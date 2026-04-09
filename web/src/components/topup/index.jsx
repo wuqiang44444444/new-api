@@ -533,17 +533,17 @@ const TopUp = () => {
     }
   };
 
-  // 获取邀请链接
-  const getAffLink = async () => {
-    const res = await API.get('/api/user/aff');
-    const { success, message, data } = res.data;
-    if (success) {
-      let link = `${window.location.origin}/register?aff=${data}`;
-      setAffLink(link);
-    } else {
-      showError(message);
-    }
-  };
+  // 获取邀请链接 — Registration disabled, invite link won't work
+  // const getAffLink = async () => {
+  //   const res = await API.get('/api/user/aff');
+  //   const { success, message, data } = res.data;
+  //   if (success) {
+  //     let link = `${window.location.origin}/register?aff=${data}`;
+  //     setAffLink(link);
+  //   } else {
+  //     showError(message);
+  //   }
+  // };
 
   // 划转邀请额度
   const transfer = async () => {
@@ -585,11 +585,11 @@ const TopUp = () => {
     setTransferAmount(getQuotaPerUnit());
   }, []);
 
-  useEffect(() => {
-    if (affFetchedRef.current) return;
-    affFetchedRef.current = true;
-    getAffLink().then();
-  }, []);
+  // useEffect(() => {
+  //   if (affFetchedRef.current) return;
+  //   affFetchedRef.current = true;
+  //   getAffLink().then();
+  // }, []);
 
   // 在 statusState 可用时获取充值信息
   useEffect(() => {
