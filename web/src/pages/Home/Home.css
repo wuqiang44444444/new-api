@@ -1,0 +1,160 @@
+/* ==================== Homepage Animations ==================== */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floatSlow {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-18px);
+  }
+}
+
+@keyframes typingCursor {
+  0%,
+  50% {
+    border-right-color: var(--semi-color-text-0);
+  }
+  51%,
+  100% {
+    border-right-color: transparent;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* ==================== Homepage Layout Utilities ==================== */
+
+.home-section {
+  max-width: 80rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  padding-top: 4rem;
+  padding-bottom: 4rem;
+}
+
+@media (min-width: 768px) {
+  .home-section {
+    padding-left: 2rem;
+    padding-right: 2rem;
+    padding-top: 5rem;
+    padding-bottom: 5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .home-section {
+    padding-left: 4rem;
+    padding-right: 4rem;
+    padding-top: 6rem;
+    padding-bottom: 6rem;
+  }
+}
+
+.home-section-alt {
+  background-color: var(--semi-color-bg-1);
+}
+
+.home-fade-in-up {
+  animation: fadeInUp 0.6s ease-out both;
+}
+
+/* Staggered delay for cards */
+.home-delay-1 { animation-delay: 0.1s; }
+.home-delay-2 { animation-delay: 0.2s; }
+.home-delay-3 { animation-delay: 0.3s; }
+.home-delay-4 { animation-delay: 0.4s; }
+
+/* ==================== Homepage Card Base ==================== */
+
+.home-card {
+  border-radius: 1rem;
+  border: 1px solid var(--semi-color-border);
+  background-color: var(--semi-color-bg-2);
+  padding: 1.5rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.home-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+}
+
+html.dark .home-card:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+
+/* ==================== Hero Section Specifics ==================== */
+
+.home-hero-blob {
+  animation: floatSlow 8s ease-in-out infinite;
+}
+
+.home-hero-blob-delayed {
+  animation: floatSlow 10s ease-in-out infinite;
+  animation-delay: -3s;
+}
+
+/* ==================== Playground Section ==================== */
+
+.home-code-block {
+  background-color: #1e1e2e;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+html.dark .home-code-block {
+  background-color: #11111b;
+}
+
+.home-typing-cursor {
+  border-right: 2px solid var(--semi-color-text-0);
+  animation: typingCursor 1s step-end infinite;
+  padding-right: 2px;
+}
+
+/* Syntax highlight colors */
+.home-code-key { color: #89b4fa; }
+.home-code-string { color: #a6e3a1; }
+.home-code-number { color: #fab387; }
+.home-code-comment { color: #6c7086; font-style: italic; }
+.home-code-bool { color: #cba6f7; }
+.home-code-bracket { color: #f9e2af; }
+
+/* ==================== Logo Placeholder ==================== */
+
+.home-logo-placeholder {
+  border: 2px dashed var(--semi-color-border);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--semi-color-text-3);
+  font-size: 0.875rem;
+  transition: border-color 0.2s ease;
+}
+
+.home-logo-placeholder:hover {
+  border-color: var(--semi-color-text-2);
+}
