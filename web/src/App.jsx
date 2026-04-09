@@ -189,6 +189,7 @@ function App() {
             </Suspense>
           }
         />
+        {/* Registration disabled — self-registration is not supported
         <Route
           path='/register'
           element={
@@ -199,6 +200,7 @@ function App() {
             </Suspense>
           }
         />
+        */}
         <Route
           path='/reset'
           element={

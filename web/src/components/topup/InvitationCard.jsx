@@ -193,7 +193,7 @@ const InvitationCard = ({
           />
         </Card>
 
-        {/* 奖励说明 */}
+        {/* 奖励说明 — Registration disabled, invitation card hidden
         <Card
           className='!rounded-xl w-full'
           title={<Text type='tertiary'>{t('奖励说明')}</Text>}
@@ -221,6 +221,7 @@ const InvitationCard = ({
             </div>
           </div>
         </Card>
+        Registration disabled, invitation card hidden */}
       </Space>
     </Card>
   );
