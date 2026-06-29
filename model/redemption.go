@@ -11,9 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrRedeemFailed is returned when redemption fails due to database error
-var ErrRedeemFailed = errors.New("redeem.failed")
-
 type Redemption struct {
 	Id           int            `json:"id"`
 	UserId       int            `json:"user_id"`
@@ -125,7 +122,7 @@ func Redeem(key string, userId int) (quota int, err error) {
 	redemption := &Redemption{}
 
 	keyCol := "`key`"
-	if common.UsingPostgreSQL {
+	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
 		keyCol = `"key"`
 	}
 	common.RandomSleep()

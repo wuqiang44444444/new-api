@@ -90,7 +90,7 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
 	}
 	if delta > 0 {
-		return model.DecreaseUserQuota(task.UserId, delta)
+		return model.DecreaseUserQuota(task.UserId, delta, false)
 	}
 	return model.IncreaseUserQuota(task.UserId, -delta, false)
 }
@@ -241,6 +241,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		TokenId:   task.PrivateData.TokenId,
 		Group:     task.Group,
 		Other:     other,
+		NodeName:  task.PrivateData.NodeName,
 	})
 }
 
