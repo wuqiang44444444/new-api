@@ -1,4 +1,5 @@
 # AGENTS.md — Project Conventions for new-api
+> 本仓库遵循 docs/ 目录规范，开始任务前必须先读 docs/README.md。
 
 ## Overview
 
