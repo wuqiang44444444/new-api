@@ -20,6 +20,7 @@ import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { TokenAiMark } from '@/assets/token-ai-mark'
 import { Button } from '@/components/design-system/button'
 import { Dialog } from '@/components/dialog'
 import { LanguageSwitcher } from '@/components/language-switcher'
@@ -30,6 +31,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { useTopNavLinks } from '@/hooks/use-top-nav-links'
+import { DEFAULT_LOGO } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -182,7 +184,7 @@ export function PublicHeader(props: PublicHeaderProps) {
     logoContent = <Skeleton className='size-full rounded-lg' />
   } else if (customLogo) {
     logoContent = customLogo
-  } else {
+  } else if (systemLogo && systemLogo !== DEFAULT_LOGO) {
     logoContent = (
       <HeaderLogo
         src={systemLogo}
@@ -191,6 +193,8 @@ export function PublicHeader(props: PublicHeaderProps) {
         className='size-full rounded-lg object-contain'
       />
     )
+  } else {
+    logoContent = <TokenAiMark className='text-primary size-full' />
   }
 
   let desktopAuthContent: ReactNode

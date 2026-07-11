@@ -16,14 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type SVGProps } from 'react'
+import type { SVGProps } from 'react'
 
 import { cn } from '@/lib/utils'
 
 export function Logo({ className, ...props }: SVGProps<SVGSVGElement>) {
   return (
     <svg
-      id='newapi-logo'
+      id='tokenai-logo'
       viewBox='0 0 24 24'
       xmlns='http://www.w3.org/2000/svg'
       height='24'
@@ -31,13 +31,19 @@ export function Logo({ className, ...props }: SVGProps<SVGSVGElement>) {
       fill='none'
       stroke='currentColor'
       strokeWidth='2'
-      strokeLinecap='round'
       strokeLinejoin='round'
       className={cn('size-6', className)}
       {...props}
     >
-      <title>New API</title>
-      <path d='M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3' />
+      <title>TokenAI</title>
+      {/* App tile */}
+      <rect x='3' y='3' width='18' height='18' rx='5.5' />
+      {/* 4-point AI spark */}
+      <path
+        d='M12 6.4 L13.25 10.75 L17.6 12 L13.25 13.25 L12 17.6 L10.75 13.25 L6.4 12 L10.75 10.75 Z'
+        fill='currentColor'
+        stroke='none'
+      />
     </svg>
   )
 }
