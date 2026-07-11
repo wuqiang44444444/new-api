@@ -16,14 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useRef, useEffect } from 'react'
 import { ExternalLink, Copy, Music } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
+
+import { Button } from '@/components/design-system/button'
 import { Dialog } from '@/components/dialog'
 import { StatusBadge } from '@/components/status-badge'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 export interface AudioClip {
   clip_id?: string
@@ -87,12 +88,9 @@ function AudioClipCard({ clip }: { clip: AudioClip }) {
         <div className='mb-1 flex items-center gap-2'>
           <span className='truncate text-sm font-medium'>{title}</span>
           {duration != null && duration > 0 && (
-            <StatusBadge
-              label={formatDuration(duration)}
-              variant='neutral'
-              className='shrink-0'
-              copyable={false}
-            />
+            <StatusBadge variant='neutral' className='shrink-0'>
+              {formatDuration(duration)}
+            </StatusBadge>
           )}
         </div>
 
@@ -107,8 +105,6 @@ function AudioClipCard({ clip }: { clip: AudioClip }) {
             </span>
             <Button
               variant='outline'
-              size='sm'
-              className='h-7 gap-1 text-xs'
               onClick={() => window.open(audioUrl, '_blank')}
             >
               <ExternalLink className='h-3 w-3' />
@@ -116,8 +112,6 @@ function AudioClipCard({ clip }: { clip: AudioClip }) {
             </Button>
             <Button
               variant='outline'
-              size='sm'
-              className='h-7 gap-1 text-xs'
               onClick={() => {
                 navigator.clipboard.writeText(audioUrl)
                 toast.success(t('Copied'))

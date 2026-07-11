@@ -18,8 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { CheckCircle2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Separator } from '@/components/ui/separator'
+
 import { StatusBadge } from '@/components/status-badge'
+import { Separator } from '@/components/ui/separator'
+
 import type { SetupFormValues, SetupStatus } from '../types'
 
 interface CompleteStepProps {
@@ -72,11 +74,7 @@ export function CompleteStep({ status, values }: CompleteStepProps) {
             </dt>
             <dd className='flex flex-wrap items-center gap-2'>
               <span className='text-sm font-semibold'>{dbType}</span>
-              <StatusBadge
-                label={dbType}
-                variant={databaseVariant}
-                copyable={false}
-              />
+              <StatusBadge variant={databaseVariant}>{dbType}</StatusBadge>
             </dd>
           </div>
 

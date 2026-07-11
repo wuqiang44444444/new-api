@@ -18,11 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Copy, Check } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { Button } from '@/components/ui/button'
+
+import { Button } from '@/components/design-system/button'
+import { Dialog } from '@/components/dialog'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Dialog } from '@/components/dialog'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 
 interface PromptDialogProps {
   prompt: string
@@ -58,8 +59,8 @@ export function PromptDialog({
             <div className='bg-muted/50 relative rounded-md border p-3'>
               <Button
                 variant='ghost'
-                size='sm'
-                className='absolute top-2 right-2 h-8 w-8 p-0'
+                size='icon'
+                className='absolute top-2 right-2'
                 onClick={() => copyToClipboard(prompt)}
                 title={t('Copy to clipboard')}
               >
@@ -84,8 +85,8 @@ export function PromptDialog({
               <div className='bg-muted/50 relative rounded-md border p-3'>
                 <Button
                   variant='ghost'
-                  size='sm'
-                  className='absolute top-2 right-2 h-8 w-8 p-0'
+                  size='icon'
+                  className='absolute top-2 right-2'
                   onClick={() => copyToClipboard(promptEn)}
                   title={t('Copy to clipboard')}
                 >

@@ -18,12 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Grid2X2, Table2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
+
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
+
 import {
   DATA_TABLE_VIEW_MODES,
   type DataTableViewMode,
@@ -67,7 +69,7 @@ export function DataTableViewModeToggle(props: DataTableViewModeToggleProps) {
       role='group'
       aria-label={t('View mode')}
       className={cn(
-        'bg-muted/60 inline-flex h-8 items-center rounded-lg border p-0.5',
+        'bg-muted/60 inline-flex h-7 items-center rounded-lg border p-0.5 sm:h-8',
         props.className
       )}
     >
