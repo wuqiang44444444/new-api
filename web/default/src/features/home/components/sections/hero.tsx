@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, BookOpen, CircleCheck } from 'lucide-react'
+import { ArrowRight, CircleCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/design-system/button'
@@ -36,8 +36,6 @@ export function Hero(props: HeroProps) {
   const { t } = useTranslation()
   const { status } = useStatus()
   const { systemName } = useSystemConfig()
-  const docsUrl =
-    (status?.docs_link as string | undefined) || 'https://docs.newapi.pro'
   const serverAddress = resolveHomeBaseUrl(status)
 
   return (
@@ -96,23 +94,6 @@ export function Hero(props: HeroProps) {
             <Button variant='outline' size='xl' render={<Link to='/pricing' />}>
               {t('View Pricing')}
             </Button>
-            {docsUrl.startsWith('http') ? (
-              <Button
-                variant='ghost'
-                size='xl'
-                render={
-                  <a href={docsUrl} target='_blank' rel='noopener noreferrer' />
-                }
-              >
-                <BookOpen data-icon='inline-start' />
-                {t('Docs')}
-              </Button>
-            ) : (
-              <Button variant='ghost' size='xl' render={<Link to={docsUrl} />}>
-                <BookOpen data-icon='inline-start' />
-                {t('Docs')}
-              </Button>
-            )}
           </div>
         </div>
 
