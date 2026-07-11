@@ -66,7 +66,8 @@ Transitive dependencies should be audited before a final external release.
 | backend     | production  | Go        | `gorm.io/gorm`                                        | `v1.25.2`                            | MIT                                                |
 | backend     | production  | Go        | `github.com/expr-lang/expr`                           | `v1.17.8`                            | MIT                                                |
 | web/default | production  | npm       | `@base-ui/react`                                      | `1.4.1`                              | MIT                                                |
-| web/default | production  | npm       | `@fontsource-variable/public-sans`                    | `5.2.7`                              | OFL-1.1                                            |
+| web/default | production  | vendored  | `Lora variable font assets`                           | `5.2.8`                              | OFL-1.1                                            |
+| web/default | production  | vendored  | `Public Sans variable font assets`                    | `5.2.7`                              | OFL-1.1                                            |
 | web/default | production  | npm       | `@hookform/resolvers`                                 | `5.2.2`                              | MIT                                                |
 | web/default | production  | npm       | `@hugeicons/core-free-icons`                          | `4.1.1`                              | MIT                                                |
 | web/default | production  | npm       | `@hugeicons/react`                                    | `1.1.6`                              | MIT                                                |
@@ -351,7 +352,7 @@ SOFTWARE.
 
 SIL Open Font License 1.1
 
-The font dependency listed under OFL-1.1 is licensed under the SIL Open Font
+The font assets listed under OFL-1.1 are licensed under the SIL Open Font
 License, Version 1.1. The full license text is available at:
 https://openfontlicense.org/open-font-license-official-text/
 
@@ -372,4 +373,3 @@ this software, either in source code form or as a compiled binary, for any
 purpose, commercial or non-commercial, and by any means.
 
 For more information, please refer to https://unlicense.org/
-

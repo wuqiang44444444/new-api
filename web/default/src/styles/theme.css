@@ -19,8 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  /* Primary UI face. `@fontsource-variable/public-sans` registers the family
-   * as 'Public Sans Variable' (NOT 'Public Sans'), so that name must lead the
+  /* Primary UI face. The local font-face declarations register the family as
+   * 'Public Sans Variable' (NOT 'Public Sans'), so that name must lead the
    * stack or the webfont silently never applies. Public Sans carries no CJK
    * glyphs, so explicit CJK UI fonts (PingFang / YaHei UI / Noto Sans CJK)
    * sit BEFORE the western system fallbacks — otherwise Windows browsers pick
