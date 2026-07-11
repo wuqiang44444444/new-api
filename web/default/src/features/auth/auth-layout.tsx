@@ -17,10 +17,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
+import { ArrowRight } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { TokenAiMark } from '@/assets/token-ai-mark'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSystemConfig } from '@/hooks/use-system-config'
+import { DEFAULT_LOGO } from '@/lib/constants'
+
+import { AuthGatewayPreview } from './components/auth-gateway-preview'
 
 type AuthLayoutProps = {
   children: React.ReactNode
@@ -28,36 +34,60 @@ type AuthLayoutProps = {
 
 export function AuthLayout({ children }: AuthLayoutProps) {
   const { t } = useTranslation()
-  const { systemName, logo, loading } = useSystemConfig()
+  const { systemName, logo, loading, logoLoaded } = useSystemConfig()
+  const hasCustomLogo = Boolean(logo && logo !== DEFAULT_LOGO)
+  let brandMark: ReactNode
+
+  if (loading || (hasCustomLogo && !logoLoaded)) {
+    brandMark = <Skeleton className='absolute inset-0 rounded-lg' />
+  } else if (hasCustomLogo) {
+    brandMark = (
+      <img
+        src={logo}
+        alt={t('Logo')}
+        className='size-full rounded-lg object-cover'
+      />
+    )
+  } else {
+    brandMark = <TokenAiMark className='text-primary size-full' />
+  }
 
   return (
-    <div className='relative grid h-svh max-w-none'>
-      <Link
-        to='/'
-        className='absolute top-4 left-4 z-10 flex items-center gap-2 transition-opacity hover:opacity-80 sm:top-8 sm:left-8'
-      >
-        <div className='relative h-8 w-8'>
+    <div className='bg-background text-foreground relative min-h-svh'>
+      <header className='absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 py-4 sm:px-8 sm:py-6 lg:px-12 xl:px-16'>
+        <Link
+          to='/'
+          aria-label={t('Go to home')}
+          className='focus-visible:ring-ring inline-flex min-h-11 items-center gap-2 rounded-lg transition-opacity outline-none hover:opacity-80 focus-visible:ring-2'
+        >
+          <span className='relative flex size-8 items-center justify-center overflow-hidden rounded-lg'>
+            {brandMark}
+          </span>
           {loading ? (
-            <Skeleton className='absolute inset-0 rounded-full' />
+            <Skeleton className='h-6 w-24' />
           ) : (
-            <img
-              src={logo}
-              alt={t('Logo')}
-              className='h-8 w-8 rounded-full object-cover'
-            />
+            <span className='text-xl font-semibold'>{systemName}</span>
           )}
-        </div>
-        {loading ? (
-          <Skeleton className='h-6 w-24' />
-        ) : (
-          <h1 className='text-xl font-medium'>{systemName}</h1>
-        )}
-      </Link>
-      <div className='container flex items-center pt-16 sm:pt-0'>
-        <div className='mx-auto flex w-full flex-col justify-center space-y-2 px-4 py-8 sm:w-[480px] sm:p-8'>
-          {children}
-        </div>
-      </div>
+        </Link>
+
+        <Link
+          to='/'
+          className='text-primary focus-visible:ring-ring inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-sm font-medium outline-none hover:opacity-75 focus-visible:ring-2'
+        >
+          {t('Go to home')}
+          <ArrowRight aria-hidden='true' className='size-4' />
+        </Link>
+      </header>
+
+      <main className='grid min-h-svh lg:grid-cols-[minmax(0,46%)_minmax(0,54%)]'>
+        <section className='flex min-w-0 items-center px-4 pt-24 pb-10 sm:px-8 sm:pt-28 lg:px-12 xl:px-20'>
+          <div className='mx-auto w-full max-w-[29rem]'>{children}</div>
+        </section>
+
+        <aside className='bg-muted/40 border-border hidden min-w-0 items-center border-l px-10 pt-28 pb-16 lg:flex xl:px-16'>
+          <AuthGatewayPreview systemName={systemName} />
+        </aside>
+      </main>
     </div>
   )
 }

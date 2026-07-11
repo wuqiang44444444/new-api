@@ -20,6 +20,7 @@ import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
+import { useSystemConfig } from '@/hooks/use-system-config'
 
 import { AuthLayout } from '../auth-layout'
 import { TermsFooter } from '../components/terms-footer'
@@ -28,19 +29,26 @@ import { SignUpForm } from './components/sign-up-form'
 export function SignUp() {
   const { t } = useTranslation()
   const { status } = useStatus()
+  const { systemName } = useSystemConfig()
 
   return (
     <AuthLayout>
-      <div className='w-full space-y-8'>
-        <div className='space-y-2'>
-          <h2 className='text-center text-2xl font-semibold tracking-tight sm:text-left'>
-            {t('Create an account')}
+      <div className='w-full space-y-7'>
+        <div className='space-y-3'>
+          <p className='text-primary text-sm font-medium'>
+            {t('Professional Token Service & Enterprise AI Gateway')}
+          </p>
+          <h2 className='text-2xl font-semibold tracking-tight'>
+            {t('Create an account')} · {systemName}
           </h2>
-          <p className='text-muted-foreground text-left text-sm sm:text-base'>
+          <p className='text-muted-foreground text-sm leading-6'>
+            {t('One API for leading AI models')}
+          </p>
+          <p className='text-muted-foreground text-sm'>
             {t('Already have an account?')}{' '}
             <Link
               to='/sign-in'
-              className='hover:text-primary font-medium underline underline-offset-4'
+              className='text-foreground hover:text-primary font-medium underline underline-offset-4'
             >
               {t('Sign in')}
             </Link>
@@ -48,7 +56,7 @@ export function SignUp() {
           </p>
         </div>
 
-        <SignUpForm />
+        <SignUpForm className='gap-5' />
 
         <TermsFooter
           variant='sign-up'
