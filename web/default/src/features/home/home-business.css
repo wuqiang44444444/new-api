@@ -1,0 +1,98 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+.home-business {
+  --background: #ffffff;
+  --foreground: #0b1f3a;
+  --card: #ffffff;
+  --card-foreground: #0b1f3a;
+  --popover: #ffffff;
+  --popover-foreground: #0b1f3a;
+  --primary: #0768e8;
+  --primary-foreground: #ffffff;
+  --secondary: #eef6ff;
+  --secondary-foreground: #0b4f9e;
+  --muted: #f7faff;
+  --muted-foreground: #65758b;
+  --accent: #e8f2ff;
+  --accent-foreground: #075ac6;
+  --border: #dce7f4;
+  --input: #b9d4f6;
+  --ring: #0768e8;
+  --home-border-strong: #b9d4f6;
+  --home-code-background: #0b1f36;
+  --home-code-foreground: #d9eaff;
+  --home-success: #13965d;
+  --home-success-soft: #e9f8f1;
+  --home-shadow: 0 14px 34px rgb(24 82 149 / 8%);
+  background: var(--background);
+  color: var(--foreground);
+  scroll-behavior: smooth;
+}
+
+.dark .home-business {
+  --background: #07172c;
+  --foreground: #edf5ff;
+  --card: #0c203b;
+  --card-foreground: #edf5ff;
+  --popover: #0c203b;
+  --popover-foreground: #edf5ff;
+  --primary: #3d9bff;
+  --primary-foreground: #061326;
+  --secondary: #102b4c;
+  --secondary-foreground: #dcecff;
+  --muted: #0a1b32;
+  --muted-foreground: #a9bad0;
+  --accent: #102f55;
+  --accent-foreground: #67afff;
+  --border: #254261;
+  --input: #376797;
+  --ring: #3d9bff;
+  --home-border-strong: #376797;
+  --home-code-background: #061326;
+  --home-code-foreground: #dcecff;
+  --home-success: #43d69a;
+  --home-success-soft: #123a31;
+  --home-shadow: 0 16px 38px rgb(0 0 0 / 22%);
+}
+
+.home-business-card {
+  border: 1px solid var(--home-border-strong);
+  background: var(--card);
+  box-shadow: var(--home-shadow);
+}
+
+.home-business-code {
+  background: var(--home-code-background);
+  color: var(--home-code-foreground);
+}
+
+.home-business-success {
+  color: var(--home-success);
+}
+
+.home-business-success-surface {
+  background: var(--home-success-soft);
+  color: var(--home-success);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-business {
+    scroll-behavior: auto;
+  }
+}

@@ -17,10 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
-import { ArrowRight } from 'lucide-react'
+import {
+  ArrowRight,
+  ReceiptText,
+  RefreshCw,
+  ShieldCheck,
+  Shuffle,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { AnimateInView } from '@/components/animate-in-view'
 import { Button } from '@/components/design-system/button'
 
 interface CTAProps {
@@ -28,57 +33,100 @@ interface CTAProps {
   isAuthenticated?: boolean
 }
 
+const ENTERPRISE_CAPABILITIES = [
+  {
+    title: 'Multi-channel scheduling',
+    description: 'Reduce single-channel volatility',
+    icon: Shuffle,
+  },
+  {
+    title: 'Failure retries and rate limits',
+    description: 'Protect request availability boundaries',
+    icon: RefreshCw,
+  },
+  {
+    title: 'Permissions and quotas',
+    description: 'Manage team access centrally',
+    icon: ShieldCheck,
+  },
+  {
+    title: 'Transparent billing and logs',
+    description: 'Verify token usage and charges',
+    icon: ReceiptText,
+  },
+] as const
+
 export function CTA(props: CTAProps) {
   const { t } = useTranslation()
 
-  if (props.isAuthenticated) {
-    return null
-  }
-
   return (
-    <section className='relative z-10 overflow-hidden px-6 py-24 md:py-32'>
-      {/* Gradient mesh background */}
-      <div
-        aria-hidden
-        className='absolute inset-0 -z-10 opacity-20 dark:opacity-[0.08]'
-        style={{
-          background: [
-            'radial-gradient(ellipse 50% 50% at 30% 50%, oklch(0.7 0.15 250 / 70%) 0%, transparent 70%)',
-            'radial-gradient(ellipse 40% 40% at 70% 40%, oklch(0.65 0.12 200 / 50%) 0%, transparent 70%)',
-          ].join(', '),
-        }}
-      />
-
-      <AnimateInView
-        className='mx-auto max-w-2xl text-center'
-        animation='scale-in'
-      >
-        <h2 className='text-2xl leading-tight font-bold tracking-tight md:text-4xl'>
-          {t('Ready to simplify')}
-          <br />
-          <span className='bg-gradient-to-r from-blue-400 via-violet-400 to-purple-500 bg-clip-text text-transparent'>
-            {t('your AI integration?')}
-          </span>
-        </h2>
-        <p className='text-muted-foreground/80 mx-auto mt-5 max-w-md text-sm leading-relaxed md:text-base'>
-          {t(
-            'Deploy your own gateway and start routing requests through your configured upstream services.'
-          )}
-        </p>
-        <div className='mt-8 flex items-center justify-center gap-3'>
-          <Button className='group rounded-lg' render={<Link to='/sign-up' />}>
-            {t('Get Started')}
-            <ArrowRight className='ml-1 size-3.5 transition-transform duration-200 group-hover:translate-x-0.5' />
-          </Button>
-          <Button
-            variant='outline'
-            className='border-border/50 hover:border-border hover:bg-muted/50 rounded-lg'
-            render={<Link to='/pricing' />}
+    <section
+      id='enterprise'
+      className='border-border border-t px-4 py-20 sm:px-6 sm:py-24'
+      aria-labelledby='enterprise-title'
+    >
+      <div className='mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-20'>
+        <div className='max-w-xl'>
+          <p className='text-primary text-sm font-semibold'>
+            {t('Enterprise AI Gateway')}
+          </p>
+          <h2
+            id='enterprise-title'
+            className='mt-3 text-[clamp(1.75rem,3vw,2.375rem)] leading-tight font-semibold tracking-[-0.035em]'
           >
-            {t('View Pricing')}
-          </Button>
+            {t('Move AI applications from testing to continuous operations')}
+          </h2>
+          <p className='text-muted-foreground mt-4 text-base leading-7'>
+            {t(
+              'Team billing, technical support, and gateway deployment services help enterprises manage model access, permissions, quotas, and request quality through one entry point.'
+            )}
+          </p>
+          <div className='mt-7 flex flex-wrap items-center gap-3'>
+            <Button
+              size='xl'
+              render={
+                <Link to={props.isAuthenticated ? '/dashboard' : '/sign-up'} />
+              }
+            >
+              {props.isAuthenticated ? t('Go to Dashboard') : t('Get Started')}
+            </Button>
+            <Button
+              variant='ghost'
+              size='xl'
+              render={
+                <a
+                  href='https://docs.newapi.pro/installation/'
+                  target='_blank'
+                  rel='noopener noreferrer'
+                />
+              }
+            >
+              {t('Learn about gateway deployment')}
+              <ArrowRight data-icon='inline-end' />
+            </Button>
+          </div>
         </div>
-      </AnimateInView>
+
+        <ul className='border-border border-t'>
+          {ENTERPRISE_CAPABILITIES.map((capability) => {
+            const Icon = capability.icon
+            return (
+              <li
+                key={capability.title}
+                className='border-border grid min-h-16 grid-cols-[2rem_1fr] items-center gap-3 border-b py-3 sm:grid-cols-[2rem_1fr_auto]'
+              >
+                <Icon aria-hidden='true' className='text-primary size-5' />
+                <strong className='text-sm font-semibold'>
+                  {t(capability.title)}
+                </strong>
+                <span className='text-muted-foreground col-start-2 text-xs sm:col-start-auto'>
+                  {t(capability.description)}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
     </section>
   )
 }

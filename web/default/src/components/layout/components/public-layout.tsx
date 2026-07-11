@@ -1,3 +1,5 @@
+import { cn } from '@/lib/utils'
+
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -30,11 +32,17 @@ type PublicLayoutProps = {
   showNotifications?: boolean
   logo?: React.ReactNode
   siteName?: string
+  className?: string
 }
 
 export function PublicLayout(props: PublicLayoutProps) {
   return (
-    <div className='bg-background text-foreground relative min-h-svh overflow-x-clip'>
+    <div
+      className={cn(
+        'bg-background text-foreground relative min-h-svh overflow-x-clip',
+        props.className
+      )}
+    >
       <PublicHeader
         navContent={props.navContent}
         navLinks={props.navLinks}

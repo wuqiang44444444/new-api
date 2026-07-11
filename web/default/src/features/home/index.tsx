@@ -26,7 +26,9 @@ import { useTheme } from '@/context/theme-provider'
 import { isLikelyHtml } from '@/lib/content-format'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { CTA, Features, Hero, HowItWorks, Stats } from './components'
+import { CTA, Features, Hero, HowItWorks, SetupGuide } from './components'
+
+import './home-business.css'
 import { useHomePageContent } from './hooks'
 
 export function Home() {
@@ -121,12 +123,30 @@ export function Home() {
   }
 
   return (
-    <PublicLayout showMainContainer={false}>
-      <Hero isAuthenticated={isAuthenticated} />
-      <Stats />
-      <Features />
-      <HowItWorks />
-      <CTA isAuthenticated={isAuthenticated} />
+    <PublicLayout
+      showMainContainer={false}
+      className='home-business'
+      headerProps={{ variant: 'business' }}
+      navLinks={[
+        { title: 'Models', href: '/#models' },
+        { title: 'Pricing', href: '/pricing' },
+        { title: 'Docs', href: '/#configuration' },
+        { title: 'Enterprise', href: '/#enterprise' },
+      ]}
+    >
+      <a
+        href='#main-content'
+        className='bg-foreground text-background fixed top-2 left-2 z-[60] -translate-y-[140%] rounded-md px-4 py-3 text-sm font-medium focus:translate-y-0'
+      >
+        {t('Skip to main content')}
+      </a>
+      <main id='main-content'>
+        <Hero isAuthenticated={isAuthenticated} />
+        <HowItWorks />
+        <Features />
+        <SetupGuide />
+        <CTA isAuthenticated={isAuthenticated} />
+      </main>
       <Footer />
     </PublicLayout>
   )
