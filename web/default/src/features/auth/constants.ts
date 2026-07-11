@@ -19,6 +19,23 @@ For commercial licensing, please contact support@quantumnous.com
 import { z } from 'zod'
 
 // ============================================================================
+// Validation Constants
+// ============================================================================
+
+export const PASSWORD_MIN_LENGTH = 8
+export const PASSWORD_MAX_LENGTH = 20
+export const PASSWORD_COMPLEXITY_REGEX =
+  /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9\s])\S{8,20}$/
+export const PASSWORD_LENGTH_MESSAGE =
+  'Password must be between 8 and 20 characters'
+export const PASSWORD_COMPLEXITY_MESSAGE =
+  'Password must include letters, numbers, and symbols, without spaces'
+export const OTP_LENGTH = 6
+export const BACKUP_CODE_LENGTH = 9 // XXXX-XXXX format
+export const BACKUP_CODE_REGEX = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/i
+export const OTP_REGEX = /^\d{6}$/
+
+// ============================================================================
 // Form Schemas
 // ============================================================================
 
@@ -34,8 +51,9 @@ export const registerFormSchema = z
     password: z
       .string()
       .min(1, 'Please enter your password')
-      .min(8, 'Password must be between 8 and 20 characters')
-      .max(20, 'Password must be at most 20 characters long'),
+      .min(PASSWORD_MIN_LENGTH, PASSWORD_LENGTH_MESSAGE)
+      .max(PASSWORD_MAX_LENGTH, PASSWORD_LENGTH_MESSAGE)
+      .regex(PASSWORD_COMPLEXITY_REGEX, PASSWORD_COMPLEXITY_MESSAGE),
     confirmPassword: z.string().min(1, 'Please confirm your password'),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -52,17 +70,6 @@ export const forgotPasswordFormSchema = z.object({
 export const otpFormSchema = z.object({
   otp: z.string().min(1, 'Please enter a code.'),
 })
-
-// ============================================================================
-// Validation Constants
-// ============================================================================
-
-export const PASSWORD_MIN_LENGTH = 8
-export const PASSWORD_MAX_LENGTH = 20
-export const OTP_LENGTH = 6
-export const BACKUP_CODE_LENGTH = 9 // XXXX-XXXX format
-export const BACKUP_CODE_REGEX = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/i
-export const OTP_REGEX = /^\d{6}$/
 
 // ============================================================================
 // Countdown Constants

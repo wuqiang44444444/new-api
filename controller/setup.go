@@ -85,10 +85,10 @@ func PostSetup(c *gin.Context) {
 			return
 		}
 
-		if len(req.Password) < 8 {
+		if err := common.ValidateNewPassword(req.Password); err != nil {
 			c.JSON(200, gin.H{
 				"success": false,
-				"message": "密码长度至少为8个字符",
+				"message": err.Error(),
 			})
 			return
 		}

@@ -195,10 +195,8 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	user.Username = strings.TrimSpace(user.Username)
-	user.Email = model.NormalizeEmail(user.Email)
-	if user.Username == "" {
-		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+	if err := common.ValidateNewPassword(user.Password); err != nil {
+		common.ApiError(c, err)
 		return
 	}
 	if err := common.Validate.Struct(&user); err != nil {
@@ -833,6 +831,12 @@ func UpdateSelf(c *gin.Context) {
 		return
 	}
 
+	if user.Password != "" {
+		if err := common.ValidateNewPassword(user.Password); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
 	if user.Password == "" {
 		user.Password = "$I_LOVE_U" // make Validator happy :)
 	}
@@ -891,8 +895,10 @@ func checkUpdatePassword(originalPassword string, newPassword string, userId int
 		err = errUserPasswordUnset
 		return
 	}
-	if !common.ValidatePasswordAndHash(originalPassword, currentUser.Password) {
-		err = errOriginalPasswordFail
+	if newPassword == "" {
+		return
+	}
+	if err = common.ValidateNewPassword(newPassword); err != nil {
 		return
 	}
 	updatePassword = true

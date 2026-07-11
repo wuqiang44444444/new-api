@@ -41,7 +41,12 @@ import { Label } from '@/components/ui/label'
 import { register, wechatLoginByCode } from '@/features/auth/api'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
-import { registerFormSchema } from '@/features/auth/constants'
+import {
+  PASSWORD_COMPLEXITY_MESSAGE,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  registerFormSchema,
+} from '@/features/auth/constants'
 import { useAuthRedirect } from '@/features/auth/hooks/use-auth-redirect'
 import { useEmailVerification } from '@/features/auth/hooks/use-email-verification'
 import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
@@ -86,6 +91,8 @@ export function SignUpForm({
 
   const form = useForm<z.infer<typeof registerFormSchema>>({
     resolver: zodResolver(registerFormSchema),
+    mode: 'onBlur',
+    reValidateMode: 'onChange',
     defaultValues: {
       username: '',
       email: '',
@@ -95,6 +102,9 @@ export function SignUpForm({
   })
 
   const emailValue = form.watch('email')
+  const passwordValue = form.watch('password')
+  const confirmPasswordValue = form.watch('confirmPassword')
+  const confirmPasswordTouched = form.formState.touchedFields.confirmPassword
   const emailVerificationRequired = !!status?.email_verification
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
   const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
@@ -105,6 +115,12 @@ export function SignUpForm({
     true
   const hasWeChatLogin = Boolean(status?.wechat_login)
   const turnstileReady = !isTurnstileEnabled || Boolean(turnstileToken)
+
+  useEffect(() => {
+    if (confirmPasswordTouched && confirmPasswordValue) {
+      void form.trigger('confirmPassword')
+    }
+  }, [confirmPasswordTouched, confirmPasswordValue, passwordValue, form])
 
   const wechatQrCodeUrl = useMemo(() => {
     return (
@@ -254,7 +270,13 @@ export function SignUpForm({
               <FormLabel>{t('Password')}</FormLabel>
               <FormControl>
                 <PasswordInput
-                  placeholder={t('Enter password (8-20 characters)')}
+                  autoComplete='new-password'
+                  minLength={PASSWORD_MIN_LENGTH}
+                  maxLength={PASSWORD_MAX_LENGTH}
+                  placeholder={t(
+                    'Enter password (8-20 characters, letters, numbers, and symbols)'
+                  )}
+                  title={t(PASSWORD_COMPLEXITY_MESSAGE)}
                   {...field}
                 />
               </FormControl>
@@ -271,7 +293,13 @@ export function SignUpForm({
             <FormItem>
               <FormLabel>{t('Confirm password')}</FormLabel>
               <FormControl>
-                <PasswordInput placeholder={t('Confirm password')} {...field} />
+                <PasswordInput
+                  autoComplete='new-password'
+                  minLength={PASSWORD_MIN_LENGTH}
+                  maxLength={PASSWORD_MAX_LENGTH}
+                  placeholder={t('Confirm password')}
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
