@@ -62,7 +62,7 @@ export function CTA(props: CTAProps) {
   return (
     <section
       id='enterprise'
-      className='border-border border-t px-4 py-20 sm:px-6 sm:py-24'
+      className='border-border scroll-mt-20 border-t px-4 py-20 sm:px-6 sm:py-24'
       aria-labelledby='enterprise-title'
     >
       <div className='mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-20'>

@@ -52,7 +52,7 @@ export function Features() {
   return (
     <section
       id='models'
-      className='mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-24'
+      className='mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6 sm:py-24'
       aria-labelledby='home-values-title'
     >
       <div className='max-w-2xl'>

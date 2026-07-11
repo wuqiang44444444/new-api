@@ -39,7 +39,6 @@ For commercial licensing, please contact support@quantumnous.com
   --home-code-foreground: #d9eaff;
   --home-success: #13965d;
   --home-success-soft: #e9f8f1;
-  --home-shadow: 0 14px 34px rgb(24 82 149 / 8%);
   background: var(--background);
   color: var(--foreground);
   scroll-behavior: smooth;
@@ -68,13 +67,11 @@ For commercial licensing, please contact support@quantumnous.com
   --home-code-foreground: #dcecff;
   --home-success: #43d69a;
   --home-success-soft: #123a31;
-  --home-shadow: 0 16px 38px rgb(0 0 0 / 22%);
 }
 
 .home-business-card {
   border: 1px solid var(--home-border-strong);
   background: var(--card);
-  box-shadow: var(--home-shadow);
 }
 
 .home-business-code {

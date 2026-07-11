@@ -43,7 +43,7 @@ export function HowItWorks() {
   return (
     <section
       id='quick-start'
-      className='border-border bg-muted mx-auto grid w-[calc(100%-2rem)] max-w-6xl overflow-hidden rounded-lg border sm:w-[calc(100%-3rem)] sm:grid-cols-3'
+      className='border-border bg-muted mx-auto grid w-[calc(100%-2rem)] max-w-6xl scroll-mt-20 overflow-hidden rounded-lg border sm:w-[calc(100%-3rem)] sm:grid-cols-3'
       aria-label={t('Quick start steps')}
     >
       {STEPS.map((step, index) => {

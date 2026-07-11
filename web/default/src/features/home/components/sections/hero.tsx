@@ -45,10 +45,6 @@ export function Hero(props: HeroProps) {
       className='relative overflow-hidden px-4 pt-28 pb-12 sm:px-6 sm:pt-32 sm:pb-16'
       aria-labelledby='home-hero-title'
     >
-      <div
-        aria-hidden='true'
-        className='border-border absolute right-[-6rem] bottom-12 h-px w-[56%] -rotate-6 border-t'
-      />
       <div className='relative mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(460px,0.9fr)] lg:gap-20'>
         <div className='max-w-2xl py-4'>
           <p className='text-primary mb-5 text-sm font-semibold'>
@@ -65,7 +61,8 @@ export function Hero(props: HeroProps) {
           </h1>
           <p className='text-muted-foreground mt-6 max-w-xl text-base leading-8'>
             {t(
-              'LinkMetaX unifies leading text, image, audio, and video models behind one API, with resilient routing, usage controls, transparent billing, and end-to-end observability.'
+              '{{systemName}} unifies leading text, image, audio, and video models behind one API, with resilient routing, usage controls, transparent billing, and end-to-end observability.',
+              { systemName }
             )}
           </p>
           <ul

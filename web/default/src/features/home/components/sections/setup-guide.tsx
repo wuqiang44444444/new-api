@@ -77,7 +77,7 @@ export function SetupGuide() {
   return (
     <section
       id='configuration'
-      className='bg-muted border-border border-y px-4 py-20 sm:px-6 sm:py-24'
+      className='bg-muted border-border scroll-mt-20 border-y px-4 py-20 sm:px-6 sm:py-24'
       aria-labelledby='configuration-title'
     >
       <div className='mx-auto max-w-6xl text-center'>
