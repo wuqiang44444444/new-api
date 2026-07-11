@@ -1,11 +1,11 @@
-# LinkMetaX 首页设计 QA
+# 首页设计 QA
 
-- source visual truth path: `/private/tmp/linkmetax-home-before-desktop.png`、`/private/tmp/linkmetax-home-before-mobile.png`
-- implementation screenshot path: `/private/tmp/linkmetax-ui-final-desktop.png`、`/private/tmp/linkmetax-ui-final-mobile.png`、`/private/tmp/linkmetax-ui-final-dark.png`
-- viewport: desktop `1440 × 1000`，mobile `390 × 844`
-- state: 默认浅色主题；配置模块默认选择“代码编辑器 / Claude Code / Anthropic 兼容”
-- full-view comparison evidence: `/private/tmp/linkmetax-home-qa-full-desktop.png`、`/private/tmp/linkmetax-home-qa-full-mobile.png`
-- focused region comparison evidence: `/private/tmp/linkmetax-home-qa-config-desktop.png`，用于核对配置模块的信息密度、协议状态、代码区与复制操作
+- source visual truth path: 本轮用户提供的四张主页截图；本地同状态基线 `/private/tmp/yuan-home-light-before.png`
+- implementation screenshot path: `/private/tmp/yuan-home-light-after-final.png`、`/private/tmp/yuan-home-features-after-2.png`、`/private/tmp/yuan-home-config-after-2.png`、`/private/tmp/yuan-home-enterprise-after-2.png`、`/private/tmp/yuan-home-dark-after-clean-2.png`
+- viewport: 浏览器 CSS viewport `1504 × 818`，截图像素 `3008 × 1636`；历史移动端证据 `390 × 844`
+- state: 浅色与深色主题；配置模块默认“代码编辑器 / Claude Code”，并复核“命令行工具 / curl”切换
+- full-view comparison evidence: `/private/tmp/yuan-home-qa-comparison.png`
+- focused region comparison evidence: `/private/tmp/yuan-home-features-after-2.png`、`/private/tmp/yuan-home-config-after-2.png`、`/private/tmp/yuan-home-enterprise-after-2.png`，用于核对区块节奏、信息密度、页尾收束和锚点落位
 
 ## Findings
 
@@ -15,7 +15,7 @@
 - 间距与布局：保留原首屏双栏与 API 路由示意；新增价值入口、配置前准备、完整工具配置和企业服务收尾，桌面与移动端均无页面级横向溢出。
 - 颜色与令牌：继续使用单一业务蓝、深海军蓝正文、浅蓝选中态和绿色成功态；深色配置代码区与深色主题均保持语义一致。
 - 图像与资源：页面没有照片或插画类资源；现有 API 流程示意得到保留，新增图标继续使用同一 Lucide 图标体系，未引入占位图片或不一致的装饰资产。
-- 文案与内容：首页同时清晰表达模型 Token 服务与企业级 AI 网关；配置示例不写死域名、真实密钥、模型数量或固定模型 ID，并补齐配置位置、保存方式、验证方法与常见错误。
+- 文案与内容：首页同时清晰表达模型 Token 服务与企业级 AI 网关；首屏品牌名跟随运行时 `systemName`，不再出现导航品牌与正文品牌不一致；配置示例不写死域名、真实密钥、模型数量或固定模型 ID。
 - 交互与无障碍：场景标签、工具切换、协议同步、复制反馈、主题切换均通过；不支持的工具协议被禁用，按钮保留文本标签、焦点样式与可理解的 `aria-label`。
 
 ## Comparison History
@@ -93,8 +93,71 @@ Post-fix evidence: `/private/tmp/linkmetax-ui-final-desktop.png`、`/private/tmp
 - 桌面、平板、横屏手机和小屏手机复测均无横向溢出，所有区域继续保持统一内容网格，所有可见控件继续满足 `44px` 触控目标。
 - 默认浅色配色及备份中的全部既有主题令牌保持不变；主题、键盘切换、失败重试与减少动态效果检查均通过，浏览器错误为 0。
 
+### Pass 7
+
+本轮依据用户提供的最终主页截图，对当前工作树做收尾复核与轻量优化。
+
+Post-fix evidence: `/private/tmp/yuan-home-qa-comparison.png`、`/private/tmp/yuan-home-light-after-final.png`、`/private/tmp/yuan-home-dark-after-clean-2.png`。
+
+- [P2] 首屏正文固定显示 `LinkMetaX`，而导航、流程卡与页脚使用运行时系统名；在 `元空间`、`TokenAI` 等部署配置下形成明显品牌割裂。修复为通过 i18n 插值统一使用 `systemName`，并补齐 en、zh、fr、ja、ru、vi、zh-TW。
+- [P3] 业务卡片同时使用描边与投影，层次略显重复，也不符合当前“描边或投影二选一”的视觉规则。移除卡片投影，保留清晰描边；浅色与深色主题均复核通过。
+- [P3] 页内导航落点未给固定页头预留空间。为快速开始、能力、配置和企业区补充统一 `scroll-margin`，锚点跳转后标题与内容保持完整可见。
+- 命令行场景切换已验证，选择后面板从 Claude Code 正确更新为 curl；主题菜单浅色与深色状态均可切换并正确渲染。
+- 当前仓库匹配后端使用临时 SQLite 启动后，`/api/status` 与 `/api/home_page_content` 均返回 200；旧的本地 `:8080` 进程并非本仓库服务，其 404 不计入本轮产品缺陷。
+- 浏览器自动化上下文不允许写入系统剪贴板，复制按钮走到既有“复制失败”反馈分支；该限制不影响布局验收，但真实剪贴板成功路径仍应在普通浏览器会话中复核。
+- `bun run typecheck`、定向 oxlint、定向 oxfmt、`bun run i18n:sync` 与 `bun run build` 全部通过。
+
 ## Follow-up Polish
 
 没有阻塞交付的 P3 项。正式接入产品时，应由运行时配置提供 Base URL、账户可用模型和已验证工具清单。
 
 final result: passed
+
+---
+
+# 登录与注册方案 2 设计 QA
+
+- source visual truth path: `/Users/randy/.codex/generated_images/019f50dd-3a53-7f90-a84a-6685cdd41c19/exec-a27720a8-600f-4d0a-9c6f-363f48f64d20.png`
+- implementation screenshot path: unavailable
+- viewport: 目标桌面视口 `1440 × 1024`；移动端目标宽度 `390px`
+- state: 登录页与注册页，默认浅色主题；保留现有密码、验证码、OAuth、Passkey 与协议同意状态
+- full-view comparison evidence: blocked；当前浏览器扩展无法建立连接，无法捕获实现页并与方案图合并对比
+- focused region comparison evidence: blocked；无法获取品牌栏、表单区和网关预览区的浏览器渲染截图
+
+## Findings
+
+- [P1] 缺少浏览器渲染证据
+  - Location: `/sign-in`、`/sign-up`
+  - Evidence: 方案图已可读取，但实现截图不可用，无法验证双栏比例、表单纵向节奏、注册页高度、移动端折叠和真实字体渲染。
+  - Impact: 代码、类型、构建和静态多语言检查通过，但不能据此声明视觉还原已通过。
+  - Fix: 浏览器连接恢复后，在相同视口分别捕获登录页与注册页，合并方案图与实现截图进行对比并修复 P0/P1/P2。
+
+## Required Fidelity Surfaces
+
+- 字体与排版：代码沿用项目字体轴和既有字号/字重契约；浏览器字体回退、换行与字面宽度待截图确认。
+- 间距与布局：实现为 `46% / 54%` 双栏、移动端单栏；实际视口中的高度与溢出待截图确认。
+- 颜色与令牌：仅使用 `primary`、`muted`、`border`、`foreground` 等语义令牌；实际主题对比度待截图确认。
+- 图像与资源：默认品牌使用项目现有 `TokenAiMark`，自定义 Logo 仍由运行时配置接管；无新增位图、占位图片或手绘 SVG。
+- 文案与内容：复用现有 i18n 键并展示运行时 `systemName`；六个项目基础语言包与 `zh-TW` 同步报告均为零缺失。
+
+## Comparison History
+
+### Pass 1
+
+- 已完成方案图检查、实现代码检查、类型检查、定向 lint、格式检查、i18n 同步与生产构建。
+- 浏览器截图与主交互检查因 Chrome 扩展连接失败而未执行；没有伪造视觉对比结论。
+
+## Implementation Checklist
+
+- [x] 登录与注册共用同一品牌化双栏壳层。
+- [x] 默认 Logo 使用主页同款品牌标记，自定义 Logo 和运行时产品名继续生效。
+- [x] 保留现有认证逻辑、字段、验证和替代登录方式。
+- [x] 使用语义颜色、项目圆角、响应式 CTA 与项目图标体系。
+- [ ] 捕获桌面与移动端登录/注册实现截图。
+- [ ] 完成方案图与实现图的同视口合并对比。
+
+## Follow-up Polish
+
+视觉证据恢复后，再判断是否需要调整右侧网关预览的节点宽度、表单首屏位置或注册页纵向密度。
+
+final result: blocked
