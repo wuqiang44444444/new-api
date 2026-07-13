@@ -2727,14 +2727,11 @@
     "Model ratios reset successfully": "Соотношения моделей успешно сброшены",
     "Model Regex": "Регулярное выражение модели",
     "Model Regex (one per line)": "Регулярное выражение модели (по одному на строку)",
-<<<<<<< HEAD
-    "Model routing": "Маршрутизация модели",
-    "Model service settings": "Настройки сервиса моделей",
-=======
     "Model regex cannot be empty": "Регулярное выражение модели не может быть пустым",
+    "Model routing": "Маршрутизация модели",
     "Model scope": "Область моделей",
     "Model selected": "Модель выбрана",
->>>>>>> upstream/main
+    "Model service settings": "Настройки сервиса моделей",
     "Model Square": "Витрина моделей",
     "Model Tags": "Теги моделей",
     "Model to use for testing": "Модель для использования при тестировании",
@@ -2788,11 +2785,8 @@
     "Move": "Переместить",
     "Move a request header": "Переместить заголовок запроса",
     "Move affiliate rewards to your main balance": "Перевести партнерские вознаграждения на основной баланс",
-<<<<<<< HEAD
     "Move AI applications from testing to continuous operations": "Переведите ИИ-приложения от тестирования к постоянной эксплуатации",
-=======
     "Move fallback to end": "Переместить резерв в конец",
->>>>>>> upstream/main
     "Move Field": "Переместить поле",
     "Move Header": "Переместить заголовок",
     "Move Request Header": "Переместить заголовок запроса",
@@ -3893,11 +3887,8 @@
     "Reset usage window": "Сбросить окно использования",
     "Resets in:": "Сброс через:",
     "Resetting...": "Сброс...",
-<<<<<<< HEAD
     "Resilient multi-channel routing": "Устойчивая многоканальная маршрутизация",
     "Resize column": "Изменить ширину столбца",
-=======
->>>>>>> upstream/main
     "Resolve Conflicts": "Разрешить конфликты",
     "Resource Configuration": "Конфигурация ресурсов",
     "Resources": "Ресурсы",
@@ -3928,11 +3919,8 @@
     "Reveal key": "Показать ключ",
     "Revenue": "Доход",
     "Review & initialize": "Проверить и инициализировать",
-<<<<<<< HEAD
-    "Review models, token usage, and billing outcomes to support troubleshooting and ongoing operations.": "Проверяйте модели, расход токенов и списания для диагностики и эксплуатации.",
-=======
     "Review model rates before scaling traffic": "Проверьте тарифы моделей перед масштабированием трафика",
->>>>>>> upstream/main
+    "Review models, token usage, and billing outcomes to support troubleshooting and ongoing operations.": "Проверяйте модели, расход токенов и списания для диагностики и эксплуатации.",
     "Review your payment details": "Проверьте свои платежные данные",
     "Review your purchase details before proceeding.": "Просмотрите детали покупки перед продолжением.",
     "Rewards will be added directly to your balance": "Награды будут добавлены напрямую в ваш баланс",
@@ -3981,11 +3969,8 @@
     "Rules": "Правила",
     "Rules JSON": "Правила JSON",
     "Rules JSON must be an array": "JSON правил должен быть массивом",
-<<<<<<< HEAD
-    "Run claude to start": "Запустите claude",
-=======
     "Rules match the original model value from the client request body.": "Правила сопоставляются с исходным значением model из тела клиентского запроса.",
->>>>>>> upstream/main
+    "Run claude to start": "Запустите claude",
     "Run GC": "Запустить GC",
     "Run tests for the selected models": "Запустить тесты для выбранных моделей",
     "Run the request command": "Выполните команду запроса",
@@ -4176,11 +4161,8 @@
     "Selected when creating a token and used as the default billing group for API calls.": "Выбирается при создании токена и используется как группа тарификации по умолчанию для вызовов API.",
     "Self-Use Mode": "Режим самоиспользования",
     "Send": "Отправить",
-<<<<<<< HEAD
     "Send a minimal request and review usage logs": "Отправьте минимальный запрос и проверьте журналы",
-=======
     "Send a request": "Отправить запрос",
->>>>>>> upstream/main
     "Send code": "Отправить код",
     "Send email alerts when a user falls below this quota": "Отправлять оповещения по электронной почте, когда пользователь опускается ниже этой квоты",
     "Send reset email": "Отправить письмо для сброса пароля",
@@ -5090,11 +5072,8 @@
     "Verification required to reveal the saved key.": "Требуется подтверждение для отображения сохраненного ключа.",
     "Verify": "Проверить",
     "Verify and Sign In": "Подтвердить и войти",
-<<<<<<< HEAD
     "Verify connectivity with one minimal HTTP request.": "Проверьте соединение одним минимальным HTTP-запросом.",
-=======
     "Verify routing with Playground or your client": "Проверьте маршрутизацию через Playground или ваш клиент",
->>>>>>> upstream/main
     "Verify Setup": "Проверить настройку",
     "Verify token usage and charges": "Проверьте токены и списания",
     "Verify your database connection": "Проверьте подключение к базе данных",

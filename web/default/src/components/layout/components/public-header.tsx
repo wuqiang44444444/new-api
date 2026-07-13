@@ -20,6 +20,7 @@ import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { TokenAiMark } from '@/assets/token-ai-mark'
 import { Dialog } from '@/components/dialog'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { NotificationPopover } from '@/components/notification-popover'
@@ -151,7 +152,7 @@ export function PublicHeader(props: PublicHeaderProps) {
     (
       event: React.MouseEvent<HTMLAnchorElement>,
       link: TopNavLink,
-      closeMobile = false,
+      closeMobile = false
     ) => {
       if (link.disabled) {
         event.preventDefault()
@@ -175,12 +176,12 @@ export function PublicHeader(props: PublicHeaderProps) {
         setMobileOpen(false)
       }
     },
-    [t],
+    [t]
   )
 
   let logoContent: ReactNode
   if (loading) {
-    logoContent = <Skeleton className="size-full rounded-lg" />
+    logoContent = <Skeleton className='size-full rounded-lg' />
   } else if (customLogo) {
     logoContent = customLogo
   } else if (systemLogo && systemLogo !== DEFAULT_LOGO) {
@@ -189,21 +190,21 @@ export function PublicHeader(props: PublicHeaderProps) {
         src={systemLogo}
         loading={loading}
         logoLoaded={logoLoaded}
-        className="size-full rounded-lg object-contain"
+        className='size-full rounded-lg object-contain'
       />
     )
   } else {
-    logoContent = <TokenAiMark className="text-primary size-full" />
+    logoContent = <TokenAiMark className='text-primary size-full' />
   }
 
   let desktopAuthContent: ReactNode
   if (loading) {
-    desktopAuthContent = <Skeleton className="h-8 w-20 rounded-lg" />
+    desktopAuthContent = <Skeleton className='h-8 w-20 rounded-lg' />
   } else if (isAuthenticated) {
     desktopAuthContent = <ProfileDropdown />
   } else {
     desktopAuthContent = (
-      <Button className="font-medium" render={<Link to="/sign-in" />}>
+      <Button className='font-medium' render={<Link to='/sign-in' />}>
         {t('Sign in')}
       </Button>
     )
@@ -215,7 +216,7 @@ export function PublicHeader(props: PublicHeaderProps) {
         className={cn(
           'pointer-events-none fixed inset-x-0 top-0 z-50',
           variant === 'business' &&
-            'border-border bg-background/95 border-b backdrop-blur-xl',
+            'border-border bg-background/95 border-b backdrop-blur-xl'
         )}
       >
         <div
@@ -227,8 +228,8 @@ export function PublicHeader(props: PublicHeaderProps) {
                   'transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
                   scrolled
                     ? 'max-w-[52rem] px-3 pt-3'
-                    : 'max-w-7xl px-4 pt-0 md:px-6',
-                ),
+                    : 'max-w-7xl px-4 pt-0 md:px-6'
+                )
           )}
         >
           <nav
@@ -240,30 +241,30 @@ export function PublicHeader(props: PublicHeaderProps) {
                     'transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
                     scrolled
                       ? 'bg-background/60 ring-border/50 h-12 rounded-2xl pr-1.5 pl-4 shadow-[0_2px_16px_-6px_rgba(0,0,0,0.08),0_0_0_0.5px_rgba(0,0,0,0.02)] ring-[0.5px] backdrop-blur-2xl dark:shadow-[0_2px_16px_-6px_rgba(0,0,0,0.4)]'
-                      : 'h-16 px-2',
-                  ),
+                      : 'h-16 px-2'
+                  )
             )}
           >
             {/* Logo */}
             <Link
               to={homeUrl}
-              className="group flex shrink-0 items-center gap-2.5"
+              className='group flex shrink-0 items-center gap-2.5'
             >
-              <div className="flex size-7 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-105">
+              <div className='flex size-7 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-105'>
                 {logoContent}
               </div>
               <span
                 className={cn(
                   'font-semibold tracking-tight',
-                  variant === 'business' ? 'text-lg' : 'text-sm',
+                  variant === 'business' ? 'text-lg' : 'text-sm'
                 )}
               >
-                {loading ? <Skeleton className="h-4 w-16" /> : displaySiteName}
+                {loading ? <Skeleton className='h-4 w-16' /> : displaySiteName}
               </span>
             </Link>
 
             {/* Desktop nav */}
-            <div className="hidden items-center gap-0.5 sm:flex">
+            <div className='hidden items-center gap-0.5 sm:flex'>
               {links.map((link) => {
                 const isActive = pathname === link.href
                 if (link.external) {
@@ -271,14 +272,14 @@ export function PublicHeader(props: PublicHeaderProps) {
                     <a
                       key={`${link.href}-${link.title}`}
                       href={link.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      target='_blank'
+                      rel='noopener noreferrer'
                       aria-disabled={link.disabled}
                       tabIndex={link.disabled ? -1 : undefined}
                       onClick={(event) => handleNavLinkClick(event, link)}
                       className={cn(
                         'text-muted-foreground hover:text-foreground rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors duration-200',
-                        link.disabled && 'pointer-events-none opacity-50',
+                        link.disabled && 'pointer-events-none opacity-50'
                       )}
                     >
                       {t(link.title)}
@@ -296,7 +297,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                       isActive
                         ? 'text-foreground'
                         : 'text-muted-foreground hover:text-foreground',
-                      link.disabled && 'pointer-events-none opacity-50',
+                      link.disabled && 'pointer-events-none opacity-50'
                     )}
                   >
                     {t(link.title)}
@@ -307,7 +308,7 @@ export function PublicHeader(props: PublicHeaderProps) {
               {(showLanguageSwitcher ||
                 showThemeSwitch ||
                 showNotifications) && (
-                <div className="bg-border/40 mx-2 h-4 w-px" />
+                <div className='bg-border/40 mx-2 h-4 w-px' />
               )}
 
               {showLanguageSwitcher && <LanguageSwitcher />}
@@ -327,55 +328,43 @@ export function PublicHeader(props: PublicHeaderProps) {
 
               {showAuthButtons && (
                 <>
-                  <div className="bg-border/40 mx-1 h-4 w-px" />
-                  {loading ? (
-                    <Skeleton className="h-8 w-20 rounded-lg" />
-                  ) : isAuthenticated ? (
-                    <ProfileDropdown />
-                  ) : (
-                    <Button
-                      size="sm"
-                      className="h-8 rounded-lg px-3.5 text-xs font-medium"
-                      render={<Link to="/sign-in" />}
-                    >
-                      {t('Sign in')}
-                    </Button>
-                  )}
+                  <div className='bg-border/40 mx-1 h-4 w-px' />
+                  {desktopAuthContent}
                 </>
               )}
             </div>
 
             {/* Mobile: compact actions + hamburger */}
-            <div className="flex items-center gap-2 sm:hidden">
+            <div className='flex items-center gap-2 sm:hidden'>
               {showThemeSwitch && <ThemeSwitch />}
               {showAuthButtons && !loading && isAuthenticated && (
                 <ProfileDropdown />
               )}
               <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="size-9"
+                type='button'
+                variant='ghost'
+                size='icon'
+                className='size-9'
                 onClick={() => setMobileOpen((v) => !v)}
                 aria-label={t('Toggle navigation menu')}
               >
-                <div className="relative size-4">
+                <div className='relative size-4'>
                   <span
                     className={cn(
                       'absolute inset-x-0 block h-[1.5px] origin-center rounded-full bg-current transition-all duration-300',
-                      mobileOpen ? 'top-[7px] rotate-45' : 'top-[3px]',
+                      mobileOpen ? 'top-[7px] rotate-45' : 'top-[3px]'
                     )}
                   />
                   <span
                     className={cn(
                       'absolute inset-x-0 top-[7px] block h-[1.5px] rounded-full bg-current transition-all duration-300',
-                      mobileOpen ? 'scale-x-0 opacity-0' : 'opacity-100',
+                      mobileOpen ? 'scale-x-0 opacity-0' : 'opacity-100'
                     )}
                   />
                   <span
                     className={cn(
                       'absolute inset-x-0 block h-[1.5px] origin-center rounded-full bg-current transition-all duration-300',
-                      mobileOpen ? 'top-[7px] -rotate-45' : 'top-[11px]',
+                      mobileOpen ? 'top-[7px] -rotate-45' : 'top-[11px]'
                     )}
                   />
                 </div>
@@ -391,11 +380,11 @@ export function PublicHeader(props: PublicHeaderProps) {
           'bg-background/98 fixed inset-0 z-40 backdrop-blur-2xl transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] sm:pointer-events-none sm:hidden',
           mobileOpen
             ? 'pointer-events-auto opacity-100'
-            : 'pointer-events-none opacity-0',
+            : 'pointer-events-none opacity-0'
         )}
       >
-        <div className="flex h-full flex-col justify-between px-8 pt-20 pb-10">
-          <nav className="flex flex-col gap-1">
+        <div className='flex h-full flex-col justify-between px-8 pt-20 pb-10'>
+          <nav className='flex flex-col gap-1'>
             {links.map((link, i) => {
               const isActive = pathname === link.href
               const linkClassName = cn(
@@ -404,7 +393,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                   ? 'translate-y-0 opacity-100'
                   : 'translate-y-4 opacity-0',
                 isActive ? 'text-foreground' : 'text-muted-foreground',
-                link.disabled && 'pointer-events-none opacity-50',
+                link.disabled && 'pointer-events-none opacity-50'
               )
               const transitionStyle = {
                 transitionDelay: mobileOpen ? `${100 + i * 50}ms` : '0ms',
@@ -414,8 +403,8 @@ export function PublicHeader(props: PublicHeaderProps) {
                   <a
                     key={`${link.href}-${link.title}`}
                     href={link.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    target='_blank'
+                    rel='noopener noreferrer'
                     aria-disabled={link.disabled}
                     tabIndex={link.disabled ? -1 : undefined}
                     onClick={(event) => handleNavLinkClick(event, link, true)}
@@ -446,7 +435,7 @@ export function PublicHeader(props: PublicHeaderProps) {
               'flex flex-col gap-3 transition-all duration-500',
               mobileOpen
                 ? 'translate-y-0 opacity-100'
-                : 'translate-y-4 opacity-0',
+                : 'translate-y-4 opacity-0'
             )}
             style={{ transitionDelay: mobileOpen ? '250ms' : '0ms' }}
           >
@@ -454,7 +443,7 @@ export function PublicHeader(props: PublicHeaderProps) {
               <Link
                 to={isAuthenticated ? '/dashboard' : '/sign-in'}
                 onClick={() => setMobileOpen(false)}
-                className="bg-foreground text-background inline-flex h-10 items-center justify-center rounded-lg text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80"
+                className='bg-foreground text-background inline-flex h-10 items-center justify-center rounded-lg text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80'
               >
                 {isAuthenticated ? t('Go to Dashboard') : t('Sign in')}
               </Link>
@@ -474,18 +463,18 @@ export function PublicHeader(props: PublicHeaderProps) {
         description={t('Please sign in to view {{module}}.', {
           module: authPromptTarget?.title || '',
         })}
-        contentClassName="sm:max-w-md"
-        contentHeight="auto"
+        contentClassName='sm:max-w-md'
+        contentHeight='auto'
         footer={
           <>
-            <Button variant="outline" onClick={closeAuthPrompt}>
+            <Button variant='outline' onClick={closeAuthPrompt}>
               {t('Cancel')}
             </Button>
             <Button onClick={navigateToSignIn}>{t('Sign in now')}</Button>
           </>
         }
       >
-        <div className="bg-muted/40 text-muted-foreground rounded-lg px-3 py-2 text-sm">
+        <div className='bg-muted/40 text-muted-foreground rounded-lg px-3 py-2 text-sm'>
           {t('Redirecting to sign in in {{seconds}} seconds.', {
             seconds: authPromptSecondsLeft,
           })}
