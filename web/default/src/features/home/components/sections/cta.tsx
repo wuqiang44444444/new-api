@@ -61,29 +61,29 @@ export function CTA(props: CTAProps) {
 
   return (
     <section
-      id='enterprise'
-      className='border-border scroll-mt-20 border-t px-4 py-20 sm:px-6 sm:py-24'
-      aria-labelledby='enterprise-title'
+      id="enterprise"
+      className="border-border scroll-mt-20 border-t px-4 py-20 sm:px-6 sm:py-24"
+      aria-labelledby="enterprise-title"
     >
-      <div className='mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-20'>
-        <div className='max-w-xl'>
-          <p className='text-primary text-sm font-semibold'>
+      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-20">
+        <div className="max-w-xl">
+          <p className="text-primary text-sm font-semibold">
             {t('Enterprise AI Gateway')}
           </p>
           <h2
-            id='enterprise-title'
-            className='mt-3 text-[clamp(1.75rem,3vw,2.375rem)] leading-tight font-semibold tracking-[-0.035em]'
+            id="enterprise-title"
+            className="mt-3 text-[clamp(1.75rem,3vw,2.375rem)] leading-tight font-semibold tracking-[-0.035em]"
           >
             {t('Move AI applications from testing to continuous operations')}
           </h2>
-          <p className='text-muted-foreground mt-4 text-base leading-7'>
+          <p className="text-muted-foreground mt-4 text-base leading-7">
             {t(
-              'Team billing, technical support, and gateway deployment services help enterprises manage model access, permissions, quotas, and request quality through one entry point.'
+              'Team billing, technical support, and gateway deployment services help enterprises manage model access, permissions, quotas, and request quality through one entry point.',
             )}
           </p>
-          <div className='mt-7 flex flex-wrap items-center gap-3'>
+          <div className="mt-7 flex flex-wrap items-center gap-3">
             <Button
-              size='xl'
+              size="xl"
               render={
                 <Link to={props.isAuthenticated ? '/dashboard' : '/sign-up'} />
               }
@@ -91,35 +91,35 @@ export function CTA(props: CTAProps) {
               {props.isAuthenticated ? t('Go to Dashboard') : t('Get Started')}
             </Button>
             <Button
-              variant='ghost'
-              size='xl'
+              variant="ghost"
+              size="xl"
               render={
                 <a
-                  href='https://docs.newapi.pro/installation/'
-                  target='_blank'
-                  rel='noopener noreferrer'
+                  href="https://docs.newapi.pro/installation/"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 />
               }
             >
               {t('Learn about gateway deployment')}
-              <ArrowRight data-icon='inline-end' />
+              <ArrowRight data-icon="inline-end" />
             </Button>
           </div>
         </div>
 
-        <ul className='border-border border-t'>
+        <ul className="border-border border-t">
           {ENTERPRISE_CAPABILITIES.map((capability) => {
             const Icon = capability.icon
             return (
               <li
                 key={capability.title}
-                className='border-border grid min-h-16 grid-cols-[2rem_1fr] items-center gap-3 border-b py-3 sm:grid-cols-[2rem_1fr_auto]'
+                className="border-border grid min-h-16 grid-cols-[2rem_1fr] items-center gap-3 border-b py-3 sm:grid-cols-[2rem_1fr_auto]"
               >
-                <Icon aria-hidden='true' className='text-primary size-5' />
-                <strong className='text-sm font-semibold'>
+                <Icon aria-hidden="true" className="text-primary size-5" />
+                <strong className="text-sm font-semibold">
                   {t(capability.title)}
                 </strong>
-                <span className='text-muted-foreground col-start-2 text-xs sm:col-start-auto'>
+                <span className="text-muted-foreground col-start-2 text-xs sm:col-start-auto">
                   {t(capability.description)}
                 </span>
               </li>

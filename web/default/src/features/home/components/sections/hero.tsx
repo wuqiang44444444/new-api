@@ -20,7 +20,7 @@ import { Link } from '@tanstack/react-router'
 import { ArrowRight, CircleCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/design-system/button'
+import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 
@@ -40,31 +40,31 @@ export function Hero(props: HeroProps) {
 
   return (
     <section
-      className='relative overflow-hidden px-4 pt-28 pb-12 sm:px-6 sm:pt-32 sm:pb-16'
-      aria-labelledby='home-hero-title'
+      className="relative overflow-hidden px-4 pt-28 pb-12 sm:px-6 sm:pt-32 sm:pb-16"
+      aria-labelledby="home-hero-title"
     >
-      <div className='relative mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(460px,0.9fr)] lg:gap-20'>
-        <div className='max-w-2xl py-4'>
-          <p className='text-primary mb-5 text-sm font-semibold'>
+      <div className="relative mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(460px,0.9fr)] lg:gap-20">
+        <div className="max-w-2xl py-4">
+          <p className="text-primary mb-5 text-sm font-semibold">
             {t('Professional Token Service & Enterprise AI Gateway')}
           </p>
           <h1
-            id='home-hero-title'
-            className='text-[clamp(2.5rem,5vw,3.5rem)] leading-[1.12] font-semibold tracking-[-0.045em]'
+            id="home-hero-title"
+            className="text-[clamp(2.5rem,5vw,3.5rem)] leading-[1.12] font-semibold tracking-[-0.045em]"
           >
             {t('Reliable AI model access.')}
-            <span className='text-primary block'>
+            <span className="text-primary block">
               {t('Enterprise-ready by design.')}
             </span>
           </h1>
-          <p className='text-muted-foreground mt-6 max-w-xl text-base leading-8'>
+          <p className="text-muted-foreground mt-6 max-w-xl text-base leading-8">
             {t(
               '{{systemName}} unifies leading text, image, audio, and video models behind one API, with resilient routing, usage controls, transparent billing, and end-to-end observability.',
-              { systemName }
+              { systemName },
             )}
           </p>
           <ul
-            className='text-muted-foreground mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm font-medium'
+            className="text-muted-foreground mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm font-medium"
             aria-label={t('Core capabilities')}
           >
             {[
@@ -72,26 +72,26 @@ export function Hero(props: HeroProps) {
               'Resilient multi-channel routing',
               'Traceable token usage and billing',
             ].map((item) => (
-              <li key={item} className='flex items-center gap-2'>
+              <li key={item} className="flex items-center gap-2">
                 <CircleCheck
-                  aria-hidden='true'
-                  className='text-primary size-4'
+                  aria-hidden="true"
+                  className="text-primary size-4"
                 />
                 {t(item)}
               </li>
             ))}
           </ul>
-          <div className='mt-8 flex flex-wrap items-center gap-3'>
+          <div className="mt-8 flex flex-wrap items-center gap-3">
             <Button
-              size='xl'
+              size="xl"
               render={
                 <Link to={props.isAuthenticated ? '/dashboard' : '/sign-up'} />
               }
             >
               {props.isAuthenticated ? t('Go to Dashboard') : t('Get Started')}
-              <ArrowRight data-icon='inline-end' />
+              <ArrowRight data-icon="inline-end" />
             </Button>
-            <Button variant='outline' size='xl' render={<Link to='/pricing' />}>
+            <Button variant="outline" size="xl" render={<Link to="/pricing" />}>
               {t('View Pricing')}
             </Button>
           </div>
