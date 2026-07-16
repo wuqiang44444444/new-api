@@ -962,6 +962,33 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
+	if channel.Type == constant.ChannelTypeDoubaoVideo {
+		if err := dto.ValidateVideoUpstreamProfile(channelOtherSettings.VideoUpstreamProfile); err != nil {
+			return err
+		}
+		if channelOtherSettings.VideoUpstreamProfile.IsOfficial() {
+			// official 协议不使用第三方路径，清除残留避免成为隐藏事实来源（方案 §5.1）
+			if channelOtherSettings.VideoUpstreamCreatePath != "" || channelOtherSettings.VideoUpstreamQueryPathTemplate != "" {
+				channelOtherSettings.VideoUpstreamCreatePath = ""
+				channelOtherSettings.VideoUpstreamQueryPathTemplate = ""
+				normalized, mErr := common.Marshal(channelOtherSettings)
+				if mErr != nil {
+					return mErr
+				}
+				channel.OtherSettings = string(normalized)
+			}
+		} else {
+			// 第三方协议不得使用类型默认地址：校验渠道原始 BaseURL（空则拒绝），
+			// 避免 GetBaseURL 把空值回退到官方 Ark 地址，导致请求官方域名下的第三方路径。
+			rawBaseURL := ""
+			if channel.BaseURL != nil {
+				rawBaseURL = *channel.BaseURL
+			}
+			if err := dto.ValidateVideoUpstreamURL(rawBaseURL, channelOtherSettings.VideoUpstreamCreatePath, channelOtherSettings.VideoUpstreamQueryPathTemplate); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

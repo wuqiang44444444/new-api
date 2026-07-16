@@ -1385,6 +1385,13 @@ func CopyChannel(c *gin.Context) {
 		clone.UsedQuota = 0
 	}
 
+	// 与新建/编辑一致，复制时也校验额外设置（含 DoubaoVideo 视频上游方案），避免复制出未知 profile。
+	if err := clone.ValidateSettings(); err != nil {
+		common.SysError("failed to validate cloned channel: " + err.Error())
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "复制渠道失败：" + err.Error()})
+		return
+	}
+
 	// insert
 	if err := clone.Insert(); err != nil {
 		common.SysError("failed to clone channel: " + err.Error())

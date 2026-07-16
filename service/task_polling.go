@@ -80,7 +80,7 @@ func sweepTimedOutTasks(ctx context.Context) {
 		}
 		timedOutCount++
 		if !isLegacy && task.Quota != 0 {
-			RefundTaskQuota(ctx, task, reason)
+			refundTaskWithReconcile(ctx, task, reason)
 		}
 	}
 
@@ -112,6 +112,7 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 	}
 
 	common.SysLog("任务进度轮询开始")
+	ReconcileTaskBilling(ctx, 100)
 	sweepTimedOutTasks(ctx)
 	allTasks := model.GetAllUnFinishSyncTasks(constant.TaskQueryLimit)
 	summary.UnfinishedTasks = len(allTasks)
@@ -285,7 +286,7 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 		if responseItem.FailReason != "" || task.Status == model.TaskStatusFailure {
 			logger.LogInfo(ctx, task.TaskID+" 构建失败，"+task.FailReason)
 			task.Progress = "100%"
-			RefundTaskQuota(ctx, task, task.FailReason)
+			refundTaskWithReconcile(ctx, task, task.FailReason)
 		}
 		if responseItem.Status == model.TaskStatusSuccess {
 			task.Progress = "100%"
@@ -402,7 +403,9 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 	}
 	info := &relaycommon.RelayInfo{}
 	info.ChannelMeta = &relaycommon.ChannelMeta{
-		ChannelBaseUrl: cacheGetChannel.GetBaseURL(),
+		ChannelType:          cacheGetChannel.Type,
+		ChannelBaseUrl:       cacheGetChannel.GetBaseURL(),
+		ChannelOtherSettings: cacheGetChannel.GetOtherSettings(),
 	}
 	info.ApiKey = cacheGetChannel.Key
 	adaptor.Init(info)
@@ -432,10 +435,6 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	baseURL := constant.ChannelBaseURLs[ch.Type]
-	if ch.GetBaseURL() != "" {
-		baseURL = ch.GetBaseURL()
-	}
 	proxy := ch.GetSetting().Proxy
 
 	task := taskM[taskId]
@@ -449,9 +448,12 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if privateData.Key != "" {
 		key = privateData.Key
 	}
-	resp, err := adaptor.FetchTask(baseURL, key, map[string]any{
-		"task_id": task.GetUpstreamTaskID(),
-		"action":  task.Action,
+	videoUpstreamProfile := taskVideoUpstreamProfile(task, ch)
+	resp, err := adaptor.FetchTask(taskVideoUpstreamQueryBaseURL(task, ch), key, map[string]any{
+		"task_id":                            task.GetUpstreamTaskID(),
+		"action":                             task.Action,
+		"video_upstream_profile":             videoUpstreamProfile,
+		"video_upstream_query_path_template": taskVideoUpstreamQueryPath(task, ch),
 	}, proxy)
 	if err != nil {
 		return fmt.Errorf("fetchTask failed for task %s: %w", taskId, err)
@@ -462,7 +464,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return fmt.Errorf("readAll failed for task %s: %w", taskId, err)
 	}
 
-	logger.LogDebug(ctx, "updateVideoSingleTask response: %s", responseBody)
+	logger.LogDebug(ctx, "updateVideoSingleTask response: %s", redactTaskResponseForLog(responseBody))
 
 	snap := task.Snapshot()
 
@@ -561,6 +563,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 
 	isDone := task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure
+	if isDone {
+		prepareTerminalTaskBilling(task, taskResult)
+	}
 	if isDone && snap.Status != task.Status {
 		won, err := task.UpdateWithStatus(snap.Status)
 		if err != nil {
@@ -585,7 +590,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
 	}
 	if shouldRefund {
-		RefundTaskQuota(ctx, task, task.FailReason)
+		refundTaskWithReconcile(ctx, task, task.FailReason)
 	}
 
 	return nil
@@ -631,6 +636,9 @@ func truncateBase64(s string) string {
 //  2. taskResult.TotalTokens > 0 → 按 token 重算
 //  3. 都不满足 → 保持预扣额度不变
 func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, taskResult *relaycommon.TaskInfo) {
+	if settleTaskBillingWithState(ctx, adaptor, task, taskResult) {
+		return
+	}
 	// 0. 按次计费的任务不做差额结算
 	if bc := task.PrivateData.BillingContext; bc != nil && bc.PerCallBilling {
 		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 按次计费，跳过差额结算", task.TaskID))

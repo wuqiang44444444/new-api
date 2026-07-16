@@ -22,6 +22,7 @@ import (
 type taskPollingFetchAdaptor struct {
 	mu           sync.Mutex
 	taskIDs      []string
+	keys         []string
 	fetched      chan string
 	blockTaskID  string
 	blockStarted chan struct{}
@@ -31,7 +32,7 @@ type taskPollingFetchAdaptor struct {
 
 func (a *taskPollingFetchAdaptor) Init(_ *relaycommon.RelayInfo) {}
 
-func (a *taskPollingFetchAdaptor) FetchTask(_ string, _ string, body map[string]any, _ string) (*http.Response, error) {
+func (a *taskPollingFetchAdaptor) FetchTask(_ string, key string, body map[string]any, _ string) (*http.Response, error) {
 	taskID, _ := body["task_id"].(string)
 	if taskID == a.blockTaskID && a.releaseBlock != nil {
 		a.blockOnce.Do(func() {
@@ -44,6 +45,7 @@ func (a *taskPollingFetchAdaptor) FetchTask(_ string, _ string, body map[string]
 
 	a.mu.Lock()
 	a.taskIDs = append(a.taskIDs, taskID)
+	a.keys = append(a.keys, key)
 	a.mu.Unlock()
 	if a.fetched != nil {
 		select {
@@ -88,6 +90,12 @@ func (a *taskPollingFetchAdaptor) fetchedTaskIDs() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return append([]string(nil), a.taskIDs...)
+}
+
+func (a *taskPollingFetchAdaptor) fetchedKeys() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.keys...)
 }
 
 func seedTaskPollingChannel(t *testing.T, id int, disableSleep bool) {
@@ -330,4 +338,70 @@ func TestUpdateVideoTasksMixedChannelSleepSettings(t *testing.T) {
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.ElementsMatch(t, []string{"upstream_sleepy_1", "upstream_fast_1", "upstream_fast_2"}, adaptor.fetchedTaskIDs())
+}
+
+// TestUpdateVideoTasksPrefersFrozenKeyOverChannelKey 验证轮询使用任务快照冻结的单个 Key（P1-2），
+// 而非渠道当前的整组 Key。updateVideoSingleTask 的 Key 选择逻辑为 kling/doubao 等视频任务共用，
+// 故用 kling 平台验证；配合 model 层 TestInitTaskFreezesDoubaoVideoSelectedKey 即覆盖完整链路。
+func TestUpdateVideoTasksPrefersFrozenKeyOverChannelKey(t *testing.T) {
+	truncate(t)
+	const channelID = 401
+	ch := &model.Channel{
+		Id:     channelID,
+		Type:   constant.ChannelTypeKling,
+		Name:   "multi_key_channel",
+		Key:    "selected-key\nother-key-1\nother-key-2",
+		Status: common.ChannelStatusEnabled,
+	}
+	ch.SetOtherSettings(dto.ChannelOtherSettings{DisableTaskPollingSleep: true})
+	require.NoError(t, model.DB.Create(ch).Error)
+
+	task := seedPollingTask(t, channelID, "task_public_frozen", "upstream_frozen")
+	task.PrivateData.Key = "selected-key"
+	require.NoError(t, model.DB.Save(task).Error)
+
+	adaptor := &taskPollingFetchAdaptor{}
+	previousFactory := GetTaskAdaptorFunc
+	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return adaptor }
+	t.Cleanup(func() { GetTaskAdaptorFunc = previousFactory })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	err := UpdateVideoTasks(ctx, constant.TaskPlatform("kling"), map[int][]string{
+		channelID: {task.GetUpstreamTaskID()},
+	}, map[string]*model.Task{
+		task.GetUpstreamTaskID(): task,
+	})
+	require.NoError(t, err)
+
+	keys := adaptor.fetchedKeys()
+	require.Len(t, keys, 1)
+	assert.Equal(t, "selected-key", keys[0], "polling must use the frozen single key, not the whole multi-key set")
+}
+
+// TestUpdateVideoTasksFallsBackToChannelKeyWhenNoSnapshot 验证历史任务（无 Key 快照）回退渠道当前 Key，
+// 保证升级前的任务仍可轮询（P1-2 兼容路径）。
+func TestUpdateVideoTasksFallsBackToChannelKeyWhenNoSnapshot(t *testing.T) {
+	truncate(t)
+	const channelID = 402
+	seedTaskPollingChannel(t, channelID, true) // Key = "sk-test"
+	task := seedPollingTask(t, channelID, "task_public_historical", "upstream_historical")
+
+	adaptor := &taskPollingFetchAdaptor{}
+	previousFactory := GetTaskAdaptorFunc
+	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return adaptor }
+	t.Cleanup(func() { GetTaskAdaptorFunc = previousFactory })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	err := UpdateVideoTasks(ctx, constant.TaskPlatform("kling"), map[int][]string{
+		channelID: {task.GetUpstreamTaskID()},
+	}, map[string]*model.Task{
+		task.GetUpstreamTaskID(): task,
+	})
+	require.NoError(t, err)
+
+	keys := adaptor.fetchedKeys()
+	require.Len(t, keys, 1)
+	assert.Equal(t, "sk-test", keys[0], "historical task without key snapshot falls back to channel key")
 }

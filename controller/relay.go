@@ -592,6 +592,7 @@ func RelayTask(c *gin.Context) {
 			OriginModelName: relayInfo.OriginModelName,
 			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
 		}
+		model.AttachAsyncTaskBilling(&task.PrivateData, relayInfo, result.Quota)
 		task.Quota = result.Quota
 		task.Data = result.TaskData
 		task.Action = relayInfo.Action

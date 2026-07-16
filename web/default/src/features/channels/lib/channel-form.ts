@@ -31,6 +31,7 @@ import {
   stringifyAdvancedCustomConfig,
   validateAdvancedCustomConfig,
 } from './advanced-custom'
+import { refineVideoUpstreamProfile } from './video-upstream-validation'
 
 // ============================================================================
 // Form Validation Schema
@@ -195,6 +196,13 @@ export const channelFormSchema = z
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
     aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
+    video_upstream_profile: z
+      .enum(['official', 'third_party_relay', 'third_party_reverse_proxy'])
+      .optional(), // DoubaoVideo specific
+    video_upstream_create_path: z.string().optional(), // DoubaoVideo third-party create path suffix
+    video_upstream_query_path_template: z
+      .string()
+      .optional(), // DoubaoVideo third-party query path template
     azure_responses_version: z.string().optional(), // Azure specific
     // Field passthrough controls (stored in settings JSON)
     allow_service_tier: z.boolean().optional(), // OpenAI/Anthropic
@@ -290,6 +298,9 @@ export const channelFormSchema = z
         'Vertex AI API Key mode does not support batch creation'
       )
     }
+
+    // DoubaoVideo (type 54) 第三方视频上游协议校验抽离到 video-upstream-validation.ts（最小入侵）。
+    refineVideoUpstreamProfile(data, ctx)
   })
 
 export type ChannelFormValues = z.infer<typeof channelFormSchema>
@@ -335,6 +346,9 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   is_enterprise_account: false,
   vertex_key_type: 'json',
   aws_key_type: 'ak_sk',
+  video_upstream_profile: 'official',
+  video_upstream_create_path: '',
+  video_upstream_query_path_template: '',
   azure_responses_version: '',
   // Field passthrough controls
   allow_service_tier: false,
@@ -393,6 +407,12 @@ export function transformChannelToFormDefaults(
   let azureResponsesVersion = ''
   let isEnterpriseAccount = false
   let awsKeyType: 'ak_sk' | 'api_key' = 'ak_sk'
+  let videoUpstreamProfile:
+    | 'official'
+    | 'third_party_relay'
+    | 'third_party_reverse_proxy' = 'official'
+  let videoUpstreamCreatePath = ''
+  let videoUpstreamQueryPathTemplate = ''
   let allowServiceTier = false
   let disableStore = false
   let allowSafetyIdentifier = false
@@ -413,6 +433,10 @@ export function transformChannelToFormDefaults(
       azureResponsesVersion = parsed.azure_responses_version || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
       awsKeyType = parsed.aws_key_type || 'ak_sk'
+      videoUpstreamProfile = parsed.video_upstream_profile || 'official'
+      videoUpstreamCreatePath = parsed.video_upstream_create_path || ''
+      videoUpstreamQueryPathTemplate =
+        parsed.video_upstream_query_path_template || ''
       allowServiceTier = parsed.allow_service_tier === true
       disableStore = parsed.disable_store === true
       allowSafetyIdentifier = parsed.allow_safety_identifier === true
@@ -472,6 +496,9 @@ export function transformChannelToFormDefaults(
     vertex_key_type: vertexKeyType,
     azure_responses_version: azureResponsesVersion,
     aws_key_type: awsKeyType,
+    video_upstream_profile: videoUpstreamProfile,
+    video_upstream_create_path: videoUpstreamCreatePath,
+    video_upstream_query_path_template: videoUpstreamQueryPathTemplate,
     allow_service_tier: allowServiceTier,
     disable_store: disableStore,
     allow_include_obfuscation: allowIncludeObfuscation,
@@ -544,6 +571,26 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.aws_key_type = formData.aws_key_type || 'ak_sk'
   } else if ('aws_key_type' in settingsObj) {
     delete settingsObj.aws_key_type
+  }
+
+  // Add video upstream profile and third-party paths for DoubaoVideo channels (type 54)
+  if (formData.type === 54) {
+    settingsObj.video_upstream_profile =
+      formData.video_upstream_profile || 'official'
+    if (formData.video_upstream_profile === 'official') {
+      // official 协议不使用第三方路径，清除残留避免隐藏配置（方案 §5.1）
+      delete settingsObj.video_upstream_create_path
+      delete settingsObj.video_upstream_query_path_template
+    } else {
+      settingsObj.video_upstream_create_path =
+        formData.video_upstream_create_path || ''
+      settingsObj.video_upstream_query_path_template =
+        formData.video_upstream_query_path_template || ''
+    }
+  } else {
+    delete settingsObj.video_upstream_profile
+    delete settingsObj.video_upstream_create_path
+    delete settingsObj.video_upstream_query_path_template
   }
 
   // Field passthrough controls:

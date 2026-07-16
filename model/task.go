@@ -62,7 +62,10 @@ type Task struct {
 	Username   string                `json:"username,omitempty" gorm:"-"`
 	// 禁止返回给用户，内部可能包含key等隐私信息
 	PrivateData TaskPrivateData `json:"-" gorm:"column:private_data;type:json"`
-	Data        json.RawMessage `json:"data" gorm:"type:json"`
+	// BillingState 是 AsyncBilling.State 的可索引投影列，仅 tiered_expr 待补偿任务有值；
+	// 历史任务与普通任务为空，补偿扫描据此列走索引而非全表扫 private_data。
+	BillingState TaskBillingState `json:"-" gorm:"type:varchar(20);index"`
+	Data         json.RawMessage  `json:"data" gorm:"type:json"`
 }
 
 func (t *Task) SetData(data any) {
@@ -97,15 +100,20 @@ func (m Properties) Value() (driver.Value, error) {
 }
 
 type TaskPrivateData struct {
-	Key            string `json:"key,omitempty"`
-	UpstreamTaskID string `json:"upstream_task_id,omitempty"` // 上游真实 task ID
-	ResultURL      string `json:"result_url,omitempty"`       // 任务成功后的结果 URL（视频地址等）
+	Key                            string                   `json:"key,omitempty"`
+	UpstreamTaskID                 string                   `json:"upstream_task_id,omitempty"`                   // 上游真实 task ID
+	ResultURL                      string                   `json:"result_url,omitempty"`                         // 任务成功后的结果 URL（视频地址等）
+	VideoUpstreamProfile           dto.VideoUpstreamProfile `json:"video_upstream_profile,omitempty"`             // 创建时的视频协议快照
+	VideoUpstreamQueryBaseURL      string                   `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用
+	VideoUpstreamQueryPathTemplate string                   `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
 	BillingSource  string              `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
 	SubscriptionId int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
 	TokenId        int                 `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
 	NodeName       string              `json:"node_name,omitempty"`       // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
 	BillingContext *TaskBillingContext `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
+
+	AsyncBilling *TaskAsyncBillingContext `json:"async_billing,omitempty"`
 }
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。
@@ -176,6 +184,20 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 	if relayInfo != nil && relayInfo.ChannelMeta != nil {
 		if relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeGemini ||
 			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeVertexAi {
+			privateData.Key = relayInfo.ChannelMeta.ApiKey
+		}
+		if relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeDoubaoVideo {
+			privateData.VideoUpstreamProfile = relayInfo.ChannelMeta.ChannelOtherSettings.VideoUpstreamProfile
+			if privateData.VideoUpstreamProfile == "" {
+				privateData.VideoUpstreamProfile = dto.VideoUpstreamProfileOfficial
+			}
+			// 冻结查询地址快照（方案 §7）：第三方协议下轮询必须沿用创建时的根地址与查询路径模板，
+			// 避免管理员修改渠道后已建任务被切换到另一组地址；official 协议下模板为空，轮询回退官方内置路径。
+			privateData.VideoUpstreamQueryBaseURL = relayInfo.ChannelMeta.ChannelBaseUrl
+			privateData.VideoUpstreamQueryPathTemplate = relayInfo.ChannelMeta.ChannelOtherSettings.VideoUpstreamQueryPathTemplate
+			// 冻结创建时实际选中的单个 Key（方案 §15.4 P1-2）：distributor 已通过 GetNextEnabledKey()
+			// 把选中 Key 写入 ChannelMeta.ApiKey，此处冻结到任务快照，轮询优先读取（task_polling.go
+			// updateVideoSingleTask），避免单 Key 渠道换账号或多 Key 渠道把整组 Key 当作 Bearer 改变在途任务查询凭证。
 			privateData.Key = relayInfo.ChannelMeta.ApiKey
 		}
 		if relayInfo.UpstreamModelName != "" {
@@ -374,9 +396,8 @@ func GetByTaskIds(userId int, taskIds []any) ([]*Task, error) {
 }
 
 func (Task *Task) Insert() error {
-	var err error
-	err = DB.Create(Task).Error
-	return err
+	Task.BillingState = deriveBillingState(Task.PrivateData)
+	return DB.Create(Task).Error
 }
 
 type taskSnapshot struct {

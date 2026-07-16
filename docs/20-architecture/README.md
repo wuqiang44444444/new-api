@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-06-29
+last-reviewed: 2026-07-16
 ---
 
 # 20-architecture — 目标说明
@@ -11,6 +11,13 @@ last-reviewed: 2026-06-29
 
 ## 放什么
 架构概览、数据模型、接口边界、架构决策记录（ADR）。
+
+## 当前文档
+
+- [架构概览](架构概览.md)
+- [数据模型](数据模型.md)
+- [视频上游接入与异步任务架构](视频上游接入与异步任务架构.md)
+- [架构决策记录](decisions/)
 
 ## 不放什么
 - 产品需求与流程 -> 10-product/

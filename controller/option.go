@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -266,6 +267,16 @@ func UpdateOption(c *gin.Context) {
 				"success": false,
 				"message": "缓存创建倍率设置失败: " + err.Error(),
 			})
+			return
+		}
+	case "billing_setting.billing_expr":
+		if err = billing_setting.ValidateBillingExpressionsJSON(option.Value.(string), billing_setting.GetBillingExprCopy()); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+	case billing_setting.TaskPreConsumeTokensOption:
+		if err = billing_setting.ValidateTaskPreConsumeTokensJSON(option.Value.(string)); err != nil {
+			common.ApiErrorMsg(c, err.Error())
 			return
 		}
 	case "ModelRequestRateLimitGroup":

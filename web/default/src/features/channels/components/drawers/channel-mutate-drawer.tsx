@@ -189,6 +189,7 @@ import {
   ChannelEditorLoadingState,
   ChannelModelsSection,
 } from './sections'
+import { VideoUpstreamProfileField } from './video-upstream-profile-field'
 
 type ChannelMutateDrawerProps = {
   open: boolean
@@ -280,6 +281,7 @@ const SENSITIVE_FORM_FIELDS = [
   'vertex_key_type',
   'aws_key_type',
   'azure_responses_version',
+  'video_upstream_profile',
   'force_format',
   'thinking_to_content',
   'proxy',
@@ -2321,6 +2323,11 @@ export function ChannelMutateDrawer({
                                   </FormItem>
                                 )}
                               />
+                            )}
+
+                            {/* DoubaoVideo (type 54) */}
+                            {currentType === 54 && (
+                              <VideoUpstreamProfileField control={form.control} />
                             )}
 
                             {/* AI Proxy Library (type 21) */}

@@ -107,12 +107,16 @@ type TaskAdaptor struct {
 	ChannelType int
 	apiKey      string
 	baseURL     string
+	profile     dto.VideoUpstreamProfile
+	createPath  string
 }
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.ChannelType = info.ChannelType
 	a.baseURL = info.ChannelBaseUrl
 	a.apiKey = info.ApiKey
+	a.profile = info.ChannelOtherSettings.VideoUpstreamProfile
+	a.createPath = info.ChannelOtherSettings.VideoUpstreamCreatePath
 }
 
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
@@ -123,7 +127,11 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 
 // BuildRequestURL constructs the upstream URL.
 func (a *TaskAdaptor) BuildRequestURL(_ *relaycommon.RelayInfo) (string, error) {
-	return fmt.Sprintf("%s/api/v3/contents/generations/tasks", a.baseURL), nil
+	path, err := videoCreatePath(a.profile, a.createPath)
+	if err != nil {
+		return "", err
+	}
+	return joinVideoUpstreamURL(a.baseURL, path), nil
 }
 
 // BuildRequestHeader sets required headers.
@@ -198,6 +206,10 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if err != nil {
 		return nil, err
 	}
+	data, err = convertVideoCreateRequest(a.profile, data)
+	if err != nil {
+		return nil, err
+	}
 	return bytes.NewReader(data), nil
 }
 
@@ -214,6 +226,11 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 		return
 	}
 	_ = resp.Body.Close()
+	responseBody, err = normalizeVideoCreateResponse(a.profile, responseBody)
+	if err != nil {
+		taskErr = service.TaskErrorWrapper(err, "normalize_response_body_failed", http.StatusBadGateway)
+		return
+	}
 
 	// Parse Doubao response
 	var dResp responsePayload
@@ -244,7 +261,15 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 		return nil, fmt.Errorf("invalid task_id")
 	}
 
-	uri := fmt.Sprintf("%s/api/v3/contents/generations/tasks/%s", baseUrl, taskID)
+	profile, err := videoProfileFromFetchBody(body)
+	if err != nil {
+		return nil, err
+	}
+	path, err := videoTaskPath(profile, videoQueryTemplateFromFetchBody(body), taskID)
+	if err != nil {
+		return nil, err
+	}
+	uri := joinVideoUpstreamURL(baseUrl, path)
 
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
 	if err != nil {
@@ -259,7 +284,22 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}
-	return client.Do(req)
+	resp, err := client.Do(req)
+	if err != nil || resp == nil || profile.IsOfficial() || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return resp, err
+	}
+	responseBody, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read upstream task response: %w", err)
+	}
+	responseBody, err = normalizeVideoTaskResponse(profile, responseBody)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(responseBody))
+	resp.ContentLength = int64(len(responseBody))
+	return resp, nil
 }
 
 func (a *TaskAdaptor) GetModelList() []string {

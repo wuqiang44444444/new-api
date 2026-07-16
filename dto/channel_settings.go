@@ -53,6 +53,9 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastRemovedModels  []string              `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string              `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
 	AdvancedCustom                        *AdvancedCustomConfig `json:"advanced_custom,omitempty"`
+	VideoUpstreamProfile                  VideoUpstreamProfile  `json:"video_upstream_profile,omitempty"`             // DoubaoVideo 渠道的上游协议（official/third_party_relay/third_party_reverse_proxy）
+	VideoUpstreamCreatePath               string                `json:"video_upstream_create_path,omitempty"`         // 第三方协议的创建请求 URL 后缀，仅第三方协议使用，official 时清空
+	VideoUpstreamQueryPathTemplate        string                `json:"video_upstream_query_path_template,omitempty"` // 第三方协议的查询 URL 后缀模板，含且仅含一个 {task_id}，official 时清空
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {
@@ -60,6 +63,47 @@ func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {
 		return false
 	}
 	return *s.OpenRouterEnterprise
+}
+
+// ValidateVideoUpstreamURL 校验第三方协议的 Base URL、创建后缀、查询后缀模板。
+// 仅在 profile 为第三方协议时调用；official 协议应已清空这些字段，不进入此校验。
+// 规则对应方案 §5.2：绝对 http(s) 根地址、纯 path 后缀、占位符与转义约束。
+func ValidateVideoUpstreamURL(baseURL, createPath, queryTemplate string) error {
+	baseURL = strings.TrimSpace(baseURL)
+	createPath = strings.TrimSpace(createPath)
+	queryTemplate = strings.TrimSpace(queryTemplate)
+
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("video upstream base url must be an absolute http(s) url")
+	}
+	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
+		return fmt.Errorf("video upstream base url must use http or https")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("video upstream base url must not include query or fragment")
+	}
+
+	if !strings.HasPrefix(createPath, "/") || strings.HasPrefix(createPath, "//") {
+		return fmt.Errorf("video upstream create path must start with a single /")
+	}
+	if strings.Contains(createPath, "{task_id}") {
+		return fmt.Errorf("video upstream create path must not contain {task_id}")
+	}
+	if strings.ContainsAny(createPath, "?#") {
+		return fmt.Errorf("video upstream create path must not include query or fragment")
+	}
+
+	if !strings.HasPrefix(queryTemplate, "/") || strings.HasPrefix(queryTemplate, "//") {
+		return fmt.Errorf("video upstream query path template must start with a single /")
+	}
+	if strings.Count(queryTemplate, "{task_id}") != 1 {
+		return fmt.Errorf("video upstream query path template must contain exactly one {task_id}")
+	}
+	if strings.ContainsAny(queryTemplate, "?#") {
+		return fmt.Errorf("video upstream query path template must not include query or fragment")
+	}
+	return nil
 }
 
 const (

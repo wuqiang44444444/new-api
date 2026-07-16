@@ -38,6 +38,7 @@ const getModelDefaults = (settings: BillingSettings) => ({
   ExposeRatioEnabled: settings.ExposeRatioEnabled,
   BillingMode: settings['billing_setting.billing_mode'],
   BillingExpr: settings['billing_setting.billing_expr'],
+  TaskPreConsumeTokens: settings['task_billing_setting.preconsume_tokens'],
 })
 
 const getGroupDefaults = (settings: BillingSettings) => ({
