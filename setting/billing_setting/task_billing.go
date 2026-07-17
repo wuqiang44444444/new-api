@@ -2,12 +2,14 @@ package billing_setting
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
 )
 
 const TaskPreConsumeTokensOption = "task_billing_setting.preconsume_tokens"
+const MaxTaskPreConsumeTokens = math.MaxInt32 / 2
 
 type TaskBillingSetting struct {
 	PreConsumeTokens map[string]int `json:"preconsume_tokens"`
@@ -26,7 +28,7 @@ func init() {
 // process-wide fallback.
 func GetTaskPreConsumeTokens(model string) (int, bool) {
 	tokens, ok := taskBillingSetting.PreConsumeTokens[model]
-	return tokens, ok && tokens > 0
+	return tokens, ok && tokens > 0 && tokens <= MaxTaskPreConsumeTokens
 }
 
 func ValidateTaskPreConsumeTokensJSON(value string) error {
@@ -35,8 +37,12 @@ func ValidateTaskPreConsumeTokensJSON(value string) error {
 		return err
 	}
 	for model, upperBound := range tokens {
-		if model == "" || upperBound <= 0 {
-			return fmt.Errorf("task pre-consume token upper bound must be positive for model %q", model)
+		if model == "" || upperBound <= 0 || upperBound > MaxTaskPreConsumeTokens {
+			return fmt.Errorf(
+				"task pre-consume token upper bound must be between 1 and %d for model %q",
+				MaxTaskPreConsumeTokens,
+				model,
+			)
 		}
 	}
 	return nil

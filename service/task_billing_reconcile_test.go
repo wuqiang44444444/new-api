@@ -119,6 +119,26 @@ func TestTieredSettlementUsesFrozenExpressionAndMissingUsageKeepsPrecharge(t *te
 	assert.Equal(t, 1000, getUserQuota(t, userID))
 }
 
+func TestTieredSettlementLogRecordsCompletionTokens(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	const userID = 8107
+	seedUser(t, userID, 1000)
+
+	// 预扣 1000；表达式 c*2，真实 token=100 → 结算额度 200 < 预扣，产生退款日志(type=6)。
+	task := persistedAsyncTask(t, userID, 1000, model.TaskStatusSuccess)
+	task.PrivateData.AsyncBilling.TieredSnapshot = tieredTestSnapshot(`tier("frozen", c * 2)`, 1000)
+	require.NoError(t, task.UpdateBilling())
+
+	require.True(t, settleTaskTieredSnapshot(ctx, task, 100))
+
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	// 结算/退款日志必须回填真实 completion_tokens（修复前 RecordTaskBillingLogParams 无该字段，恒为 0）
+	assert.Equal(t, model.LogTypeRefund, log.Type)
+	assert.Equal(t, 100, log.CompletionTokens)
+}
+
 func TestFrozenExpressionFailureKeepsPrechargeForReconcile(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()

@@ -141,11 +141,15 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
           if (key === 'ServerAddress') {
             v = v.replace(/\/+$/, '')
           }
-          const res = await updateOption.mutateAsync({
-            key,
-            value: v,
-          })
-          if (!res.success) {
+          // updateOption.mutateAsync 在后端 success:false 时 reject（见 api.ts）。
+          // 此处逐项 try/catch，保留「尽力保存全部设置项、仅当全部成功才切主题」的语义，
+          // 而不是在首个失败时就中断后续设置项的保存（否则会改变原有 best-effort 行为）。
+          try {
+            await updateOption.mutateAsync({
+              key,
+              value: v,
+            })
+          } catch {
             allSucceeded = false
           }
         }
@@ -155,18 +159,18 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
           return
         }
         if (themeEntry && allSucceeded) {
-          const res = await updateOption.mutateAsync({
-            key: themeEntry[0],
-            value: normalizeValue(themeEntry[1]),
-          })
-          if (res.success) {
+          try {
+            await updateOption.mutateAsync({
+              key: themeEntry[0],
+              value: normalizeValue(themeEntry[1]),
+            })
             // 当前路由在另一套前端中并不存在，主题切换成功后重置到首页以避免 404。
             // 延时用于让表单脏状态先清除（移除 beforeunload 拦截）并展示成功提示后再刷新；
             // 使用 replace 让已失效的路由不进入历史，防止返回按钮再次触发 404。
             setTimeout(() => {
               window.location.replace('/')
             }, 600)
-          } else {
+          } catch {
             // Theme update failed; revert to the last saved value.
             _data.theme.frontend = normalizedDefaults.theme.frontend
           }

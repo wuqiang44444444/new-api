@@ -79,14 +79,16 @@ func TestRelayCreateRequestRejectsUnsupportedInputs(t *testing.T) {
 	}
 }
 
-func TestRelayTaskResponseNormalizesResultWithoutUnverifiedUsage(t *testing.T) {
-	body, err := RelayTaskResponse([]byte(`{"task_id":"relay-1","status":"succeeded","result":{"type":"video","urls":["https://cdn.example/result.mp4"]},"usage":{"completion_tokens":999}}`))
+// TestRelayTaskResponseNormalizesResultAndUsage 验证中转线终态归一化结果 URL 并透传 usage
+// （completion_tokens/total_tokens）用于按 token 结算（方案 §10.2②，原"刻意不回填"已由实测验证解除）。
+func TestRelayTaskResponseNormalizesResultAndUsage(t *testing.T) {
+	body, err := RelayTaskResponse([]byte(`{"task_id":"relay-1","status":"succeeded","result":{"type":"video","urls":["https://cdn.example/result.mp4"]},"usage":{"completion_tokens":999,"total_tokens":999}}`))
 
 	require.NoError(t, err)
 	result := decodeObject(t, body)
 	assert.Equal(t, "succeeded", result["status"])
 	assert.Equal(t, "https://cdn.example/result.mp4", result["content"].(map[string]any)["video_url"])
-	assert.NotContains(t, result, "usage")
+	assert.Equal(t, map[string]any{"completion_tokens": float64(999), "total_tokens": float64(999)}, result["usage"])
 }
 
 func TestRelayTaskResponseEnforcesTerminalContracts(t *testing.T) {
@@ -122,4 +124,13 @@ func TestReverseProxyTaskResponseRejectsUnknownStatus(t *testing.T) {
 
 	_, err = ReverseProxyTaskResponse([]byte(`{"data":{"task_id":"rp-y","status":""}}`))
 	require.Error(t, err)
+}
+
+// TestReverseProxyTaskResponseMapsExpiredToFailed 验证官Key（Ark 直通）的 expired 终态被
+// 归一化为 failed 触发退款，而非落入 default 报错或被当作 IN_PROGRESS 永久轮询。
+// expired 语义：任务过期/超时被清理，无可用结果 URL（方案 §10.6）。
+func TestReverseProxyTaskResponseMapsExpiredToFailed(t *testing.T) {
+	body, err := ReverseProxyTaskResponse([]byte(`{"data":{"task_id":"rp-exp","status":"expired"}}`))
+	require.NoError(t, err)
+	assert.Equal(t, "failed", decodeObject(t, body)["status"])
 }

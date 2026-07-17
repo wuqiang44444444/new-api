@@ -78,7 +78,9 @@ func normalizeReverseProxyStatus(status string) (string, error) {
 		return strings.ToLower(strings.TrimSpace(status)), nil
 	case "success", "completed":
 		return "succeeded", nil
-	case "failure", "error", "cancelled", "canceled":
+	// expired 是官Key（Ark 直通）终态：任务过期/超时被清理，无可用结果 URL。
+	// 归入 failed 触发退款（fail-closed，与 cancelled 一致）：用户拿不到视频，不应扣费。
+	case "failure", "error", "cancelled", "canceled", "expired":
 		return "failed", nil
 	default:
 		return "", fmt.Errorf("upstream reverse-proxy response has unsupported status %q", status)

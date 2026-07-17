@@ -65,6 +65,7 @@ import {
   type ModelRow,
 } from './model-pricing-snapshots'
 import { buildModelRatioColumns } from './model-ratio-table-columns'
+import { applyTaskPreConsumeTokenChanges } from './task-preconsume-map'
 
 type ModelRatioVisualEditorProps = {
   savedModelPrice: string
@@ -87,6 +88,8 @@ type ModelRatioVisualEditorProps = {
   audioCompletionRatio: string
   billingMode: string
   billingExpr: string
+  savedTaskPreConsumeTokens: string
+  taskPreConsumeTokens: string
   candidateModelNames?: string[]
   candidateModelsLoading?: boolean
   filterMode?: 'all' | 'unset'
@@ -126,6 +129,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
     audioCompletionRatio,
     billingMode,
     billingExpr,
+    taskPreConsumeTokens,
     candidateModelNames,
     candidateModelsLoading,
     filterMode = 'all',
@@ -297,6 +301,10 @@ const ModelRatioVisualEditorComponent = forwardRef<
       } else if (editableModel.price && editableModel.price !== '') {
         editBillingMode = 'per-request'
       }
+      const preConsumeMap = safeJsonParse<Record<string, number>>(
+        taskPreConsumeTokens,
+        { fallback: {}, silent: true }
+      )
       setEditData({
         name: editableModel.name,
         price: editableModel.price,
@@ -310,11 +318,12 @@ const ModelRatioVisualEditorComponent = forwardRef<
         billingMode: editBillingMode,
         billingExpr: editableModel.billingExpr,
         requestRuleExpr: editableModel.requestRuleExpr,
+        taskPreConsumeTokens: preConsumeMap[editableModel.name],
       })
       setEditorOpen(true)
       if (isMobile) setSheetOpen(true)
     },
-    [isMobile]
+    [isMobile, taskPreConsumeTokens]
   )
 
   const handleAdd = useCallback(() => {
@@ -380,6 +389,10 @@ const ModelRatioVisualEditorComponent = forwardRef<
         billingExpr,
         { fallback: {}, silent: true }
       )
+      const preConsumeTokensMap = safeJsonParse<Record<string, number>>(
+        taskPreConsumeTokens,
+        { fallback: {}, silent: true }
+      )
 
       delete priceMap[name]
       delete ratioMap[name]
@@ -391,6 +404,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       delete audioCompletionMap[name]
       delete billingModeMap[name]
       delete billingExprMap[name]
+      delete preConsumeTokensMap[name]
 
       onChange('ModelPrice', JSON.stringify(priceMap, null, 2))
       onChange('ModelRatio', JSON.stringify(ratioMap, null, 2))
@@ -411,6 +425,10 @@ const ModelRatioVisualEditorComponent = forwardRef<
         'billing_setting.billing_expr',
         JSON.stringify(billingExprMap, null, 2)
       )
+      onChange(
+        'TaskPreConsumeTokens',
+        JSON.stringify(preConsumeTokensMap, null, 2)
+      )
 
       if (editData?.name === name) {
         setEditData(null)
@@ -429,6 +447,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       audioCompletionRatio,
       billingMode,
       billingExpr,
+      taskPreConsumeTokens,
       onChange,
       editData,
     ]
@@ -520,6 +539,10 @@ const ModelRatioVisualEditorComponent = forwardRef<
         billingExpr,
         { fallback: {}, silent: true }
       )
+      const preConsumeTokensMap = safeJsonParse<Record<string, number>>(
+        taskPreConsumeTokens,
+        { fallback: {}, silent: true }
+      )
 
       const setIfPresent = (
         target: Record<string, number>,
@@ -530,6 +553,14 @@ const ModelRatioVisualEditorComponent = forwardRef<
         const parsed = parseFloat(value)
         if (Number.isFinite(parsed)) target[name] = parsed
       }
+
+      applyTaskPreConsumeTokenChanges(
+        preConsumeTokensMap,
+        targetNames,
+        data.billingMode === 'tiered_expr'
+          ? data.taskPreConsumeTokens
+          : undefined
+      )
 
       targetNames.forEach((name) => {
         delete priceMap[name]
@@ -596,6 +627,10 @@ const ModelRatioVisualEditorComponent = forwardRef<
         'billing_setting.billing_expr',
         JSON.stringify(billingExprMap, null, 2)
       )
+      onChange(
+        'TaskPreConsumeTokens',
+        JSON.stringify(preConsumeTokensMap, null, 2)
+      )
     },
     [
       modelPrice,
@@ -608,6 +643,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       audioCompletionRatio,
       billingMode,
       billingExpr,
+      taskPreConsumeTokens,
       onChange,
     ]
   )
@@ -642,10 +678,15 @@ const ModelRatioVisualEditorComponent = forwardRef<
     ])
     table.resetRowSelection()
     toast.success(
-      t('Applied {{name}} pricing to {{count}} models', {
-        name: sourceData.name,
-        count: targetNames.length,
-      })
+      t(
+        sourceData.billingMode === 'tiered_expr'
+          ? 'Applied {{name}} pricing and pre-consume settings to {{count}} models'
+          : 'Applied {{name}} pricing to {{count}} models',
+        {
+          name: sourceData.name,
+          count: targetNames.length,
+        }
+      )
     )
   }, [editData, editorOpen, persistPricingData, t, table])
 
@@ -851,6 +892,9 @@ export const ModelRatioVisualEditor = memo(
       prevProps.audioCompletionRatio === nextProps.audioCompletionRatio &&
       prevProps.billingMode === nextProps.billingMode &&
       prevProps.billingExpr === nextProps.billingExpr &&
+      prevProps.savedTaskPreConsumeTokens ===
+        nextProps.savedTaskPreConsumeTokens &&
+      prevProps.taskPreConsumeTokens === nextProps.taskPreConsumeTokens &&
       prevProps.candidateModelNames === nextProps.candidateModelNames &&
       prevProps.candidateModelsLoading === nextProps.candidateModelsLoading &&
       prevProps.filterMode === nextProps.filterMode &&

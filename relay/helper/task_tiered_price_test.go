@@ -15,15 +15,15 @@ import (
 
 const taskSixTierExpression = `param("_task.resolution") == "1080p"
   ? (param("_task.has_video_input") == true
-      ? tier("1080p_video", c * 4.768115942)
-      : tier("1080p", c * 7.811594203))
+      ? tier("1080p_video", c * 4.7)
+      : tier("1080p", c * 7.7))
   : param("_task.resolution") == "4k"
     ? (param("_task.has_video_input") == true
-        ? tier("4k_video", c * 2.434782609)
-        : tier("4k", c * 4.057971014))
+        ? tier("4k_video", c * 2.4)
+        : tier("4k", c * 4.0))
     : (param("_task.has_video_input") == true
-        ? tier("480_720_video", c * 4.362318841)
-        : tier("480_720", c * 7.101449275))`
+        ? tier("480p720p_video", c * 4.3)
+        : tier("480p720p", c * 7.0))`
 
 type fixedTaskProbe map[string]any
 
@@ -77,12 +77,14 @@ func TestModelPriceHelperTaskTieredMatchesSixPriceTiers(t *testing.T) {
 		tier       string
 		rate       float64
 	}{
-		{resolution: "720p", hasVideo: true, tier: "480_720_video", rate: 4.362318841},
-		{resolution: "720p", hasVideo: false, tier: "480_720", rate: 7.101449275},
-		{resolution: "1080p", hasVideo: true, tier: "1080p_video", rate: 4.768115942},
-		{resolution: "1080p", hasVideo: false, tier: "1080p", rate: 7.811594203},
-		{resolution: "4k", hasVideo: true, tier: "4k_video", rate: 2.434782609},
-		{resolution: "4k", hasVideo: false, tier: "4k", rate: 4.057971014},
+		{resolution: "480p", hasVideo: true, tier: "480p720p_video", rate: 4.3},
+		{resolution: "480p", hasVideo: false, tier: "480p720p", rate: 7.0},
+		{resolution: "720p", hasVideo: true, tier: "480p720p_video", rate: 4.3},
+		{resolution: "720p", hasVideo: false, tier: "480p720p", rate: 7.0},
+		{resolution: "1080p", hasVideo: true, tier: "1080p_video", rate: 4.7},
+		{resolution: "1080p", hasVideo: false, tier: "1080p", rate: 7.7},
+		{resolution: "4k", hasVideo: true, tier: "4k_video", rate: 2.4},
+		{resolution: "4k", hasVideo: false, tier: "4k", rate: 4.0},
 	}
 
 	for _, test := range tests {

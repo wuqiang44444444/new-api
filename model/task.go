@@ -102,6 +102,7 @@ func (m Properties) Value() (driver.Value, error) {
 type TaskPrivateData struct {
 	Key                            string                   `json:"key,omitempty"`
 	UpstreamTaskID                 string                   `json:"upstream_task_id,omitempty"`                   // 上游真实 task ID
+	UpstreamRequestID              string                   `json:"upstream_request_id,omitempty"`                // 上游调用追踪 ID（如 moxing request_id），仅任务创建时从响应头捕获，用于事后对账；异步轮询阶段已不可得
 	ResultURL                      string                   `json:"result_url,omitempty"`                         // 任务成功后的结果 URL（视频地址等）
 	VideoUpstreamProfile           dto.VideoUpstreamProfile `json:"video_upstream_profile,omitempty"`             // 创建时的视频协议快照
 	VideoUpstreamQueryBaseURL      string                   `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用

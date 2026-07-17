@@ -14,6 +14,9 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 	if async == nil || async.TieredSnapshot == nil {
 		return false
 	}
+	// 与 prepareTerminalTaskBilling 一致地记录真实 token，供结算/退款日志的 completion_tokens
+	// 列回填（recalculateTaskQuotaWithReconcile 读取）。直接调用本函数的路径（如补偿/单测）也生效。
+	async.ActualTokens = actualTokens
 	if actualTokens <= 0 {
 		async.Operation = "settle"
 		async.Reason = "表达式结算：上游未返回可计费用量，保持预扣额度"

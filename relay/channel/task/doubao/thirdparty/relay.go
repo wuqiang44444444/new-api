@@ -161,7 +161,8 @@ func RelayCreateResponse(body []byte) ([]byte, error) {
 }
 
 // RelayTaskResponse 归一化第三方中转任务状态与结果字段到现有 DoubaoVideo 轮询合同。
-// usage 未经真实账单验证前刻意不回填，避免伪造官方 Ark usage（方案 §9）。
+// usage 透传 completion_tokens/total_tokens（与反代协议 reverse_proxy.go 一致），用于按 token 结算；
+// 上游终态真实返回 usage 已由实测验证（方案 §10.2②），不再刻意丢弃。
 func RelayTaskResponse(body []byte) ([]byte, error) {
 	root, err := object(body)
 	if err != nil {
@@ -197,6 +198,19 @@ func RelayTaskResponse(body []byte) ([]byte, error) {
 	}
 	if videoURL != "" {
 		result["content"] = map[string]any{"video_url": videoURL}
+	}
+	// usage 透传 completion_tokens/total_tokens（与反代协议一致），用于按 token 结算。
+	// 上游终态真实返回 usage 已实测验证（方案 §10.2②），不再刻意丢弃。
+	if usage := mapValue(data["usage"]); usage != nil {
+		actual := map[string]any{}
+		for _, field := range []string{"completion_tokens", "total_tokens"} {
+			if value, exists := usage[field]; exists {
+				actual[field] = value
+			}
+		}
+		if len(actual) > 0 {
+			result["usage"] = actual
+		}
 	}
 	if status == "failed" {
 		message := firstString(data, "error_message")

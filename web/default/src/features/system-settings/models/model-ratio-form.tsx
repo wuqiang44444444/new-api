@@ -290,6 +290,8 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               audioCompletionRatio={form.watch('AudioCompletionRatio')}
               billingMode={form.watch('BillingMode')}
               billingExpr={form.watch('BillingExpr')}
+              savedTaskPreConsumeTokens={savedValues.TaskPreConsumeTokens}
+              taskPreConsumeTokens={form.watch('TaskPreConsumeTokens')}
               candidateModelNames={
                 isUnsetVariant ? enabledModelsQuery.data?.data : undefined
               }

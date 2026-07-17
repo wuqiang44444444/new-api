@@ -141,6 +141,7 @@ func recalculateTaskQuotaWithReconcile(ctx context.Context, task *model.Task, ac
 		UserId: task.UserId, LogType: logType, Content: reason, ChannelId: task.ChannelId,
 		ModelName: taskModelName(task), Quota: logQuota, TokenId: task.PrivateData.TokenId,
 		Group: task.Group, Other: other, NodeName: task.PrivateData.NodeName,
+		CompletionTokens: async.ActualTokens,
 	})
 }
 

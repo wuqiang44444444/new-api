@@ -38,6 +38,11 @@ export async function getSystemOptions() {
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  // 后端 success:false 时抛错，使 mutateAsync reject——避免调用方（如 saveModelRatios
+  // 的循环）在后端拒绝时仍推进本地「已保存」基线，造成前后端状态不一致。
+  if (!res.data.success) {
+    throw new Error(res.data.message || 'Failed to update setting')
+  }
   return res.data
 }
 
