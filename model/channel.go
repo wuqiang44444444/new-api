@@ -452,26 +452,32 @@ func BatchInsertChannels(channels []Channel) error {
 	return tx.Commit().Error
 }
 
-func BatchDeleteChannels(ids []int) error {
+func BatchDeleteChannels(ids []int) (int64, error) {
 	if len(ids) == 0 {
-		return nil
+		return 0, nil
 	}
 	// 使用事务 分批删除channel表和abilities表
 	tx := DB.Begin()
 	if tx.Error != nil {
-		return tx.Error
+		return 0, tx.Error
 	}
+	var deletedCount int64
 	for _, chunk := range lo.Chunk(ids, 200) {
-		if err := tx.Where("id in (?)", chunk).Delete(&Channel{}).Error; err != nil {
+		result := tx.Where("id in (?)", chunk).Delete(&Channel{})
+		if result.Error != nil {
 			tx.Rollback()
-			return err
+			return 0, result.Error
 		}
+		deletedCount += result.RowsAffected
 		if err := tx.Where("channel_id in (?)", chunk).Delete(&Ability{}).Error; err != nil {
 			tx.Rollback()
-			return err
+			return 0, err
 		}
 	}
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return 0, err
+	}
+	return deletedCount, nil
 }
 
 func (channel *Channel) GetPriority() int64 {
@@ -945,6 +951,9 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
+	if _, err := common.ParseProxyURLStrict(channelParams.Proxy); err != nil {
+		return fmt.Errorf("invalid channel proxy: %w", err)
+	}
 	channelOtherSettings := &dto.ChannelOtherSettings{}
 	if channel.OtherSettings != "" {
 		err := common.UnmarshalJsonStr(channel.OtherSettings, channelOtherSettings)
@@ -962,32 +971,13 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
-	if channel.Type == constant.ChannelTypeDoubaoVideo {
-		if err := dto.ValidateVideoUpstreamProfile(channelOtherSettings.VideoUpstreamProfile); err != nil {
-			return err
+	if channel.Type == constant.ChannelTypeAdvancedCustom && channelOtherSettings.UpstreamModelUpdateCheckEnabled {
+		if _, ok := channelOtherSettings.AdvancedCustom.ModelListRoute(); !ok {
+			return fmt.Errorf("advanced custom channels require a %s route when upstream model update checks are enabled", dto.AdvancedCustomModelListPath)
 		}
-		if channelOtherSettings.VideoUpstreamProfile.IsOfficial() {
-			// official 协议不使用第三方路径，清除残留避免成为隐藏事实来源（方案 §5.1）
-			if channelOtherSettings.VideoUpstreamCreatePath != "" || channelOtherSettings.VideoUpstreamQueryPathTemplate != "" {
-				channelOtherSettings.VideoUpstreamCreatePath = ""
-				channelOtherSettings.VideoUpstreamQueryPathTemplate = ""
-				normalized, mErr := common.Marshal(channelOtherSettings)
-				if mErr != nil {
-					return mErr
-				}
-				channel.OtherSettings = string(normalized)
-			}
-		} else {
-			// 第三方协议不得使用类型默认地址：校验渠道原始 BaseURL（空则拒绝），
-			// 避免 GetBaseURL 把空值回退到官方 Ark 地址，导致请求官方域名下的第三方路径。
-			rawBaseURL := ""
-			if channel.BaseURL != nil {
-				rawBaseURL = *channel.BaseURL
-			}
-			if err := dto.ValidateVideoUpstreamURL(rawBaseURL, channelOtherSettings.VideoUpstreamCreatePath, channelOtherSettings.VideoUpstreamQueryPathTemplate); err != nil {
-				return err
-			}
-		}
+	}
+	if err := validateChannelVideoSettings(channel, channelOtherSettings); err != nil {
+		return err
 	}
 	return nil
 }

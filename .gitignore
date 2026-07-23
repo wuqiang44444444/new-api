@@ -59,6 +59,12 @@
 /coverage/
 /build/
 /dist/
+logs
+web/dist
+web/node_modules
+.env
+one-api
+new-api
 /__debug_bin*
 /.gocache/
 /.gocache-temp/
@@ -105,12 +111,21 @@ docker-compose.*.override.yml
 # Local tool state and scratch workspaces
 .cache/
 .eslintcache
-tiktoken_cache/
-.claude/
-.cursor/
-.codex/
-.playwright-mcp/
-.local-tests/
+.gocache
+.gomodcache/
+.cache
+plans
+.claude
+.cursor
+
+electron/node_modules
+electron/dist
+/data/
+.gomodcache/
+.gocache-temp
+.gopath
+.test
+token_estimator_test.go
 skills-lock.json
 
 # Local-only live probes and scratch test workspaces

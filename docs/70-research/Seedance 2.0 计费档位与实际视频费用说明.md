@@ -76,7 +76,7 @@ last-reviewed: 2026-07-17
 
 - [`pkg/billingexpr/expr.md`](../../pkg/billingexpr/expr.md)：表达式系数的单位是 USD / 百万 Token。
 - [`pkg/billingexpr/settle.go`](../../pkg/billingexpr/settle.go)：结算时执行 `exprOutput / 1_000_000 * QuotaPerUnit`。
-- [`billing-expr.ts`](../../web/default/src/features/pricing/lib/billing-expr.ts)：前端把变量 `c` 的系数映射为“输出”价格。
+- [`billing-expr.ts`](../../web/src/features/pricing/lib/billing-expr.ts)：前端把变量 `c` 的系数映射为“输出”价格。
 
 ## 4. 为什么 4K 单价低，最终费用却更高
 

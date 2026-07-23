@@ -1,6 +1,10 @@
 package dto
 
-import "fmt"
+import (
+	"fmt"
+	"net/url"
+	"strings"
+)
 
 // VideoUpstreamProfile 标识 DoubaoVideo 渠道使用的上游视频协议方案。
 // 渠道显式选择一个稳定 ID，new-api 据此选择请求/响应协议并完成必要的转换；
@@ -46,4 +50,44 @@ func ValidateVideoUpstreamProfile(p VideoUpstreamProfile) error {
 		return nil
 	}
 	return fmt.Errorf("unknown video upstream profile: %q", p)
+}
+
+// ValidateVideoUpstreamURL validates the third-party protocol base URL and
+// create/query path contracts.
+func ValidateVideoUpstreamURL(baseURL, createPath, queryTemplate string) error {
+	baseURL = strings.TrimSpace(baseURL)
+	createPath = strings.TrimSpace(createPath)
+	queryTemplate = strings.TrimSpace(queryTemplate)
+
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("video upstream base url must be an absolute http(s) url")
+	}
+	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
+		return fmt.Errorf("video upstream base url must use http or https")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("video upstream base url must not include query or fragment")
+	}
+
+	if !strings.HasPrefix(createPath, "/") || strings.HasPrefix(createPath, "//") {
+		return fmt.Errorf("video upstream create path must start with a single /")
+	}
+	if strings.Contains(createPath, "{task_id}") {
+		return fmt.Errorf("video upstream create path must not contain {task_id}")
+	}
+	if strings.ContainsAny(createPath, "?#") {
+		return fmt.Errorf("video upstream create path must not include query or fragment")
+	}
+
+	if !strings.HasPrefix(queryTemplate, "/") || strings.HasPrefix(queryTemplate, "//") {
+		return fmt.Errorf("video upstream query path template must start with a single /")
+	}
+	if strings.Count(queryTemplate, "{task_id}") != 1 {
+		return fmt.Errorf("video upstream query path template must contain exactly one {task_id}")
+	}
+	if strings.ContainsAny(queryTemplate, "?#") {
+		return fmt.Errorf("video upstream query path template must not include query or fragment")
+	}
+	return nil
 }

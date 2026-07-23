@@ -65,47 +65,6 @@ func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {
 	return *s.OpenRouterEnterprise
 }
 
-// ValidateVideoUpstreamURL 校验第三方协议的 Base URL、创建后缀、查询后缀模板。
-// 仅在 profile 为第三方协议时调用；official 协议应已清空这些字段，不进入此校验。
-// 规则对应方案 §5.2：绝对 http(s) 根地址、纯 path 后缀、占位符与转义约束。
-func ValidateVideoUpstreamURL(baseURL, createPath, queryTemplate string) error {
-	baseURL = strings.TrimSpace(baseURL)
-	createPath = strings.TrimSpace(createPath)
-	queryTemplate = strings.TrimSpace(queryTemplate)
-
-	parsed, err := url.Parse(baseURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return fmt.Errorf("video upstream base url must be an absolute http(s) url")
-	}
-	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
-		return fmt.Errorf("video upstream base url must use http or https")
-	}
-	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return fmt.Errorf("video upstream base url must not include query or fragment")
-	}
-
-	if !strings.HasPrefix(createPath, "/") || strings.HasPrefix(createPath, "//") {
-		return fmt.Errorf("video upstream create path must start with a single /")
-	}
-	if strings.Contains(createPath, "{task_id}") {
-		return fmt.Errorf("video upstream create path must not contain {task_id}")
-	}
-	if strings.ContainsAny(createPath, "?#") {
-		return fmt.Errorf("video upstream create path must not include query or fragment")
-	}
-
-	if !strings.HasPrefix(queryTemplate, "/") || strings.HasPrefix(queryTemplate, "//") {
-		return fmt.Errorf("video upstream query path template must start with a single /")
-	}
-	if strings.Count(queryTemplate, "{task_id}") != 1 {
-		return fmt.Errorf("video upstream query path template must contain exactly one {task_id}")
-	}
-	if strings.ContainsAny(queryTemplate, "?#") {
-		return fmt.Errorf("video upstream query path template must not include query or fragment")
-	}
-	return nil
-}
-
 const (
 	advancedCustomConverterNone                        = "none"
 	advancedCustomConverterClaudeMessagesToOpenAIChat  = "anthropic_messages_to_openai_chat_completions"
@@ -156,6 +115,9 @@ const (
 	advancedCustomEndpointPathEmbeddings             = "/v1/embeddings"
 )
 
+// AdvancedCustomModelListPath identifies the optional OpenAI Models discovery route.
+const AdvancedCustomModelListPath = "/v1/models"
+
 // MatchPath returns the first route whose IncomingPath matches requestPath.
 // Matching mirrors the relay adaptor: exact match, {model} placeholder, and
 // :generateContent <-> :streamGenerateContent equivalence.
@@ -181,6 +143,20 @@ func (c *AdvancedCustomConfig) MatchPathForModel(requestPath string, model strin
 	for _, route := range c.Routes {
 		if matchAdvancedCustomIncomingPath(strings.TrimSpace(route.IncomingPath), requestPath) &&
 			matchAdvancedCustomRouteModel(route.Models, model) {
+			return route, true
+		}
+	}
+	return AdvancedCustomRoute{}, false
+}
+
+// ModelListRoute returns the explicitly configured OpenAI Models discovery route.
+// Template routes that merely happen to match /v1/models are not discovery routes.
+func (c *AdvancedCustomConfig) ModelListRoute() (AdvancedCustomRoute, bool) {
+	if c == nil {
+		return AdvancedCustomRoute{}, false
+	}
+	for _, route := range c.Routes {
+		if strings.TrimSpace(route.IncomingPath) == AdvancedCustomModelListPath {
 			return route, true
 		}
 	}
@@ -351,6 +327,7 @@ func (c *AdvancedCustomConfig) Validate() error {
 	}
 
 	paths := make(map[string]*advancedCustomPathModelState, len(c.Routes))
+	modelListRouteIndex := -1
 	for i := range c.Routes {
 		route := c.Routes[i]
 		route.IncomingPath = strings.TrimSpace(route.IncomingPath)
@@ -368,6 +345,21 @@ func (c *AdvancedCustomConfig) Validate() error {
 		}
 		if strings.Contains(route.IncomingPath, "?") {
 			return fmt.Errorf("advanced_custom.advanced_routes[%d].incoming_path must not include query", i)
+		}
+		if route.IncomingPath == AdvancedCustomModelListPath {
+			if modelListRouteIndex >= 0 {
+				return fmt.Errorf("advanced_custom.advanced_routes[%d] duplicates the /v1/models route at advanced_routes[%d]", i, modelListRouteIndex)
+			}
+			modelListRouteIndex = i
+			if len(normalizeAdvancedCustomRouteModels(route.Models)) > 0 {
+				return fmt.Errorf("advanced_custom.advanced_routes[%d].models must be empty for /v1/models", i)
+			}
+			if route.Converter != advancedCustomConverterNone {
+				return fmt.Errorf("advanced_custom.advanced_routes[%d].converter must be none for /v1/models", i)
+			}
+			if strings.Contains(upstreamPath, advancedCustomModelPlaceholder) {
+				return fmt.Errorf("advanced_custom.advanced_routes[%d].upstream_path must not contain %s for /v1/models", i, advancedCustomModelPlaceholder)
+			}
 		}
 		if err := validateAdvancedCustomRouteModels(i, route.IncomingPath, route.Models, paths); err != nil {
 			return err

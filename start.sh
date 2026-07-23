@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FRONTEND_DIR="$ROOT_DIR/web/default"
+FRONTEND_DIR="$ROOT_DIR/web"
 LOG_DIR="$ROOT_DIR/logs"
 FRONTEND_PORT=3100
 BACKEND_PORT=8100
@@ -28,20 +28,13 @@ prepare_frontend() {
     )
   fi
 
-  if [[ ! -e "$FRONTEND_DIR/node_modules" ]]; then
-    ln -s ../node_modules "$FRONTEND_DIR/node_modules"
+  if [[ ! -f "$FRONTEND_DIR/dist/index.html" ]]; then
+    echo "正在创建本地开发嵌入入口..."
+    mkdir -p "$FRONTEND_DIR/dist"
+    printf '%s\n' \
+      '<!doctype html><html><body>Development assets are served by the frontend dev server.</body></html>' \
+      >"$FRONTEND_DIR/dist/index.html"
   fi
-
-  local theme
-  for theme in default classic; do
-    if [[ ! -f "$ROOT_DIR/web/$theme/dist/index.html" ]]; then
-      echo "正在为 $theme 前端创建本地开发嵌入入口..."
-      mkdir -p "$ROOT_DIR/web/$theme/dist"
-      printf '%s\n' \
-        '<!doctype html><html><body>Development assets are served by the frontend dev server.</body></html>' \
-        >"$ROOT_DIR/web/$theme/dist/index.html"
-    fi
-  done
 }
 
 stop_port() {

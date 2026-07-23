@@ -119,9 +119,9 @@ if !ok {
 | **Token 估算器**（输入 p / 输出 c） | 可视化编辑器内 | 仅本地费用预览（`evalExprLocally`） | **否** |
 | **Async task pre-consume token upper bounds** | JSON 编辑模式文本框 | 真正的预扣配置 | 是 |
 
-1. 可视化编辑器 [`model-ratio-visual-editor.tsx`](../../web/default/src/features/system-settings/models/model-ratio-visual-editor.tsx) 的 `onChange` 只发出 10 个字段（`ModelPrice`/`ModelRatio`/各 ratio/`billing_setting.billing_mode`/`billing_setting.billing_expr`），**不含 `TaskPreConsumeTokens`**——估算器的 p/c 值仅用于本地预览，从不写入表单字段。
-2. 真正的预扣字段 `TaskPreConsumeTokens`（[`model-ratio-form.tsx`](../../web/default/src/features/system-settings/models/model-ratio-form.tsx) 的 `modelJsonFields`）**只在 JSON 编辑模式**下作为一个 JSON 文本框出现。
-3. 保存逻辑 [`ratio-settings-card.tsx`](../../web/default/src/features/system-settings/models/ratio-settings-card.tsx) 的 `apiKeyMap` 映射正确（`TaskPreConsumeTokens → task_billing_setting.preconsume_tokens`），但**只保存相对默认值有变化的字段**：
+1. 可视化编辑器 [`model-ratio-visual-editor.tsx`](../../web/src/features/system-settings/models/model-ratio-visual-editor.tsx) 的 `onChange` 只发出 10 个字段（`ModelPrice`/`ModelRatio`/各 ratio/`billing_setting.billing_mode`/`billing_setting.billing_expr`），**不含 `TaskPreConsumeTokens`**——估算器的 p/c 值仅用于本地预览，从不写入表单字段。
+2. 真正的预扣字段 `TaskPreConsumeTokens`（[`model-ratio-form.tsx`](../../web/src/features/system-settings/models/model-ratio-form.tsx) 的 `modelJsonFields`）**只在 JSON 编辑模式**下作为一个 JSON 文本框出现。
+3. 保存逻辑 [`ratio-settings-card.tsx`](../../web/src/features/system-settings/models/ratio-settings-card.tsx) 的 `apiKeyMap` 映射正确（`TaskPreConsumeTokens → task_billing_setting.preconsume_tokens`），但**只保存相对默认值有变化的字段**：
 
    ```ts
    const updates = Object.keys(normalized).filter(
@@ -325,9 +325,9 @@ sqlite3 one-api.db "UPDATE options SET value='{\"seedance-byteplus\":520000,\"se
 - request_id 捕获：[`relay/channel/api_request.go`](../../relay/channel/api_request.go)
 
 **前端（预扣配置 UI，§4 根因所在）**
-- 可视化编辑器 onChange（不写预扣）：[`web/default/src/features/system-settings/models/model-ratio-visual-editor.tsx`](../../web/default/src/features/system-settings/models/model-ratio-visual-editor.tsx)
-- 表单字段定义（预扣仅 JSON 模式）：[`web/default/src/features/system-settings/models/model-ratio-form.tsx`](../../web/default/src/features/system-settings/models/model-ratio-form.tsx)
-- 保存映射（过滤未变更字段）：[`web/default/src/features/system-settings/models/ratio-settings-card.tsx`](../../web/default/src/features/system-settings/models/ratio-settings-card.tsx)
+- 可视化编辑器 onChange（不写预扣）：[`web/src/features/system-settings/models/model-ratio-visual-editor.tsx`](../../web/src/features/system-settings/models/model-ratio-visual-editor.tsx)
+- 表单字段定义（预扣仅 JSON 模式）：[`web/src/features/system-settings/models/model-ratio-form.tsx`](../../web/src/features/system-settings/models/model-ratio-form.tsx)
+- 保存映射（过滤未变更字段）：[`web/src/features/system-settings/models/ratio-settings-card.tsx`](../../web/src/features/system-settings/models/ratio-settings-card.tsx)
 
 **option 载入**
 - 周期同步：[`main.go:110`](../../main.go#L110)、[`model/option.go:189-203`](../../model/option.go#L189)（`loadOptionsFromDatabase` / `SyncOptions`，`SyncFrequency` 默认 60s）
