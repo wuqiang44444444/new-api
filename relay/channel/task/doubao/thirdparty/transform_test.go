@@ -44,8 +44,8 @@ func TestReverseProxyTaskResponseNormalizesStatusUsageAndResult(t *testing.T) {
 	assert.Equal(t, map[string]any{"completion_tokens": float64(123), "total_tokens": float64(456)}, result["usage"])
 }
 
-func TestRelayCreateRequestMapsModesAndPreservesExplicitZero(t *testing.T) {
-	body, err := RelayCreateRequest([]byte(`{"model":"seedance-v2","content":[{"type":"text","text":"hello"}],"duration":0,"generate_audio":false}`))
+func TestRelayCreateRequestUsesMoxingMediaV1FieldNamesAndPreservesExplicitZero(t *testing.T) {
+	body, err := RelayCreateRequest([]byte(`{"model":"seedance-v2","content":[{"type":"text","text":"hello"}],"duration":0,"generate_audio":false,"ratio":"16:9"}`))
 
 	require.NoError(t, err)
 	result := decodeObject(t, body)
@@ -53,7 +53,46 @@ func TestRelayCreateRequestMapsModesAndPreservesExplicitZero(t *testing.T) {
 	assert.Equal(t, "text", result["input_mode"])
 	assert.Equal(t, "none", result["control_mode"])
 	assert.Equal(t, float64(0), result["duration_seconds"])
-	assert.Equal(t, false, result["generate_audio"])
+	assert.Equal(t, false, result["with_audio"])
+	assert.Equal(t, "16:9", result["aspect_ratio"])
+	assert.NotContains(t, result, "generate_audio")
+	assert.NotContains(t, result, "ratio")
+}
+
+func TestRelayCreateRequestAppliesModelSpecificOptionalFieldContract(t *testing.T) {
+	tests := []struct {
+		name                 string
+		body                 string
+		wantWatermarkPresent bool
+	}{
+		{
+			name:                 "doubao model omits unsupported optional fields",
+			body:                 `{"model":"doubao-seedance-2-0-260128","content":[{"type":"text","text":"hello"}],"seed":0,"camera_fixed":false,"watermark":false}`,
+			wantWatermarkPresent: false,
+		},
+		{
+			name:                 "oversea model preserves supported watermark",
+			body:                 `{"model":"seedance-2-0-oversea","content":[{"type":"text","text":"hello"}],"watermark":false}`,
+			wantWatermarkPresent: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body, err := RelayCreateRequest([]byte(test.body))
+			require.NoError(t, err)
+
+			result := decodeObject(t, body)
+			watermark, present := result["watermark"]
+			assert.Equal(t, test.wantWatermarkPresent, present)
+			if present {
+				assert.Equal(t, false, watermark)
+			} else {
+				assert.NotContains(t, result, "seed")
+				assert.NotContains(t, result, "camera_fixed")
+			}
+		})
+	}
 }
 
 func TestRelayCreateRequestMapsFrameControls(t *testing.T) {

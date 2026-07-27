@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
@@ -56,13 +57,30 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 		return nil
 	}
 
-	// 查找原始任务
-	originTask, exist, err := model.GetByTaskId(info.UserId, info.OriginTaskID)
+	// Remix is an OpenAI Videos operation, so its source must remain visible in
+	// that same northbound protocol. Other continuation flows keep the legacy
+	// user-scoped lookup.
+	var originTask *model.Task
+	var exist bool
+	var err error
+	if info.Action == constant.TaskActionRemix {
+		originTask, exist, err = model.GetVideoTaskForProtocol(
+			info.UserId,
+			info.OriginTaskID,
+			model.TaskClientProtocolOpenAIVideos,
+			false,
+		)
+	} else {
+		originTask, exist, err = model.GetByTaskId(info.UserId, info.OriginTaskID)
+	}
 	if err != nil {
 		return service.TaskErrorWrapper(err, "get_origin_task_failed", http.StatusInternalServerError)
 	}
 	if !exist {
 		return service.TaskErrorWrapperLocal(errors.New("task_origin_not_exist"), "task_not_exist", http.StatusBadRequest)
+	}
+	if info.Action == constant.TaskActionRemix && !TaskLifecycleCapabilities(originTask).SupportsRemix {
+		return service.TaskErrorWrapperLocal(errors.New("remix is not supported for this video"), "unsupported_operation", http.StatusBadRequest)
 	}
 
 	// 从原始任务推导模型名称
@@ -159,6 +177,16 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
 		return nil, taskErr
 	}
+	if err := resolveAssetReferencesForAttempt(c, info); err != nil {
+		code, status := assetResolveTaskError(err)
+		if status == http.StatusInternalServerError {
+			common.SysError(fmt.Sprintf("asset reference resolution failed: %v", err))
+			publicError := service.TaskErrorWrapperLocal(errors.New("asset references could not be resolved"), code, status)
+			publicError.Error = err
+			return nil, publicError
+		}
+		return nil, service.TaskErrorWrapperLocal(err, code, status)
+	}
 
 	// 2. 确定模型名称
 	modelName := info.OriginModelName
@@ -229,8 +257,25 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		return nil, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
 	}
 	if resp != nil && resp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(resp.Body)
-		return nil, service.TaskErrorWrapper(fmt.Errorf("%s", string(responseBody)), "fail_to_fetch_task", resp.StatusCode)
+		var responseBody []byte
+		if resp.Body != nil {
+			responseBody, _ = io.ReadAll(io.LimitReader(resp.Body, 32<<10))
+			_ = resp.Body.Close()
+		}
+		upstreamErr := parseTaskUpstreamHTTPError(resp.StatusCode, responseBody)
+		logger.LogWarn(c, fmt.Sprintf(
+			"upstream task submit rejected: channel_id=%d status=%d provider_code=%q provider_message=%q upstream_request_id=%q",
+			info.ChannelId,
+			resp.StatusCode,
+			upstreamErr.providerCode,
+			upstreamErr.providerMessage,
+			safeTaskUpstreamToken(c.GetString(common.UpstreamRequestIdKey)),
+		))
+		return nil, service.TaskErrorWrapper(
+			upstreamErr,
+			"fail_to_fetch_task",
+			resp.StatusCode,
+		)
 	}
 
 	// 10. 返回 OtherRatios 给下游（header 必须在 DoResponse 写 body 之前设置）

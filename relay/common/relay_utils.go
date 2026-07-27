@@ -204,8 +204,19 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	var hasInputReference bool
 
 	var req TaskSubmitReq
-	if err := common.UnmarshalBodyReusable(c, &req); err != nil {
-		return createTaskError(err, "invalid_json", http.StatusBadRequest, true)
+	if strings.HasPrefix(c.GetHeader("Content-Type"), "multipart/form-data") {
+		var err error
+		req, err = parseOpenAIVideoMultipartRequest(c)
+		if err != nil {
+			return createTaskError(err, "invalid_multipart_form", http.StatusBadRequest, true)
+		}
+	} else {
+		if err := common.UnmarshalBodyReusable(c, &req); err != nil {
+			return createTaskError(err, "invalid_json", http.StatusBadRequest, true)
+		}
+	}
+	if taskErr := validateOpenAIVideoCreateContract(c, &req); taskErr != nil {
+		return taskErr
 	}
 
 	prompt = req.Prompt
@@ -295,12 +306,16 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 		return createTaskError(err, "invalid_request", http.StatusBadRequest, true)
 	}
 
-	if taskErr := validatePrompt(req.Prompt); taskErr != nil {
-		return taskErr
+	if !common.GetContextKeyBool(c, constant.ContextKeyTaskPromptValidated) {
+		if taskErr := validatePrompt(req.Prompt); taskErr != nil {
+			return taskErr
+		}
 	}
 
-	if taskErr := validateTaskDurationBounds(req); taskErr != nil {
-		return taskErr
+	if !common.GetContextKeyBool(c, constant.ContextKeyTaskDurationValidated) {
+		if taskErr := validateTaskDurationBounds(req); taskErr != nil {
+			return taskErr
+		}
 	}
 
 	if len(req.Images) == 0 && strings.TrimSpace(req.Image) != "" {

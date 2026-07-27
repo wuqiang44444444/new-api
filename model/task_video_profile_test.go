@@ -25,6 +25,9 @@ func TestInitTaskFreezesDoubaoVideoProfile(t *testing.T) {
 			info := &relaycommon.RelayInfo{
 				ChannelMeta: &relaycommon.ChannelMeta{
 					ChannelType: constant.ChannelTypeDoubaoVideo,
+					ChannelSetting: dto.ChannelSettings{
+						Proxy: "http://snapshot-proxy.example",
+					},
 					ChannelOtherSettings: dto.ChannelOtherSettings{
 						VideoUpstreamProfile: test.profile,
 					},
@@ -34,8 +37,46 @@ func TestInitTaskFreezesDoubaoVideoProfile(t *testing.T) {
 			task := InitTask(constant.TaskPlatform("doubao-video"), info)
 
 			assert.Equal(t, test.want, task.PrivateData.VideoUpstreamProfile)
+			assert.Equal(t, "http://snapshot-proxy.example", task.PrivateData.VideoUpstreamProxy)
 		})
 	}
+}
+
+func TestFrozenVideoTaskChannelUsesOnlyTaskSnapshot(t *testing.T) {
+	task := &Task{
+		ChannelId:      19,
+		Platform:       constant.TaskPlatform("37"),
+		ClientProtocol: TaskClientProtocolOpenAIVideos,
+		PrivateData: TaskPrivateData{
+			Key:                            "frozen-key",
+			VideoUpstreamQueryBaseURL:      "https://frozen.example",
+			VideoUpstreamQueryPathTemplate: "/tasks/{task_id}",
+			VideoUpstreamProxy:             "http://frozen-proxy.example",
+			VideoUpstreamProfile:           dto.VideoUpstreamProfileThirdPartyRelay,
+		},
+	}
+
+	channel, ok := FrozenVideoTaskChannel(task)
+
+	assert.True(t, ok)
+	assert.Equal(t, 37, channel.Type)
+	assert.Equal(t, "frozen-key", channel.Key)
+	assert.Equal(t, "https://frozen.example", channel.GetBaseURL())
+	assert.Equal(t, "http://frozen-proxy.example", channel.GetSetting().Proxy)
+	assert.Equal(t, dto.VideoUpstreamProfileThirdPartyRelay, channel.GetOtherSettings().VideoUpstreamProfile)
+}
+
+func TestFrozenVideoTaskChannelFailsClosedWhenConnectionSnapshotIsIncomplete(t *testing.T) {
+	task := &Task{
+		Platform:       constant.TaskPlatform("37"),
+		ClientProtocol: TaskClientProtocolOpenAIVideos,
+		PrivateData:    TaskPrivateData{Key: "frozen-key"},
+	}
+
+	channel, ok := FrozenVideoTaskChannel(task)
+
+	assert.False(t, ok)
+	assert.Nil(t, channel)
 }
 
 // TestInitTaskFreezesDoubaoVideoQuerySnapshot 验证第三方协议下查询根地址与路径模板被冻结为快照（方案 §7）。

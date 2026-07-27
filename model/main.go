@@ -178,6 +178,8 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, common.DatabaseType, error)
 	return db, common.DatabaseTypeSQLite, err
 }
 
+var skipOfficialAssetCredentialMigrationGuard bool
+
 func InitDB() (err error) {
 	db, dbType, err := chooseDB("SQL_DSN", false)
 	if err == nil {
@@ -217,6 +219,14 @@ func InitDB() (err error) {
 		common.FatalLog(err)
 	}
 	return err
+}
+
+func InitDBForOfficialAssetCredentialMigration() error {
+	skipOfficialAssetCredentialMigrationGuard = true
+	defer func() {
+		skipOfficialAssetCredentialMigrationGuard = false
+	}()
+	return InitDB()
 }
 
 func InitLogDB() (err error) {
@@ -267,6 +277,9 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
+	if err := migrateSQLiteVerificationTokenHash(); err != nil {
+		return err
+	}
 
 	err := DB.AutoMigrate(
 		&Channel{},
@@ -284,6 +297,7 @@ func migrateDB() error {
 		&TopUp{},
 		&QuotaData{},
 		&Task{},
+		&TaskCreateIdempotency{},
 		&Model{},
 		&Vendor{},
 		&PrefillGroup{},
@@ -300,10 +314,30 @@ func migrateDB() error {
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
+		&Asset{},
+		&AssetBinding{},
+		&AssetGroupBinding{},
+		&AssetOwnershipClaim{},
+		&AssetGroupOwnershipClaim{},
+		&AssetReconciliationFinding{},
+		&ConsentPolicy{},
+		&RealPersonAuthorization{},
+		&RealPersonVerificationSession{},
+		&AssetOperationJob{},
+		&AssetCreateIdempotency{},
+		&ChannelAssetCredential{},
 		&CasbinRule{},
 		&AuthzRole{},
 	)
 	if err != nil {
+		return err
+	}
+	if !skipOfficialAssetCredentialMigrationGuard {
+		if err := validateOfficialAssetCredentialMigration(); err != nil {
+			return err
+		}
+	}
+	if err := migrateEmptyAssetReceiptHashes(); err != nil {
 		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
@@ -325,6 +359,9 @@ func migrateDB() error {
 }
 
 func migrateDBFast() error {
+	if err := migrateSQLiteVerificationTokenHash(); err != nil {
+		return err
+	}
 
 	var wg sync.WaitGroup
 
@@ -347,6 +384,7 @@ func migrateDBFast() error {
 		{&TopUp{}, "TopUp"},
 		{&QuotaData{}, "QuotaData"},
 		{&Task{}, "Task"},
+		{&TaskCreateIdempotency{}, "TaskCreateIdempotency"},
 		{&Model{}, "Model"},
 		{&Vendor{}, "Vendor"},
 		{&PrefillGroup{}, "PrefillGroup"},
@@ -363,6 +401,18 @@ func migrateDBFast() error {
 		{&SystemInstance{}, "SystemInstance"},
 		{&SystemTask{}, "SystemTask"},
 		{&SystemTaskLock{}, "SystemTaskLock"},
+		{&Asset{}, "Asset"},
+		{&AssetBinding{}, "AssetBinding"},
+		{&AssetGroupBinding{}, "AssetGroupBinding"},
+		{&AssetOwnershipClaim{}, "AssetOwnershipClaim"},
+		{&AssetGroupOwnershipClaim{}, "AssetGroupOwnershipClaim"},
+		{&AssetReconciliationFinding{}, "AssetReconciliationFinding"},
+		{&ConsentPolicy{}, "ConsentPolicy"},
+		{&RealPersonAuthorization{}, "RealPersonAuthorization"},
+		{&RealPersonVerificationSession{}, "RealPersonVerificationSession"},
+		{&AssetOperationJob{}, "AssetOperationJob"},
+		{&AssetCreateIdempotency{}, "AssetCreateIdempotency"},
+		{&ChannelAssetCredential{}, "ChannelAssetCredential"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
@@ -386,6 +436,14 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if !skipOfficialAssetCredentialMigrationGuard {
+		if err := validateOfficialAssetCredentialMigration(); err != nil {
+			return err
+		}
+	}
+	if err := migrateEmptyAssetReceiptHashes(); err != nil {
+		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err

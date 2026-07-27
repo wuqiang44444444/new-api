@@ -18,15 +18,19 @@ import (
 )
 
 type taskPollingKeyCaptureAdaptor struct {
-	mu   sync.Mutex
-	keys []string
+	mu      sync.Mutex
+	keys    []string
+	bases   []string
+	proxies []string
 }
 
 func (a *taskPollingKeyCaptureAdaptor) Init(_ *relaycommon.RelayInfo) {}
 
-func (a *taskPollingKeyCaptureAdaptor) FetchTask(_ string, key string, body map[string]any, _ string) (*http.Response, error) {
+func (a *taskPollingKeyCaptureAdaptor) FetchTask(baseURL string, key string, body map[string]any, proxy string) (*http.Response, error) {
 	a.mu.Lock()
 	a.keys = append(a.keys, key)
+	a.bases = append(a.bases, baseURL)
+	a.proxies = append(a.proxies, proxy)
 	a.mu.Unlock()
 
 	responseBody, err := common.Marshal(dto.TaskResponse[model.Task]{
@@ -44,6 +48,12 @@ func (a *taskPollingKeyCaptureAdaptor) FetchTask(_ string, key string, body map[
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(bytes.NewReader(responseBody)),
 	}, nil
+}
+
+func (a *taskPollingKeyCaptureAdaptor) fetchedConnections() ([]string, []string, []string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.keys...), append([]string(nil), a.bases...), append([]string(nil), a.proxies...)
 }
 
 func (a *taskPollingKeyCaptureAdaptor) ParseTaskResult([]byte) (*relaycommon.TaskInfo, error) {
@@ -115,4 +125,33 @@ func TestUpdateVideoTasksFallsBackToChannelKeyWhenNoSnapshot(t *testing.T) {
 	keys := adaptor.fetchedKeys()
 	require.Len(t, keys, 1)
 	assert.Equal(t, "sk-test", keys[0])
+}
+
+func TestUpdateVideoTasksUsesFrozenConnectionAfterChannelDeletion(t *testing.T) {
+	truncate(t)
+
+	const channelID = 407
+	task := seedPollingTask(t, channelID, "task_public_deleted_channel", "upstream_deleted_channel")
+	task.Platform = constant.TaskPlatform("50")
+	task.ClientProtocol = model.TaskClientProtocolOpenAIVideos
+	task.PrivateData.Key = "frozen-key"
+	task.PrivateData.VideoUpstreamQueryBaseURL = "https://frozen.example"
+	task.PrivateData.VideoUpstreamProxy = "http://frozen-proxy.example"
+	require.NoError(t, model.DB.Save(task).Error)
+
+	adaptor := &taskPollingKeyCaptureAdaptor{}
+	previousFactory := GetTaskAdaptorFunc
+	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return adaptor }
+	t.Cleanup(func() { GetTaskAdaptorFunc = previousFactory })
+
+	require.NoError(t, UpdateVideoTasks(context.Background(), task.Platform, map[int][]string{
+		channelID: {task.GetUpstreamTaskID()},
+	}, map[string]*model.Task{
+		task.GetUpstreamTaskID(): task,
+	}))
+
+	keys, bases, proxies := adaptor.fetchedConnections()
+	assert.Equal(t, []string{"frozen-key"}, keys)
+	assert.Equal(t, []string{"https://frozen.example"}, bases)
+	assert.Equal(t, []string{"http://frozen-proxy.example"}, proxies)
 }

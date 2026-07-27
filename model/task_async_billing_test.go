@@ -54,3 +54,22 @@ func TestAttachAsyncTaskBillingSkipsNonTieredTasks(t *testing.T) {
 
 	assert.Nil(t, privateData.AsyncBilling, "non-tiered tasks must keep the legacy billing path")
 }
+
+func TestAttachAsyncTaskBillingIncludesProtocolVideoTasks(t *testing.T) {
+	privateData := TaskPrivateData{BillingContext: &TaskBillingContext{
+		OriginModelName: "video-model",
+		PerCallBilling:  true,
+	}}
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "video-model",
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{
+			ClientProtocol: TaskClientProtocolOpenAIVideos,
+		},
+	}
+
+	AttachAsyncTaskBilling(&privateData, info, 500)
+
+	require.NotNil(t, privateData.AsyncBilling)
+	assert.Equal(t, TaskBillingStatePending, privateData.AsyncBilling.State)
+	assert.True(t, privateData.BillingContext.PerCallBilling)
+}

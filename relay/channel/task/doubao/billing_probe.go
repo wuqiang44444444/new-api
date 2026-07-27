@@ -9,6 +9,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const modelArkIntelligentDurationBillingSeconds = 15
+
 // BuildTaskBillingProbe derives expression inputs from the same typed payload
 // sent upstream. A video input only counts when its URL is non-empty, so an
 // empty placeholder cannot select a cheaper pricing tier.
@@ -42,6 +44,12 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 	durationSeconds := 0
 	if payload.Duration != nil {
 		durationSeconds = int(*payload.Duration)
+	}
+	// ModelArk uses -1 for intelligent duration. Pre-consume against the
+	// provider's maximum possible duration; terminal usage later settles the
+	// actual charge.
+	if durationSeconds == -1 {
+		durationSeconds = modelArkIntelligentDurationBillingSeconds
 	}
 	if durationSeconds < 0 || durationSeconds > common.MaxTaskDurationSeconds {
 		return nil, fmt.Errorf("duration_seconds must be between 0 and %d", common.MaxTaskDurationSeconds)

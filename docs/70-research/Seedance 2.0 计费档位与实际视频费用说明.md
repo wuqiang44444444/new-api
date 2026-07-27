@@ -145,4 +145,4 @@ BytePlus 官方定价页确认了这组单价和单条视频示例，但没有�
 - BytePlus ModelArk：[Pricing](https://docs.byteplus.com/en/docs/ModelArk/1544106)，价格与示例核对日期：2026-07-17；页面标注最近更新：2026-07-13。
 - BytePlus ModelArk：[Seedance 2.0 API Reference](https://docs.byteplus.com/en/docs/modelark/1520757)。
 - 本仓库运维定稿：[Seedance 2.0 三渠道价格与计费表达式](../40-operations/Seedance%202.0%20三渠道价格与计费表达式.md)。
-- 本仓库计费实测：[Seedance 2.0 按量计费方案](../80-dev/2026-07-17-Seedance按量计费usage回填方案.md)。
+- 当前配置与计费口径：[Seedance 2.0 三渠道价格与计费表达式](<../40-operations/Seedance%202.0%20三渠道价格与计费表达式.md>)；历史实测记录：[Seedance 2.0 按量计费方案](../99-archive/2026-07-17-Seedance按量计费usage回填方案.md)。

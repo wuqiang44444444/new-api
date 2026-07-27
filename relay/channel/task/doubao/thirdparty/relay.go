@@ -42,9 +42,9 @@ type relayCreateRequest struct {
 	EndImage        string   `json:"end_image,omitempty"`
 	ReferenceImages []string `json:"reference_images,omitempty"`
 	DurationSeconds *int     `json:"duration_seconds,omitempty"`
-	GenerateAudio   *bool    `json:"generate_audio,omitempty"`
+	WithAudio       *bool    `json:"with_audio,omitempty"`
 	Resolution      string   `json:"resolution,omitempty"`
-	Ratio           string   `json:"ratio,omitempty"`
+	AspectRatio     string   `json:"aspect_ratio,omitempty"`
 	Seed            *int     `json:"seed,omitempty"`
 	CameraFixed     *bool    `json:"camera_fixed,omitempty"`
 	Watermark       *bool    `json:"watermark,omitempty"`
@@ -67,12 +67,17 @@ func RelayCreateRequest(body []byte) ([]byte, error) {
 		InputMode:       "text",
 		ControlMode:     "none",
 		DurationSeconds: input.Duration,
-		GenerateAudio:   input.GenerateAudio,
+		WithAudio:       input.GenerateAudio,
 		Resolution:      input.Resolution,
-		Ratio:           input.Ratio,
+		AspectRatio:     input.Ratio,
 		Seed:            input.Seed,
 		CameraFixed:     input.CameraFixed,
 		Watermark:       input.Watermark,
+	}
+	if output.Model == "doubao-seedance-2-0-260128" {
+		output.Seed = nil
+		output.CameraFixed = nil
+		output.Watermark = nil
 	}
 
 	var firstFrameImages []string

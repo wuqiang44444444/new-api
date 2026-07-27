@@ -71,6 +71,12 @@ export const channelSchema = z.object({
     multi_key_mode: 'random',
   }),
   settings: z.string().default('{}'), // other_settings JSON
+  asset_credential_status: z
+    .object({
+      configured: z.boolean(),
+      access_key_id_hint: z.string().optional(),
+    })
+    .optional(),
 })
 
 export type Channel = z.infer<typeof channelSchema>
@@ -107,6 +113,15 @@ export interface ChannelOtherSettings {
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
   advanced_custom?: AdvancedCustomConfig
+  asset_upstream_profile?:
+    | 'none'
+    | 'ark_assets'
+    | 'relay_assets'
+    | 'joycreator_assets'
+    | 'official_action_assets'
+  asset_min_url_ttl_seconds?: number
+  asset_provider_project?: string
+  asset_region?: string
 }
 
 export interface AdvancedCustomConfig {
@@ -374,4 +389,14 @@ export interface AddChannelRequest {
   multi_key_mode?: 'random' | 'polling'
   batch_add_set_key_prefix_2_name?: boolean
   channel: Partial<Channel>
+  asset_credential?: ChannelAssetCredentialInput
+}
+
+export interface ChannelAssetCredentialInput {
+  access_key_id: string
+  secret_access_key: string
+}
+
+export type UpdateChannelRequest = Partial<Channel> & {
+  asset_credential?: ChannelAssetCredentialInput
 }

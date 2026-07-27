@@ -17,6 +17,17 @@ func ApplyTaskBillingTarget(task *Task, targetQuota int) (bool, int, error) {
 	}
 
 	var locked Task
+	requestedOperation := ""
+	requestedReason := ""
+	requestedTargetQuota := (*int)(nil)
+	if task.PrivateData.AsyncBilling != nil {
+		requestedOperation = task.PrivateData.AsyncBilling.Operation
+		requestedReason = task.PrivateData.AsyncBilling.Reason
+		if task.PrivateData.AsyncBilling.TargetQuota != nil {
+			target := *task.PrivateData.AsyncBilling.TargetQuota
+			requestedTargetQuota = &target
+		}
+	}
 	tokenKey := ""
 	delta := 0
 	applied := false
@@ -30,6 +41,16 @@ func ApplyTaskBillingTarget(task *Task, targetQuota int) (bool, int, error) {
 		}
 		if async.State == TaskBillingStateSettled {
 			return nil
+		}
+		if requestedOperation != "" {
+			async.Operation = requestedOperation
+		}
+		if requestedReason != "" {
+			async.Reason = requestedReason
+		}
+		if requestedTargetQuota != nil {
+			target := *requestedTargetQuota
+			async.TargetQuota = &target
 		}
 
 		delta = targetQuota - locked.Quota

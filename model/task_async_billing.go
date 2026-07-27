@@ -33,31 +33,48 @@ type TaskAsyncBillingContext struct {
 }
 
 func AttachAsyncTaskBilling(privateData *TaskPrivateData, info *relaycommon.RelayInfo, quota int) {
-	// 仅 tiered_expr 异步任务启用表达式计费状态机；普通任务返回 nil，沿用原有结算/退款路径，
-	// 避免改变 Doubao/Suno 等现有渠道的预扣与结算行为（见方案 §5.2 非表达式模式继续原流程）。
-	if info.TieredBillingSnapshot == nil {
+	if privateData == nil || info == nil {
+		return
+	}
+	clientProtocol := ""
+	if info.TaskRelayInfo != nil {
+		clientProtocol = info.TaskRelayInfo.ClientProtocol
+	}
+	// 所有北向视频协议都进入同一持久化计费状态机。非视频异步任务保持原行为；
+	// tiered_expr 任务即使没有协议标记，也必须继续使用表达式结算状态机。
+	if info.TieredBillingSnapshot == nil && clientProtocol == "" {
 		return
 	}
 	if privateData.BillingContext == nil {
 		privateData.BillingContext = &TaskBillingContext{OriginModelName: info.OriginModelName}
 	}
 	// tiered_expr 任务以表达式价格为唯一事实：不按次计费，也不再叠加内置倍率。
-	privateData.BillingContext.PerCallBilling = false
+	// 普通视频任务保留原有 PerCallBilling 语义，只增加持久化幂等门闩。
+	if info.TieredBillingSnapshot != nil {
+		privateData.BillingContext.PerCallBilling = false
+	}
 	state := TaskBillingStatePending
 	if quota == 0 {
 		state = TaskBillingStateSettled
 	}
 	// 仅持久化计费探针的 Body（_task 字段），不落库请求头，避免 Authorization/Cookie 泄露。
 	// 结算时表达式只读 _task body 字段（见方案 §5.4），不依赖 Headers。
-	probe := &billingexpr.RequestInput{}
-	if info.BillingRequestInput != nil {
-		probe.Body = append([]byte(nil), info.BillingRequestInput.Body...)
+	var probe *billingexpr.RequestInput
+	if info.TieredBillingSnapshot != nil {
+		probe = &billingexpr.RequestInput{}
+		if info.BillingRequestInput != nil {
+			probe.Body = append([]byte(nil), info.BillingRequestInput.Body...)
+		}
+	}
+	estimatedTokens := 0
+	if info.TieredBillingSnapshot != nil {
+		estimatedTokens = info.TieredBillingSnapshot.EstimatedCompletionTokens
 	}
 	privateData.AsyncBilling = &TaskAsyncBillingContext{
 		TieredSnapshot:  info.TieredBillingSnapshot,
 		BillingProbe:    probe,
 		State:           state,
-		EstimatedTokens: info.TieredBillingSnapshot.EstimatedCompletionTokens,
+		EstimatedTokens: estimatedTokens,
 	}
 }
 
@@ -91,7 +108,7 @@ func GetTerminalTasksPendingBilling(now int64, limit int) []*Task {
 	}
 	pendingStates := []TaskBillingState{TaskBillingStatePending, TaskBillingStateFailed, TaskBillingStateDebt}
 	// status 与 billing_state 均为普通列，三库行为一致，无需方言分支。
-	terminalStatuses := []string{TaskStatusSuccess, TaskStatusFailure}
+	terminalStatuses := TerminalTaskStatuses()
 	tasks := make([]*Task, 0, limit)
 	batchSize := max(limit*5, 100)
 	lastID := int64(0)

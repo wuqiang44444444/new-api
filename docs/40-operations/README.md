@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-06-29
+last-reviewed: 2026-07-26
 ---
 
 # 40-operations — 目标说明
@@ -11,6 +11,13 @@ last-reviewed: 2026-06-29
 
 ## 放什么
 环境配置、监控告警、运维手册（runbook）、故障与排障记录。
+
+## 当前文档
+
+- [环境配置（反代转发头与 ServerAddress）](环境配置.md)
+- [Seedance 视频渠道与计费配置手册](Seedance视频渠道与计费配置手册.md)
+- [Seedance 2.0 三渠道价格与计费表达式](<Seedance 2.0 三渠道价格与计费表达式.md>)
+- [素材代理与真人授权配置手册](素材代理与真人授权配置手册.md)
 
 ## 不放什么
 - 本地开发命令 -> 30-engineering/命令清单.md

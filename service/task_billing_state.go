@@ -67,6 +67,10 @@ func refundTaskWithReconcile(ctx context.Context, task *model.Task, reason strin
 	if async.State == model.TaskBillingStateSettled {
 		return
 	}
+	async.Operation = "refund"
+	async.Reason = reason
+	targetQuota := 0
+	async.TargetQuota = &targetQuota
 	quota := task.Quota
 	applied, _, err := model.ApplyTaskBillingTarget(task, 0)
 	if err != nil {
@@ -101,6 +105,9 @@ func recalculateTaskQuotaWithReconcile(ctx context.Context, task *model.Task, ac
 	}
 	preConsumedQuota := task.Quota
 	quotaDelta := actualQuota - preConsumedQuota
+	async.Operation = "settle"
+	async.Reason = reason
+	async.TargetQuota = &actualQuota
 	if async.TieredSnapshot != nil && quotaDelta > 0 {
 		for _, clamp := range clamps {
 			if clamp != nil {

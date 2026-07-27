@@ -5,8 +5,8 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRONTEND_DIR="$ROOT_DIR/web"
 LOG_DIR="$ROOT_DIR/logs"
-FRONTEND_PORT=3100
-BACKEND_PORT=8100
+FRONTEND_PORT="${FRONTEND_PORT:-3100}"
+BACKEND_PORT="${BACKEND_PORT:-8100}"
 FRONTEND_LOG="$LOG_DIR/frontend.log"
 BACKEND_LOG="$LOG_DIR/backend.log"
 FRONTEND_PID=""
@@ -127,7 +127,7 @@ mkdir -p "$LOG_DIR"
 echo "正在启动后端，端口：$BACKEND_PORT"
 (
   cd "$ROOT_DIR"
-  exec env PORT="$BACKEND_PORT" go run main.go
+  exec env PORT="$BACKEND_PORT" go run .
 ) >>"$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
 

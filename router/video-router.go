@@ -16,24 +16,59 @@ func SetVideoRouter(router *gin.Engine) {
 		videoProxyRouter.GET("/videos/:task_id/content", controller.VideoProxy)
 	}
 
-	videoV1Router := router.Group("/v1")
-	videoV1Router.Use(middleware.RouteTag("relay"))
-	videoV1Router.Use(middleware.TokenAuth(), middleware.Distribute())
+	legacyVideoRouter := router.Group("/v1")
+	legacyVideoRouter.Use(middleware.RouteTag("relay"))
+	legacyVideoRouter.Use(middleware.TokenAuth(), middleware.TaskClientProtocol("platform_video"), middleware.AssetRouteConstraint(), middleware.Distribute())
 	{
-		videoV1Router.POST("/video/generations", controller.RelayTask)
-		videoV1Router.GET("/video/generations/:task_id", controller.RelayTaskFetch)
-		videoV1Router.POST("/videos/:video_id/remix", controller.RelayTask)
+		legacyVideoRouter.POST("/video/generations", controller.RelayTask)
+		legacyVideoRouter.GET("/video/generations/:task_id", controller.RelayTaskFetch)
 	}
-	// openai compatible API video routes
-	// docs: https://platform.openai.com/docs/api-reference/videos/create
+
+	openAIVideoCreateRouter := router.Group("/v1")
+	openAIVideoCreateRouter.Use(middleware.RouteTag("relay"))
+	openAIVideoCreateRouter.Use(middleware.TokenAuth(), middleware.TaskClientProtocol("openai_videos"), middleware.TaskCreateResponseContract(), middleware.TaskCreateIdempotency(), middleware.AssetRouteConstraint(), middleware.Distribute())
 	{
-		videoV1Router.POST("/videos", controller.RelayTask)
-		videoV1Router.GET("/videos/:task_id", controller.RelayTaskFetch)
+		openAIVideoCreateRouter.POST("/videos", controller.RelayTask)
+		openAIVideoCreateRouter.POST("/videos/:video_id/remix", controller.RelayTask)
+	}
+
+	openAIVideoReadRouter := router.Group("/v1")
+	openAIVideoReadRouter.Use(middleware.RouteTag("relay"))
+	openAIVideoReadRouter.Use(middleware.TokenAuth(), middleware.TaskClientProtocol("openai_videos"))
+	{
+		openAIVideoReadRouter.GET("/videos", controller.OpenAIVideoList)
+		openAIVideoReadRouter.GET("/videos/:task_id", controller.OpenAIVideoGet)
+		openAIVideoReadRouter.DELETE("/videos/:task_id", controller.OpenAIVideoDelete)
+	}
+
+	modelArkVideoCreateRouter := router.Group("/api/v3")
+	modelArkVideoCreateRouter.Use(middleware.RouteTag("relay"))
+	modelArkVideoCreateRouter.Use(
+		middleware.TokenAuth(),
+		middleware.TaskClientProtocol("modelark_v3"),
+		middleware.TaskCreateResponseContract(),
+		middleware.TaskCreateIdempotency(),
+		middleware.ModelArkVideoCreateConvert(),
+		middleware.AssetRouteConstraint(),
+		middleware.ModelArkVideoChannelConstraint(),
+		middleware.Distribute(),
+	)
+	{
+		modelArkVideoCreateRouter.POST("/contents/generations/tasks", controller.RelayTask)
+	}
+
+	modelArkVideoReadRouter := router.Group("/api/v3")
+	modelArkVideoReadRouter.Use(middleware.RouteTag("relay"))
+	modelArkVideoReadRouter.Use(middleware.TokenAuth(), middleware.TaskClientProtocol("modelark_v3"))
+	{
+		modelArkVideoReadRouter.GET("/contents/generations/tasks", controller.ModelArkVideoList)
+		modelArkVideoReadRouter.GET("/contents/generations/tasks/:task_id", controller.ModelArkVideoGet)
+		modelArkVideoReadRouter.DELETE("/contents/generations/tasks/:task_id", controller.ModelArkVideoDelete)
 	}
 
 	klingV1Router := router.Group("/kling/v1")
 	klingV1Router.Use(middleware.RouteTag("relay"))
-	klingV1Router.Use(middleware.KlingRequestConvert(), middleware.TokenAuth(), middleware.Distribute())
+	klingV1Router.Use(middleware.KlingRequestConvert(), middleware.TokenAuth(), middleware.TaskClientProtocol("platform_video"), middleware.Distribute())
 	{
 		klingV1Router.POST("/videos/text2video", controller.RelayTask)
 		klingV1Router.POST("/videos/image2video", controller.RelayTask)
@@ -44,7 +79,7 @@ func SetVideoRouter(router *gin.Engine) {
 	// Jimeng official API routes - direct mapping to official API format
 	jimengOfficialGroup := router.Group("jimeng")
 	jimengOfficialGroup.Use(middleware.RouteTag("relay"))
-	jimengOfficialGroup.Use(middleware.JimengRequestConvert(), middleware.TokenAuth(), middleware.Distribute())
+	jimengOfficialGroup.Use(middleware.JimengRequestConvert(), middleware.TokenAuth(), middleware.TaskClientProtocol("platform_video"), middleware.Distribute())
 	{
 		// Maps to: /?Action=CVSync2AsyncSubmitTask&Version=2022-08-31 and /?Action=CVSync2AsyncGetResult&Version=2022-08-31
 		jimengOfficialGroup.POST("/", controller.RelayTask)

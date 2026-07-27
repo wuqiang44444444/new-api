@@ -1,9 +1,25 @@
 package service
 
 import (
+	"fmt"
+
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 )
+
+func taskVideoProviderChannel(task *model.Task, current *model.Channel) (*model.Channel, error) {
+	if model.TaskUsesFrozenVideoConnection(task) {
+		channel, ok := model.FrozenVideoTaskChannel(task)
+		if !ok {
+			return nil, fmt.Errorf("frozen video connection is unavailable")
+		}
+		return channel, nil
+	}
+	if current == nil {
+		return nil, fmt.Errorf("provider channel is unavailable")
+	}
+	return current, nil
+}
 
 // taskVideoUpstreamProfile returns the protocol frozen when the task was
 // created. Historical tasks without a snapshot fall back to the channel's

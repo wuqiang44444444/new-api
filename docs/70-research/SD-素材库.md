@@ -1,0 +1,174 @@
+---
+status: current
+owner: Dev Team
+last-reviewed: 2026-07-21
+---
+
+# 素材库
+
+用于素材组增改查、素材增删改查，以及上传素材后的状态查询。
+
+## 概述
+
+- **接口范围**：`https://www.moxing.pro/joycreator/openApi/v1/asset`
+- **鉴权**：`Authorization: Bearer sk-...`
+- **说明**：素材库接口独立于统一 `/v1/*` 网关路径，当前用于 JoyCreator TOB 素材组与素材管理
+
+## 关键约定
+
+- 接口返回中的 `id` 为后续调用用的主键，不是本地数据库自增 id
+- 素材组详情返回的 `groupId` 与素材详情返回的 `assetId` 为上游业务标识，可用于排障和对账
+- 创建素材后通常需要轮询 `/asset/detail/:id`，直到 `status=1` 且拿到 `vendorUrl`
+- 创建图片素材时，URL 支持 HTTP/HTTPS 链接或 base64 图片；base64 会先转存为资源 URL 后再提交上游，素材记录不保存原始 base64
+
+## 接口清单
+
+| 能力 | 方法 | 路径 | 说明 |
+|------|------|------|------|
+| 创建素材组 | POST | `/joycreator/openApi/v1/asset/group/create` | 创建素材组，返回对外使用的 id 与 groupId。 |
+| 更新素材组 | POST | `/joycreator/openApi/v1/asset/group/:id` | 按接口返回的 id 更新素材组名称和描述。 |
+| 查询素材组 | POST | `/joycreator/openApi/v1/asset/group/detail/:id` | 查询素材组详情。 |
+| 创建素材 | POST | `/joycreator/openApi/v1/asset/create` | 上传素材记录，groupId 使用素材组接口返回的 id。 |
+| 更新素材 | POST | `/joycreator/openApi/v1/asset/:id` | 更新素材名称。 |
+| 删除素材 | DELETE | `/joycreator/openApi/v1/asset/:id` | 删除素材。 |
+| 查询素材 | POST | `/joycreator/openApi/v1/asset/detail/:id` | 查询素材处理状态和 vendorUrl。 |
+
+## 请求参数
+
+### 创建素材组
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `Name` | string | 是 | 素材组名称，最长 64 字符。 |
+| `Description` | string | 否 | 素材组描述，最长 300 字符。 |
+| `GroupType` | string | 否 | 当前仅支持 `AIGC`。 |
+
+### 创建素材
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `groupId` | string / number | 是 | 使用创建素材组接口返回的 id。 |
+| `URL` | string | 是 | 素材地址。`AssetType=Image` 时支持 HTTP(S) URL、`data:image/...;base64,...` 或裸 base64；Video/Audio 仍需 HTTP(S) URL。 |
+| `AssetType` | string | 是 | 支持 `Image` / `Video` / `Audio`。 |
+| `Name` | string | 否 | 素材名称，最长 64 字符。 |
+
+### 更新素材组
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `Name` | string | 二选一 | 至少传一个字段。 |
+| `Description` | string | 二选一 | 至少传一个字段。 |
+
+### 更新素材
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `Name` | string | 是 | 更新后的素材名称。 |
+
+## 调用示例
+
+### 创建素材组
+
+```bash
+curl -X POST 'https://www.moxing.pro/joycreator/openApi/v1/asset/group/create' \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -d '{
+    "Name": "tenant-A-group",
+    "Description": "租户A的素材组",
+    "GroupType": "AIGC"
+  }'
+```
+
+### 创建素材
+
+```bash
+curl -X POST 'https://www.moxing.pro/joycreator/openApi/v1/asset/create' \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -d '{
+    "groupId": 34,
+    "URL": "https://example.com/material.jpg",
+    "AssetType": "Image",
+    "Name": "test-face"
+  }'
+```
+
+### 查询素材详情
+
+```bash
+curl -X POST 'https://www.moxing.pro/joycreator/openApi/v1/asset/detail/52' \
+  -H 'Authorization: Bearer sk-xxxx'
+```
+
+## 响应示例
+
+### 素材组详情响应
+
+```json
+{
+  "requestId": "2026051910061719312600056043374",
+  "error": null,
+  "result": {
+    "group": {
+      "id": "34",
+      "groupId": "group-20260519100444-99fv8",
+      "groupName": "tenant-A-group-updated",
+      "groupDesc": "更新后的素材组描述",
+      "groupType": "AIGC",
+      "provider": "joycreator",
+      "status": 1
+    }
+  }
+}
+```
+
+### 素材状态说明
+
+创建素材成功后，建议轮询素材详情接口，直到 `status` 进入终态。
+
+| 字段 | 说明 |
+|------|------|
+| `status` | 本地状态：0 处理中，1 成功，2 失败。 |
+| `vendorStatus` | 上游原始状态，例如 `Processing`、`Active`、`Failed`。 |
+| `vendorUrl` | 上游处理完成后的可用素材地址。 |
+| `errorMsg` | 失败原因；仅失败时有值。 |
+
+### 素材详情响应
+
+```json
+{
+  "requestId": "2026051910300012345600000000001",
+  "error": null,
+  "result": {
+    "asset": {
+      "id": "52",
+      "assetId": "asset-20260519102959-abcd1",
+      "groupId": "group-20260519100444-99fv8",
+      "groupName": "tenant-A-group-updated",
+      "assetName": "test-face",
+      "assetType": "Image",
+      "assetUrl": "https://example.com/material.jpg",
+      "vendorUrl": "https://resource.moxing.pro/image/xxx.jpg",
+      "vendorStatus": "Active",
+      "status": 1,
+      "errorMsg": ""
+    }
+  }
+}
+```
+
+## 错误响应
+
+素材库接口统一返回 `requestId` / `error` / `result` 结构；排查时优先记录 `requestId`。
+
+```json
+{
+  "requestId": "2026051910165121091900099033045",
+  "error": {
+    "code": 500,
+    "message": "素材创建失败：任务执行失败，请稍后重试"
+  },
+  "result": {}
+}
+```

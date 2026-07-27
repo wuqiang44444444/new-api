@@ -573,12 +573,8 @@ func RelayTask(c *gin.Context) {
 
 	// ── 成功：结算 + 日志 + 插入任务 ──
 	if taskErr == nil {
-		if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
-			common.SysError("settle task billing error: " + settleErr.Error())
-		}
-		service.LogTaskConsumption(c, relayInfo)
-
 		task := model.InitTask(result.Platform, relayInfo)
+		attachTaskProtocolSnapshot(c, task, relayInfo)
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 		task.PrivateData.UpstreamRequestID = c.GetString(common.UpstreamRequestIdKey)
 		task.PrivateData.BillingSource = relayInfo.BillingSource
@@ -597,8 +593,22 @@ func RelayTask(c *gin.Context) {
 		task.Quota = result.Quota
 		task.Data = result.TaskData
 		task.Action = relayInfo.Action
-		if insertErr := task.Insert(); insertErr != nil {
+		idempotencyID := int64(common.GetContextKeyInt(c, constant.ContextKeyTaskIdempotencyID))
+		if journalErr := model.RecordTaskCreateUpstreamSuccess(idempotencyID, task); journalErr != nil {
+			common.SysError("record task create upstream success error: " + journalErr.Error())
+		}
+		if insertErr := model.InsertTaskWithIdempotency(task, idempotencyID); insertErr != nil {
 			common.SysError("insert task error: " + insertErr.Error())
+			setTaskCreateContractPersistenceError(c, task.ClientProtocol)
+		} else {
+			// Persist the task before final settlement/logging. If the
+			// idempotency journal was temporarily unavailable, this avoids
+			// charging a task that has no durable local record.
+			if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
+				common.SysError("settle task billing error: " + settleErr.Error())
+			}
+			service.LogTaskConsumption(c, relayInfo)
+			setTaskCreateContractResponse(c, task)
 		}
 	}
 
@@ -611,6 +621,9 @@ func RelayTask(c *gin.Context) {
 func respondTaskError(c *gin.Context, taskErr *dto.TaskError) {
 	if taskErr.StatusCode == http.StatusTooManyRequests {
 		taskErr.Message = "当前分组上游负载已饱和，请稍后再试"
+	}
+	if respondTaskProtocolError(c, taskErr) {
+		return
 	}
 	c.JSON(taskErr.StatusCode, taskErr)
 }

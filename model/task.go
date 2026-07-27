@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql/driver"
 	"encoding/json"
+	"reflect"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -17,16 +18,16 @@ type TaskStatus string
 func (t TaskStatus) ToVideoStatus() string {
 	var status string
 	switch t {
-	case TaskStatusQueued, TaskStatusSubmitted:
+	case TaskStatusNotStart, TaskStatusQueued, TaskStatusSubmitted:
 		status = dto.VideoStatusQueued
 	case TaskStatusInProgress:
 		status = dto.VideoStatusInProgress
 	case TaskStatusSuccess:
 		status = dto.VideoStatusCompleted
-	case TaskStatusFailure:
+	case TaskStatusFailure, TaskStatusCancelled, TaskStatusExpired, TaskStatusUnknown:
 		status = dto.VideoStatusFailed
 	default:
-		status = dto.VideoStatusUnknown // Default fallback
+		status = dto.VideoStatusFailed
 	}
 	return status
 }
@@ -39,6 +40,8 @@ const (
 	TaskStatusFailure               = "FAILURE"
 	TaskStatusSuccess               = "SUCCESS"
 	TaskStatusUnknown               = "UNKNOWN"
+	TaskStatusCancelled             = "CANCELLED"
+	TaskStatusExpired               = "EXPIRED"
 )
 
 // TaskRefundLegacyCutoff separates legacy timeout tasks that intentionally
@@ -46,28 +49,34 @@ const (
 const TaskRefundLegacyCutoff int64 = 1740182400 // 2025-02-22 00:00:00 UTC
 
 type Task struct {
-	ID         int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
-	CreatedAt  int64                 `json:"created_at" gorm:"index"`
-	UpdatedAt  int64                 `json:"updated_at"`
-	TaskID     string                `json:"task_id" gorm:"type:varchar(191);index"` // 第三方id，不一定有/ song id\ Task id
-	Platform   constant.TaskPlatform `json:"platform" gorm:"type:varchar(30);index"` // 平台
-	UserId     int                   `json:"user_id" gorm:"index"`
-	Group      string                `json:"group" gorm:"type:varchar(50)"` // 修正计费用
-	ChannelId  int                   `json:"channel_id" gorm:"index"`
-	Quota      int                   `json:"quota"`
-	Action     string                `json:"action" gorm:"type:varchar(40);index"` // 任务类型, song, lyrics, description-mode
-	Status     TaskStatus            `json:"status" gorm:"type:varchar(20);index"` // 任务状态
-	FailReason string                `json:"fail_reason"`
-	SubmitTime int64                 `json:"submit_time" gorm:"index"`
-	StartTime  int64                 `json:"start_time" gorm:"index"`
-	FinishTime int64                 `json:"finish_time" gorm:"index"`
-	Progress   string                `json:"progress" gorm:"type:varchar(20);index"`
-	Properties Properties            `json:"properties" gorm:"type:json"`
-	Username   string                `json:"username,omitempty" gorm:"-"`
+	ID                      int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
+	CreatedAt               int64                 `json:"created_at" gorm:"index"`
+	UpdatedAt               int64                 `json:"updated_at"`
+	TaskID                  string                `json:"task_id" gorm:"type:varchar(191);index"` // 第三方id，不一定有/ song id\ Task id
+	Platform                constant.TaskPlatform `json:"platform" gorm:"type:varchar(30);index"` // 平台
+	UserId                  int                   `json:"user_id" gorm:"index"`
+	Group                   string                `json:"group" gorm:"type:varchar(50)"` // 修正计费用
+	ChannelId               int                   `json:"channel_id" gorm:"index"`
+	Quota                   int                   `json:"quota"`
+	Action                  string                `json:"action" gorm:"type:varchar(40);index"` // 任务类型, song, lyrics, description-mode
+	Status                  TaskStatus            `json:"status" gorm:"type:varchar(20);index"` // 任务状态
+	ClientProtocol          string                `json:"client_protocol,omitempty" gorm:"type:varchar(32);index"`
+	ClientDeletedAt         int64                 `json:"-" gorm:"bigint;index"`
+	CancellationState       string                `json:"cancellation_state,omitempty" gorm:"type:varchar(20);index"`
+	CancellationRequestedAt int64                 `json:"-" gorm:"bigint"`
+	CancellationCompletedAt int64                 `json:"-" gorm:"bigint"`
+	CancellationError       string                `json:"-" gorm:"type:text"`
+	FailReason              string                `json:"fail_reason"`
+	SubmitTime              int64                 `json:"submit_time" gorm:"index"`
+	StartTime               int64                 `json:"start_time" gorm:"index"`
+	FinishTime              int64                 `json:"finish_time" gorm:"index"`
+	Progress                string                `json:"progress" gorm:"type:varchar(20);index"`
+	Properties              Properties            `json:"properties" gorm:"type:json"`
+	Username                string                `json:"username,omitempty" gorm:"-"`
 	// 禁止返回给用户，内部可能包含key等隐私信息
 	PrivateData TaskPrivateData `json:"-" gorm:"column:private_data;type:json"`
-	// BillingState 是 AsyncBilling.State 的可索引投影列，仅 tiered_expr 待补偿任务有值；
-	// 历史任务与普通任务为空，补偿扫描据此列走索引而非全表扫 private_data。
+	// BillingState 是 AsyncBilling.State 的可索引投影列，tiered_expr 与北向视频任务有值；
+	// 其他历史任务与普通任务为空，补偿扫描据此列走索引而非全表扫 private_data。
 	BillingState TaskBillingState `json:"-" gorm:"type:varchar(20);index"`
 	Data         json.RawMessage  `json:"data" gorm:"type:json"`
 }
@@ -104,13 +113,17 @@ func (m Properties) Value() (driver.Value, error) {
 }
 
 type TaskPrivateData struct {
-	Key                            string                   `json:"key,omitempty"`
-	UpstreamTaskID                 string                   `json:"upstream_task_id,omitempty"`                   // 上游真实 task ID
-	UpstreamRequestID              string                   `json:"upstream_request_id,omitempty"`                // 上游调用追踪 ID（如 moxing request_id），仅任务创建时从响应头捕获，用于事后对账；异步轮询阶段已不可得
-	ResultURL                      string                   `json:"result_url,omitempty"`                         // 任务成功后的结果 URL（视频地址等）
-	VideoUpstreamProfile           dto.VideoUpstreamProfile `json:"video_upstream_profile,omitempty"`             // 创建时的视频协议快照
-	VideoUpstreamQueryBaseURL      string                   `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用
-	VideoUpstreamQueryPathTemplate string                   `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
+	Key                            string                    `json:"key,omitempty"`
+	UpstreamTaskID                 string                    `json:"upstream_task_id,omitempty"`                   // 上游真实 task ID
+	UpstreamRequestID              string                    `json:"upstream_request_id,omitempty"`                // 上游调用追踪 ID（如 moxing request_id），仅任务创建时从响应头捕获，用于事后对账；异步轮询阶段已不可得
+	ResultURL                      string                    `json:"result_url,omitempty"`                         // 任务成功后的结果 URL（视频地址等）
+	VideoUpstreamProfile           dto.VideoUpstreamProfile  `json:"video_upstream_profile,omitempty"`             // 创建时的视频协议快照
+	VideoUpstreamQueryBaseURL      string                    `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用
+	VideoUpstreamQueryPathTemplate string                    `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
+	VideoUpstreamProxy             string                    `json:"video_upstream_proxy,omitempty"`               // 创建时的代理快照，避免在途任务随渠道配置漂移
+	ClientRequest                  TaskClientRequestSnapshot `json:"client_request,omitempty"`
+	AssetPublicIDs                 []string                  `json:"asset_public_ids,omitempty"`
+	AssetBindingIDs                []int64                   `json:"asset_binding_ids,omitempty"`
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
 	BillingSource  string              `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
 	SubscriptionId int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
@@ -164,7 +177,7 @@ func (p *TaskPrivateData) Scan(val interface{}) error {
 }
 
 func (p TaskPrivateData) Value() (driver.Value, error) {
-	if (p == TaskPrivateData{}) {
+	if reflect.DeepEqual(p, TaskPrivateData{}) {
 		return nil, nil
 	}
 	return common.Marshal(p)
@@ -192,11 +205,24 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 			privateData.Key = relayInfo.ChannelMeta.ApiKey
 		}
 		freezeTaskVideoUpstream(&privateData, relayInfo.ChannelMeta)
+		if relayInfo.TaskRelayInfo != nil {
+			privateData.AssetPublicIDs = append([]string(nil), relayInfo.TaskRelayInfo.AssetPublicIDs...)
+			privateData.AssetBindingIDs = append([]int64(nil), relayInfo.TaskRelayInfo.AssetBindingIDs...)
+		}
 		if relayInfo.UpstreamModelName != "" {
 			properties.UpstreamModelName = relayInfo.UpstreamModelName
 		}
 		if relayInfo.OriginModelName != "" {
 			properties.OriginModelName = relayInfo.OriginModelName
+		}
+		if relayInfo.TaskRelayInfo != nil && relayInfo.TaskRelayInfo.ClientProtocol != "" {
+			if privateData.Key == "" {
+				privateData.Key = relayInfo.ChannelMeta.ApiKey
+			}
+			if privateData.VideoUpstreamQueryBaseURL == "" {
+				privateData.VideoUpstreamQueryBaseURL = relayInfo.ChannelMeta.ChannelBaseUrl
+			}
+			privateData.VideoUpstreamProxy = relayInfo.ChannelMeta.ChannelSetting.Proxy
 		}
 	}
 
@@ -307,7 +333,7 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 func GetTimedOutUnfinishedTasks(cutoffUnix int64, limit int) []*Task {
 	var tasks []*Task
 	err := DB.Where("progress != ?", "100%").
-		Where("status NOT IN ?", []string{TaskStatusFailure, TaskStatusSuccess}).
+		Where("status NOT IN ?", TerminalTaskStatuses()).
 		Where("submit_time < ?", cutoffUnix).
 		Order("submit_time").
 		Limit(limit).
@@ -344,7 +370,7 @@ func GetAllUnFinishSyncTasks(limit int) []*Task {
 	var tasks []*Task
 	var err error
 	// get all tasks progress is not 100%
-	err = DB.Where("progress != ?", "100%").Where("status != ?", TaskStatusFailure).Where("status != ?", TaskStatusSuccess).Limit(limit).Order("id").Find(&tasks).Error
+	err = DB.Where("progress != ?", "100%").Where("status NOT IN ?", TerminalTaskStatuses()).Limit(limit).Order("id").Find(&tasks).Error
 	if err != nil {
 		return nil
 	}
@@ -359,8 +385,7 @@ func HasUnfinishedSyncTasks() bool {
 	var id int64
 	err := DB.Model(&Task{}).
 		Where("progress != ?", "100%").
-		Where("status != ?", TaskStatusFailure).
-		Where("status != ?", TaskStatusSuccess).
+		Where("status NOT IN ?", TerminalTaskStatuses()).
 		Limit(1).
 		Pluck("id", &id).Error
 	return err == nil && id != 0
@@ -615,13 +640,5 @@ func TaskCountAllUserTask(userId int, queryParams SyncTaskQueryParams) int64 {
 	return total
 }
 func (t *Task) ToOpenAIVideo() *dto.OpenAIVideo {
-	openAIVideo := dto.NewOpenAIVideo()
-	openAIVideo.ID = t.TaskID
-	openAIVideo.Status = t.Status.ToVideoStatus()
-	openAIVideo.Model = t.Properties.OriginModelName
-	openAIVideo.SetProgressStr(t.Progress)
-	openAIVideo.CreatedAt = t.CreatedAt
-	openAIVideo.CompletedAt = t.UpdatedAt
-	openAIVideo.SetMetadata("url", t.GetResultURL())
-	return openAIVideo
+	return ProjectOpenAIVideo(t)
 }

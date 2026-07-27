@@ -1,14 +1,14 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-07-17
+last-reviewed: 2026-07-23
 ---
 
 # Seedance 2.0 三渠道价格与计费表达式
 
 > 给运维/商务：Seedance 2.0 在 new-api 里通过三条 DoubaoVideo 渠道接入（BytePlus 官方直连、Moxing 反代·海外官Key、Moxing 中转·海外版）。本文给出三条渠道的**官方权威价格**、**计费 token 公式**，以及**可直接配置的 tiered_expr 表达式**。
 >
-> 配置入口与操作步骤见 [Seedance 视频渠道与计费配置手册](./Seedance视频渠道与计费配置手册.md)；表达式完整语法见 [表达式计费系统设计](../../pkg/billingexpr/expr.md)；usage 回填与按 token 结算的实测结论见 [按量计费 usage 回填方案](../80-dev/2026-07-17-Seedance按量计费usage回填方案.md)。
+> 配置入口与操作步骤见 [Seedance 视频渠道与计费配置手册](./Seedance视频渠道与计费配置手册.md)；表达式完整语法见 [表达式计费系统设计](../../pkg/billingexpr/expr.md)；任务快照、usage 回填与结算边界见 [视频上游接入与异步任务架构](../20-architecture/视频上游接入与异步任务架构.md)。
 
 ## 1. 核心结论
 
@@ -121,7 +121,7 @@ param("_task.has_video_input") == true
 
 ## 6. 预扣 Token 上限（必须配，且必须覆盖最坏情况）
 
-按 token 计费的模型，必须同时配「任务预扣 Token」（系统设置 → 计费）。预扣阶段把它代入 `c` 估算冻结额度，结算时多退少补（前提：上游终态回填 usage）。
+按 token 计费的模型，必须同时配「异步任务预扣 Token 上界」。预扣阶段把它代入 `c` 估算冻结额度；终态实际费用较低时退还差额，超过预扣上界时进入 `debt`，不会自动突破上界补扣。
 
 > **⚠️ 预扣必须按"最坏情况"设，不能只按典型值。** tiered_expr 任务结算时，若实际 token 算出的费用**超过预扣**，系统不会补扣，而是把任务标记为 `debt`（欠款）待人工处理（[`task_billing_state.go:104`](../../service/task_billing_state.go#L104)：`quotaDelta > 0 → TaskBillingStateDebt`）。所以预扣上限必须覆盖该渠道可能出现的**最大 token 用量**。
 
@@ -163,11 +163,11 @@ param("_task.has_video_input") == true
 
 这里的「输入 Token」是表达式变量 `p`，不是公式中的「输入视频时长」，两者不要混淆。真正控制异步任务预扣的是同页「异步任务预扣 Token 上限」里的模型配置；Token 估算器只做费用预览，不能代替该配置。
 
-> **当前估算器限制**：§4 的 6 档表达式依赖 `param("_task.has_video_input")` 和 `param("_task.resolution")`，而当前 Token 估算器只有 `p`/`c` 输入框，不能注入这两个 `_task` 字段，因此不能仅靠上表两个数完整预览 6 档分支。实际预扣和结算会从任务请求探针读取这两个字段并正确选档；上表仍是 `p`/`c` 应采用的估算值。
+试算器提供 `_task.has_video_input` 和 `_task.resolution` 请求探针，可预览 480p/720p、1080p、4k 与有无视频输入的分支。试算值按模型保存在浏览器本地，只用于显示命中档位、USD 费用和不含用户组倍率的配额；不会写入服务器计费配置。真实预扣只读取同页独立保存的「异步任务预扣 Token 上界」。
 
 ## 7. 上线前必验
 
-1. **usage 回填**：三条渠道终态必须返回 `usage.completion_tokens`（反代透传、中转已解开回填、官方原生），否则按 token 结算退化为保持预扣。实测见 [回填方案 §10](../80-dev/2026-07-17-Seedance按量计费usage回填方案.md)。
+1. **usage 回填**：三条渠道终态必须返回 `usage.completion_tokens`（反代透传、中转归一化回填、官方原生）；缺失时回退 `total_tokens`，两者都不可用时保持原预扣。实现边界见 [视频上游接入与异步任务架构 §11](../20-architecture/视频上游接入与异步任务架构.md#11-计费边界)。
 2. **小流量核对**：跑一个 720p/5s 文生任务，确认终态 `completion_tokens ≈ 108 900`、结算扣费 ≈ `108900 × 7.0 / 1e6 × QuotaPerUnit`。
 3. **expired 状态**：官Key 的 `expired` 终态已归一化为 `failed`（退款），无需额外处理。
 

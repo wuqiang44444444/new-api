@@ -70,6 +70,12 @@ func TestBuildTaskBillingProbeNormalizesTrustedFields(t *testing.T) {
 			},
 			resolution: "720p", inputMode: "multi_image", controlMode: "reference",
 		},
+		{
+			name:       "pre-consumes intelligent duration at provider maximum",
+			metadata:   map[string]any{"duration": float64(-1)},
+			resolution: "720p", duration: modelArkIntelligentDurationBillingSeconds,
+			inputMode: "text", controlMode: "none",
+		},
 	}
 
 	for _, test := range tests {

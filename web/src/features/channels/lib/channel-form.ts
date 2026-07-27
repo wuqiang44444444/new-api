@@ -23,7 +23,7 @@ import {
   ERROR_MESSAGES,
   MODEL_FETCHABLE_TYPES,
 } from '../constants'
-import type { Channel } from '../types'
+import type { AddChannelRequest, Channel, UpdateChannelRequest } from '../types'
 import {
   CHANNEL_TYPE_ADVANCED_CUSTOM,
   advancedCustomConfigUsesRelativeUpstreamPath,
@@ -32,6 +32,7 @@ import {
   stringifyAdvancedCustomConfig,
   validateAdvancedCustomConfig,
 } from './advanced-custom'
+import { refineAssetUpstreamProfile } from './asset-upstream-validation'
 import { refineVideoUpstreamProfile } from './video-upstream-validation'
 
 // ============================================================================
@@ -236,9 +237,22 @@ export const channelFormSchema = z
       .enum(['official', 'third_party_relay', 'third_party_reverse_proxy'])
       .optional(), // DoubaoVideo specific
     video_upstream_create_path: z.string().optional(), // DoubaoVideo third-party create path suffix
-    video_upstream_query_path_template: z
-      .string()
-      .optional(), // DoubaoVideo third-party query path template
+    video_upstream_query_path_template: z.string().optional(), // DoubaoVideo third-party query path template
+    asset_upstream_profile: z
+      .enum([
+        'none',
+        'ark_assets',
+        'relay_assets',
+        'joycreator_assets',
+        'official_action_assets',
+      ])
+      .optional(), // DoubaoVideo asset management protocol
+    asset_min_url_ttl_seconds: z.number().int().min(0).optional(),
+    asset_provider_project: z.string().optional(),
+    asset_region: z.string().optional(),
+    asset_access_key_id: z.string().optional(),
+    asset_secret_access_key: z.string().optional(),
+    asset_credential_configured: z.boolean().optional(),
     azure_responses_version: z.string().optional(), // Azure specific
     // Field passthrough controls (stored in settings JSON)
     allow_service_tier: z.boolean().optional(), // OpenAI/Anthropic
@@ -347,6 +361,7 @@ export const channelFormSchema = z
 
     // DoubaoVideo (type 54) 第三方视频上游协议校验抽离到 video-upstream-validation.ts（最小入侵）。
     refineVideoUpstreamProfile(data, ctx)
+    refineAssetUpstreamProfile(data, ctx)
   })
 
 export type ChannelFormValues = z.infer<typeof channelFormSchema>
@@ -395,6 +410,13 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   video_upstream_profile: 'official',
   video_upstream_create_path: '',
   video_upstream_query_path_template: '',
+  asset_upstream_profile: 'none',
+  asset_min_url_ttl_seconds: 0,
+  asset_provider_project: '',
+  asset_region: '',
+  asset_access_key_id: '',
+  asset_secret_access_key: '',
+  asset_credential_configured: false,
   azure_responses_version: '',
   // Field passthrough controls
   allow_service_tier: false,
@@ -459,6 +481,15 @@ export function transformChannelToFormDefaults(
     | 'third_party_reverse_proxy' = 'official'
   let videoUpstreamCreatePath = ''
   let videoUpstreamQueryPathTemplate = ''
+  let assetUpstreamProfile:
+    | 'none'
+    | 'ark_assets'
+    | 'relay_assets'
+    | 'joycreator_assets'
+    | 'official_action_assets' = 'none'
+  let assetMinURLTTLSeconds = 0
+  let assetProviderProject = ''
+  let assetRegion = ''
   let allowServiceTier = false
   let disableStore = false
   let allowSafetyIdentifier = false
@@ -483,6 +514,10 @@ export function transformChannelToFormDefaults(
       videoUpstreamCreatePath = parsed.video_upstream_create_path || ''
       videoUpstreamQueryPathTemplate =
         parsed.video_upstream_query_path_template || ''
+      assetUpstreamProfile = parsed.asset_upstream_profile || 'none'
+      assetMinURLTTLSeconds = parsed.asset_min_url_ttl_seconds || 0
+      assetProviderProject = parsed.asset_provider_project || ''
+      assetRegion = parsed.asset_region || ''
       allowServiceTier = parsed.allow_service_tier === true
       disableStore = parsed.disable_store === true
       allowSafetyIdentifier = parsed.allow_safety_identifier === true
@@ -545,6 +580,14 @@ export function transformChannelToFormDefaults(
     video_upstream_profile: videoUpstreamProfile,
     video_upstream_create_path: videoUpstreamCreatePath,
     video_upstream_query_path_template: videoUpstreamQueryPathTemplate,
+    asset_upstream_profile: assetUpstreamProfile,
+    asset_min_url_ttl_seconds: assetMinURLTTLSeconds,
+    asset_provider_project: assetProviderProject,
+    asset_region: assetRegion,
+    asset_access_key_id: '',
+    asset_secret_access_key: '',
+    asset_credential_configured:
+      channel.asset_credential_status?.configured === true,
     allow_service_tier: allowServiceTier,
     disable_store: disableStore,
     allow_include_obfuscation: allowIncludeObfuscation,
@@ -633,10 +676,26 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
       settingsObj.video_upstream_query_path_template =
         formData.video_upstream_query_path_template || ''
     }
+    settingsObj.asset_upstream_profile =
+      formData.asset_upstream_profile || 'none'
+    settingsObj.asset_min_url_ttl_seconds =
+      formData.asset_min_url_ttl_seconds || 0
+    if (formData.asset_upstream_profile === 'official_action_assets') {
+      settingsObj.asset_provider_project =
+        formData.asset_provider_project?.trim() || ''
+      settingsObj.asset_region = formData.asset_region?.trim() || ''
+    } else {
+      delete settingsObj.asset_provider_project
+      delete settingsObj.asset_region
+    }
   } else {
     delete settingsObj.video_upstream_profile
     delete settingsObj.video_upstream_create_path
     delete settingsObj.video_upstream_query_path_template
+    delete settingsObj.asset_upstream_profile
+    delete settingsObj.asset_min_url_ttl_seconds
+    delete settingsObj.asset_provider_project
+    delete settingsObj.asset_region
   }
 
   // Field passthrough controls:
@@ -736,12 +795,9 @@ function normalizeBaseUrl(value: string | undefined): string {
 /**
  * Transform form data to API payload for creating channel
  */
-export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
-  mode: 'single' | 'batch' | 'multi_to_single'
-  multi_key_mode?: 'random' | 'polling'
-  batch_add_set_key_prefix_2_name?: boolean
-  channel: Partial<Channel>
-} {
+export function transformFormDataToCreatePayload(
+  formData: ChannelFormValues
+): AddChannelRequest {
   const mode = formData.multi_key_mode || 'single'
 
   const channel: Partial<Channel> = {
@@ -775,7 +831,7 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     }
   })
 
-  return {
+  const payload: AddChannelRequest = {
     mode,
     multi_key_mode:
       mode === 'multi_to_single' ? formData.multi_key_type : undefined,
@@ -783,6 +839,17 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
       mode === 'batch' ? formData.batch_add_set_key_prefix_2_name : undefined,
     channel,
   }
+  if (
+    formData.asset_upstream_profile === 'official_action_assets' &&
+    formData.asset_access_key_id?.trim() &&
+    formData.asset_secret_access_key?.trim()
+  ) {
+    payload.asset_credential = {
+      access_key_id: formData.asset_access_key_id.trim(),
+      secret_access_key: formData.asset_secret_access_key.trim(),
+    }
+  }
+  return payload
 }
 
 /**
@@ -791,8 +858,8 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
 export function transformFormDataToUpdatePayload(
   formData: ChannelFormValues,
   channelId: number
-): Partial<Channel> {
-  const payload: Partial<Channel> = {
+): UpdateChannelRequest {
+  const payload: UpdateChannelRequest = {
     id: channelId,
     name: formData.name,
     type: formData.type,
@@ -818,6 +885,16 @@ export function transformFormDataToUpdatePayload(
   // Only include key if it was changed (not empty)
   if (formData.key && formData.key.trim()) {
     payload.key = formData.key
+  }
+  if (
+    formData.asset_upstream_profile === 'official_action_assets' &&
+    formData.asset_access_key_id?.trim() &&
+    formData.asset_secret_access_key?.trim()
+  ) {
+    payload.asset_credential = {
+      access_key_id: formData.asset_access_key_id.trim(),
+      secret_access_key: formData.asset_secret_access_key.trim(),
+    }
   }
 
   // Clean up empty strings to null for optional fields

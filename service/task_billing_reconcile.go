@@ -22,7 +22,7 @@ func prepareTerminalTaskBilling(task *model.Task, result *relaycommon.TaskInfo) 
 	if async.ActualTokens <= 0 {
 		async.ActualTokens = result.TotalTokens
 	}
-	if task.Status == model.TaskStatusFailure {
+	if task.Status.ShouldRefundOnTerminal() {
 		async.Operation = "refund"
 		async.Reason = task.FailReason
 	}
@@ -42,7 +42,7 @@ func ReconcileTaskBilling(ctx context.Context, limit int) TaskBillingReconcileSu
 		if async == nil {
 			continue
 		}
-		if task.Status == model.TaskStatusFailure || async.Operation == "refund" {
+		if task.Status.ShouldRefundOnTerminal() || async.Operation == "refund" {
 			async.Operation = "refund"
 			if async.Reason == "" {
 				async.Reason = task.FailReason

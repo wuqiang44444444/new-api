@@ -56,6 +56,10 @@ type ChannelOtherSettings struct {
 	VideoUpstreamProfile                  VideoUpstreamProfile  `json:"video_upstream_profile,omitempty"`             // DoubaoVideo 渠道的上游协议（official/third_party_relay/third_party_reverse_proxy）
 	VideoUpstreamCreatePath               string                `json:"video_upstream_create_path,omitempty"`         // 第三方协议的创建请求 URL 后缀，仅第三方协议使用，official 时清空
 	VideoUpstreamQueryPathTemplate        string                `json:"video_upstream_query_path_template,omitempty"` // 第三方协议的查询 URL 后缀模板，含且仅含一个 {task_id}，official 时清空
+	AssetUpstreamProfile                  AssetUpstreamProfile  `json:"asset_upstream_profile,omitempty"`
+	AssetMinURLTTLSeconds                 int64                 `json:"asset_min_url_ttl_seconds,omitempty"`
+	AssetProviderProject                  string                `json:"asset_provider_project,omitempty"`
+	AssetRegion                           string                `json:"asset_region,omitempty"`
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {

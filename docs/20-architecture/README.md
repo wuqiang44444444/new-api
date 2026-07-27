@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-07-16
+last-reviewed: 2026-07-23
 ---
 
 # 20-architecture — 目标说明
@@ -17,6 +17,7 @@ last-reviewed: 2026-07-16
 - [架构概览](架构概览.md)
 - [数据模型](数据模型.md)
 - [视频上游接入与异步任务架构](视频上游接入与异步任务架构.md)
+- [素材代理与真人授权架构](素材代理与真人授权架构.md)
 - [架构决策记录](decisions/)
 
 ## 不放什么

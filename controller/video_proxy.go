@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,48 +22,96 @@ import (
 )
 
 // videoProxyError returns a standardized OpenAI-style error response.
-func videoProxyError(c *gin.Context, status int, errType, message string) {
+func videoProxyError(c *gin.Context, status int, errType, code, message string) {
 	c.JSON(status, gin.H{
 		"error": gin.H{
-			"message": message,
+			"message": common.MessageWithRequestId(message, c.GetString(common.RequestIdKey)),
 			"type":    errType,
+			"param":   nil,
+			"code":    code,
 		},
 	})
+}
+
+func videoProxyTaskError(c *gin.Context, task *model.Task, status int, errType, code, message string) {
+	if task != nil && task.ClientProtocol == model.TaskClientProtocolModelArkV3 {
+		modelArkVideoError(c, status, code, message)
+		return
+	}
+	videoProxyError(c, status, errType, code, message)
 }
 
 func VideoProxy(c *gin.Context) {
 	taskID := c.Param("task_id")
 	if taskID == "" {
-		videoProxyError(c, http.StatusBadRequest, "invalid_request_error", "task_id is required")
+		videoProxyError(c, http.StatusBadRequest, "invalid_request_error", "invalid_task_id", "task_id is required")
 		return
 	}
 
 	userID := c.GetInt("id")
-	task, exists, err := model.GetByTaskId(userID, taskID)
+	task, exists, err := model.GetVisibleVideoTask(
+		userID,
+		taskID,
+		model.TaskClientProtocolOpenAIVideos,
+		model.TaskClientProtocolModelArkV3,
+		model.TaskClientProtocolPlatformVideo,
+		"",
+	)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to query task %s: %s", taskID, err.Error()))
-		videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to query task")
+		videoProxyError(c, http.StatusInternalServerError, "server_error", "internal_error", "Failed to query task")
 		return
 	}
 	if !exists || task == nil {
-		videoProxyError(c, http.StatusNotFound, "invalid_request_error", "Task not found")
+		videoProxyError(c, http.StatusNotFound, "invalid_request_error", "video_not_found", "Task not found")
 		return
 	}
 
 	if task.Status != model.TaskStatusSuccess {
-		videoProxyError(c, http.StatusBadRequest, "invalid_request_error",
-			fmt.Sprintf("Task is not completed yet, current status: %s", task.Status))
+		videoProxyTaskError(c, task, http.StatusBadRequest, "invalid_request_error", "video_not_ready", "Video is not ready")
+		return
+	}
+	contentPart := strings.TrimSpace(c.Query("part"))
+	lastFrameURL := ""
+	if contentPart != "" {
+		if contentPart != "last_frame" || task.ClientProtocol != model.TaskClientProtocolModelArkV3 {
+			videoProxyTaskError(c, task, http.StatusBadRequest, "invalid_request_error", "invalid_content_part", "Content part is not supported")
+			return
+		}
+		var upstream struct {
+			Content struct {
+				LastFrameURL string `json:"last_frame_url"`
+			} `json:"content"`
+		}
+		if len(task.Data) == 0 || common.Unmarshal(task.Data, &upstream) != nil || strings.TrimSpace(upstream.Content.LastFrameURL) == "" {
+			videoProxyTaskError(c, task, http.StatusNotFound, "invalid_request_error", "content_not_found", "Requested content is not available")
+			return
+		}
+		lastFrameURL = upstream.Content.LastFrameURL
+	}
+	projected := task.ToOpenAIVideo()
+	if projected.ExpiresAt > 0 && projected.ExpiresAt <= common.GetTimestamp() {
+		videoProxyTaskError(c, task, http.StatusGone, "invalid_request_error", "video_content_expired", "Video content has expired")
 		return
 	}
 
-	channel, err := model.CacheGetChannel(task.ChannelId)
+	frozenVideoContract := model.TaskUsesFrozenVideoConnection(task)
+	var channel *model.Channel
+	if frozenVideoContract {
+		channel, err = videoTaskProviderChannel(task)
+	} else {
+		channel, err = model.CacheGetChannel(task.ChannelId)
+	}
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to get channel for task %s: %s", taskID, err.Error()))
-		videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to retrieve channel information")
+		videoProxyTaskError(c, task, http.StatusBadGateway, "server_error", "frozen_upstream_unavailable", "Frozen video connection details are unavailable")
 		return
 	}
-	baseURL := channel.GetBaseURL()
-	if baseURL == "" {
+	baseURL := task.PrivateData.VideoUpstreamQueryBaseURL
+	if baseURL == "" && !frozenVideoContract {
+		baseURL = channel.GetBaseURL()
+	}
+	if baseURL == "" && !frozenVideoContract {
 		baseURL = "https://api.openai.com"
 	}
 
@@ -75,7 +124,7 @@ func VideoProxy(c *gin.Context) {
 		client, err = service.GetHttpClientWithProxy(proxy)
 		if err != nil {
 			logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to create proxy client for task %s: %s", taskID, err.Error()))
-			videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to create proxy client")
+			videoProxyTaskError(c, task, http.StatusInternalServerError, "server_error", "internal_error", "Failed to create proxy client")
 			return
 		}
 	}
@@ -85,22 +134,26 @@ func VideoProxy(c *gin.Context) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "", nil)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to create request: %s", err.Error()))
-		videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to create proxy request")
+		videoProxyTaskError(c, task, http.StatusInternalServerError, "server_error", "internal_error", "Failed to create proxy request")
 		return
 	}
 
-	switch channel.Type {
+	channelType := channel.Type
+	if frozenType, parseErr := strconv.Atoi(string(task.Platform)); parseErr == nil {
+		channelType = frozenType
+	}
+	switch channelType {
 	case constant.ChannelTypeGemini:
 		apiKey := task.PrivateData.Key
 		if apiKey == "" {
 			logger.LogError(c.Request.Context(), fmt.Sprintf("Missing stored API key for Gemini task %s", taskID))
-			videoProxyError(c, http.StatusInternalServerError, "server_error", "API key not stored for task")
+			videoProxyTaskError(c, task, http.StatusInternalServerError, "server_error", "internal_error", "API key not stored for task")
 			return
 		}
 		videoURL, err = getGeminiVideoURL(channel, task, apiKey)
 		if err != nil {
-			logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to resolve Gemini video URL for task %s: %s", taskID, err.Error()))
-			videoProxyError(c, http.StatusBadGateway, "server_error", "Failed to resolve Gemini video URL")
+			logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to resolve Gemini video URL for task %s: %s", taskID, sanitizeVideoProviderError(err, apiKey)))
+			videoProxyTaskError(c, task, http.StatusBadGateway, "server_error", "upstream_unavailable", "Failed to resolve Gemini video URL")
 			return
 		}
 		req.Header.Set("x-goog-api-key", apiKey)
@@ -108,28 +161,44 @@ func VideoProxy(c *gin.Context) {
 		videoURL, err = getVertexVideoURL(channel, task)
 		if err != nil {
 			logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to resolve Vertex video URL for task %s: %s", taskID, err.Error()))
-			videoProxyError(c, http.StatusBadGateway, "server_error", "Failed to resolve Vertex video URL")
+			videoProxyTaskError(c, task, http.StatusBadGateway, "server_error", "upstream_unavailable", "Failed to resolve Vertex video URL")
 			return
 		}
 	case constant.ChannelTypeOpenAI, constant.ChannelTypeSora:
+		if baseURL == "" {
+			videoProxyTaskError(c, task, http.StatusBadGateway, "server_error", "frozen_upstream_unavailable", "Frozen video connection details are unavailable")
+			return
+		}
 		videoURL = fmt.Sprintf("%s/v1/videos/%s/content", baseURL, task.GetUpstreamTaskID())
-		req.Header.Set("Authorization", "Bearer "+channel.Key)
+		key := task.PrivateData.Key
+		if key == "" && !frozenVideoContract {
+			key = channel.Key
+		}
+		if key == "" {
+			videoProxyTaskError(c, task, http.StatusBadGateway, "server_error", "frozen_upstream_unavailable", "Frozen video connection details are unavailable")
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+key)
 	default:
 		// Video URL is stored in PrivateData.ResultURL (fallback to FailReason for old data)
 		videoURL = task.GetResultURL()
+	}
+	if lastFrameURL != "" {
+		videoURL = lastFrameURL
+		req.Header.Del("Authorization")
 	}
 
 	videoURL = strings.TrimSpace(videoURL)
 	if videoURL == "" {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Video URL is empty for task %s", taskID))
-		videoProxyError(c, http.StatusBadGateway, "server_error", "Failed to fetch video content")
+		videoProxyTaskError(c, task, http.StatusBadGateway, "server_error", "upstream_unavailable", "Failed to fetch video content")
 		return
 	}
 
 	if strings.HasPrefix(videoURL, "data:") {
 		if err := writeVideoDataURL(c, videoURL); err != nil {
 			logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to decode video data URL for task %s: %s", taskID, err.Error()))
-			videoProxyError(c, http.StatusBadGateway, "server_error", "Failed to fetch video content")
+			videoProxyTaskError(c, task, http.StatusBadGateway, "server_error", "upstream_unavailable", "Failed to fetch video content")
 		}
 		return
 	}
@@ -143,39 +212,38 @@ func VideoProxy(c *gin.Context) {
 	}
 	if validateErr != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Video URL blocked for task %s: %v", taskID, validateErr))
-		videoProxyError(c, http.StatusForbidden, "server_error", fmt.Sprintf("request blocked: %v", validateErr))
+		videoProxyTaskError(c, task, http.StatusForbidden, "server_error", "content_url_not_allowed", "Video content URL is not allowed")
 		return
 	}
 
 	req.URL, err = url.Parse(videoURL)
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to parse URL %s: %s", videoURL, err.Error()))
-		videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to create proxy request")
+		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to parse video content URL for task %s: %s", taskID, err.Error()))
+		videoProxyTaskError(c, task, http.StatusInternalServerError, "server_error", "internal_error", "Failed to create proxy request")
 		return
+	}
+	if requestedRange := strings.TrimSpace(c.GetHeader("Range")); requestedRange != "" {
+		req.Header.Set("Range", requestedRange)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to fetch video from %s: %s", videoURL, err.Error()))
-		videoProxyError(c, http.StatusBadGateway, "server_error", "Failed to fetch video content")
+		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to fetch video content for task %s: %s", taskID, sanitizeVideoProviderError(err, task.PrivateData.Key)))
+		videoProxyTaskError(c, task, http.StatusBadGateway, "server_error", "upstream_unavailable", "Failed to fetch video content")
 		return
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Upstream returned status %d for %s", resp.StatusCode, videoURL))
-		videoProxyError(c, http.StatusBadGateway, "server_error",
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		logger.LogError(c.Request.Context(), fmt.Sprintf("Upstream returned status %d for video task %s", resp.StatusCode, taskID))
+		videoProxyTaskError(c, task, http.StatusBadGateway, "server_error", "upstream_unavailable",
 			fmt.Sprintf("Upstream service returned status %d", resp.StatusCode))
 		return
 	}
 
-	for key, values := range resp.Header {
-		for _, value := range values {
-			c.Writer.Header().Add(key, value)
-		}
-	}
-
-	c.Writer.Header().Set("Cache-Control", "public, max-age=86400")
+	copySafeVideoContentHeaders(c.Writer.Header(), resp.Header)
+	c.Writer.Header().Set("Cache-Control", "private, no-store")
+	c.Writer.Header().Set("Pragma", "no-cache")
 	c.Writer.WriteHeader(resp.StatusCode)
 	if _, err = io.Copy(c.Writer, resp.Body); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to stream video content: %s", err.Error()))
@@ -209,7 +277,8 @@ func writeVideoDataURL(c *gin.Context, dataURL string) error {
 	}
 
 	c.Writer.Header().Set("Content-Type", mimeType)
-	c.Writer.Header().Set("Cache-Control", "public, max-age=86400")
+	c.Writer.Header().Set("Cache-Control", "private, no-store")
+	c.Writer.Header().Set("Pragma", "no-cache")
 	c.Writer.WriteHeader(http.StatusOK)
 	_, err = c.Writer.Write(videoBytes)
 	return err

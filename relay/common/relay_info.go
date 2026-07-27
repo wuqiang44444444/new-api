@@ -577,7 +577,7 @@ func GenRelayInfo(c *gin.Context, relayFormat types.RelayFormat, request dto.Req
 		return nil, errors.New("request is not a OpenAIResponsesCompactionRequest")
 	case types.RelayFormatTask:
 		info = genBaseRelayInfo(c, nil)
-		info.TaskRelayInfo = &TaskRelayInfo{}
+		info.TaskRelayInfo = &TaskRelayInfo{ClientProtocol: common.GetContextKeyString(c, constant.ContextKeyTaskClientProtocol)}
 	case types.RelayFormatMjProxy:
 		info = genBaseRelayInfo(c, nil)
 		info.TaskRelayInfo = &TaskRelayInfo{}
@@ -673,8 +673,9 @@ func (info *RelayInfo) HasSendResponse() bool {
 }
 
 type TaskRelayInfo struct {
-	Action       string
-	OriginTaskID string
+	Action         string
+	OriginTaskID   string
+	ClientProtocol string
 	// PublicTaskID 是提交时预生成的 task_xxxx 格式公开 ID，
 	// 供 DoResponse 在返回给客户端时使用（避免暴露上游真实 ID）。
 	PublicTaskID string
@@ -684,20 +685,25 @@ type TaskRelayInfo struct {
 	// LockedChannel holds the full channel object when the request is bound to
 	// a specific channel (e.g., remix on origin task's channel). Stored as any
 	// to avoid an import cycle with model; callers type-assert to *model.Channel.
-	LockedChannel any
+	LockedChannel   any
+	AssetPublicIDs  []string
+	AssetBindingIDs []int64
 }
 
 type TaskSubmitReq struct {
-	Prompt         string                 `json:"prompt"`
-	Model          string                 `json:"model,omitempty"`
-	Mode           string                 `json:"mode,omitempty"`
-	Image          string                 `json:"image,omitempty"`
-	Images         []string               `json:"images,omitempty"`
-	Size           string                 `json:"size,omitempty"`
-	Duration       int                    `json:"duration,omitempty"`
-	Seconds        string                 `json:"seconds,omitempty"`
-	InputReference string                 `json:"input_reference,omitempty"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+	Prompt                 string                 `json:"prompt"`
+	Model                  string                 `json:"model,omitempty"`
+	Mode                   string                 `json:"mode,omitempty"`
+	Image                  string                 `json:"image,omitempty"`
+	Images                 []string               `json:"images,omitempty"`
+	Size                   string                 `json:"size,omitempty"`
+	Duration               int                    `json:"duration,omitempty"`
+	Seconds                string                 `json:"seconds,omitempty"`
+	InputReference         string                 `json:"input_reference,omitempty"`
+	InputReferenceFileID   string                 `json:"-"`
+	InputReferenceImageURL string                 `json:"-"`
+	InputReferenceObject   bool                   `json:"-"`
+	Metadata               map[string]interface{} `json:"metadata,omitempty"`
 }
 
 func (t *TaskSubmitReq) GetPrompt() string {
@@ -711,8 +717,9 @@ func (t *TaskSubmitReq) HasImage() bool {
 func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 	type Alias TaskSubmitReq
 	aux := &struct {
-		Metadata json.RawMessage `json:"metadata,omitempty"`
-		Duration json.RawMessage `json:"duration,omitempty"`
+		Metadata       json.RawMessage `json:"metadata,omitempty"`
+		Duration       json.RawMessage `json:"duration,omitempty"`
+		InputReference json.RawMessage `json:"input_reference,omitempty"`
 		*Alias
 	}{
 		Alias: (*Alias)(t),
@@ -732,6 +739,34 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 				if v, err := strconv.Atoi(durationStr); err == nil {
 					t.Duration = v
 				}
+			}
+		}
+	}
+
+	if len(aux.InputReference) > 0 {
+		var legacy string
+		if err := common.Unmarshal(aux.InputReference, &legacy); err == nil {
+			t.InputReference = legacy
+		} else {
+			var reference struct {
+				FileID   string `json:"file_id"`
+				ImageURL string `json:"image_url"`
+			}
+			if err := common.Unmarshal(aux.InputReference, &reference); err != nil {
+				return fmt.Errorf("input_reference must be an object with file_id or image_url")
+			}
+			hasFile := strings.TrimSpace(reference.FileID) != ""
+			hasURL := strings.TrimSpace(reference.ImageURL) != ""
+			if hasFile == hasURL {
+				return fmt.Errorf("input_reference must provide exactly one of file_id or image_url")
+			}
+			t.InputReferenceObject = true
+			t.InputReferenceFileID = strings.TrimSpace(reference.FileID)
+			t.InputReferenceImageURL = strings.TrimSpace(reference.ImageURL)
+			if hasURL {
+				t.InputReference = t.InputReferenceImageURL
+			} else {
+				t.InputReference = "file_id:" + t.InputReferenceFileID
 			}
 		}
 	}
