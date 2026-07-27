@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-07-26
+last-reviewed: 2026-07-27
 ---
 
 # 40-operations — 目标说明
@@ -18,6 +18,8 @@ last-reviewed: 2026-07-26
 - [Seedance 视频渠道与计费配置手册](Seedance视频渠道与计费配置手册.md)
 - [Seedance 2.0 三渠道价格与计费表达式](<Seedance 2.0 三渠道价格与计费表达式.md>)
 - [素材代理与真人授权配置手册](素材代理与真人授权配置手册.md)
+- [BytePlus 官方视频与素材渠道配置指南](BytePlus官方视频与素材渠道配置指南.md)
+- [素材库验收操作手册](素材库验收操作手册.md)
 
 ## 不放什么
 - 本地开发命令 -> 30-engineering/命令清单.md

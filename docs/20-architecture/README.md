@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-07-23
+last-reviewed: 2026-07-27
 ---
 
 # 20-architecture — 目标说明
