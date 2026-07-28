@@ -33,11 +33,11 @@ last-reviewed: 2026-07-28
 示例使用环境变量，避免把密钥写进代码：
 
 ```bash
-export LINKMETAX_API_BASE="https://<your-api-host>"
-export LINKMETAX_API_KEY="sk-your-key"
+export TokenAI_API_BASE="https://<your-api-host>"
+export TokenAI_API_KEY="sk-your-key"
 ```
 
-本文的 `LINKMETAX_API_BASE` 是站点根地址，不包含末尾的 `/v1`。视频创建接口会在其后追加 `/api/v3/...`。
+本文的 `TokenAI_API_BASE` 是站点根地址，不包含末尾的 `/v1`。视频创建接口会在其后追加 `/api/v3/...`。
 
 所有请求均使用 Bearer Token：
 
@@ -50,15 +50,15 @@ API Key 只能保存在服务端或安全的密钥管理系统中，不得提交
 ## 3. 查询可用模型
 
 ```bash
-curl -sS "$LINKMETAX_API_BASE/v1/models" \
-  -H "Authorization: Bearer $LINKMETAX_API_KEY"
+curl -sS "$TokenAI_API_BASE/v1/models" \
+  -H "Authorization: Bearer $TokenAI_API_KEY"
 ```
 
 只查看 Seedance 模型：
 
 ```bash
-curl -sS "$LINKMETAX_API_BASE/v1/models" \
-  -H "Authorization: Bearer $LINKMETAX_API_KEY" \
+curl -sS "$TokenAI_API_BASE/v1/models" \
+  -H "Authorization: Bearer $TokenAI_API_KEY" \
   | jq -r '.data[].id | select(contains("seedance"))'
 ```
 
@@ -83,8 +83,8 @@ Idempotency-Key: <本次业务操作的唯一标识>
 
 ```bash
 curl -sS -X POST \
-  "$LINKMETAX_API_BASE/api/v3/contents/generations/tasks" \
-  -H "Authorization: Bearer $LINKMETAX_API_KEY" \
+  "$TokenAI_API_BASE/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $TokenAI_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: video-order-20260728-001" \
   -d '{
@@ -118,8 +118,8 @@ curl -sS -X POST \
 
 ```bash
 curl -sS -X POST \
-  "$LINKMETAX_API_BASE/api/v3/contents/generations/tasks" \
-  -H "Authorization: Bearer $LINKMETAX_API_KEY" \
+  "$TokenAI_API_BASE/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer $TokenAI_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: video-order-20260728-002" \
   -d '{
@@ -226,8 +226,8 @@ curl -sS -X POST \
 export VIDEO_TASK_ID="task_xxxxxxxxx"
 
 curl -sS \
-  "$LINKMETAX_API_BASE/api/v3/contents/generations/tasks/$VIDEO_TASK_ID" \
-  -H "Authorization: Bearer $LINKMETAX_API_KEY"
+  "$TokenAI_API_BASE/api/v3/contents/generations/tasks/$VIDEO_TASK_ID" \
+  -H "Authorization: Bearer $TokenAI_API_KEY"
 ```
 
 任务状态：
@@ -283,8 +283,8 @@ queued -> running -> succeeded
 ```bash
 while true; do
   RESPONSE="$(curl -sS \
-    "$LINKMETAX_API_BASE/api/v3/contents/generations/tasks/$VIDEO_TASK_ID" \
-    -H "Authorization: Bearer $LINKMETAX_API_KEY")"
+    "$TokenAI_API_BASE/api/v3/contents/generations/tasks/$VIDEO_TASK_ID" \
+    -H "Authorization: Bearer $TokenAI_API_KEY")"
   STATUS="$(printf '%s' "$RESPONSE" | jq -r '.status')"
   printf 'status=%s\n' "$STATUS"
 
@@ -303,8 +303,8 @@ done
 
 ```bash
 curl -sS \
-  "$LINKMETAX_API_BASE/api/v3/contents/generations/tasks?page_num=1&page_size=10" \
-  -H "Authorization: Bearer $LINKMETAX_API_KEY"
+  "$TokenAI_API_BASE/api/v3/contents/generations/tasks?page_num=1&page_size=10" \
+  -H "Authorization: Bearer $TokenAI_API_KEY"
 ```
 
 可用过滤条件：
@@ -322,12 +322,12 @@ curl -sS \
 
 ```bash
 VIDEO_URL="$(curl -sS \
-  "$LINKMETAX_API_BASE/api/v3/contents/generations/tasks/$VIDEO_TASK_ID" \
-  -H "Authorization: Bearer $LINKMETAX_API_KEY" \
+  "$TokenAI_API_BASE/api/v3/contents/generations/tasks/$VIDEO_TASK_ID" \
+  -H "Authorization: Bearer $TokenAI_API_KEY" \
   | jq -r '.content.video_url // empty')"
 
 curl -L "$VIDEO_URL" \
-  -H "Authorization: Bearer $LINKMETAX_API_KEY" \
+  -H "Authorization: Bearer $TokenAI_API_KEY" \
   -o output.mp4
 ```
 
@@ -337,8 +337,8 @@ curl -L "$VIDEO_URL" \
 
 ```bash
 curl -sS -X DELETE \
-  "$LINKMETAX_API_BASE/api/v3/contents/generations/tasks/$VIDEO_TASK_ID" \
-  -H "Authorization: Bearer $LINKMETAX_API_KEY"
+  "$TokenAI_API_BASE/api/v3/contents/generations/tasks/$VIDEO_TASK_ID" \
+  -H "Authorization: Bearer $TokenAI_API_KEY"
 ```
 
 不同状态下的行为：
@@ -377,8 +377,8 @@ import time
 
 import requests
 
-api_base = os.environ["LINKMETAX_API_BASE"].rstrip("/")
-api_key = os.environ["LINKMETAX_API_KEY"]
+api_base = os.environ["TokenAI_API_BASE"].rstrip("/")
+api_key = os.environ["TokenAI_API_KEY"]
 
 headers = {
     "Authorization": f"Bearer {api_key}",

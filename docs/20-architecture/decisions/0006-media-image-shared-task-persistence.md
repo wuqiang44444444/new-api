@@ -26,6 +26,16 @@ OpenAI 图片生成北向接口是同步合同，但 TokenSave、Moxing 等上�
 - `Idempotency-Key` 复用现有创建幂等日志，并作为异步图片调用的强烈建议。相同键与相同请求恢复原任务，不同请求返回 HTTP 409。未取得上游任务 ID 的创建结果不确定窗口继续失败关闭，不自动重提；没有显式幂等键时不按 prompt 隐式合并合法的重复生成。
 - 当前能力只覆盖 `response_format=url`，不支持固定尺寸价 Gemini 模型或 `b64_json`。
 
+## Amendment — 2026-07-28
+
+当前持久化图片 Task 的精确适用范围如下：
+
+- 仅适用于 `/v1/images/generations` 中经分发后选中、且 Advanced Custom 明确声明持久化媒体任务能力的模型；图片编辑、Gemini 原生入口和其他渠道不进入该路径；
+- `ImageTaskCreateIdempotency` 位于 `Distribute` 之后，只为已经确定会持久化的 Advanced Custom 请求创建 claim；普通同步图片不会抢占相同幂等键；
+- `gpt-image-2` 明确排除在该持久化路径之外，继续使用同步 OpenAI 图片链路，不建立 `media_image` Task 或转移计费责任；
+- 固定价格异步图片和表达式计费图片都使用 [ADR-0008](./0008-共享异步任务计费状态机与原子补偿.md) 的 `AsyncBilling` 门闩；只有表达式任务保存 tiered snapshot；
+- 终态 usage 可以从 OpenAI 风格或 Gemini 组件字段归一化，但只有通过边界校验且完成真实账单验证的语义才能用于结算。
+
 ## Consequences
 
 - 收益：客户端断开、请求超时和服务重启后，图片任务仍可继续轮询、查询、结算和补偿。

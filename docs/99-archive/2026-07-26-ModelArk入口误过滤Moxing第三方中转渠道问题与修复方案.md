@@ -2,7 +2,7 @@
 status: historical
 owner: Dev Team
 last-reviewed: 2026-07-27
-superseded-by: "../20-architecture/视频上游接入与异步任务架构.md; ../40-operations/Seedance视频渠道与计费配置手册.md"
+superseded-by: "../20-architecture/视频上游接入与异步任务架构.md; ../40-operations/02-视频与素材渠道运维手册.md"
 ---
 
 # ModelArk 入口误过滤 Moxing 第三方中转渠道：问题与修复方案

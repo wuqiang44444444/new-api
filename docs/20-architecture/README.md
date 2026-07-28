@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-07-27
+last-reviewed: 2026-07-28
 ---
 
 # 20-architecture — 目标说明
@@ -16,9 +16,14 @@ last-reviewed: 2026-07-27
 
 - [架构概览](架构概览.md)
 - [数据模型](数据模型.md)
+- [媒体北向合同与南向适配架构](媒体北向合同与南向适配架构.md)
+- [统一图片生成与异步任务架构](统一图片生成与异步任务架构.md)
+- [API Key 用量账单架构](API-Key用量账单架构.md)
 - [内置 API 文档中心架构](内置API文档中心架构.md)
 - [视频上游接入与异步任务架构](视频上游接入与异步任务架构.md)
 - [图片异步任务共享 Task 与北向恢复决策](decisions/0006-media-image-shared-task-persistence.md)
+- [视频官方北向合同与共享任务底座决策](decisions/0007-视频官方北向合同与共享任务底座.md)
+- [共享异步任务计费状态机与原子补偿决策](decisions/0008-共享异步任务计费状态机与原子补偿.md)
 - [素材代理与真人授权架构](素材代理与真人授权架构.md)
 - [架构决策记录](decisions/)
 

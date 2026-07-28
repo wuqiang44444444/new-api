@@ -2,7 +2,7 @@
 status: historical
 owner: Dev Team
 last-reviewed: 2026-07-27
-superseded-by: "../20-architecture/视频上游接入与异步任务架构.md; ../20-architecture/decisions/0002-异步任务表达式计费快照与补偿结算.md; ../40-operations/Seedance 2.0 三渠道价格与计费表达式.md; ../40-operations/Seedance视频渠道与计费配置手册.md"
+superseded-by: "../20-architecture/视频上游接入与异步任务架构.md; ../20-architecture/decisions/0008-共享异步任务计费状态机与原子补偿.md; ../40-operations/01-计费与分组运维手册.md; ../40-operations/02-视频与素材渠道运维手册.md"
 ---
 
 # Seedance 2.0 按量计费完整方案（最终版）
@@ -148,7 +148,7 @@ if !ok {
 
 ### 5.1 账单机制：全线按 token
 
-两条第三方线配同一套 tiered_expr 6 档表达式（系数为 BytePlus 官方 **USD/百万 tokens** 价，详见 [三渠道价格](../40-operations/Seedance%202.0%20三渠道价格与计费表达式.md)），表达式写 `c * 单价`（`c` = `completion_tokens`）。预扣用 EstimatedTokens 留余量，终态用真实 token 差额结算。
+两条第三方线配同一套 tiered_expr 6 档表达式（系数为 BytePlus 官方 **USD/百万 tokens** 价，详见 [01 计费与分组运维手册](../40-operations/01-计费与分组运维手册.md)），表达式写 `c * 单价`（`c` = `completion_tokens`）。预扣用 EstimatedTokens 留余量，终态用真实 token 差额结算。
 
 | 渠道 | 改动 | 性质 |
 | --- | --- | --- |
@@ -174,7 +174,7 @@ if !ok {
 
 > 说明：720p 无视频输入档单价 $7.0，预冻结 = `预扣值 × 7.0 / 1e6 × QuotaPerUnit(500000)` = `预扣值 × 3.5`。终态实际扣费与预扣值无关（按真实 token 108900 结算 = 381150 / $0.7623），预冻结差额全额退还。
 
-**未覆盖场景**（需调高对应渠道预扣，否则进 debt）：1080p 视频输入（≈1,200,000）、4k 任意场景（≈7,000,000）。若同一渠道同时开文生与视频生，按视频生（更大）的值配。更细粒度的取值对照见 [三渠道价格 §6](../40-operations/Seedance%202.0%20三渠道价格与计费表达式.md)。
+**未覆盖场景**（需调高对应渠道预扣，否则进 debt）：1080p 视频输入（≈1,200,000）、4k 任意场景（≈7,000,000）。若同一渠道同时开文生与视频生，按视频生（更大）的值配。更细粒度的取值对照见 [01 计费与分组运维手册](../40-operations/01-计费与分组运维手册.md)。
 
 ### 5.3 usage 回填（三渠道均已满足）
 
@@ -341,5 +341,5 @@ sqlite3 one-api.db "UPDATE options SET value='{\"seedance-byteplus\":520000,\"se
 
 **上游文档与配套**
 - [`Seedance 2.0 海外官 Key.md`](../70-research/Seedance%202.0%20海外官%20Key.md)、[`Seedance 2.0 海外版.md`](../70-research/Seedance%202.0%20海外版.md)、[`moxing 单次查询.md`](../70-research/moxing%20单次查询.md)
-- [配置手册（含 6 档表达式）](../40-operations/Seedance视频渠道与计费配置手册.md)、[三渠道价格与预扣取值](../40-operations/Seedance%202.0%20三渠道价格与计费表达式.md)
+- [02 视频与素材渠道运维手册](../40-operations/02-视频与素材渠道运维手册.md)、[01 计费与分组运维手册](../40-operations/01-计费与分组运维手册.md)
 - 官方计费口径：[火山方舟·模型价格](https://www.volcengine.com/docs/82379/1544106)、[Seedance 2.0 API 参考](https://www.volcengine.com/docs/82379/1520757)、[大模型调用计费（token 公式）](https://www.volcengine.com/docs/6492/1544808)

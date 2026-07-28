@@ -23,6 +23,16 @@ superseded-by: ""
 - 北向继续只提供平台 `/v1/assets` 与 `/v1/real-person-authorizations`；不新增普通客户可见的素材组 API。平台自动管理素材组，并分别对素材和素材组建立 Provider 账号范围内的唯一所有权认领。
 - `BytedToken` 只以短期密文和不可逆查找摘要保存；成功、明确失败、过期或撤销均在同一状态事务中清除 handle、H5 URL 密文和 token hash。
 
+## Amendment — 2026-07-28
+
+以下实现事实补充并修正原 Decision：
+
+- 官方 Action host 不再由管理员显式填写，也不复用视频 `Channel.BaseURL`；系统根据 Region 固定推导 `https://ark.{region}.byteplusapi.com`。原 Decision 第一条中的“显式配置 HTTPS BaseURL”由本条取代；
+- `official_action_assets` 必须与 `official` 视频 profile 配对，Region 必须符合 Provider region 格式，Project 与 Region 共同进入资源作用域；
+- 素材 AK/SK 成对写入 `channel_asset_credentials`，管理 API 只返回配置状态和脱敏 Access Key ID；保留、轮换和清除具有显式语义，并与渠道身份校验在同一事务内完成；
+- v2 指纹固定为 Action host、AK、SK、profile、Project、Region 的组合。存量旧指纹必须使用 `cmd/migrate-official-asset-credential` 先 dry-run、再只读验证、最后单事务迁移；启动守卫拒绝旧指纹、孤儿 claim 或不一致账号；
+- 系统周期性列举官方素材与素材组，将上游孤儿和本地缺失记录为 `asset_reconciliation_findings`。对账只报告并审计差异，不自动认领或删除未知上游资源。
+
 ## Consequences
 
 - 收益：官方 Action 与 Bearer 兼容线的能力声明和鉴权语义清晰，客户合同不暴露 Provider 凭据或资源标识。

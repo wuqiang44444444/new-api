@@ -8,7 +8,7 @@ last-reviewed: 2026-07-17
 
 > 目的：解释模型费用界面中的 `4k_video`、`4k` 等档位分别代表什么，以及为什么 4K 的每百万 Token 单价最低，但最终生成一条 4K 视频并不最便宜。
 >
-> 运维配置与可直接复制的表达式见 [Seedance 2.0 三渠道价格与计费表达式](../40-operations/Seedance%202.0%20三渠道价格与计费表达式.md)。
+> 运维配置与可直接复制的表达式见 [01 计费与分组运维手册](../40-operations/01-计费与分组运维手册.md)。
 
 ## 1. 结论
 
@@ -144,5 +144,5 @@ BytePlus 官方定价页确认了这组单价和单条视频示例，但没有�
 
 - BytePlus ModelArk：[Pricing](https://docs.byteplus.com/en/docs/ModelArk/1544106)，价格与示例核对日期：2026-07-17；页面标注最近更新：2026-07-13。
 - BytePlus ModelArk：[Seedance 2.0 API Reference](https://docs.byteplus.com/en/docs/modelark/1520757)。
-- 本仓库运维定稿：[Seedance 2.0 三渠道价格与计费表达式](../40-operations/Seedance%202.0%20三渠道价格与计费表达式.md)。
-- 当前配置与计费口径：[Seedance 2.0 三渠道价格与计费表达式](<../40-operations/Seedance%202.0%20三渠道价格与计费表达式.md>)；历史实测记录：[Seedance 2.0 按量计费方案](../99-archive/2026-07-17-Seedance按量计费usage回填方案.md)。
+- 本仓库运维定稿：[01 计费与分组运维手册](../40-operations/01-计费与分组运维手册.md)。
+- 当前配置与计费口径：[01 计费与分组运维手册](../40-operations/01-计费与分组运维手册.md)；历史实测记录：[Seedance 2.0 按量计费方案](../99-archive/2026-07-17-Seedance按量计费usage回填方案.md)。

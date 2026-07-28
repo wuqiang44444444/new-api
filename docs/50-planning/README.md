@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-06-29
+last-reviewed: 2026-07-28
 ---
 
 # 50-planning — 目标说明
@@ -11,6 +11,11 @@ last-reviewed: 2026-06-29
 
 ## 放什么
 路线图/阶段、实施计划、变更记录。
+
+## 当前文档
+
+- [路线图](路线图.md)
+- [变更记录](变更记录.md)
 
 ## 不放什么
 - 产品验收标准 -> 10-product/验收标准.md

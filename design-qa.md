@@ -30,7 +30,7 @@
 
 ### Pass 2
 
-Post-fix evidence: `/private/tmp/linkmetax-home-final-desktop.png`、`/private/tmp/linkmetax-home-final-mobile.png`。
+Post-fix evidence: `/private/tmp/TokenAI-home-final-desktop.png`、`/private/tmp/TokenAI-home-final-mobile.png`。
 
 - Claude Code 默认同步 Anthropic Base URL，OpenAI 兼容按钮为禁用状态。
 - 命令行切换到 Anthropic SDK 后，标题、协议、Base URL 与完整配置同步更新。
@@ -53,9 +53,9 @@ Post-fix evidence: `/private/tmp/linkmetax-home-final-desktop.png`、`/private/t
 
 根据后续反馈，将代码编辑器与命令行区域从抽象占位配置改为可执行示例；页面通过 `/api/status` 读取后台 `ServerAddress`，OpenAI 兼容示例统一追加 `/v1`，Anthropic 兼容示例使用站点根地址。
 
-Post-fix evidence: `/private/tmp/linkmetax-dynamic-examples-desktop.png`、`/private/tmp/linkmetax-dynamic-examples-mobile.png`。
+Post-fix evidence: `/private/tmp/TokenAI-dynamic-examples-desktop.png`、`/private/tmp/TokenAI-dynamic-examples-mobile.png`。
 
-- 后台测试配置 `https://gateway.linkmetax.test` 已同步出现在 Claude Code、Cline、Continue、curl、Python SDK、Node.js SDK 示例中。
+- 后台测试配置 `https://gateway.TokenAI.test` 已同步出现在 Claude Code、Cline、Continue、curl、Python SDK、Node.js SDK 示例中。
 - 编辑器区只保留有官方配置依据的 Claude Code、Cline、Continue。
 - 命令行区提供完整 curl、Python SDK 与 Node.js SDK 最小请求。
 - 桌面和移动端浏览器检查通过，控制台错误与页面脚本错误均为 0。
@@ -64,7 +64,7 @@ Post-fix evidence: `/private/tmp/linkmetax-dynamic-examples-desktop.png`、`/pri
 
 依据 UI/UX Pro Max 的企业网关、可访问性与触控规范完成质量优化。
 
-Post-fix evidence: `/private/tmp/linkmetax-ui-final-desktop.png`、`/private/tmp/linkmetax-ui-final-mobile.png`、`/private/tmp/linkmetax-ui-final-dark.png`。
+Post-fix evidence: `/private/tmp/TokenAI-ui-final-desktop.png`、`/private/tmp/TokenAI-ui-final-mobile.png`、`/private/tmp/TokenAI-ui-final-dark.png`。
 
 - 所有可见按钮与链接在 `375 × 812`、`844 × 390`、`768 × 1024`、`1440 × 1000` 下均达到至少 `44 × 44px` 的交互目标。
 - 场景标签支持 `ArrowLeft`、`ArrowRight`、`Home`、`End` 键切换，并同步维护 `aria-selected` 与 `tabindex`。
@@ -99,7 +99,7 @@ Post-fix evidence: `/private/tmp/linkmetax-ui-final-desktop.png`、`/private/tmp
 
 Post-fix evidence: `/private/tmp/yuan-home-qa-comparison.png`、`/private/tmp/yuan-home-light-after-final.png`、`/private/tmp/yuan-home-dark-after-clean-2.png`。
 
-- [P2] 首屏正文固定显示 `LinkMetaX`，而导航、流程卡与页脚使用运行时系统名；在 `元空间`、`TokenAI` 等部署配置下形成明显品牌割裂。修复为通过 i18n 插值统一使用 `systemName`，并补齐 en、zh、fr、ja、ru、vi、zh-TW。
+- [P2] 首屏正文固定显示 `TokenAI`，而导航、流程卡与页脚使用运行时系统名；在 `元空间`、`TokenAI` 等部署配置下形成明显品牌割裂。修复为通过 i18n 插值统一使用 `systemName`，并补齐 en、zh、fr、ja、ru、vi、zh-TW。
 - [P3] 业务卡片同时使用描边与投影，层次略显重复，也不符合当前“描边或投影二选一”的视觉规则。移除卡片投影，保留清晰描边；浅色与深色主题均复核通过。
 - [P3] 页内导航落点未给固定页头预留空间。为快速开始、能力、配置和企业区补充统一 `scroll-margin`，锚点跳转后标题与内容保持完整可见。
 - 命令行场景切换已验证，选择后面板从 Claude Code 正确更新为 curl；主题菜单浅色与深色状态均可切换并正确渲染。

@@ -1,10 +1,13 @@
 ---
-status: draft
+status: historical
 owner: Dev Team
 last-reviewed: 2026-07-28
+superseded-by: "../20-architecture/统一图片生成与异步任务架构.md; ../40-operations/03-图片渠道与异步任务运维手册.md"
 ---
 
 # TokenSave / Moxing 图片渠道最小入侵接入方案
+
+> 本文保留实施与验证记录。当前长期架构以[统一图片生成与异步任务架构](../20-architecture/统一图片生成与异步任务架构.md)为准，生产配置以 [03 图片渠道与异步任务运维手册](../40-operations/03-图片渠道与异步任务运维手册.md) 为准。
 
 ## 1. 目标
 

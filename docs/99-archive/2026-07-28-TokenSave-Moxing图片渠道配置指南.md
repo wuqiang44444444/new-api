@@ -1,7 +1,8 @@
 ---
-status: current
+status: historical
 owner: Dev Team
 last-reviewed: 2026-07-27
+superseded-by: "../40-operations/03-图片渠道与异步任务运维手册.md"
 ---
 
 # TokenSave / Moxing 图片渠道配置指南
@@ -66,7 +67,7 @@ TASK_TIMEOUT_MINUTES=1440
 - 价格必须配置在客户端使用的公开模型名上，而不是模型映射后的上游模型名上；
 - 固定尺寸价 `Gemini-3.1-Flash-Image-Preview` 无论直接配置还是通过模型映射命中，都会在请求上游前被拒绝。
 
-价格与分组倍率的配置方法见 [价格设置与倍率说明](价格设置与倍率说明.md) 和 [用户分组、计费分组与模型折扣配置说明](用户分组与模型折扣配置说明.md)。
+价格与分组倍率的配置方法见 [01 计费与分组运维手册](../40-operations/01-计费与分组运维手册.md)。
 
 ## 3. 在管理后台创建渠道
 
@@ -367,10 +368,10 @@ Seedream 5.0 连续多图使用：
 
 ## 8. 相关文档
 
-- [TokenSave / Moxing 图片渠道最小入侵接入方案](../80-dev/2026-07-27-TokenSave-Moxing图片渠道最小入侵接入方案.md)
-- [媒体图片异步任务运维手册](媒体图片异步任务运维手册.md)
-- [图片异步任务共享 Task 持久化闭环方案](../80-dev/2026-07-27-图片异步任务共享Task持久化闭环方案.md)
-- [价格设置与倍率说明](价格设置与倍率说明.md)
+- [TokenSave / Moxing 图片渠道最小入侵接入方案](2026-07-27-TokenSave-Moxing图片渠道最小入侵接入方案.md)
+- [03 图片渠道与异步任务运维手册](../40-operations/03-图片渠道与异步任务运维手册.md)
+- [图片异步任务共享 Task 持久化闭环方案](2026-07-27-图片异步任务共享Task持久化闭环方案.md)
+- [01 计费与分组运维手册](../40-operations/01-计费与分组运维手册.md)
 - [TokenSave 图片模型 API](https://tokensave.pro/docs/api/image)
 - [TokenSave 媒体任务机制](https://tokensave.pro/docs/api/media-task)
 - [Moxing API 文档](https://www.moxing.pro/docs)
