@@ -32,6 +32,11 @@ func MigrateRemoteAsset(
 		return nil, fmt.Errorf("%w: migration_reason must contain 1 to 300 characters on one line", ErrInvalidAssetRequest)
 	}
 	req.MigrationBatchID = strings.TrimSpace(req.MigrationBatchID)
+	if normalizedTarget, ok := dto.NormalizeAssetTarget(req.Target); ok {
+		req.Target = normalizedTarget
+	} else {
+		return nil, fmt.Errorf("%w: unsupported binding target", ErrUnsupportedAssetBindingTarget)
+	}
 	idempotencyRequest := req
 	if req.MigrationBatchID == "" {
 		random, err := common.GenerateRandomCharsKey(20)

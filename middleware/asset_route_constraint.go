@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/asset_setting"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -30,7 +31,8 @@ func AssetRouteConstraint() gin.HandlerFunc {
 			abortAssetRoute(c, http.StatusBadRequest, "invalid_request", "invalid video request")
 			return
 		}
-		if content, exists := body["content"]; exists && content != nil {
+		_, hasVideoContract := relaycommon.GetVideoContractRequest(c)
+		if content, exists := body["content"]; !hasVideoContract && exists && content != nil {
 			abortAssetRoute(c, http.StatusBadRequest, "invalid_request", "top-level content is not supported; use metadata.content")
 			return
 		}
@@ -38,6 +40,20 @@ func AssetRouteConstraint() gin.HandlerFunc {
 		if err != nil {
 			abortAssetRoute(c, http.StatusBadRequest, "invalid_asset_reference", err.Error())
 			return
+		}
+		if values, ok := relaycommon.VideoContractAssetReferences(c); ok {
+			for _, value := range values {
+				value = strings.TrimSpace(value)
+				if len(value) < len("asset://") || !strings.EqualFold(value[:len("asset://")], "asset://") {
+					continue
+				}
+				match := platformAssetReferencePattern.FindStringSubmatch(value)
+				if len(match) != 2 {
+					abortAssetRoute(c, http.StatusBadRequest, "invalid_asset_reference", "invalid platform asset reference")
+					return
+				}
+				references[match[1]] = struct{}{}
+			}
 		}
 		if len(references) == 0 {
 			c.Next()
@@ -63,6 +79,9 @@ func AssetRouteConstraint() gin.HandlerFunc {
 		}
 		assetIDs := make([]int64, 0, len(assets))
 		requestModel, _ := body["model"].(string)
+		if contractModel, ok := relaycommon.VideoContractModel(c); ok {
+			requestModel = contractModel
+		}
 		requestModel = strings.TrimSpace(requestModel)
 		for i := range assets {
 			asset := &assets[i]
@@ -256,6 +275,9 @@ func assetChannelAllowed(c *gin.Context, channelID int) bool {
 }
 
 func abortAssetRoute(c *gin.Context, status int, code, message string) {
+	if abortOfficialVideo(c, status, message) {
+		return
+	}
 	c.AbortWithStatusJSON(status, gin.H{"error": gin.H{
 		"message":    message,
 		"type":       "asset_error",

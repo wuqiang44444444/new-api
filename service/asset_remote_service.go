@@ -18,6 +18,9 @@ import (
 const remoteAssetCreateEndpoint = "/v1/assets"
 
 func CreateRemoteAsset(ctx context.Context, userID, tokenID int, userGroup, usingGroup, idempotencyKey string, req dto.CreateAssetRequest) (*model.Asset, error) {
+	if normalizedTarget, ok := dto.NormalizeAssetTarget(req.Target); ok {
+		req.Target = normalizedTarget
+	}
 	return createRemoteAsset(ctx, userID, tokenID, userGroup, usingGroup, idempotencyKey, remoteAssetCreateEndpoint, req, req, nil)
 }
 
@@ -35,6 +38,11 @@ func createRemoteAsset(ctx context.Context, userID, tokenID int, userGroup, usin
 	req.Model = strings.TrimSpace(req.Model)
 	req.Target = strings.TrimSpace(req.Target)
 	req.Source.Type = strings.TrimSpace(req.Source.Type)
+	if normalizedTarget, ok := dto.NormalizeAssetTarget(req.Target); ok {
+		req.Target = normalizedTarget
+	} else {
+		return nil, fmt.Errorf("%w: unsupported binding target", ErrUnsupportedAssetBindingTarget)
+	}
 
 	rawIdempotencyKey := strings.TrimSpace(idempotencyKey)
 	var idempotency *model.AssetCreateIdempotency
@@ -78,9 +86,6 @@ func createRemoteAsset(ctx context.Context, userID, tokenID int, userGroup, usin
 	}
 	if (req.Model == "") == (req.Target == "") {
 		return nil, fmt.Errorf("%w: exactly one of model or target is required", ErrAssetBindingInvalidRequest)
-	}
-	if req.Target != "" && req.Target != assetBindingTargetJoyCreator {
-		return nil, fmt.Errorf("%w: unsupported binding target", ErrUnsupportedAssetBindingTarget)
 	}
 	if req.AssetKind == model.AssetKindRealPerson {
 		if req.MediaType != "image" || req.Model == "" {

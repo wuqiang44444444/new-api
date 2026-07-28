@@ -8,6 +8,9 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/asset_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -52,6 +55,41 @@ func TestAssetRouteConstraintRejectsReferencesWhenLibraryDisabled(t *testing.T) 
 
 	assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), "asset_library_disabled")
+}
+
+func TestAssetRouteConstraintUsesOfficialVideoErrorEnvelopes(t *testing.T) {
+	setAssetLibraryEnabledForTest(t, false)
+	tests := []struct {
+		name     string
+		protocol string
+		wantCode float64
+	}{
+		{name: "Kling", protocol: model.TaskClientProtocolKlingV1, wantCode: 5001},
+		{name: "Jimeng", protocol: model.TaskClientProtocolJimeng, wantCode: 50500},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", bytes.NewBufferString(
+				`{"image":"asset://ast_0123456789abcdefghijklmnopqrstuv"}`,
+			))
+			c.Request.Header.Set("Content-Type", "application/json")
+			common.SetContextKey(c, constant.ContextKeyTaskClientProtocol, test.protocol)
+
+			AssetRouteConstraint()(c)
+
+			assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+			var body map[string]any
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &body))
+			assert.Equal(t, test.wantCode, body["code"])
+			assert.NotContains(t, body, "error")
+			assert.Contains(t, body, "data")
+			if test.protocol == model.TaskClientProtocolJimeng {
+				assert.Equal(t, test.wantCode, body["status"])
+			}
+		})
+	}
 }
 
 func TestCollectPlatformAssetReferencesRejectsNonPlatformReferences(t *testing.T) {

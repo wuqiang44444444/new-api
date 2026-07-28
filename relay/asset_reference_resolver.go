@@ -111,6 +111,9 @@ func resolveAssetReferencesForAttempt(c *gin.Context, info *relaycommon.RelayInf
 		rewriteMetadataAssetReferences(cloned, replacements)
 		req.Metadata = cloned
 	}
+	if err := relaycommon.RewriteVideoContractAssetReferences(c, replacements); err != nil {
+		return err
+	}
 	c.Set("task_request", req)
 	return nil
 }

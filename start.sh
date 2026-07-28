@@ -64,7 +64,7 @@ stop_port() {
     [[ -n "$pid" ]] && pids+=("$pid")
   done < <(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
   if (( ${#pids[@]} > 0 )); then
-    echo "进程未及时退出，强制释放端口 $port：${pids[*]}"
+    echo "进程未及时退出，强制释放端口 ${port}：${pids[*]}"
     kill -KILL "${pids[@]}" 2>/dev/null || true
   fi
 }
@@ -89,7 +89,7 @@ wait_for_port() {
     sleep 0.5
   done
 
-  echo "$name 在 30 秒内未监听端口 $port，最近日志如下：" >&2
+  echo "$name 在 30 秒内未监听端口 ${port}，最近日志如下：" >&2
   tail -n 80 "$log_file" >&2 || true
   return 1
 }

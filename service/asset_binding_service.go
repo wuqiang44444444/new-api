@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	assetBindingTargetJoyCreator = "joycreator_library"
+	assetBindingTargetManagementLibrary = dto.AssetTargetManagementLibrary
+	assetBindingTargetJoyCreator        = dto.AssetTargetJoyCreatorLegacy
 )
 
 func AssetBindingResponse(asset *model.Asset, binding *model.AssetBinding) dto.AssetBindingResponse {
-	return dto.AssetBindingResponse{ID: binding.PublicID, AssetID: asset.PublicID, Target: binding.BindingTarget, Model: binding.RequestedModel, Status: binding.Status, ErrorCode: binding.ErrorCode, Error: publicAssetBindingError(binding), CreatedAt: binding.CreatedAt, UpdatedAt: binding.UpdatedAt}
+	return dto.AssetBindingResponse{ID: binding.PublicID, AssetID: asset.PublicID, Target: dto.PublicAssetTarget(binding.BindingTarget), Model: binding.RequestedModel, Status: binding.Status, ErrorCode: binding.ErrorCode, Error: publicAssetBindingError(binding), CreatedAt: binding.CreatedAt, UpdatedAt: binding.UpdatedAt}
 }
 
 func selectAssetChannel(userID int, userGroup, usingGroup string, asset *model.Asset, modelName, target string) (*model.Channel, dto.AssetUpstreamProfile, error) {
@@ -51,7 +52,7 @@ func selectAssetChannel(userID int, userGroup, usingGroup string, asset *model.A
 		}
 		return channel, dto.AssetUpstreamProfile(authorization.UpstreamProfile), nil
 	}
-	if target == assetBindingTargetJoyCreator {
+	if target == assetBindingTargetManagementLibrary || target == assetBindingTargetJoyCreator {
 		var channels []model.Channel
 		if err := model.DB.Where("type = ? AND status = ?", constant.ChannelTypeDoubaoVideo, common.ChannelStatusEnabled).Order("priority desc").Order("id desc").Find(&channels).Error; err != nil {
 			return nil, "", err
@@ -94,7 +95,7 @@ func selectAssetChannel(userID int, userGroup, usingGroup string, asset *model.A
 		}
 		settings := channel.GetOtherSettings()
 		profile := settings.AssetUpstreamProfile
-		if target == assetBindingTargetJoyCreator {
+		if target == assetBindingTargetManagementLibrary || target == assetBindingTargetJoyCreator {
 			if profile != dto.AssetUpstreamProfileJoyCreator {
 				continue
 			}

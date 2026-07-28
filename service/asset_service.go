@@ -98,7 +98,7 @@ func AssetResponse(asset *model.Asset) dto.AssetResponse {
 	}
 	return dto.AssetResponse{
 		ID: asset.PublicID, Name: asset.Name, AssetKind: asset.AssetKind, MediaType: asset.MediaType,
-		Model: modelName, Target: target, SupersedesAssetID: supersedesPublicID,
+		Model: modelName, Target: dto.PublicAssetTarget(target), SupersedesAssetID: supersedesPublicID,
 		MigrationBatchID: asset.MigrationBatchID, MigrationReason: asset.MigrationReason,
 		Status: asset.Status, ErrorCode: asset.ErrorCode, Error: publicError,
 		CreatedAt: asset.CreatedAt, UpdatedAt: asset.UpdatedAt,
