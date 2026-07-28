@@ -114,10 +114,13 @@ func (m Properties) Value() (driver.Value, error) {
 
 type TaskPrivateData struct {
 	Key                            string                    `json:"key,omitempty"`
-	UpstreamTaskID                 string                    `json:"upstream_task_id,omitempty"`                   // 上游真实 task ID
-	UpstreamRequestID              string                    `json:"upstream_request_id,omitempty"`                // 上游调用追踪 ID（如 moxing request_id），仅任务创建时从响应头捕获，用于事后对账；异步轮询阶段已不可得
-	ResultURL                      string                    `json:"result_url,omitempty"`                         // 任务成功后的结果 URL（视频地址等）
-	VideoUpstreamProfile           dto.VideoUpstreamProfile  `json:"video_upstream_profile,omitempty"`             // 创建时的视频协议快照
+	UpstreamTaskID                 string                    `json:"upstream_task_id,omitempty"`       // 上游真实 task ID
+	UpstreamRequestID              string                    `json:"upstream_request_id,omitempty"`    // 上游调用追踪 ID（如 moxing request_id），仅任务创建时从响应头捕获，用于事后对账；异步轮询阶段已不可得
+	ResultURL                      string                    `json:"result_url,omitempty"`             // 任务成功后的结果 URL（视频地址等）
+	VideoUpstreamProfile           dto.VideoUpstreamProfile  `json:"video_upstream_profile,omitempty"` // 创建时的视频协议快照
+	NorthboundContractID           string                    `json:"northbound_contract_id,omitempty"`
+	NorthboundContractVersion      string                    `json:"northbound_contract_version,omitempty"`
+	SouthboundAdapterVersion       string                    `json:"southbound_adapter_version,omitempty"`
 	VideoUpstreamQueryBaseURL      string                    `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用
 	VideoUpstreamQueryPathTemplate string                    `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
 	VideoUpstreamProxy             string                    `json:"video_upstream_proxy,omitempty"`               // 创建时的代理快照，避免在途任务随渠道配置漂移
@@ -125,11 +128,12 @@ type TaskPrivateData struct {
 	AssetPublicIDs                 []string                  `json:"asset_public_ids,omitempty"`
 	AssetBindingIDs                []int64                   `json:"asset_binding_ids,omitempty"`
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
-	BillingSource  string              `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
-	SubscriptionId int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
-	TokenId        int                 `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
-	NodeName       string              `json:"node_name,omitempty"`       // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
-	BillingContext *TaskBillingContext `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
+	BillingSource  string                     `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
+	SubscriptionId int                        `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
+	TokenId        int                        `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
+	NodeName       string                     `json:"node_name,omitempty"`       // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
+	BillingContext *TaskBillingContext        `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
+	MediaImage     *TaskMediaImagePrivateData `json:"media_image,omitempty"`
 
 	AsyncBilling *TaskAsyncBillingContext `json:"async_billing,omitempty"`
 }
@@ -330,11 +334,20 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 	return tasks
 }
 
-func GetTimedOutUnfinishedTasks(cutoffUnix int64, limit int) []*Task {
+// GetTimedOutUnfinishedTasks applies a separate cutoff to media image tasks so
+// a short global task timeout cannot expire them during their synchronous
+// request-wait window.
+func GetTimedOutUnfinishedTasks(cutoffUnix int64, mediaImageCutoffUnix int64, limit int) []*Task {
 	var tasks []*Task
 	err := DB.Where("progress != ?", "100%").
 		Where("status NOT IN ?", TerminalTaskStatuses()).
-		Where("submit_time < ?", cutoffUnix).
+		Where(
+			"((platform = ? AND submit_time < ?) OR (platform <> ? AND submit_time < ?))",
+			constant.TaskPlatformMediaImage,
+			mediaImageCutoffUnix,
+			constant.TaskPlatformMediaImage,
+			cutoffUnix,
+		).
 		Order("submit_time").
 		Limit(limit).
 		Find(&tasks).Error

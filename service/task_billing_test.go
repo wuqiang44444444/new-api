@@ -42,6 +42,7 @@ func TestMain(m *testing.M) {
 
 	if err := db.AutoMigrate(
 		&model.Task{},
+		&model.TaskCreateIdempotency{},
 		&model.User{},
 		&model.Token{},
 		&model.Log{},

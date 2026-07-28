@@ -49,24 +49,35 @@ func sweepTimedOutTasks(ctx context.Context) {
 	if constant.TaskTimeoutMinutes <= 0 {
 		return
 	}
-	cutoff := time.Now().Unix() - int64(constant.TaskTimeoutMinutes)*60
-	tasks := model.GetTimedOutUnfinishedTasks(cutoff, 100)
+	nowUnix := time.Now().Unix()
+	mediaImageTimeoutMinutes := constant.TaskTimeoutMinutes
+	if mediaImageTimeoutMinutes < constant.MediaImageTaskMinTimeoutMinutes {
+		mediaImageTimeoutMinutes = constant.MediaImageTaskMinTimeoutMinutes
+	}
+	tasks := model.GetTimedOutUnfinishedTasks(
+		nowUnix-int64(constant.TaskTimeoutMinutes)*60,
+		nowUnix-int64(mediaImageTimeoutMinutes)*60,
+		100,
+	)
 	if len(tasks) == 0 {
 		return
 	}
 
-	reason := fmt.Sprintf("任务超时（%d分钟）", constant.TaskTimeoutMinutes)
 	legacyReason := "任务超时（旧系统遗留任务，不进行退款，请联系管理员）"
-	now := time.Now().Unix()
 	timedOutCount := 0
 
 	for _, task := range tasks {
 		isLegacy := task.SubmitTime > 0 && task.SubmitTime < model.TaskRefundLegacyCutoff
+		timeoutMinutes := constant.TaskTimeoutMinutes
+		if task.Platform == constant.TaskPlatformMediaImage {
+			timeoutMinutes = mediaImageTimeoutMinutes
+		}
+		reason := fmt.Sprintf("任务超时（%d分钟）", timeoutMinutes)
 
 		oldStatus := task.Status
 		task.Status = model.TaskStatusFailure
 		task.Progress = "100%"
-		task.FinishTime = now
+		task.FinishTime = nowUnix
 		if isLegacy {
 			task.FailReason = legacyReason
 			// 旧系统任务明确不退款，随终态 CAS 一并清掉 quota，避免被后续对账误判。
@@ -169,7 +180,11 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 				nullTasks = append(nullTasks, task)
 				continue
 			}
-			taskM[upstreamID] = task
+			taskKey := upstreamID
+			if platform == constant.TaskPlatformMediaImage {
+				taskKey = task.TaskID
+			}
+			taskM[taskKey] = task
 			taskChannelM[task.ChannelId] = append(taskChannelM[task.ChannelId], upstreamID)
 		}
 		if len(nullTasks) > 0 {
@@ -207,6 +222,8 @@ func DispatchPlatformUpdate(ctx context.Context, platform constant.TaskPlatform,
 		// MJ 轮询由其自身处理，这里预留入口
 	case constant.TaskPlatformSuno:
 		_ = UpdateSunoTasks(ctx, taskChannelM, taskM)
+	case constant.TaskPlatformMediaImage:
+		_ = UpdateMediaImageTasks(ctx, taskM)
 	default:
 		if err := UpdateVideoTasks(ctx, platform, taskChannelM, taskM); err != nil {
 			common.SysLog(fmt.Sprintf("UpdateVideoTasks fail: %s", err))

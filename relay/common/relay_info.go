@@ -122,6 +122,16 @@ type RelayInfo struct {
 	SendResponseCount      int
 	ReceivedResponseCount  int
 	FinalPreConsumedQuota  int // 最终预消耗的配额
+	// BillingTransferredToTask means a durable async Task owns all remaining
+	// settlement/refund work for this request.
+	BillingTransferredToTask bool
+	// SkipRequestRefund is set as soon as an upstream async task ID is known.
+	// It fails closed across the persistence window where refunding could create
+	// an untracked upstream cost.
+	SkipRequestRefund bool
+	// PersistedImageTask is an in-memory marker for a locally synthesized 202.
+	// It is never derived from upstream headers.
+	PersistedImageTask *dto.ImageTask
 	// ForcePreConsume 为 true 时禁用 BillingSession 的信任额度旁路，
 	// 强制预扣全额。用于异步任务（视频/音乐生成等），因为请求返回后任务仍在运行，
 	// 必须在提交前锁定全额。

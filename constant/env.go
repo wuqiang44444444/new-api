@@ -19,6 +19,8 @@ var ErrorLogEnabled bool
 var TaskQueryLimit int
 var TaskTimeoutMinutes int
 
+const MediaImageTaskMinTimeoutMinutes = 30
+
 // temporary variable for sora patch, will be removed in future
 var TaskPricePatches []string
 

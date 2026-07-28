@@ -119,6 +119,38 @@ func TestTieredSettlementUsesFrozenExpressionAndMissingUsageKeepsPrecharge(t *te
 	assert.Equal(t, 1000, getUserQuota(t, userID))
 }
 
+func TestReconcileUsesPersistedTargetAfterSettlementInterrupted(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	const userID = 8108
+	const preConsumedQuota = 500
+	const targetQuota = 200
+	seedUser(t, userID, 100)
+
+	task := persistedAsyncTask(t, userID, preConsumedQuota, model.TaskStatusSuccess)
+	task.PrivateData.AsyncBilling.Operation = "settle"
+	task.PrivateData.AsyncBilling.Reason = "persisted image usage target"
+	task.PrivateData.AsyncBilling.TargetQuota = common.GetPointer(targetQuota)
+	require.NoError(t, task.UpdateBilling())
+
+	interrupted := reloadTask(t, task.ID)
+	assert.Equal(t, model.TaskBillingStatePending, interrupted.PrivateData.AsyncBilling.State)
+	require.NotNil(t, interrupted.PrivateData.AsyncBilling.TargetQuota)
+	assert.Equal(t, targetQuota, *interrupted.PrivateData.AsyncBilling.TargetQuota)
+	assert.Equal(t, preConsumedQuota, interrupted.Quota)
+
+	summary := ReconcileTaskBilling(ctx, 10)
+	assert.Equal(t, 1, summary.Scanned)
+	settled := reloadTask(t, task.ID)
+	assert.Equal(t, model.TaskBillingStateSettled, settled.PrivateData.AsyncBilling.State)
+	assert.Equal(t, targetQuota, settled.Quota)
+	assert.Equal(t, 100+preConsumedQuota-targetQuota, getUserQuota(t, userID))
+
+	second := ReconcileTaskBilling(ctx, 10)
+	assert.Zero(t, second.Scanned)
+	assert.Equal(t, 100+preConsumedQuota-targetQuota, getUserQuota(t, userID))
+}
+
 func TestTieredSettlementLogRecordsCompletionTokens(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
