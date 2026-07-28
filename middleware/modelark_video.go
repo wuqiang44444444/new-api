@@ -11,33 +11,13 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 )
 
-type modelArkVideoMediaURL struct {
-	URL string `json:"url"`
-}
-
-type modelArkVideoContent struct {
-	Type     string                 `json:"type"`
-	Text     string                 `json:"text,omitempty"`
-	Role     string                 `json:"role,omitempty"`
-	ImageURL *modelArkVideoMediaURL `json:"image_url,omitempty"`
-	VideoURL *modelArkVideoMediaURL `json:"video_url,omitempty"`
-	AudioURL *modelArkVideoMediaURL `json:"audio_url,omitempty"`
-}
-
-type modelArkVideoCreateRequest struct {
-	Model         string                 `json:"model"`
-	Content       []modelArkVideoContent `json:"content"`
-	CallbackURL   string                 `json:"callback_url,omitempty"`
-	Duration      *int                   `json:"duration,omitempty"`
-	Resolution    *string                `json:"resolution,omitempty"`
-	Ratio         *string                `json:"ratio,omitempty"`
-	ServiceTier   *string                `json:"service_tier,omitempty"`
-	GenerateAudio *bool                  `json:"generate_audio,omitempty"`
-	Watermark     *bool                  `json:"watermark,omitempty"`
-}
+type modelArkVideoMediaURL = dto.VideoMediaURL
+type modelArkVideoContent = dto.ModelArkVideoContent
+type modelArkVideoCreateRequest = dto.ModelArkVideoCreateRequest
 
 func ModelArkVideoCreateConvert() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -47,8 +27,21 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 			abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", "invalid request body")
 			return
 		}
-		encoded, err := common.Marshal(body)
-		if err != nil || common.Unmarshal(encoded, &request) != nil {
+		if err := rejectUnknownVideoFields(
+			body,
+			"model", "content", "callback_url", "duration", "resolution", "ratio",
+			"service_tier", "generate_audio", "watermark", "return_last_frame",
+			"execution_expires_after", "draft", "tools", "safety_identifier",
+			"priority", "frames", "seed", "camera_fixed",
+		); err != nil {
+			abortModelArkVideo(c, http.StatusBadRequest, "unsupported_parameter", err.Error())
+			return
+		}
+		if err := rejectUnknownModelArkVideoFields(body); err != nil {
+			abortModelArkVideo(c, http.StatusBadRequest, "unsupported_parameter", err.Error())
+			return
+		}
+		if err := decodeTypedVideoRequest(body, &request); err != nil {
 			abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", "invalid request body")
 			return
 		}
@@ -56,8 +49,12 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 			abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", "model and content are required")
 			return
 		}
-		if strings.TrimSpace(request.CallbackURL) != "" {
+		if strings.TrimSpace(videoStringValue(request.CallbackURL)) != "" {
 			abortModelArkVideo(c, http.StatusBadRequest, "unsupported_parameter", "callback_url is not supported; poll the task API")
+			return
+		}
+		if request.Frames != nil {
+			abortModelArkVideo(c, http.StatusBadRequest, "unsupported_parameter", "frames is not published because frame-based billing is not supported")
 			return
 		}
 		prompt, err := validateModelArkVideoCreateRequest(request)
@@ -65,15 +62,15 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 			abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", err.Error())
 			return
 		}
-		delete(body, "model")
-		delete(body, "content")
-		delete(body, "callback_url")
-		body["content"] = request.Content
-		internalBody, err := common.Marshal(map[string]any{
-			"model":    request.Model,
-			"prompt":   prompt,
-			"metadata": body,
+		relaycommon.SetVideoContractRequest(c, dto.VideoContractRequest{
+			ContractID: dto.VideoContractModelArkV3,
+			ModelArk:   &request,
 		})
+		internalRequest := relaycommon.TaskSubmitReq{Model: request.Model, Prompt: prompt}
+		if request.Duration != nil {
+			internalRequest.Duration = *request.Duration
+		}
+		internalBody, err := common.Marshal(internalRequest)
 		if err != nil {
 			abortModelArkVideo(c, http.StatusInternalServerError, "internal_error", "failed to prepare request")
 			return
@@ -100,6 +97,35 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 	}
 }
 
+func rejectUnknownModelArkVideoFields(body map[string]any) error {
+	content, exists := body["content"]
+	if exists {
+		if err := rejectUnknownNestedVideoArrayFields(
+			content,
+			"content",
+			"type", "text", "role", "image_url", "video_url", "audio_url",
+		); err != nil {
+			return err
+		}
+		for index, rawItem := range content.([]any) {
+			item := rawItem.(map[string]any)
+			for _, mediaField := range []string{"image_url", "video_url", "audio_url"} {
+				if media, ok := item[mediaField]; ok {
+					if err := rejectUnknownNestedVideoFields(media, fmt.Sprintf("content[%d].%s", index, mediaField), "url"); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	if tools, exists := body["tools"]; exists {
+		if err := rejectUnknownNestedVideoArrayFields(tools, "tools", "type"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func validateModelArkVideoCreateRequest(request modelArkVideoCreateRequest) (string, error) {
 	if strings.TrimSpace(request.Model) == "" || len(request.Content) == 0 {
 		return "", fmt.Errorf("model and content are required")
@@ -116,6 +142,15 @@ func validateModelArkVideoCreateRequest(request modelArkVideoCreateRequest) (str
 	if request.ServiceTier != nil && !modelArkVideoValueAllowed(*request.ServiceTier, "default", "flex") {
 		return "", fmt.Errorf("service_tier is not supported")
 	}
+	if request.ExecutionExpiresAfter != nil && (*request.ExecutionExpiresAfter < 3600 || *request.ExecutionExpiresAfter > 259200) {
+		return "", fmt.Errorf("execution_expires_after must be between 3600 and 259200")
+	}
+	if request.Seed != nil && (*request.Seed < -1 || int64(*request.Seed) > int64(^uint32(0))) {
+		return "", fmt.Errorf("seed must be between -1 and 4294967295")
+	}
+	if request.SafetyIdentifier != nil && len(strings.TrimSpace(*request.SafetyIdentifier)) > 64 {
+		return "", fmt.Errorf("safety_identifier must not exceed 64 characters")
+	}
 
 	texts := make([]string, 0, len(request.Content))
 	imageCount, videoCount, audioCount := 0, 0, 0
@@ -123,8 +158,8 @@ func validateModelArkVideoCreateRequest(request modelArkVideoCreateRequest) (str
 	for index, item := range request.Content {
 		switch item.Type {
 		case "text":
-			text := strings.TrimSpace(item.Text)
-			if text == "" || item.ImageURL != nil || item.VideoURL != nil || item.AudioURL != nil || strings.TrimSpace(item.Role) != "" {
+			text := strings.TrimSpace(videoStringValue(item.Text))
+			if text == "" || item.ImageURL != nil || item.VideoURL != nil || item.AudioURL != nil || strings.TrimSpace(videoStringValue(item.Role)) != "" {
 				return "", fmt.Errorf("content[%d] is not a valid text item", index)
 			}
 			texts = append(texts, text)
@@ -133,19 +168,19 @@ func validateModelArkVideoCreateRequest(request modelArkVideoCreateRequest) (str
 			if err := validateModelArkVideoMediaItem(index, item, item.ImageURL, "first_frame", "last_frame", "reference_image"); err != nil {
 				return "", err
 			}
-			roleCounts[strings.TrimSpace(item.Role)]++
+			roleCounts[strings.TrimSpace(videoStringValue(item.Role))]++
 		case "video_url":
 			videoCount++
 			if err := validateModelArkVideoMediaItem(index, item, item.VideoURL, "reference_video"); err != nil {
 				return "", err
 			}
-			roleCounts[strings.TrimSpace(item.Role)]++
+			roleCounts[strings.TrimSpace(videoStringValue(item.Role))]++
 		case "audio_url":
 			audioCount++
 			if err := validateModelArkVideoMediaItem(index, item, item.AudioURL, "reference_audio"); err != nil {
 				return "", err
 			}
-			roleCounts[strings.TrimSpace(item.Role)]++
+			roleCounts[strings.TrimSpace(videoStringValue(item.Role))]++
 		default:
 			return "", fmt.Errorf("content[%d].type is not supported", index)
 		}
@@ -166,7 +201,7 @@ func validateModelArkVideoCreateRequest(request modelArkVideoCreateRequest) (str
 }
 
 func validateModelArkVideoMediaItem(index int, item modelArkVideoContent, media *modelArkVideoMediaURL, roles ...string) error {
-	if media == nil || item.Text != "" {
+	if media == nil || videoStringValue(item.Text) != "" {
 		return fmt.Errorf("content[%d] has an invalid media payload", index)
 	}
 	if item.Type != "image_url" && item.ImageURL != nil ||
@@ -177,7 +212,7 @@ func validateModelArkVideoMediaItem(index int, item modelArkVideoContent, media 
 	if err := validateModelArkVideoMediaURL(media.URL); err != nil {
 		return fmt.Errorf("content[%d]: %w", index, err)
 	}
-	role := strings.TrimSpace(item.Role)
+	role := strings.TrimSpace(videoStringValue(item.Role))
 	if role == "" || !modelArkVideoValueAllowed(role, roles...) {
 		return fmt.Errorf("content[%d].role is not supported", index)
 	}
@@ -220,15 +255,23 @@ func modelArkVideoValueAllowed(value string, allowed ...string) bool {
 
 func ModelArkVideoChannelConstraint() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		contract, contractOK := relaycommon.GetVideoContractRequest(c)
+		if !contractOK || contract.ContractID != dto.VideoContractModelArkV3 || contract.ModelArk == nil {
+			abortModelArkVideo(c, http.StatusBadRequest, "invalid_video_contract", "Seedance request contract is unavailable")
+			return
+		}
 		var channels []model.Channel
 		if err := model.DB.Where("type = ? AND status = ?", constant.ChannelTypeDoubaoVideo, common.ChannelStatusEnabled).Find(&channels).Error; err != nil {
 			abortModelArkVideo(c, http.StatusServiceUnavailable, "upstream_unavailable", "video service is temporarily unavailable")
 			return
 		}
 		allowed := make(map[int]struct{})
+		activeChannels := 0
 		for i := range channels {
+			activeChannels++
 			settings := channels[i].GetOtherSettings()
-			if modelArkVideoProfileCompatible(settings.VideoUpstreamProfile) {
+			if modelArkVideoProfileCompatible(settings.VideoUpstreamProfile) &&
+				dto.ModelArkVideoProfileIncompatibility(contract.ModelArk, settings.VideoUpstreamProfile, settings.AllowServiceTier) == "" {
 				allowed[channels[i].Id] = struct{}{}
 			}
 		}
@@ -245,6 +288,10 @@ func ModelArkVideoChannelConstraint() gin.HandlerFunc {
 			}
 		}
 		if len(allowed) == 0 {
+			if activeChannels > 0 {
+				abortModelArkVideo(c, http.StatusBadRequest, "unsupported_parameter", "no configured Seedance channel supports the requested official contract")
+				return
+			}
 			abortModelArkVideo(c, http.StatusServiceUnavailable, "upstream_unavailable", "no compatible ModelArk video channel is available")
 			return
 		}

@@ -15,13 +15,19 @@ const modelArkIntelligentDurationBillingSeconds = 15
 // sent upstream. A video input only counts when its URL is non-empty, so an
 // empty placeholder cannot select a cheaper pricing tier.
 func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayInfo) (map[string]any, error) {
-	req, err := common.GetTaskRequest(c)
-	if err != nil {
-		return nil, err
-	}
-	payload, err := a.convertToRequestPayload(&req)
+	payload, typed, err := a.modelArkContractPayload(c)
 	if err != nil {
 		return nil, errors.Wrap(err, "convert request payload for billing probe failed")
+	}
+	if !typed {
+		req, requestErr := common.GetTaskRequest(c)
+		if requestErr != nil {
+			return nil, requestErr
+		}
+		payload, err = a.convertToRequestPayload(&req)
+		if err != nil {
+			return nil, errors.Wrap(err, "convert request payload for billing probe failed")
+		}
 	}
 
 	resolution := strings.ToLower(strings.TrimSpace(payload.Resolution))
@@ -41,7 +47,7 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 			break
 		}
 	}
-	durationSeconds := 0
+	durationSeconds := 5
 	if payload.Duration != nil {
 		durationSeconds = int(*payload.Duration)
 	}

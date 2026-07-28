@@ -165,9 +165,15 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	}
 	req := v.(relaycommon.TaskSubmitReq)
 
-	body, err := a.convertToRequestPayload(&req, info)
+	body, typed, err := klingContractPayload(c, info)
 	if err != nil {
 		return nil, err
+	}
+	if !typed {
+		body, err = a.convertToRequestPayload(&req, info)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if body.Image == "" && body.ImageTail == "" {
 		c.Set("action", constant.TaskActionTextGenerate)

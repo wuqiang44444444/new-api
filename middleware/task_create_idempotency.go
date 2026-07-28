@@ -16,6 +16,15 @@ import (
 
 func TaskCreateIdempotency() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if c.Request.Method != http.MethodPost {
+			c.Next()
+			return
+		}
+		if common.GetContextKeyString(c, constant.ContextKeyTaskClientProtocol) == model.TaskClientProtocolJimeng &&
+			c.Query("Action") == "CVSync2AsyncGetResult" {
+			c.Next()
+			return
+		}
 		rawKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 		if rawKey == "" {
 			c.Next()
@@ -53,8 +62,19 @@ func TaskCreateIdempotency() gin.HandlerFunc {
 		}
 		common.SetContextKey(c, constant.ContextKeyTaskIdempotencyID, int(claim.ID))
 		c.Next()
+		if common.GetContextKeyBool(c, constant.ContextKeyTaskIdempotencyRelease) ||
+			(protocol == model.TaskClientProtocolOpenAIImages &&
+				!common.GetContextKeyBool(c, constant.ContextKeyTaskPersistenceEnabled)) {
+			_ = model.ReleaseTaskCreateIdempotency(claim.ID)
+			return
+		}
 		status := c.Writer.Status()
 		if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+			_ = model.ReleaseTaskCreateIdempotency(claim.ID)
+			return
+		}
+		if status >= http.StatusInternalServerError &&
+			!common.GetContextKeyBool(c, constant.ContextKeyTaskUpstreamStarted) {
 			_ = model.ReleaseTaskCreateIdempotency(claim.ID)
 			return
 		}
@@ -73,7 +93,7 @@ func replayTaskCreateIdempotency(c *gin.Context, claim *model.TaskCreateIdempote
 		}
 	}
 	if claim != nil && claim.Status == model.TaskCreateIdempotencyComplete && claim.TaskID != "" {
-		task, exists, err := model.GetVideoTaskForProtocol(c.GetInt("id"), claim.TaskID, claim.Protocol, true)
+		task, exists, err := model.GetTaskForProtocol(c.GetInt("id"), claim.TaskID, claim.Protocol, true)
 		if err == nil && exists {
 			replayTaskCreateResponse(c, claim.Protocol, task)
 			return
@@ -86,20 +106,54 @@ func replayTaskCreateResponse(c *gin.Context, protocol string, task *model.Task)
 	switch protocol {
 	case model.TaskClientProtocolOpenAIVideos:
 		c.AbortWithStatusJSON(http.StatusOK, task.ToOpenAIVideo())
+	case model.TaskClientProtocolOpenAIImages:
+		imageTask := model.ProjectOpenAIImageTask(task)
+		if task.Status == model.TaskStatusSuccess && imageTask.Result != nil {
+			c.AbortWithStatusJSON(http.StatusOK, imageTask.Result)
+			return
+		}
+		if task.Status.IsActive() {
+			c.Header("Location", "/v1/images/tasks/"+task.TaskID)
+			c.Header("Retry-After", "2")
+			c.Header("X-Task-ID", task.TaskID)
+			c.AbortWithStatusJSON(http.StatusAccepted, imageTask)
+			return
+		}
+		c.AbortWithStatusJSON(http.StatusOK, imageTask)
 	case model.TaskClientProtocolModelArkV3:
 		c.AbortWithStatusJSON(http.StatusOK, gin.H{"id": task.TaskID})
+	case model.TaskClientProtocolKlingV1:
+		c.AbortWithStatusJSON(http.StatusOK, gin.H{
+			"code": 0, "message": "SUCCEED", "request_id": c.GetString(common.RequestIdKey),
+			"data": gin.H{"task_id": task.TaskID, "task_status": "submitted"},
+		})
+	case model.TaskClientProtocolJimeng:
+		c.AbortWithStatusJSON(http.StatusOK, gin.H{
+			"code": 10000, "message": "Success", "request_id": c.GetString(common.RequestIdKey),
+			"status": 10000,
+			"data":   gin.H{"task_id": task.TaskID},
+		})
 	default:
 		abortTaskCreateIdempotency(c, http.StatusConflict, "idempotency_unavailable", "the original response cannot be replayed")
 	}
 }
 
 func abortTaskCreateIdempotency(c *gin.Context, status int, code, message string) {
-	if common.GetContextKeyString(c, constant.ContextKeyTaskClientProtocol) == model.TaskClientProtocolModelArkV3 {
+	protocol := common.GetContextKeyString(c, constant.ContextKeyTaskClientProtocol)
+	if protocol == model.TaskClientProtocolModelArkV3 {
 		c.AbortWithStatusJSON(status, gin.H{"error": gin.H{
 			"code":       code,
 			"message":    message,
 			"request_id": c.GetString(common.RequestIdKey),
 		}})
+		return
+	}
+	if protocol == model.TaskClientProtocolKlingV1 {
+		abortKlingVideo(c, status, message)
+		return
+	}
+	if protocol == model.TaskClientProtocolJimeng {
+		abortJimengVideo(c, status, message)
 		return
 	}
 	c.AbortWithStatusJSON(status, gin.H{"error": gin.H{

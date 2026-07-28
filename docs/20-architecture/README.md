@@ -16,7 +16,9 @@ last-reviewed: 2026-07-27
 
 - [架构概览](架构概览.md)
 - [数据模型](数据模型.md)
+- [内置 API 文档中心架构](内置API文档中心架构.md)
 - [视频上游接入与异步任务架构](视频上游接入与异步任务架构.md)
+- [图片异步任务共享 Task 与北向恢复决策](decisions/0006-media-image-shared-task-persistence.md)
 - [素材代理与真人授权架构](素材代理与真人授权架构.md)
 - [架构决策记录](decisions/)
 

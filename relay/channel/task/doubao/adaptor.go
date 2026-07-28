@@ -126,6 +126,9 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if taskErr := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
 		return taskErr
 	}
+	if taskErr := a.validateModelArkContract(c, info); taskErr != nil {
+		return taskErr
+	}
 	return applyVideoServiceTierPolicy(c, info, a.profile)
 }
 
@@ -148,6 +151,23 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 
 // EstimateBilling 根据请求 metadata 中的输出分辨率与是否包含视频输入，返回相对基准价的计费 OtherRatio。
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+	if payload, typed, err := a.modelArkContractPayload(c); typed {
+		if err != nil {
+			return nil
+		}
+		hasVideo := false
+		for _, item := range payload.Content {
+			if item.Type == "video_url" && item.VideoURL != nil && strings.TrimSpace(item.VideoURL.URL) != "" {
+				hasVideo = true
+				break
+			}
+		}
+		ratio, ok := GetVideoInputRatio(info.OriginModelName, payload.Resolution, hasVideo)
+		if !ok || ratio == 1.0 {
+			return nil
+		}
+		return map[string]float64{"video_input": ratio}
+	}
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil
@@ -197,9 +217,15 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		return nil, err
 	}
 
-	body, err := a.convertToRequestPayload(&req)
+	body, typed, err := a.modelArkContractPayload(c)
 	if err != nil {
 		return nil, errors.Wrap(err, "convert request payload failed")
+	}
+	if !typed {
+		body, err = a.convertToRequestPayload(&req)
+		if err != nil {
+			return nil, errors.Wrap(err, "convert request payload failed")
+		}
 	}
 	if info.IsModelMapped {
 		body.Model = info.UpstreamModelName
@@ -388,9 +414,7 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		taskResult.Status = model.TaskStatusExpired
 		taskResult.Progress = "100%"
 	default:
-		// Unknown status, treat as processing
-		taskResult.Status = model.TaskStatusInProgress
-		taskResult.Progress = "30%"
+		return nil, fmt.Errorf("unknown video task status %q", resTask.Status)
 	}
 
 	return &taskResult, nil

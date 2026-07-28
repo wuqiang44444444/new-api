@@ -111,3 +111,39 @@ func TestTaskProtocolErrorFieldsSeparatesClientAndProviderAuthentication(t *test
 		})
 	}
 }
+
+func TestRespondTaskProtocolErrorUsesNumericOfficialCodes(t *testing.T) {
+	tests := []struct {
+		name     string
+		protocol string
+		wantCode float64
+	}{
+		{name: "Kling", protocol: model.TaskClientProtocolKlingV1, wantCode: 1200},
+		{name: "Jimeng", protocol: model.TaskClientProtocolJimeng, wantCode: 50200},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			context, _ := gin.CreateTestContext(recorder)
+			common.SetContextKey(context, constant.ContextKeyTaskClientProtocol, test.protocol)
+			context.Set(common.RequestIdKey, "request-123")
+
+			respondTaskError(context, &dto.TaskError{
+				Code:       "invalid_request",
+				Message:    "invalid video request",
+				StatusCode: http.StatusBadRequest,
+				LocalError: true,
+			})
+
+			assert.Equal(t, http.StatusBadRequest, recorder.Code)
+			var body map[string]any
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &body))
+			assert.Equal(t, test.wantCode, body["code"])
+			assert.NotContains(t, body, "error")
+			assert.Contains(t, body, "data")
+			if test.protocol == model.TaskClientProtocolJimeng {
+				assert.Equal(t, test.wantCode, body["status"])
+			}
+		})
+	}
+}

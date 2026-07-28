@@ -543,7 +543,7 @@
         ]
       }
     },
-    "/v1/videos": {
+    "x-retired-openai-video-create": {
       "post": {
         "summary": "创建视频 ",
         "deprecated": false,
@@ -561,7 +561,7 @@
                 "properties": {
                   "model": {
                     "description": "模型名称",
-                    "example": "sora-2",
+                    "example": "retired-video-model",
                     "type": "string"
                   },
                   "prompt": {
@@ -655,9 +655,9 @@
                   ]
                 },
                 "example": {
-                  "id": "sora-2-123456",
+                  "id": "historical-task-id",
                   "object": "video",
-                  "model": "sora-2",
+                  "model": "retired-video-model",
                   "status": "queued",
                   "progress": 0,
                   "created_at": 1764347090922,
@@ -686,7 +686,7 @@
         ]
       }
     },
-    "/v1/videos/{task_id}": {
+    "x-retired-openai-video-task-read": {
       "get": {
         "summary": "获取视频任务状态 ",
         "deprecated": false,
@@ -701,7 +701,7 @@
             "in": "path",
             "description": "视频任务 ID",
             "required": true,
-            "example": "sora-2-123456",
+            "example": "historical-task-id",
             "schema": {
               "type": "string"
             }
@@ -748,9 +748,9 @@
                   ]
                 },
                 "example": {
-                  "id": "sora-2-123456",
+                  "id": "historical-task-id",
                   "object": "video",
-                  "model": "sora-2",
+                  "model": "retired-video-model",
                   "status": "queued",
                   "progress": 0,
                   "created_at": 1764347090922,
@@ -783,10 +783,10 @@
       "get": {
         "summary": "获取视频内容",
         "deprecated": false,
-        "description": "获取已完成视频任务的视频文件内容。\n\n此接口会代理返回视频文件流。\n",
+        "description": "获取已完成视频任务的视频文件内容。当前用于 ModelArk 视频任务以及存量视频任务的受鉴权内容代理。\n",
         "operationId": "getVideoContent",
         "tags": [
-          "视频生成/Sora兼容格式"
+          "视频生成/ModelArk格式"
         ],
         "parameters": [
           {
@@ -846,15 +846,13 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/VideoRequest"
+                "$ref": "#/components/schemas/KlingVideoRequest"
               },
               "example": {
-                "model": "kling-v1",
+                "model_name": "kling-v1",
                 "prompt": "宇航员站起身走了",
-                "duration": 5,
-                "width": 1280,
-                "height": 720,
-                "fps": 30
+                "duration": "5",
+                "aspect_ratio": "16:9"
               }
             }
           }
@@ -865,7 +863,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VideoResponse"
+                  "$ref": "#/components/schemas/KlingVideoCreateResponse"
                 }
               }
             },
@@ -876,7 +874,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/KlingVideoErrorResponse"
                 }
               }
             },
@@ -917,7 +915,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VideoTaskResponse"
+                  "$ref": "#/components/schemas/KlingVideoTaskResponse"
                 }
               }
             },
@@ -928,7 +926,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/KlingVideoErrorResponse"
                 }
               }
             },
@@ -956,15 +954,14 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/VideoRequest"
+                "$ref": "#/components/schemas/KlingVideoRequest"
               },
               "example": {
-                "model": "kling-v1",
+                "model_name": "kling-v1",
                 "prompt": "人物转身走开",
                 "image": "https://example.com/image.jpg",
-                "duration": 5,
-                "width": 1280,
-                "height": 720
+                "duration": "5",
+                "aspect_ratio": "16:9"
               }
             }
           }
@@ -975,7 +972,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VideoResponse"
+                  "$ref": "#/components/schemas/KlingVideoCreateResponse"
                 }
               }
             },
@@ -986,7 +983,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/KlingVideoErrorResponse"
                 }
               }
             },
@@ -1027,7 +1024,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VideoTaskResponse"
+                  "$ref": "#/components/schemas/KlingVideoTaskResponse"
                 }
               }
             },
@@ -1038,7 +1035,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/KlingVideoErrorResponse"
                 }
               }
             },
@@ -1133,6 +1130,14 @@
                       "type": "string",
                       "description": "响应消息"
                     },
+                    "request_id": {
+                      "type": "string",
+                      "description": "请求追踪 ID"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "description": "与 code 相同的即梦兼容状态码"
+                    },
                     "data": {
                       "type": "object",
                       "description": "响应数据",
@@ -1149,7 +1154,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/JimengVideoErrorResponse"
                 }
               }
             },
@@ -1163,7 +1168,7 @@
         ]
       }
     },
-    "/v1/video/generations": {
+    "x-retired-platform-video-create": {
       "post": {
         "summary": "创建视频生成任务",
         "deprecated": false,
@@ -4162,6 +4167,155 @@
                 "type": "integer"
               }
             }
+          }
+        }
+      },
+      "KlingVideoRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_name",
+          "prompt"
+        ],
+        "properties": {
+          "model_name": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string",
+            "description": "图生视频首帧 URL、Base64 或 asset:// 引用"
+          },
+          "image_tail": {
+            "type": "string"
+          },
+          "negative_prompt": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "std",
+              "pro"
+            ]
+          },
+          "duration": {
+            "type": "string",
+            "enum": [
+              "5",
+              "10"
+            ]
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          },
+          "cfg_scale": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "callback_url": {
+            "type": "string"
+          },
+          "external_task_id": {
+            "type": "string"
+          }
+        }
+      },
+      "KlingVideoCreateResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 0
+          },
+          "message": {
+            "type": "string",
+            "example": "SUCCEED"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "task_id": {
+                "type": "string"
+              },
+              "task_status": {
+                "type": "string",
+                "example": "submitted"
+              }
+            }
+          }
+        }
+      },
+      "KlingVideoTaskResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/KlingVideoCreateResponse"
+          }
+        ]
+      },
+      "KlingVideoErrorResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "request_id",
+          "data"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 1200
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "nullable": true
+          }
+        }
+      },
+      "JimengVideoErrorResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "data",
+          "message",
+          "request_id",
+          "status"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 50200
+          },
+          "data": {
+            "type": "object",
+            "nullable": true
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "example": 50200
           }
         }
       },

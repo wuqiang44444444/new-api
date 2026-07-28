@@ -59,21 +59,18 @@ func TestRelayCreateRequestUsesMoxingMediaV1FieldNamesAndPreservesExplicitZero(t
 	assert.NotContains(t, result, "ratio")
 }
 
-func TestRelayCreateRequestAppliesModelSpecificOptionalFieldContract(t *testing.T) {
+func TestRelayCreateRequestDoesNotSilentlyDropOptionalFields(t *testing.T) {
 	tests := []struct {
-		name                 string
-		body                 string
-		wantWatermarkPresent bool
+		name string
+		body string
 	}{
 		{
-			name:                 "doubao model omits unsupported optional fields",
-			body:                 `{"model":"doubao-seedance-2-0-260128","content":[{"type":"text","text":"hello"}],"seed":0,"camera_fixed":false,"watermark":false}`,
-			wantWatermarkPresent: false,
+			name: "doubao model preserves explicit optional fields",
+			body: `{"model":"doubao-seedance-2-0-260128","content":[{"type":"text","text":"hello"}],"seed":0,"camera_fixed":false,"watermark":false}`,
 		},
 		{
-			name:                 "oversea model preserves supported watermark",
-			body:                 `{"model":"seedance-2-0-oversea","content":[{"type":"text","text":"hello"}],"watermark":false}`,
-			wantWatermarkPresent: true,
+			name: "oversea model preserves explicit optional fields",
+			body: `{"model":"seedance-2-0-oversea","content":[{"type":"text","text":"hello"}],"seed":0,"camera_fixed":false,"watermark":false}`,
 		},
 	}
 
@@ -83,14 +80,9 @@ func TestRelayCreateRequestAppliesModelSpecificOptionalFieldContract(t *testing.
 			require.NoError(t, err)
 
 			result := decodeObject(t, body)
-			watermark, present := result["watermark"]
-			assert.Equal(t, test.wantWatermarkPresent, present)
-			if present {
-				assert.Equal(t, false, watermark)
-			} else {
-				assert.NotContains(t, result, "seed")
-				assert.NotContains(t, result, "camera_fixed")
-			}
+			assert.Equal(t, float64(0), result["seed"])
+			assert.Equal(t, false, result["camera_fixed"])
+			assert.Equal(t, false, result["watermark"])
 		})
 	}
 }

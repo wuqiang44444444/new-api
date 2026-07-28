@@ -74,12 +74,6 @@ func RelayCreateRequest(body []byte) ([]byte, error) {
 		CameraFixed:     input.CameraFixed,
 		Watermark:       input.Watermark,
 	}
-	if output.Model == "doubao-seedance-2-0-260128" {
-		output.Seed = nil
-		output.CameraFixed = nil
-		output.Watermark = nil
-	}
-
 	var firstFrameImages []string
 	for _, item := range input.Content {
 		switch strings.ToLower(strings.TrimSpace(item.Type)) {

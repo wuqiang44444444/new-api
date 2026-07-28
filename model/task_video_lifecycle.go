@@ -14,6 +14,8 @@ import (
 const (
 	TaskClientProtocolOpenAIVideos  = "openai_videos"
 	TaskClientProtocolModelArkV3    = "modelark_v3"
+	TaskClientProtocolKlingV1       = "kling_v1"
+	TaskClientProtocolJimeng        = "jimeng_official"
 	TaskClientProtocolPlatformVideo = "platform_video"
 
 	TaskCancellationStateRequested = "requested"
@@ -311,7 +313,7 @@ func CompleteTaskCancellation(taskID int64, confirmed bool, rejected bool, opera
 
 func ValidateTaskProtocol(protocol string) error {
 	switch protocol {
-	case TaskClientProtocolOpenAIVideos, TaskClientProtocolModelArkV3, TaskClientProtocolPlatformVideo:
+	case TaskClientProtocolOpenAIVideos, TaskClientProtocolModelArkV3, TaskClientProtocolKlingV1, TaskClientProtocolJimeng, TaskClientProtocolPlatformVideo, TaskClientProtocolOpenAIImages:
 		return nil
 	default:
 		return fmt.Errorf("unsupported task client protocol %q", protocol)

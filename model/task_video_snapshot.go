@@ -31,7 +31,9 @@ func TaskUsesFrozenVideoConnection(task *Task) bool {
 		return false
 	}
 	return task.ClientProtocol == TaskClientProtocolOpenAIVideos ||
-		task.ClientProtocol == TaskClientProtocolModelArkV3
+		task.ClientProtocol == TaskClientProtocolModelArkV3 ||
+		task.ClientProtocol == TaskClientProtocolKlingV1 ||
+		task.ClientProtocol == TaskClientProtocolJimeng
 }
 
 // FrozenVideoTaskChannel reconstructs the provider connection selected when a

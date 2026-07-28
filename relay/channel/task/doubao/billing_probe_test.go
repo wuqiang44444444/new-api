@@ -34,8 +34,8 @@ func TestBuildTaskBillingProbeNormalizesTrustedFields(t *testing.T) {
 		{
 			name:       "defaults to 720p and no video",
 			metadata:   map[string]any{},
-			resolution: "720p",
-			inputMode:  "text", controlMode: "none",
+			resolution: "720p", duration: 5,
+			inputMode: "text", controlMode: "none",
 		},
 		{
 			name: "normalizes case and reads non-empty video URL",
@@ -58,7 +58,7 @@ func TestBuildTaskBillingProbeNormalizesTrustedFields(t *testing.T) {
 					"video_url": map[string]any{"url": "   "},
 				}},
 			},
-			resolution: "4k", inputMode: "text", controlMode: "none",
+			resolution: "4k", duration: 5, inputMode: "text", controlMode: "none",
 		},
 		{
 			name: "maps reference-image pricing dimensions",
@@ -68,7 +68,7 @@ func TestBuildTaskBillingProbeNormalizesTrustedFields(t *testing.T) {
 					"image_url": map[string]any{"url": "asset://reference-1"},
 				}},
 			},
-			resolution: "720p", inputMode: "multi_image", controlMode: "reference",
+			resolution: "720p", duration: 5, inputMode: "multi_image", controlMode: "reference",
 		},
 		{
 			name:       "pre-consumes intelligent duration at provider maximum",

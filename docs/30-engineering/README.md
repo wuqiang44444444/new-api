@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-07-27
+last-reviewed: 2026-07-28
 ---
 
 # 30-engineering — 目标说明
@@ -17,7 +17,9 @@ last-reviewed: 2026-07-27
 - [命令清单](命令清单.md)
 - [人工智能编码指南](人工智能编码指南.md)
 - [上游代码合并指南](上游代码合并指南.md)
-- [视频生成与素材库 API 对接指南](视频生成与素材库API对接指南.md)
+- [图片模型 API 用户调用指南](图片模型API用户调用指南.md)
+- [视频模型 API 用户调用指南](视频模型API用户调用指南.md)
+- [素材库对接指南](素材库对接指南.md)
 
 ## 不放什么
 - 架构决策 -> 20-architecture/decisions/

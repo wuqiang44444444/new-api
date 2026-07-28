@@ -16,12 +16,35 @@ func respondTaskProtocolError(c *gin.Context, taskErr *dto.TaskError) bool {
 		return false
 	}
 	protocol := common.GetContextKeyString(c, constant.ContextKeyTaskClientProtocol)
-	if protocol != model.TaskClientProtocolOpenAIVideos && protocol != model.TaskClientProtocolModelArkV3 {
+	if protocol != model.TaskClientProtocolOpenAIVideos &&
+		protocol != model.TaskClientProtocolModelArkV3 &&
+		protocol != model.TaskClientProtocolKlingV1 &&
+		protocol != model.TaskClientProtocolJimeng {
 		return false
 	}
 	status, code, errorType, message := taskProtocolErrorFields(taskErr)
 	if protocol == model.TaskClientProtocolModelArkV3 {
 		modelArkVideoError(c, status, code, message)
+		return true
+	}
+	if protocol == model.TaskClientProtocolKlingV1 {
+		c.JSON(status, dto.KlingVideoErrorResponse{
+			Code:      dto.KlingVideoErrorCode(status),
+			Message:   message,
+			RequestID: c.GetString(common.RequestIdKey),
+			Data:      nil,
+		})
+		return true
+	}
+	if protocol == model.TaskClientProtocolJimeng {
+		jimengCode := dto.JimengVideoErrorCode(status)
+		c.JSON(status, dto.JimengVideoErrorResponse{
+			Code:      jimengCode,
+			Data:      nil,
+			Message:   message,
+			RequestID: c.GetString(common.RequestIdKey),
+			Status:    jimengCode,
+		})
 		return true
 	}
 	openAIVideoError(c, status, errorType, code, message)

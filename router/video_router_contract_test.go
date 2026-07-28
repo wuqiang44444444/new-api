@@ -19,16 +19,27 @@ func TestVideoRouterExposesOnlySelectedNorthboundContracts(t *testing.T) {
 	}
 
 	expected := []string{
-		http.MethodPost + " /v1/videos",
 		http.MethodGet + " /v1/videos",
 		http.MethodGet + " /v1/videos/:task_id",
-		http.MethodDelete + " /v1/videos/:task_id",
 		http.MethodGet + " /v1/videos/:task_id/content",
-		http.MethodPost + " /v1/videos/:video_id/remix",
 		http.MethodPost + " /api/v3/contents/generations/tasks",
 		http.MethodGet + " /api/v3/contents/generations/tasks",
 		http.MethodGet + " /api/v3/contents/generations/tasks/:task_id",
 		http.MethodDelete + " /api/v3/contents/generations/tasks/:task_id",
+		http.MethodPost + " /kling/v1/videos/text2video",
+		http.MethodPost + " /kling/v1/videos/image2video",
+		http.MethodGet + " /kling/v1/videos/text2video/:task_id",
+		http.MethodGet + " /kling/v1/videos/image2video/:task_id",
+		http.MethodPost + " /jimeng/",
+	}
+	for _, route := range []string{
+		http.MethodPost + " /v1/videos",
+		http.MethodPost + " /v1/videos/:video_id/remix",
+		http.MethodDelete + " /v1/videos/:task_id",
+		http.MethodPost + " /v1/video/generations",
+	} {
+		_, exists := routes[route]
+		assert.False(t, exists, route)
 	}
 	for _, route := range expected {
 		_, exists := routes[route]
