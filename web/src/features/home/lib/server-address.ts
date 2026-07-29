@@ -17,15 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { SystemStatus } from '@/features/auth/types'
+import { resolvePublicSiteBaseUrl } from '@/lib/public-api-base-url'
 
 export function resolveHomeBaseUrl(status: SystemStatus | null): string {
-  const configuredAddress =
-    (status?.server_address as string | undefined) ||
-    (status?.data?.server_address as string | undefined)
-  const fallbackAddress =
-    typeof window === 'undefined' ? '' : window.location.origin
-
-  return (configuredAddress || fallbackAddress)
-    .replace(/\/+$/, '')
-    .replace(/\/v1$/i, '')
+  return resolvePublicSiteBaseUrl(status)
 }

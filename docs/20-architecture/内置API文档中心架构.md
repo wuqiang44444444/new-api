@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: Dev Team
-last-reviewed: 2026-07-28
+last-reviewed: 2026-07-29
 ---
 
 # 内置 API 文档中心架构
@@ -19,19 +19,19 @@ last-reviewed: 2026-07-28
 - 如何保持现有单次 Web 构建和单个 Go 二进制部署方式；
 - API 合同、OpenAPI 和面向用户的 Markdown 说明如何协同治理。
 
-本文不表示当前所有 API 文档内容已经完成。历史编码顺序、文件清单、测试和发布门禁见 [内置 API 文档中心实施方案](../99-archive/2026-07-28-内置API文档中心实施方案.md)。
+本文不表示当前所有 API 文档内容和上线验收已经完成。当前实施状态、文件边界、测试和发布门禁见[内置 API 文档中心实施计划](../50-planning/内置API文档中心实施计划.md)。`99-archive/` 中的旧实施方案只保留历史背景，不再承担当前规范职责。
 
 ### 1.1 当前实现状态
 
-截至 2026-07-28，本架构已经接受，但代码尚未实现文档中心：
+截至 2026-07-29，首期代码已经按本架构落地：
 
-- `/api/status` 已返回 `docs_link`；
-- 顶部导航在 `docs_link` 为空时会指向 `/docs`；
-- 当前没有 `web/src/features/docs/`、`web/src/routes/docs/` 或 `web/public/docs-content/`；
-- 当前没有 `/docs` 页面、manifest 加载器、Markdown 安全渲染或文档搜索；
-- `docs/openapi/relay.json` 尚未成为公开页面的自动生成来源。
+- `docs/openapi/public-operations.json` 已冻结首批 28 个 operation，并由构建脚本与审计后的 `docs/openapi/relay.json` 交叉校验；
+- `web/public/docs-content/` 已包含受控 manifest、16 篇首批中文 Markdown 和构建期搜索索引；
+- `web/src/features/docs/` 与 `web/src/routes/docs/` 已提供公开路由、三栏/移动布局、目录、搜索、分页、代码复制和安全 token 渲染；
+- 首页与顶部导航已统一复用 `docs_link` 回退规则，示例 Base URL 由公开站点状态与当前 origin 动态推导；
+- `bun run build` 已强制执行源内容、合同与最终 `dist` 审计，Go 侧已固定 manifest 缓存和深层路由刷新测试。
 
-因此本文件描述目标架构，不得把 `/docs`、公开 Markdown 或 OpenAPI 校验写成已交付能力。实施状态以代码、构建产物和发布验收为准。
+当前剩余的是发布前浏览器视口、主题、纯键盘和真实部署缓存的人工验收，以及仓库既有的全局 lint/format 基线清理；这些事项不改变本文架构边界。
 
 ## 2. 架构决策摘要
 
@@ -45,8 +45,12 @@ last-reviewed: 2026-07-28
 6. 文档正文由浏览器按页加载，避免把全部 Markdown 编译进主 JavaScript 包。
 7. 文档 UI 与正文分离：页面框架文案进入前端 i18n，API 正文按文档语言目录独立维护。
 8. 首期只提供可复制示例，不提供在线携带 API Key 的 Try it 请求功能。
-9. `docs/openapi/relay.json` 继续作为公开 Relay 合同的机器可读候选来源，但必须在完成合同审计后才能参与公开页面生成；后台 `docs/openapi/api.json` 永不进入公开文档产物。
-10. 文档更新仍随当前应用重新构建和发布，不建立绕过代码审查的在线内容编辑通道。
+9. 公开内容开发前必须先完成北向合同矩阵、`docs/openapi/relay.json` 审计和机器可读 operation 白名单；后台 `docs/openapi/api.json` 永不进入公开文档产物。
+10. Manifest 只负责导航和运行时文件解析，不等同于静态文件发布边界；`bun run build` 前必须执行公开目录全量清单、安全和合同校验。
+11. Markdown 先解析为受控 token，再在文本或代码 token 中替换动态变量，并由 React 组件渲染；首期拒绝作者原始 HTML，不使用文档内容驱动的 `dangerouslySetInnerHTML`。
+12. 标题、摘要、关键词和 `h2`/`h3` 搜索索引在同一次 Web 构建前生成，不在浏览器运行时抓取全站 Markdown。
+13. 外部 `docs_link` 配置继续优先；空值或非法值才回退 `/docs`。首页、顶部导航和文档页必须复用同一链接解析规则。
+14. 文档更新仍随当前应用重新构建和发布，不建立绕过代码审查的在线内容编辑通道。
 
 ## 3. 目标与非目标
 
@@ -86,11 +90,21 @@ last-reviewed: 2026-07-28
 
 第三方聚合商或反代文档只能作为南向适配依据，不得直接成为公开合同。
 
+公开面必须由显式 operation 白名单控制，不得使用路径前缀、Go DTO 反射或 Gin 路由枚举自动推导。例如 `/api/v3/contents/generations/tasks` 是已经发布的 ModelArk 视频北向合同，不能因为路径以 `/api` 开头而被当作后台管理 API；相反，后台 `docs/openapi/api.json` 即使结构完整也不得进入白名单。
+
+首期合同审计至少覆盖：
+
+- 文本：模型发现、Chat Completions、Responses、Anthropic Messages；
+- 图片：统一生成、编辑和图片 Task 查询；
+- 视频：ModelArk、Kling、即梦各自的创建、查询、取消或结果读取合同；
+- 素材：平台素材 CRUD、绑定、迁移和真人授权中明确面向普通 API 调用方的 operation；
+- 各协议的鉴权、Content-Type、字段上限、错误信封、幂等、流式或异步生命周期。
+
 ### 4.2 内容与渲染分离
 
 Markdown 文件只保存正文、示例和少量声明式元数据；路由、布局、权限、安全过滤、代码复制和动态变量替换由 React 文档模块负责。
 
-正文不得嵌入任意脚本、事件处理器或需要执行的 React 代码。需要交互的功能应由受控组件统一实现，不能允许 Markdown 自行注入。
+正文不得嵌入任意脚本、事件处理器、原始 HTML 或需要执行的 React 代码。需要交互的功能由受控 React 组件统一实现，不能允许 Markdown 自行注入。代码高亮使用 Shiki token 输出并由 React 渲染，不接收作者提供的高亮 HTML。
 
 ### 4.3 独立模块、最小接线
 
@@ -100,14 +114,16 @@ Markdown 文件只保存正文、示例和少量声明式元数据；路由、�
 web/src/features/docs/
 web/src/routes/docs/
 web/public/docs-content/
+web/scripts/docs/
 ```
 
 现有文件只允许完成以下窄接线：
 
 - 注册公开文档路由；
-- 将站点文档导航指向 `/docs`；
+- 让首页和顶部导航复用统一的文档链接解析器；
 - 增加文档框架所需 i18n 键；
-- 必要时增加同一 Web 构建内的文档校验脚本。
+- 将公开内容校验和搜索索引生成接入唯一的 `bun run build`；
+- 必要时对文档 manifest 增加窄范围缓存规则。
 
 现有 `web/src/components/ui/markdown.tsx` 保持原职责，不扩展为文档站框架。
 
@@ -115,10 +131,12 @@ web/public/docs-content/
 
 - 文档不接收或保存真实 API Key。
 - 示例只使用 `sk-your-key` 等占位符。
-- Markdown 生成的 HTML 必须经过 DOMPurify。
-- 文档文件必须来自 manifest 白名单。
+- 作者原始 HTML 在构建校验时拒绝，运行时不渲染。
+- 受控扩展原则上不得输出 HTML 字符串；确需输出的生成片段必须经过独立、最小允许列表的 DOMPurify 净化。
+- 文档路由只读取 manifest 白名单文件；公开目录本身还必须通过构建时全量文件清单校验。
 - 内部链接使用客户端路由；只有外部 HTTP(S) 链接才打开新窗口。
-- 首期不支持任意 HTML iframe、远程脚本、表单提交和在线 API 调试。
+- 首期不支持远程图片、SVG、MathML、style、iframe、脚本、表单、可执行 URL 和在线 API 调试。
+- 动态站点变量只能写入文本或代码 token，不能在 Markdown 源字符串上做无上下文的全局替换。
 
 ## 5. 系统上下文
 
@@ -126,10 +144,13 @@ web/public/docs-content/
 flowchart LR
     Author[文档维护者]
     Contract[公开北向合同与 OpenAPI]
+    Allowlist[公开 Operation 白名单]
     Markdown[Markdown 内容]
     Manifest[导航 Manifest]
 
     subgraph WebBuild[现有 Web 构建]
+        Validator[公开内容与合同校验]
+        SearchIndex[搜索索引生成]
         DocsModule[React Docs 模块]
         Rsbuild[Rsbuild]
         Dist[web/dist]
@@ -145,9 +166,13 @@ flowchart LR
 
     Author --> Markdown
     Author --> Manifest
-    Contract -.校验与生成.-> Markdown
-    Markdown --> Rsbuild
-    Manifest --> Rsbuild
+    Contract --> Allowlist
+    Allowlist --> Validator
+    Markdown --> Validator
+    Manifest --> Validator
+    Validator --> SearchIndex
+    Validator --> Rsbuild
+    SearchIndex --> Rsbuild
     DocsModule --> Rsbuild
     Rsbuild --> Dist --> Embed --> Static
     User --> Static
@@ -155,23 +180,28 @@ flowchart LR
     DocsModule --> Status
 ```
 
-文档中心不新增后端业务层、数据库或独立服务。Go 只继续提供现有静态文件和 `/api/status`；文档加载、导航和渲染均在前端完成。
+文档中心不新增后端业务层、数据库或独立服务。Go 继续提供现有静态文件和 `/api/status`，只允许为 manifest 缓存一致性增加窄范围静态响应规则；文档加载、导航和渲染均在前端完成。
 
 ## 6. 构建与运行链路
 
 ### 6.1 构建链路
 
 ```text
+docs/openapi/relay.json
+docs/openapi/public-operations.json
 web/public/docs-content/**/*.md
 web/public/docs-content/manifest.json
+web/scripts/docs/**
 web/src/features/docs/**
+  -> bun run docs:validate
+  -> 生成 web/public/docs-content/generated/search-index.json
   -> bun run build
   -> Rsbuild
   -> web/dist/docs-content/**
   -> go:embed web/dist
 ```
 
-首期不需要额外文档构建命令。后续加入文档校验或搜索索引生成时，可以把脚本接入现有 `bun run build` 前置阶段，但对维护者仍保持一个统一构建入口。
+`bun run docs:validate` 是内部可单独运行的诊断命令，但必须作为 `bun run build` 的强制前置阶段。发布者仍只需记住一个生产构建入口；校验失败必须阻止生成 `web/dist`，不能降级为 warning。
 
 ### 6.2 运行链路
 
@@ -184,13 +214,13 @@ sequenceDiagram
     participant S as /api/status
 
     U->>R: GET /docs/api-reference/images/edits
-    R->>M: 加载并缓存导航 manifest
+    R->>M: no-cache 加载并校验导航 manifest
     M-->>R: slug 到文件映射
     R->>D: GET /docs-content/zh/api-reference/images-edits.md
     R->>S: 获取当前部署公开配置
     D-->>R: Markdown 正文
     S-->>R: server_address、system_name 等
-    R->>R: 变量替换、解析、净化、渲染
+    R->>R: token 解析、受控变量替换、React 渲染
     R-->>U: 文档页面
 ```
 
@@ -205,9 +235,19 @@ sequenceDiagram
 | `docs/`                    | 开发、运维、AI | 架构、ADR、研究、方案、运维      | 否                     |
 | `web/public/docs-content/` | API 调用方     | 快速开始、协议、接口、错误、示例 | 是                     |
 | `docs/openapi/relay.json`  | 工程与合同校验 | 模型调用公开合同候选             | 审计后按需生成公开副本 |
+| `docs/openapi/public-operations.json` | 工程与合同校验 | 已批准公开的 operationId 清单 | 否，构建时只读取 |
 | `docs/openapi/api.json`    | 工程内部       | 后台管理接口                     | 永不公开               |
 
 任何从 `docs/` 进入公开目录的内容都必须经过人工选择和脱敏，不能整目录复制。
+
+`web/public/docs-content/` 中的文件会被静态服务器直接访问，manifest 不能阻止用户手工请求未登记文件。因此构建校验必须枚举该目录的实际文件，并要求它们精确属于以下集合：
+
+- `manifest.json`；
+- manifest 登记的 Markdown；
+- manifest 显式登记的本地静态资源；
+- 构建脚本生成的固定文件，例如 `generated/search-index.json`。
+
+未登记 Markdown、符号链接、隐藏文件、临时文件、内部 OpenAPI、副本和未知生成文件一律使构建失败。
 
 ### 7.2 推荐内容结构
 
@@ -227,12 +267,23 @@ web/public/docs-content/
 │   │   ├── billing.md
 │   │   └── idempotency.md
 │   ├── api-reference/
-│   │   ├── models-list.md
-│   │   ├── chat-completions.md
-│   │   ├── responses-create.md
-│   │   ├── images-generations.md
-│   │   ├── images-edits.md
-│   │   └── images-task-get.md
+│   │   ├── text/
+│   │   │   ├── models-list.md
+│   │   │   ├── chat-completions.md
+│   │   │   ├── responses-create.md
+│   │   │   └── messages-create.md
+│   │   ├── images/
+│   │   │   ├── generations.md
+│   │   │   ├── edits.md
+│   │   │   └── task-get.md
+│   │   ├── videos/
+│   │   │   ├── modelark.md
+│   │   │   ├── kling.md
+│   │   │   └── jimeng.md
+│   │   └── assets/
+│   │       ├── overview.md
+│   │       ├── create-and-manage.md
+│   │       └── real-person-authorization.md
 │   └── guides/
 │       ├── cursor.md
 │       ├── claude-code.md
@@ -241,7 +292,9 @@ web/public/docs-content/
     └── search-index.json
 ```
 
-首期只要求 `zh/`。未来增加语言时按相同 slug 建立 `en/` 等目录，避免把不同语言正文塞进前端 i18n JSON。
+这里列出的是合同审计候选页面，不代表所有 operation 必须发布。最终页面必须以公开 operation 白名单为准；未通过真实北向合同确认的素材、视频或授权 operation 保持未发布。
+
+首期只要求 `zh/`。未来增加语言时按相同 page id 和 slug 建立 `en/` 等目录，避免把不同语言正文塞进前端 i18n JSON。
 
 ## 8. 组件职责
 
@@ -249,49 +302,77 @@ web/public/docs-content/
 | ------------------- | ------------------------------------------ | ------------------------------- |
 | Docs Route          | 解析 `/docs/*`、加载当前页面、设置页面标题 | 不直接拼接 Markdown 文件路径    |
 | Docs Layout         | 顶部栏、侧栏、正文、本页目录、移动端抽屉   | 不解析 Markdown                 |
-| Manifest Loader     | 加载、校验并缓存 manifest                  | 不从目录自动发现未登记页面      |
+| Build Validator     | 校验合同、manifest、公开目录全量文件和敏感内容 | 不把内部 OpenAPI 复制到公开目录 |
+| Manifest Loader     | no-cache 加载、校验并在会话内复用 manifest | 不从目录自动发现未登记页面      |
 | Docs Content Loader | 按 manifest 映射获取单页 Markdown          | 不允许跨目录或任意 URL          |
-| Docs Markdown       | 变量替换、Marked 解析、DOMPurify 净化      | 不执行 Markdown 中的脚本或组件  |
+| Docs Markdown       | Marked token 解析、受控变量替换和 React 渲染 | 不执行或渲染作者原始 HTML       |
 | Heading/TOC         | 生成稳定标题 ID 和本页目录                 | 不修改正文合同                  |
-| Code Block          | 语法高亮、语言标记、复制反馈               | 不执行示例代码                  |
-| Docs Search         | 搜索标题、关键词、摘要和受控正文索引       | 不查询内部 `docs/`              |
+| Code Block          | Shiki token 高亮、语言标记、复制反馈       | 不执行代码或接收高亮 HTML       |
+| Docs Search         | 加载构建期索引，搜索标题、关键词、摘要和 heading | 不抓取 Markdown 或内部 `docs/` |
 | `/api/status`       | 提供部署相关公开信息                       | 不提供用户 API Key 或管理员配置 |
 
 ## 9. Manifest 合同
 
-Manifest 是公开文档导航和文件访问的唯一登记表，至少包含：
+Manifest 是公开文档导航、运行时文件解析和本地资源登记表。首期 schema 必须为未来多语言保留明确层级：
 
 ```json
 {
-  "version": "2026-07-28",
+  "schemaVersion": 1,
+  "contentVersion": "2026-07-29.1",
   "defaultLocale": "zh",
-  "groups": [
-    {
-      "id": "getting-started",
-      "title": "开始使用",
-      "pages": [
+  "locales": {
+    "zh": {
+      "groups": [
         {
-          "title": "快速开始",
-          "slug": "quickstart",
-          "file": "zh/getting-started/quickstart.md",
-          "description": "完成第一次 API 调用",
-          "keywords": ["API Key", "Base URL"]
+          "id": "getting-started",
+          "title": "开始使用",
+          "pages": [
+            {
+              "id": "quickstart",
+              "title": "快速开始",
+              "slug": "quickstart",
+              "file": "zh/getting-started/quickstart.md",
+              "description": "完成第一次 API 调用",
+              "keywords": ["API Key", "Base URL"],
+              "assets": []
+            }
+          ]
         }
       ]
     }
-  ]
+  }
 }
 ```
 
 约束如下：
 
-- `id`、`slug` 和 `file` 在各自作用域内唯一；
-- `slug` 不以 `/` 开头，不包含 `..`、查询参数或 fragment；
-- `file` 必须位于 `/docs-content/` 下并以 `.md` 结尾；
+- `schemaVersion` 只接受实现支持的整数版本；`contentVersion` 每次公开内容变化都必须更新；
+- locale、group id、page id、slug、file 和 assets 在规定作用域内唯一；
+- page id 是跨语言稳定身份，同一主题在不同 locale 中保持相同 page id 和 slug；
+- slug 使用规范化的小写 ASCII 分段，匹配 `^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$`；
+- slug 和 file 禁止空段、`.`、`..`、反斜线、百分号、查询参数、fragment、控制字符和协议相对形式；
+- file 必须以对应 locale 目录开头并以 `.md` 结尾，asset 必须位于对应 locale 的显式资源目录；
+- 路由输入只做一次 URL 解码并与规范 slug 精确匹配，不对非法或大小写不同的路径进行猜测；
 - 页面排序完全由 manifest 决定；
 - 未登记文件不可通过文档路由访问；
+- 未登记文件即使不经过文档路由，也必须由构建全量清单检查阻止进入 `web/dist/docs-content`；
 - 外部链接不进入 `file`，只能作为页面正文或显式导航链接；
+- 字符串长度、关键词数量、单页资源数、页面总数和文件大小必须有显式上限；
 - manifest 校验失败时文档中心显示受控错误页，不猜测目录结构。
+
+Manifest 的标题、摘要和关键词是导航与搜索的权威元数据。Markdown frontmatter 不重复这些字段，只保存：
+
+```yaml
+---
+page-id: images-generations
+kind: api-reference
+last-verified: 2026-07-29
+operations:
+  - createImageGeneration
+---
+```
+
+构建时必须校验 `page-id`、唯一 `h1`、manifest 标题和 operation 白名单的一致性。API Reference 的 operation 必须进一步校验方法、路径、Content-Type 和 OpenAPI schema；普通指南不得伪造 operation 绑定。
 
 ## 10. 路由与导航
 
@@ -306,28 +387,35 @@ Manifest 是公开文档导航和文件访问的唯一登记表，至少包含�
 /docs/api-reference/images/generations
 /docs/api-reference/images/edits
 /docs/api-reference/images/tasks
+/docs/api-reference/videos/modelark
+/docs/api-reference/videos/kling
+/docs/api-reference/videos/jimeng
+/docs/api-reference/assets
 ```
 
-`/docs` 默认进入概述页。不存在的 slug 显示文档专用 404，并保留返回文档首页入口。
+`/docs` 默认进入概述页。不存在或非规范 slug 显示文档专用 404，并保留返回文档首页入口。路由切换后聚焦正文标题；带合法 `#heading` 的深层链接在内容加载完成后滚动到目标章节。
 
 ### 10.2 当前站点导航
 
-站点已有 `docs_link` 配置。内置文档上线后，运行时将其设置为 `/docs`。导航判断必须遵循：
+站点已有 `docs_link` 配置。内置文档上线不覆盖现有外部配置；首页、顶部导航和文档页通过同一解析器遵循：
 
 ```text
-http:// 或 https:// -> 外部链接
-/ 开头             -> 内部 TanStack Router 链接
+空值                            -> 内部 /docs
+合法 http:// 或 https://        -> 外部链接
+单个 / 开头且不是 //            -> 内部 TanStack Router 链接
+其他值                          -> 拒绝并安全回退 /docs
 ```
 
-不能因为 `docs_link` 非空就一律按外部链接处理。
+解析前先 trim；禁止 `javascript:`、`data:`、协议相对 URL、反斜线和控制字符。不能因为 `docs_link` 非空就一律按外部链接处理，也不能让非法配置进入 `<a href>`。
 
 ### 10.3 文档内部链接
 
 - `/docs/...` 使用客户端路由；
 - `#heading` 保持当前页面锚点跳转；
-- `https://...` 使用新窗口和 `noopener noreferrer`；
-- 不支持 `javascript:`、`data:` 等可执行协议；
-- Markdown 相对链接在解析后必须仍落入已登记文档 slug。
+- 合法 `http://`、`https://` 使用新窗口和 `noopener noreferrer`；
+- 不支持协议相对 URL、`javascript:`、`data:`、`file:` 等其他协议；
+- Markdown 相对链接必须解析为 manifest 中已登记的逻辑 slug，不能直接解析为 Markdown 文件路径；
+- 首期图片只允许 manifest 登记的本地资源，外部图片和内联 data URL 均拒绝。
 
 ## 11. Markdown 渲染与安全
 
@@ -336,19 +424,20 @@ http:// 或 https:// -> 外部链接
 ```text
 读取 Markdown
   -> 解析受控 frontmatter
-  -> 替换公开站点变量
-  -> 解析 Markdown token
+  -> Marked lexer 解析 token
+  -> 拒绝 raw HTML 与未支持 token
+  -> 仅在文本/代码 token 中替换公开站点变量
   -> 为 heading 生成稳定 ID
-  -> 渲染代码块等受控扩展
-  -> DOMPurify
-  -> 调整内部/外部链接
-  -> React 展示
+  -> 校验并分类链接与本地资源
+  -> React 受控组件渲染
+  -> Shiki codeToTokens 按需高亮
 ```
 
 允许的动态占位符首期限定为：
 
 ```text
 {{SYSTEM_NAME}}
+{{SITE_BASE_URL}}
 {{OPENAI_BASE_URL}}
 {{ANTHROPIC_BASE_URL}}
 {{API_KEY_PLACEHOLDER}}
@@ -357,7 +446,19 @@ http:// 或 https:// -> 外部链接
 
 这些值只能来自公开站点状态、当前请求 origin 或固定占位符。禁止从 localStorage、用户令牌列表、Cookie 或真实登录凭据自动填充。
 
-原始 HTML 即使被 Markdown 解析，也必须经过允许列表净化。`script`、`style`、`iframe`、事件属性、表单和危险 URL 协议必须移除。
+变量替换要求：
+
+- `SYSTEM_NAME` 作为纯文本 token 输出；
+- Base URL 必须先通过 HTTP(S) URL 校验和协议路径归一化，再作为文本或代码输出；
+- API Key 与模型始终使用固定占位符，不读取当前登录用户数据；
+- 未知占位符使构建失败，运行时不做模糊替换；
+- 状态接口失败时以当前 origin 推导 Base URL，不阻塞静态正文。
+
+首期不支持作者原始 HTML。构建器发现 HTML token、MDX、内联 SVG、MathML、表单或 style 时直接失败；运行时再次丢弃这些 token。表格、提示块、代码块和链接均由受控 React 组件渲染。
+
+Shiki 使用 `codeToTokens` 或等价 token API，代码文本由 React 转义，颜色值只来自已加载主题，不接收 Markdown 中的 style。若某个受控扩展必须输出 HTML 字符串，该片段必须在独立模块中用 DOMPurify 的显式 `ALLOWED_TAGS`、`ALLOWED_ATTR`、`FORBID_TAGS`、`FORBID_ATTR` 和 URI 规则净化；净化后不得重新写入未经 URL 解析器验证的属性。
+
+Heading ID 使用固定算法：对 heading 纯文本做 Unicode NFKC、trim、小写和稳定分段；空结果使用确定性 `section`，重复项依次添加 `-2`、`-3`。算法版本属于文档路由合同，变更时需要迁移旧锚点或提供兼容跳转。
 
 ## 12. API 合同与 OpenAPI 治理
 
@@ -365,7 +466,7 @@ http:// 或 https:// -> 外部链接
 
 公开文档只覆盖 Relay 和明确发布的平台 API。以下内容不得进入公开 API Reference：
 
-- `/api` 后台管理接口；
+- `docs/openapi/api.json` 中的后台管理接口；
 - 渠道、用户管理、系统设置和内部日志接口；
 - Provider 真实模型 ID、渠道 ID、Key、Header override；
 - Task `private_data` 和上游请求/响应原文；
@@ -373,20 +474,19 @@ http:// 或 https:// -> 外部链接
 - 未验证的供应商原生协议；
 - DTO 捕获但未声明为公共合同的未知字段。
 
+是否公开按 operationId 白名单判断，禁止按 `/api`、`/v1` 等路径前缀粗略判断。公开白名单只记录已批准 operationId 和必要的发布状态，不复制 schema；schema 仍以审计后的 `relay.json` 为机器合同。
+
 ### 12.2 OpenAPI 协作方式
 
-短期：
+实施前置门禁：
 
-- Markdown 页面人工维护；
-- `docs/openapi/relay.json` 作为审计输入，不直接复制发布；
-- 每个接口页面记录方法、路径、Content-Type、鉴权和最后验证日期。
+- 建立 `docs/openapi/public-operations.json`；
+- 审计并修正 `relay.json` 中图片 Qwen 私有结构、重复 operationId、缺失的图片 Task、视频、素材和错误响应；
+- 明确退休、存量只读、未实现和未验证 operation，不得进入白名单；
+- 校验 Gin 路由、OpenAPI 路径/方法/operationId 和 Markdown frontmatter；
+- 每个 API Reference 记录鉴权、Content-Type、字段上限、响应、错误、幂等或任务生命周期和最后验证日期。
 
-中期：
-
-- 修正 `relay.json` 与真实北向合同的偏差；
-- 增加路由与 OpenAPI 路径、方法、`operationId` 的检查；
-- 从经过白名单筛选的 OpenAPI operation 生成参数表或校验 Markdown 示例；
-- 生成的公开产物进入 `web/public/docs-content/generated/`。
+首期 Markdown 页面人工维护，但结构化参数表和示例必须通过 OpenAPI 校验。经过白名单筛选的生成内容只能进入 `web/public/docs-content/generated/`，且同样受公开目录全量清单约束。
 
 长期：
 
@@ -405,7 +505,9 @@ http:// 或 https:// -> 外部链接
 - keywords；
 - heading。
 
-全文索引后续在同一 Web 构建前生成，浏览器只加载索引 JSON，不在每次搜索时抓取全部 Markdown。
+这些字段在 `bun run docs:validate` 中从 manifest 和已登记 Markdown 的 `h2`/`h3` 生成到 `generated/search-index.json`。浏览器首次打开搜索时按需加载当前 locale 索引，不在运行时抓取全部 Markdown。全文正文搜索不在首期范围内。
+
+索引生成必须保证稳定排序、去重和大小上限；未登记页面、其他 locale、原始正文、代码内容和内部 `docs/` 不得进入索引。
 
 ### 13.2 本页目录
 
@@ -431,10 +533,11 @@ http:// 或 https:// -> 外部链接
 ## 14. 缓存与性能
 
 - Docs 路由保持独立代码分割，不增加首页初始包。
-- Manifest 在会话内缓存，页面 Markdown 按需加载。
+- Manifest 使用 `cache: no-store` 或等价 no-cache 语义加载，校验成功后才在当前会话内复用。
+- 现有静态中间件默认对非根资源缓存一周，因此必须对 `/docs-content/manifest.json` 增加窄范围 `no-cache, must-revalidate` 规则，或提供经验证等价的构建版本 cache-bust；不能只依赖响应中的自定义版本头。
+- 页面 Markdown 和搜索索引按 `contentVersion` 附加查询参数；部署为单个 Go embed 版本，manifest 与内容必须来自同一构建产物。
 - 页面切换可以预取当前页相邻文档，但不得启动全站无界并发抓取。
 - Shiki 或等价高亮逻辑只在进入文档路由时加载。
-- Manifest 包含版本值；Markdown 请求可附带该版本，避免部署后继续命中旧内容。
 - 单页 Markdown 应保持可审查大小，超大参考内容拆成多个主题页。
 
 ## 15. 错误与降级
@@ -450,6 +553,8 @@ http:// 或 https:// -> 外部链接
 | 搜索索引失败       | 保留目录导航，隐藏或禁用搜索                 |
 
 普通用户错误页面不得包含绝对文件路径、原始 Markdown、堆栈或内部配置。
+
+构建期的合同、公开目录清单、raw HTML、未知占位符、敏感内容或索引生成错误不允许运行时降级，必须直接阻止生产构建。
 
 ## 16. 国际化
 
@@ -469,7 +574,7 @@ docs-content/zh/...
 docs-content/en/...
 ```
 
-同一主题在不同语言下保持相同逻辑 slug。语言缺失时回退默认语言，并明确展示当前回退状态；不把整篇 Markdown 存入 i18n JSON。
+Manifest 按 locale 分组，同一主题在不同语言下保持相同 page id 和逻辑 slug。当前 UI locale 不存在或单页缺失时回退 `defaultLocale`，并明确展示当前回退状态；不把整篇 Markdown 存入 i18n JSON。
 
 ## 17. 备选方案
 
@@ -492,7 +597,10 @@ docs-content/en/...
 ## 18. 演进约束
 
 - 新增接口页面前先确认接口已公开且合同可追溯。
+- 新增或删除公开 API 必须在同一变更中更新 Gin 路由审计、`relay.json`、公开 operation 白名单和对应 Markdown。
 - 文档不得先于能力发布而宣称支持。
 - 废弃页面必须提供迁移说明和重定向，不能直接复用旧 slug 表示新合同。
+- Manifest schema、heading ID 算法、slug 和公开 operationId 都属于稳定合同；不兼容变更必须升级版本并提供迁移。
+- `docs:validate`、组件测试和最终 `web/dist/docs-content` 审计属于发布门禁，不得标记为可选。
 - 引入在线 Try it 前必须单独完成 API Key、CORS、代理、日志和文件上传安全设计。
 - 若未来文档规模、SEO 或独立发布需求超过当前 SPA 能力，应重新评估静态站点生成，但不得同时维护两套正文事实来源。

@@ -272,6 +272,7 @@ export type BillingSettings = {
   'billing_setting.billing_mode': string
   'billing_setting.billing_expr': string
   'task_billing_setting.preconsume_tokens': string
+  'billing_statement_setting.context_thresholds': string
   'tool_price_setting.prices': string
   TopupGroupRatio: string
   GroupRatio: string

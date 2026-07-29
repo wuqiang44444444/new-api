@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/QuantumNous/new-api/setting/billing_statement_setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -307,6 +308,11 @@ func UpdateOption(c *gin.Context) {
 		}
 	case billing_setting.TaskPreConsumeTokensOption:
 		if err = billing_setting.ValidateTaskPreConsumeTokensJSON(option.Value.(string)); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+	case billing_statement_setting.ContextThresholdsOption:
+		if err = billing_statement_setting.ValidateContextThresholdsJSON(option.Value.(string)); err != nil {
 			common.ApiErrorMsg(c, err.Error())
 			return
 		}

@@ -19,11 +19,70 @@ For commercial licensing, please contact support@quantumnous.com
 import dayjs from '@/lib/dayjs'
 
 import type {
+  BillingBreakdownItem,
+  BillingBreakdownSummary,
   BillingPeriod,
   BillingPreset,
   BillingStatementItem,
   BillingSummary,
 } from './types'
+
+export function summarizeBillingBreakdownItems(
+  items: BillingBreakdownItem[]
+): BillingBreakdownSummary {
+  const summary: BillingBreakdownSummary = {
+    requests: 0,
+    gross_quota: 0,
+  }
+  for (const item of items) {
+    summary.requests += item.requests
+    summary.gross_quota += item.gross_quota
+    if (item.cache) {
+      summary.cache ??= {
+        hit_requests: 0,
+        write_requests: 0,
+        read_tokens: 0,
+        write_tokens: 0,
+        hit_request_gross_quota: 0,
+        hit_request_ratio: 0,
+      }
+      summary.cache.hit_requests += item.cache.hit_requests
+      summary.cache.write_requests += item.cache.write_requests
+      summary.cache.read_tokens += item.cache.read_tokens
+      summary.cache.write_tokens += item.cache.write_tokens
+      summary.cache.hit_request_gross_quota +=
+        item.cache.hit_request_gross_quota
+    }
+    if (item.context) {
+      summary.context ??= {
+        classified_requests: 0,
+        short_requests: 0,
+        long_requests: 0,
+        short_gross_quota: 0,
+        long_gross_quota: 0,
+      }
+      summary.context.classified_requests += item.context.classified_requests
+      summary.context.short_requests += item.context.short_requests
+      summary.context.long_requests += item.context.long_requests
+      summary.context.short_gross_quota += item.context.short_gross_quota
+      summary.context.long_gross_quota += item.context.long_gross_quota
+    }
+    if (item.billing_mode) {
+      summary.billing_mode ??= {
+        tiered_requests: 0,
+        tiered_gross_quota: 0,
+      }
+      summary.billing_mode.tiered_requests += item.billing_mode.tiered_requests
+      summary.billing_mode.tiered_gross_quota +=
+        item.billing_mode.tiered_gross_quota
+    }
+  }
+  if (summary.cache && summary.requests > 0) {
+    summary.cache.hit_request_ratio =
+      summary.cache.hit_requests / summary.requests
+  }
+  return summary
+}
 
 export function resolveBillingPeriod(
   preset: BillingPreset,

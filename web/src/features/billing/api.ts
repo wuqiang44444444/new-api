@@ -18,7 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
-import type { BillingStatementResponse } from './types'
+import type {
+  BillingBreakdownResponse,
+  BillingStatementResponse,
+} from './types'
 
 export async function getBillingStatement(
   startTimestamp: number,
@@ -26,6 +29,22 @@ export async function getBillingStatement(
 ) {
   const response = await api.get<BillingStatementResponse>(
     '/api/billing/self',
+    {
+      params: {
+        start_timestamp: startTimestamp,
+        end_timestamp: endTimestamp,
+      },
+    }
+  )
+  return response.data
+}
+
+export async function getBillingBreakdown(
+  startTimestamp: number,
+  endTimestamp: number
+) {
+  const response = await api.get<BillingBreakdownResponse>(
+    '/api/billing/self/breakdown',
     {
       params: {
         start_timestamp: startTimestamp,

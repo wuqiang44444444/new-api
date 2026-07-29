@@ -1,0 +1,492 @@
+{
+  "schemaVersion": 1,
+  "contentVersion": "2026-07-29.1",
+  "locales": {
+    "zh": [
+      {
+        "pageId": "overview",
+        "slug": "overview",
+        "title": "API 文档概述",
+        "description": "了解统一 API 的协议、能力范围与阅读路径",
+        "keywords": ["API", "文档", "能力"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "从这里开始",
+            "text": "从这里开始"
+          },
+          {
+            "depth": 2,
+            "id": "能力范围",
+            "text": "能力范围"
+          },
+          {
+            "depth": 2,
+            "id": "兼容性边界",
+            "text": "兼容性边界"
+          },
+          {
+            "depth": 2,
+            "id": "示例约定",
+            "text": "示例约定"
+          }
+        ]
+      },
+      {
+        "pageId": "quickstart",
+        "slug": "quickstart",
+        "title": "快速开始",
+        "description": "用占位 Key 完成第一次文本请求",
+        "keywords": ["curl", "入门", "Base URL"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "准备-api-key",
+            "text": "准备 API Key"
+          },
+          {
+            "depth": 2,
+            "id": "查询可用模型",
+            "text": "查询可用模型"
+          },
+          {
+            "depth": 2,
+            "id": "发起第一次请求",
+            "text": "发起第一次请求"
+          },
+          {
+            "depth": 2,
+            "id": "下一步",
+            "text": "下一步"
+          }
+        ]
+      },
+      {
+        "pageId": "authentication",
+        "slug": "authentication",
+        "title": "鉴权",
+        "description": "安全地使用 Bearer API Key",
+        "keywords": ["Bearer", "API Key", "安全"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "bearer-鉴权",
+            "text": "Bearer 鉴权"
+          },
+          {
+            "depth": 2,
+            "id": "安全要求",
+            "text": "安全要求"
+          },
+          {
+            "depth": 2,
+            "id": "常见鉴权错误",
+            "text": "常见鉴权错误"
+          }
+        ]
+      },
+      {
+        "pageId": "base-url",
+        "slug": "base-url",
+        "title": "Base URL",
+        "description": "按协议选择当前部署的动态 Base URL",
+        "keywords": ["OpenAI", "Anthropic", "URL"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "openai-兼容客户端",
+            "text": "OpenAI 兼容客户端"
+          },
+          {
+            "depth": 2,
+            "id": "anthropic-兼容客户端",
+            "text": "Anthropic 兼容客户端"
+          },
+          {
+            "depth": 2,
+            "id": "平台原生入口",
+            "text": "平台原生入口"
+          },
+          {
+            "depth": 2,
+            "id": "反向代理与路径前缀",
+            "text": "反向代理与路径前缀"
+          }
+        ]
+      },
+      {
+        "pageId": "errors",
+        "slug": "concepts/errors",
+        "title": "错误与重试",
+        "description": "识别错误信封、限流和安全重试边界",
+        "keywords": ["错误码", "重试", "限流"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "http-状态",
+            "text": "HTTP 状态"
+          },
+          {
+            "depth": 2,
+            "id": "错误信封",
+            "text": "错误信封"
+          },
+          {
+            "depth": 2,
+            "id": "安全重试",
+            "text": "安全重试"
+          },
+          {
+            "depth": 2,
+            "id": "限流与计费",
+            "text": "限流与计费"
+          }
+        ]
+      },
+      {
+        "pageId": "async-tasks",
+        "slug": "concepts/async-tasks",
+        "title": "异步任务",
+        "description": "轮询图片、视频与素材任务的通用方法",
+        "keywords": ["任务", "轮询", "状态"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "状态机",
+            "text": "状态机"
+          },
+          {
+            "depth": 2,
+            "id": "轮询建议",
+            "text": "轮询建议"
+          },
+          {
+            "depth": 2,
+            "id": "任务隔离",
+            "text": "任务隔离"
+          },
+          {
+            "depth": 2,
+            "id": "内容下载",
+            "text": "内容下载"
+          }
+        ]
+      },
+      {
+        "pageId": "text-api",
+        "slug": "api-reference/text",
+        "title": "文本与模型",
+        "description": "模型列表、Chat Completions、Responses 与 Messages",
+        "keywords": ["模型", "Chat", "Responses", "Claude"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "查询模型",
+            "text": "查询模型"
+          },
+          {
+            "depth": 2,
+            "id": "chat-completions",
+            "text": "Chat Completions"
+          },
+          {
+            "depth": 2,
+            "id": "responses",
+            "text": "Responses"
+          },
+          {
+            "depth": 2,
+            "id": "anthropic-messages",
+            "text": "Anthropic Messages"
+          },
+          {
+            "depth": 2,
+            "id": "计费与错误",
+            "text": "计费与错误"
+          }
+        ]
+      },
+      {
+        "pageId": "images-generations",
+        "slug": "api-reference/images/generations",
+        "title": "图片生成",
+        "description": "使用 OpenAI 兼容合同创建图片",
+        "keywords": ["图片生成", "prompt", "n"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "请求",
+            "text": "请求"
+          },
+          {
+            "depth": 2,
+            "id": "同步响应",
+            "text": "同步响应"
+          },
+          {
+            "depth": 2,
+            "id": "异步响应",
+            "text": "异步响应"
+          },
+          {
+            "depth": 2,
+            "id": "计费与幂等",
+            "text": "计费与幂等"
+          }
+        ]
+      },
+      {
+        "pageId": "images-edits",
+        "slug": "api-reference/images/edits",
+        "title": "图片编辑",
+        "description": "以 multipart 请求编辑图片",
+        "keywords": ["图片编辑", "multipart", "mask"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "最小请求",
+            "text": "最小请求"
+          },
+          {
+            "depth": 2,
+            "id": "文件要求",
+            "text": "文件要求"
+          },
+          {
+            "depth": 2,
+            "id": "响应与任务",
+            "text": "响应与任务"
+          },
+          {
+            "depth": 2,
+            "id": "重试",
+            "text": "重试"
+          }
+        ]
+      },
+      {
+        "pageId": "images-task-get",
+        "slug": "api-reference/images/tasks",
+        "title": "查询图片任务",
+        "description": "查询异步图片任务状态和结果",
+        "keywords": ["图片任务", "queued", "completed"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "请求",
+            "text": "请求"
+          },
+          {
+            "depth": 2,
+            "id": "任务响应",
+            "text": "任务响应"
+          },
+          {
+            "depth": 2,
+            "id": "状态",
+            "text": "状态"
+          },
+          {
+            "depth": 2,
+            "id": "轮询",
+            "text": "轮询"
+          }
+        ]
+      },
+      {
+        "pageId": "videos-modelark",
+        "slug": "api-reference/videos/modelark",
+        "title": "ModelArk 视频",
+        "description": "创建、列出、查询和删除 ModelArk 视频任务",
+        "keywords": ["ModelArk", "视频", "任务"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "创建任务",
+            "text": "创建任务"
+          },
+          {
+            "depth": 2,
+            "id": "列表与查询",
+            "text": "列表与查询"
+          },
+          {
+            "depth": 2,
+            "id": "下载内容",
+            "text": "下载内容"
+          },
+          {
+            "depth": 2,
+            "id": "删除任务",
+            "text": "删除任务"
+          },
+          {
+            "depth": 2,
+            "id": "计费与重试",
+            "text": "计费与重试"
+          }
+        ]
+      },
+      {
+        "pageId": "videos-kling",
+        "slug": "api-reference/videos/kling",
+        "title": "Kling 视频",
+        "description": "使用 Kling 文生视频与图生视频合同",
+        "keywords": ["Kling", "文生视频", "图生视频"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "文生视频",
+            "text": "文生视频"
+          },
+          {
+            "depth": 2,
+            "id": "图生视频",
+            "text": "图生视频"
+          },
+          {
+            "depth": 2,
+            "id": "查询任务",
+            "text": "查询任务"
+          },
+          {
+            "depth": 2,
+            "id": "字段与计费",
+            "text": "字段与计费"
+          }
+        ]
+      },
+      {
+        "pageId": "videos-jimeng",
+        "slug": "api-reference/videos/jimeng",
+        "title": "即梦视频",
+        "description": "按 Action 提交或查询即梦异步任务",
+        "keywords": ["即梦", "Action", "视频"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "提交任务",
+            "text": "提交任务"
+          },
+          {
+            "depth": 2,
+            "id": "查询结果",
+            "text": "查询结果"
+          },
+          {
+            "depth": 2,
+            "id": "响应与重试",
+            "text": "响应与重试"
+          }
+        ]
+      },
+      {
+        "pageId": "assets-lifecycle",
+        "slug": "api-reference/assets",
+        "title": "素材生命周期",
+        "description": "创建、查询、更新、迁移和删除素材",
+        "keywords": ["素材", "asset", "迁移"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "创建素材",
+            "text": "创建素材"
+          },
+          {
+            "depth": 2,
+            "id": "查询与管理",
+            "text": "查询与管理"
+          },
+          {
+            "depth": 2,
+            "id": "迁移",
+            "text": "迁移"
+          },
+          {
+            "depth": 2,
+            "id": "asset-引用",
+            "text": "asset 引用"
+          },
+          {
+            "depth": 2,
+            "id": "状态与错误",
+            "text": "状态与错误"
+          }
+        ]
+      },
+      {
+        "pageId": "assets-authorizations",
+        "slug": "api-reference/assets/real-person-authorizations",
+        "title": "真人授权",
+        "description": "创建、查询、撤销和重试真人授权",
+        "keywords": ["真人授权", "同意", "状态"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "创建授权",
+            "text": "创建授权"
+          },
+          {
+            "depth": 2,
+            "id": "查询状态",
+            "text": "查询状态"
+          },
+          {
+            "depth": 2,
+            "id": "撤销与重试",
+            "text": "撤销与重试"
+          },
+          {
+            "depth": 2,
+            "id": "隐私边界",
+            "text": "隐私边界"
+          }
+        ]
+      },
+      {
+        "pageId": "troubleshooting",
+        "slug": "guides/troubleshooting",
+        "title": "排障清单",
+        "description": "排查 Base URL、鉴权、模型、媒体和任务问题",
+        "keywords": ["排障", "Content-Type", "额度"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "base-url",
+            "text": "Base URL"
+          },
+          {
+            "depth": 2,
+            "id": "鉴权与模型",
+            "text": "鉴权与模型"
+          },
+          {
+            "depth": 2,
+            "id": "content-type",
+            "text": "Content-Type"
+          },
+          {
+            "depth": 2,
+            "id": "图片与视频",
+            "text": "图片与视频"
+          },
+          {
+            "depth": 2,
+            "id": "素材",
+            "text": "素材"
+          },
+          {
+            "depth": 2,
+            "id": "异步任务",
+            "text": "异步任务"
+          },
+          {
+            "depth": 2,
+            "id": "提交支持信息",
+            "text": "提交支持信息"
+          }
+        ]
+      }
+    ]
+  }
+}

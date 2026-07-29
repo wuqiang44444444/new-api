@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-07-28
+last-reviewed: 2026-07-29
 ---
 
 # 50-planning — 目标说明
@@ -15,6 +15,7 @@ last-reviewed: 2026-07-28
 ## 当前文档
 
 - [路线图](路线图.md)
+- [内置 API 文档中心实施计划](内置API文档中心实施计划.md)
 - [变更记录](变更记录.md)
 
 ## 不放什么

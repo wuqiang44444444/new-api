@@ -90,3 +90,64 @@ export type BillingStatementResponse = {
   message: string
   data?: BillingStatementData
 }
+
+export type BillingCacheBreakdown = {
+  hit_requests: number
+  write_requests: number
+  read_tokens: number
+  write_tokens: number
+  hit_request_gross_quota: number
+  hit_request_ratio: number
+}
+
+export type BillingContextBreakdown = {
+  threshold_tokens?: number
+  classified_requests: number
+  short_requests: number
+  long_requests: number
+  short_gross_quota: number
+  long_gross_quota: number
+}
+
+export type BillingModeBreakdown = {
+  tiered_requests: number
+  tiered_gross_quota: number
+}
+
+export type BillingBreakdownItem = {
+  token_id: number
+  token_name: string
+  model_name: string
+  requests: number
+  gross_quota: number
+  cache?: BillingCacheBreakdown
+  context?: BillingContextBreakdown
+  billing_mode?: BillingModeBreakdown
+}
+
+export type BillingBreakdownSummary = {
+  requests: number
+  gross_quota: number
+  cache?: BillingCacheBreakdown
+  context?: BillingContextBreakdown
+  billing_mode?: BillingModeBreakdown
+}
+
+export type BillingBreakdownData = {
+  period: BillingPeriod
+  summary: BillingBreakdownSummary
+  items: BillingBreakdownItem[]
+  generated_at: number
+  data_source: 'settlement_logs'
+  classification: {
+    context_threshold_source: 'current_model_config'
+    unconfigured_context: 'omitted'
+    quota_basis: 'settled_consume_log_quota'
+  }
+}
+
+export type BillingBreakdownResponse = {
+  success: boolean
+  message: string
+  data?: BillingBreakdownData
+}

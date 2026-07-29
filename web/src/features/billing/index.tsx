@@ -29,11 +29,16 @@ import { Badge } from '@/components/ui/badge'
 import dayjs from '@/lib/dayjs'
 import { formatTimestampToDate } from '@/lib/format'
 
-import { getBillingStatement } from './api'
+import { getBillingBreakdown, getBillingStatement } from './api'
+import { BillingBreakdown } from './components/billing-breakdown'
 import { BillingFilters } from './components/billing-filters'
 import { BillingStatementTable } from './components/billing-statement-table'
 import { BillingSummaryCards } from './components/billing-summary'
-import { resolveBillingPeriod, summarizeBillingItems } from './lib'
+import {
+  resolveBillingPeriod,
+  summarizeBillingBreakdownItems,
+  summarizeBillingItems,
+} from './lib'
 import type { BillingPreset, BillingSearch, BillingView } from './types'
 
 type BillingProps = {
@@ -72,6 +77,26 @@ export function Billing(props: BillingProps) {
       }
       return response.data
     },
+    staleTime: 60 * 1000,
+    retry: false,
+  })
+  const breakdownQuery = useQuery({
+    queryKey: [
+      'billing-statement-breakdown',
+      period.start_timestamp,
+      period.end_timestamp,
+    ],
+    queryFn: async () => {
+      const response = await getBillingBreakdown(
+        period.start_timestamp,
+        period.end_timestamp
+      )
+      if (!response.success || !response.data) {
+        throw new Error(response.message || 'Unable to load usage breakdown')
+      }
+      return response.data
+    },
+    enabled: billingQuery.isSuccess,
     staleTime: 60 * 1000,
     retry: false,
   })
@@ -115,6 +140,15 @@ export function Billing(props: BillingProps) {
     () => summarizeBillingItems(filteredItems, period),
     [filteredItems, period]
   )
+  const filteredBreakdownSummary = useMemo(() => {
+    const items = (breakdownQuery.data?.items ?? []).filter(
+      (item) =>
+        (props.search.tokenId == null ||
+          item.token_id === props.search.tokenId) &&
+        (!props.search.model || item.model_name === props.search.model)
+    )
+    return summarizeBillingBreakdownItems(items)
+  }, [breakdownQuery.data?.items, props.search.model, props.search.tokenId])
 
   const updateSearch = (patch: Partial<BillingSearch>) => {
     navigate({
@@ -186,6 +220,7 @@ export function Billing(props: BillingProps) {
                 funds={statement?.funds}
                 loading={billingQuery.isLoading}
               />
+              <BillingBreakdown summary={filteredBreakdownSummary} />
               <BillingStatementTable
                 items={filteredItems}
                 period={period}
