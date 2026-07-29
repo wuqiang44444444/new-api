@@ -16,7 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/service/relayconvert"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert"
 )
 
 type mediaImageTaskPollEnvelope struct {

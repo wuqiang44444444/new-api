@@ -1,33 +1,15 @@
 package dto
 
-import "fmt"
+import kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 
-type AssetUpstreamProfile string
+type AssetUpstreamProfile = kitdto.AssetUpstreamProfile
 
 const (
-	AssetUpstreamProfileNone       AssetUpstreamProfile = "none"
-	AssetUpstreamProfileArk        AssetUpstreamProfile = "ark_assets"
-	AssetUpstreamProfileRelay      AssetUpstreamProfile = "relay_assets"
-	AssetUpstreamProfileJoyCreator AssetUpstreamProfile = "joycreator_assets"
-	AssetUpstreamProfileOfficial   AssetUpstreamProfile = "official_action_assets"
+	AssetUpstreamProfileNone       = kitdto.AssetUpstreamProfileNone
+	AssetUpstreamProfileArk        = kitdto.AssetUpstreamProfileArk
+	AssetUpstreamProfileRelay      = kitdto.AssetUpstreamProfileRelay
+	AssetUpstreamProfileJoyCreator = kitdto.AssetUpstreamProfileJoyCreator
+	AssetUpstreamProfileOfficial   = kitdto.AssetUpstreamProfileOfficial
 )
 
-func (p AssetUpstreamProfile) IsValid() bool {
-	switch p {
-	case "", AssetUpstreamProfileNone, AssetUpstreamProfileArk, AssetUpstreamProfileRelay, AssetUpstreamProfileJoyCreator, AssetUpstreamProfileOfficial:
-		return true
-	default:
-		return false
-	}
-}
-
-func (p AssetUpstreamProfile) IsRoutable() bool {
-	return p == AssetUpstreamProfileArk || p == AssetUpstreamProfileRelay || p == AssetUpstreamProfileOfficial
-}
-
-func ValidateAssetUpstreamProfile(p AssetUpstreamProfile) error {
-	if !p.IsValid() {
-		return fmt.Errorf("unsupported asset upstream profile %q", p)
-	}
-	return nil
-}
+var ValidateAssetUpstreamProfile = kitdto.ValidateAssetUpstreamProfile

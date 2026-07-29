@@ -1,64 +1,12 @@
-# OS and editor files
-.DS_Store
-.AppleDouble
-.LSOverride
-.idea/
-.vscode/
-.zed/
-.history/
-*.swp
-*.swo
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-
-# Local environment and secrets
-.env
-.env.*
-!.env.example
-!*.env.example
-!**/*.env.example
-*.key
-*.pem
-*.p12
-*.pfx
-*.crt
-
-# Runtime data, uploads, and logs
-/data/
-/upload/
-/uploads/
-/logs/
-/tmp/
-/temp/
-/.tmp/
-/plans/
-*.log
-*.pid
-*.sock
-
-# Databases and local persistence
-*.db
-*.db-shm
-*.db-wal
-*.db-journal
-*.sqlite
-*.sqlite3
-*.sqlite-shm
-*.sqlite-wal
-
-# Go build, test, and tool caches
-/one-api
-/new-api
+.idea
+.vscode
+.zed
+.history
+upload
 *.exe
-*.test
-*.out
-*.prof
-/coverage.out
-/coverage/
-/build/
-/dist/
+*.db
+build
+*.db-journal
 logs
 web/dist
 web/node_modules
@@ -66,50 +14,8 @@ web/node_modules
 one-api
 new-api
 /__debug_bin*
-/.gocache/
-/.gocache-temp/
-/.gomodcache/
-/.gopath/
-/tmp/main
-
-# Frontend dependencies, builds, and caches
-/web/node_modules/
-/web/default/node_modules/
-/web/classic/node_modules/
-/web/dist/
-/web/default/dist/
-/web/classic/dist/
-/web/default/dist-ssr/
-/web/classic/dist-ssr/
-/web/default/.rsbuild/
-/web/default/.vite/
-/web/classic/.vite/
-/web/default/.tanstack/
-/web/classic/.tanstack/
-/web/default/coverage/
-/web/classic/coverage/
-/web/default/.eslintcache
-/web/classic/.eslintcache
-*.tsbuildinfo
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-bun-debug.log*
-lerna-debug.log*
-
-# Electron dependencies and build output
-/electron/node_modules/
-/electron/dist/
-/electron/build/
-/electron/out/
-
-# Docker and local deployment overrides
-docker-compose.override.yml
-docker-compose.*.override.yml
-
-# Local tool state and scratch workspaces
-.cache/
+.DS_Store
+tiktoken_cache
 .eslintcache
 .gocache
 .gomodcache/
@@ -127,10 +33,11 @@ electron/dist
 .test
 token_estimator_test.go
 skills-lock.json
+.playwright-mcp
 
-# Local-only live probes and scratch test workspaces
+# Local-only live probes and scratch test workspaces.
+.local-tests/
 service/relayconvert/chat_responses_live_local_test.go
 service/openaicompat/chat_responses_live_local_test.go
-token_estimator_test.go
-.air.toml
-.test
+go.work
+go.work.sum

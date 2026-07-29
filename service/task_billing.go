@@ -192,6 +192,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 		Group:     task.Group,
 		Other:     other,
 	})
+
 	return true
 }
 

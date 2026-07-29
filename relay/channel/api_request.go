@@ -17,9 +17,9 @@ import (
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
@@ -476,15 +476,19 @@ func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	return doRequest(c, req, info)
 }
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
-	var client *http.Client
-	var err error
-	if info.ChannelSetting.Proxy != "" {
-		client, err = service.GetHttpClientWithProxy(info.ChannelSetting.Proxy)
-		if err != nil {
-			return nil, fmt.Errorf("new proxy http client failed: %w", err)
-		}
-	} else {
-		client = service.GetHttpClient()
+	client, err := service.GetHttpClientWithProxySettings(info.ChannelSetting.Proxy, info.ChannelSetting)
+	if err != nil {
+		return nil, fmt.Errorf("new proxy http client failed: %w", err)
+	}
+	if common2.DebugEnabled && req != nil && req.URL != nil {
+		policy := service.NormalizeHTTPTransportPolicy(info.ChannelSetting)
+		logger.LogDebug(c, fmt.Sprintf(
+			"http transport select: host=%s protocol=%s shards=%d policy=%s",
+			req.URL.Host,
+			policy.Protocol,
+			policy.Shards,
+			policy.String(),
+		))
 	}
 
 	var stopPinger context.CancelFunc
@@ -517,6 +521,17 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 	if resp == nil {
 		return nil, errors.New("resp is nil")
+	}
+	if common2.DebugEnabled {
+		policy := service.NormalizeHTTPTransportPolicy(info.ChannelSetting)
+		logger.LogDebug(c, fmt.Sprintf(
+			"http transport negotiated: host=%s protocol=%s shards=%d policy=%s negotiated=%s",
+			req.URL.Host,
+			policy.Protocol,
+			policy.Shards,
+			policy.String(),
+			resp.Proto,
+		))
 	}
 
 	// 始终覆盖（即便为空）：重试场景下若前次失败响应带 ID 而最终成功响应不带，

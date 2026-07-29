@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	kittypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -125,7 +126,7 @@ func TestGPTImage2SynchronousRelayDoesNotCreateTask(t *testing.T) {
 		RequestURLPath:    "/v1/images/generations",
 		Request:           imageRequest,
 		RelayMode:         relayconstant.RelayModeImagesGenerations,
-		RelayFormat:       types.RelayFormatOpenAIImage,
+		RelayFormat:       kittypes.RelayFormatOpenAIImage,
 		StartTime:         startedAt,
 		FirstResponseTime: startedAt.Add(100 * time.Millisecond),
 		PriceData: types.PriceData{

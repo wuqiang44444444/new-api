@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	kittypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -202,10 +203,10 @@ func TestConvertMediaTaskImageRequestRejectsUnsafeCountsAndFields(t *testing.T) 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), test.want)
 
-			var apiErr *types.NewAPIError
+			var apiErr *kittypes.NewAPIError
 			require.True(t, errors.As(err, &apiErr))
 			assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
-			assert.True(t, types.IsSkipRetryError(apiErr))
+			assert.True(t, kittypes.IsSkipRetryError(apiErr))
 		})
 	}
 }
@@ -254,10 +255,10 @@ func TestConvertMediaTaskImageRequestRejectsFixedPriceGeminiModel(t *testing.T) 
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "fixed per-size pricing is disabled")
-			var apiErr *types.NewAPIError
+			var apiErr *kittypes.NewAPIError
 			require.True(t, errors.As(err, &apiErr))
 			assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
-			assert.True(t, types.IsSkipRetryError(apiErr))
+			assert.True(t, kittypes.IsSkipRetryError(apiErr))
 		})
 	}
 }
@@ -315,10 +316,10 @@ func TestConvertMediaTaskImageRequestRejectsStandardAndLegacyImageConflict(t *te
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "image and reference_images cannot be used together")
-	var apiErr *types.NewAPIError
+	var apiErr *kittypes.NewAPIError
 	require.True(t, errors.As(err, &apiErr))
 	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
-	assert.True(t, types.IsSkipRetryError(apiErr))
+	assert.True(t, kittypes.IsSkipRetryError(apiErr))
 }
 
 func TestMediaTaskImageBlockingPollsOncePerTaskAndSynthesizesOpenAIResponse(t *testing.T) {
@@ -553,9 +554,9 @@ func TestMediaTaskImageBlockingFailedTaskIsNotRetried(t *testing.T) {
 
 	_, err = adaptor.DoRequest(c, info, bytes.NewReader(body))
 	require.Error(t, err)
-	var apiErr *types.NewAPIError
+	var apiErr *kittypes.NewAPIError
 	require.True(t, errors.As(err, &apiErr))
-	assert.True(t, types.IsSkipRetryError(apiErr))
+	assert.True(t, kittypes.IsSkipRetryError(apiErr))
 	assert.Contains(t, apiErr.Error(), "provider rejected the prompt")
 	assert.Equal(t, int32(1), creates.Load())
 }
@@ -749,10 +750,10 @@ func TestMediaTaskImageBlockingTimeoutDoesNotCreateAnotherTask(t *testing.T) {
 
 	_, err = adaptor.DoRequest(c, info, bytes.NewReader(body))
 	require.Error(t, err)
-	var apiErr *types.NewAPIError
+	var apiErr *kittypes.NewAPIError
 	require.True(t, errors.As(err, &apiErr))
 	assert.Equal(t, http.StatusGatewayTimeout, apiErr.StatusCode)
-	assert.True(t, types.IsSkipRetryError(apiErr))
+	assert.True(t, kittypes.IsSkipRetryError(apiErr))
 	assert.Equal(t, int32(1), creates.Load())
 	assert.Equal(t, int32(0), queries.Load())
 }
@@ -773,7 +774,7 @@ func mediaTaskImageTestAdaptor(baseURL string) (*Adaptor, *relaycommon.RelayInfo
 		},
 	}
 	info := advancedCustomRelayInfo(config)
-	info.RelayFormat = types.RelayFormatOpenAIImage
+	info.RelayFormat = kittypes.RelayFormatOpenAIImage
 	info.RelayMode = relayconstant.RelayModeImagesGenerations
 	info.RequestURLPath = "/v1/images/generations"
 	info.OriginModelName = "gemini-3.1-flash-image-preview-usage"

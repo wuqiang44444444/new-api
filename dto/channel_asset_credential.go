@@ -1,11 +1,6 @@
 package dto
 
-type ChannelAssetCredentialInput struct {
-	AccessKeyID     string `json:"access_key_id"`
-	SecretAccessKey string `json:"secret_access_key"`
-}
+import relaykitdto "github.com/QuantumNous/new-api/relaykit/dto"
 
-type ChannelAssetCredentialStatus struct {
-	Configured      bool   `json:"configured"`
-	AccessKeyIDHint string `json:"access_key_id_hint,omitempty"`
-}
+type ChannelAssetCredentialInput = relaykitdto.ChannelAssetCredentialInput
+type ChannelAssetCredentialStatus = relaykitdto.ChannelAssetCredentialStatus
