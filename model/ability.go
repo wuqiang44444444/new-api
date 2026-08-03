@@ -106,13 +106,41 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 }
 
 func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+	return GetChannelWithAllowedIDs(group, model, retry, requestPath, nil)
+}
+
+func GetChannelWithAllowedIDs(group string, model string, retry int, requestPath string, allowedIDs map[int]struct{}) (*Channel, error) {
 	var abilities []Ability
 
-	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry)
-	if err != nil {
-		return nil, err
+	var channelQuery *gorm.DB
+	if allowedIDs != nil {
+		ids := make([]int, 0, len(allowedIDs))
+		for id := range allowedIDs {
+			ids = append(ids, id)
+		}
+		if len(ids) == 0 {
+			return nil, nil
+		}
+		baseQuery := DB.Model(&Ability{}).Where(commonGroupCol+" = ? and model = ? and enabled = ? and channel_id IN ?", group, model, true, ids)
+		var priorities []int64
+		if err := baseQuery.Distinct("priority").Order("priority DESC").Pluck("priority", &priorities).Error; err != nil {
+			return nil, err
+		}
+		if len(priorities) == 0 {
+			return nil, nil
+		}
+		if retry >= len(priorities) {
+			retry = len(priorities) - 1
+		}
+		channelQuery = DB.Model(&Ability{}).Where(commonGroupCol+" = ? and model = ? and enabled = ? and channel_id IN ? and priority = ?", group, model, true, ids, priorities[retry])
+	} else {
+		var err error
+		channelQuery, err = getChannelQuery(group, model, retry)
+		if err != nil {
+			return nil, err
+		}
 	}
+	var err error
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
 		err = channelQuery.Order("weight DESC").Find(&abilities).Error
 	} else {
@@ -194,6 +222,9 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
+	if err := ValidateLinkSKUAbilityBindings(channel); err != nil {
+		return err
+	}
 	models_ := strings.Split(channel.Models, ",")
 	groups_ := strings.Split(channel.Group, ",")
 	abilitySet := make(map[string]struct{})
@@ -241,6 +272,9 @@ func (channel *Channel) DeleteAbilities() error {
 // UpdateAbilities updates abilities of this channel.
 // Make sure the channel is completed before calling this function.
 func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
+	if err := ValidateLinkSKUAbilityBindings(channel); err != nil {
+		return err
+	}
 	isNewTx := false
 	// 如果没有传入事务，创建新的事务
 	if tx == nil {
@@ -311,10 +345,20 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 }
 
 func UpdateAbilityStatus(channelId int, status bool) error {
+	if status {
+		if err := validateLinkSKUAbilitiesByChannelID(channelId); err != nil {
+			return err
+		}
+	}
 	return DB.Model(&Ability{}).Where("channel_id = ?", channelId).Select("enabled").Update("enabled", status).Error
 }
 
 func UpdateAbilityStatusByTag(tag string, status bool) error {
+	if status {
+		if err := validateLinkSKUAbilitiesByTag(tag); err != nil {
+			return err
+		}
+	}
 	return DB.Model(&Ability{}).Where("tag = ?", tag).Select("enabled").Update("enabled", status).Error
 }
 

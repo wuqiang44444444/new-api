@@ -33,11 +33,13 @@ import type {
   GetChannelResponse,
   GetChannelsParams,
   GetChannelsResponse,
+  LinkImplementationsResponse,
   MultiKeyManageParams,
   MultiKeyStatusResponse,
   SearchChannelsParams,
   SearchChannelsResponse,
   TagOperationParams,
+  UpdateChannelRequest,
 } from './types'
 
 const channelActionConfig = (
@@ -105,6 +107,11 @@ export async function getChannel(id: number): Promise<GetChannelResponse> {
   return res.data
 }
 
+export async function getLinkImplementations(): Promise<LinkImplementationsResponse> {
+  const res = await api.get('/api/channel/link_implementations')
+  return res.data
+}
+
 /**
  * Get channel operations summary for administrators
  */
@@ -129,7 +136,7 @@ export async function createChannel(
  */
 export async function updateChannel(
   id: number,
-  data: Partial<Channel>
+  data: UpdateChannelRequest
 ): Promise<{ success: boolean; message?: string; data?: Channel }> {
   const res = await api.put(
     '/api/channel/',
@@ -217,6 +224,36 @@ export async function testChannel(
   const res = await api.get(
     `/api/channel/test/${id}`,
     channelActionConfig({ params })
+  )
+  return res.data
+}
+
+export async function testChannelAssetAction(
+  id: number
+): Promise<ChannelTestResponse> {
+  const res = await api.get(
+    `/api/channel/test_asset/${id}`,
+    channelActionConfig()
+  )
+  return res.data
+}
+
+export async function testChannelVideoAPI(
+  id: number
+): Promise<ChannelTestResponse> {
+  const res = await api.get(
+    `/api/channel/test_video/${id}`,
+    channelActionConfig()
+  )
+  return res.data
+}
+
+export async function deleteChannelAssetCredential(
+  id: number
+): Promise<ChannelTestResponse> {
+  const res = await api.delete(
+    `/api/channel/${id}/asset_credential`,
+    channelActionConfig()
   )
   return res.data
 }

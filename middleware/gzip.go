@@ -36,6 +36,9 @@ func DecompressRequestMiddleware() gin.HandlerFunc {
 		maxBytes := int64(maxMB) << 20
 
 		origBody := c.Request.Body
+		if contentEncoding := c.GetHeader("Content-Encoding"); contentEncoding != "" {
+			c.Set("original_request_content_encoding", contentEncoding)
+		}
 		wrapMaxBytes := func(body io.ReadCloser) io.ReadCloser {
 			return http.MaxBytesReader(c.Writer, body, maxBytes)
 		}

@@ -158,6 +158,16 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		var bodyMap map[string]interface{}
 		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
 			bodyMap["model"] = info.UpstreamModelName
+			if req, requestErr := relaycommon.GetTaskRequest(c); requestErr == nil && req.InputReferenceObject {
+				reference := map[string]any{}
+				if req.InputReferenceFileID != "" {
+					reference["file_id"] = req.InputReferenceFileID
+				}
+				if req.InputReferenceImageURL != "" {
+					reference["image_url"] = req.InputReferenceImageURL
+				}
+				bodyMap["input_reference"] = reference
+			}
 			if newBody, err := common.Marshal(bodyMap); err == nil {
 				return bytes.NewReader(newBody), nil
 			}
@@ -305,13 +315,17 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	case "completed":
 		taskResult.Status = model.TaskStatusSuccess
 		// Url intentionally left empty — the caller constructs the proxy URL using the public task ID
-	case "failed", "cancelled":
+	case "failed":
 		taskResult.Status = model.TaskStatusFailure
 		if resTask.Error != nil {
 			taskResult.Reason = resTask.Error.Message
 		} else {
 			taskResult.Reason = "task failed"
 		}
+	case "cancelled":
+		taskResult.Status = model.TaskStatusCancelled
+	case "expired":
+		taskResult.Status = model.TaskStatusExpired
 	default:
 	}
 	if resTask.Progress > 0 && resTask.Progress < 100 {

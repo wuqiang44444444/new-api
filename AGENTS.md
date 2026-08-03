@@ -1,4 +1,5 @@
 # AGENTS.md — Project Conventions for new-api
+> 本仓库遵循 docs/ 目录规范，开始任务前必须先读 docs/README.md。
 
 DO NOT send optional commentary
 
@@ -55,6 +56,14 @@ web/           — Frontend (React 19, Rsbuild, Base UI, Tailwind)
 ## Rules
 
 ### Common Code Quality
+
+**最小入侵（最高优先级硬约束）：**
+
+- 所有本地改动必须首先以降低未来接取上游代码时的冲突面、合并成本和出错风险为目标；本约束优先于本节其他代码组织偏好。
+- 新增类型、常量、辅助逻辑、适配器和可独立放置的测试等，原则上放入额外的单独文件，不为追求抽象复用而扩写、重排或重构现有上游文件。
+- 现有热路径只允许保留单行调用或极窄分支；如无法做到，必须把绝大部分新增逻辑隔离到新文件，并把现有文件改动压缩到完成接线所必需的最小范围。
+- 允许在新增文件中保留少量、清晰且局部的重复，以换取更小的上游文件改动与更低的未来合并冲突；不得仅为消除这类重复而扩大现有文件的修改范围。
+- 禁止借功能改动之机对现有代码做无关的重命名、移动、格式化、抽象提取或顺手重构。只有在无法安全实现、无法满足既有接口或无法通过必要验证时，才可扩大现有文件改动，并必须明确说明原因。
 
 - New code should stay direct and readable. Prefer early returns, clear branches, and well-named local variables to deep nesting or layered control flow.
 - Minimize nested function definitions. Use them only when required by a callback API or when keeping the closure local is clearly simpler than adding another symbol.

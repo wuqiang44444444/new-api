@@ -142,6 +142,7 @@ func main() {
 		}
 		return a
 	}
+	service.CancelQueuedVideoTaskFunc = relay.CancelQueuedVideoTaskForReconciliation
 
 	// Register the periodic channel test, upstream model update, and async task
 	// polling (Midjourney / Suno / video) jobs as scheduled system tasks

@@ -327,111 +327,51 @@
     },
     "/v1/images/generations": {
       "post": {
-        "summary": "生成图像(qwen-image)",
+        "summary": "创建图片",
         "deprecated": false,
-        "description": " 百炼qwen-image系列图片生成",
-        "operationId": "createImage",
+        "description": "使用 OpenAI 兼容的 Link 合同创建图片。响应可能直接包含图片，也可能返回可查询的异步任务。",
+        "operationId": "createImageGeneration",
         "tags": [
-          "图片生成/Qwen千问"
+          "图片生成/OpenAI兼容格式"
         ],
         "parameters": [],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "model": {
-                    "type": "string"
-                  },
-                  "input": {
-                    "type": "object",
-                    "properties": {
-                      "messages": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "role": {
-                              "type": "string"
-                            },
-                            "content": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "text": {
-                                    "type": "string"
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    },
-                    "required": [
-                      "messages"
-                    ]
-                  },
-                  "parameters": {
-                    "type": "object",
-                    "properties": {
-                      "negative_prompt": {
-                        "type": "string"
-                      },
-                      "prompt_extend": {
-                        "type": "boolean"
-                      },
-                      "watermark": {
-                        "type": "boolean"
-                      },
-                      "size": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                },
-                "required": [
-                  "model",
-                  "input"
-                ]
-              },
-              "example": {
-                "model": "qwen-image-plus",
-                "input": {
-                  "messages": [
-                    {
-                      "role": "user",
-                      "content": [
-                        {
-                          "text": "一副典雅庄重的对联悬挂于厅堂之中，房间是个安静古典的中式布置，桌子上放着一些青花瓷，对联上左书“义本生知人机同道善思新”，右书“通云赋智乾坤启数高志远”， 横批“智启通义”，字体飘逸，在中间挂着一幅中国风的画作，内容是岳阳楼。"
-                        }
-                      ]
-                    }
-                  ]
-                },
-                "parameters": {
-                  "negative_prompt": "",
-                  "prompt_extend": true,
-                  "watermark": false,
-                  "size": "1328*1328"
-                }
+                "$ref": "#/components/schemas/ImageGenerationRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
-            "description": "成功生成图像",
+            "description": "同步图片响应或异步图片任务",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImageResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ImageResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageTask"
+                    }
+                  ]
                 }
               }
-            },
-            "headers": {}
+            }
+          },
+          "400": {
+            "description": "请求参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -443,97 +383,51 @@
     },
     "/v1/images/edits": {
       "post": {
-        "summary": "编辑图像(qwen-image-edit)",
+        "summary": "编辑图片",
         "deprecated": false,
-        "description": " 百炼qwen-image系列图片生成",
-        "operationId": "createImage",
+        "description": "使用 OpenAI 兼容 multipart Link 合同编辑图片。",
+        "operationId": "createImageEdit",
         "tags": [
-          "图片生成/Qwen千问"
+          "图片生成/OpenAI兼容格式"
         ],
         "parameters": [],
         "requestBody": {
           "content": {
-            "application/json": {
+            "multipart/form-data": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "model": {
-                    "type": "string"
-                  },
-                  "input": {
-                    "type": "object",
-                    "properties": {
-                      "messages": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "role": {
-                              "type": "string"
-                            },
-                            "content": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "image": {
-                                    "type": "string"
-                                  },
-                                  "text": {
-                                    "type": "string"
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    },
-                    "required": [
-                      "messages"
-                    ]
-                  },
-                  "parameters": {
-                    "type": "object",
-                    "properties": {
-                      "n": {
-                        "type": "integer"
-                      },
-                      "negative_prompt": {
-                        "type": "string"
-                      },
-                      "prompt_extend": {
-                        "type": "boolean"
-                      },
-                      "watermark": {
-                        "type": "boolean"
-                      },
-                      "size": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                },
-                "required": [
-                  "model",
-                  "input"
-                ]
-              },
-              "example": "{\n    \"model\": \"qwen-image-edit-plus\",\n    \"input\": {\n        \"messages\": [\n            {\n                \"role\": \"user\",\n                \"content\": [\n                    {\n                        \"image\": \"https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250925/fpakfo/image36.webp\"\n                    },\n                    {\n                        \"text\": \"生成一张符合深度图的图像，遵循以下描述：一辆红色的破旧的自行车停在一条泥泞的小路上，背景是茂密的原始森林\"\n                    }\n                ]\n            }\n        ]\n    },\n    \"parameters\": {\n        \"n\": 2,\n        \"negative_prompt\": \" \",\n        \"prompt_extend\": true,\n        \"watermark\": false\n    }"
+                "$ref": "#/components/schemas/ImageEditRequest"
+              }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
-            "description": "成功生成图像",
+            "description": "同步图片响应或异步图片任务",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImageResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ImageResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageTask"
+                    }
+                  ]
                 }
               }
-            },
-            "headers": {}
+            }
+          },
+          "400": {
+            "description": "请求参数或 multipart 表单无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -543,7 +437,54 @@
         ]
       }
     },
-    "/v1/videos": {
+    "/v1/images/tasks/{task_id}": {
+      "get": {
+        "summary": "查询图片任务",
+        "deprecated": false,
+        "operationId": "getImageTask",
+        "tags": [
+          "图片生成/OpenAI兼容格式"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "图片任务状态与结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageTask"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "任务不存在或不属于当前鉴权主体",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageTaskErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "x-retired-openai-video-create": {
       "post": {
         "summary": "创建视频 ",
         "deprecated": false,
@@ -561,7 +502,7 @@
                 "properties": {
                   "model": {
                     "description": "模型名称",
-                    "example": "sora-2",
+                    "example": "retired-video-model",
                     "type": "string"
                   },
                   "prompt": {
@@ -655,9 +596,9 @@
                   ]
                 },
                 "example": {
-                  "id": "sora-2-123456",
+                  "id": "historical-task-id",
                   "object": "video",
-                  "model": "sora-2",
+                  "model": "retired-video-model",
                   "status": "queued",
                   "progress": 0,
                   "created_at": 1764347090922,
@@ -686,7 +627,7 @@
         ]
       }
     },
-    "/v1/videos/{task_id}": {
+    "x-retired-openai-video-task-read": {
       "get": {
         "summary": "获取视频任务状态 ",
         "deprecated": false,
@@ -701,7 +642,7 @@
             "in": "path",
             "description": "视频任务 ID",
             "required": true,
-            "example": "sora-2-123456",
+            "example": "historical-task-id",
             "schema": {
               "type": "string"
             }
@@ -748,9 +689,9 @@
                   ]
                 },
                 "example": {
-                  "id": "sora-2-123456",
+                  "id": "historical-task-id",
                   "object": "video",
-                  "model": "sora-2",
+                  "model": "retired-video-model",
                   "status": "queued",
                   "progress": 0,
                   "created_at": 1764347090922,
@@ -783,10 +724,10 @@
       "get": {
         "summary": "获取视频内容",
         "deprecated": false,
-        "description": "获取已完成视频任务的视频文件内容。\n\n此接口会代理返回视频文件流。\n",
+        "description": "获取已完成视频任务的视频文件内容。当前用于 ModelArk 视频任务以及存量视频任务的受鉴权内容代理。\n",
         "operationId": "getVideoContent",
         "tags": [
-          "视频生成/Sora兼容格式"
+          "视频生成/ModelArk格式"
         ],
         "parameters": [
           {
@@ -836,7 +777,7 @@
       "post": {
         "summary": "Kling 文生视频",
         "deprecated": false,
-        "description": "使用 Kling 模型从文本描述生成视频。\n\n支持的模型：kling-v1, kling-v1-5 等\n",
+        "description": "使用 Kling 模型从文本描述生成视频。\n\n当前内置适配器登记的公开模型：kling-v1、kling-v1-6、kling-v2-master。实际可用范围仍以 GET /v1/models 和账户权限为准。\n",
         "operationId": "createKlingText2Video",
         "tags": [
           "视频生成/Kling格式"
@@ -846,15 +787,13 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/VideoRequest"
+                "$ref": "#/components/schemas/KlingVideoRequest"
               },
               "example": {
-                "model": "kling-v1",
+                "model_name": "kling-v1",
                 "prompt": "宇航员站起身走了",
-                "duration": 5,
-                "width": 1280,
-                "height": 720,
-                "fps": 30
+                "duration": "5",
+                "aspect_ratio": "16:9"
               }
             }
           }
@@ -865,7 +804,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VideoResponse"
+                  "$ref": "#/components/schemas/KlingVideoCreateResponse"
                 }
               }
             },
@@ -876,7 +815,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/KlingVideoErrorResponse"
                 }
               }
             },
@@ -917,7 +856,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VideoTaskResponse"
+                  "$ref": "#/components/schemas/KlingVideoTaskResponse"
                 }
               }
             },
@@ -928,7 +867,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/KlingVideoErrorResponse"
                 }
               }
             },
@@ -946,7 +885,7 @@
       "post": {
         "summary": "Kling 图生视频",
         "deprecated": false,
-        "description": "使用 Kling 模型从图片生成视频。\n\n支持通过 image 参数传入图片 URL 或 Base64 编码的图片数据。\n",
+        "description": "使用 Kling 模型从图片生成视频。\n\n当前内置适配器登记的公开模型：kling-v1、kling-v1-6、kling-v2-master。支持通过 image 参数传入图片 URL 或 Base64 编码的图片数据；实际可用范围仍以 GET /v1/models 和账户权限为准。\n",
         "operationId": "createKlingImage2Video",
         "tags": [
           "视频生成/Kling格式"
@@ -956,15 +895,14 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/VideoRequest"
+                "$ref": "#/components/schemas/KlingVideoRequest"
               },
               "example": {
-                "model": "kling-v1",
+                "model_name": "kling-v1",
                 "prompt": "人物转身走开",
                 "image": "https://example.com/image.jpg",
-                "duration": 5,
-                "width": 1280,
-                "height": 720
+                "duration": "5",
+                "aspect_ratio": "16:9"
               }
             }
           }
@@ -975,7 +913,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VideoResponse"
+                  "$ref": "#/components/schemas/KlingVideoCreateResponse"
                 }
               }
             },
@@ -986,7 +924,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/KlingVideoErrorResponse"
                 }
               }
             },
@@ -1027,7 +965,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VideoTaskResponse"
+                  "$ref": "#/components/schemas/KlingVideoTaskResponse"
                 }
               }
             },
@@ -1038,7 +976,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/KlingVideoErrorResponse"
                 }
               }
             },
@@ -1056,7 +994,7 @@
       "post": {
         "summary": "即梦视频生成",
         "deprecated": false,
-        "description": "即梦官方 API 格式的视频生成接口。\n\n支持通过 Action 参数指定操作类型：\n- `CVSync2AsyncSubmitTask`: 提交视频生成任务\n- `CVSync2AsyncGetResult`: 获取任务结果\n\n需要在查询参数中指定 Action 和 Version。\n",
+        "description": "即梦官方 API 格式的视频生成接口。当前内置适配器登记的 req_key 为 jimeng_vgfm_t2v_l20。\n\n支持通过 Action 参数指定操作类型：\n- `CVSync2AsyncSubmitTask`: 提交视频生成任务\n- `CVSync2AsyncGetResult`: 获取任务结果\n\n需要在查询参数中指定 Action 和 Version。\n",
         "operationId": "createJimengVideo",
         "tags": [
           "视频生成/即梦格式"
@@ -1092,10 +1030,23 @@
               "schema": {
                 "type": "object",
                 "description": "即梦官方 API 请求格式",
+                "additionalProperties": false,
+                "oneOf": [
+                  {
+                    "required": [
+                      "req_key"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "task_id"
+                    ]
+                  }
+                ],
                 "properties": {
                   "req_key": {
                     "type": "string",
-                    "description": "请求类型标识"
+                    "description": "请求类型标识；当前内置适配器使用 jimeng_vgfm_t2v_l20"
                   },
                   "prompt": {
                     "type": "string",
@@ -1107,11 +1058,31 @@
                       "type": "string"
                     },
                     "description": "Base64 编码的图片数据"
+                  },
+                  "image_urls": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "图片 URL 或 asset:// 引用"
+                  },
+                  "seed": {
+                    "type": "integer"
+                  },
+                  "aspect_ratio": {
+                    "type": "string"
+                  },
+                  "frames": {
+                    "type": "integer"
+                  },
+                  "task_id": {
+                    "type": "string",
+                    "description": "查询 Action 使用的任务 ID"
                   }
                 }
               },
               "example": {
-                "req_key": "jimeng_video_generation",
+                "req_key": "jimeng_vgfm_t2v_l20",
                 "prompt": "一只猫在弹钢琴"
               }
             }
@@ -1133,6 +1104,14 @@
                       "type": "string",
                       "description": "响应消息"
                     },
+                    "request_id": {
+                      "type": "string",
+                      "description": "请求追踪 ID"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "description": "与 code 相同的即梦兼容状态码"
+                    },
                     "data": {
                       "type": "object",
                       "description": "响应数据",
@@ -1149,7 +1128,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/JimengVideoErrorResponse"
                 }
               }
             },
@@ -1163,7 +1142,7 @@
         ]
       }
     },
-    "/v1/video/generations": {
+    "x-retired-platform-video-create": {
       "post": {
         "summary": "创建视频生成任务",
         "deprecated": false,
@@ -2297,6 +2276,686 @@
               }
             },
             "headers": {}
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v3/contents/generations/tasks": {
+      "post": {
+        "summary": "创建 ModelArk 视频任务",
+        "deprecated": false,
+        "description": "使用公开 ModelArk v3 合同创建视频任务。Seedance 2.0 固定分辨率 SKU（seedance-2.0-standard-720p、seedance-2.0-standard-1080p、seedance-2.0-value-720p、seedance-2.0-value-1080p、seedance-2.0-value-4k）保持既有窄能力；seedance-2.0-standard 与 seedance-2.0-fast 是独立的可变分辨率 SKU，其中 Standard 支持平台托管真人素材，Fast 仅支持 480p/720p。",
+        "operationId": "createModelArkVideoTask",
+        "tags": [
+          "视频生成/ModelArk格式"
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelArkVideoCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "任务已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelArkVideoTask"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "列出 ModelArk 视频任务",
+        "deprecated": false,
+        "operationId": "listModelArkVideoTasks",
+        "tags": [
+          "视频生成/ModelArk格式"
+        ],
+        "parameters": [
+          {
+            "name": "page_num",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelArkVideoTaskList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v3/contents/generations/tasks/{task_id}": {
+      "get": {
+        "summary": "查询 ModelArk 视频任务",
+        "deprecated": false,
+        "operationId": "getModelArkVideoTask",
+        "tags": [
+          "视频生成/ModelArk格式"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TaskId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务状态与结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelArkVideoTask"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "任务不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "删除或取消 ModelArk 视频任务",
+        "deprecated": false,
+        "operationId": "deleteModelArkVideoTask",
+        "tags": [
+          "视频生成/ModelArk格式"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TaskId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务已删除或取消",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "当前任务状态不允许删除",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/api-service-rules/current": {
+      "get": {
+        "summary": "获取当前 API 服务规则及应用接受状态",
+        "operationId": "getCurrentAPIServiceRule",
+        "tags": ["素材"],
+        "responses": {
+          "200": {
+            "description": "当前规则与当前 API Key 对应应用的接受状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rule": {"$ref": "#/components/schemas/APIServiceRule"},
+                    "acceptance": {"$ref": "#/components/schemas/APIServiceRuleAcceptance"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [{"BearerAuth": []}]
+      }
+    },
+    "/v1/api-service-rules/acceptance": {
+      "post": {
+        "summary": "接受当前 API 服务规则",
+        "operationId": "acceptCurrentAPIServiceRule",
+        "tags": ["素材"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {"schema": {"$ref": "#/components/schemas/AcceptAPIServiceRuleRequest"}}
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "接受记录",
+            "content": {
+              "application/json": {"schema": {"$ref": "#/components/schemas/APIServiceRuleAcceptance"}}
+            }
+          },
+          "409": {"description": "版本或内容哈希已变化，需重新获取并接受"}
+        },
+        "security": [{"BearerAuth": []}]
+      }
+    },
+    "/v1/assets": {
+      "post": {
+        "summary": "创建素材",
+        "deprecated": false,
+        "operationId": "createAsset",
+        "tags": [
+          "素材"
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAssetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "素材已受理",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "素材请求无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "列出素材",
+        "deprecated": false,
+        "operationId": "listAssets",
+        "tags": [
+          "素材"
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "asset_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "media_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "素材列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/assets/{asset_id}": {
+      "get": {
+        "summary": "查询素材",
+        "deprecated": false,
+        "operationId": "getAsset",
+        "tags": [
+          "素材"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AssetId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "素材详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asset"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "素材不存在"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "summary": "更新素材名称",
+        "deprecated": false,
+        "operationId": "updateAsset",
+        "tags": [
+          "素材"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AssetId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAssetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的素材",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asset"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "删除素材",
+        "deprecated": false,
+        "operationId": "deleteAsset",
+        "tags": [
+          "素材"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AssetId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "素材已删除"
+          },
+          "409": {
+            "description": "素材状态或绑定不允许删除"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/assets/{asset_id}/bindings": {
+      "get": {
+        "summary": "列出素材绑定",
+        "deprecated": false,
+        "operationId": "listAssetBindings",
+        "tags": [
+          "素材"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AssetId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "素材绑定列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AssetBinding"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/assets/{asset_id}/migrations": {
+      "post": {
+        "summary": "迁移素材",
+        "deprecated": false,
+        "operationId": "migrateAsset",
+        "tags": [
+          "素材"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AssetId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrateAssetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "迁移已受理",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/real-person-authorizations": {
+      "post": {
+        "summary": "创建真人授权",
+        "deprecated": false,
+        "operationId": "createRealPersonAuthorization",
+        "tags": [
+          "素材"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRealPersonAuthorizationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "授权已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RealPersonAuthorization"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/real-person-authorizations/{authorization_id}": {
+      "get": {
+        "summary": "查询真人授权",
+        "deprecated": false,
+        "operationId": "getRealPersonAuthorization",
+        "tags": [
+          "素材"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "授权状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RealPersonAuthorization"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/real-person-authorizations/{authorization_id}/revoke": {
+      "post": {
+        "summary": "撤销真人授权",
+        "deprecated": false,
+        "operationId": "revokeRealPersonAuthorization",
+        "tags": [
+          "素材"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已撤销的授权",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RealPersonAuthorization"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/real-person-authorizations/{authorization_id}/retry": {
+      "post": {
+        "summary": "重试真人授权验证",
+        "deprecated": false,
+        "operationId": "retryRealPersonAuthorization",
+        "tags": [
+          "素材"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "授权与新的验证地址",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorization": {
+                      "$ref": "#/components/schemas/RealPersonAuthorization"
+                    },
+                    "verification_url": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "当前状态不可重试"
           }
         },
         "security": [
@@ -3644,7 +4303,9 @@
       },
       "ImageGenerationRequest": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
+          "model",
           "prompt"
         ],
         "properties": {
@@ -3659,7 +4320,7 @@
           "n": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10,
+            "maximum": 128,
             "default": 1
           },
           "size": {
@@ -3699,13 +4360,36 @@
           },
           "user": {
             "type": "string"
+          },
+          "background": {
+            "type": "string"
+          },
+          "moderation": {
+            "type": "string"
+          },
+          "output_format": {
+            "type": "string"
+          },
+          "output_compression": {
+            "type": "integer"
+          },
+          "partial_images": {
+            "type": "integer"
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "watermark": {
+            "type": "boolean"
           }
         }
       },
       "ImageEditRequest": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "image",
+          "model",
           "prompt"
         ],
         "properties": {
@@ -3724,13 +4408,27 @@
             "type": "string"
           },
           "n": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 128
           },
           "size": {
             "type": "string"
           },
           "response_format": {
             "type": "string"
+          },
+          "quality": {
+            "type": "string"
+          },
+          "input_fidelity": {
+            "type": "string"
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "watermark": {
+            "type": "boolean"
           }
         }
       },
@@ -3756,6 +4454,78 @@
                 }
               }
             }
+          }
+        }
+      },
+      "ImageTask": {
+        "type": "object",
+        "required": [
+          "id",
+          "object",
+          "status",
+          "created_at",
+          "model"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "enum": [
+              "image.generation.task"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "in_progress",
+              "completed",
+              "failed",
+              "unknown"
+            ]
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "completed_at": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ImageResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ImageTaskError"
+          }
+        }
+      },
+      "ImageTaskError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ImageTaskErrorEnvelope": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ImageTaskError"
           }
         }
       },
@@ -4162,6 +4932,197 @@
                 "type": "integer"
               }
             }
+          }
+        }
+      },
+      "KlingVideoRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_name",
+          "prompt"
+        ],
+        "properties": {
+          "model_name": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string",
+            "description": "图生视频首帧 URL、Base64 或 asset:// 引用"
+          },
+          "image_tail": {
+            "type": "string"
+          },
+          "negative_prompt": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "std",
+              "pro"
+            ]
+          },
+          "duration": {
+            "type": "string",
+            "enum": [
+              "5",
+              "10"
+            ]
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          },
+          "cfg_scale": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "static_mask": {
+            "type": "string"
+          },
+          "dynamic_masks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mask": {
+                  "type": "string"
+                },
+                "trajectories": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "x": {
+                        "type": "integer"
+                      },
+                      "y": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "camera_control": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "config": {
+                "type": "object"
+              }
+            }
+          },
+          "callback_url": {
+            "type": "string"
+          },
+          "external_task_id": {
+            "type": "string"
+          }
+        }
+      },
+      "KlingVideoCreateResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 0
+          },
+          "message": {
+            "type": "string",
+            "example": "SUCCEED"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "task_id": {
+                "type": "string"
+              },
+              "task_status": {
+                "type": "string",
+                "example": "submitted"
+              }
+            }
+          }
+        }
+      },
+      "KlingVideoTaskResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/KlingVideoCreateResponse"
+          }
+        ]
+      },
+      "KlingVideoErrorResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "request_id",
+          "data"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 1200
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "nullable": true
+          }
+        }
+      },
+      "JimengVideoErrorResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "data",
+          "message",
+          "request_id",
+          "status"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 50200
+          },
+          "data": {
+            "type": "object",
+            "nullable": true
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "example": 50200
           }
         }
       },
@@ -4593,6 +5554,652 @@
           "created_at": {
             "type": "integer"
           }
+        }
+      },
+      "ModelArkVideoCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model",
+          "content"
+        ],
+        "x-fixed-seedance-2-capability": {
+          "models": {
+            "seedance-2.0-standard-720p": {
+              "resolution": "720p"
+            },
+            "seedance-2.0-standard-1080p": {
+              "resolution": "1080p"
+            },
+            "seedance-2.0-value-720p": {
+              "resolution": "720p"
+            },
+            "seedance-2.0-value-1080p": {
+              "resolution": "1080p"
+            },
+            "seedance-2.0-value-4k": {
+              "resolution": "4k"
+            }
+          },
+          "min_duration": 4,
+          "max_duration": 15,
+          "default_duration": 5,
+          "allows_automatic_duration": false,
+          "ratios": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16",
+            "21:9"
+          ],
+          "default_ratio": "16:9",
+          "max_images": 9,
+          "max_videos": 0,
+          "max_audio": 3,
+          "supports_generate_audio": false,
+          "supports_direct_media": true,
+          "supports_managed_assets": false,
+          "supports_mixed_media_paths": false,
+          "reference_modes_exclusive": true,
+          "requires_text": true,
+          "audio_requires_reference_image": true,
+          "unsupported_fields": [
+            "end_user_subject",
+            "callback_url",
+            "service_tier",
+            "watermark",
+            "return_last_frame",
+            "execution_expires_after",
+            "draft",
+            "tools",
+            "safety_identifier",
+            "priority",
+            "frames",
+            "seed",
+            "camera_fixed"
+          ],
+          "lifecycle": {
+            "supports_content": true,
+            "supports_last_frame": false,
+            "supports_cancel_queued": false,
+            "supports_delete": false
+          }
+        },
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "公开模型 ID。当前 ModelArk v3 SKU 包括 seedance-byteplus、seedance-2-0-oversea、doubao-seedance-2-0-260128、seedance-2.0-standard、seedance-2.0-fast、seedance-2.0-standard-720p、seedance-2.0-standard-1080p、seedance-2.0-value-720p、seedance-2.0-value-1080p、seedance-2.0-value-4k。seedance-2.0-standard 支持 480p/720p/1080p 和平台托管真人素材；seedance-2.0-fast 支持 480p/720p；末五个为既有固定分辨率 SKU。"
+          },
+          "end_user_subject": {
+            "type": "string",
+            "description": "应用作用域内稳定、匿名的最终用户标识。引用 real_person 素材时必须与创建认证时一致；不会以原文保存或发送给 Provider。"
+          },
+          "content": {
+            "type": "array",
+            "minItems": 1,
+            "description": "模型支持的文本和媒体条目。固定分辨率 Seedance 2.0 SKU 维持既有窄媒体能力；seedance-2.0-standard/fast 要求至少一个非空文本，支持文生、图生、参考视频与参考音频，其中只有 Standard 支持平台 asset:// 真人素材。具体数量、组合和字段限制以模型 capability 与服务端 4xx 为准。",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "image_url",
+                    "video_url",
+                    "audio_url"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "first_frame",
+                    "last_frame",
+                    "reference_image",
+                    "reference_video",
+                    "reference_audio"
+                  ]
+                },
+                "image_url": {
+                  "$ref": "#/components/schemas/VideoMediaURL"
+                },
+                "video_url": {
+                  "$ref": "#/components/schemas/VideoMediaURL"
+                },
+                "audio_url": {
+                  "$ref": "#/components/schemas/VideoMediaURL"
+                }
+              }
+            }
+          },
+          "duration": {
+            "type": "integer",
+            "description": "视频时长。固定分辨率 Seedance 2.0 SKU 允许 4～15，省略时为 5。"
+          },
+          "resolution": {
+            "type": "string",
+            "description": "输出分辨率。固定分辨率 Seedance 2.0 SKU 可省略；显式值必须与模型名中的 720p、1080p 或 4k 一致。"
+          },
+          "ratio": {
+            "type": "string",
+            "description": "画幅。固定分辨率 Seedance 2.0 SKU 支持 16:9、4:3、1:1、3:4、9:16、21:9，省略时为 16:9，不支持 adaptive。"
+          },
+          "service_tier": {
+            "type": "string"
+          },
+          "generate_audio": {
+            "type": "boolean",
+            "description": "是否生成音频。固定分辨率 Seedance 2.0 SKU 只能省略或传 false。"
+          },
+          "watermark": {
+            "type": "boolean"
+          },
+          "return_last_frame": {
+            "type": "boolean"
+          },
+          "execution_expires_after": {
+            "type": "integer"
+          },
+          "draft": {
+            "type": "boolean"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "safety_identifier": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "seed": {
+            "type": "integer"
+          },
+          "camera_fixed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VideoMediaURL": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "ModelArkVideoTask": {
+        "type": "object",
+        "required": [
+          "id",
+          "model",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "content": {
+            "type": "object",
+            "properties": {
+              "video_url": {
+                "type": "string"
+              },
+              "last_frame_url": {
+                "type": "string"
+              }
+            }
+          },
+          "seed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "integer"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "ratio": {
+            "type": "string"
+          },
+          "generate_audio": {
+            "type": "boolean"
+          },
+          "draft": {
+            "type": "boolean"
+          },
+          "service_tier": {
+            "type": "string"
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "completion_tokens": {
+                "type": "integer"
+              },
+              "total_tokens": {
+                "type": "integer"
+              }
+            }
+          },
+          "error": {
+            "$ref": "#/components/schemas/ImageTaskError"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ModelArkVideoTaskList": {
+        "type": "object",
+        "required": [
+          "total",
+          "items"
+        ],
+        "properties": {
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelArkVideoTask"
+            }
+          }
+        }
+      },
+      "AssetSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CreateAssetRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "asset_kind",
+          "media_type",
+          "source"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "asset_kind": {
+            "type": "string"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "authorization_id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/AssetSource"
+          }
+        }
+      },
+      "UpdateAssetRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "MigrateAssetRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "migration_reason"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "authorization_id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/AssetSource"
+          },
+          "migration_batch_id": {
+            "type": "string"
+          },
+          "migration_reason": {
+            "type": "string"
+          }
+        }
+      },
+      "Asset": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "asset_kind",
+          "media_type",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "asset_kind": {
+            "type": "string"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "supersedes_asset_id": {
+            "type": "string"
+          },
+          "migration_batch_id": {
+            "type": "string"
+          },
+          "migration_reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "AssetEnvelope": {
+        "type": "object",
+        "required": [
+          "asset"
+        ],
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/Asset"
+          }
+        }
+      },
+      "AssetListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "page_size": {
+            "type": "integer"
+          }
+        }
+      },
+      "AssetBinding": {
+        "type": "object",
+        "required": [
+          "id",
+          "asset_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "asset_id": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "APIServiceRule": {
+        "type": "object",
+        "required": ["id", "version", "title", "content", "content_sha256", "status", "effective_at"],
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "version": {"type": "string"},
+          "title": {"type": "string"},
+          "content": {"type": "string"},
+          "content_sha256": {"type": "string"},
+          "status": {"type": "string"},
+          "effective_at": {"type": "integer", "format": "int64"}
+        }
+      },
+      "AcceptAPIServiceRuleRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version", "content_sha256", "compliance_owner", "consent_record_system_ref"],
+        "properties": {
+          "version": {"type": "string"},
+          "content_sha256": {"type": "string"},
+          "compliance_owner": {"type": "string"},
+          "consent_record_system_ref": {"type": "string"}
+        }
+      },
+      "APIServiceRuleAcceptance": {
+        "type": "object",
+        "required": ["accepted", "app_id", "version", "content_sha256"],
+        "properties": {
+          "accepted": {"type": "boolean"},
+          "app_id": {"type": "integer"},
+          "version": {"type": "string"},
+          "content_sha256": {"type": "string"},
+          "accepted_at": {"type": "integer", "format": "int64"}
+        }
+      },
+      "CreateRealPersonAuthorizationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model",
+          "end_user_subject"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "end_user_subject": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128,
+            "pattern": "^(?=.*[A-Za-z])(?=.*[0-9])(?=.*[._:-])[A-Za-z0-9._:-]+$",
+            "description": "应用作用域内稳定、匿名的最终用户标识；不得包含姓名、邮箱、手机号或证件号"
+          }
+        }
+      },
+      "RealPersonAuthorization": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["awaiting_verification", "verifying", "authorized", "failed", "expired", "revoked"]
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "verification_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "cleanup_status": {
+            "type": "string",
+            "enum": ["pending", "partial", "complete", "manual_required"]
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      }
+    },
+    "parameters": {
+      "TaskId": {
+        "name": "task_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "AssetId": {
+        "name": "asset_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "AuthorizationId": {
+        "name": "authorization_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
         }
       }
     },

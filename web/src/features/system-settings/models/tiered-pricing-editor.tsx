@@ -100,6 +100,18 @@ import {
   tryParseVisualConfig,
 } from '@/features/pricing/lib/tier-expr'
 import { cn } from '@/lib/utils'
+import { useSystemConfigStore } from '@/stores/system-config-store'
+
+import { AsyncPreConsumeTokenField } from './async-pre-consume-token-field'
+import {
+  type EstimatorDraft,
+  type EstimatorResolution,
+  convertRawCost,
+  createDefaultDraft,
+  loadDraft,
+  probeToRequestBody,
+  saveDraft,
+} from './tiered-pricing-estimator-state'
 
 const PRICE_SUFFIX = '$/1M tokens'
 const CACHE_PRICE_VARS = BILLING_EXTRA_VARS.filter(
@@ -1350,64 +1362,162 @@ function PresetSection({ applyPreset }: PresetSectionProps) {
   )
 }
 
+// AsyncPreConsumeTokenField（真实预扣配置字段，与下方费用试算器严格分离）已抽出到
+// ./async-pre-consume-token-field，见顶部 import。
+
 // ---------------------------------------------------------------------------
 // Cost estimator
 // ---------------------------------------------------------------------------
 
 type EstimatorProps = {
   effectiveExpr: string
+  modelName?: string
 }
 
-function CostEstimator({ effectiveExpr }: EstimatorProps) {
+const RESOLUTION_OPTIONS: EstimatorResolution[] = [
+  '480p',
+  '720p',
+  '1080p',
+  '4k',
+]
+
+function CostEstimator({ effectiveExpr, modelName }: EstimatorProps) {
   const { t } = useTranslation()
-  const [promptTokens, setPromptTokens] = useState(0)
-  const [completionTokens, setCompletionTokens] = useState(0)
-  const [extras, setExtras] = useState<ExtraTokenValues>({
-    cacheReadTokens: 0,
-    cacheCreateTokens: 0,
-    cacheCreate1hTokens: 0,
-    imageTokens: 0,
-    imageOutputTokens: 0,
-    audioInputTokens: 0,
-    audioOutputTokens: 0,
-  })
+  // 仅当服务端 QuotaPerUnit 已确认（非 loading）时才参与配额换算，避免在配置尚未
+  // 加载或加载失败时用默认 500000 展示「准确配额」（方案 6.2 / 风险表 L509）。
+  const quotaLoading = useSystemConfigStore((s) => s.loading)
+  const quotaPerUnit = useSystemConfigStore(
+    (s) => s.config.currency?.quotaPerUnit ?? 0
+  )
+  const [draft, setDraft] = useState<EstimatorDraft>(() => createDefaultDraft())
+
+  // 按模型身份加载本地草稿；新建模型（无名称）只用组件内默认状态，不落盘
+  useEffect(() => {
+    if (!modelName) {
+      setDraft(createDefaultDraft())
+      return
+    }
+    setDraft(loadDraft(modelName))
+  }, [modelName])
+
+  // 草稿变更即写回（仅本地预览便利，非计费配置）
+  useEffect(() => {
+    if (modelName) saveDraft(modelName, draft)
+  }, [modelName, draft])
 
   const usesExtras = useMemo(
     () => exprUsesExtraVars(effectiveExpr),
     [effectiveExpr]
   )
-
-  const result = useMemo(
-    () =>
-      evalExprLocally(effectiveExpr, promptTokens, completionTokens, extras),
-    [effectiveExpr, promptTokens, completionTokens, extras]
+  // 仅 _task 探针有页面输入；非 _task 的 param() 与 header() 缺试算上下文，单独提示
+  const usesTaskProbe = useMemo(
+    () => effectiveExpr.includes('_task'),
+    [effectiveExpr]
   )
+  const usesAsyncForbiddenContext = useMemo(
+    () =>
+      usesTaskProbe &&
+      /\b(?:header|hour|minute|weekday|month|day)\s*\(/.test(effectiveExpr),
+    [effectiveExpr, usesTaskProbe]
+  )
+  const usesUnguardedContext = useMemo(() => {
+    // 剥离 param("_task...") 调用起点后，若仍残留 param(，说明存在无探针的 param 路径
+    const nonTaskParam = effectiveExpr
+      .replaceAll(/param\(\s*["']_task/g, '')
+      .includes('param(')
+    return nonTaskParam || effectiveExpr.includes('header(')
+  }, [effectiveExpr])
+
+  const result = useMemo(() => {
+    const requestInput = { body: probeToRequestBody(draft.taskProbe) }
+    return evalExprLocally(
+      effectiveExpr,
+      draft.promptTokens,
+      draft.completionTokens,
+      draft.extras,
+      requestInput
+    )
+  }, [effectiveExpr, draft])
+
+  // loading 时传 0 → convertRawCost 返回 quota=null，UI 标记配额不可计算
+  const { usd, quota } = convertRawCost(
+    result.cost,
+    quotaLoading ? 0 : quotaPerUnit
+  )
+
+  // 配额展示文案：用早返回避免 JSX 嵌套三元（no-nested-ternary）
+  const formatQuota = () => {
+    if (quotaLoading) {
+      return `${t('Estimated quota')}: —`
+    }
+    if (quota === null) {
+      return t('Quota unavailable (QuotaPerUnit not configured)')
+    }
+    return `${t('Estimated quota')}: ${quota.toLocaleString()} (${t('excluding group ratio')})`
+  }
+
+  const setExtra = (stateKey: keyof ExtraTokenValues, value: number) =>
+    setDraft((prev) => ({
+      ...prev,
+      extras: { ...prev.extras, [stateKey]: value },
+    }))
 
   return (
     <div className='bg-muted/30 space-y-3 rounded-md border p-3'>
       <div className='space-y-1'>
-        <h4 className='text-sm font-medium'>{t('Token estimator')}</h4>
+        <div className='flex items-center justify-between gap-2'>
+          <h4 className='text-sm font-medium'>
+            {t('Cost estimator (browser local draft)')}
+          </h4>
+          <Button
+            type='button'
+            variant='ghost'
+            size='sm'
+            className='h-7 px-2 text-xs'
+            onClick={() => setDraft(createDefaultDraft())}
+          >
+            {t('Restore defaults')}
+          </Button>
+        </div>
         <p className='text-muted-foreground text-xs'>
           {t(
-            'Enter token counts to preview the estimated cost (excluding group multipliers).'
+            'Preview only. NOT saved as model price or pre-consume config; real billing follows the backend expression.'
           )}
         </p>
+        {usesUnguardedContext && (
+          <p className='text-xs text-amber-600 dark:text-amber-500'>
+            {t(
+              'This expression uses request context (param/header) without a trial probe; the result may fall into the fallback tier.'
+            )}
+          </p>
+        )}
+        {usesAsyncForbiddenContext && (
+          <p className='text-destructive text-xs'>
+            {t(
+              'Async task expressions cannot use header or time functions because those values are not frozen between pre-consume and settlement.'
+            )}
+          </p>
+        )}
       </div>
       <div className='grid grid-cols-2 gap-3'>
         <div className='space-y-1'>
           <Label className='text-xs'>{t('Input tokens')}</Label>
           <DraftNumberInput
             min={0}
-            value={promptTokens}
-            onValueChange={setPromptTokens}
+            value={draft.promptTokens}
+            onValueChange={(v) =>
+              setDraft((prev) => ({ ...prev, promptTokens: v }))
+            }
           />
         </div>
         <div className='space-y-1'>
           <Label className='text-xs'>{t('Output tokens')}</Label>
           <DraftNumberInput
             min={0}
-            value={completionTokens}
-            onValueChange={setCompletionTokens}
+            value={draft.completionTokens}
+            onValueChange={(v) =>
+              setDraft((prev) => ({ ...prev, completionTokens: v }))
+            }
           />
         </div>
       </div>
@@ -1427,17 +1537,86 @@ function CostEstimator({ effectiveExpr }: EstimatorProps) {
                 <Label className='text-xs'>{t(variable.shortLabel)}</Label>
                 <DraftNumberInput
                   min={0}
-                  value={extras[stateKey]}
-                  onValueChange={(value) =>
-                    setExtras((prev) => ({
-                      ...prev,
-                      [stateKey]: value,
-                    }))
-                  }
+                  value={draft.extras[stateKey]}
+                  onValueChange={(value) => setExtra(stateKey, value)}
                 />
               </div>
             )
           })}
+        </div>
+      )}
+      {usesTaskProbe && (
+        <div className='space-y-2 border-t pt-3'>
+          <div className='space-y-1'>
+            <h4 className='text-sm font-medium'>
+              {t('Task trial conditions')}
+            </h4>
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'Drives param("_task.*") so the preview hits the correct tier.'
+              )}
+            </p>
+          </div>
+          <div className='grid grid-cols-2 gap-3'>
+            <div className='space-y-1'>
+              <Label className='text-xs'>{t('Has video input')}</Label>
+              <Select
+                items={[
+                  { value: 'false', label: t('No') },
+                  { value: 'true', label: t('Yes') },
+                ]}
+                value={String(draft.taskProbe.hasVideoInput)}
+                onValueChange={(value) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    taskProbe: {
+                      ...prev.taskProbe,
+                      hasVideoInput: value === 'true',
+                    },
+                  }))
+                }
+              >
+                <SelectTrigger className='w-full' size='sm'>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectGroup>
+                    <SelectItem value='false'>{t('No')}</SelectItem>
+                    <SelectItem value='true'>{t('Yes')}</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className='space-y-1'>
+              <Label className='text-xs'>{t('Resolution')}</Label>
+              <Select
+                items={RESOLUTION_OPTIONS.map((r) => ({ value: r, label: r }))}
+                value={draft.taskProbe.resolution}
+                onValueChange={(value) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    taskProbe: {
+                      ...prev.taskProbe,
+                      resolution: value as EstimatorResolution,
+                    },
+                  }))
+                }
+              >
+                <SelectTrigger className='w-full' size='sm'>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectGroup>
+                    {RESOLUTION_OPTIONS.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
       )}
       <div
@@ -1453,15 +1632,18 @@ function CostEstimator({ effectiveExpr }: EstimatorProps) {
             {t('Expression error')}: {result.error}
           </span>
         ) : (
-          <div className='flex items-center gap-2'>
-            <span className='font-medium'>
-              {t('Estimated quota cost')}: {result.cost.toLocaleString()}
-            </span>
+          <div className='flex flex-wrap items-center gap-x-4 gap-y-1'>
             {result.matchedTier && (
               <Badge variant='outline' className='text-xs'>
                 {t('Hit tier')}: {result.matchedTier}
               </Badge>
             )}
+            <span className='font-medium'>
+              {t('Estimated cost')}: ${usd.toFixed(6)}
+            </span>
+            <span className='text-muted-foreground text-xs'>
+              {formatQuota()}
+            </span>
           </div>
         )}
       </div>
@@ -1627,6 +1809,9 @@ export type TieredPricingEditorProps = {
   requestRuleExpr: string
   onBillingExprChange: (next: string) => void
   onRequestRuleExprChange: (next: string) => void
+  // 异步任务预扣 token 上界（受控），与下方浏览器本地试算值严格分离。
+  taskPreConsumeTokens?: number
+  onTaskPreConsumeTokensChange?: (next: number) => void
 }
 
 type EditorMode = 'visual' | 'raw'
@@ -1637,9 +1822,16 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
   requestRuleExpr: currentRequestRuleExpr,
   onBillingExprChange,
   onRequestRuleExprChange,
+  taskPreConsumeTokens,
+  onTaskPreConsumeTokensChange,
 }: TieredPricingEditorProps) {
   const { t } = useTranslation()
-  const [editorMode, setEditorMode] = useState<EditorMode>('visual')
+  // 首帧即按表达式能否被可视化解析决定模式：含 param() 条件或单变量 tier（如视频任务
+  // 按 _task 分档）的表达式无法可视化解析，直接进入 raw 模式，避免首帧 visual+null 配置
+  // 生成 'p * 0 + c * 0' 并被回写 effect 写回父表单，污染已保存的表达式。
+  const [editorMode, setEditorMode] = useState<EditorMode>(() =>
+    currentExpr && !tryParseVisualConfig(currentExpr) ? 'raw' : 'visual'
+  )
   const [visualConfig, setVisualConfig] = useState<VisualConfig | null>(() =>
     tryParseVisualConfig(currentExpr)
   )
@@ -1872,7 +2064,22 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
         )}
       </div>
 
-      <CostEstimator effectiveExpr={effectiveExpr} />
+      <AsyncPreConsumeTokenField
+        value={taskPreConsumeTokens}
+        onChange={onTaskPreConsumeTokensChange}
+      />
+      {/* 表达式按异步任务（_task）计费但未配置预扣上界：运行时后端 fail-closed，
+          任务创建会被拒。前端给出明确警告（方案 4.1）。 */}
+      {effectiveExpr.includes('_task') &&
+        (!taskPreConsumeTokens || taskPreConsumeTokens <= 0) && (
+          <p className='text-xs text-amber-600 dark:text-amber-500'>
+            {t(
+              'This expression bills async tasks but no pre-consume token upper bound is set; async tasks will be rejected (fail-closed) at runtime.'
+            )}
+          </p>
+        )}
+
+      <CostEstimator effectiveExpr={effectiveExpr} modelName={modelName} />
     </div>
   )
 })

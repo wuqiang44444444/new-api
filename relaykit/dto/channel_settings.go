@@ -85,6 +85,14 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastRemovedModels  []string              `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string              `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
 	AdvancedCustom                        *AdvancedCustomConfig `json:"advanced_custom,omitempty"`
+	LinkImplementation                    LinkImplementationRef `json:"link_implementation,omitempty"`
+	VideoUpstreamProfile                  VideoUpstreamProfile  `json:"video_upstream_profile,omitempty"`             // DoubaoVideo 渠道的上游协议
+	VideoUpstreamCreatePath               string                `json:"video_upstream_create_path,omitempty"`         // 第三方协议的创建请求 URL 后缀，仅第三方协议使用，official 时清空
+	VideoUpstreamQueryPathTemplate        string                `json:"video_upstream_query_path_template,omitempty"` // 第三方协议的查询 URL 后缀模板，含且仅含一个 {task_id}，official 时清空
+	AssetUpstreamProfile                  AssetUpstreamProfile  `json:"asset_upstream_profile,omitempty"`
+	AssetMinURLTTLSeconds                 int64                 `json:"asset_min_url_ttl_seconds,omitempty"`
+	AssetProviderProject                  string                `json:"asset_provider_project,omitempty"`
+	AssetRegion                           string                `json:"asset_region,omitempty"`
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {
@@ -103,6 +111,8 @@ const (
 	advancedCustomConverterOpenAIResponsesToGemini     = "openai_responses_to_gemini_generate_content"
 	advancedCustomConverterGeminiContentToOpenAIChat   = "gemini_generate_content_to_openai_chat_completions"
 	advancedCustomConverterOpenAIChatToGeminiContent   = "openai_chat_completions_to_gemini_generate_content"
+
+	AdvancedCustomConverterMediaTaskImageBlocking = "media_task_image_blocking"
 )
 
 const (
@@ -343,7 +353,8 @@ func IsAdvancedCustomConverterAllowed(converter string) bool {
 		advancedCustomConverterOpenAIResponsesToOpenAIChat,
 		advancedCustomConverterOpenAIResponsesToGemini,
 		advancedCustomConverterGeminiContentToOpenAIChat,
-		advancedCustomConverterOpenAIChatToGeminiContent:
+		advancedCustomConverterOpenAIChatToGeminiContent,
+		AdvancedCustomConverterMediaTaskImageBlocking:
 		return true
 	default:
 		return false
@@ -539,6 +550,10 @@ func validateAdvancedCustomConverterPath(index int, incomingPath string, convert
 		}
 	case advancedCustomConverterGeminiContentToOpenAIChat:
 		if strings.Contains(incomingPath, ":generateContent") || strings.Contains(incomingPath, ":streamGenerateContent") {
+			return nil
+		}
+	case AdvancedCustomConverterMediaTaskImageBlocking:
+		if incomingPath == advancedCustomEndpointPathImageGeneration {
 			return nil
 		}
 	}

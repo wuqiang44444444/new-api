@@ -99,7 +99,10 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *taskdto.TaskError) {
-	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
+	if taskErr := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
+		return taskErr
+	}
+	return service.ValidateFrozenVideoSKUCapability(c, info)
 }
 
 // BuildRequestURL constructs the upstream URL.
@@ -166,9 +169,15 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		}
 	}
 
-	body, err := a.convertToRequestPayload(&req, info)
+	body, typed, err := jimengContractPayload(c, info)
 	if err != nil {
 		return nil, errors.Wrap(err, "convert request payload failed")
+	}
+	if !typed {
+		body, err = a.convertToRequestPayload(&req, info)
+		if err != nil {
+			return nil, errors.Wrap(err, "convert request payload failed")
+		}
 	}
 	data, err := common.Marshal(body)
 	if err != nil {
@@ -444,9 +453,20 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	case "in_queue":
 		taskResult.Status = model.TaskStatusQueued
 		taskResult.Progress = "10%"
+	case "generating":
+		taskResult.Status = model.TaskStatusInProgress
+		taskResult.Progress = "50%"
 	case "done":
 		taskResult.Status = model.TaskStatusSuccess
 		taskResult.Progress = "100%"
+	case "failed":
+		taskResult.Status = model.TaskStatusFailure
+		taskResult.Progress = "100%"
+		if taskResult.Reason == "" {
+			taskResult.Reason = resTask.Message
+		}
+	default:
+		return nil, fmt.Errorf("unknown Jimeng task status %q", resTask.Data.Status)
 	}
 	taskResult.Url = resTask.Data.VideoUrl
 	return &taskResult, nil

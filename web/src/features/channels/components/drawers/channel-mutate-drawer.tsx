@@ -182,6 +182,9 @@ import {
 import { ParamOverrideEditorDialog } from '../dialogs/param-override-editor-dialog'
 import { StatusCodeRiskDialog } from '../dialogs/status-code-risk-dialog'
 import { ModelMappingEditor } from '../model-mapping-editor'
+import { AssetUpstreamProfileField } from './asset-upstream-profile-field'
+import { LinkImplementationField } from './link-implementation-field'
+import { OfficialChannelConnectivityPanel } from './official-channel-connectivity-panel'
 import {
   ChannelAdvancedSection,
   ChannelApiAccessSection,
@@ -190,6 +193,7 @@ import {
   ChannelEditorLoadingState,
   ChannelModelsSection,
 } from './sections'
+import { VideoUpstreamProfileField } from './video-upstream-profile-field'
 
 type ChannelMutateDrawerProps = {
   open: boolean
@@ -281,6 +285,13 @@ const SENSITIVE_FORM_FIELDS = [
   'vertex_key_type',
   'aws_key_type',
   'azure_responses_version',
+  'video_upstream_profile',
+  'asset_upstream_profile',
+  'asset_min_url_ttl_seconds',
+  'asset_provider_project',
+  'asset_region',
+  'asset_access_key_id',
+  'asset_secret_access_key',
   'force_format',
   'thinking_to_content',
   'proxy',
@@ -663,6 +674,20 @@ export function ChannelMutateDrawer({
     queryFn: () => getChannel(channelId || 0),
     enabled: isEditing && Boolean(channelId),
   })
+  const savedDoubaoProfiles = useMemo(() => {
+    const settings = parseSettingsRecord(channelData?.data?.settings)
+    return {
+      asset:
+        typeof settings.asset_upstream_profile === 'string'
+          ? settings.asset_upstream_profile
+          : 'none',
+      video:
+        typeof settings.video_upstream_profile === 'string' &&
+        settings.video_upstream_profile
+          ? settings.video_upstream_profile
+          : 'official',
+    }
+  }, [channelData?.data?.settings])
 
   // Fetch available groups
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
@@ -729,6 +754,7 @@ export function ChannelMutateDrawer({
   const currentModelMapping = form.watch('model_mapping')
   const awsKeyType = form.watch('aws_key_type')
   const vertexKeyType = form.watch('vertex_key_type')
+  const videoUpstreamProfile = form.watch('video_upstream_profile')
   const upstreamModelUpdateCheckEnabled = form.watch(
     'upstream_model_update_check_enabled'
   )
@@ -2351,6 +2377,40 @@ export function ChannelMutateDrawer({
                               />
                             )}
 
+                            {/* DoubaoVideo (type 54) */}
+                            {currentType === 54 && (
+                              <>
+                                <LinkImplementationField
+                                  control={form.control}
+                                  channelType={currentType}
+                                />
+                                <VideoUpstreamProfileField
+                                  control={form.control}
+                                />
+                                <AssetUpstreamProfileField
+                                  control={form.control}
+                                  sensitiveLocked={sensitiveLocked}
+                                  credentialStatus={
+                                    channelData?.data?.asset_credential_status
+                                  }
+                                />
+                              </>
+                            )}
+
+                            {currentType === 58 && (
+                              <LinkImplementationField
+                                control={form.control}
+                                channelType={currentType}
+                              />
+                            )}
+
+                            {(currentType === 50 || currentType === 51) && (
+                              <LinkImplementationField
+                                control={form.control}
+                                channelType={currentType}
+                              />
+                            )}
+
                             {/* AI Proxy Library (type 21) */}
                             {currentType === 21 && (
                               <FormField
@@ -2986,7 +3046,12 @@ export function ChannelMutateDrawer({
                                   }
                                   return (
                                     <FormItem>
-                                      <FormLabel>{t('API Key *')}</FormLabel>
+                                      <FormLabel>
+                                        {currentType === 54 &&
+                                        videoUpstreamProfile === 'official'
+                                          ? t('Model API Key *')
+                                          : t('API Key *')}
+                                      </FormLabel>
                                       <FormControl>
                                         <Textarea
                                           placeholder={keyPlaceholder}
@@ -3240,6 +3305,28 @@ export function ChannelMutateDrawer({
                             </ChannelAuthSection>
                           </fieldset>
                         </div>
+                        {currentType === 54 && channelId ? (
+                          <OfficialChannelConnectivityPanel
+                            key={channelId}
+                            channelId={channelId}
+                            control={form.control}
+                            credentialConfigured={
+                              channelData?.data?.asset_credential_status
+                                ?.configured === true
+                            }
+                            savedAssetProfile={savedDoubaoProfiles.asset}
+                            savedVideoProfile={savedDoubaoProfiles.video}
+                            sensitiveLocked={sensitiveLocked}
+                            onCredentialCleared={() => {
+                              form.setValue(
+                                'asset_credential_configured',
+                                false
+                              )
+                              form.setValue('asset_access_key_id', '')
+                              form.setValue('asset_secret_access_key', '')
+                            }}
+                          />
+                        ) : null}
                       </ChannelApiAccessSection>
                     </div>
 
@@ -4233,9 +4320,7 @@ export function ChannelMutateDrawer({
                                         <SelectValue />
                                       </SelectTrigger>
                                     </FormControl>
-                                    <SelectContent
-                                      alignItemWithTrigger={false}
-                                    >
+                                    <SelectContent alignItemWithTrigger={false}>
                                       <SelectGroup>
                                         <SelectItem value='auto'>
                                           {t('Auto')}

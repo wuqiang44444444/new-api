@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -278,9 +280,20 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		//	return nil, errors.New("prompt is required")
 		//}
 
-		if imageRequest.N == nil || *imageRequest.N == 0 {
+		_, registeredImageSKU := model.ResolveImageSKUCapability(imageRequest.Model)
+		if imageRequest.N == nil || (*imageRequest.N == 0 && !registeredImageSKU) {
 			imageRequest.N = common.GetPointer(uint(1))
 		}
+	}
+
+	if capability, registered := model.ResolveImageSKUCapability(imageRequest.Model); registered {
+		if relayMode != relayconstant.RelayModeImagesGenerations {
+			return nil, errors.New("this image model is available only through /v1/images/generations")
+		}
+		if err := capability.ValidateRequest(imageRequest); err != nil {
+			return nil, err
+		}
+		common.SetContextKey(c, constant.ContextKeyResolvedImageSKUCapability, capability)
 	}
 
 	return imageRequest, nil

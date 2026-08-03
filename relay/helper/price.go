@@ -77,6 +77,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 
 	// Check if this model uses tiered_expr billing
 	if billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeTieredExpr {
+		if info.TaskRelayInfo != nil && info.TaskRelayInfo.ClientProtocol == model.TaskClientProtocolOpenAIImages {
+			return ModelPriceHelperMediaImageTaskTiered(c, info)
+		}
 		return modelPriceHelperTiered(c, info, promptTokens, meta, groupRatioInfo)
 	}
 

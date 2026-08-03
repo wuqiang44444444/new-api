@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
+import { resolveDocsLink } from '@/lib/docs-link'
 
 import { resolveHomeBaseUrl } from '../../lib/server-address'
 import { GatewayFlow } from '../gateway-flow'
@@ -37,15 +38,14 @@ export function Hero(props: HeroProps) {
   const { status } = useStatus()
   const { systemName } = useSystemConfig()
   const serverAddress = resolveHomeBaseUrl(status)
-  const docsUrl =
-    (status?.docs_link as string | undefined) || 'https://docs.newapi.pro'
+  const docsLink = resolveDocsLink(status?.docs_link)
 
-  const docsButton = docsUrl.startsWith('http') ? (
+  const docsButton = docsLink.external ? (
     <Button
       variant='outline'
       className='h-11 gap-1.5 px-5'
       render={
-        <a href={docsUrl} target='_blank' rel='noopener noreferrer' />
+        <a href={docsLink.href} target='_blank' rel='noopener noreferrer' />
       }
     >
       <BookOpen aria-hidden='true' className='size-4' />
@@ -55,7 +55,7 @@ export function Hero(props: HeroProps) {
     <Button
       variant='outline'
       className='h-11 gap-1.5 px-5'
-      render={<Link to={docsUrl} />}
+      render={<Link to={docsLink.href} />}
     >
       <BookOpen aria-hidden='true' className='size-4' />
       {t('Docs')}

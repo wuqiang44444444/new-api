@@ -62,6 +62,8 @@ export type ModelRatioData = {
   billingMode?: PricingMode
   billingExpr?: string
   requestRuleExpr?: string
+  // tiered_expr 模型的异步任务预扣 token 上界；与浏览器本地费用试算值无关。
+  taskPreConsumeTokens?: number
 }
 
 export type PreviewRow = {

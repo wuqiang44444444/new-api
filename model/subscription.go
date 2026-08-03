@@ -1231,7 +1231,7 @@ type SubscriptionPreConsumeRecord struct {
 	UserId             int    `json:"user_id" gorm:"index"`
 	UserSubscriptionId int    `json:"user_subscription_id" gorm:"index"`
 	PreConsumed        int64  `json:"pre_consumed" gorm:"type:bigint;not null;default:0"`
-	Status             string `json:"status" gorm:"type:varchar(32);index"` // consumed/refunded
+	Status             string `json:"status" gorm:"type:varchar(32);index"` // consumed/transferred/refunded
 	CreatedAt          int64  `json:"created_at" gorm:"bigint"`
 	UpdatedAt          int64  `json:"updated_at" gorm:"bigint;index"`
 }
@@ -1400,6 +1400,9 @@ func RefundSubscriptionPreConsume(requestId string) error {
 			return err
 		}
 		if record.Status == "refunded" {
+			return nil
+		}
+		if record.Status == "transferred" {
 			return nil
 		}
 		if record.PreConsumed <= 0 {

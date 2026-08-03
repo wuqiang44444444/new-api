@@ -1,0 +1,81 @@
+---
+adr: 0006
+status: accepted
+date: 2026-07-27
+superseded-by: ""
+---
+
+# ADR-0006: 图片异步任务共享 Task 持久化与客户端恢复
+
+## Context
+
+OpenAI 图片生成 Link API是同步合同，但 TokenSave、Moxing 等上游可能先返回 HTTP 202，再通过统一媒体任务接口完成图片生成。此前的请求内阻塞轮询在客户端断开、请求超时或服务重启后会丢失执行责任；本地退款后上游仍可能成功收费，无法自动对账。
+
+系统已经具备供视频任务使用的共享 `Task`、创建幂等日志、后台轮询、终态 CAS、计费补偿和审计能力。图片接入必须复用这些事实来源，同时保持图片与视频各自独立的客户端 DTO、结果和错误合同，并继续遵守供应商中立和最小入侵约束。
+
+## Decision
+
+- `POST /v1/images/generations` 继续作为统一图片创建入口。上游同步 HTTP 200 保持现有图片链路；上游 HTTP 202 在返回客户端前持久化为共享 `Task`。
+- 新增供应商无关的 `media_image` Task platform、`openai_images` client protocol 和 `image_generation` action，不新增图片任务表或第二套状态机。
+- 图片 Task 在 `private_data.media_image` 中冻结查询根地址、路径模板、代理、鉴权模板、实际选中 Key、请求数量、结果 URL、可选 usage 和上游请求 ID。原始 prompt、参考图内容、完整响应和 base64 不落库。
+- 持久化图片查询只使用 Advanced Custom 路由鉴权模板（省略时为默认 Bearer）和实际选中 Key；渠道级或运行时 header override 不进入该合同并在创建前失败关闭，避免保存完整鉴权头或让在途任务依赖可变配置。
+- 取得上游任务 ID 后禁止重新创建。请求内等待器与后台轮询器允许重复 GET，但终态必须通过 Task 状态 CAS 竞争，只有胜出者能够结算或退款。
+- Task 持久化后，计费责任从请求链路单向转移到 Task。固定模型价格按不超过请求 `n` 的实际结果数量结算；上游返回超过 `n` 张去重结果时按协议违规失败关闭并退款，不向用户补扣超发图片。表达式计费只使用冻结表达式和经过验证的实际 usage，预扣不足进入既有 debt/补偿状态。
+- `media_image` 对全局任务超时应用 30 分钟保护性下限，防止错误配置在最长 5 分钟请求等待期间提前终止任务；其他任务保持原全局超时语义。
+- 请求等待期内完成时返回 OpenAI 图片 HTTP 200；仍在执行时返回本站 HTTP 202 任务对象。客户端通过 `GET /v1/images/tasks/:task_id` 查询，且只能读取自己的 `openai_images` 任务。
+- `Idempotency-Key` 复用现有创建幂等日志，并作为异步图片调用的强烈建议。相同键与相同请求恢复原任务，不同请求返回 HTTP 409。未取得上游任务 ID 的创建结果不确定窗口继续失败关闭，不自动重提；没有显式幂等键时不按 prompt 隐式合并合法的重复生成。
+- 当前能力只覆盖 `response_format=url`，不支持固定尺寸价 Gemini 模型或 `b64_json`。
+
+## Amendment — 2026-07-28
+
+当前持久化图片 Task 的精确适用范围如下：
+
+- 仅适用于 `/v1/images/generations` 中经分发后选中、且 Advanced Custom 明确声明持久化媒体任务能力的模型；图片编辑、Gemini 原生入口和其他渠道不进入该路径；
+- （已由 2026-07-30 Amendment 取代）原设计认为
+  `ImageTaskCreateIdempotency` 只为“已经确定会持久化”的 Advanced Custom 请求创建 claim；
+  后续确认同一 route 在响应前无法判定同步或异步，因此不得继续按该旧判据实现。普通、确定
+  同步的图片 route 仍不进入该幂等域；
+- `gpt-image-2` 明确排除在该持久化路径之外，继续使用同步 OpenAI 图片链路，不建立 `media_image` Task 或转移计费责任；
+- 固定价格异步图片和表达式计费图片都使用 [ADR-0008](./0008-共享异步任务计费状态机与原子补偿.md) 的 `AsyncBilling` 门闩；只有表达式任务保存 tiered snapshot；
+- 终态 usage 可以从 OpenAI 风格或 Gemini 组件字段归一化，但只有通过边界校验且完成真实账单验证的语义才能用于结算。
+
+## Amendment — 2026-07-30
+
+- 本 ADR 的持久化图片路径属于 [ADR-0011](./0011-异步创建未知与轮询合同违例对账.md) 所定义
+  的共享 Task 型创建。经分发确定使用 `media_task_image_blocking` 等可能返回持久化 Task 的
+  route 后，必须在向上游发送 POST 前建立耐久 create attempt；不能等收到 200/202 后再创建。
+- 这类上游可能返回同步 `data[]` 或异步 task 信封。同步成功时在资金事务中完成结算并关闭
+  attempt，不创建 Task；异步成功时原子创建 `media_image` Task 并把 hold 转移为
+  `AsyncBilling.pending`；结果模糊时进入 `unknown`，不自动重提或盲目退款。
+- 客户端提供 `Idempotency-Key` 时，claim 在同步成功后保留为
+  `completed_no_replay`，不能释放后重新占用。同键重放返回
+  `409 idempotency_result_unavailable` 且不再次 POST；普通确定同步的图片 route 没有进入该
+  claim 域，不承诺相同语义。
+- `Idempotency-Key` 仍为强烈建议的可选扩展。没有 Key 的图片请求为 at-least-once；内部
+  attempt 只保护本次调用的资金和恢复事实，不能把后续无 Key 请求识别为同一次生成。
+- 无效 JSON、任务 ID 不匹配、成功结果暂缺或地址不可采信进入
+  `reconciliation_required`。已取得可信完成结果但去重数量确定超过请求 `n` 时，属于确定性
+  内部 `PROVIDER_CONTRACT_FAILURE`：对外投影
+  `failed/provider_contract_failure`，按 ADR-0008 零目标结算并记录潜在上游已计费
+  exposure，不重复 GET 期待结果数量变化。
+- create attempt 与轮询对账都扩展现有共享任务补偿调度器，不新增图片专用进程或第二套任务
+  系统。
+
+## Consequences
+
+- 收益：客户端断开、请求超时和服务重启后，图片任务仍可继续轮询、查询、结算和补偿。
+- 收益：图片与视频共享 Task、终态 CAS、计费状态机和创建幂等事实，不形成第二套异步系统。
+- 收益：渠道适配协议仍由 Advanced Custom 的供应商无关策略决定，新上游兼容同一媒体任务合同时无需新增供应商代码。
+- 代价：OpenAI Images 没有标准异步查询协议，本站需要公开 HTTP 202 和 `/v1/images/tasks/:task_id` 扩展合同。
+- 代价：任务私有数据需要保存创建时实际选中的上游 Key；数据库与备份必须继续按凭证敏感级别保护。
+- 风险：上游已接受任务但本地未取得任务 ID 的窗口无法仅靠本地事务消除；发送前 attempt
+  保证该窗口有持久化资金与对账事实，没有上游查询能力时仍可能在到期释放后形成平台 exposure。
+- 风险：具体 usage 模型的精确 Token 结算仍需真实账单验收；阶段 D 交付的是采集与冻结结算框架，核验前继续使用固定 `ModelPrice`。
+- 后续约束：图片 Task 不得复用视频命名字段表达图片事实，不得持久化 base64、原始 prompt、完整鉴权头或完整上游响应。
+
+## Alternatives Considered
+
+- 继续仅在请求内阻塞轮询：未采用。客户端断开和服务重启会丢失执行责任，晚成功无法形成资金闭环。
+- 新建图片专用任务表和轮询器：未采用。它会复制 Task 状态机、计费补偿和幂等能力，形成第二事实来源。
+- 把图片任务伪装成视频任务并复用单个结果 URL：未采用。多图片结果、usage 和 Link 合同不同，会污染视频字段语义。
+- 超时后退款并重新提交：未采用。上游任务可能仍然成功并收费，会造成重复生成和重复成本。

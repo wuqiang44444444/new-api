@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,6 +42,7 @@ func TestMain(m *testing.M) {
 
 	if err := db.AutoMigrate(
 		&model.Task{},
+		&model.TaskCreateIdempotency{},
 		&model.User{},
 		&model.Token{},
 		&model.Log{},
@@ -49,6 +51,24 @@ func TestMain(m *testing.M) {
 		&model.UserSubscription{},
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
+		&model.Asset{},
+		&model.AssetSource{},
+		&model.AssetBinding{},
+		&model.AssetGroupBinding{},
+		&model.AssetOwnershipClaim{},
+		&model.AssetGroupOwnershipClaim{},
+		&model.AssetReconciliationFinding{},
+		&model.APIServiceRule{},
+		&model.ApplicationAPIRuleAcceptance{},
+		&model.RealPersonAuthorization{},
+		&model.RealPersonVerificationSession{},
+		&model.AssetOperationJob{},
+		&model.AssetCreateIdempotency{},
+		&model.TaskCreateAttempt{},
+		&model.TaskAssetAuthorization{},
+		&model.ProviderCostExposure{},
+		&model.ProviderExposureIncident{},
+		&model.Ability{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -72,6 +92,24 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM user_subscriptions")
 		model.DB.Exec("DELETE FROM system_task_locks")
 		model.DB.Exec("DELETE FROM system_tasks")
+		model.DB.Exec("DELETE FROM asset_operation_jobs")
+		model.DB.Exec("DELETE FROM asset_create_idempotencies")
+		model.DB.Exec("DELETE FROM asset_ownership_claims")
+		model.DB.Exec("DELETE FROM asset_group_ownership_claims")
+		model.DB.Exec("DELETE FROM asset_reconciliation_findings")
+		model.DB.Exec("DELETE FROM application_api_rule_acceptances")
+		model.DB.Exec("DELETE FROM api_service_rules")
+		model.DB.Exec("DELETE FROM real_person_verification_sessions")
+		model.DB.Exec("DELETE FROM real_person_authorizations")
+		model.DB.Exec("DELETE FROM asset_group_bindings")
+		model.DB.Exec("DELETE FROM asset_bindings")
+		model.DB.Exec("DELETE FROM asset_sources")
+		model.DB.Exec("DELETE FROM assets")
+		model.DB.Exec("DELETE FROM task_asset_authorizations")
+		model.DB.Exec("DELETE FROM task_create_attempts")
+		model.DB.Exec("DELETE FROM provider_cost_exposures")
+		model.DB.Exec("DELETE FROM provider_exposure_incidents")
+		model.DB.Exec("DELETE FROM abilities")
 	})
 }
 
@@ -420,6 +458,43 @@ func TestRefundTaskQuota_FundingFailureKeepsPendingMarker(t *testing.T) {
 	assert.Equal(t, preConsumed, task.Quota)
 	assert.Equal(t, preConsumed, getTaskQuota(t, task.ID))
 	assert.Equal(t, int64(0), countLogs(t))
+}
+
+func TestRefundTaskQuota_LegacyConcurrentCallsRefundOnce(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+
+	const userID, tokenID, preConsumed = 6, 6, 1200
+	seedUser(t, userID, 5000)
+	seedToken(t, tokenID, userID, "sk-legacy-concurrent", 3000)
+	task := makeTask(userID, 0, preConsumed, tokenID, BillingSourceWallet, 0)
+	require.NoError(t, model.DB.Create(task).Error)
+
+	var first, second model.Task
+	require.NoError(t, model.DB.First(&first, task.ID).Error)
+	require.NoError(t, model.DB.First(&second, task.ID).Error)
+	var wait sync.WaitGroup
+	results := make(chan bool, 2)
+	wait.Add(2)
+	go func() {
+		defer wait.Done()
+		results <- RefundTaskQuota(ctx, &first, "legacy concurrent failure")
+	}()
+	go func() {
+		defer wait.Done()
+		results <- RefundTaskQuota(ctx, &second, "legacy concurrent failure")
+	}()
+	wait.Wait()
+	close(results)
+	for result := range results {
+		assert.True(t, result)
+	}
+
+	assert.Equal(t, 5000+preConsumed, getUserQuota(t, userID))
+	assert.Equal(t, 3000+preConsumed, getTokenRemainQuota(t, tokenID))
+	assert.Equal(t, -preConsumed, getTokenUsedQuota(t, tokenID))
+	assert.Zero(t, getTaskQuota(t, task.ID))
+	assert.Equal(t, int64(1), countLogs(t))
 }
 
 // ===========================================================================

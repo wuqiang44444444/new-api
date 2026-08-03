@@ -408,10 +408,24 @@ func GetChannel(c *gin.Context) {
 	if channel != nil {
 		clearChannelInfo(channel)
 	}
+	status, err := model.GetChannelAssetCredentialStatus(
+		id,
+		authz.Can(c.GetInt("id"), c.GetInt("role"), authz.ChannelSensitiveWrite),
+	)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    channel,
+		"data": struct {
+			*model.Channel
+			AssetCredentialStatus dto.ChannelAssetCredentialStatus `json:"asset_credential_status"`
+		}{
+			Channel:               channel,
+			AssetCredentialStatus: status,
+		},
 	})
 	return
 }
@@ -571,10 +585,11 @@ func RefreshCodexChannelCredential(c *gin.Context) {
 }
 
 type AddChannelRequest struct {
-	Mode                      string                `json:"mode"`
-	MultiKeyMode              constant.MultiKeyMode `json:"multi_key_mode"`
-	BatchAddSetKeyPrefix2Name bool                  `json:"batch_add_set_key_prefix_2_name"`
-	Channel                   *model.Channel        `json:"channel"`
+	Mode                      string                           `json:"mode"`
+	MultiKeyMode              constant.MultiKeyMode            `json:"multi_key_mode"`
+	BatchAddSetKeyPrefix2Name bool                             `json:"batch_add_set_key_prefix_2_name"`
+	Channel                   *model.Channel                   `json:"channel"`
+	AssetCredential           *dto.ChannelAssetCredentialInput `json:"asset_credential,omitempty"`
 }
 
 func getVertexArrayKeys(keys string) ([]string, error) {
@@ -696,15 +711,36 @@ func AddChannel(c *gin.Context) {
 		}
 		channels = append(channels, *localChannel)
 	}
-	err = model.BatchInsertChannels(channels)
+	if err := validateNewChannelAssetCredential(
+		addChannelRequest.Channel,
+		addChannelRequest.AssetCredential,
+		addChannelRequest.Mode,
+	); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	if addChannelRequest.Channel.GetOtherSettings().AssetUpstreamProfile == dto.AssetUpstreamProfileOfficial {
+		if len(channels) != 1 {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "official_action_assets only supports single-key channel creation"})
+			return
+		}
+		err = model.InsertChannelWithAssetCredential(&channels[0], addChannelRequest.AssetCredential)
+	} else {
+		err = model.BatchInsertChannels(channels)
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	assetCredentialAudit := "unchanged"
+	if addChannelRequest.AssetCredential != nil {
+		assetCredentialAudit = "created"
+	}
 	recordManageAudit(c, "channel.create", map[string]interface{}{
-		"name":  addChannelRequest.Channel.Name,
-		"type":  addChannelRequest.Channel.Type,
-		"count": len(channels),
+		"name":             addChannelRequest.Channel.Name,
+		"type":             addChannelRequest.Channel.Type,
+		"count":            len(channels),
+		"asset_credential": assetCredentialAudit,
 	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -715,6 +751,9 @@ func AddChannel(c *gin.Context) {
 
 func DeleteChannel(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
+	if rejectAssetChannelDeletion(c, []int{id}) {
+		return
+	}
 	channelName := ""
 	channelProxy := ""
 	channelLookupFailed := false
@@ -727,6 +766,9 @@ func DeleteChannel(c *gin.Context) {
 	channel := model.Channel{Id: id}
 	err := channel.Delete()
 	if err != nil {
+		if rejectAssetChannelFenceError(c, err) {
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -748,8 +790,14 @@ func DeleteChannel(c *gin.Context) {
 }
 
 func DeleteDisabledChannel(c *gin.Context) {
+	if rejectDisabledAssetChannelDeletion(c) {
+		return
+	}
 	rows, err := model.DeleteDisabledChannel()
 	if err != nil {
+		if rejectAssetChannelFenceError(c, err) {
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -907,8 +955,14 @@ func DeleteChannelBatch(c *gin.Context) {
 		})
 		return
 	}
+	if rejectAssetChannelDeletion(c, channelBatch.Ids) {
+		return
+	}
 	deletedCount, err := model.BatchDeleteChannels(channelBatch.Ids)
 	if err != nil {
+		if rejectAssetChannelFenceError(c, err) {
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -929,8 +983,9 @@ func DeleteChannelBatch(c *gin.Context) {
 
 type PatchChannel struct {
 	model.Channel
-	MultiKeyMode *string `json:"multi_key_mode"`
-	KeyMode      *string `json:"key_mode"` // 多key模式下密钥覆盖或者追加
+	MultiKeyMode    *string                          `json:"multi_key_mode"`
+	KeyMode         *string                          `json:"key_mode"` // 多key模式下密钥覆盖或者追加
+	AssetCredential *dto.ChannelAssetCredentialInput `json:"asset_credential,omitempty"`
 }
 
 type ChannelStatusRequest struct {
@@ -1083,8 +1138,38 @@ func UpdateChannel(c *gin.Context) {
 			// 覆盖模式：直接使用新密钥（默认行为，不需要特殊处理）
 		}
 	}
-	err = channel.Update()
+	if err := validateUpdatedChannelAssetCredential(
+		&channel.Channel,
+		originChannel,
+		requestData,
+		channel.AssetCredential,
+	); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	if rejectAssetChannelAccountChange(c, requestData, &channel.Channel, originChannel) {
+		return
+	}
+	assetCredentialAudit := "unchanged"
+	if channel.AssetCredential != nil {
+		existingCredential, lookupErr := model.GetChannelAssetCredential(channel.Id)
+		if lookupErr != nil {
+			common.ApiError(c, lookupErr)
+			return
+		}
+		if existingCredential == nil {
+			assetCredentialAudit = "created"
+		} else {
+			assetCredentialAudit = "rotated"
+		}
+		err = model.UpdateChannelWithAssetCredential(&channel.Channel, channel.AssetCredential)
+	} else {
+		err = channel.Update()
+	}
 	if err != nil {
+		if rejectAssetChannelFenceError(c, err) {
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -1109,12 +1194,17 @@ func UpdateChannel(c *gin.Context) {
 	if channel.Key != "" && channel.Key != originChannel.Key {
 		changedFields = append(changedFields, "key")
 	}
+	if channel.AssetCredential != nil {
+		changedFields = append(changedFields, "asset_credential")
+	}
 	recordManageAudit(c, "channel.update", map[string]interface{}{
-		"id":             channel.Id,
-		"name":           channel.Name,
-		"changed_fields": changedFields,
+		"id":               channel.Id,
+		"name":             channel.Name,
+		"changed_fields":   changedFields,
+		"asset_credential": assetCredentialAudit,
 	})
 	channel.Key = ""
+	channel.AssetCredential = nil
 	clearChannelInfo(&channel.Channel)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -1435,6 +1525,14 @@ func CopyChannel(c *gin.Context) {
 	if resetBalance {
 		clone.Balance = 0
 		clone.UsedQuota = 0
+	}
+	cloneSettings := clone.GetOtherSettings()
+	if cloneSettings.AssetUpstreamProfile == dto.AssetUpstreamProfileOfficial {
+		cloneSettings.AssetUpstreamProfile = dto.AssetUpstreamProfileNone
+		cloneSettings.AssetMinURLTTLSeconds = 0
+		cloneSettings.AssetProviderProject = ""
+		cloneSettings.AssetRegion = ""
+		clone.SetOtherSettings(cloneSettings)
 	}
 
 	if err := clone.ValidateSettings(); err != nil {

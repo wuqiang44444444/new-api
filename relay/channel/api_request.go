@@ -510,8 +510,10 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
+	service.MarkTaskCreateAttemptUpstreamStarted(c)
 	resp, err := client.Do(req)
 	if err != nil {
+		service.MarkTaskCreateAttemptOutcomeUnknown(c, info)
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
@@ -530,9 +532,9 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		))
 	}
 
-	if upID := resp.Header.Get(common2.RequestIdKey); upID != "" {
-		c.Set(common2.UpstreamRequestIdKey, upID)
-	}
+	// 始终覆盖（即便为空）：重试场景下若前次失败响应带 ID 而最终成功响应不带，
+	// 仅当非空才 Set 会残留失败请求的旧 ID，导致记录的 upstream_request_id 不准。
+	c.Set(common2.UpstreamRequestIdKey, resp.Header.Get(common2.RequestIdKey))
 
 	_ = req.Body.Close()
 	_ = c.Request.Body.Close()

@@ -38,6 +38,11 @@ type TaskPollingAdaptor interface {
 // 打破 service -> relay -> relay/channel -> service 的循环依赖。
 var GetTaskAdaptorFunc func(platform constant.TaskPlatform) TaskPollingAdaptor
 
+const (
+	refundReconciliationLimit       = 100
+	refundReconciliationGracePeriod = 30 * time.Second
+)
+
 // sweepTimedOutTasks 在主轮询之前独立清理超时任务。
 // 每次最多处理 100 条，剩余的下个周期继续处理。
 // 使用 per-task CAS (UpdateWithStatus) 防止覆盖被正常轮询已推进的任务。
@@ -51,16 +56,27 @@ func sweepTimedOutTasks(ctx context.Context) {
 		return
 	}
 
-	reason := fmt.Sprintf("任务超时（%d分钟）", constant.TaskTimeoutMinutes)
 	legacyReason := "任务超时（旧系统遗留任务，不进行退款，请联系管理员）"
 	now := time.Now().Unix()
 	timedOutCount := 0
 
 	for _, task := range tasks {
 		isLegacy := task.SubmitTime > 0 && task.SubmitTime < model.TaskRefundLegacyCutoff
+		timeoutMinutes := constant.TaskTimeoutMinutes
+		if task.Platform == constant.TaskPlatformMediaImage {
+			timeoutMinutes = constant.MediaImageTaskMinTimeoutMinutes
+			if constant.TaskTimeoutMinutes > timeoutMinutes {
+				timeoutMinutes = constant.TaskTimeoutMinutes
+			}
+		}
+		reason := fmt.Sprintf("任务超时（%d分钟）", timeoutMinutes)
 
 		oldStatus := task.Status
 		task.Status = model.TaskStatusFailure
+		if oldStatus == model.TaskStatusReconciliationRequired {
+			task.Status = model.TaskStatusExpired
+			reason = upstreamOutcomeUnresolvedReason
+		}
 		task.Progress = "100%"
 		task.FinishTime = now
 		if isLegacy {
@@ -82,8 +98,8 @@ func sweepTimedOutTasks(ctx context.Context) {
 			continue
 		}
 		timedOutCount++
-		if !isLegacy && task.Quota != 0 {
-			RefundTaskQuota(ctx, task, reason)
+		if !isLegacy && (task.Quota != 0 || reason == upstreamOutcomeUnresolvedReason) {
+			refundTaskWithReconcile(ctx, task, reason)
 		}
 	}
 
@@ -92,12 +108,27 @@ func sweepTimedOutTasks(ctx context.Context) {
 	}
 }
 
+// sweepUnrefundedFailedTasks 重试已落 FAILURE 终态但仍保留 quota 的欠退款任务。
+func sweepUnrefundedFailedTasks(ctx context.Context) {
+	updatedBefore := time.Now().Add(-refundReconciliationGracePeriod).Unix()
+	tasks := model.GetUnrefundedFailedTasks(updatedBefore, refundReconciliationLimit)
+	for _, task := range tasks {
+		if ctx.Err() != nil {
+			return
+		}
+		if !RefundTaskQuota(ctx, task, task.FailReason) {
+			logger.LogError(ctx, fmt.Sprintf("sweepUnrefundedFailedTasks refund error for task %s", task.TaskID))
+		}
+	}
+}
+
 // TaskPollSummary is the result recorded on an async_task_poll system task row,
 // summarizing one polling pass.
 type TaskPollSummary struct {
-	UnfinishedTasks  int `json:"unfinished_tasks"`
-	PlatformsScanned int `json:"platforms_scanned"`
-	NullTasksFailed  int `json:"null_tasks_failed"`
+	UnfinishedTasks   int `json:"unfinished_tasks"`
+	PlatformsScanned  int `json:"platforms_scanned"`
+	NullTasksFailed   int `json:"null_tasks_failed"`
+	ExposureIncidents int `json:"exposure_incidents"`
 }
 
 // RunTaskPollingOnce performs one async-task (Suno/video) polling pass
@@ -107,15 +138,20 @@ type TaskPollSummary struct {
 // adaptor factory has not been wired yet, to avoid a nil call during startup.
 func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) TaskPollSummary {
 	summary := TaskPollSummary{}
-	if GetTaskAdaptorFunc == nil {
-		return summary
-	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	common.SysLog("任务进度轮询开始")
+	ReconcileRevokedTaskAssetAuthorizations(ctx, taskCreateAttemptReconcileLimit)
+	ReconcileRequestedTaskCancellations(ctx, taskCreateAttemptReconcileLimit)
+	ReconcileTaskCreateAttempts(ctx)
 	sweepTimedOutTasks(ctx)
+	ReconcileTaskBilling(ctx, refundReconciliationLimit)
+	if GetTaskAdaptorFunc == nil {
+		summary.ExposureIncidents = EvaluateProviderExposurePolicies(ctx, providerExposurePolicyLimit)
+		return summary
+	}
 	allTasks := model.GetAllUnFinishSyncTasks(constant.TaskQueryLimit)
 	summary.UnfinishedTasks = len(allTasks)
 	platformTask := make(map[constant.TaskPlatform][]*model.Task)
@@ -139,27 +175,31 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 		summary.PlatformsScanned++
 		taskChannelM := make(map[int][]string)
 		taskM := make(map[string]*model.Task)
-		nullTaskIds := make([]int64, 0)
+		nullTasks := make([]*model.Task, 0)
 		for _, task := range tasks {
 			upstreamID := task.GetUpstreamTaskID()
 			if upstreamID == "" {
 				// 统计失败的未完成任务
-				nullTaskIds = append(nullTaskIds, task.ID)
+				nullTasks = append(nullTasks, task)
 				continue
 			}
-			taskM[upstreamID] = task
+			taskKey := upstreamID
+			if platform == constant.TaskPlatformMediaImage {
+				taskKey = task.TaskID
+			}
+			taskM[taskKey] = task
 			taskChannelM[task.ChannelId] = append(taskChannelM[task.ChannelId], upstreamID)
 		}
-		if len(nullTaskIds) > 0 {
-			summary.NullTasksFailed += len(nullTaskIds)
-			err := model.TaskBulkUpdateByID(nullTaskIds, map[string]any{
-				"status":   "FAILURE",
-				"progress": "100%",
-			})
-			if err != nil {
-				logger.LogError(ctx, fmt.Sprintf("Fix null task_id task error: %v", err))
-			} else {
-				logger.LogInfo(ctx, fmt.Sprintf("Fix null task_id task success: %v", nullTaskIds))
+		if len(nullTasks) > 0 {
+			for _, task := range nullTasks {
+				won, err := failTaskWithBilling(ctx, task, "upstream task id is missing")
+				if err != nil {
+					logger.LogError(ctx, fmt.Sprintf("Failed to finalize task %s without upstream id: %v", task.TaskID, err))
+					continue
+				}
+				if won {
+					summary.NullTasksFailed++
+				}
 			}
 		}
 		if len(taskChannelM) == 0 {
@@ -170,6 +210,9 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 	}
 	if report != nil && ctx.Err() == nil {
 		report(totalPlatforms, totalPlatforms)
+	}
+	if ctx.Err() == nil {
+		summary.ExposureIncidents = EvaluateProviderExposurePolicies(ctx, providerExposurePolicyLimit)
 	}
 	common.SysLog("任务进度轮询完成")
 	return summary
@@ -185,6 +228,8 @@ func DispatchPlatformUpdate(ctx context.Context, platform constant.TaskPlatform,
 		// MJ 轮询由其自身处理，这里预留入口
 	case constant.TaskPlatformSuno:
 		_ = UpdateSunoTasks(ctx, taskChannelM, taskM)
+	case constant.TaskPlatformMediaImage:
+		_ = UpdateMediaImageTasks(ctx, taskM)
 	default:
 		if err := UpdateVideoTasks(ctx, platform, taskChannelM, taskM); err != nil {
 			common.SysLog(fmt.Sprintf("UpdateVideoTasks fail: %s", err))
@@ -280,31 +325,37 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 			continue
 		}
 
-		prevStatus := task.Status
+		snapshot := task.Snapshot()
 		task.Status = lo.If(model.TaskStatus(responseItem.Status) != "", model.TaskStatus(responseItem.Status)).Else(task.Status)
 		task.FailReason = lo.If(responseItem.FailReason != "", responseItem.FailReason).Else(task.FailReason)
 		task.SubmitTime = lo.If(responseItem.SubmitTime != 0, responseItem.SubmitTime).Else(task.SubmitTime)
 		task.StartTime = lo.If(responseItem.StartTime != 0, responseItem.StartTime).Else(task.StartTime)
 		task.FinishTime = lo.If(responseItem.FinishTime != 0, responseItem.FinishTime).Else(task.FinishTime)
-		isFailure := responseItem.FailReason != "" || task.Status == model.TaskStatusFailure
-		if isFailure {
-			logger.LogInfo(ctx, task.TaskID+" 构建失败，"+task.FailReason)
+		if responseItem.FailReason != "" && !task.Status.IsTerminal() {
 			task.Status = model.TaskStatusFailure
+		}
+		if task.Status.ShouldRefundOnTerminal() {
+			logger.LogInfo(ctx, task.TaskID+" 构建失败，"+task.FailReason)
 			task.Progress = "100%"
 		}
-		if responseItem.Status == model.TaskStatusSuccess {
+		if task.Status.IsTerminal() {
 			task.Progress = "100%"
 		}
 		task.Data = responseItem.Data
 
-		// 持久化走 CAS，防止重叠轮询/sweep/多实例/持久化失败重试导致重复退款或覆盖终态。
-		won, err := task.UpdateWithStatus(prevStatus)
-		if err != nil {
+		if task.Status.IsTerminal() && snapshot.Status != task.Status {
+			won, updateErr := task.UpdateWithStatus(snapshot.Status)
+			if updateErr != nil {
+				logger.LogError(ctx, fmt.Sprintf("UpdateSunoTask task %s error: %v", task.TaskID, updateErr))
+			} else if !won {
+				logger.LogWarn(ctx, fmt.Sprintf("Task %s CAS lost or no-op update, skip billing", task.TaskID))
+			} else if task.Status.ShouldRefundOnTerminal() && task.Quota != 0 {
+				refundTaskWithReconcile(ctx, task, task.FailReason)
+			}
+			continue
+		}
+		if err = task.Update(); err != nil {
 			logger.LogError(ctx, fmt.Sprintf("UpdateSunoTask task %s error: %v", task.TaskID, err))
-		} else if !won {
-			logger.LogWarn(ctx, fmt.Sprintf("Task %s CAS lost or no-op update, skip billing", task.TaskID))
-		} else if isFailure && prevStatus != model.TaskStatusFailure && task.Quota != 0 {
-			RefundTaskQuota(ctx, task, task.FailReason)
 		}
 	}
 	return nil
@@ -328,7 +379,7 @@ func taskNeedsUpdate(oldTask *model.Task, newTask taskdto.SunoDataResponse) bool
 		return true
 	}
 
-	if (oldTask.Status == model.TaskStatusFailure || oldTask.Status == model.TaskStatusSuccess) && oldTask.Progress != "100%" {
+	if oldTask.Status.IsTerminal() && oldTask.Progress != "100%" {
 		return true
 	}
 
@@ -387,44 +438,39 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 	if len(taskIds) == 0 {
 		return nil
 	}
-	cacheGetChannel, err := model.CacheGetChannel(channelId)
-	if err != nil {
-		// Collect DB primary key IDs for bulk update (taskIds are upstream IDs, not task_id column values)
-		var failedIDs []int64
-		for _, upstreamID := range taskIds {
-			if t, ok := taskM[upstreamID]; ok {
-				failedIDs = append(failedIDs, t.ID)
-			}
-		}
-		errUpdate := model.TaskBulkUpdateByID(failedIDs, map[string]any{
-			"fail_reason": fmt.Sprintf("Failed to get channel info, channel ID: %d", channelId),
-			"status":      "FAILURE",
-			"progress":    "100%",
-		})
-		if errUpdate != nil {
-			common.SysLog(fmt.Sprintf("UpdateVideoTask error: %v", errUpdate))
-		}
-		return fmt.Errorf("CacheGetChannel failed: %w", err)
-	}
+	cacheGetChannel, channelErr := model.CacheGetChannel(channelId)
 	adaptor := GetTaskAdaptorFunc(platform)
 	if adaptor == nil {
 		return fmt.Errorf("video adaptor not found")
 	}
-	info := &relaycommon.RelayInfo{}
-	info.ChannelMeta = &relaycommon.ChannelMeta{
-		ChannelBaseUrl: cacheGetChannel.GetBaseURL(),
-	}
-	info.ApiKey = cacheGetChannel.Key
-	adaptor.Init(info)
-	disablePollingSleep := cacheGetChannel.GetOtherSettings().DisableTaskPollingSleep
+	var firstErr error
 	for i, taskId := range taskIds {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := updateVideoSingleTask(ctx, adaptor, cacheGetChannel, taskId, taskM); err != nil {
-			logger.LogError(ctx, fmt.Sprintf("Failed to update video task %s: %s", taskId, err.Error()))
+		task := taskM[taskId]
+		providerChannel, err := taskVideoProviderChannel(task, cacheGetChannel)
+		if err != nil {
+			if channelErr != nil {
+				err = fmt.Errorf("CacheGetChannel failed: %w", channelErr)
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			if task != nil {
+				if _, updateErr := failTaskWithBilling(ctx, task, fmt.Sprintf("Failed to get channel info, channel ID: %d", channelId)); updateErr != nil {
+					common.SysLog(fmt.Sprintf("UpdateVideoTask error: %v", updateErr))
+				}
+			}
+			continue
 		}
-		if disablePollingSleep || i == len(taskIds)-1 {
+		if err := updateVideoSingleTask(ctx, adaptor, providerChannel, taskId, taskM); err != nil {
+			logger.LogError(ctx, fmt.Sprintf("Failed to update video task %s: %s", taskId, err.Error()))
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+		if providerChannel.GetOtherSettings().DisableTaskPollingSleep || i == len(taskIds)-1 {
 			continue
 		}
 
@@ -435,16 +481,12 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 		case <-time.After(1 * time.Second):
 		}
 	}
-	return nil
+	return firstErr
 }
 
 func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *model.Channel, taskId string, taskM map[string]*model.Task) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
-	}
-	baseURL := constant.ChannelBaseURLs[ch.Type]
-	if ch.GetBaseURL() != "" {
-		baseURL = ch.GetBaseURL()
 	}
 	proxy := ch.GetSetting().Proxy
 
@@ -453,17 +495,48 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		logger.LogError(ctx, fmt.Sprintf("Task %s not found in taskM", taskId))
 		return fmt.Errorf("task %s not found", taskId)
 	}
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{
+		ChannelType:          ch.Type,
+		ChannelId:            ch.Id,
+		ChannelBaseUrl:       ch.GetBaseURL(),
+		ApiKey:               ch.Key,
+		ChannelSetting:       ch.GetSetting(),
+		ChannelOtherSettings: ch.GetOtherSettings(),
+	}}
+	adaptor.Init(info)
 	key := ch.Key
 
 	privateData := task.PrivateData
 	if privateData.Key != "" {
 		key = privateData.Key
 	}
-	resp, err := adaptor.FetchTask(baseURL, key, map[string]any{
-		"task_id": task.GetUpstreamTaskID(),
-		"action":  task.Action,
+	videoUpstreamProfile := taskVideoUpstreamProfile(task, ch)
+	adapterVersion, versionErr := relaycommon.ResolveVideoSouthboundAdapterVersion(
+		ch.Type,
+		videoUpstreamProfile,
+		privateData.SouthboundAdapterVersion,
+	)
+	if versionErr != nil {
+		if markErr := markTaskReconciliationRequired(task); markErr != nil {
+			return fmt.Errorf("mark invalid adapter version for task %s: %w", taskId, markErr)
+		}
+		return nil
+	}
+	resp, err := adaptor.FetchTask(taskVideoUpstreamQueryBaseURL(task, ch), key, map[string]any{
+		"task_id":                            task.GetUpstreamTaskID(),
+		"action":                             task.Action,
+		"video_upstream_profile":             videoUpstreamProfile,
+		"video_upstream_adapter_version":     adapterVersion.String(),
+		"video_upstream_query_path_template": taskVideoUpstreamQueryPath(task, ch),
 	}, proxy)
 	if err != nil {
+		var contractViolation *relaycommon.UpstreamContractViolation
+		if errors.As(err, &contractViolation) {
+			if markErr := markTaskReconciliationRequired(task); markErr != nil {
+				return fmt.Errorf("mark reconciliation required for task %s: %w", taskId, markErr)
+			}
+			return nil
+		}
 		return fmt.Errorf("fetchTask failed for task %s: %w", taskId, err)
 	}
 	defer resp.Body.Close()
@@ -472,7 +545,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return fmt.Errorf("readAll failed for task %s: %w", taskId, err)
 	}
 
-	logger.LogDebug(ctx, "updateVideoSingleTask response: %s", responseBody)
+	logger.LogDebug(ctx, "updateVideoSingleTask response: %s", redactTaskResponseForLog(responseBody))
 
 	snap := task.Snapshot()
 
@@ -489,12 +562,27 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		taskResult.Reason = t.FailReason
 		task.Data = t.Data
 	} else if taskResult, err = adaptor.ParseTaskResult(responseBody); err != nil {
+		var contractViolation *relaycommon.UpstreamContractViolation
+		if errors.As(err, &contractViolation) {
+			return markTaskReconciliationRequired(task)
+		}
 		return fmt.Errorf("parseTaskResult failed for task %s: %w", taskId, err)
 	}
 
-	task.Data = redactVideoResponseBody(responseBody)
+	if adapterVersion.IsJSONVideoOmniV2() {
+		task.Data = redactTaskResponseForLog(responseBody)
+	} else {
+		task.Data = redactVideoResponseBody(responseBody)
+	}
 
-	logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
+	logger.LogDebug(
+		ctx,
+		"updateVideoSingleTask normalized: task_id=%q status=%q progress=%q has_result_url=%t",
+		taskResult.TaskID,
+		taskResult.Status,
+		taskResult.Progress,
+		strings.TrimSpace(taskResult.Url) != "",
+	)
 
 	now := time.Now().Unix()
 	if taskResult.Status == "" {
@@ -563,14 +651,37 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		if quota != 0 {
 			shouldRefund = true
 		}
+	case model.TaskStatusCancelled:
+		task.Progress = taskcommon.ProgressComplete
+		if task.FinishTime == 0 {
+			task.FinishTime = now
+		}
+		task.FailReason = "video task cancelled"
+		shouldRefund = quota != 0
+	case model.TaskStatusExpired:
+		task.Progress = taskcommon.ProgressComplete
+		if task.FinishTime == 0 {
+			task.FinishTime = now
+		}
+		task.FailReason = "video task expired"
+		shouldRefund = quota != 0
 	default:
 		return fmt.Errorf("unknown task status %s for task %s", taskResult.Status, task.TaskID)
 	}
 	if taskResult.Progress != "" {
 		task.Progress = taskResult.Progress
 	}
+	if snap.Status == model.TaskStatusReconciliationRequired &&
+		(task.Status == model.TaskStatusQueued ||
+			task.Status == model.TaskStatusInProgress ||
+			task.Status == model.TaskStatusSuccess) {
+		task.FailReason = ""
+	}
 
-	isDone := task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure
+	isDone := task.Status.IsTerminal()
+	if isDone {
+		prepareTerminalTaskBilling(task, taskResult)
+	}
 	if isDone && snap.Status != task.Status {
 		won, err := task.UpdateWithStatus(snap.Status)
 		if err != nil {
@@ -595,10 +706,24 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
 	}
 	if shouldRefund {
-		RefundTaskQuota(ctx, task, task.FailReason)
+		refundTaskWithReconcile(ctx, task, task.FailReason)
 	}
 
 	return nil
+}
+
+func markTaskReconciliationRequired(task *model.Task) error {
+	if task == nil {
+		return nil
+	}
+	oldStatus := task.Status
+	task.Status = model.TaskStatusReconciliationRequired
+	task.FailReason = "upstream_contract_violation"
+	if task.Progress == "" || task.Progress == "0%" {
+		task.Progress = taskcommon.ProgressInProgress
+	}
+	_, err := task.UpdateWithStatus(oldStatus)
+	return err
 }
 
 func redactVideoResponseBody(body []byte) []byte {
@@ -641,6 +766,9 @@ func truncateBase64(s string) string {
 //  2. taskResult.TotalTokens > 0 → 按 token 重算
 //  3. 都不满足 → 保持预扣额度不变
 func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, taskResult *relaycommon.TaskInfo) {
+	if settleTaskBillingWithState(ctx, adaptor, task, taskResult) {
+		return
+	}
 	// 0. 按次计费的任务不做差额结算
 	if bc := task.PrivateData.BillingContext; bc != nil && bc.PerCallBilling {
 		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 按次计费，跳过差额结算", task.TaskID))

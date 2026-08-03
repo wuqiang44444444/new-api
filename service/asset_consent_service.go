@@ -1,0 +1,446 @@
+package service
+
+import (
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"net/url"
+	"sort"
+	"strings"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
+	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/doubao/assets"
+	"github.com/QuantumNous/new-api/setting/asset_setting"
+	"gorm.io/gorm"
+)
+
+func CreateRealPersonAuthorization(ctx context.Context, userID, tokenID int, userGroup, usingGroup string, req dto.CreateRealPersonAuthorizationRequest) (*model.RealPersonAuthorization, string, error) {
+	config := asset_setting.Current()
+	if !config.VerificationReady() {
+		return nil, "", fmt.Errorf("real-person authorization service is unavailable")
+	}
+	publicURL, err := url.Parse(config.PublicBaseURL)
+	if err != nil || publicURL.Scheme != "https" || publicURL.Host == "" {
+		return nil, "", fmt.Errorf("real-person authorization service requires an HTTPS public base URL")
+	}
+	modelName := strings.TrimSpace(req.Model)
+	if modelName == "" {
+		return nil, "", fmt.Errorf("model is required")
+	}
+	if err := RequireCurrentAPIServiceRuleAcceptance(userID, tokenID); err != nil {
+		return nil, "", err
+	}
+	subjectHash, err := EndUserSubjectHash(tokenID, req.EndUserSubject)
+	if err != nil {
+		return nil, "", err
+	}
+	channel, profile, fingerprint, err := selectRealPersonAuthorizationChannel(userGroup, usingGroup, modelName)
+	if err != nil {
+		return nil, "", err
+	}
+	authorization := &model.RealPersonAuthorization{
+		UserID: userID, CreatedByTokenID: tokenID, RequestedModel: modelName,
+		AppID: tokenID, EndUserSubjectHash: subjectHash,
+		ChannelID: channel.Id, CredentialFingerprint: fingerprint, UpstreamProfile: string(profile),
+		ProviderProject: channel.GetOtherSettings().AssetProviderProject, Region: channel.GetOtherSettings().AssetRegion,
+		Status: model.RealPersonAuthorizationAwaitingVerification,
+	}
+	if err := model.DB.WithContext(ctx).Create(authorization).Error; err != nil {
+		return nil, "", err
+	}
+	verificationURL, err := createRealPersonVerificationSession(ctx, authorization)
+	return authorization, verificationURL, err
+}
+
+func RefreshRealPersonVerification(ctx context.Context, authorization *model.RealPersonAuthorization) error {
+	if authorization == nil || (authorization.Status != model.RealPersonAuthorizationAwaitingVerification && authorization.Status != model.RealPersonAuthorizationVerifying) {
+		return nil
+	}
+	var session model.RealPersonVerificationSession
+	if err := model.DB.WithContext(ctx).Where("authorization_id = ?", authorization.ID).Order("id desc").First(&session).Error; err != nil {
+		return err
+	}
+	if session.UpstreamSessionID == "" && session.VerificationHandleCiphertext == "" {
+		return refreshUnregisteredVerificationSession(ctx, authorization, &session)
+	}
+	adapter, channel, err := verificationAdapterForAuthorization(authorization)
+	if err != nil {
+		return err
+	}
+	verificationHandle := session.UpstreamSessionID
+	if session.VerificationHandleCiphertext != "" {
+		verificationHandle, err = common.DecryptShortLivedSecretForScope(
+			realPersonVerificationSecretScope(session.AuthorizationID, session.ID),
+			session.VerificationHandleCiphertext,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	result, err := adapter.GetVerificationResult(ctx, verificationHandle)
+	if err != nil {
+		return err
+	}
+	status := strings.ToLower(result.Status)
+	now := common.GetTimestamp()
+	authorizationStatus := model.RealPersonAuthorizationVerifying
+	authorizationErrorCode := ""
+	sessionStatus := "verifying"
+	verificationSucceeded := (status == "active" || status == "success" || status == "succeeded" || status == "completed" || status == "group_ready") && result.GroupID != ""
+	if verificationSucceeded {
+		authorizationStatus = model.RealPersonAuthorizationAuthorized
+		sessionStatus = "active"
+	} else if status == "failed" || status == "rejected" || status == "expired" {
+		authorizationStatus = model.RealPersonAuthorizationFailed
+		sessionStatus = status
+		switch status {
+		case "rejected":
+			authorizationErrorCode = "real_person_verification_rejected"
+		case "expired":
+			authorizationStatus = model.RealPersonAuthorizationExpired
+			authorizationErrorCode = "real_person_verification_expired"
+		default:
+			authorizationErrorCode = "real_person_verification_failed"
+		}
+	}
+
+	committedStatus := ""
+	committedErrorCode := ""
+	err = model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		current, err := model.LockRealPersonAuthorization(tx, authorization.ID)
+		if err != nil {
+			return err
+		}
+		if current.Status != model.RealPersonAuthorizationAwaitingVerification && current.Status != model.RealPersonAuthorizationVerifying {
+			committedStatus = current.Status
+			committedErrorCode = current.ErrorCode
+			return nil
+		}
+		updated := tx.Model(&model.RealPersonAuthorization{}).
+			Where("id = ? AND status IN ?", current.ID, []string{model.RealPersonAuthorizationAwaitingVerification, model.RealPersonAuthorizationVerifying}).
+			Updates(map[string]any{"status": authorizationStatus, "error_code": authorizationErrorCode, "updated_at": now})
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if verificationSucceeded {
+			if err := saveAuthorizedRealPersonGroup(tx, current, channel, result.GroupID); err != nil {
+				return err
+			}
+		}
+		sessionUpdates := map[string]any{"status": sessionStatus, "error_code": authorizationErrorCode, "last_polled_at": now, "updated_at": now}
+		if verificationSucceeded {
+			sessionUpdates["upstream_group_id"] = result.GroupID
+		}
+		if verificationSucceeded || authorizationStatus == model.RealPersonAuthorizationFailed || authorizationStatus == model.RealPersonAuthorizationExpired {
+			sessionUpdates["verification_handle_ciphertext"] = ""
+			sessionUpdates["h5_url_ciphertext"] = ""
+			sessionUpdates["verification_token_hash"] = nil
+		}
+		if err := tx.Model(&model.RealPersonVerificationSession{}).Where("id = ? AND authorization_id = ?", session.ID, current.ID).Updates(sessionUpdates).Error; err != nil {
+			return err
+		}
+		committedStatus = authorizationStatus
+		committedErrorCode = authorizationErrorCode
+		return nil
+	})
+	if err == nil && committedStatus != "" {
+		authorization.Status = committedStatus
+		authorization.ErrorCode = committedErrorCode
+	}
+	return err
+}
+
+func RetryRealPersonVerification(ctx context.Context, authorization *model.RealPersonAuthorization) (string, error) {
+	if authorization == nil || authorization.AppID <= 0 || authorization.EndUserSubjectHash == "" || authorization.RevokedAt != 0 {
+		return "", fmt.Errorf("%w: authorization cannot be retried", ErrRealPersonAuthorizationNotRetryable)
+	}
+	if authorization.Status != model.RealPersonAuthorizationFailed && authorization.Status != model.RealPersonAuthorizationExpired {
+		return "", fmt.Errorf("%w: authorization is not retryable", ErrRealPersonAuthorizationNotRetryable)
+	}
+	return createRealPersonVerificationSession(ctx, authorization)
+}
+
+func RevokeRealPersonAuthorization(ctx context.Context, authorization *model.RealPersonAuthorization) error {
+	if authorization == nil {
+		return fmt.Errorf("authorization not found")
+	}
+	if authorization.Status == model.RealPersonAuthorizationDeleted {
+		return nil
+	}
+	now := common.GetTimestamp()
+	finalStatus := model.RealPersonAuthorizationRevoked
+	finalRevokedAt := now
+	finalUpdatedAt := now
+	err := model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		current, err := model.LockRealPersonAuthorization(tx, authorization.ID)
+		if err != nil {
+			return err
+		}
+		if current.Status == model.RealPersonAuthorizationDeleted {
+			finalStatus = model.RealPersonAuthorizationDeleted
+			finalRevokedAt = current.RevokedAt
+			finalUpdatedAt = current.UpdatedAt
+			return nil
+		}
+		if err := tx.Model(&model.RealPersonAuthorization{}).Where("id = ?", current.ID).Updates(map[string]any{"status": model.RealPersonAuthorizationRevoked, "cleanup_status": model.RealPersonCleanupPending, "error_code": "", "revoked_at": now, "updated_at": now}).Error; err != nil {
+			return err
+		}
+		if err := scheduleRevokedTaskAuthorizationsTx(tx, current.ID, now); err != nil {
+			return err
+		}
+		if err := model.ClearRealPersonVerificationSecretsTx(tx, current.ID); err != nil {
+			return err
+		}
+		var assets []model.Asset
+		if err := tx.Where("authorization_id = ? AND deleted_at = ?", current.ID, 0).Find(&assets).Error; err != nil {
+			return err
+		}
+		for i := range assets {
+			if err := scheduleAssetDeletionTx(tx, &assets[i], now); err != nil {
+				return err
+			}
+		}
+		var groups []model.AssetGroupBinding
+		if err := tx.Where("authorization_id = ? AND status <> ?", current.ID, model.AssetBindingStatusDeleted).Find(&groups).Error; err != nil {
+			return err
+		}
+		for i := range groups {
+			if err := scheduleAutomaticAssetGroupDeletionTx(tx, &groups[i], now); err != nil {
+				return err
+			}
+		}
+		var remainingAssets, remainingGroups int64
+		if err := tx.Model(&model.Asset{}).Where("authorization_id = ? AND deleted_at = ?", current.ID, 0).Count(&remainingAssets).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.AssetGroupBinding{}).Where("authorization_id = ? AND status <> ?", current.ID, model.AssetBindingStatusDeleted).Count(&remainingGroups).Error; err != nil {
+			return err
+		}
+		if remainingAssets == 0 && remainingGroups == 0 {
+			if err := tx.Model(&model.RealPersonAuthorization{}).Where("id = ? AND status = ?", current.ID, model.RealPersonAuthorizationRevoked).Updates(map[string]any{"status": model.RealPersonAuthorizationDeleted, "cleanup_status": model.RealPersonCleanupComplete, "error_code": "", "updated_at": now}).Error; err != nil {
+				return err
+			}
+			finalStatus = model.RealPersonAuthorizationDeleted
+		}
+		return nil
+	})
+	if err == nil {
+		authorization.Status = finalStatus
+		if finalStatus == model.RealPersonAuthorizationDeleted {
+			authorization.CleanupStatus = model.RealPersonCleanupComplete
+		} else {
+			authorization.CleanupStatus = model.RealPersonCleanupPending
+		}
+		authorization.ErrorCode = ""
+		authorization.RevokedAt = finalRevokedAt
+		authorization.UpdatedAt = finalUpdatedAt
+	}
+	return err
+}
+
+func createRealPersonVerificationSession(ctx context.Context, authorization *model.RealPersonAuthorization) (string, error) {
+	adapter, channel, err := verificationAdapterForAuthorization(authorization)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrRealPersonVerificationUpstream, err)
+	}
+	config := asset_setting.Current()
+	claimExpiresAt := common.GetTimestamp() + config.CreateUnknownTTLSeconds
+	session, err := claimRealPersonVerificationSession(ctx, authorization, claimExpiresAt, config.VerificationPollMaxAttempts)
+	if err != nil {
+		return "", err
+	}
+	redirectURL := config.PublicBaseURL + "/verification/real-person/complete?authorization_id=" + url.QueryEscape(authorization.PublicID)
+	result, err := adapter.CreateVerificationSession(ctx, assetadapter.VerificationRequest{RedirectURL: redirectURL, ProjectName: "NEWAPI managed real-person asset"})
+	validResult := err == nil && (result.SessionID != "" || result.Handle != "") && allowedH5URL(result.H5URL, channel.GetBaseURL(), config.H5AllowedHosts)
+	verificationToken := ""
+	if validResult {
+		result.ExpiresAt = realPersonVerificationExpiresAt(result.ExpiresAt, common.GetTimestamp())
+		verificationToken, err = common.GenerateRandomCharsKey(48)
+		if err == nil {
+			result.EncryptedHandle, err = common.EncryptShortLivedSecretForScope(
+				realPersonVerificationSecretScope(authorization.ID, session.ID),
+				result.Handle,
+			)
+		}
+		if err == nil {
+			result.EncryptedH5URL, err = common.EncryptShortLivedSecretForScope(
+				realPersonVerificationSecretScope(authorization.ID, session.ID),
+				result.H5URL,
+			)
+		}
+		if err == nil {
+			result.VerificationTokenHash = hashAssetToken(verificationToken)
+			result.Handle = ""
+			result.H5URL = ""
+		}
+		validResult = err == nil
+	}
+	accepted, committedStatus, committedErrorCode, persistErr := persistRealPersonVerificationSessionCreate(
+		authorization, session, result, err, validResult, config.VerificationPollMaxAttempts,
+	)
+	if persistErr != nil {
+		common.SysError(fmt.Sprintf("failed to persist verification session create result: authorization_id=%d local_session_id=%d orphan_suspected=true err=%v", authorization.ID, session.ID, persistErr))
+		return "", persistErr
+	}
+	authorization.Status = committedStatus
+	authorization.ErrorCode = committedErrorCode
+	if err != nil {
+		if !assetadapter.IsDefinitiveUpstreamRejection(err) {
+			common.SysError(fmt.Sprintf("verification session create outcome remains unknown: authorization_id=%d local_session_id=%d orphan_suspected=true err=%v", authorization.ID, session.ID, err))
+		}
+		return "", fmt.Errorf("%w: %v", ErrRealPersonVerificationUpstream, err)
+	}
+	if !validResult {
+		if result.SessionID != "" {
+			common.SysError(fmt.Sprintf("verification session could not be attached: authorization_id=%d local_session_id=%d upstream_session_present=true orphan_suspected=true", authorization.ID, session.ID))
+		}
+		return "", fmt.Errorf("%w: upstream returned an invalid verification session", ErrRealPersonVerificationUpstream)
+	}
+	if !accepted {
+		common.SysError(fmt.Sprintf("verification session lost authorization ownership: authorization_id=%d local_session_id=%d upstream_session_present=%t orphan_suspected=true", authorization.ID, session.ID, result.SessionID != ""))
+		return "", fmt.Errorf("%w: authorization state changed while creating verification session", ErrRealPersonAuthorizationNotRetryable)
+	}
+	return config.PublicBaseURL + "/verification/real-person/" + url.PathEscape(verificationToken), nil
+}
+
+func OpenRealPersonVerification(ctx context.Context, rawToken string) (string, error) {
+	hash := hashAssetToken(strings.TrimSpace(rawToken))
+	var session model.RealPersonVerificationSession
+	if err := model.DB.WithContext(ctx).
+		Where("verification_token_hash = ? AND expires_at > ?", hash, common.GetTimestamp()).
+		First(&session).Error; err != nil {
+		return "", err
+	}
+	h5URL, err := common.DecryptShortLivedSecretForScope(
+		realPersonVerificationSecretScope(session.AuthorizationID, session.ID),
+		session.H5URLCiphertext,
+	)
+	if err != nil || h5URL == "" {
+		return "", fmt.Errorf("verification link is unavailable")
+	}
+	return h5URL, nil
+}
+
+func verificationAdapterForAuthorization(authorization *model.RealPersonAuthorization) (assetadapter.VerificationAdapter, *model.Channel, error) {
+	channel, err := model.GetChannelById(authorization.ChannelID, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	key, fingerprint, err := singleChannelCredential(channel)
+	if err != nil || fingerprint != authorization.CredentialFingerprint {
+		return nil, nil, fmt.Errorf("authorization channel credential changed")
+	}
+	profile := dto.AssetUpstreamProfile(authorization.UpstreamProfile)
+	adapter, err := assetAdapterForChannel(channel, profile, key)
+	if err != nil {
+		return nil, nil, err
+	}
+	verification, ok := adapter.(assetadapter.VerificationAdapter)
+	if !ok {
+		return nil, nil, fmt.Errorf("selected channel does not support verification")
+	}
+	return verification, channel, nil
+}
+
+func selectRealPersonAuthorizationChannel(userGroup, usingGroup, modelName string) (*model.Channel, dto.AssetUpstreamProfile, string, error) {
+	candidateGroups := assetCandidateGroups(userGroup, usingGroup)
+	abilities := model.GetAllEnableAbilities()
+	sort.SliceStable(abilities, func(i, j int) bool {
+		left, right := int64(0), int64(0)
+		if abilities[i].Priority != nil {
+			left = *abilities[i].Priority
+		}
+		if abilities[j].Priority != nil {
+			right = *abilities[j].Priority
+		}
+		return left > right
+	})
+	for _, ability := range abilities {
+		if !containsAssetGroup(candidateGroups, ability.Group) || ability.Model != modelName {
+			continue
+		}
+		channel, err := model.GetChannelById(ability.ChannelId, true)
+		if err != nil || channel.Status != common.ChannelStatusEnabled || channel.Type != constant.ChannelTypeDoubaoVideo {
+			continue
+		}
+		settings := channel.GetOtherSettings()
+		profile := settings.AssetUpstreamProfile
+		if profile != dto.AssetUpstreamProfileOfficial && profile != dto.AssetUpstreamProfileArk {
+			continue
+		}
+		if !assetProfileMatchesVideoProfile(profile, settings.VideoUpstreamProfile) {
+			continue
+		}
+		_, fingerprint, err := singleChannelCredential(channel)
+		if err == nil {
+			return channel, profile, fingerprint, nil
+		}
+	}
+	return nil, "", "", fmt.Errorf("no eligible real-person verification channel is available")
+}
+
+func saveAuthorizedRealPersonGroup(tx *gorm.DB, authorization *model.RealPersonAuthorization, channel *model.Channel, groupID string) error {
+	group := model.AssetGroupBinding{
+		UserID: authorization.UserID, AuthorizationID: &authorization.ID,
+		ScopeKey:  model.AssetScopeKey(authorization.UserID, &authorization.ID),
+		ChannelID: channel.Id, CredentialFingerprint: authorization.CredentialFingerprint,
+		UpstreamProfile: authorization.UpstreamProfile, ProviderProject: authorization.ProviderProject,
+		Region: authorization.Region, GroupKind: "real_person",
+		UpstreamResourceID: groupID, UpstreamGroupID: groupID, Status: model.AssetBindingStatusActive,
+	}
+	if err := tx.Where("scope_key = ? AND channel_id = ? AND credential_fingerprint = ? AND group_kind = ?", group.ScopeKey, group.ChannelID, group.CredentialFingerprint, group.GroupKind).FirstOrCreate(&group).Error; err != nil {
+		return err
+	}
+	return model.ClaimAssetGroupOwnership(tx, &group, groupID)
+}
+
+func scheduleAssetDeletionTx(tx *gorm.DB, asset *model.Asset, now int64) error {
+	if err := tx.Model(asset).Updates(map[string]any{"status": model.AssetStatusDeleting, "updated_at": now}).Error; err != nil {
+		return err
+	}
+	var bindings []model.AssetBinding
+	if err := tx.Where("asset_id = ? AND status <> ?", asset.ID, model.AssetBindingStatusDeleted).Find(&bindings).Error; err != nil {
+		return err
+	}
+	for i := range bindings {
+		bindingID := bindings[i].ID
+		if err := tx.Model(&model.AssetBinding{}).Where("id = ?", bindingID).Update("status", model.AssetBindingStatusDeleting).Error; err != nil {
+			return err
+		}
+		job := &model.AssetOperationJob{IdempotencyKey: fmt.Sprintf("delete-binding:%d", bindingID), Kind: "delete_binding", AssetID: &asset.ID, BindingID: &bindingID, Status: model.AssetJobPending}
+		if _, err := model.EnsureAssetOperationJob(tx, job, true); err != nil {
+			return err
+		}
+	}
+	if len(bindings) == 0 {
+		if err := model.DeleteAssetSourceTx(tx, asset.ID); err != nil {
+			return err
+		}
+		return tx.Model(asset).Updates(map[string]any{"status": model.AssetStatusDeleted, "deleted_at": now, "updated_at": now}).Error
+	}
+	return nil
+}
+
+func hashAssetToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func allowedH5URL(rawURL, channelBaseURL string, configuredHosts []string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.User != nil {
+		return false
+	}
+	allowed := map[string]struct{}{}
+	if base, err := url.Parse(channelBaseURL); err == nil && base.Hostname() != "" {
+		allowed[strings.ToLower(base.Hostname())] = struct{}{}
+	}
+	for _, host := range configuredHosts {
+		allowed[strings.ToLower(host)] = struct{}{}
+	}
+	_, ok := allowed[strings.ToLower(parsed.Hostname())]
+	return ok
+}

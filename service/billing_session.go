@@ -25,9 +25,10 @@ import (
 type BillingSession struct {
 	relayInfo        *relaycommon.RelayInfo
 	funding          FundingSource
-	preConsumedQuota int  // 实际预扣额度（信任用户可能为 0）
-	tokenConsumed    int  // 令牌额度实际扣减量
-	extraReserved    int  // 发送前补充预扣的额度（订阅退款时需要单独回滚）
+	preConsumedQuota int // 实际预扣额度（信任用户可能为 0）
+	tokenConsumed    int // 令牌额度实际扣减量
+	extraReserved    int // 发送前补充预扣的额度（订阅退款时需要单独回滚）
+	taskAttemptID    int64
 	trusted          bool // 是否命中信任额度旁路
 	fundingSettled   bool // funding.Settle 已成功，资金来源已提交
 	settled          bool // Settle 全部完成（资金 + 令牌）
@@ -78,8 +79,12 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	return tokenErr
 }
 
-// Refund 退还所有预扣费，幂等安全，异步执行。
+// Refund 退还所有预扣费并保持幂等。durable task attempt 在当前调用中
+// 原子释放；legacy funding 继续沿用异步退款。
 func (s *BillingSession) Refund(c *gin.Context) {
+	if s.refundTaskAttempt() {
+		return
+	}
 	s.mu.Lock()
 	if s.settled || s.refunded || !s.needsRefundLocked() {
 		s.mu.Unlock()
