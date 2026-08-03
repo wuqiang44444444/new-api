@@ -124,7 +124,7 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			// Remove operation-audit details (operator/route info), admin-only.
 			delete(otherMap, "audit_info")
 			// delete(otherMap, "reject_reason")
-			delete(otherMap, "stream_status")
+			// delete(otherMap, "stream_status")
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
 	}
@@ -404,17 +404,16 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 }
 
 type RecordTaskBillingLogParams struct {
-	UserId           int
-	LogType          int
-	Content          string
-	ChannelId        int
-	ModelName        string
-	Quota            int
-	CompletionTokens int // 异步任务终态真实 completion_tokens；同步路径或缺失时为 0
-	TokenId          int
-	Group            string
-	Other            map[string]interface{}
-	NodeName         string // 任务发起节点；为空时回退当前节点
+	UserId    int
+	LogType   int
+	Content   string
+	ChannelId int
+	ModelName string
+	Quota     int
+	TokenId   int
+	Group     string
+	Other     map[string]interface{}
+	NodeName  string // 任务发起节点；为空时回退当前节点
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
@@ -430,19 +429,18 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 	createdAt := common.GetTimestamp()
 	log := &Log{
-		UserId:           params.UserId,
-		Username:         username,
-		CreatedAt:        createdAt,
-		Type:             params.LogType,
-		Content:          params.Content,
-		TokenName:        tokenName,
-		ModelName:        params.ModelName,
-		Quota:            params.Quota,
-		CompletionTokens: params.CompletionTokens,
-		ChannelId:        params.ChannelId,
-		TokenId:          params.TokenId,
-		Group:            params.Group,
-		Other:            common.MapToJsonStr(params.Other),
+		UserId:    params.UserId,
+		Username:  username,
+		CreatedAt: createdAt,
+		Type:      params.LogType,
+		Content:   params.Content,
+		TokenName: tokenName,
+		ModelName: params.ModelName,
+		Quota:     params.Quota,
+		ChannelId: params.ChannelId,
+		TokenId:   params.TokenId,
+		Group:     params.Group,
+		Other:     common.MapToJsonStr(params.Other),
 	}
 	err := createLog(log)
 	if err != nil {

@@ -112,13 +112,6 @@ func SyncChannelCache(frequency int) {
 }
 
 func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
-	return GetRandomSatisfiedChannelWithAllowedIDs(group, model, retry, requestPath, nil)
-}
-
-func GetRandomSatisfiedChannelWithAllowedIDs(group string, model string, retry int, requestPath string, allowedIDs map[int]struct{}) (*Channel, error) {
-	if allowedIDs != nil {
-		return GetChannelWithAllowedIDs(group, model, retry, requestPath, allowedIDs)
-	}
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
 		return GetChannel(group, model, retry, requestPath)

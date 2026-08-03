@@ -103,7 +103,6 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
           for (const field of SENSITIVE_UPDATE_FIELDS) {
             delete payload[field]
           }
-          delete payload.asset_credential
         }
         const payloadWithKeyMode =
           canEditSensitive &&

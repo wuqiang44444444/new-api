@@ -3,9 +3,6 @@ package controller
 import "github.com/QuantumNous/new-api/model"
 
 func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, requestData map[string]any) bool {
-	if _, ok := requestData["asset_credential"]; ok {
-		return true
-	}
 	if _, ok := requestData["type"]; ok && channel.Type != origin.Type {
 		return true
 	}
@@ -74,7 +71,6 @@ var channelSensitiveFields = map[string]struct{}{
 	"other":               {},
 	"settings":            {},
 	"key_mode":            {},
-	"asset_credential":    {},
 }
 
 // channelOperationalFields lists fields managed by operation endpoints instead

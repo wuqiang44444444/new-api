@@ -18,21 +18,15 @@ func getGeminiVideoURL(channel *model.Channel, task *model.Task, apiKey string) 
 	}
 
 	if url := extractGeminiVideoURLFromTaskData(task); url != "" {
-		return url, nil
+		return ensureAPIKey(url, apiKey), nil
 	}
 
-	channelType := channel.Type
-	if frozenType, err := strconv.Atoi(string(task.Platform)); err == nil {
-		channelType = frozenType
-	}
-	baseURL := constant.ChannelBaseURLs[channelType]
-	if task.PrivateData.VideoUpstreamQueryBaseURL != "" {
-		baseURL = task.PrivateData.VideoUpstreamQueryBaseURL
-	} else if channel.GetBaseURL() != "" {
+	baseURL := constant.ChannelBaseURLs[channel.Type]
+	if channel.GetBaseURL() != "" {
 		baseURL = channel.GetBaseURL()
 	}
 
-	adaptor := relay.GetTaskAdaptor(task.Platform)
+	adaptor := relay.GetTaskAdaptor(constant.TaskPlatform(strconv.Itoa(channel.Type)))
 	if adaptor == nil {
 		return "", fmt.Errorf("gemini task adaptor not found")
 	}
@@ -58,11 +52,11 @@ func getGeminiVideoURL(channel *model.Channel, task *model.Task, apiKey string) 
 
 	taskInfo, parseErr := adaptor.ParseTaskResult(body)
 	if parseErr == nil && taskInfo != nil && taskInfo.RemoteUrl != "" {
-		return taskInfo.RemoteUrl, nil
+		return ensureAPIKey(taskInfo.RemoteUrl, apiKey), nil
 	}
 
 	if url := extractGeminiVideoURLFromPayload(body); url != "" {
-		return url, nil
+		return ensureAPIKey(url, apiKey), nil
 	}
 
 	if parseErr != nil {
@@ -162,18 +156,12 @@ func getVertexVideoURL(channel *model.Channel, task *model.Task) (string, error)
 		return url, nil
 	}
 
-	channelType := channel.Type
-	if frozenType, err := strconv.Atoi(string(task.Platform)); err == nil {
-		channelType = frozenType
-	}
-	baseURL := constant.ChannelBaseURLs[channelType]
-	if task.PrivateData.VideoUpstreamQueryBaseURL != "" {
-		baseURL = task.PrivateData.VideoUpstreamQueryBaseURL
-	} else if channel.GetBaseURL() != "" {
+	baseURL := constant.ChannelBaseURLs[channel.Type]
+	if channel.GetBaseURL() != "" {
 		baseURL = channel.GetBaseURL()
 	}
 
-	adaptor := relay.GetTaskAdaptor(task.Platform)
+	adaptor := relay.GetTaskAdaptor(constant.TaskPlatform(strconv.Itoa(channel.Type)))
 	if adaptor == nil {
 		return "", fmt.Errorf("vertex task adaptor not found")
 	}
@@ -221,9 +209,6 @@ func getVertexTaskKey(channel *model.Channel, task *model.Task) string {
 	if task != nil {
 		if key := strings.TrimSpace(task.PrivateData.Key); key != "" {
 			return key
-		}
-		if model.TaskUsesFrozenVideoConnection(task) {
-			return ""
 		}
 	}
 	if channel == nil {
@@ -293,4 +278,17 @@ func buildVideoDataURL(mimeType string, encoding string, base64Data string) stri
 		}
 	}
 	return "data:" + mime + ";base64," + base64Data
+}
+
+func ensureAPIKey(uri, key string) string {
+	if key == "" || uri == "" {
+		return uri
+	}
+	if strings.Contains(uri, "key=") {
+		return uri
+	}
+	if strings.Contains(uri, "?") {
+		return fmt.Sprintf("%s&key=%s", uri, key)
+	}
+	return fmt.Sprintf("%s?key=%s", uri, key)
 }

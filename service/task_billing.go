@@ -162,22 +162,23 @@ func taskModelName(task *model.Task) string {
 
 // RefundTaskQuota 统一的任务失败退款逻辑。
 // 当异步任务失败时，将预扣的 quota 退还给用户（支持钱包和订阅），并退还令牌额度。
-// 返回资金来源是否已成功退还；失败时保留 quota 作为后续对账标记。
+// 返回资金来源是否已成功退还；失败时保留 quota，供显式重试或人工对账。
 func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool {
 	quota := task.Quota
 	if quota == 0 {
 		return true
 	}
 
-	applied, refundedQuota, err := model.RefundLegacyTaskQuota(task)
-	if err != nil {
-		logger.LogWarn(ctx, fmt.Sprintf("原子退款失败 task %s: %s", task.TaskID, err.Error()))
+	// 1. 退还资金来源（钱包或订阅）
+	if err := taskAdjustFunding(task, -quota); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("退还资金来源失败 task %s: %s", task.TaskID, err.Error()))
 		return false
 	}
-	if !applied {
-		return true
-	}
 
+	// 2. 退还令牌额度
+	taskAdjustTokenQuota(ctx, task, -quota)
+
+	// 3. 记录日志
 	other := taskBillingOther(task)
 	other["task_id"] = task.TaskID
 	other["reason"] = reason
@@ -187,12 +188,18 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 		Content:   "",
 		ChannelId: task.ChannelId,
 		ModelName: taskModelName(task),
-		Quota:     refundedQuota,
+		Quota:     quota,
 		TokenId:   task.PrivateData.TokenId,
 		Group:     task.Group,
 		Other:     other,
 	})
 
+	// 4. 资金退款完成后再清除持久化标记。
+	// 回写失败必须显式告警，避免漏掉潜在的重复退款风险。
+	task.Quota = 0
+	if err := task.UpdateQuota(); err != nil {
+		logger.LogError(ctx, fmt.Sprintf("退款成功但清除 task quota 失败 task %s: %s", task.TaskID, err.Error()))
+	}
 	return true
 }
 

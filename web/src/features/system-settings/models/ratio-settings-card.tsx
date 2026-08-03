@@ -31,6 +31,7 @@ import { resetModelRatios } from '../api'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
+import { positiveIntegerSchema } from '../utils/numeric-field'
 import { GroupRatioForm } from './group-ratio-form'
 import { ModelRatioForm } from './model-ratio-form'
 import { ToolPriceSettings } from './tool-price-settings'
@@ -116,7 +117,6 @@ const createModelSchema = (t: Translate) =>
     ExposeRatioEnabled: z.boolean(),
     BillingMode: createJsonStringField(t),
     BillingExpr: createJsonStringField(t),
-    TaskPreConsumeTokens: createJsonStringField(t),
   })
 
 const createGroupSchema = (t: Translate) =>
@@ -131,6 +131,7 @@ const createGroupSchema = (t: Translate) =>
         parsed.every((item) => typeof item === 'string'),
       predicateMessage: 'Expected a JSON array of group identifiers',
     }),
+    MaxTokenAutoGroups: positiveIntegerSchema(t('Enter a positive integer')),
     DefaultUseAutoGroup: z.boolean(),
     GroupSpecialUsableGroup: createJsonStringField(t),
   })
@@ -194,9 +195,6 @@ export function RatioSettingsCard({
     ExposeRatioEnabled: modelDefaults.ExposeRatioEnabled,
     BillingMode: normalizeJsonString(modelDefaults.BillingMode),
     BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
-    TaskPreConsumeTokens: normalizeJsonString(
-      modelDefaults.TaskPreConsumeTokens
-    ),
   })
   const [savedModelValues, setSavedModelValues] = useState(
     modelNormalizedDefaults.current
@@ -208,6 +206,7 @@ export function RatioSettingsCard({
     UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
     GroupGroupRatio: normalizeJsonString(groupDefaults.GroupGroupRatio),
     AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
+    MaxTokenAutoGroups: groupDefaults.MaxTokenAutoGroups,
     DefaultUseAutoGroup: groupDefaults.DefaultUseAutoGroup,
     GroupSpecialUsableGroup: normalizeJsonString(
       groupDefaults.GroupSpecialUsableGroup
@@ -233,9 +232,6 @@ export function RatioSettingsCard({
       ),
       BillingMode: formatJsonForTextarea(modelDefaults.BillingMode),
       BillingExpr: formatJsonForTextarea(modelDefaults.BillingExpr),
-      TaskPreConsumeTokens: formatJsonForTextarea(
-        modelDefaults.TaskPreConsumeTokens
-      ),
     },
   })
 
@@ -270,9 +266,6 @@ export function RatioSettingsCard({
       ExposeRatioEnabled: modelDefaults.ExposeRatioEnabled,
       BillingMode: normalizeJsonString(modelDefaults.BillingMode),
       BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
-      TaskPreConsumeTokens: normalizeJsonString(
-        modelDefaults.TaskPreConsumeTokens
-      ),
     }
     setSavedModelValues(modelNormalizedDefaults.current)
 
@@ -290,9 +283,6 @@ export function RatioSettingsCard({
       ),
       BillingMode: formatJsonForTextarea(modelDefaults.BillingMode),
       BillingExpr: formatJsonForTextarea(modelDefaults.BillingExpr),
-      TaskPreConsumeTokens: formatJsonForTextarea(
-        modelDefaults.TaskPreConsumeTokens
-      ),
     })
   }, [modelDefaults, modelForm])
 
@@ -303,6 +293,7 @@ export function RatioSettingsCard({
       UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
       GroupGroupRatio: normalizeJsonString(groupDefaults.GroupGroupRatio),
       AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
+      MaxTokenAutoGroups: groupDefaults.MaxTokenAutoGroups,
       DefaultUseAutoGroup: groupDefaults.DefaultUseAutoGroup,
       GroupSpecialUsableGroup: normalizeJsonString(
         groupDefaults.GroupSpecialUsableGroup
@@ -336,13 +327,11 @@ export function RatioSettingsCard({
         ExposeRatioEnabled: values.ExposeRatioEnabled,
         BillingMode: normalizeJsonString(values.BillingMode),
         BillingExpr: normalizeJsonString(values.BillingExpr),
-        TaskPreConsumeTokens: normalizeJsonString(values.TaskPreConsumeTokens),
       }
 
       const apiKeyMap: Record<string, string> = {
         BillingMode: 'billing_setting.billing_mode',
         BillingExpr: 'billing_setting.billing_expr',
-        TaskPreConsumeTokens: 'task_billing_setting.preconsume_tokens',
       }
 
       const updates = (
@@ -375,6 +364,7 @@ export function RatioSettingsCard({
         UserUsableGroups: normalizeJsonString(values.UserUsableGroups),
         GroupGroupRatio: normalizeJsonString(values.GroupGroupRatio),
         AutoGroups: normalizeJsonString(values.AutoGroups),
+        MaxTokenAutoGroups: values.MaxTokenAutoGroups,
         DefaultUseAutoGroup: values.DefaultUseAutoGroup,
         GroupSpecialUsableGroup: normalizeJsonString(
           values.GroupSpecialUsableGroup
@@ -397,6 +387,8 @@ export function RatioSettingsCard({
         const apiKey = apiKeyMap[key] || key
         await updateOption.mutateAsync({ key: apiKey, value: normalized[key] })
       }
+
+      groupNormalizedDefaults.current = normalized
     },
     [updateOption]
   )

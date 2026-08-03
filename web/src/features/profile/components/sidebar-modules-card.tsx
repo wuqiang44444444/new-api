@@ -116,11 +116,6 @@ export function SidebarModulesCard() {
           description: t('Balance and top-up management'),
         },
         {
-          key: 'billing',
-          title: t('Billing Statement'),
-          description: t('Usage statements and settled costs'),
-        },
-        {
           key: 'personal',
           title: t('Personal Settings'),
           description: t('Personal info settings'),

@@ -94,7 +94,8 @@ export const useSystemConfigStore = create<SystemConfigState>()(
       setLoading: (loading) => set({ loading }),
     }),
     {
-      name: 'system-config-storage',
+      // Use a new key so clients do not hydrate the retired /logo.png default.
+      name: 'system-config-storage-v2',
       partialize: (state) => ({
         config: state.config,
         loadedLogoUrl: state.loadedLogoUrl,

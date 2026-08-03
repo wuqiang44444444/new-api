@@ -20,7 +20,6 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
-import { resolveDocsLink } from '@/lib/docs-link'
 import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -57,7 +56,7 @@ export function useTopNavLinks(): TopNavLink[] {
   }, [status])
 
   // Documentation link (may be external)
-  const docsLink = resolveDocsLink(status?.docs_link)
+  const docsLink: string | undefined = status?.docs_link as string | undefined
 
   const isAuthed = !!auth?.user
 
@@ -80,17 +79,20 @@ export function useTopNavLinks(): TopNavLink[] {
     links.push({ title: t('Model Square'), href: '/pricing', requiresAuth })
   }
 
-  // Replace the former rankings slot with documentation. Existing deployments
-  // that enabled rankings keep the fourth navigation entry after this upgrade.
+  // Rankings
   const rankings = modules?.rankings
-  const rankingsSlotEnabled =
-    rankings && typeof rankings === 'object' && rankings.enabled
-  if (modules?.docs !== false || rankingsSlotEnabled) {
-    links.push({
-      title: t('Docs'),
-      href: docsLink.href,
-      external: docsLink.external,
-    })
+  if (rankings && typeof rankings === 'object' && rankings.enabled) {
+    const requiresAuth = rankings.requireAuth && !isAuthed
+    links.push({ title: t('Rankings'), href: '/rankings', requiresAuth })
+  }
+
+  // Docs (supports external links)
+  if (modules?.docs !== false) {
+    if (docsLink) {
+      links.push({ title: t('Docs'), href: docsLink, external: true })
+    } else {
+      links.push({ title: t('Docs'), href: '/docs' })
+    }
   }
 
   // About

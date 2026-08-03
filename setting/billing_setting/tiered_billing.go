@@ -71,11 +71,10 @@ func GetPricingSyncData(base map[string]any) map[string]any {
 // ---------------------------------------------------------------------------
 
 func SmokeTestExpr(exprStr string) error {
-	return smokeTestExpr(exprStr, true)
+	return smokeTestExpr(exprStr)
 }
 
-// smokeTestExpr 校验表达式可编译、各向量结果非负；requireTier 为 true 时还强制每个价格分支用 tier() 包裹。
-func smokeTestExpr(exprStr string, requireTier bool) error {
+func smokeTestExpr(exprStr string) error {
 	vectors := []billingexpr.TokenParams{
 		{P: 0, C: 0, Len: 0},
 		{P: 1000, C: 1000, Len: 1000},
@@ -94,15 +93,12 @@ func smokeTestExpr(exprStr string, requireTier bool) error {
 
 	for _, v := range vectors {
 		for _, request := range requests {
-			result, trace, err := billingexpr.RunExprWithRequest(exprStr, v, request)
+			result, _, err := billingexpr.RunExprWithRequest(exprStr, v, request)
 			if err != nil {
 				return fmt.Errorf("vector {p=%g, c=%g}: run failed: %w", v.P, v.C, err)
 			}
 			if result < 0 {
 				return fmt.Errorf("vector {p=%g, c=%g}: result %f < 0", v.P, v.C, result)
-			}
-			if requireTier && trace.MatchedTier == "" {
-				return fmt.Errorf("billing expression must wrap every price branch with tier(name, value)")
 			}
 		}
 	}

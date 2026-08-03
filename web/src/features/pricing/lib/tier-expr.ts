@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { BILLING_CACHE_VAR_MAP } from './billing-expr'
-import { prepareEstimatorExpression } from './tier-expr-estimator-safety'
 
 export const CACHE_MODE_TIMED = 'timed'
 export const CACHE_MODE_GENERIC = 'generic'
@@ -264,66 +263,21 @@ export type ExtraTokenValues = Record<
 >
 
 export type EvalResult = {
-  // 表达式原始结果（token × USD/百万 token 单价），即后端 rawCost；USD/配额换算由调用方做
   cost: number
   matchedTier: string
   error: string | null
-}
-
-// 本地求值器的请求探针：param(path) 读 body、header(name) 读 headers。
-export type EstimatorRequestInput = {
-  body?: Record<string, unknown>
-  headers?: Record<string, string>
-}
-
-// 按点路径读取 body（param("_task.resolution")）；缺失返回 null，与后端 nil 语义一致。
-// path 先整体 trim，对齐后端 strings.TrimSpace(path)（run.go:75）。
-function readByPath(
-  body: Record<string, unknown> | undefined,
-  path: string
-): unknown {
-  if (!body || !path) return null
-  const trimmed = path.trim()
-  if (!trimmed) return null
-  const segments = trimmed.split('.')
-  let current: unknown = body
-  for (const segment of segments) {
-    if (current && typeof current === 'object' && segment in current) {
-      current = (current as Record<string, unknown>)[segment]
-    } else {
-      return null
-    }
-  }
-  return current
-}
-
-// 大小写不敏感读取 header；缺失返回空串。name 先 trim，对齐后端
-// strings.ToLower(strings.TrimSpace(key))（run.go:72）。
-function readHeader(
-  headers: Record<string, string> | undefined,
-  name: string
-): string {
-  if (!headers || !name) return ''
-  const lower = name.trim().toLowerCase()
-  if (!lower) return ''
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === lower) return value
-  }
-  return ''
 }
 
 export function evalExprLocally(
   exprStr: string,
   promptTokens: number,
   completionTokens: number,
-  extraTokenValues: ExtraTokenValues,
-  requestInput?: EstimatorRequestInput
+  extraTokenValues: ExtraTokenValues
 ): EvalResult {
   try {
     if (!exprStr || !exprStr.trim()) {
       return { cost: 0, matchedTier: '', error: null }
     }
-    const safeExpression = prepareEstimatorExpression(exprStr)
     let matchedTier = ''
     const tierFn = (name: string, value: number) => {
       matchedTier = name
@@ -338,20 +292,7 @@ export function evalExprLocally(
       p: promptTokens,
       c: completionTokens,
       len,
-      nil: null,
       tier: tierFn,
-      // 请求探针：让依赖 param("_task.*") / header() 的表达式能按真实条件命中正确档位。
-      // 缺探针时 param 返回 null、header 返回 ''、has 返回 false（条件恒假→兜底档）。
-      param: (path: string) => readByPath(requestInput?.body, path),
-      header: (name: string) => readHeader(requestInput?.headers, name),
-      // has：source 为空或 substr 为空串时返回 false，对齐后端 guard（run.go:86），
-      // 避免 JS ''.includes('') === true 与后端 strings.Contains 行为分叉。
-      has: (source: unknown, text: unknown) => {
-        if (source == null) return false
-        const substr = String(text ?? '')
-        if (substr === '') return false
-        return String(source).includes(substr)
-      },
       max: Math.max,
       min: Math.min,
       abs: Math.abs,
@@ -363,12 +304,9 @@ export function evalExprLocally(
     }
     const fn = new Function(
       ...Object.keys(env),
-      `"use strict"; return (${safeExpression});`
+      `"use strict"; return (${exprStr});`
     )
-    const cost = Number(fn(...Object.values(env)))
-    if (!Number.isFinite(cost)) {
-      throw new Error('Expression result must be a finite number')
-    }
+    const cost = Number(fn(...Object.values(env))) || 0
     return { cost, matchedTier, error: null }
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)

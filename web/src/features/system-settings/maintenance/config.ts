@@ -70,7 +70,6 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
   personal: {
     enabled: true,
     topup: true,
-    billing: true,
     personal: true,
   },
   admin: {

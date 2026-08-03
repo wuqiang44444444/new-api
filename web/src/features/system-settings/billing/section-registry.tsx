@@ -25,7 +25,6 @@ import { PaymentSettingsSection } from '../integrations/payment-settings-section
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
-import { ContextThresholdSettingsSection } from './context-threshold-settings-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
@@ -39,7 +38,6 @@ const getModelDefaults = (settings: BillingSettings) => ({
   ExposeRatioEnabled: settings.ExposeRatioEnabled,
   BillingMode: settings['billing_setting.billing_mode'],
   BillingExpr: settings['billing_setting.billing_expr'],
-  TaskPreConsumeTokens: settings['task_billing_setting.preconsume_tokens'],
 })
 
 const getGroupDefaults = (settings: BillingSettings) => ({
@@ -48,6 +46,7 @@ const getGroupDefaults = (settings: BillingSettings) => ({
   UserUsableGroups: settings.UserUsableGroups,
   GroupGroupRatio: settings.GroupGroupRatio,
   AutoGroups: settings.AutoGroups,
+  MaxTokenAutoGroups: settings.MaxTokenAutoGroups,
   DefaultUseAutoGroup: settings.DefaultUseAutoGroup,
   GroupSpecialUsableGroup:
     settings['group_ratio_setting.group_special_usable_group'],
@@ -126,15 +125,6 @@ const BILLING_SECTIONS = [
         groupDefaults={getGroupDefaults(settings)}
         toolPricesDefault={settings['tool_price_setting.prices']}
         visibleTabs={['groups']}
-      />
-    ),
-  },
-  {
-    id: 'usage-statement',
-    titleKey: 'Usage Statement Breakdown',
-    build: (settings: BillingSettings) => (
-      <ContextThresholdSettingsSection
-        defaultValue={settings['billing_statement_setting.context_thresholds']}
       />
     ),
   },

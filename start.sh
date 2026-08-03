@@ -7,6 +7,7 @@ FRONTEND_DIR="$ROOT_DIR/web"
 LOG_DIR="$ROOT_DIR/logs"
 FRONTEND_PORT="${FRONTEND_PORT:-3100}"
 BACKEND_PORT="${BACKEND_PORT:-8100}"
+STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-300}"
 FRONTEND_LOG="$LOG_DIR/frontend.log"
 BACKEND_LOG="$LOG_DIR/backend.log"
 FRONTEND_PID=""
@@ -67,6 +68,16 @@ stop_port() {
     echo "进程未及时退出，强制释放端口 ${port}：${pids[*]}"
     kill -KILL "${pids[@]}" 2>/dev/null || true
   fi
+
+  for _ in {1..20}; do
+    if ! lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+      return
+    fi
+    sleep 0.25
+  done
+
+  echo "无法释放端口 $port，请手动检查占用进程。" >&2
+  return 1
 }
 
 wait_for_port() {
@@ -74,8 +85,10 @@ wait_for_port() {
   local port="$2"
   local pid="$3"
   local log_file="$4"
+  local timeout="$5"
+  local attempts=$((timeout * 2))
 
-  for _ in {1..60}; do
+  for ((i = 0; i < attempts; i++)); do
     if lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
       echo "$name 已启动：http://localhost:$port"
       return
@@ -89,7 +102,7 @@ wait_for_port() {
     sleep 0.5
   done
 
-  echo "$name 在 30 秒内未监听端口 ${port}，最近日志如下：" >&2
+  echo "$name 在 ${timeout} 秒内未监听端口 ${port}，最近日志如下：" >&2
   tail -n 80 "$log_file" >&2 || true
   return 1
 }
@@ -115,6 +128,11 @@ require_command bun
 require_command go
 require_command lsof
 
+if [[ ! "$STARTUP_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
+  echo "STARTUP_TIMEOUT 必须是正整数（秒）：$STARTUP_TIMEOUT" >&2
+  exit 1
+fi
+
 stop_port "$FRONTEND_PORT"
 stop_port "$BACKEND_PORT"
 
@@ -139,8 +157,8 @@ echo "正在启动前端，端口：$FRONTEND_PORT"
 ) >>"$FRONTEND_LOG" 2>&1 &
 FRONTEND_PID=$!
 
-wait_for_port "后端" "$BACKEND_PORT" "$BACKEND_PID" "$BACKEND_LOG"
-wait_for_port "前端" "$FRONTEND_PORT" "$FRONTEND_PID" "$FRONTEND_LOG"
+wait_for_port "后端" "$BACKEND_PORT" "$BACKEND_PID" "$BACKEND_LOG" "$STARTUP_TIMEOUT"
+wait_for_port "前端" "$FRONTEND_PORT" "$FRONTEND_PID" "$FRONTEND_LOG" "$STARTUP_TIMEOUT"
 
 echo "持续监控前后端日志，按 Ctrl+C 停止服务。"
 tail -n 100 -F "$BACKEND_LOG" "$FRONTEND_LOG"

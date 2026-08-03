@@ -12,7 +12,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
@@ -20,7 +19,6 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -57,30 +55,13 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 		return nil
 	}
 
-	// Remix is an OpenAI Videos operation, so its source must remain visible in
-	// that same northbound protocol. Other continuation flows keep the legacy
-	// user-scoped lookup.
-	var originTask *model.Task
-	var exist bool
-	var err error
-	if info.Action == constant.TaskActionRemix {
-		originTask, exist, err = model.GetVideoTaskForProtocol(
-			info.UserId,
-			info.OriginTaskID,
-			model.TaskClientProtocolOpenAIVideos,
-			false,
-		)
-	} else {
-		originTask, exist, err = model.GetByTaskId(info.UserId, info.OriginTaskID)
-	}
+	// 查找原始任务
+	originTask, exist, err := model.GetByTaskId(info.UserId, info.OriginTaskID)
 	if err != nil {
 		return service.TaskErrorWrapper(err, "get_origin_task_failed", http.StatusInternalServerError)
 	}
 	if !exist {
 		return service.TaskErrorWrapperLocal(errors.New("task_origin_not_exist"), "task_not_exist", http.StatusBadRequest)
-	}
-	if info.Action == constant.TaskActionRemix && !TaskLifecycleCapabilities(originTask).SupportsRemix {
-		return service.TaskErrorWrapperLocal(errors.New("remix is not supported for this video"), "unsupported_operation", http.StatusBadRequest)
 	}
 
 	// 从原始任务推导模型名称
@@ -177,16 +158,6 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
 		return nil, taskErr
 	}
-	if err := resolveAssetReferencesForAttempt(c, info); err != nil {
-		code, status := assetResolveTaskError(err)
-		if status == http.StatusInternalServerError {
-			common.SysError(fmt.Sprintf("asset reference resolution failed: %v", err))
-			publicError := service.TaskErrorWrapperLocal(errors.New("asset references could not be resolved"), code, status)
-			publicError.Error = err
-			return nil, publicError
-		}
-		return nil, service.TaskErrorWrapperLocal(err, code, status)
-	}
 
 	// 2. 确定模型名称
 	modelName := info.OriginModelName
@@ -208,33 +179,27 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 	// 4. 价格计算：基础模型价格
 	info.OriginModelName = modelName
-	isTieredTask := false
-	if billing_setting.GetBillingMode(modelName) == billing_setting.BillingModeTieredExpr {
-		// tiered_expr 模式：以管理员表达式价格为唯一事实，跳过内置倍率路径（见方案 §5.6）。
-		priceData, err := helper.ModelPriceHelperTaskTiered(c, info, adaptor)
-		if err != nil {
-			return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
+	priceData, err := helper.ModelPriceHelperPerCall(c, info)
+	if err != nil {
+		return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
+	}
+	info.PriceData = priceData
+
+	// 5. 计费估算：让适配器根据用户请求提供 OtherRatios（时长、分辨率等）
+	//    必须在 ModelPriceHelperPerCall 之后调用（它会重建 PriceData）。
+	//    ResolveOriginTask 可能已在 remix 路径中预设了 OtherRatios，此处合并。
+	if estimatedRatios := adaptor.EstimateBilling(c, info); len(estimatedRatios) > 0 {
+		for k, v := range estimatedRatios {
+			info.PriceData.AddOtherRatio(k, v)
 		}
-		info.PriceData = priceData
-		isTieredTask = true
-	} else {
-		// 原有普通 Task 定价主路径（原位恢复，保持与上游一致）：基础价格 → EstimateBilling 倍率 → 应用 OtherRatios（饱和转换）。
-		priceData, err := helper.ModelPriceHelperPerCall(c, info)
-		if err != nil {
-			return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
-		}
-		info.PriceData = priceData
-		if estimatedRatios := adaptor.EstimateBilling(c, info); len(estimatedRatios) > 0 {
-			for k, v := range estimatedRatios {
-				info.PriceData.AddOtherRatio(k, v)
-			}
-		}
-		if !common.StringsContains(constant.TaskPricePatches, modelName) {
-			quotaWithRatios := info.PriceData.ApplyOtherRatiosToFloat(float64(info.PriceData.Quota))
-			quota, clamp := common.QuotaFromFloatChecked(quotaWithRatios)
-			info.PriceData.Quota = quota
-			noteTaskQuotaClamp(info, clamp)
-		}
+	}
+
+	// 6. 将 OtherRatios 应用到基础额度（饱和转换，防止溢出成负数）
+	if !common.StringsContains(constant.TaskPricePatches, modelName) {
+		quotaWithRatios := info.PriceData.ApplyOtherRatiosToFloat(float64(info.PriceData.Quota))
+		quota, clamp := common.QuotaFromFloatChecked(quotaWithRatios)
+		info.PriceData.Quota = quota
+		noteTaskQuotaClamp(info, clamp)
 	}
 
 	// 7. 预扣费（仅首次 — 重试时 info.Billing 已存在，跳过）
@@ -248,9 +213,6 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	// 8. 构建请求体
 	requestBody, err := adaptor.BuildRequestBody(c, info)
 	if err != nil {
-		if contractErr, ok := relaycommon.AsVideoContractError(err); ok {
-			return nil, service.TaskErrorWrapperLocal(contractErr, contractErr.Code, http.StatusBadRequest)
-		}
 		return nil, service.TaskErrorWrapper(err, "build_request_failed", http.StatusInternalServerError)
 	}
 
@@ -260,25 +222,8 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		return nil, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
 	}
 	if resp != nil && resp.StatusCode != http.StatusOK {
-		var responseBody []byte
-		if resp.Body != nil {
-			responseBody, _ = io.ReadAll(io.LimitReader(resp.Body, 32<<10))
-			_ = resp.Body.Close()
-		}
-		upstreamErr := parseTaskUpstreamHTTPError(resp.StatusCode, responseBody)
-		logger.LogWarn(c, fmt.Sprintf(
-			"upstream task submit rejected: channel_id=%d status=%d provider_code=%q provider_message=%q upstream_request_id=%q",
-			info.ChannelId,
-			resp.StatusCode,
-			upstreamErr.providerCode,
-			upstreamErr.providerMessage,
-			safeTaskUpstreamToken(c.GetString(common.UpstreamRequestIdKey)),
-		))
-		return nil, service.TaskErrorWrapper(
-			upstreamErr,
-			"fail_to_fetch_task",
-			resp.StatusCode,
-		)
+		responseBody, _ := io.ReadAll(resp.Body)
+		return nil, service.TaskErrorWrapper(fmt.Errorf("%s", string(responseBody)), "fail_to_fetch_task", resp.StatusCode)
 	}
 
 	// 10. 返回 OtherRatios 给下游（header 必须在 DoResponse 写 body 之前设置）
@@ -297,14 +242,12 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 	// 11. 提交后计费调整：让适配器根据上游实际返回调整 OtherRatios
 	finalQuota := info.PriceData.Quota
-	if !isTieredTask {
-		if adjustedRatios := adaptor.AdjustBillingOnSubmit(info, taskData); len(adjustedRatios) > 0 {
-			if adjustedQuota, ok := recalcQuotaFromRatios(info, adjustedRatios); ok {
-				// 基于调整后的 ratios 重新计算 quota
-				finalQuota = adjustedQuota
-				info.PriceData.ReplaceOtherRatios(adjustedRatios)
-				info.PriceData.Quota = finalQuota
-			}
+	if adjustedRatios := adaptor.AdjustBillingOnSubmit(info, taskData); len(adjustedRatios) > 0 {
+		if adjustedQuota, ok := recalcQuotaFromRatios(info, adjustedRatios); ok {
+			// 基于调整后的 ratios 重新计算 quota
+			finalQuota = adjustedQuota
+			info.PriceData.ReplaceOtherRatios(adjustedRatios)
+			info.PriceData.Quota = finalQuota
 		}
 	}
 

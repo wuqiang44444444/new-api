@@ -155,8 +155,7 @@ export const ModelPricingEditorPanel = forwardRef<
   })
   const [billingExpr, setBillingExpr] = useState('')
   const [requestRuleExpr, setRequestRuleExpr] = useState('')
-  // tiered_expr 模型的异步任务预扣 token 上界（独立字段，与费用试算器分离）
-  const [taskPreConsumeTokens, setTaskPreConsumeTokens] = useState(0)
+  const [editorReloadToken, setEditorReloadToken] = useState(0)
   const isEditMode = !!editData
 
   const form = useForm<ModelPricingFormValues>({
@@ -198,7 +197,6 @@ export const ModelPricingEditorPanel = forwardRef<
       )
       setBillingExpr(editData.billingExpr || '')
       setRequestRuleExpr(editData.requestRuleExpr || '')
-      setTaskPreConsumeTokens(editData.taskPreConsumeTokens ?? 0)
     } else {
       form.reset({
         name: '',
@@ -214,14 +212,12 @@ export const ModelPricingEditorPanel = forwardRef<
       setPricingMode('per-token')
       setBillingExpr('')
       setRequestRuleExpr('')
-      setTaskPreConsumeTokens(0)
     }
 
     setPromptPrice(nextLaneState.promptPrice)
     setLanePrices(nextLaneState.prices)
     setLaneEnabled(nextLaneState.enabled)
-    // 不再随 editData 变化递增重载 token：TieredPricingEditor 的 React key 改用模型名，
-    // 同一模型保存不重建（保留试算现场），仅切换模型身份时重建（见下方 key={editData?.name}）。
+    setEditorReloadToken((token) => token + 1)
   }, [editData, form])
 
   const setFormValue = (field: keyof ModelPricingFormValues, value: string) => {
@@ -460,12 +456,11 @@ export const ModelPricingEditorPanel = forwardRef<
       if (pricingMode === 'tiered_expr') {
         data.billingExpr = billingExpr
         data.requestRuleExpr = requestRuleExpr
-        data.taskPreConsumeTokens = taskPreConsumeTokens
       }
 
       return data
     },
-    [billingExpr, pricingMode, requestRuleExpr, taskPreConsumeTokens]
+    [billingExpr, pricingMode, requestRuleExpr]
   )
 
   useImperativeHandle(
@@ -647,14 +642,12 @@ export const ModelPricingEditorPanel = forwardRef<
                   <TabsContent value='tiered_expr' className='pt-0'>
                     <FieldGroup className='gap-5'>
                       <TieredPricingEditor
-                        key={editData?.name || '__new_model__'}
+                        key={editorReloadToken}
                         modelName={watchedValues.name}
                         billingExpr={billingExpr}
                         requestRuleExpr={requestRuleExpr}
                         onBillingExprChange={setBillingExpr}
                         onRequestRuleExprChange={setRequestRuleExpr}
-                        taskPreConsumeTokens={taskPreConsumeTokens}
-                        onTaskPreConsumeTokensChange={setTaskPreConsumeTokens}
                       />
                     </FieldGroup>
                   </TabsContent>

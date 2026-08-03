@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -44,18 +43,6 @@ func TestChannelHasSensitiveChanges(t *testing.T) {
 		updated.Key = "new-key"
 
 		assert.True(t, channelHasSensitiveChanges(&updated, origin, map[string]any{"key": updated.Key}))
-	})
-
-	t.Run("asset credential write", func(t *testing.T) {
-		updated := PatchChannel{Channel: *origin}
-		updated.AssetCredential = &dto.ChannelAssetCredentialInput{
-			AccessKeyID:     "access",
-			SecretAccessKey: "secret",
-		}
-
-		assert.True(t, channelHasSensitiveChanges(&updated, origin, map[string]any{
-			"asset_credential": map[string]any{"access_key_id": "access", "secret_access_key": "secret"},
-		}))
 	})
 
 	t.Run("base url change", func(t *testing.T) {

@@ -16,10 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import {
-  parseTiersFromExpr,
-  splitBillingExprAndRequestRules,
-} from '@/features/pricing/lib/billing-expr'
+import { splitBillingExprAndRequestRules } from '@/features/pricing/lib/billing-expr'
 
 import { safeJsonParse } from '../utils/json-parser'
 import { formatPricingNumber } from './pricing-format'
@@ -101,24 +98,11 @@ const getExpressionSummary = (
   row: ModelPricingSnapshot,
   t: (key: string) => string
 ) => {
-  const expr = row.billingExpr || ''
-  const tiers = parseTiersFromExpr(expr)
-  const tierCount = tiers.length || (expr.match(/tier\(/g) || []).length
-  if (tierCount === 0) {
-    return t('Expression pricing')
-  }
-  // 提取各档非零单价（c=输出、p=输入）聚合成 min/max 价格区间；视频等只用 c 的
-  // 表达式也能正确显示。系数口径为 USD/1M tokens，与表达式计费单位一致。
-  const unitPrices = tiers
-    .flatMap((tier) => [Number(tier.outputPrice), Number(tier.inputPrice)])
-    .filter((v) => Number.isFinite(v) && v > 0)
-  if (unitPrices.length === 0) {
+  const tierCount = (row.billingExpr?.match(/tier\(/g) || []).length
+  if (tierCount > 0) {
     return `${t('Tiered pricing')} · ${tierCount} ${t('tiers')}`
   }
-  const minStr = formatPricingNumber(Math.min(...unitPrices))
-  const maxStr = formatPricingNumber(Math.max(...unitPrices))
-  const range = minStr === maxStr ? `$${minStr}` : `$${minStr}–$${maxStr}`
-  return `${t('Tiered pricing')} · ${range} · ${tierCount} ${t('tiers')}`
+  return t('Expression pricing')
 }
 
 export const getPriceSummary = (

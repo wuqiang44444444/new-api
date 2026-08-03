@@ -136,6 +136,7 @@ export type AuthSettings = {
   'discord.client_id': string
   'discord.client_secret': string
   'oidc.enabled': boolean
+  'oidc.display_name': string
   'oidc.client_id': string
   'oidc.client_secret': string
   'oidc.well_known': string
@@ -216,13 +217,13 @@ export type ModelSettings = {
   ExposeRatioEnabled: boolean
   'billing_setting.billing_mode': string
   'billing_setting.billing_expr': string
-  'task_billing_setting.preconsume_tokens': string
   'tool_price_setting.prices': string
   TopupGroupRatio: string
   GroupRatio: string
   UserUsableGroups: string
   GroupGroupRatio: string
   AutoGroups: string
+  MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
   RetryTimes: number
@@ -271,14 +272,13 @@ export type BillingSettings = {
   ExposeRatioEnabled: boolean
   'billing_setting.billing_mode': string
   'billing_setting.billing_expr': string
-  'task_billing_setting.preconsume_tokens': string
-  'billing_statement_setting.context_thresholds': string
   'tool_price_setting.prices': string
   TopupGroupRatio: string
   GroupRatio: string
   UserUsableGroups: string
   GroupGroupRatio: string
   AutoGroups: string
+  MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
   PayAddress: string

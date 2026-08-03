@@ -453,7 +453,31 @@ func BatchInsertChannels(channels []Channel) error {
 }
 
 func BatchDeleteChannels(ids []int) (int64, error) {
-	return batchDeleteChannelsWithAssetFence(ids)
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	// 使用事务 分批删除channel表和abilities表
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return 0, tx.Error
+	}
+	var deletedCount int64
+	for _, chunk := range lo.Chunk(ids, 200) {
+		result := tx.Where("id in (?)", chunk).Delete(&Channel{})
+		if result.Error != nil {
+			tx.Rollback()
+			return 0, result.Error
+		}
+		deletedCount += result.RowsAffected
+		if err := tx.Where("channel_id in (?)", chunk).Delete(&Ability{}).Error; err != nil {
+			tx.Rollback()
+			return 0, err
+		}
+	}
+	if err := tx.Commit().Error; err != nil {
+		return 0, err
+	}
+	return deletedCount, nil
 }
 
 func (channel *Channel) GetPriority() int64 {
@@ -544,7 +568,14 @@ func (channel *Channel) Update() error {
 			}
 		}
 	}
-	return updateChannelWithAssetFence(channel, nil)
+	var err error
+	err = DB.Model(channel).Updates(channel).Error
+	if err != nil {
+		return err
+	}
+	DB.Model(channel).First(channel, "id = ?", channel.Id)
+	err = channel.UpdateAbilities(nil)
+	return err
 }
 
 func (channel *Channel) UpdateResponseTime(responseTime int64) {
@@ -568,7 +599,13 @@ func (channel *Channel) UpdateBalance(balance float64) {
 }
 
 func (channel *Channel) Delete() error {
-	return deleteChannelWithAssetFence(channel)
+	var err error
+	err = DB.Delete(channel).Error
+	if err != nil {
+		return err
+	}
+	err = channel.DeleteAbilities()
+	return err
 }
 
 var channelStatusLock sync.Mutex
@@ -837,11 +874,13 @@ func updateChannelUsedQuota(id int, quota int) {
 }
 
 func DeleteChannelByStatus(status int64) (int64, error) {
-	return deleteChannelsByStatusWithAssetFence([]int{int(status)})
+	result := DB.Where("status = ?", status).Delete(&Channel{})
+	return result.RowsAffected, result.Error
 }
 
 func DeleteDisabledChannel() (int64, error) {
-	return deleteChannelsByStatusWithAssetFence([]int{common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled})
+	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
+	return result.RowsAffected, result.Error
 }
 
 func GetPaginatedTags(offset int, limit int) ([]*string, error) {
@@ -939,12 +978,6 @@ func (channel *Channel) ValidateSettings() error {
 		if _, ok := channelOtherSettings.AdvancedCustom.ModelListRoute(); !ok {
 			return fmt.Errorf("advanced custom channels require a %s route when upstream model update checks are enabled", dto.AdvancedCustomModelListPath)
 		}
-	}
-	if err := validateChannelVideoSettings(channel, channelOtherSettings); err != nil {
-		return err
-	}
-	if err := validateChannelAssetSettings(channel, channelOtherSettings); err != nil {
-		return err
 	}
 	return nil
 }

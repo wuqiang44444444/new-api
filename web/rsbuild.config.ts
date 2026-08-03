@@ -63,6 +63,7 @@ export default defineConfig(({ envMode }) => {
       },
     },
     html: {
+      favicon: './public/tokenai-favicon.ico',
       template: './index.html',
     },
     server: {

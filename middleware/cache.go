@@ -6,9 +6,7 @@ import (
 
 func Cache() func(c *gin.Context) {
 	return func(c *gin.Context) {
-		if c.Request.URL.Path == "/docs-content/manifest.json" {
-			c.Header("Cache-Control", "no-cache, must-revalidate")
-		} else if c.Request.URL.Path == "/" {
+		if c.Request.RequestURI == "/" {
 			c.Header("Cache-Control", "no-cache")
 		} else {
 			c.Header("Cache-Control", "max-age=604800") // one week

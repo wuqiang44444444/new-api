@@ -34,7 +34,7 @@ func SetUpLogger(server *gin.Engine) {
 			param.Latency,
 			param.ClientIP,
 			param.Method,
-			redactAssetBearerToken(param.Path),
+			param.Path,
 		)
 	}))
 }

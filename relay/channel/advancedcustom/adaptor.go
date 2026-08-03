@@ -175,14 +175,10 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 	if err != nil {
 		return nil, err
 	}
-	switch converter {
-	case relayconvert.ConverterNone:
-		return a.convertOpenAICompatibleImageRequest(c, info, request)
-	case dto.AdvancedCustomConverterMediaTaskImageBlocking:
-		return convertMediaTaskImageRequest(request, info.OriginModelName)
-	default:
+	if converter != relayconvert.ConverterNone {
 		return nil, fmt.Errorf("converter %q does not support image requests", converter)
 	}
+	return a.convertOpenAICompatibleImageRequest(c, info, request)
 }
 
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {
@@ -276,9 +272,6 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	if !a.converted && a.converter != relayconvert.ConverterNone {
 		return nil, errors.New("advanced custom converter routes cannot be used with pass-through request body")
 	}
-	if a.converter == dto.AdvancedCustomConverterMediaTaskImageBlocking {
-		return a.doMediaTaskImageBlocking(c, info, requestBody)
-	}
 
 	if info.RelayMode == relayconstant.RelayModeAudioTranscription ||
 		info.RelayMode == relayconstant.RelayModeAudioTranslation ||
@@ -299,8 +292,6 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	switch a.converter {
 	case relayconvert.ConverterNone:
 		return a.doNativeResponse(c, resp, info)
-	case dto.AdvancedCustomConverterMediaTaskImageBlocking:
-		return a.openaiAdaptor.DoResponse(c, resp, info)
 	case relayconvert.ConverterClaudeMessagesToOpenAIChat,
 		relayconvert.ConverterGeminiContentToOpenAIChat:
 		return a.openaiAdaptor.DoResponse(c, resp, info)

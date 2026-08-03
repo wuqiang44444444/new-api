@@ -198,13 +198,19 @@ func TaskErrorWrapperLocal(err error, code string, statusCode int) *taskdto.Task
 }
 
 func TaskErrorWrapper(err error, code string, statusCode int) *taskdto.TaskError {
-	text := sanitizeTaskErrorText(err)
+	text := err.Error()
+	lowerText := strings.ToLower(text)
+	if strings.Contains(lowerText, "post") || strings.Contains(lowerText, "dial") || strings.Contains(lowerText, "http") {
+		common.SysLog(fmt.Sprintf("error: %s", text))
+		//text = "请求上游地址失败"
+		text = common.MaskSensitiveInfo(text)
+	}
 	//避免暴露内部错误
 	taskError := &taskdto.TaskError{
 		Code:       code,
 		Message:    text,
 		StatusCode: statusCode,
-		Error:      errors.New(text),
+		Error:      err,
 	}
 
 	return taskError
@@ -219,7 +225,6 @@ func TaskErrorFromAPIError(apiErr *types.NewAPIError) *taskdto.TaskError {
 		Code:       string(apiErr.GetErrorCode()),
 		Message:    apiErr.Err.Error(),
 		StatusCode: apiErr.StatusCode,
-		LocalError: true,
 		Error:      apiErr.Err,
 	}
 }

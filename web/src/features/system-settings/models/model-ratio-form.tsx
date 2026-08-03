@@ -59,7 +59,6 @@ type ModelFormValues = {
   ExposeRatioEnabled: boolean
   BillingMode: string
   BillingExpr: string
-  TaskPreConsumeTokens: string
 }
 
 type ModelRatioFormProps = {
@@ -81,7 +80,6 @@ type ModelJsonFieldName =
   | 'ImageRatio'
   | 'AudioRatio'
   | 'AudioCompletionRatio'
-  | 'TaskPreConsumeTokens'
 
 const modelJsonFields: Array<{
   name: ModelJsonFieldName
@@ -131,12 +129,6 @@ const modelJsonFields: Array<{
     name: 'AudioCompletionRatio',
     labelKey: 'Audio completion ratio',
     descriptionKey: 'Ratio applied to audio completions for streaming models.',
-  },
-  {
-    name: 'TaskPreConsumeTokens',
-    labelKey: 'Async task pre-consume token upper bounds',
-    descriptionKey:
-      'JSON map of model to the maximum billable token estimate used for asynchronous task pre-consume.',
   },
 ]
 
@@ -293,8 +285,6 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               audioCompletionRatio={form.watch('AudioCompletionRatio')}
               billingMode={form.watch('BillingMode')}
               billingExpr={form.watch('BillingExpr')}
-              savedTaskPreConsumeTokens={savedValues.TaskPreConsumeTokens}
-              taskPreConsumeTokens={form.watch('TaskPreConsumeTokens')}
               candidateModelNames={
                 isUnsetVariant ? enabledModelsQuery.data?.data : undefined
               }

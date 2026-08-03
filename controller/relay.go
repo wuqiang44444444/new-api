@@ -125,7 +125,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
-	relay.PreparePersistentImageTaskRequest(c, relayInfo)
 
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
@@ -175,7 +174,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		// Only return quota if downstream failed and quota was actually pre-consumed
 		if newAPIError != nil {
 			newAPIError = service.NormalizeViolationFeeError(newAPIError)
-			if relayInfo.Billing != nil && !relayInfo.SkipRequestRefund {
+			if relayInfo.Billing != nil {
 				relayInfo.Billing.Refund(c)
 			}
 			service.ChargeViolationFeeIfNeeded(c, relayInfo, newAPIError)
@@ -200,8 +199,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			newAPIError = channelErr
 			break
 		}
-
 		addUsedChannel(c, channel.Id)
+		if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
+			newAPIError = billingErr
+			break
+		}
+
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
 		if bodyErr != nil {
 			// Ensure consistent 413 for oversized bodies even when error occurs later (e.g., retry path)
@@ -309,15 +312,14 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		}, nil
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
-
-	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
-
 	if err != nil {
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 	if channel == nil {
 		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
+
+	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
 
 	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName)
 	if newAPIError != nil {
@@ -394,7 +396,6 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
-		service.AppendUpstreamTaskTraceAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {
@@ -578,10 +579,13 @@ func RelayTask(c *gin.Context) {
 
 	// ── 成功：结算 + 日志 + 插入任务 ──
 	if taskErr == nil {
+		if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
+			common.SysError("settle task billing error: " + settleErr.Error())
+		}
+		service.LogTaskConsumption(c, relayInfo)
+
 		task := model.InitTask(result.Platform, relayInfo)
-		attachTaskProtocolSnapshot(c, task, relayInfo)
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
-		task.PrivateData.UpstreamRequestID = c.GetString(common.UpstreamRequestIdKey)
 		task.PrivateData.BillingSource = relayInfo.BillingSource
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 		task.PrivateData.TokenId = relayInfo.TokenId
@@ -594,26 +598,11 @@ func RelayTask(c *gin.Context) {
 			OriginModelName: relayInfo.OriginModelName,
 			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
 		}
-		model.AttachAsyncTaskBilling(&task.PrivateData, relayInfo, result.Quota)
 		task.Quota = result.Quota
 		task.Data = result.TaskData
 		task.Action = relayInfo.Action
-		idempotencyID := int64(common.GetContextKeyInt(c, constant.ContextKeyTaskIdempotencyID))
-		if journalErr := model.RecordTaskCreateUpstreamSuccess(idempotencyID, task); journalErr != nil {
-			common.SysError("record task create upstream success error: " + journalErr.Error())
-		}
-		if insertErr := model.InsertTaskWithIdempotency(task, idempotencyID); insertErr != nil {
+		if insertErr := task.Insert(); insertErr != nil {
 			common.SysError("insert task error: " + insertErr.Error())
-			setTaskCreateContractPersistenceError(c, task.ClientProtocol)
-		} else {
-			// Persist the task before final settlement/logging. If the
-			// idempotency journal was temporarily unavailable, this avoids
-			// charging a task that has no durable local record.
-			if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
-				common.SysError("settle task billing error: " + settleErr.Error())
-			}
-			service.LogTaskConsumption(c, relayInfo)
-			setTaskCreateContractResponse(c, task)
 		}
 	}
 
@@ -626,9 +615,6 @@ func RelayTask(c *gin.Context) {
 func respondTaskError(c *gin.Context, taskErr *taskdto.TaskError) {
 	if taskErr.StatusCode == http.StatusTooManyRequests {
 		taskErr.Message = "当前分组上游负载已饱和，请稍后再试"
-	}
-	if respondTaskProtocolError(c, taskErr) {
-		return
 	}
 	c.JSON(taskErr.StatusCode, taskErr)
 }
