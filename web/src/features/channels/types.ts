@@ -138,11 +138,82 @@ export interface LinkImplementation {
   contract_id: string
   public_skus: string[]
   channel_type: number
+  required_video_profile?: string
+  required_asset_profile?: string
+  required_create_path?: string
+  required_sku_create_paths?: Array<{
+    public_sku: string
+    create_path: string
+  }>
+  required_query_path?: string
+  required_adapter_version?: string
+  required_routes?: Array<{
+    public_sku: string
+    incoming_path: string
+    upstream_path: string
+    converter: string
+    auth_type: string
+  }>
+  execution_bindings: Array<{
+    route_family: string
+    action: string
+    profile: string
+    provider_model: string
+    link_sku: string
+  }>
+  asset_capability: {
+    supports_managed_assets: boolean
+    asset_resolution_modes?: string[]
+    asset_source_min_ttl_seconds?: number
+    asset_kinds?: string[]
+    media_types?: string[]
+    max_images?: number
+    max_videos?: number
+    max_audio?: number
+    supports_mixed_media_paths: boolean
+  }
+  task_contract: string
+  billing_contract: string
 }
 
 export interface LinkImplementationsResponse {
   success: boolean
   data: LinkImplementation[]
+}
+
+export interface LinkModelPublication {
+  id: number
+  contract_namespace: string
+  route_family: string
+  customer_model: string
+  link_sku: string
+  publication_version: number
+  source_channel_id: number
+  change_reason: string
+  created_at: number
+  updated_at: number
+  currently_fulfillable: boolean
+  routing_conflict: boolean
+}
+
+export interface LinkModelPublicationsResponse {
+  success: boolean
+  data: LinkModelPublication[]
+}
+
+export interface RebindLinkModelPublicationRequest {
+  contract_namespace: string
+  route_family: string
+  customer_model: string
+  link_sku: string
+  expected_version: number
+  reason: string
+}
+
+export interface RebindLinkModelPublicationResponse {
+  success: boolean
+  message?: string
+  data?: LinkModelPublication
 }
 
 export interface AdvancedCustomConfig {

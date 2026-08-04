@@ -13,7 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 )
 
-const linkImplementationHashVersion = "link-implementation-hash-v1"
+const linkImplementationHashVersion = "link-implementation-hash-v2"
 
 const (
 	LinkImplementationBytePlusSeedanceArk  = "byteplus.seedance-ark"
@@ -61,11 +61,6 @@ type LinkRouteRequirement struct {
 	AuthType     string `json:"auth_type"`
 }
 
-type LinkModelMapping struct {
-	PublicSKU     string `json:"public_sku"`
-	UpstreamModel string `json:"upstream_model"`
-}
-
 type LinkSKUPathRequirement struct {
 	PublicSKU  string `json:"public_sku"`
 	CreatePath string `json:"create_path"`
@@ -89,7 +84,7 @@ type LinkImplementation struct {
 	RequiredQueryPath      string                            `json:"required_query_path,omitempty"`
 	RequiredAdapterVersion string                            `json:"required_adapter_version,omitempty"`
 	RequiredRoutes         []LinkRouteRequirement            `json:"required_routes,omitempty"`
-	RequiredModelMappings  []LinkModelMapping                `json:"required_model_mappings,omitempty"`
+	ExecutionBindings      []LinkExecutionBinding            `json:"execution_bindings"`
 	AssetCapability        LinkAssetImplementationCapability `json:"asset_capability"`
 	TaskContract           string                            `json:"task_contract"`
 	BillingContract        string                            `json:"billing_contract"`
@@ -109,7 +104,7 @@ type linkImplementationHashMaterial struct {
 	RequiredQueryPath      string                            `json:"required_query_path,omitempty"`
 	RequiredAdapterVersion string                            `json:"required_adapter_version,omitempty"`
 	RequiredRoutes         []LinkRouteRequirement            `json:"required_routes,omitempty"`
-	RequiredModelMappings  []LinkModelMapping                `json:"required_model_mappings,omitempty"`
+	ExecutionBindings      []LinkExecutionBinding            `json:"execution_bindings"`
 	AssetCapability        LinkAssetImplementationCapability `json:"asset_capability"`
 	TaskContract           string                            `json:"task_contract"`
 	BillingContract        string                            `json:"billing_contract"`
@@ -124,32 +119,36 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 			ContractID: "modelark.contents.generations.v3", PublicSKUs: []string{VideoSKUSeedanceBytePlus},
 			ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileOfficial,
 			RequiredAssetProfile: string(dto.AssetUpstreamProfileOfficial), RequiredAdapterVersion: "54:official:v1",
-			AssetCapability: LinkAssetImplementationCapability{SupportsManagedAssets: true, ResolutionModes: []LinkAssetResolutionMode{LinkAssetResolutionUpstreamBinding}, AssetKinds: []string{AssetKindGeneral, AssetKindRealPerson}, MediaTypes: []string{"image", "video", "audio"}},
-			TaskContract:    "shared_video_task", BillingContract: "newapi_quota",
+			ExecutionBindings: []LinkExecutionBinding{{RouteFamily: LinkRouteFamilyModelArkVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileOfficial, ProviderModel: VideoSKUSeedanceBytePlus, LinkSKU: VideoSKUSeedanceBytePlus}},
+			AssetCapability:   LinkAssetImplementationCapability{SupportsManagedAssets: true, ResolutionModes: []LinkAssetResolutionMode{LinkAssetResolutionUpstreamBinding}, AssetKinds: []string{AssetKindGeneral, AssetKindRealPerson}, MediaTypes: []string{"image", "video", "audio"}},
+			TaskContract:      "shared_video_task", BillingContract: "newapi_quota",
 		},
 		{
 			ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV1, Provider: "Moxing",
 			ContractID: "modelark.contents.generations.v3", PublicSKUs: []string{VideoSKUSeedance20Oversea},
 			ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileThirdPartyRelay,
 			RequiredAssetProfile: string(dto.AssetUpstreamProfileRelay), RequiredCreatePath: "/v1/media/generations", RequiredQueryPath: "/v1/media/tasks/{task_id}", RequiredAdapterVersion: "54:third_party_relay:v1",
-			AssetCapability: LinkAssetImplementationCapability{SupportsManagedAssets: true, ResolutionModes: []LinkAssetResolutionMode{LinkAssetResolutionUpstreamBinding}, AssetKinds: []string{AssetKindGeneral, AssetKindRealPerson}, MediaTypes: []string{"image", "video", "audio"}},
-			TaskContract:    "shared_video_task", BillingContract: "newapi_quota",
+			ExecutionBindings: []LinkExecutionBinding{{RouteFamily: LinkRouteFamilyModelArkVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileThirdPartyRelay, ProviderModel: VideoSKUSeedance20Oversea, LinkSKU: VideoSKUSeedance20Oversea}},
+			AssetCapability:   LinkAssetImplementationCapability{SupportsManagedAssets: true, ResolutionModes: []LinkAssetResolutionMode{LinkAssetResolutionUpstreamBinding}, AssetKinds: []string{AssetKindGeneral, AssetKindRealPerson}, MediaTypes: []string{"image", "video", "audio"}},
+			TaskContract:      "shared_video_task", BillingContract: "newapi_quota",
 		},
 		{
 			ID: LinkImplementationTokenSaveSeedance, Version: LinkImplementationVersionV1, Provider: "TokenSave",
 			ContractID: "modelark.contents.generations.v3", PublicSKUs: []string{VideoSKUDoubaoSeedance20260128},
 			ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileThirdPartyRelay,
 			RequiredAssetProfile: string(dto.AssetUpstreamProfileRelay), RequiredCreatePath: "/v1/media/generations", RequiredQueryPath: "/v1/media/tasks/{task_id}", RequiredAdapterVersion: "54:third_party_relay:v1",
-			AssetCapability: LinkAssetImplementationCapability{SupportsManagedAssets: true, ResolutionModes: []LinkAssetResolutionMode{LinkAssetResolutionUpstreamBinding}, AssetKinds: []string{AssetKindGeneral, AssetKindRealPerson}, MediaTypes: []string{"image", "video", "audio"}},
-			TaskContract:    "shared_video_task", BillingContract: "newapi_quota",
+			ExecutionBindings: []LinkExecutionBinding{{RouteFamily: LinkRouteFamilyModelArkVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileThirdPartyRelay, ProviderModel: VideoSKUDoubaoSeedance20260128, LinkSKU: VideoSKUDoubaoSeedance20260128}},
+			AssetCapability:   LinkAssetImplementationCapability{SupportsManagedAssets: true, ResolutionModes: []LinkAssetResolutionMode{LinkAssetResolutionUpstreamBinding}, AssetKinds: []string{AssetKindGeneral, AssetKindRealPerson}, MediaTypes: []string{"image", "video", "audio"}},
+			TaskContract:      "shared_video_task", BillingContract: "newapi_quota",
 		},
 		{
 			ID: LinkImplementationMoxingSeedanceArk, Version: LinkImplementationVersionV1, Provider: "Moxing",
 			ContractID: "modelark.contents.generations.v3", PublicSKUs: []string{VideoSKUSeedance20Oversea},
 			ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileThirdPartyReverse,
 			RequiredAssetProfile: string(dto.AssetUpstreamProfileArk), RequiredAdapterVersion: "54:third_party_reverse_proxy:v1",
-			AssetCapability: LinkAssetImplementationCapability{SupportsManagedAssets: true, ResolutionModes: []LinkAssetResolutionMode{LinkAssetResolutionUpstreamBinding}, AssetKinds: []string{AssetKindGeneral, AssetKindRealPerson}, MediaTypes: []string{"image", "video", "audio"}},
-			TaskContract:    "shared_video_task", BillingContract: "newapi_quota",
+			ExecutionBindings: []LinkExecutionBinding{{RouteFamily: LinkRouteFamilyModelArkVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileThirdPartyReverse, ProviderModel: VideoSKUSeedance20Oversea, LinkSKU: VideoSKUSeedance20Oversea}},
+			AssetCapability:   LinkAssetImplementationCapability{SupportsManagedAssets: true, ResolutionModes: []LinkAssetResolutionMode{LinkAssetResolutionUpstreamBinding}, AssetKinds: []string{AssetKindGeneral, AssetKindRealPerson}, MediaTypes: []string{"image", "video", "audio"}},
+			TaskContract:      "shared_video_task", BillingContract: "newapi_quota",
 		},
 		{
 			ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV1, Provider: "飞彩",
@@ -157,9 +156,9 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 			PublicSKUs:  []string{VideoSKUSeedance20Standard720P, VideoSKUSeedance20Value720P},
 			ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileJSONMediaArrays,
 			RequiredAssetProfile: string(dto.AssetUpstreamProfileNone), RequiredCreatePath: "/v1/videos", RequiredQueryPath: "/v1/videos/{task_id}", RequiredAdapterVersion: "54:third_party_json_video_media_arrays:v1",
-			RequiredModelMappings: []LinkModelMapping{
-				{PublicSKU: VideoSKUSeedance20Standard720P, UpstreamModel: "seedance-2.0-vip-720p-azhw"},
-				{PublicSKU: VideoSKUSeedance20Value720P, UpstreamModel: "seedance-2.0-933-720p-azhw"},
+			ExecutionBindings: []LinkExecutionBinding{
+				{RouteFamily: LinkRouteFamilyModelArkVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileJSONMediaArrays, ProviderModel: "seedance-2.0-vip-720p-azhw", LinkSKU: VideoSKUSeedance20Standard720P},
+				{RouteFamily: LinkRouteFamilyModelArkVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileJSONMediaArrays, ProviderModel: "seedance-2.0-933-720p-azhw", LinkSKU: VideoSKUSeedance20Value720P},
 			},
 			AssetCapability: LinkAssetImplementationCapability{
 				ResolutionModes:     []LinkAssetResolutionMode{LinkAssetResolutionSourceURL},
@@ -175,8 +174,12 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 			ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileFunCloudSeedanceV2,
 			RequiredAssetProfile: string(dto.AssetUpstreamProfileNone), RequiredQueryPath: "/api/v2/open/aigc/{task_id}", RequiredAdapterVersion: "54:third_party_funcloud_seedance_v2:v2",
 			RequiredSKUCreatePaths: []LinkSKUPathRequirement{{PublicSKU: VideoSKUSeedance20Standard, CreatePath: "/api/v2/open/aigc/seedance2-0"}, {PublicSKU: VideoSKUSeedance20Fast, CreatePath: "/api/v2/open/aigc/seedance2-0-fast"}},
-			AssetCapability:        LinkAssetImplementationCapability{ResolutionModes: []LinkAssetResolutionMode{LinkAssetResolutionSourceURL}, SourceMinTTLSeconds: 300, AssetKinds: []string{AssetKindGeneral}, MediaTypes: []string{"image", "video", "audio"}, MaxImages: 3, MaxVideos: 1, MaxAudio: 1},
-			TaskContract:           "shared_video_task", BillingContract: "newapi_quota",
+			ExecutionBindings: []LinkExecutionBinding{
+				{RouteFamily: LinkRouteFamilyModelArkVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileFunCloudSeedanceV2, ProviderModel: VideoSKUSeedance20Standard, LinkSKU: VideoSKUSeedance20Standard},
+				{RouteFamily: LinkRouteFamilyModelArkVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileFunCloudSeedanceV2, ProviderModel: VideoSKUSeedance20Fast, LinkSKU: VideoSKUSeedance20Fast},
+			},
+			AssetCapability: LinkAssetImplementationCapability{ResolutionModes: []LinkAssetResolutionMode{LinkAssetResolutionSourceURL}, SourceMinTTLSeconds: 300, AssetKinds: []string{AssetKindGeneral}, MediaTypes: []string{"image", "video", "audio"}, MaxImages: 3, MaxVideos: 1, MaxAudio: 1},
+			TaskContract:    "shared_video_task", BillingContract: "newapi_quota",
 		},
 		{
 			ID: LinkImplementationMoxingImages, Version: LinkImplementationVersionV1, Provider: "Moxing",
@@ -186,28 +189,39 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 				{PublicSKU: "seedream-5-moxing", IncomingPath: "/v1/images/generations", UpstreamPath: "/v1/images/generations", Converter: dto.AdvancedCustomConverterMediaTaskImageBlocking, AuthType: dto.AdvancedCustomAuthTypeHeader},
 				{PublicSKU: "nano-banana-2", IncomingPath: "/v1/images/generations", UpstreamPath: "/v1/media/generations", Converter: dto.AdvancedCustomConverterMediaTaskImageBlocking, AuthType: dto.AdvancedCustomAuthTypeHeader},
 			},
-			RequiredModelMappings: []LinkModelMapping{{PublicSKU: "seedream-5-moxing", UpstreamModel: "seedream-5-0-260128"}, {PublicSKU: "nano-banana-2", UpstreamModel: "gemini-3.1-flash-image-preview-usage"}},
-			AssetCapability:       LinkAssetImplementationCapability{}, TaskContract: "shared_image_task", BillingContract: "newapi_quota",
+			ExecutionBindings: []LinkExecutionBinding{
+				{RouteFamily: LinkRouteFamilyImageGeneration, Action: LinkExecutionActionCreate, Profile: dto.AdvancedCustomConverterMediaTaskImageBlocking, ProviderModel: "seedream-5-0-260128", LinkSKU: "seedream-5-moxing"},
+				{RouteFamily: LinkRouteFamilyImageGeneration, Action: LinkExecutionActionCreate, Profile: dto.AdvancedCustomConverterMediaTaskImageBlocking, ProviderModel: "gemini-3.1-flash-image-preview-usage", LinkSKU: "nano-banana-2"},
+			},
+			AssetCapability: LinkAssetImplementationCapability{}, TaskContract: "shared_image_task", BillingContract: "newapi_quota",
 		},
 		{
 			ID: LinkImplementationQihangImages, Version: LinkImplementationVersionV1, Provider: "Qihang",
 			ContractID: "newapi.images.generations.v1", PublicSKUs: []string{"seedream-5-qihang"},
-			ChannelType:           constant.ChannelTypeAdvancedCustom,
-			RequiredRoutes:        []LinkRouteRequirement{{PublicSKU: "seedream-5-qihang", IncomingPath: "/v1/images/generations", UpstreamPath: "/v1/images/generations", Converter: "none", AuthType: dto.AdvancedCustomAuthTypeHeader}},
-			RequiredModelMappings: []LinkModelMapping{{PublicSKU: "seedream-5-qihang", UpstreamModel: "seedream-5"}},
-			AssetCapability:       LinkAssetImplementationCapability{}, TaskContract: "synchronous_image_or_shared_task", BillingContract: "newapi_quota",
+			ChannelType:       constant.ChannelTypeAdvancedCustom,
+			RequiredRoutes:    []LinkRouteRequirement{{PublicSKU: "seedream-5-qihang", IncomingPath: "/v1/images/generations", UpstreamPath: "/v1/images/generations", Converter: "none", AuthType: dto.AdvancedCustomAuthTypeHeader}},
+			ExecutionBindings: []LinkExecutionBinding{{RouteFamily: LinkRouteFamilyImageGeneration, Action: LinkExecutionActionCreate, Profile: "none", ProviderModel: "seedream-5", LinkSKU: "seedream-5-qihang"}},
+			AssetCapability:   LinkAssetImplementationCapability{}, TaskContract: "synchronous_image_or_shared_task", BillingContract: "newapi_quota",
 		},
 		{
 			ID: LinkImplementationKlingVideos, Version: LinkImplementationVersionV1, Provider: "Kling",
 			ContractID: "kling.v1.videos", PublicSKUs: []string{VideoSKUKlingV1, VideoSKUKlingV16, VideoSKUKlingV2Master},
 			ChannelType: constant.ChannelTypeKling, RequiredVideoProfile: VideoProfileOfficial, RequiredAdapterVersion: "50:official:v1",
-			AssetCapability: LinkAssetImplementationCapability{}, TaskContract: "shared_video_task", BillingContract: "newapi_quota",
+			ExecutionBindings: []LinkExecutionBinding{
+				{RouteFamily: LinkRouteFamilyKlingVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileOfficial, ProviderModel: VideoSKUKlingV1, LinkSKU: VideoSKUKlingV1},
+				{RouteFamily: LinkRouteFamilyKlingVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileOfficial, ProviderModel: VideoSKUKlingV16, LinkSKU: VideoSKUKlingV16},
+				{RouteFamily: LinkRouteFamilyKlingVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileOfficial, ProviderModel: VideoSKUKlingV2Master, LinkSKU: VideoSKUKlingV2Master},
+			},
+			AssetCapability: LinkAssetImplementationCapability{ResolutionModes: []LinkAssetResolutionMode{LinkAssetResolutionSourceURL}, SourceMinTTLSeconds: 300, AssetKinds: []string{AssetKindGeneral}, MediaTypes: []string{"image"}, MaxImages: 2},
+			TaskContract:    "shared_video_task", BillingContract: "newapi_quota",
 		},
 		{
 			ID: LinkImplementationJimengVideos, Version: LinkImplementationVersionV1, Provider: "Jimeng",
 			ContractID: "jimeng.cv.async.2022-08-31", PublicSKUs: []string{VideoSKUJimengVGFMT2VL20},
 			ChannelType: constant.ChannelTypeJimeng, RequiredVideoProfile: VideoProfileOfficial, RequiredAdapterVersion: "51:official:v1",
-			AssetCapability: LinkAssetImplementationCapability{}, TaskContract: "shared_video_task", BillingContract: "newapi_quota",
+			ExecutionBindings: []LinkExecutionBinding{{RouteFamily: LinkRouteFamilyJimengVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileOfficial, ProviderModel: VideoSKUJimengVGFMT2VL20, LinkSKU: VideoSKUJimengVGFMT2VL20}},
+			AssetCapability:   LinkAssetImplementationCapability{ResolutionModes: []LinkAssetResolutionMode{LinkAssetResolutionSourceURL}, SourceMinTTLSeconds: 300, AssetKinds: []string{AssetKindGeneral}, MediaTypes: []string{"image"}},
+			TaskContract:      "shared_video_task", BillingContract: "newapi_quota",
 		},
 	}
 	return buildLinkImplementationRegistryFrom(implementations)
@@ -248,8 +262,11 @@ func normalizeLinkImplementation(implementation LinkImplementation) LinkImplemen
 		left, right := implementation.RequiredRoutes[i], implementation.RequiredRoutes[j]
 		return left.PublicSKU+"\x00"+left.IncomingPath+"\x00"+left.UpstreamPath < right.PublicSKU+"\x00"+right.IncomingPath+"\x00"+right.UpstreamPath
 	})
-	sort.Slice(implementation.RequiredModelMappings, func(i, j int) bool {
-		return implementation.RequiredModelMappings[i].PublicSKU < implementation.RequiredModelMappings[j].PublicSKU
+	for index := range implementation.ExecutionBindings {
+		implementation.ExecutionBindings[index] = normalizeLinkExecutionBinding(implementation.ExecutionBindings[index])
+	}
+	sort.Slice(implementation.ExecutionBindings, func(i, j int) bool {
+		return linkExecutionBindingKey(implementation.ExecutionBindings[i]) < linkExecutionBindingKey(implementation.ExecutionBindings[j])
 	})
 	sort.Slice(implementation.RequiredSKUCreatePaths, func(i, j int) bool {
 		return implementation.RequiredSKUCreatePaths[i].PublicSKU < implementation.RequiredSKUCreatePaths[j].PublicSKU
@@ -297,7 +314,7 @@ func linkImplementationContentHash(implementation LinkImplementation) string {
 		RequiredVideoProfile: implementation.RequiredVideoProfile, RequiredAssetProfile: implementation.RequiredAssetProfile,
 		RequiredCreatePath: implementation.RequiredCreatePath, RequiredSKUCreatePaths: implementation.RequiredSKUCreatePaths, RequiredQueryPath: implementation.RequiredQueryPath,
 		RequiredAdapterVersion: implementation.RequiredAdapterVersion, RequiredRoutes: implementation.RequiredRoutes,
-		RequiredModelMappings: implementation.RequiredModelMappings, AssetCapability: implementation.AssetCapability,
+		ExecutionBindings: implementation.ExecutionBindings, AssetCapability: implementation.AssetCapability,
 		TaskContract: implementation.TaskContract, BillingContract: implementation.BillingContract,
 	}
 	payload, err := common.Marshal(material)
@@ -340,7 +357,7 @@ func ListLinkImplementations() []LinkImplementation {
 func cloneLinkImplementation(implementation LinkImplementation) LinkImplementation {
 	implementation.PublicSKUs = append([]string(nil), implementation.PublicSKUs...)
 	implementation.RequiredRoutes = append([]LinkRouteRequirement(nil), implementation.RequiredRoutes...)
-	implementation.RequiredModelMappings = append([]LinkModelMapping(nil), implementation.RequiredModelMappings...)
+	implementation.ExecutionBindings = append([]LinkExecutionBinding(nil), implementation.ExecutionBindings...)
 	implementation.RequiredSKUCreatePaths = append([]LinkSKUPathRequirement(nil), implementation.RequiredSKUCreatePaths...)
 	implementation.AssetCapability.ResolutionModes = append([]LinkAssetResolutionMode(nil), implementation.AssetCapability.ResolutionModes...)
 	implementation.AssetCapability.AssetKinds = append([]string(nil), implementation.AssetCapability.AssetKinds...)
@@ -354,8 +371,11 @@ func ValidateLinkImplementationRegistry() error {
 	}
 	seenSKU := make(map[string]struct{})
 	for id, implementation := range linkImplementationRegistry {
-		if id == "" || implementation.ID != id || implementation.Version == "" || implementation.ContractID == "" || implementation.ChannelType <= 0 || len(implementation.PublicSKUs) == 0 {
+		if id == "" || implementation.ID != id || implementation.Version == "" || implementation.ContractID == "" || implementation.ChannelType <= 0 || len(implementation.PublicSKUs) == 0 || len(implementation.ExecutionBindings) == 0 {
 			return fmt.Errorf("Link implementation %q is incomplete", id)
+		}
+		if err := validateLinkExecutionBindings(implementation); err != nil {
+			return fmt.Errorf("Link implementation %q execution bindings: %w", id, err)
 		}
 		if implementation.ContentHash == "" || implementation.ContentHash != linkImplementationContentHash(implementation) {
 			return fmt.Errorf("Link implementation %q content hash is invalid", id)

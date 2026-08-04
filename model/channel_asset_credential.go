@@ -138,6 +138,10 @@ func resolveAssetChannelCredential(tx *gorm.DB, channel *Channel, override *Chan
 }
 
 func InsertChannelWithAssetCredential(channel *Channel, input *dto.ChannelAssetCredentialInput) error {
+	return InsertChannelWithAssetCredentialActor(channel, input, 0)
+}
+
+func InsertChannelWithAssetCredentialActor(channel *Channel, input *dto.ChannelAssetCredentialInput, actorID int) error {
 	credential, err := NormalizeChannelAssetCredential(input)
 	if err != nil {
 		return err
@@ -149,7 +153,7 @@ func InsertChannelWithAssetCredential(channel *Channel, input *dto.ChannelAssetC
 		if err := tx.Create(channel).Error; err != nil {
 			return err
 		}
-		if err := channel.AddAbilities(tx); err != nil {
+		if err := channel.AddAbilitiesWithActor(tx, actorID); err != nil {
 			return err
 		}
 		now := common.GetTimestamp()
@@ -162,6 +166,10 @@ func InsertChannelWithAssetCredential(channel *Channel, input *dto.ChannelAssetC
 }
 
 func UpdateChannelWithAssetCredential(channel *Channel, input *dto.ChannelAssetCredentialInput) error {
+	return UpdateChannelWithAssetCredentialActor(channel, input, 0)
+}
+
+func UpdateChannelWithAssetCredentialActor(channel *Channel, input *dto.ChannelAssetCredentialInput, actorID int) error {
 	credential, err := NormalizeChannelAssetCredential(input)
 	if err != nil {
 		return err
@@ -170,7 +178,7 @@ func UpdateChannelWithAssetCredential(channel *Channel, input *dto.ChannelAssetC
 		return errors.New("channel and asset credential are required")
 	}
 	credential.ChannelID = channel.Id
-	return updateChannelWithAssetFence(channel, credential)
+	return updateChannelWithAssetFenceActor(channel, credential, actorID)
 }
 
 func DeleteChannelAssetCredential(channelID int) error {

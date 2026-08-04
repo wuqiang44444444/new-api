@@ -13,8 +13,21 @@ func validateJSONVideoMediaArraysChannel(channel *Channel, settings *dto.Channel
 	if channel == nil || settings == nil {
 		return nil
 	}
+	capabilityModels := map[string]string{}
+	if !settings.LinkImplementation.Empty() {
+		executions, err := DeriveChannelLinkExecutions(channel, settings)
+		if err != nil {
+			return err
+		}
+		for _, execution := range executions {
+			capabilityModels[execution.CustomerModel] = execution.LinkSKU
+		}
+	}
 	for _, modelName := range strings.Split(channel.Models, ",") {
 		publicModel := strings.TrimSpace(modelName)
+		if linkSKU := capabilityModels[publicModel]; linkSKU != "" {
+			publicModel = linkSKU
+		}
 		capability, registered := ResolveVideoSKUCapability(publicModel)
 		if !registered {
 			if settings.VideoUpstreamProfile == dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays {

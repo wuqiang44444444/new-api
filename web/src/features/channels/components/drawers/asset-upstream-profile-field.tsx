@@ -40,6 +40,12 @@ export function AssetUpstreamProfileField(
     control: props.control,
     name: 'asset_upstream_profile',
   })
+  const planLocked = Boolean(
+    useWatch({
+      control: props.control,
+      name: 'link_implementation_id',
+    })
+  )
 
   let description = t(
     'No upstream asset library is associated with this channel.'
@@ -89,7 +95,7 @@ export function AssetUpstreamProfileField(
                 }
               }}
               value={field.value}
-              disabled={props.sensitiveLocked}
+              disabled={props.sensitiveLocked || planLocked}
             >
               <FormControl>
                 <SelectTrigger>
@@ -131,7 +137,7 @@ export function AssetUpstreamProfileField(
                   type='number'
                   min={1}
                   step={1}
-                  disabled={props.sensitiveLocked}
+                  disabled={props.sensitiveLocked || planLocked}
                   value={field.value || ''}
                   onChange={(event) =>
                     field.onChange(Number(event.target.value))

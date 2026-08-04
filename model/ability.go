@@ -222,8 +222,21 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
+	return channel.AddAbilitiesWithActor(tx, 0)
+}
+
+func (channel *Channel) AddAbilitiesWithActor(tx *gorm.DB, actorID int) error {
 	if err := ValidateLinkSKUAbilityBindings(channel); err != nil {
 		return err
+	}
+	useDB := DB
+	if tx != nil {
+		useDB = tx
+	}
+	if channel.Status == common.ChannelStatusEnabled {
+		if err := EnsureChannelLinkModelPublications(useDB, channel, actorID); err != nil {
+			return err
+		}
 	}
 	models_ := strings.Split(channel.Models, ",")
 	groups_ := strings.Split(channel.Group, ",")
@@ -251,11 +264,6 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 	if len(abilities) == 0 {
 		return nil
 	}
-	// choose DB or provided tx
-	useDB := DB
-	if tx != nil {
-		useDB = tx
-	}
 	for _, chunk := range lo.Chunk(abilities, 50) {
 		err := useDB.Clauses(clause.OnConflict{DoNothing: true}).Create(&chunk).Error
 		if err != nil {
@@ -272,6 +280,10 @@ func (channel *Channel) DeleteAbilities() error {
 // UpdateAbilities updates abilities of this channel.
 // Make sure the channel is completed before calling this function.
 func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
+	return channel.UpdateAbilitiesWithActor(tx, 0)
+}
+
+func (channel *Channel) UpdateAbilitiesWithActor(tx *gorm.DB, actorID int) error {
 	if err := ValidateLinkSKUAbilityBindings(channel); err != nil {
 		return err
 	}
@@ -288,6 +300,14 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 				tx.Rollback()
 			}
 		}()
+	}
+	if channel.Status == common.ChannelStatusEnabled {
+		if err := EnsureChannelLinkModelPublications(tx, channel, actorID); err != nil {
+			if isNewTx {
+				tx.Rollback()
+			}
+			return err
+		}
 	}
 
 	// First delete all abilities of this channel
@@ -344,22 +364,52 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 	return nil
 }
 
-func UpdateAbilityStatus(channelId int, status bool) error {
+func updateAbilityStatusTx(tx *gorm.DB, channel *Channel, status bool, actorID int) error {
+	if tx == nil || channel == nil {
+		return errors.New("channel ability status transaction requires a channel")
+	}
 	if status {
-		if err := validateLinkSKUAbilitiesByChannelID(channelId); err != nil {
+		if err := ValidateLinkSKUAbilityBindings(channel); err != nil {
+			return err
+		}
+		if err := EnsureChannelLinkModelPublications(tx, channel, actorID); err != nil {
 			return err
 		}
 	}
-	return DB.Model(&Ability{}).Where("channel_id = ?", channelId).Select("enabled").Update("enabled", status).Error
+	return tx.Model(&Ability{}).Where("channel_id = ?", channel.Id).Select("enabled").Update("enabled", status).Error
+}
+
+func UpdateAbilityStatusWithActor(channelId int, status bool, actorID int) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var channel Channel
+		if err := lockForUpdate(tx).First(&channel, "id = ?", channelId).Error; err != nil {
+			return err
+		}
+		return updateAbilityStatusTx(tx, &channel, status, actorID)
+	})
+}
+
+func UpdateAbilityStatus(channelId int, status bool) error {
+	return UpdateAbilityStatusWithActor(channelId, status, 0)
+}
+
+func UpdateAbilityStatusByTagWithActor(tag string, status bool, actorID int) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var channels []Channel
+		if err := lockForUpdate(tx).Where("tag = ?", tag).Find(&channels).Error; err != nil {
+			return err
+		}
+		for i := range channels {
+			if err := updateAbilityStatusTx(tx, &channels[i], status, actorID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func UpdateAbilityStatusByTag(tag string, status bool) error {
-	if status {
-		if err := validateLinkSKUAbilitiesByTag(tag); err != nil {
-			return err
-		}
-	}
-	return DB.Model(&Ability{}).Where("tag = ?", tag).Select("enabled").Update("enabled", status).Error
+	return UpdateAbilityStatusByTagWithActor(tag, status, 0)
 }
 
 func UpdateAbilityByTag(tag string, newTag *string, priority *int64, weight *uint) error {

@@ -74,6 +74,8 @@ type TaskCreateAttempt struct {
 	ManualRecoveryNote        string                            `json:"-" gorm:"type:text"`
 	CreatedAt                 int64                             `json:"-" gorm:"bigint;index"`
 	UpdatedAt                 int64                             `json:"-" gorm:"bigint"`
+
+	LinkPubSnapshot `json:"-" gorm:"embedded"`
 }
 
 type TaskCreateAttemptParams struct {
@@ -92,6 +94,10 @@ type TaskCreateAttemptParams struct {
 	LinkImplementationID      string
 	LinkImplementationVersion string
 	LinkImplementationHash    string
+	LinkContractNamespace     string
+	LinkRouteFamily           string
+	PublishedLinkContractSKU  string
+	LinkPublicationVersion    int64
 	ChannelID                 int
 	PublicModel               string
 	UpstreamProfile           string
@@ -131,20 +137,26 @@ func CreatePreparedTaskAttempt(params TaskCreateAttemptParams) (*TaskCreateAttem
 		LinkImplementationID:      strings.TrimSpace(params.LinkImplementationID),
 		LinkImplementationVersion: strings.TrimSpace(params.LinkImplementationVersion),
 		LinkImplementationHash:    strings.TrimSpace(params.LinkImplementationHash),
-		ChannelID:                 params.ChannelID,
-		PublicModel:               strings.TrimSpace(params.PublicModel),
-		UpstreamProfile:           strings.TrimSpace(params.UpstreamProfile),
-		AdapterVersion:            strings.TrimSpace(params.AdapterVersion),
-		FrozenConnectionSnapshot:  append(json.RawMessage(nil), params.FrozenConnectionSnapshot...),
-		BillingSnapshot:           append(json.RawMessage(nil), params.BillingSnapshot...),
-		Status:                    TaskCreateAttemptPrepared,
-		BillingHoldState:          TaskCreateAttemptBillingUnheld,
-		HeldQuota:                 params.HeldQuota,
-		NextAttemptAt:             params.NextAttemptAt,
-		HoldDeadlineAt:            params.HoldDeadlineAt,
-		TaskDeadlineAt:            params.TaskDeadlineAt,
-		CreatedAt:                 now,
-		UpdatedAt:                 now,
+		LinkPubSnapshot: LinkPubSnapshot{
+			LinkContractNamespace:    strings.TrimSpace(params.LinkContractNamespace),
+			LinkRouteFamily:          strings.TrimSpace(params.LinkRouteFamily),
+			PublishedLinkContractSKU: strings.TrimSpace(params.PublishedLinkContractSKU),
+			LinkPublicationVersion:   params.LinkPublicationVersion,
+		},
+		ChannelID:                params.ChannelID,
+		PublicModel:              strings.TrimSpace(params.PublicModel),
+		UpstreamProfile:          strings.TrimSpace(params.UpstreamProfile),
+		AdapterVersion:           strings.TrimSpace(params.AdapterVersion),
+		FrozenConnectionSnapshot: append(json.RawMessage(nil), params.FrozenConnectionSnapshot...),
+		BillingSnapshot:          append(json.RawMessage(nil), params.BillingSnapshot...),
+		Status:                   TaskCreateAttemptPrepared,
+		BillingHoldState:         TaskCreateAttemptBillingUnheld,
+		HeldQuota:                params.HeldQuota,
+		NextAttemptAt:            params.NextAttemptAt,
+		HoldDeadlineAt:           params.HoldDeadlineAt,
+		TaskDeadlineAt:           params.TaskDeadlineAt,
+		CreatedAt:                now,
+		UpdatedAt:                now,
 	}
 	if err := DB.Create(attempt).Error; err != nil {
 		return nil, err

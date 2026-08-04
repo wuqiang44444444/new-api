@@ -104,11 +104,22 @@ func createRemoteAsset(ctx context.Context, userID, tokenID int, userGroup, usin
 			return nil, fmt.Errorf("%w: real-person asset service is disabled", ErrAssetLibraryUnavailable)
 		}
 	}
+	publication, sourceMinimumTTL, err := resolveAssetLinkPublication(req.Model, req.AssetKind, req.MediaType)
+	if err != nil {
+		return nil, err
+	}
 
 	asset := &model.Asset{
 		UserID: userID, CreatedByTokenID: tokenID, AppID: tokenID, Name: req.Name,
 		AssetKind: req.AssetKind, MediaType: req.MediaType,
-		Status: model.AssetStatusCreating,
+		RequestedModel: req.Model,
+		Status:         model.AssetStatusCreating,
+	}
+	if publication != nil {
+		asset.LinkContractNamespace = publication.ContractNamespace
+		asset.LinkRouteFamily = string(publication.RouteFamily)
+		asset.PublishedLinkContractSKU = publication.LinkSKU
+		asset.LinkPublicationVersion = publication.PublicationVersion
 	}
 	if migration != nil {
 		asset.SupersedesAssetID = migration.SupersedesAssetID
@@ -136,8 +147,8 @@ func createRemoteAsset(ctx context.Context, userID, tokenID int, userGroup, usin
 	if err != nil {
 		return nil, err
 	}
-	if req.Model == "" && req.Target == "" {
-		if err := validateRemoteAssetTTL(req.Source.ExpiresAt, 0, time.Now()); err != nil {
+	if (req.Model == "" && req.Target == "") || (publication != nil && sourceMinimumTTL > 0 && req.AssetKind != model.AssetKindRealPerson) {
+		if err := validateRemoteAssetTTL(req.Source.ExpiresAt, sourceMinimumTTL, time.Now()); err != nil {
 			return nil, err
 		}
 		asset.Status = model.AssetStatusReady
@@ -181,7 +192,11 @@ func createRemoteAsset(ctx context.Context, userID, tokenID int, userGroup, usin
 	}
 
 	implementation, ok := model.ResolveChannelLinkImplementation(channel)
-	if model.IsRegisteredLinkSKU(req.Model) && !ok {
+	if publication != nil {
+		if !ok || model.ValidateChannelLinkExecution(channel, publication.CustomerModel, publication.RouteFamily, publication.LinkSKU) != nil {
+			return nil, fmt.Errorf("%w: selected Provider does not implement the published Link contract", ErrAssetUpstreamUnavailable)
+		}
+	} else if model.IsRegisteredLinkSKU(req.Model) && !ok {
 		return nil, fmt.Errorf("%w: selected Provider has no registered Link implementation", ErrAssetUpstreamUnavailable)
 	}
 	binding := &model.AssetBinding{
@@ -189,6 +204,12 @@ func createRemoteAsset(ctx context.Context, userID, tokenID int, userGroup, usin
 		UpstreamProfile: string(profile), ProviderProject: channel.GetOtherSettings().AssetProviderProject,
 		Region: channel.GetOtherSettings().AssetRegion, RequestedModel: req.Model, BindingTarget: req.Target,
 		Status: model.AssetBindingStatusCreating,
+	}
+	if publication != nil {
+		binding.LinkContractNamespace = publication.ContractNamespace
+		binding.LinkRouteFamily = string(publication.RouteFamily)
+		binding.PublishedLinkContractSKU = publication.LinkSKU
+		binding.LinkPublicationVersion = publication.PublicationVersion
 	}
 	if ok {
 		binding.LinkImplementationID = implementation.ID

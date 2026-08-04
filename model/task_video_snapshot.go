@@ -48,13 +48,16 @@ func FrozenVideoTaskChannel(task *Task) (*Channel, bool) {
 		return nil, false
 	}
 	linkRef := dto.LinkImplementationRef{}
-	publicModel := strings.TrimSpace(task.Properties.OriginModelName)
-	if IsRegisteredLinkSKU(publicModel) {
+	contractSKU := strings.TrimSpace(task.PrivateData.PublishedLinkContractSKU)
+	if contractSKU == "" {
+		contractSKU = strings.TrimSpace(task.Properties.OriginModelName)
+	}
+	if IsRegisteredLinkSKU(contractSKU) {
 		implementation, ok := ResolveLinkImplementation(dto.LinkImplementationRef{
 			ID: task.PrivateData.LinkImplementationID, Version: task.PrivateData.LinkImplementationVersion,
 		})
 		if !ok || implementation.ContentHash != strings.TrimSpace(task.PrivateData.LinkImplementationHash) ||
-			!slices.Contains(implementation.PublicSKUs, publicModel) {
+			!slices.Contains(implementation.PublicSKUs, contractSKU) {
 			return nil, false
 		}
 		linkRef = dto.LinkImplementationRef{ID: implementation.ID, Version: implementation.Version}

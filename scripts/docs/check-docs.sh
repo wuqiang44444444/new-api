@@ -22,7 +22,7 @@ required_files=(
   "docs/10-product/业务流程.md"
   "docs/10-product/验收标准.md"
   "docs/20-architecture/架构概览.md"
-  "docs/20-architecture/数据模型.md"
+  "docs/20-architecture/异步任务与计费事实架构.md"
   "docs/30-engineering/本地搭建.md"
   "docs/30-engineering/命令清单.md"
   "docs/30-engineering/人工智能编码指南.md"
@@ -76,7 +76,19 @@ while IFS= read -r decision_file; do
   decision_prefix="${decision_name%%-*}"
   decision_adr="$(sed -n 's/^adr: //p' "$decision_file" | head -n 1)"
 
-  grep -q '^status: accepted$' "$decision_file"
+  decision_status="$(sed -n 's/^status: //p' "$decision_file" | head -n 1)"
+  case "$decision_status" in
+    accepted)
+      ;;
+    superseded)
+      decision_successor="$(sed -n 's/^superseded-by: //p' "$decision_file" | head -n 1 | tr -d '"')"
+      test -n "$decision_successor"
+      ;;
+    *)
+      echo "invalid ADR status in $decision_file: $decision_status" >&2
+      exit 1
+      ;;
+  esac
   test "$decision_adr" = "$decision_prefix"
   grep -Fq "($decision_name)" "$decision_index"
 
@@ -86,10 +98,6 @@ while IFS= read -r decision_file; do
 done < <(find "$decision_dir" -maxdepth 1 -type f -name '*.md' ! -name 'README.md' | sort)
 
 test "$decision_count" -gt 0
-if grep -R -qE '^status: (superseded|historical)$' "$decision_dir"; then
-  echo "inactive ADR found in $decision_dir" >&2
-  exit 1
-fi
 
 while IFS= read -r indexed_target; do
   test -f "$decision_dir/$indexed_target"

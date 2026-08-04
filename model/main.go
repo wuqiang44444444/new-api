@@ -285,6 +285,8 @@ func migrateDB() error {
 		&Option{},
 		&Redemption{},
 		&Ability{},
+		&LinkModelPublication{},
+		&LinkModelPublicationAudit{},
 		&Log{},
 		&Midjourney{},
 		&TopUp{},
@@ -329,6 +331,9 @@ func migrateDB() error {
 		&AuthzRole{},
 	)
 	if err != nil {
+		return err
+	}
+	if err := MigrateDirectLinkModelPublications(); err != nil {
 		return err
 	}
 	if !skipOfficialAssetCredentialMigrationGuard {
@@ -384,6 +389,8 @@ func migrateDBFast() error {
 		{&Option{}, "Option"},
 		{&Redemption{}, "Redemption"},
 		{&Ability{}, "Ability"},
+		{&LinkModelPublication{}, "LinkModelPublication"},
+		{&LinkModelPublicationAudit{}, "LinkModelPublicationAudit"},
 		{&Log{}, "Log"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
@@ -447,6 +454,9 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := MigrateDirectLinkModelPublications(); err != nil {
+		return err
 	}
 	if !skipOfficialAssetCredentialMigrationGuard {
 		if err := validateOfficialAssetCredentialMigration(); err != nil {

@@ -11,10 +11,13 @@ func MediaImageTaskSnapshotIsCurrent(task *Task) bool {
 	if task == nil || task.ClientProtocol != TaskClientProtocolOpenAIImages {
 		return false
 	}
-	publicModel := strings.TrimSpace(task.Properties.OriginModelName)
-	capability, ok := ResolveImageSKUCapability(publicModel)
+	contractSKU := strings.TrimSpace(task.PrivateData.PublishedLinkContractSKU)
+	if contractSKU == "" {
+		contractSKU = strings.TrimSpace(task.Properties.OriginModelName)
+	}
+	capability, ok := ResolveImageSKUCapability(contractSKU)
 	if !ok {
-		return !IsRegisteredLinkSKU(publicModel)
+		return !IsRegisteredLinkSKU(contractSKU)
 	}
 	if task.PrivateData.NorthboundContractID != capability.ContractID ||
 		task.PrivateData.NorthboundContractVersion != capability.Version ||
@@ -26,5 +29,5 @@ func MediaImageTaskSnapshotIsCurrent(task *Task) bool {
 		ID: task.PrivateData.LinkImplementationID, Version: task.PrivateData.LinkImplementationVersion,
 	})
 	return ok && implementation.ContentHash == strings.TrimSpace(task.PrivateData.LinkImplementationHash) &&
-		implementation.ContractID == capability.ContractID && slices.Contains(implementation.PublicSKUs, publicModel)
+		implementation.ContractID == capability.ContractID && slices.Contains(implementation.PublicSKUs, contractSKU)
 }

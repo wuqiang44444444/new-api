@@ -30,6 +30,7 @@ type ProviderCostExposure struct {
 	ProviderAmount         *string `json:"provider_amount,omitempty" gorm:"type:varchar(64)"`
 	ProviderCurrency       string  `json:"provider_currency,omitempty" gorm:"type:varchar(16)"`
 	CreatedAt              int64   `json:"created_at" gorm:"bigint;index"`
+	LinkPubSnapshot        `gorm:"embedded"`
 }
 
 func insertProviderCostExposureTx(tx *gorm.DB, exposure *ProviderCostExposure) error {

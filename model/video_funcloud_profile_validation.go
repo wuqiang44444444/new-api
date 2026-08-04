@@ -37,10 +37,24 @@ func validateFunCloudVideoProfileChannel(channel *Channel, settings *dto.Channel
 	if strings.TrimSpace(settings.VideoUpstreamQueryPathTemplate) != funCloudQueryPath {
 		return fmt.Errorf("FunCloud video profile query path must be %s", funCloudQueryPath)
 	}
+	capabilityModels := map[string]string{}
+	if !settings.LinkImplementation.Empty() {
+		executions, err := DeriveChannelLinkExecutions(channel, settings)
+		if err != nil {
+			return err
+		}
+		for _, execution := range executions {
+			capabilityModels[execution.CustomerModel] = execution.LinkSKU
+		}
+	}
 	for _, rawModel := range strings.Split(channel.Models, ",") {
-		modelName := strings.TrimSpace(rawModel)
-		if modelName == "" {
+		customerModel := strings.TrimSpace(rawModel)
+		if customerModel == "" {
 			continue
+		}
+		modelName := customerModel
+		if linkSKU := capabilityModels[customerModel]; linkSKU != "" {
+			modelName = linkSKU
 		}
 		capability, ok := ResolveVideoSKUCapability(modelName)
 		if !ok || !capability.SupportsProfile(VideoProfileFunCloudSeedanceV2) {

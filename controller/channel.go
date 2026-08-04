@@ -724,9 +724,9 @@ func AddChannel(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "official_action_assets only supports single-key channel creation"})
 			return
 		}
-		err = model.InsertChannelWithAssetCredential(&channels[0], addChannelRequest.AssetCredential)
+		err = model.InsertChannelWithAssetCredentialActor(&channels[0], addChannelRequest.AssetCredential, c.GetInt("id"))
 	} else {
-		err = model.BatchInsertChannels(channels)
+		err = model.BatchInsertChannelsWithActor(channels, c.GetInt("id"))
 	}
 	if err != nil {
 		common.ApiError(c, err)
@@ -838,12 +838,11 @@ func DisableTagChannels(c *gin.Context) {
 		})
 		return
 	}
-	err = model.DisableChannelByTag(channelTag.Tag)
+	err = model.DisableChannelByTagWithActor(channelTag.Tag, c.GetInt("id"))
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	model.InitChannelCache()
 	recordManageAudit(c, "channel.tag_disable", map[string]interface{}{
 		"tag": channelTag.Tag,
 	})
@@ -864,12 +863,11 @@ func EnableTagChannels(c *gin.Context) {
 		})
 		return
 	}
-	err = model.EnableChannelByTag(channelTag.Tag)
+	err = model.EnableChannelByTagWithActor(channelTag.Tag, c.GetInt("id"))
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	model.InitChannelCache()
 	recordManageAudit(c, "channel.tag_enable", map[string]interface{}{
 		"tag": channelTag.Tag,
 	})
@@ -924,7 +922,7 @@ func EditTagChannels(c *gin.Context) {
 		}
 		channelTag.HeaderOverride = common.GetPointer[string](trimmed)
 	}
-	err = model.EditChannelByTag(channelTag.Tag, channelTag.NewTag, channelTag.ModelMapping, channelTag.Models, channelTag.Groups, channelTag.Priority, channelTag.Weight, channelTag.ParamOverride, channelTag.HeaderOverride)
+	err = model.EditChannelByTagWithActor(channelTag.Tag, channelTag.NewTag, channelTag.ModelMapping, channelTag.Models, channelTag.Groups, channelTag.Priority, channelTag.Weight, channelTag.ParamOverride, channelTag.HeaderOverride, c.GetInt("id"))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -1162,9 +1160,9 @@ func UpdateChannel(c *gin.Context) {
 		} else {
 			assetCredentialAudit = "rotated"
 		}
-		err = model.UpdateChannelWithAssetCredential(&channel.Channel, channel.AssetCredential)
+		err = model.UpdateChannelWithAssetCredentialActor(&channel.Channel, channel.AssetCredential, c.GetInt("id"))
 	} else {
-		err = channel.Update()
+		err = channel.UpdateWithActor(c.GetInt("id"))
 	}
 	if err != nil {
 		if rejectAssetChannelFenceError(c, err) {
@@ -1225,9 +1223,10 @@ func UpdateChannelStatus(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	changed := model.UpdateChannelStatus(id, "", req.Status, "manual operation")
-	if changed {
-		model.InitChannelCache()
+	changed, err := model.UpdateChannelStatusWithActor(id, "", req.Status, "manual operation", c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
 	recordManageAudit(c, "channel.status_update", map[string]interface{}{
 		"id":      id,
@@ -1247,14 +1246,10 @@ func BatchUpdateChannelStatus(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	changedCount := 0
-	for _, id := range req.Ids {
-		if model.UpdateChannelStatus(id, "", req.Status, "manual batch operation") {
-			changedCount++
-		}
-	}
-	if changedCount > 0 {
-		model.InitChannelCache()
+	changedCount, err := model.UpdateChannelStatusesWithActor(req.Ids, req.Status, "manual batch operation", c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
 	recordManageAudit(c, "channel.status_update_batch", map[string]interface{}{
 		"count":  changedCount,
@@ -1428,7 +1423,7 @@ func BatchSetChannelTag(c *gin.Context) {
 		})
 		return
 	}
-	err = model.BatchSetChannelTag(channelBatch.Ids, channelBatch.Tag)
+	err = model.BatchSetChannelTagWithActor(channelBatch.Ids, channelBatch.Tag, c.GetInt("id"))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -1542,7 +1537,7 @@ func CopyChannel(c *gin.Context) {
 	}
 
 	// insert
-	if err := clone.Insert(); err != nil {
+	if err := clone.InsertWithActor(c.GetInt("id")); err != nil {
 		common.SysError("failed to clone channel: " + err.Error())
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "复制渠道失败，请稍后重试"})
 		return
@@ -1778,7 +1773,7 @@ func ManageMultiKeys(c *gin.Context) {
 
 		channel.ChannelInfo.MultiKeyStatusList[keyIndex] = 2 // disabled
 
-		err = channel.Update()
+		err = channel.UpdateWithActor(c.GetInt("id"))
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -1820,7 +1815,7 @@ func ManageMultiKeys(c *gin.Context) {
 			delete(channel.ChannelInfo.MultiKeyDisabledReason, keyIndex)
 		}
 
-		err = channel.Update()
+		err = channel.UpdateWithActor(c.GetInt("id"))
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -1844,7 +1839,7 @@ func ManageMultiKeys(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyDisabledTime = make(map[int]int64)
 		channel.ChannelInfo.MultiKeyDisabledReason = make(map[int]string)
 
-		err = channel.Update()
+		err = channel.UpdateWithActor(c.GetInt("id"))
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -1891,7 +1886,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 
-		err = channel.Update()
+		err = channel.UpdateWithActor(c.GetInt("id"))
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -1971,7 +1966,7 @@ func ManageMultiKeys(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyDisabledTime = newDisabledTime
 		channel.ChannelInfo.MultiKeyDisabledReason = newDisabledReason
 
-		err = channel.Update()
+		err = channel.UpdateWithActor(c.GetInt("id"))
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -2039,7 +2034,7 @@ func ManageMultiKeys(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyDisabledTime = newDisabledTime
 		channel.ChannelInfo.MultiKeyDisabledReason = newDisabledReason
 
-		err = channel.Update()
+		err = channel.UpdateWithActor(c.GetInt("id"))
 		if err != nil {
 			common.ApiError(c, err)
 			return

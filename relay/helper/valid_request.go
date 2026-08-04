@@ -280,17 +280,27 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		//	return nil, errors.New("prompt is required")
 		//}
 
-		_, registeredImageSKU := model.ResolveImageSKUCapability(imageRequest.Model)
+		capabilityModel := imageRequest.Model
+		if publishedSKU := common.GetContextKeyString(c, constant.ContextKeyPublishedLinkContractSKU); publishedSKU != "" {
+			capabilityModel = publishedSKU
+		}
+		_, registeredImageSKU := model.ResolveImageSKUCapability(capabilityModel)
 		if imageRequest.N == nil || (*imageRequest.N == 0 && !registeredImageSKU) {
 			imageRequest.N = common.GetPointer(uint(1))
 		}
 	}
 
-	if capability, registered := model.ResolveImageSKUCapability(imageRequest.Model); registered {
+	capabilityModel := imageRequest.Model
+	if publishedSKU := common.GetContextKeyString(c, constant.ContextKeyPublishedLinkContractSKU); publishedSKU != "" {
+		capabilityModel = publishedSKU
+	}
+	if capability, registered := model.ResolveImageSKUCapability(capabilityModel); registered {
 		if relayMode != relayconstant.RelayModeImagesGenerations {
 			return nil, errors.New("this image model is available only through /v1/images/generations")
 		}
-		if err := capability.ValidateRequest(imageRequest); err != nil {
+		contractRequest := *imageRequest
+		contractRequest.Model = capabilityModel
+		if err := capability.ValidateRequest(&contractRequest); err != nil {
 			return nil, err
 		}
 		common.SetContextKey(c, constant.ContextKeyResolvedImageSKUCapability, capability)

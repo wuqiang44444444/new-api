@@ -17,7 +17,7 @@ func TestModelArkVideoCreateRejectsEndUserSubjectForSKUWithoutManagedAssets(t *t
 	engine.POST("/api/v3/contents/generations/tasks", func(c *gin.Context) {
 		c.Set("token_id", 321)
 		c.Next()
-	}, ModelArkVideoCreateConvert(), func(c *gin.Context) {
+	}, ModelArkVideoCreateConvert(), ResolveVideoSKUCapability(), func(c *gin.Context) {
 		t.Fatal("request should have been aborted")
 	})
 	request := httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{

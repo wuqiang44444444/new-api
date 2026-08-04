@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-04
+last-reviewed: 2026-08-05
 ---
 
 # 30-engineering — 目标说明
@@ -20,7 +20,9 @@ last-reviewed: 2026-08-04
 - [API Key 用量账单使用指南](API-Key用量账单使用指南.md)
 - [图片模型 API 用户调用指南](图片模型API用户调用指南.md)
 - [视频模型 API 调用指南](视频模型API用户调用指南.md)
+- [飞彩 Seedance 全模型回归规约](飞彩Seedance全模型回归规约.md)
 - [素材库对接指南](素材库对接指南.md)
+- [公开 API 文档维护指南](公开API文档维护指南.md)
 
 ## 不放什么
 - 架构决策 -> 20-architecture/decisions/

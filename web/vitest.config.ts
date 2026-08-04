@@ -15,6 +15,7 @@ export default defineConfig({
     environment: 'happy-dom',
     include: [
       'src/features/billing/**/*.{test,spec}.{ts,tsx}',
+      'src/features/channels/components/**/*.{test,spec}.{ts,tsx}',
       'src/features/docs/**/*.{test,spec}.{ts,tsx}',
       'src/hooks/__tests__/**/*.{test,spec}.{ts,tsx}',
     ],

@@ -49,6 +49,8 @@ type Asset struct {
 	Name               string `json:"name" gorm:"type:varchar(64)"`
 	AssetKind          string `json:"asset_kind" gorm:"type:varchar(32);index"`
 	MediaType          string `json:"media_type" gorm:"type:varchar(16);index"`
+	RequestedModel     string `json:"-" gorm:"type:varchar(191);index"`
+	LinkPubSnapshot    `json:"-" gorm:"embedded"`
 	AuthorizationID    *int64 `json:"-" gorm:"index"`
 	SupersedesAssetID  *int64 `json:"-" gorm:"index"`
 	MigrationBatchID   string `json:"-" gorm:"type:varchar(64);index"`
@@ -81,6 +83,7 @@ type AssetBinding struct {
 	UpstreamReferenceValue string `json:"-" gorm:"type:varchar(512)"`
 	UpstreamGroupBindingID *int64 `json:"-" gorm:"index"`
 	RequestedModel         string `json:"model,omitempty" gorm:"type:varchar(191)"`
+	LinkPubSnapshot        `json:"-" gorm:"embedded"`
 	BindingTarget          string `json:"target,omitempty" gorm:"type:varchar(64)"`
 	Status                 string `json:"status" gorm:"type:varchar(32);index"`
 	ErrorCode              string `json:"error_code,omitempty" gorm:"type:varchar(64)"`

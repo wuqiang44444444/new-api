@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -23,18 +24,32 @@ func ResolveVideoSKUCapability() gin.HandlerFunc {
 			abortVideoSKUCapability(c, http.StatusBadRequest, "video request contract is unavailable")
 			return
 		}
-		publicModel, modelOK := relaycommon.VideoContractModel(c)
-		if !modelOK || strings.TrimSpace(publicModel) == "" {
+		customerModel, modelOK := relaycommon.VideoContractModel(c)
+		if !modelOK || strings.TrimSpace(customerModel) == "" {
 			abortVideoSKUCapability(c, http.StatusBadRequest, "video model is required")
 			return
 		}
-		capability, registered := model.ResolveVideoSKUCapability(publicModel)
+		publication, published := resolvedLinkModelPublication(c)
+		if !published && common.GetContextKeyString(c, constant.ContextKeyLinkRouteFamily) != "" {
+			abortVideoSKUCapability(c, http.StatusBadRequest, "video customer model has no published Link contract")
+			return
+		}
+		contractSKU := customerModel
+		if published {
+			contractSKU = publication.LinkSKU
+		}
+		capability, registered := model.ResolveVideoSKUCapability(contractSKU)
 		if !registered {
 			abortVideoSKUCapability(c, http.StatusBadRequest, "video model has no published SKU capability")
 			return
 		}
+		contract = videoContractForPublishedSKU(contract, contractSKU)
 		if err := capability.ValidateContractRequest(contract); err != nil {
 			abortVideoSKUCapability(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		if common.GetContextKeyString(c, constant.ContextKeyEndUserSubjectHash) != "" && !slices.Contains(capability.RequestFields, "end_user_subject") {
+			abortVideoSKUCapability(c, http.StatusBadRequest, "end_user_subject is not supported by this model")
 			return
 		}
 		common.SetContextKey(c, constant.ContextKeyResolvedVideoSKUCapability, capability)
@@ -65,8 +80,17 @@ func VideoSKUChannelConstraint() gin.HandlerFunc {
 			return
 		}
 		allowed := make(map[int]struct{})
+		publication, published := resolvedLinkModelPublication(c)
+		if !published && common.GetContextKeyString(c, constant.ContextKeyLinkRouteFamily) != "" {
+			abortVideoSKUCapability(c, http.StatusBadRequest, "video publication snapshot is unavailable")
+			return
+		}
 		for i := range channels {
-			if model.ValidateVideoSKUImplementation(capability, &channels[i]) == nil {
+			executionValid := true
+			if published {
+				executionValid = model.ValidateChannelLinkExecution(&channels[i], publication.CustomerModel, publication.RouteFamily, publication.LinkSKU) == nil
+			}
+			if model.ValidateVideoSKUImplementation(capability, &channels[i]) == nil && executionValid {
 				allowed[channels[i].Id] = struct{}{}
 			}
 		}
@@ -89,6 +113,24 @@ func VideoSKUChannelConstraint() gin.HandlerFunc {
 		common.SetContextKey(c, constant.ContextKeyAssetAllowedChannelIDs, allowed)
 		c.Next()
 	}
+}
+
+func videoContractForPublishedSKU(contract dto.VideoContractRequest, linkSKU string) dto.VideoContractRequest {
+	switch {
+	case contract.ModelArk != nil:
+		request := *contract.ModelArk
+		request.Model = linkSKU
+		contract.ModelArk = &request
+	case contract.Kling != nil:
+		request := *contract.Kling
+		request.ModelName = common.GetPointer(linkSKU)
+		contract.Kling = &request
+	case contract.Jimeng != nil:
+		request := *contract.Jimeng
+		request.ReqKey = linkSKU
+		contract.Jimeng = &request
+	}
+	return contract
 }
 
 func abortVideoSKUCapability(c *gin.Context, status int, message string) {

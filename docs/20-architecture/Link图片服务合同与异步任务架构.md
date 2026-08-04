@@ -1,10 +1,10 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-04
+last-reviewed: 2026-08-05
 ---
 
-# 统一图片生成与异步任务架构
+# Link 图片服务合同与异步任务架构
 
 ## 1. 目的与范围
 
@@ -12,7 +12,7 @@ last-reviewed: 2026-08-04
 
 - 三个公开图片 SKU 如何保持同一组 Link 合同字段；
 - Moxing、Qihang 和媒体任务协议如何在 Provider 隔离；
-- HTTP 200 与 HTTP 202 如何进入同一客户 API 合同；
+- HTTP 200 与 HTTP 202 如何进入同一客户接入合同；
 - 何时把计费责任从请求链路转交给 Task；
 - 如何避免重复创建、重复计费、结果超发和敏感信息落库。
 
@@ -31,14 +31,18 @@ last-reviewed: 2026-08-04
 - 图片任务创建幂等与同步图片隔离；
 - Provider POST 前的 `TaskCreateAttempt`、资金 hold、`sending/unknown` 对账和人工恢复；
 - 轮询合同违例 `RECONCILIATION_REQUIRED`、确定性 `PROVIDER_CONTRACT_FAILURE` 与 exposure；
-- 固定按张结算和可选 usage 表达式结算。
+- 固定按张结算和可选 usage 表达式结算；
+- 客户模型名通过持久化 publication 绑定 Link 图片 SKU；Advanced Custom 渠道使用既有
+  `model_mapping` 得到 Provider 模型，再由所选 Link 接入方案的 image execution binding 复检；
+- publication、客户模型、Link SKU、Provider 模型和 implementation 身份进入 create attempt 与异步
+  Task 快照，直接使用内部 Link SKU 而没有 publication 的请求失败关闭。
 
 生产发布仍受 ability、分组、价格和真实验收控制。`doubao-seedream-4-5-251128` 只有适配器能力，不属于当前公开 SKU；`gpt-image-2` 被明确排除在媒体图片 Task 路径外。
 
 以上边界已经在图片 relay、共享 task attempt 和 polling service 中接线。代码存在不等于生产
 已发布；真实渠道、价格、usage 和错误语义仍需按分组与 Provider 验收。
 
-## 3. Link 合同
+## 3. 客户模型发布与 Link 图片合同
 
 ### 3.1 路径与公开 SKU
 
@@ -46,6 +50,11 @@ last-reviewed: 2026-08-04
 POST /v1/images/generations
 GET  /v1/images/tasks/:task_id
 ```
+
+客户请求中的 `model` 是可自定义的客户模型名。系统按
+`(link, image_generation, customer_model)` 读取 publication 后取得下表 Link SKU；Link SKU 是稳定
+能力合同，不要求客户直接使用该字符串。客户模型继续用于模型发现、Token 权限、价格、Ability、日志
+和响应。
 
 | 公开 SKU | 公开能力 | 渠道实现 |
 | --- | --- | --- |
@@ -87,7 +96,9 @@ stream
 flowchart LR
     Client[图片客户端]
     Router["POST /v1/images/generations"]
+    Publication[客户模型 publication 与 SKU capability]
     Dist[模型与渠道分发]
+    Binding[Execution binding 复检]
     Attempt[发送前 Create Attempt / Billing Hold]
     Adapter[Advanced Custom 适配器]
     Provider[图片上游]
@@ -96,7 +107,7 @@ flowchart LR
     Billing[计费与补偿]
     Query["GET /v1/images/tasks/:id"]
 
-    Client --> Router --> Dist --> Attempt --> Adapter --> Provider
+    Client --> Router --> Publication --> Dist --> Binding --> Attempt --> Adapter --> Provider
     Adapter -->|同步 data[]| Client
     Adapter -->|任务信封 + hold 转移| Task
     Task --> Poller --> Provider
@@ -108,8 +119,9 @@ flowchart LR
 
 | 组件 | 负责 | 不负责 |
 | --- | --- | --- |
-| 图片 Router/Controller | 客户端认证、分发和响应 | 不解析 Provider 私有任务 |
+| 图片 Router/Controller | 客户端认证、publication 冻结、SKU 校验、分发和响应 | 不解析 Provider 私有任务 |
 | 图片 DTO 与 converter | 公共字段校验、模型专有值域和 Provider 转换 | 不决定价格或渠道权重 |
+| Link publication / implementation | 稳定绑定客户模型与 SKU，过滤等价实现并在发送前复检 Provider 模型 | 不替代 NEWAPI 选渠或 `model_mapping` |
 | Create Attempt | 在潜在异步 POST 前冻结执行/计费事实，承接同步完成、Task 转移和 unknown | 不保存 prompt、参考图或完整响应 |
 | `media_task_image_blocking` | 同步响应、任务信封、创建结果和等待窗口 | 不维护第二套任务表 |
 | Task 服务 | 持久化、轮询、CAS、终态和公开投影 | 不保存 prompt 或参考图内容 |
@@ -122,13 +134,20 @@ flowchart LR
 sequenceDiagram
     participant C as 客户端
     participant R as Relay
+    participant P as Publication
+    participant D as NEWAPI 分发
     participant J as Create Attempt
     participant A as 图片适配器
-    participant U as 上游
+    participant U as Provider
     participant T as Task 服务
 
     C->>R: POST /v1/images/generations
+    R->>P: 客户模型 + image_generation
+    P-->>R: 冻结 Link SKU / publication version
     R->>R: SKU、字段、数量、计费校验
+    R->>D: 按客户模型正常选渠
+    D-->>R: 渠道 + Provider 模型
+    R->>R: execution binding 复检冻结 SKU
     R->>A: 已选渠道、映射模型、请求
     R->>J: prepared（冻结 route、连接和计费）
     R->>J: 预扣 + sending 原子提交
@@ -170,10 +189,12 @@ private_data.media_image != nil
 创建时冻结：
 
 - 本地与上游任务 ID；
+- 合同命名空间、`image_generation` 路由族、客户模型、Link SKU 和 publication version；
+- implementation ID/version/content hash 与 Provider 模型；
 - 创建和最后轮询请求 ID；
 - 查询 Base URL、固定查询模板和代理；
 - 创建时实际单个 API Key及鉴权模板；
-- 公开模型、上游模型和请求图片数量；
+- 客户模型、Provider 模型和请求图片数量；
 - 响应格式；
 - 模型价格、分组倍率、附加倍率和计费来源；
 - 可选表达式快照与最小计费探针。
@@ -268,7 +289,8 @@ Task 独占终态结算或退款
 
 ### 9.1 固定价格
 
-固定 `ModelPrice` 以公开 SKU 为价格键。预扣按请求数量，成功后按实际交付数量结算：
+固定 `ModelPrice` 以客户模型名为价格键；客户模型恰好等于 Link SKU 只是合法特例。预扣按请求数量，
+成功后按实际交付数量结算：
 
 ```text
 target quota = 单张价格 × 实际成功图片数 × 分组倍率
@@ -298,10 +320,11 @@ exposure，不能与上游明确失败混为同一指标。
 ## 10. 错误、安全与审计
 
 - 不支持字段在上游调用前返回 400。
-- 上游错误经过脱敏，不返回渠道 ID、真实模型、Base URL、任务 ID或凭证。
+- 上游错误经过脱敏，不返回渠道 ID、真实模型、Base URL、任务 ID 或凭证。
 - 任务查询只允许资源所有者或管理员，且必须匹配 `client_protocol=openai_images`。
 - 普通响应不包含 `private_data`、`billing_state` 或上游请求。
 - 管理审计保留本地任务、脱敏上游任务/请求、轮询次数、等待时间、渠道和计费状态。
+- 管理审计关联客户模型、Link SKU、publication version、implementation 和 Provider 模型。
 - 管理审计还必须保留 attempt 状态、hold 金额/年龄、对账截止时间、
   `released_with_exposure`、`provider_contract_failure` 和 `upstream_outcome_unresolved`。
 - 创建后本地持久化失败、任务生命周期退款后晚成功、usage 与账单不一致均属于人工对账红色窗口。
@@ -311,7 +334,7 @@ exposure，不能与上游明确失败混为同一指标。
 1. 公开 SKU 使用统一图片路径和同义字段，Provider 差异不泄漏。
 2. 同步和异步是同一客户端响应联合合同，不是两套产品 API。
 3. 图片任务复用共享 Task，不建立第二套任务系统。
-4. Task 持久化后，只有 Task可以完成终态资金操作。
+4. Task 持久化后，只有 Task 可以完成终态资金操作。
 5. 上游结果数不超过请求 `n`，用户控制数量先经过统一上限。
 6. `gpt-image-2` 与标准 multipart edits 不进入媒体图片 Task 路径。
 7. 任务快照不保存 prompt、参考图内容或完整上游响应。
@@ -321,10 +344,14 @@ exposure，不能与上游明确失败混为同一指标。
 10. 观测不可采信进入有界对账；可信但确定不可交付的结果进入内部
     `PROVIDER_CONTRACT_FAILURE`，按零目标结算并记录 exposure。
 11. 对账扫描扩展共享任务补偿调度器，不新增图片专用进程。
+12. 客户模型 publication 是 Link SKU 的权威；当前候选与 Provider 模型只用于履约资格和发送前复检。
+13. 客户价格与响应保留客户模型名，capability、实现等价和内部审计使用 Link SKU。
 
 ## 12. 相关文档
 
-- [Link 合同架构](Link合同架构.md)
+- [Link 服务合同概念与协作关系](Link服务合同概念与协作关系.md)
+- [Link 服务合同注册与履约架构](Link服务合同注册与履约架构.md)
+- [异步任务与计费事实架构](异步任务与计费事实架构.md)
 - [ADR-0008：共享异步任务计费状态机与原子补偿](decisions/0008-共享异步任务计费状态机与原子补偿.md)
 - [ADR-0011：异步创建未知与轮询合同违例对账](decisions/0011-异步创建未知与轮询合同违例对账.md)
 - [图片模型 API 用户调用指南](../30-engineering/图片模型API用户调用指南.md)

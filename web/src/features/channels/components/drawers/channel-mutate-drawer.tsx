@@ -752,6 +752,7 @@ export function ChannelMutateDrawer({
   const currentModels = form.watch('models')
   const currentName = form.watch('name')
   const currentModelMapping = form.watch('model_mapping')
+  const currentLinkAccessPlan = form.watch('link_implementation_id')
   const awsKeyType = form.watch('aws_key_type')
   const vertexKeyType = form.watch('vertex_key_type')
   const videoUpstreamProfile = form.watch('video_upstream_profile')
@@ -2383,6 +2384,7 @@ export function ChannelMutateDrawer({
                                 <LinkImplementationField
                                   control={form.control}
                                   channelType={currentType}
+                                  canRebind={canEditSensitive}
                                 />
                                 <VideoUpstreamProfileField
                                   control={form.control}
@@ -2401,6 +2403,7 @@ export function ChannelMutateDrawer({
                               <LinkImplementationField
                                 control={form.control}
                                 channelType={currentType}
+                                canRebind={canEditSensitive}
                               />
                             )}
 
@@ -2408,6 +2411,7 @@ export function ChannelMutateDrawer({
                               <LinkImplementationField
                                 control={form.control}
                                 channelType={currentType}
+                                canRebind={canEditSensitive}
                               />
                             )}
 
@@ -2908,6 +2912,9 @@ export function ChannelMutateDrawer({
                                         type='button'
                                         variant='outline'
                                         size='sm'
+                                        disabled={Boolean(
+                                          currentLinkAccessPlan
+                                        )}
                                         onClick={() =>
                                           setAdvancedCustomEditorOpen(true)
                                         }
@@ -4880,19 +4887,21 @@ export function ChannelMutateDrawer({
         />
       )}
 
-      {advancedCustomEditorOpen && !sensitiveLocked && (
-        <AdvancedCustomEditorDialog
-          open={advancedCustomEditorOpen}
-          value={form.watch('advanced_custom') || ''}
-          onOpenChange={setAdvancedCustomEditorOpen}
-          onSave={(nextValue) => {
-            form.setValue('advanced_custom', nextValue, {
-              shouldDirty: true,
-              shouldValidate: true,
-            })
-          }}
-        />
-      )}
+      {advancedCustomEditorOpen &&
+        !sensitiveLocked &&
+        !currentLinkAccessPlan && (
+          <AdvancedCustomEditorDialog
+            open={advancedCustomEditorOpen}
+            value={form.watch('advanced_custom') || ''}
+            onOpenChange={setAdvancedCustomEditorOpen}
+            onSave={(nextValue) => {
+              form.setValue('advanced_custom', nextValue, {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+            }}
+          />
+        )}
 
       {/* Fetch Models Dialog */}
       <FetchModelsDialog

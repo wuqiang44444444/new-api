@@ -17,9 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { type Control, useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import {
   FormControl,
   FormDescription,
@@ -37,113 +40,314 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-import { getLinkImplementations } from '../../api'
+import { getLinkImplementations, getLinkModelPublications } from '../../api'
 import type { ChannelFormValues } from '../../lib/channel-form'
+import {
+  deriveLinkPublicationPreviews,
+  EMPTY_LINK_ACCESS_PLAN_PROJECTION,
+  linkAccessPlanAutofill,
+  linkAccessPlansForChannelType,
+  type LinkAccessPlanProjection,
+} from '../../lib/link-access-plan'
+import type { LinkModelPublication } from '../../types'
+import { LinkPublicationRebindDialog } from '../dialogs/link-publication-rebind-dialog'
 
 const NO_LINK_IMPLEMENTATION = '__none__'
 
 interface LinkImplementationFieldProps {
   control: Control<ChannelFormValues>
   channelType: number
+  canRebind: boolean
 }
 
-export function LinkImplementationField({
-  control,
-  channelType,
-}: LinkImplementationFieldProps) {
+export function LinkImplementationField(props: LinkImplementationFieldProps) {
   const { t } = useTranslation()
   const form = useFormContext<ChannelFormValues>()
-  const models = useWatch({ control, name: 'models' }) || ''
+  const models = useWatch({ control: props.control, name: 'models' }) || ''
+  const modelMapping =
+    useWatch({ control: props.control, name: 'model_mapping' }) || ''
+  const selectedID =
+    useWatch({ control: props.control, name: 'link_implementation_id' }) || ''
   const selectedVersion =
-    useWatch({ control, name: 'link_implementation_version' }) || ''
+    useWatch({
+      control: props.control,
+      name: 'link_implementation_version',
+    }) || ''
+  const ordinaryProjectionRef = useRef<LinkAccessPlanProjection | null>(null)
+  const [rebindTarget, setRebindTarget] = useState<{
+    publication: LinkModelPublication
+    linkSKU: string
+  } | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['link_implementations'],
     queryFn: getLinkImplementations,
   })
-  const configuredModels = new Set(
-    models
-      .split(',')
-      .map((model) => model.trim())
-      .filter(Boolean)
+  const { data: publicationData } = useQuery({
+    queryKey: ['link_model_publications'],
+    queryFn: getLinkModelPublications,
+  })
+  const implementations = useMemo(
+    () => linkAccessPlansForChannelType(data?.data || [], props.channelType),
+    [data?.data, props.channelType]
   )
-  const implementations = (data?.data || []).filter(
-    (implementation) =>
-      implementation.channel_type === channelType &&
-      (configuredModels.size === 0 ||
-        implementation.public_skus.some((model) => configuredModels.has(model)))
+  const selectedImplementation = useMemo(
+    () =>
+      implementations.find(
+        (implementation) => implementation.id === selectedID
+      ),
+    [implementations, selectedID]
+  )
+  const previews = useMemo(
+    () =>
+      selectedImplementation
+        ? deriveLinkPublicationPreviews(
+            selectedImplementation,
+            models,
+            modelMapping
+          )
+        : [],
+    [modelMapping, models, selectedImplementation]
+  )
+  const projection = useMemo(
+    () =>
+      selectedImplementation
+        ? linkAccessPlanAutofill(selectedImplementation, previews)
+        : null,
+    [previews, selectedImplementation]
   )
 
+  useEffect(() => {
+    if (!projection) return
+    form.setValue(
+      'video_upstream_profile',
+      projection.video_upstream_profile as ChannelFormValues['video_upstream_profile']
+    )
+    form.setValue(
+      'asset_upstream_profile',
+      projection.asset_upstream_profile as ChannelFormValues['asset_upstream_profile']
+    )
+    form.setValue(
+      'video_upstream_create_path',
+      projection.video_upstream_create_path
+    )
+    form.setValue(
+      'video_upstream_query_path_template',
+      projection.video_upstream_query_path_template
+    )
+    form.setValue(
+      'asset_min_url_ttl_seconds',
+      projection.asset_min_url_ttl_seconds
+    )
+    form.setValue('advanced_custom', projection.advanced_custom)
+  }, [form, projection])
+
   return (
-    <FormField
-      control={control}
-      name='link_implementation_id'
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>{t('Link Implementation')}</FormLabel>
-          <Select
-            disabled={isLoading}
-            items={[
-              {
-                value: NO_LINK_IMPLEMENTATION,
-                label: t('No Link implementation'),
-              },
-              ...implementations.map((implementation) => ({
-                value: implementation.id,
-                label: `${implementation.provider} · ${implementation.id}/${implementation.version}`,
-              })),
-            ]}
-            value={field.value || NO_LINK_IMPLEMENTATION}
-            onValueChange={(value) => {
-              if (value === NO_LINK_IMPLEMENTATION) {
-                field.onChange('')
-                form.setValue('link_implementation_version', '')
-                return
-              }
-              const implementation = implementations.find(
-                (candidate) => candidate.id === value
-              )
-              field.onChange(value)
-              form.setValue(
-                'link_implementation_version',
-                implementation?.version || ''
-              )
-            }}
-          >
-            <FormControl>
-              <SelectTrigger>
-                <SelectValue placeholder={t('Select Link implementation')} />
-              </SelectTrigger>
-            </FormControl>
-            <SelectContent alignItemWithTrigger={false}>
-              <SelectGroup>
-                <SelectItem value={NO_LINK_IMPLEMENTATION}>
-                  {t('No Link implementation')}
-                </SelectItem>
-                {implementations.map((implementation) => (
-                  <SelectItem
-                    key={`${implementation.id}/${implementation.version}`}
-                    value={implementation.id}
-                  >
-                    {implementation.provider} · {implementation.id}/
-                    {implementation.version}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <FormDescription>
-            {field.value
-              ? t(
-                  'Execution is pinned to implementation {{id}}/{{version}}. Saving fails if the channel models or protocol settings do not match.',
-                  { id: field.value, version: selectedVersion }
+    <div className='space-y-3'>
+      <FormField
+        control={props.control}
+        name='link_implementation_id'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('Link Access Plan')}</FormLabel>
+            <Select
+              disabled={isLoading}
+              items={[
+                {
+                  value: NO_LINK_IMPLEMENTATION,
+                  label: t('No Link access plan'),
+                },
+                ...implementations.map((implementation) => ({
+                  value: implementation.id,
+                  label: `${implementation.provider} · ${implementation.id}/${implementation.version}`,
+                })),
+              ]}
+              value={field.value || NO_LINK_IMPLEMENTATION}
+              onValueChange={(value) => {
+                if (value === NO_LINK_IMPLEMENTATION) {
+                  field.onChange('')
+                  form.setValue('link_implementation_version', '')
+                  const ordinaryProjection =
+                    ordinaryProjectionRef.current ||
+                    EMPTY_LINK_ACCESS_PLAN_PROJECTION
+                  form.setValue(
+                    'video_upstream_profile',
+                    ordinaryProjection.video_upstream_profile as ChannelFormValues['video_upstream_profile']
+                  )
+                  form.setValue(
+                    'asset_upstream_profile',
+                    ordinaryProjection.asset_upstream_profile as ChannelFormValues['asset_upstream_profile']
+                  )
+                  form.setValue(
+                    'video_upstream_create_path',
+                    ordinaryProjection.video_upstream_create_path
+                  )
+                  form.setValue(
+                    'video_upstream_query_path_template',
+                    ordinaryProjection.video_upstream_query_path_template
+                  )
+                  form.setValue(
+                    'asset_min_url_ttl_seconds',
+                    ordinaryProjection.asset_min_url_ttl_seconds
+                  )
+                  form.setValue(
+                    'advanced_custom',
+                    ordinaryProjection.advanced_custom
+                  )
+                  ordinaryProjectionRef.current = null
+                  return
+                }
+                const implementation = implementations.find(
+                  (candidate) => candidate.id === value
                 )
-              : t(
-                  'Channels publishing registered Link models must select an implementation explicitly.'
-                )}
-          </FormDescription>
-          <FormMessage />
-        </FormItem>
+                if (!selectedID) {
+                  ordinaryProjectionRef.current = {
+                    video_upstream_profile:
+                      form.getValues('video_upstream_profile') || 'official',
+                    asset_upstream_profile:
+                      form.getValues('asset_upstream_profile') || 'none',
+                    video_upstream_create_path:
+                      form.getValues('video_upstream_create_path') || '',
+                    video_upstream_query_path_template:
+                      form.getValues('video_upstream_query_path_template') ||
+                      '',
+                    asset_min_url_ttl_seconds:
+                      form.getValues('asset_min_url_ttl_seconds') || 0,
+                    advanced_custom: form.getValues('advanced_custom') || '',
+                  }
+                }
+                field.onChange(value)
+                form.setValue(
+                  'link_implementation_version',
+                  implementation?.version || ''
+                )
+              }}
+            >
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('Select Link access plan')} />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  <SelectItem value={NO_LINK_IMPLEMENTATION}>
+                    {t('No Link access plan')}
+                  </SelectItem>
+                  {implementations.map((implementation) => (
+                    <SelectItem
+                      key={`${implementation.id}/${implementation.version}`}
+                      value={implementation.id}
+                    >
+                      {implementation.provider} · {implementation.id}/
+                      {implementation.version}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FormDescription>
+              {field.value
+                ? t(
+                    'This plan projects the customer models and ordinary model mapping into one immutable Link contract. Protocol fields are filled and locked by the plan.',
+                    { id: field.value, version: selectedVersion }
+                  )
+                : t(
+                    'Without a plan, this channel keeps ordinary routing behavior.'
+                  )}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      {selectedImplementation && (
+        <Alert>
+          <AlertTitle>
+            {selectedImplementation.provider} · {selectedImplementation.id}/
+            {selectedImplementation.version}
+          </AlertTitle>
+          <AlertDescription className='space-y-2 text-xs'>
+            <div>
+              {t('Provider')}: {selectedImplementation.provider} ·{' '}
+              {t('Contract')}: {selectedImplementation.contract_id} ·{' '}
+              {t('Task contract')}: {selectedImplementation.task_contract} ·{' '}
+              {t('Billing contract')}: {selectedImplementation.billing_contract}
+            </div>
+            <div>
+              {t('Video Upstream Profile')}:{' '}
+              {selectedImplementation.required_video_profile || '—'} ·{' '}
+              {t('Asset Upstream Profile')}:{' '}
+              {selectedImplementation.required_asset_profile || '—'} ·{' '}
+              {t('Resolution')}:{' '}
+              {selectedImplementation.asset_capability.asset_resolution_modes?.join(
+                ', '
+              ) || '—'}
+            </div>
+            <div>
+              {t('Supported Link SKUs')}:{' '}
+              {selectedImplementation.public_skus.join(', ')}
+            </div>
+            {previews.map((preview) => {
+              const publication = publicationData?.data.find(
+                (candidate) =>
+                  candidate.contract_namespace === 'link' &&
+                  candidate.route_family === preview.routeFamily &&
+                  candidate.customer_model === preview.customerModel
+              )
+              let publicationStatus = 'Unavailable'
+              if (publication?.routing_conflict) {
+                publicationStatus = 'Conflict'
+              } else if (publication?.currently_fulfillable) {
+                publicationStatus = 'Available'
+              }
+              return (
+                <div key={preview.customerModel} className='font-mono'>
+                  {preview.customerModel} → {preview.providerModel || '—'} →{' '}
+                  {preview.error ? t(preview.error) : preview.linkSKU || '—'}
+                  {publication
+                    ? ` · ${t('Published')}: ${publication.link_sku} · ${t('publication version')} ${publication.publication_version} · ${t(publicationStatus)}`
+                    : ` · ${t('will be published when saved')}`}
+                  {publication &&
+                    preview.linkSKU &&
+                    publication.link_sku !== preview.linkSKU && (
+                      <span className='text-destructive inline-flex items-center gap-1'>
+                        {' '}
+                        · {t('Conflict')}
+                        <Button
+                          type='button'
+                          variant='destructive'
+                          size='xs'
+                          disabled={!props.canRebind}
+                          title={
+                            props.canRebind
+                              ? t('Rebind Link publication')
+                              : t(
+                                  'Sensitive channel write permission is required.'
+                                )
+                          }
+                          onClick={() =>
+                            setRebindTarget({
+                              publication,
+                              linkSKU: preview.linkSKU || '',
+                            })
+                          }
+                        >
+                          {t('Rebind')}
+                        </Button>
+                      </span>
+                    )}
+                </div>
+              )
+            })}
+          </AlertDescription>
+        </Alert>
       )}
-    />
+      <LinkPublicationRebindDialog
+        open={rebindTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRebindTarget(null)
+        }}
+        publication={rebindTarget?.publication || null}
+        proposedSKU={rebindTarget?.linkSKU || ''}
+      />
+    </div>
   )
 }

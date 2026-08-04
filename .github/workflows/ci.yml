@@ -19,6 +19,34 @@ jobs:
     timeout-minutes: 15
     env:
       GOWORK: 'off'
+      TEST_LINK_CONTRACT_MYSQL_DSN: root:root@tcp(127.0.0.1:3306)/newapi_test?charset=utf8mb4&parseTime=True&loc=UTC
+      TEST_LINK_CONTRACT_POSTGRES_DSN: host=127.0.0.1 user=postgres password=postgres dbname=newapi_test port=5432 sslmode=disable TimeZone=UTC
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: newapi_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: newapi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d newapi_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
 
     steps:
       - name: Checkout
@@ -85,4 +113,4 @@ jobs:
         run: bun run typecheck
 
       - name: Test
-        run: bun test
+        run: bun run test

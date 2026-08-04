@@ -3,6 +3,7 @@ package router
 import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
+	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,6 +36,7 @@ func SetVideoRouter(router *gin.Engine) {
 		middleware.TaskCreateResponseContract(),
 		middleware.TaskCreateIdempotency(),
 		middleware.ModelArkVideoCreateConvert(),
+		middleware.ResolveLinkModelPublication(model.LinkRouteFamilyModelArkVideo),
 		middleware.ResolveVideoSKUCapability(),
 		middleware.AssetRouteConstraint(),
 		middleware.ModelArkVideoChannelConstraint(),
@@ -61,6 +63,7 @@ func SetVideoRouter(router *gin.Engine) {
 		middleware.TaskCreateResponseContract(),
 		middleware.TaskCreateIdempotency(),
 		middleware.KlingRequestConvert(),
+		middleware.ResolveLinkModelPublication(model.LinkRouteFamilyKlingVideo),
 		middleware.ResolveVideoSKUCapability(),
 		middleware.AssetRouteConstraint(),
 		middleware.VideoSKUChannelConstraint(),
@@ -88,6 +91,7 @@ func SetVideoRouter(router *gin.Engine) {
 		middleware.TaskCreateResponseContract(),
 		middleware.TaskCreateIdempotency(),
 		middleware.JimengRequestConvert(),
+		middleware.ResolveLinkModelPublication(model.LinkRouteFamilyJimengVideo),
 		middleware.ResolveVideoSKUCapability(),
 		middleware.AssetRouteConstraint(),
 		middleware.VideoSKUChannelConstraint(),

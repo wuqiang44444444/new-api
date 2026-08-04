@@ -34,8 +34,11 @@ import type {
   GetChannelsParams,
   GetChannelsResponse,
   LinkImplementationsResponse,
+  LinkModelPublicationsResponse,
   MultiKeyManageParams,
   MultiKeyStatusResponse,
+  RebindLinkModelPublicationRequest,
+  RebindLinkModelPublicationResponse,
   SearchChannelsParams,
   SearchChannelsResponse,
   TagOperationParams,
@@ -109,6 +112,22 @@ export async function getChannel(id: number): Promise<GetChannelResponse> {
 
 export async function getLinkImplementations(): Promise<LinkImplementationsResponse> {
   const res = await api.get('/api/channel/link_implementations')
+  return res.data
+}
+
+export async function getLinkModelPublications(): Promise<LinkModelPublicationsResponse> {
+  const res = await api.get('/api/channel/link_model_publications')
+  return res.data
+}
+
+export async function rebindLinkModelPublication(
+  data: RebindLinkModelPublicationRequest
+): Promise<RebindLinkModelPublicationResponse> {
+  const res = await api.post(
+    '/api/channel/link_model_publications/rebind',
+    data,
+    channelActionConfig()
+  )
   return res.data
 }
 

@@ -125,16 +125,16 @@ func TestLinkImplementationRequiresActiveExposurePolicyAtRuntime(t *testing.T) {
 
 func TestLinkImplementationContentHashIsCanonicalAndScoped(t *testing.T) {
 	expectedHashes := map[string]string{
-		LinkImplementationBytePlusSeedanceArk:  "sha256:54ddaa65892ebaa8c688769125a38f69d957f21c8799902cb61558aade6a4777",
-		LinkImplementationFeicaiSeedanceVideos: "sha256:155df9ab499c00e18605986f06b040d32aa86bb13a3c63142ee57977b6fe45d8",
-		LinkImplementationFunCloudSeedance:     "sha256:d07d02f6c7362508bc9550b556865b5a1fb2067c45bb75daff08c9144f333c27",
-		LinkImplementationJimengVideos:         "sha256:3c65f2a82fc6c11a0c76b0af9fdba9b155f4fcf4ea46c76dc312737335c5fce7",
-		LinkImplementationKlingVideos:          "sha256:9b9839f6c33508abf6d304932b24af7f1b10259e5e20a115287e5ee2e3cd084f",
-		LinkImplementationMoxingImages:         "sha256:a02a43716619140cac7ca8cdf886cce8bdbebd3ec741ddb4fb451ef487beaf5c",
-		LinkImplementationMoxingSeedanceArk:    "sha256:8a2b07ddc0286a1a20e23643eb1112496678bf623e6530de8c5a765daf217740",
-		LinkImplementationMoxingSeedanceMedia:  "sha256:cb4152fd07a5e9f5582bb57a7557b40af73b3476ea39fe8eb64d4891cfa0acd7",
-		LinkImplementationQihangImages:         "sha256:8cced3abda6325184f9f34e3a4088c0b65164393f1f957bb64dd47d3f2571cac",
-		LinkImplementationTokenSaveSeedance:    "sha256:300190cf339c6446e4dfcd87337bd3245adcc5339631846e53499091439279ce",
+		LinkImplementationBytePlusSeedanceArk:  "sha256:eb24770e7f787d658b91739a18619149a9a73865ffdaafc20ff2493a9b1a1a99",
+		LinkImplementationFeicaiSeedanceVideos: "sha256:2126cded7a1e8007f6affb2083a266d9fda785f92dcb0675175191838d9df987",
+		LinkImplementationFunCloudSeedance:     "sha256:2f354b4a61b93ac954e53301b631613507ebc1ed90d136ea8cd5eb99a34cdb7b",
+		LinkImplementationJimengVideos:         "sha256:3426e5c65740859d53046a7d8582d323ea76c3af76ae23c14e97f6b028328623",
+		LinkImplementationKlingVideos:          "sha256:5902ab950dbcebaf8577ca4e6fc108dfd2559162cba06fb2f25452f489b56efb",
+		LinkImplementationMoxingImages:         "sha256:4b2f5b74b46db5091ae1150d1ec002d3bd0637335476ffb95460daec37edee38",
+		LinkImplementationMoxingSeedanceArk:    "sha256:5076adca885671d73bc5f60b6acad16e587d58646e7b66bba7aa829787fb9f45",
+		LinkImplementationMoxingSeedanceMedia:  "sha256:3f78ff7d430ae9ca9461ef10ca34131e9ae89a71c210b9401951baab68bca92d",
+		LinkImplementationQihangImages:         "sha256:f42ef37e3acb7f494bc3ffeaea55852e6824931dca905082e122fcfecc7aa424",
+		LinkImplementationTokenSaveSeedance:    "sha256:cd55b6219fa2036f5ba8103cbfc278229673b34f2b0254f3428139d50f3f498a",
 	}
 	implementations := ListLinkImplementations()
 	require.Len(t, implementations, len(expectedHashes))

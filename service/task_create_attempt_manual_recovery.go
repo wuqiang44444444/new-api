@@ -172,6 +172,10 @@ func stageTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycomm
 	contractID, contractVersion := taskAttemptNorthboundContract(c, info.TaskRelayInfo.ClientProtocol)
 	task.PrivateData.NorthboundContractID = contractID
 	task.PrivateData.NorthboundContractVersion = contractVersion
+	task.PrivateData.LinkContractNamespace = info.LinkContractNamespace
+	task.PrivateData.LinkRouteFamily = info.LinkRouteFamily
+	task.PrivateData.PublishedLinkContractSKU = info.PublishedLinkContractSKU
+	task.PrivateData.LinkPublicationVersion = info.LinkPublicationVersion
 	profile := strings.TrimSpace(string(info.ChannelOtherSettings.VideoUpstreamProfile))
 	if profile == "" {
 		profile = string(dto.VideoUpstreamProfileOfficial)

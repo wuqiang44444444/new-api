@@ -92,6 +92,9 @@ func AssetResponse(asset *model.Asset) dto.AssetResponse {
 	if model.DB.Select("requested_model", "binding_target").Where("asset_id = ?", asset.ID).Order("id asc").First(&binding).Error == nil {
 		modelName, target = binding.RequestedModel, binding.BindingTarget
 	}
+	if modelName == "" {
+		modelName = asset.RequestedModel
+	}
 	supersedesPublicID := ""
 	if asset.SupersedesAssetID != nil {
 		var superseded model.Asset

@@ -15,11 +15,12 @@ func ValidateLinkImplementationRegistration(channel *Channel, settings *dto.Chan
 	if channel == nil || settings == nil {
 		return fmt.Errorf("Link implementation channel settings are required")
 	}
-	linkModels := channelRegisteredLinkModels(channel)
 	ref := settings.LinkImplementation
-	if len(linkModels) == 0 {
-		if !ref.Empty() {
-			return fmt.Errorf("Link implementation is configured but the channel has no registered Link SKU")
+	if ref.Empty() {
+		for _, rawModel := range strings.Split(channel.Models, ",") {
+			if IsRegisteredLinkSKU(strings.TrimSpace(rawModel)) {
+				return fmt.Errorf("registered Link SKUs require an explicit Link access plan")
+			}
 		}
 		return nil
 	}
@@ -39,13 +40,17 @@ func ValidateLinkImplementationRegistration(channel *Channel, settings *dto.Chan
 	if channel.Status == common.ChannelStatusEnabled && !provider_exposure_setting.Current().ActiveForImplementation(implementation.ID, implementation.Version) {
 		return fmt.Errorf("Link implementation %s/%s has no enabled exposure policy", implementation.ID, implementation.Version)
 	}
-	for _, publicSKU := range linkModels {
-		if !slices.Contains(implementation.PublicSKUs, publicSKU) {
-			return fmt.Errorf("Link implementation %s/%s does not implement public SKU %q", implementation.ID, implementation.Version, publicSKU)
-		}
-	}
-	if err := validateLinkImplementationSettings(channel, settings, implementation, linkModels); err != nil {
+	executions, err := DeriveChannelLinkExecutions(channel, settings)
+	if err != nil {
 		return err
+	}
+	if err := validateLinkImplementationSettings(channel, settings, implementation, executions); err != nil {
+		return err
+	}
+	for _, execution := range executions {
+		if err := ValidateLinkImplementationAssetCoverage(implementation, execution.LinkSKU); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -66,10 +71,56 @@ func ValidateChannelLinkImplementationForSKU(channel *Channel, publicSKU string)
 	if !provider_exposure_setting.Current().ActiveForImplementation(implementation.ID, implementation.Version) {
 		return fmt.Errorf("Link implementation %s/%s has no enabled exposure policy", implementation.ID, implementation.Version)
 	}
-	if err := validateLinkImplementationSettings(channel, &settings, implementation, []string{publicSKU}); err != nil {
+	executions, err := DeriveChannelLinkExecutions(channel, &settings)
+	if err != nil {
 		return err
 	}
-	return nil
+	found := false
+	for _, execution := range executions {
+		if execution.LinkSKU == publicSKU {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("channel has no execution binding for Link SKU %q", publicSKU)
+	}
+	if err := validateLinkImplementationSettings(channel, &settings, implementation, executions); err != nil {
+		return err
+	}
+	return ValidateLinkImplementationAssetCoverage(implementation, publicSKU)
+}
+
+func ResolveChannelLinkExecution(channel *Channel, customerModel string, routeFamily LinkRouteFamily) (ChannelLinkExecution, error) {
+	if channel == nil {
+		return ChannelLinkExecution{}, fmt.Errorf("Link implementation channel is required")
+	}
+	settings := channel.GetOtherSettings()
+	executions, err := DeriveChannelLinkExecutions(channel, &settings)
+	if err != nil {
+		return ChannelLinkExecution{}, err
+	}
+	matches := make([]ChannelLinkExecution, 0, 1)
+	for _, execution := range executions {
+		if execution.CustomerModel == strings.TrimSpace(customerModel) && execution.Binding.RouteFamily == routeFamily {
+			matches = append(matches, execution)
+		}
+	}
+	if len(matches) != 1 {
+		return ChannelLinkExecution{}, fmt.Errorf("customer model %q resolved %d Link executions for route family %q", customerModel, len(matches), routeFamily)
+	}
+	return matches[0], nil
+}
+
+func ValidateChannelLinkExecution(channel *Channel, customerModel string, routeFamily LinkRouteFamily, expectedSKU string) error {
+	execution, err := ResolveChannelLinkExecution(channel, customerModel, routeFamily)
+	if err != nil {
+		return err
+	}
+	if execution.LinkSKU != strings.TrimSpace(expectedSKU) {
+		return fmt.Errorf("customer model %q resolves to Link SKU %q instead of published SKU %q", customerModel, execution.LinkSKU, expectedSKU)
+	}
+	return ValidateChannelLinkImplementationForSKU(channel, execution.LinkSKU)
 }
 
 func ResolveChannelLinkImplementation(channel *Channel) (LinkImplementation, bool) {
@@ -79,21 +130,12 @@ func ResolveChannelLinkImplementation(channel *Channel) (LinkImplementation, boo
 	return ResolveLinkImplementation(channel.GetOtherSettings().LinkImplementation)
 }
 
-func channelRegisteredLinkModels(channel *Channel) []string {
-	if channel == nil {
-		return nil
+func validateLinkImplementationSettings(channel *Channel, settings *dto.ChannelOtherSettings, implementation LinkImplementation, executions []ChannelLinkExecution) error {
+	publicSKUs := make([]string, 0, len(executions))
+	for _, execution := range executions {
+		publicSKUs = append(publicSKUs, execution.LinkSKU)
 	}
-	result := make([]string, 0)
-	for _, rawModel := range strings.Split(channel.Models, ",") {
-		publicSKU := strings.TrimSpace(rawModel)
-		if IsRegisteredLinkSKU(publicSKU) {
-			result = append(result, publicSKU)
-		}
-	}
-	return normalizedStringSet(result)
-}
-
-func validateLinkImplementationSettings(channel *Channel, settings *dto.ChannelOtherSettings, implementation LinkImplementation, publicSKUs []string) error {
+	publicSKUs = normalizedStringSet(publicSKUs)
 	videoProfile := normalizedVideoProfile(string(settings.VideoUpstreamProfile))
 	if implementation.RequiredVideoProfile != "" && videoProfile != normalizedVideoProfile(implementation.RequiredVideoProfile) {
 		return fmt.Errorf("Link implementation %s/%s requires video profile %q", implementation.ID, implementation.Version, implementation.RequiredVideoProfile)
@@ -123,29 +165,13 @@ func validateLinkImplementationSettings(channel *Channel, settings *dto.ChannelO
 		if settings.AdvancedCustom == nil {
 			return fmt.Errorf("Link implementation %s/%s requires Advanced Custom routes", implementation.ID, implementation.Version)
 		}
-		for _, publicSKU := range publicSKUs {
-			requirement, required := linkRouteRequirementForSKU(implementation.RequiredRoutes, publicSKU)
+		for _, execution := range executions {
+			requirement, required := linkRouteRequirementForSKU(implementation.RequiredRoutes, execution.LinkSKU)
 			if !required {
-				return fmt.Errorf("Link implementation %s/%s has no route declaration for %q", implementation.ID, implementation.Version, publicSKU)
+				return fmt.Errorf("Link implementation %s/%s has no route declaration for %q", implementation.ID, implementation.Version, execution.LinkSKU)
 			}
-			if !advancedCustomRouteMatchesRequirement(settings.AdvancedCustom.Routes, requirement) {
-				return fmt.Errorf("Link implementation %s/%s route for %q is incomplete or mismatched", implementation.ID, implementation.Version, publicSKU)
-			}
-		}
-	}
-	if len(implementation.RequiredModelMappings) > 0 {
-		mapping := make(map[string]string)
-		if channel.ModelMapping != nil && strings.TrimSpace(*channel.ModelMapping) != "" {
-			if err := common.Unmarshal([]byte(*channel.ModelMapping), &mapping); err != nil {
-				return fmt.Errorf("Link implementation model mapping is invalid: %w", err)
-			}
-		}
-		for _, requirement := range implementation.RequiredModelMappings {
-			if !slices.Contains(publicSKUs, requirement.PublicSKU) {
-				continue
-			}
-			if strings.TrimSpace(mapping[requirement.PublicSKU]) != requirement.UpstreamModel {
-				return fmt.Errorf("Link implementation %s/%s requires model mapping %q -> %q", implementation.ID, implementation.Version, requirement.PublicSKU, requirement.UpstreamModel)
+			if !advancedCustomRouteMatchesRequirement(settings.AdvancedCustom.Routes, execution.CustomerModel, requirement) {
+				return fmt.Errorf("Link implementation %s/%s route for customer model %q is incomplete or mismatched", implementation.ID, implementation.Version, execution.CustomerModel)
 			}
 		}
 	}
@@ -161,12 +187,12 @@ func linkRouteRequirementForSKU(requirements []LinkRouteRequirement, publicSKU s
 	return LinkRouteRequirement{}, false
 }
 
-func advancedCustomRouteMatchesRequirement(routes []dto.AdvancedCustomRoute, requirement LinkRouteRequirement) bool {
+func advancedCustomRouteMatchesRequirement(routes []dto.AdvancedCustomRoute, customerModel string, requirement LinkRouteRequirement) bool {
 	for _, route := range routes {
 		if strings.TrimSpace(route.IncomingPath) != requirement.IncomingPath ||
 			strings.TrimSpace(route.UpstreamPath) != requirement.UpstreamPath ||
 			strings.TrimSpace(route.Converter) != requirement.Converter ||
-			!slices.Contains(normalizedStringSet(route.Models), requirement.PublicSKU) {
+			!slices.Contains(normalizedStringSet(route.Models), customerModel) {
 			continue
 		}
 		authType := dto.AdvancedCustomAuthTypeNone

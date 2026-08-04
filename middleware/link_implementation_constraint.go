@@ -23,10 +23,25 @@ func LinkImplementationChannelConstraint() gin.HandlerFunc {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, err.Error())
 			return
 		}
-		if !shouldSelectChannel || request == nil || !model.IsRegisteredLinkSKU(request.Model) {
+		if !shouldSelectChannel || request == nil {
 			c.Next()
 			return
 		}
+		publication, published := resolvedLinkModelPublication(c)
+		if !published {
+			if model.IsRegisteredLinkSKU(request.Model) {
+				abortWithOpenAiMessage(c, http.StatusBadRequest, "registered Link SKU must be accessed through a published customer model")
+				return
+			}
+			c.Next()
+			return
+		}
+		capability, registered := model.ResolveImageSKUCapability(publication.LinkSKU)
+		if !registered {
+			abortWithOpenAiMessage(c, http.StatusBadRequest, "published Link contract has no image SKU capability")
+			return
+		}
+		common.SetContextKey(c, constant.ContextKeyResolvedImageSKUCapability, capability)
 		var channels []model.Channel
 		if err := model.DB.Where("status = ?", common.ChannelStatusEnabled).Find(&channels).Error; err != nil {
 			abortWithOpenAiMessage(c, http.StatusServiceUnavailable, "Link implementation registry is temporarily unavailable")
@@ -34,7 +49,7 @@ func LinkImplementationChannelConstraint() gin.HandlerFunc {
 		}
 		allowed := make(map[int]struct{})
 		for i := range channels {
-			if model.ValidateChannelLinkImplementationForSKU(&channels[i], request.Model) == nil {
+			if model.ValidateChannelLinkExecution(&channels[i], publication.CustomerModel, publication.RouteFamily, publication.LinkSKU) == nil {
 				allowed[channels[i].Id] = struct{}{}
 			}
 		}

@@ -49,7 +49,7 @@ func TestProviderExposurePolicyPagesAndDisablesOnlyAffectedPublicModel(t *testin
 	})
 	require.NoError(t, err)
 	baseURL := "https://video.example.com"
-	modelMapping := `{"seedance-2.0-standard-720p":"seedance-2.0-vip-720p-azhw"}`
+	modelMapping := `{"seedance-2.0-standard-720p":"seedance-2.0-vip-720p-azhw","unrelated-model":"seedance-2.0-933-720p-azhw"}`
 	channel := &model.Channel{
 		Id:            9402,
 		Type:          constant.ChannelTypeDoubaoVideo,

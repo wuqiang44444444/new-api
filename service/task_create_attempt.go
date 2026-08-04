@@ -82,7 +82,7 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 		skuVersion, skuHash = capability.Version, capability.ContentHash
 	}
 	implementation, err := resolveTaskAttemptLinkImplementation(
-		info.OriginModelName,
+		info.PublishedLinkContractSKU,
 		info.ChannelOtherSettings.LinkImplementation,
 	)
 	if err != nil {
@@ -108,6 +108,10 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 		LinkImplementationID:      implementation.ID,
 		LinkImplementationVersion: implementation.Version,
 		LinkImplementationHash:    implementation.ContentHash,
+		LinkContractNamespace:     info.LinkContractNamespace,
+		LinkRouteFamily:           info.LinkRouteFamily,
+		PublishedLinkContractSKU:  info.PublishedLinkContractSKU,
+		LinkPublicationVersion:    info.LinkPublicationVersion,
 		ChannelID:                 info.ChannelId,
 		PublicModel:               info.OriginModelName,
 		UpstreamProfile:           profile,

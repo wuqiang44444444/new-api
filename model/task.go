@@ -150,6 +150,8 @@ type TaskPrivateData struct {
 	MediaImage     *TaskMediaImagePrivateData `json:"media_image,omitempty"`
 
 	AsyncBilling *TaskAsyncBillingContext `json:"async_billing,omitempty"`
+
+	LinkPubSnapshot
 }
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。
@@ -225,16 +227,22 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 		linkVideoTask := relayInfo.TaskRelayInfo != nil && IsLinkVideoTaskClientProtocol(relayInfo.TaskRelayInfo.ClientProtocol)
 		if linkVideoTask {
 			freezeTaskVideoUpstream(&privateData, relayInfo.ChannelMeta)
-			if implementation, ok := ResolveLinkImplementation(relayInfo.ChannelMeta.ChannelOtherSettings.LinkImplementation); ok &&
-				IsRegisteredLinkSKU(relayInfo.OriginModelName) {
-				privateData.LinkImplementationID = implementation.ID
-				privateData.LinkImplementationVersion = implementation.Version
-				privateData.LinkImplementationHash = implementation.ContentHash
-			}
 			privateData.AssetPublicIDs = append([]string(nil), relayInfo.TaskRelayInfo.AssetPublicIDs...)
 			privateData.AssetBindingIDs = append([]int64(nil), relayInfo.TaskRelayInfo.AssetBindingIDs...)
 			privateData.AppID = relayInfo.TaskRelayInfo.AppID
 			privateData.EndUserSubjectHash = relayInfo.TaskRelayInfo.EndUserSubjectHash
+		}
+		if relayInfo.PublishedLinkContractSKU != "" {
+			implementation, ok := ResolveLinkImplementation(relayInfo.ChannelMeta.ChannelOtherSettings.LinkImplementation)
+			if ok {
+				privateData.LinkImplementationID = implementation.ID
+				privateData.LinkImplementationVersion = implementation.Version
+				privateData.LinkImplementationHash = implementation.ContentHash
+			}
+			privateData.LinkContractNamespace = relayInfo.LinkContractNamespace
+			privateData.LinkRouteFamily = relayInfo.LinkRouteFamily
+			privateData.PublishedLinkContractSKU = relayInfo.PublishedLinkContractSKU
+			privateData.LinkPublicationVersion = relayInfo.LinkPublicationVersion
 		}
 		if relayInfo.UpstreamModelName != "" {
 			properties.UpstreamModelName = relayInfo.UpstreamModelName

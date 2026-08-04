@@ -37,7 +37,8 @@ func resolveAssetReferencesForAttempt(c *gin.Context, info *relaycommon.RelayInf
 		return err
 	}
 	implementation, ok := model.ResolveChannelLinkImplementation(channel)
-	if !ok || model.ValidateChannelLinkImplementationForSKU(channel, req.Model) != nil {
+	if info == nil || info.PublishedLinkContractSKU == "" || !ok ||
+		model.ValidateChannelLinkExecution(channel, info.OriginModelName, model.LinkRouteFamily(info.LinkRouteFamily), info.PublishedLinkContractSKU) != nil {
 		return fmt.Errorf("%w: selected channel has no registered Link implementation", service.ErrAssetReferenceUnresolvable)
 	}
 	var fingerprint string
@@ -71,6 +72,13 @@ func resolveAssetReferencesForAttempt(c *gin.Context, info *relaycommon.RelayInf
 	imageCount, videoCount, audioCount := 0, 0, 0
 	for i := range assets {
 		asset := &assets[i]
+		if asset.RequestedModel != info.OriginModelName ||
+			asset.LinkContractNamespace != info.LinkContractNamespace ||
+			asset.LinkRouteFamily != info.LinkRouteFamily ||
+			asset.PublishedLinkContractSKU != info.PublishedLinkContractSKU ||
+			asset.LinkPublicationVersion != info.LinkPublicationVersion {
+			return fmt.Errorf("%w: asset %s belongs to a different Link publication", service.ErrAssetBindingRequired, asset.PublicID)
+		}
 		if asset.Status != model.AssetStatusReady {
 			return fmt.Errorf("%w: asset %s is no longer ready", service.ErrAssetNotReady, asset.PublicID)
 		}
@@ -105,6 +113,12 @@ func resolveAssetReferencesForAttempt(c *gin.Context, info *relaycommon.RelayInf
 				}
 				if binding.RequestedModel != "" && binding.RequestedModel != req.Model {
 					return fmt.Errorf("%w: asset binding model does not match the video request", service.ErrAssetBindingRequired)
+				}
+				if binding.LinkContractNamespace != info.LinkContractNamespace ||
+					binding.LinkRouteFamily != info.LinkRouteFamily ||
+					binding.PublishedLinkContractSKU != info.PublishedLinkContractSKU ||
+					binding.LinkPublicationVersion != info.LinkPublicationVersion {
+					return fmt.Errorf("%w: asset binding publication does not match the video request", service.ErrAssetBindingRequired)
 				}
 				replacements["asset://"+asset.PublicID] = "asset://" + binding.UpstreamReferenceValue
 				bindingIDs = append(bindingIDs, binding.ID)
@@ -142,9 +156,9 @@ func resolveAssetReferencesForAttempt(c *gin.Context, info *relaycommon.RelayInf
 	// implementation-specific source limits are rechecked immediately before
 	// dispatch because a different eligible implementation may have been chosen.
 	if implementation.AssetCapability.Supports(model.LinkAssetResolutionSourceURL) &&
-		(imageCount > implementation.AssetCapability.MaxImages ||
-			videoCount > implementation.AssetCapability.MaxVideos ||
-			audioCount > implementation.AssetCapability.MaxAudio) {
+		((implementation.AssetCapability.MaxImages > 0 && imageCount > implementation.AssetCapability.MaxImages) ||
+			(implementation.AssetCapability.MaxVideos > 0 && videoCount > implementation.AssetCapability.MaxVideos) ||
+			(implementation.AssetCapability.MaxAudio > 0 && audioCount > implementation.AssetCapability.MaxAudio)) {
 		return fmt.Errorf("%w: referenced assets exceed the Link implementation media limits", service.ErrAssetReferenceUnresolvable)
 	}
 	if info != nil && info.TaskRelayInfo != nil {

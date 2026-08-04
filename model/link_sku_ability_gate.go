@@ -2,26 +2,34 @@ package model
 
 import (
 	"fmt"
-	"strings"
 )
 
 func ValidateLinkSKUAbilityBindings(channel *Channel) error {
 	if channel == nil {
 		return fmt.Errorf("Link ability channel is required")
 	}
-	for _, rawModel := range strings.Split(channel.Models, ",") {
-		publicSKU := strings.TrimSpace(rawModel)
-		if capability, registered := ResolveVideoSKUCapability(publicSKU); registered {
+	settings := channel.GetOtherSettings()
+	if settings.LinkImplementation.Empty() {
+		return ValidateLinkImplementationRegistration(channel, &settings)
+	}
+	executions, err := DeriveChannelLinkExecutions(channel, &settings)
+	if err != nil {
+		return err
+	}
+	for _, execution := range executions {
+		if capability, registered := ResolveVideoSKUCapability(execution.LinkSKU); registered {
 			if err := ValidateVideoSKUImplementation(capability, channel); err != nil {
 				return err
 			}
 			continue
 		}
-		if _, registered := ResolveImageSKUCapability(publicSKU); registered {
-			if err := ValidateChannelLinkImplementationForSKU(channel, publicSKU); err != nil {
+		if _, registered := ResolveImageSKUCapability(execution.LinkSKU); registered {
+			if err := ValidateChannelLinkImplementationForSKU(channel, execution.LinkSKU); err != nil {
 				return err
 			}
+			continue
 		}
+		return fmt.Errorf("Link customer model %q resolves to unregistered SKU %q", execution.CustomerModel, execution.LinkSKU)
 	}
 	return nil
 }

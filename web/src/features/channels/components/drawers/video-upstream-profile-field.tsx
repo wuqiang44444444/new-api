@@ -57,6 +57,12 @@ export function VideoUpstreamProfileField(
     control: props.control,
     name: 'video_upstream_profile',
   })
+  const planLocked = Boolean(
+    useWatch({
+      control: props.control,
+      name: 'link_implementation_id',
+    })
+  )
   const baseURL = useWatch({ control: props.control, name: 'base_url' }) || ''
   const createPath =
     useWatch({ control: props.control, name: 'video_upstream_create_path' }) ||
@@ -131,6 +137,7 @@ export function VideoUpstreamProfileField(
               ]}
               onValueChange={field.onChange}
               value={field.value}
+              disabled={planLocked}
             >
               <FormControl>
                 <SelectTrigger>
@@ -174,7 +181,11 @@ export function VideoUpstreamProfileField(
               <FormItem>
                 <FormLabel>{t('Create Path Suffix')}</FormLabel>
                 <FormControl>
-                  <Input placeholder='/v1/media/generations' {...field} />
+                  <Input
+                    placeholder='/v1/media/generations'
+                    disabled={planLocked}
+                    {...field}
+                  />
                 </FormControl>
                 <FormDescription className='text-xs'>
                   {t(
@@ -193,7 +204,11 @@ export function VideoUpstreamProfileField(
               <FormItem>
                 <FormLabel>{t('Query Path Template')}</FormLabel>
                 <FormControl>
-                  <Input placeholder='/v1/media/tasks/{task_id}' {...field} />
+                  <Input
+                    placeholder='/v1/media/tasks/{task_id}'
+                    disabled={planLocked}
+                    {...field}
+                  />
                 </FormControl>
                 <FormDescription className='text-xs'>
                   {t(

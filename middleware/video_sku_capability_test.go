@@ -91,6 +91,40 @@ func TestUnregisteredVideoSKUFailsClosedBeforeDistribution(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, response.Code)
 }
 
+func TestPublishedCustomerVideoModelValidatesAgainstFrozenLinkSKU(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.POST("/api/v3/contents/generations/tasks",
+		ModelArkVideoCreateConvert(),
+		func(c *gin.Context) {
+			publication := model.LinkModelPublication{
+				ContractNamespace:  model.LinkContractNamespaceDefault,
+				RouteFamily:        model.LinkRouteFamilyModelArkVideo,
+				CustomerModel:      "customer-seedance",
+				LinkSKU:            model.VideoSKUSeedance20Standard720P,
+				PublicationVersion: 3,
+			}
+			common.SetContextKey(c, constant.ContextKeyLinkRouteFamily, string(publication.RouteFamily))
+			common.SetContextKey(c, constant.ContextKeyLinkModelPublication, publication)
+			c.Next()
+		},
+		ResolveVideoSKUCapability(),
+		func(c *gin.Context) {
+			capability, ok := resolvedVideoSKUCapability(c)
+			require.True(t, ok)
+			assert.Equal(t, model.VideoSKUSeedance20Standard720P, capability.PublicModel)
+			c.Status(http.StatusNoContent)
+		},
+	)
+	request := httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"customer-seedance","content":[{"type":"text","text":"move"}]}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	engine.ServeHTTP(response, request)
+
+	assert.Equal(t, http.StatusNoContent, response.Code)
+}
+
 func TestVideoSKUCreateGatesDoNotInterceptJimengReadAction(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

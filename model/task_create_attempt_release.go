@@ -209,6 +209,7 @@ func releaseTaskCreateAttemptHold(
 				LinkImplementationID:   attempt.LinkImplementationID,
 				LinkImplementationVer:  attempt.LinkImplementationVersion,
 				LinkImplementationHash: attempt.LinkImplementationHash,
+				LinkPubSnapshot:        attempt.LinkPubSnapshot,
 				CustomerQuotaReleased:  attempt.HeldQuota,
 				CreatedAt:              now,
 			}); err != nil {

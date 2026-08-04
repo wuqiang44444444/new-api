@@ -40,3 +40,17 @@ func TestGetAndValidOpenAIImageRequestAppliesLinkContract(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "n must be between 1 and 1")
 }
+
+func TestGetAndValidOpenAIImageRequestUsesPublishedSKUForCustomerAlias(t *testing.T) {
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(`{"model":"customer-image","prompt":"draw","size":"2K"}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+	common.SetContextKey(context, constant.ContextKeyPublishedLinkContractSKU, "seedream-5-qihang")
+
+	request, err := GetAndValidOpenAIImageRequest(context, relayconstant.RelayModeImagesGenerations)
+	require.NoError(t, err)
+	assert.Equal(t, "customer-image", request.Model)
+	capability, ok := common.GetContextKeyType[model.ImageSKUCapability](context, constant.ContextKeyResolvedImageSKUCapability)
+	require.True(t, ok)
+	assert.Equal(t, "seedream-5-qihang", capability.PublicModel)
+}

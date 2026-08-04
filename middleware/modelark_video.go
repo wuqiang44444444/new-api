@@ -53,19 +53,6 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 		appID := c.GetInt("token_id")
 		common.SetContextKey(c, constant.ContextKeyAssetAppID, appID)
 		if request.EndUserSubject != nil {
-			if capability, ok := model.ResolveVideoSKUCapability(request.Model); ok {
-				supported := false
-				for _, field := range capability.RequestFields {
-					if field == "end_user_subject" {
-						supported = true
-						break
-					}
-				}
-				if !supported {
-					abortModelArkVideo(c, http.StatusBadRequest, "unsupported_parameter", "end_user_subject is not supported by this model")
-					return
-				}
-			}
 			if request.SafetyIdentifier != nil {
 				abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", "end_user_subject and safety_identifier cannot be supplied together")
 				return
@@ -250,9 +237,19 @@ func ModelArkVideoChannelConstraint() gin.HandlerFunc {
 			allowServiceTier bool
 		}]bool)
 		activeChannels := 0
+		publication, published := resolvedLinkModelPublication(c)
+		if !published && common.GetContextKeyString(c, constant.ContextKeyLinkRouteFamily) != "" {
+			abortModelArkVideo(c, http.StatusBadRequest, "invalid_video_contract", "video publication snapshot is unavailable")
+			return
+		}
 		for i := range channels {
 			activeChannels++
 			settings := channels[i].GetOtherSettings()
+			if published {
+				if err := model.ValidateChannelLinkExecution(&channels[i], publication.CustomerModel, publication.RouteFamily, publication.LinkSKU); err != nil {
+					continue
+				}
+			}
 			if capability, ok := resolvedVideoSKUCapability(c); ok {
 				if err := model.ValidateVideoSKUImplementation(capability, &channels[i]); err != nil {
 					continue

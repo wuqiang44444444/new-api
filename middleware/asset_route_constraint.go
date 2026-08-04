@@ -87,9 +87,18 @@ func AssetRouteConstraint() gin.HandlerFunc {
 		if requestModel == "" {
 			requestModel = common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
 		}
+		publication, published := resolvedLinkModelPublication(c)
 		subjectHash := common.GetContextKeyString(c, constant.ContextKeyEndUserSubjectHash)
 		for i := range assets {
 			asset := &assets[i]
+			if published && (asset.RequestedModel != publication.CustomerModel ||
+				asset.LinkContractNamespace != publication.ContractNamespace ||
+				asset.LinkRouteFamily != string(publication.RouteFamily) ||
+				asset.PublishedLinkContractSKU != publication.LinkSKU ||
+				asset.LinkPublicationVersion != publication.PublicationVersion) {
+				abortAssetRoute(c, http.StatusConflict, "asset_publication_mismatch", "one or more assets were created under a different Link publication")
+				return
+			}
 			if asset.Status != model.AssetStatusReady {
 				abortAssetRoute(c, http.StatusConflict, "asset_not_ready", "one or more assets are not ready")
 				return
@@ -129,6 +138,12 @@ func AssetRouteConstraint() gin.HandlerFunc {
 			if binding.RequestedModel != "" && binding.RequestedModel != requestModel {
 				continue
 			}
+			if published && (binding.LinkContractNamespace != publication.ContractNamespace ||
+				binding.LinkRouteFamily != string(publication.RouteFamily) ||
+				binding.PublishedLinkContractSKU != publication.LinkSKU ||
+				binding.LinkPublicationVersion != publication.PublicationVersion) {
+				continue
+			}
 			current, err := model.AssetBindingIsCurrent(&binding)
 			if err != nil {
 				abortAssetRoute(c, http.StatusInternalServerError, "database_error", "failed to validate asset binding credentials")
@@ -154,7 +169,7 @@ func AssetRouteConstraint() gin.HandlerFunc {
 		}
 		for i := range sourceChannels {
 			channel := &sourceChannels[i]
-			if model.ValidateChannelLinkImplementationForSKU(channel, requestModel) != nil {
+			if !published || model.ValidateChannelLinkExecution(channel, publication.CustomerModel, publication.RouteFamily, publication.LinkSKU) != nil {
 				continue
 			}
 			implementation, ok := model.ResolveChannelLinkImplementation(channel)
@@ -182,7 +197,10 @@ func AssetRouteConstraint() gin.HandlerFunc {
 					audioCount++
 				}
 			}
-			if !eligible || imageCount > implementation.AssetCapability.MaxImages || videoCount > implementation.AssetCapability.MaxVideos || audioCount > implementation.AssetCapability.MaxAudio {
+			if !eligible ||
+				(implementation.AssetCapability.MaxImages > 0 && imageCount > implementation.AssetCapability.MaxImages) ||
+				(implementation.AssetCapability.MaxVideos > 0 && videoCount > implementation.AssetCapability.MaxVideos) ||
+				(implementation.AssetCapability.MaxAudio > 0 && audioCount > implementation.AssetCapability.MaxAudio) {
 				continue
 			}
 			for _, assetID := range assetIDs {

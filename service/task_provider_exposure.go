@@ -22,6 +22,7 @@ func taskProviderExposure(task *model.Task, reason string) *model.ProviderCostEx
 		LinkImplementationID:   task.PrivateData.LinkImplementationID,
 		LinkImplementationVer:  task.PrivateData.LinkImplementationVersion,
 		LinkImplementationHash: task.PrivateData.LinkImplementationHash,
+		LinkPubSnapshot:        task.PrivateData.LinkPubSnapshot,
 	}
 }
 

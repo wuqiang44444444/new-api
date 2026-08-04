@@ -149,6 +149,10 @@ func channelAssetIdentityChanged(tx *gorm.DB, current, update *Channel, credenti
 }
 
 func updateChannelWithAssetFence(channel *Channel, credential *ChannelAssetCredential) error {
+	return updateChannelWithAssetFenceActor(channel, credential, 0)
+}
+
+func updateChannelWithAssetFenceActor(channel *Channel, credential *ChannelAssetCredential, actorID int) error {
 	if channel.Id == 0 {
 		return errors.New("channel ID is 0")
 	}
@@ -181,7 +185,7 @@ func updateChannelWithAssetFence(channel *Channel, credential *ChannelAssetCrede
 		if err := tx.First(channel, "id = ?", channel.Id).Error; err != nil {
 			return err
 		}
-		return channel.UpdateAbilities(tx)
+		return channel.UpdateAbilitiesWithActor(tx, actorID)
 	})
 }
 

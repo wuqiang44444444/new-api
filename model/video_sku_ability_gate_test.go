@@ -81,7 +81,7 @@ func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 	require.Error(t, ValidateLinkSKUAbilityBindings(kling))
 	kling.Type = constant.ChannelTypeKling
 	kling.Models = "unregistered-kling-model"
-	require.NoError(t, ValidateLinkSKUAbilityBindings(kling))
+	require.Error(t, ValidateLinkSKUAbilityBindings(kling))
 
 	overseaCapability, ok := ResolveVideoSKUCapability(VideoSKUSeedance20Oversea)
 	require.True(t, ok)

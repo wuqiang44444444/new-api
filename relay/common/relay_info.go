@@ -80,6 +80,13 @@ type TokenCountMeta struct {
 	estimatePromptTokens int
 }
 
+type LinkPublicationSnapshot struct {
+	LinkContractNamespace    string
+	LinkRouteFamily          string
+	PublishedLinkContractSKU string
+	LinkPublicationVersion   int64
+}
+
 type RelayInfo struct {
 	TokenId           int
 	TokenKey          string
@@ -200,6 +207,7 @@ type RelayInfo struct {
 	*ResponsesUsageInfo
 	*ChannelMeta
 	*TaskRelayInfo
+	LinkPublicationSnapshot
 }
 
 func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
@@ -482,6 +490,7 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 	if reqId == "" {
 		reqId = common.NewRequestId()
 	}
+	linkPublicationVersion, _ := common.GetContextKeyType[int64](c, constant.ContextKeyLinkPublicationVersion)
 	info := &RelayInfo{
 		Request: request,
 
@@ -493,6 +502,12 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		UserEmail:  common.GetContextKeyString(c, constant.ContextKeyUserEmail),
 
 		OriginModelName: common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
+		LinkPublicationSnapshot: LinkPublicationSnapshot{
+			LinkContractNamespace:    common.GetContextKeyString(c, constant.ContextKeyLinkContractNamespace),
+			LinkRouteFamily:          common.GetContextKeyString(c, constant.ContextKeyLinkRouteFamily),
+			PublishedLinkContractSKU: common.GetContextKeyString(c, constant.ContextKeyPublishedLinkContractSKU),
+			LinkPublicationVersion:   linkPublicationVersion,
+		},
 
 		TokenId:        common.GetContextKeyInt(c, constant.ContextKeyTokenId),
 		TokenKey:       common.GetContextKeyString(c, constant.ContextKeyTokenKey),
