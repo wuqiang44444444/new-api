@@ -64,12 +64,10 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 	var exist bool
 	var err error
 	if info.Action == constant.TaskActionRemix {
-		originTask, exist, err = model.GetVideoTaskForProtocol(
+		originTask, exist, err = model.GetNativeOpenAIVideoTaskForApp(
 			info.UserId,
 			info.TokenId,
 			info.OriginTaskID,
-			model.TaskClientProtocolOpenAIVideos,
-			false,
 		)
 	} else {
 		originTask, exist, err = model.GetByTaskIDForApp(info.UserId, info.TokenId, info.OriginTaskID)
@@ -80,10 +78,6 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 	if !exist {
 		return service.TaskErrorWrapperLocal(errors.New("task_origin_not_exist"), "task_not_exist", http.StatusBadRequest)
 	}
-	if info.Action == constant.TaskActionRemix && !TaskLifecycleCapabilities(originTask).SupportsRemix {
-		return service.TaskErrorWrapperLocal(errors.New("remix is not supported for this video"), "unsupported_operation", http.StatusBadRequest)
-	}
-
 	// 从原始任务推导模型名称
 	if info.OriginModelName == "" {
 		if originTask.Properties.OriginModelName != "" {
@@ -97,6 +91,16 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 				info.OriginModelName = m
 			}
 		}
+	}
+	if info.Action == constant.TaskActionRemix && model.IsRegisteredLinkSKU(info.OriginModelName) {
+		return service.TaskErrorWrapperLocal(
+			errors.New("registered Link SKUs must use their published Link contract"),
+			"link_sku_contract_mismatch",
+			http.StatusBadRequest,
+		)
+	}
+	if info.Action == constant.TaskActionRemix && !TaskLifecycleCapabilities(originTask).SupportsRemix {
+		return service.TaskErrorWrapperLocal(errors.New("remix is not supported for this video"), "unsupported_operation", http.StatusBadRequest)
 	}
 
 	// 锁定到原始任务的渠道（重试时复用同一渠道，轮换 key）

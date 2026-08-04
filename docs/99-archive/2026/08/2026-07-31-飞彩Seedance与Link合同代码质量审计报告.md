@@ -1,7 +1,10 @@
 ---
-status: current
+status: historical
 owner: Dev Team
-last-reviewed: 2026-08-02
+last-reviewed: 2026-08-04
+archived-at: 2026-08-04
+source-path: docs/80-dev/2026-07-31-飞彩Seedance与Link合同代码质量审计报告.md
+superseded-by: "docs/20-architecture/Link合同架构.md; docs/20-architecture/视频上游接入与异步任务架构.md; docs/50-planning/路线图.md"
 ---
 
 # 飞彩 Seedance 与 Link 合同代码质量审计报告

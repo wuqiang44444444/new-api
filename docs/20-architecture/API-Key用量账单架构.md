@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-01
+last-reviewed: 2026-08-04
 ---
 
 # API Key 用量账单架构

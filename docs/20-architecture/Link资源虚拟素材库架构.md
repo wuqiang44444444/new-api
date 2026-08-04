@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-03
+last-reviewed: 2026-08-04
 ---
 
 # Link 资源虚拟素材库架构
@@ -21,8 +21,8 @@ ADR-0014 的最小 AssetSource 与双模式 Resolver，同时将内部能力归�
 并覆盖已登记图片 SKU。截至 2026-08-03，代码已完成持久化 `AssetSource`、binding/source 双模式
 Resolver、查询时 Asset 聚合状态、当前 binding 的实现/策略/凭据围栏、公开/内部能力分层和显式
 实现版本接线；运行时可用性仍以渠道启用状态、Ability、分组、
-价格和外部 Provider 验收为准。实施过程与外部验收门禁见
-[Link 资源虚拟素材库实施方案](../80-dev/2026-08-02-Link资源虚拟素材库实施方案.md)。
+价格和外部 Provider 验收为准。未完成的外部验收门禁以
+[路线图](../50-planning/路线图.md)为准，历史实施过程仅用于追溯。
 
 跨图片、视频和素材产品的 Link 总合同见 [Link 合同架构](Link合同架构.md)；本文只展开其中的
 Link 资源子合同。
@@ -396,5 +396,5 @@ Provider 抓取失败和上游清理失败。日志脱敏规则必须在错误�
 - [素材代理与真人授权架构](素材代理与真人授权架构.md)
 - [数据模型](数据模型.md)
 - [视频上游接入与异步任务架构](视频上游接入与异步任务架构.md)
-- [Link 资源虚拟素材库实施方案](../80-dev/2026-08-02-Link资源虚拟素材库实施方案.md)
-- [FunCloud Seedance 2.0 中转接入分析方案](../80-dev/2026-08-02-FunCloud-Seedance-2.0中转接入分析方案.md)
+- [Link 资源虚拟素材库实施方案（历史）](../99-archive/2026/08/2026-08-02-Link资源虚拟素材库实施方案.md)
+- [FunCloud Seedance 2.0 中转接入分析方案（历史）](../99-archive/2026/08/2026-08-02-FunCloud-Seedance-2.0中转接入分析方案.md)

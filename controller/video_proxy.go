@@ -51,15 +51,16 @@ func VideoProxy(c *gin.Context) {
 
 	userID := c.GetInt("id")
 	appID := c.GetInt("token_id")
-	task, exists, err := model.GetVisibleVideoTask(
-		userID,
-		appID,
-		taskID,
-		model.TaskClientProtocolOpenAIVideos,
-		model.TaskClientProtocolModelArkV3,
-		model.TaskClientProtocolPlatformVideo,
-		"",
-	)
+	task, exists, err := model.GetNativeOpenAIVideoTaskForApp(userID, appID, taskID)
+	if err == nil && !exists {
+		task, exists, err = model.GetVisibleVideoTask(
+			userID,
+			appID,
+			taskID,
+			model.TaskClientProtocolModelArkV3,
+			model.TaskClientProtocolPlatformVideo,
+		)
+	}
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to query task %s: %s", taskID, err.Error()))
 		videoProxyError(c, http.StatusInternalServerError, "server_error", "internal_error", "Failed to query task")

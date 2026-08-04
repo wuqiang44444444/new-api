@@ -33,6 +33,26 @@
       "family": "images"
     },
     {
+      "operationId": "createVideo",
+      "status": "published",
+      "family": "video-openai"
+    },
+    {
+      "operationId": "getVideo",
+      "status": "published",
+      "family": "video-openai"
+    },
+    {
+      "operationId": "remixVideo",
+      "status": "published",
+      "family": "video-openai"
+    },
+    {
+      "operationId": "createVideoGeneration",
+      "status": "published",
+      "family": "video-openai"
+    },
+    {
       "operationId": "createModelArkVideoTask",
       "status": "published",
       "family": "video-modelark"

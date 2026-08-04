@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-07-29
+last-reviewed: 2026-08-04
 ---
 
 # 50-planning — 目标说明

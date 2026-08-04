@@ -10,6 +10,8 @@ import (
 
 func TestPublishedVideoProtocolsAlwaysRequireTaskCreateAttempt(t *testing.T) {
 	for _, protocol := range []string{
+		model.TaskClientProtocolOpenAIVideos,
+		model.TaskClientProtocolPlatformVideo,
 		model.TaskClientProtocolModelArkV3,
 		model.TaskClientProtocolKlingV1,
 		model.TaskClientProtocolJimeng,

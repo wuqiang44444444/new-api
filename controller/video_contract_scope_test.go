@@ -12,12 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRetiredOpenAIVideoModelsAreFilteredFromDiscovery(t *testing.T) {
-	assert.Equal(t, []string{"seedance-model", "kling-v2-master"}, withoutRetiredVideoModels(
-		[]string{"sora-2", "seedance-model", "sora-2-pro", "kling-v2-master"},
-	))
-}
-
 func TestTaskCreateContractResponsesUseOfficialVideoShapes(t *testing.T) {
 	tests := []struct {
 		protocol string

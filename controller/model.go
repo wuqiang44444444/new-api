@@ -41,9 +41,6 @@ func init() {
 		channelName := adaptor.GetChannelName()
 		modelNames := adaptor.GetModelList()
 		for _, modelName := range modelNames {
-			if retiredVideoModel(modelName) {
-				continue
-			}
 			openAIModels = append(openAIModels, dto.OpenAIModels{
 				Id:      modelName,
 				Object:  "model",
@@ -257,7 +254,6 @@ func ListModels(c *gin.Context, modelType int) {
 	}
 
 	ownerByModel := map[string]string{}
-	userModelNames = withoutRetiredVideoModels(userModelNames)
 	if len(ownerGroups) > 0 {
 		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
 	}
@@ -327,7 +323,7 @@ func DashboardListModels(c *gin.Context) {
 func EnabledListModels(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"success": true,
-		"data":    withoutRetiredVideoModels(model.GetEnabledModels()),
+		"data":    model.GetEnabledModels(),
 	})
 }
 

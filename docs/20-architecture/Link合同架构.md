@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-03
+last-reviewed: 2026-08-04
 ---
 
 # Link 合同架构
@@ -304,7 +304,10 @@ Link Resolver 和真实 Provider 验收完成前，对应 SKU 的 `supports_link
 
 中间件将官方 DTO 转为内部视频任务语义，并把原始合同对象保存在请求上下文。任务创建时冻结 Link 合同标识、合同版本和渠道适配协议版本；查询、列表、取消、删除和内容下载按任务创建时的合同投影。存量字段与新术语的对应见 9.1 节。
 
-OpenAI 视频已下架。`openai_videos` 只用于存量任务读取，不参与模型发现、新任务、计费或分发。
+OpenAI Videos 是 NEWAPI rc23 原生合同，不属于 Link 合同。`sora-2`、`sora-2-pro` 等原生模型
+继续使用 `/v1/videos`、原生 DTO、Sora adapter、Ability 与计费分发；它们不冻结 Link capability
+或 implementation。反向边界同样严格：上表显式登记的 Link SKU 不得借原生或旧版平台视频入口
+创建，详见 [ADR-0016](decisions/0016-原生OpenAI-Videos与Link合同并存边界.md)。
 
 ### 5.3 请求级媒体与统一素材库合同
 

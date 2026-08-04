@@ -8,6 +8,8 @@ import (
 )
 
 func SetVideoRouter(router *gin.Engine) {
+	registerOpenAIVideoNativeRoutes(router)
+
 	// Video proxy: accepts either session auth (dashboard) or token auth (API clients)
 	videoProxyRouter := router.Group("/v1")
 	videoProxyRouter.Use(middleware.RouteTag("relay"))
@@ -23,8 +25,6 @@ func SetVideoRouter(router *gin.Engine) {
 		legacyVideoRouter.GET("/video/generations/:task_id", controller.RelayTaskFetch)
 	}
 
-	// OpenAI video models are retired. Read-only routes remain temporarily for
-	// historical tasks; no route can create or remix an OpenAI video task.
 	openAIVideoReadRouter := router.Group("/v1")
 	openAIVideoReadRouter.Use(middleware.RouteTag("relay"))
 	openAIVideoReadRouter.Use(middleware.TokenAuth(), middleware.TaskClientProtocol("openai_videos"))

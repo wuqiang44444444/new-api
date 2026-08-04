@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-02
+last-reviewed: 2026-08-04
 ---
 
 # 00-context — 目标说明

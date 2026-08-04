@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-06-29
+last-reviewed: 2026-08-04
 ---
 
 # 10-product — 目标说明
@@ -11,6 +11,11 @@ last-reviewed: 2026-06-29
 
 ## 放什么
 用户与角色、业务流程、验收标准、产品路线。
+
+## 当前文档
+
+- [业务流程](业务流程.md)
+- [验收标准](验收标准.md)
 
 ## 不放什么
 - 技术实现与架构 -> 20-architecture/

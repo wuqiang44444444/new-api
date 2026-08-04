@@ -1,14 +1,14 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-02
+last-reviewed: 2026-08-04
 ---
 
-# Seedance（ModelArk v3）视频 API 调用指南
+# 视频模型 API 调用指南
 
 ## 1. 适用范围
 
-本文面向使用 new-api 的开发者，介绍当前 Seedance 视频模型通过 ModelArk v3 合同执行任务创建、状态查询、结果下载、历史列表和删除的方式。
+本文面向使用 new-api 的开发者，介绍 rc23 原生 OpenAI Videos，以及 Seedance 模型通过 ModelArk v3 Link 合同执行任务创建、状态查询和结果下载的方式。两类合同共享任务底座，但路径、字段、模型和响应不能混用。
 
 当前开放以下 Seedance 视频模型：
 
@@ -29,11 +29,58 @@ last-reviewed: 2026-08-02
 
 渠道可以使用官方实现或经过 capability 等价校验的第三方实现，但这不会改变 Link 合同。FunCloud 仅承接独立的 `seedance-2.0-standard` 与 `seedance-2.0-fast`；其路径、业务 code、Bearer Key 与上游素材 ID 均不会向客户端公开。现有官方、TokenSave 和飞彩 SKU 不会加入 FunCloud profile，也不会因 FunCloud 报价改变定价。
 
-模型可用范围可能随账户权限调整。正式调用前应通过模型列表或控制台确认当前 API Key 可以使用的模型。平台当前不提供 OpenAI/Sora 视频新任务创建，不要使用 `POST /v1/videos` 或旧的 `/v1/video/generations` 创建视频。
+模型可用范围可能随账户权限调整。正式调用前应通过模型列表或控制台确认当前 API Key 可以使用的模型。`sora-2`、`sora-2-pro` 等 NEWAPI 原生模型使用 `/v1/videos`；上表 Seedance Link SKU 必须使用 `/api/v3/contents/generations/tasks`，提交到原生入口会返回 `link_sku_contract_mismatch`。
 
 Kling 和即梦使用各自独立的 Link 合同中的官方协议，不能使用本文的 ModelArk 路径、字段、状态或错误
 信封。对应调用方式见 [Kling 视频 API Reference](../../web/public/docs-content/zh/api-reference/videos/kling.md)
 和[即梦视频 API Reference](../../web/public/docs-content/zh/api-reference/videos/jimeng.md)。
+
+### 1.1 rc23 原生 OpenAI Videos
+
+原生合同提供：
+
+```text
+POST /v1/videos
+POST /v1/videos/{video_id}/remix
+GET  /v1/videos/{task_id}
+GET  /v1/videos/{task_id}/content
+POST /v1/video/generations
+GET  /v1/video/generations/{task_id}
+```
+
+推荐使用 `/v1/videos`。JSON 创建示例：
+
+```bash
+curl -sS -X POST "$TokenAI_API_BASE/v1/videos" \
+  -H "Authorization: Bearer $TokenAI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: sora-order-20260804-001" \
+  -d '{
+    "model": "sora-2",
+    "prompt": "清晨的海岸线，固定镜头，电影感",
+    "seconds": "8",
+    "size": "1280x720"
+  }'
+```
+
+`model` 省略时默认 `sora-2`；`seconds` 支持 `4`、`8`、`12`。`input_reference` 可按 rc23
+合同使用 multipart 文件，或在 JSON 中使用包含 `file_id` / `image_url` 的对象；`image_url` 支持
+HTTP/HTTPS、Data URL，以及经过平台虚拟素材授权与渠道绑定检查的 `asset://ast_xxx`。
+
+Remix 请求只提交新的 `prompt`，源视频必须属于同一 API Key 应用、由 OpenAI Videos 合同创建，
+且上游 adapter 支持 Remix：
+
+```bash
+curl -sS -X POST "$TokenAI_API_BASE/v1/videos/task_xxx/remix" \
+  -H "Authorization: Bearer $TokenAI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: sora-remix-20260804-001" \
+  -d '{"prompt":"保持构图，将天气改为雪天"}'
+```
+
+创建成功返回 OpenAI Videos 任务对象。使用 `GET /v1/videos/{task_id}` 轮询，成功后通过
+`GET /v1/videos/{task_id}/content` 下载。发送到 Provider 后结果未知时，平台返回
+`create_outcome_unknown`，客户端不得自行换 Key 或重复创建，应保留 `request_id` 等待对账。
 
 ## 2. 调用准备
 

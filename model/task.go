@@ -223,7 +223,8 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 			privateData.Key = relayInfo.ChannelMeta.ApiKey
 		}
 		freezeTaskVideoUpstream(&privateData, relayInfo.ChannelMeta)
-		if implementation, ok := ResolveLinkImplementation(relayInfo.ChannelMeta.ChannelOtherSettings.LinkImplementation); ok {
+		if implementation, ok := ResolveLinkImplementation(relayInfo.ChannelMeta.ChannelOtherSettings.LinkImplementation); ok &&
+			IsRegisteredLinkSKU(relayInfo.OriginModelName) {
 			privateData.LinkImplementationID = implementation.ID
 			privateData.LinkImplementationVersion = implementation.Version
 			privateData.LinkImplementationHash = implementation.ContentHash

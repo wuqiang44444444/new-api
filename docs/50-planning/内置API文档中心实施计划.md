@@ -30,8 +30,8 @@ last-reviewed: 2026-08-02
 
 - `/api/status` 的 `docs_link`、`server_address` 和 `system_name` 已通过统一解析器供首页、顶部导航和文档页使用；
 - `/docs` 与 `/docs/*` 已作为未登录公开路由落地，深层刷新由 Go 测试固定；
-- `web/public/docs-content/` 已包含 manifest、16 篇首批中文 Markdown 和生成的搜索索引；
-- `docs/openapi/public-operations.json` 已批准 28 个文本、图片、视频与素材 operation，后台 `docs/openapi/api.json` 不进入公开产物；
+- `web/public/docs-content/` 已包含 manifest、17 篇中文 Markdown 和生成的搜索索引；
+- `docs/openapi/public-operations.json` 已批准 32 个文本、图片、视频与素材 operation，后台 `docs/openapi/api.json` 不进入公开产物；
 - Docs 专用 Marked token 渲染器拒绝 raw HTML、未知 token、危险链接、远程图片和未知占位符，不使用文档内容驱动的 `dangerouslySetInnerHTML`；
 - `bun run build` 已强制串联内容/合同校验、搜索索引生成、Rsbuild 和最终 dist 审计；
 - Vitest、React Testing Library、user-event、happy-dom 与 `bun run test` 已接入；

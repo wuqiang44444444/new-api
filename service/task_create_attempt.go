@@ -81,9 +81,12 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 	} else if capability, ok := common.GetContextKeyType[model.ImageSKUCapability](c, constant.ContextKeyResolvedImageSKUCapability); ok {
 		skuVersion, skuHash = capability.Version, capability.ContentHash
 	}
-	implementation, registered := model.ResolveLinkImplementation(info.ChannelOtherSettings.LinkImplementation)
-	if model.IsRegisteredLinkSKU(info.OriginModelName) && !registered {
-		return types.NewError(errors.New("channel Link implementation is not registered"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+	implementation, err := resolveTaskAttemptLinkImplementation(
+		info.OriginModelName,
+		info.ChannelOtherSettings.LinkImplementation,
+	)
+	if err != nil {
+		return types.NewError(err, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
 	now := time.Now()
 	taskDeadlineAt := now.Add(24 * time.Hour).Unix()

@@ -484,7 +484,7 @@
         ]
       }
     },
-    "x-retired-openai-video-create": {
+    "/v1/videos": {
       "post": {
         "summary": "创建视频 ",
         "deprecated": false,
@@ -502,7 +502,7 @@
                 "properties": {
                   "model": {
                     "description": "模型名称",
-                    "example": "retired-video-model",
+                    "example": "sora-2",
                     "type": "string"
                   },
                   "prompt": {
@@ -596,9 +596,9 @@
                   ]
                 },
                 "example": {
-                  "id": "historical-task-id",
+                  "id": "task_xxxxxxxxx",
                   "object": "video",
-                  "model": "retired-video-model",
+                  "model": "sora-2",
                   "status": "queued",
                   "progress": 0,
                   "created_at": 1764347090922,
@@ -627,7 +627,7 @@
         ]
       }
     },
-    "x-retired-openai-video-task-read": {
+    "/v1/videos/{task_id}": {
       "get": {
         "summary": "获取视频任务状态 ",
         "deprecated": false,
@@ -642,7 +642,7 @@
             "in": "path",
             "description": "视频任务 ID",
             "required": true,
-            "example": "historical-task-id",
+            "example": "task_xxxxxxxxx",
             "schema": {
               "type": "string"
             }
@@ -689,9 +689,9 @@
                   ]
                 },
                 "example": {
-                  "id": "historical-task-id",
+                  "id": "task_xxxxxxxxx",
                   "object": "video",
-                  "model": "retired-video-model",
+                  "model": "sora-2",
                   "status": "queued",
                   "progress": 0,
                   "created_at": 1764347090922,
@@ -720,11 +720,83 @@
         ]
       }
     },
+    "/v1/videos/{video_id}/remix": {
+      "post": {
+        "summary": "Remix 视频",
+        "deprecated": false,
+        "description": "基于同一 API Key 应用中可见的 OpenAI Videos 任务创建 Remix。源任务必须支持 Remix。",
+        "operationId": "remixVideo",
+        "tags": [
+          "视频生成/Sora兼容格式"
+        ],
+        "parameters": [
+          {
+            "name": "video_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["prompt"],
+                "properties": {
+                  "prompt": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Remix 任务已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAIVideo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求或源任务不支持 Remix",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/videos/{task_id}/content": {
       "get": {
         "summary": "获取视频内容",
         "deprecated": false,
-        "description": "获取已完成视频任务的视频文件内容。当前用于 ModelArk 视频任务以及存量视频任务的受鉴权内容代理。\n",
+        "description": "获取已完成 OpenAI Videos 或 ModelArk 视频任务的视频文件内容。\n",
         "operationId": "getVideoContent",
         "tags": [
           "视频生成/ModelArk格式"
@@ -1142,7 +1214,7 @@
         ]
       }
     },
-    "x-retired-platform-video-create": {
+    "/v1/video/generations": {
       "post": {
         "summary": "创建视频生成任务",
         "deprecated": false,

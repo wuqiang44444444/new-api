@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-07-28
+last-reviewed: 2026-08-04
 ---
 
 # 40-operations — 目标说明
@@ -19,9 +19,10 @@ last-reviewed: 2026-07-28
 - [02 视频与素材渠道运维手册](02-视频与素材渠道运维手册.md)
 - [03 图片渠道与异步任务运维手册](03-图片渠道与异步任务运维手册.md)
 - [04 素材库验收操作手册](04-素材库验收操作手册.md)
+- [05 全渠道上线验收手册](05-全渠道上线验收手册.md)
 - [环境配置（反代转发头与 ServerAddress）](环境配置.md)
 
-原九份专题资料已移至 [99-archive](../99-archive/README.md)，现行操作统一按 `01`—`04` 执行。
+历史专题资料已移至 [99-archive](../99-archive/README.md)，现行操作统一按 `01`—`05` 执行。
 
 ## 不放什么
 - 本地开发命令 -> 30-engineering/命令清单.md

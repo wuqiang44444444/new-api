@@ -6,7 +6,7 @@ import (
 )
 
 // RequiresVideoTaskCreateAttempt is a correctness boundary, not a rollout
-// switch. Every currently published video Link contract must
+// switch. Every published video contract must
 // establish a durable attempt before an upstream POST. Traffic rollout remains
 // controlled by Ability/group configuration.
 func RequiresVideoTaskCreateAttempt(info *relaycommon.RelayInfo) bool {
@@ -14,7 +14,9 @@ func RequiresVideoTaskCreateAttempt(info *relaycommon.RelayInfo) bool {
 		return false
 	}
 	switch info.ClientProtocol {
-	case model.TaskClientProtocolModelArkV3,
+	case model.TaskClientProtocolOpenAIVideos,
+		model.TaskClientProtocolPlatformVideo,
+		model.TaskClientProtocolModelArkV3,
 		model.TaskClientProtocolKlingV1,
 		model.TaskClientProtocolJimeng:
 		return true

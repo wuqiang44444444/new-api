@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-07-29.1",
+  "contentVersion": "2026-08-04.1",
   "defaultLocale": "zh",
   "locales": {
     "zh": {
@@ -129,6 +129,15 @@
           "id": "videos",
           "title": "视频 API",
           "pages": [
+            {
+              "id": "videos-openai",
+              "title": "OpenAI Videos",
+              "slug": "api-reference/videos/openai",
+              "file": "zh/api-reference/videos/openai.md",
+              "description": "使用 rc23 原生 OpenAI Videos 创建、查询和 Remix 视频",
+              "keywords": ["OpenAI Videos", "Sora", "Remix"],
+              "assets": []
+            },
             {
               "id": "videos-modelark",
               "title": "ModelArk 视频",

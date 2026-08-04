@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-07-28
+last-reviewed: 2026-08-04
 ---
 
 # API Key 用量账单使用指南
@@ -36,6 +36,8 @@ last-reviewed: 2026-07-28
 - 按 API Key汇总。
 
 如果侧栏没有“账单”，检查管理员和个人侧栏模块是否启用了 `billing`。
+
+页面同时请求基础账单和可选的使用构成明细。费用、请求数和基础 Token 始终以基础账单为准；缓存、长短 Context、动态计费和数据质量仅用于解释。
 
 ## 3. 指标口径
 
@@ -88,6 +90,7 @@ CSV 不包含 API Key密钥值、prompt、请求体、 Provider 凭证、渠道�
 
 ```http
 GET /api/billing/self
+GET /api/billing/self/breakdown
 ```
 
 该接口使用控制台 `UserAuth()` 的 Bearer 凭据（登录访问令牌或个人访问令牌），不是模型 Relay API Key。
@@ -120,6 +123,18 @@ generated_at
 data_source=settlement_logs
 ```
 
+`/api/billing/self/breakdown` 使用相同周期和可选筛选条件，按 `token_id + model_name`
+与基础账单合并。其主要字段包括：
+
+| 分类 | 说明 |
+| --- | --- |
+| `cache` | 缓存命中、写入与总输入 Token；历史上游字段不完整时可能不可用 |
+| `context` | 已记录的短/长 Context 请求与 Token，不用当前阈值重算历史 |
+| `dynamic_pricing` | 动态表达式的请求数和已记录档位 |
+| `data_quality` | 可解析、不可用或无法归类的历史请求数 |
+
+`data_quality.unavailable_requests > 0` 表示该分组存在无法可靠解释的历史元数据，不能把对应构成显示为零用量。如果 breakdown 请求失败，基础金额仍可展示，但页面必须明确标记解释数据不可用。
+
 ## 7. 数据边界
 
 以下情况会影响账单完整性：
@@ -129,8 +144,9 @@ data_source=settlement_logs
 - 异步任务尚未结算；
 - 退款发生在另一个查询周期；
 - 历史日志没有记录更高精度耗时或完整 Token。
+- 历史 `Log.Other` 缺少缓存、Context 或动态档位元数据；此时 breakdown 报告数据质量缺口，不猜测或重算。
 
-账单不展示任意历史时点的期初/期末余额、本周期充值与用量的逐笔勾稽、跨期冲销凭证、税务发票或 Provider 成本账单。
+账单不提供任意历史时点的期初/期末余额、本周期充值与用量的逐笔勾稽、跨期冲销凭证、税务发票或 Provider 成本账单。`generated_at` 只是查询生成时间，不是会计关账或 `as_of` 快照。
 
 如需核对差异，记录账单周期、API Key ID、模型、平台请求 ID和相关任务 ID，再从用量日志和管理员审计继续追踪。
 

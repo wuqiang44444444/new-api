@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: Dev Team
-last-reviewed: 2026-08-02
+last-reviewed: 2026-08-04
 ---
 
 # 内置 API 文档中心架构
@@ -23,10 +23,10 @@ last-reviewed: 2026-08-02
 
 ### 1.1 当前实现状态
 
-截至 2026-07-29，首期代码已经按本架构落地：
+截至 2026-08-04，首期代码已经按本架构落地：
 
-- `docs/openapi/public-operations.json` 已冻结首批 28 个 operation，并由构建脚本与审计后的 `docs/openapi/relay.json` 交叉校验；
-- `web/public/docs-content/` 已包含受控 manifest、16 篇首批中文 Markdown 和构建期搜索索引；
+- `docs/openapi/public-operations.json` 已冻结 32 个 operation，并由构建脚本与审计后的 `docs/openapi/relay.json` 交叉校验；
+- `web/public/docs-content/` 已包含受控 manifest、17 篇中文 Markdown 和构建期搜索索引；
 - `web/src/features/docs/` 与 `web/src/routes/docs/` 已提供公开路由、三栏/移动布局、目录、搜索、分页、代码复制和安全 token 渲染；
 - 首页与顶部导航已统一复用 `docs_link` 回退规则，示例 Base URL 由公开站点状态与当前 origin 动态推导；
 - `bun run build` 已强制执行源内容、合同与最终 `dist` 审计，Go 侧已固定 manifest 缓存和深层路由刷新测试。

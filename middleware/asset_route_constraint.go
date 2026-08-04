@@ -84,6 +84,9 @@ func AssetRouteConstraint() gin.HandlerFunc {
 			requestModel = contractModel
 		}
 		requestModel = strings.TrimSpace(requestModel)
+		if requestModel == "" {
+			requestModel = common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
+		}
 		subjectHash := common.GetContextKeyString(c, constant.ContextKeyEndUserSubjectHash)
 		for i := range assets {
 			asset := &assets[i]

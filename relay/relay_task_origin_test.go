@@ -54,6 +54,38 @@ func TestResolveOriginTaskRejectsDeletedOrCrossProtocolRemixSources(t *testing.T
 	}
 }
 
+func TestResolveOriginTaskRejectsLinkSKUThroughNativeRemix(t *testing.T) {
+	originalDB := model.DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Task{}))
+	model.DB = db
+	t.Cleanup(func() { model.DB = originalDB })
+
+	task := model.Task{
+		TaskID: "native-protocol-link-sku", UserId: 42, AppID: 1001,
+		ClientProtocol: model.TaskClientProtocolOpenAIVideos,
+		Platform:       constant.TaskPlatform("54"),
+		Properties:     model.Properties{OriginModelName: model.VideoSKUSeedance20Oversea},
+	}
+	require.NoError(t, db.Create(&task).Error)
+
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(http.MethodPost, "/v1/videos/"+task.TaskID+"/remix", nil)
+	context.Params = gin.Params{{Key: "video_id", Value: task.TaskID}}
+
+	taskErr := ResolveOriginTask(context, &relaycommon.RelayInfo{
+		UserId:  42,
+		TokenId: 1001,
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{
+			AppID: 1001,
+		},
+	})
+
+	require.NotNil(t, taskErr)
+	assert.Equal(t, "link_sku_contract_mismatch", taskErr.Code)
+}
+
 func TestLegacyVideoFetchIsIsolatedByApplication(t *testing.T) {
 	originalDB := model.DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

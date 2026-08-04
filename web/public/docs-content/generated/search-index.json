@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-07-29.1",
+  "contentVersion": "2026-08-04.1",
   "locales": {
     "zh": [
       {
@@ -290,6 +290,45 @@
             "depth": 2,
             "id": "轮询",
             "text": "轮询"
+          }
+        ]
+      },
+      {
+        "pageId": "videos-openai",
+        "slug": "api-reference/videos/openai",
+        "title": "OpenAI Videos",
+        "description": "使用 rc23 原生 OpenAI Videos 创建、查询和 Remix 视频",
+        "keywords": ["OpenAI Videos", "Sora", "Remix"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "创建视频",
+            "text": "创建视频"
+          },
+          {
+            "depth": 2,
+            "id": "查询任务",
+            "text": "查询任务"
+          },
+          {
+            "depth": 2,
+            "id": "remix",
+            "text": "Remix"
+          },
+          {
+            "depth": 2,
+            "id": "下载内容",
+            "text": "下载内容"
+          },
+          {
+            "depth": 2,
+            "id": "旧版兼容入口",
+            "text": "旧版兼容入口"
+          },
+          {
+            "depth": 2,
+            "id": "计费与重试",
+            "text": "计费与重试"
           }
         ]
       },

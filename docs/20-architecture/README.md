@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-03
+last-reviewed: 2026-08-04
 ---
 
 # 20-architecture — 目标说明
@@ -23,7 +23,7 @@ last-reviewed: 2026-08-03
 - [内置 API 文档中心架构](内置API文档中心架构.md)
 - [视频上游接入与异步任务架构](视频上游接入与异步任务架构.md)
 - [图片异步任务共享 Task 与客户端恢复决策](decisions/0006-media-image-shared-task-persistence.md)
-- [视频 Link 合同与共享任务底座决策](decisions/0007-视频Link合同与共享任务底座.md)
+- [视频 Link 合同与共享任务底座决策（已被 ADR-0016 取代）](decisions/0007-视频Link合同与共享任务底座.md)
 - [共享异步任务计费状态机与原子补偿决策](decisions/0008-共享异步任务计费状态机与原子补偿.md)
 - [请求级媒体与平台托管素材双路径决策](decisions/0009-请求级媒体与平台托管素材双路径.md)
 - [视频公开 SKU 能力与候选渠道等价决策](decisions/0010-视频公开SKU能力与候选渠道等价.md)
@@ -32,6 +32,7 @@ last-reviewed: 2026-08-03
 - [真人素材单图同步流式边界决策（已被 ADR-0014 取代）](decisions/0012-真人素材单图同步流式边界.md)
 - [Link 资源源引用与双模式解析决策（已被 ADR-0015 取代）](decisions/0014-Link资源源引用与双模式解析.md)
 - [Link 公开 SKU 与实现身份版本绑定决策](decisions/0015-Link公开SKU与实现身份版本绑定.md)
+- [原生 OpenAI Videos 与 Link 合同并存边界决策](decisions/0016-原生OpenAI-Videos与Link合同并存边界.md)
 - [素材代理与真人授权架构](素材代理与真人授权架构.md)
 - [架构决策记录](decisions/)
 

@@ -1,14 +1,17 @@
 ---
-status: current
+status: historical
 owner: Dev Team
-last-reviewed: 2026-08-03
+last-reviewed: 2026-08-04
+archived-at: 2026-08-04
+source-path: docs/80-dev/2026-08-02-FunCloud-Seedance-2.0中转接入分析方案.md
+superseded-by: "docs/20-architecture/Link资源虚拟素材库架构.md; docs/20-architecture/视频上游接入与异步任务架构.md; docs/40-operations/02-视频与素材渠道运维手册.md; docs/50-planning/路线图.md"
 ---
 
 # FunCloud Seedance 2.0 中转接入分析方案
 
 ## 1. 文档目的与最终方向
 
-本文以 2026-08-02 收到的 FunCloud 最新文档为唯一 Provider 事实源，对照当前代码，给出**移除旧协议、直接应用新协议**的具体实施方案。整体产品和架构设计以 [Link 资源虚拟素材库架构](../20-architecture/Link资源虚拟素材库架构.md) 为准，代码侧共同改造以 [Link 资源虚拟素材库实施方案](./2026-08-02-Link资源虚拟素材库实施方案.md) 为准；本文不另行定义一套 FunCloud 客户素材产品。
+本文以 2026-08-02 收到的 FunCloud 最新文档为唯一 Provider 事实源，对照当前代码，给出**移除旧协议、直接应用新协议**的具体实施方案。整体产品和架构设计以 [Link 资源虚拟素材库架构](../../../20-architecture/Link资源虚拟素材库架构.md) 为准，代码侧共同改造以 [Link 资源虚拟素材库实施方案](./2026-08-02-Link资源虚拟素材库实施方案.md) 为准；本文不另行定义一套 FunCloud 客户素材产品。
 
 前置架构语义是：
 
@@ -431,9 +434,9 @@ docs/openapi/relay.json
 
 ### 8.6 文档和 ADR
 
-[ADR-0012](../20-architecture/decisions/0012-真人素材单图同步流式边界.md) 只记录即将删除的 FunCloud 流式例外；新 Link 设计还改变了 [ADR-0004](../20-architecture/decisions/0004-中转型素材代理与上游绑定.md) 的“不保存完整源 URL”、“创建必须绑定 model/target”和“素材只能在原 binding/模型中使用”三项核心决策。
+[ADR-0012](../../../20-architecture/decisions/0012-真人素材单图同步流式边界.md) 只记录即将删除的 FunCloud 流式例外；新 Link 设计还改变了 [ADR-0004](../../../20-architecture/decisions/0004-中转型素材代理与上游绑定.md) 的“不保存完整源 URL”、“创建必须绑定 model/target”和“素材只能在原 binding/模型中使用”三项核心决策。
 
-已接受的 [ADR-0015：Link 公开 SKU 与实现身份版本绑定](../20-architecture/decisions/0015-Link公开SKU与实现身份版本绑定.md) 已取代 ADR-0014，并继续承接 ADR-0014 对 ADR-0004 和 ADR-0012 的替代关系；当前只保留必要决策：
+已接受的 [ADR-0015：Link 公开 SKU 与实现身份版本绑定](../../../20-architecture/decisions/0015-Link公开SKU与实现身份版本绑定.md) 已取代 ADR-0014，并继续承接 ADR-0014 对 ADR-0004 和 ADR-0012 的替代关系；当前只保留必要决策：
 
 - Link 资源可保存最小化的短期加密源引用，并按渠道解析为 binding 或 `source_url`；源 URL 不是资源身份，也不提供相同媒体判定；
 - 源记录只有 `asset_id`、按 Asset scope 认证加密的 URL 和 `expires_at`；不新增 URL HMAC、公开 source ID、独立状态、密钥版本、迁移注册表或后台保留系统；
@@ -443,7 +446,7 @@ docs/openapi/relay.json
 - `realPersonMode` 语义未决，书面澄清前不形成公开 SKU、不发送字段；
 - 平台 `real_person` Link 在 FunCloud 具备明确授权合同前不路由到 FunCloud。
 
-同时更新素材架构、视频架构、运维手册、用户文档、路线图、[Link 资源虚拟素材库架构](../20-architecture/Link资源虚拟素材库架构.md)、[Link 资源虚拟素材库实施方案](./2026-08-02-Link资源虚拟素材库实施方案.md) 和 `docs/80-dev/README.md`，删除“FunCloud 单图同步流式直通”和“FunCloud 通过本地暂存 multipart 接入 Link”的旧事实。
+同时更新素材架构、视频架构、运维手册、用户文档、路线图、[Link 资源虚拟素材库架构](../../../20-architecture/Link资源虚拟素材库架构.md)、[Link 资源虚拟素材库实施方案](./2026-08-02-Link资源虚拟素材库实施方案.md) 和 `docs/80-dev/README.md`，删除“FunCloud 单图同步流式直通”和“FunCloud 通过本地暂存 multipart 接入 Link”的旧事实。
 
 ## 9. callback、batch 与 last frame
 
@@ -522,7 +525,7 @@ relay/common/video_adapter_version.go
 
 ## 12. 实施顺序
 
-1. [x] [ADR-0015](../20-architecture/decisions/0015-Link公开SKU与实现身份版本绑定.md) 已接受并取代 ADR-0014，继续保留最小 AssetSource 与双模式 Resolver。
+1. [x] [ADR-0015](../../../20-architecture/decisions/0015-Link公开SKU与实现身份版本绑定.md) 已接受并取代 ADR-0014，继续保留最小 AssetSource 与双模式 Resolver。
 2. [ ] 直接删除本地旧 H5/multipart 素材文件、路由、profile、配置、前端字段和迁移注册；共享 NEWAPI 文件只撤销本地窄接线。
 3. [ ] 实现最小 `AssetSource`、公开 `SupportsLinkAssets` 与内部解析能力拆分，完成双模式 Resolver。
 4. [ ] 将普通 Standard/Fast 的公开能力直接设为 `SupportsLinkAssets=true`，内部渠道解析能力设为 `SupportsManagedAssets=false`、`AssetResolutionModes=[source_url]`，不保留字段并行期。
@@ -595,7 +598,7 @@ relay/common/video_adapter_version.go
 
 以下条件全部满足后，才允许启用普通 FunCloud Ability：
 
-- [ADR-0015](../20-architecture/decisions/0015-Link公开SKU与实现身份版本绑定.md) 已接受；
+- [ADR-0015](../../../20-architecture/decisions/0015-Link公开SKU与实现身份版本绑定.md) 已接受；
 - 旧 v1 parser、旧素材 profile、旧 raw upload route 和旧数据库模型已移除；
 - NEWAPI 上游原有代码未因删除本地 FunCloud 扩展而被移动、重排或重构，共享文件只保留必要窄接线；
 - 新任务只生成 FunCloud v2 snapshot；

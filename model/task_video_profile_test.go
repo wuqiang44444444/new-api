@@ -43,6 +43,27 @@ func TestInitTaskFreezesDoubaoVideoProfile(t *testing.T) {
 	}
 }
 
+func TestInitTaskDoesNotAttachLinkImplementationToNativeVideo(t *testing.T) {
+	linkRef := dto.LinkImplementationRef{
+		ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV1,
+	}
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "sora-2",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType: constant.ChannelTypeDoubaoVideo,
+			ChannelOtherSettings: dto.ChannelOtherSettings{
+				LinkImplementation: linkRef,
+			},
+		},
+	}
+
+	task := InitTask(constant.TaskPlatform("54"), info)
+
+	assert.Empty(t, task.PrivateData.LinkImplementationID)
+	assert.Empty(t, task.PrivateData.LinkImplementationVersion)
+	assert.Empty(t, task.PrivateData.LinkImplementationHash)
+}
+
 func TestFrozenVideoTaskChannelUsesOnlyTaskSnapshot(t *testing.T) {
 	implementation, ok := ResolveLinkImplementation(dto.LinkImplementationRef{
 		ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV1,

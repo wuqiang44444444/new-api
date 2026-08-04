@@ -61,7 +61,7 @@ func OpenAIVideoList(c *gin.Context) {
 }
 
 func OpenAIVideoGet(c *gin.Context) {
-	task, exists, err := model.GetVideoTaskForProtocol(c.GetInt("id"), c.GetInt("token_id"), c.Param("task_id"), model.TaskClientProtocolOpenAIVideos, false)
+	task, exists, err := model.GetNativeOpenAIVideoTaskForApp(c.GetInt("id"), c.GetInt("token_id"), c.Param("task_id"))
 	if err != nil {
 		openAIVideoError(c, http.StatusInternalServerError, "server_error", "internal_error", "Failed to retrieve video")
 		return

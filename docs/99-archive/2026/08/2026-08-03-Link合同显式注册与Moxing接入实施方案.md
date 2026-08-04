@@ -1,7 +1,10 @@
 ---
-status: current
+status: historical
 owner: Dev Team
-last-reviewed: 2026-08-03
+last-reviewed: 2026-08-04
+archived-at: 2026-08-04
+source-path: docs/80-dev/2026-08-03-Link合同显式注册与Moxing接入实施方案.md
+superseded-by: "docs/20-architecture/Link合同架构.md; docs/20-architecture/Link资源虚拟素材库架构.md; docs/20-architecture/数据模型.md; docs/40-operations/03-图片渠道与异步任务运维手册.md"
 ---
 
 # Link 合同显式注册与 Moxing 接入实施方案
@@ -68,9 +71,9 @@ last-reviewed: 2026-08-03
 ### 2.2 已读取的权威资料
 
 - `AGENTS.md`、`docs/README.md` 及其必读文档；
-- [Link 合同架构](../20-architecture/Link合同架构.md)；
-- [Link 资源虚拟素材库架构](../20-architecture/Link资源虚拟素材库架构.md)；
-- [ADR-0015：Link 公开 SKU 与实现身份版本绑定](../20-architecture/decisions/0015-Link公开SKU与实现身份版本绑定.md)；
+- [Link 合同架构](../../../20-architecture/Link合同架构.md)；
+- [Link 资源虚拟素材库架构](../../../20-architecture/Link资源虚拟素材库架构.md)；
+- [ADR-0015：Link 公开 SKU 与实现身份版本绑定](../../../20-architecture/decisions/0015-Link公开SKU与实现身份版本绑定.md)；
 - [Link 资源虚拟素材库实施方案](./2026-08-02-Link资源虚拟素材库实施方案.md)；
 - `web/AGENTS.md`。
 
