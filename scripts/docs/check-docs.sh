@@ -65,4 +65,37 @@ done
 grep -q "YYYY-MM-DD-" "docs/80-dev/README.md"
 grep -q "docs/README.md" "AGENTS.md"
 
+decision_dir="docs/20-architecture/decisions"
+decision_index="$decision_dir/README.md"
+test -s "$decision_index"
+
+decision_count=0
+while IFS= read -r decision_file; do
+  decision_count=$((decision_count + 1))
+  decision_name="${decision_file##*/}"
+  decision_prefix="${decision_name%%-*}"
+  decision_adr="$(sed -n 's/^adr: //p' "$decision_file" | head -n 1)"
+
+  grep -q '^status: accepted$' "$decision_file"
+  test "$decision_adr" = "$decision_prefix"
+  grep -Fq "($decision_name)" "$decision_index"
+
+  while IFS= read -r relative_target; do
+    test -f "$decision_dir/$relative_target"
+  done < <(grep -oE '\]\(\./[^)#[:space:]]+\.md' "$decision_file" | sed 's#^](\./##' || true)
+done < <(find "$decision_dir" -maxdepth 1 -type f -name '*.md' ! -name 'README.md' | sort)
+
+test "$decision_count" -gt 0
+if grep -R -qE '^status: (superseded|historical)$' "$decision_dir"; then
+  echo "inactive ADR found in $decision_dir" >&2
+  exit 1
+fi
+
+while IFS= read -r indexed_target; do
+  test -f "$decision_dir/$indexed_target"
+done < <(grep -oE '\]\([0-9]{4}-[^)#[:space:]]+\.md' "$decision_index" | sed 's#^](##' || true)
+
+grep -q '^## ADR 判定门禁$' "docs/30-engineering/人工智能编码指南.md"
+grep -q '不得为了识别或拒绝 Link SKU 而修改' "docs/00-context/硬约束.md"
+
 echo "docs:check passed"

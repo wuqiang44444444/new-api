@@ -9,7 +9,7 @@ import (
 )
 
 func TestValidateFunCloudVideoProfileChannelSeparatesStandardAndFast(t *testing.T) {
-	baseURL := "https://mm.example.com"
+	baseURL := funCloudBaseURL
 	settings := &dto.ChannelOtherSettings{
 		VideoUpstreamProfile:           dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2,
 		VideoUpstreamCreatePath:        funCloudFastCreatePath,
@@ -23,4 +23,8 @@ func TestValidateFunCloudVideoProfileChannelSeparatesStandardAndFast(t *testing.
 
 	settings.VideoUpstreamCreatePath = funCloudStandardCreatePath
 	require.NoError(t, validateFunCloudVideoProfileChannel(channel, settings))
+
+	legacyBaseURL := "https://mm-accelerate.leonecloud.com"
+	channel.BaseURL = &legacyBaseURL
+	require.ErrorContains(t, validateFunCloudVideoProfileChannel(channel, settings), funCloudBaseURL)
 }

@@ -16,11 +16,12 @@ last-reviewed: 2026-08-04
 - 选渠、解析、授权、有效期和安全边界如何协同；
 - 哪些能力属于公开 SKU，哪些能力只属于渠道实现。
 
-[ADR-0015](decisions/0015-Link公开SKU与实现身份版本绑定.md) 已接受本文所描述的架构，并沿用
-ADR-0014 的最小 AssetSource 与双模式 Resolver，同时将内部能力归属收敛到显式实现 ID/version，
-并覆盖已登记图片 SKU。截至 2026-08-03，代码已完成持久化 `AssetSource`、binding/source 双模式
-Resolver、查询时 Asset 聚合状态、当前 binding 的实现/策略/凭据围栏、公开/内部能力分层和显式
-实现版本接线；运行时可用性仍以渠道启用状态、Ability、分组、
+[ADR-0015](decisions/0015-Link公开SKU与实现身份版本绑定.md) 已接受本文所描述的最小
+AssetSource、双模式 Resolver 与显式实现 ID/version 架构。
+截至 2026-08-04，代码已完成持久化 `AssetSource`、binding/source 双模式 Resolver、查询时 Asset
+聚合状态、当前 binding 的实现/策略/凭据围栏、公开/内部能力分层和显式实现版本接线。Resolver
+当前只接入视频创建链路；图片 SKU 虽已登记 capability 与 implementation，但
+`supports_link_assets=false`，尚不接受 `asset://`。运行时可用性仍以渠道启用状态、Ability、分组、
 价格和外部 Provider 验收为准。未完成的外部验收门禁以
 [路线图](../50-planning/路线图.md)为准，历史实施过程仅用于追溯。
 
@@ -35,8 +36,8 @@ Link 资源虚拟素材库为客户提供供应商中立的素材身份：
 
 1. 客户通过统一 `/v1/assets` 合同创建 `ast_*`；
 2. 创建后只需在业务请求中使用 `asset://ast_*`，不感知 Provider 的素材 ID、素材 API 或凭据；
-3. 平台可在不改变客户请求的前提下，为已登记的图片或视频 SKU 选择支持上游托管素材或仅支持
-   HTTPS URL 的渠道；
+3. 平台可在不改变客户请求的前提下，为已发布 Link 资源能力的视频 SKU 选择支持上游托管素材或
+   仅支持 HTTPS URL 的渠道；图片只有在 capability 与 Router 同时启用后才能进入同一解析链；
 4. 所有权、App 隔离、真人授权、状态、路由和审计由平台统一治理；
 5. Provider 差异停留在渠道适配协议内部，不派生第二套客户素材产品。
 
@@ -90,9 +91,9 @@ Asset（ast_*）
 | 真人授权 | 证明可识别自然人形象的使用范围、期限和撤销状态 | 通过平台授权合同管理 |
 
 `Asset` 是聚合根。`AssetSource` 与 `AssetBinding` 是两种可解析路径，不是两类客户资源。通过
-当前创建 API 新建的 Asset 必须带一个 source。当前本地旧 binding-only Asset 数据不兼容读取，实施
-时直接清理并按最新合同重新创建。任何 Asset 都必须至少存在一条实际可用路径，不能创建 source 与
-binding 都为空的壳对象。
+当前公开创建 API 新建的 Asset 必须带一个 source；schema 允许 source 在删除/清理阶段不存在，
+历史 binding-only 记录也可在 active binding 仍满足当前实现围栏时解析。面向客户的可用 Asset
+必须至少存在一条实际可用路径，不能把 source 与 binding 都不可用的壳对象投影为 `ready`。
 
 ### 3.2 AssetSource 的最小边界
 
@@ -155,16 +156,16 @@ Idempotency-Key: <opaque-key>
 
 ### 4.2 使用
 
-创建后，客户在图片或视频公开 SKU 已声明支持 Link 资源的请求字段中统一传入：
+创建后，客户在公开 SKU 已声明支持 Link 资源的请求字段中统一传入：
 
 ```text
 asset://ast_xxx
 ```
 
 客户不需要知道最终渠道采用 `upstream_binding` 还是 `source_url`，也不需要在每次任务中重传
-创建 URL。请求级 HTTPS URL 仍是一条独立便捷路径，但不进入素材库，不获得 `ast_*` 的复用、
-授权和治理语义。一个媒体集合默认不得混用请求级 URL 与 Link 资源，避免生命周期与选渠规则
-含糊。
+创建 URL。当前只有视频 capability 与 Router 完成了这条接线；图片请求中的 `image` 仍只接受
+HTTP(S) URL。请求级 HTTPS URL 是独立路径，不进入素材库，也不获得 `ast_*` 的复用、授权和治理
+语义。一个媒体集合默认不得混用请求级 URL 与 Link 资源，避免生命周期与选渠规则含糊。
 
 ### 4.3 查询、删除与迁移
 
@@ -172,8 +173,8 @@ asset://ast_xxx
 - 删除按平台逻辑删除语义执行，并异步清理可清理的上游 binding；
 - 删除不得把上游清理失败伪装成已完成；
 - 迁移会创建新的 `ast_*`，不会刷新或覆盖原 AssetSource；
-- 同一当前实现版本内已创建的任务继续引用创建时的资源和解析审计，不随客户发起的换源/迁移重写；
-  实现版本硬切换前则直接清理本地旧任务，不为旧版本保留执行入口。
+- 已创建的任务继续引用创建时的 Asset 与 binding 标识，不随客户发起的换源/迁移重写；实现版本
+  不匹配时 fail closed，不把旧 binding 解释为新实现资源。
 
 ## 5. Provider 中立解析架构
 
@@ -225,8 +226,6 @@ Resolver 不在失败后把 Link 资源静默降级为另一条客户路径，�
 - 每个 Asset 持久化一条最小 `AssetSource(asset_id, encrypted_url, expires_at)`；URL 使用
   `asset-source:<public_id>` scope 的 v2 envelope 加密，legacy unscoped envelope 一律拒绝；
 - `model` 与 `target` 是互斥的可选预物化提示；两者都缺失时创建 source-only Asset，不创建 binding；
-- 开发期确认实现升级后，直接删除本地旧版本注册和专属代码，清理旧 binding、Task、attempt 与
-  exposure 数据，再按当前版本重新物化；旧 binding 不迁移、不兼容读取，也不形成清理专用执行链；
 - Resolver 只识别代码注册的唯一当前版本，不实现历史版本解析、双读、alias 或 fallback。
 
 因此，“客户以后只使用 Asset”是客户合同；“平台是否仍需 source”由实际解析模式决定。平台不能
@@ -244,8 +243,9 @@ Resolver 不在失败后把 Link 资源静默降级为另一条客户路径，�
 - 请求级 URL 与 Link 资源是否允许混用。
 
 `supports_link_assets` 是各产品公开 SKU 的能力权威，并参与对应公开能力版本和内容哈希。它不
-承诺特定 Provider 存在持久素材库，也不暴露解析模式。图片继续复用统一 NEWAPI 图片 DTO、路由、
-Task 和计费；引入图片 capability 不得派生第二套 Provider 专属图片 API。
+承诺特定 Provider 存在持久素材库，也不暴露解析模式。当前视频 SKU 可启用该能力；三个 Link 图片
+SKU 均为 false，且图片 Router 未接入 Asset Resolver。未来图片启用时继续复用统一 NEWAPI 图片
+DTO、路由、Task 和计费，不得派生第二套 Provider 专属图片 API。
 
 ### 6.2 渠道实现能力
 
@@ -266,9 +266,9 @@ profile 只描述协议形状，不能单独授予 Provider 身份或 Link 资�
 可以覆盖多个公开 SKU，但必须逐一证明其公开能力覆盖。binding、credential fingerprint、Task、
 create attempt 和 exposure 冻结实现 ID/version，防止当前部署中渠道配置漂移。
 
-新任务、Task、binding 和渠道校验只读取代码注册的唯一当前实现版本。Task 冻结版本不用于兼容已从
-本地代码删除的旧实现。开发期升级先清理本地旧数据，再一次性切换注册表和代码；不保留历史声明或
-旧 adapter/parser。
+新任务、Task、binding 和渠道校验只读取代码注册的唯一当前实现版本。Task 冻结版本用于防止配置
+漂移，不自动提供已删除实现的兼容执行；任何会影响已有数据的实现升级都必须先核查部署数据并制定
+显式迁移或清理方案。
 
 ### 6.3 Provider 能力矩阵
 
@@ -280,8 +280,9 @@ create attempt 和 exposure 冻结实现 ID/version，防止当前部署中渠�
 
 Provider 能力必须以已验证文档和实测为准。FunCloud 的 `realPersonMode` 目前存在语义冲突：一处
 描述为图中真人驱动，另一处限制输出不得与现实自然人雷同。在获得 Provider 书面澄清并完成授权、
-计费、审核和端到端验收前，不得配置公开 SKU、Ability 或 `supports_link_assets=true`；对外文案也
-不得断言其人物必然对应或不对应现实自然人。
+计费、审核和端到端验收前，不得为其登记或启用 `real_person` 能力，也不得发送
+`realPersonMode=true`；现有 general Link 资源和公开视频 SKU 不因此被误写为真人能力。对外文案
+也不得断言其人物必然对应或不对应现实自然人。
 
 ## 7. 状态、有效期与错误语义
 
@@ -383,15 +384,14 @@ Provider 抓取失败和上游清理失败。日志脱敏规则必须在错误�
 11. `expires_at=0` 表示有效期未知和 best-effort，不表示永久有效。
 12. 内部解析能力归属于不可变的 Link 实现 ID/version；profile 只描述适配形状，不能创建实现身份。
 13. 同一公开 SKU 可由多个能力等价实现服务；实现 ID 不进入公开 capability hash。
-14. binding 只匹配代码注册的唯一当前实现版本；开发期版本升级直接清理旧 binding 并重新物化，
-    不保留旧版本兼容链。
-15. 本地旧 Task、binding、attempt 和 exposure 数据不迁移、不双读、不回退；new-api 上游共享代码
-    仍按最小入侵原则保留。
+14. binding 只匹配代码注册的唯一当前实现版本；版本不匹配时 fail closed，不建立隐式双读或
+    fallback。
+15. 影响已有 Task、binding、attempt 或 exposure 的实现升级必须先核查部署数据并显式处理；
+    new-api 上游共享代码仍按最小入侵原则保留。
 
 ## 11. 相关文档
 
 - [ADR-0015：Link 公开 SKU 与实现身份版本绑定](decisions/0015-Link公开SKU与实现身份版本绑定.md)
-- [ADR-0014：Link 资源源引用与双模式解析（已被 ADR-0015 取代）](decisions/0014-Link资源源引用与双模式解析.md)
 - [Link 合同架构](Link合同架构.md)
 - [素材代理与真人授权架构](素材代理与真人授权架构.md)
 - [数据模型](数据模型.md)

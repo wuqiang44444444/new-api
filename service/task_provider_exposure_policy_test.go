@@ -21,7 +21,7 @@ func TestProviderExposurePolicyPagesAndDisablesOnlyAffectedPublicModel(t *testin
 	t.Cleanup(func() { *setting = original })
 	*setting = provider_exposure_setting.PolicySetting{
 		Enabled:                       true,
-		MonitoredImplementations:      model.LinkImplementationFeicaiSeedanceJSON + "/" + model.LinkImplementationVersionV1,
+		MonitoredImplementations:      model.LinkImplementationFeicaiSeedanceVideos + "/" + model.LinkImplementationVersionV1,
 		WindowSeconds:                 3600,
 		WarningCount:                  1,
 		PagingCount:                   1,
@@ -37,17 +37,19 @@ func TestProviderExposurePolicyPagesAndDisablesOnlyAffectedPublicModel(t *testin
 	}
 	require.NoError(t, model.DB.Create(root).Error)
 	implementation, ok := model.ResolveLinkImplementation(taskdto.LinkImplementationRef{
-		ID: model.LinkImplementationFeicaiSeedanceJSON, Version: model.LinkImplementationVersionV1,
+		ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV1,
 	})
 	require.True(t, ok)
 	settingsJSON, err := common.Marshal(taskdto.ChannelOtherSettings{
-		VideoUpstreamProfile:           taskdto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+		VideoUpstreamProfile:           taskdto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		VideoUpstreamCreatePath:        "/v1/videos",
 		VideoUpstreamQueryPathTemplate: "/v1/videos/{task_id}",
 		AssetUpstreamProfile:           taskdto.AssetUpstreamProfileNone,
 		LinkImplementation:             taskdto.LinkImplementationRef{ID: implementation.ID, Version: implementation.Version},
 	})
 	require.NoError(t, err)
+	baseURL := "https://video.example.com"
+	modelMapping := `{"seedance-2.0-standard-720p":"seedance-2.0-vip-720p-azhw"}`
 	channel := &model.Channel{
 		Id:            9402,
 		Type:          constant.ChannelTypeDoubaoVideo,
@@ -56,6 +58,8 @@ func TestProviderExposurePolicyPagesAndDisablesOnlyAffectedPublicModel(t *testin
 		Status:        common.ChannelStatusEnabled,
 		Models:        model.VideoSKUSeedance20Standard720P + ",unrelated-model",
 		Group:         "default",
+		BaseURL:       &baseURL,
+		ModelMapping:  &modelMapping,
 		OtherSettings: string(settingsJSON),
 	}
 	require.NoError(t, model.DB.Create(channel).Error)
@@ -76,7 +80,7 @@ func TestProviderExposurePolicyPagesAndDisablesOnlyAffectedPublicModel(t *testin
 		RequestHash:          "policy-exposure-request",
 		ChannelID:            channel.Id,
 		PublicModel:          model.VideoSKUSeedance20Standard720P,
-		UpstreamProfile:      string(taskdto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference),
+		UpstreamProfile:      string(taskdto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays),
 		LinkImplementationID: implementation.ID, LinkImplementationVersion: implementation.Version, LinkImplementationHash: implementation.ContentHash,
 		Status:           model.TaskCreateAttemptReleasedWithExposure,
 		BillingHoldState: model.TaskCreateAttemptBillingReleased,
@@ -92,7 +96,7 @@ func TestProviderExposurePolicyPagesAndDisablesOnlyAffectedPublicModel(t *testin
 		RequestHash:          "policy-recovered-request",
 		ChannelID:            channel.Id,
 		PublicModel:          model.VideoSKUSeedance20Standard720P,
-		UpstreamProfile:      string(taskdto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference),
+		UpstreamProfile:      string(taskdto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays),
 		LinkImplementationID: implementation.ID, LinkImplementationVersion: implementation.Version, LinkImplementationHash: implementation.ContentHash,
 		Status:           model.TaskCreateAttemptComplete,
 		BillingHoldState: model.TaskCreateAttemptBillingTransferred,
@@ -107,7 +111,7 @@ func TestProviderExposurePolicyPagesAndDisablesOnlyAffectedPublicModel(t *testin
 		UserID:                 root.Id,
 		ChannelID:              channel.Id,
 		PublicModel:            model.VideoSKUSeedance20Standard720P,
-		UpstreamProfile:        string(taskdto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference),
+		UpstreamProfile:        string(taskdto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays),
 		LinkImplementationID:   implementation.ID,
 		LinkImplementationVer:  implementation.Version,
 		LinkImplementationHash: implementation.ContentHash,
@@ -181,7 +185,7 @@ func TestManualTaskCreateAttemptRecoveryRequiresHeldJournalAndIsIdempotent(t *te
 		RequestHash:     "manual-recovery-request",
 		ChannelID:       9503,
 		PublicModel:     model.VideoSKUSeedance20Standard720P,
-		UpstreamProfile: string(taskdto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference),
+		UpstreamProfile: string(taskdto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays),
 	})
 	require.NoError(t, err)
 	_, err = model.HoldTaskCreateAttempt(model.TaskAttemptHoldParams{
@@ -204,7 +208,7 @@ func TestManualTaskCreateAttemptRecoveryRequiresHeldJournalAndIsIdempotent(t *te
 			OriginModelName: model.VideoSKUSeedance20Standard720P,
 		},
 		PrivateData: model.TaskPrivateData{
-			VideoUpstreamProfile: taskdto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+			VideoUpstreamProfile: taskdto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 			TokenId:              token.Id,
 			BillingSource:        BillingSourceWallet,
 		},
@@ -284,7 +288,7 @@ func TestManualTaskCreateAttemptRecoveryRequiresHeldJournalAndIsIdempotent(t *te
 		RequestHash:     "manual-recovery-released-request",
 		ChannelID:       9503,
 		PublicModel:     model.VideoSKUSeedance20Standard720P,
-		UpstreamProfile: string(taskdto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference),
+		UpstreamProfile: string(taskdto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays),
 	})
 	require.NoError(t, err)
 	_, err = model.HoldTaskCreateAttempt(model.TaskAttemptHoldParams{

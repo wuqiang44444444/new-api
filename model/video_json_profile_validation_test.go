@@ -8,32 +8,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidateJSONVideoProfileChannelPublishesOnlyEquivalentSKUs(t *testing.T) {
+func TestValidateJSONVideoMediaArraysChannelPublishesOnlyEquivalentSKUs(t *testing.T) {
 	httpsBaseURL := "https://video.example.com"
 	httpBaseURL := "http://video.example.com"
+	pathBaseURL := "https://video.example.com/provider-root"
 	settings := &dto.ChannelOtherSettings{
-		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 	}
 
-	require.NoError(t, validateJSONVideoProfileChannel(&Channel{
+	require.NoError(t, validateJSONVideoMediaArraysChannel(&Channel{
 		Type:    constant.ChannelTypeDoubaoVideo,
 		Models:  VideoSKUSeedance20Standard720P,
 		BaseURL: &httpsBaseURL,
 	}, settings))
 
-	require.Error(t, validateJSONVideoProfileChannel(&Channel{
+	require.Error(t, validateJSONVideoMediaArraysChannel(&Channel{
 		Type:    constant.ChannelTypeDoubaoVideo,
-		Models:  "seedance-2.0-vip-720p-azhw-feicai",
+		Models:  "seedance-2.0-vip-720p-azhw",
 		BaseURL: &httpsBaseURL,
 	}, settings))
 
-	require.Error(t, validateJSONVideoProfileChannel(&Channel{
+	require.Error(t, validateJSONVideoMediaArraysChannel(&Channel{
 		Type:    constant.ChannelTypeDoubaoVideo,
 		Models:  VideoSKUSeedance20Standard720P,
 		BaseURL: &httpBaseURL,
 	}, settings))
 
-	require.Error(t, validateJSONVideoProfileChannel(&Channel{
+	require.Error(t, validateJSONVideoMediaArraysChannel(&Channel{
+		Type:    constant.ChannelTypeDoubaoVideo,
+		Models:  VideoSKUSeedance20Standard720P,
+		BaseURL: &pathBaseURL,
+	}, settings))
+
+	require.Error(t, validateJSONVideoMediaArraysChannel(&Channel{
 		Type:    constant.ChannelTypeDoubaoVideo,
 		Models:  VideoSKUSeedance20Standard720P,
 		BaseURL: &httpsBaseURL,

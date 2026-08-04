@@ -297,7 +297,7 @@
         "pageId": "videos-openai",
         "slug": "api-reference/videos/openai",
         "title": "OpenAI Videos",
-        "description": "使用 rc23 原生 OpenAI Videos 创建、查询和 Remix 视频",
+        "description": "使用上游原生 OpenAI Videos 创建、查询和 Remix 视频",
         "keywords": ["OpenAI Videos", "Sora", "Remix"],
         "headings": [
           {
@@ -317,18 +317,13 @@
           },
           {
             "depth": 2,
-            "id": "下载内容",
-            "text": "下载内容"
+            "id": "既有视频生成入口",
+            "text": "既有视频生成入口"
           },
           {
             "depth": 2,
-            "id": "旧版兼容入口",
-            "text": "旧版兼容入口"
-          },
-          {
-            "depth": 2,
-            "id": "计费与重试",
-            "text": "计费与重试"
+            "id": "内容下载",
+            "text": "内容下载"
           }
         ]
       },

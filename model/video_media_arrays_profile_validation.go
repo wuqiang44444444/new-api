@@ -9,7 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 )
 
-func validateJSONVideoProfileChannel(channel *Channel, settings *dto.ChannelOtherSettings) error {
+func validateJSONVideoMediaArraysChannel(channel *Channel, settings *dto.ChannelOtherSettings) error {
 	if channel == nil || settings == nil {
 		return nil
 	}
@@ -17,7 +17,7 @@ func validateJSONVideoProfileChannel(channel *Channel, settings *dto.ChannelOthe
 		publicModel := strings.TrimSpace(modelName)
 		capability, registered := ResolveVideoSKUCapability(publicModel)
 		if !registered {
-			if settings.VideoUpstreamProfile == dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference {
+			if settings.VideoUpstreamProfile == dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays {
 				return fmt.Errorf("video model %q has no published capability for the selected channel profile", publicModel)
 			}
 			continue
@@ -27,7 +27,7 @@ func validateJSONVideoProfileChannel(channel *Channel, settings *dto.ChannelOthe
 			return fmt.Errorf("video model %q is not capability-equivalent to the selected channel profile", capability.PublicModel)
 		}
 	}
-	if settings.VideoUpstreamProfile != dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference {
+	if settings.VideoUpstreamProfile != dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays {
 		return nil
 	}
 	baseURL := ""
@@ -35,9 +35,10 @@ func validateJSONVideoProfileChannel(channel *Channel, settings *dto.ChannelOthe
 		baseURL = strings.TrimSpace(*channel.BaseURL)
 	}
 	parsed, err := url.Parse(baseURL)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" ||
-		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return fmt.Errorf("JSON video profile base url must be HTTPS without userinfo, query, or fragment")
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" ||
+		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		(parsed.Path != "" && parsed.Path != "/") {
+		return fmt.Errorf("JSON video media-arrays profile base url must be an HTTPS origin without userinfo, path, query, or fragment")
 	}
 	return nil
 }

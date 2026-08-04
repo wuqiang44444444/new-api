@@ -19,7 +19,6 @@ func TestVideoRouterExposesOnlySelectedNorthboundContracts(t *testing.T) {
 	}
 
 	expected := []string{
-		http.MethodGet + " /v1/videos",
 		http.MethodPost + " /v1/videos",
 		http.MethodPost + " /v1/videos/:video_id/remix",
 		http.MethodGet + " /v1/videos/:task_id",

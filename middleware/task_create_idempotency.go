@@ -114,8 +114,6 @@ func replayTaskCreateIdempotency(c *gin.Context, claim *model.TaskCreateIdempote
 
 func replayTaskCreateResponse(c *gin.Context, protocol string, task *model.Task) {
 	switch protocol {
-	case model.TaskClientProtocolOpenAIVideos:
-		c.AbortWithStatusJSON(http.StatusOK, task.ToOpenAIVideo())
 	case model.TaskClientProtocolOpenAIImages:
 		imageTask := model.ProjectOpenAIImageTask(task)
 		if task.Status == model.TaskStatusSuccess && imageTask.Result != nil {

@@ -33,10 +33,10 @@ func TestJSONVideoCreateRequestUsesMappedModelFromTypedContract(t *testing.T) {
 		},
 	}
 
-	body, handled, err := buildJSONVideoCreateRequest(
+	body, handled, err := buildJSONVideoMediaArraysCreateRequest(
 		c,
 		info,
-		dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 	)
 
 	require.NoError(t, err)
@@ -44,15 +44,14 @@ func TestJSONVideoCreateRequestUsesMappedModelFromTypedContract(t *testing.T) {
 	assert.JSONEq(t, `{
 		"model":"private-upstream-model",
 		"prompt":"hello",
-		"duration":5,
-		"ratio":"16:9",
-		"reference_mode":"text_to_video"
+		"duration":4,
+		"size":"1280x720"
 	}`, string(body))
 }
 
 func TestJSONVideoCreateRequestRejectsGenericBodyFallback(t *testing.T) {
 	body, err := convertVideoCreateRequest(
-		dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		[]byte(`{"model":"private-upstream-model"}`),
 	)
 

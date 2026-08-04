@@ -9,8 +9,8 @@ func ModelArkVideoProfileIncompatibility(request *ModelArkVideoCreateRequest, pr
 	if request.ServiceTier != nil && strings.TrimSpace(*request.ServiceTier) == "flex" && !allowServiceTier {
 		return "service_tier \"flex\" is not supported by the selected video channel"
 	}
-	if profile == VideoUpstreamProfileThirdPartyJSONVideoOmniReference {
-		return ModelArkJSONVideoIncompatibility(request)
+	if profile == VideoUpstreamProfileThirdPartyJSONVideoMediaArrays {
+		return ModelArkVideoMediaArraysIncompatibility(request)
 	}
 	return ""
 }

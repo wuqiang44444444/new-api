@@ -16,7 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/task/doubao/thirdparty/funcloud"
-	"github.com/QuantumNous/new-api/relay/channel/task/doubao/thirdparty/jsonvideo"
+	"github.com/QuantumNous/new-api/relay/channel/task/doubao/thirdparty/mediaarrays"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -224,7 +224,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		}
 		return bytes.NewReader(data), nil
 	}
-	if data, handled, err := buildJSONVideoCreateRequest(c, info, a.profile); handled {
+	if data, handled, err := buildJSONVideoMediaArraysCreateRequest(c, info, a.profile); handled {
 		if err != nil {
 			return nil, err
 		}
@@ -353,7 +353,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 		adapterVersion,
 		responseBody,
 		taskID,
-		jsonvideo.TaskResponseContext{
+		mediaarrays.TaskResponseContext{
 			BaseURL: baseUrl,
 		},
 	)

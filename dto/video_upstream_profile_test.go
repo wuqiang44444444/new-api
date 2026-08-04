@@ -12,6 +12,7 @@ func TestVideoUpstreamProfileIsOfficial(t *testing.T) {
 	assert.True(t, VideoUpstreamProfileOfficial.IsOfficial())
 	assert.False(t, VideoUpstreamProfileThirdPartyReverseProxy.IsOfficial())
 	assert.False(t, VideoUpstreamProfileThirdPartyRelay.IsOfficial())
+	assert.False(t, VideoUpstreamProfileThirdPartyJSONVideoMediaArrays.IsOfficial())
 }
 
 func TestVideoUpstreamProfileIsThirdParty(t *testing.T) {
@@ -19,6 +20,7 @@ func TestVideoUpstreamProfileIsThirdParty(t *testing.T) {
 	assert.False(t, VideoUpstreamProfileOfficial.IsThirdParty())
 	assert.True(t, VideoUpstreamProfileThirdPartyRelay.IsThirdParty())
 	assert.True(t, VideoUpstreamProfileThirdPartyReverseProxy.IsThirdParty())
+	assert.True(t, VideoUpstreamProfileThirdPartyJSONVideoMediaArrays.IsThirdParty())
 }
 
 func TestVideoUpstreamProfileIsValid(t *testing.T) {
@@ -26,6 +28,7 @@ func TestVideoUpstreamProfileIsValid(t *testing.T) {
 		VideoUpstreamProfileOfficial,
 		VideoUpstreamProfileThirdPartyRelay,
 		VideoUpstreamProfileThirdPartyReverseProxy,
+		VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 	} {
 		assert.Truef(t, p.IsValid(), "expected %q to be a registered profile", p)
 	}
@@ -42,6 +45,7 @@ func TestValidateVideoUpstreamProfile(t *testing.T) {
 		VideoUpstreamProfileOfficial,
 		VideoUpstreamProfileThirdPartyRelay,
 		VideoUpstreamProfileThirdPartyReverseProxy,
+		VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 	} {
 		assert.NoErrorf(t, ValidateVideoUpstreamProfile(p), "expected %q to pass validation", p)
 	}

@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestJSONVideoOmniReferenceProfileClassification(t *testing.T) {
-	profile := VideoUpstreamProfileThirdPartyJSONVideoOmniReference
+func TestJSONVideoMediaArraysProfileClassification(t *testing.T) {
+	profile := VideoUpstreamProfileThirdPartyJSONVideoMediaArrays
 	assert.True(t, profile.IsValid())
 	assert.True(t, profile.IsThirdParty())
 	assert.False(t, profile.IsOfficial())

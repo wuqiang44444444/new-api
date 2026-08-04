@@ -38,13 +38,6 @@ func TestVideoTaskOperationsAreIsolatedByApplication(t *testing.T) {
 	require.Len(t, listed, 1)
 	assert.Equal(t, "task-app-a", listed[0].TaskID)
 
-	_, visible, err = GetVisibleVideoTask(501, 1002, "task-app-a", TaskClientProtocolModelArkV3)
-	require.NoError(t, err)
-	assert.False(t, visible)
-	_, visible, err = GetVisibleVideoTask(501, 0, "task-app-a", TaskClientProtocolModelArkV3)
-	require.NoError(t, err)
-	assert.True(t, visible)
-
 	deleted, err := MarkVideoTaskClientDeleted(501, 1002, "task-app-a", TaskClientProtocolModelArkV3)
 	require.NoError(t, err)
 	assert.False(t, deleted)

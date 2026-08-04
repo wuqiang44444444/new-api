@@ -3,45 +3,10 @@ package model
 import (
 	"testing"
 
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
-
-func TestOpenAIVideoProjectionUsesOnlyContractStatuses(t *testing.T) {
-	tests := []struct {
-		status    TaskStatus
-		want      string
-		errorCode string
-	}{
-		{TaskStatusQueued, dto.VideoStatusQueued, ""},
-		{TaskStatusInProgress, dto.VideoStatusInProgress, ""},
-		{TaskStatusSuccess, dto.VideoStatusCompleted, ""},
-		{TaskStatusFailure, dto.VideoStatusFailed, "video_generation_failed"},
-		{TaskStatusCancelled, dto.VideoStatusFailed, "cancelled"},
-		{TaskStatusExpired, dto.VideoStatusFailed, "expired"},
-	}
-	for _, test := range tests {
-		t.Run(string(test.status), func(t *testing.T) {
-			video := ProjectOpenAIVideo(&Task{
-				TaskID: "task_public",
-				Status: test.status,
-				PrivateData: TaskPrivateData{ClientRequest: TaskClientRequestSnapshot{
-					Prompt: "prompt", Seconds: "8", Size: "1280x720",
-				}},
-			})
-			assert.Equal(t, test.want, video.Status)
-			assert.NotContains(t, []string{dto.VideoStatusQueued, dto.VideoStatusInProgress, dto.VideoStatusCompleted, dto.VideoStatusFailed}, "cancelled")
-			if test.errorCode == "" {
-				assert.Nil(t, video.Error)
-			} else {
-				require.NotNil(t, video.Error)
-				assert.Equal(t, test.errorCode, video.Error.Code)
-			}
-		})
-	}
-}
 
 func TestModelArkListEnforcesProtocolSevenDayWindowAndOfficialFilters(t *testing.T) {
 	truncateTables(t)
@@ -79,7 +44,7 @@ func TestModelArkListEnforcesProtocolSevenDayWindowAndOfficialFilters(t *testing
 	excluded := []Task{
 		{TaskID: "too-old", UserId: userID, AppID: appID, ClientProtocol: TaskClientProtocolModelArkV3, Status: TaskStatusSuccess, CreatedAt: now - ModelArkTaskListWindowSeconds - 1},
 		{TaskID: "future", UserId: userID, AppID: appID, ClientProtocol: TaskClientProtocolModelArkV3, Status: TaskStatusSuccess, CreatedAt: now},
-		{TaskID: "openai", UserId: userID, AppID: appID, ClientProtocol: TaskClientProtocolOpenAIVideos, Status: TaskStatusSuccess, CreatedAt: now - 1},
+		{TaskID: "kling", UserId: userID, AppID: appID, ClientProtocol: TaskClientProtocolKlingV1, Status: TaskStatusSuccess, CreatedAt: now - 1},
 		{TaskID: "deleted", UserId: userID, AppID: appID, ClientProtocol: TaskClientProtocolModelArkV3, ClientDeletedAt: now - 1, Status: TaskStatusSuccess, CreatedAt: now - 1},
 	}
 	for i := range excluded {
@@ -168,20 +133,20 @@ func TestTaskCreateIdempotencyReplayConflictExpiryAndAtomicCompletion(t *testing
 	const userID = 982
 	now := int64(1_800_000_000)
 
-	claim, created, err := ClaimTaskCreateIdempotency(userID, TaskClientProtocolOpenAIVideos, "key", "request-a", now+3600)
+	claim, created, err := ClaimTaskCreateIdempotency(userID, TaskClientProtocolModelArkV3, "key", "request-a", now+3600)
 	require.NoError(t, err)
 	require.True(t, created)
 
-	replay, created, err := ClaimTaskCreateIdempotency(userID, TaskClientProtocolOpenAIVideos, "key", "request-a", now+3600)
+	replay, created, err := ClaimTaskCreateIdempotency(userID, TaskClientProtocolModelArkV3, "key", "request-a", now+3600)
 	require.NoError(t, err)
 	assert.False(t, created)
 	assert.Equal(t, claim.ID, replay.ID)
 
-	_, _, err = ClaimTaskCreateIdempotency(userID, TaskClientProtocolOpenAIVideos, "key", "request-b", now+3600)
+	_, _, err = ClaimTaskCreateIdempotency(userID, TaskClientProtocolModelArkV3, "key", "request-b", now+3600)
 	assert.ErrorIs(t, err, ErrTaskCreateIdempotencyConflict)
 
 	task := &Task{
-		TaskID: "task-idempotent", UserId: userID, ClientProtocol: TaskClientProtocolOpenAIVideos,
+		TaskID: "task-idempotent", UserId: userID, ClientProtocol: TaskClientProtocolModelArkV3,
 		Status: TaskStatusQueued, ChannelId: 12,
 		PrivateData: TaskPrivateData{UpstreamTaskID: "upstream-idempotent"},
 	}

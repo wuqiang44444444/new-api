@@ -75,22 +75,3 @@ func TestTaskCreateDispositionDoesNotChangeLegacyNonVideoRetry(t *testing.T) {
 
 	assert.True(t, shouldRetryTaskRelay(context, info, taskErr, 1))
 }
-
-func TestNativeVideoUnknownCreateNeverRetries(t *testing.T) {
-	for _, protocol := range []string{
-		model.TaskClientProtocolOpenAIVideos,
-		model.TaskClientProtocolPlatformVideo,
-	} {
-		context, _ := gin.CreateTestContext(nil)
-		relaycommon.SetTaskCreateDisposition(context, relaycommon.TaskCreateOutcomeUnknown)
-		info := &relaycommon.RelayInfo{
-			TaskRelayInfo: &relaycommon.TaskRelayInfo{ClientProtocol: protocol},
-		}
-		taskErr := &taskdto.TaskError{
-			StatusCode: http.StatusTooManyRequests,
-			Error:      errors.New("provider outcome is unknown"),
-		}
-
-		assert.False(t, shouldRetryTaskRelay(context, info, taskErr, 1), protocol)
-	}
-}

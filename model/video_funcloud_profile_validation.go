@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	funCloudBaseURL            = "https://mm-internal-cn.leonecloud.com"
 	funCloudStandardCreatePath = "/api/v2/open/aigc/seedance2-0"
 	funCloudFastCreatePath     = "/api/v2/open/aigc/seedance2-0-fast"
 	funCloudQueryPath          = "/api/v2/open/aigc/{task_id}"
@@ -25,6 +26,9 @@ func validateFunCloudVideoProfileChannel(channel *Channel, settings *dto.Channel
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return fmt.Errorf("FunCloud video profile base url must be HTTPS without userinfo, query, or fragment")
+	}
+	if baseURL != funCloudBaseURL {
+		return fmt.Errorf("FunCloud video profile base url must be %s", funCloudBaseURL)
 	}
 	createPath := strings.TrimSpace(settings.VideoUpstreamCreatePath)
 	if createPath != funCloudStandardCreatePath && createPath != funCloudFastCreatePath {

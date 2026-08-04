@@ -15,6 +15,7 @@ func TestInitTaskFreezesAssetReferencesPrivately(t *testing.T) {
 			ChannelType: constant.ChannelTypeDoubaoVideo,
 		},
 		TaskRelayInfo: &relaycommon.TaskRelayInfo{
+			ClientProtocol:  TaskClientProtocolModelArkV3,
 			AssetPublicIDs:  []string{"ast_one", "ast_two"},
 			AssetBindingIDs: []int64{21, 22},
 		},

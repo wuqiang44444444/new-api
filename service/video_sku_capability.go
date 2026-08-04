@@ -42,7 +42,15 @@ func ValidateFrozenVideoSKUCapability(
 			http.StatusBadRequest,
 		)
 	}
-	channel := &model.Channel{Id: info.ChannelId, Type: info.ChannelType, Status: common.ChannelStatusEnabled}
+	channel := &model.Channel{
+		Id:     info.ChannelId,
+		Type:   info.ChannelType,
+		Status: common.ChannelStatusEnabled,
+		Models: capability.PublicModel,
+	}
+	if mapping := common.GetContextKeyString(c, constant.ContextKeyChannelModelMapping); mapping != "" {
+		channel.ModelMapping = &mapping
+	}
 	channel.SetOtherSettings(info.ChannelOtherSettings)
 	if err := model.ValidateVideoSKUImplementation(capability, channel); err != nil {
 		return TaskErrorWrapperLocal(err, "unsupported_parameter", http.StatusBadRequest)

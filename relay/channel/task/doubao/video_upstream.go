@@ -8,7 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel/task/doubao/thirdparty"
 	"github.com/QuantumNous/new-api/relay/channel/task/doubao/thirdparty/funcloud"
-	"github.com/QuantumNous/new-api/relay/channel/task/doubao/thirdparty/jsonvideo"
+	"github.com/QuantumNous/new-api/relay/channel/task/doubao/thirdparty/mediaarrays"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
 
@@ -28,7 +28,7 @@ func videoCreatePath(profile dto.VideoUpstreamProfile, configuredCreatePath stri
 		return officialVideoCreatePath, nil
 	case dto.VideoUpstreamProfileThirdPartyRelay,
 		dto.VideoUpstreamProfileThirdPartyReverseProxy,
-		dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2:
 		if strings.TrimSpace(configuredCreatePath) == "" {
 			return "", fmt.Errorf("video_upstream_create_path is required for third-party profile")
@@ -47,7 +47,7 @@ func videoTaskPath(profile dto.VideoUpstreamProfile, configuredQueryTemplate, ta
 		return officialVideoCreatePath + "/" + escapedTaskID, nil
 	case dto.VideoUpstreamProfileThirdPartyRelay,
 		dto.VideoUpstreamProfileThirdPartyReverseProxy,
-		dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2:
 		if strings.TrimSpace(configuredQueryTemplate) == "" {
 			return "", fmt.Errorf("video_upstream_query_path_template is required for third-party profile")
@@ -70,8 +70,8 @@ func convertVideoCreateRequest(profile dto.VideoUpstreamProfile, body []byte) ([
 		return body, nil
 	case dto.VideoUpstreamProfileThirdPartyRelay:
 		return thirdparty.RelayCreateRequest(body)
-	case dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference:
-		return nil, fmt.Errorf("JSON video request must use the typed capability path")
+	case dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays:
+		return nil, fmt.Errorf("JSON video media-arrays request must use the typed capability path")
 	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2:
 		return nil, fmt.Errorf("FunCloud video request must use the typed capability path")
 	default:
@@ -88,8 +88,8 @@ func normalizeVideoCreateResponse(profile dto.VideoUpstreamProfile, body []byte)
 		return thirdparty.ReverseProxyCreateResponse(body)
 	case dto.VideoUpstreamProfileThirdPartyRelay:
 		return thirdparty.RelayCreateResponse(body)
-	case dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference:
-		return jsonvideo.CreateResponse(body)
+	case dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays:
+		return mediaarrays.CreateResponse(body)
 	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2:
 		return funcloud.CreateResponse(body)
 	default:
@@ -103,7 +103,7 @@ func normalizeVideoTaskResponse(
 	adapterVersion relaycommon.VideoSouthboundAdapterVersion,
 	body []byte,
 	expectedTaskID string,
-	responseContext jsonvideo.TaskResponseContext,
+	responseContext mediaarrays.TaskResponseContext,
 ) ([]byte, error) {
 	switch profile {
 	case "", dto.VideoUpstreamProfileOfficial:
@@ -112,14 +112,13 @@ func normalizeVideoTaskResponse(
 		return thirdparty.ReverseProxyTaskResponse(body)
 	case dto.VideoUpstreamProfileThirdPartyRelay:
 		return thirdparty.RelayTaskResponse(body)
-	case dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference:
-		if !adapterVersion.IsJSONVideoOmniV2() {
+	case dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays:
+		if !adapterVersion.IsJSONVideoMediaArraysV1() {
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "unsupported video adapter revision"}
 		}
-		return jsonvideo.TaskResponseV2(body, expectedTaskID, responseContext)
+		return mediaarrays.TaskResponse(body, expectedTaskID, responseContext)
 	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2:
-		if adapterVersion.Profile != dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2 ||
-			adapterVersion.Revision != relaycommon.VideoAdapterRevisionV1 {
+		if !adapterVersion.IsFunCloudSeedanceV2() {
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "unsupported video adapter revision"}
 		}
 		return funcloud.TaskResponse(body, expectedTaskID)

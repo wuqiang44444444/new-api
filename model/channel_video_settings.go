@@ -15,7 +15,7 @@ func validateChannelVideoSettings(channel *Channel, settings *dto.ChannelOtherSe
 	if err := dto.ValidateVideoUpstreamProfile(settings.VideoUpstreamProfile); err != nil {
 		return err
 	}
-	if err := validateJSONVideoProfileChannel(channel, settings); err != nil {
+	if err := validateJSONVideoMediaArraysChannel(channel, settings); err != nil {
 		return err
 	}
 	if err := validateFunCloudVideoProfileChannel(channel, settings); err != nil {

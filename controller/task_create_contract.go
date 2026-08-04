@@ -15,8 +15,6 @@ func setTaskCreateContractResponse(c *gin.Context, task *model.Task) {
 		return
 	}
 	switch task.ClientProtocol {
-	case model.TaskClientProtocolOpenAIVideos:
-		c.Set(middleware.TaskCreateContractResponseKey, task.ToOpenAIVideo())
 	case model.TaskClientProtocolModelArkV3:
 		c.Set(middleware.TaskCreateContractResponseKey, gin.H{"id": task.TaskID})
 	case model.TaskClientProtocolKlingV1:

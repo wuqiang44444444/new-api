@@ -65,7 +65,7 @@ func TestGetTaskForProtocolEnforcesOwnerAndProtocol(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, exists)
 
-	_, exists, err = GetTaskForProtocol(701, task.TaskID, TaskClientProtocolOpenAIVideos, false)
+	_, exists, err = GetTaskForProtocol(701, task.TaskID, TaskClientProtocolModelArkV3, false)
 	require.NoError(t, err)
 	assert.False(t, exists)
 }

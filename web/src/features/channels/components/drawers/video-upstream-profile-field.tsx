@@ -70,7 +70,7 @@ export function VideoUpstreamProfileField(
   const isThirdParty =
     profile === 'third_party_relay' ||
     profile === 'third_party_reverse_proxy' ||
-    profile === 'third_party_json_video_omni_reference' ||
+    profile === 'third_party_json_video_media_arrays' ||
     profile === 'third_party_funcloud_seedance_v2'
   const trimmedBase = baseURL.trim().replace(/\/+$/, '')
   const baseForPreview = trimmedBase || t('(channel API address)')
@@ -90,9 +90,9 @@ export function VideoUpstreamProfileField(
   } else if (profile === 'third_party_relay') {
     descriptionKey =
       'Third-party relay protocol converts the request into a unified media task structure. Configure the third-party API address, create path suffix and query path template.'
-  } else if (profile === 'third_party_json_video_omni_reference') {
+  } else if (profile === 'third_party_json_video_media_arrays') {
     descriptionKey =
-      'JSON video omni-reference protocol supports typed text, image, and audio inputs. Configure an HTTPS API address, create path suffix, and query path template.'
+      'JSON video media-arrays protocol supports typed text, reference image, and reference audio inputs. Configure an HTTPS API address, create path suffix, and query path template.'
   } else if (profile === 'third_party_funcloud_seedance_v2') {
     descriptionKey =
       'FunCloud Seedance 2.0 uses a typed channel adapter protocol. Configure separate Standard and Fast channels with the documented HTTPS paths.'
@@ -121,8 +121,8 @@ export function VideoUpstreamProfileField(
                   label: t('Third-party Reverse Proxy Protocol'),
                 },
                 {
-                  value: 'third_party_json_video_omni_reference',
-                  label: t('JSON Video Omni-reference Protocol'),
+                  value: 'third_party_json_video_media_arrays',
+                  label: t('JSON Video Media Arrays Protocol'),
                 },
                 {
                   value: 'third_party_funcloud_seedance_v2',
@@ -150,8 +150,8 @@ export function VideoUpstreamProfileField(
                   <SelectItem value='third_party_reverse_proxy'>
                     {t('Third-party Reverse Proxy Protocol')}
                   </SelectItem>
-                  <SelectItem value='third_party_json_video_omni_reference'>
-                    {t('JSON Video Omni-reference Protocol')}
+                  <SelectItem value='third_party_json_video_media_arrays'>
+                    {t('JSON Video Media Arrays Protocol')}
                   </SelectItem>
                   <SelectItem value='third_party_funcloud_seedance_v2'>
                     {t('FunCloud Seedance 2.0 Protocol')}

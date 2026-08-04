@@ -272,7 +272,7 @@ export const channelFormSchema = z
         'official',
         'third_party_relay',
         'third_party_reverse_proxy',
-        'third_party_json_video_omni_reference',
+        'third_party_json_video_media_arrays',
         'third_party_funcloud_seedance_v2',
       ])
       .optional(),
@@ -552,7 +552,7 @@ export function transformChannelToFormDefaults(
     | 'official'
     | 'third_party_relay'
     | 'third_party_reverse_proxy'
-    | 'third_party_json_video_omni_reference'
+    | 'third_party_json_video_media_arrays'
     | 'third_party_funcloud_seedance_v2' = 'official'
   let videoUpstreamCreatePath = ''
   let videoUpstreamQueryPathTemplate = ''

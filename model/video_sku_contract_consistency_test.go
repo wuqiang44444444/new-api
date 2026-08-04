@@ -28,28 +28,30 @@ type videoOpenAPIFixedSeedance2 struct {
 	Models map[string]struct {
 		Resolution string `json:"resolution"`
 	} `json:"models"`
-	MinDuration                 int      `json:"min_duration"`
-	MaxDuration                 int      `json:"max_duration"`
-	DefaultDuration             int      `json:"default_duration"`
-	AllowsAutomaticDuration     bool     `json:"allows_automatic_duration"`
+	MinDuration                 *int     `json:"min_duration"`
+	MaxDuration                 *int     `json:"max_duration"`
+	DefaultDuration             *int     `json:"default_duration"`
+	AllowsAutomaticDuration     *bool    `json:"allows_automatic_duration"`
 	Ratios                      []string `json:"ratios"`
 	DefaultRatio                string   `json:"default_ratio"`
-	MaxImages                   int      `json:"max_images"`
-	MaxVideos                   int      `json:"max_videos"`
-	MaxAudio                    int      `json:"max_audio"`
-	SupportsGenerateAudio       bool     `json:"supports_generate_audio"`
-	SupportsDirectMedia         bool     `json:"supports_direct_media"`
-	SupportsLinkAssets          bool     `json:"supports_link_assets"`
-	SupportsMixedMediaPaths     bool     `json:"supports_mixed_media_paths"`
-	ReferenceModesExclusive     bool     `json:"reference_modes_exclusive"`
-	RequiresText                bool     `json:"requires_text"`
-	AudioRequiresReferenceImage bool     `json:"audio_requires_reference_image"`
+	MaxImages                   *int     `json:"max_images"`
+	MaxVideos                   *int     `json:"max_videos"`
+	MaxAudio                    *int     `json:"max_audio"`
+	ImageRoles                  []string `json:"image_roles"`
+	AudioRoles                  []string `json:"audio_roles"`
+	SupportsGenerateAudio       *bool    `json:"supports_generate_audio"`
+	SupportsDirectMedia         *bool    `json:"supports_direct_media"`
+	SupportsLinkAssets          *bool    `json:"supports_link_assets"`
+	SupportsMixedMediaPaths     *bool    `json:"supports_mixed_media_paths"`
+	ReferenceModesExclusive     *bool    `json:"reference_modes_exclusive"`
+	RequiresText                *bool    `json:"requires_text"`
+	AudioRequiresReferenceImage *bool    `json:"audio_requires_reference_image"`
 	UnsupportedFields           []string `json:"unsupported_fields"`
 	Lifecycle                   struct {
-		SupportsContent      bool `json:"supports_content"`
-		SupportsLastFrame    bool `json:"supports_last_frame"`
-		SupportsCancelQueued bool `json:"supports_cancel_queued"`
-		SupportsDelete       bool `json:"supports_delete"`
+		SupportsContent      *bool `json:"supports_content"`
+		SupportsLastFrame    *bool `json:"supports_last_frame"`
+		SupportsCancelQueued *bool `json:"supports_cancel_queued"`
+		SupportsDelete       *bool `json:"supports_delete"`
 	} `json:"lifecycle"`
 }
 
@@ -80,10 +82,7 @@ func TestPublishedVideoSKURegistryMatchesOpenAPIAndUserGuides(t *testing.T) {
 	require.NotNil(t, fixedSeedance2)
 	fixedSeedanceModels := []string{
 		VideoSKUSeedance20Standard720P,
-		VideoSKUSeedance20Standard1080P,
 		VideoSKUSeedance20Value720P,
-		VideoSKUSeedance20Value1080P,
-		VideoSKUSeedance20Value4K,
 	}
 	publishedFixedModels := make([]string, 0, len(fixedSeedance2.Models))
 	for publicModel := range fixedSeedance2.Models {
@@ -93,29 +92,49 @@ func TestPublishedVideoSKURegistryMatchesOpenAPIAndUserGuides(t *testing.T) {
 	for _, publicModel := range fixedSeedanceModels {
 		capability, ok := ResolveVideoSKUCapability(publicModel)
 		require.True(t, ok, publicModel)
+		require.NotNil(t, fixedSeedance2.MinDuration, publicModel)
+		require.NotNil(t, fixedSeedance2.MaxDuration, publicModel)
+		require.NotNil(t, fixedSeedance2.DefaultDuration, publicModel)
+		require.NotNil(t, fixedSeedance2.AllowsAutomaticDuration, publicModel)
+		require.NotNil(t, fixedSeedance2.MaxImages, publicModel)
+		require.NotNil(t, fixedSeedance2.MaxVideos, publicModel)
+		require.NotNil(t, fixedSeedance2.MaxAudio, publicModel)
+		require.NotNil(t, fixedSeedance2.SupportsGenerateAudio, publicModel)
+		require.NotNil(t, fixedSeedance2.SupportsDirectMedia, publicModel)
+		require.NotNil(t, fixedSeedance2.SupportsLinkAssets, publicModel)
+		require.NotNil(t, fixedSeedance2.SupportsMixedMediaPaths, publicModel)
+		require.NotNil(t, fixedSeedance2.ReferenceModesExclusive, publicModel)
+		require.NotNil(t, fixedSeedance2.RequiresText, publicModel)
+		require.NotNil(t, fixedSeedance2.AudioRequiresReferenceImage, publicModel)
+		require.NotNil(t, fixedSeedance2.Lifecycle.SupportsContent, publicModel)
+		require.NotNil(t, fixedSeedance2.Lifecycle.SupportsLastFrame, publicModel)
+		require.NotNil(t, fixedSeedance2.Lifecycle.SupportsCancelQueued, publicModel)
+		require.NotNil(t, fixedSeedance2.Lifecycle.SupportsDelete, publicModel)
 		assert.Equal(t, capability.Resolution, fixedSeedance2.Models[publicModel].Resolution, publicModel)
-		assert.Equal(t, capability.MinDuration, fixedSeedance2.MinDuration, publicModel)
-		assert.Equal(t, capability.MaxDuration, fixedSeedance2.MaxDuration, publicModel)
-		assert.Equal(t, capability.DefaultDuration, fixedSeedance2.DefaultDuration, publicModel)
-		assert.Equal(t, capability.AllowsAutomaticDuration, fixedSeedance2.AllowsAutomaticDuration, publicModel)
+		assert.Equal(t, capability.MinDuration, *fixedSeedance2.MinDuration, publicModel)
+		assert.Equal(t, capability.MaxDuration, *fixedSeedance2.MaxDuration, publicModel)
+		assert.Equal(t, capability.DefaultDuration, *fixedSeedance2.DefaultDuration, publicModel)
+		assert.Equal(t, capability.AllowsAutomaticDuration, *fixedSeedance2.AllowsAutomaticDuration, publicModel)
 		assert.ElementsMatch(t, capability.Ratios, fixedSeedance2.Ratios, publicModel)
 		require.NotEmpty(t, capability.Ratios, publicModel)
 		assert.Equal(t, capability.Ratios[0], fixedSeedance2.DefaultRatio, publicModel)
-		assert.Equal(t, capability.MaxImages, fixedSeedance2.MaxImages, publicModel)
-		assert.Equal(t, capability.MaxVideos, fixedSeedance2.MaxVideos, publicModel)
-		assert.Equal(t, capability.MaxAudio, fixedSeedance2.MaxAudio, publicModel)
-		assert.Equal(t, capability.SupportsGenerateAudio, fixedSeedance2.SupportsGenerateAudio, publicModel)
-		assert.Equal(t, capability.SupportsDirectMedia, fixedSeedance2.SupportsDirectMedia, publicModel)
-		assert.Equal(t, capability.SupportsLinkAssets, fixedSeedance2.SupportsLinkAssets, publicModel)
-		assert.Equal(t, capability.SupportsMixedMediaPath, fixedSeedance2.SupportsMixedMediaPaths, publicModel)
-		assert.Equal(t, capability.ReferenceModesExclusive, fixedSeedance2.ReferenceModesExclusive, publicModel)
-		assert.Equal(t, capability.RequiresText, fixedSeedance2.RequiresText, publicModel)
-		assert.Equal(t, capability.AudioRequiresReference, fixedSeedance2.AudioRequiresReferenceImage, publicModel)
+		assert.Equal(t, capability.MaxImages, *fixedSeedance2.MaxImages, publicModel)
+		assert.Equal(t, capability.MaxVideos, *fixedSeedance2.MaxVideos, publicModel)
+		assert.Equal(t, capability.MaxAudio, *fixedSeedance2.MaxAudio, publicModel)
+		assert.ElementsMatch(t, capability.ImageRoles, fixedSeedance2.ImageRoles, publicModel)
+		assert.ElementsMatch(t, capability.AudioRoles, fixedSeedance2.AudioRoles, publicModel)
+		assert.Equal(t, capability.SupportsGenerateAudio, *fixedSeedance2.SupportsGenerateAudio, publicModel)
+		assert.Equal(t, capability.SupportsDirectMedia, *fixedSeedance2.SupportsDirectMedia, publicModel)
+		assert.Equal(t, capability.SupportsLinkAssets, *fixedSeedance2.SupportsLinkAssets, publicModel)
+		assert.Equal(t, capability.SupportsMixedMediaPath, *fixedSeedance2.SupportsMixedMediaPaths, publicModel)
+		assert.Equal(t, capability.ReferenceModesExclusive, *fixedSeedance2.ReferenceModesExclusive, publicModel)
+		assert.Equal(t, capability.RequiresText, *fixedSeedance2.RequiresText, publicModel)
+		assert.Equal(t, capability.AudioRequiresReference, *fixedSeedance2.AudioRequiresReferenceImage, publicModel)
 		assert.ElementsMatch(t, capability.UnsupportedFields, fixedSeedance2.UnsupportedFields, publicModel)
-		assert.Equal(t, capability.Lifecycle.SupportsContent, fixedSeedance2.Lifecycle.SupportsContent, publicModel)
-		assert.Equal(t, capability.Lifecycle.SupportsLastFrame, fixedSeedance2.Lifecycle.SupportsLastFrame, publicModel)
-		assert.Equal(t, capability.Lifecycle.SupportsCancelQueued, fixedSeedance2.Lifecycle.SupportsCancelQueued, publicModel)
-		assert.Equal(t, capability.Lifecycle.SupportsDelete, fixedSeedance2.Lifecycle.SupportsDelete, publicModel)
+		assert.Equal(t, capability.Lifecycle.SupportsContent, *fixedSeedance2.Lifecycle.SupportsContent, publicModel)
+		assert.Equal(t, capability.Lifecycle.SupportsLastFrame, *fixedSeedance2.Lifecycle.SupportsLastFrame, publicModel)
+		assert.Equal(t, capability.Lifecycle.SupportsCancelQueued, *fixedSeedance2.Lifecycle.SupportsCancelQueued, publicModel)
+		assert.Equal(t, capability.Lifecycle.SupportsDelete, *fixedSeedance2.Lifecycle.SupportsDelete, publicModel)
 	}
 
 	for _, publicModel := range []string{
@@ -123,10 +142,7 @@ func TestPublishedVideoSKURegistryMatchesOpenAPIAndUserGuides(t *testing.T) {
 		VideoSKUSeedance20Oversea,
 		VideoSKUDoubaoSeedance20260128,
 		VideoSKUSeedance20Standard720P,
-		VideoSKUSeedance20Standard1080P,
 		VideoSKUSeedance20Value720P,
-		VideoSKUSeedance20Value1080P,
-		VideoSKUSeedance20Value4K,
 		VideoSKUSeedance20Standard,
 		VideoSKUSeedance20Fast,
 	} {

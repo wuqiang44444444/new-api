@@ -57,18 +57,13 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 		return nil
 	}
 
-	// Remix is an OpenAI Videos operation, so its source must remain visible in
-	// that same Link client API protocol. Other API continuation flows are still
-	// isolated by the authenticated application.
+	// Keep the upstream native remix lookup unchanged. Link continuation flows
+	// remain isolated by the authenticated application.
 	var originTask *model.Task
 	var exist bool
 	var err error
 	if info.Action == constant.TaskActionRemix {
-		originTask, exist, err = model.GetNativeOpenAIVideoTaskForApp(
-			info.UserId,
-			info.TokenId,
-			info.OriginTaskID,
-		)
+		originTask, exist, err = model.GetByTaskId(info.UserId, info.OriginTaskID)
 	} else {
 		originTask, exist, err = model.GetByTaskIDForApp(info.UserId, info.TokenId, info.OriginTaskID)
 	}
@@ -92,17 +87,6 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 			}
 		}
 	}
-	if info.Action == constant.TaskActionRemix && model.IsRegisteredLinkSKU(info.OriginModelName) {
-		return service.TaskErrorWrapperLocal(
-			errors.New("registered Link SKUs must use their published Link contract"),
-			"link_sku_contract_mismatch",
-			http.StatusBadRequest,
-		)
-	}
-	if info.Action == constant.TaskActionRemix && !TaskLifecycleCapabilities(originTask).SupportsRemix {
-		return service.TaskErrorWrapperLocal(errors.New("remix is not supported for this video"), "unsupported_operation", http.StatusBadRequest)
-	}
-
 	// 锁定到原始任务的渠道（重试时复用同一渠道，轮换 key）
 	ch, err := model.GetChannelById(originTask.ChannelId, true)
 	if err != nil {
@@ -459,9 +443,8 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		taskId = c.GetString("task_id")
 	}
 	userId := c.GetInt("id")
-	appID := c.GetInt("token_id")
 
-	originTask, exist, err := model.GetByTaskIDForApp(userId, appID, taskId)
+	originTask, exist, err := model.GetByTaskId(userId, taskId)
 	if err != nil {
 		taskResp = service.TaskErrorWrapper(err, "get_task_failed", http.StatusInternalServerError)
 		return

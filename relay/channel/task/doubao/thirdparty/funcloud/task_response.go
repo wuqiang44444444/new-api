@@ -146,8 +146,9 @@ func sanitizeProviderText(value string) string {
 			return "upstream task failed"
 		}
 	}
-	if len(value) > 512 {
-		value = value[:512]
+	runes := []rune(value)
+	if len(runes) > 512 {
+		value = string(runes[:512])
 	}
 	return value
 }

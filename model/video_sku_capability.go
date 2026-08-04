@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	VideoSKUCapabilityVersionAZHWV1 = "azhw-omni-reference-v1"
+	VideoSKUCapabilityVersionAZHWV1 = "azhw-media-arrays-v1"
 	VideoSKUCapabilityVersionV1     = "public-video-contract-v1"
-	VideoProfileJSONOmniReference   = "third_party_json_video_omni_reference"
+	VideoProfileJSONMediaArrays     = "third_party_json_video_media_arrays"
 	VideoProfileOfficial            = "official"
 	VideoProfileThirdPartyRelay     = "third_party_relay"
 	VideoProfileThirdPartyReverse   = "third_party_reverse_proxy"
@@ -64,6 +64,9 @@ type VideoSKUCapability struct {
 	MaxImages               int                         `json:"max_images"`
 	MaxVideos               int                         `json:"max_videos"`
 	MaxAudio                int                         `json:"max_audio"`
+	ImageRoles              []string                    `json:"image_roles,omitempty"`
+	VideoRoles              []string                    `json:"video_roles,omitempty"`
+	AudioRoles              []string                    `json:"audio_roles,omitempty"`
 	SupportsGenerateAudio   bool                        `json:"supports_generate_audio"`
 	SupportsDirectMedia     bool                        `json:"supports_direct_media"`
 	SupportsLinkAssets      bool                        `json:"supports_link_assets"`
@@ -88,11 +91,8 @@ var videoSKUCapabilities = buildVideoSKUCapabilities()
 
 func buildVideoSKUCapabilities() map[string]VideoSKUCapability {
 	resolutions := map[string]string{
-		VideoSKUSeedance20Standard720P:  "720p",
-		VideoSKUSeedance20Standard1080P: "1080p",
-		VideoSKUSeedance20Value720P:     "720p",
-		VideoSKUSeedance20Value1080P:    "1080p",
-		VideoSKUSeedance20Value4K:       "4k",
+		VideoSKUSeedance20Standard720P: "720p",
+		VideoSKUSeedance20Value720P:    "720p",
 	}
 	result := make(map[string]VideoSKUCapability, len(resolutions))
 	for publicModel, resolution := range resolutions {
@@ -104,12 +104,14 @@ func buildVideoSKUCapabilities() map[string]VideoSKUCapability {
 			Resolutions:             []string{resolution},
 			MinDuration:             4,
 			MaxDuration:             15,
-			DefaultDuration:         5,
-			Ratios:                  []string{"16:9", "4:3", "1:1", "3:4", "9:16", "21:9"},
+			DefaultDuration:         4,
+			Ratios:                  []string{"16:9", "9:16"},
 			MaxImages:               9,
 			MaxAudio:                3,
+			ImageRoles:              []string{"reference_image"},
+			AudioRoles:              []string{"reference_audio"},
 			SupportsDirectMedia:     true,
-			SupportsLinkAssets:      false,
+			SupportsLinkAssets:      true,
 			SupportsMixedMediaPath:  false,
 			ReferenceModesExclusive: true,
 			RequiresText:            true,
@@ -134,7 +136,7 @@ func buildVideoSKUCapabilities() map[string]VideoSKUCapability {
 				"camera_fixed",
 			},
 			RequiredChannelTypes: []int{constant.ChannelTypeDoubaoVideo},
-			RequiredProfiles:     []string{VideoProfileJSONOmniReference},
+			RequiredProfiles:     []string{VideoProfileJSONMediaArrays},
 			Lifecycle:            VideoSKULifecycleCapability{SupportsContent: true},
 		}
 		capability.ContentHash = videoSKUCapabilityHash(capability)
@@ -274,6 +276,9 @@ func cloneVideoSKUCapability(capability VideoSKUCapability) VideoSKUCapability {
 	capability.Resolutions = append([]string(nil), capability.Resolutions...)
 	capability.DurationValues = append([]int(nil), capability.DurationValues...)
 	capability.Modes = append([]string(nil), capability.Modes...)
+	capability.ImageRoles = append([]string(nil), capability.ImageRoles...)
+	capability.VideoRoles = append([]string(nil), capability.VideoRoles...)
+	capability.AudioRoles = append([]string(nil), capability.AudioRoles...)
 	capability.RequestFields = append([]string(nil), capability.RequestFields...)
 	capability.RequiredFields = append([]string(nil), capability.RequiredFields...)
 	capability.UnsupportedFields = append([]string(nil), capability.UnsupportedFields...)
@@ -374,7 +379,11 @@ func (capability VideoSKUCapability) ValidateModelArkRequest(request *dto.ModelA
 			if item.ImageURL != nil {
 				mediaURL = item.ImageURL.URL
 			}
-			switch strings.TrimSpace(videoString(item.Role)) {
+			role := strings.TrimSpace(videoString(item.Role))
+			if len(capability.ImageRoles) > 0 && !slices.Contains(capability.ImageRoles, role) {
+				return fmt.Errorf("image role %q is not supported by this model", role)
+			}
+			switch role {
 			case "first_frame":
 				firstFrame++
 			case "last_frame":
@@ -387,10 +396,18 @@ func (capability VideoSKUCapability) ValidateModelArkRequest(request *dto.ModelA
 			if item.AudioURL != nil {
 				mediaURL = item.AudioURL.URL
 			}
+			role := strings.TrimSpace(videoString(item.Role))
+			if len(capability.AudioRoles) > 0 && !slices.Contains(capability.AudioRoles, role) {
+				return fmt.Errorf("audio role %q is not supported by this model", role)
+			}
 		case "video_url":
 			video++
 			if item.VideoURL != nil {
 				mediaURL = item.VideoURL.URL
+			}
+			role := strings.TrimSpace(videoString(item.Role))
+			if len(capability.VideoRoles) > 0 && !slices.Contains(capability.VideoRoles, role) {
+				return fmt.Errorf("video role %q is not supported by this model", role)
 			}
 		}
 		if strings.HasPrefix(strings.TrimSpace(mediaURL), "asset://") {

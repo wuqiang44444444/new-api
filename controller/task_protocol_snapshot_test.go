@@ -40,7 +40,7 @@ func TestPublishedVideoTaskFreezesResolvedSKUCapability(t *testing.T) {
 	assert.Equal(t, string(dto.VideoContractKlingV1), task.PrivateData.NorthboundContractID)
 }
 
-func TestPublishedOmniVideoTaskFreezesAdapterV2(t *testing.T) {
+func TestPublishedMediaArraysVideoTaskFreezesAdapterV1(t *testing.T) {
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 		ContractID: dto.VideoContractModelArkV3,
@@ -52,7 +52,7 @@ func TestPublishedOmniVideoTaskFreezesAdapterV2(t *testing.T) {
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelType: constant.ChannelTypeDoubaoVideo,
 			ChannelOtherSettings: dto.ChannelOtherSettings{
-				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 			},
 		},
 	}
@@ -60,7 +60,7 @@ func TestPublishedOmniVideoTaskFreezesAdapterV2(t *testing.T) {
 	attachTaskProtocolSnapshot(context, task, info)
 
 	assert.Equal(t,
-		"54:third_party_json_video_omni_reference:v2",
+		"54:third_party_json_video_media_arrays:v1",
 		task.PrivateData.SouthboundAdapterVersion,
 	)
 }

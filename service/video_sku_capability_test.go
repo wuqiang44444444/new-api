@@ -42,3 +42,46 @@ func TestAdapterPreflightRevalidatesFrozenVideoSKUCapability(t *testing.T) {
 	info.ChannelType = constant.ChannelTypeJimeng
 	require.NotNil(t, ValidateFrozenVideoSKUCapability(context, info))
 }
+
+func TestAdapterPreflightRevalidatesFrozenFeicaiModelMapping(t *testing.T) {
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	capability, ok := model.ResolveVideoSKUCapability(model.VideoSKUSeedance20Value720P)
+	require.True(t, ok)
+	common.SetContextKey(context, constant.ContextKeyResolvedVideoSKUCapability, capability)
+	common.SetContextKey(
+		context,
+		constant.ContextKeyChannelModelMapping,
+		`{"seedance-2.0-value-720p":"seedance-2.0-933-720p-azhw"}`,
+	)
+	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
+		ContractID: dto.VideoContractModelArkV3,
+		ModelArk: &dto.ModelArkVideoCreateRequest{
+			Model:      model.VideoSKUSeedance20Value720P,
+			Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
+			Duration:   common.GetPointer(4),
+			Resolution: common.GetPointer("720p"),
+			Ratio:      common.GetPointer("16:9"),
+		},
+	})
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{
+		ChannelType: constant.ChannelTypeDoubaoVideo,
+		ChannelOtherSettings: relaykitdto.ChannelOtherSettings{
+			VideoUpstreamProfile:           relaykitdto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
+			VideoUpstreamCreatePath:        "/v1/videos",
+			VideoUpstreamQueryPathTemplate: "/v1/videos/{task_id}",
+			AssetUpstreamProfile:           relaykitdto.AssetUpstreamProfileNone,
+			LinkImplementation: relaykitdto.LinkImplementationRef{
+				ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV1,
+			},
+		},
+	}}
+
+	require.Nil(t, ValidateFrozenVideoSKUCapability(context, info))
+
+	common.SetContextKey(
+		context,
+		constant.ContextKeyChannelModelMapping,
+		`{"seedance-2.0-value-720p":"seedance-2.0-933-720p-azhw-feicai"}`,
+	)
+	require.NotNil(t, ValidateFrozenVideoSKUCapability(context, info))
+}

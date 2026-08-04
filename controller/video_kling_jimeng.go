@@ -2,21 +2,18 @@ package controller
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 )
 
 func KlingVideoGet(c *gin.Context) {
-	task, exists, err := videoTaskForCurrentOrLegacyProtocol(
+	task, exists, err := videoTaskForProtocol(
 		c.GetInt("id"),
 		c.Param("task_id"),
 		model.TaskClientProtocolKlingV1,
-		constant.ChannelTypeKling,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, dto.KlingVideoErrorResponse{
@@ -55,11 +52,10 @@ func JimengVideo(c *gin.Context) {
 		RelayTask(c)
 		return
 	}
-	task, exists, err := videoTaskForCurrentOrLegacyProtocol(
+	task, exists, err := videoTaskForProtocol(
 		c.GetInt("id"),
 		c.GetString("task_id"),
 		model.TaskClientProtocolJimeng,
-		constant.ChannelTypeJimeng,
 	)
 	if err != nil {
 		code := dto.JimengVideoErrorCode(http.StatusInternalServerError)
@@ -93,19 +89,8 @@ func JimengVideo(c *gin.Context) {
 	})
 }
 
-func videoTaskForCurrentOrLegacyProtocol(userID int, taskID, protocol string, channelType int) (*model.Task, bool, error) {
-	task, exists, err := model.GetTaskForProtocol(userID, taskID, protocol, false)
-	if err != nil || exists {
-		return task, exists, err
-	}
-	legacy, legacyExists, err := model.GetTaskForProtocol(userID, taskID, model.TaskClientProtocolPlatformVideo, false)
-	if err != nil || !legacyExists {
-		return legacy, legacyExists, err
-	}
-	if string(legacy.Platform) != strconv.Itoa(channelType) {
-		return nil, false, nil
-	}
-	return legacy, true, nil
+func videoTaskForProtocol(userID int, taskID, protocol string) (*model.Task, bool, error) {
+	return model.GetTaskForProtocol(userID, taskID, protocol, false)
 }
 
 func klingTaskStatus(status model.TaskStatus) string {

@@ -11,11 +11,8 @@ import (
 
 func TestFeicaiVideoSKUCapabilitiesAreStableAndResolutionBound(t *testing.T) {
 	models := map[string]string{
-		VideoSKUSeedance20Standard720P:  "720p",
-		VideoSKUSeedance20Standard1080P: "1080p",
-		VideoSKUSeedance20Value720P:     "720p",
-		VideoSKUSeedance20Value1080P:    "1080p",
-		VideoSKUSeedance20Value4K:       "4k",
+		VideoSKUSeedance20Standard720P: "720p",
+		VideoSKUSeedance20Value720P:    "720p",
 	}
 	for publicModel, resolution := range models {
 		t.Run(publicModel, func(t *testing.T) {
@@ -26,7 +23,15 @@ func TestFeicaiVideoSKUCapabilitiesAreStableAndResolutionBound(t *testing.T) {
 			assert.Equal(t, resolution, first.Resolution)
 			assert.Equal(t, first.ContentHash, second.ContentHash)
 			assert.Len(t, first.ContentHash, 64)
-			assert.True(t, first.SupportsProfile(VideoProfileJSONOmniReference))
+			assert.True(t, first.SupportsProfile(VideoProfileJSONMediaArrays))
+			assert.Equal(t, 4, first.DefaultDuration)
+			assert.Equal(t, []string{"16:9", "9:16"}, first.Ratios)
+			assert.Equal(t, []string{"reference_image"}, first.ImageRoles)
+			assert.Empty(t, first.VideoRoles)
+			assert.Equal(t, []string{"reference_audio"}, first.AudioRoles)
+			assert.True(t, first.SupportsLinkAssets)
+			assert.False(t, first.SupportsMixedMediaPath)
+			assert.Equal(t, 0, first.MaxVideos)
 
 			wrong := "720p"
 			if resolution == wrong {
@@ -78,8 +83,19 @@ func TestFeicaiVideoSKUCapabilitiesAreStableAndResolutionBound(t *testing.T) {
 					},
 				},
 			})
-			require.ErrorContains(t, err, "reference_image")
+			require.ErrorContains(t, err, "first_frame")
 		})
+	}
+}
+
+func TestFeicaiHighResolutionSKUsRemainUnpublishedWithoutVerifiedSize(t *testing.T) {
+	for _, publicModel := range []string{
+		VideoSKUSeedance20Standard1080P,
+		VideoSKUSeedance20Value1080P,
+		VideoSKUSeedance20Value4K,
+	} {
+		_, ok := ResolveVideoSKUCapability(publicModel)
+		assert.False(t, ok, publicModel)
 	}
 }
 
@@ -129,6 +145,7 @@ func TestFunCloudVideoSKUCapabilitiesMatchTheirEndpoints(t *testing.T) {
 		Content:  []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
 	}
 	require.ErrorContains(t, standard.ValidateModelArkRequest(request), "duration")
+
 }
 
 func TestKlingAndJimengCapabilitiesOwnPublishedRequestValidation(t *testing.T) {

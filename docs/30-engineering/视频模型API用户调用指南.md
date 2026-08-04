@@ -17,19 +17,19 @@ last-reviewed: 2026-08-04
 | `seedance-byteplus` | Seedance BytePlus SKU |
 | `seedance-2-0-oversea` | Seedance 2.0 海外版 SKU |
 | `doubao-seedance-2-0-260128` | Seedance 2.0 国际版 SKU |
-| `seedance-2.0-standard` | Seedance 2.0 标准可变分辨率 SKU；支持平台托管真人素材 |
+| `seedance-2.0-standard` | Seedance 2.0 标准可变分辨率 SKU；支持普通 Link 资源，不支持真人素材 |
 | `seedance-2.0-fast` | Seedance 2.0 Fast 可变分辨率 SKU；仅支持 480p/720p |
 | `seedance-2.0-standard-720p` | Seedance 2.0 标准 720p SKU |
-| `seedance-2.0-standard-1080p` | Seedance 2.0 标准 1080p SKU |
 | `seedance-2.0-value-720p` | Seedance 2.0 经济 720p SKU |
-| `seedance-2.0-value-1080p` | Seedance 2.0 经济 1080p SKU |
-| `seedance-2.0-value-4k` | Seedance 2.0 经济 4K SKU |
 
 上述 Seedance SKU 使用相同的 ModelArk v3 客户端 API。调用方只需更换 `model`，不需要了解或切换上游地址、鉴权方式、任务路径和响应格式。
 
 渠道可以使用官方实现或经过 capability 等价校验的第三方实现，但这不会改变 Link 合同。FunCloud 仅承接独立的 `seedance-2.0-standard` 与 `seedance-2.0-fast`；其路径、业务 code、Bearer Key 与上游素材 ID 均不会向客户端公开。现有官方、TokenSave 和飞彩 SKU 不会加入 FunCloud profile，也不会因 FunCloud 报价改变定价。
 
-模型可用范围可能随账户权限调整。正式调用前应通过模型列表或控制台确认当前 API Key 可以使用的模型。`sora-2`、`sora-2-pro` 等 NEWAPI 原生模型使用 `/v1/videos`；上表 Seedance Link SKU 必须使用 `/api/v3/contents/generations/tasks`，提交到原生入口会返回 `link_sku_contract_mismatch`。
+模型可用范围可能随账户权限调整。正式调用前应通过模型列表或控制台确认当前 API Key 可以使用的
+模型。`sora-2`、`sora-2-pro` 等 NEWAPI 原生模型使用 `/v1/videos`；上表 Seedance Link SKU 的
+公开合同只承诺 `/api/v3/contents/generations/tasks`。本文不定义原生入口如何处理合同外模型，
+客户端不得依赖本地 `link_sku_contract_mismatch` 兼容行为。
 
 Kling 和即梦使用各自独立的 Link 合同中的官方协议，不能使用本文的 ModelArk 路径、字段、状态或错误
 信封。对应调用方式见 [Kling 视频 API Reference](../../web/public/docs-content/zh/api-reference/videos/kling.md)
@@ -313,21 +313,21 @@ Provider 的模型介绍提到视频、音频等多模态参考能力，但当�
 
 ### 5.5 Seedance 2.0 固定分辨率 SKU
 
-以下规则只适用于 `seedance-2.0-standard-*` 和 `seedance-2.0-value-*` 五个 SKU：
+以下规则只适用于 `seedance-2.0-standard-720p` 和 `seedance-2.0-value-720p`：
 
 | 能力 | 合同 |
 | --- | --- |
-| 分辨率 | 由模型名固定为 `720p`、`1080p` 或 `4k`；`resolution` 可省略，显式值必须完全一致 |
-| 时长 | 4～15 秒整数，省略时为 5 秒；不接受 `-1` |
-| 画幅 | `16:9`、`4:3`、`1:1`、`3:4`、`9:16`、`21:9`，省略时为 `16:9`；不接受 `adaptive` |
-| 图片 | 最多 9 张；支持单张 `first_frame`、`first_frame` + `last_frame`，或 1～9 张 `reference_image` |
+| 分辨率 | 由模型名固定为 `720p`；`resolution` 可省略，显式值必须为 `720p` |
+| 时长 | 4～15 秒整数，省略时为 4 秒；不接受 `-1` |
+| 画幅 | 已验证并发布 `16:9`、`9:16`，省略时为 `16:9`；不接受其它比例或 `adaptive` |
+| 图片 | 最多 9 张，只支持 `reference_image`；未发布 `first_frame` / `last_frame` |
 | 音频 | 最多 3 段 `reference_audio`，且必须与 `reference_image` 一起使用 |
-| 视频/托管素材 | 不支持 `video_url` 和 `asset://`；图片、音频使用公网 HTTP(S) URL 或受支持的 Base64 Data URL |
+| 视频/托管素材 | 不支持 `video_url`；普通 `general` 图片/音频支持 `asset://`，也可使用请求级公网 HTTP(S) URL；仅图片支持受支持的 Base64 Data URL |
 | 音频生成 | `generate_audio` 只能省略或显式传 `false` |
 | 高级字段 | 不支持回调、服务档位、草稿、水印、seed、帧数等高级字段 |
 
-每个请求仍必须包含至少一个非空文本项。首尾帧模式不能携带音频，首帧/首尾帧不能与
-`reference_image` 混用。不支持的字段或组合会返回 `400 unsupported_parameter`，不会被
+每个请求仍必须包含至少一个非空文本项。直接 URL 与 `asset://` 不能在同一请求混用，
+`real_person` 素材不由该实现解析。不支持的字段、角色或组合会返回 `400 unsupported_parameter`，不会被
 静默删除或改写。
 
 上表是人类可读摘要。可机器读取的精确合同位于 OpenAPI
@@ -472,7 +472,7 @@ curl -sS -X DELETE \
 
 如果返回 `503 cancellation_unknown`，表示上游取消结果暂时未知。应继续查询原任务，不要立即创建重复任务。
 
-`seedance-2.0-standard-*` 和 `seedance-2.0-value-*` 五个固定分辨率 SKU 第一阶段只支持查询和
+上述两个固定 720p SKU 第一阶段只支持查询和
 内容下载：排队任务删除返回 `409 cancellation_unsupported`，运行中返回 `409 task_running`，
 终态任务返回 `409 delete_unsupported`。这些确定不支持的操作不会向上游发送取消或删除请求。
 

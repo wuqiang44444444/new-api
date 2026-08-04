@@ -28,13 +28,7 @@ func freezeTaskVideoUpstream(privateData *TaskPrivateData, channel *relaycommon.
 }
 
 func TaskUsesFrozenVideoConnection(task *Task) bool {
-	if task == nil {
-		return false
-	}
-	return task.ClientProtocol == TaskClientProtocolOpenAIVideos ||
-		task.ClientProtocol == TaskClientProtocolModelArkV3 ||
-		task.ClientProtocol == TaskClientProtocolKlingV1 ||
-		task.ClientProtocol == TaskClientProtocolJimeng
+	return task != nil && IsLinkVideoTaskClientProtocol(task.ClientProtocol)
 }
 
 // FrozenVideoTaskChannel reconstructs the provider connection selected when a

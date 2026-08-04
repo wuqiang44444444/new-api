@@ -1,4 +1,4 @@
-package jsonvideo
+package mediaarrays
 
 import (
 	"fmt"
@@ -10,14 +10,7 @@ import (
 )
 
 type createResponse struct {
-	ID        string `json:"id"`
-	Object    string `json:"object,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Model     string `json:"model,omitempty"`
-	CreatedAt int64  `json:"created_at,omitempty"`
-	Progress  int    `json:"progress,omitempty"`
-	Seconds   any    `json:"seconds,omitempty"`
-	Size      string `json:"size,omitempty"`
+	ID string `json:"id"`
 }
 
 func CreateResponse(body []byte) ([]byte, error) {
@@ -27,21 +20,17 @@ func CreateResponse(body []byte) ([]byte, error) {
 	}
 	response.ID = strings.TrimSpace(response.ID)
 	if response.ID == "" {
-		return nil, fmt.Errorf("upstream create response has no task id")
+		return nil, fmt.Errorf("upstream create response has no id")
 	}
 	if len(response.ID) > 191 || strings.ContainsFunc(response.ID, unicode.IsControl) {
-		return nil, fmt.Errorf("upstream create response has an invalid task id")
+		return nil, fmt.Errorf("upstream create response has an invalid id")
 	}
-	return common.Marshal(response)
+	return common.Marshal(map[string]any{"id": response.ID})
 }
 
 type taskResponse struct {
 	ID       string `json:"id"`
 	Status   string `json:"status"`
-	Model    string `json:"model,omitempty"`
-	Progress int    `json:"progress,omitempty"`
-	Seconds  any    `json:"seconds,omitempty"`
-	Size     string `json:"size,omitempty"`
 	VideoURL string `json:"video_url,omitempty"`
 	Error    struct {
 		Code    string `json:"code"`
@@ -53,11 +42,7 @@ type TaskResponseContext struct {
 	BaseURL string
 }
 
-func TaskResponseV2(
-	body []byte,
-	expectedTaskID string,
-	responseContext TaskResponseContext,
-) ([]byte, error) {
+func TaskResponse(body []byte, expectedTaskID string, responseContext TaskResponseContext) ([]byte, error) {
 	var response taskResponse
 	if err := common.Unmarshal(body, &response); err != nil {
 		return nil, &relaycommon.UpstreamContractViolation{Reason: "invalid JSON task response"}
@@ -66,23 +51,14 @@ func TaskResponseV2(
 	if response.ID == "" || response.ID != expectedTaskID {
 		return nil, &relaycommon.UpstreamContractViolation{Reason: "task id mismatch"}
 	}
-	result := map[string]any{
-		"id":       response.ID,
-		"model":    response.Model,
-		"progress": response.Progress,
-		"seconds":  response.Seconds,
-		"size":     response.Size,
-	}
+	result := map[string]any{"id": response.ID}
 	switch response.Status {
 	case "queued":
 		result["status"] = "queued"
-	case "in_progress", "processing":
+	case "processing":
 		result["status"] = "running"
 	case "completed":
-		videoURL, err := relaycommon.ValidateSameOriginHTTPSVideoResultURL(
-			response.VideoURL,
-			responseContext.BaseURL,
-		)
+		videoURL, err := relaycommon.ValidateSameOriginHTTPSVideoResultURL(response.VideoURL, responseContext.BaseURL)
 		if err != nil {
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "invalid completed video url"}
 		}
@@ -90,10 +66,7 @@ func TaskResponseV2(
 		result["content"] = map[string]any{"video_url": videoURL}
 	case "failed":
 		result["status"] = "failed"
-		result["error"] = map[string]any{
-			"code":    sanitize(response.Error.Code, 64),
-			"message": sanitize(response.Error.Message, 500),
-		}
+		result["error"] = map[string]any{"code": sanitize(response.Error.Code, 64), "message": sanitize(response.Error.Message, 500)}
 	default:
 		return nil, &relaycommon.UpstreamContractViolation{Reason: "unsupported task status"}
 	}
@@ -103,9 +76,7 @@ func TaskResponseV2(
 func sanitize(value string, limit int) string {
 	value = strings.TrimSpace(value)
 	lower := strings.ToLower(value)
-	for _, sensitive := range []string{
-		"http://", "https://", "bearer ", "authorization", "api_key", "api-key", "cookie",
-	} {
+	for _, sensitive := range []string{"http://", "https://", "bearer ", "authorization", "api_key", "api-key", "cookie"} {
 		if strings.Contains(lower, sensitive) {
 			return "upstream task failed"
 		}

@@ -14,7 +14,7 @@ func TestJSONVideoCreateHTTPDispositionFailsClosedWithoutVerifiedProviderContrac
 	info := &relaycommon.RelayInfo{
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelOtherSettings: dto.ChannelOtherSettings{
-				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 			},
 		},
 	}
@@ -72,5 +72,32 @@ func TestTokenSaveDoubaoInsufficientQuotaIsTerminalRejection(t *testing.T) {
 	assert.Equal(t,
 		relaycommon.TaskCreateOutcomeUnknown,
 		taskCreateHTTPDisposition(info, http.StatusUnauthorized, "user_quota_insufficient"),
+	)
+}
+
+func TestFeicaiAccountRequiredIsTerminalRejection(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		OriginModelName: model.VideoSKUSeedance20Value720P,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelOtherSettings: dto.ChannelOtherSettings{
+				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
+				LinkImplementation: dto.LinkImplementationRef{
+					ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV1,
+				},
+			},
+		},
+	}
+
+	assert.Equal(t,
+		relaycommon.TaskCreateTerminalRejection,
+		taskCreateHTTPDisposition(info, http.StatusForbidden, "feicai_account_required"),
+	)
+	assert.Equal(t,
+		relaycommon.TaskCreateOutcomeUnknown,
+		taskCreateHTTPDisposition(info, http.StatusUnauthorized, "feicai_account_required"),
+	)
+	assert.Equal(t,
+		relaycommon.TaskCreateOutcomeUnknown,
+		taskCreateHTTPDisposition(info, http.StatusForbidden, "account_required"),
 	)
 }

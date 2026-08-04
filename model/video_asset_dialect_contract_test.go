@@ -75,7 +75,7 @@ func exerciseVideoAssetDialectContracts(t *testing.T) {
 	}).Error)
 	claim, created, err := ClaimTaskCreateIdempotency(
 		userID,
-		TaskClientProtocolOpenAIVideos,
+		TaskClientProtocolModelArkV3,
 		"key-"+suffix,
 		"request-"+suffix,
 		common.GetTimestamp()+3600,
@@ -84,7 +84,7 @@ func exerciseVideoAssetDialectContracts(t *testing.T) {
 	require.True(t, created)
 	task := &Task{
 		TaskID: "task_" + suffix, UserId: userID, ChannelId: 77,
-		ClientProtocol: TaskClientProtocolOpenAIVideos, Status: TaskStatusQueued,
+		ClientProtocol: TaskClientProtocolModelArkV3, Status: TaskStatusQueued,
 		PrivateData: TaskPrivateData{UpstreamTaskID: "upstream-" + suffix},
 	}
 	require.NoError(t, RecordTaskCreateUpstreamSuccess(claim.ID, task))

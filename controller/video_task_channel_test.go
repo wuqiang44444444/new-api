@@ -13,7 +13,7 @@ func TestVideoTaskProviderChannelDoesNotReadMutableChannelForFrozenTask(t *testi
 	task := &model.Task{
 		ChannelId:      999999,
 		Platform:       constant.TaskPlatform("24"),
-		ClientProtocol: model.TaskClientProtocolOpenAIVideos,
+		ClientProtocol: model.TaskClientProtocolModelArkV3,
 		PrivateData: model.TaskPrivateData{
 			Key:                       "frozen-key",
 			VideoUpstreamQueryBaseURL: "https://frozen.example",

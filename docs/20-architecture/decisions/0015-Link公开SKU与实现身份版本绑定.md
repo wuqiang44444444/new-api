@@ -9,10 +9,9 @@ superseded-by: ""
 
 ## Context
 
-本决策取代 [ADR-0014](./0014-Link资源源引用与双模式解析.md)。ADR-0014 确立的最小
-`AssetSource`、`upstream_binding` / `source_url` 双模式 Resolver、TTL、安全和不可变源引用继续
-有效；本决策重新收敛其中“内部实现能力按 channel/profile 声明”的身份模型，并把同一套 Link
-资源边界扩展到显式登记的图片 SKU。
+本决策统一 Link 合同术语、公开 SKU capability、候选实现等价、Provider 实现身份，以及最小
+`AssetSource`、`upstream_binding` / `source_url` 双模式 Resolver。此前分散在多个实施阶段文档中的
+这些内容不再构成独立决策。
 
 此前公开 SKU 能力、Provider 实现身份和渠道配置没有完全正交：公开视频能力由
 `VideoSKUCapability` 表达，内部能力按 `(channel_type, profile)` 查找，但不同 Provider 可以共享
@@ -25,51 +24,57 @@ superseded-by: ""
 
 ## Decision
 
-1. **一个 Link 公开 SKU 对应一份公开客户合同和能力声明。** 同一 SKU 可以由一个或多个
+1. **Link 身份只来自显式代码注册。** Link 从上到下分为客户 API 合同、公开 SKU capability、
+   Provider 实现声明、渠道实例和任务执行快照。Ability、模型发现、渠道配置、URL、profile 或
+   运行时探测都不能创建或反向推断 Link 身份。
+2. **一个 Link 公开 SKU 对应一份公开客户合同和能力声明。** 同一 SKU 可以由一个或多个
    Provider 实现服务，但所有实现必须完整覆盖同一公开 capability。`contract_id`、SKU capability
    version 和 capability hash 是客户语义权威；Provider、渠道类型、profile、converter 和解析模式
    不进入公开 capability hash。无法证明公开语义等价时必须排除实现或拆分 SKU。
-2. **Provider 实现使用独立的代码注册身份。** 每个实现以
+3. **Provider 实现使用独立的代码注册身份。** 每个实现以
    `link_implementation_id + link_implementation_version` 唯一标识，并声明允许的公开 SKU、渠道
    类型、profile、converter、适配器版本、Link 资源解析模式、素材约束、任务和计费链路。一个实现
    可以覆盖多个公开 SKU；一个公开 SKU 也可以列出多个已验证等价实现。
-3. **渠道必须显式绑定精确实现版本。** 渠道设置同时保存 `link_implementation_id` 和
+4. **渠道必须显式绑定精确实现版本。** 渠道设置同时保存 `link_implementation_id` 和
    `link_implementation_version`。只配置 route、模型名、Ability、Base URL、profile 或前端模板不
    产生 Link 实现身份。保存、Ability 发布、运行时过滤和发送前复检都解析同一注册项并校验精确
    ID/version；缺失、未知、退役或版本不匹配均 fail closed。
-4. **注册版本不可原地改义。** 已发布的实现 ID/version 对应声明是不可变事实。改变公开 SKU 集合、
+5. **注册版本不可原地改义。** 实现 ID/version 对应声明是不可变事实。改变公开 SKU 集合、
    必需 profile/converter、解析模式、素材限制、任务或计费接线时必须提升实现版本；破坏性变化应
    使用新的实现 ID。注册表为声明计算内部 content hash，并以回归测试防止同一 ID/version 静默
    改义。
-5. **profile 只描述协议适配形状。** Link 内部的 `supports_managed_assets`、
+6. **profile 只描述协议适配形状。** Link 内部的 `supports_managed_assets`、
    `asset_resolution_modes`、`asset_source_min_ttl_seconds` 及素材类型/数量约束由实现注册项声明；
    channel/profile 可以作为该声明的适配条件，但不能单独授予 Provider 身份或 Link 资格。非 Link
    原生渠道继续使用既有 profile 和 Ability 逻辑，不受本决策收紧。
-6. **binding、任务和风险事实冻结实现身份。** `AssetBinding`、credential fingerprint、Task、
+7. **binding、任务和风险事实冻结实现身份。** `AssetBinding`、credential fingerprint、Task、
    create attempt、Provider exposure 和管理员审计至少携带实现 ID/version；任务和 binding 另冻结
-   实现 content hash。渠道或注册表后续升级不改变历史任务，旧 binding 不跨实现版本复用。
-7. **Link 资源 Resolver 可服务图片和视频，但公开能力分别注册。** 视频继续使用
+   content hash。冻结用于防止同一次当前版本部署中的渠道配置漂移；版本不匹配时 fail closed，
+   不建立旧版本 Resolver、双读、alias 或 fallback。
+8. **Link 资源 Resolver 可服务图片和视频，但公开能力分别注册。** 视频继续使用
    `VideoSKUCapability`；显式 Link 图片 SKU 使用最小 `ImageSKUCapability`，只表达公开字段值域、
    `supports_link_assets` 和相关组合限制。图片继续复用 `/v1/images/generations`、现有 DTO、Task 和
    计费链，不新增 Provider 专属公开 API。图片 Resolver 和真实 Provider 未完成验收前，对应公开
    SKU 的 `supports_link_assets` 必须保持 false。
-8. **exposure 不自动生成宽松默认。** 注册实现后，管理员按实现 ID/version 显式配置有效 exposure
+9. **exposure 不自动生成宽松默认。** 注册实现后，管理员按实现 ID/version 显式配置有效 exposure
    策略，之后才能启用渠道。允许先保存禁用渠道进行连接测试；启用保存、Ability 发布和运行时均
    在策略缺失、失效或预算耗尽时 fail closed。
-9. **最小 AssetSource 与双模式解析保持不变。** `AssetSource` 仍只保存 Asset 作用域认证加密 URL
+10. **最小 AssetSource 与双模式解析。** `AssetSource` 只保存 Asset 作用域认证加密 URL
    和客户声明的 `expires_at`；不增加 URL HMAC、独立状态机、密钥注册表或原地刷新。Resolver 仍
    优先 active binding，再按实现声明选择 `source_url`，并在选渠和发送前复检所有权、授权、作用域
    和 TTL。换源继续创建新 `ast_*`。
-10. **一次性 URL 继续走请求级媒体路径。** 仅为当前任务服务的短时 URL 不包装为长期可复用 Link
+11. **一次性 URL 继续走请求级媒体路径。** 仅为当前任务服务的短时 URL 不包装为长期可复用 Link
     资源；同一请求是否允许混用请求级媒体与 `asset://ast_*` 由公开 SKU capability 声明，未声明
     时 fail closed。
-11. **FunCloud 继续是 URL-only 视频实现。** 它只以 `source_url` 消费 `general` Link 资源，不创建
-    `AssetBinding`；旧 H5、`bytedToken`、multipart、material list、raw upload 和专用 attempt 退出
-    目标架构。`realPersonMode` 获得书面澄清和完整验收前不注册公开能力、不发送 true，平台
-    `real_person` Link 不路由到该实现。
-12. **旧未发布实现的硬删除必须经过部署核查。** 每个实际部署环境在删除旧路由、模型和 attempt
+12. **当前开发期实现只保留单一版本。** 版本升级采用一次性硬切换；删除旧注册、专属 adapter、
+    parser、fixture 和测试，不保留多版本运行时、旧任务 fallback 或兼容状态机。首次正式发布后
+    如需跨版本无损升级，必须另行作出架构决策。
+13. **旧未发布实现的硬删除必须经过部署核查。** 每个实际部署环境在删除旧路由、模型和 attempt
     前核查该入口未发布、无在途 attempt 且相关表无业务记录。若存在记录，先制定显式清理或迁移
     方案；不得把“本地未发布”当作所有环境均无数据的证明。
+14. **NEWAPI 原生合同不属于 Link。** 原生 Router、DTO、Relay、Adapter、模型发现和客户端协议
+    以上游代码为唯一权威。本决策不能授权增加原生专属 Link SKU 拒绝中间件、`client_protocol`、
+    兼容读取、fallback 或历史协议推断；隔离必须在 Link 自身注册和候选实现选择中完成。
 
 ## Consequences
 
@@ -84,8 +89,8 @@ superseded-by: ""
 - 代价：每次实现能力变化都需要版本升级、注册一致性测试和管理员重新确认，发布流程更严格。
 - 风险：若把 implementation ID 加入公开 capability hash，会错误地把等价 Provider 拆成不同客户
   合同；实现时必须维持公开能力与内部身份分离。
-- 后续约束：ADR-0014 的 source/binding、TTL 和安全边界继续作为本决策的一部分，不得因实现注册
-  改造恢复 multipart、原地 source refresh 或 Provider 专属客户资源类型。
+- 后续约束：source/binding、TTL 和安全边界是本决策的一部分；不得因实现注册改造恢复 multipart、
+  原地 source refresh、Provider 专属客户资源类型或历史版本兼容路径。
 
 ## Alternatives Considered
 

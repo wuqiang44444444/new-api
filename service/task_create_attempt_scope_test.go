@@ -10,8 +10,6 @@ import (
 
 func TestPublishedVideoProtocolsAlwaysRequireTaskCreateAttempt(t *testing.T) {
 	for _, protocol := range []string{
-		model.TaskClientProtocolOpenAIVideos,
-		model.TaskClientProtocolPlatformVideo,
 		model.TaskClientProtocolModelArkV3,
 		model.TaskClientProtocolKlingV1,
 		model.TaskClientProtocolJimeng,
@@ -25,5 +23,8 @@ func TestPublishedVideoProtocolsAlwaysRequireTaskCreateAttempt(t *testing.T) {
 	assert.False(t, RequiresVideoTaskCreateAttempt(nil))
 	assert.False(t, RequiresVideoTaskCreateAttempt(&relaycommon.RelayInfo{
 		TaskRelayInfo: &relaycommon.TaskRelayInfo{},
+	}))
+	assert.False(t, RequiresVideoTaskCreateAttempt(&relaycommon.RelayInfo{
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{ClientProtocol: "unknown"},
 	}))
 }

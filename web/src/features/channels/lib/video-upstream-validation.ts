@@ -31,7 +31,7 @@ export function refineVideoUpstreamProfile(
   const isThirdParty =
     data.video_upstream_profile === 'third_party_relay' ||
     data.video_upstream_profile === 'third_party_reverse_proxy' ||
-    data.video_upstream_profile === 'third_party_json_video_omni_reference' ||
+    data.video_upstream_profile === 'third_party_json_video_media_arrays' ||
     data.video_upstream_profile === 'third_party_funcloud_seedance_v2'
   if (!isThirdParty) return
 
@@ -41,7 +41,7 @@ export function refineVideoUpstreamProfile(
   if (!data.base_url?.trim()) {
     addIssue('base_url', 'Base URL is required for third-party video upstream')
   } else if (
-    data.video_upstream_profile === 'third_party_json_video_omni_reference' ||
+    data.video_upstream_profile === 'third_party_json_video_media_arrays' ||
     data.video_upstream_profile === 'third_party_funcloud_seedance_v2'
   ) {
     try {

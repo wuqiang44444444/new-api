@@ -316,9 +316,6 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			}
 			if req != nil {
 				modelRequest.Model = req.Model
-				if modelRequest.Model == "" {
-					modelRequest.Model = "sora-2"
-				}
 			}
 		} else if c.Request.Method == http.MethodGet {
 			relayMode = relayconstant.RelayModeVideoFetchByID
@@ -442,8 +439,7 @@ func getTaskOriginModelName(c *gin.Context) string {
 	}
 
 	userId := c.GetInt("id")
-	appID := c.GetInt("token_id")
-	if task, exist, err := model.GetByTaskIDForApp(userId, appID, taskId); err == nil && exist && task != nil {
+	if task, exist, err := model.GetByTaskId(userId, taskId); err == nil && exist && task != nil {
 		return task.Properties.OriginModelName
 	}
 	return ""

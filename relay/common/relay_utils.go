@@ -204,19 +204,8 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	var hasInputReference bool
 
 	var req TaskSubmitReq
-	if strings.HasPrefix(c.GetHeader("Content-Type"), "multipart/form-data") {
-		var err error
-		req, err = parseOpenAIVideoMultipartRequest(c)
-		if err != nil {
-			return createTaskError(err, "invalid_multipart_form", http.StatusBadRequest, true)
-		}
-	} else {
-		if err := common.UnmarshalBodyReusable(c, &req); err != nil {
-			return createTaskError(err, "invalid_json", http.StatusBadRequest, true)
-		}
-	}
-	if taskErr := validateOpenAIVideoCreateContract(c, &req); taskErr != nil {
-		return taskErr
+	if err := common.UnmarshalBodyReusable(c, &req); err != nil {
+		return createTaskError(err, "invalid_json", http.StatusBadRequest, true)
 	}
 
 	prompt = req.Prompt

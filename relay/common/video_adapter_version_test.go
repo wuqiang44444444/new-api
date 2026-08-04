@@ -9,12 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCurrentVideoSouthboundAdapterVersionSelectsOmniV2Only(t *testing.T) {
+func TestCurrentVideoSouthboundAdapterVersionSelectsMediaArraysV1(t *testing.T) {
 	assert.Equal(t,
-		"54:third_party_json_video_omni_reference:v2",
+		"54:third_party_json_video_media_arrays:v1",
 		CurrentVideoSouthboundAdapterVersion(
 			constant.ChannelTypeDoubaoVideo,
-			dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+			dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		),
 	)
 	assert.Equal(t,
@@ -23,14 +23,13 @@ func TestCurrentVideoSouthboundAdapterVersionSelectsOmniV2Only(t *testing.T) {
 	)
 }
 
-func TestResolveVideoSouthboundAdapterVersionDefaultsOmniToV2AndFailsClosed(t *testing.T) {
-	omni, err := ResolveVideoSouthboundAdapterVersion(
+func TestResolveVideoSouthboundAdapterVersionRequiresMediaArraysV1AndFailsClosed(t *testing.T) {
+	_, err := ResolveVideoSouthboundAdapterVersion(
 		constant.ChannelTypeDoubaoVideo,
-		dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		"",
 	)
-	require.NoError(t, err)
-	assert.True(t, omni.IsJSONVideoOmniV2())
+	require.Error(t, err)
 
 	official, err := ResolveVideoSouthboundAdapterVersion(
 		constant.ChannelTypeDoubaoVideo,
@@ -40,24 +39,24 @@ func TestResolveVideoSouthboundAdapterVersionDefaultsOmniToV2AndFailsClosed(t *t
 	require.NoError(t, err)
 	assert.Equal(t, VideoAdapterRevisionV1, official.Revision)
 
-	v2, err := ResolveVideoSouthboundAdapterVersion(
+	v1, err := ResolveVideoSouthboundAdapterVersion(
 		constant.ChannelTypeDoubaoVideo,
-		dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
-		"54:third_party_json_video_omni_reference:v2",
+		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
+		"54:third_party_json_video_media_arrays:v1",
 	)
 	require.NoError(t, err)
-	assert.True(t, v2.IsJSONVideoOmniV2())
+	assert.True(t, v1.IsJSONVideoMediaArraysV1())
 
 	for _, frozen := range []string{
-		"54:third_party_json_video_omni_reference:v1",
-		"54:third_party_json_video_omni_reference:v3",
+		"54:third_party_json_video_media_arrays:v2",
+		"54:third_party_json_video_media_arrays:v3",
 		"54:official:v2",
-		"18:third_party_json_video_omni_reference:v2",
+		"18:third_party_json_video_media_arrays:v1",
 		"malformed",
 	} {
 		_, err := ResolveVideoSouthboundAdapterVersion(
 			constant.ChannelTypeDoubaoVideo,
-			dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+			dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 			frozen,
 		)
 		require.Error(t, err, frozen)
@@ -76,4 +75,5 @@ func TestResolveFunCloudAdapterRequiresOnlyV2Snapshot(t *testing.T) {
 	version, err := ResolveVideoSouthboundAdapterVersion(constant.ChannelTypeDoubaoVideo, profile, "54:third_party_funcloud_seedance_v2:v2")
 	require.NoError(t, err)
 	assert.Equal(t, VideoAdapterRevisionV2, version.Revision)
+	assert.True(t, version.IsFunCloudSeedanceV2())
 }

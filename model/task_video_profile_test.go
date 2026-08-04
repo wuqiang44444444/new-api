@@ -24,6 +24,7 @@ func TestInitTaskFreezesDoubaoVideoProfile(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			info := &relaycommon.RelayInfo{
+				TaskRelayInfo: &relaycommon.TaskRelayInfo{ClientProtocol: TaskClientProtocolModelArkV3},
 				ChannelMeta: &relaycommon.ChannelMeta{
 					ChannelType: constant.ChannelTypeDoubaoVideo,
 					ChannelSetting: dto.ChannelSettings{
@@ -43,27 +44,6 @@ func TestInitTaskFreezesDoubaoVideoProfile(t *testing.T) {
 	}
 }
 
-func TestInitTaskDoesNotAttachLinkImplementationToNativeVideo(t *testing.T) {
-	linkRef := dto.LinkImplementationRef{
-		ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV1,
-	}
-	info := &relaycommon.RelayInfo{
-		OriginModelName: "sora-2",
-		ChannelMeta: &relaycommon.ChannelMeta{
-			ChannelType: constant.ChannelTypeDoubaoVideo,
-			ChannelOtherSettings: dto.ChannelOtherSettings{
-				LinkImplementation: linkRef,
-			},
-		},
-	}
-
-	task := InitTask(constant.TaskPlatform("54"), info)
-
-	assert.Empty(t, task.PrivateData.LinkImplementationID)
-	assert.Empty(t, task.PrivateData.LinkImplementationVersion)
-	assert.Empty(t, task.PrivateData.LinkImplementationHash)
-}
-
 func TestFrozenVideoTaskChannelUsesOnlyTaskSnapshot(t *testing.T) {
 	implementation, ok := ResolveLinkImplementation(dto.LinkImplementationRef{
 		ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV1,
@@ -72,7 +52,7 @@ func TestFrozenVideoTaskChannelUsesOnlyTaskSnapshot(t *testing.T) {
 	task := &Task{
 		ChannelId:      19,
 		Platform:       constant.TaskPlatform("54"),
-		ClientProtocol: TaskClientProtocolOpenAIVideos,
+		ClientProtocol: TaskClientProtocolModelArkV3,
 		Properties:     Properties{OriginModelName: VideoSKUSeedance20Oversea},
 		PrivateData: TaskPrivateData{
 			Key:                            "frozen-key",
@@ -99,7 +79,7 @@ func TestFrozenVideoTaskChannelUsesOnlyTaskSnapshot(t *testing.T) {
 func TestFrozenVideoTaskChannelFailsClosedWhenImplementationHashChanged(t *testing.T) {
 	task := &Task{
 		Platform:       constant.TaskPlatform("54"),
-		ClientProtocol: TaskClientProtocolOpenAIVideos,
+		ClientProtocol: TaskClientProtocolModelArkV3,
 		Properties:     Properties{OriginModelName: VideoSKUSeedance20Oversea},
 		PrivateData: TaskPrivateData{
 			Key:                       "frozen-key",
@@ -119,7 +99,7 @@ func TestFrozenVideoTaskChannelFailsClosedWhenImplementationHashChanged(t *testi
 func TestFrozenVideoTaskChannelFailsClosedWhenConnectionSnapshotIsIncomplete(t *testing.T) {
 	task := &Task{
 		Platform:       constant.TaskPlatform("37"),
-		ClientProtocol: TaskClientProtocolOpenAIVideos,
+		ClientProtocol: TaskClientProtocolModelArkV3,
 		PrivateData:    TaskPrivateData{Key: "frozen-key"},
 	}
 
@@ -132,6 +112,7 @@ func TestFrozenVideoTaskChannelFailsClosedWhenConnectionSnapshotIsIncomplete(t *
 // TestInitTaskFreezesDoubaoVideoQuerySnapshot 验证第三方协议下查询根地址与路径模板被冻结为快照（方案 §7）。
 func TestInitTaskFreezesDoubaoVideoQuerySnapshot(t *testing.T) {
 	info := &relaycommon.RelayInfo{
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{ClientProtocol: TaskClientProtocolModelArkV3},
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelType:    constant.ChannelTypeDoubaoVideo,
 			ChannelBaseUrl: "https://example.com",
@@ -153,6 +134,7 @@ func TestInitTaskFreezesDoubaoVideoQuerySnapshot(t *testing.T) {
 // 轮询优先读取 private_data.key，从而单 Key 渠道换账号不污染在途任务、多 Key 渠道不再把整组 Key 当作 Bearer。
 func TestInitTaskFreezesDoubaoVideoSelectedKey(t *testing.T) {
 	info := &relaycommon.RelayInfo{
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{ClientProtocol: TaskClientProtocolModelArkV3},
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelType: constant.ChannelTypeDoubaoVideo,
 			ApiKey:      "selected-single-key",

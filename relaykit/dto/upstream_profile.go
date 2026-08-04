@@ -9,11 +9,11 @@ import (
 type VideoUpstreamProfile string
 
 const (
-	VideoUpstreamProfileOfficial                         VideoUpstreamProfile = "official"
-	VideoUpstreamProfileThirdPartyRelay                  VideoUpstreamProfile = "third_party_relay"
-	VideoUpstreamProfileThirdPartyReverseProxy           VideoUpstreamProfile = "third_party_reverse_proxy"
-	VideoUpstreamProfileThirdPartyJSONVideoOmniReference VideoUpstreamProfile = "third_party_json_video_omni_reference"
-	VideoUpstreamProfileThirdPartyFunCloudSeedanceV2     VideoUpstreamProfile = "third_party_funcloud_seedance_v2"
+	VideoUpstreamProfileOfficial                       VideoUpstreamProfile = "official"
+	VideoUpstreamProfileThirdPartyRelay                VideoUpstreamProfile = "third_party_relay"
+	VideoUpstreamProfileThirdPartyReverseProxy         VideoUpstreamProfile = "third_party_reverse_proxy"
+	VideoUpstreamProfileThirdPartyJSONVideoMediaArrays VideoUpstreamProfile = "third_party_json_video_media_arrays"
+	VideoUpstreamProfileThirdPartyFunCloudSeedanceV2   VideoUpstreamProfile = "third_party_funcloud_seedance_v2"
 )
 
 func (p VideoUpstreamProfile) IsOfficial() bool {
@@ -23,7 +23,7 @@ func (p VideoUpstreamProfile) IsOfficial() bool {
 func (p VideoUpstreamProfile) IsThirdParty() bool {
 	return p == VideoUpstreamProfileThirdPartyRelay ||
 		p == VideoUpstreamProfileThirdPartyReverseProxy ||
-		p == VideoUpstreamProfileThirdPartyJSONVideoOmniReference ||
+		p == VideoUpstreamProfileThirdPartyJSONVideoMediaArrays ||
 		p == VideoUpstreamProfileThirdPartyFunCloudSeedanceV2
 }
 
@@ -32,7 +32,7 @@ func (p VideoUpstreamProfile) IsValid() bool {
 	case VideoUpstreamProfileOfficial,
 		VideoUpstreamProfileThirdPartyRelay,
 		VideoUpstreamProfileThirdPartyReverseProxy,
-		VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+		VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		VideoUpstreamProfileThirdPartyFunCloudSeedanceV2:
 		return true
 	}

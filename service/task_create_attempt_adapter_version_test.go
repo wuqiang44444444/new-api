@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestTaskAttemptRecoveryTemplateUsesSameOmniAdapterV2(t *testing.T) {
+func TestTaskAttemptRecoveryTemplateUsesSameMediaArraysAdapterV1(t *testing.T) {
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
 	task := &model.Task{}
 	info := &relaycommon.RelayInfo{
@@ -20,7 +20,7 @@ func TestTaskAttemptRecoveryTemplateUsesSameOmniAdapterV2(t *testing.T) {
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelType: constant.ChannelTypeDoubaoVideo,
 			ChannelOtherSettings: dto.ChannelOtherSettings{
-				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 			},
 		},
 	}
@@ -28,7 +28,7 @@ func TestTaskAttemptRecoveryTemplateUsesSameOmniAdapterV2(t *testing.T) {
 	stageTaskProtocolSnapshot(context, task, info)
 
 	assert.Equal(t,
-		"54:third_party_json_video_omni_reference:v2",
+		"54:third_party_json_video_media_arrays:v1",
 		task.PrivateData.SouthboundAdapterVersion,
 	)
 }

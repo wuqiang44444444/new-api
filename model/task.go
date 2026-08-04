@@ -222,14 +222,15 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeVertexAi {
 			privateData.Key = relayInfo.ChannelMeta.ApiKey
 		}
-		freezeTaskVideoUpstream(&privateData, relayInfo.ChannelMeta)
-		if implementation, ok := ResolveLinkImplementation(relayInfo.ChannelMeta.ChannelOtherSettings.LinkImplementation); ok &&
-			IsRegisteredLinkSKU(relayInfo.OriginModelName) {
-			privateData.LinkImplementationID = implementation.ID
-			privateData.LinkImplementationVersion = implementation.Version
-			privateData.LinkImplementationHash = implementation.ContentHash
-		}
-		if relayInfo.TaskRelayInfo != nil {
+		linkVideoTask := relayInfo.TaskRelayInfo != nil && IsLinkVideoTaskClientProtocol(relayInfo.TaskRelayInfo.ClientProtocol)
+		if linkVideoTask {
+			freezeTaskVideoUpstream(&privateData, relayInfo.ChannelMeta)
+			if implementation, ok := ResolveLinkImplementation(relayInfo.ChannelMeta.ChannelOtherSettings.LinkImplementation); ok &&
+				IsRegisteredLinkSKU(relayInfo.OriginModelName) {
+				privateData.LinkImplementationID = implementation.ID
+				privateData.LinkImplementationVersion = implementation.Version
+				privateData.LinkImplementationHash = implementation.ContentHash
+			}
 			privateData.AssetPublicIDs = append([]string(nil), relayInfo.TaskRelayInfo.AssetPublicIDs...)
 			privateData.AssetBindingIDs = append([]int64(nil), relayInfo.TaskRelayInfo.AssetBindingIDs...)
 			privateData.AppID = relayInfo.TaskRelayInfo.AppID
@@ -241,7 +242,7 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 		if relayInfo.OriginModelName != "" {
 			properties.OriginModelName = relayInfo.OriginModelName
 		}
-		if relayInfo.TaskRelayInfo != nil && relayInfo.TaskRelayInfo.ClientProtocol != "" {
+		if linkVideoTask {
 			if privateData.Key == "" {
 				privateData.Key = relayInfo.ChannelMeta.ApiKey
 			}
@@ -272,9 +273,6 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 		Platform:    platform,
 		Properties:  properties,
 		PrivateData: privateData,
-	}
-	if t.AppID <= 0 {
-		t.AppID = relayInfo.TokenId
 	}
 	return t
 }
@@ -586,5 +584,13 @@ func TaskCountAllUserTask(userId int, queryParams SyncTaskQueryParams) int64 {
 	return total
 }
 func (t *Task) ToOpenAIVideo() *dto.OpenAIVideo {
-	return ProjectOpenAIVideo(t)
+	openAIVideo := dto.NewOpenAIVideo()
+	openAIVideo.ID = t.TaskID
+	openAIVideo.Status = t.Status.ToVideoStatus()
+	openAIVideo.Model = t.Properties.OriginModelName
+	openAIVideo.SetProgressStr(t.Progress)
+	openAIVideo.CreatedAt = t.CreatedAt
+	openAIVideo.CompletedAt = t.UpdatedAt
+	openAIVideo.SetMetadata("url", t.GetResultURL())
+	return openAIVideo
 }

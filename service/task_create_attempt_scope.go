@@ -13,14 +13,5 @@ func RequiresVideoTaskCreateAttempt(info *relaycommon.RelayInfo) bool {
 	if info == nil || info.TaskRelayInfo == nil {
 		return false
 	}
-	switch info.ClientProtocol {
-	case model.TaskClientProtocolOpenAIVideos,
-		model.TaskClientProtocolPlatformVideo,
-		model.TaskClientProtocolModelArkV3,
-		model.TaskClientProtocolKlingV1,
-		model.TaskClientProtocolJimeng:
-		return true
-	default:
-		return false
-	}
+	return model.IsLinkVideoTaskClientProtocol(info.ClientProtocol)
 }

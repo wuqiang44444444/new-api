@@ -224,11 +224,6 @@ func collectPlatformAssetReferences(body map[string]any) (map[string]struct{}, e
 	if image, ok := body["image"].(string); ok {
 		values = append(values, image)
 	}
-	if inputReference, ok := body["input_reference"].(map[string]any); ok {
-		if imageURL, ok := inputReference["image_url"].(string); ok {
-			values = append(values, imageURL)
-		}
-	}
 	if images, ok := body["images"].([]any); ok {
 		for _, raw := range images {
 			if value, ok := raw.(string); ok {

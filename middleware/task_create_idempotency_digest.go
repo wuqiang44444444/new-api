@@ -6,26 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
-	"mime/multipart"
 	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/gin-gonic/gin"
 )
-
-type taskCreateMultipartFileDigest struct {
-	Field       string `json:"field"`
-	Filename    string `json:"filename"`
-	Size        int64  `json:"size"`
-	ContentType string `json:"content_type,omitempty"`
-	SHA256      string `json:"sha256"`
-}
-
-type taskCreateMultipartDigest struct {
-	Values map[string][]string             `json:"values"`
-	Files  []taskCreateMultipartFileDigest `json:"files"`
-}
 
 func taskCreateRequestHash(c *gin.Context, protocol string) (string, error) {
 	digest := sha256.New()
@@ -47,37 +33,6 @@ func taskCreateRequestHash(c *gin.Context, protocol string) (string, error) {
 			return "", err
 		}
 		_, _ = digest.Write(canonical)
-	case strings.Contains(contentType, gin.MIMEMultipartPOSTForm):
-		form, err := common.ParseMultipartFormReusable(c)
-		if err != nil {
-			return "", err
-		}
-		defer form.RemoveAll()
-		canonical := taskCreateMultipartDigest{Values: form.Value}
-		for field, headers := range form.File {
-			for _, header := range headers {
-				fileDigest, err := hashTaskCreateMultipartFile(field, header)
-				if err != nil {
-					return "", err
-				}
-				canonical.Files = append(canonical.Files, fileDigest)
-			}
-		}
-		sort.Slice(canonical.Files, func(i, j int) bool {
-			left, right := canonical.Files[i], canonical.Files[j]
-			if left.Field != right.Field {
-				return left.Field < right.Field
-			}
-			if left.Filename != right.Filename {
-				return left.Filename < right.Filename
-			}
-			return left.SHA256 < right.SHA256
-		})
-		encoded, err := common.Marshal(canonical)
-		if err != nil {
-			return "", err
-		}
-		_, _ = digest.Write(encoded)
 	default:
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
@@ -170,23 +125,4 @@ func canonicalTaskCreateJSON(data []byte) ([]byte, error) {
 	default:
 		return nil, io.ErrUnexpectedEOF
 	}
-}
-
-func hashTaskCreateMultipartFile(field string, header *multipart.FileHeader) (taskCreateMultipartFileDigest, error) {
-	file, err := header.Open()
-	if err != nil {
-		return taskCreateMultipartFileDigest{}, err
-	}
-	defer file.Close()
-	digest := sha256.New()
-	if _, err := io.Copy(digest, file); err != nil {
-		return taskCreateMultipartFileDigest{}, err
-	}
-	return taskCreateMultipartFileDigest{
-		Field:       field,
-		Filename:    header.Filename,
-		Size:        header.Size,
-		ContentType: header.Header.Get("Content-Type"),
-		SHA256:      hex.EncodeToString(digest.Sum(nil)),
-	}, nil
 }

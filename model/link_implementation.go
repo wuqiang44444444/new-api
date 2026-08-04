@@ -16,16 +16,16 @@ import (
 const linkImplementationHashVersion = "link-implementation-hash-v1"
 
 const (
-	LinkImplementationBytePlusSeedanceArk = "byteplus.seedance-ark"
-	LinkImplementationMoxingSeedanceMedia = "moxing.seedance-media-task"
-	LinkImplementationMoxingSeedanceArk   = "moxing.seedance-ark-assets"
-	LinkImplementationTokenSaveSeedance   = "tokensave.seedance-media-task"
-	LinkImplementationFeicaiSeedanceJSON  = "feicai.seedance-json-omni"
-	LinkImplementationFunCloudSeedance    = "funcloud.seedance-json"
-	LinkImplementationMoxingImages        = "moxing.images.media-task"
-	LinkImplementationQihangImages        = "qihang.images.openai-compatible"
-	LinkImplementationKlingVideos         = "kling.videos-official"
-	LinkImplementationJimengVideos        = "jimeng.videos-official"
+	LinkImplementationBytePlusSeedanceArk  = "byteplus.seedance-ark"
+	LinkImplementationMoxingSeedanceMedia  = "moxing.seedance-media-task"
+	LinkImplementationMoxingSeedanceArk    = "moxing.seedance-ark-assets"
+	LinkImplementationTokenSaveSeedance    = "tokensave.seedance-media-task"
+	LinkImplementationFeicaiSeedanceVideos = "feicai.seedance-videos"
+	LinkImplementationFunCloudSeedance     = "funcloud.seedance-json"
+	LinkImplementationMoxingImages         = "moxing.images.media-task"
+	LinkImplementationQihangImages         = "qihang.images.openai-compatible"
+	LinkImplementationKlingVideos          = "kling.videos-official"
+	LinkImplementationJimengVideos         = "jimeng.videos-official"
 
 	LinkImplementationVersionV1 = "v1"
 )
@@ -152,12 +152,22 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 			TaskContract:    "shared_video_task", BillingContract: "newapi_quota",
 		},
 		{
-			ID: LinkImplementationFeicaiSeedanceJSON, Version: LinkImplementationVersionV1, Provider: "飞彩",
+			ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV1, Provider: "飞彩",
 			ContractID:  "modelark.contents.generations.v3",
-			PublicSKUs:  []string{VideoSKUSeedance20Standard720P, VideoSKUSeedance20Standard1080P, VideoSKUSeedance20Value720P, VideoSKUSeedance20Value1080P, VideoSKUSeedance20Value4K},
-			ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileJSONOmniReference,
-			RequiredAssetProfile: string(dto.AssetUpstreamProfileNone), RequiredCreatePath: "/v1/videos", RequiredQueryPath: "/v1/videos/{task_id}", RequiredAdapterVersion: "54:third_party_json_video_omni_reference:v2",
-			AssetCapability: LinkAssetImplementationCapability{}, TaskContract: "shared_video_task", BillingContract: "newapi_quota",
+			PublicSKUs:  []string{VideoSKUSeedance20Standard720P, VideoSKUSeedance20Value720P},
+			ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileJSONMediaArrays,
+			RequiredAssetProfile: string(dto.AssetUpstreamProfileNone), RequiredCreatePath: "/v1/videos", RequiredQueryPath: "/v1/videos/{task_id}", RequiredAdapterVersion: "54:third_party_json_video_media_arrays:v1",
+			RequiredModelMappings: []LinkModelMapping{
+				{PublicSKU: VideoSKUSeedance20Standard720P, UpstreamModel: "seedance-2.0-vip-720p-azhw"},
+				{PublicSKU: VideoSKUSeedance20Value720P, UpstreamModel: "seedance-2.0-933-720p-azhw"},
+			},
+			AssetCapability: LinkAssetImplementationCapability{
+				ResolutionModes:     []LinkAssetResolutionMode{LinkAssetResolutionSourceURL},
+				SourceMinTTLSeconds: 3600,
+				AssetKinds:          []string{AssetKindGeneral}, MediaTypes: []string{"image", "audio"},
+				MaxImages: 9, MaxAudio: 3,
+			},
+			TaskContract: "shared_video_task", BillingContract: "newapi_quota",
 		},
 		{
 			ID: LinkImplementationFunCloudSeedance, Version: LinkImplementationVersionV1, Provider: "FunCloud",

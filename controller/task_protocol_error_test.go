@@ -19,10 +19,7 @@ func TestRespondTaskProtocolErrorUsesProtocolEnvelopeAndHidesUpstreamMessage(t *
 	tests := []struct {
 		name     string
 		protocol string
-	}{
-		{name: "OpenAI", protocol: model.TaskClientProtocolOpenAIVideos},
-		{name: "ModelArk", protocol: model.TaskClientProtocolModelArkV3},
-	}
+	}{{name: "ModelArk", protocol: model.TaskClientProtocolModelArkV3}}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()

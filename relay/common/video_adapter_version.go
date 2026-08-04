@@ -32,17 +32,23 @@ var videoAdapterRevisionRules = map[struct {
 	ChannelType int
 	Profile     dto.VideoUpstreamProfile
 }]videoAdapterRevisionRule{
-	{ChannelType: constant.ChannelTypeDoubaoVideo, Profile: dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference}: {Revision: VideoAdapterRevisionV2, AllowEmpty: true},
-	{ChannelType: constant.ChannelTypeDoubaoVideo, Profile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2}:     {Revision: VideoAdapterRevisionV2, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeDoubaoVideo, Profile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays}: {Revision: VideoAdapterRevisionV1, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeDoubaoVideo, Profile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2}:   {Revision: VideoAdapterRevisionV2, AllowEmpty: false},
 }
 
 func (version VideoSouthboundAdapterVersion) String() string {
 	return fmt.Sprintf("%d:%s:%s", version.ChannelType, version.Profile, version.Revision)
 }
 
-func (version VideoSouthboundAdapterVersion) IsJSONVideoOmniV2() bool {
+func (version VideoSouthboundAdapterVersion) IsJSONVideoMediaArraysV1() bool {
 	return version.ChannelType == constant.ChannelTypeDoubaoVideo &&
-		version.Profile == dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference &&
+		version.Profile == dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays &&
+		version.Revision == VideoAdapterRevisionV1
+}
+
+func (version VideoSouthboundAdapterVersion) IsFunCloudSeedanceV2() bool {
+	return version.ChannelType == constant.ChannelTypeDoubaoVideo &&
+		version.Profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2 &&
 		version.Revision == VideoAdapterRevisionV2
 }
 
@@ -60,9 +66,9 @@ func CurrentVideoSouthboundAdapterVersion(channelType int, profile dto.VideoUpst
 }
 
 // ResolveVideoSouthboundAdapterVersion validates that a frozen channel adapter
-// protocol version belongs to the selected channel/profile. Empty omni snapshots use its only supported
-// v2 contract; other empty historical snapshots remain v1. Unknown, mismatched,
-// and retired explicit omni v1 versions fail closed.
+// protocol version belongs to the selected channel/profile. Profiles with
+// credential-sensitive result semantics require an explicit frozen version;
+// unknown and mismatched versions fail closed.
 func ResolveVideoSouthboundAdapterVersion(
 	channelType int,
 	profile dto.VideoUpstreamProfile,

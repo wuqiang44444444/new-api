@@ -90,21 +90,6 @@ func TestAssetRouteConstraintRejectsReferencesWhenLibraryDisabled(t *testing.T) 
 	assert.Contains(t, recorder.Body.String(), "asset_library_disabled")
 }
 
-func TestAssetRouteConstraintInspectsNativeOpenAIVideoInputReference(t *testing.T) {
-	setAssetLibraryEnabledForTest(t, false)
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewBufferString(
-		`{"model":"sora-2","input_reference":{"image_url":"asset://ast_0123456789abcdefghijklmnopqrstuv"}}`,
-	))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	AssetRouteConstraint()(c)
-
-	assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "asset_library_disabled")
-}
-
 func TestAssetRouteConstraintInspectsModelArkCreateRoute(t *testing.T) {
 	setAssetLibraryEnabledForTest(t, false)
 	recorder := httptest.NewRecorder()

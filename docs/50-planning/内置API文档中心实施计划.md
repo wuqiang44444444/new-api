@@ -129,7 +129,9 @@ docs/openapi/public-operations.json
 - 即梦 `/jimeng/` 的 submit/query Action；
 - `/v1/videos/:task_id/content` 只在确认其普通 API 调用边界后加入。
 
-视频文档按 Link 合同中的官方协议分别组织，不抽象成一个供应商中立请求 DTO。OpenAI 视频创建和仅兼容读取的存量入口不得作为新用户能力发布。
+视频文档按 Link 合同中的官方协议分别组织，不抽象成一个供应商中立请求 DTO。NEWAPI 原生
+OpenAI Videos 是否发布及其 operation 内容直接以上游合同和公开范围审计为准，不由 Link 文档
+重写为存量兼容入口。
 
 #### 素材
 

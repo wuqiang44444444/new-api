@@ -63,7 +63,7 @@ func TestAttachAsyncTaskBillingIncludesProtocolVideoTasks(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		OriginModelName: "video-model",
 		TaskRelayInfo: &relaycommon.TaskRelayInfo{
-			ClientProtocol: TaskClientProtocolOpenAIVideos,
+			ClientProtocol: TaskClientProtocolModelArkV3,
 		},
 	}
 

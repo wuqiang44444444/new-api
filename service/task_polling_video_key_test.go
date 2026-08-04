@@ -133,7 +133,7 @@ func TestUpdateVideoTasksUsesFrozenConnectionAfterChannelDeletion(t *testing.T) 
 	const channelID = 407
 	task := seedPollingTask(t, channelID, "task_public_deleted_channel", "upstream_deleted_channel")
 	task.Platform = constant.TaskPlatform("50")
-	task.ClientProtocol = model.TaskClientProtocolOpenAIVideos
+	task.ClientProtocol = model.TaskClientProtocolModelArkV3
 	task.PrivateData.Key = "frozen-key"
 	task.PrivateData.VideoUpstreamQueryBaseURL = "https://frozen.example"
 	task.PrivateData.VideoUpstreamProxy = "http://frozen-proxy.example"

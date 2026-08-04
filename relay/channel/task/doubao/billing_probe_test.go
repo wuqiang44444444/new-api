@@ -5,8 +5,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -115,6 +117,50 @@ func TestBuildTaskBillingProbeRejectsInvalidResolutionAndDuration(t *testing.T) 
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestBuildTaskBillingProbeFreezesVerifiedMediaArraysSize(t *testing.T) {
+	context := probeContext(relaycommon.TaskSubmitReq{})
+	resolution, ratio := "720p", "9:16"
+	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
+		ContractID: dto.VideoContractModelArkV3,
+		ModelArk: &dto.ModelArkVideoCreateRequest{
+			Model:      model.VideoSKUSeedance20Standard720P,
+			Resolution: &resolution,
+			Ratio:      &ratio,
+			Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
+		},
+	})
+	probe, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays}).BuildTaskBillingProbe(
+		context,
+		&relaycommon.RelayInfo{OriginModelName: model.VideoSKUSeedance20Standard720P},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 4, probe["duration_seconds"])
+	assert.Equal(t, "720p", probe["resolution"])
+	assert.Equal(t, "9:16", probe["ratio"])
+	assert.Equal(t, "720x1280", probe["size"])
+	assert.Equal(t, float64(1), probe["size_multiplier"])
+}
+
+func TestBuildTaskBillingProbeRejectsUnverifiedMediaArraysSize(t *testing.T) {
+	context := probeContext(relaycommon.TaskSubmitReq{})
+	resolution, ratio := "1080p", "16:9"
+	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
+		ContractID: dto.VideoContractModelArkV3,
+		ModelArk: &dto.ModelArkVideoCreateRequest{
+			Model:      model.VideoSKUSeedance20Standard1080P,
+			Resolution: &resolution,
+			Ratio:      &ratio,
+			Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
+		},
+	})
+
+	_, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays}).BuildTaskBillingProbe(
+		context,
+		&relaycommon.RelayInfo{OriginModelName: model.VideoSKUSeedance20Standard1080P},
+	)
+	require.ErrorContains(t, err, "billing capability is unavailable")
 }
 
 func TestOfficialPriceTableRemainsIsolatedFromExternalModels(t *testing.T) {

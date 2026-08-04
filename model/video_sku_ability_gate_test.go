@@ -11,14 +11,15 @@ import (
 
 func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 	feicai := &Channel{
-		Type:   constant.ChannelTypeDoubaoVideo,
-		Models: VideoSKUSeedance20Standard720P,
-		Status: common.ChannelStatusEnabled,
+		Type:         constant.ChannelTypeDoubaoVideo,
+		Models:       VideoSKUSeedance20Standard720P,
+		Status:       common.ChannelStatusEnabled,
+		ModelMapping: common.GetPointer(`{"seedance-2.0-standard-720p":"seedance-2.0-vip-720p-azhw"}`),
 	}
 	feicai.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProfile:    dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+		VideoUpstreamProfile:    dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		VideoUpstreamCreatePath: "/v1/videos", VideoUpstreamQueryPathTemplate: "/v1/videos/{task_id}",
-		LinkImplementation: dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceJSON, Version: LinkImplementationVersionV1},
+		LinkImplementation: dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV1},
 	})
 	require.NoError(t, ValidateLinkSKUAbilityBindings(feicai))
 
@@ -100,7 +101,7 @@ func TestVideoSKUImplementationEquivalenceIncludesLifecycleAndRequestLimits(t *t
 	require.True(t, ok)
 	implementation, ok := ResolveVideoSKUImplementationCapability(
 		public.PublicModel,
-		dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceJSON, Version: LinkImplementationVersionV1},
+		dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV1},
 	)
 	require.True(t, ok)
 	require.True(t, VideoSKUCapabilitiesEquivalent(public, implementation))
@@ -125,7 +126,7 @@ func TestVideoSKUImplementationEquivalenceIncludesLifecycleAndRequestLimits(t *t
 	require.True(t, ok)
 	implementation, ok = ResolveVideoSKUImplementationCapability(
 		public.PublicModel,
-		dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceJSON, Version: LinkImplementationVersionV1},
+		dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV1},
 	)
 	require.True(t, ok)
 	require.False(t, VideoSKUCapabilitiesEquivalent(public, implementation))

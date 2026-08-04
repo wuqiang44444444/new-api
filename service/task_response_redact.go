@@ -28,11 +28,29 @@ func redactTaskResponseValue(value any) {
 				typed[key] = "[redacted]"
 				continue
 			}
+			if text, ok := child.(string); ok && taskResponseStringIsSensitive(text) {
+				typed[key] = "[redacted]"
+				continue
+			}
 			redactTaskResponseValue(child)
 		}
 	case []any:
-		for _, child := range typed {
+		for index, child := range typed {
+			if text, ok := child.(string); ok && taskResponseStringIsSensitive(text) {
+				typed[index] = "[redacted]"
+				continue
+			}
 			redactTaskResponseValue(child)
 		}
 	}
+}
+
+func taskResponseStringIsSensitive(value string) bool {
+	lower := strings.ToLower(value)
+	for _, marker := range []string{"http://", "https://", "bearer ", "authorization", "api_key", "api-key", "access_token", "cookie"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }

@@ -8,8 +8,6 @@ import (
 )
 
 func SetVideoRouter(router *gin.Engine) {
-	registerOpenAIVideoNativeRoutes(router)
-
 	// Video proxy: accepts either session auth (dashboard) or token auth (API clients)
 	videoProxyRouter := router.Group("/v1")
 	videoProxyRouter.Use(middleware.RouteTag("relay"))
@@ -18,19 +16,15 @@ func SetVideoRouter(router *gin.Engine) {
 		videoProxyRouter.GET("/videos/:task_id/content", controller.VideoProxy)
 	}
 
-	legacyVideoRouter := router.Group("/v1")
-	legacyVideoRouter.Use(middleware.RouteTag("relay"))
-	legacyVideoRouter.Use(middleware.TokenAuth(), middleware.TaskClientProtocol("platform_video"))
+	videoV1Router := router.Group("/v1")
+	videoV1Router.Use(middleware.RouteTag("relay"))
+	videoV1Router.Use(middleware.TokenAuth(), middleware.Distribute())
 	{
-		legacyVideoRouter.GET("/video/generations/:task_id", controller.RelayTaskFetch)
-	}
-
-	openAIVideoReadRouter := router.Group("/v1")
-	openAIVideoReadRouter.Use(middleware.RouteTag("relay"))
-	openAIVideoReadRouter.Use(middleware.TokenAuth(), middleware.TaskClientProtocol("openai_videos"))
-	{
-		openAIVideoReadRouter.GET("/videos", controller.OpenAIVideoList)
-		openAIVideoReadRouter.GET("/videos/:task_id", controller.OpenAIVideoGet)
+		videoV1Router.POST("/video/generations", controller.RelayTask)
+		videoV1Router.GET("/video/generations/:task_id", controller.RelayTaskFetch)
+		videoV1Router.POST("/videos/:video_id/remix", controller.RelayTask)
+		videoV1Router.POST("/videos", controller.RelayTask)
+		videoV1Router.GET("/videos/:task_id", controller.RelayTaskFetch)
 	}
 
 	modelArkVideoCreateRouter := router.Group("/api/v3")

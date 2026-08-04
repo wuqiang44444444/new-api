@@ -569,7 +569,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return fmt.Errorf("parseTaskResult failed for task %s: %w", taskId, err)
 	}
 
-	if adapterVersion.IsJSONVideoOmniV2() {
+	if adapterVersion.IsJSONVideoMediaArraysV1() {
 		task.Data = redactTaskResponseForLog(responseBody)
 	} else {
 		task.Data = redactVideoResponseBody(responseBody)

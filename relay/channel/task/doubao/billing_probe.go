@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relay/channel/task/doubao/thirdparty/mediaarrays"
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
@@ -48,6 +51,10 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 		}
 	}
 	durationSeconds := 5
+	capability, hasCapability := model.ResolveVideoSKUCapability(info.OriginModelName)
+	if hasCapability && capability.DefaultDuration > 0 {
+		durationSeconds = capability.DefaultDuration
+	}
 	if payload.Duration != nil {
 		durationSeconds = int(*payload.Duration)
 	}
@@ -66,12 +73,34 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 	}
 	inputMode, controlMode := relayBillingModes(payload)
 
-	return map[string]any{
+	probe := map[string]any{
 		"resolution":       resolution,
 		"has_video_input":  hasVideoInput,
 		"duration_seconds": durationSeconds,
 		"generate_audio":   generateAudio,
 		"input_mode":       inputMode,
 		"control_mode":     controlMode,
-	}, nil
+	}
+	if a.profile == dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays {
+		if !hasCapability || !capability.SupportsProfile(string(a.profile)) || len(capability.Ratios) == 0 {
+			return nil, fmt.Errorf("JSON video media-arrays billing capability is unavailable")
+		}
+		resolution = strings.ToLower(strings.TrimSpace(payload.Resolution))
+		if resolution == "" {
+			resolution = capability.Resolution
+		}
+		ratio := strings.TrimSpace(payload.Ratio)
+		if ratio == "" {
+			ratio = capability.Ratios[0]
+		}
+		size, ok := mediaarrays.ResolveVideoSize(resolution, ratio)
+		if !ok {
+			return nil, fmt.Errorf("resolution %q and ratio %q have no verified provider size", resolution, ratio)
+		}
+		probe["resolution"] = resolution
+		probe["ratio"] = ratio
+		probe["size"] = size.Value
+		probe["size_multiplier"] = size.Multiplier
+	}
+	return probe, nil
 }

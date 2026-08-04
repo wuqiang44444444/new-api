@@ -9,16 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTaskAttemptLinkImplementationIsolatedFromNativeVideo(t *testing.T) {
+func TestTaskAttemptLinkImplementationRequiresRegisteredSKUAndImplementation(t *testing.T) {
 	ref := dto.LinkImplementationRef{
 		ID: model.LinkImplementationMoxingSeedanceMedia, Version: model.LinkImplementationVersionV1,
 	}
-
-	native, err := resolveTaskAttemptLinkImplementation("sora-2", ref)
-	require.NoError(t, err)
-	assert.Empty(t, native.ID)
-	assert.Empty(t, native.Version)
-	assert.Empty(t, native.ContentHash)
 
 	link, err := resolveTaskAttemptLinkImplementation(model.VideoSKUSeedance20Oversea, ref)
 	require.NoError(t, err)

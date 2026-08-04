@@ -22,11 +22,11 @@ NEWAPI 已原生支持的渠道或模型不建立 Link 合同；这是代码变�
 
 ## 2. 当前实现状态
 
-截至 2026-08-03，代码已经形成以下边界：
+截至 2026-08-04，代码已经形成以下边界：
 
 | 产品面 | Link 合同 | 当前实现 |
 | --- | --- | --- |
-| 图片 | 统一 NEWAPI 图片接口 | `POST /v1/images/generations`；注册 SKU 由版本化 `ImageSKUCapability` 执行字段和值域校验，异步时使用 `GET /v1/images/tasks/:task_id` |
+| 图片 | 统一 NEWAPI 图片接口 | `POST /v1/images/generations`；三个 Link 图片 SKU 已注册 capability 与 implementation，异步时使用 `GET /v1/images/tasks/:task_id`；当前 `supports_link_assets=false` |
 | 视频 | 模型厂商官方合同 | Seedance 使用 ModelArk v3，Kling 使用 Kling v1，即梦使用 `CVSync2Async*` |
 | 素材库 | 平台统一控制面合同 | `/v1/assets`、平台 `ast_xxx`、持久化 `AssetSource` 和 binding/source 双模式 Resolver |
 | Provider 实现 | 代码注册 + 渠道显式选择 | 以 implementation ID/version/content hash 贯穿 Ability、运行时、binding、Task、attempt 与 exposure |
@@ -35,14 +35,14 @@ NEWAPI 已原生支持的渠道或模型不建立 Link 合同；这是代码变�
 任一快照已经不是当前唯一注册事实时，任务按合同违例失败关闭，不继续访问上游。启用渠道和运行时
 候选还必须命中当前启用的 implementation exposure 策略，profile 不再构成第二套监控身份。
 
-当前仍需通过生产配置或灰度持续证明的事项包括：
+当前代码边界已经落地，但生产发布仍需由配置和外部验收证明：
 
 - 同一视频 SKU 的全部启用渠道是否完整实现其官方合同；
 - 公开视频 SKU 的真实 Provider 字段、媒体组合和结果投影是否持续满足已注册 capability；
-- 异步 create attempt 的发送前持久化与轮询合同违例对账是否覆盖故障注入；
+- durable create attempt、轮询合同违例对账和人工恢复是否覆盖目标部署的故障场景；
 - 图片公开 SKU 的价格、能力和值域是否已完成真实上游与账单验收；
 - 历史视频只读入口和素材旧别名是否达到退出条件；
-- 内置 API 文档是否准确发布上述 Link 合同。
+- 公开 API 文档与代码注册、OpenAPI 白名单是否持续一致。
 
 架构文档只描述已实现边界和已接受设计，不把“代码可解析”“渠道可配置”自动写成“生产已发布”。运行时可用模型仍以模型发现、ability、分组和渠道配置为准。
 
@@ -159,8 +159,7 @@ NEWAPI 已稳定发布的原生合同（有则直接使用，不建 Link）
 注册项声明内部实现能力，渠道显式绑定精确实现 ID/version；profile 只描述协议适配形状，不能单独
 授予 Link 身份。Ability 只表示“这个渠道可以进入该 SKU 的执行选渠集合”，不自动证明合同等价。
 配置发布和运行时必须分别校验执行渠道完整实现 SKU 能力；不等价时排除渠道或拆分
-公开 SKU。完整决策见
-[ADR-0010](decisions/0010-视频公开SKU能力与候选渠道等价.md) 与
+公开 SKU。唯一决策见
 [ADR-0015](decisions/0015-Link公开SKU与实现身份版本绑定.md)。
 
 ### 3.7 Link 资源是平台逻辑身份
@@ -178,6 +177,9 @@ NEWAPI 已稳定发布的原生合同（有则直接使用，不建 Link）
 - 一次性签名 URL 优先走请求级媒体路径；需要可复用时必须保证源 TTL 或先建立 managed binding。
 
 当前代码已经实现最小 `AssetSource`、显式实现身份、能力分层和 binding/source 双模式 Resolver。
+Resolver 当前接入视频创建链路；三个 Link 图片 capability 均明确设置
+`supports_link_assets=false`，图片 Router 也没有接入 `AssetRouteConstraint`，因此
+`asset://ast_*` 目前不是公开图片输入。
 SQLite schema 与方言契约已纳入自动化；MySQL、PostgreSQL 外部数据库门禁在提供对应 disposable
 test DSN 时执行。代码完成不等于生产发布，真实 Provider 抓取、字段和计费仍须按渠道灰度验收。
 
@@ -273,9 +275,9 @@ GET  /v1/images/tasks/:task_id
 
 | 公开 SKU | 合同归属 | 实现登记与发布状态 | Provider 模型与路径 |
 | --- | --- | --- | --- |
-| `seedream-5-moxing` | Link 图片 SKU | `moxing.images.media-task/v1`，待代码登记和真实验收 | `seedream-5-0-260128`；Advanced Custom `/v1/images/generations` + `media_task_image_blocking` |
-| `seedream-5-qihang` | Link 图片 SKU | `qihang.images.openai-compatible/v1`，待代码登记和真实验收；登记前不得进入 Link 门禁后的候选集 | `seedream-5`；Advanced Custom `/v1/images/generations` + `converter=none` |
-| `nano-banana-2` | Link 图片 SKU | 独立验收后才可加入 `moxing.images.media-task/v1` 或其它等价实现；验收前保持未发布 | `gemini-3.1-flash-image-preview-usage`；Advanced Custom `/v1/media/generations` + `media_task_image_blocking` |
+| `seedream-5-moxing` | Link 图片 SKU | 已登记 `moxing.images.media-task/v1`；生产开放仍需渠道、价格与真实验收 | `seedream-5-0-260128`；Advanced Custom `/v1/images/generations` + `media_task_image_blocking` |
+| `seedream-5-qihang` | Link 图片 SKU | 已登记 `qihang.images.openai-compatible/v1`；生产开放仍需渠道、价格与真实验收 | `seedream-5`；Advanced Custom `/v1/images/generations` + `converter=none` |
+| `nano-banana-2` | Link 图片 SKU | 已登记 `moxing.images.media-task/v1`；生产开放仍需独立 usage 与账单验收 | `gemini-3.1-flash-image-preview-usage`；Advanced Custom `/v1/media/generations` + `media_task_image_blocking` |
 
 客户端统一使用 `model`、`prompt`、`image`、`size`、`n`、`response_format` 和 `stream` 等 Link 合同字段。Nano 的 `image -> reference_images`、模型 ID 和异步任务信封转换均属于 Provider 事实。
 
@@ -288,7 +290,9 @@ GET  /v1/images/tasks/:task_id
 显式 Link 图片 SKU 使用最小、版本化的 `ImageSKUCapability` 记录公开字段值域和
 `supports_link_assets`，继续复用现有 OpenAI 图片 DTO、路由、Task 和计费。Provider 实现的 route、
 converter、模型映射和素材解析模式保留在实现注册项中，不进入公开图片 capability hash。图片
-Link Resolver 和真实 Provider 验收完成前，对应 SKU 的 `supports_link_assets` 保持 false。
+Link Resolver 尚未接入图片 Router，因此三个 SKU 的 `supports_link_assets` 当前均为 false；
+客户端 `image` 只接受 HTTP(S) URL。启用前必须同时完成 capability、Router、Resolver、Provider
+转换和回归测试，不能只修改渠道配置。
 
 供应商原生图片协议是独立附加合同，只有上游真实支持、网关已有转发能力并完成渠道验证时才能开放；它不属于统一图片的跨供应商兼容承诺。
 
@@ -304,10 +308,11 @@ Link Resolver 和真实 Provider 验收完成前，对应 SKU 的 `supports_link
 
 中间件将官方 DTO 转为内部视频任务语义，并把原始合同对象保存在请求上下文。任务创建时冻结 Link 合同标识、合同版本和渠道适配协议版本；查询、列表、取消、删除和内容下载按任务创建时的合同投影。存量字段与新术语的对应见 9.1 节。
 
-OpenAI Videos 是 NEWAPI rc23 原生合同，不属于 Link 合同。`sora-2`、`sora-2-pro` 等原生模型
-继续使用 `/v1/videos`、原生 DTO、Sora adapter、Ability 与计费分发；它们不冻结 Link capability
-或 implementation。反向边界同样严格：上表显式登记的 Link SKU 不得借原生或旧版平台视频入口
-创建，详见 [ADR-0016](decisions/0016-原生OpenAI-Videos与Link合同并存边界.md)。
+OpenAI Videos 是 NEWAPI rc23 原生合同，不属于 Link 合同。`/v1/videos`、
+`/v1/video/generations`、原生 DTO、Sora adapter、Ability、模型发现与计费分发以上游代码为唯一
+权威。本地 Link 代码不得在这些入口增加 SKU 识别、拒绝中间件、`client_protocol`、历史读取、
+fallback 或素材兼容层，也不得把原生模型注册为 Link 实现。Link SKU 只通过上表类型化 Link 路由
+和显式候选实现发布，因此无需由原生入口承担 Link 隔离职责。
 
 ### 5.3 请求级媒体与统一素材库合同
 
@@ -328,14 +333,15 @@ OpenAI Videos 是 NEWAPI rc23 原生合同，不属于 Link 合同。`sora-2`、
 
 - 平台 CRUD、迁移、授权、幂等和用户隔离；
 - 平台资源 ID `ast_xxx`；
-- 图片或视频已发布字段中的 `asset://ast_xxx` 引用；
+- 已明确发布 Link 资源能力的视频字段中的 `asset://ast_xxx` 引用；
 - 平台状态、错误和生命周期。
 
 上游素材账号、资源 ID、素材组、Action/Version、签名、profile 和渠道 ID 不进入普通客户 API 合同。
 
-Link 资源仍使用图片统一合同或视频官方合同中已经发布的媒体字段，只把字段值设为
-`asset://ast_xxx`。网关在选渠前校验所有权、状态、授权、实现版本、解析能力和多素材渠道交集，
-并在每次 Provider 尝试前改写为该实现所需的 binding 引用或受保护源 URL。
+Link 资源使用已发布且 capability 明确允许的媒体字段，把字段值设为 `asset://ast_xxx`。当前该
+路径只在视频 Router 接线；图片 capability 明确关闭。视频网关在选渠前校验所有权、状态、授权、
+实现版本、解析能力和多素材渠道交集，并在每次 Provider 尝试前改写为该实现所需的 binding 引用
+或受保护源 URL。
 
 平台已经识别为真人或需要平台授权、撤回和审计的素材，只能通过 `asset://ast_xxx` 使用。
 对于未经分类的直接 URL/Data URL，网关不执行内容审核，也不能仅凭地址技术判断是否包含
@@ -355,7 +361,7 @@ Link 资源仍使用图片统一合同或视频官方合同中已经发布的媒
 | `moxing.seedance-media-task/v1` | DoubaoVideo third-party relay + relay assets | `seedance-2-0-oversea` |
 | `moxing.seedance-ark-assets/v1` | DoubaoVideo reverse proxy + Ark assets | `seedance-2-0-oversea` |
 | `tokensave.seedance-media-task/v1` | DoubaoVideo third-party relay + relay assets | `doubao-seedance-2-0-260128` |
-| `feicai.seedance-json-omni/v1` | DoubaoVideo JSON omni-reference adapter v2 | 五个固定分辨率 AZHW SKU |
+| `feicai.seedance-videos/v1` | DoubaoVideo JSON media-arrays adapter v1，`source_url` only | 两个已验证 720p AZHW SKU；1080p/4K 未登记 |
 | `funcloud.seedance-json/v1` | DoubaoVideo FunCloud adapter v2，`source_url` only | `seedance-2.0-standard`、`seedance-2.0-fast` |
 | `moxing.images.media-task/v1` | Advanced Custom media-task converter | `seedream-5-moxing`、`nano-banana-2` |
 | `qihang.images.openai-compatible/v1` | Advanced Custom converter none | `seedream-5-qihang` |
@@ -509,7 +515,9 @@ sequenceDiagram
 2. 确认不与 NEWAPI 已有原生合同重复；这是开发治理检查，不是 Link 身份判定。
 3. 新增唯一 `contract_id`/版本、公开 SKU capability 和显式代码注册项。
 4. 新增不可变的 `link_implementation_id + version` 注册项，并让渠道显式保存精确版本。
-5. 将新增逻辑隔离在独立路由、DTO、converter、adapter/profile 或生命周期扩展文件中，原生热路径只保留最小接线。
+5. 将 Link 新增逻辑隔离在独立路由、DTO、converter、adapter/profile 或生命周期扩展文件中；
+   不修改、包装或复制 NEWAPI 原生 Router/DTO/Relay/Adapter。确需修复上游原生安全问题时，必须
+   以独立问题和上游语义为依据，不能由 Link 合同推导。
 6. 明确已有 Link SKU 的全部实现是否合同等价；无法证明时排除实现或拆分 SKU。
 7. 为实现版本显式配置 exposure 策略，并明确渠道/实现/SKU 风险桶，再启用渠道和 Ability。
 8. 增加合同、跨实现等价、单版本硬切换、跨实现 failover、exposure 隔离、失败关闭、计费和敏感信息回归测试。
@@ -519,12 +527,9 @@ sequenceDiagram
 ## 11. 相关文档
 
 - [硬约束](../00-context/硬约束.md)
-- [ADR-0007：视频 Link 合同与共享任务底座](decisions/0007-视频Link合同与共享任务底座.md)
 - [ADR-0008：共享异步任务计费状态机与原子补偿](decisions/0008-共享异步任务计费状态机与原子补偿.md)
 - [ADR-0009：请求级媒体与平台托管素材双路径](decisions/0009-请求级媒体与平台托管素材双路径.md)
-- [ADR-0010：视频公开 SKU 能力与候选渠道等价](decisions/0010-视频公开SKU能力与候选渠道等价.md)
 - [ADR-0011：异步创建未知与轮询合同违例对账](decisions/0011-异步创建未知与轮询合同违例对账.md)
-- [ADR-0013：Link 合同与渠道适配协议](decisions/0013-Link合同与渠道适配协议.md)
 - [ADR-0015：Link 公开 SKU 与实现身份版本绑定](decisions/0015-Link公开SKU与实现身份版本绑定.md)
 - [统一图片生成与异步任务架构](统一图片生成与异步任务架构.md)
 - [视频上游接入与异步任务架构](视频上游接入与异步任务架构.md)

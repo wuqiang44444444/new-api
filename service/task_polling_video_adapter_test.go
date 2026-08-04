@@ -50,7 +50,7 @@ func (capture *videoAdapterPollingCapture) AdjustBillingOnComplete(*model.Task, 
 	return 0
 }
 
-func TestVideoPollingUsesFrozenAdapterV2AndRedactsResultURLFromTaskData(t *testing.T) {
+func TestVideoPollingUsesFrozenMediaArraysV1AndRedactsResultURLFromTaskData(t *testing.T) {
 	truncate(t)
 	now := time.Now().Unix()
 	channel := &model.Channel{
@@ -61,7 +61,7 @@ func TestVideoPollingUsesFrozenAdapterV2AndRedactsResultURLFromTaskData(t *testi
 		Status:  common.ChannelStatusEnabled,
 	}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 	})
 	task := &model.Task{
 		TaskID:         "task-poll-v2",
@@ -75,8 +75,8 @@ func TestVideoPollingUsesFrozenAdapterV2AndRedactsResultURLFromTaskData(t *testi
 		ClientProtocol: model.TaskClientProtocolModelArkV3,
 		PrivateData: model.TaskPrivateData{
 			UpstreamTaskID:            "provider-task-v2",
-			VideoUpstreamProfile:      dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
-			SouthboundAdapterVersion:  "54:third_party_json_video_omni_reference:v2",
+			VideoUpstreamProfile:      dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
+			SouthboundAdapterVersion:  "54:third_party_json_video_media_arrays:v1",
 			VideoUpstreamQueryBaseURL: "https://video.example.com",
 			Key:                       "provider-key",
 		},
@@ -92,7 +92,7 @@ func TestVideoPollingUsesFrozenAdapterV2AndRedactsResultURLFromTaskData(t *testi
 		map[string]*model.Task{task.PrivateData.UpstreamTaskID: task},
 	))
 	require.NoError(t, model.DB.First(task, task.ID).Error)
-	assert.Equal(t, "54:third_party_json_video_omni_reference:v2", capture.adapterVersion)
+	assert.Equal(t, "54:third_party_json_video_media_arrays:v1", capture.adapterVersion)
 	assert.NotContains(t, string(task.Data), "video.example.com")
 	assert.NotContains(t, string(task.Data), "secret")
 	assert.Contains(t, string(task.Data), "[redacted]")
@@ -103,7 +103,7 @@ func TestVideoPollingRejectsUnknownFrozenAdapterBeforeFetch(t *testing.T) {
 	now := time.Now().Unix()
 	channel := &model.Channel{Id: 972, Type: constant.ChannelTypeDoubaoVideo}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
+		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 	})
 	task := &model.Task{
 		TaskID:    "task-poll-invalid-version",
@@ -113,8 +113,8 @@ func TestVideoPollingRejectsUnknownFrozenAdapterBeforeFetch(t *testing.T) {
 		UpdatedAt: now,
 		PrivateData: model.TaskPrivateData{
 			UpstreamTaskID:           "provider-invalid-version",
-			VideoUpstreamProfile:     dto.VideoUpstreamProfileThirdPartyJSONVideoOmniReference,
-			SouthboundAdapterVersion: "54:third_party_json_video_omni_reference:v3",
+			VideoUpstreamProfile:     dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
+			SouthboundAdapterVersion: "54:third_party_json_video_media_arrays:v3",
 		},
 	}
 	require.NoError(t, model.DB.Create(task).Error)

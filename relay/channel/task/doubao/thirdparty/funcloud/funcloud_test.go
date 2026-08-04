@@ -2,7 +2,9 @@ package funcloud
 
 import (
 	"errors"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -71,6 +73,12 @@ func TestTaskResponseNormalizesAndRejectsContractConflicts(t *testing.T) {
 
 	_, err = TaskResponse([]byte(`{"code":0,"data":{"taskId":"task_1","status":"success","result":["https://cdn.example/a.mp4","https://cdn.example/b.mp4"]}}`), "task_1")
 	assert.True(t, errors.As(err, &violation))
+}
+
+func TestSanitizeProviderTextPreservesUTF8WhenTruncated(t *testing.T) {
+	value := sanitizeProviderText(strings.Repeat("界", 513))
+	assert.True(t, utf8.ValidString(value))
+	assert.Len(t, []rune(value), 512)
 }
 
 func TestCreateRequestRejectsUnresolvedAssetsAndMediaBeyondContract(t *testing.T) {
