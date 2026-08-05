@@ -7,7 +7,7 @@ import (
 
 func tokenSaveSeedanceV1Implementation() LinkImplementation {
 	return LinkImplementation{
-		ID: LinkImplementationTokenSaveSeedance, Version: LinkImplementationVersionV1, Provider: "TokenSave",
+		ID: LinkImplementationTokenSaveSeedance, Version: LinkImplementationVersionV1, Provider: "Moxing", PlanName: "tokensave." + VideoSKUDoubaoSeedance20260128,
 		Deprecated: true,
 		ContractID: "modelark.contents.generations.v3", PublicSKUs: []string{VideoSKUDoubaoSeedance20260128},
 		ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileThirdPartyRelay,
@@ -20,7 +20,7 @@ func tokenSaveSeedanceV1Implementation() LinkImplementation {
 
 func tokenSaveSeedanceV2Implementation() LinkImplementation {
 	return LinkImplementation{
-		ID: LinkImplementationTokenSaveSeedance, Version: LinkImplementationVersionV2, Provider: "TokenSave",
+		ID: LinkImplementationTokenSaveSeedance, Version: LinkImplementationVersionV2, Provider: "Moxing", PlanName: "tokensave." + VideoSKUDoubaoSeedance20260128,
 		ContractID: "modelark.contents.generations.v3", PublicSKUs: []string{VideoSKUDoubaoSeedance20260128},
 		ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileThirdPartyRelay,
 		RequiredAssetProfile: string(dto.AssetUpstreamProfileRelay), RequiredCreatePath: "/v1/media/generations", RequiredQueryPath: "/v1/media/tasks/{task_id}", RequiredAdapterVersion: "54:third_party_relay:v2",

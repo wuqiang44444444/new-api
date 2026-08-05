@@ -48,6 +48,14 @@ func TestLinkImplementationRegistryRejectsDuplicateNormalizedIdentities(t *testi
 	require.ErrorContains(t, err, `duplicate Link implementation identity "duplicate"/""`)
 }
 
+func TestLinkImplementationRegistryRejectsDuplicateDisplayNames(t *testing.T) {
+	_, err := buildLinkImplementationRegistryFrom([]LinkImplementation{
+		{ID: "first", Version: "v2", Provider: "Moxing", PlanName: "tokensave.seedance"},
+		{ID: "second", Version: "v2", Provider: " Moxing ", PlanName: " tokensave.seedance "},
+	})
+	require.ErrorContains(t, err, `duplicate Link plan display name "Moxing · tokensave.seedance/v2"`)
+}
+
 func TestFeicaiMediaArraysImplementationRequiresExactMappingAndSourceContract(t *testing.T) {
 	_, v1Exists := ResolveLinkImplementation(dto.LinkImplementationRef{
 		ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV1,
@@ -143,6 +151,8 @@ func TestTokenSaveV2ImplementationSupersedesV1WithoutReinterpretingIt(t *testing
 	})
 	require.True(t, ok)
 	assert.False(t, current.Deprecated)
+	assert.Equal(t, "Moxing", current.Provider)
+	assert.Equal(t, "tokensave."+VideoSKUDoubaoSeedance20260128, current.PlanName)
 	assert.Equal(t, "54:third_party_relay:v2", current.RequiredAdapterVersion)
 	assert.Equal(t, []string{AssetKindGeneral}, current.AssetCapability.AssetKinds)
 	assert.Equal(t, []string{"image"}, current.AssetCapability.MediaTypes)
@@ -151,6 +161,32 @@ func TestTokenSaveV2ImplementationSupersedesV1WithoutReinterpretingIt(t *testing
 	selectable := LinkImplementationsForSKU(VideoSKUDoubaoSeedance20260128)
 	require.Len(t, selectable, 1)
 	assert.Equal(t, LinkImplementationVersionV2, selectable[0].Version)
+}
+
+func TestSelectableLinkImplementationsExcludeDeprecatedHistory(t *testing.T) {
+	selectable := ListSelectableLinkImplementations()
+	require.NotEmpty(t, selectable)
+	for _, implementation := range selectable {
+		assert.False(t, implementation.Deprecated)
+	}
+
+	moxingVersions := make(map[string]string)
+	moxingPlanNames := make(map[string]string)
+	for _, implementation := range selectable {
+		if implementation.ID == LinkImplementationMoxingSeedanceMedia || implementation.ID == LinkImplementationTokenSaveSeedance {
+			assert.Equal(t, "Moxing", implementation.Provider)
+			moxingVersions[implementation.ID] = implementation.Version
+			moxingPlanNames[implementation.ID] = implementation.PlanName
+		}
+	}
+	assert.Equal(t, map[string]string{
+		LinkImplementationMoxingSeedanceMedia: LinkImplementationVersionV2,
+		LinkImplementationTokenSaveSeedance:   LinkImplementationVersionV2,
+	}, moxingVersions)
+	assert.Equal(t, map[string]string{
+		LinkImplementationMoxingSeedanceMedia: "tokensave." + VideoSKUSeedance20Oversea,
+		LinkImplementationTokenSaveSeedance:   "tokensave." + VideoSKUDoubaoSeedance20260128,
+	}, moxingPlanNames)
 }
 
 func TestLinkImplementationRequiresActiveExposurePolicyAtRuntime(t *testing.T) {

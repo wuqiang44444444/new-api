@@ -57,7 +57,7 @@ Provider 模型同名，也不能替代 publication。
 
 Resolver 完成 Link 资源解析后，converter 按下表构造 V2 请求：
 
-| ModelArk 输入 | Moxing V2 输出 | 约束 |
+| ModelArk 输入 | `seedance-2-0-oversea` V2 输出 | 约束 |
 | --- | --- | --- |
 | 映射后的模型 | `model` | 必须为 `seedance-2-0-oversea` |
 | `content[type=text]` | `prompt` | 按输入顺序换行拼接，总长不超过 2500 |

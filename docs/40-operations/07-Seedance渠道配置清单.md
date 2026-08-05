@@ -9,8 +9,13 @@ last-reviewed: 2026-08-05
 ## 1. 目的与范围
 
 本文给出当前代码显式注册的 Link Seedance 新任务渠道模板，供管理员新建、复核和停流渠道时使用。
-清单覆盖 BytePlus、墨行 Moxing、TokenSave、飞彩和 FunCloud，共 7 个运营渠道模板；其中本轮
+清单覆盖 BytePlus、墨行 Moxing、飞彩和 FunCloud，共 7 个运营渠道模板；Moxing 下的两个当前
+Seedance Provider 模型均属 TokenSave 模型体系，按 Link SKU 及 capability 区分。其中本轮
 Seedance Provider 专题设计中的飞彩、墨行与 FunCloud 占 6 个。
+
+管理界面中两个 Moxing 方案分别显示为
+`Moxing · tokensave.seedance-2-0-oversea/v2` 和
+`Moxing · tokensave.doubao-seedance-2-0-260128/v2`。
 
 本文中的 `SD-01`—`SD-07` 只是文档清单编号，不是数据库 Channel ID。客户模型名允许按产品需要
 自定义；下表使用当前 Link SKU 作为推荐客户模型名，以便直接核对 publication、价格和 Ability。
@@ -22,8 +27,8 @@ Seedance Provider 专题设计中的飞彩、墨行与 FunCloud 占 6 个。
 | 编号 | 渠道 | Provider | 模型数 | Link implementation | 视频 profile | 创建路径 | 查询路径 |
 | --- | --- | --- | ---: | --- | --- | --- | --- |
 | `SD-01` | BytePlus 官方 | BytePlus | 1 | `byteplus.seedance-ark@v1` | `official` | 系统内置 | 系统内置 |
-| `SD-02` | 墨行海外版 | Moxing | 1 | `moxing.seedance-media-task@v2` | `third_party_relay` | `/v1/media/generations` | `/v1/media/tasks/{task_id}` |
-| `SD-03` | 墨行 doubao | TokenSave | 1 | `tokensave.seedance-media-task@v2` | `third_party_relay` | `/v1/media/generations` | `/v1/media/tasks/{task_id}` |
+| `SD-02` | `seedance-2-0-oversea` Link 方案 | Moxing | 1 | `moxing.seedance-media-task@v2` | `third_party_relay` | `/v1/media/generations` | `/v1/media/tasks/{task_id}` |
+| `SD-03` | `doubao-seedance-2-0-260128` Link 方案 | Moxing | 1 | `tokensave.seedance-media-task@v2` | `third_party_relay` | `/v1/media/generations` | `/v1/media/tasks/{task_id}` |
 | `SD-04` | 飞彩稳定 VIP | 飞彩 | 5 | `feicai.seedance-videos@v2` | `third_party_json_video_media_arrays` | `/v1/videos` | `/v1/videos/{task_id}` |
 | `SD-05` | 飞彩非稳定 933／实验 | 飞彩 | 5 | `feicai.seedance-videos@v2` | `third_party_json_video_media_arrays` | `/v1/videos` | `/v1/videos/{task_id}` |
 | `SD-06` | FunCloud Standard | FunCloud | 1 | `funcloud.seedance-json@v1` | `third_party_funcloud_seedance_v2` | `/api/v2/open/aigc/seedance2-0` | `/api/v2/open/aigc/{task_id}` |
@@ -44,7 +49,7 @@ Seedance Provider 专题设计中的飞彩、墨行与 FunCloud 占 6 个。
 官方渠道不手工填写第三方创建、查询路径。视频 Key、素材 AK/SK、Project 和 Region 按
 [02 视频与素材渠道运维手册](02-视频与素材渠道运维手册.md)分别配置，不得混填。
 
-### 3.2 `SD-02` 墨行海外版
+### 3.2 `SD-02` `seedance-2-0-oversea` Link 方案
 
 | 推荐客户模型 / Link SKU | Provider 模型 | Base URL | 素材方式 |
 | --- | --- | --- | --- |
@@ -53,14 +58,16 @@ Seedance Provider 专题设计中的飞彩、墨行与 FunCloud 占 6 个。
 本渠道只选择 `moxing.seedance-media-task@v2`。不得加入 TokenSave、历史 Ark 或普通 NEWAPI 视频模型，
 也不得复用其它线路的 Key、价格或 AssetBinding。
 
-### 3.3 `SD-03` 墨行 doubao
+### 3.3 `SD-03` `doubao-seedance-2-0-260128` Link 方案
 
 | 推荐客户模型 / Link SKU | Provider 模型 | Base URL | 素材方式 |
 | --- | --- | --- | --- |
 | `doubao-seedance-2-0-260128` | `doubao-seedance-2-0-260128` | `https://tokensave.pro` | `relay_assets` / `upstream_binding` |
 
-本渠道只选择 `tokensave.seedance-media-task@v2`。它与 `SD-02` 虽共享 `/v1/media/*` 协议形状，
-但域名、implementation、凭据、价格、素材 binding 和 Provider 证据都必须隔离。
+本渠道只选择 `tokensave.seedance-media-task@v2`。它与 `SD-02` 同属 Moxing Provider 的 TokenSave 模型体系且
+共享 `/v1/media/*` 协议形状，但 Link SKU、capability、域名、implementation、凭据、价格、素材 binding 和
+Provider 证据都必须隔离。`moxing.*` 与旧 `tokensave.*` implementation ID 只保留为不可变履约身份；
+方案展示名另由代码注册的 `tokensave.<Link SKU>` 提供。
 
 ### 3.4 `SD-04` 飞彩稳定 VIP
 
@@ -143,4 +150,3 @@ Seedance 模型。
 - [FunCloud 国内 Seedance 2.0 模型接入设计](../20-architecture/seedance%20模型接入设计/funcloud/FunCloud国内Seedance-2.0模型接入设计.md)
 - [02 视频与素材渠道运维手册](02-视频与素材渠道运维手册.md)
 - [06 飞彩 Seedance 全模型上线验收手册](06-飞彩Seedance全模型上线验收手册.md)
-

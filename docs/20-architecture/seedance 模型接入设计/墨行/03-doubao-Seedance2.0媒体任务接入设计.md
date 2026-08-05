@@ -20,6 +20,8 @@ implementation、请求转换、素材范围和按秒计费差异。
 
 | 维度 | 设计值 |
 | --- | --- |
+| Provider | `Moxing` |
+| Provider 模型体系 | TokenSave |
 | Provider 模型 / Link SKU | `doubao-seedance-2-0-260128` |
 | Provider origin | `https://tokensave.pro` |
 | implementation | `tokensave.seedance-media-task@v2` |
@@ -35,7 +37,7 @@ Provider 模型由 `model_mapping` 得到，并由 execution binding 精确复�
 
 ## 3. 公开 capability
 
-公开能力只取当前模型页、类型化 ModelArk 合同和 TokenSave v2 implementation 的共同交集：
+公开能力只取当前模型页、类型化 ModelArk 合同和该 Link SKU 的 v2 implementation 共同交集：
 
 | 能力 | 当前合同 |
 | --- | --- |
@@ -58,7 +60,7 @@ Provider 模型由 `model_mapping` 得到，并由 execution binding 精确复�
 
 Resolver 完成 Link 资源解析后，converter 按下表构造 V2 请求：
 
-| ModelArk 输入 | TokenSave V2 输出 | 约束 |
+| ModelArk 输入 | `doubao-seedance-2-0-260128` V2 输出 | 约束 |
 | --- | --- | --- |
 | 映射后的模型 | `model` | 必须为 `doubao-seedance-2-0-260128` |
 | `content[type=text]` | `prompt` | 按输入顺序换行拼接，总长不超过 2500 |
@@ -82,8 +84,8 @@ implementation 只支持 `upstream_binding` 模式的 general 图片，单请求
 账号互操作。
 
 Resolver 在选渠前和发送前复检 Asset 所有者、App、publication、状态、implementation、Channel、
-凭据指纹和 TTL。TokenSave Key、Base URL、implementation 或 profile 变化后，旧 binding 失败关闭；
-Moxing 的 `relay_assets` binding 不得复用。
+凭据指纹和 TTL。本 SKU 的 Key、Base URL、implementation 或 profile 变化后，旧 binding 失败关闭；
+`seedance-2-0-oversea` 的 `relay_assets` binding 不得复用。
 
 ## 6. Task、内容与计费
 
@@ -110,5 +112,5 @@ ID、Key、签名 URL 或原始响应。
 3. 视频输入、音频输入、watermark 和 real_person 均不在当前合同内。
 4. Converter 只消费完成 capability 校验和 Resolver 解析的类型化请求。
 5. 创建未知不自动重发；轮询不可采信不直接判业务失败。
-6. Task 查询、内容回源和结算始终使用创建时冻结的 TokenSave 连接、凭据、实现和价格事实。
-7. 本 SKU 不得降级到 Moxing oversea、Ark 或 NEWAPI 原生视频语义。
+6. Task 查询、内容回源和结算始终使用创建时冻结的本 Link SKU 连接、凭据、实现和价格事实。
+7. 本 SKU 不得降级到 `seedance-2-0-oversea`、Ark 或 NEWAPI 原生视频语义。

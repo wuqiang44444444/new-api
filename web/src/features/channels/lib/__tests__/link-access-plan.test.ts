@@ -23,6 +23,7 @@ import type { LinkImplementation } from '../../types'
 import {
   deriveLinkPublicationPreviews,
   linkAccessPlanAutofill,
+  linkAccessPlanLabel,
   linkAccessPlansForChannelType,
 } from '../link-access-plan'
 
@@ -31,6 +32,7 @@ const implementation = {
   version: 'v1',
   content_hash: 'sha256:test',
   provider: 'Provider',
+  plan_name: 'tokensave.link-sku',
   contract_id: 'contract',
   public_skus: ['link-sku'],
   channel_type: 54,
@@ -62,6 +64,13 @@ const implementation = {
 } satisfies LinkImplementation
 
 describe('Link access plan projection', () => {
+  test('uses the registered Link plan name instead of its implementation ID', () => {
+    assert.equal(
+      linkAccessPlanLabel(implementation),
+      'Provider · tokensave.link-sku/v1'
+    )
+  })
+
   test('lists plans by channel type without filtering on customer model names', () => {
     assert.deepEqual(
       linkAccessPlansForChannelType(

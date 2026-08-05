@@ -36,6 +36,7 @@ const implementation = {
   version: 'v1',
   content_hash: 'sha256:test',
   provider: 'Provider',
+  plan_name: 'tokensave.video-sku',
   contract_id: 'contract',
   public_skus: ['video-sku'],
   channel_type: 54,
@@ -61,10 +62,16 @@ const implementation = {
   billing_contract: 'billing',
 } satisfies LinkImplementation
 
+const implementationV2 = {
+  ...implementation,
+  version: 'v2',
+  content_hash: 'sha256:test-v2',
+} satisfies LinkImplementation
+
 vi.mock('../../../api', () => ({
   getLinkImplementations: async () => ({
     success: true,
-    data: [implementation],
+    data: [implementation, implementationV2],
   }),
   getLinkModelPublications: async () => ({ success: true, data: [] }),
   rebindLinkModelPublication: vi.fn(),
@@ -93,6 +100,10 @@ function ProjectionHarness() {
     control: form.control,
     name: 'asset_min_url_ttl_seconds',
   })
+  const selectedVersion = useWatch({
+    control: form.control,
+    name: 'link_implementation_version',
+  })
 
   return (
     <FormProvider {...form}>
@@ -102,6 +113,7 @@ function ProjectionHarness() {
       <output aria-label='Minimum asset URL TTL'>
         {assetMinURLTTLSeconds}
       </output>
+      <output aria-label='Selected plan version'>{selectedVersion}</output>
       <LinkImplementationField
         control={form.control}
         channelType={54}
@@ -130,7 +142,7 @@ describe('Link access plan field', () => {
     const listbox = await screen.findByRole('listbox')
     const popup = listbox.closest('[data-slot="select-content"]')
     const planOption = screen.getByRole('option', {
-      name: 'Provider · reactive-plan/v1',
+      name: 'Provider · tokensave.video-sku/v1',
     })
     expect(popup?.classList.contains('w-[460px]')).toBe(true)
     expect(popup?.classList.contains('max-w-[calc(100vw-2rem)]')).toBe(true)
@@ -139,6 +151,38 @@ describe('Link access plan field', () => {
         '[&_[data-slot=select-item-text]]:whitespace-normal'
       )
     ).toBe(true)
+
+    queryClient.clear()
+  })
+
+  it('selects exactly one version when plans share an implementation ID', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <I18nextProvider i18n={i18next}>
+          <ProjectionHarness />
+        </I18nextProvider>
+      </QueryClientProvider>
+    )
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('combobox'))
+
+    const v1Option = screen.getByRole('option', {
+      name: 'Provider · tokensave.video-sku/v1',
+    })
+    const v2Option = screen.getByRole('option', {
+      name: 'Provider · tokensave.video-sku/v2',
+    })
+    expect(v1Option.getAttribute('aria-selected')).toBe('true')
+    expect(v2Option.getAttribute('aria-selected')).toBe('false')
+
+    await user.click(v2Option)
+    expect(screen.getByLabelText('Selected plan version').textContent).toBe(
+      'v2'
+    )
 
     queryClient.clear()
   })

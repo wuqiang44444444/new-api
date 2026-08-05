@@ -58,7 +58,7 @@ Provider 价格只用于成本审批，不直接成为客户价格。若客户�
 按冻结时长/分辨率/场景表达式结算，不读取 usage。只有目标生产黑盒证明字段类型、单位、终态稳定性
 和账单一致性后，才允许提升 implementation/billing 版本使用结构化 token。
 
-2026-08-05 的 TokenSave 成功文生样本未返回 `usage`，进一步确认当前按秒 SKU 只能依据冻结请求规格
+2026-08-05 的 `doubao-seedance-2-0-260128` 成功文生样本未返回 `usage`，进一步确认当前按秒 SKU 只能依据冻结请求规格
 结算，不能依赖 token usage；该样本尚未闭合 Provider 实际扣款金额。
 
 ## 4. 单次账单查询
@@ -79,7 +79,8 @@ Authorization: Bearer itk-mxai-...
 - 模型 Channel Key 只发往视频/素材数据面；
 - 集成 Token 只由受限 Provider 对账控制面读取，不写入 Channel Key、Task、attempt、普通配置导出
   或客户日志；
-- 缺少集成 Token 只关闭 Moxing oversea 自动 Provider 对账，不授权 TokenSave 复用该 Token；
+- 缺少集成 Token 只关闭 `seedance-2-0-oversea` 自动 Provider 对账，不授权
+  `doubao-seedance-2-0-260128` 复用该 Token；
 - 账户接口 Base URL、Token 和账号身份必须显式绑定，不能从模型域名或 Key 前缀猜测。
 
 ### 4.2 对账状态
@@ -117,7 +118,7 @@ Authorization: Bearer itk-mxai-...
 聚合。查询到的 `charged_yuan` 可作为独立 Provider 金额证据，但不能用客户 quota 冒充或把不同币种
 未换算相加。
 
-exposure 策略缺失、失效或预算耗尽时，对应 Moxing/TokenSave implementation 候选 fail closed。真正的并发硬上限
+exposure 策略缺失、失效或预算耗尽时，对应 Moxing 线路 implementation 候选 fail closed。真正的并发硬上限
 必须在 Provider POST 前原子预留预算，事后对账和熔断不能宣称为零超调。
 
 ## 7. 不变量

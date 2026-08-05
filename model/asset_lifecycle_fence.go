@@ -220,6 +220,9 @@ func deleteChannelWithAssetFence(channel *Channel) error {
 		if err := deleteChannelAssetCredentialsTx(tx, []int{channel.Id}); err != nil {
 			return err
 		}
+		if err := deleteChannelReconciliationFindingsTx(tx, []int{channel.Id}); err != nil {
+			return err
+		}
 		*channel = *current
 		return nil
 	})
@@ -261,7 +264,10 @@ func batchDeleteChannelsWithAssetFence(ids []int) (int64, error) {
 		if err := deleteChannelAbilitiesTx(tx, deletable); err != nil {
 			return err
 		}
-		return deleteChannelAssetCredentialsTx(tx, deletable)
+		if err := deleteChannelAssetCredentialsTx(tx, deletable); err != nil {
+			return err
+		}
+		return deleteChannelReconciliationFindingsTx(tx, deletable)
 	})
 	return rows, err
 }
@@ -302,6 +308,9 @@ func deleteChannelsByStatusWithAssetFence(statuses []int) (int64, error) {
 		if err != nil {
 			return err
 		}
+		if err := deleteChannelReconciliationFindingsTx(tx, deletable); err != nil {
+			return err
+		}
 		return deleteChannelAssetCredentialsTx(tx, deletable)
 	})
 	return rows, err
@@ -331,6 +340,26 @@ func deleteChannelAbilitiesTx(tx *gorm.DB, ids []int) error {
 		}
 		if err := tx.Where("channel_id IN ?", ids[start:end]).Delete(&Ability{}).Error; err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// deleteChannelReconciliationFindingsTx drops reconciliation findings for the
+// deleted channels. Findings are diagnostic rows and are not covered by the
+// active-resource fence, so without this they would outlive their channel and
+// become orphans.
+func deleteChannelReconciliationFindingsTx(tx *gorm.DB, ids []int) error {
+	if len(ids) == 0 || !tx.Migrator().HasTable(&AssetReconciliationFinding{}) {
+		return nil
+	}
+	for start := 0; start < len(ids); start += 200 {
+		end := start + 200
+		if end > len(ids) {
+			end = len(ids)
+		}
+		if err := tx.Where("channel_id IN ?", ids[start:end]).Delete(&AssetReconciliationFinding{}).Error; err != nil {
+			return fmt.Errorf("delete channel reconciliation findings: %w", err)
 		}
 	}
 	return nil

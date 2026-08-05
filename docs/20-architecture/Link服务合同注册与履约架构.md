@@ -348,6 +348,12 @@ alias、双读或 fallback。正式发布后若需要多版本无损共存，必
 | `kling.videos-official/v1` | Kling official | 三个 Kling SKU |
 | `jimeng.videos-official/v1` | Jimeng official | `jimeng_vgfm_t2v_l20` |
 
+`moxing.seedance-media-task` 与 `tokensave.seedance-media-task` 的 Provider 均为 Moxing，两者的 Provider 模型均属
+TokenSave 模型体系。两个字符串是已发布的不可变 implementation ID，不是 Provider 或 Link 方案展示名；
+为保持历史 Task、publication 和 execution binding 可验证，不对这两个 ID 做重命名。界面使用代码注册且
+不进入履约 hash 的 `plan_name` 展示 Link 方案，当前分别为 `tokensave.seedance-2-0-oversea` 与
+`tokensave.doubao-seedance-2-0-260128`。两者仍按 origin、凭据、SKU、计费和 AssetBinding 独立履约。
+
 该表只帮助阅读，运行时权威是代码注册表及其 content hash。未在 capability、implementation 和
 execution binding 中完整登记的 Provider 模型不能通过渠道配置获得 Link 身份。
 

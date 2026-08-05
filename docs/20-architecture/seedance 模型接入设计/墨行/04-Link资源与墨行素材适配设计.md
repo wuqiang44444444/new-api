@@ -39,7 +39,7 @@ flowchart LR
     Binding --> Fence["implementation / channel / credential fingerprint"]
     Fence --> Ref["asset://upstream_id 或 asset://uuid"]
     Ref --> Converter["image / end_image / reference_images[]"]
-    Converter --> Moxing["Moxing / TokenSave V2"]
+    Converter --> Moxing["两个当前 Link SKU 的 V2 履约"]
 ```
 
 `RelayAdapter` 创建素材时调用 `POST /assets`，查询 `GET /assets/{uuid}`，并把 `Active` 记录的
@@ -113,7 +113,7 @@ JoyCreator facade 的素材组 `id`、业务 `groupId/assetId`、`vendorUrl` 和
 ## 8. 不变量
 
 1. 客户只持有 `ast_*`，所有墨行素材标识都停留在内部 binding。
-2. Moxing V2、TokenSave V2、未重新取证的历史 Ark 和 JoyCreator 素材不能跨
+2. 两个当前 Link SKU、未重新取证的历史 Ark 和 JoyCreator 素材不能跨
    implementation/账号/profile 复用。
 3. 当前 V2 只允许 general Link 资源，不发布 real_person；Ark 不创建新 binding。
 4. `Active`、凭据作用域和 implementation 围栏必须在选渠与发送前同时成立。

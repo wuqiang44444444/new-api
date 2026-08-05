@@ -12,15 +12,19 @@ last-reviewed: 2026-08-05
 
 `status: accepted` 表示接入边界已经形成设计，不表示渠道已经启用或通过生产验收。墨行当前产品范围
 固定为两个互不降级的 Link SKU：按量计费的 `seedance-2-0-oversea` 与按秒计费的
-`doubao-seedance-2-0-260128`。它们共享 `/v1/media/*` 协议形状，但使用不同域名、implementation、
-价格与 Provider 证据；完成本文门禁前不得仅因代码存在而发布 Ability。
+`doubao-seedance-2-0-260128`。两个 Provider 模型均属于 Moxing 的 TokenSave 模型体系，并共享
+`/v1/media/*` 协议形状；方案必须按 Link SKU 及其 capability 命名和展示，不得用 `moxing` /
+`tokensave` 把两者伪装成不同 Provider。当前展示名分别为
+`Moxing · tokensave.seedance-2-0-oversea/v2` 与
+`Moxing · tokensave.doubao-seedance-2-0-260128/v2`。域名、不可变 implementation ID、凭据、价格与
+Provider 证据仍必须隔离。完成本文门禁前不得仅因代码存在而发布 Ability。
 
 ## 1. 模型结论
 
 | Provider 模型 | 官方线路 | 设计结论 |
 | --- | --- | --- |
-| `seedance-2-0-oversea` | Moxing V2 `/v1/media/*` | 当前模型之一；`moxing.seedance-media-task@v2`，按量计费 |
-| `doubao-seedance-2-0-260128` | TokenSave V2 `/v1/media/*` | 当前模型之二；`tokensave.seedance-media-task@v2`，按秒计费 |
+| `seedance-2-0-oversea` | `seedance-2-0-oversea` Link 方案 | 当前模型之一；`moxing.seedance-media-task@v2`，按量计费 |
+| `doubao-seedance-2-0-260128` | `doubao-seedance-2-0-260128` Link 方案 | 当前模型之二；`tokensave.seedance-media-task@v2`，按秒计费 |
 | `dreamina-seedance-2-0-260128` | 历史 Ark `/v1/ark/*` | 模型页仍保留旧合同；素材/H5 配套资料已失效，重新取证前不得新增候选或 binding |
 
 客户模型名仍可由管理员自定义。上表中的 Provider 模型只参与 `model_mapping` 与 implementation
@@ -40,7 +44,8 @@ execution binding，不直接承担客户模型 publication 身份。
 
 `doubao-seedance-2-0-260128` 的当前补充资料证明文生、图生、参考生，`480p/720p/1080p`、
 `4..15/-1`、七种画幅及 `result/usage` 字符串响应口径。该页没有给出 Provider origin、账号、素材
-CRUD、真人认证或价格，不能单独证明 TokenSave implementation 身份、按秒计费或素材授权合同；这些
+CRUD、真人认证或价格，不能单独证明该 Link 方案的 implementation 身份、按秒计费或
+素材授权合同；这些
 事实仍分别依赖代码注册、其它 Provider 证据和生产验收。营销文案中的视频/音频参考、编辑和延长
 能力未给出本次可执行字段合同，初版仍保持未发布。
 

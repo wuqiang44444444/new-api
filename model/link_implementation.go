@@ -67,13 +67,14 @@ type LinkSKUPathRequirement struct {
 }
 
 // LinkImplementation is the code-owned implementation contract selected by a
-// channel. Provider is display-only; execution identity is ID + Version +
-// ContentHash.
+// channel. Provider and PlanName are display-only; execution identity is ID +
+// Version + ContentHash.
 type LinkImplementation struct {
 	ID                     string                            `json:"id"`
 	Version                string                            `json:"version"`
 	ContentHash            string                            `json:"content_hash"`
 	Provider               string                            `json:"provider"`
+	PlanName               string                            `json:"plan_name,omitempty"`
 	Deprecated             bool                              `json:"deprecated,omitempty"`
 	ContractID             string                            `json:"contract_id"`
 	PublicSKUs             []string                          `json:"public_skus"`
@@ -125,7 +126,7 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 			TaskContract:      "shared_video_task", BillingContract: "newapi_quota",
 		},
 		{
-			ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV2, Provider: "Moxing",
+			ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV2, Provider: "Moxing", PlanName: "tokensave." + VideoSKUSeedance20Oversea,
 			ContractID: "modelark.contents.generations.v3", PublicSKUs: []string{VideoSKUSeedance20Oversea},
 			ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileThirdPartyRelay,
 			RequiredAssetProfile: string(dto.AssetUpstreamProfileRelay), RequiredCreatePath: "/v1/media/generations", RequiredQueryPath: "/v1/media/tasks/{task_id}", RequiredAdapterVersion: "54:third_party_relay:v2",
@@ -204,6 +205,7 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 
 func buildLinkImplementationRegistryFrom(implementations []LinkImplementation) (map[string]LinkImplementation, error) {
 	registry := make(map[string]LinkImplementation, len(implementations))
+	displayNames := make(map[string]struct{}, len(implementations))
 	for _, implementation := range implementations {
 		implementation = normalizeLinkImplementation(implementation)
 		if implementation.ID == "" {
@@ -212,6 +214,13 @@ func buildLinkImplementationRegistryFrom(implementations []LinkImplementation) (
 		key := linkImplementationRegistryKey(implementation.ID, implementation.Version)
 		if _, exists := registry[key]; exists {
 			return nil, fmt.Errorf("duplicate Link implementation identity %q/%q", implementation.ID, implementation.Version)
+		}
+		if implementation.PlanName != "" {
+			displayKey := implementation.Provider + "\x00" + implementation.PlanName + "\x00" + implementation.Version
+			if _, exists := displayNames[displayKey]; exists {
+				return nil, fmt.Errorf("duplicate Link plan display name %q", implementation.Provider+" · "+implementation.PlanName+"/"+implementation.Version)
+			}
+			displayNames[displayKey] = struct{}{}
 		}
 		implementation.ContentHash = linkImplementationContentHash(implementation)
 		registry[key] = implementation
@@ -222,6 +231,8 @@ func buildLinkImplementationRegistryFrom(implementations []LinkImplementation) (
 func normalizeLinkImplementation(implementation LinkImplementation) LinkImplementation {
 	implementation.ID = strings.TrimSpace(implementation.ID)
 	implementation.Version = strings.TrimSpace(implementation.Version)
+	implementation.Provider = strings.TrimSpace(implementation.Provider)
+	implementation.PlanName = strings.TrimSpace(implementation.PlanName)
 	implementation.ContractID = strings.TrimSpace(implementation.ContractID)
 	implementation.RequiredVideoProfile = strings.TrimSpace(implementation.RequiredVideoProfile)
 	implementation.RequiredAssetProfile = strings.TrimSpace(implementation.RequiredAssetProfile)
@@ -330,6 +341,23 @@ func LinkImplementationsForSKU(publicSKU string) []LinkImplementation {
 func ListLinkImplementations() []LinkImplementation {
 	result := make([]LinkImplementation, 0, len(linkImplementationRegistry))
 	for _, implementation := range linkImplementationRegistry {
+		result = append(result, cloneLinkImplementation(implementation))
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ID+"\x00"+result[i].Version < result[j].ID+"\x00"+result[j].Version
+	})
+	return result
+}
+
+// ListSelectableLinkImplementations returns only implementations that may be
+// assigned to channels creating new work. Deprecated versions remain in the
+// registry exclusively for resolving immutable historical task snapshots.
+func ListSelectableLinkImplementations() []LinkImplementation {
+	result := make([]LinkImplementation, 0, len(linkImplementationRegistry))
+	for _, implementation := range linkImplementationRegistry {
+		if implementation.Deprecated {
+			continue
+		}
 		result = append(result, cloneLinkImplementation(implementation))
 	}
 	sort.Slice(result, func(i, j int) bool {

@@ -135,6 +135,7 @@ export interface LinkImplementation {
   version: string
   content_hash: string
   provider: string
+  plan_name?: string
   contract_id: string
   public_skus: string[]
   channel_type: number

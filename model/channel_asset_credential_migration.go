@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 )
 
@@ -110,14 +111,26 @@ func validateOfficialAssetCredentialMigration() error {
 	}
 
 	channels := make(map[int]*Channel)
+	missingChannels := make(map[int]bool)
 	fingerprints := make(map[int]string)
 	for _, record := range records {
+		if missingChannels[record.ChannelID] {
+			continue
+		}
 		channel := channels[record.ChannelID]
 		if channel == nil {
 			var err error
 			channel, err = GetChannelById(record.ChannelID, true)
 			if err != nil {
-				return fmt.Errorf("official asset credential migration blocked: %s references unavailable channel %d", record.Source, record.ChannelID)
+				// The referenced channel no longer exists, so these records are
+				// orphans left behind by channel deletion, not official
+				// credentials awaiting migration. Pruning them must never brick
+				// gateway startup: drop the orphan reconciliation findings, warn
+				// once per missing channel, and skip the remaining records.
+				missingChannels[record.ChannelID] = true
+				pruneOrphanOfficialReconciliationFindings(record.ChannelID)
+				common.SysError(fmt.Sprintf("official asset credential migration: %s references unavailable channel %d; pruned orphan reconciliation findings", record.Source, record.ChannelID))
+				continue
 			}
 			channels[record.ChannelID] = channel
 		}
@@ -139,4 +152,15 @@ func validateOfficialAssetCredentialMigration() error {
 
 func ValidateOfficialAssetCredentialMigration() error {
 	return validateOfficialAssetCredentialMigration()
+}
+
+// pruneOrphanOfficialReconciliationFindings removes official reconciliation
+// findings for a channel that no longer exists. Findings are diagnostic rows
+// produced by reconciliation runs; once their channel is gone they have
+// nothing left to reconcile and must not block startup.
+func pruneOrphanOfficialReconciliationFindings(channelID int) {
+	if err := DB.Where("channel_id = ? AND upstream_profile = ?", channelID, dto.AssetUpstreamProfileOfficial).
+		Delete(&AssetReconciliationFinding{}).Error; err != nil {
+		common.SysError(fmt.Sprintf("official asset credential migration: failed to prune orphan reconciliation findings for channel %d: %v", channelID, err))
+	}
 }

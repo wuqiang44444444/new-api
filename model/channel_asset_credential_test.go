@@ -176,4 +176,25 @@ func TestOfficialAssetCredentialMigrationGuard(t *testing.T) {
 
 		require.NoError(t, validateOfficialAssetCredentialMigration())
 	})
+
+	t.Run("prunes orphan findings for a deleted channel instead of bricking", func(t *testing.T) {
+		truncateTables(t)
+		// Channel 989 does not exist, mirroring a finding left behind after a
+		// channel was hard-deleted. Such an orphan must not block startup.
+		require.NoError(t, DB.Create(&AssetReconciliationFinding{
+			ChannelID:             989,
+			CredentialFingerprint: "legacy-fingerprint",
+			UpstreamProfile:       string(dto.AssetUpstreamProfileOfficial),
+			Status:                AssetReconciliationFindingOpen,
+			FindingType:           AssetReconciliationOrphanUpstream,
+			ScopeHash:             "scope-989",
+		}).Error)
+
+		require.NoError(t, validateOfficialAssetCredentialMigration())
+
+		var count int64
+		require.NoError(t, DB.Model(&AssetReconciliationFinding{}).
+			Where("channel_id = ?", 989).Count(&count).Error)
+		assert.Zero(t, count, "orphan finding must be pruned")
+	})
 }

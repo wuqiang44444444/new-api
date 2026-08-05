@@ -106,6 +106,26 @@ func TestChannelCredentialMutationAndDeletionRespectAssetFence(t *testing.T) {
 	require.NoError(t, DB.First(&persisted, "id = ?", channel.Id).Error)
 }
 
+func TestChannelDeleteRemovesReconciliationFindings(t *testing.T) {
+	truncateTables(t)
+	channel, _ := seedAssetLifecycleChannel(t, 507, "key", "relay_assets")
+	require.NoError(t, DB.Create(&AssetReconciliationFinding{
+		ChannelID: channel.Id, CredentialFingerprint: "fp",
+		UpstreamProfile: "relay_assets", Status: AssetReconciliationFindingOpen,
+		FindingType: AssetReconciliationOrphanUpstream, ScopeHash: "scope-507",
+	}).Error)
+
+	require.NoError(t, channel.Delete())
+
+	var channelCount int64
+	require.NoError(t, DB.Model(&Channel{}).Where("id = ?", channel.Id).Count(&channelCount).Error)
+	assert.Zero(t, channelCount)
+	var findingCount int64
+	require.NoError(t, DB.Model(&AssetReconciliationFinding{}).
+		Where("channel_id = ?", channel.Id).Count(&findingCount).Error)
+	assert.Zero(t, findingCount, "deleting a channel must remove its reconciliation findings")
+}
+
 func TestUserDeleteFinalizesOnlyAuthorizationsWithoutResources(t *testing.T) {
 	truncateTables(t)
 	user := User{Id: 504, Username: "asset-cleanup-user"}

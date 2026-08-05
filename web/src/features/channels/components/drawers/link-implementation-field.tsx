@@ -46,6 +46,8 @@ import {
   deriveLinkPublicationPreviews,
   EMPTY_LINK_ACCESS_PLAN_PROJECTION,
   linkAccessPlanAutofill,
+  linkAccessPlanLabel,
+  linkAccessPlanOptionValue,
   linkAccessPlansForChannelType,
   type LinkAccessPlanProjection,
 } from '../../lib/link-access-plan'
@@ -96,10 +98,15 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
   const selectedImplementation = useMemo(
     () =>
       implementations.find(
-        (implementation) => implementation.id === selectedID
+        (implementation) =>
+          implementation.id === selectedID &&
+          implementation.version === selectedVersion
       ),
-    [implementations, selectedID]
+    [implementations, selectedID, selectedVersion]
   )
+  const selectedOptionValue = selectedImplementation
+    ? linkAccessPlanOptionValue(selectedImplementation)
+    : NO_LINK_IMPLEMENTATION
   const previews = useMemo(
     () =>
       selectedImplementation
@@ -160,15 +167,18 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
                   label: t('No Link access plan'),
                 },
                 ...implementations.map((implementation) => ({
-                  value: implementation.id,
-                  label: `${implementation.provider} · ${implementation.id}/${implementation.version}`,
+                  value: linkAccessPlanOptionValue(implementation),
+                  label: linkAccessPlanLabel(implementation),
                 })),
               ]}
-              value={field.value || NO_LINK_IMPLEMENTATION}
+              value={selectedOptionValue}
               onValueChange={(value) => {
                 if (value === NO_LINK_IMPLEMENTATION) {
                   field.onChange('')
-                  form.setValue('link_implementation_version', '')
+                  form.setValue('link_implementation_version', '', {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
                   const ordinaryProjection =
                     ordinaryProjectionRef.current ||
                     EMPTY_LINK_ACCESS_PLAN_PROJECTION
@@ -200,8 +210,9 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
                   return
                 }
                 const implementation = implementations.find(
-                  (candidate) => candidate.id === value
+                  (candidate) => linkAccessPlanOptionValue(candidate) === value
                 )
+                if (!implementation) return
                 if (!selectedID) {
                   ordinaryProjectionRef.current = {
                     video_upstream_profile:
@@ -218,10 +229,11 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
                     advanced_custom: form.getValues('advanced_custom') || '',
                   }
                 }
-                field.onChange(value)
+                field.onChange(implementation.id)
                 form.setValue(
                   'link_implementation_version',
-                  implementation?.version || ''
+                  implementation.version,
+                  { shouldDirty: true, shouldValidate: true }
                 )
               }}
             >
@@ -241,12 +253,11 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
                   {implementations.map((implementation) => (
                     <SelectItem
                       key={`${implementation.id}/${implementation.version}`}
-                      value={implementation.id}
+                      value={linkAccessPlanOptionValue(implementation)}
                       className={linkAccessPlanSelectItemClass}
                     >
                       <span className='min-w-0 leading-snug break-words whitespace-normal'>
-                        {implementation.provider} · {implementation.id}/
-                        {implementation.version}
+                        {linkAccessPlanLabel(implementation)}
                       </span>
                     </SelectItem>
                   ))}

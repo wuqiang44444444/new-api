@@ -45,6 +45,22 @@ export const EMPTY_LINK_ACCESS_PLAN_PROJECTION: LinkAccessPlanProjection = {
   advanced_custom: '',
 }
 
+export function linkAccessPlanOptionValue(
+  implementation: Pick<LinkImplementation, 'id' | 'version'>
+): string {
+  return JSON.stringify([implementation.id, implementation.version])
+}
+
+export function linkAccessPlanLabel(
+  implementation: Pick<
+    LinkImplementation,
+    'id' | 'version' | 'provider' | 'plan_name'
+  >
+): string {
+  const contractName = implementation.plan_name || implementation.id
+  return `${implementation.provider} · ${contractName}/${implementation.version}`
+}
+
 export function linkAccessPlansForChannelType(
   implementations: LinkImplementation[],
   channelType: number
