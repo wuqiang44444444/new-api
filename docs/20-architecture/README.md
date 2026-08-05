@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-06
 ---
 
 # 20-architecture — 架构索引
@@ -32,7 +32,8 @@ last-reviewed: 2026-08-05
 2. [Link 服务合同概念与协作关系](Link服务合同概念与协作关系.md)：理解客户合同、发布事实、接入方案与渠道实现的分工。
 3. [Link 服务合同注册与履约架构](Link服务合同注册与履约架构.md)：理解本地扩展合同、公开 SKU 与实现注册的技术边界。
 4. [异步任务与计费事实架构](异步任务与计费事实架构.md)：理解 create attempt、Task、资金状态和平台风险。
-5. 再按任务选择图片、视频、资源、真人授权、账单、公开文档或 [Seedance Provider 接入设计](<seedance 模型接入设计/README.md>)。
+5. 再按任务选择图片、视频、资源、真人授权、账单、公开文档、[Seedance 统一北向合同](Seedance统一北向合同架构.md)
+   或 [Seedance Provider 接入设计](<seedance 模型接入设计/README.md>)。
 6. 需要理解“为什么这样设计”时阅读[架构决策索引](decisions/README.md)。
 
 ## 当前架构文档
@@ -45,6 +46,7 @@ last-reviewed: 2026-08-05
 | 共享异步事实 | [异步任务与计费事实架构](异步任务与计费事实架构.md) | create attempt、Task、计费和 exposure 如何形成耐久事实 | `model/task*.go`、Task billing、exposure |
 | 图片数据面 | [Link 图片服务合同与异步任务架构](Link图片服务合同与异步任务架构.md) | 同步/异步图片如何共享入口、Task 和计费 | 图片 relay、`media_task_image_blocking`、`media_image` Task |
 | 视频数据面 | [Link 视频服务合同与异步任务架构](Link视频服务合同与异步任务架构.md) | Link 视频合同、Provider adapter、共享 Task、轮询和内容代理 | Link 视频 Router、Task relay、capability 与 polling；原生视频以上游代码为准 |
+| Seedance 北向合同 | [Seedance 统一北向合同架构](Seedance统一北向合同架构.md) | ModelArk v3 下的规范词汇、模型级 capability、版本、机器发现和失败关闭如何协作 | `VideoSKUCapability`、ModelArk middleware、capability API 与 OpenAPI 投影 |
 | Provider 接入设计 | [Seedance 模型接入设计索引](<seedance 模型接入设计/README.md>) | FunCloud、墨行、飞彩如何在共同 Link 合同下表达各自路径、素材、Task 和计费差异 | Provider implementation、execution binding、adapter 与 capability 目标设计 |
 | Link 资源 | [Link 资源合同与解析架构](Link资源合同与解析架构.md) | `ast_*`、source/binding、Provider 物化和 Resolver 如何协作 | `Asset`、`AssetSource`、`AssetBinding`、Resolver、Asset job |
 | 真人授权 | [真人素材授权与撤回架构](真人素材授权与撤回架构.md) | 真人认证、任务使用、撤回和内容访问如何线性化 | authorization、verification、Task authorization reservation |

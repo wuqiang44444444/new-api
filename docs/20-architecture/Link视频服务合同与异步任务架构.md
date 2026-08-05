@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-06
 ---
 
 # Link 视频服务合同与异步任务架构
@@ -23,9 +23,12 @@ last-reviewed: 2026-08-05
 NEWAPI rc23 原生 OpenAI Videos 与旧版平台视频不属于本文架构，其 Router、DTO、Relay、Sora adapter、
 模型发现和客户端协议以上游代码为唯一权威。
 
+Seedance ModelArk v3 的规范词汇、模型级 capability、版本与机器发现细节集中在
+[Seedance 统一北向合同架构](Seedance统一北向合同架构.md)，本文不重复维护逐模型字段矩阵。
+
 ### 1.1 当前实现状态
 
-截至 2026-08-04，代码已实现：
+截至 2026-08-06，代码已实现：
 
 - Seedance、Kling、即梦三套类型化客户接入合同和稳定 `contract_id`；
 - 官方 DTO 白名单校验、合同错误投影和 Provider 请求转换；
@@ -627,6 +630,7 @@ fail closed，不使用进程级默认值。异步视频任务强制全额预扣
 ## 16. 相关文档
 
 - [Link 服务合同概念与协作关系](Link服务合同概念与协作关系.md)
+- [Seedance 统一北向合同架构](Seedance统一北向合同架构.md)
 - [Link 服务合同注册与履约架构](Link服务合同注册与履约架构.md)
 - [异步任务与计费事实架构](异步任务与计费事实架构.md)
 - [ADR-0001：视频上游协议适配与任务执行快照](decisions/0001-视频上游协议适配与任务执行快照.md)
