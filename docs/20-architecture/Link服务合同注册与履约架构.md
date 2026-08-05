@@ -338,15 +338,17 @@ alias、双读或 fallback。正式发布后若需要多版本无损共存，必
 | implementation ID/version | 主要执行形状 | Link SKU |
 | --- | --- | --- |
 | `byteplus.seedance-ark/v1` | DoubaoVideo official + official Action Assets | `seedance-byteplus` |
-| `moxing.seedance-media-task@v2` | third-party relay + relay assets；当前候选 | `seedance-2-0-oversea` |
-| `moxing.seedance-ark-assets@v1` | deprecated Ark 历史解析；不得创建新任务 | 冻结历史事实中的 `seedance-2-0-oversea` |
-| `tokensave.seedance-media-task@v2` | third-party relay + relay assets；按秒计费、general 图片 | `doubao-seedance-2-0-260128` |
+| `moxing.seedance-media-task/v2` | third-party relay + relay assets；当前候选 | `seedance-2-0-oversea` |
+| `moxing.seedance-ark-assets/v1` | deprecated Ark 历史解析；不得创建新任务 | 冻结历史事实中的 `seedance-2-0-oversea` |
+| `tokensave.seedance-media-task/v2` | third-party relay + relay assets；按秒计费、general 图片 | `doubao-seedance-2-0-260128` |
 | `feicai.seedance-videos/v2` | JSON media-arrays + `source_url` | 10 个独立飞彩 SKU；无逐模型 size 证据的组合保持不可发布 |
 | `funcloud.seedance-json/v1` | FunCloud adapter v2 + `source_url` | `seedance-2.0-standard`、`seedance-2.0-fast` |
 | `moxing.images.media-task/v1` | Advanced Custom media-task | `seedream-5-moxing`、`nano-banana-2` |
 | `qihang.images.openai-compatible/v1` | Advanced Custom converter none | `seedream-5-qihang` |
 | `kling.videos-official/v1` | Kling official | 三个 Kling SKU |
 | `jimeng.videos-official/v1` | Jimeng official | `jimeng_vgfm_t2v_l20` |
+
+表中的 `/v1`、`/v2` 仅把独立的 implementation ID 与 version 并列展示，斜线不是 ID 的组成部分。
 
 `moxing.seedance-media-task` 与 `tokensave.seedance-media-task` 的 Provider 均为 Moxing，两者的 Provider 模型均属
 TokenSave 模型体系。两个字符串是已发布的不可变 implementation ID，不是 Provider 或 Link 方案展示名；

@@ -12,9 +12,9 @@ import (
 func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 	feicai := &Channel{
 		Type:         constant.ChannelTypeDoubaoVideo,
-		Models:       VideoSKUSeedance20Value1080P,
+		Models:       VideoSKUSeedance20Standard720P,
 		Status:       common.ChannelStatusEnabled,
-		ModelMapping: common.GetPointer(`{"seedance-2.0-value-1080p":"seedance-2.0-933-1080p-azhw-feicai"}`),
+		ModelMapping: common.GetPointer(`{"seedance-2.0-standard-720p":"seedance-2.0-vip-720p-azhw-feicai"}`),
 	}
 	feicai.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProfile:    dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
@@ -22,20 +22,12 @@ func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 		LinkImplementation: dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV2},
 	})
 	require.NoError(t, ValidateLinkSKUAbilityBindings(feicai))
-	require.ErrorContains(t, ValidateLinkSKUAbilityPublicationReadiness(feicai), "no verified provider ratio/size evidence")
-
-	originalFeicai := videoSKUCapabilities[VideoSKUSeedance20Value1080P]
-	verifiedFeicai := originalFeicai
-	verifiedFeicai.Ratios = []string{"16:9"}
-	verifiedFeicai.ContentHash = videoSKUCapabilityHash(verifiedFeicai)
-	videoSKUCapabilities[VideoSKUSeedance20Value1080P] = verifiedFeicai
-	originalImplementationHash := videoSKUImplementationHashes[VideoSKUSeedance20Value1080P]
-	videoSKUImplementationHashes[VideoSKUSeedance20Value1080P] = verifiedFeicai.ContentHash
-	t.Cleanup(func() {
-		videoSKUCapabilities[VideoSKUSeedance20Value1080P] = originalFeicai
-		videoSKUImplementationHashes[VideoSKUSeedance20Value1080P] = originalImplementationHash
-	})
 	require.NoError(t, ValidateLinkSKUAbilityPublicationReadiness(feicai))
+
+	feicai.Models = VideoSKUSeedance20Value1080P
+	feicai.ModelMapping = common.GetPointer(`{"seedance-2.0-value-1080p":"seedance-2.0-933-1080p-azhw-feicai"}`)
+	require.NoError(t, ValidateLinkSKUAbilityBindings(feicai))
+	require.ErrorContains(t, ValidateLinkSKUAbilityPublicationReadiness(feicai), "no verified provider ratio/size evidence")
 
 	feicai.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProfile: dto.VideoUpstreamProfileOfficial,

@@ -3,6 +3,7 @@ page-id: videos-modelark
 kind: api-reference
 last-verified: 2026-08-05
 operations:
+  - listModelArkVideoModelCapabilities
   - createModelArkVideoTask
   - listModelArkVideoTasks
   - getModelArkVideoTask
@@ -13,6 +14,30 @@ operations:
 # ModelArk 视频
 
 ModelArk 使用 `/api/v3/contents/generations/tasks` 原生合同。它不是 `/v1` 子路径，字段也不能与 Kling 或即梦请求混用。
+
+## 查询模型与参数能力
+
+`GET /v1/models` 只返回当前 API Key 实际可调用的客户模型身份。查看全部已登记 Seedance 基础候选、
+当前 Key 的客户模型 alias，以及每个模型的字段、默认值、分辨率、画幅、媒体数量和生命周期能力时，
+调用：
+
+```bash
+curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models" \
+  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
+```
+
+也可以用精确模型过滤：
+
+```bash
+curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models?model=seedance-2.0-fast" \
+  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
+```
+
+精确过滤支持直接使用 `/v1/models` 返回的客户模型 ID；alias 行的 `id` 和
+`capability.public_model` 保持客户模型，不暴露其绑定的 Link SKU。响应中的 `capability` 是参数合同；
+`visible_in_v1_models` 表示该模型是否出现在当前 Key 的
+`GET /v1/models` 中；只有 `published=true`、`visible_in_v1_models=true` 且 `available=true` 时才可提交
+创建请求。`available=false` 的候选模型仍会显示参数，便于客户端提前适配，但不得解释为已经生产发布。
 
 ## 创建任务
 

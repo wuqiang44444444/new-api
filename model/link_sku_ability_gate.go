@@ -56,11 +56,41 @@ func ValidateLinkSKUAbilityPublicationReadiness(channel *Channel) error {
 		if !registered {
 			return fmt.Errorf("Link customer model %q resolves to unregistered SKU %q", execution.CustomerModel, execution.LinkSKU)
 		}
-		if len(capability.Ratios) == 0 {
+		combinations := capability.ResolutionRatioCombinations
+		if len(combinations) == 0 {
+			resolutions := capability.Resolutions
+			if strings.TrimSpace(capability.Resolution) != "" {
+				resolutions = []string{capability.Resolution}
+			}
+			for _, resolution := range resolutions {
+				for _, ratio := range capability.Ratios {
+					combinations = append(combinations, VideoResolutionRatioCombination{Resolution: resolution, Ratio: ratio})
+				}
+			}
+		}
+		if len(combinations) == 0 {
 			return fmt.Errorf(
 				"video SKU %q has no verified provider ratio/size evidence and cannot be published",
 				strings.TrimSpace(execution.LinkSKU),
 			)
+		}
+		for _, combination := range combinations {
+			if _, verified := ResolveVideoProviderSizeEvidence(
+				settings.LinkImplementation,
+				execution.ProviderModel,
+				combination.Resolution,
+				combination.Ratio,
+			); !verified {
+				return fmt.Errorf(
+					"video SKU %q has no verified provider ratio/size evidence for implementation %q/%q, Provider model %q, resolution %q, ratio %q and cannot be published",
+					strings.TrimSpace(execution.LinkSKU),
+					strings.TrimSpace(settings.LinkImplementation.ID),
+					strings.TrimSpace(settings.LinkImplementation.Version),
+					strings.TrimSpace(execution.ProviderModel),
+					strings.TrimSpace(combination.Resolution),
+					strings.TrimSpace(combination.Ratio),
+				)
+			}
 		}
 	}
 	return nil

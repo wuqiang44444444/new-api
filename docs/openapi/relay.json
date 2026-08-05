@@ -153,6 +153,65 @@
         ]
       }
     },
+    "/api/v3/contents/generations/models": {
+      "get": {
+        "summary": "查询 ModelArk 视频模型能力",
+        "deprecated": false,
+        "description": "返回全部代码登记的 Seedance ModelArk 基础候选及当前 API Key 已发布的客户模型 alias，并标记 publication、/v1/models 可见性和实际可用性。alias 行保持客户模型身份，不暴露其绑定的 Link SKU。available=false 的模型仅供能力预览，不能据此发送创建请求。",
+        "operationId": "listModelArkVideoModelCapabilities",
+        "tags": [
+          "视频生成/ModelArk格式"
+        ],
+        "parameters": [
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "description": "按精确客户模型 ID 或基础候选 ID 查询单个 capability",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "模型 capability 列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelArkVideoCapabilityCatalog"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "模型 capability 不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1beta/models": {
       "get": {
         "summary": "Gemini 格式获取",
@@ -5631,6 +5690,321 @@
       "ModelArkVideoCreateRequest": {
         "type": "object",
         "additionalProperties": false,
+        "x-modelark-model-capabilities": [
+          {
+            "public_model": "doubao-seedance-2-0-260128",
+            "contract_id": "modelark.contents.generations.v3",
+            "version": "tokensave-media-task-v2",
+            "content_hash": "f2912b15555aff6472f636cb58755ae8552ba35e30f21bf330e6bc66cb2c364b",
+            "request_fields": ["model", "content", "duration", "resolution", "ratio", "generate_audio"],
+            "required_fields": ["model", "content"],
+            "unsupported_fields": [
+              "end_user_subject",
+              "callback_url",
+              "service_tier",
+              "watermark",
+              "return_last_frame",
+              "execution_expires_after",
+              "draft",
+              "tools",
+              "safety_identifier",
+              "priority",
+              "frames",
+              "seed",
+              "camera_fixed"
+            ],
+            "resolutions": ["480p", "720p", "1080p"],
+            "ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
+            "requires_resolution": true,
+            "requires_ratio": true,
+            "duration": {
+              "minimum": 4,
+              "maximum": 15,
+              "allows_automatic": true,
+              "required": true
+            },
+            "media": {
+              "content_types": ["text", "image_url"],
+              "min_images": 0,
+              "max_images": 9,
+              "max_videos": 0,
+              "max_audio": 0,
+              "image_roles": ["", "first_frame", "last_frame", "reference_image"]
+            },
+            "constraints": {
+              "requires_text": true,
+              "supports_generate_audio": true,
+              "supports_direct_media": true,
+              "supports_link_assets": true,
+              "supports_mixed_media_paths": false,
+              "reference_modes_exclusive": true,
+              "audio_requires_reference_image": false,
+              "audio_requires_visual_reference": false
+            },
+            "lifecycle": {
+              "supports_content": true,
+              "supports_last_frame": false,
+              "supports_cancel_queued": false,
+              "supports_delete": false
+            }
+          },
+          {
+            "public_model": "seedance-2-0-oversea",
+            "contract_id": "modelark.contents.generations.v3",
+            "version": "moxing-media-task-v2",
+            "content_hash": "80fbc021411a9280a5214acfae1a71f7643581517377c53c133a8e6ae0a57f24",
+            "request_fields": ["model", "content", "duration", "resolution", "ratio", "generate_audio"],
+            "required_fields": ["model", "content"],
+            "unsupported_fields": [
+              "end_user_subject",
+              "callback_url",
+              "service_tier",
+              "watermark",
+              "return_last_frame",
+              "execution_expires_after",
+              "draft",
+              "tools",
+              "safety_identifier",
+              "priority",
+              "frames",
+              "seed",
+              "camera_fixed"
+            ],
+            "resolutions": ["480p", "720p"],
+            "ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
+            "requires_resolution": true,
+            "requires_ratio": true,
+            "duration": {
+              "minimum": 4,
+              "maximum": 15,
+              "allows_automatic": true,
+              "required": true
+            },
+            "media": {
+              "content_types": ["text", "image_url"],
+              "min_images": 0,
+              "max_images": 9,
+              "max_videos": 0,
+              "max_audio": 0,
+              "image_roles": ["", "first_frame", "last_frame", "reference_image"]
+            },
+            "constraints": {
+              "requires_text": true,
+              "supports_generate_audio": true,
+              "supports_direct_media": true,
+              "supports_link_assets": true,
+              "supports_mixed_media_paths": false,
+              "reference_modes_exclusive": true,
+              "audio_requires_reference_image": false,
+              "audio_requires_visual_reference": false
+            },
+            "lifecycle": {
+              "supports_content": true,
+              "supports_last_frame": false,
+              "supports_cancel_queued": false,
+              "supports_delete": false
+            }
+          },
+          {
+            "public_model": "seedance-2.0-fast",
+            "contract_id": "modelark.contents.generations.v3",
+            "version": "public-video-contract-v2",
+            "content_hash": "91b0d2f7adca87d371a48f086463fadffefbaef4595bd2f25e15eac88b797392",
+            "request_fields": [
+              "model",
+              "end_user_subject",
+              "content",
+              "duration",
+              "resolution",
+              "ratio",
+              "generate_audio",
+              "watermark",
+              "seed",
+              "camera_fixed"
+            ],
+            "required_fields": ["model", "content"],
+            "unsupported_fields": [
+              "callback_url",
+              "service_tier",
+              "return_last_frame",
+              "execution_expires_after",
+              "draft",
+              "tools",
+              "safety_identifier",
+              "priority",
+              "frames"
+            ],
+            "resolutions": ["480p", "720p"],
+            "default_resolution": "720p",
+            "ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
+            "default_ratio": "16:9",
+            "requires_resolution": false,
+            "requires_ratio": false,
+            "duration": {
+              "minimum": 4,
+              "maximum": 15,
+              "default": 5,
+              "allows_automatic": false,
+              "required": false
+            },
+            "media": {
+              "content_types": ["text", "image_url", "video_url", "audio_url"],
+              "min_images": 0,
+              "max_images": 3,
+              "max_videos": 1,
+              "max_audio": 1,
+              "image_roles": ["reference_image", "first_frame", "last_frame"],
+              "video_roles": ["reference_video"],
+              "audio_roles": ["reference_audio"]
+            },
+            "constraints": {
+              "requires_text": true,
+              "supports_generate_audio": true,
+              "supports_direct_media": true,
+              "supports_link_assets": true,
+              "supports_mixed_media_paths": false,
+              "reference_modes_exclusive": false,
+              "audio_requires_reference_image": false,
+              "audio_requires_visual_reference": true
+            },
+            "lifecycle": {
+              "supports_content": true,
+              "supports_last_frame": false,
+              "supports_cancel_queued": false,
+              "supports_delete": false
+            }
+          },
+          {
+            "public_model": "seedance-2.0-standard",
+            "contract_id": "modelark.contents.generations.v3",
+            "version": "public-video-contract-v2",
+            "content_hash": "50056b167d80c6334b5aa8ad7adcf4b37f5c72c10e5fcefb52262ee053e75f4a",
+            "request_fields": [
+              "model",
+              "end_user_subject",
+              "content",
+              "duration",
+              "resolution",
+              "ratio",
+              "generate_audio",
+              "watermark",
+              "seed",
+              "camera_fixed"
+            ],
+            "required_fields": ["model", "content"],
+            "unsupported_fields": [
+              "callback_url",
+              "service_tier",
+              "return_last_frame",
+              "execution_expires_after",
+              "draft",
+              "tools",
+              "safety_identifier",
+              "priority",
+              "frames"
+            ],
+            "resolutions": ["480p", "720p", "1080p"],
+            "default_resolution": "720p",
+            "ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
+            "default_ratio": "16:9",
+            "requires_resolution": false,
+            "requires_ratio": false,
+            "duration": {
+              "minimum": 4,
+              "maximum": 15,
+              "default": 5,
+              "allows_automatic": false,
+              "required": false
+            },
+            "media": {
+              "content_types": ["text", "image_url", "video_url", "audio_url"],
+              "min_images": 0,
+              "max_images": 3,
+              "max_videos": 1,
+              "max_audio": 1,
+              "image_roles": ["reference_image", "first_frame", "last_frame"],
+              "video_roles": ["reference_video"],
+              "audio_roles": ["reference_audio"]
+            },
+            "constraints": {
+              "requires_text": true,
+              "supports_generate_audio": true,
+              "supports_direct_media": true,
+              "supports_link_assets": true,
+              "supports_mixed_media_paths": false,
+              "reference_modes_exclusive": false,
+              "audio_requires_reference_image": false,
+              "audio_requires_visual_reference": true
+            },
+            "lifecycle": {
+              "supports_content": true,
+              "supports_last_frame": false,
+              "supports_cancel_queued": false,
+              "supports_delete": false
+            }
+          },
+          {
+            "public_model": "seedance-byteplus",
+            "contract_id": "modelark.contents.generations.v3",
+            "version": "public-video-contract-v2",
+            "content_hash": "dc4761018ab640e588942cb69f42cac517b3027e9a4b7fd8d19c0a6e63f95987",
+            "request_fields": [
+              "model",
+              "end_user_subject",
+              "content",
+              "duration",
+              "resolution",
+              "ratio",
+              "service_tier",
+              "generate_audio",
+              "watermark",
+              "return_last_frame",
+              "execution_expires_after",
+              "draft",
+              "tools",
+              "safety_identifier",
+              "priority",
+              "seed",
+              "camera_fixed"
+            ],
+            "required_fields": ["model", "content"],
+            "unsupported_fields": ["callback_url", "frames"],
+            "resolutions": ["480p", "720p", "1080p", "4k"],
+            "ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
+            "requires_resolution": true,
+            "requires_ratio": true,
+            "duration": {
+              "minimum": 4,
+              "maximum": 15,
+              "default": 5,
+              "allows_automatic": true,
+              "required": false
+            },
+            "media": {
+              "content_types": ["text", "image_url", "video_url", "audio_url"],
+              "min_images": 0,
+              "max_images": 9,
+              "max_videos": 3,
+              "max_audio": 3
+            },
+            "constraints": {
+              "requires_text": false,
+              "supports_generate_audio": true,
+              "supports_direct_media": true,
+              "supports_link_assets": true,
+              "supports_mixed_media_paths": false,
+              "reference_modes_exclusive": false,
+              "audio_requires_reference_image": false,
+              "audio_requires_visual_reference": true
+            },
+            "lifecycle": {
+              "supports_content": true,
+              "supports_last_frame": true,
+              "supports_cancel_queued": true,
+              "supports_delete": true
+            }
+          }
+        ],
         "required": [
           "model",
           "content"
@@ -5834,6 +6208,146 @@
           "updated_at": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "ModelArkVideoCapabilityCatalog": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "data"],
+        "properties": {
+          "object": {
+            "type": "string",
+            "enum": ["list"]
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelArkVideoCapabilityCatalogItem"
+            }
+          }
+        }
+      },
+      "ModelArkVideoCapabilityCatalogItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "object", "available", "published", "visible_in_v1_models", "capability"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "enum": ["model.capability"]
+          },
+          "available": {
+            "type": "boolean",
+            "description": "当前 API Key 是否存在已发布且可履约的候选"
+          },
+          "published": {
+            "type": "boolean",
+            "description": "是否存在该精确客户模型的 LinkModelPublication"
+          },
+          "visible_in_v1_models": {
+            "type": "boolean",
+            "description": "当前 API Key 调用 GET /v1/models 时是否可见"
+          },
+          "capability": {
+            "$ref": "#/components/schemas/ModelArkVideoCapability"
+          }
+        }
+      },
+      "ModelArkVideoCapability": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "public_model", "contract_id", "version", "content_hash", "request_fields", "required_fields",
+          "unsupported_fields", "resolutions", "ratios", "requires_resolution", "requires_ratio", "duration",
+          "media", "constraints", "lifecycle"
+        ],
+        "properties": {
+          "public_model": {"type": "string", "description": "客户请求使用的模型 ID，与响应项 id 相同；客户 alias 不替换为 Link SKU"},
+          "contract_id": {"type": "string", "enum": ["modelark.contents.generations.v3"]},
+          "version": {"type": "string"},
+          "content_hash": {"type": "string"},
+          "request_fields": {"type": "array", "items": {"type": "string"}},
+          "required_fields": {"type": "array", "items": {"type": "string"}},
+          "unsupported_fields": {"type": "array", "items": {"type": "string"}},
+          "resolutions": {"type": "array", "items": {"type": "string", "enum": ["480p", "720p", "1080p", "4k"]}},
+          "default_resolution": {"type": "string", "enum": ["480p", "720p", "1080p", "4k"]},
+          "ratios": {"type": "array", "items": {"type": "string", "enum": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"]}},
+          "default_ratio": {"type": "string", "enum": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"]},
+          "resolution_ratio_combinations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["resolution", "ratio"],
+              "properties": {
+                "resolution": {"type": "string"},
+                "ratio": {"type": "string"}
+              }
+            }
+          },
+          "requires_resolution": {"type": "boolean"},
+          "requires_ratio": {"type": "boolean"},
+          "duration": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["minimum", "maximum", "allows_automatic", "required"],
+            "properties": {
+              "minimum": {"type": "integer"},
+              "maximum": {"type": "integer"},
+              "default": {"type": "integer"},
+              "values": {"type": "array", "items": {"type": "integer"}},
+              "allows_automatic": {"type": "boolean"},
+              "required": {"type": "boolean"}
+            }
+          },
+          "media": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["content_types", "min_images", "max_images", "max_videos", "max_audio"],
+            "properties": {
+              "content_types": {"type": "array", "items": {"type": "string"}},
+              "min_images": {"type": "integer"},
+              "max_images": {"type": "integer"},
+              "max_videos": {"type": "integer"},
+              "max_audio": {"type": "integer"},
+              "image_roles": {"type": "array", "items": {"type": "string"}},
+              "video_roles": {"type": "array", "items": {"type": "string"}},
+              "audio_roles": {"type": "array", "items": {"type": "string"}}
+            }
+          },
+          "constraints": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "requires_text", "supports_generate_audio", "supports_direct_media", "supports_link_assets",
+              "supports_mixed_media_paths", "reference_modes_exclusive", "audio_requires_reference_image",
+              "audio_requires_visual_reference"
+            ],
+            "properties": {
+              "requires_text": {"type": "boolean"},
+              "supports_generate_audio": {"type": "boolean"},
+              "supports_direct_media": {"type": "boolean"},
+              "supports_link_assets": {"type": "boolean"},
+              "supports_mixed_media_paths": {"type": "boolean"},
+              "reference_modes_exclusive": {"type": "boolean"},
+              "audio_requires_reference_image": {"type": "boolean"},
+              "audio_requires_visual_reference": {"type": "boolean"}
+            }
+          },
+          "lifecycle": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["supports_content", "supports_last_frame", "supports_cancel_queued", "supports_delete"],
+            "properties": {
+              "supports_content": {"type": "boolean"},
+              "supports_last_frame": {"type": "boolean"},
+              "supports_cancel_queued": {"type": "boolean"},
+              "supports_delete": {"type": "boolean"}
+            }
           }
         }
       },

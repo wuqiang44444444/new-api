@@ -118,6 +118,47 @@ func TestApplyVideoServiceTierPolicy(t *testing.T) {
 	}
 }
 
+func TestModelArkServiceTierIsPreservedOrRejectedWithoutSilentOmission(t *testing.T) {
+	tests := []struct {
+		name      string
+		profile   dto.VideoUpstreamProfile
+		allow     bool
+		tier      string
+		wantError bool
+		wantValue string
+	}{
+		{name: "default is rejected when the channel cannot send it", profile: dto.VideoUpstreamProfileOfficial, tier: "default", wantError: true, wantValue: "default"},
+		{name: "default is rejected by relay even when enabled", profile: dto.VideoUpstreamProfileThirdPartyRelay, allow: true, tier: "default", wantError: true, wantValue: "default"},
+		{name: "default is preserved for an equivalent channel", profile: dto.VideoUpstreamProfileOfficial, allow: true, tier: " default ", wantValue: "default"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			context := probeContext(relaycommon.TaskSubmitReq{})
+			relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
+				ContractID: dto.VideoContractModelArkV3,
+				ModelArk: &dto.ModelArkVideoCreateRequest{
+					Model: "seedance-byteplus", ServiceTier: common.GetPointer(test.tier),
+				},
+			})
+			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelOtherSettings: dto.ChannelOtherSettings{AllowServiceTier: test.allow},
+			}}
+
+			taskErr := applyVideoServiceTierPolicy(context, info, test.profile)
+			if test.wantError {
+				require.NotNil(t, taskErr)
+				assert.Equal(t, "unsupported_parameter", taskErr.Code)
+			} else {
+				require.Nil(t, taskErr)
+			}
+			contract, ok := relaycommon.GetVideoContractRequest(context)
+			require.True(t, ok)
+			require.NotNil(t, contract.ModelArk.ServiceTier)
+			assert.Equal(t, test.wantValue, *contract.ModelArk.ServiceTier)
+		})
+	}
+}
+
 func TestValidateRequestAppliesVideoServiceTierPolicyBeforeSubmission(t *testing.T) {
 	tests := []struct {
 		name          string

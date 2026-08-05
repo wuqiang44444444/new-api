@@ -14,45 +14,14 @@ import (
 )
 
 type videoOpenAPISchema struct {
-	Required             []string                      `json:"required"`
-	Properties           map[string]videoOpenAPISchema `json:"properties"`
-	Enum                 []string                      `json:"enum"`
-	Minimum              *float64                      `json:"minimum"`
-	Maximum              *float64                      `json:"maximum"`
-	AdditionalProperties any                           `json:"additionalProperties"`
-	OneOf                []videoOpenAPISchema          `json:"oneOf"`
-	FixedSeedance2       *videoOpenAPIFixedSeedance2   `json:"x-fixed-seedance-2-capability"`
-}
-
-type videoOpenAPIFixedSeedance2 struct {
-	Models map[string]struct {
-		Resolution string `json:"resolution"`
-	} `json:"models"`
-	MinDuration                 *int     `json:"min_duration"`
-	MaxDuration                 *int     `json:"max_duration"`
-	DefaultDuration             *int     `json:"default_duration"`
-	AllowsAutomaticDuration     *bool    `json:"allows_automatic_duration"`
-	Ratios                      []string `json:"ratios"`
-	DefaultRatio                string   `json:"default_ratio"`
-	MaxImages                   *int     `json:"max_images"`
-	MaxVideos                   *int     `json:"max_videos"`
-	MaxAudio                    *int     `json:"max_audio"`
-	ImageRoles                  []string `json:"image_roles"`
-	AudioRoles                  []string `json:"audio_roles"`
-	SupportsGenerateAudio       *bool    `json:"supports_generate_audio"`
-	SupportsDirectMedia         *bool    `json:"supports_direct_media"`
-	SupportsLinkAssets          *bool    `json:"supports_link_assets"`
-	SupportsMixedMediaPaths     *bool    `json:"supports_mixed_media_paths"`
-	ReferenceModesExclusive     *bool    `json:"reference_modes_exclusive"`
-	RequiresText                *bool    `json:"requires_text"`
-	AudioRequiresReferenceImage *bool    `json:"audio_requires_reference_image"`
-	UnsupportedFields           []string `json:"unsupported_fields"`
-	Lifecycle                   struct {
-		SupportsContent      *bool `json:"supports_content"`
-		SupportsLastFrame    *bool `json:"supports_last_frame"`
-		SupportsCancelQueued *bool `json:"supports_cancel_queued"`
-		SupportsDelete       *bool `json:"supports_delete"`
-	} `json:"lifecycle"`
+	Required             []string                            `json:"required"`
+	Properties           map[string]videoOpenAPISchema       `json:"properties"`
+	Enum                 []string                            `json:"enum"`
+	Minimum              *float64                            `json:"minimum"`
+	Maximum              *float64                            `json:"maximum"`
+	AdditionalProperties any                                 `json:"additionalProperties"`
+	OneOf                []videoOpenAPISchema                `json:"oneOf"`
+	ModelArkCapabilities []ModelArkVideoCapabilityProjection `json:"x-modelark-model-capabilities"`
 }
 
 type videoOpenAPIDocument struct {
@@ -78,7 +47,12 @@ func TestPublishedVideoSKURegistryMatchesOpenAPIAndUserGuides(t *testing.T) {
 	var specification videoOpenAPIDocument
 	require.NoError(t, common.Unmarshal(openAPI, &specification))
 	modelArkSchema := specification.Components.Schemas["ModelArkVideoCreateRequest"]
-	assert.Nil(t, modelArkSchema.FixedSeedance2, "Feicai v2 must remain absent from public OpenAPI until model-specific size evidence closes")
+	assert.Equal(t, PublicModelArkVideoCapabilityProjection(), modelArkSchema.ModelArkCapabilities)
+	for _, projection := range modelArkSchema.ModelArkCapabilities {
+		assert.NotContains(t, projection.PublicModel, "-720p", "Feicai v2 must remain absent from public OpenAPI until release evidence closes")
+		assert.NotContains(t, projection.PublicModel, "-1080p", "Feicai v2 must remain absent from public OpenAPI until release evidence closes")
+		assert.NotContains(t, projection.PublicModel, "-4k", "Feicai v2 must remain absent from public OpenAPI until release evidence closes")
+	}
 
 	for _, publicModel := range []string{
 		VideoSKUSeedanceBytePlus,

@@ -58,6 +58,11 @@
       "family": "video-modelark"
     },
     {
+      "operationId": "listModelArkVideoModelCapabilities",
+      "status": "published",
+      "family": "video-modelark"
+    },
+    {
       "operationId": "listModelArkVideoTasks",
       "status": "published",
       "family": "video-modelark"

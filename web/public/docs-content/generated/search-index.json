@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-08-04.1",
+  "contentVersion": "2026-08-05.1",
   "locales": {
     "zh": [
       {
@@ -334,6 +334,11 @@
         "description": "创建、列出、查询和删除 ModelArk 视频任务",
         "keywords": ["ModelArk", "视频", "任务"],
         "headings": [
+          {
+            "depth": 2,
+            "id": "查询模型与参数能力",
+            "text": "查询模型与参数能力"
+          },
           {
             "depth": 2,
             "id": "创建任务",

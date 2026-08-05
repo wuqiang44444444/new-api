@@ -286,6 +286,14 @@ Link 合同层先捕获不可变的 publication，再按其 Link SKU 捕获
 `resolved_sku_capability`（版本与内容 hash），用两个快照
 完成字段默认值和等价显式值规范化。后续步骤不得重新读取“当前版本”：
 
+- ModelArk resolution 只使用 `480p`、`720p`、`1080p`、`4k`，ratio 只使用
+  `16:9`、`4:3`、`1:1`、`3:4`、`9:16`、`21:9`、`adaptive`；不接受别名；
+- duration、resolution 和 ratio 的默认值都属于 capability 并进入内容 hash；没有冻结默认值的维度
+  必须由客户显式提供；
+- 非笛卡尔积能力使用 `resolution_ratio_combinations` 显式登记，adapter 不从数组顺序推断组合或默认值；
+- 显式 `false`、`0`、`-1`、`default` 和空 `tools` 数组保留字段存在性；模型或候选不能等价履约时
+  在收费和 Provider POST 前失败，不静默删除。
+
 1. 使用客户模型读取 Ability 候选，publication 继续作为合同权威；
 2. 排除未完整实现该冻结能力版本的渠道/profile；
 3. 与 `AssetRouteConstraint` 等请求级路由约束取交集；
@@ -596,7 +604,9 @@ fail closed，不使用进程级默认值。异步视频任务强制全额预扣
 - 飞彩 v2 的 10 个固定分辨率 SKU 在 size 与 Provider 证据未闭合时不进入 OpenAPI 公开投影；
   任一未发布 SKU 被误写入公开指南或机器合同应使 CI 失败；
 - 飞彩 media-arrays 的 implementation、converter 和 billing probe 只接受四元 registry 中已验证的精确 size 组合；
-  任何分辨率都不得复用其它模型的像素值，也不得在没有 size 证据时发布 Ability；
+  Ability 发布门禁、converter 和 billing probe 读取 `model/video_provider_size_evidence.go` 的同一份
+  implementation/version、Provider model、resolution、ratio 证据；任何分辨率都不得复用其它模型的
+  像素值，也不得在没有 size 证据时发布 Ability；
 - JSON Video media-arrays 只通过类型化 `mediaarrays.CreateRequest` 创建，通用请求转换入口
   对该 profile fail closed，不存在 body 重解析 fallback；
 - ModelArk 创建入口允许空 profile 和全部已登记 profile，并拒绝未知 profile；请求包含

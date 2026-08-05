@@ -1,9 +1,11 @@
 package mediaarrays
 
 import (
+	"math"
 	"strings"
 
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 )
 
 type VideoSize struct {
@@ -21,10 +23,10 @@ type videoSizeRegistryKey struct {
 	Ratio                 string
 }
 
-// videoSizes contains only size combinations proven with the exact frozen
-// implementation, provider model and production credential. Research examples
-// and values inferred from a sibling model deliberately do not belong here.
-var videoSizes = feicaiV2VerifiedVideoSizes()
+// videoSizes is a package-local test overlay. Production evidence is owned by
+// model so Ability publication, billing, and Provider conversion consume the
+// same immutable registry.
+var videoSizes = make(map[videoSizeRegistryKey]VideoSize)
 
 func ResolveVideoSize(
 	implementation dto.LinkImplementationRef,
@@ -40,7 +42,20 @@ func ResolveVideoSize(
 		Ratio:                 strings.TrimSpace(ratio),
 	}
 	size, ok := videoSizes[key]
-	if !ok || strings.TrimSpace(size.Value) == "" || size.Multiplier <= 0 ||
+	if ok && strings.TrimSpace(size.Value) != "" && size.Multiplier > 0 &&
+		!math.IsNaN(size.Multiplier) && !math.IsInf(size.Multiplier, 0) &&
+		strings.TrimSpace(size.BillingClass) != "" && strings.TrimSpace(size.EvidenceVersion) != "" {
+		return size, true
+	}
+	evidence, ok := model.ResolveVideoProviderSizeEvidence(implementation, providerModel, resolution, ratio)
+	if !ok {
+		return VideoSize{}, false
+	}
+	size = VideoSize{
+		Value: evidence.ProviderSize, Multiplier: evidence.Multiplier,
+		BillingClass: evidence.BillingClass, EvidenceVersion: evidence.EvidenceVersion,
+	}
+	if strings.TrimSpace(size.Value) == "" || size.Multiplier <= 0 ||
 		strings.TrimSpace(size.BillingClass) == "" || strings.TrimSpace(size.EvidenceVersion) == "" {
 		return VideoSize{}, false
 	}

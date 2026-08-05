@@ -14,13 +14,14 @@ import (
 )
 
 const (
-	VideoSKUCapabilityVersionFeicaiV2 = "feicai-media-arrays-v2"
-	VideoSKUCapabilityVersionV1       = "public-video-contract-v1"
-	VideoProfileJSONMediaArrays       = "third_party_json_video_media_arrays"
-	VideoProfileOfficial              = "official"
-	VideoProfileThirdPartyRelay       = "third_party_relay"
-	VideoProfileThirdPartyReverse     = "third_party_reverse_proxy"
-	VideoProfileFunCloudSeedanceV2    = "third_party_funcloud_seedance_v2"
+	VideoSKUCapabilityVersionFeicaiV2   = "feicai-media-arrays-v2"
+	VideoSKUCapabilityVersionModelArkV2 = "public-video-contract-v2"
+	VideoSKUCapabilityVersionV1         = "public-video-contract-v1"
+	VideoProfileJSONMediaArrays         = "third_party_json_video_media_arrays"
+	VideoProfileOfficial                = "official"
+	VideoProfileThirdPartyRelay         = "third_party_relay"
+	VideoProfileThirdPartyReverse       = "third_party_reverse_proxy"
+	VideoProfileFunCloudSeedanceV2      = "third_party_funcloud_seedance_v2"
 
 	VideoSKUSeedanceBytePlus        = "seedance-byteplus"
 	VideoSKUSeedance20Oversea       = "seedance-2-0-oversea"
@@ -50,49 +51,57 @@ type VideoSKULifecycleCapability struct {
 	SupportsDelete       bool `json:"supports_delete"`
 }
 
+type VideoResolutionRatioCombination struct {
+	Resolution string `json:"resolution"`
+	Ratio      string `json:"ratio"`
+}
+
 type VideoSKUCapability struct {
-	PublicModel             string                      `json:"public_model"`
-	ContractID              string                      `json:"contract_id"`
-	Version                 string                      `json:"version"`
-	ContentHash             string                      `json:"content_hash"`
-	Resolution              string                      `json:"resolution"`
-	Resolutions             []string                    `json:"resolutions,omitempty"`
-	MinDuration             int                         `json:"min_duration"`
-	MaxDuration             int                         `json:"max_duration"`
-	DefaultDuration         int                         `json:"default_duration"`
-	BillingMode             string                      `json:"billing_mode,omitempty"`
-	AllowsAutomaticDuration bool                        `json:"allows_automatic_duration"`
-	RequiresDuration        bool                        `json:"requires_duration,omitempty"`
-	RequiresResolution      bool                        `json:"requires_resolution,omitempty"`
-	RequiresRatio           bool                        `json:"requires_ratio,omitempty"`
-	MaxPromptCharacters     int                         `json:"max_prompt_characters,omitempty"`
-	DurationValues          []int                       `json:"duration_values,omitempty"`
-	Ratios                  []string                    `json:"ratios"`
-	Modes                   []string                    `json:"modes,omitempty"`
-	HasCFGScaleRange        bool                        `json:"has_cfg_scale_range,omitempty"`
-	MinCFGScale             float64                     `json:"min_cfg_scale,omitempty"`
-	MaxCFGScale             float64                     `json:"max_cfg_scale,omitempty"`
-	MinImages               int                         `json:"min_images,omitempty"`
-	MaxImages               int                         `json:"max_images"`
-	MaxVideos               int                         `json:"max_videos"`
-	MaxAudio                int                         `json:"max_audio"`
-	ImageRoles              []string                    `json:"image_roles,omitempty"`
-	VideoRoles              []string                    `json:"video_roles,omitempty"`
-	AudioRoles              []string                    `json:"audio_roles,omitempty"`
-	SupportsGenerateAudio   bool                        `json:"supports_generate_audio"`
-	SupportsDirectMedia     bool                        `json:"supports_direct_media"`
-	SupportsLinkAssets      bool                        `json:"supports_link_assets"`
-	SupportsMixedMediaPath  bool                        `json:"supports_mixed_media_paths"`
-	ReferenceModesExclusive bool                        `json:"reference_modes_exclusive"`
-	RequiresText            bool                        `json:"requires_text"`
-	AudioRequiresReference  bool                        `json:"audio_requires_reference_image"`
-	AudioRequiresVisual     bool                        `json:"audio_requires_visual_reference"`
-	RequestFields           []string                    `json:"request_fields,omitempty"`
-	RequiredFields          []string                    `json:"required_fields,omitempty"`
-	UnsupportedFields       []string                    `json:"unsupported_fields,omitempty"`
-	RequiredChannelTypes    []int                       `json:"required_channel_types"`
-	RequiredProfiles        []string                    `json:"required_profiles"`
-	Lifecycle               VideoSKULifecycleCapability `json:"lifecycle"`
+	PublicModel                 string                            `json:"public_model"`
+	ContractID                  string                            `json:"contract_id"`
+	Version                     string                            `json:"version"`
+	ContentHash                 string                            `json:"content_hash"`
+	Resolution                  string                            `json:"resolution"`
+	Resolutions                 []string                          `json:"resolutions,omitempty"`
+	MinDuration                 int                               `json:"min_duration"`
+	MaxDuration                 int                               `json:"max_duration"`
+	DefaultDuration             int                               `json:"default_duration"`
+	DefaultResolution           string                            `json:"default_resolution,omitempty"`
+	DefaultRatio                string                            `json:"default_ratio,omitempty"`
+	ResolutionRatioCombinations []VideoResolutionRatioCombination `json:"resolution_ratio_combinations,omitempty"`
+	BillingMode                 string                            `json:"billing_mode,omitempty"`
+	AllowsAutomaticDuration     bool                              `json:"allows_automatic_duration"`
+	RequiresDuration            bool                              `json:"requires_duration,omitempty"`
+	RequiresResolution          bool                              `json:"requires_resolution,omitempty"`
+	RequiresRatio               bool                              `json:"requires_ratio,omitempty"`
+	MaxPromptCharacters         int                               `json:"max_prompt_characters,omitempty"`
+	DurationValues              []int                             `json:"duration_values,omitempty"`
+	Ratios                      []string                          `json:"ratios"`
+	Modes                       []string                          `json:"modes,omitempty"`
+	HasCFGScaleRange            bool                              `json:"has_cfg_scale_range,omitempty"`
+	MinCFGScale                 float64                           `json:"min_cfg_scale,omitempty"`
+	MaxCFGScale                 float64                           `json:"max_cfg_scale,omitempty"`
+	MinImages                   int                               `json:"min_images,omitempty"`
+	MaxImages                   int                               `json:"max_images"`
+	MaxVideos                   int                               `json:"max_videos"`
+	MaxAudio                    int                               `json:"max_audio"`
+	ImageRoles                  []string                          `json:"image_roles,omitempty"`
+	VideoRoles                  []string                          `json:"video_roles,omitempty"`
+	AudioRoles                  []string                          `json:"audio_roles,omitempty"`
+	SupportsGenerateAudio       bool                              `json:"supports_generate_audio"`
+	SupportsDirectMedia         bool                              `json:"supports_direct_media"`
+	SupportsLinkAssets          bool                              `json:"supports_link_assets"`
+	SupportsMixedMediaPath      bool                              `json:"supports_mixed_media_paths"`
+	ReferenceModesExclusive     bool                              `json:"reference_modes_exclusive"`
+	RequiresText                bool                              `json:"requires_text"`
+	AudioRequiresReference      bool                              `json:"audio_requires_reference_image"`
+	AudioRequiresVisual         bool                              `json:"audio_requires_visual_reference"`
+	RequestFields               []string                          `json:"request_fields,omitempty"`
+	RequiredFields              []string                          `json:"required_fields,omitempty"`
+	UnsupportedFields           []string                          `json:"unsupported_fields,omitempty"`
+	RequiredChannelTypes        []int                             `json:"required_channel_types"`
+	RequiredProfiles            []string                          `json:"required_profiles"`
+	Lifecycle                   VideoSKULifecycleCapability       `json:"lifecycle"`
 }
 
 // videoSKUCapabilities is the explicit code registry for published video Link
@@ -124,13 +133,15 @@ func buildVideoSKUCapabilities() map[string]VideoSKUCapability {
 		capability := VideoSKUCapability{
 			PublicModel:             publicModel,
 			ContractID:              string(dto.VideoContractModelArkV3),
-			Version:                 VideoSKUCapabilityVersionV1,
-			Resolutions:             []string{"480p", "720p", "1080p", "4k"},
+			Version:                 VideoSKUCapabilityVersionModelArkV2,
+			Resolutions:             append([]string(nil), modelArkCanonicalResolutions...),
 			MinDuration:             4,
 			MaxDuration:             15,
 			DefaultDuration:         5,
 			AllowsAutomaticDuration: true,
-			Ratios:                  []string{"16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"},
+			RequiresResolution:      true,
+			RequiresRatio:           true,
+			Ratios:                  canonicalModelArkRatios(),
 			MaxImages:               9,
 			MaxVideos:               3,
 			MaxAudio:                3,
@@ -237,6 +248,7 @@ func ResolveVideoSKUCapability(publicModel string) (VideoSKUCapability, bool) {
 func cloneVideoSKUCapability(capability VideoSKUCapability) VideoSKUCapability {
 	capability.Ratios = append([]string(nil), capability.Ratios...)
 	capability.Resolutions = append([]string(nil), capability.Resolutions...)
+	capability.ResolutionRatioCombinations = append([]VideoResolutionRatioCombination(nil), capability.ResolutionRatioCombinations...)
 	capability.DurationValues = append([]int(nil), capability.DurationValues...)
 	capability.Modes = append([]string(nil), capability.Modes...)
 	capability.ImageRoles = append([]string(nil), capability.ImageRoles...)
@@ -285,7 +297,7 @@ func (capability VideoSKUCapability) ValidateModelArkRequest(request *dto.ModelA
 		case "draft":
 			present = request.Draft != nil
 		case "tools":
-			present = len(request.Tools) > 0
+			present = request.Tools != nil
 		case "safety_identifier":
 			present = request.SafetyIdentifier != nil
 		case "priority":
@@ -316,24 +328,35 @@ func (capability VideoSKUCapability) ValidateModelArkRequest(request *dto.ModelA
 			return fmt.Errorf("duration must be between %d and %d", capability.MinDuration, capability.MaxDuration)
 		}
 	}
+	resolution := strings.TrimSpace(capability.DefaultResolution)
 	if request.Resolution != nil {
-		resolution := strings.TrimSpace(*request.Resolution)
-		if capability.Resolution != "" && resolution != capability.Resolution {
-			return fmt.Errorf("resolution must be %s for this model", capability.Resolution)
-		}
-		if capability.Resolution == "" && len(capability.Resolutions) > 0 &&
-			!slices.Contains(capability.Resolutions, resolution) {
-			return fmt.Errorf("resolution is not supported by this model")
-		}
+		resolution = strings.TrimSpace(*request.Resolution)
 	}
-	if request.Resolution == nil && capability.RequiresResolution {
+	if request.Resolution == nil && (capability.RequiresResolution || resolution == "") {
 		return fmt.Errorf("resolution is required for this model")
 	}
-	if request.Ratio != nil && !slices.Contains(capability.Ratios, strings.TrimSpace(*request.Ratio)) {
+	if capability.Resolution != "" && resolution != capability.Resolution {
+		return fmt.Errorf("resolution must be %s for this model", capability.Resolution)
+	}
+	if capability.Resolution == "" && len(capability.Resolutions) > 0 &&
+		!slices.Contains(capability.Resolutions, resolution) {
+		return fmt.Errorf("resolution is not supported by this model")
+	}
+	ratio := strings.TrimSpace(capability.DefaultRatio)
+	if request.Ratio != nil {
+		ratio = strings.TrimSpace(*request.Ratio)
+	}
+	if ratio != "" && !slices.Contains(capability.Ratios, ratio) {
 		return fmt.Errorf("ratio is not supported by this model")
 	}
-	if request.Ratio == nil && capability.RequiresRatio {
+	if request.Ratio == nil && (capability.RequiresRatio || ratio == "") {
 		return fmt.Errorf("ratio is required for this model")
+	}
+	if len(capability.ResolutionRatioCombinations) > 0 && !slices.Contains(
+		capability.ResolutionRatioCombinations,
+		VideoResolutionRatioCombination{Resolution: resolution, Ratio: ratio},
+	) {
+		return fmt.Errorf("resolution %q and ratio %q are not supported together by this model", resolution, ratio)
 	}
 	if request.GenerateAudio != nil && *request.GenerateAudio && !capability.SupportsGenerateAudio {
 		return fmt.Errorf("generate_audio is not supported by this model")

@@ -129,7 +129,7 @@ func TestLinkChannelInsertPublishesAbilityAtomically(t *testing.T) {
 	assert.False(t, availability.RoutingConflict)
 
 	conflicting := feicaiAliasChannel("customer-seedance")
-	conflicting.ModelMapping = common.GetPointer(`{"customer-seedance":"seedance-2.0-933-720p-azhw-feicai"}`)
+	conflicting.ModelMapping = common.GetPointer(`{"customer-seedance":"seedance-2.0-vip-720p-mini-azhw-feicai"}`)
 	require.ErrorContains(t, conflicting.Insert(), "non-equivalent channel")
 	var persisted Channel
 	assert.ErrorIs(t, DB.First(&persisted, "id = ?", conflicting.Id).Error, gorm.ErrRecordNotFound)

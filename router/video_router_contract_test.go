@@ -26,6 +26,7 @@ func TestVideoRouterExposesOnlySelectedNorthboundContracts(t *testing.T) {
 		http.MethodPost + " /v1/video/generations",
 		http.MethodGet + " /v1/video/generations/:task_id",
 		http.MethodPost + " /api/v3/contents/generations/tasks",
+		http.MethodGet + " /api/v3/contents/generations/models",
 		http.MethodGet + " /api/v3/contents/generations/tasks",
 		http.MethodGet + " /api/v3/contents/generations/tasks/:task_id",
 		http.MethodDelete + " /api/v3/contents/generations/tasks/:task_id",

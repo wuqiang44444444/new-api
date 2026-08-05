@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
@@ -20,23 +21,22 @@ func applyVideoServiceTierPolicy(c *gin.Context, info *relaycommon.RelayInfo, pr
 		}
 		tier := strings.TrimSpace(*contract.ModelArk.ServiceTier)
 		if tier == "" {
-			contract.ModelArk.ServiceTier = nil
-			relaycommon.SetVideoContractRequest(c, contract)
-			return nil
+			return service.TaskErrorWrapperLocal(
+				fmt.Errorf("service_tier must not be empty"),
+				"unsupported_parameter",
+				http.StatusBadRequest,
+			)
 		}
 		allowServiceTier := info != nil && info.ChannelOtherSettings.AllowServiceTier
-		if tier == "default" && (profile == dto.VideoUpstreamProfileThirdPartyRelay || !allowServiceTier) {
-			contract.ModelArk.ServiceTier = nil
-			relaycommon.SetVideoContractRequest(c, contract)
-			return nil
-		}
-		if tier == "flex" && (profile == dto.VideoUpstreamProfileThirdPartyRelay || !allowServiceTier) {
+		if profile == dto.VideoUpstreamProfileThirdPartyRelay || !allowServiceTier {
 			return service.TaskErrorWrapperLocal(
 				fmt.Errorf("service_tier %q is not supported by the selected video channel", tier),
 				"unsupported_parameter",
 				http.StatusBadRequest,
 			)
 		}
+		contract.ModelArk.ServiceTier = common.GetPointer(tier)
+		relaycommon.SetVideoContractRequest(c, contract)
 		return nil
 	}
 	req, err := relaycommon.GetTaskRequest(c)

@@ -36,9 +36,16 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 		}
 	}
 
+	capability, hasCapability := model.ResolveVideoSKUCapability(info.OriginModelName)
 	resolution := strings.ToLower(strings.TrimSpace(payload.Resolution))
+	if resolution == "" && hasCapability {
+		resolution = strings.ToLower(strings.TrimSpace(capability.DefaultResolution))
+	}
+	if resolution == "" && !hasCapability {
+		resolution = model.ModelArkResolution720P
+	}
 	if resolution == "" {
-		resolution = "720p"
+		return nil, fmt.Errorf("resolution is required for this model")
 	}
 	switch resolution {
 	case "480p", "720p", "1080p", "4k":
@@ -54,7 +61,6 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 		}
 	}
 	durationSeconds := 5
-	capability, hasCapability := model.ResolveVideoSKUCapability(info.OriginModelName)
 	if hasCapability {
 		if capability.DefaultDuration <= 0 && payload.Duration == nil {
 			return nil, fmt.Errorf("duration is required for this model")

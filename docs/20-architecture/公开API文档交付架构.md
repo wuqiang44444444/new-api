@@ -191,6 +191,19 @@ Manifest 中的 page ID 是跨语言稳定身份，slug 是公开路由合同，
 - 未实现、仅兼容读取、已退休或未验证的 operation；
 - DTO 捕获但未声明为公共合同的未知字段。
 
+ModelArk v3 的公开模型子集在 `ModelArkVideoCreateRequest.x-modelark-model-capabilities` 中提供机器投影。
+投影值由运行时 `VideoSKUCapability` registry 生成，包含 capability version/hash、字段分类、规范
+resolution/ratio、显式默认值、时长、媒体 role/数量、组合约束和生命周期；固定分辨率飞彩 SKU 在
+发布证据闭合前不进入该数组。`go run ./cmd/generate-modelark-capabilities` 输出规范投影，后端一致性测试
+对 OpenAPI 与运行时结构深比较；`/v1/models` 的响应结构不承担这些能力字段。
+
+第三方通过带 Token 鉴权的 `GET /api/v3/contents/generations/models` 查询全部代码登记的 ModelArk 视频
+基础候选，并查询当前 Token 已发布客户模型的 capability。客户模型 alias 通过 publication 的
+`CustomerModel -> LinkSKU` 读取能力，但响应 `id` 与 `capability.public_model` 保持客户模型，不暴露其
+绑定 SKU。该接口同时返回 `published`、`visible_in_v1_models` 和按当前 Token 计算的 `available`，因此
+可以展示尚未开放的候选参数而不把注册误报为生产可用。只有三者全部为 `true` 的模型可以尝试创建任务；
+Provider implementation、真实模型、渠道、价格、Key 与连接信息不进入响应。
+
 ## 9. 安全与缓存
 
 - 示例只使用固定占位 Key 和模型，不读取 localStorage、Cookie 或登录用户数据；

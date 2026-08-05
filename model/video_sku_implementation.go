@@ -12,7 +12,7 @@ import (
 // registry. The implementation identity is resolved first; profile similarity
 // alone can never select one of these declarations.
 var videoSKUImplementationHashes = map[string]string{
-	VideoSKUSeedanceBytePlus:        "f9ddc5b4e9f16630c7d65641e27dd19adc0dd134c7eea30d9ffc43148becbcdd",
+	VideoSKUSeedanceBytePlus:        "dc4761018ab640e588942cb69f42cac517b3027e9a4b7fd8d19c0a6e63f95987",
 	VideoSKUSeedance20Oversea:       "80fbc021411a9280a5214acfae1a71f7643581517377c53c133a8e6ae0a57f24",
 	VideoSKUDoubaoSeedance20260128:  "f2912b15555aff6472f636cb58755ae8552ba35e30f21bf330e6bc66cb2c364b",
 	VideoSKUSeedance20Mini720P:      "e128cd92cd2f274b6459e38e1e95bd94c1a8e03d4b13fa48f4029cd02a4774f4",
@@ -25,8 +25,8 @@ var videoSKUImplementationHashes = map[string]string{
 	VideoSKUSeedance20Value4K:       "85d057b051822aadead4885e3c20b51072f4cbd272ca232dcf30e1d1b61fc02e",
 	VideoSKUSeedance20Standard4K:    "82a1429e820e600b0801bfa5e47f2dde81d2dc08638a4d14c3a934c6c6db9c13",
 	VideoSKUSeedance20ProPI720P:     "0cfb62ad039937f62e66f3ea095c2ff1a5d89b9d2c15f1052c02d4c92eb3e80b",
-	VideoSKUSeedance20Standard:      "8e9ff078808bec2194ff29964dedbc51e60d1c1a59d1d581781683871b774a04",
-	VideoSKUSeedance20Fast:          "c11711ef1f1aa1f8768b2297a50c3e353b4640002ae3eee7e4ac7667a4f8285f",
+	VideoSKUSeedance20Standard:      "50056b167d80c6334b5aa8ad7adcf4b37f5c72c10e5fcefb52262ee053e75f4a",
+	VideoSKUSeedance20Fast:          "91b0d2f7adca87d371a48f086463fadffefbaef4595bd2f25e15eac88b797392",
 	VideoSKUKlingV1:                 "2d5877f3e3257a2a89a92b172d333bb0851ad4200d459e9b012c09b903300c34",
 	VideoSKUKlingV16:                "afdd30503fa4ded4fda82641e77802fdae2ea79329f2f373e951fe50264e5e3f",
 	VideoSKUKlingV2Master:           "75e42fa0efda0c4b942c119fac32ea9205d978852ca95ec4e277028f6422bce5",

@@ -106,7 +106,7 @@ export const getUserMidjourneyLogs = (params: GetMidjourneyLogsParams) =>
 // ============================================================================
 
 export const getAllTaskLogs = (params: GetTaskLogsParams) =>
-  fetchLogs('/api/task', params, true)
+  fetchLogs('/api/task/', params, true)
 
 export const getUserTaskLogs = (params: GetTaskLogsParams) =>
   fetchLogs('/api/task', params, false)

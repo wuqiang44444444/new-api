@@ -167,7 +167,11 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 				break
 			}
 		}
-		ratio, ok := GetVideoInputRatio(info.OriginModelName, payload.Resolution, hasVideo)
+		resolution := strings.TrimSpace(payload.Resolution)
+		if capability, found := model.ResolveVideoSKUCapability(info.OriginModelName); found && resolution == "" {
+			resolution = capability.DefaultResolution
+		}
+		ratio, ok := GetVideoInputRatio(info.OriginModelName, resolution, hasVideo)
 		if !ok || ratio == 1.0 {
 			return nil
 		}

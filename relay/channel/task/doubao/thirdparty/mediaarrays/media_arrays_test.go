@@ -90,9 +90,7 @@ func TestCreateRequestRejectsUnpublishedRolesAndUnresolvedAssets(t *testing.T) {
 	videoSizes[key] = VideoSize{
 		Value: "1280x720", Multiplier: 1, BillingClass: "standard-720p", EvidenceVersion: "test-evidence",
 	}
-	t.Cleanup(func() {
-		videoSizes[key] = feicaiV2VerifiedVideoSizes()[key]
-	})
+	t.Cleanup(func() { delete(videoSizes, key) })
 
 	capability, ok := model.ResolveVideoSKUCapability(model.VideoSKUSeedance20Standard720P)
 	require.True(t, ok)

@@ -62,6 +62,35 @@ func TestFeicaiV2VideoSKUCapabilitiesCoverAllProviderModelsAndFailClosed(t *test
 	}
 }
 
+func TestModelArkCapabilityRegistryUsesCanonicalVocabularyAndPinnedImplementationHashes(t *testing.T) {
+	for publicModel, capability := range videoSKUCapabilities {
+		if capability.ContractID != string(dto.VideoContractModelArkV3) {
+			continue
+		}
+		require.NoError(t, validateModelArkCapabilityVocabulary(capability), publicModel)
+		assert.Equal(t, capability.ContentHash, videoSKUImplementationHashes[publicModel], publicModel)
+	}
+}
+
+func TestRegisteredModelArkCapabilityProjectionIncludesEverySeedanceSKU(t *testing.T) {
+	projections := RegisteredModelArkVideoCapabilityProjection()
+	require.Len(t, projections, 15)
+	projected := make(map[string]ModelArkVideoCapabilityProjection, len(projections))
+	for _, projection := range projections {
+		projected[projection.PublicModel] = projection
+		assert.NotEqual(t, VideoSKUCapabilityVersionV1, projection.Version, projection.PublicModel)
+	}
+	for publicModel, capability := range videoSKUCapabilities {
+		if capability.ContractID != string(dto.VideoContractModelArkV3) {
+			continue
+		}
+		projection, ok := projected[publicModel]
+		require.True(t, ok, publicModel)
+		assert.Equal(t, capability.Version, projection.Version, publicModel)
+		assert.Equal(t, capability.ContentHash, projection.ContentHash, publicModel)
+	}
+}
+
 func TestFeicaiV2SD2AndProPIEnforceDistinctMediaContracts(t *testing.T) {
 	sd2, ok := ResolveVideoSKUCapability(VideoSKUSeedance20SD2720P)
 	require.True(t, ok)
@@ -188,6 +217,8 @@ func TestFunCloudVideoSKUCapabilitiesMatchTheirEndpoints(t *testing.T) {
 	assert.True(t, standard.SupportsLinkAssets)
 	assert.False(t, standard.AllowsAutomaticDuration)
 	assert.True(t, standard.SupportsProfile(VideoProfileFunCloudSeedanceV2))
+	assert.Equal(t, ModelArkResolution720P, standard.DefaultResolution)
+	assert.Equal(t, "16:9", standard.DefaultRatio)
 	assert.ElementsMatch(t, []string{"reference_image", "first_frame", "last_frame"}, standard.ImageRoles)
 	assert.Equal(t, []string{"reference_video"}, standard.VideoRoles)
 	assert.Equal(t, []string{"reference_audio"}, standard.AudioRoles)
@@ -209,6 +240,36 @@ func TestFunCloudVideoSKUCapabilitiesMatchTheirEndpoints(t *testing.T) {
 	}
 	require.ErrorContains(t, standard.ValidateModelArkRequest(request), "duration")
 
+}
+
+func TestModelArkCapabilityDefaultsAndCombinationMatrixArePartOfValidation(t *testing.T) {
+	capability, ok := ResolveVideoSKUCapability(VideoSKUSeedance20Standard)
+	require.True(t, ok)
+	capability.ResolutionRatioCombinations = []VideoResolutionRatioCombination{
+		{Resolution: ModelArkResolution720P, Ratio: "16:9"},
+	}
+	capability.ContentHash = videoSKUCapabilityHash(capability)
+	request := &dto.ModelArkVideoCreateRequest{
+		Model:   capability.PublicModel,
+		Content: []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
+	}
+	require.NoError(t, capability.ValidateModelArkRequest(request))
+
+	ratio := "9:16"
+	request.Ratio = &ratio
+	require.ErrorContains(t, capability.ValidateModelArkRequest(request), "not supported together")
+
+	bytePlus, ok := ResolveVideoSKUCapability(VideoSKUSeedanceBytePlus)
+	require.True(t, ok)
+	request.Model = bytePlus.PublicModel
+	request.Ratio = nil
+	require.ErrorContains(t, bytePlus.ValidateModelArkRequest(request), "resolution is required")
+
+	fast, ok := ResolveVideoSKUCapability(VideoSKUSeedance20Fast)
+	require.True(t, ok)
+	request.Model = fast.PublicModel
+	request.Tools = common.GetPointer([]dto.ModelArkVideoTool{})
+	require.ErrorContains(t, fast.ValidateModelArkRequest(request), "tools is not supported")
 }
 
 func TestKlingAndJimengCapabilitiesOwnPublishedRequestValidation(t *testing.T) {

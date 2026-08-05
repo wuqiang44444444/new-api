@@ -20,7 +20,7 @@ func tokenSaveSeedanceVideoSKUCapability() VideoSKUCapability {
 		RequiresResolution:      true,
 		RequiresRatio:           true,
 		MaxPromptCharacters:     2500,
-		Ratios:                  []string{"16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"},
+		Ratios:                  canonicalModelArkRatios(),
 		MaxImages:               9,
 		ImageRoles:              []string{"", "first_frame", "last_frame", "reference_image"},
 		SupportsGenerateAudio:   true,

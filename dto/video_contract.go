@@ -42,7 +42,7 @@ type ModelArkVideoCreateRequest struct {
 	ReturnLastFrame       *bool                  `json:"return_last_frame,omitempty"`
 	ExecutionExpiresAfter *int                   `json:"execution_expires_after,omitempty"`
 	Draft                 *bool                  `json:"draft,omitempty"`
-	Tools                 []ModelArkVideoTool    `json:"tools,omitempty"`
+	Tools                 *[]ModelArkVideoTool   `json:"tools,omitempty"`
 	SafetyIdentifier      *string                `json:"safety_identifier,omitempty"`
 	Priority              *int                   `json:"priority,omitempty"`
 	Frames                *int                   `json:"frames,omitempty"`

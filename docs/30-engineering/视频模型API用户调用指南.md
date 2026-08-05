@@ -20,6 +20,16 @@ publication 为准：
 | `doubao-seedance-2-0-260128` | 墨行 doubao Seedance 2.0；按秒计费 |
 | `seedance-2.0-standard` | Seedance 2.0 标准可变分辨率 SKU；支持普通 Link 资源，不支持真人素材 |
 | `seedance-2.0-fast` | Seedance 2.0 Fast 可变分辨率 SKU；仅支持 480p/720p |
+| `seedance-2.0-mini-720p` | 飞彩 Mini 720p 固定档位候选；是否可用以 capability 接口为准 |
+| `seedance-2.0-sd2-720p` | 飞彩 SD2 720p 固定档位候选；是否可用以 capability 接口为准 |
+| `seedance-2.0-fast-720p` | 飞彩 Fast 720p 固定档位候选；是否可用以 capability 接口为准 |
+| `seedance-2.0-value-720p` | 飞彩 Value 720p 固定档位候选；是否可用以 capability 接口为准 |
+| `seedance-2.0-standard-720p` | 飞彩 Standard 720p 固定档位候选；是否可用以 capability 接口为准 |
+| `seedance-2.0-value-1080p` | 飞彩 Value 1080p 固定档位候选；是否可用以 capability 接口为准 |
+| `seedance-2.0-standard-1080p` | 飞彩 Standard 1080p 固定档位候选；是否可用以 capability 接口为准 |
+| `seedance-2.0-value-4k` | 飞彩 Value 4K 固定档位候选；是否可用以 capability 接口为准 |
+| `seedance-2.0-standard-4k` | 飞彩 Standard 4K 固定档位候选；是否可用以 capability 接口为准 |
+| `seedance-2.0-pro-pi-720p` | 飞彩 Pro PI 720p 固定档位候选；是否可用以 capability 接口为准 |
 
 上述 Seedance SKU 使用相同的 ModelArk v3 客户端 API。调用方只需更换 `model`，不需要了解或切换上游地址、鉴权方式、任务路径和响应格式。
 
@@ -32,6 +42,12 @@ publication 为准：
 模型。`sora-2`、`sora-2-pro` 等 NEWAPI 原生模型使用 `/v1/videos`；上表 Seedance Link SKU 的
 公开合同只承诺 `/api/v3/contents/generations/tasks`。本文不定义原生入口如何处理合同外模型，
 客户端不得依赖本地 `link_sku_contract_mismatch` 兼容行为。
+
+`GET /v1/models` 只列出当前 Key 实际可调用的客户模型。查询全部已登记 Seedance 基础候选、当前 Key
+已发布的客户模型 alias 及模型级参数支持时，使用 `GET /api/v3/contents/generations/models`。调用方可用
+`/v1/models` 返回的同一模型 ID 精确查询 capability；alias 行不会暴露内部 Link SKU。候选模型可以出现
+在 capability 接口中，但只有 `published=true`、`available=true` 且同时满足
+`visible_in_v1_models=true` 时才允许创建任务。
 
 Kling 和即梦使用各自独立的 Link 合同中的官方协议，不能使用本文的 ModelArk 路径、字段、状态或错误
 信封。对应调用方式见 [Kling 视频 API Reference](../../web/public/docs-content/zh/api-reference/videos/kling.md)
@@ -239,12 +255,17 @@ curl -sS -X POST \
 | --- | --- | --- | --- |
 | `model` | string | 是 | 从模型列表中取得的模型 ID |
 | `content` | array | 是 | 至少包含一个有效内容项 |
-| `duration` | integer | 否 | 默认 5 秒；也可传 `-1` 或 4～15 秒，具体模型可能进一步限制 |
-| `resolution` | string | 否 | `480p`、`720p`、`1080p`、`4k` |
-| `ratio` | string | 否 | `16:9`、`4:3`、`1:1`、`3:4`、`9:16`、`21:9`、`adaptive` |
+| `duration` | integer | 按模型 | `-1` 或 4～15 秒及默认值都由模型 capability 决定 |
+| `resolution` | string | 按模型 | `480p`、`720p`、`1080p`、`4k` 的模型级子集 |
+| `ratio` | string | 按模型 | `16:9`、`4:3`、`1:1`、`3:4`、`9:16`、`21:9`、`adaptive` 的模型级子集 |
 | `generate_audio` | boolean | 否 | 是否生成音频；支持情况以所选模型为准 |
 
-建议只发送业务确实需要的可选字段。省略字段表示使用模型默认行为；显式的 `false` 不会被当成未填写。
+建议只发送业务确实需要的可选字段。只有模型 capability 明确给出默认值时才可省略对应字段；显式的
+`false`、`0`、`-1`、`default` 或空数组不会被当成未填写。OpenAPI 的
+`ModelArkVideoCreateRequest.x-modelark-model-capabilities` 是当前公开模型能力的机器可读投影，值与运行时
+registry 不一致会使测试失败。`seedance-2.0-standard` 与 `seedance-2.0-fast` 当前显式默认
+duration/resolution/ratio 为 `5`、`720p`、`16:9`；`seedance-byteplus` 的 resolution 与 ratio 在默认值
+完成精确模型验证前必须显式提供。
 
 ### 5.2 `content` 内容项
 
@@ -284,6 +305,8 @@ curl -sS -X POST \
 - `callback_url` 当前不支持，请使用任务查询接口；
 - `frames` 当前未开放；
 - 模型不支持的高级字段会明确返回 4xx，不会静默降级。
+- capability 允许 `service_tier` 但所选候选未开启等价透传时，显式 `default` 和 `flex` 都会返回
+  `400 unsupported_parameter`，不会被删除后继续请求。
 
 为获得现有通用 Seedance SKU 之间最稳定的可移植性，建议优先使用 `model`、文本或图片
 `content`、`duration`、`resolution`、`ratio` 和 `generate_audio`。

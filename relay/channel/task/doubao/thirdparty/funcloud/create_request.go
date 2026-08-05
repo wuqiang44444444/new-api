@@ -3,7 +3,6 @@ package funcloud
 import (
 	"fmt"
 	"net/url"
-	"slices"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -38,7 +37,8 @@ func CreateRequest(input *dto.ModelArkVideoCreateRequest, capability model.Video
 	if err := capability.ValidateModelArkRequest(input); err != nil {
 		return nil, err
 	}
-	if capability.DefaultDuration <= 0 || len(capability.Ratios) == 0 {
+	if capability.DefaultDuration <= 0 || strings.TrimSpace(capability.DefaultResolution) == "" ||
+		strings.TrimSpace(capability.DefaultRatio) == "" {
 		return nil, fmt.Errorf("FunCloud video capability has no request defaults")
 	}
 
@@ -46,21 +46,14 @@ func CreateRequest(input *dto.ModelArkVideoCreateRequest, capability model.Video
 	if input.Duration != nil {
 		duration = *input.Duration
 	}
-	ratio := capability.Ratios[0]
+	ratio := strings.TrimSpace(capability.DefaultRatio)
 	if input.Ratio != nil && strings.TrimSpace(*input.Ratio) != "" {
 		ratio = strings.TrimSpace(*input.Ratio)
 	}
-	resolution := strings.TrimSpace(capability.Resolution)
+	resolution := strings.TrimSpace(capability.DefaultResolution)
 	if input.Resolution != nil && strings.TrimSpace(*input.Resolution) != "" {
 		resolution = strings.TrimSpace(*input.Resolution)
 	}
-	if resolution == "" && slices.Contains(capability.Resolutions, "720p") {
-		resolution = "720p"
-	}
-	if resolution == "" {
-		return nil, fmt.Errorf("resolution is required by the FunCloud v2 adapter")
-	}
-
 	output := createRequest{
 		Content:       make([]createContent, 0, len(input.Content)),
 		Ratio:         ratio,
