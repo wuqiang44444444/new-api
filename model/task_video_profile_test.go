@@ -46,7 +46,7 @@ func TestInitTaskFreezesDoubaoVideoProfile(t *testing.T) {
 
 func TestFrozenVideoTaskChannelUsesOnlyTaskSnapshot(t *testing.T) {
 	implementation, ok := ResolveLinkImplementation(dto.LinkImplementationRef{
-		ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV1,
+		ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV2,
 	})
 	require.True(t, ok)
 	task := &Task{

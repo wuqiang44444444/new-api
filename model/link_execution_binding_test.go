@@ -14,12 +14,12 @@ func TestDeriveChannelLinkExecutionsUsesOrdinaryModelMapping(t *testing.T) {
 	channel := &Channel{
 		Type:         constant.ChannelTypeDoubaoVideo,
 		Models:       "customer-seedance",
-		ModelMapping: common.GetPointer(`{"customer-seedance":"seedance-2.0-vip-720p-azhw"}`),
+		ModelMapping: common.GetPointer(`{"customer-seedance":"seedance-2.0-vip-720p-azhw-feicai"}`),
 	}
 	settings := dto.ChannelOtherSettings{
 		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		LinkImplementation: dto.LinkImplementationRef{
-			ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV1,
+			ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV2,
 		},
 	}
 
@@ -27,7 +27,7 @@ func TestDeriveChannelLinkExecutionsUsesOrdinaryModelMapping(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, executions, 1)
 	assert.Equal(t, "customer-seedance", executions[0].CustomerModel)
-	assert.Equal(t, "seedance-2.0-vip-720p-azhw", executions[0].ProviderModel)
+	assert.Equal(t, "seedance-2.0-vip-720p-azhw-feicai", executions[0].ProviderModel)
 	assert.Equal(t, VideoSKUSeedance20Standard720P, executions[0].LinkSKU)
 }
 

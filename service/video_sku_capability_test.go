@@ -43,7 +43,7 @@ func TestAdapterPreflightRevalidatesFrozenVideoSKUCapability(t *testing.T) {
 	require.NotNil(t, ValidateFrozenVideoSKUCapability(context, info))
 }
 
-func TestAdapterPreflightRevalidatesFrozenFeicaiModelMapping(t *testing.T) {
+func TestAdapterPreflightRejectsFeicaiModelWithoutVerifiedSize(t *testing.T) {
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
 	capability, ok := model.ResolveVideoSKUCapability(model.VideoSKUSeedance20Value720P)
 	require.True(t, ok)
@@ -51,7 +51,7 @@ func TestAdapterPreflightRevalidatesFrozenFeicaiModelMapping(t *testing.T) {
 	common.SetContextKey(
 		context,
 		constant.ContextKeyChannelModelMapping,
-		`{"seedance-2.0-value-720p":"seedance-2.0-933-720p-azhw"}`,
+		`{"seedance-2.0-value-720p":"seedance-2.0-933-720p-azhw-feicai"}`,
 	)
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 		ContractID: dto.VideoContractModelArkV3,
@@ -71,17 +71,17 @@ func TestAdapterPreflightRevalidatesFrozenFeicaiModelMapping(t *testing.T) {
 			VideoUpstreamQueryPathTemplate: "/v1/videos/{task_id}",
 			AssetUpstreamProfile:           relaykitdto.AssetUpstreamProfileNone,
 			LinkImplementation: relaykitdto.LinkImplementationRef{
-				ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV1,
+				ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV2,
 			},
 		},
 	}}
 
-	require.Nil(t, ValidateFrozenVideoSKUCapability(context, info))
+	require.Equal(t, "unsupported_parameter", ValidateFrozenVideoSKUCapability(context, info).Code)
 
 	common.SetContextKey(
 		context,
 		constant.ContextKeyChannelModelMapping,
-		`{"seedance-2.0-value-720p":"seedance-2.0-933-720p-azhw-feicai"}`,
+		`{"seedance-2.0-value-720p":"seedance-2.0-933-720p-azhw-unknown"}`,
 	)
 	require.NotNil(t, ValidateFrozenVideoSKUCapability(context, info))
 }

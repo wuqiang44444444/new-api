@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { LinkImplementation } from '../types'
+import { assetMinURLTTLWithDefault } from './asset-upstream-policy'
 
 export type LinkPublicationPreview = {
   customerModel: string
@@ -164,10 +165,10 @@ export function linkAccessPlanAutofill(
     values.video_upstream_query_path_template =
       implementation.required_query_path
   }
-  if (implementation.asset_capability.asset_source_min_ttl_seconds) {
-    values.asset_min_url_ttl_seconds =
-      implementation.asset_capability.asset_source_min_ttl_seconds
-  }
+  values.asset_min_url_ttl_seconds = assetMinURLTTLWithDefault(
+    implementation.required_asset_profile,
+    implementation.asset_capability.asset_source_min_ttl_seconds
+  )
 
   if (implementation.required_routes?.length) {
     const routes = implementation.required_routes.flatMap((requirement) => {

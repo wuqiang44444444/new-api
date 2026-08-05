@@ -18,13 +18,15 @@ func seedAssetLifecycleChannel(t *testing.T, id int, key, profile string) (*Chan
 		VideoUpstreamProfile:    dto.VideoUpstreamProfileThirdPartyRelay,
 		VideoUpstreamCreatePath: "/v1/media/generations", VideoUpstreamQueryPathTemplate: "/v1/media/tasks/{task_id}",
 		AssetUpstreamProfile: dto.AssetUpstreamProfile(profile),
-		LinkImplementation:   dto.LinkImplementationRef{ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV1},
+		LinkImplementation:   dto.LinkImplementationRef{ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV2},
 	}
 	if profile == string(dto.AssetUpstreamProfileArk) {
-		otherSettings.VideoUpstreamProfile = dto.VideoUpstreamProfileThirdPartyReverseProxy
+		otherSettings.VideoUpstreamProfile = dto.VideoUpstreamProfileOfficial
 		otherSettings.VideoUpstreamCreatePath = ""
 		otherSettings.VideoUpstreamQueryPathTemplate = ""
-		otherSettings.LinkImplementation.ID = LinkImplementationMoxingSeedanceArk
+		otherSettings.LinkImplementation = dto.LinkImplementationRef{
+			ID: LinkImplementationBytePlusSeedanceArk, Version: LinkImplementationVersionV1,
+		}
 	}
 	settings, err := common.Marshal(otherSettings)
 	require.NoError(t, err)
@@ -32,6 +34,9 @@ func seedAssetLifecycleChannel(t *testing.T, id int, key, profile string) (*Chan
 		Id: id, Type: constant.ChannelTypeDoubaoVideo, Key: key,
 		Status: common.ChannelStatusEnabled, Name: fmt.Sprintf("asset-channel-%d", id),
 		BaseURL: &baseURL, OtherSettings: string(settings), Models: VideoSKUSeedance20Oversea, Group: "default",
+	}
+	if profile == string(dto.AssetUpstreamProfileArk) {
+		channel.Models = VideoSKUSeedanceBytePlus
 	}
 	require.NoError(t, DB.Create(channel).Error)
 	return channel, AssetCredentialFingerprint(baseURL, key, profile)

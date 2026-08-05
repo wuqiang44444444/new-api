@@ -76,7 +76,7 @@ func TestVideoPollingUsesFrozenMediaArraysV1AndRedactsResultURLFromTaskData(t *t
 		PrivateData: model.TaskPrivateData{
 			UpstreamTaskID:            "provider-task-v2",
 			VideoUpstreamProfile:      dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-			SouthboundAdapterVersion:  "54:third_party_json_video_media_arrays:v1",
+			SouthboundAdapterVersion:  "54:third_party_json_video_media_arrays:v2",
 			VideoUpstreamQueryBaseURL: "https://video.example.com",
 			Key:                       "provider-key",
 		},
@@ -92,7 +92,7 @@ func TestVideoPollingUsesFrozenMediaArraysV1AndRedactsResultURLFromTaskData(t *t
 		map[string]*model.Task{task.PrivateData.UpstreamTaskID: task},
 	))
 	require.NoError(t, model.DB.First(task, task.ID).Error)
-	assert.Equal(t, "54:third_party_json_video_media_arrays:v1", capture.adapterVersion)
+	assert.Equal(t, "54:third_party_json_video_media_arrays:v2", capture.adapterVersion)
 	assert.NotContains(t, string(task.Data), "video.example.com")
 	assert.NotContains(t, string(task.Data), "secret")
 	assert.Contains(t, string(task.Data), "[redacted]")

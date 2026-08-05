@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -13,22 +14,27 @@ import (
 )
 
 const (
-	VideoSKUCapabilityVersionAZHWV1 = "azhw-media-arrays-v1"
-	VideoSKUCapabilityVersionV1     = "public-video-contract-v1"
-	VideoProfileJSONMediaArrays     = "third_party_json_video_media_arrays"
-	VideoProfileOfficial            = "official"
-	VideoProfileThirdPartyRelay     = "third_party_relay"
-	VideoProfileThirdPartyReverse   = "third_party_reverse_proxy"
-	VideoProfileFunCloudSeedanceV2  = "third_party_funcloud_seedance_v2"
+	VideoSKUCapabilityVersionFeicaiV2 = "feicai-media-arrays-v2"
+	VideoSKUCapabilityVersionV1       = "public-video-contract-v1"
+	VideoProfileJSONMediaArrays       = "third_party_json_video_media_arrays"
+	VideoProfileOfficial              = "official"
+	VideoProfileThirdPartyRelay       = "third_party_relay"
+	VideoProfileThirdPartyReverse     = "third_party_reverse_proxy"
+	VideoProfileFunCloudSeedanceV2    = "third_party_funcloud_seedance_v2"
 
 	VideoSKUSeedanceBytePlus        = "seedance-byteplus"
 	VideoSKUSeedance20Oversea       = "seedance-2-0-oversea"
 	VideoSKUDoubaoSeedance20260128  = "doubao-seedance-2-0-260128"
 	VideoSKUSeedance20Standard720P  = "seedance-2.0-standard-720p"
 	VideoSKUSeedance20Standard1080P = "seedance-2.0-standard-1080p"
+	VideoSKUSeedance20Standard4K    = "seedance-2.0-standard-4k"
 	VideoSKUSeedance20Value720P     = "seedance-2.0-value-720p"
 	VideoSKUSeedance20Value1080P    = "seedance-2.0-value-1080p"
 	VideoSKUSeedance20Value4K       = "seedance-2.0-value-4k"
+	VideoSKUSeedance20Mini720P      = "seedance-2.0-mini-720p"
+	VideoSKUSeedance20SD2720P       = "seedance-2.0-sd2-720p"
+	VideoSKUSeedance20Fast720P      = "seedance-2.0-fast-720p"
+	VideoSKUSeedance20ProPI720P     = "seedance-2.0-pro-pi-720p"
 	VideoSKUSeedance20Standard      = "seedance-2.0-standard"
 	VideoSKUSeedance20Fast          = "seedance-2.0-fast"
 	VideoSKUKlingV1                 = "kling-v1"
@@ -54,13 +60,19 @@ type VideoSKUCapability struct {
 	MinDuration             int                         `json:"min_duration"`
 	MaxDuration             int                         `json:"max_duration"`
 	DefaultDuration         int                         `json:"default_duration"`
+	BillingMode             string                      `json:"billing_mode,omitempty"`
 	AllowsAutomaticDuration bool                        `json:"allows_automatic_duration"`
+	RequiresDuration        bool                        `json:"requires_duration,omitempty"`
+	RequiresResolution      bool                        `json:"requires_resolution,omitempty"`
+	RequiresRatio           bool                        `json:"requires_ratio,omitempty"`
+	MaxPromptCharacters     int                         `json:"max_prompt_characters,omitempty"`
 	DurationValues          []int                       `json:"duration_values,omitempty"`
 	Ratios                  []string                    `json:"ratios"`
 	Modes                   []string                    `json:"modes,omitempty"`
 	HasCFGScaleRange        bool                        `json:"has_cfg_scale_range,omitempty"`
 	MinCFGScale             float64                     `json:"min_cfg_scale,omitempty"`
 	MaxCFGScale             float64                     `json:"max_cfg_scale,omitempty"`
+	MinImages               int                         `json:"min_images,omitempty"`
 	MaxImages               int                         `json:"max_images"`
 	MaxVideos               int                         `json:"max_videos"`
 	MaxAudio                int                         `json:"max_audio"`
@@ -90,62 +102,16 @@ type VideoSKUCapability struct {
 var videoSKUCapabilities = buildVideoSKUCapabilities()
 
 func buildVideoSKUCapabilities() map[string]VideoSKUCapability {
-	resolutions := map[string]string{
-		VideoSKUSeedance20Standard720P: "720p",
-		VideoSKUSeedance20Value720P:    "720p",
-	}
-	result := make(map[string]VideoSKUCapability, len(resolutions))
-	for publicModel, resolution := range resolutions {
-		capability := VideoSKUCapability{
-			PublicModel:             publicModel,
-			ContractID:              string(dto.VideoContractModelArkV3),
-			Version:                 VideoSKUCapabilityVersionAZHWV1,
-			Resolution:              resolution,
-			Resolutions:             []string{resolution},
-			MinDuration:             4,
-			MaxDuration:             15,
-			DefaultDuration:         4,
-			Ratios:                  []string{"16:9", "9:16"},
-			MaxImages:               9,
-			MaxAudio:                3,
-			ImageRoles:              []string{"reference_image"},
-			AudioRoles:              []string{"reference_audio"},
-			SupportsDirectMedia:     true,
-			SupportsLinkAssets:      true,
-			SupportsMixedMediaPath:  false,
-			ReferenceModesExclusive: true,
-			RequiresText:            true,
-			AudioRequiresReference:  true,
-			RequestFields: []string{
-				"model", "content", "duration", "resolution", "ratio", "generate_audio",
-			},
-			RequiredFields: []string{"model", "content"},
-			UnsupportedFields: []string{
-				"end_user_subject",
-				"callback_url",
-				"service_tier",
-				"watermark",
-				"return_last_frame",
-				"execution_expires_after",
-				"draft",
-				"tools",
-				"safety_identifier",
-				"priority",
-				"frames",
-				"seed",
-				"camera_fixed",
-			},
-			RequiredChannelTypes: []int{constant.ChannelTypeDoubaoVideo},
-			RequiredProfiles:     []string{VideoProfileJSONMediaArrays},
-			Lifecycle:            VideoSKULifecycleCapability{SupportsContent: true},
-		}
-		capability.ContentHash = videoSKUCapabilityHash(capability)
+	result := make(map[string]VideoSKUCapability)
+	for publicModel, capability := range feicaiVideoSKUCapabilities() {
 		result[publicModel] = capability
 	}
+	moxing := moxingSeedanceVideoSKUCapability()
+	result[moxing.PublicModel] = moxing
+	tokenSave := tokenSaveSeedanceVideoSKUCapability()
+	result[tokenSave.PublicModel] = tokenSave
 	for publicModel, profiles := range map[string][]string{
-		VideoSKUSeedanceBytePlus:       {VideoProfileOfficial},
-		VideoSKUSeedance20Oversea:      {VideoProfileThirdPartyRelay, VideoProfileThirdPartyReverse},
-		VideoSKUDoubaoSeedance20260128: {VideoProfileThirdPartyRelay},
+		VideoSKUSeedanceBytePlus: {VideoProfileOfficial},
 	} {
 		lifecycle := VideoSKULifecycleCapability{
 			SupportsContent:   true,
@@ -200,9 +166,6 @@ func buildVideoSKUCapabilities() map[string]VideoSKUCapability {
 				"seed",
 				"camera_fixed",
 			)
-		}
-		if publicModel == VideoSKUDoubaoSeedance20260128 {
-			capability.Resolutions = []string{"480p", "720p", "1080p"}
 		}
 		capability.ContentHash = videoSKUCapabilityHash(capability)
 		result[publicModel] = capability
@@ -311,6 +274,8 @@ func (capability VideoSKUCapability) ValidateModelArkRequest(request *dto.ModelA
 			present = request.CallbackURL != nil
 		case "service_tier":
 			present = request.ServiceTier != nil
+		case "generate_audio":
+			present = request.GenerateAudio != nil
 		case "watermark":
 			present = request.Watermark != nil
 		case "return_last_frame":
@@ -341,6 +306,9 @@ func (capability VideoSKUCapability) ValidateModelArkRequest(request *dto.ModelA
 	if err := validateModelArkContractScalars(request); err != nil {
 		return err
 	}
+	if request.Duration == nil && (capability.RequiresDuration || capability.DefaultDuration <= 0) {
+		return fmt.Errorf("duration is required for this model")
+	}
 	if request.Duration != nil {
 		if *request.Duration == -1 && capability.AllowsAutomaticDuration {
 			// The public contract explicitly permits provider-selected duration.
@@ -358,21 +326,33 @@ func (capability VideoSKUCapability) ValidateModelArkRequest(request *dto.ModelA
 			return fmt.Errorf("resolution is not supported by this model")
 		}
 	}
+	if request.Resolution == nil && capability.RequiresResolution {
+		return fmt.Errorf("resolution is required for this model")
+	}
 	if request.Ratio != nil && !slices.Contains(capability.Ratios, strings.TrimSpace(*request.Ratio)) {
 		return fmt.Errorf("ratio is not supported by this model")
+	}
+	if request.Ratio == nil && capability.RequiresRatio {
+		return fmt.Errorf("ratio is required for this model")
 	}
 	if request.GenerateAudio != nil && *request.GenerateAudio && !capability.SupportsGenerateAudio {
 		return fmt.Errorf("generate_audio is not supported by this model")
 	}
 	images, audio, video, text := 0, 0, 0, 0
+	prompt := ""
 	hasAsset, hasDirect := false, false
 	firstFrame, lastFrame, referenceImage := 0, 0, 0
 	for _, item := range request.Content {
 		var mediaURL string
 		switch item.Type {
 		case "text":
-			if strings.TrimSpace(videoString(item.Text)) != "" {
+			value := strings.TrimSpace(videoString(item.Text))
+			if value != "" {
 				text++
+				if prompt != "" {
+					prompt += "\n"
+				}
+				prompt += value
 			}
 		case "image_url":
 			images++
@@ -384,6 +364,10 @@ func (capability VideoSKUCapability) ValidateModelArkRequest(request *dto.ModelA
 				return fmt.Errorf("image role %q is not supported by this model", role)
 			}
 			switch role {
+			case "":
+				if slices.Contains(capability.ImageRoles, "") {
+					firstFrame++
+				}
 			case "first_frame":
 				firstFrame++
 			case "last_frame":
@@ -409,6 +393,8 @@ func (capability VideoSKUCapability) ValidateModelArkRequest(request *dto.ModelA
 			if len(capability.VideoRoles) > 0 && !slices.Contains(capability.VideoRoles, role) {
 				return fmt.Errorf("video role %q is not supported by this model", role)
 			}
+		default:
+			return fmt.Errorf("content type %q is not supported by this model", item.Type)
 		}
 		if strings.HasPrefix(strings.TrimSpace(mediaURL), "asset://") {
 			hasAsset = true
@@ -419,8 +405,12 @@ func (capability VideoSKUCapability) ValidateModelArkRequest(request *dto.ModelA
 	switch {
 	case capability.RequiresText && text == 0:
 		return fmt.Errorf("at least one non-empty text item is required")
+	case capability.MaxPromptCharacters > 0 && utf8.RuneCountInString(prompt) > capability.MaxPromptCharacters:
+		return fmt.Errorf("prompt exceeds the maximum of %d characters", capability.MaxPromptCharacters)
+	case images < capability.MinImages:
+		return fmt.Errorf("image content requires at least %d item(s)", capability.MinImages)
 	case video > capability.MaxVideos:
-		return fmt.Errorf("video content is not supported by this model")
+		return fmt.Errorf("video content exceeds the maximum of %d", capability.MaxVideos)
 	case images > capability.MaxImages:
 		return fmt.Errorf("image content exceeds the maximum of %d", capability.MaxImages)
 	case audio > capability.MaxAudio:

@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import i18next from 'i18next'
 import { FormProvider, useForm, useWatch } from 'react-hook-form'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
@@ -39,6 +40,7 @@ const implementation = {
   public_skus: ['video-sku'],
   channel_type: 54,
   required_video_profile: 'third_party_relay',
+  required_asset_profile: 'relay_assets',
   required_sku_create_paths: [
     { public_sku: 'video-sku', create_path: '/v1/video/create' },
   ],
@@ -87,12 +89,19 @@ function ProjectionHarness() {
     control: form.control,
     name: 'video_upstream_create_path',
   })
+  const assetMinURLTTLSeconds = useWatch({
+    control: form.control,
+    name: 'asset_min_url_ttl_seconds',
+  })
 
   return (
     <FormProvider {...form}>
       <input aria-label='Models' {...form.register('models')} />
       <input aria-label='Model mapping' {...form.register('model_mapping')} />
       <output aria-label='Create path'>{createPath}</output>
+      <output aria-label='Minimum asset URL TTL'>
+        {assetMinURLTTLSeconds}
+      </output>
       <LinkImplementationField
         control={form.control}
         channelType={54}
@@ -103,6 +112,37 @@ function ProjectionHarness() {
 }
 
 describe('Link access plan field', () => {
+  it('shows long plan names in a wider wrapping menu', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <I18nextProvider i18n={i18next}>
+          <ProjectionHarness />
+        </I18nextProvider>
+      </QueryClientProvider>
+    )
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('combobox'))
+
+    const listbox = await screen.findByRole('listbox')
+    const popup = listbox.closest('[data-slot="select-content"]')
+    const planOption = screen.getByRole('option', {
+      name: 'Provider · reactive-plan/v1',
+    })
+    expect(popup?.classList.contains('w-[460px]')).toBe(true)
+    expect(popup?.classList.contains('max-w-[calc(100vw-2rem)]')).toBe(true)
+    expect(
+      planOption.classList.contains(
+        '[&_[data-slot=select-item-text]]:whitespace-normal'
+      )
+    ).toBe(true)
+
+    queryClient.clear()
+  })
+
   it('reprojects SKU-specific fields after models are entered plan-first', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -116,6 +156,11 @@ describe('Link access plan field', () => {
     )
 
     expect(screen.getByLabelText('Create path').textContent).toBe('')
+    await waitFor(() => {
+      expect(screen.getByLabelText('Minimum asset URL TTL').textContent).toBe(
+        '3600'
+      )
+    })
     fireEvent.change(screen.getByLabelText('Models'), {
       target: { value: 'customer-video-v1' },
     })

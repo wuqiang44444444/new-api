@@ -34,11 +34,10 @@ NEWAPI rc23 原生 OpenAI Videos 与旧版平台视频不属于本文架构，�
   `third_party_json_video_media_arrays`、`third_party_funcloud_seedance_v2` 渠道 profile 解耦；
 - `southbound_adapter_version` 已从审计字符串升级为实际执行键；创建、轮询和内容代理按任务冻结的
   上游调用合同 adapter 版本分发，不用当前代码版本覆盖在途任务合同；
-- 公开 SKU 以 `VideoSKUCapability` 为运行时唯一权威；两个已验证的 Seedance 2.0 固定 720p SKU
-  同时投影为 OpenAPI `ModelArkVideoCreateRequest.x-fixed-seedance-2-capability`
-  机器合同，一致性测试逐值比较模型、时长、画幅、媒体上限、禁用字段和生命周期；
-- 飞彩 `feicai.seedance-videos/v1` 只登记两个已取得直接 size 证据的 720p SKU；1080p/4K
-  标识不注册公开 capability，未取证前北向校验、渠道注册和运行时选渠均 fail closed；
+- 公开 SKU 以 `VideoSKUCapability` 为运行时唯一权威；飞彩单轨
+  `feicai.seedance-videos/v2` 已登记 10 个独立 SKU、媒体上下限和按秒/按次计费模式；
+  逐模型 size registry 仍只接受正式黑盒证据，未登记组合在预扣前 fail closed，且不投影为公开
+  OpenAPI 能力；
 - JSON Video media-arrays 创建只有一条可达路径：类型化 ModelArk 请求 + 冻结
   capability + 映射后上游模型进入 `mediaarrays.CreateRequest`；通用 body 重解析和备用
   builder 已禁止；
@@ -235,7 +234,7 @@ Ark 兼容状态及别名；任何未识别状态都不得被解释为成功。�
 其 origin、query 或是否存在不得单独改变任务终态和计费；它也不得成为凭据转发目标。
 
 `third_party_json_video_media_arrays` 只支持
-`54:third_party_json_video_media_arrays:v1`：
+`54:third_party_json_video_media_arrays:v2`：
 
 - 创建响应必须提供非空、长度受控且无控制字符的 `id`；`task_id` 不参与身份判断；查询响应的
   `id` 必须等于冻结任务 ID，查询响应中的 `task_id` 继续忽略；
@@ -245,7 +244,7 @@ Ark 兼容状态及别名；任何未识别状态都不得被解释为成功。�
 - 缺失、畸形或跨域结果 URL 时进入 `reconciliation_required`，不得回退固定路径；
 - `queued`、`processing`、`completed`、`failed` 之外的状态继续 fail closed。
 
-这里的 v1 是新 media-arrays 网关执行合同版本，不是 Provider 模型版本或客户接入合同版本。
+这里的 v2 是 media-arrays 网关执行合同版本，不是 Provider 模型版本或客户接入合同版本。
 旧 omni-reference adapter、parser、fixture 与无鉴权内容源已经硬删除；客户端不选择 adapter version。
 
 上述段落描述当前代码事实。已接受的[飞彩全模型设计](<seedance 模型接入设计/飞彩/README.md>)
@@ -382,10 +381,9 @@ at-least-once。完整状态见
 [ADR-0011](decisions/0011-异步创建未知与轮询合同违例对账.md)。
 
 确定拒绝必须由已登记、可测试的 Provider `HTTP status + error.code` 合同证明。仅凭 400、401、
-403 或其他 HTTP 状态不能证明任务未创建。当前代码只为
-`feicai.seedance-videos/v1 + HTTP 403 + feicai_account_required` 登记确定拒绝，其它飞彩组合仍进入
-`unknown`。目标飞彩 v2 不继承该合同；v1 分支随单轨替换删除，只有取得 v2 独立证据后才能增加
-精确组合，不能把整个状态码或相同 message 注册为确定拒绝。
+403 或其他 HTTP 状态不能证明任务未创建。飞彩 v1 专用规则已经删除；当前 v2 没有确定拒绝组合，
+发送后的非 2xx 或解析异常均进入 `unknown`。只有取得 v2 独立证据后才能增加精确组合，不能把整个
+状态码或相同 message 注册为确定拒绝。
 
 人工处置只开放 Root 运维接口：Provider 确认已创建时通过 `recover` 补录上游任务 ID；确认
 绝未创建时通过 `reject` 释放 hold。两者都要求新鲜的 2FA/Passkey security proof、
@@ -595,10 +593,10 @@ fail closed，不使用进程级默认值。异步视频任务强制全额预扣
 - 所有已登记 profile 的创建、查询、响应归一化和失败语义有回归测试；
 - SKU 规范化接受缺失值与等价显式值、拒绝冲突值；Ability 发布和运行时都排除生命周期或媒体
   能力不等价的候选；
-- 两个固定 720p Seedance 2.0 SKU 的 OpenAPI 机器合同与运行时 capability
-  逐值比较；任一 duration、resolution、ratio、媒体上限、禁用字段或生命周期漂移使 CI 失败；
-- 飞彩 media-arrays 的实现注册、converter 和 billing probe 只接受已验证的 720p size 组合；
-  1080p/4K 不得复用 720p 像素值，也不得在没有实现覆盖时发布 Ability；
+- 飞彩 v2 的 10 个固定分辨率 SKU 在 size 与 Provider 证据未闭合时不进入 OpenAPI 公开投影；
+  任一未发布 SKU 被误写入公开指南或机器合同应使 CI 失败；
+- 飞彩 media-arrays 的 implementation、converter 和 billing probe 只接受四元 registry 中已验证的精确 size 组合；
+  任何分辨率都不得复用其它模型的像素值，也不得在没有 size 证据时发布 Ability；
 - JSON Video media-arrays 只通过类型化 `mediaarrays.CreateRequest` 创建，通用请求转换入口
   对该 profile fail closed，不存在 body 重解析 fallback；
 - ModelArk 创建入口允许空 profile 和全部已登记 profile，并拒绝未知 profile；请求包含

@@ -9,17 +9,11 @@ import (
 )
 
 type CreateError struct {
-	Code       int
-	Definitive bool
+	Code int
 }
 
 func (e *CreateError) Error() string {
-	return fmt.Sprintf("FunCloud video create rejected with code %d", e.Code)
-}
-
-func IsTerminalCreateRejection(err error) bool {
-	createErr, ok := err.(*CreateError)
-	return ok && createErr.Definitive
+	return fmt.Sprintf("FunCloud video create returned application code %d", e.Code)
 }
 
 func CreateResponse(body []byte) ([]byte, error) {
@@ -39,7 +33,11 @@ func CreateResponse(body []byte) ([]byte, error) {
 		if taskID != "" {
 			return nil, fmt.Errorf("FunCloud create response contains both an error and a task id")
 		}
-		return nil, &CreateError{Code: envelope.Code, Definitive: isDefinitiveCreateCode(envelope.Code)}
+		// The published FunCloud documents do not bind any application code to
+		// an exact HTTP status, create endpoint, and "task was not created"
+		// guarantee. The shared durable-attempt path therefore treats every
+		// non-zero code observed after sending as an unknown create outcome.
+		return nil, &CreateError{Code: envelope.Code}
 	}
 	if !validTaskID(taskID) {
 		return nil, fmt.Errorf("FunCloud create response contains an invalid task id")
@@ -50,15 +48,6 @@ func CreateResponse(body []byte) ([]byte, error) {
 	return common.Marshal(struct {
 		ID string `json:"id"`
 	}{ID: taskID})
-}
-
-func isDefinitiveCreateCode(code int) bool {
-	switch code {
-	case 10002, 10005, 10006:
-		return true
-	default:
-		return false
-	}
 }
 
 func validTaskID(value string) bool {

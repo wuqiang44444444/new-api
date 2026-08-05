@@ -71,20 +71,20 @@ func TestModelMappedHelperValidatesPublishedLinkExecution(t *testing.T) {
 		Models:       "customer-seedance",
 		Group:        "default",
 		Status:       common.ChannelStatusEnabled,
-		ModelMapping: common.GetPointer(`{"customer-seedance":"seedance-2.0-vip-720p-azhw"}`),
+		ModelMapping: common.GetPointer(`{"customer-seedance":"seedance-2.0-vip-720p-azhw-feicai"}`),
 	}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProfile:           dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		VideoUpstreamCreatePath:        "/v1/videos",
 		VideoUpstreamQueryPathTemplate: "/v1/videos/{task_id}",
 		LinkImplementation: dto.LinkImplementationRef{
-			ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV1,
+			ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV2,
 		},
 	})
 	require.NoError(t, model.DB.Create(&channel).Error)
 	gin.SetMode(gin.TestMode)
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
-	context.Set("model_mapping", `{"customer-seedance":"seedance-2.0-vip-720p-azhw"}`)
+	context.Set("model_mapping", `{"customer-seedance":"seedance-2.0-vip-720p-azhw-feicai"}`)
 	info := &relaycommon.RelayInfo{
 		OriginModelName: "customer-seedance",
 		ChannelMeta: &relaycommon.ChannelMeta{
@@ -100,5 +100,5 @@ func TestModelMappedHelperValidatesPublishedLinkExecution(t *testing.T) {
 	request := &relaykitdto.GeneralOpenAIRequest{Model: "customer-seedance"}
 
 	require.NoError(t, ModelMappedHelper(context, info, request))
-	assert.Equal(t, "seedance-2.0-vip-720p-azhw", request.Model)
+	assert.Equal(t, "seedance-2.0-vip-720p-azhw-feicai", request.Model)
 }

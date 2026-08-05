@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 )
 
 func ValidateLinkSKUAbilityBindings(channel *Channel) error {
@@ -34,22 +35,32 @@ func ValidateLinkSKUAbilityBindings(channel *Channel) error {
 	return nil
 }
 
-func validateLinkSKUAbilitiesByChannelID(channelID int) error {
-	var channel Channel
-	if err := DB.First(&channel, "id = ?", channelID).Error; err != nil {
+// ValidateLinkSKUAbilityPublicationReadiness applies release-only evidence
+// gates after the structural implementation/binding checks. Disabled channels
+// may be configured before evidence is complete, but enabling their Channel or
+// Ability must not create a publication that no request can satisfy.
+func ValidateLinkSKUAbilityPublicationReadiness(channel *Channel) error {
+	if err := ValidateLinkSKUAbilityBindings(channel); err != nil {
 		return err
 	}
-	return ValidateLinkSKUAbilityBindings(&channel)
-}
-
-func validateLinkSKUAbilitiesByTag(tag string) error {
-	var channels []Channel
-	if err := DB.Where("tag = ?", tag).Find(&channels).Error; err != nil {
+	settings := channel.GetOtherSettings()
+	if normalizedVideoProfile(string(settings.VideoUpstreamProfile)) != VideoProfileJSONMediaArrays {
+		return nil
+	}
+	executions, err := DeriveChannelLinkExecutions(channel, &settings)
+	if err != nil {
 		return err
 	}
-	for i := range channels {
-		if err := ValidateLinkSKUAbilityBindings(&channels[i]); err != nil {
-			return err
+	for _, execution := range executions {
+		capability, registered := ResolveVideoSKUCapability(execution.LinkSKU)
+		if !registered {
+			return fmt.Errorf("Link customer model %q resolves to unregistered SKU %q", execution.CustomerModel, execution.LinkSKU)
+		}
+		if len(capability.Ratios) == 0 {
+			return fmt.Errorf(
+				"video SKU %q has no verified provider ratio/size evidence and cannot be published",
+				strings.TrimSpace(execution.LinkSKU),
+			)
 		}
 	}
 	return nil

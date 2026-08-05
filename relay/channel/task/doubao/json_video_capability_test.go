@@ -14,22 +14,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestJSONVideoCreateRequestUsesMappedModelFromTypedContract(t *testing.T) {
+func TestJSONVideoCreateRequestFailsClosedWithoutVerifiedMappedModelSize(t *testing.T) {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	duration, resolution, ratio := 4, "1080p", "16:9"
 	relaycommon.SetVideoContractRequest(c, dto.VideoContractRequest{
 		ContractID: dto.VideoContractModelArkV3,
 		ModelArk: &dto.ModelArkVideoCreateRequest{
-			Model:   model.VideoSKUSeedance20Standard720P,
+			Model: model.VideoSKUSeedance20Value1080P, Duration: &duration, Resolution: &resolution, Ratio: &ratio,
 			Content: []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("hello")}},
 		},
 	})
-	capability, ok := model.ResolveVideoSKUCapability(model.VideoSKUSeedance20Standard720P)
+	capability, ok := model.ResolveVideoSKUCapability(model.VideoSKUSeedance20Value1080P)
 	require.True(t, ok)
+	capability.Ratios = []string{"16:9"}
 	common.SetContextKey(c, constant.ContextKeyResolvedVideoSKUCapability, capability)
 	info := &relaycommon.RelayInfo{
 		ChannelMeta: &relaycommon.ChannelMeta{
-			UpstreamModelName: "private-upstream-model",
+			UpstreamModelName: model.FeicaiProviderModelSeedance20Value1080P,
 			IsModelMapped:     true,
+			ChannelOtherSettings: dto.ChannelOtherSettings{
+				LinkImplementation: dto.LinkImplementationRef{
+					ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV2,
+				},
+			},
 		},
 	}
 
@@ -39,14 +46,9 @@ func TestJSONVideoCreateRequestUsesMappedModelFromTypedContract(t *testing.T) {
 		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 	)
 
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "no verified provider size")
 	assert.True(t, handled)
-	assert.JSONEq(t, `{
-		"model":"private-upstream-model",
-		"prompt":"hello",
-		"duration":4,
-		"size":"1280x720"
-	}`, string(body))
+	assert.Nil(t, body)
 }
 
 func TestJSONVideoCreateRequestRejectsGenericBodyFallback(t *testing.T) {

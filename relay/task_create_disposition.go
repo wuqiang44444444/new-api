@@ -25,13 +25,6 @@ func taskCreateHTTPDisposition(
 		status == http.StatusForbidden && providerCode == "user_quota_insufficient" {
 		return relaycommon.TaskCreateTerminalRejection
 	}
-	if info != nil && info.ChannelMeta != nil &&
-		info.ChannelOtherSettings.VideoUpstreamProfile == dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays &&
-		info.ChannelOtherSettings.LinkImplementation.ID == model.LinkImplementationFeicaiSeedanceVideos &&
-		info.ChannelOtherSettings.LinkImplementation.Version == model.LinkImplementationVersionV1 &&
-		status == http.StatusForbidden && providerCode == "feicai_account_required" {
-		return relaycommon.TaskCreateTerminalRejection
-	}
 	// Unregistered status + provider-code combinations remain unknown. A new
 	// terminal rejection requires exact provider evidence and a regression test.
 	return relaycommon.TaskCreateOutcomeUnknown

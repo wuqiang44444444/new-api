@@ -16,9 +16,15 @@ type createRequest struct {
 	Size     string   `json:"size"`
 	Images   []string `json:"images,omitempty"`
 	Audios   []string `json:"audios,omitempty"`
+	Videos   []string `json:"videos,omitempty"`
 }
 
-func CreateRequest(input *dto.ModelArkVideoCreateRequest, upstreamModel string, capability model.VideoSKUCapability) ([]byte, error) {
+func CreateRequest(
+	input *dto.ModelArkVideoCreateRequest,
+	implementation dto.LinkImplementationRef,
+	upstreamModel string,
+	capability model.VideoSKUCapability,
+) ([]byte, error) {
 	if input == nil {
 		return nil, fmt.Errorf("invalid JSON video media-arrays request")
 	}
@@ -29,22 +35,22 @@ func CreateRequest(input *dto.ModelArkVideoCreateRequest, upstreamModel string, 
 	if upstreamModel == "" {
 		return nil, fmt.Errorf("model is required")
 	}
-	if capability.DefaultDuration <= 0 || len(capability.Ratios) == 0 {
-		return nil, fmt.Errorf("JSON video media-arrays capability has no request defaults")
-	}
 	duration := capability.DefaultDuration
 	if input.Duration != nil {
 		duration = *input.Duration
+	}
+	if duration <= 0 {
+		return nil, fmt.Errorf("duration is required for this model")
 	}
 	resolution := capability.Resolution
 	if input.Resolution != nil {
 		resolution = strings.ToLower(strings.TrimSpace(*input.Resolution))
 	}
-	ratio := capability.Ratios[0]
-	if input.Ratio != nil && strings.TrimSpace(*input.Ratio) != "" {
+	ratio := ""
+	if input.Ratio != nil {
 		ratio = strings.TrimSpace(*input.Ratio)
 	}
-	size, ok := ResolveVideoSize(resolution, ratio)
+	size, ok := ResolveVideoSize(implementation, upstreamModel, resolution, ratio)
 	if !ok {
 		return nil, fmt.Errorf("resolution %q and ratio %q have no verified provider size", resolution, ratio)
 	}
@@ -89,7 +95,18 @@ func CreateRequest(input *dto.ModelArkVideoCreateRequest, upstreamModel string, 
 			}
 			output.Audios = append(output.Audios, media)
 		case "video_url":
-			return nil, fmt.Errorf("video input is not supported")
+			role := ""
+			if item.Role != nil {
+				role = strings.TrimSpace(*item.Role)
+			}
+			if item.VideoURL == nil || role != "reference_video" {
+				return nil, fmt.Errorf("video_url requires role=reference_video")
+			}
+			media := strings.TrimSpace(item.VideoURL.URL)
+			if err := dto.ValidateVideoMediaArrayURL(media, dto.VideoMediaArrayVideo, false); err != nil {
+				return nil, fmt.Errorf("invalid video input: %w", err)
+			}
+			output.Videos = append(output.Videos, media)
 		default:
 			return nil, fmt.Errorf("unsupported content type %q", item.Type)
 		}

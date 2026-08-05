@@ -226,7 +226,11 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 }
 
 func (channel *Channel) AddAbilitiesWithActor(tx *gorm.DB, actorID int) error {
-	if err := ValidateLinkSKUAbilityBindings(channel); err != nil {
+	validate := ValidateLinkSKUAbilityBindings
+	if channel.Status == common.ChannelStatusEnabled {
+		validate = ValidateLinkSKUAbilityPublicationReadiness
+	}
+	if err := validate(channel); err != nil {
 		return err
 	}
 	useDB := DB
@@ -284,7 +288,11 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 }
 
 func (channel *Channel) UpdateAbilitiesWithActor(tx *gorm.DB, actorID int) error {
-	if err := ValidateLinkSKUAbilityBindings(channel); err != nil {
+	validate := ValidateLinkSKUAbilityBindings
+	if channel.Status == common.ChannelStatusEnabled {
+		validate = ValidateLinkSKUAbilityPublicationReadiness
+	}
+	if err := validate(channel); err != nil {
 		return err
 	}
 	isNewTx := false
@@ -369,7 +377,7 @@ func updateAbilityStatusTx(tx *gorm.DB, channel *Channel, status bool, actorID i
 		return errors.New("channel ability status transaction requires a channel")
 	}
 	if status {
-		if err := ValidateLinkSKUAbilityBindings(channel); err != nil {
+		if err := ValidateLinkSKUAbilityPublicationReadiness(channel); err != nil {
 			return err
 		}
 		if err := EnsureChannelLinkModelPublications(tx, channel, actorID); err != nil {

@@ -11,7 +11,7 @@ import (
 
 func TestTaskAttemptLinkImplementationRequiresRegisteredSKUAndImplementation(t *testing.T) {
 	ref := dto.LinkImplementationRef{
-		ID: model.LinkImplementationMoxingSeedanceMedia, Version: model.LinkImplementationVersionV1,
+		ID: model.LinkImplementationMoxingSeedanceMedia, Version: model.LinkImplementationVersionV2,
 	}
 
 	link, err := resolveTaskAttemptLinkImplementation(model.VideoSKUSeedance20Oversea, ref)

@@ -35,6 +35,13 @@ func buildJSONVideoMediaArraysCreateRequest(
 	if !ok {
 		return nil, true, fmt.Errorf("JSON video media-arrays capability snapshot is unavailable")
 	}
-	body, err := mediaarrays.CreateRequest(contract.ModelArk, upstreamModel, capability)
+	if info == nil || info.ChannelMeta == nil || info.ChannelOtherSettings.LinkImplementation.Empty() {
+		return nil, true, fmt.Errorf("JSON video media-arrays implementation snapshot is unavailable")
+	}
+	implementation := info.ChannelOtherSettings.LinkImplementation
+	if implementation.ID == "" || implementation.Version == "" {
+		return nil, true, fmt.Errorf("JSON video media-arrays implementation snapshot is unavailable")
+	}
+	body, err := mediaarrays.CreateRequest(contract.ModelArk, implementation, upstreamModel, capability)
 	return body, true, err
 }

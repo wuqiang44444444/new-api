@@ -338,10 +338,10 @@ alias、双读或 fallback。正式发布后若需要多版本无损共存，必
 | implementation ID/version | 主要执行形状 | Link SKU |
 | --- | --- | --- |
 | `byteplus.seedance-ark/v1` | DoubaoVideo official + official Action Assets | `seedance-byteplus` |
-| `moxing.seedance-media-task/v1` | third-party relay + relay assets | `seedance-2-0-oversea` |
-| `moxing.seedance-ark-assets/v1` | reverse proxy + Ark assets | `seedance-2-0-oversea` |
-| `tokensave.seedance-media-task/v1` | third-party relay + relay assets | `doubao-seedance-2-0-260128` |
-| `feicai.seedance-videos/v1` | JSON media-arrays + `source_url` | 两个已注册 720p SKU |
+| `moxing.seedance-media-task@v2` | third-party relay + relay assets；当前候选 | `seedance-2-0-oversea` |
+| `moxing.seedance-ark-assets@v1` | deprecated Ark 历史解析；不得创建新任务 | 冻结历史事实中的 `seedance-2-0-oversea` |
+| `tokensave.seedance-media-task@v2` | third-party relay + relay assets；按秒计费、general 图片 | `doubao-seedance-2-0-260128` |
+| `feicai.seedance-videos/v2` | JSON media-arrays + `source_url` | 10 个独立飞彩 SKU；无逐模型 size 证据的组合保持不可发布 |
 | `funcloud.seedance-json/v1` | FunCloud adapter v2 + `source_url` | `seedance-2.0-standard`、`seedance-2.0-fast` |
 | `moxing.images.media-task/v1` | Advanced Custom media-task | `seedream-5-moxing`、`nano-banana-2` |
 | `qihang.images.openai-compatible/v1` | Advanced Custom converter none | `seedream-5-qihang` |

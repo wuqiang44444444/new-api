@@ -1,3 +1,21 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { type Control, useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
@@ -19,6 +37,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
+import { assetMinURLTTLWithDefault } from '../../lib/asset-upstream-policy'
 import type { ChannelFormValues } from '../../lib/channel-form'
 import { maskAssetCredentialHint } from '../../lib/official-channel-connectivity'
 
@@ -89,6 +108,14 @@ export function AssetUpstreamProfileField(
               ]}
               onValueChange={(value) => {
                 field.onChange(value)
+                form.setValue(
+                  'asset_min_url_ttl_seconds',
+                  assetMinURLTTLWithDefault(
+                    value,
+                    form.getValues('asset_min_url_ttl_seconds')
+                  ),
+                  { shouldDirty: true, shouldValidate: true }
+                )
                 if (value !== 'official_action_assets') {
                   form.setValue('asset_access_key_id', '')
                   form.setValue('asset_secret_access_key', '')

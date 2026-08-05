@@ -52,12 +52,13 @@ func TestModelArkContractPayloadInjectsOnlyHashedSubject(t *testing.T) {
 }
 
 func TestModelArkRelayCapabilityRejectsUnsupportedMediaBeforeBilling(t *testing.T) {
+	duration, resolution, ratio := 4, "720p", "16:9"
 	request := &dto.ModelArkVideoCreateRequest{
-		Model: model.VideoSKUSeedance20Oversea,
-		Content: []dto.ModelArkVideoContent{{
-			Type: "video_url", Role: common.GetPointer("reference_video"),
-			VideoURL: &dto.VideoMediaURL{URL: "https://example.com/video.mp4"},
-		}},
+		Model: model.VideoSKUSeedance20Oversea, Duration: &duration, Resolution: &resolution, Ratio: &ratio,
+		Content: []dto.ModelArkVideoContent{
+			{Type: "text", Text: common.GetPointer("move")},
+			{Type: "video_url", Role: common.GetPointer("reference_video"), VideoURL: &dto.VideoMediaURL{URL: "https://example.com/video.mp4"}},
+		},
 	}
 
 	capability, ok := model.ResolveVideoSKUCapability(model.VideoSKUSeedance20Oversea)
@@ -66,9 +67,11 @@ func TestModelArkRelayCapabilityRejectsUnsupportedMediaBeforeBilling(t *testing.
 }
 
 func TestModelArkRelayCapabilityRejectsEndFrameWithReferenceImageBeforeBilling(t *testing.T) {
+	duration, resolution, ratio := 4, "720p", "16:9"
 	request := &dto.ModelArkVideoCreateRequest{
-		Model: model.VideoSKUSeedance20Oversea,
+		Model: model.VideoSKUSeedance20Oversea, Duration: &duration, Resolution: &resolution, Ratio: &ratio,
 		Content: []dto.ModelArkVideoContent{
+			{Type: "text", Text: common.GetPointer("move")},
 			{
 				Type: "image_url", Role: common.GetPointer("first_frame"),
 				ImageURL: &dto.VideoMediaURL{URL: "https://example.com/first.png"},

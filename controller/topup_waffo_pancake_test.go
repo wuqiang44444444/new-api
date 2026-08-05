@@ -27,6 +27,18 @@ func TestFormatWaffoPancakeAmount_UsesDisplayPriceString(t *testing.T) {
 	}
 }
 
+func TestBuildWaffoTopUpGoodsInfoUsesTokenAIFallback(t *testing.T) {
+	originalSystemName := common.SystemName
+	t.Cleanup(func() {
+		common.SystemName = originalSystemName
+	})
+
+	common.SystemName = ""
+	goodsInfo := buildWaffoTopUpGoodsInfo(10)
+
+	require.Equal(t, "TokenAI", goodsInfo.AppName)
+}
+
 func TestGetWaffoPancakePayMoney(t *testing.T) {
 	originalUnitPrice := setting.WaffoPancakeUnitPrice
 	originalQuotaDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType

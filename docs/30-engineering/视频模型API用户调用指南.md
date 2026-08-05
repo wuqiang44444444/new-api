@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-04
+last-reviewed: 2026-08-05
 ---
 
 # 视频模型 API 调用指南
@@ -10,19 +10,21 @@ last-reviewed: 2026-08-04
 
 本文面向使用 new-api 的开发者，介绍 rc23 原生 OpenAI Videos，以及 Seedance 模型通过 ModelArk v3 Link 合同执行任务创建、状态查询和结果下载的方式。两类合同共享任务底座，但路径、字段、模型和响应不能混用。
 
-当前开放以下 Seedance 视频模型：
+当前 ModelArk v3 合同定义以下 Seedance 视频模型；实际可用性必须以 API Key 的模型列表和
+publication 为准：
 
 | 模型 ID | 说明 |
 | --- | --- |
 | `seedance-byteplus` | Seedance BytePlus SKU |
-| `seedance-2-0-oversea` | Seedance 2.0 海外版 SKU |
-| `doubao-seedance-2-0-260128` | Seedance 2.0 国际版 SKU |
+| `seedance-2-0-oversea` | 墨行 Seedance 2.0 海外版；按量计费 |
+| `doubao-seedance-2-0-260128` | 墨行 doubao Seedance 2.0；按秒计费 |
 | `seedance-2.0-standard` | Seedance 2.0 标准可变分辨率 SKU；支持普通 Link 资源，不支持真人素材 |
 | `seedance-2.0-fast` | Seedance 2.0 Fast 可变分辨率 SKU；仅支持 480p/720p |
-| `seedance-2.0-standard-720p` | Seedance 2.0 标准 720p SKU |
-| `seedance-2.0-value-720p` | Seedance 2.0 经济 720p SKU |
 
 上述 Seedance SKU 使用相同的 ModelArk v3 客户端 API。调用方只需更换 `model`，不需要了解或切换上游地址、鉴权方式、任务路径和响应格式。
+
+其中墨行产品范围固定为上表中的 `seedance-2-0-oversea` 与 `doubao-seedance-2-0-260128` 两个模型；
+其它 Seedance SKU 属于各自独立 Provider 线路，不得被视为墨行模型或作为这两个模型的降级候选。
 
 渠道可以使用官方实现或经过 capability 等价校验的第三方实现，但这不会改变 Link 合同。FunCloud 仅承接独立的 `seedance-2.0-standard` 与 `seedance-2.0-fast`；其路径、业务 code、Bearer Key 与上游素材 ID 均不会向客户端公开。现有官方、TokenSave 和飞彩 SKU 不会加入 FunCloud profile，也不会因 FunCloud 报价改变定价。
 
@@ -311,29 +313,24 @@ Provider 的模型介绍提到视频、音频等多模态参考能力，但当�
 平台按已验证的具体字段发布能力，不根据营销描述猜测未定义参数。 Provider 合同与价格以
 [TokenSave 模型页](https://tokensave.pro/docs/models/doubao-seedance-2-0-260128)为核对来源。
 
-### 5.5 Seedance 2.0 固定分辨率 SKU
+2026-08-05 的 4 秒 480p 文生黑盒已完成创建、成功轮询、MP4 下载和 Range 验证，终态 `result` 为
+对象且没有 `usage`。这只证明基础文生链路，不代表其它场景、分辨率或 Provider 账单已经验收；本地
+Channel/Ability 继续禁用，实际可用性仍以模型列表为准。
 
-以下规则只适用于 `seedance-2.0-standard-720p` 和 `seedance-2.0-value-720p`：
+### 5.5 `seedance-2-0-oversea`
 
-| 能力 | 合同 |
-| --- | --- |
-| 分辨率 | 由模型名固定为 `720p`；`resolution` 可省略，显式值必须为 `720p` |
-| 时长 | 4～15 秒整数，省略时为 4 秒；不接受 `-1` |
-| 画幅 | 已验证并发布 `16:9`、`9:16`，省略时为 `16:9`；不接受其它比例或 `adaptive` |
-| 图片 | 最多 9 张，只支持 `reference_image`；未发布 `first_frame` / `last_frame` |
-| 音频 | 最多 3 段 `reference_audio`，且必须与 `reference_image` 一起使用 |
-| 视频/托管素材 | 不支持 `video_url`；普通 `general` 图片/音频支持 `asset://`，也可使用请求级公网 HTTP(S) URL；仅图片支持受支持的 Base64 Data URL |
-| 音频生成 | `generate_audio` 只能省略或显式传 `false` |
-| 高级字段 | 不支持回调、服务档位、草稿、水印、seed、帧数等高级字段 |
+墨行海外版当前只使用 `moxing.seedance-media-task/v2` relay 线路，不会降级到历史 Ark。请求必须包含
+非空文本，并显式传入 `duration`（4～15 或 `-1`）、`resolution`（仅 `480p`/`720p`）和 `ratio`。
+支持文生视频、单首帧、首尾帧和 `reference_image`；参考图与首尾帧互斥，音频/视频输入、watermark、
+seed、camera_fixed、真人素材和 last-frame 结果均未发布。`generate_audio=false` 会原样发送。该渠道在
+真实终态结果和 usage 取证完成前保持禁用，实际可用性以模型列表为准。
 
-每个请求仍必须包含至少一个非空文本项。直接 URL 与 `asset://` 不能在同一请求混用，
-`real_person` 素材不由该实现解析。不支持的字段、角色或组合会返回 `400 unsupported_parameter`，不会被
-静默删除或改写。
+### 5.6 飞彩 Seedance 2.0 固定分辨率 SKU
 
-上表是人类可读摘要。可机器读取的精确合同位于 OpenAPI
-`components.schemas.ModelArkVideoCreateRequest.x-fixed-seedance-2-capability`。运行时仍以
-`VideoSKUCapability` 为唯一权威，CI 会逐值比较该 OpenAPI 投影；文档不是独立的第二套
-执行配置。
+飞彩 v2 已在代码中分别登记 Mini、SD2、Fast、value/standard 720p、1080p、4K 与 Pro PI 共 10 个
+SKU，但正式 HTTPS、精确模型权限、逐模型像素 size、成功任务、内容下载和账单证据尚未全部闭合。
+因此这些 SKU 当前不在公开 OpenAPI 或模型列表中发布，配置渠道也必须保持禁用；调用方不得依赖
+研究资料中的默认时长、画幅或价格。每个模型完成独立门禁后才会逐项加入本指南。
 
 ## 6. 查询任务
 
@@ -472,9 +469,8 @@ curl -sS -X DELETE \
 
 如果返回 `503 cancellation_unknown`，表示上游取消结果暂时未知。应继续查询原任务，不要立即创建重复任务。
 
-上述两个固定 720p SKU 第一阶段只支持查询和
-内容下载：排队任务删除返回 `409 cancellation_unsupported`，运行中返回 `409 task_running`，
-终态任务返回 `409 delete_unsupported`。这些确定不支持的操作不会向上游发送取消或删除请求。
+飞彩 v2 的 10 个固定分辨率 SKU 当前尚未发布，不得依赖历史两个 720p 合同的取消或删除语义。
+模型发布后仍必须以当时 capability 与服务端 409 错误为准，不会伪装取消或删除成功。
 
 ## 9. 幂等与安全重试
 

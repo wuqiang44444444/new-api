@@ -528,6 +528,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		"video_upstream_profile":             videoUpstreamProfile,
 		"video_upstream_adapter_version":     adapterVersion.String(),
 		"video_upstream_query_path_template": taskVideoUpstreamQueryPath(task, ch),
+		"video_upstream_implementation_id":   privateData.LinkImplementationID,
 	}, proxy)
 	if err != nil {
 		var contractViolation *relaycommon.UpstreamContractViolation
@@ -569,7 +570,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return fmt.Errorf("parseTaskResult failed for task %s: %w", taskId, err)
 	}
 
-	if adapterVersion.IsJSONVideoMediaArraysV1() {
+	if adapterVersion.IsJSONVideoMediaArraysV2() {
 		task.Data = redactTaskResponseForLog(responseBody)
 	} else {
 		task.Data = redactVideoResponseBody(responseBody)

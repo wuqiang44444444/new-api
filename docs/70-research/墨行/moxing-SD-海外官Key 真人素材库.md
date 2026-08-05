@@ -1,215 +1,78 @@
+# doubao-seedance-2.0
+
+豆包大模型团队推出的新一代专业级多模态创作视频模型 Seedance 2.0，支持图像、视频、音频等多模态作为参考输入生成视频，还具备视频编辑、延长等能力，能高精度还原各类细节并稳定角色特征，具备极致拟真的视听稳定性，深度适配商业广告、影视制作与社交媒体营销等各大核心场景。
+
+- **模型**: `doubao-seedance-2-0-260128`
+- **厂商**: 豆包
+- **类型**: 视频
+
 ---
-status: historical
-owner: Dev Team
-last-reviewed: 2026-08-02
+
+## 能力与接口
+
+### 视频生成
+
+```
+POST /v1/media/generations
+```
+
+异步任务；提交后轮询 `GET /v1/media/tasks/:task_id`。支持文生视频、图生视频和参考生视频三类场景。
+
+### 生成场景
+
+- 文生视频
+- 图生视频
+- 参考生视频
+
 ---
 
-# 海外官Key 真人素材库
+## 请求参数
 
-> **历史资料。** 本文只描述 `dreamina-seedance-2-0-260128` 的旧 Ark 素材线路，不适用于当前
-> `doubao-seedance-2-0-260128` TokenSave V2 relay 渠道。当前 doubao 渠道使用
-> `third_party_relay + relay_assets`，不得配置为 `ark_assets`。
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `aspect_ratio` | string | 否 | 画幅比例；支持 `16:9` / `4:3` / `1:1` / `3:4` / `9:16` / `21:9` / `adaptive`。示例：`16:9` |
+| `capability` | string | 是 | 能力类型；固定为 `video_generation` |
+| `control_mode` | string | 是 | 控制模式；文生视频固定 `none`；图生视频可用 `none` 或 `end_frame`；参考生视频固定 `reference`。示例：`none` |
+| `duration_seconds` | integer | 否 | 视频时长（秒）；支持 4-15 秒，或 `-1` 表示自动。示例：`4` |
+| `input_mode` | string | 是 | 输入模式；文生视频使用 `text`；图生视频使用 `single_image`；参考生视频使用 `multi_image`。示例：`text` |
+| `model` | string | 是 | 模型 ID；要调用的视频模型 logical key |
+| `prompt` | string | 是 | 提示词；描述想要生成的视频内容，最长 2500 字符。参考生视频场景中用于描述基于参考素材生成的目标效果。示例：`图片1中的人物站在海边，夕阳下回眸一笑` |
 
-H5 真人认证、素材组与素材管理；合规人像素材上传与 `asset://` 引用。
+---
 
-## 概述
+## 响应格式
 
-面向模型 `dreamina-seedance-2-0-260128` 的合规人像参考素材。完整接入路径见模型文档。
-
-- **鉴权**：`Authorization: Bearer sk-...`
-- **对外标识**：直接使用官方 `group-xxx` / `asset-xxx`
-- **视频引用**：`asset://{asset_id}`
-- **回调配置**：服务端需配置 `ARK_ASSET_CALLBACK_BASE_URL`（公网 HTTPS），用于 H5 认证回调
-
-## 推荐流程
-
-### 虚拟人像
-
-```
-CreateAssetGroup → 上传素材 → 轮询 Active
-```
-
-### 真人肖像
-
-```
-H5 认证建组 → 上传素材 → 轮询 Active
-```
-
-详细步骤：
-
-1. `POST /v1/ark/assets/groups`（`GroupType=AIGC`）→ 返回 Id（`group-xxx`）
-2. `POST /v1/ark/assets/visual-validate/session` → 返回 `h5_link` + `session_id`
-3. 终端用户打开 H5 完成真人认证（平台不托管 H5 页）
-4. `GET .../visual-validate/sessions/:session_id` 或 `.../result/:session_id` → 获得 `group_id`
-5. `POST /v1/ark/assets`（传 `GroupId`）→ 返回 Id
-6. `GET /v1/ark/assets/:id` 轮询至 `Status=Active`
-7. `POST /v1/ark/media/generations` 在 `content[]` 中使用 `asset://{Id}`
-
-## 接口清单
-
-| 能力 | 方法 | 路径 |
+| 字段 | 类型 | 说明 |
 |------|------|------|
-| 发起 H5 认证 | POST | `/v1/ark/assets/visual-validate/session` |
-| 创建虚拟人像素材组 | POST | `/v1/ark/assets/groups` |
-| 查询 session 状态 | GET | `/v1/ark/assets/visual-validate/sessions/:session_id` |
-| 获取 GroupId | GET | `/v1/ark/assets/visual-validate/result/:session_id` |
-| 创建素材 | POST | `/v1/ark/assets` |
-| 查询素材 | GET | `/v1/ark/assets/:id` |
-| 素材列表（本账号） | POST | `/v1/ark/assets/list` |
-| 素材组列表（本账号） | POST | `/v1/ark/assets/groups/list` |
-| 更新素材 | POST | `/v1/ark/assets/:id/update` |
-| 删除素材 | POST | `/v1/ark/assets/:id/delete` |
-| 查询/更新/删除素材组 | GET/POST | `/v1/ark/assets/groups/:group_id` |
+| `created_at` | string | 任务创建时间（Unix 时间戳） |
+| `error_message` | string | 终态失败时的错误描述 |
+| `progress` | string | 0-100 之间的整数，表示生成进度 |
+| `result` | string | 终态成功时返回视频/资源信息，包含 `url`、`duration_seconds` 等字段 |
+| `status` | string | `queued` / `running` / `succeeded` / `failed` |
+| `task_id` | string | 任务唯一 ID，用于轮询 `GET /v1/media/tasks/:id` |
+| `usage` | string | 本次任务的额度消耗（如有） |
 
-## Session 状态
+---
 
-| 状态 | 说明 |
-|------|------|
-| `pending` | 已创建，等待用户打开 H5 并完成认证。 |
-| `callback_received` | 已收到 H5 回调，正在拉取 GroupId。 |
-| `group_ready` | 认证成功，已获得 `group_id`，可上传素材。 |
-| `failed` | 认证失败，查看 `error_message`。 |
-| `expired` | BytedToken / session 超时（约 30 分钟），需重新发起 session。 |
+## 错误与限制
 
-## 调用示例
+### 错误码
 
-### 虚拟人像素材组（API 直建）
+| 错误码 | HTTP | 说明 |
+|--------|------|------|
+| `invalid_request_error` | 400 | 请求参数缺失、格式错误或字段值不在允许范围内 |
+| `invalid_api_key` | 401 | API Key 为空、格式错误或已失效；请确认 `Authorization: Bearer sk-...` |
+| `insufficient_quota` | 403 | 账户余额或配额不足；请充值或申请扩容 |
+| `model_not_found` | 404 | 请求的 model 不存在或当前账户无权访问 |
+| `rate_limit_exceeded` | 429 | 触发并发或 RPM 限流；建议指数退避后重试 |
+| `internal_server_error` | 500 | 平台内部异常；可重试，持续异常请联系技术支持 |
+| `upstream_unavailable` | 502 | 模型服务暂时不可用或超时；建议稍后重试 |
 
-```bash
-curl -X POST 'https://www.moxing.pro/v1/ark/assets/groups' \
-  -H 'Authorization: Bearer sk-xxxx' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "Name": "virtual-portrait-group",
-    "Description": "虚拟人像素材组",
-    "GroupType": "AIGC"
-  }'
-```
+### Limits
 
-### 真人肖像素材组（H5 认证）
-
-```bash
-curl -X POST 'https://www.moxing.pro/v1/ark/assets/visual-validate/session' \
-  -H 'Authorization: Bearer sk-xxxx' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "client_redirect_url": "https://your-app.com/h5-done",
-    "project_name": "default"
-  }'
-```
-
-打开响应中的 `h5_link` 完成认证后：
-
-```bash
-# 查询 session 状态
-curl 'https://www.moxing.pro/v1/ark/assets/visual-validate/sessions/{session_id}' \
-  -H 'Authorization: Bearer sk-xxxx'
-
-# 获取 GroupId
-curl 'https://www.moxing.pro/v1/ark/assets/visual-validate/result/{session_id}' \
-  -H 'Authorization: Bearer sk-xxxx'
-```
-
-获得 `group_id` 后上传素材：
-
-```bash
-# 上传素材
-curl -X POST 'https://www.moxing.pro/v1/ark/assets' \
-  -H 'Authorization: Bearer sk-xxxx' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "GroupId": "group-20260331145705-xxxxx",
-    "URL": "https://example.com/portrait-front.png",
-    "AssetType": "Image",
-    "Name": "portrait-front"
-  }'
-
-# 查询素材
-curl 'https://www.moxing.pro/v1/ark/assets/asset-20260318071009-xxxxx' \
-  -H 'Authorization: Bearer sk-xxxx'
-
-# 素材列表
-curl -X POST 'https://www.moxing.pro/v1/ark/assets/list' \
-  -H 'Authorization: Bearer sk-xxxx' \
-  -H 'Content-Type: application/json' \
-  -d '{"Statuses":["Active"],"PageNumber":1,"PageSize":20}'
-```
-
-### 用于 dreamina 视频
-
-素材 Active 后，在海外官Key 视频请求的 `content[]` 中引用：
-
-```bash
-curl -X POST 'https://www.moxing.pro/v1/ark/media/generations' \
-  -H 'Authorization: Bearer sk-xxxx' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "dreamina-seedance-2-0-260128",
-    "duration": 5,
-    "resolution": "720p",
-    "ratio": "16:9",
-    "generate_audio": true,
-    "content": [
-      { "type": "text", "text": "参考图主体自然微笑并看向镜头" },
-      {
-        "type": "image_url",
-        "role": "reference_image",
-        "image_url": { "url": "asset://asset-20260318071009-xxxxx" }
-      }
-    ]
-  }'
-```
-
-## Python 全流程
-
-```python
-import time
-import requests
-
-base = "https://www.moxing.pro"
-headers = {"Authorization": "Bearer sk-xxxx", "Content-Type": "application/json"}
-
-# 1. 发起 H5 认证
-sess = requests.post(f"{base}/v1/ark/assets/visual-validate/session", headers=headers, json={
-    "client_redirect_url": "https://your-app.com/done",
-}, timeout=30).json()
-session_id = sess["session_id"]
-print("Open H5:", sess["h5_link"])
-
-# 2. 用户完成 H5 后轮询 session / result
-for _ in range(60):
-    st = requests.get(f"{base}/v1/ark/assets/visual-validate/sessions/{session_id}", headers=headers, timeout=30).json()
-    print("session", st["status"], st.get("group_id"))
-    if st["status"] == "group_ready":
-        group_id = st["group_id"]
-        break
-    if st["status"] in ("failed", "expired"):
-        raise RuntimeError(st)
-    time.sleep(3)
-else:
-    raise TimeoutError("H5 session timeout")
-
-# 3. 上传素材
-created = requests.post(f"{base}/v1/ark/assets", headers=headers, json={
-    "GroupId": group_id,
-    "URL": "https://example.com/portrait.png",
-    "AssetType": "Image",
-    "Name": "portrait",
-}, timeout=60).json()
-asset_id = created["Id"]
-print("asset id", asset_id)
-
-# 4. 轮询 Active
-for _ in range(36):
-    asset = requests.get(f"{base}/v1/ark/assets/{asset_id}", headers=headers, timeout=30).json()
-    print("asset", asset.get("Status"))
-    if asset.get("Status") == "Active":
-        asset_uri = f"asset://{asset_id}"
-        break
-    if asset.get("Status") == "Failed":
-        raise RuntimeError(asset)
-    time.sleep(5)
-
-# 5. 用于 dreamina 视频（见海外官Key 视频文档）
-print("use in video:", asset_uri)
-```
+| 限制项 | 说明 |
+|--------|------|
+| 分辨率 | 480p / 720p / 1080p |
+| 参考素材 | 参考生视频使用 `reference_images` 传入素材库 `asset://` 引用 |
+| 画幅比例 | `16:9` / `4:3` / `1:1` / `3:4` / `9:16` / `21:9` / `adaptive` |
+| 视频时长 | 4-15 秒，或 `-1` 自动 |

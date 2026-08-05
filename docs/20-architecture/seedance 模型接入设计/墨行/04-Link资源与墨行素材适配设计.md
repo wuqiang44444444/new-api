@@ -18,15 +18,17 @@ POST /v1/assets -> ast_*
 墨行 `uuid`、`upstream_id`、Ark `asset-*`、JoyCreator `id/assetId` 和原始 URL 都是内部执行事实，
 不能作为第二套客户素材身份。
 
-## 2. 三类官方素材接口
+## 2. 素材相关证据
 
-| 官方接口 | 作用域 | Link 设计 |
+| 资料或接口 | 当前证据 | Link 设计 |
 | --- | --- | --- |
-| `/assets/*` | 当前 V2 relay 素材；按 API Key 用户隔离 | `relay_assets`，服务 `seedance-2-0-oversea` |
-| `/v1/ark/assets/*` | 历史 Ark 素材、分组和 H5 真人认证 | `ark_assets`，只服务经重新验证的历史 Ark 模型 |
+| `/assets/*` | 当前 V2 relay 素材；按 API Key 用户隔离 | 两个当前 SKU 各自使用独立账号作用域的 `relay_assets` |
+| doubao V2 `reference_images + asset://` | 只描述生成请求消费素材库引用 | 不推断素材 CRUD、真人授权或与其它素材 profile 互操作 |
+| `/v1/ark/assets/*` | 原配套参考文档已改版，当前不再提供接口、分组或 H5 合同 | 不创建新 `ark_assets` binding；仅解释完整冻结的历史事实 |
 | `/joycreator/openApi/v1/asset/*` | JoyCreator 管理 facade | management-only，不参与视频候选和 Resolver |
 
-同一个 Provider 提供这些端点不表示素材 ID、凭据作用域或生命周期可以互换。
+资料位于同一目录、模型都接受 `asset://` 或历史页面曾互相链接，均不表示素材 ID、凭据作用域或
+生命周期可以互换。
 
 ## 3. 当前 V2 relay 解析链
 
@@ -37,7 +39,7 @@ flowchart LR
     Binding --> Fence["implementation / channel / credential fingerprint"]
     Fence --> Ref["asset://upstream_id 或 asset://uuid"]
     Ref --> Converter["image / end_image / reference_images[]"]
-    Converter --> Moxing["墨行 V2"]
+    Converter --> Moxing["Moxing / TokenSave V2"]
 ```
 
 `RelayAdapter` 创建素材时调用 `POST /assets`，查询 `GET /assets/{uuid}`，并把 `Active` 记录的
@@ -49,8 +51,8 @@ flowchart LR
 
 - 客户 source 只接受符合平台安全策略的公网 HTTPS URL；官方接口支持图片 base64 不代表 Link
   AssetSource 也接受或持久化 base64；
-- V2 relay 可处理 Image、Video、Audio 素材，但当前视频 SKU capability 只开放实际请求转换支持的
-  图片引用；素材类型存在不等于某个 SKU 可消费；
+- V2 relay 素材接口可能处理 Image、Video、Audio，但两个当前视频 SKU capability 都只开放本次
+  请求转换已证明的图片引用；营销能力或素材类型存在不等于 SKU 可消费；
 - `Pending/Processing/Active/Failed` 分别归一为 processing/processing/active/failed；
 - 只有 active 且作用域匹配的 binding 才能用于 Provider 请求；
 - 更新名称和删除是 Provider lifecycle 操作，不改变平台 `ast_*` 身份；
@@ -75,9 +77,13 @@ V2 官方资料明确素材归属绑定 API Key 用户。因此 binding 必须�
 `asset_kind=general`。因此当前 V2 implementation 必须只声明 `general`，不能因为资料写到“人像库
 参考”就把普通 relay asset 提升为平台 `real_person`。
 
-历史 Ark 线路支持图片型真人素材和 H5 认证，但它只与 `dreamina` Ark 模型及相同账号作用域协作。
-Ark 真人 binding 不能被当前 V2 `seedance-2-0-oversea` 复用。若将来墨行 V2 提供等价真人授权合同，
-必须新增 implementation/capability 版本并验证撤回线性化、在途 reservation、删除和内容回源。
+改版后的“海外官 Key 真人素材库”正文只描述 doubao V2 生成任务和参考素材消费，不再提供 Ark 素材
+创建、H5 认证、callback、group 或撤回语义。历史 `dreamina` 模型页仍保留这些旧说法，但其配套链接
+已不能证明具体合同。因此不得创建新的 Ark 真人 binding；若部署中已有完整冻结事实，只能由对应
+历史 implementation 解释，且不能被两个当前 V2 SKU 复用。
+
+若将来任一 V2 或 Ark 线路重新提供可验证的真人授权合同，必须新增 implementation/capability 版本，
+并验证撤回线性化、在途 reservation、删除、内容回源和精确 Provider 账号作用域。
 
 ## 6. 请求级媒体与 Link 资源
 
@@ -107,9 +113,9 @@ JoyCreator facade 的素材组 `id`、业务 `groupId/assetId`、`vendorUrl` 和
 ## 8. 不变量
 
 1. 客户只持有 `ast_*`，所有墨行素材标识都停留在内部 binding。
-2. V2 relay、历史 Ark 和 JoyCreator 素材不能跨 profile 复用。
-3. 当前 V2 只允许 general Link 资源，不发布 real_person。
+2. Moxing V2、TokenSave V2、未重新取证的历史 Ark 和 JoyCreator 素材不能跨
+   implementation/账号/profile 复用。
+3. 当前 V2 只允许 general Link 资源，不发布 real_person；Ark 不创建新 binding。
 4. `Active`、凭据作用域和 implementation 围栏必须在选渠与发送前同时成立。
 5. Provider 支持某种素材类型不自动扩张公开 SKU 媒体能力。
 6. Converter 不解析 Link 资源，Resolver 不修改客户模型或计费合同。
-

@@ -183,33 +183,6 @@ func generateAssetPublicID(prefix string) (string, error) {
 	return prefix + key, nil
 }
 
-func GetAssetByPublicID(userID int, publicID string) (*Asset, error) {
-	var asset Asset
-	err := DB.Where("user_id = ? AND public_id = ? AND deleted_at = ?", userID, strings.TrimSpace(publicID), 0).First(&asset).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	projected := []Asset{asset}
-	if err := ProjectAssetStatuses(projected, common.GetTimestamp()); err != nil {
-		return nil, err
-	}
-	return &projected[0], nil
-}
-
-func ListAssetsByUser(userID, offset, limit int, filters ...AssetListFilter) ([]Asset, int64, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
-	filter := AssetListFilter{}
-	if len(filters) > 0 {
-		filter = filters[0]
-	}
-	return listAssetsWithProjectedStatus(DB.Model(&Asset{}).Where("user_id = ? AND deleted_at = ?", userID, 0), offset, limit, filter)
-}
-
 func countUserAssets(tx *gorm.DB, userID int) (int64, error) {
 	query := tx.Model(&Asset{}).Where("user_id = ? AND deleted_at = ?", userID, 0)
 	var count int64
@@ -223,23 +196,6 @@ func ListAssetBindings(userID int, assetID int64) ([]AssetBinding, error) {
 	var bindings []AssetBinding
 	err := DB.Where("user_id = ? AND asset_id = ?", userID, assetID).Order("id desc").Find(&bindings).Error
 	return bindings, err
-}
-
-func LoadAssetsForReference(userID int, publicIDs []string) ([]Asset, error) {
-	if len(publicIDs) == 0 {
-		return nil, nil
-	}
-	var assets []Asset
-	if err := DB.Where("user_id = ? AND public_id IN ? AND deleted_at = ?", userID, publicIDs, 0).Find(&assets).Error; err != nil {
-		return nil, err
-	}
-	if len(assets) != len(publicIDs) {
-		return nil, gorm.ErrRecordNotFound
-	}
-	if err := ProjectAssetStatuses(assets, common.GetTimestamp()); err != nil {
-		return nil, err
-	}
-	return assets, nil
 }
 
 func ActiveBindingsForAssets(assetIDs []int64) ([]AssetBinding, error) {

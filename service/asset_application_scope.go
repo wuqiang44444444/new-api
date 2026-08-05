@@ -10,8 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// RenameAssetForApp is the app-scoped variant used by the Link resource API contract.
-// RenameAsset remains untouched for internal legacy callers.
+// RenameAssetForApp enforces the Link resource ownership boundary.
 func RenameAssetForApp(userID, appID int, publicID, name string) (*model.Asset, error) {
 	asset, err := model.GetAssetByPublicIDForApp(userID, appID, publicID)
 	if err != nil || asset == nil {

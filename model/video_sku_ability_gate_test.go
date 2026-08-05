@@ -12,16 +12,30 @@ import (
 func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 	feicai := &Channel{
 		Type:         constant.ChannelTypeDoubaoVideo,
-		Models:       VideoSKUSeedance20Standard720P,
+		Models:       VideoSKUSeedance20Value1080P,
 		Status:       common.ChannelStatusEnabled,
-		ModelMapping: common.GetPointer(`{"seedance-2.0-standard-720p":"seedance-2.0-vip-720p-azhw"}`),
+		ModelMapping: common.GetPointer(`{"seedance-2.0-value-1080p":"seedance-2.0-933-1080p-azhw-feicai"}`),
 	}
 	feicai.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProfile:    dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		VideoUpstreamCreatePath: "/v1/videos", VideoUpstreamQueryPathTemplate: "/v1/videos/{task_id}",
-		LinkImplementation: dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV1},
+		LinkImplementation: dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV2},
 	})
 	require.NoError(t, ValidateLinkSKUAbilityBindings(feicai))
+	require.ErrorContains(t, ValidateLinkSKUAbilityPublicationReadiness(feicai), "no verified provider ratio/size evidence")
+
+	originalFeicai := videoSKUCapabilities[VideoSKUSeedance20Value1080P]
+	verifiedFeicai := originalFeicai
+	verifiedFeicai.Ratios = []string{"16:9"}
+	verifiedFeicai.ContentHash = videoSKUCapabilityHash(verifiedFeicai)
+	videoSKUCapabilities[VideoSKUSeedance20Value1080P] = verifiedFeicai
+	originalImplementationHash := videoSKUImplementationHashes[VideoSKUSeedance20Value1080P]
+	videoSKUImplementationHashes[VideoSKUSeedance20Value1080P] = verifiedFeicai.ContentHash
+	t.Cleanup(func() {
+		videoSKUCapabilities[VideoSKUSeedance20Value1080P] = originalFeicai
+		videoSKUImplementationHashes[VideoSKUSeedance20Value1080P] = originalImplementationHash
+	})
+	require.NoError(t, ValidateLinkSKUAbilityPublicationReadiness(feicai))
 
 	feicai.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProfile: dto.VideoUpstreamProfileOfficial,
@@ -39,6 +53,7 @@ func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 		LinkImplementation:   dto.LinkImplementationRef{ID: LinkImplementationBytePlusSeedanceArk, Version: LinkImplementationVersionV1},
 	})
 	require.NoError(t, ValidateLinkSKUAbilityBindings(bytePlus))
+	require.NoError(t, ValidateLinkSKUAbilityPublicationReadiness(bytePlus))
 	bytePlusCapability, ok := ResolveVideoSKUCapability(VideoSKUSeedanceBytePlus)
 	require.True(t, ok)
 	require.True(t, bytePlusCapability.SupportsProfile(""))
@@ -58,7 +73,7 @@ func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 		VideoUpstreamProfile:    dto.VideoUpstreamProfileThirdPartyRelay,
 		AssetUpstreamProfile:    dto.AssetUpstreamProfileRelay,
 		VideoUpstreamCreatePath: "/v1/media/generations", VideoUpstreamQueryPathTemplate: "/v1/media/tasks/{task_id}",
-		LinkImplementation: dto.LinkImplementationRef{ID: LinkImplementationTokenSaveSeedance, Version: LinkImplementationVersionV1},
+		LinkImplementation: dto.LinkImplementationRef{ID: LinkImplementationTokenSaveSeedance, Version: LinkImplementationVersionV2},
 	})
 	require.NoError(t, ValidateLinkSKUAbilityBindings(doubao))
 	doubaoCapability, ok := ResolveVideoSKUCapability(VideoSKUDoubaoSeedance20260128)
@@ -86,7 +101,7 @@ func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 	overseaCapability, ok := ResolveVideoSKUCapability(VideoSKUSeedance20Oversea)
 	require.True(t, ok)
 	require.True(t, overseaCapability.SupportsProfile(VideoProfileThirdPartyRelay))
-	require.True(t, overseaCapability.SupportsProfile(VideoProfileThirdPartyReverse))
+	require.False(t, overseaCapability.SupportsProfile(VideoProfileThirdPartyReverse))
 	require.False(t, overseaCapability.Lifecycle.SupportsCancelQueued)
 	require.False(t, overseaCapability.Lifecycle.SupportsDelete)
 	moxingArk := &Channel{
@@ -101,7 +116,7 @@ func TestVideoSKUImplementationEquivalenceIncludesLifecycleAndRequestLimits(t *t
 	require.True(t, ok)
 	implementation, ok := ResolveVideoSKUImplementationCapability(
 		public.PublicModel,
-		dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV1},
+		dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV2},
 	)
 	require.True(t, ok)
 	require.True(t, VideoSKUCapabilitiesEquivalent(public, implementation))
@@ -126,7 +141,7 @@ func TestVideoSKUImplementationEquivalenceIncludesLifecycleAndRequestLimits(t *t
 	require.True(t, ok)
 	implementation, ok = ResolveVideoSKUImplementationCapability(
 		public.PublicModel,
-		dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV1},
+		dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV2},
 	)
 	require.True(t, ok)
 	require.False(t, VideoSKUCapabilitiesEquivalent(public, implementation))

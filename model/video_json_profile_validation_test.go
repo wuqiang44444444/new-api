@@ -24,7 +24,7 @@ func TestValidateJSONVideoMediaArraysChannelPublishesOnlyEquivalentSKUs(t *testi
 
 	require.Error(t, validateJSONVideoMediaArraysChannel(&Channel{
 		Type:    constant.ChannelTypeDoubaoVideo,
-		Models:  "seedance-2.0-vip-720p-azhw",
+		Models:  "seedance-2.0-vip-720p-azhw-feicai",
 		BaseURL: &httpsBaseURL,
 	}, settings))
 

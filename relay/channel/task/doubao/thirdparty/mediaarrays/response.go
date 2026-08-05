@@ -55,7 +55,7 @@ func TaskResponse(body []byte, expectedTaskID string, responseContext TaskRespon
 	switch response.Status {
 	case "queued":
 		result["status"] = "queued"
-	case "processing":
+	case "processing", "in_progress":
 		result["status"] = "running"
 	case "completed":
 		videoURL, err := relaycommon.ValidateSameOriginHTTPSVideoResultURL(response.VideoURL, responseContext.BaseURL)

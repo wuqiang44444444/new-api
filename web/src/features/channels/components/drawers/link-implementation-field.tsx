@@ -53,6 +53,9 @@ import type { LinkModelPublication } from '../../types'
 import { LinkPublicationRebindDialog } from '../dialogs/link-publication-rebind-dialog'
 
 const NO_LINK_IMPLEMENTATION = '__none__'
+const linkAccessPlanSelectContentClass = 'w-[460px] max-w-[calc(100vw-2rem)]'
+const linkAccessPlanSelectItemClass =
+  'items-start py-2 [&_[data-slot=select-item-text]]:min-w-0 [&_[data-slot=select-item-text]]:shrink [&_[data-slot=select-item-text]]:whitespace-normal'
 
 interface LinkImplementationFieldProps {
   control: Control<ChannelFormValues>
@@ -227,7 +230,10 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
                   <SelectValue placeholder={t('Select Link access plan')} />
                 </SelectTrigger>
               </FormControl>
-              <SelectContent alignItemWithTrigger={false}>
+              <SelectContent
+                alignItemWithTrigger={false}
+                className={linkAccessPlanSelectContentClass}
+              >
                 <SelectGroup>
                   <SelectItem value={NO_LINK_IMPLEMENTATION}>
                     {t('No Link access plan')}
@@ -236,9 +242,12 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
                     <SelectItem
                       key={`${implementation.id}/${implementation.version}`}
                       value={implementation.id}
+                      className={linkAccessPlanSelectItemClass}
                     >
-                      {implementation.provider} · {implementation.id}/
-                      {implementation.version}
+                      <span className='min-w-0 leading-snug break-words whitespace-normal'>
+                        {implementation.provider} · {implementation.id}/
+                        {implementation.version}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectGroup>

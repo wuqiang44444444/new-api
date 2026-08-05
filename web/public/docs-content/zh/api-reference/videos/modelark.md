@@ -1,7 +1,7 @@
 ---
 page-id: videos-modelark
 kind: api-reference
-last-verified: 2026-08-02
+last-verified: 2026-08-05
 operations:
   - createModelArkVideoTask
   - listModelArkVideoTasks
@@ -35,7 +35,7 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 
 `model` 和非空 `content` 必填。`content` 可包含该模型支持的文本与媒体 URL 条目。`duration`、`resolution`、`ratio`、音频、草稿和服务档位等可选字段必须以当前模型能力为准。
 
-## doubao Seedance 2.0
+## 墨行 doubao Seedance 2.0
 
 `doubao-seedance-2-0-260128` 只使用已登记的 TokenSave relay 实现，不会路由到 FunCloud。
 
@@ -47,6 +47,20 @@ TokenSave V2 `/v1/media/generations` 合同，无需也不应把模型映射为 
 因此本平台暂不发布视频或音频参考输入；未支持的媒体会返回 `400 unsupported_parameter`。
 `generate_audio` 用于控制输出视频是否带音频。上游合同可在
 [TokenSave 模型页](https://tokensave.pro/docs/models/doubao-seedance-2-0-260128)核对。
+
+当前 4 秒 480p 文生黑盒已验证创建、成功轮询、MP4 下载和 Range；终态 `result` 为对象且未返回
+`usage`。图片场景、其它分辨率、智能时长和 Provider 账单仍未闭合，因此本地渠道保持禁用，实际
+可用性以模型列表为准。
+
+## 墨行 Seedance 2.0 海外版
+
+`seedance-2-0-oversea` 当前只绑定墨行 V2 relay。请求必须包含非空文本，并显式传入 4～15 或 `-1`
+秒、`480p`/`720p` 分辨率和画幅。支持文生视频、单首帧、首尾帧和参考图；参考图与首尾帧互斥。
+音频/视频输入、watermark、seed、camera_fixed、真人素材和 last-frame 结果未发布。生产结果与 usage
+证据闭合前渠道保持禁用，实际可用性以模型列表为准。
+
+墨行当前只包含本节与上一节的两个模型；后续列出的 FunCloud、飞彩等 SKU 属于独立 Provider，
+不会作为墨行线路的兼容或降级实现。
 
 ## Seedance 2.0 可变分辨率 SKU
 
@@ -60,20 +74,12 @@ Fast 支持 480p/720p；时长均为显式 4～15 秒，不支持 `-1`。两者�
 `bytedToken`、material ID 或上游 `asset://asset-*`。渠道未完成生产验收或 Ability 未启用时，
 模型会按无可用等价渠道 fail closed。
 
-## Seedance 2.0 固定分辨率 SKU
+## 飞彩 Seedance 2.0 固定分辨率 SKU
 
-公开模型为 `seedance-2.0-standard-720p` 和 `seedance-2.0-value-720p`。它们的分辨率由模型名
-固定为 720p，`resolution` 省略或传 `720p`；时长为
-4～15 秒（默认 4），当前只发布经过协议资料确认的 `16:9`、`9:16`（默认 `16:9`）。
-
-这两个 SKU 要求至少一个非空文本项，支持最多 9 张 `reference_image` 和 3 段
-`reference_audio`，不支持参考视频、`first_frame` 或 `last_frame`。普通 `general` 图片和音频
-可以使用 `asset://`，但不能和请求级 URL 混用；音频不能单独使用。`generate_audio` 只能省略或传 `false`，回调、服务档位、草稿、水印、seed
-和帧数等高级字段不支持。无效字段或组合返回 `400 unsupported_parameter`。
-
-上述固定 SKU 约束同时发布在 OpenAPI
-`ModelArkVideoCreateRequest.x-fixed-seedance-2-capability` 中，便于 SDK 和工具机器读取。
-平台会将它与运行时 SKU 能力逐值校验；当两者不一致时，发布检查会失败。
+飞彩 v2 的 10 个 SKU 已完成代码侧身份、媒体上限和按秒/按次计费模式登记，但逐模型 HTTPS、权限、
+像素 size、成功任务、内容与账单证据尚未全部闭合。它们当前不在公开 OpenAPI 或模型列表中发布，
+渠道保持禁用。调用方不得根据研究示例猜测默认时长、画幅或价格；每个模型完成独立验收后才会逐项
+开放。
 
 模型明确支持时，普通图片或音频可以使用请求级公网 HTTP(S) URL，受支持的图片还可使用 Base64
 Data URL；它们不会自动进入平台素材库。需要平台复用、渠道绑定或授权治理的素材使用
@@ -121,9 +127,8 @@ curl "{{OPENAI_BASE_URL}}/videos/video-task-placeholder/content" \
 能力取决于公开模型/SKU；上游不支持取消或删除时会返回明确的 409 错误，不会伪装操作成功。
 删除是不可逆操作；调用前应在业务侧确认目标 ID，并妥善处理已经下载的副本。
 
-上述两个固定 720p SKU 第一阶段只支持本地列表、任务查询和内容下载：排队任务返回
-`409 cancellation_unsupported`，运行中返回 `409 task_running`，终态任务返回
-`409 delete_unsupported`，平台不会伪装取消或删除成功。
+飞彩 v2 的 10 个固定分辨率 SKU 当前尚未发布，不得依赖历史两个 720p 合同的取消或删除语义。
+模型发布后仍必须以当时 capability 与服务端 409 错误为准，平台不会伪装取消或删除成功。
 
 ## 计费与重试
 

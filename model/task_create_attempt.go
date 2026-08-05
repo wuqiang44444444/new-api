@@ -79,6 +79,7 @@ type TaskCreateAttempt struct {
 }
 
 type TaskCreateAttemptParams struct {
+	IdempotencyID             int64
 	PublicTaskID              string
 	UserID                    int
 	TokenID                   int
@@ -158,7 +159,13 @@ func CreatePreparedTaskAttempt(params TaskCreateAttemptParams) (*TaskCreateAttem
 		CreatedAt:                now,
 		UpdatedAt:                now,
 	}
-	if err := DB.Create(attempt).Error; err != nil {
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(attempt).Error; err != nil {
+			return err
+		}
+		return bindTaskCreateIdempotencyAttempt(tx, params.IdempotencyID, attempt.AttemptID)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return attempt, nil
@@ -197,7 +204,7 @@ func GetTaskCreateAttemptsDue(now int64, limit int) []*TaskCreateAttempt {
 	}
 	var attempts []*TaskCreateAttempt
 	err := DB.Where("status IN ? AND next_attempt_at > ? AND next_attempt_at <= ?",
-		[]TaskCreateAttemptStatus{TaskCreateAttemptSending, TaskCreateAttemptUnknown, TaskCreateAttemptUpstreamSucceeded},
+		[]TaskCreateAttemptStatus{TaskCreateAttemptPrepared, TaskCreateAttemptSending, TaskCreateAttemptUnknown, TaskCreateAttemptUpstreamSucceeded},
 		0,
 		now,
 	).Order("next_attempt_at, id").Limit(limit).Find(&attempts).Error
@@ -211,7 +218,7 @@ func HasTaskCreateAttemptWork(now int64) bool {
 	var id int64
 	err := DB.Model(&TaskCreateAttempt{}).
 		Where("status IN ? AND next_attempt_at > ? AND next_attempt_at <= ?",
-			[]TaskCreateAttemptStatus{TaskCreateAttemptSending, TaskCreateAttemptUnknown, TaskCreateAttemptUpstreamSucceeded},
+			[]TaskCreateAttemptStatus{TaskCreateAttemptPrepared, TaskCreateAttemptSending, TaskCreateAttemptUnknown, TaskCreateAttemptUpstreamSucceeded},
 			0,
 			now,
 		).

@@ -75,21 +75,21 @@ func TestTokenSaveDoubaoInsufficientQuotaIsTerminalRejection(t *testing.T) {
 	)
 }
 
-func TestFeicaiAccountRequiredIsTerminalRejection(t *testing.T) {
+func TestFeicaiV2AccountRequiredRemainsUnknownWithoutExactContract(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		OriginModelName: model.VideoSKUSeedance20Value720P,
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelOtherSettings: dto.ChannelOtherSettings{
 				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 				LinkImplementation: dto.LinkImplementationRef{
-					ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV1,
+					ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV2,
 				},
 			},
 		},
 	}
 
 	assert.Equal(t,
-		relaycommon.TaskCreateTerminalRejection,
+		relaycommon.TaskCreateOutcomeUnknown,
 		taskCreateHTTPDisposition(info, http.StatusForbidden, "feicai_account_required"),
 	)
 	assert.Equal(t,

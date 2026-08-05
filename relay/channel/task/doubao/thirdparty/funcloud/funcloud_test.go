@@ -2,6 +2,7 @@ package funcloud
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -37,12 +38,13 @@ func TestCreateRequestInjectsFixedDefaultsAndPreservesFalseAndZero(t *testing.T)
 	assert.NotContains(t, output, "model")
 }
 
-func TestCreateResponseClassifiesOnlyKnownRejections(t *testing.T) {
-	_, err := CreateResponse([]byte(`{"code":10002,"msg":"bad","data":{}}`))
-	assert.True(t, IsTerminalCreateRejection(err))
-
-	_, err = CreateResponse([]byte(`{"code":19999,"msg":"unknown","data":{}}`))
-	assert.False(t, IsTerminalCreateRejection(err))
+func TestCreateResponseKeepsAllApplicationErrorsAmbiguous(t *testing.T) {
+	for _, code := range []int{10002, 10005, 10006, 30003, 90003, 19999} {
+		_, err := CreateResponse([]byte(fmt.Sprintf(`{"code":%d,"msg":"provider error","data":{}}`, code)))
+		var createErr *CreateError
+		require.ErrorAs(t, err, &createErr)
+		assert.Equal(t, code, createErr.Code)
+	}
 
 	body, err := CreateResponse([]byte(`{"code":0,"msg":"success","data":{"taskId":"task_1","status":"processing"}}`))
 	require.NoError(t, err)
@@ -73,6 +75,9 @@ func TestTaskResponseNormalizesAndRejectsContractConflicts(t *testing.T) {
 
 	_, err = TaskResponse([]byte(`{"code":0,"data":{"taskId":"task_1","status":"success","result":["https://cdn.example/a.mp4","https://cdn.example/b.mp4"]}}`), "task_1")
 	assert.True(t, errors.As(err, &violation))
+
+	_, err = TaskResponse([]byte(`{"code":90003,"msg":"server internal error","data":{}}`), "task_1")
+	assert.True(t, errors.As(err, &violation))
 }
 
 func TestSanitizeProviderTextPreservesUTF8WhenTruncated(t *testing.T) {
@@ -89,7 +94,7 @@ func TestCreateRequestRejectsUnresolvedAssetsAndMediaBeyondContract(t *testing.T
 		Model: model.VideoSKUSeedance20Standard,
 		Content: []dto.ModelArkVideoContent{
 			{Type: "text", Text: &prompt},
-			{Type: "image_url", ImageURL: &dto.VideoMediaURL{URL: "asset://ast_01234567890123456789012345678901"}},
+			{Type: "image_url", Role: common.GetPointer("reference_image"), ImageURL: &dto.VideoMediaURL{URL: "asset://ast_01234567890123456789012345678901"}},
 		},
 	}
 	_, err := CreateRequest(request, capability)
@@ -97,8 +102,47 @@ func TestCreateRequestRejectsUnresolvedAssetsAndMediaBeyondContract(t *testing.T
 
 	request.Content = []dto.ModelArkVideoContent{{Type: "text", Text: &prompt}}
 	for i := 0; i < 4; i++ {
-		request.Content = append(request.Content, dto.ModelArkVideoContent{Type: "image_url", ImageURL: &dto.VideoMediaURL{URL: "https://cdn.example/image.png"}})
+		request.Content = append(request.Content, dto.ModelArkVideoContent{Type: "image_url", Role: common.GetPointer("reference_image"), ImageURL: &dto.VideoMediaURL{URL: "https://cdn.example/image.png"}})
 	}
 	_, err = CreateRequest(request, capability)
 	require.Error(t, err)
+}
+
+func TestCreateRequestRejectsMediaOutsideFunCloudContract(t *testing.T) {
+	capability, ok := model.ResolveVideoSKUCapability(model.VideoSKUSeedance20Standard)
+	require.True(t, ok)
+	prompt := "product"
+
+	tests := []struct {
+		name  string
+		media dto.ModelArkVideoContent
+	}{
+		{
+			name:  "image role",
+			media: dto.ModelArkVideoContent{Type: "image_url", Role: common.GetPointer("reference_video"), ImageURL: &dto.VideoMediaURL{URL: "https://cdn.example/image.png"}},
+		},
+		{
+			name:  "video role",
+			media: dto.ModelArkVideoContent{Type: "video_url", Role: common.GetPointer("reference_image"), VideoURL: &dto.VideoMediaURL{URL: "https://cdn.example/video.mp4"}},
+		},
+		{
+			name:  "audio role",
+			media: dto.ModelArkVideoContent{Type: "audio_url", Role: common.GetPointer("reference_image"), AudioURL: &dto.VideoMediaURL{URL: "https://cdn.example/audio.mp3"}},
+		},
+		{
+			name:  "plain HTTP",
+			media: dto.ModelArkVideoContent{Type: "image_url", Role: common.GetPointer("reference_image"), ImageURL: &dto.VideoMediaURL{URL: "http://cdn.example/image.png"}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := &dto.ModelArkVideoCreateRequest{
+				Model:   model.VideoSKUSeedance20Standard,
+				Content: []dto.ModelArkVideoContent{{Type: "text", Text: &prompt}, test.media},
+			}
+			_, err := CreateRequest(request, capability)
+			require.Error(t, err)
+		})
+	}
 }

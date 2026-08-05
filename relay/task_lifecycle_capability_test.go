@@ -9,7 +9,7 @@ import (
 
 func TestTaskLifecycleUsesFrozenSKUCapability(t *testing.T) {
 	task := &model.Task{PrivateData: model.TaskPrivateData{
-		SKUCapabilityVersion: model.VideoSKUCapabilityVersionAZHWV1,
+		SKUCapabilityVersion: model.VideoSKUCapabilityVersionFeicaiV2,
 		SKULifecycle: model.VideoSKULifecycleCapability{
 			SupportsContent: true,
 		},

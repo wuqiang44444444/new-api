@@ -7,6 +7,15 @@ const projectRoot = path.resolve(
   '..'
 )
 const html = await readFile(path.join(projectRoot, 'dist/index.html'), 'utf8')
+
+if (!html.includes('<title>TokenAI</title>')) {
+  throw new Error('Branding validation failed: initial title is not TokenAI')
+}
+
+if (!/<meta\s+name="title"\s+content="TokenAI"\s*\/>/.test(html)) {
+  throw new Error('Branding validation failed: meta title is not TokenAI')
+}
+
 const iconLinks = html.match(
   /<link\b[^>]*\brel=["'][^"']*icon[^"']*["'][^>]*>/gi
 )

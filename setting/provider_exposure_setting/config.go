@@ -6,7 +6,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/config"
 )
 
-const defaultMonitoredImplementations = "byteplus.seedance-ark/v1,moxing.seedance-media-task/v1,moxing.seedance-ark-assets/v1,tokensave.seedance-media-task/v1,feicai.seedance-videos/v1,funcloud.seedance-json/v1,moxing.images.media-task/v1,qihang.images.openai-compatible/v1,kling.videos-official/v1,jimeng.videos-official/v1"
+const defaultMonitoredImplementations = "byteplus.seedance-ark/v1,moxing.seedance-media-task/v2,tokensave.seedance-media-task/v1,tokensave.seedance-media-task/v2,feicai.seedance-videos/v2,funcloud.seedance-json/v1,moxing.images.media-task/v1,qihang.images.openai-compatible/v1,kling.videos-official/v1,jimeng.videos-official/v1"
 
 // PolicySetting controls the provider-cost exposure circuit breaker. Thresholds
 // set to zero are disabled. The default intentionally pages and pauses the

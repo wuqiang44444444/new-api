@@ -25,7 +25,7 @@ func TestModelArkVideoCreateConvertHashesAndRemovesEndUserSubject(t *testing.T) 
 	engine.POST("/api/v3/contents/generations/tasks", func(c *gin.Context) {
 		c.Set("token_id", 321)
 		c.Next()
-	}, ModelArkVideoCreateConvert(), func(c *gin.Context) {
+	}, ModelArkVideoCreateConvert(), ResolveVideoSKUCapability(), func(c *gin.Context) {
 		contract, ok := relaycommon.GetVideoContractRequest(c)
 		require.True(t, ok)
 		require.NotNil(t, contract.ModelArk)
@@ -36,7 +36,7 @@ func TestModelArkVideoCreateConvertHashesAndRemovesEndUserSubject(t *testing.T) 
 		c.Status(http.StatusNoContent)
 	})
 	request := httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{
-		"model":"seedance-model",
+		"model":"seedance-2.0-standard",
 		"end_user_subject":"customer-42",
 		"content":[{"type":"text","text":"make a video"}]
 	}`))
@@ -266,7 +266,7 @@ func TestModelArkVideoChannelConstraintFiltersNonEquivalentProfile(t *testing.T)
 
 	channels := []model.Channel{
 		{Name: "official", Type: constant.ChannelTypeDoubaoVideo, Status: common.ChannelStatusEnabled, Key: "official", Models: model.VideoSKUSeedanceBytePlus, OtherSettings: `{"video_upstream_profile":"official","asset_upstream_profile":"official_action_assets","link_implementation":{"id":"byteplus.seedance-ark","version":"v1"}}`},
-		{Name: "relay", Type: constant.ChannelTypeDoubaoVideo, Status: common.ChannelStatusEnabled, Key: "relay", Models: model.VideoSKUDoubaoSeedance20260128, OtherSettings: `{"video_upstream_profile":"third_party_relay","video_upstream_create_path":"/v1/media/generations","video_upstream_query_path_template":"/v1/media/tasks/{task_id}","asset_upstream_profile":"relay_assets","link_implementation":{"id":"tokensave.seedance-media-task","version":"v1"}}`},
+		{Name: "relay", Type: constant.ChannelTypeDoubaoVideo, Status: common.ChannelStatusEnabled, Key: "relay", Models: model.VideoSKUDoubaoSeedance20260128, OtherSettings: `{"video_upstream_profile":"third_party_relay","video_upstream_create_path":"/v1/media/generations","video_upstream_query_path_template":"/v1/media/tasks/{task_id}","asset_upstream_profile":"relay_assets","link_implementation":{"id":"tokensave.seedance-media-task","version":"v2"}}`},
 	}
 	require.NoError(t, db.Create(&channels).Error)
 

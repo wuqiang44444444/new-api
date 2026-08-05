@@ -21,8 +21,8 @@ func TestRepeatedAssetDeletionDoesNotFinishBeforeBindingsAreDeleted(t *testing.T
 	binding := model.AssetBinding{AssetID: asset.ID, UserID: asset.UserID, ChannelID: 1, CredentialFingerprint: "credential", UpstreamProfile: "relay_assets", UpstreamResourceID: "resource", Status: model.AssetBindingStatusActive}
 	require.NoError(t, model.DB.Create(&binding).Error)
 
-	require.NoError(t, DeleteAsset(context.Background(), asset.UserID, asset.PublicID))
-	require.NoError(t, DeleteAsset(context.Background(), asset.UserID, asset.PublicID))
+	require.NoError(t, DeleteAssetForApp(context.Background(), asset.UserID, asset.AppID, asset.PublicID))
+	require.NoError(t, DeleteAssetForApp(context.Background(), asset.UserID, asset.AppID, asset.PublicID))
 
 	require.NoError(t, model.DB.First(&asset, "id = ?", asset.ID).Error)
 	require.NoError(t, model.DB.First(&binding, "id = ?", binding.ID).Error)
@@ -92,7 +92,7 @@ func TestRemoteCreateResultAfterDeletionStaysInCleanupState(t *testing.T) {
 	watchdog := model.AssetOperationJob{IdempotencyKey: remoteCreateWatchdogKey(binding.ID), Kind: "resolve_unknown_create", AssetID: &asset.ID, BindingID: &binding.ID}
 	require.NoError(t, model.DB.Create(&watchdog).Error)
 
-	require.NoError(t, DeleteAsset(context.Background(), asset.UserID, asset.PublicID))
+	require.NoError(t, DeleteAssetForApp(context.Background(), asset.UserID, asset.AppID, asset.PublicID))
 	require.NoError(t, saveRemoteCreateResult(&asset, &binding, assetadapter.AssetResult{ResourceID: "late-resource", BusinessID: "late-business", Status: "active"}))
 
 	require.NoError(t, model.DB.First(&asset, "id = ?", asset.ID).Error)

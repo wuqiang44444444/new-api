@@ -16,13 +16,13 @@ func TestRenameAssetCreatesAJobForEveryAcceptedRename(t *testing.T) {
 	binding := model.AssetBinding{AssetID: asset.ID, UserID: asset.UserID, ChannelID: 1, CredentialFingerprint: "credential", UpstreamProfile: "relay_assets", UpstreamResourceID: "resource", Status: model.AssetBindingStatusActive}
 	require.NoError(t, model.DB.Create(&binding).Error)
 
-	_, err := RenameAsset(asset.UserID, asset.PublicID, "second")
+	_, err := RenameAssetForApp(asset.UserID, asset.AppID, asset.PublicID, "second")
 	require.NoError(t, err)
 	var firstJob model.AssetOperationJob
 	require.NoError(t, model.DB.First(&firstJob, "kind = ? AND binding_id = ?", "update_binding", binding.ID).Error)
 	require.NoError(t, model.DB.Model(&firstJob).Update("status", model.AssetJobSucceeded).Error)
 
-	_, err = RenameAsset(asset.UserID, asset.PublicID, "third")
+	_, err = RenameAssetForApp(asset.UserID, asset.AppID, asset.PublicID, "third")
 	require.NoError(t, err)
 	var jobs []model.AssetOperationJob
 	require.NoError(t, model.DB.Where("kind = ? AND binding_id = ?", "update_binding", binding.ID).Order("id asc").Find(&jobs).Error)
@@ -36,6 +36,6 @@ func TestRenameAssetWrapsInvalidName(t *testing.T) {
 	asset := model.Asset{UserID: 939, Name: "first", AssetKind: model.AssetKindGeneral, MediaType: "image", Status: model.AssetStatusReady}
 	require.NoError(t, model.DB.Create(&asset).Error)
 
-	_, err := RenameAsset(asset.UserID, asset.PublicID, "   ")
+	_, err := RenameAssetForApp(asset.UserID, asset.AppID, asset.PublicID, "   ")
 	assert.ErrorIs(t, err, ErrInvalidAssetRequest)
 }

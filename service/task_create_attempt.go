@@ -93,7 +93,9 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 	if constant.TaskTimeoutMinutes > 0 {
 		taskDeadlineAt = now.Add(time.Duration(constant.TaskTimeoutMinutes) * time.Minute).Unix()
 	}
+	idempotencyID := int64(common.GetContextKeyInt(c, constant.ContextKeyTaskIdempotencyID))
 	attempt, err := model.CreatePreparedTaskAttempt(model.TaskCreateAttemptParams{
+		IdempotencyID:             idempotencyID,
 		PublicTaskID:              info.PublicTaskID,
 		UserID:                    info.UserId,
 		TokenID:                   info.TokenId,
@@ -126,16 +128,6 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 		TaskDeadlineAt:           taskDeadlineAt,
 	})
 	if err != nil {
-		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
-	}
-	idempotencyID := int64(common.GetContextKeyInt(c, constant.ContextKeyTaskIdempotencyID))
-	if err := model.BindTaskCreateIdempotencyAttempt(idempotencyID, attempt.AttemptID); err != nil {
-		_, _ = model.TransitionTaskCreateAttempt(
-			nil, attempt.ID,
-			model.TaskCreateAttemptPrepared, model.TaskCreateAttemptBillingUnheld,
-			model.TaskCreateAttemptRejected, model.TaskCreateAttemptBillingReleased,
-			map[string]any{"frozen_connection_snapshot": nil},
-		)
 		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
 	hold, holdErr := holdTaskAttemptForBilling(info, attempt.ID)

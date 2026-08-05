@@ -20,7 +20,7 @@ last-reviewed: 2026-08-05
 - [Link 资源合同与解析架构](../../Link资源合同与解析架构.md)。
 
 `status: accepted` 表示合同边界和接入方案已经确定，不表示生产渠道已经开放。当前代码已登记
-`funcloud.seedance-json/v1`、两个 Link SKU、FunCloud v2 adapter 和 `source_url` 素材解析；真实
+`funcloud.seedance-json@v1`、两个 Link SKU、FunCloud v2 adapter 和 `source_url` 素材解析；真实
 Provider 的全部媒体组合、结果回源、计费、错误和真人语义仍须完成生产凭据黑盒验收。
 
 ## 2. Provider 证据与保守边界
@@ -75,7 +75,7 @@ Provider 的全部媒体组合、结果回源、计费、错误和真人语义�
 | 客户接入合同 | `modelark.contents.generations.v3` | 客户路径、DTO、响应、错误和 Task 投影 |
 | 客户模型 publication | `(link, modelark_video, customer_model) -> Link SKU + version` | 客户模型稳定代表哪个 SKU |
 | Link SKU capability | `seedance-2.0-standard`、`seedance-2.0-fast` | 字段、值域、媒体、资源和生命周期能力 |
-| Link implementation | `funcloud.seedance-json/v1` | FunCloud 路径、profile、adapter、解析方式与执行绑定 |
+| Link implementation | `funcloud.seedance-json@v1` | FunCloud 路径、profile、adapter、解析方式与执行绑定 |
 | Channel / Ability | 客户模型、`model_mapping`、Key、分组、价格、优先级、权重 | 当前能否履约，不定义合同身份 |
 
 三种模型身份保持分离：
@@ -84,7 +84,7 @@ Provider 的全部媒体组合、结果回源、计费、错误和真人语义�
 customer_model
   -> channel.model_mapping
   -> provider execution model
-  -> funcloud.seedance-json/v1 execution binding
+  -> funcloud.seedance-json@v1 execution binding
   -> Link SKU
 ```
 
@@ -98,7 +98,7 @@ FunCloud 创建请求本身没有 `model` 字段。这里的 provider execution 
 版本和实现参数不提升为客户合同标识。
 
 ```text
-implementation:        funcloud.seedance-json/v1
+implementation:        funcloud.seedance-json@v1
 contract_id:           modelark.contents.generations.v3
 route_family:          modelark_video
 channel_type:          DoubaoVideo
@@ -231,9 +231,9 @@ publication Link SKU
 | `asset://ast_*` | new-api Link 资源合同 | 是 |
 | `asset://<FunCloud assetId>` | FunCloud 私有素材合同 | 否 |
 
-现有资料没有包含 FunCloud 素材 API 的完整生命周期合同，因此 `funcloud.seedance-json/v1` 不创建、
+现有资料没有包含 FunCloud 素材 API 的完整生命周期合同，因此 `funcloud.seedance-json@v1` 不创建、
 查询或删除 FunCloud 托管素材，也不把 Provider asset ID 保存为 `AssetBinding`。客户提交
-`asset://ast_*` 后，由唯一 Link Resolver 在选渠前验证资源，并在每次 Provider 尝试前解析为受保护
+`asset://ast_*` 后，由唯一 Resolver 在选渠前验证资源，并在每次 Provider 尝试前解析为受保护
 的 HTTPS `source_url`；converter 只接收解析结果。
 
 ### 6.2 解析约束
@@ -389,7 +389,7 @@ Provider 资料推导。
 - 创建 unknown 保持 hold；到期仍无法恢复时释放客户资金并幂等记录 Provider cost exposure；
 - 客户退款和 Provider 可能已发生的成本分账，不得以不退客户额度隐藏平台损失。
 
-Provider exposure 至少按 `channel + Link SKU + funcloud.seedance-json/v1 + profile + reason + window`
+Provider exposure 至少按 `channel + Link SKU + funcloud.seedance-json@v1 + profile + reason + window`
 隔离。策略缺失、过期或预算耗尽时 FunCloud 候选 fail closed。
 
 ## 9. 渠道配置与发布
@@ -404,7 +404,7 @@ FunCloud 渠道保存时必须验证：
 - Standard 只使用 `/api/v2/open/aigc/seedance2-0` 和 Standard execution model；
 - Fast 只使用 `/api/v2/open/aigc/seedance2-0-fast` 和 Fast execution model；
 - `asset_upstream_profile=none`，素材方式只能由 implementation 登记的 `source_url` 获得；
-- 精确选择 `funcloud.seedance-json/v1`，且 exposure、价格和单 Key 配置完整。
+- 精确选择 `funcloud.seedance-json@v1`，且 exposure、价格和单 Key 配置完整。
 
 ### 9.2 发布流程
 
@@ -440,7 +440,7 @@ FunCloud SKU、其它 Provider 私有 SKU、普通 DoubaoVideo 候选或 NEWAPI 
 
 当前代码已经具备：
 
-- 两个 FunCloud SKU capability 和 `funcloud.seedance-json/v1` 显式注册；
+- 两个 FunCloud SKU capability 和 `funcloud.seedance-json@v1` 显式注册；
 - Base URL、Standard/Fast 路径和 query path 的渠道校验；
 - ModelArk 到 FunCloud camelCase JSON 的类型化 converter，并保留显式 `false` / `0`；
 - 创建响应、Standard/Fast 查询状态和结果的统一归一化；
@@ -448,25 +448,26 @@ FunCloud SKU、其它 Provider 私有 SKU、普通 DoubaoVideo 候选或 NEWAPI 
 - `asset://ast_* -> source_url` Resolver，且 converter 拒绝未解析 Asset；
 - Fast `1080p` 拒绝、媒体数量上限和基础合同测试。
 
-### 11.2 代码与本文目标仍需闭合
+### 11.2 已闭合的结构差异
 
-生产开放前至少完成：
+当前代码已经闭合原设计中的三项结构差异：
 
-1. 在 capability 中显式登记图片、视频和音频 role 白名单，不能用空列表表示“接受任意 role”；当前
-   公开入口已有 ModelArk 入站中间件兜底，显式登记用于覆盖内部调用和未来不经过该中间件的路径；
-2. 保持并验证 `end_user_subject` 的平台安全语义：按 App 哈希、从 Provider DTO 移除、绝不进入
-   FunCloud body，且不能被解释为真人能力；若未来改为拒绝，必须在 publication 解析到实际 SKU 后
-   判定，不能仅按客户模型字符串预判；
-3. 删除当前仅按 body 数值 code 判断确定拒绝的跨 SKU 规则；在取得完整
-   `implementation/SKU/path + HTTP status + application code` 证据前，Standard/Fast 均不得自动释放
-   发送后的 hold；
-4. 使用生产 Key 分别验证两个创建路径、所有准备发布的分辨率/画幅、默认值和 3 / 1 / 1 媒体边界；
-5. 验证 `generateAudio`、`watermark`、`seed=0`、`cameraFixed=false` 的真实可观察行为；
-6. 验证 Standard/Fast 状态别名、错误码、结果 URL origin、有效期、Range、重定向和内容回源；
-7. 用故障注入验证断连、坏 JSON、未知 code、ID/状态/结果冲突均进入正确的 unknown 或 reconciliation；
-8. 用真实账单验证按时长、分辨率、视频输入和生成音频的价格维度、失败扣费与退款；
-9. 完成 SQLite、MySQL、PostgreSQL 的 publication、attempt、Task、结算和 exposure 回归；
-10. 保持 `realPersonMode`、Provider 托管素材、回调、批量查询和尾帧能力关闭，直到各自合同完整取证。
+1. capability 显式登记图片、视频和音频 role 白名单，内部调用与公开入口使用同一约束；
+2. `end_user_subject` 按 App 哈希后从类型化 Provider 请求移除，不进入 FunCloud body，也不授予真人能力；
+3. 已删除仅按 FunCloud body 数值 code 判断确定拒绝的跨 SKU 规则。未登记的
+   `implementation/SKU/path + HTTP status + application code` 组合一律保持 create unknown。
+
+### 11.3 仍需生产证据闭合
+
+生产开放前仍须完成：
+
+1. 使用生产 Key 分别验证两个创建路径、所有准备发布的分辨率/画幅、默认值和 3 / 1 / 1 媒体边界；
+2. 验证 `generateAudio`、`watermark`、`seed=0`、`cameraFixed=false` 的真实可观察行为；
+3. 验证 Standard/Fast 状态别名、错误码、结果 URL origin、有效期、Range、重定向和内容回源；
+4. 用故障注入验证断连、坏 JSON、未知 code、ID/状态/结果冲突均进入正确的 unknown 或 reconciliation；
+5. 用真实账单验证按时长、分辨率、视频输入和生成音频的价格维度、失败扣费与退款；
+6. 完成 SQLite、MySQL、PostgreSQL 的 publication、attempt、Task、结算和 exposure 回归；
+7. 保持 `realPersonMode`、Provider 托管素材、回调、批量查询和尾帧能力关闭，直到各自合同完整取证。
 
 ## 12. 验证矩阵
 
@@ -489,7 +490,7 @@ FunCloud SKU、其它 Provider 私有 SKU、普通 DoubaoVideo 候选或 NEWAPI 
 3. 客户模型、Link SKU 和 Provider 执行模型保持分离，publication 是已发布身份权威。
 4. FunCloud 私有路径、Bearer Key、业务 code、asset ID、task ID 和状态外壳不进入客户合同。
 5. Provider 资料未闭合的字段、媒体上限、回调、批量、尾帧和真人能力默认关闭。
-6. `asset://ast_*` 只能由 Link Resolver 解析；FunCloud converter 不读取数据库或处理裸 Asset URI。
+6. `asset://ast_*` 只能由 Resolver 解析；FunCloud converter 不读取数据库或处理裸 Asset URI。
 7. FunCloud 当前只实现 `general + source_url`，不把 Provider 私有素材协议冒充平台 Link 资源合同。
 8. 所有 Provider POST 均先建立 durable attempt，并在资金 hold 与 `sending` 提交后发送。
 9. 创建未知不自动重发，轮询合同违例不直接判失败，退款与 Provider exposure 分账。

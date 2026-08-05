@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"sync"
 	"testing"
@@ -12,8 +13,10 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -94,6 +97,7 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM system_tasks")
 		model.DB.Exec("DELETE FROM asset_operation_jobs")
 		model.DB.Exec("DELETE FROM asset_create_idempotencies")
+		model.DB.Exec("DELETE FROM task_create_idempotencies")
 		model.DB.Exec("DELETE FROM asset_ownership_claims")
 		model.DB.Exec("DELETE FROM asset_group_ownership_claims")
 		model.DB.Exec("DELETE FROM asset_reconciliation_findings")
@@ -252,6 +256,45 @@ func TestTaskBillingOtherFiltersHistoricalOtherRatios(t *testing.T) {
 	assert.NotContains(t, other, "negative")
 	assert.NotContains(t, other, "nan")
 	assert.NotContains(t, other, "inf")
+}
+
+func TestLogTaskConsumptionIncludesTieredBillingEvidence(t *testing.T) {
+	truncate(t)
+	seedUser(t, 301, 1_000_000)
+	seedChannel(t, 302)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
+	ctx.Set("token_name", "task-test-token")
+
+	info := &relaycommon.RelayInfo{
+		UserId:          301,
+		UsingGroup:      "default",
+		OriginModelName: "doubao-seedance-2-0-260128",
+		PriceData: types.PriceData{
+			Quota:          135800,
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		},
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode:   "tiered_expr",
+			ExprString:    `tier("480p", param("_task.duration_seconds") * 67900)`,
+			EstimatedTier: "480p",
+		},
+		ChannelMeta:   &relaycommon.ChannelMeta{ChannelId: 302},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{Action: "generate"},
+	}
+
+	LogTaskConsumption(ctx, info)
+
+	var logEntry model.Log
+	require.NoError(t, model.LOG_DB.Where("model_name = ?", info.OriginModelName).Order("id DESC").First(&logEntry).Error)
+	var other map[string]any
+	require.NoError(t, common.UnmarshalJsonStr(logEntry.Other, &other))
+	assert.Equal(t, "tiered_expr", other["billing_mode"])
+	assert.Equal(t, "480p", other["matched_tier"])
+	assert.NotEmpty(t, other["expr_b64"])
+	assert.Equal(t, "/api/v3/contents/generations/tasks", other["request_path"])
 }
 
 func TestTaskBillingContextPriceDataFiltersMultiplier(t *testing.T) {

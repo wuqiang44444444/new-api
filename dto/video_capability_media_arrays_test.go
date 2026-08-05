@@ -33,4 +33,17 @@ func TestModelArkVideoMediaArraysIncompatibilityValidatesTransportBeforeHold(t *
 		}},
 	}
 	assert.Contains(t, ModelArkVideoMediaArraysIncompatibility(audioData), "data URL is not supported")
+
+	for _, item := range []ModelArkVideoContent{
+		{Type: "audio_url", AudioURL: &VideoMediaURL{URL: "http://media.example.com/reference.mp3"}},
+		{Type: "video_url", VideoURL: &VideoMediaURL{URL: "http://media.example.com/reference.mp4"}},
+	} {
+		request := &ModelArkVideoCreateRequest{Content: []ModelArkVideoContent{item}}
+		assert.Contains(t, ModelArkVideoMediaArraysIncompatibility(request), "https URL")
+	}
+
+	videoAsset := &ModelArkVideoCreateRequest{Content: []ModelArkVideoContent{{
+		Type: "video_url", VideoURL: &VideoMediaURL{URL: "asset://ast_video"},
+	}}}
+	assert.Empty(t, ModelArkVideoMediaArraysIncompatibility(videoAsset))
 }

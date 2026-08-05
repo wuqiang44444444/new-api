@@ -12,9 +12,9 @@ last-reviewed: 2026-08-05
 
 | Provider | 设计入口 | 当前状态 |
 | --- | --- | --- |
-| FunCloud | [国内 Seedance 2.0 模型接入设计](funcloud/FunCloud国内Seedance-2.0模型接入设计.md) | implementation 与两个 SKU 已登记，生产黑盒仍有门禁 |
-| 墨行 | [Seedance 模型接入设计](墨行/README.md) | 当前 V2 与历史 Ark 已隔离；完成能力、素材和账单门禁前不得生产发布 |
-| 飞彩 | [Seedance 全模型接入设计](飞彩/README.md) | 目标只保留全模型 v2；当前两个 720p v1 在部署数据清空后整体移除，不建设双轨 |
+| FunCloud | [国内 Seedance 2.0 模型接入设计](funcloud/FunCloud国内Seedance-2.0模型接入设计.md) | implementation 与 Standard/Fast 已登记，仅 `randy` 验收分组发布 |
+| 墨行 | [Seedance 模型接入设计](墨行/README.md) | relay v2 已与历史 Ark 隔离；渠道禁用，结果、usage 与 Provider 对账门禁未闭合 |
+| 飞彩 | [Seedance 全模型接入设计](飞彩/README.md) | 单轨 v2 与 10 个 SKU 已结构登记；size registry 仅登记 3 个已验证的 16:9 组合，渠道与 Ability 禁用 |
 
 `status: accepted` 表示设计边界已确定，不表示代码、渠道或生产 Ability 已开放。运行时权威仍是代码注册表、publication、Channel/Ability、价格、exposure 策略及真实 Provider 验收结果。
 

@@ -16,6 +16,18 @@ func setupLinkPublicationTestDB(t *testing.T) {
 	t.Helper()
 	previousDB := DB
 	previousType := common.MainDatabaseType()
+	originalCapabilities := make(map[string]VideoSKUCapability, 2)
+	originalImplementationHashes := make(map[string]string, 2)
+	for _, publicModel := range []string{VideoSKUSeedance20Standard720P, VideoSKUSeedance20Value720P} {
+		original := videoSKUCapabilities[publicModel]
+		originalCapabilities[publicModel] = original
+		originalImplementationHashes[publicModel] = videoSKUImplementationHashes[publicModel]
+		verified := original
+		verified.Ratios = []string{"16:9"}
+		verified.ContentHash = videoSKUCapabilityHash(verified)
+		videoSKUCapabilities[publicModel] = verified
+		videoSKUImplementationHashes[publicModel] = verified.ContentHash
+	}
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	DB = db
@@ -23,6 +35,10 @@ func setupLinkPublicationTestDB(t *testing.T) {
 	initCol()
 	require.NoError(t, DB.AutoMigrate(&Channel{}, &Ability{}, &LinkModelPublication{}, &LinkModelPublicationAudit{}))
 	t.Cleanup(func() {
+		for publicModel, capability := range originalCapabilities {
+			videoSKUCapabilities[publicModel] = capability
+			videoSKUImplementationHashes[publicModel] = originalImplementationHashes[publicModel]
+		}
 		DB = previousDB
 		common.SetMainDatabaseType(previousType)
 		initCol()
@@ -33,14 +49,14 @@ func feicaiAliasChannel(customerModel string) *Channel {
 	channel := &Channel{
 		Type: constant.ChannelTypeDoubaoVideo, Models: customerModel, Group: "default",
 		Status:       common.ChannelStatusEnabled,
-		ModelMapping: common.GetPointer(`{"` + customerModel + `":"seedance-2.0-vip-720p-azhw"}`),
+		ModelMapping: common.GetPointer(`{"` + customerModel + `":"seedance-2.0-vip-720p-azhw-feicai"}`),
 	}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProfile:           dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		VideoUpstreamCreatePath:        "/v1/videos",
 		VideoUpstreamQueryPathTemplate: "/v1/videos/{task_id}",
 		LinkImplementation: dto.LinkImplementationRef{
-			ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV1,
+			ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV2,
 		},
 	})
 	return channel
@@ -113,7 +129,7 @@ func TestLinkChannelInsertPublishesAbilityAtomically(t *testing.T) {
 	assert.False(t, availability.RoutingConflict)
 
 	conflicting := feicaiAliasChannel("customer-seedance")
-	conflicting.ModelMapping = common.GetPointer(`{"customer-seedance":"seedance-2.0-933-720p-azhw"}`)
+	conflicting.ModelMapping = common.GetPointer(`{"customer-seedance":"seedance-2.0-933-720p-azhw-feicai"}`)
 	require.ErrorContains(t, conflicting.Insert(), "non-equivalent channel")
 	var persisted Channel
 	assert.ErrorIs(t, DB.First(&persisted, "id = ?", conflicting.Id).Error, gorm.ErrRecordNotFound)
@@ -278,7 +294,7 @@ func TestDirectLinkPublicationMigrationIsConservative(t *testing.T) {
 	alias := feicaiAliasChannel("customer-seedance")
 	require.NoError(t, DB.Create(alias).Error)
 	invalid := feicaiAliasChannel(VideoSKUSeedance20Value720P)
-	invalid.ModelMapping = common.GetPointer(`{"seedance-2.0-value-720p":"seedance-2.0-933-720p-azhw"}`)
+	invalid.ModelMapping = common.GetPointer(`{"seedance-2.0-value-720p":"seedance-2.0-933-720p-azhw-feicai"}`)
 	settings := invalid.GetOtherSettings()
 	settings.VideoUpstreamCreatePath = "/wrong"
 	invalid.SetOtherSettings(settings)

@@ -2361,7 +2361,7 @@
       "post": {
         "summary": "创建 ModelArk 视频任务",
         "deprecated": false,
-        "description": "使用公开 ModelArk v3 合同创建视频任务。Seedance 2.0 固定分辨率 SKU（seedance-2.0-standard-720p、seedance-2.0-value-720p）保持窄能力；seedance-2.0-standard 与 seedance-2.0-fast 是独立的可变分辨率 SKU，两者仅支持普通 Link 资源，不支持真人素材；Fast 仅支持 480p/720p。",
+        "description": "使用公开 ModelArk v3 合同创建视频任务。seedance-2.0-standard 与 seedance-2.0-fast 是独立的可变分辨率 SKU，两者仅支持普通 Link 资源，不支持真人素材；Fast 仅支持 480p/720p。飞彩 v2 固定分辨率 SKU 仍处于逐模型 size 与账单验证阶段，不在本 OpenAPI 中发布。",
         "operationId": "createModelArkVideoTask",
         "tags": [
           "视频生成/ModelArk格式"
@@ -5635,66 +5635,10 @@
           "model",
           "content"
         ],
-        "x-fixed-seedance-2-capability": {
-          "models": {
-            "seedance-2.0-standard-720p": {
-              "resolution": "720p"
-            },
-            "seedance-2.0-value-720p": {
-              "resolution": "720p"
-            }
-          },
-          "min_duration": 4,
-          "max_duration": 15,
-          "default_duration": 4,
-          "allows_automatic_duration": false,
-          "ratios": [
-            "16:9",
-            "9:16"
-          ],
-          "default_ratio": "16:9",
-          "max_images": 9,
-          "max_videos": 0,
-          "max_audio": 3,
-          "image_roles": [
-            "reference_image"
-          ],
-          "audio_roles": [
-            "reference_audio"
-          ],
-          "supports_generate_audio": false,
-          "supports_direct_media": true,
-          "supports_link_assets": true,
-          "supports_mixed_media_paths": false,
-          "reference_modes_exclusive": true,
-          "requires_text": true,
-          "audio_requires_reference_image": true,
-          "unsupported_fields": [
-            "end_user_subject",
-            "callback_url",
-            "service_tier",
-            "watermark",
-            "return_last_frame",
-            "execution_expires_after",
-            "draft",
-            "tools",
-            "safety_identifier",
-            "priority",
-            "frames",
-            "seed",
-            "camera_fixed"
-          ],
-          "lifecycle": {
-            "supports_content": true,
-            "supports_last_frame": false,
-            "supports_cancel_queued": false,
-            "supports_delete": false
-          }
-        },
         "properties": {
           "model": {
             "type": "string",
-            "description": "公开模型 ID。当前 ModelArk v3 SKU 包括 seedance-byteplus、seedance-2-0-oversea、doubao-seedance-2-0-260128、seedance-2.0-standard、seedance-2.0-fast、seedance-2.0-standard-720p、seedance-2.0-value-720p。seedance-2.0-standard 支持 480p/720p/1080p；seedance-2.0-fast 支持 480p/720p；两者仅支持普通 Link 资源，不支持真人素材；末两个为飞彩固定 720p SKU。"
+            "description": "公开模型 ID。当前 ModelArk v3 合同包括 seedance-byteplus、seedance-2-0-oversea、doubao-seedance-2-0-260128、seedance-2.0-standard、seedance-2.0-fast；实际可用性以模型列表和 publication 为准。seedance-2.0-standard 支持 480p/720p/1080p；seedance-2.0-fast 支持 480p/720p；两者仅支持普通 Link 资源，不支持真人素材。飞彩 v2 的 10 个固定分辨率 SKU 尚未完成逐模型发布门禁。"
           },
           "end_user_subject": {
             "type": "string",
@@ -5703,7 +5647,7 @@
           "content": {
             "type": "array",
             "minItems": 1,
-            "description": "模型支持的文本和媒体条目。固定分辨率 Seedance 2.0 SKU 只发布 reference_image/reference_audio，并可使用普通 asset:// Link 资源；seedance-2.0-standard/fast 要求至少一个非空文本，支持文生、图生、参考视频与参考音频，并可使用普通 asset:// Link 资源，但不支持真人素材。具体数量、组合和字段限制以模型 capability 与服务端 4xx 为准。",
+            "description": "模型支持的文本和媒体条目。seedance-2.0-standard/fast 要求至少一个非空文本，支持文生、图生、参考视频与参考音频，并可使用普通 asset:// Link 资源，但不支持真人素材。飞彩 v2 固定分辨率 SKU 尚未公开发布。具体数量、组合和字段限制以模型 capability 与服务端 4xx 为准。",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -5747,22 +5691,22 @@
           },
           "duration": {
             "type": "integer",
-            "description": "视频时长。固定分辨率 Seedance 2.0 SKU 允许 4～15，省略时为 4。"
+            "description": "视频时长。各公开模型的必填性、边界和默认值以模型 capability 与服务端 4xx 为准。"
           },
           "resolution": {
             "type": "string",
-            "description": "输出分辨率。当前固定分辨率 Seedance 2.0 SKU 固定为 720p；可省略，显式值必须为 720p。"
+            "description": "输出分辨率。可选值和必填性由当前已发布模型 capability 决定。"
           },
           "ratio": {
             "type": "string",
-            "description": "画幅。固定分辨率 Seedance 2.0 SKU 只支持 16:9、9:16，省略时为 16:9，不支持 adaptive；具体 Provider 实现仍须覆盖该 SKU 与画幅组合。"
+            "description": "画幅。可选值、默认值与 adaptive 支持由当前已发布模型 capability 决定。"
           },
           "service_tier": {
             "type": "string"
           },
           "generate_audio": {
             "type": "boolean",
-            "description": "是否生成音频。固定分辨率 Seedance 2.0 SKU 只能省略或传 false。"
+            "description": "是否生成音频。是否允许显式 true/false 由当前已发布模型 capability 决定。"
           },
           "watermark": {
             "type": "boolean"

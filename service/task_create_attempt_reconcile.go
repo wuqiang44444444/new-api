@@ -20,6 +20,15 @@ func ReconcileTaskCreateAttempts(ctx context.Context) int {
 			break
 		}
 		switch attempt.Status {
+		case model.TaskCreateAttemptPrepared:
+			rejected, err := model.RejectPreparedTaskCreateAttempt(attempt.ID)
+			if err != nil {
+				logger.LogWarn(ctx, fmt.Sprintf("reject stale prepared task create attempt %s failed: %v", attempt.AttemptID, err))
+				continue
+			}
+			if rejected {
+				processed++
+			}
 		case model.TaskCreateAttemptUpstreamSucceeded:
 			if _, err := model.RecoverTaskCreateAttempt(attempt.ID); err != nil {
 				logger.LogWarn(ctx, fmt.Sprintf("recover task create attempt %s failed: %v", attempt.AttemptID, err))

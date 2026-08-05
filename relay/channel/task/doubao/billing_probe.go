@@ -18,6 +18,9 @@ const modelArkIntelligentDurationBillingSeconds = 15
 // sent upstream. A video input only counts when its URL is non-empty, so an
 // empty placeholder cannot select a cheaper pricing tier.
 func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayInfo) (map[string]any, error) {
+	if info == nil {
+		return nil, fmt.Errorf("relay info is unavailable")
+	}
 	payload, typed, err := a.modelArkContractPayload(c)
 	if err != nil {
 		return nil, errors.Wrap(err, "convert request payload for billing probe failed")
@@ -52,15 +55,28 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 	}
 	durationSeconds := 5
 	capability, hasCapability := model.ResolveVideoSKUCapability(info.OriginModelName)
-	if hasCapability && capability.DefaultDuration > 0 {
-		durationSeconds = capability.DefaultDuration
+	if hasCapability {
+		if capability.DefaultDuration <= 0 && payload.Duration == nil {
+			return nil, fmt.Errorf("duration is required for this model")
+		}
+		if capability.DefaultDuration > 0 {
+			durationSeconds = capability.DefaultDuration
+		}
 	}
 	if payload.Duration != nil {
 		durationSeconds = int(*payload.Duration)
 	}
+	if hasCapability {
+		if durationSeconds == -1 && !capability.AllowsAutomaticDuration {
+			return nil, fmt.Errorf("duration must be between %d and %d", capability.MinDuration, capability.MaxDuration)
+		}
+		if durationSeconds != -1 && (durationSeconds < capability.MinDuration || durationSeconds > capability.MaxDuration) {
+			return nil, fmt.Errorf("duration must be between %d and %d", capability.MinDuration, capability.MaxDuration)
+		}
+	}
 	// ModelArk uses -1 for intelligent duration. Pre-consume against the
-	// provider's maximum possible duration; terminal usage later settles the
-	// actual charge.
+	// provider's maximum possible duration. Only an implementation with verified
+	// terminal usage may later settle below this frozen upper bound.
 	if durationSeconds == -1 {
 		durationSeconds = modelArkIntelligentDurationBillingSeconds
 	}
@@ -82,18 +98,25 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 		"control_mode":     controlMode,
 	}
 	if a.profile == dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays {
-		if !hasCapability || !capability.SupportsProfile(string(a.profile)) || len(capability.Ratios) == 0 {
+		if info.ChannelMeta == nil || info.ChannelOtherSettings.LinkImplementation.Empty() || !hasCapability ||
+			!capability.SupportsProfile(string(a.profile)) {
 			return nil, fmt.Errorf("JSON video media-arrays billing capability is unavailable")
+		}
+		upstreamModel := strings.TrimSpace(info.UpstreamModelName)
+		if upstreamModel == "" {
+			upstreamModel = strings.TrimSpace(payload.Model)
 		}
 		resolution = strings.ToLower(strings.TrimSpace(payload.Resolution))
 		if resolution == "" {
 			resolution = capability.Resolution
 		}
 		ratio := strings.TrimSpace(payload.Ratio)
-		if ratio == "" {
-			ratio = capability.Ratios[0]
-		}
-		size, ok := mediaarrays.ResolveVideoSize(resolution, ratio)
+		size, ok := mediaarrays.ResolveVideoSize(
+			info.ChannelOtherSettings.LinkImplementation,
+			upstreamModel,
+			resolution,
+			ratio,
+		)
 		if !ok {
 			return nil, fmt.Errorf("resolution %q and ratio %q have no verified provider size", resolution, ratio)
 		}
@@ -101,6 +124,8 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 		probe["ratio"] = ratio
 		probe["size"] = size.Value
 		probe["size_multiplier"] = size.Multiplier
+		probe["billing_size_class"] = size.BillingClass
+		probe["billing_mode"] = capability.BillingMode
 	}
 	return probe, nil
 }

@@ -15,7 +15,6 @@ import (
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
-	"github.com/QuantumNous/new-api/relay/channel/task/doubao/thirdparty/funcloud"
 	"github.com/QuantumNous/new-api/relay/channel/task/doubao/thirdparty/mediaarrays"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -276,9 +275,6 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	_ = resp.Body.Close()
 	responseBody, err = normalizeVideoCreateResponse(a.profile, responseBody)
 	if err != nil {
-		if a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2 && funcloud.IsTerminalCreateRejection(err) {
-			relaycommon.SetTaskCreateDisposition(c, relaycommon.TaskCreateTerminalRejection)
-		}
 		taskErr = service.TaskErrorWrapper(err, "normalize_response_body_failed", http.StatusBadGateway)
 		return
 	}
@@ -320,6 +316,10 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 	if err != nil {
 		return nil, err
 	}
+	implementationID, err := videoImplementationIDFromFetchBody(body)
+	if err != nil {
+		return nil, err
+	}
 	path, err := videoTaskPath(profile, videoQueryTemplateFromFetchBody(body), taskID)
 	if err != nil {
 		return nil, err
@@ -353,6 +353,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 		adapterVersion,
 		responseBody,
 		taskID,
+		implementationID,
 		mediaarrays.TaskResponseContext{
 			BaseURL: baseUrl,
 		},

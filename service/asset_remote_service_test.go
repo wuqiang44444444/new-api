@@ -192,7 +192,7 @@ func TestAssetDeletionWithoutBindingsCompletesLocally(t *testing.T) {
 	asset := model.Asset{UserID: 902, Name: "remote", AssetKind: model.AssetKindGeneral, MediaType: "image", Status: model.AssetStatusReady}
 	require.NoError(t, model.DB.Create(&asset).Error)
 
-	require.NoError(t, DeleteAsset(context.Background(), 902, asset.PublicID))
+	require.NoError(t, DeleteAssetForApp(context.Background(), 902, asset.AppID, asset.PublicID))
 	require.NoError(t, model.DB.First(&asset, "id = ?", asset.ID).Error)
 	assert.Equal(t, model.AssetStatusDeleted, asset.Status)
 	assert.NotZero(t, asset.DeletedAt)

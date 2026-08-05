@@ -101,6 +101,10 @@ func ClaimTaskCreateIdempotency(userID int, protocol, keyHash, requestHash strin
 }
 
 func BindTaskCreateIdempotencyAttempt(id int64, attemptID string) error {
+	return bindTaskCreateIdempotencyAttempt(DB, id, attemptID)
+}
+
+func bindTaskCreateIdempotencyAttempt(tx *gorm.DB, id int64, attemptID string) error {
 	if id == 0 {
 		return nil
 	}
@@ -108,7 +112,7 @@ func BindTaskCreateIdempotencyAttempt(id int64, attemptID string) error {
 	if attemptID == "" {
 		return errors.New("task create attempt id is required")
 	}
-	result := DB.Model(&TaskCreateIdempotency{}).
+	result := tx.Model(&TaskCreateIdempotency{}).
 		Where("id = ? AND status = ? AND (attempt_id = ? OR attempt_id = '')",
 			id,
 			TaskCreateIdempotencyCreating,

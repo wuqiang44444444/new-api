@@ -1,9 +1,11 @@
 package thirdparty
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +46,7 @@ func TestReverseProxyTaskResponseNormalizesStatusUsageAndResult(t *testing.T) {
 	assert.Equal(t, map[string]any{"completion_tokens": float64(123), "total_tokens": float64(456)}, result["usage"])
 }
 
-func TestRelayCreateRequestUsesMoxingMediaV1FieldNamesAndPreservesExplicitZero(t *testing.T) {
+func TestRelayCreateRequestUsesMediaTaskFieldNamesAndPreservesExplicitZero(t *testing.T) {
 	body, err := RelayCreateRequest([]byte(`{"model":"seedance-v2","content":[{"type":"text","text":"hello"}],"duration":0,"generate_audio":false,"ratio":"16:9"}`))
 
 	require.NoError(t, err)
@@ -126,28 +128,76 @@ func TestRelayCreateRequestRejectsUnsupportedInputs(t *testing.T) {
 	}
 }
 
-// TestRelayTaskResponseNormalizesResultAndUsage 验证中转线终态归一化结果 URL 并透传 usage
-// （completion_tokens/total_tokens）用于按 token 结算（方案 §10.2②，原"刻意不回填"已由实测验证解除）。
-func TestRelayTaskResponseNormalizesResultAndUsage(t *testing.T) {
-	body, err := RelayTaskResponse([]byte(`{"task_id":"relay-1","status":"succeeded","result":{"type":"video","urls":["https://cdn.example/result.mp4"]},"usage":{"completion_tokens":999,"total_tokens":999}}`))
+func TestRelayTaskResponseIncludesOnlyImplementationVerifiedUsage(t *testing.T) {
+	providerBody := []byte(`{"task_id":"relay-1","status":"succeeded","result":{"type":"video","urls":["https://cdn.example/result.mp4"]},"usage":{"completion_tokens":999,"total_tokens":999}}`)
+	body, err := RelayTaskResponse(providerBody, "relay-1", RelayTaskResponseContext{IncludeVerifiedUsage: true})
 
 	require.NoError(t, err)
 	result := decodeObject(t, body)
 	assert.Equal(t, "succeeded", result["status"])
 	assert.Equal(t, "https://cdn.example/result.mp4", result["content"].(map[string]any)["video_url"])
 	assert.Equal(t, map[string]any{"completion_tokens": float64(999), "total_tokens": float64(999)}, result["usage"])
+
+	body, err = RelayTaskResponse(providerBody, "relay-1", RelayTaskResponseContext{})
+	require.NoError(t, err)
+	assert.NotContains(t, decodeObject(t, body), "usage")
+}
+
+func TestRelayTaskResponseV2AcceptsDocumentedStringResultAndIgnoresStringUsage(t *testing.T) {
+	body, err := RelayTaskResponse(
+		[]byte(`{"task_id":"relay-1","status":"succeeded","result":"{\"url\":\"https://cdn.example/result.mp4\",\"duration_seconds\":4}","usage":"provider-defined"}`),
+		"relay-1",
+		RelayTaskResponseContext{},
+	)
+
+	require.NoError(t, err)
+	result := decodeObject(t, body)
+	assert.Equal(t, "https://cdn.example/result.mp4", result["content"].(map[string]any)["video_url"])
+	assert.NotContains(t, result, "usage")
 }
 
 func TestRelayTaskResponseEnforcesTerminalContracts(t *testing.T) {
-	_, err := RelayTaskResponse([]byte(`{"task_id":"relay-1","status":"succeeded","result":{"type":"video"}}`))
+	_, err := RelayTaskResponse([]byte(`{"task_id":"relay-1","status":"succeeded","result":{"type":"video"}}`), "relay-1", RelayTaskResponseContext{})
 	require.Error(t, err)
 
-	failed, err := RelayTaskResponse([]byte(`{"task_id":"relay-2","status":"failed"}`))
+	failed, err := RelayTaskResponse([]byte(`{"task_id":"relay-2","status":"failed"}`), "relay-2", RelayTaskResponseContext{})
 	require.NoError(t, err)
 	assert.Equal(t, "upstream task failed", decodeObject(t, failed)["error"].(map[string]any)["message"])
 
-	_, err = RelayTaskResponse([]byte(`{"task_id":"relay-3","status":"internal_dispatching"}`))
+	_, err = RelayTaskResponse([]byte(`{"task_id":"relay-3","status":"internal_dispatching"}`), "relay-3", RelayTaskResponseContext{})
 	require.Error(t, err)
+}
+
+func TestRelayResponsesEnforceTaskIdentityAndSafeResultURL(t *testing.T) {
+	_, err := RelayCreateResponse([]byte(`{"task_id":"bad\u000aid"}`))
+	require.Error(t, err)
+	_, err = RelayCreateResponse([]byte(`{"task_id":"` + strings.Repeat("x", 192) + `"}`))
+	require.Error(t, err)
+
+	_, err = RelayTaskResponse(
+		[]byte(`{"task_id":"different","status":"running"}`),
+		"expected",
+		RelayTaskResponseContext{},
+	)
+	require.Error(t, err)
+	var violation *relaycommon.UpstreamContractViolation
+	assert.ErrorAs(t, err, &violation)
+
+	_, err = RelayTaskResponse(
+		[]byte(`{"task_id":"expected","status":"succeeded","result":{"primary_url":"http://cdn.example/result.mp4"}}`),
+		"expected",
+		RelayTaskResponseContext{},
+	)
+	require.Error(t, err)
+	assert.ErrorAs(t, err, &violation)
+}
+
+func TestRelayTaskResponseV1RemainsAvailableOnlyForFrozenLegacyTasks(t *testing.T) {
+	body, err := RelayTaskResponseV1([]byte(`{"task_id":"legacy","status":"succeeded","result":{"urls":["https://cdn.example/legacy.mp4"]},"usage":{"total_tokens":42}}`))
+	require.NoError(t, err)
+	result := decodeObject(t, body)
+	assert.Equal(t, "legacy", result["id"])
+	assert.Equal(t, map[string]any{"total_tokens": float64(42)}, result["usage"])
 }
 
 // TestReverseProxyTaskResponseEnforcesSucceededContract 验证反代 succeeded 缺结果 URL 时

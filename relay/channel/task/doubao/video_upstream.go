@@ -16,6 +16,7 @@ const (
 	videoUpstreamProfileBodyKey       = "video_upstream_profile"
 	videoUpstreamQueryTemplateBodyKey = "video_upstream_query_path_template"
 	videoUpstreamAdapterVersionKey    = "video_upstream_adapter_version"
+	videoUpstreamImplementationIDKey  = "video_upstream_implementation_id"
 )
 
 // 官方协议内置路径（方案 §3.1），不参与渠道路径配置。
@@ -103,6 +104,7 @@ func normalizeVideoTaskResponse(
 	adapterVersion relaycommon.VideoSouthboundAdapterVersion,
 	body []byte,
 	expectedTaskID string,
+	implementationID string,
 	responseContext mediaarrays.TaskResponseContext,
 ) ([]byte, error) {
 	switch profile {
@@ -111,9 +113,14 @@ func normalizeVideoTaskResponse(
 	case dto.VideoUpstreamProfileThirdPartyReverseProxy:
 		return thirdparty.ReverseProxyTaskResponse(body)
 	case dto.VideoUpstreamProfileThirdPartyRelay:
-		return thirdparty.RelayTaskResponse(body)
+		if !adapterVersion.IsThirdPartyRelayV2() {
+			return thirdparty.RelayTaskResponseV1(body)
+		}
+		return thirdparty.RelayTaskResponse(body, expectedTaskID, thirdparty.RelayTaskResponseContext{
+			IncludeVerifiedUsage: false,
+		})
 	case dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays:
-		if !adapterVersion.IsJSONVideoMediaArraysV1() {
+		if !adapterVersion.IsJSONVideoMediaArraysV2() {
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "unsupported video adapter revision"}
 		}
 		return mediaarrays.TaskResponse(body, expectedTaskID, responseContext)
@@ -125,6 +132,18 @@ func normalizeVideoTaskResponse(
 	default:
 		return nil, dto.ValidateVideoUpstreamProfile(profile)
 	}
+}
+
+func videoImplementationIDFromFetchBody(body map[string]any) (string, error) {
+	value, ok := body[videoUpstreamImplementationIDKey]
+	if !ok || value == nil {
+		return "", nil
+	}
+	implementationID, ok := value.(string)
+	if !ok {
+		return "", &relaycommon.UpstreamContractViolation{Reason: "invalid Link implementation ID type"}
+	}
+	return strings.TrimSpace(implementationID), nil
 }
 
 func videoAdapterVersionFromFetchBody(

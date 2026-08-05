@@ -28,7 +28,7 @@ func TestTaskAttemptRecoveryTemplateUsesSameMediaArraysAdapterV1(t *testing.T) {
 	stageTaskProtocolSnapshot(context, task, info)
 
 	assert.Equal(t,
-		"54:third_party_json_video_media_arrays:v1",
+		"54:third_party_json_video_media_arrays:v2",
 		task.PrivateData.SouthboundAdapterVersion,
 	)
 }

@@ -9,103 +9,160 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFeicaiVideoSKUCapabilitiesAreStableAndResolutionBound(t *testing.T) {
-	models := map[string]string{
-		VideoSKUSeedance20Standard720P: "720p",
-		VideoSKUSeedance20Value720P:    "720p",
+func TestFeicaiV2VideoSKUCapabilitiesCoverAllProviderModelsAndFailClosed(t *testing.T) {
+	models := map[string]struct {
+		resolution  string
+		minDuration int
+		minImages   int
+		maxAudio    int
+		maxVideos   int
+		billingMode string
+		ratios      []string
+	}{
+		VideoSKUSeedance20Mini720P:      {"720p", 4, 0, 3, 0, VideoBillingModePerSecond, []string{"16:9"}},
+		VideoSKUSeedance20SD2720P:       {"720p", 11, 1, 0, 0, VideoBillingModePerSecond, nil},
+		VideoSKUSeedance20Fast720P:      {"720p", 4, 0, 3, 0, VideoBillingModePerSecond, nil},
+		VideoSKUSeedance20Value720P:     {"720p", 4, 0, 3, 0, VideoBillingModePerSecond, nil},
+		VideoSKUSeedance20Standard720P:  {"720p", 4, 0, 3, 0, VideoBillingModePerSecond, []string{"16:9"}},
+		VideoSKUSeedance20Value1080P:    {"1080p", 4, 0, 3, 0, VideoBillingModePerSecond, nil},
+		VideoSKUSeedance20Standard1080P: {"1080p", 4, 0, 3, 0, VideoBillingModePerSecond, []string{"16:9"}},
+		VideoSKUSeedance20Value4K:       {"4k", 4, 0, 3, 0, VideoBillingModePerSecond, nil},
+		VideoSKUSeedance20Standard4K:    {"4k", 4, 0, 3, 0, VideoBillingModePerSecond, nil},
+		VideoSKUSeedance20ProPI720P:     {"720p", 15, 0, 3, 3, VideoBillingModePerRequest, nil},
 	}
-	for publicModel, resolution := range models {
+	for publicModel, expected := range models {
 		t.Run(publicModel, func(t *testing.T) {
 			first, ok := ResolveVideoSKUCapability(publicModel)
 			require.True(t, ok)
 			second, ok := ResolveVideoSKUCapability(publicModel)
 			require.True(t, ok)
-			assert.Equal(t, resolution, first.Resolution)
+			assert.Equal(t, VideoSKUCapabilityVersionFeicaiV2, first.Version)
+			assert.Equal(t, expected.resolution, first.Resolution)
+			assert.Equal(t, expected.minDuration, first.MinDuration)
+			assert.Equal(t, expected.minImages, first.MinImages)
+			assert.Equal(t, expected.maxAudio, first.MaxAudio)
+			assert.Equal(t, expected.maxVideos, first.MaxVideos)
+			assert.Equal(t, expected.billingMode, first.BillingMode)
 			assert.Equal(t, first.ContentHash, second.ContentHash)
 			assert.Len(t, first.ContentHash, 64)
 			assert.True(t, first.SupportsProfile(VideoProfileJSONMediaArrays))
-			assert.Equal(t, 4, first.DefaultDuration)
-			assert.Equal(t, []string{"16:9", "9:16"}, first.Ratios)
+			assert.Equal(t, expected.ratios, first.Ratios)
 			assert.Equal(t, []string{"reference_image"}, first.ImageRoles)
-			assert.Empty(t, first.VideoRoles)
 			assert.Equal(t, []string{"reference_audio"}, first.AudioRoles)
 			assert.True(t, first.SupportsLinkAssets)
 			assert.False(t, first.SupportsMixedMediaPath)
-			assert.Equal(t, 0, first.MaxVideos)
-
-			wrong := "720p"
-			if resolution == wrong {
-				wrong = "1080p"
+			if expected.maxVideos > 0 {
+				assert.Equal(t, []string{"reference_video"}, first.VideoRoles)
+				assert.Equal(t, 15, first.DefaultDuration)
+			} else {
+				assert.Empty(t, first.VideoRoles)
+				assert.Zero(t, first.DefaultDuration)
 			}
-			err := first.ValidateModelArkRequest(&dto.ModelArkVideoCreateRequest{
-				Model:      publicModel,
-				Resolution: common.GetPointer(wrong),
-				Content: []dto.ModelArkVideoContent{
-					{Type: "text", Text: common.GetPointer("hello")},
-				},
-			})
-			require.Error(t, err)
-
-			err = first.ValidateModelArkRequest(&dto.ModelArkVideoCreateRequest{
-				Model: publicModel,
-				Content: []dto.ModelArkVideoContent{
-					{
-						Type:     "image_url",
-						Role:     common.GetPointer("reference_image"),
-						ImageURL: &dto.VideoMediaURL{URL: "https://example.com/reference.png"},
-					},
-				},
-			})
-			require.ErrorContains(t, err, "text")
-
-			err = first.ValidateModelArkRequest(&dto.ModelArkVideoCreateRequest{
-				Model:       publicModel,
-				ServiceTier: common.GetPointer("default"),
-				Content: []dto.ModelArkVideoContent{
-					{Type: "text", Text: common.GetPointer("hello")},
-				},
-			})
-			require.ErrorContains(t, err, "service_tier")
-
-			err = first.ValidateModelArkRequest(&dto.ModelArkVideoCreateRequest{
-				Model: publicModel,
-				Content: []dto.ModelArkVideoContent{
-					{Type: "text", Text: common.GetPointer("hello")},
-					{
-						Type:     "image_url",
-						Role:     common.GetPointer("first_frame"),
-						ImageURL: &dto.VideoMediaURL{URL: "https://example.com/first.png"},
-					},
-					{
-						Type:     "audio_url",
-						Role:     common.GetPointer("reference_audio"),
-						AudioURL: &dto.VideoMediaURL{URL: "https://example.com/audio.mp3"},
-					},
-				},
-			})
-			require.ErrorContains(t, err, "first_frame")
 		})
 	}
 }
 
-func TestFeicaiHighResolutionSKUsRemainUnpublishedWithoutVerifiedSize(t *testing.T) {
-	for _, publicModel := range []string{
-		VideoSKUSeedance20Standard1080P,
-		VideoSKUSeedance20Value1080P,
-		VideoSKUSeedance20Value4K,
-	} {
-		_, ok := ResolveVideoSKUCapability(publicModel)
-		assert.False(t, ok, publicModel)
+func TestFeicaiV2SD2AndProPIEnforceDistinctMediaContracts(t *testing.T) {
+	sd2, ok := ResolveVideoSKUCapability(VideoSKUSeedance20SD2720P)
+	require.True(t, ok)
+	sd2.Ratios = []string{"16:9"}
+	duration, resolution, ratio := 11, "720p", "16:9"
+	sd2Request := &dto.ModelArkVideoCreateRequest{
+		Model: VideoSKUSeedance20SD2720P, Duration: &duration, Resolution: &resolution, Ratio: &ratio,
+		Content: []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
 	}
+	require.ErrorContains(t, sd2.ValidateModelArkRequest(sd2Request), "at least 1")
+	sd2Request.Content = append(sd2Request.Content, dto.ModelArkVideoContent{
+		Type: "image_url", Role: common.GetPointer("reference_image"),
+		ImageURL: &dto.VideoMediaURL{URL: "https://example.com/reference.png"},
+	})
+	require.NoError(t, sd2.ValidateModelArkRequest(sd2Request))
+
+	proPI, ok := ResolveVideoSKUCapability(VideoSKUSeedance20ProPI720P)
+	require.True(t, ok)
+	proPI.Ratios = []string{"16:9"}
+	proRequest := &dto.ModelArkVideoCreateRequest{
+		Model: VideoSKUSeedance20ProPI720P, Resolution: &resolution, Ratio: &ratio,
+		Content: []dto.ModelArkVideoContent{
+			{Type: "text", Text: common.GetPointer("move")},
+			{Type: "video_url", Role: common.GetPointer("reference_video"), VideoURL: &dto.VideoMediaURL{URL: "https://example.com/reference.mp4"}},
+		},
+	}
+	require.NoError(t, proPI.ValidateModelArkRequest(proRequest))
+}
+
+func TestMoxingV2CapabilityRejectsUnverifiedFieldsAndRequiresExplicitDimensions(t *testing.T) {
+	capability, ok := ResolveVideoSKUCapability(VideoSKUSeedance20Oversea)
+	require.True(t, ok)
+	assert.Equal(t, VideoSKUCapabilityVersionMoxingV2, capability.Version)
+	assert.Equal(t, []string{"480p", "720p"}, capability.Resolutions)
+	assert.Equal(t, []string{"", "first_frame", "last_frame", "reference_image"}, capability.ImageRoles)
+	assert.True(t, capability.RequiresDuration)
+	assert.True(t, capability.RequiresResolution)
+	assert.True(t, capability.RequiresRatio)
+	assert.Equal(t, 2500, capability.MaxPromptCharacters)
+	assert.True(t, capability.SupportsGenerateAudio)
+	assert.False(t, capability.Lifecycle.SupportsLastFrame)
+
+	request := &dto.ModelArkVideoCreateRequest{
+		Model:   VideoSKUSeedance20Oversea,
+		Content: []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
+	}
+	require.ErrorContains(t, capability.ValidateModelArkRequest(request), "duration is required")
+
+	duration, resolution, ratio := -1, "720p", "16:9"
+	generateAudio := false
+	request.Duration = &duration
+	request.Resolution = &resolution
+	request.Ratio = &ratio
+	request.GenerateAudio = &generateAudio
+	require.NoError(t, capability.ValidateModelArkRequest(request))
+
+	resolution = "1080p"
+	require.ErrorContains(t, capability.ValidateModelArkRequest(request), "resolution")
+	resolution = "720p"
+	watermark := false
+	request.Watermark = &watermark
+	require.ErrorContains(t, capability.ValidateModelArkRequest(request), "watermark")
+}
+
+func TestTokenSaveV2CapabilityIsIndependentAndRejectsUnverifiedMultimodalFields(t *testing.T) {
+	capability, ok := ResolveVideoSKUCapability(VideoSKUDoubaoSeedance20260128)
+	require.True(t, ok)
+	assert.Equal(t, VideoSKUCapabilityVersionTokenSaveV2, capability.Version)
+	assert.Equal(t, []string{"480p", "720p", "1080p"}, capability.Resolutions)
+	assert.Equal(t, []string{"", "first_frame", "last_frame", "reference_image"}, capability.ImageRoles)
+	assert.True(t, capability.RequiresDuration)
+	assert.True(t, capability.RequiresResolution)
+	assert.True(t, capability.RequiresRatio)
+	assert.True(t, capability.RequiresText)
+	assert.Zero(t, capability.MaxVideos)
+	assert.Zero(t, capability.MaxAudio)
+	assert.False(t, capability.Lifecycle.SupportsLastFrame)
+
+	duration, resolution, ratio := 4, "1080p", "16:9"
+	request := &dto.ModelArkVideoCreateRequest{
+		Model: VideoSKUDoubaoSeedance20260128, Duration: &duration, Resolution: &resolution, Ratio: &ratio,
+		Content: []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
+	}
+	require.NoError(t, capability.ValidateModelArkRequest(request))
+
+	request.Content = append(request.Content, dto.ModelArkVideoContent{
+		Type: "video_url", Role: common.GetPointer("reference_video"),
+		VideoURL: &dto.VideoMediaURL{URL: "https://example.com/reference.mp4"},
+	})
+	require.ErrorContains(t, capability.ValidateModelArkRequest(request), "video content")
 }
 
 func TestVideoSKUCapabilityLimitsAreDataDriven(t *testing.T) {
 	capability, ok := ResolveVideoSKUCapability(VideoSKUSeedance20Standard720P)
 	require.True(t, ok)
 	capability.MaxImages = 1
+	capability.Ratios = []string{"16:9"}
+	duration, resolution, ratio := 4, "720p", "16:9"
 
 	err := capability.ValidateModelArkRequest(&dto.ModelArkVideoCreateRequest{
-		Model: capability.PublicModel,
+		Model: capability.PublicModel, Duration: &duration, Resolution: &resolution, Ratio: &ratio,
 		Content: []dto.ModelArkVideoContent{
 			{Type: "text", Text: common.GetPointer("hello")},
 			{
@@ -131,12 +188,18 @@ func TestFunCloudVideoSKUCapabilitiesMatchTheirEndpoints(t *testing.T) {
 	assert.True(t, standard.SupportsLinkAssets)
 	assert.False(t, standard.AllowsAutomaticDuration)
 	assert.True(t, standard.SupportsProfile(VideoProfileFunCloudSeedanceV2))
+	assert.ElementsMatch(t, []string{"reference_image", "first_frame", "last_frame"}, standard.ImageRoles)
+	assert.Equal(t, []string{"reference_video"}, standard.VideoRoles)
+	assert.Equal(t, []string{"reference_audio"}, standard.AudioRoles)
 
 	fast, ok := ResolveVideoSKUCapability(VideoSKUSeedance20Fast)
 	require.True(t, ok)
 	assert.ElementsMatch(t, []string{"480p", "720p"}, fast.Resolutions)
 	assert.True(t, fast.SupportsLinkAssets)
 	assert.False(t, fast.AllowsAutomaticDuration)
+	assert.ElementsMatch(t, standard.ImageRoles, fast.ImageRoles)
+	assert.Equal(t, standard.VideoRoles, fast.VideoRoles)
+	assert.Equal(t, standard.AudioRoles, fast.AudioRoles)
 
 	duration := -1
 	request := &dto.ModelArkVideoCreateRequest{

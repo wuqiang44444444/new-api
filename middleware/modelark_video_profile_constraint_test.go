@@ -90,7 +90,7 @@ func TestModelArkVideoChannelConstraintAllowsDoubaoSeedanceRelay(t *testing.T) {
 		{
 			Name: "relay", Type: constant.ChannelTypeDoubaoVideo, Status: common.ChannelStatusEnabled,
 			Key: "relay", Models: model.VideoSKUDoubaoSeedance20260128,
-			OtherSettings: `{"video_upstream_profile":"third_party_relay","video_upstream_create_path":"/v1/media/generations","video_upstream_query_path_template":"/v1/media/tasks/{task_id}","asset_upstream_profile":"relay_assets","link_implementation":{"id":"tokensave.seedance-media-task","version":"v1"}}`,
+			OtherSettings: `{"video_upstream_profile":"third_party_relay","video_upstream_create_path":"/v1/media/generations","video_upstream_query_path_template":"/v1/media/tasks/{task_id}","asset_upstream_profile":"relay_assets","link_implementation":{"id":"tokensave.seedance-media-task","version":"v2"}}`,
 		},
 		{
 			Name: "reverse", Type: constant.ChannelTypeDoubaoVideo, Status: common.ChannelStatusEnabled,
@@ -129,7 +129,7 @@ func TestModelArkVideoChannelConstraintAllowsDoubaoSeedanceRelay(t *testing.T) {
 	assert.NotContains(t, allowed, channels[1].Id)
 }
 
-func TestModelArkVideoChannelConstraintAllowsMoxingArkManagedAssetProfile(t *testing.T) {
+func TestModelArkVideoChannelConstraintRejectsHistoricalMoxingArkProfile(t *testing.T) {
 	previousDB := model.DB
 	previousType := common.MainDatabaseType()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -149,13 +149,15 @@ func TestModelArkVideoChannelConstraintAllowsMoxingArkManagedAssetProfile(t *tes
 	}
 	require.NoError(t, db.Create(&channel).Error)
 
-	var allowed map[int]struct{}
 	engine := gin.New()
 	engine.POST("/", func(c *gin.Context) {
 		relaycommon.SetVideoContractRequest(c, dto.VideoContractRequest{
 			ContractID: dto.VideoContractModelArkV3,
 			ModelArk: &dto.ModelArkVideoCreateRequest{
-				Model: model.VideoSKUSeedance20Oversea,
+				Model:      model.VideoSKUSeedance20Oversea,
+				Duration:   common.GetPointer(4),
+				Resolution: common.GetPointer("720p"),
+				Ratio:      common.GetPointer("16:9"),
 				Content: []dto.ModelArkVideoContent{
 					{Type: "text", Text: common.GetPointer("portrait speaks")},
 					{Type: "image_url", Role: common.GetPointer("reference_image"), ImageURL: &dto.VideoMediaURL{URL: "asset://ast_12345678901234567890123456789012"}},
@@ -165,15 +167,10 @@ func TestModelArkVideoChannelConstraintAllowsMoxingArkManagedAssetProfile(t *tes
 		common.SetContextKey(c, constant.ContextKeyAssetAllowedChannelIDs, map[int]struct{}{channel.Id: {}})
 		c.Next()
 	}, ResolveVideoSKUCapability(), ModelArkVideoChannelConstraint(), func(c *gin.Context) {
-		value, ok := common.GetContextKey(c, constant.ContextKeyAssetAllowedChannelIDs)
-		require.True(t, ok)
-		allowed, ok = value.(map[int]struct{})
-		require.True(t, ok)
-		c.Status(http.StatusNoContent)
+		t.Fatal("historical Moxing Ark profile must not remain a candidate")
 	})
 	response := httptest.NewRecorder()
 	engine.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/", nil))
 
-	assert.Equal(t, http.StatusNoContent, response.Code)
-	assert.Contains(t, allowed, channel.Id)
+	assert.Equal(t, http.StatusBadRequest, response.Code)
 }

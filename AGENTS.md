@@ -71,9 +71,18 @@ web/           — Frontend (React 19, Rsbuild, Base UI, Tailwind)
 
 ### Documentation Governance
 
-**99 归档目录不可更新（最高优先级硬约束）：**
+**99 归档目录只增不改（最高优先级硬约束）：**
 
-- `docs/99-archive/` 下的文档在任何时候都不得更新。所有文档维护、事实同步、勘误、frontmatter 刷新、链接修复和格式整理都必须跳过该目录；如需补充或修正信息，必须在 `docs/00-context/`—`docs/90-ui-ux/` 的对应当前事实文档中完成，不得回写归档文档。
+- `docs/99-archive/` 只允许接收通过归档闸门的新文件：源文档的已验证事实和未完成事项必须先收敛到
+  `docs/00-context/`—`docs/90-ui-ux/`，补齐 `status: historical`、`archived-at`、`source-path` 和
+  `superseded-by`，确认目标路径不存在后再移动进入。文件一旦进入 `docs/99-archive/` 即永久只读；
+  不得修改、覆盖、删除、重命名或格式化任何既有归档文件，包括勘误、frontmatter 刷新和链接修复。
+  后续补充或修正只能写入 `docs/00-context/`—`docs/90-ui-ux/` 的当前事实文档，不得回写归档。
+
+**60/70 目录禁止主动更新（硬约束）：**
+
+- 开发过程中，除非用户针对当前任务主动、明确授权，否则不得在 `docs/60-marketing/` 或 `docs/70-research/` 下创建、修改、删除、移动、重命名、格式化或自动同步任何文档。一般性的“更新文档”“维护 docs”或事实收敛请求不构成该授权；只读检查不受影响。
+
 - 架构事实写入 `20-architecture/`，产品行为写入 `10-product/`，工程步骤写入 `30-engineering/`，运维流程写入 `40-operations/`，临时实施记录写入 `50-planning/` 或 `80-dev/`。
 - ADR 编号创建后永不重排、复用或回填缺号。新决策取代旧决策时，保留旧文件并更新为 `status: superseded`，同时填写 `superseded-by`。
 - 架构文档必须按当前边界、职责、数据/控制流和不变量组织，不得记录实施流水。

@@ -21,9 +21,10 @@ last-reviewed: 2026-08-05
 - [04 素材库验收操作手册](04-素材库验收操作手册.md)
 - [05 全渠道上线验收手册](05-全渠道上线验收手册.md)
 - [06 飞彩 Seedance 全模型上线验收手册](06-飞彩Seedance全模型上线验收手册.md)
+- [07 Seedance 渠道配置清单](07-Seedance渠道配置清单.md)
 - [环境配置（反代转发头与 ServerAddress）](环境配置.md)
 
-历史专题资料已移至 [99-archive](../99-archive/README.md)，现行操作统一按 `01`—`06` 执行。
+历史专题资料已移至 [99-archive](../99-archive/README.md)，现行操作统一按 `01`—`07` 执行。
 
 ## 不放什么
 - 本地开发命令 -> 30-engineering/命令清单.md

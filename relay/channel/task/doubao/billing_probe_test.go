@@ -119,37 +119,75 @@ func TestBuildTaskBillingProbeRejectsInvalidResolutionAndDuration(t *testing.T) 
 	}
 }
 
-func TestBuildTaskBillingProbeFreezesVerifiedMediaArraysSize(t *testing.T) {
+func TestBuildTaskBillingProbeRejectsDurationOutsideRegisteredSKUCapability(t *testing.T) {
+	tests := []struct {
+		name     string
+		model    string
+		duration int
+	}{
+		{name: "over model maximum", model: model.VideoSKUSeedance20Oversea, duration: 16},
+		{name: "automatic duration not supported", model: model.VideoSKUSeedance20Standard720P, duration: -1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			context := probeContext(relaycommon.TaskSubmitReq{})
+			resolution, ratio := "720p", "16:9"
+			relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
+				ContractID: dto.VideoContractModelArkV3,
+				ModelArk: &dto.ModelArkVideoCreateRequest{
+					Model:      test.model,
+					Duration:   &test.duration,
+					Resolution: &resolution,
+					Ratio:      &ratio,
+					Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
+				},
+			})
+
+			_, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyRelay}).BuildTaskBillingProbe(
+				context,
+				&relaycommon.RelayInfo{OriginModelName: test.model},
+			)
+			require.ErrorContains(t, err, "duration must be between 4 and 15")
+		})
+	}
+}
+
+func TestBuildTaskBillingProbeRejectsUnverifiedMediaArraysSizeBeforeHold(t *testing.T) {
 	context := probeContext(relaycommon.TaskSubmitReq{})
-	resolution, ratio := "720p", "9:16"
+	duration, resolution, ratio := 4, "720p", "9:16"
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 		ContractID: dto.VideoContractModelArkV3,
 		ModelArk: &dto.ModelArkVideoCreateRequest{
 			Model:      model.VideoSKUSeedance20Standard720P,
+			Duration:   &duration,
 			Resolution: &resolution,
 			Ratio:      &ratio,
 			Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
 		},
 	})
-	probe, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays}).BuildTaskBillingProbe(
+	_, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays}).BuildTaskBillingProbe(
 		context,
-		&relaycommon.RelayInfo{OriginModelName: model.VideoSKUSeedance20Standard720P},
+		&relaycommon.RelayInfo{
+			OriginModelName: model.VideoSKUSeedance20Standard720P,
+			ChannelMeta: &relaycommon.ChannelMeta{
+				UpstreamModelName: model.FeicaiProviderModelSeedance20Standard720P,
+				ChannelOtherSettings: dto.ChannelOtherSettings{LinkImplementation: dto.LinkImplementationRef{
+					ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV2,
+				}},
+			},
+		},
 	)
-	require.NoError(t, err)
-	assert.Equal(t, 4, probe["duration_seconds"])
-	assert.Equal(t, "720p", probe["resolution"])
-	assert.Equal(t, "9:16", probe["ratio"])
-	assert.Equal(t, "720x1280", probe["size"])
-	assert.Equal(t, float64(1), probe["size_multiplier"])
+	require.ErrorContains(t, err, "no verified provider size")
 }
 
-func TestBuildTaskBillingProbeRejectsUnverifiedMediaArraysSize(t *testing.T) {
+func TestBuildTaskBillingProbeRejectsUnverifiedHighResolutionSize(t *testing.T) {
 	context := probeContext(relaycommon.TaskSubmitReq{})
-	resolution, ratio := "1080p", "16:9"
+	duration, resolution, ratio := 4, "1080p", "16:9"
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 		ContractID: dto.VideoContractModelArkV3,
 		ModelArk: &dto.ModelArkVideoCreateRequest{
 			Model:      model.VideoSKUSeedance20Standard1080P,
+			Duration:   &duration,
 			Resolution: &resolution,
 			Ratio:      &ratio,
 			Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},

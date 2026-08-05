@@ -25,7 +25,7 @@ last-reviewed: 2026-08-05
   -> TaskCreateAttempt 资金 hold
   -> 墨行创建请求
   -> 可信 Task：hold 原子转移
-  -> 成功：按可信 usage 结算；usage 不可信时遵守冻结预扣合同
+  -> 成功：按各 SKU 冻结合同结算；当前两个 v2 SKU 均不依赖未验 usage
   -> 失败：退款或结算
   -> unknown 到期释放：另记 ProviderCostExposure
 ```
@@ -34,23 +34,32 @@ last-reviewed: 2026-08-05
 Provider 当前余额或无限额度旁路。quota 换算只使用统一 checked 饱和函数；溢出、NaN 和钳制必须
 失败安全并进入管理员审计。
 
-对当前 `seedance-2-0-oversea` SKU，`duration=-1` 表示智能时长，预扣阶段必须按已发布能力的最大档
-15 秒计算 hold，不能按未知值、默认 5 秒或最小 4 秒预扣。模型合同先校验显式时长 `4..15` 或 `-1`；
-全局 `MaxTaskDurationSeconds=3600` 只是所有任务共享的防溢出安全上限，不能替代更严格的模型边界。
+对两个当前 SKU，`duration=-1` 都表示智能时长，预扣阶段必须按已发布能力的最大档 15 秒计算 hold，
+不能按未知值、默认 5 秒或最小 4 秒预扣。模型合同先校验显式时长 `4..15` 或 `-1`；全局
+`MaxTaskDurationSeconds=3600` 只是所有任务共享的防溢出安全上限，不能替代更严格的模型边界。
 
 ## 3. Provider 价格与 usage
 
-墨行当前 V2 资料按“元/百万 token”报价，并同时列出输出分辨率和是否包含视频输入。初始公开合同
-只支持 480p/720p 且不支持视频输入，因此不能把历史 Ark 的 1080p/4K 或“含视频输入”低价档应用到
-当前任务。
+两个 SKU 使用不同价格事实，不得共用表达式：
+
+| Link SKU | Provider 报价 | 当前冻结表达式 | 预扣配置 |
+| --- | --- | --- | ---: |
+| `seedance-2-0-oversea` | ¥49/百万 token（480p/720p、无视频输入） | `v1:tier("480p720p", c * 7.0)`；按 `USDExchangeRate=7` 换算 | 324000 |
+| `doubao-seedance-2-0-260128` | 按输出秒、分辨率和文本/图像模式 | 使用 `_task.duration_seconds/resolution/input_mode/control_mode` 的按秒表达式 | 1 |
+
+oversea 初始公开合同只支持 480p/720p 且不支持视频输入，不能把价格表中的 1080p/视频输入档应用到
+该 SKU。doubao 允许 1080p，但仍不发布视频输入；720p 图生与文生/参考生必须命中各自按秒档位。
 
 Provider 价格只用于成本审批，不直接成为客户价格。若客户采用表达式计费，表达式必须自包含，并
 使用冻结任务探针；不能在运行时读取墨行当前报价。异步表达式不得依赖未冻结 header 或时间函数。
 
-官方 V2 文档把任务 `usage` 描述为字符串，当前 adapter 则可接收结构化
-`completion_tokens/total_tokens`。只有目标生产黑盒证明字段类型、单位、终态稳定性和退款口径后，
-这些 token 才能用于实际结算。adapter 透传能力、单元测试 fixture 或代码注释只能证明解析器能够
-处理该对象，不能替代可追溯的目标生产证据；未验证 usage 不得伪装为官方 Ark usage。
+两个当前模型页都把任务 `usage` 描述为字符串。v2 adapter 不再把任一模型的未验 usage 投影为
+`completion_tokens/total_tokens`。oversea 成功时保留按最大可计费 token 预扣形成的冻结费用；doubao
+按冻结时长/分辨率/场景表达式结算，不读取 usage。只有目标生产黑盒证明字段类型、单位、终态稳定性
+和账单一致性后，才允许提升 implementation/billing 版本使用结构化 token。
+
+2026-08-05 的 TokenSave 成功文生样本未返回 `usage`，进一步确认当前按秒 SKU 只能依据冻结请求规格
+结算，不能依赖 token usage；该样本尚未闭合 Provider 实际扣款金额。
 
 ## 4. 单次账单查询
 
@@ -70,7 +79,7 @@ Authorization: Bearer itk-mxai-...
 - 模型 Channel Key 只发往视频/素材数据面；
 - 集成 Token 只由受限 Provider 对账控制面读取，不写入 Channel Key、Task、attempt、普通配置导出
   或客户日志；
-- 缺少集成 Token 只关闭自动 Provider 对账，不阻断已验证的视频履约；
+- 缺少集成 Token 只关闭 Moxing oversea 自动 Provider 对账，不授权 TokenSave 复用该 Token；
 - 账户接口 Base URL、Token 和账号身份必须显式绑定，不能从模型域名或 Key 前缀猜测。
 
 ### 4.2 对账状态
@@ -108,7 +117,7 @@ Authorization: Bearer itk-mxai-...
 聚合。查询到的 `charged_yuan` 可作为独立 Provider 金额证据，但不能用客户 quota 冒充或把不同币种
 未换算相加。
 
-exposure 策略缺失、失效或预算耗尽时，墨行 implementation 候选 fail closed。真正的并发硬上限
+exposure 策略缺失、失效或预算耗尽时，对应 Moxing/TokenSave implementation 候选 fail closed。真正的并发硬上限
 必须在 Provider POST 前原子预留预算，事后对账和熔断不能宣称为零超调。
 
 ## 7. 不变量
@@ -116,7 +125,7 @@ exposure 策略缺失、失效或预算耗尽时，墨行 implementation 候选 
 1. 客户费用永远由 NEWAPI 冻结价格与结算日志决定。
 2. Provider 价格和账单只作成本证据，不覆盖客户 quota。
 3. 模型 Key 与集成 Token 必须物理和权限隔离。
-4. 未验证的 `usage` 不参与实际 token 结算。
+4. 未验证的 `usage` 不参与实际 token 结算；doubao 按秒结算不读取 `c`。
 5. 对账延迟或失败不阻断正常 Task 终态，但必须可观测。
 6. create unknown 不因查到相似费用记录而自动认领任务。
 7. Provider 金额未知时保持未知，不使用估算值伪装实际成本。

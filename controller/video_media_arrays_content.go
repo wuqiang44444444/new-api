@@ -19,7 +19,7 @@ func videoMediaArraysContentSource(task *model.Task) (string, string, bool, erro
 		task.PrivateData.VideoUpstreamProfile,
 		task.PrivateData.SouthboundAdapterVersion,
 	)
-	if err != nil || !version.IsJSONVideoMediaArraysV1() {
+	if err != nil || !version.IsJSONVideoMediaArraysV2() {
 		return "", "", true, fmt.Errorf("frozen JSON video media-arrays adapter version is invalid")
 	}
 	implementation, ok := model.ResolveLinkImplementation(dto.LinkImplementationRef{

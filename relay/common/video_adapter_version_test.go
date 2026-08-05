@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCurrentVideoSouthboundAdapterVersionSelectsMediaArraysV1(t *testing.T) {
+func TestCurrentVideoSouthboundAdapterVersionSelectsMediaArraysV2(t *testing.T) {
 	assert.Equal(t,
-		"54:third_party_json_video_media_arrays:v1",
+		"54:third_party_json_video_media_arrays:v2",
 		CurrentVideoSouthboundAdapterVersion(
 			constant.ChannelTypeDoubaoVideo,
 			dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
@@ -21,9 +21,31 @@ func TestCurrentVideoSouthboundAdapterVersionSelectsMediaArraysV1(t *testing.T) 
 		"54:official:v1",
 		CurrentVideoSouthboundAdapterVersion(constant.ChannelTypeDoubaoVideo, ""),
 	)
+	assert.Equal(t,
+		"54:third_party_relay:v2",
+		CurrentVideoSouthboundAdapterVersion(constant.ChannelTypeDoubaoVideo, dto.VideoUpstreamProfileThirdPartyRelay),
+	)
 }
 
-func TestResolveVideoSouthboundAdapterVersionRequiresMediaArraysV1AndFailsClosed(t *testing.T) {
+func TestResolveThirdPartyRelayKeepsFrozenV1ReadableAndUsesV2ForNewTasks(t *testing.T) {
+	profile := dto.VideoUpstreamProfileThirdPartyRelay
+	_, err := ResolveVideoSouthboundAdapterVersion(constant.ChannelTypeDoubaoVideo, profile, "")
+	require.Error(t, err)
+
+	v1, err := ResolveVideoSouthboundAdapterVersion(constant.ChannelTypeDoubaoVideo, profile, "54:third_party_relay:v1")
+	require.NoError(t, err)
+	assert.Equal(t, VideoAdapterRevisionV1, v1.Revision)
+	assert.False(t, v1.IsThirdPartyRelayV2())
+
+	v2, err := ResolveVideoSouthboundAdapterVersion(constant.ChannelTypeDoubaoVideo, profile, "54:third_party_relay:v2")
+	require.NoError(t, err)
+	assert.True(t, v2.IsThirdPartyRelayV2())
+
+	_, err = ResolveVideoSouthboundAdapterVersion(constant.ChannelTypeDoubaoVideo, profile, "54:third_party_relay:v3")
+	require.Error(t, err)
+}
+
+func TestResolveVideoSouthboundAdapterVersionRequiresMediaArraysV2AndFailsClosed(t *testing.T) {
 	_, err := ResolveVideoSouthboundAdapterVersion(
 		constant.ChannelTypeDoubaoVideo,
 		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
@@ -39,16 +61,16 @@ func TestResolveVideoSouthboundAdapterVersionRequiresMediaArraysV1AndFailsClosed
 	require.NoError(t, err)
 	assert.Equal(t, VideoAdapterRevisionV1, official.Revision)
 
-	v1, err := ResolveVideoSouthboundAdapterVersion(
+	v2, err := ResolveVideoSouthboundAdapterVersion(
 		constant.ChannelTypeDoubaoVideo,
 		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-		"54:third_party_json_video_media_arrays:v1",
+		"54:third_party_json_video_media_arrays:v2",
 	)
 	require.NoError(t, err)
-	assert.True(t, v1.IsJSONVideoMediaArraysV1())
+	assert.True(t, v2.IsJSONVideoMediaArraysV2())
 
 	for _, frozen := range []string{
-		"54:third_party_json_video_media_arrays:v2",
+		"54:third_party_json_video_media_arrays:v1",
 		"54:third_party_json_video_media_arrays:v3",
 		"54:official:v2",
 		"18:third_party_json_video_media_arrays:v1",

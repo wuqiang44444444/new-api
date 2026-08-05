@@ -31,6 +31,9 @@ func ValidateLinkImplementationRegistration(channel *Channel, settings *dto.Chan
 	if !ok {
 		return fmt.Errorf("Link implementation %q version %q is not registered", strings.TrimSpace(ref.ID), strings.TrimSpace(ref.Version))
 	}
+	if implementation.Deprecated {
+		return fmt.Errorf("Link implementation %s/%s is deprecated and cannot accept new tasks", implementation.ID, implementation.Version)
+	}
 	if implementation.ChannelType != channel.Type {
 		return fmt.Errorf("Link implementation %s/%s requires channel type %d", implementation.ID, implementation.Version, implementation.ChannelType)
 	}
@@ -65,7 +68,7 @@ func ValidateChannelLinkImplementationForSKU(channel *Channel, publicSKU string)
 	}
 	settings := channel.GetOtherSettings()
 	implementation, ok := ResolveLinkImplementation(settings.LinkImplementation)
-	if !ok || !slices.Contains(implementation.PublicSKUs, publicSKU) {
+	if !ok || implementation.Deprecated || !slices.Contains(implementation.PublicSKUs, publicSKU) {
 		return fmt.Errorf("channel has no registered Link implementation for public SKU %q", publicSKU)
 	}
 	if !provider_exposure_setting.Current().ActiveForImplementation(implementation.ID, implementation.Version) {

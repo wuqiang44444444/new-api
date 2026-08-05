@@ -10,6 +10,7 @@ import (
 const (
 	VideoMediaArrayImage = "image"
 	VideoMediaArrayAudio = "audio"
+	VideoMediaArrayVideo = "video"
 
 	maxVideoMediaArrayURLLength = 20 * 1024 * 1024
 )
@@ -26,7 +27,7 @@ func ValidateVideoMediaArrayURL(value, mediaType string, allowAsset bool) error 
 	if value == "" || len(value) > maxVideoMediaArrayURLLength {
 		return fmt.Errorf("media URL is empty or too large")
 	}
-	if mediaType != VideoMediaArrayImage && mediaType != VideoMediaArrayAudio {
+	if mediaType != VideoMediaArrayImage && mediaType != VideoMediaArrayAudio && mediaType != VideoMediaArrayVideo {
 		return fmt.Errorf("unsupported media type")
 	}
 	if strings.HasPrefix(value, "asset://") {
@@ -60,6 +61,9 @@ func ValidateVideoMediaArrayURL(value, mediaType string, allowAsset bool) error 
 			return fmt.Errorf("media URL must be an http(s) URL or an image data URL")
 		}
 		return fmt.Errorf("media URL must be an http(s) URL")
+	}
+	if mediaType != VideoMediaArrayImage && parsed.Scheme != "https" {
+		return fmt.Errorf("media URL must be an https URL")
 	}
 	return nil
 }

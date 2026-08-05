@@ -27,8 +27,8 @@ func TestPublishedVideoContractsResolveOneVersionedSKUCapability(t *testing.T) {
 		{
 			name: "ModelArk",
 			path: "/api/v3/contents/generations/tasks", protocol: model.TaskClientProtocolModelArkV3,
-			body:    `{"model":"seedance-2.0-standard-720p","content":[{"type":"text","text":"move"}]}`,
-			convert: ModelArkVideoCreateConvert(), model: model.VideoSKUSeedance20Standard720P,
+			body:    `{"model":"seedance-2.0-standard","content":[{"type":"text","text":"move"}]}`,
+			convert: ModelArkVideoCreateConvert(), model: model.VideoSKUSeedance20Standard,
 		},
 		{
 			name: "Kling",
@@ -101,7 +101,7 @@ func TestPublishedCustomerVideoModelValidatesAgainstFrozenLinkSKU(t *testing.T) 
 				ContractNamespace:  model.LinkContractNamespaceDefault,
 				RouteFamily:        model.LinkRouteFamilyModelArkVideo,
 				CustomerModel:      "customer-seedance",
-				LinkSKU:            model.VideoSKUSeedance20Standard720P,
+				LinkSKU:            model.VideoSKUSeedance20Standard,
 				PublicationVersion: 3,
 			}
 			common.SetContextKey(c, constant.ContextKeyLinkRouteFamily, string(publication.RouteFamily))
@@ -112,7 +112,7 @@ func TestPublishedCustomerVideoModelValidatesAgainstFrozenLinkSKU(t *testing.T) 
 		func(c *gin.Context) {
 			capability, ok := resolvedVideoSKUCapability(c)
 			require.True(t, ok)
-			assert.Equal(t, model.VideoSKUSeedance20Standard720P, capability.PublicModel)
+			assert.Equal(t, model.VideoSKUSeedance20Standard, capability.PublicModel)
 			c.Status(http.StatusNoContent)
 		},
 	)

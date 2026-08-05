@@ -28,6 +28,13 @@ func ModelArkVideoMediaArraysIncompatibility(request *ModelArkVideoCreateRequest
 			if err := ValidateVideoMediaArrayURL(item.AudioURL.URL, VideoMediaArrayAudio, true); err != nil {
 				return fmt.Sprintf("audio input is invalid: %s", err.Error())
 			}
+		case "video_url":
+			if item.VideoURL == nil {
+				return "video input is invalid: media URL is missing"
+			}
+			if err := ValidateVideoMediaArrayURL(item.VideoURL.URL, VideoMediaArrayVideo, true); err != nil {
+				return fmt.Sprintf("video input is invalid: %s", err.Error())
+			}
 		}
 	}
 	return ""

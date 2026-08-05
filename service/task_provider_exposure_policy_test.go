@@ -21,7 +21,7 @@ func TestProviderExposurePolicyPagesAndDisablesOnlyAffectedPublicModel(t *testin
 	t.Cleanup(func() { *setting = original })
 	*setting = provider_exposure_setting.PolicySetting{
 		Enabled:                       true,
-		MonitoredImplementations:      model.LinkImplementationFeicaiSeedanceVideos + "/" + model.LinkImplementationVersionV1,
+		MonitoredImplementations:      model.LinkImplementationFeicaiSeedanceVideos + "/" + model.LinkImplementationVersionV2,
 		WindowSeconds:                 3600,
 		WarningCount:                  1,
 		PagingCount:                   1,
@@ -37,7 +37,7 @@ func TestProviderExposurePolicyPagesAndDisablesOnlyAffectedPublicModel(t *testin
 	}
 	require.NoError(t, model.DB.Create(root).Error)
 	implementation, ok := model.ResolveLinkImplementation(taskdto.LinkImplementationRef{
-		ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV1,
+		ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV2,
 	})
 	require.True(t, ok)
 	settingsJSON, err := common.Marshal(taskdto.ChannelOtherSettings{
@@ -49,7 +49,7 @@ func TestProviderExposurePolicyPagesAndDisablesOnlyAffectedPublicModel(t *testin
 	})
 	require.NoError(t, err)
 	baseURL := "https://video.example.com"
-	modelMapping := `{"seedance-2.0-standard-720p":"seedance-2.0-vip-720p-azhw","unrelated-model":"seedance-2.0-933-720p-azhw"}`
+	modelMapping := `{"seedance-2.0-standard-720p":"seedance-2.0-vip-720p-azhw-feicai","unrelated-model":"seedance-2.0-933-720p-azhw-feicai"}`
 	channel := &model.Channel{
 		Id:            9402,
 		Type:          constant.ChannelTypeDoubaoVideo,

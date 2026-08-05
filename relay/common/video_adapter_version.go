@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -24,7 +25,8 @@ type VideoSouthboundAdapterVersion struct {
 }
 
 type videoAdapterRevisionRule struct {
-	Revision   string
+	Current    string
+	Supported  []string
 	AllowEmpty bool
 }
 
@@ -32,23 +34,30 @@ var videoAdapterRevisionRules = map[struct {
 	ChannelType int
 	Profile     dto.VideoUpstreamProfile
 }]videoAdapterRevisionRule{
-	{ChannelType: constant.ChannelTypeDoubaoVideo, Profile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays}: {Revision: VideoAdapterRevisionV1, AllowEmpty: false},
-	{ChannelType: constant.ChannelTypeDoubaoVideo, Profile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2}:   {Revision: VideoAdapterRevisionV2, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeDoubaoVideo, Profile: dto.VideoUpstreamProfileThirdPartyRelay}:                {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV1, VideoAdapterRevisionV2}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeDoubaoVideo, Profile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays}: {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeDoubaoVideo, Profile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2}:   {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
 }
 
 func (version VideoSouthboundAdapterVersion) String() string {
 	return fmt.Sprintf("%d:%s:%s", version.ChannelType, version.Profile, version.Revision)
 }
 
-func (version VideoSouthboundAdapterVersion) IsJSONVideoMediaArraysV1() bool {
+func (version VideoSouthboundAdapterVersion) IsJSONVideoMediaArraysV2() bool {
 	return version.ChannelType == constant.ChannelTypeDoubaoVideo &&
 		version.Profile == dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays &&
-		version.Revision == VideoAdapterRevisionV1
+		version.Revision == VideoAdapterRevisionV2
 }
 
 func (version VideoSouthboundAdapterVersion) IsFunCloudSeedanceV2() bool {
 	return version.ChannelType == constant.ChannelTypeDoubaoVideo &&
 		version.Profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2 &&
+		version.Revision == VideoAdapterRevisionV2
+}
+
+func (version VideoSouthboundAdapterVersion) IsThirdPartyRelayV2() bool {
+	return version.ChannelType == constant.ChannelTypeDoubaoVideo &&
+		version.Profile == dto.VideoUpstreamProfileThirdPartyRelay &&
 		version.Revision == VideoAdapterRevisionV2
 }
 
@@ -61,7 +70,7 @@ func CurrentVideoSouthboundAdapterVersion(channelType int, profile dto.VideoUpst
 	return VideoSouthboundAdapterVersion{
 		ChannelType: channelType,
 		Profile:     profile,
-		Revision:    rule.Revision,
+		Revision:    rule.Current,
 	}.String()
 }
 
@@ -91,7 +100,7 @@ func ResolveVideoSouthboundAdapterVersion(
 		return VideoSouthboundAdapterVersion{
 			ChannelType: channelType,
 			Profile:     profile,
-			Revision:    rule.Revision,
+			Revision:    rule.Current,
 		}, nil
 	}
 
@@ -108,7 +117,7 @@ func ResolveVideoSouthboundAdapterVersion(
 		return VideoSouthboundAdapterVersion{}, fmt.Errorf("video adapter profile mismatch")
 	}
 	revision := parts[2]
-	if revision != videoAdapterRevisionRuleFor(channelType, profile).Revision {
+	if !slices.Contains(videoAdapterRevisionRuleFor(channelType, profile).Supported, revision) {
 		return VideoSouthboundAdapterVersion{}, fmt.Errorf("video adapter revision is unsupported")
 	}
 	return VideoSouthboundAdapterVersion{
@@ -125,7 +134,7 @@ func videoAdapterRevisionRuleFor(channelType int, profile dto.VideoUpstreamProfi
 	}{ChannelType: channelType, Profile: profile}]; ok {
 		return rule
 	}
-	return videoAdapterRevisionRule{Revision: VideoAdapterRevisionV1, AllowEmpty: true}
+	return videoAdapterRevisionRule{Current: VideoAdapterRevisionV1, Supported: []string{VideoAdapterRevisionV1}, AllowEmpty: true}
 }
 
 func normalizedVideoUpstreamProfile(profile dto.VideoUpstreamProfile) dto.VideoUpstreamProfile {

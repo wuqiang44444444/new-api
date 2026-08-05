@@ -123,6 +123,19 @@ describe('Link access plan projection', () => {
     })
   })
 
+  test('defaults a required asset profile fetch window to one hour', () => {
+    assert.equal(
+      linkAccessPlanAutofill(
+        {
+          ...implementation,
+          required_asset_profile: 'relay_assets',
+        },
+        []
+      ).asset_min_url_ttl_seconds,
+      3600
+    )
+  })
+
   test('derives route family from the unique registered execution binding', () => {
     const renamedRouteImplementation = {
       ...implementation,
@@ -190,13 +203,13 @@ describe('Link access plan projection', () => {
               route_family: 'modelark_video',
               action: 'create',
               profile: 'third_party_json_video_media_arrays',
-              provider_model: 'seedance-2.0-vip-720p-azhw',
+              provider_model: 'seedance-2.0-vip-720p-azhw-feicai',
               link_sku: 'seedance-2.0-standard-720p',
             },
           ],
         },
         customerModel: 'customer-feicai',
-        mapping: '{"customer-feicai":"seedance-2.0-vip-720p-azhw"}',
+        mapping: '{"customer-feicai":"seedance-2.0-vip-720p-azhw-feicai"}',
         linkSKU: 'seedance-2.0-standard-720p',
         routeFamily: 'modelark_video',
       },
