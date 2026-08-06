@@ -351,9 +351,10 @@ seed、camera_fixed、真人素材和 last-frame 结果均未发布。`generate_
 ### 5.6 飞彩 Seedance 2.0 固定分辨率 SKU
 
 飞彩 v2 已在代码中分别登记 Mini、SD2、Fast、value/standard 720p、1080p、4K 与 Pro PI 共 10 个
-SKU，但正式 HTTPS、精确模型权限、逐模型像素 size、成功任务、内容下载和账单证据尚未全部闭合。
-因此这些 SKU 当前不在公开 OpenAPI 或模型列表中发布，配置渠道也必须保持禁用；调用方不得依赖
-研究资料中的默认时长、画幅或价格。每个模型完成独立门禁后才会逐项加入本指南。
+SKU。当前模型列表发布 Mini 720p、Fast 720p、Standard 720p、Standard 1080p、Standard 4K 和
+Value 720p，六者都只开放已验证的 `16:9`。SD2、Value 1080p、Value 4K 和 Pro PI 因真实 Provider
+验证失败或 create outcome unknown 保持未发布；调用方不得依赖研究资料中的默认时长、其它画幅或
+价格，也不得用已发布 SKU 的成功横向推导这四个模型。
 
 ## 6. 查询任务
 

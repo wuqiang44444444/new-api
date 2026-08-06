@@ -1,7 +1,12 @@
 ---
-status: in-progress
+status: historical
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-06
+archived-at: 2026-08-06
+source-path: "docs/80-dev/2026-08-05-FunCloud国内Seedance模型接入实施方案与结果报告.md"
+superseded-by:
+  - "docs/20-architecture/seedance 模型接入设计/funcloud/FunCloud国内Seedance-2.0模型接入设计.md"
+  - "docs/50-planning/Seedance多Provider真实验证矩阵.md"
 ---
 
 # FunCloud 国内 Seedance 模型接入实施方案与结果报告
@@ -9,7 +14,7 @@ last-reviewed: 2026-08-05
 ## 1. 结论
 
 本次实施以
-[FunCloud 国内 Seedance 2.0 模型接入设计](../20-architecture/seedance%20模型接入设计/funcloud/FunCloud国内Seedance-2.0模型接入设计.md)
+[FunCloud 国内 Seedance 2.0 模型接入设计](../../../20-architecture/seedance%20模型接入设计/funcloud/FunCloud国内Seedance-2.0模型接入设计.md)
 为权威边界，对当前代码、本地 SQLite 配置和真实 FunCloud 凭据进行了逐项核对与实施。
 
 截至 2026-08-05：
@@ -364,5 +369,5 @@ task ai:check
 ```
 
 真实 API 复验使用测试组 Token，按
-[视频模型 API 用户调用指南](../30-engineering/视频模型API用户调用指南.md) 发起；凭据、Provider task ID、
+[视频模型 API 用户调用指南](../../../30-engineering/视频模型API用户调用指南.md) 发起；凭据、Provider task ID、
 完整 source URL 和原始 Provider 响应不得固化到文档、脚本或版本库。

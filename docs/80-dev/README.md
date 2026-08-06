@@ -6,11 +6,12 @@ last-reviewed: 2026-08-06
 
 # 80-dev — 目标说明
 
-> 2026-08-05 weekly 全量收敛已完成；当前活动增量为
-> [墨行双 Seedance 模型实施与实测结果报告](2026-08-05-墨行双Seedance模型实施与实测结果报告.md)、
-> [飞彩 Seedance 全模型 v2 实施方案与结果报告](2026-08-05-飞彩Seedance全模型v2实施方案与结果报告.md)、
-> [FunCloud 国内 Seedance 模型接入实施方案与结果报告](2026-08-05-FunCloud国内Seedance模型接入实施方案与结果报告.md)、
-> 以及 [OpenAI 图片统一北向合同问题与收敛方案](2026-08-05-OpenAI图片统一北向合同问题与收敛方案.md)。
+> 2026-08-06 daily 收敛已完成；四份 Seedance 实施与实测报告的稳定边界已进入
+> [20-architecture/Seedance 模型接入设计](<../20-architecture/seedance 模型接入设计/README.md>)，逐模型真实返回值和
+> 当前缺口已进入 [50-planning/Seedance 多 Provider 真实验证矩阵](../50-planning/Seedance多Provider真实验证矩阵.md)，
+> 历史原文已移动到 [99-archive/2026/08](../99-archive/2026/08/)。当前活动增量包括
+> [OpenAI 图片统一北向合同问题与收敛方案](2026-08-05-OpenAI图片统一北向合同问题与收敛方案.md)和
+> [渠道 52 真实验证与收窄发布记录](2026-08-06-渠道52真实验证与收窄发布记录.md)。
 > Seedance 统一北向合同的当前事实已进入
 > [20-architecture/Seedance 统一北向合同架构](../20-architecture/Seedance统一北向合同架构.md)，原实施方案已归档。
 > 三份 Link 实施与复评文档的已验证事实、

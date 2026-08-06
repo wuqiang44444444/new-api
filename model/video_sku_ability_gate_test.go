@@ -24,6 +24,16 @@ func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 	require.NoError(t, ValidateLinkSKUAbilityBindings(feicai))
 	require.NoError(t, ValidateLinkSKUAbilityPublicationReadiness(feicai))
 
+	feicai.Models = "seedance-2.0-mini-720p,seedance-2.0-fast-720p,seedance-2.0-standard-720p,seedance-2.0-standard-1080p,seedance-2.0-standard-4k"
+	feicai.ModelMapping = common.GetPointer(`{"seedance-2.0-mini-720p":"seedance-2.0-vip-720p-mini-azhw-feicai","seedance-2.0-fast-720p":"seedance-2.0-vip-720p-fast-azhw-feicai","seedance-2.0-standard-720p":"seedance-2.0-vip-720p-azhw-feicai","seedance-2.0-standard-1080p":"seedance-2.0-vip-1080p-azhw-feicai","seedance-2.0-standard-4k":"seedance-2.0-vip-4k-azhw-feicai"}`)
+	require.NoError(t, ValidateLinkSKUAbilityBindings(feicai))
+	require.NoError(t, ValidateLinkSKUAbilityPublicationReadiness(feicai))
+
+	feicai.Models = VideoSKUSeedance20Value720P
+	feicai.ModelMapping = common.GetPointer(`{"seedance-2.0-value-720p":"seedance-2.0-933-720p-azhw-feicai"}`)
+	require.NoError(t, ValidateLinkSKUAbilityBindings(feicai))
+	require.NoError(t, ValidateLinkSKUAbilityPublicationReadiness(feicai))
+
 	feicai.Models = VideoSKUSeedance20Value1080P
 	feicai.ModelMapping = common.GetPointer(`{"seedance-2.0-value-1080p":"seedance-2.0-933-1080p-azhw-feicai"}`)
 	require.NoError(t, ValidateLinkSKUAbilityBindings(feicai))

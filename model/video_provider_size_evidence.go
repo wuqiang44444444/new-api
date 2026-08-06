@@ -7,7 +7,11 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 )
 
-const FeicaiV2EvidenceVersion20260805 = "feicai-prod-2026-08-05-r1"
+const (
+	FeicaiV2EvidenceVersion20260805   = "feicai-prod-2026-08-05-r1"
+	FeicaiV2EvidenceVersion20260806   = "feicai-prod-2026-08-06-r2"
+	FeicaiV2EvidenceVersion20260806R3 = "feicai-prod-2026-08-06-r3"
+)
 
 type VideoProviderSizeEvidence struct {
 	ProviderSize    string  `json:"provider_size"`
@@ -42,6 +46,24 @@ var videoProviderSizeEvidenceRegistry = map[videoProviderSizeEvidenceKey]VideoPr
 		ProviderModel: FeicaiProviderModelSeedance20Standard1080P, Resolution: ModelArkResolution1080P, Ratio: "16:9",
 	}: {
 		ProviderSize: "1280x720", Multiplier: 1, BillingClass: "standard-1080p-16-9", EvidenceVersion: FeicaiV2EvidenceVersion20260805,
+	},
+	{
+		ImplementationID: LinkImplementationFeicaiSeedanceVideos, ImplementationVersion: LinkImplementationVersionV2,
+		ProviderModel: FeicaiProviderModelSeedance20Fast720P, Resolution: ModelArkResolution720P, Ratio: "16:9",
+	}: {
+		ProviderSize: "1280x720", Multiplier: 1, BillingClass: "fast-720p-16-9", EvidenceVersion: FeicaiV2EvidenceVersion20260806,
+	},
+	{
+		ImplementationID: LinkImplementationFeicaiSeedanceVideos, ImplementationVersion: LinkImplementationVersionV2,
+		ProviderModel: FeicaiProviderModelSeedance20Value720P, Resolution: ModelArkResolution720P, Ratio: "16:9",
+	}: {
+		ProviderSize: "1280x720", Multiplier: 1, BillingClass: "value-720p-16-9", EvidenceVersion: FeicaiV2EvidenceVersion20260806R3,
+	},
+	{
+		ImplementationID: LinkImplementationFeicaiSeedanceVideos, ImplementationVersion: LinkImplementationVersionV2,
+		ProviderModel: FeicaiProviderModelSeedance20Standard4K, Resolution: ModelArkResolution4K, Ratio: "16:9",
+	}: {
+		ProviderSize: "1280x720", Multiplier: 1, BillingClass: "standard-4k-16-9", EvidenceVersion: FeicaiV2EvidenceVersion20260806,
 	},
 }
 

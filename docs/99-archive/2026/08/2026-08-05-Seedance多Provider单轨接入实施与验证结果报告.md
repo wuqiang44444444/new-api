@@ -1,7 +1,12 @@
 ---
-status: in-progress
+status: historical
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-06
+archived-at: 2026-08-06
+source-path: "docs/80-dev/2026-08-05-Seedance多Provider单轨接入实施与验证结果报告.md"
+superseded-by:
+  - "docs/20-architecture/seedance 模型接入设计/README.md"
+  - "docs/50-planning/Seedance多Provider真实验证矩阵.md"
 ---
 
 # Seedance 多 Provider 单轨接入实施与验证结果报告

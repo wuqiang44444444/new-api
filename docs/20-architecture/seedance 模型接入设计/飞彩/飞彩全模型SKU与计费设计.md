@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-06
 ---
 
 # 飞彩全模型 SKU 与计费设计
@@ -21,15 +21,15 @@ billing mode 和 Provider 对账边界。Mini、Fast、933、VIP、SD2 与 Pro P
 
 | # | Provider 模型 | 目标 Link SKU | 固定分辨率 | duration | 图片 min–max | 音频 max | 视频 max | billing mode | 当前代码 |
 | ---: | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| 1 | `seedance-2.0-vip-720p-mini-azhw-feicai` | `seedance-2.0-mini-720p` | 720p | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2 已登记，未发布 |
+| 1 | `seedance-2.0-vip-720p-mini-azhw-feicai` | `seedance-2.0-mini-720p` | 720p | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2 已登记，渠道 51 已发布 |
 | 2 | `seedance2.0-sd2-feicai` | `seedance-2.0-sd2-720p` | 720p | 11–15；初版必填 | 1–9 | 0 | 0 | per-second | v2 已登记，未发布 |
-| 3 | `seedance-2.0-vip-720p-fast-azhw-feicai` | `seedance-2.0-fast-720p` | 720p | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2 已登记，未发布 |
-| 4 | `seedance-2.0-933-720p-azhw-feicai` | `seedance-2.0-value-720p` | 720p | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2 已登记，未发布 |
-| 5 | `seedance-2.0-vip-720p-azhw-feicai` | `seedance-2.0-standard-720p` | 720p | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2 已登记，未发布 |
+| 3 | `seedance-2.0-vip-720p-fast-azhw-feicai` | `seedance-2.0-fast-720p` | 720p | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2-r2 已登记，渠道 51 已发布 |
+| 4 | `seedance-2.0-933-720p-azhw-feicai` | `seedance-2.0-value-720p` | 720p | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2-r3 已登记，渠道 52 已收窄发布 |
+| 5 | `seedance-2.0-vip-720p-azhw-feicai` | `seedance-2.0-standard-720p` | 720p | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2 已登记，渠道 51 已发布 |
 | 6 | `seedance-2.0-933-1080p-azhw-feicai` | `seedance-2.0-value-1080p` | 1080p | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2 已登记，未发布 |
-| 7 | `seedance-2.0-vip-1080p-azhw-feicai` | `seedance-2.0-standard-1080p` | 1080p | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2 已登记，未发布 |
+| 7 | `seedance-2.0-vip-1080p-azhw-feicai` | `seedance-2.0-standard-1080p` | 1080p | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2 已登记，渠道 51 已发布 |
 | 8 | `seedance-2.0-933-4k-azhw-feicai` | `seedance-2.0-value-4k` | 4K | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2 已登记，未发布 |
-| 9 | `seedance-2.0-vip-4k-azhw-feicai` | `seedance-2.0-standard-4k` | 4K | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2 已登记，未发布 |
+| 9 | `seedance-2.0-vip-4k-azhw-feicai` | `seedance-2.0-standard-4k` | 4K | 4–15；初版必填 | 0–9 | 3 | 0 | per-second | v2-r2 已登记，渠道 51 已发布 |
 | 10 | `seedance-933-pro-pi-feicai` | `seedance-2.0-pro-pi-720p` | 720p | 固定 15；省略归一为 15 | 0–9 | 3 | 3 | per-request | v2 已登记，未发布 |
 
 前 9 个模型的 v2 合同不继承旧 v1 的“省略即 4 秒”，初版统一要求客户显式提交 duration。
@@ -108,8 +108,8 @@ Mini、Fast、933 与 VIP 的 8 个按秒 SKU 使用同一协议形状，但分�
 ### 4.3 1080p 与 4K
 
 - `value-1080p`、`standard-1080p`、`value-4k`、`standard-4k` 都已有 v2 capability 与飞彩 binding；
-- `standard-1080p` 只有 `16:9` 的精确 size 证据；其它三个 SKU 与 `standard-1080p` 的其它 ratio
-  均无 size 登记；
+- `standard-1080p` 与 `standard-4k` 只有 `16:9` 的精确 size 证据；两个 value SKU 与两个 standard SKU
+  的其它 ratio 均无 size 登记；
 - 不得从 720p 或 standard 1080p 推导 value 1080p、`1080x1920` 或任何 4K 像素值；
 - 资料中的 `1792x1024` 不是 4K，也不能自动对应 21:9；
 - 高分辨率客户价格独立审批，不从 720p 临时乘倍率推导；
@@ -126,13 +126,17 @@ Mini、Fast、933 与 VIP 的 8 个按秒 SKU 使用同一协议形状，但分�
   -> provider size + billing size class + evidence version
 ```
 
-生产 registry 当前只有三个经本系统 `:8100` 端到端验证的精确条目：
+registry 当前有六个精确条目；2026-08-06 新增的 Fast 720p、Standard 4K 与 Value 720p 来自隔离
+Provider 创建、轮询、同源内容检查和账户 usage 窗口证据：
 
 | Provider 模型 | resolution / ratio | Provider 请求 `size` | 实测产物 | evidence version |
 | --- | --- | --- | --- | --- |
 | `seedance-2.0-vip-720p-mini-azhw-feicai` | `720p / 16:9` | `1280x720` | 1280×720 | `feicai-prod-2026-08-05-r1` |
+| `seedance-2.0-vip-720p-fast-azhw-feicai` | `720p / 16:9` | `1280x720` | 1280×720 | `feicai-prod-2026-08-06-r2` |
+| `seedance-2.0-933-720p-azhw-feicai` | `720p / 16:9` | `1280x720` | 1256×720 | `feicai-prod-2026-08-06-r3` |
 | `seedance-2.0-vip-720p-azhw-feicai` | `720p / 16:9` | `1280x720` | 1280×720 | `feicai-prod-2026-08-05-r1` |
 | `seedance-2.0-vip-1080p-azhw-feicai` | `1080p / 16:9` | `1280x720` | 1920×1080 | `feicai-prod-2026-08-05-r1` |
+| `seedance-2.0-vip-4k-azhw-feicai` | `4k / 16:9` | `1280x720` | 3840×2160 | `feicai-prod-2026-08-06-r2` |
 
 Standard 1080p 的 Provider 请求 `size` 与最终编码像素不同，两个事实必须分开冻结。旧
 `720p:16:9` 和 `720p:9:16` 两元记录未作为 fallback 保留。
@@ -157,13 +161,13 @@ resolver 必须始终同时接收冻结 `feicai.seedance-videos@v2` 和映射后
 | ---: | --- | --- | --- | --- |
 | 1 | `seedance-2.0-mini-720p` | 六画幅 | `16:9` | 本系统创建/轮询/计费/内容/Range 已验证；逐任务 Provider 账单未闭合 |
 | 2 | `seedance-2.0-sd2-720p` | 16:9、9:16 | 无 | 16:9 create 503 unknown，不自动重发 |
-| 3 | `seedance-2.0-fast-720p` | 六画幅 | 无 | 16:9 已生成 1280×720；usage 与研究价不一致 |
-| 4 | `seedance-2.0-value-720p` | 六画幅 | 无 | 请求 1280×720，产物 1256×720；账单未闭合 |
+| 3 | `seedance-2.0-fast-720p` | 六画幅 | `16:9` | 两次隔离 4 秒成功均生成 1280×720，账户 usage 各增 180 分；当前客户价格继续使用已配置表达式 |
+| 4 | `seedance-2.0-value-720p` | 六画幅 | `16:9` | 4 秒任务 completed；内容 4,032,300 B、1256×720、4.062993 秒；渠道 52 仅发布此 SKU |
 | 5 | `seedance-2.0-standard-720p` | 六画幅 | `16:9` | 本系统创建/轮询/计费/内容/Range 已验证；逐任务 Provider 账单未闭合 |
 | 6 | `seedance-2.0-value-1080p` | 六画幅 | 无 | 16:9 两次终态失败，不从标准 1080p 推导 |
 | 7 | `seedance-2.0-standard-1080p` | 六画幅 | `16:9` | 本系统创建/轮询/计费/内容/Range 已验证；请求 size 与产物像素已分开冻结 |
 | 8 | `seedance-2.0-value-4k` | 六画幅 | 无 | 16:9 两次终态失败，不从标准 4K 推导 |
-| 9 | `seedance-2.0-standard-4k` | 六画幅 | 无 | 16:9 已生成 3840×2160；账单未闭合 |
+| 9 | `seedance-2.0-standard-4k` | 六画幅 | `16:9` | 两次隔离 4 秒任务均 completed、账户 usage 各增 1120 分；完整内容验证为 3840×2160、4.016667 秒 |
 | 10 | `seedance-2.0-pro-pi-720p` | 六画幅 | 无 | 主轮询出现 `in_progress`，复测终态失败；未闭合按次账单 |
 
 “研究资料画幅”不是生产 capability。每个 SKU 初始只发布已经进入 v2 registry 的精确组合；未登记 ratio
@@ -266,7 +270,8 @@ validated request
 分页/过滤/延迟、Key 隔离和结果 URL 安全。不同单位必须显式记录来源、币种和换算版本；未知金额保持空值。
 
 2026-08-05 受控黑盒中账户 usage 增量为 ¥56.88；Fast 隔离成功窗口增量为 180 分，与研究报价的 240 分
-不一致。该观察不足以反推单价或客户费用，必须保持草案禁用。
+不一致。2026-08-06 渠道 52 五模型隔离窗口总增量为 144 分，且只有 Value 720p 成功；该账户聚合变化
+仍不是任务级账单，不能反推单价或改写客户费用。
 
 任务列表不覆盖 NEWAPI 客户结算，不用相似时间/模型猜测 create unknown，`fail_reason` 不原样回显。
 只有能以冻结 request ID、幂等键或其它唯一键精确关联时，才可进入 CAS 幂等恢复。

@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-06
 ---
 
 # Seedance 模型接入设计索引
@@ -12,9 +12,13 @@ last-reviewed: 2026-08-05
 
 | Provider | 设计入口 | 当前状态 |
 | --- | --- | --- |
-| FunCloud | [国内 Seedance 2.0 模型接入设计](funcloud/FunCloud国内Seedance-2.0模型接入设计.md) | implementation 与 Standard/Fast 已登记，仅 `randy` 验收分组发布 |
-| 墨行 | [Seedance 模型接入设计](墨行/README.md) | relay v2 已与历史 Ark 隔离；渠道禁用，结果、usage 与 Provider 对账门禁未闭合 |
-| 飞彩 | [Seedance 全模型接入设计](飞彩/README.md) | 单轨 v2 与 10 个 SKU 已结构登记；size registry 仅登记 3 个已验证的 16:9 组合，渠道与 Ability 禁用 |
+| FunCloud | [国内 Seedance 2.0 模型接入设计](funcloud/FunCloud国内Seedance-2.0模型接入设计.md) | Standard 三档文本与 Fast 文本/参考视频/图片音频/Link Asset 已有真实成功证据；仅 `randy` 验收组可用，Standard 媒体稳定性和 Provider 账单仍阻断生产开放 |
+| 墨行 | [Seedance 模型接入设计](墨行/README.md) | relay v2 已与历史 Ark 隔离；TokenSave 480p/1080p 直连成功且 480p 完成本站 E2E，另有请求快照不完整的 720p 成功产物；oversea 凭据预检 401；两条渠道与 Ability 均禁用 |
+| 飞彩 | [Seedance 全模型接入设计](飞彩/README.md) | 单轨 v2 与 10 个 SKU 已结构登记；6 个模型直连生成成功，3 个模型完成本站 E2E 并进入精确 16:9 size registry；渠道与 Ability 禁用，任务级 Provider 成本未闭合 |
+
+逐模型脱敏返回值、账务勾稽和当前缺口集中记录在
+[Seedance 多 Provider 真实验证矩阵](../../50-planning/Seedance多Provider真实验证矩阵.md)。架构文档只保留
+稳定边界和证据结论，不承载逐次调用流水。
 
 `status: accepted` 表示设计边界已确定，不表示代码、渠道或生产 Ability 已开放。运行时权威仍是代码注册表、publication、Channel/Ability、价格、exposure 策略及真实 Provider 验收结果。
 

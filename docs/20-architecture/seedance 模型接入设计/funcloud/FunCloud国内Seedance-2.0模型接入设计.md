@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-06
 ---
 
 # FunCloud 国内 Seedance 2.0 模型接入设计
@@ -20,8 +20,9 @@ last-reviewed: 2026-08-05
 - [Link 资源合同与解析架构](../../Link资源合同与解析架构.md)。
 
 `status: accepted` 表示合同边界和接入方案已经确定，不表示生产渠道已经开放。当前代码已登记
-`funcloud.seedance-json@v1`、两个 Link SKU、FunCloud v2 adapter 和 `source_url` 素材解析；真实
-Provider 的全部媒体组合、结果回源、计费、错误和真人语义仍须完成生产凭据黑盒验收。
+`funcloud.seedance-json@v1`、两个 Link SKU、FunCloud v2 adapter 和 `source_url` 素材解析。生产凭据
+黑盒已闭合 Standard 三档文本、Fast 两档文本、Fast 参考视频、图片加音频和 Link Asset 图片的创建、
+终态、本站内容代理与 Range；Standard 媒体稳定性、Provider 账单、确定拒绝和真人语义仍未闭合。
 
 ## 2. Provider 证据与保守边界
 
@@ -457,15 +458,29 @@ FunCloud SKU、其它 Provider 私有 SKU、普通 DoubaoVideo 候选或 NEWAPI 
 3. 已删除仅按 FunCloud body 数值 code 判断确定拒绝的跨 SKU 规则。未登记的
    `implementation/SKU/path + HTTP status + application code` 组合一律保持 create unknown。
 
-### 11.3 仍需生产证据闭合
+### 11.3 真实证据边界与待闭合项
+
+2026-08-05 至 2026-08-06 的生产凭据黑盒与当前数据库形成以下事实：
+
+- Standard 的 480p、720p、1080p 四秒文本任务成功；Fast 的 480p、720p 四秒文本任务成功；
+- Fast 的 720p 参考视频、480p 中性图片加音频和 480p `asset://` 图片成功，内容代理与 Range 均可用；
+- Standard 的图片、图片加音频和参考视频在四秒与五秒样本中多次进入可信 Provider 失败；同一素材在
+  Fast 存在成功证据，因此不能把失败统一解释为平台 URL 转换问题，也不能横向推断 Standard 已通过；
+- 当前数据库冻结 21 个真实 Task：13 个成功、8 个失败。21 个 create attempt 均为
+  `complete + transferred`；成功任务 `SUCCESS + settled`，失败任务 `FAILURE + settled + quota=0`
+  且存在退款日志；
+- 该批客户账单毛消费 4,762,140 quota、退款 2,082,824 quota、净额 2,679,316 quota，与成功 Task
+  最终 quota 合计一致。原实施报告冻结的是更早的 20-Task 快照；其后新增 1 个 Fast 成功 Task，增加
+  293,000 quota 且未产生新退款。该勾稽只证明平台按冻结价格正确执行，不证明供应商实际成本或生产售价已批准。
 
 生产开放前仍须完成：
 
-1. 使用生产 Key 分别验证两个创建路径、所有准备发布的分辨率/画幅、默认值和 3 / 1 / 1 媒体边界；
+1. 用供应商确认的中性媒体规格使 Standard 图片、图片加音频和参考视频获得稳定成功证据，并继续验证
+   准备发布的其它画幅、默认值和 3 / 1 / 1 媒体边界；
 2. 验证 `generateAudio`、`watermark`、`seed=0`、`cameraFixed=false` 的真实可观察行为；
-3. 验证 Standard/Fast 状态别名、错误码、结果 URL origin、有效期、Range、重定向和内容回源；
-4. 用故障注入验证断连、坏 JSON、未知 code、ID/状态/结果冲突均进入正确的 unknown 或 reconciliation；
-5. 用真实账单验证按时长、分辨率、视频输入和生成音频的价格维度、失败扣费与退款；
+3. 固化 Standard/Fast 错误结构、结果 URL origin/有效期/CDN 跳转和连续 Range 合同；
+4. 用故障注入验证断连、坏 JSON、未知 code、ID/状态/结果冲突进入正确的 unknown 或 reconciliation；
+5. 逐笔取得成功、内容拒绝和生成失败的 Provider 账单，验证币种、精度、时长口径、价格维度与失败扣费；
 6. 完成 SQLite、MySQL、PostgreSQL 的 publication、attempt、Task、结算和 exposure 回归；
 7. 保持 `realPersonMode`、Provider 托管素材、回调、批量查询和尾帧能力关闭，直到各自合同完整取证。
 

@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-06
 ---
 
 # 墨行 Seedance 模型接入设计索引
@@ -18,6 +18,13 @@ last-reviewed: 2026-08-05
 `Moxing · tokensave.seedance-2-0-oversea/v2` 与
 `Moxing · tokensave.doubao-seedance-2-0-260128/v2`。域名、不可变 implementation ID、凭据、价格与
 Provider 证据仍必须隔离。完成本文门禁前不得仅因代码存在而发布 Ability。
+
+当前真实证据边界是：`seedance-2-0-oversea` 在 `www.moxing.pro` 与裸域名的认证预检均返回 401，
+没有创建付费任务；`doubao-seedance-2-0-260128` 的 4 秒、480p、16:9 文生已完成 Provider 直连与本站
+ModelArk v3 E2E，4 秒、1080p、16:9 另有直连成功证据，两者均返回对象型 `result`、缺失 `usage`，
+MP4 下载与 Range 成功。另一个标为 720p 的脱敏产物输出 1280×720，但没有冻结请求时长、分辨率和画幅，
+不能作为精确合同证据。现有证据不扩张到素材、`duration=-1`、音频开关或 Provider 账单；两条渠道和
+Ability 当前均保持禁用。
 
 ## 1. 模型结论
 

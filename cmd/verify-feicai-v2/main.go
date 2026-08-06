@@ -610,7 +610,11 @@ func inspectContent(
 		return 0, "", 0, 0, 0, 0, err
 	}
 	request.Header.Set("Authorization", "Bearer "+credential)
-	response, err := client.Do(request)
+	contentClient := *client
+	if contentClient.Timeout < 5*time.Minute {
+		contentClient.Timeout = 5 * time.Minute
+	}
+	response, err := contentClient.Do(request)
 	if err != nil {
 		return 0, "", 0, 0, 0, 0, err
 	}

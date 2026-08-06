@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-06
 ---
 
 # 08 Seedance 模型能力接口操作手册
@@ -208,13 +208,13 @@ alias 不是新的 capability 注册，也不能反向改变原 SKU。
 | `seedance-2.0-fast` | `public-video-contract-v2` | 480p/720p，默认 720p | 4–15，默认 5 | 7 种规范画幅，默认 16:9 | 3/1/1 | 文本必需；可生成音频 |
 | `seedance-2.0-mini-720p` | `feicai-media-arrays-v2` | 固定 720p，必传 | 4–15，必传 | 仅 16:9，必传 | 9/0/3 | 文本必需；引用模式互斥 |
 | `seedance-2.0-sd2-720p` | `feicai-media-arrays-v2` | 固定 720p，必传 | 11–15，必传 | 当前无已验证画幅 | 9/0/0，至少 1 图 | 不可发布执行，不能把空画幅解释为任意值 |
-| `seedance-2.0-fast-720p` | `feicai-media-arrays-v2` | 固定 720p，必传 | 4–15，必传 | 当前无已验证画幅 | 9/0/3 | 当前无完整可执行参数组合 |
-| `seedance-2.0-value-720p` | `feicai-media-arrays-v2` | 固定 720p，必传 | 4–15，必传 | 当前无已验证画幅 | 9/0/3 | 当前无完整可执行参数组合 |
+| `seedance-2.0-fast-720p` | `feicai-media-arrays-v2-r2` | 固定 720p，必传 | 4–15，必传 | 仅 16:9，必传 | 9/0/3 | 文本必需；引用模式互斥 |
+| `seedance-2.0-value-720p` | `feicai-media-arrays-v2-r3` | 固定 720p，必传 | 4–15，必传 | 仅 16:9，必传 | 9/0/3 | 文本必需；引用模式互斥 |
 | `seedance-2.0-standard-720p` | `feicai-media-arrays-v2` | 固定 720p，必传 | 4–15，必传 | 仅 16:9，必传 | 9/0/3 | 文本必需；引用模式互斥 |
 | `seedance-2.0-value-1080p` | `feicai-media-arrays-v2` | 固定 1080p，必传 | 4–15，必传 | 当前无已验证画幅 | 9/0/3 | 当前无完整可执行参数组合 |
 | `seedance-2.0-standard-1080p` | `feicai-media-arrays-v2` | 固定 1080p，必传 | 4–15，必传 | 仅 16:9，必传 | 9/0/3 | 文本必需；引用模式互斥 |
 | `seedance-2.0-value-4k` | `feicai-media-arrays-v2` | 固定 4k，必传 | 4–15，必传 | 当前无已验证画幅 | 9/0/3 | 当前无完整可执行参数组合 |
-| `seedance-2.0-standard-4k` | `feicai-media-arrays-v2` | 固定 4k，必传 | 4–15，必传 | 当前无已验证画幅 | 9/0/3 | 当前无完整可执行参数组合 |
+| `seedance-2.0-standard-4k` | `feicai-media-arrays-v2-r2` | 固定 4k，必传 | 4–15，必传 | 仅 16:9，必传 | 9/0/3 | 文本必需；引用模式互斥 |
 | `seedance-2.0-pro-pi-720p` | `feicai-media-arrays-v2` | 固定 720p，必传 | 固定 15，默认 15 | 当前无已验证画幅 | 9/3/3 | 当前无完整可执行参数组合 |
 
 7 种规范画幅为 `16:9`、`4:3`、`1:1`、`3:4`、`9:16`、`21:9` 和 `adaptive`。

@@ -18,17 +18,18 @@ func TestFeicaiV2VideoSKUCapabilitiesCoverAllProviderModelsAndFailClosed(t *test
 		maxVideos   int
 		billingMode string
 		ratios      []string
+		version     string
 	}{
-		VideoSKUSeedance20Mini720P:      {"720p", 4, 0, 3, 0, VideoBillingModePerSecond, []string{"16:9"}},
-		VideoSKUSeedance20SD2720P:       {"720p", 11, 1, 0, 0, VideoBillingModePerSecond, nil},
-		VideoSKUSeedance20Fast720P:      {"720p", 4, 0, 3, 0, VideoBillingModePerSecond, nil},
-		VideoSKUSeedance20Value720P:     {"720p", 4, 0, 3, 0, VideoBillingModePerSecond, nil},
-		VideoSKUSeedance20Standard720P:  {"720p", 4, 0, 3, 0, VideoBillingModePerSecond, []string{"16:9"}},
-		VideoSKUSeedance20Value1080P:    {"1080p", 4, 0, 3, 0, VideoBillingModePerSecond, nil},
-		VideoSKUSeedance20Standard1080P: {"1080p", 4, 0, 3, 0, VideoBillingModePerSecond, []string{"16:9"}},
-		VideoSKUSeedance20Value4K:       {"4k", 4, 0, 3, 0, VideoBillingModePerSecond, nil},
-		VideoSKUSeedance20Standard4K:    {"4k", 4, 0, 3, 0, VideoBillingModePerSecond, nil},
-		VideoSKUSeedance20ProPI720P:     {"720p", 15, 0, 3, 3, VideoBillingModePerRequest, nil},
+		VideoSKUSeedance20Mini720P:      {"720p", 4, 0, 3, 0, VideoBillingModePerSecond, []string{"16:9"}, VideoSKUCapabilityVersionFeicaiV2},
+		VideoSKUSeedance20SD2720P:       {"720p", 11, 1, 0, 0, VideoBillingModePerSecond, nil, VideoSKUCapabilityVersionFeicaiV2},
+		VideoSKUSeedance20Fast720P:      {"720p", 4, 0, 3, 0, VideoBillingModePerSecond, []string{"16:9"}, VideoSKUCapabilityVersionFeicaiV2R2},
+		VideoSKUSeedance20Value720P:     {"720p", 4, 0, 3, 0, VideoBillingModePerSecond, []string{"16:9"}, VideoSKUCapabilityVersionFeicaiV2R3},
+		VideoSKUSeedance20Standard720P:  {"720p", 4, 0, 3, 0, VideoBillingModePerSecond, []string{"16:9"}, VideoSKUCapabilityVersionFeicaiV2},
+		VideoSKUSeedance20Value1080P:    {"1080p", 4, 0, 3, 0, VideoBillingModePerSecond, nil, VideoSKUCapabilityVersionFeicaiV2},
+		VideoSKUSeedance20Standard1080P: {"1080p", 4, 0, 3, 0, VideoBillingModePerSecond, []string{"16:9"}, VideoSKUCapabilityVersionFeicaiV2},
+		VideoSKUSeedance20Value4K:       {"4k", 4, 0, 3, 0, VideoBillingModePerSecond, nil, VideoSKUCapabilityVersionFeicaiV2},
+		VideoSKUSeedance20Standard4K:    {"4k", 4, 0, 3, 0, VideoBillingModePerSecond, []string{"16:9"}, VideoSKUCapabilityVersionFeicaiV2R2},
+		VideoSKUSeedance20ProPI720P:     {"720p", 15, 0, 3, 3, VideoBillingModePerRequest, nil, VideoSKUCapabilityVersionFeicaiV2},
 	}
 	for publicModel, expected := range models {
 		t.Run(publicModel, func(t *testing.T) {
@@ -36,7 +37,7 @@ func TestFeicaiV2VideoSKUCapabilitiesCoverAllProviderModelsAndFailClosed(t *test
 			require.True(t, ok)
 			second, ok := ResolveVideoSKUCapability(publicModel)
 			require.True(t, ok)
-			assert.Equal(t, VideoSKUCapabilityVersionFeicaiV2, first.Version)
+			assert.Equal(t, expected.version, first.Version)
 			assert.Equal(t, expected.resolution, first.Resolution)
 			assert.Equal(t, expected.minDuration, first.MinDuration)
 			assert.Equal(t, expected.minImages, first.MinImages)

@@ -56,17 +56,21 @@ func TestResolveVideoSizeRequiresExactImplementationAndProviderEvidence(t *testi
 	}
 }
 
-func TestResolveVideoSizeIncludesThreeVerifiedFeicaiGatewayCandidates(t *testing.T) {
+func TestResolveVideoSizeIncludesVerifiedFeicaiGatewayCandidates(t *testing.T) {
 	implementation := dto.LinkImplementationRef{
 		ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV2,
 	}
 	tests := []struct {
 		providerModel string
 		resolution    string
+		evidence      string
 	}{
-		{providerModel: model.FeicaiProviderModelSeedance20Mini720P, resolution: "720p"},
-		{providerModel: model.FeicaiProviderModelSeedance20Standard720P, resolution: "720p"},
-		{providerModel: model.FeicaiProviderModelSeedance20Standard1080P, resolution: "1080p"},
+		{providerModel: model.FeicaiProviderModelSeedance20Mini720P, resolution: "720p", evidence: feicaiV2Evidence20260805},
+		{providerModel: model.FeicaiProviderModelSeedance20Fast720P, resolution: "720p", evidence: feicaiV2Evidence20260806},
+		{providerModel: model.FeicaiProviderModelSeedance20Value720P, resolution: "720p", evidence: feicaiV2Evidence20260806R3},
+		{providerModel: model.FeicaiProviderModelSeedance20Standard720P, resolution: "720p", evidence: feicaiV2Evidence20260805},
+		{providerModel: model.FeicaiProviderModelSeedance20Standard1080P, resolution: "1080p", evidence: feicaiV2Evidence20260805},
+		{providerModel: model.FeicaiProviderModelSeedance20Standard4K, resolution: "4k", evidence: feicaiV2Evidence20260806},
 	}
 	for _, test := range tests {
 		size, ok := ResolveVideoSize(implementation, test.providerModel, test.resolution, "16:9")
@@ -74,7 +78,7 @@ func TestResolveVideoSizeIncludesThreeVerifiedFeicaiGatewayCandidates(t *testing
 		assert.Equal(t, "1280x720", size.Value, test.providerModel)
 		assert.Equal(t, 1.0, size.Multiplier, test.providerModel)
 		assert.NotEmpty(t, size.BillingClass, test.providerModel)
-		assert.Equal(t, feicaiV2Evidence20260805, size.EvidenceVersion, test.providerModel)
+		assert.Equal(t, test.evidence, size.EvidenceVersion, test.providerModel)
 	}
 }
 

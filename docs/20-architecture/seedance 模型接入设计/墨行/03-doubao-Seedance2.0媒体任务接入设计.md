@@ -97,9 +97,11 @@ Provider 的 `queued/running/succeeded/failed` 分别归一到共享 Task；未�
 ID、Key、签名 URL 或原始响应。
 
 2026-08-05 的 4 秒 480p 文生实测返回对象型 `result`、缺失 `usage`，并得到可下载的 MP4 与 Range
-响应。因此 v2 adapter 同时接受白名单对象、JSON 字符串对象和直接 HTTPS URL，但不会根据模型页的
-字符串描述强制改写真实对象；缺失或字符串型 `usage` 均不投影为 token。该单样本只闭合基础文生结果
-形状，不证明其它分辨率、素材场景、智能时长或 Provider 账单。
+响应；追加保存的 4 秒 1080p、16:9 脱敏验证产物同样成功，产物为 1920×1080、无音频流。另有一份
+文件名标识 720p、输出 1280×720 的成功产物，但其 `requested_duration/resolution/ratio` 均为空，
+只能作为补充内容证据，不能登记精确 capability。v2 adapter 因此接受白名单对象、JSON 字符串对象和
+直接 HTTPS URL，但不会根据模型页的字符串描述强制改写真实对象；缺失或字符串型 `usage` 均不投影为
+token。当前证据不证明素材场景、智能时长、720p 精确请求合同或 Provider 账单。
 
 本 SKU 按冻结的时长、分辨率和场景表达式进行按秒计费；`duration=-1` 按 15 秒上界预扣。文本、
 单图/首尾帧和参考图模式必须命中各自已登记档位。Provider `usage` 在真实类型和单位完成生产取证前

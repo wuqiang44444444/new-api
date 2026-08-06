@@ -15,6 +15,8 @@ import (
 
 const (
 	VideoSKUCapabilityVersionFeicaiV2   = "feicai-media-arrays-v2"
+	VideoSKUCapabilityVersionFeicaiV2R2 = "feicai-media-arrays-v2-r2"
+	VideoSKUCapabilityVersionFeicaiV2R3 = "feicai-media-arrays-v2-r3"
 	VideoSKUCapabilityVersionModelArkV2 = "public-video-contract-v2"
 	VideoSKUCapabilityVersionV1         = "public-video-contract-v1"
 	VideoProfileJSONMediaArrays         = "third_party_json_video_media_arrays"

@@ -38,21 +38,27 @@ func feicaiVideoSKUCapabilities() map[string]VideoSKUCapability {
 	definitions := []feicaiVideoSKUDefinition{
 		{PublicModel: VideoSKUSeedance20Mini720P, Resolution: "720p", MinDuration: 4, MaxDuration: 15, MaxAudio: 3, BillingMode: VideoBillingModePerSecond, Ratios: []string{"16:9"}},
 		{PublicModel: VideoSKUSeedance20SD2720P, Resolution: "720p", MinDuration: 11, MaxDuration: 15, MinImages: 1, BillingMode: VideoBillingModePerSecond},
-		{PublicModel: VideoSKUSeedance20Fast720P, Resolution: "720p", MinDuration: 4, MaxDuration: 15, MaxAudio: 3, BillingMode: VideoBillingModePerSecond},
-		{PublicModel: VideoSKUSeedance20Value720P, Resolution: "720p", MinDuration: 4, MaxDuration: 15, MaxAudio: 3, BillingMode: VideoBillingModePerSecond},
+		{PublicModel: VideoSKUSeedance20Fast720P, Resolution: "720p", MinDuration: 4, MaxDuration: 15, MaxAudio: 3, BillingMode: VideoBillingModePerSecond, Ratios: []string{"16:9"}},
+		{PublicModel: VideoSKUSeedance20Value720P, Resolution: "720p", MinDuration: 4, MaxDuration: 15, MaxAudio: 3, BillingMode: VideoBillingModePerSecond, Ratios: []string{"16:9"}},
 		{PublicModel: VideoSKUSeedance20Standard720P, Resolution: "720p", MinDuration: 4, MaxDuration: 15, MaxAudio: 3, BillingMode: VideoBillingModePerSecond, Ratios: []string{"16:9"}},
 		{PublicModel: VideoSKUSeedance20Value1080P, Resolution: "1080p", MinDuration: 4, MaxDuration: 15, MaxAudio: 3, BillingMode: VideoBillingModePerSecond},
 		{PublicModel: VideoSKUSeedance20Standard1080P, Resolution: "1080p", MinDuration: 4, MaxDuration: 15, MaxAudio: 3, BillingMode: VideoBillingModePerSecond, Ratios: []string{"16:9"}},
 		{PublicModel: VideoSKUSeedance20Value4K, Resolution: "4k", MinDuration: 4, MaxDuration: 15, MaxAudio: 3, BillingMode: VideoBillingModePerSecond},
-		{PublicModel: VideoSKUSeedance20Standard4K, Resolution: "4k", MinDuration: 4, MaxDuration: 15, MaxAudio: 3, BillingMode: VideoBillingModePerSecond},
+		{PublicModel: VideoSKUSeedance20Standard4K, Resolution: "4k", MinDuration: 4, MaxDuration: 15, MaxAudio: 3, BillingMode: VideoBillingModePerSecond, Ratios: []string{"16:9"}},
 		{PublicModel: VideoSKUSeedance20ProPI720P, Resolution: "720p", MinDuration: 15, MaxDuration: 15, DefaultDuration: 15, MaxAudio: 3, MaxVideos: 3, BillingMode: VideoBillingModePerRequest},
 	}
 	result := make(map[string]VideoSKUCapability, len(definitions))
 	for _, definition := range definitions {
+		version := VideoSKUCapabilityVersionFeicaiV2
+		if definition.PublicModel == VideoSKUSeedance20Fast720P || definition.PublicModel == VideoSKUSeedance20Standard4K {
+			version = VideoSKUCapabilityVersionFeicaiV2R2
+		} else if definition.PublicModel == VideoSKUSeedance20Value720P {
+			version = VideoSKUCapabilityVersionFeicaiV2R3
+		}
 		capability := VideoSKUCapability{
 			PublicModel:             definition.PublicModel,
 			ContractID:              string(dto.VideoContractModelArkV3),
-			Version:                 VideoSKUCapabilityVersionFeicaiV2,
+			Version:                 version,
 			Resolution:              definition.Resolution,
 			Resolutions:             []string{definition.Resolution},
 			MinDuration:             definition.MinDuration,
