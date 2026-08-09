@@ -57,8 +57,9 @@ export function linkAccessPlanLabel(
     'id' | 'version' | 'provider' | 'plan_name'
   >
 ): string {
-  const contractName = implementation.plan_name || implementation.id
-  return `${implementation.provider} · ${contractName}/${implementation.version}`
+  return implementation.plan_name
+    ? `${implementation.provider} · ${implementation.plan_name}`
+    : implementation.provider
 }
 
 export function linkAccessPlansForChannelType(
@@ -68,6 +69,32 @@ export function linkAccessPlansForChannelType(
   return implementations.filter(
     (implementation) => implementation.channel_type === channelType
   )
+}
+
+export function linkAccessPlanProviderModelDefaults(
+  implementation: LinkImplementation
+): string[] {
+  const expectedProfile = implementation.required_video_profile?.trim()
+  if (!expectedProfile) return []
+  const bindings = implementation.execution_bindings.filter(
+    (binding) =>
+      binding.action === 'create' && binding.profile === expectedProfile
+  )
+  if (new Set(bindings.map((binding) => binding.route_family)).size !== 1) {
+    return []
+  }
+
+  return [
+    ...new Set(
+      bindings.flatMap((binding) => {
+        const providerModel = binding.provider_model.trim()
+        if (!providerModel) {
+          return []
+        }
+        return [providerModel]
+      })
+    ),
+  ]
 }
 
 export function deriveLinkPublicationPreviews(
@@ -108,7 +135,7 @@ export function deriveLinkPublicationPreviews(
     let providerModel = customerModel
     const visited = new Set([providerModel])
     while (typeof mapping[providerModel] === 'string') {
-      const next = mapping[providerModel].trim()
+      const next = mapping[providerModel]
       if (!next || next === providerModel) break
       if (visited.has(next)) {
         return {

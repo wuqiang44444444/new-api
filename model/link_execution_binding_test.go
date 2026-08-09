@@ -41,6 +41,23 @@ func TestDeriveChannelLinkExecutionsFailsClosedWithoutExactBinding(t *testing.T)
 	require.Error(t, err)
 }
 
+func TestDeriveChannelLinkExecutionsPreservesMappedModelLiteral(t *testing.T) {
+	channel := &Channel{
+		Type:         constant.ChannelTypeDoubaoVideo,
+		Models:       "customer-seedance",
+		ModelMapping: common.GetPointer(`{"customer-seedance":" seedance-2.0-vip-720p-azhw-feicai "}`),
+	}
+	settings := dto.ChannelOtherSettings{
+		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
+		LinkImplementation: dto.LinkImplementationRef{
+			ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV2,
+		},
+	}
+
+	_, err := DeriveChannelLinkExecutions(channel, &settings)
+	require.ErrorContains(t, err, `Provider model " seedance-2.0-vip-720p-azhw-feicai "`)
+}
+
 func TestDeriveChannelLinkExecutionsRejectsAmbiguousAdvancedCustomRoutes(t *testing.T) {
 	channel := &Channel{
 		Type:         constant.ChannelTypeAdvancedCustom,

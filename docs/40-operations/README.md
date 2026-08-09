@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-06
 ---
 
 # 40-operations — 目标说明
@@ -23,9 +23,10 @@ last-reviewed: 2026-08-05
 - [06 飞彩 Seedance 全模型上线验收手册](06-飞彩Seedance全模型上线验收手册.md)
 - [07 Seedance 渠道配置清单](07-Seedance渠道配置清单.md)
 - [08 Seedance 模型能力接口操作手册](08-Seedance模型能力接口操作手册.md)
+- [09 Azure GPT-5.6 Chat 与 Responses 兼容运维手册](09-Azure-GPT-5.6-Chat与Responses兼容运维手册.md)
 - [环境配置（反代转发头与 ServerAddress）](环境配置.md)
 
-历史专题资料已移至 [99-archive](../99-archive/README.md)，现行操作统一按 `01`—`08` 执行。
+历史专题资料已移至 [99-archive](../99-archive/README.md)，现行操作统一按 `01`—`09` 执行。
 
 ## 不放什么
 - 本地开发命令 -> 30-engineering/命令清单.md

@@ -14,8 +14,9 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     include: [
-      'src/features/billing/**/*.{test,spec}.{ts,tsx}',
+      'src/features/billing-reconciliation/**/*.{test,spec}.{ts,tsx}',
       'src/features/channels/components/**/*.{test,spec}.{ts,tsx}',
+      'src/features/channels/lib/__tests__/link-access-plan.test.ts',
       'src/features/docs/**/*.{test,spec}.{ts,tsx}',
       'src/hooks/__tests__/**/*.{test,spec}.{ts,tsx}',
     ],

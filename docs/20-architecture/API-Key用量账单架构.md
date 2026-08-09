@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-04
+last-reviewed: 2026-08-09
 ---
 
 # API Key 用量账单架构
@@ -17,15 +17,16 @@ last-reviewed: 2026-08-04
 当前代码已经实现：
 
 - 登录用户页面 `/billing`；
+- 当前页面使用 `GET /api/billing/statement/self`，按自然月展示 API Key → 客户模型汇总；
 - 自助接口 `GET /api/billing/self`；
 - 使用构成接口 `GET /api/billing/self/breakdown`；
 - 最长 31 天的账单周期；
-- API Key × 模型明细、按模型和按 API Key汇总；
+- API Key × 模型的服务端汇总；
 - 输入、输出、总 Token、请求数、RPM、TPM、耗时、流式比例；
 - 消费、退款和非负净费用；
 - 当前余额与累计消费；
 - 缓存、长短 Context、动态计费和数据质量明细；
-- 带原始 quota/比例列的 CSV 导出和用量日志下钻；
+- 用量日志下钻；
 - SQLite、MySQL/PostgreSQL 使用 GORM 聚合的实现，以及 ClickHouse SQL 兼容测试。
 
 该功能没有新增数据库结构，也没有修改预扣、结算、退款或日志写入主链路。
@@ -37,13 +38,16 @@ last-reviewed: 2026-08-04
 账单使用独立功能模块：
 
 ```text
-web/src/features/billing/
+web/src/features/billing-reconciliation/
 web/src/routes/_authenticated/billing/
 controller/billing_statement.go
 model/billing_statement.go
 controller/billing_statement_breakdown.go
 model/billing_statement_breakdown.go
 ```
+
+旧 `web/src/features/billing/` 在确认无生产路由或其他调用后已移除。原 `GET /api/billing/self`
+和 breakdown 后端合同仍保留作为兼容入口，本次不因前端无引用而删除对外 API。
 
 它不并入 Dashboard、Wallet 或 Usage Logs：
 

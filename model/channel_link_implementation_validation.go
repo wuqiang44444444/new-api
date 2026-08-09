@@ -17,11 +17,6 @@ func ValidateLinkImplementationRegistration(channel *Channel, settings *dto.Chan
 	}
 	ref := settings.LinkImplementation
 	if ref.Empty() {
-		for _, rawModel := range strings.Split(channel.Models, ",") {
-			if IsRegisteredLinkSKU(strings.TrimSpace(rawModel)) {
-				return fmt.Errorf("registered Link SKUs require an explicit Link access plan")
-			}
-		}
 		return nil
 	}
 	if !ref.Valid() {

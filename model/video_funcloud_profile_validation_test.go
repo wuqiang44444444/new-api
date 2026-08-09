@@ -17,6 +17,10 @@ func TestValidateFunCloudVideoProfileChannelSeparatesStandardAndFast(t *testing.
 	}
 	channel := &Channel{Type: constant.ChannelTypeDoubaoVideo, BaseURL: &baseURL, Models: VideoSKUSeedance20Fast}
 	require.NoError(t, validateFunCloudVideoProfileChannel(channel, settings))
+	httpBaseURL := "http://" + funCloudHost
+	channel.BaseURL = &httpBaseURL
+	require.NoError(t, validateFunCloudVideoProfileChannel(channel, settings))
+	channel.BaseURL = &baseURL
 
 	channel.Models = VideoSKUSeedance20Standard
 	require.Error(t, validateFunCloudVideoProfileChannel(channel, settings))
@@ -26,7 +30,7 @@ func TestValidateFunCloudVideoProfileChannelSeparatesStandardAndFast(t *testing.
 
 	legacyBaseURL := "https://mm-accelerate.leonecloud.com"
 	channel.BaseURL = &legacyBaseURL
-	require.ErrorContains(t, validateFunCloudVideoProfileChannel(channel, settings), funCloudBaseURL)
+	require.ErrorContains(t, validateFunCloudVideoProfileChannel(channel, settings), funCloudHost)
 }
 
 func TestFunCloudImplementationMatchesRoleRestrictedCapabilities(t *testing.T) {

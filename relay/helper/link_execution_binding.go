@@ -26,7 +26,7 @@ func validatePublishedLinkExecution(info *relaycommon.RelayInfo) error {
 	if execution.LinkSKU != info.PublishedLinkContractSKU {
 		return fmt.Errorf("selected channel resolves Link SKU %q instead of published SKU %q", execution.LinkSKU, info.PublishedLinkContractSKU)
 	}
-	if execution.ProviderModel != strings.TrimSpace(info.UpstreamModelName) {
+	if execution.ProviderModel != info.UpstreamModelName {
 		return fmt.Errorf("selected channel resolves provider model %q instead of mapped model %q", execution.ProviderModel, info.UpstreamModelName)
 	}
 	return nil

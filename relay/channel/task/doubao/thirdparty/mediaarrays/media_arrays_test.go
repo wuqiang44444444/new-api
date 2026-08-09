@@ -151,9 +151,9 @@ func TestResponsesUseIDAsOnlyTaskIdentity(t *testing.T) {
 	assert.JSONEq(t, `{"id":"task_public"}`, string(created))
 
 	completed, err := TaskResponse(
-		[]byte(`{"id":"task_public","task_id":"different_internal","status":"completed","video_url":"https://video.example.com/v1/videos/task_public/content"}`),
+		[]byte(`{"id":"task_public","task_id":"different_internal","status":"completed","video_url":"http://video.example.com/v1/videos/task_public/content"}`),
 		"task_public",
-		TaskResponseContext{BaseURL: "https://video.example.com"},
+		TaskResponseContext{BaseURL: "http://video.example.com"},
 	)
 	require.NoError(t, err)
 	assert.Contains(t, string(completed), `"status":"succeeded"`)
@@ -179,7 +179,7 @@ func TestCreateResponseDoesNotFallBackToTaskID(t *testing.T) {
 	require.ErrorContains(t, err, "invalid id")
 }
 
-func TestCompletedResponseRequiresSameOriginHTTPSURL(t *testing.T) {
+func TestCompletedResponseRequiresSameOriginHTTPOrHTTPSURL(t *testing.T) {
 	tests := []string{
 		`{"id":"task_public","status":"completed","video_url":"http://video.example.com/result.mp4"}`,
 		`{"id":"task_public","status":"completed","video_url":"https://cdn.example.com/result.mp4"}`,

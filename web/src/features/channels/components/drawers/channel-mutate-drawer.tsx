@@ -3066,23 +3066,23 @@ export function ChannelMutateDrawer({
                                           {...field}
                                         />
                                       </FormControl>
-                                      <FormDescription>
-                                        <div className='flex flex-col gap-2'>
-                                          <span>{keyDescription}</span>
-                                          {isBatchMode && (
-                                            <Button
-                                              type='button'
-                                              variant='outline'
-                                              size='sm'
-                                              onClick={handleDeduplicateKeys}
-                                              className='w-fit'
-                                            >
-                                              <Trash2 className='mr-2 h-4 w-4' />
-                                              {t('Remove Duplicates')}
-                                            </Button>
-                                          )}
-                                        </div>
-                                      </FormDescription>
+                                      <div className='flex flex-col items-start gap-2'>
+                                        <FormDescription>
+                                          {keyDescription}
+                                        </FormDescription>
+                                        {isBatchMode && (
+                                          <Button
+                                            type='button'
+                                            variant='outline'
+                                            size='sm'
+                                            onClick={handleDeduplicateKeys}
+                                            className='w-fit'
+                                          >
+                                            <Trash2 className='mr-2 h-4 w-4' />
+                                            {t('Remove Duplicates')}
+                                          </Button>
+                                        )}
+                                      </div>
                                       {isEditing && canRevealChannelKey && (
                                         <div className='border-border/60 mt-4 flex flex-col gap-3 border-y border-dashed py-4'>
                                           <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>

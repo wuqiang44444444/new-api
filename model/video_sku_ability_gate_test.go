@@ -41,6 +41,7 @@ func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 
 	feicai.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProfile: dto.VideoUpstreamProfileOfficial,
+		LinkImplementation:   dto.LinkImplementationRef{ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV2},
 	})
 	require.Error(t, ValidateLinkSKUAbilityBindings(feicai))
 
@@ -63,6 +64,7 @@ func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 	require.True(t, bytePlusCapability.Lifecycle.SupportsDelete)
 	bytePlus.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyRelay,
+		LinkImplementation:   dto.LinkImplementationRef{ID: LinkImplementationBytePlusSeedanceArk, Version: LinkImplementationVersionV1},
 	})
 	require.Error(t, ValidateLinkSKUAbilityBindings(bytePlus))
 
@@ -84,6 +86,7 @@ func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 	require.True(t, doubaoCapability.SupportsProfile(VideoProfileThirdPartyRelay))
 	doubao.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyReverseProxy,
+		LinkImplementation:   dto.LinkImplementationRef{ID: LinkImplementationTokenSaveSeedance, Version: LinkImplementationVersionV2},
 	})
 	require.Error(t, ValidateLinkSKUAbilityBindings(doubao))
 
@@ -110,7 +113,7 @@ func TestVideoSKUAbilityPublishGateRejectsIncompatibleBinding(t *testing.T) {
 		Type: constant.ChannelTypeDoubaoVideo, Models: VideoSKUSeedance20Oversea, Status: common.ChannelStatusEnabled,
 	}
 	moxingArk.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyReverseProxy})
-	require.Error(t, ValidateLinkSKUAbilityBindings(moxingArk))
+	require.NoError(t, ValidateLinkSKUAbilityBindings(moxingArk))
 }
 
 func TestVideoSKUImplementationEquivalenceIncludesLifecycleAndRequestLimits(t *testing.T) {

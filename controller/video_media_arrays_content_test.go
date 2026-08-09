@@ -20,9 +20,9 @@ func TestVideoMediaArraysContentSourceUsesFrozenBearerAndIdentity(t *testing.T) 
 		LinkImplementationID:      implementation.ID,
 		LinkImplementationVersion: implementation.Version,
 		LinkImplementationHash:    implementation.ContentHash,
-		VideoUpstreamQueryBaseURL: "https://video.example.com/root",
+		VideoUpstreamQueryBaseURL: "http://video.example.com/root",
 		Key:                       "frozen-provider-key",
-		ResultURL:                 "https://video.example.com/v1/videos/task/content",
+		ResultURL:                 "http://video.example.com/v1/videos/task/content",
 	}}
 
 	contentURL, key, handled, err := videoMediaArraysContentSource(task)
@@ -37,12 +37,12 @@ func TestVideoMediaArraysContentSourceUsesFrozenBearerAndIdentity(t *testing.T) 
 	require.Error(t, err)
 
 	task.PrivateData.Key = "frozen-provider-key"
-	task.PrivateData.ResultURL = "https://cdn.example.com/result.mp4"
+	task.PrivateData.ResultURL = "http://cdn.example.com/result.mp4"
 	_, _, handled, err = videoMediaArraysContentSource(task)
 	assert.True(t, handled)
 	require.Error(t, err)
 
-	task.PrivateData.ResultURL = "https://video.example.com/result.mp4"
+	task.PrivateData.ResultURL = "http://video.example.com/result.mp4"
 	task.PrivateData.LinkImplementationHash = "sha256:stale"
 	_, _, handled, err = videoMediaArraysContentSource(task)
 	assert.True(t, handled)

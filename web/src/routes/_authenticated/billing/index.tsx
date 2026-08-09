@@ -19,16 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 
-import { Billing } from '@/features/billing'
-import { BILLING_PRESETS } from '@/features/billing/types'
+import { MyBilling } from '@/features/billing-reconciliation'
 
 const billingSearchSchema = z.object({
-  preset: z.enum(BILLING_PRESETS).optional().catch('this-week'),
-  startTime: z.number().optional(),
-  endTime: z.number().optional(),
-  tokenId: z.number().positive().optional(),
-  model: z.string().optional(),
-  view: z.enum(['detail', 'model', 'key']).optional().catch('detail'),
+  month: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/)
+    .optional(),
 })
 
 export const Route = createFileRoute('/_authenticated/billing/')({
@@ -37,5 +34,15 @@ export const Route = createFileRoute('/_authenticated/billing/')({
 })
 
 function BillingRoute() {
-  return <Billing search={Route.useSearch()} />
+  const search = Route.useSearch()
+  const navigate = Route.useNavigate()
+
+  return (
+    <MyBilling
+      month={search.month}
+      onMonthChange={(month) =>
+        navigate({ search: (current) => ({ ...current, month }) })
+      }
+    />
+  )
 }

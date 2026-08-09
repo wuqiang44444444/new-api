@@ -58,7 +58,7 @@ func TaskResponse(body []byte, expectedTaskID string, responseContext TaskRespon
 	case "processing", "in_progress":
 		result["status"] = "running"
 	case "completed":
-		videoURL, err := relaycommon.ValidateSameOriginHTTPSVideoResultURL(response.VideoURL, responseContext.BaseURL)
+		videoURL, err := relaycommon.ValidateSameOriginVideoResultURL(response.VideoURL, responseContext.BaseURL)
 		if err != nil {
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "invalid completed video url"}
 		}

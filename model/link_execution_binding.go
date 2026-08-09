@@ -84,7 +84,6 @@ func validateLinkExecutionBindings(implementation LinkImplementation) error {
 func resolveImplementationExecutionBinding(implementation LinkImplementation, routeFamily LinkRouteFamily, action, profile, providerModel string) (LinkExecutionBinding, error) {
 	action = strings.TrimSpace(action)
 	profile = strings.TrimSpace(profile)
-	providerModel = strings.TrimSpace(providerModel)
 	matches := make([]LinkExecutionBinding, 0, 1)
 	for _, binding := range implementation.ExecutionBindings {
 		if binding.RouteFamily == routeFamily && binding.Action == action && binding.Profile == profile && binding.ProviderModel == providerModel {
@@ -115,9 +114,9 @@ func DeriveChannelLinkExecutions(channel *Channel, settings *dto.ChannelOtherSet
 		if customerModel == "" {
 			continue
 		}
-		providerModel, err := resolveMappedChannelModel(customerModel, mapping)
+		providerModel, _, err := ResolveModelMapping(customerModel, mapping)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("model mapping for %q: %w", customerModel, err)
 		}
 		routeFamily, profile, err := channelExecutionShape(channel, settings, implementation, customerModel)
 		if err != nil {
@@ -144,22 +143,6 @@ func channelModelMapping(channel *Channel) (map[string]string, error) {
 		return nil, fmt.Errorf("Link implementation model mapping is invalid: %w", err)
 	}
 	return mapping, nil
-}
-
-func resolveMappedChannelModel(customerModel string, mapping map[string]string) (string, error) {
-	current := strings.TrimSpace(customerModel)
-	visited := map[string]struct{}{current: {}}
-	for {
-		next := strings.TrimSpace(mapping[current])
-		if next == "" || next == current {
-			return current, nil
-		}
-		if _, exists := visited[next]; exists {
-			return "", fmt.Errorf("model mapping for %q contains a cycle", customerModel)
-		}
-		visited[next] = struct{}{}
-		current = next
-	}
 }
 
 func channelExecutionShape(channel *Channel, settings *dto.ChannelOtherSettings, implementation LinkImplementation, customerModel string) (LinkRouteFamily, string, error) {

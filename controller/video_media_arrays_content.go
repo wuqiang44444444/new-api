@@ -33,7 +33,7 @@ func videoMediaArraysContentSource(task *model.Task) (string, string, bool, erro
 	if key == "" {
 		return "", "", true, fmt.Errorf("frozen JSON video media-arrays credential is unavailable")
 	}
-	resultURL, err := relaycommon.ValidateSameOriginHTTPSVideoResultURL(
+	resultURL, err := relaycommon.ValidateSameOriginVideoResultURL(
 		task.PrivateData.ResultURL,
 		strings.TrimSpace(task.PrivateData.VideoUpstreamQueryBaseURL),
 	)

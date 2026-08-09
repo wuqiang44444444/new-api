@@ -28,6 +28,7 @@ import {
   MessageSquare,
   Radio,
   ReceiptText,
+  Scale,
   ServerCog,
   Settings,
   Ticket,
@@ -110,7 +111,7 @@ export function useSidebarData(): SidebarData {
             icon: Wallet,
           },
           {
-            title: t('Billing Statement'),
+            title: t('My billing'),
             url: '/billing',
             icon: ReceiptText,
           },
@@ -139,6 +140,11 @@ export function useSidebarData(): SidebarData {
             title: t('Users'),
             url: '/users',
             icon: Users,
+          },
+          {
+            title: t('Billing reconciliation'),
+            url: '/admin/billing',
+            icon: Scale,
           },
           {
             title: t('Redemption Codes'),

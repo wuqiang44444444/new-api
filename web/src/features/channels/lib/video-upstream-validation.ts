@@ -47,21 +47,22 @@ export function refineVideoUpstreamProfile(
     try {
       const parsed = new URL(data.base_url.trim())
       if (
-        parsed.protocol !== 'https:' ||
+        (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') ||
         parsed.username ||
         parsed.password ||
+        (parsed.pathname !== '' && parsed.pathname !== '/') ||
         parsed.search ||
         parsed.hash
       ) {
         addIssue(
           'base_url',
-          'Selected video profile requires an HTTPS Base URL without userinfo, query, or fragment'
+          'Provide a valid URL starting with http:// or https://'
         )
       }
     } catch {
       addIssue(
         'base_url',
-        'Selected video profile requires an HTTPS Base URL without userinfo, query, or fragment'
+        'Provide a valid URL starting with http:// or https://'
       )
     }
   }

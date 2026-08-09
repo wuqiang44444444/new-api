@@ -35,9 +35,20 @@ func TestLinkImplementationRegistryAndExplicitChannelRegistration(t *testing.T) 
 	settings.VideoUpstreamCreatePath = "/api/v2/open/aigc/seedance2-0"
 	settings.LinkImplementation.Version = "v2"
 	assert.Error(t, ValidateLinkImplementationRegistration(channel, &settings))
+}
 
-	settings.LinkImplementation = dto.LinkImplementationRef{}
-	assert.Error(t, ValidateLinkImplementationRegistration(channel, &settings))
+func TestOrdinaryChannelMayUseRegisteredLinkSKUNameWithoutPlan(t *testing.T) {
+	channel := &Channel{
+		Type: constant.ChannelTypeDoubaoVideo, Models: VideoSKUSeedance20Standard,
+	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
+	})
+
+	settings := channel.GetOtherSettings()
+	require.NoError(t, ValidateLinkImplementationRegistration(channel, &settings))
+	require.NoError(t, ValidateLinkSKUAbilityBindings(channel))
+	require.NoError(t, ValidateLinkSKUAbilityPublicationReadiness(channel))
 }
 
 func TestLinkImplementationRegistryRejectsDuplicateNormalizedIdentities(t *testing.T) {
@@ -50,10 +61,18 @@ func TestLinkImplementationRegistryRejectsDuplicateNormalizedIdentities(t *testi
 
 func TestLinkImplementationRegistryRejectsDuplicateDisplayNames(t *testing.T) {
 	_, err := buildLinkImplementationRegistryFrom([]LinkImplementation{
-		{ID: "first", Version: "v2", Provider: "Moxing", PlanName: "tokensave.seedance"},
-		{ID: "second", Version: "v2", Provider: " Moxing ", PlanName: " tokensave.seedance "},
+		{ID: "first", Version: "v2", Provider: "Moxing", PlanName: "Seedance"},
+		{ID: "second", Version: "v3", Provider: " Moxing ", PlanName: " Seedance "},
 	})
-	require.ErrorContains(t, err, `duplicate Link plan display name "Moxing · tokensave.seedance/v2"`)
+	require.ErrorContains(t, err, `duplicate selectable Link plan display name "Moxing · Seedance"`)
+}
+
+func TestLinkImplementationRegistryAllowsDeprecatedDisplayNameHistory(t *testing.T) {
+	_, err := buildLinkImplementationRegistryFrom([]LinkImplementation{
+		{ID: "history", Version: "v1", Provider: "Moxing", PlanName: "Seedance", Deprecated: true},
+		{ID: "current", Version: "v2", Provider: "Moxing", PlanName: "Seedance"},
+	})
+	require.NoError(t, err)
 }
 
 func TestFeicaiMediaArraysImplementationRequiresExactMappingAndSourceContract(t *testing.T) {
@@ -152,7 +171,7 @@ func TestTokenSaveV2ImplementationSupersedesV1WithoutReinterpretingIt(t *testing
 	require.True(t, ok)
 	assert.False(t, current.Deprecated)
 	assert.Equal(t, "Moxing", current.Provider)
-	assert.Equal(t, "tokensave."+VideoSKUDoubaoSeedance20260128, current.PlanName)
+	assert.Equal(t, "Seedance 2.0 Overseas (Official Key)", current.PlanName)
 	assert.Equal(t, "54:third_party_relay:v2", current.RequiredAdapterVersion)
 	assert.Equal(t, []string{AssetKindGeneral}, current.AssetCapability.AssetKinds)
 	assert.Equal(t, []string{"image"}, current.AssetCapability.MediaTypes)
@@ -168,6 +187,7 @@ func TestSelectableLinkImplementationsExcludeDeprecatedHistory(t *testing.T) {
 	require.NotEmpty(t, selectable)
 	for _, implementation := range selectable {
 		assert.False(t, implementation.Deprecated)
+		assert.NotEmpty(t, implementation.PlanName)
 	}
 
 	moxingVersions := make(map[string]string)
@@ -184,8 +204,8 @@ func TestSelectableLinkImplementationsExcludeDeprecatedHistory(t *testing.T) {
 		LinkImplementationTokenSaveSeedance:   LinkImplementationVersionV2,
 	}, moxingVersions)
 	assert.Equal(t, map[string]string{
-		LinkImplementationMoxingSeedanceMedia: "tokensave." + VideoSKUSeedance20Oversea,
-		LinkImplementationTokenSaveSeedance:   "tokensave." + VideoSKUDoubaoSeedance20260128,
+		LinkImplementationMoxingSeedanceMedia: "Seedance 2.0 Overseas",
+		LinkImplementationTokenSaveSeedance:   "Seedance 2.0 Overseas (Official Key)",
 	}, moxingPlanNames)
 }
 

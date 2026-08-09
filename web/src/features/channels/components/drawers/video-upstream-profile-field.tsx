@@ -98,10 +98,10 @@ export function VideoUpstreamProfileField(
       'Third-party relay protocol converts the request into a unified media task structure. Configure the third-party API address, create path suffix and query path template.'
   } else if (profile === 'third_party_json_video_media_arrays') {
     descriptionKey =
-      'JSON video media-arrays protocol supports typed text, reference image, and reference audio inputs. Configure an HTTPS API address, create path suffix, and query path template.'
+      'JSON video media-arrays protocol supports typed text, reference image, and reference audio inputs. Configure an HTTP or HTTPS API address, create path suffix, and query path template.'
   } else if (profile === 'third_party_funcloud_seedance_v2') {
     descriptionKey =
-      'FunCloud Seedance 2.0 uses a typed channel adapter protocol. Configure separate Standard and Fast channels with the documented HTTPS paths.'
+      'FunCloud Seedance 2.0 uses a typed channel adapter protocol. Configure separate Standard and Fast channels with the documented paths; the API address may use HTTP or HTTPS.'
   }
 
   return (

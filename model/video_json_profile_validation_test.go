@@ -11,6 +11,7 @@ import (
 func TestValidateJSONVideoMediaArraysChannelPublishesOnlyEquivalentSKUs(t *testing.T) {
 	httpsBaseURL := "https://video.example.com"
 	httpBaseURL := "http://video.example.com"
+	ftpBaseURL := "ftp://video.example.com"
 	pathBaseURL := "https://video.example.com/provider-root"
 	settings := &dto.ChannelOtherSettings{
 		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
@@ -28,10 +29,16 @@ func TestValidateJSONVideoMediaArraysChannelPublishesOnlyEquivalentSKUs(t *testi
 		BaseURL: &httpsBaseURL,
 	}, settings))
 
-	require.Error(t, validateJSONVideoMediaArraysChannel(&Channel{
+	require.NoError(t, validateJSONVideoMediaArraysChannel(&Channel{
 		Type:    constant.ChannelTypeDoubaoVideo,
 		Models:  VideoSKUSeedance20Standard720P,
 		BaseURL: &httpBaseURL,
+	}, settings))
+
+	require.Error(t, validateJSONVideoMediaArraysChannel(&Channel{
+		Type:    constant.ChannelTypeDoubaoVideo,
+		Models:  VideoSKUSeedance20Standard720P,
+		BaseURL: &ftpBaseURL,
 	}, settings))
 
 	require.Error(t, validateJSONVideoMediaArraysChannel(&Channel{

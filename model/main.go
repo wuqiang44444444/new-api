@@ -333,6 +333,9 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := migrateBillingReconciliationDB(); err != nil {
+		return err
+	}
 	if err := MigrateDirectLinkModelPublications(); err != nil {
 		return err
 	}
@@ -454,6 +457,9 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := migrateBillingReconciliationDB(); err != nil {
+		return err
 	}
 	if err := MigrateDirectLinkModelPublications(); err != nil {
 		return err

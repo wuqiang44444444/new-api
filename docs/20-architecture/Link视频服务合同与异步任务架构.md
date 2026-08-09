@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-06
+last-reviewed: 2026-08-09
 ---
 
 # Link 视频服务合同与异步任务架构
@@ -187,7 +187,7 @@ flowchart LR
 | `official` | 保持现有 Ark 视频请求 | 使用官方根地址回退与内置固定路径 | 使用官方任务响应合同 |
 | `third_party_reverse_proxy` | 保持 Ark 兼容结构 | 使用渠道 Base URL、创建路径和查询模板 | 归一化已定义的包裹、任务 ID、状态和结果字段差异 |
 | `third_party_relay` | 转换为统一媒体异步任务结构 | 使用渠道 Base URL、创建路径和查询模板 | 将中转四态、结果和错误归一化为内部任务合同 |
-| `third_party_json_video_media_arrays` | 当前转换为 `duration/size/images/audios`；飞彩目标 v2 增加受 capability 约束的 `videos` | 使用 HTTPS Base URL、`/v1/videos` 与查询模板 | 当前 adapter v1 以 `id` 为唯一任务身份；飞彩全模型采用单轨 v2 替换，不建设双轨 |
+| `third_party_json_video_media_arrays` | 当前转换为 `duration/size/images/audios`；飞彩目标 v2 增加受 capability 约束的 `videos` | 使用渠道 HTTP(S) Base URL、`/v1/videos` 与查询模板 | 当前 adapter v1 以 `id` 为唯一任务身份；飞彩全模型采用单轨 v2 替换，不建设双轨 |
 | `third_party_funcloud_seedance_v2` | 从 ModelArk 内容构造 FunCloud v2 JSON | SKU 固定创建路径，查询 `/api/v2/open/aigc/{task_id}` | 归一化 v2 状态与结果；Link 资源只使用 `source_url` |
 
 official 的内置路径为：
@@ -241,9 +241,9 @@ Ark 兼容状态及别名；任何未识别状态都不得被解释为成功。�
 
 - 创建响应必须提供非空、长度受控且无控制字符的 `id`；`task_id` 不参与身份判断；查询响应的
   `id` 必须等于冻结任务 ID，查询响应中的 `task_id` 继续忽略；
-- `completed` 顶层必须提供非空绝对 HTTPS `video_url`，且无 userinfo、长度受控并与冻结
-  Base URL 的 host、port 同源；通过校验后保存到 `private_data.result_url`，内容回源使用任务
-  冻结 Bearer Key 并拒绝重定向；
+- `completed` 顶层必须提供非空绝对 HTTP(S) `video_url`，且无 userinfo、长度受控并与冻结
+  Base URL 同源（scheme、host 和有效端口一致）；通过校验后保存到 `private_data.result_url`，
+  内容回源使用任务冻结 Bearer Key 并拒绝重定向；
 - 缺失、畸形或跨域结果 URL 时进入 `reconciliation_required`，不得回退固定路径；
 - `queued`、`processing`、`completed`、`failed` 之外的状态继续 fail closed。
 
@@ -447,6 +447,18 @@ sequenceDiagram
 
 ## 9. URL 与配置约束
 
+南向 Provider Base URL 使用 NEWAPI 已有的绝对 HTTP(S) 语义。Provider 官网面向直连客户提出的
+HTTPS 接入要求、示例或建议不属于 Link 客户合同，也不能反向限制中转站管理员配置的连接地址；
+profile 和 implementation 只固定 Provider 协议、路径、鉴权、请求转换与响应归一。除非精确协议
+依赖 HTTP 无法提供的传输能力，否则不得增加 Provider 专属 HTTPS-only 校验。
+
+这条规则不等于信任 Provider 返回的任意 URL。任务结果和内容回源仍必须与冻结 Base URL 同源，
+拒绝 userinfo 和重定向，并经过长度、SSRF、端口及脱敏校验；客户可控媒体 URL 与 Link AssetSource
+继续遵守资源合同，不能借南向 Base URL 兼容规则获得额外权限。
+
+代码在渠道保存、任务完成响应与内容回源三个边界使用同一 HTTP(S) 语义。任何后续修改都必须同时
+覆盖这三层，避免形成“可保存或可创建，但任务结果不可交付”的半兼容状态。
+
 所有已登记第三方 profile 必须同时提供 Base URL、创建路径和查询路径模板：
 
 - Base URL 必须是绝对 `http://` 或 `https://` 地址，不包含 query 或 fragment；
@@ -474,7 +486,7 @@ official profile 不读取第三方路径字段。保存 official 渠道时由�
 
 平台公开 URL 始终是 §9.1 的自身代理端点；omni Provider 只执行 v2 回源合同：
 
-- 使用 `private_data.result_url`，不发送 Authorization；保存和回源前均执行同源 HTTPS 校验，
+- 使用 `private_data.result_url`，按冻结实现决定鉴权；保存和回源前均执行同源 HTTP(S) 校验，
   所有重定向继续逐跳执行 SSRF 校验；
 - 完整结果 URL、签名 query 和 Key 不写普通日志或 `FailReason`；Task 的普通 `data` 也不得保留
   可重放结果 URL；

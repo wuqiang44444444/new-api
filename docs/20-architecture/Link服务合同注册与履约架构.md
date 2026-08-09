@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-09
 ---
 
 # Link 服务合同注册与履约架构
@@ -93,6 +93,17 @@ publication 的唯一逻辑键为：
 implementation 是代码注册事实。Provider 名称、Base URL、Key 格式、模型后缀、profile 或
 `model_mapping` 不能单独创建实现身份。
 
+南向连接地址继续继承 NEWAPI 的原生 HTTP(S) 语义。Provider 官网描述的是客户直接调用 Provider
+时的接入方式，不是本网关对 `Channel.base_url` 的合同权威；官网要求或推荐 HTTPS、当前官网只展示
+HTTPS 地址、某次验收使用 HTTPS，均不能让 Link 为同一渠道地址建立第二套 scheme 白名单。Link
+implementation 负责固定协议结构、路径、鉴权、转换和响应语义，不负责把 NEWAPI 已支持的 HTTP
+连接收紧为 HTTPS-only。只有 mTLS、TLS 层身份或其它无法由 HTTP 承载的协议能力确属履约必要条件时，
+才能由精确 adapter 以代码注册事实和回归测试显式限制；一般性的传输安全偏好属于部署与运维选择。
+
+该继承规则只适用于管理员控制的 Provider 连接事实。客户提交的任意 URL、`AssetSource`、Provider
+返回的内容地址以及平台代理回源仍是不可信输入，必须继续执行对应的结构校验、同源约束、SSRF、
+重定向、TTL 和授权检查；这些安全边界不得通过“兼容 NEWAPI Base URL”反向放宽。
+
 ### 3.4 execution binding
 
 execution binding 证明一个固定执行形状履行哪个 Link SKU：
@@ -132,6 +143,12 @@ provider_model + implementation execution shape -> Link SKU
 ```
 
 管理端不提供第二张可编辑的“customer model -> Link SKU”映射。
+
+新建 Link 视频渠道且 `models`、`model_mapping` 均为空时，管理端可以从当前 implementation 中
+`action=create`、唯一 route、当前视频 profile 的 execution bindings 读取 `provider_model`，填入
+既有 `Models` 编辑器作为未保存的可编辑默认值。该投影不创建 `model_mapping`、publication 或
+Ability；无法唯一确定 route、编辑存量配置、切换或清除方案时，不得自动改写已有模型与 mapping。
+图片方案不自动采用这一视频默认行为。
 
 方案投影是响应式的：先选方案、后填写或修改 `models` / `model_mapping` 时，SKU 专属创建路径、
 Advanced Custom routes 等受方案管理字段必须从同一注册事实重新计算；新方案未声明的字段必须清空，
@@ -387,6 +404,8 @@ implementation 注册中的 `task_contract` 和 `billing_contract` 是执行语�
 10. 原生 NEWAPI 合同不由 Link 中间件识别、包装或降级。
 11. 所有持久化、唯一冲突、事务和行锁语义同时支持 SQLite、MySQL 和 PostgreSQL。
 12. API Key、Provider 凭据、签名 URL、上游资源 ID 和私有快照不进入普通用户响应或日志。
+13. Link 南向 Provider Base URL 继承 NEWAPI 的 HTTP(S) 语义；Provider 官网直连要求不能创建
+    HTTPS-only 的 Link 分叉。
 
 ## 11. 扩展规则
 

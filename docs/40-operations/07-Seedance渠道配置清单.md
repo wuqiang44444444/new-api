@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-06
+last-reviewed: 2026-08-09
 ---
 
 # 07 Seedance 渠道配置清单
@@ -14,11 +14,12 @@ Seedance Provider 模型均属 TokenSave 模型体系，按 Link SKU 及 capabil
 Seedance Provider 专题设计中的飞彩、墨行与 FunCloud 占 6 个。
 
 管理界面中两个 Moxing 方案分别显示为
-`Moxing · tokensave.seedance-2-0-oversea/v2` 和
-`Moxing · tokensave.doubao-seedance-2-0-260128/v2`。
+`Moxing · Seedance 2.0 Overseas` 和
+`Moxing · Seedance 2.0 Overseas (Official Key)`。
 
 本文中的 `SD-01`—`SD-08` 只是文档清单编号，不是数据库 Channel ID。客户模型名允许按产品需要
-自定义；下表使用当前 Link SKU 作为推荐客户模型名，以便直接核对 publication、价格和 Ability。
+自定义；下表的客户模型是当前运营配置，Provider 模型是后台真实映射目标。Link SKU 由系统内部
+通过 execution binding 推导，不作为管理员日常模型命名配置。
 真实 Channel 状态、分组、价格、凭据权限、publication、exposure 和 Provider 验收结果仍以运行时
 权威事实为准，本清单不表示渠道已经生产发布。
 
@@ -30,7 +31,7 @@ Seedance Provider 专题设计中的飞彩、墨行与 FunCloud 占 6 个。
 | `SD-02` | `seedance-2-0-oversea` Link 方案 | Moxing | 1 | `moxing.seedance-media-task@v2` | `third_party_relay` | `/v1/media/generations` | `/v1/media/tasks/{task_id}` |
 | `SD-03` | `doubao-seedance-2-0-260128` Link 方案 | Moxing | 1 | `tokensave.seedance-media-task@v2` | `third_party_relay` | `/v1/media/generations` | `/v1/media/tasks/{task_id}` |
 | `SD-04` | 飞彩稳定 VIP | 飞彩 | 5 | `feicai.seedance-videos@v2` | `third_party_json_video_media_arrays` | `/v1/videos` | `/v1/videos/{task_id}` |
-| `SD-05` | 飞彩非稳定 933／实验（仅 Value 720p） | 飞彩 | 1 | `feicai.seedance-videos@v2` | `third_party_json_video_media_arrays` | `/v1/videos` | `/v1/videos/{task_id}` |
+| `SD-05` | 飞彩非稳定 933／实验 | 飞彩 | 1 | `feicai.seedance-videos@v2` | `third_party_json_video_media_arrays` | `/v1/videos` | `/v1/videos/{task_id}` |
 | `SD-06` | FunCloud Standard | FunCloud | 1 | `funcloud.seedance-json@v1` | `third_party_funcloud_seedance_v2` | `/api/v2/open/aigc/seedance2-0` | `/api/v2/open/aigc/{task_id}` |
 | `SD-07` | FunCloud Fast | FunCloud | 1 | `funcloud.seedance-json@v1` | `third_party_funcloud_seedance_v2` | `/api/v2/open/aigc/seedance2-0-fast` | `/api/v2/open/aigc/{task_id}` |
 | `SD-08` | 飞彩待验证四模型（隔离） | 飞彩 | 4 | `feicai.seedance-videos@v2` | `third_party_json_video_media_arrays` | `/v1/videos` | `/v1/videos/{task_id}` |
@@ -43,7 +44,7 @@ Seedance Provider 专题设计中的飞彩、墨行与 FunCloud 占 6 个。
 
 ### 3.1 `SD-01` BytePlus 官方
 
-| 推荐客户模型 / Link SKU | Provider 执行目标 | 素材方式 |
+| 当前客户模型 | Provider 执行目标 | 素材方式 |
 | --- | --- | --- |
 | `seedance-byteplus` | 管理员配置的 BytePlus Endpoint ID；由官方 implementation 复检 | `official_action_assets` / `upstream_binding` |
 
@@ -52,7 +53,7 @@ Seedance Provider 专题设计中的飞彩、墨行与 FunCloud 占 6 个。
 
 ### 3.2 `SD-02` `seedance-2-0-oversea` Link 方案
 
-| 推荐客户模型 / Link SKU | Provider 模型 | Base URL | 素材方式 |
+| 当前客户模型 | Provider 模型 | Base URL | 素材方式 |
 | --- | --- | --- | --- |
 | `seedance-2-0-oversea` | `seedance-2-0-oversea` | `https://www.moxing.pro` | `relay_assets` / `upstream_binding` |
 
@@ -61,18 +62,18 @@ Seedance Provider 专题设计中的飞彩、墨行与 FunCloud 占 6 个。
 
 ### 3.3 `SD-03` `doubao-seedance-2-0-260128` Link 方案
 
-| 推荐客户模型 / Link SKU | Provider 模型 | Base URL | 素材方式 |
+| 当前客户模型 | Provider 模型 | Base URL | 素材方式 |
 | --- | --- | --- | --- |
 | `doubao-seedance-2-0-260128` | `doubao-seedance-2-0-260128` | `https://tokensave.pro` | `relay_assets` / `upstream_binding` |
 
 本渠道只选择 `tokensave.seedance-media-task@v2`。它与 `SD-02` 同属 Moxing Provider 的 TokenSave 模型体系且
 共享 `/v1/media/*` 协议形状，但 Link SKU、capability、域名、implementation、凭据、价格、素材 binding 和
 Provider 证据都必须隔离。`moxing.*` 与旧 `tokensave.*` implementation ID 只保留为不可变履约身份；
-方案展示名另由代码注册的 `tokensave.<Link SKU>` 提供。
+方案展示名由代码注册的人类可读文案提供，不使用 implementation ID、版本或 Link SKU。
 
 ### 3.4 `SD-04` 飞彩稳定 VIP
 
-| 推荐客户模型 / Link SKU | Provider 模型 | 运营分层 |
+| 当前客户模型 | Provider 模型 | 运营分层 |
 | --- | --- | --- |
 | `seedance-2.0-mini-720p` | `seedance-2.0-vip-720p-mini-azhw-feicai` | VIP Mini |
 | `seedance-2.0-fast-720p` | `seedance-2.0-vip-720p-fast-azhw-feicai` | VIP Fast |
@@ -83,11 +84,11 @@ Provider 证据都必须隔离。`moxing.*` 与旧 `tokensave.*` implementation 
 “稳定 VIP”是渠道运营分组，不是生产就绪声明。模型名包含 `vip` 只决定本清单的渠道归属，不能替代
 逐模型 size、任务、内容、Range、账单、价格和 exposure 验收。
 
-### 3.5 `SD-05` 飞彩非稳定 933／实验（已收窄为 Value 720p）
+### 3.5 `SD-05` 飞彩非稳定 933／实验
 
-| 当前客户模型 / Link SKU | Provider 模型 | 运营状态 |
+| 当前客户模型 | Provider 模型 | 运营状态 |
 | --- | --- | --- |
-| `seedance-2.0-value-720p` | `seedance-2.0-933-720p-azhw-feicai` | `16:9` 已验证并发布 |
+| `seedance-2.0-unstable-720p` | `seedance-2.0-933-720p-azhw-feicai` | `16:9` 已验证并发布 |
 
 2026-08-06 五模型最小矩阵中，SD2 与 Pro PI create 为 `503 unknown`，Value 1080p 与 Value 4K
 明确终态失败；这四个 SKU 已从渠道 52 的 Models 和 model mapping 移除并转入禁用渠道 55（清单编号
@@ -99,7 +100,7 @@ Provider model、implementation 与 Link SKU 不变，调整候选渠道归属�
 
 ### 3.6 `SD-06` FunCloud Standard
 
-| 推荐客户模型 / Link SKU | Provider execution model | Base URL | 素材方式 |
+| 当前客户模型 | Provider execution model | Base URL | 素材方式 |
 | --- | --- | --- | --- |
 | `seedance-2.0-standard` | `seedance-2.0-standard` | `https://mm-internal-cn.leonecloud.com` | `source_url` |
 
@@ -108,7 +109,7 @@ Seedance 模型。
 
 ### 3.7 `SD-07` FunCloud Fast
 
-| 推荐客户模型 / Link SKU | Provider execution model | Base URL | 素材方式 |
+| 当前客户模型 | Provider execution model | Base URL | 素材方式 |
 | --- | --- | --- | --- |
 | `seedance-2.0-fast` | `seedance-2.0-fast` | `https://mm-internal-cn.leonecloud.com` | `source_url` |
 
@@ -117,7 +118,7 @@ Seedance 模型。
 
 ### 3.8 `SD-08` 飞彩待验证四模型（隔离）
 
-| 客户模型 / Link SKU | Provider 模型 | 运行状态 |
+| 当前客户模型 | Provider 模型 | 运行状态 |
 | --- | --- | --- |
 | `seedance-2.0-sd2-720p` | `seedance2.0-sd2-feicai` | disabled；无 publication |
 | `seedance-2.0-value-1080p` | `seedance-2.0-933-1080p-azhw-feicai` | disabled；无 publication |

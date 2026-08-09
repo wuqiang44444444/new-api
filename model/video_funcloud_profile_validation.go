@@ -10,6 +10,7 @@ import (
 
 const (
 	funCloudBaseURL            = "https://mm-internal-cn.leonecloud.com"
+	funCloudHost               = "mm-internal-cn.leonecloud.com"
 	funCloudStandardCreatePath = "/api/v2/open/aigc/seedance2-0"
 	funCloudFastCreatePath     = "/api/v2/open/aigc/seedance2-0-fast"
 	funCloudQueryPath          = "/api/v2/open/aigc/{task_id}"
@@ -24,11 +25,14 @@ func validateFunCloudVideoProfileChannel(channel *Channel, settings *dto.Channel
 		baseURL = strings.TrimSpace(*channel.BaseURL)
 	}
 	parsed, err := url.Parse(baseURL)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return fmt.Errorf("FunCloud video profile base url must be HTTPS without userinfo, query, or fragment")
+	if err != nil ||
+		(!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) ||
+		parsed.Host == "" || parsed.User != nil || parsed.Port() != "" || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		(parsed.Path != "" && parsed.Path != "/") {
+		return fmt.Errorf("FunCloud video profile base url must be an HTTP(S) origin without userinfo, port, path, query, or fragment")
 	}
-	if baseURL != funCloudBaseURL {
-		return fmt.Errorf("FunCloud video profile base url must be %s", funCloudBaseURL)
+	if !strings.EqualFold(parsed.Hostname(), funCloudHost) {
+		return fmt.Errorf("FunCloud video profile base url host must be %s", funCloudHost)
 	}
 	createPath := strings.TrimSpace(settings.VideoUpstreamCreatePath)
 	if createPath != funCloudStandardCreatePath && createPath != funCloudFastCreatePath {

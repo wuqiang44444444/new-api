@@ -117,7 +117,7 @@ var linkImplementationRegistry, linkImplementationRegistryBuildErr = buildLinkIm
 func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 	implementations := []LinkImplementation{
 		{
-			ID: LinkImplementationBytePlusSeedanceArk, Version: LinkImplementationVersionV1, Provider: "BytePlus",
+			ID: LinkImplementationBytePlusSeedanceArk, Version: LinkImplementationVersionV1, Provider: "BytePlus", PlanName: "Seedance Official",
 			ContractID: "modelark.contents.generations.v3", PublicSKUs: []string{VideoSKUSeedanceBytePlus},
 			ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileOfficial,
 			RequiredAssetProfile: string(dto.AssetUpstreamProfileOfficial), RequiredAdapterVersion: "54:official:v1",
@@ -126,7 +126,7 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 			TaskContract:      "shared_video_task", BillingContract: "newapi_quota",
 		},
 		{
-			ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV2, Provider: "Moxing", PlanName: "tokensave." + VideoSKUSeedance20Oversea,
+			ID: LinkImplementationMoxingSeedanceMedia, Version: LinkImplementationVersionV2, Provider: "Moxing", PlanName: "Seedance 2.0 Overseas",
 			ContractID: "modelark.contents.generations.v3", PublicSKUs: []string{VideoSKUSeedance20Oversea},
 			ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileThirdPartyRelay,
 			RequiredAssetProfile: string(dto.AssetUpstreamProfileRelay), RequiredCreatePath: "/v1/media/generations", RequiredQueryPath: "/v1/media/tasks/{task_id}", RequiredAdapterVersion: "54:third_party_relay:v2",
@@ -145,7 +145,7 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 		tokenSaveSeedanceV2Implementation(),
 		feicaiSeedanceV2Implementation(),
 		{
-			ID: LinkImplementationFunCloudSeedance, Version: LinkImplementationVersionV1, Provider: "FunCloud",
+			ID: LinkImplementationFunCloudSeedance, Version: LinkImplementationVersionV1, Provider: "FunCloud", PlanName: "Seedance 2.0 Video",
 			ContractID: "modelark.contents.generations.v3", PublicSKUs: []string{VideoSKUSeedance20Standard, VideoSKUSeedance20Fast},
 			ChannelType: constant.ChannelTypeDoubaoVideo, RequiredVideoProfile: VideoProfileFunCloudSeedanceV2,
 			RequiredAssetProfile: string(dto.AssetUpstreamProfileNone), RequiredQueryPath: "/api/v2/open/aigc/{task_id}", RequiredAdapterVersion: "54:third_party_funcloud_seedance_v2:v2",
@@ -158,7 +158,7 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 			TaskContract:    "shared_video_task", BillingContract: "newapi_quota",
 		},
 		{
-			ID: LinkImplementationMoxingImages, Version: LinkImplementationVersionV1, Provider: "Moxing",
+			ID: LinkImplementationMoxingImages, Version: LinkImplementationVersionV1, Provider: "Moxing", PlanName: "Image Generation",
 			ContractID: "newapi.images.generations.v1", PublicSKUs: []string{"seedream-5-moxing", "nano-banana-2"},
 			ChannelType: constant.ChannelTypeAdvancedCustom,
 			RequiredRoutes: []LinkRouteRequirement{
@@ -172,7 +172,7 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 			AssetCapability: LinkAssetImplementationCapability{}, TaskContract: "shared_image_task", BillingContract: "newapi_quota",
 		},
 		{
-			ID: LinkImplementationQihangImages, Version: LinkImplementationVersionV1, Provider: "Qihang",
+			ID: LinkImplementationQihangImages, Version: LinkImplementationVersionV1, Provider: "Qihang", PlanName: "Image Generation",
 			ContractID: "newapi.images.generations.v1", PublicSKUs: []string{"seedream-5-qihang"},
 			ChannelType:       constant.ChannelTypeAdvancedCustom,
 			RequiredRoutes:    []LinkRouteRequirement{{PublicSKU: "seedream-5-qihang", IncomingPath: "/v1/images/generations", UpstreamPath: "/v1/images/generations", Converter: "none", AuthType: dto.AdvancedCustomAuthTypeHeader}},
@@ -180,7 +180,7 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 			AssetCapability:   LinkAssetImplementationCapability{}, TaskContract: "synchronous_image_or_shared_task", BillingContract: "newapi_quota",
 		},
 		{
-			ID: LinkImplementationKlingVideos, Version: LinkImplementationVersionV1, Provider: "Kling",
+			ID: LinkImplementationKlingVideos, Version: LinkImplementationVersionV1, Provider: "Kling", PlanName: "Video Generation",
 			ContractID: "kling.v1.videos", PublicSKUs: []string{VideoSKUKlingV1, VideoSKUKlingV16, VideoSKUKlingV2Master},
 			ChannelType: constant.ChannelTypeKling, RequiredVideoProfile: VideoProfileOfficial, RequiredAdapterVersion: "50:official:v1",
 			ExecutionBindings: []LinkExecutionBinding{
@@ -192,7 +192,7 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 			TaskContract:    "shared_video_task", BillingContract: "newapi_quota",
 		},
 		{
-			ID: LinkImplementationJimengVideos, Version: LinkImplementationVersionV1, Provider: "Jimeng",
+			ID: LinkImplementationJimengVideos, Version: LinkImplementationVersionV1, Provider: "Jimeng", PlanName: "Video Generation",
 			ContractID: "jimeng.cv.async.2022-08-31", PublicSKUs: []string{VideoSKUJimengVGFMT2VL20},
 			ChannelType: constant.ChannelTypeJimeng, RequiredVideoProfile: VideoProfileOfficial, RequiredAdapterVersion: "51:official:v1",
 			ExecutionBindings: []LinkExecutionBinding{{RouteFamily: LinkRouteFamilyJimengVideo, Action: LinkExecutionActionCreate, Profile: VideoProfileOfficial, ProviderModel: VideoSKUJimengVGFMT2VL20, LinkSKU: VideoSKUJimengVGFMT2VL20}},
@@ -215,10 +215,10 @@ func buildLinkImplementationRegistryFrom(implementations []LinkImplementation) (
 		if _, exists := registry[key]; exists {
 			return nil, fmt.Errorf("duplicate Link implementation identity %q/%q", implementation.ID, implementation.Version)
 		}
-		if implementation.PlanName != "" {
-			displayKey := implementation.Provider + "\x00" + implementation.PlanName + "\x00" + implementation.Version
+		if !implementation.Deprecated && implementation.PlanName != "" {
+			displayKey := implementation.Provider + "\x00" + implementation.PlanName
 			if _, exists := displayNames[displayKey]; exists {
-				return nil, fmt.Errorf("duplicate Link plan display name %q", implementation.Provider+" · "+implementation.PlanName+"/"+implementation.Version)
+				return nil, fmt.Errorf("duplicate selectable Link plan display name %q", implementation.Provider+" · "+implementation.PlanName)
 			}
 			displayNames[displayKey] = struct{}{}
 		}
@@ -383,7 +383,7 @@ func ValidateLinkImplementationRegistry() error {
 	}
 	seenSKU := make(map[string]struct{})
 	for key, implementation := range linkImplementationRegistry {
-		if key == "" || key != linkImplementationRegistryKey(implementation.ID, implementation.Version) || implementation.Version == "" || implementation.ContractID == "" || implementation.ChannelType <= 0 || len(implementation.PublicSKUs) == 0 || len(implementation.ExecutionBindings) == 0 {
+		if key == "" || key != linkImplementationRegistryKey(implementation.ID, implementation.Version) || implementation.Version == "" || implementation.ContractID == "" || implementation.ChannelType <= 0 || len(implementation.PublicSKUs) == 0 || len(implementation.ExecutionBindings) == 0 || (!implementation.Deprecated && implementation.PlanName == "") {
 			return fmt.Errorf("Link implementation %q is incomplete", key)
 		}
 		if err := validateLinkExecutionBindings(implementation); err != nil {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	rootcommon "github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -34,35 +35,19 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 			return fmt.Errorf("unmarshal_model_mapping_failed")
 		}
 
-		// 支持链式模型重定向，最终使用链尾的模型
-		currentModel := mappingModelName
-		visitedModels := map[string]bool{
-			currentModel: true,
-		}
-		for {
-			if mappedModel, exists := modelMap[currentModel]; exists && mappedModel != "" {
-				// 模型重定向循环检测，避免无限循环
-				if visitedModels[mappedModel] {
-					if mappedModel == currentModel {
-						if currentModel == info.OriginModelName {
-							info.IsModelMapped = false
-							break
-						} else {
-							info.IsModelMapped = true
-							break
-						}
-					}
-					return errors.New("model_mapping_contains_cycle")
-				}
-				visitedModels[mappedModel] = true
-				currentModel = mappedModel
-				info.IsModelMapped = true
-			} else {
-				break
+		mappedModel, mappingApplied, err := model.ResolveModelMapping(
+			mappingModelName,
+			modelMap,
+		)
+		if err != nil {
+			if errors.Is(err, model.ErrModelMappingCycle) {
+				return errors.New("model_mapping_contains_cycle")
 			}
+			return err
 		}
+		info.IsModelMapped = mappingApplied && mappedModel != info.OriginModelName
 		if info.IsModelMapped {
-			info.UpstreamModelName = currentModel
+			info.UpstreamModelName = mappedModel
 		}
 	}
 

@@ -36,7 +36,7 @@ const implementation = {
   version: 'v1',
   content_hash: 'sha256:test',
   provider: 'Provider',
-  plan_name: 'tokensave.video-sku',
+  plan_name: 'Seedance 2.0 Overseas with Managed Assets',
   contract_id: 'contract',
   public_skus: ['video-sku'],
   channel_type: 54,
@@ -66,6 +66,7 @@ const implementationV2 = {
   ...implementation,
   version: 'v2',
   content_hash: 'sha256:test-v2',
+  plan_name: 'Seedance 2.0 Overseas with Managed Assets Next',
 } satisfies LinkImplementation
 
 vi.mock('../../../api', () => ({
@@ -84,12 +85,23 @@ beforeAll(async () => {
   })
 })
 
-function ProjectionHarness() {
+type ProjectionHarnessProps = {
+  selectPlanByDefault?: boolean
+  initialModels?: string
+  initialModelMapping?: string
+}
+
+function ProjectionHarness(props: ProjectionHarnessProps) {
+  const selectPlanByDefault = props.selectPlanByDefault !== false
   const form = useForm<ChannelFormValues>({
     defaultValues: {
       ...CHANNEL_FORM_DEFAULT_VALUES,
-      link_implementation_id: implementation.id,
-      link_implementation_version: implementation.version,
+      models: props.initialModels || '',
+      model_mapping: props.initialModelMapping || '',
+      link_implementation_id: selectPlanByDefault ? implementation.id : '',
+      link_implementation_version: selectPlanByDefault
+        ? implementation.version
+        : '',
     },
   })
   const createPath = useWatch({
@@ -142,7 +154,7 @@ describe('Link access plan field', () => {
     const listbox = await screen.findByRole('listbox')
     const popup = listbox.closest('[data-slot="select-content"]')
     const planOption = screen.getByRole('option', {
-      name: 'Provider · tokensave.video-sku/v1',
+      name: 'Provider · Seedance 2.0 Overseas with Managed Assets',
     })
     expect(popup?.classList.contains('w-[460px]')).toBe(true)
     expect(popup?.classList.contains('max-w-[calc(100vw-2rem)]')).toBe(true)
@@ -171,10 +183,10 @@ describe('Link access plan field', () => {
     await user.click(await screen.findByRole('combobox'))
 
     const v1Option = screen.getByRole('option', {
-      name: 'Provider · tokensave.video-sku/v1',
+      name: 'Provider · Seedance 2.0 Overseas with Managed Assets',
     })
     const v2Option = screen.getByRole('option', {
-      name: 'Provider · tokensave.video-sku/v2',
+      name: 'Provider · Seedance 2.0 Overseas with Managed Assets Next',
     })
     expect(v1Option.getAttribute('aria-selected')).toBe('true')
     expect(v2Option.getAttribute('aria-selected')).toBe('false')
@@ -183,6 +195,85 @@ describe('Link access plan field', () => {
     expect(screen.getByLabelText('Selected plan version').textContent).toBe(
       'v2'
     )
+
+    queryClient.clear()
+  })
+
+  it('fills registered provider models without creating model mapping on a new video plan', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <I18nextProvider i18n={i18next}>
+          <ProjectionHarness selectPlanByDefault={false} />
+        </I18nextProvider>
+      </QueryClientProvider>
+    )
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('combobox'))
+    await user.click(
+      screen.getByRole('option', {
+        name: 'Provider · Seedance 2.0 Overseas with Managed Assets',
+      })
+    )
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('Models') as HTMLInputElement).value).toBe(
+        'provider-video-v1'
+      )
+    })
+    expect(
+      (screen.getByLabelText('Model mapping') as HTMLInputElement).value
+    ).toBe('')
+    expect(screen.queryByText('Supported Link SKUs')).toBeNull()
+    expect(screen.queryByText(/video-sku/)).toBeNull()
+
+    queryClient.clear()
+  })
+
+  it('preserves existing customer models and mapping when a video plan is selected, switched, or cleared', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <I18nextProvider i18n={i18next}>
+          <ProjectionHarness
+            selectPlanByDefault={false}
+            initialModels='customer-video'
+            initialModelMapping='{"customer-video":"provider-video-v1"}'
+          />
+        </I18nextProvider>
+      </QueryClientProvider>
+    )
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('combobox'))
+    await user.click(
+      screen.getByRole('option', {
+        name: 'Provider · Seedance 2.0 Overseas with Managed Assets',
+      })
+    )
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(
+      screen.getByRole('option', {
+        name: 'Provider · Seedance 2.0 Overseas with Managed Assets Next',
+      })
+    )
+    await user.click(screen.getByRole('combobox'))
+    await user.click(
+      screen.getByRole('option', { name: 'No Link access plan' })
+    )
+
+    expect((screen.getByLabelText('Models') as HTMLInputElement).value).toBe(
+      'customer-video'
+    )
+    expect(
+      (screen.getByLabelText('Model mapping') as HTMLInputElement).value
+    ).toBe('{"customer-video":"provider-video-v1"}')
 
     queryClient.clear()
   })

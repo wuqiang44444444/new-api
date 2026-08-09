@@ -9,7 +9,9 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	relaykitdto "github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -27,6 +29,7 @@ func TestModelMappedHelperResolvesOrdinaryMappingContract(t *testing.T) {
 	}{
 		{name: "no mapping", wantModel: "customer-model"},
 		{name: "chain", mapping: `{"customer-model":"provider-alias","provider-alias":"provider-model"}`, wantModel: "provider-model", wantMapped: true},
+		{name: "literal whitespace", mapping: `{"customer-model":" provider-model "}`, wantModel: " provider-model ", wantMapped: true},
 		{name: "self mapping", mapping: `{"customer-model":"customer-model"}`, wantModel: "customer-model"},
 		{name: "cycle", mapping: `{"customer-model":"provider-alias","provider-alias":"customer-model"}`, wantModel: "customer-model", wantErrorText: "model_mapping_contains_cycle"},
 	}
@@ -56,6 +59,25 @@ func TestModelMappedHelperResolvesOrdinaryMappingContract(t *testing.T) {
 			assert.Equal(t, test.wantMapped, info.IsModelMapped)
 		})
 	}
+}
+
+func TestModelMappedHelperPreservesCompactSelfMappingSemantics(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Set("model_mapping", `{"customer-model":"customer-model"}`)
+	info := &relaycommon.RelayInfo{
+		RelayMode:       relayconstant.RelayModeResponsesCompact,
+		OriginModelName: ratio_setting.WithCompactModelSuffix("customer-model"),
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: ratio_setting.WithCompactModelSuffix("customer-model"),
+		},
+	}
+	request := &relaykitdto.GeneralOpenAIRequest{Model: ratio_setting.WithCompactModelSuffix("customer-model")}
+
+	require.NoError(t, ModelMappedHelper(context, info, request))
+	assert.True(t, info.IsModelMapped)
+	assert.Equal(t, "customer-model", info.UpstreamModelName)
+	assert.Equal(t, "customer-model", request.Model)
 }
 
 func TestModelMappedHelperValidatesPublishedLinkExecution(t *testing.T) {

@@ -48,6 +48,7 @@ import {
   linkAccessPlanAutofill,
   linkAccessPlanLabel,
   linkAccessPlanOptionValue,
+  linkAccessPlanProviderModelDefaults,
   linkAccessPlansForChannelType,
   type LinkAccessPlanProjection,
 } from '../../lib/link-access-plan'
@@ -235,6 +236,20 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
                   implementation.version,
                   { shouldDirty: true, shouldValidate: true }
                 )
+                const currentModels = form.getValues('models').trim()
+                const currentModelMapping = (
+                  form.getValues('model_mapping') || ''
+                ).trim()
+                if (!currentModels && !currentModelMapping) {
+                  const providerModels =
+                    linkAccessPlanProviderModelDefaults(implementation)
+                  if (providerModels.length > 0) {
+                    form.setValue('models', providerModels.join(','), {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                }
               }}
             >
               <FormControl>
@@ -278,33 +293,10 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
           </FormItem>
         )}
       />
-      {selectedImplementation && (
+      {selectedImplementation && previews.length > 0 && (
         <Alert>
-          <AlertTitle>
-            {selectedImplementation.provider} · {selectedImplementation.id}/
-            {selectedImplementation.version}
-          </AlertTitle>
+          <AlertTitle>{linkAccessPlanLabel(selectedImplementation)}</AlertTitle>
           <AlertDescription className='space-y-2 text-xs'>
-            <div>
-              {t('Provider')}: {selectedImplementation.provider} ·{' '}
-              {t('Contract')}: {selectedImplementation.contract_id} ·{' '}
-              {t('Task contract')}: {selectedImplementation.task_contract} ·{' '}
-              {t('Billing contract')}: {selectedImplementation.billing_contract}
-            </div>
-            <div>
-              {t('Video Upstream Profile')}:{' '}
-              {selectedImplementation.required_video_profile || '—'} ·{' '}
-              {t('Asset Upstream Profile')}:{' '}
-              {selectedImplementation.required_asset_profile || '—'} ·{' '}
-              {t('Resolution')}:{' '}
-              {selectedImplementation.asset_capability.asset_resolution_modes?.join(
-                ', '
-              ) || '—'}
-            </div>
-            <div>
-              {t('Supported Link SKUs')}:{' '}
-              {selectedImplementation.public_skus.join(', ')}
-            </div>
             {previews.map((preview) => {
               const publication = publicationData?.data.find(
                 (candidate) =>
@@ -320,10 +312,10 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
               }
               return (
                 <div key={preview.customerModel} className='font-mono'>
-                  {preview.customerModel} → {preview.providerModel || '—'} →{' '}
-                  {preview.error ? t(preview.error) : preview.linkSKU || '—'}
+                  {preview.customerModel} → {preview.providerModel || '—'}
+                  {preview.error ? ` · ${t(preview.error)}` : ''}
                   {publication
-                    ? ` · ${t('Published')}: ${publication.link_sku} · ${t('publication version')} ${publication.publication_version} · ${t(publicationStatus)}`
+                    ? ` · ${t('Published')} · ${t(publicationStatus)}`
                     : ` · ${t('will be published when saved')}`}
                   {publication &&
                     preview.linkSKU &&

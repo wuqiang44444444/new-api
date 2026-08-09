@@ -40,10 +40,16 @@ func ValidateLinkSKUAbilityBindings(channel *Channel) error {
 // may be configured before evidence is complete, but enabling their Channel or
 // Ability must not create a publication that no request can satisfy.
 func ValidateLinkSKUAbilityPublicationReadiness(channel *Channel) error {
+	if channel == nil {
+		return fmt.Errorf("Link ability channel is required")
+	}
+	settings := channel.GetOtherSettings()
+	if settings.LinkImplementation.Empty() {
+		return nil
+	}
 	if err := ValidateLinkSKUAbilityBindings(channel); err != nil {
 		return err
 	}
-	settings := channel.GetOtherSettings()
 	if normalizedVideoProfile(string(settings.VideoUpstreamProfile)) != VideoProfileJSONMediaArrays {
 		return nil
 	}

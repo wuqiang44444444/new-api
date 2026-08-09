@@ -48,10 +48,12 @@ func validateJSONVideoMediaArraysChannel(channel *Channel, settings *dto.Channel
 		baseURL = strings.TrimSpace(*channel.BaseURL)
 	}
 	parsed, err := url.Parse(baseURL)
-	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" ||
+	if err != nil ||
+		(!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) ||
+		parsed.Host == "" ||
 		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
 		(parsed.Path != "" && parsed.Path != "/") {
-		return fmt.Errorf("JSON video media-arrays profile base url must be an HTTPS origin without userinfo, path, query, or fragment")
+		return fmt.Errorf("JSON video media-arrays profile base url must be an HTTP(S) origin without userinfo, path, query, or fragment")
 	}
 	return nil
 }

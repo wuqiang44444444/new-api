@@ -16,14 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import type { LinkImplementation } from '../../types'
 import {
   deriveLinkPublicationPreviews,
   linkAccessPlanAutofill,
   linkAccessPlanLabel,
+  linkAccessPlanProviderModelDefaults,
   linkAccessPlansForChannelType,
 } from '../link-access-plan'
 
@@ -32,7 +32,7 @@ const implementation = {
   version: 'v1',
   content_hash: 'sha256:test',
   provider: 'Provider',
-  plan_name: 'tokensave.link-sku',
+  plan_name: 'Video Generation',
   contract_id: 'contract',
   public_skus: ['link-sku'],
   channel_type: 54,
@@ -65,55 +65,109 @@ const implementation = {
 
 describe('Link access plan projection', () => {
   test('uses the registered Link plan name instead of its implementation ID', () => {
-    assert.equal(
-      linkAccessPlanLabel(implementation),
-      'Provider · tokensave.link-sku/v1'
+    expect(linkAccessPlanLabel(implementation)).toBe(
+      'Provider · Video Generation'
     )
   })
 
   test('lists plans by channel type without filtering on customer model names', () => {
-    assert.deepEqual(
+    expect(
       linkAccessPlansForChannelType(
         [implementation, { ...implementation, id: 'other', channel_type: 50 }],
         54
-      ).map((plan) => plan.id),
-      ['example']
-    )
+      ).map((plan) => plan.id)
+    ).toEqual(['example'])
+  })
+
+  test('defaults video models from the selected create profile without using Link SKUs', () => {
+    expect(linkAccessPlanProviderModelDefaults(implementation)).toEqual([
+      'provider-model',
+    ])
+  })
+
+  test('does not default provider models across multiple video route families', () => {
+    expect(
+      linkAccessPlanProviderModelDefaults({
+        ...implementation,
+        execution_bindings: [
+          ...implementation.execution_bindings,
+          {
+            route_family: 'another_video_family',
+            action: 'create',
+            profile: 'third_party_relay',
+            provider_model: 'another-provider-model',
+            link_sku: 'link-sku',
+          },
+        ],
+      })
+    ).toEqual([])
+  })
+
+  test('does not project image implementation models into the video defaults', () => {
+    expect(
+      linkAccessPlanProviderModelDefaults({
+        ...implementation,
+        required_video_profile: undefined,
+        execution_bindings: [
+          {
+            route_family: 'image_generation',
+            action: 'create',
+            profile: 'media_task_image_blocking',
+            provider_model: 'provider-image-model',
+            link_sku: 'image-link-sku',
+          },
+        ],
+      })
+    ).toEqual([])
   })
 
   test('derives a custom customer model through the ordinary mapping chain', () => {
-    assert.deepEqual(
+    expect(
       deriveLinkPublicationPreviews(
         implementation,
         'customer-model',
         '{"customer-model":"provider-model"}'
-      ),
-      [
-        {
-          customerModel: 'customer-model',
-          providerModel: 'provider-model',
-          linkSKU: 'link-sku',
-          routeFamily: 'modelark_video',
-        },
-      ]
-    )
+      )
+    ).toEqual([
+      {
+        customerModel: 'customer-model',
+        providerModel: 'provider-model',
+        linkSKU: 'link-sku',
+        routeFamily: 'modelark_video',
+      },
+    ])
+  })
+
+  test('preserves mapping literals when matching execution bindings', () => {
+    expect(
+      deriveLinkPublicationPreviews(
+        implementation,
+        'customer-model',
+        '{"customer-model":" provider-model "}'
+      )
+    ).toEqual([
+      {
+        customerModel: 'customer-model',
+        providerModel: ' provider-model ',
+        error: 'Provider model must match exactly one execution binding.',
+      },
+    ])
   })
 
   test('rejects non-object mapping JSON without crashing the projection', () => {
-    assert.deepEqual(
+    expect(
       deriveLinkPublicationPreviews(
         implementation,
         'customer-model,customer-model',
         'null'
-      ),
-      [
-        {
-          customerModel: 'customer-model',
-          providerModel: '',
-          error: 'Model mapping is not valid JSON.',
-        },
-      ]
-    )
+      )
+    ).toEqual([
+      {
+        customerModel: 'customer-model',
+        providerModel: '',
+        error: 'Model mapping is not valid JSON.',
+      },
+    ])
   })
 
   test('autofill is projected from the selected plan', () => {
@@ -122,7 +176,7 @@ describe('Link access plan projection', () => {
       'customer-model',
       '{"customer-model":"provider-model"}'
     )
-    assert.deepEqual(linkAccessPlanAutofill(implementation, previews), {
+    expect(linkAccessPlanAutofill(implementation, previews)).toEqual({
       video_upstream_profile: 'third_party_relay',
       asset_upstream_profile: 'none',
       video_upstream_create_path: '/v1/media/generations',
@@ -133,16 +187,15 @@ describe('Link access plan projection', () => {
   })
 
   test('defaults a required asset profile fetch window to one hour', () => {
-    assert.equal(
+    expect(
       linkAccessPlanAutofill(
         {
           ...implementation,
           required_asset_profile: 'relay_assets',
         },
         []
-      ).asset_min_url_ttl_seconds,
-      3600
-    )
+      ).asset_min_url_ttl_seconds
+    ).toBe(3600)
   })
 
   test('derives route family from the unique registered execution binding', () => {
@@ -165,7 +218,7 @@ describe('Link access plan projection', () => {
       '{"customer-model":"provider-model"}'
     )
 
-    assert.equal(previews[0]?.routeFamily, 'future_video_family')
+    expect(previews[0]?.routeFamily).toBe('future_video_family')
   })
 
   test('recomputes SKU-specific create path and clears stale plan values', () => {
@@ -186,10 +239,10 @@ describe('Link access plan projection', () => {
     )
     const afterModels = linkAccessPlanAutofill(skuPathImplementation, previews)
 
-    assert.equal(beforeModels.video_upstream_create_path, '')
-    assert.equal(afterModels.video_upstream_create_path, '/v1/first')
-    assert.equal(afterModels.video_upstream_query_path_template, '')
-    assert.equal(afterModels.advanced_custom, '')
+    expect(beforeModels.video_upstream_create_path).toBe('')
+    expect(afterModels.video_upstream_create_path).toBe('/v1/first')
+    expect(afterModels.video_upstream_query_path_template).toBe('')
+    expect(afterModels.advanced_custom).toBe('')
   })
 
   test('matches registered Feicai, Moxing image, and Kling execution bindings', () => {
@@ -289,8 +342,8 @@ describe('Link access plan projection', () => {
         testCase.customerModel,
         testCase.mapping
       )
-      assert.equal(previews[0]?.linkSKU, testCase.linkSKU)
-      assert.equal(previews[0]?.routeFamily, testCase.routeFamily)
+      expect(previews[0]?.linkSKU).toBe(testCase.linkSKU)
+      expect(previews[0]?.routeFamily).toBe(testCase.routeFamily)
     }
 
     const moxingProjection = linkAccessPlanAutofill(
@@ -301,8 +354,7 @@ describe('Link access plan projection', () => {
         cases[1].mapping
       )
     )
-    assert.match(
-      moxingProjection.advanced_custom,
+    expect(moxingProjection.advanced_custom).toMatch(
       /nano-banana-2|customer-image/
     )
   })
