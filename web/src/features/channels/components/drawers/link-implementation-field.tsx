@@ -17,12 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { type Control, useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
 import {
   FormControl,
   FormDescription,
@@ -40,7 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-import { getLinkImplementations, getLinkModelPublications } from '../../api'
+import { getLinkImplementations } from '../../api'
 import type { ChannelFormValues } from '../../lib/channel-form'
 import {
   deriveLinkPublicationPreviews,
@@ -52,8 +51,6 @@ import {
   linkAccessPlansForChannelType,
   type LinkAccessPlanProjection,
 } from '../../lib/link-access-plan'
-import type { LinkModelPublication } from '../../types'
-import { LinkPublicationRebindDialog } from '../dialogs/link-publication-rebind-dialog'
 
 const NO_LINK_IMPLEMENTATION = '__none__'
 const linkAccessPlanSelectContentClass = 'w-[460px] max-w-[calc(100vw-2rem)]'
@@ -63,7 +60,6 @@ const linkAccessPlanSelectItemClass =
 interface LinkImplementationFieldProps {
   control: Control<ChannelFormValues>
   channelType: number
-  canRebind: boolean
 }
 
 export function LinkImplementationField(props: LinkImplementationFieldProps) {
@@ -80,17 +76,9 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
       name: 'link_implementation_version',
     }) || ''
   const ordinaryProjectionRef = useRef<LinkAccessPlanProjection | null>(null)
-  const [rebindTarget, setRebindTarget] = useState<{
-    publication: LinkModelPublication
-    linkSKU: string
-  } | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['link_implementations'],
     queryFn: getLinkImplementations,
-  })
-  const { data: publicationData } = useQuery({
-    queryKey: ['link_model_publications'],
-    queryFn: getLinkModelPublications,
   })
   const implementations = useMemo(
     () => linkAccessPlansForChannelType(data?.data || [], props.channelType),
@@ -108,6 +96,13 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
   const selectedOptionValue = selectedImplementation
     ? linkAccessPlanOptionValue(selectedImplementation)
     : NO_LINK_IMPLEMENTATION
+  const providerModels = useMemo(
+    () =>
+      selectedImplementation
+        ? linkAccessPlanProviderModelDefaults(selectedImplementation)
+        : [],
+    [selectedImplementation]
+  )
   const previews = useMemo(
     () =>
       selectedImplementation
@@ -236,20 +231,6 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
                   implementation.version,
                   { shouldDirty: true, shouldValidate: true }
                 )
-                const currentModels = form.getValues('models').trim()
-                const currentModelMapping = (
-                  form.getValues('model_mapping') || ''
-                ).trim()
-                if (!currentModels && !currentModelMapping) {
-                  const providerModels =
-                    linkAccessPlanProviderModelDefaults(implementation)
-                  if (providerModels.length > 0) {
-                    form.setValue('models', providerModels.join(','), {
-                      shouldDirty: true,
-                      shouldValidate: true,
-                    })
-                  }
-                }
               }}
             >
               <FormControl>
@@ -293,73 +274,20 @@ export function LinkImplementationField(props: LinkImplementationFieldProps) {
           </FormItem>
         )}
       />
-      {selectedImplementation && previews.length > 0 && (
+      {selectedImplementation && providerModels.length > 0 && (
         <Alert>
           <AlertTitle>{linkAccessPlanLabel(selectedImplementation)}</AlertTitle>
-          <AlertDescription className='space-y-2 text-xs'>
-            {previews.map((preview) => {
-              const publication = publicationData?.data.find(
-                (candidate) =>
-                  candidate.contract_namespace === 'link' &&
-                  candidate.route_family === preview.routeFamily &&
-                  candidate.customer_model === preview.customerModel
-              )
-              let publicationStatus = 'Unavailable'
-              if (publication?.routing_conflict) {
-                publicationStatus = 'Conflict'
-              } else if (publication?.currently_fulfillable) {
-                publicationStatus = 'Available'
-              }
-              return (
-                <div key={preview.customerModel} className='font-mono'>
-                  {preview.customerModel} → {preview.providerModel || '—'}
-                  {preview.error ? ` · ${t(preview.error)}` : ''}
-                  {publication
-                    ? ` · ${t('Published')} · ${t(publicationStatus)}`
-                    : ` · ${t('will be published when saved')}`}
-                  {publication &&
-                    preview.linkSKU &&
-                    publication.link_sku !== preview.linkSKU && (
-                      <span className='text-destructive inline-flex items-center gap-1'>
-                        {' '}
-                        · {t('Conflict')}
-                        <Button
-                          type='button'
-                          variant='destructive'
-                          size='xs'
-                          disabled={!props.canRebind}
-                          title={
-                            props.canRebind
-                              ? t('Rebind Link publication')
-                              : t(
-                                  'Sensitive channel write permission is required.'
-                                )
-                          }
-                          onClick={() =>
-                            setRebindTarget({
-                              publication,
-                              linkSKU: preview.linkSKU || '',
-                            })
-                          }
-                        >
-                          {t('Rebind')}
-                        </Button>
-                      </span>
-                    )}
-                </div>
-              )
-            })}
+          <AlertDescription>
+            <ul className='flex flex-col gap-1 text-xs'>
+              {providerModels.map((providerModel) => (
+                <li key={providerModel} className='font-mono break-all'>
+                  {providerModel}
+                </li>
+              ))}
+            </ul>
           </AlertDescription>
         </Alert>
       )}
-      <LinkPublicationRebindDialog
-        open={rebindTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setRebindTarget(null)
-        }}
-        publication={rebindTarget?.publication || null}
-        proposedSKU={rebindTarget?.linkSKU || ''}
-      />
     </div>
   )
 }

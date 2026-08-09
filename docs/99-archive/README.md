@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-04
+last-reviewed: 2026-08-09
 ---
 
 # 99-archive — 目标说明
@@ -31,6 +31,8 @@ last-reviewed: 2026-08-04
 - [FunCloud Seedance 2.0 中转接入分析方案](2026/08/2026-08-02-FunCloud-Seedance-2.0中转接入分析方案.md)：FunCloud v2 JSON 合同与旧素材链退出的实施分析。
 - [Link 资源虚拟素材库实施方案](2026/08/2026-08-02-Link资源虚拟素材库实施方案.md)：AssetSource、binding/source Resolver 与虚拟素材生命周期的实施记录。
 - [Link 合同显式注册与 Moxing 接入实施方案](2026/08/2026-08-03-Link合同显式注册与Moxing接入实施方案.md)：代码所有实现身份、快照围栏和 Moxing 图片 Link 接线现场。
+- [Link 模型命名与映射交互分析](2026/08/2026-08-07-Link模型命名与映射交互分析.md)：Link 视频渠道管理员只配置客户模型名与真实模型名、SKU 不进入 `models`/`model_mapping`、选择方案后真实模型默认投影只取自 create execution bindings 的 `provider_model` 的交互分析；当前事实已进入 Link 服务合同概念与协作关系 §3.6 与 交互模式。
+- [客户与上游对账实施方案](2026/08/2026-08-09-客户与上游对账实施方案.md)：管理员客户/上游对账双 Tab、上游月度折扣与审计、`statement_snapshot` 与最小入侵接线的阶段性实施与验收记录；当前架构事实已进入 客户与上游对账架构，未完成事项进入路线图。
 
 ### 早期归档
 

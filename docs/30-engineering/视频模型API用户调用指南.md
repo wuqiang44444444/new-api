@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-10
 ---
 
 # 视频模型 API 调用指南
@@ -350,11 +350,11 @@ seed、camera_fixed、真人素材和 last-frame 结果均未发布。`generate_
 
 ### 5.6 飞彩 Seedance 2.0 固定分辨率 SKU
 
-飞彩 v2 已在代码中分别登记 Mini、SD2、Fast、value/standard 720p、1080p、4K 与 Pro PI 共 10 个
-SKU。当前模型列表发布 Mini 720p、Fast 720p、Standard 720p、Standard 1080p、Standard 4K 和
-Value 720p，六者都只开放已验证的 `16:9`。SD2、Value 1080p、Value 4K 和 Pro PI 因真实 Provider
-验证失败或 create outcome unknown 保持未发布；调用方不得依赖研究资料中的默认时长、其它画幅或
-价格，也不得用已发布 SKU 的成功横向推导这四个模型。
+飞彩 v2/v3 已在代码中分别登记 Mini、SD2、Fast、value/standard 720p、1080p、4K 与 Pro PI 共 10 个
+共享 SKU。当前生产候选仍使用 v2 的带后缀 Provider 模型；模型列表发布 Mini 720p、Fast 720p、
+Standard 720p、Standard 1080p、Standard 4K 和 Value 720p，六者都只开放 v2 已验证的 `16:9`。
+v3 的无后缀 Provider 模型尚无独立 size evidence，全部保持不可用；SD2、Value 1080p、Value 4K 和
+Pro PI 在两个版本中都不能因相邻模型成功而发布。
 
 ## 6. 查询任务
 
@@ -493,8 +493,8 @@ curl -sS -X DELETE \
 
 如果返回 `503 cancellation_unknown`，表示上游取消结果暂时未知。应继续查询原任务，不要立即创建重复任务。
 
-飞彩 v2 的 10 个固定分辨率 SKU 当前尚未发布，不得依赖历史两个 720p 合同的取消或删除语义。
-模型发布后仍必须以当时 capability 与服务端 409 错误为准，不会伪装取消或删除成功。
+飞彩 v2/v3 的 10 个固定分辨率 SKU 均未声明取消或删除能力，不得依赖历史两个 720p 合同的相关语义。
+即使模型已发布，仍必须以当时 capability 与服务端 409 错误为准，不会伪装取消或删除成功。
 
 ## 9. 幂等与安全重试
 

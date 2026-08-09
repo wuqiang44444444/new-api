@@ -17,7 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18next from 'i18next'
 import { FormProvider, useForm, useWatch } from 'react-hook-form'
@@ -126,11 +132,7 @@ function ProjectionHarness(props: ProjectionHarnessProps) {
         {assetMinURLTTLSeconds}
       </output>
       <output aria-label='Selected plan version'>{selectedVersion}</output>
-      <LinkImplementationField
-        control={form.control}
-        channelType={54}
-        canRebind
-      />
+      <LinkImplementationField control={form.control} channelType={54} />
     </FormProvider>
   )
 }
@@ -199,7 +201,7 @@ describe('Link access plan field', () => {
     queryClient.clear()
   })
 
-  it('fills registered provider models without creating model mapping on a new video plan', async () => {
+  it('keeps customer models and mapping empty when a new video plan is selected', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     })
@@ -219,11 +221,7 @@ describe('Link access plan field', () => {
       })
     )
 
-    await waitFor(() => {
-      expect((screen.getByLabelText('Models') as HTMLInputElement).value).toBe(
-        'provider-video-v1'
-      )
-    })
+    expect((screen.getByLabelText('Models') as HTMLInputElement).value).toBe('')
     expect(
       (screen.getByLabelText('Model mapping') as HTMLInputElement).value
     ).toBe('')
@@ -274,6 +272,32 @@ describe('Link access plan field', () => {
     expect(
       (screen.getByLabelText('Model mapping') as HTMLInputElement).value
     ).toBe('{"customer-video":"provider-video-v1"}')
+
+    queryClient.clear()
+  })
+
+  it('shows only registered provider models in the Link plan summary', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <I18nextProvider i18n={i18next}>
+          <ProjectionHarness
+            initialModels='customer-video'
+            initialModelMapping='{"customer-video":"provider-video-v1"}'
+          />
+        </I18nextProvider>
+      </QueryClientProvider>
+    )
+
+    const summary = await screen.findByRole('alert')
+    expect(within(summary).getByText('provider-video-v1')).not.toBeNull()
+    expect(within(summary).queryByText(/customer-video/)).toBeNull()
+    expect(summary.textContent).not.toContain('→')
+    expect(summary.textContent).not.toContain('Published')
+    expect(summary.textContent).not.toContain('Available')
+    expect(summary.textContent).not.toContain('will be published when saved')
 
     queryClient.clear()
   })

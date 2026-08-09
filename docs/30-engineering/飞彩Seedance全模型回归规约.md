@@ -1,14 +1,14 @@
 ---
 status: accepted
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-10
 ---
 
 # 飞彩 Seedance 全模型回归规约
 
 ## 1. 目的与边界
 
-本文定义飞彩单轨 `feicai.seedance-videos/v2` 的确定性行为回归。测试保护客户合同、实现身份、
+本文定义飞彩 `feicai.seedance-videos/v2` 与 `/v3` 的确定性行为回归。测试保护客户合同、实现身份、
 异步资金、计费、资源与内容代理，不以文件布局、私有常量或覆盖率为目标。真实 Provider 行为见
 [上线验收手册](../40-operations/06-飞彩Seedance全模型上线验收手册.md)。
 
@@ -17,18 +17,20 @@ last-reviewed: 2026-08-05
 - [总体架构与履约设计](<../20-architecture/seedance 模型接入设计/飞彩/飞彩总体架构与履约设计.md>)
 - [全模型 SKU 与计费设计](<../20-architecture/seedance 模型接入设计/飞彩/飞彩全模型SKU与计费设计.md>)
 
-## 2. 单轨 v2 与 v1 移除回归
+## 2. v2/v3 分离与 v1 移除回归
 
 必须以行为测试证明：
 
-- `feicai.seedance-videos/v2` 能解析为唯一飞彩 implementation，并包含 10 个 Public SKU 与 10 条 binding；
+- `feicai.seedance-videos/v2` 与 `/v3` 均能精确解析，并各自包含相同 10 个 Public SKU 与 10 条 binding；
+- v2 只接受带 `-feicai` 后缀 Provider 模型，v3 只接受无后缀模型，交叉 mapping 必须拒绝；
 - `feicai.seedance-videos/v1` 不再解析，不能保存、启用或创建新任务；
 - media-arrays profile 为新任务冻结 adapter v2；冻结 v1、空版本、未知版本和 profile/version 错配均拒绝；
-- 飞彩 v2 Task 的轮询和内容代理只接受冻结 v2 implementation/hash/adapter；
+- 飞彩 Task 的轮询和内容代理只接受创建时冻结的精确 implementation version/hash/adapter；
 - 其它 Provider 的 implementation v1 继续正常解析，证明删除范围没有扩大；
-- 含 v1 引用的部署数据审计结果会阻止单轨切换，而不是触发运行时 fallback。
+- 含 v1 引用的部署数据审计结果会阻止切换，而不是触发运行时 fallback。
 
-不增加“v1 和 v2 同时成功”的测试，因为目标架构明确不支持双轨。
+不增加“v1 与当前版本同时成功”的测试；v2/v3 并行只表示管理员可选择两个独立履约版本，不允许
+运行时跨版本补 binding、借 evidence 或 fallback。
 
 ## 3. 10 模型 capability 回归矩阵
 
@@ -58,7 +60,7 @@ last-reviewed: 2026-08-05
 
 ## 4. execution binding 与发布回归
 
-- 10 个 Provider 模型分别唯一解析表中 Link SKU；
+- v2/v3 各自的 10 个 Provider 模型分别唯一解析表中 Link SKU；
 - Mini、Fast、value、standard、SD2、Pro PI 不能互为等价 binding；
 - 飞彩 Fast 不能解析为 FunCloud `seedance-2.0-fast`；
 - 未登记 Provider 模型、route/action/profile 错误或重复 binding 全部失败关闭；
@@ -73,7 +75,7 @@ last-reviewed: 2026-08-05
 resolver 用例必须包含完整键：
 
 ```text
-(implementation v2, provider_model, resolution, ratio)
+(implementation version, provider_model, resolution, ratio)
 ```
 
 并验证返回的 Provider size 与 billing size class 同时来自同一记录。以下任一变化都应无法命中：
@@ -95,7 +97,8 @@ resolver 用例必须包含完整键：
 - 一个其它 Provider 模型的同名 ratio；
 - converter 输出 size 与 billing probe 的 size/billing class 一致。
 
-当前两组 720p 值只能作为 v2 重新取证后的 fixture；不能让高分辨率或其它 720p 模型因共享表而通过。
+当前六条 size evidence 只属于 v2 fixture；v3 在没有独立 evidence 时必须全部失败关闭，不能让同名 SKU、
+高分辨率或其它 720p 模型因共享表而通过。
 
 ## 6. 请求转换回归
 
@@ -114,8 +117,8 @@ resolver 用例必须包含完整键：
 - 创建响应只有 `task_id` 时不创建 Task；
 - 断连、坏 JSON、缺失 id、未知非 2xx 均进入 unknown，不重发、不换渠道、不退款；
 - v1 的 `403 + feicai_account_required` 不再触发飞彩确定拒绝；
-- v2 未登记确定拒绝时，相同组合仍为 unknown；
-- 若后续登记 v2 精确组合，正确 status+code 才 terminal rejection，近似 status、近似 code、同 message 和无 code 均 unknown；
+- 所选 implementation version 未登记确定拒绝时，相同组合仍为 unknown；
+- 若后续登记精确版本组合，正确 version+status+code 才 terminal rejection，另一版本、近似 status、近似 code、同 message 和无 code 均 unknown；
 - unknown hold、CAS 恢复、到期释放与 ProviderCostExposure 幂等。
 
 ## 8. 主轮询与任务列表对账回归
@@ -137,11 +140,11 @@ resolver 用例必须包含完整键：
 
 ## 9. Link 资源与内容代理回归
 
-- v2 implementation 上限为图片 9、音频 3、视频 3，但请求仍受各 SKU 更窄 capability 约束；
+- v2/v3 implementation 上限均为图片 9、音频 3、视频 3，但请求仍受各 SKU 更窄 capability 约束；
 - 只有 `general` Asset 可用，`real_person` 始终拒绝；
-- 所有权、App、状态、publication、implementation v2、TTL 与多素材交集逐项失败关闭；
+- 所有权、App、状态、publication、精确 implementation version、TTL 与多素材交集逐项失败关闭；
 - 直接媒体与 `asset://` 混用拒绝；
-- 内容代理使用 Task 冻结的 v2 implementation/hash、Base URL、Key 和结果 URL；
+- 内容代理使用 Task 冻结的精确 implementation version/hash、Base URL、Key 和结果 URL；
 - Key 轮换不改变历史 Task 使用的冻结 Key；
 - 同源 HTTPS、拒绝重定向、Range 与响应头白名单行为可观察；
 - Key、Provider 模型、任务 ID 和完整 URL 不出现在普通响应、日志或错误正文。

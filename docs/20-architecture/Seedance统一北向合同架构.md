@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-06
+last-reviewed: 2026-08-10
 ---
 
 # Seedance 统一北向合同架构
@@ -115,7 +115,7 @@ Provider asset ID、Provider 模型、implementation、账号和完整签名 URL
 | 墨行中转 | `moxing-media-task-v2` | `moxing.seedance-media-task` v2 | `seedance-2-0-oversea`；严格媒体子集 |
 | TokenSave 中转 | `tokensave-media-task-v2` | `tokensave.seedance-media-task` v2 | `doubao-seedance-2-0-260128`；严格媒体子集 |
 | FunCloud | `public-video-contract-v2` | `funcloud.seedance-json` v1 | Standard/Fast 两个独立 SKU；显式默认值由 capability 驱动 |
-| 飞彩 media-arrays | `feicai-media-arrays-v2` | `feicai.seedance-videos` v2 | 10 个固定档位 SKU；每个 Provider 模型、分辨率、画幅和计费形状独立履约 |
+| 飞彩 media-arrays | `feicai-media-arrays-v2` | `feicai.seedance-videos` v2/v3 | 10 个固定档位 SKU；v2 绑定带后缀模型，v3 绑定无后缀模型；每个实现版本、Provider 模型、分辨率、画幅和计费形状独立履约 |
 
 `seedance-2-0-oversea` 与 `doubao-seedance-2-0-260128` 是两个独立客户 SKU，不是同一 SKU 的可互换
 Provider 候选。相似模型名、同源 Provider 或相同请求字段都不能建立互换关系。

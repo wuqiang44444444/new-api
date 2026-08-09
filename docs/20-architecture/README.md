@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-06
+last-reviewed: 2026-08-09
 ---
 
 # 20-architecture — 架构索引
@@ -51,6 +51,7 @@ last-reviewed: 2026-08-06
 | Link 资源 | [Link 资源合同与解析架构](Link资源合同与解析架构.md) | `ast_*`、source/binding、Provider 物化和 Resolver 如何协作 | `Asset`、`AssetSource`、`AssetBinding`、Resolver、Asset job |
 | 真人授权 | [真人素材授权与撤回架构](真人素材授权与撤回架构.md) | 真人认证、任务使用、撤回和内容访问如何线性化 | authorization、verification、Task authorization reservation |
 | 只读投影 | [API Key 用量账单架构](API-Key用量账单架构.md) | 结算日志如何投影为用户账单 | billing statement controller/model、前端 billing feature |
+| 只读投影 | [客户与上游对账架构](客户与上游对账架构.md) | 管理员客户/上游对账、月度折扣与审计、计费快照如何从结算事实聚合 | billing-reconciliation router/controller/model、ProviderBillingDiscount/Audit、statement snapshot |
 | 公开文档 | [公开 API 文档交付架构](公开API文档交付架构.md) | 公开合同内容如何构建、校验并随 Web 发布 | `web/src/features/docs/`、`web/scripts/docs/`、`web/public/docs-content/` |
 
 ## 文档边界

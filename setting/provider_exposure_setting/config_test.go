@@ -13,3 +13,8 @@ func TestActiveForImplementationRequiresEnabledExactIdentity(t *testing.T) {
 	setting.Enabled = false
 	assert.False(t, setting.ActiveForImplementation("provider.one", "v1"))
 }
+
+func TestDefaultPolicyMonitorsBothSelectableFeicaiImplementations(t *testing.T) {
+	assert.True(t, policySetting.MonitorsImplementation("feicai.seedance-videos", "v2"))
+	assert.True(t, policySetting.MonitorsImplementation("feicai.seedance-videos", "v3"))
+}

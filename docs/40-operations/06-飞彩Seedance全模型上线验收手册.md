@@ -1,15 +1,16 @@
 ---
 status: accepted
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-10
 ---
 
 # 06 飞彩 Seedance 全模型上线验收手册
 
 ## 1. 目的与边界
 
-本手册用于在隔离分组中，以正式 HTTPS、目标生产凭据和 new-api 客户入口验收飞彩
-`feicai.seedance-videos/v2`。飞彩采用单轨 v2，不在生产验收中保留或测试 v1 fallback。
+本手册用于在隔离分组中，以正式 HTTPS、目标生产凭据和 new-api 客户入口验收飞彩精确
+implementation version。当前生产渠道使用 `feicai.seedance-videos/v2`；无后缀模型必须另选 `/v3`
+并从零取得独立证据，不能继承 v2 验收结果。任何当前版本都不保留或测试 v1 fallback。
 
 所有证据必须脱敏。不得在本文或验收产物中写入真实 Key、Cookie、完整签名 URL、上游任务 ID、
 真实渠道 ID或内部管理地址。
@@ -31,11 +32,11 @@ last-reviewed: 2026-08-05
 
 1. 创建隔离测试分组、测试用户和专用 API Key。
 2. 配置正式可验证 HTTPS Base URL、单一目标 Key 和 10 个精确 model mapping。
-3. 导出 publication、capability/hash、implementation v2/hash、adapter v2、execution bindings、价格和 exposure 快照。
+3. 导出 publication、capability/hash、精确 implementation version/hash、adapter v2、execution bindings、价格和 exposure 快照。
 4. 为每个创建用例生成唯一 `Idempotency-Key`；仅幂等重放使用相同 Key。
 5. 准备可验证的 HTTPS 图片、音频和视频；记录 MIME、大小、有效期和所有权，不保存完整源 URL 到共享证据。
 6. 准备余额前后快照、任务列表、usage/subscription 和 NEWAPI 结算日志的只读核对方式。
-7. 记录飞彩 Ability 停流方式；回滚只阻止新流量，不能中断已创建 v2 Task 的轮询与结算。
+7. 记录飞彩 Ability 停流方式；回滚只阻止新流量，不能中断已创建 Task 按冻结 implementation version 的轮询与结算。
 
 ## 4. 10 模型黑盒矩阵
 
@@ -66,7 +67,7 @@ last-reviewed: 2026-08-05
 4. 只轮询平台 Task 查询端点，验证 queued/running/终态单调且平台 ID 不变。
 5. 成功后通过平台 content endpoint 下载，检查非空、MIME、可播放、Range 和同源代理行为。
 6. 使用相同 `Idempotency-Key` 重放，确认没有第二个 Provider 任务或第二次扣费。
-7. 核对冻结 customer model、Link SKU、Provider model、implementation v2/hash、adapter v2 和 billing probe。
+7. 核对冻结 customer model、Link SKU、Provider model、精确 implementation version/hash、adapter v2 和 billing probe。
 8. 核对客户预扣、终态结算/退款、Provider 任务 quota 和账户用量，保持三类金额分离。
 9. 执行表中拒绝用例，确认错误发生在 Provider POST 前或符合已登记的确定拒绝合同。
 10. 将结果标记为通过、失败或阻塞，并附脱敏证据摘要。
@@ -111,7 +112,7 @@ last-reviewed: 2026-08-05
 
 单个模型只有同时满足以下条件才可发布：
 
-- 精确 customer model、Link SKU、Provider model 和 v2 binding 一致；
+- 精确 customer model、Link SKU、Provider model 和所选 implementation binding 一致；
 - capability 的 duration、resolution、size、媒体 min/max/roles 与黑盒一致；
 - 成功、可信失败、unknown、幂等、轮询和内容下载均通过；
 - 客户账单、Provider 证据和 exposure 可分别核对；
@@ -122,7 +123,7 @@ last-reviewed: 2026-08-05
 
 ## 10. 停流与回滚
 
-出现以下任一情况立即移除对应模型或整个飞彩 v2 Ability：
+出现以下任一情况立即移除对应模型或所选飞彩 implementation 的 Ability：
 
 - binding/SKU 错配、错误 size 或媒体静默丢弃；
 - 负费用、重复扣费/退款、预扣与结算 probe 不一致；
@@ -131,8 +132,8 @@ last-reviewed: 2026-08-05
 - v1 路径或 adapter 被运行时重新启用；
 - Key、Provider 模型、上游任务 ID或完整 URL 泄漏。
 
-回滚只停止新流量。已创建的 v2 Task、attempt、hold、exposure 和结算继续由当前 v2 代码闭合；
-不得把 v2 Task 交给 v1 parser，也不得通过恢复 v1 渠道处理 v2 在途任务。
+回滚只停止新流量。已创建的 Task、attempt、hold、exposure 和结算继续按冻结 implementation version/hash
+闭合；不得跨 v2/v3 解释在途事实，也不得通过恢复 v1 渠道处理当前版本任务。
 
 ## 11. 证据归档
 

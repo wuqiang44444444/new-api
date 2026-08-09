@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: Dev Team
-last-reviewed: 2026-08-06
+last-reviewed: 2026-08-10
 ---
 
 # 飞彩全模型 SKU 与计费设计
@@ -15,7 +15,9 @@ billing mode 和 Provider 对账边界。Mini、Fast、933、VIP、SD2 与 Pro P
 客户模型名可自定义，Link SKU 是稳定产品身份，Provider 模型只用于 `model_mapping` 和 execution binding。
 2026-08-03 研究报价只记录 Provider 证据，不是客户生产售价。
 
-飞彩只采用单轨 v2。两个旧 v1 capability 已被 v2 全模型注册整体替换，不保留 v1 hash 或 v1 converter。
+飞彩 v2/v3 共享同一组 10 个 SKU capability，但 implementation 与 Provider 模型身份严格分离：v2
+只绑定带 `-feicai` 后缀模型，v3 只绑定无后缀模型。两个旧 v1 capability 已被全模型注册整体替换，
+不保留 v1 hash 或 v1 converter。
 
 ## 2. 10 模型完整合同矩阵
 
@@ -155,6 +157,9 @@ v2 完整键为：
 resolver 必须始终同时接收冻结 `feicai.seedance-videos@v2` 和映射后的 Provider 模型。旧两元 resolver 与
 全局 fallback 不得恢复；converter 和 billing probe 必须调用同一 resolver，确保发送像素值和费用维度来自同一证据。
 
+v3 使用同一四元 registry 结构，但必须以 `feicai.seedance-videos@v3` 和无后缀 Provider 模型形成独立键。
+当前没有 v3 条目；不得复制 v2 像素值、billing class 或 evidence version 来使 v3 通过发布门禁。
+
 ### 5.3 10 模型 size 发布状态
 
 | # | Link SKU | 研究资料画幅 | 可直接进入 v2 registry | 发布要求 |
@@ -170,15 +175,16 @@ resolver 必须始终同时接收冻结 `feicai.seedance-videos@v2` 和映射后
 | 9 | `seedance-2.0-standard-4k` | 六画幅 | `16:9` | 两次隔离 4 秒任务均 completed、账户 usage 各增 1120 分；完整内容验证为 3840×2160、4.016667 秒 |
 | 10 | `seedance-2.0-pro-pi-720p` | 六画幅 | 无 | 主轮询出现 `in_progress`，复测终态失败；未闭合按次账单 |
 
-“研究资料画幅”不是生产 capability。每个 SKU 初始只发布已经进入 v2 registry 的精确组合；未登记 ratio
+“研究资料画幅”不是生产 capability。表中状态仅属于 v2；v3 当前没有任何 size evidence，不能复制或
+继承 v2 条目。每个 SKU 只发布已经进入所选 implementation/version registry 的精确组合；未登记 ratio
 在预扣前返回能力不支持。
 
 ## 6. 字段映射与请求边界
 
-Provider 原生资料明确支持整数 `duration` 替代字符串 `seconds`，两者二选一。v2 只发送 `duration`，
+Provider 原生资料明确支持整数 `duration` 替代字符串 `seconds`，两者二选一。media-arrays adapter v2 只发送 `duration`，
 避免字符串解析、双字段冲突和两个默认值来源。
 
-| 客户字段 | 飞彩字段 | v2 规则 |
+| 客户字段 | 飞彩字段 | v2/v3 共同规则 |
 | --- | --- | --- |
 | 客户模型 | `model` | 精确 `model_mapping` 后由 execution binding 复检 |
 | 非空 text | `prompt` | 按顺序换行拼接 |

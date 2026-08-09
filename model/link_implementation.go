@@ -28,6 +28,7 @@ const (
 
 	LinkImplementationVersionV1 = "v1"
 	LinkImplementationVersionV2 = "v2"
+	LinkImplementationVersionV3 = "v3"
 )
 
 type LinkAssetResolutionMode string
@@ -144,6 +145,7 @@ func buildLinkImplementationRegistry() (map[string]LinkImplementation, error) {
 		tokenSaveSeedanceV1Implementation(),
 		tokenSaveSeedanceV2Implementation(),
 		feicaiSeedanceV2Implementation(),
+		feicaiSeedanceV3Implementation(),
 		{
 			ID: LinkImplementationFunCloudSeedance, Version: LinkImplementationVersionV1, Provider: "FunCloud", PlanName: "Seedance 2.0 Video",
 			ContractID: "modelark.contents.generations.v3", PublicSKUs: []string{VideoSKUSeedance20Standard, VideoSKUSeedance20Fast},

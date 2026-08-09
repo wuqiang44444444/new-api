@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-09
+last-reviewed: 2026-08-10
 ---
 
 # Link 视频服务合同与异步任务架构
@@ -37,10 +37,10 @@ Seedance ModelArk v3 的规范词汇、模型级 capability、版本与机器发
   `third_party_json_video_media_arrays`、`third_party_funcloud_seedance_v2` 渠道 profile 解耦；
 - `southbound_adapter_version` 已从审计字符串升级为实际执行键；创建、轮询和内容代理按任务冻结的
   上游调用合同 adapter 版本分发，不用当前代码版本覆盖在途任务合同；
-- 公开 SKU 以 `VideoSKUCapability` 为运行时唯一权威；飞彩单轨
-  `feicai.seedance-videos/v2` 已登记 10 个独立 SKU、媒体上下限和按秒/按次计费模式；
-  逐模型 size registry 仍只接受正式黑盒证据，未登记组合在预扣前 fail closed，且不投影为公开
-  OpenAPI 能力；
+- 公开 SKU 以 `VideoSKUCapability` 为运行时唯一权威；飞彩
+  `feicai.seedance-videos/v2` 与 `v3` 共享同一组 10 个独立 SKU、媒体上下限和按秒/按次计费模式，
+  但分别冻结带后缀和无后缀 Provider 模型；逐模型 size registry 仍只接受精确 implementation/version
+  的正式黑盒证据，未登记组合在预扣前 fail closed，且不投影为公开 OpenAPI 能力；
 - JSON Video media-arrays 创建只有一条可达路径：类型化 ModelArk 请求 + 冻结
   capability + 映射后上游模型进入 `mediaarrays.CreateRequest`；通用 body 重解析和备用
   builder 已禁止；
@@ -187,7 +187,7 @@ flowchart LR
 | `official` | 保持现有 Ark 视频请求 | 使用官方根地址回退与内置固定路径 | 使用官方任务响应合同 |
 | `third_party_reverse_proxy` | 保持 Ark 兼容结构 | 使用渠道 Base URL、创建路径和查询模板 | 归一化已定义的包裹、任务 ID、状态和结果字段差异 |
 | `third_party_relay` | 转换为统一媒体异步任务结构 | 使用渠道 Base URL、创建路径和查询模板 | 将中转四态、结果和错误归一化为内部任务合同 |
-| `third_party_json_video_media_arrays` | 当前转换为 `duration/size/images/audios`；飞彩目标 v2 增加受 capability 约束的 `videos` | 使用渠道 HTTP(S) Base URL、`/v1/videos` 与查询模板 | 当前 adapter v1 以 `id` 为唯一任务身份；飞彩全模型采用单轨 v2 替换，不建设双轨 |
+| `third_party_json_video_media_arrays` | 转换为 `duration/size/images/audios`，并为飞彩 Pro PI 增加受 capability 约束的 `videos` | 使用渠道 HTTP(S) Base URL、`/v1/videos` 与查询模板 | media-arrays adapter v2 以 `id` 为唯一任务身份；飞彩 v2/v3 共享协议形状，但按冻结 implementation/version 和 Provider 模型独立履约 |
 | `third_party_funcloud_seedance_v2` | 从 ModelArk 内容构造 FunCloud v2 JSON | SKU 固定创建路径，查询 `/api/v2/open/aigc/{task_id}` | 归一化 v2 状态与结果；Link 资源只使用 `source_url` |
 
 official 的内置路径为：
@@ -392,9 +392,9 @@ at-least-once。完整状态见
 [ADR-0011](decisions/0011-异步创建未知与轮询合同违例对账.md)。
 
 确定拒绝必须由已登记、可测试的 Provider `HTTP status + error.code` 合同证明。仅凭 400、401、
-403 或其他 HTTP 状态不能证明任务未创建。飞彩 v1 专用规则已经删除；当前 v2 没有确定拒绝组合，
-发送后的非 2xx 或解析异常均进入 `unknown`。只有取得 v2 独立证据后才能增加精确组合，不能把整个
-状态码或相同 message 注册为确定拒绝。
+403 或其他 HTTP 状态不能证明任务未创建。飞彩 v1 专用规则已经删除；当前 v2/v3 都没有确定拒绝组合，
+发送后的非 2xx 或解析异常均进入 `unknown`。只有取得精确 implementation/version 的独立证据后才能
+增加组合，不能把证据扩张到另一版本、整个状态码或相同 message。
 
 人工处置只开放 Root 运维接口：Provider 确认已创建时通过 `recover` 补录上游任务 ID；确认
 绝未创建时通过 `reject` 释放 hold。两者都要求新鲜的 2FA/Passkey security proof、
@@ -616,7 +616,7 @@ fail closed，不使用进程级默认值。异步视频任务强制全额预扣
 - 所有已登记 profile 的创建、查询、响应归一化和失败语义有回归测试；
 - SKU 规范化接受缺失值与等价显式值、拒绝冲突值；Ability 发布和运行时都排除生命周期或媒体
   能力不等价的候选；
-- 飞彩 v2 的 10 个固定分辨率 SKU 在 size 与 Provider 证据未闭合时不进入 OpenAPI 公开投影；
+- 飞彩 v2/v3 共享的 10 个固定分辨率 SKU 在精确 implementation/version 的 size 与 Provider 证据未闭合时不进入 OpenAPI 公开投影；
   任一未发布 SKU 被误写入公开指南或机器合同应使 CI 失败；
 - 飞彩 media-arrays 的 implementation、converter 和 billing probe 只接受四元 registry 中已验证的精确 size 组合；
   Ability 发布门禁、converter 和 billing probe 读取 `model/video_provider_size_evidence.go` 的同一份

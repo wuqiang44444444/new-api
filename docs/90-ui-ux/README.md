@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-09
 ---
 
 # 90-ui-ux — 目标说明
@@ -16,7 +16,6 @@ last-reviewed: 2026-08-05
 
 - [页面清单](页面清单.md)
 - [交互模式](交互模式.md)
-- [Link 接入方案与模型发布交互规范（合并稿，待稳定后晋升）](../80-dev/2026-08-07-Link模型命名与映射交互分析.md)
 - [API 文档中心交互规范](API文档中心交互规范.md)
 
 ## 不放什么

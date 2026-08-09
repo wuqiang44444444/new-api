@@ -1,18 +1,19 @@
 ---
 status: accepted
 owner: Dev Team
-last-reviewed: 2026-08-06
+last-reviewed: 2026-08-10
 ---
 
 # 飞彩 Seedance 全模型接入设计
 
-本目录定义飞彩 10 个 Seedance 模型接入 new-api 的当前架构。飞彩只保留一个活动实现：
-`feicai.seedance-videos@v2`。v1 窄实现已从注册、adapter 分派和确定拒绝规则中移除，不建设
-v1/v2 双轨、兼容解析或历史任务 fallback。
+本目录定义飞彩 10 个 Seedance 模型接入 new-api 的当前架构。代码显式注册两个并行且不可变的活动实现：
+`feicai.seedance-videos@v2` 只绑定带 `-feicai` 后缀的 Provider 模型，`v3` 只绑定无后缀模型；两者
+履行同一组 10 个 Link SKU，但证据、渠道选择、任务快照和 hash 相互独立。v1 窄实现已从注册、adapter
+分派和确定拒绝规则中移除，不提供 v1 兼容解析或历史任务 fallback。
 
 ## 1. 文档职责与阅读顺序
 
-1. [总体架构与履约设计](飞彩总体架构与履约设计.md)：单轨 v2、请求转换、Task、Link 资源、内容代理以及 v1 移除边界。
+1. [总体架构与履约设计](飞彩总体架构与履约设计.md)：v2/v3 并行实现、请求转换、Task、Link 资源、内容代理以及 v1 移除边界。
 2. [全模型 SKU 与计费设计](飞彩全模型SKU与计费设计.md)：10 个模型逐一对应的身份、能力、size、媒体和计费合同。
 3. [发布门禁与验证设计](飞彩发布门禁与验证设计.md)：架构级证据门禁、切换条件和发布不变量。
 
@@ -23,15 +24,16 @@ v1/v2 双轨、兼容解析或历史任务 fallback。
 
 ## 2. 当前事实与发布边界
 
-当前代码已完成单轨替换：
+当前代码已完成 v1 移除和 v2/v3 显式分离：
 
 ```text
 已删除飞彩 v1 注册与 v1 专用分支
-  -> 以相同 implementation ID 登记唯一 v2
-  -> 登记 10 个独立 Link SKU capability 与 execution binding
+  -> 以相同 implementation ID 登记不可变 v2 与 v3
+  -> 两个版本共享 10 个独立 Link SKU capability
+  -> v2 的 10 条 binding 只接受带后缀模型，v3 的 10 条 binding 只接受无后缀模型
   -> 只允许 media-arrays adapter v2 创建、轮询和内容回源
-  -> size registry 只登记六个已取得真实内容证据的 16:9 组合
-  -> 其余未取证组合在 Provider POST 前失败关闭
+  -> size registry 只登记 v2 下六个已取得真实内容证据的 16:9 组合
+  -> v3 当前没有 size evidence，全部组合在 Provider POST 前失败关闭
   -> 逐模型通过证据门禁后发布 Ability
 ```
 
@@ -56,8 +58,9 @@ v1/v2 双轨、兼容解析或历史任务 fallback。
 | `seedance-2.0-vip-4k-azhw-feicai` | `seedance-2.0-standard-4k` | 4K、standard 档 | v2-r2 已登记，渠道 51 已发布 |
 | `seedance-933-pro-pi-feicai` | `seedance-2.0-pro-pi-720p` | 720p、固定 15 秒、参考视频、按次 | v2 已登记，未发布 |
 
-“v2 已登记”只表示 capability、execution binding 和 adapter 结构完整，不等于价格已批准或
-客户合同已发布。10 个模型必须分别完成 size、任务、内容和账单证据闭环，不能互相替代。
+表中“v2 已登记”描述当前生产渠道使用的带后缀实现。v3 另以无后缀模型登记相同 10 个 SKU，但
+尚无独立 size evidence，不能继承表中的 v2 发布状态。任一版本的结构登记都不等于价格已批准或
+客户合同已发布；10 个模型及两个实现版本必须按精确证据键分别闭环，不能互相替代。
 
 ## 4. 共同边界
 

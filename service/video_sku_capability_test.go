@@ -45,21 +45,21 @@ func TestAdapterPreflightRevalidatesFrozenVideoSKUCapability(t *testing.T) {
 
 func TestAdapterPreflightRejectsFeicaiModelWithoutVerifiedSize(t *testing.T) {
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
-	capability, ok := model.ResolveVideoSKUCapability(model.VideoSKUSeedance20Value720P)
+	capability, ok := model.ResolveVideoSKUCapability(model.VideoSKUSeedance20Value1080P)
 	require.True(t, ok)
 	common.SetContextKey(context, constant.ContextKeyResolvedVideoSKUCapability, capability)
 	common.SetContextKey(
 		context,
 		constant.ContextKeyChannelModelMapping,
-		`{"seedance-2.0-value-720p":"seedance-2.0-933-720p-azhw-feicai"}`,
+		`{"seedance-2.0-value-1080p":"seedance-2.0-933-1080p-azhw-feicai"}`,
 	)
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 		ContractID: dto.VideoContractModelArkV3,
 		ModelArk: &dto.ModelArkVideoCreateRequest{
-			Model:      model.VideoSKUSeedance20Value720P,
+			Model:      model.VideoSKUSeedance20Value1080P,
 			Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
 			Duration:   common.GetPointer(4),
-			Resolution: common.GetPointer("720p"),
+			Resolution: common.GetPointer("1080p"),
 			Ratio:      common.GetPointer("16:9"),
 		},
 	})
@@ -81,7 +81,7 @@ func TestAdapterPreflightRejectsFeicaiModelWithoutVerifiedSize(t *testing.T) {
 	common.SetContextKey(
 		context,
 		constant.ContextKeyChannelModelMapping,
-		`{"seedance-2.0-value-720p":"seedance-2.0-933-720p-azhw-unknown"}`,
+		`{"seedance-2.0-value-1080p":"seedance-2.0-933-1080p-azhw-unknown"}`,
 	)
 	require.NotNil(t, ValidateFrozenVideoSKUCapability(context, info))
 }

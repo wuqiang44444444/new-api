@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-09
+last-reviewed: 2026-08-10
 ---
 
 # Link 服务合同注册与履约架构
@@ -347,8 +347,9 @@ implementation `content_hash` 使用 `link-implementation-hash-v2` 的规范化�
 计算 SHA-256。哈希覆盖 execution bindings 与执行语义，排除展示文案、运行状态、凭据和其它非执行
 字段。相同 implementation ID/version 不得原地改义。
 
-当前开发期只保留每个 implementation 的单一当前版本；旧版本任务和 binding 不建立兼容 Resolver、
-alias、双读或 fallback。正式发布后若需要多版本无损共存，必须另行作出架构决策。
+同一 implementation ID 可以登记多个不可变版本，但每个版本必须拥有独立 hash、精确 execution
+binding 和证据键；版本之间不建立兼容 Resolver、alias、双读或 fallback。飞彩 v2/v3 是当前显式注册的
+并行版本：它们共享客户 SKU 语义，但分别绑定不同 Provider 模型集合，管理员必须在渠道上明确选择。
 
 ## 9. 当前 implementation 注册投影
 
@@ -358,7 +359,8 @@ alias、双读或 fallback。正式发布后若需要多版本无损共存，必
 | `moxing.seedance-media-task/v2` | third-party relay + relay assets；当前候选 | `seedance-2-0-oversea` |
 | `moxing.seedance-ark-assets/v1` | deprecated Ark 历史解析；不得创建新任务 | 冻结历史事实中的 `seedance-2-0-oversea` |
 | `tokensave.seedance-media-task/v2` | third-party relay + relay assets；按秒计费、general 图片 | `doubao-seedance-2-0-260128` |
-| `feicai.seedance-videos/v2` | JSON media-arrays + `source_url` | 10 个独立飞彩 SKU；无逐模型 size 证据的组合保持不可发布 |
+| `feicai.seedance-videos/v2` | JSON media-arrays + `source_url` | 10 个独立飞彩 SKU；只绑定带 `-feicai` 后缀模型；已有证据仍按 v2 精确键生效 |
+| `feicai.seedance-videos/v3` | JSON media-arrays + `source_url` | 与 v2 履行同一组 10 个 SKU，只绑定无后缀模型；当前无 v3 size 证据，保持不可发布 |
 | `funcloud.seedance-json/v1` | FunCloud adapter v2 + `source_url` | `seedance-2.0-standard`、`seedance-2.0-fast` |
 | `moxing.images.media-task/v1` | Advanced Custom media-task | `seedream-5-moxing`、`nano-banana-2` |
 | `qihang.images.openai-compatible/v1` | Advanced Custom converter none | `seedream-5-qihang` |

@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-09
 ---
 
 # Link 服务合同概念与协作关系
@@ -170,6 +170,32 @@ Provider 模型只是判别维度之一。所有决定 SKU 的执行维度必须
     -> execution binding 复检 Provider 模型仍履行同一 SKU
 ```
 
+### 3.6 管理端模型命名与默认投影
+
+管理员在渠道配置中只有两个可操作模型概念：
+
+| 概念 | NEWAPI 字段 | 管理员决定什么 |
+| --- | --- | --- |
+| 客户模型名 | `channels.models` | 客户可见、可授权、可路由的模型名 |
+| 真实模型名 | `model_mapping` 的最终目标 | 选中渠道在 Provider 请求中实际使用的模型名 |
+
+Link SKU 是内部能力、等价履约、计费和审计身份，不进入管理员的模型命名工作流：不塞入 `models` 或
+`model_mapping`，不要求管理员理解 SKU 字符串，也不作为必填、必选或必读信息。模型映射沿用 NEWAPI 原生
+方向——客户模型名经 `model_mapping` 得到真实模型名，无 mapping 时使用身份翻译（客户模型名 == 真实模型名），
+Link 不增加第二张映射表，也不在无 mapping 时暗中改写为 Provider 模型或 SKU。
+
+选择 Link 接入方案后，新建且 `models` 与 `model_mapping` 均为空的表单可由系统填入真实模型候选作为
+可编辑默认值。真实模型候选只来自当前 implementation 的 create execution bindings 的 `provider_model`
+（过滤 `action=create`、当前 video profile，且单一 route_family 时），由前端
+`linkAccessPlanProviderModelDefaults` 计算，后端 `ListSelectableLinkImplementations` 只透传注册的
+`execution_bindings`。`public_skus` / Link SKU、Provider 或方案展示名、`plan_name`、模型名相似度、其它
+渠道的映射或当前 publication 都不得作为候选来源。无法唯一确定 route 时不填充。这只是未保存的编辑辅助，
+不触发后台保存、Ability 发布或 publication 创建。
+
+切换、选择或清除 Link 方案都不得自动创建、改写或删除 `model_mapping`，也不自动生成自映射；`models` 或
+`model_mapping` 已有内容时切换方案不改写。真实模型候选可作为 `Models` 或 `Model Mapping` 的受控建议项，
+但选择、改名和映射仍是管理员在 NEWAPI 原有字段中的显式操作。
+
 ## 4. 事实所有权
 
 | 事实 | 权威来源 | 不负责 |
@@ -265,6 +291,8 @@ Provider 模型及视频/素材执行方式。
 10. 客户价格使用客户模型名，渠道成本和权重不进入 Link SKU 能力合同。
 11. Task、attempt、Asset 与 Binding 冻结已发生的 publication 和执行事实。
 12. NEWAPI 继续负责渠道分发，Link 不建立 Provider 自动选择或兼容降级。
+13. 管理端真实模型候选只来自 create execution bindings 的 `provider_model`；SKU 不进入 `models` 或
+    `model_mapping`；切换方案不自动改写或删除 `model_mapping`；无 mapping 时使用身份翻译，不生成自映射。
 
 ## 7. 相关文档
 

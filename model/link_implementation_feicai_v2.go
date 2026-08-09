@@ -10,7 +10,7 @@ func feicaiSeedanceV2Implementation() LinkImplementation {
 		ID:         LinkImplementationFeicaiSeedanceVideos,
 		Version:    LinkImplementationVersionV2,
 		Provider:   "飞彩",
-		PlanName:   "Seedance 2.0 Video",
+		PlanName:   "Seedance 2.0 Video（后缀模型）",
 		ContractID: "modelark.contents.generations.v3",
 		PublicSKUs: []string{
 			VideoSKUSeedance20Mini720P,

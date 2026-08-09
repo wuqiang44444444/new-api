@@ -248,6 +248,7 @@ func TestLinkImplementationContentHashIsCanonicalAndScoped(t *testing.T) {
 	expectedHashes := map[string]string{
 		LinkImplementationBytePlusSeedanceArk + "/v1":  "sha256:eb24770e7f787d658b91739a18619149a9a73865ffdaafc20ff2493a9b1a1a99",
 		LinkImplementationFeicaiSeedanceVideos + "/v2": "sha256:1a6506d9480a4ac0a4354ac7b4a715da9039faeb49488b909004dd8950495304",
+		LinkImplementationFeicaiSeedanceVideos + "/v3": "sha256:a5aaab34a88874b93ca6edc6a7aad59bd1ed665c5cba6992a7afb21aaa10c613",
 		LinkImplementationFunCloudSeedance + "/v1":     "sha256:2f354b4a61b93ac954e53301b631613507ebc1ed90d136ea8cd5eb99a34cdb7b",
 		LinkImplementationJimengVideos + "/v1":         "sha256:3426e5c65740859d53046a7d8582d323ea76c3af76ae23c14e97f6b028328623",
 		LinkImplementationKlingVideos + "/v1":          "sha256:5902ab950dbcebaf8577ca4e6fc108dfd2559162cba06fb2f25452f489b56efb",

@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-06
+last-reviewed: 2026-08-09
 ---
 
 # 80-dev — 目标说明
@@ -11,8 +11,12 @@ last-reviewed: 2026-08-06
 > 当前缺口已进入 [50-planning/Seedance 多 Provider 真实验证矩阵](../50-planning/Seedance多Provider真实验证矩阵.md)，
 > 历史原文已移动到 [99-archive/2026/08](../99-archive/2026/08/)。当前活动增量包括
 > [OpenAI 图片统一北向合同问题与收敛方案](2026-08-05-OpenAI图片统一北向合同问题与收敛方案.md)、
-> [渠道 52 真实验证与收窄发布记录](2026-08-06-渠道52真实验证与收窄发布记录.md)和
-> [Link 模型命名与映射交互分析](2026-08-07-Link模型命名与映射交互分析.md)。
+> [Seedance 国内渠道图片验证 TODO](2026-08-06-Seedance国内渠道图片验证TODO.md)和
+> [渠道 52 真实验证与收窄发布记录](2026-08-06-渠道52真实验证与收窄发布记录.md)。
+> Link 模型命名与映射交互分析的合同与交互事实已晋升到
+> [Link 服务合同概念与协作关系](../20-architecture/Link服务合同概念与协作关系.md)与
+> [交互模式](../90-ui-ux/交互模式.md)，原文已归档；客户与上游对账实施方案
+> 的架构事实已进入 [客户与上游对账架构](../20-architecture/客户与上游对账架构.md)，未完成事项进入路线图，原文已归档。
 > Seedance 统一北向合同的当前事实已进入
 > [20-architecture/Seedance 统一北向合同架构](../20-architecture/Seedance统一北向合同架构.md)，原实施方案已归档。
 > 三份 Link 实施与复评文档的已验证事实、

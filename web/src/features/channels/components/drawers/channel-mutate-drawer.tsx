@@ -181,9 +181,10 @@ import {
 } from '../dialogs/missing-models-confirmation-dialog'
 import { ParamOverrideEditorDialog } from '../dialogs/param-override-editor-dialog'
 import { StatusCodeRiskDialog } from '../dialogs/status-code-risk-dialog'
-import { ModelMappingEditor } from '../model-mapping-editor'
 import { AssetUpstreamProfileField } from './asset-upstream-profile-field'
+import { LinkAwareModelMappingEditor } from './link-aware-model-mapping-editor'
 import { LinkImplementationField } from './link-implementation-field'
+import { LinkPublicationConflictField } from './link-publication-conflict-field'
 import { OfficialChannelConnectivityPanel } from './official-channel-connectivity-panel'
 import {
   ChannelAdvancedSection,
@@ -2384,7 +2385,6 @@ export function ChannelMutateDrawer({
                                 <LinkImplementationField
                                   control={form.control}
                                   channelType={currentType}
-                                  canRebind={canEditSensitive}
                                 />
                                 <VideoUpstreamProfileField
                                   control={form.control}
@@ -2403,7 +2403,6 @@ export function ChannelMutateDrawer({
                               <LinkImplementationField
                                 control={form.control}
                                 channelType={currentType}
-                                canRebind={canEditSensitive}
                               />
                             )}
 
@@ -2411,7 +2410,6 @@ export function ChannelMutateDrawer({
                               <LinkImplementationField
                                 control={form.control}
                                 channelType={currentType}
-                                canRebind={canEditSensitive}
                               />
                             )}
 
@@ -3609,7 +3607,9 @@ export function ChannelMutateDrawer({
                                     </div>
                                   </div>
                                   <FormControl>
-                                    <ModelMappingEditor
+                                    <LinkAwareModelMappingEditor
+                                      control={form.control}
+                                      channelType={currentType}
                                       value={field.value || ''}
                                       onChange={field.onChange}
                                       disabled={isSubmitting}
@@ -3619,6 +3619,10 @@ export function ChannelMutateDrawer({
                                       )}
                                     />
                                   </FormControl>
+                                  <LinkPublicationConflictField
+                                    control={form.control}
+                                    canRebind={canEditSensitive}
+                                  />
                                   {modelMappingGuardrail.invalidJson && (
                                     <Alert variant='destructive'>
                                       <AlertDescription>
