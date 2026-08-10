@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	mediaimageprotocol "github.com/QuantumNous/new-api/relay/mediaimage"
 	kittypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
@@ -566,7 +567,7 @@ func TestMediaTaskImageBlockingReusesOpenAIImageSettlementCount(t *testing.T) {
 	adaptor, info, c := mediaTaskImageTestAdaptor("https://upstream.example")
 	info.PriceData = types.PriceData{UsePrice: true}
 	info.PriceData.AddOtherRatio("n", 1)
-	response, err := mediaTaskImageSuccessResponse(&mediaTaskImageResult{
+	response, err := mediaTaskImageSuccessResponse(&mediaimageprotocol.Result{
 		URLs: []string{
 			"https://cdn.example/one.png",
 			"https://cdn.example/two.png",
@@ -678,52 +679,6 @@ func TestPersistentMediaTaskImageRejectsUnfrozenAuthenticationInputsBeforeCreate
 			assert.Contains(t, err.Error(), "persistent media image")
 		})
 	}
-}
-
-func TestMediaTaskImageTaskIDUsesAllowlist(t *testing.T) {
-	tests := []string{
-		"../../admin",
-		"task/child",
-		"task%2Fchild",
-		"task id",
-		"任务-1",
-	}
-	for _, taskID := range tests {
-		t.Run(taskID, func(t *testing.T) {
-			response := &http.Response{
-				Body: io.NopCloser(strings.NewReader(fmt.Sprintf(`{"task_id":%q}`, taskID))),
-			}
-
-			_, _, err := mediaTaskImageTaskID(response)
-
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "unsafe characters")
-		})
-	}
-
-	response := &http.Response{
-		Body: io.NopCloser(strings.NewReader(`{"task_id":"task_01:part-2.~"}`)),
-	}
-	taskID, _, err := mediaTaskImageTaskID(response)
-	require.NoError(t, err)
-	assert.Equal(t, "task_01:part-2.~", taskID)
-
-	response = &http.Response{
-		Body: io.NopCloser(strings.NewReader(
-			fmt.Sprintf(`{"task_id":%q}`, strings.Repeat("a", 192)),
-		)),
-	}
-	_, _, err = mediaTaskImageTaskID(response)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "too long")
-}
-
-func TestMediaTaskImageWaitStopsOnCanceledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := waitForMediaTaskImagePoll(ctx, mediaTaskImageInitialPollDelay, &relaycommon.RelayInfo{})
-	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestMediaTaskImageBlockingTimeoutDoesNotCreateAnotherTask(t *testing.T) {

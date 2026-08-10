@@ -353,8 +353,9 @@ seed、camera_fixed、真人素材和 last-frame 结果均未发布。`generate_
 飞彩 v2/v3 已在代码中分别登记 Mini、SD2、Fast、value/standard 720p、1080p、4K 与 Pro PI 共 10 个
 共享 SKU。当前生产候选仍使用 v2 的带后缀 Provider 模型；模型列表发布 Mini 720p、Fast 720p、
 Standard 720p、Standard 1080p、Standard 4K 和 Value 720p，六者都只开放 v2 已验证的 `16:9`。
-v3 的无后缀 Provider 模型尚无独立 size evidence，全部保持不可用；SD2、Value 1080p、Value 4K 和
-Pro PI 在两个版本中都不能因相邻模型成功而发布。
+v3 的无后缀 Provider 模型当前仅 Mini 720p、Fast 720p 和 Standard 720p 登记独立 `16:9` size
+evidence；登记不等于生产开放。Standard 1080p、Standard 4K、Value 720p、Value 1080p、Value 4K、
+SD2 和 Pro PI 在 v3 中仍不可用，也不能因相邻模型成功而发布。
 
 ## 6. 查询任务
 

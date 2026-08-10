@@ -75,6 +75,10 @@ func StageMediaImageTaskCreateAttemptRecovery(
 	if spec.RequestedImageCount == 0 || spec.RequestedImageCount > dto.MaxImageN {
 		return fmt.Errorf("requested image count must be between 1 and %d", dto.MaxImageN)
 	}
+	spec, err := normalizeMediaImageTaskCreateSpec(spec)
+	if err != nil {
+		return err
+	}
 	now := common.GetTimestamp()
 	task := model.InitTask(constant.TaskPlatformMediaImage, info)
 	task.PrivateData.VideoUpstreamProfile = ""
@@ -102,8 +106,9 @@ func StageMediaImageTaskCreateAttemptRecovery(
 		OriginModelName: info.OriginModelName,
 	}
 	task.PrivateData.MediaImage = &model.TaskMediaImagePrivateData{
+		Protocol:            spec.Protocol,
 		QueryBaseURL:        strings.TrimSpace(spec.QueryBaseURL),
-		QueryPathTemplate:   mediaImageTaskQueryPath,
+		QueryPathTemplate:   spec.QueryPathTemplate,
 		Proxy:               strings.TrimSpace(spec.Proxy),
 		AuthType:            strings.TrimSpace(spec.AuthType),
 		AuthName:            strings.TrimSpace(spec.AuthName),

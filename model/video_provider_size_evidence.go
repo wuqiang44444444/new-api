@@ -11,6 +11,7 @@ const (
 	FeicaiV2EvidenceVersion20260805   = "feicai-prod-2026-08-05-r1"
 	FeicaiV2EvidenceVersion20260806   = "feicai-prod-2026-08-06-r2"
 	FeicaiV2EvidenceVersion20260806R3 = "feicai-prod-2026-08-06-r3"
+	FeicaiV3EvidenceVersion20260810   = "feicai-v3-prod-2026-08-10-r1"
 )
 
 type VideoProviderSizeEvidence struct {
@@ -64,6 +65,24 @@ var videoProviderSizeEvidenceRegistry = map[videoProviderSizeEvidenceKey]VideoPr
 		ProviderModel: FeicaiProviderModelSeedance20Standard4K, Resolution: ModelArkResolution4K, Ratio: "16:9",
 	}: {
 		ProviderSize: "1280x720", Multiplier: 1, BillingClass: "standard-4k-16-9", EvidenceVersion: FeicaiV2EvidenceVersion20260806,
+	},
+	{
+		ImplementationID: LinkImplementationFeicaiSeedanceVideos, ImplementationVersion: LinkImplementationVersionV3,
+		ProviderModel: FeicaiV3ProviderModelSeedance20Mini720P, Resolution: ModelArkResolution720P, Ratio: "16:9",
+	}: {
+		ProviderSize: "1280x720", Multiplier: 1, BillingClass: "mini-720p-16-9", EvidenceVersion: FeicaiV3EvidenceVersion20260810,
+	},
+	{
+		ImplementationID: LinkImplementationFeicaiSeedanceVideos, ImplementationVersion: LinkImplementationVersionV3,
+		ProviderModel: FeicaiV3ProviderModelSeedance20Fast720P, Resolution: ModelArkResolution720P, Ratio: "16:9",
+	}: {
+		ProviderSize: "1280x720", Multiplier: 1, BillingClass: "fast-720p-16-9", EvidenceVersion: FeicaiV3EvidenceVersion20260810,
+	},
+	{
+		ImplementationID: LinkImplementationFeicaiSeedanceVideos, ImplementationVersion: LinkImplementationVersionV3,
+		ProviderModel: FeicaiV3ProviderModelSeedance20Standard720P, Resolution: ModelArkResolution720P, Ratio: "16:9",
+	}: {
+		ProviderSize: "1280x720", Multiplier: 1, BillingClass: "standard-720p-16-9", EvidenceVersion: FeicaiV3EvidenceVersion20260810,
 	},
 }
 

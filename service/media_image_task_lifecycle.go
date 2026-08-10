@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -15,20 +14,18 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	mediaimageprotocol "github.com/QuantumNous/new-api/relay/mediaimage"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
 
-const (
-	mediaImageTaskQueryPath       = "/v1/media/tasks/{task_id}"
-	mediaImageTaskMaxResponseSize = 1 << 20
-)
-
 type MediaImageTaskCreateSpec struct {
 	UpstreamTaskID      string
 	CreateRequestID     string
+	Protocol            string
 	QueryBaseURL        string
+	QueryPathTemplate   string
 	Proxy               string
 	AuthType            string
 	AuthName            string
@@ -46,6 +43,10 @@ func PersistMediaImageTask(c *gin.Context, info *relaycommon.RelayInfo, spec Med
 	}
 	if spec.RequestedImageCount == 0 || spec.RequestedImageCount > dto.MaxImageN {
 		return nil, fmt.Errorf("requested image count must be between 1 and %d", dto.MaxImageN)
+	}
+	spec, err := normalizeMediaImageTaskCreateSpec(spec)
+	if err != nil {
+		return nil, err
 	}
 	if info.TaskRelayInfo.PublicTaskID == "" {
 		info.TaskRelayInfo.PublicTaskID = model.GenerateTaskID()
@@ -91,8 +92,9 @@ func PersistMediaImageTask(c *gin.Context, info *relaycommon.RelayInfo, spec Med
 		PerCallBilling:  false,
 	}
 	task.PrivateData.MediaImage = &model.TaskMediaImagePrivateData{
+		Protocol:            spec.Protocol,
 		QueryBaseURL:        strings.TrimSpace(spec.QueryBaseURL),
-		QueryPathTemplate:   mediaImageTaskQueryPath,
+		QueryPathTemplate:   spec.QueryPathTemplate,
 		Proxy:               strings.TrimSpace(spec.Proxy),
 		AuthType:            strings.TrimSpace(spec.AuthType),
 		AuthName:            strings.TrimSpace(spec.AuthName),
@@ -126,6 +128,36 @@ func PersistMediaImageTask(c *gin.Context, info *relaycommon.RelayInfo, spec Med
 	info.Action = constant.TaskActionImageGeneration
 	LogTaskConsumption(c, info)
 	return task, nil
+}
+
+func normalizeMediaImageTaskCreateSpec(spec MediaImageTaskCreateSpec) (MediaImageTaskCreateSpec, error) {
+	protocol, err := mediaimageprotocol.ValidateProtocol(spec.Protocol)
+	if err != nil {
+		return MediaImageTaskCreateSpec{}, err
+	}
+	queryPath := strings.TrimSpace(spec.QueryPathTemplate)
+	if queryPath == "" {
+		return MediaImageTaskCreateSpec{}, errors.New("media image task query path is required")
+	}
+	validationTaskID := strings.TrimSpace(spec.UpstreamTaskID)
+	if validationTaskID == "" {
+		validationTaskID = "validation"
+	}
+	if _, err := mediaimageprotocol.BuildQueryURL(mediaimageprotocol.QuerySpec{
+		Protocol:          protocol,
+		BaseURL:           spec.QueryBaseURL,
+		PathTemplate:      queryPath,
+		TaskID:            validationTaskID,
+		APIKey:            "validation",
+		AuthType:          spec.AuthType,
+		AuthName:          spec.AuthName,
+		AuthValueTemplate: spec.AuthValueTemplate,
+	}); err != nil {
+		return MediaImageTaskCreateSpec{}, err
+	}
+	spec.Protocol = protocol
+	spec.QueryPathTemplate = queryPath
+	return spec, nil
 }
 
 func WaitMediaImageTask(ctx context.Context, taskID string, skipSleep bool) (*model.Task, error) {
@@ -169,45 +201,6 @@ func WaitMediaImageTask(ctx context.Context, taskID string, skipSleep bool) (*mo
 			}
 		}
 	}
-}
-
-func mediaImageTaskResultURLs(result *mediaImageTaskPollResult) ([]string, error) {
-	if result == nil {
-		return nil, errors.New("upstream media image task has no result")
-	}
-	urls := make([]string, 0, len(result.URLs)+1)
-	seen := make(map[string]struct{}, len(result.URLs)+1)
-	add := func(value string) error {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return nil
-		}
-		parsed, err := url.Parse(value)
-		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-			return errors.New("upstream media image task returned an invalid result URL")
-		}
-		if _, ok := seen[value]; ok {
-			return nil
-		}
-		if len(urls) >= dto.MaxImageN {
-			return fmt.Errorf("upstream media image task returned more than %d images", dto.MaxImageN)
-		}
-		seen[value] = struct{}{}
-		urls = append(urls, value)
-		return nil
-	}
-	for _, value := range result.URLs {
-		if err := add(value); err != nil {
-			return nil, err
-		}
-	}
-	if err := add(result.PrimaryURL); err != nil {
-		return nil, err
-	}
-	if len(urls) == 0 {
-		return nil, errors.New("upstream media image task returned no result URL")
-	}
-	return urls, nil
 }
 
 func settleMediaImageTask(ctx context.Context, task *model.Task) {

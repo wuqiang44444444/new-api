@@ -60,7 +60,7 @@ func TestFeicaiV2AndV3RemainSelectableWithDisjointProviderModels(t *testing.T) {
 	})
 }
 
-func TestFeicaiV3AcceptsOnlyUnsuffixedMappingsAndFailsClosedWithoutEvidence(t *testing.T) {
+func TestFeicaiV3AcceptsOnlyUnsuffixedMappingsAndFailsClosedForUnverifiedModel(t *testing.T) {
 	v2Settings := dto.ChannelOtherSettings{
 		VideoUpstreamProfile:    dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
 		VideoUpstreamCreatePath: "/v1/videos", VideoUpstreamQueryPathTemplate: "/v1/videos/{task_id}",
@@ -88,9 +88,38 @@ func TestFeicaiV3AcceptsOnlyUnsuffixedMappingsAndFailsClosedWithoutEvidence(t *t
 	channel.Status = common.ChannelStatusEnabled
 	channel.SetOtherSettings(v3Settings)
 	require.NoError(t, ValidateLinkSKUAbilityBindings(channel))
+	require.NoError(t, ValidateLinkSKUAbilityPublicationReadiness(channel))
+
+	channel.Models = VideoSKUSeedance20Standard1080P
+	channel.ModelMapping = common.GetPointer(`{"seedance-2.0-standard-1080p":"seedance-2.0-vip-1080p-azhw"}`)
+	require.NoError(t, ValidateLinkSKUAbilityBindings(channel))
 	require.ErrorContains(
 		t,
 		ValidateLinkSKUAbilityPublicationReadiness(channel),
 		"no verified provider ratio/size evidence",
 	)
+}
+
+func TestFeicaiV3VerifiedProviderSizeEvidenceIsExactAndModelScoped(t *testing.T) {
+	implementation := dto.LinkImplementationRef{
+		ID: LinkImplementationFeicaiSeedanceVideos, Version: LinkImplementationVersionV3,
+	}
+	for _, providerModel := range []string{
+		FeicaiV3ProviderModelSeedance20Mini720P,
+		FeicaiV3ProviderModelSeedance20Fast720P,
+		FeicaiV3ProviderModelSeedance20Standard720P,
+	} {
+		evidence, ok := ResolveVideoProviderSizeEvidence(implementation, providerModel, ModelArkResolution720P, "16:9")
+		require.True(t, ok, providerModel)
+		assert.Equal(t, "1280x720", evidence.ProviderSize, providerModel)
+		assert.Equal(t, FeicaiV3EvidenceVersion20260810, evidence.EvidenceVersion, providerModel)
+	}
+
+	_, ok := ResolveVideoProviderSizeEvidence(
+		implementation,
+		FeicaiV3ProviderModelSeedance20Standard1080P,
+		ModelArkResolution1080P,
+		"16:9",
+	)
+	assert.False(t, ok)
 }

@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-06
+last-reviewed: 2026-08-10
 ---
 
 # 50-planning — 目标说明
@@ -16,6 +16,7 @@ last-reviewed: 2026-08-06
 
 - [路线图](路线图.md)
 - [Seedance 多 Provider 真实验证矩阵](Seedance多Provider真实验证矩阵.md)
+- [Seedance 专用渠道与 Link 简化实施计划](Seedance专用渠道与Link简化实施计划.md)
 - [内置 API 文档中心实施计划](内置API文档中心实施计划.md)
 - [变更记录](变更记录.md)
 

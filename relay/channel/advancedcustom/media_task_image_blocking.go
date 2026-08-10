@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -20,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	mediaimageprotocol "github.com/QuantumNous/new-api/relay/mediaimage"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -27,9 +27,8 @@ import (
 
 const (
 	mediaTaskImageCapability       = "image_generation"
+	mediaTaskImageQueryPath        = "/v1/media/tasks/{task_id}"
 	mediaTaskImageDefaultTimeout   = 5 * time.Minute
-	mediaTaskImageInitialPollDelay = time.Second
-	mediaTaskImageMaxPollDelay     = 5 * time.Second
 	mediaTaskImageMaxResponseBytes = 1 << 20
 	mediaTaskImageMaxPromptRunes   = 3000
 	mediaTaskImageMaxInputImages   = 14
@@ -57,24 +56,6 @@ type mediaTaskImageExtra struct {
 
 type mediaTaskImageSequentialImageOption struct {
 	MaxImages *uint `json:"max_images,omitempty"`
-}
-
-type mediaTaskImageResponseEnvelope struct {
-	TaskID       string                          `json:"task_id"`
-	ID           string                          `json:"id"`
-	RequestID    string                          `json:"request_id"`
-	Status       string                          `json:"status"`
-	State        string                          `json:"state"`
-	Error        json.RawMessage                 `json:"error"`
-	ErrorMessage string                          `json:"error_message"`
-	Message      string                          `json:"message"`
-	Result       *mediaTaskImageResult           `json:"result"`
-	Data         *mediaTaskImageResponseEnvelope `json:"data"`
-}
-
-type mediaTaskImageResult struct {
-	PrimaryURL string   `json:"primary_url"`
-	URLs       []string `json:"urls"`
 }
 
 func convertMediaTaskImageRequest(request dto.ImageRequest, originModel string) (*mediaTaskImageRequest, error) {
@@ -440,6 +421,7 @@ func mediaTaskImageInvalidRequest(err error) error {
 func (a *Adaptor) doMediaTaskImageBlocking(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	ctx, cancel := mediaTaskImageExecutionContext(c)
 	defer cancel()
+	querySpec := a.mediaTaskImageQuerySpec(info, "validation", nil)
 
 	if !info.IsChannelTest {
 		if len(info.HeadersOverride) > 0 || info.UseRuntimeHeadersOverride {
@@ -452,11 +434,13 @@ func (a *Adaptor) doMediaTaskImageBlocking(c *gin.Context, info *relaycommon.Rel
 				return nil, mediaTaskImageInvalidRequest(errors.New("persistent media image task auth must reference {api_key}"))
 			}
 		}
-		if _, err := a.mediaTaskImagePollURL(info, "validation"); err != nil {
+		if _, err := mediaimageprotocol.BuildQueryURL(querySpec); err != nil {
 			return nil, mediaTaskImageNoRetry(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest)
 		}
 		recoverySpec := service.MediaImageTaskCreateSpec{
+			Protocol:            querySpec.Protocol,
 			QueryBaseURL:        info.ChannelBaseUrl,
+			QueryPathTemplate:   querySpec.PathTemplate,
 			Proxy:               info.ChannelSetting.Proxy,
 			ResponseFormat:      "url",
 			RequestedImageCount: mediaTaskImageRequestedCount(info),
@@ -486,56 +470,56 @@ func (a *Adaptor) doMediaTaskImageBlocking(c *gin.Context, info *relaycommon.Rel
 		}
 		return nil, err
 	}
-	if initialResponse.StatusCode == http.StatusOK {
-		status, payload, err := mediaTaskImageCreateStatus(initialResponse)
+	if initialResponse.StatusCode == http.StatusOK || initialResponse.StatusCode == http.StatusAccepted {
+		outcome, err := mediaimageprotocol.InspectCreateResponse(mediaimageprotocol.ProtocolMediaImageTaskV1, initialResponse)
 		if err != nil {
+			_ = closeMediaTaskImageResponse(initialResponse)
 			return nil, mediaTaskImageNoRetry(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 		}
-		switch status {
-		case "":
+		switch outcome.Disposition {
+		case mediaimageprotocol.CreatePassthrough:
 			if err := validateMediaTaskImageSynchronousCount(initialResponse, mediaTaskImageRequestedCount(info)); err != nil {
 				return nil, mediaTaskImageNoRetry(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 			}
 			return initialResponse, nil
-		case "queued", "running", "in_progress", "processing":
-			// Some media-task providers acknowledge asynchronous creation with
-			// HTTP 200 instead of HTTP 202. Continue through the same persistence
-			// and polling path once the response body identifies a pending task.
-		case "succeeded", "success", "completed":
+		case mediaimageprotocol.CreateCompleted:
 			_ = closeMediaTaskImageResponse(initialResponse)
-			return mediaTaskImageSuccessResponse(payload.Result)
-		case "failed", "failure", "cancelled", "canceled", "expired":
+			return mediaTaskImageSuccessResponse(&outcome.Result)
+		case mediaimageprotocol.CreateRejected:
 			_ = closeMediaTaskImageResponse(initialResponse)
-			return nil, mediaTaskImageNoRetry(errors.New(sanitizeMediaTaskImageError(payload.errorMessage())), types.ErrorCodeBadResponse, http.StatusBadGateway)
-		default:
+			return nil, mediaTaskImageNoRetry(errors.New(outcome.Failure), types.ErrorCodeBadResponse, http.StatusBadGateway)
+		case mediaimageprotocol.CreateAccepted:
 			_ = closeMediaTaskImageResponse(initialResponse)
-			return nil, mediaTaskImageNoRetry(fmt.Errorf("upstream media task returned unsupported status %q", status), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			info.SkipRequestRefund = true
+			trace := &relaycommon.UpstreamTaskTrace{TaskID: outcome.TaskID, CreateRequestID: outcome.RequestID}
+			relaycommon.SetUpstreamTaskTrace(c, trace)
+			if outcome.RequestID != "" {
+				c.Set(common.UpstreamRequestIdKey, outcome.RequestID)
+			}
+			return a.finishAcceptedMediaTaskImage(c, ctx, info, trace, querySpec, outcome.TaskID, outcome.RequestID)
 		}
-	} else if initialResponse.StatusCode != http.StatusAccepted {
-		return initialResponse, nil
 	}
+	return initialResponse, nil
+}
 
-	taskID, createRequestID, err := mediaTaskImageTaskID(initialResponse)
-	if err != nil {
-		return nil, mediaTaskImageNoRetry(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
-	}
-	// Once the provider has returned a validated task ID, retrying the POST or
-	// blindly refunding the request can create an untracked upstream cost.
-	info.SkipRequestRefund = true
-	trace := &relaycommon.UpstreamTaskTrace{
-		TaskID:          taskID,
-		CreateRequestID: createRequestID,
-	}
-	relaycommon.SetUpstreamTaskTrace(c, trace)
-	if createRequestID != "" {
-		c.Set(common.UpstreamRequestIdKey, createRequestID)
-	}
+func (a *Adaptor) finishAcceptedMediaTaskImage(
+	c *gin.Context,
+	ctx context.Context,
+	info *relaycommon.RelayInfo,
+	trace *relaycommon.UpstreamTaskTrace,
+	querySpec mediaimageprotocol.QuerySpec,
+	taskID string,
+	createRequestID string,
+) (*http.Response, error) {
+	querySpec.TaskID = taskID
 	if !info.IsChannelTest {
 		imageCount := mediaTaskImageRequestedCount(info)
 		spec := service.MediaImageTaskCreateSpec{
 			UpstreamTaskID:      taskID,
 			CreateRequestID:     createRequestID,
+			Protocol:            querySpec.Protocol,
 			QueryBaseURL:        info.ChannelBaseUrl,
+			QueryPathTemplate:   querySpec.PathTemplate,
 			Proxy:               info.ChannelSetting.Proxy,
 			ResponseFormat:      "url",
 			RequestedImageCount: imageCount,
@@ -581,17 +565,43 @@ func (a *Adaptor) doMediaTaskImageBlocking(c *gin.Context, info *relaycommon.Rel
 		}
 		switch task.Status {
 		case model.TaskStatusSuccess:
-			result := &mediaTaskImageResult{URLs: append([]string(nil), task.PrivateData.MediaImage.ResultURLs...)}
+			result := &mediaimageprotocol.Result{URLs: append([]string(nil), task.PrivateData.MediaImage.ResultURLs...)}
 			return mediaTaskImageSuccessResponse(result)
 		default:
-			return nil, mediaTaskImageNoRetry(errors.New(sanitizeMediaTaskImageError(task.FailReason)), types.ErrorCodeBadResponse, http.StatusBadGateway)
+			return nil, mediaTaskImageNoRetry(errors.New(mediaimageprotocol.SanitizeFailure(task.FailReason)), types.ErrorCodeBadResponse, http.StatusBadGateway)
 		}
 	}
-	pollURL, err := a.mediaTaskImagePollURL(info, taskID)
+
+	headers, err := a.mediaTaskImageQueryHeaders(c, info)
 	if err != nil {
 		return nil, mediaTaskImageNoRetry(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
 	}
-	return a.pollMediaTaskImage(c, ctx, info, trace, pollURL)
+	querySpec.Headers = headers
+	waitResult, err := mediaimageprotocol.Wait(ctx, func(request *http.Request) (*http.Response, error) {
+		logger.LogDebug(c, "media image upstream request: method=%s url=%s", request.Method, relaycommon.SanitizeURLForLog(request.URL.String()))
+		return channel.DoRequest(c, request, info)
+	}, querySpec, mediaimageprotocol.WaitOptions{SkipSleep: info.ChannelOtherSettings.DisableTaskPollingSleep})
+	trace.PollAttempts = waitResult.Attempts
+	trace.PollElapsedMilliseconds = waitResult.Elapsed.Milliseconds()
+	recordMediaTaskImagePollRequestID(c, trace, waitResult.Observation.RequestID)
+	if err != nil {
+		if ctx.Err() != nil {
+			logger.LogWarn(c, fmt.Sprintf(
+				"media image task timed out: channel_id=%d task_id=%q create_request_id=%q poll_request_id=%q poll_attempts=%d elapsed_ms=%d",
+				info.ChannelId, trace.TaskID, trace.CreateRequestID, trace.LastPollRequestID, trace.PollAttempts, trace.PollElapsedMilliseconds,
+			))
+			return nil, mediaTaskImageTimeoutError()
+		}
+		return nil, mediaTaskImageNoRetry(err, types.ErrorCodeDoRequestFailed, http.StatusBadGateway)
+	}
+	switch waitResult.Observation.State {
+	case mediaimageprotocol.StateCompleted:
+		return mediaTaskImageSuccessResponse(&waitResult.Observation.Result)
+	case mediaimageprotocol.StateFailed:
+		return nil, mediaTaskImageNoRetry(errors.New(waitResult.Observation.Failure), types.ErrorCodeBadResponse, http.StatusBadGateway)
+	default:
+		return nil, mediaTaskImageNoRetry(errors.New("upstream media image task returned an untrusted state"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+	}
 }
 
 func mediaTaskImagePreferAsync(c *gin.Context) bool {
@@ -656,32 +666,6 @@ func validateMediaTaskImageSynchronousCount(response *http.Response, requested u
 	return nil
 }
 
-func mediaTaskImageCreateStatus(response *http.Response) (string, *mediaTaskImageResponseEnvelope, error) {
-	body, err := readMediaTaskImageResponse(response)
-	if err != nil {
-		return "", nil, err
-	}
-	response.Body = io.NopCloser(bytes.NewReader(body))
-	response.ContentLength = int64(len(body))
-
-	var envelope mediaTaskImageResponseEnvelope
-	if err := common.Unmarshal(body, &envelope); err != nil {
-		// OpenAI-compatible synchronous responses use data as an array, while
-		// media-task envelopes use data as an object. Leave array responses to
-		// the existing OpenAI image response parser.
-		return "", nil, nil
-	}
-	payload := envelope.payload()
-	if payload == nil {
-		return "", nil, nil
-	}
-	status := strings.ToLower(strings.TrimSpace(payload.Status))
-	if status == "" {
-		status = strings.ToLower(strings.TrimSpace(payload.State))
-	}
-	return status, payload, nil
-}
-
 func mediaTaskImageExecutionContext(c *gin.Context) (context.Context, context.CancelFunc) {
 	parent := context.Background()
 	if c != nil && c.Request != nil {
@@ -730,239 +714,43 @@ func (a *Adaptor) doMediaTaskImageHTTP(c *gin.Context, ctx context.Context, info
 	return channel.DoRequest(c, request, info)
 }
 
-func mediaTaskImageTaskID(response *http.Response) (string, string, error) {
-	headerRequestID := mediaTaskImageResponseHeaderRequestID(response)
-	body, err := readMediaTaskImageResponse(response)
+func (a *Adaptor) mediaTaskImageQuerySpec(info *relaycommon.RelayInfo, taskID string, headers http.Header) mediaimageprotocol.QuerySpec {
+	spec := mediaimageprotocol.QuerySpec{
+		Protocol:     mediaimageprotocol.ProtocolMediaImageTaskV1,
+		BaseURL:      info.ChannelBaseUrl,
+		PathTemplate: mediaTaskImageQueryPath,
+		TaskID:       taskID,
+		APIKey:       info.ApiKey,
+		Headers:      headers,
+	}
+	if a.route.Auth != nil {
+		spec.AuthType = a.route.Auth.Type
+		spec.AuthName = a.route.Auth.Name
+		spec.AuthValueTemplate = a.route.Auth.Value
+	}
+	return spec
+}
+
+func (a *Adaptor) mediaTaskImageQueryHeaders(c *gin.Context, info *relaycommon.RelayInfo) (http.Header, error) {
+	headers := make(http.Header)
+	if err := a.SetupRequestHeader(c, &headers, info); err != nil {
+		return nil, fmt.Errorf("setup media image query headers: %w", err)
+	}
+	overrides, err := channel.ResolveHeaderOverride(info, c)
 	if err != nil {
-		return "", headerRequestID, err
+		return nil, err
 	}
-	var envelope mediaTaskImageResponseEnvelope
-	if err := common.Unmarshal(body, &envelope); err != nil {
-		return "", headerRequestID, errors.New("decode media task create response")
+	for key, value := range overrides {
+		headers.Set(key, value)
 	}
-	payload := envelope.payload()
-	requestID := mediaTaskImageEnvelopeRequestID(&envelope, payload)
-	if requestID == "" {
-		requestID = headerRequestID
-	}
-	taskID := strings.TrimSpace(payload.TaskID)
-	if taskID == "" {
-		taskID = strings.TrimSpace(payload.ID)
-	}
-	if taskID == "" && payload != &envelope {
-		taskID = strings.TrimSpace(envelope.TaskID)
-		if taskID == "" {
-			taskID = strings.TrimSpace(envelope.ID)
-		}
-	}
-	if taskID == "" {
-		return "", requestID, errors.New("upstream media task create response has no task_id")
-	}
-	if len(taskID) > 191 {
-		return "", requestID, errors.New("upstream media task id is too long")
-	}
-	if strings.ContainsFunc(taskID, func(r rune) bool {
-		return !isSafeMediaTaskImageIDRune(r)
-	}) {
-		return "", requestID, errors.New("upstream media task id contains unsafe characters")
-	}
-	return taskID, requestID, nil
-}
-
-func isSafeMediaTaskImageIDRune(r rune) bool {
-	return r >= 'a' && r <= 'z' ||
-		r >= 'A' && r <= 'Z' ||
-		r >= '0' && r <= '9' ||
-		strings.ContainsRune("-._~:", r)
-}
-
-func (a *Adaptor) mediaTaskImagePollURL(info *relaycommon.RelayInfo, taskID string) (string, error) {
-	if info == nil || strings.TrimSpace(info.ChannelBaseUrl) == "" {
-		return "", errors.New("channel base URL is required for media task polling")
-	}
-	base, err := url.Parse(strings.TrimSpace(info.ChannelBaseUrl))
-	if err != nil || base.Scheme == "" || base.Host == "" {
-		return "", errors.New("channel base URL must be a full URL for media task polling")
-	}
-	if base.Scheme != "http" && base.Scheme != "https" {
-		return "", errors.New("channel base URL must use http or https for media task polling")
-	}
-
-	rawPath := strings.TrimRight(base.EscapedPath(), "/") + "/v1/media/tasks/" + url.PathEscape(taskID)
-	path, err := url.PathUnescape(rawPath)
-	if err != nil {
-		return "", errors.New("invalid media task id")
-	}
-	base.Path = path
-	base.RawPath = rawPath
-	base.RawQuery = ""
-	base.Fragment = ""
-
-	if a.route.Auth != nil && strings.TrimSpace(a.route.Auth.Type) == dto.AdvancedCustomAuthTypeQuery {
-		query := base.Query()
-		query.Set(strings.TrimSpace(a.route.Auth.Name), applyAuthTemplate(a.route.Auth.Value, info.ApiKey))
-		base.RawQuery = query.Encode()
-	}
-	return base.String(), nil
-}
-
-func (a *Adaptor) pollMediaTaskImage(c *gin.Context, ctx context.Context, info *relaycommon.RelayInfo, trace *relaycommon.UpstreamTaskTrace, pollURL string) (*http.Response, error) {
-	pollStartedAt := time.Now()
-	defer func() {
-		trace.PollElapsedMilliseconds = time.Since(pollStartedAt).Milliseconds()
-	}()
-
-	delay := mediaTaskImageInitialPollDelay
-	for {
-		if err := waitForMediaTaskImagePoll(ctx, delay, info); err != nil {
-			trace.PollElapsedMilliseconds = time.Since(pollStartedAt).Milliseconds()
-			logger.LogWarn(c, fmt.Sprintf(
-				"media image task timed out: channel_id=%d task_id=%q create_request_id=%q poll_request_id=%q poll_attempts=%d elapsed_ms=%d",
-				info.ChannelId, trace.TaskID, trace.CreateRequestID, trace.LastPollRequestID, trace.PollAttempts, trace.PollElapsedMilliseconds,
-			))
-			return nil, mediaTaskImageTimeoutError()
-		}
-
-		trace.PollAttempts++
-		response, err := a.doMediaTaskImageHTTP(c, ctx, info, http.MethodGet, pollURL, nil, 0)
-		if err != nil {
-			trace.PollElapsedMilliseconds = time.Since(pollStartedAt).Milliseconds()
-			if ctx.Err() != nil {
-				logger.LogWarn(c, fmt.Sprintf(
-					"media image task timed out: channel_id=%d task_id=%q create_request_id=%q poll_request_id=%q poll_attempts=%d elapsed_ms=%d",
-					info.ChannelId, trace.TaskID, trace.CreateRequestID, trace.LastPollRequestID, trace.PollAttempts, trace.PollElapsedMilliseconds,
-				))
-				return nil, mediaTaskImageTimeoutError()
-			}
-			logger.LogError(c, fmt.Sprintf(
-				"media image task query failed: channel_id=%d task_id=%q create_request_id=%q poll_request_id=%q poll_attempts=%d elapsed_ms=%d",
-				info.ChannelId, trace.TaskID, trace.CreateRequestID, trace.LastPollRequestID, trace.PollAttempts, trace.PollElapsedMilliseconds,
-			))
-			return nil, mediaTaskImageNoRetry(errors.New("upstream media task query failed"), types.ErrorCodeDoRequestFailed, http.StatusBadGateway)
-		}
-		if response.StatusCode != http.StatusOK {
-			recordMediaTaskImagePollRequestID(c, trace, mediaTaskImageResponseHeaderRequestID(response))
-			statusCode := response.StatusCode
-			_ = closeMediaTaskImageResponse(response)
-			return nil, mediaTaskImageNoRetry(fmt.Errorf("upstream media task query returned status %d", statusCode), types.ErrorCodeBadResponseStatusCode, statusCode)
-		}
-
-		payload, pollRequestID, err := parseMediaTaskImageQueryResponse(response)
-		recordMediaTaskImagePollRequestID(c, trace, pollRequestID)
-		if err != nil {
-			return nil, mediaTaskImageNoRetry(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
-		}
-		status := strings.ToLower(strings.TrimSpace(payload.Status))
-		if status == "" {
-			status = strings.ToLower(strings.TrimSpace(payload.State))
-		}
-		trace.PollElapsedMilliseconds = time.Since(pollStartedAt).Milliseconds()
-		logger.LogDebug(
-			c,
-			"media image task status: channel_id=%d task_id=%q create_request_id=%q poll_request_id=%q status=%q poll_attempts=%d elapsed_ms=%d",
-			info.ChannelId,
-			trace.TaskID,
-			trace.CreateRequestID,
-			trace.LastPollRequestID,
-			status,
-			trace.PollAttempts,
-			trace.PollElapsedMilliseconds,
-		)
-		switch status {
-		case "queued", "running":
-		case "succeeded":
-			return mediaTaskImageSuccessResponse(payload.Result)
-		case "failed":
-			return nil, mediaTaskImageNoRetry(errors.New(sanitizeMediaTaskImageError(payload.errorMessage())), types.ErrorCodeBadResponse, http.StatusBadGateway)
-		default:
-			return nil, mediaTaskImageNoRetry(fmt.Errorf("upstream media task returned unsupported status %q", status), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
-		}
-
-		delay *= 2
-		if delay > mediaTaskImageMaxPollDelay {
-			delay = mediaTaskImageMaxPollDelay
-		}
-	}
-}
-
-func waitForMediaTaskImagePoll(ctx context.Context, delay time.Duration, info *relaycommon.RelayInfo) error {
-	if info != nil && info.IsChannelTest && info.ChannelOtherSettings.DisableTaskPollingSleep {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			return nil
-		}
-	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
-
-func parseMediaTaskImageQueryResponse(response *http.Response) (*mediaTaskImageResponseEnvelope, string, error) {
-	headerRequestID := mediaTaskImageResponseHeaderRequestID(response)
-	body, err := readMediaTaskImageResponse(response)
-	if err != nil {
-		return nil, headerRequestID, err
-	}
-	var envelope mediaTaskImageResponseEnvelope
-	if err := common.Unmarshal(body, &envelope); err != nil {
-		return nil, headerRequestID, errors.New("decode media task query response")
-	}
-	payload := envelope.payload()
-	requestID := mediaTaskImageEnvelopeRequestID(&envelope, payload)
-	if requestID == "" {
-		requestID = headerRequestID
-	}
-	return payload, requestID, nil
-}
-
-func mediaTaskImageResponseHeaderRequestID(response *http.Response) string {
-	if response == nil {
-		return ""
-	}
-	for _, header := range []string{common.RequestIdKey, "X-Request-Id", "Request-Id", "X-Trace-Id"} {
-		if requestID := sanitizeMediaTaskImageRequestID(response.Header.Get(header)); requestID != "" {
-			return requestID
-		}
-	}
-	return ""
-}
-
-func mediaTaskImageEnvelopeRequestID(envelope, payload *mediaTaskImageResponseEnvelope) string {
-	if payload != nil {
-		if requestID := sanitizeMediaTaskImageRequestID(payload.RequestID); requestID != "" {
-			return requestID
-		}
-	}
-	if envelope != nil && envelope != payload {
-		return sanitizeMediaTaskImageRequestID(envelope.RequestID)
-	}
-	return ""
-}
-
-func sanitizeMediaTaskImageRequestID(requestID string) string {
-	requestID = strings.TrimSpace(requestID)
-	if requestID == "" || strings.ContainsFunc(requestID, unicode.IsControl) {
-		return ""
-	}
-	runes := []rune(requestID)
-	if len(runes) > 512 {
-		return string(runes[:512])
-	}
-	return requestID
+	return headers, nil
 }
 
 func recordMediaTaskImagePollRequestID(c *gin.Context, trace *relaycommon.UpstreamTaskTrace, requestID string) {
 	if trace == nil {
 		return
 	}
-	requestID = sanitizeMediaTaskImageRequestID(requestID)
+	requestID = mediaimageprotocol.SanitizeRequestID(requestID)
 	if requestID != "" {
 		trace.LastPollRequestID = requestID
 	}
@@ -976,73 +764,13 @@ func recordMediaTaskImagePollRequestID(c *gin.Context, trace *relaycommon.Upstre
 	}
 }
 
-func (e *mediaTaskImageResponseEnvelope) payload() *mediaTaskImageResponseEnvelope {
-	if e != nil && e.Data != nil {
-		return e.Data
-	}
-	return e
-}
-
-func (e *mediaTaskImageResponseEnvelope) errorMessage() string {
-	if e == nil {
-		return "upstream media task failed"
-	}
-	if message := strings.TrimSpace(e.ErrorMessage); message != "" {
-		return message
-	}
-	if message := strings.TrimSpace(e.Message); message != "" {
-		return message
-	}
-	if len(e.Error) > 0 && string(e.Error) != "null" {
-		var message string
-		if common.Unmarshal(e.Error, &message) == nil && strings.TrimSpace(message) != "" {
-			return message
-		}
-		var object struct {
-			Message string `json:"message"`
-		}
-		if common.Unmarshal(e.Error, &object) == nil && strings.TrimSpace(object.Message) != "" {
-			return object.Message
-		}
-	}
-	return "upstream media task failed"
-}
-
-func mediaTaskImageSuccessResponse(result *mediaTaskImageResult) (*http.Response, error) {
+func mediaTaskImageSuccessResponse(result *mediaimageprotocol.Result) (*http.Response, error) {
 	if result == nil {
 		return nil, mediaTaskImageNoRetry(errors.New("upstream succeeded response has no result"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 	}
-	urls := make([]string, 0, len(result.URLs)+1)
-	seen := make(map[string]struct{}, len(result.URLs)+1)
-	add := func(value string) error {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return nil
-		}
-		parsed, err := url.Parse(value)
-		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-			return errors.New("upstream media task returned an invalid result URL")
-		}
-		if _, exists := seen[value]; exists {
-			return nil
-		}
-		if len(urls) >= dto.MaxImageN {
-			return fmt.Errorf("upstream media task returned more than %d images", dto.MaxImageN)
-		}
-		seen[value] = struct{}{}
-		urls = append(urls, value)
-		return nil
-	}
-	for _, value := range result.URLs {
-		if err := add(value); err != nil {
-			return nil, mediaTaskImageNoRetry(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
-		}
-	}
-	if err := add(result.PrimaryURL); err != nil {
+	urls, err := mediaimageprotocol.NormalizeResultURLs(*result, dto.MaxImageN)
+	if err != nil {
 		return nil, mediaTaskImageNoRetry(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
-	}
-	if len(urls) == 0 {
-		return nil, mediaTaskImageNoRetry(errors.New("upstream succeeded response has no result URL"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 	}
 
 	response := dto.ImageResponse{
@@ -1084,24 +812,6 @@ func closeMediaTaskImageResponse(response *http.Response) error {
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
 	return response.Body.Close()
-}
-
-func sanitizeMediaTaskImageError(message string) string {
-	message = strings.TrimSpace(message)
-	lower := strings.ToLower(message)
-	for _, sensitive := range []string{"http://", "https://", "bearer ", "api_key", "api-key", "authorization", "cookie"} {
-		if strings.Contains(lower, sensitive) {
-			return "upstream media task failed"
-		}
-	}
-	runes := []rune(message)
-	if len(runes) > 512 {
-		return string(runes[:512])
-	}
-	if message == "" {
-		return "upstream media task failed"
-	}
-	return message
 }
 
 func mediaTaskImageNoRetry(err error, code types.ErrorCode, status int) error {

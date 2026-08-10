@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
 
 const estimatedFullMatrixSpendCNY = 71.81
@@ -80,36 +81,39 @@ type usageResponse struct {
 }
 
 type modelResult struct {
-	ProviderModel         string  `json:"provider_model"`
-	CredentialName        string  `json:"credential_name"`
-	Duration              int     `json:"duration"`
-	Size                  string  `json:"size"`
-	CreateHTTPStatus      int     `json:"create_http_status"`
-	ProviderID            string  `json:"-"`
-	CreateStatus          string  `json:"create_status,omitempty"`
-	ObservedTaskID        string  `json:"-"`
-	PollCount             int     `json:"poll_count"`
-	TerminalStatus        string  `json:"terminal_status,omitempty"`
-	VideoURL              string  `json:"-"`
-	TaskListStatus        string  `json:"task_list_status,omitempty"`
-	TaskListHTTPStatus    int     `json:"task_list_http_status,omitempty"`
-	TaskQuota             int64   `json:"task_quota,omitempty"`
-	ContentHTTPStatus     int     `json:"content_http_status,omitempty"`
-	ContentType           string  `json:"content_type,omitempty"`
-	ContentLength         int64   `json:"content_length,omitempty"`
-	VideoWidth            int     `json:"video_width,omitempty"`
-	VideoHeight           int     `json:"video_height,omitempty"`
-	VideoDurationSeconds  float64 `json:"video_duration_seconds,omitempty"`
-	IdentityStable        bool    `json:"identity_stable"`
-	SameOriginHTTPSVideo  bool    `json:"same_origin_https_video"`
-	Passed                bool    `json:"passed"`
-	Error                 string  `json:"error,omitempty"`
+	ProviderModel         string   `json:"provider_model"`
+	CredentialName        string   `json:"credential_name"`
+	Prompt                string   `json:"prompt"`
+	Duration              int      `json:"duration"`
+	Size                  string   `json:"size"`
+	CreateHTTPStatus      int      `json:"create_http_status"`
+	ProviderID            string   `json:"-"`
+	CreateStatus          string   `json:"create_status,omitempty"`
+	ObservedTaskID        string   `json:"-"`
+	PollCount             int      `json:"poll_count"`
+	PollStatuses          []string `json:"poll_statuses,omitempty"`
+	TerminalStatus        string   `json:"terminal_status,omitempty"`
+	VideoURL              string   `json:"-"`
+	TaskListStatus        string   `json:"task_list_status,omitempty"`
+	TaskListHTTPStatus    int      `json:"task_list_http_status,omitempty"`
+	TaskQuota             int64    `json:"task_quota,omitempty"`
+	ContentHTTPStatus     int      `json:"content_http_status,omitempty"`
+	ContentType           string   `json:"content_type,omitempty"`
+	ContentLength         int64    `json:"content_length,omitempty"`
+	VideoWidth            int      `json:"video_width,omitempty"`
+	VideoHeight           int      `json:"video_height,omitempty"`
+	VideoDurationSeconds  float64  `json:"video_duration_seconds,omitempty"`
+	IdentityStable        bool     `json:"identity_stable"`
+	SameOriginVideo       bool     `json:"same_origin_video"`
+	Passed                bool     `json:"passed"`
+	Error                 string   `json:"error,omitempty"`
 	consecutivePollErrors int
 }
 
 type report struct {
 	StartedAt                string             `json:"started_at"`
 	FinishedAt               string             `json:"finished_at"`
+	ImplementationVersion    string             `json:"implementation_version"`
 	BaseURL                  string             `json:"base_url"`
 	SizeCandidate            string             `json:"size_candidate"`
 	EstimatedMinimumSpendCNY float64            `json:"estimated_minimum_spend_cny"`
@@ -129,7 +133,9 @@ type providerErrorEnvelope struct {
 }
 
 func main() {
-	baseURLFlag := flag.String("base-url", "https://feicai123.top", "Feicai HTTPS base URL")
+	baseURLFlag := flag.String("base-url", "https://feicai123.top", "Feicai base URL")
+	implementationVersion := flag.String("implementation-version", "v2", "Feicai implementation version: v2 or v3")
+	allowInsecureHTTP := flag.Bool("allow-insecure-http", false, "explicitly allow sending the provider credential over plaintext HTTP")
 	size := flag.String("size", "1280x720", "single candidate size tested for every exact provider model")
 	confirmSpend := flag.Bool("confirm-spend", false, "confirm that the live calls may incur provider charges")
 	maxSpend := flag.Float64("max-spend-cny", 0, "operator-approved maximum CNY spend")
@@ -141,7 +147,7 @@ func main() {
 	if !*confirmSpend {
 		fatalf("live verification requires -confirm-spend")
 	}
-	baseURL, err := validatedBaseURL(*baseURLFlag)
+	baseURL, err := validatedBaseURL(*baseURLFlag, *allowInsecureHTTP)
 	if err != nil {
 		fatalf("invalid base URL: %v", err)
 	}
@@ -152,22 +158,33 @@ func main() {
 	if err != nil {
 		fatalf("ffprobe is required to verify generated video dimensions")
 	}
+	sharedKey := strings.TrimSpace(os.Getenv("FEICAI_API_KEY"))
 	vipKey := strings.TrimSpace(os.Getenv("FEICAI_VIP_API_KEY"))
 	valueKey := strings.TrimSpace(os.Getenv("FEICAI_VALUE_API_KEY"))
+	if vipKey == "" {
+		vipKey = sharedKey
+	}
+	if valueKey == "" {
+		valueKey = sharedKey
+	}
 	referenceImage := strings.TrimSpace(os.Getenv("FEICAI_REFERENCE_IMAGE_URL"))
 	if vipKey == "" || valueKey == "" {
 		fatalf("FEICAI_VIP_API_KEY and FEICAI_VALUE_API_KEY are required")
 	}
-	if err := validateReferenceImage(referenceImage); err != nil {
-		fatalf("FEICAI_REFERENCE_IMAGE_URL is invalid: %v", err)
+	versionSpecs := verificationModelSpecsForVersion(*implementationVersion, vipKey, valueKey, referenceImage)
+	if len(versionSpecs) == 0 {
+		fatalf("unsupported implementation version %q; expected v2 or v3", *implementationVersion)
 	}
-
-	specs, err := selectVerificationModelSpecs(
-		verificationModelSpecs(vipKey, valueKey, referenceImage),
-		*selectedModels,
-	)
+	specs, err := selectVerificationModelSpecs(versionSpecs, *selectedModels)
 	if err != nil {
 		fatalf("invalid model selection: %v", err)
+	}
+	for _, spec := range specs {
+		if spec.ReferenceImage != "" {
+			if err := validateReferenceImage(spec.ReferenceImage); err != nil {
+				fatalf("FEICAI_REFERENCE_IMAGE_URL is invalid: %v", err)
+			}
+		}
 	}
 	estimatedSpend := estimatedSpendCNY(specs)
 	if *maxSpend < estimatedSpend {
@@ -194,6 +211,7 @@ func main() {
 
 	verification := report{
 		StartedAt:                time.Now().UTC().Format(time.RFC3339),
+		ImplementationVersion:    strings.ToLower(strings.TrimSpace(*implementationVersion)),
 		BaseURL:                  baseURL.String(),
 		SizeCandidate:            *size,
 		EstimatedMinimumSpendCNY: estimatedSpend,
@@ -236,7 +254,7 @@ func main() {
 	for index := range verification.Models {
 		result := &verification.Models[index]
 		result.Passed = result.Error == "" && result.TerminalStatus == "completed" && result.IdentityStable &&
-			result.SameOriginHTTPSVideo &&
+			result.SameOriginVideo &&
 			(result.ContentHTTPStatus == http.StatusOK || result.ContentHTTPStatus == http.StatusPartialContent) &&
 			result.VideoWidth > 0 && result.VideoHeight > 0 && result.VideoDurationSeconds > 0
 		verification.Passed = verification.Passed && result.Passed
@@ -272,6 +290,28 @@ func verificationModelSpecs(vipKey, valueKey, referenceImage string) []modelSpec
 		{ProviderModel: "seedance-2.0-933-4k-azhw-feicai", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 14.32},
 		{ProviderModel: "seedance-2.0-vip-4k-azhw-feicai", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 16.92},
 		{ProviderModel: "seedance-933-pro-pi-feicai", CredentialName: "value", Credential: valueKey, Duration: 15, EstimatedCNY: 11.05},
+	}
+}
+
+func verificationModelSpecsForVersion(version, vipKey, valueKey, referenceImage string) []modelSpec {
+	switch strings.ToLower(strings.TrimSpace(version)) {
+	case "v2":
+		return verificationModelSpecs(vipKey, valueKey, referenceImage)
+	case "v3":
+		return []modelSpec{
+			{ProviderModel: "seedance-2.0-vip-720p-mini-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 2.88},
+			{ProviderModel: "seedance2.0-sd2", CredentialName: "value", Credential: valueKey, Duration: 11, ReferenceImage: referenceImage, EstimatedCNY: 6.60},
+			{ProviderModel: "seedance-2.0-vip-720p-fast-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 3.52},
+			{ProviderModel: "seedance-2.0-933-720p-azhw", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 3.08},
+			{ProviderModel: "seedance-2.0-vip-720p-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 3.64},
+			{ProviderModel: "seedance-2.0-933-1080p-azhw", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 7.26},
+			{ProviderModel: "seedance-2.0-vip-1080p-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 8.58},
+			{ProviderModel: "seedance-2.0-933-4k-azhw", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 17.60},
+			{ProviderModel: "seedance-2.0-vip-4k-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 20.80},
+			{ProviderModel: "seedance-933-pro-pi", CredentialName: "value", Credential: valueKey, Duration: 15, EstimatedCNY: 11.55},
+		}
+	default:
+		return nil
 	}
 }
 
@@ -311,10 +351,13 @@ func estimatedSpendCNY(specs []modelSpec) float64 {
 	return float64(int64(total*100+0.5)) / 100
 }
 
-func validatedBaseURL(raw string) (*url.URL, error) {
+func validatedBaseURL(raw string, allowInsecureHTTP bool) (*url.URL, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, errors.New("base URL must be an origin HTTPS URL")
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, errors.New("base URL must be an absolute origin URL")
+	}
+	if parsed.Scheme != "https" && !(allowInsecureHTTP && parsed.Scheme == "http") {
+		return nil, errors.New("base URL must use HTTPS unless -allow-insecure-http is explicitly set")
 	}
 	parsed.Path = strings.TrimRight(parsed.Path, "/")
 	return parsed, nil
@@ -400,11 +443,12 @@ func createTask(
 	spec modelSpec,
 	size string,
 ) modelResult {
+	const prompt = "A calm landscape with a slow cinematic camera movement"
 	result := modelResult{
-		ProviderModel: spec.ProviderModel, CredentialName: spec.CredentialName, Duration: spec.Duration, Size: size,
+		ProviderModel: spec.ProviderModel, CredentialName: spec.CredentialName, Prompt: prompt, Duration: spec.Duration, Size: size,
 	}
 	request := createRequest{
-		Model: spec.ProviderModel, Prompt: "A calm landscape with a slow cinematic camera movement",
+		Model: spec.ProviderModel, Prompt: prompt,
 		Duration: spec.Duration, Size: size,
 	}
 	if spec.ReferenceImage != "" {
@@ -515,15 +559,20 @@ func pollTask(
 		return
 	}
 	result.ObservedTaskID = strings.TrimSpace(response.TaskID)
-	switch strings.ToLower(strings.TrimSpace(response.Status)) {
+	normalizedStatus := strings.ToLower(strings.TrimSpace(response.Status))
+	if len(result.PollStatuses) == 0 || result.PollStatuses[len(result.PollStatuses)-1] != normalizedStatus {
+		result.PollStatuses = append(result.PollStatuses, normalizedStatus)
+	}
+	switch normalizedStatus {
 	case "queued", "processing", "in_progress":
 		return
 	case "completed":
 		result.TerminalStatus = "completed"
 		result.VideoURL = strings.TrimSpace(response.VideoURL)
-		result.SameOriginHTTPSVideo = sameOriginHTTPS(baseURL, result.VideoURL)
-		if !result.SameOriginHTTPSVideo {
-			result.Error = "completed response has no same-origin HTTPS video_url"
+		_, videoURLErr := relaycommon.ValidateSameOriginVideoResultURL(result.VideoURL, baseURL.String())
+		result.SameOriginVideo = videoURLErr == nil
+		if !result.SameOriginVideo {
+			result.Error = "completed response has no same-origin HTTP(S) video_url"
 		}
 	case "failed":
 		result.TerminalStatus = "failed"
@@ -575,7 +624,7 @@ func completeEvidence(
 		case <-time.After(2 * time.Second):
 		}
 	}
-	if result.TerminalStatus == "completed" && result.SameOriginHTTPSVideo {
+	if result.TerminalStatus == "completed" && result.SameOriginVideo {
 		contentStatus, contentType, contentLength, width, height, videoDuration, err := inspectContent(
 			ctx,
 			client,
@@ -623,7 +672,7 @@ func inspectContent(
 		return response.StatusCode, response.Header.Get("Content-Type"), response.ContentLength, 0, 0, 0,
 			fmt.Errorf("content HTTP %d", response.StatusCode)
 	}
-	temporaryVideo, err := os.CreateTemp("", "feicai-v2-video-*.mp4")
+	temporaryVideo, err := os.CreateTemp("", "feicai-video-*.mp4")
 	if err != nil {
 		return response.StatusCode, response.Header.Get("Content-Type"), response.ContentLength, 0, 0, 0, err
 	}
@@ -684,11 +733,6 @@ func probeVideoMetadata(ctx context.Context, ffprobePath, videoPath string) (int
 		return 0, 0, 0, errors.New("ffprobe returned invalid video duration")
 	}
 	return width, height, videoDuration, nil
-}
-
-func sameOriginHTTPS(baseURL *url.URL, raw string) bool {
-	parsed, err := url.Parse(raw)
-	return err == nil && parsed.Scheme == "https" && strings.EqualFold(parsed.Host, baseURL.Host) && parsed.User == nil
 }
 
 func endpoint(baseURL *url.URL, path string) string {

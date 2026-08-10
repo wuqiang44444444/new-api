@@ -1,279 +1,198 @@
 ---
-status: current
+status: accepted
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-10
 ---
 
-# Link 资源合同与解析架构
+# Link 素材库与确定性解析架构
 
-Link 资源是 new-api 面向客户提供的稳定逻辑媒体身份。客户使用 `ast_*` 或 `asset://ast_*`，平台在
-内部根据客户模型 publication、Link 实现能力、所有权、授权、渠道账号和 URL 有效期，将其解析为
-Provider 托管引用或受保护源 URL。
+## 1. 定位与状态
 
-平台不是对象存储服务：不保存媒体二进制，不把 Provider 资源 ID 暴露为客户合同，也不承诺所有
-Provider 都具备相同的素材生命周期。
+平台素材库是官方或第三方可信资源控制面的中转代理，不是对象存储、URL 缓存、人脸认证平台或内容
+审核机构。本文描述已接受的目标设计；当前通用 `AssetBinding`、自动物化/迁移、source fallback 和
+独立真人授权实现均属于待移除旧架构。
 
-## 1. 范围与当前边界
-
-本文负责：
-
-- `Asset`、`AssetSource`、`AssetBinding` 的职责和生命周期；
-- `/v1/assets` 客户合同与 `asset://ast_*` 使用语义；
-- Link Resolver 的选渠前约束和发送前改写；
-- Provider 素材 adapter、账号指纹、source/binding 双路径；
-- 创建、迁移、删除、后台任务、TTL、安全和审计边界。
-
-真人身份认证、任务使用 reservation、撤回和内容回源门禁由
-[真人素材授权与撤回架构](真人素材授权与撤回架构.md)负责。请求级 HTTP/HTTPS URL 或 Data URL
-不创建 Link 资源，也不获得本文的复用、迁移、撤回和治理能力。
-
-当前代码已经实现 `AssetSource` 作用域加密、0..N binding、binding/source Resolver、查询时聚合状态、
-显式 Link implementation、publication 快照、渠道账号围栏和后台 operation job。图片 Link 资源尚未
-发布：现有图片 capability 均为 `supports_link_assets=false`，图片 Router 未接入 Resolver。
-
-代码存在不等于生产发布。Provider 托管生命周期、外部数据库和目标渠道仍必须完成真实环境验收。
-
-## 2. 客户资源与内部执行事实
+平台不保存媒体二进制。客户使用平台身份，Provider 身份只保存在受保护执行事实中：
 
 ```text
-Asset（ast_*，客户逻辑身份）
-  ├─ 所有权 / app / asset_kind / media_type / 聚合状态
-  ├─ 客户模型与 publication 快照
-  ├─ 0..1 AssetSource
-  │    └─ 作用域加密 URL + expires_at
-  ├─ 0..N AssetBinding
-  │    ├─ implementation ID/version/hash + policy
-  │    ├─ channel + profile + credential fingerprint
-  │    ├─ Provider resource/reference + 状态
-  │    └─ ownership claim
-  └─ 0..1 真人授权引用
+Asset Group: astgrp_*
+Asset:       ast_*
+视频引用:    asset://ast_*
 ```
 
-| 对象 | 权威职责 | 不承担的职责 |
-| --- | --- | --- |
-| `Asset` | 客户稳定身份、所有权、类型、publication、聚合状态和迁移谱系 | 不保存媒体字节、完整 URL 或上游 ID |
-| `AssetSource` | 不可变的受保护执行源，也是创建 binding 的原始输入 | 不是独立客户资源、内容指纹或长期素材档案 |
-| `AssetBinding` | 某实现、渠道、凭据作用域下的 Provider 托管映射 | 不允许客户直接创建或读取上游资源 ID |
-| ownership claim | 证明 Provider 账号作用域中的对象只由一个本地 Asset 认领 | 不替代用户所有权或真人授权 |
-| `AssetOperationJob` | 驱动轮询、删除、更新和未知创建 watchdog | 不决定客户合同或资源所有权 |
+## 2. 客户与 Provider 接口
 
-`Asset` 是聚合根。source 与 binding 是两种执行路径，不是两类客户资源；同一个 `ast_*` 可以在
-不同候选渠道上选择不同路径。
-
-## 3. 客户接入合同
-
-### 3.1 创建
+客户统一使用平台 API：
 
 ```text
-POST /v1/assets
-  -> 鉴权与 user/app 作用域
-  -> 校验 HTTPS URL、类型、TTL、授权和幂等
-  -> 可选客户模型 publication 解析
-  -> 创建 Asset + AssetSource
-  -> 可选选择 Link implementation 与渠道物化 binding
-  -> 返回 ast_*
+POST   /v1/asset-groups
+GET    /v1/asset-groups/{group_id}
+GET    /v1/asset-groups
+DELETE /v1/asset-groups/{group_id}
+
+POST   /v1/assets
+GET    /v1/assets/{asset_id}
+GET    /v1/assets
+PATCH  /v1/assets/{asset_id}
+DELETE /v1/assets/{asset_id}
 ```
 
-创建请求可以不指定 `model` 或 `target`，此时建立供应商中立的 `Asset + AssetSource`。指定 `model`
-时，值是客户模型名；系统从 publication 冻结 contract namespace、route family、Link SKU 与 version，
-不能从当前渠道候选反向猜 SKU。
+平台在南向使用渠道配置的 `asset_upstream_protocol`。客户不持有 Provider AK/SK，也不复制 Provider
+Action 签名合同。裸 Provider `asset://asset-*` 不属于客户合同；控制台已有素材只能由管理员显式导入、
+分配给 `user_id + app_id`，再生成 `ast_*` / `astgrp_*`。
 
-指定管理目标时只接受规范 target。Provider profile、渠道类型、Base URL 或 Key 格式不能产生 Link
-实现身份；可物化 binding 必须来自代码注册的 implementation 和精确 execution binding。
-
-`Idempotency-Key` 的作用域为 `user + app + endpoint + key`：
-
-- 同键同请求返回原 `ast_*` 和当前聚合状态；
-- 同键不同请求返回冲突；
-- 数据库只保存 key 摘要与规范请求 HMAC；
-- 创建结果未知时不自动换 Key 或 Provider 重建；
-- watchdog 到期后关闭本地创建并保留潜在 Provider 孤儿风险。
-
-### 3.2 使用
-
-客户在已声明支持 Link 资源的类型化媒体字段中使用：
-
-```text
-asset://ast_xxx
-```
-
-客户不能提交裸 `ast_*` 让 Converter 猜语义，也不能直接提交 Provider 素材 ID。使用资格由对应公开
-SKU capability 声明，包括支持的素材类型、数量、真人要求、是否允许 source/binding，以及能否与
-请求级媒体混用。
-
-### 3.3 查询、迁移与删除
-
-- 查询返回平台身份、类型、聚合状态、授权引用和脱敏 binding 摘要，不暴露完整 source 或 Provider ID；
-- 迁移创建新的 `ast_*`，通过 `supersedes_asset_id`、batch 和 reason 保留谱系，不原地换源或改绑；
-- 删除先使本地资源不可引用，再异步清理 Provider 对象；
-- 删除 Asset 不删除客户自己的 OSS/CDN 源对象；
-- 无法证明 Provider 对象已删除时不能向客户投影已完成清理。
-
-## 4. 控制面创建与 Provider 物化
+## 3. 一对一资源模型
 
 ```mermaid
-sequenceDiagram
-    participant C as API 客户端
-    participant S as Asset Service
-    participant P as Publication
-    participant I as Link Implementation
-    participant A as Provider Asset Adapter
-    participant DB as 数据库与 Job
-
-    C->>S: POST /v1/assets + HTTPS URL
-    S->>S: 校验作用域、URL、TTL、类型、授权、幂等
-    opt 指定客户模型
-        S->>P: namespace + route family + customer model
-        P-->>S: Link SKU + publication version
-    end
-    S->>DB: 创建 Asset / AssetSource / 幂等事实
-    opt 需要 Provider 物化
-        S->>I: 解析实现、渠道、策略和凭据作用域
-        I-->>S: implementation + profile + channel
-        S->>DB: 创建 Binding / claim / watchdog
-        S->>A: 创建 Provider 素材或素材组
-        A-->>S: resource ID、reference、归一化状态
-        S->>DB: CAS 提交 binding 状态
-    end
-    S-->>C: ast_* + 聚合状态
+flowchart LR
+    A["ast_* / astgrp_*"] --> T["user_id + app_id"]
+    T --> C["固定 channel_id"]
+    C --> P["asset_upstream_protocol"]
+    P --> S["Provider account / Region / Project"]
+    S --> R["一个 Provider Asset / Group"]
 ```
 
-上游明确拒绝时 binding 进入失败；网络结果不确定时进入 `create_unknown`，禁止自动重建。删除或
-撤回与上游创建并发时，晚到结果只能补记并进入清理，不能把本地资源复活为 ready。
+一个平台 Asset 或 AssetGroup 只对应一个 Provider 资源，并保存：
 
-## 5. Provider 中立 Resolver
+- `user_id + app_id` 所有权；
+- 固定 `channel_id` 和素材协议；
+- 稳定 Provider 账号作用域；
+- Region/Project（协议需要时）；
+- Provider Asset/Group ID；
+- Provider status、media type 和 moderation strategy。
 
-### 5.1 两种解析模式
+不建立 0..N `AssetBinding`、多渠道候选、自动物化、跨账号/区域迁移或 source/binding fallback。
 
-| 模式 | Provider 能力 | 输出 | 资格 |
-| --- | --- | --- | --- |
-| `upstream_binding` | Provider 有完整素材创建、查询和删除生命周期 | 上游资源引用 | binding active，implementation/profile/账号指纹匹配，授权有效 |
-| `source_url` | Provider 在任务请求中自行抓取 HTTPS URL | 解密后的源 URL | source 可解密，声明 TTL 足够，授权有效 |
+创建素材时的客户模型只用于找到唯一 Seedance Channel；素材不永久绑定该模型。同一 Channel、账号、
+Region、Project 下的其他兼容 Seedance 模型可以复用。
 
-Resolver 是 `asset://ast_*` 到 Provider 引用的唯一转换权威。Converter 只消费 Resolver 输出，不自行
-读取数据库、解密 URL、猜测上游 ID 或绕过授权。
+## 4. 国内与海外
 
-### 5.2 选渠与发送前复检
+国内火山与海外 BytePlus 的账号、Region、Project、权益、审核和真人认证不互通。同一媒体若需要在
+两个区域使用，必须分别创建两个平台素材并分别经过上游处理。
+
+客户不在 Token、Group 或请求字段中选择 `cn/global`。不同线路已经使用不同客户模型名，模型页面
+直接表达国内、海外或第三方产品。
+
+当前官方素材实现只验证了 BytePlus 固定 Host 和相关真人图片流程，不能通过替换 Base URL/Region
+声称兼容国内火山。国内协议必须取得并验证独立的 Host、签名、Project、权益和认证合同。
+
+## 5. 凭据与账号边界
+
+官方直连可以同时需要：
+
+- 视频 Bearer API Key；
+- 素材 AK/SK；
+- Region 和 Project。
+
+第三方中转通常只需要 Base URL、平台 Key、视频协议、素材协议和模型映射，不重复要求已经由上游
+代理的 AK/SK、Region 或 Project。管理表单按协议显示普通字段，并保留 NEWAPI 的
+`param_override` / `header_override`。
+
+素材绑定稳定 Channel 和账号作用域，不绑定包含 Secret 的 credential fingerprint。同账号轮换 Key
+或 AK/SK 后既有素材继续可用；改变账号、Project、Region、国内/海外类型或素材协议必须新建渠道。
+
+## 6. 创建 Asset
+
+### 6.1 路由与请求
+
+客户提交客户模型、可访问 URL、可选 `astgrp_*`、media type 和 Provider 支持的 moderation。模型只
+确定唯一 Channel；`asset_upstream_protocol=none` 时直接返回“该模型不支持素材库”，不扫描其他
+渠道。
+
+每次 POST 表示创建一个新资源。不建立素材幂等键、请求 HMAC、自动重试或重复资源检测。
+
+### 6.2 源 URL 生命周期
+
+平台可以在发送 Provider `CreateAsset` 前作用域加密保存源 URL。取得可信 Provider Asset ID 后立即
+删除；创建失败时同样立即删除，不等待 Provider 状态变为 Active。
+
+后续使用只依赖 Provider Asset ID。资源失效时不回退源 URL、不自动重建、不迁移到其他渠道或区域。
+
+### 6.3 moderation
+
+- 平台传递上游定义的 moderation 语义；
+- 不自行判断账号是否有权使用 `Skip`；
+- adapter 不支持时明确失败，不静默删除字段；
+- 保存实际策略；
+- `active` 只表示 Provider 按该策略接受资源，不代表平台完成全面法律或内容审核。
+
+## 7. 查询、列表和删除
+
+- `POST /v1/assets` 取得可信 ID 后返回 `processing`；
+- `GET /v1/assets/{id}` 调用固定 adapter 刷新 Provider 状态；
+- `GET /v1/asset-groups/{id}` 按需刷新认证/Group 状态；
+- 列表以本地主数据库为主，不逐项调用 Provider；
+- 删除使用固定 Channel 和 adapter，不重新路由。
+
+素材管理不建立 `create_unknown` / `delete_unknown`：
+
+- 创建未取得可信 Provider ID：请求失败，本地记录 failed，脱敏技术日志用于排障；
+- 可能的 Provider 孤儿资源由管理员通知技术人员分析，不建设核查页面或自动扫描；
+- 删除未明确成功：返回失败并保留原状态；
+- 后续 GET 明确确认 Provider 不存在后才更新为 deleted。
+
+## 8. 视频解析
+
+ModelArk V3 请求可以同时包含 `asset://ast_*`、HTTP/HTTPS URL 和 Data URL。只要含平台素材：
+
+1. 校验 `user_id + app_id` 所有权和 active 状态；
+2. 客户模型确定的 Channel 必须等于素材固定 Channel；
+3. 多个素材必须属于同一账号、Region 和 Project；
+4. Resolver 把 `asset://ast_*` 改写为真实 Provider 资源引用；
+5. 普通 URL/Data URL 与素材一起发送到这个唯一 Channel。
+
+不一致时返回：
 
 ```text
-客户模型 publication
-  -> SKU capability
-  -> 候选 implementation
-  -> Asset 所有权 / app / 状态 / 类型 / 授权
-  -> publication 一致性
-  -> binding 或 source 可用路径
-  -> 多素材渠道与实现交集
-  -> 常规 Ability / 分组 / 优先级 / 权重分发
-  -> 发送前复检并改写引用
+asset_channel_mismatch
+asset_scope_conflict
 ```
 
-Resolver 按以下顺序执行：
+这些是所有权和 Provider 作用域校验，不是 SKU capability、publication 或候选分发门禁。
 
-1. 从本次请求冻结的 publication 确定 Link SKU；
-2. 校验所有 Asset 的 user/app、状态、媒体类型、publication 和真人授权；
-3. 解析代码注册的候选 implementation 及资源能力；
-4. 为每个 Asset 生成 active binding 或有效 source 候选；
-5. 对多素材求共同可执行渠道/实现交集；
-6. 将交集交给既有渠道分发器；
-7. 每次 Provider 尝试前复检 publication、实现版本、渠道、凭据指纹、binding 状态、授权和 TTL；
-8. 将平台引用改写为精确 Provider 引用。
+## 9. AssetGroup 与真人认证
 
-没有交集、实现退役、凭据变化、source 失效或授权撤回时 fail closed。Resolver 不在失败后把 Link
-资源降级为请求级 URL，也不跨渠道偷换客户请求。
+真人认证是 `AssetGroup` 的一种上游创建方式。adapter 创建 Provider 认证/邀请并直接返回官方或第三方
+`verification_url` / QR。客户直接访问上游页面，平台按需 GET Provider 状态。
 
-## 6. Provider 实现与凭据隔离
+平台只保存租户、固定 Channel、Provider Group ID、状态和必要的短期查询句柄；不保存人脸媒体、
+身份证件、活体数据、人脸特征或授权表单。详见
+[素材组与真人认证代理架构](真人素材授权与撤回架构.md)。
 
-Link implementation 注册资源解析模式、允许的 SKU、渠道类型、profile、adapter、素材限制和最小
-TTL。profile 只描述协议形状，不能独立授予 Link 身份。
+## 10. 最小状态
 
-当前 Provider 素材适配形状包括：
-
-| asset profile | 主要用途 | 凭据边界 |
-| --- | --- | --- |
-| `ark_assets` | Ark 兼容素材、素材组和认证 | 渠道 Bearer/平台 Key 作用域 |
-| `relay_assets` | 第三方中转素材创建与引用 | 中转渠道 Key |
-| `joycreator_assets` | 管理素材库，不参与视频路由 | management-only |
-| `official_action_assets` | BytePlus 官方 Action 素材与真人认证 | 独立 AK/SK + Project + Region |
-
-BytePlus 视频模型 API Key 保存在 `Channel.Key`，官方素材 AK/SK 保存在一对一敏感凭据模型中。两类
-adapter 共享渠道身份但消费不同凭据；读取接口不回显 AK/SK，轮换和清除使用显式管理动作。
-
-binding 冻结 implementation ID/version/hash、channel、profile、credential fingerprint 与 publication。
-渠道 Key、Base URL、素材凭据、Project、Region 或 profile 改变后，旧 binding 失去路由资格；存在
-活动资源时，生命周期栅栏可以阻止破坏性轮换和删除。
-
-## 7. 生命周期与后台任务
-
-Asset 公共状态是 source 与全部 binding 在查询时点的聚合投影：
+Asset：
 
 ```text
-creating -> processing -> ready
-    |            |          |
-    +-> create_unknown      +-> deleting -> deleted
-    +-> failed                  \-> deletion_failed
+creating -> processing -> active | failed
+active -> deleting -> deleted | active
 ```
 
-binding 使用更细的 `creating/create_unknown/processing/active/failed/stale_credential/deleting/
-deletion_failed/deleted`。只有 ready Asset 的可用路径能参与解析。
+AssetGroup：
 
-聚合规则：
+```text
+creating -> verifying -> active | failed | expired
+active -> deleting -> deleted | active
+```
 
-- 任一 active binding 或有效 source 存在时，资源可解析；
-- source 过期只关闭 `source_url`，不删除仍可用 binding；
-- 凭据或实现版本漂移只关闭对应 binding；
-- 真人授权失效高于技术路径可用性，立即关闭新的解析；
-- 逻辑删除后所有路径均不可用于新请求。
+状态保持能够表达 Provider 真实结果的最小集合，不增加后台持续轮询、自动迁移、复杂
+`AssetOperationJob` 或管理员核查状态。
 
-`AssetOperationJob` 通过租约、CAS、有上限重试和退避驱动 `poll_binding`、`update_binding`、
-`delete_binding`、`delete_group` 和创建 watchdog。关闭素材创建开关后，已开始的轮询、删除、撤回和
-watchdog 仍须继续，避免生命周期永久停留。
+## 11. 安全不变量
 
-## 8. URL、TTL 与安全边界
+1. 所有资源按 `user_id + app_id` 隔离。
+2. 一个平台资源只对应一个固定 Channel 和一个 Provider 资源。
+3. 国内、海外、账号和 Project 之间不自动迁移。
+4. 裸 Provider 资源 ID 不进入客户合同。
+5. 平台不保存媒体二进制、人脸材料、凭据或完整签名 URL。
+6. 源 URL 在取得 Provider ID或创建失败后立即删除。
+7. 素材失败不建立视频级 unknown 对账机制。
+8. Resolver 只做所有权、状态和确定作用域转换，不参与选渠。
 
-平台只执行提交前控制面校验：HTTPS、无 userinfo、长度受限、明显非公网目标拒绝以及当前 DNS
-结果检查。平台不主动 GET/HEAD，因此不能证明 URL 可访问、媒体类型正确、无重定向或无 DNS
-rebinding；Provider 仍负责最终抓取安全。
+## 12. 相关文档
 
-`AssetSource` 只保存 `asset-source:<public_id>` 作用域认证加密 URL 和客户声明的 `expires_at`：
-
-- 不增加独立公开 ID、业务状态、URL HMAC、全局去重或后台刷新；
-- URL 不得进入响应、普通日志、metrics、trace、Task 或 job payload；
-- 已声明有效期时，选渠和每次发送前都必须满足实现最小 TTL；
-- `expires_at=0` 表示有效期未知，按 best-effort 处理，不表示永久有效；
-- 换源创建新 `ast_*`，不原地修改密文；
-- Asset 删除时一并删除 source。
-
-所有查询和修改以 `user_id + app_id` 过滤。Provider ID、凭据指纹、完整签名 URL、上游响应和私有
-连接事实只在受保护持久化与管理员审计中使用。
-
-## 9. 可观测性与架构不变量
-
-审计至少能够关联 customer model、publication version、Link SKU、implementation、channel、profile、
-解析模式、binding、TTL 分类、授权状态和失败原因，但普通用户只看到稳定平台错误。
-
-必须保持：
-
-1. `ast_*` 是唯一客户资源身份，Provider ID 不是客户合同。
-2. 平台不保存媒体二进制，完整 source URL 只存在于作用域密文。
-3. AssetSource 与 AssetBinding 是同一资源的执行路径，不是独立客户对象。
-4. publication 改绑不重解释既有 Asset/Binding。
-5. Resolver 是 `asset://` 的唯一转换权威，Converter 不自行解析。
-6. 多素材请求使用全部资源的可执行渠道/实现交集。
-7. ownership、app、publication 和真人授权检查先于技术引用解析。
-8. 实现、渠道、凭据或 TTL 不匹配时 fail closed，不提供 alias、双读或 fallback。
-9. 迁移和换源创建新 `ast_*`，并保留谱系。
-10. 创建未知、删除失败和 Provider 孤儿风险必须耐久记录、可恢复、可审计。
-11. 所有模型、事务、锁和 job 查询兼容 SQLite、MySQL 与 PostgreSQL。
-
-## 10. 相关文档
-
-- [Link 服务合同概念与协作关系](Link服务合同概念与协作关系.md)
-- [Link 服务合同注册与履约架构](Link服务合同注册与履约架构.md)
-- [真人素材授权与撤回架构](真人素材授权与撤回架构.md)
+- [Seedance 统一北向合同架构](Seedance统一北向合同架构.md)
 - [Link 视频服务合同与异步任务架构](Link视频服务合同与异步任务架构.md)
-- [素材库对接指南](../30-engineering/素材库对接指南.md)
-- [02 视频与素材渠道运维手册](../40-operations/02-视频与素材渠道运维手册.md)
-- [04 素材库验收操作手册](../40-operations/04-素材库验收操作手册.md)
-- [ADR-0005：官方 Action 素材凭据隔离](decisions/0005-官方Action素材凭据隔离.md)
-- [ADR-0009：请求级媒体与平台托管素材双路径](decisions/0009-请求级媒体与平台托管素材双路径.md)
-- [ADR-0015：Link 服务合同发布与实现身份绑定](decisions/0015-Link服务合同发布与实现身份绑定.md)
+- [素材组与真人认证代理架构](真人素材授权与撤回架构.md)
+- [ADR-0016](decisions/0016-Seedance专用渠道与确定性素材代理.md)

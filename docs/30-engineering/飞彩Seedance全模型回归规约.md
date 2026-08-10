@@ -97,8 +97,8 @@ resolver 用例必须包含完整键：
 - 一个其它 Provider 模型的同名 ratio；
 - converter 输出 size 与 billing probe 的 size/billing class 一致。
 
-当前六条 size evidence 只属于 v2 fixture；v3 在没有独立 evidence 时必须全部失败关闭，不能让同名 SKU、
-高分辨率或其它 720p 模型因共享表而通过。
+当前 v2 有六条、v3 有三条独立 size evidence。v3 仅 Mini、Fast、Standard 720p 的 `16:9` 可命中；
+其它七个 v3 模型必须失败关闭，不能让同名 SKU、高分辨率或其它 720p 模型因共享表而通过。
 
 ## 6. 请求转换回归
 

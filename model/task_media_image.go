@@ -12,6 +12,7 @@ import (
 const TaskClientProtocolOpenAIImages = "openai_images"
 
 type TaskMediaImagePrivateData struct {
+	Protocol            string     `json:"protocol,omitempty"`
 	QueryBaseURL        string     `json:"query_base_url,omitempty"`
 	QueryPathTemplate   string     `json:"query_path_template,omitempty"`
 	Proxy               string     `json:"proxy,omitempty"`

@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	mediaimageprotocol "github.com/QuantumNous/new-api/relay/mediaimage"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -23,6 +24,8 @@ import (
 )
 
 type mediaImageRoundTripper func(*http.Request) (*http.Response, error)
+
+const testMediaImageQueryPath = "/v1/media/tasks/{task_id}"
 
 func (f mediaImageRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	return f(request)
@@ -84,7 +87,9 @@ func TestPersistMediaImageTaskTransfersBillingWithoutPersistingPrompt(t *testing
 
 	task, err := PersistMediaImageTask(c, info, MediaImageTaskCreateSpec{
 		UpstreamTaskID:      "upstream-task-1",
+		Protocol:            mediaimageprotocol.ProtocolMediaImageTaskV1,
 		QueryBaseURL:        "https://provider.example",
+		QueryPathTemplate:   testMediaImageQueryPath,
 		ResponseFormat:      "url",
 		RequestedImageCount: 2,
 	})
@@ -104,6 +109,9 @@ func TestPersistMediaImageTaskTransfersBillingWithoutPersistingPrompt(t *testing
 	require.NoError(t, err)
 	require.True(t, exists)
 	assert.Equal(t, "upstream-task-1", stored.PrivateData.UpstreamTaskID)
+	require.NotNil(t, stored.PrivateData.MediaImage)
+	assert.Equal(t, mediaimageprotocol.ProtocolMediaImageTaskV1, stored.PrivateData.MediaImage.Protocol)
+	assert.Equal(t, testMediaImageQueryPath, stored.PrivateData.MediaImage.QueryPathTemplate)
 	assert.Equal(t, model.TaskBillingStatePending, stored.BillingState)
 }
 
@@ -134,8 +142,9 @@ func TestPollMediaImageTaskOncePersistsAllURLsAndSettlesActualCountOnce(t *testi
 				OtherRatios: map[string]float64{"n": 2},
 			},
 			MediaImage: &model.TaskMediaImagePrivateData{
+				Protocol:            mediaimageprotocol.ProtocolMediaImageTaskV1,
 				QueryBaseURL:        "https://provider.example",
-				QueryPathTemplate:   "/v1/media/tasks/{task_id}",
+				QueryPathTemplate:   testMediaImageQueryPath,
 				RequestedImageCount: 2,
 				ResponseFormat:      "url",
 				UsePrice:            true,
@@ -206,8 +215,9 @@ func TestPollMediaImageTaskOnceFailsClosedWhenProviderReturnsMoreThanRequested(t
 				OtherRatios: map[string]float64{"n": 1},
 			},
 			MediaImage: &model.TaskMediaImagePrivateData{
+				Protocol:            mediaimageprotocol.ProtocolMediaImageTaskV1,
 				QueryBaseURL:        "https://provider.example",
-				QueryPathTemplate:   "/v1/media/tasks/{task_id}",
+				QueryPathTemplate:   testMediaImageQueryPath,
 				RequestedImageCount: 1,
 				ResponseFormat:      "url",
 				UsePrice:            true,

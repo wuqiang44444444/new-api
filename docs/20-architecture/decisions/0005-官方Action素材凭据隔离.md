@@ -1,8 +1,8 @@
 ---
 adr: 0005
-status: accepted
+status: superseded
 date: 2026-07-23
-superseded-by: ""
+superseded-by: "ADR-0016"
 ---
 
 # ADR-0005: 官方 Action 素材凭据隔离

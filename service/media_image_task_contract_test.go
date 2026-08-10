@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	mediaimageprotocol "github.com/QuantumNous/new-api/relay/mediaimage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,8 +33,9 @@ func TestMediaImageContractViolationCanRecoverBeforeDeadline(t *testing.T) {
 			Key:            "provider-secret",
 			UpstreamTaskID: "provider-task-contract",
 			MediaImage: &model.TaskMediaImagePrivateData{
+				Protocol:            mediaimageprotocol.ProtocolMediaImageTaskV1,
 				QueryBaseURL:        "https://provider.example",
-				QueryPathTemplate:   "/v1/media/tasks/{task_id}",
+				QueryPathTemplate:   testMediaImageQueryPath,
 				RequestedImageCount: 1,
 			},
 		},
@@ -64,4 +66,62 @@ func TestMediaImageContractViolationCanRecoverBeforeDeadline(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, model.TaskStatus(model.TaskStatusInProgress), recovered.Status)
 	assert.Equal(t, 2, calls)
+}
+
+func TestMediaImageTaskMissingProtocolFailsWithOriginalContractError(t *testing.T) {
+	truncate(t)
+	now := time.Now().Unix()
+	task := &model.Task{
+		TaskID:         "task_image_missing_protocol",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		SubmitTime:     now,
+		Status:         model.TaskStatusQueued,
+		Platform:       constant.TaskPlatformMediaImage,
+		ClientProtocol: model.TaskClientProtocolOpenAIImages,
+		PrivateData: model.TaskPrivateData{
+			UpstreamTaskID: "provider-task-missing-protocol",
+			MediaImage: &model.TaskMediaImagePrivateData{
+				QueryBaseURL:        "https://provider.example",
+				QueryPathTemplate:   testMediaImageQueryPath,
+				RequestedImageCount: 1,
+			},
+		},
+	}
+	require.NoError(t, task.Insert())
+
+	failed, err := PollMediaImageTaskOnce(context.Background(), task.TaskID)
+
+	require.NoError(t, err)
+	assert.Equal(t, model.TaskStatus(model.TaskStatusFailure), failed.Status)
+	assert.Equal(t, "media image task protocol is required", failed.FailReason)
+}
+
+func TestMediaImageTaskMissingQueryPathFailsWithOriginalContractError(t *testing.T) {
+	truncate(t)
+	now := time.Now().Unix()
+	task := &model.Task{
+		TaskID:         "task_image_missing_query_path",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		SubmitTime:     now,
+		Status:         model.TaskStatusQueued,
+		Platform:       constant.TaskPlatformMediaImage,
+		ClientProtocol: model.TaskClientProtocolOpenAIImages,
+		PrivateData: model.TaskPrivateData{
+			UpstreamTaskID: "provider-task-missing-query-path",
+			MediaImage: &model.TaskMediaImagePrivateData{
+				Protocol:            mediaimageprotocol.ProtocolMediaImageTaskV1,
+				QueryBaseURL:        "https://provider.example",
+				RequestedImageCount: 1,
+			},
+		},
+	}
+	require.NoError(t, task.Insert())
+
+	failed, err := PollMediaImageTaskOnce(context.Background(), task.TaskID)
+
+	require.NoError(t, err)
+	assert.Equal(t, model.TaskStatus(model.TaskStatusFailure), failed.Status)
+	assert.Equal(t, "media image task query path is required", failed.FailReason)
 }

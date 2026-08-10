@@ -1,7 +1,7 @@
 ---
-status: current
+status: accepted
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-10
 ---
 
 # 公开 API 文档交付架构
@@ -191,18 +191,14 @@ Manifest 中的 page ID 是跨语言稳定身份，slug 是公开路由合同，
 - 未实现、仅兼容读取、已退休或未验证的 operation；
 - DTO 捕获但未声明为公共合同的未知字段。
 
-ModelArk v3 的公开模型子集在 `ModelArkVideoCreateRequest.x-modelark-model-capabilities` 中提供机器投影。
-投影值由运行时 `VideoSKUCapability` registry 生成，包含 capability version/hash、字段分类、规范
-resolution/ratio、显式默认值、时长、媒体 role/数量、组合约束和生命周期；固定分辨率飞彩 SKU 在
-发布证据闭合前不进入该数组。`go run ./cmd/generate-modelark-capabilities` 输出规范投影，后端一致性测试
-对 OpenAPI 与运行时结构深比较；`/v1/models` 的响应结构不承担这些能力字段。
+ModelArk V3 OpenAPI 只描述统一官方请求结构、四组任务行为、平台素材引用和稳定错误，不生成逐模型
+SKU capability 投影。Provider 或模型的特殊限制由对应代码 adapter 明确校验，并在公开模型说明中以
+普通文档表达；不把运行时 publication、implementation 或 hash 注册表暴露为客户合同。
 
-第三方通过带 Token 鉴权的 `GET /api/v3/contents/generations/models` 查询全部代码登记的 ModelArk 视频
-基础候选，并查询当前 Token 已发布客户模型的 capability。客户模型 alias 通过 publication 的
-`CustomerModel -> LinkSKU` 读取能力，但响应 `id` 与 `capability.public_model` 保持客户模型，不暴露其
-绑定 SKU。该接口同时返回 `published`、`visible_in_v1_models` 和按当前 Token 计算的 `available`，因此
-可以展示尚未开放的候选参数而不把注册误报为生产可用。只有三者全部为 `true` 的模型可以尝试创建任务；
-Provider implementation、真实模型、渠道、价格、Key 与连接信息不进入响应。
+若保留带 Token 鉴权的 `GET /api/v3/contents/generations/models`，它只按 Token、Group、Ability 和已
+启用 `ChannelTypeSeedanceLink` 返回客户模型可用性与面向客户的展示信息。响应不得暴露 Provider 模型、
+Channel ID、上游协议、价格、Key 或连接，也不能声称尚未完成真实验收的模型已经生产开放。模型是否
+兼容某个 adapter 由技术人员线下确认，不由该接口创建或认证。
 
 ## 9. 安全与缓存
 
@@ -243,4 +239,4 @@ Provider implementation、真实模型、渠道、价格、Key 与连接信息�
 - [公开 API 文档维护指南](../30-engineering/公开API文档维护指南.md)
 - [API 文档中心交互规范](../90-ui-ux/API文档中心交互规范.md)
 - [内置 API 文档中心实施计划](../50-planning/内置API文档中心实施计划.md)
-- [Link 服务合同概念与协作关系](Link服务合同概念与协作关系.md)
+- [Link 扩展概念与协作关系](Link服务合同概念与协作关系.md)

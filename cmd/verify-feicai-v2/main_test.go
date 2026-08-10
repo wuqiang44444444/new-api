@@ -49,6 +49,44 @@ func TestVerificationModelSpecsCoverEveryFeicaiV2Model(t *testing.T) {
 	}
 }
 
+func TestVerificationModelSpecsCoverEveryFeicaiV3Model(t *testing.T) {
+	specs := verificationModelSpecsForVersion("v3", "shared-key", "shared-key", "https://example.com/reference.png")
+
+	require.Len(t, specs, 10)
+	assert.Equal(t, "seedance-2.0-vip-720p-mini-azhw", specs[0].ProviderModel)
+	assert.Equal(t, "seedance2.0-sd2", specs[1].ProviderModel)
+	assert.Equal(t, "seedance-933-pro-pi", specs[9].ProviderModel)
+	assert.Equal(t, []float64{2.88, 6.60, 3.52, 3.08, 3.64, 7.26, 8.58, 17.60, 20.80, 11.55}, []float64{
+		specs[0].EstimatedCNY,
+		specs[1].EstimatedCNY,
+		specs[2].EstimatedCNY,
+		specs[3].EstimatedCNY,
+		specs[4].EstimatedCNY,
+		specs[5].EstimatedCNY,
+		specs[6].EstimatedCNY,
+		specs[7].EstimatedCNY,
+		specs[8].EstimatedCNY,
+		specs[9].EstimatedCNY,
+	})
+	for _, spec := range specs {
+		assert.NotContains(t, spec.ProviderModel, "-feicai")
+		assert.Equal(t, "shared-key", spec.Credential)
+	}
+}
+
+func TestValidatedBaseURLRequiresExplicitOptInForHTTP(t *testing.T) {
+	_, err := validatedBaseURL("http://43.161.200.208", false)
+	require.ErrorContains(t, err, "allow-insecure-http")
+
+	parsed, err := validatedBaseURL("http://43.161.200.208", true)
+	require.NoError(t, err)
+	assert.Equal(t, "http://43.161.200.208", parsed.String())
+
+	parsed, err = validatedBaseURL("https://provider.example", false)
+	require.NoError(t, err)
+	assert.Equal(t, "https://provider.example", parsed.String())
+}
+
 func TestSelectVerificationModelSpecsUsesExactUniqueModels(t *testing.T) {
 	specs := verificationModelSpecs("vip-key", "value-key", "https://example.com/reference.png")
 
