@@ -43,7 +43,10 @@ const SEEDANCE_VIDEO_PROTOCOL_OPTIONS = [
   { value: 'modelark_v3_byteplus', labelKey: 'BytePlus ModelArk V3' },
   { value: 'media_task_v1', labelKey: 'Media Task V1' },
   { value: 'ark_media_v1', labelKey: 'Ark Media V1' },
-  { value: 'media_arrays_v2', labelKey: 'Media Arrays V2' },
+  {
+    value: 'url_media_arrays_v1',
+    labelKey: 'URL Media Arrays (URL Only, No Asset Library)',
+  },
   { value: 'funcloud_seedance_v2', labelKey: 'FunCloud Seedance V2' },
 ] as const
 

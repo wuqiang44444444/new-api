@@ -50,7 +50,7 @@ func (capture *videoAdapterPollingCapture) AdjustBillingOnComplete(*model.Task, 
 	return 0
 }
 
-func TestVideoPollingUsesFrozenMediaArraysV1AndRedactsResultURLFromTaskData(t *testing.T) {
+func TestVideoPollingUsesFrozenURLMediaArraysAdapterAndRedactsResultURLFromTaskData(t *testing.T) {
 	truncate(t)
 	now := time.Now().Unix()
 	channel := &model.Channel{
@@ -61,7 +61,7 @@ func TestVideoPollingUsesFrozenMediaArraysV1AndRedactsResultURLFromTaskData(t *t
 		Status:  common.ChannelStatusEnabled,
 	}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMediaArraysV2,
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolURLMediaArraysV1,
 	})
 	task := &model.Task{
 		TaskID:         "task-poll-v2",
@@ -103,7 +103,7 @@ func TestVideoPollingRejectsUnknownFrozenAdapterBeforeFetch(t *testing.T) {
 	now := time.Now().Unix()
 	channel := &model.Channel{Id: 972, Type: constant.ChannelTypeSeedanceLink}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMediaArraysV2,
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolURLMediaArraysV1,
 	})
 	task := &model.Task{
 		TaskID:    "task-poll-invalid-version",

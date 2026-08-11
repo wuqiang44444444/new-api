@@ -75,12 +75,12 @@ func TestTokenSaveDoubaoInsufficientQuotaIsTerminalRejection(t *testing.T) {
 	)
 }
 
-func TestFeicaiV2AccountRequiredRemainsUnknownWithoutExactContract(t *testing.T) {
+func TestURLMediaArraysAccountRequiredRemainsUnknownWithoutExactContract(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelType: constant.ChannelTypeSeedanceLink,
 			ChannelOtherSettings: dto.ChannelOtherSettings{
-				VideoUpstreamProtocol: dto.VideoUpstreamProtocolMediaArraysV2,
+				VideoUpstreamProtocol: dto.VideoUpstreamProtocolURLMediaArraysV1,
 			},
 		},
 	}

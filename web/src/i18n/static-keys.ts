@@ -223,7 +223,7 @@ export const STATIC_I18N_KEYS = [
   'BytePlus ModelArk V3',
   'Media Task V1',
   'Ark Media V1',
-  'Media Arrays V2',
+  'URL Media Arrays (URL Only, No Asset Library)',
   'FunCloud Seedance V2',
   'No Asset Protocol',
   'Volcengine Official Assets',

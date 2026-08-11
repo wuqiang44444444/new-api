@@ -26,7 +26,8 @@ beforeAll(async () => {
           'BytePlus ModelArk V3': 'BytePlus ModelArk V3',
           'Media Task V1': 'Moxing',
           'Ark Media V1': 'Ark Proxy Video API',
-          'Media Arrays V2': 'Feicai',
+          'URL Media Arrays (URL Only, No Asset Library)':
+            'URL Media Arrays (URL Only, No Asset Library)',
           'FunCloud Seedance V2': 'FunCloud',
           'Volcengine Official Assets': 'Volcengine Official Assets',
           'BytePlus Official Assets': 'BytePlus Official Assets',
@@ -102,5 +103,29 @@ describe('Seedance protocol fields', () => {
     )
 
     expect(assetTrigger.textContent).toContain('Moxing Asset Library')
+  })
+
+  test('labels the URL-only protocol and selects no asset library', async () => {
+    const user = userEvent.setup()
+    render(<SeedanceProtocolFieldsHarness />)
+
+    const videoTrigger = screen.getByRole('combobox', {
+      name: 'Seedance Video Protocol',
+    })
+    const assetTrigger = screen.getByRole('combobox', {
+      name: 'Seedance Asset Protocol',
+    })
+
+    await user.click(videoTrigger)
+    await user.click(
+      await screen.findByRole('option', {
+        name: 'URL Media Arrays (URL Only, No Asset Library)',
+      })
+    )
+
+    expect(videoTrigger.textContent).toContain(
+      'URL Media Arrays (URL Only, No Asset Library)'
+    )
+    expect(assetTrigger.textContent).toContain('No Asset Protocol')
   })
 })

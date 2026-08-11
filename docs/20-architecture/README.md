@@ -42,10 +42,11 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 
 1. [架构概览](架构概览.md)：先理解系统边界、运行平面和事实所有权。
 2. [Seedance 专用渠道与 Link 架构](Seedance专用渠道与Link架构.md)：理解 ModelArk V3、确定性渠道、代码协议、视频任务和素材代理。
-3. [异步任务与计费事实架构](异步任务与计费事实架构.md)：理解 create attempt、Task、资金状态和平台风险。
-4. 再按任务选择图片、账单、公开文档或 [Seedance Provider 接入设计](Seedance模型接入设计/README.md)。
-5. 需要理解用户生命周期邮件通知时阅读[用户生命周期邮件通知架构](用户生命周期邮件通知架构.md)。
-6. 需要理解“为什么这样设计”时阅读[架构决策索引](decisions/README.md)。
+3. 涉及素材时阅读 [Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md)。
+4. [异步任务与计费事实架构](异步任务与计费事实架构.md)：理解 create attempt、Task、资金状态和平台风险。
+5. 再按任务选择图片、账单、公开文档或 [Seedance Provider 接入设计](Seedance模型接入设计/README.md)。
+6. 需要理解用户生命周期邮件通知时阅读[用户生命周期邮件通知架构](用户生命周期邮件通知架构.md)。
+7. 需要理解“为什么这样设计”时阅读[架构决策索引](decisions/README.md)。
 
 ## 当前架构文档
 
@@ -53,6 +54,7 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 | --- | --- | --- | --- |
 | 全局 | [架构概览](架构概览.md) | 系统由什么组成，边界和事实源在哪里 | `router/`、`controller/`、`service/`、`model/`、`relay/` |
 | Seedance Link | [Seedance 专用渠道与 Link 架构](Seedance专用渠道与Link架构.md) | 专用渠道、ModelArk V3、代码协议、视频任务和一对一素材如何协作 | `ChannelTypeSeedanceLink`、ModelArk V3 Router、协议注册表、Task、Asset |
+| Seedance 素材 | [Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md) | 请求级媒体、公共引用、私域真人/AIGC 和国内/海外官方协议如何分工 | Resolver、Asset/AssetGroup、官方 Action adapter |
 | 共享异步事实 | [异步任务与计费事实架构](异步任务与计费事实架构.md) | create attempt、Task、计费和 exposure 如何形成耐久事实 | `model/task*.go`、Task billing、exposure |
 | 图片数据面 | [Link 图片服务合同与异步任务架构](Link图片服务合同与异步任务架构.md) | 同步/异步图片如何共享入口、Task 和计费 | 图片 relay、`media_task_image_blocking`、`media_image` Task |
 | Provider 接入设计 | [Seedance 模型接入设计索引](Seedance模型接入设计/README.md) | FunCloud、墨行、飞彩如何选择独立客户模型和代码协议 | Provider adapter、模型映射与真实验证事实 |

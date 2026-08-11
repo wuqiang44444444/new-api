@@ -15,7 +15,7 @@ const DEFAULT_ASSET_PROTOCOL_BY_VIDEO: Record<
   modelark_v3_byteplus: 'byteplus_assets_action_v2024_01_01',
   media_task_v1: 'relay_assets_v1',
   ark_media_v1: 'ark_assets_v1',
-  media_arrays_v2: 'none',
+  url_media_arrays_v1: 'none',
   funcloud_seedance_v2: 'none',
 }
 

@@ -113,7 +113,7 @@ type modelResult struct {
 type report struct {
 	StartedAt                string             `json:"started_at"`
 	FinishedAt               string             `json:"finished_at"`
-	ProtocolVersion          string             `json:"protocol_version"`
+	Protocol                 string             `json:"protocol"`
 	BaseURL                  string             `json:"base_url"`
 	SizeCandidate            string             `json:"size_candidate"`
 	EstimatedMinimumSpendCNY float64            `json:"estimated_minimum_spend_cny"`
@@ -134,7 +134,6 @@ type providerErrorEnvelope struct {
 
 func main() {
 	baseURLFlag := flag.String("base-url", "https://feicai123.top", "Feicai base URL")
-	protocolVersion := flag.String("protocol-version", "v2", "Feicai protocol version: v2 or v3")
 	allowInsecureHTTP := flag.Bool("allow-insecure-http", false, "explicitly allow sending the provider credential over plaintext HTTP")
 	size := flag.String("size", "1280x720", "single candidate size tested for every exact provider model")
 	confirmSpend := flag.Bool("confirm-spend", false, "confirm that the live calls may incur provider charges")
@@ -171,11 +170,10 @@ func main() {
 	if vipKey == "" || valueKey == "" {
 		fatalf("FEICAI_VIP_API_KEY and FEICAI_VALUE_API_KEY are required")
 	}
-	versionSpecs := verificationModelSpecsForVersion(*protocolVersion, vipKey, valueKey, referenceImage)
-	if len(versionSpecs) == 0 {
-		fatalf("unsupported protocol version %q; expected v2 or v3", *protocolVersion)
-	}
-	specs, err := selectVerificationModelSpecs(versionSpecs, *selectedModels)
+	specs, err := selectVerificationModelSpecs(
+		verificationModelSpecs(vipKey, valueKey, referenceImage),
+		*selectedModels,
+	)
 	if err != nil {
 		fatalf("invalid model selection: %v", err)
 	}
@@ -211,7 +209,7 @@ func main() {
 
 	verification := report{
 		StartedAt:                time.Now().UTC().Format(time.RFC3339),
-		ProtocolVersion:          strings.ToLower(strings.TrimSpace(*protocolVersion)),
+		Protocol:                 "url_media_arrays_v1",
 		BaseURL:                  baseURL.String(),
 		SizeCandidate:            *size,
 		EstimatedMinimumSpendCNY: estimatedSpend,
@@ -280,38 +278,16 @@ func main() {
 
 func verificationModelSpecs(vipKey, valueKey, referenceImage string) []modelSpec {
 	return []modelSpec{
-		{ProviderModel: "seedance-2.0-vip-720p-mini-azhw-feicai", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 2.20},
-		{ProviderModel: "seedance2.0-sd2-feicai", CredentialName: "value", Credential: valueKey, Duration: 11, ReferenceImage: referenceImage, EstimatedCNY: 6.60},
-		{ProviderModel: "seedance-2.0-vip-720p-fast-azhw-feicai", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 2.40},
-		{ProviderModel: "seedance-2.0-933-720p-azhw-feicai", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 2.48},
-		{ProviderModel: "seedance-2.0-vip-720p-azhw-feicai", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 2.96},
-		{ProviderModel: "seedance-2.0-933-1080p-azhw-feicai", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 5.92},
-		{ProviderModel: "seedance-2.0-vip-1080p-azhw-feicai", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 6.96},
-		{ProviderModel: "seedance-2.0-933-4k-azhw-feicai", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 14.32},
-		{ProviderModel: "seedance-2.0-vip-4k-azhw-feicai", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 16.92},
-		{ProviderModel: "seedance-933-pro-pi-feicai", CredentialName: "value", Credential: valueKey, Duration: 15, EstimatedCNY: 11.05},
-	}
-}
-
-func verificationModelSpecsForVersion(version, vipKey, valueKey, referenceImage string) []modelSpec {
-	switch strings.ToLower(strings.TrimSpace(version)) {
-	case "v2":
-		return verificationModelSpecs(vipKey, valueKey, referenceImage)
-	case "v3":
-		return []modelSpec{
-			{ProviderModel: "seedance-2.0-vip-720p-mini-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 2.88},
-			{ProviderModel: "seedance2.0-sd2", CredentialName: "value", Credential: valueKey, Duration: 11, ReferenceImage: referenceImage, EstimatedCNY: 6.60},
-			{ProviderModel: "seedance-2.0-vip-720p-fast-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 3.52},
-			{ProviderModel: "seedance-2.0-933-720p-azhw", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 3.08},
-			{ProviderModel: "seedance-2.0-vip-720p-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 3.64},
-			{ProviderModel: "seedance-2.0-933-1080p-azhw", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 7.26},
-			{ProviderModel: "seedance-2.0-vip-1080p-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 8.58},
-			{ProviderModel: "seedance-2.0-933-4k-azhw", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 17.60},
-			{ProviderModel: "seedance-2.0-vip-4k-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 20.80},
-			{ProviderModel: "seedance-933-pro-pi", CredentialName: "value", Credential: valueKey, Duration: 15, EstimatedCNY: 11.55},
-		}
-	default:
-		return nil
+		{ProviderModel: "seedance-2.0-vip-720p-mini-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 2.20},
+		{ProviderModel: "seedance2.0-sd2", CredentialName: "value", Credential: valueKey, Duration: 11, ReferenceImage: referenceImage, EstimatedCNY: 6.60},
+		{ProviderModel: "seedance-2.0-vip-720p-fast-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 2.40},
+		{ProviderModel: "seedance-2.0-933-720p-azhw", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 2.48},
+		{ProviderModel: "seedance-2.0-vip-720p-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 2.96},
+		{ProviderModel: "seedance-2.0-933-1080p-azhw", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 5.92},
+		{ProviderModel: "seedance-2.0-vip-1080p-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 6.96},
+		{ProviderModel: "seedance-2.0-933-4k-azhw", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 14.32},
+		{ProviderModel: "seedance-2.0-vip-4k-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 16.92},
+		{ProviderModel: "seedance-933-pro-pi", CredentialName: "value", Credential: valueKey, Duration: 15, EstimatedCNY: 11.05},
 	}
 }
 

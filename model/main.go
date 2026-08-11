@@ -307,6 +307,9 @@ func migrateDB() error {
 	if err := migrateTaskApplicationScope(); err != nil {
 		return err
 	}
+	if err := migrateSeedanceURLMediaArraysProtocol(); err != nil {
+		return err
+	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
 	}
@@ -397,6 +400,9 @@ func migrateDBFast() error {
 		return err
 	}
 	if err := migrateTaskApplicationScope(); err != nil {
+		return err
+	}
+	if err := migrateSeedanceURLMediaArraysProtocol(); err != nil {
 		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {

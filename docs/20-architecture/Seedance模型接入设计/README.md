@@ -16,7 +16,7 @@ ModelArk V3 北向；各 Provider 可以使用不同代码化上游协议、路�
 | --- | --- | --- |
 | FunCloud | [国内 Seedance 2.0 模型接入设计](FunCloud/FunCloud国内Seedance-2.0模型接入设计.md) | Standard/Fast 使用独立客户模型与 Channel；已有部分真实成功证据，素材协议和 Provider 账单仍阻断全面开放 |
 | 墨行 | [Seedance 模型接入设计](墨行/README.md) | oversea/doubao 使用独立客户模型与 Channel；doubao 有部分视频证据，oversea 预检 401；素材需按一对一代理重新验收 |
-| 飞彩 | [Seedance 全模型接入设计](飞彩/README.md) | v2/v3 及各档位使用独立客户模型；v3 仅 Mini/Fast/Standard 720p 16:9 有精确成功证据，其它组合保持禁用 |
+| 飞彩 | [Seedance 全模型接入设计](飞彩/README.md) | 只维护当前 `url_media_arrays_v1` 与无后缀 Provider 模型；仅 Mini/Fast/Standard 720p 16:9 有精确 size 证据 |
 
 逐模型生产缺口和当前验收顺序集中记录在
 [路线图的 Seedance 生产验收](../../50-planning/路线图.md#seedance-生产验收)。架构文档只保留稳定边界

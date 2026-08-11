@@ -14,7 +14,7 @@ const (
 	VideoUpstreamProtocolModelArkV3BytePlus   VideoUpstreamProtocol = "modelark_v3_byteplus"
 	VideoUpstreamProtocolMediaTaskV1          VideoUpstreamProtocol = "media_task_v1"
 	VideoUpstreamProtocolArkMediaV1           VideoUpstreamProtocol = "ark_media_v1"
-	VideoUpstreamProtocolMediaArraysV2        VideoUpstreamProtocol = "media_arrays_v2"
+	VideoUpstreamProtocolURLMediaArraysV1     VideoUpstreamProtocol = "url_media_arrays_v1"
 	VideoUpstreamProtocolFunCloudSeedanceV2   VideoUpstreamProtocol = "funcloud_seedance_v2"
 )
 
@@ -24,7 +24,7 @@ func (p VideoUpstreamProtocol) IsValid() bool {
 		VideoUpstreamProtocolModelArkV3BytePlus,
 		VideoUpstreamProtocolMediaTaskV1,
 		VideoUpstreamProtocolArkMediaV1,
-		VideoUpstreamProtocolMediaArraysV2,
+		VideoUpstreamProtocolURLMediaArraysV1,
 		VideoUpstreamProtocolFunCloudSeedanceV2:
 		return true
 	default:
@@ -49,7 +49,7 @@ func (p VideoUpstreamProtocol) TransportProfile() VideoUpstreamProfile {
 		return VideoUpstreamProfileThirdPartyRelay
 	case VideoUpstreamProtocolArkMediaV1:
 		return VideoUpstreamProfileThirdPartyReverseProxy
-	case VideoUpstreamProtocolMediaArraysV2:
+	case VideoUpstreamProtocolURLMediaArraysV1:
 		return VideoUpstreamProfileThirdPartyJSONVideoMediaArrays
 	case VideoUpstreamProtocolFunCloudSeedanceV2:
 		return VideoUpstreamProfileThirdPartyFunCloudSeedanceV2
@@ -64,7 +64,7 @@ func (p VideoUpstreamProtocol) TransportPaths(providerModel string) (string, str
 		return "/v1/media/generations", "/v1/media/tasks/{task_id}"
 	case VideoUpstreamProtocolArkMediaV1:
 		return "/v1/ark/media/generations", "/v1/ark/media/tasks/{task_id}"
-	case VideoUpstreamProtocolMediaArraysV2:
+	case VideoUpstreamProtocolURLMediaArraysV1:
 		return "/v1/videos", "/v1/videos/{task_id}"
 	case VideoUpstreamProtocolFunCloudSeedanceV2:
 		createPath := "/api/v2/open/aigc/seedance2-0"

@@ -16,7 +16,7 @@ func TestSeedanceVideoProtocolsResolveCodeBackedTransport(t *testing.T) {
 		{VideoUpstreamProtocolModelArkV3BytePlus, VideoUpstreamProfileOfficial},
 		{VideoUpstreamProtocolMediaTaskV1, VideoUpstreamProfileThirdPartyRelay},
 		{VideoUpstreamProtocolArkMediaV1, VideoUpstreamProfileThirdPartyReverseProxy},
-		{VideoUpstreamProtocolMediaArraysV2, VideoUpstreamProfileThirdPartyJSONVideoMediaArrays},
+		{VideoUpstreamProtocolURLMediaArraysV1, VideoUpstreamProfileThirdPartyJSONVideoMediaArrays},
 		{VideoUpstreamProtocolFunCloudSeedanceV2, VideoUpstreamProfileThirdPartyFunCloudSeedanceV2},
 	}
 
@@ -39,7 +39,7 @@ func TestSeedanceVideoProtocolsResolveFixedPaths(t *testing.T) {
 	}{
 		{"media task", VideoUpstreamProtocolMediaTaskV1, "seedance", "/v1/media/generations", "/v1/media/tasks/{task_id}"},
 		{"ark media", VideoUpstreamProtocolArkMediaV1, "seedance", "/v1/ark/media/generations", "/v1/ark/media/tasks/{task_id}"},
-		{"media arrays", VideoUpstreamProtocolMediaArraysV2, "seedance", "/v1/videos", "/v1/videos/{task_id}"},
+		{"URL media arrays", VideoUpstreamProtocolURLMediaArraysV1, "seedance", "/v1/videos", "/v1/videos/{task_id}"},
 		{"funcloud standard", VideoUpstreamProtocolFunCloudSeedanceV2, "seedance-2.0", "/api/v2/open/aigc/seedance2-0", "/api/v2/open/aigc/{task_id}"},
 		{"funcloud fast", VideoUpstreamProtocolFunCloudSeedanceV2, "seedance-2.0-fast", "/api/v2/open/aigc/seedance2-0-fast", "/api/v2/open/aigc/{task_id}"},
 	}

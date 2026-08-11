@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
@@ -98,6 +99,12 @@ func TestCollectModelArkAssetReferencesRejectsUnnamespacedAndInvalidPublicRefere
 			info:      officialAssetReferenceRelayInfo(dto.VideoUpstreamProtocolMediaTaskV1),
 			wantError: service.ErrAssetReferenceUnresolvable,
 		},
+		{
+			name:      "URL-only protocol",
+			url:       "asset://pubref_asset-public",
+			info:      officialAssetReferenceRelayInfo(dto.VideoUpstreamProtocolURLMediaArraysV1),
+			wantError: service.ErrAssetReferenceUnresolvable,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -108,6 +115,18 @@ func TestCollectModelArkAssetReferencesRejectsUnnamespacedAndInvalidPublicRefere
 			require.ErrorIs(t, err, test.wantError)
 		})
 	}
+}
+
+func TestResolvePrivateAssetReferencesRejectsChannelWithoutAssetProtocolBeforeLookup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	info := officialAssetReferenceRelayInfo(dto.VideoUpstreamProtocolURLMediaArraysV1)
+	info.ChannelType = constant.ChannelTypeSeedanceLink
+	info.ChannelOtherSettings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolNone
+
+	_, _, _, err := resolvePrivateAssetReferences(context, info, []string{"ast_private"})
+
+	require.ErrorIs(t, err, service.ErrAssetReferenceUnresolvable)
 }
 
 func TestRewriteMetadataAssetReferencesOnlyRewritesRegisteredValues(t *testing.T) {

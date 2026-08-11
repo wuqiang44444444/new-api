@@ -123,7 +123,7 @@ export interface ChannelOtherSettings {
     | 'modelark_v3_byteplus'
     | 'media_task_v1'
     | 'ark_media_v1'
-    | 'media_arrays_v2'
+    | 'url_media_arrays_v1'
     | 'funcloud_seedance_v2'
   asset_upstream_protocol?:
     | 'none'

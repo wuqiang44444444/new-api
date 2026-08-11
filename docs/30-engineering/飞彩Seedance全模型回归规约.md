@@ -8,7 +8,8 @@ last-reviewed: 2026-08-10
 
 ## 1. 边界
 
-飞彩使用 `ChannelTypeSeedanceLink` 和代码化 `media_arrays_v2` 协议。每个客户模型配置独立渠道和独立
+飞彩使用 `ChannelTypeSeedanceLink` 和代码化 `url_media_arrays_v1` 协议。该协议只接受 URL/Data URL，
+必须配对 `asset_upstream_protocol=none`。每个客户模型配置独立渠道和独立
 `model_mapping`；系统不维护 Link SKU、publication、implementation 或 execution binding。
 
 真实 Provider 行为见[飞彩上线验收手册](../40-operations/06-飞彩Seedance全模型上线验收手册.md)。
@@ -30,11 +31,12 @@ last-reviewed: 2026-08-10
 - duration 的合法边界与首个非法值；
 - resolution、ratio 和已验证 size evidence；
 - text、image、audio、video 的允许数量、role 和组合；
-- HTTP/HTTPS、Data URL 与 `asset://ast_*` 的协议支持；
+- HTTP/HTTPS、Data URL 成功，以及 `asset://ast_*`、`asset://pubref_*` 明确失败；
 - adapter 不支持字段明确失败，不静默删除、钳制或改义；
 - converter 与 billing probe 对同一请求解析相同 duration、size 和计费档位。
 
-能力差异由技术人员根据合同和实测写入 adapter 或 size evidence，不由运行时 capability 门禁推断。
+模型的图片必填、音视频支持范围和真人内容差异由飞彩判断；平台只维护线协议与 size evidence，不建立
+逐模型 capability 门禁。
 
 ## 4. 异步与失败
 
@@ -47,11 +49,9 @@ last-reviewed: 2026-08-10
 
 ## 5. 素材
 
-只有渠道配置并验证了素材协议时才测试 `asset://ast_*`。每个素材必须满足当前 `user_id + app_id`、
-ready 状态、同一客户模型、同一 Channel、同一协议和凭据身份。普通 URL/Data URL 不创建平台素材。
-
-飞彩不支持的素材类型或真人流程必须明确失败；不得借用其它 Seedance Channel 的素材，也不得建立自动
-物化、迁移、source fallback 或多 binding。
+飞彩 Channel 固定使用 `asset_upstream_protocol=none`。`asset://ast_*`、`asset://pubref_*` 和真人认证
+流程必须在 Provider POST 前明确失败；普通 URL/Data URL 不创建平台素材。不得借用其它 Seedance
+Channel 的素材，也不得建立自动物化、迁移、source fallback 或多 binding。
 
 ## 6. 计费
 

@@ -20,8 +20,9 @@ var videoMediaArrayImageMIMETypes = map[string]struct{}{
 }
 
 // ValidateVideoMediaArrayURL validates the media representation accepted by
-// array-based JSON video providers. Durable asset references are allowed only
-// before the Link resolver rewrites them to their protected source URL.
+// array-based JSON video providers. Asset references are allowed only before
+// the selected Link protocol resolves them to a Provider-native reference or
+// rejects them; this validator never grants source URL fallback semantics.
 func ValidateVideoMediaArrayURL(value, mediaType string, allowAsset bool) error {
 	value = strings.TrimSpace(value)
 	if value == "" || len(value) > maxVideoMediaArrayURLLength {

@@ -8,8 +8,10 @@ last-reviewed: 2026-08-11
 
 ## 1. 范围与状态
 
-本文是 Seedance、ModelArk V3、代码化上游协议、异步视频任务和平台素材代理的唯一权威架构。
-迁移步骤、实施清单和评审过程不进入本文。
+本文是 Seedance、ModelArk V3、代码化上游协议、异步视频任务和平台素材代理的总体权威架构。
+官方素材库、`ast_*` / `pubref_*` 和素材数据流的专题细节由
+[Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md)负责。迁移步骤、实施
+清单和评审过程不进入架构正文。
 
 当前代码已经实现本文描述的架构边界。具体 Provider 是否可进入生产分组，仍取决于该线路的真实
 视频、素材、计费和灰度验收；“架构已实现”不等于“所有 Provider 已生产发布”。
@@ -109,7 +111,7 @@ modelark_v3_volcengine
 modelark_v3_byteplus
 media_task_v1
 ark_media_v1
-media_arrays_v2
+url_media_arrays_v1
 funcloud_seedance_v2
 ```
 
@@ -223,96 +225,22 @@ GET、DELETE、内容回源、轮询和结算均使用冻结事实。当前 Chan
 
 ## 9. 平台素材代理
 
-### 9.1 客户合同
+素材数据面分为请求级 URL/Data URL、官方 `pubref_*` 公共引用和 `ast_*` / `astgrp_*` 私域资源。
+私域资源一对一固定到 `user_id + app_id`、Channel、素材协议和 Provider 作用域；公共引用不进入平台
+资源库。真人认证属于 AssetGroup 的上游流程，不形成平台独立授权域。
 
-客户统一使用：
-
-```text
-POST   /v1/asset-groups
-GET    /v1/asset-groups/{group_id}
-GET    /v1/asset-groups
-DELETE /v1/asset-groups/{group_id}
-
-POST   /v1/assets
-GET    /v1/assets/{asset_id}
-GET    /v1/assets
-PATCH  /v1/assets/{asset_id}
-DELETE /v1/assets/{asset_id}
-```
-
-素材引用分为两个不重叠的北向命名空间：
-
-| 引用 | 含义 | 平台责任 |
-| --- | --- | --- |
-| `asset://ast_*` | 平台创建并映射的 Provider 私域素材 | 按 `user_id + app_id` 校验、解析和冻结 |
-| `asset://pubref_<Provider公共AssetID>` | 调用方自行从官方公共目录取得的预置素材 | 校验格式、去掉 `pubref_` 后转发 |
-
-`pubref_*` 不是平台 Asset，不进入 `/v1/assets`、数据库或租户配额；平台不提供公共目录列表、搜索、详情、
-资格判断或可用性预检，最终结果由 Provider 判定。客户不得提交不带 `ast_*` / `pubref_*` 命名空间的裸
-Provider Asset ID，也不能通过平台查看 Provider 账号级资源列表。
-
-### 9.2 一对一 Provider 资源
-
-```text
-ast_xxx / astgrp_xxx
-  -> user_id + app_id
-  -> channel_id
-  -> asset_upstream_protocol
-  -> Provider 账号 + Region + Project
-  -> 一个 Provider Asset / Group / 验证会话
-```
-
-平台不建立 0..N AssetBinding、多渠道候选、自动物化、自动迁移或 source fallback。国内火山、海外
-BytePlus 和第三方素材互不迁移；同一媒体跨线路使用时必须分别创建并经过各自 Provider 处理。
-
-`RequestedModel` 冻结创建时的客户模型。Resolver 要求视频请求使用同一客户模型和固定 Channel，
-并复检 Provider 作用域；系统不自动推断其它客户模型是否兼容。
-
-### 9.3 来源与状态
-
-平台不保存媒体二进制。`CreateAsset` 的 HTTP/HTTPS/Data URL 只存在于当前请求和 Provider 创建调用
-中，不写入 Asset、Task、日志或长期 source 记录。取得可信 Provider ID 后，后续操作只使用 Provider
-资源身份，不从原 URL 重建。
-
-Asset 与 AssetGroup 使用与当前上游投影一致的最小状态：`processing`、`ready`、`failed`、`deleted`。
-创建未取得可信 Provider ID 时返回失败；删除结果不明确时返回失败并保留原状态，后续 GET 明确确认
-不存在后再标记 deleted。不建立 `create_unknown`、`delete_unknown`、自动重试、孤儿扫描、持续轮询
-或管理员核查状态机。
-
-### 9.4 真人认证代理
-
-真人认证是 `AssetGroup(group_kind=real_person)` 的一种上游流程，不是平台独立授权域：
-
-```text
-客户创建 AssetGroup
-  -> 固定 Seedance Channel 和素材协议
-  -> adapter 创建 Provider 验证会话
-  -> 返回官方或第三方 verification_url / QR
-  -> 客户直接访问 Provider 页面
-  -> GET AssetGroup 时按需刷新状态
-```
-
-平台只保存租户归属、冻结渠道、Provider Group/Session ID、加密的短期验证 URL 和过期时间。平台不
-保存人脸媒体、证件、活体数据、人脸特征或授权表单正文，也不建立 `RealPersonAuthorization`、平台
-H5、人脸表单、reservation 或自建撤回状态机。Provider 不支持删除或撤回时必须明确返回不支持。
+平台不保存媒体二进制，不浏览 Provider 账号资源，不建立云导入、租户素材容量分配、自动物化、
+跨线路迁移、source fallback 或素材创建/删除 unknown 状态机。身份、控制面、国内/海外协议、数据流
+和错误语义的完整定义见
+[Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md)。
 
 ## 10. 素材参与视频创建
 
 ModelArk V3 可以同时携带 HTTP/HTTPS URL、Data URL、`asset://ast_*` 和官方 `asset://pubref_*`。
-`ast_*` 按以下私域规则解析：
-
-1. 客户模型确定的 Channel 必须等于所有素材冻结 Channel；
-2. 所有平台素材必须属于相同 Provider 账号、Region 和 Project；
-3. Resolver 把 `asset://ast_*` 改写为该 Provider 的真实资源引用；
-4. 普通 URL/Data URL 与解析后的平台素材一起发送到同一个 Provider；
-5. 渠道不一致返回 `asset_channel_mismatch`，Provider 作用域不一致返回 `asset_scope_conflict`。
-
-Resolver 是平台素材身份到 Provider 引用的唯一转换权威。请求级 URL/Data URL 不自动获得 Asset、
-迁移、真人认证或撤回语义。
-
-`pubref_*` 仅对 `modelark_v3_volcengine` 和 `modelark_v3_byteplus` 开放。Resolver 只校验公共 ID 使用安全
-字符且长度合规，再把 `asset://pubref_<id>` 改写为 `asset://<id>`；不查询私域库、不创建 Asset，也不
-判断该 ID 是否确属公共目录。Provider 返回的不存在、无权限、审核或配额错误走统一上游错误语义。
+Resolver 对 `ast_*` 复检租户、状态、客户模型、Channel 和 Provider 作用域；对官方 `pubref_*` 只做
+命名格式校验和去命名空间。请求级 URL/Data URL 不自动获得 Asset 或真人认证语义，公共资格和素材
+审核始终由 Provider 判定。详细合同见
+[Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md)。
 
 ## 11. 计费与风险
 
@@ -369,6 +297,7 @@ Resolver 是平台素材身份到 Provider 引用的唯一转换权威。请求�
 ## 15. 相关文档
 
 - [架构概览](架构概览.md)
+- [Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md)
 - [异步任务与计费事实架构](异步任务与计费事实架构.md)
 - [Link 图片服务合同与异步任务架构](Link图片服务合同与异步任务架构.md)
 - [Seedance Provider 接入设计](<Seedance模型接入设计/README.md>)

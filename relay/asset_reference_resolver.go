@@ -120,6 +120,10 @@ func validPublicProviderAssetID(value string) bool {
 }
 
 func resolvePrivateAssetReferences(c *gin.Context, info *relaycommon.RelayInfo, publicIDs []string) (map[string]string, []string, int, error) {
+	if info != nil && info.ChannelMeta != nil &&
+		info.ChannelOtherSettings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolNone {
+		return nil, nil, 0, service.ErrAssetReferenceUnresolvable
+	}
 	if !asset_setting.Current().Enabled || info == nil || info.ChannelMeta == nil ||
 		info.ChannelType != constant.ChannelTypeSeedanceLink {
 		return nil, nil, 0, service.ErrAssetLibraryUnavailable

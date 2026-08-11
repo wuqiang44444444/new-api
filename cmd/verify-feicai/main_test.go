@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestVerificationModelSpecsCoverEveryFeicaiV2Model(t *testing.T) {
+func TestVerificationModelSpecsCoverEveryCurrentFeicaiModel(t *testing.T) {
 	const referenceImage = "https://example.com/reference.png"
 	specs := verificationModelSpecs("vip-key", "value-key", referenceImage)
 
@@ -18,16 +18,16 @@ func TestVerificationModelSpecsCoverEveryFeicaiV2Model(t *testing.T) {
 		duration   int
 		needsImage bool
 	}{
-		"seedance-2.0-vip-720p-mini-azhw-feicai": {credential: "vip", duration: 4},
-		"seedance2.0-sd2-feicai":                 {credential: "value", duration: 11, needsImage: true},
-		"seedance-2.0-vip-720p-fast-azhw-feicai": {credential: "vip", duration: 4},
-		"seedance-2.0-933-720p-azhw-feicai":      {credential: "value", duration: 4},
-		"seedance-2.0-vip-720p-azhw-feicai":      {credential: "vip", duration: 4},
-		"seedance-2.0-933-1080p-azhw-feicai":     {credential: "value", duration: 4},
-		"seedance-2.0-vip-1080p-azhw-feicai":     {credential: "vip", duration: 4},
-		"seedance-2.0-933-4k-azhw-feicai":        {credential: "value", duration: 4},
-		"seedance-2.0-vip-4k-azhw-feicai":        {credential: "vip", duration: 4},
-		"seedance-933-pro-pi-feicai":             {credential: "value", duration: 15},
+		"seedance-2.0-vip-720p-mini-azhw": {credential: "vip", duration: 4},
+		"seedance2.0-sd2":                 {credential: "value", duration: 11, needsImage: true},
+		"seedance-2.0-vip-720p-fast-azhw": {credential: "vip", duration: 4},
+		"seedance-2.0-933-720p-azhw":      {credential: "value", duration: 4},
+		"seedance-2.0-vip-720p-azhw":      {credential: "vip", duration: 4},
+		"seedance-2.0-933-1080p-azhw":     {credential: "value", duration: 4},
+		"seedance-2.0-vip-1080p-azhw":     {credential: "vip", duration: 4},
+		"seedance-2.0-933-4k-azhw":        {credential: "value", duration: 4},
+		"seedance-2.0-vip-4k-azhw":        {credential: "vip", duration: 4},
+		"seedance-933-pro-pi":             {credential: "value", duration: 15},
 	}
 
 	require.Len(t, specs, len(expected))
@@ -49,31 +49,6 @@ func TestVerificationModelSpecsCoverEveryFeicaiV2Model(t *testing.T) {
 	}
 }
 
-func TestVerificationModelSpecsCoverEveryFeicaiV3Model(t *testing.T) {
-	specs := verificationModelSpecsForVersion("v3", "shared-key", "shared-key", "https://example.com/reference.png")
-
-	require.Len(t, specs, 10)
-	assert.Equal(t, "seedance-2.0-vip-720p-mini-azhw", specs[0].ProviderModel)
-	assert.Equal(t, "seedance2.0-sd2", specs[1].ProviderModel)
-	assert.Equal(t, "seedance-933-pro-pi", specs[9].ProviderModel)
-	assert.Equal(t, []float64{2.88, 6.60, 3.52, 3.08, 3.64, 7.26, 8.58, 17.60, 20.80, 11.55}, []float64{
-		specs[0].EstimatedCNY,
-		specs[1].EstimatedCNY,
-		specs[2].EstimatedCNY,
-		specs[3].EstimatedCNY,
-		specs[4].EstimatedCNY,
-		specs[5].EstimatedCNY,
-		specs[6].EstimatedCNY,
-		specs[7].EstimatedCNY,
-		specs[8].EstimatedCNY,
-		specs[9].EstimatedCNY,
-	})
-	for _, spec := range specs {
-		assert.NotContains(t, spec.ProviderModel, "-feicai")
-		assert.Equal(t, "shared-key", spec.Credential)
-	}
-}
-
 func TestValidatedBaseURLRequiresExplicitOptInForHTTP(t *testing.T) {
 	_, err := validatedBaseURL("http://43.161.200.208", false)
 	require.ErrorContains(t, err, "allow-insecure-http")
@@ -92,17 +67,17 @@ func TestSelectVerificationModelSpecsUsesExactUniqueModels(t *testing.T) {
 
 	selected, err := selectVerificationModelSpecs(
 		specs,
-		"seedance-2.0-vip-720p-fast-azhw-feicai,seedance-2.0-933-4k-azhw-feicai",
+		"seedance-2.0-vip-720p-fast-azhw,seedance-2.0-933-4k-azhw",
 	)
 	require.NoError(t, err)
 	require.Len(t, selected, 2)
-	assert.Equal(t, "seedance-2.0-vip-720p-fast-azhw-feicai", selected[0].ProviderModel)
-	assert.Equal(t, "seedance-2.0-933-4k-azhw-feicai", selected[1].ProviderModel)
+	assert.Equal(t, "seedance-2.0-vip-720p-fast-azhw", selected[0].ProviderModel)
+	assert.Equal(t, "seedance-2.0-933-4k-azhw", selected[1].ProviderModel)
 	assert.InDelta(t, 16.72, estimatedSpendCNY(selected), 0.001)
 
 	_, err = selectVerificationModelSpecs(specs, "unknown")
 	require.ErrorContains(t, err, "unknown provider model")
-	_, err = selectVerificationModelSpecs(specs, "seedance-2.0-vip-720p-fast-azhw-feicai,seedance-2.0-vip-720p-fast-azhw-feicai")
+	_, err = selectVerificationModelSpecs(specs, "seedance-2.0-vip-720p-fast-azhw,seedance-2.0-vip-720p-fast-azhw")
 	require.ErrorContains(t, err, "duplicate provider model")
 }
 

@@ -23,7 +23,7 @@ Affinity、随机选渠、失败重选和 fallback 均不参与。
 | `modelark_v3_byteplus` | BytePlus 官方 | 官方 `/api/v3/contents/generations/tasks` |
 | `media_task_v1` | Moxing、TokenSave | `/v1/media/generations`、`/v1/media/tasks/{task_id}` |
 | `ark_media_v1` | Ark 反代 | `/v1/ark/media/generations`、`/v1/ark/media/tasks/{task_id}` |
-| `media_arrays_v2` | 飞彩 | `/v1/videos`、`/v1/videos/{task_id}` |
+| `url_media_arrays_v1` | 飞彩；仅 URL，不支持素材库 | `/v1/videos`、`/v1/videos/{task_id}` |
 | `funcloud_seedance_v2` | FunCloud | Standard/Fast 路径由 Provider 模型名在代码中选择 |
 
 这些路径不出现在管理员 JSON 配置中。不要把第三方协议挂回 `DoubaoVideo`，也不要让客户端调用第三方

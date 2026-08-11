@@ -8,23 +8,23 @@ last-reviewed: 2026-08-10
 
 ## 1. 目的与边界
 
-本手册用于在隔离分组中，以正式 HTTPS、目标生产凭据和 ModelArk V3 客户入口验收飞彩精确
-Provider 协议版本。当前生产渠道使用代码协议 `media_arrays_v2`；无后缀模型若使用另一套 `/v3`
-并从零取得独立证据，不能继承 v2 验收结果。任何当前版本都不保留或测试 v1 fallback。
+本手册用于在隔离分组中，以正式 HTTPS、目标生产凭据和 ModelArk V3 客户入口验收飞彩当前精确
+Provider 模型。当前渠道只使用代码协议 `url_media_arrays_v1` 和无 `-feicai` 后缀的当前模型，不保留
+或测试飞彩 v1/v2/v3 adapter、模型配置族或 fallback。
 
 所有证据必须脱敏。不得在本文或验收产物中写入真实 Key、Cookie、完整签名 URL、上游任务 ID、
 真实渠道 ID或内部管理地址。
 
-## 2. v1 移除前置审计
+## 2. 历史版本移除前置审计
 
 上线窗口开始前，逐环境确认：
 
-- 飞彩 v1 Channel 与 Ability 已停流；
-- v1 非终态 Task、create attempt、hold、结算、退款和 exposure 数量均为零；
-- 没有仍需访问的 v1 历史内容；
-- 客户模型、Channel、Model Mapping、价格和运维配置不引用 v1；
+- 飞彩历史版本 Channel 与 Ability 已停流；
+- 历史版本非终态 Task、create attempt、hold、结算、退款和 exposure 数量均为零；
+- 没有仍需访问的历史版本内容；
+- 客户模型、Channel、Model Mapping、价格和运维配置不引用历史版本；
 - 已保存旧版本二进制和配置快照，必要时可整体回滚；
-- 新版本不会在运行时解析 v1 adapter。
+- 当前版本不会在运行时解析历史 adapter。
 
 任一项不满足则停止上线，不临时打开兼容分支。
 
@@ -47,7 +47,7 @@ Provider 协议版本。当前生产渠道使用代码协议 `media_arrays_v2`�
 | 1 | `seedance-2.0-mini-720p` | 4 秒、15 秒；已批准 size；图片/音频允许组合 | 3/16 秒；未登记 ratio；10 图/4 音频/任意视频 | 按秒、模型独立单价 |
 | 2 | `seedance-2.0-sd2-720p` | 1 图+11 秒、9 图+15 秒；已批准两画幅 | 无图；10 图；10/16 秒；任意音频/视频；省略 duration | 按秒；失败是否扣费 |
 | 3 | `seedance-2.0-fast-720p` | 4/15 秒；已批准 size；图片/音频 | 越界时长、媒体和未登记 ratio | 按秒；记录时延但不宣称 SLA |
-| 4 | `seedance-2.0-value-720p` | v2 下 16:9、9:16；4/15 秒；内容下载 | 未登记画幅、媒体越界 | 按秒；与 v1 研究结果分开 |
+| 4 | `seedance-2.0-value-720p` | 当前 16:9、9:16；4/15 秒；内容下载 | 未登记画幅、媒体越界 | 按秒；不继承历史结果 |
 | 5 | `seedance-2.0-standard-720p` | 独立执行同类场景 | 不接受 value 模型证据代替 | 独立单价、独立 Provider 任务 |
 | 6 | `seedance-2.0-value-1080p` | 每个批准的 1080p size；4/15 秒；Range | 720p/4K resolution、未登记 ratio | 按秒、高分辨率成本 |
 | 7 | `seedance-2.0-standard-1080p` | 独立执行 1080p 场景 | 不接受 value size/账单代替 | 独立单价 |
@@ -55,7 +55,7 @@ Provider 协议版本。当前生产渠道使用代码协议 `media_arrays_v2`�
 | 9 | `seedance-2.0-standard-4k` | 独立执行 4K 场景 | 不接受 value 证据代替 | 独立单价、quota 饱和 |
 | 10 | `seedance-2.0-pro-pi-720p` | 图片、音频、视频各自及批准组合；固定 15 秒 | 14/16 秒；4 视频；错误 role；未批准宽幅 | 固定按次，duration 不乘价 |
 
-只有已经进入 v2 size registry 的组合才执行成功验收；研究资料列出的其它画幅保持拒绝，直到形成新证据并重新审批。
+只有已经进入当前 size registry 的组合才执行成功验收；研究资料列出的其它画幅保持拒绝，直到形成新证据并重新审批。
 
 ## 5. 单模型串行验收流程
 
@@ -67,7 +67,7 @@ Provider 协议版本。当前生产渠道使用代码协议 `media_arrays_v2`�
 4. 只轮询平台 Task 查询端点，验证 queued/running/终态单调且平台 ID 不变。
 5. 成功后通过平台 content endpoint 下载，检查非空、MIME、可播放、Range 和同源代理行为。
 6. 制造明确失败，确认平台没有切换渠道或发送第二个 Provider POST。
-7. 核对冻结 customer model、Channel、Provider model、`media_arrays_v2` 协议和 billing probe。
+7. 核对冻结 customer model、Channel、Provider model、`url_media_arrays_v1` 协议和 billing probe。
 8. 核对客户预扣、终态结算/退款、Provider 任务 quota 和账户用量，保持三类金额分离。
 9. 执行表中拒绝用例，确认错误发生在 Provider POST 前或符合已登记的确定拒绝合同。
 10. 将结果标记为通过、失败或阻塞，并附脱敏证据摘要。
@@ -79,7 +79,7 @@ Provider 协议版本。当前生产渠道使用代码协议 `media_arrays_v2`�
 - 任务列表确认大写 `QUEUED/IN_PROGRESS/SUCCESS/FAILURE`，并验证它与冻结 id 的真实关联。
 - 人为制造发送后断连、无效 JSON、缺少 id 或未登记非 2xx，确认进入 unknown、不重发、不换渠道、不退款。
 - 只有证明任务列表存在稳定唯一关联时，才验收自动 CAS 恢复；否则保持人工/有界对账。
-- v2 的任何 terminal rejection 必须独立验证精确 HTTP status 与 error.code；不能沿用 v1 证据。
+- 当前协议的任何 terminal rejection 必须独立验证精确 HTTP status 与 error.code；不能沿用历史证据。
 
 ## 7. 素材与内容专项
 
@@ -112,7 +112,7 @@ Provider 协议版本。当前生产渠道使用代码协议 `media_arrays_v2`�
 
 单个模型只有同时满足以下条件才可发布：
 
-- 精确 customer model、唯一 Channel、Provider model 和 `media_arrays_v2` 协议一致；
+- 精确 customer model、唯一 Channel、Provider model 和 `url_media_arrays_v1` 协议一致；
 - 上线清单中的 duration、resolution、size、媒体 min/max/roles 与黑盒一致；
 - 成功、可信失败、unknown、单次创建、轮询和内容下载均通过；
 - 客户账单、Provider 证据和 exposure 可分别核对；
@@ -129,11 +129,11 @@ Provider 协议版本。当前生产渠道使用代码协议 `media_arrays_v2`�
 - 负费用、重复扣费/退款、预扣与结算 probe 不一致；
 - unknown 被自动重发、换渠道或退款；
 - Task ID 误用、错误状态被判成功、内容跨域回源；
-- v1 路径或 adapter 被运行时重新启用；
+- 历史路径或 adapter 被运行时重新启用；
 - Key、Provider 模型、上游任务 ID或完整 URL 泄漏。
 
 回滚只停止新流量。已创建的 Task、attempt、hold、exposure 和结算继续按冻结 Channel、Provider 模型和
-协议闭合；不得跨 v2/v3 解释在途事实，也不得通过恢复 v1 渠道处理当前版本任务。
+协议闭合；不得用历史版本解释在途事实，也不得通过恢复历史渠道处理当前版本任务。
 
 ## 11. 证据归档
 

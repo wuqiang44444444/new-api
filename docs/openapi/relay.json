@@ -2363,7 +2363,7 @@
       "post": {
         "summary": "创建 ModelArk 视频任务",
         "deprecated": false,
-        "description": "使用公开 ModelArk v3 合同创建视频任务。seedance-2.0-standard 与 seedance-2.0-fast 是独立的可变分辨率 SKU，两者仅支持普通 Link 资源，不支持真人素材；Fast 仅支持 480p/720p。飞彩 v2 固定分辨率 SKU 仍处于逐模型 size 与账单验证阶段，不在本 OpenAPI 中发布。",
+        "description": "使用公开 ModelArk v3 合同创建视频任务。seedance-2.0-standard 与 seedance-2.0-fast 是独立的可变分辨率 SKU，两者仅支持普通 Link 资源，不支持真人素材；Fast 仅支持 480p/720p。飞彩当前固定分辨率模型仍处于逐模型 size 与账单验证阶段，不在本 OpenAPI 中发布。",
         "operationId": "createModelArkVideoTask",
         "tags": [
           "视频生成/ModelArk格式"

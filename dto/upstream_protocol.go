@@ -10,7 +10,7 @@ const (
 	VideoUpstreamProtocolModelArkV3BytePlus   = kitdto.VideoUpstreamProtocolModelArkV3BytePlus
 	VideoUpstreamProtocolMediaTaskV1          = kitdto.VideoUpstreamProtocolMediaTaskV1
 	VideoUpstreamProtocolArkMediaV1           = kitdto.VideoUpstreamProtocolArkMediaV1
-	VideoUpstreamProtocolMediaArraysV2        = kitdto.VideoUpstreamProtocolMediaArraysV2
+	VideoUpstreamProtocolURLMediaArraysV1     = kitdto.VideoUpstreamProtocolURLMediaArraysV1
 	VideoUpstreamProtocolFunCloudSeedanceV2   = kitdto.VideoUpstreamProtocolFunCloudSeedanceV2
 
 	AssetUpstreamProtocolNone             = kitdto.AssetUpstreamProtocolNone
