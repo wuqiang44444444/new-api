@@ -17,8 +17,7 @@ import (
 func TestOfficialActionAdapterSignsCreateAssetAndUsesOfficialContract(t *testing.T) {
 	var captured *http.Request
 	var body map[string]any
-	adapter, err := NewOfficialActionAdapter(
-		"https://ark.ap-southeast-1.byteplusapi.com",
+	adapter, err := NewBytePlusActionAdapter(
 		"ACCESS|SECRET",
 		"ap-southeast-1",
 		"project-a",
@@ -65,11 +64,48 @@ func TestOfficialActionAdapterSignsCreateAssetAndUsesOfficialContract(t *testing
 	assert.Equal(t, "active", result.Status)
 }
 
+func TestOfficialActionConstructorsUseSeparateProviderEndpoints(t *testing.T) {
+	tests := []struct {
+		name     string
+		wantHost string
+		create   func(HTTPDoer) (*OfficialActionAdapter, error)
+	}{
+		{
+			name:     "Volcengine domestic",
+			wantHost: "ark.cn-beijing.volcengineapi.com",
+			create: func(client HTTPDoer) (*OfficialActionAdapter, error) {
+				return NewVolcengineActionAdapter("ACCESS|SECRET", "project-cn", client)
+			},
+		},
+		{
+			name:     "BytePlus overseas",
+			wantHost: "ark.ap-southeast-1.byteplusapi.com",
+			create: func(client HTTPDoer) (*OfficialActionAdapter, error) {
+				return NewBytePlusActionAdapter("ACCESS|SECRET", "ap-southeast-1", "project-global", client)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var capturedHost string
+			adapter, err := test.create(assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+				capturedHost = req.URL.Host
+				return assetJSONResponse(`{"ResponseMetadata":{},"Result":{"Items":[],"TotalCount":0}}`), nil
+			}))
+			require.NoError(t, err)
+
+			_, _, err = adapter.ListAssets(context.Background(), AssetListRequest{GroupType: "AIGC", Page: 1, PageSize: 1})
+
+			require.NoError(t, err)
+			assert.Equal(t, test.wantHost, capturedHost)
+		})
+	}
+}
+
 func TestOfficialActionVerificationUsesOpaqueProviderSession(t *testing.T) {
 	actions := make([]string, 0, 2)
 	bodies := make([]map[string]any, 0, 2)
-	adapter, err := NewOfficialActionAdapter(
-		"https://ark.ap-southeast-1.byteplusapi.com",
+	adapter, err := NewBytePlusActionAdapter(
 		"ACCESS|SECRET",
 		"ap-southeast-1",
 		"project-a",
@@ -108,8 +144,7 @@ func TestOfficialActionVerificationUsesOpaqueProviderSession(t *testing.T) {
 }
 
 func TestOfficialActionDeleteGroupUsesVerifiedActionAndNoBearerAuth(t *testing.T) {
-	adapter, err := NewOfficialActionAdapter(
-		"https://ark.ap-southeast-1.byteplusapi.com",
+	adapter, err := NewBytePlusActionAdapter(
 		"ACCESS|SECRET",
 		"ap-southeast-1",
 		"project-a",
@@ -123,12 +158,12 @@ func TestOfficialActionDeleteGroupUsesVerifiedActionAndNoBearerAuth(t *testing.T
 	require.NoError(t, adapter.DeleteGroup(context.Background(), "group-1"))
 }
 
-func TestOfficialActionAdapterRejectsUnsafeConfiguration(t *testing.T) {
-	_, err := NewOfficialActionAdapter("http://ark.example", "ACCESS|SECRET", "region", "project", nil)
+func TestOfficialActionAdapterRejectsInvalidConfiguration(t *testing.T) {
+	_, err := NewBytePlusActionAdapter("single-value", "region", "project", nil)
 	require.Error(t, err)
-	_, err = NewOfficialActionAdapter("https://ark.example", "single-value", "region", "project", nil)
+	_, err = NewBytePlusActionAdapter("ACCESS|SECRET", "", "project", nil)
 	require.Error(t, err)
-	_, err = NewOfficialActionAdapter("https://ark.example", "ACCESS|SECRET", "", "project", nil)
+	_, err = NewVolcengineActionAdapter("ACCESS|SECRET", "", nil)
 	require.Error(t, err)
 }
 

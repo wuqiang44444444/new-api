@@ -472,10 +472,11 @@ func seedanceAssetAdapter(channel *model.Channel) (assetadapter.Adapter, string,
 	}
 	var adapter assetadapter.Adapter
 	switch settings.AssetUpstreamProtocol {
-	case dto.AssetUpstreamProtocolVolcengineAction, dto.AssetUpstreamProtocolBytePlusAction:
-		adapter, err = assetadapter.NewOfficialActionAdapter(
-			model.AssetActionBaseURL(settings.AssetUpstreamProtocol, settings.AssetRegion), key,
-			settings.AssetRegion, settings.AssetProviderProject, httpClient,
+	case dto.AssetUpstreamProtocolVolcengineAction:
+		adapter, err = assetadapter.NewVolcengineActionAdapter(key, settings.AssetProviderProject, httpClient)
+	case dto.AssetUpstreamProtocolBytePlusAction:
+		adapter, err = assetadapter.NewBytePlusActionAdapter(
+			key, settings.AssetRegion, settings.AssetProviderProject, httpClient,
 		)
 	case dto.AssetUpstreamProtocolArkAssetsV1:
 		adapter = assetadapter.NewArkAdapter(channel.GetBaseURL(), key, httpClient)

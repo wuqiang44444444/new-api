@@ -19,8 +19,7 @@ func TestOfficialActionListContractsRequireAndSendGroupType(t *testing.T) {
 		body   map[string]any
 	}
 	calls := make([]capturedCall, 0, 3)
-	adapter, err := NewOfficialActionAdapter(
-		"https://ark.ap-southeast-1.byteplusapi.com",
+	adapter, err := NewBytePlusActionAdapter(
 		"ACCESS|SECRET",
 		"ap-southeast-1",
 		"project-a",
@@ -53,8 +52,7 @@ func TestOfficialActionListContractsRequireAndSendGroupType(t *testing.T) {
 
 func TestOfficialActionListsRejectMissingGroupTypeBeforeCallingUpstream(t *testing.T) {
 	called := false
-	adapter, err := NewOfficialActionAdapter(
-		"https://ark.ap-southeast-1.byteplusapi.com",
+	adapter, err := NewBytePlusActionAdapter(
 		"ACCESS|SECRET",
 		"ap-southeast-1",
 		"project-a",
@@ -74,8 +72,7 @@ func TestOfficialActionListsRejectMissingGroupTypeBeforeCallingUpstream(t *testi
 }
 
 func TestOfficialActionHTTPErrorKeepsSafeProviderCode(t *testing.T) {
-	adapter, err := NewOfficialActionAdapter(
-		"https://ark.ap-southeast-1.byteplusapi.com",
+	adapter, err := NewBytePlusActionAdapter(
 		"ACCESS|SECRET",
 		"ap-southeast-1",
 		"project-a",

@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-10
+last-reviewed: 2026-08-11
 ---
 
 # 视频模型 API 调用指南
@@ -82,8 +82,10 @@ DELETE /api/v3/contents/generations/tasks/{task_id}
 
 ## 5. 素材
 
-`content` 可以包含 HTTP/HTTPS URL、Data URL 和 `asset://ast_*`。平台素材必须属于当前
+`content` 可以包含 HTTP/HTTPS URL、Data URL、`asset://ast_*`，国内/海外官方模型还支持
+`asset://pubref_<Provider公共AssetID>`。平台私域素材必须属于当前
 `user_id + app_id`，状态为 `ready`，并且创建时客户模型、Channel、协议和凭据身份与本次请求一致。
+`pubref_*` 由调用方从官方目录取得，平台只转发，最终可用性以 Provider 响应为准。
 素材管理详见[素材库对接指南](素材库对接指南.md)。
 
 ## 6. 模型上线

@@ -20,6 +20,7 @@ func TestAssetResolveTaskError(t *testing.T) {
 		code     string
 		status   int
 	}{
+		{"invalid reference", service.ErrInvalidAssetRequest, "invalid_asset_reference", http.StatusBadRequest},
 		{"library unavailable", service.ErrAssetLibraryUnavailable, "asset_upstream_unavailable", http.StatusServiceUnavailable},
 		{"asset not found", service.ErrAssetNotFound, "asset_not_found", http.StatusNotFound},
 		{"asset not ready", service.ErrAssetNotReady, "asset_not_ready", http.StatusConflict},

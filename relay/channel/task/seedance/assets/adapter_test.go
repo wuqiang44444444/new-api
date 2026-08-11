@@ -65,8 +65,7 @@ func TestProtocolAdaptersNormalizeCreationContracts(t *testing.T) {
 
 func TestMoxingAndBytePlusImplementUnifiedRealPersonContract(t *testing.T) {
 	moxing := NewArkAdapter("https://tokensave.pro", "moxing-key", nil)
-	bytePlus, err := NewOfficialActionAdapter(
-		"https://ark.ap-southeast-1.byteplusapi.com",
+	bytePlus, err := NewBytePlusActionAdapter(
 		"ACCESS|SECRET",
 		"ap-southeast-1",
 		"project-a",

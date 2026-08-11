@@ -180,8 +180,10 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 
 **Link assets and real-person verification proxy:**
 
-- 客户接口只暴露 `ast_*`、`astgrp_*` 和 `asset://` 平台身份，不暴露 Provider ID、账号或协议细节；
-  source URL 只允许出现在创建请求和当次 Provider 调用中，不得持久化、记录或返回；平台不保存媒体二进制。
+- 私域素材只暴露 `ast_*`、`astgrp_*` 和 `asset://ast_*`，不暴露 Provider 私域 ID、账号或协议细节；
+  官方公共预置素材使用 `asset://pubref_<Provider公共AssetID>`，平台只校验格式、去命名空间和转发，
+  不提供公共目录或资格判断。source URL 只允许出现在创建请求和当次 Provider 调用中，不得持久化、
+  记录或返回；平台不保存媒体二进制。
 - 一个 Asset/AssetGroup 一对一固定到 `user_id + app_id`、Channel、Provider 账号、Region/Project、
   素材协议和一个 Provider 资源。Resolver 在每次 Provider 发送前复检所有权、app、状态和固定作用域。
 - 同一 Channel、Base URL、协议和 Provider 账号作用域内允许轮换 Key/AK/SK；凭据值不参与素材作用域

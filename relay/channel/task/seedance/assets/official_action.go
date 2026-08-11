@@ -19,8 +19,11 @@ import (
 )
 
 const (
-	officialActionService = "ark"
-	officialActionVersion = "2024-01-01"
+	officialActionService       = "ark"
+	officialActionVersion       = "2024-01-01"
+	volcengineActionBaseURL     = "https://ark.cn-beijing.volcengineapi.com"
+	volcengineActionRegion      = "cn-beijing"
+	bytePlusActionBaseURLFormat = "https://ark.%s.byteplusapi.com"
 )
 
 type OfficialActionAdapter struct {
@@ -33,14 +36,23 @@ type OfficialActionAdapter struct {
 	now             func() time.Time
 }
 
-func NewOfficialActionAdapter(baseURL, credential, region, providerProject string, httpClient HTTPDoer) (*OfficialActionAdapter, error) {
+func NewVolcengineActionAdapter(credential, providerProject string, httpClient HTTPDoer) (*OfficialActionAdapter, error) {
+	return newOfficialActionAdapter(volcengineActionBaseURL, credential, volcengineActionRegion, providerProject, httpClient)
+}
+
+func NewBytePlusActionAdapter(credential, region, providerProject string, httpClient HTTPDoer) (*OfficialActionAdapter, error) {
+	region = strings.TrimSpace(region)
+	return newOfficialActionAdapter(fmt.Sprintf(bytePlusActionBaseURLFormat, region), credential, region, providerProject, httpClient)
+}
+
+func newOfficialActionAdapter(baseURL, credential, region, providerProject string, httpClient HTTPDoer) (*OfficialActionAdapter, error) {
 	parts := strings.SplitN(strings.TrimSpace(credential), "|", 2)
 	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
 		return nil, fmt.Errorf("official Action credential must use ACCESS_KEY|SECRET_KEY")
 	}
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, fmt.Errorf("official Action base URL must be an absolute HTTPS URL without credentials, query, or fragment")
+		return nil, fmt.Errorf("official Action endpoint is invalid")
 	}
 	if strings.TrimSpace(region) == "" || strings.TrimSpace(providerProject) == "" {
 		return nil, fmt.Errorf("official Action Region and ProviderProject are required")

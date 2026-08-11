@@ -169,7 +169,7 @@ func TestSeedanceSettingsAcceptVolcengineOfficialAssetProtocol(t *testing.T) {
 		AssetRegion:           VolcengineAssetActionRegion,
 	})
 	require.NoError(t, channel.ValidateSettings())
-	assert.Equal(t, "https://ark.cn-beijing.volces.com", AssetActionBaseURL(
+	assert.Equal(t, VolcengineAssetActionBaseURL, AssetActionBaseURL(
 		dto.AssetUpstreamProtocolVolcengineAction,
 		VolcengineAssetActionRegion,
 	))

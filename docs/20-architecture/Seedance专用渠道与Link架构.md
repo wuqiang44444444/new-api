@@ -240,8 +240,16 @@ PATCH  /v1/assets/{asset_id}
 DELETE /v1/assets/{asset_id}
 ```
 
-平台身份为 `astgrp_*`、`ast_*` 和 `asset://ast_*`。客户不能提交裸 Provider Asset ID，也不能看到
-Provider 账号级资源列表。控制台既有素材必须先由管理员显式导入并分配到 `user_id + app_id`。
+素材引用分为两个不重叠的北向命名空间：
+
+| 引用 | 含义 | 平台责任 |
+| --- | --- | --- |
+| `asset://ast_*` | 平台创建并映射的 Provider 私域素材 | 按 `user_id + app_id` 校验、解析和冻结 |
+| `asset://pubref_<Provider公共AssetID>` | 调用方自行从官方公共目录取得的预置素材 | 校验格式、去掉 `pubref_` 后转发 |
+
+`pubref_*` 不是平台 Asset，不进入 `/v1/assets`、数据库或租户配额；平台不提供公共目录列表、搜索、详情、
+资格判断或可用性预检，最终结果由 Provider 判定。客户不得提交不带 `ast_*` / `pubref_*` 命名空间的裸
+Provider Asset ID，也不能通过平台查看 Provider 账号级资源列表。
 
 ### 9.2 一对一 Provider 资源
 
@@ -290,7 +298,8 @@ H5、人脸表单、reservation 或自建撤回状态机。Provider 不支持删
 
 ## 10. 素材参与视频创建
 
-ModelArk V3 可以同时携带 HTTP/HTTPS URL、Data URL 和 `asset://ast_*`。只要出现平台素材：
+ModelArk V3 可以同时携带 HTTP/HTTPS URL、Data URL、`asset://ast_*` 和官方 `asset://pubref_*`。
+`ast_*` 按以下私域规则解析：
 
 1. 客户模型确定的 Channel 必须等于所有素材冻结 Channel；
 2. 所有平台素材必须属于相同 Provider 账号、Region 和 Project；
@@ -300,6 +309,10 @@ ModelArk V3 可以同时携带 HTTP/HTTPS URL、Data URL 和 `asset://ast_*`。�
 
 Resolver 是平台素材身份到 Provider 引用的唯一转换权威。请求级 URL/Data URL 不自动获得 Asset、
 迁移、真人认证或撤回语义。
+
+`pubref_*` 仅对 `modelark_v3_volcengine` 和 `modelark_v3_byteplus` 开放。Resolver 只校验公共 ID 使用安全
+字符且长度合规，再把 `asset://pubref_<id>` 改写为 `asset://<id>`；不查询私域库、不创建 Asset，也不
+判断该 ID 是否确属公共目录。Provider 返回的不存在、无权限、审核或配额错误走统一上游错误语义。
 
 ## 11. 计费与风险
 
@@ -348,7 +361,7 @@ Resolver 是平台素材身份到 Provider 引用的唯一转换权威。请求�
 4. Seedance 不进入原生分发池，不使用 Priority/Weight/重试/切换。
 5. 每个视频创建只发送一次 Provider POST；`unknown` 不自动退款。
 6. Task 按创建时冻结的 Channel、协议、连接、素材和计费事实执行。
-7. Asset/AssetGroup 按 `user_id + app_id` 隔离并一对一固定 Provider 作用域。
+7. `ast_*` / AssetGroup 按 `user_id + app_id` 隔离并一对一固定 Provider 作用域；`pubref_*` 不进入资源域。
 8. 真人认证直接使用 Provider 页面，平台不保存生物识别材料。
 9. 不支持字段和操作明确失败，不静默兼容或伪造成功。
 10. 主数据库持有耐久事实，缓存和投影不能成为唯一权威。

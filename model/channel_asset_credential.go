@@ -24,6 +24,7 @@ type ChannelAssetCredential struct {
 var ErrAssetCredentialProfileActive = errors.New("official asset profile must be disabled before clearing its credential")
 
 const VolcengineAssetActionRegion = "cn-beijing"
+const VolcengineAssetActionBaseURL = "https://ark.cn-beijing.volcengineapi.com"
 
 func GetChannelAssetCredential(channelID int) (*ChannelAssetCredential, error) {
 	return getChannelAssetCredential(DB, channelID)
@@ -83,29 +84,19 @@ func NormalizeChannelAssetCredential(input *dto.ChannelAssetCredentialInput) (*C
 	}, nil
 }
 
-func OfficialAssetActionBaseURL(region string) string {
+func BytePlusAssetActionBaseURL(region string) string {
 	return "https://ark." + strings.TrimSpace(region) + ".byteplusapi.com"
 }
 
 func AssetActionBaseURL(protocol dto.AssetUpstreamProtocol, region string) string {
 	switch protocol {
 	case dto.AssetUpstreamProtocolVolcengineAction:
-		return "https://ark.cn-beijing.volces.com"
+		return VolcengineAssetActionBaseURL
 	case dto.AssetUpstreamProtocolBytePlusAction:
-		return OfficialAssetActionBaseURL(region)
+		return BytePlusAssetActionBaseURL(region)
 	default:
 		return ""
 	}
-}
-
-func OfficialAssetCredentialFingerprint(_, _, project, region string) string {
-	return AssetCredentialFingerprint(
-		"official_action_assets/v2\n"+OfficialAssetActionBaseURL(region),
-		"",
-		string(dto.AssetUpstreamProfileOfficial),
-		project,
-		region,
-	)
 }
 
 func ResolveAssetChannelCredential(channel *Channel) (string, string, error) {

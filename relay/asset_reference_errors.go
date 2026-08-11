@@ -12,6 +12,8 @@ import (
 // 视为内部错误返回 500，不伪装成素材竞态。映射独立成文件，避免扩写 asset_reference_resolver.go 的现有逻辑。
 func assetResolveTaskError(err error) (code string, status int) {
 	switch {
+	case errors.Is(err, service.ErrInvalidAssetRequest):
+		return "invalid_asset_reference", http.StatusBadRequest
 	case errors.Is(err, service.ErrAssetLibraryUnavailable):
 		return "asset_upstream_unavailable", http.StatusServiceUnavailable
 	case errors.Is(err, service.ErrAssetNotFound):

@@ -203,10 +203,13 @@ Provider 请求已经发送、但平台无法确认是否创建成功时，结�
 
 - `ast_*`：一个素材；
 - `astgrp_*`：一个素材组或真人素材组；
-- `asset://ast_*`：视频请求中的平台素材引用。
+- `asset://ast_*`：视频请求中的平台私域素材引用；
+- `asset://pubref_<Provider公共AssetID>`：调用方自行取得的官方公共预置素材引用。
 
-一个平台资源一对一固定到 `user_id + app_id`、客户模型对应的渠道和 Provider 账号作用域。客户不会
-看到或提交裸 Provider Asset ID。国内、海外和第三方素材不自动迁移或互相复用；同一媒体要在不同
+一个平台私域资源一对一固定到 `user_id + app_id`、客户模型对应的渠道和 Provider 账号作用域。客户不会
+看到或提交裸 Provider 私域 Asset ID。`pubref_*` 不属于平台资源：平台不列举、搜索、保存或判断其公共
+资格，只向国内/海外官方 ModelArk V3 Provider 转发调用方声明的公共 ID。国内、海外和第三方私域素材
+不自动迁移或互相复用；同一媒体要在不同
 线路使用时，必须分别创建并经过各自 Provider 处理。
 
 平台不保存媒体二进制。创建素材使用的 HTTP/HTTPS URL 或 Data URL 只参与当次请求和 Provider 调用，
@@ -214,7 +217,8 @@ Provider 请求已经发送、但平台无法确认是否创建成功时，结�
 
 ### 10.3 在视频请求中使用素材
 
-同一 ModelArk V3 请求可以混合使用 `asset://ast_*`、HTTP/HTTPS URL 和 Data URL。只要包含平台素材：
+同一 ModelArk V3 请求可以混合使用 `asset://ast_*`、官方 `asset://pubref_*`、HTTP/HTTPS URL 和 Data URL。
+只要包含平台私域素材：
 
 1. 素材必须属于请求客户模型固定的同一渠道；
 2. 所有平台素材必须属于相同 Provider 账号、Region 和 Project；
@@ -222,6 +226,9 @@ Provider 请求已经发送、但平台无法确认是否创建成功时，结�
 4. 渠道不一致返回 `asset_channel_mismatch`；账号或地域作用域不一致返回 `asset_scope_conflict`。
 
 请求级 URL/Data URL 不自动获得平台素材、迁移、真人认证、撤回或长期审核语义。
+
+`pubref_*` 只做格式校验并转换为 Provider 的 `asset://<id>`；不存在、不可用、审核或权限错误由 Provider
+决定并由平台返回。平台不提供公共素材管理接口。
 
 ### 10.4 真人认证代理
 
