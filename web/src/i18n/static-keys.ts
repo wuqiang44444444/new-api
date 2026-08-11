@@ -215,6 +215,22 @@ export const STATIC_I18N_KEYS = [
   // Channel Affinity section
   'Channel Affinity',
 
+  // Channel types
+  'Seedance Dedicated Channel',
+
+  // Seedance protocol options
+  'Volcengine ModelArk V3',
+  'BytePlus ModelArk V3',
+  'Media Task V1',
+  'Ark Media V1',
+  'Media Arrays V2',
+  'FunCloud Seedance V2',
+  'No Asset Protocol',
+  'Volcengine Official Assets',
+  'BytePlus Official Assets',
+  'Ark Assets V1',
+  'Relay Assets V1',
+
   // Models constants
   'Exact Match',
   'Prefix Match',

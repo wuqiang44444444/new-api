@@ -14,117 +14,75 @@ const (
 	AssetKindGeneral    = "general"
 	AssetKindRealPerson = "real_person"
 
-	AssetStatusCreating       = "creating"
-	AssetStatusCreateUnknown  = "create_unknown"
-	AssetStatusProcessing     = "processing"
-	AssetStatusReady          = "ready"
-	AssetStatusFailed         = "failed"
-	AssetStatusDeleting       = "deleting"
-	AssetStatusDeletionFailed = "deletion_failed"
-	AssetStatusDeleted        = "deleted"
-
-	AssetBindingStatusPending         = "pending"
-	AssetBindingStatusCreating        = "creating"
-	AssetBindingStatusCreateUnknown   = "create_unknown"
-	AssetBindingStatusProcessing      = "processing"
-	AssetBindingStatusActive          = "active"
-	AssetBindingStatusFailed          = "failed"
-	AssetBindingStatusStaleCredential = "stale_credential"
-	AssetBindingStatusDeleting        = "deleting"
-	AssetBindingStatusDeletionFailed  = "deletion_failed"
-	AssetBindingStatusDeleted         = "deleted"
+	AssetStatusProcessing = "processing"
+	AssetStatusReady      = "ready"
+	AssetStatusFailed     = "failed"
+	AssetStatusDeleted    = "deleted"
 )
 
 var (
-	ErrAssetCountLimit = errors.New("asset count limit reached")
+	ErrAssetCountLimit                = errors.New("asset count limit reached")
+	ErrChannelHasActiveAssetResources = errors.New("channel has active asset resources")
 )
 
+// Asset is the one-to-one platform projection of one Provider asset. The
+// selected channel, credential scope and Provider resource never fan out.
 type Asset struct {
-	ID                 int64  `json:"-" gorm:"primaryKey"`
-	PublicID           string `json:"id" gorm:"type:varchar(64);uniqueIndex"`
-	UserID             int    `json:"-" gorm:"index:idx_assets_user_status"`
-	CreatedByTokenID   int    `json:"-" gorm:"index"`
-	AppID              int    `json:"-" gorm:"index"`
-	EndUserSubjectHash string `json:"-" gorm:"type:varchar(64);index"`
-	Name               string `json:"name" gorm:"type:varchar(64)"`
-	AssetKind          string `json:"asset_kind" gorm:"type:varchar(32);index"`
-	MediaType          string `json:"media_type" gorm:"type:varchar(16);index"`
-	RequestedModel     string `json:"-" gorm:"type:varchar(191);index"`
-	LinkPubSnapshot    `json:"-" gorm:"embedded"`
-	AuthorizationID    *int64 `json:"-" gorm:"index"`
-	SupersedesAssetID  *int64 `json:"-" gorm:"index"`
-	MigrationBatchID   string `json:"-" gorm:"type:varchar(64);index"`
-	MigrationReason    string `json:"-" gorm:"type:varchar(300)"`
-	Status             string `json:"status" gorm:"type:varchar(32);index:idx_assets_user_status"`
-	ErrorCode          string `json:"error_code,omitempty" gorm:"type:varchar(64)"`
-	ErrorMessage       string `json:"error,omitempty" gorm:"type:text"`
-	CreatedAt          int64  `json:"created_at" gorm:"bigint;index"`
-	UpdatedAt          int64  `json:"updated_at" gorm:"bigint;index"`
-	DeletedAt          int64  `json:"-" gorm:"bigint;index"`
-}
-
-type AssetBinding struct {
 	ID                     int64  `json:"-" gorm:"primaryKey"`
 	PublicID               string `json:"id" gorm:"type:varchar(64);uniqueIndex"`
-	AssetID                int64  `json:"-" gorm:"uniqueIndex:idx_asset_channel_credential;index"`
-	UserID                 int    `json:"-" gorm:"index"`
-	ChannelID              int    `json:"-" gorm:"uniqueIndex:idx_asset_channel_credential;index"`
-	CredentialFingerprint  string `json:"-" gorm:"type:varchar(64);uniqueIndex:idx_asset_channel_credential"`
-	LinkImplementationID   string `json:"-" gorm:"type:varchar(128);uniqueIndex:idx_asset_channel_credential;index"`
-	LinkImplementationVer  string `json:"-" gorm:"column:link_implementation_version;type:varchar(32);uniqueIndex:idx_asset_channel_credential"`
-	LinkImplementationHash string `json:"-" gorm:"type:varchar(80);index"`
-	UpstreamProfile        string `json:"-" gorm:"type:varchar(32);index"`
+	UserID                 int    `json:"-" gorm:"index:idx_assets_user_status"`
+	CreatedByTokenID       int    `json:"-" gorm:"index"`
+	AppID                  int    `json:"-" gorm:"index"`
+	Name                   string `json:"name" gorm:"type:varchar(64)"`
+	AssetKind              string `json:"asset_kind" gorm:"type:varchar(32);index"`
+	MediaType              string `json:"media_type" gorm:"type:varchar(16);index"`
+	RequestedModel         string `json:"-" gorm:"type:varchar(191);index"`
+	ChannelID              int    `json:"-" gorm:"index"`
+	CredentialFingerprint  string `json:"-" gorm:"type:varchar(64);index"`
+	UpstreamProtocol       string `json:"-" gorm:"type:varchar(96);index"`
 	ProviderProject        string `json:"-" gorm:"type:varchar(128)"`
 	Region                 string `json:"-" gorm:"type:varchar(64)"`
+	AssetGroupID           *int64 `json:"-" gorm:"index"`
 	UpstreamResourceID     string `json:"-" gorm:"type:varchar(191)"`
 	UpstreamBusinessID     string `json:"-" gorm:"type:varchar(191)"`
-	UpstreamRequestID      string `json:"-" gorm:"type:varchar(191);index"`
 	UpstreamReferenceType  string `json:"-" gorm:"type:varchar(32)"`
 	UpstreamReferenceValue string `json:"-" gorm:"type:varchar(512)"`
-	UpstreamGroupBindingID *int64 `json:"-" gorm:"index"`
-	RequestedModel         string `json:"model,omitempty" gorm:"type:varchar(191)"`
-	LinkPubSnapshot        `json:"-" gorm:"embedded"`
-	BindingTarget          string `json:"target,omitempty" gorm:"type:varchar(64)"`
-	Status                 string `json:"status" gorm:"type:varchar(32);index"`
+	Status                 string `json:"status" gorm:"type:varchar(32);index:idx_assets_user_status"`
 	ErrorCode              string `json:"error_code,omitempty" gorm:"type:varchar(64)"`
 	ErrorMessage           string `json:"error,omitempty" gorm:"type:text"`
 	CreatedAt              int64  `json:"created_at" gorm:"bigint;index"`
 	UpdatedAt              int64  `json:"updated_at" gorm:"bigint;index"`
+	DeletedAt              int64  `json:"-" gorm:"bigint;index"`
 }
 
-type AssetGroupBinding struct {
-	ID                    int64  `json:"-" gorm:"primaryKey"`
-	UserID                int    `json:"-" gorm:"index"`
-	AuthorizationID       *int64 `json:"-" gorm:"index"`
-	ScopeKey              string `json:"-" gorm:"type:varchar(191);uniqueIndex:idx_asset_group_scope"`
-	ChannelID             int    `json:"-" gorm:"uniqueIndex:idx_asset_group_scope;index"`
-	CredentialFingerprint string `json:"-" gorm:"type:varchar(64);uniqueIndex:idx_asset_group_scope"`
-	UpstreamProfile       string `json:"-" gorm:"type:varchar(32)"`
-	ProviderProject       string `json:"-" gorm:"type:varchar(128)"`
-	Region                string `json:"-" gorm:"type:varchar(64)"`
-	GroupKind             string `json:"-" gorm:"type:varchar(32);uniqueIndex:idx_asset_group_scope"`
-	Name                  string `json:"name" gorm:"type:varchar(64)"`
-	Description           string `json:"description,omitempty" gorm:"type:varchar(300)"`
-	UpstreamResourceID    string `json:"-" gorm:"type:varchar(191)"`
-	UpstreamGroupID       string `json:"-" gorm:"type:varchar(191)"`
-	UpstreamRequestID     string `json:"-" gorm:"type:varchar(191);index"`
-	Status                string `json:"status" gorm:"type:varchar(32);index"`
-	ErrorCode             string `json:"error_code,omitempty" gorm:"type:varchar(64)"`
-	ErrorMessage          string `json:"error,omitempty" gorm:"type:text"`
-	CreatedAt             int64  `json:"created_at" gorm:"bigint;index"`
-	UpdatedAt             int64  `json:"updated_at" gorm:"bigint;index"`
-}
-
-type AssetOwnershipClaim struct {
-	ID                         int64  `json:"-" gorm:"primaryKey"`
-	ProviderAccountFingerprint string `json:"-" gorm:"type:varchar(64);uniqueIndex:idx_asset_ownership_scope"`
-	UpstreamProfile            string `json:"-" gorm:"type:varchar(32);uniqueIndex:idx_asset_ownership_scope"`
-	ProviderProject            string `json:"-" gorm:"type:varchar(128);uniqueIndex:idx_asset_ownership_scope"`
-	Region                     string `json:"-" gorm:"type:varchar(64);uniqueIndex:idx_asset_ownership_scope"`
-	UpstreamResourceID         string `json:"-" gorm:"type:varchar(191);uniqueIndex:idx_asset_ownership_scope"`
-	AssetBindingID             int64  `json:"-" gorm:"uniqueIndex"`
-	UserID                     int    `json:"-" gorm:"index"`
-	CreatedAt                  int64  `json:"-" gorm:"bigint"`
+// AssetGroup represents both ordinary Provider groups and the upstream
+// real-person verification flow. The platform stores no face media.
+type AssetGroup struct {
+	ID                        int64  `json:"-" gorm:"primaryKey"`
+	PublicID                  string `json:"id" gorm:"type:varchar(64);uniqueIndex"`
+	UserID                    int    `json:"-" gorm:"index"`
+	CreatedByTokenID          int    `json:"-" gorm:"index"`
+	AppID                     int    `json:"-" gorm:"index"`
+	Name                      string `json:"name" gorm:"type:varchar(64)"`
+	Description               string `json:"description,omitempty" gorm:"type:varchar(300)"`
+	GroupKind                 string `json:"group_kind" gorm:"type:varchar(32);index"`
+	RequestedModel            string `json:"-" gorm:"type:varchar(191);index"`
+	ChannelID                 int    `json:"-" gorm:"index"`
+	CredentialFingerprint     string `json:"-" gorm:"type:varchar(64);index"`
+	UpstreamProtocol          string `json:"-" gorm:"type:varchar(96);index"`
+	ProviderProject           string `json:"-" gorm:"type:varchar(128)"`
+	Region                    string `json:"-" gorm:"type:varchar(64)"`
+	UpstreamResourceID        string `json:"-" gorm:"type:varchar(191)"`
+	UpstreamBusinessID        string `json:"-" gorm:"type:varchar(191)"`
+	VerificationSessionID     string `json:"-" gorm:"type:varchar(191)"`
+	VerificationURLCiphertext string `json:"-" gorm:"type:text"`
+	VerificationURLExpiresAt  int64  `json:"-" gorm:"bigint"`
+	Status                    string `json:"status" gorm:"type:varchar(32);index"`
+	ErrorCode                 string `json:"error_code,omitempty" gorm:"type:varchar(64)"`
+	ErrorMessage              string `json:"error,omitempty" gorm:"type:text"`
+	CreatedAt                 int64  `json:"created_at" gorm:"bigint;index"`
+	UpdatedAt                 int64  `json:"updated_at" gorm:"bigint;index"`
+	DeletedAt                 int64  `json:"-" gorm:"bigint;index"`
 }
 
 type AssetListFilter struct {
@@ -150,23 +108,14 @@ func (a *Asset) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
-func (b *AssetBinding) BeforeCreate(_ *gorm.DB) error {
-	if b.PublicID == "" {
-		id, err := generateAssetPublicID("ab_")
+func (g *AssetGroup) BeforeCreate(_ *gorm.DB) error {
+	if g.PublicID == "" {
+		id, err := generateAssetPublicID("astgrp_")
 		if err != nil {
 			return err
 		}
-		b.PublicID = id
+		g.PublicID = id
 	}
-	now := common.GetTimestamp()
-	if b.CreatedAt == 0 {
-		b.CreatedAt = now
-	}
-	b.UpdatedAt = now
-	return nil
-}
-
-func (g *AssetGroupBinding) BeforeCreate(_ *gorm.DB) error {
 	now := common.GetTimestamp()
 	if g.CreatedAt == 0 {
 		g.CreatedAt = now
@@ -183,27 +132,6 @@ func generateAssetPublicID(prefix string) (string, error) {
 	return prefix + key, nil
 }
 
-func countUserAssets(tx *gorm.DB, userID int) (int64, error) {
-	query := tx.Model(&Asset{}).Where("user_id = ? AND deleted_at = ?", userID, 0)
-	var count int64
-	if err := query.Count(&count).Error; err != nil {
-		return 0, err
-	}
-	return count, nil
-}
-
-func ListAssetBindings(userID int, assetID int64) ([]AssetBinding, error) {
-	var bindings []AssetBinding
-	err := DB.Where("user_id = ? AND asset_id = ?", userID, assetID).Order("id desc").Find(&bindings).Error
-	return bindings, err
-}
-
-func ActiveBindingsForAssets(assetIDs []int64) ([]AssetBinding, error) {
-	var bindings []AssetBinding
-	err := DB.Where("asset_id IN ? AND status = ? AND upstream_reference_type = ?", assetIDs, AssetBindingStatusActive, "asset_uri_id").Find(&bindings).Error
-	return bindings, err
-}
-
 func ValidateAssetKind(kind string) bool {
 	return kind == AssetKindGeneral || kind == AssetKindRealPerson
 }
@@ -217,15 +145,11 @@ func ValidateAssetMediaType(mediaType string) bool {
 	}
 }
 
-func AssetScopeKey(userID int, authorizationID *int64) string {
-	if authorizationID != nil {
-		return fmt.Sprintf("rpa:%d", *authorizationID)
-	}
-	return fmt.Sprintf("usr:%d", userID)
-}
-
-func AssetCredentialFingerprint(baseURL, key, profile string, providerScope ...string) string {
-	input := strings.TrimRight(baseURL, "/") + "\n" + key + "\n" + profile
+func AssetCredentialFingerprint(baseURL, _ string, protocol string, providerScope ...string) string {
+	// Credentials are intentionally excluded: rotating a Key/AK/SK on the same
+	// channel must not invalidate resources already fixed to that channel and
+	// Provider scope.
+	input := strings.TrimRight(baseURL, "/") + "\n" + protocol
 	for _, value := range providerScope {
 		if strings.TrimSpace(value) != "" {
 			input += "\n" + strings.TrimSpace(value)
@@ -236,27 +160,18 @@ func AssetCredentialFingerprint(baseURL, key, profile string, providerScope ...s
 }
 
 func ChannelHasActiveAssetResources(channelID int) (bool, error) {
-	// A pre-asset-schema database cannot contain an asset dependency.
-	if !DB.Migrator().HasTable(&AssetBinding{}) {
+	if !DB.Migrator().HasTable(&Asset{}) {
 		return false, nil
 	}
-	var bindingCount int64
-	if err := DB.Model(&AssetBinding{}).Where("channel_id = ? AND status <> ?", channelID, AssetBindingStatusDeleted).Count(&bindingCount).Error; err != nil {
-		return false, err
+	var count int64
+	if err := DB.Model(&Asset{}).Where("channel_id = ? AND deleted_at = ?", channelID, 0).Count(&count).Error; err != nil || count > 0 {
+		return count > 0, err
 	}
-	if bindingCount > 0 {
-		return true, nil
+	if !DB.Migrator().HasTable(&AssetGroup{}) {
+		return false, nil
 	}
-	var groupCount int64
-	if err := DB.Model(&AssetGroupBinding{}).Where("channel_id = ? AND status <> ?", channelID, AssetBindingStatusDeleted).Count(&groupCount).Error; err != nil {
-		return false, err
-	}
-	if groupCount > 0 {
-		return true, nil
-	}
-	var authorizationCount int64
-	err := DB.Model(&RealPersonAuthorization{}).Where("channel_id = ? AND status NOT IN ?", channelID, []string{RealPersonAuthorizationExpired, RealPersonAuthorizationRevoked, RealPersonAuthorizationDeleted}).Count(&authorizationCount).Error
-	return authorizationCount > 0, err
+	err := DB.Model(&AssetGroup{}).Where("channel_id = ? AND deleted_at = ?", channelID, 0).Count(&count).Error
+	return count > 0, err
 }
 
 func FirstChannelWithActiveAssetResources(channelIDs []int) (int, bool, error) {
@@ -270,10 +185,4 @@ func FirstChannelWithActiveAssetResources(channelIDs []int) (int, bool, error) {
 		}
 	}
 	return 0, false, nil
-}
-
-func GetDisabledChannelIDs() ([]int, error) {
-	var ids []int
-	err := DB.Model(&Channel{}).Where("status = ? OR status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Pluck("id", &ids).Error
-	return ids, err
 }

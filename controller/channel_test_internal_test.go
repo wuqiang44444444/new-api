@@ -163,15 +163,15 @@ func TestCopyChannelRejectsInvalidLegacyProxySettings(t *testing.T) {
 func TestCopyChannelResetsOfficialAssetProfileWithoutCopyingCredential(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	origin := &model.Channel{
-		Type:   constant.ChannelTypeDoubaoVideo,
+		Type:   constant.ChannelTypeSeedanceLink,
 		Name:   "official asset channel",
 		Key:    "video-api-key",
 		Models: "video-model",
 		Group:  "default",
 	}
 	origin.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProfile:  dto.VideoUpstreamProfileOfficial,
-		AssetUpstreamProfile:  dto.AssetUpstreamProfileOfficial,
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3BytePlus,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolBytePlusAction,
 		AssetMinURLTTLSeconds: 3600,
 		AssetProviderProject:  "project-a",
 		AssetRegion:           "ap-southeast-1",
@@ -188,7 +188,8 @@ func TestCopyChannelResetsOfficialAssetProfileWithoutCopyingCredential(t *testin
 	var cloned model.Channel
 	require.NoError(t, db.Where("id <> ?", origin.Id).First(&cloned).Error)
 	settings := cloned.GetOtherSettings()
-	assert.Equal(t, dto.AssetUpstreamProfileNone, settings.AssetUpstreamProfile)
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, cloned.Status)
+	assert.Equal(t, dto.AssetUpstreamProtocolNone, settings.AssetUpstreamProtocol)
 	assert.Zero(t, settings.AssetMinURLTTLSeconds)
 	assert.Empty(t, settings.AssetProviderProject)
 	assert.Empty(t, settings.AssetRegion)

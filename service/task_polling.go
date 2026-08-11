@@ -125,10 +125,9 @@ func sweepUnrefundedFailedTasks(ctx context.Context) {
 // TaskPollSummary is the result recorded on an async_task_poll system task row,
 // summarizing one polling pass.
 type TaskPollSummary struct {
-	UnfinishedTasks   int `json:"unfinished_tasks"`
-	PlatformsScanned  int `json:"platforms_scanned"`
-	NullTasksFailed   int `json:"null_tasks_failed"`
-	ExposureIncidents int `json:"exposure_incidents"`
+	UnfinishedTasks  int `json:"unfinished_tasks"`
+	PlatformsScanned int `json:"platforms_scanned"`
+	NullTasksFailed  int `json:"null_tasks_failed"`
 }
 
 // RunTaskPollingOnce performs one async-task (Suno/video) polling pass
@@ -143,13 +142,11 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 	}
 
 	common.SysLog("任务进度轮询开始")
-	ReconcileRevokedTaskAssetAuthorizations(ctx, taskCreateAttemptReconcileLimit)
 	ReconcileRequestedTaskCancellations(ctx, taskCreateAttemptReconcileLimit)
 	ReconcileTaskCreateAttempts(ctx)
 	sweepTimedOutTasks(ctx)
 	ReconcileTaskBilling(ctx, refundReconciliationLimit)
 	if GetTaskAdaptorFunc == nil {
-		summary.ExposureIncidents = EvaluateProviderExposurePolicies(ctx, providerExposurePolicyLimit)
 		return summary
 	}
 	allTasks := model.GetAllUnFinishSyncTasks(constant.TaskQueryLimit)
@@ -210,9 +207,6 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 	}
 	if report != nil && ctx.Err() == nil {
 		report(totalPlatforms, totalPlatforms)
-	}
-	if ctx.Err() == nil {
-		summary.ExposureIncidents = EvaluateProviderExposurePolicies(ctx, providerExposurePolicyLimit)
 	}
 	common.SysLog("任务进度轮询完成")
 	return summary
@@ -528,7 +522,6 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		"video_upstream_profile":             videoUpstreamProfile,
 		"video_upstream_adapter_version":     adapterVersion.String(),
 		"video_upstream_query_path_template": taskVideoUpstreamQueryPath(task, ch),
-		"video_upstream_implementation_id":   privateData.LinkImplementationID,
 	}, proxy)
 	if err != nil {
 		var contractViolation *relaycommon.UpstreamContractViolation

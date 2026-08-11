@@ -18,14 +18,10 @@ func assetResolveTaskError(err error) (code string, status int) {
 		return "asset_not_found", http.StatusNotFound
 	case errors.Is(err, service.ErrAssetNotReady):
 		return "asset_not_ready", http.StatusConflict
-	case errors.Is(err, service.ErrRealPersonAuthorizationNotReady):
-		return "real_person_authorization_not_ready", http.StatusConflict
-	case errors.Is(err, service.ErrAssetCredentialChanged):
-		return "asset_credential_changed", http.StatusConflict
-	case errors.Is(err, service.ErrAssetBindingRequired):
-		return "asset_binding_required", http.StatusConflict
-	case errors.Is(err, service.ErrAssetSourceExpired):
-		return "asset_source_expired", http.StatusConflict
+	case errors.Is(err, service.ErrAssetChannelMismatch):
+		return "asset_channel_mismatch", http.StatusConflict
+	case errors.Is(err, service.ErrAssetScopeConflict):
+		return "asset_scope_conflict", http.StatusConflict
 	case errors.Is(err, service.ErrAssetReferenceUnresolvable):
 		return "asset_reference_unresolvable", http.StatusConflict
 	default:

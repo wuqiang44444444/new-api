@@ -119,6 +119,7 @@ export interface SearchUsersParams {
 
 export interface UserFormData {
   username: string
+  email?: string
   display_name: string
   password?: string
   role?: number // Only used when creating user

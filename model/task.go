@@ -116,30 +116,19 @@ func (m Properties) Value() (driver.Value, error) {
 }
 
 type TaskPrivateData struct {
-	Key                  string                   `json:"key,omitempty"`
-	UpstreamTaskID       string                   `json:"upstream_task_id,omitempty"`       // 上游真实 task ID
-	UpstreamRequestID    string                   `json:"upstream_request_id,omitempty"`    // 上游调用追踪 ID（如 moxing request_id），仅任务创建时从响应头捕获，用于事后对账；异步轮询阶段已不可得
-	ResultURL            string                   `json:"result_url,omitempty"`             // 任务成功后的结果 URL（视频地址等）
-	VideoUpstreamProfile dto.VideoUpstreamProfile `json:"video_upstream_profile,omitempty"` // 创建时的视频协议快照
-	// NorthboundContract* and SouthboundAdapterVersion are persisted compatibility
-	// names for the Link contract identity and channel adapter protocol version.
-	NorthboundContractID           string                      `json:"northbound_contract_id,omitempty"`
-	NorthboundContractVersion      string                      `json:"northbound_contract_version,omitempty"`
-	SouthboundAdapterVersion       string                      `json:"southbound_adapter_version,omitempty"`
-	LinkImplementationID           string                      `json:"link_implementation_id,omitempty"`
-	LinkImplementationVersion      string                      `json:"link_implementation_version,omitempty"`
-	LinkImplementationHash         string                      `json:"link_implementation_hash,omitempty"`
-	SKUCapabilityVersion           string                      `json:"sku_capability_version,omitempty"`
-	SKUCapabilityHash              string                      `json:"sku_capability_hash,omitempty"`
-	SKULifecycle                   VideoSKULifecycleCapability `json:"sku_lifecycle,omitempty"`
-	VideoUpstreamQueryBaseURL      string                      `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用
-	VideoUpstreamQueryPathTemplate string                      `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
-	VideoUpstreamProxy             string                      `json:"video_upstream_proxy,omitempty"`               // 创建时的代理快照，避免在途任务随渠道配置漂移
-	ClientRequest                  TaskClientRequestSnapshot   `json:"client_request,omitempty"`
-	AssetPublicIDs                 []string                    `json:"asset_public_ids,omitempty"`
-	AssetBindingIDs                []int64                     `json:"asset_binding_ids,omitempty"`
-	AppID                          int                         `json:"app_id,omitempty"`
-	EndUserSubjectHash             string                      `json:"end_user_subject_hash,omitempty"`
+	Key                            string                    `json:"key,omitempty"`
+	UpstreamTaskID                 string                    `json:"upstream_task_id,omitempty"`       // 上游真实 task ID
+	UpstreamRequestID              string                    `json:"upstream_request_id,omitempty"`    // 上游调用追踪 ID（如 moxing request_id），仅任务创建时从响应头捕获，用于事后对账；异步轮询阶段已不可得
+	ResultURL                      string                    `json:"result_url,omitempty"`             // 任务成功后的结果 URL（视频地址等）
+	VideoUpstreamProfile           dto.VideoUpstreamProfile  `json:"video_upstream_profile,omitempty"` // 创建时的视频协议快照
+	VideoUpstreamProtocol          dto.VideoUpstreamProtocol `json:"video_upstream_protocol,omitempty"`
+	SouthboundAdapterVersion       string                    `json:"southbound_adapter_version,omitempty"`
+	VideoUpstreamQueryBaseURL      string                    `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用
+	VideoUpstreamQueryPathTemplate string                    `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
+	VideoUpstreamProxy             string                    `json:"video_upstream_proxy,omitempty"`               // 创建时的代理快照，避免在途任务随渠道配置漂移
+	ClientRequest                  TaskClientRequestSnapshot `json:"client_request,omitempty"`
+	AssetPublicIDs                 []string                  `json:"asset_public_ids,omitempty"`
+	AppID                          int                       `json:"app_id,omitempty"`
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
 	BillingSource  string                     `json:"billing_source,omitempty"`   // "wallet" 或 "subscription"
 	SubscriptionId int                        `json:"subscription_id,omitempty"`  // 订阅 ID，用于订阅退款
@@ -150,8 +139,6 @@ type TaskPrivateData struct {
 	MediaImage     *TaskMediaImagePrivateData `json:"media_image,omitempty"`
 
 	AsyncBilling *TaskAsyncBillingContext `json:"async_billing,omitempty"`
-
-	LinkPubSnapshot
 }
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。
@@ -228,21 +215,7 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 		if linkVideoTask {
 			freezeTaskVideoUpstream(&privateData, relayInfo.ChannelMeta)
 			privateData.AssetPublicIDs = append([]string(nil), relayInfo.TaskRelayInfo.AssetPublicIDs...)
-			privateData.AssetBindingIDs = append([]int64(nil), relayInfo.TaskRelayInfo.AssetBindingIDs...)
 			privateData.AppID = relayInfo.TaskRelayInfo.AppID
-			privateData.EndUserSubjectHash = relayInfo.TaskRelayInfo.EndUserSubjectHash
-		}
-		if relayInfo.PublishedLinkContractSKU != "" {
-			implementation, ok := ResolveLinkImplementation(relayInfo.ChannelMeta.ChannelOtherSettings.LinkImplementation)
-			if ok {
-				privateData.LinkImplementationID = implementation.ID
-				privateData.LinkImplementationVersion = implementation.Version
-				privateData.LinkImplementationHash = implementation.ContentHash
-			}
-			privateData.LinkContractNamespace = relayInfo.LinkContractNamespace
-			privateData.LinkRouteFamily = relayInfo.LinkRouteFamily
-			privateData.PublishedLinkContractSKU = relayInfo.PublishedLinkContractSKU
-			privateData.LinkPublicationVersion = relayInfo.LinkPublicationVersion
 		}
 		if relayInfo.UpstreamModelName != "" {
 			properties.UpstreamModelName = relayInfo.UpstreamModelName

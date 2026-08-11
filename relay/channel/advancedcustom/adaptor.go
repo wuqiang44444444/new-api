@@ -180,9 +180,6 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		return a.convertOpenAICompatibleImageRequest(c, info, request)
 	case dto.AdvancedCustomConverterMediaTaskImageBlocking:
 		contractModel := info.OriginModelName
-		if info.PublishedLinkContractSKU != "" {
-			contractModel = info.PublishedLinkContractSKU
-		}
 		return convertMediaTaskImageRequest(request, contractModel)
 	default:
 		return nil, fmt.Errorf("converter %q does not support image requests", converter)

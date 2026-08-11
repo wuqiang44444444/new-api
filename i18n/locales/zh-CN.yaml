@@ -284,3 +284,11 @@ custom_oauth.name_empty: "提供商名称不能为空"
 custom_oauth.has_bindings: "无法删除已有用户绑定的提供商"
 custom_oauth.binding_not_found: "OAuth 绑定不存在"
 custom_oauth.provider_id_field_invalid: "无法从提供商响应中提取用户 ID"
+
+# Notification email messages
+notify.account_created.subject: "【{{.SiteName}}】您的账户已创建"
+notify.account_created.body: "<p>{{.Username}} 您好，</p><p>您在 {{.SiteName}} 的账户已创建成功。如非本人操作，请联系管理员。</p>"
+notify.password_changed.subject: "【{{.SiteName}}】您的密码已修改"
+notify.password_changed.body: "<p>{{.Username}} 您好，</p><p>您在 {{.SiteName}} 的账户密码刚刚被修改。如非本人操作，请立即重置密码或联系管理员。</p>"
+notify.token_created.subject: "【{{.SiteName}}】新 API 密钥已创建"
+notify.token_created.body: "<p>{{.Username}} 您好，</p><p>您的 {{.SiteName}} 账户刚刚创建了一个新的 API 密钥。如非本人操作，请立即检查您的密钥列表。</p>"

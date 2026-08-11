@@ -23,10 +23,8 @@ func TestAssetResolveTaskError(t *testing.T) {
 		{"library unavailable", service.ErrAssetLibraryUnavailable, "asset_upstream_unavailable", http.StatusServiceUnavailable},
 		{"asset not found", service.ErrAssetNotFound, "asset_not_found", http.StatusNotFound},
 		{"asset not ready", service.ErrAssetNotReady, "asset_not_ready", http.StatusConflict},
-		{"real-person authorization not ready", service.ErrRealPersonAuthorizationNotReady, "real_person_authorization_not_ready", http.StatusConflict},
-		{"credential changed", service.ErrAssetCredentialChanged, "asset_credential_changed", http.StatusConflict},
-		{"binding required", service.ErrAssetBindingRequired, "asset_binding_required", http.StatusConflict},
-		{"source expired", service.ErrAssetSourceExpired, "asset_source_expired", http.StatusConflict},
+		{"channel mismatch", service.ErrAssetChannelMismatch, "asset_channel_mismatch", http.StatusConflict},
+		{"scope conflict", service.ErrAssetScopeConflict, "asset_scope_conflict", http.StatusConflict},
 		{"reference unresolvable", service.ErrAssetReferenceUnresolvable, "asset_reference_unresolvable", http.StatusConflict},
 	}
 	for _, tc := range cases {

@@ -1,7 +1,6 @@
 package model
 
 import (
-	"slices"
 	"strconv"
 	"strings"
 
@@ -11,13 +10,14 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
 
-// freezeTaskVideoUpstream keeps in-flight Doubao video tasks bound to the
+// freezeTaskVideoUpstream keeps in-flight Seedance tasks bound to the
 // protocol, endpoint, and selected key used when they were created.
 func freezeTaskVideoUpstream(privateData *TaskPrivateData, channel *relaycommon.ChannelMeta) {
-	if channel.ChannelType != constant.ChannelTypeDoubaoVideo {
+	if channel.ChannelType != constant.ChannelTypeSeedanceLink {
 		return
 	}
-	privateData.VideoUpstreamProfile = channel.ChannelOtherSettings.VideoUpstreamProfile
+	privateData.VideoUpstreamProtocol = channel.ChannelOtherSettings.VideoUpstreamProtocol
+	privateData.VideoUpstreamProfile = channel.ChannelOtherSettings.VideoUpstreamProtocol.TransportProfile()
 	if privateData.VideoUpstreamProfile == "" {
 		privateData.VideoUpstreamProfile = dto.VideoUpstreamProfileOfficial
 	}
@@ -32,7 +32,7 @@ func TaskUsesFrozenVideoConnection(task *Task) bool {
 }
 
 // FrozenVideoTaskChannel reconstructs the provider connection selected when a
-// video task was submitted under a Link contract. It deliberately does not consult the
+// video task was submitted. It deliberately does not consult the
 // mutable channel row.
 func FrozenVideoTaskChannel(task *Task) (*Channel, bool) {
 	if !TaskUsesFrozenVideoConnection(task) {
@@ -47,21 +47,6 @@ func FrozenVideoTaskChannel(task *Task) (*Channel, bool) {
 	if baseURL == "" || key == "" {
 		return nil, false
 	}
-	linkRef := dto.LinkImplementationRef{}
-	contractSKU := strings.TrimSpace(task.PrivateData.PublishedLinkContractSKU)
-	if contractSKU == "" {
-		contractSKU = strings.TrimSpace(task.Properties.OriginModelName)
-	}
-	if IsRegisteredLinkSKU(contractSKU) {
-		implementation, ok := ResolveLinkImplementation(dto.LinkImplementationRef{
-			ID: task.PrivateData.LinkImplementationID, Version: task.PrivateData.LinkImplementationVersion,
-		})
-		if !ok || implementation.ContentHash != strings.TrimSpace(task.PrivateData.LinkImplementationHash) ||
-			!slices.Contains(implementation.PublicSKUs, contractSKU) {
-			return nil, false
-		}
-		linkRef = dto.LinkImplementationRef{ID: implementation.ID, Version: implementation.Version}
-	}
 	channel := &Channel{
 		Id:      task.ChannelId,
 		Type:    channelType,
@@ -71,9 +56,9 @@ func FrozenVideoTaskChannel(task *Task) (*Channel, bool) {
 	}
 	channel.SetSetting(dto.ChannelSettings{Proxy: task.PrivateData.VideoUpstreamProxy})
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol:          task.PrivateData.VideoUpstreamProtocol,
 		VideoUpstreamProfile:           task.PrivateData.VideoUpstreamProfile,
 		VideoUpstreamQueryPathTemplate: task.PrivateData.VideoUpstreamQueryPathTemplate,
-		LinkImplementation:             linkRef,
 	})
 	return channel, true
 }

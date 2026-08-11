@@ -208,39 +208,6 @@ func TestAttemptRecoveryCompletesUnknownClientClaim(t *testing.T) {
 	assert.Equal(t, task.TaskID, claim.TaskID)
 }
 
-func TestUnknownTaskCreateAttemptReleaseWritesExposureInSameTransaction(t *testing.T) {
-	truncateTables(t)
-	user := User{Id: 105, Username: "attempt-exposure", Quota: 100}
-	require.NoError(t, DB.Create(&user).Error)
-	token := Token{UserId: user.Id, Key: "attempt-exposure-token", Status: common.TokenStatusEnabled, RemainQuota: 100}
-	require.NoError(t, DB.Create(&token).Error)
-	billing, err := common.Marshal(map[string]any{"public_model": "public-video-sku"})
-	require.NoError(t, err)
-	attempt, err := CreatePreparedTaskAttempt(TaskCreateAttemptParams{
-		PublicTaskID:    GenerateTaskID(),
-		UserID:          user.Id,
-		TokenID:         token.Id,
-		ClientProtocol:  TaskClientProtocolModelArkV3,
-		RequestHash:     "unknown-request",
-		BillingSnapshot: billing,
-	})
-	require.NoError(t, err)
-	_, err = HoldTaskCreateAttempt(TaskAttemptHoldParams{
-		AttemptID: attempt.ID, FundingSource: "wallet", Quota: 30,
-	})
-	require.NoError(t, err)
-	require.NoError(t, MarkTaskCreateAttemptUnknown(attempt.ID, "request-exposure"))
-
-	_, err = ReleaseTaskCreateAttemptHold(attempt.ID, TaskCreateAttemptReleasedWithExposure)
-	require.NoError(t, err)
-	var exposure ProviderCostExposure
-	require.NoError(t, DB.First(&exposure, "source_kind = ? AND source_id = ?",
-		ProviderCostExposureSourceAttempt, attempt.AttemptID).Error)
-	assert.Equal(t, 30, exposure.CustomerQuotaReleased)
-	assert.Equal(t, "public-video-sku", exposure.PublicModel)
-	assert.Equal(t, string(TaskCreateAttemptReleasedWithExposure), exposure.Reason)
-}
-
 func TestProviderContractFailureBillingAndExposureAreAtomic(t *testing.T) {
 	truncateTables(t)
 	user := User{Id: 103, Username: "contract-user", Quota: 0}

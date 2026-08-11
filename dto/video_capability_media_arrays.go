@@ -6,8 +6,8 @@ import (
 )
 
 // ModelArkVideoMediaArraysIncompatibility validates only transport-specific
-// media representation before a provider channel is selected. SKU values,
-// counts and roles remain owned by VideoSKUCapability.
+// media representation before a provider channel is selected. Provider model
+// values, counts and roles are validated by the code-backed media-arrays adapter.
 func ModelArkVideoMediaArraysIncompatibility(request *ModelArkVideoCreateRequest) string {
 	if request == nil {
 		return "video request is unavailable"

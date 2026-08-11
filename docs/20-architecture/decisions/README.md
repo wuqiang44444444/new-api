@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-10
+last-reviewed: 2026-08-11
 ---
 
 # 架构决策索引
@@ -16,17 +16,17 @@ ADR 编号是稳定引用，不是连续目录序号。编号按创建顺序只�
 
 | ADR | 唯一负责的决策边界 |
 | --- | --- |
-| [0001](0001-视频上游协议适配与任务执行快照.md) | `DoubaoVideo` Provider profile 与在途任务执行快照 |
 | [0008](0008-共享异步任务计费状态机与原子补偿.md) | 共享异步任务的资金目标、幂等结算与补偿 |
-| [0011](0011-异步创建未知与轮询合同违例对账.md) | 显式接入的任务型 Provider 路径在发送前的 durable attempt 与对账 |
 | [0016](0016-Seedance专用渠道与确定性素材代理.md) | Seedance 专用渠道、确定性路由、代码协议和一对一素材代理 |
 
 ## 已被取代的决策
 
 | 原 ADR | 被取代者 | 说明 |
 | --- | --- | --- |
+| [0001](0001-视频上游协议适配与任务执行快照.md) | ADR-0016 | 删除 `DoubaoVideo` profile 扩展；第三方 Seedance 协议迁入专用渠道，原生渠道恢复上游语义 |
 | [0005](0005-官方Action素材凭据隔离.md) | ADR-0016 | 保留官方视频/素材凭据分离，但改为协议驱动字段和 AssetGroup 认证代理 |
 | [0009](0009-请求级媒体与平台托管素材双路径.md) | ADR-0016 | 保留 URL/Data URL 与平台素材双路径，删除通用 binding/迁移/独立授权域 |
+| [0011](0011-异步创建未知与轮询合同违例对账.md) | ADR-0016 | 保留 durable attempt 与不可采信轮询响应隔离；删除 unknown 到期自动释放和专用核查体系 |
 | [0015](0015-Link服务合同发布与实现身份绑定.md) | ADR-0016 | 删除 publication、SKU、implementation、execution binding 与候选等价体系 |
 
 ## 不建立本地 ADR 的上游事实

@@ -16,18 +16,18 @@ import (
 const officialVideoConnectivityPath = "/api/v3/contents/generations/tasks?page_size=1"
 
 func CheckVideoChannelConnectivity(ctx context.Context, channel *model.Channel) error {
-	if channel == nil || channel.Type != constant.ChannelTypeDoubaoVideo {
+	if channel == nil || channel.Type != constant.ChannelTypeSeedanceLink {
 		return newChannelConnectivityError(
 			ChannelConnectivityVideoInvalidConfig,
-			"channel does not use the official video API",
+			"channel is not a Seedance Link channel",
 			nil,
 		)
 	}
-	profile := channel.GetOtherSettings().VideoUpstreamProfile
-	if profile != "" && profile != dto.VideoUpstreamProfileOfficial {
+	protocol := channel.GetOtherSettings().VideoUpstreamProtocol
+	if protocol != dto.VideoUpstreamProtocolModelArkV3Volcengine && protocol != dto.VideoUpstreamProtocolModelArkV3BytePlus {
 		return newChannelConnectivityError(
 			ChannelConnectivityVideoInvalidConfig,
-			"channel does not use the official video API",
+			"Seedance channel does not use an official ModelArk V3 protocol",
 			nil,
 		)
 	}

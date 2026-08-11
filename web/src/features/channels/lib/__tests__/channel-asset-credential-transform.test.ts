@@ -17,7 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+
+import { describe, test } from 'vitest'
 
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
@@ -28,36 +29,36 @@ import {
 const officialForm = {
   ...CHANNEL_FORM_DEFAULT_VALUES,
   name: 'official',
-  type: 54,
+  type: 61,
   key: 'video-api-key',
   models: 'video-model',
-  video_upstream_profile: 'official' as const,
-  asset_upstream_profile: 'official_action_assets' as const,
+  video_upstream_protocol: 'modelark_v3_byteplus' as const,
+  asset_upstream_protocol: 'byteplus_assets_action_v2024_01_01' as const,
   asset_min_url_ttl_seconds: 3600,
   asset_provider_project: 'project-a',
   asset_region: 'ap-southeast-1',
 }
 
 describe('channel asset credential transforms', () => {
-  test('persists the explicit Link implementation reference', () => {
+  test('persists only the code-backed Seedance protocols', () => {
     const payload = transformFormDataToCreatePayload({
       ...CHANNEL_FORM_DEFAULT_VALUES,
       name: 'funcloud',
-      type: 54,
+      type: 61,
       key: 'video-api-key',
       models: 'seedance-2.0-standard',
-      video_upstream_profile: 'third_party_funcloud_seedance_v2',
-      video_upstream_create_path: '/api/v2/open/aigc/seedance2-0',
-      video_upstream_query_path_template: '/api/v2/open/aigc/{task_id}',
-      link_implementation_id: 'funcloud.seedance-json',
-      link_implementation_version: 'v1',
+      video_upstream_protocol: 'funcloud_seedance_v2',
+      asset_upstream_protocol: 'none',
+      priority: 99,
+      weight: 100,
     })
 
     const settings = JSON.parse(payload.channel.settings || '{}')
-    assert.deepEqual(settings.link_implementation, {
-      id: 'funcloud.seedance-json',
-      version: 'v1',
-    })
+    assert.equal(settings.video_upstream_protocol, 'funcloud_seedance_v2')
+    assert.equal(settings.asset_upstream_protocol, 'none')
+    assert.equal('video_upstream_create_path' in settings, false)
+    assert.equal(payload.channel.priority, null)
+    assert.equal(payload.channel.weight, null)
   })
 
   test('creates a separate write-only credential payload', () => {
@@ -68,6 +69,22 @@ describe('channel asset credential transforms', () => {
     })
 
     assert.equal(payload.channel.key, 'video-api-key')
+    assert.deepEqual(payload.asset_credential, {
+      access_key_id: 'access',
+      secret_access_key: 'secret',
+    })
+  })
+
+  test('creates the same write-only credential payload for Volcengine assets', () => {
+    const payload = transformFormDataToCreatePayload({
+      ...officialForm,
+      video_upstream_protocol: 'modelark_v3_volcengine',
+      asset_upstream_protocol: 'volcengine_assets_action_v2024_01_01',
+      asset_region: 'cn-beijing',
+      asset_access_key_id: ' access ',
+      asset_secret_access_key: ' secret ',
+    })
+
     assert.deepEqual(payload.asset_credential, {
       access_key_id: 'access',
       secret_access_key: 'secret',

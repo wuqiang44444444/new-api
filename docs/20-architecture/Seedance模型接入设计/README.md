@@ -1,0 +1,33 @@
+---
+status: accepted
+owner: Dev Team
+last-reviewed: 2026-08-11
+---
+
+# Seedance 模型接入设计索引
+
+本目录按 Provider 收纳 Seedance 模型接入目标架构。所有线路使用 `ChannelTypeSeedanceLink` 和
+ModelArk V3 北向；各 Provider 可以使用不同代码化上游协议、路径、鉴权、任务信封和素材方式。
+不同线路必须使用不同客户模型名，每个客户模型只对应一个已启用 Seedance Channel。
+
+## Provider 设计
+
+| Provider | 设计入口 | 当前状态 |
+| --- | --- | --- |
+| FunCloud | [国内 Seedance 2.0 模型接入设计](FunCloud/FunCloud国内Seedance-2.0模型接入设计.md) | Standard/Fast 使用独立客户模型与 Channel；已有部分真实成功证据，素材协议和 Provider 账单仍阻断全面开放 |
+| 墨行 | [Seedance 模型接入设计](墨行/README.md) | oversea/doubao 使用独立客户模型与 Channel；doubao 有部分视频证据，oversea 预检 401；素材需按一对一代理重新验收 |
+| 飞彩 | [Seedance 全模型接入设计](飞彩/README.md) | v2/v3 及各档位使用独立客户模型；v3 仅 Mini/Fast/Standard 720p 16:9 有精确成功证据，其它组合保持禁用 |
+
+逐模型生产缺口和当前验收顺序集中记录在
+[路线图的 Seedance 生产验收](../../50-planning/路线图.md#seedance-生产验收)。架构文档只保留稳定边界
+和证据结论，不承载逐次调用流水。
+
+`status: accepted` 表示设计边界已确定，不表示代码、渠道或生产分组已开放。配置权威是客户模型、
+Channel、`model_mapping`、价格和代码协议；是否兼容与是否上线由技术人员线下验证后通知管理员。
+系统不建立 publication、SKU、implementation 或 execution binding 自动门禁。
+
+## 共同上位架构
+
+- [Seedance 专用渠道与 Link 架构](../Seedance专用渠道与Link架构.md)
+- [异步任务与计费事实架构](../异步任务与计费事实架构.md)
+- [API Key 用量账单架构](../API-Key用量账单架构.md)

@@ -581,7 +581,7 @@ nano-banana-2
 
 ## 13. 相关文档
 
-- [Link 服务合同注册与履约架构](../20-architecture/Link服务合同注册与履约架构.md)
+- [Seedance 专用渠道与 Link 架构](../20-architecture/Seedance专用渠道与Link架构.md)
 - [Link 图片服务合同与异步任务架构](../20-architecture/Link图片服务合同与异步任务架构.md)
 - [03 图片渠道与异步任务运维手册](../40-operations/03-图片渠道与异步任务运维手册.md)
 - [API Key 用量账单使用指南](API-Key用量账单使用指南.md)

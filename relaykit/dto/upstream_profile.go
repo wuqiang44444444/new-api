@@ -87,16 +87,15 @@ func ValidateVideoUpstreamURL(baseURL, createPath, queryTemplate string) error {
 type AssetUpstreamProfile string
 
 const (
-	AssetUpstreamProfileNone       AssetUpstreamProfile = "none"
-	AssetUpstreamProfileArk        AssetUpstreamProfile = "ark_assets"
-	AssetUpstreamProfileRelay      AssetUpstreamProfile = "relay_assets"
-	AssetUpstreamProfileJoyCreator AssetUpstreamProfile = "joycreator_assets"
-	AssetUpstreamProfileOfficial   AssetUpstreamProfile = "official_action_assets"
+	AssetUpstreamProfileNone     AssetUpstreamProfile = "none"
+	AssetUpstreamProfileArk      AssetUpstreamProfile = "ark_assets"
+	AssetUpstreamProfileRelay    AssetUpstreamProfile = "relay_assets"
+	AssetUpstreamProfileOfficial AssetUpstreamProfile = "official_action_assets"
 )
 
 func (p AssetUpstreamProfile) IsValid() bool {
 	switch p {
-	case "", AssetUpstreamProfileNone, AssetUpstreamProfileArk, AssetUpstreamProfileRelay, AssetUpstreamProfileJoyCreator, AssetUpstreamProfileOfficial:
+	case "", AssetUpstreamProfileNone, AssetUpstreamProfileArk, AssetUpstreamProfileRelay, AssetUpstreamProfileOfficial:
 		return true
 	default:
 		return false

@@ -1,7 +1,7 @@
 ---
-status: accepted
+status: current
 owner: Dev Team
-last-reviewed: 2026-08-10
+last-reviewed: 2026-08-11
 ---
 
 # Link 图片服务合同与异步任务架构
@@ -142,7 +142,7 @@ Provider 返回的最终扣量或媒体元数据同样是不可信输入，进�
 
 ## 12. 相关文档
 
-- [Link 渠道与上游协议履约架构](Link服务合同注册与履约架构.md)
+- [Seedance 专用渠道与 Link 架构](Seedance专用渠道与Link架构.md)
 - [异步任务与计费事实架构](异步任务与计费事实架构.md)
 - [架构概览](架构概览.md)
 - [ADR-0008](decisions/0008-共享异步任务计费状态机与原子补偿.md)

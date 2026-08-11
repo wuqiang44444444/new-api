@@ -155,3 +155,25 @@ func TestUpdateVideoTasksUsesFrozenConnectionAfterChannelDeletion(t *testing.T) 
 	assert.Equal(t, []string{"https://frozen.example"}, bases)
 	assert.Equal(t, []string{"http://frozen-proxy.example"}, proxies)
 }
+
+func TestRefreshVideoTaskUsesFrozenConnectionForModelArkGet(t *testing.T) {
+	truncate(t)
+	task := seedPollingTask(t, 408, "task_modelark_get", "upstream_modelark_get")
+	task.Platform = constant.TaskPlatform("61")
+	task.ClientProtocol = model.TaskClientProtocolModelArkV3
+	task.PrivateData.Key = "frozen-get-key"
+	task.PrivateData.VideoUpstreamQueryBaseURL = "https://frozen-get.example"
+	task.PrivateData.VideoUpstreamProxy = "http://frozen-get-proxy.example"
+	require.NoError(t, model.DB.Save(task).Error)
+
+	adaptor := &taskPollingKeyCaptureAdaptor{}
+	previousFactory := GetTaskAdaptorFunc
+	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return adaptor }
+	t.Cleanup(func() { GetTaskAdaptorFunc = previousFactory })
+
+	require.NoError(t, RefreshVideoTask(context.Background(), task))
+	keys, bases, proxies := adaptor.fetchedConnections()
+	assert.Equal(t, []string{"frozen-get-key"}, keys)
+	assert.Equal(t, []string{"https://frozen-get.example"}, bases)
+	assert.Equal(t, []string{"http://frozen-get-proxy.example"}, proxies)
+}

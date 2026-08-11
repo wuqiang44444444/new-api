@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -60,15 +59,6 @@ func proxyLinkVideoContent(c *gin.Context) bool {
 	}
 	if task.ClientDeletedAt != 0 {
 		modelArkVideoError(c, http.StatusNotFound, "video_not_found", "Task not found")
-		return true
-	}
-	if err := service.AuthorizeTaskContent(task); err != nil {
-		if errors.Is(err, service.ErrTaskContentAuthorizationRevoked) {
-			modelArkVideoError(c, http.StatusForbidden, "real_person_authorization_revoked", "Content access authorization has been revoked")
-			return true
-		}
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to authorize Link video task %s: %s", taskID, err.Error()))
-		modelArkVideoError(c, http.StatusInternalServerError, "internal_error", "Failed to authorize video content")
 		return true
 	}
 	if task.Status != model.TaskStatusSuccess {
@@ -169,7 +159,7 @@ func proxyLinkVideoContent(c *gin.Context) bool {
 		}
 		videoURL = fmt.Sprintf("%s/v1/videos/%s/content", baseURL, task.GetUpstreamTaskID())
 		req.Header.Set("Authorization", "Bearer "+key)
-	case constant.ChannelTypeDoubaoVideo:
+	case constant.ChannelTypeSeedanceLink:
 		contentURL, key, handled, sourceErr := videoMediaArraysContentSource(task)
 		if sourceErr != nil {
 			modelArkVideoError(c, http.StatusBadGateway, "frozen_upstream_unavailable", "Frozen video connection details are unavailable")

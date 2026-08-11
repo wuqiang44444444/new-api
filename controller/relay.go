@@ -691,6 +691,12 @@ func shouldRetryTaskRelay(
 	if taskErr == nil {
 		return false
 	}
+	// Seedance is a high-cost deterministic task. Once its customer model has
+	// selected a Channel, no error path may create another Provider task or
+	// switch to a different Seedance Channel.
+	if relayInfo != nil && relayInfo.ChannelMeta != nil && relayInfo.ChannelType == constant.ChannelTypeSeedanceLink {
+		return false
+	}
 	if service.RequiresVideoTaskCreateAttempt(relayInfo) {
 		switch relaycommon.GetTaskCreateDisposition(c) {
 		case relaycommon.TaskCreateOutcomeUnknown, relaycommon.TaskCreateTerminalRejection:

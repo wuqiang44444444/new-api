@@ -37,8 +37,7 @@ func ReconcileRequestedTaskCancellations(ctx context.Context, limit int) int {
 			continue
 		}
 		processed++
-		if !task.Status.CanRequestCancellation() ||
-			task.PrivateData.SKUCapabilityVersion != "" && !task.PrivateData.SKULifecycle.SupportsCancelQueued {
+		if !task.Status.CanRequestCancellation() {
 			_, _, _ = model.CompleteTaskCancellation(
 				task.ID,
 				false,

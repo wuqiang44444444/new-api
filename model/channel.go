@@ -875,13 +875,7 @@ func (channel *Channel) ValidateSettings() error {
 			return fmt.Errorf("advanced custom channels require a %s route when upstream model update checks are enabled", dto.AdvancedCustomModelListPath)
 		}
 	}
-	if err := validateChannelVideoSettings(channel, channelOtherSettings); err != nil {
-		return err
-	}
-	if err := validateChannelAssetSettings(channel, channelOtherSettings); err != nil {
-		return err
-	}
-	if err := ValidateLinkImplementationRegistration(channel, channelOtherSettings); err != nil {
+	if err := validateSeedanceChannelSettings(channel, channelOtherSettings); err != nil {
 		return err
 	}
 	return nil

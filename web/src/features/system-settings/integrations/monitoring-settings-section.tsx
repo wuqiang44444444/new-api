@@ -62,6 +62,11 @@ const numericString = z.string().refine((value) => {
 
 const monitoringSchema = z.object({
   QuotaRemindThreshold: numericString,
+  notification_setting: z.object({
+    send_email_on_account_created: z.boolean(),
+    send_email_on_password_changed: z.boolean(),
+    send_email_on_token_created: z.boolean(),
+  }),
   perf_metrics_setting: z.object({
     enabled: z.boolean(),
     flush_interval: z.coerce.number().min(1),
@@ -75,6 +80,9 @@ type MonitoringFormValues = z.output<typeof monitoringSchema>
 
 type FlatMonitoringDefaults = {
   QuotaRemindThreshold: string
+  'notification_setting.send_email_on_account_created': boolean
+  'notification_setting.send_email_on_password_changed': boolean
+  'notification_setting.send_email_on_token_created': boolean
   'perf_metrics_setting.enabled': boolean
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'minute' | '5min' | 'hour'
@@ -89,6 +97,14 @@ const buildFormDefaults = (
   defaults: MonitoringSettingsSectionProps['defaultValues']
 ): MonitoringFormInput => ({
   QuotaRemindThreshold: defaults.QuotaRemindThreshold ?? '',
+  notification_setting: {
+    send_email_on_account_created:
+      defaults['notification_setting.send_email_on_account_created'],
+    send_email_on_password_changed:
+      defaults['notification_setting.send_email_on_password_changed'],
+    send_email_on_token_created:
+      defaults['notification_setting.send_email_on_token_created'],
+  },
   perf_metrics_setting: {
     enabled: defaults['perf_metrics_setting.enabled'],
     flush_interval: defaults['perf_metrics_setting.flush_interval'],
@@ -101,6 +117,12 @@ const normalizeDefaults = (
   defaults: MonitoringSettingsSectionProps['defaultValues']
 ): FlatMonitoringDefaults => ({
   QuotaRemindThreshold: (defaults.QuotaRemindThreshold ?? '').trim(),
+  'notification_setting.send_email_on_account_created':
+    defaults['notification_setting.send_email_on_account_created'],
+  'notification_setting.send_email_on_password_changed':
+    defaults['notification_setting.send_email_on_password_changed'],
+  'notification_setting.send_email_on_token_created':
+    defaults['notification_setting.send_email_on_token_created'],
   'perf_metrics_setting.enabled': defaults['perf_metrics_setting.enabled'],
   'perf_metrics_setting.flush_interval':
     defaults['perf_metrics_setting.flush_interval'],
@@ -114,6 +136,12 @@ const normalizeFormValues = (
   values: MonitoringFormValues
 ): FlatMonitoringDefaults => ({
   QuotaRemindThreshold: values.QuotaRemindThreshold.trim(),
+  'notification_setting.send_email_on_account_created':
+    values.notification_setting.send_email_on_account_created,
+  'notification_setting.send_email_on_password_changed':
+    values.notification_setting.send_email_on_password_changed,
+  'notification_setting.send_email_on_token_created':
+    values.notification_setting.send_email_on_token_created,
   'perf_metrics_setting.enabled': values.perf_metrics_setting.enabled,
   'perf_metrics_setting.flush_interval':
     values.perf_metrics_setting.flush_interval,
@@ -208,6 +236,69 @@ export function MonitoringSettingsSection({
               </FormItem>
             )}
           />
+
+          <div>
+            <h4 className='font-medium'>{t('Notification emails')}</h4>
+            <p className='text-muted-foreground mt-1 text-xs'>
+              {t(
+                'Send an email to the user when these account events happen.'
+              )}
+            </p>
+          </div>
+
+          <div className='grid grid-cols-1 gap-4 md:grid-cols-3'>
+            <FormField
+              control={form.control}
+              name='notification_setting.send_email_on_account_created'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Account created')}</FormLabel>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='notification_setting.send_email_on_password_changed'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Password changed')}</FormLabel>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='notification_setting.send_email_on_token_created'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('API key created')}</FormLabel>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+          </div>
 
           <div>
             <h4 className='font-medium'>{t('Model performance metrics')}</h4>

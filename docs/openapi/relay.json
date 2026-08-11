@@ -153,65 +153,6 @@
         ]
       }
     },
-    "/api/v3/contents/generations/models": {
-      "get": {
-        "summary": "查询 ModelArk 视频模型能力",
-        "deprecated": false,
-        "description": "返回全部代码登记的 Seedance ModelArk 基础候选及当前 API Key 已发布的客户模型 alias，并标记 publication、/v1/models 可见性和实际可用性。alias 行保持客户模型身份，不暴露其绑定的 Link SKU。available=false 的模型仅供能力预览，不能据此发送创建请求。",
-        "operationId": "listModelArkVideoModelCapabilities",
-        "tags": [
-          "视频生成/ModelArk格式"
-        ],
-        "parameters": [
-          {
-            "name": "model",
-            "in": "query",
-            "required": false,
-            "description": "按精确客户模型 ID 或基础候选 ID 查询单个 capability",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "模型 capability 列表",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModelArkVideoCapabilityCatalog"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "认证失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "模型 capability 不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
-      }
-    },
     "/v1beta/models": {
       "get": {
         "summary": "Gemini 格式获取",
@@ -344,26 +285,26 @@
         ]
       }
     },
-	    "/v1/responses/compact": {
-	      "post": {
-	        "summary": "压缩对话 (OpenAI Responses API)",
-	        "deprecated": false,
-	        "description": "OpenAI Responses API，用于对长对话进行 compaction。",
-	        "operationId": "compactResponse",
+    "/v1/responses/compact": {
+      "post": {
+        "summary": "压缩对话 (OpenAI Responses API)",
+        "deprecated": false,
+        "description": "OpenAI Responses API，用于对长对话进行 compaction。",
+        "operationId": "compactResponse",
         "tags": [
           "OpenAI格式(Responses)"
         ],
         "parameters": [],
-	        "requestBody": {
-	          "content": {
-	            "application/json": {
-	              "schema": {
-	                "$ref": "#/components/schemas/ResponsesCompactionRequest"
-	              }
-	            }
-	          },
-	          "required": true
-	        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResponsesCompactionRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "成功压缩对话",
@@ -812,7 +753,9 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["prompt"],
+                "required": [
+                  "prompt"
+                ],
                 "properties": {
                   "prompt": {
                     "type": "string"
@@ -2605,53 +2548,6 @@
         ]
       }
     },
-    "/v1/api-service-rules/current": {
-      "get": {
-        "summary": "获取当前 API 服务规则及应用接受状态",
-        "operationId": "getCurrentAPIServiceRule",
-        "tags": ["素材"],
-        "responses": {
-          "200": {
-            "description": "当前规则与当前 API Key 对应应用的接受状态",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "rule": {"$ref": "#/components/schemas/APIServiceRule"},
-                    "acceptance": {"$ref": "#/components/schemas/APIServiceRuleAcceptance"}
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [{"BearerAuth": []}]
-      }
-    },
-    "/v1/api-service-rules/acceptance": {
-      "post": {
-        "summary": "接受当前 API 服务规则",
-        "operationId": "acceptCurrentAPIServiceRule",
-        "tags": ["素材"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {"schema": {"$ref": "#/components/schemas/AcceptAPIServiceRuleRequest"}}
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "接受记录",
-            "content": {
-              "application/json": {"schema": {"$ref": "#/components/schemas/APIServiceRuleAcceptance"}}
-            }
-          },
-          "409": {"description": "版本或内容哈希已变化，需重新获取并接受"}
-        },
-        "security": [{"BearerAuth": []}]
-      }
-    },
     "/v1/assets": {
       "post": {
         "summary": "创建素材",
@@ -2659,16 +2555,6 @@
         "operationId": "createAsset",
         "tags": [
           "素材"
-        ],
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
         ],
         "requestBody": {
           "required": true,
@@ -2681,12 +2567,12 @@
           }
         },
         "responses": {
-          "202": {
-            "description": "素材已受理",
+          "201": {
+            "description": "素材已在所选 Seedance 渠道创建",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AssetEnvelope"
+                  "$ref": "#/components/schemas/Asset"
                 }
               }
             }
@@ -2700,6 +2586,15 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "素材、模型或渠道状态冲突"
+          },
+          "502": {
+            "description": "素材上游操作失败"
+          },
+          "503": {
+            "description": "素材上游不可用"
           }
         },
         "security": [
@@ -2869,93 +2764,11 @@
         ]
       }
     },
-    "/v1/assets/{asset_id}/bindings": {
-      "get": {
-        "summary": "列出素材绑定",
-        "deprecated": false,
-        "operationId": "listAssetBindings",
-        "tags": [
-          "素材"
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/AssetId"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "素材绑定列表",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/AssetBinding"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
-      }
-    },
-    "/v1/assets/{asset_id}/migrations": {
+    "/v1/asset-groups": {
       "post": {
-        "summary": "迁移素材",
+        "summary": "创建素材组或真人认证会话",
         "deprecated": false,
-        "operationId": "migrateAsset",
-        "tags": [
-          "素材"
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/AssetId"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MigrateAssetRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "迁移已受理",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AssetEnvelope"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
-      }
-    },
-    "/v1/real-person-authorizations": {
-      "post": {
-        "summary": "创建真人授权",
-        "deprecated": false,
-        "operationId": "createRealPersonAuthorization",
+        "operationId": "createAssetGroup",
         "tags": [
           "素材"
         ],
@@ -2964,129 +2777,116 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateRealPersonAuthorizationRequest"
+                "$ref": "#/components/schemas/CreateAssetGroupRequest"
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "授权已创建",
+            "description": "素材组已创建；真人组包含上游认证地址",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RealPersonAuthorization"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
-      }
-    },
-    "/v1/real-person-authorizations/{authorization_id}": {
-      "get": {
-        "summary": "查询真人授权",
-        "deprecated": false,
-        "operationId": "getRealPersonAuthorization",
-        "tags": [
-          "素材"
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/AuthorizationId"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "授权状态",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RealPersonAuthorization"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
-      }
-    },
-    "/v1/real-person-authorizations/{authorization_id}/revoke": {
-      "post": {
-        "summary": "撤销真人授权",
-        "deprecated": false,
-        "operationId": "revokeRealPersonAuthorization",
-        "tags": [
-          "素材"
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/AuthorizationId"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "已撤销的授权",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RealPersonAuthorization"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
-      }
-    },
-    "/v1/real-person-authorizations/{authorization_id}/retry": {
-      "post": {
-        "summary": "重试真人授权验证",
-        "deprecated": false,
-        "operationId": "retryRealPersonAuthorization",
-        "tags": [
-          "素材"
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/AuthorizationId"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "授权与新的验证地址",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "authorization": {
-                      "$ref": "#/components/schemas/RealPersonAuthorization"
-                    },
-                    "verification_url": {
-                      "type": "string",
-                      "format": "uri"
-                    }
-                  }
+                  "$ref": "#/components/schemas/AssetGroup"
                 }
               }
             }
           },
+          "400": {
+            "description": "素材组请求无效"
+          },
+          "502": {
+            "description": "素材上游操作失败"
+          },
+          "503": {
+            "description": "素材上游不可用"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "列出素材组",
+        "deprecated": false,
+        "operationId": "listAssetGroups",
+        "tags": [
+          "素材"
+        ],
+        "responses": {
+          "200": {
+            "description": "素材组列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetGroupListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/asset-groups/{group_id}": {
+      "get": {
+        "summary": "查询素材组或真人认证状态",
+        "deprecated": false,
+        "operationId": "getAssetGroup",
+        "tags": [
+          "素材"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AssetGroupId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "素材组详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetGroup"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "素材组不存在"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "删除素材组",
+        "deprecated": false,
+        "operationId": "deleteAssetGroup",
+        "tags": [
+          "素材"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AssetGroupId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "素材组已删除"
+          },
           "409": {
-            "description": "当前状态不可重试"
+            "description": "素材组仍包含素材或当前状态不允许删除"
           }
         },
         "security": [
@@ -3960,9 +3760,9 @@
           }
         }
       },
-	      "ResponsesCompactionResponse": {
-	        "type": "object",
-	        "properties": {
+      "ResponsesCompactionResponse": {
+        "type": "object",
+        "properties": {
           "id": {
             "type": "string"
           },
@@ -3987,44 +3787,44 @@
             "type": "object",
             "properties": {}
           }
-	        }
-	      },
-	      "ResponsesCompactionRequest": {
-	        "type": "object",
-	        "required": [
-	          "model"
-	        ],
-	        "properties": {
-	          "model": {
-	            "type": "string"
-	          },
-	          "input": {
-	            "description": "输入内容，可以是字符串或消息数组",
-	            "oneOf": [
-	              {
-	                "type": "string"
-	              },
-	              {
-	                "type": "array",
-	                "items": {
-	                  "type": "object",
-	                  "properties": {}
-	                }
-	              }
-	            ]
-	          },
-	          "instructions": {
-	            "type": "string"
-	          },
-	          "previous_response_id": {
-	            "type": "string"
-	          }
-	        }
-	      },
-	      "ResponsesStreamResponse": {
-	        "type": "object",
-	        "properties": {
-	          "type": {
+        }
+      },
+      "ResponsesCompactionRequest": {
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "input": {
+            "description": "输入内容，可以是字符串或消息数组",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            ]
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "previous_response_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ResponsesStreamResponse": {
+        "type": "object",
+        "properties": {
+          "type": {
             "type": "string"
           },
           "response": {
@@ -5690,321 +5490,6 @@
       "ModelArkVideoCreateRequest": {
         "type": "object",
         "additionalProperties": false,
-        "x-modelark-model-capabilities": [
-          {
-            "public_model": "doubao-seedance-2-0-260128",
-            "contract_id": "modelark.contents.generations.v3",
-            "version": "tokensave-media-task-v2",
-            "content_hash": "f2912b15555aff6472f636cb58755ae8552ba35e30f21bf330e6bc66cb2c364b",
-            "request_fields": ["model", "content", "duration", "resolution", "ratio", "generate_audio"],
-            "required_fields": ["model", "content"],
-            "unsupported_fields": [
-              "end_user_subject",
-              "callback_url",
-              "service_tier",
-              "watermark",
-              "return_last_frame",
-              "execution_expires_after",
-              "draft",
-              "tools",
-              "safety_identifier",
-              "priority",
-              "frames",
-              "seed",
-              "camera_fixed"
-            ],
-            "resolutions": ["480p", "720p", "1080p"],
-            "ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
-            "requires_resolution": true,
-            "requires_ratio": true,
-            "duration": {
-              "minimum": 4,
-              "maximum": 15,
-              "allows_automatic": true,
-              "required": true
-            },
-            "media": {
-              "content_types": ["text", "image_url"],
-              "min_images": 0,
-              "max_images": 9,
-              "max_videos": 0,
-              "max_audio": 0,
-              "image_roles": ["", "first_frame", "last_frame", "reference_image"]
-            },
-            "constraints": {
-              "requires_text": true,
-              "supports_generate_audio": true,
-              "supports_direct_media": true,
-              "supports_link_assets": true,
-              "supports_mixed_media_paths": false,
-              "reference_modes_exclusive": true,
-              "audio_requires_reference_image": false,
-              "audio_requires_visual_reference": false
-            },
-            "lifecycle": {
-              "supports_content": true,
-              "supports_last_frame": false,
-              "supports_cancel_queued": false,
-              "supports_delete": false
-            }
-          },
-          {
-            "public_model": "seedance-2-0-oversea",
-            "contract_id": "modelark.contents.generations.v3",
-            "version": "moxing-media-task-v2",
-            "content_hash": "80fbc021411a9280a5214acfae1a71f7643581517377c53c133a8e6ae0a57f24",
-            "request_fields": ["model", "content", "duration", "resolution", "ratio", "generate_audio"],
-            "required_fields": ["model", "content"],
-            "unsupported_fields": [
-              "end_user_subject",
-              "callback_url",
-              "service_tier",
-              "watermark",
-              "return_last_frame",
-              "execution_expires_after",
-              "draft",
-              "tools",
-              "safety_identifier",
-              "priority",
-              "frames",
-              "seed",
-              "camera_fixed"
-            ],
-            "resolutions": ["480p", "720p"],
-            "ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
-            "requires_resolution": true,
-            "requires_ratio": true,
-            "duration": {
-              "minimum": 4,
-              "maximum": 15,
-              "allows_automatic": true,
-              "required": true
-            },
-            "media": {
-              "content_types": ["text", "image_url"],
-              "min_images": 0,
-              "max_images": 9,
-              "max_videos": 0,
-              "max_audio": 0,
-              "image_roles": ["", "first_frame", "last_frame", "reference_image"]
-            },
-            "constraints": {
-              "requires_text": true,
-              "supports_generate_audio": true,
-              "supports_direct_media": true,
-              "supports_link_assets": true,
-              "supports_mixed_media_paths": false,
-              "reference_modes_exclusive": true,
-              "audio_requires_reference_image": false,
-              "audio_requires_visual_reference": false
-            },
-            "lifecycle": {
-              "supports_content": true,
-              "supports_last_frame": false,
-              "supports_cancel_queued": false,
-              "supports_delete": false
-            }
-          },
-          {
-            "public_model": "seedance-2.0-fast",
-            "contract_id": "modelark.contents.generations.v3",
-            "version": "public-video-contract-v2",
-            "content_hash": "91b0d2f7adca87d371a48f086463fadffefbaef4595bd2f25e15eac88b797392",
-            "request_fields": [
-              "model",
-              "end_user_subject",
-              "content",
-              "duration",
-              "resolution",
-              "ratio",
-              "generate_audio",
-              "watermark",
-              "seed",
-              "camera_fixed"
-            ],
-            "required_fields": ["model", "content"],
-            "unsupported_fields": [
-              "callback_url",
-              "service_tier",
-              "return_last_frame",
-              "execution_expires_after",
-              "draft",
-              "tools",
-              "safety_identifier",
-              "priority",
-              "frames"
-            ],
-            "resolutions": ["480p", "720p"],
-            "default_resolution": "720p",
-            "ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
-            "default_ratio": "16:9",
-            "requires_resolution": false,
-            "requires_ratio": false,
-            "duration": {
-              "minimum": 4,
-              "maximum": 15,
-              "default": 5,
-              "allows_automatic": false,
-              "required": false
-            },
-            "media": {
-              "content_types": ["text", "image_url", "video_url", "audio_url"],
-              "min_images": 0,
-              "max_images": 3,
-              "max_videos": 1,
-              "max_audio": 1,
-              "image_roles": ["reference_image", "first_frame", "last_frame"],
-              "video_roles": ["reference_video"],
-              "audio_roles": ["reference_audio"]
-            },
-            "constraints": {
-              "requires_text": true,
-              "supports_generate_audio": true,
-              "supports_direct_media": true,
-              "supports_link_assets": true,
-              "supports_mixed_media_paths": false,
-              "reference_modes_exclusive": false,
-              "audio_requires_reference_image": false,
-              "audio_requires_visual_reference": true
-            },
-            "lifecycle": {
-              "supports_content": true,
-              "supports_last_frame": false,
-              "supports_cancel_queued": false,
-              "supports_delete": false
-            }
-          },
-          {
-            "public_model": "seedance-2.0-standard",
-            "contract_id": "modelark.contents.generations.v3",
-            "version": "public-video-contract-v2",
-            "content_hash": "50056b167d80c6334b5aa8ad7adcf4b37f5c72c10e5fcefb52262ee053e75f4a",
-            "request_fields": [
-              "model",
-              "end_user_subject",
-              "content",
-              "duration",
-              "resolution",
-              "ratio",
-              "generate_audio",
-              "watermark",
-              "seed",
-              "camera_fixed"
-            ],
-            "required_fields": ["model", "content"],
-            "unsupported_fields": [
-              "callback_url",
-              "service_tier",
-              "return_last_frame",
-              "execution_expires_after",
-              "draft",
-              "tools",
-              "safety_identifier",
-              "priority",
-              "frames"
-            ],
-            "resolutions": ["480p", "720p", "1080p"],
-            "default_resolution": "720p",
-            "ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
-            "default_ratio": "16:9",
-            "requires_resolution": false,
-            "requires_ratio": false,
-            "duration": {
-              "minimum": 4,
-              "maximum": 15,
-              "default": 5,
-              "allows_automatic": false,
-              "required": false
-            },
-            "media": {
-              "content_types": ["text", "image_url", "video_url", "audio_url"],
-              "min_images": 0,
-              "max_images": 3,
-              "max_videos": 1,
-              "max_audio": 1,
-              "image_roles": ["reference_image", "first_frame", "last_frame"],
-              "video_roles": ["reference_video"],
-              "audio_roles": ["reference_audio"]
-            },
-            "constraints": {
-              "requires_text": true,
-              "supports_generate_audio": true,
-              "supports_direct_media": true,
-              "supports_link_assets": true,
-              "supports_mixed_media_paths": false,
-              "reference_modes_exclusive": false,
-              "audio_requires_reference_image": false,
-              "audio_requires_visual_reference": true
-            },
-            "lifecycle": {
-              "supports_content": true,
-              "supports_last_frame": false,
-              "supports_cancel_queued": false,
-              "supports_delete": false
-            }
-          },
-          {
-            "public_model": "seedance-byteplus",
-            "contract_id": "modelark.contents.generations.v3",
-            "version": "public-video-contract-v2",
-            "content_hash": "dc4761018ab640e588942cb69f42cac517b3027e9a4b7fd8d19c0a6e63f95987",
-            "request_fields": [
-              "model",
-              "end_user_subject",
-              "content",
-              "duration",
-              "resolution",
-              "ratio",
-              "service_tier",
-              "generate_audio",
-              "watermark",
-              "return_last_frame",
-              "execution_expires_after",
-              "draft",
-              "tools",
-              "safety_identifier",
-              "priority",
-              "seed",
-              "camera_fixed"
-            ],
-            "required_fields": ["model", "content"],
-            "unsupported_fields": ["callback_url", "frames"],
-            "resolutions": ["480p", "720p", "1080p", "4k"],
-            "ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
-            "requires_resolution": true,
-            "requires_ratio": true,
-            "duration": {
-              "minimum": 4,
-              "maximum": 15,
-              "default": 5,
-              "allows_automatic": true,
-              "required": false
-            },
-            "media": {
-              "content_types": ["text", "image_url", "video_url", "audio_url"],
-              "min_images": 0,
-              "max_images": 9,
-              "max_videos": 3,
-              "max_audio": 3
-            },
-            "constraints": {
-              "requires_text": false,
-              "supports_generate_audio": true,
-              "supports_direct_media": true,
-              "supports_link_assets": true,
-              "supports_mixed_media_paths": false,
-              "reference_modes_exclusive": false,
-              "audio_requires_reference_image": false,
-              "audio_requires_visual_reference": true
-            },
-            "lifecycle": {
-              "supports_content": true,
-              "supports_last_frame": true,
-              "supports_cancel_queued": true,
-              "supports_delete": true
-            }
-          }
-        ],
         "required": [
           "model",
           "content"
@@ -6012,16 +5497,12 @@
         "properties": {
           "model": {
             "type": "string",
-            "description": "公开模型 ID。当前 ModelArk v3 合同包括 seedance-byteplus、seedance-2-0-oversea、doubao-seedance-2-0-260128、seedance-2.0-standard、seedance-2.0-fast；实际可用性以模型列表和 publication 为准。seedance-2.0-standard 支持 480p/720p/1080p；seedance-2.0-fast 支持 480p/720p；两者仅支持普通 Link 资源，不支持真人素材。飞彩 v2 的 10 个固定分辨率 SKU 尚未完成逐模型发布门禁。"
-          },
-          "end_user_subject": {
-            "type": "string",
-            "description": "应用作用域内稳定、匿名的最终用户标识。引用 real_person 素材时必须与创建认证时一致；不会以原文保存或发送给 Provider。"
+            "description": "客户可见的 Seedance 模型 ID。一个已启用模型固定对应一个 Seedance Channel；实际可用性以 GET /v1/models 为准。"
           },
           "content": {
             "type": "array",
             "minItems": 1,
-            "description": "模型支持的文本和媒体条目。seedance-2.0-standard/fast 要求至少一个非空文本，支持文生、图生、参考视频与参考音频，并可使用普通 asset:// Link 资源，但不支持真人素材。飞彩 v2 固定分辨率 SKU 尚未公开发布。具体数量、组合和字段限制以模型 capability 与服务端 4xx 为准。",
+            "description": "统一 ModelArk V3 文本和媒体条目。媒体 URL 可使用 HTTP(S)、Data URL 或 asset://ast_*；具体模型能力由上线前技术审核和 Provider 错误确定。",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -6065,7 +5546,13 @@
           },
           "duration": {
             "type": "integer",
-            "description": "视频时长。各公开模型的必填性、边界和默认值以模型 capability 与服务端 4xx 为准。"
+            "minimum": -1,
+            "maximum": 3600,
+            "description": "视频时长；-1 表示智能时长，0 无效。模型自身范围可能更窄。"
+          },
+          "callback_url": {
+            "type": "string",
+            "format": "uri"
           },
           "resolution": {
             "type": "string",
@@ -6089,7 +5576,9 @@
             "type": "boolean"
           },
           "execution_expires_after": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 3600,
+            "maximum": 259200
           },
           "draft": {
             "type": "boolean"
@@ -6110,10 +5599,20 @@
             "type": "string"
           },
           "priority": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9
+          },
+          "frames": {
+            "type": "integer",
+            "minimum": 29,
+            "maximum": 289,
+            "description": "必须满足 25 + 4n；与 duration 同时存在时按官方语义优先。"
           },
           "seed": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": -1,
+            "maximum": 2147483647
           },
           "camera_fixed": {
             "type": "boolean"
@@ -6211,146 +5710,6 @@
           }
         }
       },
-      "ModelArkVideoCapabilityCatalog": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["object", "data"],
-        "properties": {
-          "object": {
-            "type": "string",
-            "enum": ["list"]
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ModelArkVideoCapabilityCatalogItem"
-            }
-          }
-        }
-      },
-      "ModelArkVideoCapabilityCatalogItem": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["id", "object", "available", "published", "visible_in_v1_models", "capability"],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "object": {
-            "type": "string",
-            "enum": ["model.capability"]
-          },
-          "available": {
-            "type": "boolean",
-            "description": "当前 API Key 是否存在已发布且可履约的候选"
-          },
-          "published": {
-            "type": "boolean",
-            "description": "是否存在该精确客户模型的 LinkModelPublication"
-          },
-          "visible_in_v1_models": {
-            "type": "boolean",
-            "description": "当前 API Key 调用 GET /v1/models 时是否可见"
-          },
-          "capability": {
-            "$ref": "#/components/schemas/ModelArkVideoCapability"
-          }
-        }
-      },
-      "ModelArkVideoCapability": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "public_model", "contract_id", "version", "content_hash", "request_fields", "required_fields",
-          "unsupported_fields", "resolutions", "ratios", "requires_resolution", "requires_ratio", "duration",
-          "media", "constraints", "lifecycle"
-        ],
-        "properties": {
-          "public_model": {"type": "string", "description": "客户请求使用的模型 ID，与响应项 id 相同；客户 alias 不替换为 Link SKU"},
-          "contract_id": {"type": "string", "enum": ["modelark.contents.generations.v3"]},
-          "version": {"type": "string"},
-          "content_hash": {"type": "string"},
-          "request_fields": {"type": "array", "items": {"type": "string"}},
-          "required_fields": {"type": "array", "items": {"type": "string"}},
-          "unsupported_fields": {"type": "array", "items": {"type": "string"}},
-          "resolutions": {"type": "array", "items": {"type": "string", "enum": ["480p", "720p", "1080p", "4k"]}},
-          "default_resolution": {"type": "string", "enum": ["480p", "720p", "1080p", "4k"]},
-          "ratios": {"type": "array", "items": {"type": "string", "enum": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"]}},
-          "default_ratio": {"type": "string", "enum": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"]},
-          "resolution_ratio_combinations": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["resolution", "ratio"],
-              "properties": {
-                "resolution": {"type": "string"},
-                "ratio": {"type": "string"}
-              }
-            }
-          },
-          "requires_resolution": {"type": "boolean"},
-          "requires_ratio": {"type": "boolean"},
-          "duration": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["minimum", "maximum", "allows_automatic", "required"],
-            "properties": {
-              "minimum": {"type": "integer"},
-              "maximum": {"type": "integer"},
-              "default": {"type": "integer"},
-              "values": {"type": "array", "items": {"type": "integer"}},
-              "allows_automatic": {"type": "boolean"},
-              "required": {"type": "boolean"}
-            }
-          },
-          "media": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["content_types", "min_images", "max_images", "max_videos", "max_audio"],
-            "properties": {
-              "content_types": {"type": "array", "items": {"type": "string"}},
-              "min_images": {"type": "integer"},
-              "max_images": {"type": "integer"},
-              "max_videos": {"type": "integer"},
-              "max_audio": {"type": "integer"},
-              "image_roles": {"type": "array", "items": {"type": "string"}},
-              "video_roles": {"type": "array", "items": {"type": "string"}},
-              "audio_roles": {"type": "array", "items": {"type": "string"}}
-            }
-          },
-          "constraints": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "requires_text", "supports_generate_audio", "supports_direct_media", "supports_link_assets",
-              "supports_mixed_media_paths", "reference_modes_exclusive", "audio_requires_reference_image",
-              "audio_requires_visual_reference"
-            ],
-            "properties": {
-              "requires_text": {"type": "boolean"},
-              "supports_generate_audio": {"type": "boolean"},
-              "supports_direct_media": {"type": "boolean"},
-              "supports_link_assets": {"type": "boolean"},
-              "supports_mixed_media_paths": {"type": "boolean"},
-              "reference_modes_exclusive": {"type": "boolean"},
-              "audio_requires_reference_image": {"type": "boolean"},
-              "audio_requires_visual_reference": {"type": "boolean"}
-            }
-          },
-          "lifecycle": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["supports_content", "supports_last_frame", "supports_cancel_queued", "supports_delete"],
-            "properties": {
-              "supports_content": {"type": "boolean"},
-              "supports_last_frame": {"type": "boolean"},
-              "supports_cancel_queued": {"type": "boolean"},
-              "supports_delete": {"type": "boolean"}
-            }
-          }
-        }
-      },
       "ModelArkVideoTaskList": {
         "type": "object",
         "required": [
@@ -6374,11 +5733,16 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "type"
+          "type",
+          "url",
+          "expires_at"
         ],
         "properties": {
           "type": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "url"
+            ]
           },
           "url": {
             "type": "string",
@@ -6397,26 +5761,35 @@
           "name",
           "asset_kind",
           "media_type",
+          "model",
           "source"
         ],
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 64
           },
           "asset_kind": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "general",
+              "real_person"
+            ]
           },
           "media_type": {
-            "type": "string"
-          },
-          "authorization_id": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "audio"
+            ]
           },
           "model": {
             "type": "string"
           },
-          "target": {
-            "type": "string"
+          "asset_group_id": {
+            "type": "string",
+            "description": "可选 astgrp_*；真人素材必须属于已认证真人组"
           },
           "source": {
             "$ref": "#/components/schemas/AssetSource"
@@ -6435,37 +5808,6 @@
           }
         }
       },
-      "MigrateAssetRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "source",
-          "migration_reason"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "authorization_id": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string"
-          },
-          "target": {
-            "type": "string"
-          },
-          "source": {
-            "$ref": "#/components/schemas/AssetSource"
-          },
-          "migration_batch_id": {
-            "type": "string"
-          },
-          "migration_reason": {
-            "type": "string"
-          }
-        }
-      },
       "Asset": {
         "type": "object",
         "required": [
@@ -6473,40 +5815,49 @@
           "name",
           "asset_kind",
           "media_type",
+          "model",
           "status",
           "created_at",
           "updated_at"
         ],
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^ast_"
           },
           "name": {
             "type": "string"
           },
           "asset_kind": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "general",
+              "real_person"
+            ]
           },
           "media_type": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "audio"
+            ]
           },
           "model": {
             "type": "string"
           },
-          "target": {
-            "type": "string"
-          },
-          "supersedes_asset_id": {
-            "type": "string"
-          },
-          "migration_batch_id": {
-            "type": "string"
-          },
-          "migration_reason": {
-            "type": "string"
+          "asset_group_id": {
+            "type": "string",
+            "pattern": "^astgrp_"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "processing",
+              "ready",
+              "failed",
+              "deleted"
+            ]
           },
           "error_code": {
             "type": "string"
@@ -6521,17 +5872,6 @@
           "updated_at": {
             "type": "integer",
             "format": "int64"
-          }
-        }
-      },
-      "AssetEnvelope": {
-        "type": "object",
-        "required": [
-          "asset"
-        ],
-        "properties": {
-          "asset": {
-            "$ref": "#/components/schemas/Asset"
           }
         }
       },
@@ -6562,30 +5902,89 @@
           }
         }
       },
-      "AssetBinding": {
+      "CreateAssetGroupRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "group_kind",
+          "model"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "group_kind": {
+            "type": "string",
+            "enum": [
+              "general",
+              "real_person"
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "redirect_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "可选；直接传给上游真人认证服务"
+          }
+        }
+      },
+      "AssetGroup": {
         "type": "object",
         "required": [
           "id",
-          "asset_id",
+          "name",
+          "group_kind",
+          "model",
           "status",
           "created_at",
           "updated_at"
         ],
         "properties": {
           "id": {
+            "type": "string",
+            "pattern": "^astgrp_"
+          },
+          "name": {
             "type": "string"
           },
-          "asset_id": {
+          "description": {
             "type": "string"
           },
-          "target": {
-            "type": "string"
+          "group_kind": {
+            "type": "string",
+            "enum": [
+              "general",
+              "real_person"
+            ]
           },
           "model": {
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "processing",
+              "ready",
+              "failed",
+              "deleted"
+            ]
+          },
+          "verification_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "上游真人认证地址；仅在有效期内返回"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
           },
           "error_code": {
             "type": "string"
@@ -6603,99 +6002,30 @@
           }
         }
       },
-      "APIServiceRule": {
-        "type": "object",
-        "required": ["id", "version", "title", "content", "content_sha256", "status", "effective_at"],
-        "properties": {
-          "id": {"type": "integer", "format": "int64"},
-          "version": {"type": "string"},
-          "title": {"type": "string"},
-          "content": {"type": "string"},
-          "content_sha256": {"type": "string"},
-          "status": {"type": "string"},
-          "effective_at": {"type": "integer", "format": "int64"}
-        }
-      },
-      "AcceptAPIServiceRuleRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["version", "content_sha256", "compliance_owner", "consent_record_system_ref"],
-        "properties": {
-          "version": {"type": "string"},
-          "content_sha256": {"type": "string"},
-          "compliance_owner": {"type": "string"},
-          "consent_record_system_ref": {"type": "string"}
-        }
-      },
-      "APIServiceRuleAcceptance": {
-        "type": "object",
-        "required": ["accepted", "app_id", "version", "content_sha256"],
-        "properties": {
-          "accepted": {"type": "boolean"},
-          "app_id": {"type": "integer"},
-          "version": {"type": "string"},
-          "content_sha256": {"type": "string"},
-          "accepted_at": {"type": "integer", "format": "int64"}
-        }
-      },
-      "CreateRealPersonAuthorizationRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "model",
-          "end_user_subject"
-        ],
-        "properties": {
-          "model": {
-            "type": "string"
-          },
-          "end_user_subject": {
-            "type": "string",
-            "minLength": 8,
-            "maxLength": 128,
-            "pattern": "^(?=.*[A-Za-z])(?=.*[0-9])(?=.*[._:-])[A-Za-z0-9._:-]+$",
-            "description": "应用作用域内稳定、匿名的最终用户标识；不得包含姓名、邮箱、手机号或证件号"
-          }
-        }
-      },
-      "RealPersonAuthorization": {
+      "AssetGroupListResponse": {
         "type": "object",
         "required": [
-          "id",
-          "status",
-          "created_at",
-          "updated_at"
+          "data",
+          "total",
+          "page",
+          "page_size"
         ],
         "properties": {
-          "id": {
-            "type": "string"
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetGroup"
+            }
           },
-          "status": {
-            "type": "string",
-            "enum": ["awaiting_verification", "verifying", "authorized", "failed", "expired", "revoked"]
-          },
-          "error_code": {
-            "type": "string"
-          },
-          "verification_url": {
-            "type": "string",
-            "format": "uri"
-          },
-          "cleanup_status": {
-            "type": "string",
-            "enum": ["pending", "partial", "complete", "manual_required"]
-          },
-          "expires_at": {
+          "total": {
             "type": "integer",
             "format": "int64"
           },
-          "created_at": {
-            "type": "integer",
-            "format": "int64"
+          "page": {
+            "type": "integer"
           },
-          "updated_at": {
-            "type": "integer",
-            "format": "int64"
+          "page_size": {
+            "type": "integer"
           }
         }
       }
@@ -6717,12 +6047,13 @@
           "type": "string"
         }
       },
-      "AuthorizationId": {
-        "name": "authorization_id",
+      "AssetGroupId": {
+        "name": "group_id",
         "in": "path",
         "required": true,
         "schema": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^astgrp_"
         }
       }
     },

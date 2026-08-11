@@ -15,19 +15,12 @@ func videoMediaArraysContentSource(task *model.Task) (string, string, bool, erro
 		return "", "", false, nil
 	}
 	version, err := relaycommon.ResolveVideoSouthboundAdapterVersion(
-		constant.ChannelTypeDoubaoVideo,
+		constant.ChannelTypeSeedanceLink,
 		task.PrivateData.VideoUpstreamProfile,
 		task.PrivateData.SouthboundAdapterVersion,
 	)
 	if err != nil || !version.IsJSONVideoMediaArraysV2() {
 		return "", "", true, fmt.Errorf("frozen JSON video media-arrays adapter version is invalid")
-	}
-	implementation, ok := model.ResolveLinkImplementation(dto.LinkImplementationRef{
-		ID: task.PrivateData.LinkImplementationID, Version: task.PrivateData.LinkImplementationVersion,
-	})
-	if !ok || implementation.ID != model.LinkImplementationFeicaiSeedanceVideos ||
-		implementation.ContentHash != strings.TrimSpace(task.PrivateData.LinkImplementationHash) {
-		return "", "", true, fmt.Errorf("frozen JSON video media-arrays implementation is invalid")
 	}
 	key := strings.TrimSpace(task.PrivateData.Key)
 	if key == "" {

@@ -21,21 +21,14 @@ func taskVideoProviderChannel(task *model.Task, current *model.Channel) (*model.
 	return current, nil
 }
 
-// taskVideoUpstreamProfile returns the protocol frozen when the task was
-// created. Historical tasks without a snapshot fall back to the channel's
-// current profile so their pre-upgrade behavior remains queryable.
+// taskVideoUpstreamProfile returns the Seedance transport frozen at creation.
+// Native video channels use the official profile and do not read local profile
+// configuration.
 func taskVideoUpstreamProfile(task *model.Task, channel *model.Channel) dto.VideoUpstreamProfile {
 	if task != nil && task.PrivateData.VideoUpstreamProfile != "" {
 		return task.PrivateData.VideoUpstreamProfile
 	}
-	if channel == nil {
-		return dto.VideoUpstreamProfileOfficial
-	}
-	profile := channel.GetOtherSettings().VideoUpstreamProfile
-	if profile == "" {
-		return dto.VideoUpstreamProfileOfficial
-	}
-	return profile
+	return dto.VideoUpstreamProfileOfficial
 }
 
 // taskVideoUpstreamQueryBaseURL returns the upstream root address used to poll
@@ -52,16 +45,11 @@ func taskVideoUpstreamQueryBaseURL(task *model.Task, channel *model.Channel) str
 	return channel.GetBaseURL()
 }
 
-// taskVideoUpstreamQueryPath returns the query path template used to poll a
-// task. The creation-time snapshot wins (方案 §7); historical tasks fall back
-// to the channel's current template. Empty for the official profile, whose
-// polling path is built-in.
+// taskVideoUpstreamQueryPath returns the query path frozen for a Seedance task.
+// Native official video tasks use their built-in path.
 func taskVideoUpstreamQueryPath(task *model.Task, channel *model.Channel) string {
 	if task != nil && task.PrivateData.VideoUpstreamQueryPathTemplate != "" {
 		return task.PrivateData.VideoUpstreamQueryPathTemplate
 	}
-	if channel == nil {
-		return ""
-	}
-	return channel.GetOtherSettings().VideoUpstreamQueryPathTemplate
+	return ""
 }

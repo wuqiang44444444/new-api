@@ -330,15 +330,10 @@
       {
         "pageId": "videos-modelark",
         "slug": "api-reference/videos/modelark",
-        "title": "ModelArk 视频",
+        "title": "ModelArk V3 Seedance 视频",
         "description": "创建、列出、查询和删除 ModelArk 视频任务",
         "keywords": ["ModelArk", "视频", "任务"],
         "headings": [
-          {
-            "depth": 2,
-            "id": "查询模型与参数能力",
-            "text": "查询模型与参数能力"
-          },
           {
             "depth": 2,
             "id": "创建任务",
@@ -346,43 +341,18 @@
           },
           {
             "depth": 2,
-            "id": "墨行-doubao-seedance-2-0",
-            "text": "墨行 doubao Seedance 2.0"
+            "id": "查询-列表与删除",
+            "text": "查询、列表与删除"
           },
           {
             "depth": 2,
-            "id": "墨行-seedance-2-0-海外版",
-            "text": "墨行 Seedance 2.0 海外版"
+            "id": "素材引用",
+            "text": "素材引用"
           },
           {
             "depth": 2,
-            "id": "seedance-2-0-可变分辨率-sku",
-            "text": "Seedance 2.0 可变分辨率 SKU"
-          },
-          {
-            "depth": 2,
-            "id": "飞彩-seedance-2-0-固定分辨率-sku",
-            "text": "飞彩 Seedance 2.0 固定分辨率 SKU"
-          },
-          {
-            "depth": 2,
-            "id": "列表与查询",
-            "text": "列表与查询"
-          },
-          {
-            "depth": 2,
-            "id": "下载内容",
-            "text": "下载内容"
-          },
-          {
-            "depth": 2,
-            "id": "删除任务",
-            "text": "删除任务"
-          },
-          {
-            "depth": 2,
-            "id": "计费与重试",
-            "text": "计费与重试"
+            "id": "创建结果不明与计费",
+            "text": "创建结果不明与计费"
           }
         ]
       },
@@ -447,63 +417,29 @@
       {
         "pageId": "assets-lifecycle",
         "slug": "api-reference/assets",
-        "title": "素材生命周期",
-        "description": "创建、查询、更新、迁移和删除素材",
-        "keywords": ["素材", "asset", "迁移"],
+        "title": "素材与素材组",
+        "description": "创建、查询、更新和删除素材及素材组",
+        "keywords": ["素材", "asset", "素材组", "真人认证"],
         "headings": [
           {
             "depth": 2,
-            "id": "创建素材",
-            "text": "创建素材"
+            "id": "创建普通素材",
+            "text": "创建普通素材"
           },
           {
             "depth": 2,
-            "id": "查询与管理",
-            "text": "查询与管理"
+            "id": "素材组与真人认证",
+            "text": "素材组与真人认证"
           },
           {
             "depth": 2,
-            "id": "迁移",
-            "text": "迁移"
+            "id": "查询与删除",
+            "text": "查询与删除"
           },
           {
             "depth": 2,
-            "id": "asset-引用",
-            "text": "asset 引用"
-          },
-          {
-            "depth": 2,
-            "id": "状态与错误",
-            "text": "状态与错误"
-          }
-        ]
-      },
-      {
-        "pageId": "assets-authorizations",
-        "slug": "api-reference/assets/real-person-authorizations",
-        "title": "真人授权",
-        "description": "创建、查询、撤销和重试真人授权",
-        "keywords": ["真人授权", "同意", "状态"],
-        "headings": [
-          {
-            "depth": 2,
-            "id": "创建授权",
-            "text": "创建授权"
-          },
-          {
-            "depth": 2,
-            "id": "查询状态",
-            "text": "查询状态"
-          },
-          {
-            "depth": 2,
-            "id": "撤销与重试",
-            "text": "撤销与重试"
-          },
-          {
-            "depth": 2,
-            "id": "隐私边界",
-            "text": "隐私边界"
+            "id": "在视频请求中引用",
+            "text": "在视频请求中引用"
           }
         ]
       },

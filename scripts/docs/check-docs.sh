@@ -104,6 +104,6 @@ while IFS= read -r indexed_target; do
 done < <(grep -oE '\]\([0-9]{4}-[^)#[:space:]]+\.md' "$decision_index" | sed 's#^](##' || true)
 
 grep -q '^## ADR 判定门禁$' "docs/30-engineering/人工智能编码指南.md"
-grep -q '不得为了识别或拒绝 Link SKU 而修改' "docs/00-context/硬约束.md"
+grep -q '不得为了识别或拒绝 Link 模型而修改' "docs/00-context/硬约束.md"
 
 echo "docs:check passed"

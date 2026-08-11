@@ -7,13 +7,14 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 )
 
 func validateNewChannelAssetCredential(channel *model.Channel, input *dto.ChannelAssetCredentialInput, mode string) error {
-	if channel.GetOtherSettings().AssetUpstreamProfile != dto.AssetUpstreamProfileOfficial {
+	if !channelUsesOfficialAssetCredential(channel) {
 		if input != nil {
 			return errors.New("asset credential is only accepted for official_action_assets")
 		}
@@ -49,7 +50,7 @@ func validateUpdatedChannelAssetCredential(channel, origin *model.Channel, reque
 	}
 	effective.ChannelInfo = channel.ChannelInfo
 
-	if effective.GetOtherSettings().AssetUpstreamProfile != dto.AssetUpstreamProfileOfficial {
+	if !channelUsesOfficialAssetCredential(&effective) {
 		if input != nil {
 			return errors.New("asset credential is only accepted for official_action_assets")
 		}
@@ -73,6 +74,14 @@ func validateUpdatedChannelAssetCredential(channel, origin *model.Channel, reque
 		return errors.New("official_action_assets requires an asset Access Key ID and Secret Access Key")
 	}
 	return nil
+}
+
+func channelUsesOfficialAssetCredential(channel *model.Channel) bool {
+	if channel == nil || channel.Type != constant.ChannelTypeSeedanceLink {
+		return false
+	}
+	settings := channel.GetOtherSettings()
+	return settings.AssetUpstreamProtocol.TransportProfile() == dto.AssetUpstreamProfileOfficial
 }
 
 func DeleteChannelAssetCredential(c *gin.Context) {

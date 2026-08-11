@@ -334,6 +334,7 @@ func AddToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	service.NotifyTokenCreated(c.GetInt("id"))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

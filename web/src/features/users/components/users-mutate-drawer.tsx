@@ -166,6 +166,13 @@ export function UsersMutateDrawer({
         })
         return
       }
+      if (!data.email) {
+        form.setError('email', {
+          type: 'manual',
+          message: t('Email is required'),
+        })
+        return
+      }
     }
 
     setIsSubmitting(true)
@@ -260,6 +267,30 @@ export function UsersMutateDrawer({
                           disabled={isUpdate}
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='email'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Email')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type='email'
+                          placeholder={t('name@example.com')}
+                          disabled={isUpdate}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {isUpdate
+                          ? t('Email cannot be changed here')
+                          : t('Required for account notifications')}
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

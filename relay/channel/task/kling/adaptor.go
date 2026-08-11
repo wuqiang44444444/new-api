@@ -133,7 +133,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if taskErr := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
 		return taskErr
 	}
-	return service.ValidateFrozenVideoSKUCapability(c, info)
+	return nil
 }
 
 // BuildRequestURL constructs the upstream URL.

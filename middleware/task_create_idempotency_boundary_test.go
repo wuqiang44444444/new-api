@@ -84,7 +84,6 @@ func TestTaskCreateIdempotencyAllowsSameRequestAfterManualVerifiedRejection(t *t
 	require.NoError(t, db.AutoMigrate(
 		&model.TaskCreateIdempotency{},
 		&model.TaskCreateAttempt{},
-		&model.TaskAssetAuthorization{},
 	))
 	model.DB = db
 	common.SetMainDatabaseType(common.DatabaseTypeSQLite)

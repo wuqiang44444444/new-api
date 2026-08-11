@@ -9,9 +9,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
-	"github.com/QuantumNous/new-api/model"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -280,30 +278,9 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		//	return nil, errors.New("prompt is required")
 		//}
 
-		capabilityModel := imageRequest.Model
-		if publishedSKU := common.GetContextKeyString(c, constant.ContextKeyPublishedLinkContractSKU); publishedSKU != "" {
-			capabilityModel = publishedSKU
-		}
-		_, registeredImageSKU := model.ResolveImageSKUCapability(capabilityModel)
-		if imageRequest.N == nil || (*imageRequest.N == 0 && !registeredImageSKU) {
+		if imageRequest.N == nil || *imageRequest.N == 0 {
 			imageRequest.N = common.GetPointer(uint(1))
 		}
-	}
-
-	capabilityModel := imageRequest.Model
-	if publishedSKU := common.GetContextKeyString(c, constant.ContextKeyPublishedLinkContractSKU); publishedSKU != "" {
-		capabilityModel = publishedSKU
-	}
-	if capability, registered := model.ResolveImageSKUCapability(capabilityModel); registered {
-		if relayMode != relayconstant.RelayModeImagesGenerations {
-			return nil, errors.New("this image model is available only through /v1/images/generations")
-		}
-		contractRequest := *imageRequest
-		contractRequest.Model = capabilityModel
-		if err := capability.ValidateRequest(&contractRequest); err != nil {
-			return nil, err
-		}
-		common.SetContextKey(c, constant.ContextKeyResolvedImageSKUCapability, capability)
 	}
 
 	return imageRequest, nil

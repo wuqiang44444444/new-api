@@ -295,55 +295,50 @@ export function SignUpForm({
           )}
         />
 
-        {/* Email Verification Section */}
-        {emailVerificationRequired && (
-          <>
-            {/* Email Field */}
-            <FormField
-              control={form.control}
-              name='email'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {t('Email (required for verification)')}
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={t('name@example.com')}
-                      type='email'
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Verification Code Field */}
-            <div className='flex items-end gap-2'>
-              <div className='flex-1'>
+        {/* Email Field */}
+        <FormField
+          control={form.control}
+          name='email'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Email')}</FormLabel>
+              <FormControl>
                 <Input
-                  placeholder={t('Verification code')}
-                  value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value)}
+                  placeholder={t('name@example.com')}
+                  type='email'
+                  {...field}
                 />
-              </div>
-              <Button
-                variant='outline'
-                type='button'
-                disabled={
-                  isLoading ||
-                  isSendingCode ||
-                  isActive ||
-                  !emailValue ||
-                  !turnstileReady
-                }
-                onClick={handleSendVerificationCode}
-              >
-                {verificationCodeAction}
-              </Button>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* Verification Code Field */}
+        {emailVerificationRequired && (
+          <div className='flex items-end gap-2'>
+            <div className='flex-1'>
+              <Input
+                placeholder={t('Verification code')}
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value)}
+              />
             </div>
-          </>
+            <Button
+              variant='outline'
+              type='button'
+              disabled={
+                isLoading ||
+                isSendingCode ||
+                isActive ||
+                !emailValue ||
+                !turnstileReady
+              }
+              onClick={handleSendVerificationCode}
+            >
+              {verificationCodeAction}
+            </Button>
+          </div>
         )}
 
         {/* Turnstile */}

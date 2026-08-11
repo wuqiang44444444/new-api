@@ -84,7 +84,7 @@ func PromoteTaskCreateAttemptManualSuccess(
 				return errors.New("task create attempt was recovered with a different upstream task id")
 			}
 			return nil
-		case TaskCreateAttemptReleasedWithExposure, TaskCreateAttemptRejected:
+		case TaskCreateAttemptRejected:
 			return ErrTaskCreateAttemptAlreadyReleased
 		case TaskCreateAttemptSending, TaskCreateAttemptUnknown:
 		default:
@@ -164,7 +164,6 @@ type TaskCreateAttemptRecoveryView struct {
 	UpstreamTaskID     string                            `json:"upstream_task_id,omitempty"`
 	OutcomeUnknownAt   int64                             `json:"outcome_unknown_at,omitempty"`
 	NextAttemptAt      int64                             `json:"next_attempt_at"`
-	HoldDeadlineAt     int64                             `json:"hold_deadline_at"`
 	TaskDeadlineAt     int64                             `json:"task_deadline_at"`
 	ManualRecoveryAt   int64                             `json:"manual_recovery_at,omitempty"`
 	ManualRecoveryBy   int                               `json:"manual_recovery_by,omitempty"`

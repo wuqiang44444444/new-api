@@ -16,12 +16,12 @@ import (
 
 func officialVideoConnectivityTestChannel(baseURL, key string) *model.Channel {
 	channel := &model.Channel{
-		Type:    constant.ChannelTypeDoubaoVideo,
+		Type:    constant.ChannelTypeSeedanceLink,
 		BaseURL: &baseURL,
 		Key:     key,
 	}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProfile: dto.VideoUpstreamProfileOfficial,
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
 	})
 	return channel
 }

@@ -21,6 +21,7 @@ type taskCreateFrozenConnection struct {
 	BaseURL           string `json:"base_url"`
 	Key               string `json:"key"`
 	Proxy             string `json:"proxy,omitempty"`
+	Protocol          string `json:"protocol,omitempty"`
 	Profile           string `json:"profile"`
 	CreatePath        string `json:"create_path,omitempty"`
 	QueryPathTemplate string `json:"query_path_template,omitempty"`
@@ -52,6 +53,9 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 		return types.NewError(err, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
 	profile := strings.TrimSpace(string(info.ChannelOtherSettings.VideoUpstreamProfile))
+	if info.ChannelType == constant.ChannelTypeSeedanceLink {
+		profile = string(info.ChannelOtherSettings.VideoUpstreamProtocol.TransportProfile())
+	}
 	if profile == "" {
 		profile = string(dto.VideoUpstreamProfileOfficial)
 	}
@@ -59,6 +63,7 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 		BaseURL:           info.ChannelBaseUrl,
 		Key:               info.ApiKey,
 		Proxy:             info.ChannelSetting.Proxy,
+		Protocol:          strings.TrimSpace(string(info.ChannelOtherSettings.VideoUpstreamProtocol)),
 		Profile:           profile,
 		CreatePath:        info.ChannelOtherSettings.VideoUpstreamCreatePath,
 		QueryPathTemplate: info.ChannelOtherSettings.VideoUpstreamQueryPathTemplate,
@@ -74,20 +79,6 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
-	contractID, contractVersion := taskAttemptNorthboundContract(c, info.ClientProtocol)
-	skuVersion, skuHash := "", ""
-	if capability, ok := common.GetContextKeyType[model.VideoSKUCapability](c, constant.ContextKeyResolvedVideoSKUCapability); ok {
-		skuVersion, skuHash = capability.Version, capability.ContentHash
-	} else if capability, ok := common.GetContextKeyType[model.ImageSKUCapability](c, constant.ContextKeyResolvedImageSKUCapability); ok {
-		skuVersion, skuHash = capability.Version, capability.ContentHash
-	}
-	implementation, err := resolveTaskAttemptLinkImplementation(
-		info.PublishedLinkContractSKU,
-		info.ChannelOtherSettings.LinkImplementation,
-	)
-	if err != nil {
-		return types.NewError(err, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
-	}
 	now := time.Now()
 	taskDeadlineAt := now.Add(24 * time.Hour).Unix()
 	if constant.TaskTimeoutMinutes > 0 {
@@ -95,36 +86,24 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 	}
 	idempotencyID := int64(common.GetContextKeyInt(c, constant.ContextKeyTaskIdempotencyID))
 	attempt, err := model.CreatePreparedTaskAttempt(model.TaskCreateAttemptParams{
-		IdempotencyID:             idempotencyID,
-		PublicTaskID:              info.PublicTaskID,
-		UserID:                    info.UserId,
-		TokenID:                   info.TokenId,
-		AppID:                     info.AppID,
-		EndUserSubjectHash:        info.EndUserSubjectHash,
-		ClientProtocol:            info.ClientProtocol,
-		RequestHash:               requestHash,
-		NorthboundContractID:      contractID,
-		NorthboundContractVersion: contractVersion,
-		SKUCapabilityVersion:      skuVersion,
-		SKUCapabilityHash:         skuHash,
-		LinkImplementationID:      implementation.ID,
-		LinkImplementationVersion: implementation.Version,
-		LinkImplementationHash:    implementation.ContentHash,
-		LinkContractNamespace:     info.LinkContractNamespace,
-		LinkRouteFamily:           info.LinkRouteFamily,
-		PublishedLinkContractSKU:  info.PublishedLinkContractSKU,
-		LinkPublicationVersion:    info.LinkPublicationVersion,
-		ChannelID:                 info.ChannelId,
-		PublicModel:               info.OriginModelName,
-		UpstreamProfile:           profile,
+		IdempotencyID:    idempotencyID,
+		PublicTaskID:     info.PublicTaskID,
+		UserID:           info.UserId,
+		TokenID:          info.TokenId,
+		AppID:            info.AppID,
+		ClientProtocol:   info.ClientProtocol,
+		RequestHash:      requestHash,
+		ChannelID:        info.ChannelId,
+		PublicModel:      info.OriginModelName,
+		UpstreamProfile:  profile,
+		UpstreamProtocol: strings.TrimSpace(string(info.ChannelOtherSettings.VideoUpstreamProtocol)),
 		AdapterVersion: relaycommon.CurrentVideoSouthboundAdapterVersion(
 			info.ChannelType,
-			info.ChannelOtherSettings.VideoUpstreamProfile,
+			dto.VideoUpstreamProfile(profile),
 		),
 		FrozenConnectionSnapshot: frozen,
 		BillingSnapshot:          billing,
 		NextAttemptAt:            now.Add(2 * time.Minute).Unix(),
-		HoldDeadlineAt:           now.Add(24 * time.Hour).Unix(),
 		TaskDeadlineAt:           taskDeadlineAt,
 	})
 	if err != nil {
@@ -145,12 +124,6 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog(),
 			)
 		}
-		if errors.Is(holdErr, model.ErrTaskAttemptAuthorizationUnavailable) {
-			return types.NewErrorWithStatusCode(
-				holdErr, types.ErrorCodeInvalidRequest, http.StatusConflict,
-				types.ErrOptionWithSkipRetry(),
-			)
-		}
 		return types.NewError(holdErr, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
 	common.SetContextKey(c, constant.ContextKeyTaskCreateAttemptID, int(attempt.ID))
@@ -164,12 +137,11 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 func holdTaskAttemptForBilling(info *relaycommon.RelayInfo, attemptID int64) (*model.TaskAttemptHoldResult, error) {
 	hold := func(source string) (*model.TaskAttemptHoldResult, error) {
 		return model.HoldTaskCreateAttempt(model.TaskAttemptHoldParams{
-			AttemptID:      attemptID,
-			FundingSource:  source,
-			ModelName:      info.OriginModelName,
-			Quota:          info.PriceData.Quota,
-			AssetPublicIDs: append([]string(nil), info.AssetPublicIDs...),
-			IsPlayground:   info.IsPlayground,
+			AttemptID:     attemptID,
+			FundingSource: source,
+			ModelName:     info.OriginModelName,
+			Quota:         info.PriceData.Quota,
+			IsPlayground:  info.IsPlayground,
 		})
 	}
 	if info.PriceData.FreeModel {
@@ -271,25 +243,6 @@ func taskAttemptRequestHash(c *gin.Context, protocol string) (string, error) {
 	_, _ = digest.Write([]byte(c.Request.Method + "\n" + c.Request.URL.Path + "\n" + protocol + "\n"))
 	_, _ = digest.Write(body)
 	return hex.EncodeToString(digest.Sum(nil)), nil
-}
-
-func taskAttemptNorthboundContract(c *gin.Context, protocol string) (string, string) {
-	if capability, ok := common.GetContextKeyType[model.ImageSKUCapability](c, constant.ContextKeyResolvedImageSKUCapability); ok {
-		return capability.ContractID, capability.Version
-	}
-	if contract, ok := relaycommon.GetVideoContractRequest(c); ok {
-		switch contract.ContractID {
-		case dto.VideoContractModelArkV3:
-			return string(contract.ContractID), "2024-01-01"
-		case dto.VideoContractKlingV1:
-			return string(contract.ContractID), "v1"
-		case dto.VideoContractJimeng:
-			return string(contract.ContractID), "2022-08-31"
-		default:
-			return string(contract.ContractID), "v1"
-		}
-	}
-	return protocol, "v1"
 }
 
 func MarkTaskCreateAttemptUpstreamStarted(c *gin.Context) {

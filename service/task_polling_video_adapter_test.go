@@ -55,17 +55,17 @@ func TestVideoPollingUsesFrozenMediaArraysV1AndRedactsResultURLFromTaskData(t *t
 	now := time.Now().Unix()
 	channel := &model.Channel{
 		Id:      971,
-		Type:    constant.ChannelTypeDoubaoVideo,
+		Type:    constant.ChannelTypeSeedanceLink,
 		Key:     "provider-key",
 		BaseURL: common.GetPointer("https://video.example.com"),
 		Status:  common.ChannelStatusEnabled,
 	}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMediaArraysV2,
 	})
 	task := &model.Task{
 		TaskID:         "task-poll-v2",
-		Platform:       constant.TaskPlatform("54"),
+		Platform:       constant.TaskPlatform("61"),
 		UserId:         971,
 		ChannelId:      channel.Id,
 		Status:         model.TaskStatusInProgress,
@@ -76,7 +76,7 @@ func TestVideoPollingUsesFrozenMediaArraysV1AndRedactsResultURLFromTaskData(t *t
 		PrivateData: model.TaskPrivateData{
 			UpstreamTaskID:            "provider-task-v2",
 			VideoUpstreamProfile:      dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-			SouthboundAdapterVersion:  "54:third_party_json_video_media_arrays:v2",
+			SouthboundAdapterVersion:  "61:third_party_json_video_media_arrays:v2",
 			VideoUpstreamQueryBaseURL: "https://video.example.com",
 			Key:                       "provider-key",
 		},
@@ -92,7 +92,7 @@ func TestVideoPollingUsesFrozenMediaArraysV1AndRedactsResultURLFromTaskData(t *t
 		map[string]*model.Task{task.PrivateData.UpstreamTaskID: task},
 	))
 	require.NoError(t, model.DB.First(task, task.ID).Error)
-	assert.Equal(t, "54:third_party_json_video_media_arrays:v2", capture.adapterVersion)
+	assert.Equal(t, "61:third_party_json_video_media_arrays:v2", capture.adapterVersion)
 	assert.NotContains(t, string(task.Data), "video.example.com")
 	assert.NotContains(t, string(task.Data), "secret")
 	assert.Contains(t, string(task.Data), "[redacted]")
@@ -101,9 +101,9 @@ func TestVideoPollingUsesFrozenMediaArraysV1AndRedactsResultURLFromTaskData(t *t
 func TestVideoPollingRejectsUnknownFrozenAdapterBeforeFetch(t *testing.T) {
 	truncate(t)
 	now := time.Now().Unix()
-	channel := &model.Channel{Id: 972, Type: constant.ChannelTypeDoubaoVideo}
+	channel := &model.Channel{Id: 972, Type: constant.ChannelTypeSeedanceLink}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMediaArraysV2,
 	})
 	task := &model.Task{
 		TaskID:    "task-poll-invalid-version",
@@ -114,7 +114,7 @@ func TestVideoPollingRejectsUnknownFrozenAdapterBeforeFetch(t *testing.T) {
 		PrivateData: model.TaskPrivateData{
 			UpstreamTaskID:           "provider-invalid-version",
 			VideoUpstreamProfile:     dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-			SouthboundAdapterVersion: "54:third_party_json_video_media_arrays:v3",
+			SouthboundAdapterVersion: "61:third_party_json_video_media_arrays:v3",
 		},
 	}
 	require.NoError(t, model.DB.Create(task).Error)

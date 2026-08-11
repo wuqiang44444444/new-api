@@ -52,3 +52,42 @@ func TestReconcileTaskCreateAttemptsRejectsStalePreparedAttempt(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, created)
 }
+
+func TestReconcileTaskCreateAttemptsStopsUnknownWithoutReleasingHold(t *testing.T) {
+	truncate(t)
+	user := &model.User{Id: 992, Username: "unknown-hold", Quota: 100}
+	require.NoError(t, model.DB.Create(user).Error)
+	token := &model.Token{UserId: user.Id, Key: "unknown-hold-token", Status: common.TokenStatusEnabled, RemainQuota: 100}
+	require.NoError(t, model.DB.Create(token).Error)
+	now := common.GetTimestamp()
+	attempt, err := model.CreatePreparedTaskAttempt(model.TaskCreateAttemptParams{
+		PublicTaskID:   "task-unknown-hold",
+		UserID:         user.Id,
+		TokenID:        token.Id,
+		ClientProtocol: model.TaskClientProtocolModelArkV3,
+		RequestHash:    "unknown-hold-request",
+		NextAttemptAt:  now - 1,
+	})
+	require.NoError(t, err)
+	_, err = model.HoldTaskCreateAttempt(model.TaskAttemptHoldParams{
+		AttemptID: attempt.ID, FundingSource: BillingSourceWallet, Quota: 25,
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.MarkTaskCreateAttemptUnknown(attempt.ID, "provider-request"))
+	require.NoError(t, model.ScheduleTaskCreateAttemptReconcile(attempt.ID, model.TaskCreateAttemptUnknown, now-1))
+
+	assert.Equal(t, 1, ReconcileTaskCreateAttempts(context.Background()))
+	require.NoError(t, model.DB.First(attempt, attempt.ID).Error)
+	require.NoError(t, model.DB.First(user, user.Id).Error)
+	require.NoError(t, model.DB.First(token, token.Id).Error)
+	assert.Equal(t, model.TaskCreateAttemptUnknown, attempt.Status)
+	assert.Equal(t, model.TaskCreateAttemptBillingHeld, attempt.BillingHoldState)
+	assert.Zero(t, attempt.NextAttemptAt)
+	assert.Equal(t, 75, user.Quota)
+	assert.Equal(t, 75, token.RemainQuota)
+
+	var exposures int64
+	require.NoError(t, model.DB.Model(&model.ProviderCostExposure{}).
+		Where("source_id = ?", attempt.AttemptID).Count(&exposures).Error)
+	assert.Zero(t, exposures)
+}

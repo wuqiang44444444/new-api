@@ -417,6 +417,16 @@ export function AccountBindingsTab({
 
   return (
     <>
+      {!profile.email && (
+        <div className='mb-3 flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5 text-xs'>
+          <Mail className='mt-0.5 h-4 w-4 shrink-0 text-amber-600' />
+          <p className='text-muted-foreground'>
+            {t(
+              'No email is set. Add an email to receive account and security notifications.'
+            )}
+          </p>
+        </div>
+      )}
       <div className='grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3'>
         {bindings.map((binding) => {
           let actionLabel = t('Bind')

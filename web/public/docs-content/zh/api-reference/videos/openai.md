@@ -1,7 +1,7 @@
 ---
 page-id: videos-openai
 kind: api-reference
-last-verified: 2026-08-04
+last-verified: 2026-08-10
 operations:
   - createVideo
   - getVideo
@@ -12,7 +12,7 @@ operations:
 # OpenAI Videos
 
 本页描述仓库上游现有的 OpenAI Videos 路由，适用于渠道实际支持的 Sora/OpenAI 视频模型。
-Seedance、Kling、即梦 Link SKU 使用各自的类型化入口，不通过本页推断或扩展能力。
+Seedance、Kling、即梦使用各自的类型化入口，不通过本页推断或扩展能力。
 
 ## 创建视频
 
@@ -30,8 +30,8 @@ curl "{{OPENAI_BASE_URL}}/videos" \
   }'
 ```
 
-模型、时长、尺寸和参考输入必须以所选渠道的实际合同为准；本页不会把 Link SKU capability
-投影到原生 OpenAI Videos。
+模型、时长、尺寸和参考输入必须以所选渠道的实际合同为准；本页不会把 Link 扩展规则投影到原生
+OpenAI Videos。
 
 ## 查询任务
 

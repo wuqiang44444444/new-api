@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
@@ -53,10 +53,10 @@ func TestUnregisteredTaskCreateHTTPDispositionFailsClosed(t *testing.T) {
 
 func TestTokenSaveDoubaoInsufficientQuotaIsTerminalRejection(t *testing.T) {
 	info := &relaycommon.RelayInfo{
-		OriginModelName: model.VideoSKUDoubaoSeedance20260128,
 		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType: constant.ChannelTypeSeedanceLink,
 			ChannelOtherSettings: dto.ChannelOtherSettings{
-				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyRelay,
+				VideoUpstreamProtocol: dto.VideoUpstreamProtocolMediaTaskV1,
 			},
 		},
 	}
@@ -77,13 +77,10 @@ func TestTokenSaveDoubaoInsufficientQuotaIsTerminalRejection(t *testing.T) {
 
 func TestFeicaiV2AccountRequiredRemainsUnknownWithoutExactContract(t *testing.T) {
 	info := &relaycommon.RelayInfo{
-		OriginModelName: model.VideoSKUSeedance20Value720P,
 		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType: constant.ChannelTypeSeedanceLink,
 			ChannelOtherSettings: dto.ChannelOtherSettings{
-				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-				LinkImplementation: dto.LinkImplementationRef{
-					ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV2,
-				},
+				VideoUpstreamProtocol: dto.VideoUpstreamProtocolMediaArraysV2,
 			},
 		},
 	}

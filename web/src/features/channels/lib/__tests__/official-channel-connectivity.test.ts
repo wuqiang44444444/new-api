@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+
+import { describe, test } from 'vitest'
 
 import {
   getOfficialConnectivityAvailability,
@@ -29,7 +30,7 @@ describe('official channel connectivity', () => {
         { success: false, error_code: 'asset_resources_active' },
         'fallback'
       ),
-      'Delete all active assets, asset groups, and real-person authorizations before clearing credentials.'
+      'Delete all active assets and asset groups before clearing credentials.'
     )
     assert.equal(
       getOfficialConnectivityMessage(
@@ -52,10 +53,10 @@ describe('official channel connectivity', () => {
 
   test('keeps both tests visible but blocks persisted tests for draft secrets', () => {
     const available = getOfficialConnectivityAvailability({
-      assetProfile: 'official_action_assets',
-      savedAssetProfile: 'official_action_assets',
-      videoProfile: 'official',
-      savedVideoProfile: 'official',
+      assetProtocol: 'byteplus_assets_action_v2024_01_01',
+      savedAssetProtocol: 'byteplus_assets_action_v2024_01_01',
+      videoProtocol: 'modelark_v3_byteplus',
+      savedVideoProtocol: 'modelark_v3_byteplus',
       credentialConfigured: true,
       hasPendingVideoKey: true,
       hasPendingAssetCredential: true,
@@ -67,12 +68,29 @@ describe('official channel connectivity', () => {
     assert.equal(available.hasUnsavedTestChanges, true)
   })
 
+  test('enables the saved Volcengine official asset test with stored credentials', () => {
+    const availability = getOfficialConnectivityAvailability({
+      assetProtocol: 'volcengine_assets_action_v2024_01_01',
+      savedAssetProtocol: 'volcengine_assets_action_v2024_01_01',
+      videoProtocol: 'modelark_v3_volcengine',
+      savedVideoProtocol: 'modelark_v3_volcengine',
+      credentialConfigured: true,
+      hasPendingVideoKey: false,
+      hasPendingAssetCredential: false,
+      sensitiveLocked: false,
+    })
+
+    assert.equal(availability.videoCanTest, true)
+    assert.equal(availability.assetCanTest, true)
+    assert.equal(availability.hasUnsavedTestChanges, false)
+  })
+
   test('allows explicit clear only after the official asset profile is saved disabled', () => {
     const active = getOfficialConnectivityAvailability({
-      assetProfile: 'none',
-      savedAssetProfile: 'official_action_assets',
-      videoProfile: 'official',
-      savedVideoProfile: 'official',
+      assetProtocol: 'none',
+      savedAssetProtocol: 'byteplus_assets_action_v2024_01_01',
+      videoProtocol: 'modelark_v3_byteplus',
+      savedVideoProtocol: 'modelark_v3_byteplus',
       credentialConfigured: true,
       hasPendingVideoKey: false,
       hasPendingAssetCredential: false,
@@ -81,10 +99,10 @@ describe('official channel connectivity', () => {
     assert.equal(active.canClearCredential, false)
 
     const disabled = getOfficialConnectivityAvailability({
-      assetProfile: 'none',
-      savedAssetProfile: 'none',
-      videoProfile: 'official',
-      savedVideoProfile: 'official',
+      assetProtocol: 'none',
+      savedAssetProtocol: 'none',
+      videoProtocol: 'modelark_v3_byteplus',
+      savedVideoProtocol: 'modelark_v3_byteplus',
       credentialConfigured: true,
       hasPendingVideoKey: false,
       hasPendingAssetCredential: false,
@@ -94,10 +112,10 @@ describe('official channel connectivity', () => {
 
     assert.equal(
       getOfficialConnectivityAvailability({
-        assetProfile: 'none',
-        savedAssetProfile: 'none',
-        videoProfile: 'official',
-        savedVideoProfile: 'official',
+        assetProtocol: 'none',
+        savedAssetProtocol: 'none',
+        videoProtocol: 'modelark_v3_byteplus',
+        savedVideoProtocol: 'modelark_v3_byteplus',
         credentialConfigured: true,
         hasPendingVideoKey: false,
         hasPendingAssetCredential: true,
@@ -108,18 +126,14 @@ describe('official channel connectivity', () => {
   })
 
   test('enables saved Ark and relay asset profiles without separate credentials', () => {
-    for (const assetProfile of ['ark_assets', 'relay_assets']) {
+    for (const assetProtocol of ['ark_assets_v1', 'relay_assets_v1']) {
       const availability = getOfficialConnectivityAvailability({
-        assetProfile,
-        savedAssetProfile: assetProfile,
-        videoProfile:
-          assetProfile === 'ark_assets'
-            ? 'third_party_reverse_proxy'
-            : 'third_party_relay',
-        savedVideoProfile:
-          assetProfile === 'ark_assets'
-            ? 'third_party_reverse_proxy'
-            : 'third_party_relay',
+        assetProtocol,
+        savedAssetProtocol: assetProtocol,
+        videoProtocol:
+          assetProtocol === 'ark_assets_v1' ? 'ark_media_v1' : 'media_task_v1',
+        savedVideoProtocol:
+          assetProtocol === 'ark_assets_v1' ? 'ark_media_v1' : 'media_task_v1',
         credentialConfigured: false,
         hasPendingVideoKey: false,
         hasPendingAssetCredential: false,

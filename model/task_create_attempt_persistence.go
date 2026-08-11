@@ -90,15 +90,6 @@ func InsertTaskWithCreateAttempt(task *Task, idempotencyID, attemptID int64) err
 		if attemptResult.RowsAffected != 1 {
 			return errors.New("task create attempt transfer was lost")
 		}
-		if err := tx.Model(&TaskAssetAuthorization{}).
-			Where("attempt_id = ? AND state = ?", attempt.AttemptID, TaskAssetAuthorizationReserved).
-			Updates(map[string]any{
-				"task_id":    task.TaskID,
-				"state":      TaskAssetAuthorizationTaskBound,
-				"updated_at": common.GetTimestamp(),
-			}).Error; err != nil {
-			return err
-		}
 		if idempotencyID != 0 {
 			result := tx.Model(&TaskCreateIdempotency{}).
 				Where("id = ? AND attempt_id = ? AND status IN ?", idempotencyID, attempt.AttemptID, []string{
@@ -185,15 +176,6 @@ func RecoverTaskCreateAttempt(id int64) (*Task, error) {
 		}
 		if result.RowsAffected != 1 {
 			return errors.New("task create attempt recovery lost its journal")
-		}
-		if err := tx.Model(&TaskAssetAuthorization{}).
-			Where("attempt_id = ? AND state = ?", attempt.AttemptID, TaskAssetAuthorizationReserved).
-			Updates(map[string]any{
-				"task_id":    task.TaskID,
-				"state":      TaskAssetAuthorizationTaskBound,
-				"updated_at": common.GetTimestamp(),
-			}).Error; err != nil {
-			return err
 		}
 		if err := tx.Model(&TaskCreateIdempotency{}).
 			Where("attempt_id = ? AND status IN ?", attempt.AttemptID, []string{

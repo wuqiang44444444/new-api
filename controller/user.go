@@ -224,6 +224,10 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+	if user.Email == "" {
+		common.ApiErrorI18n(c, i18n.MsgUserEmailEmpty)
+		return
+	}
 	if err := common.Validate.Struct(&user); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
@@ -269,9 +273,7 @@ func Register(c *gin.Context) {
 		InviterId:   inviterId,
 		Role:        common.RoleCommonUser, // 明确设置角色为普通用户
 	}
-	if common.EmailVerificationEnabled {
-		cleanUser.Email = user.Email
-	}
+	cleanUser.Email = user.Email
 	if err := cleanUser.Insert(inviterId); err != nil {
 		if errors.Is(err, model.ErrEmailAlreadyTaken) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
@@ -287,6 +289,7 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserRegisterFailed)
 		return
 	}
+	service.NotifyAccountCreated(insertedUser.Id)
 	// 生成默认令牌
 	if constant.GenerateDefaultToken {
 		key, err := common.GenerateKey()
@@ -736,6 +739,9 @@ func UpdateUser(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if updatePassword {
+		service.NotifyPasswordChanged(updatedUser.Id)
+	}
 	recordManageAuditFor(c, updatedUser.Id, "user.update", map[string]interface{}{
 		"username": originUser.Username,
 		"id":       updatedUser.Id,
@@ -911,6 +917,7 @@ func UpdateSelf(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
+		service.NotifyPasswordChanged(cleanUser.Id)
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": "",
@@ -1012,7 +1019,8 @@ func CreateUser(c *gin.Context) {
 	var user model.User
 	err := common.DecodeJson(c.Request.Body, &user)
 	user.Username = strings.TrimSpace(user.Username)
-	if err != nil || user.Username == "" || user.Password == "" {
+	user.Email = model.NormalizeEmail(user.Email)
+	if err != nil || user.Username == "" || user.Password == "" || user.Email == "" {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
@@ -1032,6 +1040,7 @@ func CreateUser(c *gin.Context) {
 	cleanUser := model.User{
 		Username:    user.Username,
 		Password:    user.Password,
+		Email:       user.Email,
 		DisplayName: user.DisplayName,
 		Role:        user.Role, // 保持管理员设置的角色
 	}
@@ -1054,6 +1063,7 @@ func CreateUser(c *gin.Context) {
 		}
 	}
 	cleanUser.FinishInsert(0)
+	service.NotifyAccountCreated(cleanUser.Id)
 
 	recordManageAuditFor(c, cleanUser.Id, "user.create", map[string]interface{}{
 		"username": cleanUser.Username,

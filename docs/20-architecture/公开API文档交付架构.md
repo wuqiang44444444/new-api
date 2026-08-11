@@ -193,12 +193,11 @@ Manifest 中的 page ID 是跨语言稳定身份，slug 是公开路由合同，
 
 ModelArk V3 OpenAPI 只描述统一官方请求结构、四组任务行为、平台素材引用和稳定错误，不生成逐模型
 SKU capability 投影。Provider 或模型的特殊限制由对应代码 adapter 明确校验，并在公开模型说明中以
-普通文档表达；不把运行时 publication、implementation 或 hash 注册表暴露为客户合同。
+普通文档表达；已删除的 publication、implementation 或 hash 注册表不进入客户合同。
 
-若保留带 Token 鉴权的 `GET /api/v3/contents/generations/models`，它只按 Token、Group、Ability 和已
-启用 `ChannelTypeSeedanceLink` 返回客户模型可用性与面向客户的展示信息。响应不得暴露 Provider 模型、
-Channel ID、上游协议、价格、Key 或连接，也不能声称尚未完成真实验收的模型已经生产开放。模型是否
-兼容某个 adapter 由技术人员线下确认，不由该接口创建或认证。
+不另设 `GET /api/v3/contents/generations/models`。客户模型发现继续使用 NEWAPI 原生 `/v1/models`，
+只依据 Token、Group、Ability 和已启用渠道返回客户模型；不得暴露 Provider 模型、Channel ID、上游
+协议、价格、Key 或连接。模型是否兼容某个 adapter 由技术人员线下确认，不由模型发现接口创建或认证。
 
 ## 9. 安全与缓存
 
@@ -238,5 +237,5 @@ Channel ID、上游协议、价格、Key 或连接，也不能声称尚未完成
 
 - [公开 API 文档维护指南](../30-engineering/公开API文档维护指南.md)
 - [API 文档中心交互规范](../90-ui-ux/API文档中心交互规范.md)
-- [内置 API 文档中心实施计划](../50-planning/内置API文档中心实施计划.md)
-- [Link 扩展概念与协作关系](Link服务合同概念与协作关系.md)
+- [路线图：内置 API 文档中心上线验收](../50-planning/路线图.md#内置-api-文档中心上线验收)
+- [Seedance 专用渠道与 Link 架构](Seedance专用渠道与Link架构.md)

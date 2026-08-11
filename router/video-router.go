@@ -3,7 +3,6 @@ package router
 import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
-	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
 )
@@ -34,13 +33,8 @@ func SetVideoRouter(router *gin.Engine) {
 		middleware.TokenAuth(),
 		middleware.TaskClientProtocol("modelark_v3"),
 		middleware.TaskCreateResponseContract(),
-		middleware.TaskCreateIdempotency(),
 		middleware.ModelArkVideoCreateConvert(),
-		middleware.ResolveLinkModelPublication(model.LinkRouteFamilyModelArkVideo),
-		middleware.ResolveVideoSKUCapability(),
-		middleware.AssetRouteConstraint(),
-		middleware.ModelArkVideoChannelConstraint(),
-		middleware.Distribute(),
+		middleware.ResolveSeedanceChannel(),
 	)
 	{
 		modelArkVideoCreateRouter.POST("/contents/generations/tasks", controller.RelayTask)
@@ -55,10 +49,6 @@ func SetVideoRouter(router *gin.Engine) {
 		modelArkVideoReadRouter.DELETE("/contents/generations/tasks/:task_id", controller.ModelArkVideoDelete)
 	}
 
-	modelArkVideoCapabilityRouter := router.Group("/api/v3")
-	modelArkVideoCapabilityRouter.Use(middleware.RouteTag("relay"), middleware.TokenAuth())
-	modelArkVideoCapabilityRouter.GET("/contents/generations/models", controller.ModelArkVideoCapabilities)
-
 	klingV1CreateRouter := router.Group("/kling/v1")
 	klingV1CreateRouter.Use(middleware.RouteTag("relay"))
 	klingV1CreateRouter.Use(
@@ -67,10 +57,6 @@ func SetVideoRouter(router *gin.Engine) {
 		middleware.TaskCreateResponseContract(),
 		middleware.TaskCreateIdempotency(),
 		middleware.KlingRequestConvert(),
-		middleware.ResolveLinkModelPublication(model.LinkRouteFamilyKlingVideo),
-		middleware.ResolveVideoSKUCapability(),
-		middleware.AssetRouteConstraint(),
-		middleware.VideoSKUChannelConstraint(),
 		middleware.Distribute(),
 	)
 	{
@@ -95,10 +81,6 @@ func SetVideoRouter(router *gin.Engine) {
 		middleware.TaskCreateResponseContract(),
 		middleware.TaskCreateIdempotency(),
 		middleware.JimengRequestConvert(),
-		middleware.ResolveLinkModelPublication(model.LinkRouteFamilyJimengVideo),
-		middleware.ResolveVideoSKUCapability(),
-		middleware.AssetRouteConstraint(),
-		middleware.VideoSKUChannelConstraint(),
 		middleware.Distribute(),
 	)
 	{

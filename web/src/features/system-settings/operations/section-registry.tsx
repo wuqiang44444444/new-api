@@ -55,6 +55,15 @@ const OPERATIONS_SECTIONS = [
             settings['perf_metrics_setting.bucket_time'] ?? 'hour',
           'perf_metrics_setting.retention_days':
             settings['perf_metrics_setting.retention_days'] ?? 0,
+          'notification_setting.send_email_on_account_created':
+            settings['notification_setting.send_email_on_account_created'] ??
+            false,
+          'notification_setting.send_email_on_password_changed':
+            settings['notification_setting.send_email_on_password_changed'] ??
+            false,
+          'notification_setting.send_email_on_token_created':
+            settings['notification_setting.send_email_on_token_created'] ??
+            false,
         }}
       />
     ),

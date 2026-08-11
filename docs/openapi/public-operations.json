@@ -1,7 +1,11 @@
 {
   "schemaVersion": 1,
   "operations": [
-    { "operationId": "listModels", "status": "published", "family": "text" },
+    {
+      "operationId": "listModels",
+      "status": "published",
+      "family": "text"
+    },
     {
       "operationId": "createChatCompletion",
       "status": "published",
@@ -54,11 +58,6 @@
     },
     {
       "operationId": "createModelArkVideoTask",
-      "status": "published",
-      "family": "video-modelark"
-    },
-    {
-      "operationId": "listModelArkVideoModelCapabilities",
       "status": "published",
       "family": "video-modelark"
     },
@@ -133,32 +132,22 @@
       "family": "assets"
     },
     {
-      "operationId": "listAssetBindings",
+      "operationId": "createAssetGroup",
       "status": "published",
       "family": "assets"
     },
     {
-      "operationId": "migrateAsset",
+      "operationId": "listAssetGroups",
       "status": "published",
       "family": "assets"
     },
     {
-      "operationId": "createRealPersonAuthorization",
+      "operationId": "getAssetGroup",
       "status": "published",
       "family": "assets"
     },
     {
-      "operationId": "getRealPersonAuthorization",
-      "status": "published",
-      "family": "assets"
-    },
-    {
-      "operationId": "revokeRealPersonAuthorization",
-      "status": "published",
-      "family": "assets"
-    },
-    {
-      "operationId": "retryRealPersonAuthorization",
+      "operationId": "deleteAssetGroup",
       "status": "published",
       "family": "assets"
     }

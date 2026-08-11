@@ -62,5 +62,5 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 	if request != nil {
 		request.SetModelName(info.UpstreamModelName)
 	}
-	return validatePublishedLinkExecution(info)
+	return nil
 }

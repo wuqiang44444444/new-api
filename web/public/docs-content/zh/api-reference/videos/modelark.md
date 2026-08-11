@@ -1,9 +1,8 @@
 ---
 page-id: videos-modelark
 kind: api-reference
-last-verified: 2026-08-05
+last-verified: 2026-08-10
 operations:
-  - listModelArkVideoModelCapabilities
   - createModelArkVideoTask
   - listModelArkVideoTasks
   - getModelArkVideoTask
@@ -11,33 +10,10 @@ operations:
   - getVideoContent
 ---
 
-# ModelArk 视频
+# ModelArk V3 Seedance 视频
 
-ModelArk 使用 `/api/v3/contents/generations/tasks` 原生合同。它不是 `/v1` 子路径，字段也不能与 Kling 或即梦请求混用。
-
-## 查询模型与参数能力
-
-`GET /v1/models` 只返回当前 API Key 实际可调用的客户模型身份。查看全部已登记 Seedance 基础候选、
-当前 Key 的客户模型 alias，以及每个模型的字段、默认值、分辨率、画幅、媒体数量和生命周期能力时，
-调用：
-
-```bash
-curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models" \
-  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
-```
-
-也可以用精确模型过滤：
-
-```bash
-curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models?model=seedance-2.0-fast" \
-  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
-```
-
-精确过滤支持直接使用 `/v1/models` 返回的客户模型 ID；alias 行的 `id` 和
-`capability.public_model` 保持客户模型，不暴露其绑定的 Link SKU。响应中的 `capability` 是参数合同；
-`visible_in_v1_models` 表示该模型是否出现在当前 Key 的
-`GET /v1/models` 中；只有 `published=true`、`visible_in_v1_models=true` 且 `available=true` 时才可提交
-创建请求。`available=false` 的候选模型仍会显示参数，便于客户端提前适配，但不得解释为已经生产发布。
+所有 Seedance 客户模型统一使用 ModelArk V3 四组任务接口。`/v1/video/generations` 属于 NEWAPI 原生
+DoubaoVideo 合同，不是本接口的别名。
 
 ## 创建任务
 
@@ -58,108 +34,40 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
   }'
 ```
 
-`model` 和非空 `content` 必填。`content` 可包含该模型支持的文本与媒体 URL 条目。`duration`、`resolution`、`ratio`、音频、草稿和服务档位等可选字段必须以当前模型能力为准。
+平台验证统一 ModelArk V3 请求结构、媒体 URL 和影响计费的安全边界。模型是否支持具体分辨率、媒体
+组合或扩展字段，以管理员上线前的技术审核和所选 Provider 的错误为准；平台不再提供 publication、
+Link SKU capability 或模型能力目录接口。
 
-## 墨行 doubao Seedance 2.0
+不同渠道使用不同客户模型名。一个已启用客户模型只对应一个 Seedance 渠道，任务不会根据 Priority、
+Weight 随机分发，也不会在失败后换到其它 Provider 再创建一次。
 
-`doubao-seedance-2-0-260128` 只使用已登记的 TokenSave relay 实现，不会路由到 FunCloud。
+## 查询、列表与删除
 
-`doubao-seedance-2-0-260128` 支持 `480p`、`720p`、`1080p`，时长支持 4～15 秒或 `-1`，
-支持文生视频、首帧/首尾帧和参考图。客户端始终调用上面的 `/api/v3` 接口；平台会适配当前
-TokenSave V2 `/v1/media/generations` 合同，无需也不应把模型映射为 `dreamina-*`。
-
-该 Provider 的模型介绍提到视频、音频参考能力，但当前公开请求字段只明确定义了图片引用。
-因此本平台暂不发布视频或音频参考输入；未支持的媒体会返回 `400 unsupported_parameter`。
-`generate_audio` 用于控制输出视频是否带音频。上游合同可在
-[TokenSave 模型页](https://tokensave.pro/docs/models/doubao-seedance-2-0-260128)核对。
-
-当前 4 秒 480p 文生黑盒已验证创建、成功轮询、MP4 下载和 Range；终态 `result` 为对象且未返回
-`usage`。图片场景、其它分辨率、智能时长和 Provider 账单仍未闭合，因此本地渠道保持禁用，实际
-可用性以模型列表为准。
-
-## 墨行 Seedance 2.0 海外版
-
-`seedance-2-0-oversea` 当前只绑定墨行 V2 relay。请求必须包含非空文本，并显式传入 4～15 或 `-1`
-秒、`480p`/`720p` 分辨率和画幅。支持文生视频、单首帧、首尾帧和参考图；参考图与首尾帧互斥。
-音频/视频输入、watermark、seed、camera_fixed、真人素材和 last-frame 结果未发布。生产结果与 usage
-证据闭合前渠道保持禁用，实际可用性以模型列表为准。
-
-墨行当前只包含本节与上一节的两个模型；后续列出的 FunCloud、飞彩等 SKU 属于独立 Provider，
-不会作为墨行线路的兼容或降级实现。
-
-## Seedance 2.0 可变分辨率 SKU
-
-`seedance-2.0-standard` 与 `seedance-2.0-fast` 是 FunCloud 对接使用的独立供应商中立 SKU，
-不会改变官方、TokenSave 或固定分辨率 SKU 的能力与价格。Standard 支持 480p/720p/1080p，
-Fast 支持 480p/720p；时长均为显式 4～15 秒，不支持 `-1`。两者要求至少一个非空文本项，
-并可按模型能力接收图片、参考视频和参考音频。两者都只支持 `general` Link 资源经
-`source_url` 解析，不支持 `real_person` Link 资源；FunCloud 私有 `realPersonMode` 也不属于公开合同。
-
-调用方继续使用本页 ModelArk v3 合同，不能提交 FunCloud 私有路径、Bearer Key、上游模型参数、
-`bytedToken`、material ID 或上游 `asset://asset-*`。渠道未完成生产验收或 Ability 未启用时，
-模型会按无可用等价渠道 fail closed。
-
-## 飞彩 Seedance 2.0 固定分辨率 SKU
-
-飞彩 v2 的 10 个 SKU 已完成代码侧身份、媒体上限和按秒/按次计费模式登记，但逐模型 HTTPS、权限、
-像素 size、成功任务、内容与账单证据尚未全部闭合。它们当前不在公开 OpenAPI 或模型列表中发布，
-渠道保持禁用。调用方不得根据研究示例猜测默认时长、画幅或价格；每个模型完成独立验收后才会逐项
-开放。
-
-模型明确支持时，普通图片或音频可以使用请求级公网 HTTP(S) URL，受支持的图片还可使用 Base64
-Data URL；它们不会自动进入平台素材库。需要平台复用、渠道绑定或授权治理的素材使用
-`asset://ast_xxx`。平台已识别为真人的素材
-必须走授权后的平台素材路径；平台不会仅凭普通 URL/Data URL 自动识别真人，调用方不得借直接
-媒体规避未开放真人能力的业务政策。
-
-引用 `real_person` 平台素材时，请求顶层必须同时传入创建认证时使用的
-应用内稳定匿名 `end_user_subject`。平台只保存并向支持的 Provider 发送带
-`app_id` 作用域的 HMAC 摘要，不保存或向 Provider 发送原文。该字段不支持只接受普通素材、
-未发布真人素材能力的固定分辨率 Seedance 2.0 SKU；对这些模型传入时返回
-`400 unsupported_parameter`。
-
-## 列表与查询
-
-```bash
-curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
-  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
+```text
+GET    /api/v3/contents/generations/tasks
+GET    /api/v3/contents/generations/tasks/{task_id}
+DELETE /api/v3/contents/generations/tasks/{task_id}
 ```
 
-```bash
-curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/video-task-placeholder" \
-  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
-```
+Task 会冻结创建时的渠道、Provider 模型、南向协议和计费事实。查询和删除始终使用该冻结链路，不会因
+管理员后来修改渠道而重新选路。删除是否支持及返回状态以 Provider 官方行为为准；失败不会切换渠道。
 
-列表支持服务端公开的分页查询参数。查询响应中的状态与结果地址是权威来源。
+## 素材引用
 
-## 下载内容
+请求可使用 HTTP/HTTPS URL、Data URL 或平台素材 `asset://ast_*`。平台素材必须属于当前 API Key、客户
+模型及其唯一 Seedance 渠道；Provider ID 和账号信息不会返回给客户端。真人认证直接使用素材组响应的
+上游 `verification_url`，平台不提供独立真人授权 API。
 
-任务完成后可通过受鉴权内容代理下载：
+## 创建结果不明与计费
+
+每个创建请求最多发送一次 Provider POST。平台不接受 ModelArk V3 客户幂等键；发送后结果不明时保留
+内部 create attempt 和资金 hold，不自动重发、换渠道或退款。客户端应停止重试并保存 `request_id`，由
+技术人员核查。Task 成功建立后，预扣、结算、差额和退款继续使用平台统一计费底座。
+
+任务成功后，如响应提供内容代理，可使用：
 
 ```bash
 curl "{{OPENAI_BASE_URL}}/videos/video-task-placeholder/content" \
   -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}" \
   --output result.mp4
 ```
-
-先检查响应状态和 `Content-Type`。任务未完成、ID 不存在或无权限时会返回 JSON 错误，不是视频字节。
-使用真人托管素材的任务会在发送前预留授权，并在每次内容回源前重新检查授权状态；撤回会阻断
-后续内容回源。撤回前已经下载到平台之外的副本始终不受平台控制。
-
-## 删除任务
-
-`DELETE /api/v3/contents/generations/tasks/{task_id}` 用于取消或删除当前用户拥有的任务。具体
-能力取决于公开模型/SKU；上游不支持取消或删除时会返回明确的 409 错误，不会伪装操作成功。
-删除是不可逆操作；调用前应在业务侧确认目标 ID，并妥善处理已经下载的副本。
-
-飞彩 v2 的 10 个固定分辨率 SKU 当前尚未发布，不得依赖历史两个 720p 合同的取消或删除语义。
-模型发布后仍必须以当时 capability 与服务端 409 错误为准，平台不会伪装取消或删除成功。
-
-## 计费与重试
-
-时长、分辨率、服务档位、音频和模型可能影响费用。`Idempotency-Key` 是推荐的可选平台扩展。
-平台在预扣前建立内部创建记录。已成功持久化 Task 后，同键同请求可以取回原任务；原请求仍在
-创建或结果未知时，同 Key 重放返回 `409 idempotency_in_progress`。发送后无法确认结果时会
-保留预扣并进入有界对账，不会换渠道或重复提交上游创建请求。客户端应停止自动重试、保存
-`request_id` 并联系平台核对。原请求没有提供 Key 时，再次提交是新的业务操作，可能创建第二个
-上游任务；事后补充 Key 不能恢复原操作。

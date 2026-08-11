@@ -12,13 +12,12 @@ import (
 type TaskCreateAttemptStatus string
 
 const (
-	TaskCreateAttemptPrepared             TaskCreateAttemptStatus = "prepared"
-	TaskCreateAttemptSending              TaskCreateAttemptStatus = "sending"
-	TaskCreateAttemptUpstreamSucceeded    TaskCreateAttemptStatus = "upstream_succeeded"
-	TaskCreateAttemptComplete             TaskCreateAttemptStatus = "complete"
-	TaskCreateAttemptUnknown              TaskCreateAttemptStatus = "unknown"
-	TaskCreateAttemptRejected             TaskCreateAttemptStatus = "rejected"
-	TaskCreateAttemptReleasedWithExposure TaskCreateAttemptStatus = "released_with_exposure"
+	TaskCreateAttemptPrepared          TaskCreateAttemptStatus = "prepared"
+	TaskCreateAttemptSending           TaskCreateAttemptStatus = "sending"
+	TaskCreateAttemptUpstreamSucceeded TaskCreateAttemptStatus = "upstream_succeeded"
+	TaskCreateAttemptComplete          TaskCreateAttemptStatus = "complete"
+	TaskCreateAttemptUnknown           TaskCreateAttemptStatus = "unknown"
+	TaskCreateAttemptRejected          TaskCreateAttemptStatus = "rejected"
 )
 
 type TaskCreateAttemptBillingHoldState string
@@ -31,84 +30,61 @@ const (
 )
 
 type TaskCreateAttempt struct {
-	ID                 int64  `json:"-" gorm:"primaryKey"`
-	AttemptID          string `json:"-" gorm:"type:varchar(64);uniqueIndex"`
-	PublicTaskID       string `json:"-" gorm:"type:varchar(191);index"`
-	UserID             int    `json:"-" gorm:"index"`
-	TokenID            int    `json:"-" gorm:"index"`
-	AppID              int    `json:"-" gorm:"index"`
-	EndUserSubjectHash string `json:"-" gorm:"type:varchar(64);index"`
-	SubscriptionID     int    `json:"-" gorm:"index"`
-	ClientProtocol     string `json:"-" gorm:"type:varchar(32);index"`
-	RequestHash        string `json:"-" gorm:"type:varchar(64)"`
-	// NorthboundContract* are persisted compatibility names for the Link contract identity.
-	NorthboundContractID      string                            `json:"-" gorm:"type:varchar(96)"`
-	NorthboundContractVersion string                            `json:"-" gorm:"type:varchar(32)"`
-	SKUCapabilityVersion      string                            `json:"-" gorm:"type:varchar(64)"`
-	SKUCapabilityHash         string                            `json:"-" gorm:"type:varchar(64)"`
-	LinkImplementationID      string                            `json:"-" gorm:"type:varchar(128);index"`
-	LinkImplementationVersion string                            `json:"-" gorm:"type:varchar(32);index"`
-	LinkImplementationHash    string                            `json:"-" gorm:"type:varchar(80)"`
-	ChannelID                 int                               `json:"-" gorm:"index"`
-	PublicModel               string                            `json:"-" gorm:"type:varchar(191);index"`
-	UpstreamProfile           string                            `json:"-" gorm:"type:varchar(64);index"`
-	AdapterVersion            string                            `json:"-" gorm:"type:varchar(128)"`
-	FrozenConnectionSnapshot  json.RawMessage                   `json:"-" gorm:"type:json"`
-	BillingSnapshot           json.RawMessage                   `json:"-" gorm:"type:json"`
-	RecoverySnapshot          json.RawMessage                   `json:"-" gorm:"type:json"`
-	Status                    TaskCreateAttemptStatus           `json:"-" gorm:"type:varchar(32);index"`
-	BillingHoldState          TaskCreateAttemptBillingHoldState `json:"-" gorm:"type:varchar(20);index"`
-	BillingSource             string                            `json:"-" gorm:"type:varchar(20);index"`
-	HeldQuota                 int                               `json:"-"`
-	TokenQuotaTracked         bool                              `json:"-"`
-	TokenQuotaHeld            bool                              `json:"-"`
-	UpstreamRequestID         string                            `json:"-" gorm:"type:varchar(191);index"`
-	UpstreamTaskID            string                            `json:"-" gorm:"type:varchar(191);index"`
-	ReconcileAttempts         int                               `json:"-"`
-	OutcomeUnknownAt          int64                             `json:"-" gorm:"bigint;index"`
-	NextAttemptAt             int64                             `json:"-" gorm:"bigint;index"`
-	HoldDeadlineAt            int64                             `json:"-" gorm:"bigint;index"`
-	TaskDeadlineAt            int64                             `json:"-" gorm:"bigint;index"`
-	ManualRecoveryAt          int64                             `json:"-" gorm:"bigint;index"`
-	ManualRecoveryBy          int                               `json:"-"`
-	ManualRecoveryNote        string                            `json:"-" gorm:"type:text"`
-	CreatedAt                 int64                             `json:"-" gorm:"bigint;index"`
-	UpdatedAt                 int64                             `json:"-" gorm:"bigint"`
-
-	LinkPubSnapshot `json:"-" gorm:"embedded"`
+	ID                       int64                             `json:"-" gorm:"primaryKey"`
+	AttemptID                string                            `json:"-" gorm:"type:varchar(64);uniqueIndex"`
+	PublicTaskID             string                            `json:"-" gorm:"type:varchar(191);index"`
+	UserID                   int                               `json:"-" gorm:"index"`
+	TokenID                  int                               `json:"-" gorm:"index"`
+	AppID                    int                               `json:"-" gorm:"index"`
+	SubscriptionID           int                               `json:"-" gorm:"index"`
+	ClientProtocol           string                            `json:"-" gorm:"type:varchar(32);index"`
+	RequestHash              string                            `json:"-" gorm:"type:varchar(64)"`
+	ChannelID                int                               `json:"-" gorm:"index"`
+	PublicModel              string                            `json:"-" gorm:"type:varchar(191);index"`
+	UpstreamProfile          string                            `json:"-" gorm:"type:varchar(64);index"`
+	UpstreamProtocol         string                            `json:"-" gorm:"type:varchar(96);index"`
+	AdapterVersion           string                            `json:"-" gorm:"type:varchar(128)"`
+	FrozenConnectionSnapshot json.RawMessage                   `json:"-" gorm:"type:json"`
+	BillingSnapshot          json.RawMessage                   `json:"-" gorm:"type:json"`
+	RecoverySnapshot         json.RawMessage                   `json:"-" gorm:"type:json"`
+	Status                   TaskCreateAttemptStatus           `json:"-" gorm:"type:varchar(32);index"`
+	BillingHoldState         TaskCreateAttemptBillingHoldState `json:"-" gorm:"type:varchar(20);index"`
+	BillingSource            string                            `json:"-" gorm:"type:varchar(20);index"`
+	HeldQuota                int                               `json:"-"`
+	TokenQuotaTracked        bool                              `json:"-"`
+	TokenQuotaHeld           bool                              `json:"-"`
+	UpstreamRequestID        string                            `json:"-" gorm:"type:varchar(191);index"`
+	UpstreamTaskID           string                            `json:"-" gorm:"type:varchar(191);index"`
+	ReconcileAttempts        int                               `json:"-"`
+	OutcomeUnknownAt         int64                             `json:"-" gorm:"bigint;index"`
+	NextAttemptAt            int64                             `json:"-" gorm:"bigint;index"`
+	TaskDeadlineAt           int64                             `json:"-" gorm:"bigint;index"`
+	ManualRecoveryAt         int64                             `json:"-" gorm:"bigint;index"`
+	ManualRecoveryBy         int                               `json:"-"`
+	ManualRecoveryNote       string                            `json:"-" gorm:"type:text"`
+	CreatedAt                int64                             `json:"-" gorm:"bigint;index"`
+	UpdatedAt                int64                             `json:"-" gorm:"bigint"`
 }
 
 type TaskCreateAttemptParams struct {
-	IdempotencyID             int64
-	PublicTaskID              string
-	UserID                    int
-	TokenID                   int
-	AppID                     int
-	EndUserSubjectHash        string
-	SubscriptionID            int
-	ClientProtocol            string
-	RequestHash               string
-	NorthboundContractID      string
-	NorthboundContractVersion string
-	SKUCapabilityVersion      string
-	SKUCapabilityHash         string
-	LinkImplementationID      string
-	LinkImplementationVersion string
-	LinkImplementationHash    string
-	LinkContractNamespace     string
-	LinkRouteFamily           string
-	PublishedLinkContractSKU  string
-	LinkPublicationVersion    int64
-	ChannelID                 int
-	PublicModel               string
-	UpstreamProfile           string
-	AdapterVersion            string
-	FrozenConnectionSnapshot  json.RawMessage
-	BillingSnapshot           json.RawMessage
-	HeldQuota                 int
-	NextAttemptAt             int64
-	HoldDeadlineAt            int64
-	TaskDeadlineAt            int64
+	IdempotencyID            int64
+	PublicTaskID             string
+	UserID                   int
+	TokenID                  int
+	AppID                    int
+	SubscriptionID           int
+	ClientProtocol           string
+	RequestHash              string
+	ChannelID                int
+	PublicModel              string
+	UpstreamProfile          string
+	UpstreamProtocol         string
+	AdapterVersion           string
+	FrozenConnectionSnapshot json.RawMessage
+	BillingSnapshot          json.RawMessage
+	HeldQuota                int
+	NextAttemptAt            int64
+	TaskDeadlineAt           int64
 }
 
 func CreatePreparedTaskAttempt(params TaskCreateAttemptParams) (*TaskCreateAttempt, error) {
@@ -122,31 +98,18 @@ func CreatePreparedTaskAttempt(params TaskCreateAttemptParams) (*TaskCreateAttem
 	}
 	now := common.GetTimestamp()
 	attempt := &TaskCreateAttempt{
-		AttemptID:                 "attempt_" + attemptKey,
-		PublicTaskID:              strings.TrimSpace(params.PublicTaskID),
-		UserID:                    params.UserID,
-		TokenID:                   params.TokenID,
-		AppID:                     params.AppID,
-		EndUserSubjectHash:        strings.TrimSpace(params.EndUserSubjectHash),
-		SubscriptionID:            params.SubscriptionID,
-		ClientProtocol:            strings.TrimSpace(params.ClientProtocol),
-		RequestHash:               strings.TrimSpace(params.RequestHash),
-		NorthboundContractID:      strings.TrimSpace(params.NorthboundContractID),
-		NorthboundContractVersion: strings.TrimSpace(params.NorthboundContractVersion),
-		SKUCapabilityVersion:      strings.TrimSpace(params.SKUCapabilityVersion),
-		SKUCapabilityHash:         strings.TrimSpace(params.SKUCapabilityHash),
-		LinkImplementationID:      strings.TrimSpace(params.LinkImplementationID),
-		LinkImplementationVersion: strings.TrimSpace(params.LinkImplementationVersion),
-		LinkImplementationHash:    strings.TrimSpace(params.LinkImplementationHash),
-		LinkPubSnapshot: LinkPubSnapshot{
-			LinkContractNamespace:    strings.TrimSpace(params.LinkContractNamespace),
-			LinkRouteFamily:          strings.TrimSpace(params.LinkRouteFamily),
-			PublishedLinkContractSKU: strings.TrimSpace(params.PublishedLinkContractSKU),
-			LinkPublicationVersion:   params.LinkPublicationVersion,
-		},
+		AttemptID:                "attempt_" + attemptKey,
+		PublicTaskID:             strings.TrimSpace(params.PublicTaskID),
+		UserID:                   params.UserID,
+		TokenID:                  params.TokenID,
+		AppID:                    params.AppID,
+		SubscriptionID:           params.SubscriptionID,
+		ClientProtocol:           strings.TrimSpace(params.ClientProtocol),
+		RequestHash:              strings.TrimSpace(params.RequestHash),
 		ChannelID:                params.ChannelID,
 		PublicModel:              strings.TrimSpace(params.PublicModel),
 		UpstreamProfile:          strings.TrimSpace(params.UpstreamProfile),
+		UpstreamProtocol:         strings.TrimSpace(params.UpstreamProtocol),
 		AdapterVersion:           strings.TrimSpace(params.AdapterVersion),
 		FrozenConnectionSnapshot: append(json.RawMessage(nil), params.FrozenConnectionSnapshot...),
 		BillingSnapshot:          append(json.RawMessage(nil), params.BillingSnapshot...),
@@ -154,7 +117,6 @@ func CreatePreparedTaskAttempt(params TaskCreateAttemptParams) (*TaskCreateAttem
 		BillingHoldState:         TaskCreateAttemptBillingUnheld,
 		HeldQuota:                params.HeldQuota,
 		NextAttemptAt:            params.NextAttemptAt,
-		HoldDeadlineAt:           params.HoldDeadlineAt,
 		TaskDeadlineAt:           params.TaskDeadlineAt,
 		CreatedAt:                now,
 		UpdatedAt:                now,
@@ -234,5 +196,14 @@ func ScheduleTaskCreateAttemptReconcile(id int64, status TaskCreateAttemptStatus
 			"reconcile_attempts": gorm.Expr("reconcile_attempts + 1"),
 			"next_attempt_at":    nextAttemptAt,
 			"updated_at":         common.GetTimestamp(),
+		}).Error
+}
+
+func StopTaskCreateAttemptReconcile(id int64, status TaskCreateAttemptStatus) error {
+	return DB.Model(&TaskCreateAttempt{}).
+		Where("id = ? AND status = ?", id, status).
+		Updates(map[string]any{
+			"next_attempt_at": 0,
+			"updated_at":      common.GetTimestamp(),
 		}).Error
 }

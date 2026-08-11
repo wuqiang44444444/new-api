@@ -43,15 +43,11 @@ func ReconcileTaskCreateAttempts(ctx context.Context) int {
 			}
 			processed++
 		case model.TaskCreateAttemptUnknown:
-			if attempt.HoldDeadlineAt > now {
-				scheduleTaskCreateAttemptRetry(ctx, attempt, now)
+			if err := model.StopTaskCreateAttemptReconcile(attempt.ID, model.TaskCreateAttemptUnknown); err != nil {
+				logger.LogWarn(ctx, fmt.Sprintf("stop automatic reconciliation for unresolved task create attempt %s failed: %v", attempt.AttemptID, err))
 				continue
 			}
-			if _, err := model.ReleaseTaskCreateAttemptHold(attempt.ID, model.TaskCreateAttemptReleasedWithExposure); err != nil {
-				logger.LogWarn(ctx, fmt.Sprintf("release unresolved task create attempt %s failed: %v", attempt.AttemptID, err))
-				scheduleTaskCreateAttemptRetry(ctx, attempt, now)
-				continue
-			}
+			logger.LogWarn(ctx, fmt.Sprintf("task create attempt %s remains unknown with its customer hold intact; technical verification is required", attempt.AttemptID))
 			processed++
 		}
 	}

@@ -7,7 +7,6 @@ type BillingUsage = kitdto.BillingUsage
 type BoolValue = kitdto.BoolValue
 type ChannelOtherSettings = kitdto.ChannelOtherSettings
 type ChannelSettings = kitdto.ChannelSettings
-type LinkImplementationRef = kitdto.LinkImplementationRef
 type ClaudeErrorWithStatusCode = kitdto.ClaudeErrorWithStatusCode
 type ClaudeRequest = kitdto.ClaudeRequest
 type EmbeddingRequest = kitdto.EmbeddingRequest

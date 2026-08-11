@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -15,7 +14,6 @@ import (
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
-	"github.com/QuantumNous/new-api/relay/channel/task/doubao/thirdparty/mediaarrays"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -110,37 +108,23 @@ type TaskAdaptor struct {
 	ChannelType int
 	apiKey      string
 	baseURL     string
-	profile     dto.VideoUpstreamProfile
-	createPath  string
 }
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.ChannelType = info.ChannelType
 	a.baseURL = info.ChannelBaseUrl
 	a.apiKey = info.ApiKey
-	a.profile = info.ChannelOtherSettings.VideoUpstreamProfile
-	a.createPath = info.ChannelOtherSettings.VideoUpstreamCreatePath
 }
 
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *taskdto.TaskError) {
 	// Accept only POST /v1/video/generations as "generate" action.
-	if taskErr := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
-		return taskErr
-	}
-	if taskErr := a.validateModelArkContract(c, info); taskErr != nil {
-		return taskErr
-	}
-	return applyVideoServiceTierPolicy(c, info, a.profile)
+	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
 }
 
 // BuildRequestURL constructs the upstream URL.
 func (a *TaskAdaptor) BuildRequestURL(_ *relaycommon.RelayInfo) (string, error) {
-	path, err := videoCreatePath(a.profile, a.createPath)
-	if err != nil {
-		return "", err
-	}
-	return joinVideoUpstreamURL(a.baseURL, path), nil
+	return fmt.Sprintf("%s/api/v3/contents/generations/tasks", a.baseURL), nil
 }
 
 // BuildRequestHeader sets required headers.
@@ -153,30 +137,6 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 
 // EstimateBilling 根据请求 metadata 中的输出分辨率与是否包含视频输入，返回相对基准价的计费 OtherRatio。
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
-	if a.profile == dto.VideoUpstreamProfileThirdPartyRelay && info.OriginModelName == model.VideoSKUDoubaoSeedance20260128 {
-		return nil
-	}
-	if payload, typed, err := a.modelArkContractPayload(c); typed {
-		if err != nil {
-			return nil
-		}
-		hasVideo := false
-		for _, item := range payload.Content {
-			if item.Type == "video_url" && item.VideoURL != nil && strings.TrimSpace(item.VideoURL.URL) != "" {
-				hasVideo = true
-				break
-			}
-		}
-		resolution := strings.TrimSpace(payload.Resolution)
-		if capability, found := model.ResolveVideoSKUCapability(info.OriginModelName); found && resolution == "" {
-			resolution = capability.DefaultResolution
-		}
-		ratio, ok := GetVideoInputRatio(info.OriginModelName, resolution, hasVideo)
-		if !ok || ratio == 1.0 {
-			return nil
-		}
-		return map[string]float64{"video_input": ratio}
-	}
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil
@@ -221,32 +181,13 @@ func hasVideoInMetadata(metadata map[string]interface{}) bool {
 
 // BuildRequestBody converts request into Doubao specific format.
 func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayInfo) (io.Reader, error) {
-	if data, handled, err := buildFunCloudVideoCreateRequest(c, info, a.profile); handled {
-		if err != nil {
-			return nil, err
-		}
-		return bytes.NewReader(data), nil
-	}
-	if data, handled, err := buildJSONVideoMediaArraysCreateRequest(c, info, a.profile); handled {
-		if err != nil {
-			return nil, err
-		}
-		return bytes.NewReader(data), nil
-	}
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil, err
 	}
-
-	body, typed, err := a.modelArkContractPayload(c)
+	body, err := a.convertToRequestPayload(&req)
 	if err != nil {
 		return nil, errors.Wrap(err, "convert request payload failed")
-	}
-	if !typed {
-		body, err = a.convertToRequestPayload(&req)
-		if err != nil {
-			return nil, errors.Wrap(err, "convert request payload failed")
-		}
 	}
 	if info.IsModelMapped {
 		body.Model = info.UpstreamModelName
@@ -254,10 +195,6 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		info.UpstreamModelName = body.Model
 	}
 	data, err := common.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	data, err = convertVideoCreateRequest(a.profile, data)
 	if err != nil {
 		return nil, err
 	}
@@ -277,11 +214,6 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 		return
 	}
 	_ = resp.Body.Close()
-	responseBody, err = normalizeVideoCreateResponse(a.profile, responseBody)
-	if err != nil {
-		taskErr = service.TaskErrorWrapper(err, "normalize_response_body_failed", http.StatusBadGateway)
-		return
-	}
 
 	// Parse Doubao response
 	var dResp responsePayload
@@ -312,23 +244,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 		return nil, fmt.Errorf("invalid task_id")
 	}
 
-	profile, err := videoProfileFromFetchBody(body)
-	if err != nil {
-		return nil, err
-	}
-	adapterVersion, err := videoAdapterVersionFromFetchBody(body, a.ChannelType, profile)
-	if err != nil {
-		return nil, err
-	}
-	implementationID, err := videoImplementationIDFromFetchBody(body)
-	if err != nil {
-		return nil, err
-	}
-	path, err := videoTaskPath(profile, videoQueryTemplateFromFetchBody(body), taskID)
-	if err != nil {
-		return nil, err
-	}
-	uri := joinVideoUpstreamURL(baseUrl, path)
+	uri := fmt.Sprintf("%s/api/v3/contents/generations/tasks/%s", baseUrl, taskID)
 
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
 	if err != nil {
@@ -343,31 +259,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}
-	resp, err := client.Do(req)
-	if err != nil || resp == nil || profile.IsOfficial() || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return resp, err
-	}
-	responseBody, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil {
-		return nil, fmt.Errorf("read upstream task response: %w", err)
-	}
-	responseBody, err = normalizeVideoTaskResponse(
-		profile,
-		adapterVersion,
-		responseBody,
-		taskID,
-		implementationID,
-		mediaarrays.TaskResponseContext{
-			BaseURL: baseUrl,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-	resp.Body = io.NopCloser(bytes.NewReader(responseBody))
-	resp.ContentLength = int64(len(responseBody))
-	return resp, nil
+	return client.Do(req)
 }
 
 func (a *TaskAdaptor) GetModelList() []string {
@@ -406,12 +298,10 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	}
 
 	r.Content = lo.Reject(r.Content, func(c ContentItem, _ int) bool { return c.Type == "text" })
-	if strings.TrimSpace(req.Prompt) != "" {
-		r.Content = append(r.Content, ContentItem{
-			Type: "text",
-			Text: req.Prompt,
-		})
-	}
+	r.Content = append(r.Content, ContentItem{
+		Type: "text",
+		Text: req.Prompt,
+	})
 
 	return &r, nil
 }
@@ -445,14 +335,10 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		taskResult.Status = model.TaskStatusFailure
 		taskResult.Progress = "100%"
 		taskResult.Reason = resTask.Error.Message
-	case "cancelled":
-		taskResult.Status = model.TaskStatusCancelled
-		taskResult.Progress = "100%"
-	case "expired":
-		taskResult.Status = model.TaskStatusExpired
-		taskResult.Progress = "100%"
 	default:
-		return nil, fmt.Errorf("unknown video task status %q", resTask.Status)
+		// Unknown status, treat as processing
+		taskResult.Status = model.TaskStatusInProgress
+		taskResult.Progress = "30%"
 	}
 
 	return &taskResult, nil

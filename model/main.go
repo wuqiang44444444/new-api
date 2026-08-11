@@ -168,12 +168,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, common.DatabaseType, error)
 	return db, common.DatabaseTypeSQLite, err
 }
 
-var skipOfficialAssetCredentialMigrationGuard bool
-
 func InitDB() (err error) {
-	if err := ValidateLinkImplementationRegistry(); err != nil {
-		return fmt.Errorf("validate Link implementation registry: %w", err)
-	}
 	db, dbType, err := chooseDB("SQL_DSN", false)
 	if err == nil {
 		common.SetMainDatabaseType(dbType)
@@ -212,14 +207,6 @@ func InitDB() (err error) {
 		common.FatalLog(err)
 	}
 	return err
-}
-
-func InitDBForOfficialAssetCredentialMigration() error {
-	skipOfficialAssetCredentialMigrationGuard = true
-	defer func() {
-		skipOfficialAssetCredentialMigrationGuard = false
-	}()
-	return InitDB()
 }
 
 func InitLogDB() (err error) {
@@ -270,10 +257,6 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
-	if err := migrateSQLiteVerificationTokenHash(); err != nil {
-		return err
-	}
-
 	err := DB.AutoMigrate(
 		&Channel{},
 		&Token{},
@@ -285,8 +268,6 @@ func migrateDB() error {
 		&Option{},
 		&Redemption{},
 		&Ability{},
-		&LinkModelPublication{},
-		&LinkModelPublicationAudit{},
 		&Log{},
 		&Midjourney{},
 		&TopUp{},
@@ -294,9 +275,7 @@ func migrateDB() error {
 		&Task{},
 		&TaskCreateIdempotency{},
 		&TaskCreateAttempt{},
-		&TaskAssetAuthorization{},
 		&ProviderCostExposure{},
-		&ProviderExposureIncident{},
 		&Model{},
 		&Vendor{},
 		&PrefillGroup{},
@@ -314,18 +293,7 @@ func migrateDB() error {
 		&SystemTask{},
 		&SystemTaskLock{},
 		&Asset{},
-		&AssetSource{},
-		&AssetBinding{},
-		&AssetGroupBinding{},
-		&AssetOwnershipClaim{},
-		&AssetGroupOwnershipClaim{},
-		&AssetReconciliationFinding{},
-		&APIServiceRule{},
-		&ApplicationAPIRuleAcceptance{},
-		&RealPersonAuthorization{},
-		&RealPersonVerificationSession{},
-		&AssetOperationJob{},
-		&AssetCreateIdempotency{},
+		&AssetGroup{},
 		&ChannelAssetCredential{},
 		&CasbinRule{},
 		&AuthzRole{},
@@ -336,21 +304,7 @@ func migrateDB() error {
 	if err := migrateBillingReconciliationDB(); err != nil {
 		return err
 	}
-	if err := MigrateDirectLinkModelPublications(); err != nil {
-		return err
-	}
-	if !skipOfficialAssetCredentialMigrationGuard {
-		if err := validateOfficialAssetCredentialMigration(); err != nil {
-			return err
-		}
-	}
-	if err := migrateAssetApplicationScope(); err != nil {
-		return err
-	}
 	if err := migrateTaskApplicationScope(); err != nil {
-		return err
-	}
-	if err := dropLegacyRealPersonConsentSchema(); err != nil {
 		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
@@ -372,10 +326,6 @@ func migrateDB() error {
 }
 
 func migrateDBFast() error {
-	if err := migrateSQLiteVerificationTokenHash(); err != nil {
-		return err
-	}
-
 	var wg sync.WaitGroup
 
 	migrations := []struct {
@@ -392,8 +342,6 @@ func migrateDBFast() error {
 		{&Option{}, "Option"},
 		{&Redemption{}, "Redemption"},
 		{&Ability{}, "Ability"},
-		{&LinkModelPublication{}, "LinkModelPublication"},
-		{&LinkModelPublicationAudit{}, "LinkModelPublicationAudit"},
 		{&Log{}, "Log"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
@@ -401,9 +349,7 @@ func migrateDBFast() error {
 		{&Task{}, "Task"},
 		{&TaskCreateIdempotency{}, "TaskCreateIdempotency"},
 		{&TaskCreateAttempt{}, "TaskCreateAttempt"},
-		{&TaskAssetAuthorization{}, "TaskAssetAuthorization"},
 		{&ProviderCostExposure{}, "ProviderCostExposure"},
-		{&ProviderExposureIncident{}, "ProviderExposureIncident"},
 		{&Model{}, "Model"},
 		{&Vendor{}, "Vendor"},
 		{&PrefillGroup{}, "PrefillGroup"},
@@ -421,18 +367,7 @@ func migrateDBFast() error {
 		{&SystemTask{}, "SystemTask"},
 		{&SystemTaskLock{}, "SystemTaskLock"},
 		{&Asset{}, "Asset"},
-		{&AssetSource{}, "AssetSource"},
-		{&AssetBinding{}, "AssetBinding"},
-		{&AssetGroupBinding{}, "AssetGroupBinding"},
-		{&AssetOwnershipClaim{}, "AssetOwnershipClaim"},
-		{&AssetGroupOwnershipClaim{}, "AssetGroupOwnershipClaim"},
-		{&AssetReconciliationFinding{}, "AssetReconciliationFinding"},
-		{&APIServiceRule{}, "APIServiceRule"},
-		{&ApplicationAPIRuleAcceptance{}, "ApplicationAPIRuleAcceptance"},
-		{&RealPersonAuthorization{}, "RealPersonAuthorization"},
-		{&RealPersonVerificationSession{}, "RealPersonVerificationSession"},
-		{&AssetOperationJob{}, "AssetOperationJob"},
-		{&AssetCreateIdempotency{}, "AssetCreateIdempotency"},
+		{&AssetGroup{}, "AssetGroup"},
 		{&ChannelAssetCredential{}, "ChannelAssetCredential"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
@@ -461,21 +396,7 @@ func migrateDBFast() error {
 	if err := migrateBillingReconciliationDB(); err != nil {
 		return err
 	}
-	if err := MigrateDirectLinkModelPublications(); err != nil {
-		return err
-	}
-	if !skipOfficialAssetCredentialMigrationGuard {
-		if err := validateOfficialAssetCredentialMigration(); err != nil {
-			return err
-		}
-	}
-	if err := migrateAssetApplicationScope(); err != nil {
-		return err
-	}
 	if err := migrateTaskApplicationScope(); err != nil {
-		return err
-	}
-	if err := dropLegacyRealPersonConsentSchema(); err != nil {
 		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {

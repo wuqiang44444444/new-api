@@ -719,7 +719,7 @@ func AddChannel(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	if addChannelRequest.Channel.GetOtherSettings().AssetUpstreamProfile == dto.AssetUpstreamProfileOfficial {
+	if channelUsesOfficialAssetCredential(addChannelRequest.Channel) {
 		if len(channels) != 1 {
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "official_action_assets only supports single-key channel creation"})
 			return
@@ -1145,9 +1145,6 @@ func UpdateChannel(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	if rejectAssetChannelAccountChange(c, requestData, &channel.Channel, originChannel) {
-		return
-	}
 	assetCredentialAudit := "unchanged"
 	if channel.AssetCredential != nil {
 		existingCredential, lookupErr := model.GetChannelAssetCredential(channel.Id)
@@ -1522,12 +1519,18 @@ func CopyChannel(c *gin.Context) {
 		clone.UsedQuota = 0
 	}
 	cloneSettings := clone.GetOtherSettings()
-	if cloneSettings.AssetUpstreamProfile == dto.AssetUpstreamProfileOfficial {
-		cloneSettings.AssetUpstreamProfile = dto.AssetUpstreamProfileNone
-		cloneSettings.AssetMinURLTTLSeconds = 0
-		cloneSettings.AssetProviderProject = ""
-		cloneSettings.AssetRegion = ""
-		clone.SetOtherSettings(cloneSettings)
+	if clone.Type == constant.ChannelTypeSeedanceLink {
+		// A copied Seedance channel has the same customer models. Keep it
+		// disabled until an administrator finishes the one-model/one-channel
+		// handover explicitly.
+		clone.Status = common.ChannelStatusManuallyDisabled
+		if cloneSettings.AssetUpstreamProtocol.TransportProfile() == dto.AssetUpstreamProfileOfficial {
+			cloneSettings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolNone
+			cloneSettings.AssetMinURLTTLSeconds = 0
+			cloneSettings.AssetProviderProject = ""
+			cloneSettings.AssetRegion = ""
+			clone.SetOtherSettings(cloneSettings)
+		}
 	}
 
 	if err := clone.ValidateSettings(); err != nil {

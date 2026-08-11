@@ -18,9 +18,9 @@ func TestTaskAttemptRecoveryTemplateUsesSameMediaArraysAdapterV1(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		TaskRelayInfo: &relaycommon.TaskRelayInfo{ClientProtocol: model.TaskClientProtocolModelArkV3},
 		ChannelMeta: &relaycommon.ChannelMeta{
-			ChannelType: constant.ChannelTypeDoubaoVideo,
+			ChannelType: constant.ChannelTypeSeedanceLink,
 			ChannelOtherSettings: dto.ChannelOtherSettings{
-				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
+				VideoUpstreamProtocol: dto.VideoUpstreamProtocolMediaArraysV2,
 			},
 		},
 	}
@@ -28,7 +28,7 @@ func TestTaskAttemptRecoveryTemplateUsesSameMediaArraysAdapterV1(t *testing.T) {
 	stageTaskProtocolSnapshot(context, task, info)
 
 	assert.Equal(t,
-		"54:third_party_json_video_media_arrays:v2",
+		"61:third_party_json_video_media_arrays:v2",
 		task.PrivateData.SouthboundAdapterVersion,
 	)
 }

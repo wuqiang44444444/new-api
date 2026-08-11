@@ -8,8 +8,8 @@ last-reviewed: 2026-08-10
 
 ## 1. 目的与边界
 
-本手册用于在隔离分组中，以正式 HTTPS、目标生产凭据和 new-api 客户入口验收飞彩精确
-implementation version。当前生产渠道使用 `feicai.seedance-videos/v2`；无后缀模型必须另选 `/v3`
+本手册用于在隔离分组中，以正式 HTTPS、目标生产凭据和 ModelArk V3 客户入口验收飞彩精确
+Provider 协议版本。当前生产渠道使用代码协议 `media_arrays_v2`；无后缀模型若使用另一套 `/v3`
 并从零取得独立证据，不能继承 v2 验收结果。任何当前版本都不保留或测试 v1 fallback。
 
 所有证据必须脱敏。不得在本文或验收产物中写入真实 Key、Cookie、完整签名 URL、上游任务 ID、
@@ -22,9 +22,9 @@ implementation version。当前生产渠道使用 `feicai.seedance-videos/v2`；
 - 飞彩 v1 Channel 与 Ability 已停流；
 - v1 非终态 Task、create attempt、hold、结算、退款和 exposure 数量均为零；
 - 没有仍需访问的 v1 历史内容；
-- AssetBinding、publication、缓存和运维配置不引用 v1；
+- 客户模型、Channel、Model Mapping、价格和运维配置不引用 v1；
 - 已保存旧版本二进制和配置快照，必要时可整体回滚；
-- 新版本不会在运行时解析 v1 implementation 或 adapter。
+- 新版本不会在运行时解析 v1 adapter。
 
 任一项不满足则停止上线，不临时打开兼容分支。
 
@@ -32,17 +32,17 @@ implementation version。当前生产渠道使用 `feicai.seedance-videos/v2`；
 
 1. 创建隔离测试分组、测试用户和专用 API Key。
 2. 配置正式可验证 HTTPS Base URL、单一目标 Key 和 10 个精确 model mapping。
-3. 导出 publication、capability/hash、精确 implementation version/hash、adapter v2、execution bindings、价格和 exposure 快照。
-4. 为每个创建用例生成唯一 `Idempotency-Key`；仅幂等重放使用相同 Key。
+3. 导出客户模型、唯一 Channel、Provider 模型、代码协议、价格和 Provider exposure 快照。
+4. 每个用例只发送一次创建请求；记录平台 `request_id`，不得用客户幂等键重放。
 5. 准备可验证的 HTTPS 图片、音频和视频；记录 MIME、大小、有效期和所有权，不保存完整源 URL 到共享证据。
 6. 准备余额前后快照、任务列表、usage/subscription 和 NEWAPI 结算日志的只读核对方式。
-7. 记录飞彩 Ability 停流方式；回滚只阻止新流量，不能中断已创建 Task 按冻结 implementation version 的轮询与结算。
+7. 记录飞彩 Ability 停流方式；回滚只阻止新流量，不能中断已创建 Task 按冻结 Channel 与协议的轮询和结算。
 
 ## 4. 10 模型黑盒矩阵
 
 每一行必须独立创建、轮询、下载、核账；其它模型的成功不能代替。
 
-| # | 客户 Link SKU | 必验成功场景 | 必验拒绝/边界 | 账单重点 |
+| # | 客户模型 | 必验成功场景 | 必验拒绝/边界 | 账单重点 |
 | ---: | --- | --- | --- | --- |
 | 1 | `seedance-2.0-mini-720p` | 4 秒、15 秒；已批准 size；图片/音频允许组合 | 3/16 秒；未登记 ratio；10 图/4 音频/任意视频 | 按秒、模型独立单价 |
 | 2 | `seedance-2.0-sd2-720p` | 1 图+11 秒、9 图+15 秒；已批准两画幅 | 无图；10 图；10/16 秒；任意音频/视频；省略 duration | 按秒；失败是否扣费 |
@@ -66,8 +66,8 @@ implementation version。当前生产渠道使用 `feicai.seedance-videos/v2`；
 3. 记录平台请求 ID、Task ID、HTTP 状态和脱敏请求摘要。
 4. 只轮询平台 Task 查询端点，验证 queued/running/终态单调且平台 ID 不变。
 5. 成功后通过平台 content endpoint 下载，检查非空、MIME、可播放、Range 和同源代理行为。
-6. 使用相同 `Idempotency-Key` 重放，确认没有第二个 Provider 任务或第二次扣费。
-7. 核对冻结 customer model、Link SKU、Provider model、精确 implementation version/hash、adapter v2 和 billing probe。
+6. 制造明确失败，确认平台没有切换渠道或发送第二个 Provider POST。
+7. 核对冻结 customer model、Channel、Provider model、`media_arrays_v2` 协议和 billing probe。
 8. 核对客户预扣、终态结算/退款、Provider 任务 quota 和账户用量，保持三类金额分离。
 9. 执行表中拒绝用例，确认错误发生在 Provider POST 前或符合已登记的确定拒绝合同。
 10. 将结果标记为通过、失败或阻塞，并附脱敏证据摘要。
@@ -85,8 +85,8 @@ implementation version。当前生产渠道使用 `feicai.seedance-videos/v2`；
 
 - 图片 HTTPS 与允许的图片 Data URL 分别验证；音频、视频只使用 HTTPS。
 - 验证 HTTP、localhost、内网、本地路径、相对路径和过期 URL 均失败关闭。
-- 验证直接媒体、Link 资源和混合路径；混合路径必须拒绝。
-- 验证 Asset 所有权、App、状态、publication、TTL、多素材共同候选和 `real_person` 拒绝。
+- 验证直接媒体、平台素材和所选 Provider 支持的组合。
+- 验证 Asset 所有权、App、客户模型、唯一 Channel、状态、TTL 和 `real_person` 拒绝。
 - Pro PI 验证 1/3 个参考视频的顺序和抓取时间；其它九个模型验证任意视频输入拒绝。
 - 内容代理验证冻结 Key、同源 HTTPS、拒绝重定向、结果 URL 过期和 Range。
 - 普通响应、日志、CSV、指标和验收截图不得出现 Key、Provider 模型、上游任务 ID或完整媒体/结果 URL。
@@ -112,9 +112,9 @@ implementation version。当前生产渠道使用 `feicai.seedance-videos/v2`；
 
 单个模型只有同时满足以下条件才可发布：
 
-- 精确 customer model、Link SKU、Provider model 和所选 implementation binding 一致；
-- capability 的 duration、resolution、size、媒体 min/max/roles 与黑盒一致；
-- 成功、可信失败、unknown、幂等、轮询和内容下载均通过；
+- 精确 customer model、唯一 Channel、Provider model 和 `media_arrays_v2` 协议一致；
+- 上线清单中的 duration、resolution、size、媒体 min/max/roles 与黑盒一致；
+- 成功、可信失败、unknown、单次创建、轮询和内容下载均通过；
 - 客户账单、Provider 证据和 exposure 可分别核对；
 - 无敏感信息泄漏；
 - 该模型的 Ability 可独立停流且回滚边界明确。
@@ -123,19 +123,19 @@ implementation version。当前生产渠道使用 `feicai.seedance-videos/v2`；
 
 ## 10. 停流与回滚
 
-出现以下任一情况立即移除对应模型或所选飞彩 implementation 的 Ability：
+出现以下任一情况立即禁用对应客户模型的唯一飞彩 Channel：
 
-- binding/SKU 错配、错误 size 或媒体静默丢弃；
+- 客户模型/Provider 模型错配、错误 size 或媒体静默丢弃；
 - 负费用、重复扣费/退款、预扣与结算 probe 不一致；
 - unknown 被自动重发、换渠道或退款；
 - Task ID 误用、错误状态被判成功、内容跨域回源；
 - v1 路径或 adapter 被运行时重新启用；
 - Key、Provider 模型、上游任务 ID或完整 URL 泄漏。
 
-回滚只停止新流量。已创建的 Task、attempt、hold、exposure 和结算继续按冻结 implementation version/hash
-闭合；不得跨 v2/v3 解释在途事实，也不得通过恢复 v1 渠道处理当前版本任务。
+回滚只停止新流量。已创建的 Task、attempt、hold、exposure 和结算继续按冻结 Channel、Provider 模型和
+协议闭合；不得跨 v2/v3 解释在途事实，也不得通过恢复 v1 渠道处理当前版本任务。
 
 ## 11. 证据归档
 
 每次验收保留：矩阵、配置/hash 摘要、脱敏请求响应、轮询时序、媒体校验、客户账单、Provider 对账、
-unknown/幂等结果、停流演练和最终审批。证据中不得保存秘密或未经脱敏的 Provider 私有数据。
+unknown/单次创建结果、停流演练和最终审批。证据中不得保存秘密或未经脱敏的 Provider 私有数据。

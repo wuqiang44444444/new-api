@@ -55,22 +55,9 @@ func TestMain(m *testing.M) {
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
 		&model.Asset{},
-		&model.AssetSource{},
-		&model.AssetBinding{},
-		&model.AssetGroupBinding{},
-		&model.AssetOwnershipClaim{},
-		&model.AssetGroupOwnershipClaim{},
-		&model.AssetReconciliationFinding{},
-		&model.APIServiceRule{},
-		&model.ApplicationAPIRuleAcceptance{},
-		&model.RealPersonAuthorization{},
-		&model.RealPersonVerificationSession{},
-		&model.AssetOperationJob{},
-		&model.AssetCreateIdempotency{},
+		&model.AssetGroup{},
 		&model.TaskCreateAttempt{},
-		&model.TaskAssetAuthorization{},
 		&model.ProviderCostExposure{},
-		&model.ProviderExposureIncident{},
 		&model.Ability{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
@@ -95,24 +82,11 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM user_subscriptions")
 		model.DB.Exec("DELETE FROM system_task_locks")
 		model.DB.Exec("DELETE FROM system_tasks")
-		model.DB.Exec("DELETE FROM asset_operation_jobs")
-		model.DB.Exec("DELETE FROM asset_create_idempotencies")
 		model.DB.Exec("DELETE FROM task_create_idempotencies")
-		model.DB.Exec("DELETE FROM asset_ownership_claims")
-		model.DB.Exec("DELETE FROM asset_group_ownership_claims")
-		model.DB.Exec("DELETE FROM asset_reconciliation_findings")
-		model.DB.Exec("DELETE FROM application_api_rule_acceptances")
-		model.DB.Exec("DELETE FROM api_service_rules")
-		model.DB.Exec("DELETE FROM real_person_verification_sessions")
-		model.DB.Exec("DELETE FROM real_person_authorizations")
-		model.DB.Exec("DELETE FROM asset_group_bindings")
-		model.DB.Exec("DELETE FROM asset_bindings")
-		model.DB.Exec("DELETE FROM asset_sources")
+		model.DB.Exec("DELETE FROM asset_groups")
 		model.DB.Exec("DELETE FROM assets")
-		model.DB.Exec("DELETE FROM task_asset_authorizations")
 		model.DB.Exec("DELETE FROM task_create_attempts")
 		model.DB.Exec("DELETE FROM provider_cost_exposures")
-		model.DB.Exec("DELETE FROM provider_exposure_incidents")
 		model.DB.Exec("DELETE FROM abilities")
 	})
 }

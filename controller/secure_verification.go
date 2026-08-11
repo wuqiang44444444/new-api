@@ -84,8 +84,7 @@ func isAllowedSecurityProofScope(scope string) bool {
 		securityProofScopePasskeyRegister,
 		securityProofScopePasskeyDelete,
 		securityProofScopeTaskContractAttemptRecover,
-		securityProofScopeTaskContractAttemptReject,
-		securityProofScopeTaskContractExposureResolve:
+		securityProofScopeTaskContractAttemptReject:
 		return true
 	default:
 		return false

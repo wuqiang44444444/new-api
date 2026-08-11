@@ -20,6 +20,7 @@ import { z } from 'zod'
 
 import {
   CHANNEL_TYPE_NEW_API,
+  CHANNEL_TYPE_SEEDANCE_LINK,
   CHANNEL_STATUS,
   ERROR_MESSAGES,
   MODEL_FETCHABLE_TYPES,
@@ -33,8 +34,7 @@ import {
   stringifyAdvancedCustomConfig,
   validateAdvancedCustomConfig,
 } from './advanced-custom'
-import { refineAssetUpstreamProfile } from './asset-upstream-validation'
-import { refineVideoUpstreamProfile } from './video-upstream-validation'
+import { refineSeedanceProtocols } from './seedance-protocol-validation'
 
 // ============================================================================
 // Form Validation Schema
@@ -267,34 +267,31 @@ export const channelFormSchema = z
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
     aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
-    video_upstream_profile: z
-      .enum([
-        'official',
-        'third_party_relay',
-        'third_party_reverse_proxy',
-        'third_party_json_video_media_arrays',
-        'third_party_funcloud_seedance_v2',
-      ])
-      .optional(),
-    video_upstream_create_path: z.string().optional(),
-    video_upstream_query_path_template: z.string().optional(),
-    asset_upstream_profile: z
-      .enum([
-        'none',
-        'ark_assets',
-        'relay_assets',
-        'joycreator_assets',
-        'official_action_assets',
-      ])
-      .optional(),
     asset_min_url_ttl_seconds: z.number().int().min(0).optional(),
     asset_provider_project: z.string().optional(),
     asset_region: z.string().optional(),
     asset_access_key_id: z.string().optional(),
     asset_secret_access_key: z.string().optional(),
     asset_credential_configured: z.boolean().optional(),
-    link_implementation_id: z.string().optional(),
-    link_implementation_version: z.string().optional(),
+    video_upstream_protocol: z
+      .enum([
+        'modelark_v3_volcengine',
+        'modelark_v3_byteplus',
+        'media_task_v1',
+        'ark_media_v1',
+        'media_arrays_v2',
+        'funcloud_seedance_v2',
+      ])
+      .optional(),
+    asset_upstream_protocol: z
+      .enum([
+        'none',
+        'volcengine_assets_action_v2024_01_01',
+        'byteplus_assets_action_v2024_01_01',
+        'ark_assets_v1',
+        'relay_assets_v1',
+      ])
+      .optional(),
     azure_responses_version: z.string().optional(), // Azure specific
     // Field passthrough controls (stored in settings JSON)
     allow_service_tier: z.boolean().optional(), // OpenAI/Anthropic
@@ -312,7 +309,9 @@ export const channelFormSchema = z
   })
   .superRefine((data, ctx) => {
     if (
-      [3, 8, 36, 45, CHANNEL_TYPE_NEW_API].includes(data.type) &&
+      [3, 8, 36, 45, CHANNEL_TYPE_NEW_API, CHANNEL_TYPE_SEEDANCE_LINK].includes(
+        data.type
+      ) &&
       !data.base_url?.trim()
     ) {
       addRequiredIssue(
@@ -404,8 +403,7 @@ export const channelFormSchema = z
       )
     }
 
-    refineVideoUpstreamProfile(data, ctx)
-    refineAssetUpstreamProfile(data, ctx)
+    refineSeedanceProtocols(data, ctx)
 
     const protocol = normalizeHttpProtocol(data.http_protocol)
     const shards = data.http2_connection_shards ?? 1
@@ -470,18 +468,14 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   is_enterprise_account: false,
   vertex_key_type: 'json',
   aws_key_type: 'ak_sk',
-  video_upstream_profile: 'official',
-  video_upstream_create_path: '',
-  video_upstream_query_path_template: '',
-  asset_upstream_profile: 'none',
-  asset_min_url_ttl_seconds: 0,
+  asset_min_url_ttl_seconds: 3600,
   asset_provider_project: '',
-  asset_region: '',
+  asset_region: 'cn-beijing',
   asset_access_key_id: '',
   asset_secret_access_key: '',
   asset_credential_configured: false,
-  link_implementation_id: '',
-  link_implementation_version: '',
+  video_upstream_protocol: 'modelark_v3_volcengine',
+  asset_upstream_protocol: 'volcengine_assets_action_v2024_01_01',
   azure_responses_version: '',
   // Field passthrough controls
   allow_service_tier: false,
@@ -548,20 +542,6 @@ export function transformChannelToFormDefaults(
   let azureResponsesVersion = ''
   let isEnterpriseAccount = false
   let awsKeyType: 'ak_sk' | 'api_key' = 'ak_sk'
-  let videoUpstreamProfile:
-    | 'official'
-    | 'third_party_relay'
-    | 'third_party_reverse_proxy'
-    | 'third_party_json_video_media_arrays'
-    | 'third_party_funcloud_seedance_v2' = 'official'
-  let videoUpstreamCreatePath = ''
-  let videoUpstreamQueryPathTemplate = ''
-  let assetUpstreamProfile:
-    | 'none'
-    | 'ark_assets'
-    | 'relay_assets'
-    | 'joycreator_assets'
-    | 'official_action_assets' = 'none'
   let assetMinURLTTLSeconds = 0
   let assetProviderProject = ''
   let assetRegion = ''
@@ -577,8 +557,10 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
-  let linkImplementationID = ''
-  let linkImplementationVersion = ''
+  let videoUpstreamProtocol: ChannelFormValues['video_upstream_protocol'] =
+    'modelark_v3_volcengine'
+  let assetUpstreamProtocol: ChannelFormValues['asset_upstream_protocol'] =
+    'none'
 
   if (channel.settings) {
     try {
@@ -587,16 +569,12 @@ export function transformChannelToFormDefaults(
       azureResponsesVersion = parsed.azure_responses_version || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
       awsKeyType = parsed.aws_key_type || 'ak_sk'
-      videoUpstreamProfile = parsed.video_upstream_profile || 'official'
-      videoUpstreamCreatePath = parsed.video_upstream_create_path || ''
-      videoUpstreamQueryPathTemplate =
-        parsed.video_upstream_query_path_template || ''
-      assetUpstreamProfile = parsed.asset_upstream_profile || 'none'
       assetMinURLTTLSeconds = parsed.asset_min_url_ttl_seconds || 0
       assetProviderProject = parsed.asset_provider_project || ''
       assetRegion = parsed.asset_region || ''
-      linkImplementationID = parsed.link_implementation?.id || ''
-      linkImplementationVersion = parsed.link_implementation?.version || ''
+      videoUpstreamProtocol =
+        parsed.video_upstream_protocol || 'modelark_v3_volcengine'
+      assetUpstreamProtocol = parsed.asset_upstream_protocol || 'none'
       allowServiceTier = parsed.allow_service_tier === true
       disableStore = parsed.disable_store === true
       allowSafetyIdentifier = parsed.allow_safety_identifier === true
@@ -656,10 +634,6 @@ export function transformChannelToFormDefaults(
     vertex_key_type: vertexKeyType,
     azure_responses_version: azureResponsesVersion,
     aws_key_type: awsKeyType,
-    video_upstream_profile: videoUpstreamProfile,
-    video_upstream_create_path: videoUpstreamCreatePath,
-    video_upstream_query_path_template: videoUpstreamQueryPathTemplate,
-    asset_upstream_profile: assetUpstreamProfile,
     asset_min_url_ttl_seconds: assetMinURLTTLSeconds,
     asset_provider_project: assetProviderProject,
     asset_region: assetRegion,
@@ -667,8 +641,8 @@ export function transformChannelToFormDefaults(
     asset_secret_access_key: '',
     asset_credential_configured:
       channel.asset_credential_status?.configured === true,
-    link_implementation_id: linkImplementationID,
-    link_implementation_version: linkImplementationVersion,
+    video_upstream_protocol: videoUpstreamProtocol,
+    asset_upstream_protocol: assetUpstreamProtocol,
     allow_service_tier: allowServiceTier,
     disable_store: disableStore,
     allow_include_obfuscation: allowIncludeObfuscation,
@@ -757,23 +731,21 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     delete settingsObj.aws_key_type
   }
 
-  if (formData.type === 54) {
-    settingsObj.video_upstream_profile =
-      formData.video_upstream_profile || 'official'
-    if (formData.video_upstream_profile === 'official') {
-      delete settingsObj.video_upstream_create_path
-      delete settingsObj.video_upstream_query_path_template
-    } else {
-      settingsObj.video_upstream_create_path =
-        formData.video_upstream_create_path || ''
-      settingsObj.video_upstream_query_path_template =
-        formData.video_upstream_query_path_template || ''
-    }
-    settingsObj.asset_upstream_profile =
-      formData.asset_upstream_profile || 'none'
+  if (formData.type === CHANNEL_TYPE_SEEDANCE_LINK) {
+    settingsObj.video_upstream_protocol = formData.video_upstream_protocol
+    settingsObj.asset_upstream_protocol =
+      formData.asset_upstream_protocol || 'none'
     settingsObj.asset_min_url_ttl_seconds =
       formData.asset_min_url_ttl_seconds || 0
-    if (formData.asset_upstream_profile === 'official_action_assets') {
+    delete settingsObj.video_upstream_profile
+    delete settingsObj.video_upstream_create_path
+    delete settingsObj.video_upstream_query_path_template
+    delete settingsObj.asset_upstream_profile
+    if (
+      formData.asset_upstream_protocol ===
+        'volcengine_assets_action_v2024_01_01' ||
+      formData.asset_upstream_protocol === 'byteplus_assets_action_v2024_01_01'
+    ) {
       settingsObj.asset_provider_project =
         formData.asset_provider_project?.trim() || ''
       settingsObj.asset_region = formData.asset_region?.trim() || ''
@@ -789,18 +761,8 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     delete settingsObj.asset_min_url_ttl_seconds
     delete settingsObj.asset_provider_project
     delete settingsObj.asset_region
-  }
-
-  if (
-    formData.link_implementation_id?.trim() &&
-    formData.link_implementation_version?.trim()
-  ) {
-    settingsObj.link_implementation = {
-      id: formData.link_implementation_id.trim(),
-      version: formData.link_implementation_version.trim(),
-    }
-  } else {
-    delete settingsObj.link_implementation
+    delete settingsObj.video_upstream_protocol
+    delete settingsObj.asset_upstream_protocol
   }
 
   // Field passthrough controls:
@@ -914,8 +876,14 @@ export function transformFormDataToCreatePayload(
     models: formData.models,
     group: formatGroups(formData.group),
     model_mapping: formData.model_mapping || null,
-    priority: formData.priority || null,
-    weight: formData.weight || null,
+    priority:
+      formData.type === CHANNEL_TYPE_SEEDANCE_LINK
+        ? null
+        : formData.priority || null,
+    weight:
+      formData.type === CHANNEL_TYPE_SEEDANCE_LINK
+        ? null
+        : formData.weight || null,
     test_model: formData.test_model || null,
     auto_ban: formData.auto_ban ?? 1,
     status: formData.status,
@@ -945,7 +913,11 @@ export function transformFormDataToCreatePayload(
     channel,
   }
   if (
-    formData.asset_upstream_profile === 'official_action_assets' &&
+    formData.type === CHANNEL_TYPE_SEEDANCE_LINK &&
+    (formData.asset_upstream_protocol ===
+      'volcengine_assets_action_v2024_01_01' ||
+      formData.asset_upstream_protocol ===
+        'byteplus_assets_action_v2024_01_01') &&
     formData.asset_access_key_id?.trim() &&
     formData.asset_secret_access_key?.trim()
   ) {
@@ -973,8 +945,12 @@ export function transformFormDataToUpdatePayload(
     models: formData.models,
     group: formatGroups(formData.group),
     model_mapping: formData.model_mapping || null,
-    priority: formData.priority ?? 0,
-    weight: formData.weight ?? 0,
+    priority:
+      formData.type === CHANNEL_TYPE_SEEDANCE_LINK
+        ? 0
+        : (formData.priority ?? 0),
+    weight:
+      formData.type === CHANNEL_TYPE_SEEDANCE_LINK ? 0 : (formData.weight ?? 0),
     test_model: formData.test_model || null,
     auto_ban: formData.auto_ban ?? 1,
     status_code_mapping: formData.status_code_mapping || null,
@@ -992,7 +968,11 @@ export function transformFormDataToUpdatePayload(
     payload.key = formData.key
   }
   if (
-    formData.asset_upstream_profile === 'official_action_assets' &&
+    formData.type === CHANNEL_TYPE_SEEDANCE_LINK &&
+    (formData.asset_upstream_protocol ===
+      'volcengine_assets_action_v2024_01_01' ||
+      formData.asset_upstream_protocol ===
+        'byteplus_assets_action_v2024_01_01') &&
     formData.asset_access_key_id?.trim() &&
     formData.asset_secret_access_key?.trim()
   ) {

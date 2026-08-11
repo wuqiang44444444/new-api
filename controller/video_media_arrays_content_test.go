@@ -10,16 +10,9 @@ import (
 )
 
 func TestVideoMediaArraysContentSourceUsesFrozenBearerAndIdentity(t *testing.T) {
-	implementation, ok := model.ResolveLinkImplementation(dto.LinkImplementationRef{
-		ID: model.LinkImplementationFeicaiSeedanceVideos, Version: model.LinkImplementationVersionV2,
-	})
-	require.True(t, ok)
 	task := &model.Task{PrivateData: model.TaskPrivateData{
 		VideoUpstreamProfile:      dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-		SouthboundAdapterVersion:  "54:third_party_json_video_media_arrays:v2",
-		LinkImplementationID:      implementation.ID,
-		LinkImplementationVersion: implementation.Version,
-		LinkImplementationHash:    implementation.ContentHash,
+		SouthboundAdapterVersion:  "61:third_party_json_video_media_arrays:v2",
 		VideoUpstreamQueryBaseURL: "http://video.example.com/root",
 		Key:                       "frozen-provider-key",
 		ResultURL:                 "http://video.example.com/v1/videos/task/content",
@@ -42,9 +35,4 @@ func TestVideoMediaArraysContentSourceUsesFrozenBearerAndIdentity(t *testing.T) 
 	assert.True(t, handled)
 	require.Error(t, err)
 
-	task.PrivateData.ResultURL = "http://video.example.com/result.mp4"
-	task.PrivateData.LinkImplementationHash = "sha256:stale"
-	_, _, handled, err = videoMediaArraysContentSource(task)
-	assert.True(t, handled)
-	require.Error(t, err)
 }

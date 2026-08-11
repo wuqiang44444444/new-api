@@ -4,7 +4,6 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
-	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/relaykit/types"
 
@@ -84,8 +83,6 @@ func SetRelayRouter(router *gin.Engine) {
 		imageCreateRouter := relayV1Router.Group("")
 		imageCreateRouter.Use(
 			middleware.TaskClientProtocol("openai_images"),
-			middleware.ResolveLinkModelPublication(model.LinkRouteFamilyImageGeneration),
-			middleware.LinkImplementationChannelConstraint(),
 			middleware.Distribute(),
 			middleware.ImageTaskCreateIdempotency(),
 		)

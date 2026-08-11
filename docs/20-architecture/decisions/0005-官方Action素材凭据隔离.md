@@ -2,10 +2,14 @@
 adr: 0005
 status: superseded
 date: 2026-07-23
+last-reviewed: 2026-08-11
 superseded-by: "ADR-0016"
 ---
 
 # ADR-0005: 官方 Action 素材凭据隔离
+
+> 本决策已被 [ADR-0016](0016-Seedance专用渠道与确定性素材代理.md) 取代；当前事实见
+> [Seedance 专用渠道与 Link 架构](../Seedance专用渠道与Link架构.md)。
 
 ## Context
 

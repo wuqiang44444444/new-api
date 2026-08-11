@@ -17,10 +17,6 @@ type TaskAttemptReleaseResult struct {
 	BillingSource string
 }
 
-type taskCreateBillingSnapshot struct {
-	PublicModel string `json:"public_model"`
-}
-
 func MarkTaskCreateAttemptUnknown(id int64, upstreamRequestID string) error {
 	if id == 0 {
 		return errors.New("task create attempt is required")
@@ -77,7 +73,7 @@ func releaseTaskCreateAttemptHold(
 	terminal TaskCreateAttemptStatus,
 	options taskAttemptReleaseOptions,
 ) (*TaskAttemptReleaseResult, error) {
-	if terminal != TaskCreateAttemptRejected && terminal != TaskCreateAttemptReleasedWithExposure {
+	if terminal != TaskCreateAttemptRejected {
 		return nil, errors.New("invalid task attempt release status")
 	}
 	released := &TaskAttemptReleaseResult{}
@@ -167,11 +163,6 @@ func releaseTaskCreateAttemptHold(
 		if update.RowsAffected != 1 {
 			return errors.New("task create attempt release lost its state")
 		}
-		if err := tx.Model(&TaskAssetAuthorization{}).
-			Where("attempt_id = ? AND state = ?", attempt.AttemptID, TaskAssetAuthorizationReserved).
-			Updates(map[string]any{"state": TaskAssetAuthorizationClosed, "updated_at": now}).Error; err != nil {
-			return err
-		}
 		if terminal == TaskCreateAttemptRejected {
 			if options.deleteIdempotencyClaim {
 				if err := tx.Where("attempt_id = ? AND status IN ?", attempt.AttemptID, []string{
@@ -193,27 +184,6 @@ func releaseTaskCreateAttemptHold(
 					}).Error; err != nil {
 					return err
 				}
-			}
-		}
-		if terminal == TaskCreateAttemptReleasedWithExposure {
-			var billing taskCreateBillingSnapshot
-			_ = common.Unmarshal(attempt.BillingSnapshot, &billing)
-			if err := insertProviderCostExposureTx(tx, &ProviderCostExposure{
-				SourceKind:             ProviderCostExposureSourceAttempt,
-				SourceID:               attempt.AttemptID,
-				Reason:                 string(TaskCreateAttemptReleasedWithExposure),
-				UserID:                 attempt.UserID,
-				ChannelID:              attempt.ChannelID,
-				PublicModel:            billing.PublicModel,
-				UpstreamProfile:        attempt.UpstreamProfile,
-				LinkImplementationID:   attempt.LinkImplementationID,
-				LinkImplementationVer:  attempt.LinkImplementationVersion,
-				LinkImplementationHash: attempt.LinkImplementationHash,
-				LinkPubSnapshot:        attempt.LinkPubSnapshot,
-				CustomerQuotaReleased:  attempt.HeldQuota,
-				CreatedAt:              now,
-			}); err != nil {
-				return err
 			}
 		}
 		return nil

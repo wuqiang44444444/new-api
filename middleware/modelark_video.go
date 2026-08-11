@@ -10,9 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -30,7 +28,7 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 		}
 		if err := rejectUnknownVideoFields(
 			body,
-			"model", "end_user_subject", "content", "callback_url", "duration", "resolution", "ratio",
+			"model", "content", "callback_url", "duration", "resolution", "ratio",
 			"service_tier", "generate_audio", "watermark", "return_last_frame",
 			"execution_expires_after", "draft", "tools", "safety_identifier",
 			"priority", "frames", "seed", "camera_fixed",
@@ -52,19 +50,6 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 		}
 		appID := c.GetInt("token_id")
 		common.SetContextKey(c, constant.ContextKeyAssetAppID, appID)
-		if request.EndUserSubject != nil {
-			if request.SafetyIdentifier != nil {
-				abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", "end_user_subject and safety_identifier cannot be supplied together")
-				return
-			}
-			subjectHash, err := service.EndUserSubjectHash(appID, *request.EndUserSubject)
-			if err != nil {
-				abortModelArkVideo(c, http.StatusBadRequest, "invalid_end_user_subject", err.Error())
-				return
-			}
-			common.SetContextKey(c, constant.ContextKeyEndUserSubjectHash, subjectHash)
-			request.EndUserSubject = nil
-		}
 		prompt, err := validateModelArkVideoCreateRequest(request)
 		if err != nil {
 			abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", err.Error())
@@ -137,6 +122,21 @@ func rejectUnknownModelArkVideoFields(body map[string]any) error {
 func validateModelArkVideoCreateRequest(request modelArkVideoCreateRequest) (string, error) {
 	if strings.TrimSpace(request.Model) == "" || len(request.Content) == 0 {
 		return "", fmt.Errorf("model and content are required")
+	}
+	if request.Duration != nil && (*request.Duration == 0 || *request.Duration < -1 || *request.Duration > relaycommon.MaxTaskDurationSeconds) {
+		return "", fmt.Errorf("duration must be -1 or between 1 and %d", relaycommon.MaxTaskDurationSeconds)
+	}
+	if request.Frames != nil && (*request.Frames < 29 || *request.Frames > 289 || (*request.Frames-25)%4 != 0) {
+		return "", fmt.Errorf("frames must be between 29 and 289 and match 25 + 4n")
+	}
+	if request.ExecutionExpiresAfter != nil && (*request.ExecutionExpiresAfter < 3600 || *request.ExecutionExpiresAfter > 259200) {
+		return "", fmt.Errorf("execution_expires_after must be between 3600 and 259200")
+	}
+	if request.Priority != nil && (*request.Priority < 0 || *request.Priority > 9) {
+		return "", fmt.Errorf("priority must be between 0 and 9")
+	}
+	if request.Seed != nil && (*request.Seed < -1 || int64(*request.Seed) > int64(1<<31-1)) {
+		return "", fmt.Errorf("seed must be between -1 and 2147483647")
 	}
 	texts := make([]string, 0, len(request.Content))
 	for index, item := range request.Content {
@@ -217,91 +217,6 @@ func modelArkVideoValueAllowed(value string, allowed ...string) bool {
 		}
 	}
 	return false
-}
-
-func ModelArkVideoChannelConstraint() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		contract, contractOK := relaycommon.GetVideoContractRequest(c)
-		if !contractOK || contract.ContractID != dto.VideoContractModelArkV3 || contract.ModelArk == nil {
-			abortModelArkVideo(c, http.StatusBadRequest, "invalid_video_contract", "Seedance request contract is unavailable")
-			return
-		}
-		var channels []model.Channel
-		if err := model.DB.Where("type = ? AND status = ?", constant.ChannelTypeDoubaoVideo, common.ChannelStatusEnabled).Find(&channels).Error; err != nil {
-			abortModelArkVideo(c, http.StatusServiceUnavailable, "upstream_unavailable", "video service is temporarily unavailable")
-			return
-		}
-		allowed := make(map[int]struct{})
-		profileCompatibility := make(map[struct {
-			profile          dto.VideoUpstreamProfile
-			allowServiceTier bool
-		}]bool)
-		activeChannels := 0
-		publication, published := resolvedLinkModelPublication(c)
-		if !published && common.GetContextKeyString(c, constant.ContextKeyLinkRouteFamily) != "" {
-			abortModelArkVideo(c, http.StatusBadRequest, "invalid_video_contract", "video publication snapshot is unavailable")
-			return
-		}
-		for i := range channels {
-			activeChannels++
-			settings := channels[i].GetOtherSettings()
-			if published {
-				if err := model.ValidateChannelLinkExecution(&channels[i], publication.CustomerModel, publication.RouteFamily, publication.LinkSKU); err != nil {
-					continue
-				}
-			}
-			if capability, ok := resolvedVideoSKUCapability(c); ok {
-				if err := model.ValidateVideoSKUImplementation(capability, &channels[i]); err != nil {
-					continue
-				}
-			}
-			compatibilityKey := struct {
-				profile          dto.VideoUpstreamProfile
-				allowServiceTier bool
-			}{settings.VideoUpstreamProfile, settings.AllowServiceTier}
-			compatible, checked := profileCompatibility[compatibilityKey]
-			if !checked {
-				compatible = modelArkVideoProfileCompatible(settings.VideoUpstreamProfile) &&
-					dto.ModelArkVideoProfileIncompatibility(
-						contract.ModelArk,
-						settings.VideoUpstreamProfile,
-						settings.AllowServiceTier,
-					) == ""
-				profileCompatibility[compatibilityKey] = compatible
-			}
-			if compatible {
-				allowed[channels[i].Id] = struct{}{}
-			}
-		}
-		if existingValue, ok := common.GetContextKey(c, constant.ContextKeyAssetAllowedChannelIDs); ok {
-			existing, typeOK := existingValue.(map[int]struct{})
-			if !typeOK {
-				allowed = nil
-			} else {
-				for channelID := range allowed {
-					if _, exists := existing[channelID]; !exists {
-						delete(allowed, channelID)
-					}
-				}
-			}
-		}
-		if len(allowed) == 0 {
-			if activeChannels > 0 {
-				abortModelArkVideo(c, http.StatusBadRequest, "unsupported_parameter", "no configured Seedance channel supports the requested model contract")
-				return
-			}
-			abortModelArkVideo(c, http.StatusServiceUnavailable, "upstream_unavailable", "no compatible ModelArk video channel is available")
-			return
-		}
-		common.SetContextKey(c, constant.ContextKeyAssetAllowedChannelIDs, allowed)
-		c.Next()
-	}
-}
-
-// modelArkVideoProfileCompatible reports whether the ModelArk client API contract
-// can use a DoubaoVideo channel's configured adapter protocol.
-func modelArkVideoProfileCompatible(profile dto.VideoUpstreamProfile) bool {
-	return profile == "" || profile.IsValid()
 }
 
 func abortModelArkVideo(c *gin.Context, status int, code, message string) {

@@ -38,15 +38,21 @@ func TokenModelAccess() gin.HandlerFunc {
 		value, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
 		allowed, typeOK := value.(map[string]bool)
 		if !ok || !typeOK {
-			abortAssetRoute(c, http.StatusForbidden, "token_model_forbidden",
-				i18n.T(c, i18n.MsgDistributorTokenNoModelAccess))
+			abortTokenModelAccess(c, i18n.T(c, i18n.MsgDistributorTokenNoModelAccess))
 			return
 		}
 		if _, permitted := allowed[ratio_setting.FormatMatchingModelName(request.Model)]; !permitted {
-			abortAssetRoute(c, http.StatusForbidden, "token_model_forbidden",
-				i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": request.Model}))
+			abortTokenModelAccess(c, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": request.Model}))
 			return
 		}
 		c.Next()
 	}
+}
+
+func abortTokenModelAccess(c *gin.Context, message string) {
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{
+		"message": message,
+		"type":    "asset_error",
+		"code":    "token_model_forbidden",
+	}})
 }

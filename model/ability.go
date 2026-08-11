@@ -37,21 +37,25 @@ func GetAllEnableAbilityWithChannels() ([]AbilityWithChannel, error) {
 		Joins("left join channels on abilities.channel_id = channels.id").
 		Where("abilities.enabled = ?", true).
 		Scan(&abilities).Error
-	return abilities, err
+	if err != nil {
+		return nil, err
+	}
+	seedanceAbilities, err := enabledSeedanceAbilityViews(DB)
+	return append(abilities, seedanceAbilities...), err
 }
 
 func GetGroupEnabledModels(group string) []string {
 	var models []string
 	// Find distinct models
 	DB.Table("abilities").Where(commonGroupCol+" = ? and enabled = ?", group, true).Distinct("model").Pluck("model", &models)
-	return models
+	return appendEnabledSeedanceModels(models, group)
 }
 
 func GetEnabledModels() []string {
 	var models []string
 	// Find distinct models
 	DB.Table("abilities").Where("enabled = ?", true).Distinct("model").Pluck("model", &models)
-	return models
+	return appendEnabledSeedanceModels(models, "")
 }
 
 func GetAllEnableAbilities() []Ability {
@@ -106,41 +110,12 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 }
 
 func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
-	return GetChannelWithAllowedIDs(group, model, retry, requestPath, nil)
-}
-
-func GetChannelWithAllowedIDs(group string, model string, retry int, requestPath string, allowedIDs map[int]struct{}) (*Channel, error) {
 	var abilities []Ability
 
-	var channelQuery *gorm.DB
-	if allowedIDs != nil {
-		ids := make([]int, 0, len(allowedIDs))
-		for id := range allowedIDs {
-			ids = append(ids, id)
-		}
-		if len(ids) == 0 {
-			return nil, nil
-		}
-		baseQuery := DB.Model(&Ability{}).Where(commonGroupCol+" = ? and model = ? and enabled = ? and channel_id IN ?", group, model, true, ids)
-		var priorities []int64
-		if err := baseQuery.Distinct("priority").Order("priority DESC").Pluck("priority", &priorities).Error; err != nil {
-			return nil, err
-		}
-		if len(priorities) == 0 {
-			return nil, nil
-		}
-		if retry >= len(priorities) {
-			retry = len(priorities) - 1
-		}
-		channelQuery = DB.Model(&Ability{}).Where(commonGroupCol+" = ? and model = ? and enabled = ? and channel_id IN ? and priority = ?", group, model, true, ids, priorities[retry])
-	} else {
-		var err error
-		channelQuery, err = getChannelQuery(group, model, retry)
-		if err != nil {
-			return nil, err
-		}
+	channelQuery, err := getChannelQuery(group, model, retry)
+	if err != nil {
+		return nil, err
 	}
-	var err error
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
 		err = channelQuery.Order("weight DESC").Find(&abilities).Error
 	} else {
@@ -226,21 +201,15 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 }
 
 func (channel *Channel) AddAbilitiesWithActor(tx *gorm.DB, actorID int) error {
-	validate := ValidateLinkSKUAbilityBindings
-	if channel.Status == common.ChannelStatusEnabled {
-		validate = ValidateLinkSKUAbilityPublicationReadiness
-	}
-	if err := validate(channel); err != nil {
+	if err := ValidateSeedanceChannelModelUniqueness(tx, channel); err != nil {
 		return err
+	}
+	if channel.Type == constant.ChannelTypeSeedanceLink {
+		return nil
 	}
 	useDB := DB
 	if tx != nil {
 		useDB = tx
-	}
-	if channel.Status == common.ChannelStatusEnabled {
-		if err := EnsureChannelLinkModelPublications(useDB, channel, actorID); err != nil {
-			return err
-		}
 	}
 	models_ := strings.Split(channel.Models, ",")
 	groups_ := strings.Split(channel.Group, ",")
@@ -288,11 +257,7 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 }
 
 func (channel *Channel) UpdateAbilitiesWithActor(tx *gorm.DB, actorID int) error {
-	validate := ValidateLinkSKUAbilityBindings
-	if channel.Status == common.ChannelStatusEnabled {
-		validate = ValidateLinkSKUAbilityPublicationReadiness
-	}
-	if err := validate(channel); err != nil {
+	if err := ValidateSeedanceChannelModelUniqueness(tx, channel); err != nil {
 		return err
 	}
 	isNewTx := false
@@ -309,15 +274,6 @@ func (channel *Channel) UpdateAbilitiesWithActor(tx *gorm.DB, actorID int) error
 			}
 		}()
 	}
-	if channel.Status == common.ChannelStatusEnabled {
-		if err := EnsureChannelLinkModelPublications(tx, channel, actorID); err != nil {
-			if isNewTx {
-				tx.Rollback()
-			}
-			return err
-		}
-	}
-
 	// First delete all abilities of this channel
 	err := tx.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error
 	if err != nil {
@@ -325,6 +281,12 @@ func (channel *Channel) UpdateAbilitiesWithActor(tx *gorm.DB, actorID int) error
 			tx.Rollback()
 		}
 		return err
+	}
+	if channel.Type == constant.ChannelTypeSeedanceLink {
+		if isNewTx {
+			return tx.Commit().Error
+		}
+		return nil
 	}
 
 	// Then add new abilities
@@ -377,12 +339,12 @@ func updateAbilityStatusTx(tx *gorm.DB, channel *Channel, status bool, actorID i
 		return errors.New("channel ability status transaction requires a channel")
 	}
 	if status {
-		if err := ValidateLinkSKUAbilityPublicationReadiness(channel); err != nil {
+		if err := ValidateSeedanceChannelModelUniqueness(tx, channel); err != nil {
 			return err
 		}
-		if err := EnsureChannelLinkModelPublications(tx, channel, actorID); err != nil {
-			return err
-		}
+	}
+	if channel.Type == constant.ChannelTypeSeedanceLink {
+		return tx.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error
 	}
 	return tx.Model(&Ability{}).Where("channel_id = ?", channel.Id).Select("enabled").Update("enabled", status).Error
 }

@@ -139,6 +139,7 @@ import {
 import {
   ADD_MODE_OPTIONS,
   CHANNEL_STATUS_LABELS,
+  CHANNEL_TYPE_SEEDANCE_LINK,
   CHANNEL_TYPE_OPTIONS,
   CHANNEL_TYPE_WARNINGS,
   ERROR_MESSAGES,
@@ -181,10 +182,7 @@ import {
 } from '../dialogs/missing-models-confirmation-dialog'
 import { ParamOverrideEditorDialog } from '../dialogs/param-override-editor-dialog'
 import { StatusCodeRiskDialog } from '../dialogs/status-code-risk-dialog'
-import { AssetUpstreamProfileField } from './asset-upstream-profile-field'
-import { LinkAwareModelMappingEditor } from './link-aware-model-mapping-editor'
-import { LinkImplementationField } from './link-implementation-field'
-import { LinkPublicationConflictField } from './link-publication-conflict-field'
+import { ModelMappingEditor } from '../model-mapping-editor'
 import { OfficialChannelConnectivityPanel } from './official-channel-connectivity-panel'
 import {
   ChannelAdvancedSection,
@@ -194,7 +192,7 @@ import {
   ChannelEditorLoadingState,
   ChannelModelsSection,
 } from './sections'
-import { VideoUpstreamProfileField } from './video-upstream-profile-field'
+import { SeedanceProtocolFields } from './seedance-protocol-fields'
 
 type ChannelMutateDrawerProps = {
   open: boolean
@@ -286,8 +284,8 @@ const SENSITIVE_FORM_FIELDS = [
   'vertex_key_type',
   'aws_key_type',
   'azure_responses_version',
-  'video_upstream_profile',
-  'asset_upstream_profile',
+  'video_upstream_protocol',
+  'asset_upstream_protocol',
   'asset_min_url_ttl_seconds',
   'asset_provider_project',
   'asset_region',
@@ -675,18 +673,18 @@ export function ChannelMutateDrawer({
     queryFn: () => getChannel(channelId || 0),
     enabled: isEditing && Boolean(channelId),
   })
-  const savedDoubaoProfiles = useMemo(() => {
+  const savedSeedanceProtocols = useMemo(() => {
     const settings = parseSettingsRecord(channelData?.data?.settings)
     return {
       asset:
-        typeof settings.asset_upstream_profile === 'string'
-          ? settings.asset_upstream_profile
+        typeof settings.asset_upstream_protocol === 'string'
+          ? settings.asset_upstream_protocol
           : 'none',
       video:
-        typeof settings.video_upstream_profile === 'string' &&
-        settings.video_upstream_profile
-          ? settings.video_upstream_profile
-          : 'official',
+        typeof settings.video_upstream_protocol === 'string' &&
+        settings.video_upstream_protocol
+          ? settings.video_upstream_protocol
+          : 'modelark_v3_volcengine',
     }
   }, [channelData?.data?.settings])
 
@@ -753,10 +751,8 @@ export function ChannelMutateDrawer({
   const currentModels = form.watch('models')
   const currentName = form.watch('name')
   const currentModelMapping = form.watch('model_mapping')
-  const currentLinkAccessPlan = form.watch('link_implementation_id')
   const awsKeyType = form.watch('aws_key_type')
   const vertexKeyType = form.watch('vertex_key_type')
-  const videoUpstreamProfile = form.watch('video_upstream_profile')
   const upstreamModelUpdateCheckEnabled = form.watch(
     'upstream_model_update_check_enabled'
   )
@@ -1933,9 +1929,13 @@ export function ChannelMutateDrawer({
                 {t(
                   'Sensitive channel settings are read-only for your account.'
                 )}{' '}
-                {t(
-                  'You can still edit non-sensitive operations fields such as models, groups, priority, and weight.'
-                )}
+                {currentType === CHANNEL_TYPE_SEEDANCE_LINK
+                  ? t(
+                      'Seedance uses one fixed channel for each model. Priority and Weight do not participate in routing.'
+                    )
+                  : t(
+                      'You can still edit non-sensitive operations fields such as models, groups, priority, and weight.'
+                    )}
               </AlertDescription>
             </Alert>
           )}
@@ -2379,37 +2379,13 @@ export function ChannelMutateDrawer({
                               />
                             )}
 
-                            {/* DoubaoVideo (type 54) */}
-                            {currentType === 54 && (
-                              <>
-                                <LinkImplementationField
-                                  control={form.control}
-                                  channelType={currentType}
-                                />
-                                <VideoUpstreamProfileField
-                                  control={form.control}
-                                />
-                                <AssetUpstreamProfileField
-                                  control={form.control}
-                                  sensitiveLocked={sensitiveLocked}
-                                  credentialStatus={
-                                    channelData?.data?.asset_credential_status
-                                  }
-                                />
-                              </>
-                            )}
-
-                            {currentType === 58 && (
-                              <LinkImplementationField
+                            {currentType === CHANNEL_TYPE_SEEDANCE_LINK && (
+                              <SeedanceProtocolFields
                                 control={form.control}
-                                channelType={currentType}
-                              />
-                            )}
-
-                            {(currentType === 50 || currentType === 51) && (
-                              <LinkImplementationField
-                                control={form.control}
-                                channelType={currentType}
+                                sensitiveLocked={sensitiveLocked}
+                                credentialStatus={
+                                  channelData?.data?.asset_credential_status
+                                }
                               />
                             )}
 
@@ -2910,9 +2886,6 @@ export function ChannelMutateDrawer({
                                         type='button'
                                         variant='outline'
                                         size='sm'
-                                        disabled={Boolean(
-                                          currentLinkAccessPlan
-                                        )}
                                         onClick={() =>
                                           setAdvancedCustomEditorOpen(true)
                                         }
@@ -3051,12 +3024,7 @@ export function ChannelMutateDrawer({
                                   }
                                   return (
                                     <FormItem>
-                                      <FormLabel>
-                                        {currentType === 54 &&
-                                        videoUpstreamProfile === 'official'
-                                          ? t('Model API Key *')
-                                          : t('API Key *')}
-                                      </FormLabel>
+                                      <FormLabel>{t('API Key *')}</FormLabel>
                                       <FormControl>
                                         <Textarea
                                           placeholder={keyPlaceholder}
@@ -3310,7 +3278,8 @@ export function ChannelMutateDrawer({
                             </ChannelAuthSection>
                           </fieldset>
                         </div>
-                        {currentType === 54 && channelId ? (
+                        {currentType === CHANNEL_TYPE_SEEDANCE_LINK &&
+                        channelId ? (
                           <OfficialChannelConnectivityPanel
                             key={channelId}
                             channelId={channelId}
@@ -3319,8 +3288,8 @@ export function ChannelMutateDrawer({
                               channelData?.data?.asset_credential_status
                                 ?.configured === true
                             }
-                            savedAssetProfile={savedDoubaoProfiles.asset}
-                            savedVideoProfile={savedDoubaoProfiles.video}
+                            savedAssetProtocol={savedSeedanceProtocols.asset}
+                            savedVideoProtocol={savedSeedanceProtocols.video}
                             sensitiveLocked={sensitiveLocked}
                             onCredentialCleared={() => {
                               form.setValue(
@@ -3607,9 +3576,7 @@ export function ChannelMutateDrawer({
                                     </div>
                                   </div>
                                   <FormControl>
-                                    <LinkAwareModelMappingEditor
-                                      control={form.control}
-                                      channelType={currentType}
+                                    <ModelMappingEditor
                                       value={field.value || ''}
                                       onChange={field.onChange}
                                       disabled={isSubmitting}
@@ -3619,10 +3586,6 @@ export function ChannelMutateDrawer({
                                       )}
                                     />
                                   </FormControl>
-                                  <LinkPublicationConflictField
-                                    control={form.control}
-                                    canRebind={canEditSensitive}
-                                  />
                                   {modelMappingGuardrail.invalidJson && (
                                     <Alert variant='destructive'>
                                       <AlertDescription>
@@ -3736,55 +3699,67 @@ export function ChannelMutateDrawer({
                               icon={<Route className='h-3.5 w-3.5' />}
                               iconTone='info'
                             />
-                            <div className='grid gap-4 sm:grid-cols-2'>
-                              <FormField
-                                control={form.control}
-                                name='priority'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('Priority')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        type='number'
-                                        placeholder='0'
-                                        {...field}
-                                        onChange={(e) =>
-                                          field.onChange(Number(e.target.value))
-                                        }
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.PRIORITY)}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
+                            {currentType === CHANNEL_TYPE_SEEDANCE_LINK ? (
+                              <FormDescription>
+                                {t(
+                                  'Seedance uses one fixed channel for each model. Priority and Weight do not participate in routing.'
                                 )}
-                              />
+                              </FormDescription>
+                            ) : (
+                              <div className='grid gap-4 sm:grid-cols-2'>
+                                <FormField
+                                  control={form.control}
+                                  name='priority'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>{t('Priority')}</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type='number'
+                                          placeholder='0'
+                                          {...field}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              Number(e.target.value)
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <FormDescription>
+                                        {t(FIELD_DESCRIPTIONS.PRIORITY)}
+                                      </FormDescription>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
 
-                              <FormField
-                                control={form.control}
-                                name='weight'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('Weight')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        type='number'
-                                        placeholder='0'
-                                        {...field}
-                                        onChange={(e) =>
-                                          field.onChange(Number(e.target.value))
-                                        }
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.WEIGHT)}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
+                                <FormField
+                                  control={form.control}
+                                  name='weight'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>{t('Weight')}</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type='number'
+                                          placeholder='0'
+                                          {...field}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              Number(e.target.value)
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <FormDescription>
+                                        {t(FIELD_DESCRIPTIONS.WEIGHT)}
+                                      </FormDescription>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              </div>
+                            )}
 
                             <FormField
                               control={form.control}
@@ -4891,21 +4866,19 @@ export function ChannelMutateDrawer({
         />
       )}
 
-      {advancedCustomEditorOpen &&
-        !sensitiveLocked &&
-        !currentLinkAccessPlan && (
-          <AdvancedCustomEditorDialog
-            open={advancedCustomEditorOpen}
-            value={form.watch('advanced_custom') || ''}
-            onOpenChange={setAdvancedCustomEditorOpen}
-            onSave={(nextValue) => {
-              form.setValue('advanced_custom', nextValue, {
-                shouldDirty: true,
-                shouldValidate: true,
-              })
-            }}
-          />
-        )}
+      {advancedCustomEditorOpen && !sensitiveLocked && (
+        <AdvancedCustomEditorDialog
+          open={advancedCustomEditorOpen}
+          value={form.watch('advanced_custom') || ''}
+          onOpenChange={setAdvancedCustomEditorOpen}
+          onSave={(nextValue) => {
+            form.setValue('advanced_custom', nextValue, {
+              shouldDirty: true,
+              shouldValidate: true,
+            })
+          }}
+        />
+      )}
 
       {/* Fetch Models Dialog */}
       <FetchModelsDialog

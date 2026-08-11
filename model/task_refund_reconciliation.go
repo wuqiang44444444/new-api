@@ -27,10 +27,7 @@ func HasTaskPollingWork() bool {
 	if HasUnfinishedSyncTasks() {
 		return true
 	}
-	if HasTaskCreateAttemptWork(GetDBTimestamp()) || HasRevokedTaskAssetAuthorizationWork() {
-		return true
-	}
-	if HasProviderExposurePolicyWork(GetDBTimestamp()) {
+	if HasTaskCreateAttemptWork(GetDBTimestamp()) {
 		return true
 	}
 

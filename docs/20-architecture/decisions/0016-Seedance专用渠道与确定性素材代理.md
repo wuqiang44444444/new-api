@@ -2,6 +2,7 @@
 adr: 0016
 status: accepted
 date: 2026-08-10
+last-reviewed: 2026-08-11
 superseded-by: ""
 ---
 
@@ -31,7 +32,8 @@ Seedance 模型只对应一个渠道；技术人员会在线下判断新模型�
   只在保存、编辑已启用渠道和重新启用时校验；不增加请求时复检、数据库唯一约束、启动扫描、自动
   修复或并发补偿。
 - Seedance 不使用 Priority、Weight、Affinity、随机分发、失败重选、跨渠道重试或 fallback。Group
-  只控制访问，Ability 登记客户模型到 Channel。
+  只控制访问；客户模型直接登记在 Seedance Channel，不写入 NEWAPI 原生 Ability 或通用分发缓存。
+  模型发现和价格展示只使用只读投影。
 - 南向差异由代码化 `video_upstream_protocol` / `asset_upstream_protocol` adapter 表达。管理员只选择
   已有协议并配置 NEWAPI 普通 Channel 字段，不编写 JSON 转换或状态脚本。技术人员线下判断兼容性；
   完全兼容时可零开发配置上线，不兼容时新增代码 adapter。
@@ -39,13 +41,15 @@ Seedance 模型只对应一个渠道；技术人员会在线下判断新模型�
   binding、内容 hash 等价证明、Link Access Plan、改绑审计和候选交集。履约主链收敛为：
 
   ```text
-  customer model -> Group / Ability / price -> Channel
+  customer model -> Group / price -> Seedance Channel 模型登记 -> Channel
     -> model_mapping -> code-backed upstream_protocol -> Provider model
   ```
 
 - Seedance 视频创建只允许一次 Provider POST。发送前继续建立 durable attempt 和资金 hold；取得可信
   Provider task ID 后才创建 Task。结果不明保持视频 `unknown`，不自动重发、换渠道或退款。Task 冻结
   Channel、adapter、Provider 模型、连接、素材和计费事实。
+- `unknown` 不设置自动释放期限，不进入 `released_with_exposure`。只有技术人员核实 Provider 明确未
+  创建后才人工推进 `rejected` 并释放资金，或补录可信 task ID 恢复成功事实。
 - 客户素材 API 使用 `/v1/assets`、`/v1/asset-groups`、`ast_*`、`astgrp_*` 和 `asset://ast_*`。一个平台
   Asset/AssetGroup 一对一固定到 `user_id + app_id`、Channel、Provider 账号、Region/Project 和一个
   Provider 资源；删除通用 0..N AssetBinding、自动迁移、物化和 source fallback。
@@ -56,6 +60,8 @@ Seedance 模型只对应一个渠道；技术人员会在线下判断新模型�
 - ModelArk V3 视频允许 `asset://ast_*` 与 HTTP/Data URL 混用。含平台素材时，客户模型的唯一 Channel
   必须与所有素材 Channel 相同，且多素材共享账号、Region、Project；否则分别返回
   `asset_channel_mismatch` 或 `asset_scope_conflict`。
+- 素材作用域由固定 Channel、Base URL、协议、账号、Region/Project 表达，Key/AK/SK 值不参与作用域
+  指纹；同一作用域允许凭据轮换，作用域变化必须新建渠道。
 - 素材管理不使用视频级 `create_unknown` / `delete_unknown`、自动重试、后台核查或孤儿扫描。创建未
   取得可信 Provider ID 即失败并记录技术日志；删除不明确即失败并保留状态，后续 GET 明确不存在后
   再标记 deleted。

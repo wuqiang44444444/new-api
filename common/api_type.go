@@ -81,6 +81,10 @@ func ChannelType2APIType(channelType int) (int, bool) {
 		apiType = constant.APITypeSub2API
 	case constant.ChannelTypeNewAPI:
 		apiType = constant.APITypeNewAPI
+	case constant.ChannelTypeSeedanceLink:
+		// Seedance is task-only. APITypeOpenAI is used only for shared relay
+		// metadata; task dispatch is selected by ChannelType.
+		apiType = constant.APITypeOpenAI
 	}
 	if apiType == -1 {
 		return constant.APITypeOpenAI, false

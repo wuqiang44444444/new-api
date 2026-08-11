@@ -27,11 +27,6 @@ func TestTaskContractWriteOperationsRequireSessionBoundSecurityProof(t *testing.
 			path:    "/api/task-contract/attempts/attempt_1/reject",
 			handler: RejectTaskCreateAttempt,
 		},
-		{
-			name:    "exposure resolution",
-			path:    "/api/task-contract/provider-exposures/incidents/1/resolve",
-			handler: ResolveProviderExposureIncident,
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

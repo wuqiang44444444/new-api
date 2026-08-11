@@ -32,8 +32,8 @@ interface OfficialChannelConnectivityPanelProps {
   channelId: number
   control: Control<ChannelFormValues>
   credentialConfigured: boolean
-  savedAssetProfile?: string
-  savedVideoProfile?: string
+  savedAssetProtocol?: string
+  savedVideoProtocol?: string
   sensitiveLocked: boolean
   onCredentialCleared: () => void
 }
@@ -125,16 +125,16 @@ export function OfficialChannelConnectivityPanel(
   const [isClearing, setIsClearing] = useState(false)
   const [clearedChannelId, setClearedChannelId] = useState<number | null>(null)
   const [
-    assetProfile,
-    videoProfile,
+    assetProtocol,
+    videoProtocol,
     pendingVideoKey,
     pendingAccessKeyID,
     pendingSecretAccessKey,
   ] = useWatch({
     control: props.control,
     name: [
-      'asset_upstream_profile',
-      'video_upstream_profile',
+      'asset_upstream_protocol',
+      'video_upstream_protocol',
       'key',
       'asset_access_key_id',
       'asset_secret_access_key',
@@ -144,9 +144,9 @@ export function OfficialChannelConnectivityPanel(
   const credentialConfigured =
     props.credentialConfigured && clearedChannelId !== props.channelId
   const isRelevant =
-    (assetProfile !== undefined && assetProfile !== 'none') ||
-    (props.savedAssetProfile !== undefined &&
-      props.savedAssetProfile !== 'none') ||
+    (assetProtocol !== undefined && assetProtocol !== 'none') ||
+    (props.savedAssetProtocol !== undefined &&
+      props.savedAssetProtocol !== 'none') ||
     credentialConfigured
   if (!isRelevant) return null
 
@@ -155,20 +155,25 @@ export function OfficialChannelConnectivityPanel(
     pendingAccessKeyID?.trim() || pendingSecretAccessKey?.trim()
   )
   const availability = getOfficialConnectivityAvailability({
-    assetProfile,
-    savedAssetProfile: props.savedAssetProfile,
-    videoProfile,
-    savedVideoProfile: props.savedVideoProfile,
+    assetProtocol,
+    savedAssetProtocol: props.savedAssetProtocol,
+    videoProtocol,
+    savedVideoProtocol: props.savedVideoProtocol,
     credentialConfigured,
     hasPendingVideoKey,
     hasPendingAssetCredential,
     sensitiveLocked: props.sensitiveLocked,
   })
   const showVideoTest =
-    videoProfile === 'official' || props.savedVideoProfile === 'official'
+    videoProtocol === 'modelark_v3_volcengine' ||
+    videoProtocol === 'modelark_v3_byteplus' ||
+    props.savedVideoProtocol === 'modelark_v3_volcengine' ||
+    props.savedVideoProtocol === 'modelark_v3_byteplus'
   const officialAssetAction =
-    assetProfile === 'official_action_assets' ||
-    props.savedAssetProfile === 'official_action_assets'
+    assetProtocol === 'volcengine_assets_action_v2024_01_01' ||
+    assetProtocol === 'byteplus_assets_action_v2024_01_01' ||
+    props.savedAssetProtocol === 'volcengine_assets_action_v2024_01_01' ||
+    props.savedAssetProtocol === 'byteplus_assets_action_v2024_01_01'
 
   const testVideo = async () => {
     setVideoResult({ status: 'testing' })

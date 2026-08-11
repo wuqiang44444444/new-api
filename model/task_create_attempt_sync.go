@@ -41,8 +41,6 @@ func CompleteTaskCreateAttemptWithoutTask(id int64) error {
 		if result.RowsAffected != 1 {
 			return errors.New("synchronous task create attempt completion lost its state")
 		}
-		return tx.Model(&TaskAssetAuthorization{}).
-			Where("attempt_id = ? AND state = ?", attempt.AttemptID, TaskAssetAuthorizationReserved).
-			Updates(map[string]any{"state": TaskAssetAuthorizationClosed, "updated_at": now}).Error
+		return nil
 	})
 }

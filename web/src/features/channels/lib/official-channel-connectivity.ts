@@ -1,4 +1,5 @@
 import type { ChannelTestResponse } from '../types'
+import { isOfficialSeedanceAssetProtocol } from './seedance-protocol-pairing'
 
 const connectivityMessages: Record<string, string> = {
   asset_action_not_configured:
@@ -24,7 +25,7 @@ const connectivityMessages: Record<string, string> = {
   asset_credential_profile_active:
     'Disable Official Action Assets and save the channel before clearing its stored credentials.',
   asset_resources_active:
-    'Delete all active assets, asset groups, and real-person authorizations before clearing credentials.',
+    'Delete all active assets and asset groups before clearing credentials.',
 }
 
 export function getOfficialConnectivityMessage(
@@ -44,35 +45,43 @@ export function maskAssetCredentialHint(value?: string): string {
 }
 
 export function getOfficialConnectivityAvailability(input: {
-  assetProfile?: string
-  savedAssetProfile?: string
-  videoProfile?: string
-  savedVideoProfile?: string
+  assetProtocol?: string
+  savedAssetProtocol?: string
+  videoProtocol?: string
+  savedVideoProtocol?: string
   credentialConfigured: boolean
   hasPendingVideoKey: boolean
   hasPendingAssetCredential: boolean
   sensitiveLocked: boolean
 }) {
   const videoCanTest =
-    input.videoProfile === 'official' &&
-    (input.savedVideoProfile === 'official' ||
-      input.savedVideoProfile === undefined) &&
+    ['modelark_v3_volcengine', 'modelark_v3_byteplus'].includes(
+      input.videoProtocol || ''
+    ) &&
+    (input.savedVideoProtocol === input.videoProtocol ||
+      input.savedVideoProtocol === undefined) &&
     !input.hasPendingVideoKey
-  const assetProfileSupportsTest = [
-    'ark_assets',
-    'relay_assets',
-    'official_action_assets',
-  ].includes(input.assetProfile || '')
+  const assetProtocolSupportsTest = [
+    'ark_assets_v1',
+    'relay_assets_v1',
+    'volcengine_assets_action_v2024_01_01',
+    'byteplus_assets_action_v2024_01_01',
+  ].includes(input.assetProtocol || '')
+  const usesOfficialAssets = isOfficialSeedanceAssetProtocol(
+    input.assetProtocol
+  )
+  const savedUsesOfficialAssets = isOfficialSeedanceAssetProtocol(
+    input.savedAssetProtocol
+  )
   const assetCanTest =
-    assetProfileSupportsTest &&
-    input.savedAssetProfile === input.assetProfile &&
-    (input.assetProfile !== 'official_action_assets' ||
-      input.credentialConfigured) &&
+    assetProtocolSupportsTest &&
+    input.savedAssetProtocol === input.assetProtocol &&
+    (!usesOfficialAssets || input.credentialConfigured) &&
     !input.hasPendingAssetCredential
   const canClearCredential =
     input.credentialConfigured &&
-    input.assetProfile !== 'official_action_assets' &&
-    input.savedAssetProfile !== 'official_action_assets' &&
+    !usesOfficialAssets &&
+    !savedUsesOfficialAssets &&
     !input.hasPendingAssetCredential &&
     !input.sensitiveLocked
 
@@ -83,8 +92,8 @@ export function getOfficialConnectivityAvailability(input: {
     hasUnsavedTestChanges:
       input.hasPendingVideoKey ||
       input.hasPendingAssetCredential ||
-      input.assetProfile !== input.savedAssetProfile ||
-      (input.savedVideoProfile !== undefined &&
-        input.videoProfile !== input.savedVideoProfile),
+      input.assetProtocol !== input.savedAssetProtocol ||
+      (input.savedVideoProtocol !== undefined &&
+        input.videoProtocol !== input.savedVideoProtocol),
   }
 }

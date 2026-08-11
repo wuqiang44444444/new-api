@@ -70,12 +70,6 @@ func PersistMediaImageTask(c *gin.Context, info *relaycommon.RelayInfo, spec Med
 	task.Action = constant.TaskActionImageGeneration
 	task.ClientProtocol = model.TaskClientProtocolOpenAIImages
 	task.Quota = info.FinalPreConsumedQuota
-	if capability, ok := common.GetContextKeyType[model.ImageSKUCapability](c, constant.ContextKeyResolvedImageSKUCapability); ok {
-		task.PrivateData.NorthboundContractID = capability.ContractID
-		task.PrivateData.NorthboundContractVersion = capability.Version
-		task.PrivateData.SKUCapabilityVersion = capability.Version
-		task.PrivateData.SKUCapabilityHash = capability.ContentHash
-	}
 	task.PrivateData.Key = info.ApiKey
 	task.PrivateData.UpstreamTaskID = spec.UpstreamTaskID
 	task.PrivateData.UpstreamRequestID = spec.CreateRequestID

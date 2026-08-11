@@ -34,9 +34,9 @@ var videoAdapterRevisionRules = map[struct {
 	ChannelType int
 	Profile     dto.VideoUpstreamProfile
 }]videoAdapterRevisionRule{
-	{ChannelType: constant.ChannelTypeDoubaoVideo, Profile: dto.VideoUpstreamProfileThirdPartyRelay}:                {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV1, VideoAdapterRevisionV2}, AllowEmpty: false},
-	{ChannelType: constant.ChannelTypeDoubaoVideo, Profile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays}: {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
-	{ChannelType: constant.ChannelTypeDoubaoVideo, Profile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2}:   {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyRelay}:                {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays}: {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2}:   {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
 }
 
 func (version VideoSouthboundAdapterVersion) String() string {
@@ -44,19 +44,19 @@ func (version VideoSouthboundAdapterVersion) String() string {
 }
 
 func (version VideoSouthboundAdapterVersion) IsJSONVideoMediaArraysV2() bool {
-	return version.ChannelType == constant.ChannelTypeDoubaoVideo &&
+	return version.ChannelType == constant.ChannelTypeSeedanceLink &&
 		version.Profile == dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays &&
 		version.Revision == VideoAdapterRevisionV2
 }
 
 func (version VideoSouthboundAdapterVersion) IsFunCloudSeedanceV2() bool {
-	return version.ChannelType == constant.ChannelTypeDoubaoVideo &&
+	return version.ChannelType == constant.ChannelTypeSeedanceLink &&
 		version.Profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2 &&
 		version.Revision == VideoAdapterRevisionV2
 }
 
 func (version VideoSouthboundAdapterVersion) IsThirdPartyRelayV2() bool {
-	return version.ChannelType == constant.ChannelTypeDoubaoVideo &&
+	return version.ChannelType == constant.ChannelTypeSeedanceLink &&
 		version.Profile == dto.VideoUpstreamProfileThirdPartyRelay &&
 		version.Revision == VideoAdapterRevisionV2
 }

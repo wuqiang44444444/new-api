@@ -38,9 +38,7 @@ func TestMain(m *testing.M) {
 		&Task{},
 		&TaskCreateIdempotency{},
 		&TaskCreateAttempt{},
-		&TaskAssetAuthorization{},
 		&ProviderCostExposure{},
-		&ProviderExposureIncident{},
 		&User{},
 		&UserSession{},
 		&AuthFlow{},
@@ -64,16 +62,7 @@ func TestMain(m *testing.M) {
 		&SystemTask{},
 		&SystemTaskLock{},
 		&Asset{},
-		&AssetSource{},
-		&AssetBinding{},
-		&AssetGroupBinding{},
-		&AssetOwnershipClaim{},
-		&AssetGroupOwnershipClaim{},
-		&AssetReconciliationFinding{},
-		&RealPersonAuthorization{},
-		&RealPersonVerificationSession{},
-		&AssetOperationJob{},
-		&AssetCreateIdempotency{},
+		&AssetGroup{},
 		&ChannelAssetCredential{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
@@ -109,21 +98,10 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM system_instances")
 		DB.Exec("DELETE FROM system_task_locks")
 		DB.Exec("DELETE FROM system_tasks")
-		DB.Exec("DELETE FROM asset_operation_jobs")
-		DB.Exec("DELETE FROM asset_create_idempotencies")
 		DB.Exec("DELETE FROM task_create_idempotencies")
 		DB.Exec("DELETE FROM task_create_attempts")
-		DB.Exec("DELETE FROM task_asset_authorizations")
 		DB.Exec("DELETE FROM provider_cost_exposures")
-		DB.Exec("DELETE FROM provider_exposure_incidents")
-		DB.Exec("DELETE FROM asset_ownership_claims")
-		DB.Exec("DELETE FROM asset_group_ownership_claims")
-		DB.Exec("DELETE FROM asset_reconciliation_findings")
-		DB.Exec("DELETE FROM real_person_verification_sessions")
-		DB.Exec("DELETE FROM real_person_authorizations")
-		DB.Exec("DELETE FROM asset_group_bindings")
-		DB.Exec("DELETE FROM asset_bindings")
-		DB.Exec("DELETE FROM asset_sources")
+		DB.Exec("DELETE FROM asset_groups")
 		DB.Exec("DELETE FROM assets")
 	})
 }

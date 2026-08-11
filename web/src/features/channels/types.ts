@@ -115,106 +115,22 @@ export interface ChannelOtherSettings {
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
   advanced_custom?: AdvancedCustomConfig
-  asset_upstream_profile?:
-    | 'none'
-    | 'ark_assets'
-    | 'relay_assets'
-    | 'joycreator_assets'
-    | 'official_action_assets'
   asset_min_url_ttl_seconds?: number
   asset_provider_project?: string
   asset_region?: string
-  link_implementation?: {
-    id: string
-    version: string
-  }
-}
-
-export interface LinkImplementation {
-  id: string
-  version: string
-  content_hash: string
-  provider: string
-  plan_name?: string
-  contract_id: string
-  public_skus: string[]
-  channel_type: number
-  required_video_profile?: string
-  required_asset_profile?: string
-  required_create_path?: string
-  required_sku_create_paths?: Array<{
-    public_sku: string
-    create_path: string
-  }>
-  required_query_path?: string
-  required_adapter_version?: string
-  required_routes?: Array<{
-    public_sku: string
-    incoming_path: string
-    upstream_path: string
-    converter: string
-    auth_type: string
-  }>
-  execution_bindings: Array<{
-    route_family: string
-    action: string
-    profile: string
-    provider_model: string
-    link_sku: string
-  }>
-  asset_capability: {
-    supports_managed_assets: boolean
-    asset_resolution_modes?: string[]
-    asset_source_min_ttl_seconds?: number
-    asset_kinds?: string[]
-    media_types?: string[]
-    max_images?: number
-    max_videos?: number
-    max_audio?: number
-    supports_mixed_media_paths: boolean
-  }
-  task_contract: string
-  billing_contract: string
-}
-
-export interface LinkImplementationsResponse {
-  success: boolean
-  data: LinkImplementation[]
-}
-
-export interface LinkModelPublication {
-  id: number
-  contract_namespace: string
-  route_family: string
-  customer_model: string
-  link_sku: string
-  publication_version: number
-  source_channel_id: number
-  change_reason: string
-  created_at: number
-  updated_at: number
-  currently_fulfillable: boolean
-  routing_conflict: boolean
-}
-
-export interface LinkModelPublicationsResponse {
-  success: boolean
-  data: LinkModelPublication[]
-}
-
-export interface RebindLinkModelPublicationRequest {
-  contract_namespace: string
-  route_family: string
-  customer_model: string
-  link_sku: string
-  expected_version: number
-  reason: string
-}
-
-export interface RebindLinkModelPublicationResponse {
-  success: boolean
-  message?: string
-  data?: LinkModelPublication
+  video_upstream_protocol?:
+    | 'modelark_v3_volcengine'
+    | 'modelark_v3_byteplus'
+    | 'media_task_v1'
+    | 'ark_media_v1'
+    | 'media_arrays_v2'
+    | 'funcloud_seedance_v2'
+  asset_upstream_protocol?:
+    | 'none'
+    | 'volcengine_assets_action_v2024_01_01'
+    | 'byteplus_assets_action_v2024_01_01'
+    | 'ark_assets_v1'
+    | 'relay_assets_v1'
 }
 
 export interface AdvancedCustomConfig {

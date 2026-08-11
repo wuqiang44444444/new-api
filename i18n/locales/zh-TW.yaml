@@ -284,3 +284,11 @@ custom_oauth.name_empty: "供應者名稱不能為空"
 custom_oauth.has_bindings: "無法刪除已有使用者綁定的供應者"
 custom_oauth.binding_not_found: "OAuth 綁定不存在"
 custom_oauth.provider_id_field_invalid: "無法從供應者響應中提取使用者 ID"
+
+# Notification email messages
+notify.account_created.subject: "【{{.SiteName}}】您的帳號已建立"
+notify.account_created.body: "<p>{{.Username}} 您好，</p><p>您在 {{.SiteName}} 的帳號已建立成功。如非本人操作，請聯繫管理員。</p>"
+notify.password_changed.subject: "【{{.SiteName}}】您的密碼已修改"
+notify.password_changed.body: "<p>{{.Username}} 您好，</p><p>您在 {{.SiteName}} 的帳號密碼剛剛被修改。如非本人操作，請立即重置密碼或聯繫管理員。</p>"
+notify.token_created.subject: "【{{.SiteName}}】新 API 金鑰已建立"
+notify.token_created.body: "<p>{{.Username}} 您好，</p><p>您的 {{.SiteName}} 帳號剛剛建立了一個新的 API 金鑰。如非本人操作，請立即檢查您的金鑰列表。</p>"

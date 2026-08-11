@@ -16,12 +16,12 @@ import (
 
 func officialAssetControllerTestChannel() *model.Channel {
 	channel := &model.Channel{
-		Type: constant.ChannelTypeDoubaoVideo,
+		Type: constant.ChannelTypeSeedanceLink,
 		Key:  "video-api-key",
 	}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProfile:  dto.VideoUpstreamProfileOfficial,
-		AssetUpstreamProfile:  dto.AssetUpstreamProfileOfficial,
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3BytePlus,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolBytePlusAction,
 		AssetMinURLTTLSeconds: 3600,
 		AssetProviderProject:  "project-a",
 		AssetRegion:           "ap-southeast-1",
@@ -48,6 +48,24 @@ func TestValidateNewOfficialAssetCredential(t *testing.T) {
 		&dto.ChannelAssetCredentialInput{AccessKeyID: "access", SecretAccessKey: "secret"},
 		"batch",
 	), "single-key")
+}
+
+func TestVolcengineOfficialAssetsUseTheSameSeparatedCredentialStore(t *testing.T) {
+	channel := officialAssetControllerTestChannel()
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolVolcengineAction,
+		AssetMinURLTTLSeconds: 3600,
+		AssetProviderProject:  "default",
+		AssetRegion:           model.VolcengineAssetActionRegion,
+	})
+
+	require.True(t, channelUsesOfficialAssetCredential(channel))
+	require.NoError(t, validateNewChannelAssetCredential(
+		channel,
+		&dto.ChannelAssetCredentialInput{AccessKeyID: "access", SecretAccessKey: "secret"},
+		"single",
+	))
 }
 
 func TestGetChannelReturnsOnlyAssetCredentialStatus(t *testing.T) {
@@ -79,9 +97,8 @@ func TestGetChannelReturnsOnlyAssetCredentialStatus(t *testing.T) {
 func TestDeleteChannelAssetCredentialRequiresSavedProfileToBeDisabled(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(
-		&model.AssetBinding{},
-		&model.AssetGroupBinding{},
-		&model.RealPersonAuthorization{},
+		&model.Asset{},
+		&model.AssetGroup{},
 		&model.ChannelAssetCredential{},
 	))
 	channel := officialAssetControllerTestChannel()

@@ -35,6 +35,10 @@ import { type UserFormData, type User } from '../types'
 
 export const userFormSchema = z.object({
   username: z.string().min(1, 'Username is required'),
+  email: z
+    .string()
+    .email('Please enter a valid email address')
+    .or(z.literal('')),
   display_name: z.string().optional(),
   password: z.string().optional(),
   role: z.number().optional(),
@@ -54,6 +58,7 @@ export type UserFormValues = z.infer<typeof userFormSchema>
 
 export const USER_FORM_DEFAULT_VALUES: UserFormValues = {
   username: '',
+  email: '',
   display_name: '',
   password: '',
   role: 1, // Default to common user
@@ -97,6 +102,7 @@ export function transformFormDataToPayload(
   // For create: only send required fields
   if (userId === undefined) {
     payload.role = role
+    payload.email = data.email
   } else {
     // For update: quota is adjusted atomically via /api/user/manage, not sent here
     payload.group = data.group
@@ -115,6 +121,7 @@ export function transformFormDataToPayload(
 export function transformUserToFormDefaults(user: User): UserFormValues {
   return {
     username: user.username,
+    email: user.email || '',
     display_name: user.display_name,
     password: '',
     role: user.role,

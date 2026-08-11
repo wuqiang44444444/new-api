@@ -174,14 +174,11 @@ func stageTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycomm
 		return
 	}
 	task.ClientProtocol = info.TaskRelayInfo.ClientProtocol
-	contractID, contractVersion := taskAttemptNorthboundContract(c, info.TaskRelayInfo.ClientProtocol)
-	task.PrivateData.NorthboundContractID = contractID
-	task.PrivateData.NorthboundContractVersion = contractVersion
-	task.PrivateData.LinkContractNamespace = info.LinkContractNamespace
-	task.PrivateData.LinkRouteFamily = info.LinkRouteFamily
-	task.PrivateData.PublishedLinkContractSKU = info.PublishedLinkContractSKU
-	task.PrivateData.LinkPublicationVersion = info.LinkPublicationVersion
+	task.PrivateData.VideoUpstreamProtocol = info.ChannelOtherSettings.VideoUpstreamProtocol
 	profile := strings.TrimSpace(string(info.ChannelOtherSettings.VideoUpstreamProfile))
+	if info.ChannelType == constant.ChannelTypeSeedanceLink {
+		profile = string(info.ChannelOtherSettings.VideoUpstreamProtocol.TransportProfile())
+	}
 	if profile == "" {
 		profile = string(dto.VideoUpstreamProfileOfficial)
 	}
@@ -189,20 +186,6 @@ func stageTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycomm
 		info.ChannelType,
 		dto.VideoUpstreamProfile(profile),
 	)
-	if capability, ok := common.GetContextKeyType[model.VideoSKUCapability](
-		c,
-		constant.ContextKeyResolvedVideoSKUCapability,
-	); ok {
-		task.PrivateData.SKUCapabilityVersion = capability.Version
-		task.PrivateData.SKUCapabilityHash = capability.ContentHash
-		task.PrivateData.SKULifecycle = capability.Lifecycle
-	} else if capability, ok := common.GetContextKeyType[model.ImageSKUCapability](
-		c,
-		constant.ContextKeyResolvedImageSKUCapability,
-	); ok {
-		task.PrivateData.SKUCapabilityVersion = capability.Version
-		task.PrivateData.SKUCapabilityHash = capability.ContentHash
-	}
 	request, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return

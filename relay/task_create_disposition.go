@@ -3,7 +3,7 @@ package relay
 import (
 	"net/http"
 
-	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
@@ -20,8 +20,8 @@ func taskCreateHTTPDisposition(
 	providerCode string,
 ) relaycommon.TaskCreateDisposition {
 	if info != nil && info.ChannelMeta != nil &&
-		info.OriginModelName == model.VideoSKUDoubaoSeedance20260128 &&
-		info.ChannelOtherSettings.VideoUpstreamProfile == dto.VideoUpstreamProfileThirdPartyRelay &&
+		info.ChannelType == constant.ChannelTypeSeedanceLink &&
+		info.ChannelOtherSettings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolMediaTaskV1 &&
 		status == http.StatusForbidden && providerCode == "user_quota_insufficient" {
 		return relaycommon.TaskCreateTerminalRejection
 	}

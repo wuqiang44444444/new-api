@@ -16,11 +16,11 @@ func TestTaskVideoUpstreamProfilePrefersTaskSnapshot(t *testing.T) {
 	assert.Equal(t, dto.VideoUpstreamProfileThirdPartyReverseProxy, taskVideoUpstreamProfile(task, channel))
 }
 
-func TestTaskVideoUpstreamProfileFallsBackForHistoricalTask(t *testing.T) {
+func TestTaskVideoUpstreamProfileDoesNotReadChannelProfile(t *testing.T) {
 	channel := &model.Channel{}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyRelay})
 
-	assert.Equal(t, dto.VideoUpstreamProfileThirdPartyRelay, taskVideoUpstreamProfile(&model.Task{}, channel))
+	assert.Equal(t, dto.VideoUpstreamProfileOfficial, taskVideoUpstreamProfile(&model.Task{}, channel))
 	assert.Equal(t, dto.VideoUpstreamProfileOfficial, taskVideoUpstreamProfile(&model.Task{}, &model.Channel{}))
 }
 
@@ -37,10 +37,10 @@ func TestTaskVideoUpstreamQueryConfigPrefersTaskSnapshot(t *testing.T) {
 	assert.Equal(t, "/snapshot/tasks/{task_id}", taskVideoUpstreamQueryPath(task, channel))
 }
 
-func TestTaskVideoUpstreamQueryPathFallsBackForHistoricalTask(t *testing.T) {
+func TestTaskVideoUpstreamQueryPathDoesNotReadChannelSettings(t *testing.T) {
 	channel := &model.Channel{}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamQueryPathTemplate: "/channel/tasks/{task_id}"})
 
-	assert.Equal(t, "/channel/tasks/{task_id}", taskVideoUpstreamQueryPath(&model.Task{}, channel))
+	assert.Empty(t, taskVideoUpstreamQueryPath(&model.Task{}, channel))
 	assert.Empty(t, taskVideoUpstreamQueryPath(&model.Task{}, &model.Channel{}))
 }

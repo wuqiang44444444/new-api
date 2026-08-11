@@ -3,7 +3,6 @@ package model
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -12,18 +11,16 @@ import (
 )
 
 var (
-	ErrTaskAttemptInsufficientQuota        = errors.New("task attempt quota is insufficient")
-	ErrTaskAttemptSubscriptionUnavailable  = errors.New("task attempt subscription is unavailable")
-	ErrTaskAttemptAuthorizationUnavailable = errors.New("task attempt asset authorization is unavailable")
+	ErrTaskAttemptInsufficientQuota       = errors.New("task attempt quota is insufficient")
+	ErrTaskAttemptSubscriptionUnavailable = errors.New("task attempt subscription is unavailable")
 )
 
 type TaskAttemptHoldParams struct {
-	AttemptID      int64
-	FundingSource  string
-	ModelName      string
-	Quota          int
-	AssetPublicIDs []string
-	IsPlayground   bool
+	AttemptID     int64
+	FundingSource string
+	ModelName     string
+	Quota         int
+	IsPlayground  bool
 }
 
 type TaskAttemptHoldResult struct {
@@ -40,8 +37,8 @@ type TaskAttemptHoldResult struct {
 	TokenDebited            bool
 }
 
-// HoldTaskCreateAttempt atomically reserves user/token quota, real-person
-// authorizations, and the durable attempt state before the first outbound POST.
+// HoldTaskCreateAttempt atomically reserves quota and the durable attempt
+// state before the first outbound POST.
 func HoldTaskCreateAttempt(params TaskAttemptHoldParams) (*TaskAttemptHoldResult, error) {
 	if params.AttemptID <= 0 || params.Quota < 0 {
 		return nil, errors.New("invalid task attempt hold")
@@ -61,10 +58,6 @@ func HoldTaskCreateAttempt(params TaskAttemptHoldParams) (*TaskAttemptHoldResult
 			return errors.New("task attempt is not prepared")
 		}
 		userID = attempt.UserID
-		if err := reserveTaskAssetAuthorizationsTx(tx, &attempt, params.AssetPublicIDs); err != nil {
-			return err
-		}
-
 		heldQuota := params.Quota
 		if source == "subscription" && heldQuota == 0 {
 			heldQuota = 1
@@ -159,67 +152,6 @@ func HoldTaskCreateAttempt(params TaskAttemptHoldParams) (*TaskAttemptHoldResult
 		}
 	}
 	return result, nil
-}
-
-func reserveTaskAssetAuthorizationsTx(tx *gorm.DB, attempt *TaskCreateAttempt, publicIDs []string) error {
-	if len(publicIDs) == 0 {
-		return nil
-	}
-	var assets []Asset
-	if err := tx.Where("user_id = ? AND app_id = ? AND public_id IN ? AND deleted_at = ?",
-		attempt.UserID, attempt.AppID, publicIDs, 0).Find(&assets).Error; err != nil {
-		return err
-	}
-	if len(assets) != len(publicIDs) {
-		return fmt.Errorf("%w: asset missing", ErrTaskAttemptAuthorizationUnavailable)
-	}
-	sort.Slice(assets, func(i, j int) bool {
-		left, right := int64(0), int64(0)
-		if assets[i].AuthorizationID != nil {
-			left = *assets[i].AuthorizationID
-		}
-		if assets[j].AuthorizationID != nil {
-			right = *assets[j].AuthorizationID
-		}
-		if left == right {
-			return assets[i].ID < assets[j].ID
-		}
-		return left < right
-	})
-	now := common.GetTimestamp()
-	for i := range assets {
-		asset := &assets[i]
-		if asset.AssetKind != AssetKindRealPerson {
-			continue
-		}
-		if asset.AuthorizationID == nil {
-			return fmt.Errorf("%w: authorization missing", ErrTaskAttemptAuthorizationUnavailable)
-		}
-		authorization, err := LockRealPersonAuthorization(tx, *asset.AuthorizationID)
-		if err != nil {
-			return err
-		}
-		if authorization.UserID != attempt.UserID || authorization.AppID != attempt.AppID || authorization.EndUserSubjectHash == "" || authorization.EndUserSubjectHash != attempt.EndUserSubjectHash || asset.EndUserSubjectHash != attempt.EndUserSubjectHash || authorization.Status != RealPersonAuthorizationAuthorized {
-			return fmt.Errorf("%w: authorization inactive", ErrTaskAttemptAuthorizationUnavailable)
-		}
-		relation := &TaskAssetAuthorization{
-			AttemptID:          attempt.AttemptID,
-			TaskID:             attempt.PublicTaskID,
-			UserID:             attempt.UserID,
-			AppID:              attempt.AppID,
-			EndUserSubjectHash: attempt.EndUserSubjectHash,
-			AssetID:            asset.ID,
-			AuthorizationID:    authorization.ID,
-			AssetKind:          asset.AssetKind,
-			State:              TaskAssetAuthorizationReserved,
-			CreatedAt:          now,
-			UpdatedAt:          now,
-		}
-		if err := tx.Create(relation).Error; err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func preConsumeTaskAttemptSubscriptionTx(

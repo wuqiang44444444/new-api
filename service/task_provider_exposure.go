@@ -12,17 +12,9 @@ func taskProviderExposure(task *model.Task, reason string) *model.ProviderCostEx
 		return nil
 	}
 	return &model.ProviderCostExposure{
-		SourceKind:             model.ProviderCostExposureSourceTask,
-		SourceID:               task.TaskID,
-		Reason:                 reason,
-		UserID:                 task.UserId,
-		ChannelID:              task.ChannelId,
-		PublicModel:            task.Properties.OriginModelName,
-		UpstreamProfile:        string(task.PrivateData.VideoUpstreamProfile),
-		LinkImplementationID:   task.PrivateData.LinkImplementationID,
-		LinkImplementationVer:  task.PrivateData.LinkImplementationVersion,
-		LinkImplementationHash: task.PrivateData.LinkImplementationHash,
-		LinkPubSnapshot:        task.PrivateData.LinkPubSnapshot,
+		SourceKind: model.ProviderCostExposureSourceTask,
+		SourceID:   task.TaskID, Reason: reason, UserID: task.UserId, ChannelID: task.ChannelId,
+		PublicModel: task.Properties.OriginModelName, UpstreamProfile: string(task.PrivateData.VideoUpstreamProfile),
 	}
 }
 

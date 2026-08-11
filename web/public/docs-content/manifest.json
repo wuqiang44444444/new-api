@@ -140,7 +140,7 @@
             },
             {
               "id": "videos-modelark",
-              "title": "ModelArk 视频",
+              "title": "ModelArk V3 Seedance 视频",
               "slug": "api-reference/videos/modelark",
               "file": "zh/api-reference/videos/modelark.md",
               "description": "创建、列出、查询和删除 ModelArk 视频任务",
@@ -173,20 +173,11 @@
           "pages": [
             {
               "id": "assets-lifecycle",
-              "title": "素材生命周期",
+              "title": "素材与素材组",
               "slug": "api-reference/assets",
               "file": "zh/api-reference/assets/overview.md",
-              "description": "创建、查询、更新、迁移和删除素材",
-              "keywords": ["素材", "asset", "迁移"],
-              "assets": []
-            },
-            {
-              "id": "assets-authorizations",
-              "title": "真人授权",
-              "slug": "api-reference/assets/real-person-authorizations",
-              "file": "zh/api-reference/assets/real-person-authorizations.md",
-              "description": "创建、查询、撤销和重试真人授权",
-              "keywords": ["真人授权", "同意", "状态"],
+              "description": "创建、查询、更新和删除素材及素材组",
+              "keywords": ["素材", "asset", "素材组", "真人认证"],
               "assets": []
             }
           ]

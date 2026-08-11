@@ -12,13 +12,6 @@ func TaskLifecycleCapabilities(task *model.Task) channel.TaskLifecycleCapabiliti
 	if task == nil {
 		return channel.TaskLifecycleCapabilities{}
 	}
-	if task.PrivateData.SKUCapabilityVersion != "" {
-		return channel.TaskLifecycleCapabilities{
-			SupportsContent:        task.PrivateData.SKULifecycle.SupportsContent,
-			SupportsCancelQueued:   task.PrivateData.SKULifecycle.SupportsCancelQueued,
-			SupportsDeleteTerminal: task.PrivateData.SKULifecycle.SupportsDelete,
-		}
-	}
 	adaptor := GetTaskAdaptor(task.Platform)
 	lifecycle, ok := adaptor.(channel.TaskLifecycleAdaptor)
 	if !ok {

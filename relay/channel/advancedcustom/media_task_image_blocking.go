@@ -70,30 +70,21 @@ func convertMediaTaskImageRequest(request dto.ImageRequest, originModel string) 
 	if prompt == "" {
 		return nil, mediaTaskImageInvalidRequest(errors.New("prompt is required"))
 	}
-	publicCapability, registeredPublicModel := model.ResolveImageSKUCapability(originModel)
-	if registeredPublicModel {
-		publicRequest := request
-		publicRequest.Model = publicCapability.PublicModel
-		if err := publicCapability.ValidateRequest(&publicRequest); err != nil {
-			return nil, mediaTaskImageInvalidRequest(err)
-		}
-	} else {
-		if len([]rune(prompt)) > mediaTaskImageMaxPromptRunes {
-			return nil, mediaTaskImageInvalidRequest(fmt.Errorf("prompt must not exceed %d characters", mediaTaskImageMaxPromptRunes))
-		}
-		if request.Stream != nil && *request.Stream {
-			return nil, mediaTaskImageInvalidRequest(errors.New("streaming image responses are not supported by this image model"))
-		}
-		if err := rejectUnsupportedMediaTaskImageFields(request); err != nil {
-			return nil, mediaTaskImageInvalidRequest(err)
-		}
+	if len([]rune(prompt)) > mediaTaskImageMaxPromptRunes {
+		return nil, mediaTaskImageInvalidRequest(fmt.Errorf("prompt must not exceed %d characters", mediaTaskImageMaxPromptRunes))
+	}
+	if request.Stream != nil && *request.Stream {
+		return nil, mediaTaskImageInvalidRequest(errors.New("streaming image responses are not supported by this image model"))
+	}
+	if err := rejectUnsupportedMediaTaskImageFields(request); err != nil {
+		return nil, mediaTaskImageInvalidRequest(err)
 	}
 
 	imageCount := uint(1)
 	if request.N != nil {
 		imageCount = *request.N
 	}
-	if !registeredPublicModel && (imageCount == 0 || imageCount > dto.MaxImageN) {
+	if imageCount == 0 || imageCount > dto.MaxImageN {
 		return nil, mediaTaskImageInvalidRequest(fmt.Errorf("n must be an integer between 1 and %d", dto.MaxImageN))
 	}
 
@@ -101,7 +92,7 @@ func convertMediaTaskImageRequest(request dto.ImageRequest, originModel string) 
 	if responseFormat == "" {
 		responseFormat = "url"
 	}
-	if !registeredPublicModel && responseFormat != "url" {
+	if responseFormat != "url" {
 		return nil, mediaTaskImageInvalidRequest(errors.New("response_format must be url"))
 	}
 
@@ -114,15 +105,14 @@ func convertMediaTaskImageRequest(request dto.ImageRequest, originModel string) 
 	}
 
 	output := &mediaTaskImageRequest{
-		Model:           upstreamModel,
-		Capability:      mediaTaskImageCapability,
-		Prompt:          prompt,
-		N:               &imageCount,
-		Size:            strings.TrimSpace(request.Size),
-		ResponseFormat:  responseFormat,
-		ReferenceImages: extraFields.referenceImages,
-		AspectRatio:     extraFields.aspectRatio,
-		Extra:           extraFields.extra,
+		Model:          upstreamModel,
+		Capability:     mediaTaskImageCapability,
+		Prompt:         prompt,
+		N:              &imageCount,
+		Size:           strings.TrimSpace(request.Size),
+		ResponseFormat: responseFormat,
+		AspectRatio:    extraFields.aspectRatio,
+		Extra:          extraFields.extra,
 	}
 
 	if len(request.Image) > 0 && len(request.Images) > 0 {
@@ -150,13 +140,11 @@ func convertMediaTaskImageRequest(request dto.ImageRequest, originModel string) 
 		} else if err := common.Unmarshal(output.Image, &referenceImages); err != nil {
 			return nil, mediaTaskImageInvalidRequest(errors.New("image must be an HTTP(S) URL or an array of HTTP(S) URLs"))
 		}
-		if !registeredPublicModel && len(referenceImages) > mediaTaskImageMaxGeminiImages {
+		if len(referenceImages) > mediaTaskImageMaxGeminiImages {
 			return nil, mediaTaskImageInvalidRequest(fmt.Errorf("image must not contain more than %d images", mediaTaskImageMaxGeminiImages))
 		}
-		if !registeredPublicModel {
-			if err := validateMediaTaskImageURLs(referenceImages, "image"); err != nil {
-				return nil, mediaTaskImageInvalidRequest(err)
-			}
+		if err := validateMediaTaskImageURLs(referenceImages, "image"); err != nil {
+			return nil, mediaTaskImageInvalidRequest(err)
 		}
 		output.ReferenceImages = referenceImages
 		output.Image = nil
@@ -173,10 +161,8 @@ func convertMediaTaskImageRequest(request dto.ImageRequest, originModel string) 
 		output.Extra.Watermark = request.Watermark
 	}
 
-	if !registeredPublicModel {
-		if err := validateMediaTaskImageModel(output, validationModel, northboundReferenceField); err != nil {
-			return nil, mediaTaskImageInvalidRequest(err)
-		}
+	if err := validateMediaTaskImageModel(output, validationModel, northboundReferenceField); err != nil {
+		return nil, mediaTaskImageInvalidRequest(err)
 	}
 	if output.Extra != nil && output.Extra.SequentialImageGeneration == "auto" {
 		maxImages := output.Extra.SequentialImageGenerationOptions.MaxImages
@@ -192,10 +178,9 @@ func convertMediaTaskImageRequest(request dto.ImageRequest, originModel string) 
 }
 
 type parsedMediaTaskImageExtraFields struct {
-	capability      string
-	aspectRatio     string
-	referenceImages []string
-	extra           *mediaTaskImageExtra
+	capability  string
+	aspectRatio string
+	extra       *mediaTaskImageExtra
 }
 
 func parseMediaTaskImageExtraFields(fields map[string]json.RawMessage) (parsedMediaTaskImageExtraFields, error) {
@@ -213,9 +198,7 @@ func parseMediaTaskImageExtraFields(fields map[string]json.RawMessage) (parsedMe
 			}
 			parsed.aspectRatio = strings.TrimSpace(parsed.aspectRatio)
 		case "reference_images":
-			if err := common.Unmarshal(value, &parsed.referenceImages); err != nil {
-				return parsed, errors.New("reference_images must be an array of strings")
-			}
+			return parsed, fmt.Errorf("unsupported image field %q", key)
 		case "extra":
 			extra, err := parseMediaTaskImageExtra(value)
 			if err != nil {

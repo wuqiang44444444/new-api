@@ -30,7 +30,6 @@ type ModelArkVideoContent struct {
 
 type ModelArkVideoCreateRequest struct {
 	Model                 string                 `json:"model"`
-	EndUserSubject        *string                `json:"end_user_subject,omitempty"`
 	Content               []ModelArkVideoContent `json:"content"`
 	CallbackURL           *string                `json:"callback_url,omitempty"`
 	Duration              *int                   `json:"duration,omitempty"`

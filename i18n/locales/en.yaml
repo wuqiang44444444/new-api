@@ -283,3 +283,11 @@ custom_oauth.name_empty: "Provider name cannot be empty"
 custom_oauth.has_bindings: "Cannot delete provider with existing user bindings"
 custom_oauth.binding_not_found: "OAuth binding not found"
 custom_oauth.provider_id_field_invalid: "Could not extract user ID from provider response"
+
+# Notification email messages
+notify.account_created.subject: "[{{.SiteName}}] Your account has been created"
+notify.account_created.body: "<p>Hi {{.Username}},</p><p>Your account at {{.SiteName}} has been created successfully. If this was not you, please contact the administrator.</p>"
+notify.password_changed.subject: "[{{.SiteName}}] Your password was changed"
+notify.password_changed.body: "<p>Hi {{.Username}},</p><p>The password for your {{.SiteName}} account was just changed. If this was not you, please reset it immediately or contact the administrator.</p>"
+notify.token_created.subject: "[{{.SiteName}}] A new API key was created"
+notify.token_created.body: "<p>Hi {{.Username}},</p><p>A new API key was just created on your {{.SiteName}} account. If this was not you, please review your keys immediately.</p>"

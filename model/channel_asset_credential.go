@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -21,6 +22,8 @@ type ChannelAssetCredential struct {
 }
 
 var ErrAssetCredentialProfileActive = errors.New("official asset profile must be disabled before clearing its credential")
+
+const VolcengineAssetActionRegion = "cn-beijing"
 
 func GetChannelAssetCredential(channelID int) (*ChannelAssetCredential, error) {
 	return getChannelAssetCredential(DB, channelID)
@@ -84,10 +87,21 @@ func OfficialAssetActionBaseURL(region string) string {
 	return "https://ark." + strings.TrimSpace(region) + ".byteplusapi.com"
 }
 
-func OfficialAssetCredentialFingerprint(accessKeyID, secretAccessKey, project, region string) string {
+func AssetActionBaseURL(protocol dto.AssetUpstreamProtocol, region string) string {
+	switch protocol {
+	case dto.AssetUpstreamProtocolVolcengineAction:
+		return "https://ark.cn-beijing.volces.com"
+	case dto.AssetUpstreamProtocolBytePlusAction:
+		return OfficialAssetActionBaseURL(region)
+	default:
+		return ""
+	}
+}
+
+func OfficialAssetCredentialFingerprint(_, _, project, region string) string {
 	return AssetCredentialFingerprint(
 		"official_action_assets/v2\n"+OfficialAssetActionBaseURL(region),
-		strings.TrimSpace(accessKeyID)+"|"+strings.TrimSpace(secretAccessKey),
+		"",
 		string(dto.AssetUpstreamProfileOfficial),
 		project,
 		region,
@@ -99,11 +113,13 @@ func ResolveAssetChannelCredential(channel *Channel) (string, string, error) {
 }
 
 func resolveAssetChannelCredential(tx *gorm.DB, channel *Channel, override *ChannelAssetCredential) (string, string, error) {
-	if channel == nil || channel.ChannelInfo.IsMultiKey {
+	if channel == nil || channel.Type != constant.ChannelTypeSeedanceLink || channel.ChannelInfo.IsMultiKey {
 		return "", "", errors.New("asset channel must use a single credential")
 	}
 	settings := channel.GetOtherSettings()
-	if settings.AssetUpstreamProfile == dto.AssetUpstreamProfileOfficial {
+	assetProfile := settings.AssetUpstreamProtocol.TransportProfile()
+	credentialIdentity := string(settings.AssetUpstreamProtocol)
+	if assetProfile == dto.AssetUpstreamProfileOfficial {
 		credential := override
 		var err error
 		if credential == nil {
@@ -116,9 +132,10 @@ func resolveAssetChannelCredential(tx *gorm.DB, channel *Channel, override *Chan
 			return "", "", errors.New("official asset credential is not configured")
 		}
 		key := strings.TrimSpace(credential.AccessKeyID) + "|" + strings.TrimSpace(credential.SecretAccessKey)
-		return key, OfficialAssetCredentialFingerprint(
-			credential.AccessKeyID,
-			credential.SecretAccessKey,
+		return key, AssetCredentialFingerprint(
+			AssetActionBaseURL(settings.AssetUpstreamProtocol, settings.AssetRegion),
+			key,
+			credentialIdentity,
 			settings.AssetProviderProject,
 			settings.AssetRegion,
 		), nil
@@ -131,7 +148,7 @@ func resolveAssetChannelCredential(tx *gorm.DB, channel *Channel, override *Chan
 	return key, AssetCredentialFingerprint(
 		channel.GetBaseURL(),
 		key,
-		string(settings.AssetUpstreamProfile),
+		credentialIdentity,
 		settings.AssetProviderProject,
 		settings.AssetRegion,
 	), nil
@@ -197,7 +214,9 @@ func DeleteChannelAssetCredential(channelID int) error {
 		if active {
 			return fmt.Errorf("%w: channel %d", ErrChannelHasActiveAssetResources, channelID)
 		}
-		if channel.GetOtherSettings().AssetUpstreamProfile == dto.AssetUpstreamProfileOfficial {
+		settings := channel.GetOtherSettings()
+		assetProfile := settings.AssetUpstreamProtocol.TransportProfile()
+		if assetProfile == dto.AssetUpstreamProfileOfficial {
 			return ErrAssetCredentialProfileActive
 		}
 		return deleteChannelAssetCredentialsTx(tx, []int{channelID})

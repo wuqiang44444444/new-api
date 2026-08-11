@@ -5,7 +5,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
 
 func TestModelArkListEnforcesProtocolSevenDayWindowAndOfficialFilters(t *testing.T) {
@@ -237,50 +236,4 @@ func TestConfirmedCancellationWinsQueuedToRunningRace(t *testing.T) {
 	assert.True(t, won)
 	assert.Equal(t, TaskStatus(TaskStatusCancelled), cancelled.Status)
 	assert.Equal(t, TaskCancellationStateConfirmed, cancelled.CancellationState)
-}
-
-func TestAssetOwnershipClaimIsUniqueWithinProviderAccountScope(t *testing.T) {
-	truncateTables(t)
-	bindings := []AssetBinding{
-		{PublicID: "ab_owner_a", AssetID: 1001, UserID: 1, ChannelID: 1, CredentialFingerprint: "account-a", UpstreamProfile: "official_action_assets", ProviderProject: "project", Region: "region"},
-		{PublicID: "ab_owner_b", AssetID: 1002, UserID: 2, ChannelID: 1, CredentialFingerprint: "account-a", UpstreamProfile: "official_action_assets", ProviderProject: "project", Region: "region"},
-		{PublicID: "ab_owner_c", AssetID: 1003, UserID: 3, ChannelID: 2, CredentialFingerprint: "account-b", UpstreamProfile: "official_action_assets", ProviderProject: "project", Region: "region"},
-	}
-	for i := range bindings {
-		require.NoError(t, DB.Create(&bindings[i]).Error)
-	}
-
-	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
-		return ClaimAssetOwnership(tx, &bindings[0], "resource-1")
-	}))
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		return ClaimAssetOwnership(tx, &bindings[1], "resource-1")
-	})
-	assert.ErrorIs(t, err, ErrAssetOwnershipConflict)
-	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
-		return ClaimAssetOwnership(tx, &bindings[2], "resource-1")
-	}))
-}
-
-func TestAssetGroupOwnershipClaimIsUniqueWithinProviderAccountScope(t *testing.T) {
-	truncateTables(t)
-	groups := []AssetGroupBinding{
-		{UserID: 1, ScopeKey: "user:1", ChannelID: 1, CredentialFingerprint: "account-a", UpstreamProfile: "official_action_assets", ProviderProject: "project", Region: "region", GroupKind: "general_aigc"},
-		{UserID: 2, ScopeKey: "user:2", ChannelID: 1, CredentialFingerprint: "account-a", UpstreamProfile: "official_action_assets", ProviderProject: "project", Region: "region", GroupKind: "general_aigc"},
-		{UserID: 3, ScopeKey: "user:3", ChannelID: 2, CredentialFingerprint: "account-b", UpstreamProfile: "official_action_assets", ProviderProject: "project", Region: "region", GroupKind: "general_aigc"},
-	}
-	for i := range groups {
-		require.NoError(t, DB.Create(&groups[i]).Error)
-	}
-
-	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
-		return ClaimAssetGroupOwnership(tx, &groups[0], "group-1")
-	}))
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		return ClaimAssetGroupOwnership(tx, &groups[1], "group-1")
-	})
-	assert.ErrorIs(t, err, ErrAssetGroupOwnershipConflict)
-	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
-		return ClaimAssetGroupOwnership(tx, &groups[2], "group-1")
-	}))
 }

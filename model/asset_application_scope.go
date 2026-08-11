@@ -4,7 +4,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
 )
 
@@ -17,11 +16,7 @@ func GetAssetByPublicIDForApp(userID, appID int, publicID string) (*Asset, error
 	if err != nil {
 		return nil, err
 	}
-	projected := []Asset{asset}
-	if err := ProjectAssetStatuses(projected, common.GetTimestamp()); err != nil {
-		return nil, err
-	}
-	return &projected[0], nil
+	return &asset, nil
 }
 
 func ListAssetsByApp(userID, appID, offset, limit int, filters ...AssetListFilter) ([]Asset, int64, error) {
@@ -32,7 +27,26 @@ func ListAssetsByApp(userID, appID, offset, limit int, filters ...AssetListFilte
 	if len(filters) > 0 {
 		filter = filters[0]
 	}
-	return listAssetsWithProjectedStatus(DB.Model(&Asset{}).Where("user_id = ? AND app_id = ? AND deleted_at = ?", userID, appID, 0), offset, limit, filter)
+	query := DB.Model(&Asset{}).Where("user_id = ? AND app_id = ? AND deleted_at = ?", userID, appID, 0)
+	if filter.Status != "" {
+		query = query.Where("status = ?", filter.Status)
+	}
+	if filter.AssetKind != "" {
+		query = query.Where("asset_kind = ?", filter.AssetKind)
+	}
+	if filter.MediaType != "" {
+		query = query.Where("media_type = ?", filter.MediaType)
+	}
+	if filter.Name != "" {
+		query = query.Where("name LIKE ?", "%"+filter.Name+"%")
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var assets []Asset
+	err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&assets).Error
+	return assets, total, err
 }
 
 func LoadAssetsForReferenceForApp(userID, appID int, publicIDs []string) ([]Asset, error) {
@@ -46,8 +60,28 @@ func LoadAssetsForReferenceForApp(userID, appID int, publicIDs []string) ([]Asse
 	if len(assets) != len(publicIDs) {
 		return nil, gorm.ErrRecordNotFound
 	}
-	if err := ProjectAssetStatuses(assets, common.GetTimestamp()); err != nil {
-		return nil, err
-	}
 	return assets, nil
+}
+
+func GetAssetGroupByPublicIDForApp(userID, appID int, publicID string) (*AssetGroup, error) {
+	var group AssetGroup
+	err := DB.Where("user_id = ? AND app_id = ? AND public_id = ? AND deleted_at = ?", userID, appID, strings.TrimSpace(publicID), 0).First(&group).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &group, err
+}
+
+func ListAssetGroupsByApp(userID, appID, offset, limit int) ([]AssetGroup, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	query := DB.Model(&AssetGroup{}).Where("user_id = ? AND app_id = ? AND deleted_at = ?", userID, appID, 0)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var groups []AssetGroup
+	err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&groups).Error
+	return groups, total, err
 }
