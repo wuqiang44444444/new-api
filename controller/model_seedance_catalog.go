@@ -16,6 +16,9 @@ import (
 )
 
 func ListSeedanceModels(c *gin.Context) {
+	if listCustomerContractModelsFiltered(c, constant.ChannelTypeOpenAI, true) {
+		return
+	}
 	groups, err := getModelListGroups(c)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "get user group failed"})

@@ -209,6 +209,14 @@ export function createInitialLaneState(data?: ModelRatioData | null) {
   }
 }
 
+export function pricingModeFromData(
+  data?: ModelRatioData | null
+): PricingMode {
+  if (data?.billingMode === 'tiered_expr') return 'tiered_expr'
+  if (data?.price) return 'per-request'
+  return 'per-token'
+}
+
 export function buildPreviewRows(
   values: ModelPricingFormValues,
   mode: PricingMode,

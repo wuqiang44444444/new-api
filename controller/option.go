@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/billing_statement_setting"
@@ -302,7 +303,7 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	case "billing_setting.billing_expr":
-		if err = billing_setting.ValidateBillingExpressionsJSON(option.Value.(string), billing_setting.GetBillingExprCopy()); err != nil {
+		if err = validateBillingExpressionsOption(option.Value.(string)); err != nil {
 			common.ApiErrorMsg(c, err.Error())
 			return
 		}
@@ -380,15 +381,29 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	}
+	auditDetails := map[string]interface{}{"key": option.Key}
+	if option.Key == "GroupRatio" || option.Key == "GroupGroupRatio" {
+		groupRatios := ratio_setting.GroupRatio2JSONString()
+		specialRatios := ratio_setting.GroupGroupRatio2JSONString()
+		if option.Key == "GroupRatio" {
+			groupRatios = option.Value.(string)
+		} else {
+			specialRatios = option.Value.(string)
+		}
+		impact, impactErr := service.PreviewCustomerContractRatioImpact(groupRatios, specialRatios)
+		if impactErr != nil {
+			common.ApiError(c, impactErr)
+			return
+		}
+		auditDetails["customer_contract_impact"] = impact
+	}
 	err = model.UpdateOption(option.Key, option.Value.(string))
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	// 出于安全考虑只记录被修改的配置项名称，不记录配置值（可能含密钥等敏感信息）。
-	recordManageAudit(c, "option.update", map[string]interface{}{
-		"key": option.Key,
-	})
+	recordManageAudit(c, "option.update", auditDetails)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

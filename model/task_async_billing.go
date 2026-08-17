@@ -52,6 +52,7 @@ func AttachAsyncTaskBilling(privateData *TaskPrivateData, info *relaycommon.Rela
 	if privateData.BillingContext == nil {
 		privateData.BillingContext = &TaskBillingContext{OriginModelName: info.OriginModelName}
 	}
+	privateData.BillingContext.ContractFact = info.ContractBillingFact
 	// tiered_expr 任务以表达式价格为唯一事实：不按次计费，也不再叠加内置倍率。
 	// 普通视频任务保留原有 PerCallBilling 语义，只增加持久化幂等门闩。
 	if info.TieredBillingSnapshot != nil {

@@ -28,6 +28,7 @@ last-reviewed: 2026-08-11
 - [06 飞彩 Seedance 全模型上线验收手册](06-飞彩Seedance全模型上线验收手册.md)
 - [07 Seedance 渠道配置清单](07-Seedance渠道配置清单.md)
 - [09 Azure GPT-5.6 Chat 与 Responses 兼容运维手册](09-Azure-GPT-5.6-Chat与Responses兼容运维手册.md)
+- [10 用户模型合同运维手册](10-用户模型合同运维手册.md)
 - [环境配置（反代转发头与 ServerAddress）](环境配置.md)
 
 历史专题资料已移至 [99-archive](../99-archive/README.md)，Seedance 配置与验收统一按 `02`、`04`、`07`

@@ -48,7 +48,11 @@ func ValidateTaskPreConsumeTokensJSON(value string) error {
 	return nil
 }
 
-func ValidateBillingExpressionsJSON(value string, oldValue map[string]string) error {
+func ValidateBillingExpressionsJSON(
+	value string,
+	oldValue map[string]string,
+	taskProbeExtraFieldsByModel map[string]map[string]any,
+) error {
 	var expressions map[string]string
 	if err := common.UnmarshalJsonStr(value, &expressions); err != nil {
 		return err
@@ -56,7 +60,8 @@ func ValidateBillingExpressionsJSON(value string, oldValue map[string]string) er
 	for model, expression := range expressions {
 		// 仅对新增或修改的表达式强制 tier()；未变更的存量表达式走 relaxed，避免阻塞历史配置保存。
 		requireTier := oldValue[model] != expression
-		if err := smokeTestExpr(expression, requireTier); err != nil {
+		extraFields, taskModel := taskProbeExtraFieldsByModel[model]
+		if err := smokeTestExpr(expression, requireTier, taskModel, extraFields); err != nil {
 			return fmt.Errorf("invalid billing expression for model %s: %w", model, err)
 		}
 	}

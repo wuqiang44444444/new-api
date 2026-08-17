@@ -101,6 +101,23 @@ export interface TokenAutoGroupsConfig {
   max_count: number
 }
 
+export interface SelfCustomerContractRule {
+  model: string
+  discount: string
+  available: boolean
+  price: {
+    price_type: 'model_price' | 'model_ratio' | 'tiered_multiplier'
+    current_discounted_price?: string
+    billing_mode?: string
+  }
+}
+
+export interface SelfCustomerContract {
+  contract_mode: boolean
+  contract_version: number
+  models: SelfCustomerContractRule[]
+}
+
 // ============================================================================
 // Dialog Types
 // ============================================================================

@@ -28,6 +28,10 @@ import type {
   ManageUserAction,
   ManageUserQuotaPayload,
   ApiResponse,
+  CustomerContract,
+  CustomerContractAuditPage,
+  CustomerContractGroupOption,
+  CustomerContractWritePayload,
 } from './types'
 
 // ============================================================================
@@ -172,6 +176,38 @@ export async function getPermissionCatalog(): Promise<PermissionCatalog> {
     resources: res.data?.data?.resources ?? [],
     roles: res.data?.data?.roles ?? [],
   }
+}
+
+export async function getCustomerContract(
+  userId: number
+): Promise<ApiResponse<CustomerContract>> {
+  const res = await api.get(`/api/user/${userId}/contract`)
+  return res.data
+}
+
+export async function getCustomerContractOptions(
+  userId: number
+): Promise<ApiResponse<CustomerContractGroupOption[]>> {
+  const res = await api.get(`/api/user/${userId}/contract/options`)
+  return res.data
+}
+
+export async function getCustomerContractAudits(
+  userId: number,
+  page = 1
+): Promise<ApiResponse<CustomerContractAuditPage>> {
+  const res = await api.get(`/api/user/${userId}/contract/audits`, {
+    params: { p: page },
+  })
+  return res.data
+}
+
+export async function updateCustomerContract(
+  userId: number,
+  payload: CustomerContractWritePayload
+): Promise<ApiResponse<CustomerContract>> {
+  const res = await api.put(`/api/user/${userId}/contract`, payload)
+  return res.data
 }
 
 // ============================================================================

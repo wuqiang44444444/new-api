@@ -39,6 +39,14 @@ func TestHardDeleteUserFailsClosedWhenAuthFenceCannotPublish(t *testing.T) {
 		TokenHash: "hard-delete-auth-flow", Purpose: AuthFlowPurposeTwoFALogin,
 		UserId: user.Id, ExpiresAt: time.Now().Add(time.Minute),
 	}).Error)
+	require.NoError(t, DB.Create(&CustomerModelContract{
+		UserId: user.Id, PublicModel: "hard-delete-model", RouteGroup: "default", RatioUnits: 80_000_000,
+	}).Error)
+	require.NoError(t, DB.Create(&CustomerContractAudit{
+		UserId: user.Id, ContractVersion: 1, AdminUserId: user.Id, Operation: "create", Reason: "retained audit",
+		BeforeState: `{"enabled":false,"version":0,"rules":[]}`,
+		AfterState:  `{"enabled":true,"version":1,"rules":[]}`,
+	}).Error)
 
 	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
 	common.RedisEnabled = true
@@ -71,6 +79,10 @@ func TestHardDeleteUserFailsClosedWhenAuthFenceCannotPublish(t *testing.T) {
 		require.NoError(t, DB.Unscoped().Model(record).Where("user_id = ?", user.Id).Count(&count).Error)
 		assert.EqualValues(t, 1, count)
 	}
+	require.NoError(t, DB.Model(&CustomerModelContract{}).Where("user_id = ?", user.Id).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
+	require.NoError(t, DB.Model(&CustomerContractAudit{}).Where("user_id = ?", user.Id).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
 }
 
 func TestHardDeleteUserPublishesTombstoneAndPurgesAuthenticationData(t *testing.T) {
@@ -98,6 +110,14 @@ func TestHardDeleteUserPublishesTombstoneAndPurgesAuthenticationData(t *testing.
 	require.NoError(t, DB.Create(&AuthFlow{
 		TokenHash: "hard-delete-success-flow", Purpose: AuthFlowPurposeTwoFALogin,
 		UserId: user.Id, ExpiresAt: time.Now().Add(time.Minute),
+	}).Error)
+	require.NoError(t, DB.Create(&CustomerModelContract{
+		UserId: user.Id, PublicModel: "hard-delete-success-model", RouteGroup: "default", RatioUnits: 80_000_000,
+	}).Error)
+	require.NoError(t, DB.Create(&CustomerContractAudit{
+		UserId: user.Id, ContractVersion: 1, AdminUserId: user.Id, Operation: "create", Reason: "retained audit",
+		BeforeState: `{"enabled":false,"version":0,"rules":[]}`,
+		AfterState:  `{"enabled":true,"version":1,"rules":[]}`,
 	}).Error)
 	require.NoError(t, populateUserCache(user))
 	// Administrative hard deletion commonly targets an already soft-deleted
@@ -127,6 +147,10 @@ func TestHardDeleteUserPublishesTombstoneAndPurgesAuthenticationData(t *testing.
 	require.NoError(t, err)
 	assert.Equal(t, "2", committed)
 	assert.False(t, server.Exists(getUserCacheKey(user.Id)))
+	require.NoError(t, DB.Model(&CustomerModelContract{}).Where("user_id = ?", user.Id).Count(&count).Error)
+	assert.Zero(t, count)
+	require.NoError(t, DB.Model(&CustomerContractAudit{}).Where("user_id = ?", user.Id).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
 }
 
 func TestIncrementFailedAttemptsCountsConcurrentFailures(t *testing.T) {

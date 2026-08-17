@@ -816,6 +816,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         <div className='hidden min-h-0 min-w-0 md:block'>
           {editorOpen ? (
             <ModelPricingEditorPanel
+              key={editData?.name || '__new_model__'}
               ref={editorPanelRef}
               editData={editData}
               onSave={onSave}

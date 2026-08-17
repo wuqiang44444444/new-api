@@ -27,10 +27,11 @@ import * as z from 'zod'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-import { resetModelRatios } from '../api'
+import { previewCustomerContractRatioImpact, resetModelRatios } from '../api'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
+import type { CustomerContractRatioImpact } from '../types'
 import { positiveIntegerSchema } from '../utils/numeric-field'
 import { GroupRatioForm } from './group-ratio-form'
 import { ModelRatioForm } from './model-ratio-form'
@@ -166,6 +167,11 @@ export function RatioSettingsCard({
   const updateOption = useUpdateOption()
   const queryClient = useQueryClient()
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [groupImpact, setGroupImpact] =
+    useState<CustomerContractRatioImpact | null>(null)
+  const [pendingGroupValues, setPendingGroupValues] =
+    useState<GroupFormValues | null>(null)
+  const [checkingGroupImpact, setCheckingGroupImpact] = useState(false)
 
   const resetMutation = useMutation({
     mutationFn: resetModelRatios,
@@ -376,7 +382,7 @@ export function RatioSettingsCard({
     [t, updateOption]
   )
 
-  const saveGroupRatios = useCallback(
+  const persistGroupRatios = useCallback(
     async (values: GroupFormValues) => {
       const normalized = {
         GroupRatio: normalizeJsonString(values.GroupRatio),
@@ -413,6 +419,54 @@ export function RatioSettingsCard({
     },
     [updateOption]
   )
+
+  const saveGroupRatios = useCallback(
+    async (values: GroupFormValues) => {
+      const groupRatio = normalizeJsonString(values.GroupRatio)
+      const groupGroupRatio = normalizeJsonString(values.GroupGroupRatio)
+      const changesContractPricing =
+        groupRatio !== groupNormalizedDefaults.current.GroupRatio ||
+        groupGroupRatio !== groupNormalizedDefaults.current.GroupGroupRatio
+      if (!changesContractPricing) {
+        await persistGroupRatios(values)
+        return
+      }
+
+      setCheckingGroupImpact(true)
+      try {
+        const response = await previewCustomerContractRatioImpact({
+          group_ratio: groupRatio,
+          group_group_ratio: groupGroupRatio,
+        })
+        if (!response.success || !response.data) {
+          throw new Error(response.message || t('Failed to preview changes'))
+        }
+        if (response.data.affected_contracts === 0) {
+          await persistGroupRatios(values)
+          return
+        }
+        setGroupImpact(response.data)
+        setPendingGroupValues(values)
+      } catch (error: unknown) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : t('Failed to preview changes')
+        )
+      } finally {
+        setCheckingGroupImpact(false)
+      }
+    },
+    [persistGroupRatios, t]
+  )
+
+  const confirmGroupRatioSave = useCallback(() => {
+    if (!pendingGroupValues) return
+    const values = pendingGroupValues
+    setGroupImpact(null)
+    setPendingGroupValues(null)
+    void persistGroupRatios(values)
+  }, [pendingGroupValues, persistGroupRatios])
 
   const handleResetRatios = useCallback(() => {
     setConfirmOpen(true)
@@ -459,7 +513,7 @@ export function RatioSettingsCard({
         <GroupRatioForm
           form={groupForm}
           onSave={saveGroupRatios}
-          isSaving={updateOption.isPending}
+          isSaving={updateOption.isPending || checkingGroupImpact}
         />
       )
     }
@@ -527,6 +581,28 @@ export function RatioSettingsCard({
         isLoading={resetMutation.isPending}
         handleConfirm={handleConfirmReset}
         confirmText={t('Reset')}
+      />
+
+      <ConfirmDialog
+        open={groupImpact !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setGroupImpact(null)
+            setPendingGroupValues(null)
+          }
+        }}
+        title={t('Contract customer prices will change')}
+        desc={t(
+          'This change affects {{contracts}} active contracts and {{rules}} model rules in groups: {{groups}}.',
+          {
+            contracts: groupImpact?.affected_contracts || 0,
+            rules: groupImpact?.affected_rules || 0,
+            groups: groupImpact?.affected_groups.join(', ') || '—',
+          }
+        )}
+        confirmText={t('Save group ratios')}
+        isLoading={updateOption.isPending}
+        handleConfirm={confirmGroupRatioSave}
       />
     </>
   )

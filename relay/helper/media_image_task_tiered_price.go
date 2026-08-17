@@ -59,7 +59,11 @@ func ModelPriceHelperMediaImageTaskTiered(c *gin.Context, info *relaycommon.Rela
 
 	groupRatioInfo := HandleGroupRatio(c, info)
 	quotaBeforeGroup := rawCost / 1_000_000 * common.QuotaPerUnit
-	preConsumedQuota, err := billingexpr.QuotaRoundStrict(quotaBeforeGroup * groupRatioInfo.GroupRatio)
+	estimatedQuota, err := applyCustomerContractToFloat(quotaBeforeGroup*groupRatioInfo.GroupRatio, info)
+	if err != nil {
+		return types.PriceData{}, err
+	}
+	preConsumedQuota, err := billingexpr.QuotaRoundStrict(estimatedQuota)
 	if err != nil {
 		return types.PriceData{}, err
 	}

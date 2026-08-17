@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/shopspring/decimal"
 )
 
 func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualTokens int) bool {
@@ -45,15 +47,26 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 		persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, fmt.Errorf("frozen task billing expression failed: %w", err))
 		return true
 	}
+	actualQuota := result.ActualQuotaAfterGroup
+	if task.PrivateData.BillingContext != nil && task.PrivateData.BillingContext.ContractFact != nil {
+		modelQuota := decimal.NewFromFloat(result.ActualQuotaBeforeGroup).
+			Mul(decimal.NewFromFloat(async.TieredSnapshot.GroupRatio))
+		modelQuota, err = ApplyCustomerContractRatio(modelQuota, task.PrivateData.BillingContext.ContractFact)
+		if err != nil {
+			persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, err)
+			return true
+		}
+		actualQuota, result.Clamp = common.QuotaRoundChecked(modelQuota.InexactFloat64())
+	}
 
 	reason := fmt.Sprintf("表达式结算：tokens=%d, tier=%s", actualTokens, result.MatchedTier)
 	async.Operation = "settle"
 	async.Reason = reason
-	async.TargetQuota = &result.ActualQuotaAfterGroup
+	async.TargetQuota = &actualQuota
 	if err := task.UpdateBilling(); err != nil {
 		persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, err)
 		return true
 	}
-	recalculateTaskQuotaWithReconcile(ctx, task, result.ActualQuotaAfterGroup, reason, result.Clamp)
+	recalculateTaskQuotaWithReconcile(ctx, task, actualQuota, reason, result.Clamp)
 	return true
 }

@@ -86,6 +86,22 @@ func TestPendingUserAuthFenceRejectsStaleCacheWrite(t *testing.T) {
 	assert.False(t, server.Exists(getUserCacheKey(userID)))
 }
 
+func TestUserAuthCacheRoundTripsCustomerContractFenceFields(t *testing.T) {
+	useUserCacheMiniRedis(t)
+	const userID = 4203
+	require.NoError(t, writeUserCache(&UserBase{
+		Id: userID, Group: "default", Username: "contract-cache", AuthVersion: 9,
+		CacheSchema: userCacheSchemaVersion, ContractMode: true, ContractVersion: 6,
+	}, true))
+
+	cached, err := cacheGetUserBase(userID)
+	require.NoError(t, err)
+	assert.True(t, cached.ContractMode)
+	assert.EqualValues(t, 6, cached.ContractVersion)
+	assert.EqualValues(t, 9, cached.AuthVersion)
+	assert.Equal(t, userCacheSchemaVersion, cached.CacheSchema)
+}
+
 func TestUserAuthFieldUpdateRejectsVersionMismatch(t *testing.T) {
 	useUserCacheMiniRedis(t)
 	const userID = 4202

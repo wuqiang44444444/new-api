@@ -37,6 +37,24 @@ type QuotaInfo struct {
 	ModelPrice    float64
 	ModelRatio    float64
 	GroupRatio    float64
+	ContractFact  *types.ContractBillingFact
+}
+
+func finalAudioQuotaInfo(
+	inputDetails TokenDetails,
+	outputDetails TokenDetails,
+	modelName string,
+	usePrice bool,
+	modelPrice float64,
+	modelRatio float64,
+	groupRatio float64,
+	contractFact *types.ContractBillingFact,
+) QuotaInfo {
+	return QuotaInfo{
+		InputDetails: inputDetails, OutputDetails: outputDetails,
+		ModelName: modelName, UsePrice: usePrice, ModelPrice: modelPrice,
+		ModelRatio: modelRatio, GroupRatio: groupRatio, ContractFact: contractFact,
+	}
 }
 
 func hasCustomModelRatio(modelName string, currentRatio float64) bool {
@@ -47,14 +65,19 @@ func hasCustomModelRatio(modelName string, currentRatio float64) bool {
 	return currentRatio != defaultRatio
 }
 
-func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp) {
+func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp, error) {
 	if info.UsePrice {
 		modelPrice := decimal.NewFromFloat(info.ModelPrice)
 		quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 		groupRatio := decimal.NewFromFloat(info.GroupRatio)
 
 		quota := modelPrice.Mul(quotaPerUnit).Mul(groupRatio)
-		return common.QuotaFromDecimalChecked(quota)
+		quota, err := ApplyCustomerContractRatio(quota, info.ContractFact)
+		if err != nil {
+			return 0, nil, err
+		}
+		result, clamp := common.QuotaFromDecimalChecked(quota)
+		return result, clamp, nil
 	}
 
 	completionRatio := decimal.NewFromFloat(ratio_setting.GetCompletionRatio(info.ModelName))
@@ -77,13 +100,18 @@ func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp) {
 	quota = quota.Add(outputAudioTokens.Mul(audioRatio).Mul(audioCompletionRatio))
 
 	quota = quota.Mul(ratio)
+	quota, err := ApplyCustomerContractRatio(quota, info.ContractFact)
+	if err != nil {
+		return 0, nil, err
+	}
 
 	// If ratio is not zero and quota is less than or equal to zero, set quota to 1
 	if !ratio.IsZero() && quota.LessThanOrEqual(decimal.Zero) {
 		quota = decimal.NewFromInt(1)
 	}
 
-	return common.QuotaFromDecimalChecked(quota)
+	result, clamp := common.QuotaFromDecimalChecked(quota)
+	return result, clamp, nil
 }
 
 func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.RealtimeUsage) error {
@@ -105,38 +133,38 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	textOutTokens := usage.OutputTokenDetails.TextTokens
 	audioInputTokens := usage.InputTokenDetails.AudioTokens
 	audioOutTokens := usage.OutputTokenDetails.AudioTokens
-	groupRatio := ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
-	modelRatio, _, _ := ratio_setting.GetModelRatio(modelName)
-
-	autoGroup, exists := common.GetContextKey(ctx, constant.ContextKeyAutoGroup)
-	if exists {
-		groupRatio = ratio_setting.GetGroupRatio(autoGroup.(string))
-		logger.LogDebug(ctx, "final group ratio: %f", groupRatio)
-		relayInfo.UsingGroup = autoGroup.(string)
+	modelRatio := relayInfo.PriceData.ModelRatio
+	actualGroupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
+	if relayInfo.ContractBillingFact == nil {
+		groupRatio := ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
+		modelRatio, _, _ = ratio_setting.GetModelRatio(modelName)
+		if autoGroup, exists := common.GetContextKey(ctx, constant.ContextKeyAutoGroup); exists {
+			groupRatio = ratio_setting.GetGroupRatio(autoGroup.(string))
+			logger.LogDebug(ctx, "final group ratio: %f", groupRatio)
+			relayInfo.UsingGroup = autoGroup.(string)
+		}
+		actualGroupRatio = groupRatio
+		if userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup); ok {
+			actualGroupRatio = userGroupRatio
+		}
 	}
 
-	actualGroupRatio := groupRatio
-	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup)
-	if ok {
-		actualGroupRatio = userGroupRatio
-	}
-
-	quotaInfo := QuotaInfo{
-		InputDetails: TokenDetails{
+	quotaInfo := finalAudioQuotaInfo(
+		TokenDetails{
 			TextTokens:  textInputTokens,
 			AudioTokens: audioInputTokens,
 		},
-		OutputDetails: TokenDetails{
+		TokenDetails{
 			TextTokens:  textOutTokens,
 			AudioTokens: audioOutTokens,
 		},
-		ModelName:  modelName,
-		UsePrice:   relayInfo.UsePrice,
-		ModelRatio: modelRatio,
-		GroupRatio: actualGroupRatio,
-	}
+		modelName, relayInfo.UsePrice, relayInfo.PriceData.ModelPrice, modelRatio, actualGroupRatio, relayInfo.ContractBillingFact,
+	)
 
-	quota, clamp := calculateAudioQuota(quotaInfo)
+	quota, clamp, err := calculateAudioQuota(quotaInfo)
+	if err != nil {
+		return err
+	}
 	noteQuotaClamp(relayInfo, clamp)
 
 	if userQuota < quota {
@@ -185,22 +213,23 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	modelPrice := relayInfo.PriceData.ModelPrice
 	usePrice := relayInfo.PriceData.UsePrice
 
-	quotaInfo := QuotaInfo{
-		InputDetails: TokenDetails{
+	quotaInfo := finalAudioQuotaInfo(
+		TokenDetails{
 			TextTokens:  textInputTokens,
 			AudioTokens: audioInputTokens,
 		},
-		OutputDetails: TokenDetails{
+		TokenDetails{
 			TextTokens:  textOutTokens,
 			AudioTokens: audioOutTokens,
 		},
-		ModelName:  modelName,
-		UsePrice:   usePrice,
-		ModelRatio: modelRatio,
-		GroupRatio: groupRatio,
-	}
+		modelName, usePrice, modelPrice, modelRatio, groupRatio, relayInfo.ContractBillingFact,
+	)
 
-	quota, clamp := calculateAudioQuota(quotaInfo)
+	quota, clamp, quotaErr := calculateAudioQuota(quotaInfo)
+	if quotaErr != nil {
+		logger.LogError(ctx, "invalid frozen customer contract billing fact: "+quotaErr.Error())
+		quota = relayInfo.FinalPreConsumedQuota
+	}
 	noteQuotaClamp(relayInfo, clamp)
 	if tieredOk {
 		quota = tieredQuota
@@ -241,6 +270,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	appendCustomerContractBillingInfo(other, relayInfo.ContractBillingFact)
 	attachQuotaSaturation(ctx, relayInfo, other)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
@@ -308,22 +338,23 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	modelPrice := relayInfo.PriceData.ModelPrice
 	usePrice := relayInfo.PriceData.UsePrice
 
-	quotaInfo := QuotaInfo{
-		InputDetails: TokenDetails{
+	quotaInfo := finalAudioQuotaInfo(
+		TokenDetails{
 			TextTokens:  textInputTokens,
 			AudioTokens: audioInputTokens,
 		},
-		OutputDetails: TokenDetails{
+		TokenDetails{
 			TextTokens:  textOutTokens,
 			AudioTokens: audioOutTokens,
 		},
-		ModelName:  relayInfo.OriginModelName,
-		UsePrice:   usePrice,
-		ModelRatio: modelRatio,
-		GroupRatio: groupRatio,
-	}
+		relayInfo.OriginModelName, usePrice, modelPrice, modelRatio, groupRatio, relayInfo.ContractBillingFact,
+	)
 
-	quota, clamp := calculateAudioQuota(quotaInfo)
+	quota, clamp, quotaErr := calculateAudioQuota(quotaInfo)
+	if quotaErr != nil {
+		logger.LogError(ctx, "invalid frozen customer contract billing fact: "+quotaErr.Error())
+		quota = relayInfo.FinalPreConsumedQuota
+	}
 	noteQuotaClamp(relayInfo, clamp)
 	if tieredOk {
 		quota = tieredQuota
@@ -364,6 +395,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	appendCustomerContractBillingInfo(other, relayInfo.ContractBillingFact)
 	attachQuotaSaturation(ctx, relayInfo, other)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

@@ -62,6 +62,8 @@ func TestMain(m *testing.M) {
 		&SystemTask{},
 		&SystemTaskLock{},
 		&ChannelAssetCredential{},
+		&CustomerModelContract{},
+		&CustomerContractAudit{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -99,6 +101,8 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM task_create_idempotencies")
 		DB.Exec("DELETE FROM task_create_attempts")
 		DB.Exec("DELETE FROM provider_cost_exposures")
+		DB.Exec("DELETE FROM customer_model_contracts")
+		DB.Exec("DELETE FROM customer_contract_audits")
 		DB.Exec("DELETE FROM asset_groups")
 		DB.Exec("DELETE FROM assets")
 	})

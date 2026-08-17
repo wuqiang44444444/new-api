@@ -57,6 +57,7 @@ func TestMain(m *testing.M) {
 		&model.TaskCreateAttempt{},
 		&model.ProviderCostExposure{},
 		&model.Ability{},
+		&model.CustomerModelContract{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -86,6 +87,7 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM task_create_attempts")
 		model.DB.Exec("DELETE FROM provider_cost_exposures")
 		model.DB.Exec("DELETE FROM abilities")
+		model.DB.Exec("DELETE FROM customer_model_contracts")
 	})
 }
 

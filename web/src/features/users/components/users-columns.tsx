@@ -40,6 +40,7 @@ import {
 } from '../constants'
 import type { User } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
+import { getUserContractStatus } from './user-contract-status'
 import { UserQuotaCell } from './user-quota-cell'
 
 export function useUsersColumns(): ColumnDef<User>[] {
@@ -89,6 +90,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
         const username = row.getValue('username') as string
         const displayName = row.original.display_name
         const remark = row.original.remark
+        const contractStatus = getUserContractStatus(row.original, t)
 
         return (
           <div className='flex min-w-[160px] flex-col gap-1'>
@@ -108,6 +110,11 @@ export function useUsersColumns(): ColumnDef<User>[] {
                   </TooltipContent>
                 </Tooltip>
               )}
+              <StatusBadge
+                label={contractStatus.label}
+                variant={contractStatus.variant}
+                copyable={false}
+              />
             </div>
             {displayName && displayName !== username && (
               <LongText className='text-muted-foreground max-w-[180px] text-xs'>

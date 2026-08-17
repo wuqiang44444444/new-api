@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,6 +19,24 @@ func TestTaskPrivateDataHistoricalJSONRemainsCompatible(t *testing.T) {
 	require.NotNil(t, privateData.BillingContext)
 	assert.Equal(t, 2.0, privateData.BillingContext.ModelRatio)
 	assert.Nil(t, privateData.AsyncBilling)
+}
+
+func TestTaskPrivateDataRoundTripsFrozenCustomerContractFact(t *testing.T) {
+	privateData := TaskPrivateData{BillingContext: &TaskBillingContext{
+		OriginModelName: "contract-model", ModelRatio: 2, GroupRatio: 0.87,
+		ContractFact: &hosttypes.ContractBillingFact{
+			UserId: 7, ContractVersion: 12, PublicModel: "contract-model",
+			RouteGroup: "contract-route", RatioUnits: 80_000_000,
+		},
+	}}
+
+	value, err := privateData.Value()
+	require.NoError(t, err)
+	var restored TaskPrivateData
+	require.NoError(t, restored.Scan(value))
+	require.NotNil(t, restored.BillingContext)
+	require.NotNil(t, restored.BillingContext.ContractFact)
+	assert.Equal(t, privateData.BillingContext.ContractFact, restored.BillingContext.ContractFact)
 }
 
 func TestAttachAsyncTaskBillingStoresOnlyCompactProbe(t *testing.T) {

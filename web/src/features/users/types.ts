@@ -62,6 +62,9 @@ export const userSchema = z.object({
   admin_permissions: z
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
+  contract_mode: z.boolean().optional().default(false),
+  contract_version: z.number().optional().default(0),
+  contract_rule_count: z.number().optional().default(0),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -76,6 +79,65 @@ export interface ApiResponse<T = unknown> {
   success: boolean
   message?: string
   data?: T
+}
+
+export interface CustomerContractPricePreview {
+  price_type: 'model_price' | 'model_ratio' | 'tiered_multiplier'
+  current_discounted_price?: string
+}
+
+export interface CustomerContractRule {
+  model: string
+  route_group: string
+  discount: string
+  available: boolean
+  native_group_ratio: string
+  effective_multiplier: string
+  special_group_ratio: boolean
+  price: CustomerContractPricePreview
+}
+
+export interface CustomerContract {
+  user_id: number
+  username: string
+  contract_mode: boolean
+  contract_version: number
+  rules: CustomerContractRule[]
+  disable_warning?: string
+}
+
+export interface CustomerContractGroupOption {
+  group: string
+  models: string[]
+  prices: Record<string, CustomerContractPricePreview>
+  native_group_ratio: string
+  special_group_ratio: boolean
+}
+
+export interface CustomerContractAudit {
+  id: number
+  contract_version: number
+  admin_user_id: number
+  admin_username: string
+  operation: 'create' | 'update' | 'enable' | 'disable'
+  reason: string
+  before_rule_count: number
+  after_rule_count: number
+  created_at: number
+}
+
+export interface CustomerContractAuditPage {
+  items: CustomerContractAudit[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface CustomerContractWritePayload {
+  expected_version: number
+  enabled: boolean
+  reason: string
+  rules: Array<{ model: string; route_group: string; discount: string }>
 }
 
 export type UserSortBy =

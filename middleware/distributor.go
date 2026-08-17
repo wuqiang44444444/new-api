@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -39,6 +40,20 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		var contractFact *hosttypes.ContractBillingFact
+		if shouldSelectChannel {
+			contractFact, err = applyCustomerContractRequest(c, modelRequest.Model)
+			if err != nil {
+				abortWithOpenAiMessage(c, http.StatusForbidden, "The requested model does not exist", types.ErrorCodeModelNotFound)
+				return
+			}
+			if contractFact != nil {
+				if err := validateCustomerContractTokenModelLimit(c, modelRequest.Model); err != nil {
+					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}))
+					return
+				}
+			}
+		}
 		if ok {
 			id, err := strconv.Atoi(channelId.(string))
 			if err != nil {
@@ -54,11 +69,15 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
 				return
 			}
+			if contractFact != nil && !channelSatisfiesCustomerContract(channel, contractFact) {
+				abortWithOpenAiMessage(c, http.StatusForbidden, "The requested model does not exist", types.ErrorCodeModelNotFound)
+				return
+			}
 		} else {
 			// Select a channel for the user
 			// check token model mapping
 			modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
-			if modelLimitEnable {
+			if modelLimitEnable && contractFact == nil && (shouldSelectChannel || !common.GetContextKeyBool(c, constant.ContextKeyContractMode)) {
 				s, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
 				if !ok {
 					// token model limit is empty, all models are not allowed
@@ -85,7 +104,7 @@ func Distribute() func(c *gin.Context) {
 				var selectGroup string
 				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 				// check path is /pg/chat/completions
-				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
+				if contractFact == nil && strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
 					playgroundRequest := &dto.PlayGroundRequest{}
 					err = common.UnmarshalBodyReusable(c, playgroundRequest)
 					if err != nil {
@@ -141,6 +160,10 @@ func Distribute() func(c *gin.Context) {
 						Retry:       common.GetPointer(0),
 					})
 					if err != nil {
+						if contractFact != nil {
+							abortCustomerContractChannelUnavailable(c, contractFact, err.Error())
+							return
+						}
 						showGroup := usingGroup
 						if usingGroup == "auto" {
 							showGroup = fmt.Sprintf("auto(%s)", selectGroup)
@@ -155,9 +178,17 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if channel == nil {
+						if contractFact != nil {
+							abortCustomerContractChannelUnavailable(c, contractFact, "no enabled channel")
+							return
+						}
 						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 						return
 					}
+				}
+				if contractFact != nil && !channelSatisfiesCustomerContract(channel, contractFact) {
+					abortCustomerContractChannelUnavailable(c, contractFact, fmt.Sprintf("selected channel %d failed exact contract validation", channel.Id))
+					return
 				}
 			}
 		}

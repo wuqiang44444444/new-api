@@ -207,6 +207,9 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 }
 
 func ListModels(c *gin.Context, modelType int) {
+	if listCustomerContractModels(c, modelType) {
+		return
+	}
 	acceptUnsetRatioModel := operation_setting.SelfUseModeEnabled
 	if !acceptUnsetRatioModel {
 		userId := c.GetInt("id")
@@ -321,6 +324,26 @@ func ChannelListModels(c *gin.Context) {
 }
 
 func DashboardListModels(c *gin.Context) {
+	if common.GetContextKeyBool(c, constant.ContextKeyContractMode) {
+		version, ok := common.GetContextKeyType[int64](c, constant.ContextKeyContractVersion)
+		if !ok {
+			respondCustomerContractModelLoadError(c)
+			return
+		}
+		snapshot, err := service.LoadCustomerContractSnapshot(c.GetInt("id"), version)
+		if err != nil || service.RefreshCustomerContractAvailability(snapshot) != nil {
+			respondCustomerContractModelLoadError(c)
+			return
+		}
+		models := make([]string, 0, len(snapshot.Rules))
+		for _, rule := range snapshot.Rules {
+			if rule.Available {
+				models = append(models, rule.PublicModel)
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": map[int][]string{0: models}})
+		return
+	}
 	c.JSON(200, gin.H{
 		"success": true,
 		"data":    channelId2Models,
@@ -336,6 +359,9 @@ func EnabledListModels(c *gin.Context) {
 
 func RetrieveModel(c *gin.Context, modelType int) {
 	modelId := c.Param("model")
+	if retrieveCustomerContractModel(c, modelType, modelId) {
+		return
+	}
 	if respondConfiguredSeedanceModel(c, modelType, modelId) {
 		return
 	}

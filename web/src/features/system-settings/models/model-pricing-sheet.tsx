@@ -64,14 +64,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 
 import {
-  EMPTY_LANE_ENABLED,
-  EMPTY_LANE_PRICES,
   buildPreviewRows,
   createInitialLaneState,
   createModelPricingSchema,
   hasValue,
   laneConfigs,
   numericDraftRegex,
+  pricingModeFromData,
   ratioFieldByLane,
   toNumberOrNull,
   type LaneKey,
@@ -126,6 +125,7 @@ export const ModelPricingSheet = forwardRef<
           <SheetDescription>{description}</SheetDescription>
         </SheetHeader>
         <ModelPricingEditorPanel
+          key={editData?.name || '__new_model__'}
           ref={ref}
           editData={editData}
           onSave={onSave}
@@ -145,32 +145,38 @@ export const ModelPricingEditorPanel = forwardRef<
   ref
 ) {
   const { t } = useTranslation()
-  const [pricingMode, setPricingMode] = useState<PricingMode>('per-token')
-  const [promptPrice, setPromptPrice] = useState('')
+  const initialLaneState = createInitialLaneState(editData)
+  const [pricingMode, setPricingMode] =
+    useState<PricingMode>(pricingModeFromData(editData))
+  const [promptPrice, setPromptPrice] = useState(initialLaneState.promptPrice)
   const [lanePrices, setLanePrices] = useState<Record<LaneKey, string>>({
-    ...EMPTY_LANE_PRICES,
+    ...initialLaneState.prices,
   })
   const [laneEnabled, setLaneEnabled] = useState<Record<LaneKey, boolean>>({
-    ...EMPTY_LANE_ENABLED,
+    ...initialLaneState.enabled,
   })
-  const [billingExpr, setBillingExpr] = useState('')
-  const [requestRuleExpr, setRequestRuleExpr] = useState('')
+  const [billingExpr, setBillingExpr] = useState(editData?.billingExpr || '')
+  const [requestRuleExpr, setRequestRuleExpr] = useState(
+    editData?.requestRuleExpr || ''
+  )
   // tiered_expr 模型的异步任务预扣 token 上界（独立字段，与费用试算器分离）
-  const [taskPreConsumeTokens, setTaskPreConsumeTokens] = useState(0)
+  const [taskPreConsumeTokens, setTaskPreConsumeTokens] = useState(
+    editData?.taskPreConsumeTokens ?? 0
+  )
   const isEditMode = !!editData
 
   const form = useForm<ModelPricingFormValues>({
     resolver: zodResolver(createModelPricingSchema(t)),
     defaultValues: {
-      name: '',
-      price: '',
-      ratio: '',
-      cacheRatio: '',
-      createCacheRatio: '',
-      completionRatio: '',
-      imageRatio: '',
-      audioRatio: '',
-      audioCompletionRatio: '',
+      name: editData?.name || '',
+      price: editData?.price || '',
+      ratio: editData?.ratio || '',
+      cacheRatio: editData?.cacheRatio || '',
+      createCacheRatio: editData?.createCacheRatio || '',
+      completionRatio: editData?.completionRatio || '',
+      imageRatio: editData?.imageRatio || '',
+      audioRatio: editData?.audioRatio || '',
+      audioCompletionRatio: editData?.audioCompletionRatio || '',
     },
   })
 
@@ -189,13 +195,7 @@ export const ModelPricingEditorPanel = forwardRef<
         audioRatio: editData.audioRatio || '',
         audioCompletionRatio: editData.audioCompletionRatio || '',
       })
-      setPricingMode(
-        editData.billingMode === 'tiered_expr'
-          ? 'tiered_expr'
-          : editData.price
-            ? 'per-request'
-            : 'per-token'
-      )
+      setPricingMode(pricingModeFromData(editData))
       setBillingExpr(editData.billingExpr || '')
       setRequestRuleExpr(editData.requestRuleExpr || '')
       setTaskPreConsumeTokens(editData.taskPreConsumeTokens ?? 0)

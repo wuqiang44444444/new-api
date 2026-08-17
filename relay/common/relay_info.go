@@ -167,6 +167,9 @@ type RelayInfo struct {
 	UpstreamRequestBodySize int64
 
 	PriceData hosttypes.PriceData
+	// ContractBillingFact is frozen before channel selection and is nil for the
+	// untouched NEWAPI native path.
+	ContractBillingFact *hosttypes.ContractBillingFact
 
 	// QuotaClamp is set (non-nil) when a quota conversion saturated at the
 	// int32 bound (or NaN fallback) while computing this request's charge.
@@ -516,6 +519,7 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 			estimatePromptTokens: common.GetContextKeyInt(c, constant.ContextKeyEstimatedTokens),
 		},
 	}
+	info.ContractBillingFact, _ = common.GetContextKeyType[*hosttypes.ContractBillingFact](c, constant.ContextKeyContractFact)
 
 	if info.RelayMode == relayconstant.RelayModeUnknown {
 		info.RelayMode = c.GetInt("relay_mode")

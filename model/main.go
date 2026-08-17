@@ -295,6 +295,8 @@ func migrateDB() error {
 		&ChannelAssetCredential{},
 		&CasbinRule{},
 		&AuthzRole{},
+		&CustomerModelContract{},
+		&CustomerContractAudit{},
 	)
 	if err != nil {
 		return err
@@ -309,6 +311,9 @@ func migrateDB() error {
 		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
+		return err
+	}
+	if err := InitializeUserContractVersions(); err != nil {
 		return err
 	}
 	if err := InitializeExternalIdentityClaims(); err != nil {

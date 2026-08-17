@@ -20,6 +20,7 @@ import { api } from '@/lib/api'
 
 import type {
   ConfirmPaymentComplianceResponse,
+  CustomerContractRatioImpactResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
   SystemOptionsResponse,
@@ -38,6 +39,17 @@ export async function getSystemOptions() {
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  return res.data
+}
+
+export async function previewCustomerContractRatioImpact(request: {
+  group_ratio: string
+  group_group_ratio: string
+}) {
+  const res = await api.post<CustomerContractRatioImpactResponse>(
+    '/api/option/customer_contract_ratio_impact',
+    request
+  )
   return res.data
 }
 

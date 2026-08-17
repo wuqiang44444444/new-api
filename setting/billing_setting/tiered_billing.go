@@ -71,25 +71,24 @@ func GetPricingSyncData(base map[string]any) map[string]any {
 // ---------------------------------------------------------------------------
 
 func SmokeTestExpr(exprStr string) error {
-	return smokeTestExpr(exprStr, true)
+	return smokeTestExpr(exprStr, true, false, nil)
 }
 
 // smokeTestExpr 校验表达式可编译、各向量结果非负；requireTier 为 true 时还强制每个价格分支用 tier() 包裹。
-func smokeTestExpr(exprStr string, requireTier bool) error {
+func smokeTestExpr(exprStr string, requireTier bool, taskModel bool, taskProbeExtraFields map[string]any) error {
 	vectors := []billingexpr.TokenParams{
 		{P: 0, C: 0, Len: 0},
 		{P: 1000, C: 1000, Len: 1000},
 		{P: 100000, C: 100000, Len: 100000},
 		{P: 1000000, C: 1000000, Len: 1000000},
 	}
-	requests := []billingexpr.RequestInput{
-		{},
-		{
-			Headers: map[string]string{
-				"anthropic-beta": "fast-mode-2026-02-01",
-			},
-			Body: []byte(`{"service_tier":"fast","stream_options":{"include_usage":true},"messages":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21]}`),
-		},
+	requests := genericBillingSmokeRequests()
+	if taskModel {
+		var err error
+		requests, err = taskBillingSmokeRequests(taskProbeExtraFields)
+		if err != nil {
+			return err
+		}
 	}
 
 	for _, v := range vectors {

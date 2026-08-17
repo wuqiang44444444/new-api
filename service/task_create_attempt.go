@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -28,9 +29,10 @@ type taskCreateFrozenConnection struct {
 }
 
 type taskCreateBillingSnapshot struct {
-	PublicModel string `json:"public_model"`
-	Quota       int    `json:"quota"`
-	FreeModel   bool   `json:"free_model"`
+	PublicModel  string                         `json:"public_model"`
+	Quota        int                            `json:"quota"`
+	FreeModel    bool                           `json:"free_model"`
+	ContractFact *hosttypes.ContractBillingFact `json:"contract_fact,omitempty"`
 }
 
 // PrepareTaskCreateAttempt creates the durable journal before billing and then
@@ -72,9 +74,10 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
 	billing, err := common.Marshal(taskCreateBillingSnapshot{
-		PublicModel: info.OriginModelName,
-		Quota:       info.PriceData.Quota,
-		FreeModel:   info.PriceData.FreeModel,
+		PublicModel:  info.OriginModelName,
+		Quota:        info.PriceData.Quota,
+		FreeModel:    info.PriceData.FreeModel,
+		ContractFact: info.ContractBillingFact,
 	})
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())

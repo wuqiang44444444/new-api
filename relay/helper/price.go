@@ -121,7 +121,11 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		audioRatio = ratio_setting.GetAudioRatio(info.OriginModelName)
 		audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(info.OriginModelName)
 		ratio := modelRatio * groupRatioInfo.GroupRatio
-		quota, err := common.QuotaFromFloatStrict(float64(preConsumedTokens) * ratio)
+		preConsumeValue, err := applyCustomerContractToFloat(float64(preConsumedTokens)*ratio, info)
+		if err != nil {
+			return hosttypes.PriceData{}, err
+		}
+		quota, err := common.QuotaFromFloatStrict(preConsumeValue)
 		if err != nil {
 			return hosttypes.PriceData{}, err
 		}
@@ -172,6 +176,10 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			priceData.AddOtherRatio(name, ratio)
 		}
 		quotaToPreConsume := priceData.ApplyOtherRatiosToFloat(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+		quotaToPreConsume, err := applyCustomerContractToFloat(quotaToPreConsume, info)
+		if err != nil {
+			return hosttypes.PriceData{}, err
+		}
 		quota, err := common.QuotaFromFloatStrict(quotaToPreConsume)
 		if err != nil {
 			return hosttypes.PriceData{}, err
@@ -218,7 +226,11 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 
 	if usePrice {
 		var err error
-		quota, err = common.QuotaFromFloatStrict(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+		quotaValue, contractErr := applyCustomerContractToFloat(modelPrice*common.QuotaPerUnit*groupRatioInfo.GroupRatio, info)
+		if contractErr != nil {
+			return hosttypes.PriceData{}, contractErr
+		}
+		quota, err = common.QuotaFromFloatStrict(quotaValue)
 		if err != nil {
 			return hosttypes.PriceData{}, err
 		}
@@ -231,7 +243,11 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 	} else {
 		// 按量计费：以模型倍率的一半作为预扣额度
 		var err error
-		quota, err = common.QuotaFromFloatStrict(modelRatio / 2 * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+		quotaValue, contractErr := applyCustomerContractToFloat(modelRatio/2*common.QuotaPerUnit*groupRatioInfo.GroupRatio, info)
+		if contractErr != nil {
+			return hosttypes.PriceData{}, contractErr
+		}
+		quota, err = common.QuotaFromFloatStrict(quotaValue)
 		if err != nil {
 			return hosttypes.PriceData{}, err
 		}
@@ -296,7 +312,11 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 
 	// Expression coefficients are $/1M tokens prices; convert to quota the same way per-call billing does.
 	quotaBeforeGroup := rawCost / 1_000_000 * common.QuotaPerUnit
-	preConsumedQuota, err := billingexpr.QuotaRoundStrict(quotaBeforeGroup * groupRatioInfo.GroupRatio)
+	estimatedQuota, err := applyCustomerContractToFloat(quotaBeforeGroup*groupRatioInfo.GroupRatio, info)
+	if err != nil {
+		return hosttypes.PriceData{}, err
+	}
+	preConsumedQuota, err := billingexpr.QuotaRoundStrict(estimatedQuota)
 	if err != nil {
 		return hosttypes.PriceData{}, err
 	}

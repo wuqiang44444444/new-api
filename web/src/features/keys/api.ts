@@ -26,6 +26,7 @@ import type {
   SearchApiKeysParams,
   ApiKeyFormData,
   TokenAutoGroupsConfig,
+  SelfCustomerContract,
 } from './types'
 
 // ============================================================================
@@ -38,6 +39,13 @@ export async function getApiKeys(
 ): Promise<GetApiKeysResponse> {
   const { p = 1, size = 10 } = params
   const res = await api.get(`/api/token/?p=${p}&size=${size}`)
+  return res.data
+}
+
+export async function getSelfCustomerContract(): Promise<
+  ApiResponse<SelfCustomerContract>
+> {
+  const res = await api.get('/api/user/self/contract')
   return res.data
 }
 

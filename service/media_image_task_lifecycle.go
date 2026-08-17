@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
 
 type MediaImageTaskCreateSpec struct {
@@ -84,6 +85,7 @@ func PersistMediaImageTask(c *gin.Context, info *relaycommon.RelayInfo, spec Med
 		OtherRatios:     info.PriceData.OtherRatios(),
 		OriginModelName: info.OriginModelName,
 		PerCallBilling:  false,
+		ContractFact:    info.ContractBillingFact,
 	}
 	task.PrivateData.MediaImage = &model.TaskMediaImagePrivateData{
 		Protocol:            spec.Protocol,
@@ -224,15 +226,26 @@ func settleMediaImageTask(ctx context.Context, task *model.Task) {
 			persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, err)
 			return
 		}
+		actualQuota := result.ActualQuotaAfterGroup
+		if billingContext := task.PrivateData.BillingContext; billingContext != nil && billingContext.ContractFact != nil {
+			quotaDecimal := decimal.NewFromFloat(result.ActualQuotaBeforeGroup).
+				Mul(decimal.NewFromFloat(async.TieredSnapshot.GroupRatio))
+			quotaDecimal, err = ApplyCustomerContractRatio(quotaDecimal, billingContext.ContractFact)
+			if err != nil {
+				persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, err)
+				return
+			}
+			actualQuota, result.Clamp = common.QuotaRoundChecked(quotaDecimal.InexactFloat64())
+		}
 		async.ActualTokens = media.Usage.TotalTokens
 		async.Operation = "settle"
 		async.Reason = fmt.Sprintf("图片 usage 表达式结算：tier=%s", result.MatchedTier)
-		async.TargetQuota = &result.ActualQuotaAfterGroup
+		async.TargetQuota = &actualQuota
 		if err := task.UpdateBilling(); err != nil {
 			persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, err)
 			return
 		}
-		recalculateTaskQuotaWithReconcile(ctx, task, result.ActualQuotaAfterGroup, async.Reason, result.Clamp)
+		recalculateTaskQuotaWithReconcile(ctx, task, actualQuota, async.Reason, result.Clamp)
 		return
 	}
 
@@ -250,6 +263,14 @@ func settleMediaImageTask(ctx context.Context, task *model.Task) {
 		priceData.AddOtherRatio("n", float64(actualCount))
 		actualFloat := priceData.ApplyOtherRatiosToFloat(billingContext.ModelPrice * common.QuotaPerUnit * billingContext.GroupRatio)
 		actualQuota, clamp := common.QuotaFromFloatChecked(actualFloat)
+		if billingContext.ContractFact != nil {
+			quotaDecimal, err := ApplyCustomerContractRatio(decimal.NewFromFloat(actualFloat), billingContext.ContractFact)
+			if err != nil {
+				persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, err)
+				return
+			}
+			actualQuota, clamp = common.QuotaFromDecimalChecked(quotaDecimal)
+		}
 		recalculateTaskQuotaWithReconcile(ctx, task, actualQuota, fmt.Sprintf("图片实际数量结算：n=%d", actualCount), clamp)
 		return
 	}

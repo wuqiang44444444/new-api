@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	mediaimageprotocol "github.com/QuantumNous/new-api/relay/mediaimage"
 	"github.com/QuantumNous/new-api/types"
@@ -185,6 +186,84 @@ func TestPollMediaImageTaskOncePersistsAllURLsAndSettlesActualCountOnce(t *testi
 	require.NoError(t, err)
 	assert.Equal(t, model.TaskStatus(model.TaskStatusSuccess), again.Status)
 	assert.Equal(t, 1, calls, "terminal replay must not query or settle again")
+}
+
+func TestSettleMediaImageTaskAppliesFrozenCustomerContractToActualCount(t *testing.T) {
+	truncate(t)
+	seedUser(t, 804, 2_000_000)
+
+	task := &model.Task{
+		TaskID: "task_contract_image_count", UserId: 804, Group: "contract-group", ChannelId: 94,
+		Quota: 696_000, Status: model.TaskStatusSuccess, Platform: constant.TaskPlatformMediaImage,
+		Properties: model.Properties{OriginModelName: "contract-model"},
+		PrivateData: model.TaskPrivateData{
+			BillingContext: &model.TaskBillingContext{
+				ModelPrice: 1, GroupRatio: 0.87, OriginModelName: "contract-model",
+				OtherRatios: map[string]float64{"n": 2},
+				ContractFact: &types.ContractBillingFact{
+					UserId: 804, ContractVersion: 2, PublicModel: "contract-model",
+					RouteGroup: "contract-group", RatioUnits: 80_000_000,
+				},
+			},
+			MediaImage: &model.TaskMediaImagePrivateData{
+				UsePrice: true, RequestedImageCount: 2, ResultURLs: []string{"https://cdn.example/one.png"},
+			},
+			AsyncBilling: &model.TaskAsyncBillingContext{State: model.TaskBillingStatePending},
+		},
+		BillingState: model.TaskBillingStatePending,
+	}
+	require.NoError(t, task.Insert())
+
+	settleMediaImageTask(context.Background(), task)
+
+	stored, exists, err := model.GetByOnlyTaskId(task.TaskID)
+	require.NoError(t, err)
+	require.True(t, exists)
+	// 1 image × 1 price × 500000 × 0.87 native group × 0.8 contract.
+	assert.Equal(t, 348_000, stored.Quota)
+	require.NotNil(t, stored.PrivateData.AsyncBilling.TargetQuota)
+	assert.Equal(t, 348_000, *stored.PrivateData.AsyncBilling.TargetQuota)
+}
+
+func TestSettleMediaImageTaskAppliesFrozenCustomerContractToTieredUsage(t *testing.T) {
+	truncate(t)
+	seedUser(t, 805, 2_000_000)
+	expression := `tier("base", p * 2)`
+
+	task := &model.Task{
+		TaskID: "task_contract_image_tiered", UserId: 805, Group: "contract-group", ChannelId: 95,
+		Quota: 100, Status: model.TaskStatusSuccess, Platform: constant.TaskPlatformMediaImage,
+		Properties: model.Properties{OriginModelName: "contract-model"},
+		PrivateData: model.TaskPrivateData{
+			BillingContext: &model.TaskBillingContext{
+				OriginModelName: "contract-model",
+				ContractFact: &types.ContractBillingFact{
+					UserId: 805, ContractVersion: 3, PublicModel: "contract-model",
+					RouteGroup: "contract-group", RatioUnits: 80_000_000,
+				},
+			},
+			MediaImage: &model.TaskMediaImagePrivateData{Usage: &dto.Usage{PromptTokens: 100, TotalTokens: 100}},
+			AsyncBilling: &model.TaskAsyncBillingContext{
+				State: model.TaskBillingStatePending,
+				TieredSnapshot: &billingexpr.BillingSnapshot{
+					BillingMode: "tiered_expr", ExprString: expression, ExprHash: billingexpr.ExprHashString(expression),
+					GroupRatio: 0.87, EstimatedQuotaAfterGroup: 87, QuotaPerUnit: common.QuotaPerUnit,
+				},
+			},
+		},
+		BillingState: model.TaskBillingStatePending,
+	}
+	require.NoError(t, task.Insert())
+
+	settleMediaImageTask(context.Background(), task)
+
+	stored, exists, err := model.GetByOnlyTaskId(task.TaskID)
+	require.NoError(t, err)
+	require.True(t, exists)
+	// Raw quota 100 × native group 0.87 × contract 0.8 = 69.6, rounded once.
+	assert.Equal(t, 70, stored.Quota)
+	require.NotNil(t, stored.PrivateData.AsyncBilling.TargetQuota)
+	assert.Equal(t, 70, *stored.PrivateData.AsyncBilling.TargetQuota)
 }
 
 func TestPollMediaImageTaskOnceFailsClosedWhenProviderReturnsMoreThanRequested(t *testing.T) {

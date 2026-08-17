@@ -526,6 +526,19 @@ func RelayTask(c *gin.Context) {
 		respondTaskError(c, taskErr)
 		return
 	}
+	if relayInfo.ContractBillingFact == nil && relayInfo.OriginModelName != "" {
+		lockedChannel, _ := relayInfo.LockedChannel.(*model.Channel)
+		contractFact, contractErr := middleware.ApplyCustomerContractResolvedModel(c, relayInfo.OriginModelName, lockedChannel)
+		if contractErr != nil {
+			respondTaskError(c, service.TaskErrorWrapperLocal(contractErr, "model_not_allowed", http.StatusForbidden))
+			return
+		}
+		if contractFact != nil {
+			relayInfo.ContractBillingFact = contractFact
+			relayInfo.UsingGroup = contractFact.RouteGroup
+			relayInfo.TokenGroup = contractFact.RouteGroup
+		}
+	}
 
 	var result *relay.TaskSubmitResult
 	var taskErr *taskdto.TaskError
@@ -624,6 +637,7 @@ func RelayTask(c *gin.Context) {
 			OtherRatios:     relayInfo.PriceData.OtherRatios(),
 			OriginModelName: relayInfo.OriginModelName,
 			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			ContractFact:    relayInfo.ContractBillingFact,
 		}
 		model.AttachAsyncTaskBilling(&task.PrivateData, relayInfo, result.Quota)
 		task.Quota = result.Quota

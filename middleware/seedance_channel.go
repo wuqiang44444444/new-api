@@ -27,6 +27,11 @@ func ResolveSeedanceChannel() gin.HandlerFunc {
 			return
 		}
 		customerModel := strings.TrimSpace(contract.ModelArk.Model)
+		contractFact, err := applyCustomerContractRequest(c, customerModel)
+		if err != nil {
+			abortModelArkVideo(c, http.StatusForbidden, "model_not_found", "the requested model does not exist")
+			return
+		}
 		if common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled) {
 			value, exists := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
 			limits, valid := value.(map[string]bool)
@@ -48,6 +53,9 @@ func ResolveSeedanceChannel() gin.HandlerFunc {
 		}
 
 		usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+		if contractFact != nil {
+			usingGroup = contractFact.RouteGroup
+		}
 		groups := []string{usingGroup}
 		if usingGroup == "auto" {
 			groups = service.GetRequestAutoGroups(c, common.GetContextKeyString(c, constant.ContextKeyUserGroup))

@@ -39,6 +39,18 @@ export type UpdateOptionResponse = {
   message: string
 }
 
+export type CustomerContractRatioImpact = {
+  affected_contracts: number
+  affected_rules: number
+  affected_groups: string[]
+}
+
+export type CustomerContractRatioImpactResponse = {
+  success: boolean
+  message?: string
+  data?: CustomerContractRatioImpact
+}
+
 export type ConfirmPaymentComplianceResponse = {
   success: boolean
   message: string

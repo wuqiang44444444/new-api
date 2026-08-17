@@ -3,11 +3,13 @@ package service
 import (
 	"net/http"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
 
 // TieredResultWrapper wraps billingexpr.TieredResult for use at the service layer.
@@ -109,6 +111,13 @@ func refreshTieredBillingGroup(relayInfo *relaycommon.RelayInfo) (*billingexpr.B
 	}
 
 	estimatedQuotaAfterGroup := snap.EstimatedQuotaBeforeGroup * groupRatio
+	if relayInfo.ContractBillingFact != nil {
+		contractQuota, err := ApplyCustomerContractRatio(decimal.NewFromFloat(estimatedQuotaAfterGroup), relayInfo.ContractBillingFact)
+		if err != nil {
+			return nil, err
+		}
+		estimatedQuotaAfterGroup = contractQuota.InexactFloat64()
+	}
 	estimatedQuota, err := billingexpr.QuotaRoundStrict(estimatedQuotaAfterGroup)
 	if err != nil {
 		return nil, err
@@ -178,6 +187,18 @@ func TryTieredSettle(relayInfo *relaycommon.RelayInfo, params billingexpr.TokenP
 			quota = snap.EstimatedQuotaAfterGroup
 		}
 		return true, quota, nil
+	}
+	if relayInfo.ContractBillingFact != nil {
+		actualAfterGroup := decimal.NewFromFloat(tr.ActualQuotaBeforeGroup).Mul(decimal.NewFromFloat(snap.GroupRatio))
+		actualAfterContract, err := ApplyCustomerContractRatio(actualAfterGroup, relayInfo.ContractBillingFact)
+		if err != nil {
+			quota = relayInfo.FinalPreConsumedQuota
+			if quota <= 0 {
+				quota = snap.EstimatedQuotaAfterGroup
+			}
+			return true, quota, nil
+		}
+		tr.ActualQuotaAfterGroup, tr.Clamp = common.QuotaRoundChecked(actualAfterContract.InexactFloat64())
 	}
 
 	// Surface any int32 saturation from settlement onto RelayInfo so the

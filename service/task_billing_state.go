@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/shopspring/decimal"
 )
 
 func setTaskBillingState(task *model.Task, state model.TaskBillingState, billingErr string) {
@@ -166,29 +167,52 @@ func calculateTaskQuotaByTokens(task *model.Task, totalTokens int) (int, *common
 	if totalTokens <= 0 {
 		return 0, nil, "", false
 	}
-	modelRatio, ok, _ := ratio_setting.GetModelRatio(taskModelName(task))
-	if !ok || modelRatio <= 0 {
-		return 0, nil, "", false
-	}
-	group := task.Group
-	if group == "" {
-		user, err := model.GetUserById(task.UserId, false)
-		if err == nil {
-			group = user.Group
+	billingContext := task.PrivateData.BillingContext
+	modelRatio := 0.0
+	groupRatio := 0.0
+	if billingContext != nil && billingContext.ContractFact != nil {
+		modelRatio = billingContext.ModelRatio
+		groupRatio = billingContext.GroupRatio
+	} else {
+		var ok bool
+		modelRatio, ok, _ = ratio_setting.GetModelRatio(taskModelName(task))
+		if !ok {
+			return 0, nil, "", false
+		}
+		group := task.Group
+		if group == "" {
+			user, err := model.GetUserById(task.UserId, false)
+			if err == nil {
+				group = user.Group
+			}
+		}
+		if group == "" {
+			return 0, nil, "", false
+		}
+		groupRatio = ratio_setting.GetGroupRatio(group)
+		if specialRatio, found := ratio_setting.GetGroupGroupRatio(group, group); found {
+			groupRatio = specialRatio
 		}
 	}
-	if group == "" {
+	if modelRatio <= 0 {
 		return 0, nil, "", false
-	}
-	groupRatio := ratio_setting.GetGroupRatio(group)
-	if special, found := ratio_setting.GetGroupGroupRatio(group, group); found {
-		groupRatio = special
 	}
 	otherMultiplier := 1.0
 	if priceData := taskBillingContextPriceData(task.PrivateData.BillingContext); priceData != nil {
 		otherMultiplier = priceData.OtherRatioMultiplier()
 	}
-	quota, clamp := common.QuotaFromFloatChecked(float64(totalTokens) * modelRatio * groupRatio * otherMultiplier)
+	quotaDecimal := decimal.NewFromInt(int64(totalTokens)).
+		Mul(decimal.NewFromFloat(modelRatio)).
+		Mul(decimal.NewFromFloat(groupRatio)).
+		Mul(decimal.NewFromFloat(otherMultiplier))
+	var err error
+	if billingContext != nil && billingContext.ContractFact != nil {
+		quotaDecimal, err = ApplyCustomerContractRatio(quotaDecimal, billingContext.ContractFact)
+		if err != nil {
+			return 0, nil, "invalid frozen customer contract ratio", false
+		}
+	}
+	quota, clamp := common.QuotaFromDecimalChecked(quotaDecimal)
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f, otherMultiplier=%.4f", totalTokens, modelRatio, groupRatio, otherMultiplier)
 	return quota, clamp, reason, true
 }
@@ -225,7 +249,7 @@ func settleTaskBillingWithState(ctx context.Context, adaptor TaskPollingAdaptor,
 		recalculateTaskQuotaWithReconcile(ctx, task, actualQuota, "adaptor计费调整")
 		return true
 	}
-	if actualQuota, clamp, reason, ok := calculateTaskQuotaByTokens(task, result.TotalTokens); ok {
+	if actualQuota, clamp, reason, ok := calculateTaskQuotaByTokens(task, actualTokens); ok {
 		recalculateTaskQuotaWithReconcile(ctx, task, actualQuota, reason, clamp)
 		return true
 	}

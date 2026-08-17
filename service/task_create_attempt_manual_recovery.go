@@ -54,6 +54,7 @@ func StageVideoTaskCreateAttemptRecovery(
 		OtherRatios:     info.PriceData.OtherRatios(),
 		OriginModelName: info.OriginModelName,
 		PerCallBilling:  common.StringsContains(constant.TaskPricePatches, info.OriginModelName) || info.PriceData.UsePrice,
+		ContractFact:    info.ContractBillingFact,
 	}
 	model.AttachAsyncTaskBilling(&task.PrivateData, info, task.Quota)
 	stageTaskProtocolSnapshot(c, task, info)
@@ -104,6 +105,7 @@ func StageMediaImageTaskCreateAttemptRecovery(
 		GroupRatio:      info.PriceData.GroupRatioInfo.GroupRatio,
 		OtherRatios:     info.PriceData.OtherRatios(),
 		OriginModelName: info.OriginModelName,
+		ContractFact:    info.ContractBillingFact,
 	}
 	task.PrivateData.MediaImage = &model.TaskMediaImagePrivateData{
 		Protocol:            spec.Protocol,

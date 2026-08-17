@@ -24,6 +24,7 @@ import { ApiKeysDialogs } from './components/api-keys-dialogs'
 import { ApiKeysPrimaryButtons } from './components/api-keys-primary-buttons'
 import { ApiKeysProvider } from './components/api-keys-provider'
 import { ApiKeysTable } from './components/api-keys-table'
+import { CustomerContractPricing } from './components/customer-contract-pricing'
 
 export function ApiKeys() {
   const { t } = useTranslation()
@@ -35,6 +36,7 @@ export function ApiKeys() {
           <ApiKeysPrimaryButtons />
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
+          <CustomerContractPricing />
           <ApiKeysTable />
         </SectionPageLayout.Content>
       </SectionPageLayout>

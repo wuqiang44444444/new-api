@@ -138,10 +138,17 @@ func NormalizeChannelGroupFilter(group string) string {
 }
 
 func channelGroupFilterCondition() string {
-	if common.UsingMainDatabase(common.DatabaseTypeMySQL) {
-		return `CONCAT(',', ` + commonGroupCol + `, ',') LIKE ? ESCAPE '!'`
+	groupColumn := commonGroupCol
+	if groupColumn == "" {
+		groupColumn = "`group`"
+		if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+			groupColumn = `"group"`
+		}
 	}
-	return `(',' || ` + commonGroupCol + ` || ',') LIKE ? ESCAPE '!'`
+	if common.UsingMainDatabase(common.DatabaseTypeMySQL) {
+		return `CONCAT(',', ` + groupColumn + `, ',') LIKE ? ESCAPE '!'`
+	}
+	return `(',' || ` + groupColumn + ` || ',') LIKE ? ESCAPE '!'`
 }
 
 func channelGroupFilterPattern(group string) string {

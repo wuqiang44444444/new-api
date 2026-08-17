@@ -46,7 +46,8 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 4. [异步任务与计费事实架构](异步任务与计费事实架构.md)：理解 create attempt、Task、资金状态和平台风险。
 5. 再按任务选择图片、账单、公开文档或 [Seedance Provider 接入设计](Seedance模型接入设计/README.md)。
 6. 需要理解用户生命周期邮件通知时阅读[用户生命周期邮件通知架构](用户生命周期邮件通知架构.md)。
-7. 需要理解“为什么这样设计”时阅读[架构决策索引](decisions/README.md)。
+7. 需要理解 B 端用户模型白名单、渠道组和合同计费时阅读[用户模型合同定价架构](用户模型合同定价架构.md)。
+8. 需要理解“为什么这样设计”时阅读[架构决策索引](decisions/README.md)。
 
 ## 当前架构文档
 
@@ -63,6 +64,7 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 | 只读投影 | [客户与上游对账架构](客户与上游对账架构.md) | 管理员客户/上游对账、月度折扣与审计、计费快照如何从结算事实聚合 | billing-reconciliation router/controller/model、ProviderBillingDiscount/Audit、statement snapshot |
 | 公开文档 | [公开 API 文档交付架构](公开API文档交付架构.md) | 公开合同内容如何构建、校验并随 Web 发布 | `web/src/features/docs/`、`web/scripts/docs/`、`web/public/docs-content/` |
 | 用户通知 | [用户生命周期邮件通知架构](用户生命周期邮件通知架构.md) | 账户创建、密码修改、API Key 创建三类事件邮件如何按 per-event 开关异步投递 | `notification_setting`、`service/user_lifecycle_notify.go`、controller 接线、前端开关 |
+| 合同定价 | [用户模型合同定价架构](用户模型合同定价架构.md) | 按用户精确模型授权、唯一渠道组、缓存围栏和冻结计费事实如何协作 | `customer_contract` model/service/middleware/controller、合同前端组件 |
 
 ## 文档边界
 
