@@ -24,15 +24,22 @@ beforeAll(async () => {
           'Seedance Asset Protocol': 'Seedance Asset Protocol',
           'Volcengine ModelArk V3': 'Volcengine ModelArk V3',
           'BytePlus ModelArk V3': 'BytePlus ModelArk V3',
-          'Media Task V1': 'Moxing',
+          'TokenSave Media Task V1': 'TokenSave Media Task V1',
+          'Moxing Media Task V1': 'Moxing Media Task V1',
+          'Moxing ModelArk Media Task V1': 'Moxing ModelArk Media Task V1',
           'Ark Media V1': 'Ark Proxy Video API',
-          'URL Media Arrays (URL Only, No Asset Library)':
-            'URL Media Arrays (URL Only, No Asset Library)',
-          'FunCloud Seedance V2': 'FunCloud',
+          'Feicai Videos V1 (URL Only, No Asset Library)':
+            'Feicai Videos V1 (URL Only, No Asset Library)',
+          'FunCloud Seedance': 'FunCloud',
+          'FunCloud Material Library': 'FunCloud Material Library',
           'Volcengine Official Assets': 'Volcengine Official Assets',
           'BytePlus Official Assets': 'BytePlus Official Assets',
           'No Asset Protocol': 'No Asset Protocol',
-          'Relay Assets V1': 'Moxing Asset Library',
+          'TokenSave Asset Library V1': 'TokenSave Asset Library V1',
+          'Moxing JoyCreator Asset Library V1':
+            'Moxing JoyCreator Asset Library V1',
+          'Moxing Volcengine Asset Library V1':
+            'Moxing Volcengine Asset Library V1',
           'Ark Assets V1': 'Ark Proxy Asset Library',
         },
       },
@@ -40,11 +47,15 @@ beforeAll(async () => {
   })
 })
 
-function SeedanceProtocolFieldsHarness() {
+function SeedanceProtocolFieldsHarness(
+  props: { models?: string; modelMapping?: string } = {}
+) {
   const form = useForm<ChannelFormValues>({
     defaultValues: {
       ...CHANNEL_FORM_DEFAULT_VALUES,
       type: 61,
+      models: props.models || '',
+      model_mapping: props.modelMapping || '',
       video_upstream_protocol: 'modelark_v3_volcengine',
       asset_upstream_protocol: 'volcengine_assets_action_v2024_01_01',
     },
@@ -98,11 +109,13 @@ describe('Seedance protocol fields', () => {
     await user.click(videoTrigger)
     await user.click(
       await screen.findByRole('option', {
-        name: 'Moxing',
+        name: 'Moxing Media Task V1',
       })
     )
 
-    expect(assetTrigger.textContent).toContain('Moxing Asset Library')
+    expect(assetTrigger.textContent).toContain(
+      'Moxing JoyCreator Asset Library V1'
+    )
   })
 
   test('labels the URL-only protocol and selects no asset library', async () => {
@@ -119,13 +132,41 @@ describe('Seedance protocol fields', () => {
     await user.click(videoTrigger)
     await user.click(
       await screen.findByRole('option', {
-        name: 'URL Media Arrays (URL Only, No Asset Library)',
+        name: 'Feicai Videos V1 (URL Only, No Asset Library)',
       })
     )
 
     expect(videoTrigger.textContent).toContain(
-      'URL Media Arrays (URL Only, No Asset Library)'
+      'Feicai Videos V1 (URL Only, No Asset Library)'
     )
     expect(assetTrigger.textContent).toContain('No Asset Protocol')
+  })
+
+  test('selects no asset library for a customer model mapped to FunCloud 2.5', async () => {
+    const user = userEvent.setup()
+    render(
+      <SeedanceProtocolFieldsHarness
+        models='customer-next'
+        modelMapping='{"customer-next":"seedance-2-5"}'
+      />
+    )
+
+    const videoTrigger = screen.getByRole('combobox', {
+      name: 'Seedance Video Protocol',
+    })
+    const assetTrigger = screen.getByRole('combobox', {
+      name: 'Seedance Asset Protocol',
+    })
+    await user.click(videoTrigger)
+    await user.click(await screen.findByRole('option', { name: 'FunCloud' }))
+
+    expect(assetTrigger.textContent).toContain('No Asset Protocol')
+    await user.click(assetTrigger)
+    const listbox = await screen.findByRole('listbox')
+    expect(
+      within(listbox).queryByRole('option', {
+        name: 'FunCloud Material Library',
+      })
+    ).toBeNull()
   })
 })

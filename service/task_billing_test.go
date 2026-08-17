@@ -54,8 +54,6 @@ func TestMain(m *testing.M) {
 		&model.UserSubscription{},
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
-		&model.Asset{},
-		&model.AssetGroup{},
 		&model.TaskCreateAttempt{},
 		&model.ProviderCostExposure{},
 		&model.Ability{},

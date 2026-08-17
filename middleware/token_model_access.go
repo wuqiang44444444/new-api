@@ -49,6 +49,34 @@ func TokenModelAccess() gin.HandlerFunc {
 	}
 }
 
+// TokenModelAccessFromQuery applies the same allow-list to model-keyed GET and
+// DELETE asset operations. The endpoint remains responsible for requiring the
+// model parameter.
+func TokenModelAccessFromQuery() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled) {
+			c.Next()
+			return
+		}
+		modelName := strings.TrimSpace(c.Query("model"))
+		if modelName == "" {
+			c.Next()
+			return
+		}
+		value, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
+		allowed, typeOK := value.(map[string]bool)
+		if !ok || !typeOK {
+			abortTokenModelAccess(c, i18n.T(c, i18n.MsgDistributorTokenNoModelAccess))
+			return
+		}
+		if _, permitted := allowed[ratio_setting.FormatMatchingModelName(modelName)]; !permitted {
+			abortTokenModelAccess(c, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelName}))
+			return
+		}
+		c.Next()
+	}
+}
+
 func abortTokenModelAccess(c *gin.Context, message string) {
 	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{
 		"message": message,

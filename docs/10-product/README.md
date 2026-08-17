@@ -48,5 +48,5 @@ last-reviewed: 2026-08-11
 
 - 使用角色、触发、产品行为、结果和失败语义描述流程；
 - 验收必须可观察、可复现，并区分代码完成、真实 Provider 验证和生产发布；
-- 客户术语使用客户模型、API Key、Task、`ast_*`、`astgrp_*` 和账单，不要求客户理解 Channel、协议或 Provider 模型；
+- 客户术语使用客户模型、API Key、Task、素材 opaque ID 和账单，不要求客户理解 Channel、协议或 Provider 模型；
 - 不写代码文件清单、事务细节、实施顺序或排障过程。

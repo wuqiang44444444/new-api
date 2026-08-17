@@ -73,3 +73,28 @@ func TestAttachAsyncTaskBillingIncludesProtocolVideoTasks(t *testing.T) {
 	assert.Equal(t, TaskBillingStatePending, privateData.AsyncBilling.State)
 	assert.True(t, privateData.BillingContext.PerCallBilling)
 }
+
+func TestTaskPrivateDataRoundTripsProviderBillingEvidence(t *testing.T) {
+	privateData := TaskPrivateData{AsyncBilling: &TaskAsyncBillingContext{
+		ActualTokens:        40594,
+		ActualUsageReported: true,
+		ActualUsageSource:   "usage.completion_tokens",
+		ActualUsageEvidence: map[string]int{"usage.completion_tokens": 40594, "usage.prompt_tokens": 0},
+		ProviderBillingEvidence: &relaycommon.ProviderBillingEvidence{
+			Provider: "funcloud", TokenSource: "completionTokens", ReportedTokens: 40594,
+			RawConsumption: "0.232731", ConsumptionUnit: "pointConsume",
+			ProviderModel: "seedance-2-fast", Resolution: "720p",
+		},
+	}}
+	value, err := privateData.Value()
+	require.NoError(t, err)
+
+	var restored TaskPrivateData
+	require.NoError(t, restored.Scan(value))
+	require.NotNil(t, restored.AsyncBilling)
+	require.NotNil(t, restored.AsyncBilling.ProviderBillingEvidence)
+	assert.True(t, restored.AsyncBilling.ActualUsageReported)
+	assert.Equal(t, privateData.AsyncBilling.ActualUsageSource, restored.AsyncBilling.ActualUsageSource)
+	assert.Equal(t, privateData.AsyncBilling.ActualUsageEvidence, restored.AsyncBilling.ActualUsageEvidence)
+	assert.Equal(t, privateData.AsyncBilling.ProviderBillingEvidence, restored.AsyncBilling.ProviderBillingEvidence)
+}

@@ -5,29 +5,31 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/feicai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestVerificationModelSpecsCoverEveryCurrentFeicaiModel(t *testing.T) {
 	const referenceImage = "https://example.com/reference.png"
-	specs := verificationModelSpecs("vip-key", "value-key", referenceImage)
+	specs, err := verificationModelSpecs("vip-key", "value-key", referenceImage)
+	require.NoError(t, err)
 
 	expected := map[string]struct {
 		credential string
 		duration   int
 		needsImage bool
 	}{
-		"seedance-2.0-vip-720p-mini-azhw": {credential: "vip", duration: 4},
-		"seedance2.0-sd2":                 {credential: "value", duration: 11, needsImage: true},
-		"seedance-2.0-vip-720p-fast-azhw": {credential: "vip", duration: 4},
-		"seedance-2.0-933-720p-azhw":      {credential: "value", duration: 4},
-		"seedance-2.0-vip-720p-azhw":      {credential: "vip", duration: 4},
-		"seedance-2.0-933-1080p-azhw":     {credential: "value", duration: 4},
-		"seedance-2.0-vip-1080p-azhw":     {credential: "vip", duration: 4},
-		"seedance-2.0-933-4k-azhw":        {credential: "value", duration: 4},
-		"seedance-2.0-vip-4k-azhw":        {credential: "vip", duration: 4},
-		"seedance-933-pro-pi":             {credential: "value", duration: 15},
+		feicai.ProviderModelSeedance20Mini720P:      {credential: "vip", duration: 4},
+		feicai.ProviderModelSeedance20SD2720P:       {credential: "value", duration: 11, needsImage: true},
+		feicai.ProviderModelSeedance20Fast720P:      {credential: "vip", duration: 4},
+		feicai.ProviderModelSeedance20Value720P:     {credential: "value", duration: 4},
+		feicai.ProviderModelSeedance20Standard720P:  {credential: "vip", duration: 4},
+		feicai.ProviderModelSeedance20Value1080P:    {credential: "value", duration: 4},
+		feicai.ProviderModelSeedance20Standard1080P: {credential: "vip", duration: 4},
+		feicai.ProviderModelSeedance20Value4K:       {credential: "value", duration: 4},
+		feicai.ProviderModelSeedance20Standard4K:    {credential: "vip", duration: 4},
+		feicai.ProviderModelSeedance20ProPI720P:     {credential: "value", duration: 15},
 	}
 
 	require.Len(t, specs, len(expected))
@@ -63,7 +65,8 @@ func TestValidatedBaseURLRequiresExplicitOptInForHTTP(t *testing.T) {
 }
 
 func TestSelectVerificationModelSpecsUsesExactUniqueModels(t *testing.T) {
-	specs := verificationModelSpecs("vip-key", "value-key", "https://example.com/reference.png")
+	specs, err := verificationModelSpecs("vip-key", "value-key", "https://example.com/reference.png")
+	require.NoError(t, err)
 
 	selected, err := selectVerificationModelSpecs(
 		specs,
@@ -98,6 +101,8 @@ func TestVerificationReportRedactsProviderTaskAndContentIdentities(t *testing.T)
 	assert.NotContains(t, serialized, "private-provider-task-id")
 	assert.NotContains(t, serialized, "private-observed-task-id")
 	assert.NotContains(t, serialized, "private-content-url")
+	assert.NotContains(t, serialized, "task_list")
+	assert.NotContains(t, serialized, "task_quota")
 }
 
 func TestProviderErrorCodeDoesNotEchoRawProviderResponse(t *testing.T) {

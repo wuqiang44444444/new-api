@@ -292,8 +292,6 @@ func migrateDB() error {
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
-		&Asset{},
-		&AssetGroup{},
 		&ChannelAssetCredential{},
 		&CasbinRule{},
 		&AuthzRole{},
@@ -304,10 +302,10 @@ func migrateDB() error {
 	if err := migrateBillingReconciliationDB(); err != nil {
 		return err
 	}
-	if err := migrateTaskApplicationScope(); err != nil {
+	if err := migrateFunCloudProtocolNames(); err != nil {
 		return err
 	}
-	if err := migrateSeedanceURLMediaArraysProtocol(); err != nil {
+	if err := migrateTaskApplicationScope(); err != nil {
 		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
@@ -369,8 +367,6 @@ func migrateDBFast() error {
 		{&SystemInstance{}, "SystemInstance"},
 		{&SystemTask{}, "SystemTask"},
 		{&SystemTaskLock{}, "SystemTaskLock"},
-		{&Asset{}, "Asset"},
-		{&AssetGroup{}, "AssetGroup"},
 		{&ChannelAssetCredential{}, "ChannelAssetCredential"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
@@ -399,10 +395,10 @@ func migrateDBFast() error {
 	if err := migrateBillingReconciliationDB(); err != nil {
 		return err
 	}
-	if err := migrateTaskApplicationScope(); err != nil {
+	if err := migrateFunCloudProtocolNames(); err != nil {
 		return err
 	}
-	if err := migrateSeedanceURLMediaArraysProtocol(); err != nil {
+	if err := migrateTaskApplicationScope(); err != nil {
 		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {

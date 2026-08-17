@@ -18,18 +18,22 @@ const (
 )
 
 type TaskAsyncBillingContext struct {
-	TieredSnapshot  *billingexpr.BillingSnapshot `json:"tiered_snapshot,omitempty"`
-	BillingProbe    *billingexpr.RequestInput    `json:"billing_probe,omitempty"`
-	EstimatedTokens int                          `json:"estimated_tokens,omitempty"`
-	ActualTokens    int                          `json:"actual_tokens,omitempty"`
-	State           TaskBillingState             `json:"state,omitempty"`
-	Error           string                       `json:"error,omitempty"`
-	Attempts        int                          `json:"attempts,omitempty"`
-	NextRetryAt     int64                        `json:"next_retry_at,omitempty"`
-	Operation       string                       `json:"operation,omitempty"`
-	TargetQuota     *int                         `json:"target_quota,omitempty"`
-	Reason          string                       `json:"reason,omitempty"`
-	QuotaClamp      *common.QuotaClamp           `json:"quota_clamp,omitempty"`
+	TieredSnapshot          *billingexpr.BillingSnapshot         `json:"tiered_snapshot,omitempty"`
+	BillingProbe            *billingexpr.RequestInput            `json:"billing_probe,omitempty"`
+	EstimatedTokens         int                                  `json:"estimated_tokens,omitempty"`
+	ActualTokens            int                                  `json:"actual_tokens,omitempty"`
+	ActualUsageReported     bool                                 `json:"actual_usage_reported,omitempty"`
+	ActualUsageSource       string                               `json:"actual_usage_source,omitempty"`
+	ActualUsageEvidence     map[string]int                       `json:"actual_usage_evidence,omitempty"`
+	ProviderBillingEvidence *relaycommon.ProviderBillingEvidence `json:"provider_billing_evidence,omitempty"`
+	State                   TaskBillingState                     `json:"state,omitempty"`
+	Error                   string                               `json:"error,omitempty"`
+	Attempts                int                                  `json:"attempts,omitempty"`
+	NextRetryAt             int64                                `json:"next_retry_at,omitempty"`
+	Operation               string                               `json:"operation,omitempty"`
+	TargetQuota             *int                                 `json:"target_quota,omitempty"`
+	Reason                  string                               `json:"reason,omitempty"`
+	QuotaClamp              *common.QuotaClamp                   `json:"quota_clamp,omitempty"`
 }
 
 func AttachAsyncTaskBilling(privateData *TaskPrivateData, info *relaycommon.RelayInfo, quota int) {

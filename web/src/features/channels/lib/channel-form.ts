@@ -277,10 +277,12 @@ export const channelFormSchema = z
       .enum([
         'modelark_v3_volcengine',
         'modelark_v3_byteplus',
-        'media_task_v1',
+        'tokensave_media_task_v1',
+        'moxing_media_task_v1',
+        'moxing_modelark_media_v1',
         'ark_media_v1',
-        'url_media_arrays_v1',
-        'funcloud_seedance_v2',
+        'feicai_videos_v1',
+        'funcloud_seedance',
       ])
       .optional(),
     asset_upstream_protocol: z
@@ -289,7 +291,10 @@ export const channelFormSchema = z
         'volcengine_assets_action_v2024_01_01',
         'byteplus_assets_action_v2024_01_01',
         'ark_assets_v1',
-        'relay_assets_v1',
+        'tokensave_assets_v1',
+        'moxing_joycreator_assets_v1',
+        'moxing_volc_assets_v1',
+        'funcloud_material',
       ])
       .optional(),
     azure_responses_version: z.string().optional(), // Azure specific

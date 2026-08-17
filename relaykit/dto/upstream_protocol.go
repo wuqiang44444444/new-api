@@ -2,7 +2,6 @@ package dto
 
 import (
 	"fmt"
-	"strings"
 )
 
 // VideoUpstreamProtocol identifies a code-backed Seedance southbound adapter.
@@ -12,20 +11,24 @@ type VideoUpstreamProtocol string
 const (
 	VideoUpstreamProtocolModelArkV3Volcengine VideoUpstreamProtocol = "modelark_v3_volcengine"
 	VideoUpstreamProtocolModelArkV3BytePlus   VideoUpstreamProtocol = "modelark_v3_byteplus"
-	VideoUpstreamProtocolMediaTaskV1          VideoUpstreamProtocol = "media_task_v1"
+	VideoUpstreamProtocolTokenSaveMediaTaskV1 VideoUpstreamProtocol = "tokensave_media_task_v1"
+	VideoUpstreamProtocolMoxingMediaTaskV1    VideoUpstreamProtocol = "moxing_media_task_v1"
+	VideoUpstreamProtocolMoxingModelArkV1     VideoUpstreamProtocol = "moxing_modelark_media_v1"
 	VideoUpstreamProtocolArkMediaV1           VideoUpstreamProtocol = "ark_media_v1"
-	VideoUpstreamProtocolURLMediaArraysV1     VideoUpstreamProtocol = "url_media_arrays_v1"
-	VideoUpstreamProtocolFunCloudSeedanceV2   VideoUpstreamProtocol = "funcloud_seedance_v2"
+	VideoUpstreamProtocolFeicaiVideosV1       VideoUpstreamProtocol = "feicai_videos_v1"
+	VideoUpstreamProtocolFunCloudSeedance     VideoUpstreamProtocol = "funcloud_seedance"
 )
 
 func (p VideoUpstreamProtocol) IsValid() bool {
 	switch p {
 	case VideoUpstreamProtocolModelArkV3Volcengine,
 		VideoUpstreamProtocolModelArkV3BytePlus,
-		VideoUpstreamProtocolMediaTaskV1,
+		VideoUpstreamProtocolTokenSaveMediaTaskV1,
+		VideoUpstreamProtocolMoxingMediaTaskV1,
+		VideoUpstreamProtocolMoxingModelArkV1,
 		VideoUpstreamProtocolArkMediaV1,
-		VideoUpstreamProtocolURLMediaArraysV1,
-		VideoUpstreamProtocolFunCloudSeedanceV2:
+		VideoUpstreamProtocolFeicaiVideosV1,
+		VideoUpstreamProtocolFunCloudSeedance:
 		return true
 	default:
 		return false
@@ -45,14 +48,16 @@ func (p VideoUpstreamProtocol) TransportProfile() VideoUpstreamProfile {
 	switch p {
 	case VideoUpstreamProtocolModelArkV3Volcengine, VideoUpstreamProtocolModelArkV3BytePlus:
 		return VideoUpstreamProfileOfficial
-	case VideoUpstreamProtocolMediaTaskV1:
+	case VideoUpstreamProtocolTokenSaveMediaTaskV1, VideoUpstreamProtocolMoxingMediaTaskV1:
 		return VideoUpstreamProfileThirdPartyRelay
+	case VideoUpstreamProtocolMoxingModelArkV1:
+		return VideoUpstreamProfileThirdPartyMoxingModelArk
 	case VideoUpstreamProtocolArkMediaV1:
 		return VideoUpstreamProfileThirdPartyReverseProxy
-	case VideoUpstreamProtocolURLMediaArraysV1:
-		return VideoUpstreamProfileThirdPartyJSONVideoMediaArrays
-	case VideoUpstreamProtocolFunCloudSeedanceV2:
-		return VideoUpstreamProfileThirdPartyFunCloudSeedanceV2
+	case VideoUpstreamProtocolFeicaiVideosV1:
+		return VideoUpstreamProfileThirdPartyFeicaiVideos
+	case VideoUpstreamProtocolFunCloudSeedance:
+		return VideoUpstreamProfileThirdPartyFunCloudSeedance
 	default:
 		return ""
 	}
@@ -60,16 +65,23 @@ func (p VideoUpstreamProtocol) TransportProfile() VideoUpstreamProfile {
 
 func (p VideoUpstreamProtocol) TransportPaths(providerModel string) (string, string) {
 	switch p {
-	case VideoUpstreamProtocolMediaTaskV1:
+	case VideoUpstreamProtocolTokenSaveMediaTaskV1,
+		VideoUpstreamProtocolMoxingMediaTaskV1,
+		VideoUpstreamProtocolMoxingModelArkV1:
 		return "/v1/media/generations", "/v1/media/tasks/{task_id}"
 	case VideoUpstreamProtocolArkMediaV1:
 		return "/v1/ark/media/generations", "/v1/ark/media/tasks/{task_id}"
-	case VideoUpstreamProtocolURLMediaArraysV1:
+	case VideoUpstreamProtocolFeicaiVideosV1:
 		return "/v1/videos", "/v1/videos/{task_id}"
-	case VideoUpstreamProtocolFunCloudSeedanceV2:
-		createPath := "/api/v2/open/aigc/seedance2-0"
-		if strings.Contains(strings.ToLower(strings.TrimSpace(providerModel)), "fast") {
-			createPath += "-fast"
+	case VideoUpstreamProtocolFunCloudSeedance:
+		createPath, ok := map[string]string{
+			"seedance-2":      "/api/v2/open/aigc/seedance2-0",
+			"seedance-2-fast": "/api/v2/open/aigc/seedance2-0-fast",
+			"seedance-2-mini": "/api/v2/open/aigc/seedance2-0-mini",
+			"seedance-2-5":    "/api/v2/open/aigc/seedance2-5",
+		}[providerModel]
+		if !ok {
+			return "", ""
 		}
 		return createPath, "/api/v2/open/aigc/{task_id}"
 	default:
@@ -80,11 +92,14 @@ func (p VideoUpstreamProtocol) TransportPaths(providerModel string) (string, str
 type AssetUpstreamProtocol string
 
 const (
-	AssetUpstreamProtocolNone             AssetUpstreamProtocol = "none"
-	AssetUpstreamProtocolVolcengineAction AssetUpstreamProtocol = "volcengine_assets_action_v2024_01_01"
-	AssetUpstreamProtocolBytePlusAction   AssetUpstreamProtocol = "byteplus_assets_action_v2024_01_01"
-	AssetUpstreamProtocolArkAssetsV1      AssetUpstreamProtocol = "ark_assets_v1"
-	AssetUpstreamProtocolRelayAssetsV1    AssetUpstreamProtocol = "relay_assets_v1"
+	AssetUpstreamProtocolNone               AssetUpstreamProtocol = "none"
+	AssetUpstreamProtocolVolcengineAction   AssetUpstreamProtocol = "volcengine_assets_action_v2024_01_01"
+	AssetUpstreamProtocolBytePlusAction     AssetUpstreamProtocol = "byteplus_assets_action_v2024_01_01"
+	AssetUpstreamProtocolArkAssetsV1        AssetUpstreamProtocol = "ark_assets_v1"
+	AssetUpstreamProtocolTokenSaveAssetsV1  AssetUpstreamProtocol = "tokensave_assets_v1"
+	AssetUpstreamProtocolMoxingJoyCreatorV1 AssetUpstreamProtocol = "moxing_joycreator_assets_v1"
+	AssetUpstreamProtocolMoxingVolcAssetsV1 AssetUpstreamProtocol = "moxing_volc_assets_v1"
+	AssetUpstreamProtocolFunCloudMaterial   AssetUpstreamProtocol = "funcloud_material"
 )
 
 func (p AssetUpstreamProtocol) IsValid() bool {
@@ -93,7 +108,10 @@ func (p AssetUpstreamProtocol) IsValid() bool {
 		AssetUpstreamProtocolVolcengineAction,
 		AssetUpstreamProtocolBytePlusAction,
 		AssetUpstreamProtocolArkAssetsV1,
-		AssetUpstreamProtocolRelayAssetsV1:
+		AssetUpstreamProtocolTokenSaveAssetsV1,
+		AssetUpstreamProtocolMoxingJoyCreatorV1,
+		AssetUpstreamProtocolMoxingVolcAssetsV1,
+		AssetUpstreamProtocolFunCloudMaterial:
 		return true
 	default:
 		return false
@@ -117,8 +135,14 @@ func (p AssetUpstreamProtocol) TransportProfile() AssetUpstreamProfile {
 		return AssetUpstreamProfileOfficial
 	case AssetUpstreamProtocolArkAssetsV1:
 		return AssetUpstreamProfileArk
-	case AssetUpstreamProtocolRelayAssetsV1:
+	case AssetUpstreamProtocolTokenSaveAssetsV1:
 		return AssetUpstreamProfileRelay
+	case AssetUpstreamProtocolMoxingJoyCreatorV1:
+		return AssetUpstreamProfileMoxingJoyCreator
+	case AssetUpstreamProtocolMoxingVolcAssetsV1:
+		return AssetUpstreamProfileMoxingVolc
+	case AssetUpstreamProtocolFunCloudMaterial:
+		return AssetUpstreamProfileFunCloudMaterial
 	default:
 		return ""
 	}

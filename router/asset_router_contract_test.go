@@ -19,12 +19,10 @@ func TestAssetRouterPublishesOnlyAssetsAndAssetGroups(t *testing.T) {
 
 	for _, expected := range []string{
 		http.MethodPost + " /v1/assets",
-		http.MethodGet + " /v1/assets",
 		http.MethodGet + " /v1/assets/:asset_id",
 		http.MethodPatch + " /v1/assets/:asset_id",
 		http.MethodDelete + " /v1/assets/:asset_id",
 		http.MethodPost + " /v1/asset-groups",
-		http.MethodGet + " /v1/asset-groups",
 		http.MethodGet + " /v1/asset-groups/:group_id",
 		http.MethodDelete + " /v1/asset-groups/:group_id",
 	} {
@@ -33,6 +31,8 @@ func TestAssetRouterPublishesOnlyAssetsAndAssetGroups(t *testing.T) {
 	}
 
 	for _, removed := range []string{
+		http.MethodGet + " /v1/assets",
+		http.MethodGet + " /v1/asset-groups",
 		http.MethodGet + " /v1/api-service-rules/current",
 		http.MethodPost + " /v1/api-service-rules/acceptance",
 		http.MethodPost + " /v1/real-person-authorizations",

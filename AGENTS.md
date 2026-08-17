@@ -56,8 +56,10 @@ web/           — Frontend (React 19, Rsbuild, Base UI, Tailwind)
 - Link 不使用 publication、Link SKU、逐模型 capability、不可变 implementation、execution binding、
   内容 hash 等价证明、Link Access Plan 或候选交集。
 - Seedance 的 Channel 模型清单描述其专用路由；它不写入 NEWAPI 原生 Ability 或通用分发缓存。
-  模型发现与价格接口只读取等价投影。Task、create attempt、Asset/AssetGroup、计费和审计快照描述
-  已经发生的事实。
+  模型发现与价格接口只读取等价投影。Task、create attempt、计费和审计快照描述已经发生的事实；
+  素材控制面是调用方自管的无状态单资源代理，不建立本地 Asset/AssetGroup 事实。
+- 客户模型可使用部署方自定义名称，`model_mapping` 精确映射到代码协议登记的上游模型。公开元数据
+  不返回上游身份；素材支持以 `api.assets` 为准，相同非空 `reuse_scope` 仅表示可尝试复用同一素材域。
 
 ## Internationalization (i18n)
 
@@ -178,28 +180,26 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
   素材和计费事实，不因当前配置、凭据或价格变化而重新选渠或重解释。
 - 预扣、结算、差额、退款和补偿必须幂等。客户退款与 Provider exposure 分账；Provider 金额未知时必须保持未知，不得以客户 quota 冒充供应商成本。
 
-**Link assets and real-person verification proxy:**
+**Link stateless asset proxy:**
 
-- 私域素材只暴露 `ast_*`、`astgrp_*` 和 `asset://ast_*`，不暴露 Provider 私域 ID、账号或协议细节；
-  官方公共预置素材使用 `asset://pubref_<Provider公共AssetID>`，平台只校验格式、去命名空间和转发，
-  不提供公共目录或资格判断。source URL 只允许出现在创建请求和当次 Provider 调用中，不得持久化、
-  记录或返回；平台不保存媒体二进制。
-- 一个 Asset/AssetGroup 一对一固定到 `user_id + app_id`、Channel、Provider 账号、Region/Project、
-  素材协议和一个 Provider 资源。Resolver 在每次 Provider 发送前复检所有权、app、状态和固定作用域。
-- 同一 Channel、Base URL、协议和 Provider 账号作用域内允许轮换 Key/AK/SK；凭据值不参与素材作用域
-  指纹。改变 Base URL、协议、账号、Region 或 Project 必须新建渠道。
-- 请求级 HTTP/HTTPS URL 或 Data URL 不得自动获得 Asset、迁移或真人认证语义；不得建立 0..N
-  AssetBinding、自动迁移、物化或 source fallback。
-- 国内、海外和第三方素材不能自动迁移或切换。一个客户模型只能配置官方、第三方或无素材库之一。
-- 真人认证作为 AssetGroup 上游流程，只返回 Provider 官方/第三方链接或二维码并按需查询状态；不得
-  自建人脸表单、法律授权域、reservation 或撤回状态机。
-- 素材管理不使用 `create_unknown` / `delete_unknown`、自动重试、孤儿扫描或管理员核查系统；不明确
-  结果按失败返回并写脱敏技术日志。
+- `/v1/assets` 与 `/v1/asset-groups` 只提供带客户 `model` 的单资源创建、查询、更新或删除；不提供列表。
+  平台按客户模型选择唯一 Seedance Channel，并由其 `asset_upstream_protocol` adapter 调用 Provider。
+- 素材和素材组 ID 是 Provider 返回的不透明 ID；平台可返回 `asset://<opaque-id>`，但不得返回 Provider
+  名称、Channel ID、账号、Region/Project、协议细节或上游原始模型。调用方保存 `model + id + reference`。
+- 视频请求中的 `asset://<opaque-id>` 不查询本地数据库，也不验证所有权、应用、状态、模型、Channel、
+  账号或 Provider 作用域；所选视频 adapter 原样接收引用，最终兼容性由 Provider 判定。
+- 平台不建立 Asset/AssetGroup、素材 binding、resolver、列表索引、跨 Provider 探测、fallback、迁移或
+  自动物化。错误 Provider ID 只发送给客户模型选定的 Provider；失败按脱敏统一错误返回，不换渠道。
+- source URL 只允许出现在创建请求和当次 Provider 调用中，不得持久化、记录或返回；平台不保存媒体
+  二进制。真人认证仅代理 Provider 素材组流程和认证 URL，不自建人脸表单、授权域或撤回状态机。
+- 不支持的模型或操作必须根据代码 adapter 与已验证 Provider 文档明确返回
+  `unsupported_asset_operation`，不得伪装为上游故障或尝试其它 Provider。
 
 **Security and authoritative facts:**
 
 - 不得提交、记录或输出密钥、Token、Cookie、支付凭据、生产配置、完整签名 URL、Task 私有数据或原始 Provider 响应。
-- 所有客户资源必须按 `user_id + app_id` 隔离；素材组真人认证沿用同一租户作用域，不建立独立最终用户身份域。
+- Task、资金及平台持久化客户资源必须按 `user_id + app_id` 隔离；无状态素材代理不建立平台资源所有权，
+  由受信应用自行管理其 Provider opaque ID。
 - 主数据库是合同、Task、资金、资源和授权的持久化事实源；Redis、进程缓存和前端状态必须可重建，不得成为唯一权威。
 
 **Billing expression system:** When working on tiered/dynamic billing (expression-based pricing), MUST read `pkg/billingexpr/expr.md` first. It documents the design philosophy, expression language, full architecture, token normalization rules, quota conversion, and expression versioning. All billing expression changes must follow that document.

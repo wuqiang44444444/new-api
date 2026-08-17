@@ -47,14 +47,14 @@ describe('channel asset credential transforms', () => {
       type: 61,
       key: 'video-api-key',
       models: 'seedance-2.0-standard',
-      video_upstream_protocol: 'funcloud_seedance_v2',
+      video_upstream_protocol: 'funcloud_seedance',
       asset_upstream_protocol: 'none',
       priority: 99,
       weight: 100,
     })
 
     const settings = JSON.parse(payload.channel.settings || '{}')
-    assert.equal(settings.video_upstream_protocol, 'funcloud_seedance_v2')
+    assert.equal(settings.video_upstream_protocol, 'funcloud_seedance')
     assert.equal(settings.asset_upstream_protocol, 'none')
     assert.equal('video_upstream_create_path' in settings, false)
     assert.equal(payload.channel.priority, null)

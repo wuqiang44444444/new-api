@@ -63,6 +63,24 @@ func TestSeedanceModelUniquenessIsEnforcedOnEnabledManagementWrite(t *testing.T)
 	require.NoError(t, ValidateSeedanceChannelModelUniqueness(db, different))
 }
 
+func TestFeicaiSeedanceChannelSettingsUseDedicatedProtocolWithoutAssets(t *testing.T) {
+	withSeedanceChannelDB(t)
+	channel := &Channel{
+		Type:    constant.ChannelTypeSeedanceLink,
+		Key:     "single-provider-key",
+		BaseURL: common.GetPointer("https://feicai.example.com"),
+	}
+	settings := dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFeicaiVideosV1,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone,
+	}
+
+	require.NoError(t, validateSeedanceChannelSettings(channel, &settings))
+	assert.Empty(t, settings.VideoUpstreamProfile)
+	assert.Empty(t, settings.VideoUpstreamCreatePath)
+	assert.Empty(t, settings.VideoUpstreamQueryPathTemplate)
+}
+
 func TestGetEnabledSeedanceChannelUsesDedicatedRoutingWithoutPriorityDistribution(t *testing.T) {
 	db := withSeedanceChannelDB(t)
 	priority := int64(-999)
@@ -123,6 +141,111 @@ func TestSeedanceChannelIsNotPublishedIntoNativeAbilities(t *testing.T) {
 	assert.Equal(t, constant.ChannelTypeSeedanceLink, views[0].ChannelType)
 }
 
+func TestConfiguredSeedancePublicModelsIncludeDisabledAPIContracts(t *testing.T) {
+	db := withSeedanceChannelDB(t)
+	channels := []*Channel{
+		seedanceTestChannel("seedance-official-disabled", common.ChannelStatusManuallyDisabled),
+		seedanceTestChannel("seedance-funcloud-disabled", common.ChannelStatusManuallyDisabled),
+		seedanceTestChannel("seedance-moxing-disabled", common.ChannelStatusManuallyDisabled),
+		seedanceTestChannel("seedance-feicai-disabled", common.ChannelStatusManuallyDisabled),
+		seedanceTestChannel("seedance-tokensave-disabled", common.ChannelStatusManuallyDisabled),
+	}
+	channels[0].SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolVolcengineAction,
+		AssetMinURLTTLSeconds: 3600,
+	})
+	channels[1].SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial,
+		AssetMinURLTTLSeconds: 3600,
+	})
+	channels[2].SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMoxingMediaTaskV1,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolMoxingJoyCreatorV1,
+		AssetMinURLTTLSeconds: 3600,
+	})
+	channels[3].SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFeicaiVideosV1,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone,
+	})
+	channels[4].SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolTokenSaveMediaTaskV1,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolTokenSaveAssetsV1,
+		AssetMinURLTTLSeconds: 3600,
+	})
+	for _, channel := range channels {
+		require.NoError(t, db.Create(channel).Error)
+	}
+
+	catalog, err := GetConfiguredSeedancePublicModels()
+	require.NoError(t, err)
+	require.Len(t, catalog, 5)
+
+	byModel := make(map[string]SeedancePublicModel, len(catalog))
+	for _, item := range catalog {
+		byModel[item.ModelName] = item
+	}
+	official := byModel["seedance-official-disabled"]
+	assert.False(t, official.Enabled)
+	assert.Equal(t, "modelark_v3", official.API.Video.Protocol)
+	assert.True(t, official.API.Assets.Supported)
+	assert.Equal(t, "caller_managed_stateless", official.API.Assets.ManagementMode)
+	assert.True(t, official.API.Assets.RequiresModel)
+	assert.False(t, publicOperationSupported(official.API.Assets.Operations, "list_assets"))
+	assert.True(t, publicOperationSupported(official.API.Assets.Operations, "get_asset_group_verification"))
+	require.NotNil(t, official.API.Assets.Creation)
+	assert.Equal(t, 3600, int(official.API.Assets.Creation.Source.ExpiresAtMinRemainingSeconds))
+	assert.Equal(t, dto.PublicAssetGroupOptional, publicAssetGroupRequirement(official.API.Assets.Media, AssetKindGeneral, "image"))
+	assert.Equal(t, dto.PublicAssetGroupRequired, publicAssetGroupRequirement(official.API.Assets.Media, AssetKindRealPerson, "image"))
+
+	funCloud := byModel["seedance-funcloud-disabled"]
+	assert.True(t, funCloud.API.Assets.Supported)
+	assert.False(t, publicOperationSupported(funCloud.API.Assets.Operations, "update_asset"))
+	assert.False(t, publicOperationSupported(funCloud.API.Assets.Operations, "delete_asset"))
+	assert.True(t, publicOperationSupported(funCloud.API.Assets.Operations, "delete_asset_group"))
+	require.NotNil(t, funCloud.API.Assets.Creation)
+	assert.Contains(t, funCloud.API.Assets.Creation.RequiredFields, "asset_group_id")
+	assert.Equal(t, int64(dto.PublicAssetFunCloudMaxBytes), funCloud.API.Assets.Creation.Source.MaxBytes)
+	assert.True(t, funCloud.API.Assets.Creation.Source.ContentTypeMustMatchMedia)
+	assert.Equal(t, dto.PublicAssetGroupRequired, publicAssetGroupRequirement(funCloud.API.Assets.Media, AssetKindGeneral, "image"))
+
+	moxing := byModel["seedance-moxing-disabled"]
+	assert.True(t, moxing.API.Assets.Supported)
+	assert.True(t, publicOperationSupported(moxing.API.Assets.Operations, "update_asset"))
+	assert.False(t, publicOperationSupported(moxing.API.Assets.Operations, "delete_asset_group"))
+
+	feicai := byModel["seedance-feicai-disabled"]
+	assert.False(t, feicai.API.Assets.Supported)
+	assert.False(t, publicOperationSupported(feicai.API.Assets.Operations, "create_asset"))
+	assert.Nil(t, feicai.API.Assets.Creation)
+
+	tokenSave := byModel["seedance-tokensave-disabled"]
+	assert.True(t, tokenSave.API.Assets.Supported)
+	assert.False(t, publicOperationSupported(tokenSave.API.Assets.Operations, "create_asset_group"))
+	require.NotNil(t, tokenSave.API.Assets.Creation)
+	assert.NotContains(t, tokenSave.API.Assets.Creation.RequiredFields, "asset_group_id")
+	assert.Equal(t, dto.PublicAssetGroupUnsupported, publicAssetGroupRequirement(tokenSave.API.Assets.Media, AssetKindGeneral, "image"))
+}
+
+func publicOperationSupported(operations []dto.PublicAPIOperation, name string) bool {
+	for _, operation := range operations {
+		if operation.Operation == name {
+			return operation.Supported
+		}
+	}
+	return false
+}
+
+func publicAssetGroupRequirement(media []dto.PublicAssetMedia, kind, mediaType string) string {
+	for _, item := range media {
+		if item.Kind == kind && item.MediaType == mediaType {
+			return item.AssetGroupRequirement
+		}
+	}
+	return ""
+}
+
 func TestSeedanceSettingsPersistOnlyCodeBackedProtocols(t *testing.T) {
 	channel := seedanceTestChannel("seedance-cn", common.ChannelStatusEnabled)
 
@@ -141,19 +264,20 @@ func TestSeedanceSettingsRequireOneCredentialAndMatchingAssetProtocol(t *testing
 	mismatched := seedanceTestChannel("seedance-global", common.ChannelStatusEnabled)
 	mismatched.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3BytePlus,
-		AssetUpstreamProtocol: dto.AssetUpstreamProtocolRelayAssetsV1,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolTokenSaveAssetsV1,
 		AssetMinURLTTLSeconds: 3600,
 		AssetProviderProject:  "project-a",
 		AssetRegion:           "ap-southeast-1",
 	})
 	require.ErrorContains(t, mismatched.ValidateSettings(), "Media Task V1")
 
-	matched := seedanceTestChannel("seedance-global", common.ChannelStatusEnabled)
+	matched := seedanceTestChannel("customer-standard-a", common.ChannelStatusEnabled)
 	baseURL := "https://relay.example.com"
 	matched.BaseURL = &baseURL
+	matched.ModelMapping = common.GetPointer(`{"customer-standard-a":"doubao-seedance-2-0-260128"}`)
 	matched.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMediaTaskV1,
-		AssetUpstreamProtocol: dto.AssetUpstreamProtocolRelayAssetsV1,
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolTokenSaveMediaTaskV1,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolTokenSaveAssetsV1,
 		AssetMinURLTTLSeconds: 3600,
 	})
 	require.NoError(t, matched.ValidateSettings())
@@ -178,4 +302,126 @@ func TestSeedanceSettingsAcceptVolcengineOfficialAssetProtocol(t *testing.T) {
 	settings.AssetRegion = "ap-southeast-1"
 	channel.SetOtherSettings(settings)
 	require.ErrorContains(t, channel.ValidateSettings(), VolcengineAssetActionRegion)
+}
+
+func TestMoxingTokenSaveSettingsRequireExactCustomerModelMapping(t *testing.T) {
+	tests := []struct {
+		name          string
+		customerModel string
+		providerModel string
+		video         dto.VideoUpstreamProtocol
+		asset         dto.AssetUpstreamProtocol
+	}{
+		{
+			name: "standard line A", customerModel: "customer-standard-a", providerModel: "doubao-seedance-2-0-260128",
+			video: dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, asset: dto.AssetUpstreamProtocolTokenSaveAssetsV1,
+		},
+		{
+			name: "standard line B", customerModel: "customer-standard-b", providerModel: "doubao-seedance-2-0-260128",
+			video: dto.VideoUpstreamProtocolMoxingMediaTaskV1, asset: dto.AssetUpstreamProtocolMoxingJoyCreatorV1,
+		},
+		{
+			name: "fast line", customerModel: "customer-fast", providerModel: "doubao-seedance-2-0-fast-260128",
+			video: dto.VideoUpstreamProtocolMoxingModelArkV1, asset: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
+		},
+		{
+			name: "mini line", customerModel: "customer-mini", providerModel: "doubao-seedance-2-0-mini-260615",
+			video: dto.VideoUpstreamProtocolMoxingModelArkV1, asset: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
+		},
+		{
+			name: "next line", customerModel: "customer-next", providerModel: "doubao-seedance-2-5-260628",
+			video: dto.VideoUpstreamProtocolMoxingModelArkV1, asset: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			channel := seedanceTestChannel(test.customerModel, common.ChannelStatusEnabled)
+			channel.BaseURL = common.GetPointer("https://provider.example.com")
+			channel.ModelMapping = common.GetPointer(fmt.Sprintf(`{"%s":"%s"}`, test.customerModel, test.providerModel))
+			channel.SetOtherSettings(dto.ChannelOtherSettings{
+				VideoUpstreamProtocol: test.video, AssetUpstreamProtocol: test.asset, AssetMinURLTTLSeconds: 3600,
+			})
+			require.NoError(t, channel.ValidateSettings())
+			if test.asset == dto.AssetUpstreamProtocolMoxingVolcAssetsV1 {
+				assert.Equal(t, "default", channel.GetOtherSettings().AssetProviderProject)
+			}
+
+			channel.ModelMapping = common.GetPointer(fmt.Sprintf(`{"%s":"wrong-model"}`, test.customerModel))
+			require.ErrorContains(t, channel.ValidateSettings(), "model_mapping")
+		})
+	}
+}
+
+func TestFunCloudSettingsRequireExactModelAndMaterialSupport(t *testing.T) {
+	tests := []struct {
+		customerModel string
+		providerModel string
+		material      bool
+	}{
+		{customerModel: "public-standard", providerModel: "seedance-2", material: true},
+		{customerModel: "public-fast", providerModel: "seedance-2-fast", material: true},
+		{customerModel: "public-mini", providerModel: "seedance-2-mini", material: true},
+		{customerModel: "public-next", providerModel: "seedance-2-5", material: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.customerModel, func(t *testing.T) {
+			channel := seedanceTestChannel(test.customerModel, common.ChannelStatusEnabled)
+			channel.BaseURL = common.GetPointer("https://funcloud.example.com")
+			channel.ModelMapping = common.GetPointer(fmt.Sprintf(`{"%s":"%s"}`, test.customerModel, test.providerModel))
+			assetProtocol := dto.AssetUpstreamProtocolNone
+			if test.material {
+				assetProtocol = dto.AssetUpstreamProtocolFunCloudMaterial
+			}
+			channel.SetOtherSettings(dto.ChannelOtherSettings{
+				VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance,
+				AssetUpstreamProtocol: assetProtocol,
+				AssetMinURLTTLSeconds: 3600,
+			})
+			require.NoError(t, channel.ValidateSettings())
+
+			channel.ModelMapping = common.GetPointer(fmt.Sprintf(`{"%s":"wrong"}`, test.customerModel))
+			require.ErrorContains(t, channel.ValidateSettings(), "model_mapping")
+		})
+	}
+
+	unsupportedMaterial := seedanceTestChannel("public-next", common.ChannelStatusEnabled)
+	unsupportedMaterial.BaseURL = common.GetPointer("https://funcloud.example.com")
+	unsupportedMaterial.ModelMapping = common.GetPointer(`{"public-next":"seedance-2-5"}`)
+	unsupportedMaterial.SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial,
+		AssetMinURLTTLSeconds: 3600,
+	})
+	require.ErrorContains(t, unsupportedMaterial.ValidateSettings(), "2.5 does not support")
+}
+
+func TestSeedancePublicAssetReuseScopeUsesConfiguredAssetDomain(t *testing.T) {
+	first := seedanceTestChannel("public-fast-a", common.ChannelStatusEnabled)
+	first.BaseURL = common.GetPointer("https://assets.example.com")
+	first.SetOtherSettings(dto.ChannelOtherSettings{
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
+		AssetProviderProject:  "default",
+	})
+	second := seedanceTestChannel("public-mini-a", common.ChannelStatusEnabled)
+	second.BaseURL = common.GetPointer("https://assets.example.com/")
+	second.SetOtherSettings(dto.ChannelOtherSettings{
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
+		AssetProviderProject:  "default",
+	})
+	differentProtocol := seedanceTestChannel("public-standard-a", common.ChannelStatusEnabled)
+	differentProtocol.BaseURL = common.GetPointer("https://assets.example.com")
+	differentProtocol.SetOtherSettings(dto.ChannelOtherSettings{
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolMoxingJoyCreatorV1,
+	})
+
+	firstScope := seedancePublicAssetReuseScope(first, first.GetOtherSettings().AssetUpstreamProtocol)
+	secondScope := seedancePublicAssetReuseScope(second, second.GetOtherSettings().AssetUpstreamProtocol)
+	differentScope := seedancePublicAssetReuseScope(differentProtocol, differentProtocol.GetOtherSettings().AssetUpstreamProtocol)
+
+	require.NotEmpty(t, firstScope)
+	assert.Equal(t, firstScope, secondScope)
+	assert.NotEqual(t, firstScope, differentScope)
+	assert.Empty(t, seedancePublicAssetReuseScope(first, dto.AssetUpstreamProtocolNone))
 }

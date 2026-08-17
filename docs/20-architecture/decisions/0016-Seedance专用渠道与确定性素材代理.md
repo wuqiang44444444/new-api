@@ -1,9 +1,9 @@
 ---
 adr: 0016
-status: accepted
+status: superseded
 date: 2026-08-10
 last-reviewed: 2026-08-11
-superseded-by: ""
+superseded-by: ADR-0017
 ---
 
 # ADR-0016: Seedance 专用渠道与确定性素材代理

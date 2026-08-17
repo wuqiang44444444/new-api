@@ -7,8 +7,8 @@ import (
 
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty"
+	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/feicai"
 	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/funcloud"
-	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/mediaarrays"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
 
@@ -27,9 +27,10 @@ func videoCreatePath(profile dto.VideoUpstreamProfile, configuredCreatePath stri
 	case "", dto.VideoUpstreamProfileOfficial:
 		return officialVideoCreatePath, nil
 	case dto.VideoUpstreamProfileThirdPartyRelay,
+		dto.VideoUpstreamProfileThirdPartyMoxingModelArk,
 		dto.VideoUpstreamProfileThirdPartyReverseProxy,
-		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-		dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2:
+		dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
+		dto.VideoUpstreamProfileThirdPartyFunCloudSeedance:
 		if strings.TrimSpace(configuredCreatePath) == "" {
 			return "", fmt.Errorf("video_upstream_create_path is required for third-party profile")
 		}
@@ -46,9 +47,10 @@ func videoTaskPath(profile dto.VideoUpstreamProfile, configuredQueryTemplate, ta
 	case "", dto.VideoUpstreamProfileOfficial:
 		return officialVideoCreatePath + "/" + escapedTaskID, nil
 	case dto.VideoUpstreamProfileThirdPartyRelay,
+		dto.VideoUpstreamProfileThirdPartyMoxingModelArk,
 		dto.VideoUpstreamProfileThirdPartyReverseProxy,
-		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-		dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2:
+		dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
+		dto.VideoUpstreamProfileThirdPartyFunCloudSeedance:
 		if strings.TrimSpace(configuredQueryTemplate) == "" {
 			return "", fmt.Errorf("video_upstream_query_path_template is required for third-party profile")
 		}
@@ -66,14 +68,15 @@ func joinVideoUpstreamURL(baseURL, path string) string {
 // convertVideoCreateRequest 按协议转换创建请求体：第三方中转协议转换为统一媒体任务结构，其余透传。
 func convertVideoCreateRequest(profile dto.VideoUpstreamProfile, body []byte) ([]byte, error) {
 	switch profile {
-	case "", dto.VideoUpstreamProfileOfficial, dto.VideoUpstreamProfileThirdPartyReverseProxy:
+	case "", dto.VideoUpstreamProfileOfficial, dto.VideoUpstreamProfileThirdPartyReverseProxy,
+		dto.VideoUpstreamProfileThirdPartyMoxingModelArk:
 		return body, nil
 	case dto.VideoUpstreamProfileThirdPartyRelay:
 		return thirdparty.RelayCreateRequest(body)
-	case dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays:
-		return nil, fmt.Errorf("JSON video media-arrays request must use the typed capability path")
-	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2:
-		return nil, fmt.Errorf("FunCloud video request must use the typed capability path")
+	case dto.VideoUpstreamProfileThirdPartyFeicaiVideos:
+		return nil, fmt.Errorf("the selected video adapter requires the typed capability path")
+	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedance:
+		return nil, fmt.Errorf("the selected video adapter requires the typed capability path")
 	default:
 		return nil, dto.ValidateVideoUpstreamProfile(profile)
 	}
@@ -88,9 +91,11 @@ func normalizeVideoCreateResponse(profile dto.VideoUpstreamProfile, body []byte)
 		return thirdparty.ReverseProxyCreateResponse(body)
 	case dto.VideoUpstreamProfileThirdPartyRelay:
 		return thirdparty.RelayCreateResponse(body)
-	case dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays:
-		return mediaarrays.CreateResponse(body)
-	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2:
+	case dto.VideoUpstreamProfileThirdPartyMoxingModelArk:
+		return thirdparty.RelayCreateResponse(body)
+	case dto.VideoUpstreamProfileThirdPartyFeicaiVideos:
+		return feicai.CreateResponse(body)
+	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedance:
 		return funcloud.CreateResponse(body)
 	default:
 		return nil, dto.ValidateVideoUpstreamProfile(profile)
@@ -103,7 +108,8 @@ func normalizeVideoTaskResponse(
 	adapterVersion relaycommon.VideoSouthboundAdapterVersion,
 	body []byte,
 	expectedTaskID string,
-	responseContext mediaarrays.TaskResponseContext,
+	baseURL string,
+	fetchBody map[string]any,
 ) ([]byte, error) {
 	switch profile {
 	case "", dto.VideoUpstreamProfileOfficial:
@@ -114,19 +120,26 @@ func normalizeVideoTaskResponse(
 		if !adapterVersion.IsThirdPartyRelayV2() {
 			return thirdparty.RelayTaskResponseV1(body)
 		}
-		return thirdparty.RelayTaskResponse(body, expectedTaskID, thirdparty.RelayTaskResponseContext{
-			IncludeVerifiedUsage: false,
-		})
-	case dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays:
-		if !adapterVersion.IsJSONVideoMediaArraysV2() {
+		return thirdparty.RelayTaskResponse(body, expectedTaskID)
+	case dto.VideoUpstreamProfileThirdPartyMoxingModelArk:
+		if !adapterVersion.IsMoxingModelArkV1() {
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "unsupported video adapter revision"}
 		}
-		return mediaarrays.TaskResponse(body, expectedTaskID, responseContext)
-	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2:
-		if !adapterVersion.IsFunCloudSeedanceV2() {
+		return thirdparty.RelayTaskResponse(body, expectedTaskID)
+	case dto.VideoUpstreamProfileThirdPartyFeicaiVideos:
+		if !adapterVersion.IsFeicaiVideos() {
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "unsupported video adapter revision"}
 		}
-		return funcloud.TaskResponse(body, expectedTaskID)
+		return feicai.TaskResponse(body, expectedTaskID, feicai.TaskResponseContext{BaseURL: baseURL})
+	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedance:
+		if !adapterVersion.IsFunCloudSeedanceV3() {
+			return nil, &relaycommon.UpstreamContractViolation{Reason: "unsupported video adapter revision"}
+		}
+		responseContext, err := funCloudTaskResponseContextFromFetchBody(fetchBody)
+		if err != nil {
+			return nil, err
+		}
+		return funcloud.TaskResponse(body, expectedTaskID, responseContext)
 	default:
 		return nil, dto.ValidateVideoUpstreamProfile(profile)
 	}

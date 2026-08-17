@@ -15,11 +15,12 @@ import (
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
-	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/mediaarrays"
+	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
 )
@@ -53,6 +54,7 @@ type requestPayload struct {
 	Priority         *dto.IntValue  `json:"priority,omitempty"`
 	Resolution       string         `json:"resolution,omitempty"`
 	Ratio            string         `json:"ratio,omitempty"`
+	OutputFormat     *string        `json:"output_format,omitempty"`
 	Duration         *dto.IntValue  `json:"duration,omitempty"`
 	Frames           *dto.IntValue  `json:"frames,omitempty"`
 	Seed             *dto.IntValue  `json:"seed,omitempty"`
@@ -80,19 +82,23 @@ type responseTask struct {
 	Tools           []struct {
 		Type string `json:"type"`
 	} `json:"tools"`
-	Usage struct {
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
+	Usage *struct {
+		CompletionTokens *int `json:"completion_tokens"`
+		TotalTokens      *int `json:"total_tokens"`
 		ToolUsage        struct {
 			WebSearch int `json:"web_search"`
 		} `json:"tool_usage"`
 	} `json:"usage"`
-	Error struct {
+	// usage_source/usage_evidence 由第三方归一层写入，描述计费用量的形成字段与全部采集证据。
+	UsageSource   string         `json:"usage_source,omitempty"`
+	UsageEvidence map[string]int `json:"usage_evidence,omitempty"`
+	Error         struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
-	CreatedAt int64 `json:"created_at"`
-	UpdatedAt int64 `json:"updated_at"`
+	ProviderBillingEvidence *relaycommon.ProviderBillingEvidence `json:"_provider_billing_evidence,omitempty"`
+	CreatedAt               int64                                `json:"created_at"`
+	UpdatedAt               int64                                `json:"updated_at"`
 }
 
 type TaskAdaptor struct {
@@ -100,6 +106,7 @@ type TaskAdaptor struct {
 	ChannelType int
 	apiKey      string
 	baseURL     string
+	protocol    dto.VideoUpstreamProtocol
 	profile     dto.VideoUpstreamProfile
 	createPath  string
 }
@@ -109,6 +116,7 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.ChannelType = info.ChannelType
 	a.apiKey = info.ApiKey
 	a.baseURL = info.ChannelBaseUrl
+	a.protocol = protocol
 	a.profile = protocol.TransportProfile()
 	a.createPath, info.ChannelOtherSettings.VideoUpstreamQueryPathTemplate = protocol.TransportPaths(info.UpstreamModelName)
 	info.ChannelOtherSettings.VideoUpstreamProfile = a.profile
@@ -124,8 +132,27 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 			http.StatusBadRequest,
 		)
 	}
+	if err := dto.ValidateVideoUpstreamProtocol(a.protocol); err != nil {
+		return service.TaskErrorWrapperLocal(err, "invalid_video_protocol", http.StatusBadRequest)
+	}
 	if taskErr := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
 		return taskErr
+	}
+	payload, typed, err := a.modelArkContractPayload(c)
+	if err != nil || !typed {
+		if err == nil {
+			err = stderrors.New("Seedance requires the ModelArk V3 request contract")
+		}
+		return service.TaskErrorWrapperLocal(err, "invalid_video_contract", http.StatusBadRequest)
+	}
+	info.Action = modelArkTaskAction(payload)
+	if a.protocol == dto.VideoUpstreamProtocolFunCloudSeedance &&
+		billing_setting.GetBillingMode(info.OriginModelName) != billing_setting.BillingModeTieredExpr {
+		return service.TaskErrorWrapperLocal(
+			fmt.Errorf("customer model %s requires tiered_expr billing", info.OriginModelName),
+			"model_price_error",
+			http.StatusBadRequest,
+		)
 	}
 	return applyVideoServiceTierPolicy(c, info, a.profile)
 }
@@ -146,7 +173,11 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 }
 
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
-	if a.profile == dto.VideoUpstreamProfileThirdPartyRelay && info.OriginModelName == "doubao-seedance-2-0-260128" {
+	if a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedance {
+		return nil
+	}
+	if a.profile == dto.VideoUpstreamProfileThirdPartyRelay &&
+		providerModelFromRelayInfo(info, info.OriginModelName) == modelSeedance20 {
 		return nil
 	}
 	payload, typed, err := a.modelArkContractPayload(c)
@@ -160,7 +191,7 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 			break
 		}
 	}
-	ratio, ok := GetVideoInputRatio(info.OriginModelName, strings.TrimSpace(payload.Resolution), hasVideo)
+	ratio, ok := GetVideoInputRatio(providerModelFromRelayInfo(info, info.OriginModelName), strings.TrimSpace(payload.Resolution), hasVideo)
 	if !ok || ratio == 1.0 {
 		return nil
 	}
@@ -174,7 +205,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		}
 		return bytes.NewReader(data), nil
 	}
-	if data, handled, err := buildJSONVideoMediaArraysCreateRequest(c, info, a.profile); handled {
+	if data, handled, err := buildFeicaiVideoCreateRequest(c, info, a.profile); handled {
 		if err != nil {
 			return nil, err
 		}
@@ -192,11 +223,22 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	} else {
 		info.UpstreamModelName = body.Model
 	}
+	if _, defaultGenerateAudio, ok := providerBillingDefaults(a.protocol, body.Model); ok && defaultGenerateAudio && body.GenerateAudio == nil {
+		value := dto.BoolValue(true)
+		body.GenerateAudio = &value
+	}
 	data, err := common.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	data, err = convertVideoCreateRequest(a.profile, data)
+	switch a.protocol {
+	case dto.VideoUpstreamProtocolMoxingMediaTaskV1:
+		data, err = thirdparty.MoxingMediaCreateRequest(data)
+	case dto.VideoUpstreamProtocolMoxingModelArkV1:
+		// The Moxing ModelArk protocol consumes the typed payload directly.
+	default:
+		data, err = convertVideoCreateRequest(a.profile, data)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +317,8 @@ func (a *TaskAdaptor) FetchTask(baseURL, key string, body map[string]any, proxy 
 		adapterVersion,
 		responseBody,
 		taskID,
-		mediaarrays.TaskResponseContext{BaseURL: baseURL},
+		baseURL,
+		body,
 	)
 	if err != nil {
 		return nil, err
@@ -306,8 +349,20 @@ func (*TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, err
 		result.Status = model.TaskStatusSuccess
 		result.Progress = "100%"
 		result.Url = providerTask.Content.VideoURL
-		result.CompletionTokens = providerTask.Usage.CompletionTokens
-		result.TotalTokens = providerTask.Usage.TotalTokens
+		if providerTask.Usage != nil {
+			if providerTask.Usage.CompletionTokens != nil {
+				result.CompletionTokens = *providerTask.Usage.CompletionTokens
+				result.UsageReported = true
+				result.CompletionTokensReported = true
+			}
+			if providerTask.Usage.TotalTokens != nil {
+				result.TotalTokens = *providerTask.Usage.TotalTokens
+				result.UsageReported = true
+			}
+		}
+		result.UsageSource = providerTask.UsageSource
+		result.UsageEvidence = providerTask.UsageEvidence
+		result.ProviderBillingEvidence = providerTask.ProviderBillingEvidence
 	case "failed":
 		result.Status = model.TaskStatusFailure
 		result.Progress = "100%"

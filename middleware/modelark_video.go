@@ -29,6 +29,7 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 		if err := rejectUnknownVideoFields(
 			body,
 			"model", "content", "callback_url", "duration", "resolution", "ratio",
+			"output_format",
 			"service_tier", "generate_audio", "watermark", "return_last_frame",
 			"execution_expires_after", "draft", "tools", "safety_identifier",
 			"priority", "frames", "seed", "camera_fixed",
@@ -48,8 +49,6 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 			abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", "model and content are required")
 			return
 		}
-		appID := c.GetInt("token_id")
-		common.SetContextKey(c, constant.ContextKeyAssetAppID, appID)
 		prompt, err := validateModelArkVideoCreateRequest(request)
 		if err != nil {
 			abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", err.Error())

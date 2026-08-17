@@ -3,6 +3,8 @@ page-id: videos-modelark
 kind: api-reference
 last-verified: 2026-08-10
 operations:
+  - listModelArkVideoModels
+  - retrieveModel
   - createModelArkVideoTask
   - listModelArkVideoTasks
   - getModelArkVideoTask
@@ -35,8 +37,27 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 ```
 
 平台验证统一 ModelArk V3 请求结构、媒体 URL 和影响计费的安全边界。模型是否支持具体分辨率、媒体
-组合或扩展字段，以管理员上线前的技术审核和所选 Provider 的错误为准；平台不再提供 publication、
-Link SKU capability 或模型能力目录接口。
+组合或扩展字段，以管理员上线前的技术审核和所选 Provider 的错误为准；模型目录不替 Provider 承诺
+未明确登记的生成能力。
+
+## 模型目录与可用状态
+
+`GET /v1/models` 会在通用模型目录中返回所有已配置 Seedance 客户模型；
+`GET /api/v3/contents/generations/models` 只返回同一批 Seedance 条目，便于 ModelArk 客户直接发现。
+两者都包括已停用模型。客户应分别读取：
+
+- `available`：当前 API Key 是否能发起新任务；
+- `availability`：`available`、`disabled` 或 `restricted`；
+- `supported_endpoint_types`：Seedance 固定为 `modelark-video`；
+- `api.video.creation`：创建方法、路径、内容类型、必填字段和当前客户模型名；
+- `api.video.operations`：创建、列表、查询、删除和内容下载接口；
+- `api.assets`：无状态素材代理、引用格式、素材类型、逐操作支持状态及创建限制。
+
+停用只影响调用资格，不会让模型及其接口说明从目录消失。`api` 只描述客户北向合同，不返回 Provider
+模型、渠道 ID、凭据、上游协议或第三方私有路径。
+
+客户模型名由部署方定义。调用方只能发送目录中的客户模型名，不需要也无法从公开 API 获知上游原始
+模型或 Provider。
 
 不同渠道使用不同客户模型名。一个已启用客户模型只对应一个 Seedance 渠道，任务不会根据 Priority、
 Weight 随机分发，也不会在失败后换到其它 Provider 再创建一次。
@@ -54,9 +75,14 @@ Task 会冻结创建时的渠道、Provider 模型、南向协议和计费事实
 
 ## 素材引用
 
-请求可使用 HTTP/HTTPS URL、Data URL 或平台素材 `asset://ast_*`。平台素材必须属于当前 API Key、客户
-模型及其唯一 Seedance 渠道；Provider ID 和账号信息不会返回给客户端。真人认证直接使用素材组响应的
-上游 `verification_url`，平台不提供独立真人授权 API。
+请求始终可以按对应模型合同使用请求级媒体。素材 API 返回 Provider opaque ID；视频中使用
+`asset://<opaque-id>`。平台不查询该 ID、不验证所有权、状态、模型、Channel 或 Provider 作用域，也不
+尝试其它 Provider；当前客户模型选中的 Provider 最终判断可用性。是否支持素材创建、素材组和真人认证，
+以该模型 `api.assets.operations[].supported` 为准。不支持的操作明确返回
+`unsupported_asset_operation`。公开响应不返回 Provider 名称、账号、Channel、协议或上游原始模型。
+
+跨模型复用前比较两个模型的 `api.assets.reuse_scope`。只有两个非空值完全相同时才可尝试复用；scope
+不同或缺失时不得复用。部署方可给相同 scope 的模型使用相同业务后缀，但客户端不能用后缀代替元数据。
 
 ## 创建结果不明与计费
 

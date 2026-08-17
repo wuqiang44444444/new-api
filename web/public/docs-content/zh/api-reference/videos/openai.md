@@ -56,8 +56,8 @@ curl -X POST "{{OPENAI_BASE_URL}}/videos/video-task-placeholder/remix" \
 
 ## 既有视频生成入口
 
-仓库上游当前仍登记 `POST /v1/video/generations`。它与本次飞彩 Link 南向 `/v1/videos` 没有
-身份或兼容关系；飞彩客户入口仍是 ModelArk v3。
+仓库上游当前仍登记 `POST /v1/video/generations`。它与 Seedance Link 的任何南向第三方路径都没有
+身份或兼容关系；Seedance 客户入口统一为 ModelArk V3。
 
 ## 内容下载
 

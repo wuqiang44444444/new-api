@@ -9,11 +9,12 @@ import (
 type VideoUpstreamProfile string
 
 const (
-	VideoUpstreamProfileOfficial                       VideoUpstreamProfile = "official"
-	VideoUpstreamProfileThirdPartyRelay                VideoUpstreamProfile = "third_party_relay"
-	VideoUpstreamProfileThirdPartyReverseProxy         VideoUpstreamProfile = "third_party_reverse_proxy"
-	VideoUpstreamProfileThirdPartyJSONVideoMediaArrays VideoUpstreamProfile = "third_party_json_video_media_arrays"
-	VideoUpstreamProfileThirdPartyFunCloudSeedanceV2   VideoUpstreamProfile = "third_party_funcloud_seedance_v2"
+	VideoUpstreamProfileOfficial                   VideoUpstreamProfile = "official"
+	VideoUpstreamProfileThirdPartyRelay            VideoUpstreamProfile = "third_party_relay"
+	VideoUpstreamProfileThirdPartyMoxingModelArk   VideoUpstreamProfile = "third_party_moxing_modelark"
+	VideoUpstreamProfileThirdPartyReverseProxy     VideoUpstreamProfile = "third_party_reverse_proxy"
+	VideoUpstreamProfileThirdPartyFeicaiVideos     VideoUpstreamProfile = "third_party_feicai_videos"
+	VideoUpstreamProfileThirdPartyFunCloudSeedance VideoUpstreamProfile = "third_party_funcloud_seedance"
 )
 
 func (p VideoUpstreamProfile) IsOfficial() bool {
@@ -22,18 +23,20 @@ func (p VideoUpstreamProfile) IsOfficial() bool {
 
 func (p VideoUpstreamProfile) IsThirdParty() bool {
 	return p == VideoUpstreamProfileThirdPartyRelay ||
+		p == VideoUpstreamProfileThirdPartyMoxingModelArk ||
 		p == VideoUpstreamProfileThirdPartyReverseProxy ||
-		p == VideoUpstreamProfileThirdPartyJSONVideoMediaArrays ||
-		p == VideoUpstreamProfileThirdPartyFunCloudSeedanceV2
+		p == VideoUpstreamProfileThirdPartyFeicaiVideos ||
+		p == VideoUpstreamProfileThirdPartyFunCloudSeedance
 }
 
 func (p VideoUpstreamProfile) IsValid() bool {
 	switch p {
 	case VideoUpstreamProfileOfficial,
 		VideoUpstreamProfileThirdPartyRelay,
+		VideoUpstreamProfileThirdPartyMoxingModelArk,
 		VideoUpstreamProfileThirdPartyReverseProxy,
-		VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-		VideoUpstreamProfileThirdPartyFunCloudSeedanceV2:
+		VideoUpstreamProfileThirdPartyFeicaiVideos,
+		VideoUpstreamProfileThirdPartyFunCloudSeedance:
 		return true
 	}
 	return false
@@ -87,15 +90,20 @@ func ValidateVideoUpstreamURL(baseURL, createPath, queryTemplate string) error {
 type AssetUpstreamProfile string
 
 const (
-	AssetUpstreamProfileNone     AssetUpstreamProfile = "none"
-	AssetUpstreamProfileArk      AssetUpstreamProfile = "ark_assets"
-	AssetUpstreamProfileRelay    AssetUpstreamProfile = "relay_assets"
-	AssetUpstreamProfileOfficial AssetUpstreamProfile = "official_action_assets"
+	AssetUpstreamProfileNone             AssetUpstreamProfile = "none"
+	AssetUpstreamProfileArk              AssetUpstreamProfile = "ark_assets"
+	AssetUpstreamProfileRelay            AssetUpstreamProfile = "relay_assets"
+	AssetUpstreamProfileMoxingJoyCreator AssetUpstreamProfile = "moxing_joycreator_assets"
+	AssetUpstreamProfileMoxingVolc       AssetUpstreamProfile = "moxing_volc_assets"
+	AssetUpstreamProfileOfficial         AssetUpstreamProfile = "official_action_assets"
+	AssetUpstreamProfileFunCloudMaterial AssetUpstreamProfile = "funcloud_material"
 )
 
 func (p AssetUpstreamProfile) IsValid() bool {
 	switch p {
-	case "", AssetUpstreamProfileNone, AssetUpstreamProfileArk, AssetUpstreamProfileRelay, AssetUpstreamProfileOfficial:
+	case "", AssetUpstreamProfileNone, AssetUpstreamProfileArk, AssetUpstreamProfileRelay,
+		AssetUpstreamProfileMoxingJoyCreator, AssetUpstreamProfileMoxingVolc, AssetUpstreamProfileOfficial,
+		AssetUpstreamProfileFunCloudMaterial:
 		return true
 	default:
 		return false
@@ -103,7 +111,9 @@ func (p AssetUpstreamProfile) IsValid() bool {
 }
 
 func (p AssetUpstreamProfile) IsRoutable() bool {
-	return p == AssetUpstreamProfileArk || p == AssetUpstreamProfileRelay || p == AssetUpstreamProfileOfficial
+	return p == AssetUpstreamProfileArk || p == AssetUpstreamProfileRelay ||
+		p == AssetUpstreamProfileMoxingJoyCreator || p == AssetUpstreamProfileMoxingVolc ||
+		p == AssetUpstreamProfileOfficial || p == AssetUpstreamProfileFunCloudMaterial
 }
 
 func ValidateAssetUpstreamProfile(p AssetUpstreamProfile) error {

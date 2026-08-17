@@ -613,9 +613,8 @@ func GenRelayInfo(c *gin.Context, relayFormat types.RelayFormat, request dto.Req
 		return nil, errors.New("failed to build relay info")
 	}
 	if info.TaskRelayInfo != nil {
-		info.TaskRelayInfo.AppID = common.GetContextKeyInt(c, constant.ContextKeyAssetAppID)
+		info.TaskRelayInfo.AppID = c.GetInt("token_id")
 	}
-
 	info.InitRequestConversionChain()
 	return info, nil
 }
@@ -846,9 +845,8 @@ type TaskRelayInfo struct {
 	// LockedChannel holds the full channel object when the request is bound to
 	// a specific channel (e.g., remix on origin task's channel). Stored as any
 	// to avoid an import cycle with model; callers type-assert to *model.Channel.
-	LockedChannel  any
-	AssetPublicIDs []string
-	AppID          int
+	LockedChannel any
+	AppID         int
 }
 
 type TaskSubmitReq struct {
@@ -966,15 +964,20 @@ func (t *TaskSubmitReq) UnmarshalMetadata(v any) error {
 }
 
 type TaskInfo struct {
-	Code             int    `json:"code"`
-	TaskID           string `json:"task_id"`
-	Status           string `json:"status"`
-	Reason           string `json:"reason,omitempty"`
-	Url              string `json:"url,omitempty"`
-	RemoteUrl        string `json:"remote_url,omitempty"`
-	Progress         string `json:"progress,omitempty"`
-	CompletionTokens int    `json:"completion_tokens,omitempty"` // 用于按倍率计费
-	TotalTokens      int    `json:"total_tokens,omitempty"`      // 用于按倍率计费
+	Code                     int                      `json:"code"`
+	TaskID                   string                   `json:"task_id"`
+	Status                   string                   `json:"status"`
+	Reason                   string                   `json:"reason,omitempty"`
+	Url                      string                   `json:"url,omitempty"`
+	RemoteUrl                string                   `json:"remote_url,omitempty"`
+	Progress                 string                   `json:"progress,omitempty"`
+	CompletionTokens         int                      `json:"completion_tokens,omitempty"` // 用于按倍率计费
+	TotalTokens              int                      `json:"total_tokens,omitempty"`      // 用于按倍率计费
+	UsageReported            bool                     `json:"-"`                           // 区分终态实际 0 与未返回 usage
+	CompletionTokensReported bool                     `json:"-"`
+	UsageSource              string                   `json:"-"` // 计费用量的形成字段（归一层写入）
+	UsageEvidence            map[string]int           `json:"-"` // 终态采集的全部合法用量证据（字段路径 -> 数值）
+	ProviderBillingEvidence  *ProviderBillingEvidence `json:"-"`
 }
 
 func FailTaskInfo(reason string) *TaskInfo {

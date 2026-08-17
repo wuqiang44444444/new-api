@@ -8,11 +8,10 @@ import (
 )
 
 type TaskLifecycleCapabilities struct {
-	SupportsContent         bool
-	SupportsRemix           bool
-	SupportsCancelQueued    bool
-	SupportsDeleteTerminal  bool
-	SupportsAssetReferences bool
+	SupportsContent        bool
+	SupportsRemix          bool
+	SupportsCancelQueued   bool
+	SupportsDeleteTerminal bool
 }
 
 type TaskLifecycleAdaptor interface {

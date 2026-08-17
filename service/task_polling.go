@@ -516,12 +516,14 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		}
 		return nil
 	}
+	billingContext := frozenVideoBillingFetchContext(task)
 	resp, err := adaptor.FetchTask(taskVideoUpstreamQueryBaseURL(task, ch), key, map[string]any{
-		"task_id":                            task.GetUpstreamTaskID(),
-		"action":                             task.Action,
-		"video_upstream_profile":             videoUpstreamProfile,
-		"video_upstream_adapter_version":     adapterVersion.String(),
-		"video_upstream_query_path_template": taskVideoUpstreamQueryPath(task, ch),
+		"task_id":                              task.GetUpstreamTaskID(),
+		"action":                               task.Action,
+		relaycommon.VideoTaskBillingContextKey: billingContext,
+		"video_upstream_profile":               videoUpstreamProfile,
+		"video_upstream_adapter_version":       adapterVersion.String(),
+		"video_upstream_query_path_template":   taskVideoUpstreamQueryPath(task, ch),
 	}, proxy)
 	if err != nil {
 		var contractViolation *relaycommon.UpstreamContractViolation
@@ -563,7 +565,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return fmt.Errorf("parseTaskResult failed for task %s: %w", taskId, err)
 	}
 
-	if adapterVersion.IsJSONVideoMediaArraysV2() {
+	if adapterVersion.IsFeicaiVideos() {
 		task.Data = redactTaskResponseForLog(responseBody)
 	} else {
 		task.Data = redactVideoResponseBody(responseBody)
@@ -725,6 +727,11 @@ func redactVideoResponseBody(body []byte) []byte {
 	if err := common.Unmarshal(body, &m); err != nil {
 		return body
 	}
+	delete(m, "_provider_billing_evidence")
+	// usage_source/usage_evidence 是归一层写入的内部计费字段，只属于 PrivateData.AsyncBilling，
+	// 不得随 task.Data 进入客户可见的任务响应。
+	delete(m, "usage_source")
+	delete(m, "usage_evidence")
 	resp, _ := m["response"].(map[string]any)
 	if resp != nil {
 		delete(resp, "bytesBase64Encoded")

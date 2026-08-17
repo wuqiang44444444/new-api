@@ -169,17 +169,6 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
 		return nil, taskErr
 	}
-	if err := resolveAssetReferencesForAttempt(c, info); err != nil {
-		code, status := assetResolveTaskError(err)
-		if status == http.StatusInternalServerError {
-			common.SysError(fmt.Sprintf("asset reference resolution failed: %v", err))
-			publicError := service.TaskErrorWrapperLocal(errors.New("asset references could not be resolved"), code, status)
-			publicError.Error = err
-			return nil, publicError
-		}
-		return nil, service.TaskErrorWrapperLocal(err, code, status)
-	}
-
 	// 2. 确定模型名称
 	modelName := info.OriginModelName
 	if modelName == "" {
@@ -191,6 +180,13 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	info.UpstreamModelName = modelName
 	if err := helper.ModelMappedHelper(c, info, nil); err != nil {
 		return nil, service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
+	}
+	if validator, ok := adaptor.(interface {
+		ValidateMappedRequest(*gin.Context, *relaycommon.RelayInfo) *dto.TaskError
+	}); ok {
+		if taskErr := validator.ValidateMappedRequest(c, info); taskErr != nil {
+			return nil, taskErr
+		}
 	}
 
 	// 3. 预生成公开 task ID（仅首次）

@@ -19,7 +19,7 @@ func TestFunCloudApplicationErrorsDoNotMarkCreateAsTerminal(t *testing.T) {
 	for _, code := range []int{10002, 10005, 10006, 30003, 90003} {
 		t.Run(fmt.Sprintf("code_%d", code), func(t *testing.T) {
 			context, _ := gin.CreateTestContext(nil)
-			adaptor := TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2}
+			adaptor := TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedance}
 			response := &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(strings.NewReader(fmt.Sprintf(`{"code":%d,"msg":"provider error","data":{}}`, code))),

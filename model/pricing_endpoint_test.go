@@ -107,6 +107,37 @@ func TestPricingAdvancedCustomUsesConfiguredEndpointTypes(t *testing.T) {
 	}, byModel["gpt-4o"])
 }
 
+func TestPricingIncludesDisabledSeedanceCatalogWithModelArkAndAssetAPI(t *testing.T) {
+	resetPricingEndpointTestTables(t)
+	channel := &Channel{
+		Id: 102, Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusManuallyDisabled,
+		Name: "disabled official", Key: "official-key", Group: "default", Models: "seedance-official-disabled",
+	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolVolcengineAction,
+	})
+	require.NoError(t, DB.Create(channel).Error)
+	InvalidatePricingCache()
+
+	pricing, exists := func() (Pricing, bool) {
+		for _, item := range GetPricing() {
+			if item.ModelName == "seedance-official-disabled" {
+				return item, true
+			}
+		}
+		return Pricing{}, false
+	}()
+	require.True(t, exists)
+	assert.False(t, pricing.Available)
+	assert.Equal(t, "disabled", pricing.Availability)
+	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeModelArkVideo}, pricing.SupportedEndpointTypes)
+	require.NotNil(t, pricing.API)
+	assert.Equal(t, "new-api", pricing.OwnerBy)
+	assert.True(t, pricing.API.Assets.Supported)
+	assert.Equal(t, "/api/v3/contents/generations/tasks", GetSupportedEndpointMap()[string(constant.EndpointTypeModelArkVideo)].Path)
+}
+
 func TestPricingModelMetadataEndpointsMergeWithAdvancedCustomInference(t *testing.T) {
 	resetPricingEndpointTestTables(t)
 

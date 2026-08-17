@@ -24,6 +24,10 @@ func redactTaskResponseValue(value any) {
 	case map[string]any:
 		for key, child := range typed {
 			normalized := strings.ToLower(key)
+			if normalized == "_provider_billing_evidence" || normalized == "usage_source" || normalized == "usage_evidence" {
+				delete(typed, key)
+				continue
+			}
 			if normalized == "url" || strings.HasSuffix(normalized, "_url") || normalized == "authorization" || normalized == "cookie" || normalized == "api_key" || normalized == "access_token" || strings.Contains(normalized, "base64") {
 				typed[key] = "[redacted]"
 				continue

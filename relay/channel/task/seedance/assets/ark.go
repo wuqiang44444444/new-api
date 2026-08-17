@@ -66,15 +66,6 @@ func (a *ArkAdapter) GetGroup(ctx context.Context, resourceID string) (GroupResu
 	return normalizeArkGroup(response), err
 }
 
-func (a *ArkAdapter) UpdateGroup(ctx context.Context, resourceID string, req GroupRequest) (GroupResult, error) {
-	var response arkGroupResponse
-	err := a.request(ctx, http.MethodPost, "/v1/ark/assets/groups/"+url.PathEscape(resourceID), map[string]any{"Name": req.Name, "Description": req.Description}, &response)
-	if response.ID == "" {
-		response.ID = resourceID
-	}
-	return normalizeArkGroup(response), err
-}
-
 func (a *ArkAdapter) DeleteGroup(ctx context.Context, resourceID string) error {
 	return ErrGroupDeletionUnsupported
 }

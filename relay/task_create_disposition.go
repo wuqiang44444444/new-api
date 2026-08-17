@@ -21,7 +21,9 @@ func taskCreateHTTPDisposition(
 ) relaycommon.TaskCreateDisposition {
 	if info != nil && info.ChannelMeta != nil &&
 		info.ChannelType == constant.ChannelTypeSeedanceLink &&
-		info.ChannelOtherSettings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolMediaTaskV1 &&
+		(info.ChannelOtherSettings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 ||
+			info.ChannelOtherSettings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolMoxingMediaTaskV1 ||
+			info.ChannelOtherSettings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolMoxingModelArkV1) &&
 		status == http.StatusForbidden && providerCode == "user_quota_insufficient" {
 		return relaycommon.TaskCreateTerminalRejection
 	}

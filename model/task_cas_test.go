@@ -61,8 +61,6 @@ func TestMain(m *testing.M) {
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
-		&Asset{},
-		&AssetGroup{},
 		&ChannelAssetCredential{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())

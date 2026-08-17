@@ -13,6 +13,7 @@ import (
 const (
 	VideoAdapterRevisionV1 = "v1"
 	VideoAdapterRevisionV2 = "v2"
+	VideoAdapterRevisionV3 = "v3"
 )
 
 // VideoSouthboundAdapterVersion is the compatibility name for the frozen channel
@@ -34,31 +35,48 @@ var videoAdapterRevisionRules = map[struct {
 	ChannelType int
 	Profile     dto.VideoUpstreamProfile
 }]videoAdapterRevisionRule{
-	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyRelay}:                {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
-	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays}: {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
-	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2}:   {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyRelay}:            {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyMoxingModelArk}:   {Current: VideoAdapterRevisionV1, Supported: []string{VideoAdapterRevisionV1}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos}:     {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV1, VideoAdapterRevisionV2}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedance}: {Current: VideoAdapterRevisionV3, Supported: []string{VideoAdapterRevisionV3}, AllowEmpty: false},
 }
 
 func (version VideoSouthboundAdapterVersion) String() string {
 	return fmt.Sprintf("%d:%s:%s", version.ChannelType, version.Profile, version.Revision)
 }
 
-func (version VideoSouthboundAdapterVersion) IsJSONVideoMediaArraysV2() bool {
+func (version VideoSouthboundAdapterVersion) IsFeicaiVideosV1() bool {
 	return version.ChannelType == constant.ChannelTypeSeedanceLink &&
-		version.Profile == dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays &&
+		version.Profile == dto.VideoUpstreamProfileThirdPartyFeicaiVideos &&
+		version.Revision == VideoAdapterRevisionV1
+}
+
+func (version VideoSouthboundAdapterVersion) IsFeicaiVideosV2() bool {
+	return version.ChannelType == constant.ChannelTypeSeedanceLink &&
+		version.Profile == dto.VideoUpstreamProfileThirdPartyFeicaiVideos &&
 		version.Revision == VideoAdapterRevisionV2
 }
 
-func (version VideoSouthboundAdapterVersion) IsFunCloudSeedanceV2() bool {
+func (version VideoSouthboundAdapterVersion) IsFeicaiVideos() bool {
+	return version.IsFeicaiVideosV1() || version.IsFeicaiVideosV2()
+}
+
+func (version VideoSouthboundAdapterVersion) IsFunCloudSeedanceV3() bool {
 	return version.ChannelType == constant.ChannelTypeSeedanceLink &&
-		version.Profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2 &&
-		version.Revision == VideoAdapterRevisionV2
+		version.Profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedance &&
+		version.Revision == VideoAdapterRevisionV3
 }
 
 func (version VideoSouthboundAdapterVersion) IsThirdPartyRelayV2() bool {
 	return version.ChannelType == constant.ChannelTypeSeedanceLink &&
 		version.Profile == dto.VideoUpstreamProfileThirdPartyRelay &&
 		version.Revision == VideoAdapterRevisionV2
+}
+
+func (version VideoSouthboundAdapterVersion) IsMoxingModelArkV1() bool {
+	return version.ChannelType == constant.ChannelTypeSeedanceLink &&
+		version.Profile == dto.VideoUpstreamProfileThirdPartyMoxingModelArk &&
+		version.Revision == VideoAdapterRevisionV1
 }
 
 // CurrentVideoSouthboundAdapterVersion is the single authority for new channel

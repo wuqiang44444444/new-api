@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -117,6 +118,16 @@ func TestTieredSettlementUsesFrozenExpressionAndMissingUsageKeepsPrecharge(t *te
 	assert.Equal(t, 700, unchanged.Quota)
 	assert.Equal(t, model.TaskBillingStateSettled, unchanged.PrivateData.AsyncBilling.State)
 	assert.Equal(t, 1000, getUserQuota(t, userID))
+
+	reportedZero := persistedAsyncTask(t, userID, 500, model.TaskStatusSuccess)
+	reportedZero.PrivateData.AsyncBilling.TieredSnapshot = tieredTestSnapshot(`tier("frozen", c * 999)`, 500)
+	reportedZero.PrivateData.AsyncBilling.ActualUsageReported = true
+	require.NoError(t, reportedZero.UpdateBilling())
+	require.True(t, settleTaskTieredSnapshot(ctx, reportedZero, 0))
+	zeroSettled := reloadTask(t, reportedZero.ID)
+	assert.Zero(t, zeroSettled.Quota)
+	assert.Equal(t, model.TaskBillingStateSettled, zeroSettled.PrivateData.AsyncBilling.State)
+	assert.Equal(t, 1500, getUserQuota(t, userID))
 }
 
 func TestReconcileUsesPersistedTargetAfterSettlementInterrupted(t *testing.T) {
@@ -169,6 +180,80 @@ func TestTieredSettlementLogRecordsCompletionTokens(t *testing.T) {
 	// 结算/退款日志必须回填真实 completion_tokens（修复前 RecordTaskBillingLogParams 无该字段，恒为 0）
 	assert.Equal(t, model.LogTypeRefund, log.Type)
 	assert.Equal(t, 100, log.CompletionTokens)
+}
+
+func TestTerminalTaskBillingPersistsProviderEvidenceAndKeepsItAdminOnly(t *testing.T) {
+	task := &model.Task{
+		Properties:  model.Properties{OriginModelName: "seedance-fast", UpstreamModelName: "seedance-2-fast"},
+		PrivateData: model.TaskPrivateData{AsyncBilling: &model.TaskAsyncBillingContext{}},
+	}
+	evidence := &relaycommon.ProviderBillingEvidence{
+		Provider: "funcloud", TokenSource: "completionTokens", ReportedTokens: 40594,
+		RawConsumption: "0.232731", ConsumptionUnit: "pointConsume",
+		ProviderModel: "seedance-2-fast", Resolution: "720p",
+	}
+	prepareTerminalTaskBilling(task, &relaycommon.TaskInfo{
+		CompletionTokens: 40594, ProviderBillingEvidence: evidence,
+	})
+
+	assert.True(t, task.PrivateData.AsyncBilling.ActualUsageReported)
+	assert.Equal(t, 40594, task.PrivateData.AsyncBilling.ActualTokens)
+	require.NotNil(t, task.PrivateData.AsyncBilling.ProviderBillingEvidence)
+	assert.Equal(t, "0.232731", task.PrivateData.AsyncBilling.ProviderBillingEvidence.RawConsumption)
+	other := taskBillingOther(task)
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, *evidence, adminInfo["provider_billing_evidence"])
+}
+
+func TestFirstBillingFailureKeepsProviderEvidenceInAdminLog(t *testing.T) {
+	truncate(t)
+	task := persistedAsyncTask(t, 8110, 500, model.TaskStatusSuccess)
+	task.PrivateData.AsyncBilling.ProviderBillingEvidence = &relaycommon.ProviderBillingEvidence{
+		Provider: "funcloud", TokenSource: "completionTokens", ReportedTokens: 40594,
+		RawConsumption: "0.232731", ConsumptionUnit: "pointConsume",
+	}
+	require.NoError(t, task.UpdateBilling())
+
+	persistTaskBillingFailure(context.Background(), task, model.TaskBillingStateFailed, assert.AnError)
+
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	var other map[string]any
+	require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
+	adminInfo, ok := other["admin_info"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, string(model.TaskBillingStateFailed), adminInfo["task_billing_state"])
+	assert.Equal(t, assert.AnError.Error(), adminInfo["task_billing_error"])
+	providerEvidence, ok := adminInfo["provider_billing_evidence"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "funcloud", providerEvidence["provider"])
+	assert.Equal(t, "0.232731", providerEvidence["raw_consumption"])
+}
+
+func TestTerminalTaskBillingDistinguishesReportedZeroFromMissingUsage(t *testing.T) {
+	task := &model.Task{PrivateData: model.TaskPrivateData{AsyncBilling: &model.TaskAsyncBillingContext{}}}
+
+	prepareTerminalTaskBilling(task, &relaycommon.TaskInfo{
+		UsageReported: true, CompletionTokensReported: true,
+	})
+
+	assert.True(t, task.PrivateData.AsyncBilling.ActualUsageReported)
+	assert.Zero(t, task.PrivateData.AsyncBilling.ActualTokens)
+}
+
+func TestTerminalTaskBillingKeepsUnverifiedUsageAsEvidenceWithoutBilling(t *testing.T) {
+	task := &model.Task{PrivateData: model.TaskPrivateData{AsyncBilling: &model.TaskAsyncBillingContext{}}}
+
+	prepareTerminalTaskBilling(task, &relaycommon.TaskInfo{
+		UsageSource:   "usage.total_tokens-usage.prompt_tokens",
+		UsageEvidence: map[string]int{"usage.completion_tokens_details.reasoning_tokens": 0},
+	})
+
+	assert.False(t, task.PrivateData.AsyncBilling.ActualUsageReported)
+	assert.Zero(t, task.PrivateData.AsyncBilling.ActualTokens)
+	assert.Equal(t, "usage.total_tokens-usage.prompt_tokens", task.PrivateData.AsyncBilling.ActualUsageSource)
+	assert.Equal(t, map[string]int{"usage.completion_tokens_details.reasoning_tokens": 0}, task.PrivateData.AsyncBilling.ActualUsageEvidence)
 }
 
 func TestFrozenExpressionFailureKeepsPrechargeForReconcile(t *testing.T) {

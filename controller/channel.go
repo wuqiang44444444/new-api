@@ -751,9 +751,6 @@ func AddChannel(c *gin.Context) {
 
 func DeleteChannel(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	if rejectAssetChannelDeletion(c, []int{id}) {
-		return
-	}
 	channelName := ""
 	channelProxy := ""
 	channelLookupFailed := false
@@ -766,9 +763,6 @@ func DeleteChannel(c *gin.Context) {
 	channel := model.Channel{Id: id}
 	err := channel.Delete()
 	if err != nil {
-		if rejectAssetChannelFenceError(c, err) {
-			return
-		}
 		common.ApiError(c, err)
 		return
 	}
@@ -790,14 +784,8 @@ func DeleteChannel(c *gin.Context) {
 }
 
 func DeleteDisabledChannel(c *gin.Context) {
-	if rejectDisabledAssetChannelDeletion(c) {
-		return
-	}
 	rows, err := model.DeleteDisabledChannel()
 	if err != nil {
-		if rejectAssetChannelFenceError(c, err) {
-			return
-		}
 		common.ApiError(c, err)
 		return
 	}
@@ -953,14 +941,8 @@ func DeleteChannelBatch(c *gin.Context) {
 		})
 		return
 	}
-	if rejectAssetChannelDeletion(c, channelBatch.Ids) {
-		return
-	}
 	deletedCount, err := model.BatchDeleteChannels(channelBatch.Ids)
 	if err != nil {
-		if rejectAssetChannelFenceError(c, err) {
-			return
-		}
 		common.ApiError(c, err)
 		return
 	}
@@ -1162,9 +1144,6 @@ func UpdateChannel(c *gin.Context) {
 		err = channel.UpdateWithActor(c.GetInt("id"))
 	}
 	if err != nil {
-		if rejectAssetChannelFenceError(c, err) {
-			return
-		}
 		common.ApiError(c, err)
 		return
 	}

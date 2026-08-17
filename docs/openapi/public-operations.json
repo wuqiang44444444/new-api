@@ -7,6 +7,11 @@
       "family": "text"
     },
     {
+      "operationId": "retrieveModel",
+      "status": "published",
+      "family": "text"
+    },
+    {
       "operationId": "createChatCompletion",
       "status": "published",
       "family": "text"
@@ -62,6 +67,11 @@
       "family": "video-modelark"
     },
     {
+      "operationId": "listModelArkVideoModels",
+      "status": "published",
+      "family": "video-modelark"
+    },
+    {
       "operationId": "listModelArkVideoTasks",
       "status": "published",
       "family": "video-modelark"
@@ -112,11 +122,6 @@
       "family": "assets"
     },
     {
-      "operationId": "listAssets",
-      "status": "published",
-      "family": "assets"
-    },
-    {
       "operationId": "getAsset",
       "status": "published",
       "family": "assets"
@@ -133,11 +138,6 @@
     },
     {
       "operationId": "createAssetGroup",
-      "status": "published",
-      "family": "assets"
-    },
-    {
-      "operationId": "listAssetGroups",
       "status": "published",
       "family": "assets"
     },

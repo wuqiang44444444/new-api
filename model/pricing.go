@@ -33,6 +33,9 @@ type Pricing struct {
 	AudioCompletionRatio   *float64                `json:"audio_completion_ratio,omitempty"`
 	EnableGroup            []string                `json:"enable_groups"`
 	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
+	Available              bool                    `json:"available"`
+	Availability           string                  `json:"availability"`
+	API                    *dto.PublicModelAPI     `json:"api,omitempty"`
 	BillingMode            string                  `json:"billing_mode,omitempty"`
 	BillingExpr            string                  `json:"billing_expr,omitempty"`
 	PricingVersion         string                  `json:"pricing_version,omitempty"`
@@ -184,6 +187,11 @@ func updatePricing() {
 		common.SysLog(fmt.Sprintf("GetAllEnableAbilityWithChannels error: %v", err))
 		return
 	}
+	seedanceCatalog, err := loadSeedancePricingCatalog()
+	if err != nil {
+		common.SysLog(fmt.Sprintf("GetConfiguredSeedancePublicModels error: %v", err))
+		return
+	}
 	// 预加载模型元数据与供应商一次，避免循环查询
 	var allMeta []Model
 	_ = DB.Find(&allMeta).Error
@@ -259,8 +267,10 @@ func updatePricing() {
 	}
 
 	modelGroupsMap := make(map[string]*types.Set[string])
+	availableModels := make(map[string]bool, len(enableAbilities))
 
 	for _, ability := range enableAbilities {
+		availableModels[ability.Model] = true
 		groups, ok := modelGroupsMap[ability.Model]
 		if !ok {
 			groups = types.NewSet[string]()
@@ -268,6 +278,7 @@ func updatePricing() {
 		}
 		groups.Add(ability.Group)
 	}
+	seedanceCatalog.mergeGroups(modelGroupsMap)
 
 	//这里使用切片而不是Set，因为一个模型可能支持多个端点类型，并且第一个端点是优先使用端点
 	modelSupportEndpointsStr := make(map[string][]string)
@@ -284,6 +295,7 @@ func updatePricing() {
 		}
 		modelSupportEndpointsStr[ability.Model] = endpoints
 	}
+	seedanceCatalog.mergeEndpoints(modelSupportEndpointsStr)
 
 	// 再补充模型自定义端点：若配置有效则追加到已有推断，不再裁剪渠道真实能力
 	for modelName, meta := range metaMap {
@@ -360,13 +372,21 @@ func updatePricing() {
 			ModelName:              model,
 			EnableGroup:            groups.Items(),
 			SupportedEndpointTypes: modelSupportEndpointTypes[model],
+			Available:              availableModels[model],
+			Availability:           "available",
 		}
+		if !pricing.Available {
+			pricing.Availability = "disabled"
+		}
+		seedanceCatalog.apply(model, &pricing)
 
 		// 补充模型元数据（描述、标签、供应商、状态）
 		if meta, ok := metaMap[model]; ok {
 			// 若模型被禁用(status!=1)，则直接跳过，不返回给前端
 			if meta.Status != 1 {
-				continue
+				if !seedanceCatalog.keepDisabled(model, &pricing) {
+					continue
+				}
 			}
 			pricing.Description = meta.Description
 			pricing.Icon = meta.Icon
@@ -419,6 +439,9 @@ func updatePricing() {
 	modelEnableGroups = make(map[string][]string)
 	modelQuotaTypeMap = make(map[string]int)
 	for _, p := range pricingMap {
+		if !p.Available {
+			continue
+		}
 		modelEnableGroups[p.ModelName] = p.EnableGroup
 		modelQuotaTypeMap[p.ModelName] = p.QuotaType
 	}

@@ -139,20 +139,6 @@ func (a *OfficialActionAdapter) GetGroup(ctx context.Context, resourceID string)
 	return normalizeOfficialGroup(response), err
 }
 
-func (a *OfficialActionAdapter) UpdateGroup(ctx context.Context, resourceID string, request GroupRequest) (GroupResult, error) {
-	var response officialGroup
-	err := a.doAction(ctx, "UpdateAssetGroup", map[string]any{
-		"Id":          resourceID,
-		"Name":        request.Name,
-		"Description": request.Description,
-		"ProjectName": a.providerProject,
-	}, &response)
-	if response.ID == "" {
-		response.ID = resourceID
-	}
-	return normalizeOfficialGroup(response), err
-}
-
 func (a *OfficialActionAdapter) DeleteGroup(ctx context.Context, resourceID string) error {
 	return a.doAction(ctx, "DeleteAssetGroup", map[string]any{"Id": resourceID, "ProjectName": a.providerProject}, nil)
 }

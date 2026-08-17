@@ -42,10 +42,13 @@ func persistTaskBillingFailure(ctx context.Context, task *model.Task, state mode
 	if firstFailure {
 		other := taskBillingOther(task)
 		other["task_id"] = task.TaskID
-		other["admin_info"] = map[string]any{
-			"task_billing_state": state,
-			"task_billing_error": message,
+		adminInfo, _ := other["admin_info"].(map[string]interface{})
+		if adminInfo == nil {
+			adminInfo = make(map[string]interface{})
+			other["admin_info"] = adminInfo
 		}
+		adminInfo["task_billing_state"] = state
+		adminInfo["task_billing_error"] = message
 		if task.PrivateData.AsyncBilling.QuotaClamp != nil {
 			attachQuotaSaturationToOther(other, task.PrivateData.AsyncBilling.QuotaClamp)
 		}
@@ -203,8 +206,11 @@ func settleTaskBillingWithState(ctx context.Context, adaptor TaskPollingAdaptor,
 		return true
 	}
 	actualTokens := result.CompletionTokens
-	if actualTokens <= 0 {
+	if !result.CompletionTokensReported && actualTokens <= 0 {
 		actualTokens = result.TotalTokens
+	}
+	if async.ActualUsageReported {
+		actualTokens = async.ActualTokens
 	}
 	if settleTaskTieredSnapshot(ctx, task, actualTokens) {
 		return true

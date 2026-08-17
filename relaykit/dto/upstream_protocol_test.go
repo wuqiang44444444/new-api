@@ -14,10 +14,12 @@ func TestSeedanceVideoProtocolsResolveCodeBackedTransport(t *testing.T) {
 	}{
 		{VideoUpstreamProtocolModelArkV3Volcengine, VideoUpstreamProfileOfficial},
 		{VideoUpstreamProtocolModelArkV3BytePlus, VideoUpstreamProfileOfficial},
-		{VideoUpstreamProtocolMediaTaskV1, VideoUpstreamProfileThirdPartyRelay},
+		{VideoUpstreamProtocolTokenSaveMediaTaskV1, VideoUpstreamProfileThirdPartyRelay},
+		{VideoUpstreamProtocolMoxingMediaTaskV1, VideoUpstreamProfileThirdPartyRelay},
+		{VideoUpstreamProtocolMoxingModelArkV1, VideoUpstreamProfileThirdPartyMoxingModelArk},
 		{VideoUpstreamProtocolArkMediaV1, VideoUpstreamProfileThirdPartyReverseProxy},
-		{VideoUpstreamProtocolURLMediaArraysV1, VideoUpstreamProfileThirdPartyJSONVideoMediaArrays},
-		{VideoUpstreamProtocolFunCloudSeedanceV2, VideoUpstreamProfileThirdPartyFunCloudSeedanceV2},
+		{VideoUpstreamProtocolFeicaiVideosV1, VideoUpstreamProfileThirdPartyFeicaiVideos},
+		{VideoUpstreamProtocolFunCloudSeedance, VideoUpstreamProfileThirdPartyFunCloudSeedance},
 	}
 
 	for _, test := range tests {
@@ -27,6 +29,8 @@ func TestSeedanceVideoProtocolsResolveCodeBackedTransport(t *testing.T) {
 		})
 	}
 	require.Error(t, ValidateVideoUpstreamProtocol("administrator_json"))
+	require.Error(t, ValidateVideoUpstreamProtocol("media_task_v1"))
+	require.Error(t, ValidateVideoUpstreamProtocol("funcloud_seedance_v2"))
 }
 
 func TestSeedanceVideoProtocolsResolveFixedPaths(t *testing.T) {
@@ -37,11 +41,16 @@ func TestSeedanceVideoProtocolsResolveFixedPaths(t *testing.T) {
 		createPath    string
 		queryPath     string
 	}{
-		{"media task", VideoUpstreamProtocolMediaTaskV1, "seedance", "/v1/media/generations", "/v1/media/tasks/{task_id}"},
+		{"TokenSave media task", VideoUpstreamProtocolTokenSaveMediaTaskV1, "seedance", "/v1/media/generations", "/v1/media/tasks/{task_id}"},
+		{"Moxing media task", VideoUpstreamProtocolMoxingMediaTaskV1, "seedance", "/v1/media/generations", "/v1/media/tasks/{task_id}"},
+		{"Moxing ModelArk", VideoUpstreamProtocolMoxingModelArkV1, "seedance", "/v1/media/generations", "/v1/media/tasks/{task_id}"},
 		{"ark media", VideoUpstreamProtocolArkMediaV1, "seedance", "/v1/ark/media/generations", "/v1/ark/media/tasks/{task_id}"},
-		{"URL media arrays", VideoUpstreamProtocolURLMediaArraysV1, "seedance", "/v1/videos", "/v1/videos/{task_id}"},
-		{"funcloud standard", VideoUpstreamProtocolFunCloudSeedanceV2, "seedance-2.0", "/api/v2/open/aigc/seedance2-0", "/api/v2/open/aigc/{task_id}"},
-		{"funcloud fast", VideoUpstreamProtocolFunCloudSeedanceV2, "seedance-2.0-fast", "/api/v2/open/aigc/seedance2-0-fast", "/api/v2/open/aigc/{task_id}"},
+		{"Feicai videos", VideoUpstreamProtocolFeicaiVideosV1, "seedance", "/v1/videos", "/v1/videos/{task_id}"},
+		{"funcloud standard", VideoUpstreamProtocolFunCloudSeedance, "seedance-2", "/api/v2/open/aigc/seedance2-0", "/api/v2/open/aigc/{task_id}"},
+		{"funcloud fast", VideoUpstreamProtocolFunCloudSeedance, "seedance-2-fast", "/api/v2/open/aigc/seedance2-0-fast", "/api/v2/open/aigc/{task_id}"},
+		{"funcloud mini", VideoUpstreamProtocolFunCloudSeedance, "seedance-2-mini", "/api/v2/open/aigc/seedance2-0-mini", "/api/v2/open/aigc/{task_id}"},
+		{"funcloud 2.5", VideoUpstreamProtocolFunCloudSeedance, "seedance-2-5", "/api/v2/open/aigc/seedance2-5", "/api/v2/open/aigc/{task_id}"},
+		{"funcloud unknown fails closed", VideoUpstreamProtocolFunCloudSeedance, "seedance-unknown", "", ""},
 	}
 
 	for _, test := range tests {
@@ -59,9 +68,15 @@ func TestSeedanceAssetProtocolsAreExplicit(t *testing.T) {
 		AssetUpstreamProtocolVolcengineAction,
 		AssetUpstreamProtocolBytePlusAction,
 		AssetUpstreamProtocolArkAssetsV1,
-		AssetUpstreamProtocolRelayAssetsV1,
+		AssetUpstreamProtocolTokenSaveAssetsV1,
+		AssetUpstreamProtocolMoxingJoyCreatorV1,
+		AssetUpstreamProtocolMoxingVolcAssetsV1,
+		AssetUpstreamProtocolFunCloudMaterial,
 	} {
 		require.NoError(t, ValidateAssetUpstreamProtocol(protocol))
+		assert.True(t, protocol.TransportProfile().IsValid())
 	}
 	require.Error(t, ValidateAssetUpstreamProtocol("automatic"))
+	require.Error(t, ValidateAssetUpstreamProtocol("relay_assets_v1"))
+	require.Error(t, ValidateAssetUpstreamProtocol("funcloud_material_v2"))
 }

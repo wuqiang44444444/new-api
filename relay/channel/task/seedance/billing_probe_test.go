@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/feicai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -147,7 +148,7 @@ func TestBuildTaskBillingProbeUsesFramesForSafePreConsume(t *testing.T) {
 	assert.Equal(t, 13, probe["duration_seconds"])
 }
 
-func TestBuildTaskBillingProbeRejectsUnverifiedMediaArraysSizeBeforeHold(t *testing.T) {
+func TestBuildTaskBillingProbeRejectsUnknownFeicaiModelBeforeHold(t *testing.T) {
 	context := probeContext(relaycommon.TaskSubmitReq{})
 	duration, resolution, ratio := 4, "720p", "9:16"
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
@@ -160,7 +161,7 @@ func TestBuildTaskBillingProbeRejectsUnverifiedMediaArraysSizeBeforeHold(t *test
 			Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
 		},
 	})
-	_, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays}).BuildTaskBillingProbe(
+	_, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos}).BuildTaskBillingProbe(
 		context,
 		&relaycommon.RelayInfo{
 			OriginModelName: "customer-seedance-model",
@@ -169,10 +170,11 @@ func TestBuildTaskBillingProbeRejectsUnverifiedMediaArraysSizeBeforeHold(t *test
 			},
 		},
 	)
-	require.ErrorContains(t, err, "no verified provider size")
+	require.ErrorContains(t, err, "selected customer model is not supported")
+	assert.NotContains(t, err.Error(), "unverified-provider-model")
 }
 
-func TestBuildTaskBillingProbeRejectsUnverifiedHighResolutionSize(t *testing.T) {
+func TestBuildTaskBillingProbeRequiresSelectedFeicaiChannelMeta(t *testing.T) {
 	context := probeContext(relaycommon.TaskSubmitReq{})
 	duration, resolution, ratio := 4, "1080p", "16:9"
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
@@ -186,11 +188,74 @@ func TestBuildTaskBillingProbeRejectsUnverifiedHighResolutionSize(t *testing.T) 
 		},
 	})
 
-	_, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays}).BuildTaskBillingProbe(
+	_, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos}).BuildTaskBillingProbe(
 		context,
 		&relaycommon.RelayInfo{OriginModelName: "customer-seedance-1080p"},
 	)
 	require.ErrorContains(t, err, "billing capability is unavailable")
+}
+
+func TestBuildTaskBillingProbeUsesPerSecondModeAndActualRatioForFeicaiProPI(t *testing.T) {
+	context := probeContext(relaycommon.TaskSubmitReq{})
+	duration, resolution, ratio := 15, "720p", "21:9"
+	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
+		ContractID: dto.VideoContractModelArkV3,
+		ModelArk: &dto.ModelArkVideoCreateRequest{
+			Model:      "seedance-2.0-pro-pi-720p",
+			Duration:   &duration,
+			Resolution: &resolution,
+			Ratio:      &ratio,
+			Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
+		},
+	})
+	probe, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos}).BuildTaskBillingProbe(
+		context,
+		&relaycommon.RelayInfo{
+			OriginModelName: "seedance-2.0-pro-pi-720p",
+			ChannelMeta: &relaycommon.ChannelMeta{
+				UpstreamModelName: feicai.ProviderModelSeedance20ProPI720P,
+			},
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "per-second", probe["billing_mode"])
+	assert.Equal(t, "21:9", probe["ratio"])
+	assert.Equal(t, 1.0, probe["size_multiplier"])
+	assert.NotContains(t, probe, "size")
+	assert.NotContains(t, probe, "billing_size_class")
+}
+
+func TestBuildTaskBillingProbeKeepsAllFeicaiRatiosPriceNeutral(t *testing.T) {
+	for _, ratio := range []string{"21:9", "16:9", "4:3", "1:1", "3:4", "9:16"} {
+		t.Run(ratio, func(t *testing.T) {
+			context := probeContext(relaycommon.TaskSubmitReq{})
+			duration, resolution := 4, "720p"
+			relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
+				ContractID: dto.VideoContractModelArkV3,
+				ModelArk: &dto.ModelArkVideoCreateRequest{
+					Model:      "administrator-defined-client-name",
+					Duration:   &duration,
+					Resolution: &resolution,
+					Ratio:      &ratio,
+					Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
+				},
+			})
+
+			probe, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos}).BuildTaskBillingProbe(
+				context,
+				&relaycommon.RelayInfo{
+					OriginModelName: "administrator-defined-client-name",
+					ChannelMeta: &relaycommon.ChannelMeta{
+						UpstreamModelName: feicai.ProviderModelSeedance20Mini720P,
+					},
+				},
+			)
+			require.NoError(t, err)
+			assert.Equal(t, ratio, probe["ratio"])
+			assert.Equal(t, 1.0, probe["size_multiplier"])
+			assert.NotContains(t, probe, "size")
+		})
+	}
 }
 
 func TestOfficialPriceTableRemainsIsolatedFromExternalModels(t *testing.T) {
@@ -211,4 +276,16 @@ func TestTokenSaveDoubaoRelayDoesNotApplyOfficialTokenPriceRatio(t *testing.T) {
 	}), info)
 
 	assert.Nil(t, ratios)
+}
+
+func TestMoxing25BillingProbeUsesThirtySecondAudioDefault(t *testing.T) {
+	context := probeContext(relaycommon.TaskSubmitReq{Metadata: map[string]any{"duration": float64(-1)}})
+	probe, err := (&TaskAdaptor{protocol: dto.VideoUpstreamProtocolMoxingModelArkV1}).BuildTaskBillingProbe(
+		context,
+		&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: modelSeedance25}},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, 30, probe["duration_seconds"])
+	assert.Equal(t, true, probe["generate_audio"])
 }

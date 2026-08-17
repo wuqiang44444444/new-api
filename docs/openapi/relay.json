@@ -75,7 +75,7 @@
       "get": {
         "summary": "获取模型列表",
         "deprecated": false,
-        "description": "获取当前可用的模型列表。\n\n根据请求头自动识别返回格式：\n- 包含 `x-api-key` 和 `anthropic-version` 头时返回 Anthropic 格式\n- 包含 `x-goog-api-key` 头或 `key` 查询参数时返回 Gemini 格式\n- 其他情况返回 OpenAI 格式\n",
+        "description": "获取模型目录。普通 NEWAPI 模型仍按当前 Key 的可用范围返回；所有已配置 Seedance Link 客户模型都会返回，并通过 `available`、`availability` 区分当前可调用、已禁用或受当前 Key 限制。Seedance 条目还包含统一 ModelArk V3 调用接口和逐模型素材接口能力；不会暴露 Provider 模型、渠道、凭据或南向私有路径。\n\n根据请求头自动识别返回格式：\n- 包含 `x-api-key` 和 `anthropic-version` 头时返回 Anthropic 格式\n- 包含 `x-goog-api-key` 头或 `key` 查询参数时返回 Gemini 格式\n- 其他情况返回 OpenAI 格式\n",
         "operationId": "listModels",
         "tags": [
           "获取模型列表"
@@ -151,6 +151,48 @@
             "BearerAuth": []
           }
         ]
+      }
+    },
+    "/v1/models/{model}": {
+      "get": {
+        "summary": "获取单个模型元数据",
+        "deprecated": false,
+        "description": "按客户模型名获取单个模型。Seedance 条目返回统一视频创建合同、逐操作素材能力和匿名素材复用域；不返回 Provider、上游原始模型名、Channel、凭据或南向路径。",
+        "operationId": "retrieveModel",
+        "tags": ["获取模型列表"],
+        "parameters": [
+          {
+            "name": "model",
+            "in": "path",
+            "required": true,
+            "description": "部署方定义的客户模型名。",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "模型元数据；模型不存在时按兼容合同返回 model_not_found 错误信封。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {"$ref": "#/components/schemas/Model"},
+                    {"$ref": "#/components/schemas/ErrorResponse"}
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+              }
+            }
+          }
+        },
+        "security": [{"BearerAuth": []}]
       }
     },
     "/v1beta/models": {
@@ -2359,11 +2401,40 @@
         ]
       }
     },
+    "/api/v3/contents/generations/models": {
+      "get": {
+        "summary": "获取 Seedance ModelArk 模型目录",
+        "deprecated": false,
+        "description": "返回所有已配置 Seedance 客户模型。禁用或受当前 Key 限制的模型继续返回，并由 available 与 availability 表达调用资格；api 字段提供完整 ModelArk V3 北向操作与逐模型素材接口支持矩阵。",
+        "operationId": "listModelArkVideoModels",
+        "tags": [
+          "视频生成/ModelArk格式"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Seedance 模型目录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v3/contents/generations/tasks": {
       "post": {
         "summary": "创建 ModelArk 视频任务",
         "deprecated": false,
-        "description": "使用公开 ModelArk v3 合同创建视频任务。seedance-2.0-standard 与 seedance-2.0-fast 是独立的可变分辨率 SKU，两者仅支持普通 Link 资源，不支持真人素材；Fast 仅支持 480p/720p。飞彩当前固定分辨率模型仍处于逐模型 size 与账单验证阶段，不在本 OpenAPI 中发布。",
+        "description": "使用公开 ModelArk v3 合同创建视频任务。所有已配置 Seedance 客户模型及其当前可用状态、视频操作和素材操作矩阵由 GET /v1/models 返回；available=false 的目录条目不能创建新任务。具体生成参数仍由对应模型的已验证合同校验。",
         "operationId": "createModelArkVideoTask",
         "tags": [
           "视频生成/ModelArk格式"
@@ -2587,73 +2658,39 @@
               }
             }
           },
-          "409": {
-            "description": "素材、模型或渠道状态冲突"
+          "404": {
+            "description": "客户模型不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "所选模型不支持该素材操作，或素材类型不受支持",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "message": "asset operation is not supported by this model",
+                    "type": "asset_error",
+                    "code": "unsupported_asset_operation",
+                    "request_id": "req_..."
+                  }
+                }
+              }
+            }
           },
           "502": {
             "description": "素材上游操作失败"
           },
           "503": {
             "description": "素材上游不可用"
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
-      },
-      "get": {
-        "summary": "列出素材",
-        "deprecated": false,
-        "operationId": "listAssets",
-        "tags": [
-          "素材"
-        ],
-        "parameters": [
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "asset_kind",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "media_type",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "name",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "素材列表",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AssetListResponse"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -2674,6 +2711,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/AssetId"
+          },
+          {
+            "$ref": "#/components/parameters/AssetModel"
           }
         ],
         "responses": {
@@ -2688,7 +2728,7 @@
             }
           },
           "404": {
-            "description": "素材不存在"
+            "description": "客户模型或素材不存在"
           }
         },
         "security": [
@@ -2729,6 +2769,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "客户模型或素材不存在"
           }
         },
         "security": [
@@ -2747,14 +2790,17 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/AssetId"
+          },
+          {
+            "$ref": "#/components/parameters/AssetModel"
           }
         ],
         "responses": {
           "204": {
             "description": "素材已删除"
           },
-          "409": {
-            "description": "素材状态或绑定不允许删除"
+          "404": {
+            "description": "客户模型或所选模型的上游素材不存在"
           }
         },
         "security": [
@@ -2796,36 +2842,32 @@
           "400": {
             "description": "素材组请求无效"
           },
+          "404": {
+            "description": "客户模型不存在"
+          },
+          "422": {
+            "description": "所选模型不支持该素材组操作，或素材组类型不受支持",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "message": "asset operation is not supported by this model",
+                    "type": "asset_error",
+                    "code": "unsupported_asset_operation",
+                    "request_id": "req_..."
+                  }
+                }
+              }
+            }
+          },
           "502": {
             "description": "素材上游操作失败"
           },
           "503": {
             "description": "素材上游不可用"
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
-      },
-      "get": {
-        "summary": "列出素材组",
-        "deprecated": false,
-        "operationId": "listAssetGroups",
-        "tags": [
-          "素材"
-        ],
-        "responses": {
-          "200": {
-            "description": "素材组列表",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AssetGroupListResponse"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -2846,6 +2888,19 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/AssetGroupId"
+          },
+          {
+            "$ref": "#/components/parameters/AssetModel"
+          },
+          {
+            "name": "verification_session",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "真人认证会话 ID 查询时设为 true。"
           }
         ],
         "responses": {
@@ -2860,7 +2915,7 @@
             }
           },
           "404": {
-            "description": "素材组不存在"
+            "description": "客户模型或素材组不存在"
           }
         },
         "security": [
@@ -2879,11 +2934,17 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/AssetGroupId"
+          },
+          {
+            "$ref": "#/components/parameters/AssetModel"
           }
         ],
         "responses": {
           "204": {
             "description": "素材组已删除"
+          },
+          "404": {
+            "description": "客户模型或素材组不存在"
           },
           "409": {
             "description": "素材组仍包含素材或当前状态不允许删除"
@@ -2921,6 +2982,11 @@
               "code": {
                 "type": "string",
                 "description": "错误代码",
+                "nullable": true
+              },
+              "request_id": {
+                "type": "string",
+                "description": "请求追踪 ID",
                 "nullable": true
               }
             }
@@ -2996,6 +3062,420 @@
             "type": "string",
             "description": "模型所有者",
             "example": "openai"
+          },
+          "supported_endpoint_types": {
+            "type": "array",
+            "description": "客户可调用的入口类型；Seedance Link 固定为 modelark-video。",
+            "items": {
+              "type": "string"
+            }
+          },
+          "available": {
+            "type": "boolean",
+            "description": "当前 API Key 是否可以发起新请求。Seedance 模型即使为 false 仍保留在目录中。"
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "available",
+              "disabled",
+              "restricted"
+            ]
+          },
+          "api": {
+            "$ref": "#/components/schemas/PublicModelAPI"
+          }
+        }
+      },
+      "PublicModelAPI": {
+        "type": "object",
+        "required": [
+          "video",
+          "assets"
+        ],
+        "properties": {
+          "video": {
+            "$ref": "#/components/schemas/PublicVideoAPI"
+          },
+          "assets": {
+            "$ref": "#/components/schemas/PublicAssetAPI"
+          }
+        }
+      },
+      "PublicVideoAPI": {
+        "type": "object",
+        "required": [
+          "protocol",
+          "documentation_path",
+          "operations",
+          "creation"
+        ],
+        "properties": {
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "modelark_v3"
+            ]
+          },
+          "documentation_path": {
+            "type": "string",
+            "example": "/docs/api-reference/videos/modelark"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicAPIOperation"
+            }
+          },
+          "creation": {
+            "$ref": "#/components/schemas/PublicVideoCreation",
+            "description": "统一视频创建合同；model 为部署方定义的客户模型名，不是上游原始模型名。"
+          }
+        }
+      },
+      "PublicVideoCreation": {
+        "type": "object",
+        "required": [
+          "method",
+          "path",
+          "content_type",
+          "required_fields",
+          "model"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": ["POST"]
+          },
+          "path": {
+            "type": "string",
+            "example": "/api/v3/contents/generations/tasks"
+          },
+          "content_type": {
+            "type": "string",
+            "enum": ["application/json"]
+          },
+          "required_fields": {
+            "type": "array",
+            "items": {"type": "string"},
+            "example": ["model", "content"]
+          },
+          "model": {
+            "type": "string",
+            "description": "应在创建请求中发送的客户模型名。"
+          }
+        }
+      },
+      "PublicAssetAPI": {
+        "type": "object",
+        "required": [
+          "supported",
+          "documentation_path",
+          "management_mode",
+          "requires_model",
+          "reference_format",
+          "media",
+          "operations"
+        ],
+        "properties": {
+          "supported": {
+            "type": "boolean",
+            "description": "该客户模型是否支持素材操作。"
+          },
+          "documentation_path": {
+            "type": "string",
+            "example": "/docs/api-reference/assets"
+          },
+          "management_mode": {
+			"type": "string",
+			"enum": ["caller_managed_stateless"]
+		  },
+		  "requires_model": {
+			"type": "boolean",
+			"description": "所有单项素材和素材组操作都必须携带客户模型名。"
+		  },
+		  "reference_format": {
+			"type": "string",
+			"example": "asset://{opaque_upstream_asset_id}"
+          },
+          "reuse_scope": {
+            "type": "string",
+            "description": "匿名素材复用域；仅支持素材时返回。两个模型的非空值完全相同时才可尝试复用，最终仍由上游裁决。",
+            "example": "asset_scope_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicAssetMedia"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "description": "统一素材北向的完整操作表；supported=false 表示该模型明确不支持对应操作。",
+            "items": {
+              "$ref": "#/components/schemas/PublicAPIOperation"
+            }
+          },
+          "creation": {
+            "$ref": "#/components/schemas/PublicAssetCreation",
+            "description": "仅在 create_asset 可用时返回；描述客户应如何构造 POST /v1/assets 及平台已经验证的限制。"
+          }
+        }
+      },
+      "PublicAssetMedia": {
+        "type": "object",
+        "required": [
+          "kind",
+          "media_type",
+          "asset_group_requirement"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "general",
+              "real_person"
+            ]
+          },
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "audio"
+            ]
+          },
+          "asset_group_requirement": {
+            "type": "string",
+            "enum": [
+              "required",
+              "optional",
+              "unsupported"
+            ],
+            "description": "该 kind + media_type 创建素材时对 asset_group_id 的要求；unsupported 表示必须省略且不应创建素材组。"
+          }
+        }
+      },
+      "PublicAssetCreation": {
+        "type": "object",
+        "required": [
+          "method",
+          "path",
+          "content_type",
+          "required_fields",
+          "name_max_characters",
+          "source",
+          "example"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "POST"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "example": "/v1/assets"
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "application/json"
+            ]
+          },
+          "required_fields": {
+            "type": "array",
+            "description": "JSON 必填字段，嵌套字段使用点号；asset_group_id 是否必填同时受 media.asset_group_requirement 约束。",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name_max_characters": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "source": {
+            "$ref": "#/components/schemas/PublicAssetSourceContract"
+          },
+          "example": {
+            "$ref": "#/components/schemas/PublicAssetCreateExample"
+          }
+        }
+      },
+      "PublicAssetSourceContract": {
+        "type": "object",
+        "required": [
+          "type",
+          "url_scheme",
+          "public_network_only",
+          "port",
+          "max_url_length",
+          "expires_at_min_remaining_seconds",
+          "content_type_must_match_media_type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "url"
+            ]
+          },
+          "url_scheme": {
+            "type": "string",
+            "enum": [
+              "https"
+            ]
+          },
+          "public_network_only": {
+            "type": "boolean"
+          },
+          "port": {
+            "type": "integer",
+            "enum": [
+              443
+            ]
+          },
+          "max_url_length": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expires_at_min_remaining_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "source.expires_at 提供时，其剩余有效期至少应达到该值；expires_at 可省略。"
+          },
+          "max_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "仅在网关会抓取并上传素材的协议上返回。"
+          },
+          "redirect_limit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "content_type_must_match_media_type": {
+            "type": "boolean"
+          },
+          "accepted_content_types": {
+            "type": "array",
+            "description": "仅返回平台已验证并强制校验的 MIME；不臆测未验证的 Provider 尺寸、码率或格式限制。",
+            "items": {
+              "$ref": "#/components/schemas/PublicAssetSourceMediaTypes"
+            }
+          }
+        }
+      },
+      "PublicAssetSourceMediaTypes": {
+        "type": "object",
+        "required": [
+          "media_type",
+          "content_types"
+        ],
+        "properties": {
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "audio"
+            ]
+          },
+          "content_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PublicAssetCreateExample": {
+        "type": "object",
+        "required": [
+          "name",
+          "asset_kind",
+          "media_type",
+          "model",
+          "source"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "asset_kind": {
+            "type": "string",
+            "enum": [
+              "general",
+              "real_person"
+            ]
+          },
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "audio"
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "asset_group_id": {
+            "type": "string",
+            "pattern": "^astgrp_"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PublicAssetSourceExample"
+          }
+        }
+      },
+      "PublicAssetSourceExample": {
+        "type": "object",
+        "required": [
+          "type",
+          "url"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "url"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "PublicAPIOperation": {
+        "type": "object",
+        "required": [
+          "operation",
+          "method",
+          "path",
+          "supported"
+        ],
+        "properties": {
+          "operation": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PATCH",
+              "DELETE"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "supported": {
+            "type": "boolean"
           }
         }
       },
@@ -3046,6 +3526,20 @@
                   "items": {
                     "type": "string"
                   }
+                },
+                "available": {
+                  "type": "boolean"
+                },
+                "availability": {
+                  "type": "string",
+                  "enum": [
+                    "available",
+                    "disabled",
+                    "restricted"
+                  ]
+                },
+                "api": {
+                  "$ref": "#/components/schemas/PublicModelAPI"
                 }
               }
             }
@@ -5502,7 +5996,7 @@
           "content": {
             "type": "array",
             "minItems": 1,
-            "description": "统一 ModelArk V3 文本和媒体条目。媒体 URL 可使用 HTTP(S)、Data URL 或 asset://ast_*；具体模型能力由上线前技术审核和 Provider 错误确定。",
+            "description": "统一 ModelArk V3 文本和媒体条目。媒体 URL 可使用 HTTP(S)、Data URL 或 asset://<opaque-upstream-id>；素材存在性与兼容性由当前 Provider 判断。",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -5561,6 +6055,14 @@
           "ratio": {
             "type": "string",
             "description": "画幅。可选值、默认值与 adaptive 支持由当前已发布模型 capability 决定。"
+          },
+          "output_format": {
+            "type": "string",
+            "enum": [
+              "mp4",
+              "mov"
+            ],
+            "description": "显式类型化输出格式。仅已登记支持该字段的客户模型接受 mp4 或 mov；其它模型传入时会明确失败。"
           },
           "service_tier": {
             "type": "string"
@@ -5789,7 +6291,7 @@
           },
           "asset_group_id": {
             "type": "string",
-            "description": "可选 astgrp_*；真人素材必须属于已认证真人组"
+			"description": "可选的上游素材组 opaque ID；网关不查询或验证其归属。"
           },
           "source": {
             "$ref": "#/components/schemas/AssetSource"
@@ -5800,63 +6302,51 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "name"
+		  "name",
+		  "model"
         ],
         "properties": {
           "name": {
             "type": "string"
+		  },
+		  "model": {
+			"type": "string",
+			"description": "用于选择唯一渠道的客户模型名。"
           }
         }
       },
       "Asset": {
         "type": "object",
         "required": [
+		  "object",
           "id",
-          "name",
-          "asset_kind",
-          "media_type",
           "model",
-          "status",
-          "created_at",
-          "updated_at"
+		  "status"
         ],
         "properties": {
+		  "object": {
+			"type": "string",
+			"enum": ["asset"]
+		  },
           "id": {
             "type": "string",
-            "pattern": "^ast_"
-          },
-          "name": {
-            "type": "string"
-          },
-          "asset_kind": {
-            "type": "string",
-            "enum": [
-              "general",
-              "real_person"
-            ]
-          },
-          "media_type": {
-            "type": "string",
-            "enum": [
-              "image",
-              "video",
-              "audio"
-            ]
+			"description": "上游返回的 opaque 素材资源 ID。"
           },
           "model": {
-            "type": "string"
+			"type": "string",
+			"description": "请求使用的客户模型名；不返回上游原始模型名。"
           },
-          "asset_group_id": {
-            "type": "string",
-            "pattern": "^astgrp_"
+		  "reference": {
+			"type": "string",
+			"pattern": "^asset://",
+			"description": "素材可用于生成时返回；调用方负责保存。"
           },
           "status": {
             "type": "string",
             "enum": [
               "processing",
               "ready",
-              "failed",
-              "deleted"
+			  "failed"
             ]
           },
           "error_code": {
@@ -5864,41 +6354,6 @@
           },
           "error": {
             "type": "string"
-          },
-          "created_at": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "updated_at": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
-      "AssetListResponse": {
-        "type": "object",
-        "required": [
-          "data",
-          "total",
-          "page",
-          "page_size"
-        ],
-        "properties": {
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Asset"
-            }
-          },
-          "total": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "page": {
-            "type": "integer"
-          },
-          "page_size": {
-            "type": "integer"
           }
         }
       },
@@ -5939,42 +6394,36 @@
       "AssetGroup": {
         "type": "object",
         "required": [
+          "object",
           "id",
-          "name",
-          "group_kind",
           "model",
-          "status",
-          "created_at",
-          "updated_at"
+          "status"
         ],
         "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^astgrp_"
-          },
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "group_kind": {
+          "object": {
             "type": "string",
             "enum": [
-              "general",
-              "real_person"
+              "asset_group",
+              "asset_group_verification"
             ]
+          },
+          "id": {
+            "type": "string",
+            "description": "上游素材组 ID；真人认证创建阶段为上游会话 ID。"
           },
           "model": {
             "type": "string"
+          },
+          "group_id": {
+            "type": "string",
+            "description": "真人认证完成后上游返回的实际素材组 ID。"
           },
           "status": {
             "type": "string",
             "enum": [
               "processing",
               "ready",
-              "failed",
-              "deleted"
+              "failed"
             ]
           },
           "verification_url": {
@@ -5985,47 +6434,6 @@
           "expires_at": {
             "type": "integer",
             "format": "int64"
-          },
-          "error_code": {
-            "type": "string"
-          },
-          "error": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "updated_at": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
-      "AssetGroupListResponse": {
-        "type": "object",
-        "required": [
-          "data",
-          "total",
-          "page",
-          "page_size"
-        ],
-        "properties": {
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AssetGroup"
-            }
-          },
-          "total": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "page": {
-            "type": "integer"
-          },
-          "page_size": {
-            "type": "integer"
           }
         }
       }
@@ -6052,9 +6460,16 @@
         "in": "path",
         "required": true,
         "schema": {
-          "type": "string",
-          "pattern": "^astgrp_"
-        }
+		  "type": "string"
+		}
+	  },
+	  "AssetModel": {
+		"name": "model",
+		"in": "query",
+		"required": true,
+		"schema": {
+		  "type": "string"
+		}
       }
     },
     "responses": {},

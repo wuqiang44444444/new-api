@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-11
+last-reviewed: 2026-08-12
 ---
 
 # 视频模型 API 调用指南
@@ -49,6 +49,19 @@ Content-Type: application/json
 - `seed` 为 `-1..2147483647`。
 
 具体 adapter 不支持的字段会明确失败，不会静默删除、钳制或改义。
+`output_format` 是统一北向合同中的显式可选字段，不是任意 Provider 参数透传；当前只有部分已登记模型
+接受 `mp4` 或 `mov`，其它模型显式传入时返回 400。
+
+### 2.1 按模型读取调用合同
+
+调用前查询 `GET /v1/models/{customer_model}`：
+
+- `api.video.creation` 给出创建方法、路径、内容类型、必填字段和应填写的客户模型名；
+- `api.video.operations` 给出全部统一视频入口；
+- `api.assets` 给出该客户模型当前是否支持素材及其限制。
+
+客户模型名由部署方定义，目录不会返回上游原始模型名或 Provider。分辨率、时长、媒体数量和扩展字段
+仍以已登记 adapter 的校验结果为准；不支持的字段在发送上游前明确返回 400。
 
 ## 3. 确定性路由
 
@@ -82,10 +95,9 @@ DELETE /api/v3/contents/generations/tasks/{task_id}
 
 ## 5. 素材
 
-`content` 可以包含 HTTP/HTTPS URL、Data URL、`asset://ast_*`，国内/海外官方模型还支持
-`asset://pubref_<Provider公共AssetID>`。平台私域素材必须属于当前
-`user_id + app_id`，状态为 `ready`，并且创建时客户模型、Channel、协议和凭据身份与本次请求一致。
-`pubref_*` 由调用方从官方目录取得，平台只转发，最终可用性以 Provider 响应为准。
+`content` 可以包含 HTTP/HTTPS URL、Data URL、`asset://<opaque-id>`。opaque ID 由调用方从素材 API
+取得并与客户模型一起保存；平台不会查询或改写素材引用。素材是否属于当前账号或支持当前模型由
+Provider 最终判断。平台不再提供 `ast_*` / `pubref_*` 命名空间。
 素材管理详见[素材库对接指南](素材库对接指南.md)。
 
 ## 6. 模型上线
@@ -93,5 +105,6 @@ DELETE /api/v3/contents/generations/tasks/{task_id}
 模型可用性以 `/v1/models`、Token/Group/Ability 和管理配置为准。系统不提供 Link publication、SKU
 capability、implementation 或 execution binding 接口。
 
-技术人员在线下确认新模型或上游是否兼容已有代码协议；兼容时管理员可直接配置渠道、客户模型和
-`model_mapping`，不兼容时由技术人员新增 `video_upstream_protocol` adapter。管理员不编辑协议 JSON。
+技术人员在线下确认新模型或上游是否兼容已有代码协议；兼容时管理员可配置任意业务客户模型名，并用
+`model_mapping` 精确映射到已登记上游模型；不兼容时由技术人员新增代码 adapter。管理员不编辑协议
+JSON。下游只保存和发送客户模型名。

@@ -321,6 +321,72 @@ func TestListModelsIncludesTieredBillingModel(t *testing.T) {
 	require.Empty(t, missingExprPricing.BillingExpr)
 }
 
+func TestListModelsReturnsDisabledSeedanceModelsWithPublicAPIContracts(t *testing.T) {
+	withSelfUseModeEnabled(t)
+	db := setupModelListControllerTestDB(t)
+
+	funCloud := &model.Channel{
+		Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusManuallyDisabled,
+		Name: "disabled material line", Key: "material-key", Group: "default", Models: "public-video-fast",
+	}
+	funCloud.ModelMapping = common.GetPointer(`{"public-video-fast":"seedance-2-fast"}`)
+	funCloud.SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial,
+		AssetMinURLTTLSeconds: 3600,
+	})
+	feicai := &model.Channel{
+		Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusManuallyDisabled,
+		Name: "disabled fixed-resolution line", Key: "fixed-key", Group: "default", Models: "public-video-720p",
+	}
+	feicai.SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFeicaiVideosV1,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone,
+	})
+	require.NoError(t, db.Create(funCloud).Error)
+	require.NoError(t, db.Create(feicai).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
+
+	ListModels(ctx, constant.ChannelTypeOpenAI)
+
+	assert.NotContains(t, recorder.Body.String(), "funcloud")
+	assert.NotContains(t, recorder.Body.String(), "feicai")
+	assert.NotContains(t, recorder.Body.String(), `"seedance-2-fast"`)
+	payload := decodeListModelsPayload(t, recorder)
+	require.Len(t, payload.Data, 2)
+	byName := make(map[string]dto.OpenAIModels, len(payload.Data))
+	for _, item := range payload.Data {
+		byName[item.Id] = item
+	}
+	funCloudModel := byName["public-video-fast"]
+	require.NotNil(t, funCloudModel.Available)
+	assert.False(t, *funCloudModel.Available)
+	assert.Equal(t, "disabled", funCloudModel.Availability)
+	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeModelArkVideo}, funCloudModel.SupportedEndpointTypes)
+	require.NotNil(t, funCloudModel.API)
+	assert.Equal(t, "new-api", funCloudModel.OwnedBy)
+	assert.True(t, funCloudModel.API.Assets.Supported)
+	assert.NotEmpty(t, funCloudModel.API.Assets.ReuseScope)
+	assert.Equal(t, "public-video-fast", funCloudModel.API.Video.Creation.Model)
+	assert.Equal(t, []string{"model", "content"}, funCloudModel.API.Video.Creation.RequiredFields)
+	require.NotNil(t, funCloudModel.API.Assets.Creation)
+	assert.Equal(t, "/v1/assets", funCloudModel.API.Assets.Creation.Path)
+	assert.Contains(t, funCloudModel.API.Assets.Creation.RequiredFields, "asset_group_id")
+	assert.Equal(t, 3600, int(funCloudModel.API.Assets.Creation.Source.ExpiresAtMinRemainingSeconds))
+	assert.Equal(t, "public-video-fast", funCloudModel.API.Assets.Creation.Example.Model)
+
+	feicaiModel := byName["public-video-720p"]
+	require.NotNil(t, feicaiModel.API)
+	assert.Equal(t, "new-api", feicaiModel.OwnedBy)
+	assert.False(t, feicaiModel.API.Assets.Supported)
+	assert.Empty(t, feicaiModel.API.Assets.ReuseScope)
+	assert.Nil(t, feicaiModel.API.Assets.Creation)
+}
+
 func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T) {
 	withSelfUseModeEnabled(t)
 	db := setupModelListControllerTestDB(t)

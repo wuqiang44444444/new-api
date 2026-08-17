@@ -144,6 +144,7 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		other["upstream_model_name"] = props.UpstreamModelName
 	}
 	appendBillingStatementIdentitySnapshotWithMode(other, props.OriginModelName, props.UpstreamModelName, "per_call")
+	appendProviderBillingEvidence(other, task)
 	return other
 }
 

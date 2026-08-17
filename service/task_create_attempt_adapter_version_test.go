@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestTaskAttemptRecoveryTemplateUsesSameURLMediaArraysAdapter(t *testing.T) {
+func TestTaskAttemptRecoveryTemplateUsesSameFeicaiAdapter(t *testing.T) {
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
 	task := &model.Task{}
 	info := &relaycommon.RelayInfo{
@@ -20,7 +20,7 @@ func TestTaskAttemptRecoveryTemplateUsesSameURLMediaArraysAdapter(t *testing.T) 
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelType: constant.ChannelTypeSeedanceLink,
 			ChannelOtherSettings: dto.ChannelOtherSettings{
-				VideoUpstreamProtocol: dto.VideoUpstreamProtocolURLMediaArraysV1,
+				VideoUpstreamProtocol: dto.VideoUpstreamProtocolFeicaiVideosV1,
 			},
 		},
 	}
@@ -28,7 +28,7 @@ func TestTaskAttemptRecoveryTemplateUsesSameURLMediaArraysAdapter(t *testing.T) 
 	stageTaskProtocolSnapshot(context, task, info)
 
 	assert.Equal(t,
-		"61:third_party_json_video_media_arrays:v2",
+		"61:third_party_feicai_videos:v2",
 		task.PrivateData.SouthboundAdapterVersion,
 	)
 }

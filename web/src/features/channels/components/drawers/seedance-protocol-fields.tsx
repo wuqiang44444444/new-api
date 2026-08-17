@@ -41,13 +41,21 @@ type SeedanceProtocolFieldsProps = {
 const SEEDANCE_VIDEO_PROTOCOL_OPTIONS = [
   { value: 'modelark_v3_volcengine', labelKey: 'Volcengine ModelArk V3' },
   { value: 'modelark_v3_byteplus', labelKey: 'BytePlus ModelArk V3' },
-  { value: 'media_task_v1', labelKey: 'Media Task V1' },
+  {
+    value: 'tokensave_media_task_v1',
+    labelKey: 'TokenSave Media Task V1',
+  },
+  { value: 'moxing_media_task_v1', labelKey: 'Moxing Media Task V1' },
+  {
+    value: 'moxing_modelark_media_v1',
+    labelKey: 'Moxing ModelArk Media Task V1',
+  },
   { value: 'ark_media_v1', labelKey: 'Ark Media V1' },
   {
-    value: 'url_media_arrays_v1',
-    labelKey: 'URL Media Arrays (URL Only, No Asset Library)',
+    value: 'feicai_videos_v1',
+    labelKey: 'Feicai Videos V1 (URL Only, No Asset Library)',
   },
-  { value: 'funcloud_seedance_v2', labelKey: 'FunCloud Seedance V2' },
+  { value: 'funcloud_seedance', labelKey: 'FunCloud Seedance' },
 ] as const
 
 const SEEDANCE_ASSET_PROTOCOL_OPTIONS = [
@@ -61,7 +69,19 @@ const SEEDANCE_ASSET_PROTOCOL_OPTIONS = [
     labelKey: 'BytePlus Official Assets',
   },
   { value: 'ark_assets_v1', labelKey: 'Ark Assets V1' },
-  { value: 'relay_assets_v1', labelKey: 'Relay Assets V1' },
+  { value: 'tokensave_assets_v1', labelKey: 'TokenSave Asset Library V1' },
+  {
+    value: 'moxing_joycreator_assets_v1',
+    labelKey: 'Moxing JoyCreator Asset Library V1',
+  },
+  {
+    value: 'moxing_volc_assets_v1',
+    labelKey: 'Moxing Volcengine Asset Library V1',
+  },
+  {
+    value: 'funcloud_material',
+    labelKey: 'FunCloud Material Library',
+  },
 ] as const
 
 export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
@@ -75,12 +95,18 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
     control: props.control,
     name: 'asset_upstream_protocol',
   })
+  const modelMapping = useWatch({
+    control: props.control,
+    name: 'model_mapping',
+  })
   const usesAssets = assetProtocol && assetProtocol !== 'none'
   const usesOfficialAssets = isOfficialSeedanceAssetProtocol(assetProtocol)
   const usesVolcengineAssets =
     assetProtocol === 'volcengine_assets_action_v2024_01_01'
-  const compatibleAssetProtocols =
-    getCompatibleSeedanceAssetProtocols(videoProtocol)
+  const compatibleAssetProtocols = getCompatibleSeedanceAssetProtocols(
+    videoProtocol,
+    modelMapping
+  )
   const compatibleAssetOptions = SEEDANCE_ASSET_PROTOCOL_OPTIONS.filter(
     (option) =>
       compatibleAssetProtocols.includes(option.value as SeedanceAssetProtocol)
@@ -106,8 +132,10 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
                 value={field.value}
                 onValueChange={(value) => {
                   const nextVideoProtocol = value as SeedanceVideoProtocol
-                  const nextAssetProtocol =
-                    getDefaultSeedanceAssetProtocol(nextVideoProtocol)
+                  const nextAssetProtocol = getDefaultSeedanceAssetProtocol(
+                    nextVideoProtocol,
+                    modelMapping
+                  )
                   field.onChange(nextVideoProtocol)
                   form.setValue('asset_upstream_protocol', nextAssetProtocol, {
                     shouldDirty: true,

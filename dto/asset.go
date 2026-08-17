@@ -16,21 +16,18 @@ type CreateAssetRequest struct {
 }
 
 type UpdateAssetRequest struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Model string `json:"model"`
 }
 
 type AssetResponse struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	AssetKind    string `json:"asset_kind"`
-	MediaType    string `json:"media_type"`
-	Model        string `json:"model,omitempty"`
-	AssetGroupID string `json:"asset_group_id,omitempty"`
-	Status       string `json:"status"`
-	ErrorCode    string `json:"error_code,omitempty"`
-	Error        string `json:"error,omitempty"`
-	CreatedAt    int64  `json:"created_at"`
-	UpdatedAt    int64  `json:"updated_at"`
+	Object    string `json:"object"`
+	ID        string `json:"id"`
+	Model     string `json:"model"`
+	Reference string `json:"reference,omitempty"`
+	Status    string `json:"status"`
+	ErrorCode string `json:"error_code,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 type CreateAssetGroupRequest struct {
@@ -42,16 +39,11 @@ type CreateAssetGroupRequest struct {
 }
 
 type AssetGroupResponse struct {
+	Object          string `json:"object"`
 	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Description     string `json:"description,omitempty"`
-	GroupKind       string `json:"group_kind"`
 	Model           string `json:"model"`
+	GroupID         string `json:"group_id,omitempty"`
 	Status          string `json:"status"`
 	VerificationURL string `json:"verification_url,omitempty"`
 	ExpiresAt       int64  `json:"expires_at,omitempty"`
-	ErrorCode       string `json:"error_code,omitempty"`
-	Error           string `json:"error,omitempty"`
-	CreatedAt       int64  `json:"created_at"`
-	UpdatedAt       int64  `json:"updated_at"`
 }

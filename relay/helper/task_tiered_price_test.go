@@ -25,26 +25,6 @@ const taskSixTierExpression = `param("_task.resolution") == "1080p"
         ? tier("480p720p_video", c * 4.3)
         : tier("480p720p", c * 7.0))`
 
-const funCloudStandardListPriceExpression = `param("_task.has_video_input") == true
-  ? (param("_task.resolution") == "1080p"
-      ? tier("1080p_video", param("_task.duration_seconds") * 398900)
-      : param("_task.resolution") == "720p"
-        ? tier("720p_video", param("_task.duration_seconds") * 160000)
-        : tier("480p_video", param("_task.duration_seconds") * 146500))
-  : (param("_task.resolution") == "1080p"
-      ? tier("1080p", param("_task.duration_seconds") * 365100)
-      : param("_task.resolution") == "720p"
-        ? tier("720p", param("_task.duration_seconds") * 146500)
-        : tier("480p", param("_task.duration_seconds") * 67900))`
-
-const funCloudFastListPriceExpression = `param("_task.has_video_input") == true
-  ? (param("_task.resolution") == "720p"
-      ? tier("720p_video", param("_task.duration_seconds") * 160000)
-      : tier("480p_video", param("_task.duration_seconds") * 146500))
-  : (param("_task.resolution") == "720p"
-      ? tier("720p", param("_task.duration_seconds") * 146500)
-      : tier("480p", param("_task.duration_seconds") * 67900))`
-
 type fixedTaskProbe map[string]any
 
 func (p fixedTaskProbe) BuildTaskBillingProbe(*gin.Context, *relaycommon.RelayInfo) (map[string]any, error) {
@@ -130,53 +110,6 @@ func TestModelPriceHelperTaskTieredMatchesSixPriceTiers(t *testing.T) {
 			assert.Equal(t, model, info.TieredBillingSnapshot.ModelName)
 			assert.Equal(t, test.tier, info.TieredBillingSnapshot.EstimatedTier)
 			assert.Nil(t, price.OtherRatios())
-		})
-	}
-}
-
-func TestModelPriceHelperTaskTieredMatchesFunCloudListPrices(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	const standardModel = "seedance-2.0-standard"
-	const fastModel = "seedance-2.0-fast"
-	loadTaskPricingConfig(t, map[string]string{
-		standardModel: funCloudStandardListPriceExpression,
-		fastModel:     funCloudFastListPriceExpression,
-	}, map[string]int{standardModel: 1, fastModel: 1})
-
-	tests := []struct {
-		name       string
-		model      string
-		resolution string
-		hasVideo   bool
-		tier       string
-		usdPerSec  float64
-	}{
-		{name: "standard 480p", model: standardModel, resolution: "480p", tier: "480p", usdPerSec: 0.0679},
-		{name: "standard 720p", model: standardModel, resolution: "720p", tier: "720p", usdPerSec: 0.1465},
-		{name: "standard 1080p", model: standardModel, resolution: "1080p", tier: "1080p", usdPerSec: 0.3651},
-		{name: "standard v2v 480p", model: standardModel, resolution: "480p", hasVideo: true, tier: "480p_video", usdPerSec: 0.1465},
-		{name: "standard v2v 720p", model: standardModel, resolution: "720p", hasVideo: true, tier: "720p_video", usdPerSec: 0.16},
-		{name: "standard v2v 1080p", model: standardModel, resolution: "1080p", hasVideo: true, tier: "1080p_video", usdPerSec: 0.3989},
-		{name: "fast 480p", model: fastModel, resolution: "480p", tier: "480p", usdPerSec: 0.0679},
-		{name: "fast 720p", model: fastModel, resolution: "720p", tier: "720p", usdPerSec: 0.1465},
-		{name: "fast v2v 480p", model: fastModel, resolution: "480p", hasVideo: true, tier: "480p_video", usdPerSec: 0.1465},
-		{name: "fast v2v 720p", model: fastModel, resolution: "720p", hasVideo: true, tier: "720p_video", usdPerSec: 0.16},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			const duration = 10
-			info := &relaycommon.RelayInfo{OriginModelName: test.model, UserGroup: "default", UsingGroup: "default"}
-			price, err := ModelPriceHelperTaskTiered(taskPriceContext(), info, fixedTaskProbe{
-				"resolution": test.resolution, "has_video_input": test.hasVideo, "duration_seconds": duration,
-			})
-
-			require.NoError(t, err)
-			expected, clamp := common.QuotaRoundChecked(test.usdPerSec * duration * common.QuotaPerUnit)
-			require.Nil(t, clamp)
-			assert.Equal(t, expected, price.Quota)
-			require.NotNil(t, info.TieredBillingSnapshot)
-			assert.Equal(t, test.tier, info.TieredBillingSnapshot.EstimatedTier)
 		})
 	}
 }

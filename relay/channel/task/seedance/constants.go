@@ -9,6 +9,17 @@ var ModelList = []string{
 	"doubao-seedance-1-5-pro-251215",
 	"doubao-seedance-2-0-260128",
 	"doubao-seedance-2-0-fast-260128",
+	"doubao-seedance-2-0-mini-260615",
+	"doubao-seedance-2-5-260628",
+	"doubao-seedance-2-0-260128-tokensave",
+	"doubao-seedance-2-0-260128-moxing",
+	"doubao-seedance-2-0-fast-260128-moxing",
+	"doubao-seedance-2-0-mini-260615-moxing",
+	"doubao-seedance-2-5-260628-moxing",
+	"seedance-2-funcloud",
+	"seedance-2-fast-funcloud",
+	"seedance-2-mini-funcloud",
+	"seedance-2-5-funcloud",
 }
 
 var ChannelName = "seedance-link"

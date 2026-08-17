@@ -468,7 +468,7 @@ func BatchInsertChannelsWithActor(channels []Channel, actorID int) error {
 }
 
 func BatchDeleteChannels(ids []int) (int64, error) {
-	return batchDeleteChannelsWithAssetFence(ids)
+	return batchDeleteChannelRows(ids)
 }
 
 func (channel *Channel) GetPriority() int64 {
@@ -566,7 +566,7 @@ func (channel *Channel) UpdateWithActor(actorID int) error {
 			}
 		}
 	}
-	return updateChannelWithAssetFenceActor(channel, nil, actorID)
+	return updateChannelWithCredentialActor(channel, nil, actorID)
 }
 
 func (channel *Channel) UpdateResponseTime(responseTime int64) {
@@ -590,7 +590,7 @@ func (channel *Channel) UpdateBalance(balance float64) {
 }
 
 func (channel *Channel) Delete() error {
-	return deleteChannelWithAssetFence(channel)
+	return deleteChannel(channel)
 }
 
 // channelPollingLocks stores locks for each channel.id to ensure thread-safe polling
@@ -772,11 +772,11 @@ func updateChannelUsedQuota(id int, quota int) {
 }
 
 func DeleteChannelByStatus(status int64) (int64, error) {
-	return deleteChannelsByStatusWithAssetFence([]int{int(status)})
+	return deleteChannelsByStatus([]int{int(status)})
 }
 
 func DeleteDisabledChannel() (int64, error) {
-	return deleteChannelsByStatusWithAssetFence([]int{common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled})
+	return deleteChannelsByStatus([]int{common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled})
 }
 
 func GetPaginatedTags(offset int, limit int) ([]*string, error) {

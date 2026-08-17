@@ -1,16 +1,17 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-10
+last-reviewed: 2026-08-15
 ---
 
 # 飞彩 Seedance 全模型回归规约
 
 ## 1. 边界
 
-飞彩使用 `ChannelTypeSeedanceLink` 和代码化 `url_media_arrays_v1` 协议。该协议只接受 URL/Data URL，
-必须配对 `asset_upstream_protocol=none`。每个客户模型配置独立渠道和独立
-`model_mapping`；系统不维护 Link SKU、publication、implementation 或 execution binding。
+飞彩使用 `ChannelTypeSeedanceLink` 和代码化 `feicai_videos_v1` 专用协议。素材 CRUD 必须配对
+`asset_upstream_protocol=none`；视频媒体接受 URL/Data URL，并将非空 `asset://<opaque-id>` 交给上游
+最终判断。VIP 与性价比分别使用一个五模型 Channel，每个客户模型拥有
+独立 `model_mapping`；系统不维护 Link SKU、publication、implementation 或 execution binding。
 
 真实 Provider 行为见[飞彩上线验收手册](../40-operations/06-飞彩Seedance全模型上线验收手册.md)。
 
@@ -29,14 +30,16 @@ last-reviewed: 2026-08-10
 对准备上线的每个飞彩 Provider 模型使用确定表格测试覆盖：
 
 - duration 的合法边界与首个非法值；
-- resolution、ratio 和已验证 size evidence；
+- resolution 和 ratio 必须由精确 Provider 模型登记表验证；南向发送 ratio，不生成或发送 size；
+- SD2 只接受`16:9`、`9:16`，其它比例范围按精确 Provider 模型登记，不根据客户模型名称判断；
 - text、image、audio、video 的允许数量、role 和组合；
-- HTTP/HTTPS、Data URL 成功，以及 `asset://ast_*`、`asset://pubref_*` 明确失败；
+- HTTP/HTTPS、Data URL 成功；`asset://<opaque-id>` 原样进入上游请求且不触发本地素材查询；
 - adapter 不支持字段明确失败，不静默删除、钳制或改义；
-- converter 与 billing probe 对同一请求解析相同 duration、size 和计费档位。
+- converter 与 billing probe 对同一请求解析相同 duration、ratio 和计费档位。
 
-模型的图片必填、音视频支持范围和真人内容差异由飞彩判断；平台只维护线协议与 size evidence，不建立
-逐模型 capability 门禁。
+平台对十个精确 Provider 模型维护已验证的 duration、固定分辨率、图片/音频/视频数量和计费模式，
+未知模型发送前失败。飞彩继续负责内容审核、媒体可拉取性和真实生成结果；代码登记表不演化为管理员
+可编辑的逐模型 capability 系统。
 
 ## 4. 异步与失败
 
@@ -49,9 +52,9 @@ last-reviewed: 2026-08-10
 
 ## 5. 素材
 
-飞彩 Channel 固定使用 `asset_upstream_protocol=none`。`asset://ast_*`、`asset://pubref_*` 和真人认证
-流程必须在 Provider POST 前明确失败；普通 URL/Data URL 不创建平台素材。不得借用其它 Seedance
-Channel 的素材，也不得建立自动物化、迁移、source fallback 或多 binding。
+飞彩 Channel 固定使用 `asset_upstream_protocol=none`，因此素材 CRUD 和真人认证元数据明确为不支持。
+视频中的 `asset://<opaque-id>` 只检查非空并交给飞彩 Provider；平台不判断该 ID 是否来自其它 Provider，
+也不建立素材、自动物化、迁移、source fallback 或 binding。
 
 ## 6. 计费
 
@@ -60,17 +63,21 @@ Channel 的素材，也不得建立自动物化、迁移、source fallback 或�
 - 预扣和终态使用创建时冻结的同一计费事实；
 - 失败退款与 unknown hold 均幂等；unknown 不按期限自动释放，只有技术人员核实明确未创建后才人工释放；
 - Provider 返回的额度字段不覆盖客户 quota 或历史结算。
+- 同一 Provider 模型、同时长的所有合法比例必须得到相同客户 quota，`size_multiplier` 恒为`1`。
 
 ## 7. 验证命令
 
 ```bash
-go test ./model ./middleware ./relay/common ./relay/channel/task/doubao/... ./relay ./service ./controller
+go test ./model ./dto ./relay/common ./relay/channel/task/seedance/...
+go test ./controller -run '^TestVideoFeicaiContentSourceUsesFrozenSnapshot$'
+go test ./relay -run '^TestFeicaiVideoCreateHTTPDispositionFailsClosedWithoutVerifiedProviderContract$'
+go test ./service -run '^(TestVideoPollingUsesFrozenFeicaiAdapterAndRedactsResultURLFromTaskData|TestVideoPollingRejectsUnknownFrozenAdapterBeforeFetch)$'
 ```
 
 涉及 `relaykit/` 时另执行：
 
 ```bash
-cd relaykit && GOWORK=off go build ./...
+cd relaykit && GOWORK=off go test ./... && GOWORK=off go build ./...
 ```
 
 测试使用确定输入和精确断言，不用随机循环、sleep、日志存在性或私有文件布局代替行为合同。

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/feicai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
 
@@ -56,20 +57,6 @@ type taskResponse struct {
 	FailReason string `json:"fail_reason"`
 }
 
-type taskListResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-	Data    struct {
-		Items []struct {
-			TaskID     string `json:"task_id"`
-			Status     string `json:"status"`
-			Quota      int64  `json:"quota"`
-			VideoURL   string `json:"video_url"`
-			FailReason string `json:"fail_reason"`
-		} `json:"items"`
-	} `json:"data"`
-}
-
 type modelListResponse struct {
 	Data []struct {
 		ID string `json:"id"`
@@ -94,9 +81,6 @@ type modelResult struct {
 	PollStatuses          []string `json:"poll_statuses,omitempty"`
 	TerminalStatus        string   `json:"terminal_status,omitempty"`
 	VideoURL              string   `json:"-"`
-	TaskListStatus        string   `json:"task_list_status,omitempty"`
-	TaskListHTTPStatus    int      `json:"task_list_http_status,omitempty"`
-	TaskQuota             int64    `json:"task_quota,omitempty"`
 	ContentHTTPStatus     int      `json:"content_http_status,omitempty"`
 	ContentType           string   `json:"content_type,omitempty"`
 	ContentLength         int64    `json:"content_length,omitempty"`
@@ -117,7 +101,6 @@ type report struct {
 	BaseURL                  string             `json:"base_url"`
 	SizeCandidate            string             `json:"size_candidate"`
 	EstimatedMinimumSpendCNY float64            `json:"estimated_minimum_spend_cny"`
-	ReconciliationAvailable  bool               `json:"reconciliation_available"`
 	UsageBeforeCents         map[string]float64 `json:"usage_before_cents"`
 	UsageAfterCents          map[string]float64 `json:"usage_after_cents"`
 	Models                   []modelResult      `json:"models"`
@@ -170,10 +153,11 @@ func main() {
 	if vipKey == "" || valueKey == "" {
 		fatalf("FEICAI_VIP_API_KEY and FEICAI_VALUE_API_KEY are required")
 	}
-	specs, err := selectVerificationModelSpecs(
-		verificationModelSpecs(vipKey, valueKey, referenceImage),
-		*selectedModels,
-	)
+	allSpecs, err := verificationModelSpecs(vipKey, valueKey, referenceImage)
+	if err != nil {
+		fatalf("invalid verification metadata: %v", err)
+	}
+	specs, err := selectVerificationModelSpecs(allSpecs, *selectedModels)
 	if err != nil {
 		fatalf("invalid model selection: %v", err)
 	}
@@ -209,7 +193,7 @@ func main() {
 
 	verification := report{
 		StartedAt:                time.Now().UTC().Format(time.RFC3339),
-		Protocol:                 "url_media_arrays_v1",
+		Protocol:                 "feicai_videos_v1",
 		BaseURL:                  baseURL.String(),
 		SizeCandidate:            *size,
 		EstimatedMinimumSpendCNY: estimatedSpend,
@@ -233,7 +217,7 @@ func main() {
 	}
 	pollTasks(ctx, client, baseURL, specs, verification.Models, *pollInterval)
 	for index := range verification.Models {
-		completeEvidence(ctx, client, baseURL, specs[index], &verification.Models[index], ffprobePath)
+		completeEvidence(ctx, client, specs[index], &verification.Models[index], ffprobePath)
 	}
 	for name, credential := range credentialSpecs {
 		if len(specsForCredential(specs, name)) == 0 {
@@ -248,7 +232,6 @@ func main() {
 	}
 
 	verification.Passed = true
-	verification.ReconciliationAvailable = true
 	for index := range verification.Models {
 		result := &verification.Models[index]
 		result.Passed = result.Error == "" && result.TerminalStatus == "completed" && result.IdentityStable &&
@@ -256,8 +239,6 @@ func main() {
 			(result.ContentHTTPStatus == http.StatusOK || result.ContentHTTPStatus == http.StatusPartialContent) &&
 			result.VideoWidth > 0 && result.VideoHeight > 0 && result.VideoDurationSeconds > 0
 		verification.Passed = verification.Passed && result.Passed
-		verification.ReconciliationAvailable = verification.ReconciliationAvailable &&
-			result.TaskListHTTPStatus == http.StatusOK && result.TaskListStatus == "SUCCESS" && result.TaskQuota > 0
 	}
 	for name, before := range verification.UsageBeforeCents {
 		after := verification.UsageAfterCents[name]
@@ -276,19 +257,54 @@ func main() {
 	}
 }
 
-func verificationModelSpecs(vipKey, valueKey, referenceImage string) []modelSpec {
-	return []modelSpec{
-		{ProviderModel: "seedance-2.0-vip-720p-mini-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 2.20},
-		{ProviderModel: "seedance2.0-sd2", CredentialName: "value", Credential: valueKey, Duration: 11, ReferenceImage: referenceImage, EstimatedCNY: 6.60},
-		{ProviderModel: "seedance-2.0-vip-720p-fast-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 2.40},
-		{ProviderModel: "seedance-2.0-933-720p-azhw", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 2.48},
-		{ProviderModel: "seedance-2.0-vip-720p-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 2.96},
-		{ProviderModel: "seedance-2.0-933-1080p-azhw", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 5.92},
-		{ProviderModel: "seedance-2.0-vip-1080p-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 6.96},
-		{ProviderModel: "seedance-2.0-933-4k-azhw", CredentialName: "value", Credential: valueKey, Duration: 4, EstimatedCNY: 14.32},
-		{ProviderModel: "seedance-2.0-vip-4k-azhw", CredentialName: "vip", Credential: vipKey, Duration: 4, EstimatedCNY: 16.92},
-		{ProviderModel: "seedance-933-pro-pi", CredentialName: "value", Credential: valueKey, Duration: 15, EstimatedCNY: 11.05},
+type verificationMetadata struct {
+	CredentialName      string
+	EstimatedCNY        float64
+	NeedsReferenceImage bool
+}
+
+var verificationMetadataByModel = map[string]verificationMetadata{
+	feicai.ProviderModelSeedance20Mini720P:      {CredentialName: "vip", EstimatedCNY: 2.20},
+	feicai.ProviderModelSeedance20SD2720P:       {CredentialName: "value", EstimatedCNY: 6.60, NeedsReferenceImage: true},
+	feicai.ProviderModelSeedance20Fast720P:      {CredentialName: "vip", EstimatedCNY: 2.40},
+	feicai.ProviderModelSeedance20Value720P:     {CredentialName: "value", EstimatedCNY: 2.48},
+	feicai.ProviderModelSeedance20Standard720P:  {CredentialName: "vip", EstimatedCNY: 2.96},
+	feicai.ProviderModelSeedance20Value1080P:    {CredentialName: "value", EstimatedCNY: 5.92},
+	feicai.ProviderModelSeedance20Standard1080P: {CredentialName: "vip", EstimatedCNY: 6.96},
+	feicai.ProviderModelSeedance20Value4K:       {CredentialName: "value", EstimatedCNY: 14.32},
+	feicai.ProviderModelSeedance20Standard4K:    {CredentialName: "vip", EstimatedCNY: 16.92},
+	feicai.ProviderModelSeedance20ProPI720P:     {CredentialName: "value", EstimatedCNY: 11.05},
+}
+
+func verificationModelSpecs(vipKey, valueKey, referenceImage string) ([]modelSpec, error) {
+	adapterSpecs := feicai.CurrentModelSpecs()
+	if len(adapterSpecs) != len(verificationMetadataByModel) {
+		return nil, fmt.Errorf("adapter exposes %d models but verifier metadata has %d", len(adapterSpecs), len(verificationMetadataByModel))
 	}
+	credentials := map[string]string{"vip": vipKey, "value": valueKey}
+	specs := make([]modelSpec, 0, len(adapterSpecs))
+	for _, adapterSpec := range adapterSpecs {
+		metadata, ok := verificationMetadataByModel[adapterSpec.ProviderModel]
+		if !ok {
+			return nil, fmt.Errorf("missing verifier metadata for provider model %q", adapterSpec.ProviderModel)
+		}
+		credential, ok := credentials[metadata.CredentialName]
+		if !ok {
+			return nil, fmt.Errorf("unsupported credential group %q for provider model %q", metadata.CredentialName, adapterSpec.ProviderModel)
+		}
+		spec := modelSpec{
+			ProviderModel:  adapterSpec.ProviderModel,
+			CredentialName: metadata.CredentialName,
+			Credential:     credential,
+			Duration:       adapterSpec.MinDuration,
+			EstimatedCNY:   metadata.EstimatedCNY,
+		}
+		if metadata.NeedsReferenceImage {
+			spec.ReferenceImage = referenceImage
+		}
+		specs = append(specs, spec)
+	}
+	return specs, nil
 }
 
 func selectVerificationModelSpecs(specs []modelSpec, rawSelection string) ([]modelSpec, error) {
@@ -561,44 +577,12 @@ func pollTask(
 func completeEvidence(
 	ctx context.Context,
 	client *http.Client,
-	baseURL *url.URL,
 	spec modelSpec,
 	result *modelResult,
 	ffprobePath string,
 ) {
 	if result.ProviderID == "" || result.TerminalStatus == "" {
 		return
-	}
-	for attempt := 0; attempt < 3; attempt++ {
-		status, payload, err := doProviderRequest(
-			ctx,
-			client,
-			http.MethodGet,
-			endpoint(baseURL, "/v1/tasks?task_id="+url.QueryEscape(result.ProviderID)+"&page_size=5"),
-			spec.Credential,
-			nil,
-		)
-		result.TaskListHTTPStatus = status
-		if err == nil && status == http.StatusOK {
-			var response taskListResponse
-			if common.Unmarshal(payload, &response) == nil && response.Success {
-				for _, item := range response.Data.Items {
-					if strings.TrimSpace(item.TaskID) == result.ProviderID {
-						result.TaskListStatus = strings.ToUpper(strings.TrimSpace(item.Status))
-						result.TaskQuota = item.Quota
-						break
-					}
-				}
-			}
-		}
-		if result.TaskListStatus != "" {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(2 * time.Second):
-		}
 	}
 	if result.TerminalStatus == "completed" && result.SameOriginVideo {
 		contentStatus, contentType, contentLength, width, height, videoDuration, err := inspectContent(

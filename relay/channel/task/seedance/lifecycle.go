@@ -15,10 +15,9 @@ import (
 func (*TaskAdaptor) TaskLifecycleCapabilities(task *model.Task) channel.TaskLifecycleCapabilities {
 	official := task != nil && (task.PrivateData.VideoUpstreamProfile == "" || task.PrivateData.VideoUpstreamProfile == dto.VideoUpstreamProfileOfficial)
 	return channel.TaskLifecycleCapabilities{
-		SupportsContent:         true,
-		SupportsCancelQueued:    official,
-		SupportsDeleteTerminal:  official,
-		SupportsAssetReferences: true,
+		SupportsContent:        true,
+		SupportsCancelQueued:   official,
+		SupportsDeleteTerminal: official,
 	}
 }
 

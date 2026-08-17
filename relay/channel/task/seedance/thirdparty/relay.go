@@ -44,6 +44,8 @@ type relayCreateRequest struct {
 	Image           string   `json:"image,omitempty"`
 	EndImage        string   `json:"end_image,omitempty"`
 	ReferenceImages []string `json:"reference_images,omitempty"`
+	ReferenceVideos []string `json:"reference_videos,omitempty"`
+	ReferenceAudios []string `json:"reference_audios,omitempty"`
 	DurationSeconds *int     `json:"duration_seconds,omitempty"`
 	WithAudio       *bool    `json:"with_audio,omitempty"`
 	Resolution      string   `json:"resolution,omitempty"`
@@ -56,6 +58,16 @@ type relayCreateRequest struct {
 // RelayCreateRequest 把现有 DoubaoVideo 请求转换为第三方中转的统一媒体任务合同。
 // 不支持的媒体类型或冲突的首帧、尾帧、参考图组合 fail closed（方案 §3.2）。
 func RelayCreateRequest(body []byte) ([]byte, error) {
+	return relayCreateRequestForProvider(body, false)
+}
+
+// MoxingMediaCreateRequest converts the domestic Seedance 2.0 façade while
+// preserving its documented reference video and reference audio fields.
+func MoxingMediaCreateRequest(body []byte) ([]byte, error) {
+	return relayCreateRequestForProvider(body, true)
+}
+
+func relayCreateRequestForProvider(body []byte, allowReferenceAudioVideo bool) ([]byte, error) {
 	var input relayFacadeRequest
 	if err := common.Unmarshal(body, &input); err != nil {
 		return nil, fmt.Errorf("invalid JSON request")
@@ -105,8 +117,22 @@ func RelayCreateRequest(body []byte) ([]byte, error) {
 			default:
 				return nil, fmt.Errorf("unsupported image role %q", item.Role)
 			}
-		case "video_url", "audio_url":
-			return nil, fmt.Errorf("third-party relay does not accept %s content through this adaptor", item.Type)
+		case "video_url":
+			if !allowReferenceAudioVideo {
+				return nil, fmt.Errorf("TokenSave does not accept video_url content through this adaptor")
+			}
+			if item.VideoURL == nil || strings.TrimSpace(item.VideoURL.URL) == "" {
+				return nil, fmt.Errorf("video_url.url is required")
+			}
+			output.ReferenceVideos = append(output.ReferenceVideos, strings.TrimSpace(item.VideoURL.URL))
+		case "audio_url":
+			if !allowReferenceAudioVideo {
+				return nil, fmt.Errorf("TokenSave does not accept audio_url content through this adaptor")
+			}
+			if item.AudioURL == nil || strings.TrimSpace(item.AudioURL.URL) == "" {
+				return nil, fmt.Errorf("audio_url.url is required")
+			}
+			output.ReferenceAudios = append(output.ReferenceAudios, strings.TrimSpace(item.AudioURL.URL))
 		default:
 			return nil, fmt.Errorf("unsupported content type %q", item.Type)
 		}
@@ -126,8 +152,12 @@ func RelayCreateRequest(body []byte) ([]byte, error) {
 	}
 
 	switch {
-	case len(output.ReferenceImages) > 0:
-		output.InputMode = "multi_image"
+	case len(output.ReferenceImages) > 0 || len(output.ReferenceVideos) > 0 || len(output.ReferenceAudios) > 0:
+		if len(output.ReferenceVideos) > 0 || len(output.ReferenceAudios) > 0 {
+			output.InputMode = "multi_modal"
+		} else {
+			output.InputMode = "multi_image"
+		}
 		output.ControlMode = "reference"
 		if output.Image != "" {
 			output.ReferenceImages = append([]string{output.Image}, output.ReferenceImages...)
@@ -139,8 +169,8 @@ func RelayCreateRequest(body []byte) ([]byte, error) {
 	case output.Image != "":
 		output.InputMode = "single_image"
 	}
-	if output.Prompt == "" && output.Image == "" && len(output.ReferenceImages) == 0 {
-		return nil, fmt.Errorf("prompt or image content is required")
+	if output.Prompt == "" && output.Image == "" && len(output.ReferenceImages) == 0 && len(output.ReferenceVideos) == 0 && len(output.ReferenceAudios) == 0 {
+		return nil, fmt.Errorf("prompt or media content is required")
 	}
 	return common.Marshal(output)
 }
@@ -163,13 +193,9 @@ func RelayCreateResponse(body []byte) ([]byte, error) {
 	return common.Marshal(map[string]any{"id": taskID})
 }
 
-type RelayTaskResponseContext struct {
-	IncludeVerifiedUsage bool
-}
-
 // RelayTaskResponse 归一化第三方中转任务状态与结果字段到现有 DoubaoVideo 轮询合同。
-// usage 只有在冻结 implementation 已独立完成类型、单位与终态稳定性取证时才进入结算输入。
-func RelayTaskResponse(body []byte, expectedTaskID string, responseContext RelayTaskResponseContext) ([]byte, error) {
+// 成功终态中的明确 usage/Token 数值始终进入用量归一，不设置 Provider 或模型信任开关。
+func RelayTaskResponse(body []byte, expectedTaskID string) ([]byte, error) {
 	root, err := object(body)
 	if err != nil {
 		return nil, &relaycommon.UpstreamContractViolation{Reason: "invalid JSON task response"}
@@ -202,18 +228,14 @@ func RelayTaskResponse(body []byte, expectedTaskID string, responseContext Relay
 		}
 		result["content"] = map[string]any{"video_url": videoURL}
 	}
-	if responseContext.IncludeVerifiedUsage {
-		usage := mapValue(data["usage"])
-		actual := map[string]any{}
-		if usage != nil {
-			for _, field := range []string{"completion_tokens", "total_tokens"} {
-				if value, exists := usage[field]; exists {
-					actual[field] = value
-				}
-			}
+	if status == "succeeded" {
+		terminal := normalizeTerminalTokenUsage(root)
+		if terminal.Usage != nil {
+			result["usage"] = terminal.Usage
+			result["usage_source"] = terminal.Source
 		}
-		if len(actual) > 0 {
-			result["usage"] = actual
+		if len(terminal.Evidence) > 0 {
+			result["usage_evidence"] = terminal.Evidence
 		}
 	}
 	if status == "failed" {

@@ -127,7 +127,6 @@ type TaskPrivateData struct {
 	VideoUpstreamQueryPathTemplate string                    `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
 	VideoUpstreamProxy             string                    `json:"video_upstream_proxy,omitempty"`               // 创建时的代理快照，避免在途任务随渠道配置漂移
 	ClientRequest                  TaskClientRequestSnapshot `json:"client_request,omitempty"`
-	AssetPublicIDs                 []string                  `json:"asset_public_ids,omitempty"`
 	AppID                          int                       `json:"app_id,omitempty"`
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
 	BillingSource  string                     `json:"billing_source,omitempty"`   // "wallet" 或 "subscription"
@@ -214,7 +213,6 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 		linkVideoTask := relayInfo.TaskRelayInfo != nil && IsLinkVideoTaskClientProtocol(relayInfo.TaskRelayInfo.ClientProtocol)
 		if linkVideoTask {
 			freezeTaskVideoUpstream(&privateData, relayInfo.ChannelMeta)
-			privateData.AssetPublicIDs = append([]string(nil), relayInfo.TaskRelayInfo.AssetPublicIDs...)
 			privateData.AppID = relayInfo.TaskRelayInfo.AppID
 		}
 		if relayInfo.UpstreamModelName != "" {

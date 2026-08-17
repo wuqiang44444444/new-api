@@ -54,13 +54,16 @@ func ReverseProxyTaskResponse(body []byte) ([]byte, error) {
 	}
 	if usage := mapValue(data["usage"]); usage != nil {
 		actual := map[string]any{}
+		sources := make([]string, 0, 2)
 		for _, field := range []string{"completion_tokens", "total_tokens"} {
 			if value, exists := usage[field]; exists {
 				actual[field] = value
+				sources = append(sources, "usage."+field)
 			}
 		}
 		if len(actual) > 0 {
 			result["usage"] = actual
+			result["usage_source"] = strings.Join(sources, ",")
 		}
 	}
 	if message := findString(data, []string{"error", "message"}, []string{"message"}); message != "" {

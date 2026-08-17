@@ -19,8 +19,17 @@ func prepareTerminalTaskBilling(task *model.Task, result *relaycommon.TaskInfo) 
 		return
 	}
 	async.ActualTokens = result.CompletionTokens
-	if async.ActualTokens <= 0 {
+	if !result.CompletionTokensReported && async.ActualTokens <= 0 {
 		async.ActualTokens = result.TotalTokens
+	}
+	async.ActualUsageReported = result.UsageReported || result.CompletionTokens > 0 || result.TotalTokens > 0
+	async.ActualUsageSource = result.UsageSource
+	if len(result.UsageEvidence) > 0 {
+		async.ActualUsageEvidence = result.UsageEvidence
+	}
+	if result.ProviderBillingEvidence != nil {
+		evidence := *result.ProviderBillingEvidence
+		async.ProviderBillingEvidence = &evidence
 	}
 	if task.Status.ShouldRefundOnTerminal() {
 		async.Operation = "refund"

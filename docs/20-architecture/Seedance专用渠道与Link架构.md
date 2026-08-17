@@ -1,20 +1,21 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-11
+last-reviewed: 2026-08-15
 ---
 
 # Seedance 专用渠道与 Link 架构
 
 ## 1. 范围与状态
 
-本文是 Seedance、ModelArk V3、代码化上游协议、异步视频任务和平台素材代理的总体权威架构。
-官方素材库、`ast_*` / `pubref_*` 和素材数据流的专题细节由
+本文是 Seedance、ModelArk V3、代码化上游协议、异步视频任务和无状态素材代理的总体权威架构。
+Provider opaque 素材 ID 与视频引用的数据流专题细节由
 [Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md)负责。迁移步骤、实施
 清单和评审过程不进入架构正文。
 
-当前代码已经实现本文描述的架构边界。具体 Provider 是否可进入生产分组，仍取决于该线路的真实
-视频、素材、计费和灰度验收；“架构已实现”不等于“所有 Provider 已生产发布”。
+当前代码已经实现本文描述的架构边界，包括无条件采集成功终态中的明确 usage/Token 数值，并按冻结
+计价方式决定是否参与客户结算。具体 Provider 是否可进入生产分组，仍取决于该线路的真实视频、素材、
+计费和灰度验收；“架构已实现”不等于“所有 Provider 已生产发布”。
 
 NEWAPI 原生 `/v1/videos`、`/v1/video/generations`、Router、DTO、Provider adapter 和计费语义不属于
 Seedance Link 合同，继续以上游代码为权威。
@@ -64,7 +65,8 @@ execution binding、内容 hash、Link Access Plan 或候选等价证明。
 技术人员负责线下判断某个 Provider 模型是否完整兼容现有代码协议。完全兼容时，管理员配置客户
 模型、Channel、`model_mapping` 和已有协议即可上线；不兼容时，技术人员先新增代码 adapter。
 
-系统负责请求结构、权限、计费上界、确定性路由、Task、资金、素材所有权和敏感信息保护。系统不
+系统负责请求结构、权限、计费上界、确定性路由、Task、资金、素材控制面转发和敏感信息保护。素材
+opaque ID 的所有权与应用内隔离由受信调用方管理。系统不
 根据模型名、价格、域名、Key 或 Provider 名称自动认证兼容性，也不让管理员编写 JSON 映射、响应
 脚本或状态机。
 
@@ -89,7 +91,12 @@ customer_model
 ### 4.2 不进入原生分发池
 
 Seedance 客户模型不写入 NEWAPI 原生 Ability 或通用渠道分发缓存。模型发现和价格展示使用只读
-投影，该投影不能获得 `/v1/video/generations` 履约资格。
+投影：所有已配置客户模型均进入目录，是否可调用由 `available` / `availability` 单独表达；目录还投影
+统一 ModelArk V3 北向操作和客户安全素材操作矩阵。该投影不能获得 `/v1/video/generations` 履约资格，
+也不暴露 Provider 模型、Channel、南向协议或私有路径。
+
+通用 `GET /v1/models` 和 ModelArk 专用 `GET /api/v3/contents/generations/models` 复用该投影；后者只
+筛出 Seedance 条目，不建立第二套模型事实或 Provider capability 注册表。
 
 Priority、Weight、Affinity、随机分发、失败重选、跨渠道重试和 fallback 均不参与 Seedance 路由。
 管理端不展示 Seedance 的 Priority/Weight 编辑项，并使用普通人可理解的说明告知管理员：每个模型
@@ -109,10 +116,12 @@ Seedance Channel 只允许一个视频渠道凭据，不使用 Multi-Key 轮换�
 ```text
 modelark_v3_volcengine
 modelark_v3_byteplus
-media_task_v1
+tokensave_media_task_v1
+moxing_media_task_v1
+moxing_modelark_media_v1
 ark_media_v1
-url_media_arrays_v1
-funcloud_seedance_v2
+feicai_videos_v1
+funcloud_seedance
 ```
 
 当前素材协议为：
@@ -122,7 +131,10 @@ none
 volcengine_assets_action_v2024_01_01
 byteplus_assets_action_v2024_01_01
 ark_assets_v1
-relay_assets_v1
+tokensave_assets_v1
+moxing_joycreator_assets_v1
+moxing_volc_assets_v1
+funcloud_material
 ```
 
 精确枚举、路径和 transport profile 以 `relaykit/dto/upstream_protocol.go` 为代码权威。内部 transport
@@ -137,11 +149,11 @@ AK/SK 和 URL TTL 等字段；第三方已经代管这些事实时不重复要�
 视频协议与素材协议必须按代码注册关系配对。官方国内、官方海外、第三方素材和无素材库是互斥的
 渠道形态；系统不在运行时从一个素材协议切换到另一个。
 
-### 5.3 凭据轮换与作用域
+### 5.3 凭据轮换与 Provider 可见性
 
-素材作用域由固定 Channel、Base URL、协议、Provider 账号、Region 和 Project 表达。Key/AK/SK 的
-Secret 值不参与作用域身份；同一作用域内轮换凭据不使既有素材失效。改变账号、Base URL、Region、
-Project、国内/海外类型或素材协议时必须新建渠道，不能把旧素材解释到新作用域。
+Channel 的 Base URL、协议、Provider 账号、Region 和 Project 决定素材 CRUD 实际发往哪里。Key/AK/SK
+可以按正常渠道流程轮换；平台不据此建立素材作用域指纹或解释 opaque ID。改变账号、Base URL、Region、
+Project、国内/海外类型或素材协议时必须新建渠道；既有 opaque ID 在新配置下是否可见由 Provider 判断。
 
 ## 6. ModelArk V3 北向合同
 
@@ -216,30 +228,28 @@ Task 和 create attempt 保存已经发生的事实，包括：
 - 客户模型、Token、app 和北向合同；
 - Channel、Provider 模型、上游协议和 adapter 版本；
 - Base URL、查询路径、代理和受保护凭据；
-- 平台素材引用与 Provider 作用域；
+- 请求中的 opaque 素材引用（不附加平台所有权或 Provider 作用域结论）；
 - 预扣、价格、计费表达式和结算上下文。
 
 GET、DELETE、内容回源、轮询和结算均使用冻结事实。当前 Channel 停用、模型映射变化、凭据轮换、
 协议升级或管理员改价不能重新路由或重新解释历史任务。Provider 不支持删除时返回诚实的不支持
 错误，不伪造取消或删除成功。
 
-## 9. 平台素材代理
+## 9. 无状态素材代理
 
-素材数据面分为请求级 URL/Data URL、官方 `pubref_*` 公共引用和 `ast_*` / `astgrp_*` 私域资源。
-私域资源一对一固定到 `user_id + app_id`、Channel、素材协议和 Provider 作用域；公共引用不进入平台
-资源库。真人认证属于 AssetGroup 的上游流程，不形成平台独立授权域。
+素材控制面只代理带客户 `model` 的单资源操作，不提供列表，也不建立 Asset/AssetGroup、所有权、状态、
+Channel 或 Provider 作用域映射。Provider 返回的 opaque ID 直接交给调用方保存；真人认证属于素材组的
+上游流程，不形成平台独立授权域。
 
-平台不保存媒体二进制，不浏览 Provider 账号资源，不建立云导入、租户素材容量分配、自动物化、
-跨线路迁移、source fallback 或素材创建/删除 unknown 状态机。身份、控制面、国内/海外协议、数据流
-和错误语义的完整定义见
+平台不保存 source URL 或媒体二进制，不浏览 Provider 账号资源，不建立云导入、容量分配、自动物化、
+跨线路迁移、source fallback、跨 Provider 探测或素材 unknown 状态机。完整定义见
 [Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md)。
 
 ## 10. 素材参与视频创建
 
-ModelArk V3 可以同时携带 HTTP/HTTPS URL、Data URL、`asset://ast_*` 和官方 `asset://pubref_*`。
-Resolver 对 `ast_*` 复检租户、状态、客户模型、Channel 和 Provider 作用域；对官方 `pubref_*` 只做
-命名格式校验和去命名空间。请求级 URL/Data URL 不自动获得 Asset 或真人认证语义，公共资格和素材
-审核始终由 Provider 判定。详细合同见
+ModelArk V3 可以同时携带 HTTP/HTTPS URL、Data URL 和 `asset://<opaque-id>`。平台只验证引用非空，
+不查询素材或复检所有权、应用、状态、模型、Channel、账号或 Region/Project；引用直接进入当前模型
+adapter，存在性、权限、审核与兼容性由 Provider 判定。详细合同见
 [Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md)。
 
 ## 11. 计费与风险
@@ -250,6 +260,29 @@ Resolver 对 `ast_*` 复检租户、状态、客户模型、Channel 和 Provider
 预扣、结算、差额、退款和补偿必须幂等。客户退款与 Provider 潜在成本分账；Provider 金额未知时
 保持未知，不得使用客户 quota 冒充 Provider 货币成本。共享资金状态和补偿规则由
 [异步任务与计费事实架构](异步任务与计费事实架构.md)负责。
+
+### 11.1 终态实际用量与计价单位分离
+
+Provider 响应归一负责“如实取得实际用量”，冻结计费上下文负责“决定用什么单位结算”，两者不能由
+同一个布尔开关绑定。成功终态原始响应中只要出现任何明确的 `usage` 或 Token 相关用量字段，并通过
+数值类型、非负值、上界和溢出校验，就必须形成平台实际用量事实；不得再增加配置、逐模型白名单、
+人工验收状态或 Provider 开关来决定是否采集，也不得从进度、金额或时长猜测 Token。
+
+共享解析层中的 `IncludeVerifiedUsage` 原本是第三方用量尚未完成类型、单位和终态稳定性取证时的资金
+保护门。它不属于 Provider 合同，实际调用也从未启用；当前代码已删除该参数，没有把它改造成另一个
+配置或白名单。adapter 直接采集成功终态中的明确 usage/Token 数值，运行时按创建时冻结的计价方式
+处理：
+
+| 冻结计价方式 | 成功终态返回实际 Token usage | 客户结算 |
+| --- | --- | --- |
+| 按 Token | 有任一合法字段 | 按协议优先级归一为实际 Token，幂等重算预扣差额 |
+| 按 Token | 没有合法字段 | 保留预扣估算，不凭空构造实际用量 |
+| 按秒或按次 | 有合法 Token 字段 | 保存为 Provider 用量证据，但仍按冻结秒数或次数结算 |
+
+同一响应的多个 Token 字段不得相加。优先使用最具体的输出/completion 字段；缺失时由 total 与 prompt
+推导，最后才使用单独的 total。所有原始字段和来源进入私有、耐久计费证据，
+完整 Provider 响应、私有 Task ID 和媒体 URL 不进入客户响应或通用日志。首次成功写入并结算的终态
+用量不可被后续轮询覆盖；重复查询只做幂等确认，差异进入 Provider 合同异常审计。
 
 ## 12. 权威事实
 
@@ -289,10 +322,12 @@ Resolver 对 `ast_*` 复检租户、状态、客户模型、Channel 和 Provider
 4. Seedance 不进入原生分发池，不使用 Priority/Weight/重试/切换。
 5. 每个视频创建只发送一次 Provider POST；`unknown` 不自动退款。
 6. Task 按创建时冻结的 Channel、协议、连接、素材和计费事实执行。
-7. `ast_*` / AssetGroup 按 `user_id + app_id` 隔离并一对一固定 Provider 作用域；`pubref_*` 不进入资源域。
+7. 素材 API 不提供列表或本地资源身份；opaque ID 由调用方保存，视频调用不做本地素材可用性校验。
 8. 真人认证直接使用 Provider 页面，平台不保存生物识别材料。
 9. 不支持字段和操作明确失败，不静默兼容或伪造成功。
 10. 主数据库持有耐久事实，缓存和投影不能成为唯一权威。
+11. Provider 实际用量的采集与客户计价单位分离；成功终态中的任何明确 usage/Token 数值均为合法
+    用量，不得被配置、白名单或共享布尔开关静默丢弃。
 
 ## 15. 相关文档
 

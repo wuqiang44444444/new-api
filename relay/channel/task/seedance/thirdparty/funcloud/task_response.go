@@ -6,19 +6,29 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/shopspring/decimal"
 )
 
-func TaskResponse(body []byte, expectedTaskID string) ([]byte, error) {
+type TaskResponseContext struct {
+	ProviderModel string
+	Resolution    string
+	HasVideoInput bool
+	MaxTokens     int
+}
+
+func TaskResponse(body []byte, expectedTaskID string, responseContext TaskResponseContext) ([]byte, error) {
 	var envelope struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
 		Data struct {
-			TaskID    string   `json:"taskId"`
-			Status    string   `json:"status"`
-			Result    []string `json:"result"`
-			ErrorCode string   `json:"errorCode"`
-			ErrorMsg  string   `json:"errorMsg"`
-			Output    struct {
+			TaskID           string   `json:"taskId"`
+			Status           string   `json:"status"`
+			Result           []string `json:"result"`
+			ErrorCode        string   `json:"errorCode"`
+			ErrorMsg         string   `json:"errorMsg"`
+			CompletionTokens *int     `json:"completionTokens"`
+			PointConsume     string   `json:"pointConsume"`
+			Output           struct {
 				ID      string `json:"id"`
 				Status  string `json:"status"`
 				Content struct {
@@ -28,6 +38,7 @@ func TaskResponse(body []byte, expectedTaskID string) ([]byte, error) {
 					Code    string `json:"code"`
 					Message string `json:"message"`
 				} `json:"error"`
+				PointConsume string `json:"pointConsume"`
 			} `json:"output"`
 		} `json:"data"`
 	}
@@ -100,6 +111,45 @@ func TaskResponse(body []byte, expectedTaskID string) ([]byte, error) {
 		errorCode = fastErrorCode
 	}
 	errorCode = sanitizeProviderText(errorCode)
+	completionTokens := 0
+	var billingEvidence *relaycommon.ProviderBillingEvidence
+	if status == "succeeded" {
+		if envelope.Data.CompletionTokens == nil || *envelope.Data.CompletionTokens <= 0 ||
+			responseContext.MaxTokens <= 0 || *envelope.Data.CompletionTokens > responseContext.MaxTokens {
+			return violation("FunCloud completionTokens is not trustworthy")
+		}
+		completionTokens = *envelope.Data.CompletionTokens
+		pointConsume := strings.TrimSpace(envelope.Data.PointConsume)
+		outputPointConsume := strings.TrimSpace(envelope.Data.Output.PointConsume)
+		if pointConsume == "" {
+			pointConsume = outputPointConsume
+		} else if outputPointConsume != "" && outputPointConsume != pointConsume {
+			primary, primaryErr := decimal.NewFromString(pointConsume)
+			output, outputErr := decimal.NewFromString(outputPointConsume)
+			if primaryErr != nil || outputErr != nil || !primary.Equal(output) {
+				return violation("conflicting FunCloud point consumption values")
+			}
+		}
+		if pointConsume != "" {
+			points, err := decimal.NewFromString(pointConsume)
+			if err != nil || !points.IsPositive() {
+				return violation("FunCloud point consumption is not trustworthy")
+			}
+		}
+		billingEvidence = &relaycommon.ProviderBillingEvidence{
+			Provider:        "funcloud",
+			TokenSource:     "completionTokens",
+			ReportedTokens:  completionTokens,
+			RawConsumption:  pointConsume,
+			ConsumptionUnit: "pointConsume",
+			ProviderModel:   strings.TrimSpace(responseContext.ProviderModel),
+			Resolution:      strings.ToLower(strings.TrimSpace(responseContext.Resolution)),
+			HasVideoInput:   responseContext.HasVideoInput,
+		}
+		if pointConsume == "" {
+			billingEvidence.ConsumptionUnit = ""
+		}
+	}
 	return common.Marshal(struct {
 		ID      string `json:"id"`
 		Status  string `json:"status"`
@@ -110,6 +160,11 @@ func TaskResponse(body []byte, expectedTaskID string) ([]byte, error) {
 			Code    string `json:"code,omitempty"`
 			Message string `json:"message,omitempty"`
 		} `json:"error"`
+		Usage struct {
+			CompletionTokens int `json:"completion_tokens,omitempty"`
+			TotalTokens      int `json:"total_tokens,omitempty"`
+		} `json:"usage"`
+		ProviderBillingEvidence *relaycommon.ProviderBillingEvidence `json:"_provider_billing_evidence,omitempty"`
 	}{
 		ID:     taskID,
 		Status: status,
@@ -120,6 +175,11 @@ func TaskResponse(body []byte, expectedTaskID string) ([]byte, error) {
 			Code    string `json:"code,omitempty"`
 			Message string `json:"message,omitempty"`
 		}{Code: errorCode, Message: errorMessage},
+		Usage: struct {
+			CompletionTokens int `json:"completion_tokens,omitempty"`
+			TotalTokens      int `json:"total_tokens,omitempty"`
+		}{CompletionTokens: completionTokens, TotalTokens: completionTokens},
+		ProviderBillingEvidence: billingEvidence,
 	})
 }
 

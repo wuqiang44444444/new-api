@@ -91,9 +91,6 @@ func DeleteChannelAssetCredential(c *gin.Context) {
 		return
 	}
 	if err := model.DeleteChannelAssetCredential(channelID); err != nil {
-		if rejectAssetChannelFenceError(c, err) {
-			return
-		}
 		if errors.Is(err, model.ErrAssetCredentialProfileActive) {
 			c.JSON(http.StatusConflict, gin.H{
 				"success":    false,

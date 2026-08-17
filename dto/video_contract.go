@@ -35,6 +35,7 @@ type ModelArkVideoCreateRequest struct {
 	Duration              *int                   `json:"duration,omitempty"`
 	Resolution            *string                `json:"resolution,omitempty"`
 	Ratio                 *string                `json:"ratio,omitempty"`
+	OutputFormat          *string                `json:"output_format,omitempty"`
 	ServiceTier           *string                `json:"service_tier,omitempty"`
 	GenerateAudio         *bool                  `json:"generate_audio,omitempty"`
 	Watermark             *bool                  `json:"watermark,omitempty"`

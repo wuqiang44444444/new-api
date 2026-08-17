@@ -125,15 +125,19 @@ describe('official channel connectivity', () => {
     )
   })
 
-  test('enables saved Ark and relay asset profiles without separate credentials', () => {
-    for (const assetProtocol of ['ark_assets_v1', 'relay_assets_v1']) {
+  test('enables saved bearer-key asset profiles without separate credentials', () => {
+    const cases = [
+      ['ark_assets_v1', 'ark_media_v1'],
+      ['tokensave_assets_v1', 'tokensave_media_task_v1'],
+      ['moxing_volc_assets_v1', 'moxing_modelark_media_v1'],
+      ['funcloud_material', 'funcloud_seedance'],
+    ] as const
+    for (const [assetProtocol, videoProtocol] of cases) {
       const availability = getOfficialConnectivityAvailability({
         assetProtocol,
         savedAssetProtocol: assetProtocol,
-        videoProtocol:
-          assetProtocol === 'ark_assets_v1' ? 'ark_media_v1' : 'media_task_v1',
-        savedVideoProtocol:
-          assetProtocol === 'ark_assets_v1' ? 'ark_media_v1' : 'media_task_v1',
+        videoProtocol,
+        savedVideoProtocol: videoProtocol,
         credentialConfigured: false,
         hasPendingVideoKey: false,
         hasPendingAssetCredential: false,
@@ -144,5 +148,17 @@ describe('official channel connectivity', () => {
       assert.equal(availability.videoCanTest, false)
       assert.equal(availability.hasUnsavedTestChanges, false)
     }
+
+    const joyCreator = getOfficialConnectivityAvailability({
+      assetProtocol: 'moxing_joycreator_assets_v1',
+      savedAssetProtocol: 'moxing_joycreator_assets_v1',
+      videoProtocol: 'moxing_media_task_v1',
+      savedVideoProtocol: 'moxing_media_task_v1',
+      credentialConfigured: false,
+      hasPendingVideoKey: false,
+      hasPendingAssetCredential: false,
+      sensitiveLocked: false,
+    })
+    assert.equal(joyCreator.assetCanTest, false)
   })
 })

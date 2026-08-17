@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestJSONVideoCreateHTTPDispositionFailsClosedWithoutVerifiedProviderContract(t *testing.T) {
+func TestFeicaiVideoCreateHTTPDispositionFailsClosedWithoutVerifiedProviderContract(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelOtherSettings: dto.ChannelOtherSettings{
-				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
+				VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
 			},
 		},
 	}
@@ -56,7 +56,7 @@ func TestTokenSaveDoubaoInsufficientQuotaIsTerminalRejection(t *testing.T) {
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelType: constant.ChannelTypeSeedanceLink,
 			ChannelOtherSettings: dto.ChannelOtherSettings{
-				VideoUpstreamProtocol: dto.VideoUpstreamProtocolMediaTaskV1,
+				VideoUpstreamProtocol: dto.VideoUpstreamProtocolTokenSaveMediaTaskV1,
 			},
 		},
 	}
@@ -75,12 +75,12 @@ func TestTokenSaveDoubaoInsufficientQuotaIsTerminalRejection(t *testing.T) {
 	)
 }
 
-func TestURLMediaArraysAccountRequiredRemainsUnknownWithoutExactContract(t *testing.T) {
+func TestFeicaiAccountRequiredRemainsUnknownWithoutExactContract(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelType: constant.ChannelTypeSeedanceLink,
 			ChannelOtherSettings: dto.ChannelOtherSettings{
-				VideoUpstreamProtocol: dto.VideoUpstreamProtocolURLMediaArraysV1,
+				VideoUpstreamProtocol: dto.VideoUpstreamProtocolFeicaiVideosV1,
 			},
 		},
 	}

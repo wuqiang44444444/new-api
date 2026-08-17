@@ -4,13 +4,11 @@ import settingconfig "github.com/QuantumNous/new-api/setting/config"
 
 type BusinessSetting struct {
 	Enabled            bool  `json:"enabled"`
-	MaxAssetsPerUser   int64 `json:"max_assets_per_user"`
 	RemoteURLMaxLength int64 `json:"remote_url_max_length"`
 }
 
 var businessSetting = BusinessSetting{
 	Enabled:            true,
-	MaxAssetsPerUser:   1000,
 	RemoteURLMaxLength: 8192,
 }
 
@@ -20,14 +18,12 @@ func init() {
 
 type Config struct {
 	Enabled            bool
-	MaxAssetsPerUser   int64
 	RemoteURLMaxLength int
 }
 
 func Current() Config {
 	return Config{
 		Enabled:            businessSetting.Enabled,
-		MaxAssetsPerUser:   positiveOr(businessSetting.MaxAssetsPerUser, 1000),
 		RemoteURLMaxLength: int(boundedPositive(businessSetting.RemoteURLMaxLength, 8192, 65536)),
 	}
 }

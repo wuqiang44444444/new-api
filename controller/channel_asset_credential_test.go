@@ -97,8 +97,6 @@ func TestGetChannelReturnsOnlyAssetCredentialStatus(t *testing.T) {
 func TestDeleteChannelAssetCredentialRequiresSavedProfileToBeDisabled(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(
-		&model.Asset{},
-		&model.AssetGroup{},
 		&model.ChannelAssetCredential{},
 	))
 	channel := officialAssetControllerTestChannel()

@@ -92,7 +92,10 @@ func validateMedia(media *dto.VideoMediaURL) error {
 	}
 	raw := strings.TrimSpace(media.URL)
 	if strings.HasPrefix(raw, "asset://") {
-		return fmt.Errorf("platform asset references must be resolved to HTTPS before FunCloud conversion")
+		if strings.TrimSpace(strings.TrimPrefix(raw, "asset://")) == "" {
+			return fmt.Errorf("FunCloud asset reference is invalid")
+		}
+		return nil
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.User != nil || parsed.Opaque != "" || !strings.EqualFold(parsed.Scheme, "https") {

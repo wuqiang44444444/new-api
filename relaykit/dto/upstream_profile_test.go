@@ -6,19 +6,19 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestJSONVideoMediaArraysProfileClassification(t *testing.T) {
-	profile := VideoUpstreamProfileThirdPartyJSONVideoMediaArrays
+func TestFeicaiVideoProfileIsExplicitAndScoped(t *testing.T) {
+	profile := VideoUpstreamProfileThirdPartyFeicaiVideos
 	assert.True(t, profile.IsValid())
 	assert.True(t, profile.IsThirdParty())
 	assert.False(t, profile.IsOfficial())
 	assert.NoError(t, ValidateVideoUpstreamProfile(profile))
-	assert.Error(t, ValidateVideoUpstreamProfile("third_party_json_video_unknown"))
 }
 
 func TestFunCloudVideoProfileIsExplicitAndScoped(t *testing.T) {
-	video := VideoUpstreamProfileThirdPartyFunCloudSeedanceV2
+	video := VideoUpstreamProfileThirdPartyFunCloudSeedance
 	assert.True(t, video.IsValid())
 	assert.True(t, video.IsThirdParty())
 	assert.False(t, video.IsOfficial())
 	assert.NoError(t, ValidateVideoUpstreamProfile(video))
+	assert.Error(t, ValidateVideoUpstreamProfile("third_party_funcloud_seedance_v2"))
 }

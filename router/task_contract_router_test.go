@@ -17,9 +17,6 @@ func TestTaskContractOperationsExposeOnlyRootOperationalRoutes(t *testing.T) {
 		routes[route.Method+" "+route.Path] = struct{}{}
 	}
 	for _, route := range []string{
-		http.MethodGet + " /api/task-contract/provider-exposures/metrics",
-		http.MethodGet + " /api/task-contract/provider-exposures/incidents",
-		http.MethodPost + " /api/task-contract/provider-exposures/incidents/:id/resolve",
 		http.MethodGet + " /api/task-contract/attempts",
 		http.MethodPost + " /api/task-contract/attempts/:attempt_id/recover",
 		http.MethodPost + " /api/task-contract/attempts/:attempt_id/reject",

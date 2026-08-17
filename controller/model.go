@@ -261,16 +261,20 @@ func ListModels(c *gin.Context, modelType int) {
 	for _, modelName := range userModelNames {
 		userOpenAiModels = append(userOpenAiModels, buildOpenAIModel(modelName, ownerByModel))
 	}
+	userOpenAiModels = appendConfiguredSeedanceModels(userOpenAiModels)
 
 	switch modelType {
 	case constant.ChannelTypeAnthropic:
 		useranthropicModels := make([]dto.AnthropicModel, len(userOpenAiModels))
 		for i, model := range userOpenAiModels {
 			useranthropicModels[i] = dto.AnthropicModel{
-				ID:          model.Id,
-				CreatedAt:   time.Unix(int64(model.Created), 0).UTC().Format(time.RFC3339),
-				DisplayName: model.Id,
-				Type:        "model",
+				ID:           model.Id,
+				CreatedAt:    time.Unix(int64(model.Created), 0).UTC().Format(time.RFC3339),
+				DisplayName:  model.Id,
+				Type:         "model",
+				Available:    model.Available,
+				Availability: model.Availability,
+				API:          model.API,
 			}
 		}
 		firstID := ""
@@ -289,8 +293,11 @@ func ListModels(c *gin.Context, modelType int) {
 		userGeminiModels := make([]dto.GeminiModel, len(userOpenAiModels))
 		for i, model := range userOpenAiModels {
 			userGeminiModels[i] = dto.GeminiModel{
-				Name:        model.Id,
-				DisplayName: model.Id,
+				Name:         model.Id,
+				DisplayName:  model.Id,
+				Available:    model.Available,
+				Availability: model.Availability,
+				API:          model.API,
 			}
 		}
 		c.JSON(200, gin.H{
@@ -329,6 +336,9 @@ func EnabledListModels(c *gin.Context) {
 
 func RetrieveModel(c *gin.Context, modelType int) {
 	modelId := c.Param("model")
+	if respondConfiguredSeedanceModel(c, modelType, modelId) {
+		return
+	}
 	if aiModel, ok := openAIModelsMap[modelId]; ok {
 		switch modelType {
 		case constant.ChannelTypeAnthropic:

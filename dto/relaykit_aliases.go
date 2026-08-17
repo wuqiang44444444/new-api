@@ -24,6 +24,16 @@ type OpenAIResponsesRequest = kitdto.OpenAIResponsesRequest
 type OpenAIVideo = kitdto.OpenAIVideo
 type OpenAIVideoError = kitdto.OpenAIVideoError
 type PlayGroundRequest = kitdto.PlayGroundRequest
+type PublicAPIOperation = kitdto.PublicAPIOperation
+type PublicAssetAPI = kitdto.PublicAssetAPI
+type PublicAssetCreation = kitdto.PublicAssetCreation
+type PublicAssetCreateExample = kitdto.PublicAssetCreateExample
+type PublicAssetMedia = kitdto.PublicAssetMedia
+type PublicAssetSourceContract = kitdto.PublicAssetSourceContract
+type PublicAssetSourceExample = kitdto.PublicAssetSourceExample
+type PublicAssetSourceMediaTypes = kitdto.PublicAssetSourceMediaTypes
+type PublicModelAPI = kitdto.PublicModelAPI
+type PublicVideoAPI = kitdto.PublicVideoAPI
 type Request = kitdto.Request
 type RerankRequest = kitdto.RerankRequest
 type Usage = kitdto.Usage
@@ -33,7 +43,13 @@ type AdvancedCustomRoute = kitdto.AdvancedCustomRoute
 type AdvancedCustomRouteAuth = kitdto.AdvancedCustomRouteAuth
 
 const (
-	MaxImageN = kitdto.MaxImageN
+	MaxImageN                        = kitdto.MaxImageN
+	PublicAssetNameMaxCharacters     = kitdto.PublicAssetNameMaxCharacters
+	PublicAssetFunCloudMaxBytes      = kitdto.PublicAssetFunCloudMaxBytes
+	PublicAssetFunCloudRedirectLimit = kitdto.PublicAssetFunCloudRedirectLimit
+	PublicAssetGroupRequired         = kitdto.PublicAssetGroupRequired
+	PublicAssetGroupOptional         = kitdto.PublicAssetGroupOptional
+	PublicAssetGroupUnsupported      = kitdto.PublicAssetGroupUnsupported
 
 	BillingUsageSemanticAnthropic = kitdto.BillingUsageSemanticAnthropic
 	BillingUsageSemanticGemini    = kitdto.BillingUsageSemanticGemini

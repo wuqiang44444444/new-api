@@ -160,7 +160,7 @@ func proxyLinkVideoContent(c *gin.Context) bool {
 		videoURL = fmt.Sprintf("%s/v1/videos/%s/content", baseURL, task.GetUpstreamTaskID())
 		req.Header.Set("Authorization", "Bearer "+key)
 	case constant.ChannelTypeSeedanceLink:
-		contentURL, key, handled, sourceErr := videoMediaArraysContentSource(task)
+		contentURL, key, handled, sourceErr := videoFeicaiContentSource(task)
 		if sourceErr != nil {
 			modelArkVideoError(c, http.StatusBadGateway, "frozen_upstream_unavailable", "Frozen video connection details are unavailable")
 			return true

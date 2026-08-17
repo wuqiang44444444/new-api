@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-11
+last-reviewed: 2026-08-14
 ---
 
 # Seedance 视频与素材产品设计
@@ -51,13 +51,13 @@ Provider 差异由技术人员审核并由代码协议处理，不要求管理�
 
 | 角色 | 负责内容 | 不需要承担 |
 | --- | --- | --- |
-| API 客户 | 选择客户模型，调用 ModelArk V3，查询 Task，使用平台素材 | 判断 Provider 协议、渠道或凭据 |
+| API 客户 | 选择客户模型，调用 ModelArk V3，查询 Task，管理 Provider opaque 素材 ID | 判断 Provider 协议、渠道或凭据 |
 | 平台管理员 | 按技术指引配置客户模型、渠道、映射、价格、分组和启停 | 编写转换 JSON、分析 Provider 接口 |
 | 技术人员 | 判断新线路是否兼容已有协议；不兼容时开发 adapter；提供配置清单 | 代替管理员执行日常启停和分组运营 |
 | 运维与审计人员 | 观察任务、费用和脱敏日志，异常时通知技术人员 | 在后台修复低概率孤儿或重放视频请求 |
 
-客户只看到 API Key、客户模型、ModelArk V3、Task、`ast_*`、`astgrp_*` 和账单。Provider 模型、渠道、
-上游协议、账号和凭据是平台内部信息。
+客户只看到 API Key、客户模型、ModelArk V3、Task、素材 opaque ID 和账单。Provider 模型、渠道、上游
+协议、账号和凭据是平台内部信息。
 
 ## 6. 产品对象与命名
 
@@ -69,7 +69,7 @@ Provider 差异由技术人员审核并由代码协议处理，不要求管理�
 | 视频协议 | 技术人员已经实现并审核的代码转换方案 |
 | 素材协议 | 该渠道选择的官方素材库、第三方素材库或无素材库形态 |
 | Task | 一次已经取得可信 Provider task ID 的异步视频任务 |
-| Asset / AssetGroup | `ast_*` / `astgrp_*` 平台身份，一对一固定到创建时的渠道和 Provider 作用域 |
+| Asset / AssetGroup | Provider 返回的 opaque 素材或素材组 ID，由调用方和客户模型一起保存 |
 
 不同 Provider、地区、协议、账号或价格线路必须使用不同客户模型名。管理员不会把这些线路映射为同一
 个前端模型再交给系统选择。客户在选择模型时就应知道它属于国内、海外还是特定第三方产品，无须在
@@ -138,6 +138,12 @@ Priority 和 Weight 对 Seedance 路由不生效。管理端可以保留 NEWAPI 
 
 ### 9.1 统一入口
 
+客户可通过 `GET /v1/models` 或只返回 Seedance 条目的
+`GET /api/v3/contents/generations/models` 获取完整客户模型目录。停用模型仍保留并返回
+`available=false`、`availability=disabled`；当前 Key 无权使用的已启用模型返回 `restricted`。每个
+Seedance 条目的 `api.video` 给出统一 ModelArk V3 创建合同与操作，`api.assets` 逐项给出素材引用、
+素材类型、素材组、真人认证、素材操作和匿名复用域。目录存在不等于当前可调用。
+
 Seedance 客户使用四组 ModelArk V3 行为：
 
 | 行为 | 客户接口 | 产品结果 |
@@ -147,8 +153,8 @@ Seedance 客户使用四组 ModelArk V3 行为：
 | 列表 | `GET /api/v3/contents/generations/tasks` | 返回当前用户和应用作用域的平台 Task |
 | 删除 | `DELETE /api/v3/contents/generations/tasks/{task_id}` | 调用创建时 Provider；不支持时明确告知 |
 
-`/v1/video/generations` 是 NEWAPI 原生视频入口，不会选择 Seedance 专用渠道。客户也不直接调用飞彩、
-FunCloud、TokenSave 等第三方私有路径。
+`/v1/video/generations` 是 NEWAPI 原生视频入口，不会选择 Seedance 专用渠道。客户也不直接调用任何
+第三方私有路径。
 
 ### 9.2 请求与响应
 
@@ -157,6 +163,9 @@ FunCloud、TokenSave 等第三方私有路径。
 
 普通响应只返回平台 Task ID、客户模型和 ModelArk V3 状态/结果投影，不返回 Provider task ID、Provider
 模型、渠道 ID、Key、连接快照或原始 Provider 响应。
+
+客户模型名由部署方定义，并通过内部 `model_mapping` 精确映射到已登记上游模型。公开目录和普通响应
+不返回上游原始模型名或 Provider。客户选择哪个模型就固定哪个履约产品，平台不在模型之间降级或回退。
 
 ### 9.3 单次创建承诺
 
@@ -197,38 +206,27 @@ Provider 请求已经发送、但平台无法确认是否创建成功时，结�
 客户不在请求中选择素材库、Region 或 Provider。模型名称和固定渠道已经确定这些事实；系统不会在官方、
 第三方和无素材库之间运行时切换。
 
-### 10.2 平台素材身份
+### 10.2 调用方自管素材身份
 
-客户通过 `/v1/assets` 和 `/v1/asset-groups` 管理素材，使用平台 ID：
+客户通过 `/v1/assets` 和 `/v1/asset-groups` 管理单个 Provider 资源。每个操作携带客户 `model`，平台按
+模型选择唯一 Seedance Channel，并直接返回 Provider opaque 素材、素材组或认证会话 ID；素材可用时
+同时返回 `asset://<opaque-id>`。调用方保存 `model + id + reference`。
 
-- `ast_*`：一个素材；
-- `astgrp_*`：一个素材组或真人素材组；
-- `asset://ast_*`：视频请求中的平台私域素材引用；
-- `asset://pubref_<Provider公共AssetID>`：调用方自行取得的官方公共预置素材引用。
+平台不为 opaque ID 增加 Provider 命名空间，不返回 Provider 名称、Channel ID、账号、Region/Project、
+协议或上游原始模型，也不建立 Asset/AssetGroup 表、所有权映射或列表索引。不同线路是否接受同一 ID
+由 Provider 决定；平台不迁移、探测或自动切换。
 
-一个平台私域资源一对一固定到 `user_id + app_id`、客户模型对应的渠道和 Provider 账号作用域。客户不会
-看到或提交裸 Provider 私域 Asset ID。`pubref_*` 不属于平台资源：平台不列举、搜索、保存或判断其公共
-资格，只向国内/海外官方 ModelArk V3 Provider 转发调用方声明的公共 ID。国内、海外和第三方私域素材
-不自动迁移或互相复用；同一媒体要在不同
-线路使用时，必须分别创建并经过各自 Provider 处理。
-
-平台不保存媒体二进制。创建素材使用的 HTTP/HTTPS URL 或 Data URL 只参与当次请求和 Provider 调用，
-取得可信 Provider ID 或创建失败后即删除，不进入长期素材、Task 或日志。
+平台不保存媒体二进制。创建素材使用的 HTTPS URL 只参与当次请求和 Provider 调用，不进入 Task、日志
+或长期存储。
 
 ### 10.3 在视频请求中使用素材
 
-同一 ModelArk V3 请求可以混合使用 `asset://ast_*`、官方 `asset://pubref_*`、HTTP/HTTPS URL 和 Data URL。
-只要包含平台私域素材：
+同一 ModelArk V3 请求可以混合使用 `asset://<opaque-id>`、HTTP/HTTPS URL 和 Data URL。平台只校验
+`asset://` 后存在非空 ID，不查询素材、不验证所有权、应用、ready、客户模型、Channel、账号、Region
+或 Project，也不改写为另一套平台 ID。引用进入当前模型的 adapter 后，由 Provider 判断存在性、权限、
+审核及模型兼容性；失败只返回脱敏错误，不探测或切换其它 Provider。
 
-1. 素材必须属于请求客户模型固定的同一渠道；
-2. 所有平台素材必须属于相同 Provider 账号、Region 和 Project；
-3. 平台把 `asset://ast_*` 转换为该 Provider 的真实资源引用；
-4. 渠道不一致返回 `asset_channel_mismatch`；账号或地域作用域不一致返回 `asset_scope_conflict`。
-
-请求级 URL/Data URL 不自动获得平台素材、迁移、真人认证、撤回或长期审核语义。
-
-`pubref_*` 只做格式校验并转换为 Provider 的 `asset://<id>`；不存在、不可用、审核或权限错误由 Provider
-决定并由平台返回。平台不提供公共素材管理接口。
+请求级 URL/Data URL 不自动获得素材库、迁移、真人认证、撤回或长期审核语义。
 
 ### 10.4 真人认证代理
 
@@ -244,6 +242,8 @@ Provider 完成法律授权、撤回平台外副本或删除 Provider 已处理�
 - 每个素材或素材组 POST 都创建一个新资源，不提供平台幂等键或自动重复检测；
 - 创建未取得可信 Provider ID 时返回失败并记录脱敏技术日志，不建立 `create_unknown`；
 - 删除未取得明确成功时返回失败并保留原状态，不建立 `delete_unknown`；
+- 统一北向不提供素材组更新；Provider 私有更新接口不自动成为平台能力，也不建立品牌化入口；
+- 要求空组删除的 adapter 必须与 Provider 都明确证明组为空；计数缺失、非零或查询歧义都返回失败；
 - 后续 GET 明确确认 Provider 不存在后，才把平台资源更新为 deleted；
 - 少见孤儿资源由管理员通知技术人员分析，不建设自动扫描或专门核查页面。
 
@@ -256,6 +256,10 @@ Provider 完成法律授权、撤回平台外副本或删除 Provider 已处理�
 - `unknown` 不自动退款；客户退款与 Provider 潜在成本分别记录；
 - Provider 实际金额未知时显示未知，不用客户 quota 或当前报价伪装 Provider 成本。
 
+使用上游 Token 结算的成功任务只接受查询响应中严格大于零且不超过冻结上界的可信用量；字段缺失、
+类型错误或超界时进入对账态并保留预扣，不使用 `pointConsume` 反推或估算。`pointConsume` 仅作为可选
+Provider 成本证据和管理员审计投影，不返回客户。
+
 客户账单的具体聚合和展示由[客户与上游对账单产品说明](客户与上游对账单产品说明.md)负责。
 
 ## 12. 权限、隐私与信息展示
@@ -267,8 +271,8 @@ Provider 完成法律授权、撤回平台外副本或删除 Provider 已处理�
 | Provider task/resource ID、连接快照 | 不可见 | 普通页面不展示 | 仅脱敏、按权限查看 |
 | Key、AK/SK、完整签名 URL、原始响应 | 不可见 | 不以明文展示 | 不进入普通日志或响应 |
 
-所有 Task、Asset 和 AssetGroup 按 `user_id + app_id` 隔离。缓存和前端状态只用于加速或展示，不能
-成为任务、资金、素材或权限的唯一事实源。
+所有 Task 和平台持久化资源按 `user_id + app_id` 隔离。素材代理不持久化 Asset/AssetGroup，opaque ID
+由受信应用管理；缓存和前端状态不能成为任务、资金或权限的唯一事实源。
 
 ## 13. 主要失败与客户反馈
 
@@ -280,9 +284,11 @@ Provider 完成法律授权、撤回平台外副本或删除 Provider 已处理�
 | Provider 明确拒绝创建 | 任务创建失败，按已确认事实处理预扣 |
 | Provider 创建结果不明 | 进入 `unknown`，不重发、不换渠道、不自动退款 |
 | 单次任务查询不可采信 | 保持原业务状态，允许后续继续查询 |
-| 平台素材渠道或账号作用域不匹配 | 分别返回 `asset_channel_mismatch` 或 `asset_scope_conflict` |
-| 素材创建没有可信 Provider ID | 返回失败，不创建可用平台 Asset |
-| 素材删除结果不明确 | 返回失败并保留原状态，等待后续可信查询 |
+| 当前模型不支持素材或具体操作 | 返回 `unsupported_asset_operation`，不尝试其它 Provider |
+| opaque ID 属于错误 Provider、账号或模型 | 只由当前 Provider 判断，平台返回脱敏上游错误且不 fallback |
+| 素材创建没有可信 Provider ID | 返回失败，不建立本地素材状态 |
+| 素材删除结果不明确 | 返回失败，不建立本地 unknown 或自动重试 |
+| 上游计量线路成功终态缺失可信计量 | 进入 `RECONCILIATION_REQUIRED`，保留预扣且不暴露私有计费证据 |
 
 错误提示面向客户或普通管理员说明“什么不符合、需要修改什么”，不要求他们理解内部合同、状态机或
 Provider 请求路径。

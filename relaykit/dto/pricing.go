@@ -9,27 +9,36 @@ type OpenAIModels struct {
 	Created                int                  `json:"created"`
 	OwnedBy                string               `json:"owned_by"`
 	SupportedEndpointTypes []types.EndpointType `json:"supported_endpoint_types"`
+	Available              *bool                `json:"available,omitempty"`
+	Availability           string               `json:"availability,omitempty"`
+	API                    *PublicModelAPI      `json:"api,omitempty"`
 }
 
 type AnthropicModel struct {
-	ID          string `json:"id"`
-	CreatedAt   string `json:"created_at"`
-	DisplayName string `json:"display_name"`
-	Type        string `json:"type"`
+	ID           string          `json:"id"`
+	CreatedAt    string          `json:"created_at"`
+	DisplayName  string          `json:"display_name"`
+	Type         string          `json:"type"`
+	Available    *bool           `json:"available,omitempty"`
+	Availability string          `json:"availability,omitempty"`
+	API          *PublicModelAPI `json:"api,omitempty"`
 }
 
 type GeminiModel struct {
-	Name                       interface{}   `json:"name"`
-	BaseModelId                interface{}   `json:"baseModelId"`
-	Version                    interface{}   `json:"version"`
-	DisplayName                interface{}   `json:"displayName"`
-	Description                interface{}   `json:"description"`
-	InputTokenLimit            interface{}   `json:"inputTokenLimit"`
-	OutputTokenLimit           interface{}   `json:"outputTokenLimit"`
-	SupportedGenerationMethods []interface{} `json:"supportedGenerationMethods"`
-	Thinking                   interface{}   `json:"thinking"`
-	Temperature                interface{}   `json:"temperature"`
-	MaxTemperature             interface{}   `json:"maxTemperature"`
-	TopP                       interface{}   `json:"topP"`
-	TopK                       interface{}   `json:"topK"`
+	Name                       interface{}     `json:"name"`
+	BaseModelId                interface{}     `json:"baseModelId"`
+	Version                    interface{}     `json:"version"`
+	DisplayName                interface{}     `json:"displayName"`
+	Description                interface{}     `json:"description"`
+	InputTokenLimit            interface{}     `json:"inputTokenLimit"`
+	OutputTokenLimit           interface{}     `json:"outputTokenLimit"`
+	SupportedGenerationMethods []interface{}   `json:"supportedGenerationMethods"`
+	Thinking                   interface{}     `json:"thinking"`
+	Temperature                interface{}     `json:"temperature"`
+	MaxTemperature             interface{}     `json:"maxTemperature"`
+	TopP                       interface{}     `json:"topP"`
+	TopK                       interface{}     `json:"topK"`
+	Available                  *bool           `json:"available,omitempty"`
+	Availability               string          `json:"availability,omitempty"`
+	API                        *PublicModelAPI `json:"api,omitempty"`
 }

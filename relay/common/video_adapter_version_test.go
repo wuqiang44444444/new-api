@@ -9,14 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCurrentVideoSouthboundAdapterVersionSelectsMediaArraysV2(t *testing.T) {
-	assert.Equal(t,
-		"61:third_party_json_video_media_arrays:v2",
-		CurrentVideoSouthboundAdapterVersion(
-			constant.ChannelTypeSeedanceLink,
-			dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-		),
-	)
+func TestCurrentVideoSouthboundAdapterVersionSelectsRegisteredProfiles(t *testing.T) {
 	assert.Equal(t,
 		"61:official:v1",
 		CurrentVideoSouthboundAdapterVersion(constant.ChannelTypeSeedanceLink, ""),
@@ -25,6 +18,38 @@ func TestCurrentVideoSouthboundAdapterVersionSelectsMediaArraysV2(t *testing.T) 
 		"61:third_party_relay:v2",
 		CurrentVideoSouthboundAdapterVersion(constant.ChannelTypeSeedanceLink, dto.VideoUpstreamProfileThirdPartyRelay),
 	)
+}
+
+func TestResolveFeicaiAdapterUsesV2AndRetainsV1TaskCompatibility(t *testing.T) {
+	profile := dto.VideoUpstreamProfileThirdPartyFeicaiVideos
+	assert.Equal(t, "61:third_party_feicai_videos:v2", CurrentVideoSouthboundAdapterVersion(constant.ChannelTypeSeedanceLink, profile))
+
+	_, err := ResolveVideoSouthboundAdapterVersion(constant.ChannelTypeSeedanceLink, profile, "")
+	require.Error(t, err)
+	v1, err := ResolveVideoSouthboundAdapterVersion(
+		constant.ChannelTypeSeedanceLink,
+		profile,
+		"61:third_party_feicai_videos:v1",
+	)
+	require.NoError(t, err)
+	assert.True(t, v1.IsFeicaiVideosV1())
+	assert.True(t, v1.IsFeicaiVideos())
+
+	v2, err := ResolveVideoSouthboundAdapterVersion(
+		constant.ChannelTypeSeedanceLink,
+		profile,
+		"61:third_party_feicai_videos:v2",
+	)
+	require.NoError(t, err)
+	assert.True(t, v2.IsFeicaiVideosV2())
+	assert.True(t, v2.IsFeicaiVideos())
+
+	_, err = ResolveVideoSouthboundAdapterVersion(
+		constant.ChannelTypeSeedanceLink,
+		profile,
+		"61:third_party_feicai_videos:v3",
+	)
+	require.Error(t, err)
 }
 
 func TestResolveSeedanceThirdPartyRelayRequiresV2(t *testing.T) {
@@ -40,57 +65,17 @@ func TestResolveSeedanceThirdPartyRelayRequiresV2(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestResolveVideoSouthboundAdapterVersionRequiresMediaArraysV2AndFailsClosed(t *testing.T) {
-	_, err := ResolveVideoSouthboundAdapterVersion(
-		constant.ChannelTypeSeedanceLink,
-		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-		"",
-	)
-	require.Error(t, err)
+func TestResolveFunCloudAdapterOnlyAcceptsCurrentV3(t *testing.T) {
+	profile := dto.VideoUpstreamProfileThirdPartyFunCloudSeedance
+	assert.Equal(t, "61:third_party_funcloud_seedance:v3", CurrentVideoSouthboundAdapterVersion(constant.ChannelTypeSeedanceLink, profile))
 
-	official, err := ResolveVideoSouthboundAdapterVersion(
-		constant.ChannelTypeSeedanceLink,
-		"",
-		"",
-	)
-	require.NoError(t, err)
-	assert.Equal(t, VideoAdapterRevisionV1, official.Revision)
-
-	v2, err := ResolveVideoSouthboundAdapterVersion(
-		constant.ChannelTypeSeedanceLink,
-		dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-		"61:third_party_json_video_media_arrays:v2",
-	)
-	require.NoError(t, err)
-	assert.True(t, v2.IsJSONVideoMediaArraysV2())
-
-	for _, frozen := range []string{
-		"61:third_party_json_video_media_arrays:v1",
-		"61:third_party_json_video_media_arrays:v3",
-		"61:official:v2",
-		"18:third_party_json_video_media_arrays:v1",
-		"malformed",
-	} {
-		_, err := ResolveVideoSouthboundAdapterVersion(
-			constant.ChannelTypeSeedanceLink,
-			dto.VideoUpstreamProfileThirdPartyJSONVideoMediaArrays,
-			frozen,
-		)
-		require.Error(t, err, frozen)
-	}
-}
-
-func TestResolveFunCloudAdapterRequiresOnlyV2Snapshot(t *testing.T) {
-	profile := dto.VideoUpstreamProfileThirdPartyFunCloudSeedanceV2
-	assert.Equal(t, "61:third_party_funcloud_seedance_v2:v2", CurrentVideoSouthboundAdapterVersion(constant.ChannelTypeSeedanceLink, profile))
-
-	for _, frozen := range []string{"", "61:third_party_funcloud_seedance_v2:v1", "61:third_party_funcloud_seedance_v2:v3"} {
+	for _, frozen := range []string{"", "61:third_party_funcloud_seedance:v1", "61:third_party_funcloud_seedance:v2", "61:third_party_funcloud_seedance:v4"} {
 		_, err := ResolveVideoSouthboundAdapterVersion(constant.ChannelTypeSeedanceLink, profile, frozen)
 		require.Error(t, err, frozen)
 	}
 
-	version, err := ResolveVideoSouthboundAdapterVersion(constant.ChannelTypeSeedanceLink, profile, "61:third_party_funcloud_seedance_v2:v2")
+	current, err := ResolveVideoSouthboundAdapterVersion(constant.ChannelTypeSeedanceLink, profile, "61:third_party_funcloud_seedance:v3")
 	require.NoError(t, err)
-	assert.Equal(t, VideoAdapterRevisionV2, version.Revision)
-	assert.True(t, version.IsFunCloudSeedanceV2())
+	assert.Equal(t, VideoAdapterRevisionV3, current.Revision)
+	assert.True(t, current.IsFunCloudSeedanceV3())
 }

@@ -1,38 +1,28 @@
 ---
-status: accepted
+status: current
 owner: Dev Team
-last-reviewed: 2026-08-11
+last-reviewed: 2026-08-15
 ---
 
-# 墨行 Seedance 模型接入设计索引
+# TokenSave 与墨行 Seedance 接入设计索引
 
-墨行当前有两条 Moxing/TokenSave 模型线路，均使用 `ChannelTypeSeedanceLink` 和 ModelArk V3 北向，
-南向共享 `/v1/media/*` 协议形状但必须配置为不同客户模型、不同 Channel 和独立价格：
+本目录保留三份当前事实文档：
 
-| Provider 模型 | 设计结论 |
-| --- | --- |
-| `seedance-2-0-oversea` | 独立客户模型/Channel；按量计费；`media_task_v1` |
-| `doubao-seedance-2-0-260128` | 独立客户模型/Channel；按秒计费；`media_task_v1` |
-| `dreamina-seedance-2-0-260128` | 历史 Ark 线路；重新取证前不创建新渠道或素材 |
+1. [渠道对接设计](渠道对接设计.md)：五个客户模型、精确映射、三个视频协议、逐模型 typed contract、
+   南向转换、终态 usage 归一、durable attempt、计费与发布边界。
+2. [素材库对接设计](素材库对接设计.md)：TokenSave、JoyCreator、墨行火山三种素材协议、能力矩阵、
+   Asset/AssetGroup 作用域、Resolver、真人验证和失败语义。
+3. [全模型与计费设计](墨行全模型与计费设计.md)：面向商务人员说明五个客户模型分别按秒或按 Token
+   计费、当前美元价格、Fast 真实 usage/账单证据、实际用量结算规则和发布状态。
 
-两条当前线路不共享客户模型，不使用 Priority/Weight/Affinity，也不互相 fallback。旧 implementation
-字符串只用于迁移期解释历史 Task，不再构成新请求身份。
-
-当前证据：oversea 在 `www.moxing.pro` 与裸域名认证预检均为 401，没有付费创建；doubao 的 4 秒
-480p/16:9 已完成直连和本站 ModelArk V3 E2E，4 秒 1080p/16:9 有直连成功，结果为对象且缺少 usage，
-MP4 与 Range 成功。另一个 720p 产物为 1280×720，但缺少完整请求快照，不能作为精确合同证据。
-素材、`duration=-1`、音频开关和 Provider 账单仍未闭合；两条 Channel 和生产分组均应保持禁用。
-
-## 阅读顺序
-
-1. [模型线路与合同边界](01-模型线路与合同边界.md)
-2. [Seedance 2.0 海外版媒体任务](02-Seedance2.0海外版媒体任务接入设计.md)
-3. [doubao Seedance 2.0 媒体任务](03-doubao-Seedance2.0媒体任务接入设计.md)
-4. [墨行素材适配](04-Link资源与墨行素材适配设计.md)
-5. [异步任务计费与 Provider 对账](05-异步任务计费与Provider账单对账设计.md)
-6. [上线证据与验证矩阵](06-发布门禁与验证矩阵.md)
+当前代码已经具备上述协议和本地合同测试，但“代码已实现”“渠道可配置”和“生产已发布”是三个不同
+状态。Fast 已取得一次真实成功查询和账单一致证据；代码已删除 `IncludeVerifiedUsage`，成功终态中的
+明确 usage/Token 数值会直接进入归一，Fast、Mini、2.5 按实际 completion tokens 结算，墨行 2.0 仍
+按秒结算。Fast、Mini、2.5 仍保持可配置但未发布；所有线路都必须按客户模型完成剩余真实视频、素材、
+账单和灰度验收后，才能启用生产流量。
 
 ## 上位架构
 
 - [Seedance 专用渠道与 Link 架构](../../Seedance专用渠道与Link架构.md)
+- [Seedance 官方素材库与素材引用设计](../../Seedance官方素材库与素材引用设计.md)
 - [异步任务与计费事实架构](../../异步任务与计费事实架构.md)

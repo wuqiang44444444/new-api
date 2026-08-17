@@ -1,6 +1,7 @@
 package model
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -99,6 +100,17 @@ func AssetActionBaseURL(protocol dto.AssetUpstreamProtocol, region string) strin
 	}
 }
 
+func AssetCredentialFingerprint(baseURL, _ string, protocol string, providerScope ...string) string {
+	input := strings.TrimRight(baseURL, "/") + "\n" + protocol
+	for _, value := range providerScope {
+		if strings.TrimSpace(value) != "" {
+			input += "\n" + strings.TrimSpace(value)
+		}
+	}
+	sum := sha256.Sum256([]byte(input))
+	return fmt.Sprintf("%x", sum[:])
+}
+
 func ResolveAssetChannelCredential(channel *Channel) (string, string, error) {
 	return resolveAssetChannelCredential(DB, channel, nil)
 }
@@ -186,7 +198,7 @@ func UpdateChannelWithAssetCredentialActor(channel *Channel, input *dto.ChannelA
 		return errors.New("channel and asset credential are required")
 	}
 	credential.ChannelID = channel.Id
-	return updateChannelWithAssetFenceActor(channel, credential, actorID)
+	return updateChannelWithCredentialActor(channel, credential, actorID)
 }
 
 func DeleteChannelAssetCredential(channelID int) error {
@@ -194,16 +206,9 @@ func DeleteChannelAssetCredential(channelID int) error {
 		return errors.New("channel ID is required")
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		channel, err := lockAssetLifecycleChannel(tx, channelID)
+		channel, err := lockChannelForMutation(tx, channelID)
 		if err != nil {
 			return err
-		}
-		active, err := channelHasActiveAssetResourcesTx(tx, channelID)
-		if err != nil {
-			return err
-		}
-		if active {
-			return fmt.Errorf("%w: channel %d", ErrChannelHasActiveAssetResources, channelID)
 		}
 		settings := channel.GetOtherSettings()
 		assetProfile := settings.AssetUpstreamProtocol.TransportProfile()

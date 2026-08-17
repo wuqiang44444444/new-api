@@ -15,6 +15,8 @@ import (
 )
 
 var ErrGroupDeletionUnsupported = errors.New("asset upstream group deletion is not supported by the verified protocol")
+var ErrGroupNotEmpty = errors.New("asset upstream group is not empty")
+var ErrAssetOperationUnsupported = errors.New("asset upstream operation is not supported by the verified protocol")
 
 type HTTPDoer interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -38,6 +40,10 @@ type AssetRequest struct {
 	URL             string
 	Name            string
 	MediaType       string
+	Source          io.Reader
+	SourceType      string
+	SourceMaxBytes  int64
+	SourceFilename  string
 }
 
 type AssetResult struct {
@@ -97,7 +103,6 @@ type Adapter interface {
 type GroupAdapter interface {
 	CreateGroup(ctx context.Context, req GroupRequest) (GroupResult, error)
 	GetGroup(ctx context.Context, resourceID string) (GroupResult, error)
-	UpdateGroup(ctx context.Context, resourceID string, req GroupRequest) (GroupResult, error)
 	DeleteGroup(ctx context.Context, resourceID string) error
 }
 

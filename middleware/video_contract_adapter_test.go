@@ -42,6 +42,30 @@ func TestKlingRequestConvertStoresTypedContractWithoutMetadata(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, response.Code)
 }
 
+func TestModelArkVideoConvertStoresTypedOutputFormat(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.POST("/v1/contents/generations/tasks", ModelArkVideoCreateConvert(), func(c *gin.Context) {
+		contract, ok := relaycommon.GetVideoContractRequest(c)
+		require.True(t, ok)
+		require.NotNil(t, contract.ModelArk)
+		require.NotNil(t, contract.ModelArk.OutputFormat)
+		assert.Equal(t, "mov", *contract.ModelArk.OutputFormat)
+		c.Status(http.StatusNoContent)
+	})
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/contents/generations/tasks",
+		strings.NewReader(`{"model":"doubao-seedance-2-5-260628-moxing","content":[{"type":"text","text":"extend"}],"output_format":"mov"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	engine.ServeHTTP(response, request)
+
+	assert.Equal(t, http.StatusNoContent, response.Code)
+}
+
 func TestJimengRequestConvertStoresTypedContractWithoutMetadata(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

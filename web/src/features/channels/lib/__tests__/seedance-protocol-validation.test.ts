@@ -26,7 +26,7 @@ const seedanceForm = {
   models: 'seedance-customer-model',
   group: ['default'],
   base_url: 'https://provider.example.com',
-  video_upstream_protocol: 'media_task_v1' as const,
+  video_upstream_protocol: 'tokensave_media_task_v1' as const,
   asset_upstream_protocol: 'none' as const,
 }
 
@@ -35,10 +35,12 @@ describe('Seedance protocol validation', () => {
     const cases: Array<[SeedanceVideoProtocol, string]> = [
       ['modelark_v3_volcengine', 'volcengine_assets_action_v2024_01_01'],
       ['modelark_v3_byteplus', 'byteplus_assets_action_v2024_01_01'],
-      ['media_task_v1', 'relay_assets_v1'],
+      ['tokensave_media_task_v1', 'tokensave_assets_v1'],
+      ['moxing_media_task_v1', 'moxing_joycreator_assets_v1'],
+      ['moxing_modelark_media_v1', 'moxing_volc_assets_v1'],
       ['ark_media_v1', 'ark_assets_v1'],
-      ['url_media_arrays_v1', 'none'],
-      ['funcloud_seedance_v2', 'none'],
+      ['feicai_videos_v1', 'none'],
+      ['funcloud_seedance', 'funcloud_material'],
     ]
 
     for (const [videoProtocol, assetProtocol] of cases) {
@@ -54,13 +56,38 @@ describe('Seedance protocol validation', () => {
       getCompatibleSeedanceAssetProtocols('modelark_v3_volcengine'),
       ['volcengine_assets_action_v2024_01_01', 'none']
     )
-    assert.deepEqual(getCompatibleSeedanceAssetProtocols('media_task_v1'), [
-      'relay_assets_v1',
+    assert.deepEqual(
+      getCompatibleSeedanceAssetProtocols('tokensave_media_task_v1'),
+      ['tokensave_assets_v1', 'none']
+    )
+    assert.deepEqual(
+      getCompatibleSeedanceAssetProtocols('moxing_media_task_v1'),
+      ['moxing_joycreator_assets_v1', 'none']
+    )
+    assert.deepEqual(
+      getCompatibleSeedanceAssetProtocols('moxing_modelark_media_v1'),
+      ['moxing_volc_assets_v1', 'none']
+    )
+    assert.deepEqual(getCompatibleSeedanceAssetProtocols('feicai_videos_v1'), [
+      'none',
+    ])
+    assert.deepEqual(getCompatibleSeedanceAssetProtocols('funcloud_seedance'), [
+      'funcloud_material',
       'none',
     ])
     assert.deepEqual(
-      getCompatibleSeedanceAssetProtocols('url_media_arrays_v1'),
+      getCompatibleSeedanceAssetProtocols(
+        'funcloud_seedance',
+        '{"customer-next":"seedance-2-5"}'
+      ),
       ['none']
+    )
+    assert.equal(
+      getDefaultSeedanceAssetProtocol(
+        'funcloud_seedance',
+        '{"customer-next":"seedance-2-5"}'
+      ),
+      'none'
     )
   })
 
@@ -73,7 +100,7 @@ describe('Seedance protocol validation', () => {
       isOfficialSeedanceAssetProtocol('byteplus_assets_action_v2024_01_01'),
       true
     )
-    assert.equal(isOfficialSeedanceAssetProtocol('relay_assets_v1'), false)
+    assert.equal(isOfficialSeedanceAssetProtocol('tokensave_assets_v1'), false)
   })
 
   test('uses the dedicated channel name in the localized type selector', () => {
@@ -92,6 +119,25 @@ describe('Seedance protocol validation', () => {
     assert.equal(channelFormSchema.safeParse(seedanceForm).success, true)
   })
 
+  test('rejects removed generic protocol identifiers', () => {
+    assert.equal(
+      channelFormSchema.safeParse({
+        ...seedanceForm,
+        video_upstream_protocol: 'media_task_v1',
+        asset_upstream_protocol: 'relay_assets_v1',
+      }).success,
+      false
+    )
+    assert.equal(
+      channelFormSchema.safeParse({
+        ...seedanceForm,
+        video_upstream_protocol: 'funcloud_seedance_v2',
+        asset_upstream_protocol: 'funcloud_material_v2',
+      }).success,
+      false
+    )
+  })
+
   test('rejects multi-key and mismatched asset protocols', () => {
     const multiKey = channelFormSchema.safeParse({
       ...seedanceForm,
@@ -105,6 +151,18 @@ describe('Seedance protocol validation', () => {
       asset_min_url_ttl_seconds: 3600,
     })
     assert.equal(mismatchedAsset.success, false)
+  })
+
+  test('rejects FunCloud 2.5 with the FunCloud material library', () => {
+    const result = channelFormSchema.safeParse({
+      ...seedanceForm,
+      models: 'customer-next',
+      model_mapping: '{"customer-next":"seedance-2-5"}',
+      video_upstream_protocol: 'funcloud_seedance',
+      asset_upstream_protocol: 'funcloud_material',
+      asset_min_url_ttl_seconds: 3600,
+    })
+    assert.equal(result.success, false)
   })
 
   test('accepts BytePlus official video and asset credentials together', () => {
@@ -155,8 +213,8 @@ describe('Seedance protocol validation', () => {
       key: 'video-key',
       models: 'doubao-video-model',
       settings: JSON.stringify({
-        video_upstream_protocol: 'media_task_v1',
-        asset_upstream_protocol: 'relay_assets_v1',
+        video_upstream_protocol: 'tokensave_media_task_v1',
+        asset_upstream_protocol: 'tokensave_assets_v1',
       }),
     })
     const settings = JSON.parse(payload.channel.settings || '{}')

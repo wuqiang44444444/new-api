@@ -1,136 +1,56 @@
 package service
 
 import (
-	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 	"testing"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/glebarez/sqlite"
+	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
 
-type assetServiceRoundTripFunc func(*http.Request) (*http.Response, error)
-
-func (function assetServiceRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
-	return function(request)
-}
-
-func withAssetServiceDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	previousDB := model.DB
-	previousType := common.MainDatabaseType()
-	previousMemoryCacheEnabled := common.MemoryCacheEnabled
-	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Asset{}, &model.AssetGroup{}))
-	model.DB = db
-	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
-	common.MemoryCacheEnabled = false
-	t.Cleanup(func() {
-		model.DB = previousDB
-		common.SetMainDatabaseType(previousType)
-		common.MemoryCacheEnabled = previousMemoryCacheEnabled
+func TestAssetResponseReturnsOpaqueProviderIDAndReference(t *testing.T) {
+	response := assetResponse("customer-model", "provider-resource-id", assetadapter.AssetResult{
+		ResourceID: "provider-resource-id", ReferenceValue: "provider-reference-id", Status: "active",
 	})
-	return db
+
+	assert.Equal(t, "asset", response.Object)
+	assert.Equal(t, "provider-resource-id", response.ID)
+	assert.Equal(t, "customer-model", response.Model)
+	assert.Equal(t, "asset://provider-reference-id", response.Reference)
+	assert.Equal(t, "ready", response.Status)
+	assert.NotContains(t, fmt.Sprintf("%+v", response), "volcengine")
 }
 
-func createRelayAssetChannel(t *testing.T, db *gorm.DB, baseURL string) (*model.Channel, string) {
-	t.Helper()
-	channel := &model.Channel{
-		Type:    constant.ChannelTypeSeedanceLink,
-		Status:  common.ChannelStatusEnabled,
-		Name:    "asset relay",
-		Models:  "seedance-assets",
-		Group:   "default",
-		Key:     "old-key",
-		BaseURL: common.GetPointer(baseURL),
-	}
-	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMediaTaskV1,
-		AssetUpstreamProtocol: dto.AssetUpstreamProtocolRelayAssetsV1,
-		AssetMinURLTTLSeconds: 3600,
-	})
-	require.NoError(t, db.Create(channel).Error)
-	_, fingerprint, err := model.ResolveAssetChannelCredential(channel)
-	require.NoError(t, err)
-	return channel, fingerprint
+func TestValidateAssetLookupRequiresCallerModelAndOpaqueID(t *testing.T) {
+	_, _, err := validateAssetLookup("", "provider-id")
+	assert.ErrorIs(t, err, ErrInvalidAssetRequest)
+
+	modelName, resourceID, err := validateAssetLookup(" customer-model ", " provider-id ")
+	assert.NoError(t, err)
+	assert.Equal(t, "customer-model", modelName)
+	assert.Equal(t, "provider-id", resourceID)
+
+	modelName, resourceID, err = validateAssetLookup("customer-model", "opaque/id?owned-by=provider")
+	assert.NoError(t, err)
+	assert.Equal(t, "customer-model", modelName)
+	assert.Equal(t, "opaque/id?owned-by=provider", resourceID)
 }
 
-func TestCreateRemoteAssetDistinguishesChannelAndScopeConflicts(t *testing.T) {
-	channel := &model.Channel{Id: 91}
-	fingerprint := "scope-a"
-	request := dto.CreateAssetRequest{
-		Name:         "source",
-		AssetKind:    model.AssetKindGeneral,
-		MediaType:    "image",
-		Model:        "seedance-assets",
-		AssetGroupID: "astgrp_contract",
-	}
-	group := &model.AssetGroup{
-		PublicID:              request.AssetGroupID,
-		UserID:                1,
-		CreatedByTokenID:      2,
-		AppID:                 2,
-		Name:                  "group",
-		GroupKind:             model.AssetKindGeneral,
-		RequestedModel:        "another-model",
-		ChannelID:             channel.Id,
-		CredentialFingerprint: fingerprint,
-		UpstreamProtocol:      string(dto.AssetUpstreamProtocolRelayAssetsV1),
-		Status:                model.AssetStatusReady,
-		UpstreamResourceID:    "group-upstream",
-	}
-	settings := dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocolRelayAssetsV1}
-	err := validateAssetGroupBinding(group, request, channel, fingerprint, settings)
-	assert.ErrorIs(t, err, ErrAssetChannelMismatch)
-
-	group.RequestedModel = request.Model
-	group.CredentialFingerprint = "different-scope"
-	err = validateAssetGroupBinding(group, request, channel, fingerprint, settings)
-	assert.ErrorIs(t, err, ErrAssetScopeConflict)
+func TestUnsupportedAdapterOperationHasExplicitPublicSentinel(t *testing.T) {
+	assert.ErrorIs(t, normalizeAssetAdapterError(assetadapter.ErrAssetOperationUnsupported), ErrUnsupportedAssetOperation)
 }
 
-func TestRefreshAssetTreatsUpstream404AsDeleted(t *testing.T) {
-	db := withAssetServiceDB(t)
-	previousHTTPClient := httpClient
-	httpClient = &http.Client{Transport: assetServiceRoundTripFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       io.NopCloser(strings.NewReader(`{"detail":"missing"}`)),
-			Header:     make(http.Header),
-		}, nil
-	})}
-	t.Cleanup(func() { httpClient = previousHTTPClient })
-	channel, fingerprint := createRelayAssetChannel(t, db, "https://relay.example.com")
-	asset := &model.Asset{
-		PublicID:              "ast_missing",
-		UserID:                1,
-		CreatedByTokenID:      2,
-		AppID:                 2,
-		Name:                  "missing",
-		AssetKind:             model.AssetKindGeneral,
-		MediaType:             "image",
-		RequestedModel:        "seedance-assets",
-		ChannelID:             channel.Id,
-		CredentialFingerprint: fingerprint,
-		UpstreamProtocol:      string(dto.AssetUpstreamProtocolRelayAssetsV1),
-		UpstreamResourceID:    "provider-missing",
-		Status:                model.AssetStatusReady,
-	}
-	require.NoError(t, db.Create(asset).Error)
+func TestSeedanceAssetAdapterDistinguishesUnsupportedFromInvalidProtocol(t *testing.T) {
+	channel := &model.Channel{Type: constant.ChannelTypeSeedanceLink, Key: "unused"}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone})
+	_, _, err := seedanceAssetAdapter(channel)
+	assert.ErrorIs(t, err, ErrAssetLibraryUnsupported)
 
-	err := RefreshAsset(context.Background(), asset)
-	assert.ErrorIs(t, err, ErrAssetNotFound)
-	require.NoError(t, db.First(asset, asset.ID).Error)
-	assert.Equal(t, model.AssetStatusDeleted, asset.Status)
-	assert.NotZero(t, asset.DeletedAt)
+	channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocol("unknown_asset_protocol")})
+	_, _, err = seedanceAssetAdapter(channel)
+	assert.ErrorIs(t, err, ErrAssetLibraryUnavailable)
+	assert.NotErrorIs(t, err, ErrAssetLibraryUnsupported)
 }

@@ -63,7 +63,9 @@ export function getOfficialConnectivityAvailability(input: {
     !input.hasPendingVideoKey
   const assetProtocolSupportsTest = [
     'ark_assets_v1',
-    'relay_assets_v1',
+    'tokensave_assets_v1',
+    'moxing_volc_assets_v1',
+    'funcloud_material',
     'volcengine_assets_action_v2024_01_01',
     'byteplus_assets_action_v2024_01_01',
   ].includes(input.assetProtocol || '')

@@ -191,13 +191,16 @@ Manifest 中的 page ID 是跨语言稳定身份，slug 是公开路由合同，
 - 未实现、仅兼容读取、已退休或未验证的 operation；
 - DTO 捕获但未声明为公共合同的未知字段。
 
-ModelArk V3 OpenAPI 只描述统一官方请求结构、四组任务行为、平台素材引用和稳定错误，不生成逐模型
-SKU capability 投影。Provider 或模型的特殊限制由对应代码 adapter 明确校验，并在公开模型说明中以
-普通文档表达；已删除的 publication、implementation 或 hash 注册表不进入客户合同。
+ModelArk V3 OpenAPI 描述统一官方请求结构、四组任务行为、平台素材引用和稳定错误。`/v1/models` 和
+`/api/pricing` 另外返回由 Channel 当前配置只读投影的客户安全 API 摘要：ModelArk V3 北向操作、统一
+素材操作的逐项支持状态、素材类型、私域/公共引用和真人认证支持。该摘要不建立 publication、SKU、
+implementation 或 hash 注册表，也不暴露 Provider 模型、Channel ID、南向协议和私有路径。
 
-不另设 `GET /api/v3/contents/generations/models`。客户模型发现继续使用 NEWAPI 原生 `/v1/models`，
-只依据 Token、Group、Ability 和已启用渠道返回客户模型；不得暴露 Provider 模型、Channel ID、上游
-协议、价格、Key 或连接。模型是否兼容某个 adapter 由技术人员线下确认，不由模型发现接口创建或认证。
+客户模型可以通过 NEWAPI 原生 `/v1/models` 统一发现，也可以通过
+`GET /api/v3/contents/generations/models` 只读取 Seedance ModelArk 目录；两者复用同一只读投影。
+NEWAPI 原生模型仍按 Token、Group、Ability 和已启用渠道返回；Seedance Link 则返回所有已配置客户模型，
+使用 `available` 和 `availability=available|disabled|restricted` 把“目录存在”与“当前 Key 可调用”分开。
+模型是否兼容某个 adapter 仍由技术人员线下确认，模型发现只投影已经配置的北向合同，不创建或认证兼容性。
 
 ## 9. 安全与缓存
 
