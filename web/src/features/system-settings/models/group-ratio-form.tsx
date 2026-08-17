@@ -68,6 +68,7 @@ type GroupFormValues = {
   GroupRatio: string
   TopupGroupRatio: string
   UserUsableGroups: string
+  GroupDescriptions: string
   GroupGroupRatio: string
   AutoGroups: string
   MaxTokenAutoGroups: number
@@ -170,6 +171,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
               groupRatio={form.watch('GroupRatio')}
               topupGroupRatio={form.watch('TopupGroupRatio')}
               userUsableGroups={form.watch('UserUsableGroups')}
+              groupDescriptions={form.watch('GroupDescriptions')}
               groupGroupRatio={form.watch('GroupGroupRatio')}
               autoGroups={form.watch('AutoGroups')}
               maxTokenAutoGroupsField={
