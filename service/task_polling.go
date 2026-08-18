@@ -62,14 +62,7 @@ func sweepTimedOutTasks(ctx context.Context) {
 
 	for _, task := range tasks {
 		isLegacy := task.SubmitTime > 0 && task.SubmitTime < model.TaskRefundLegacyCutoff
-		timeoutMinutes := constant.TaskTimeoutMinutes
-		if task.Platform == constant.TaskPlatformMediaImage {
-			timeoutMinutes = constant.MediaImageTaskMinTimeoutMinutes
-			if constant.TaskTimeoutMinutes > timeoutMinutes {
-				timeoutMinutes = constant.TaskTimeoutMinutes
-			}
-		}
-		reason := fmt.Sprintf("任务超时（%d分钟）", timeoutMinutes)
+		reason := fmt.Sprintf("任务超时（%d分钟）", constant.TaskTimeoutMinutes)
 
 		oldStatus := task.Status
 		task.Status = model.TaskStatusFailure
@@ -180,11 +173,7 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 				nullTasks = append(nullTasks, task)
 				continue
 			}
-			taskKey := upstreamID
-			if platform == constant.TaskPlatformMediaImage {
-				taskKey = task.TaskID
-			}
-			taskM[taskKey] = task
+			taskM[upstreamID] = task
 			taskChannelM[task.ChannelId] = append(taskChannelM[task.ChannelId], upstreamID)
 		}
 		if len(nullTasks) > 0 {
@@ -222,8 +211,6 @@ func DispatchPlatformUpdate(ctx context.Context, platform constant.TaskPlatform,
 		// MJ 轮询由其自身处理，这里预留入口
 	case constant.TaskPlatformSuno:
 		_ = UpdateSunoTasks(ctx, taskChannelM, taskM)
-	case constant.TaskPlatformMediaImage:
-		_ = UpdateMediaImageTasks(ctx, taskM)
 	default:
 		if err := UpdateVideoTasks(ctx, platform, taskChannelM, taskM); err != nil {
 			common.SysLog(fmt.Sprintf("UpdateVideoTasks fail: %s", err))

@@ -105,9 +105,6 @@ func PromoteTaskCreateAttemptManualSuccess(
 		}
 		task.PrivateData.UpstreamTaskID = upstreamTaskID
 		task.PrivateData.UpstreamRequestID = upstreamRequestID
-		if task.PrivateData.MediaImage != nil && task.PrivateData.MediaImage.CreateRequestID == "" {
-			task.PrivateData.MediaImage.CreateRequestID = upstreamRequestID
-		}
 		snapshot.Task = task
 		snapshot.PrivateData = task.PrivateData
 		encoded, err := common.Marshal(snapshot)

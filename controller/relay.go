@@ -91,10 +91,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	defer func() {
 		if newAPIError != nil {
-			if common.GetContextKeyBool(c, constant.ContextKeyTaskCreateOutcomeUnknown) {
-				writeOpenAITaskCreateOutcomeUnknown(c)
-				return
-			}
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			switch relayFormat {
@@ -129,8 +125,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
-	relay.PreparePersistentImageTaskRequest(c, relayInfo)
-
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
 	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
@@ -166,12 +160,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	// common.SetContextKey(c, constant.ContextKeyTokenCountMeta, meta)
 
-	if common.GetContextKeyBool(c, constant.ContextKeyTaskPersistenceEnabled) {
-		newAPIError = service.PrepareTaskCreateAttempt(c, relayInfo)
-		if newAPIError != nil {
-			return
-		}
-	} else if priceData.FreeModel {
+	if priceData.FreeModel {
 		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
 	} else {
 		newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
@@ -184,11 +173,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		// Only return quota if downstream failed and quota was actually pre-consumed
 		if newAPIError != nil {
 			newAPIError = service.NormalizeViolationFeeError(newAPIError)
-			if !common.GetContextKeyBool(c, constant.ContextKeyTaskCreateOutcomeUnknown) {
-				if releaseErr := service.ReleaseRejectedTaskCreateAttempt(c, relayInfo); releaseErr != nil {
-					common.SysError("release rejected image task create attempt error: " + releaseErr.Error())
-				}
-			}
 			if relayInfo.Billing != nil && !relayInfo.SkipRequestRefund {
 				relayInfo.Billing.Refund(c)
 			}
@@ -417,7 +401,6 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
-		service.AppendUpstreamTaskTraceAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {

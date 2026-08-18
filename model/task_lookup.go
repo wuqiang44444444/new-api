@@ -1,17 +1,35 @@
 package model
 
-// GetByOnlyTaskId loads a task by its public task ID without applying a user
-// ownership filter. It is intended for internal lifecycle and polling paths.
-func GetByOnlyTaskId(taskId string) (*Task, bool, error) {
-	if taskId == "" {
+import (
+	"errors"
+	"strings"
+
+	"gorm.io/gorm"
+)
+
+// GetTaskForProtocol is the legacy user-scoped lookup used by callers that do
+// not have an application/token scope. The protocol is required so a lookup
+// cannot silently broaden to another task contract.
+func GetTaskForProtocol(userID int, taskID, protocol string, includeDeleted bool) (*Task, bool, error) {
+	if userID <= 0 || strings.TrimSpace(taskID) == "" || strings.TrimSpace(protocol) == "" {
 		return nil, false, nil
 	}
-
-	var task *Task
-	err := DB.Where("task_id = ?", taskId).First(&task).Error
-	exists, err := RecordExist(err)
+	query := DB.Where(
+		"user_id = ? AND task_id = ? AND client_protocol = ?",
+		userID,
+		strings.TrimSpace(taskID),
+		protocol,
+	)
+	if !includeDeleted {
+		query = query.Where("client_deleted_at = ?", 0)
+	}
+	var task Task
+	err := query.First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
 	if err != nil {
 		return nil, false, err
 	}
-	return task, exists, nil
+	return &task, true, nil
 }

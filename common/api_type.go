@@ -85,6 +85,8 @@ func ChannelType2APIType(channelType int) (int, bool) {
 		// Seedance is task-only. APITypeOpenAI is used only for shared relay
 		// metadata; task dispatch is selected by ChannelType.
 		apiType = constant.APITypeOpenAI
+	case constant.ChannelTypeAsyncImage:
+		apiType = constant.APITypeAsyncImage
 	}
 	if apiType == -1 {
 		return constant.APITypeOpenAI, false

@@ -2,7 +2,6 @@ package service
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -58,69 +57,6 @@ func StageVideoTaskCreateAttemptRecovery(
 	}
 	model.AttachAsyncTaskBilling(&task.PrivateData, info, task.Quota)
 	stageTaskProtocolSnapshot(c, task, info)
-	return model.RecordTaskCreateAttemptRecoveryTemplate(attemptID, task)
-}
-
-func StageMediaImageTaskCreateAttemptRecovery(
-	c *gin.Context,
-	info *relaycommon.RelayInfo,
-	spec MediaImageTaskCreateSpec,
-) error {
-	if c == nil || info == nil || info.TaskRelayInfo == nil {
-		return errors.New("media image task recovery context is incomplete")
-	}
-	attemptID := int64(common.GetContextKeyInt(c, constant.ContextKeyTaskCreateAttemptID))
-	if attemptID == 0 {
-		return nil
-	}
-	if spec.RequestedImageCount == 0 || spec.RequestedImageCount > dto.MaxImageN {
-		return fmt.Errorf("requested image count must be between 1 and %d", dto.MaxImageN)
-	}
-	spec, err := normalizeMediaImageTaskCreateSpec(spec)
-	if err != nil {
-		return err
-	}
-	now := common.GetTimestamp()
-	task := model.InitTask(constant.TaskPlatformMediaImage, info)
-	task.PrivateData.VideoUpstreamProfile = ""
-	task.PrivateData.VideoUpstreamQueryBaseURL = ""
-	task.PrivateData.VideoUpstreamQueryPathTemplate = ""
-	task.PrivateData.VideoUpstreamProxy = ""
-	task.CreatedAt = now
-	task.UpdatedAt = now
-	task.SubmitTime = now
-	task.Status = model.TaskStatusQueued
-	task.Progress = "0%"
-	task.Action = constant.TaskActionImageGeneration
-	task.ClientProtocol = model.TaskClientProtocolOpenAIImages
-	task.Quota = taskRecoveryTemplateQuota(info)
-	task.PrivateData.Key = info.ApiKey
-	task.PrivateData.BillingSource = info.BillingSource
-	task.PrivateData.SubscriptionId = info.SubscriptionId
-	task.PrivateData.TokenId = info.TokenId
-	task.PrivateData.NodeName = common.NodeName
-	task.PrivateData.BillingContext = &model.TaskBillingContext{
-		ModelPrice:      info.PriceData.ModelPrice,
-		ModelRatio:      info.PriceData.ModelRatio,
-		GroupRatio:      info.PriceData.GroupRatioInfo.GroupRatio,
-		OtherRatios:     info.PriceData.OtherRatios(),
-		OriginModelName: info.OriginModelName,
-		ContractFact:    info.ContractBillingFact,
-	}
-	task.PrivateData.MediaImage = &model.TaskMediaImagePrivateData{
-		Protocol:            spec.Protocol,
-		QueryBaseURL:        strings.TrimSpace(spec.QueryBaseURL),
-		QueryPathTemplate:   spec.QueryPathTemplate,
-		Proxy:               strings.TrimSpace(spec.Proxy),
-		AuthType:            strings.TrimSpace(spec.AuthType),
-		AuthName:            strings.TrimSpace(spec.AuthName),
-		AuthValueTemplate:   spec.AuthValueTemplate,
-		ResponseFormat:      spec.ResponseFormat,
-		RequestedImageCount: spec.RequestedImageCount,
-		UsePrice:            info.PriceData.UsePrice,
-		UsageBillingEnabled: info.TieredBillingSnapshot != nil,
-	}
-	model.AttachAsyncTaskBilling(&task.PrivateData, info, task.Quota)
 	return model.RecordTaskCreateAttemptRecoveryTemplate(attemptID, task)
 }
 

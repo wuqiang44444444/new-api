@@ -113,15 +113,6 @@
               "description": "以 multipart 请求编辑图片",
               "keywords": ["图片编辑", "multipart", "mask"],
               "assets": []
-            },
-            {
-              "id": "images-task-get",
-              "title": "查询图片任务",
-              "slug": "api-reference/images/tasks",
-              "file": "zh/api-reference/images/task-get.md",
-              "description": "查询异步图片任务状态和结果",
-              "keywords": ["图片任务", "queued", "completed"],
-              "assets": []
             }
           ]
         },

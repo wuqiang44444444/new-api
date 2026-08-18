@@ -1,146 +1,86 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-11
+last-reviewed: 2026-08-18
 ---
 
-# Link 图片服务合同与异步任务架构
+# 图片服务合同与异步 Provider 适配架构
 
-## 1. 范围与状态
+## 1. 范围与边界
 
-本文定义 Link 图片扩展在简化架构中的客户入口、Channel、converter、同步/异步响应和计费边界。
-图片设计可以继续单独演进；本次只删除 publication、Link SKU、implementation 和 execution binding
-依赖，并保留已经确认的通用图片任务协议。
+NEWAPI 原生图片入口 `/v1/images/generations` 与 `/v1/images/edits` 以上游 DTO、渠道选择、计费和
+错误语义为权威。Seedance Link 的视频与素材边界由[Seedance 专用渠道与 Link 架构](Seedance专用渠道与Link架构.md)
+定义，不在图片入口中推断或复用。
 
-NEWAPI 原生图片生成和编辑入口继续以上游实现为权威，不因 Link 图片设计被包装或收紧。
+图片渠道分为两类：
 
-## 2. 简化履约链
+- 原生同步渠道：Provider 在一次请求中返回完整图片，直接走普通图片生命周期；
+- 兼容子集渠道：Provider 内部是异步任务，但 adaptor 在同一 HTTP 请求内创建并轮询，客户仍只看
+  OpenAI 图片 `200` 响应。FunCloud 中转异步图片渠道属于此类。
 
-```text
-customer_model
-  -> Token / Group / Ability / price
-  -> NEWAPI 当前图片渠道选择
-  -> model_mapping
-  -> code-backed converter / upstream protocol
-  -> Provider
-```
+这两类都不得建立第二套客户任务查询、幂等账本或图片专用 Task 状态机。
 
-客户模型用于模型发现、权限、价格、日志和响应；Provider 模型只用于上游调用。Link 图片不再要求
-客户模型 publication、图片 SKU capability、`LinkImplementation` 或 execution binding。
+## 2. 客户合同
 
-本次不把 Seedance 的“单模型单渠道”“Priority/Weight 无效”和“一次 POST 不切换”自动复制到所有
-图片模型。图片的渠道选择与重试语义必须由图片产品和具体 Provider 合同单独确认。
+所有普通图片渠道使用 `POST /v1/images/generations` 或 `POST /v1/images/edits`。具体渠道可以声明
+兼容子集，但必须在代码中明确拒绝不支持字段，不得静默删除、钳制或改义。
 
-## 3. 客户合同
+FunCloud 异步图片渠道的公开约束为：
 
-Link 图片可以复用 NEWAPI 图片创建入口，并在已明确接入的异步图片路径上提供任务查询。同步和异步
-是同一客户响应联合合同：
+- `n` 固定为 `1`，`response_format` 只能为 `url`；
+- 参考图只接受 `extra_fields.reference_images` 中的 HTTP(S) URL 数组；网关只校验数量、scheme
+  和 URL 长度，不远程下载或探测文件大小；
+- `callbackUrl`、Base64 和其它 Provider 私有字段明确返回 `400`；
+- 一次请求内完成创建、轮询和结果投影，成功必须恰好返回一个 URL。
 
-- Provider 同步返回完整图片时，按标准图片响应投影；
-- Provider 返回可轮询 task ID 时，创建共享 Task 并返回平台 task ID；
-- Provider 返回既无完整图片也无可信 task ID 时，返回明确合同错误；
-- 普通客户不看到 Provider task ID、Provider 模型、凭据或私有连接。
+## 3. 渠道与 adaptor
 
-客户请求字段由统一图片 DTO 和具体 converter 代码校验。不支持字段必须明确拒绝，不得为了兼容某个
-Provider 静默删除、钳制或改义。
+普通渠道通过 `ChannelType`、`APIType`、endpoint 类型和 `relay/channel/<name>/` adaptor 注册。
+管理员只配置客户模型、`model_mapping`、API Key、Base URL 和价格；Provider 模型、请求字段、状态
+和错误映射由代码登记。
 
-## 4. Converter 与协议
-
-图片 Provider 差异由代码 converter/protocol 表达，包括：
-
-- 请求路径、鉴权和字段转换；
-- 可选标量的 absent 与显式零值语义；
-- Provider 模型和尺寸/质量翻译；
-- 同步图片、异步 task 或错误响应识别；
-- 轮询状态、结果和错误归一；
-- 计费所需的受控维度提取。
-
-管理员选择现有 converter/protocol，不编写 JSON 字段映射或状态脚本。完全兼容已有协议的新模型可以
-通过客户模型、`model_mapping`、Channel 和价格配置上线；不兼容时由技术人员新增代码。
-
-## 5. 通用图片任务协议标识
-
-跨 Provider 的图片任务型适配使用共享协议标识：
-
-```text
-protocol = media-image-task/v1
-```
-
-该标识描述可观察的任务交换合同，不代表某个 Provider 品牌或 Link SKU。它至少约定：
-
-- 创建响应如何提供可信 task ID；
-- 查询请求和 Provider 状态如何归一；
-- 成功结果如何提供可代理的图片内容；
-- Provider 错误如何映射为平台错误；
-- 哪些字段是计费和终态所需的受控事实。
-
-## 6. 南向协议与共享生命周期边界
-
-`relay/mediaimage` 是任务型图片协议的共享实现边界。Provider adapter 只负责协议转换，不建立第二套
-Provider 专用 Task、计费状态机、轮询器或补偿表。
+FunCloud adaptor 的南向流程为：
 
 ```mermaid
 flowchart LR
-    R["图片客户请求"] --> C["Channel + converter"]
-    C --> M["relay/mediaimage"]
-    M --> U["Provider task API"]
-    U --> T["共享 Task / billing lifecycle"]
+    A[OpenAI 图片请求] --> B[请求白名单与模型校验]
+    B --> C[POST /api/v2/open/aigc/model]
+    C --> D{status}
+    D -->|processing/queued| E[GET /api/v2/open/aigc/taskId]
+    E --> D
+    D -->|success| F[恰好一个 URL]
+    F --> G[OpenAI ImageResponse]
 ```
 
-共享生命周期负责：
+轮询节奏为前 30 秒每 3 秒、之后每 5 秒；总体等待使用已有 `RELAY_TIMEOUT`，部署值为 `0` 时不得
+上线此渠道。Provider task ID 不写入客户响应、Task 表或持久化任务状态。
 
-- 发送前需要时建立 durable create attempt；
-- 取得可信 task ID 后创建 Task；
-- 冻结 Channel、Provider 模型、protocol、adapter、连接和计费事实；
-- 轮询、终态、结果代理、结算和补偿；
-- 防止 Provider 响应或客户乘数造成负扣费和溢出。
+## 4. 超时、取消与计费
 
-Provider adapter 不得复制共享状态机，也不得用私有状态覆盖已经确认的 Task 事实。
+该兼容子集复用当前 `gpt-image-2` 普通同步图片生命周期：
 
-## 7. 创建安全
+- 预扣和普通同步结算由现有图片链路负责；
+- `RELAY_TIMEOUT` 或客户端 context 取消时，请求失败并按同步图片失败/退款路径处理；
+- 不自动重发、换渠道或把未知结果伪装成成功；
+- 不新增 durable `TaskCreateAttempt`、客户幂等 claim、内部对账状态机或 Provider exposure 账本。
 
-只有明确接入持久化任务协议的图片 Provider POST 才使用 durable attempt。同步图片不因共享模型存在
-而自动创建 attempt。
+这不是通用异步任务规则。若未来 Provider 在超时后仍可能扣费且无法由同步失败语义覆盖，必须停止
+使用该兼容子集，另行评审 durable Task/attempt 合同。
 
-图片是否允许自动重试、是否提供客户幂等、创建结果不明时如何处置，必须由具体图片合同明确，不从
-Seedance 视频规则反向推断。无可信 task ID 时不得创建伪 Task。
+## 5. Link 资源边界
 
-## 8. Task 与查询
+Seedance `asset://<opaque-id>` 只由视频 adapter 原样转交 Provider；图片 adaptor 不查询、不下载、
+不迁移、不验证和不持久化素材引用。图片模型不得根据名称、价格或请求字段获得 Link 履约资格。
 
-异步图片 Task 冻结：
+## 6. 不变量
 
-- user、token、app、客户模型和客户入口；
-- Channel、Provider 模型、converter/protocol 和 adapter 版本；
-- 查询连接、proxy 和受保护凭据引用；
-- 计费上下文、预扣上界和资金来源；
-- 最小结果代理信息。
+1. 客户模型、Channel、Provider 模型和代码 adaptor 身份分离；`model_mapping` 只做精确转换。
+2. 不支持字段显式失败；Provider 原始响应、凭据和完整敏感 URL 不进入客户日志或响应。
+3. FunCloud 结果为空、多于一个、非法 JSON、未知状态或未知错误码均失败关闭且跳过重试。
+4. 图片兼容子集不创建本地 Task，不提供 `/v1/images/tasks/:task_id`。
+5. 视频/Seedance 的 durable Task、attempt、冻结快照与计费状态机继续按其专题架构执行。
 
-查询和结算读取冻结快照，不因 Channel 编辑、模型映射或价格变化重新选渠或重算历史。单次不可采信
-轮询不直接证明 Provider 任务失败。
-
-## 9. 素材边界
-
-当前图片入口是否接受 `asset://<opaque-id>` 由图片产品和 converter 明确决定，不能从 Seedance 素材库能力
-自动推导。未明确支持时返回参数不支持；不得查询、下载、迁移或改写 opaque 素材引用。
-
-## 10. 计费
-
-客户价格和日志使用客户模型。所有图片数量、尺寸、质量和其它乘数必须先做上界校验，再使用统一
-checked quota 转换。饱和事件进入管理员日志；预扣和结算都不能溢出为负数。
-
-Provider 返回的最终扣量或媒体元数据同样是不可信输入，进入客户 quota 前必须验证或饱和转换。
-
-## 11. 架构不变量
-
-1. Link 图片不再依赖 publication、SKU、implementation 或 execution binding。
-2. 客户模型、Channel、`model_mapping` 和代码 converter 构成直接履约链。
-3. `media-image-task/v1` 使用共享 Task 与计费生命周期，不建立 Provider 专用第二套状态机。
-4. 只有可信 task ID 才能创建异步 Task。
-5. 不支持字段明确失败，不静默删除或改义。
-6. 客户模型用于权限、价格和日志；Provider 模型仅用于上游调用。
-7. Seedance 的唯一渠道和不切换规则不会未经评审自动扩张到图片。
-
-## 12. 相关文档
+## 7. 相关文档
 
 - [Seedance 专用渠道与 Link 架构](Seedance专用渠道与Link架构.md)
 - [异步任务与计费事实架构](异步任务与计费事实架构.md)

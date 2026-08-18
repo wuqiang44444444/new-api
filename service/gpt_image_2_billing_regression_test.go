@@ -85,7 +85,6 @@ func TestGPTImage2SynchronousBillingSnapshotDoesNotCreateTask(t *testing.T) {
 	assert.Equal(t, starting-expectedCost, getTokenRemainQuota(t, tokenID))
 	assert.Equal(t, expectedCost, getTokenUsedQuota(t, tokenID))
 	assert.Equal(t, float64(imageCount), info.PriceData.OtherRatios()["n"])
-	assert.False(t, info.BillingTransferredToTask)
 	assert.Nil(t, info.TaskRelayInfo)
 
 	var taskCount int64

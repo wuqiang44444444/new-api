@@ -37,11 +37,6 @@
       "family": "images"
     },
     {
-      "operationId": "getImageTask",
-      "status": "published",
-      "family": "images"
-    },
-    {
       "operationId": "createVideo",
       "status": "published",
       "family": "video-openai"

@@ -316,14 +316,3 @@ func ResetRejectedTaskCreateAttemptForRetry(c *gin.Context, info *relaycommon.Re
 	}
 	return nil
 }
-
-func CompleteSynchronousTaskCreateAttempt(c *gin.Context) error {
-	if c == nil {
-		return nil
-	}
-	attemptID := int64(common.GetContextKeyInt(c, constant.ContextKeyTaskCreateAttemptID))
-	if attemptID == 0 {
-		return nil
-	}
-	return model.CompleteTaskCreateAttemptWithoutTask(attemptID)
-}

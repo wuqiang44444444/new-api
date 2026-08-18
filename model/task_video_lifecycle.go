@@ -2,7 +2,6 @@ package model
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -186,13 +185,4 @@ func CompleteTaskCancellation(taskID int64, confirmed bool, rejected bool, opera
 		return nil
 	})
 	return &saved, wonTerminal, err
-}
-
-func ValidateTaskProtocol(protocol string) error {
-	switch protocol {
-	case TaskClientProtocolModelArkV3, TaskClientProtocolKlingV1, TaskClientProtocolJimeng, TaskClientProtocolOpenAIImages:
-		return nil
-	default:
-		return fmt.Errorf("unsupported task client protocol %q", protocol)
-	}
 }

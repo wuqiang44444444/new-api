@@ -225,13 +225,8 @@
           },
           {
             "depth": 2,
-            "id": "异步响应",
-            "text": "异步响应"
-          },
-          {
-            "depth": 2,
-            "id": "计费与幂等",
-            "text": "计费与幂等"
+            "id": "等待-超时与计费",
+            "text": "等待、超时与计费"
           }
         ]
       },
@@ -254,42 +249,13 @@
           },
           {
             "depth": 2,
-            "id": "响应与任务",
-            "text": "响应与任务"
+            "id": "响应与等待",
+            "text": "响应与等待"
           },
           {
             "depth": 2,
             "id": "重试",
             "text": "重试"
-          }
-        ]
-      },
-      {
-        "pageId": "images-task-get",
-        "slug": "api-reference/images/tasks",
-        "title": "查询图片任务",
-        "description": "查询异步图片任务状态和结果",
-        "keywords": ["图片任务", "queued", "completed"],
-        "headings": [
-          {
-            "depth": 2,
-            "id": "请求",
-            "text": "请求"
-          },
-          {
-            "depth": 2,
-            "id": "任务响应",
-            "text": "任务响应"
-          },
-          {
-            "depth": 2,
-            "id": "状态",
-            "text": "状态"
-          },
-          {
-            "depth": 2,
-            "id": "轮询",
-            "text": "轮询"
           }
         ]
       },

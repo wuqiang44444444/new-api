@@ -76,13 +76,3 @@ func setTaskCreateContractPersistenceError(c *gin.Context, protocol string) {
 		Body:   body,
 	})
 }
-
-func writeOpenAITaskCreateOutcomeUnknown(c *gin.Context) {
-	requestID := c.GetString(common.RequestIdKey)
-	c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
-		"message":    common.MessageWithRequestId("Task creation outcome requires reconciliation", requestID),
-		"type":       "server_error",
-		"code":       "create_outcome_unknown",
-		"request_id": requestID,
-	}})
-}

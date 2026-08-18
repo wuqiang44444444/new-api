@@ -12,10 +12,14 @@ func buildChannelTestImageRequest(model string) *dto.ImageRequest {
 	switch strings.ToLower(strings.TrimSpace(model)) {
 	case "nano-banana-2", "gemini-3.1-flash-image-preview-usage":
 		size = "1K"
+	case "nano-banana-2-lite":
+		size = ""
 	case "doubao-seedream-4-5-251128":
 		size = "2048x2048"
-	case "seedream-5", "seedream-5-moxing", "seedream-5-qihang", "seedream-5-0-260128":
+	case "seedream-5", "seedream-5-moxing", "seedream-5-qihang", "seedream-5-0-260128", "seedream-5.0-lite":
 		size = "2K"
+	case "seedream-5.0-pro":
+		size = "1K"
 	}
 	return &dto.ImageRequest{
 		Model:  model,

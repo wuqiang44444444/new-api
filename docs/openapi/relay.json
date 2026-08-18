@@ -371,7 +371,7 @@
       "post": {
         "summary": "创建图片",
         "deprecated": false,
-        "description": "使用 OpenAI 兼容的 Link 合同创建图片。响应可能直接包含图片，也可能返回可查询的异步任务。",
+        "description": "使用 OpenAI 兼容图片请求创建图片。普通响应在本次请求内完成；部分渠道的 Provider 异步由网关内部轮询。",
         "operationId": "createImageGeneration",
         "tags": [
           "图片生成/OpenAI兼容格式"
@@ -389,18 +389,11 @@
         },
         "responses": {
           "200": {
-            "description": "同步图片响应或异步图片任务",
+            "description": "图片响应",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/ImageResponse"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ImageTask"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/ImageResponse"
                 }
               }
             }
@@ -445,18 +438,11 @@
         },
         "responses": {
           "200": {
-            "description": "同步图片响应或异步图片任务",
+            "description": "图片响应",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/ImageResponse"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ImageTask"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/ImageResponse"
                 }
               }
             }
@@ -467,53 +453,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
-      }
-    },
-    "/v1/images/tasks/{task_id}": {
-      "get": {
-        "summary": "查询图片任务",
-        "deprecated": false,
-        "operationId": "getImageTask",
-        "tags": [
-          "图片生成/OpenAI兼容格式"
-        ],
-        "parameters": [
-          {
-            "name": "task_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "图片任务状态与结果",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ImageTask"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "任务不存在或不属于当前鉴权主体",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ImageTaskErrorEnvelope"
                 }
               }
             }
@@ -4882,78 +4821,6 @@
           }
         }
       },
-      "ImageTask": {
-        "type": "object",
-        "required": [
-          "id",
-          "object",
-          "status",
-          "created_at",
-          "model"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "object": {
-            "type": "string",
-            "enum": [
-              "image.generation.task"
-            ]
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "queued",
-              "in_progress",
-              "completed",
-              "failed",
-              "unknown"
-            ]
-          },
-          "created_at": {
-            "type": "integer"
-          },
-          "completed_at": {
-            "type": "integer"
-          },
-          "model": {
-            "type": "string"
-          },
-          "result": {
-            "$ref": "#/components/schemas/ImageResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ImageTaskError"
-          }
-        }
-      },
-      "ImageTaskError": {
-        "type": "object",
-        "required": [
-          "code",
-          "message"
-        ],
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        }
-      },
-      "ImageTaskErrorEnvelope": {
-        "type": "object",
-        "required": [
-          "error"
-        ],
-        "properties": {
-          "error": {
-            "$ref": "#/components/schemas/ImageTaskError"
-          }
-        }
-      },
       "AudioTranscriptionRequest": {
         "type": "object",
         "required": [
@@ -6200,7 +6067,7 @@
             }
           },
           "error": {
-            "$ref": "#/components/schemas/ImageTaskError"
+            "$ref": "#/components/schemas/VideoTaskError"
           },
           "created_at": {
             "type": "integer",

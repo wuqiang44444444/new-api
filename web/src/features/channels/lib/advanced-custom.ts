@@ -73,11 +73,6 @@ export const ADVANCED_CUSTOM_CONVERTER_OPTIONS: Array<{
     label: 'OpenAI Chat to Gemini Generate Content',
     triggerLabel: 'To Gemini Generate Content',
   },
-  {
-    value: 'media_task_image_blocking',
-    label: 'Media task image blocking',
-    triggerLabel: 'Media task image',
-  },
 ]
 
 export type AdvancedCustomAuthMode = 'default' | AdvancedCustomAuthType
@@ -412,13 +407,6 @@ export function getAdvancedCustomConverterDefaults(
   ) {
     return { upstream_path: geminiGenerateContentPath, auth: geminiQueryAuth() }
   }
-  if (converter === 'media_task_image_blocking') {
-    return {
-      upstream_path: '/v1/images/generations',
-      auth: bearerHeaderAuth(),
-    }
-  }
-
   return {
     upstream_path: normalizedIncomingPath || openAIChatPath,
     auth: getAdvancedCustomNativeAuth(normalizedIncomingPath),
@@ -849,9 +837,6 @@ function isConverterPathAllowed(
   converter: AdvancedCustomConverter
 ): boolean {
   if (converter === 'none') return true
-  if (converter === 'media_task_image_blocking') {
-    return incomingPath === '/v1/images/generations'
-  }
   if (incomingPath === '/v1/alpha/search') return false
   if (converter === 'anthropic_messages_to_openai_chat_completions') {
     return incomingPath === '/v1/messages'

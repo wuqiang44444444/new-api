@@ -61,10 +61,9 @@ const (
 	VideoStatusCompleted  = kitdto.VideoStatusCompleted
 	VideoStatusFailed     = kitdto.VideoStatusFailed
 
-	AdvancedCustomConverterMediaTaskImageBlocking = kitdto.AdvancedCustomConverterMediaTaskImageBlocking
-	AdvancedCustomAuthTypeNone                    = kitdto.AdvancedCustomAuthTypeNone
-	AdvancedCustomAuthTypeHeader                  = kitdto.AdvancedCustomAuthTypeHeader
-	AdvancedCustomAuthTypeQuery                   = kitdto.AdvancedCustomAuthTypeQuery
+	AdvancedCustomAuthTypeNone   = kitdto.AdvancedCustomAuthTypeNone
+	AdvancedCustomAuthTypeHeader = kitdto.AdvancedCustomAuthTypeHeader
+	AdvancedCustomAuthTypeQuery  = kitdto.AdvancedCustomAuthTypeQuery
 )
 
 var HasGeminiUsageMetadataTokens = kitdto.HasGeminiUsageMetadataTokens

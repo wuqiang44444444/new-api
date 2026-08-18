@@ -80,21 +80,6 @@ func SetRelayRouter(router *gin.Engine) {
 		})
 	}
 	{
-		imageCreateRouter := relayV1Router.Group("")
-		imageCreateRouter.Use(
-			middleware.TaskClientProtocol("openai_images"),
-			middleware.Distribute(),
-			middleware.ImageTaskCreateIdempotency(),
-		)
-		imageCreateRouter.POST("/images/generations", func(c *gin.Context) {
-			controller.Relay(c, types.RelayFormatOpenAIImage)
-		})
-
-		imageReadRouter := relayV1Router.Group("")
-		imageReadRouter.Use(middleware.TaskClientProtocol("openai_images"))
-		imageReadRouter.GET("/images/tasks/:task_id", controller.OpenAIImageTaskGet)
-	}
-	{
 		//http router
 		httpRouter := relayV1Router.Group("")
 		httpRouter.Use(middleware.Distribute())
@@ -130,6 +115,9 @@ func SetRelayRouter(router *gin.Engine) {
 			controller.Relay(c, types.RelayFormatOpenAIImage)
 		})
 		httpRouter.POST("/images/edits", func(c *gin.Context) {
+			controller.Relay(c, types.RelayFormatOpenAIImage)
+		})
+		httpRouter.POST("/images/generations", func(c *gin.Context) {
 			controller.Relay(c, types.RelayFormatOpenAIImage)
 		})
 

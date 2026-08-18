@@ -68,9 +68,7 @@ func TaskCreateIdempotency() gin.HandlerFunc {
 			}
 			return
 		}
-		if common.GetContextKeyBool(c, constant.ContextKeyTaskIdempotencyRelease) ||
-			(protocol == model.TaskClientProtocolOpenAIImages &&
-				!common.GetContextKeyBool(c, constant.ContextKeyTaskPersistenceEnabled)) {
+		if common.GetContextKeyBool(c, constant.ContextKeyTaskIdempotencyRelease) {
 			_ = model.ReleaseTaskCreateIdempotency(claim.ID)
 			return
 		}
@@ -114,20 +112,6 @@ func replayTaskCreateIdempotency(c *gin.Context, claim *model.TaskCreateIdempote
 
 func replayTaskCreateResponse(c *gin.Context, protocol string, task *model.Task) {
 	switch protocol {
-	case model.TaskClientProtocolOpenAIImages:
-		imageTask := model.ProjectOpenAIImageTask(task)
-		if task.Status == model.TaskStatusSuccess && imageTask.Result != nil {
-			c.AbortWithStatusJSON(http.StatusOK, imageTask.Result)
-			return
-		}
-		if task.Status.IsActive() {
-			c.Header("Location", "/v1/images/tasks/"+task.TaskID)
-			c.Header("Retry-After", "2")
-			c.Header("X-Task-ID", task.TaskID)
-			c.AbortWithStatusJSON(http.StatusAccepted, imageTask)
-			return
-		}
-		c.AbortWithStatusJSON(http.StatusOK, imageTask)
 	case model.TaskClientProtocolModelArkV3:
 		c.AbortWithStatusJSON(http.StatusOK, gin.H{"id": task.TaskID})
 	case model.TaskClientProtocolKlingV1:

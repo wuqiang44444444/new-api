@@ -46,7 +46,8 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	var requestBody io.Reader
 
-	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
+	allowPassThrough := info.ApiType != constant.APITypeAsyncImage
+	if allowPassThrough && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
@@ -76,7 +77,11 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 				}
 			}
 
-			logger.LogDebug(c, "image request body: %s", jsonData)
+			if info.ApiType == constant.APITypeAsyncImage {
+				logger.LogDebug(c, "image request body: [redacted]")
+			} else {
+				logger.LogDebug(c, "image request body: %s", jsonData)
+			}
 			body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
 			if err != nil {
 				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
@@ -93,17 +98,25 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
 		service.MarkTaskCreateAttemptOutcomeUnknown(c, info)
+		if info.ApiType == constant.APITypeAsyncImage {
+			if apiErr, ok := err.(*types.NewAPIError); ok {
+				service.ResetStatusCode(apiErr, statusCodeMappingStr)
+				return apiErr
+			}
+		}
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
+	var usage any
+	responseHandled := false
 	var httpResp *http.Response
 	if resp != nil {
 		httpResp = resp.(*http.Response)
-		if TryHandlePersistedImageTaskResponse(c, info, httpResp) {
-			return nil
-		}
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 		if httpResp.StatusCode != http.StatusOK {
-			if httpResp.StatusCode == http.StatusCreated && info.ApiType == constant.APITypeReplicate {
+			if info.ApiType == constant.APITypeAsyncImage {
+				usage, newAPIError = adaptor.DoResponse(c, httpResp, info)
+				responseHandled = true
+			} else if httpResp.StatusCode == http.StatusCreated && info.ApiType == constant.APITypeReplicate {
 				// replicate channel returns 201 Created when using Prefer: wait, treat it as success.
 				httpResp.StatusCode = http.StatusOK
 			} else {
@@ -118,17 +131,15 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		}
 	}
 
-	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
+	if !responseHandled {
+		usage, newAPIError = adaptor.DoResponse(c, httpResp, info)
+	}
 	if newAPIError != nil {
 		service.MarkTaskCreateAttemptOutcomeUnknown(c, info)
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
 	}
-	if info.BillingTransferredToTask {
-		return nil
-	}
-
 	imageN := uint(1)
 	if request.N != nil {
 		imageN = *request.N
@@ -159,6 +170,5 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	}
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), logContent)
-	markSynchronousImageIdempotencyComplete(c, info)
 	return nil
 }

@@ -51,7 +51,7 @@ func TestCompletedNoReplayClaimCannotBeReusedBeforeExpiry(t *testing.T) {
 	truncateTables(t)
 	claim, created, err := ClaimTaskCreateIdempotency(
 		102,
-		TaskClientProtocolOpenAIImages,
+		TaskClientProtocolModelArkV3,
 		"key-hash",
 		"request-hash",
 		common.GetTimestamp()+3600,
@@ -62,7 +62,7 @@ func TestCompletedNoReplayClaimCannotBeReusedBeforeExpiry(t *testing.T) {
 
 	replayed, created, err := ClaimTaskCreateIdempotency(
 		102,
-		TaskClientProtocolOpenAIImages,
+		TaskClientProtocolModelArkV3,
 		"key-hash",
 		"request-hash",
 		common.GetTimestamp()+3600,

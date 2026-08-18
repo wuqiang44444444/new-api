@@ -165,7 +165,6 @@ export type AdvancedCustomConverter =
   | 'openai_responses_to_gemini_generate_content'
   | 'gemini_generate_content_to_openai_chat_completions'
   | 'openai_chat_completions_to_gemini_generate_content'
-  | 'media_task_image_blocking'
 
 export type AdvancedCustomAuthType = 'none' | 'header' | 'query'
 

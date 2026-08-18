@@ -53,6 +53,9 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 	if channel != nil && channel.Type == constant.ChannelTypeCodex {
 		return string(constant.EndpointTypeOpenAIResponse)
 	}
+	if channel != nil && channel.Type == constant.ChannelTypeAsyncImage {
+		return string(constant.EndpointTypeImageGeneration)
+	}
 	if channel != nil && channel.Type == constant.ChannelTypeAdvancedCustom {
 		advancedCustom := channel.GetOtherSettings().AdvancedCustom
 		if advancedCustom != nil {

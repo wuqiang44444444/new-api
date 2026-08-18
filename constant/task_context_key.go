@@ -8,7 +8,6 @@ const (
 	ContextKeyTaskUpstreamStarted              ContextKey = "task_upstream_started"
 	ContextKeyTaskCreateAttemptID              ContextKey = "task_create_attempt_id"
 	ContextKeyTaskCreateOutcomeUnknown         ContextKey = "task_create_outcome_unknown"
-	ContextKeyTaskPersistenceEnabled           ContextKey = "task_persistence_enabled"
 	ContextKeyTaskPromptValidated              ContextKey = "task_prompt_validated"
 	ContextKeyTaskDurationValidated            ContextKey = "task_duration_validated"
 )

@@ -130,15 +130,13 @@ type TaskPrivateData struct {
 	ClientRequest                  TaskClientRequestSnapshot `json:"client_request,omitempty"`
 	AppID                          int                       `json:"app_id,omitempty"`
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
-	BillingSource  string                     `json:"billing_source,omitempty"`   // "wallet" 或 "subscription"
-	SubscriptionId int                        `json:"subscription_id,omitempty"`  // 订阅 ID，用于订阅退款
-	TokenId        int                        `json:"token_id,omitempty"`         // 令牌 ID，用于令牌额度退款
-	SkipTokenQuota bool                       `json:"skip_token_quota,omitempty"` // Playground 等不参与令牌额度记账的任务
-	NodeName       string                     `json:"node_name,omitempty"`        // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
-	BillingContext *TaskBillingContext        `json:"billing_context,omitempty"`  // 计费参数快照（用于轮询阶段重新计算）
-	MediaImage     *TaskMediaImagePrivateData `json:"media_image,omitempty"`
-
-	AsyncBilling *TaskAsyncBillingContext `json:"async_billing,omitempty"`
+	BillingSource  string                   `json:"billing_source,omitempty"`   // "wallet" 或 "subscription"
+	SubscriptionId int                      `json:"subscription_id,omitempty"`  // 订阅 ID，用于订阅退款
+	TokenId        int                      `json:"token_id,omitempty"`         // 令牌 ID，用于令牌额度退款
+	SkipTokenQuota bool                     `json:"skip_token_quota,omitempty"` // Playground 等不参与令牌额度记账的任务
+	NodeName       string                   `json:"node_name,omitempty"`        // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
+	BillingContext *TaskBillingContext      `json:"billing_context,omitempty"`  // 计费参数快照（用于轮询阶段重新计算）
+	AsyncBilling   *TaskAsyncBillingContext `json:"async_billing,omitempty"`
 }
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。
@@ -339,25 +337,11 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 	return tasks
 }
 
-// GetTimedOutUnfinishedTasks applies a separate cutoff to media image tasks so
-// a short global task timeout cannot expire them during their synchronous
-// request-wait window.
 func GetTimedOutUnfinishedTasks(cutoffUnix int64, limit int) []*Task {
-	mediaImageTimeoutMinutes := constant.TaskTimeoutMinutes
-	if mediaImageTimeoutMinutes < constant.MediaImageTaskMinTimeoutMinutes {
-		mediaImageTimeoutMinutes = constant.MediaImageTaskMinTimeoutMinutes
-	}
-	mediaImageCutoffUnix := time.Now().Unix() - int64(mediaImageTimeoutMinutes)*60
 	var tasks []*Task
 	err := DB.Where("progress != ?", "100%").
 		Where("status NOT IN ?", TerminalTaskStatuses()).
-		Where(
-			"((platform = ? AND submit_time < ?) OR (platform <> ? AND submit_time < ?))",
-			constant.TaskPlatformMediaImage,
-			mediaImageCutoffUnix,
-			constant.TaskPlatformMediaImage,
-			cutoffUnix,
-		).
+		Where("submit_time < ?", cutoffUnix).
 		Order("submit_time").
 		Limit(limit).
 		Find(&tasks).Error

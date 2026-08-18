@@ -26,7 +26,7 @@ operations: []
 | -------- | ------------------------------------------------------- | ------------------------- |
 | 模型发现 | `GET /v1/models`                                        | 查询当前 Key 可访问的模型 |
 | 文本     | `/v1/chat/completions`、`/v1/responses`、`/v1/messages` | 选择与你的 SDK 相同的协议 |
-| 图片     | `/v1/images/generations`、`/v1/images/edits`            | 支持同步响应和异步任务    |
+| 图片     | `/v1/images/generations`、`/v1/images/edits`            | 在本次请求内返回同步响应 |
 | 视频     | ModelArk、Kling、即梦 Link 合同                       | 不同协议的字段不能混用    |
 | 素材     | `/v1/assets`                                            | 管理可复用素材及其绑定    |
 

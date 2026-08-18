@@ -112,8 +112,6 @@ const (
 	advancedCustomConverterOpenAIResponsesToGemini     = "openai_responses_to_gemini_generate_content"
 	advancedCustomConverterGeminiContentToOpenAIChat   = "gemini_generate_content_to_openai_chat_completions"
 	advancedCustomConverterOpenAIChatToGeminiContent   = "openai_chat_completions_to_gemini_generate_content"
-
-	AdvancedCustomConverterMediaTaskImageBlocking = "media_task_image_blocking"
 )
 
 const (
@@ -354,8 +352,7 @@ func IsAdvancedCustomConverterAllowed(converter string) bool {
 		advancedCustomConverterOpenAIResponsesToOpenAIChat,
 		advancedCustomConverterOpenAIResponsesToGemini,
 		advancedCustomConverterGeminiContentToOpenAIChat,
-		advancedCustomConverterOpenAIChatToGeminiContent,
-		AdvancedCustomConverterMediaTaskImageBlocking:
+		advancedCustomConverterOpenAIChatToGeminiContent:
 		return true
 	default:
 		return false
@@ -551,10 +548,6 @@ func validateAdvancedCustomConverterPath(index int, incomingPath string, convert
 		}
 	case advancedCustomConverterGeminiContentToOpenAIChat:
 		if strings.Contains(incomingPath, ":generateContent") || strings.Contains(incomingPath, ":streamGenerateContent") {
-			return nil
-		}
-	case AdvancedCustomConverterMediaTaskImageBlocking:
-		if incomingPath == advancedCustomEndpointPathImageGeneration {
 			return nil
 		}
 	}
