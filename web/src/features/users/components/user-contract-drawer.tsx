@@ -49,7 +49,7 @@ import {
 interface UserContractDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  user: User
+  user: Pick<User, 'id' | 'username'>
   onSuccess: () => void
 }
 

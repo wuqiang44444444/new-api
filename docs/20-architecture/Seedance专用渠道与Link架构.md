@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-15
+last-reviewed: 2026-08-18
 ---
 
 # Seedance 专用渠道与 Link 架构
@@ -10,7 +10,8 @@ last-reviewed: 2026-08-15
 
 本文是 Seedance、ModelArk V3、代码化上游协议、异步视频任务和无状态素材代理的总体权威架构。
 Provider opaque 素材 ID 与视频引用的数据流专题细节由
-[Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md)负责。迁移步骤、实施
+[Seedance 无状态素材代理架构](Seedance无状态素材代理架构.md)负责。对外能力和操作矩阵由
+[Seedance 模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)负责。迁移步骤、实施
 清单和评审过程不进入架构正文。
 
 当前代码已经实现本文描述的架构边界，包括无条件采集成功终态中的明确 usage/Token 数值，并按冻结
@@ -243,14 +244,14 @@ Channel 或 Provider 作用域映射。Provider 返回的 opaque ID 直接交给
 
 平台不保存 source URL 或媒体二进制，不浏览 Provider 账号资源，不建立云导入、容量分配、自动物化、
 跨线路迁移、source fallback、跨 Provider 探测或素材 unknown 状态机。完整定义见
-[Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md)。
+[Seedance 无状态素材代理架构](Seedance无状态素材代理架构.md)。
 
 ## 10. 素材参与视频创建
 
 ModelArk V3 可以同时携带 HTTP/HTTPS URL、Data URL 和 `asset://<opaque-id>`。平台只验证引用非空，
 不查询素材或复检所有权、应用、状态、模型、Channel、账号或 Region/Project；引用直接进入当前模型
 adapter，存在性、权限、审核与兼容性由 Provider 判定。详细合同见
-[Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md)。
+[Seedance 模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)和[Seedance 无状态素材代理架构](Seedance无状态素材代理架构.md)。
 
 ## 11. 计费与风险
 
@@ -268,9 +269,8 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 数值类型、非负值、上界和溢出校验，就必须形成平台实际用量事实；不得再增加配置、逐模型白名单、
 人工验收状态或 Provider 开关来决定是否采集，也不得从进度、金额或时长猜测 Token。
 
-共享解析层中的 `IncludeVerifiedUsage` 原本是第三方用量尚未完成类型、单位和终态稳定性取证时的资金
-保护门。它不属于 Provider 合同，实际调用也从未启用；当前代码已删除该参数，没有把它改造成另一个
-配置或白名单。adapter 直接采集成功终态中的明确 usage/Token 数值，运行时按创建时冻结的计价方式
+旧的共享用量开关曾把“是否采集”与“是否参与结算”混在一起；它不属于 Provider 合同，当前代码已删除，
+没有替换成 Provider 配置或模型白名单。adapter 直接采集成功终态中的明确 usage/Token 数值，运行时按创建时冻结的计价方式
 处理：
 
 | 冻结计价方式 | 成功终态返回实际 Token usage | 客户结算 |
@@ -293,7 +293,7 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 | Provider 模型 | `model_mapping` | 创建时冻结 |
 | 南向协议 | 代码注册表 + Channel 协议选择 | 创建时冻结 |
 | 视频创建与资金 | `TaskCreateAttempt` / `Task` | 后续按冻结事实执行 |
-| 素材归属和作用域 | `Asset` / `AssetGroup` | 创建后不可迁移 |
+| 素材 opaque ID 与复用域 | 调用方保存 `model + id + reference`；公开元数据只给匿名 `reuse_scope` | 平台不建立 Asset/AssetGroup 事实，存在性与兼容性由 Provider 裁决 |
 | 历史费用 | 冻结计费上下文与结算日志 | 不按当前价格回算 |
 
 主数据库是 Channel、Task、资金、素材和审计的持久化事实源。Redis、进程缓存、模型发现投影和前端
@@ -310,7 +310,7 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 5. Priority/Weight/Affinity、失败重选、跨渠道重试或 fallback；
 6. 管理员编写协议 JSON、字段映射或状态脚本；
 7. 请求时重复唯一性检查、启动扫描、自动修复和低频并发补丁；
-8. 通用 0..N AssetBinding、跨账号/区域迁移和 source fallback；
+   8. 通用 0..N AssetBinding、跨账号/区域迁移和 source fallback；
 9. 平台人脸认证、法律授权、独立撤回域和 Provider 数据删除承诺；
 10. 素材幂等、unknown 对账、孤儿扫描和管理员核查工作流。
 
@@ -329,12 +329,25 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 11. Provider 实际用量的采集与客户计价单位分离；成功终态中的任何明确 usage/Token 数值均为合法
     用量，不得被配置、白名单或共享布尔开关静默丢弃。
 
-## 15. 相关文档
+## 15. 变更性质：Link 新增与 NEWAPI 原生边界
+
+| 变更面 | 性质 | 说明 |
+| --- | --- | --- |
+| ModelArk V3 Router、Seedance ChannelType、视频/素材协议注册 | Link 专属新增 | 独立于 NEWAPI 原生视频入口，不修改原生模型识别或拒绝逻辑 |
+| TaskCreateAttempt、Seedance Task 快照和 Provider usage 归一 | 共享异步底座的本地扩展 | 复用耐久 Task/计费事实；只在显式接入的 Link 任务启用 |
+| `/v1/assets` 单资源代理与 `asset://<opaque-id>` | Link 专属合同优化 | 不建立本地 Asset/AssetGroup、resolver、列表或所有权事实 |
+| 原生鉴权、计费和日志底座 | NEWAPI 原生能力复用 + 必要窄接线 | 仅传递合同/任务事实或调用共享服务；原生入口保持原语义 |
+
+未来接取上游时，新增类型、协议、校验和测试应优先放在 `relay/channel/task/seedance/`、协议注册表或
+新文件中；只有无法通过独立接线完成时才修改 NEWAPI 原生热路径，并记录最小接线点。
+
+## 16. 相关文档
 
 - [架构概览](架构概览.md)
-- [Seedance 官方素材库与素材引用设计](Seedance官方素材库与素材引用设计.md)
+- [Seedance 模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)
+- [Seedance 无状态素材代理架构](Seedance无状态素材代理架构.md)
 - [异步任务与计费事实架构](异步任务与计费事实架构.md)
 - [Link 图片服务合同与异步任务架构](Link图片服务合同与异步任务架构.md)
 - [Seedance Provider 接入设计](<Seedance模型接入设计/README.md>)
 - [ADR-0008：共享异步任务计费状态机与原子补偿](decisions/0008-共享异步任务计费状态机与原子补偿.md)
-- [ADR-0016：Seedance 专用渠道与确定性素材代理](decisions/0016-Seedance专用渠道与确定性素材代理.md)
+- [ADR-0017：调用方自管无状态素材代理](decisions/0017-调用方自管无状态素材代理.md)

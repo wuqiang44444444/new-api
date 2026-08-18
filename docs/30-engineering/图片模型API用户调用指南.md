@@ -184,7 +184,7 @@ Content-Type: application/json
 }
 ```
 
-不要假设另一个 Seedream SKU必然接受相同高级参数。
+不要假设另一个 Seedream 客户模型必然接受相同高级参数。
 
 ## 5. 使用 URL 参考图进行编辑
 
@@ -248,7 +248,7 @@ curl -sS "$NEWAPI_BASE_URL/v1/images/generations" \
 - data URI或 Base64 字符串。
 
 上述限制只适用于统一图片 API 的 `image` 字段；视频请求级媒体是否允许 Data URL，以对应视频
-官方合同和公开 SKU 能力为准。
+官方合同和已发布客户模型能力为准。
 
 使用短期签名 URL时，建议有效期至少覆盖客户端超时、排队和生成时间，并预留重试余量。
 

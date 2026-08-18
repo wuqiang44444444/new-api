@@ -22,7 +22,7 @@ required_files=(
   "docs/10-product/业务流程.md"
   "docs/10-product/验收标准.md"
   "docs/20-architecture/架构概览.md"
-  "docs/20-architecture/异步任务与计费事实架构.md"
+  "docs/20-architecture/账单计费-异步任务与计费事实架构.md"
   "docs/30-engineering/本地搭建.md"
   "docs/30-engineering/命令清单.md"
   "docs/30-engineering/人工智能编码指南.md"

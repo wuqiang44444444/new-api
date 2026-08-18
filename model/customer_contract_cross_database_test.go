@@ -116,6 +116,16 @@ func TestCustomerContractPersistenceAcrossSupportedServerDatabases(t *testing.T)
 			require.Len(t, audits, 1)
 			assert.Equal(t, "cross database contract transaction", audits[0].Reason)
 
+			items, listTotal, summary, err := GetCustomerContractAdminList(CustomerContractAdminListFilter{
+				AdminRole: common.RoleRootUser, Keyword: "cross-db-model", Limit: 20,
+			})
+			require.NoError(t, err)
+			assert.EqualValues(t, 1, listTotal)
+			assert.EqualValues(t, 1, summary.Active)
+			require.Len(t, items, 1)
+			assert.Equal(t, user.Id, items[0].UserId)
+			assert.Equal(t, CustomerContractAdminStatusActive, items[0].ContractStatus)
+
 			concurrentUser := User{
 				Username: "contract-concurrent-" + test.name, AffCode: "contract-concurrent-aff-" + test.name,
 				Group: "default", AuthVersion: 1,

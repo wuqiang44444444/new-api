@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: Dev Team
-last-reviewed: 2026-08-15
+last-reviewed: 2026-08-18
 ---
 
 # Seedance 模型接入设计索引
@@ -12,7 +12,7 @@ ModelArk V3 北向；各 Provider 可以使用不同代码化上游协议、路�
 
 下游通用合同见[公开模型调用与素材能力元数据设计](公开模型调用与素材能力元数据设计.md)：客户模型
 可以使用部署方自己的名称，目录通过 `api.video`、`api.assets` 和匿名 `reuse_scope` 描述能力，不返回
-上游身份。
+上游身份。每个 Provider 子目录统一只保留四份文档：原始技术资料整理、模型与素材库对接设计、模型价格与计费、模型与素材能力元数据；README 不再作为第二套事实入口。
 
 ## Provider 设计
 
@@ -22,9 +22,11 @@ Provider 专题只记录自身客户价格、第三方报价和履约边界，�
 
 | Provider | 设计入口 | 当前状态 |
 | --- | --- | --- |
-| FunCloud | [Seedance 全模型接入设计](FunCloud/README.md) | 四个独立客户模型与 Channel 已实现；Standard/Fast/Mini 支持统一北向虚拟素材，2.5 无素材；真实模型、素材和账单仍需生产验收 |
-| 墨行 | [TokenSave 与墨行 Seedance 接入设计](墨行/README.md) | 五个客户模型、三个视频协议和三种素材协议已实现为可配置合同；Fast 已取得真实终态 usage 与账单一致证据，实际用量结算已实施；Fast/Mini/2.5 未发布 |
-| 飞彩 | [Seedance 全模型接入设计](飞彩/README.md) | 使用专用 `feicai_videos_v1`；SD2 开放 16:9/9:16，其余九个固定分辨率模型开放六种登记画幅 |
+| 火山官方 | [模型与素材库对接设计](火山官方/火山官方模型与素材库对接设计.md) | `modelark_v3_volcengine` + `volcengine_assets_action_v2024_01_01`；官方模型、价格与 Action 素材合同已代码化，账号开通和生产账单需逐模型验收 |
+| BytePlus 官方 | [模型与素材库对接设计](BytePlus官方/BytePlus官方模型与素材库对接设计.md) | `modelark_v3_byteplus` + `byteplus_assets_action_v2024_01_01`；海外 `dreamina-*` 身份与国内 `doubao-*` 隔离，目标账号验收未完成 |
+| FunCloud | [模型与素材库对接设计](FunCloud/FunCloud模型与素材库对接设计.md) | 四个独立客户模型与 Channel；Standard/Fast/Mini 可选虚拟素材，2.5 无素材；真实模型、素材和账单仍需生产验收 |
+| 墨行（含 TokenSave 海外转售） | [模型与素材库对接设计](墨行/墨行模型与素材库对接设计.md) | 五个客户模型、三个视频协议和三种素材协议；Fast 有真实终态 usage 与账单一致证据，Mini/2.5 未发布 |
+| 飞彩 | [模型与素材库对接设计](飞彩/飞彩模型与素材库对接设计.md) | 专用 `feicai_videos_v1`；十个固定分辨率模型，`asset_upstream_protocol=none`，不提供素材 CRUD |
 
 逐模型生产缺口和当前验收顺序集中记录在
 [路线图的 Seedance 生产验收](../../50-planning/路线图.md#seedance-生产验收)。架构文档只保留稳定边界
@@ -37,5 +39,5 @@ Channel、`model_mapping`、价格和代码协议；是否兼容与是否上线�
 ## 共同上位架构
 
 - [Seedance 专用渠道与 Link 架构](../Seedance专用渠道与Link架构.md)
-- [异步任务与计费事实架构](../异步任务与计费事实架构.md)
-- [API Key 用量账单架构](../API-Key用量账单架构.md)
+- [异步任务与计费事实架构](../账单计费-异步任务与计费事实架构.md)
+- [API Key 用量账单架构](../账单计费-APIKEY用量账单架构.md)

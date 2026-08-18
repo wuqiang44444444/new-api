@@ -1,14 +1,14 @@
 ---
-status: accepted
+status: current
 owner: Dev Team
-last-reviewed: 2026-08-10
+last-reviewed: 2026-08-18
 ---
 
 # 公开 API 文档交付架构
 
 公开 API 文档是 new-api Web 交付物中的只读合同投影。受控 Markdown、公开 operation 白名单和
-审计后的 OpenAPI 在现有 React/Rsbuild 构建中校验并生成静态内容，最终随 `web/dist` 嵌入同一个
-Go 二进制发布。
+Relay OpenAPI 合同快照在现有 React/Rsbuild 构建中校验并生成静态内容，最终随 `web/dist` 嵌入同一个
+Go 二进制发布。OpenAPI 快照提供机器合同候选，公开资格由白名单、代码审计和专项测试共同决定。
 
 本文只描述交付边界、事实归属、构建与运行数据流、安全和一致性约束。内容维护步骤见
 [公开 API 文档维护指南](../30-engineering/公开API文档维护指南.md)，页面结构和交互见
@@ -35,15 +35,15 @@ Go 二进制发布。
 
 ## 2. 事实所有权
 
-| 事实 | 权威来源 | 约束 |
-| --- | --- | --- |
-| API 机器合同 | `docs/openapi/relay.json` | 只提供审计候选，不自动代表全部公开 |
-| 公开 operation 范围 | `docs/openapi/public-operations.json` | 以 operationId 显式批准，不按路径前缀推断 |
-| 页面导航与文件映射 | `web/public/docs-content/manifest.json` | slug、locale、page ID、文件和本地资源白名单 |
-| 人类可读说明 | manifest 登记的 Markdown | 场景、限制、示例和错误处理；不复制内部实现 |
-| 搜索元数据 | Manifest + 已登记 Markdown heading | 在构建期生成，浏览器不抓取全站正文 |
-| 运行时站点变量 | 当前 origin 与公开 `/api/status` | 不读取登录态凭据或管理员配置 |
-| 页面框架 | `web/src/features/docs/`、`web/src/routes/docs/` | 路由、加载、渲染和交互，不定义 API 合同 |
+| 事实                | 权威来源                                         | 约束                                        |
+| ------------------- | ------------------------------------------------ | ------------------------------------------- |
+| API 机器合同候选    | `docs/openapi/relay.json`                        | 提供机器合同快照；不自动代表全部公开        |
+| 公开 operation 范围 | `docs/openapi/public-operations.json`            | 以 operationId 显式批准，不按路径前缀推断   |
+| 页面导航与文件映射  | `web/public/docs-content/manifest.json`          | slug、locale、page ID、文件和本地资源白名单 |
+| 人类可读说明        | manifest 登记的 Markdown                         | 场景、限制、示例和错误处理；不复制内部实现  |
+| 搜索元数据          | Manifest + 已登记 Markdown heading               | 在构建期生成，浏览器不抓取全站正文          |
+| 运行时站点变量      | 当前 origin 与公开 `/api/status`                 | 不读取登录态凭据或管理员配置                |
+| 页面框架            | `web/src/features/docs/`、`web/src/routes/docs/` | 路由、加载、渲染和交互，不定义 API 合同     |
 
 公开文档描述客户可以依赖的协议，不等同于代码能够解析的全部字段。Link 能力必须来自已发布合同；
 NEWAPI 原生能力以上游公开合同和当前路由审计为准。
@@ -53,7 +53,7 @@ NEWAPI 原生能力以上游公开合同和当前路由审计为准。
 ```mermaid
 flowchart LR
     Author[文档维护者]
-    OpenAPI[审计后的 Relay OpenAPI]
+    OpenAPI[Relay OpenAPI 合同快照]
     Allowlist[公开 Operation 白名单]
     Markdown[公开 Markdown]
     Manifest[导航 Manifest]
@@ -112,7 +112,7 @@ web/src/features/docs/**
 
 1. Manifest schema、唯一性、slug、locale 和文件映射合法；
 2. 公开目录实际文件集合与 Manifest 及固定生成文件精确一致；
-3. Markdown frontmatter、唯一 H1、operationId 和 OpenAPI 方法/路径/schema 一致；
+3. Markdown frontmatter、唯一 H1 和 operationId 引用关系合法；公开 operation 在 `relay.json` 中存在，且满足发布状态、BearerAuth 和响应定义门槛。Gin 路由、方法/路径、Content-Type、schema、错误信封与 Markdown 参数表的一致性，仍由人工审计和专项测试保证；
 4. 未出现 raw HTML、危险 URL、未知占位符、凭据模式、内部文档或后台 API；
 5. 搜索索引只包含公开页面；
 6. `web/dist/docs-content` 与源内容版本一致且没有额外文件。
@@ -128,7 +128,7 @@ sequenceDiagram
     participant S as /api/status
 
     U->>R: GET /docs/{slug}
-    R->>M: no-cache 加载并校验 Manifest
+    R->>M: 受控缓存策略加载并校验 Manifest
     M-->>R: slug -> locale/file/page metadata
     R->>D: GET 已登记 Markdown?version=contentVersion
     R->>S: 获取公开站点信息
@@ -174,15 +174,16 @@ Manifest 是导航、文件解析和本地资源登记表，不是静态服务�
 
 未登记 Markdown、隐藏文件、符号链接、临时文件、内部 OpenAPI、副本和未知生成文件均阻止构建。
 
-Manifest 中的 page ID 是跨语言稳定身份，slug 是公开路由合同，file 是受控静态映射，
-`contentVersion` 用于保证 Manifest、Markdown 与搜索索引来自同一构建。
+Manifest 中的 page ID 在设计上是跨语言稳定身份，slug 是公开路由合同，file 是受控静态映射，
+`contentVersion` 用于保证 Manifest、Markdown 与搜索索引来自同一构建。当前首期发布仅包含 `zh`；
+新增 locale 前必须补齐运行时语言选择、回退行为和跨 locale page ID 校验。
 
 ## 8. OpenAPI 协作边界
 
-公开白名单只保存已批准 operationId 和必要发布状态，不复制 schema。机器 schema 仍来自审计后的
+公开白名单只保存已批准 operationId 和必要发布状态，不复制 schema。机器 schema 候选来自
 `relay.json`，Markdown 负责使用说明、场景、限制、示例和错误处理。
 
-构建器按 operationId 校验 Gin/合同审计结果、OpenAPI 方法与路径、Markdown frontmatter。以下内容
+构建器按 operationId 校验公开白名单、`relay.json` 和 Markdown frontmatter 的引用关系。以下内容
 永不进入公开 API Reference：
 
 - 后台管理、渠道、用户、系统设置和内部日志接口；
@@ -191,26 +192,22 @@ Manifest 中的 page ID 是跨语言稳定身份，slug 是公开路由合同，
 - 未实现、仅兼容读取、已退休或未验证的 operation；
 - DTO 捕获但未声明为公共合同的未知字段。
 
-ModelArk V3 OpenAPI 描述统一官方请求结构、四组任务行为、平台素材引用和稳定错误。`/v1/models` 和
-`/api/pricing` 另外返回由 Channel 当前配置只读投影的客户安全 API 摘要：ModelArk V3 北向操作、统一
-素材操作的逐项支持状态、素材类型、私域/公共引用和真人认证支持。该摘要不建立 publication、SKU、
-implementation 或 hash 注册表，也不暴露 Provider 模型、Channel ID、南向协议和私有路径。
-
-客户模型可以通过 NEWAPI 原生 `/v1/models` 统一发现，也可以通过
-`GET /api/v3/contents/generations/models` 只读取 Seedance ModelArk 目录；两者复用同一只读投影。
-NEWAPI 原生模型仍按 Token、Group、Ability 和已启用渠道返回；Seedance Link 则返回所有已配置客户模型，
-使用 `available` 和 `availability=available|disabled|restricted` 把“目录存在”与“当前 Key 可调用”分开。
-模型是否兼容某个 adapter 仍由技术人员线下确认，模型发现只投影已经配置的北向合同，不创建或认证兼容性。
+Seedance/ModelArk 的北向合同、模型目录、`available`/`availability` 和 `api.assets` 能力矩阵不由本文
+定义，分别以 [Seedance 专用渠道与 Link 架构](Seedance专用渠道与Link架构.md)、
+[Seedance 模型素材库支持矩阵](Seedance模型素材库支持矩阵.md) 和
+[Seedance 无状态素材代理架构](Seedance无状态素材代理架构.md) 为权威。本文只规定：这些能力进入公开
+文档前必须已有批准的 operation、脱敏的公开投影和对应的代码/真实验证证据，不在此复制其合同细节。
 
 ## 9. 安全与缓存
 
-- 示例只使用固定占位 Key 和模型，不读取 localStorage、Cookie 或登录用户数据；
+- 示例只使用固定占位 Key 和模型；Docs 模块不读取 API Key、Cookie 或登录态，仅使用公开 `/api/status` 中的
+  `system_name`、`server_address` 等字段，并可复用其非敏感缓存；
 - 动态变量只能来自公开状态、当前 origin 或固定占位符，且只写入文本/代码 token；
 - 内部链接解析为 Manifest slug，外部链接只允许 HTTP(S)，其他 scheme 拒绝；
 - 远程图片、内联 Data URL、SVG、MathML、iframe、表单和 style 默认不支持；
 - Manifest 使用 `no-cache, must-revalidate`，Markdown 与索引按 `contentVersion` cache-bust；
 - Docs 路由独立代码分割，页面按需加载，不无界抓取全站 Markdown；
-- 状态接口失败时从当前 origin 推导公开 Base URL，不阻塞静态正文；
+- 没有可用的公开 status（包括缓存）时从当前 origin 推导公开 Base URL，不阻塞静态正文；
 - 合同、目录清单和敏感内容错误只能在构建期失败，不允许运行时绕过。
 
 ## 10. 架构取舍与演进
@@ -232,7 +229,7 @@ NEWAPI 原生模型仍按 Token、Group、Ability 和已启用渠道返回；See
 2. 内部 `docs/` 与后台 OpenAPI 永不直接进入公开产物。
 3. Manifest 负责受控解析，最终公开文件集合由构建全量清单保证。
 4. Markdown 是内容，不拥有路由、安全、执行逻辑或运行时凭据。
-5. 公开文档、OpenAPI 和代码必须在同一次变更与构建中保持一致。
+5. 公开文档、OpenAPI 和代码必须在同一次变更中审查；可自动验证的部分必须在构建期保持一致。
 6. 文档内容更新随现有应用重新构建发布，不存在绕过代码审查的在线写入通道。
 7. 运行时加载失败可以受控降级；合同、安全和产物一致性错误必须在构建期阻断。
 
@@ -242,3 +239,5 @@ NEWAPI 原生模型仍按 Token、Group、Ability 和已启用渠道返回；See
 - [API 文档中心交互规范](../90-ui-ux/API文档中心交互规范.md)
 - [路线图：内置 API 文档中心上线验收](../50-planning/路线图.md#内置-api-文档中心上线验收)
 - [Seedance 专用渠道与 Link 架构](Seedance专用渠道与Link架构.md)
+- [Seedance 模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)
+- [Seedance 无状态素材代理架构](Seedance无状态素材代理架构.md)

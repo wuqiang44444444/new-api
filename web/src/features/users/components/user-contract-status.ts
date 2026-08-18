@@ -2,27 +2,48 @@ import type { User } from '../types'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
 
-export function getUserContractStatus(user: User, t: Translate) {
-  const ruleCount = user.contract_rule_count || 0
-  if (user.contract_mode && ruleCount === 0) {
+interface ContractStatusSource {
+  contractMode: boolean
+  contractVersion: number
+  ruleCount: number
+}
+
+export function getContractStatusPresentation(
+  source: ContractStatusSource,
+  t: Translate
+) {
+  if (source.contractMode && source.ruleCount === 0) {
     return {
       label: t('Contract active · no model access'),
       variant: 'danger' as const,
     }
   }
-  if (user.contract_mode) {
+  if (source.contractMode) {
     return {
-      label: t('Contract active · {{count}} rules', { count: ruleCount }),
+      label: t('Contract active · {{count}} rules', {
+        count: source.ruleCount,
+      }),
       variant: 'warning' as const,
     }
   }
-  if ((user.contract_version || 0) > 0) {
+  if (source.contractVersion > 0) {
     return {
       label: t('Contract inactive · {{count}} retained rules', {
-        count: ruleCount,
+        count: source.ruleCount,
       }),
       variant: 'neutral' as const,
     }
   }
   return { label: t('Native mode'), variant: 'success' as const }
+}
+
+export function getUserContractStatus(user: User, t: Translate) {
+  return getContractStatusPresentation(
+    {
+      contractMode: user.contract_mode,
+      contractVersion: user.contract_version,
+      ruleCount: user.contract_rule_count,
+    },
+    t
+  )
 }

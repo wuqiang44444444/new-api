@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-11
+last-reviewed: 2026-08-18
 ---
 
 # 30-engineering — 工程指南
@@ -25,8 +25,8 @@ last-reviewed: 2026-08-11
 - [API Key 用量账单使用指南](API-Key用量账单使用指南.md)
 - [图片模型 API 用户调用指南](图片模型API用户调用指南.md)
 - [视频模型 API 调用指南](视频模型API用户调用指南.md)
-- [飞彩 Seedance 全模型回归规约](飞彩Seedance全模型回归规约.md)
-- [素材库对接指南](素材库对接指南.md)
+- 飞彩 Seedance 全模型回归以[飞彩 Seedance 全模型上线验收手册](../40-operations/06-飞彩Seedance全模型上线验收手册.md)为唯一运维入口。
+- [无状态素材代理对接指南](素材库对接指南.md)
 - [公开 API 文档维护指南](公开API文档维护指南.md)
 - [用户模型合同开发与验证](用户模型合同开发与验证.md)
 

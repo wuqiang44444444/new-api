@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-12
+last-reviewed: 2026-08-18
 ---
 
 # 视频模型 API 调用指南
@@ -98,12 +98,14 @@ DELETE /api/v3/contents/generations/tasks/{task_id}
 `content` 可以包含 HTTP/HTTPS URL、Data URL、`asset://<opaque-id>`。opaque ID 由调用方从素材 API
 取得并与客户模型一起保存；平台不会查询或改写素材引用。素材是否属于当前账号或支持当前模型由
 Provider 最终判断。平台不再提供 `ast_*` / `pubref_*` 命名空间。
-素材管理详见[素材库对接指南](素材库对接指南.md)。
+素材管理详见[无状态素材代理对接指南](素材库对接指南.md)。
 
 ## 6. 模型上线
 
-模型可用性以 `/v1/models`、Token/Group/Ability 和管理配置为准。系统不提供 Link publication、SKU
-capability、implementation 或 execution binding 接口。
+原生模型可用性以 `/v1/models`、Token/Group/Ability 和管理配置为准；Seedance 模型可用性以客户模型目录、
+Token/Group 和管理配置为准，并只通过专用 `ChannelTypeSeedanceLink`、代码协议和只读模型能力投影履约。
+系统不提供旧 Link publication、SKU、
+capability、implementation 或 execution binding 合同接口。
 
 技术人员在线下确认新模型或上游是否兼容已有代码协议；兼容时管理员可配置任意业务客户模型名，并用
 `model_mapping` 精确映射到已登记上游模型；不兼容时由技术人员新增代码 adapter。管理员不编辑协议

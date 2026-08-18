@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-04
+last-reviewed: 2026-08-18
 ---
 
 # API Key 用量账单使用指南
@@ -152,5 +152,5 @@ data_source=settlement_logs
 
 ## 8. 相关文档
 
-- [API Key 用量账单架构](../20-architecture/API-Key用量账单架构.md)
+- [API Key 用量账单架构](../20-architecture/账单计费-APIKEY用量账单架构.md)
 - [01 计费与分组运维手册](../40-operations/01-计费与分组运维手册.md)
