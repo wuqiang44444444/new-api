@@ -83,6 +83,14 @@ export interface ApiResponse<T = unknown> {
 
 export interface CustomerContractPricePreview {
   price_type: 'model_price' | 'model_ratio' | 'tiered_multiplier'
+  billing_mode?: 'per_call' | 'per_token' | 'tiered_expr' | string
+  base_model_price?: string
+  final_model_price?: string
+  base_model_ratio?: string
+  final_model_ratio?: string
+  completion_ratio?: string
+  base_image_ratio?: string
+  final_image_ratio?: string
   current_discounted_price?: string
 }
 

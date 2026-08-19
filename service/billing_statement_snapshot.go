@@ -58,6 +58,7 @@ func appendBillingStatementIdentitySnapshotWithMode(other map[string]interface{}
 	for _, key := range []string{
 		"model_price", "model_ratio", "completion_ratio", "cache_ratio",
 		"group_ratio", "user_group_ratio", "expr_b64",
+		"contract_discount", "contract_version",
 	} {
 		if value, exists := other[key]; exists {
 			snapshot[key] = value

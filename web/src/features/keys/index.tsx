@@ -36,8 +36,14 @@ export function ApiKeys() {
           <ApiKeysPrimaryButtons />
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <CustomerContractPricing />
-          <ApiKeysTable />
+          <div className='flex h-full min-h-0 flex-col gap-4'>
+            <div className='max-h-[50%] shrink-0 overflow-y-auto'>
+              <CustomerContractPricing />
+            </div>
+            <div className='min-h-0 flex-1'>
+              <ApiKeysTable />
+            </div>
+          </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
 

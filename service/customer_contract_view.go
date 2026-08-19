@@ -11,6 +11,14 @@ import (
 
 type CustomerContractPricePreview struct {
 	PriceType              string `json:"price_type"`
+	BillingMode            string `json:"billing_mode,omitempty"`
+	BaseModelPrice         string `json:"base_model_price,omitempty"`
+	FinalModelPrice        string `json:"final_model_price,omitempty"`
+	BaseModelRatio         string `json:"base_model_ratio,omitempty"`
+	FinalModelRatio        string `json:"final_model_ratio,omitempty"`
+	CompletionRatio        string `json:"completion_ratio,omitempty"`
+	BaseImageRatio         string `json:"base_image_ratio,omitempty"`
+	FinalImageRatio        string `json:"final_image_ratio,omitempty"`
 	CurrentDiscountedPrice string `json:"current_discounted_price,omitempty"`
 }
 
@@ -26,10 +34,12 @@ type CustomerContractAdminRuleView struct {
 }
 
 type CustomerContractUserRuleView struct {
-	Model     string                       `json:"model"`
-	Discount  string                       `json:"discount"`
-	Available bool                         `json:"available"`
-	Price     CustomerContractPricePreview `json:"price"`
+	Model               string                       `json:"model"`
+	Discount            string                       `json:"discount"`
+	ChannelDiscount     string                       `json:"channel_discount"`
+	EffectiveMultiplier string                       `json:"effective_multiplier"`
+	Available           bool                         `json:"available"`
+	Price               CustomerContractPricePreview `json:"price"`
 }
 
 func BuildCustomerContractAdminRules(snapshot *model.CustomerContractSnapshot, userGroup string) ([]CustomerContractAdminRuleView, error) {
@@ -75,7 +85,8 @@ func BuildCustomerContractUserRules(snapshot *model.CustomerContractSnapshot, us
 	result := make([]CustomerContractUserRuleView, 0, len(adminRules))
 	for _, rule := range adminRules {
 		result = append(result, CustomerContractUserRuleView{
-			Model: rule.Model, Discount: rule.Discount, Available: rule.Available, Price: rule.Price,
+			Model: rule.Model, Discount: rule.Discount, ChannelDiscount: rule.NativeGroupRatio,
+			EffectiveMultiplier: rule.EffectiveMultiplier, Available: rule.Available, Price: rule.Price,
 		})
 	}
 	return result, nil
@@ -98,15 +109,32 @@ func buildCustomerContractPricePreview(pricing model.Pricing, effectiveMultiplie
 	}
 	if billingMode == billing_setting.BillingModeTieredExpr {
 		preview.PriceType = "tiered_multiplier"
+		preview.BillingMode = billingMode
 		return preview
 	}
 	if pricing.QuotaType == 1 {
 		preview.PriceType = "model_price"
-		preview.CurrentDiscountedPrice = decimal.NewFromFloat(pricing.ModelPrice).Mul(effectiveMultiplier).String()
+		preview.BillingMode = "per_call"
+		base := decimal.NewFromFloat(pricing.ModelPrice)
+		preview.BaseModelPrice = base.String()
+		preview.FinalModelPrice = base.Mul(effectiveMultiplier).String()
+		preview.CurrentDiscountedPrice = preview.FinalModelPrice
 		return preview
 	}
 	preview.PriceType = "model_ratio"
-	preview.CurrentDiscountedPrice = decimal.NewFromFloat(pricing.ModelRatio).Mul(effectiveMultiplier).String()
+	preview.BillingMode = "per_token"
+	baseModelRatio := decimal.NewFromFloat(pricing.ModelRatio)
+	preview.BaseModelRatio = baseModelRatio.String()
+	preview.FinalModelRatio = baseModelRatio.Mul(effectiveMultiplier).String()
+	preview.CurrentDiscountedPrice = preview.FinalModelRatio
+	if pricing.CompletionRatio > 0 {
+		preview.CompletionRatio = decimal.NewFromFloat(pricing.CompletionRatio).String()
+	}
+	if pricing.ImageRatio != nil {
+		baseImageRatio := decimal.NewFromFloat(*pricing.ImageRatio)
+		preview.BaseImageRatio = baseImageRatio.String()
+		preview.FinalImageRatio = baseImageRatio.Mul(effectiveMultiplier).String()
+	}
 	return preview
 }
 

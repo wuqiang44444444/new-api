@@ -10,7 +10,7 @@ import (
 )
 
 func TestAppendBillingStatementSnapshotIsAdminOnlyAndFrozen(t *testing.T) {
-	other := map[string]interface{}{"model_price": 0.25, "group_ratio": 0.8, "completion_ratio": 2.0}
+	other := map[string]interface{}{"model_price": 0.25, "group_ratio": 0.8, "contract_discount": "0.5", "contract_version": 4, "completion_ratio": 2.0}
 	relayInfo := &relaycommon.RelayInfo{OriginModelName: "customer-model", ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "provider-model"}}
 
 	appendBillingStatementSnapshot(relayInfo, other)
@@ -25,6 +25,8 @@ func TestAppendBillingStatementSnapshotIsAdminOnlyAndFrozen(t *testing.T) {
 	assert.Equal(t, "per_call", snapshot["billing_mode"])
 	assert.Equal(t, 1, snapshot["snapshot_version"])
 	assert.Equal(t, 0.8, snapshot["group_ratio"])
+	assert.Equal(t, "0.5", snapshot["contract_discount"])
+	assert.Equal(t, 4, snapshot["contract_version"])
 	assert.Equal(t, 2.0, snapshot["completion_ratio"])
 
 }

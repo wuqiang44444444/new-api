@@ -21,32 +21,9 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from '@/components/ui/empty'
+import { ContractPriceDetails } from '@/components/contract-price-details'
 
 import { getSelfCustomerContract } from '../api'
-import type { SelfCustomerContractRule } from '../types'
-
-function ContractPrice({ rule }: { rule: SelfCustomerContractRule }) {
-  const { t } = useTranslation()
-  if (rule.price.price_type === 'tiered_multiplier') {
-    return (
-      <span>
-        {t('Tiered price × {{discount}}', { discount: rule.discount })}
-      </span>
-    )
-  }
-  return (
-    <span>
-      {rule.price.current_discounted_price || '—'}{' '}
-      <span className='text-muted-foreground'>
-        (
-        {rule.price.price_type === 'model_price'
-          ? t('Fixed model price')
-          : t('Token price ratio')}
-        )
-      </span>
-    </span>
-  )
-}
 
 export function CustomerContractPricing() {
   const { t } = useTranslation()
@@ -102,10 +79,14 @@ export function CustomerContractPricing() {
   } else {
     contractContent = (
       <div className='divide-y rounded-lg border'>
-        {contract.models.map((rule) => (
+        {contract.models.map((rule) => {
+          const channelMultiplier = rule.channel_discount || '1'
+          const effectiveMultiplier =
+            rule.effective_multiplier || rule.discount
+          return (
           <div
             key={rule.model}
-            className='grid gap-2 p-3 md:grid-cols-[minmax(200px,1fr)_120px_minmax(180px,1fr)] md:items-center'
+            className='grid gap-2 p-3 md:grid-cols-[minmax(200px,1fr)_130px_minmax(240px,1fr)] md:items-start'
           >
             <div className='flex min-w-0 items-center gap-2'>
               <span className='truncate font-mono text-sm'>{rule.model}</span>
@@ -114,13 +95,22 @@ export function CustomerContractPricing() {
               </Badge>
             </div>
             <div className='text-sm'>
-              {t('Discount')}: {rule.discount}
+              <div>{t('Contract discount')}: {rule.discount}</div>
+              <div className='text-muted-foreground text-xs'>
+                {t('Channel multiplier')}: {channelMultiplier}
+              </div>
             </div>
-            <div className='text-sm'>
-              <ContractPrice rule={rule} />
+            <div className='min-w-0 text-sm'>
+              <ContractPriceDetails
+                price={rule.price}
+                channelMultiplier={channelMultiplier}
+                contractDiscount={rule.discount}
+                effectiveMultiplier={effectiveMultiplier}
+              />
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
     )
   }

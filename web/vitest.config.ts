@@ -14,6 +14,7 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     include: [
+      'src/components/__tests__/**/*.{test,spec}.{ts,tsx}',
       'src/features/billing-reconciliation/**/*.{test,spec}.{ts,tsx}',
       'src/features/channels/components/**/*.{test,spec}.{ts,tsx}',
       'src/features/channels/lib/__tests__/channel-asset-credential-transform.test.ts',

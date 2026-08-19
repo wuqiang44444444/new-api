@@ -30,6 +30,11 @@ vi.mock('../../api', () => ({
   getSelfCustomerContract: () => getSelfCustomerContract(),
 }))
 
+vi.mock('@/lib/currency', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/currency')>()),
+  formatBillingCurrencyFromUSD: (usd: number) => `$${usd}`,
+}))
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, string>) =>
@@ -64,7 +69,7 @@ describe('customer contract pricing on the API key page', () => {
     await vi.waitFor(() => expect(container.textContent).toBe(''))
   })
 
-  it('shows only customer-visible model, discount, and price facts', async () => {
+  it('shows customer-visible model, discount, channel multiplier, and price facts', async () => {
     getSelfCustomerContract.mockResolvedValue({
       success: true,
       data: {
@@ -74,15 +79,22 @@ describe('customer contract pricing on the API key page', () => {
           {
             model: 'claude-sonnet-5',
             discount: '0.8',
+            channel_discount: '0.5',
+            effective_multiplier: '0.4',
             available: true,
             price: {
               price_type: 'model_ratio',
-              current_discounted_price: '0.696',
+              base_model_ratio: '0.5',
+              final_model_ratio: '0.2',
+              completion_ratio: '4',
+              current_discounted_price: '0.2',
             },
           },
           {
             model: 'claude-opus-4-8',
             discount: '0.6',
+            channel_discount: '1',
+            effective_multiplier: '0.6',
             available: false,
             price: { price_type: 'tiered_multiplier' },
           },
@@ -93,11 +105,11 @@ describe('customer contract pricing on the API key page', () => {
     const { container } = renderPricing()
 
     expect(await screen.findByText('claude-sonnet-5')).toBeTruthy()
-    expect(screen.getByText(/0\.696/)).toBeTruthy()
+    expect(screen.getByText('Input $0.4/M · Output $1.6/M')).toBeTruthy()
+    expect(screen.getByText(/Channel multiplier: 0\.5/)).toBeTruthy()
     expect(screen.getByText('Tiered price × 0.6')).toBeTruthy()
     expect(screen.getByText('Unavailable')).toBeTruthy()
     expect(container.textContent).not.toContain('route_group')
-    expect(container.textContent).not.toContain('channel')
     expect(container.textContent).not.toContain('provider')
   })
 

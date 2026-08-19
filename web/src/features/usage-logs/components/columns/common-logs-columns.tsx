@@ -271,6 +271,14 @@ function buildTypeDetailSegments(
         })
       }
     }
+
+    const contractDiscount = Number(other.contract_discount)
+    if (Number.isFinite(contractDiscount) && contractDiscount > 0) {
+      segments.push({
+        text: `${t('Contract discount')} ${formatRatioCompact(contractDiscount)}x`,
+        muted: true,
+      })
+    }
   }
 
   if (other.is_system_prompt_overwritten) {

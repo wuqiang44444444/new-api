@@ -1,6 +1,7 @@
 import { Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { ContractPriceDetails } from '@/components/contract-price-details'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
@@ -19,7 +20,7 @@ import type {
   CustomerContractRule,
 } from '../types'
 import {
-  draftCurrentPrice,
+  draftPricePreview,
   draftEffectiveMultiplier,
   normalizeContractDiscount,
   parseContractDiscount,
@@ -153,23 +154,13 @@ export function CustomerContractRuleList({
               )}
             </Field>
             <Field>
-              <FieldLabel>{t('Current Price')}</FieldLabel>
-              <div className='text-sm'>
-                {rule.price.price_type === 'tiered_multiplier'
-                  ? t('Tiered price × {{discount}}', {
-                      discount: rule.discount,
-                    })
-                  : draftCurrentPrice(rule)}
-              </div>
-            </Field>
-            <Field>
-              <FieldLabel>{t('Effective multiplier')}</FieldLabel>
-              <div className='text-sm'>
-                {rule.native_group_ratio} × {rule.discount} ={' '}
-                <span className='font-medium'>
-                  {draftEffectiveMultiplier(rule)}
-                </span>
-              </div>
+              <FieldLabel>{t('Pricing details')}</FieldLabel>
+              <ContractPriceDetails
+                price={draftPricePreview(rule)}
+                channelMultiplier={rule.native_group_ratio}
+                contractDiscount={rule.discount}
+                effectiveMultiplier={draftEffectiveMultiplier(rule)}
+              />
               {rule.special_group_ratio && (
                 <FieldDescription>
                   {t('A special native group ratio also applies')}

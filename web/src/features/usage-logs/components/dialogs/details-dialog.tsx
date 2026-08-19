@@ -290,6 +290,14 @@ function BillingBreakdown(props: {
     })
   }
 
+  const contractDiscount = Number(other.contract_discount)
+  if (Number.isFinite(contractDiscount) && contractDiscount > 0) {
+    rows.push({
+      label: t('Contract discount'),
+      value: `${formatRatio(contractDiscount)}x`,
+    })
+  }
+
   if (!isTieredExpr && isClaude && hasAnyCacheTokens(other)) {
     if (other.cache_ratio != null && other.cache_ratio !== 1) {
       rows.push({

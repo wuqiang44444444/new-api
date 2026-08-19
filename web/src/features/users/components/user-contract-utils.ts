@@ -34,19 +34,35 @@ export function draftEffectiveMultiplier(rule: CustomerContractRule): string {
   return formatted || '0'
 }
 
-export function draftCurrentPrice(rule: CustomerContractRule): string {
-  const currentPrice = Number(rule.price.current_discounted_price)
-  const savedMultiplier = Number(rule.effective_multiplier)
-  const draftMultiplier = Number(draftEffectiveMultiplier(rule))
-  if (
-    !Number.isFinite(currentPrice) ||
-    !Number.isFinite(savedMultiplier) ||
-    savedMultiplier <= 0 ||
-    !Number.isFinite(draftMultiplier)
-  ) {
-    return '—'
+export function draftPricePreview(rule: CustomerContractRule): CustomerContractRule['price'] {
+  const discount = parseContractDiscount(rule.discount)
+  const channel = Number(rule.native_group_ratio)
+  if (discount === null || !Number.isFinite(channel)) return rule.price
+  const effective = channel * discount
+  const format = (value: number) =>
+    value.toFixed(8).replace(/\.?0+$/, '')
+  const price = { ...rule.price }
+  if (price.base_model_ratio) {
+    price.final_model_ratio = format(Number(price.base_model_ratio) * effective)
+    price.current_discounted_price = price.final_model_ratio
   }
-  return ((currentPrice / savedMultiplier) * draftMultiplier)
-    .toFixed(8)
-    .replace(/\.?0+$/, '')
+  if (price.base_image_ratio) {
+    price.final_image_ratio = format(Number(price.base_image_ratio) * effective)
+  }
+  if (price.base_model_price) {
+    price.final_model_price = format(Number(price.base_model_price) * effective)
+    price.current_discounted_price = price.final_model_price
+  }
+  if (
+    !price.base_model_ratio &&
+    !price.base_model_price &&
+    price.current_discounted_price
+  ) {
+    const current = Number(price.current_discounted_price)
+    const saved = Number(rule.effective_multiplier)
+    if (Number.isFinite(current) && Number.isFinite(saved) && saved > 0) {
+      price.current_discounted_price = format((current / saved) * effective)
+    }
+  }
+  return price
 }

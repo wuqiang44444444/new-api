@@ -137,6 +137,26 @@ func TestBillingReconciliationUsesFrozenSnapshotPricingBeforeLegacyTopLevelFacts
 	assert.Equal(t, BillingReconciliationModeToken, parsed.billingMode)
 }
 
+func TestBillingReconciliationSeparatesContractDiscountFromGroupRatio(t *testing.T) {
+	db := setupBillingReconciliationTestDB(t)
+	require.NoError(t, db.Create(&User{Id: 18, Username: "contract", Quota: 10000}).Error)
+	require.NoError(t, db.Create(&Log{
+		UserId: 18, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 12, TokenName: "key", ChannelId: 21,
+		ModelName: "model", PromptTokens: 10, Quota: 400,
+		Other: `{"group_ratio":0.8,"contract_discount":"0.5","model_ratio":1}`,
+	}).Error)
+
+	statement, err := GetBillingCustomerStatement(18, 1000, 1500, "api_key", 0, "", "")
+	require.NoError(t, err)
+	item := statement.Groups[0].Models[0]
+	require.NotNil(t, item.OriginalQuota)
+	assert.EqualValues(t, 1000, *item.OriginalQuota)
+	require.NotNil(t, item.DiscountRatio)
+	assert.InDelta(t, 0.8, *item.DiscountRatio, 0.000001)
+	require.NotNil(t, item.ContractDiscountRatio)
+	assert.InDelta(t, 0.5, *item.ContractDiscountRatio, 0.000001)
+}
+
 func TestBillingReconciliationClassifiesLegacyBillingFactsWithoutUsage(t *testing.T) {
 	tests := []struct {
 		name string

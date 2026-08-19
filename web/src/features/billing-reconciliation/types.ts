@@ -85,6 +85,8 @@ export type CustomerModelSummary = {
   original_quota?: number
   discount_ratio?: number
   multiple_discounts?: boolean
+  contract_discount_ratio?: number
+  multiple_contract_discounts?: boolean
   price_versions: number
   data_quality?: BillingDataQuality
   detail_filter: BillingDetailFilter

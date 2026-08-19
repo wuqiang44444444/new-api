@@ -428,13 +428,17 @@ function customerDiscountLabel(
   model: CustomerModelSummary,
   translate: (key: string) => string
 ) {
-  if (model.multiple_discounts) {
+  if (model.multiple_discounts || model.multiple_contract_discounts) {
     return translate('Multiple versions')
   }
-  if (model.discount_ratio == null) {
+  if (model.discount_ratio == null && model.contract_discount_ratio == null) {
     return translate('Unknown')
   }
-  return model.discount_ratio.toFixed(4)
+  const group = model.discount_ratio == null ? '1' : model.discount_ratio.toFixed(4)
+  const contract = model.contract_discount_ratio == null
+    ? '1'
+    : model.contract_discount_ratio.toFixed(4)
+  return `${group} × ${contract}`
 }
 
 function SummaryCard(props: {

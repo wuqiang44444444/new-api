@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,15 +83,17 @@ type BillingReconciliationUsage struct {
 }
 
 type BillingReconciliationModelSummary struct {
-	ModelName         string                            `json:"model_name"`
-	BillingMode       string                            `json:"billing_mode"`
-	Usage             BillingReconciliationUsage        `json:"usage"`
-	OriginalQuota     *int64                            `json:"original_quota,omitempty"`
-	DiscountRatio     *float64                          `json:"discount_ratio,omitempty"`
-	MultipleDiscounts bool                              `json:"multiple_discounts,omitempty"`
-	PriceVersions     int64                             `json:"price_versions"`
-	DataQuality       *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
-	DetailFilter      BillingReconciliationDetailFilter `json:"detail_filter"`
+	ModelName                 string                            `json:"model_name"`
+	BillingMode               string                            `json:"billing_mode"`
+	Usage                     BillingReconciliationUsage        `json:"usage"`
+	OriginalQuota             *int64                            `json:"original_quota,omitempty"`
+	DiscountRatio             *float64                          `json:"discount_ratio,omitempty"`
+	MultipleDiscounts         bool                              `json:"multiple_discounts,omitempty"`
+	ContractDiscountRatio     *float64                          `json:"contract_discount_ratio,omitempty"`
+	MultipleContractDiscounts bool                              `json:"multiple_contract_discounts,omitempty"`
+	PriceVersions             int64                             `json:"price_versions"`
+	DataQuality               *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
+	DetailFilter              BillingReconciliationDetailFilter `json:"detail_filter"`
 }
 
 type BillingReconciliationGroupSummary struct {
@@ -142,13 +145,16 @@ type billingReconciliationLog struct {
 }
 
 type billingReconciliationModelAccumulator struct {
-	model                 BillingReconciliationModelSummary
-	discountSeen          bool
-	discountRatio         float64
-	originalQuota         int64
-	originalQuotaKnown    bool
-	originalQuotaComplete bool
-	priceSnapshotMarkers  map[string]struct{}
+	model                     BillingReconciliationModelSummary
+	discountSeen              bool
+	discountRatio             float64
+	contractDiscountSeen      bool
+	contractDiscountRatio     float64
+	multipleContractDiscounts bool
+	originalQuota             int64
+	originalQuotaKnown        bool
+	originalQuotaComplete     bool
+	priceSnapshotMarkers      map[string]struct{}
 }
 
 func GetBillingCustomerStatement(
@@ -383,13 +389,15 @@ func finalizeBillingCustomerStatementOriginalQuota(statement *BillingCustomerSta
 }
 
 type parsedBillingReconciliationLog struct {
-	billingMode     string
-	cacheReadTokens int64
-	cacheWrite      billingStatementCacheWriteTokens
-	discountRatio   *float64
-	priceMarker     string
-	providerModel   string
-	unavailable     bool
+	billingMode           string
+	cacheReadTokens       int64
+	cacheWrite            billingStatementCacheWriteTokens
+	discountRatio         *float64
+	contractDiscountRatio *float64
+	hasAuxiliaryCharge    bool
+	priceMarker           string
+	providerModel         string
+	unavailable           bool
 }
 
 func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingReconciliationLog {
@@ -460,12 +468,23 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 	if ratio, ok := billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "group_ratio")); ok && ratio > 0 {
 		parsed.discountRatio = &ratio
 	}
+	if ratio, ok := billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "contract_discount")); ok && ratio > 0 {
+		parsed.contractDiscountRatio = &ratio
+	}
+	// Tool and operation surcharges are appended after the model charge and do
+	// not carry a separate historical quota amount. Do not pretend the whole
+	// settled quota can be reversed by a price ratio when such a surcharge is
+	// present.
+	parsed.hasAuxiliaryCharge = len(other["tool_surcharges"]) > 0 ||
+		len(other["fee_quota"]) > 0 || len(other["image_generation_call_price"]) > 0 ||
+		len(other["web_search_price"]) > 0 || len(other["file_search_price"]) > 0
 	priceMarkers := []string{
 		billingReconciliationRawMarker(billingReconciliationSnapshotRaw(snapshot, other, "model_price")),
 		billingReconciliationRawMarker(billingReconciliationSnapshotRaw(snapshot, other, "model_ratio")),
 		billingReconciliationRawMarker(billingReconciliationSnapshotRaw(snapshot, other, "completion_ratio")),
 		billingReconciliationRawMarker(billingReconciliationSnapshotRaw(snapshot, other, "cache_ratio")),
 		billingReconciliationRawMarker(billingReconciliationSnapshotRaw(snapshot, other, "group_ratio")),
+		billingReconciliationRawMarker(billingReconciliationSnapshotRaw(snapshot, other, "contract_discount")),
 		billingReconciliationRawMarker(billingReconciliationSnapshotRaw(snapshot, other, "expr_b64")),
 	}
 	for _, marker := range priceMarkers {
@@ -489,10 +508,15 @@ func billingReconciliationFloat(raw json.RawMessage) (float64, bool) {
 		return 0, false
 	}
 	var value float64
-	if err := common.Unmarshal(raw, &value); err != nil {
+	if err := common.Unmarshal(raw, &value); err == nil {
+		return value, true
+	}
+	var text string
+	if err := common.Unmarshal(raw, &text); err != nil {
 		return 0, false
 	}
-	return value, true
+	value, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+	return value, err == nil
 }
 
 func billingReconciliationBool(raw json.RawMessage) (bool, bool) {
@@ -546,21 +570,33 @@ func accumulateBillingReconciliationPrice(accumulator *billingReconciliationMode
 	if quota == 0 {
 		return
 	}
-	if parsed.discountRatio == nil || *parsed.discountRatio <= 0 {
+	if parsed.discountRatio == nil || *parsed.discountRatio <= 0 || parsed.hasAuxiliaryCharge {
 		accumulator.originalQuotaComplete = false
 		ensureBillingReconciliationQuality(&accumulator.model.DataQuality).MissingHistoricalPriceRows++
-		return
+	} else {
+		ratio := *parsed.discountRatio
+		if !accumulator.discountSeen {
+			accumulator.discountSeen = true
+			accumulator.discountRatio = ratio
+		} else if accumulator.discountRatio != ratio {
+			accumulator.model.MultipleDiscounts = true
+		}
+
+		contractRatio := 1.0
+		if parsed.contractDiscountRatio != nil && *parsed.contractDiscountRatio > 0 {
+			contractRatio = *parsed.contractDiscountRatio
+			if !accumulator.contractDiscountSeen {
+				accumulator.contractDiscountSeen = true
+				accumulator.contractDiscountRatio = contractRatio
+			} else if accumulator.contractDiscountRatio != contractRatio {
+				accumulator.multipleContractDiscounts = true
+			}
+		}
+
+		original, _ := common.QuotaRoundChecked(float64(quota) / ratio / contractRatio)
+		accumulator.originalQuota += int64(max(original, 0))
+		accumulator.originalQuotaKnown = true
 	}
-	ratio := *parsed.discountRatio
-	if !accumulator.discountSeen {
-		accumulator.discountSeen = true
-		accumulator.discountRatio = ratio
-	} else if accumulator.discountRatio != ratio {
-		accumulator.model.MultipleDiscounts = true
-	}
-	original, _ := common.QuotaRoundChecked(float64(quota) / ratio)
-	accumulator.originalQuota += int64(max(original, 0))
-	accumulator.originalQuotaKnown = true
 }
 
 func finalizeBillingReconciliationPrice(accumulator *billingReconciliationModelAccumulator) {
@@ -573,6 +609,11 @@ func finalizeBillingReconciliationPrice(accumulator *billingReconciliationModelA
 		value := accumulator.discountRatio
 		accumulator.model.DiscountRatio = &value
 	}
+	if accumulator.contractDiscountSeen && !accumulator.multipleContractDiscounts {
+		value := accumulator.contractDiscountRatio
+		accumulator.model.ContractDiscountRatio = &value
+	}
+	accumulator.model.MultipleContractDiscounts = accumulator.multipleContractDiscounts
 }
 
 func ensureBillingReconciliationQuality(target **BillingReconciliationDataQuality) *BillingReconciliationDataQuality {
