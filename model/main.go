@@ -293,6 +293,7 @@ func migrateDB() error {
 		&SystemTask{},
 		&SystemTaskLock{},
 		&ChannelAssetCredential{},
+		&ChannelAssetScopeIdentity{},
 		&CasbinRule{},
 		&AuthzRole{},
 		&CustomerModelContract{},

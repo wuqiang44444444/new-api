@@ -46,7 +46,8 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	var requestBody io.Reader
 
-	allowPassThrough := info.ApiType != constant.APITypeAsyncImage
+	strictImageAPI := isStrictImageAPIType(info.ApiType)
+	allowPassThrough := !strictImageAPI
 	if allowPassThrough && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
@@ -77,7 +78,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 				}
 			}
 
-			if info.ApiType == constant.APITypeAsyncImage {
+			if strictImageAPI {
 				logger.LogDebug(c, "image request body: [redacted]")
 			} else {
 				logger.LogDebug(c, "image request body: %s", jsonData)
@@ -98,7 +99,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
 		service.MarkTaskCreateAttemptOutcomeUnknown(c, info)
-		if info.ApiType == constant.APITypeAsyncImage {
+		if strictImageAPI {
 			if apiErr, ok := err.(*types.NewAPIError); ok {
 				service.ResetStatusCode(apiErr, statusCodeMappingStr)
 				return apiErr
@@ -113,7 +114,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		httpResp = resp.(*http.Response)
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 		if httpResp.StatusCode != http.StatusOK {
-			if info.ApiType == constant.APITypeAsyncImage {
+			if strictImageAPI {
 				usage, newAPIError = adaptor.DoResponse(c, httpResp, info)
 				responseHandled = true
 			} else if httpResp.StatusCode == http.StatusCreated && info.ApiType == constant.APITypeReplicate {

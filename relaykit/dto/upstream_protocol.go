@@ -11,6 +11,7 @@ type VideoUpstreamProtocol string
 const (
 	VideoUpstreamProtocolModelArkV3Volcengine VideoUpstreamProtocol = "modelark_v3_volcengine"
 	VideoUpstreamProtocolModelArkV3BytePlus   VideoUpstreamProtocol = "modelark_v3_byteplus"
+	VideoUpstreamProtocolModelArkV3CMCC       VideoUpstreamProtocol = "modelark_v3_cmcc"
 	VideoUpstreamProtocolTokenSaveMediaTaskV1 VideoUpstreamProtocol = "tokensave_media_task_v1"
 	VideoUpstreamProtocolMoxingMediaTaskV1    VideoUpstreamProtocol = "moxing_media_task_v1"
 	VideoUpstreamProtocolMoxingModelArkV1     VideoUpstreamProtocol = "moxing_modelark_media_v1"
@@ -23,6 +24,7 @@ func (p VideoUpstreamProtocol) IsValid() bool {
 	switch p {
 	case VideoUpstreamProtocolModelArkV3Volcengine,
 		VideoUpstreamProtocolModelArkV3BytePlus,
+		VideoUpstreamProtocolModelArkV3CMCC,
 		VideoUpstreamProtocolTokenSaveMediaTaskV1,
 		VideoUpstreamProtocolMoxingMediaTaskV1,
 		VideoUpstreamProtocolMoxingModelArkV1,
@@ -46,7 +48,9 @@ func ValidateVideoUpstreamProtocol(p VideoUpstreamProtocol) error {
 // code-backed Seedance adapter. It is not persisted as Seedance configuration.
 func (p VideoUpstreamProtocol) TransportProfile() VideoUpstreamProfile {
 	switch p {
-	case VideoUpstreamProtocolModelArkV3Volcengine, VideoUpstreamProtocolModelArkV3BytePlus:
+	case VideoUpstreamProtocolModelArkV3Volcengine,
+		VideoUpstreamProtocolModelArkV3BytePlus,
+		VideoUpstreamProtocolModelArkV3CMCC:
 		return VideoUpstreamProfileOfficial
 	case VideoUpstreamProtocolTokenSaveMediaTaskV1, VideoUpstreamProtocolMoxingMediaTaskV1:
 		return VideoUpstreamProfileThirdPartyRelay
@@ -100,6 +104,7 @@ const (
 	AssetUpstreamProtocolMoxingJoyCreatorV1 AssetUpstreamProtocol = "moxing_joycreator_assets_v1"
 	AssetUpstreamProtocolMoxingVolcAssetsV1 AssetUpstreamProtocol = "moxing_volc_assets_v1"
 	AssetUpstreamProtocolFunCloudMaterial   AssetUpstreamProtocol = "funcloud_material"
+	AssetUpstreamProtocolCMCCAICCV2         AssetUpstreamProtocol = "cmcc_aicc_assets_v2"
 )
 
 func (p AssetUpstreamProtocol) IsValid() bool {
@@ -111,7 +116,8 @@ func (p AssetUpstreamProtocol) IsValid() bool {
 		AssetUpstreamProtocolTokenSaveAssetsV1,
 		AssetUpstreamProtocolMoxingJoyCreatorV1,
 		AssetUpstreamProtocolMoxingVolcAssetsV1,
-		AssetUpstreamProtocolFunCloudMaterial:
+		AssetUpstreamProtocolFunCloudMaterial,
+		AssetUpstreamProtocolCMCCAICCV2:
 		return true
 	default:
 		return false
@@ -143,6 +149,8 @@ func (p AssetUpstreamProtocol) TransportProfile() AssetUpstreamProfile {
 		return AssetUpstreamProfileMoxingVolc
 	case AssetUpstreamProtocolFunCloudMaterial:
 		return AssetUpstreamProfileFunCloudMaterial
+	case AssetUpstreamProtocolCMCCAICCV2:
+		return AssetUpstreamProfileCMCCAICCV2
 	default:
 		return ""
 	}

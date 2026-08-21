@@ -8,6 +8,7 @@ type AssetUpstreamProtocol = kitdto.AssetUpstreamProtocol
 const (
 	VideoUpstreamProtocolModelArkV3Volcengine = kitdto.VideoUpstreamProtocolModelArkV3Volcengine
 	VideoUpstreamProtocolModelArkV3BytePlus   = kitdto.VideoUpstreamProtocolModelArkV3BytePlus
+	VideoUpstreamProtocolModelArkV3CMCC       = kitdto.VideoUpstreamProtocolModelArkV3CMCC
 	VideoUpstreamProtocolTokenSaveMediaTaskV1 = kitdto.VideoUpstreamProtocolTokenSaveMediaTaskV1
 	VideoUpstreamProtocolMoxingMediaTaskV1    = kitdto.VideoUpstreamProtocolMoxingMediaTaskV1
 	VideoUpstreamProtocolMoxingModelArkV1     = kitdto.VideoUpstreamProtocolMoxingModelArkV1
@@ -23,6 +24,7 @@ const (
 	AssetUpstreamProtocolMoxingJoyCreatorV1 = kitdto.AssetUpstreamProtocolMoxingJoyCreatorV1
 	AssetUpstreamProtocolMoxingVolcAssetsV1 = kitdto.AssetUpstreamProtocolMoxingVolcAssetsV1
 	AssetUpstreamProtocolFunCloudMaterial   = kitdto.AssetUpstreamProtocolFunCloudMaterial
+	AssetUpstreamProtocolCMCCAICCV2         = kitdto.AssetUpstreamProtocolCMCCAICCV2
 )
 
 var ValidateVideoUpstreamProtocol = kitdto.ValidateVideoUpstreamProtocol

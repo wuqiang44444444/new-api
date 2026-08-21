@@ -121,6 +121,7 @@ export interface ChannelOtherSettings {
   video_upstream_protocol?:
     | 'modelark_v3_volcengine'
     | 'modelark_v3_byteplus'
+    | 'modelark_v3_cmcc'
     | 'tokensave_media_task_v1'
     | 'moxing_media_task_v1'
     | 'moxing_modelark_media_v1'
@@ -136,6 +137,7 @@ export interface ChannelOtherSettings {
     | 'moxing_joycreator_assets_v1'
     | 'moxing_volc_assets_v1'
     | 'funcloud_material'
+    | 'cmcc_aicc_assets_v2'
 }
 
 export interface AdvancedCustomConfig {

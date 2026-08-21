@@ -60,6 +60,7 @@ const (
 	ChannelTypeNewAPI         = 60
 	ChannelTypeSeedanceLink   = 61
 	ChannelTypeAsyncImage     = 62
+	ChannelTypeMoxingImage    = 63
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -128,6 +129,7 @@ var ChannelBaseURLs = []string{
 	"",                                          //60
 	"https://ark.cn-beijing.volces.com",         //61
 	"https://mm-internal-cn.leonecloud.com",     //62
+	"https://www.moxing.pro",                    //63
 }
 
 var ChannelTypeNames = map[int]string{
@@ -190,6 +192,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeNewAPI:         "New API",
 	ChannelTypeSeedanceLink:   "Seedance Link",
 	ChannelTypeAsyncImage:     "Async Image Relay",
+	ChannelTypeMoxingImage:    "Moxing Image",
 }
 
 func GetChannelTypeName(channelType int) string {

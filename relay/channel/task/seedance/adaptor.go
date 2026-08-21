@@ -146,7 +146,8 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		return service.TaskErrorWrapperLocal(err, "invalid_video_contract", http.StatusBadRequest)
 	}
 	info.Action = modelArkTaskAction(payload)
-	if a.protocol == dto.VideoUpstreamProtocolFunCloudSeedance &&
+	if (a.protocol == dto.VideoUpstreamProtocolFunCloudSeedance ||
+		a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC) &&
 		billing_setting.GetBillingMode(info.OriginModelName) != billing_setting.BillingModeTieredExpr {
 		return service.TaskErrorWrapperLocal(
 			fmt.Errorf("customer model %s requires tiered_expr billing", info.OriginModelName),
@@ -165,14 +166,17 @@ func (a *TaskAdaptor) BuildRequestURL(_ *relaycommon.RelayInfo) (string, error) 
 	return joinVideoUpstreamURL(a.baseURL, path), nil
 }
 
-func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *relaycommon.RelayInfo) error {
+func (a *TaskAdaptor) BuildRequestHeader(c *gin.Context, req *http.Request, _ *relaycommon.RelayInfo) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+a.apiKey)
-	return nil
+	return a.applyCMCCRequestHeaders(c, req)
 }
 
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+	if a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC {
+		return nil
+	}
 	if a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedance {
 		return nil
 	}

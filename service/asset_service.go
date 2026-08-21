@@ -25,9 +25,6 @@ func CreateRemoteAsset(ctx context.Context, group string, req dto.CreateAssetReq
 		!model.ValidateAssetKind(req.AssetKind) || !model.ValidateAssetMediaType(req.MediaType) {
 		return dto.AssetResponse{}, ErrInvalidAssetRequest
 	}
-	if req.AssetKind == model.AssetKindRealPerson && req.MediaType != "image" {
-		return dto.AssetResponse{}, ErrUnsupportedAssetType
-	}
 	if req.AssetKind == model.AssetKindRealPerson && req.AssetGroupID == "" {
 		return dto.AssetResponse{}, ErrInvalidAssetRequest
 	}
@@ -56,6 +53,10 @@ func CreateRemoteAsset(ctx context.Context, group string, req dto.CreateAssetReq
 	}
 	if !adapter.Supports(req.AssetKind, req.MediaType) {
 		return dto.AssetResponse{}, ErrUnsupportedAssetType
+	}
+	if requirement, ok := adapter.(assetadapter.AssetGroupRequirementAdapter); ok &&
+		requirement.RequiresAssetGroup(req.AssetKind, req.MediaType) && req.AssetGroupID == "" {
+		return dto.AssetResponse{}, ErrInvalidAssetRequest
 	}
 
 	assetRequest := assetadapter.AssetRequest{
@@ -333,6 +334,8 @@ func seedanceAssetAdapter(channel *model.Channel) (assetadapter.Adapter, string,
 		adapter = assetadapter.NewMoxingVolcAdapter(channel.GetBaseURL(), key, httpClient)
 	case dto.AssetUpstreamProtocolFunCloudMaterial:
 		adapter = assetadapter.NewFunCloudMaterialAdapter(channel.GetBaseURL(), key, httpClient)
+	case dto.AssetUpstreamProtocolCMCCAICCV2:
+		adapter, err = assetadapter.NewCMCCAICCV2Adapter(key, httpClient)
 	default:
 		return nil, "", ErrAssetLibraryUnavailable
 	}

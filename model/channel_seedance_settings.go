@@ -49,6 +49,9 @@ func validateSeedanceChannelSettings(channel *Channel, settings *dto.ChannelOthe
 	if err := validateFunCloudSeedanceChannel(channel, settings); err != nil {
 		return err
 	}
+	if err := validateCMCCSeedanceChannel(channel, settings); err != nil {
+		return err
+	}
 
 	settings.VideoUpstreamProfile = ""
 	settings.AssetUpstreamProfile = ""
@@ -104,6 +107,10 @@ func validateSeedanceChannelSettings(channel *Channel, settings *dto.ChannelOthe
 	case dto.AssetUpstreamProtocolFunCloudMaterial:
 		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudSeedance {
 			return fmt.Errorf("FunCloud material protocol requires the FunCloud Seedance video protocol")
+		}
+	case dto.AssetUpstreamProtocolCMCCAICCV2:
+		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolModelArkV3CMCC {
+			return fmt.Errorf("CMCC AICC assets require the CMCC ModelArk V3 video protocol")
 		}
 	}
 

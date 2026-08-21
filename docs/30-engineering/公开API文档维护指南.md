@@ -76,7 +76,7 @@ Manifest 的 locale、group、page、slug、file 和 asset 必须在各自作用
   "title": "创建图片",
   "slug": "api-reference/images/generations",
   "file": "zh/api-reference/images/generations.md",
-  "description": "创建同步或异步图片任务",
+  "description": "创建图片并等待本次请求返回结果",
   "keywords": ["images", "generation"],
   "assets": []
 }

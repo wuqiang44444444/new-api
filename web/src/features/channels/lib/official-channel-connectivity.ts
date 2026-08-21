@@ -23,7 +23,7 @@ const connectivityMessages: Record<string, string> = {
   video_api_upstream_unavailable:
     'Official video API is temporarily unavailable.',
   asset_credential_profile_active:
-    'Disable Official Action Assets and save the channel before clearing its stored credentials.',
+    'Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.',
   asset_resources_active:
     'Delete all active assets and asset groups before clearing credentials.',
 }
@@ -55,9 +55,11 @@ export function getOfficialConnectivityAvailability(input: {
   sensitiveLocked: boolean
 }) {
   const videoCanTest =
-    ['modelark_v3_volcengine', 'modelark_v3_byteplus'].includes(
-      input.videoProtocol || ''
-    ) &&
+    [
+      'modelark_v3_volcengine',
+      'modelark_v3_byteplus',
+      'modelark_v3_cmcc',
+    ].includes(input.videoProtocol || '') &&
     (input.savedVideoProtocol === input.videoProtocol ||
       input.savedVideoProtocol === undefined) &&
     !input.hasPendingVideoKey
@@ -68,6 +70,7 @@ export function getOfficialConnectivityAvailability(input: {
     'funcloud_material',
     'volcengine_assets_action_v2024_01_01',
     'byteplus_assets_action_v2024_01_01',
+    'cmcc_aicc_assets_v2',
   ].includes(input.assetProtocol || '')
   const usesOfficialAssets = isOfficialSeedanceAssetProtocol(
     input.assetProtocol

@@ -14,6 +14,7 @@ const DEFAULT_ASSET_PROTOCOL_BY_VIDEO: Record<
 > = {
   modelark_v3_volcengine: 'volcengine_assets_action_v2024_01_01',
   modelark_v3_byteplus: 'byteplus_assets_action_v2024_01_01',
+  modelark_v3_cmcc: 'cmcc_aicc_assets_v2',
   tokensave_media_task_v1: 'tokensave_assets_v1',
   moxing_media_task_v1: 'moxing_joycreator_assets_v1',
   moxing_modelark_media_v1: 'moxing_volc_assets_v1',
@@ -57,6 +58,7 @@ export function isOfficialSeedanceAssetProtocol(
 ): boolean {
   return (
     assetProtocol === 'volcengine_assets_action_v2024_01_01' ||
-    assetProtocol === 'byteplus_assets_action_v2024_01_01'
+    assetProtocol === 'byteplus_assets_action_v2024_01_01' ||
+    assetProtocol === 'cmcc_aicc_assets_v2'
   )
 }

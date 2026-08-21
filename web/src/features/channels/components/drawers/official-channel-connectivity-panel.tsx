@@ -167,8 +167,10 @@ export function OfficialChannelConnectivityPanel(
   const showVideoTest =
     videoProtocol === 'modelark_v3_volcengine' ||
     videoProtocol === 'modelark_v3_byteplus' ||
+    videoProtocol === 'modelark_v3_cmcc' ||
     props.savedVideoProtocol === 'modelark_v3_volcengine' ||
-    props.savedVideoProtocol === 'modelark_v3_byteplus'
+    props.savedVideoProtocol === 'modelark_v3_byteplus' ||
+    props.savedVideoProtocol === 'modelark_v3_cmcc'
   const officialAssetAction =
     assetProtocol === 'volcengine_assets_action_v2024_01_01' ||
     assetProtocol === 'byteplus_assets_action_v2024_01_01' ||
@@ -342,7 +344,7 @@ export function OfficialChannelConnectivityPanel(
               {!availability.canClearCredential ? (
                 <p className='text-muted-foreground mt-1 text-xs'>
                   {t(
-                    'Disable Official Action Assets and save the channel before clearing its stored credentials.'
+                    'Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.'
                   )}
                 </p>
               ) : null}

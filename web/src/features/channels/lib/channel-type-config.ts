@@ -16,7 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { CHANNEL_TYPE_ASYNC_IMAGE, CHANNEL_TYPES } from '../constants'
+import {
+  CHANNEL_TYPE_ASYNC_IMAGE,
+  CHANNEL_TYPE_MOXING_IMAGE,
+  CHANNEL_TYPES,
+} from '../constants'
 
 // ============================================================================
 // Channel Type Configuration
@@ -29,7 +33,6 @@ export interface ChannelTypeConfig {
   defaultBaseUrl?: string
   requiresOrganization?: boolean
   requiresRegion?: boolean
-  supportedModels?: string[]
   hints?: {
     baseUrl?: string
     key?: string
@@ -173,6 +176,17 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       baseUrl: 'FunCloud async image API base URL',
       key: 'FunCloud API key',
       models: 'nano-banana-2-lite,nano-banana-2,seedream-5.0-lite,seedream-5.0-pro',
+    },
+  },
+  [CHANNEL_TYPE_MOXING_IMAGE]: {
+    id: CHANNEL_TYPE_MOXING_IMAGE,
+    name: CHANNEL_TYPES[CHANNEL_TYPE_MOXING_IMAGE],
+    icon: 'openai',
+    defaultBaseUrl: 'https://www.moxing.pro',
+    hints: {
+      baseUrl: 'https://www.moxing.pro',
+      key: 'Moxing API key',
+      models: 'seedream-5-moxing,seedream-5-pro-moxing',
     },
   },
 }

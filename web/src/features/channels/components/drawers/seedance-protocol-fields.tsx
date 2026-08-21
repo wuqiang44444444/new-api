@@ -41,6 +41,7 @@ type SeedanceProtocolFieldsProps = {
 const SEEDANCE_VIDEO_PROTOCOL_OPTIONS = [
   { value: 'modelark_v3_volcengine', labelKey: 'Volcengine ModelArk V3' },
   { value: 'modelark_v3_byteplus', labelKey: 'BytePlus ModelArk V3' },
+  { value: 'modelark_v3_cmcc', labelKey: 'CMCC Mobile Cloud ModelArk V3' },
   {
     value: 'tokensave_media_task_v1',
     labelKey: 'TokenSave Media Task V1',
@@ -82,6 +83,10 @@ const SEEDANCE_ASSET_PROTOCOL_OPTIONS = [
     value: 'funcloud_material',
     labelKey: 'FunCloud Material Library',
   },
+  {
+    value: 'cmcc_aicc_assets_v2',
+    labelKey: 'CMCC AICC Assets V2',
+  },
 ] as const
 
 export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
@@ -103,6 +108,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
   const usesOfficialAssets = isOfficialSeedanceAssetProtocol(assetProtocol)
   const usesVolcengineAssets =
     assetProtocol === 'volcengine_assets_action_v2024_01_01'
+  const usesCMCCAssets = assetProtocol === 'cmcc_aicc_assets_v2'
   const compatibleAssetProtocols = getCompatibleSeedanceAssetProtocols(
     videoProtocol,
     modelMapping
@@ -111,9 +117,18 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
     (option) =>
       compatibleAssetProtocols.includes(option.value as SeedanceAssetProtocol)
   )
-  const newOfficialCredentialDescription = usesVolcengineAssets
-    ? t('Used only for Volcengine official asset operations.')
-    : t('Used only for BytePlus official asset operations.')
+  let newOfficialCredentialDescription = t(
+    'Used only for BytePlus official asset operations.'
+  )
+  if (usesCMCCAssets) {
+    newOfficialCredentialDescription = t(
+      'Used only for CMCC Mobile Cloud AICC asset operations.'
+    )
+  } else if (usesVolcengineAssets) {
+    newOfficialCredentialDescription = t(
+      'Used only for Volcengine official asset operations.'
+    )
+  }
 
   return (
     <>
@@ -344,43 +359,47 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
               </FormItem>
             )}
           />
-          <FormField
-            control={props.control}
-            name='asset_provider_project'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Provider Project')}</FormLabel>
-                <FormControl>
-                  <Input
-                    disabled={props.sensitiveLocked}
-                    value={field.value || ''}
-                    onChange={field.onChange}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={props.control}
-            name='asset_region'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Provider Region')}</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder={
-                      usesVolcengineAssets ? 'cn-beijing' : 'ap-southeast-1'
-                    }
-                    disabled={props.sensitiveLocked || usesVolcengineAssets}
-                    value={field.value || ''}
-                    onChange={field.onChange}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {!usesCMCCAssets ? (
+            <FormField
+              control={props.control}
+              name='asset_provider_project'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Provider Project')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      disabled={props.sensitiveLocked}
+                      value={field.value || ''}
+                      onChange={field.onChange}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          ) : null}
+          {!usesCMCCAssets ? (
+            <FormField
+              control={props.control}
+              name='asset_region'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Provider Region')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={
+                        usesVolcengineAssets ? 'cn-beijing' : 'ap-southeast-1'
+                      }
+                      disabled={props.sensitiveLocked || usesVolcengineAssets}
+                      value={field.value || ''}
+                      onChange={field.onChange}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          ) : null}
         </>
       ) : null}
     </>

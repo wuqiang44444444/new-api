@@ -217,10 +217,12 @@ export const STATIC_I18N_KEYS = [
 
   // Channel types
   'Seedance Dedicated Channel',
+  'Moxing Image',
 
   // Seedance protocol options
   'Volcengine ModelArk V3',
   'BytePlus ModelArk V3',
+  'CMCC Mobile Cloud ModelArk V3',
   'TokenSave Media Task V1',
   'Moxing Media Task V1',
   'Moxing ModelArk Media Task V1',
@@ -230,6 +232,7 @@ export const STATIC_I18N_KEYS = [
   'No Asset Protocol',
   'Volcengine Official Assets',
   'BytePlus Official Assets',
+  'CMCC AICC Assets V2',
   'Ark Assets V1',
   'TokenSave Asset Library V1',
   'Moxing JoyCreator Asset Library V1',

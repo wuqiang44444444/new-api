@@ -35,6 +35,7 @@ describe('Seedance protocol validation', () => {
     const cases: Array<[SeedanceVideoProtocol, string]> = [
       ['modelark_v3_volcengine', 'volcengine_assets_action_v2024_01_01'],
       ['modelark_v3_byteplus', 'byteplus_assets_action_v2024_01_01'],
+      ['modelark_v3_cmcc', 'cmcc_aicc_assets_v2'],
       ['tokensave_media_task_v1', 'tokensave_assets_v1'],
       ['moxing_media_task_v1', 'moxing_joycreator_assets_v1'],
       ['moxing_modelark_media_v1', 'moxing_volc_assets_v1'],
@@ -100,6 +101,7 @@ describe('Seedance protocol validation', () => {
       isOfficialSeedanceAssetProtocol('byteplus_assets_action_v2024_01_01'),
       true
     )
+    assert.equal(isOfficialSeedanceAssetProtocol('cmcc_aicc_assets_v2'), true)
     assert.equal(isOfficialSeedanceAssetProtocol('tokensave_assets_v1'), false)
   })
 
@@ -203,6 +205,31 @@ describe('Seedance protocol validation', () => {
       asset_secret_access_key: 'secret-key',
     })
     assert.equal(wrongRegion.success, false)
+  })
+
+  test('accepts CMCC video and separate asset credentials without project fields', () => {
+    const form = {
+      ...seedanceForm,
+      models: 'seedance-2.0-cmcc',
+      model_mapping: '{"seedance-2.0-cmcc":"doubao-seedance-2.0"}',
+      base_url: 'https://zhenze-huhehaote.cmecloud.cn',
+      video_upstream_protocol: 'modelark_v3_cmcc' as const,
+      asset_upstream_protocol: 'cmcc_aicc_assets_v2' as const,
+      asset_min_url_ttl_seconds: 3600,
+      asset_access_key_id: 'access-key',
+      asset_secret_access_key: 'secret-key',
+    }
+    assert.equal(channelFormSchema.safeParse(form).success, true)
+    const payload = transformFormDataToCreatePayload(form)
+    assert.deepEqual(payload.asset_credential, {
+      access_key_id: 'access-key',
+      secret_access_key: 'secret-key',
+    })
+    const settings = JSON.parse(payload.channel.settings || '{}')
+    assert.equal(settings.video_upstream_protocol, 'modelark_v3_cmcc')
+    assert.equal(settings.asset_upstream_protocol, 'cmcc_aicc_assets_v2')
+    assert.equal('asset_provider_project' in settings, false)
+    assert.equal('asset_region' in settings, false)
   })
 
   test('removes Seedance protocol fields when saving a native DoubaoVideo channel', () => {

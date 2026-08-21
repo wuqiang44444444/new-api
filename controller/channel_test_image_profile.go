@@ -3,7 +3,10 @@ package controller
 import (
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/samber/lo"
 )
 
@@ -27,4 +30,21 @@ func buildChannelTestImageRequest(model string) *dto.ImageRequest {
 		N:      lo.ToPtr(uint(1)),
 		Size:   size,
 	}
+}
+
+func buildChannelTestImageRequestForChannel(channel *model.Channel, customerModel string) *dto.ImageRequest {
+	request := buildChannelTestImageRequest(customerModel)
+	if channel == nil || channel.Type != constant.ChannelTypeMoxingImage {
+		return request
+	}
+	var mapping map[string]string
+	if err := common.UnmarshalJsonStr(channel.GetModelMapping(), &mapping); err != nil {
+		return request
+	}
+	providerModel, mapped, err := model.ResolveModelMapping(customerModel, mapping)
+	fixedSize, supported := constant.MoxingImageFixedSize(providerModel)
+	if err == nil && mapped && supported {
+		request.Size = fixedSize
+	}
+	return request
 }

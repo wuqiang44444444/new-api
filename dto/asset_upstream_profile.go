@@ -12,6 +12,7 @@ const (
 	AssetUpstreamProfileMoxingVolc       = kitdto.AssetUpstreamProfileMoxingVolc
 	AssetUpstreamProfileOfficial         = kitdto.AssetUpstreamProfileOfficial
 	AssetUpstreamProfileFunCloudMaterial = kitdto.AssetUpstreamProfileFunCloudMaterial
+	AssetUpstreamProfileCMCCAICCV2       = kitdto.AssetUpstreamProfileCMCCAICCV2
 )
 
 var ValidateAssetUpstreamProfile = kitdto.ValidateAssetUpstreamProfile

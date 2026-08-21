@@ -14,6 +14,7 @@ func TestSeedanceVideoProtocolsResolveCodeBackedTransport(t *testing.T) {
 	}{
 		{VideoUpstreamProtocolModelArkV3Volcengine, VideoUpstreamProfileOfficial},
 		{VideoUpstreamProtocolModelArkV3BytePlus, VideoUpstreamProfileOfficial},
+		{VideoUpstreamProtocolModelArkV3CMCC, VideoUpstreamProfileOfficial},
 		{VideoUpstreamProtocolTokenSaveMediaTaskV1, VideoUpstreamProfileThirdPartyRelay},
 		{VideoUpstreamProtocolMoxingMediaTaskV1, VideoUpstreamProfileThirdPartyRelay},
 		{VideoUpstreamProtocolMoxingModelArkV1, VideoUpstreamProfileThirdPartyMoxingModelArk},
@@ -72,6 +73,7 @@ func TestSeedanceAssetProtocolsAreExplicit(t *testing.T) {
 		AssetUpstreamProtocolMoxingJoyCreatorV1,
 		AssetUpstreamProtocolMoxingVolcAssetsV1,
 		AssetUpstreamProtocolFunCloudMaterial,
+		AssetUpstreamProtocolCMCCAICCV2,
 	} {
 		require.NoError(t, ValidateAssetUpstreamProtocol(protocol))
 		assert.True(t, protocol.TransportProfile().IsValid())

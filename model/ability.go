@@ -205,6 +205,9 @@ func (channel *Channel) AddAbilitiesWithActor(tx *gorm.DB, actorID int) error {
 		return err
 	}
 	if channel.Type == constant.ChannelTypeSeedanceLink {
+		if err := ensureChannelAssetScopeIdentityTx(tx, channel); err != nil {
+			return err
+		}
 		return nil
 	}
 	useDB := DB
@@ -283,6 +286,12 @@ func (channel *Channel) UpdateAbilitiesWithActor(tx *gorm.DB, actorID int) error
 		return err
 	}
 	if channel.Type == constant.ChannelTypeSeedanceLink {
+		if err := ensureChannelAssetScopeIdentityTx(tx, channel); err != nil {
+			if isNewTx {
+				tx.Rollback()
+			}
+			return err
+		}
 		if isNewTx {
 			return tx.Commit().Error
 		}

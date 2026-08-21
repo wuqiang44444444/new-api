@@ -1,3 +1,4 @@
+import i18next from 'i18next'
 import { z } from 'zod'
 
 import { CHANNEL_TYPE_SEEDANCE_LINK } from '../constants'
@@ -20,12 +21,17 @@ export function refineSeedanceProtocols(
   }
 
   if (!data.video_upstream_protocol) {
-    addIssue('video_upstream_protocol', 'Select a Seedance video protocol')
+    addIssue(
+      'video_upstream_protocol',
+      i18next.t('Select a Seedance video protocol')
+    )
   }
   if (data.multi_key_mode && data.multi_key_mode !== 'single') {
     addIssue(
       'multi_key_mode',
-      'Seedance channels use one credential and do not support multi-key mode'
+      i18next.t(
+        'Seedance channels use one credential and do not support multi-key mode'
+      )
     )
   }
 
@@ -34,7 +40,7 @@ export function refineSeedanceProtocols(
   if (!data.asset_min_url_ttl_seconds) {
     addIssue(
       'asset_min_url_ttl_seconds',
-      'A verified Provider URL fetch window is required'
+      i18next.t('A verified Provider URL fetch window is required')
     )
   }
   if (
@@ -43,7 +49,7 @@ export function refineSeedanceProtocols(
   ) {
     addIssue(
       'asset_upstream_protocol',
-      'Ark Assets requires the Ark Media video protocol'
+      i18next.t('Ark Assets requires the Ark Media video protocol')
     )
   }
   if (
@@ -52,7 +58,9 @@ export function refineSeedanceProtocols(
   ) {
     addIssue(
       'asset_upstream_protocol',
-      'TokenSave Assets requires the TokenSave Media Task video protocol'
+      i18next.t(
+        'TokenSave Assets requires the TokenSave Media Task video protocol'
+      )
     )
   }
   if (
@@ -61,7 +69,9 @@ export function refineSeedanceProtocols(
   ) {
     addIssue(
       'asset_upstream_protocol',
-      'Moxing JoyCreator Assets requires the Moxing Media Task video protocol'
+      i18next.t(
+        'Moxing JoyCreator Assets requires the Moxing Media Task video protocol'
+      )
     )
   }
   if (
@@ -70,7 +80,9 @@ export function refineSeedanceProtocols(
   ) {
     addIssue(
       'asset_upstream_protocol',
-      'Moxing Volcengine Assets requires the Moxing ModelArk video protocol'
+      i18next.t(
+        'Moxing Volcengine Assets requires the Moxing ModelArk video protocol'
+      )
     )
   }
   if (
@@ -79,7 +91,9 @@ export function refineSeedanceProtocols(
   ) {
     addIssue(
       'asset_upstream_protocol',
-      'FunCloud Material requires the FunCloud Seedance video protocol'
+      i18next.t(
+        'FunCloud Material requires the FunCloud Seedance video protocol'
+      )
     )
   }
   if (
@@ -88,7 +102,20 @@ export function refineSeedanceProtocols(
   ) {
     addIssue(
       'asset_upstream_protocol',
-      'FunCloud Seedance 2.5 does not support the FunCloud Material Library'
+      i18next.t(
+        'FunCloud Seedance 2.5 does not support the FunCloud Material Library'
+      )
+    )
+  }
+  if (
+    assetProtocol === 'cmcc_aicc_assets_v2' &&
+    data.video_upstream_protocol !== 'modelark_v3_cmcc'
+  ) {
+    addIssue(
+      'asset_upstream_protocol',
+      i18next.t(
+        'CMCC AICC Assets requires the CMCC ModelArk V3 video protocol'
+      )
     )
   }
   if (
@@ -97,7 +124,9 @@ export function refineSeedanceProtocols(
   ) {
     addIssue(
       'asset_upstream_protocol',
-      'Volcengine Assets requires the Volcengine ModelArk V3 video protocol'
+      i18next.t(
+        'Volcengine Assets requires the Volcengine ModelArk V3 video protocol'
+      )
     )
   }
   if (
@@ -106,13 +135,34 @@ export function refineSeedanceProtocols(
   ) {
     addIssue(
       'asset_upstream_protocol',
-      'BytePlus Assets requires the BytePlus ModelArk V3 video protocol'
+      i18next.t(
+        'BytePlus Assets requires the BytePlus ModelArk V3 video protocol'
+      )
     )
   }
   if (!isOfficialSeedanceAssetProtocol(assetProtocol)) return
+  const accessKeyID = data.asset_access_key_id?.trim() || ''
+  const secretAccessKey = data.asset_secret_access_key?.trim() || ''
+  if ((accessKeyID === '') !== (secretAccessKey === '')) {
+    addIssue(
+      accessKeyID ? 'asset_secret_access_key' : 'asset_access_key_id',
+      i18next.t(
+        'Asset Access Key ID and Secret Access Key must be provided together'
+      )
+    )
+  } else if (accessKeyID === '' && !data.asset_credential_configured) {
+    addIssue(
+      'asset_access_key_id',
+      i18next.t('Asset credentials are required')
+    )
+  }
+  if (assetProtocol === 'cmcc_aicc_assets_v2') return
 
   if (!data.asset_provider_project?.trim()) {
-    addIssue('asset_provider_project', 'A Provider Project is required')
+    addIssue(
+      'asset_provider_project',
+      i18next.t('A Provider Project is required')
+    )
   }
   if (
     assetProtocol === 'volcengine_assets_action_v2024_01_01' &&
@@ -120,7 +170,7 @@ export function refineSeedanceProtocols(
   ) {
     addIssue(
       'asset_region',
-      'Volcengine Assets uses the fixed cn-beijing region'
+      i18next.t('Volcengine Assets uses the fixed cn-beijing region')
     )
   }
   if (
@@ -129,17 +179,9 @@ export function refineSeedanceProtocols(
   ) {
     addIssue(
       'asset_region',
-      'Region must use a Provider region ID such as ap-southeast-1'
+      i18next.t(
+        'Region must use a Provider region ID such as ap-southeast-1'
+      )
     )
-  }
-  const accessKeyID = data.asset_access_key_id?.trim() || ''
-  const secretAccessKey = data.asset_secret_access_key?.trim() || ''
-  if ((accessKeyID === '') !== (secretAccessKey === '')) {
-    addIssue(
-      accessKeyID ? 'asset_secret_access_key' : 'asset_access_key_id',
-      'Asset Access Key ID and Secret Access Key must be provided together'
-    )
-  } else if (accessKeyID === '' && !data.asset_credential_configured) {
-    addIssue('asset_access_key_id', 'Asset credentials are required')
   }
 }

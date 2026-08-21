@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-18
+last-reviewed: 2026-08-21
 ---
 
 # 图片模型 API 用户调用指南
@@ -15,6 +15,9 @@ last-reviewed: 2026-08-18
 FunCloud 中转异步图片渠道虽然南向创建任务并轮询，但 adaptor 在同一请求内完成等待。等待上限由部署
 的 `RELAY_TIMEOUT` 决定；超时或取消按普通同步图片失败/退款语义处理。调用方不要盲目重发，因为
 Provider 可能已经受理请求。
+
+Moxing 图片渠道南向使用一次同步 POST，也复用同一北向入口和同步计费链路。当前代码支持 Lite/Pro
+固定 `2K` 单图文生图；真实 Provider、账单与超时歧义尚未验收，管理员启用渠道前不能把下述代码合同视为生产可用承诺。
 
 ## 2. 最小请求
 
@@ -57,7 +60,35 @@ URL 可能有有效期，需要长期使用时请及时下载到你控制的存�
 客户模型名可以不同；管理员通过 `model_mapping` 精确映射到 Provider 模型。请以 `GET /v1/models`
 的实时结果确认当前 Key 是否开放模型。
 
-## 4. 请求字段与当前限制
+## 4. Moxing 兼容子集
+
+Moxing 客户模型名可由管理员定义；当前预置一个禁用渠道，在同一 Key 下承载两个独立客户别名：
+
+| 客户模型 | Provider 模型 | 固定规格 | 默认客户价 |
+| --- | --- | --- | --- |
+| `seedream-5-moxing` | `doubao-seedream-5-0-260128` | Lite、`2K`、单图 URL | `$0.035/次` |
+| `seedream-5-pro-moxing` | `doubao-seedream-5-0-pro-260628` | Pro、`2K`、单图 URL | `$0.09/次` |
+
+客户端仍只提交客户模型名：
+
+```json
+{
+  "model": "seedream-5-moxing",
+  "prompt": "一只蓝色陶瓷杯的产品摄影",
+  "n": 1,
+  "size": "2K",
+  "response_format": "url"
+}
+```
+
+客户模型和 `model_mapping` 均由管理员配置；代码只要求每个渠道模型经过 NEWAPI 原生映射链后，最终落到
+登记的 Moxing Provider profile。客户模型直接使用 Provider 模型名时可以不配置映射。
+两个模型当前都只允许 prompt 1—3000 字符、`n` 省略或为 `1`、固定 `2K`、URL 响应。参考图、组图、
+联网搜索、Base64、stream、任意宽高、输出格式、watermark、未知顶层字段和非空 `extra_fields` 均在
+发送 Provider 请求前返回 HTTP `400`。客户模型名本身不赋予能力；映射目标不在代码登记表时同样拒绝。
+Pro `1K` 与按实际像素结算尚未开放，不能通过修改请求或 Param Override 绕过固定规格。
+
+## 5. 请求字段与当前限制
 
 当前 FunCloud 渠道尚未发布参考图能力。由于 input-image 价格和失败扣费规则仍需核实，
 客户端传入 `extra_fields.reference_images` 会明确返回 HTTP `400`；不会静默删除或改义。
@@ -75,12 +106,12 @@ URL 可能有有效期，需要长期使用时请及时下载到你控制的存�
 }
 ```
 
-`callbackUrl`、`b64_json`、`stream=true`、未知字段和 Provider 私有 JSON 均返回 HTTP `400`。
+`callbackUrl`、`b64_json`、显式提交的 `stream`（包括 `false`）、未知字段和 Provider 私有 JSON 均返回 HTTP `400`。
 更高分辨率/质量档位也会在请求校验阶段拒绝，直到对应预扣计费倍率完成配置和验收。
 
 `n` 必须为 `1`；不拆分多图请求。成功结果必须恰好包含一个 URL，否则返回上游响应错误。
 
-## 5. 错误与重试
+## 6. 错误与重试
 
 | 状态 | 含义 |
 | --- | --- |
@@ -91,7 +122,7 @@ URL 可能有有效期，需要长期使用时请及时下载到你控制的存�
 客户端应记录自己的 request ID 和业务订单。收到 `504` 后不要自动重复创建；如业务决定重试，需
 接受重复生成和重复计费风险。
 
-## 6. 安全
+## 7. 安全
 
 - API Key 只放在服务端环境变量或密钥管理系统中；不要写入 URL、前端代码或日志。
 - 不要记录完整签名 URL、参考图 URL、Base64、提示词或 Provider 原始响应。

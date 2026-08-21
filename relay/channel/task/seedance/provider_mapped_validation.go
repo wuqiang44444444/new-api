@@ -19,7 +19,11 @@ func (a *TaskAdaptor) ValidateMappedRequest(c *gin.Context, info *relaycommon.Re
 	if !ok || contract.ContractID != taskdto.VideoContractModelArkV3 || contract.ModelArk == nil {
 		return service.TaskErrorWrapperLocal(errors.New("Seedance channels require the ModelArk V3 request contract"), "invalid_video_contract", http.StatusBadRequest)
 	}
-	if a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 ||
+	if a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC {
+		if err := validateCMCCProviderModelRequest(info.UpstreamModelName, contract.ModelArk); err != nil {
+			return service.TaskErrorWrapperLocal(err, "invalid_video_parameter", http.StatusBadRequest)
+		}
+	} else if a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 ||
 		a.protocol == dto.VideoUpstreamProtocolMoxingMediaTaskV1 ||
 		a.protocol == dto.VideoUpstreamProtocolMoxingModelArkV1 ||
 		a.protocol == dto.VideoUpstreamProtocolFunCloudSeedance {

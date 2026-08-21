@@ -53,7 +53,7 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 	if channel != nil && channel.Type == constant.ChannelTypeCodex {
 		return string(constant.EndpointTypeOpenAIResponse)
 	}
-	if channel != nil && channel.Type == constant.ChannelTypeAsyncImage {
+	if channel != nil && (channel.Type == constant.ChannelTypeAsyncImage || channel.Type == constant.ChannelTypeMoxingImage) {
 		return string(constant.EndpointTypeImageGeneration)
 	}
 	if channel != nil && channel.Type == constant.ChannelTypeAdvancedCustom {
@@ -717,7 +717,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 				Input: []any{"hello world"},
 			}
 		case constant.EndpointTypeImageGeneration:
-			return buildChannelTestImageRequest(model)
+			return buildChannelTestImageRequestForChannel(channel, model)
 		case constant.EndpointTypeJinaRerank:
 			// 返回 RerankRequest
 			return &dto.RerankRequest{

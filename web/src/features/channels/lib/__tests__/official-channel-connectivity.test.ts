@@ -85,6 +85,23 @@ describe('official channel connectivity', () => {
     assert.equal(availability.hasUnsavedTestChanges, false)
   })
 
+  test('enables both saved CMCC connectivity probes with stored credentials', () => {
+    const availability = getOfficialConnectivityAvailability({
+      assetProtocol: 'cmcc_aicc_assets_v2',
+      savedAssetProtocol: 'cmcc_aicc_assets_v2',
+      videoProtocol: 'modelark_v3_cmcc',
+      savedVideoProtocol: 'modelark_v3_cmcc',
+      credentialConfigured: true,
+      hasPendingVideoKey: false,
+      hasPendingAssetCredential: false,
+      sensitiveLocked: false,
+    })
+
+    assert.equal(availability.videoCanTest, true)
+    assert.equal(availability.assetCanTest, true)
+    assert.equal(availability.hasUnsavedTestChanges, false)
+  })
+
   test('allows explicit clear only after the official asset profile is saved disabled', () => {
     const active = getOfficialConnectivityAvailability({
       assetProtocol: 'none',

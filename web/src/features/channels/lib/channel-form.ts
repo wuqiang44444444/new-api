@@ -277,6 +277,7 @@ export const channelFormSchema = z
       .enum([
         'modelark_v3_volcengine',
         'modelark_v3_byteplus',
+        'modelark_v3_cmcc',
         'tokensave_media_task_v1',
         'moxing_media_task_v1',
         'moxing_modelark_media_v1',
@@ -295,6 +296,7 @@ export const channelFormSchema = z
         'moxing_joycreator_assets_v1',
         'moxing_volc_assets_v1',
         'funcloud_material',
+        'cmcc_aicc_assets_v2',
       ])
       .optional(),
     azure_responses_version: z.string().optional(), // Azure specific
@@ -922,7 +924,8 @@ export function transformFormDataToCreatePayload(
     (formData.asset_upstream_protocol ===
       'volcengine_assets_action_v2024_01_01' ||
       formData.asset_upstream_protocol ===
-        'byteplus_assets_action_v2024_01_01') &&
+        'byteplus_assets_action_v2024_01_01' ||
+      formData.asset_upstream_protocol === 'cmcc_aicc_assets_v2') &&
     formData.asset_access_key_id?.trim() &&
     formData.asset_secret_access_key?.trim()
   ) {
@@ -977,7 +980,8 @@ export function transformFormDataToUpdatePayload(
     (formData.asset_upstream_protocol ===
       'volcengine_assets_action_v2024_01_01' ||
       formData.asset_upstream_protocol ===
-        'byteplus_assets_action_v2024_01_01') &&
+        'byteplus_assets_action_v2024_01_01' ||
+      formData.asset_upstream_protocol === 'cmcc_aicc_assets_v2') &&
     formData.asset_access_key_id?.trim() &&
     formData.asset_secret_access_key?.trim()
   ) {

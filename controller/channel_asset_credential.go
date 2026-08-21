@@ -16,22 +16,22 @@ import (
 func validateNewChannelAssetCredential(channel *model.Channel, input *dto.ChannelAssetCredentialInput, mode string) error {
 	if !channelUsesOfficialAssetCredential(channel) {
 		if input != nil {
-			return errors.New("asset credential is only accepted for official_action_assets")
+			return errors.New("asset credential is only accepted for a protocol with separate asset AK/SK")
 		}
 		return nil
 	}
 	if mode != "single" || channel.ChannelInfo.IsMultiKey {
-		return errors.New("official_action_assets only supports single-key channel creation")
+		return errors.New("separate asset AK/SK only supports single-key channel creation")
 	}
 	if strings.TrimSpace(channel.Key) == "" {
-		return errors.New("official video API key is required")
+		return errors.New("video API key is required")
 	}
 	credential, err := model.NormalizeChannelAssetCredential(input)
 	if err != nil {
 		return err
 	}
 	if credential == nil {
-		return errors.New("official_action_assets requires an asset Access Key ID and Secret Access Key")
+		return errors.New("the selected asset protocol requires an Access Key ID and Secret Access Key")
 	}
 	return nil
 }
@@ -52,15 +52,15 @@ func validateUpdatedChannelAssetCredential(channel, origin *model.Channel, reque
 
 	if !channelUsesOfficialAssetCredential(&effective) {
 		if input != nil {
-			return errors.New("asset credential is only accepted for official_action_assets")
+			return errors.New("asset credential is only accepted for a protocol with separate asset AK/SK")
 		}
 		return nil
 	}
 	if effective.ChannelInfo.IsMultiKey {
-		return errors.New("official_action_assets requires a single-key channel")
+		return errors.New("separate asset AK/SK requires a single-key channel")
 	}
 	if strings.TrimSpace(effective.Key) == "" {
-		return errors.New("official video API key is required")
+		return errors.New("video API key is required")
 	}
 	if input != nil {
 		_, err := model.NormalizeChannelAssetCredential(input)
@@ -71,7 +71,7 @@ func validateUpdatedChannelAssetCredential(channel, origin *model.Channel, reque
 		return err
 	}
 	if credential == nil {
-		return errors.New("official_action_assets requires an asset Access Key ID and Secret Access Key")
+		return errors.New("the selected asset protocol requires an Access Key ID and Secret Access Key")
 	}
 	return nil
 }
@@ -81,7 +81,8 @@ func channelUsesOfficialAssetCredential(channel *model.Channel) bool {
 		return false
 	}
 	settings := channel.GetOtherSettings()
-	return settings.AssetUpstreamProtocol.TransportProfile() == dto.AssetUpstreamProfileOfficial
+	profile := settings.AssetUpstreamProtocol.TransportProfile()
+	return profile == dto.AssetUpstreamProfileOfficial || profile == dto.AssetUpstreamProfileCMCCAICCV2
 }
 
 func DeleteChannelAssetCredential(c *gin.Context) {

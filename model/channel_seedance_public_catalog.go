@@ -156,9 +156,20 @@ func seedancePublicAssetAPI(
 		assetCreate, assetRead = true, true
 		groupCreate, groupRead, groupDelete = true, true, true
 		assetGroupRequirement = dto.PublicAssetGroupRequired
+	case dto.AssetUpstreamProtocolCMCCAICCV2:
+		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
+		groupCreate, groupRead, groupDelete = true, true, true
+		realPerson = true
+		assetGroupRequirement = dto.PublicAssetGroupRequired
 	}
 	if assetCreate {
 		media = publicAssetMedia(realPerson, assetGroupRequirement)
+		if protocol == dto.AssetUpstreamProtocolCMCCAICCV2 {
+			media = append(media,
+				dto.PublicAssetMedia{Kind: AssetKindRealPerson, MediaType: "video", AssetGroupRequirement: dto.PublicAssetGroupRequired},
+				dto.PublicAssetMedia{Kind: AssetKindRealPerson, MediaType: "audio", AssetGroupRequirement: dto.PublicAssetGroupRequired},
+			)
+		}
 	}
 
 	supported := protocol != "" && protocol != dto.AssetUpstreamProtocolNone
@@ -225,6 +236,14 @@ func seedancePublicAssetReuseScope(channel *Channel, protocol dto.AssetUpstreamP
 	baseURL := channel.GetBaseURL()
 	if protocol.TransportProfile() == dto.AssetUpstreamProfileOfficial {
 		baseURL = AssetActionBaseURL(protocol, settings.AssetRegion)
+	}
+	if protocol == dto.AssetUpstreamProtocolCMCCAICCV2 {
+		scope, err := CMCCAssetReuseScope(channel.Id)
+		if err != nil {
+			common.SysError("CMCC asset reuse scope is unavailable")
+			return ""
+		}
+		return scope
 	}
 	fingerprint := AssetCredentialFingerprint(
 		baseURL,

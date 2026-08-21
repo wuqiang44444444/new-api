@@ -85,7 +85,10 @@ func batchDeleteChannelRows(ids []int) (int64, error) {
 		if err := tx.Where("channel_id IN ?", deletable).Delete(&Ability{}).Error; err != nil {
 			return err
 		}
-		return deleteChannelAssetCredentialsTx(tx, deletable)
+		if err := deleteChannelAssetCredentialsTx(tx, deletable); err != nil {
+			return err
+		}
+		return deleteChannelAssetScopeIdentitiesTx(tx, deletable)
 	})
 	return rows, err
 }

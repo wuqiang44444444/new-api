@@ -24,6 +24,7 @@ Provider 专题只记录自身客户价格、第三方报价和履约边界，�
 | --- | --- | --- |
 | 火山官方 | [模型与素材库对接设计](火山官方/火山官方模型与素材库对接设计.md) | `modelark_v3_volcengine` + `volcengine_assets_action_v2024_01_01`；官方模型、价格与 Action 素材合同已代码化，账号开通和生产账单需逐模型验收 |
 | BytePlus 官方 | [模型与素材库对接设计](BytePlus官方/BytePlus官方模型与素材库对接设计.md) | `modelark_v3_byteplus` + `byteplus_assets_action_v2024_01_01`；海外 `dreamina-*` 身份与国内 `doubao-*` 隔离，目标账号验收未完成 |
+| 移动云 | [模型与素材库对接设计](移动云/移动云模型与素材库对接设计.md) | 目标 `modelark_v3_cmcc` + `cmcc_aicc_assets_v2`；Standard 的 raw REST 已实测文本、480p/720p/1080p 与 `reference_video`，代码、素材和账单验收未完成；Fast、Mini、条件 2.5 仍为无 Provider 证据候选 |
 | FunCloud | [模型与素材库对接设计](FunCloud/FunCloud模型与素材库对接设计.md) | 四个独立客户模型与 Channel；Standard/Fast/Mini 可选虚拟素材，2.5 无素材；真实模型、素材和账单仍需生产验收 |
 | 墨行（含 TokenSave 海外转售） | [模型与素材库对接设计](墨行/墨行模型与素材库对接设计.md) | 五个客户模型、三个视频协议和三种素材协议；Fast 有真实终态 usage 与账单一致证据，Mini/2.5 未发布 |
 | 飞彩 | [模型与素材库对接设计](飞彩/飞彩模型与素材库对接设计.md) | 专用 `feicai_videos_v1`；十个固定分辨率模型，`asset_upstream_protocol=none`，不提供素材 CRUD |

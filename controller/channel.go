@@ -721,7 +721,7 @@ func AddChannel(c *gin.Context) {
 	}
 	if channelUsesOfficialAssetCredential(addChannelRequest.Channel) {
 		if len(channels) != 1 {
-			c.JSON(http.StatusOK, gin.H{"success": false, "message": "official_action_assets only supports single-key channel creation"})
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "separate asset AK/SK only supports single-key channel creation"})
 			return
 		}
 		err = model.InsertChannelWithAssetCredentialActor(&channels[0], addChannelRequest.AssetCredential, c.GetInt("id"))

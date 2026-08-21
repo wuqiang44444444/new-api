@@ -68,6 +68,22 @@ func TestVolcengineOfficialAssetsUseTheSameSeparatedCredentialStore(t *testing.T
 	))
 }
 
+func TestCMCCAssetsUseTheSeparatedCredentialStoreWithoutProjectOrRegion(t *testing.T) {
+	channel := officialAssetControllerTestChannel()
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3CMCC,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolCMCCAICCV2,
+		AssetMinURLTTLSeconds: 3600,
+	})
+
+	require.True(t, channelUsesOfficialAssetCredential(channel))
+	require.NoError(t, validateNewChannelAssetCredential(
+		channel,
+		&dto.ChannelAssetCredentialInput{AccessKeyID: "access", SecretAccessKey: "secret"},
+		"single",
+	))
+}
+
 func TestGetChannelReturnsOnlyAssetCredentialStatus(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.ChannelAssetCredential{}))

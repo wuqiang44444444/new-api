@@ -22,7 +22,7 @@ type ChannelAssetCredential struct {
 	UpdatedTime     int64  `json:"-" gorm:"bigint"`
 }
 
-var ErrAssetCredentialProfileActive = errors.New("official asset profile must be disabled before clearing its credential")
+var ErrAssetCredentialProfileActive = errors.New("separate asset credential profile must be disabled before clearing its credential")
 
 const VolcengineAssetActionRegion = "cn-beijing"
 const VolcengineAssetActionBaseURL = "https://ark.cn-beijing.volcengineapi.com"
@@ -122,7 +122,7 @@ func resolveAssetChannelCredential(tx *gorm.DB, channel *Channel, override *Chan
 	settings := channel.GetOtherSettings()
 	assetProfile := settings.AssetUpstreamProtocol.TransportProfile()
 	credentialIdentity := string(settings.AssetUpstreamProtocol)
-	if assetProfile == dto.AssetUpstreamProfileOfficial {
+	if assetProfile == dto.AssetUpstreamProfileOfficial || assetProfile == dto.AssetUpstreamProfileCMCCAICCV2 {
 		credential := override
 		var err error
 		if credential == nil {
@@ -132,9 +132,13 @@ func resolveAssetChannelCredential(tx *gorm.DB, channel *Channel, override *Chan
 			}
 		}
 		if credential == nil || strings.TrimSpace(credential.AccessKeyID) == "" || strings.TrimSpace(credential.SecretAccessKey) == "" {
-			return "", "", errors.New("official asset credential is not configured")
+			return "", "", errors.New("separate asset credential is not configured")
 		}
 		key := strings.TrimSpace(credential.AccessKeyID) + "|" + strings.TrimSpace(credential.SecretAccessKey)
+		if assetProfile == dto.AssetUpstreamProfileCMCCAICCV2 {
+			scope, err := cmccAssetReuseScope(tx, channel.Id)
+			return key, strings.TrimPrefix(scope, "asset_scope_"), err
+		}
 		return key, AssetCredentialFingerprint(
 			AssetActionBaseURL(settings.AssetUpstreamProtocol, settings.AssetRegion),
 			key,
@@ -212,7 +216,7 @@ func DeleteChannelAssetCredential(channelID int) error {
 		}
 		settings := channel.GetOtherSettings()
 		assetProfile := settings.AssetUpstreamProtocol.TransportProfile()
-		if assetProfile == dto.AssetUpstreamProfileOfficial {
+		if assetProfile == dto.AssetUpstreamProfileOfficial || assetProfile == dto.AssetUpstreamProfileCMCCAICCV2 {
 			return ErrAssetCredentialProfileActive
 		}
 		return deleteChannelAssetCredentialsTx(tx, []int{channelID})

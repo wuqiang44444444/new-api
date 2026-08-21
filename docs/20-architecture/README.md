@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-18
+last-reviewed: 2026-08-20
 ---
 
 # 20-architecture — 架构索引
@@ -47,8 +47,9 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 2. [Seedance专用渠道与Link架构](Seedance专用渠道与Link架构.md)：ModelArk V3、确定性渠道、代码协议、视频任务和素材代理。
 3. 涉及素材：先看[Seedance模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)，再看[Seedance无状态素材代理架构](Seedance无状态素材代理架构.md)。
 4. 涉及异步或计费：看[账单计费-异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md)；动态计费再看[账单计费-计费表达式与协议探针架构](账单计费-计费表达式与协议探针架构.md)。
-5. 涉及 Provider：进入[Seedance模型接入设计](Seedance模型接入设计/README.md)，按火山官方、BytePlus官方、FunCloud、墨行/TokenSave、飞彩选择目录。
-6. 需要“为什么”时看[架构决策索引](decisions/README.md)；需要公开文档交付、账单投影或通知时按下表定位专题。
+5. 涉及普通图片和南向异步任务：看[图片服务与异步 Provider 适配架构](图片服务与异步Provider适配架构.md)。
+6. 涉及 Provider：进入[Seedance模型接入设计](Seedance模型接入设计/README.md)，按火山官方、BytePlus官方、移动云、FunCloud、墨行/TokenSave、飞彩选择目录。
+7. 需要“为什么”时看[架构决策索引](decisions/README.md)；需要公开文档交付、账单投影或通知时按下表定位专题。
 
 ## 当前架构文档
 
@@ -60,8 +61,8 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 | Seedance 代理 | [Seedance无状态素材代理架构](Seedance无状态素材代理架构.md) | opaque ID、无状态路由、Provider 边界和安全不变量 | 素材 Service、`asset_upstream_protocol` adapter |
 | 异步与计费 | [账单计费-异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md) | create attempt、Task、资金、结算和 Provider exposure | `model/task*.go`、Task billing、exposure |
 | 计费表达式 | [账单计费-计费表达式与协议探针架构](账单计费-计费表达式与协议探针架构.md) | 表达式校验、协议探针、价格快照和终态结算 | `pkg/billingexpr/`、`setting/billing_setting/` |
-| 图片数据面 | [Link图片服务合同与异步任务架构](Link图片服务合同与异步任务架构.md) | 同步/异步图片、Task 和计费 | 图片 relay、图片 Task |
-| Provider 接入 | [Seedance模型接入设计](Seedance模型接入设计/README.md) | 五类 Provider 的原始文档、对接、价格和能力元数据 | Provider adapter、模型映射、真实验证 |
+| 图片数据面 | [图片服务与异步Provider适配架构](图片服务与异步Provider适配架构.md) | 原生图片入口、异步 Provider 内联轮询、同步 Provider 适配和计费边界 | 图片 relay、`ChannelTypeAsyncImage`、`ChannelTypeMoxingImage`、专用 adaptor |
+| Provider 接入 | [Seedance模型接入设计](Seedance模型接入设计/README.md) | 六类 Provider 的原始文档、对接、价格和能力元数据 | Provider adapter、模型映射、真实验证 |
 | 账单投影 | [账单计费-APIKEY用量账单架构](账单计费-APIKEY用量账单架构.md) | 结算日志到用户账单的只读投影 | billing statement controller/model |
 | 对账投影 | [账单计费-客户与上游对账架构](账单计费-客户与上游对账架构.md) | 客户/上游对账、折扣审计和计费快照聚合 | reconciliation router/controller/model |
 | 公开文档 | [公开API文档交付架构](公开API文档交付架构.md) | 公开合同的构建、校验和 Web 发布 | `web/src/features/docs/`、`web/scripts/docs/` |

@@ -1,6 +1,7 @@
 package seedance
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -316,6 +317,122 @@ func TestFunCloudRequiresTieredBillingBeforeProviderSubmission(t *testing.T) {
 		"billing_setting.billing_mode": `{"seedance-2-fast-funcloud":"tiered_expr"}`,
 	}))
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(newContext(), info()))
+}
+
+func TestCMCCMappedRequestSetsTrustedVideoHeaderAndProviderModel(t *testing.T) {
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		saved[key] = value
+		return nil
+	}))
+	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(saved)) })
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"seedance-2.0-cmcc":"tiered_expr"}`,
+	}))
+
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
+	contract := &dto.ModelArkVideoCreateRequest{
+		Model: "seedance-2.0-cmcc",
+		Content: []dto.ModelArkVideoContent{
+			{Type: "text", Text: common.GetPointer("continue the motion")},
+			{Type: "image_url", Role: common.GetPointer("reference_image"), ImageURL: &dto.VideoMediaURL{URL: "asset://opaque-image-1"}},
+			{Type: "image_url", Role: common.GetPointer("reference_image"), ImageURL: &dto.VideoMediaURL{URL: "asset://opaque-image-2"}},
+			{Type: "video_url", Role: common.GetPointer("reference_video"), VideoURL: &dto.VideoMediaURL{URL: "asset://opaque-video"}},
+			{Type: "audio_url", Role: common.GetPointer("reference_audio"), AudioURL: &dto.VideoMediaURL{URL: "asset://opaque-audio"}},
+		},
+		Duration: common.GetPointer(5), Resolution: common.GetPointer("720p"), Ratio: common.GetPointer("16:9"),
+	}
+	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{ContractID: dto.VideoContractModelArkV3, ModelArk: contract})
+	context.Set(string(constant.ContextKeyTaskPromptValidated), true)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "seedance-2.0-cmcc",
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: modelSeedance20CMCC, IsModelMapped: true},
+		TaskRelayInfo:   &relaycommon.TaskRelayInfo{},
+	}
+	adaptor := &TaskAdaptor{protocol: kitdto.VideoUpstreamProtocolModelArkV3CMCC, profile: kitdto.VideoUpstreamProfileOfficial, apiKey: "video-key"}
+
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(context, info))
+	require.Nil(t, adaptor.ValidateMappedRequest(context, info))
+	request, err := http.NewRequest(http.MethodPost, "https://cmcc.example/api/v3/contents/generations/tasks", nil)
+	require.NoError(t, err)
+	require.NoError(t, adaptor.BuildRequestHeader(context, request, info))
+	assert.Equal(t, "Bearer video-key", request.Header.Get("Authorization"))
+	assert.Equal(t, "true", request.Header.Get("Input-Has-Video"))
+
+	body, err := adaptor.BuildRequestBody(context, info)
+	require.NoError(t, err)
+	payload, err := io.ReadAll(body)
+	require.NoError(t, err)
+	var upstream requestPayload
+	require.NoError(t, common.Unmarshal(payload, &upstream))
+	assert.Equal(t, modelSeedance20CMCC, upstream.Model)
+	assert.Len(t, upstream.Content, 5)
+}
+
+func TestCMCCDefaultDurationKeepsBillingAndOptionalPayloadSemanticsAligned(t *testing.T) {
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
+	contract := &dto.ModelArkVideoCreateRequest{
+		Model:      "seedance-2.0-cmcc",
+		Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("generate")}},
+		Resolution: common.GetPointer("720p"),
+	}
+	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
+		ContractID: dto.VideoContractModelArkV3,
+		ModelArk:   contract,
+	})
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "seedance-2.0-cmcc",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: modelSeedance20CMCC,
+			IsModelMapped:     true,
+		},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{},
+	}
+	adaptor := &TaskAdaptor{
+		protocol: kitdto.VideoUpstreamProtocolModelArkV3CMCC,
+		profile:  kitdto.VideoUpstreamProfileOfficial,
+	}
+
+	require.Nil(t, adaptor.ValidateMappedRequest(context, info))
+	probe, err := adaptor.BuildTaskBillingProbe(context, info)
+	require.NoError(t, err)
+	assert.Equal(t, 5, probe["duration_seconds"])
+
+	body, err := adaptor.BuildRequestBody(context, info)
+	require.NoError(t, err)
+	payload, err := io.ReadAll(body)
+	require.NoError(t, err)
+	var upstream map[string]any
+	require.NoError(t, common.Unmarshal(payload, &upstream))
+	assert.NotContains(t, upstream, "duration")
+}
+
+func TestCMCCProviderContractFailsClosedOnUnverifiedParameters(t *testing.T) {
+	base := dto.ModelArkVideoCreateRequest{
+		Model:    modelSeedance20CMCC,
+		Content:  []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("generate")}},
+		Duration: common.GetPointer(5), Resolution: common.GetPointer("720p"),
+	}
+	tests := []struct {
+		name   string
+		mutate func(*dto.ModelArkVideoCreateRequest)
+	}{
+		{name: "unsupported ratio", mutate: func(req *dto.ModelArkVideoCreateRequest) { req.Ratio = common.GetPointer("4:3") }},
+		{name: "seed", mutate: func(req *dto.ModelArkVideoCreateRequest) { req.Seed = common.GetPointer(7) }},
+		{name: "output format", mutate: func(req *dto.ModelArkVideoCreateRequest) { req.OutputFormat = common.GetPointer("mp4") }},
+		{name: "callback", mutate: func(req *dto.ModelArkVideoCreateRequest) {
+			req.CallbackURL = common.GetPointer("https://client.example/callback")
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := base
+			test.mutate(&request)
+			require.Error(t, validateCMCCProviderModelRequest(modelSeedance20CMCC, &request))
+		})
+	}
 }
 
 func TestFunCloudMappedValidationBindsExactProviderPath(t *testing.T) {

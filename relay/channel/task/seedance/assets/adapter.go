@@ -100,6 +100,10 @@ type Adapter interface {
 	DeleteAsset(ctx context.Context, resourceID string) error
 }
 
+type AssetGroupRequirementAdapter interface {
+	RequiresAssetGroup(kind, mediaType string) bool
+}
+
 type GroupAdapter interface {
 	CreateGroup(ctx context.Context, req GroupRequest) (GroupResult, error)
 	GetGroup(ctx context.Context, resourceID string) (GroupResult, error)
@@ -131,6 +135,20 @@ type upstreamApplicationError struct {
 	definitive bool
 }
 
+type upstreamStringApplicationError struct {
+	provider   string
+	code       string
+	definitive bool
+	notFound   bool
+}
+
+func (e *upstreamStringApplicationError) Error() string {
+	if e.code == "" {
+		return fmt.Sprintf("%s asset upstream rejected request", e.provider)
+	}
+	return fmt.Sprintf("%s asset upstream rejected request with code %s", e.provider, e.code)
+}
+
 func (e *upstreamApplicationError) Error() string {
 	return fmt.Sprintf("%s asset upstream rejected request with code %d", e.provider, e.code)
 }
@@ -143,13 +161,17 @@ func IsDefinitiveUpstreamRejection(err error) bool {
 		return statusErr.StatusCode >= http.StatusBadRequest && statusErr.StatusCode < http.StatusInternalServerError
 	}
 	applicationErr, ok := err.(*upstreamApplicationError)
+	if ok {
+		if applicationErr.code == http.StatusRequestTimeout || applicationErr.code == http.StatusTooEarly || applicationErr.code == http.StatusTooManyRequests {
+			return false
+		}
+		return applicationErr.definitive || applicationErr.code >= 400 && applicationErr.code < 500 || applicationErr.code >= 40000 && applicationErr.code < 50000
+	}
+	stringErr, ok := err.(*upstreamStringApplicationError)
 	if !ok {
 		return false
 	}
-	if applicationErr.code == http.StatusRequestTimeout || applicationErr.code == http.StatusTooEarly || applicationErr.code == http.StatusTooManyRequests {
-		return false
-	}
-	return applicationErr.definitive || applicationErr.code >= 400 && applicationErr.code < 500 || applicationErr.code >= 40000 && applicationErr.code < 50000
+	return stringErr.definitive
 }
 
 func (e *upstreamHTTPError) Error() string {
@@ -160,8 +182,11 @@ func (e *upstreamHTTPError) Error() string {
 }
 
 func upstreamNotFound(err error) bool {
-	statusErr, ok := err.(*upstreamHTTPError)
-	return ok && statusErr.StatusCode == http.StatusNotFound
+	if statusErr, ok := err.(*upstreamHTTPError); ok {
+		return statusErr.StatusCode == http.StatusNotFound
+	}
+	stringErr, ok := err.(*upstreamStringApplicationError)
+	return ok && stringErr.notFound
 }
 
 func IsUpstreamNotFound(err error) bool {

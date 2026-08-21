@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-18
+last-reviewed: 2026-08-20
 ---
 
 # Seedance 专用渠道与 Link 架构
@@ -117,6 +117,7 @@ Seedance Channel 只允许一个视频渠道凭据，不使用 Multi-Key 轮换�
 ```text
 modelark_v3_volcengine
 modelark_v3_byteplus
+modelark_v3_cmcc
 tokensave_media_task_v1
 moxing_media_task_v1
 moxing_modelark_media_v1
@@ -136,6 +137,7 @@ tokensave_assets_v1
 moxing_joycreator_assets_v1
 moxing_volc_assets_v1
 funcloud_material
+cmcc_aicc_assets_v2
 ```
 
 精确枚举、路径和 transport profile 以 `relaykit/dto/upstream_protocol.go` 为代码权威。内部 transport
@@ -147,7 +149,7 @@ profile 只服务 adapter 复用和任务快照，不是第二套管理员配置
 `param_override` 和 `header_override`。管理端只根据所选协议显示真正需要的素材 Region、Project、
 AK/SK 和 URL TTL 等字段；第三方已经代管这些事实时不重复要求客户或管理员填写。
 
-视频协议与素材协议必须按代码注册关系配对。官方国内、官方海外、第三方素材和无素材库是互斥的
+视频协议与素材协议必须按代码注册关系配对。火山、BytePlus、移动云、第三方素材和无素材库是互斥的
 渠道形态；系统不在运行时从一个素材协议切换到另一个。
 
 ### 5.3 凭据轮换与 Provider 可见性
@@ -347,7 +349,7 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 - [Seedance 模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)
 - [Seedance 无状态素材代理架构](Seedance无状态素材代理架构.md)
 - [异步任务与计费事实架构](异步任务与计费事实架构.md)
-- [Link 图片服务合同与异步任务架构](Link图片服务合同与异步任务架构.md)
+- [图片服务与异步 Provider 适配架构](图片服务与异步Provider适配架构.md)
 - [Seedance Provider 接入设计](<Seedance模型接入设计/README.md>)
 - [ADR-0008：共享异步任务计费状态机与原子补偿](decisions/0008-共享异步任务计费状态机与原子补偿.md)
 - [ADR-0017：调用方自管无状态素材代理](decisions/0017-调用方自管无状态素材代理.md)
