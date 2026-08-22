@@ -60,8 +60,7 @@ const (
 	ChannelTypeNewAPI         = 60
 	ChannelTypeSeedanceLink   = 61
 	ChannelTypeAsyncImage     = 62
-	ChannelTypeMoxingImage    = 63
-	ChannelTypeDummy          // this one is only for count, do not add any channel after this
+	ChannelTypeDummy          = 63 // count sentinel; channel type 63 was retired after migration into type 62
 
 )
 
@@ -129,7 +128,7 @@ var ChannelBaseURLs = []string{
 	"",                                          //60
 	"https://ark.cn-beijing.volces.com",         //61
 	"https://mm-internal-cn.leonecloud.com",     //62
-	"https://www.moxing.pro",                    //63
+	"",                                          //63 retired, kept to preserve safe index bounds
 }
 
 var ChannelTypeNames = map[int]string{
@@ -191,8 +190,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeSub2API:        "Sub2API",
 	ChannelTypeNewAPI:         "New API",
 	ChannelTypeSeedanceLink:   "Seedance Link",
-	ChannelTypeAsyncImage:     "Async Image Relay",
-	ChannelTypeMoxingImage:    "Moxing Image",
+	ChannelTypeAsyncImage:     "Image Relay",
 }
 
 func GetChannelTypeName(channelType int) string {

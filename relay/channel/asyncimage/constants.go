@@ -1,20 +1,17 @@
 package asyncimage
 
-const (
-	ChannelName = "Async Image Relay"
+import "github.com/QuantumNous/new-api/constant"
 
-	nanoBanana2Lite = "nano-banana-2-lite"
-	nanoBanana2     = "nano-banana-2"
-	seedream5Lite   = "seedream-5.0-lite"
-	seedream5Pro    = "seedream-5.0-pro"
+const (
+	ChannelName = "FunCloud Async Image"
+
+	nanoBanana2Lite = constant.FunCloudImageProviderModelNanoBanana2Lite
+	nanoBanana2     = constant.FunCloudImageProviderModelNanoBanana2
+	seedream5Lite   = constant.FunCloudImageProviderModelSeedream5Lite
+	seedream5Pro    = constant.FunCloudImageProviderModelSeedream5Pro
 )
 
-var ModelList = []string{
-	nanoBanana2Lite,
-	nanoBanana2,
-	seedream5Lite,
-	seedream5Pro,
-}
+var ModelList = constant.FunCloudImageProviderModels()
 
 var allAspectRatios = map[string]struct{}{
 	"auto": {}, "1:1": {}, "1:4": {}, "16:9": {}, "1:8": {}, "21:9": {},

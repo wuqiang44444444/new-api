@@ -47,6 +47,14 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	var requestBody io.Reader
 
 	strictImageAPI := isStrictImageAPIType(info.ApiType)
+	if strictImageAPI && len(info.ParamOverride) > 0 {
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("strict image channels do not allow parameter overrides"),
+			types.ErrorCodeChannelParamOverrideInvalid,
+			http.StatusServiceUnavailable,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
 	allowPassThrough := !strictImageAPI
 	if allowPassThrough && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
 		storage, err := common.GetBodyStorage(c)

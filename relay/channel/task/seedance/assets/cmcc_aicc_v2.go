@@ -255,8 +255,10 @@ func (a *CMCCAICCV2Adapter) signedQuery(method, escapedPath string, now time.Tim
 		return "", err
 	}
 	values := map[string]string{
-		"AccessKey":        a.accessKey,
-		"Timestamp":        now.Format("2006-01-02T15:04:05Z"),
+		"AccessKey": a.accessKey,
+		// The CMCC V2.0 endpoint validates Beijing wall-clock time with a literal Z,
+		// matching the official SDK's localtime-based signing behavior.
+		"Timestamp":        now.UTC().Add(8 * time.Hour).Format("2006-01-02T15:04:05Z"),
 		"SignatureMethod":  "HmacSHA256",
 		"SignatureVersion": "V2.0",
 		"SignatureNonce":   hex.EncodeToString(nonce),

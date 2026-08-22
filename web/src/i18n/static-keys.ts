@@ -217,7 +217,13 @@ export const STATIC_I18N_KEYS = [
 
   // Channel types
   'Seedance Dedicated Channel',
-  'Moxing Image',
+  'Image Relay',
+
+  // Image relay protocol options
+  'FunCloud Async Image V2',
+  'Moxing Images V1',
+  'Provider API key',
+  'Provider image API base URL',
 
   // Seedance protocol options
   'Volcengine ModelArk V3',

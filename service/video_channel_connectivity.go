@@ -24,7 +24,9 @@ func CheckVideoChannelConnectivity(ctx context.Context, channel *model.Channel) 
 		)
 	}
 	protocol := channel.GetOtherSettings().VideoUpstreamProtocol
-	if protocol != dto.VideoUpstreamProtocolModelArkV3Volcengine && protocol != dto.VideoUpstreamProtocolModelArkV3BytePlus {
+	if protocol != dto.VideoUpstreamProtocolModelArkV3Volcengine &&
+		protocol != dto.VideoUpstreamProtocolModelArkV3BytePlus &&
+		protocol != dto.VideoUpstreamProtocolModelArkV3CMCC {
 		return newChannelConnectivityError(
 			ChannelConnectivityVideoInvalidConfig,
 			"Seedance channel does not use an official ModelArk V3 protocol",

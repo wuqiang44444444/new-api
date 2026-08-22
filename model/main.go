@@ -195,14 +195,17 @@ func InitDB() (err error) {
 		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
 
 		if !common.IsMasterNode {
-			return nil
+			return verifyImageRelayMigrationState()
 		}
 		if common.UsingMainDatabase(common.DatabaseTypeMySQL) {
 			//_, _ = sqlDB.Exec("ALTER TABLE channels MODIFY model_mapping TEXT;") // TODO: delete this line when most users have upgraded
 		}
 		common.SysLog("database migration started")
 		err = migrateDB()
-		return err
+		if err != nil {
+			return err
+		}
+		return verifyImageRelayMigrationState()
 	} else {
 		common.FatalLog(err)
 	}
@@ -308,6 +311,9 @@ func migrateDB() error {
 	if err := migrateFunCloudProtocolNames(); err != nil {
 		return err
 	}
+	if err := migrateImageRelayChannels(); err != nil {
+		return err
+	}
 	if err := migrateTaskApplicationScope(); err != nil {
 		return err
 	}
@@ -402,6 +408,9 @@ func migrateDBFast() error {
 		return err
 	}
 	if err := migrateFunCloudProtocolNames(); err != nil {
+		return err
+	}
+	if err := migrateImageRelayChannels(); err != nil {
 		return err
 	}
 	if err := migrateTaskApplicationScope(); err != nil {

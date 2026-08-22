@@ -34,17 +34,23 @@ func buildChannelTestImageRequest(model string) *dto.ImageRequest {
 
 func buildChannelTestImageRequestForChannel(channel *model.Channel, customerModel string) *dto.ImageRequest {
 	request := buildChannelTestImageRequest(customerModel)
-	if channel == nil || channel.Type != constant.ChannelTypeMoxingImage {
+	if channel == nil || channel.Type != constant.ChannelTypeAsyncImage {
 		return request
 	}
 	var mapping map[string]string
-	if err := common.UnmarshalJsonStr(channel.GetModelMapping(), &mapping); err != nil {
+	modelMapping := strings.TrimSpace(channel.GetModelMapping())
+	if modelMapping != "" && modelMapping != "{}" {
+		if err := common.UnmarshalJsonStr(modelMapping, &mapping); err != nil {
+			return request
+		}
+	}
+	providerModel, _, err := model.ResolveModelMapping(customerModel, mapping)
+	if err != nil {
 		return request
 	}
-	providerModel, mapped, err := model.ResolveModelMapping(customerModel, mapping)
-	fixedSize, supported := constant.MoxingImageFixedSize(providerModel)
-	if err == nil && mapped && supported {
-		request.Size = fixedSize
+	size, supported := constant.ImageRelayTestSize(channel.GetOtherSettings().ImageUpstreamProtocol, providerModel)
+	if supported {
+		request.Size = size
 	}
 	return request
 }

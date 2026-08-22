@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { z } from 'zod'
 
 import {
+  CHANNEL_TYPE_ASYNC_IMAGE,
   CHANNEL_TYPE_NEW_API,
   CHANNEL_TYPE_SEEDANCE_LINK,
   CHANNEL_STATUS,
@@ -273,6 +274,9 @@ export const channelFormSchema = z
     asset_access_key_id: z.string().optional(),
     asset_secret_access_key: z.string().optional(),
     asset_credential_configured: z.boolean().optional(),
+    image_upstream_protocol: z
+      .enum(['funcloud_aigc_v2', 'moxing_images_v1'])
+      .optional(),
     video_upstream_protocol: z
       .enum([
         'modelark_v3_volcengine',
@@ -316,15 +320,32 @@ export const channelFormSchema = z
   })
   .superRefine((data, ctx) => {
     if (
-      [3, 8, 36, 45, CHANNEL_TYPE_NEW_API, CHANNEL_TYPE_SEEDANCE_LINK].includes(
-        data.type
-      ) &&
+      [
+        3,
+        8,
+        36,
+        45,
+        CHANNEL_TYPE_NEW_API,
+        CHANNEL_TYPE_SEEDANCE_LINK,
+        CHANNEL_TYPE_ASYNC_IMAGE,
+      ].includes(data.type) &&
       !data.base_url?.trim()
     ) {
       addRequiredIssue(
         ctx,
         'base_url',
         'Base URL is required for this channel type'
+      )
+    }
+
+    if (
+      data.type === CHANNEL_TYPE_ASYNC_IMAGE &&
+      !data.image_upstream_protocol
+    ) {
+      addRequiredIssue(
+        ctx,
+        'image_upstream_protocol',
+        'Image upstream protocol is required'
       )
     }
 
@@ -481,6 +502,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   asset_access_key_id: '',
   asset_secret_access_key: '',
   asset_credential_configured: false,
+  image_upstream_protocol: 'funcloud_aigc_v2',
   video_upstream_protocol: 'modelark_v3_volcengine',
   asset_upstream_protocol: 'volcengine_assets_action_v2024_01_01',
   azure_responses_version: '',
@@ -564,6 +586,8 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
+  let imageUpstreamProtocol: ChannelFormValues['image_upstream_protocol'] =
+    'funcloud_aigc_v2'
   let videoUpstreamProtocol: ChannelFormValues['video_upstream_protocol'] =
     'modelark_v3_volcengine'
   let assetUpstreamProtocol: ChannelFormValues['asset_upstream_protocol'] =
@@ -579,6 +603,8 @@ export function transformChannelToFormDefaults(
       assetMinURLTTLSeconds = parsed.asset_min_url_ttl_seconds || 0
       assetProviderProject = parsed.asset_provider_project || ''
       assetRegion = parsed.asset_region || ''
+      imageUpstreamProtocol =
+        parsed.image_upstream_protocol || 'funcloud_aigc_v2'
       videoUpstreamProtocol =
         parsed.video_upstream_protocol || 'modelark_v3_volcengine'
       assetUpstreamProtocol = parsed.asset_upstream_protocol || 'none'
@@ -648,6 +674,7 @@ export function transformChannelToFormDefaults(
     asset_secret_access_key: '',
     asset_credential_configured:
       channel.asset_credential_status?.configured === true,
+    image_upstream_protocol: imageUpstreamProtocol,
     video_upstream_protocol: videoUpstreamProtocol,
     asset_upstream_protocol: assetUpstreamProtocol,
     allow_service_tier: allowServiceTier,
@@ -770,6 +797,13 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     delete settingsObj.asset_region
     delete settingsObj.video_upstream_protocol
     delete settingsObj.asset_upstream_protocol
+  }
+
+  if (formData.type === CHANNEL_TYPE_ASYNC_IMAGE) {
+    settingsObj.image_upstream_protocol =
+      formData.image_upstream_protocol || 'funcloud_aigc_v2'
+  } else {
+    delete settingsObj.image_upstream_protocol
   }
 
   // Field passthrough controls:

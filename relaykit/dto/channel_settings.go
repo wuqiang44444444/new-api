@@ -85,6 +85,7 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastRemovedModels  []string              `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string              `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
 	AdvancedCustom                        *AdvancedCustomConfig `json:"advanced_custom,omitempty"`
+	ImageUpstreamProtocol                 ImageUpstreamProtocol `json:"image_upstream_protocol,omitempty"`
 	VideoUpstreamProtocol                 VideoUpstreamProtocol `json:"video_upstream_protocol,omitempty"`
 	AssetUpstreamProtocol                 AssetUpstreamProtocol `json:"asset_upstream_protocol,omitempty"`
 	VideoUpstreamProfile                  VideoUpstreamProfile  `json:"video_upstream_profile,omitempty"`             // Seedance 运行时传输形状，不是管理员配置协议

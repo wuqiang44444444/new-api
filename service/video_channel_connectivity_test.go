@@ -50,6 +50,22 @@ func TestCheckVideoChannelConnectivityUsesReadOnlyListEndpoint(t *testing.T) {
 	assert.Equal(t, "Bearer video-api-key", authorization)
 }
 
+func TestCheckVideoChannelConnectivityAcceptsCMCCProtocol(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"total":0,"items":[]}`))
+	}))
+	t.Cleanup(upstream.Close)
+	channel := officialVideoConnectivityTestChannel(upstream.URL, "video-api-key")
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3CMCC,
+	})
+
+	err := CheckVideoChannelConnectivity(context.Background(), channel)
+
+	require.NoError(t, err)
+}
+
 func TestCheckVideoChannelConnectivityReturnsStableErrors(t *testing.T) {
 	tests := []struct {
 		name        string

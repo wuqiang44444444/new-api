@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-20
+last-reviewed: 2026-08-21
 ---
 
 # 20-architecture — 架构索引
@@ -61,7 +61,7 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 | Seedance 代理 | [Seedance无状态素材代理架构](Seedance无状态素材代理架构.md) | opaque ID、无状态路由、Provider 边界和安全不变量 | 素材 Service、`asset_upstream_protocol` adapter |
 | 异步与计费 | [账单计费-异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md) | create attempt、Task、资金、结算和 Provider exposure | `model/task*.go`、Task billing、exposure |
 | 计费表达式 | [账单计费-计费表达式与协议探针架构](账单计费-计费表达式与协议探针架构.md) | 表达式校验、协议探针、价格快照和终态结算 | `pkg/billingexpr/`、`setting/billing_setting/` |
-| 图片数据面 | [图片服务与异步Provider适配架构](图片服务与异步Provider适配架构.md) | 原生图片入口、异步 Provider 内联轮询、同步 Provider 适配和计费边界 | 图片 relay、`ChannelTypeAsyncImage`、`ChannelTypeMoxingImage`、专用 adaptor |
+| 图片数据面 | [图片服务与异步Provider适配架构](图片服务与异步Provider适配架构.md) | 原生图片入口、显式上游协议、异步 Provider 内联轮询、同步 Provider 适配和计费边界 | `ChannelTypeAsyncImage`、`image_upstream_protocol`、图片 dispatch 与专用 adaptor |
 | Provider 接入 | [Seedance模型接入设计](Seedance模型接入设计/README.md) | 六类 Provider 的原始文档、对接、价格和能力元数据 | Provider adapter、模型映射、真实验证 |
 | 账单投影 | [账单计费-APIKEY用量账单架构](账单计费-APIKEY用量账单架构.md) | 结算日志到用户账单的只读投影 | billing statement controller/model |
 | 对账投影 | [账单计费-客户与上游对账架构](账单计费-客户与上游对账架构.md) | 客户/上游对账、折扣审计和计费快照聚合 | reconciliation router/controller/model |

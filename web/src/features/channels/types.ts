@@ -115,6 +115,7 @@ export interface ChannelOtherSettings {
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
   advanced_custom?: AdvancedCustomConfig
+  image_upstream_protocol?: 'funcloud_aigc_v2' | 'moxing_images_v1'
   asset_min_url_ttl_seconds?: number
   asset_provider_project?: string
   asset_region?: string

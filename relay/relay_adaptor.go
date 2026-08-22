@@ -7,7 +7,6 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/advancedcustom"
 	"github.com/QuantumNous/new-api/relay/channel/ali"
-	"github.com/QuantumNous/new-api/relay/channel/asyncimage"
 	"github.com/QuantumNous/new-api/relay/channel/aws"
 	"github.com/QuantumNous/new-api/relay/channel/baidu"
 	"github.com/QuantumNous/new-api/relay/channel/baidu_v2"
@@ -19,13 +18,13 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/deepseek"
 	"github.com/QuantumNous/new-api/relay/channel/dify"
 	"github.com/QuantumNous/new-api/relay/channel/gemini"
+	"github.com/QuantumNous/new-api/relay/channel/imagerelay"
 	"github.com/QuantumNous/new-api/relay/channel/jimeng"
 	"github.com/QuantumNous/new-api/relay/channel/jina"
 	"github.com/QuantumNous/new-api/relay/channel/minimax"
 	"github.com/QuantumNous/new-api/relay/channel/mistral"
 	"github.com/QuantumNous/new-api/relay/channel/mokaai"
 	"github.com/QuantumNous/new-api/relay/channel/moonshot"
-	"github.com/QuantumNous/new-api/relay/channel/moxingimage"
 	"github.com/QuantumNous/new-api/relay/channel/newapi"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
@@ -133,9 +132,7 @@ func GetAdaptor(apiType int) channel.Adaptor {
 	case constant.APITypeNewAPI:
 		return &newapi.Adaptor{}
 	case constant.APITypeAsyncImage:
-		return &asyncimage.Adaptor{}
-	case constant.APITypeMoxingImage:
-		return &moxingimage.Adaptor{}
+		return &imagerelay.Adaptor{}
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,15 +45,18 @@ func TestNormalizeChannelTestEndpointUsesAsyncImageEndpoint(t *testing.T) {
 	assert.Equal(t, string(constant.EndpointTypeImageGeneration), normalizeChannelTestEndpoint(channel, "nano-banana-2", ""))
 }
 
-func TestBuildChannelTestImageRequestForMoxingUsesMappedProviderProfile(t *testing.T) {
+func TestBuildChannelTestImageRequestForImageRelayUsesSelectedProtocolProfile(t *testing.T) {
 	channel := &model.Channel{
-		Type:   constant.ChannelTypeMoxingImage,
+		Type:   constant.ChannelTypeAsyncImage,
 		Models: "lite-customer-model,pro-customer-model",
 		ModelMapping: common.GetPointer(`{
 			"lite-customer-model":"doubao-seedream-5-0-260128",
 			"pro-customer-model":"doubao-seedream-5-0-pro-260628"
 		}`),
 	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		ImageUpstreamProtocol: dto.ImageUpstreamProtocolMoxingImagesV1,
+	})
 	tests := []struct {
 		name          string
 		customerModel string
@@ -71,9 +75,4 @@ func TestBuildChannelTestImageRequestForMoxingUsesMappedProviderProfile(t *testi
 			assert.Equal(t, test.wantSize, request.Size)
 		})
 	}
-}
-
-func TestNormalizeChannelTestEndpointUsesMoxingImageEndpoint(t *testing.T) {
-	channel := &model.Channel{Type: constant.ChannelTypeMoxingImage}
-	assert.Equal(t, string(constant.EndpointTypeImageGeneration), normalizeChannelTestEndpoint(channel, "customer-image-model", ""))
 }

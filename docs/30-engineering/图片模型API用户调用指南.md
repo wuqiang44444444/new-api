@@ -12,12 +12,14 @@ last-reviewed: 2026-08-21
 始终等待本次 Provider 调用完成并返回 HTTP `200`；客户端不接收、不查询 Provider task ID，也不存在
 图片专用 `/v1/images/tasks/:task_id`。
 
-FunCloud 中转异步图片渠道虽然南向创建任务并轮询，但 adaptor 在同一请求内完成等待。等待上限由部署
-的 `RELAY_TIMEOUT` 决定；超时或取消按普通同步图片失败/退款语义处理。调用方不要盲目重发，因为
-Provider 可能已经受理请求。
+管理端只提供「图片中转」一个渠道类型。每条渠道由管理员显式选择 `funcloud_aigc_v2` 或
+`moxing_images_v1`，并独立配置 Base URL、Key、客户模型和 `model_mapping`；同一渠道实例不能混放两个
+协议的 Provider 模型。协议不从模型名、映射、价格或 Base URL 推断。
 
-Moxing 图片渠道南向使用一次同步 POST，也复用同一北向入口和同步计费链路。当前代码支持 Lite/Pro
-固定 `2K` 单图文生图；真实 Provider、账单与超时歧义尚未验收，管理员启用渠道前不能把下述代码合同视为生产可用承诺。
+FunCloud 虽然南向创建任务并轮询，但 adaptor 在同一请求内完成等待。Moxing 南向使用一次同步 POST。
+两者的等待上限均由部署的 `RELAY_TIMEOUT` 决定；超时或取消按普通同步图片失败/退款语义处理。调用方
+不要盲目重发，因为 Provider 可能已经受理请求。Moxing 当前代码支持 Lite/Pro 固定 `2K` 单图文生图；
+真实 Provider、账单与超时歧义尚未验收，管理员启用前不能把下述代码合同视为生产可用承诺。
 
 ## 2. 最小请求
 
@@ -62,7 +64,8 @@ URL 可能有有效期，需要长期使用时请及时下载到你控制的存�
 
 ## 4. Moxing 兼容子集
 
-Moxing 客户模型名可由管理员定义；当前预置一个禁用渠道，在同一 Key 下承载两个独立客户别名：
+Moxing 客户模型名可由管理员定义；选择 `moxing_images_v1` 的一条图片中转渠道可在同一 Key 下承载
+两个独立客户别名：
 
 | 客户模型 | Provider 模型 | 固定规格 | 默认客户价 |
 | --- | --- | --- | --- |
@@ -81,8 +84,9 @@ Moxing 客户模型名可由管理员定义；当前预置一个禁用渠道，�
 }
 ```
 
-客户模型和 `model_mapping` 均由管理员配置；代码只要求每个渠道模型经过 NEWAPI 原生映射链后，最终落到
-登记的 Moxing Provider profile。客户模型直接使用 Provider 模型名时可以不配置映射。
+客户模型和 `model_mapping` 均由管理员配置；选择协议不会创建或改写 mapping。代码只要求每个渠道模型
+经过 NEWAPI 原生映射链后，最终落到所选协议登记的 Provider profile。客户模型直接使用 Provider 模型名
+时可以不配置映射。
 两个模型当前都只允许 prompt 1—3000 字符、`n` 省略或为 `1`、固定 `2K`、URL 响应。参考图、组图、
 联网搜索、Base64、stream、任意宽高、输出格式、watermark、未知顶层字段和非空 `extra_fields` 均在
 发送 Provider 请求前返回 HTTP `400`。客户模型名本身不赋予能力；映射目标不在代码登记表时同样拒绝。

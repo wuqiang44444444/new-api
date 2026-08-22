@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -526,6 +527,10 @@ func parseTopLevelString(raw json.RawMessage, fieldName string) (string, error) 
 }
 
 func validateModelFields(modelName string, payload *imagePayload, size, topQuality, resolution, extraQuality, outputFormat, aspectRatio string) error {
+	publishedSize, supported := constant.FunCloudImagePublishedSize(modelName)
+	if !supported {
+		return badRequest(fmt.Sprintf("unsupported async image model %q", modelName))
+	}
 	if aspectRatio != "" {
 		allowed := allAspectRatios
 		if modelName == seedream5Lite {
@@ -553,9 +558,9 @@ func validateModelFields(modelName string, payload *imagePayload, size, topQuali
 			resolution = size
 		}
 		if resolution == "" {
-			resolution = "1K"
+			resolution = publishedSize
 		}
-		if resolution != "1K" {
+		if resolution != publishedSize {
 			return badRequest("nano-banana-2 is currently published at fixed 1K resolution")
 		}
 		if size != "" && resolution != "" && size != resolution {
@@ -582,14 +587,11 @@ func validateModelFields(modelName string, payload *imagePayload, size, topQuali
 	if quality != "basic" && quality != "high" {
 		return badRequest("quality must be basic or high")
 	}
-	if size != "" {
-		if (modelName == seedream5Lite && size != "2K") || (modelName == seedream5Pro && size != "1K") {
-			return badRequest("this Seedream model is currently published at a fixed base resolution")
-		}
-	} else if modelName == seedream5Lite {
-		size = "2K"
-	} else if modelName == seedream5Pro {
-		size = "1K"
+	if size != "" && size != publishedSize {
+		return badRequest("this Seedream model is currently published at a fixed base resolution")
+	}
+	if size == "" {
+		size = publishedSize
 	}
 	if quality != "basic" {
 		// Seedream higher quality/resolution variants have different provider

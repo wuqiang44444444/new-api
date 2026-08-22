@@ -35,7 +35,7 @@ func TestCMCCAICCV2CreateAssetUsesSignedRESTContract(t *testing.T) {
 	assert.Equal(t, http.MethodPost, captured.Method)
 	assert.Equal(t, "/api/openapi-maas/exp/aicc/v2/asset", captured.URL.Path)
 	assert.Equal(t, "ACCESS", captured.URL.Query().Get("AccessKey"))
-	assert.Equal(t, "2026-08-21T01:02:03Z", captured.URL.Query().Get("Timestamp"))
+	assert.Equal(t, "2026-08-21T09:02:03Z", captured.URL.Query().Get("Timestamp"))
 	assert.Equal(t, "HmacSHA256", captured.URL.Query().Get("SignatureMethod"))
 	assert.Equal(t, "V2.0", captured.URL.Query().Get("SignatureVersion"))
 	assert.NotEmpty(t, captured.URL.Query().Get("SignatureNonce"))
@@ -125,7 +125,7 @@ func TestCMCCAICCV2SignatureMatchesFixedProviderVector(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t,
-		"AccessKey=ACCESS&Signature=2d19c7ca26d461a67921fae52d60b65eb6138731148f5f0fb897b1e209804815&SignatureMethod=HmacSHA256&SignatureNonce=000102030405060708090a0b0c0d0e0f&SignatureVersion=V2.0&Timestamp=2026-08-21T01%3A02%3A03Z",
+		"AccessKey=ACCESS&Signature=d7864abc35652bc8ffb33d7750e4d6c60f8d43471472dd0450d47dafaee44cbb&SignatureMethod=HmacSHA256&SignatureNonce=000102030405060708090a0b0c0d0e0f&SignatureVersion=V2.0&Timestamp=2026-08-21T09%3A02%3A03Z",
 		query,
 	)
 }

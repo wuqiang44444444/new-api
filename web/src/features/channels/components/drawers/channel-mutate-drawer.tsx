@@ -139,6 +139,7 @@ import {
 import {
   ADD_MODE_OPTIONS,
   CHANNEL_STATUS_LABELS,
+  CHANNEL_TYPE_ASYNC_IMAGE,
   CHANNEL_TYPE_SEEDANCE_LINK,
   CHANNEL_TYPE_OPTIONS,
   CHANNEL_TYPE_WARNINGS,
@@ -183,6 +184,7 @@ import {
 import { ParamOverrideEditorDialog } from '../dialogs/param-override-editor-dialog'
 import { StatusCodeRiskDialog } from '../dialogs/status-code-risk-dialog'
 import { ModelMappingEditor } from '../model-mapping-editor'
+import { ImageRelayProtocolFields } from './image-relay-protocol-fields'
 import { OfficialChannelConnectivityPanel } from './official-channel-connectivity-panel'
 import {
   ChannelAdvancedSection,
@@ -284,6 +286,7 @@ const SENSITIVE_FORM_FIELDS = [
   'vertex_key_type',
   'aws_key_type',
   'azure_responses_version',
+  'image_upstream_protocol',
   'video_upstream_protocol',
   'asset_upstream_protocol',
   'asset_min_url_ttl_seconds',
@@ -2386,6 +2389,13 @@ export function ChannelMutateDrawer({
                                 credentialStatus={
                                   channelData?.data?.asset_credential_status
                                 }
+                              />
+                            )}
+
+                            {currentType === CHANNEL_TYPE_ASYNC_IMAGE && (
+                              <ImageRelayProtocolFields
+                                control={form.control}
+                                sensitiveLocked={sensitiveLocked}
                               />
                             )}
 
