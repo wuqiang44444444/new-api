@@ -24,7 +24,6 @@ func TestAssetRouterPublishesOnlyAssetsAndAssetGroups(t *testing.T) {
 		http.MethodDelete + " /v1/assets/:asset_id",
 		http.MethodPost + " /v1/asset-groups",
 		http.MethodGet + " /v1/asset-groups/:group_id",
-		http.MethodDelete + " /v1/asset-groups/:group_id",
 	} {
 		_, ok := routes[expected]
 		assert.True(t, ok, expected)
@@ -33,6 +32,7 @@ func TestAssetRouterPublishesOnlyAssetsAndAssetGroups(t *testing.T) {
 	for _, removed := range []string{
 		http.MethodGet + " /v1/assets",
 		http.MethodGet + " /v1/asset-groups",
+		http.MethodDelete + " /v1/asset-groups/:group_id",
 		http.MethodGet + " /v1/api-service-rules/current",
 		http.MethodPost + " /v1/api-service-rules/acceptance",
 		http.MethodPost + " /v1/real-person-authorizations",

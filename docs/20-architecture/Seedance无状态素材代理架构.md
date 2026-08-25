@@ -56,10 +56,10 @@ customer model -> unique Seedance Channel -> model_mapping -> code adapter -> Pr
 | 删除素材 | `DELETE /v1/assets/{asset_id}?model=...` | 只发送到该模型选定的 Provider |
 | 创建素材组/认证会话 | `POST /v1/asset-groups` | 真人认证属于 Provider 素材组流程 |
 | 查询素材组/认证会话 | `GET /v1/asset-groups/{id}?model=...` | 认证会话使用显式查询参数区分 |
-| 删除素材组 | `DELETE /v1/asset-groups/{group_id}?model=...` | 不支持时诚实失败 |
 
-不注册 `GET /v1/assets` 和 `GET /v1/asset-groups`。第三方 adapter 如需分页 List，只能在南向调用内部
-使用，不得将结果发布为客户目录。
+不注册 `GET /v1/assets`、`GET /v1/asset-groups` 或 `DELETE /v1/asset-groups/{group_id}`。平台不主动
+删除素材组；Provider 即使提供删除能力，也只能由 Provider 管理员在明确影响范围后执行。第三方 adapter
+如需分页 List，只能在南向调用内部使用，不得将结果发布为客户目录。
 
 Provider 返回的 `id` 和视频 `reference` 均由调用方保存，二者可以不同。平台可以返回
 `asset://<opaque-id>`，但不把该引用转换成本地资源 ID，也不验证其来源。视频 adapter 最终将存在性、

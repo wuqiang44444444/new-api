@@ -963,9 +963,10 @@ func DeleteChannelBatch(c *gin.Context) {
 
 type PatchChannel struct {
 	model.Channel
-	MultiKeyMode    *string                          `json:"multi_key_mode"`
-	KeyMode         *string                          `json:"key_mode"` // 多key模式下密钥覆盖或者追加
-	AssetCredential *dto.ChannelAssetCredentialInput `json:"asset_credential,omitempty"`
+	MultiKeyMode                *string                          `json:"multi_key_mode"`
+	KeyMode                     *string                          `json:"key_mode"` // 多key模式下密钥覆盖或者追加
+	AssetCredential             *dto.ChannelAssetCredentialInput `json:"asset_credential,omitempty"`
+	ConfirmAssetTenantUnchanged bool                             `json:"confirm_asset_tenant_unchanged,omitempty"`
 }
 
 type ChannelStatusRequest struct {
@@ -1139,11 +1140,19 @@ func UpdateChannel(c *gin.Context) {
 		} else {
 			assetCredentialAudit = "rotated"
 		}
-		err = model.UpdateChannelWithAssetCredentialActor(&channel.Channel, channel.AssetCredential, c.GetInt("id"))
+		err = model.UpdateChannelWithAssetCredentialActor(
+			&channel.Channel,
+			channel.AssetCredential,
+			c.GetInt("id"),
+			channel.ConfirmAssetTenantUnchanged,
+		)
 	} else {
-		err = channel.UpdateWithActor(c.GetInt("id"))
+		err = channel.UpdateWithActorAndAssetTenantConfirmation(c.GetInt("id"), channel.ConfirmAssetTenantUnchanged)
 	}
 	if err != nil {
+		if respondAssetTenantMutationError(c, err) {
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -1171,14 +1180,18 @@ func UpdateChannel(c *gin.Context) {
 	if channel.AssetCredential != nil {
 		changedFields = append(changedFields, "asset_credential")
 	}
+	assetTenantConfirmationAudit := channel.ConfirmAssetTenantUnchanged &&
+		(channel.AssetCredential != nil || (channel.Key != "" && channel.Key != originChannel.Key))
 	recordManageAudit(c, "channel.update", map[string]interface{}{
-		"id":               channel.Id,
-		"name":             channel.Name,
-		"changed_fields":   changedFields,
-		"asset_credential": assetCredentialAudit,
+		"id":                               channel.Id,
+		"name":                             channel.Name,
+		"changed_fields":                   changedFields,
+		"asset_credential":                 assetCredentialAudit,
+		"asset_tenant_unchanged_confirmed": assetTenantConfirmationAudit,
 	})
 	channel.Key = ""
 	channel.AssetCredential = nil
+	channel.ConfirmAssetTenantUnchanged = false
 	clearChannelInfo(&channel.Channel)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -1503,7 +1516,7 @@ func CopyChannel(c *gin.Context) {
 		// disabled until an administrator finishes the one-model/one-channel
 		// handover explicitly.
 		clone.Status = common.ChannelStatusManuallyDisabled
-		if cloneSettings.AssetUpstreamProtocol.TransportProfile() == dto.AssetUpstreamProfileOfficial {
+		if channelUsesOfficialAssetCredential(&clone) {
 			cloneSettings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolNone
 			cloneSettings.AssetMinURLTTLSeconds = 0
 			cloneSettings.AssetProviderProject = ""

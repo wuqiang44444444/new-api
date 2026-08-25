@@ -96,16 +96,6 @@ func GetAssetGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-func DeleteAssetGroup(c *gin.Context) {
-	if err := service.DeleteRemoteAssetGroup(
-		c.Request.Context(), assetRequestGroup(c), c.Query("model"), c.Param("group_id"),
-	); err != nil {
-		writeAssetServiceError(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
 func assetRequestGroup(c *gin.Context) string {
 	return common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 }
@@ -119,8 +109,6 @@ func writeAssetServiceError(c *gin.Context, err error) {
 		assetAPIError(c, http.StatusNotFound, "asset_not_found", "asset was not found by the selected model")
 	case errors.Is(err, service.ErrAssetModelNotFound):
 		assetAPIError(c, http.StatusNotFound, "model_not_found", "model was not found")
-	case errors.Is(err, service.ErrAssetGroupNotEmpty):
-		assetAPIError(c, http.StatusConflict, "asset_group_not_empty", "asset group is not empty")
 	case errors.Is(err, service.ErrUnsupportedAssetType):
 		assetAPIError(c, http.StatusUnprocessableEntity, "unsupported_asset_type", "asset type is not supported")
 	case errors.Is(err, service.ErrUnsupportedAssetOperation), errors.Is(err, service.ErrAssetLibraryUnsupported):

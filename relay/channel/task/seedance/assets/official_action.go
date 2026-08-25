@@ -139,10 +139,6 @@ func (a *OfficialActionAdapter) GetGroup(ctx context.Context, resourceID string)
 	return normalizeOfficialGroup(response), err
 }
 
-func (a *OfficialActionAdapter) DeleteGroup(ctx context.Context, resourceID string) error {
-	return a.doAction(ctx, "DeleteAssetGroup", map[string]any{"Id": resourceID, "ProjectName": a.providerProject}, nil)
-}
-
 func (a *OfficialActionAdapter) ListAssets(ctx context.Context, request AssetListRequest) ([]AssetResult, int, error) {
 	groupType := strings.TrimSpace(request.GroupType)
 	if groupType == "" {

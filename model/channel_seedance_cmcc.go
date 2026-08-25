@@ -2,9 +2,7 @@ package model
 
 import (
 	"fmt"
-	"strings"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 )
 
@@ -26,17 +24,12 @@ func validateCMCCSeedanceChannel(channel *Channel, settings *dto.ChannelOtherSet
 	); err != nil {
 		return err
 	}
-	models := channel.GetModels()
-	if len(models) != 1 {
-		return fmt.Errorf("CMCC Seedance channels require exactly one customer model")
-	}
-	customerModel := strings.TrimSpace(models[0])
-	var mapping map[string]string
-	if err := common.UnmarshalJsonStr(channel.GetModelMapping(), &mapping); err != nil {
-		return fmt.Errorf("CMCC Seedance requires one exact model_mapping entry")
-	}
-	if len(mapping) != 1 || strings.TrimSpace(mapping[customerModel]) != CMCCSeedance20ProviderModel {
-		return fmt.Errorf("CMCC Seedance model_mapping must map customer model %q to %q", customerModel, CMCCSeedance20ProviderModel)
+	if _, err := resolveSeedanceChannelProviderModels(
+		channel,
+		settings.VideoUpstreamProtocol,
+		map[string]struct{}{CMCCSeedance20ProviderModel: {}},
+	); err != nil {
+		return err
 	}
 	settings.AssetProviderProject = ""
 	settings.AssetRegion = ""

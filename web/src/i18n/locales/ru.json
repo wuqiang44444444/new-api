@@ -5938,5 +5938,16 @@
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom"
   },
-  "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.": "Отключите протокол ресурсов с отдельными учетными данными и сохраните канал перед удалением сохраненных учетных данных."
+  "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.": "Отключите протокол ресурсов с отдельными учетными данными и сохраните канал перед удалением сохраненных учетных данных.",
+  "Asset library boundary: this channel": "Граница библиотеки: этот канал",
+  "One Seedance channel represents one upstream asset tenant. Put every model that must share assets in this channel; create another channel for a different tenant.": "Один канал Seedance представляет одного вышестоящего арендатора ресурсов. Поместите в этот канал все модели, которые должны совместно использовать ресурсы; для другого арендатора создайте новый канал.",
+  "Models sharing this asset library: {{models}}": "Модели с общей библиотекой: {{models}}",
+  "None selected": "Ничего не выбрано",
+  "Confirm asset credential rotation": "Подтвердить смену учётных данных",
+  "Confirm tenant is unchanged": "Подтвердить неизменность арендатора",
+  "Only continue when these credentials belong to the same upstream asset tenant. If the account or tenant changed, cancel and create a new channel.": "Продолжайте, только если эти учётные данные принадлежат тому же вышестоящему арендатору ресурсов. Если учётная запись или арендатор изменились, отмените операцию и создайте новый канал.",
+  "Models sharing this asset library": "Модели с общей библиотекой",
+  "This channel already defines an asset tenant. Create a new channel to change its type, Base URL, protocols, project, or region.": "Для этого канала уже задан арендатор ресурсов. Чтобы изменить тип, базовый URL, протоколы, проект или регион, создайте новый канал.",
+  "Credential rotation requires confirmation that the upstream asset tenant is unchanged.": "Для смены учётных данных требуется подтвердить, что вышестоящий арендатор ресурсов не изменился.",
+  "Asset share group {{label}}": "Группа общих ресурсов {{label}}"
 }

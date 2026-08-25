@@ -66,10 +66,6 @@ func (a *ArkAdapter) GetGroup(ctx context.Context, resourceID string) (GroupResu
 	return normalizeArkGroup(response), err
 }
 
-func (a *ArkAdapter) DeleteGroup(ctx context.Context, resourceID string) error {
-	return ErrGroupDeletionUnsupported
-}
-
 func (a *ArkAdapter) CreateAsset(ctx context.Context, req AssetRequest) (AssetResult, error) {
 	var response arkAssetResponse
 	err := a.request(ctx, http.MethodPost, "/v1/ark/assets", map[string]any{"GroupId": req.GroupResourceID, "URL": req.URL, "AssetType": normalizedMediaType(req.MediaType), "Name": req.Name}, &response)

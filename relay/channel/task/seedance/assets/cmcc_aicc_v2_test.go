@@ -50,8 +50,8 @@ func TestCMCCAICCV2CreateAssetUsesSignedRESTContract(t *testing.T) {
 	assert.Equal(t, "processing", result.Status)
 }
 
-func TestCMCCAICCV2ImplementsReadOnlyConnectivityCRUDAndVerification(t *testing.T) {
-	requests := make([]string, 0, 9)
+func TestCMCCAICCV2ImplementsReadOnlyConnectivityAssetCRUDAndGroupVerification(t *testing.T) {
+	requests := make([]string, 0, 8)
 	adapter, err := NewCMCCAICCV2Adapter("ACCESS|SECRET", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		key := req.Method + " " + req.URL.Path
 		requests = append(requests, key)
@@ -64,12 +64,10 @@ func TestCMCCAICCV2ImplementsReadOnlyConnectivityCRUDAndVerification(t *testing.
 			return assetJSONResponse(`{"requestId":"request-update","state":"OK","body":{"assetId":"asset-1","status":"ACTIVE"}}`), nil
 		case "DELETE /api/openapi-maas/exp/aicc/v2/asset/asset-1":
 			return assetJSONResponse(`{"requestId":"request-delete","state":"OK","body":true}`), nil
-		case "POST /api/openapi-maas/exp/aicc/v2/asset-group/":
+		case "POST /api/openapi-maas/exp/aicc/v2/asset-group":
 			return assetJSONResponse(`{"requestId":"request-group-create","state":"OK","body":{"groupId":"group-1","groupType":"AIGC","groupName":"characters"}}`), nil
 		case "GET /api/openapi-maas/exp/aicc/v2/asset-group/group-1":
 			return assetJSONResponse(`{"requestId":"request-group-get","state":"OK","body":{"groupId":"group-1","groupType":"AIGC","groupName":"characters"}}`), nil
-		case "DELETE /api/openapi-maas/exp/aicc/v2/asset-group/group-1":
-			return assetJSONResponse(`{"requestId":"request-group-delete","state":"OK","body":true}`), nil
 		case "POST /api/openapi-maas/exp/aicc/v2/real-person-auth/sessions":
 			return assetJSONResponse(`{"requestId":"request-session","state":"OK","body":{"bytedToken":"opaque-session","h5Link":"https://verify.example/session","expiresIn":1800}}`), nil
 		case "POST /api/openapi-maas/exp/aicc/v2/real-person-auth/asset-group/by-byted-token":
@@ -95,7 +93,6 @@ func TestCMCCAICCV2ImplementsReadOnlyConnectivityCRUDAndVerification(t *testing.
 	assert.Equal(t, "group-1", group.ResourceID)
 	_, err = adapter.GetGroup(context.Background(), "group-1")
 	require.NoError(t, err)
-	require.NoError(t, adapter.DeleteGroup(context.Background(), "group-1"))
 	session, err := adapter.CreateVerificationSession(context.Background(), VerificationRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, "opaque-session", session.SessionID)
@@ -104,7 +101,7 @@ func TestCMCCAICCV2ImplementsReadOnlyConnectivityCRUDAndVerification(t *testing.
 	require.NoError(t, err)
 	assert.Equal(t, "real-group-1", verification.GroupID)
 	assert.Equal(t, "active", verification.Status)
-	assert.Len(t, requests, 9)
+	assert.Len(t, requests, 8)
 }
 
 func TestCMCCAICCV2SignatureMatchesFixedProviderVector(t *testing.T) {
@@ -119,13 +116,13 @@ func TestCMCCAICCV2SignatureMatchesFixedProviderVector(t *testing.T) {
 
 	query, err := adapter.signedQuery(
 		http.MethodPost,
-		"/api/openapi-maas/exp/aicc/v2/asset-group/",
+		"/api/openapi-maas/exp/aicc/v2/asset-group",
 		time.Date(2026, time.August, 21, 1, 2, 3, 0, time.UTC),
 	)
 	require.NoError(t, err)
 
 	assert.Equal(t,
-		"AccessKey=ACCESS&Signature=d7864abc35652bc8ffb33d7750e4d6c60f8d43471472dd0450d47dafaee44cbb&SignatureMethod=HmacSHA256&SignatureNonce=000102030405060708090a0b0c0d0e0f&SignatureVersion=V2.0&Timestamp=2026-08-21T09%3A02%3A03Z",
+		"AccessKey=ACCESS&Signature=468421ee51dadadbdfcf4af8032dab08cd30df990247acdfe5d820130fecafcf&SignatureMethod=HmacSHA256&SignatureNonce=000102030405060708090a0b0c0d0e0f&SignatureVersion=V2.0&Timestamp=2026-08-21T09%3A02%3A03Z",
 		query,
 	)
 }

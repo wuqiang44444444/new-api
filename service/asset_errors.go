@@ -7,7 +7,6 @@ var (
 	ErrAssetNotFound             = errors.New("asset not found")
 	ErrUnsupportedAssetType      = errors.New("unsupported asset type for upstream")
 	ErrUnsupportedAssetOperation = errors.New("asset operation is not supported by this model")
-	ErrAssetGroupNotEmpty        = errors.New("asset group is not empty")
 	ErrAssetModelNotFound        = errors.New("asset model was not found")
 	ErrAssetLibraryUnsupported   = errors.New("asset library is not supported by this model")
 	ErrAssetLibraryUnavailable   = errors.New("asset library is unavailable")

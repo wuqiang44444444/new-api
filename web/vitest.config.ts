@@ -23,6 +23,7 @@ export default defineConfig({
       'src/features/channels/lib/__tests__/seedance-protocol-validation.test.ts',
       'src/features/customer-contracts/**/*.{test,spec}.{ts,tsx}',
       'src/features/docs/**/*.{test,spec}.{ts,tsx}',
+      'src/features/pricing/lib/__tests__/asset-share-groups.test.ts',
       'src/hooks/__tests__/**/*.{test,spec}.{ts,tsx}',
       'src/features/keys/components/**/customer-contract*.{test,spec}.{ts,tsx}',
       'src/features/system-settings/models/**/model-pricing-switch*.{test,spec}.{ts,tsx}',

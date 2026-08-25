@@ -46,11 +46,11 @@ func TestUnsupportedAdapterOperationHasExplicitPublicSentinel(t *testing.T) {
 func TestSeedanceAssetAdapterDistinguishesUnsupportedFromInvalidProtocol(t *testing.T) {
 	channel := &model.Channel{Type: constant.ChannelTypeSeedanceLink, Key: "unused"}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone})
-	_, _, err := seedanceAssetAdapter(channel)
+	_, err := seedanceAssetAdapter(channel)
 	assert.ErrorIs(t, err, ErrAssetLibraryUnsupported)
 
 	channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocol("unknown_asset_protocol")})
-	_, _, err = seedanceAssetAdapter(channel)
+	_, err = seedanceAssetAdapter(channel)
 	assert.ErrorIs(t, err, ErrAssetLibraryUnavailable)
 	assert.NotErrorIs(t, err, ErrAssetLibraryUnsupported)
 }

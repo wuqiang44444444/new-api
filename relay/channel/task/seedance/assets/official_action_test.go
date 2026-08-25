@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -141,21 +140,6 @@ func TestOfficialActionVerificationUsesOpaqueProviderSession(t *testing.T) {
 	assert.Equal(t, "project-a", bodies[0]["ProjectName"])
 	assert.Equal(t, "short-lived-token", bodies[1]["BytedToken"])
 	assert.Equal(t, "project-a", bodies[1]["ProjectName"])
-}
-
-func TestOfficialActionDeleteGroupUsesVerifiedActionAndNoBearerAuth(t *testing.T) {
-	adapter, err := NewBytePlusActionAdapter(
-		"ACCESS|SECRET",
-		"ap-southeast-1",
-		"project-a",
-		assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
-			assert.Equal(t, "DeleteAssetGroup", req.URL.Query().Get("Action"))
-			assert.False(t, strings.HasPrefix(req.Header.Get("Authorization"), "Bearer "))
-			return assetJSONResponse(`{"ResponseMetadata":{"Action":"DeleteAssetGroup"},"Result":{}}`), nil
-		}),
-	)
-	require.NoError(t, err)
-	require.NoError(t, adapter.DeleteGroup(context.Background(), "group-1"))
 }
 
 func TestOfficialActionAdapterRejectsInvalidConfiguration(t *testing.T) {

@@ -17,6 +17,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -240,24 +241,34 @@ func TestDoResponseRejectsProviderErrorsAndInvalidResults(t *testing.T) {
 	}
 }
 
-func TestDoRequestRejectsInfiniteTimeoutConfiguration(t *testing.T) {
+func TestDoRequestUsesFixedTimeoutWithoutGlobalConfiguration(t *testing.T) {
 	originalRelayTimeout := common.RelayTimeout
 	common.RelayTimeout = 0
 	defer func() { common.RelayTimeout = originalRelayTimeout }()
 
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		deadline, ok := request.Context().Deadline()
+		require.True(t, ok)
+		remaining := time.Until(deadline)
+		assert.Greater(t, remaining, 9*time.Minute)
+		assert.LessOrEqual(t, remaining, 10*time.Minute)
+		return testHTTPResponse(http.StatusOK, `{"data":[{"url":"https://cdn.example.com/image.png"}]}`), nil
+	})}
 	c, _ := moxingImageContext(context.Background())
-	_, err := (&Adaptor{client: &http.Client{}}).DoRequest(c, moxingImageInfo("https://example.com"), strings.NewReader(`{}`))
-
-	apiErr, ok := err.(*types.NewAPIError)
-	require.True(t, ok)
-	assert.Equal(t, http.StatusServiceUnavailable, apiErr.StatusCode)
-	assert.True(t, types.IsSkipRetryError(apiErr))
+	response, err := (&Adaptor{client: client}).DoRequest(c, moxingImageInfo("https://example.com"), strings.NewReader(`{}`))
+	require.NoError(t, err)
+	require.NotNil(t, response)
 }
 
 func TestDoRequestTreatsCanceledPOSTAsUnknownAndDoesNotRetry(t *testing.T) {
 	originalRelayTimeout := common.RelayTimeout
+	originalAutomaticDisable := common.AutomaticDisableChannelEnabled
 	common.RelayTimeout = 60
-	defer func() { common.RelayTimeout = originalRelayTimeout }()
+	common.AutomaticDisableChannelEnabled = true
+	defer func() {
+		common.RelayTimeout = originalRelayTimeout
+		common.AutomaticDisableChannelEnabled = originalAutomaticDisable
+	}()
 
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		return nil, context.Canceled
@@ -268,8 +279,33 @@ func TestDoRequestTreatsCanceledPOSTAsUnknownAndDoesNotRetry(t *testing.T) {
 
 	apiErr, ok := err.(*types.NewAPIError)
 	require.True(t, ok)
+	assert.Equal(t, 499, apiErr.StatusCode)
+	assert.Equal(t, types.ErrorCode("request_canceled"), apiErr.GetErrorCode())
+	assert.True(t, types.IsSkipRetryError(apiErr))
+	assert.False(t, types.IsChannelError(apiErr))
+	assert.False(t, types.IsRecordErrorLog(apiErr))
+	assert.False(t, service.ShouldDisableChannel(apiErr))
+}
+
+func TestDoResponseMapsResponseBodyDeadlineToGatewayTimeout(t *testing.T) {
+	c, _ := moxingImageContext(context.Background())
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(deadlineReader{}),
+	}
+
+	_, apiErr := (&Adaptor{}).DoResponse(c, response, moxingImageInfo("https://example.com"))
+
+	require.NotNil(t, apiErr)
 	assert.Equal(t, http.StatusGatewayTimeout, apiErr.StatusCode)
 	assert.True(t, types.IsSkipRetryError(apiErr))
+	assert.True(t, types.IsChannelError(apiErr))
+}
+
+type deadlineReader struct{}
+
+func (deadlineReader) Read([]byte) (int, error) {
+	return 0, context.DeadlineExceeded
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

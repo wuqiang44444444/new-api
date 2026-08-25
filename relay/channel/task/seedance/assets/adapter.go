@@ -14,8 +14,6 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 )
 
-var ErrGroupDeletionUnsupported = errors.New("asset upstream group deletion is not supported by the verified protocol")
-var ErrGroupNotEmpty = errors.New("asset upstream group is not empty")
 var ErrAssetOperationUnsupported = errors.New("asset upstream operation is not supported by the verified protocol")
 
 type HTTPDoer interface {
@@ -107,7 +105,6 @@ type AssetGroupRequirementAdapter interface {
 type GroupAdapter interface {
 	CreateGroup(ctx context.Context, req GroupRequest) (GroupResult, error)
 	GetGroup(ctx context.Context, resourceID string) (GroupResult, error)
-	DeleteGroup(ctx context.Context, resourceID string) error
 }
 
 type VerificationAdapter interface {

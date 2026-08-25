@@ -22,6 +22,7 @@ import { useMemo } from 'react'
 import { useStatus } from '@/hooks/use-status'
 
 import { getPricing } from '../api'
+import { buildAssetShareGroups } from '../lib/asset-share-groups'
 
 export function usePricingData() {
   const { status } = useStatus()
@@ -47,7 +48,7 @@ export function usePricingData() {
 
     const vendorMap = new Map(data.vendors.map((v) => [v.id, v]))
 
-    return data.data.map((model) => {
+    const hydratedModels = data.data.map((model) => {
       const vendor = model.vendor_id
         ? vendorMap.get(model.vendor_id)
         : undefined
@@ -59,6 +60,14 @@ export function usePricingData() {
         vendor_description: vendor?.description,
         group_ratio: model.group_ratio ?? data.group_ratio,
       }
+    })
+    const assetShareGroups = buildAssetShareGroups(hydratedModels)
+    return hydratedModels.map((model) => {
+      const scope = model.api?.assets?.reuse_scope?.trim()
+      const assetShareGroup = scope ? assetShareGroups.get(scope) : undefined
+      return assetShareGroup
+        ? { ...model, asset_share_group: assetShareGroup }
+        : model
     })
   }, [data])
 

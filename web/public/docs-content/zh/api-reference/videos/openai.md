@@ -1,7 +1,7 @@
 ---
 page-id: videos-openai
 kind: api-reference
-last-verified: 2026-08-10
+last-verified: 2026-08-25
 operations:
   - createVideo
   - getVideo
@@ -32,6 +32,13 @@ curl "{{OPENAI_BASE_URL}}/videos" \
 
 模型、时长、尺寸和参考输入必须以所选渠道的实际合同为准；本页不会把 Link 扩展规则投影到原生
 OpenAI Videos。
+
+调用前读取 `GET /v1/models` 中对应条目的 `api.video.creation`。`parameters` 返回该客户模型允许的
+字段、尺寸和时长边界，`additional_properties=false` 时不得发送列表外字段；单模型详情
+`GET /v1/models/{model}` 返回同一合同。
+
+当前创建合同使用 `seconds` 表达时长。只有模型元数据列出的 `model`、`prompt`、`seconds`、`size` 和
+`input_reference` 可以用于该入口；不要发送内部兼容字段或其它视频入口的参数。
 
 ## 查询任务
 

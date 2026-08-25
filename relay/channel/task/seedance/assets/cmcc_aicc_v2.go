@@ -125,7 +125,7 @@ func (a *CMCCAICCV2Adapter) DeleteAsset(ctx context.Context, resourceID string) 
 
 func (a *CMCCAICCV2Adapter) CreateGroup(ctx context.Context, request GroupRequest) (GroupResult, error) {
 	var result cmccGroup
-	err := a.request(ctx, http.MethodPost, "/asset-group/", map[string]any{
+	err := a.request(ctx, http.MethodPost, "/asset-group", map[string]any{
 		"groupType": "AIGC", "groupName": request.Name, "description": request.Description,
 	}, &result)
 	return normalizeCMCCGroup(result), err
@@ -135,10 +135,6 @@ func (a *CMCCAICCV2Adapter) GetGroup(ctx context.Context, resourceID string) (Gr
 	var result cmccGroup
 	err := a.request(ctx, http.MethodGet, "/asset-group/"+url.PathEscape(resourceID), nil, &result)
 	return normalizeCMCCGroup(result), err
-}
-
-func (a *CMCCAICCV2Adapter) DeleteGroup(ctx context.Context, resourceID string) error {
-	return a.delete(ctx, "/asset-group/"+url.PathEscape(resourceID))
 }
 
 func (a *CMCCAICCV2Adapter) CreateVerificationSession(ctx context.Context, request VerificationRequest) (VerificationResult, error) {

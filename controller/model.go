@@ -260,9 +260,16 @@ func ListModels(c *gin.Context, modelType int) {
 	if len(ownerGroups) > 0 {
 		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
 	}
+	mediaAPIByModel, err := model.GetPublicMediaModelAPIs(userModelNames, ownerGroups)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("GetPublicMediaModelAPIs error: %v", err))
+		mediaAPIByModel = map[string]*dto.PublicModelAPI{}
+	}
 	userOpenAiModels := make([]dto.OpenAIModels, 0, len(userModelNames))
 	for _, modelName := range userModelNames {
-		userOpenAiModels = append(userOpenAiModels, buildOpenAIModel(modelName, ownerByModel))
+		item := buildOpenAIModel(modelName, ownerByModel)
+		applyPublicMediaMetadata(&item, mediaAPIByModel[modelName])
+		userOpenAiModels = append(userOpenAiModels, item)
 	}
 	userOpenAiModels = appendConfiguredSeedanceModels(userOpenAiModels)
 
@@ -365,7 +372,7 @@ func RetrieveModel(c *gin.Context, modelType int) {
 	if respondConfiguredSeedanceModel(c, modelType, modelId) {
 		return
 	}
-	if aiModel, ok := openAIModelsMap[modelId]; ok {
+	if aiModel, ok := modelMetadataForRetrieve(c, modelId); ok {
 		switch modelType {
 		case constant.ChannelTypeAnthropic:
 			c.JSON(200, dto.AnthropicModel{
@@ -373,6 +380,7 @@ func RetrieveModel(c *gin.Context, modelType int) {
 				CreatedAt:   time.Unix(int64(aiModel.Created), 0).UTC().Format(time.RFC3339),
 				DisplayName: aiModel.Id,
 				Type:        "model",
+				API:         aiModel.API,
 			})
 		default:
 			c.JSON(200, aiModel)

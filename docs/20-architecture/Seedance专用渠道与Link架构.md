@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-20
+last-reviewed: 2026-08-25
 ---
 
 # Seedance 专用渠道与 Link 架构
@@ -93,8 +93,9 @@ customer_model
 
 Seedance 客户模型不写入 NEWAPI 原生 Ability 或通用渠道分发缓存。模型发现和价格展示使用只读
 投影：所有已配置客户模型均进入目录，是否可调用由 `available` / `availability` 单独表达；目录还投影
-统一 ModelArk V3 北向操作和客户安全素材操作矩阵。该投影不能获得 `/v1/video/generations` 履约资格，
-也不暴露 Provider 模型、Channel、南向协议或私有路径。
+统一 ModelArk V3 北向操作、逐模型创建参数合同和客户安全素材操作矩阵。创建参数以允许字段白名单、
+必填性、固定值、默认值、枚举、上下限及逐内容类型数量表达；未登记字段即不支持。该投影不能获得
+`/v1/video/generations` 履约资格，也不暴露 Provider 模型、Channel、南向协议或私有路径。
 
 通用 `GET /v1/models` 和 ModelArk 专用 `GET /api/v3/contents/generations/models` 复用该投影；后者只
 筛出 Seedance 条目，不建立第二套模型事实或 Provider capability 注册表。
@@ -154,9 +155,15 @@ AK/SK 和 URL TTL 等字段；第三方已经代管这些事实时不重复要�
 
 ### 5.3 凭据轮换与 Provider 可见性
 
-Channel 的 Base URL、协议、Provider 账号、Region 和 Project 决定素材 CRUD 实际发往哪里。Key/AK/SK
-可以按正常渠道流程轮换；平台不据此建立素材作用域指纹或解释 opaque ID。改变账号、Base URL、Region、
-Project、国内/海外类型或素材协议时必须新建渠道；既有 opaque ID 在新配置下是否可见由 Provider 判断。
+一个启用素材协议的 Seedance Channel 是一个管理员声明、后端冻结的素材租户边界。首次启用素材协议时
+创建随机唯一 identity；同一 Channel 的所有客户模型由
+`SHA-256("seedance_channel_asset_scope:v1" + "\n" + identity)` 发布相同匿名 `reuse_scope`。不同
+Channel 即使 Base URL、协议和 Project 完全相同也使用不同 identity，平台不声明跨 Channel 复用。
+
+identity 建立后，Channel Type、Base URL、视频协议、素材协议、Region 和 Project 在更新事务中不可变，
+素材协议也不能原地改回 `none`。更换账号、租户或上述任一字段必须新建 Channel。Key/AK/SK 仅在管理员
+显式确认“素材租户未变化”后允许轮换；后端校验确认并写入审计，但不保存凭据内容，也不声称能独立证明
+新旧凭据属于同一 Provider 租户。既有 opaque ID 在该边界内的可见性仍由 Provider 判断。
 
 ## 6. ModelArk V3 北向合同
 
@@ -172,6 +179,10 @@ Seedance 专用渠道提供四组客户行为：
 北向入口校验 ModelArk V3 的 JSON 结构、必填字段、标准媒体节点以及 duration、分辨率、数量等计费
 安全边界。adapter 再校验该南向协议的精确字段组合。不支持字段必须明确失败，不得静默删除、钳制、
 降级或改义。
+
+模型目录的 `api.video.creation.parameters` 与 `content_types` 是上述两层校验的客户安全交集：调用方可据此
+生成表单或请求，但不得从客户模型后缀猜测能力。通用模型列表、单模型详情、ModelArk 专用模型列表和
+价格目录复用同一投影；任何入口都不得返回南向协议、Provider 模型或渠道身份。
 
 客户端只看到平台 Task ID、客户模型和 ModelArk V3 投影；Provider task ID、Provider 模型、渠道
 凭据、连接快照和原始 Provider 响应不得进入普通响应。
@@ -295,7 +306,7 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 | Provider 模型 | `model_mapping` | 创建时冻结 |
 | 南向协议 | 代码注册表 + Channel 协议选择 | 创建时冻结 |
 | 视频创建与资金 | `TaskCreateAttempt` / `Task` | 后续按冻结事实执行 |
-| 素材 opaque ID 与复用域 | 调用方保存 `model + id + reference`；公开元数据只给匿名 `reuse_scope` | 平台不建立 Asset/AssetGroup 事实，存在性与兼容性由 Provider 裁决 |
+| 素材 opaque ID 与复用域 | 调用方保存 `model + id + reference`；主库保存 Channel 随机 identity，公开元数据只给匿名 `reuse_scope` | 同 Channel 模型共享 scope、不同 Channel 隔离；平台不建立 Asset/AssetGroup 事实，存在性与兼容性由 Provider 裁决 |
 | 历史费用 | 冻结计费上下文与结算日志 | 不按当前价格回算 |
 
 主数据库是 Channel、Task、资金、素材和审计的持久化事实源。Redis、进程缓存、模型发现投影和前端
@@ -312,7 +323,7 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 5. Priority/Weight/Affinity、失败重选、跨渠道重试或 fallback；
 6. 管理员编写协议 JSON、字段映射或状态脚本；
 7. 请求时重复唯一性检查、启动扫描、自动修复和低频并发补丁；
-   8. 通用 0..N AssetBinding、跨账号/区域迁移和 source fallback；
+8. 通用 0..N AssetBinding、跨账号/区域迁移和 source fallback；
 9. 平台人脸认证、法律授权、独立撤回域和 Provider 数据删除承诺；
 10. 素材幂等、unknown 对账、孤儿扫描和管理员核查工作流。
 
@@ -330,6 +341,8 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 10. 主数据库持有耐久事实，缓存和投影不能成为唯一权威。
 11. Provider 实际用量的采集与客户计价单位分离；成功终态中的任何明确 usage/Token 数值均为合法
     用量，不得被配置、白名单或共享布尔开关静默丢弃。
+12. 一个启用素材协议的 Channel 只拥有一个随机稳定 identity；同 Channel 模型 scope 相同，不同
+    Channel scope 不同；边界字段不可原地修改，凭据轮换必须显式确认租户未变化。
 
 ## 15. 变更性质：Link 新增与 NEWAPI 原生边界
 

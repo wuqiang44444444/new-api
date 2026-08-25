@@ -68,6 +68,18 @@ export type PricingModel = {
   input_modalities?: Modality[]
   output_modalities?: Modality[]
   capabilities?: ModelCapability[]
+  available?: boolean
+  availability?: string
+  api?: {
+    assets?: {
+      supported?: boolean
+      reuse_scope?: string
+    }
+  }
+  asset_share_group?: {
+    label: string
+    models: string[]
+  }
 }
 
 /** Input/output modalities supported by a model. */

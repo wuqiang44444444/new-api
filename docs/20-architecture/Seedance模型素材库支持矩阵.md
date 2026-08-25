@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-18
+last-reviewed: 2026-08-25
 ---
 
 # Seedance 模型素材库支持矩阵
@@ -55,9 +55,9 @@ adapter 后，矩阵才可以改变。
 | `operations` | 每项操作的 HTTP 方法、路径和 `supported` | 不支持的操作必须停止，不得换 Provider 或 fallback |
 | `creation` | URL TTL、长度、MIME、大小和重定向限制 | 只提交满足该模型返回限制的创建请求 |
 
-相同非空 `reuse_scope` 只表示当前配置落在同一匿名素材域，不是存在性、权限、所有权或兼容性证明。
-最终结果由选定 Provider 裁决。部署方可以为相同 scope 的客户模型使用相同业务后缀，但后缀不是运行时
-能力依据。
+相同非空 `reuse_scope` 表示模型位于同一个由管理员声明并由平台冻结的 Channel 素材边界；不同 Channel
+不会发布相同 scope。它仍不是 Provider 真实租户、存在性、权限、所有权或兼容性证明，最终结果由选定
+Provider 裁决。部署方可以为相同 scope 的客户模型使用相同业务后缀，但后缀不是运行时能力依据。
 
 ## 4. 操作矩阵与北向路径
 
@@ -71,10 +71,10 @@ adapter 后，矩阵才可以改变。
 | 删除素材 | `DELETE /v1/assets/{asset_id}?model=...` | query | 只发送到该模型选定的 Provider |
 | 创建素材组/认证会话 | `POST /v1/asset-groups` | JSON body | 真人流程由 `media` 和操作矩阵共同决定 |
 | 查询素材组/认证会话 | `GET /v1/asset-groups/{id}?model=...` | query | 认证会话必须显式传 `verification_session=true` |
-| 删除素材组 | `DELETE /v1/asset-groups/{group_id}?model=...` | query | 不支持时返回明确不支持错误 |
 
-`GET /v1/assets` 和 `GET /v1/asset-groups` 固定为 `supported=false`。Provider adapter 即使内部需要
-分页查询，也不得把上游 List 发布为客户目录。
+`GET /v1/assets`、`GET /v1/asset-groups` 和 `DELETE /v1/asset-groups/{group_id}` 均不注册，也不进入
+公开操作元数据。平台不主动删除素材组；Provider adapter 即使内部需要分页查询，也不得把上游 List
+发布为客户目录。
 
 ## 5. ID、引用与素材组规则
 

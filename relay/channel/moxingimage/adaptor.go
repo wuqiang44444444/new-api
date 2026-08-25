@@ -156,9 +156,6 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	if info == nil {
 		return nil, upstreamError("missing relay info")
 	}
-	if common.RelayTimeout <= 0 {
-		return nil, timeoutConfigurationError()
-	}
 	requestURL, err := a.GetRequestURL(info)
 	if err != nil {
 		return nil, upstreamError("failed to build image request URL")
@@ -188,9 +185,13 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	if err != nil {
 		return nil, upstreamError("failed to initialize image provider client")
 	}
+	client = channel.ImageRelayHTTPClient(client, info.StartTime)
 	response, err := client.Do(request)
 	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, context.Canceled) {
+			return nil, channel.ImageRelayClientCanceledError()
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, timeoutError(err)
 		}
 		return nil, upstreamError("image request failed")
@@ -208,6 +209,12 @@ func (a *Adaptor) DoResponse(c *gin.Context, response *http.Response, info *rela
 	defer service.CloseResponseBodyGracefully(response)
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, channel.ImageRelayClientCanceledError()
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, timeoutError(err)
+		}
 		return nil, upstreamError("failed to read image response")
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
@@ -362,15 +369,6 @@ func timeoutError(err error) *types.NewAPIError {
 		fmt.Errorf("image provider timed out: %w", err),
 		types.ErrorCodeChannelResponseTimeExceeded,
 		http.StatusGatewayTimeout,
-		types.ErrOptionWithSkipRetry(),
-	)
-}
-
-func timeoutConfigurationError() *types.NewAPIError {
-	return types.NewErrorWithStatusCode(
-		errors.New("RELAY_TIMEOUT must be positive for Moxing image channels"),
-		types.ErrorCodeInvalidRequest,
-		http.StatusServiceUnavailable,
 		types.ErrOptionWithSkipRetry(),
 	)
 }

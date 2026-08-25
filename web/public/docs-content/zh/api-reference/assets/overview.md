@@ -1,7 +1,7 @@
 ---
 page-id: assets-lifecycle
 kind: api-reference
-last-verified: 2026-08-16
+last-verified: 2026-08-25
 operations:
   - createAsset
   - getAsset
@@ -9,7 +9,6 @@ operations:
   - deleteAsset
   - createAssetGroup
   - getAssetGroup
-  - deleteAssetGroup
 ---
 
 # 素材与素材组
@@ -75,8 +74,10 @@ DELETE /v1/assets/{asset_id}?model={customer_model}
 ```text
 POST   /v1/asset-groups
 GET    /v1/asset-groups/{group_id}?model={customer_model}
-DELETE /v1/asset-groups/{group_id}?model={customer_model}
 ```
+
+中转站不提供素材组删除接口，也不会主动删除 Provider 素材组。确需清理时，应由 Provider 管理员在确认
+素材组归属、组内素材和级联影响后执行。
 
 真人认证创建响应中的 `id` 是上游会话 ID，并包含 `verification_url`。查询认证结果时使用：
 

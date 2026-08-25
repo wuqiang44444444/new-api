@@ -535,6 +535,10 @@ func (channel *Channel) Update() error {
 }
 
 func (channel *Channel) UpdateWithActor(actorID int) error {
+	return channel.UpdateWithActorAndAssetTenantConfirmation(actorID, false)
+}
+
+func (channel *Channel) UpdateWithActorAndAssetTenantConfirmation(actorID int, assetTenantUnchanged bool) error {
 	// If this is a multi-key channel, recalculate MultiKeySize based on the current key list to avoid inconsistency after editing keys
 	if channel.ChannelInfo.IsMultiKey {
 		var keyStr string
@@ -573,7 +577,7 @@ func (channel *Channel) UpdateWithActor(actorID int) error {
 			}
 		}
 	}
-	return updateChannelWithCredentialActor(channel, nil, actorID)
+	return updateChannelWithCredentialActor(channel, nil, actorID, assetTenantUnchanged)
 }
 
 func (channel *Channel) UpdateResponseTime(responseTime int64) {

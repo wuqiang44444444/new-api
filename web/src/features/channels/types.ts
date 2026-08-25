@@ -416,4 +416,5 @@ export interface ChannelAssetCredentialInput {
 
 export type UpdateChannelRequest = Partial<Channel> & {
   asset_credential?: ChannelAssetCredentialInput
+  confirm_asset_tenant_unchanged?: boolean
 }

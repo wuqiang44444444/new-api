@@ -1,6 +1,9 @@
 package model
 
-import "gorm.io/gorm"
+import (
+	"github.com/QuantumNous/new-api/constant"
+	"gorm.io/gorm"
+)
 
 // updateChannelsAndAbilitiesByTag keeps channel changes and Ability rows in
 // one transaction for bulk model, mapping, and group edits.
@@ -14,6 +17,15 @@ func updateChannelsAndAbilitiesByTag(tag, updatedTag string, updateData Channel,
 			return err
 		}
 		for i := range channels {
+			if channels[i].Type == constant.ChannelTypeSeedanceLink {
+				settings, err := parsedChannelOtherSettings(&channels[i])
+				if err != nil {
+					return err
+				}
+				if err := validateSeedanceChannelSettingsTx(tx, &channels[i], &settings); err != nil {
+					return err
+				}
+			}
 			if err := channels[i].UpdateAbilitiesWithActor(tx, actorID); err != nil {
 				return err
 			}

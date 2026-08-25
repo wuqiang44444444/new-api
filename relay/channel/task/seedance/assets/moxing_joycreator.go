@@ -12,18 +12,54 @@ import (
 
 const moxingJoyCreatorAssetRoot = "/joycreator/openApi/v1/asset"
 
-type MoxingJoyCreatorAdapter struct{ client }
+type joyCreatorAssetAdapter struct {
+	client
+	root         string
+	profile      dto.AssetUpstreamProfile
+	providerName string
+}
+
+type MoxingJoyCreatorAdapter struct {
+	*joyCreatorAssetAdapter
+}
 
 func NewMoxingJoyCreatorAdapter(baseURL, apiKey string, httpClient HTTPDoer) *MoxingJoyCreatorAdapter {
-	return &MoxingJoyCreatorAdapter{client: newClient(baseURL, apiKey, httpClient)}
+	return &MoxingJoyCreatorAdapter{joyCreatorAssetAdapter: newJoyCreatorAssetAdapter(
+		baseURL,
+		apiKey,
+		httpClient,
+		moxingJoyCreatorAssetRoot,
+		dto.AssetUpstreamProfileMoxingJoyCreator,
+		"Moxing JoyCreator",
+	)}
 }
 
-func (*MoxingJoyCreatorAdapter) Profile() dto.AssetUpstreamProfile {
-	return dto.AssetUpstreamProfileMoxingJoyCreator
+func newJoyCreatorAssetAdapter(
+	baseURL string,
+	apiKey string,
+	httpClient HTTPDoer,
+	root string,
+	profile dto.AssetUpstreamProfile,
+	providerName string,
+) *joyCreatorAssetAdapter {
+	return &joyCreatorAssetAdapter{
+		client:       newClient(baseURL, apiKey, httpClient),
+		root:         root,
+		profile:      profile,
+		providerName: providerName,
+	}
 }
 
-func (*MoxingJoyCreatorAdapter) Supports(kind, mediaType string) bool {
+func (a *joyCreatorAssetAdapter) Profile() dto.AssetUpstreamProfile {
+	return a.profile
+}
+
+func (*joyCreatorAssetAdapter) Supports(kind, mediaType string) bool {
 	return kind == "general" && (mediaType == "image" || mediaType == "video" || mediaType == "audio")
+}
+
+func (a *joyCreatorAssetAdapter) RequiresAssetGroup(kind, mediaType string) bool {
+	return a.Supports(kind, mediaType)
 }
 
 type joyCreatorError struct {
@@ -51,60 +87,63 @@ type joyCreatorEnvelope struct {
 	RequestID string           `json:"requestId"`
 	Error     *joyCreatorError `json:"error"`
 	Result    struct {
-		Group joyCreatorGroup `json:"group"`
-		Asset joyCreatorAsset `json:"asset"`
+		Group        joyCreatorGroup `json:"group"`
+		Asset        joyCreatorAsset `json:"asset"`
+		ID           string          `json:"id"`
+		GroupID      string          `json:"groupId"`
+		AssetID      string          `json:"assetId"`
+		VendorURL    string          `json:"vendorUrl"`
+		VendorStatus string          `json:"vendorStatus"`
+		Status       int             `json:"status"`
+		ErrorMsg     string          `json:"errorMsg"`
 	} `json:"result"`
 }
 
-func (a *MoxingJoyCreatorAdapter) requestJoyCreator(ctx context.Context, method, path string, body any) (joyCreatorEnvelope, error) {
+func (a *joyCreatorAssetAdapter) requestJoyCreator(ctx context.Context, method, path string, body any) (joyCreatorEnvelope, error) {
 	var response joyCreatorEnvelope
 	if err := a.request(ctx, method, path, body, &response); err != nil {
 		return response, err
 	}
 	if response.Error != nil {
-		return response, &upstreamApplicationError{provider: "Moxing JoyCreator", code: response.Error.Code}
+		return response, &upstreamApplicationError{provider: a.providerName, code: response.Error.Code}
 	}
 	return response, nil
 }
 
-func (a *MoxingJoyCreatorAdapter) CreateGroup(ctx context.Context, req GroupRequest) (GroupResult, error) {
-	response, err := a.requestJoyCreator(ctx, http.MethodPost, moxingJoyCreatorAssetRoot+"/group/create", map[string]any{
+func (a *joyCreatorAssetAdapter) CreateGroup(ctx context.Context, req GroupRequest) (GroupResult, error) {
+	response, err := a.requestJoyCreator(ctx, http.MethodPost, a.root+"/group/create", map[string]any{
 		"Name": req.Name, "Description": req.Description, "GroupType": "AIGC",
 	})
 	return normalizeJoyCreatorGroup(response), err
 }
 
-func (a *MoxingJoyCreatorAdapter) GetGroup(ctx context.Context, resourceID string) (GroupResult, error) {
-	response, err := a.requestJoyCreator(ctx, http.MethodPost, moxingJoyCreatorAssetRoot+"/group/detail/"+url.PathEscape(resourceID), nil)
+func (a *joyCreatorAssetAdapter) GetGroup(ctx context.Context, resourceID string) (GroupResult, error) {
+	response, err := a.requestJoyCreator(ctx, http.MethodPost, a.root+"/group/detail/"+url.PathEscape(resourceID), nil)
 	return normalizeJoyCreatorGroup(response), err
 }
 
-func (*MoxingJoyCreatorAdapter) DeleteGroup(context.Context, string) error {
-	return ErrGroupDeletionUnsupported
-}
-
-func (a *MoxingJoyCreatorAdapter) CreateAsset(ctx context.Context, req AssetRequest) (AssetResult, error) {
-	response, err := a.requestJoyCreator(ctx, http.MethodPost, moxingJoyCreatorAssetRoot+"/create", map[string]any{
+func (a *joyCreatorAssetAdapter) CreateAsset(ctx context.Context, req AssetRequest) (AssetResult, error) {
+	response, err := a.requestJoyCreator(ctx, http.MethodPost, a.root+"/create", map[string]any{
 		"groupId": req.GroupResourceID, "URL": req.URL, "AssetType": normalizedMediaType(req.MediaType), "Name": req.Name,
 	})
 	return normalizeJoyCreatorAsset(response), err
 }
 
-func (a *MoxingJoyCreatorAdapter) GetAsset(ctx context.Context, resourceID string) (AssetResult, error) {
-	response, err := a.requestJoyCreator(ctx, http.MethodPost, moxingJoyCreatorAssetRoot+"/detail/"+url.PathEscape(resourceID), nil)
+func (a *joyCreatorAssetAdapter) GetAsset(ctx context.Context, resourceID string) (AssetResult, error) {
+	response, err := a.requestJoyCreator(ctx, http.MethodPost, a.root+"/detail/"+url.PathEscape(resourceID), nil)
 	return normalizeJoyCreatorAsset(response), err
 }
 
-func (a *MoxingJoyCreatorAdapter) UpdateAsset(ctx context.Context, resourceID, name string) (AssetResult, error) {
-	response, err := a.requestJoyCreator(ctx, http.MethodPost, moxingJoyCreatorAssetRoot+"/"+url.PathEscape(resourceID), map[string]string{"Name": name})
+func (a *joyCreatorAssetAdapter) UpdateAsset(ctx context.Context, resourceID, name string) (AssetResult, error) {
+	response, err := a.requestJoyCreator(ctx, http.MethodPost, a.root+"/"+url.PathEscape(resourceID), map[string]string{"Name": name})
 	if response.Result.Asset.ID == "" {
 		response.Result.Asset.ID = resourceID
 	}
 	return normalizeJoyCreatorAsset(response), err
 }
 
-func (a *MoxingJoyCreatorAdapter) DeleteAsset(ctx context.Context, resourceID string) error {
-	_, err := a.requestJoyCreator(ctx, http.MethodDelete, moxingJoyCreatorAssetRoot+"/"+url.PathEscape(resourceID), nil)
+func (a *joyCreatorAssetAdapter) DeleteAsset(ctx context.Context, resourceID string) error {
+	_, err := a.requestJoyCreator(ctx, http.MethodDelete, a.root+"/"+url.PathEscape(resourceID), nil)
 	if upstreamNotFound(err) {
 		return nil
 	}
@@ -113,18 +152,37 @@ func (a *MoxingJoyCreatorAdapter) DeleteAsset(ctx context.Context, resourceID st
 
 func normalizeJoyCreatorGroup(response joyCreatorEnvelope) GroupResult {
 	group := response.Result.Group
+	directResult := group.ID == "" && response.Result.ID != ""
+	if directResult {
+		group.ID = response.Result.ID
+		group.GroupID = response.Result.GroupID
+		group.Status = response.Result.Status
+		group.ErrorMsg = response.Result.ErrorMsg
+	}
 	status := "processing"
 	switch group.Status {
 	case 1:
 		status = "active"
 	case 2:
 		status = "failed"
+	default:
+		if directResult {
+			status = "active"
+		}
 	}
 	return GroupResult{ResourceID: group.ID, BusinessID: group.GroupID, Status: status, RequestID: response.RequestID}
 }
 
 func normalizeJoyCreatorAsset(response joyCreatorEnvelope) AssetResult {
 	asset := response.Result.Asset
+	if asset.ID == "" && response.Result.ID != "" {
+		asset.ID = response.Result.ID
+		asset.AssetID = response.Result.AssetID
+		asset.VendorURL = response.Result.VendorURL
+		asset.VendorStatus = response.Result.VendorStatus
+		asset.Status = response.Result.Status
+		asset.ErrorMsg = response.Result.ErrorMsg
+	}
 	result := AssetResult{
 		ResourceID: asset.ID, BusinessID: asset.AssetID, ErrorMessage: strings.TrimSpace(asset.ErrorMsg), RequestID: response.RequestID,
 	}

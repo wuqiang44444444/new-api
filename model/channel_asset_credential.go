@@ -1,7 +1,6 @@
 package model
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -25,7 +24,6 @@ type ChannelAssetCredential struct {
 var ErrAssetCredentialProfileActive = errors.New("separate asset credential profile must be disabled before clearing its credential")
 
 const VolcengineAssetActionRegion = "cn-beijing"
-const VolcengineAssetActionBaseURL = "https://ark.cn-beijing.volcengineapi.com"
 
 func GetChannelAssetCredential(channelID int) (*ChannelAssetCredential, error) {
 	return getChannelAssetCredential(DB, channelID)
@@ -85,80 +83,36 @@ func NormalizeChannelAssetCredential(input *dto.ChannelAssetCredentialInput) (*C
 	}, nil
 }
 
-func BytePlusAssetActionBaseURL(region string) string {
-	return "https://ark." + strings.TrimSpace(region) + ".byteplusapi.com"
-}
-
-func AssetActionBaseURL(protocol dto.AssetUpstreamProtocol, region string) string {
-	switch protocol {
-	case dto.AssetUpstreamProtocolVolcengineAction:
-		return VolcengineAssetActionBaseURL
-	case dto.AssetUpstreamProtocolBytePlusAction:
-		return BytePlusAssetActionBaseURL(region)
-	default:
-		return ""
-	}
-}
-
-func AssetCredentialFingerprint(baseURL, _ string, protocol string, providerScope ...string) string {
-	input := strings.TrimRight(baseURL, "/") + "\n" + protocol
-	for _, value := range providerScope {
-		if strings.TrimSpace(value) != "" {
-			input += "\n" + strings.TrimSpace(value)
-		}
-	}
-	sum := sha256.Sum256([]byte(input))
-	return fmt.Sprintf("%x", sum[:])
-}
-
-func ResolveAssetChannelCredential(channel *Channel) (string, string, error) {
+func ResolveAssetChannelCredential(channel *Channel) (string, error) {
 	return resolveAssetChannelCredential(DB, channel, nil)
 }
 
-func resolveAssetChannelCredential(tx *gorm.DB, channel *Channel, override *ChannelAssetCredential) (string, string, error) {
+func resolveAssetChannelCredential(tx *gorm.DB, channel *Channel, override *ChannelAssetCredential) (string, error) {
 	if channel == nil || channel.Type != constant.ChannelTypeSeedanceLink || channel.ChannelInfo.IsMultiKey {
-		return "", "", errors.New("asset channel must use a single credential")
+		return "", errors.New("asset channel must use a single credential")
 	}
 	settings := channel.GetOtherSettings()
 	assetProfile := settings.AssetUpstreamProtocol.TransportProfile()
-	credentialIdentity := string(settings.AssetUpstreamProtocol)
 	if assetProfile == dto.AssetUpstreamProfileOfficial || assetProfile == dto.AssetUpstreamProfileCMCCAICCV2 {
 		credential := override
 		var err error
 		if credential == nil {
 			credential, err = getChannelAssetCredential(tx, channel.Id)
 			if err != nil {
-				return "", "", err
+				return "", err
 			}
 		}
 		if credential == nil || strings.TrimSpace(credential.AccessKeyID) == "" || strings.TrimSpace(credential.SecretAccessKey) == "" {
-			return "", "", errors.New("separate asset credential is not configured")
+			return "", errors.New("separate asset credential is not configured")
 		}
 		key := strings.TrimSpace(credential.AccessKeyID) + "|" + strings.TrimSpace(credential.SecretAccessKey)
-		if assetProfile == dto.AssetUpstreamProfileCMCCAICCV2 {
-			scope, err := cmccAssetReuseScope(tx, channel.Id)
-			return key, strings.TrimPrefix(scope, "asset_scope_"), err
-		}
-		return key, AssetCredentialFingerprint(
-			AssetActionBaseURL(settings.AssetUpstreamProtocol, settings.AssetRegion),
-			key,
-			credentialIdentity,
-			settings.AssetProviderProject,
-			settings.AssetRegion,
-		), nil
+		return key, nil
 	}
 	keys := channel.GetKeys()
 	if len(keys) != 1 || strings.TrimSpace(keys[0]) == "" {
-		return "", "", errors.New("asset channel must contain exactly one credential")
+		return "", errors.New("asset channel must contain exactly one credential")
 	}
-	key := strings.TrimSpace(keys[0])
-	return key, AssetCredentialFingerprint(
-		channel.GetBaseURL(),
-		key,
-		credentialIdentity,
-		settings.AssetProviderProject,
-		settings.AssetRegion,
-	), nil
+	return strings.TrimSpace(keys[0]), nil
 }
 
 func InsertChannelWithAssetCredential(channel *Channel, input *dto.ChannelAssetCredentialInput) error {
@@ -190,10 +144,10 @@ func InsertChannelWithAssetCredentialActor(channel *Channel, input *dto.ChannelA
 }
 
 func UpdateChannelWithAssetCredential(channel *Channel, input *dto.ChannelAssetCredentialInput) error {
-	return UpdateChannelWithAssetCredentialActor(channel, input, 0)
+	return UpdateChannelWithAssetCredentialActor(channel, input, 0, false)
 }
 
-func UpdateChannelWithAssetCredentialActor(channel *Channel, input *dto.ChannelAssetCredentialInput, actorID int) error {
+func UpdateChannelWithAssetCredentialActor(channel *Channel, input *dto.ChannelAssetCredentialInput, actorID int, assetTenantUnchanged bool) error {
 	credential, err := NormalizeChannelAssetCredential(input)
 	if err != nil {
 		return err
@@ -202,7 +156,7 @@ func UpdateChannelWithAssetCredentialActor(channel *Channel, input *dto.ChannelA
 		return errors.New("channel and asset credential are required")
 	}
 	credential.ChannelID = channel.Id
-	return updateChannelWithCredentialActor(channel, credential, actorID)
+	return updateChannelWithCredentialActor(channel, credential, actorID, assetTenantUnchanged)
 }
 
 func DeleteChannelAssetCredential(channelID int) error {

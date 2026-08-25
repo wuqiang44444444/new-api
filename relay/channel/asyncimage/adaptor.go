@@ -184,9 +184,6 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	if info == nil {
 		return nil, upstreamError("missing relay info")
 	}
-	if common.RelayTimeout <= 0 {
-		return nil, timeoutConfigurationError()
-	}
 	requestURL, err := a.GetRequestURL(info)
 	if err != nil {
 		return nil, upstreamError("failed to build create request URL")
@@ -216,8 +213,12 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	if err != nil {
 		return nil, upstreamError("failed to initialize upstream client")
 	}
+	client = channel.ImageRelayHTTPClient(client, info.StartTime)
 	resp, err := client.Do(req)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || (c != nil && c.Request != nil && errors.Is(c.Request.Context().Err(), context.Canceled)) {
+			return nil, channel.ImageRelayClientCanceledError()
+		}
 		if errors.Is(err, context.DeadlineExceeded) || (c != nil && c.Request != nil && errors.Is(c.Request.Context().Err(), context.DeadlineExceeded)) {
 			return nil, timeoutError(err)
 		}
@@ -244,6 +245,12 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	defer service.CloseResponseBodyGracefully(resp)
 	initial, err := decodeEnvelope(resp.Body)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, channel.ImageRelayClientCanceledError()
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, timeoutError(err)
+		}
 		return nil, upstreamError("invalid create response")
 	}
 	if apiErr := envelopeError(initial); apiErr != nil {
@@ -258,10 +265,6 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	if strings.TrimSpace(initial.Data.TaskID) == "" {
 		return nil, upstreamError("create response did not include task ID")
 	}
-	if common.RelayTimeout <= 0 {
-		return nil, timeoutConfigurationError()
-	}
-
 	ctx, cancel := responseContext(c, info)
 	defer cancel()
 	client, err := a.httpClient(info)
@@ -273,6 +276,9 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	for {
 		if !firstPoll {
 			if err := waitForNextPoll(ctx, info); err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil, channel.ImageRelayClientCanceledError()
+				}
 				return nil, timeoutError(err)
 			}
 		}
@@ -292,7 +298,10 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		}
 		pollResp, err := client.Do(request)
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if errors.Is(err, context.Canceled) {
+				return nil, channel.ImageRelayClientCanceledError()
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
 				return nil, timeoutError(err)
 			}
 			return nil, upstreamError("polling request failed")
@@ -305,6 +314,12 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 			return decodeEnvelope(pollResp.Body)
 		}()
 		if decodeErr != nil {
+			if errors.Is(decodeErr, context.Canceled) {
+				return nil, channel.ImageRelayClientCanceledError()
+			}
+			if errors.Is(decodeErr, context.DeadlineExceeded) {
+				return nil, timeoutError(decodeErr)
+			}
 			return nil, upstreamError("invalid polling response")
 		}
 		if apiErr := envelopeError(result); apiErr != nil {
@@ -353,17 +368,11 @@ func responseContext(c *gin.Context, info *relaycommon.RelayInfo) (context.Conte
 	if c != nil && c.Request != nil {
 		parent = c.Request.Context()
 	}
-	if common.RelayTimeout <= 0 {
-		return context.WithCancel(parent)
+	startTime := time.Time{}
+	if info != nil {
+		startTime = info.StartTime
 	}
-	remaining := time.Duration(common.RelayTimeout) * time.Second
-	if info != nil && !info.StartTime.IsZero() {
-		remaining -= time.Since(info.StartTime)
-	}
-	if remaining <= 0 {
-		remaining = time.Nanosecond
-	}
-	return context.WithTimeout(parent, remaining)
+	return channel.ImageRelayTimeoutContext(parent, startTime)
 }
 
 func waitForNextPoll(ctx context.Context, info *relaycommon.RelayInfo) error {
@@ -443,15 +452,6 @@ func timeoutError(err error) *types.NewAPIError {
 		err = context.DeadlineExceeded
 	}
 	return types.NewErrorWithStatusCode(fmt.Errorf("async image provider timed out: %w", err), types.ErrorCodeChannelResponseTimeExceeded, http.StatusGatewayTimeout, types.ErrOptionWithSkipRetry())
-}
-
-func timeoutConfigurationError() *types.NewAPIError {
-	return types.NewErrorWithStatusCode(
-		errors.New("RELAY_TIMEOUT must be positive for async image channels"),
-		types.ErrorCodeInvalidRequest,
-		http.StatusServiceUnavailable,
-		types.ErrOptionWithSkipRetry(),
-	)
 }
 
 func isHTTPURL(raw string) bool {

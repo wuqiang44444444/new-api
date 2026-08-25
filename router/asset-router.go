@@ -16,6 +16,5 @@ func SetAssetRouter(router *gin.Engine) {
 		assets.DELETE("/assets/:asset_id", middleware.TokenModelAccessFromQuery(), controller.DeleteAsset)
 		assets.POST("/asset-groups", middleware.TokenModelAccess(), controller.CreateAssetGroup)
 		assets.GET("/asset-groups/:group_id", middleware.TokenModelAccessFromQuery(), controller.GetAssetGroup)
-		assets.DELETE("/asset-groups/:group_id", middleware.TokenModelAccessFromQuery(), controller.DeleteAssetGroup)
 	}
 }

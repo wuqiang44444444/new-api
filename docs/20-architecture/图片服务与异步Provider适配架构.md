@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-21
+last-reviewed: 2026-08-25
 ---
 
 # 图片服务与中转 Provider 适配架构
@@ -55,6 +55,7 @@ POST /v1/images/generations
 代码负责：
 
 - 协议路径、鉴权头、请求字段转换、轮询和响应归一化；
+- 从本次 relay 开始起对图片中转南向履约应用固定 10 分钟总时限；
 - 每个协议已发布 Provider profile 的字段、规格和失败语义；
 - 保存时确认每个客户模型最终解析到所选协议登记的 Provider profile。
 
@@ -113,6 +114,27 @@ Moxing 当前发布：
 
 不支持字段不得静默删除、钳制、降级或改义。
 
+### 5.1 公开模型参数投影
+
+`GET /v1/models`、`GET /v1/models/{model}` 与 `/api/pricing` 对图片模型返回同一份
+`api.image` 客户合同。`creation` 固定声明 `POST /v1/images/generations`、
+`application/json`、客户模型名和 `additional_properties=false`；`parameters` 逐项声明允许字段、类型、
+必填性、固定值、默认值、枚举和上下限。嵌套字段使用点路径，例如
+`extra_fields.aspect_ratio`。参数未出现在列表中即表示该客户模型不支持，调用方不得按其它模型或渠道
+经验补发。
+
+严格图片模型先按调用方分组顺序选取第一个有可用渠道的分组，再取该分组内最高 Priority 的所有已启用渠道。
+这些渠道是运行时可能按 Weight 选中的同级候选；只有它们经管理员 `model_mapping` 定位的代码 profile 产生
+完全一致的客户合同时，才对外发布 `api.image`。任一候选缺少已登记 profile 或合同不一致时不发布，不用 Weight
+或 Channel ID 猜测单一合同。列表和单模型详情必须复用同一构造逻辑；不得再由静态模型表直接返回缺少端点或参数的详情。
+`/api/pricing` 没有单一调用方分组上下文，因此只有该模型在各可见分组的最高 Priority 候选合同全部一致时才发布。
+公开投影只包含客户模型和北向字段，不返回协议枚举、Provider 模型、Channel 名称或私有路径。
+
+原生 OpenAI 兼容图片模型也按模型族返回生成端点的精确字段，而不是暴露 `ImageRequest` DTO 的字段并集：
+DALL·E 2、DALL·E 3 与 GPT Image 分别声明自己的 `n`、尺寸、质量、格式和流式参数；编辑专用字段不得
+出现在生成接口合同中。无法由代码识别到稳定模型族的原生图片名称只返回网关稳定公共字段，不推测
+Provider 私有枚举。
+
 ## 6. 南向控制流
 
 ```mermaid
@@ -140,9 +162,15 @@ Moxing 只发送一次同步 POST，不轮询、不重发；成功响应必须�
 客户合同始终是本次 HTTP 请求内等待并返回 OpenAI 图片响应。FunCloud task ID 只存在于 adaptor 的请求
 上下文；不会写入客户响应、主数据库、图片 Task 或 create attempt。Moxing 当前没有南向任务 ID。
 
-两个协议都要求 `RELAY_TIMEOUT` 为有限正数。等待超时或请求 context 取消返回 `504`；Provider POST、
-轮询、网络、5xx、非法 JSON、未知状态和结果合同错误均携带 skip-retry，不自动重发、换协议、换渠道或
-fallback。`504` 不能解释为 Provider 一定未受理或未计费。
+两个协议的总时限都由代码固定为 10 分钟，从本次 relay 的 `StartTime` 起算：FunCloud 的
+创建、初始响应和全部轮询共享剩余时间；Moxing 的单次 POST 及响应体读取使用同一边界。
+部署无需配置 `RELAY_TIMEOUT`；未配置或为 `0` 时不会禁用图片中转。若部署显式配置了更短的
+正数 `RELAY_TIMEOUT`，它作为所有 relay 共享的更早上限，不会延长图片中转的 10 分钟边界。
+
+客户请求 context 更早取消时，若连接仍可写则返回 `499` / `request_canceled`；该结果不写入
+relay 错误日志、不重试且不参与渠道自动封禁。任一有效时限到期仍返回 `504` 并保留渠道超时分类。
+Provider POST、轮询、网络、5xx、非法 JSON、未知状态和结果合同错误均携带 skip-retry，不自动
+重发、换协议、换渠道或 fallback。`499` 或 `504` 都不能解释为 Provider 一定未受理或未计费。
 
 若任一 Provider 无法在同步等待边界内给出可信结果，或者超时后仍可能收费且现有同步退款语义无法覆盖，
 该协议必须保持停用并另行评审 durable Task/attempt 与 Provider exposure 合同。
@@ -189,15 +217,19 @@ master 完成迁移后，每个节点都必须在启动阶段只读确认 marker
 5. FunCloud 与 Moxing adaptor 独立履约，不共享请求 DTO、轮询状态或响应猜测。
 6. Provider task ID 不持久化、不返回客户，也不创建图片 Task 或 create attempt。
 7. 不支持字段显式失败；Provider 发送后的失败全部 skip retry。
-8. 成功必须恰好交付一张合法 URL 图片；其它结果失败关闭。
-9. 代码实现不能替代真实 Provider、账单、超时 exposure、外部数据库和生产灰度验收。
+8. 图片中转由代码统一限制为 10 分钟；`RELAY_TIMEOUT` 仅能在显式配置为更短正数时提前终止。
+9. 客户取消不得解释为 Provider 超时或渠道故障，不得触发自动封禁。
+10. 成功必须恰好交付一张合法 URL 图片；其它结果失败关闭。
+11. 模型列表、单模型详情和价格目录必须返回一致的图片入口与逐模型参数合同。
+12. 代码实现不能替代真实 Provider、账单、超时 exposure、外部数据库和生产灰度验收。
 
 ## 11. 代码事实与相关文档
 
 主要代码事实：
 
 - `relaykit/dto/image_upstream_protocol.go`、`constant/image_relay.go`；
-- `relay/channel/imagerelay/`、`relay/channel/asyncimage/`、`relay/channel/moxingimage/`；
+- `relay/channel/image_relay_timeout.go`、`relay/channel/imagerelay/`、`relay/channel/asyncimage/`、
+  `relay/channel/moxingimage/`；
 - `model/channel_image_relay.go`、`model/image_relay_channel_migration.go`；
 - `relay/image_handler.go`、`relay/image_strict_api.go`、`relay/relay_adaptor.go`；
 - `controller/channel-test.go`、`controller/channel_test_image_profile.go`；

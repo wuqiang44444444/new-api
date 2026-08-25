@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-08-05.1",
+  "contentVersion": "2026-08-25.2",
   "locales": {
     "zh": [
       {
@@ -147,7 +147,7 @@
         "pageId": "async-tasks",
         "slug": "concepts/async-tasks",
         "title": "异步任务",
-        "description": "轮询图片、视频与素材任务的通用方法",
+        "description": "轮询明确返回任务 ID 的视频任务",
         "keywords": ["任务", "轮询", "状态"],
         "headings": [
           {
@@ -176,7 +176,7 @@
         "pageId": "text-api",
         "slug": "api-reference/text",
         "title": "文本与模型",
-        "description": "模型列表、Chat Completions、Responses 与 Messages",
+        "description": "查询模型入口与逐模型参数，并调用文本 API",
         "keywords": ["模型", "Chat", "Responses", "Claude"],
         "headings": [
           {
@@ -227,6 +227,11 @@
             "depth": 2,
             "id": "等待-超时与计费",
             "text": "等待、超时与计费"
+          },
+          {
+            "depth": 2,
+            "id": "错误处理",
+            "text": "错误处理"
           }
         ]
       },

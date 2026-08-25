@@ -5938,5 +5938,16 @@
     "Zhipu V4": "Zhipu V 4",
     "Zoom": "ズーム"
   },
-  "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.": "個別の認証情報を使用する素材プロトコルを無効にしてチャネルを保存してから、保存済みの認証情報を消去してください。"
+  "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.": "個別の認証情報を使用する素材プロトコルを無効にしてチャネルを保存してから、保存済みの認証情報を消去してください。",
+  "Asset library boundary: this channel": "素材ライブラリ境界：このチャネル",
+  "One Seedance channel represents one upstream asset tenant. Put every model that must share assets in this channel; create another channel for a different tenant.": "1 つの Seedance チャネルは 1 つの上流素材テナントを表します。素材を共有するすべてのモデルをこのチャネルに配置し、別テナントには新しいチャネルを作成してください。",
+  "Models sharing this asset library: {{models}}": "この素材ライブラリを共有するモデル：{{models}}",
+  "None selected": "未選択",
+  "Confirm asset credential rotation": "素材認証情報の更新を確認",
+  "Confirm tenant is unchanged": "テナントが同一であることを確認",
+  "Only continue when these credentials belong to the same upstream asset tenant. If the account or tenant changed, cancel and create a new channel.": "新しい認証情報が同じ上流素材テナントに属する場合のみ続行してください。アカウントまたはテナントが変わった場合はキャンセルして新しいチャネルを作成してください。",
+  "Models sharing this asset library": "この素材ライブラリを共有するモデル",
+  "This channel already defines an asset tenant. Create a new channel to change its type, Base URL, protocols, project, or region.": "このチャネルの素材テナントは確定済みです。タイプ、Base URL、プロトコル、プロジェクト、リージョンを変更するには新しいチャネルを作成してください。",
+  "Credential rotation requires confirmation that the upstream asset tenant is unchanged.": "認証情報を更新するには、上流素材テナントが変わっていないことの確認が必要です。",
+  "Asset share group {{label}}": "素材共有グループ {{label}}"
 }

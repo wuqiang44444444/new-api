@@ -1,8 +1,25 @@
 package dto
 
 type PublicModelAPI struct {
-	Video  PublicVideoAPI `json:"video"`
-	Assets PublicAssetAPI `json:"assets"`
+	Image  *PublicImageAPI `json:"image,omitempty"`
+	Video  *PublicVideoAPI `json:"video,omitempty"`
+	Assets *PublicAssetAPI `json:"assets,omitempty"`
+}
+
+type PublicImageAPI struct {
+	DocumentationPath string               `json:"documentation_path"`
+	Operations        []PublicAPIOperation `json:"operations"`
+	Creation          PublicImageCreation  `json:"creation"`
+}
+
+type PublicImageCreation struct {
+	Method               string               `json:"method"`
+	Path                 string               `json:"path"`
+	ContentType          string               `json:"content_type"`
+	RequiredFields       []string             `json:"required_fields"`
+	Model                string               `json:"model"`
+	AdditionalProperties bool                 `json:"additional_properties"`
+	Parameters           []PublicAPIParameter `json:"parameters"`
 }
 
 type PublicVideoAPI struct {
@@ -13,11 +30,42 @@ type PublicVideoAPI struct {
 }
 
 type PublicVideoCreation struct {
-	Method         string   `json:"method"`
-	Path           string   `json:"path"`
-	ContentType    string   `json:"content_type"`
+	Method               string                   `json:"method"`
+	Path                 string                   `json:"path"`
+	ContentType          string                   `json:"content_type"`
+	RequiredFields       []string                 `json:"required_fields"`
+	Model                string                   `json:"model"`
+	AdditionalProperties bool                     `json:"additional_properties"`
+	Parameters           []PublicAPIParameter     `json:"parameters"`
+	ContentTypes         []PublicVideoContentType `json:"content_types"`
+}
+
+// PublicAPIParameter is the machine-readable, customer-facing contract for one
+// accepted request field. Nested names use dot notation, for example
+// extra_fields.aspect_ratio. Fields absent from the list are unsupported when
+// AdditionalProperties is false.
+type PublicAPIParameter struct {
+	Name          string   `json:"name"`
+	Type          string   `json:"type"`
+	Required      bool     `json:"required"`
+	Enum          []string `json:"enum,omitempty"`
+	FixedValue    any      `json:"fixed_value,omitempty"`
+	DefaultValue  any      `json:"default_value,omitempty"`
+	Minimum       *int     `json:"minimum,omitempty"`
+	Maximum       *int     `json:"maximum,omitempty"`
+	SpecialValues []int    `json:"special_values,omitempty"`
+	MinLength     *int     `json:"min_length,omitempty"`
+	MaxLength     *int     `json:"max_length,omitempty"`
+	MinItems      *int     `json:"min_items,omitempty"`
+	MaxItems      *int     `json:"max_items,omitempty"`
+}
+
+type PublicVideoContentType struct {
+	Type           string   `json:"type"`
+	Roles          []string `json:"roles,omitempty"`
 	RequiredFields []string `json:"required_fields"`
-	Model          string   `json:"model"`
+	MinItems       int      `json:"min_items,omitempty"`
+	MaxItems       int      `json:"max_items,omitempty"`
 }
 
 type PublicAssetAPI struct {

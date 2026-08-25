@@ -5938,5 +5938,16 @@
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom"
   },
-  "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.": "Hãy tắt giao thức tài nguyên dùng thông tin xác thực riêng và lưu kênh trước khi xóa thông tin xác thực đã lưu."
+  "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.": "Hãy tắt giao thức tài nguyên dùng thông tin xác thực riêng và lưu kênh trước khi xóa thông tin xác thực đã lưu.",
+  "Asset library boundary: this channel": "Ranh giới thư viện tài nguyên: kênh này",
+  "One Seedance channel represents one upstream asset tenant. Put every model that must share assets in this channel; create another channel for a different tenant.": "Một kênh Seedance đại diện cho một đối tượng thuê tài nguyên thượng nguồn. Đặt mọi mô hình cần dùng chung tài nguyên vào kênh này; tạo kênh khác cho đối tượng thuê khác.",
+  "Models sharing this asset library: {{models}}": "Các mô hình dùng chung thư viện này: {{models}}",
+  "None selected": "Chưa chọn",
+  "Confirm asset credential rotation": "Xác nhận thay thông tin xác thực",
+  "Confirm tenant is unchanged": "Xác nhận đối tượng thuê không đổi",
+  "Only continue when these credentials belong to the same upstream asset tenant. If the account or tenant changed, cancel and create a new channel.": "Chỉ tiếp tục khi thông tin xác thực này thuộc cùng đối tượng thuê tài nguyên thượng nguồn. Nếu tài khoản hoặc đối tượng thuê đã thay đổi, hãy hủy và tạo kênh mới.",
+  "Models sharing this asset library": "Các mô hình dùng chung thư viện này",
+  "This channel already defines an asset tenant. Create a new channel to change its type, Base URL, protocols, project, or region.": "Kênh này đã xác định đối tượng thuê tài nguyên. Hãy tạo kênh mới để thay đổi loại, Base URL, giao thức, dự án hoặc khu vực.",
+  "Credential rotation requires confirmation that the upstream asset tenant is unchanged.": "Việc thay thông tin xác thực yêu cầu xác nhận đối tượng thuê tài nguyên thượng nguồn không thay đổi.",
+  "Asset share group {{label}}": "Nhóm chia sẻ tài nguyên {{label}}"
 }

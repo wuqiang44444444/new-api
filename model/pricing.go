@@ -279,6 +279,15 @@ func updatePricing() {
 		groups.Add(ability.Group)
 	}
 	seedanceCatalog.mergeGroups(modelGroupsMap)
+	pricingModelNames := make([]string, 0, len(modelGroupsMap))
+	for modelName := range modelGroupsMap {
+		pricingModelNames = append(pricingModelNames, modelName)
+	}
+	mediaAPIByModel, mediaAPIErr := GetPublicMediaModelAPIs(pricingModelNames, nil)
+	if mediaAPIErr != nil {
+		common.SysLog(fmt.Sprintf("GetPublicMediaModelAPIs error: %v", mediaAPIErr))
+		mediaAPIByModel = map[string]*dto.PublicModelAPI{}
+	}
 
 	//这里使用切片而不是Set，因为一个模型可能支持多个端点类型，并且第一个端点是优先使用端点
 	modelSupportEndpointsStr := make(map[string][]string)
@@ -378,6 +387,7 @@ func updatePricing() {
 		if !pricing.Available {
 			pricing.Availability = "disabled"
 		}
+		pricing.API = mediaAPIByModel[model]
 		seedanceCatalog.apply(model, &pricing)
 
 		// 补充模型元数据（描述、标签、供应商、状态）

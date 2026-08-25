@@ -5938,5 +5938,16 @@
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom"
   },
-  "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.": "Désactivez le protocole de ressources qui utilise des identifiants distincts et enregistrez le canal avant d'effacer les identifiants stockés."
+  "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.": "Désactivez le protocole de ressources qui utilise des identifiants distincts et enregistrez le canal avant d'effacer les identifiants stockés.",
+  "Asset library boundary: this channel": "Périmètre de la bibliothèque : ce canal",
+  "One Seedance channel represents one upstream asset tenant. Put every model that must share assets in this channel; create another channel for a different tenant.": "Un canal Seedance représente un locataire de ressources en amont. Placez dans ce canal tous les modèles qui doivent partager des ressources ; créez un autre canal pour un autre locataire.",
+  "Models sharing this asset library: {{models}}": "Modèles partageant cette bibliothèque : {{models}}",
+  "None selected": "Aucune sélection",
+  "Confirm asset credential rotation": "Confirmer la rotation des identifiants",
+  "Confirm tenant is unchanged": "Confirmer que le locataire n’a pas changé",
+  "Only continue when these credentials belong to the same upstream asset tenant. If the account or tenant changed, cancel and create a new channel.": "Continuez uniquement si ces identifiants appartiennent au même locataire de ressources en amont. Si le compte ou le locataire a changé, annulez et créez un nouveau canal.",
+  "Models sharing this asset library": "Modèles partageant cette bibliothèque",
+  "This channel already defines an asset tenant. Create a new channel to change its type, Base URL, protocols, project, or region.": "Ce canal définit déjà un locataire de ressources. Créez un nouveau canal pour modifier son type, son URL de base, ses protocoles, son projet ou sa région.",
+  "Credential rotation requires confirmation that the upstream asset tenant is unchanged.": "La rotation des identifiants exige de confirmer que le locataire de ressources en amont n’a pas changé.",
+  "Asset share group {{label}}": "Groupe de partage {{label}}"
 }

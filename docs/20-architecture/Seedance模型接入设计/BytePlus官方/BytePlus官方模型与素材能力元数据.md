@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-18
+last-reviewed: 2026-08-25
 ---
 
 # BytePlus 官方模型与素材能力元数据
@@ -17,7 +17,7 @@ last-reviewed: 2026-08-18
 | `assets.reference_format` | `asset://{opaque_upstream_asset_id}` |
 | `assets.media` | general image/video/audio；real_person image |
 | `asset_group_requirement` | optional |
-| `reuse_scope` | `asset_scope_<credential/project/region fingerprint>` |
+| `reuse_scope` | 由 Channel 随机稳定 identity 与统一格式版本生成；同 Channel 模型相同、跨 Channel 不同 |
 
 列表操作仍为 `supported=false`；真人认证仅代理会话与结果，不返回 AK/SK、Provider、Region/Project 或原始 ID。
 
@@ -32,4 +32,3 @@ last-reviewed: 2026-08-18
 ## 3. 来源与不变量
 
 元数据由 `modelark_v3_byteplus + model_mapping + byteplus_assets_action_v2024_01_01` 生成；不根据 `dreamina` 名称、价格或域名推断。代码权威：`model/channel_seedance_public_catalog.go`、`relay/channel/task/seedance/assets/official_action.go`、`model/channel_asset_credential.go`。
-

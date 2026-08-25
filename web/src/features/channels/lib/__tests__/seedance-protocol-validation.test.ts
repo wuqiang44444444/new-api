@@ -167,6 +167,19 @@ describe('Seedance protocol validation', () => {
     assert.equal(result.success, false)
   })
 
+  test('rejects FunCloud 2.5 when it is one of multiple administrator mappings', () => {
+    const result = channelFormSchema.safeParse({
+      ...seedanceForm,
+      models: 'customer-standard,customer-next',
+      model_mapping:
+        '{"customer-standard":"seedance-2","customer-next":"seedance-2-5"}',
+      video_upstream_protocol: 'funcloud_seedance',
+      asset_upstream_protocol: 'funcloud_material',
+      asset_min_url_ttl_seconds: 3600,
+    })
+    assert.equal(result.success, false)
+  })
+
   test('accepts BytePlus official video and asset credentials together', () => {
     const result = channelFormSchema.safeParse({
       ...seedanceForm,

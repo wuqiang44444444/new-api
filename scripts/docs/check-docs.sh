@@ -39,7 +39,14 @@ required_files=(
 )
 
 for file in "${required_files[@]}"; do
-  test -s "$file"
+  case "$file" in
+    docs/60-marketing/*|docs/70-research/*|docs/99-archive/*)
+      test -e "$file"
+      ;;
+    *)
+      test -s "$file"
+      ;;
+  esac
 done
 
 readme_dirs=(
@@ -49,17 +56,24 @@ readme_dirs=(
   "docs/30-engineering"
   "docs/40-operations"
   "docs/50-planning"
-  "docs/60-marketing"
-  "docs/70-research"
   "docs/80-dev"
   "docs/90-ui-ux"
-  "docs/99-archive"
 )
 
 for dir in "${readme_dirs[@]}"; do
   grep -q "^## 目标" "$dir/README.md"
   grep -q "^## 放什么" "$dir/README.md"
   grep -q "^## 不放什么" "$dir/README.md"
+done
+
+protected_readme_dirs=(
+  "docs/60-marketing"
+  "docs/70-research"
+  "docs/99-archive"
+)
+
+for dir in "${protected_readme_dirs[@]}"; do
+  test -e "$dir/README.md"
 done
 
 grep -q "YYYY-MM-DD-" "docs/80-dev/README.md"

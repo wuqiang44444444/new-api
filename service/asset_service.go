@@ -240,24 +240,8 @@ func GetRemoteAssetGroup(ctx context.Context, group, modelName, resourceID strin
 	return assetGroupResponse(modelName, resourceID, result), nil
 }
 
-func DeleteRemoteAssetGroup(ctx context.Context, group, modelName, resourceID string) error {
-	modelName, resourceID, err := validateAssetLookup(modelName, resourceID)
-	if err != nil {
-		return err
-	}
-	_, adapter, err := assetAdapterForModel(group, modelName)
-	if err != nil {
-		return err
-	}
-	groupAdapter, ok := adapter.(assetadapter.GroupAdapter)
-	if !ok {
-		return ErrUnsupportedAssetOperation
-	}
-	return normalizeAssetAdapterError(groupAdapter.DeleteGroup(ctx, resourceID))
-}
-
 func CheckAssetChannelConnectivity(ctx context.Context, channel *model.Channel) error {
-	adapter, _, err := seedanceAssetAdapter(channel)
+	adapter, err := seedanceAssetAdapter(channel)
 	if err != nil {
 		return err
 	}
@@ -292,31 +276,31 @@ func assetAdapterForModel(group, modelName string) (*model.Channel, assetadapter
 		}
 		return nil, nil, ErrAssetModelNotFound
 	}
-	adapter, _, err := seedanceAssetAdapter(channel)
+	adapter, err := seedanceAssetAdapter(channel)
 	if err != nil {
 		return nil, nil, err
 	}
 	return channel, adapter, nil
 }
 
-func seedanceAssetAdapter(channel *model.Channel) (assetadapter.Adapter, string, error) {
+func seedanceAssetAdapter(channel *model.Channel) (assetadapter.Adapter, error) {
 	if channel == nil || channel.Type != constant.ChannelTypeSeedanceLink {
-		return nil, "", ErrAssetUpstreamUnavailable
+		return nil, ErrAssetUpstreamUnavailable
 	}
 	settings := channel.GetOtherSettings()
 	if settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolNone {
-		return nil, "", ErrAssetLibraryUnsupported
+		return nil, ErrAssetLibraryUnsupported
 	}
 	if !settings.AssetUpstreamProtocol.IsValid() {
-		return nil, "", ErrAssetLibraryUnavailable
+		return nil, ErrAssetLibraryUnavailable
 	}
-	key, fingerprint, err := model.ResolveAssetChannelCredential(channel)
+	key, err := model.ResolveAssetChannelCredential(channel)
 	if err != nil {
-		return nil, "", ErrAssetUpstreamUnavailable
+		return nil, ErrAssetUpstreamUnavailable
 	}
 	httpClient, err := GetHttpClientWithProxy(channel.GetSetting().Proxy)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	var adapter assetadapter.Adapter
 	switch settings.AssetUpstreamProtocol {
@@ -327,7 +311,7 @@ func seedanceAssetAdapter(channel *model.Channel) (assetadapter.Adapter, string,
 	case dto.AssetUpstreamProtocolArkAssetsV1:
 		adapter = assetadapter.NewArkAdapter(channel.GetBaseURL(), key, httpClient)
 	case dto.AssetUpstreamProtocolTokenSaveAssetsV1:
-		adapter = assetadapter.NewRelayAdapter(channel.GetBaseURL(), key, httpClient)
+		adapter = assetadapter.NewTokenSaveAssetAdapter(channel.GetBaseURL(), key, httpClient)
 	case dto.AssetUpstreamProtocolMoxingJoyCreatorV1:
 		adapter = assetadapter.NewMoxingJoyCreatorAdapter(channel.GetBaseURL(), key, httpClient)
 	case dto.AssetUpstreamProtocolMoxingVolcAssetsV1:
@@ -337,12 +321,12 @@ func seedanceAssetAdapter(channel *model.Channel) (assetadapter.Adapter, string,
 	case dto.AssetUpstreamProtocolCMCCAICCV2:
 		adapter, err = assetadapter.NewCMCCAICCV2Adapter(key, httpClient)
 	default:
-		return nil, "", ErrAssetLibraryUnavailable
+		return nil, ErrAssetLibraryUnavailable
 	}
 	if err != nil {
-		return nil, "", ErrAssetUpstreamUnavailable
+		return nil, ErrAssetUpstreamUnavailable
 	}
-	return adapter, fingerprint, nil
+	return adapter, nil
 }
 
 func validateAssetLookup(modelName, resourceID string) (string, string, error) {
@@ -392,11 +376,8 @@ func normalizeAssetAdapterError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, assetadapter.ErrAssetOperationUnsupported) || errors.Is(err, assetadapter.ErrGroupDeletionUnsupported) {
+	if errors.Is(err, assetadapter.ErrAssetOperationUnsupported) {
 		return ErrUnsupportedAssetOperation
-	}
-	if errors.Is(err, assetadapter.ErrGroupNotEmpty) {
-		return ErrAssetGroupNotEmpty
 	}
 	if assetadapter.IsUpstreamNotFound(err) {
 		return ErrAssetNotFound

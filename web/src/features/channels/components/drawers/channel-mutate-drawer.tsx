@@ -176,6 +176,7 @@ import {
 import type { Channel } from '../../types'
 import { useChannels } from '../channels-provider'
 import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
+import { AssetTenantRotationDialog } from '../dialogs/asset-tenant-rotation-dialog'
 import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
 import {
   MissingModelsConfirmationDialog,
@@ -644,6 +645,10 @@ export function ChannelMutateDrawer({
     string[]
   >([])
   const statusCodeRiskResolveRef = useRef<
+    ((confirmed: boolean) => void) | null
+  >(null)
+  const [assetTenantRotationOpen, setAssetTenantRotationOpen] = useState(false)
+  const assetTenantRotationResolveRef = useRef<
     ((confirmed: boolean) => void) | null
   >(null)
   const [missingModelsDialogOpen, setMissingModelsDialogOpen] = useState(false)
@@ -1629,11 +1634,32 @@ export function ChannelMutateDrawer({
     }
   }, [])
 
+  const confirmAssetTenantRotation = useCallback(
+    (): Promise<boolean> =>
+      new Promise((resolve) => {
+        assetTenantRotationResolveRef.current = resolve
+        setAssetTenantRotationOpen(true)
+      }),
+    []
+  )
+
+  const handleAssetTenantRotationAction = useCallback((confirmed: boolean) => {
+    setAssetTenantRotationOpen(false)
+    if (assetTenantRotationResolveRef.current) {
+      assetTenantRotationResolveRef.current(confirmed)
+      assetTenantRotationResolveRef.current = null
+    }
+  }, [])
+
   useEffect(() => {
     return () => {
       if (statusCodeRiskResolveRef.current) {
         statusCodeRiskResolveRef.current(false)
         statusCodeRiskResolveRef.current = null
+      }
+      if (assetTenantRotationResolveRef.current) {
+        assetTenantRotationResolveRef.current(false)
+        assetTenantRotationResolveRef.current = null
       }
     }
   }, [])
@@ -1650,6 +1676,7 @@ export function ChannelMutateDrawer({
   // Submit handler
   const onSubmit = useCallback(
     async (data: ChannelFormValues) => {
+      let submissionData = data
       // Validate key is required when creating
       if (!isEditing && !data.key?.trim()) {
         form.setError('key', {
@@ -1746,7 +1773,27 @@ export function ChannelMutateDrawer({
         }
       }
 
-      await channelMutation.mutateAsync(data)
+      const rotatesAssetCredential =
+        Boolean(data.key?.trim()) ||
+        Boolean(
+          data.asset_access_key_id?.trim() &&
+          data.asset_secret_access_key?.trim()
+        )
+      if (
+        isEditing &&
+        data.type === CHANNEL_TYPE_SEEDANCE_LINK &&
+        savedSeedanceProtocols.asset !== 'none' &&
+        rotatesAssetCredential
+      ) {
+        const confirmed = await confirmAssetTenantRotation()
+        if (!confirmed) return
+        submissionData = {
+          ...data,
+          confirm_asset_tenant_unchanged: true,
+        }
+      }
+
+      await channelMutation.mutateAsync(submissionData)
     },
     [
       isEditing,
@@ -1754,7 +1801,9 @@ export function ChannelMutateDrawer({
       form,
       confirmMissingModelMappings,
       confirmStatusCodeRisk,
+      confirmAssetTenantRotation,
       channelMutation,
+      savedSeedanceProtocols.asset,
       t,
     ]
   )
@@ -4944,6 +4993,12 @@ export function ChannelMutateDrawer({
         }}
         detailItems={statusCodeRiskDetailItems}
         onConfirm={() => handleStatusCodeRiskAction(true)}
+      />
+      <AssetTenantRotationDialog
+        open={assetTenantRotationOpen}
+        models={parseModelsString(currentModels || '')}
+        onCancel={() => handleAssetTenantRotationAction(false)}
+        onConfirm={() => handleAssetTenantRotationAction(true)}
       />
     </>
   )

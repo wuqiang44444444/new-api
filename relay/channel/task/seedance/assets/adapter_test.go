@@ -4,13 +4,13 @@ package assets
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -39,9 +39,9 @@ func TestProtocolAdaptersNormalizeCreationContracts(t *testing.T) {
 			})),
 		},
 		{
-			name: "relay", wantPath: "/assets", wantStatus: "active", wantID: "uuid-1", wantRefType: "asset_uri_id",
-			adapter: NewRelayAdapter("https://upstream.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
-				return assetJSONResponse(`{"uuid":"uuid-1","upstream_id":"asset-relay","status":"Active"}`), nil
+			name: "tokensave", wantPath: "/v1/asset/create", wantStatus: "active", wantID: "52", wantRefType: "asset_uri_id",
+			adapter: NewTokenSaveAssetAdapter("https://upstream.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+				return assetJSONResponse(`{"requestId":"request-1","error":null,"result":{"id":"52","assetId":"asset-tokensave","vendorStatus":"Active","status":1}}`), nil
 			})),
 		},
 	}
@@ -52,7 +52,7 @@ func TestProtocolAdaptersNormalizeCreationContracts(t *testing.T) {
 			case *ArkAdapter:
 				original := adapter.http
 				adapter.http = assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) { requestedPath = req.URL.Path; return original.Do(req) })
-			case *RelayAdapter:
+			case *TokenSaveAssetAdapter:
 				original := adapter.http
 				adapter.http = assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) { requestedPath = req.URL.Path; return original.Do(req) })
 			}
@@ -77,7 +77,7 @@ func TestMoxingAssetAdaptersUseProviderSpecificContracts(t *testing.T) {
 		{
 			name: "JoyCreator", wantPath: "/joycreator/openApi/v1/asset/create", wantID: "52", wantRefID: "asset-joy-1",
 			adapter: NewMoxingJoyCreatorAdapter("https://moxing.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
-				return assetJSONResponse(`{"requestId":"request-1","error":null,"result":{"asset":{"id":"52","assetId":"asset-joy-1","vendorStatus":"Active","status":1}}}`), nil
+				return assetJSONResponse(`{"requestId":"request-1","error":null,"result":{"id":"52","assetId":"asset-joy-1","vendorStatus":"Active","status":1}}`), nil
 			})),
 		},
 		{
@@ -117,6 +117,46 @@ func TestMoxingAssetAdaptersUseProviderSpecificContracts(t *testing.T) {
 	}
 }
 
+func TestMoxingJoyCreatorNormalizesDirectGroupCreationResult(t *testing.T) {
+	adapter := NewMoxingJoyCreatorAdapter("https://moxing.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+		return assetJSONResponse(`{"requestId":"request-1","error":null,"result":{"id":"34","groupId":"group-provider-1"}}`), nil
+	}))
+
+	group, err := adapter.CreateGroup(context.Background(), GroupRequest{Name: "group"})
+	require.NoError(t, err)
+	assert.Equal(t, "34", group.ResourceID)
+	assert.Equal(t, "group-provider-1", group.BusinessID)
+	assert.Equal(t, "active", group.Status)
+}
+
+func TestMoxingAssetAdaptersRequireGroupsForSupportedAssets(t *testing.T) {
+	adapters := []Adapter{
+		NewMoxingJoyCreatorAdapter("https://moxing.example", "key", nil),
+		NewMoxingVolcAdapter("https://moxing.example", "key", nil),
+	}
+	for _, adapter := range adapters {
+		requirement, ok := adapter.(AssetGroupRequirementAdapter)
+		require.True(t, ok)
+		assert.True(t, requirement.RequiresAssetGroup("general", "image"))
+		assert.False(t, requirement.RequiresAssetGroup("general", "text"))
+	}
+}
+
+func TestMoxingVolcCreateGroupOmitsProjectName(t *testing.T) {
+	adapter := NewMoxingVolcAdapter("https://moxing.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+		var body map[string]any
+		require.NoError(t, common.DecodeJson(req.Body, &body))
+		assert.Equal(t, "group", body["Name"])
+		assert.Equal(t, "AIGC", body["GroupType"])
+		assert.NotContains(t, body, "ProjectName")
+		return assetJSONResponse(`{"Result":{"Id":"group-1","Status":"active"}}`), nil
+	}))
+
+	group, err := adapter.CreateGroup(context.Background(), GroupRequest{Name: "group"})
+	require.NoError(t, err)
+	assert.Equal(t, "group-1", group.ResourceID)
+}
+
 func TestMoxingAndBytePlusImplementUnifiedRealPersonContract(t *testing.T) {
 	moxing := NewArkAdapter("https://tokensave.pro", "moxing-key", nil)
 	bytePlus, err := NewBytePlusActionAdapter(
@@ -148,13 +188,6 @@ func TestProxyConnectivityUsesDocumentedReadOnlyListEndpoints(t *testing.T) {
 			},
 		},
 		{
-			name:     "relay assets",
-			wantPath: "/assets/list",
-			adapter: func(client HTTPDoer) ConnectivityAdapter {
-				return NewRelayAdapter("https://upstream.example", "channel-key", client)
-			},
-		},
-		{
 			name:     "Moxing Volcengine assets",
 			wantPath: "/v1/volc/assets/list",
 			adapter: func(client HTTPDoer) ConnectivityAdapter {
@@ -174,12 +207,6 @@ func TestProxyConnectivityUsesDocumentedReadOnlyListEndpoints(t *testing.T) {
 			require.NoError(t, test.adapter(client).CheckConnectivity(context.Background()))
 		})
 	}
-}
-
-func TestArkGroupDeleteFailsClosedWhenExactEndpointIsUnconfirmed(t *testing.T) {
-	adapter := NewArkAdapter("https://upstream.example", "key", nil)
-	err := adapter.DeleteGroup(context.Background(), "group-1")
-	require.ErrorIs(t, err, ErrGroupDeletionUnsupported)
 }
 
 func TestCreateErrorClassificationSeparatesRejectedFromUnknownOutcomes(t *testing.T) {
@@ -245,14 +272,14 @@ func TestArkVerificationAdapterUsesDocumentedSessionAndResultEndpoints(t *testin
 }
 
 func TestAdapterDeletionIsIdempotent(t *testing.T) {
-	relayAdapter := NewRelayAdapter("https://upstream.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter := NewTokenSaveAssetAdapter("https://upstream.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(`{"detail":"missing"}`))}, nil
 	}))
-	require.NoError(t, relayAdapter.DeleteAsset(context.Background(), "missing"))
+	require.NoError(t, adapter.DeleteAsset(context.Background(), "missing"))
 }
 
 func TestUpstreamHTTPErrorDoesNotExposeResponseBody(t *testing.T) {
-	adapter := NewRelayAdapter("https://upstream.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter := NewTokenSaveAssetAdapter("https://upstream.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader(`{"sas":"secret-token","detail":"internal"}`))}, nil
 	}))
 	_, err := adapter.GetAsset(context.Background(), "asset-1")
@@ -262,7 +289,7 @@ func TestUpstreamHTTPErrorDoesNotExposeResponseBody(t *testing.T) {
 }
 
 func TestUpstreamNotFoundIsExplicitlyClassified(t *testing.T) {
-	adapter := NewRelayAdapter("https://upstream.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+	adapter := NewTokenSaveAssetAdapter("https://upstream.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader(`{"detail":"missing"}`)),
@@ -281,10 +308,6 @@ func TestFunCloudMaterialAdapterUsesPublishedGroupAndVirtualUploadContracts(t *t
 		switch req.URL.Path {
 		case "/api/v2/open/material/group/create":
 			return assetJSONResponse(`{"code":0,"data":{"groupId":"group-1"}}`), nil
-		case "/api/v2/open/material/group/list":
-			return assetJSONResponse(`{"code":0,"data":{"list":[{"groupId":"group-1","materialCount":0}]}}`), nil
-		case "/api/v2/open/material/group/delete":
-			return assetJSONResponse(`{"code":0,"data":{}}`), nil
 		case "/api/v2/open/material/virtual/upload":
 			multipartReader, err := req.MultipartReader()
 			require.NoError(t, err)
@@ -318,7 +341,6 @@ func TestFunCloudMaterialAdapterUsesPublishedGroupAndVirtualUploadContracts(t *t
 	group, err := adapter.CreateGroup(context.Background(), GroupRequest{Name: "group", Description: "description"})
 	require.NoError(t, err)
 	assert.Equal(t, "group-1", group.ResourceID)
-	require.NoError(t, adapter.DeleteGroup(context.Background(), "group-1"))
 
 	asset, err := adapter.CreateAsset(context.Background(), AssetRequest{
 		GroupResourceID: "group-1", Name: "clip", MediaType: "video",
@@ -332,8 +354,6 @@ func TestFunCloudMaterialAdapterUsesPublishedGroupAndVirtualUploadContracts(t *t
 	assert.Equal(t, "active", asset.Status)
 	assert.Equal(t, []string{
 		"POST /api/v2/open/material/group/create",
-		"GET /api/v2/open/material/group/list?page=1&pageSize=100",
-		"POST /api/v2/open/material/group/delete?groupId=group-1",
 		"POST /api/v2/open/material/virtual/upload",
 	}, paths)
 
@@ -342,62 +362,26 @@ func TestFunCloudMaterialAdapterUsesPublishedGroupAndVirtualUploadContracts(t *t
 	require.ErrorIs(t, adapter.DeleteAsset(context.Background(), "material-1"), ErrAssetOperationUnsupported)
 }
 
-func TestFunCloudMaterialGroupDeleteFailsClosedUnlessProviderGroupIsEmpty(t *testing.T) {
-	tests := []struct {
-		name         string
-		listResponse *http.Response
-		listErr      error
-		wantNotEmpty bool
-		wantDelete   bool
-		wantNoError  bool
-	}{
-		{
-			name: "non-empty group", listResponse: assetJSONResponse(`{"code":0,"data":{"list":[{"groupId":"group-1","materialCount":2}]}}`),
-			wantNotEmpty: true,
-		},
-		{
-			name: "empty group", listResponse: assetJSONResponse(`{"code":0,"data":{"list":[{"groupId":"group-1","materialCount":0}]}}`),
-			wantDelete: true, wantNoError: true,
-		},
-		{
-			name: "missing group", listResponse: assetJSONResponse(`{"code":0,"data":{"list":[]}}`),
-			wantNoError: true,
-		},
-		{
-			name: "ambiguous envelope", listResponse: assetJSONResponse(`{"code":0,"data":{"list":[],"items":[]}}`),
-		},
-		{
-			name: "missing material count", listResponse: assetJSONResponse(`{"code":0,"data":{"list":[{"groupId":"group-1"}]}}`),
-		},
-		{
-			name: "lookup transport failure", listErr: fmt.Errorf("lookup unavailable"),
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			deleteCalled := false
-			adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
-				switch req.URL.Path {
-				case "/api/v2/open/material/group/list":
-					return test.listResponse, test.listErr
-				case "/api/v2/open/material/group/delete":
-					deleteCalled = true
-					return assetJSONResponse(`{"code":0,"data":{}}`), nil
-				default:
-					return nil, fmt.Errorf("unexpected request %s", req.URL.Path)
-				}
-			}))
+func TestFunCloudMaterialListInfersActiveFromVerifiedReferenceWhenStatusIsOmitted(t *testing.T) {
+	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+		return assetJSONResponse(`{"code":0,"data":{"list":[{"materialId":"material-1","isAsset":true,"assetUrl":"asset://provider-asset-1"}]}}`), nil
+	}))
 
-			err := adapter.DeleteGroup(context.Background(), "group-1")
-			if test.wantNoError {
-				require.NoError(t, err)
-			} else {
-				require.Error(t, err)
-			}
-			assert.Equal(t, test.wantNotEmpty, errors.Is(err, ErrGroupNotEmpty))
-			assert.Equal(t, test.wantDelete, deleteCalled)
-		})
-	}
+	asset, err := adapter.GetAsset(context.Background(), "material-1")
+	require.NoError(t, err)
+	assert.Equal(t, "active", asset.Status)
+	assert.Equal(t, "asset_uri_id", asset.ReferenceType)
+	assert.Equal(t, "provider-asset-1", asset.ReferenceValue)
+}
+
+func TestFunCloudMaterialListKeepsMissingStatusWithoutVerifiedReferenceProcessing(t *testing.T) {
+	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+		return assetJSONResponse(`{"code":0,"data":{"list":[{"materialId":"material-1","isAsset":false,"assetUrl":"asset://provider-asset-1"}]}}`), nil
+	}))
+
+	asset, err := adapter.GetAsset(context.Background(), "material-1")
+	require.NoError(t, err)
+	assert.Equal(t, "processing", asset.Status)
 }
 
 func TestFunCloudMaterialListAndAssetNormalizationFailClosed(t *testing.T) {

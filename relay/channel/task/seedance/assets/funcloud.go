@@ -9,7 +9,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"net/url"
 	"strconv"
 	"strings"
 	"unicode"
@@ -44,10 +43,9 @@ type funCloudMaterialEnvelope struct {
 }
 
 type funCloudGroup struct {
-	GroupID       string `json:"groupId"`
-	GroupName     string `json:"groupName"`
-	Description   string `json:"description"`
-	MaterialCount *int   `json:"materialCount"`
+	GroupID     string `json:"groupId"`
+	GroupName   string `json:"groupName"`
+	Description string `json:"description"`
 }
 
 type funCloudMaterial struct {
@@ -58,6 +56,7 @@ type funCloudMaterial struct {
 	GroupID          string `json:"groupId"`
 	AssetURL         string `json:"assetUrl"`
 	AssetStatus      string `json:"assetStatus"`
+	IsAsset          *bool  `json:"isAsset"`
 }
 
 func (a *FunCloudMaterialAdapter) requestEnvelope(ctx context.Context, method, path string, body any) (funCloudMaterialEnvelope, error) {
@@ -140,31 +139,6 @@ func (a *FunCloudMaterialAdapter) getGroup(ctx context.Context, resourceID strin
 		return funCloudGroup{}, &upstreamHTTPError{StatusCode: http.StatusNotFound}
 	}
 	return *matched, nil
-}
-
-func (a *FunCloudMaterialAdapter) DeleteGroup(ctx context.Context, resourceID string) error {
-	resourceID = strings.TrimSpace(resourceID)
-	if resourceID == "" {
-		return fmt.Errorf("FunCloud material group id is required")
-	}
-	group, err := a.getGroup(ctx, resourceID)
-	if upstreamNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if group.MaterialCount == nil || *group.MaterialCount < 0 {
-		return fmt.Errorf("FunCloud material group response has no trustworthy material count")
-	}
-	if *group.MaterialCount != 0 {
-		return ErrGroupNotEmpty
-	}
-	_, err = a.requestEnvelope(ctx, http.MethodPost, funCloudMaterialRoot+"/group/delete?groupId="+url.QueryEscape(resourceID), nil)
-	if upstreamNotFound(err) {
-		return nil
-	}
-	return err
 }
 
 func (a *FunCloudMaterialAdapter) CreateAsset(ctx context.Context, req AssetRequest) (AssetResult, error) {
@@ -341,6 +315,9 @@ func normalizeFunCloudMaterial(material funCloudMaterial) (AssetResult, error) {
 		}
 		result.ReferenceType = "asset_uri_id"
 		result.ReferenceValue = providerID
+	}
+	if strings.TrimSpace(material.AssetStatus) == "" && material.IsAsset != nil && *material.IsAsset && result.ReferenceValue != "" {
+		result.Status = "active"
 	}
 	if result.Status == "active" && result.ReferenceValue == "" {
 		return AssetResult{}, fmt.Errorf("FunCloud active material has no asset URL")

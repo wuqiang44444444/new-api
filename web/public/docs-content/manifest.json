@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-08-05.1",
+  "contentVersion": "2026-08-25.2",
   "defaultLocale": "zh",
   "locales": {
     "zh": {
@@ -71,7 +71,7 @@
               "title": "异步任务",
               "slug": "concepts/async-tasks",
               "file": "zh/concepts/async-tasks.md",
-              "description": "轮询图片、视频与素材任务的通用方法",
+              "description": "轮询明确返回任务 ID 的视频任务",
               "keywords": ["任务", "轮询", "状态"],
               "assets": []
             }
@@ -86,7 +86,7 @@
               "title": "文本与模型",
               "slug": "api-reference/text",
               "file": "zh/api-reference/text/overview.md",
-              "description": "模型列表、Chat Completions、Responses 与 Messages",
+              "description": "查询模型入口与逐模型参数，并调用文本 API",
               "keywords": ["模型", "Chat", "Responses", "Claude"],
               "assets": []
             }

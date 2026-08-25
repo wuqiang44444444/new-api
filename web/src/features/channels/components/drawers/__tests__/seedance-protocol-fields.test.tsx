@@ -74,6 +74,19 @@ function SeedanceProtocolFieldsHarness(
 }
 
 describe('Seedance protocol fields', () => {
+  test('explains the channel asset boundary and lists the sharing models', () => {
+    render(<SeedanceProtocolFieldsHarness models='seedance-a, seedance-b' />)
+
+    expect(
+      screen.getByText('Asset library boundary: this channel')
+    ).toBeTruthy()
+    expect(
+      screen.getByText(
+        'Models sharing this asset library: seedance-a, seedance-b'
+      )
+    ).toBeTruthy()
+  })
+
   test('uses wide selectors and links the selected video provider to its asset library', async () => {
     const user = userEvent.setup()
     render(<SeedanceProtocolFieldsHarness />)

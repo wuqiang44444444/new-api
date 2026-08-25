@@ -50,7 +50,7 @@ export function getCompatibleSeedanceAssetProtocols(
 
 export function isFunCloud25ProviderModel(modelMapping?: string): boolean {
   const providerModels = extractRedirectModels(modelMapping || '')
-  return providerModels.length === 1 && providerModels[0] === 'seedance-2-5'
+  return providerModels.includes('seedance-2-5')
 }
 
 export function isOfficialSeedanceAssetProtocol(

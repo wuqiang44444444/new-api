@@ -1,6 +1,7 @@
 import { type Control, useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   FormControl,
   FormDescription,
@@ -104,6 +105,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
     control: props.control,
     name: 'model_mapping',
   })
+  const models = useWatch({ control: props.control, name: 'models' })
   const usesAssets = assetProtocol && assetProtocol !== 'none'
   const usesOfficialAssets = isOfficialSeedanceAssetProtocol(assetProtocol)
   const usesVolcengineAssets =
@@ -132,6 +134,29 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
 
   return (
     <>
+      {usesAssets ? (
+        <Alert>
+          <AlertTitle>{t('Asset library boundary: this channel')}</AlertTitle>
+          <AlertDescription className='space-y-1'>
+            <p>
+              {t(
+                'One Seedance channel represents one upstream asset tenant. Put every model that must share assets in this channel; create another channel for a different tenant.'
+              )}
+            </p>
+            <p>
+              {t('Models sharing this asset library: {{models}}', {
+                models:
+                  models
+                    ?.split(',')
+                    .map((model) => model.trim())
+                    .filter(Boolean)
+                    .join(', ') || t('None selected'),
+              })}
+            </p>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <FormField
         control={props.control}
         name='video_upstream_protocol'

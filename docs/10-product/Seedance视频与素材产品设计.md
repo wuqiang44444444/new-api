@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-18
+last-reviewed: 2026-08-25
 ---
 
 # Seedance 视频与素材产品设计
@@ -120,13 +120,20 @@ Seedance Channel 不允许 Multi-Key 轮换。
 发现冲突时，系统使用普通语言指出冲突模型和已有渠道，并拒绝保存或启用。停用渠道可以暂存重名
 配置；系统不在每次客户请求时重复检查，也不为绕过后台直接修改数据库的极端情况增加自动修复。
 
-### 8.3 Priority 与 Weight
+### 8.3 一个素材渠道一个租户边界
+
+选择素材协议后，表单明确告知管理员：当前 Channel 代表一个上游素材租户，需要共享素材的模型必须放在
+同一 Channel。素材边界建立后，渠道类型、Base URL、视频/素材协议、Project 和 Region 不能原地修改；
+管理员需新建 Channel。轮换视频 Key 或素材 AK/SK 时必须在确认弹窗声明素材租户未变化，系统记录声明，
+但不代替管理员向 Provider 核实账号归属。
+
+### 8.4 Priority 与 Weight
 
 Priority 和 Weight 对 Seedance 路由不生效。管理端可以保留 NEWAPI 通用字段和高级配置入口，但必须
 明确提示管理员：“每个 Seedance 模型固定使用一个渠道，Priority 和 Weight 不参与路由，任务失败
 不会自动切换渠道。”保存时相应值不获得任何 Seedance 分发语义。
 
-### 8.4 启停与配置变化
+### 8.5 启停与配置变化
 
 停用渠道只阻止新的客户请求。已经创建的 Task 继续使用创建时的线路、协议、连接、素材和计费事实；
 修改模型映射、轮换 Key、升级协议或调整价格都不能把在途任务改到新配置上。
@@ -212,12 +219,19 @@ Provider 请求已经发送、但平台无法确认是否创建成功时，结�
 模型选择唯一 Seedance Channel，并直接返回 Provider opaque 素材、素材组或认证会话 ID；素材可用时
 同时返回 `asset://<opaque-id>`。调用方保存 `model + id + reference`。
 
+`/v1/asset-groups` 只提供创建与单项查询，不提供列表、更新或删除。平台不主动删除 Provider 素材组；
+确需清理时由 Provider 管理员在明确整组归属和影响范围后执行。
+
 平台不为 opaque ID 增加 Provider 命名空间，不返回 Provider 名称、Channel ID、账号、Region/Project、
 协议或上游原始模型，也不建立 Asset/AssetGroup 表、resolver、所有权映射或列表索引。不同线路是否接受同一 ID
 由 Provider 决定；平台不迁移、探测或自动切换。
 
 平台不保存媒体二进制。创建素材使用的 HTTPS URL 只参与当次请求和 Provider 调用，不进入 Task、日志
 或长期存储。
+
+模型列表、表格和详情以匿名“素材共享组”标签展示同一 Channel 内可见且可用的模型。标签从公开
+`reuse_scope` 稳定派生，不显示 Channel、Provider、账号或上游模型。不同 Channel 不显示为同组；标签
+相同仍不保证每种素材都被每个模型接受，最终由 Provider 裁决。
 
 ### 10.3 在视频请求中使用素材
 

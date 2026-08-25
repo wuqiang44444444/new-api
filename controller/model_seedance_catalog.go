@@ -65,7 +65,7 @@ func ListSeedanceModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"object":  "list",
-		"data":    appendConfiguredSeedanceModels(availableModels),
+		"data":    applyConfiguredSeedanceModels(availableModels, catalog),
 	})
 }
 
@@ -75,7 +75,10 @@ func appendConfiguredSeedanceModels(models []dto.OpenAIModels) []dto.OpenAIModel
 		common.SysLog("GetConfiguredSeedancePublicModels error: " + err.Error())
 		return models
 	}
+	return applyConfiguredSeedanceModels(models, catalog)
+}
 
+func applyConfiguredSeedanceModels(models []dto.OpenAIModels, catalog []model.SeedancePublicModel) []dto.OpenAIModels {
 	indexByName := make(map[string]int, len(models)+len(catalog))
 	for i := range models {
 		indexByName[models[i].Id] = i

@@ -15,14 +15,14 @@ func resetPricingEndpointTestTables(t *testing.T) {
 	t.Helper()
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled
 	common.MemoryCacheEnabled = true
-	require.NoError(t, DB.AutoMigrate(&Channel{}, &Ability{}, &Model{}, &Vendor{}))
-	for _, table := range []string{"abilities", "channels", "models", "vendors"} {
+	require.NoError(t, DB.AutoMigrate(&Channel{}, &Ability{}, &ChannelAssetScopeIdentity{}, &Model{}, &Vendor{}))
+	for _, table := range []string{"abilities", "channel_asset_scope_identities", "channels", "models", "vendors"} {
 		require.NoError(t, DB.Exec("DELETE FROM "+table).Error)
 	}
 	InitChannelCache()
 	InvalidatePricingCache()
 	t.Cleanup(func() {
-		for _, table := range []string{"abilities", "channels", "models", "vendors"} {
+		for _, table := range []string{"abilities", "channel_asset_scope_identities", "channels", "models", "vendors"} {
 			require.NoError(t, DB.Exec("DELETE FROM "+table).Error)
 		}
 		InitChannelCache()
@@ -116,8 +116,12 @@ func TestPricingIncludesDisabledSeedanceCatalogWithModelArkAndAssetAPI(t *testin
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
 		AssetUpstreamProtocol: dto.AssetUpstreamProtocolVolcengineAction,
+		AssetProviderProject:  "default",
+		AssetRegion:           VolcengineAssetActionRegion,
+		AssetMinURLTTLSeconds: 3600,
 	})
-	require.NoError(t, DB.Create(channel).Error)
+	require.NoError(t, channel.ValidateSettings())
+	require.NoError(t, channel.Insert())
 	InvalidatePricingCache()
 
 	pricing, exists := func() (Pricing, bool) {

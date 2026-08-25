@@ -312,6 +312,14 @@ export function validateContentSafety(body, page, manifestContext) {
     !/(?:docs\/openapi\/api\.json|private_data|header\s*override)/i.test(body),
     `${page.file} 包含禁止公开的内部字段或文件`
   )
+  if (page.groupId === 'images') {
+    assert(
+      !/(?:渠道|FunCloud|Moxing|funcloud_aigc_v2|moxing_images_v1|image_upstream_protocol|ChannelType(?:AsyncImage|MoxingImage)|nano-banana-2|doubao-seedream|seedream-5\.0)/i.test(
+        body
+      ),
+      `${page.file} 包含禁止公开的图片渠道、协议或上游模型身份`
+    )
+  }
   const placeholders = [...body.matchAll(/\{\{([A-Z0-9_]+)\}\}/g)].map(
     (match) => match[1]
   )

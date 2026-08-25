@@ -5938,5 +5938,16 @@
     "Zhipu V4": "智譜 V4",
     "Zoom": "縮放"
   },
-  "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.": "請先停用使用獨立素材憑證的素材協議並儲存渠道，再清除已儲存的憑證。"
+  "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.": "請先停用使用獨立素材憑證的素材協議並儲存渠道，再清除已儲存的憑證。",
+  "Asset library boundary: this channel": "素材庫邊界：目前渠道",
+  "One Seedance channel represents one upstream asset tenant. Put every model that must share assets in this channel; create another channel for a different tenant.": "一個 Seedance 渠道代表一個上游素材租戶。需要共享素材的所有模型必須放在目前渠道；不同租戶請建立新渠道。",
+  "Models sharing this asset library: {{models}}": "共享此素材庫的模型：{{models}}",
+  "None selected": "尚未選擇",
+  "Confirm asset credential rotation": "確認輪換素材憑證",
+  "Confirm tenant is unchanged": "確認租戶未變更",
+  "Only continue when these credentials belong to the same upstream asset tenant. If the account or tenant changed, cancel and create a new channel.": "僅當新憑證仍屬於同一個上游素材租戶時繼續。若帳號或租戶已變更，請取消並建立新渠道。",
+  "Models sharing this asset library": "共享此素材庫的模型",
+  "This channel already defines an asset tenant. Create a new channel to change its type, Base URL, protocols, project, or region.": "目前渠道已確定素材租戶。如需修改渠道類型、Base URL、協定、Project 或 Region，請建立新渠道。",
+  "Credential rotation requires confirmation that the upstream asset tenant is unchanged.": "輪換憑證前必須確認上游素材租戶未變更。",
+  "Asset share group {{label}}": "素材共享組 {{label}}"
 }

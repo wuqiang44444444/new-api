@@ -49,7 +49,14 @@ func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	model.DB = db
 	model.LOG_DB = db
 
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.Vendor{}))
+	require.NoError(t, db.AutoMigrate(
+		&model.User{},
+		&model.Channel{},
+		&model.Ability{},
+		&model.ChannelAssetScopeIdentity{},
+		&model.Model{},
+		&model.Vendor{},
+	))
 
 	t.Cleanup(func() {
 		sqlDB, err := db.DB()
@@ -80,7 +87,9 @@ func initModelListColumnNames(t *testing.T) {
 		}
 	}()
 
-	common.IsMasterNode = false
+	// This fixture owns a fresh database, so it must run the master migration
+	// path before InitDB verifies migration markers such as image relay v1.
+	common.IsMasterNode = true
 	common.SQLitePath = fmt.Sprintf("file:%s_init?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	require.NoError(t, os.Setenv("SQL_DSN", "local"))
@@ -339,11 +348,12 @@ func TestListModelsReturnsDisabledSeedanceModelsWithPublicAPIContracts(t *testin
 		Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusManuallyDisabled,
 		Name: "disabled fixed-resolution line", Key: "fixed-key", Group: "default", Models: "public-video-720p",
 	}
+	feicai.ModelMapping = common.GetPointer(`{"public-video-720p":"seedance-2.0-vip-720p-mini-azhw"}`)
 	feicai.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFeicaiVideosV1,
 		AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone,
 	})
-	require.NoError(t, db.Create(funCloud).Error)
+	require.NoError(t, funCloud.Insert())
 	require.NoError(t, db.Create(feicai).Error)
 
 	recorder := httptest.NewRecorder()

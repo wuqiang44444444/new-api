@@ -80,6 +80,14 @@ function getErrorMessage(error: unknown): string | undefined {
   return undefined
 }
 
+function getErrorCode(error: unknown): string | undefined {
+  if (!isRecord(error)) return undefined
+  const response = error.response
+  if (!isRecord(response) || !isRecord(response.data)) return undefined
+  const errorCode = response.data.error_code
+  return typeof errorCode === 'string' ? errorCode : undefined
+}
+
 export function useChannelMutateForm(props: UseChannelMutateFormParams) {
   const { t } = useTranslation()
   const currentUser = useAuthStore((s) => s.auth.user)
@@ -138,6 +146,23 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
       props.onSuccess()
     },
     onError: (error: unknown) => {
+      const errorCode = getErrorCode(error)
+      if (errorCode === 'asset_tenant_boundary_immutable') {
+        toast.error(
+          t(
+            'This channel already defines an asset tenant. Create a new channel to change its type, Base URL, protocols, project, or region.'
+          )
+        )
+        return
+      }
+      if (errorCode === 'asset_tenant_rotation_unconfirmed') {
+        toast.error(
+          t(
+            'Credential rotation requires confirmation that the upstream asset tenant is unchanged.'
+          )
+        )
+        return
+      }
       toast.error(getErrorMessage(error) || t(ERROR_MESSAGES.CREATE_FAILED))
     },
   })

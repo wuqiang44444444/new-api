@@ -2,9 +2,7 @@ package model
 
 import (
 	"fmt"
-	"strings"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 )
 
@@ -23,29 +21,23 @@ func validateFunCloudSeedanceChannel(channel *Channel, settings *dto.ChannelOthe
 		return nil
 	}
 
-	models := channel.GetModels()
-	if len(models) != 1 {
-		return fmt.Errorf("FunCloud Seedance channels require exactly one customer model")
-	}
-	customerModel := strings.TrimSpace(models[0])
-	var mapping map[string]string
-	if err := common.UnmarshalJsonStr(channel.GetModelMapping(), &mapping); err != nil {
-		return fmt.Errorf("FunCloud Seedance channels require one exact model_mapping entry")
-	}
-	providerModel := strings.TrimSpace(mapping[customerModel])
-	if len(mapping) != 1 || providerModel == "" {
-		return fmt.Errorf("model_mapping must contain exactly one entry for customer model %q", customerModel)
-	}
-	if _, ok := funCloudSeedanceProviderModels[providerModel]; !ok {
-		return fmt.Errorf("model_mapping target for %q is not supported by the FunCloud Seedance protocol", customerModel)
+	providerModels, err := resolveSeedanceChannelProviderModels(
+		channel,
+		settings.VideoUpstreamProtocol,
+		funCloudSeedanceProviderModels,
+	)
+	if err != nil {
+		return err
 	}
 
 	switch settings.AssetUpstreamProtocol {
 	case dto.AssetUpstreamProtocolNone:
 		return nil
 	case dto.AssetUpstreamProtocolFunCloudMaterial:
-		if providerModel == "seedance-2-5" {
-			return fmt.Errorf("FunCloud Seedance 2.5 does not support the FunCloud material protocol")
+		for customerModel, providerModel := range providerModels {
+			if providerModel == "seedance-2-5" {
+				return fmt.Errorf("customer model %q resolves to FunCloud Seedance 2.5; FunCloud Seedance 2.5 does not support the FunCloud material protocol", customerModel)
+			}
 		}
 		return nil
 	default:

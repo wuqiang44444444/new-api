@@ -75,7 +75,7 @@
       "get": {
         "summary": "获取模型列表",
         "deprecated": false,
-        "description": "获取模型目录。普通 NEWAPI 模型仍按当前 Key 的可用范围返回；所有已配置 Seedance Link 客户模型都会返回，并通过 `available`、`availability` 区分当前可调用、已禁用或受当前 Key 限制。Seedance 条目还包含统一 ModelArk V3 调用接口和逐模型素材接口能力；不会暴露 Provider 模型、渠道、凭据或南向私有路径。\n\n根据请求头自动识别返回格式：\n- 包含 `x-api-key` 和 `anthropic-version` 头时返回 Anthropic 格式\n- 包含 `x-goog-api-key` 头或 `key` 查询参数时返回 Gemini 格式\n- 其他情况返回 OpenAI 格式\n",
+        "description": "获取模型目录。普通 NEWAPI 模型仍按当前 Key 的可用范围返回；所有已配置 Seedance Link 客户模型都会返回，并通过 `available`、`availability` 区分当前可调用、已禁用或受当前 Key 限制。图片和视频条目的 api 字段包含北向入口、完整允许参数及约束；视频条目还包含逐模型素材接口能力。公开元数据不会暴露 Provider 模型、渠道、凭据或南向私有路径。\n\n根据请求头自动识别返回格式：\n- 包含 `x-api-key` 和 `anthropic-version` 头时返回 Anthropic 格式\n- 包含 `x-goog-api-key` 头或 `key` 查询参数时返回 Gemini 格式\n- 其他情况返回 OpenAI 格式\n",
         "operationId": "listModels",
         "tags": [
           "获取模型列表"
@@ -157,7 +157,7 @@
       "get": {
         "summary": "获取单个模型元数据",
         "deprecated": false,
-        "description": "按客户模型名获取单个模型。Seedance 条目返回统一视频创建合同、逐操作素材能力和匿名素材复用域；不返回 Provider、上游原始模型名、Channel、凭据或南向路径。",
+        "description": "按客户模型名获取与列表同构的单模型元数据。图片和视频条目返回北向入口、完整允许参数及约束；视频条目还返回逐操作素材能力和匿名素材复用域。响应不包含 Provider、上游原始模型名、Channel、凭据或南向路径。",
         "operationId": "retrieveModel",
         "tags": ["获取模型列表"],
         "parameters": [
@@ -371,7 +371,7 @@
       "post": {
         "summary": "创建图片",
         "deprecated": false,
-        "description": "使用 OpenAI 兼容图片请求创建图片。普通响应在本次请求内完成；部分渠道的 Provider 异步由网关内部轮询。",
+        "description": "使用 OpenAI 兼容图片请求创建图片。普通响应在本次请求内完成，内部执行差异不会作为图片任务暴露给客户端。",
         "operationId": "createImageGeneration",
         "tags": [
           "图片生成/OpenAI兼容格式"
@@ -420,7 +420,7 @@
       "post": {
         "summary": "编辑图片",
         "deprecated": false,
-        "description": "使用 OpenAI 兼容 multipart Link 合同编辑图片。",
+        "description": "使用 OpenAI 兼容 multipart 请求编辑图片，并在本次请求内返回最终结果。",
         "operationId": "createImageEdit",
         "tags": [
           "图片生成/OpenAI兼容格式"
@@ -2344,7 +2344,7 @@
       "get": {
         "summary": "获取 Seedance ModelArk 模型目录",
         "deprecated": false,
-        "description": "返回所有已配置 Seedance 客户模型。禁用或受当前 Key 限制的模型继续返回，并由 available 与 availability 表达调用资格；api 字段提供完整 ModelArk V3 北向操作与逐模型素材接口支持矩阵。",
+        "description": "返回所有已配置 Seedance 客户模型。禁用或受当前 Key 限制的模型继续返回，并由 available 与 availability 表达调用资格；api 字段提供完整 ModelArk V3 北向操作、逐模型创建参数和素材接口支持矩阵。",
         "operationId": "listModelArkVideoModels",
         "tags": [
           "视频生成/ModelArk格式"
@@ -2373,7 +2373,7 @@
       "post": {
         "summary": "创建 ModelArk 视频任务",
         "deprecated": false,
-        "description": "使用公开 ModelArk v3 合同创建视频任务。所有已配置 Seedance 客户模型及其当前可用状态、视频操作和素材操作矩阵由 GET /v1/models 返回；available=false 的目录条目不能创建新任务。具体生成参数仍由对应模型的已验证合同校验。",
+        "description": "使用公开 ModelArk v3 合同创建视频任务。所有已配置 Seedance 客户模型及其当前可用状态、视频操作、创建参数和素材操作矩阵由 GET /v1/models 返回；available=false 的目录条目不能创建新任务。只发送 api.video.creation.parameters 与 content_types 登记的字段和内容。",
         "operationId": "createModelArkVideoTask",
         "tags": [
           "视频生成/ModelArk格式"
@@ -2862,38 +2862,6 @@
             "BearerAuth": []
           }
         ]
-      },
-      "delete": {
-        "summary": "删除素材组",
-        "deprecated": false,
-        "operationId": "deleteAssetGroup",
-        "tags": [
-          "素材"
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/AssetGroupId"
-          },
-          {
-            "$ref": "#/components/parameters/AssetModel"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "素材组已删除"
-          },
-          "404": {
-            "description": "客户模型或素材组不存在"
-          },
-          "409": {
-            "description": "素材组仍包含素材或当前状态不允许删除"
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
       }
     }
   },
@@ -3028,16 +2996,61 @@
       },
       "PublicModelAPI": {
         "type": "object",
-        "required": [
-          "video",
-          "assets"
-        ],
         "properties": {
+          "image": {
+            "$ref": "#/components/schemas/PublicImageAPI"
+          },
           "video": {
             "$ref": "#/components/schemas/PublicVideoAPI"
           },
           "assets": {
             "$ref": "#/components/schemas/PublicAssetAPI"
+          }
+        }
+      },
+      "PublicImageAPI": {
+        "type": "object",
+        "required": ["documentation_path", "operations", "creation"],
+        "properties": {
+          "documentation_path": {
+            "type": "string",
+            "example": "/docs/api-reference/images/generations"
+          },
+          "operations": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/PublicAPIOperation"}
+          },
+          "creation": {
+            "$ref": "#/components/schemas/PublicImageCreation"
+          }
+        }
+      },
+      "PublicImageCreation": {
+        "type": "object",
+        "required": [
+          "method", "path", "content_type", "required_fields", "model",
+          "additional_properties", "parameters"
+        ],
+        "properties": {
+          "method": {"type": "string", "enum": ["POST"]},
+          "path": {"type": "string", "example": "/v1/images/generations"},
+          "content_type": {"type": "string", "enum": ["application/json"]},
+          "required_fields": {
+            "type": "array",
+            "items": {"type": "string"},
+            "example": ["model", "prompt"]
+          },
+          "model": {
+            "type": "string",
+            "description": "应在创建请求中发送的客户模型名。"
+          },
+          "additional_properties": {
+            "type": "boolean",
+            "description": "为 false 时，parameters 未登记的字段不受支持。"
+          },
+          "parameters": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/PublicAPIParameter"}
           }
         }
       },
@@ -3053,7 +3066,8 @@
           "protocol": {
             "type": "string",
             "enum": [
-              "modelark_v3"
+              "modelark_v3",
+              "openai_videos"
             ]
           },
           "documentation_path": {
@@ -3079,7 +3093,10 @@
           "path",
           "content_type",
           "required_fields",
-          "model"
+          "model",
+          "additional_properties",
+          "parameters",
+          "content_types"
         ],
         "properties": {
           "method": {
@@ -3102,7 +3119,62 @@
           "model": {
             "type": "string",
             "description": "应在创建请求中发送的客户模型名。"
+          },
+          "additional_properties": {
+            "type": "boolean",
+            "description": "为 false 时，parameters 未登记的字段不受支持。"
+          },
+          "parameters": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/PublicAPIParameter"}
+          },
+          "content_types": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/PublicVideoContentType"}
           }
+        }
+      },
+      "PublicAPIParameter": {
+        "type": "object",
+        "required": ["name", "type", "required"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "字段名；嵌套字段使用点路径。"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["string", "integer", "boolean", "array", "object"]
+          },
+          "required": {"type": "boolean"},
+          "enum": {"type": "array", "items": {"type": "string"}},
+          "fixed_value": {
+            "description": "发送该字段时唯一允许的值。"
+          },
+          "default_value": {
+            "description": "字段省略时使用的默认值。"
+          },
+          "minimum": {"type": "integer"},
+          "maximum": {"type": "integer"},
+          "special_values": {"type": "array", "items": {"type": "integer"}},
+          "min_length": {"type": "integer", "minimum": 0},
+          "max_length": {"type": "integer", "minimum": 0},
+          "min_items": {"type": "integer", "minimum": 0},
+          "max_items": {"type": "integer", "minimum": 0}
+        }
+      },
+      "PublicVideoContentType": {
+        "type": "object",
+        "required": ["type", "required_fields"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["text", "image_url", "video_url", "audio_url"]
+          },
+          "roles": {"type": "array", "items": {"type": "string"}},
+          "required_fields": {"type": "array", "items": {"type": "string"}},
+          "min_items": {"type": "integer", "minimum": 0},
+          "max_items": {"type": "integer", "minimum": 0}
         }
       },
       "PublicAssetAPI": {
@@ -4689,22 +4761,11 @@
           },
           "size": {
             "type": "string",
-            "enum": [
-              "256x256",
-              "512x512",
-              "1024x1024",
-              "1792x1024",
-              "1024x1792"
-            ],
-            "default": "1024x1024"
+            "description": "所选模型支持的尺寸或分辨率"
           },
           "quality": {
             "type": "string",
-            "enum": [
-              "standard",
-              "hd"
-            ],
-            "default": "standard"
+            "description": "所选模型支持的质量档位"
           },
           "style": {
             "type": "string",
@@ -4758,8 +4819,20 @@
         ],
         "properties": {
           "image": {
-            "type": "string",
-            "format": "binary"
+            "description": "一个或多个待编辑图片文件",
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "binary"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            ]
           },
           "mask": {
             "type": "string",

@@ -25,7 +25,7 @@ Standard/Fast/Mini 资料称支持多模态参考；2.5 资料称支持 4–30 �
 
 ## 素材 API 摘要
 
-资料列出真人认证、虚拟素材组和素材上传：`/api/v2/open/material/person/validate/session`、`/material/group/create`、`/material/virtual/upload`、`/material/list`，返回 `asset://<assetId>`。资料还描述素材组更新、删除和真人模式，但平台当前只发布代码已验证的虚拟素材组、空组删除和单素材查询；不把资料中的列表接口变成平台列表 API。
+资料列出真人认证、虚拟素材组和素材上传：`/api/v2/open/material/person/validate/session`、`/material/group/create`、`/material/virtual/upload`、`/material/list`，返回 `asset://<assetId>`。资料还描述素材组更新、级联删除和真人模式，但平台当前只发布代码已验证的虚拟素材组创建/查询和单素材上传/查询；多人共享下游不发布素材组删除，也不把资料中的列表接口变成平台列表 API。
 
 ## 价格资料
 
@@ -34,4 +34,3 @@ Standard/Fast/Mini 资料称支持多模态参考；2.5 资料称支持 4–30 �
 ## 资料风险
 
 资料中出现 `realPersonMode`、callback、`480pto720p`、编辑/延长等扩展字段，但当前平台不发布这些字段。Provider 成功响应的 `completionTokens` 是可形成客户实际用量的候选证据；`pointConsume` 仅作为 Provider 成本证据，不能反推客户费用。
-

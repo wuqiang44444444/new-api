@@ -41,6 +41,7 @@ import {
   stripTrailingZeros,
 } from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
+import { AssetShareGroupBadge } from './asset-share-group-badge'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
 
 // ----------------------------------------------------------------------------
@@ -83,11 +84,14 @@ export function usePricingColumns(
         const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 14) : null
 
         return (
-          <div className='flex max-w-full min-w-0 items-center gap-2'>
-            {modelIcon}
-            <span className='truncate font-mono text-sm font-medium'>
-              {model.model_name}
-            </span>
+          <div className='flex max-w-full min-w-0 flex-col gap-1'>
+            <div className='flex min-w-0 items-center gap-2'>
+              {modelIcon}
+              <span className='truncate font-mono text-sm font-medium'>
+                {model.model_name}
+              </span>
+            </div>
+            <AssetShareGroupBadge model={model} />
           </div>
         )
       },

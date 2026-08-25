@@ -5938,5 +5938,16 @@
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom"
   },
-  "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.": "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials."
+  "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.": "Disable the asset protocol that uses separate credentials and save the channel before clearing its stored credentials.",
+  "Asset library boundary: this channel": "Asset library boundary: this channel",
+  "One Seedance channel represents one upstream asset tenant. Put every model that must share assets in this channel; create another channel for a different tenant.": "One Seedance channel represents one upstream asset tenant. Put every model that must share assets in this channel; create another channel for a different tenant.",
+  "Models sharing this asset library: {{models}}": "Models sharing this asset library: {{models}}",
+  "None selected": "None selected",
+  "Confirm asset credential rotation": "Confirm asset credential rotation",
+  "Confirm tenant is unchanged": "Confirm tenant is unchanged",
+  "Only continue when these credentials belong to the same upstream asset tenant. If the account or tenant changed, cancel and create a new channel.": "Only continue when these credentials belong to the same upstream asset tenant. If the account or tenant changed, cancel and create a new channel.",
+  "Models sharing this asset library": "Models sharing this asset library",
+  "This channel already defines an asset tenant. Create a new channel to change its type, Base URL, protocols, project, or region.": "This channel already defines an asset tenant. Create a new channel to change its type, Base URL, protocols, project, or region.",
+  "Credential rotation requires confirmation that the upstream asset tenant is unchanged.": "Credential rotation requires confirmation that the upstream asset tenant is unchanged.",
+  "Asset share group {{label}}": "Asset share group {{label}}"
 }

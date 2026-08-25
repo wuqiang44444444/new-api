@@ -43,6 +43,7 @@ Go 二进制发布。OpenAPI 快照提供机器合同候选，公开资格由白
 | 人类可读说明        | manifest 登记的 Markdown                         | 场景、限制、示例和错误处理；不复制内部实现  |
 | 搜索元数据          | Manifest + 已登记 Markdown heading               | 在构建期生成，浏览器不抓取全站正文          |
 | 运行时站点变量      | 当前 origin 与公开 `/api/status`                 | 不读取登录态凭据或管理员配置                |
+| 模型入口与参数合同  | `/v1/models` 的 `supported_endpoint_types` / `api` | 代码 profile 的脱敏客户投影；列表与详情一致 |
 | 页面框架            | `web/src/features/docs/`、`web/src/routes/docs/` | 路由、加载、渲染和交互，不定义 API 合同     |
 
 公开文档描述客户可以依赖的协议，不等同于代码能够解析的全部字段。Link 能力必须来自已发布合同；
@@ -198,6 +199,14 @@ Seedance/ModelArk 的北向合同、模型目录、`available`/`availability` �
 [Seedance 无状态素材代理架构](Seedance无状态素材代理架构.md) 为权威。本文只规定：这些能力进入公开
 文档前必须已有批准的 operation、脱敏的公开投影和对应的代码/真实验证证据，不在此复制其合同细节。
 
+图片和视频页面只解释如何读取模型目录中的 `api.image.creation`、`api.video.creation` 与逐字段参数，
+不在导航描述或正文中按渠道名称维护另一套能力表。公开说明可以展示客户模型名和北向协议，但不得出现
+Channel 名称、南向协议枚举、Provider 模型或第三方私有路径。
+
+原生 OpenAI Videos 的创建合同只公布当前北向实际支持的 `model`、`prompt`、`seconds`、`size` 与
+`input_reference`。内部兼容 DTO 中的 `duration`、`metadata`、`image` 或 `images` 等字段不得因结构体可解析
+而出现在该端点的公开模型参数中。
+
 ## 9. 安全与缓存
 
 - 示例只使用固定占位 Key 和模型；Docs 模块不读取 API Key、Cookie 或登录态，仅使用公开 `/api/status` 中的
@@ -237,7 +246,6 @@ Seedance/ModelArk 的北向合同、模型目录、`available`/`availability` �
 
 - [公开 API 文档维护指南](../30-engineering/公开API文档维护指南.md)
 - [API 文档中心交互规范](../90-ui-ux/API文档中心交互规范.md)
-- [路线图：内置 API 文档中心上线验收](../50-planning/路线图.md#内置-api-文档中心上线验收)
 - [Seedance 专用渠道与 Link 架构](Seedance专用渠道与Link架构.md)
 - [Seedance 模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)
 - [Seedance 无状态素材代理架构](Seedance无状态素材代理架构.md)

@@ -21,7 +21,7 @@ func lockChannelForMutation(tx *gorm.DB, id int) (*Channel, error) {
 	return &channel, nil
 }
 
-func updateChannelWithCredentialActor(channel *Channel, credential *ChannelAssetCredential, actorID int) error {
+func updateChannelWithCredentialActor(channel *Channel, credential *ChannelAssetCredential, actorID int, assetTenantUnchanged bool) error {
 	if channel.Id == 0 {
 		return errors.New("channel ID is 0")
 	}
@@ -30,16 +30,20 @@ func updateChannelWithCredentialActor(channel *Channel, credential *ChannelAsset
 		if err != nil {
 			return err
 		}
+		original := *current
 		if err := tx.Model(current).Updates(channel).Error; err != nil {
+			return err
+		}
+		if err := tx.First(channel, "id = ?", channel.Id).Error; err != nil {
+			return err
+		}
+		if err := validateChannelAssetTenantMutation(tx, &original, channel, credential, assetTenantUnchanged); err != nil {
 			return err
 		}
 		if credential != nil {
 			if err := saveChannelAssetCredentialTx(tx, credential); err != nil {
 				return err
 			}
-		}
-		if err := tx.First(channel, "id = ?", channel.Id).Error; err != nil {
-			return err
 		}
 		return channel.UpdateAbilitiesWithActor(tx, actorID)
 	})

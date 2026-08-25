@@ -160,39 +160,69 @@ func TestCopyChannelRejectsInvalidLegacyProxySettings(t *testing.T) {
 	assert.Equal(t, int64(1), channelCount)
 }
 
-func TestCopyChannelResetsOfficialAssetProfileWithoutCopyingCredential(t *testing.T) {
-	db := setupModelListControllerTestDB(t)
-	origin := &model.Channel{
-		Type:   constant.ChannelTypeSeedanceLink,
-		Name:   "official asset channel",
-		Key:    "video-api-key",
-		Models: "video-model",
-		Group:  "default",
+func TestCopyChannelResetsSeparatedAssetCredentialProfilesWithoutCopyingCredential(t *testing.T) {
+	db := setupAssetTenantControllerTestDB(t)
+
+	tests := []struct {
+		name         string
+		modelName    string
+		modelMapping *string
+		baseURL      *string
+		video        dto.VideoUpstreamProtocol
+		asset        dto.AssetUpstreamProtocol
+		project      string
+		region       string
+	}{
+		{
+			name: "BytePlus official", modelName: "video-model",
+			video: dto.VideoUpstreamProtocolModelArkV3BytePlus, asset: dto.AssetUpstreamProtocolBytePlusAction,
+			project: "project-a", region: "ap-southeast-1",
+		},
+		{
+			name: "CMCC", modelName: "cmcc-customer",
+			modelMapping: common.GetPointer(`{"cmcc-customer":"` + model.CMCCSeedance20ProviderModel + `"}`),
+			baseURL:      common.GetPointer("https://zhenze-huhehaote.cmecloud.cn"),
+			video:        dto.VideoUpstreamProtocolModelArkV3CMCC, asset: dto.AssetUpstreamProtocolCMCCAICCV2,
+		},
 	}
-	origin.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3BytePlus,
-		AssetUpstreamProtocol: dto.AssetUpstreamProtocolBytePlusAction,
-		AssetMinURLTTLSeconds: 3600,
-		AssetProviderProject:  "project-a",
-		AssetRegion:           "ap-southeast-1",
-	})
-	require.NoError(t, db.Create(origin).Error)
 
-	recorder := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", origin.Id)}}
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/channel/copy", nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origin := &model.Channel{
+				Type: constant.ChannelTypeSeedanceLink, Name: tt.name, Key: "video-api-key",
+				Models: tt.modelName, ModelMapping: tt.modelMapping, BaseURL: tt.baseURL, Group: "default",
+			}
+			origin.SetOtherSettings(dto.ChannelOtherSettings{
+				VideoUpstreamProtocol: tt.video, AssetUpstreamProtocol: tt.asset,
+				AssetMinURLTTLSeconds: 3600, AssetProviderProject: tt.project, AssetRegion: tt.region,
+			})
+			require.NoError(t, db.Create(origin).Error)
+			require.NoError(t, db.Create(&model.ChannelAssetCredential{
+				ChannelID: origin.Id, AccessKeyID: "original-ak", SecretAccessKey: "original-sk",
+			}).Error)
 
-	CopyChannel(ctx)
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", origin.Id)}}
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/api/channel/copy", nil)
 
-	var cloned model.Channel
-	require.NoError(t, db.Where("id <> ?", origin.Id).First(&cloned).Error)
-	settings := cloned.GetOtherSettings()
-	assert.Equal(t, common.ChannelStatusManuallyDisabled, cloned.Status)
-	assert.Equal(t, dto.AssetUpstreamProtocolNone, settings.AssetUpstreamProtocol)
-	assert.Zero(t, settings.AssetMinURLTTLSeconds)
-	assert.Empty(t, settings.AssetProviderProject)
-	assert.Empty(t, settings.AssetRegion)
+			CopyChannel(ctx)
+
+			var cloned model.Channel
+			require.NoError(t, db.Where("name = ?", origin.Name+"_复制").First(&cloned).Error)
+			settings := cloned.GetOtherSettings()
+			assert.Equal(t, common.ChannelStatusManuallyDisabled, cloned.Status)
+			assert.Equal(t, dto.AssetUpstreamProtocolNone, settings.AssetUpstreamProtocol)
+			assert.Zero(t, settings.AssetMinURLTTLSeconds)
+			assert.Empty(t, settings.AssetProviderProject)
+			assert.Empty(t, settings.AssetRegion)
+			credential, err := model.GetChannelAssetCredential(cloned.Id)
+			require.NoError(t, err)
+			assert.Nil(t, credential)
+			_, err = model.ChannelAssetReuseScope(cloned.Id)
+			assert.Error(t, err)
+		})
+	}
 }
 
 func TestDeleteChannelResetsProxyCacheWhenPreReadFails(t *testing.T) {

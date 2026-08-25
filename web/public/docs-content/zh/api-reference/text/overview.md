@@ -4,6 +4,7 @@ kind: api-reference
 last-verified: 2026-07-29
 operations:
   - listModels
+  - retrieveModel
   - createChatCompletion
   - createResponse
   - createMessage
@@ -23,6 +24,16 @@ curl "{{OPENAI_BASE_URL}}/models" \
 ```
 
 默认返回 OpenAI 格式。带 Anthropic 或 Gemini 协议头时响应格式可能相应变化；本页后续示例均使用默认 OpenAI 视图。
+
+图片和视频模型还会返回机器可读合同：
+
+- `supported_endpoint_types` 指明可调用的北向入口；
+- `api.image.creation` 或 `api.video.creation` 指明方法、路径、内容类型和必填字段；
+- `parameters` 是该客户模型允许的完整字段列表，包含类型、固定值、默认值、枚举和上下限；
+- `additional_properties=false` 表示列表外字段不受支持；视频的 `content_types` 另列媒体类型、角色与数量。
+
+`GET /v1/models/{model}` 与列表中的同名条目使用同一合同。不要从模型后缀猜测参数，也不要发送目录
+没有登记的字段。
 
 ## Chat Completions
 

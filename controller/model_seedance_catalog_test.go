@@ -16,7 +16,7 @@ import (
 
 func TestConfiguredSeedanceModelAvailabilityUsesCallerAccess(t *testing.T) {
 	withSelfUseModeEnabled(t)
-	db := setupModelListControllerTestDB(t)
+	setupModelListControllerTestDB(t)
 
 	enabled := &model.Channel{
 		Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusEnabled,
@@ -34,7 +34,8 @@ func TestConfiguredSeedanceModelAvailabilityUsesCallerAccess(t *testing.T) {
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
 		AssetUpstreamProtocol: dto.AssetUpstreamProtocolVolcengineAction,
 	})
-	require.NoError(t, db.Create(&[]*model.Channel{enabled, disabled}).Error)
+	require.NoError(t, enabled.Insert())
+	require.NoError(t, disabled.Insert())
 
 	retrieve := func(modelName, userGroup string, modelLimit map[string]bool) dto.OpenAIModels {
 		recorder := httptest.NewRecorder()

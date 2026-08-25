@@ -106,4 +106,15 @@ describe('channel asset credential transforms', () => {
     assert.equal('key' in payload, false)
     assert.equal('asset_credential' in payload, false)
   })
+
+  test('sends the explicit unchanged-tenant assertion only after confirmation', () => {
+    const unconfirmed = transformFormDataToUpdatePayload(officialForm, 26)
+    assert.equal('confirm_asset_tenant_unchanged' in unconfirmed, false)
+
+    const confirmed = transformFormDataToUpdatePayload(
+      { ...officialForm, confirm_asset_tenant_unchanged: true },
+      26
+    )
+    assert.equal(confirmed.confirm_asset_tenant_unchanged, true)
+  })
 })

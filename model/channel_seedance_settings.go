@@ -15,14 +15,21 @@ import (
 var officialAssetRegionPattern = regexp.MustCompile(`^[a-z]{2}(?:-[a-z]+)+-[0-9]+$`)
 
 func validateSeedanceChannelSettings(channel *Channel, settings *dto.ChannelOtherSettings) error {
+	return validateSeedanceChannelSettingsTx(DB, channel, settings)
+}
+
+func validateSeedanceChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *dto.ChannelOtherSettings) error {
 	if channel == nil || channel.Type != constant.ChannelTypeSeedanceLink {
 		return nil
+	}
+	if tx == nil {
+		tx = DB
 	}
 	credentialChannel := *channel
 	isMultiKey := channel.ChannelInfo.IsMultiKey
 	if channel.Id > 0 {
 		var persisted Channel
-		if err := DB.Select("id", "key", "channel_info").First(&persisted, channel.Id).Error; err == nil {
+		if err := tx.Select("id", "key", "channel_info").First(&persisted, channel.Id).Error; err == nil {
 			isMultiKey = isMultiKey || persisted.ChannelInfo.IsMultiKey
 			if strings.TrimSpace(credentialChannel.Key) == "" {
 				credentialChannel.Key = persisted.Key
@@ -136,24 +143,8 @@ func validateMoxingTokenSaveModelMapping(channel *Channel, protocol dto.VideoUps
 	default:
 		return nil
 	}
-
-	models := channel.GetModels()
-	if len(models) != 1 {
-		return fmt.Errorf("TokenSave and Moxing Seedance channels require exactly one customer model")
-	}
-	customerModel := strings.TrimSpace(models[0])
-	var mapping map[string]string
-	if err := common.UnmarshalJsonStr(channel.GetModelMapping(), &mapping); err != nil {
-		return fmt.Errorf("TokenSave and Moxing Seedance channels require one exact model_mapping entry")
-	}
-	providerModel := strings.TrimSpace(mapping[customerModel])
-	if len(mapping) != 1 || providerModel == "" {
-		return fmt.Errorf("model_mapping must contain exactly one entry for customer model %q", customerModel)
-	}
-	if _, supported := providerModels[providerModel]; !supported {
-		return fmt.Errorf("model_mapping target for %q is not supported by video protocol %s", customerModel, protocol)
-	}
-	return nil
+	_, err := resolveSeedanceChannelProviderModels(channel, protocol, providerModels)
+	return err
 }
 
 // ValidateSeedanceChannelModelUniqueness enforces the administrator-facing

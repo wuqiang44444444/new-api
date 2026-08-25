@@ -140,11 +140,6 @@
       "operationId": "getAssetGroup",
       "status": "published",
       "family": "assets"
-    },
-    {
-      "operationId": "deleteAssetGroup",
-      "status": "published",
-      "family": "assets"
     }
   ]
 }

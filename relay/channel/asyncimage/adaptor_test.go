@@ -17,6 +17,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -206,18 +207,24 @@ func TestDoRequestKeepsProviderEnvelopeForHTTPErrorMapping(t *testing.T) {
 	assert.NotContains(t, apiErr.Error(), "provider detail")
 }
 
-func TestDoRequestRejectsInfiniteTimeoutConfiguration(t *testing.T) {
+func TestDoRequestUsesFixedTimeoutWithoutGlobalConfiguration(t *testing.T) {
 	originalRelayTimeout := common.RelayTimeout
 	common.RelayTimeout = 0
 	defer func() { common.RelayTimeout = originalRelayTimeout }()
 
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		deadline, ok := request.Context().Deadline()
+		require.True(t, ok)
+		remaining := time.Until(deadline)
+		assert.Greater(t, remaining, 9*time.Minute)
+		assert.LessOrEqual(t, remaining, 10*time.Minute)
+		return testHTTPResponse(http.StatusOK, `{"code":0,"data":{"status":"success","result":["https://cdn.example.com/result.png"]}}`), nil
+	})}
 	c, _ := newImageRequestContext(context.Background())
 	info := asyncImageInfo("https://example.com", nanoBanana2)
-	_, err := (&Adaptor{client: &http.Client{}}).DoRequest(c, info, strings.NewReader(`{"prompt":"x"}`))
-	apiErr, ok := err.(*types.NewAPIError)
-	require.True(t, ok)
-	assert.Equal(t, http.StatusServiceUnavailable, apiErr.StatusCode)
-	assert.True(t, types.IsSkipRetryError(apiErr))
+	response, err := (&Adaptor{client: client}).DoRequest(c, info, strings.NewReader(`{"prompt":"x"}`))
+	require.NoError(t, err)
+	require.NotNil(t, response)
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -268,8 +275,13 @@ func TestDoResponseRejectsProviderErrorsAndInvalidResults(t *testing.T) {
 
 func TestDoResponseHonorsCanceledContext(t *testing.T) {
 	originalRelayTimeout := common.RelayTimeout
+	originalAutomaticDisable := common.AutomaticDisableChannelEnabled
 	common.RelayTimeout = 60
-	defer func() { common.RelayTimeout = originalRelayTimeout }()
+	common.AutomaticDisableChannelEnabled = true
+	defer func() {
+		common.RelayTimeout = originalRelayTimeout
+		common.AutomaticDisableChannelEnabled = originalAutomaticDisable
+	}()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	c, _ := newImageRequestContext(ctx)
@@ -281,6 +293,31 @@ func TestDoResponseHonorsCanceledContext(t *testing.T) {
 	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"code":0,"data":{"taskId":"task-1","status":"processing"}}`))}
 	_, apiErr := (&Adaptor{client: client}).DoResponse(c, resp, info)
 	require.NotNil(t, apiErr)
+	assert.Equal(t, 499, apiErr.StatusCode)
+	assert.Equal(t, types.ErrorCode("request_canceled"), apiErr.GetErrorCode())
+	assert.True(t, types.IsSkipRetryError(apiErr))
+	assert.False(t, types.IsChannelError(apiErr))
+	assert.False(t, types.IsRecordErrorLog(apiErr))
+	assert.False(t, service.ShouldDisableChannel(apiErr))
+}
+
+func TestDoResponseMapsResponseBodyDeadlineToGatewayTimeout(t *testing.T) {
+	c, _ := newImageRequestContext(context.Background())
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(deadlineReader{}),
+	}
+
+	_, apiErr := (&Adaptor{}).DoResponse(c, response, asyncImageInfo("https://example.com", nanoBanana2))
+
+	require.NotNil(t, apiErr)
 	assert.Equal(t, http.StatusGatewayTimeout, apiErr.StatusCode)
 	assert.True(t, types.IsSkipRetryError(apiErr))
+	assert.True(t, types.IsChannelError(apiErr))
+}
+
+type deadlineReader struct{}
+
+func (deadlineReader) Read([]byte) (int, error) {
+	return 0, context.DeadlineExceeded
 }

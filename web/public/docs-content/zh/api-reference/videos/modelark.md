@@ -37,8 +37,7 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 ```
 
 平台验证统一 ModelArk V3 请求结构、媒体 URL 和影响计费的安全边界。模型是否支持具体分辨率、媒体
-组合或扩展字段，以管理员上线前的技术审核和所选 Provider 的错误为准；模型目录不替 Provider 承诺
-未明确登记的生成能力。
+组合或扩展字段，以模型目录中已登记的创建参数合同为准；列表外字段不得发送。
 
 ## 模型目录与可用状态
 
@@ -50,6 +49,8 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 - `availability`：`available`、`disabled` 或 `restricted`；
 - `supported_endpoint_types`：Seedance 固定为 `modelark-video`；
 - `api.video.creation`：创建方法、路径、内容类型、必填字段和当前客户模型名；
+- `api.video.creation.parameters`：允许字段、类型、固定值、默认值、枚举和上下限；
+- `api.video.creation.content_types`：允许的内容类型、角色、必填子字段和数量边界；
 - `api.video.operations`：创建、列表、查询、删除和内容下载接口；
 - `api.assets`：无状态素材代理、引用格式、素材类型、逐操作支持状态及创建限制。
 

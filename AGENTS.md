@@ -182,7 +182,8 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 
 **Link stateless asset proxy:**
 
-- `/v1/assets` 与 `/v1/asset-groups` 只提供带客户 `model` 的单资源创建、查询、更新或删除；不提供列表。
+- `/v1/assets` 只提供带客户 `model` 的单资源创建、查询、已验证更新或删除；`/v1/asset-groups` 只提供
+  创建与单项查询，不提供列表、更新或删除。平台不主动删除素材组；确需清理由 Provider 管理员执行。
   平台按客户模型选择唯一 Seedance Channel，并由其 `asset_upstream_protocol` adapter 调用 Provider。
 - 素材和素材组 ID 是 Provider 返回的不透明 ID；平台可返回 `asset://<opaque-id>`，但不得返回 Provider
   名称、Channel ID、账号、Region/Project、协议细节或上游原始模型。调用方保存 `model + id + reference`。

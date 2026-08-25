@@ -30,6 +30,10 @@ func (*MoxingVolcAdapter) Supports(kind, mediaType string) bool {
 	return kind == "general" && (mediaType == "image" || mediaType == "video" || mediaType == "audio")
 }
 
+func (a *MoxingVolcAdapter) RequiresAssetGroup(kind, mediaType string) bool {
+	return a.Supports(kind, mediaType)
+}
+
 type moxingVolcError struct {
 	Code    any    `json:"Code"`
 	Message string `json:"Message"`
@@ -100,7 +104,7 @@ func (a *MoxingVolcAdapter) CheckConnectivity(ctx context.Context) error {
 
 func (a *MoxingVolcAdapter) CreateGroup(ctx context.Context, req GroupRequest) (GroupResult, error) {
 	response, err := a.requestVolc(ctx, http.MethodPost, moxingVolcAssetRoot+"/groups", map[string]any{
-		"Name": req.Name, "Description": req.Description, "GroupType": "AIGC", "ProjectName": "default",
+		"Name": req.Name, "Description": req.Description, "GroupType": "AIGC",
 	})
 	return normalizeMoxingVolcGroup(response), err
 }
@@ -108,14 +112,6 @@ func (a *MoxingVolcAdapter) CreateGroup(ctx context.Context, req GroupRequest) (
 func (a *MoxingVolcAdapter) GetGroup(ctx context.Context, resourceID string) (GroupResult, error) {
 	response, err := a.requestVolc(ctx, http.MethodGet, moxingVolcAssetRoot+"/groups/"+url.PathEscape(resourceID)+"?ProjectName=default", nil)
 	return normalizeMoxingVolcGroup(response), err
-}
-
-func (a *MoxingVolcAdapter) DeleteGroup(ctx context.Context, resourceID string) error {
-	_, err := a.requestVolc(ctx, http.MethodPost, moxingVolcAssetRoot+"/groups/"+url.PathEscape(resourceID)+"/delete", map[string]string{"ProjectName": "default"})
-	if upstreamNotFound(err) {
-		return nil
-	}
-	return err
 }
 
 func (a *MoxingVolcAdapter) CreateAsset(ctx context.Context, req AssetRequest) (AssetResult, error) {
