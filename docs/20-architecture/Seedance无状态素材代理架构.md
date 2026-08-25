@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-18
+last-reviewed: 2026-08-26
 ---
 
 # Seedance 无状态素材代理架构
@@ -57,9 +57,11 @@ customer model -> unique Seedance Channel -> model_mapping -> code adapter -> Pr
 | 创建素材组/认证会话 | `POST /v1/asset-groups` | 真人认证属于 Provider 素材组流程 |
 | 查询素材组/认证会话 | `GET /v1/asset-groups/{id}?model=...` | 认证会话使用显式查询参数区分 |
 
-不注册 `GET /v1/assets`、`GET /v1/asset-groups` 或 `DELETE /v1/asset-groups/{group_id}`。平台不主动
-删除素材组；Provider 即使提供删除能力，也只能由 Provider 管理员在明确影响范围后执行。第三方 adapter
-如需分页 List，只能在南向调用内部使用，不得将结果发布为客户目录。
+不注册 `GET /v1/assets`、`GET /v1/asset-groups` 或 `DELETE /v1/asset-groups/{group_id}`。当前全部
+素材协议 adapter 均不实现素材组删除，公开模型元数据也不登记该操作；单素材
+`DELETE /v1/assets/{asset_id}` 按各自协议的已验证合同保留。素材组可能承载多人素材并发生级联删除，
+平台不主动清理；确需清理时由 Provider 管理员确认归属和级联影响后执行。第三方 adapter 如需分页
+List，只能在南向调用内部使用，不得将结果发布为客户目录。
 
 Provider 返回的 `id` 和视频 `reference` 均由调用方保存，二者可以不同。平台可以返回
 `asset://<opaque-id>`，但不把该引用转换成本地资源 ID，也不验证其来源。视频 adapter 最终将存在性、
@@ -70,9 +72,12 @@ Provider 返回的 `id` 和视频 `reference` 均由调用方保存，二者可�
 素材协议由代码注册表决定，管理员只能选择已注册协议并配置其所需字段。平台不根据模型名、域名、Key
 或 Provider 名称动态认证兼容性，也不允许管理员编写协议 JSON、字段映射或状态脚本。
 
-素材调用的 Base URL、协议、账号、Region 和 Project 决定实际 Provider 作用域。Key/AK/SK 可以按普通
-渠道流程轮换；平台不据此建立素材作用域指纹，也不解释 opaque ID。账号、Base URL、Region、Project、
-国内/海外类型或素材协议发生变化时，应建立新的渠道事实；旧 opaque ID 是否可见由 Provider 决定。
+素材调用的 Base URL、协议、账号、Region 和 Project 决定实际 Provider 作用域。一个启用素材协议的
+Channel 是一个素材租户边界：identity 建立后，Channel Type、Base URL、视频/素材协议、Project 和
+Region 在更新事务中不可变，修改这些字段必须新建 Channel；Key/AK/SK 轮换必须由管理员显式确认
+“素材租户未变化”并通过后端校验。identity 与匿名 `reuse_scope` 的生成机制由
+[Seedance 专用渠道与 Link 架构](Seedance专用渠道与Link架构.md) §5.3 负责。平台不解释 opaque ID；
+旧 opaque ID 是否可见由 Provider 决定。
 
 错误的 Provider ID 只发送到当前客户模型选定的 Provider；不得探测其来源、换渠道或重试其它 Provider。
 
@@ -96,5 +101,5 @@ ModelArk V3 接受 HTTP/HTTPS URL、Data URL 和 `asset://<opaque-id>`。素材�
 
 - [Seedance 模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)：对外素材能力、操作和错误合同；
 - [Seedance 专用渠道与 Link 架构](Seedance专用渠道与Link架构.md)：客户模型、Channel、协议和 Task 总体关系；
-- [异步任务与计费事实架构](异步任务与计费事实架构.md)：create attempt、Task、资金和结算事实；
+- [异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md)：create attempt、Task、资金和结算事实；
 - [ADR-0017：调用方自管无状态素材代理](decisions/0017-调用方自管无状态素材代理.md)：无状态素材边界的长期决策。

@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-21
+last-reviewed: 2026-08-26
 ---
 
 # 20-architecture — 架构索引
@@ -46,10 +46,11 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 1. [架构概览](架构概览.md)：系统边界、运行平面和事实所有权。
 2. [Seedance专用渠道与Link架构](Seedance专用渠道与Link架构.md)：ModelArk V3、确定性渠道、代码协议、视频任务和素材代理。
 3. 涉及素材：先看[Seedance模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)，再看[Seedance无状态素材代理架构](Seedance无状态素材代理架构.md)。
-4. 涉及异步或计费：看[账单计费-异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md)；动态计费再看[账单计费-计费表达式与协议探针架构](账单计费-计费表达式与协议探针架构.md)。
-5. 涉及普通图片和南向异步任务：看[图片服务与异步 Provider 适配架构](图片服务与异步Provider适配架构.md)。
-6. 涉及 Provider：进入[Seedance模型接入设计](Seedance模型接入设计/README.md)，按火山官方、BytePlus官方、移动云、FunCloud、墨行/TokenSave、飞彩选择目录。
-7. 需要“为什么”时看[架构决策索引](decisions/README.md)；需要公开文档交付、账单投影或通知时按下表定位专题。
+4. 涉及模型目录 `api` 元数据：看[公开模型元数据投影架构](公开模型元数据投影架构.md)。
+5. 涉及异步或计费：看[账单计费-异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md)；动态计费再看[账单计费-计费表达式与协议探针架构](账单计费-计费表达式与协议探针架构.md)。
+6. 涉及普通图片和南向异步任务：看[图片服务与异步 Provider 适配架构](图片服务与异步Provider适配架构.md)。
+7. 涉及 Provider：进入[Seedance模型接入设计](Seedance模型接入设计/README.md)，按火山官方、BytePlus官方、移动云、FunCloud、墨行/TokenSave、飞彩选择目录。
+8. 需要“为什么”时看[架构决策索引](decisions/README.md)；需要公开文档交付、账单投影或通知时按下表定位专题。
 
 ## 当前架构文档
 
@@ -59,6 +60,7 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 | Seedance Link | [Seedance专用渠道与Link架构](Seedance专用渠道与Link架构.md) | 专用渠道、ModelArk V3、代码协议、视频任务和素材代理 | `ChannelTypeSeedanceLink`、ModelArk V3 Router、协议注册表、Task |
 | Seedance 素材 | [Seedance模型素材库支持矩阵](Seedance模型素材库支持矩阵.md) | 客户模型的素材操作、素材组要求、引用和错误合同 | `PublicAssetAPI`、`seedancePublicAssetAPI`、素材 Controller |
 | Seedance 代理 | [Seedance无状态素材代理架构](Seedance无状态素材代理架构.md) | opaque ID、无状态路由、Provider 边界和安全不变量 | 素材 Service、`asset_upstream_protocol` adapter |
+| 公开元数据 | [公开模型元数据投影架构](公开模型元数据投影架构.md) | 模型目录 `api` 投影的入口、一致性与脱敏规则 | `channel_seedance_public_catalog.go`、`public_image_model_api.go`、`pkg/publicmodel/` |
 | 异步与计费 | [账单计费-异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md) | create attempt、Task、资金、结算和 Provider exposure | `model/task*.go`、Task billing、exposure |
 | 计费表达式 | [账单计费-计费表达式与协议探针架构](账单计费-计费表达式与协议探针架构.md) | 表达式校验、协议探针、价格快照和终态结算 | `pkg/billingexpr/`、`setting/billing_setting/` |
 | 图片数据面 | [图片服务与异步Provider适配架构](图片服务与异步Provider适配架构.md) | 原生图片入口、显式上游协议、异步 Provider 内联轮询、同步 Provider 适配和计费边界 | `ChannelTypeAsyncImage`、`image_upstream_protocol`、图片 dispatch 与专用 adaptor |

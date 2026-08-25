@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-25
+last-reviewed: 2026-08-26
 ---
 
 # Seedance 模型素材库支持矩阵
@@ -126,5 +126,5 @@ source URL、签名 URL、媒体二进制和原始 Provider 响应。共享 Prov
 
 本文不描述 Provider 签名、连接和 adapter 细节，不定义任务创建 attempt、Task 冻结、计费结算或迁移步骤。
 这些内容分别由 [Seedance 无状态素材代理架构](Seedance无状态素材代理架构.md)、[Seedance 专用渠道与
-Link 架构](Seedance专用渠道与Link架构.md)、[异步任务与计费事实架构](异步任务与计费事实架构.md) 和
+Link 架构](Seedance专用渠道与Link架构.md)、[异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md) 和
 [ADR-0017：调用方自管无状态素材代理](decisions/0017-调用方自管无状态素材代理.md) 负责。
