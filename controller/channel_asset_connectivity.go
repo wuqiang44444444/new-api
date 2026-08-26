@@ -33,10 +33,11 @@ func testChannelConnectivity(c *gin.Context, check func(context.Context, *model.
 	}
 	startedAt := time.Now()
 	if err := check(c.Request.Context(), channel); err != nil {
+		message, errorCode := channelConnectivityPublicError(err)
 		c.JSON(http.StatusOK, gin.H{
 			"success":    false,
-			"message":    err.Error(),
-			"error_code": service.ChannelConnectivityErrorCode(err),
+			"message":    message,
+			"error_code": errorCode,
 			"time":       time.Since(startedAt).Seconds(),
 		})
 		return
@@ -46,4 +47,12 @@ func testChannelConnectivity(c *gin.Context, check func(context.Context, *model.
 		"message": "",
 		"time":    time.Since(startedAt).Seconds(),
 	})
+}
+
+func channelConnectivityPublicError(err error) (string, string) {
+	errorCode := service.ChannelConnectivityErrorCode(err)
+	if errorCode == "" {
+		return "channel connectivity check failed", ""
+	}
+	return err.Error(), errorCode
 }

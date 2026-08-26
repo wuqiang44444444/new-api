@@ -243,13 +243,20 @@ func GetRemoteAssetGroup(ctx context.Context, group, modelName, resourceID strin
 func CheckAssetChannelConnectivity(ctx context.Context, channel *model.Channel) error {
 	adapter, err := seedanceAssetAdapter(channel)
 	if err != nil {
-		return err
+		return assetChannelConfigurationError(err)
 	}
 	connectivity, ok := adapter.(assetadapter.ConnectivityAdapter)
 	if !ok {
-		return ErrUnsupportedAssetType
+		return newChannelConnectivityError(
+			ChannelConnectivityAssetInvalidConfig,
+			"asset action configuration is invalid",
+			ErrUnsupportedAssetType,
+		)
 	}
-	return connectivity.CheckConnectivity(ctx)
+	if err := connectivity.CheckConnectivity(ctx); err != nil {
+		return assetChannelUpstreamError(err)
+	}
+	return nil
 }
 
 func assetAdapterForModel(group, modelName string) (*model.Channel, assetadapter.Adapter, error) {
