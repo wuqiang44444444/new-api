@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-08-25.2",
+  "contentVersion": "2026-08-26.1",
   "defaultLocale": "zh",
   "locales": {
     "zh": {
@@ -49,6 +49,48 @@
               "file": "zh/getting-started/base-url.md",
               "description": "按协议选择当前部署的动态 Base URL",
               "keywords": ["OpenAI", "Anthropic", "URL"],
+              "assets": []
+            }
+          ]
+        },
+        {
+          "id": "tool-configuration",
+          "title": "工具配置",
+          "pages": [
+            {
+              "id": "tool-codex",
+              "title": "Codex",
+              "slug": "tool-configuration/codex",
+              "file": "zh/tool-configuration/codex.md",
+              "description": "把 Codex 连接到当前网关，并将 API Key 保存在本地文件",
+              "keywords": ["Codex", "Responses", "本地 Key", "配置"],
+              "assets": []
+            },
+            {
+              "id": "tool-claude-code",
+              "title": "Claude Code",
+              "slug": "tool-configuration/claude-code",
+              "file": "zh/tool-configuration/claude-code.md",
+              "description": "把 Claude Code 连接到当前网关，并将 API Key 保存在本地设置",
+              "keywords": ["Claude Code", "Anthropic", "本地 Key", "配置"],
+              "assets": []
+            },
+            {
+              "id": "tool-workbuddy",
+              "title": "WorkBuddy",
+              "slug": "tool-configuration/workbuddy",
+              "file": "zh/tool-configuration/workbuddy.md",
+              "description": "在 WorkBuddy 中添加当前网关的自定义模型",
+              "keywords": ["WorkBuddy", "Custom Model", "Chat Completions", "配置"],
+              "assets": []
+            },
+            {
+              "id": "tool-cc-switch",
+              "title": "CC Switch",
+              "slug": "tool-configuration/cc-switch",
+              "file": "zh/tool-configuration/cc-switch.md",
+              "description": "在 CC Switch 中添加当前网关并使用原生协议直连",
+              "keywords": ["CC Switch", "Codex", "Claude Code", "本地 Key"],
               "assets": []
             }
           ]

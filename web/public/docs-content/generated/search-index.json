@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-08-25.2",
+  "contentVersion": "2026-08-26.1",
   "locales": {
     "zh": [
       {
@@ -111,6 +111,82 @@
             "depth": 2,
             "id": "反向代理与路径前缀",
             "text": "反向代理与路径前缀"
+          }
+        ]
+      },
+      {
+        "pageId": "tool-codex",
+        "slug": "tool-configuration/codex",
+        "title": "Codex",
+        "description": "把 Codex 连接到当前网关，并将 API Key 保存在本地文件",
+        "keywords": ["Codex", "Responses", "本地 Key", "配置"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "1-配置-codex",
+            "text": "1. 配置 Codex"
+          },
+          {
+            "depth": 2,
+            "id": "2-保存-api-key",
+            "text": "2. 保存 API Key"
+          },
+          {
+            "depth": 2,
+            "id": "3-重新启动",
+            "text": "3. 重新启动"
+          }
+        ]
+      },
+      {
+        "pageId": "tool-claude-code",
+        "slug": "tool-configuration/claude-code",
+        "title": "Claude Code",
+        "description": "把 Claude Code 连接到当前网关，并将 API Key 保存在本地设置",
+        "keywords": ["Claude Code", "Anthropic", "本地 Key", "配置"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "1-写入设置",
+            "text": "1. 写入设置"
+          },
+          {
+            "depth": 2,
+            "id": "2-重新启动",
+            "text": "2. 重新启动"
+          }
+        ]
+      },
+      {
+        "pageId": "tool-workbuddy",
+        "slug": "tool-configuration/workbuddy",
+        "title": "WorkBuddy",
+        "description": "在 WorkBuddy 中添加当前网关的自定义模型",
+        "keywords": ["WorkBuddy", "Custom Model", "Chat Completions", "配置"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "添加自定义模型",
+            "text": "添加自定义模型"
+          }
+        ]
+      },
+      {
+        "pageId": "tool-cc-switch",
+        "slug": "tool-configuration/cc-switch",
+        "title": "CC Switch",
+        "description": "在 CC Switch 中添加当前网关并使用原生协议直连",
+        "keywords": ["CC Switch", "Codex", "Claude Code", "本地 Key"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "给-codex-使用",
+            "text": "给 Codex 使用"
+          },
+          {
+            "depth": 2,
+            "id": "给-claude-code-使用",
+            "text": "给 Claude Code 使用"
           }
         ]
       },
