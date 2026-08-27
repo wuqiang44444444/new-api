@@ -1,7 +1,7 @@
 ---
 page-id: tool-codex
 kind: guide
-last-verified: 2026-08-26
+last-verified: 2026-08-27
 operations: []
 ---
 
@@ -11,7 +11,7 @@ operations: []
 
 ## 1. 配置 Codex
 
-打开 `~/.codex/config.toml`，写入：
+打开 `~/.codex/config.toml`。如果文件已经存在，只添加或修改下面四项，不要删除其他配置；修改前建议先备份。
 
 ```toml
 model_provider = "openai"
@@ -30,6 +30,8 @@ cli_auth_credentials_store = "file"
   "OPENAI_API_KEY": "{{API_KEY_PLACEHOLDER}}"
 }
 ```
+
+如果文件已经存在，修改前先备份。写入这份内容会把当前登录切换为网关 API Key，不要把旧的 ChatGPT 登录字段混合进来。
 
 macOS、Linux 或 WSL 再执行：
 

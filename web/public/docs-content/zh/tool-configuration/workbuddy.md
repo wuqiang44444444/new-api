@@ -1,7 +1,7 @@
 ---
 page-id: tool-workbuddy
 kind: guide
-last-verified: 2026-08-26
+last-verified: 2026-08-27
 operations: []
 ---
 
@@ -27,4 +27,4 @@ API Key 直接保存在 WorkBuddy 的本地模型设置中，不需要环境变�
 
 Endpoint 必须是完整的 Chat Completions 地址，不要只填写站点根地址，也不要改成 `/responses`。
 
-参考：[腾讯云 WorkBuddy 自定义模型配置](https://intl.cloud.tencent.com/document/product/1300/80640)。
+参考：[腾讯云 WorkBuddy 自定义模型配置](https://intl.cloud.tencent.com/ind/document/product/1300/80640)。

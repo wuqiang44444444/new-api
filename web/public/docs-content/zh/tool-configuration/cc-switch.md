@@ -1,7 +1,7 @@
 ---
 page-id: tool-cc-switch
 kind: guide
-last-verified: 2026-08-26
+last-verified: 2026-08-27
 operations: []
 ---
 
@@ -30,7 +30,7 @@ operations: []
 1. 打开 `Claude Code` 页面，点击右上角 `+`，选择 `自定义`。
 2. API Endpoint 填 `{{ANTHROPIC_BASE_URL}}`，API Key 填 `{{API_KEY_PLACEHOLDER}}`。
 3. API 格式选择原生 `Anthropic Messages`，认证字段选择 `ANTHROPIC_AUTH_TOKEN`。
-4. 把默认或回退模型设置为 `{{MODEL_ID_PLACEHOLDER}}`，保存并启用。
+4. 把默认或回退模型以及 Opus、Sonnet、Haiku 模型映射都设置为 `{{MODEL_ID_PLACEHOLDER}}`，保存并启用。
 5. 完全退出 Claude Code 后重新打开，再新建会话测试。
 
 只有上游协议与客户端协议不一致时才需要本地路由。当前网关已经提供两种原生协议，不要额外转换。
