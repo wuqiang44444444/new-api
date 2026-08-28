@@ -47,6 +47,8 @@ var channelPermissionRoutes = []permissionRoute{
 	{method: http.MethodGet, path: "/test/:id", permission: authz.ChannelOperate, handler: controller.TestChannel},
 	{method: http.MethodGet, path: "/test_video/:id", permission: authz.ChannelOperate, handler: controller.TestChannelVideoAPI},
 	{method: http.MethodGet, path: "/test_asset/:id", permission: authz.ChannelOperate, handler: controller.TestChannelAssetAction},
+	{method: http.MethodGet, path: "/:id/default_asset_group", permission: authz.ChannelOperate, handler: controller.GetChannelDefaultAssetGroup},
+	{method: http.MethodPost, path: "/:id/default_asset_group", permission: authz.ChannelOperate, handler: controller.CreateOrReuseChannelDefaultAssetGroup},
 	{method: http.MethodGet, path: "/update_balance", permission: authz.ChannelOperate, handler: controller.UpdateAllChannelsBalance},
 	{method: http.MethodGet, path: "/update_balance/:id", permission: authz.ChannelOperate, handler: controller.UpdateChannelBalance},
 	{method: http.MethodPost, path: "/", permission: authz.ChannelSensitiveWrite, handler: controller.AddChannel},

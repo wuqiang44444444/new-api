@@ -222,6 +222,20 @@ export interface ChannelTestResponse {
   }
 }
 
+export interface ChannelDefaultAssetGroupStatus {
+  supported: boolean
+  configured: boolean
+  name: string
+  action?: 'created' | 'reused'
+}
+
+export interface ChannelDefaultAssetGroupResponse {
+  success: boolean
+  message?: string
+  error_code?: string
+  data?: ChannelDefaultAssetGroupStatus
+}
+
 export interface ChannelBalanceResponse {
   success: boolean
   message?: string
@@ -417,4 +431,5 @@ export interface ChannelAssetCredentialInput {
 export type UpdateChannelRequest = Partial<Channel> & {
   asset_credential?: ChannelAssetCredentialInput
   confirm_asset_tenant_unchanged?: boolean
+  confirm_asset_tenant_replacement?: boolean
 }

@@ -837,8 +837,20 @@
         "tags": [
           "视频生成/Kling格式"
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "可选创建幂等键，最多 191 个字符，同一请求可在 24 小时内恢复。",
+            "schema": {
+              "type": "string",
+              "maxLength": 191
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -945,8 +957,20 @@
         "tags": [
           "视频生成/Kling格式"
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "可选创建幂等键，最多 191 个字符，同一请求可在 24 小时内恢复。",
+            "schema": {
+              "type": "string",
+              "maxLength": 191
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -1077,9 +1101,20 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "仅提交 Action 使用的可选幂等键，最多 191 个字符，同一请求可在 24 小时内恢复。",
+            "schema": {
+              "type": "string",
+              "maxLength": 191
+            }
           }
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -1089,7 +1124,8 @@
                 "oneOf": [
                   {
                     "required": [
-                      "req_key"
+                      "req_key",
+                      "prompt"
                     ]
                   },
                   {
@@ -1170,7 +1206,27 @@
                     "data": {
                       "type": "object",
                       "description": "响应数据",
-                      "properties": {}
+                      "properties": {
+                        "task_id": {
+                          "type": "string",
+                          "description": "平台任务 ID"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "in_queue",
+                            "generating",
+                            "done",
+                            "failed"
+                          ],
+                          "description": "查询 Action 返回的任务业务状态"
+                        },
+                        "video_url": {
+                          "type": "string",
+                          "format": "uri",
+                          "description": "任务完成后返回的视频地址"
+                        }
+                      }
                     }
                   }
                 }
@@ -2378,16 +2434,7 @@
         "tags": [
           "视频生成/ModelArk格式"
         ],
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
@@ -2404,7 +2451,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ModelArkVideoTask"
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "平台任务 ID"
+                    }
+                  }
                 }
               }
             }
@@ -2454,6 +2511,54 @@
               "minimum": 1,
               "maximum": 500,
               "default": 10
+            }
+          },
+          {
+            "name": "filter.status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "running",
+                "succeeded",
+                "failed",
+                "cancelled",
+                "expired"
+              ]
+            }
+          },
+          {
+            "name": "filter.task_ids",
+            "in": "query",
+            "required": false,
+            "description": "可重复传递，最多 500 个任务 ID。",
+            "schema": {
+              "type": "array",
+              "maxItems": 500,
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "filter.model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filter.service_tier",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "default"
             }
           }
         ],
@@ -4891,6 +4996,14 @@
                 }
               }
             }
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "可选公开扩展元数据"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
           }
         }
       },
@@ -5430,11 +5543,81 @@
         }
       },
       "KlingVideoTaskResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/KlingVideoCreateResponse"
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "request_id",
+          "data"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 0
+          },
+          "message": {
+            "type": "string",
+            "example": "SUCCEED"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "task_id",
+              "task_status",
+              "task_status_msg",
+              "created_at",
+              "updated_at"
+            ],
+            "properties": {
+              "task_id": {
+                "type": "string"
+              },
+              "task_status": {
+                "type": "string",
+                "enum": [
+                  "submitted",
+                  "processing",
+                  "succeed",
+                  "failed"
+                ]
+              },
+              "task_status_msg": {
+                "type": "string"
+              },
+              "task_result": {
+                "type": "object",
+                "properties": {
+                  "videos": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "url"
+                      ],
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "created_at": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "updated_at": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
           }
-        ]
+        }
       },
       "KlingVideoErrorResponse": {
         "type": "object",
@@ -6116,6 +6299,9 @@
           "frames": {
             "type": "integer"
           },
+          "framespersecond": {
+            "type": "integer"
+          },
           "ratio": {
             "type": "string"
           },
@@ -6124,6 +6310,17 @@
           },
           "draft": {
             "type": "boolean"
+          },
+          "draft_task_id": {
+            "type": "string"
+          },
+          "safety_identifier": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9
           },
           "service_tier": {
             "type": "string"
@@ -6136,6 +6333,14 @@
               },
               "total_tokens": {
                 "type": "integer"
+              },
+              "tool_usage": {
+                "type": "object",
+                "properties": {
+                  "web_search": {
+                    "type": "integer"
+                  }
+                }
               }
             }
           },
@@ -6176,8 +6381,7 @@
         "additionalProperties": false,
         "required": [
           "type",
-          "url",
-          "expires_at"
+          "url"
         ],
         "properties": {
           "type": {
@@ -6192,7 +6396,8 @@
           },
           "expires_at": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "可选 URL 过期时间（Unix 秒）；填写时必须满足模型公开的最短剩余有效期。"
           }
         }
       },
@@ -6231,7 +6436,7 @@
           },
           "asset_group_id": {
             "type": "string",
-			"description": "可选的上游素材组 opaque ID；网关不查询或验证其归属。"
+			"description": "可选的上游素材组 opaque ID。AIGC 普通素材默认省略或传空字符串；仅模型能力声明 required 或真人素材时必填。网关不查询或验证其归属。"
           },
           "source": {
             "$ref": "#/components/schemas/AssetSource"
@@ -6247,7 +6452,8 @@
         ],
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 64
 		  },
 		  "model": {
 			"type": "string",

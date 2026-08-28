@@ -168,6 +168,10 @@ import {
   findMissingModelsInMapping,
   validateModelMappingJson,
   hasAdvancedSettingsErrors,
+  assetTenantBoundarySnapshotFromChannel,
+  assetTenantBoundarySnapshotFromForm,
+  collectAssetTenantBoundaryChanges,
+  type AssetTenantBoundaryChange,
 } from '../../lib'
 import {
   collectInvalidStatusCodeEntries,
@@ -647,8 +651,15 @@ export function ChannelMutateDrawer({
   const statusCodeRiskResolveRef = useRef<
     ((confirmed: boolean) => void) | null
   >(null)
-  const [assetTenantRotationOpen, setAssetTenantRotationOpen] = useState(false)
-  const assetTenantRotationResolveRef = useRef<
+  const [assetTenantConfirmationOpen, setAssetTenantConfirmationOpen] =
+    useState(false)
+  const [assetTenantConfirmationMode, setAssetTenantConfirmationMode] =
+    useState<'rotation' | 'replacement'>('rotation')
+  const [
+    pendingAssetTenantBoundaryChanges,
+    setPendingAssetTenantBoundaryChanges,
+  ] = useState<AssetTenantBoundaryChange[]>([])
+  const assetTenantConfirmationResolveRef = useRef<
     ((confirmed: boolean) => void) | null
   >(null)
   const [missingModelsDialogOpen, setMissingModelsDialogOpen] = useState(false)
@@ -695,6 +706,10 @@ export function ChannelMutateDrawer({
           : 'modelark_v3_volcengine',
     }
   }, [channelData?.data?.settings])
+  const savedAssetTenantBoundary = useMemo(
+    () => assetTenantBoundarySnapshotFromChannel(channelData?.data),
+    [channelData?.data]
+  )
 
   // Fetch available groups
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
@@ -757,6 +772,10 @@ export function ChannelMutateDrawer({
   const currentKey = form.watch('key')
   const currentOther = form.watch('other')
   const currentModels = form.watch('models')
+  const currentVideoUpstreamProtocol = form.watch('video_upstream_protocol')
+  const currentAssetUpstreamProtocol = form.watch('asset_upstream_protocol')
+  const currentAssetProviderProject = form.watch('asset_provider_project')
+  const currentAssetRegion = form.watch('asset_region')
   const currentName = form.watch('name')
   const currentModelMapping = form.watch('model_mapping')
   const awsKeyType = form.watch('aws_key_type')
@@ -951,6 +970,28 @@ export function ChannelMutateDrawer({
     () => parseModelsString(currentModels),
     [currentModels]
   )
+  const currentAssetTenantBoundaryChanges = useMemo(() => {
+    if (!isEditing || currentType !== CHANNEL_TYPE_SEEDANCE_LINK) return []
+    return collectAssetTenantBoundaryChanges(
+      savedAssetTenantBoundary,
+      assetTenantBoundarySnapshotFromForm({
+        base_url: currentBaseUrl,
+        video_upstream_protocol: currentVideoUpstreamProtocol,
+        asset_upstream_protocol: currentAssetUpstreamProtocol,
+        asset_provider_project: currentAssetProviderProject,
+        asset_region: currentAssetRegion,
+      })
+    )
+  }, [
+    currentAssetProviderProject,
+    currentAssetRegion,
+    currentAssetUpstreamProtocol,
+    currentBaseUrl,
+    currentType,
+    currentVideoUpstreamProtocol,
+    isEditing,
+    savedAssetTenantBoundary,
+  ])
 
   const currentTypeLabel = useMemo(
     () =>
@@ -1634,22 +1675,31 @@ export function ChannelMutateDrawer({
     }
   }, [])
 
-  const confirmAssetTenantRotation = useCallback(
-    (): Promise<boolean> =>
+  const confirmAssetTenantMutation = useCallback(
+    (
+      mode: 'rotation' | 'replacement',
+      boundaryChanges: AssetTenantBoundaryChange[] = []
+    ): Promise<boolean> =>
       new Promise((resolve) => {
-        assetTenantRotationResolveRef.current = resolve
-        setAssetTenantRotationOpen(true)
+        assetTenantConfirmationResolveRef.current = resolve
+        setAssetTenantConfirmationMode(mode)
+        setPendingAssetTenantBoundaryChanges(boundaryChanges)
+        setAssetTenantConfirmationOpen(true)
       }),
     []
   )
 
-  const handleAssetTenantRotationAction = useCallback((confirmed: boolean) => {
-    setAssetTenantRotationOpen(false)
-    if (assetTenantRotationResolveRef.current) {
-      assetTenantRotationResolveRef.current(confirmed)
-      assetTenantRotationResolveRef.current = null
-    }
-  }, [])
+  const handleAssetTenantConfirmationAction = useCallback(
+    (confirmed: boolean) => {
+      setAssetTenantConfirmationOpen(false)
+      setPendingAssetTenantBoundaryChanges([])
+      if (assetTenantConfirmationResolveRef.current) {
+        assetTenantConfirmationResolveRef.current(confirmed)
+        assetTenantConfirmationResolveRef.current = null
+      }
+    },
+    []
+  )
 
   useEffect(() => {
     return () => {
@@ -1657,9 +1707,9 @@ export function ChannelMutateDrawer({
         statusCodeRiskResolveRef.current(false)
         statusCodeRiskResolveRef.current = null
       }
-      if (assetTenantRotationResolveRef.current) {
-        assetTenantRotationResolveRef.current(false)
-        assetTenantRotationResolveRef.current = null
+      if (assetTenantConfirmationResolveRef.current) {
+        assetTenantConfirmationResolveRef.current(false)
+        assetTenantConfirmationResolveRef.current = null
       }
     }
   }, [])
@@ -1779,13 +1829,31 @@ export function ChannelMutateDrawer({
           data.asset_access_key_id?.trim() &&
           data.asset_secret_access_key?.trim()
         )
+      const assetTenantBoundaryChanges = collectAssetTenantBoundaryChanges(
+        savedAssetTenantBoundary,
+        assetTenantBoundarySnapshotFromForm(data)
+      )
       if (
+        isEditing &&
+        data.type === CHANNEL_TYPE_SEEDANCE_LINK &&
+        assetTenantBoundaryChanges.length > 0
+      ) {
+        const confirmed = await confirmAssetTenantMutation(
+          'replacement',
+          assetTenantBoundaryChanges
+        )
+        if (!confirmed) return
+        submissionData = {
+          ...data,
+          confirm_asset_tenant_replacement: true,
+        }
+      } else if (
         isEditing &&
         data.type === CHANNEL_TYPE_SEEDANCE_LINK &&
         savedSeedanceProtocols.asset !== 'none' &&
         rotatesAssetCredential
       ) {
-        const confirmed = await confirmAssetTenantRotation()
+        const confirmed = await confirmAssetTenantMutation('rotation')
         if (!confirmed) return
         submissionData = {
           ...data,
@@ -1793,7 +1861,11 @@ export function ChannelMutateDrawer({
         }
       }
 
-      await channelMutation.mutateAsync(submissionData)
+      try {
+        await channelMutation.mutateAsync(submissionData)
+      } catch {
+        // The mutation onError handler owns user-visible feedback.
+      }
     },
     [
       isEditing,
@@ -1801,8 +1873,9 @@ export function ChannelMutateDrawer({
       form,
       confirmMissingModelMappings,
       confirmStatusCodeRisk,
-      confirmAssetTenantRotation,
+      confirmAssetTenantMutation,
       channelMutation,
+      savedAssetTenantBoundary,
       savedSeedanceProtocols.asset,
       t,
     ]
@@ -2435,6 +2508,9 @@ export function ChannelMutateDrawer({
                               <SeedanceProtocolFields
                                 control={form.control}
                                 sensitiveLocked={sensitiveLocked}
+                                boundaryChanges={
+                                  currentAssetTenantBoundaryChanges
+                                }
                                 credentialStatus={
                                   channelData?.data?.asset_credential_status
                                 }
@@ -4995,10 +5071,12 @@ export function ChannelMutateDrawer({
         onConfirm={() => handleStatusCodeRiskAction(true)}
       />
       <AssetTenantRotationDialog
-        open={assetTenantRotationOpen}
+        open={assetTenantConfirmationOpen}
+        mode={assetTenantConfirmationMode}
         models={parseModelsString(currentModels || '')}
-        onCancel={() => handleAssetTenantRotationAction(false)}
-        onConfirm={() => handleAssetTenantRotationAction(true)}
+        boundaryChanges={pendingAssetTenantBoundaryChanges}
+        onCancel={() => handleAssetTenantConfirmationAction(false)}
+        onConfirm={() => handleAssetTenantConfirmationAction(true)}
       />
     </>
   )

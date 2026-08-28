@@ -25,6 +25,7 @@ import type {
   BatchSetTagParams,
   Channel,
   ChannelBalanceResponse,
+  ChannelDefaultAssetGroupResponse,
   ChannelOpsResponse,
   ChannelTestResponse,
   CopyChannelParams,
@@ -247,6 +248,27 @@ export async function deleteChannelAssetCredential(
 ): Promise<ChannelTestResponse> {
   const res = await api.delete(
     `/api/channel/${id}/asset_credential`,
+    channelActionConfig()
+  )
+  return res.data
+}
+
+export async function getChannelDefaultAssetGroup(
+  id: number
+): Promise<ChannelDefaultAssetGroupResponse> {
+  const res = await api.get(
+    `/api/channel/${id}/default_asset_group`,
+    channelActionConfig()
+  )
+  return res.data
+}
+
+export async function createOrReuseChannelDefaultAssetGroup(
+  id: number
+): Promise<ChannelDefaultAssetGroupResponse> {
+  const res = await api.post(
+    `/api/channel/${id}/default_asset_group`,
+    undefined,
     channelActionConfig()
   )
   return res.data

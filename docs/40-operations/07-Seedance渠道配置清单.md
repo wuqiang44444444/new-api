@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-25
+last-reviewed: 2026-08-28
 ---
 
 # 07 Seedance 渠道配置清单
@@ -63,9 +63,12 @@ FunCloud 四个客户模型和路径必须精确对应：
 Channel；不同连接或协议仍须分开。飞彩、FunCloud 2.5 选择 `none`，不得配置 `funcloud_material`。
 
 启用素材协议时，一个 Channel 就代表一个上游素材租户。需要共享素材的所有客户模型必须放在同一个
-Channel；不同租户或无法确认同租户时必须分开。首次保存会生成内部随机 identity；建立后不得原地修改
-Channel Type、Base URL、视频/素材协议、Project 或 Region，也不得改回 `none`。此类变化应新建 Channel。
-轮换 Key 或素材 AK/SK 时，管理端必须确认“素材租户未变化”；平台记录该声明但不验证 Provider 账号等价。
+Channel；不同租户或无法确认同租户时必须分开。首次保存会生成内部随机 identity；建立后 Channel Type
+不可修改。Base URL、视频/素材协议、Project 或 Region 变化时，管理员直接在当前 Channel 编辑界面填写
+新值：页面列出精确差异，点击保存后必须勾选并确认“替换素材租户”。成功后 Channel ID 和客户模型不变，
+identity/`reuse_scope` 更新（改为 `none` 时移除）；旧素材 ID/引用可能不可用，平台不迁移、探测或删除。
+操作前应确认在途 Task 无需改线，操作后重新查询模型目录并按新 scope 建立复用关系。轮换 Key 或素材
+AK/SK 且边界不变时，仍须确认“素材租户未变化”；平台记录声明但不验证 Provider 账号等价。
 
 升级到统一 scope 公式后，全部旧 `reuse_scope`（包括移动云 CMCC）都会失效。发布前应通知 API 调用方
 清理按旧 scope 缓存的跨模型复用关系，并在升级完成后重新查询模型目录；不得把旧 scope 与新 scope

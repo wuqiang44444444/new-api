@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-08-28.1",
+  "contentVersion": "2026-08-28.2",
   "defaultLocale": "zh",
   "locales": {
     "zh": {
@@ -143,8 +143,8 @@
               "title": "图片生成",
               "slug": "api-reference/images/generations",
               "file": "zh/api-reference/images/generations.md",
-              "description": "使用 OpenAI 兼容合同创建图片",
-              "keywords": ["图片生成", "prompt", "n"],
+              "description": "查看图片生成参数、同步与流式响应及错误处理",
+              "keywords": ["图片生成", "响应", "流式"],
               "assets": []
             },
             {
@@ -152,8 +152,8 @@
               "title": "图片编辑",
               "slug": "api-reference/images/edits",
               "file": "zh/api-reference/images/edits.md",
-              "description": "以 multipart 请求编辑图片",
-              "keywords": ["图片编辑", "multipart", "mask"],
+              "description": "查看图片编辑表单、文件要求与响应字段",
+              "keywords": ["图片编辑", "multipart", "响应"],
               "assets": []
             }
           ]
@@ -167,8 +167,8 @@
               "title": "OpenAI Videos",
               "slug": "api-reference/videos/openai",
               "file": "zh/api-reference/videos/openai.md",
-              "description": "使用上游原生 OpenAI Videos 创建、查询和 Remix 视频",
-              "keywords": ["OpenAI Videos", "Sora", "Remix"],
+              "description": "查看 OpenAI Videos 创建、查询、Remix、下载和通用视频合同",
+              "keywords": ["OpenAI Videos", "Sora", "响应"],
               "assets": []
             },
             {
@@ -176,8 +176,8 @@
               "title": "ModelArk V3 Seedance 视频",
               "slug": "api-reference/videos/modelark",
               "file": "zh/api-reference/videos/modelark.md",
-              "description": "创建、列出、查询和删除 ModelArk 视频任务",
-              "keywords": ["ModelArk", "视频", "任务"],
+              "description": "查看 ModelArk 视频参数、任务响应、状态、列表和下载",
+              "keywords": ["ModelArk", "参数", "响应"],
               "assets": []
             },
             {
@@ -185,8 +185,8 @@
               "title": "Kling 视频",
               "slug": "api-reference/videos/kling",
               "file": "zh/api-reference/videos/kling.md",
-              "description": "使用 Kling 文生视频与图生视频合同",
-              "keywords": ["Kling", "文生视频", "图生视频"],
+              "description": "查看 Kling 文生与图生视频参数、任务响应和状态",
+              "keywords": ["Kling", "参数", "响应"],
               "assets": []
             },
             {
@@ -194,8 +194,8 @@
               "title": "即梦视频",
               "slug": "api-reference/videos/jimeng",
               "file": "zh/api-reference/videos/jimeng.md",
-              "description": "按 Action 提交或查询即梦异步任务",
-              "keywords": ["即梦", "Action", "视频"],
+              "description": "查看即梦提交与查询参数、任务响应和状态",
+              "keywords": ["即梦", "Action", "响应"],
               "assets": []
             }
           ]
@@ -209,8 +209,8 @@
               "title": "素材与素材组",
               "slug": "api-reference/assets",
               "file": "zh/api-reference/assets/overview.md",
-              "description": "创建、查询、更新和删除素材及素材组",
-              "keywords": ["素材", "asset", "素材组", "真人认证"],
+              "description": "直接创建 AIGC 素材，并按需使用素材组和真人认证",
+              "keywords": ["AIGC 素材", "素材组", "参数", "响应"],
               "assets": []
             }
           ]

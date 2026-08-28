@@ -57,6 +57,11 @@
       "family": "video-openai"
     },
     {
+      "operationId": "getVideoGeneration",
+      "status": "published",
+      "family": "video-openai"
+    },
+    {
       "operationId": "createModelArkVideoTask",
       "status": "published",
       "family": "video-modelark"

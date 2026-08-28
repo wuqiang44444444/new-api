@@ -23,14 +23,13 @@ func assetBoundaryTestChannel(name string, status int) *Channel {
 	return channel
 }
 
-func TestAssetTenantBoundaryFieldsAreImmutableAfterIdentityCreation(t *testing.T) {
+func TestAssetTenantBoundaryReplacementRequiresConfirmationAndRotatesScope(t *testing.T) {
 	withSeedanceChannelDB(t)
 
 	tests := []struct {
 		name   string
 		mutate func(*Channel)
 	}{
-		{name: "channel type", mutate: func(channel *Channel) { channel.Type = constant.ChannelTypeOpenAI }},
 		{name: "base url", mutate: func(channel *Channel) { channel.BaseURL = common.GetPointer("https://other.example.com") }},
 		{name: "video protocol", mutate: func(channel *Channel) {
 			settings := channel.GetOtherSettings()
@@ -58,12 +57,13 @@ func TestAssetTenantBoundaryFieldsAreImmutableAfterIdentityCreation(t *testing.T
 		t.Run(tt.name, func(t *testing.T) {
 			channel := assetBoundaryTestChannel("boundary-"+tt.name, common.ChannelStatusManuallyDisabled)
 			require.NoError(t, channel.Insert())
+			require.NoError(t, SaveChannelDefaultAssetGroup(channel.Id, "old-provider-group"))
 			originalScope, err := ChannelAssetReuseScope(channel.Id)
 			require.NoError(t, err)
 
 			tt.mutate(channel)
-			err = channel.UpdateWithActorAndAssetTenantConfirmation(0, true)
-			require.ErrorIs(t, err, ErrAssetTenantBoundaryImmutable)
+			err = channel.UpdateWithActorAndAssetTenantConfirmation(0, false, false)
+			require.ErrorIs(t, err, ErrAssetTenantReplacementUnconfirmed)
 
 			stored, err := GetChannelById(channel.Id, true)
 			require.NoError(t, err)
@@ -72,8 +72,31 @@ func TestAssetTenantBoundaryFieldsAreImmutableAfterIdentityCreation(t *testing.T
 			assert.Equal(t, originalScope, storedScope)
 			assert.Equal(t, "https://assets.example.com", stored.GetBaseURL())
 			assert.Equal(t, constant.ChannelTypeSeedanceLink, stored.Type)
+			defaultGroup, err := GetChannelDefaultAssetGroup(channel.Id)
+			require.NoError(t, err)
+			require.NotNil(t, defaultGroup)
+
+			require.NoError(t, channel.UpdateWithActorAndAssetTenantConfirmation(0, false, true))
+			replacedScope, err := ChannelAssetReuseScope(channel.Id)
+			require.NoError(t, err)
+			assert.NotEqual(t, originalScope, replacedScope)
+			defaultGroup, err = GetChannelDefaultAssetGroup(channel.Id)
+			require.NoError(t, err)
+			assert.Nil(t, defaultGroup)
 		})
 	}
+}
+
+func TestAssetTenantBoundaryReplacementCannotChangeChannelType(t *testing.T) {
+	withSeedanceChannelDB(t)
+	channel := assetBoundaryTestChannel("boundary-channel-type", common.ChannelStatusManuallyDisabled)
+	require.NoError(t, channel.Insert())
+	channel.Type = constant.ChannelTypeOpenAI
+	require.ErrorIs(
+		t,
+		channel.UpdateWithActorAndAssetTenantConfirmation(0, false, true),
+		ErrAssetTenantBoundaryImmutable,
+	)
 }
 
 func TestAssetCredentialRotationRequiresExplicitTenantConfirmation(t *testing.T) {
@@ -88,7 +111,7 @@ func TestAssetCredentialRotationRequiresExplicitTenantConfirmation(t *testing.T)
 	require.ErrorIs(t, err, ErrAssetTenantRotationUnconfirmed)
 
 	channel.Key = "rotated-key"
-	require.NoError(t, channel.UpdateWithActorAndAssetTenantConfirmation(0, true))
+	require.NoError(t, channel.UpdateWithActorAndAssetTenantConfirmation(0, true, false))
 	stored, err := GetChannelById(channel.Id, true)
 	require.NoError(t, err)
 	assert.Equal(t, "rotated-key", stored.Key)
@@ -113,8 +136,11 @@ func TestFirstAssetProtocolActivationCreatesPermanentIdentity(t *testing.T) {
 
 	settings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolNone
 	channel.SetOtherSettings(settings)
-	err = channel.UpdateWithActorAndAssetTenantConfirmation(0, true)
-	require.ErrorIs(t, err, ErrAssetTenantBoundaryImmutable)
+	err = channel.UpdateWithActorAndAssetTenantConfirmation(0, false, false)
+	require.ErrorIs(t, err, ErrAssetTenantReplacementUnconfirmed)
+	require.NoError(t, channel.UpdateWithActorAndAssetTenantConfirmation(0, false, true))
+	_, err = ChannelAssetReuseScope(channel.Id)
+	require.ErrorIs(t, err, errChannelAssetScopeIdentityMissing)
 }
 
 func TestAssetScopeIdentityBackfillIncludesDisabledChannels(t *testing.T) {

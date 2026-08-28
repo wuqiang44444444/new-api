@@ -297,6 +297,7 @@ func migrateDB() error {
 		&SystemTaskLock{},
 		&ChannelAssetCredential{},
 		&ChannelAssetScopeIdentity{},
+		&ChannelDefaultAssetGroup{},
 		&CasbinRule{},
 		&AuthzRole{},
 		&CustomerModelContract{},
@@ -384,6 +385,7 @@ func migrateDBFast() error {
 		{&SystemTaskLock{}, "SystemTaskLock"},
 		{&ChannelAssetCredential{}, "ChannelAssetCredential"},
 		{&ChannelAssetScopeIdentity{}, "ChannelAssetScopeIdentity"},
+		{&ChannelDefaultAssetGroup{}, "ChannelDefaultAssetGroup"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))

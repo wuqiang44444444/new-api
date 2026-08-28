@@ -21,7 +21,13 @@ func lockChannelForMutation(tx *gorm.DB, id int) (*Channel, error) {
 	return &channel, nil
 }
 
-func updateChannelWithCredentialActor(channel *Channel, credential *ChannelAssetCredential, actorID int, assetTenantUnchanged bool) error {
+func updateChannelWithCredentialActor(
+	channel *Channel,
+	credential *ChannelAssetCredential,
+	actorID int,
+	assetTenantUnchanged bool,
+	assetTenantReplacementConfirmed bool,
+) error {
 	if channel.Id == 0 {
 		return errors.New("channel ID is 0")
 	}
@@ -37,8 +43,35 @@ func updateChannelWithCredentialActor(channel *Channel, credential *ChannelAsset
 		if err := tx.First(channel, "id = ?", channel.Id).Error; err != nil {
 			return err
 		}
-		if err := validateChannelAssetTenantMutation(tx, &original, channel, credential, assetTenantUnchanged); err != nil {
+		if err := validateChannelAssetTenantMutation(
+			tx,
+			&original,
+			channel,
+			credential,
+			assetTenantUnchanged,
+			assetTenantReplacementConfirmed,
+		); err != nil {
 			return err
+		}
+		boundaryChanges, err := ChannelAssetTenantBoundaryChanges(&original, channel)
+		if err != nil {
+			return err
+		}
+		originalSettings, err := parsedChannelOtherSettings(&original)
+		if err != nil {
+			return err
+		}
+		boundaryEstablished, err := channelAssetTenantBoundaryEstablished(tx, &original, originalSettings)
+		if err != nil {
+			return err
+		}
+		if boundaryEstablished && len(boundaryChanges) > 0 && assetTenantReplacementConfirmed {
+			if err := deleteChannelDefaultAssetGroupsTx(tx, []int{channel.Id}); err != nil {
+				return err
+			}
+			if err := replaceChannelAssetScopeIdentityTx(tx, channel); err != nil {
+				return err
+			}
 		}
 		if credential != nil {
 			if err := saveChannelAssetCredentialTx(tx, credential); err != nil {
@@ -90,6 +123,9 @@ func batchDeleteChannelRows(ids []int) (int64, error) {
 			return err
 		}
 		if err := deleteChannelAssetCredentialsTx(tx, deletable); err != nil {
+			return err
+		}
+		if err := deleteChannelDefaultAssetGroupsTx(tx, deletable); err != nil {
 			return err
 		}
 		return deleteChannelAssetScopeIdentitiesTx(tx, deletable)

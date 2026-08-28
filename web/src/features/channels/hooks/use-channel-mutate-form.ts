@@ -30,8 +30,10 @@ import { useAuthStore } from '@/stores/auth-store'
 import { createChannel, updateChannel } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import {
+  ASSET_TENANT_BOUNDARY_FIELD_LABELS,
   transformFormDataToCreatePayload,
   transformFormDataToUpdatePayload,
+  type AssetTenantBoundaryField,
   type ChannelFormValues,
 } from '../lib'
 import type { Channel } from '../types'
@@ -88,6 +90,18 @@ function getErrorCode(error: unknown): string | undefined {
   return typeof errorCode === 'string' ? errorCode : undefined
 }
 
+function getChangedFields(error: unknown): AssetTenantBoundaryField[] {
+  if (!isRecord(error)) return []
+  const response = error.response
+  if (!isRecord(response) || !isRecord(response.data)) return []
+  const changedFields = response.data.changed_fields
+  if (!Array.isArray(changedFields)) return []
+  return changedFields.filter(
+    (field): field is AssetTenantBoundaryField =>
+      typeof field === 'string' && field in ASSET_TENANT_BOUNDARY_FIELD_LABELS
+  )
+}
+
 export function useChannelMutateForm(props: UseChannelMutateFormParams) {
   const { t } = useTranslation()
   const currentUser = useAuthStore((s) => s.auth.user)
@@ -131,7 +145,9 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
         if (!response.success) {
           throw new Error(response.message || t(ERROR_MESSAGES.UPDATE_FAILED))
         }
-        return SUCCESS_MESSAGES.UPDATED
+        return data.confirm_asset_tenant_replacement
+          ? 'Channel updated and asset tenant replaced successfully'
+          : SUCCESS_MESSAGES.UPDATED
       }
 
       const payload = transformFormDataToCreatePayload(data)
@@ -150,8 +166,24 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
       if (errorCode === 'asset_tenant_boundary_immutable') {
         toast.error(
           t(
-            'This channel already defines an asset tenant. Create a new channel to change its type, Base URL, protocols, project, or region.'
+            'The channel type cannot be changed after an asset tenant is established.'
           )
+        )
+        return
+      }
+      if (errorCode === 'asset_tenant_replacement_unconfirmed') {
+        const fieldLabels = getChangedFields(error).map((field) =>
+          t(ASSET_TENANT_BOUNDARY_FIELD_LABELS[field])
+        )
+        toast.error(
+          fieldLabels.length > 0
+            ? t(
+                'Confirm the asset tenant replacement before saving changes to: {{fields}}.',
+                { fields: fieldLabels.join(', ') }
+              )
+            : t(
+                'Confirm the asset tenant replacement before saving boundary changes.'
+              )
         )
         return
       }

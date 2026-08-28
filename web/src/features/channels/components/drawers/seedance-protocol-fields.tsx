@@ -1,3 +1,22 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { AlertTriangle } from 'lucide-react'
 import { type Control, useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
@@ -20,6 +39,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
+import {
+  ASSET_TENANT_BOUNDARY_FIELD_LABELS,
+  type AssetTenantBoundaryChange,
+} from '../../lib/asset-tenant-boundary'
 import type { ChannelFormValues } from '../../lib/channel-form'
 import { maskAssetCredentialHint } from '../../lib/official-channel-connectivity'
 import {
@@ -37,6 +60,7 @@ type SeedanceProtocolFieldsProps = {
     configured: boolean
     access_key_id_hint?: string
   }
+  boundaryChanges?: AssetTenantBoundaryChange[]
 }
 
 const SEEDANCE_VIDEO_PROTOCOL_OPTIONS = [
@@ -140,7 +164,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
           <AlertDescription className='space-y-1'>
             <p>
               {t(
-                'One Seedance channel represents one upstream asset tenant. Put every model that must share assets in this channel; create another channel for a different tenant.'
+                "One Seedance channel represents one upstream asset tenant. Put every model that must share assets in this channel; a confirmed boundary change replaces this channel's tenant."
               )}
             </p>
             <p>
@@ -153,6 +177,35 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
                     .join(', ') || t('None selected'),
               })}
             </p>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {props.boundaryChanges?.length ? (
+        <Alert className='border-warning/40 bg-warning/5'>
+          <AlertTriangle className='text-warning size-4' aria-hidden='true' />
+          <AlertTitle>
+            {t('This save will replace the asset tenant')}
+          </AlertTitle>
+          <AlertDescription className='space-y-2'>
+            <p>
+              {t(
+                'Existing asset IDs and asset references may become unavailable. The customer models and channel ID will remain unchanged.'
+              )}
+            </p>
+            <ul className='space-y-1'>
+              {props.boundaryChanges.map((change) => (
+                <li key={change.field} className='break-words'>
+                  <span className='font-medium'>
+                    {t(ASSET_TENANT_BOUNDARY_FIELD_LABELS[change.field])}:
+                  </span>{' '}
+                  <span className='font-mono text-xs'>
+                    {change.previous || t('Not set')} →{' '}
+                    {change.next || t('Not set')}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </AlertDescription>
         </Alert>
       ) : null}

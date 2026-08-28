@@ -46,6 +46,9 @@ web/           — Frontend (React 19, Rsbuild, Base UI, Tailwind)
 - **NEWAPI 原生能力**：上游已经提供的 Router、DTO、Relay、Provider adapter、模型发现和计费语义继续以上游代码为权威。本地代码不得包装、复制、收紧或为原生入口增加 Link 模型推断。
 - **Link 类型化合同**：Link 只承载本地明确支持的扩展入口。Seedance 由专用 ChannelType 和代码协议
   注册表达；技术人员线下审核模型兼容性，管理员按明确结论配置。
+- **统一北向协议优先**：Link 已发布北向协议定义客户请求形状和字段语义；南向代码 adapter 必须吸收
+  Provider 的字段、路径和必填性差异，不得要求客户按 Provider 或模型改变请求结构。该规则不允许透传
+  合同外 Provider 私有参数，也不允许静默改变其它北向字段语义。
 - 两类能力可以共享鉴权、渠道、Task、计费、资源和日志底座，但不得互相推断、兼容降级或建立第二套公共状态。
 
 ### Current Link facts
@@ -57,7 +60,8 @@ web/           — Frontend (React 19, Rsbuild, Base UI, Tailwind)
   内容 hash 等价证明、Link Access Plan 或候选交集。
 - Seedance 的 Channel 模型清单描述其专用路由；它不写入 NEWAPI 原生 Ability 或通用分发缓存。
   模型发现与价格接口只读取等价投影。Task、create attempt、计费和审计快照描述已经发生的事实；
-  素材控制面是调用方自管的无状态单资源代理，不建立本地 Asset/AssetGroup 事实。
+  素材控制面是调用方自管的无状态单资源代理，不建立客户 Asset/AssetGroup 事实；每个支持普通 AIGC
+  素材组的 Channel 可以保存一个内部默认 Provider group ID，但它只是南向履约配置。
 - 客户模型可使用部署方自定义名称，`model_mapping` 精确映射到代码协议登记的上游模型。公开元数据
   不返回上游身份；素材支持以 `api.assets` 为准，相同非空 `reuse_scope` 仅表示可尝试复用同一素材域。
 
@@ -168,8 +172,11 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 - Seedance 不使用 Priority、Weight、Affinity、随机分发、失败重选、跨渠道重试或 fallback。
 - 南向差异必须由代码注册的 `video_upstream_protocol` / `asset_upstream_protocol` adapter 实现；
   管理员不编写协议 JSON、字段映射或状态脚本。
+- Link 已发布入口以统一北向协议为第一优先级。已发布北向字段在具体 Provider 不生效时，adapter 必须
+  按合同转换或忽略，不能反向导致客户请求错误；只有整个业务操作无法履约时才返回不支持。
 - 不得修改 NEWAPI 原生入口去识别或拒绝 Link 模型，也不得把 ModelArk V3 请求降级到原生视频入口。
-- 客户端不得透传合同外 Provider 私有参数；不支持字段必须明确拒绝或保持未发布，不得静默删除、钳制、降级或改义。
+- 客户端不得透传合同外 Provider 私有参数；合同外字段必须明确拒绝或保持未发布，不得静默删除、钳制、
+  降级或改义。统一北向协议定义的条件生效字段不属于合同外字段。
 
 **Durable asynchronous execution:**
 
@@ -189,8 +196,22 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
   名称、Channel ID、账号、Region/Project、协议细节或上游原始模型。调用方保存 `model + id + reference`。
 - 视频请求中的 `asset://<opaque-id>` 不查询本地数据库，也不验证所有权、应用、状态、模型、Channel、
   账号或 Provider 作用域；所选视频 adapter 原样接收引用，最终兼容性由 Provider 判定。
-- 平台不建立 Asset/AssetGroup、素材 binding、resolver、列表索引、跨 Provider 探测、fallback、迁移或
-  自动物化。错误 Provider ID 只发送给客户模型选定的 Provider；失败按脱敏统一错误返回，不换渠道。
+- 平台不建立客户 Asset/AssetGroup、素材 binding、resolver、列表索引、跨 Provider 探测、fallback、
+  迁移或自动物化。允许每个支持普通 AIGC 素材组的 Channel 保存一个固定名称
+  `aigctokenaigeneral` 的内部默认 Provider group ID；它不是客户资源，也不得扩展成通用 AssetGroup
+  表、列表、所有权或状态机。错误 Provider ID 只发送给客户模型选定的 Provider；失败按脱敏统一错误
+  返回，不换渠道。
+- 默认素材组只能由管理员在已保存 Channel 的管理页面手工创建或复用；业务素材请求和升级过程不得自动
+  创建。普通 AIGC 素材创建中，裁剪后非空的调用方 `asset_group_id` 必须保持原值并优先使用；仅未传、空
+  或空白时使用 Channel 默认组。北向结构不合法时返回 `invalid_request`，不得静默改用默认组；Provider
+  拒绝显式 ID 后也不得回退。默认组缺失时返回 `default_asset_group_not_configured`。
+- `asset_group_id` 是统一北向素材创建协议的合法可选字段。普通素材组策略必须由代码注册的唯一
+  `GeneralAssetGroupPolicy`（`none` / `default_fallback`）同时驱动运行时和公开元数据，不得从
+  `GroupAdapter`、requirement 接口或模型名重复推断。`none` 时 adapter 不发送组字段并继续履约；直接
+  素材组操作无法履约时继续返回既有 `unsupported_asset_operation`。
+- `aigctokenaigeneral` 是普通北向素材组创建的系统保留名称。Channel 停用保留默认 ID，复制不继承，
+  素材租户替换与删除 Channel 只删除本地默认组配置而不删除 Provider 组；真人素材继续使用 Provider
+  认证产生的专用组。
 - source URL 只允许出现在创建请求和当次 Provider 调用中，不得持久化、记录或返回；平台不保存媒体
   二进制。真人认证仅代理 Provider 素材组流程和认证 URL，不自建人脸表单、授权域或撤回状态机。
 - 不支持的模型或操作必须根据代码 adapter 与已验证 Provider 文档明确返回
@@ -200,7 +221,7 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 
 - 不得提交、记录或输出密钥、Token、Cookie、支付凭据、生产配置、完整签名 URL、Task 私有数据或原始 Provider 响应。
 - Task、资金及平台持久化客户资源必须按 `user_id + app_id` 隔离；无状态素材代理不建立平台资源所有权，
-  由受信应用自行管理其 Provider opaque ID。
+  由受信应用自行管理其 Provider opaque ID。Channel 默认素材组 ID 是渠道基础设施配置，不是客户资源。
 - 主数据库是合同、Task、资金、资源和授权的持久化事实源；Redis、进程缓存和前端状态必须可重建，不得成为唯一权威。
 
 **Billing expression system:** When working on tiered/dynamic billing (expression-based pricing), MUST read `pkg/billingexpr/expr.md` first. It documents the design philosophy, expression language, full architecture, token normalization rules, quota conversion, and expression versioning. All billing expression changes must follow that document.

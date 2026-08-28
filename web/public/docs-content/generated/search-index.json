@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-08-28.1",
+  "contentVersion": "2026-08-28.2",
   "locales": {
     "zh": [
       {
@@ -286,23 +286,33 @@
         "pageId": "images-generations",
         "slug": "api-reference/images/generations",
         "title": "图片生成",
-        "description": "使用 OpenAI 兼容合同创建图片",
-        "keywords": ["图片生成", "prompt", "n"],
+        "description": "查看图片生成参数、同步与流式响应及错误处理",
+        "keywords": ["图片生成", "响应", "流式"],
         "headings": [
           {
             "depth": 2,
-            "id": "请求",
-            "text": "请求"
+            "id": "最小请求",
+            "text": "最小请求"
           },
           {
             "depth": 2,
-            "id": "同步响应",
-            "text": "同步响应"
+            "id": "请求参数",
+            "text": "请求参数"
           },
           {
             "depth": 2,
-            "id": "等待-超时与计费",
-            "text": "等待、超时与计费"
+            "id": "非流式响应",
+            "text": "非流式响应"
+          },
+          {
+            "depth": 2,
+            "id": "流式响应",
+            "text": "流式响应"
+          },
+          {
+            "depth": 2,
+            "id": "等待-费用与重试",
+            "text": "等待、费用与重试"
           },
           {
             "depth": 2,
@@ -315,8 +325,8 @@
         "pageId": "images-edits",
         "slug": "api-reference/images/edits",
         "title": "图片编辑",
-        "description": "以 multipart 请求编辑图片",
-        "keywords": ["图片编辑", "multipart", "mask"],
+        "description": "查看图片编辑表单、文件要求与响应字段",
+        "keywords": ["图片编辑", "multipart", "响应"],
         "headings": [
           {
             "depth": 2,
@@ -325,18 +335,33 @@
           },
           {
             "depth": 2,
+            "id": "请求参数",
+            "text": "请求参数"
+          },
+          {
+            "depth": 2,
             "id": "文件要求",
             "text": "文件要求"
           },
           {
             "depth": 2,
-            "id": "响应与等待",
-            "text": "响应与等待"
+            "id": "非流式响应",
+            "text": "非流式响应"
           },
           {
             "depth": 2,
-            "id": "重试",
-            "text": "重试"
+            "id": "流式响应",
+            "text": "流式响应"
+          },
+          {
+            "depth": 2,
+            "id": "等待-费用与重试",
+            "text": "等待、费用与重试"
+          },
+          {
+            "depth": 2,
+            "id": "错误处理",
+            "text": "错误处理"
           }
         ]
       },
@@ -344,18 +369,33 @@
         "pageId": "videos-openai",
         "slug": "api-reference/videos/openai",
         "title": "OpenAI Videos",
-        "description": "使用上游原生 OpenAI Videos 创建、查询和 Remix 视频",
-        "keywords": ["OpenAI Videos", "Sora", "Remix"],
+        "description": "查看 OpenAI Videos 创建、查询、Remix、下载和通用视频合同",
+        "keywords": ["OpenAI Videos", "Sora", "响应"],
         "headings": [
           {
             "depth": 2,
-            "id": "创建视频",
-            "text": "创建视频"
+            "id": "调用前查询模型合同",
+            "text": "调用前查询模型合同"
           },
           {
             "depth": 2,
-            "id": "查询任务",
-            "text": "查询任务"
+            "id": "创建-openai-视频",
+            "text": "创建 OpenAI 视频"
+          },
+          {
+            "depth": 3,
+            "id": "创建参数",
+            "text": "创建参数"
+          },
+          {
+            "depth": 3,
+            "id": "创建响应",
+            "text": "创建响应"
+          },
+          {
+            "depth": 2,
+            "id": "查询-openai-视频任务",
+            "text": "查询 OpenAI 视频任务"
           },
           {
             "depth": 2,
@@ -364,13 +404,18 @@
           },
           {
             "depth": 2,
-            "id": "既有视频生成入口",
-            "text": "既有视频生成入口"
+            "id": "下载内容",
+            "text": "下载内容"
           },
           {
             "depth": 2,
-            "id": "内容下载",
-            "text": "内容下载"
+            "id": "通用视频生成合同",
+            "text": "通用视频生成合同"
+          },
+          {
+            "depth": 2,
+            "id": "错误与重试",
+            "text": "错误与重试"
           }
         ]
       },
@@ -378,23 +423,58 @@
         "pageId": "videos-modelark",
         "slug": "api-reference/videos/modelark",
         "title": "ModelArk V3 Seedance 视频",
-        "description": "创建、列出、查询和删除 ModelArk 视频任务",
-        "keywords": ["ModelArk", "视频", "任务"],
+        "description": "查看 ModelArk 视频参数、任务响应、状态、列表和下载",
+        "keywords": ["ModelArk", "参数", "响应"],
         "headings": [
+          {
+            "depth": 2,
+            "id": "查询模型与参数合同",
+            "text": "查询模型与参数合同"
+          },
           {
             "depth": 2,
             "id": "创建任务",
             "text": "创建任务"
           },
           {
-            "depth": 2,
-            "id": "模型目录与可用状态",
-            "text": "模型目录与可用状态"
+            "depth": 3,
+            "id": "顶层请求参数",
+            "text": "顶层请求参数"
+          },
+          {
+            "depth": 3,
+            "id": "content-内容项",
+            "text": "content 内容项"
+          },
+          {
+            "depth": 3,
+            "id": "创建响应",
+            "text": "创建响应"
           },
           {
             "depth": 2,
-            "id": "查询-列表与删除",
-            "text": "查询、列表与删除"
+            "id": "查询单个任务",
+            "text": "查询单个任务"
+          },
+          {
+            "depth": 3,
+            "id": "任务响应字段",
+            "text": "任务响应字段"
+          },
+          {
+            "depth": 2,
+            "id": "列出任务",
+            "text": "列出任务"
+          },
+          {
+            "depth": 2,
+            "id": "删除或取消任务",
+            "text": "删除或取消任务"
+          },
+          {
+            "depth": 2,
+            "id": "下载视频或末帧",
+            "text": "下载视频或末帧"
           },
           {
             "depth": 2,
@@ -403,8 +483,13 @@
           },
           {
             "depth": 2,
-            "id": "创建结果不明与计费",
-            "text": "创建结果不明与计费"
+            "id": "创建结果不明-计费与重试",
+            "text": "创建结果不明、计费与重试"
+          },
+          {
+            "depth": 2,
+            "id": "错误响应",
+            "text": "错误响应"
           }
         ]
       },
@@ -412,23 +497,28 @@
         "pageId": "videos-kling",
         "slug": "api-reference/videos/kling",
         "title": "Kling 视频",
-        "description": "使用 Kling 文生视频与图生视频合同",
-        "keywords": ["Kling", "文生视频", "图生视频"],
+        "description": "查看 Kling 文生与图生视频参数、任务响应和状态",
+        "keywords": ["Kling", "参数", "响应"],
         "headings": [
           {
             "depth": 2,
-            "id": "文生视频",
-            "text": "文生视频"
+            "id": "创建文生视频",
+            "text": "创建文生视频"
           },
           {
             "depth": 2,
-            "id": "图生视频",
-            "text": "图生视频"
+            "id": "创建图生视频",
+            "text": "创建图生视频"
           },
           {
             "depth": 2,
-            "id": "已发布创建能力",
-            "text": "已发布创建能力"
+            "id": "创建请求参数",
+            "text": "创建请求参数"
+          },
+          {
+            "depth": 2,
+            "id": "创建响应",
+            "text": "创建响应"
           },
           {
             "depth": 2,
@@ -437,8 +527,13 @@
           },
           {
             "depth": 2,
-            "id": "字段与计费",
-            "text": "字段与计费"
+            "id": "幂等-计费与重试",
+            "text": "幂等、计费与重试"
+          },
+          {
+            "depth": 2,
+            "id": "错误响应",
+            "text": "错误响应"
           }
         ]
       },
@@ -446,13 +541,23 @@
         "pageId": "videos-jimeng",
         "slug": "api-reference/videos/jimeng",
         "title": "即梦视频",
-        "description": "按 Action 提交或查询即梦异步任务",
-        "keywords": ["即梦", "Action", "视频"],
+        "description": "查看即梦提交与查询参数、任务响应和状态",
+        "keywords": ["即梦", "Action", "响应"],
         "headings": [
           {
             "depth": 2,
             "id": "提交任务",
             "text": "提交任务"
+          },
+          {
+            "depth": 3,
+            "id": "提交参数",
+            "text": "提交参数"
+          },
+          {
+            "depth": 3,
+            "id": "创建响应",
+            "text": "创建响应"
           },
           {
             "depth": 2,
@@ -461,8 +566,13 @@
           },
           {
             "depth": 2,
-            "id": "响应与重试",
-            "text": "响应与重试"
+            "id": "幂等-计费与重试",
+            "text": "幂等、计费与重试"
+          },
+          {
+            "depth": 2,
+            "id": "错误响应",
+            "text": "错误响应"
           }
         ]
       },
@@ -470,28 +580,88 @@
         "pageId": "assets-lifecycle",
         "slug": "api-reference/assets",
         "title": "素材与素材组",
-        "description": "创建、查询、更新和删除素材及素材组",
-        "keywords": ["素材", "asset", "素材组", "真人认证"],
+        "description": "直接创建 AIGC 素材，并按需使用素材组和真人认证",
+        "keywords": ["AIGC 素材", "素材组", "参数", "响应"],
         "headings": [
+          {
+            "depth": 2,
+            "id": "调用前读取模型能力",
+            "text": "调用前读取模型能力"
+          },
+          {
+            "depth": 3,
+            "id": "模型广场的-素材共享组-提示",
+            "text": "模型广场的“素材共享组”提示"
+          },
           {
             "depth": 2,
             "id": "创建素材",
             "text": "创建素材"
           },
           {
-            "depth": 2,
-            "id": "查询-更新和删除",
-            "text": "查询、更新和删除"
+            "depth": 3,
+            "id": "创建请求参数",
+            "text": "创建请求参数"
+          },
+          {
+            "depth": 3,
+            "id": "创建成功响应",
+            "text": "创建成功响应"
           },
           {
             "depth": 2,
-            "id": "素材组与真人认证",
-            "text": "素材组与真人认证"
+            "id": "查询素材",
+            "text": "查询素材"
           },
           {
             "depth": 2,
-            "id": "在视频请求中引用",
-            "text": "在视频请求中引用"
+            "id": "更新素材名称",
+            "text": "更新素材名称"
+          },
+          {
+            "depth": 2,
+            "id": "删除素材",
+            "text": "删除素材"
+          },
+          {
+            "depth": 2,
+            "id": "可选-创建普通素材组",
+            "text": "可选：创建普通素材组"
+          },
+          {
+            "depth": 3,
+            "id": "素材组请求参数",
+            "text": "素材组请求参数"
+          },
+          {
+            "depth": 3,
+            "id": "普通素材组响应",
+            "text": "普通素材组响应"
+          },
+          {
+            "depth": 2,
+            "id": "创建真人认证会话",
+            "text": "创建真人认证会话"
+          },
+          {
+            "depth": 2,
+            "id": "查询素材组或认证结果",
+            "text": "查询素材组或认证结果"
+          },
+          {
+            "depth": 2,
+            "id": "在视频请求中引用素材",
+            "text": "在视频请求中引用素材"
+          },
+          {
+            "depth": 2,
+            "id": "状态处理",
+            "text": "状态处理"
+          },
+          {
+            "depth": 2,
+            "id": "错误响应",
+            "text": "错误响应"
           }
         ]
       },

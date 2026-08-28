@@ -18,6 +18,8 @@ func TestChannelStatusRoutesUseOperatePermission(t *testing.T) {
 	assertChannelRoutePermission(t, http.MethodPut, "/", authz.ChannelWrite, controller.UpdateChannel)
 	assertChannelRoutePermission(t, http.MethodGet, "/test_video/:id", authz.ChannelOperate, controller.TestChannelVideoAPI)
 	assertChannelRoutePermission(t, http.MethodGet, "/test_asset/:id", authz.ChannelOperate, controller.TestChannelAssetAction)
+	assertChannelRoutePermission(t, http.MethodGet, "/:id/default_asset_group", authz.ChannelOperate, controller.GetChannelDefaultAssetGroup)
+	assertChannelRoutePermission(t, http.MethodPost, "/:id/default_asset_group", authz.ChannelOperate, controller.CreateOrReuseChannelDefaultAssetGroup)
 }
 
 func TestChannelDeleteRoutesUseSensitiveWritePermission(t *testing.T) {

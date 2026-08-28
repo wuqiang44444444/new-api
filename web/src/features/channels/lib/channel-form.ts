@@ -275,6 +275,7 @@ export const channelFormSchema = z
     asset_secret_access_key: z.string().optional(),
     asset_credential_configured: z.boolean().optional(),
     confirm_asset_tenant_unchanged: z.boolean().optional(),
+    confirm_asset_tenant_replacement: z.boolean().optional(),
     image_upstream_protocol: z
       .enum(['funcloud_aigc_v2', 'moxing_images_v1'])
       .optional(),
@@ -504,6 +505,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   asset_secret_access_key: '',
   asset_credential_configured: false,
   confirm_asset_tenant_unchanged: false,
+  confirm_asset_tenant_replacement: false,
   image_upstream_protocol: 'funcloud_aigc_v2',
   video_upstream_protocol: 'modelark_v3_volcengine',
   asset_upstream_protocol: 'volcengine_assets_action_v2024_01_01',
@@ -677,6 +679,7 @@ export function transformChannelToFormDefaults(
     asset_credential_configured:
       channel.asset_credential_status?.configured === true,
     confirm_asset_tenant_unchanged: false,
+    confirm_asset_tenant_replacement: false,
     image_upstream_protocol: imageUpstreamProtocol,
     video_upstream_protocol: videoUpstreamProtocol,
     asset_upstream_protocol: assetUpstreamProtocol,
@@ -1029,6 +1032,9 @@ export function transformFormDataToUpdatePayload(
   }
   if (formData.confirm_asset_tenant_unchanged) {
     payload.confirm_asset_tenant_unchanged = true
+  }
+  if (formData.confirm_asset_tenant_replacement) {
+    payload.confirm_asset_tenant_replacement = true
   }
 
   // Clean up empty strings to null for optional fields

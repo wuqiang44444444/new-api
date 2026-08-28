@@ -66,6 +66,11 @@ func TestAssetTenantMutationErrorsExposeStableCodes(t *testing.T) {
 		code string
 	}{
 		{name: "immutable boundary", err: model.ErrAssetTenantBoundaryImmutable, code: assetTenantBoundaryImmutableCode},
+		{
+			name: "unconfirmed replacement",
+			err:  &model.AssetTenantReplacementRequiredError{ChangedFields: []string{"asset_provider_project"}},
+			code: assetTenantReplacementUnconfirmedCode,
+		},
 		{name: "unconfirmed rotation", err: model.ErrAssetTenantRotationUnconfirmed, code: assetTenantRotationUnconfirmedCode},
 	}
 
@@ -80,6 +85,9 @@ func TestAssetTenantMutationErrorsExposeStableCodes(t *testing.T) {
 			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
 			assert.Equal(t, tt.code, payload["error_code"])
 			assert.Equal(t, false, payload["success"])
+			if tt.code == assetTenantReplacementUnconfirmedCode {
+				assert.Contains(t, payload["changed_fields"], "asset_provider_project")
+			}
 		})
 	}
 }
@@ -175,4 +183,187 @@ func TestConfirmedAssetTenantCredentialRotationIsAuditedWithoutSecrets(t *testin
 	auditRecord := logs[0].Content + logs[0].Other
 	assert.NotContains(t, auditRecord, oldVideoSecret)
 	assert.NotContains(t, auditRecord, newVideoSecret)
+}
+
+func TestConfirmedAssetTenantReplacementKeepsChannelAndModelsAndRotatesScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAssetTenantControllerTestDB(t)
+
+	const (
+		rootUserID    = 901
+		customerModel = "customer-seedance"
+	)
+	require.NoError(t, db.Create(&model.User{
+		Id: rootUserID, Username: "root-replacement", Password: "not-used-in-test",
+		Role: common.RoleRootUser, Status: common.UserStatusEnabled, Group: "default",
+	}).Error)
+
+	channel := &model.Channel{
+		Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusManuallyDisabled,
+		Name: "tenant-replacement", Key: "video-secret", Models: customerModel, Group: "default",
+		BaseURL:      common.GetPointer("https://ark.cn-beijing.volces.com"),
+		ModelMapping: common.GetPointer(`{"customer-seedance":"doubao-seedance-2-0-fast-260128"}`),
+	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolVolcengineAction,
+		AssetMinURLTTLSeconds: 3600,
+		AssetProviderProject:  "default",
+		AssetRegion:           model.VolcengineAssetActionRegion,
+	})
+	require.NoError(t, channel.ValidateSettings())
+	require.NoError(t, model.InsertChannelWithAssetCredentialActor(
+		channel,
+		&dto.ChannelAssetCredentialInput{AccessKeyID: "asset-access", SecretAccessKey: "asset-secret"},
+		rootUserID,
+	))
+	originalScope, err := model.ChannelAssetReuseScope(channel.Id)
+	require.NoError(t, err)
+
+	replacementSettings := channel.GetOtherSettings()
+	replacementSettings.AssetProviderProject = "lumen-test"
+	channel.SetOtherSettings(replacementSettings)
+
+	update := func(confirm bool) *httptest.ResponseRecorder {
+		t.Helper()
+		payload := map[string]any{
+			"id": channel.Id, "type": channel.Type, "name": channel.Name,
+			"models": channel.Models, "group": channel.Group, "base_url": channel.BaseURL,
+			"model_mapping": channel.ModelMapping, "settings": channel.OtherSettings,
+		}
+		if confirm {
+			payload["confirm_asset_tenant_replacement"] = true
+		}
+		body, marshalErr := common.Marshal(payload)
+		require.NoError(t, marshalErr)
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Set("id", rootUserID)
+		context.Set("role", common.RoleRootUser)
+		context.Set("username", "root-replacement")
+		context.Request = httptest.NewRequest(http.MethodPut, "/api/channel/", bytes.NewReader(body))
+		context.Request.Header.Set("Content-Type", "application/json")
+		UpdateChannel(context)
+		return recorder
+	}
+
+	unconfirmed := update(false)
+	assert.Equal(t, http.StatusConflict, unconfirmed.Code)
+	var rejected map[string]any
+	require.NoError(t, common.Unmarshal(unconfirmed.Body.Bytes(), &rejected))
+	assert.Equal(t, assetTenantReplacementUnconfirmedCode, rejected["error_code"])
+	assert.Contains(t, rejected["changed_fields"], "asset_provider_project")
+
+	storedBefore, err := model.GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, "default", storedBefore.GetOtherSettings().AssetProviderProject)
+	scopeBefore, err := model.ChannelAssetReuseScope(channel.Id)
+	require.NoError(t, err)
+	assert.Equal(t, originalScope, scopeBefore)
+
+	confirmed := update(true)
+	assert.Equal(t, http.StatusOK, confirmed.Code)
+	var accepted map[string]any
+	require.NoError(t, common.Unmarshal(confirmed.Body.Bytes(), &accepted))
+	assert.Equal(t, true, accepted["success"])
+
+	storedAfter, err := model.GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, channel.Id, storedAfter.Id)
+	assert.Equal(t, customerModel, storedAfter.Models)
+	assert.Equal(t, "lumen-test", storedAfter.GetOtherSettings().AssetProviderProject)
+	replacedScope, err := model.ChannelAssetReuseScope(channel.Id)
+	require.NoError(t, err)
+	assert.NotEqual(t, originalScope, replacedScope)
+
+	var logs []model.Log
+	require.NoError(t, db.Where("type = ?", model.LogTypeManage).Find(&logs).Error)
+	require.Len(t, logs, 1)
+	var other map[string]any
+	require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
+	op, ok := other["op"].(map[string]any)
+	require.True(t, ok)
+	params, ok := op["params"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, true, params["asset_tenant_replaced"])
+	assert.Contains(t, params["asset_tenant_boundary_changed_fields"], "asset_provider_project")
+	assert.NotContains(t, logs[0].Content+logs[0].Other, "asset-secret")
+}
+
+func TestPartialChannelUpdateWithoutPersistedBoundaryChangeDoesNotAuditReplacement(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAssetTenantControllerTestDB(t)
+
+	const (
+		rootUserID    = 902
+		customerModel = "customer-seedance"
+	)
+	require.NoError(t, db.Create(&model.User{
+		Id: rootUserID, Username: "root-partial-update", Password: "not-used-in-test",
+		Role: common.RoleRootUser, Status: common.UserStatusEnabled, Group: "default",
+	}).Error)
+
+	channel := &model.Channel{
+		Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusManuallyDisabled,
+		Name: "partial-update", Key: "video-secret", Models: customerModel, Group: "default",
+		BaseURL:      common.GetPointer("https://ark.cn-beijing.volces.com"),
+		ModelMapping: common.GetPointer(`{"customer-seedance":"doubao-seedance-2-0-fast-260128"}`),
+	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolVolcengineAction,
+		AssetMinURLTTLSeconds: 3600,
+		AssetProviderProject:  "default",
+		AssetRegion:           model.VolcengineAssetActionRegion,
+	})
+	require.NoError(t, channel.ValidateSettings())
+	require.NoError(t, model.InsertChannelWithAssetCredentialActor(
+		channel,
+		&dto.ChannelAssetCredentialInput{AccessKeyID: "asset-access", SecretAccessKey: "asset-secret"},
+		rootUserID,
+	))
+	originalScope, err := model.ChannelAssetReuseScope(channel.Id)
+	require.NoError(t, err)
+
+	// 请求省略 base_url：零值不会落库，即使携带替换确认也不构成实际边界变化。
+	payload := map[string]any{
+		"id": channel.Id, "type": channel.Type, "name": channel.Name,
+		"models": channel.Models, "group": channel.Group,
+		"settings":                         channel.OtherSettings,
+		"confirm_asset_tenant_replacement": true,
+	}
+	body, marshalErr := common.Marshal(payload)
+	require.NoError(t, marshalErr)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("id", rootUserID)
+	context.Set("role", common.RoleRootUser)
+	context.Set("username", "root-partial-update")
+	context.Request = httptest.NewRequest(http.MethodPut, "/api/channel/", bytes.NewReader(body))
+	context.Request.Header.Set("Content-Type", "application/json")
+	UpdateChannel(context)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	var response map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.Equal(t, true, response["success"], "update rejected: %v", response["message"])
+
+	stored, err := model.GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, "default", stored.GetOtherSettings().AssetProviderProject)
+	scopeAfter, err := model.ChannelAssetReuseScope(channel.Id)
+	require.NoError(t, err)
+	assert.Equal(t, originalScope, scopeAfter)
+
+	var logs []model.Log
+	require.NoError(t, db.Where("type = ?", model.LogTypeManage).Find(&logs).Error)
+	require.Len(t, logs, 1)
+	var other map[string]any
+	require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
+	op, ok := other["op"].(map[string]any)
+	require.True(t, ok)
+	params, ok := op["params"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, false, params["asset_tenant_replaced"])
+	assert.Empty(t, params["asset_tenant_boundary_changed_fields"])
+	assert.Empty(t, params["changed_fields"])
 }

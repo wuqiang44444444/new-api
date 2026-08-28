@@ -243,6 +243,7 @@ type officialAsset struct {
 
 type officialGroup struct {
 	ID     string `json:"Id"`
+	Name   string `json:"Name"`
 	Status string `json:"Status"`
 }
 
@@ -273,7 +274,7 @@ func normalizeOfficialGroup(response officialGroup) GroupResult {
 	if status == "" {
 		status = "active"
 	}
-	return GroupResult{ResourceID: response.ID, BusinessID: response.ID, Status: status}
+	return GroupResult{ResourceID: response.ID, BusinessID: response.ID, Name: response.Name, Status: status}
 }
 
 func officialListBody(filter map[string]any, page, pageSize int, providerProject string) map[string]any {

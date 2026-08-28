@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-26
+last-reviewed: 2026-08-28
 ---
 
 # Seedance 专用渠道与 Link 架构
@@ -14,9 +14,10 @@ Provider opaque 素材 ID 与视频引用的数据流专题细节由
 [Seedance 模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)负责。迁移步骤、实施
 清单和评审过程不进入架构正文。
 
-当前代码已经实现本文描述的架构边界，包括无条件采集成功终态中的明确 usage/Token 数值，并按冻结
-计价方式决定是否参与客户结算。具体 Provider 是否可进入生产分组，仍取决于该线路的真实视频、素材、
-计费和灰度验收；“架构已实现”不等于“所有 Provider 已生产发布”。
+除第 9 节标明的 Channel 默认素材组目标外，当前代码已经实现本文描述的架构边界，包括无条件采集成功
+终态中的明确 usage/Token 数值，并按冻结计价方式决定是否参与客户结算。默认素材组是 2026-08-28 已
+接受但尚待实现和真实 Provider 验收的目标合同，不得写成生产已发布。具体 Provider 是否可进入生产分组，
+仍取决于该线路的真实视频、素材、计费和灰度验收。
 
 NEWAPI 原生 `/v1/videos`、`/v1/video/generations`、Router、DTO、Provider adapter 和计费语义不属于
 Seedance Link 合同，继续以上游代码为权威。
@@ -35,6 +36,11 @@ Seedance 使用独立业务渠道：
 
 所有官方和第三方 Seedance 线路都属于该渠道类型，包括火山、BytePlus、飞彩、FunCloud、TokenSave
 及以后经技术人员确认的兼容线路。业务类型不等于南向协议；不同 Provider 可以使用不同协议。
+
+Seedance Link 以统一北向协议为第一优先级。北向协议定义客户请求形状和字段语义，南向代码 adapter
+负责把统一请求转换为 Provider 的字段、路径和必填组合；Provider 差异不得反向要求客户改变请求结构。
+只有整个业务操作无法履约时才返回不支持。该原则不允许客户透传合同外 Provider 私有参数，也不允许
+adapter 静默钳制、降级或改写其它北向字段语义。
 
 ```mermaid
 flowchart LR
@@ -66,8 +72,8 @@ execution binding、内容 hash、Link Access Plan 或候选等价证明。
 技术人员负责线下判断某个 Provider 模型是否完整兼容现有代码协议。完全兼容时，管理员配置客户
 模型、Channel、`model_mapping` 和已有协议即可上线；不兼容时，技术人员先新增代码 adapter。
 
-系统负责请求结构、权限、计费上界、确定性路由、Task、资金、素材控制面转发和敏感信息保护。素材
-opaque ID 的所有权与应用内隔离由受信调用方管理。系统不
+系统负责统一北向请求结构、权限、计费上界、确定性路由、Task、资金、素材控制面转发、南向协议适配和
+敏感信息保护。素材 opaque ID 的所有权与应用内隔离由受信调用方管理。系统不
 根据模型名、价格、域名、Key 或 Provider 名称自动认证兼容性，也不让管理员编写 JSON 映射、响应
 脚本或状态机。
 
@@ -144,6 +150,9 @@ cmcc_aicc_assets_v2
 精确枚举、路径和 transport profile 以 `relaykit/dto/upstream_protocol.go` 为代码权威。内部 transport
 profile 只服务 adapter 复用和任务快照，不是第二套管理员配置协议。
 
+代码协议注册的是“如何履约统一北向合同”，不是另一套客户协议。某个已发布北向字段在具体 Provider
+不生效时，adapter 必须按北向合同忽略或转换；不得把 Provider 是否存在同名字段变成客户请求资格。
+
 ### 5.2 管理字段
 
 所有线路复用 NEWAPI 普通 Channel 字段：Name、Base URL、Key、Models、Group、`model_mapping`、
@@ -166,10 +175,13 @@ Provider 模型），最终 Provider 模型必须属于所选视频协议的登�
 `SHA-256("seedance_channel_asset_scope:v1" + "\n" + identity)` 发布相同匿名 `reuse_scope`。不同
 Channel 即使 Base URL、协议和 Project 完全相同也使用不同 identity，平台不声明跨 Channel 复用。
 
-identity 建立后，Channel Type、Base URL、视频协议、素材协议、Region 和 Project 在更新事务中不可变，
-素材协议也不能原地改回 `none`。更换账号、租户或上述任一字段必须新建 Channel。Key/AK/SK 仅在管理员
-显式确认“素材租户未变化”后允许轮换；后端校验确认并写入审计，但不保存凭据内容，也不声称能独立证明
-新旧凭据属于同一 Provider 租户。既有 opaque ID 在该边界内的可见性仍由 Provider 判断。
+identity 建立后，Channel Type 不可修改。Base URL、视频协议、素材协议、Region 或 Project 不能由普通
+保存静默改写；管理员在当前渠道编辑界面修改任一字段时，前端列出精确的新旧值并要求确认“替换素材
+租户”。确认后的同一事务更新 Channel/凭据并生成新的 identity；改为 `none` 时删除 identity。Channel ID、
+客户模型和既有 Task 不变，既有 Task 继续使用创建时快照。新请求发布新的匿名 `reuse_scope`，旧 opaque ID
+和引用可能不可用，平台不迁移、探测或删除旧租户素材。未确认请求返回冲突且不产生任何配置或 identity
+变化。仅轮换 Key/AK/SK 时仍须显式确认“素材租户未变化”；后端记录两类确认及具体边界字段，但不记录
+凭据内容，也不声称能独立证明 Provider 租户归属。
 
 ## 6. ModelArk V3 北向合同
 
@@ -183,8 +195,8 @@ Seedance 专用渠道提供四组客户行为：
 | 删除 | `DELETE /api/v3/contents/generations/tasks/{task_id}` | Task 冻结 adapter；不支持时明确返回 |
 
 北向入口校验 ModelArk V3 的 JSON 结构、必填字段、标准媒体节点以及 duration、分辨率、数量等计费
-安全边界。adapter 再校验该南向协议的精确字段组合。不支持字段必须明确失败，不得静默删除、钳制、
-降级或改义。
+安全边界。adapter 再校验该南向协议的精确字段组合。合同外 Provider 私有字段必须明确失败，不得静默
+删除、钳制、降级或改义；已属于统一北向合同的条件生效字段由 adapter 转换或忽略。
 
 模型目录的 `api.video.creation.parameters` 与 `content_types` 是上述两层校验的客户安全交集：调用方可据此
 生成表单或请求，但不得从客户模型后缀猜测能力。通用模型列表、单模型详情、ModelArk 专用模型列表和
@@ -255,11 +267,29 @@ GET、DELETE、内容回源、轮询和结算均使用冻结事实。当前 Chan
 协议升级或管理员改价不能重新路由或重新解释历史任务。Provider 不支持删除时返回诚实的不支持
 错误，不伪造取消或删除成功。
 
-## 9. 无状态素材代理
+## 9. 无状态素材代理与 Channel 默认素材组
 
-素材控制面只代理带客户 `model` 的单资源操作，不提供列表，也不建立 Asset/AssetGroup、所有权、状态、
-Channel 或 Provider 作用域映射。Provider 返回的 opaque ID 直接交给调用方保存；真人认证属于素材组的
-上游流程，不形成平台独立授权域。
+素材控制面只代理带客户 `model` 的单资源操作，不提供列表，也不建立客户 Asset/AssetGroup、所有权、
+状态、Channel 或 Provider 作用域映射。Provider 返回的 opaque ID 直接交给调用方保存；真人认证属于
+素材组的上游流程，不形成平台独立授权域。
+
+已接受的目标合同允许每个支持普通 AIGC 素材组的 Channel 保存一个内部默认 Provider group ID，固定
+Provider 组名为 `aigctokenaigeneral`。该记录是 Channel 基础设施配置，不是客户 AssetGroup 资源；不
+提供客户列表、所有权、状态、迁移或本地素材映射。默认组只由管理员在已保存 Channel 的管理页面手工
+创建或按完全同名查询复用，业务素材请求不得自动创建。
+
+普通 AIGC 素材创建遵守统一北向行为：调用方提供裁剪后非空的 `asset_group_id` 时保持原值并优先使用；
+仅未传、空或空白时使用 Channel 默认组；北向结构错误返回 `invalid_request`，不得改用默认组；默认组未
+配置时返回 `default_asset_group_not_configured`。Provider 拒绝显式 ID 后不得回退默认组。策略为 `none`
+时北向字段仍然合法，adapter 不发送组字段并继续履约；直接创建素材组操作无法履约时继续返回既有
+`unsupported_asset_operation`。
+
+普通素材组行为只能由代码注册的 `GeneralAssetGroupPolicy`（`none` / `default_fallback`）决定，并同时
+驱动运行时与公开元数据。`GroupAdapter` 只作为管理端创建能力门槛，不能用于运行时判断。
+
+`aigctokenaigeneral` 是系统保留名称，普通北向素材组创建不得占用。Channel 停用保留默认组 ID，复制
+Channel 不复制，删除 Channel 只删除本地配置而不删除 Provider 组。真人素材继续使用 Provider 认证流程
+产生的专用组，不落入普通 AIGC 默认组。
 
 平台不保存 source URL 或媒体二进制，不浏览 Provider 账号资源，不建立云导入、容量分配、自动物化、
 跨线路迁移、source fallback、跨 Provider 探测或素材 unknown 状态机。完整定义见
@@ -312,7 +342,8 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 | Provider 模型 | `model_mapping` | 创建时冻结 |
 | 南向协议 | 代码注册表 + Channel 协议选择 | 创建时冻结 |
 | 视频创建与资金 | `TaskCreateAttempt` / `Task` | 后续按冻结事实执行 |
-| 素材 opaque ID 与复用域 | 调用方保存 `model + id + reference`；主库保存 Channel 随机 identity，公开元数据只给匿名 `reuse_scope` | 同 Channel 模型共享 scope、不同 Channel 隔离；平台不建立 Asset/AssetGroup 事实，存在性与兼容性由 Provider 裁决 |
+| 素材 opaque ID 与复用域 | 调用方保存 `model + id + reference`；主库保存 Channel 随机 identity，公开元数据只给匿名 `reuse_scope` | 同 Channel 模型共享 scope、不同 Channel 隔离；平台不建立客户 Asset/AssetGroup 事实，存在性与兼容性由 Provider 裁决 |
+| Channel 默认素材组 | 主库中每个 Channel 最多一个内部 Provider group ID；名称由代码固定为 `aigctokenaigeneral` | 只作为普通 AIGC 素材创建的默认南向参数；不是客户资源，业务请求不自动创建 |
 | 历史费用 | 冻结计费上下文与结算日志 | 不按当前价格回算 |
 
 主数据库是 Channel、Task、资金、素材和审计的持久化事实源。Redis、进程缓存、模型发现投影和前端
@@ -343,12 +374,16 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 6. Task 按创建时冻结的 Channel、协议、连接、素材和计费事实执行。
 7. 素材 API 不提供列表或本地资源身份；opaque ID 由调用方保存，视频调用不做本地素材可用性校验。
 8. 真人认证直接使用 Provider 页面，平台不保存生物识别材料。
-9. 不支持字段和操作明确失败，不静默兼容或伪造成功。
+9. 合同外字段和无法履约的操作明确失败，不静默兼容或伪造成功；统一北向条件字段由 adapter 履约。
 10. 主数据库持有耐久事实，缓存和投影不能成为唯一权威。
 11. Provider 实际用量的采集与客户计价单位分离；成功终态中的任何明确 usage/Token 数值均为合法
     用量，不得被配置、白名单或共享布尔开关静默丢弃。
-12. 一个启用素材协议的 Channel 只拥有一个随机稳定 identity；同 Channel 模型 scope 相同，不同
-    Channel scope 不同；边界字段不可原地修改，凭据轮换必须显式确认租户未变化。
+12. 一个启用素材协议的 Channel 当前只拥有一个随机 identity；同 Channel 模型 scope 相同，不同 Channel
+    scope 不同。Channel Type 不可修改；其它边界字段替换必须显式确认并原子重建 identity，凭据轮换必须
+    显式确认租户未变化。
+13. 统一北向协议优先于南向字段差异；adapter 负责转换和条件忽略，客户不按 Provider 改变请求结构。
+14. 每个支持普通 AIGC 素材组的 Channel 最多保存一个当前默认组 ID；只由管理员创建或复用，业务请求
+    不自动创建，删除 Channel 不删除 Provider 组。
 
 ## 15. 变更性质：Link 新增与 NEWAPI 原生边界
 
@@ -356,7 +391,7 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 | --- | --- | --- |
 | ModelArk V3 Router、Seedance ChannelType、视频/素材协议注册 | Link 专属新增 | 独立于 NEWAPI 原生视频入口，不修改原生模型识别或拒绝逻辑 |
 | TaskCreateAttempt、Seedance Task 快照和 Provider usage 归一 | 共享异步底座的本地扩展 | 复用耐久 Task/计费事实；只在显式接入的 Link 任务启用 |
-| `/v1/assets` 单资源代理与 `asset://<opaque-id>` | Link 专属合同优化 | 不建立本地 Asset/AssetGroup、resolver、列表或所有权事实 |
+| `/v1/assets` 单资源代理与 `asset://<opaque-id>` | Link 专属合同优化 | 不建立客户 Asset/AssetGroup、resolver、列表或所有权事实；Channel 默认组只是一对一基础设施配置 |
 | 原生鉴权、计费和日志底座 | NEWAPI 原生能力复用 + 必要窄接线 | 仅传递合同/任务事实或调用共享服务；原生入口保持原语义 |
 
 未来接取上游时，新增类型、协议、校验和测试应优先放在 `relay/channel/task/seedance/`、协议注册表或
@@ -373,3 +408,4 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 - [Seedance Provider 接入设计](<Seedance模型接入设计/README.md>)
 - [ADR-0008：共享异步任务计费状态机与原子补偿](decisions/0008-共享异步任务计费状态机与原子补偿.md)
 - [ADR-0017：调用方自管无状态素材代理](decisions/0017-调用方自管无状态素材代理.md)
+- [ADR-0018：Channel 默认素材组基础设施配置](decisions/0018-Channel默认素材组基础设施配置.md)

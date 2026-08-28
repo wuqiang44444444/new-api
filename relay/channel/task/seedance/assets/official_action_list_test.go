@@ -71,6 +71,26 @@ func TestOfficialActionListsRejectMissingGroupTypeBeforeCallingUpstream(t *testi
 	assert.False(t, called)
 }
 
+func TestOfficialActionListGroupsPreservesProviderName(t *testing.T) {
+	adapter, err := NewBytePlusActionAdapter(
+		"ACCESS|SECRET",
+		"ap-southeast-1",
+		"project-a",
+		assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+			return assetJSONResponse(`{"Result":{"Items":[{"Id":"group-1","Name":"aigctokenaigeneral","Status":"Active"}],"TotalCount":1}}`), nil
+		}),
+	)
+	require.NoError(t, err)
+
+	groups, total, err := adapter.ListGroups(context.Background(), GroupListRequest{GroupType: "AIGC", Page: 1, PageSize: 100})
+
+	require.NoError(t, err)
+	require.Len(t, groups, 1)
+	assert.Equal(t, 1, total)
+	assert.Equal(t, "group-1", groups[0].ResourceID)
+	assert.Equal(t, "aigctokenaigeneral", groups[0].Name)
+}
+
 func TestOfficialActionHTTPErrorKeepsSafeProviderCode(t *testing.T) {
 	adapter, err := NewBytePlusActionAdapter(
 		"ACCESS|SECRET",

@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { type Control, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -9,7 +9,9 @@ import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 
 import {
+  createOrReuseChannelDefaultAssetGroup,
   deleteChannelAssetCredential,
+  getChannelDefaultAssetGroup,
   testChannelAssetAction,
   testChannelVideoAPI,
 } from '../../api'
@@ -55,6 +57,36 @@ function ConnectivityStatusBadge({ status }: { status: TestStatus }) {
   }
   return (
     <StatusBadge label={t('Not tested')} variant='neutral' copyable={false} />
+  )
+}
+
+function DefaultAssetGroupStatusBadge(props: {
+  loading: boolean
+  error: boolean
+  configured: boolean
+}) {
+  const { t } = useTranslation()
+  if (props.loading) {
+    return (
+      <StatusBadge label={t('Loading...')} variant='info' copyable={false} />
+    )
+  }
+  if (props.error) {
+    return (
+      <StatusBadge label={t('Unavailable')} variant='danger' copyable={false} />
+    )
+  }
+  if (props.configured) {
+    return (
+      <StatusBadge label={t('Configured')} variant='success' copyable={false} />
+    )
+  }
+  return (
+    <StatusBadge
+      label={t('Not configured')}
+      variant='neutral'
+      copyable={false}
+    />
   )
 }
 
@@ -123,6 +155,8 @@ export function OfficialChannelConnectivityPanel(
   })
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
+  const [isConfiguringDefaultGroup, setIsConfiguringDefaultGroup] =
+    useState(false)
   const [clearedChannelId, setClearedChannelId] = useState<number | null>(null)
   const [
     assetProtocol,
@@ -148,6 +182,21 @@ export function OfficialChannelConnectivityPanel(
     (props.savedAssetProtocol !== undefined &&
       props.savedAssetProtocol !== 'none') ||
     credentialConfigured
+  const defaultGroupQuery = useQuery({
+    queryKey: channelsQueryKeys.defaultAssetGroup(props.channelId),
+    queryFn: async () => {
+      const response = await getChannelDefaultAssetGroup(props.channelId)
+      if (!response.success || !response.data) {
+        throw new Error(response.message || 'Unable to load default asset group status.')
+      }
+      return response.data
+    },
+    enabled: isRelevant && props.channelId > 0,
+  })
+  const showDefaultGroupManagement =
+    defaultGroupQuery.isLoading ||
+    defaultGroupQuery.isError ||
+    defaultGroupQuery.data?.supported === true
   if (!isRelevant) return null
 
   const hasPendingVideoKey = Boolean(pendingVideoKey?.trim())
@@ -281,6 +330,43 @@ export function OfficialChannelConnectivityPanel(
     }
   }
 
+  const configureDefaultGroup = async () => {
+    setIsConfiguringDefaultGroup(true)
+    try {
+      const response = await createOrReuseChannelDefaultAssetGroup(
+        props.channelId
+      )
+      if (!response.success || !response.data) {
+        toast.error(t('Failed to configure default asset group'), {
+          description: response.message
+            ? t(response.message)
+            : t('Try again after checking the channel configuration.'),
+        })
+        return
+      }
+      queryClient.setQueryData(
+        channelsQueryKeys.defaultAssetGroup(props.channelId),
+        response.data
+      )
+      toast.success(t('Default asset group configured'))
+    } catch (error) {
+      let description = t('Try again after checking the channel configuration.')
+      if (error && typeof error === 'object' && 'response' in error) {
+        const message = (
+          error as { response?: { data?: { message?: unknown } } }
+        ).response?.data?.message
+        if (typeof message === 'string' && message.trim()) {
+          description = t(message)
+        }
+      }
+      toast.error(t('Failed to configure default asset group'), {
+        description,
+      })
+    } finally {
+      setIsConfiguringDefaultGroup(false)
+    }
+  }
+
   return (
     <>
       <div className='border-border/60 bg-muted/10 space-y-3 rounded-lg border p-4'>
@@ -335,6 +421,63 @@ export function OfficialChannelConnectivityPanel(
             onTest={testAsset}
           />
         </div>
+        {showDefaultGroupManagement ? (
+          <div className='border-border/60 flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between'>
+            <div className='min-w-0'>
+              <div className='flex flex-wrap items-center gap-2'>
+                <p className='text-sm font-medium'>
+                  {t('Default asset group')}
+                </p>
+                <DefaultAssetGroupStatusBadge
+                  loading={defaultGroupQuery.isLoading}
+                  error={defaultGroupQuery.isError}
+                  configured={defaultGroupQuery.data?.configured === true}
+                />
+              </div>
+              <p className='text-muted-foreground mt-1 text-xs'>
+                {t(
+                  'Creates or reuses the system group {{name}} for this channel.',
+                  {
+                    name:
+                      defaultGroupQuery.data?.name || 'aigctokenaigeneral',
+                  }
+                )}
+              </p>
+              {availability.hasUnsavedTestChanges ? (
+                <p className='text-warning mt-1 text-xs'>
+                  {t(
+                    'Save the pending channel changes before configuring the default asset group.'
+                  )}
+                </p>
+              ) : null}
+              {!availability.hasUnsavedTestChanges &&
+              defaultGroupQuery.isError ? (
+                <p className='text-destructive mt-1 text-xs'>
+                  {t('Unable to load default asset group status.')}
+                </p>
+              ) : null}
+            </div>
+            <Button
+              type='button'
+              size='sm'
+              variant='outline'
+              className='w-full sm:w-auto sm:shrink-0'
+              aria-busy={isConfiguringDefaultGroup}
+              disabled={
+                isConfiguringDefaultGroup ||
+                defaultGroupQuery.isLoading ||
+                defaultGroupQuery.isError ||
+                availability.hasUnsavedTestChanges ||
+                defaultGroupQuery.data?.supported !== true
+              }
+              onClick={configureDefaultGroup}
+            >
+              {isConfiguringDefaultGroup
+                ? t('Creating or reusing...')
+                : t('Create or reuse default asset group')}
+            </Button>
+          </div>
+        ) : null}
         {credentialConfigured ? (
           <div className='border-border/60 flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between'>
             <div>

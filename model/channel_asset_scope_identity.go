@@ -42,12 +42,12 @@ func ensureChannelAssetScopeIdentityTx(tx *gorm.DB, channel *Channel) error {
 	}
 
 	quiet := tx.Session(&gorm.Session{Logger: tx.Logger.LogMode(gormlogger.Silent)})
-	random := make([]byte, 16)
-	if _, err := rand.Read(random); err != nil {
+	identity, err := newChannelAssetScopeIdentity()
+	if err != nil {
 		return fmt.Errorf("generate channel asset scope identity: %w", err)
 	}
 	record := ChannelAssetScopeIdentity{
-		ChannelID: channel.Id, Identity: hex.EncodeToString(random), CreatedTime: common.GetTimestamp(),
+		ChannelID: channel.Id, Identity: identity, CreatedTime: common.GetTimestamp(),
 	}
 	if err := quiet.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "channel_id"}},
@@ -59,6 +59,42 @@ func ensureChannelAssetScopeIdentityTx(tx *gorm.DB, channel *Channel) error {
 		return fmt.Errorf("verify channel asset scope identity: %w", err)
 	}
 	return nil
+}
+
+func replaceChannelAssetScopeIdentityTx(tx *gorm.DB, channel *Channel) error {
+	if tx == nil || channel == nil || channel.Id <= 0 {
+		return errors.New("channel asset scope identity is unavailable")
+	}
+	settings, err := parsedChannelOtherSettings(channel)
+	if err != nil {
+		return err
+	}
+	if channel.Type != constant.ChannelTypeSeedanceLink ||
+		settings.AssetUpstreamProtocol == "" || settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolNone {
+		return deleteChannelAssetScopeIdentitiesTx(tx, []int{channel.Id})
+	}
+	identity, err := newChannelAssetScopeIdentity()
+	if err != nil {
+		return fmt.Errorf("generate channel asset scope identity: %w", err)
+	}
+	record := ChannelAssetScopeIdentity{
+		ChannelID: channel.Id, Identity: identity, CreatedTime: common.GetTimestamp(),
+	}
+	return tx.Session(&gorm.Session{Logger: tx.Logger.LogMode(gormlogger.Silent)}).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "channel_id"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"identity":     record.Identity,
+			"created_time": record.CreatedTime,
+		}),
+	}).Create(&record).Error
+}
+
+func newChannelAssetScopeIdentity() (string, error) {
+	random := make([]byte, 16)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(random), nil
 }
 
 func getChannelAssetScopeIdentity(tx *gorm.DB, channelID int) (string, error) {

@@ -29,6 +29,7 @@ type GroupRequest struct {
 type GroupResult struct {
 	ResourceID string
 	BusinessID string
+	Name       string
 	Status     string
 	RequestID  string
 }
@@ -105,6 +106,10 @@ type AssetGroupRequirementAdapter interface {
 type GroupAdapter interface {
 	CreateGroup(ctx context.Context, req GroupRequest) (GroupResult, error)
 	GetGroup(ctx context.Context, resourceID string) (GroupResult, error)
+}
+
+type GroupSearchAdapter interface {
+	ListGroups(ctx context.Context, req GroupListRequest) ([]GroupResult, int, error)
 }
 
 type VerificationAdapter interface {

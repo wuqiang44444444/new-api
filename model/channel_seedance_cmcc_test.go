@@ -47,7 +47,7 @@ func TestCMCCChannelValidationAndStableAssetScope(t *testing.T) {
 	require.ErrorIs(t, err, ErrAssetTenantRotationUnconfirmed)
 	require.NoError(t, UpdateChannelWithAssetCredentialActor(channel, &dto.ChannelAssetCredentialInput{
 		AccessKeyID: "rotated-access", SecretAccessKey: "rotated-secret",
-	}, 0, true))
+	}, 0, true, false))
 	rotatedScope, err := ChannelAssetReuseScope(channel.Id)
 	require.NoError(t, err)
 	assert.Equal(t, firstScope, rotatedScope)

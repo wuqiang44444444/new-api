@@ -963,10 +963,11 @@ func DeleteChannelBatch(c *gin.Context) {
 
 type PatchChannel struct {
 	model.Channel
-	MultiKeyMode                *string                          `json:"multi_key_mode"`
-	KeyMode                     *string                          `json:"key_mode"` // 多key模式下密钥覆盖或者追加
-	AssetCredential             *dto.ChannelAssetCredentialInput `json:"asset_credential,omitempty"`
-	ConfirmAssetTenantUnchanged bool                             `json:"confirm_asset_tenant_unchanged,omitempty"`
+	MultiKeyMode                  *string                          `json:"multi_key_mode"`
+	KeyMode                       *string                          `json:"key_mode"` // 多key模式下密钥覆盖或者追加
+	AssetCredential               *dto.ChannelAssetCredentialInput `json:"asset_credential,omitempty"`
+	ConfirmAssetTenantUnchanged   bool                             `json:"confirm_asset_tenant_unchanged,omitempty"`
+	ConfirmAssetTenantReplacement bool                             `json:"confirm_asset_tenant_replacement,omitempty"`
 }
 
 type ChannelStatusRequest struct {
@@ -1128,6 +1129,11 @@ func UpdateChannel(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}
+	assetTenantBoundaryEstablished, err := model.ChannelAssetTenantBoundaryEstablished(originChannel)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	assetCredentialAudit := "unchanged"
 	if channel.AssetCredential != nil {
 		existingCredential, lookupErr := model.GetChannelAssetCredential(channel.Id)
@@ -1145,9 +1151,14 @@ func UpdateChannel(c *gin.Context) {
 			channel.AssetCredential,
 			c.GetInt("id"),
 			channel.ConfirmAssetTenantUnchanged,
+			channel.ConfirmAssetTenantReplacement,
 		)
 	} else {
-		err = channel.UpdateWithActorAndAssetTenantConfirmation(c.GetInt("id"), channel.ConfirmAssetTenantUnchanged)
+		err = channel.UpdateWithActorAndAssetTenantConfirmation(
+			c.GetInt("id"),
+			channel.ConfirmAssetTenantUnchanged,
+			channel.ConfirmAssetTenantReplacement,
+		)
 	}
 	if err != nil {
 		if respondAssetTenantMutationError(c, err) {
@@ -1159,6 +1170,17 @@ func UpdateChannel(c *gin.Context) {
 	model.InitChannelCache()
 	if proxyChanged {
 		service.InvalidateProxyClient(originProxy)
+	}
+	// 租户替换审计以持久化结果为准：请求省略的零值字段不会落库，不能按请求载荷记为边界变化。
+	persistedChannel, err := model.GetChannelById(channel.Id, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	assetTenantBoundaryChanges, err := model.ChannelAssetTenantBoundaryChanges(originChannel, persistedChannel)
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
 	// 记录变更的字段名（语言无关的字段标识），密钥仅记录"已更换"绝不记录内容。
 	changedFields := make([]string, 0)
@@ -1180,18 +1202,36 @@ func UpdateChannel(c *gin.Context) {
 	if channel.AssetCredential != nil {
 		changedFields = append(changedFields, "asset_credential")
 	}
+	for _, boundaryField := range assetTenantBoundaryChanges {
+		alreadyRecorded := false
+		for _, changedField := range changedFields {
+			if changedField == boundaryField {
+				alreadyRecorded = true
+				break
+			}
+		}
+		if !alreadyRecorded {
+			changedFields = append(changedFields, boundaryField)
+		}
+	}
+	assetTenantReplaced := assetTenantBoundaryEstablished &&
+		channel.ConfirmAssetTenantReplacement && len(assetTenantBoundaryChanges) > 0
 	assetTenantConfirmationAudit := channel.ConfirmAssetTenantUnchanged &&
+		!assetTenantReplaced &&
 		(channel.AssetCredential != nil || (channel.Key != "" && channel.Key != originChannel.Key))
 	recordManageAudit(c, "channel.update", map[string]interface{}{
-		"id":                               channel.Id,
-		"name":                             channel.Name,
-		"changed_fields":                   changedFields,
-		"asset_credential":                 assetCredentialAudit,
-		"asset_tenant_unchanged_confirmed": assetTenantConfirmationAudit,
+		"id":                                   channel.Id,
+		"name":                                 channel.Name,
+		"changed_fields":                       changedFields,
+		"asset_credential":                     assetCredentialAudit,
+		"asset_tenant_unchanged_confirmed":     assetTenantConfirmationAudit,
+		"asset_tenant_replaced":                assetTenantReplaced,
+		"asset_tenant_boundary_changed_fields": assetTenantBoundaryChanges,
 	})
 	channel.Key = ""
 	channel.AssetCredential = nil
 	channel.ConfirmAssetTenantUnchanged = false
+	channel.ConfirmAssetTenantReplacement = false
 	clearChannelInfo(&channel.Channel)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

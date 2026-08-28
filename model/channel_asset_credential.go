@@ -144,10 +144,16 @@ func InsertChannelWithAssetCredentialActor(channel *Channel, input *dto.ChannelA
 }
 
 func UpdateChannelWithAssetCredential(channel *Channel, input *dto.ChannelAssetCredentialInput) error {
-	return UpdateChannelWithAssetCredentialActor(channel, input, 0, false)
+	return UpdateChannelWithAssetCredentialActor(channel, input, 0, false, false)
 }
 
-func UpdateChannelWithAssetCredentialActor(channel *Channel, input *dto.ChannelAssetCredentialInput, actorID int, assetTenantUnchanged bool) error {
+func UpdateChannelWithAssetCredentialActor(
+	channel *Channel,
+	input *dto.ChannelAssetCredentialInput,
+	actorID int,
+	assetTenantUnchanged bool,
+	assetTenantReplacementConfirmed bool,
+) error {
 	credential, err := NormalizeChannelAssetCredential(input)
 	if err != nil {
 		return err
@@ -156,7 +162,13 @@ func UpdateChannelWithAssetCredentialActor(channel *Channel, input *dto.ChannelA
 		return errors.New("channel and asset credential are required")
 	}
 	credential.ChannelID = channel.Id
-	return updateChannelWithCredentialActor(channel, credential, actorID, assetTenantUnchanged)
+	return updateChannelWithCredentialActor(
+		channel,
+		credential,
+		actorID,
+		assetTenantUnchanged,
+		assetTenantReplacementConfirmed,
+	)
 }
 
 func DeleteChannelAssetCredential(channelID int) error {
