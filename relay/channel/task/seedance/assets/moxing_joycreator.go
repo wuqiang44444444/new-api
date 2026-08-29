@@ -58,10 +58,6 @@ func (*joyCreatorAssetAdapter) Supports(kind, mediaType string) bool {
 	return kind == "general" && (mediaType == "image" || mediaType == "video" || mediaType == "audio")
 }
 
-func (a *joyCreatorAssetAdapter) RequiresAssetGroup(kind, mediaType string) bool {
-	return a.Supports(kind, mediaType)
-}
-
 type joyCreatorError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`

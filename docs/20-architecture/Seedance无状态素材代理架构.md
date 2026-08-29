@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-28
+last-reviewed: 2026-08-29
 ---
 
 # Seedance 无状态素材代理架构
@@ -16,9 +16,9 @@ last-reviewed: 2026-08-28
 不是平台素材目录。平台不保存媒体二进制，也不持久化客户 Asset/AssetGroup 映射、所有权、状态或
 Provider 作用域事实。
 
-已实现的第一批 Channel 默认素材组管理能力不改变该边界：平台只为每个支持普通 AIGC 素材组的 Channel
-保存一个内部 Provider group ID；它不是客户 AssetGroup 资源，也不形成客户列表、状态或所有权模型。
-将该 ID 用作普通素材创建南向默认参数属于尚未启用的第二批运行时行为。
+Channel 默认素材组能力不改变该边界：平台只为每个支持普通 AIGC 素材组的 Channel 保存一个内部
+Provider group ID；它不是客户 AssetGroup 资源，也不形成客户列表、状态或所有权模型。普通素材创建在
+调用方未传、传空或空白组 ID 时读取该 Channel 配置，并只把解析结果用于当次南向调用。
 
 ```text
 customer model -> unique Seedance Channel -> model_mapping -> code adapter -> Provider
@@ -81,9 +81,9 @@ Provider 返回的 `id` 和视频 `reference` 均由调用方保存，二者可�
 
 ### 3.1 普通 AIGC 默认素材组
 
-当前代码已实现本节的管理控制面和持久化：Channel 一对一表是默认组 ID 的主数据库事实源；管理员通过
-渠道编辑页“连通性测试”下方的动作查询、创建或复用固定名称组；Channel 删除或确认替换素材租户时只
-删除本地记录。当前素材业务请求仍不读取该表，以下组 ID 解析顺序是已接受但尚待第二批启用的运行时合同。
+当前代码已实现本节的管理控制面、持久化和运行时回退：Channel 一对一表是默认组 ID 的主数据库事实源；
+管理员通过渠道编辑页“连通性测试”下方的动作查询、创建或复用固定名称组；Channel 删除或确认替换素材
+租户时只删除本地记录。普通素材业务请求按以下顺序解析组 ID。
 
 固定默认组名为 `aigctokenaigeneral`，并作为普通北向素材组创建的系统保留名称。管理员只能在已保存
 Channel 的管理页面手工创建或复用该组；业务 `POST /v1/assets` 不得触发 Provider 组创建或查询。
@@ -106,9 +106,9 @@ Channel 的管理页面手工创建或复用该组；业务 `POST /v1/assets` �
 删除 Channel 只删除本地配置且不调用 Provider 删除。`real_person` 继续使用 Provider 认证产生的专用组，
 不使用普通 AIGC 默认组。
 
-发布必须分两批：先上线持久化和管理能力并配置全部存量 `default_fallback` Channel，再同时启用运行时
-默认回退和普通素材 optional 元数据。北向字段合同不随单个 Channel 的配置状态改变；配置缺失以稳定 409
-暴露为 Channel 管理错误。
+代码按两批完成：先实现持久化和管理能力，再同时接入运行时默认回退和普通素材 optional 元数据。北向字段
+合同不随单个 Channel 的配置状态改变；配置缺失以稳定 409 暴露为 Channel 管理错误。真实 Provider 与
+部署灰度仍按发布验收流程单独验证。
 
 ## 4. 路由与凭据边界
 

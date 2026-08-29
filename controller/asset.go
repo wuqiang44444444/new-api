@@ -105,6 +105,10 @@ func writeAssetServiceError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrInvalidAssetRequest), errors.Is(err, service.ErrAssetURLRequired),
 		errors.Is(err, service.ErrUnsafeAssetURL), errors.Is(err, service.ErrAssetURLTTLInsufficient):
 		assetAPIError(c, http.StatusBadRequest, "invalid_request", "asset request is invalid")
+	case errors.Is(err, service.ErrReservedAssetGroupName):
+		assetAPIError(c, http.StatusBadRequest, "reserved_asset_group_name", "asset group name is reserved")
+	case errors.Is(err, service.ErrDefaultAssetGroupNotConfigured):
+		assetAPIError(c, http.StatusConflict, "default_asset_group_not_configured", "channel default asset group is not configured")
 	case errors.Is(err, service.ErrAssetNotFound):
 		assetAPIError(c, http.StatusNotFound, "asset_not_found", "asset was not found by the selected model")
 	case errors.Is(err, service.ErrAssetModelNotFound):

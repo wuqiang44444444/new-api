@@ -108,20 +108,7 @@ const (
 )
 
 func (p AssetUpstreamProtocol) IsValid() bool {
-	switch p {
-	case AssetUpstreamProtocolNone,
-		AssetUpstreamProtocolVolcengineAction,
-		AssetUpstreamProtocolBytePlusAction,
-		AssetUpstreamProtocolArkAssetsV1,
-		AssetUpstreamProtocolTokenSaveAssetsV1,
-		AssetUpstreamProtocolMoxingJoyCreatorV1,
-		AssetUpstreamProtocolMoxingVolcAssetsV1,
-		AssetUpstreamProtocolFunCloudMaterial,
-		AssetUpstreamProtocolCMCCAICCV2:
-		return true
-	default:
-		return false
-	}
+	return p.GeneralAssetGroupPolicy() != ""
 }
 
 func ValidateAssetUpstreamProtocol(p AssetUpstreamProtocol) error {

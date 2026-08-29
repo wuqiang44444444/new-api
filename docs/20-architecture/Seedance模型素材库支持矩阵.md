@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-28
+last-reviewed: 2026-08-29
 ---
 
 # Seedance 模型素材库支持矩阵
@@ -28,9 +28,8 @@ Provider 如何签名、如何选路或如何保存平台内部快照。内部�
 `GET /v1/models/{customer_model}` 返回的 `api.assets` 是调用方运行时唯一能力依据。代码已存在不等于
 相应 Provider 已完成真实验收或已进入生产分组。
 
-2026-08-28 已接受“统一北向协议优先 + Channel 默认普通 AIGC 素材组”的目标合同，相关代码、公开
-元数据和真实 Provider 验收尚未完成。下文把目标客户行为与当前代码状态明确区分；在代码和公开文档完成
-同步前，不得宣称调用方已经可以在所有线路省略素材组 ID。
+2026-08-29 已完成“统一北向协议优先 + Channel 默认普通 AIGC 素材组”的代码与公开元数据接线；真实
+Provider 和生产灰度仍需逐线路验收。不得把代码合同写成全部线路已经生产开放。
 
 ## 2. 通用能力矩阵
 
@@ -101,9 +100,9 @@ group ID。该名称是普通北向素材组创建的系统保留名称；默认
 作为运行时判据。当前全部已发布且能创建普通素材组的协议目标策略为 `default_fallback`，`none` 协议不
 发送组字段。
 
-这些规则仅针对普通 AIGC 素材。`real_person` 仍使用 Provider 认证流程生成的专用组 ID。当前代码仍需按
-[实施方案](../80-dev/2026-08-28-Seedance渠道默认素材组实施方案.md)完成元数据、Service、adapter 和管理端
-改造后，目标合同才成为可调用事实。
+这些规则仅针对普通 AIGC 素材。`real_person` 仍使用 Provider 认证流程生成的专用组 ID。当前代码已按
+[实施方案](../80-dev/2026-08-28-Seedance渠道默认素材组实施方案.md)完成策略注册、元数据、Service 回退、
+错误合同和管理端能力；真实 Provider 与部署灰度仍需单独验收。
 
 ### 5.2 Provider opaque ID 与引用
 

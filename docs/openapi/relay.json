@@ -2712,6 +2712,16 @@
               }
             }
           },
+          "409": {
+            "description": "所选 Channel 尚未配置系统默认素材组（default_asset_group_not_configured）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "422": {
             "description": "所选模型不支持该素材操作，或素材类型不受支持",
             "content": {
@@ -2884,7 +2894,7 @@
             }
           },
           "400": {
-            "description": "素材组请求无效"
+            "description": "素材组请求无效，或使用系统保留名称 aigctokenaigeneral（reserved_asset_group_name）"
           },
           "404": {
             "description": "客户模型不存在"
@@ -3540,7 +3550,7 @@
           },
           "asset_group_id": {
             "type": "string",
-            "pattern": "^astgrp_"
+            "description": "可选的 Provider opaque group ID，不规定公共前缀。"
           },
           "source": {
             "$ref": "#/components/schemas/PublicAssetSourceExample"
@@ -6436,7 +6446,7 @@
           },
           "asset_group_id": {
             "type": "string",
-			"description": "可选的上游素材组 opaque ID。AIGC 普通素材默认省略或传空字符串；仅模型能力声明 required 或真人素材时必填。网关不查询或验证其归属。"
+			"description": "可选的上游素材组 opaque ID。AIGC 普通素材省略、传空或空白时使用所选 Channel 的默认组；裁剪后非空时保持原值。真人素材必须传认证产生的专用组 ID。"
           },
           "source": {
             "$ref": "#/components/schemas/AssetSource"

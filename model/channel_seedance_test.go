@@ -211,18 +211,18 @@ func TestConfiguredSeedancePublicModelsIncludeDisabledAPIContracts(t *testing.T)
 	assert.False(t, publicOperationSupported(funCloud.API.Assets.Operations, "delete_asset"))
 	assert.False(t, publicOperationExists(funCloud.API.Assets.Operations, "delete_asset_group"))
 	require.NotNil(t, funCloud.API.Assets.Creation)
-	assert.Contains(t, funCloud.API.Assets.Creation.RequiredFields, "asset_group_id")
+	assert.NotContains(t, funCloud.API.Assets.Creation.RequiredFields, "asset_group_id")
 	assert.Equal(t, int64(dto.PublicAssetFunCloudMaxBytes), funCloud.API.Assets.Creation.Source.MaxBytes)
 	assert.True(t, funCloud.API.Assets.Creation.Source.ContentTypeMustMatchMedia)
-	assert.Equal(t, dto.PublicAssetGroupRequired, publicAssetGroupRequirement(funCloud.API.Assets.Media, AssetKindGeneral, "image"))
+	assert.Equal(t, dto.PublicAssetGroupOptional, publicAssetGroupRequirement(funCloud.API.Assets.Media, AssetKindGeneral, "image"))
 
 	moxing := byModel["seedance-moxing-disabled"]
 	assert.True(t, moxing.API.Assets.Supported)
 	assert.True(t, publicOperationSupported(moxing.API.Assets.Operations, "update_asset"))
 	assert.False(t, publicOperationExists(moxing.API.Assets.Operations, "delete_asset_group"))
 	require.NotNil(t, moxing.API.Assets.Creation)
-	assert.Contains(t, moxing.API.Assets.Creation.RequiredFields, "asset_group_id")
-	assert.Equal(t, dto.PublicAssetGroupRequired, publicAssetGroupRequirement(moxing.API.Assets.Media, AssetKindGeneral, "image"))
+	assert.NotContains(t, moxing.API.Assets.Creation.RequiredFields, "asset_group_id")
+	assert.Equal(t, dto.PublicAssetGroupOptional, publicAssetGroupRequirement(moxing.API.Assets.Media, AssetKindGeneral, "image"))
 
 	feicai := byModel["seedance-feicai-disabled"]
 	assert.False(t, feicai.API.Assets.Supported)
@@ -233,21 +233,27 @@ func TestConfiguredSeedancePublicModelsIncludeDisabledAPIContracts(t *testing.T)
 	assert.True(t, tokenSave.API.Assets.Supported)
 	assert.True(t, publicOperationSupported(tokenSave.API.Assets.Operations, "create_asset_group"))
 	require.NotNil(t, tokenSave.API.Assets.Creation)
-	assert.Contains(t, tokenSave.API.Assets.Creation.RequiredFields, "asset_group_id")
-	assert.Equal(t, dto.PublicAssetGroupRequired, publicAssetGroupRequirement(tokenSave.API.Assets.Media, AssetKindGeneral, "image"))
+	assert.NotContains(t, tokenSave.API.Assets.Creation.RequiredFields, "asset_group_id")
+	assert.Equal(t, dto.PublicAssetGroupOptional, publicAssetGroupRequirement(tokenSave.API.Assets.Media, AssetKindGeneral, "image"))
 }
 
-func TestGroupRequiredProxyAssetAPIsRequireAssetGroups(t *testing.T) {
+func TestPublishedAssetProtocolsKeepGeneralGroupOptional(t *testing.T) {
 	for _, protocol := range []dto.AssetUpstreamProtocol{
+		dto.AssetUpstreamProtocolVolcengineAction,
+		dto.AssetUpstreamProtocolBytePlusAction,
+		dto.AssetUpstreamProtocolArkAssetsV1,
 		dto.AssetUpstreamProtocolTokenSaveAssetsV1,
 		dto.AssetUpstreamProtocolMoxingJoyCreatorV1,
 		dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
+		dto.AssetUpstreamProtocolFunCloudMaterial,
+		dto.AssetUpstreamProtocolCMCCAICCV2,
 	} {
 		t.Run(string(protocol), func(t *testing.T) {
 			api := seedancePublicAssetAPI("customer-model", protocol, 3600, "asset-scope")
 			require.NotNil(t, api.Creation)
-			assert.Contains(t, api.Creation.RequiredFields, "asset_group_id")
-			assert.Equal(t, dto.PublicAssetGroupRequired, publicAssetGroupRequirement(api.Media, AssetKindGeneral, "image"))
+			assert.NotContains(t, api.Creation.RequiredFields, "asset_group_id")
+			assert.Empty(t, api.Creation.Example.AssetGroupID)
+			assert.Equal(t, dto.PublicAssetGroupOptional, publicAssetGroupRequirement(api.Media, AssetKindGeneral, "image"))
 		})
 	}
 }

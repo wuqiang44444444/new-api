@@ -71,7 +71,7 @@ func TestCMCCChannelValidationAndStableAssetScope(t *testing.T) {
 		}
 	}
 	assert.Equal(t, firstScope, cmcc.API.Assets.ReuseScope)
-	assert.Equal(t, dto.PublicAssetGroupRequired, publicAssetGroupRequirement(cmcc.API.Assets.Media, AssetKindGeneral, "video"))
+	assert.Equal(t, dto.PublicAssetGroupOptional, publicAssetGroupRequirement(cmcc.API.Assets.Media, AssetKindGeneral, "video"))
 	assert.Equal(t, dto.PublicAssetGroupRequired, publicAssetGroupRequirement(cmcc.API.Assets.Media, AssetKindRealPerson, "image"))
 	assert.Equal(t, dto.PublicAssetGroupRequired, publicAssetGroupRequirement(cmcc.API.Assets.Media, AssetKindRealPerson, "video"))
 	assert.Equal(t, dto.PublicAssetGroupRequired, publicAssetGroupRequirement(cmcc.API.Assets.Media, AssetKindRealPerson, "audio"))

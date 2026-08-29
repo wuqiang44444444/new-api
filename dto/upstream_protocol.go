@@ -4,6 +4,7 @@ import kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 
 type VideoUpstreamProtocol = kitdto.VideoUpstreamProtocol
 type AssetUpstreamProtocol = kitdto.AssetUpstreamProtocol
+type GeneralAssetGroupPolicy = kitdto.GeneralAssetGroupPolicy
 
 const (
 	VideoUpstreamProtocolModelArkV3Volcengine = kitdto.VideoUpstreamProtocolModelArkV3Volcengine
@@ -25,6 +26,9 @@ const (
 	AssetUpstreamProtocolMoxingVolcAssetsV1 = kitdto.AssetUpstreamProtocolMoxingVolcAssetsV1
 	AssetUpstreamProtocolFunCloudMaterial   = kitdto.AssetUpstreamProtocolFunCloudMaterial
 	AssetUpstreamProtocolCMCCAICCV2         = kitdto.AssetUpstreamProtocolCMCCAICCV2
+
+	GeneralAssetGroupPolicyNone            = kitdto.GeneralAssetGroupPolicyNone
+	GeneralAssetGroupPolicyDefaultFallback = kitdto.GeneralAssetGroupPolicyDefaultFallback
 )
 
 var ValidateVideoUpstreamProtocol = kitdto.ValidateVideoUpstreamProtocol

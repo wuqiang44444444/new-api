@@ -99,10 +99,6 @@ type Adapter interface {
 	DeleteAsset(ctx context.Context, resourceID string) error
 }
 
-type AssetGroupRequirementAdapter interface {
-	RequiresAssetGroup(kind, mediaType string) bool
-}
-
 type GroupAdapter interface {
 	CreateGroup(ctx context.Context, req GroupRequest) (GroupResult, error)
 	GetGroup(ctx context.Context, resourceID string) (GroupResult, error)

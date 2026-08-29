@@ -161,36 +161,32 @@ func seedancePublicAssetAPI(
 		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
 		groupCreate, groupRead = true, true
 		realPerson = true
-		assetGroupRequirement = dto.PublicAssetGroupOptional
 	case dto.AssetUpstreamProtocolMoxingVolcAssetsV1:
 		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
 		groupCreate, groupRead = true, true
 		realPerson = true
-		assetGroupRequirement = dto.PublicAssetGroupRequired
 	case dto.AssetUpstreamProtocolArkAssetsV1:
 		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
 		groupCreate, groupRead = true, true
 		realPerson = true
-		assetGroupRequirement = dto.PublicAssetGroupOptional
 	case dto.AssetUpstreamProtocolTokenSaveAssetsV1:
 		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
 		groupCreate, groupRead = true, true
-		assetGroupRequirement = dto.PublicAssetGroupRequired
 	case dto.AssetUpstreamProtocolMoxingJoyCreatorV1:
 		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
 		groupCreate, groupRead = true, true
-		assetGroupRequirement = dto.PublicAssetGroupRequired
 	case dto.AssetUpstreamProtocolFunCloudMaterial:
 		assetCreate, assetRead = true, true
 		groupCreate, groupRead = true, true
-		assetGroupRequirement = dto.PublicAssetGroupRequired
 	case dto.AssetUpstreamProtocolCMCCAICCV2:
 		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
 		groupCreate, groupRead = true, true
 		realPerson = true
-		assetGroupRequirement = dto.PublicAssetGroupRequired
 	}
 	if assetCreate {
+		if protocol.GeneralAssetGroupPolicy() == dto.GeneralAssetGroupPolicyDefaultFallback {
+			assetGroupRequirement = dto.PublicAssetGroupOptional
+		}
 		media = publicAssetMedia(realPerson, assetGroupRequirement)
 		if protocol == dto.AssetUpstreamProtocolCMCCAICCV2 {
 			media = append(media,
@@ -227,10 +223,6 @@ func seedancePublicAssetAPI(
 		example := dto.PublicAssetCreateExample{
 			Name: "example-asset", AssetKind: AssetKindGeneral, MediaType: "image", Model: modelName,
 			Source: dto.PublicAssetSourceExample{Type: "url", URL: "https://cdn.example.com/path/to/image.png"},
-		}
-		if assetGroupRequirement == dto.PublicAssetGroupRequired {
-			requiredFields = append(requiredFields, "asset_group_id")
-			example.AssetGroupID = "provider-group-id"
 		}
 		source := dto.PublicAssetSourceContract{
 			Type: "url", URLScheme: "https", PublicNetworkOnly: true, Port: 443,

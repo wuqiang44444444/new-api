@@ -81,11 +81,6 @@ func (*CMCCAICCV2Adapter) Supports(kind, mediaType string) bool {
 	return mediaType == "image" || mediaType == "video" || mediaType == "audio"
 }
 
-func (*CMCCAICCV2Adapter) RequiresAssetGroup(kind, mediaType string) bool {
-	return (kind == "general" || kind == "real_person") &&
-		(mediaType == "image" || mediaType == "video" || mediaType == "audio")
-}
-
 func (a *CMCCAICCV2Adapter) CheckConnectivity(ctx context.Context) error {
 	var result struct {
 		Total int64 `json:"total"`

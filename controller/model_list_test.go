@@ -385,7 +385,7 @@ func TestListModelsReturnsDisabledSeedanceModelsWithPublicAPIContracts(t *testin
 	assert.Equal(t, []string{"model", "content"}, funCloudModel.API.Video.Creation.RequiredFields)
 	require.NotNil(t, funCloudModel.API.Assets.Creation)
 	assert.Equal(t, "/v1/assets", funCloudModel.API.Assets.Creation.Path)
-	assert.Contains(t, funCloudModel.API.Assets.Creation.RequiredFields, "asset_group_id")
+	assert.NotContains(t, funCloudModel.API.Assets.Creation.RequiredFields, "asset_group_id")
 	assert.Equal(t, 3600, int(funCloudModel.API.Assets.Creation.Source.ExpiresAtMinRemainingSeconds))
 	assert.Equal(t, "public-video-fast", funCloudModel.API.Assets.Creation.Example.Model)
 

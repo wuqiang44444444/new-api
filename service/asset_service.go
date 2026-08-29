@@ -20,12 +20,8 @@ func CreateRemoteAsset(ctx context.Context, group string, req dto.CreateAssetReq
 	req.AssetKind = strings.TrimSpace(req.AssetKind)
 	req.MediaType = strings.TrimSpace(req.MediaType)
 	req.Model = strings.TrimSpace(req.Model)
-	req.AssetGroupID = strings.TrimSpace(req.AssetGroupID)
 	if req.Name == "" || len([]rune(req.Name)) > dto.PublicAssetNameMaxCharacters || req.Model == "" ||
 		!model.ValidateAssetKind(req.AssetKind) || !model.ValidateAssetMediaType(req.MediaType) {
-		return dto.AssetResponse{}, ErrInvalidAssetRequest
-	}
-	if req.AssetKind == model.AssetKindRealPerson && req.AssetGroupID == "" {
 		return dto.AssetResponse{}, ErrInvalidAssetRequest
 	}
 	if strings.TrimSpace(req.Source.Type) != "url" {
@@ -54,13 +50,13 @@ func CreateRemoteAsset(ctx context.Context, group string, req dto.CreateAssetReq
 	if !adapter.Supports(req.AssetKind, req.MediaType) {
 		return dto.AssetResponse{}, ErrUnsupportedAssetType
 	}
-	if requirement, ok := adapter.(assetadapter.AssetGroupRequirementAdapter); ok &&
-		requirement.RequiresAssetGroup(req.AssetKind, req.MediaType) && req.AssetGroupID == "" {
-		return dto.AssetResponse{}, ErrInvalidAssetRequest
+	assetGroupID, err := resolveAssetGroupID(channel, req.AssetKind, req.AssetGroupID)
+	if err != nil {
+		return dto.AssetResponse{}, err
 	}
 
 	assetRequest := assetadapter.AssetRequest{
-		GroupResourceID: req.AssetGroupID,
+		GroupResourceID: assetGroupID,
 		URL:             remoteURL,
 		Name:            req.Name,
 		MediaType:       req.MediaType,
@@ -150,6 +146,9 @@ func CreateAssetGroup(ctx context.Context, group string, req dto.CreateAssetGrou
 		if _, err := validProviderURL(req.RedirectURL); err != nil {
 			return dto.AssetGroupResponse{}, ErrInvalidAssetRequest
 		}
+	}
+	if req.GroupKind == model.AssetKindGeneral && req.Name == DefaultAssetGroupName {
+		return dto.AssetGroupResponse{}, ErrReservedAssetGroupName
 	}
 	channel, adapter, err := assetAdapterForModel(group, req.Model)
 	if err != nil {

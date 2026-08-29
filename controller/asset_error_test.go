@@ -50,3 +50,35 @@ func TestWriteAssetServiceErrorReportsUnknownModel(t *testing.T) {
 		}
 	}`, recorder.Body.String())
 }
+
+func TestWriteAssetServiceErrorMapsDefaultGroupConfigurationConflict(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+
+	writeAssetServiceError(ctx, service.ErrDefaultAssetGroupNotConfigured)
+
+	assert.Equal(t, http.StatusConflict, recorder.Code)
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &body))
+	assert.Equal(t, "default_asset_group_not_configured", body.Error.Code)
+}
+
+func TestWriteAssetServiceErrorMapsReservedGroupName(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+
+	writeAssetServiceError(ctx, service.ErrReservedAssetGroupName)
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &body))
+	assert.Equal(t, "reserved_asset_group_name", body.Error.Code)
+}

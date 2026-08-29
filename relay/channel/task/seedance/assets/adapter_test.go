@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,6 +22,37 @@ func (f assetHTTPDoerFunc) Do(req *http.Request) (*http.Response, error) { retur
 
 func assetJSONResponse(body string) *http.Response {
 	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{"Content-Type": []string{"application/json"}}}
+}
+
+func TestDefaultFallbackProtocolsExposeAdministrativeGroupCapability(t *testing.T) {
+	volcengine, err := NewVolcengineActionAdapter("ACCESS|SECRET", "project-a", nil)
+	require.NoError(t, err)
+	bytePlus, err := NewBytePlusActionAdapter("ACCESS|SECRET", "ap-southeast-1", "project-a", nil)
+	require.NoError(t, err)
+	cmcc, err := NewCMCCAICCV2Adapter("ACCESS|SECRET", nil)
+	require.NoError(t, err)
+
+	tests := []struct {
+		protocol dto.AssetUpstreamProtocol
+		adapter  Adapter
+	}{
+		{protocol: dto.AssetUpstreamProtocolVolcengineAction, adapter: volcengine},
+		{protocol: dto.AssetUpstreamProtocolBytePlusAction, adapter: bytePlus},
+		{protocol: dto.AssetUpstreamProtocolArkAssetsV1, adapter: NewArkAdapter("https://upstream.example", "key", nil)},
+		{protocol: dto.AssetUpstreamProtocolTokenSaveAssetsV1, adapter: NewTokenSaveAssetAdapter("https://upstream.example", "key", nil)},
+		{protocol: dto.AssetUpstreamProtocolMoxingJoyCreatorV1, adapter: NewMoxingJoyCreatorAdapter("https://upstream.example", "key", nil)},
+		{protocol: dto.AssetUpstreamProtocolMoxingVolcAssetsV1, adapter: NewMoxingVolcAdapter("https://upstream.example", "key", nil)},
+		{protocol: dto.AssetUpstreamProtocolFunCloudMaterial, adapter: NewFunCloudMaterialAdapter("https://upstream.example", "key", nil)},
+		{protocol: dto.AssetUpstreamProtocolCMCCAICCV2, adapter: cmcc},
+	}
+
+	for _, test := range tests {
+		t.Run(string(test.protocol), func(t *testing.T) {
+			require.Equal(t, dto.GeneralAssetGroupPolicyDefaultFallback, test.protocol.GeneralAssetGroupPolicy())
+			_, ok := test.adapter.(GroupAdapter)
+			assert.True(t, ok, "default_fallback protocol must support administrator group creation")
+		})
+	}
 }
 
 func TestProtocolAdaptersNormalizeCreationContracts(t *testing.T) {
@@ -127,19 +159,6 @@ func TestMoxingJoyCreatorNormalizesDirectGroupCreationResult(t *testing.T) {
 	assert.Equal(t, "34", group.ResourceID)
 	assert.Equal(t, "group-provider-1", group.BusinessID)
 	assert.Equal(t, "active", group.Status)
-}
-
-func TestMoxingAssetAdaptersRequireGroupsForSupportedAssets(t *testing.T) {
-	adapters := []Adapter{
-		NewMoxingJoyCreatorAdapter("https://moxing.example", "key", nil),
-		NewMoxingVolcAdapter("https://moxing.example", "key", nil),
-	}
-	for _, adapter := range adapters {
-		requirement, ok := adapter.(AssetGroupRequirementAdapter)
-		require.True(t, ok)
-		assert.True(t, requirement.RequiresAssetGroup("general", "image"))
-		assert.False(t, requirement.RequiresAssetGroup("general", "text"))
-	}
 }
 
 func TestMoxingVolcCreateGroupOmitsProjectName(t *testing.T) {

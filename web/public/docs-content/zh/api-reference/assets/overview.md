@@ -21,8 +21,8 @@ operations:
 
 > **AIGC 普通素材的推荐流程：直接创建素材，不要默认先创建素材组。** 调用
 > `POST /v1/assets` 时优先省略 `asset_group_id`（发送空字符串也按未填写处理），这样不同模型可以保持
-> 一致的接入流程。只有当前模型的 `api.assets.media[].asset_group_requirement` 明确为 `required`，或者
-> 业务确实需要分组管理时，才先调用素材组接口。平台继续保留素材组创建与单项查询能力。
+> 一致的接入流程。普通素材由所选 Channel 的系统默认组完成南向履约；只有业务确实需要自定义分组管理时，
+> 才先调用素材组接口。平台继续保留素材组创建与单项查询能力。
 
 ## 调用前读取模型能力
 
@@ -84,7 +84,7 @@ curl "{{OPENAI_BASE_URL}}/assets" \
 | `asset_kind` | string | 是 | `general` 或 `real_person` |
 | `media_type` | string | 是 | `image`、`video` 或 `audio`；必须出现在当前模型的 `api.assets.media` 中 |
 | `model` | string | 是 | 客户模型名；用于选择唯一素材执行路径，必须使用模型目录中的原值 |
-| `asset_group_id` | string | 默认否 | AIGC 普通素材优先省略或传空字符串；仅 `real_person` 或当前模型的 `asset_group_requirement=required` 时必填 |
+| `asset_group_id` | string | 条件使用 | AIGC 普通素材优先省略、传空字符串或空白，由网关使用 Channel 默认组；裁剪后非空时原值交给 Provider。`real_person` 必须传认证产生的专用组 ID |
 | `source` | object | 是 | 本次创建使用的源对象 |
 | `source.type` | string | 是 | 当前固定为 `url` |
 | `source.url` | string | 是 | 上游可访问的公网 HTTPS 绝对 URL |
@@ -200,7 +200,7 @@ curl "{{OPENAI_BASE_URL}}/asset-groups" \
 
 | 字段 | 类型 | 必填 | 取值与说明 |
 | --- | --- | --- | --- |
-| `name` | string | 是 | 素材组名称；最多 `64` 个字符 |
+| `name` | string | 是 | 素材组名称；最多 `64` 个字符；`aigctokenaigeneral` 为系统保留名称，调用方不得创建 |
 | `description` | string | 否 | 素材组说明；最多 `300` 个字符 |
 | `group_kind` | string | 是 | 普通组使用 `general`；真人认证流程使用 `real_person` |
 | `model` | string | 是 | 客户模型名 |
@@ -222,7 +222,7 @@ HTTP `201`：
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `object` | string | 普通组固定为 `asset_group` |
-| `id` | string | 上游素材组 opaque ID；需要素材组的创建请求把它放入 `asset_group_id` |
+| `id` | string | 上游素材组 opaque ID；业务需要自定义分组时可把它放入普通素材的 `asset_group_id` |
 | `model` | string | 创建素材组时使用的客户模型名 |
 | `status` | string | `processing`、`ready` 或 `failed` |
 
@@ -335,9 +335,11 @@ HTTP `200` 返回 `AssetGroup` 对象。真人认证完成后，响应中的 `gr
 | HTTP 状态 | `error.code` | 含义与处理 |
 | --- | --- | --- |
 | `400` | `invalid_request` | JSON、必填字段、名称、URL、有效期或参数组合无效；修正后再请求 |
+| `400` | `reserved_asset_group_name` | 普通调用方试图创建系统保留素材组名称；改用其它业务名称 |
 | `400` | `asset_url_ttl_insufficient` | URL 剩余有效期不足；读取 `error.details.required_min_ttl_seconds` 后换用更长有效期 URL |
 | `404` | `model_not_found` | 客户模型不存在；重新读取模型目录 |
 | `404` | `asset_not_found` | 当前模型选定的上游未找到该素材或素材组 |
+| `409` | `default_asset_group_not_configured` | 所选 Channel 尚未配置系统默认组；由管理员在渠道编辑页创建或复用后重试 |
 | `422` | `unsupported_asset_type` | 当前模型不支持该 `asset_kind + media_type` 组合 |
 | `422` | `unsupported_asset_operation` | 当前模型未发布该素材或素材组操作 |
 | `502` | `asset_upstream_error` | 上游拒绝或返回无效结果；不要改成其它 Provider ID 探测 |
