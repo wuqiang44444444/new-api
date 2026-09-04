@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaykittypes "github.com/QuantumNous/new-api/relaykit/types"
@@ -93,4 +94,26 @@ func ApplyCustomerContractResolvedModel(c *gin.Context, publicModel string, lock
 		return nil, fmt.Errorf("locked channel is outside the customer contract")
 	}
 	return fact, nil
+}
+
+// applyCustomerContractDistributeGate resolves the customer contract fact for
+// a distributed request and enforces the token model limit under contract
+// mode. It returns the resolved fact (nil outside contract scope) and whether
+// the request was aborted.
+func applyCustomerContractDistributeGate(c *gin.Context, publicModel string, shouldSelectChannel bool) (*hosttypes.ContractBillingFact, bool) {
+	if !shouldSelectChannel {
+		return nil, false
+	}
+	contractFact, err := applyCustomerContractRequest(c, publicModel)
+	if err != nil {
+		abortWithOpenAiMessage(c, http.StatusForbidden, "The requested model does not exist", relaykittypes.ErrorCodeModelNotFound)
+		return nil, true
+	}
+	if contractFact != nil {
+		if err := validateCustomerContractTokenModelLimit(c, publicModel); err != nil {
+			abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": publicModel}))
+			return nil, true
+		}
+	}
+	return contractFact, false
 }

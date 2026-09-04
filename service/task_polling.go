@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -500,6 +499,10 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	baseURL := constant.GetChannelBaseURL(ch.Type)
+	if ch.GetBaseURL() != "" {
+		baseURL = ch.GetBaseURL()
+	}
 	proxy := ch.GetSetting().Proxy
 
 	task := taskM[taskId]
@@ -523,23 +526,17 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		key = privateData.Key
 	}
 	snap := task.Snapshot()
-	videoUpstreamProfile := taskVideoUpstreamProfile(task, ch)
-	adapterVersion, versionErr := relaycommon.ResolveVideoSouthboundAdapterVersion(
-		ch.Type,
-		videoUpstreamProfile,
-		privateData.SouthboundAdapterVersion,
-	)
-	if versionErr != nil {
-		if markErr := markTaskReconciliationRequired(task); markErr != nil {
-			return fmt.Errorf("mark invalid adapter version for task %s: %w", taskId, markErr)
-		}
+	adapterVersion, proceed, err := resolveLinkVideoPollVersion(ch, task)
+	if err != nil {
+		return fmt.Errorf("mark reconciliation required for task %s: %w", taskId, err)
+	}
+	if !proceed {
 		return nil
 	}
-	resp, err := adaptor.FetchTask(taskVideoUpstreamQueryBaseURL(task, ch), key, task, proxy)
+	resp, err := adaptor.FetchTask(taskVideoUpstreamQueryBaseURL(task, ch, baseURL), key, task, proxy)
 	if err != nil {
-		var contractViolation *relaycommon.UpstreamContractViolation
-		if errors.As(err, &contractViolation) {
-			if markErr := markTaskReconciliationRequired(task); markErr != nil {
+		if handled, markErr := linkVideoContractViolationHandled(task, err); handled {
+			if markErr != nil {
 				return fmt.Errorf("mark reconciliation required for task %s: %w", taskId, markErr)
 			}
 			return nil
@@ -577,18 +574,16 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		taskResult.Reason = t.FailReason
 		task.Data = t.Data
 	} else if taskResult, err = adaptor.ParseTaskResult(task, resp, responseBody); err != nil {
-		var contractViolation *relaycommon.UpstreamContractViolation
-		if errors.As(err, &contractViolation) {
-			return markTaskReconciliationRequired(task)
+		if handled, markErr := linkVideoContractViolationHandled(task, err); handled {
+			if markErr != nil {
+				return fmt.Errorf("mark reconciliation required for task %s: %w", taskId, markErr)
+			}
+			return nil
 		}
 		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassHookError, resp.StatusCode, err.Error())
 	}
 
-	if adapterVersion.IsFeicaiVideos() {
-		task.Data = redactTaskResponseForLog(responseBody)
-	} else {
-		task.Data = redactVideoResponseBody(responseBody)
-	}
+	task.Data = linkVideoRedactResponse(adapterVersion, responseBody)
 
 	logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
 
@@ -652,12 +647,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if taskResult.Progress != "" {
 		task.Progress = taskResult.Progress
 	}
-	if snap.Status == model.TaskStatusReconciliationRequired &&
-		(task.Status == model.TaskStatusQueued ||
-			task.Status == model.TaskStatusInProgress ||
-			task.Status == model.TaskStatusSuccess) {
-		task.FailReason = ""
-	}
+	clearLinkVideoFailReasonOnRecovery(snap.Status, task)
 
 	isDone := task.Status.IsTerminal()
 	if isDone {
@@ -689,20 +679,6 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 
 	return nil
-}
-
-func markTaskReconciliationRequired(task *model.Task) error {
-	if task == nil {
-		return nil
-	}
-	oldStatus := task.Status
-	task.Status = model.TaskStatusReconciliationRequired
-	task.FailReason = "upstream_contract_violation"
-	if task.Progress == "" || task.Progress == "0%" {
-		task.Progress = taskcommon.ProgressInProgress
-	}
-	_, err := task.UpdateWithStatus(oldStatus)
-	return err
 }
 
 func redactVideoResponseBody(body []byte) []byte {

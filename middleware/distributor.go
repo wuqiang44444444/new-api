@@ -21,7 +21,6 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
-	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -46,19 +45,9 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
-		var contractFact *hosttypes.ContractBillingFact
-		if shouldSelectChannel {
-			contractFact, err = applyCustomerContractRequest(c, modelRequest.Model)
-			if err != nil {
-				abortWithOpenAiMessage(c, http.StatusForbidden, "The requested model does not exist", types.ErrorCodeModelNotFound)
-				return
-			}
-			if contractFact != nil {
-				if err := validateCustomerContractTokenModelLimit(c, modelRequest.Model); err != nil {
-					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}))
-					return
-				}
-			}
+		contractFact, aborted := applyCustomerContractDistributeGate(c, modelRequest.Model, shouldSelectChannel)
+		if aborted {
+			return
 		}
 		if pin, found, overridden := constraints.ResolvedPin(); found {
 			for _, lost := range overridden {

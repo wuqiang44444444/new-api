@@ -35,21 +35,15 @@ func taskVideoUpstreamProfile(task *model.Task, channel *model.Channel) dto.Vide
 // a task. The creation-time snapshot wins (方案 §7) so an admin editing the
 // channel cannot reroute an in-flight task; historical tasks fall back to the
 // channel's current base url, which itself falls back to the type default.
-func taskVideoUpstreamQueryBaseURL(task *model.Task, channel *model.Channel) string {
+func taskVideoUpstreamQueryBaseURL(task *model.Task, channel *model.Channel, typeDefault string) string {
 	if task != nil && task.PrivateData.VideoUpstreamQueryBaseURL != "" {
 		return task.PrivateData.VideoUpstreamQueryBaseURL
 	}
 	if channel == nil {
-		return ""
+		return typeDefault
 	}
-	return channel.GetBaseURL()
-}
-
-// taskVideoUpstreamQueryPath returns the query path frozen for a Seedance task.
-// Native official video tasks use their built-in path.
-func taskVideoUpstreamQueryPath(task *model.Task, channel *model.Channel) string {
-	if task != nil && task.PrivateData.VideoUpstreamQueryPathTemplate != "" {
-		return task.PrivateData.VideoUpstreamQueryPathTemplate
+	if channel.GetBaseURL() != "" {
+		return channel.GetBaseURL()
 	}
-	return ""
+	return typeDefault
 }

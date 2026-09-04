@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/setting/config"
 )
 
@@ -72,8 +73,58 @@ func ValidateBillingExpressionsJSON(
 // configuration never blocks.
 func ValidateOneBillingExpression(modelName, expression, oldValue string, extraFields map[string]any, taskModel bool) error {
 	requireTier := oldValue != expression
-	if err := smokeTestExpr(expression, requireTier, taskModel, extraFields); err != nil {
+	if err := smokeTestLinkExpr(expression, requireTier, taskModel, extraFields); err != nil {
 		return fmt.Errorf("invalid billing expression for model %s: %w", modelName, err)
+	}
+	return nil
+}
+
+// smokeTestLinkExpr validates a Link contract expression: compilable, vector
+// results non-negative, tier() wrapping required when requireTier is set, and
+// task models probed with protocol-specific request fields. It duplicates the
+// shared smoke vectors loop locally so setting/billing_setting/tiered_billing.go
+// stays byte-identical to upstream (allowed narrow duplication per the
+// minimal-invasion rule).
+func smokeTestLinkExpr(exprStr string, requireTier bool, taskModel bool, taskProbeExtraFields map[string]any) error {
+	if _, err := billingexpr.CompileFromCache(exprStr); err != nil {
+		return err
+	}
+	if !taskModel {
+		usageKeys := billingexpr.UsedUsageKeys(exprStr)
+		if len(usageKeys) > 0 {
+			return fmt.Errorf("expression references usage keys %v but the model has no task plugin usage schema", usageKeys)
+		}
+	}
+
+	vectors := []billingexpr.TokenParams{
+		{P: 0, C: 0, Len: 0},
+		{P: 1000, C: 1000, Len: 1000},
+		{P: 100000, C: 100000, Len: 100000},
+		{P: 1000000, C: 1000000, Len: 1000000},
+	}
+
+	requests := billingExprSmokeRequests()
+	if taskModel {
+		var err error
+		requests, err = taskBillingSmokeRequests(taskProbeExtraFields)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, v := range vectors {
+		for _, request := range requests {
+			result, trace, err := billingexpr.RunExprWithRequest(exprStr, v, request)
+			if err != nil {
+				return fmt.Errorf("vector {p=%g, c=%g}: run failed: %w", v.P, v.C, err)
+			}
+			if math.IsNaN(result) || math.IsInf(result, 0) || result < 0 {
+				return fmt.Errorf("vector {p=%g, c=%g}: result must be finite and non-negative, got %f", v.P, v.C, result)
+			}
+			if requireTier && trace.MatchedTier == "" {
+				return fmt.Errorf("billing expression must wrap every price branch with tier(name, value)")
+			}
+		}
 	}
 	return nil
 }

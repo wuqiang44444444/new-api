@@ -78,25 +78,23 @@ func GetPricingSyncData(base map[string]any) map[string]any {
 // ---------------------------------------------------------------------------
 
 func SmokeTestExpr(exprStr string) error {
-	return smokeTestExpr(exprStr, true, false, nil)
+	return smokeTestExpr(exprStr)
 }
 
-// smokeTestExpr æ ¡éªè¡¨è¾¾å¼å¯ç¼è¯ãååéç»æéè´ï¼requireTier ä¸º true æ¶è¿å¼ºå¶æ¯ä¸ªä»·æ ¼åæ¯ç¨ tier() åè£¹ã
-func smokeTestExpr(exprStr string, requireTier bool, taskModel bool, taskProbeExtraFields map[string]any) error {
+func smokeTestExpr(exprStr string) error {
 	if _, err := billingexpr.CompileFromCache(exprStr); err != nil {
 		return err
 	}
-	if !taskModel {
-		usageKeys := billingexpr.UsedUsageKeys(exprStr)
-		if len(usageKeys) > 0 {
-			sortedKeys := make([]string, 0, len(usageKeys))
-			for key := range usageKeys {
-				sortedKeys = append(sortedKeys, key)
-			}
-			sort.Strings(sortedKeys)
-			return fmt.Errorf("expression references usage keys %v but the model has no task plugin usage schema", sortedKeys)
+	usageKeys := billingexpr.UsedUsageKeys(exprStr)
+	if len(usageKeys) > 0 {
+		sortedKeys := make([]string, 0, len(usageKeys))
+		for key := range usageKeys {
+			sortedKeys = append(sortedKeys, key)
 		}
+		sort.Strings(sortedKeys)
+		return fmt.Errorf("expression references usage keys %v but the model has no task plugin usage schema", sortedKeys)
 	}
+
 	vectors := []billingexpr.TokenParams{
 		{P: 0, C: 0, Len: 0},
 		{P: 1000, C: 1000, Len: 1000},
@@ -104,26 +102,14 @@ func smokeTestExpr(exprStr string, requireTier bool, taskModel bool, taskProbeEx
 		{P: 1000000, C: 1000000, Len: 1000000},
 	}
 
-	requests := billingExprSmokeRequests()
-	if taskModel {
-		var err error
-		requests, err = taskBillingSmokeRequests(taskProbeExtraFields)
-		if err != nil {
-			return err
-		}
-	}
-
 	for _, v := range vectors {
-		for _, request := range requests {
-			result, trace, err := billingexpr.RunExprWithRequest(exprStr, v, request)
+		for _, request := range billingExprSmokeRequests() {
+			result, _, err := billingexpr.RunExprWithRequest(exprStr, v, request)
 			if err != nil {
 				return fmt.Errorf("vector {p=%g, c=%g}: run failed: %w", v.P, v.C, err)
 			}
 			if math.IsNaN(result) || math.IsInf(result, 0) || result < 0 {
 				return fmt.Errorf("vector {p=%g, c=%g}: result must be finite and non-negative, got %f", v.P, v.C, result)
-			}
-			if requireTier && trace.MatchedTier == "" {
-				return fmt.Errorf("billing expression must wrap every price branch with tier(name, value)")
 			}
 		}
 	}
