@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import { applyTaskPreConsumeTokenChanges } from './task-preconsume-map'
 
@@ -25,13 +24,13 @@ describe('task pre-consume option map updates', () => {
   test('adds or updates only the selected model', () => {
     const values = { existing: 100, untouched: 200 }
     applyTaskPreConsumeTokenChanges(values, ['existing'], 300)
-    assert.deepEqual(values, { existing: 300, untouched: 200 })
+    expect(values).toEqual({ existing: 300, untouched: 200 })
   })
 
   test('clears only the selected model', () => {
     const values = { selected: 100, untouched: 200 }
     applyTaskPreConsumeTokenChanges(values, ['selected'])
-    assert.deepEqual(values, { untouched: 200 })
+    expect(values).toEqual({ untouched: 200 })
   })
 
   test('batch copy applies the same upper bound to every target', () => {
@@ -41,7 +40,7 @@ describe('task pre-consume option map updates', () => {
       ['source', 'targetA', 'targetB'],
       520000
     )
-    assert.deepEqual(values, {
+    expect(values).toEqual({
       source: 520000,
       targetA: 520000,
       targetB: 520000,

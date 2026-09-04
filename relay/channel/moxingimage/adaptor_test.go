@@ -119,12 +119,11 @@ func TestDoRequestUsesFixedEndpointAndHeaders(t *testing.T) {
 		assert.Equal(t, "https://example.com/v1/images/generations", request.URL.String())
 		assert.Equal(t, "Bearer test-key", request.Header.Get("Authorization"))
 		assert.Equal(t, "application/json", request.Header.Get("Content-Type"))
-		assert.Equal(t, int64(13), request.ContentLength)
+		assert.Equal(t, int64(14), request.ContentLength)
 		assert.Equal(t, "provider.internal", request.Host)
 		return testHTTPResponse(http.StatusOK, `{"data":[{"url":"https://cdn.example.com/image.png"}]}`), nil
 	})}
 	info := moxingImageInfo("https://example.com/")
-	info.UpstreamRequestBodySize = 13
 	info.ChannelMeta.HeadersOverride = map[string]any{"Host": "provider.internal"}
 	c, _ := moxingImageContext(context.Background())
 

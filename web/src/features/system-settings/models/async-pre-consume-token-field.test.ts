@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import {
   classifyPreConsumeDraft,
@@ -60,14 +59,14 @@ describe('async pre-consume draft classification', () => {
 
   for (const { input, expected } of cases) {
     test(`classifyPreConsumeDraft(${JSON.stringify(input)}) === ${expected}`, () => {
-      assert.equal(classifyPreConsumeDraft(input), expected)
+      expect(classifyPreConsumeDraft(input)).toBe(expected)
     })
   }
 
   test('formatPreConsumeValue renders empty for non-positive / undefined', () => {
-    assert.equal(formatPreConsumeValue(undefined), '')
-    assert.equal(formatPreConsumeValue(0), '')
-    assert.equal(formatPreConsumeValue(-5), '')
-    assert.equal(formatPreConsumeValue(250000), '250000')
+    expect(formatPreConsumeValue(undefined)).toBe('')
+    expect(formatPreConsumeValue(0)).toBe('')
+    expect(formatPreConsumeValue(-5)).toBe('')
+    expect(formatPreConsumeValue(250000)).toBe('250000')
   })
 })

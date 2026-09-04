@@ -6,16 +6,11 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty"
 	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/feicai"
 	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/funcloud"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-)
-
-const (
-	videoUpstreamProfileBodyKey       = "video_upstream_profile"
-	videoUpstreamQueryTemplateBodyKey = "video_upstream_query_path_template"
-	videoUpstreamAdapterVersionKey    = "video_upstream_adapter_version"
 )
 
 // 官方协议内置路径（方案 §3.1），不参与渠道路径配置。
@@ -109,7 +104,7 @@ func normalizeVideoTaskResponse(
 	body []byte,
 	expectedTaskID string,
 	baseURL string,
-	fetchBody map[string]any,
+	billingContext *relaycommon.VideoTaskBillingContext,
 ) ([]byte, error) {
 	switch profile {
 	case "", dto.VideoUpstreamProfileOfficial:
@@ -135,7 +130,7 @@ func normalizeVideoTaskResponse(
 		if !adapterVersion.IsFunCloudSeedanceV3() {
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "unsupported video adapter revision"}
 		}
-		responseContext, err := funCloudTaskResponseContextFromFetchBody(fetchBody)
+		responseContext, err := funCloudTaskResponseContext(billingContext)
 		if err != nil {
 			return nil, err
 		}
@@ -145,23 +140,13 @@ func normalizeVideoTaskResponse(
 	}
 }
 
-func videoAdapterVersionFromFetchBody(
-	body map[string]any,
+// videoAdapterVersionFromTask 用渠道类型与创建时冻结的 adapter 版本快照解析南向协议版本。
+func videoAdapterVersionFromTask(
+	task *model.Task,
 	channelType int,
 	profile dto.VideoUpstreamProfile,
 ) (relaycommon.VideoSouthboundAdapterVersion, error) {
-	value, ok := body[videoUpstreamAdapterVersionKey]
-	frozen := ""
-	if ok && value != nil {
-		var valid bool
-		frozen, valid = value.(string)
-		if !valid {
-			return relaycommon.VideoSouthboundAdapterVersion{}, &relaycommon.UpstreamContractViolation{
-				Reason: "invalid video adapter version type",
-			}
-		}
-	}
-	version, err := relaycommon.ResolveVideoSouthboundAdapterVersion(channelType, profile, frozen)
+	version, err := relaycommon.ResolveVideoSouthboundAdapterVersion(channelType, profile, task.PrivateData.SouthboundAdapterVersion)
 	if err != nil {
 		return relaycommon.VideoSouthboundAdapterVersion{}, &relaycommon.UpstreamContractViolation{
 			Reason: "invalid video adapter version",
@@ -170,22 +155,9 @@ func videoAdapterVersionFromFetchBody(
 	return version, nil
 }
 
-// videoProfileFromFetchBody 从轮询请求体解析 profile，缺失时视为 official。
-func videoProfileFromFetchBody(body map[string]any) (dto.VideoUpstreamProfile, error) {
-	value, ok := body[videoUpstreamProfileBodyKey]
-	if !ok || value == nil {
-		return dto.VideoUpstreamProfileOfficial, nil
-	}
-
-	var profile dto.VideoUpstreamProfile
-	switch typed := value.(type) {
-	case dto.VideoUpstreamProfile:
-		profile = typed
-	case string:
-		profile = dto.VideoUpstreamProfile(typed)
-	default:
-		return "", fmt.Errorf("invalid video upstream profile type %T", value)
-	}
+// videoUpstreamProfileFromTask 返回创建时冻结的传输协议；无快照的历史任务视为 official。
+func videoUpstreamProfileFromTask(task *model.Task) (dto.VideoUpstreamProfile, error) {
+	profile := task.PrivateData.VideoUpstreamProfile
 	if profile == "" {
 		return dto.VideoUpstreamProfileOfficial, nil
 	}
@@ -195,12 +167,20 @@ func videoProfileFromFetchBody(body map[string]any) (dto.VideoUpstreamProfile, e
 	return profile, nil
 }
 
-// videoQueryTemplateFromFetchBody 读取轮询传入的查询路径模板快照，缺失时返回空（official 走内置路径）。
-func videoQueryTemplateFromFetchBody(body map[string]any) string {
-	value, ok := body[videoUpstreamQueryTemplateBodyKey]
-	if !ok || value == nil {
-		return ""
+// frozenVideoBillingContext 只读创建时冻结的计费事实（Provider 模型、计费探针 Body 与估算 token 上限）。
+// Provider adapter 在归一化终态响应时可能使用它们；轮询不得从当前渠道或价格配置重建这些事实。
+func frozenVideoBillingContext(task *model.Task) *relaycommon.VideoTaskBillingContext {
+	if task == nil {
+		return &relaycommon.VideoTaskBillingContext{}
 	}
-	template, _ := value.(string)
-	return template
+	context := &relaycommon.VideoTaskBillingContext{ProviderModel: task.Properties.UpstreamModelName}
+	if task.PrivateData.AsyncBilling == nil {
+		return context
+	}
+	context.EstimatedTokens = task.PrivateData.AsyncBilling.EstimatedTokens
+	if task.PrivateData.AsyncBilling.BillingProbe == nil {
+		return context
+	}
+	context.BillingProbeBody = append([]byte(nil), task.PrivateData.AsyncBilling.BillingProbe.Body...)
+	return context
 }

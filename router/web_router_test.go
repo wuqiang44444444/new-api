@@ -20,7 +20,7 @@ func TestDocsRouteRefreshReturnsFrontendIndex(t *testing.T) {
 	SetWebRouter(engine, WebAssets{
 		BuildFS:   webRouterTestAssets,
 		IndexPage: []byte("<html><body>frontend index</body></html>"),
-	})
+	}, func(c *gin.Context) {})
 
 	request := httptest.NewRequest(http.MethodGet, "/docs/api-reference/images/generations", nil)
 	recorder := httptest.NewRecorder()

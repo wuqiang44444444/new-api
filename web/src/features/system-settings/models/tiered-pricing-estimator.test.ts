@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { afterEach, describe, test } from 'node:test'
+import { afterEach, describe, expect, test } from 'vitest'
 
 import { evalExprLocally } from '../../pricing/lib/tier-expr'
 import {
@@ -55,9 +54,9 @@ function evalWithProbe(
 describe('estimator draft normalization', () => {
   test('non-object input falls back to safe defaults', () => {
     const d = normalizeDraft(null)
-    assert.equal(d.promptTokens, 0)
-    assert.equal(d.taskProbe.hasVideoInput, false)
-    assert.equal(d.taskProbe.resolution, '720p')
+    expect(d.promptTokens).toBe(0)
+    expect(d.taskProbe.hasVideoInput).toBe(false)
+    expect(d.taskProbe.resolution).toBe('720p')
   })
 
   test('negative / NaN / Infinity clamp to 0', () => {
@@ -67,25 +66,25 @@ describe('estimator draft normalization', () => {
       extras: { cacheReadTokens: Number.POSITIVE_INFINITY },
       taskProbe: { hasVideoInput: true, resolution: '1080p' },
     })
-    assert.equal(d.promptTokens, 0)
-    assert.equal(d.completionTokens, 0)
-    assert.equal(d.extras.cacheReadTokens, 0)
-    assert.equal(d.taskProbe.hasVideoInput, true)
-    assert.equal(d.taskProbe.resolution, '1080p')
+    expect(d.promptTokens).toBe(0)
+    expect(d.completionTokens).toBe(0)
+    expect(d.extras.cacheReadTokens).toBe(0)
+    expect(d.taskProbe.hasVideoInput).toBe(true)
+    expect(d.taskProbe.resolution).toBe('1080p')
   })
 
   test('unknown resolution enum falls back to default', () => {
     const d = normalizeDraft({
       taskProbe: { hasVideoInput: false, resolution: '8k' },
     })
-    assert.equal(d.taskProbe.resolution, '720p')
+    expect(d.taskProbe.resolution).toBe('720p')
   })
 
   test('legacy combined resolution migrates to backend 720p contract', () => {
     const d = normalizeDraft({
       taskProbe: { hasVideoInput: false, resolution: '480p720p' },
     })
-    assert.equal(d.taskProbe.resolution, '720p')
+    expect(d.taskProbe.resolution).toBe('720p')
   })
 })
 
@@ -94,14 +93,14 @@ describe('USD / quota conversion (matches backend)', () => {
     // 720p/5s 真实 token=108900，命中 480p720p 档 c*7.0 → 与生产实测一致
     const rawCost = 108900 * 7.0
     const { usd, quota } = convertRawCost(rawCost, 500000)
-    assert.ok(Math.abs(usd - 0.7623) < 1e-9)
-    assert.equal(quota, 381150)
+    expect(Math.abs(usd - 0.7623)).toBeLessThan(1e-9)
+    expect(quota).toBe(381150)
   })
 
   test('quota is null when QuotaPerUnit unavailable', () => {
     const { usd, quota } = convertRawCost(770000, 0)
-    assert.equal(usd, 0.77)
-    assert.equal(quota, null)
+    expect(usd).toBe(0.77)
+    expect(quota).toBeNull()
   })
 })
 
@@ -166,9 +165,9 @@ describe('_task probe drives correct tier (eight backend values)', () => {
     test(name, () => {
       const c = 100000
       const result = evalWithProbe(SEEDANCE_EXPR, probe, c)
-      assert.equal(result.matchedTier, expectedTier)
-      assert.equal(result.cost, c * unitPrice)
-      assert.equal(result.error, null)
+      expect(result.matchedTier).toBe(expectedTier)
+      expect(result.cost).toBe(c * unitPrice)
+      expect(result.error).toBeNull()
     })
   }
 })
@@ -180,8 +179,8 @@ describe('browser expression safety boundary', () => {
       { hasVideoInput: false, resolution: '720p' },
       10
     )
-    assert.equal(result.cost, 20)
-    assert.equal(result.error, null)
+    expect(result.cost).toBe(20)
+    expect(result.error).toBeNull()
   })
 
   test('rejects browser globals and general JavaScript syntax', () => {
@@ -190,14 +189,14 @@ describe('browser expression safety boundary', () => {
       { hasVideoInput: false, resolution: '720p' },
       10
     )
-    assert.match(globalAccess.error || '', /Unsupported identifier/)
+    expect(globalAccess.error || '').toMatch(/Unsupported identifier/)
 
     const arrowFunction = evalWithProbe(
       'tier("base", (() => c)())',
       { hasVideoInput: false, resolution: '720p' },
       10
     )
-    assert.match(arrowFunction.error || '', /Unsupported JavaScript syntax/)
+    expect(arrowFunction.error || '').toMatch(/Unsupported JavaScript syntax/)
   })
 })
 
@@ -235,8 +234,8 @@ describe('local draft persistence (per model, sanitized on read)', () => {
       taskProbe: { hasVideoInput: false, resolution: '1080p' },
     })
     const restored = loadDraft('seedance-2-0-oversea')
-    assert.equal(restored.completionTokens, 250000)
-    assert.equal(restored.taskProbe.resolution, '1080p')
+    expect(restored.completionTokens).toBe(250000)
+    expect(restored.taskProbe.resolution).toBe('1080p')
   })
 
   test('corrupt JSON in storage falls back to defaults', () => {
@@ -245,7 +244,7 @@ describe('local draft persistence (per model, sanitized on read)', () => {
     } as unknown as typeof globalThis.window
     store.set('model-pricing-estimator:v1:bad', '{not json')
     const restored = loadDraft('bad')
-    assert.deepEqual(restored, createDefaultDraft())
+    expect(restored).toStrictEqual(createDefaultDraft())
   })
 
   test('empty model name does not touch storage', () => {
@@ -256,7 +255,7 @@ describe('local draft persistence (per model, sanitized on read)', () => {
       ...createDefaultDraft(),
       completionTokens: 999,
     })
-    assert.equal(store.size, 0)
-    assert.deepEqual(loadDraft(''), createDefaultDraft())
+    expect(store.size).toBe(0)
+    expect(loadDraft('')).toStrictEqual(createDefaultDraft())
   })
 })

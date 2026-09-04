@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
 
@@ -10,25 +11,25 @@ import (
 // that were true at settlement time. It never evaluates or changes pricing.
 // The snapshot lives under admin_info so ordinary user log responses remove it
 // together with the other administrator-only fields.
-func appendBillingStatementSnapshot(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
+func appendBillingStatementSnapshot(relayInfo *relaycommon.RelayInfo, other *model.LogOther) {
 	if relayInfo == nil {
 		return
 	}
 	appendBillingStatementIdentitySnapshot(other, relayInfo.OriginModelName, relayInfo.GetUpstreamModelName())
 }
 
-func appendPerCallBillingStatementSnapshot(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
+func appendPerCallBillingStatementSnapshot(relayInfo *relaycommon.RelayInfo, other *model.LogOther) {
 	if relayInfo == nil {
 		return
 	}
 	appendBillingStatementIdentitySnapshotWithMode(other, relayInfo.OriginModelName, relayInfo.GetUpstreamModelName(), "per_call")
 }
 
-func appendBillingStatementIdentitySnapshot(other map[string]interface{}, originModel string, upstreamModel string) {
+func appendBillingStatementIdentitySnapshot(other *model.LogOther, originModel string, upstreamModel string) {
 	appendBillingStatementIdentitySnapshotWithMode(other, originModel, upstreamModel, "")
 }
 
-func appendBillingStatementIdentitySnapshotWithMode(other map[string]interface{}, originModel string, upstreamModel string, explicitMode string) {
+func appendBillingStatementIdentitySnapshotWithMode(other *model.LogOther, originModel string, upstreamModel string, explicitMode string) {
 	if other == nil {
 		return
 	}
@@ -42,14 +43,10 @@ func appendBillingStatementIdentitySnapshotWithMode(other map[string]interface{}
 	billingMode := "token"
 	if explicitMode == "per_call" {
 		billingMode = explicitMode
-	} else if modelPrice, ok := other["model_price"].(float64); ok && modelPrice > 0 {
+	} else if modelPrice, ok := other.Snapshot()["model_price"].(float64); ok && modelPrice > 0 {
 		billingMode = "per_call"
 	}
-	adminInfo, _ := other["admin_info"].(map[string]interface{})
-	if adminInfo == nil {
-		adminInfo = make(map[string]interface{})
-		other["admin_info"] = adminInfo
-	}
+	values := other.Snapshot()
 	snapshot := map[string]interface{}{
 		"snapshot_version": 1,
 		"billing_mode":     billingMode,
@@ -60,9 +57,9 @@ func appendBillingStatementIdentitySnapshotWithMode(other map[string]interface{}
 		"group_ratio", "user_group_ratio", "expr_b64",
 		"contract_discount", "contract_version",
 	} {
-		if value, exists := other[key]; exists {
+		if value, exists := values[key]; exists {
 			snapshot[key] = value
 		}
 	}
-	adminInfo["statement_snapshot"] = snapshot
+	other.SetAdmin("statement_snapshot", snapshot)
 }

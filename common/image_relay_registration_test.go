@@ -14,9 +14,11 @@ func TestImageRelayUsesOneChannelAndImageAPIRegistration(t *testing.T) {
 	assert.Equal(t, constant.APITypeAsyncImage, apiType)
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeImageGeneration}, GetEndpointTypesByChannelType(constant.ChannelTypeAsyncImage, "custom-model"))
 
-	_, legacyRegistered := ChannelType2APIType(63)
+	// Upstream rc.31 owns channel type 61 (Task Plugin); the async image type
+	// was renumbered to 63 and the retired Moxing slot moved to 65.
+	_, legacyRegistered := ChannelType2APIType(61)
 	assert.False(t, legacyRegistered)
-	assert.Equal(t, 63, constant.ChannelTypeDummy)
-	require.Greater(t, len(constant.ChannelBaseURLs), constant.ChannelTypeDummy)
-	assert.Empty(t, constant.ChannelBaseURLs[63])
+	assert.Equal(t, 64, constant.ChannelTypeDummy)
+	require.Greater(t, len(constant.ChannelBaseURLs), constant.ChannelTypeAsyncImage)
+	assert.Equal(t, "https://mm-internal-cn.leonecloud.com", constant.ChannelBaseURLs[constant.ChannelTypeAsyncImage])
 }

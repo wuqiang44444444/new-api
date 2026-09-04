@@ -21,7 +21,7 @@ import {
 const seedanceForm = {
   ...CHANNEL_FORM_DEFAULT_VALUES,
   name: 'seedance',
-  type: 61,
+  type: 62,
   key: 'one-key',
   models: 'seedance-customer-model',
   group: ['default'],

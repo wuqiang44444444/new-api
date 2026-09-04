@@ -169,8 +169,14 @@ func ApplyChannelGroupFilter(query *gorm.DB, group string) *gorm.DB {
 }
 
 // Value implements driver.Valuer interface
+// 必须返回 string 而非 []byte:PG simple protocol 下 []byte 参数按 bytea
+// 编码,写 json 列会触发 SQLSTATE 22P02。
 func (c ChannelInfo) Value() (driver.Value, error) {
-	return common.Marshal(&c)
+	b, err := common.Marshal(&c)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 // Scan implements sql.Scanner interface
@@ -364,11 +370,21 @@ func (channel *Channel) Save() error {
 	return DB.Save(channel).Error
 }
 
-func (channel *Channel) SaveWithoutKey() error {
+// saveStatusState persists only the fields owned by the channel status flow.
+// Keeping this allowlist here prevents a stale channel snapshot from
+// overwriting credentials, accounting counters, or channel configuration.
+func (channel *Channel) saveStatusState() error {
 	if channel.Id == 0 {
 		return errors.New("channel ID is 0")
 	}
-	return DB.Omit("key").Save(channel).Error
+	updates := map[string]any{
+		"status":     channel.Status,
+		"other_info": channel.OtherInfo,
+	}
+	if channel.ChannelInfo.IsMultiKey {
+		updates["channel_info"] = channel.ChannelInfo
+	}
+	return DB.Model(&Channel{}).Where("id = ?", channel.Id).Updates(updates).Error
 }
 
 func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
@@ -427,6 +443,15 @@ func SearchChannels(keyword string, group string, model string, idSort bool, sor
 	return channels, nil
 }
 
+// GetChannelById loads a channel directly from the database, bypassing the
+// in-memory channel cache.
+//
+// WARNING: do NOT call this on request hot paths (middleware, distribution,
+// relay submit/retry, polling). Every call is a synchronous DB query and will
+// not see cache-only state. Use CacheGetChannel instead: it serves from the
+// in-memory cache and falls back to this function automatically when
+// MemoryCacheEnabled is false. Direct use is appropriate only where fresh DB
+// state is required, e.g. admin CRUD, channel testing, or cache (re)building.
 func GetChannelById(id int, selectAll bool) (*Channel, error) {
 	channel := &Channel{Id: id}
 	var err error = nil
@@ -498,7 +523,7 @@ func (channel *Channel) GetBaseURL() string {
 	}
 	url := *channel.BaseURL
 	if url == "" {
-		url = constant.ChannelBaseURLs[channel.Type]
+		url = constant.GetChannelBaseURL(channel.Type)
 	}
 	return url
 }
@@ -713,13 +738,83 @@ func hasEnabledMultiKey(keys []string, statusList map[int]int) bool {
 	return false
 }
 
+var channelStatusLock sync.Mutex
+
 func UpdateChannelStatus(channelId int, usingKey string, status int, reason string) bool {
-	changed, err := UpdateChannelStatusWithActor(channelId, usingKey, status, reason, 0)
+	if common.MemoryCacheEnabled {
+		channelStatusLock.Lock()
+		defer channelStatusLock.Unlock()
+	}
+
+	// ChannelInfo stores both multi-key status and the polling cursor. Hold the
+	// same per-channel lock from the first read through persistence so neither
+	// writer can save a stale JSON snapshot over the other.
+	pollingLock := GetChannelPollingLock(channelId)
+	pollingLock.Lock()
+	defer pollingLock.Unlock()
+
+	if common.MemoryCacheEnabled {
+		channelCache, _ := CacheGetChannel(channelId)
+		if channelCache == nil {
+			return false
+		}
+		if channelCache.ChannelInfo.IsMultiKey {
+			beforeStatus := channelCache.Status
+			// 如果是多Key模式，更新缓存中的状态
+			handlerMultiKeyUpdate(channelCache, usingKey, status, reason)
+			if beforeStatus != channelCache.Status {
+				CacheUpdateChannelStatus(channelId, channelCache.Status)
+			}
+			//CacheUpdateChannel(channelCache)
+			//return true
+		} else {
+			// 如果缓存渠道存在，且状态已是目标状态，直接返回
+			if channelCache.Status == status {
+				return false
+			}
+			CacheUpdateChannelStatus(channelId, status)
+		}
+	}
+
+	shouldUpdateAbilities := false
+	defer func() {
+		if shouldUpdateAbilities {
+			err := UpdateAbilityStatus(channelId, status == common.ChannelStatusEnabled)
+			if err != nil {
+				common.SysLog(fmt.Sprintf("failed to update ability status: channel_id=%d, error=%v", channelId, err))
+			}
+		}
+	}()
+	channel, err := GetChannelById(channelId, true)
 	if err != nil {
 		common.SysLog(fmt.Sprintf("failed to update channel status: channel_id=%d, status=%d, error=%v", channelId, status, err))
 		return false
+	} else {
+		if channel.Status == status {
+			return false
+		}
+
+		if channel.ChannelInfo.IsMultiKey {
+			beforeStatus := channel.Status
+			handlerMultiKeyUpdate(channel, usingKey, status, reason)
+			if beforeStatus != channel.Status {
+				shouldUpdateAbilities = true
+			}
+		} else {
+			info := channel.GetOtherInfo()
+			info["status_reason"] = reason
+			info["status_time"] = common.GetTimestamp()
+			channel.SetOtherInfo(info)
+			channel.Status = status
+			shouldUpdateAbilities = true
+		}
+		err = channel.saveStatusState()
+		if err != nil {
+			common.SysLog(fmt.Sprintf("failed to update channel status: channel_id=%d, status=%d, error=%v", channel.Id, status, err))
+			return false
+		}
 	}
-	return changed
+	return true
 }
 
 func EnableChannelByTag(tag string) error {
@@ -880,6 +975,9 @@ func (channel *Channel) ValidateSettings() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := channelOtherSettings.ValidateToolLossPolicy(); err != nil {
+		return err
 	}
 	if channel.Type == constant.ChannelTypeAdvancedCustom {
 		if channelOtherSettings.AdvancedCustom == nil {

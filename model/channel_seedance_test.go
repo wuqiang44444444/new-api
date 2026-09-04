@@ -111,7 +111,7 @@ func TestSeedanceChannelIsNotPublishedIntoNativeAbilities(t *testing.T) {
 	require.NoError(t, db.Model(&Ability{}).Where("channel_id = ?", channel.Id).Count(&abilityCount).Error)
 	assert.Zero(t, abilityCount)
 
-	selected, err := GetChannel("default", "seedance-isolated", 0, "/v1/video/generations")
+	selected, err := GetChannel("default", "seedance-isolated", 0, nil)
 	require.NoError(t, err)
 	assert.Nil(t, selected)
 
@@ -131,7 +131,7 @@ func TestSeedanceChannelIsNotPublishedIntoNativeAbilities(t *testing.T) {
 	})
 	common.MemoryCacheEnabled = true
 	InitChannelCache()
-	selected, err = GetRandomSatisfiedChannel("default", "seedance-isolated", 0, "/v1/video/generations")
+	selected, err = GetRandomSatisfiedChannel("default", "seedance-isolated", 0, nil)
 	require.NoError(t, err)
 	assert.Nil(t, selected)
 

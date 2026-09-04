@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   CHANNEL_TYPE_ASYNC_IMAGE,
-  CHANNEL_TYPE_OPTIONS,
+  CHANNEL_TYPE_SEEDANCE_LINK,
   CHANNEL_TYPES,
   MODEL_FETCHABLE_TYPES,
 } from '../../constants'
@@ -13,11 +13,12 @@ import {
 import { getChannelTypeConfig } from '../channel-type-config'
 
 describe('image relay channel registration', () => {
-  it('exposes one administrator-facing channel type without the retired type 63', () => {
-    expect(CHANNEL_TYPE_ASYNC_IMAGE).toBe(62)
+  it('exposes the Image Relay type on 63 next to the Seedance type on 62', () => {
+    expect(CHANNEL_TYPE_ASYNC_IMAGE).toBe(63)
+    expect(CHANNEL_TYPE_SEEDANCE_LINK).toBe(62)
     expect(CHANNEL_TYPES[CHANNEL_TYPE_ASYNC_IMAGE]).toBe('Image Relay')
-    expect(CHANNEL_TYPE_OPTIONS.some((option) => option.value === 63)).toBe(
-      false
+    expect(CHANNEL_TYPES[CHANNEL_TYPE_SEEDANCE_LINK]).toBe(
+      'Seedance Dedicated Channel'
     )
     expect(MODEL_FETCHABLE_TYPES.has(CHANNEL_TYPE_ASYNC_IMAGE)).toBe(false)
   })

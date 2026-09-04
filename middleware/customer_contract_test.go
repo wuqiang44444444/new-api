@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -185,7 +186,7 @@ func TestSpecificChannelStillEnforcesContractTokenModelIntersection(t *testing.T
 	common.SetContextKey(c, constant.ContextKeyUserId, user.Id)
 	common.SetContextKey(c, constant.ContextKeyContractMode, true)
 	common.SetContextKey(c, constant.ContextKeyContractVersion, user.ContractVersion)
-	common.SetContextKey(c, constant.ContextKeyTokenSpecificChannelId, "1")
+	service.GetChannelConstraints(c).AddPin(dto.ChannelPin{ChannelId: 1, Source: dto.PinSourceToken, Rank: dto.PinRankToken, RetryMode: dto.PinRetrySingleAttempt})
 	common.SetContextKey(c, constant.ContextKeyTokenModelLimitEnabled, true)
 	common.SetContextKey(c, constant.ContextKeyTokenModelLimit, map[string]bool{})
 

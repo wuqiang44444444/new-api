@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { afterEach, describe, test } from 'node:test'
+import { afterEach, describe, expect, test } from 'vitest'
 
 import { api } from '@/lib/api'
 
@@ -39,6 +38,6 @@ describe('task log API routing', () => {
 
     await getAllTaskLogs({ p: 2, page_size: 50, task_id: 'task-1' })
 
-    assert.equal(requestedUrl, '/api/task/?p=2&page_size=50&task_id=task-1')
+    expect(requestedUrl).toBe('/api/task/?p=2&page_size=50&task_id=task-1')
   })
 })

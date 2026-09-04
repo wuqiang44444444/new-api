@@ -196,8 +196,9 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	if err != nil {
 		return nil, upstreamError("failed to build create request")
 	}
-	if info.UpstreamRequestBodySize > 0 {
-		req.ContentLength = info.UpstreamRequestBodySize
+	// ContentLength comes from the replayable upstream body when available.
+	if sized, ok := requestBody.(interface{ Size() int64 }); ok {
+		req.ContentLength = sized.Size()
 	}
 	if err := a.SetupRequestHeader(c, &req.Header, info); err != nil {
 		return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())

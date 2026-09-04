@@ -12,7 +12,7 @@ import (
 func TestVideoFeicaiContentSourceUsesFrozenSnapshot(t *testing.T) {
 	task := &model.Task{PrivateData: model.TaskPrivateData{
 		VideoUpstreamProfile:      dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
-		SouthboundAdapterVersion:  "61:third_party_feicai_videos:v1",
+		SouthboundAdapterVersion:  "62:third_party_feicai_videos:v1",
 		VideoUpstreamQueryBaseURL: "https://video.example.com",
 		Key:                       "frozen-provider-key",
 		ResultURL:                 "https://video.example.com/results/task.mp4",
@@ -24,7 +24,7 @@ func TestVideoFeicaiContentSourceUsesFrozenSnapshot(t *testing.T) {
 	assert.Equal(t, task.PrivateData.ResultURL, contentURL)
 	assert.Equal(t, "frozen-provider-key", key)
 
-	task.PrivateData.SouthboundAdapterVersion = "61:third_party_feicai_videos:v2"
+	task.PrivateData.SouthboundAdapterVersion = "62:third_party_feicai_videos:v2"
 	contentURL, key, handled, err = videoFeicaiContentSource(task)
 	require.NoError(t, err)
 	assert.True(t, handled)

@@ -27,7 +27,9 @@ func RecordTaskCreateAttemptRecoveryTemplate(id int64, task *Task) error {
 	privateData := task.PrivateData
 	privateData.UpstreamTaskID = ""
 	privateData.UpstreamRequestID = ""
-	privateData.ClientRequest.Prompt = ""
+	if privateData.ClientRequest != nil {
+		privateData.ClientRequest.Prompt = ""
+	}
 	taskCopy.PrivateData = privateData
 	snapshot, err := common.Marshal(taskAttemptRecoverySnapshot{
 		Task:        taskCopy,

@@ -178,9 +178,10 @@ func TestNativeTieredSettlementRemainsByteForByteOnExistingResult(t *testing.T) 
 }
 
 func TestCustomerContractBillingMetadataDoesNotExposeRouteGroup(t *testing.T) {
-	other := map[string]interface{}{}
+	other := model.NewLogOther()
 	appendCustomerContractBillingInfo(other, contractBillingFact())
-	assert.EqualValues(t, 4, other["contract_version"])
-	assert.Equal(t, "0.8", other["contract_discount"])
-	assert.NotContains(t, other, "route_group")
+	public := other.Snapshot()
+	assert.EqualValues(t, 4, public["contract_version"])
+	assert.Equal(t, "0.8", public["contract_discount"])
+	assert.NotContains(t, public, "route_group")
 }

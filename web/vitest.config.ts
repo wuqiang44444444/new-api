@@ -1,35 +1,39 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { defineConfig } from 'vitest/config'
 
-const rootDirectory = path.dirname(fileURLToPath(import.meta.url))
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   resolve: {
     alias: {
-      '@': path.resolve(rootDirectory, './src'),
+      '@': path.resolve(__dirname, './src'),
     },
   },
   test: {
-    environment: 'happy-dom',
-    include: [
-      'src/components/__tests__/**/*.{test,spec}.{ts,tsx}',
-      'src/features/billing-reconciliation/**/*.{test,spec}.{ts,tsx}',
-      'src/features/channels/components/**/*.{test,spec}.{ts,tsx}',
-      'src/features/channels/lib/__tests__/asset-tenant-boundary.test.ts',
-      'src/features/channels/lib/__tests__/channel-asset-credential-transform.test.ts',
-      'src/features/channels/lib/__tests__/image-relay-channel.test.ts',
-      'src/features/channels/lib/__tests__/official-channel-connectivity.test.ts',
-      'src/features/channels/lib/__tests__/seedance-protocol-validation.test.ts',
-      'src/features/customer-contracts/**/*.{test,spec}.{ts,tsx}',
-      'src/features/docs/**/*.{test,spec}.{ts,tsx}',
-      'src/features/pricing/lib/__tests__/asset-share-groups.test.ts',
-      'src/hooks/__tests__/**/*.{test,spec}.{ts,tsx}',
-      'src/features/keys/components/**/customer-contract*.{test,spec}.{ts,tsx}',
-      'src/features/system-settings/models/**/model-pricing-switch*.{test,spec}.{ts,tsx}',
-      'src/features/users/components/**/user-contract*.{test,spec}.{ts,tsx}',
-    ],
-    setupFiles: ['./src/features/docs/__tests__/setup.ts'],
+    environment: 'jsdom',
+    setupFiles: ['./src/test-setup.ts', './src/features/docs/__tests__/setup.ts'],
+    clearMocks: true,
+    restoreMocks: true,
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
   },
 })

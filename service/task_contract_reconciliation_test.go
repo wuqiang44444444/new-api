@@ -22,11 +22,11 @@ type contractRecoveryPollingAdaptor struct {
 
 func (a *contractViolationPollingAdaptor) Init(_ *relaycommon.RelayInfo) {}
 
-func (a *contractViolationPollingAdaptor) FetchTask(string, string, map[string]any, string) (*http.Response, error) {
+func (a *contractViolationPollingAdaptor) FetchTask(string, string, *model.Task, string) (*http.Response, error) {
 	return nil, &relaycommon.UpstreamContractViolation{Reason: "unsupported task status"}
 }
 
-func (a *contractViolationPollingAdaptor) ParseTaskResult([]byte) (*relaycommon.TaskInfo, error) {
+func (a *contractViolationPollingAdaptor) ParseTaskResult(*model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
 	return nil, nil
 }
 
@@ -36,11 +36,11 @@ func (a *contractViolationPollingAdaptor) AdjustBillingOnComplete(*model.Task, *
 
 func (a *contractRecoveryPollingAdaptor) Init(_ *relaycommon.RelayInfo) {}
 
-func (a *contractRecoveryPollingAdaptor) FetchTask(string, string, map[string]any, string) (*http.Response, error) {
+func (a *contractRecoveryPollingAdaptor) FetchTask(string, string, *model.Task, string) (*http.Response, error) {
 	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 }
 
-func (a *contractRecoveryPollingAdaptor) ParseTaskResult([]byte) (*relaycommon.TaskInfo, error) {
+func (a *contractRecoveryPollingAdaptor) ParseTaskResult(*model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
 	return &relaycommon.TaskInfo{Status: string(a.status)}, nil
 }
 

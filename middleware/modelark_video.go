@@ -79,7 +79,7 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 		c.Set(common.KeyBodyStorage, newStorage)
 		common.SetContextKey(c, constant.ContextKeyTaskPromptValidated, true)
 		common.SetContextKey(c, constant.ContextKeyTaskDurationValidated, true)
-		c.Request.Body = io.NopCloser(common.ReaderOnly(newStorage))
+		c.Request.Body = io.NopCloser(readerOnlyOf(newStorage))
 		c.Request.ContentLength = int64(len(internalBody))
 		c.Request.Header.Set("Content-Type", "application/json")
 		originalPath := c.Request.URL.Path

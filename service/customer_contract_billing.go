@@ -1,11 +1,14 @@
 package service
 
-import hosttypes "github.com/QuantumNous/new-api/types"
+import (
+	"github.com/QuantumNous/new-api/model"
+	hosttypes "github.com/QuantumNous/new-api/types"
+)
 
-func appendCustomerContractBillingInfo(other map[string]interface{}, fact *hosttypes.ContractBillingFact) {
+func appendCustomerContractBillingInfo(other *model.LogOther, fact *hosttypes.ContractBillingFact) {
 	if other == nil || fact == nil {
 		return
 	}
-	other["contract_version"] = fact.ContractVersion
-	other["contract_discount"] = fact.RatioString()
+	other.SetPublic("contract_version", fact.ContractVersion)
+	other.SetPublic("contract_discount", fact.RatioString())
 }

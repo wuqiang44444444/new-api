@@ -47,7 +47,7 @@ func taskCreateRequestHash(c *gin.Context, protocol string) (string, error) {
 		if _, err := storage.Seek(0, io.SeekStart); err != nil {
 			return "", err
 		}
-		c.Request.Body = io.NopCloser(common.ReaderOnly(storage))
+		c.Request.Body = io.NopCloser(readerOnlyOf(storage))
 	}
 	return hex.EncodeToString(digest.Sum(nil)), nil
 }

@@ -3,12 +3,12 @@ package seedance
 
 import (
 	"bytes"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -135,7 +135,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if err := dto.ValidateVideoUpstreamProtocol(a.protocol); err != nil {
 		return service.TaskErrorWrapperLocal(err, "invalid_video_protocol", http.StatusBadRequest)
 	}
-	if taskErr := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
+	if taskErr := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionImageToVideo); taskErr != nil {
 		return taskErr
 	}
 	payload, typed, err := a.modelArkContractPayload(c)
@@ -253,46 +253,55 @@ func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, req
 	return channel.DoTaskApiRequest(a, c, info, requestBody)
 }
 
-func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, taskErr *taskdto.TaskError) {
+// ParseResponse 只解析上游创建响应，不写客户端响应；展示由控制器负责。
+func (a *TaskAdaptor) ParseResponse(_ *gin.Context, resp *http.Response, _ *relaycommon.RelayInfo) (*channel.TaskSubmitResponse, *taskdto.TaskError) {
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", nil, service.TaskErrorWrapper(err, "read_response_body_failed", http.StatusInternalServerError)
+		return nil, service.TaskErrorWrapper(err, "read_response_body_failed", http.StatusInternalServerError)
 	}
 	_ = resp.Body.Close()
 	responseBody, err = normalizeVideoCreateResponse(a.profile, responseBody)
 	if err != nil {
-		return "", nil, service.TaskErrorWrapper(err, "normalize_response_body_failed", http.StatusBadGateway)
+		return nil, service.TaskErrorWrapper(err, "normalize_response_body_failed", http.StatusBadGateway)
 	}
 	var providerResponse responsePayload
 	if err := common.Unmarshal(responseBody, &providerResponse); err != nil {
-		return "", nil, service.TaskErrorWrapper(errors.Wrap(err, "decode Seedance create response"), "unmarshal_response_body_failed", http.StatusInternalServerError)
+		return nil, service.TaskErrorWrapper(errors.Wrap(err, "decode Seedance create response"), "unmarshal_response_body_failed", http.StatusInternalServerError)
 	}
 	if strings.TrimSpace(providerResponse.ID) == "" {
-		return "", nil, service.TaskErrorWrapper(fmt.Errorf("task_id is empty"), "invalid_response", http.StatusInternalServerError)
+		return nil, service.TaskErrorWrapper(fmt.Errorf("task_id is empty"), "invalid_response", http.StatusInternalServerError)
 	}
-	video := dto.NewOpenAIVideo()
-	video.ID = info.PublicTaskID
-	video.TaskID = info.PublicTaskID
-	video.CreatedAt = time.Now().Unix()
-	video.Model = info.OriginModelName
-	c.JSON(http.StatusOK, video)
-	return providerResponse.ID, responseBody, nil
+	// Seedance 是纯异步创建：没有立即完成的 TaskInfo，也没有跨轮次插件状态。
+	return &channel.TaskSubmitResponse{
+		UpstreamTaskID: providerResponse.ID,
+		TaskData:       responseBody,
+		ClientResponse: json.RawMessage(responseBody),
+	}, nil
 }
 
-func (a *TaskAdaptor) FetchTask(baseURL, key string, body map[string]any, proxy string) (*http.Response, error) {
-	taskID, ok := body["task_id"].(string)
-	if !ok {
+// FetchTask 从任务快照读取查询输入。baseUrl 由调用方传入；上游任务 ID、协议
+// profile、adapter 版本与查询路径模板都只读创建时冻结的 PrivateData 快照，
+// 缺失时失败关闭，不回退到当前渠道配置。
+func (a *TaskAdaptor) FetchTask(baseURL, key string, task *model.Task, proxy string) (*http.Response, error) {
+	if task == nil {
+		return nil, fmt.Errorf("task is required")
+	}
+	taskID := task.GetUpstreamTaskID()
+	if strings.TrimSpace(taskID) == "" {
 		return nil, fmt.Errorf("invalid task_id")
 	}
-	profile, err := videoProfileFromFetchBody(body)
+	if strings.TrimSpace(task.PrivateData.Key) != "" {
+		key = task.PrivateData.Key
+	}
+	profile, err := videoUpstreamProfileFromTask(task)
 	if err != nil {
 		return nil, err
 	}
-	adapterVersion, err := videoAdapterVersionFromFetchBody(body, a.ChannelType, profile)
+	adapterVersion, err := videoAdapterVersionFromTask(task, a.ChannelType, profile)
 	if err != nil {
 		return nil, err
 	}
-	path, err := videoTaskPath(profile, videoQueryTemplateFromFetchBody(body), taskID)
+	path, err := videoTaskPath(profile, task.PrivateData.VideoUpstreamQueryPathTemplate, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +331,7 @@ func (a *TaskAdaptor) FetchTask(baseURL, key string, body map[string]any, proxy 
 		responseBody,
 		taskID,
 		baseURL,
-		body,
+		frozenVideoBillingContext(task),
 	)
 	if err != nil {
 		return nil, err
@@ -336,7 +345,9 @@ func (*TaskAdaptor) GetModelList() []string { return ModelList }
 
 func (*TaskAdaptor) GetChannelName() string { return ChannelName }
 
-func (*TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
+// ParseTaskResult 按统一轮询合同解析 Provider 任务响应；task 与 resp 由接口
+// 约定保留，当前协议解析不需要它们。
+func (*TaskAdaptor) ParseTaskResult(_ *model.Task, _ *http.Response, respBody []byte) (*relaycommon.TaskInfo, error) {
 	providerTask := responseTask{}
 	if err := common.Unmarshal(respBody, &providerTask); err != nil {
 		return nil, errors.Wrap(err, "unmarshal Seedance task result failed")

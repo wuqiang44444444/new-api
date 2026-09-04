@@ -186,3 +186,12 @@ func CompleteTaskCancellation(taskID int64, confirmed bool, rejected bool, opera
 	})
 	return &saved, wonTerminal, err
 }
+
+// clientRequestServiceTier returns the frozen service tier recorded at task
+// creation, or an empty string when the task carries no client snapshot.
+func clientRequestServiceTier(t *Task) string {
+	if t == nil || t.PrivateData.ClientRequest == nil {
+		return ""
+	}
+	return t.PrivateData.ClientRequest.ServiceTier
+}

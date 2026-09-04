@@ -12,10 +12,9 @@ import (
 func TestFunCloudBillingContextFailsClosedOnIncompleteFrozenFacts(t *testing.T) {
 	tests := []struct {
 		name    string
-		context any
+		context *relaycommon.VideoTaskBillingContext
 	}{
 		{name: "missing"},
-		{name: "wrong type", context: "invalid"},
 		{name: "missing provider model", context: &relaycommon.VideoTaskBillingContext{
 			BillingProbeBody: []byte(`{"_task":{"resolution":"720p","has_video_input":false}}`), EstimatedTokens: 100,
 		}},
@@ -29,11 +28,7 @@ func TestFunCloudBillingContextFailsClosedOnIncompleteFrozenFacts(t *testing.T) 
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			body := map[string]any{}
-			if test.context != nil {
-				body[relaycommon.VideoTaskBillingContextKey] = test.context
-			}
-			_, err := funCloudTaskResponseContextFromFetchBody(body)
+			_, err := funCloudTaskResponseContext(test.context)
 			require.Error(t, err)
 			var violation *relaycommon.UpstreamContractViolation
 			assert.True(t, errors.As(err, &violation))
@@ -42,12 +37,10 @@ func TestFunCloudBillingContextFailsClosedOnIncompleteFrozenFacts(t *testing.T) 
 }
 
 func TestFunCloudBillingContextUsesFrozenTypedFacts(t *testing.T) {
-	context, err := funCloudTaskResponseContextFromFetchBody(map[string]any{
-		relaycommon.VideoTaskBillingContextKey: &relaycommon.VideoTaskBillingContext{
-			ProviderModel:    " seedance-2-fast ",
-			BillingProbeBody: []byte(`{"_task":{"resolution":"720P","has_video_input":true}}`),
-			EstimatedTokens:  324000,
-		},
+	context, err := funCloudTaskResponseContext(&relaycommon.VideoTaskBillingContext{
+		ProviderModel:    " seedance-2-fast ",
+		BillingProbeBody: []byte(`{"_task":{"resolution":"720P","has_video_input":true}}`),
+		EstimatedTokens:  324000,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "seedance-2-fast", context.ProviderModel)

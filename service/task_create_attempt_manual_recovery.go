@@ -137,7 +137,7 @@ func stageTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycomm
 		contract.ModelArk != nil && contract.ModelArk.ServiceTier != nil {
 		serviceTier = *contract.ModelArk.ServiceTier
 	}
-	task.PrivateData.ClientRequest = model.TaskClientRequestSnapshot{
+	task.PrivateData.ClientRequest = &model.TaskClientRequestSnapshot{
 		Prompt:             request.Prompt,
 		Seconds:            seconds,
 		Size:               request.Size,

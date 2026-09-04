@@ -2,6 +2,7 @@ package model
 
 import (
 	"bytes"
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 	"reflect"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	commonRelay "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	hosttypes "github.com/QuantumNous/new-api/types"
@@ -101,7 +103,7 @@ type Properties struct {
 }
 
 func (m *Properties) Scan(val interface{}) error {
-	bytesValue, _ := val.([]byte)
+	bytesValue := jsonScanBytes(val)
 	if len(bytesValue) == 0 {
 		*m = Properties{}
 		return nil
@@ -113,30 +115,72 @@ func (m Properties) Value() (driver.Value, error) {
 	if m == (Properties{}) {
 		return nil, nil
 	}
-	return common.Marshal(m)
+	// 必须返回 string 而非 []byte:PG simple protocol 下 []byte 按 bytea 编码,
+	// 写 json 列会触发 SQLSTATE 22P02。
+	b, err := common.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 type TaskPrivateData struct {
-	Key                            string                    `json:"key,omitempty"`
-	UpstreamTaskID                 string                    `json:"upstream_task_id,omitempty"`       // 上游真实 task ID
+	Key            string `json:"key,omitempty"`
+	UpstreamTaskID string `json:"upstream_task_id,omitempty"` // 上游真实 task ID
+	ResultURL      string `json:"result_url,omitempty"`       // 任务成功后的结果 URL（视频地址等）
+	// Execution records safe, immutable request provenance. It lives next to
+	// other private task state so public task DTOs cannot expose it by accident.
+	Execution *TaskExecutionSnapshot `json:"execution,omitempty"`
+	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
+	BillingSource  string              `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
+	SubscriptionId int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
+	TokenId        int                 `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
+	NodeName       string              `json:"node_name,omitempty"`       // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
+	BillingContext *TaskBillingContext `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
+	// ResponsesBackground records that the openai_responses create request
+	// asked for background:true. Every task is durable and survives client
+	// disconnect regardless; this only echoes the protocol-level request
+	// attribute back on retrieval snapshots.
+	ResponsesBackground bool `json:"responses_background,omitempty"`
+	// PluginState is plugin-owned cross-round data. Unlike Task.Data it is
+	// only replaced when a hook explicitly returns state.
+	PluginState json.RawMessage `json:"plugin_state,omitempty"`
+	// PollFailures counts consecutive unrecognized or transient poll outcomes.
+	PollFailures int `json:"poll_failures,omitempty"`
+	// 以下为 Link/Seedance 本地扩展字段：视频协议与履约快照
 	UpstreamRequestID              string                    `json:"upstream_request_id,omitempty"`    // 上游调用追踪 ID（如 moxing request_id），仅任务创建时从响应头捕获，用于事后对账；异步轮询阶段已不可得
-	ResultURL                      string                    `json:"result_url,omitempty"`             // 任务成功后的结果 URL（视频地址等）
 	VideoUpstreamProfile           dto.VideoUpstreamProfile  `json:"video_upstream_profile,omitempty"` // 创建时的视频协议快照
 	VideoUpstreamProtocol          dto.VideoUpstreamProtocol `json:"video_upstream_protocol,omitempty"`
 	SouthboundAdapterVersion       string                    `json:"southbound_adapter_version,omitempty"`
 	VideoUpstreamQueryBaseURL      string                    `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用
 	VideoUpstreamQueryPathTemplate string                    `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
 	VideoUpstreamProxy             string                    `json:"video_upstream_proxy,omitempty"`               // 创建时的代理快照，避免在途任务随渠道配置漂移
-	ClientRequest                  TaskClientRequestSnapshot `json:"client_request,omitempty"`
+	ClientRequest                  *TaskClientRequestSnapshot `json:"client_request,omitempty"`
 	AppID                          int                       `json:"app_id,omitempty"`
-	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
-	BillingSource  string                   `json:"billing_source,omitempty"`   // "wallet" 或 "subscription"
-	SubscriptionId int                      `json:"subscription_id,omitempty"`  // 订阅 ID，用于订阅退款
-	TokenId        int                      `json:"token_id,omitempty"`         // 令牌 ID，用于令牌额度退款
-	SkipTokenQuota bool                     `json:"skip_token_quota,omitempty"` // Playground 等不参与令牌额度记账的任务
-	NodeName       string                   `json:"node_name,omitempty"`        // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
-	BillingContext *TaskBillingContext      `json:"billing_context,omitempty"`  // 计费参数快照（用于轮询阶段重新计算）
-	AsyncBilling   *TaskAsyncBillingContext `json:"async_billing,omitempty"`
+	SkipTokenQuota                 bool                      `json:"skip_token_quota,omitempty"` // Playground 等不参与令牌额度记账的任务
+	AsyncBilling                   *TaskAsyncBillingContext  `json:"async_billing,omitempty"`
+}
+
+type TaskExecutionSnapshot struct {
+	RequestID   string              `json:"request_id,omitempty"`
+	RequestPath string              `json:"request_path,omitempty"`
+	TaskPlugin  *TaskPluginSnapshot `json:"task_plugin,omitempty"`
+}
+
+// TaskPluginSnapshot contains credential-free identity only. Plugin source,
+// request/response payloads, and channel secrets must never be added here.
+type TaskPluginSnapshot struct {
+	Key        string                    `json:"key"`
+	Name       string                    `json:"name"`
+	Version    string                    `json:"version"`
+	Author     *TaskPluginAuthorSnapshot `json:"author,omitempty"`
+	APIVersion int                       `json:"api_version"`
+	Generation uint64                    `json:"generation"`
+}
+
+type TaskPluginAuthorSnapshot struct {
+	Name string `json:"name"`
+	URL  string `json:"url,omitempty"`
 }
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。
@@ -147,6 +191,7 @@ type TaskBillingContext struct {
 	OtherRatios     map[string]float64             `json:"other_ratios,omitempty"`      // 附加倍率（时长、分辨率等）
 	OriginModelName string                         `json:"origin_model_name,omitempty"` // 模型名称，必须为OriginModelName
 	PerCallBilling  bool                           `json:"per_call_billing,omitempty"`  // 按次计费：跳过轮询阶段的差额结算
+	TieredSnapshot  *billingexpr.BillingSnapshot   `json:"tiered_snapshot,omitempty"`
 	ContractFact    *hosttypes.ContractBillingFact `json:"contract_fact,omitempty"`
 }
 
@@ -175,7 +220,7 @@ func GenerateTaskID() string {
 }
 
 func (p *TaskPrivateData) Scan(val interface{}) error {
-	bytesValue, _ := val.([]byte)
+	bytesValue := jsonScanBytes(val)
 	if len(bytesValue) == 0 {
 		return nil
 	}
@@ -186,7 +231,12 @@ func (p TaskPrivateData) Value() (driver.Value, error) {
 	if reflect.DeepEqual(p, TaskPrivateData{}) {
 		return nil, nil
 	}
-	return common.Marshal(p)
+	// 同 Properties.Value:string 避免 PG simple protocol 的 bytea 编码。
+	b, err := common.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 // SyncTaskQueryParams 用于包含所有搜索条件的结构体，可以根据需求添加更多字段
@@ -376,6 +426,38 @@ func HasUnfinishedSyncTasks() bool {
 	return err == nil && id != 0
 }
 
+func GetByOnlyTaskId(taskId string) (*Task, bool, error) {
+	if taskId == "" {
+		return nil, false, nil
+	}
+	var task *Task
+	var err error
+	err = DB.Where("task_id = ?", taskId).First(&task).Error
+	exist, err := RecordExist(err)
+	if err != nil {
+		return nil, false, err
+	}
+	return task, exist, err
+}
+
+// GetUniqueByOnlyTaskId resolves a public task identifier only when exactly one
+// row owns it. Historical task identifiers were not globally unique, so
+// capability-based reads must fail closed instead of selecting an arbitrary
+// tenant's row.
+func GetUniqueByOnlyTaskId(taskId string) (*Task, bool, error) {
+	if taskId == "" {
+		return nil, false, nil
+	}
+	var tasks []*Task
+	if err := DB.Where("task_id = ?", taskId).Order("id").Limit(2).Find(&tasks).Error; err != nil {
+		return nil, false, err
+	}
+	if len(tasks) != 1 {
+		return nil, false, nil
+	}
+	return tasks[0], true, nil
+}
+
 func GetByTaskId(userId int, taskId string) (*Task, bool, error) {
 	if taskId == "" {
 		return nil, false, nil
@@ -391,33 +473,57 @@ func GetByTaskId(userId int, taskId string) (*Task, bool, error) {
 	return task, exist, err
 }
 
-func GetByTaskIds(userId int, taskIds []any) ([]*Task, error) {
-	if len(taskIds) == 0 {
+func GetByTaskIdsForPlatforms(userID int, platforms []constant.TaskPlatform, taskIDs []string) ([]*Task, error) {
+	if len(platforms) == 0 || len(taskIDs) == 0 {
 		return nil, nil
 	}
-	var task []*Task
-	var err error
-	err = DB.Where("user_id = ? and task_id in (?)", userId, taskIds).
-		Find(&task).Error
+	var tasks []*Task
+	err := DB.
+		Where("user_id = ? AND platform IN ? AND task_id IN ?", userID, platforms, taskIDs).
+		Find(&tasks).Error
 	if err != nil {
 		return nil, err
 	}
-	return task, nil
+	return tasks, nil
+}
+
+// GetTaskForProtocolObservation reloads one public task through the ownership
+// boundary used by long-lived plugin protocol observers. A missing task,
+// foreign user, and wrong plugin platform are deliberately indistinguishable.
+func GetTaskForProtocolObservation(ctx context.Context, userID int, platform constant.TaskPlatform, taskID string) (*Task, bool, error) {
+	if taskID == "" {
+		return nil, false, nil
+	}
+	var task Task
+	err := DB.WithContext(ctx).
+		Where("user_id = ? AND platform = ? AND task_id = ?", userID, platform, taskID).
+		First(&task).Error
+	exists, err := RecordExist(err)
+	if err != nil || !exists {
+		return nil, exists, err
+	}
+	return &task, true, nil
 }
 
 func (Task *Task) Insert() error {
 	Task.BillingState = deriveBillingState(Task.PrivateData)
-	return DB.Create(Task).Error
+	return Task.InsertWithContext(context.Background())
+}
+
+func (Task *Task) InsertWithContext(ctx context.Context) error {
+	return DB.WithContext(ctx).Create(Task).Error
 }
 
 type taskSnapshot struct {
-	Status     TaskStatus
-	Progress   string
-	StartTime  int64
-	FinishTime int64
-	FailReason string
-	ResultURL  string
-	Data       json.RawMessage
+	Status       TaskStatus
+	Progress     string
+	StartTime    int64
+	FinishTime   int64
+	FailReason   string
+	ResultURL    string
+	Data         json.RawMessage
+	PluginState  json.RawMessage
+	PollFailures int
 }
 
 func (s taskSnapshot) Equal(other taskSnapshot) bool {
@@ -427,18 +533,22 @@ func (s taskSnapshot) Equal(other taskSnapshot) bool {
 		s.FinishTime == other.FinishTime &&
 		s.FailReason == other.FailReason &&
 		s.ResultURL == other.ResultURL &&
-		bytes.Equal(s.Data, other.Data)
+		bytes.Equal(s.Data, other.Data) &&
+		bytes.Equal(s.PluginState, other.PluginState) &&
+		s.PollFailures == other.PollFailures
 }
 
 func (t *Task) Snapshot() taskSnapshot {
 	return taskSnapshot{
-		Status:     t.Status,
-		Progress:   t.Progress,
-		StartTime:  t.StartTime,
-		FinishTime: t.FinishTime,
-		FailReason: t.FailReason,
-		ResultURL:  t.PrivateData.ResultURL,
-		Data:       t.Data,
+		Status:       t.Status,
+		Progress:     t.Progress,
+		StartTime:    t.StartTime,
+		FinishTime:   t.FinishTime,
+		FailReason:   t.FailReason,
+		ResultURL:    t.PrivateData.ResultURL,
+		Data:         t.Data,
+		PluginState:  t.PrivateData.PluginState,
+		PollFailures: t.PrivateData.PollFailures,
 	}
 }
 
@@ -555,7 +665,12 @@ func (t *Task) ToOpenAIVideo() *dto.OpenAIVideo {
 	openAIVideo.Model = t.Properties.OriginModelName
 	openAIVideo.SetProgressStr(t.Progress)
 	openAIVideo.CreatedAt = t.CreatedAt
-	openAIVideo.CompletedAt = t.UpdatedAt
-	openAIVideo.SetMetadata("url", t.GetResultURL())
+	if t.Status == TaskStatusSuccess {
+		if t.FinishTime != 0 {
+			openAIVideo.CompletedAt = t.FinishTime
+		} else {
+			openAIVideo.CompletedAt = t.UpdatedAt
+		}
+	}
 	return openAIVideo
 }

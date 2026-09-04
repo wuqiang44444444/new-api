@@ -78,7 +78,7 @@ func TestSeedanceAdaptorRecordsModelArkGenerationMode(t *testing.T) {
 			content: []dto.ModelArkVideoContent{
 				{Type: "text", Text: common.GetPointer("two puppies eating")},
 			},
-			expected: constant.TaskActionTextGenerate,
+			expected: constant.TaskActionTextToVideo,
 		},
 		{
 			name: "image to video",
@@ -86,7 +86,7 @@ func TestSeedanceAdaptorRecordsModelArkGenerationMode(t *testing.T) {
 				{Type: "text", Text: common.GetPointer("move")},
 				{Type: "image_url", Role: common.GetPointer("first_frame"), ImageURL: &dto.VideoMediaURL{URL: "https://example.com/first.png"}},
 			},
-			expected: constant.TaskActionGenerate,
+			expected: constant.TaskActionImageToVideo,
 		},
 		{
 			name: "first and last frame to video",
@@ -94,14 +94,14 @@ func TestSeedanceAdaptorRecordsModelArkGenerationMode(t *testing.T) {
 				{Type: "image_url", Role: common.GetPointer("first_frame"), ImageURL: &dto.VideoMediaURL{URL: "https://example.com/first.png"}},
 				{Type: "image_url", Role: common.GetPointer("last_frame"), ImageURL: &dto.VideoMediaURL{URL: "https://example.com/last.png"}},
 			},
-			expected: constant.TaskActionFirstTailGenerate,
+			expected: constant.TaskActionFirstTailToVideo,
 		},
 		{
 			name: "reference image to video",
 			content: []dto.ModelArkVideoContent{
 				{Type: "image_url", Role: common.GetPointer("reference_image"), ImageURL: &dto.VideoMediaURL{URL: "https://example.com/reference.png"}},
 			},
-			expected: constant.TaskActionReferenceGenerate,
+			expected: constant.TaskActionReferenceToVideo,
 		},
 		{
 			name: "video input remains generic generate",
@@ -109,7 +109,7 @@ func TestSeedanceAdaptorRecordsModelArkGenerationMode(t *testing.T) {
 				{Type: "text", Text: common.GetPointer("remix")},
 				{Type: "video_url", VideoURL: &dto.VideoMediaURL{URL: "https://example.com/source.mp4"}},
 			},
-			expected: constant.TaskActionGenerate,
+			expected: constant.TaskActionImageToVideo,
 		},
 	}
 
@@ -136,7 +136,7 @@ func TestSeedanceAdaptorRecordsModelArkGenerationMode(t *testing.T) {
 }
 
 func TestSeedanceTaskParserKeepsProviderBillingEvidenceOutOfPublicJSON(t *testing.T) {
-	result, err := (&TaskAdaptor{}).ParseTaskResult([]byte(`{
+	result, err := (&TaskAdaptor{}).ParseTaskResult(nil, nil, []byte(`{
 		"id":"provider-task","status":"succeeded","content":{"video_url":"https://video.example.com/result.mp4"},
 		"usage":{"completion_tokens":40594,"total_tokens":40594},
 		"_provider_billing_evidence":{"provider":"funcloud","token_source":"completionTokens","reported_tokens":40594,"raw_consumption":"0.232731","consumption_unit":"pointConsume","provider_model":"seedance-2-fast","resolution":"720p"}
@@ -155,7 +155,7 @@ func TestSeedanceTaskParserKeepsProviderBillingEvidenceOutOfPublicJSON(t *testin
 }
 
 func TestSeedanceTaskParserPreservesReportedZeroUsage(t *testing.T) {
-	result, err := (&TaskAdaptor{}).ParseTaskResult([]byte(`{
+	result, err := (&TaskAdaptor{}).ParseTaskResult(nil, nil, []byte(`{
 		"id":"provider-task","status":"succeeded","content":{"video_url":"https://video.example.com/result.mp4"},
 		"usage":{"completion_tokens":0,"total_tokens":0}
 	}`))
@@ -182,7 +182,7 @@ func TestMoxingFastTerminalUsageFlowsThroughNormalizationAndTaskParsing(t *testi
 	)
 	require.NoError(t, err)
 
-	result, err := (&TaskAdaptor{}).ParseTaskResult(normalized)
+	result, err := (&TaskAdaptor{}).ParseTaskResult(nil, nil, normalized)
 	require.NoError(t, err)
 	assert.True(t, result.UsageReported)
 	assert.True(t, result.CompletionTokensReported)

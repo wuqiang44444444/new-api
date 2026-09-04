@@ -42,14 +42,9 @@ func persistTaskBillingFailure(ctx context.Context, task *model.Task, state mode
 	logger.LogWarn(ctx, fmt.Sprintf("任务 %s 计费进入 %s: %s", task.TaskID, state, message))
 	if firstFailure {
 		other := taskBillingOther(task)
-		other["task_id"] = task.TaskID
-		adminInfo, _ := other["admin_info"].(map[string]interface{})
-		if adminInfo == nil {
-			adminInfo = make(map[string]interface{})
-			other["admin_info"] = adminInfo
-		}
-		adminInfo["task_billing_state"] = state
-		adminInfo["task_billing_error"] = message
+		other.SetPublic("task_id", task.TaskID)
+		other.SetAdmin("task_billing_state", string(state))
+		other.SetAdmin("task_billing_error", message)
 		if task.PrivateData.AsyncBilling.QuotaClamp != nil {
 			attachQuotaSaturationToOther(other, task.PrivateData.AsyncBilling.QuotaClamp)
 		}
@@ -96,8 +91,8 @@ func refundTaskWithReconcile(ctx context.Context, task *model.Task, reason strin
 	}
 
 	other := taskBillingOther(task)
-	other["task_id"] = task.TaskID
-	other["reason"] = reason
+	other.SetPublic("task_id", task.TaskID)
+	other.SetPublic("reason", reason)
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId: task.UserId, LogType: model.LogTypeRefund, ChannelId: task.ChannelId,
 		ModelName: taskModelName(task), Quota: quota, TokenId: task.PrivateData.TokenId,
@@ -149,9 +144,9 @@ func recalculateTaskQuotaWithReconcile(ctx context.Context, task *model.Task, ac
 		model.UpdateChannelUsedQuota(task.ChannelId, quotaDelta)
 	}
 	other := taskBillingOther(task)
-	other["task_id"] = task.TaskID
-	other["pre_consumed_quota"] = preConsumedQuota
-	other["actual_quota"] = actualQuota
+	other.SetPublic("task_id", task.TaskID)
+	other.SetPublic("pre_consumed_quota", preConsumedQuota)
+	other.SetPublic("actual_quota", actualQuota)
 	for _, clamp := range clamps {
 		attachQuotaSaturationToOther(other, clamp)
 	}

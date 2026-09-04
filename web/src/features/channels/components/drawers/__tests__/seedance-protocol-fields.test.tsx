@@ -76,7 +76,7 @@ function SeedanceProtocolFieldsHarness(
   const form = useForm<ChannelFormValues>({
     defaultValues: {
       ...CHANNEL_FORM_DEFAULT_VALUES,
-      type: 61,
+      type: 62,
       models: props.models || '',
       model_mapping: props.modelMapping || '',
       video_upstream_protocol: 'modelark_v3_volcengine',

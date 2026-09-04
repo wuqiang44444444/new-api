@@ -23,7 +23,9 @@ func RecordTaskCreateAttemptUpstreamSuccess(id int64, task *Task) error {
 		return errors.New("task attempt recovery snapshot is incomplete")
 	}
 	privateData := task.PrivateData
-	privateData.ClientRequest.Prompt = ""
+	if privateData.ClientRequest != nil {
+		privateData.ClientRequest.Prompt = ""
+	}
 	taskCopy := *task
 	taskCopy.PrivateData = privateData
 	snapshot, err := common.Marshal(taskAttemptRecoverySnapshot{

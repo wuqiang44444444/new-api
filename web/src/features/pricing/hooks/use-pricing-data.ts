@@ -24,13 +24,14 @@ import { useStatus } from '@/hooks/use-status'
 import { getPricing } from '../api'
 import { buildAssetShareGroups } from '../lib/asset-share-groups'
 
-export function usePricingData() {
+export function usePricingData(enabled = true) {
   const { status } = useStatus()
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['pricing'],
     queryFn: getPricing,
     staleTime: 5 * 60 * 1000,
+    enabled,
   })
 
   // Ensure rates never reach zero to prevent division errors

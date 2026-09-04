@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -42,14 +41,8 @@ func ResolveSeedanceChannel() gin.HandlerFunc {
 		}
 
 		specificChannelID := 0
-		if value, exists := common.GetContextKey(c, constant.ContextKeyTokenSpecificChannelId); exists {
-			text, valid := value.(string)
-			parsed, err := strconv.Atoi(strings.TrimSpace(text))
-			if !valid || err != nil {
-				abortModelArkVideo(c, http.StatusBadRequest, "invalid_channel", "the token channel is invalid")
-				return
-			}
-			specificChannelID = parsed
+		if pin, found, _ := service.GetChannelConstraints(c).ResolvedPin(); found && pin.Source == dto.PinSourceToken {
+			specificChannelID = pin.ChannelId
 		}
 
 		usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)

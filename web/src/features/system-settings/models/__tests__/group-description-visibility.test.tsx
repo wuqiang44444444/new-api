@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { after, describe, test } from 'node:test'
+import { afterAll, describe, expect, test } from 'vitest'
 
 import { Window } from 'happy-dom'
 
@@ -74,9 +73,15 @@ function findPricingRow(container: HTMLElement, groupName: string) {
   const nameInput = [...container.querySelectorAll('input')].find(
     (input) => input.value === groupName
   )
-  assert.ok(nameInput)
+  if (!nameInput) {
+    throw new Error(`pricing input for group "${groupName}" was not rendered`)
+  }
+  expect(nameInput).toBeTruthy()
   const row = nameInput.closest('tr')
-  assert.ok(row)
+  if (!row) {
+    throw new Error(`pricing row for group "${groupName}" was not rendered`)
+  }
+  expect(row).toBeTruthy()
   return row
 }
 
@@ -110,7 +115,7 @@ function PricingEditorHarness(props: {
 }
 
 describe('pricing group descriptions', () => {
-  after(() => {
+  afterAll(() => {
     domWindow.close()
   })
 
@@ -140,10 +145,14 @@ describe('pricing group descriptions', () => {
       '[aria-label="User selectable"]'
     )
 
-    assert.ok(descriptionInput)
-    assert.equal(descriptionInput.value, 'Internal routing group')
-    assert.ok(selectable)
-    assert.equal(selectable.getAttribute('aria-checked'), 'false')
+    if (!descriptionInput) {
+      throw new Error('group description input was not rendered')
+    }
+    expect(descriptionInput.value).toBe('Internal routing group')
+    if (!selectable) {
+      throw new Error('user selectable toggle was not rendered')
+    }
+    expect(selectable.getAttribute('aria-checked')).toBe('false')
 
     await act(async () => root.unmount())
     container.remove()
@@ -175,18 +184,26 @@ describe('pricing group descriptions', () => {
     const selectable = row.querySelector<HTMLElement>(
       '[aria-label="User selectable"]'
     )
-    assert.ok(selectable)
+    if (!selectable) {
+      throw new Error('user selectable toggle was not rendered')
+    }
+    expect(selectable).toBeTruthy()
 
     await act(async () => selectable.click())
 
     const descriptionInput = row.querySelector<HTMLInputElement>(
       'input[placeholder="Group description"]'
     )
-    assert.ok(descriptionInput)
-    assert.equal(descriptionInput.value, 'Default group')
-    assert.ok(latestFields)
-    assert.deepEqual(JSON.parse(latestFields.UserUsableGroups), {})
-    assert.deepEqual(JSON.parse(latestFields.GroupDescriptions), {
+    if (!descriptionInput) {
+      throw new Error('group description input was not rendered')
+    }
+    expect(descriptionInput.value).toBe('Default group')
+    if (!latestFields) {
+      throw new Error('fields change callback was not invoked')
+    }
+    expect(latestFields).toBeTruthy()
+    expect(JSON.parse(latestFields.UserUsableGroups)).toEqual({})
+    expect(JSON.parse(latestFields.GroupDescriptions)).toEqual({
       default: 'Default group',
     })
 

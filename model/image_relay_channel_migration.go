@@ -13,7 +13,11 @@ import (
 )
 
 const (
-	legacyMoxingImageChannelType = 63
+	// legacyMoxingImageChannelType is the retired pre-image-relay Moxing slot.
+	// The channel type renumber migration (see
+	// seedance_channel_type_renumber_migration.go) moves historical Moxing rows
+	// here before this migration collapses them into the async image type.
+	legacyMoxingImageChannelType = 65
 	imageRelayMigrationKey       = "migration.image_relay_protocol_v1"
 	funCloudImageDefaultBaseURL  = "https://mm-internal-cn.leonecloud.com"
 	moxingImageDefaultBaseURL    = "https://www.moxing.pro"

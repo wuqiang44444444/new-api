@@ -62,7 +62,7 @@ function ConnectivityPanelHarness() {
   const form = useForm<ChannelFormValues>({
     defaultValues: {
       ...CHANNEL_FORM_DEFAULT_VALUES,
-      type: 61,
+      type: 62,
       video_upstream_protocol: 'modelark_v3_volcengine',
       asset_upstream_protocol: 'volcengine_assets_action_v2024_01_01',
     },

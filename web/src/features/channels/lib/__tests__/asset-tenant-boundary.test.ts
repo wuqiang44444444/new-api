@@ -28,7 +28,7 @@ import { CHANNEL_FORM_DEFAULT_VALUES } from '../channel-form'
 
 const channel = {
   id: 77,
-  type: 61,
+  type: 62,
   base_url: 'https://ark.example.com/',
   settings: JSON.stringify({
     video_upstream_protocol: 'modelark_v3_volcengine',

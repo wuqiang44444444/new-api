@@ -7,6 +7,6 @@ import (
 )
 
 func TestParseTaskResultRejectsUnknownStatus(t *testing.T) {
-	_, err := (&TaskAdaptor{}).ParseTaskResult([]byte(`{"id":"task","status":"provider_private_state"}`))
+	_, err := (&TaskAdaptor{}).ParseTaskResult(nil, nil, []byte(`{"id":"task","status":"provider_private_state"}`))
 	require.Error(t, err)
 }

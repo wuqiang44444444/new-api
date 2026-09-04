@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 
 	"github.com/stretchr/testify/assert"
@@ -10,14 +11,20 @@ import (
 )
 
 func TestAppendBillingStatementSnapshotIsAdminOnlyAndFrozen(t *testing.T) {
-	other := map[string]interface{}{"model_price": 0.25, "group_ratio": 0.8, "contract_discount": "0.5", "contract_version": 4, "completion_ratio": 2.0}
+	other := model.NewLogOther()
+	other.SetPublic("model_price", 0.25)
+	other.SetPublic("group_ratio", 0.8)
+	other.SetPublic("contract_discount", "0.5")
+	other.SetPublic("contract_version", 4)
+	other.SetPublic("completion_ratio", 2.0)
 	relayInfo := &relaycommon.RelayInfo{OriginModelName: "customer-model", ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "provider-model"}}
 
 	appendBillingStatementSnapshot(relayInfo, other)
 
-	_, exposedAtTopLevel := other["statement_snapshot"]
+	values := other.Snapshot()
+	_, exposedAtTopLevel := values["statement_snapshot"]
 	assert.False(t, exposedAtTopLevel)
-	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	adminInfo, ok := values["admin_info"].(map[string]interface{})
 	require.True(t, ok)
 	snapshot, ok := adminInfo["statement_snapshot"].(map[string]interface{})
 	require.True(t, ok)
@@ -32,22 +39,25 @@ func TestAppendBillingStatementSnapshotIsAdminOnlyAndFrozen(t *testing.T) {
 }
 
 func TestAppendBillingStatementSnapshotFallsBackToOriginIdentity(t *testing.T) {
-	other := map[string]interface{}{"model_price": float64(0)}
+	other := model.NewLogOther()
+	other.SetPublic("model_price", float64(0))
 	appendBillingStatementIdentitySnapshot(other, "same-model", "")
 
-	adminInfo := other["admin_info"].(map[string]interface{})
+	adminInfo := other.Snapshot()["admin_info"].(map[string]interface{})
 	snapshot := adminInfo["statement_snapshot"].(map[string]interface{})
 	assert.Equal(t, "same-model", snapshot["provider_model"])
 	assert.Equal(t, "token", snapshot["billing_mode"])
 }
 
 func TestAppendPerCallBillingStatementSnapshotDoesNotDependOnFixedPrice(t *testing.T) {
-	other := map[string]interface{}{"model_price": float64(-1), "model_ratio": 2.5}
+	other := model.NewLogOther()
+	other.SetPublic("model_price", float64(-1))
+	other.SetPublic("model_ratio", 2.5)
 	relayInfo := &relaycommon.RelayInfo{OriginModelName: "task-model"}
 
 	appendPerCallBillingStatementSnapshot(relayInfo, other)
 
-	adminInfo := other["admin_info"].(map[string]interface{})
+	adminInfo := other.Snapshot()["admin_info"].(map[string]interface{})
 	snapshot := adminInfo["statement_snapshot"].(map[string]interface{})
 	assert.Equal(t, "task-model", snapshot["provider_model"])
 	assert.Equal(t, "per_call", snapshot["billing_mode"])

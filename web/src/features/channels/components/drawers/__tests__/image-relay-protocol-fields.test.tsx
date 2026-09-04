@@ -40,7 +40,7 @@ function ImageRelayProtocolFieldsHarness({
   const form = useForm<ChannelFormValues>({
     defaultValues: {
       ...CHANNEL_FORM_DEFAULT_VALUES,
-      type: 62,
+      type: 63,
       base_url: baseUrl,
       model_mapping: '{"customer":"provider"}',
       image_upstream_protocol: 'funcloud_aigc_v2',

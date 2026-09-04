@@ -200,7 +200,7 @@ func TestTerminalTaskBillingPersistsProviderEvidenceAndKeepsItAdminOnly(t *testi
 	assert.Equal(t, 40594, task.PrivateData.AsyncBilling.ActualTokens)
 	require.NotNil(t, task.PrivateData.AsyncBilling.ProviderBillingEvidence)
 	assert.Equal(t, "0.232731", task.PrivateData.AsyncBilling.ProviderBillingEvidence.RawConsumption)
-	other := taskBillingOther(task)
+	other := taskBillingOther(task).Snapshot()
 	adminInfo, ok := other["admin_info"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, *evidence, adminInfo["provider_billing_evidence"])

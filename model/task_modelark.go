@@ -60,7 +60,10 @@ func ListModelArkVideoTasks(userID, appID int, filter ModelArkTaskListFilter) ([
 		if modelName != "" && task.Properties.OriginModelName != modelName {
 			continue
 		}
-		taskServiceTier := strings.TrimSpace(task.PrivateData.ClientRequest.ServiceTier)
+		taskServiceTier := ""
+		if task.PrivateData.ClientRequest != nil {
+			taskServiceTier = strings.TrimSpace(task.PrivateData.ClientRequest.ServiceTier)
+		}
 		if taskServiceTier == "" {
 			taskServiceTier = "default"
 		}
@@ -89,7 +92,7 @@ func (t *Task) ToModelArkVideoTask() *dto.ModelArkVideoTask {
 		ID:          t.TaskID,
 		Model:       t.Properties.OriginModelName,
 		Status:      t.Status.ToModelArkVideoStatus(),
-		ServiceTier: t.PrivateData.ClientRequest.ServiceTier,
+		ServiceTier: clientRequestServiceTier(t),
 		CreatedAt:   t.CreatedAt,
 		UpdatedAt:   t.UpdatedAt,
 	}

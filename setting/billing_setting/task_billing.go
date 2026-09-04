@@ -58,12 +58,22 @@ func ValidateBillingExpressionsJSON(
 		return err
 	}
 	for model, expression := range expressions {
-		// 仅对新增或修改的表达式强制 tier()；未变更的存量表达式走 relaxed，避免阻塞历史配置保存。
-		requireTier := oldValue[model] != expression
 		extraFields, taskModel := taskProbeExtraFieldsByModel[model]
-		if err := smokeTestExpr(expression, requireTier, taskModel, extraFields); err != nil {
-			return fmt.Errorf("invalid billing expression for model %s: %w", model, err)
+		if err := ValidateOneBillingExpression(model, expression, oldValue[model], extraFields, taskModel); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// ValidateOneBillingExpression validates a single model expression with the
+// Link contract semantics: only new or modified expressions must wrap prices
+// in tier(), unchanged legacy expressions stay relaxed so saving historical
+// configuration never blocks.
+func ValidateOneBillingExpression(modelName, expression, oldValue string, extraFields map[string]any, taskModel bool) error {
+	requireTier := oldValue != expression
+	if err := smokeTestExpr(expression, requireTier, taskModel, extraFields); err != nil {
+		return fmt.Errorf("invalid billing expression for model %s: %w", modelName, err)
 	}
 	return nil
 }

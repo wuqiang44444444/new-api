@@ -36,7 +36,7 @@ func attachTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycom
 	if contract, ok := relaycommon.GetVideoContractRequest(c); ok && contract.ModelArk != nil && contract.ModelArk.ServiceTier != nil {
 		serviceTier = *contract.ModelArk.ServiceTier
 	}
-	task.PrivateData.ClientRequest = model.TaskClientRequestSnapshot{
+	task.PrivateData.ClientRequest = &model.TaskClientRequestSnapshot{
 		Prompt:             req.Prompt,
 		Seconds:            seconds,
 		Size:               req.Size,

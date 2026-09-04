@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/QuantumNous/new-api/model"
@@ -35,4 +36,31 @@ func validateBillingExpressionsOption(value string) error {
 		billing_setting.GetBillingExprCopy(),
 		extraFieldsByModel,
 	)
+}
+
+// validateLinkBillingExpression validates one non-plugin model expression with
+// Link contract semantics: changed expressions must wrap prices in tier(), and
+// Link task models are probed with protocol-specific extra request fields.
+func validateLinkBillingExpression(modelName string, expression string) error {
+	oldValues := billing_setting.GetBillingExprCopy()
+	if model.DB == nil {
+		// Unit-test context without a database: skip Link task probing.
+		return billing_setting.ValidateOneBillingExpression(modelName, expression, oldValues[modelName], nil, false)
+	}
+	channels, err := model.GetEnabledSeedanceChannelsForBillingValidation()
+	if err != nil {
+		// Channel lookup is only the probe-field source; on failure degrade to
+		// base validation so compile and usage-key gates still reject saves.
+		return billing_setting.ValidateOneBillingExpression(modelName, expression, oldValues[modelName], nil, false)
+	}
+	for i := range channels {
+		if !slices.Contains(channels[i].GetModels(), modelName) {
+			continue
+		}
+		extraFields := seedance.BillingProbeValidationExtraFields(
+			channels[i].GetOtherSettings().VideoUpstreamProtocol,
+		)
+		return billing_setting.ValidateOneBillingExpression(modelName, expression, oldValues[modelName], extraFields, true)
+	}
+	return billing_setting.ValidateOneBillingExpression(modelName, expression, oldValues[modelName], nil, false)
 }

@@ -44,12 +44,12 @@ func modelArkTaskAction(payload *requestPayload) string {
 	inputMode, controlMode := relayBillingModes(payload)
 	switch controlMode {
 	case "reference":
-		return constant.TaskActionReferenceGenerate
+		return constant.TaskActionReferenceToVideo
 	case "end_frame":
-		return constant.TaskActionFirstTailGenerate
+		return constant.TaskActionFirstTailToVideo
 	}
 	if inputMode != "text" {
-		return constant.TaskActionGenerate
+		return constant.TaskActionImageToVideo
 	}
 
 	hasText := false
@@ -59,16 +59,16 @@ func modelArkTaskAction(payload *requestPayload) string {
 			hasText = hasText || strings.TrimSpace(item.Text) != ""
 		case "video_url":
 			if item.VideoURL != nil && strings.TrimSpace(item.VideoURL.URL) != "" {
-				return constant.TaskActionGenerate
+				return constant.TaskActionImageToVideo
 			}
 		case "audio_url":
 			if item.AudioURL != nil && strings.TrimSpace(item.AudioURL.URL) != "" {
-				return constant.TaskActionGenerate
+				return constant.TaskActionImageToVideo
 			}
 		}
 	}
 	if hasText {
-		return constant.TaskActionTextGenerate
+		return constant.TaskActionTextToVideo
 	}
-	return constant.TaskActionGenerate
+	return constant.TaskActionImageToVideo
 }

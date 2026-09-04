@@ -34,7 +34,7 @@ func TestModelArkListEnforcesProtocolSevenDayWindowAndOfficialFilters(t *testing
 			CreatedAt:      now - int64(i+1),
 			UpdatedAt:      now - int64(i+1),
 			Properties:     Properties{OriginModelName: "seedance-model"},
-			PrivateData: TaskPrivateData{ClientRequest: TaskClientRequestSnapshot{
+			PrivateData: TaskPrivateData{ClientRequest: &TaskClientRequestSnapshot{
 				ServiceTier: serviceTier,
 			}},
 		}
@@ -78,7 +78,7 @@ func TestModelArkProjectionKeepsOfficialFieldsButHidesProviderURL(t *testing.T) 
 		TaskID:      "modelark-public-id",
 		Status:      TaskStatusSuccess,
 		Properties:  Properties{OriginModelName: "seedance-model"},
-		PrivateData: TaskPrivateData{ClientRequest: TaskClientRequestSnapshot{ServiceTier: "flex"}},
+		PrivateData: TaskPrivateData{ClientRequest: &TaskClientRequestSnapshot{ServiceTier: "flex"}},
 		Data: []byte(`{
 			"content":{"video_url":"https://provider.example/signed-secret","last_frame_url":"https://provider.example/last-frame-secret"},
 			"seed":42,

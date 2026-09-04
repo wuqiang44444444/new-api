@@ -34,6 +34,13 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 		return true
 	}
 
+	// The lenient compile environment resolves unknown identifiers to zero, so
+	// a broken frozen expression must be rejected before settlement.
+	if err := billingexpr.UnknownIdentifier(async.TieredSnapshot.ExprString); err != nil {
+		persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, fmt.Errorf("frozen task billing expression failed: %w", err))
+		return true
+	}
+
 	requestInput := billingexpr.RequestInput{}
 	if async.BillingProbe != nil {
 		requestInput = *async.BillingProbe

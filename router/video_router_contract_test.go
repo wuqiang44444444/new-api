@@ -18,11 +18,10 @@ func TestVideoRouterExposesOnlySelectedNorthboundContracts(t *testing.T) {
 		routes[route.Method+" "+route.Path] = struct{}{}
 	}
 
+	// rc.31 retires the classic OpenAI video create/read routes in favor of the
+	// task plugin endpoint and the /v1/videos/:task_id/content artifact proxy.
 	expected := []string{
-		http.MethodPost + " /v1/videos",
 		http.MethodPost + " /v1/videos/:video_id/remix",
-		http.MethodGet + " /v1/videos/:task_id",
-		http.MethodGet + " /v1/videos/:task_id/content",
 		http.MethodPost + " /v1/video/generations",
 		http.MethodGet + " /v1/video/generations/:task_id",
 		http.MethodPost + " /api/v3/contents/generations/tasks",
@@ -38,6 +37,9 @@ func TestVideoRouterExposesOnlySelectedNorthboundContracts(t *testing.T) {
 	}
 	for _, route := range []string{
 		http.MethodDelete + " /v1/videos/:task_id",
+		http.MethodPost + " /v1/videos",
+		http.MethodGet + " /v1/videos/:task_id",
+		http.MethodGet + " /v1/videos/:task_id/content",
 	} {
 		_, exists := routes[route]
 		assert.False(t, exists, route)

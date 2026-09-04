@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
@@ -24,23 +26,31 @@ func TestFunCloudFetchTaskUsesAIGCQueryAndReportedCompletionTokens(t *testing.T)
 	defer server.Close()
 
 	adaptor := &TaskAdaptor{ChannelType: constant.ChannelTypeSeedanceLink}
-	response, err := adaptor.FetchTask(server.URL, "funcloud-key", map[string]any{
-		"task_id":                            "task-1",
-		"video_upstream_profile":             kitdto.VideoUpstreamProfileThirdPartyFunCloudSeedance,
-		"video_upstream_adapter_version":     "61:third_party_funcloud_seedance:v3",
-		"video_upstream_query_path_template": "/api/v2/open/aigc/{task_id}",
-		relaycommon.VideoTaskBillingContextKey: &relaycommon.VideoTaskBillingContext{
-			ProviderModel:    "seedance-2",
-			BillingProbeBody: []byte(`{"_task":{"resolution":"480p","has_video_input":false}}`),
-			EstimatedTokens:  730000,
+	task := &model.Task{
+		TaskID: "task_public_1",
+		Properties: model.Properties{
+			UpstreamModelName: "seedance-2",
 		},
-	}, "")
+		PrivateData: model.TaskPrivateData{
+			UpstreamTaskID:                 "task-1",
+			VideoUpstreamProfile:           kitdto.VideoUpstreamProfileThirdPartyFunCloudSeedance,
+			SouthboundAdapterVersion:       relaycommon.CurrentVideoSouthboundAdapterVersion(constant.ChannelTypeSeedanceLink, kitdto.VideoUpstreamProfileThirdPartyFunCloudSeedance),
+			VideoUpstreamQueryPathTemplate: "/api/v2/open/aigc/{task_id}",
+			AsyncBilling: &model.TaskAsyncBillingContext{
+				EstimatedTokens: 730000,
+				BillingProbe: &billingexpr.RequestInput{
+					Body: []byte(`{"_task":{"resolution":"480p","has_video_input":false}}`),
+				},
+			},
+		},
+	}
+	response, err := adaptor.FetchTask(server.URL, "funcloud-key", task, "")
 	require.NoError(t, err)
 	defer response.Body.Close()
 
 	body, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
-	result, err := adaptor.ParseTaskResult(body)
+	result, err := adaptor.ParseTaskResult(task, response, body)
 	require.NoError(t, err)
 	assert.Equal(t, 40594, result.CompletionTokens)
 	assert.Equal(t, 40594, result.TotalTokens)

@@ -25,7 +25,7 @@ func TestFunCloudApplicationErrorsDoNotMarkCreateAsTerminal(t *testing.T) {
 				Body:       io.NopCloser(strings.NewReader(fmt.Sprintf(`{"code":%d,"msg":"provider error","data":{}}`, code))),
 			}
 
-			_, _, taskErr := adaptor.DoResponse(context, response, &relaycommon.RelayInfo{})
+			_, taskErr := adaptor.ParseResponse(context, response, &relaycommon.RelayInfo{})
 
 			require.NotNil(t, taskErr)
 			assert.NotEqual(t, relaycommon.TaskCreateTerminalRejection, relaycommon.GetTaskCreateDisposition(context))

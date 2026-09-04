@@ -179,12 +179,11 @@ func TestDoRequestSetsContentLengthAndHostOverride(t *testing.T) {
 	})}
 	c, _ := newImageRequestContext(context.Background())
 	info := asyncImageInfo("https://example.com", nanoBanana2)
-	info.UpstreamRequestBodySize = 13
 	info.ChannelMeta.HeadersOverride = map[string]any{
 		"Host":            "provider.internal",
 		"X-Provider-Mode": "override",
 	}
-	resp, err := (&Adaptor{client: client}).DoRequest(c, info, strings.NewReader(`{"prompt":"x"}`))
+	resp, err := (&Adaptor{client: client}).DoRequest(c, info, io.NewSectionReader(strings.NewReader(`{"prompt":"x"}`), 0, 13))
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 }
@@ -199,7 +198,7 @@ func TestDoRequestKeepsProviderEnvelopeForHTTPErrorMapping(t *testing.T) {
 	})}
 	c, _ := newImageRequestContext(context.Background())
 	info := asyncImageInfo("https://example.com", nanoBanana2)
-	resp, err := (&Adaptor{client: client}).DoRequest(c, info, strings.NewReader(`{"prompt":"x"}`))
+	resp, err := (&Adaptor{client: client}).DoRequest(c, info, io.NewSectionReader(strings.NewReader(`{"prompt":"x"}`), 0, 13))
 	require.NoError(t, err)
 	_, apiErr := (&Adaptor{client: client}).DoResponse(c, resp.(*http.Response), info)
 	require.NotNil(t, apiErr)

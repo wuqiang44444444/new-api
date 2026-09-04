@@ -26,7 +26,7 @@ type taskPollingKeyCaptureAdaptor struct {
 
 func (a *taskPollingKeyCaptureAdaptor) Init(_ *relaycommon.RelayInfo) {}
 
-func (a *taskPollingKeyCaptureAdaptor) FetchTask(baseURL string, key string, body map[string]any, proxy string) (*http.Response, error) {
+func (a *taskPollingKeyCaptureAdaptor) FetchTask(baseURL string, key string, task *model.Task, proxy string) (*http.Response, error) {
 	a.mu.Lock()
 	a.keys = append(a.keys, key)
 	a.bases = append(a.bases, baseURL)
@@ -36,7 +36,7 @@ func (a *taskPollingKeyCaptureAdaptor) FetchTask(baseURL string, key string, bod
 	responseBody, err := common.Marshal(dto.TaskResponse[model.Task]{
 		Code: dto.TaskSuccessCode,
 		Data: model.Task{
-			TaskID:   body["task_id"].(string),
+			TaskID:   task.GetUpstreamTaskID(),
 			Status:   model.TaskStatusInProgress,
 			Progress: "30%",
 		},
@@ -56,7 +56,7 @@ func (a *taskPollingKeyCaptureAdaptor) fetchedConnections() ([]string, []string,
 	return append([]string(nil), a.keys...), append([]string(nil), a.bases...), append([]string(nil), a.proxies...)
 }
 
-func (a *taskPollingKeyCaptureAdaptor) ParseTaskResult([]byte) (*relaycommon.TaskInfo, error) {
+func (a *taskPollingKeyCaptureAdaptor) ParseTaskResult(*model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
 	return &relaycommon.TaskInfo{Status: model.TaskStatusInProgress}, nil
 }
 

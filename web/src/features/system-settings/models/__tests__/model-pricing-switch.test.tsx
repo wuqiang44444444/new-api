@@ -27,6 +27,12 @@ const editorFrames = vi.hoisted(
   () => [] as Array<{ modelName?: string; billingExpr: string }>
 )
 
+// Upstream rc.31 panel reads pricing metadata via React Query; stub it so the
+// editor remount contract under test needs no QueryClientProvider.
+vi.mock('@/features/pricing/hooks/use-pricing-data', () => ({
+  usePricingData: () => ({ models: [] }),
+}))
+
 vi.mock('../tiered-pricing-editor', () => ({
   TieredPricingEditor: (props: { modelName?: string; billingExpr: string }) => {
     editorFrames.push({

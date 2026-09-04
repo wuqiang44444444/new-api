@@ -19,9 +19,8 @@ import (
 )
 
 type videoAdapterPollingCapture struct {
-	adapterVersion string
-	billingContext *relaycommon.VideoTaskBillingContext
-	fetchCount     int
+	receivedTask *model.Task
+	fetchCount   int
 }
 
 func (capture *videoAdapterPollingCapture) Init(_ *relaycommon.RelayInfo) {}
@@ -29,12 +28,11 @@ func (capture *videoAdapterPollingCapture) Init(_ *relaycommon.RelayInfo) {}
 func (capture *videoAdapterPollingCapture) FetchTask(
 	_ string,
 	_ string,
-	body map[string]any,
+	task *model.Task,
 	_ string,
 ) (*http.Response, error) {
 	capture.fetchCount++
-	capture.adapterVersion, _ = body["video_upstream_adapter_version"].(string)
-	capture.billingContext, _ = body[relaycommon.VideoTaskBillingContextKey].(*relaycommon.VideoTaskBillingContext)
+	capture.receivedTask = task
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Body: io.NopCloser(bytes.NewBufferString(`{
@@ -55,12 +53,12 @@ func TestVideoPollingPassesFrozenFunCloudBillingContext(t *testing.T) {
 	channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance})
 	probeBody := []byte(`{"_task":{"resolution":"720p","has_video_input":false}}`)
 	task := &model.Task{
-		TaskID: "task-funcloud-v3", Platform: constant.TaskPlatform("61"), UserId: 973,
+		TaskID: "task-funcloud-v3", Platform: constant.TaskPlatform("62"), UserId: 973,
 		ChannelId: channel.Id, Status: model.TaskStatusInProgress, Progress: "30%", CreatedAt: now, UpdatedAt: now,
 		Properties: model.Properties{UpstreamModelName: "seedance-2-fast"},
 		PrivateData: model.TaskPrivateData{
 			UpstreamTaskID: "provider-task-v2", VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedance,
-			SouthboundAdapterVersion:  "61:third_party_funcloud_seedance:v3",
+			SouthboundAdapterVersion:  "62:third_party_funcloud_seedance:v3",
 			VideoUpstreamQueryBaseURL: "https://funcloud.example.com", Key: "provider-key",
 			AsyncBilling: &model.TaskAsyncBillingContext{
 				BillingProbe: &billingexpr.RequestInput{Body: probeBody}, EstimatedTokens: 324000,
@@ -73,14 +71,13 @@ func TestVideoPollingPassesFrozenFunCloudBillingContext(t *testing.T) {
 		context.Background(), capture, channel, task.PrivateData.UpstreamTaskID,
 		map[string]*model.Task{task.PrivateData.UpstreamTaskID: task},
 	))
-	assert.Equal(t, "61:third_party_funcloud_seedance:v3", capture.adapterVersion)
-	require.NotNil(t, capture.billingContext)
-	assert.Equal(t, "seedance-2-fast", capture.billingContext.ProviderModel)
-	assert.Equal(t, probeBody, capture.billingContext.BillingProbeBody)
-	assert.Equal(t, 324000, capture.billingContext.EstimatedTokens)
+	require.NotNil(t, capture.receivedTask)
+	assert.Equal(t, "provider-task-v2", capture.receivedTask.PrivateData.UpstreamTaskID)
+	assert.Equal(t, "62:third_party_funcloud_seedance:v3", capture.receivedTask.PrivateData.SouthboundAdapterVersion)
+	assert.Equal(t, "provider-key", capture.receivedTask.PrivateData.Key)
 }
 
-func (capture *videoAdapterPollingCapture) ParseTaskResult([]byte) (*relaycommon.TaskInfo, error) {
+func (capture *videoAdapterPollingCapture) ParseTaskResult(*model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
 	return &relaycommon.TaskInfo{Status: model.TaskStatusInProgress, Progress: "50%"}, nil
 }
 
@@ -103,7 +100,7 @@ func TestVideoPollingUsesFrozenFeicaiAdapterAndRedactsResultURLFromTaskData(t *t
 	})
 	task := &model.Task{
 		TaskID:         "task-poll-v2",
-		Platform:       constant.TaskPlatform("61"),
+		Platform:       constant.TaskPlatform("62"),
 		UserId:         971,
 		ChannelId:      channel.Id,
 		Status:         model.TaskStatusInProgress,
@@ -114,7 +111,7 @@ func TestVideoPollingUsesFrozenFeicaiAdapterAndRedactsResultURLFromTaskData(t *t
 		PrivateData: model.TaskPrivateData{
 			UpstreamTaskID:            "provider-task-v2",
 			VideoUpstreamProfile:      dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
-			SouthboundAdapterVersion:  "61:third_party_feicai_videos:v1",
+			SouthboundAdapterVersion:  "62:third_party_feicai_videos:v1",
 			VideoUpstreamQueryBaseURL: "https://video.example.com",
 			Key:                       "provider-key",
 		},
@@ -130,7 +127,7 @@ func TestVideoPollingUsesFrozenFeicaiAdapterAndRedactsResultURLFromTaskData(t *t
 		map[string]*model.Task{task.PrivateData.UpstreamTaskID: task},
 	))
 	require.NoError(t, model.DB.First(task, task.ID).Error)
-	assert.Equal(t, "61:third_party_feicai_videos:v1", capture.adapterVersion)
+	assert.Equal(t, "62:third_party_feicai_videos:v1", capture.receivedTask.PrivateData.SouthboundAdapterVersion)
 	assert.NotContains(t, string(task.Data), "video.example.com")
 	assert.NotContains(t, string(task.Data), "secret")
 	assert.Contains(t, string(task.Data), "[redacted]")
@@ -152,7 +149,7 @@ func TestVideoPollingRejectsUnknownFrozenAdapterBeforeFetch(t *testing.T) {
 		PrivateData: model.TaskPrivateData{
 			UpstreamTaskID:           "provider-invalid-version",
 			VideoUpstreamProfile:     dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
-			SouthboundAdapterVersion: "61:third_party_feicai_videos:v3",
+			SouthboundAdapterVersion: "62:third_party_feicai_videos:v3",
 		},
 	}
 	require.NoError(t, model.DB.Create(task).Error)
