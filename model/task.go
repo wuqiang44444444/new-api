@@ -148,17 +148,17 @@ type TaskPrivateData struct {
 	// PollFailures counts consecutive unrecognized or transient poll outcomes.
 	PollFailures int `json:"poll_failures,omitempty"`
 	// 以下为 Link/Seedance 本地扩展字段：视频协议与履约快照
-	UpstreamRequestID              string                    `json:"upstream_request_id,omitempty"`    // 上游调用追踪 ID（如 moxing request_id），仅任务创建时从响应头捕获，用于事后对账；异步轮询阶段已不可得
-	VideoUpstreamProfile           dto.VideoUpstreamProfile  `json:"video_upstream_profile,omitempty"` // 创建时的视频协议快照
-	VideoUpstreamProtocol          dto.VideoUpstreamProtocol `json:"video_upstream_protocol,omitempty"`
-	SouthboundAdapterVersion       string                    `json:"southbound_adapter_version,omitempty"`
-	VideoUpstreamQueryBaseURL      string                    `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用
-	VideoUpstreamQueryPathTemplate string                    `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
-	VideoUpstreamProxy             string                    `json:"video_upstream_proxy,omitempty"`               // 创建时的代理快照，避免在途任务随渠道配置漂移
+	UpstreamRequestID              string                     `json:"upstream_request_id,omitempty"`    // 上游调用追踪 ID（如 moxing request_id），仅任务创建时从响应头捕获，用于事后对账；异步轮询阶段已不可得
+	VideoUpstreamProfile           dto.VideoUpstreamProfile   `json:"video_upstream_profile,omitempty"` // 创建时的视频协议快照
+	VideoUpstreamProtocol          dto.VideoUpstreamProtocol  `json:"video_upstream_protocol,omitempty"`
+	SouthboundAdapterVersion       string                     `json:"southbound_adapter_version,omitempty"`
+	VideoUpstreamQueryBaseURL      string                     `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用
+	VideoUpstreamQueryPathTemplate string                     `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
+	VideoUpstreamProxy             string                     `json:"video_upstream_proxy,omitempty"`               // 创建时的代理快照，避免在途任务随渠道配置漂移
 	ClientRequest                  *TaskClientRequestSnapshot `json:"client_request,omitempty"`
-	AppID                          int                       `json:"app_id,omitempty"`
-	SkipTokenQuota                 bool                      `json:"skip_token_quota,omitempty"` // Playground 等不参与令牌额度记账的任务
-	AsyncBilling                   *TaskAsyncBillingContext  `json:"async_billing,omitempty"`
+	AppID                          int                        `json:"app_id,omitempty"`
+	SkipTokenQuota                 bool                       `json:"skip_token_quota,omitempty"` // Playground 等不参与令牌额度记账的任务
+	AsyncBilling                   *TaskAsyncBillingContext   `json:"async_billing,omitempty"`
 }
 
 type TaskExecutionSnapshot struct {

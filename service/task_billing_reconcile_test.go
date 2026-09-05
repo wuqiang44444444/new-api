@@ -77,21 +77,85 @@ func TestRefundFailureIsPersistedAndReconcileRetriesOnce(t *testing.T) {
 	assert.Equal(t, int64(2), countLogs(t))
 }
 
-func TestTieredSettlementNeverSupplementsBeyondUpperBound(t *testing.T) {
+func TestFailedTaskSweepUsesAtomicAsyncBillingRefund(t *testing.T) {
+	truncate(t)
+	const userID = 8111
+	const remainingQuota = 100
+	const preConsumedQuota = 200
+	seedUser(t, userID, remainingQuota)
+	task := persistedAsyncTask(t, userID, preConsumedQuota, model.TaskStatusFailure)
+	task.FailReason = "provider task missing"
+	require.NoError(t, model.DB.Model(task).Updates(map[string]any{
+		"fail_reason": task.FailReason,
+		"updated_at":  time.Now().Add(-refundReconciliationGracePeriod - time.Second).Unix(),
+	}).Error)
+
+	sweepUnrefundedFailedTasks(context.Background())
+
+	refunded := reloadTask(t, task.ID)
+	assert.Zero(t, refunded.Quota)
+	require.NotNil(t, refunded.PrivateData.AsyncBilling)
+	assert.Equal(t, model.TaskBillingStateSettled, refunded.PrivateData.AsyncBilling.State)
+	assert.Equal(t, remainingQuota+preConsumedQuota, getUserQuota(t, userID))
+}
+
+func TestTieredSettlementSupplementsWhenFundingIsAvailable(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
 	const userID = 8102
-	const initialQuota = 100
+	const initialQuota = 2000
 	seedUser(t, userID, initialQuota)
 	task := persistedAsyncTask(t, userID, 200, model.TaskStatusSuccess)
-	task.PrivateData.AsyncBilling.TieredSnapshot = tieredTestSnapshot(`tier("base", c * 1000000)`, 200)
+	task.PrivateData.AsyncBilling.TieredSnapshot = tieredTestSnapshot(`tier("base", c * 2)`, 200)
 	require.NoError(t, task.UpdateBilling())
 
 	settled := settleTaskTieredSnapshot(ctx, task, 1000)
 	require.True(t, settled)
+	reloaded := reloadTask(t, task.ID)
+	assert.EqualValues(t, model.TaskStatusSuccess, reloaded.Status)
+	assert.Equal(t, model.TaskBillingStateSettled, reloaded.PrivateData.AsyncBilling.State)
+	assert.Equal(t, 1000, reloaded.Quota)
+	assert.Equal(t, initialQuota-800, getUserQuota(t, userID))
+
+	second := ReconcileTaskBilling(ctx, 10)
+	assert.Zero(t, second.Scanned)
+	assert.Equal(t, initialQuota-800, getUserQuota(t, userID))
+}
+
+func TestTieredSettlementKeepsSuccessfulTaskInDebtUntilSupplementCanBePaid(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	const userID = 8109
+	const initialQuota = 100
+	seedUser(t, userID, initialQuota)
+	task := persistedAsyncTask(t, userID, 200, model.TaskStatusSuccess)
+	task.PrivateData.AsyncBilling.TieredSnapshot = tieredTestSnapshot(`tier("base", c * 2)`, 200)
+	require.NoError(t, task.UpdateBilling())
+
+	require.True(t, settleTaskTieredSnapshot(ctx, task, 1000))
 	debt := reloadTask(t, task.ID)
+	assert.EqualValues(t, model.TaskStatusSuccess, debt.Status)
 	assert.Equal(t, model.TaskBillingStateDebt, debt.PrivateData.AsyncBilling.State)
+	require.NotNil(t, debt.PrivateData.AsyncBilling.TargetQuota)
+	assert.Equal(t, 1000, *debt.PrivateData.AsyncBilling.TargetQuota)
+	assert.Equal(t, 200, debt.Quota)
 	assert.Equal(t, initialQuota, getUserQuota(t, userID))
+
+	require.NoError(t, model.IncreaseUserQuota(userID, 1000, true))
+	debt.PrivateData.AsyncBilling.NextRetryAt = 0
+	require.NoError(t, debt.UpdateBilling())
+
+	summary := ReconcileTaskBilling(ctx, 10)
+	assert.Equal(t, 1, summary.Scanned)
+	settled := reloadTask(t, task.ID)
+	assert.EqualValues(t, model.TaskStatusSuccess, settled.Status)
+	assert.Equal(t, model.TaskBillingStateSettled, settled.PrivateData.AsyncBilling.State)
+	assert.Equal(t, 1000, settled.Quota)
+	assert.Equal(t, initialQuota+1000-800, getUserQuota(t, userID))
+
+	second := ReconcileTaskBilling(ctx, 10)
+	assert.Zero(t, second.Scanned)
+	assert.Equal(t, initialQuota+1000-800, getUserQuota(t, userID))
 }
 
 func TestTieredSettlementUsesFrozenExpressionAndMissingUsageKeepsPrecharge(t *testing.T) {
@@ -311,6 +375,26 @@ func TestPendingBillingScanDoesNotStarveBehindSettledHistory(t *testing.T) {
 
 	require.Len(t, tasks, 1)
 	assert.Equal(t, pending.ID, tasks[0].ID)
+}
+
+func TestDebtBillingRemainsEligibleAfterOrdinaryRetryLimit(t *testing.T) {
+	truncate(t)
+	const userID = 8112
+	seedUser(t, userID, 1000)
+	task := persistedAsyncTask(t, userID, 200, model.TaskStatusSuccess)
+	targetQuota := 1000
+	task.PrivateData.AsyncBilling.State = model.TaskBillingStateDebt
+	task.PrivateData.AsyncBilling.Attempts = 10
+	task.PrivateData.AsyncBilling.NextRetryAt = time.Now().Add(-time.Second).Unix()
+	task.PrivateData.AsyncBilling.TargetQuota = &targetQuota
+	require.NoError(t, task.UpdateBilling())
+
+	tasks := model.GetTerminalTasksPendingBilling(time.Now().Unix(), 1)
+
+	require.Len(t, tasks, 1)
+	assert.Equal(t, task.ID, tasks[0].ID)
+	assert.True(t, model.HasTerminalTasksPendingBilling())
+	assert.True(t, model.HasTaskPollingWork())
 }
 
 // TestPendingBillingScanSkipsNonTerminalTasks 验证补偿扫描只在 SQL 层返回终态任务（方案 §15.3 P0-1）：

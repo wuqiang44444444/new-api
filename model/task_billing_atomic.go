@@ -1,12 +1,18 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
 )
+
+// ErrTaskBillingInsufficientFunding identifies a retryable settlement shortfall.
+// Callers use it to distinguish customer funding debt from infrastructure errors
+// without parsing provider- or database-specific error text.
+var ErrTaskBillingInsufficientFunding = errors.New("insufficient task billing funding")
 
 // ApplyTaskBillingTarget atomically adjusts the wallet/subscription funding
 // source and advances the task billing state. Locking and the settled-state
@@ -69,7 +75,7 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 					used = 0
 				}
 				if subscription.AmountTotal > 0 && used > subscription.AmountTotal {
-					return fmt.Errorf("subscription used exceeds total, used=%d total=%d", used, subscription.AmountTotal)
+					return fmt.Errorf("%w: subscription used exceeds total, used=%d total=%d", ErrTaskBillingInsufficientFunding, used, subscription.AmountTotal)
 				}
 				if err := tx.Model(&subscription).Update("amount_used", used).Error; err != nil {
 					return err
@@ -82,7 +88,11 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 					return result.Error
 				}
 				if result.RowsAffected != 1 {
-					return fmt.Errorf("insufficient quota for task billing delta %d", delta)
+					var user User
+					if err := tx.Select("id").Where("id = ?", locked.UserId).First(&user).Error; err != nil {
+						return err
+					}
+					return fmt.Errorf("%w: insufficient wallet quota for task billing delta %d", ErrTaskBillingInsufficientFunding, delta)
 				}
 			} else {
 				result := tx.Model(&User{}).Where("id = ?", locked.UserId).
@@ -120,7 +130,7 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 						return result.Error
 					}
 					if result.RowsAffected != 1 {
-						return fmt.Errorf("insufficient token quota for task billing delta %d", delta)
+						return fmt.Errorf("%w: insufficient token quota for task billing delta %d", ErrTaskBillingInsufficientFunding, delta)
 					}
 				}
 			}

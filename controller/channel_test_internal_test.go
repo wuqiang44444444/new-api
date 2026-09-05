@@ -351,6 +351,118 @@ func TestBuildTestLogOtherInjectsTieredInfo(t *testing.T) {
 	require.NotEmpty(t, fields["expr_b64"])
 }
 
+func TestSeedanceHealthCheckCountsUnavailableProbeAsFailure(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	channel := &model.Channel{
+		Type: constant.ChannelTypeSeedanceLink, Name: "seedance without asset probe", Key: "test-key",
+		Models: "seedance-test", Group: "default", Status: common.ChannelStatusEnabled,
+	}
+	require.NoError(t, db.Create(channel).Error)
+
+	summary := testChannelForHealthCheck(context.Background(), channel, 0, false, 0)
+
+	assert.Equal(t, 1, summary.Tested)
+	assert.Equal(t, 0, summary.Succeeded)
+	assert.Equal(t, 1, summary.Failed)
+}
+
+func TestSeedanceAssetProbeCannotAutoEnableVideoChannel(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		assert.Equal(t, "/api/v2/open/material/list?page=1&pageSize=1", req.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"list":[]}}`))
+	}))
+	defer server.Close()
+
+	originalAutoEnable := common.AutomaticEnableChannelEnabled
+	common.AutomaticEnableChannelEnabled = true
+	t.Cleanup(func() { common.AutomaticEnableChannelEnabled = originalAutoEnable })
+	channel := &model.Channel{
+		Type: constant.ChannelTypeSeedanceLink, Name: "auto-disabled seedance", Key: "test-key",
+		Models: "seedance-test", Group: "default", Status: common.ChannelStatusAutoDisabled,
+		BaseURL: common.GetPointer(server.URL),
+	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial})
+	require.NoError(t, db.Create(channel).Error)
+
+	summary := testChannelForHealthCheck(context.Background(), channel, 0, false, 0)
+
+	assert.Equal(t, 1, summary.Succeeded)
+	assert.Equal(t, 0, summary.Enabled)
+	var persisted model.Channel
+	require.NoError(t, db.First(&persisted, channel.Id).Error)
+	assert.Equal(t, common.ChannelStatusAutoDisabled, persisted.Status)
+}
+
+func TestSeedanceRejectedAssetProbeCannotDisableOrOverwriteVideoHealth(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	originalAutomaticDisable := common.AutomaticDisableChannelEnabled
+	common.AutomaticDisableChannelEnabled = true
+	t.Cleanup(func() { common.AutomaticDisableChannelEnabled = originalAutomaticDisable })
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+	autoBan := 1
+	channel := &model.Channel{
+		Type: constant.ChannelTypeSeedanceLink, Name: "rejected seedance", Key: "test-key",
+		Models: "seedance-test", Group: "default", Status: common.ChannelStatusEnabled,
+		BaseURL: common.GetPointer(server.URL), AutoBan: &autoBan, ResponseTime: 321, TestTime: 123,
+	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial})
+	require.NoError(t, db.Create(channel).Error)
+
+	summary := testChannelForHealthCheck(context.Background(), channel, 0, true, 0)
+
+	assert.Equal(t, 1, summary.Failed)
+	assert.Zero(t, summary.Disabled)
+	var persisted model.Channel
+	require.NoError(t, db.First(&persisted, channel.Id).Error)
+	assert.Equal(t, common.ChannelStatusEnabled, persisted.Status)
+	assert.Equal(t, 321, persisted.ResponseTime)
+	assert.Equal(t, int64(123), persisted.TestTime)
+}
+
+func TestSeedanceApplicationProbeCannotDisableVideoChannel(t *testing.T) {
+	originalAutomaticDisable := common.AutomaticDisableChannelEnabled
+	common.AutomaticDisableChannelEnabled = true
+	t.Cleanup(func() { common.AutomaticDisableChannelEnabled = originalAutomaticDisable })
+
+	for _, test := range []struct {
+		name         string
+		providerCode int
+	}{
+		{name: "credential or balance rejection", providerCode: 10005},
+		{name: "request parameter rejection", providerCode: 10002},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db := setupModelListControllerTestDB(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"code":%d,"msg":"provider detail"}`, test.providerCode)
+			}))
+			defer server.Close()
+			autoBan := 1
+			channel := &model.Channel{
+				Type: constant.ChannelTypeSeedanceLink, Name: "seedance application rejection", Key: "test-key",
+				Models: "seedance-test", Group: "default", Status: common.ChannelStatusEnabled,
+				BaseURL: common.GetPointer(server.URL), AutoBan: &autoBan,
+			}
+			channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial})
+			require.NoError(t, db.Create(channel).Error)
+
+			summary := testChannelForHealthCheck(context.Background(), channel, 0, true, 0)
+
+			assert.Equal(t, 1, summary.Failed)
+			assert.Zero(t, summary.Disabled)
+			var persisted model.Channel
+			require.NoError(t, db.First(&persisted, channel.Id).Error)
+			assert.Equal(t, common.ChannelStatusEnabled, persisted.Status)
+		})
+	}
+}
+
 func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -367,6 +479,7 @@ func TestSelectChannelsForAutomaticTestPassiveRecoveryOnlyUsesAutoDisabled(t *te
 		{Id: 1, Status: common.ChannelStatusEnabled},
 		{Id: 2, Status: common.ChannelStatusAutoDisabled},
 		{Id: 3, Status: common.ChannelStatusManuallyDisabled},
+		{Id: 4, Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusAutoDisabled},
 	}
 
 	selected := selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModePassiveRecovery)

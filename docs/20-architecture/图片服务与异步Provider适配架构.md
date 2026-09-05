@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-25
+last-reviewed: 2026-09-04
 ---
 
 # 图片服务与中转 Provider 适配架构
@@ -12,7 +12,7 @@ last-reviewed: 2026-08-25
 `POST /v1/images/generations`、Ability、渠道分发、管理员模型映射和同步计费链路；Seedance Link 的
 ModelArk V3、视频 Task 与无状态素材代理不进入图片入口。
 
-图片中转在管理面只有一个渠道类型：`ChannelTypeAsyncImage=62`，展示名为「图片中转」。同一个渠道实例
+图片中转在管理面只有一个渠道类型：`ChannelTypeAsyncImage=63`，展示名为「图片中转」。同一个渠道实例
 通过必填的 `image_upstream_protocol` 选择一个代码登记的南向协议：
 
 | 协议值 | Provider 合同 | 当前执行形态 |

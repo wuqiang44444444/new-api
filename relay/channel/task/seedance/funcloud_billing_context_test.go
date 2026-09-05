@@ -46,5 +46,28 @@ func TestFunCloudBillingContextUsesFrozenTypedFacts(t *testing.T) {
 	assert.Equal(t, "seedance-2-fast", context.ProviderModel)
 	assert.Equal(t, "720p", context.Resolution)
 	assert.True(t, context.HasVideoInput)
-	assert.Equal(t, 324000, context.MaxTokens)
+	// 信任上限不再复用预扣预算：720p 未冻结时长按 30s 上限推导（60k/s × 31s）。
+	assert.Equal(t, 1_860_000, context.MaxTokens)
+}
+
+// 事故形状回归：1080p/15s 实测 731,025 tokens 曾超过预扣预算 520k 被永久拒绝；
+// 合理性上限必须放行真实成功任务，同时仍拒绝巨量不可信数值。
+func TestFunCloudTokenCeilingCoversMeasured1080pMaxDuration(t *testing.T) {
+	context, err := funCloudTaskResponseContext(&relaycommon.VideoTaskBillingContext{
+		ProviderModel:    "seedance-2",
+		BillingProbeBody: []byte(`{"_task":{"resolution":"1080p","duration_seconds":15,"has_video_input":false}}`),
+		EstimatedTokens:  520000,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1_920_000, context.MaxTokens)
+	assert.Greater(t, context.MaxTokens, 731_025)
+
+	// 短任务不因低速率被零值上限卡死。
+	short, err := funCloudTaskResponseContext(&relaycommon.VideoTaskBillingContext{
+		ProviderModel:    "seedance-2-fast",
+		BillingProbeBody: []byte(`{"_task":{"resolution":"480p","duration_seconds":4,"has_video_input":false}}`),
+		EstimatedTokens:  324000,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 150_000, short.MaxTokens)
 }

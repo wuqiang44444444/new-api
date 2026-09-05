@@ -111,3 +111,16 @@ func TestTaskResponseDoesNotRequireUsageForFailedTasks(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, string(normalized), "completion_tokens")
 }
+
+// Funcloud 以 HTTP 200 + 业务码 30003 表示任务不存在（2026-09-04 实测验证）。
+// 这是可采信的终态观测：必须映射为确定性 not-found（有界宽限后 FAILURE + 退款），
+// 而不是当作合同违规无限 reconciliation。
+func TestTaskResponseMapsBusinessNotFoundCodeToUpstreamTaskNotFound(t *testing.T) {
+	_, err := TaskResponse([]byte(`{"code":30003,"msg":"任务不存在","data":null}`), "task-1", TaskResponseContext{
+		ProviderModel: "seedance-2-fast", Resolution: "720p", MaxTokens: 100000,
+	})
+	require.Error(t, err)
+	var notFound *relaycommon.UpstreamTaskNotFound
+	assert.True(t, errors.As(err, &notFound))
+	assert.Equal(t, 30003, notFound.ProviderCode)
+}

@@ -53,7 +53,7 @@ func TestCreateOrReuseDefaultAssetGroupReusesFirstExactName(t *testing.T) {
 		total: 3,
 	}
 
-	groupID, action, err := createOrReuseDefaultAssetGroup(context.Background(), adapter)
+	groupID, action, err := createOrReuseDefaultAssetGroup(context.Background(), nil, adapter)
 
 	require.NoError(t, err)
 	assert.Equal(t, "first-exact", groupID)
@@ -78,7 +78,7 @@ func TestCreateOrReuseDefaultAssetGroupExhaustsPagesBeforeCreating(t *testing.T)
 		total: defaultAssetGroupPageSize + 1,
 	}
 
-	groupID, action, err := createOrReuseDefaultAssetGroup(context.Background(), adapter)
+	groupID, action, err := createOrReuseDefaultAssetGroup(context.Background(), nil, adapter)
 
 	require.NoError(t, err)
 	assert.Equal(t, "page-two-exact", groupID)
@@ -92,7 +92,7 @@ func TestCreateOrReuseDefaultAssetGroupStopsWhenSearchFails(t *testing.T) {
 		err:                     errors.New("query failed"),
 	}
 
-	_, _, err := createOrReuseDefaultAssetGroup(context.Background(), adapter)
+	_, _, err := createOrReuseDefaultAssetGroup(context.Background(), nil, adapter)
 
 	require.ErrorIs(t, err, ErrAssetUpstreamError)
 	assert.Zero(t, adapter.created)
@@ -107,7 +107,7 @@ func TestCreateOrReuseDefaultAssetGroupDoesNotCreateFromNamelessSearchResults(t 
 		total: 1,
 	}
 
-	_, _, err := createOrReuseDefaultAssetGroup(context.Background(), adapter)
+	_, _, err := createOrReuseDefaultAssetGroup(context.Background(), nil, adapter)
 
 	require.ErrorIs(t, err, ErrAssetUpstreamError)
 	assert.Zero(t, adapter.created)
@@ -116,7 +116,7 @@ func TestCreateOrReuseDefaultAssetGroupDoesNotCreateFromNamelessSearchResults(t 
 func TestCreateOrReuseDefaultAssetGroupCreatesWhenSearchIsUnavailable(t *testing.T) {
 	adapter := &defaultGroupAdapterFake{result: assetadapter.GroupResult{ResourceID: "created-group"}}
 
-	groupID, action, err := createOrReuseDefaultAssetGroup(context.Background(), adapter)
+	groupID, action, err := createOrReuseDefaultAssetGroup(context.Background(), nil, adapter)
 
 	require.NoError(t, err)
 	assert.Equal(t, "created-group", groupID)

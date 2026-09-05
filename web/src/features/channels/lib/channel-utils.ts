@@ -21,6 +21,9 @@ import { formatTimestampToDate } from '@/lib/format'
 
 import {
   CHANNEL_STATUS_CONFIG,
+  CHANNEL_TYPE_ASYNC_IMAGE,
+  CHANNEL_TYPE_SEEDANCE_LINK,
+  CHANNEL_TYPE_TASK_PLUGIN,
   CHANNEL_TYPES,
   MULTI_KEY_STATUS_CONFIG,
   RESPONSE_TIME_CONFIG,
@@ -103,8 +106,9 @@ export function getChannelTypeIcon(type: number): string {
     36: 'Suno', // SunoAPI
     55: 'OpenAI', // Sora
     54: 'Doubao', // DoubaoVideo
-    61: 'Doubao', // Seedance
-    62: 'OpenAI', // Async image relay
+    [CHANNEL_TYPE_TASK_PLUGIN]: 'NewAPI', // Task Plugin
+    [CHANNEL_TYPE_SEEDANCE_LINK]: 'Doubao', // Seedance
+    [CHANNEL_TYPE_ASYNC_IMAGE]: 'OpenAI', // Image relay
     56: 'Replicate', // Replicate
 
     // Tools & Platforms

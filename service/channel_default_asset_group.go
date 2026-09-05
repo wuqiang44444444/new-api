@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/model"
 	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
@@ -57,7 +58,7 @@ func CreateOrReuseChannelDefaultAssetGroup(ctx context.Context, channel *model.C
 		return ChannelDefaultAssetGroupResult{ChannelDefaultAssetGroupStatus: status}, ErrUnsupportedAssetOperation
 	}
 	status.Supported = true
-	providerGroupID, action, err := createOrReuseDefaultAssetGroup(ctx, groupAdapter)
+	providerGroupID, action, err := createOrReuseDefaultAssetGroup(ctx, channel, groupAdapter)
 	if err != nil {
 		return ChannelDefaultAssetGroupResult{ChannelDefaultAssetGroupStatus: status}, err
 	}
@@ -68,7 +69,8 @@ func CreateOrReuseChannelDefaultAssetGroup(ctx context.Context, channel *model.C
 	return ChannelDefaultAssetGroupResult{ChannelDefaultAssetGroupStatus: status, Action: action}, nil
 }
 
-func createOrReuseDefaultAssetGroup(ctx context.Context, adapter assetadapter.GroupAdapter) (string, string, error) {
+func createOrReuseDefaultAssetGroup(ctx context.Context, channel *model.Channel, adapter assetadapter.GroupAdapter) (string, string, error) {
+	startedAt := time.Now()
 	if search, ok := adapter.(assetadapter.GroupSearchAdapter); ok {
 		seen := 0
 		for page := 1; page <= defaultAssetGroupMaxPages; page++ {
@@ -79,7 +81,7 @@ func createOrReuseDefaultAssetGroup(ctx context.Context, adapter assetadapter.Gr
 				PageSize:  defaultAssetGroupPageSize,
 			})
 			if err != nil {
-				return "", "", normalizeAssetAdapterError(err)
+				return "", "", normalizeAssetAdapterError(ctx, "default_asset_group", "", channel, time.Since(startedAt), err)
 			}
 			for _, item := range items {
 				name := strings.TrimSpace(item.Name)
@@ -114,7 +116,7 @@ func createOrReuseDefaultAssetGroup(ctx context.Context, adapter assetadapter.Gr
 		GroupType: "AIGC",
 	})
 	if err != nil {
-		return "", "", normalizeAssetAdapterError(err)
+		return "", "", normalizeAssetAdapterError(ctx, "default_asset_group", "", channel, time.Since(startedAt), err)
 	}
 	if strings.TrimSpace(result.ResourceID) == "" {
 		return "", "", ErrAssetUpstreamError

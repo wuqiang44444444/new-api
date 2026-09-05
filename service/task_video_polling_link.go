@@ -1,9 +1,11 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -13,27 +15,45 @@ import (
 // stays upstream-owned; every Link-specific decision is expressed through the
 // narrow helpers below so the polling file keeps only single-call wiring.
 
+// reconciliationReasonMaxChars bounds the provider-violation detail appended to
+// the persisted FailReason. Reasons are local adapter constants, but the cap
+// keeps the column bounded if a future reason embeds provider text.
+const reconciliationReasonMaxChars = 200
+
 // markTaskReconciliationRequired moves a polled task into the reconciliation
-// state after an upstream contract violation, preserving progress context.
-func markTaskReconciliationRequired(task *model.Task) error {
+// state after an upstream contract violation, preserving progress context and
+// the violation reason so operators can diagnose without upstream access.
+func markTaskReconciliationRequired(ctx context.Context, task *model.Task, reason string) error {
 	if task == nil {
 		return nil
 	}
 	oldStatus := task.Status
 	task.Status = model.TaskStatusReconciliationRequired
-	task.FailReason = "upstream_contract_violation"
+	task.FailReason = reconciliationFailReason(reason)
 	if task.Progress == "" || task.Progress == "0%" {
 		task.Progress = taskcommon.ProgressInProgress
 	}
+	logger.LogWarn(ctx, fmt.Sprintf("task %s marked RECONCILIATION_REQUIRED: %s", task.TaskID, task.FailReason))
 	_, err := task.UpdateWithStatus(oldStatus)
 	return err
+}
+
+func reconciliationFailReason(reason string) string {
+	characters := []rune(reason)
+	if len(characters) > reconciliationReasonMaxChars {
+		reason = string(characters[:reconciliationReasonMaxChars])
+	}
+	if reason == "" {
+		return "upstream_contract_violation"
+	}
+	return "upstream_contract_violation: " + reason
 }
 
 // resolveLinkVideoPollVersion resolves the frozen Link southbound adapter
 // version for a video task poll. When the frozen version no longer resolves,
 // the task is marked for reconciliation and proceed=false is returned
 // together with the mark error.
-func resolveLinkVideoPollVersion(ch *model.Channel, task *model.Task) (version relaycommon.VideoSouthboundAdapterVersion, proceed bool, err error) {
+func resolveLinkVideoPollVersion(ctx context.Context, ch *model.Channel, task *model.Task) (version relaycommon.VideoSouthboundAdapterVersion, proceed bool, err error) {
 	version, versionErr := relaycommon.ResolveVideoSouthboundAdapterVersion(
 		ch.Type,
 		taskVideoUpstreamProfile(task, ch),
@@ -42,7 +62,7 @@ func resolveLinkVideoPollVersion(ch *model.Channel, task *model.Task) (version r
 	if versionErr == nil {
 		return version, true, nil
 	}
-	if markErr := markTaskReconciliationRequired(task); markErr != nil {
+	if markErr := markTaskReconciliationRequired(ctx, task, versionErr.Error()); markErr != nil {
 		return version, false, fmt.Errorf("mark invalid adapter version for task %s: %w", task.TaskID, markErr)
 	}
 	return version, false, nil
@@ -50,7 +70,7 @@ func resolveLinkVideoPollVersion(ch *model.Channel, task *model.Task) (version r
 
 // linkVideoContractViolationHandled reports whether a poll error is an
 // upstream contract violation and, if so, routes the task to reconciliation.
-func linkVideoContractViolationHandled(task *model.Task, err error) (handled bool, markErr error) {
+func linkVideoContractViolationHandled(ctx context.Context, task *model.Task, err error) (handled bool, markErr error) {
 	if err == nil {
 		return false, nil
 	}
@@ -58,10 +78,23 @@ func linkVideoContractViolationHandled(task *model.Task, err error) (handled boo
 	if !errors.As(err, &contractViolation) {
 		return false, nil
 	}
-	if markErr := markTaskReconciliationRequired(task); markErr != nil {
+	if markErr := markTaskReconciliationRequired(ctx, task, contractViolation.Reason); markErr != nil {
 		return true, markErr
 	}
 	return true, nil
+}
+
+// linkVideoUpstreamTaskMissing reports whether a poll error is the provider's
+// definitive "task does not exist" business response. It is treated as a
+// counted poll failure instead of an immediate failure so a provider-side
+// creation-to-query visibility window cannot kill freshly created tasks; the
+// shared consecutive-failure cutoff then retires the task with a refund.
+func linkVideoUpstreamTaskMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	var taskNotFound *relaycommon.UpstreamTaskNotFound
+	return errors.As(err, &taskNotFound)
 }
 
 // linkVideoRedactResponse applies the protocol-specific redaction for a polled

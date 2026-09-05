@@ -4,11 +4,14 @@ package assets
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -19,6 +22,18 @@ import (
 type assetHTTPDoerFunc func(*http.Request) (*http.Response, error)
 
 func (f assetHTTPDoerFunc) Do(req *http.Request) (*http.Response, error) { return f(req) }
+
+type blockingAssetSource struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (r *blockingAssetSource) Read([]byte) (int, error) {
+	r.once.Do(func() { close(r.started) })
+	<-r.release
+	return 0, io.EOF
+}
 
 func assetJSONResponse(body string) *http.Response {
 	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{"Content-Type": []string{"application/json"}}}
@@ -420,6 +435,9 @@ func TestFunCloudMaterialListAndAssetNormalizationFailClosed(t *testing.T) {
 			}))
 			_, err := adapter.GetAsset(context.Background(), "material-1")
 			require.Error(t, err)
+			diagnostic, ok := SafeUpstreamDiagnostic(err)
+			require.True(t, ok)
+			assert.Equal(t, "stage=decode_response class=invalid_response", diagnostic)
 		})
 	}
 }
@@ -443,7 +461,9 @@ func TestFunCloudMaterialUploadEnforcesStreamingLimit(t *testing.T) {
 		GroupResourceID: "group-1", Name: "oversized", SourceFilename: "upload.png",
 		Source: bytes.NewBufferString("too-large"), SourceType: "image/png", SourceMaxBytes: 3,
 	})
-	require.ErrorContains(t, err, "exceeds upload limit")
+	diagnostic, ok := SafeUpstreamDiagnostic(err)
+	require.True(t, ok)
+	assert.Equal(t, "stage=upload_body class=transport", diagnostic)
 }
 
 func TestFunCloudMaterialUploadRequiresGroup(t *testing.T) {
@@ -468,5 +488,56 @@ func TestFunCloudMaterialUploadRejectsOversizedResponse(t *testing.T) {
 		GroupResourceID: "group-1", Name: "source", SourceFilename: "upload.png",
 		Source: bytes.NewBufferString("image"), SourceType: "image/png", SourceMaxBytes: 10,
 	})
-	require.ErrorContains(t, err, "response is invalid")
+	diagnostic, ok := SafeUpstreamDiagnostic(err)
+	require.True(t, ok)
+	assert.Equal(t, "stage=decode_response class=invalid_response", diagnostic)
+}
+
+func TestFunCloudMaterialUploadDoesNotWaitForBlockedSourceAfterDoFailure(t *testing.T) {
+	source := &blockingAssetSource{started: make(chan struct{}), release: make(chan struct{})}
+	defer close(source.release)
+	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+		go func() {
+			_, _ = io.Copy(io.Discard, req.Body)
+		}()
+		select {
+		case <-source.started:
+			return nil, errors.New("connection failed while source read was blocked")
+		case <-time.After(time.Second):
+			return nil, errors.New("source reader did not start")
+		}
+	}))
+	result := make(chan error, 1)
+	go func() {
+		_, err := adapter.CreateAsset(context.Background(), AssetRequest{
+			GroupResourceID: "group-1", Name: "source", SourceFilename: "upload.png",
+			Source: source, SourceType: "image/png", SourceMaxBytes: 10,
+		})
+		result <- err
+	}()
+
+	select {
+	case err := <-result:
+		diagnostic, ok := SafeUpstreamDiagnostic(err)
+		require.True(t, ok)
+		assert.Equal(t, "stage=upload_body class=transport", diagnostic)
+	case <-time.After(time.Second):
+		t.Fatal("CreateAsset waited for a source reader that the failed transport did not consume")
+	}
+}
+
+func TestFunCloudMaterialUploadClassifiesFailureAfterBodyAsWaitResponse(t *testing.T) {
+	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+		_, err := io.Copy(io.Discard, req.Body)
+		require.NoError(t, err)
+		return nil, errors.New("response connection failed")
+	}))
+
+	_, err := adapter.CreateAsset(context.Background(), AssetRequest{
+		GroupResourceID: "group-1", Name: "source", SourceFilename: "upload.png",
+		Source: bytes.NewBufferString("image"), SourceType: "image/png", SourceMaxBytes: 10,
+	})
+	diagnostic, ok := SafeUpstreamDiagnostic(err)
+	require.True(t, ok)
+	assert.Equal(t, "stage=wait_response class=transport", diagnostic)
 }

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
 	"github.com/QuantumNous/new-api/setting/asset_setting"
@@ -72,9 +74,10 @@ func CreateRemoteAsset(ctx context.Context, group string, req dto.CreateAssetReq
 		assetRequest.SourceMaxBytes = funCloudMaterialMaxBytes
 		assetRequest.SourceFilename = source.Filename
 	}
+	startedAt := time.Now()
 	result, err := adapter.CreateAsset(ctx, assetRequest)
 	if err != nil {
-		return dto.AssetResponse{}, normalizeAssetAdapterError(err)
+		return dto.AssetResponse{}, normalizeAssetAdapterError(ctx, "create", req.Model, channel, time.Since(startedAt), err)
 	}
 	if strings.TrimSpace(result.ResourceID) == "" {
 		common.SysError("Seedance asset creation returned no resource id")
@@ -88,13 +91,14 @@ func GetRemoteAsset(ctx context.Context, group, modelName, resourceID string) (d
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
-	_, adapter, err := assetAdapterForModel(group, modelName)
+	channel, adapter, err := assetAdapterForModel(group, modelName)
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
+	startedAt := time.Now()
 	result, err := adapter.GetAsset(ctx, resourceID)
 	if err != nil {
-		return dto.AssetResponse{}, normalizeAssetAdapterError(err)
+		return dto.AssetResponse{}, normalizeAssetAdapterError(ctx, "get", modelName, channel, time.Since(startedAt), err)
 	}
 	return assetResponse(modelName, resourceID, result), nil
 }
@@ -109,13 +113,14 @@ func UpdateRemoteAsset(ctx context.Context, group, resourceID string, req dto.Up
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
-	_, adapter, err := assetAdapterForModel(group, modelName)
+	channel, adapter, err := assetAdapterForModel(group, modelName)
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
+	startedAt := time.Now()
 	result, err := adapter.UpdateAsset(ctx, resourceID, req.Name)
 	if err != nil {
-		return dto.AssetResponse{}, normalizeAssetAdapterError(err)
+		return dto.AssetResponse{}, normalizeAssetAdapterError(ctx, "update", modelName, channel, time.Since(startedAt), err)
 	}
 	return assetResponse(modelName, resourceID, result), nil
 }
@@ -125,11 +130,13 @@ func DeleteRemoteAsset(ctx context.Context, group, modelName, resourceID string)
 	if err != nil {
 		return err
 	}
-	_, adapter, err := assetAdapterForModel(group, modelName)
+	channel, adapter, err := assetAdapterForModel(group, modelName)
 	if err != nil {
 		return err
 	}
-	return normalizeAssetAdapterError(adapter.DeleteAsset(ctx, resourceID))
+	startedAt := time.Now()
+	err = adapter.DeleteAsset(ctx, resourceID)
+	return normalizeAssetAdapterError(ctx, "delete", modelName, channel, time.Since(startedAt), err)
 }
 
 func CreateAssetGroup(ctx context.Context, group string, req dto.CreateAssetGroupRequest) (dto.AssetGroupResponse, error) {
@@ -160,12 +167,13 @@ func CreateAssetGroup(ctx context.Context, group string, req dto.CreateAssetGrou
 		if !ok {
 			return dto.AssetGroupResponse{}, ErrUnsupportedAssetOperation
 		}
+		startedAt := time.Now()
 		result, err := verification.CreateVerificationSession(ctx, assetadapter.VerificationRequest{
 			RedirectURL: req.RedirectURL,
 			ProjectName: channel.GetOtherSettings().AssetProviderProject,
 		})
 		if err != nil {
-			return dto.AssetGroupResponse{}, normalizeAssetAdapterError(err)
+			return dto.AssetGroupResponse{}, normalizeAssetAdapterError(ctx, "asset_group", req.Model, channel, time.Since(startedAt), err)
 		}
 		result.SessionID = strings.TrimSpace(result.SessionID)
 		result.H5URL = strings.TrimSpace(result.H5URL)
@@ -190,11 +198,12 @@ func CreateAssetGroup(ctx context.Context, group string, req dto.CreateAssetGrou
 	if !ok {
 		return dto.AssetGroupResponse{}, ErrUnsupportedAssetOperation
 	}
+	startedAt := time.Now()
 	result, err := groupAdapter.CreateGroup(ctx, assetadapter.GroupRequest{
 		Name: req.Name, Description: req.Description, GroupType: "AIGC",
 	})
 	if err != nil {
-		return dto.AssetGroupResponse{}, normalizeAssetAdapterError(err)
+		return dto.AssetGroupResponse{}, normalizeAssetAdapterError(ctx, "asset_group", req.Model, channel, time.Since(startedAt), err)
 	}
 	if strings.TrimSpace(result.ResourceID) == "" {
 		return dto.AssetGroupResponse{}, ErrAssetUpstreamError
@@ -207,7 +216,7 @@ func GetRemoteAssetGroup(ctx context.Context, group, modelName, resourceID strin
 	if err != nil {
 		return dto.AssetGroupResponse{}, err
 	}
-	_, adapter, err := assetAdapterForModel(group, modelName)
+	channel, adapter, err := assetAdapterForModel(group, modelName)
 	if err != nil {
 		return dto.AssetGroupResponse{}, err
 	}
@@ -216,9 +225,10 @@ func GetRemoteAssetGroup(ctx context.Context, group, modelName, resourceID strin
 		if !ok {
 			return dto.AssetGroupResponse{}, ErrUnsupportedAssetOperation
 		}
+		startedAt := time.Now()
 		result, err := verification.GetVerificationResult(ctx, resourceID)
 		if err != nil {
-			return dto.AssetGroupResponse{}, normalizeAssetAdapterError(err)
+			return dto.AssetGroupResponse{}, normalizeAssetAdapterError(ctx, "asset_group", modelName, channel, time.Since(startedAt), err)
 		}
 		return dto.AssetGroupResponse{
 			Object:  "asset_group_verification",
@@ -232,9 +242,10 @@ func GetRemoteAssetGroup(ctx context.Context, group, modelName, resourceID strin
 	if !ok {
 		return dto.AssetGroupResponse{}, ErrUnsupportedAssetOperation
 	}
+	startedAt := time.Now()
 	result, err := groupAdapter.GetGroup(ctx, resourceID)
 	if err != nil {
-		return dto.AssetGroupResponse{}, normalizeAssetAdapterError(err)
+		return dto.AssetGroupResponse{}, normalizeAssetAdapterError(ctx, "asset_group", modelName, channel, time.Since(startedAt), err)
 	}
 	return assetGroupResponse(modelName, resourceID, result), nil
 }
@@ -378,7 +389,10 @@ func assetGroupResponse(modelName, fallbackID string, result assetadapter.GroupR
 	}
 }
 
-func normalizeAssetAdapterError(err error) error {
+// normalizeAssetAdapterError 把素材 adapter 的上游错误归一为北向合同错误，并以
+// WARN 级别记录请求关联 ID、操作、客户模型与脱敏诊断（阶段/类别/状态/Provider code）。
+// 不得记录凭据、source URL、完整签名 URL 或上游原始响应。
+func normalizeAssetAdapterError(ctx context.Context, operation, modelName string, channel *model.Channel, elapsed time.Duration, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -388,10 +402,16 @@ func normalizeAssetAdapterError(err error) error {
 	if assetadapter.IsUpstreamNotFound(err) {
 		return ErrAssetNotFound
 	}
+	channelID := 0
+	protocol := dto.AssetUpstreamProtocolNone
+	if channel != nil {
+		channelID = channel.Id
+		protocol = channel.GetOtherSettings().AssetUpstreamProtocol
+	}
 	if diagnostic, ok := assetadapter.SafeUpstreamDiagnostic(err); ok {
-		common.SysError("Seedance asset upstream operation failed: " + diagnostic)
+		logger.LogWarn(ctx, fmt.Sprintf("Seedance asset failed: operation=%s model=%s channel_id=%d protocol=%s elapsed_ms=%d %s", operation, modelName, channelID, protocol, elapsed.Milliseconds(), diagnostic))
 	} else {
-		common.SysError("Seedance asset upstream operation failed")
+		logger.LogWarn(ctx, fmt.Sprintf("Seedance asset failed: operation=%s model=%s channel_id=%d protocol=%s elapsed_ms=%d class=unclassified", operation, modelName, channelID, protocol, elapsed.Milliseconds()))
 	}
 	return ErrAssetUpstreamError
 }

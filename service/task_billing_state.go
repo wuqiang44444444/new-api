@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -110,24 +111,22 @@ func recalculateTaskQuotaWithReconcile(ctx context.Context, task *model.Task, ac
 		return
 	}
 	preConsumedQuota := task.Quota
-	quotaDelta := actualQuota - preConsumedQuota
 	async.Operation = "settle"
 	async.Reason = reason
 	async.TargetQuota = &actualQuota
-	if async.TieredSnapshot != nil && quotaDelta > 0 {
-		for _, clamp := range clamps {
-			if clamp != nil {
-				async.QuotaClamp = clamp
-				break
-			}
+	for _, clamp := range clamps {
+		if clamp != nil {
+			async.QuotaClamp = clamp
+			break
 		}
-		err := fmt.Errorf("actual quota %d exceeds pre-consumed upper bound %d", actualQuota, preConsumedQuota)
-		persistTaskBillingFailure(ctx, task, model.TaskBillingStateDebt, err)
-		return
 	}
 	applied, quotaDelta, err := model.ApplyTaskBillingTarget(task, actualQuota)
 	if err != nil {
-		persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, err)
+		state := model.TaskBillingStateFailed
+		if errors.Is(err, model.ErrTaskBillingInsufficientFunding) {
+			state = model.TaskBillingStateDebt
+		}
+		persistTaskBillingFailure(ctx, task, state, err)
 		return
 	}
 	if !applied {
@@ -215,6 +214,12 @@ func calculateTaskQuotaByTokens(task *model.Task, totalTokens int) (int, *common
 func settleTaskBillingWithState(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, result *relaycommon.TaskInfo) bool {
 	async := task.PrivateData.AsyncBilling
 	if async == nil {
+		return false
+	}
+	// 失败、取消、过期与 Provider 合同失败都必须交给统一退款路径。
+	// 若继续进入 tiered/token 结算，缺少用量的失败任务会被错误标记
+	// settled 并保留预扣，从而永久丧失退款机会。
+	if task.Status.ShouldRefundOnTerminal() {
 		return false
 	}
 	if task.PrivateData.BillingContext != nil && task.PrivateData.BillingContext.PerCallBilling {

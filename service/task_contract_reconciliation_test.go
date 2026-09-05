@@ -92,7 +92,7 @@ func TestTaskContractViolationReconcilesWithoutPrematureFailure(t *testing.T) {
 			))
 			require.NoError(t, model.DB.First(task, task.ID).Error)
 			assert.Equal(t, model.TaskStatusReconciliationRequired, task.Status)
-			assert.Equal(t, "upstream_contract_violation", task.FailReason)
+			assert.Equal(t, "upstream_contract_violation: unsupported task status", task.FailReason)
 			assert.NotZero(t, task.Quota)
 
 			require.NoError(t, updateVideoSingleTask(

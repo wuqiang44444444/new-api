@@ -124,7 +124,9 @@ func GetTerminalTasksPendingBilling(now int64, limit int) []*Task {
 		for _, task := range candidates {
 			lastID = task.ID
 			state := task.PrivateData.AsyncBilling
-			if state == nil || state.Attempts >= 10 || state.NextRetryAt > now {
+			// 资金不足形成的 debt 不能因为达到普通故障重试上限而永久退出扫描。
+			// 用户后续充值后，正常轮询必须仍能按冻结 TargetQuota 原子补扣并结清。
+			if state == nil || (state.State != TaskBillingStateDebt && state.Attempts >= 10) || state.NextRetryAt > now {
 				continue
 			}
 			tasks = append(tasks, task)

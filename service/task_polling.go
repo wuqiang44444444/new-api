@@ -135,6 +135,12 @@ func sweepUnrefundedFailedTasks(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		if task.PrivateData.AsyncBilling != nil {
+			// 已建立持久化计费状态的任务必须通过原子退款与
+			// reconciliation 路径恢复，不得只改钱包后留下未结清状态。
+			refundTaskWithReconcile(ctx, task, task.FailReason)
+			continue
+		}
 		if !RefundTaskQuota(ctx, task, task.FailReason) {
 			logger.LogError(ctx, fmt.Sprintf("sweepUnrefundedFailedTasks refund error for task %s", task.TaskID))
 		}
@@ -526,7 +532,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		key = privateData.Key
 	}
 	snap := task.Snapshot()
-	adapterVersion, proceed, err := resolveLinkVideoPollVersion(ch, task)
+	adapterVersion, proceed, err := resolveLinkVideoPollVersion(ctx, ch, task)
 	if err != nil {
 		return fmt.Errorf("mark reconciliation required for task %s: %w", taskId, err)
 	}
@@ -535,11 +541,16 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 	resp, err := adaptor.FetchTask(taskVideoUpstreamQueryBaseURL(task, ch, baseURL), key, task, proxy)
 	if err != nil {
-		if handled, markErr := linkVideoContractViolationHandled(task, err); handled {
+		if handled, markErr := linkVideoContractViolationHandled(ctx, task, err); handled {
 			if markErr != nil {
 				return fmt.Errorf("mark reconciliation required for task %s: %w", taskId, markErr)
 			}
 			return nil
+		}
+		if linkVideoUpstreamTaskMissing(err) {
+			// Counted, not immediate: the consecutive-failure cutoff retires the
+			// task with a refund while tolerating a provider-side visibility window.
+			return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassNotFound, 0, "upstream task missing (provider business code)")
 		}
 		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassTransport, 0, err.Error())
 	}
@@ -574,11 +585,16 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		taskResult.Reason = t.FailReason
 		task.Data = t.Data
 	} else if taskResult, err = adaptor.ParseTaskResult(task, resp, responseBody); err != nil {
-		if handled, markErr := linkVideoContractViolationHandled(task, err); handled {
+		if handled, markErr := linkVideoContractViolationHandled(ctx, task, err); handled {
 			if markErr != nil {
 				return fmt.Errorf("mark reconciliation required for task %s: %w", taskId, markErr)
 			}
 			return nil
+		}
+		if linkVideoUpstreamTaskMissing(err) {
+			// Funcloud reports code=30003 inside an HTTP 200 response, so the real
+			// signal is produced by ParseTaskResult rather than FetchTask.
+			return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassNotFound, resp.StatusCode, "upstream task missing (provider business code)")
 		}
 		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassHookError, resp.StatusCode, err.Error())
 	}
@@ -885,7 +901,7 @@ func failTaskFromPoll(ctx context.Context, adaptor TaskPollingAdaptor, task *mod
 	taskResult := relaycommon.FailTaskInfo(reason)
 	billingSettled := settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
 	if !billingSettled && task.Quota != 0 {
-		RefundTaskQuota(ctx, task, reason)
+		refundTaskWithReconcile(ctx, task, reason)
 	}
 	return nil
 }

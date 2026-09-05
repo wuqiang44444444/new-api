@@ -95,6 +95,9 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		constant.ChannelTypeDoubaoVideo,
 		constant.ChannelTypeVidu,
 		constant.ChannelTypeTaskPlugin,
+		// Seedance Link 渠道没有无副作用的 Chat 探针；探针边界见
+		// channel_seedance_link_health.go 的协议感知自动健康检查。
+		constant.ChannelTypeSeedanceLink,
 	}
 	if lo.Contains(unsupportedTestChannelTypes, channel.Type) {
 		channelTypeName := constant.GetChannelTypeName(channel.Type)
@@ -926,8 +929,16 @@ type channelTestSummary struct {
 func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, disableThreshold int64) channelTestSummary {
 	summary := channelTestSummary{}
 	isChannelEnabled := channel.Status == common.ChannelStatusEnabled
+	isSeedanceLink := seedanceLinkChannel(channel)
 	tik := time.Now()
-	result := testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
+	var result testResult
+	if isSeedanceLink {
+		// Link 渠道只跑代码登记协议的只读探针，禁止 Chat 探针与响应时间禁用：
+		// 素材列表 ping 不代表视频履约时延。
+		result = seedanceLinkChannelHealthResult(ctx, channel)
+	} else {
+		result = testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
+	}
 	milliseconds := time.Since(tik).Milliseconds()
 	if ctx.Err() != nil {
 		return summary
@@ -937,11 +948,11 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 
 	shouldBanChannel := false
 	newAPIError := result.newAPIError
-	if newAPIError != nil {
+	if newAPIError != nil && !isSeedanceLink {
 		shouldBanChannel = service.ShouldDisableChannel(result.newAPIError)
 	}
 
-	if common.AutomaticDisableChannelEnabled && !shouldBanChannel {
+	if common.AutomaticDisableChannelEnabled && !shouldBanChannel && !isSeedanceLink {
 		if milliseconds > disableThreshold {
 			err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
 			newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
@@ -949,7 +960,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		}
 	}
 
-	if newAPIError == nil {
+	if newAPIError == nil && result.localErr == nil {
 		summary.Succeeded++
 	} else {
 		summary.Failed++
@@ -960,12 +971,18 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		summary.Disabled++
 	}
 
-	if result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
+	// 素材只读探针成功只证明素材控制面可用，不能证明视频创建链路恢复，因此
+	// Seedance Link 渠道不得据此从自动禁用状态恢复。
+	if !isSeedanceLink && result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
 		service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 		summary.Enabled++
 	}
 
-	channel.UpdateResponseTime(milliseconds)
+	// 素材列表探针的耗时不是视频生成响应时间，不写入通用
+	// Channel response_time/test_time，避免管理端把素材控制面数据误解为视频健康。
+	if !isSeedanceLink {
+		channel.UpdateResponseTime(milliseconds)
+	}
 	return summary
 }
 
@@ -1124,6 +1141,11 @@ func selectChannelsForAutomaticTest(channels []*model.Channel, mode string) []*m
 			continue
 		}
 		if mode == operation_setting.ChannelTestModePassiveRecovery && channel.Status != common.ChannelStatusAutoDisabled {
+			continue
+		}
+		if mode == operation_setting.ChannelTestModePassiveRecovery && seedanceLinkChannel(channel) {
+			// 被禁用的 Seedance Link 无无副作用视频探针，素材探针
+			// 又不具备恢复视频 Channel 的证明力，被动恢复任务不做无效调用。
 			continue
 		}
 		selected = append(selected, channel)

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
 	_ "modernc.org/sqlite"
 )
@@ -129,8 +130,8 @@ func readChannelCredentials(databasePath string, channelID int) (channelCredenti
 		       c.models, c.model_mapping
 		FROM channels c
 		LEFT JOIN channel_asset_credentials a ON a.channel_id = c.id
-		WHERE c.id = ? AND c.type = 61
-	`, channelID).Scan(
+		WHERE c.id = ? AND c.type = ?
+	`, channelID, constant.ChannelTypeSeedanceLink).Scan(
 		&credential.ID, &credential.Status, &credential.BaseURL, &credential.VideoAPIKey,
 		&credential.AssetAccessKey, &credential.AssetSecretKey, &credential.CustomerModel,
 		&credential.ModelMapping,

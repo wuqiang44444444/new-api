@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -40,7 +41,7 @@ func TestValidateAssetLookupRequiresCallerModelAndOpaqueID(t *testing.T) {
 }
 
 func TestUnsupportedAdapterOperationHasExplicitPublicSentinel(t *testing.T) {
-	assert.ErrorIs(t, normalizeAssetAdapterError(assetadapter.ErrAssetOperationUnsupported), ErrUnsupportedAssetOperation)
+	assert.ErrorIs(t, normalizeAssetAdapterError(context.Background(), "create", "seedance-2-f", nil, 0, assetadapter.ErrAssetOperationUnsupported), ErrUnsupportedAssetOperation)
 }
 
 func TestSeedanceAssetAdapterDistinguishesUnsupportedFromInvalidProtocol(t *testing.T) {

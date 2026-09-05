@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -165,7 +166,7 @@ func TestVideoPollingRejectsUnknownFrozenAdapterBeforeFetch(t *testing.T) {
 	require.NoError(t, model.DB.First(task, task.ID).Error)
 	assert.Zero(t, capture.fetchCount)
 	assert.Equal(t, model.TaskStatusReconciliationRequired, task.Status)
-	assert.Equal(t, "upstream_contract_violation", task.FailReason)
+	assert.Equal(t, "upstream_contract_violation: video adapter revision is unsupported", task.FailReason)
 }
 
 func TestVideoTaskDataDropsPrivateBillingEvidenceButKeepsResultProjection(t *testing.T) {
@@ -183,4 +184,88 @@ func TestVideoTaskDataDropsPrivateBillingEvidenceButKeepsResultProjection(t *tes
 	assert.NotContains(t, string(redacted), "usage_source")
 	assert.NotContains(t, string(redacted), "usage_evidence")
 	assert.NotContains(t, string(redacted), "usage.completion_tokens")
+}
+
+type videoAdapterNotFoundPollingAdaptor struct{ fetchCount int }
+
+func (adaptor *videoAdapterNotFoundPollingAdaptor) Init(_ *relaycommon.RelayInfo) {}
+
+func (adaptor *videoAdapterNotFoundPollingAdaptor) FetchTask(
+	_ string,
+	_ string,
+	_ *model.Task,
+	_ string,
+) (*http.Response, error) {
+	adaptor.fetchCount++
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{"code":30003,"msg":"task not found"}`)),
+	}, nil
+}
+
+func (adaptor *videoAdapterNotFoundPollingAdaptor) ParseTaskResult(*model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
+	return nil, &relaycommon.UpstreamTaskNotFound{ProviderCode: 30003}
+}
+
+func (adaptor *videoAdapterNotFoundPollingAdaptor) AdjustBillingOnComplete(*model.Task, *relaycommon.TaskInfo) int {
+	return 0
+}
+
+// Funcloud 以 HTTP 200 + 业务码表示任务不存在：轮询必须走有界宽限后 FAILURE 的路径，
+// 不得像合同违规那样进入无限 reconciliation。
+func TestVideoPollingRetiresMissingUpstreamTaskAfterBoundedGrace(t *testing.T) {
+	truncate(t)
+	const userID = 974
+	const preConsumedQuota = 200
+	const remainingQuota = 100
+	seedUser(t, userID, remainingQuota)
+	originalCutoff := constant.TaskPollMaxFailures
+	constant.TaskPollMaxFailures = 2
+	t.Cleanup(func() { constant.TaskPollMaxFailures = originalCutoff })
+
+	now := time.Now().Unix()
+	channel := &model.Channel{
+		Id: 974, Type: constant.ChannelTypeSeedanceLink, Key: "provider-key",
+		BaseURL: common.GetPointer("https://funcloud.example.com"), Status: common.ChannelStatusEnabled,
+	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance})
+	task := &model.Task{
+		TaskID: "task-funcloud-missing", Platform: constant.TaskPlatform("62"), UserId: userID,
+		ChannelId: channel.Id, Status: model.TaskStatusInProgress, Progress: "30%", CreatedAt: now, UpdatedAt: now,
+		Quota: preConsumedQuota, BillingState: model.TaskBillingStatePending,
+		PrivateData: model.TaskPrivateData{
+			UpstreamTaskID:            "provider-task-missing",
+			VideoUpstreamProfile:      dto.VideoUpstreamProfileThirdPartyFunCloudSeedance,
+			SouthboundAdapterVersion:  "62:third_party_funcloud_seedance:v3",
+			VideoUpstreamQueryBaseURL: "https://funcloud.example.com",
+			Key:                       "provider-key",
+			AsyncBilling:              &model.TaskAsyncBillingContext{State: model.TaskBillingStatePending},
+		},
+	}
+	require.NoError(t, model.DB.Create(task).Error)
+	notFound := &videoAdapterNotFoundPollingAdaptor{}
+
+	// 第一次 not-found：宽限期内任务保持活动，不进入 reconciliation。
+	require.NoError(t, updateVideoSingleTask(
+		context.Background(), notFound, channel, task.PrivateData.UpstreamTaskID,
+		map[string]*model.Task{task.PrivateData.UpstreamTaskID: task},
+	))
+	require.NoError(t, model.DB.First(task, task.ID).Error)
+	assert.Equal(t, model.TaskStatus(model.TaskStatusInProgress), task.Status)
+	assert.Empty(t, task.FailReason)
+
+	// 达到连续失败上限：任务 FAILURE，原因指向任务不存在。
+	require.NoError(t, updateVideoSingleTask(
+		context.Background(), notFound, channel, task.PrivateData.UpstreamTaskID,
+		map[string]*model.Task{task.PrivateData.UpstreamTaskID: task},
+	))
+	require.NoError(t, model.DB.First(task, task.ID).Error)
+	assert.Equal(t, model.TaskStatus(model.TaskStatusFailure), task.Status)
+	assert.Equal(t, 2, notFound.fetchCount)
+	assert.Contains(t, task.FailReason, "upstream task missing")
+	assert.Equal(t, "100%", task.Progress)
+	assert.Zero(t, task.Quota)
+	require.NotNil(t, task.PrivateData.AsyncBilling)
+	assert.Equal(t, model.TaskBillingStateSettled, task.PrivateData.AsyncBilling.State)
+	assert.Equal(t, remainingQuota+preConsumedQuota, getUserQuota(t, userID))
 }

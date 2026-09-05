@@ -9,6 +9,11 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// funCloudTaskNotFoundCode is Funcloud's business code for "task does not
+// exist", returned as HTTP 200. Verified against the live provider on
+// 2026-09-04 for an unknown task id.
+const funCloudTaskNotFoundCode = 30003
+
 type TaskResponseContext struct {
 	ProviderModel string
 	Resolution    string
@@ -47,6 +52,13 @@ func TaskResponse(body []byte, expectedTaskID string, responseContext TaskRespon
 	}
 	if err := common.Unmarshal(body, &envelope); err != nil {
 		return violation("invalid FunCloud task response")
+	}
+	if envelope.Code == funCloudTaskNotFoundCode {
+		// Funcloud reports a missing task as HTTP 200 with a dedicated business
+		// code. This is a trusted terminal observation, not a contract violation:
+		// the polling loop retires the task after the configured grace window
+		// instead of holding it in reconciliation forever.
+		return nil, &relaycommon.UpstreamTaskNotFound{ProviderCode: envelope.Code}
 	}
 	if envelope.Code != 0 {
 		return violation("FunCloud task response contains an application error")

@@ -148,7 +148,7 @@ func TestCMCCAICCV2CapabilitiesAndErrorBoundary(t *testing.T) {
 	require.Error(t, err)
 	diagnostic, ok := SafeUpstreamDiagnostic(err)
 	assert.True(t, ok)
-	assert.Equal(t, "provider_code=AUTH_DENIED", diagnostic)
+	assert.Equal(t, "stage=decode_response class=application_error provider_code=AUTH_DENIED", diagnostic)
 	assert.NotContains(t, err.Error(), "sensitive provider text")
 	assert.False(t, strings.Contains(err.Error(), "SECRET"))
 }

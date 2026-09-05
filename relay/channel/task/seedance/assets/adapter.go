@@ -152,21 +152,22 @@ func (e *upstreamApplicationError) Error() string {
 }
 
 func IsDefinitiveUpstreamRejection(err error) bool {
-	if statusErr, ok := err.(*upstreamHTTPError); ok {
+	var statusErr *upstreamHTTPError
+	if errors.As(err, &statusErr) {
 		if statusErr.StatusCode == http.StatusRequestTimeout || statusErr.StatusCode == http.StatusTooEarly || statusErr.StatusCode == http.StatusTooManyRequests {
 			return false
 		}
 		return statusErr.StatusCode >= http.StatusBadRequest && statusErr.StatusCode < http.StatusInternalServerError
 	}
-	applicationErr, ok := err.(*upstreamApplicationError)
-	if ok {
+	var applicationErr *upstreamApplicationError
+	if errors.As(err, &applicationErr) {
 		if applicationErr.code == http.StatusRequestTimeout || applicationErr.code == http.StatusTooEarly || applicationErr.code == http.StatusTooManyRequests {
 			return false
 		}
 		return applicationErr.definitive || applicationErr.code >= 400 && applicationErr.code < 500 || applicationErr.code >= 40000 && applicationErr.code < 50000
 	}
-	stringErr, ok := err.(*upstreamStringApplicationError)
-	if !ok {
+	var stringErr *upstreamStringApplicationError
+	if !errors.As(err, &stringErr) {
 		return false
 	}
 	return stringErr.definitive
@@ -180,11 +181,12 @@ func (e *upstreamHTTPError) Error() string {
 }
 
 func upstreamNotFound(err error) bool {
-	if statusErr, ok := err.(*upstreamHTTPError); ok {
+	var statusErr *upstreamHTTPError
+	if errors.As(err, &statusErr) {
 		return statusErr.StatusCode == http.StatusNotFound
 	}
-	stringErr, ok := err.(*upstreamStringApplicationError)
-	return ok && stringErr.notFound
+	var stringErr *upstreamStringApplicationError
+	return errors.As(err, &stringErr) && stringErr.notFound
 }
 
 func IsUpstreamNotFound(err error) bool {
@@ -218,7 +220,7 @@ func (c client) request(ctx context.Context, method, path string, body any, resu
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return classifyTransportError(AssetStageWaitResponse, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
@@ -228,7 +230,10 @@ func (c client) request(ctx context.Context, method, path string, body any, resu
 	if result == nil {
 		return nil
 	}
-	return common.DecodeJson(resp.Body, result)
+	if err := common.DecodeJson(resp.Body, result); err != nil {
+		return invalidUpstreamResponse(err)
+	}
+	return nil
 }
 
 func normalizedMediaType(value string) string {

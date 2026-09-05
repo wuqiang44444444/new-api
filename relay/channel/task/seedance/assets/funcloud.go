@@ -87,7 +87,7 @@ func (a *FunCloudMaterialAdapter) CreateGroup(ctx context.Context, req GroupRequ
 	}
 	var group funCloudGroup
 	if common.Unmarshal(envelope.Data, &group) != nil || strings.TrimSpace(group.GroupID) == "" {
-		return GroupResult{}, fmt.Errorf("FunCloud material group response is invalid")
+		return GroupResult{}, invalidUpstreamResponse(fmt.Errorf("FunCloud material group response is invalid"))
 	}
 	return GroupResult{ResourceID: strings.TrimSpace(group.GroupID), BusinessID: strings.TrimSpace(group.GroupID), Status: "active"}, nil
 }
@@ -114,14 +114,14 @@ func (a *FunCloudMaterialAdapter) getGroup(ctx context.Context, resourceID strin
 		}
 		groups, err := decodeFunCloudList[funCloudGroup](envelope.Data)
 		if err != nil {
-			return funCloudGroup{}, err
+			return funCloudGroup{}, invalidUpstreamResponse(err)
 		}
 		for i := range groups {
 			if strings.TrimSpace(groups[i].GroupID) != resourceID {
 				continue
 			}
 			if matched != nil {
-				return funCloudGroup{}, fmt.Errorf("FunCloud material group list contains conflicting ids")
+				return funCloudGroup{}, invalidUpstreamResponse(fmt.Errorf("FunCloud material group list contains conflicting ids"))
 			}
 			value := groups[i]
 			value.GroupID = resourceID
@@ -133,7 +133,7 @@ func (a *FunCloudMaterialAdapter) getGroup(ctx context.Context, resourceID strin
 		}
 	}
 	if !complete {
-		return funCloudGroup{}, fmt.Errorf("FunCloud material group pagination exceeds the verified bound")
+		return funCloudGroup{}, invalidUpstreamResponse(fmt.Errorf("FunCloud material group pagination exceeds the verified bound"))
 	}
 	if matched == nil {
 		return funCloudGroup{}, &upstreamHTTPError{StatusCode: http.StatusNotFound}
@@ -150,6 +150,7 @@ func (a *FunCloudMaterialAdapter) CreateAsset(ctx context.Context, req AssetRequ
 	defer pipeReader.Close()
 	multipartWriter := multipart.NewWriter(pipeWriter)
 	contentType := multipartWriter.FormDataContentType()
+	sourceErrCh := make(chan error, 1)
 	go func() {
 		disposition := mime.FormatMediaType("form-data", map[string]string{
 			"name": "file", "filename": req.SourceFilename,
@@ -174,6 +175,7 @@ func (a *FunCloudMaterialAdapter) CreateAsset(ctx context.Context, req AssetRequ
 		if closeErr := multipartWriter.Close(); err == nil {
 			err = closeErr
 		}
+		sourceErrCh <- err
 		_ = pipeWriter.CloseWithError(err)
 	}()
 
@@ -188,7 +190,19 @@ func (a *FunCloudMaterialAdapter) CreateAsset(ctx context.Context, req AssetRequ
 	response, err := a.http.Do(httpRequest)
 	if err != nil {
 		_ = pipeReader.CloseWithError(err)
-		return AssetResult{}, err
+		select {
+		case srcErr := <-sourceErrCh:
+			if srcErr != nil {
+				// 阶段由 source producer 的失败确定；类别仍取 Do 返回的 transport
+				// 错误，以保留 timeout/connect/reset 等可操作信号。
+				return AssetResult{}, classifyTransportError(AssetStageUploadBody, err)
+			}
+			return AssetResult{}, classifyTransportError(AssetStageWaitResponse, err)
+		default:
+			// Do 可能在消费请求体前就失败。不得等待可能仍阻塞在调用方 Source.Read
+			// 的生产协程；上层会在本函数返回后关闭 source body，使该协程退出。
+			return AssetResult{}, classifyTransportError(AssetStageUploadBody, err)
+		}
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
@@ -196,21 +210,28 @@ func (a *FunCloudMaterialAdapter) CreateAsset(ctx context.Context, req AssetRequ
 		return AssetResult{}, &upstreamHTTPError{StatusCode: response.StatusCode}
 	}
 	responseData, err := io.ReadAll(io.LimitReader(response.Body, funCloudUploadResponseMaxBytes+1))
-	if err != nil || len(responseData) > funCloudUploadResponseMaxBytes {
-		return AssetResult{}, fmt.Errorf("FunCloud material upload response is invalid")
+	if err != nil {
+		return AssetResult{}, invalidUpstreamResponse(err)
+	}
+	if len(responseData) > funCloudUploadResponseMaxBytes {
+		return AssetResult{}, invalidUpstreamResponse(fmt.Errorf("FunCloud material upload response exceeds the verified bound"))
 	}
 	var envelope funCloudMaterialEnvelope
-	if common.Unmarshal(responseData, &envelope) != nil {
-		return AssetResult{}, fmt.Errorf("FunCloud material upload response is invalid")
+	if err := common.Unmarshal(responseData, &envelope); err != nil {
+		return AssetResult{}, invalidUpstreamResponse(err)
 	}
 	if envelope.Code != 0 {
 		return AssetResult{}, &upstreamApplicationError{provider: "FunCloud material", code: envelope.Code}
 	}
 	var material funCloudMaterial
 	if common.Unmarshal(envelope.Data, &material) != nil {
-		return AssetResult{}, fmt.Errorf("FunCloud material upload response is invalid")
+		return AssetResult{}, invalidUpstreamResponse(fmt.Errorf("FunCloud material upload response is invalid"))
 	}
-	return normalizeFunCloudMaterial(material)
+	result, err := normalizeFunCloudMaterial(material)
+	if err != nil {
+		return AssetResult{}, invalidUpstreamResponse(err)
+	}
+	return result, nil
 }
 
 func (a *FunCloudMaterialAdapter) GetAsset(ctx context.Context, resourceID string) (AssetResult, error) {
@@ -227,14 +248,14 @@ func (a *FunCloudMaterialAdapter) GetAsset(ctx context.Context, resourceID strin
 		}
 		materials, err := decodeFunCloudList[funCloudMaterial](envelope.Data)
 		if err != nil {
-			return AssetResult{}, err
+			return AssetResult{}, invalidUpstreamResponse(err)
 		}
 		for i := range materials {
 			if strings.TrimSpace(materials[i].MaterialID) != resourceID {
 				continue
 			}
 			if matched != nil {
-				return AssetResult{}, fmt.Errorf("FunCloud material list contains conflicting ids")
+				return AssetResult{}, invalidUpstreamResponse(fmt.Errorf("FunCloud material list contains conflicting ids"))
 			}
 			value := materials[i]
 			matched = &value
@@ -245,12 +266,16 @@ func (a *FunCloudMaterialAdapter) GetAsset(ctx context.Context, resourceID strin
 		}
 	}
 	if !complete {
-		return AssetResult{}, fmt.Errorf("FunCloud material pagination exceeds the verified bound")
+		return AssetResult{}, invalidUpstreamResponse(fmt.Errorf("FunCloud material pagination exceeds the verified bound"))
 	}
 	if matched == nil {
 		return AssetResult{}, &upstreamHTTPError{StatusCode: http.StatusNotFound}
 	}
-	return normalizeFunCloudMaterial(*matched)
+	result, err := normalizeFunCloudMaterial(*matched)
+	if err != nil {
+		return AssetResult{}, invalidUpstreamResponse(err)
+	}
+	return result, nil
 }
 
 func (*FunCloudMaterialAdapter) UpdateAsset(context.Context, string, string) (AssetResult, error) {
