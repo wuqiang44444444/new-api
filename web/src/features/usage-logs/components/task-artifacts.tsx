@@ -21,6 +21,8 @@ import {
   Download01Icon,
   File01Icon,
   Image01Icon,
+  Link01Icon,
+  Link04Icon,
   MusicNote01Icon,
   RefreshIcon,
   Video01Icon,
@@ -30,6 +32,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { Dialog } from '@/components/dialog'
 import {
   Alert,
@@ -115,7 +118,7 @@ function parseLegacyAudioClips(data: unknown): AudioClip[] {
   )
 }
 
-function LegacyAudioPreview(props: { data: unknown }) {
+export function LegacyAudioPreview(props: { data: unknown }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const clips = useMemo(() => parseLegacyAudioClips(props.data), [props.data])
@@ -275,7 +278,11 @@ function TaskArtifactCard(props: { artifact: TaskArtifact }) {
         </CardDescription>
       </CardHeader>
       <CardContent>{cardContent}</CardContent>
-      <CardFooter>
+      <CardFooter className='gap-2'>
+        <ResultLinkActions
+          url={props.artifact.content_url}
+          fileName={props.artifact.key}
+        />
         <Button
           variant='outline'
           size='sm'
@@ -301,13 +308,55 @@ function TaskArtifactCard(props: { artifact: TaskArtifact }) {
   )
 }
 
+// ResultLinkActions 提供经授权的结果操作：在新标签打开平台内容链接并复制。
+// 链接仅在产物/详情展示处出现，不写入通用日志或遥测。
+function ResultLinkActions(props: { url: string; fileName?: string }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <Button
+        variant='outline'
+        size='sm'
+        nativeButton={false}
+        render={
+          <a
+            href={props.url}
+            target='_blank'
+            rel='noopener noreferrer'
+            aria-label={t('Open video')}
+          />
+        }
+      >
+        <HugeiconsIcon
+          icon={Link04Icon}
+          strokeWidth={2}
+          data-icon='inline-start'
+        />
+        {t('Open')}
+      </Button>
+      <Button
+        variant='outline'
+        size='sm'
+        onClick={() => void copyToClipboard(props.url)}
+      >
+        <HugeiconsIcon
+          icon={Link01Icon}
+          strokeWidth={2}
+          data-icon='inline-start'
+        />
+        {t('Copy link')}
+      </Button>
+    </>
+  )
+}
+
 interface TaskArtifactsProps {
   taskId: string
   enabled: boolean
   emptyContent?: (legacyContentUrl?: string) => React.ReactNode
 }
 
-function TaskArtifacts(props: TaskArtifactsProps) {
+export function TaskArtifacts(props: TaskArtifactsProps) {
   const { t } = useTranslation()
   const artifactsQuery = useQuery({
     queryKey: ['usage-logs', 'task-artifacts', props.taskId],
@@ -476,6 +525,7 @@ export function TaskArtifactsCell(props: { log: TaskLog }) {
 
 interface LegacyVideoMediaProps {
   contentUrl: string
+  showActions?: boolean
 }
 
 function LegacyVideoMedia(props: LegacyVideoMediaProps) {
@@ -490,13 +540,42 @@ function LegacyVideoMedia(props: LegacyVideoMediaProps) {
       }}
     />
   ) : (
-    <video
-      key={mediaRevision}
-      src={props.contentUrl}
-      controls
-      preload='metadata'
-      className='max-h-[60vh] w-full rounded-md bg-black'
-      onError={() => setMediaFailed(true)}
-    />
+    <div className='space-y-2'>
+      <video
+        key={mediaRevision}
+        src={props.contentUrl}
+        controls
+        preload='metadata'
+        className='max-h-[60vh] w-full rounded-md bg-black'
+        onError={() => setMediaFailed(true)}
+      />
+      {props.showActions ? (
+        <ResultLinkActions url={props.contentUrl} />
+      ) : null}
+    </div>
   )
+}
+
+// SuccessWithoutVideoNote 用于任务成功但平台未记录到结果地址的场景，
+// 不静默显示“-”，也不改变任务成功状态。
+export function SuccessWithoutVideoNote() {
+  const { t } = useTranslation()
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant='icon'>
+          <HugeiconsIcon icon={Video01Icon} strokeWidth={2} aria-hidden='true' />
+        </EmptyMedia>
+        <EmptyTitle>{t('Task succeeded')}</EmptyTitle>
+        <EmptyDescription>
+          {t('No video result was recorded for this task')}
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  )
+}
+
+// LegacyVideoResult 在详情弹窗中展示 legacy 平台视频并附带打开/复制操作。
+export function LegacyVideoResult(props: { contentUrl: string }) {
+  return <LegacyVideoMedia contentUrl={props.contentUrl} showActions />
 }

@@ -106,7 +106,7 @@ func (a *Adaptor) ConvertImageRequest(_ *gin.Context, info *relaycommon.RelayInf
 	if info == nil || info.RelayMode != relayconstant.RelayModeImagesGenerations {
 		return nil, badRequest("Moxing image channel only supports /v1/images/generations")
 	}
-	if request.N != nil && *request.N != 1 {
+	if request.NExplicitZero || (request.N != nil && *request.N != 1) {
 		return nil, badRequest("n must be exactly 1 for Moxing image channels")
 	}
 	if request.ResponseFormat != "" && request.ResponseFormat != "url" {
@@ -266,7 +266,7 @@ func rejectUnsupportedImageFields(request dto.ImageRequest) error {
 		len(request.PartialImages) > 0 || len(request.Images) > 0 || len(request.Mask) > 0 ||
 		len(request.InputFidelity) > 0 || request.Watermark != nil || len(request.WatermarkEnabled) > 0 ||
 		len(request.UserId) > 0 || len(request.Image) > 0 || len(request.Extra) > 0 ||
-		request.Stream != nil {
+		(request.Stream != nil && *request.Stream) {
 		return badRequest("request contains unsupported image fields")
 	}
 	return nil

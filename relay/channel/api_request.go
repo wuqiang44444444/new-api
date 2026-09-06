@@ -529,9 +529,15 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
+	// 音视频证据（一期）：发送前持久化最终南向证据；失败则返回拒绝边界
+	// 错误，尚未发送任何字节，不进入 upstream-started。
+	if err := service.CaptureSouthboundTaskRequestEvidence(c, req, info); err != nil {
+		return nil, err
+	}
 	service.MarkTaskCreateAttemptUpstreamStarted(c)
 	resp, err := relayClient.Do(req)
 	if err != nil {
+		service.CaptureTaskEvidenceTransportFailure(c)
 		service.MarkTaskCreateAttemptOutcomeUnknown(c, info)
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
@@ -554,6 +560,9 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	// 始终覆盖（即便为空）：重试场景下若前次失败响应带 ID 而最终成功响应不带，
 	// 仅当非空才 Set 会残留失败请求的旧 ID，导致记录的 upstream_request_id 不准。
 	c.Set(common2.UpstreamRequestIdKey, resp.Header.Get(common2.RequestIdKey))
+
+	// 音视频证据（一期）：包装响应体，边转发边有界捕获。
+	service.AttachTaskRequestEvidenceUpstreamResponse(c, resp)
 
 	_ = req.Body.Close()
 	_ = c.Request.Body.Close()

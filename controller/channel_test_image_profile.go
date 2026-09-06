@@ -7,6 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/samber/lo"
 )
 
@@ -34,7 +35,12 @@ func buildChannelTestImageRequest(model string) *dto.ImageRequest {
 
 func buildChannelTestImageRequestForChannel(channel *model.Channel, customerModel string) *dto.ImageRequest {
 	request := buildChannelTestImageRequest(customerModel)
-	if channel == nil || channel.Type != constant.ChannelTypeAsyncImage {
+	if channel == nil {
+		return request
+	}
+	if channel.Type != constant.ChannelTypeAsyncImage &&
+		channel.Type != constant.ChannelTypeGemini &&
+		channel.Type != constant.ChannelTypeVertexAi {
 		return request
 	}
 	var mapping map[string]string
@@ -48,9 +54,40 @@ func buildChannelTestImageRequestForChannel(channel *model.Channel, customerMode
 	if err != nil {
 		return request
 	}
+	if channel.Type == constant.ChannelTypeGemini || channel.Type == constant.ChannelTypeVertexAi {
+		// gemini_image 族测试默认 1024x1024（含明确 imageConfig 档位）。
+		return request
+	}
 	size, supported := constant.ImageRelayTestSize(channel.GetOtherSettings().ImageUpstreamProtocol, providerModel)
 	if supported {
 		request.Size = size
 	}
 	return request
+}
+
+// channelTestUsesGeminiImageContract reports whether the customer model maps
+// onto an imagine-registered provider model for the admin channel test.
+func channelTestUsesGeminiImageContract(channel *model.Channel, customerModel string) bool {
+	if channel == nil {
+		return false
+	}
+	providerModel := customerModel
+	if mapping, err := decodeChannelModelMapping(channel); err == nil {
+		if resolved, _, err := model.ResolveModelMapping(customerModel, mapping); err == nil {
+			providerModel = resolved
+		}
+	}
+	return model_setting.IsGeminiModelSupportImagine(providerModel)
+}
+
+func decodeChannelModelMapping(channel *model.Channel) (map[string]string, error) {
+	mapping := make(map[string]string)
+	modelMapping := strings.TrimSpace(channel.GetModelMapping())
+	if modelMapping == "" || modelMapping == "{}" {
+		return mapping, nil
+	}
+	if err := common.UnmarshalJsonStr(modelMapping, &mapping); err != nil {
+		return nil, err
+	}
+	return mapping, nil
 }

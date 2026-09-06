@@ -25,6 +25,11 @@ type TaskClientRequestSnapshot struct {
 	Size               string `json:"size,omitempty"`
 	RemixedFromVideoID string `json:"remixed_from_video_id,omitempty"`
 	ServiceTier        string `json:"service_tier,omitempty"`
+	// 统一北向视频参数扩展。快照只在任务创建时写入一次；历史任务缺失字段
+	// 表示“未记录”，布尔参数用指针区分显式 false 与缺失。
+	Resolution    string `json:"resolution,omitempty"`
+	Ratio         string `json:"ratio,omitempty"`
+	GenerateAudio *bool  `json:"generate_audio,omitempty"`
 }
 
 func (s TaskStatus) IsActive() bool {

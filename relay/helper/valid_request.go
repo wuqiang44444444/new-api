@@ -199,19 +199,17 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 				if err != nil || n < 0 || n > dto.MaxImageN {
 					return nil, fmt.Errorf("n must be an integer between 1 and %d", dto.MaxImageN)
 				}
+				if n == 0 {
+					// 显式 n=0 的原始语义留给统一图片合同层裁决（E6），
+					// 此处只记录，不静默改写为默认值后丢失信息。
+					imageRequest.NExplicitZero = true
+				}
 				imageRequest.N = common.GetPointer(uint(n))
 			}
 			imageRequest.Quality = formData.Get("quality")
 			imageRequest.Size = formData.Get("size")
-			if streamValue := strings.TrimSpace(formData.Get("stream")); streamValue != "" {
-				stream, err := strconv.ParseBool(streamValue)
-				if err != nil {
-					return nil, fmt.Errorf("invalid stream value: %w", err)
-				}
-				imageRequest.Stream = common.GetPointer(stream)
-			}
-			if imageValue := formData.Get("image"); imageValue != "" {
-				imageRequest.Image, _ = common.Marshal(imageValue)
+			if err := parseImageFormFields(formData, imageRequest); err != nil {
+				return nil, err
 			}
 
 			if imageRequest.Model == "gpt-image-1" {
@@ -278,6 +276,9 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		//	return nil, errors.New("prompt is required")
 		//}
 
+		if imageRequest.N != nil && *imageRequest.N == 0 {
+			imageRequest.NExplicitZero = true
+		}
 		if imageRequest.N == nil || *imageRequest.N == 0 {
 			imageRequest.N = common.GetPointer(uint(1))
 		}

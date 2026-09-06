@@ -42,6 +42,9 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 	delta := 0
 	applied := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockImageTaskBillingTx(tx, task); err != nil {
+			return err
+		}
 		if err := lockForUpdate(tx).Where("id = ?", task.ID).First(&locked).Error; err != nil {
 			return err
 		}
@@ -154,6 +157,9 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 			"private_data":  locked.PrivateData,
 			"billing_state": TaskBillingStateSettled,
 		}).Error; err != nil {
+			return err
+		}
+		if err := completeImageTaskBillingTx(tx, &locked); err != nil {
 			return err
 		}
 		applied = true

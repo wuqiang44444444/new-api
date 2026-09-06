@@ -64,7 +64,19 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
-	if !strings.HasPrefix(info.UpstreamModelName, "imagen") {
+	// 标准图片入口优先走 generateContent 图片模型（G1 gemini_image 族）；
+	// imagen :predict 路径保持原语义，不承载编辑输入。
+	if info.RelayMode == constant.RelayModeImagesGenerations || info.RelayMode == constant.RelayModeImagesEdits {
+		if SupportsGenerateContentImage(info.UpstreamModelName) {
+			return ConvertImageRequestToGenerateContent(c, info, request)
+		}
+		if !strings.HasPrefix(info.UpstreamModelName, "imagen") {
+			return nil, errors.New("not supported model for image generation, only registered gemini image models and imagen models are supported")
+		}
+		if info.RelayMode == constant.RelayModeImagesEdits {
+			return nil, errors.New("imagen models do not support image edits")
+		}
+	} else if !strings.HasPrefix(info.UpstreamModelName, "imagen") {
 		return nil, errors.New("not supported model for image generation, only imagen models are supported")
 	}
 
@@ -163,6 +175,7 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
+	SetupGenerateContentImageHeader(c, req)
 	req.Set("x-goog-api-key", info.ApiKey)
 	return nil
 }
@@ -264,6 +277,13 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 
 	if strings.HasPrefix(info.UpstreamModelName, "imagen") {
 		return GeminiImageHandler(c, info, resp)
+	}
+
+	// 标准图片入口（generations/edits）由 generateContent 图片模型履约。
+	if info.RelayMode == constant.RelayModeImagesGenerations || info.RelayMode == constant.RelayModeImagesEdits {
+		if SupportsGenerateContentImage(info.UpstreamModelName) {
+			return GeminiGenerateContentImageHandler(c, info, resp)
+		}
 	}
 
 	// check if the model is an embedding model

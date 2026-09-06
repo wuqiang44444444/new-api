@@ -159,14 +159,18 @@
         "deprecated": false,
         "description": "按客户模型名获取与列表同构的单模型元数据。图片和视频条目返回北向入口、完整允许参数及约束；视频条目还返回逐操作素材能力和匿名素材复用域。响应不包含 Provider、上游原始模型名、Channel、凭据或南向路径。",
         "operationId": "retrieveModel",
-        "tags": ["获取模型列表"],
+        "tags": [
+          "获取模型列表"
+        ],
         "parameters": [
           {
             "name": "model",
             "in": "path",
             "required": true,
             "description": "部署方定义的客户模型名。",
-            "schema": {"type": "string"}
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -176,8 +180,12 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
-                    {"$ref": "#/components/schemas/Model"},
-                    {"$ref": "#/components/schemas/ErrorResponse"}
+                    {
+                      "$ref": "#/components/schemas/Model"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
                   ]
                 }
               }
@@ -187,12 +195,18 @@
             "description": "认证失败",
             "content": {
               "application/json": {
-                "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
               }
             }
           }
         },
-        "security": [{"BearerAuth": []}]
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     },
     "/v1beta/models": {
@@ -376,7 +390,30 @@
         "tags": [
           "图片生成/OpenAI兼容格式"
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "Prefer",
+            "in": "header",
+            "required": false,
+            "description": "传 respond-async 显式选择异步受理（仅已发布异步能力的图片模型支持）；与 stream=true 互斥。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "respond-async"
+              ]
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "可选幂等键，仅异步模式支持；同键等价请求重放原受理结果，不同请求体返回 409。长度 ≤ 191。",
+            "schema": {
+              "type": "string",
+              "maxLength": 191
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -407,6 +444,26 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "异步受理成功（Prefer: respond-async）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageTaskAccepted"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等键冲突或原受理结果不可重放",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -425,7 +482,30 @@
         "tags": [
           "图片生成/OpenAI兼容格式"
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "Prefer",
+            "in": "header",
+            "required": false,
+            "description": "传 respond-async 显式选择异步受理（仅已发布异步能力的图片模型支持）；与 stream=true 互斥。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "respond-async"
+              ]
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "可选幂等键，仅异步模式支持；同键等价请求重放原受理结果，不同请求体返回 409。长度 ≤ 191。",
+            "schema": {
+              "type": "string",
+              "maxLength": 191
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "multipart/form-data": {
@@ -449,6 +529,26 @@
           },
           "400": {
             "description": "请求参数或 multipart 表单无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "异步受理成功（Prefer: respond-async）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageTaskAccepted"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等键冲突或原受理结果不可重放",
             "content": {
               "application/json": {
                 "schema": {
@@ -2978,6 +3078,54 @@
           }
         ]
       }
+    },
+    "/v1/tasks/{task_id}": {
+      "get": {
+        "summary": "查询图片任务",
+        "deprecated": false,
+        "description": "按 user + 应用隔离查询显式异步图片任务（Prefer: respond-async 创建）的状态与结果；其它任务协议的响应形状不变。结果 URL 逐张 300 秒有效，过期后重新查询续签。",
+        "operationId": "retrieveImageTask",
+        "tags": [
+          "图片生成/OpenAI兼容格式"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "图片任务状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageTaskStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "任务不存在或不属于当前 Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -3125,7 +3273,11 @@
       },
       "PublicImageAPI": {
         "type": "object",
-        "required": ["documentation_path", "operations", "creation"],
+        "required": [
+          "documentation_path",
+          "operations",
+          "creation"
+        ],
         "properties": {
           "documentation_path": {
             "type": "string",
@@ -3133,7 +3285,9 @@
           },
           "operations": {
             "type": "array",
-            "items": {"$ref": "#/components/schemas/PublicAPIOperation"}
+            "items": {
+              "$ref": "#/components/schemas/PublicAPIOperation"
+            }
           },
           "creation": {
             "$ref": "#/components/schemas/PublicImageCreation"
@@ -3143,17 +3297,40 @@
       "PublicImageCreation": {
         "type": "object",
         "required": [
-          "method", "path", "content_type", "required_fields", "model",
-          "additional_properties", "parameters"
+          "method",
+          "path",
+          "content_type",
+          "required_fields",
+          "model",
+          "additional_properties",
+          "parameters"
         ],
         "properties": {
-          "method": {"type": "string", "enum": ["POST"]},
-          "path": {"type": "string", "example": "/v1/images/generations"},
-          "content_type": {"type": "string", "enum": ["application/json"]},
+          "method": {
+            "type": "string",
+            "enum": [
+              "POST"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "example": "/v1/images/generations"
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "application/json"
+            ]
+          },
           "required_fields": {
             "type": "array",
-            "items": {"type": "string"},
-            "example": ["model", "prompt"]
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "model",
+              "prompt"
+            ]
           },
           "model": {
             "type": "string",
@@ -3165,7 +3342,9 @@
           },
           "parameters": {
             "type": "array",
-            "items": {"$ref": "#/components/schemas/PublicAPIParameter"}
+            "items": {
+              "$ref": "#/components/schemas/PublicAPIParameter"
+            }
           }
         }
       },
@@ -3216,7 +3395,9 @@
         "properties": {
           "method": {
             "type": "string",
-            "enum": ["POST"]
+            "enum": [
+              "POST"
+            ]
           },
           "path": {
             "type": "string",
@@ -3224,12 +3405,19 @@
           },
           "content_type": {
             "type": "string",
-            "enum": ["application/json"]
+            "enum": [
+              "application/json"
+            ]
           },
           "required_fields": {
             "type": "array",
-            "items": {"type": "string"},
-            "example": ["model", "content"]
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "model",
+              "content"
+            ]
           },
           "model": {
             "type": "string",
@@ -3241,17 +3429,25 @@
           },
           "parameters": {
             "type": "array",
-            "items": {"$ref": "#/components/schemas/PublicAPIParameter"}
+            "items": {
+              "$ref": "#/components/schemas/PublicAPIParameter"
+            }
           },
           "content_types": {
             "type": "array",
-            "items": {"$ref": "#/components/schemas/PublicVideoContentType"}
+            "items": {
+              "$ref": "#/components/schemas/PublicVideoContentType"
+            }
           }
         }
       },
       "PublicAPIParameter": {
         "type": "object",
-        "required": ["name", "type", "required"],
+        "required": [
+          "name",
+          "type",
+          "required"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -3259,37 +3455,95 @@
           },
           "type": {
             "type": "string",
-            "enum": ["string", "integer", "boolean", "array", "object"]
+            "enum": [
+              "string",
+              "integer",
+              "boolean",
+              "array",
+              "object"
+            ]
           },
-          "required": {"type": "boolean"},
-          "enum": {"type": "array", "items": {"type": "string"}},
+          "required": {
+            "type": "boolean"
+          },
+          "enum": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "fixed_value": {
             "description": "发送该字段时唯一允许的值。"
           },
           "default_value": {
             "description": "字段省略时使用的默认值。"
           },
-          "minimum": {"type": "integer"},
-          "maximum": {"type": "integer"},
-          "special_values": {"type": "array", "items": {"type": "integer"}},
-          "min_length": {"type": "integer", "minimum": 0},
-          "max_length": {"type": "integer", "minimum": 0},
-          "min_items": {"type": "integer", "minimum": 0},
-          "max_items": {"type": "integer", "minimum": 0}
+          "minimum": {
+            "type": "integer"
+          },
+          "maximum": {
+            "type": "integer"
+          },
+          "special_values": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "min_length": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_length": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "min_items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_items": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       },
       "PublicVideoContentType": {
         "type": "object",
-        "required": ["type", "required_fields"],
+        "required": [
+          "type",
+          "required_fields"
+        ],
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["text", "image_url", "video_url", "audio_url"]
+            "enum": [
+              "text",
+              "image_url",
+              "video_url",
+              "audio_url"
+            ]
           },
-          "roles": {"type": "array", "items": {"type": "string"}},
-          "required_fields": {"type": "array", "items": {"type": "string"}},
-          "min_items": {"type": "integer", "minimum": 0},
-          "max_items": {"type": "integer", "minimum": 0}
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "min_items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_items": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       },
       "PublicAssetAPI": {
@@ -3313,16 +3567,18 @@
             "example": "/docs/api-reference/assets"
           },
           "management_mode": {
-			"type": "string",
-			"enum": ["caller_managed_stateless"]
-		  },
-		  "requires_model": {
-			"type": "boolean",
-			"description": "所有单项素材和素材组操作都必须携带客户模型名。"
-		  },
-		  "reference_format": {
-			"type": "string",
-			"example": "asset://{opaque_upstream_asset_id}"
+            "type": "string",
+            "enum": [
+              "caller_managed_stateless"
+            ]
+          },
+          "requires_model": {
+            "type": "boolean",
+            "description": "所有单项素材和素材组操作都必须携带客户模型名。"
+          },
+          "reference_format": {
+            "type": "string",
+            "example": "asset://{opaque_upstream_asset_id}"
           },
           "reuse_scope": {
             "type": "string",
@@ -6446,7 +6702,7 @@
           },
           "asset_group_id": {
             "type": "string",
-			"description": "可选的上游素材组 opaque ID。AIGC 普通素材省略、传空或空白时使用所选 Channel 的默认组；裁剪后非空时保持原值。真人素材必须传认证产生的专用组 ID。"
+            "description": "可选的上游素材组 opaque ID。AIGC 普通素材省略、传空或空白时使用所选 Channel 的默认组；裁剪后非空时保持原值。真人素材必须传认证产生的专用组 ID。"
           },
           "source": {
             "$ref": "#/components/schemas/AssetSource"
@@ -6457,52 +6713,54 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-		  "name",
-		  "model"
+          "name",
+          "model"
         ],
         "properties": {
           "name": {
             "type": "string",
             "maxLength": 64
-		  },
-		  "model": {
-			"type": "string",
-			"description": "用于选择唯一渠道的客户模型名。"
+          },
+          "model": {
+            "type": "string",
+            "description": "用于选择唯一渠道的客户模型名。"
           }
         }
       },
       "Asset": {
         "type": "object",
         "required": [
-		  "object",
+          "object",
           "id",
           "model",
-		  "status"
+          "status"
         ],
         "properties": {
-		  "object": {
-			"type": "string",
-			"enum": ["asset"]
-		  },
+          "object": {
+            "type": "string",
+            "enum": [
+              "asset"
+            ]
+          },
           "id": {
             "type": "string",
-			"description": "上游返回的 opaque 素材资源 ID。"
+            "description": "上游返回的 opaque 素材资源 ID。"
           },
           "model": {
-			"type": "string",
-			"description": "请求使用的客户模型名；不返回上游原始模型名。"
+            "type": "string",
+            "description": "请求使用的客户模型名；不返回上游原始模型名。"
           },
-		  "reference": {
-			"type": "string",
-			"pattern": "^asset://",
-			"description": "素材可用于生成时返回；调用方负责保存。"
+          "reference": {
+            "type": "string",
+            "pattern": "^asset://",
+            "description": "素材可用于生成时返回；调用方负责保存。"
           },
           "status": {
             "type": "string",
             "enum": [
               "processing",
               "ready",
-			  "failed"
+              "failed"
             ]
           },
           "error_code": {
@@ -6592,6 +6850,120 @@
             "format": "int64"
           }
         }
+      },
+      "ImageTaskAccepted": {
+        "type": "object",
+        "properties": {
+          "created": {
+            "type": "integer",
+            "description": "受理时间，Unix 秒"
+          },
+          "id": {
+            "type": "string",
+            "description": "平台任务 ID（task_ 前缀）"
+          },
+          "object": {
+            "type": "string",
+            "enum": [
+              "image_task"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued"
+            ]
+          },
+          "query_url": {
+            "type": "string",
+            "description": "查询路径 /v1/tasks/{task_id}"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "status"
+        ]
+      },
+      "ImageTaskStatus": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "enum": [
+              "image_task"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "in_progress",
+              "succeeded",
+              "failed",
+              "expired",
+              "unknown"
+            ]
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "finished_at": {
+            "type": "integer"
+          },
+          "image_count": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImageTaskDataItem"
+            }
+          },
+          "error": {
+            "$ref": "#/components/schemas/ErrorResponse"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "status"
+        ]
+      },
+      "ImageTaskDataItem": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "300 秒有效的签名下载地址"
+          },
+          "url_expires_at": {
+            "type": "integer",
+            "description": "URL 到期时间，Unix 秒"
+          },
+          "b64_json": {
+            "type": "string",
+            "description": "创建时显式 b64_json 的图片原文"
+          },
+          "mime_type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "deleted",
+              "unavailable"
+            ],
+            "description": "逐图可用性：available 才携带 url/b64_json；deleted 表示对象已被部署方删除（保留历史生成状态）；unavailable 表示暂时无法访问"
+          }
+        },
+        "required": [
+          "status"
+        ]
       }
     },
     "parameters": {
@@ -6616,16 +6988,16 @@
         "in": "path",
         "required": true,
         "schema": {
-		  "type": "string"
-		}
-	  },
-	  "AssetModel": {
-		"name": "model",
-		"in": "query",
-		"required": true,
-		"schema": {
-		  "type": "string"
-		}
+          "type": "string"
+        }
+      },
+      "AssetModel": {
+        "name": "model",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
       }
     },
     "responses": {},

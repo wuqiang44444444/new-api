@@ -3,9 +3,11 @@ package controller
 import (
 	"bytes"
 	"context"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -67,6 +69,14 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service.InitHttpClient()
 
+	oldEvidenceConfig := system_setting.GetTaskRequestEvidenceConfig()
+	evidenceConfig := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), MaxBodyBytes: 1 << 20, MaxResponseBytes: 1 << 20, WriteTimeoutSeconds: 5}
+	system_setting.SetTaskRequestEvidenceConfig(evidenceConfig)
+	require.NoError(t, service.InitTaskRequestEvidenceStore(evidenceConfig))
+	t.Cleanup(func() {
+		system_setting.SetTaskRequestEvidenceConfig(oldEvidenceConfig)
+		_ = service.InitTaskRequestEvidenceStore(oldEvidenceConfig)
+	})
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB
 	previousMemoryCache := common.MemoryCacheEnabled
@@ -75,7 +85,7 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	previousRedisEnabled := common.RedisEnabled
 	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Channel{}, &model.Task{}, &model.Log{}))
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Channel{}, &model.Task{}, &model.Log{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}))
 	model.DB = database
 	model.LOG_DB = database
 	common.MemoryCacheEnabled = false

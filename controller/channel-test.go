@@ -52,6 +52,12 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 	if channel != nil && channel.Type == constant.ChannelTypeAsyncImage {
 		return string(constant.EndpointTypeImageGeneration)
 	}
+	if channel != nil &&
+		(channel.Type == constant.ChannelTypeGemini || channel.Type == constant.ChannelTypeVertexAi) &&
+		channelTestUsesGeminiImageContract(channel, modelName) {
+		// 管理端测试按映射后的 Provider 模型识别 gemini_image 族。
+		return string(constant.EndpointTypeImageGeneration)
+	}
 	if channel != nil && channel.Type == constant.ChannelTypeAdvancedCustom {
 		advancedCustom := channel.GetOtherSettings().AdvancedCustom
 		if advancedCustom != nil {

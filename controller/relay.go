@@ -71,6 +71,7 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 }
 
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {
+	defer service.FinishTaskRequestEvidenceClientDelivery(c)
 
 	requestId := c.GetString(common.RequestIdKey)
 	//group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
@@ -164,6 +165,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	if priceData.FreeModel {
 		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
+	} else if relayFormat == types.RelayFormatOpenAIImage && relay.ImageAsyncPreferRequested(c) {
+		// 显式图片异步受理由受理事务自持资金（§4.3 在原请求预扣前确定
+		// 生命周期）；此处跳过请求级预扣，受理失败时无款可退。
 	} else {
 		newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
 		if newAPIError != nil {
@@ -201,9 +205,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			break
 		}
 		addUsedChannel(c, channel.Id)
-		if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
-			newAPIError = billingErr
-			break
+		// 显式图片异步受理由受理事务自持资金：组级 tiered 预扣也必须跳过，
+		// 否则与受理内钱包预扣形成第二条资金路径（评审 S2）。
+		if !(relayFormat == types.RelayFormatOpenAIImage && relay.ImageAsyncPreferRequested(c)) {
+			if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
+				newAPIError = billingErr
+				break
+			}
 		}
 
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
@@ -551,6 +559,7 @@ type taskSubmissionOutcome struct {
 }
 
 func RelayTask(c *gin.Context) {
+	defer service.FinishTaskRequestEvidenceClientDelivery(c)
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatTask, nil, nil)
 	if err != nil {
 		respondTaskSubmissionError(c, &taskdto.TaskError{
@@ -620,6 +629,16 @@ func executeTaskSubmissionWith(
 	var taskErr *taskdto.TaskError
 	durable := false
 	stage := "start"
+
+	// 音视频证据（一期）：北向证据在验证与选渠前持久化；写入不可用或正文
+	// 超限时直接拒绝，不创建资金 hold，不触发任何 Provider 调用。
+	if evidenceErr := service.BeginTaskRequestEvidence(c, service.TaskRequestEvidenceKindForTaskRelay(c)); evidenceErr != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(evidenceErr, service.ErrTaskRequestEvidenceBodyTooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		return nil, service.TaskErrorWrapperLocal(evidenceErr, "task_evidence_unavailable", status)
+	}
 	defer func() {
 		// 上游 durable 语义保留：任务行落库后不再退款。本地 SkipRequestRefund
 		// 语义保留：Provider 已受理（attempt hold / 上游任务 ID 已知）时不退款，
@@ -834,6 +853,9 @@ func executeTaskSubmissionWith(
 	durable = true
 	stage = "settle"
 	diagnostics.durable(task)
+
+	// 音视频证据（一期）：任务落库后回填 task/attempt 关联；best-effort。
+	service.AttachTaskRequestEvidenceTask(c, task)
 	diagnostics.settleStart(task, result.Quota)
 
 	// Link/Seedance 扩展：attempt 路径的资金已在 InsertTaskWithCreateAttempt

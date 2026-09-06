@@ -23,6 +23,12 @@ import (
 func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
 
+	// 显式异步受理（Prefer: respond-async）：在原请求预扣与渠道调用之前
+	// 确定生命周期（§4.3），其余同步路径保持不变。
+	if service.PreferRespondAsync(c) {
+		return imageAsyncHelper(c, info)
+	}
+
 	imageReq, ok := info.Request.(*dto.ImageRequest)
 	if !ok {
 		return types.NewErrorWithStatusCode(fmt.Errorf("invalid request type, expected dto.ImageRequest, got %T", info.Request), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
@@ -112,7 +118,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 				return apiErr
 			}
 		}
-		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
+		return imageRequestTransportError(info, err)
 	}
 	var usage any
 	responseHandled := false

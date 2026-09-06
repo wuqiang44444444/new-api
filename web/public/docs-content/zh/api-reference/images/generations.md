@@ -10,8 +10,10 @@ operations:
 
 `POST /v1/images/generations` · Bearer 鉴权 · `application/json`
 
-该接口使用 OpenAI 兼容的同步图片合同。请求只填写当前 Key 可访问模型公开的字段；普通响应会在本次
-HTTP 请求内返回最终图片，不会返回可供稍后查询的图片任务 ID。
+该接口使用 OpenAI 兼容的图片合同。请求只填写当前 Key 可访问模型公开的字段；默认在本次 HTTP
+请求内返回最终图片。模型目录声明异步能力时，可加 `Prefer: respond-async` 请求头显式选择异步受理：
+返回 `202` 与平台任务 ID，结果经
+[图片任务查询](images/tasks) 获取。
 
 ## 最小请求
 
@@ -44,6 +46,30 @@ curl "{{OPENAI_BASE_URL}}/images/generations" \
 | `partial_images` | integer | 否 | 流式响应中希望接收的部分图片数量；仅支持流式图片的模型可用 |
 | `stream` | boolean | 否 | `true` 返回 SSE；只有模型明确公开流式能力时才能使用 |
 | `watermark` | boolean | 否 | 是否添加水印；显式 `false` 会被保留，只有模型公开该字段时可用 |
+
+## 异步受理（可选）
+
+已发布异步能力的模型可携带以下请求头：
+
+| 请求头 | 说明 |
+| --- | --- |
+| `Prefer: respond-async` | 显式选择异步受理；与 `stream=true` 互斥，冲突返回 `400` |
+| `Idempotency-Key` | 可选幂等键，仅异步模式支持；同键等价请求重放原任务 ID，不同请求体返回 `409`，长度 ≤ 191 |
+
+受理成功返回 HTTP `202`：
+
+```json
+{
+  "created": 1785207890,
+  "id": "task_xxxxxxxx",
+  "object": "image_task",
+  "status": "queued",
+  "query_url": "/v1/tasks/task_xxxxxxxx"
+}
+```
+
+客户端断开不会取消已受理任务。应用未完成任务过多返回 `429`，平台排队容量耗尽返回 `503`；
+两者都未受理、未扣费，可稍后重试。
 
 上表是公共字段全集，不表示每个模型都支持所有字段。调用前读取模型详情中的
 `api.image.creation.parameters`：

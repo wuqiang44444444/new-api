@@ -211,6 +211,14 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/waffo-pancake/save", controller.SaveWaffoPancake)
 			optionRoute.POST("/waffo-pancake/subscription-product", controller.CreateWaffoPancakeSubscriptionProduct)
 			optionRoute.GET("/waffo-pancake/subscription-product-options", controller.ListWaffoPancakeSubscriptionProductOptions)
+
+			// 对象存储配置（本地扩展）：含加密凭据，只能经专用接口读写，
+			// 普通选项接口不得读取或绕过校验写入该命名空间。
+			optionRoute.GET("/object_storage", controller.GetObjectStorageSetting)
+			optionRoute.PUT("/object_storage", controller.UpdateObjectStorageSetting)
+			optionRoute.POST("/object_storage/test", controller.TestObjectStorageConnection)
+			optionRoute.POST("/object_storage/import_preview", controller.PreviewObjectStorageEnvImport)
+			optionRoute.POST("/object_storage/import", controller.ImportObjectStorageEnvConfig)
 		}
 
 		// Custom OAuth provider management (root only)
@@ -362,6 +370,14 @@ func SetApiRouter(router *gin.Engine) {
 			taskRoute.GET("/self", middleware.UserAuth(), controller.GetUserTask)
 			taskRoute.GET("", middleware.AdminAuth(), controller.GetAllTask)
 			taskRoute.GET("/:task_id/artifacts", middleware.UserAuth(), controller.GetDashboardTaskArtifacts)
+		}
+
+		// 音视频证据（一期）：管理员查看脱敏证据，Root 下载原始对象。
+		evidenceRoute := apiRouter.Group("/task_request_evidence")
+		{
+			evidenceRoute.GET("", middleware.AdminAuth(), controller.GetTaskRequestEvidenceList)
+			evidenceRoute.GET("/:id", middleware.AdminAuth(), controller.GetTaskRequestEvidenceDetail)
+			evidenceRoute.GET("/:id/events/:event_id/object", middleware.RootAuth(), controller.GetTaskRequestEvidenceObject)
 		}
 
 		vendorRoute := apiRouter.Group("/vendors")

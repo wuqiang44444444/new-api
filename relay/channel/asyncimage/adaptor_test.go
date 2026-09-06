@@ -254,7 +254,7 @@ func TestDoResponseRejectsProviderErrorsAndInvalidResults(t *testing.T) {
 		{name: "empty task id", body: `{"code":0,"data":{"status":"processing"}}`, statusCode: http.StatusBadGateway},
 		{name: "unknown status", body: `{"code":0,"data":{"status":"running"}}`, statusCode: http.StatusBadGateway},
 		{name: "empty result", body: `{"code":0,"data":{"status":"success","result":[]}}`, statusCode: http.StatusBadGateway},
-		{name: "multiple results", body: `{"code":0,"data":{"status":"success","result":["https://a","https://b"]}}`, statusCode: http.StatusBadGateway},
+		{name: "invalid result entries", body: `{"code":0,"data":{"status":"success","result":["not-a-url","ftp://x"]}}`, statusCode: http.StatusBadGateway},
 	}
 
 	adaptor := &Adaptor{}
@@ -270,6 +270,25 @@ func TestDoResponseRejectsProviderErrorsAndInvalidResults(t *testing.T) {
 			assert.NotContains(t, apiErr.Error(), "secret provider detail")
 		})
 	}
+}
+
+// TestDoResponseDeliversAllValidImages 验证统一多图交付（R2/R3）：
+// Provider 返回的全部合法 URL 原样进入 data[]，零合法 URL 仍失败关闭。
+func TestDoResponseDeliversAllValidImages(t *testing.T) {
+	adaptor := &Adaptor{}
+	c, recorder := newImageRequestContext(context.Background())
+	info := asyncImageInfo("https://example.com", nanoBanana2)
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+		`{"code":0,"data":{"status":"success","result":["https://a/img1.png","https://a/img2.png","not-a-url"]}}`))}
+	usage, apiErr := adaptor.DoResponse(c, resp, info)
+	require.Nil(t, apiErr)
+	require.NotNil(t, usage)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	var payload dto.ImageResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.Len(t, payload.Data, 2)
+	assert.Equal(t, "https://a/img1.png", payload.Data[0].Url)
+	assert.Equal(t, "https://a/img2.png", payload.Data[1].Url)
 }
 
 func TestDoResponseHonorsCanceledContext(t *testing.T) {

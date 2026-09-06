@@ -50,7 +50,7 @@ type TaskArtifactStoreConfig struct {
 }
 
 // LoadTaskArtifactStoreConfig reads and validates startup-only configuration.
-// S3 mode is deliberately disabled until a storage implementation is shipped.
+// S3 mode activates the S3-compatible store implementation in service.
 func LoadTaskArtifactStoreConfig() TaskArtifactStoreConfig {
 	config := TaskArtifactStoreConfig{
 		Mode:                common.GetEnvOrDefaultString(TaskArtifactStoreModeEnv, TaskArtifactStoreModeUpstream),
@@ -64,11 +64,6 @@ func LoadTaskArtifactStoreConfig() TaskArtifactStoreConfig {
 	}
 	if err := ValidateTaskArtifactStoreConfig(config); err != nil {
 		common.SysError("invalid task artifact store configuration: " + err.Error() + "; using upstream mode")
-		config.Mode = TaskArtifactStoreModeUpstream
-		return config
-	}
-	if config.Mode == TaskArtifactStoreModeS3 {
-		common.SysError("task artifact S3 storage is not implemented; using upstream mode")
 		config.Mode = TaskArtifactStoreModeUpstream
 	}
 	return config

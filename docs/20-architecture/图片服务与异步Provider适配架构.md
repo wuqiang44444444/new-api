@@ -1,243 +1,249 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-04
+last-reviewed: 2026-09-06
 ---
 
 # 图片服务与中转 Provider 适配架构
 
+## 0. 完成度口径
+
+本文描述代码已实现的事实。统一图片服务的“已实现 / 待实现 / 证据门控”三分口径以
+[统一图片服务实施计划 §5](../50-planning/2026-09-05-统一图片服务实施计划.md) 为唯一权威；
+编辑参数面（quality/mask/透明背景等）、中转 edits、SSE 流式与 file_id 等在取证/实现完成前
+显式 `400`，不属于已发布能力。
+
 ## 1. 范围与状态
 
-本文描述普通图片入口、统一图片中转渠道及其代码协议适配。图片生成继续使用 NEWAPI 原生
-`POST /v1/images/generations`、Ability、渠道分发、管理员模型映射和同步计费链路；Seedance Link 的
-ModelArk V3、视频 Task 与无状态素材代理不进入图片入口。
+本文描述统一图片北向合同、原生 Gemini/Vertex 图片履约、显式异步执行底座、统一图片中转渠道
+及其代码协议适配。图片创建继续使用 NEWAPI 原生 `POST /v1/images/generations`、
+`POST /v1/images/edits`；Seedance Link 的 ModelArk V3、视频 Task 与无状态素材代理不进入图片入口。
 
-图片中转在管理面只有一个渠道类型：`ChannelTypeAsyncImage=63`，展示名为「图片中转」。同一个渠道实例
-通过必填的 `image_upstream_protocol` 选择一个代码登记的南向协议：
+图片执行形态（同一对北向入口）：
 
-| 协议值 | Provider 合同 | 当前执行形态 |
+| 形态 | 选择方式 | 执行位置 |
 | --- | --- | --- |
-| `funcloud_aigc_v2` | FunCloud `/api/v2/open/aigc/*` | 创建任务后在本次请求内轮询 |
-| `moxing_images_v1` | Moxing `/v1/images/generations` | 单次同步 POST |
+| 同步 | 默认 | 本次 HTTP 请求内等待并返回 OpenAI Images 响应 |
+| 显式异步 | 请求头 `Prefer: respond-async` | 受理事务提交后返回 `202` + 平台任务 ID，后台 worker 执行，`GET /v1/tasks/{task_id}` 查询 |
 
-代码和管理端配置已经实现；真实 Provider 价格、失败扣费/退款、超时后的 Provider exposure 和生产灰度
-尚未验收。因此“代码已实现”不等于“生产已发布”。
+显式异步由代码登记的图片执行协议 `image_openai_v1` 承载（硬约束 §4）。受限 v1 代码已实现
+（完成度三分表见上）；真实 Provider、账单与生产灰度尚未验收，“代码已实现”不等于“生产已发布”。
 
-## 2. 身份与职责边界
+## 2. 统一北向合同层（G1 v1）
 
-统一的是渠道身份、北向入口、严格校验和计费底座，不是 Provider 请求协议：
+`service/image_contract.go` 是与 Provider 无关的合同解析层，被同步 relay、受理事务与异步
+worker 共同复用；族（模型）级字段生效矩阵由各 adapter 决定。冻结表见
+[统一图片服务实施计划](../50-planning/2026-09-05-统一图片服务实施计划.md) §2。核心规则：
+
+- `n`：未传/null 为 1；显式 `0` 或超过统一上限 10 一律 `400`，不钳制、不循环（P3/E6）；
+  `dto.MaxImageN=128` 仍是无差别安全上限。
+- 输入图（仅 edits）：multipart `image`/`image[]`、JSON `images` 数组（Data URL 或 HTTPS URL）、
+  或单图 `image` 字符串；`image` 与 `images` 互斥。URL 只计数不下载（U1/U2）。
+- 预算（E5）：最多 14 张；单张解码后 ≤ 20 MiB（20×1024×1024 字节），合计 ≤ 50 MiB，
+  按解码字节计。
+- `mask`：v1 全族未发布，统一 `400`，不降级为提示词（E2/C3）。
+- 三态字段语义：未传、`null`、显式空串视为未设置；显式 `false`/`0` 合法（E6）。
+- `Prefer: respond-async` 与 `stream=true` 互斥，在受理、预扣、上游调用前报冲突（P14）。
+
+## 3. gemini_image 族（Gemini 24 / Vertex 41）
+
+Gemini/Vertex 的 `generateContent` 图片模型（imagine 登记表，`setting/model_setting`）通过
+`relay/channel/gemini/image_generate_content.go` 履约标准图片合同；imagen `:predict` 路径保持
+原语义。Vertex 复用同一转换与响应核心，仅承载各自认证、项目与区域。
+
+- 请求：`contents=[{role:user, parts:[text, 输入图…]}]`、
+  `generationConfig.responseModalities=["TEXT","IMAGE"]`；`size` 映射 `imageConfig`
+  （`auto`→不发送；`WxH`→精确宽高比 + 按长边映射 1K/2K/4K 档）。每边不超过 4096，
+  且比例必须属于南向支持集合；不接受 `a:b` 或“最近比例”。返回图片仅允许等比例缩放到请求像素，
+  上游比例不符时报交付错误，不裁切、补边或拉伸；`n` 恒为 1，其它值在 Provider 调用前 `400`。
+- 二进制输入转 `inlineData`；HTTPS URL 以 `fileData` 原样透传（不下载、不改写）。
+- 未发布字段显式拒绝：`quality`、`style`、`background`、`moderation`、`output_format`、
+  `output_compression`、`watermark`、`input_fidelity`、`partial_images`、`stream=true`、
+  未知顶层字段（缺证据即阻断，C3/P7—P11）。
+- 响应：只取最终图片 parts（`thought` 标记、纯文本、非图片 inlineData 排除）；零图 +
+  安全拒绝显式失败，不当成功空数组（R1/R5）；usage 采用可信 `usageMetadata`（R4）。
+- `response_format`：默认 `b64_json`；显式 `url` 在对象存储启用时逐张返回 300 秒签名 URL，
+  否则 `400`（P13，不以 Data URL 冒充）。
+- 同步标准 Google 图片请求的 HTTP 交换失败不证明未发送，传输错误禁止自动重试；
+  该保护仅接入图片错误出口，不改变原生聊天或其它模型的重试策略。
+- Gemini/Vertex 图片转换成功后，南向请求头使用 `application/json` 匹配 generateContent
+  正文；multipart 北向请求头保持原值，未经过图片转换的请求沿用原生行为。
+
+## 4. 显式异步执行（image_openai_v1）
+
+受理与执行的全部持久事实都在 Task 与既有共享底座上，不建第二套任务/账本：
 
 ```text
-POST /v1/images/generations
-  -> 原生鉴权 / Ability / Distribute
-  -> 管理员 model_mapping
-  -> ChannelTypeAsyncImage / APITypeAsyncImage
-  -> image_upstream_protocol
-     -> funcloud_aigc_v2 -> relay/channel/asyncimage
-     -> moxing_images_v1 -> relay/channel/moxingimage
+POST /v1/images/{generations|edits} + Prefer: respond-async
+  -> ImageHelper 窄分派 imageAsyncHelper（controller 跳过请求级预扣）
+  -> 合同/族校验 -> 输入二进制落私有 OSS（URL 不搬运）
+  -> 受理事务：容量槽位 + 钱包/令牌额度预扣 + Task(QUEUED/FundsHeld) + 幂等绑定，一次提交
+  -> 202 {id, status:queued, query_url}
+后台 image_task_execute system task（10s 周期）：
+  恢复扫描（排队过期/租约过期/已保存结果） -> 领取(CAS+执行槽位)
+  -> SENDING 持久提交（发送许可，之后才允许写出请求字节）
+  -> 冻结事实驱动 Provider 调用（复用各 adaptor ConvertImageRequest）
+  -> 结果归一 -> 生成结果清单/实际 usage 持久化 -> 下载/上传 OSS，逐图登记
+  -> 终态 CAS -> 按冻结价格与实际 usage 计算目标 -> 共享原子结算（失败退款；未知待核实）
+GET /v1/tasks/{task_id} -> 图片投影（user_id + app_id 双重归属）
 ```
 
-`relay/channel/imagerelay` 是薄 dispatch adaptor，只读取冻结在渠道设置中的协议枚举并委派给对应 adaptor。
-它不得根据客户模型名、Provider 模型名、价格、Base URL、响应内容或 `model_mapping` 推断协议。
+关键不变量：
 
-一个 Channel 实例只能选择一个协议，因为一条渠道记录只有一组 Base URL、凭据、代理和账号边界。一个
-渠道可以承载所选协议下的多个客户模型，但不能在同一实例中混放 FunCloud 与 Moxing Provider 模型。
-需要同时使用两个 Provider 时，管理员创建两条同为「图片中转」类型、协议不同的渠道记录。
+1. Task 自身状态机承载发送许可：`QUEUED → IN_PROGRESS(SENDING 提交后) → 终态`；停留在
+   SENDING 的租约过期任务置 `RECONCILIATION_REQUIRED`，禁止自动重发、换渠道或退款（R7）。
+   可信上游任务 ID（FunCloud）取得即持久化；此后查询错误保持待核实，不能按创建拒绝退款。
+   待核实任务由恢复查询入口只查询续查，不重建；候选按最久未更新优先并以 ID 稳定排序，
+   分页使用更新时间与 ID，避免持续不可恢复的首批任务挡住后续候选。
+2. 已证实从未发送（`SentAt=0`）的过期租约释放执行槽位回队重派；排队期限（
+   `IMAGE_ASYNC_QUEUE_SECONDS`）已过且从未发送的任务安全失败并退款。
+3. 资金单一所有者：受理的全部事实与钱包/令牌预扣同事务；失败整笔回滚，不创建“已结算”补偿任务。
+   `service/image_task_billing.go` 只用冻结价格、表达式、加密请求探针与持久化实际 usage 计算目标；
+   资金差额、Task 计费状态、最终用量统计及受理槽释放由 `ApplyTaskBillingTarget` 同事务提交。
+   不调用旧非原子重算入口。固定价或缺失 usage 保留预扣，显式零 usage 不伪造 Token。异步 v1 使用钱包。
+4. 容量与背压（§3.10）：受理上限（全局等待 `IMAGE_ASYNC_MAX_WAITING`、每 user+app 未完成
+   `IMAGE_ASYNC_MAX_PER_APP`）与执行并发（`IMAGE_ASYNC_EXECUTE_CONCURRENCY`、每渠道
+   `IMAGE_ASYNC_CHANNEL_EXECUTE_CONCURRENCY`）以 `image_task_slots` 计数行在事务内
+   `FOR UPDATE` 校验并递增；受理、领取、终态释放、计费释放和重建均先锁同一全局计数行。
+   状态和槽位变更同事务，终态待结算仍保留受理占用。计数可由 Task 重建；
+   应用超限 `429`、全局受理容量耗尽 `503`，均不受理、不预扣、不发送。
+5. 旧视频轮询 feeder、通用超时退款与请求结束退款按 `client_protocol` 排除图片任务（NULL
+   安全谓词）；图片任务的退款/结算复用 `AsyncBilling` 状态机与补偿扫描。
+6. 幂等（§3.7）：`Idempotency-Key` 仅异步模式支持（同步请求携带返回 `400`）；键域
+   user + app(token) + 操作 + 客户键，摘要进既有 `TaskCreateIdempotency` 表；重放返回原
+   任务 ID；不同请求体 `409`；绑定任务未终态期间 claim 到期不重置；multipart 摘要忽略
+   boundary；受理未完成窗口内重放返回 `in_progress`，不签发第二个 202。
+7. 输入/结果对象键为 `images/tasks/{taskID}/input-N|result-N`。结果上传前持久化清单与 usage，
+   上传失败在执行预算内只重试保存，逐图登记失败不丢弃其它已生成图片。恢复领取占用相同执行槽位，
+   并通过版本 CAS 排除过期 worker；无 Provider ID 也能按清单 HEAD 补登记。部分结果在待核实时可查询。
+   没有成功落存储、没有可重查来源且进程已丢失的字节不能凭对象键恢复，保留待核实并转人工处置；
+   不自动重生成或退款。FunCloud 恢复每轮只查询一次已有任务。
 
-## 3. 管理员配置与模型映射
+## 5. 对象存储（upstream / S3 兼容 / Azure Blob，G9）
 
-管理员负责配置：
+数据库是对象存储配置的唯一持久事实：完整标准化配置以单行 JSON 持久化在 Option 表
+（`ObjectStorageSetting` 命名空间，凭据为 `objstore.v1.` 加密信封密文），由
+`updateOptionMap` 唯一接线点转发给 service 观察者装载；普通选项接口不进入、也绕不过
+该命名空间。装载即初始化（替代旧的包 `init` 环境变量装载），每次以完整不可变配置
+快照原子替换存储实例，revision 未变化不重建；多节点经既有 `SyncOptions` 周期刷新。
+启动环境变量 `TASK_ARTIFACT_STORE_*` 不再是运行期配置源，只提供一次性显式导入
+（预览不含密钥，验证通过后写入数据库；导入完成后旧变量不覆盖、不作失败 fallback）。
 
-- `image_upstream_protocol`；
-- Base URL、API Key、代理、分组、优先级和权重；
-- 客户模型清单、`model_mapping` 和客户价格。
+存储类型三种：`upstream`（未启用行为；已启用存储的停用须离线维护，不删除远端
+对象）、`s3`（path-style、代码内 SigV4，零新依赖，签名实现通过 AWS 官方测试向量；
+MinIO/R2/OSS 等兼容端点可用）、`azure_blob`（原生 Azure Blob，Shared Key 请求签名与
+service SAS 由官方 azblob SDK 承担；凭据支持连接字符串或手动录入，连接字符串按首个
+等号拆分、保留 Base64 尾部等号，冲突重复属性与 SharedKey 之外的鉴权方式显式拒绝，
+含 BlobEndpoint 时显式生效；标准化后不保存原始连接字符串）。加密信封主密钥从部署侧
+稳定主密钥（`CRYPTO_SECRET`/`SESSION_SECRET`）域分隔派生，不与数据库密文同表存储；
+各节点主密钥必须一致，解密失败存储失败关闭为禁用并告警。配置读写与连通性测试走专用
+最高管理员接口（`/api/option/object_storage*`）：读取返回脱敏账号与
+`credential_configured`；「测试连接」只测当前表单值、密钥未修改时后端按
+backend+账号复用已存密钥；「保存并启用」对同一完整配置先校验再验证、通过后原子保存，
+测试失败保留既有配置。测试在目标容器创建随机对象验证 PUT（If-None-Match 条件）、
+HEAD、鉴权 GET、短期签名 GET、删除与删除后 404；只清理本次创建的对象，清理失败单独
+提示；结果不回显签名 URL、Authorization 或上游响应正文。
 
-代码负责：
+统一存储能力：图片业务只依赖 `imageObjectStore` 最小接口（put/HEAD/签名/读取），
+不断言具体 S3 类型；S3 与 Azure Blob 实现各自履约，对象命名与前缀语义一致。
+图片结果签名固定 300 秒；旧 `TaskArtifactStore` 消费者沿用 900 秒默认值。
+Azure SAS 的起止时间统一使用 UTC；生效时间向前容错两分钟，过期时间从当前时刻计算，
+不受宿主机本地时区影响。
 
-- 协议路径、鉴权头、请求字段转换、轮询和响应归一化；
-- 从本次 relay 开始起对图片中转南向履约应用固定 10 分钟总时限；
-- 每个协议已发布 Provider profile 的字段、规格和失败语义；
-- 保存时确认每个客户模型最终解析到所选协议登记的 Provider profile。
+图片输入暂存、执行/恢复、同步 URL 投递和一次任务查询通过 `WithImageObjectStore` 绑定同一不可变
+存储实例，凭据刷新不拆分一次操作。图片回读传递调用方取消与总预算，最大 64 MiB，超限明确失败而非
+返回截断图片；此上限不用于客户 HTTPS 参考图。任务查询总预算 60 秒，单次 HEAD 最长 5 秒。
 
-`model_mapping` 始终遵守 NEWAPI 原生管理员语义：它只执行客户模型到 Provider 模型的转换。代码不生成、
-补全或固化管理员映射，也不要求 Models 等于 mapping 的键集合。客户模型可以直接使用 Provider 模型名；
-mapping 可以多跳并包含与当前渠道模型无关的管理员条目。代码仅对当前 Models 逐项执行原生
-`ResolveModelMapping`，再检查最终 Provider 模型是否属于所选协议。
+异步受理预扣前及后台领取待发送任务前，以绑定实例做小对象 PUT/GET 一致性检查（最长 5 秒）。
+同节点同实例合并并发探测，成功缓存 10 秒、失败 2 秒；实际图片写入失败使缓存失效。健康检查对象位于
+`object-storage-health/`，每实例复用一个无客户内容的随机对象，清理由桶生命周期承担。探测不可用时
+新受理返回 503，后台不领取或提交 SENDING；排队期限仍生效。短期观测不保证之后写入成功，发送后的
+故障继续按既有交付恢复/待核实处理，不重生成。
 
-切换 `image_upstream_protocol` 不会改写 Models、`model_mapping` 或客户价格。若现有模型不能落到新协议的
-profile，保存必须失败，由管理员显式调整配置。
+- 异步输入与最终图片存私有桶；数据库只保存对象引用、归属与 MIME（`PrivateData.ImageTask`），
+  不持久化签名 URL；源 URL 只存在于冻结快照，不进日志或公共响应。
+- 结果投递：图片查询授权后逐张 HEAD 校验并签发 300 秒 presigned GET URL 与 `url_expires_at`；
+  到期后再次授权查询续签；显式 `b64_json` 逐张读取对象原文返回。完整签名 URL 不进入日志。
+- 逐图可用性（评审 S12）：HEAD 404 → `deleted`（保留历史生成状态，不抹除其它图片）；其它探测/
+  读取错误 → `unavailable`（不判删除、不伪装可交付）；仅可用图片签发 URL/b64。
+- Provider 结果 URL 下载必须走 SSRF 防护客户端（拨号校验，评审 S11）；管理员上游连接客户端
+  不得复用为任意媒体下载器。
+- 既有 `task_artifact_access` 长期 capability 保留原消费者；`TaskArtifactStore.Resolve` 只对
+  有持久化登记事实的图片产物返回引用（评审 S5），未入库对象交回原 Provider 下载路径，启用
+  对象存储不改变旧产物行为。存储不可用时拒绝新异步受理。
+- 首次启用后，存储位置边界（backend、账号、端点、容器、前缀、region）在线固定，停用或更换须
+  离线维护。配置保存事务统一拒绝位置变更，不以进行中任务计数证明历史/同步对象已无人依赖；
+  第一版无后台迁移、多配置路由或跨存储探测。
+  同账号容器内轮换密钥经测试后保存；不保存第二把备用 Key，不自动尝试旧凭据。
+- 清理由部署方桶生命周期策略承担；平台不新增图片清理任务。
 
-## 4. 保存与运行时失败关闭
+## 6. 图片中转渠道（ChannelTypeAsyncImage=63）
 
-图片中转渠道保存时必须满足：
+管理面仍只有 `ChannelTypeAsyncImage` 一个图片中转类型，协议、模型映射与保存校验
+（`model/channel_image_relay.go`）不变：
 
-1. 显式选择已登记的 `image_upstream_protocol`；
-2. 显式提供 Base URL；
-3. 至少配置一个非空、无重复的客户模型；
-4. 每个客户模型经管理员 mapping 后属于所选协议的代码 profile；
-5. body pass-through 关闭，Param Override 为空，Advanced Custom route 不存在。
-
-`APITypeAsyncImage` 是严格图片 API：全局或渠道级 body pass-through 都不能绕过专用 DTO 校验。图片请求日志
-只记录脱敏占位，不输出 prompt、参考图、Provider 原始请求体或完整结果签名 URL。直接修改数据库造成协议
-缺失或冲突时，运行时失败关闭，不尝试旧类型、其它协议或模型名推断。严格图片热路径在 adaptor 转换前还会
-拒绝非空 Param Override，避免既有配置或直接数据库修改在 profile 校验后再次改写 Provider 请求。
-
-## 5. 北向兼容子集
-
-FunCloud 当前发布：
-
-| Provider 模型 | Prompt | 当前规格 | 可选参数 |
+| 协议值 | Provider 合同 | 同步执行 | 异步执行 |
 | --- | --- | --- | --- |
-| `nano-banana-2-lite` | 最多 20000 字符 | 单一分辨率 | 已登记宽高比 |
-| `nano-banana-2` | 最多 20000 字符 | `1K` | 已登记宽高比、`jpg/png` |
-| `seedream-5.0-lite` | 3—3000 字符 | `2K/basic` | 已登记宽高比 |
-| `seedream-5.0-pro` | 3—3000 字符 | `1K/basic` | 已登记宽高比 |
+| `funcloud_aigc_v2` | FunCloud `/api/v2/open/aigc/*` | 创建后在本次请求内轮询 | worker 内创建+轮询（`asyncimage/headless.go`） |
+| `moxing_images_v1` | Moxing `/v1/images/generations` | 单次同步 POST | worker 内单次 POST（`moxingimage/headless.go`） |
 
-Moxing 当前发布：
+- 同步模式继续返回 Provider URL；成功结果按 `data[]` 交付 Provider 返回的全部合法 URL
+  （零合法 URL 失败关闭），不补生成（R2/R3）。
+- 异步模式下结果下载后保存私有 OSS 并按 300 秒签名交付。
+- edits、mask、参考图与 `stream=true` 在 Provider 计费证据完成前显式 `400`（B7/G 门控）；
+  该未发布状态是证据门控，不是合同缺失。
+- 10 分钟总时限（`relay/channel/image_relay_timeout.go`）只约束同步模式；异步模式使用
+  worker 的排队/执行/存储预算。
 
-| Provider 模型 | 客户模型示例 | Prompt | 当前规格 |
-| --- | --- | --- | --- |
-| `doubao-seedream-5-0-260128` | `seedream-5-moxing` | 1—3000 字符 | 固定 `2K`、单图 URL |
-| `doubao-seedream-5-0-pro-260628` | `seedream-5-pro-moxing` | 1—3000 字符 | 固定 `2K`、单图 URL |
+## 7. 公开投影与管理测试
 
-客户模型示例不是代码映射或能力身份。管理员可以使用其它别名，也可以不配置映射而直接公开 Provider
-模型。FunCloud 和 Moxing profile 由代码注册表分开维护；管理端渠道测试先执行管理员 mapping，再根据所选
-协议和最终 Provider profile 选择测试尺寸。
+- `api.image` 投影新增 gemini_image 族（`pkg/publicmodel/image_gemini.go`）：按管理员映射后
+  落在 imagine 登记表的 Provider 模型识别（不从客户模型名推断），同时发布 `create_image`
+  与 `edit_image` 操作及逐字段参数；图片中转与原生图片模型投影规则不变。
+- 管理端渠道测试：Gemini/Vertex 渠道在映射模型为 imagine 登记模型时默认使用图片生成
+  endpoint（`controller/channel_test_image_profile.go`）；图片中转渠道测试维持协议感知尺寸。
 
-所有当前 profile 共同遵守：
+## 8. 架构不变量
 
-- `n` 必须为 `1`，`response_format` 只能为 `url`；
-- 成功结果必须恰好包含一个合法 HTTP(S) URL；
-- Base64、显式 `stream`（包括 `false`）、未知顶层字段和合同外 Provider 字段显式返回 `400`；
-- `extra_fields.reference_images` 在输入图价格和失败扣费规则验收前保持未发布；
-- 更高规格不能只通过修改 Models、mapping、Param Override 或透传配置开放。
-
-不支持字段不得静默删除、钳制、降级或改义。
-
-### 5.1 公开模型参数投影
-
-`GET /v1/models`、`GET /v1/models/{model}` 与 `/api/pricing` 对图片模型返回同一份
-`api.image` 客户合同。`creation` 固定声明 `POST /v1/images/generations`、
-`application/json`、客户模型名和 `additional_properties=false`；`parameters` 逐项声明允许字段、类型、
-必填性、固定值、默认值、枚举和上下限。嵌套字段使用点路径，例如
-`extra_fields.aspect_ratio`。参数未出现在列表中即表示该客户模型不支持，调用方不得按其它模型或渠道
-经验补发。
-
-严格图片模型先按调用方分组顺序选取第一个有可用渠道的分组，再取该分组内最高 Priority 的所有已启用渠道。
-这些渠道是运行时可能按 Weight 选中的同级候选；只有它们经管理员 `model_mapping` 定位的代码 profile 产生
-完全一致的客户合同时，才对外发布 `api.image`。任一候选缺少已登记 profile 或合同不一致时不发布，不用 Weight
-或 Channel ID 猜测单一合同。列表和单模型详情必须复用同一构造逻辑；不得再由静态模型表直接返回缺少端点或参数的详情。
-`/api/pricing` 没有单一调用方分组上下文，因此只有该模型在各可见分组的最高 Priority 候选合同全部一致时才发布。
-公开投影只包含客户模型和北向字段，不返回协议枚举、Provider 模型、Channel 名称或私有路径。
-
-原生 OpenAI 兼容图片模型也按模型族返回生成端点的精确字段，而不是暴露 `ImageRequest` DTO 的字段并集：
-DALL·E 2、DALL·E 3 与 GPT Image 分别声明自己的 `n`、尺寸、质量、格式和流式参数；编辑专用字段不得
-出现在生成接口合同中。无法由代码识别到稳定模型族的原生图片名称只返回网关稳定公共字段，不推测
-Provider 私有枚举。
-
-## 6. 南向控制流
-
-```mermaid
-flowchart LR
-    A["OpenAI 图片请求"] --> B["管理员 model_mapping"]
-    B --> C["图片中转严格校验"]
-    C --> D{"image_upstream_protocol"}
-    D -->|"funcloud_aigc_v2"| E["FunCloud 创建并在请求内轮询"]
-    D -->|"moxing_images_v1"| F["Moxing 同步 POST"]
-    E --> G["校验终态与单 URL"]
-    F --> G
-    G --> H["OpenAI ImageResponse / HTTP 200"]
-    E -->|"错误或未知"| I["脱敏失败并禁止重试"]
-    F -->|"错误或未知"| I
-```
-
-FunCloud 创建成功后立即查询一次；仍为活动状态时，前 30 秒每 3 秒轮询，之后每 5 秒轮询。创建和轮询
-共享本次请求 context 与 Provider HTTP client，不建立后台任务或持久化状态。
-
-Moxing 只发送一次同步 POST，不轮询、不重发；成功响应必须恰好包含一个 HTTP(S) URL，返回模型存在时
-还必须与冻结的上游模型一致。两个 adaptor 的路径、DTO、响应 envelope、错误码和轮询实现保持独立。
-
-## 7. 客户生命周期、超时与重试
-
-客户合同始终是本次 HTTP 请求内等待并返回 OpenAI 图片响应。FunCloud task ID 只存在于 adaptor 的请求
-上下文；不会写入客户响应、主数据库、图片 Task 或 create attempt。Moxing 当前没有南向任务 ID。
-
-两个协议的总时限都由代码固定为 10 分钟，从本次 relay 的 `StartTime` 起算：FunCloud 的
-创建、初始响应和全部轮询共享剩余时间；Moxing 的单次 POST 及响应体读取使用同一边界。
-部署无需配置 `RELAY_TIMEOUT`；未配置或为 `0` 时不会禁用图片中转。若部署显式配置了更短的
-正数 `RELAY_TIMEOUT`，它作为所有 relay 共享的更早上限，不会延长图片中转的 10 分钟边界。
-
-客户请求 context 更早取消时，若连接仍可写则返回 `499` / `request_canceled`；该结果不写入
-relay 错误日志、不重试且不参与渠道自动封禁。任一有效时限到期仍返回 `504` 并保留渠道超时分类。
-Provider POST、轮询、网络、5xx、非法 JSON、未知状态和结果合同错误均携带 skip-retry，不自动
-重发、换协议、换渠道或 fallback。`499` 或 `504` 都不能解释为 Provider 一定未受理或未计费。
-
-若任一 Provider 无法在同步等待边界内给出可信结果，或者超时后仍可能收费且现有同步退款语义无法覆盖，
-该协议必须保持停用并另行评审 durable Task/attempt 与 Provider exposure 合同。
-
-## 8. 计费边界
-
-图片预扣、成功结算和失败退款继续由原生同步图片链路负责：
-
-- 客户价格以客户模型配置和冻结快照为准，不由 `image_upstream_protocol` 或 Provider 模型反推；
-- `model_mapping` 不改变客户价格事实；
-- 当前结果固定一张，不在 Provider 响应阶段追加未预扣的数量、输入图或像素倍率；
-- Moxing adaptor 返回非空零值 `*dto.Usage`，图片 handler 补最小日志 usage 并按客户固定价格结算；
-- 客户退款与 Provider exposure 分账，未知供应商成本保持未知。
-
-未来开放 Moxing Pro 动态像素档、参考图或 FunCloud 组图前，必须先把已验证 Provider usage 归一为平台
-可预扣、可结算、可审计的标准计费事实，并同时覆盖请求上界、checked quota 转换、预扣和结算。
-
-## 9. 旧类型迁移
-
-旧 `ChannelTypeMoxingImage=63` 已退出运行时注册。数据库迁移必须在旧版本全部停止后，由 master 节点在业务
-流量进入前原子执行：
-
-- 旧类型 62 缺少协议时写入 `funcloud_aigc_v2`；
-- 旧类型 63 改为类型 62 并写入 `moxing_images_v1`；
-- 空 Base URL 按旧渠道语义物化为对应 Provider 默认地址；
-- settings 只补写协议字段，必须保留其它已存在的 JSON 字段；
-- 旧图片渠道存在 Param Override 时拒绝迁移，不静默删除或继续运行；
-- settings 非法或旧类型 63 已带冲突协议时整笔迁移失败；
-- 迁移以 Option marker 保证幂等。
-
-master 完成迁移后，每个节点都必须在启动阶段只读确认 marker 已完成、类型 63 为零、类型 62 具有合法协议、
-显式 Base URL 且不存在 Param Override；任何一项不满足都不得监听业务流量。禁止新旧版本混跑，因为旧版本
-可能在 marker 写入后重新产生类型 63，或者把已迁移的 Moxing 渠道按旧类型语义解释。
-
-迁移完成后，运行时、管理端和模型注册均不再识别类型 63。`ChannelTypeDummy=63` 与
-`ChannelBaseURLs[63]` 空槽只保留计数和安全索引边界，不构成兼容渠道、别名或 fallback。
-
-## 10. 架构不变量
-
-1. 图片统一使用 NEWAPI 原生图片入口，不因 Provider 异步形态建立第二套客户 API。
-2. 管理面只有一个图片中转 ChannelType/APIType；南向协议必须由管理员显式选择。
-3. 一个 Channel 实例只承载一个上游协议；协议选择不得从模型、mapping、价格、Base URL 或响应推断。
-4. `model_mapping` 完全由管理员维护；代码只解析当前客户模型并校验最终 Provider profile。
-5. FunCloud 与 Moxing adaptor 独立履约，不共享请求 DTO、轮询状态或响应猜测。
-6. Provider task ID 不持久化、不返回客户，也不创建图片 Task 或 create attempt。
-7. 不支持字段显式失败；Provider 发送后的失败全部 skip retry。
-8. 图片中转由代码统一限制为 10 分钟；`RELAY_TIMEOUT` 仅能在显式配置为更短正数时提前终止。
-9. 客户取消不得解释为 Provider 超时或渠道故障，不得触发自动封禁。
-10. 成功必须恰好交付一张合法 URL 图片；其它结果失败关闭。
-11. 模型列表、单模型详情和价格目录必须返回一致的图片入口与逐模型参数合同。
+1. 图片统一使用 NEWAPI 原生图片入口；异步是同一入口的显式模式，不建第二套客户 API。
+2. 显式图片执行身份只来自 `Prefer: respond-async` + 代码登记协议 `image_openai_v1`，不从
+   模型、价格或请求字段推断。
+3. 受理容量、钱包/令牌预扣、Task 写入与幂等绑定一次事务提交；任何失败全部回滚。
+4. 发送字节前必须持久提交 SENDING；发送后的一切不可判定结果按待核实处理，不自动重发、
+   换渠道或退款。
+5. 图片 Task 按创建时冻结的渠道、连接、模型与计费事实执行，不因当前配置重选渠道。
+   自定义请求头在受理时由既有 `ResolveHeaderOverride` 解析，按 Task ID 绑定加密快照；
+   发送和恢复只应用冻结值（含 Host），不再次解释模板。快照缺失或不可解密时保持待核实，
+   不从当前渠道补取请求头。
+6. 管理面只有一个图片中转 ChannelType/APIType；南向协议必须由管理员显式选择。
+7. `model_mapping` 完全由管理员维护；代码只解析当前客户模型并校验最终 Provider profile。
+8. FunCloud 与 Moxing adaptor 独立履约，不共享请求 DTO、轮询状态或响应猜测。
+9. 不支持字段显式失败；成功交付零图即失败关闭。
+10. 模型列表、单模型详情和价格目录必须返回一致的图片入口与逐模型参数合同。
+11. 敏感凭据、媒体正文、完整签名 URL 与 Provider 原始响应不进入日志、公共响应或普通任务字段。
 12. 代码实现不能替代真实 Provider、账单、超时 exposure、外部数据库和生产灰度验收。
 
-## 11. 代码事实与相关文档
+## 9. 代码事实与相关文档
 
 主要代码事实：
 
-- `relaykit/dto/image_upstream_protocol.go`、`constant/image_relay.go`；
-- `relay/channel/image_relay_timeout.go`、`relay/channel/imagerelay/`、`relay/channel/asyncimage/`、
-  `relay/channel/moxingimage/`；
-- `model/channel_image_relay.go`、`model/image_relay_channel_migration.go`；
-- `relay/image_handler.go`、`relay/image_strict_api.go`、`relay/relay_adaptor.go`；
-- `controller/channel-test.go`、`controller/channel_test_image_profile.go`；
-- `web/src/features/channels/` 与七种 locale。
+- `service/image_contract.go`（统一合同层）、`relay/image_async.go`（受理）、
+  `relay/image_task_executor.go`（Provider 执行器）、`service/image_task_worker.go`（worker）；
+- `model/task_image_lifecycle.go`、`model/image_task_slots.go`（任务生命周期与容量槽位）；
+- `relay/channel/gemini/image_generate_content.go`、`relay/channel/vertex/adaptor.go`（窄分支）；
+- `relay/channel/asyncimage/headless.go`、`relay/channel/moxingimage/headless.go`；
+- `service/sigv4.go`、`service/task_artifact_store_s3.go`、`service/task_artifact_store_azure.go`、`service/task_artifact_store_runtime.go`、`service/task_artifact_store_image.go`、`service/object_storage_probe.go`（S3/Azure 存储、运行时装载、图片能力接口与连通性测试）；
+- `setting/system_setting/object_storage.go`、`common/object_storage_credential.go`、`model/object_storage_setting.go`、`controller/object_storage_admin.go`（标准化配置、凭据信封、持久化分发与专用管理接口）；
+- `middleware/image_create_idempotency.go`、`controller/image_task_query.go`、
+  `controller/system_task_image_handler.go`；
+- `pkg/publicmodel/image_gemini.go`、`model/public_image_model_api.go`、
+  `controller/channel_test_image_profile.go`；
+- `setting/system_setting/image_task.go`（容量与预算默认值）。
 
 相关当前事实：
 
 - [架构概览](架构概览.md)
 - [异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md)
+- [公开模型元数据投影架构](公开模型元数据投影架构.md)
 - [图片模型 API 用户调用指南](../30-engineering/图片模型API用户调用指南.md)
-- [图片渠道与异步 Provider 运维手册](../40-operations/03-图片渠道与异步任务运维手册.md)
+- [图片渠道与异步任务运维手册](../40-operations/03-图片渠道与异步任务运维手册.md)

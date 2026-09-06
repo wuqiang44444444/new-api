@@ -40,6 +40,9 @@ type ImageRequest struct {
 	Image            json.RawMessage `json:"image,omitempty"`
 	// 用匿名参数接收额外参数
 	Extra map[string]json.RawMessage `json:"-"`
+	// NExplicitZero 记录客户端显式提交了 n=0。原生解析器会把显式 0 归一
+	// 为 1（保持其它渠道行为），统一图片合同层据此按标准语义拒绝（E6）。
+	NExplicitZero bool `json:"-"`
 }
 
 func (i *ImageRequest) UnmarshalJSON(data []byte) error {
@@ -65,6 +68,11 @@ func (i *ImageRequest) UnmarshalJSON(data []byte) error {
 	for k, v := range rawMap {
 		if _, ok := knownFields[k]; !ok {
 			i.Extra[k] = v
+		}
+	}
+	if rawN, ok := rawMap["n"]; ok {
+		if trimmed := strings.TrimSpace(string(rawN)); trimmed == "0" {
+			i.NExplicitZero = true
 		}
 	}
 	return nil

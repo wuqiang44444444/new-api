@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { SystemBehaviorSection } from '../general/system-behavior-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
+import { ObjectStorageSection } from '../integrations/object-storage-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
 import { PerformanceSection } from '../maintenance/performance-section'
@@ -109,6 +110,11 @@ const OPERATIONS_SECTIONS = [
         defaultEnabled={Boolean(settings.LogConsumeEnabled)}
       />
     ),
+  },
+  {
+    id: 'object-storage',
+    titleKey: 'Object Storage',
+    build: (_settings: OperationsSettings) => <ObjectStorageSection />,
   },
   {
     id: 'performance',

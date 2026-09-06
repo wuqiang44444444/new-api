@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/relay"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -353,6 +354,10 @@ func TestExecuteTaskSubmissionDisconnectAfterDurableInsertDoesNotRefund(t *testi
 
 func setupTaskSubmissionDatabase(t *testing.T, migrate bool, events *[]string) *gorm.DB {
 	t.Helper()
+	// This fixture asserts Task insert/settlement ordering, independently of evidence.
+	oldEvidenceConfig := system_setting.GetTaskRequestEvidenceConfig()
+	system_setting.SetTaskRequestEvidenceConfig(system_setting.TaskRequestEvidenceConfig{Enabled: false})
+	t.Cleanup(func() { system_setting.SetTaskRequestEvidenceConfig(oldEvidenceConfig) })
 	previousDB := model.DB
 	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

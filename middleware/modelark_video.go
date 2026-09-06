@@ -10,7 +10,9 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -20,6 +22,11 @@ type modelArkVideoCreateRequest = dto.ModelArkVideoCreateRequest
 
 func ModelArkVideoCreateConvert() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if err := service.BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindVideoTask); err != nil {
+			abortModelArkVideo(c, http.StatusServiceUnavailable, "evidence_unavailable", "request evidence unavailable")
+			return
+		}
+		defer service.FinishTaskRequestEvidenceClientDelivery(c)
 		var request modelArkVideoCreateRequest
 		var body map[string]any
 		if err := common.UnmarshalBodyReusable(c, &body); err != nil {

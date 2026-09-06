@@ -292,6 +292,13 @@ func updateOptionMap(key string, value string) (err error) {
 		common.OptionMapRWMutex.Unlock()
 		return nil
 	}
+	if key == system_setting.ObjectStorageSettingOptionKey {
+		// 对象存储命名空间（本地扩展）：含加密凭据的完整配置不进入通用
+		// OptionMap，直接转发给 service 观察者重建存储实例；普通选项接口
+		// 因此读不到、也绕不过校验写入。这是本命名空间的唯一接线点。
+		NotifyObjectStorageSettingUpdate(value)
+		return nil
+	}
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
 	common.OptionMap[key] = value

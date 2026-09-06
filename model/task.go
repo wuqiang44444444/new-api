@@ -159,6 +159,8 @@ type TaskPrivateData struct {
 	AppID                          int                        `json:"app_id,omitempty"`
 	SkipTokenQuota                 bool                       `json:"skip_token_quota,omitempty"` // Playground 等不参与令牌额度记账的任务
 	AsyncBilling                   *TaskAsyncBillingContext   `json:"async_billing,omitempty"`
+	// ImageTask 是显式图片执行协议（image_openai_v1）的受保护快照。
+	ImageTask *TaskImageExecutionData `json:"image_task,omitempty"`
 }
 
 type TaskExecutionSnapshot struct {
@@ -391,6 +393,9 @@ func GetTimedOutUnfinishedTasks(cutoffUnix int64, limit int) []*Task {
 	var tasks []*Task
 	err := DB.Where("progress != ?", "100%").
 		Where("status NOT IN ?", TerminalTaskStatuses()).
+		// 显式图片执行类型由图片 worker 按自身排队/执行预算处理，
+		// 通用超时退款扫描不得提前释放其资金（NULL 安全谓词兼容历史空值）。
+		Where("client_protocol IS NULL OR client_protocol <> ?", TaskClientProtocolImageOpenAIV1).
 		Where("submit_time < ?", cutoffUnix).
 		Order("submit_time").
 		Limit(limit).
@@ -405,7 +410,9 @@ func GetAllUnFinishSyncTasks(limit int) []*Task {
 	var tasks []*Task
 	var err error
 	// get all tasks progress is not 100%
-	err = DB.Where("progress != ?", "100%").Where("status NOT IN ?", TerminalTaskStatuses()).Limit(limit).Order("id").Find(&tasks).Error
+	err = DB.Where("progress != ?", "100%").Where("status NOT IN ?", TerminalTaskStatuses()).
+		Where("client_protocol IS NULL OR client_protocol <> ?", TaskClientProtocolImageOpenAIV1).
+		Limit(limit).Order("id").Find(&tasks).Error
 	if err != nil {
 		return nil
 	}
@@ -421,6 +428,7 @@ func HasUnfinishedSyncTasks() bool {
 	err := DB.Model(&Task{}).
 		Where("progress != ?", "100%").
 		Where("status NOT IN ?", TerminalTaskStatuses()).
+		Where("client_protocol IS NULL OR client_protocol <> ?", TaskClientProtocolImageOpenAIV1).
 		Limit(1).
 		Pluck("id", &id).Error
 	return err == nil && id != 0

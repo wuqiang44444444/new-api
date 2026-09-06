@@ -52,6 +52,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { TaskEvidence } from '../task-evidence'
 import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
@@ -671,6 +672,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
       contentHeight='min(72dvh, 720px)'
       bodyClassName='pr-2 sm:pr-4'
     >
+ {props.open && props.isAdmin && props.log.request_id ? <TaskEvidence key={props.log.request_id} requestId={props.log.request_id} isRoot={props.isRoot} /> : null}
       <div className='w-full max-w-full min-w-0 space-y-2.5 overflow-x-hidden py-1 sm:space-y-3'>
         {/* Overview section - key identifiers */}
         <div className='min-w-0 space-y-1'>

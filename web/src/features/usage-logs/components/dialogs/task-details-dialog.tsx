@@ -27,9 +27,21 @@ import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { taskActionMapper, taskStatusMapper } from '../../lib/mappers'
+import {
+  resolveTaskPreviewMode,
+  shouldLoadTaskArtifacts,
+} from '../../lib/task-artifacts'
 import { resolveTaskDetailAccess } from '../../lib/task-details'
 import type { TaskLog } from '../../types'
 import { PluginAuthorLink } from '../plugin-author-link'
+import {
+  LegacyAudioPreview,
+  LegacyVideoResult,
+  SuccessWithoutVideoNote,
+  TaskArtifacts,
+} from '../task-artifacts'
+import { TaskEvidence } from '../task-evidence'
+import { TaskVideoParameters } from '../task-video-parameters'
 
 function DetailRow(props: {
   label: React.ReactNode
@@ -87,6 +99,9 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
   const plugin = access.plugin
   const runtime = access.runtime
   const properties = props.log.properties
+  const previewMode = resolveTaskPreviewMode(props.log)
+  const showVideoResult =
+    shouldLoadTaskArtifacts(props.log, props.open) && previewMode !== 'none'
 
   return (
     <Dialog
@@ -114,6 +129,13 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
       bodyClassName='pr-2 sm:pr-4'
     >
       <div className='space-y-3'>
+        {props.open && props.isAdmin ? (
+          <TaskEvidence
+            key={props.log.task_id}
+            taskId={props.log.task_id}
+            isRoot={props.isRoot}
+          />
+        ) : null}
         <DetailSection label={t('Basic Information')}>
           <DetailRow label={t('Task ID')} value={props.log.task_id} mono />
           <DetailRow label={t('Platform')} value={props.log.platform} mono />
@@ -159,6 +181,28 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
             <DetailRow label={t('Fail Reason')} value={props.log.fail_reason} />
           ) : null}
         </DetailSection>
+
+        {showVideoResult ? (
+          <DetailSection label={t('Video Result')}>
+            {previewMode === 'legacy-suno' ? (
+              <LegacyAudioPreview data={props.log.data} />
+            ) : (
+              <TaskArtifacts
+                taskId={props.log.task_id}
+                enabled={shouldLoadTaskArtifacts(props.log, props.open)}
+                emptyContent={(legacyContentUrl) =>
+                  legacyContentUrl ? (
+                    <LegacyVideoResult contentUrl={legacyContentUrl} />
+                  ) : (
+                    <SuccessWithoutVideoNote />
+                  )
+                }
+              />
+            )}
+          </DetailSection>
+        ) : null}
+
+        <TaskVideoParameters details={props.log.video_details} />
 
         {props.isAdmin ? (
           <DetailSection
@@ -252,6 +296,27 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
               <DetailRow
                 label={t('Upstream Task ID')}
                 value={access.upstreamTaskId}
+                mono
+              />
+            ) : null}
+            {props.log.root_info?.upstream_request_id ? (
+              <DetailRow
+                label={t('Upstream Request ID')}
+                value={props.log.root_info.upstream_request_id}
+                mono
+              />
+            ) : null}
+            {props.log.root_info?.video_upstream_protocol ? (
+              <DetailRow
+                label={t('Frozen protocol')}
+                value={props.log.root_info.video_upstream_protocol}
+                mono
+              />
+            ) : null}
+            {props.log.root_info?.southbound_adapter_version ? (
+              <DetailRow
+                label={t('Adapter version')}
+                value={props.log.root_info.southbound_adapter_version}
                 mono
               />
             ) : null}

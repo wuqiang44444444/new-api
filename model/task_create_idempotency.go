@@ -56,7 +56,12 @@ func ClaimTaskCreateIdempotency(userID int, protocol, keyHash, requestHash strin
 	if err := DB.Where("user_id = ? AND protocol = ? AND key_hash = ?", userID, claim.Protocol, keyHash).First(&existing).Error; err != nil {
 		return nil, false, err
 	}
-	if existing.ExpiresAt <= now && (existing.Status == TaskCreateIdempotencyComplete || existing.Status == TaskCreateIdempotencyCompletedNoReplay) {
+	// 图片协议的 claim 到期重置必须先确认绑定任务已终态：排队、执行、
+	// 待核实及未完成交付/结算期间保留绑定（方案 §3.7，评审 S7）。
+	retainForImage := existing.Protocol == TaskClientProtocolImageOpenAIV1 &&
+		ImageTaskRequiresIdempotencyRetention(userID, existing.TaskID)
+	if existing.ExpiresAt <= now && !retainForImage &&
+		(existing.Status == TaskCreateIdempotencyComplete || existing.Status == TaskCreateIdempotencyCompletedNoReplay) {
 		result = DB.Model(&TaskCreateIdempotency{}).
 			Where("id = ? AND expires_at <= ? AND status IN ?", existing.ID, now, []string{
 				TaskCreateIdempotencyComplete,

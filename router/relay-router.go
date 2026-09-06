@@ -112,10 +112,10 @@ func SetRelayRouter(router *gin.Engine) {
 		httpRouter.POST("/edits", func(c *gin.Context) {
 			controller.Relay(c, types.RelayFormatOpenAIImage)
 		})
-		httpRouter.POST("/images/edits", func(c *gin.Context) {
+		httpRouter.POST("/images/edits", middleware.ImageCreateIdempotency(), func(c *gin.Context) {
 			controller.Relay(c, types.RelayFormatOpenAIImage)
 		})
-		httpRouter.POST("/images/generations", func(c *gin.Context) {
+		httpRouter.POST("/images/generations", middleware.ImageCreateIdempotency(), func(c *gin.Context) {
 			controller.Relay(c, types.RelayFormatOpenAIImage)
 		})
 

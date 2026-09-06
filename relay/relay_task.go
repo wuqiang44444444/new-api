@@ -381,6 +381,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	// 9. 发送请求
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
+		// 音视频证据拒绝边界：尚未发送任何字节，不标记 unknown，
+		// 返回本地不可重试错误并进入既有 ReleaseRejectedTaskCreateAttempt 释放路径。
+		if service.IsTaskRequestEvidenceUnavailable(err) {
+			return nil, service.TaskErrorWrapperLocal(err, "task_evidence_unavailable", http.StatusInternalServerError)
+		}
 		markAmbiguousTaskCreate(c, info)
 		return nil, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
 	}

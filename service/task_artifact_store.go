@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
@@ -53,11 +52,14 @@ func (disabledArtifactStore) Serve(*gin.Context, *model.Task, *StoredArtifactRef
 var taskArtifactStore TaskArtifactStore = &disabledArtifactStore{}
 
 func init() {
-	_ = system_setting.LoadTaskArtifactStoreConfig()
+	// 存储配置的唯一事实在数据库；启动环境变量只作为一次性显式导入来源。
+	// 观察者在包初始化时注册，保证 InitOptionMap 装载数据库配置时已就位
+	// （装载即初始化，替代旧的依赖包 init 装载方式）。
+	model.SetObjectStorageSettingObserver(applyTaskArtifactStoreSetting)
 }
 
-// GetTaskArtifactStore returns the process-wide artifact storage backend. This
-// release always returns the disabled implementation.
+// GetTaskArtifactStore returns the process-wide artifact storage backend.
+// Without a validated database configuration it stays disabled.
 func GetTaskArtifactStore() TaskArtifactStore {
-	return taskArtifactStore
+	return taskArtifactStoreRuntime.get()
 }

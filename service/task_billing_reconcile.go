@@ -47,6 +47,10 @@ func ReconcileTaskBilling(ctx context.Context, limit int) TaskBillingReconcileSu
 		if ctx.Err() != nil {
 			break
 		}
+		if model.IsImageTask(task) {
+			settleImageTaskBilling(ctx, task)
+			continue
+		}
 		async := task.PrivateData.AsyncBilling
 		if async == nil {
 			continue

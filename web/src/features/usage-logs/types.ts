@@ -320,6 +320,7 @@ export interface TaskLog {
   legacy_video_available?: boolean
   fail_reason?: string
   status: string // NOT_START, SUBMITTED, IN_PROGRESS, SUCCESS, FAILURE, QUEUED, UNKNOWN
+  video_details?: TaskVideoDetails
   admin_info?: {
     request_id?: string
     request_path?: string
@@ -329,9 +330,36 @@ export interface TaskLog {
     task_plugin?: TaskPluginRuntimeInfo
     upstream_task_id?: string
     node_name?: string
+    upstream_request_id?: string
+    video_upstream_protocol?: string
+    southbound_adapter_version?: string
   }
   created_at?: number
   updated_at?: number
+}
+
+// TaskVideoDetails 对应后端视频详情投影：仅由已保存事实构建，
+// 缺失字段表示“未记录”；布尔参数区分显式 false 与缺失。
+export interface TaskVideoDetails {
+  request?: {
+    seconds?: { value: string }
+    resolution?: { value: string }
+    ratio?: { value: string }
+    generate_audio?: { value: boolean }
+    service_tier?: { value: string }
+  }
+  billing?: {
+    duration_seconds?: { value: string }
+    resolution?: { value: string }
+    generate_audio?: { value: boolean }
+  }
+  settlement?: {
+    quota: number
+    billing_state?: string
+    other_ratios?: Record<string, number>
+    actual_usage?: Record<string, number>
+    actual_usage_reported?: boolean
+  }
 }
 
 export interface TaskPluginInfo {

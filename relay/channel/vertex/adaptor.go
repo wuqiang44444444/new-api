@@ -203,6 +203,7 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
+	gemini.SetupGenerateContentImageHeader(c, req)
 	if info.ChannelOtherSettings.VertexKeyType != dto.VertexKeyTypeAPIKey {
 		accessToken, err := getAccessToken(a, info)
 		if err != nil {
@@ -353,6 +354,15 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 			} else {
 				if strings.HasPrefix(info.UpstreamModelName, "imagen") {
 					return gemini.GeminiImageHandler(c, info, resp)
+				}
+				// 标准图片入口（generations/edits）复用 Gemini generateContent
+				// 图片核心；必须限定 Images RelayMode，避免聊天补全请求打到
+				// imagine 模型时被劫持为 Images 响应（评审 S4）。
+				if info.RelayMode == constant.RelayModeImagesGenerations ||
+					info.RelayMode == constant.RelayModeImagesEdits {
+					if gemini.SupportsGenerateContentImage(info.UpstreamModelName) {
+						return gemini.GeminiGenerateContentImageHandler(c, info, resp)
+					}
 				}
 				return gemini.GeminiChatHandler(c, info, resp)
 			}

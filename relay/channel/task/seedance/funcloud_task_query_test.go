@@ -1,9 +1,15 @@
 package seedance
 
 import (
+	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/system_setting"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -16,6 +22,20 @@ import (
 )
 
 func TestFunCloudFetchTaskUsesAIGCQueryAndReportedCompletionTokens(t *testing.T) {
+	oldDB := model.DB
+	oldConfig := system_setting.GetTaskRequestEvidenceConfig()
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "evidence.db")), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}))
+	model.DB = db
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), MaxBodyBytes: 1 << 20, MaxResponseBytes: 1 << 20, WriteTimeoutSeconds: 5}
+	system_setting.SetTaskRequestEvidenceConfig(config)
+	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
+	t.Cleanup(func() {
+		model.DB = oldDB
+		system_setting.SetTaskRequestEvidenceConfig(oldConfig)
+		_ = service.InitTaskRequestEvidenceStore(oldConfig)
+	})
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, http.MethodGet, request.Method)
 		assert.Equal(t, "/api/v2/open/aigc/task-1", request.URL.Path)
@@ -57,4 +77,15 @@ func TestFunCloudFetchTaskUsesAIGCQueryAndReportedCompletionTokens(t *testing.T)
 	require.NotNil(t, result.ProviderBillingEvidence)
 	assert.Equal(t, "completionTokens", result.ProviderBillingEvidence.TokenSource)
 	assert.Equal(t, 40594, result.ProviderBillingEvidence.ReportedTokens)
+	evidence, exists, err := model.FindTaskRequestEvidenceByTaskID(task.TaskID)
+	require.NoError(t, err)
+	require.True(t, exists)
+	events, err := model.ListTaskRequestEvidenceEvents(evidence.Id)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	original, err := service.GetTaskRequestEvidenceStore().Get(events[0].ObjectKey)
+	require.NoError(t, err)
+	assert.Contains(t, string(original), `"pointConsume":"0.232731"`)
+	assert.Contains(t, string(original), `"taskId":"task-1"`)
+	assert.True(t, events[0].Complete)
 }

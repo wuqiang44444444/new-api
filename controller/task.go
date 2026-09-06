@@ -44,6 +44,11 @@ func GetTask(c *gin.Context) {
 		videoProxyError(c, http.StatusNotFound, "invalid_request_error", "Task not found")
 		return
 	}
+	// 显式图片任务使用专属投影并按 user_id + app_id 双重授权（§3.7）。
+	if model.IsImageTask(task) {
+		projectImageTaskQuery(c, task.TaskID)
+		return
+	}
 	createdAt := task.CreatedAt
 	if createdAt == 0 {
 		createdAt = task.SubmitTime
@@ -417,6 +422,7 @@ func tasksToDto(tasks []*model.Task, fillUser bool, viewerRole int) []*dto.TaskD
 		}
 		item := relay.TaskModel2Dto(task)
 		item.LegacyVideoAvailable = legacyVideoAvailable(task)
+		item.VideoDetails = buildTaskVideoDetails(task)
 		if task.Status == model.TaskStatusSuccess {
 			item.ResultURL = ""
 			if taskFailReasonIsLegacyResultURL(task.FailReason) {
@@ -461,7 +467,14 @@ func tasksToDto(tasks []*model.Task, fillUser bool, viewerRole int) []*dto.TaskD
 					}
 				}
 			}
-			if rootInfo.TaskPlugin != nil || rootInfo.UpstreamTaskID != "" || rootInfo.NodeName != "" {
+			// Link 上游诊断扩展：上游请求 ID、冻结协议与 adapter 版本仍只在
+			// Root 投影出现，与平台请求 ID（AdminInfo.RequestID）分开命名。
+			rootInfo.UpstreamRequestID = task.PrivateData.UpstreamRequestID
+			rootInfo.VideoUpstreamProtocol = string(task.PrivateData.VideoUpstreamProtocol)
+			rootInfo.SouthboundAdapterVersion = task.PrivateData.SouthboundAdapterVersion
+			if rootInfo.TaskPlugin != nil || rootInfo.UpstreamTaskID != "" || rootInfo.NodeName != "" ||
+				rootInfo.UpstreamRequestID != "" || rootInfo.VideoUpstreamProtocol != "" ||
+				rootInfo.SouthboundAdapterVersion != "" {
 				item.RootInfo = rootInfo
 			}
 		}

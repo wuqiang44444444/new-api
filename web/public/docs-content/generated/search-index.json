@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-08-28.2",
+  "contentVersion": "2026-09-05.3",
   "locales": {
     "zh": [
       {
@@ -301,6 +301,11 @@
           },
           {
             "depth": 2,
+            "id": "异步受理-可选",
+            "text": "异步受理（可选）"
+          },
+          {
+            "depth": 2,
             "id": "非流式响应",
             "text": "非流式响应"
           },
@@ -362,6 +367,25 @@
             "depth": 2,
             "id": "错误处理",
             "text": "错误处理"
+          }
+        ]
+      },
+      {
+        "pageId": "images-tasks",
+        "slug": "images/tasks",
+        "title": "图片任务查询",
+        "description": "查询异步图片任务的状态与 300 秒签名结果地址",
+        "keywords": ["图片", "任务", "异步", "查询"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "请求",
+            "text": "请求"
+          },
+          {
+            "depth": 2,
+            "id": "响应字段",
+            "text": "响应字段"
           }
         ]
       },

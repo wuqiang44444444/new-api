@@ -317,6 +317,7 @@ func (a *TaskAdaptor) FetchTask(baseURL, key string, task *model.Task, proxy str
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}
 	resp, err := client.Do(req)
+	service.AttachRawTaskPollingEvidence(task, req, resp, err)
 	if err != nil || resp == nil || profile.IsOfficial() || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return resp, err
 	}
@@ -413,3 +414,5 @@ func (*TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, error)
 	}
 	return common.Marshal(video)
 }
+
+func (*TaskAdaptor) CapturesRawPollingEvidence() {}

@@ -54,7 +54,7 @@ func TestValidateTaskArtifactStoreConfig(t *testing.T) {
 	}
 }
 
-func TestLoadTaskArtifactStoreConfigFallsBackToUpstream(t *testing.T) {
+func TestLoadTaskArtifactStoreConfigFallsBackOnInvalidMode(t *testing.T) {
 	t.Setenv(TaskArtifactStoreModeEnv, "filesystem")
 	t.Setenv(TaskArtifactStoreS3PresignTTLEnv, "900")
 	config := LoadTaskArtifactStoreConfig()
@@ -70,7 +70,7 @@ func TestLoadTaskArtifactStoreConfigFallsBackToUpstream(t *testing.T) {
 	t.Setenv(TaskArtifactStoreS3PresignTTLEnv, "600")
 	config = LoadTaskArtifactStoreConfig()
 
-	assert.Equal(t, TaskArtifactStoreModeUpstream, config.Mode)
+	assert.Equal(t, TaskArtifactStoreModeS3, config.Mode)
 	assert.Equal(t, "https://objects.example.com", config.S3Endpoint)
 	assert.Equal(t, 600, config.S3PresignTTLSeconds)
 }

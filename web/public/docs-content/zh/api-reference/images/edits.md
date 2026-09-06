@@ -10,7 +10,9 @@ operations:
 
 `POST /v1/images/edits` · Bearer 鉴权 · `multipart/form-data`
 
-该接口上传一张或多张源图片，并在本次 HTTP 请求内返回编辑结果。不要手工设置 multipart boundary；
+该接口上传一张或多张源图片，并默认在本次 HTTP 请求内返回编辑结果。模型目录声明异步能力时，
+可加 `Prefer: respond-async` 请求头显式异步受理（`202` + 任务 ID，与 `stream=true` 互斥），
+结果经[图片任务查询](images/tasks)获取。不要手工设置 multipart boundary；
 让 HTTP 客户端根据表单自动生成 `Content-Type`。
 
 ## 最小请求

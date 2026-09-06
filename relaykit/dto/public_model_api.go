@@ -10,6 +10,8 @@ type PublicImageAPI struct {
 	DocumentationPath string               `json:"documentation_path"`
 	Operations        []PublicAPIOperation `json:"operations"`
 	Creation          PublicImageCreation  `json:"creation"`
+	// Edit 是 /v1/images/edits 的合同投影；仅同时发布编辑能力的模型族填写。
+	Edit *PublicImageCreation `json:"edit,omitempty"`
 }
 
 type PublicImageCreation struct {
@@ -20,6 +22,8 @@ type PublicImageCreation struct {
 	Model                string               `json:"model"`
 	AdditionalProperties bool                 `json:"additional_properties"`
 	Parameters           []PublicAPIParameter `json:"parameters"`
+	// RequiredOneOf requires exactly one of these alternative input fields.
+	RequiredOneOf []string `json:"required_one_of,omitempty"`
 }
 
 type PublicVideoAPI struct {
@@ -47,6 +51,7 @@ type PublicVideoCreation struct {
 type PublicAPIParameter struct {
 	Name          string   `json:"name"`
 	Type          string   `json:"type"`
+	ItemType      string   `json:"item_type,omitempty"`
 	Required      bool     `json:"required"`
 	Enum          []string `json:"enum,omitempty"`
 	FixedValue    any      `json:"fixed_value,omitempty"`

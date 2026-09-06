@@ -90,7 +90,6 @@ func TestConvertImageRequestBuildsPublishedModelPayloads(t *testing.T) {
 func TestConvertImageRequestRejectsUnpublishedContract(t *testing.T) {
 	two := uint(2)
 	streamTrue := true
-	streamFalse := false
 	cases := []dto.ImageRequest{
 		{Model: "doubao-seedream-unknown", Prompt: "x", Size: "2K"},
 		{Model: constant.MoxingImageProviderModelSeedream5Lite, Prompt: "x", Size: "4K"},
@@ -98,7 +97,6 @@ func TestConvertImageRequestRejectsUnpublishedContract(t *testing.T) {
 		{Model: constant.MoxingImageProviderModelSeedream5Lite, Prompt: "x", Size: "2K", N: &two},
 		{Model: constant.MoxingImageProviderModelSeedream5Lite, Prompt: "x", Size: "2K", ResponseFormat: "b64_json"},
 		{Model: constant.MoxingImageProviderModelSeedream5Lite, Prompt: "x", Size: "2K", Stream: &streamTrue},
-		{Model: constant.MoxingImageProviderModelSeedream5Lite, Prompt: "x", Size: "2K", Stream: &streamFalse},
 		{Model: constant.MoxingImageProviderModelSeedream5Lite, Prompt: "x", Size: "2K", OutputFormat: json.RawMessage(`"png"`)},
 		{Model: constant.MoxingImageProviderModelSeedream5Lite, Prompt: "x", Size: "2K", ExtraFields: json.RawMessage(`{"reference_images":["https://example.com/a.png"]}`)},
 		{Model: constant.MoxingImageProviderModelSeedream5Lite, Prompt: "x", Size: "2K", Extra: map[string]json.RawMessage{"capability": json.RawMessage(`"image_generation"`)}},

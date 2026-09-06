@@ -147,6 +147,11 @@ func UpdateOption(c *gin.Context) {
 		option.Value = fmt.Sprintf("%v", option.Value)
 	}
 	switch option.Key {
+	case system_setting.ObjectStorageSettingOptionKey:
+		// 对象存储命名空间（本地扩展）只能经专用管理员接口写入，避免绕过
+		// 校验、连通性验证与凭据加密。
+		common.ApiErrorMsg(c, "对象存储配置请使用专用接口维护")
+		return
 	case "QuotaForInviter", "QuotaForInvitee":
 		if isPositiveOptionValue(option.Value.(string)) && !operation_setting.IsPaymentComplianceConfirmed() {
 			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)

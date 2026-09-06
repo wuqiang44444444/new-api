@@ -18,6 +18,12 @@ import (
 func AudioHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
 
+	// 音视频证据（一期）：北向证据在转换与预扣前持久化。
+	// 失败时返回本地不可重试错误，不产生任何 Provider 调用。
+	if evidenceErr := service.BeginTaskRequestEvidence(c, evidenceKindForAudioPath(c)); evidenceErr != nil {
+		return types.NewError(evidenceErr, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+	}
+
 	audioReq, ok := info.Request.(*dto.AudioRequest)
 	if !ok {
 		return types.NewError(errors.New("invalid request type"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
@@ -46,6 +52,9 @@ func AudioHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	resp, err := adaptor.DoRequest(c, info, ioReader)
 	if err != nil {
+		if service.IsTaskRequestEvidenceUnavailable(err) {
+			return types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+		}
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
 	statusCodeMappingStr := c.GetString("status_code_mapping")

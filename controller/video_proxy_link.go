@@ -237,9 +237,12 @@ func proxyLinkVideoContent(c *gin.Context) bool {
 	c.Writer.Header().Set("Cache-Control", "private, no-store")
 	c.Writer.Header().Set("Pragma", "no-cache")
 	c.Writer.WriteHeader(resp.StatusCode)
-	if _, err = io.Copy(c.Writer, resp.Body); err != nil {
+	// 音视频证据（一期）：统计本次结果交付的实际写出字节。
+	recorder := beginTaskContentDeliveryEvidence(c, task)
+	if _, err = io.Copy(recorder.WriterFor(c.Writer), resp.Body); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to stream Link video content: %s", err.Error()))
 	}
+	recorder.Done(resp.StatusCode, err)
 	return true
 }
 

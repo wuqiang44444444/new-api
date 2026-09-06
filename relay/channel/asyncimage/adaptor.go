@@ -103,7 +103,7 @@ func (a *Adaptor) ConvertImageRequest(_ *gin.Context, info *relaycommon.RelayInf
 	if info == nil || info.RelayMode != relayconstant.RelayModeImagesGenerations {
 		return nil, badRequest("async image channel only supports /v1/images/generations")
 	}
-	if request.N != nil && *request.N != 1 {
+	if request.NExplicitZero || (request.N != nil && *request.N != 1) {
 		return nil, badRequest("n must be exactly 1 for async image channels")
 	}
 	if request.ResponseFormat != "" && request.ResponseFormat != "url" {
@@ -349,14 +349,22 @@ func (a *Adaptor) httpClient(info *relaycommon.RelayInfo) (*http.Client, error) 
 }
 
 func (a *Adaptor) writeImageResponse(c *gin.Context, urls []string) (any, *types.NewAPIError) {
-	if len(urls) != 1 {
-		return nil, upstreamError("provider result must contain exactly one HTTP(S) URL")
+	// 统一北向合同按 data[] 交付 Provider 返回的全部有效图片（R2/R3）；
+	// 零有效 URL 仍失败关闭，不补生成。
+	valid := make([]string, 0, len(urls))
+	for _, raw := range urls {
+		if candidate := strings.TrimSpace(raw); isHTTPURL(candidate) {
+			valid = append(valid, candidate)
+		}
 	}
-	imageURL := strings.TrimSpace(urls[0])
-	if !isHTTPURL(imageURL) {
-		return nil, upstreamError("provider result must contain exactly one HTTP(S) URL")
+	if len(valid) == 0 {
+		return nil, upstreamError("provider result must contain at least one HTTP(S) URL")
 	}
-	response := dto.ImageResponse{Created: time.Now().Unix(), Data: []dto.ImageData{{Url: imageURL}}}
+	data := make([]dto.ImageData, 0, len(valid))
+	for _, imageURL := range valid {
+		data = append(data, dto.ImageData{Url: imageURL})
+	}
+	response := dto.ImageResponse{Created: time.Now().Unix(), Data: data}
 	if c == nil {
 		return nil, upstreamError("missing response context")
 	}
@@ -487,7 +495,7 @@ func rejectUnsupportedImageFields(request dto.ImageRequest) error {
 	if len(request.Style) > 0 || len(request.User) > 0 || len(request.Background) > 0 || len(request.Moderation) > 0 ||
 		len(request.OutputCompression) > 0 || len(request.PartialImages) > 0 || len(request.Images) > 0 || len(request.Mask) > 0 ||
 		len(request.InputFidelity) > 0 || request.Watermark != nil || len(request.WatermarkEnabled) > 0 || len(request.UserId) > 0 || len(request.Image) > 0 ||
-		request.Stream != nil || len(request.Extra) > 0 {
+		(request.Stream != nil && *request.Stream) || len(request.Extra) > 0 {
 		return badRequest("request contains unsupported image fields")
 	}
 	return nil

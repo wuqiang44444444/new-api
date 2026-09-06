@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/publicmodel"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 )
 
 // GetPublicMediaModelAPIs projects the contracts of every channel that runtime
@@ -129,6 +130,20 @@ func GetPublicMediaModelAPIs(modelNames []string, groups []string) (map[string]*
 					continue
 				}
 				api, _ = publicmodel.ImageAPI(modelName, channel.GetOtherSettings().ImageUpstreamProtocol, providerModel)
+			} else if channel.Type == constant.ChannelTypeGemini || channel.Type == constant.ChannelTypeVertexAi {
+				// gemini_image 族按管理员映射后的 Provider 模型识别
+				//（imagine 登记表），不从客户模型名推断。
+				providerModel, err := mappedCustomerModel(channel, modelName)
+				if err != nil {
+					common.SysLog("public image model mapping error: " + err.Error())
+					sawMissingContract = true
+					continue
+				}
+				if model_setting.IsGeminiModelSupportImagine(providerModel) {
+					api = publicmodel.GeminiImageAPI(modelName)
+				} else if common.IsImageGenerationModel(modelName) {
+					api = publicmodel.NativeImageAPI(modelName)
+				}
 			} else if channel.Type == constant.ChannelTypeSora {
 				api = publicmodel.NativeVideoAPI(modelName)
 			} else if common.IsImageGenerationModel(modelName) {

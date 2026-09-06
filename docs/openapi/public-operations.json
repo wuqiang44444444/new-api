@@ -145,6 +145,11 @@
       "operationId": "getAssetGroup",
       "status": "published",
       "family": "assets"
+    },
+    {
+      "operationId": "retrieveImageTask",
+      "status": "published",
+      "family": "images"
     }
   ]
 }

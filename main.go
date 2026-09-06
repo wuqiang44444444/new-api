@@ -147,6 +147,10 @@ func main() {
 		}
 		return a
 	}
+	// 显式图片执行：Provider 调用由 relay 层执行器承担（避免 service→relay
+	// 循环依赖），任务状态与结算仍由 service worker 持有。
+	service.ImageTaskExecuteFunc = relay.ExecuteImageTask
+	service.ImageTaskResumePollFunc = relay.ResumeImageTaskPoll
 	service.CancelQueuedVideoTaskFunc = relay.CancelQueuedVideoTaskForReconciliation
 
 	// Register the periodic channel test, upstream model update, and async task

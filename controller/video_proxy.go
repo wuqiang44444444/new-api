@@ -291,9 +291,14 @@ func proxyTaskMedia(c *gin.Context, task *model.Task, descriptor *relaychannel.T
 		if c.Request.Method == http.MethodHead || resp.StatusCode == http.StatusNotModified {
 			return nil
 		}
-		if _, err := io.Copy(c.Writer, resp.Body); err != nil {
+		// 音视频证据（一期）：统计本次结果交付的实际写出字节。
+		recorder := beginTaskContentDeliveryEvidence(c, task)
+		copyWriter := recorder.WriterFor(c.Writer)
+		_, err := io.Copy(copyWriter, resp.Body)
+		if err != nil {
 			logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to stream task media: %v", err))
 		}
+		recorder.Done(resp.StatusCode, err)
 		return nil
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return &taskMediaProxyError{

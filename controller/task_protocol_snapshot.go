@@ -33,8 +33,20 @@ func attachTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycom
 		seconds = strconv.Itoa(req.Duration)
 	}
 	serviceTier, _ := req.Metadata["service_tier"].(string)
-	if contract, ok := relaycommon.GetVideoContractRequest(c); ok && contract.ModelArk != nil && contract.ModelArk.ServiceTier != nil {
-		serviceTier = *contract.ModelArk.ServiceTier
+	resolution := ""
+	ratio := ""
+	var generateAudio *bool
+	if contract, ok := relaycommon.GetVideoContractRequest(c); ok && contract.ModelArk != nil {
+		if contract.ModelArk.ServiceTier != nil {
+			serviceTier = *contract.ModelArk.ServiceTier
+		}
+		if contract.ModelArk.Resolution != nil {
+			resolution = *contract.ModelArk.Resolution
+		}
+		if contract.ModelArk.Ratio != nil {
+			ratio = *contract.ModelArk.Ratio
+		}
+		generateAudio = contract.ModelArk.GenerateAudio
 	}
 	task.PrivateData.ClientRequest = &model.TaskClientRequestSnapshot{
 		Prompt:             req.Prompt,
@@ -42,5 +54,8 @@ func attachTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycom
 		Size:               req.Size,
 		RemixedFromVideoID: info.OriginTaskID,
 		ServiceTier:        serviceTier,
+		Resolution:         resolution,
+		Ratio:              ratio,
+		GenerateAudio:      generateAudio,
 	}
 }

@@ -1,20 +1,24 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-25
+last-reviewed: 2026-09-06
 ---
 
 # 图片模型 API 用户调用指南
 
 ## 1. 入口与生命周期
 
-图片生成统一使用 `POST /v1/images/generations`，编辑使用 `POST /v1/images/edits`。普通图片请求
+图片生成统一使用 `POST /v1/images/generations`，编辑使用 `POST /v1/images/edits`。默认模式下请求
 始终等待本次 Provider 调用完成并返回 HTTP `200`；客户端不接收、不查询 Provider task ID，也不存在
 图片专用 `/v1/images/tasks/:task_id`。
 
-管理端只提供「图片中转」一个渠道类型。每条渠道由管理员显式选择 `funcloud_aigc_v2` 或
-`moxing_images_v1`，并独立配置 Base URL、Key、客户模型和 `model_mapping`；同一渠道实例不能混放两个
-协议的 Provider 模型。协议不从模型名、映射、价格或 Base URL 推断。
+已发布图片异步能力的模型可显式选择异步模式：请求头 `Prefer: respond-async`。受理成功返回
+HTTP `202` 与平台任务 ID，结果经 `GET /v1/tasks/{task_id}` 查询（见 §6）；客户端断开不取消任务。
+`Prefer: respond-async` 与 `stream=true` 互斥。
+
+渠道类型分两类：原生 Gemini/Vertex 渠道上的 imagine 图片模型（如映射到 `gemini-3.1-flash-image`
+的客户模型，见 §4），以及管理端「图片中转」渠道类型（每条渠道显式选择 `funcloud_aigc_v2` 或
+`moxing_images_v1`，见 §3）。
 
 FunCloud 虽然南向创建任务并轮询，但 adaptor 在同一请求内完成等待。Moxing 南向使用一次同步 POST。
 两者都有代码固定的 10 分钟总时限，无需配置 `RELAY_TIMEOUT`；显式配置的更短正数只会提前终止。
@@ -51,7 +55,31 @@ curl -sS "$NEWAPI_BASE_URL/v1/images/generations" \
 
 URL 可能有有效期，需要长期使用时请及时下载到你控制的存储。
 
-## 3. FunCloud 模型兼容子集
+## 3. Gemini/Vertex 图片模型（gemini_image 族）
+
+客户模型由管理员映射到 imagine 登记模型（例如 `nano-banana-2-gemini → gemini-3.1-flash-image`）。
+两个操作均已发布；逐字段合同以模型详情 `api.image` 投影为唯一权威。
+
+- `n` 恒为 `1`；`response_format` 默认 `b64_json`（显式 `url` 需要平台对象存储，返回 300 秒
+  签名 URL）。
+- `size` 接受 `auto` 或模型公开的 `WxH`；不接受 `a:b`。网关使用精确宽高比与分辨率档，
+  只做等比例缩放到所请求像素；不支持的规格事前 400，上游返回比例不符时报交付错误，不裁切或拉伸。
+- 未发布字段显式 `400`：`quality`、`style`、`background`、`moderation`、`output_format`、
+  `output_compression`、`watermark`、`input_fidelity`、`partial_images`、`stream=true`、`mask`
+  与任何未知顶层字段。
+- 编辑（`/v1/images/edits`）支持 multipart `image`/`image[]` 文件、JSON `images` 数组
+  （Data URL 或 HTTPS URL）或单图 `image` 字符串；最多 14 张，二进制单张 ≤ 20 MB、合计 ≤ 50 MB
+  （按解码字节）；HTTPS URL 原样交给 Provider，网关不下载。
+
+```bash
+curl -sS "$NEWAPI_BASE_URL/v1/images/edits" \
+  -H "Authorization: Bearer $NEWAPI_API_KEY" \
+  -F "model=nano-banana-2-gemini" \
+  -F "prompt=把天空改成日落" \
+  -F "image=@input.png"
+```
+
+## 4. FunCloud 模型兼容子集
 
 | Provider 模型 | Prompt | 当前发布规格 | 参数 |
 | --- | --- | --- | --- |
@@ -63,7 +91,7 @@ URL 可能有有效期，需要长期使用时请及时下载到你控制的存�
 客户模型名可以不同；管理员通过 `model_mapping` 精确映射到 Provider 模型。请以 `GET /v1/models`
 的实时结果确认当前 Key 是否开放模型。
 
-## 4. Moxing 兼容子集
+## 5. Moxing 兼容子集
 
 Moxing 客户模型名可由管理员定义；选择 `moxing_images_v1` 的一条图片中转渠道可在同一 Key 下承载
 两个独立客户别名：
@@ -93,7 +121,7 @@ Moxing 客户模型名可由管理员定义；选择 `moxing_images_v1` 的一�
 发送 Provider 请求前返回 HTTP `400`。客户模型名本身不赋予能力；映射目标不在代码登记表时同样拒绝。
 Pro `1K` 与按实际像素结算尚未开放，不能通过修改请求或 Param Override 绕过固定规格。
 
-## 5. 请求字段与当前限制
+## 6. 请求字段与当前限制
 
 当前 FunCloud 渠道尚未发布参考图能力。由于 input-image 价格和失败扣费规则仍需核实，
 客户端传入 `extra_fields.reference_images` 会明确返回 HTTP `400`；不会静默删除或改义。
@@ -116,7 +144,43 @@ Pro `1K` 与按实际像素结算尚未开放，不能通过修改请求或 Para
 
 `n` 必须为 `1`；不拆分多图请求。成功结果必须恰好包含一个 URL，否则返回上游响应错误。
 
-## 6. 错误与重试
+## 7. 异步模式与任务查询
+
+```bash
+curl -sS "$NEWAPI_BASE_URL/v1/images/generations" \
+  -H "Authorization: Bearer $NEWAPI_API_KEY" \
+  -H "Prefer: respond-async" \
+  -H "Idempotency-Key: order-2026-09-05-0001" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"nano-banana-2-gemini","prompt":"雾中灯塔","size":"1024x1024"}'
+```
+
+受理成功：
+
+```json
+HTTP 202
+{
+  "created": 1785207890,
+  "id": "task_xxxxxxxx",
+  "object": "image_task",
+  "status": "queued",
+  "query_url": "/v1/tasks/task_xxxxxxxx"
+}
+```
+
+查询 `GET /v1/tasks/{task_id}`（同一 API Key；任务按 user + 应用隔离）：
+
+- `status`：`queued | in_progress | succeeded | failed | expired | unknown`；
+- 已登记结果（含 `unknown` 下的部分结果）通过 `data[]` 逐张给出 `status`（`available/deleted/unavailable`）与 `url`（300 秒
+  有效，附带 `url_expires_at`；过期后重新查询即续签）或创建时显式 `b64_json` 的原文；`deleted`
+  表示对象已被部署方删除（不影响其余图片），`unavailable` 表示暂不可访问、稍后重查；
+- `failed/expired` 给出脱敏 `error`；`unknown` 表示结果待核实（不会自动退款），联系平台核实；
+- `Idempotency-Key` 仅异步模式支持（同步请求携带返回 `400`）：同 key 等价请求重放原任务 ID，
+  不同请求体返回 `409`；未携带 key 视为新的创建意图。
+- 背压：应用未完成任务超限返回 `429`，平台排队容量耗尽返回 `503`；两者都没有受理、扣费或发送，
+  可安全稍后重试。
+
+## 8. 错误与重试
 
 | 状态 | 含义 |
 | --- | --- |
@@ -127,7 +191,7 @@ Pro `1K` 与按实际像素结算尚未开放，不能通过修改请求或 Para
 客户端应记录自己的 request ID 和业务订单。收到 `504` 后不要自动重复创建；如业务决定重试，需
 接受重复生成和重复计费风险。
 
-## 7. 安全
+## 9. 安全
 
 - API Key 只放在服务端环境变量或密钥管理系统中；不要写入 URL、前端代码或日志。
 - 不要记录完整签名 URL、参考图 URL、Base64、提示词或 Provider 原始响应。

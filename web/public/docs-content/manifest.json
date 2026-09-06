@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-08-28.2",
+  "contentVersion": "2026-09-05.3",
   "defaultLocale": "zh",
   "locales": {
     "zh": {
@@ -15,7 +15,11 @@
               "slug": "overview",
               "file": "zh/index.md",
               "description": "了解统一 API 的协议、能力范围与阅读路径",
-              "keywords": ["API", "文档", "能力"],
+              "keywords": [
+                "API",
+                "文档",
+                "能力"
+              ],
               "assets": []
             }
           ]
@@ -30,7 +34,11 @@
               "slug": "quickstart",
               "file": "zh/getting-started/quickstart.md",
               "description": "用占位 Key 完成第一次文本请求",
-              "keywords": ["curl", "入门", "Base URL"],
+              "keywords": [
+                "curl",
+                "入门",
+                "Base URL"
+              ],
               "assets": []
             },
             {
@@ -39,7 +47,11 @@
               "slug": "authentication",
               "file": "zh/getting-started/authentication.md",
               "description": "安全地使用 Bearer API Key",
-              "keywords": ["Bearer", "API Key", "安全"],
+              "keywords": [
+                "Bearer",
+                "API Key",
+                "安全"
+              ],
               "assets": []
             },
             {
@@ -48,7 +60,11 @@
               "slug": "base-url",
               "file": "zh/getting-started/base-url.md",
               "description": "按协议选择当前部署的动态 Base URL",
-              "keywords": ["OpenAI", "Anthropic", "URL"],
+              "keywords": [
+                "OpenAI",
+                "Anthropic",
+                "URL"
+              ],
               "assets": []
             }
           ]
@@ -63,7 +79,12 @@
               "slug": "tool-configuration/codex",
               "file": "zh/tool-configuration/codex.md",
               "description": "把 Codex 连接到当前网关，并将 API Key 保存在本地文件",
-              "keywords": ["Codex", "Responses", "本地 Key", "配置"],
+              "keywords": [
+                "Codex",
+                "Responses",
+                "本地 Key",
+                "配置"
+              ],
               "assets": []
             },
             {
@@ -72,7 +93,12 @@
               "slug": "tool-configuration/claude-code",
               "file": "zh/tool-configuration/claude-code.md",
               "description": "把 Claude Code 连接到当前网关，并将 API Key 保存在本地设置",
-              "keywords": ["Claude Code", "Anthropic", "本地 Key", "配置"],
+              "keywords": [
+                "Claude Code",
+                "Anthropic",
+                "本地 Key",
+                "配置"
+              ],
               "assets": []
             },
             {
@@ -81,7 +107,12 @@
               "slug": "tool-configuration/workbuddy",
               "file": "zh/tool-configuration/workbuddy.md",
               "description": "在 WorkBuddy 中添加当前网关的自定义模型",
-              "keywords": ["WorkBuddy", "Custom Model", "Chat Completions", "配置"],
+              "keywords": [
+                "WorkBuddy",
+                "Custom Model",
+                "Chat Completions",
+                "配置"
+              ],
               "assets": []
             },
             {
@@ -90,7 +121,12 @@
               "slug": "tool-configuration/cc-switch",
               "file": "zh/tool-configuration/cc-switch.md",
               "description": "在 CC Switch 中添加当前网关并使用原生协议直连",
-              "keywords": ["CC Switch", "Codex", "Claude Code", "本地 Key"],
+              "keywords": [
+                "CC Switch",
+                "Codex",
+                "Claude Code",
+                "本地 Key"
+              ],
               "assets": []
             }
           ]
@@ -105,7 +141,11 @@
               "slug": "concepts/errors",
               "file": "zh/concepts/errors.md",
               "description": "识别错误信封、限流和安全重试边界",
-              "keywords": ["错误码", "重试", "限流"],
+              "keywords": [
+                "错误码",
+                "重试",
+                "限流"
+              ],
               "assets": []
             },
             {
@@ -114,7 +154,11 @@
               "slug": "concepts/async-tasks",
               "file": "zh/concepts/async-tasks.md",
               "description": "轮询明确返回任务 ID 的视频任务",
-              "keywords": ["任务", "轮询", "状态"],
+              "keywords": [
+                "任务",
+                "轮询",
+                "状态"
+              ],
               "assets": []
             }
           ]
@@ -129,7 +173,12 @@
               "slug": "api-reference/text",
               "file": "zh/api-reference/text/overview.md",
               "description": "查询模型入口与逐模型参数，并调用文本 API",
-              "keywords": ["模型", "Chat", "Responses", "Claude"],
+              "keywords": [
+                "模型",
+                "Chat",
+                "Responses",
+                "Claude"
+              ],
               "assets": []
             }
           ]
@@ -144,7 +193,11 @@
               "slug": "api-reference/images/generations",
               "file": "zh/api-reference/images/generations.md",
               "description": "查看图片生成参数、同步与流式响应及错误处理",
-              "keywords": ["图片生成", "响应", "流式"],
+              "keywords": [
+                "图片生成",
+                "响应",
+                "流式"
+              ],
               "assets": []
             },
             {
@@ -153,7 +206,25 @@
               "slug": "api-reference/images/edits",
               "file": "zh/api-reference/images/edits.md",
               "description": "查看图片编辑表单、文件要求与响应字段",
-              "keywords": ["图片编辑", "multipart", "响应"],
+              "keywords": [
+                "图片编辑",
+                "multipart",
+                "响应"
+              ],
+              "assets": []
+            },
+            {
+              "id": "images-tasks",
+              "title": "图片任务查询",
+              "slug": "images/tasks",
+              "file": "zh/api-reference/images/tasks.md",
+              "description": "查询异步图片任务的状态与 300 秒签名结果地址",
+              "keywords": [
+                "图片",
+                "任务",
+                "异步",
+                "查询"
+              ],
               "assets": []
             }
           ]
@@ -168,7 +239,11 @@
               "slug": "api-reference/videos/openai",
               "file": "zh/api-reference/videos/openai.md",
               "description": "查看 OpenAI Videos 创建、查询、Remix、下载和通用视频合同",
-              "keywords": ["OpenAI Videos", "Sora", "响应"],
+              "keywords": [
+                "OpenAI Videos",
+                "Sora",
+                "响应"
+              ],
               "assets": []
             },
             {
@@ -177,7 +252,11 @@
               "slug": "api-reference/videos/modelark",
               "file": "zh/api-reference/videos/modelark.md",
               "description": "查看 ModelArk 视频参数、任务响应、状态、列表和下载",
-              "keywords": ["ModelArk", "参数", "响应"],
+              "keywords": [
+                "ModelArk",
+                "参数",
+                "响应"
+              ],
               "assets": []
             },
             {
@@ -186,7 +265,11 @@
               "slug": "api-reference/videos/kling",
               "file": "zh/api-reference/videos/kling.md",
               "description": "查看 Kling 文生与图生视频参数、任务响应和状态",
-              "keywords": ["Kling", "参数", "响应"],
+              "keywords": [
+                "Kling",
+                "参数",
+                "响应"
+              ],
               "assets": []
             },
             {
@@ -195,7 +278,11 @@
               "slug": "api-reference/videos/jimeng",
               "file": "zh/api-reference/videos/jimeng.md",
               "description": "查看即梦提交与查询参数、任务响应和状态",
-              "keywords": ["即梦", "Action", "响应"],
+              "keywords": [
+                "即梦",
+                "Action",
+                "响应"
+              ],
               "assets": []
             }
           ]
@@ -210,7 +297,12 @@
               "slug": "api-reference/assets",
               "file": "zh/api-reference/assets/overview.md",
               "description": "直接创建 AIGC 素材，并按需使用素材组和真人认证",
-              "keywords": ["AIGC 素材", "素材组", "参数", "响应"],
+              "keywords": [
+                "AIGC 素材",
+                "素材组",
+                "参数",
+                "响应"
+              ],
               "assets": []
             }
           ]
@@ -225,7 +317,11 @@
               "slug": "guides/troubleshooting",
               "file": "zh/guides/troubleshooting.md",
               "description": "排查 Base URL、鉴权、模型、媒体和任务问题",
-              "keywords": ["排障", "Content-Type", "额度"],
+              "keywords": [
+                "排障",
+                "Content-Type",
+                "额度"
+              ],
               "assets": []
             }
           ]

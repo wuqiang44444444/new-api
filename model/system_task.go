@@ -21,6 +21,9 @@ const (
 	SystemTaskTypeModelUpdate    = "model_update"
 	SystemTaskTypeMidjourneyPoll = "midjourney_poll"
 	SystemTaskTypeAsyncTaskPoll  = "async_task_poll"
+	SystemTaskTypeImageTask      = "image_task_execute"
+	// 音视频证据保留期清理（一期）。
+	SystemTaskTypeTaskRequestEvidenceRetention = "task_request_evidence_retention"
 )
 
 var ErrSystemTaskLockLost = errors.New("system task lock lost")
