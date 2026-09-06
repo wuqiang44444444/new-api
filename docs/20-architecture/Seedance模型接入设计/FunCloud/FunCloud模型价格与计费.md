@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-18
+last-reviewed: 2026-09-06
 ---
 
 # FunCloud 模型价格与计费
@@ -29,11 +29,17 @@ last-reviewed: 2026-08-18
 有视频：c * provider_video_price
 ```
 
-表达式实际通过 `param("_task.has_video_input")`、`param("_task.resolution")` 和 `tier()` 展开，单位是 USD/百万 Token；统一转换为 `quota = cost / 1,000,000 × QuotaPerUnit × group_ratio`。预扣上界：Standard 730,000，Fast/Mini 324,000，2.5 648,000（均为配置快照，需按当前合同复核）。
+表达式实际通过 `param("_task.has_video_input")`、`param("_task.resolution")` 和 `tier()` 展开，单位是 USD/百万 Token；统一转换为 `quota = cost / 1,000,000 × QuotaPerUnit × group_ratio`。
+
+预扣上界（`task_billing_setting.preconsume_tokens`）只决定创建时暂挂金额，按满规格真实用量 ×
+1.25–1.3 余量取值（实测 token 速率 480p ≈ 10.1k/s、720p ≈ 21.9k/s、1080p ≈ 48.7k/s，与分辨率面积
+成正比）：Standard 920,000、Fast/Mini 420,000、2.5 860,000。预扣上界不复用为成功证据的信任上界，
+也不充当结算上界——信任上界由 adapter 按冻结探针推导（≥2.4 倍实测余量），实际费用高于预扣时
+原子补扣差额，资金不足进入可重试 `debt`，业务任务保持 `SUCCESS`。
 
 ## 3. 结算与 Provider 成本分账
 
-`completionTokens` 是客户结算依据；`pointConsume` 仅记录为 Provider exposure 证据，必须为有限正数且顶层/输出值一致。成功结算写入私有 `provider_billing_evidence`；失败按明确失败退款，unknown 保留 hold。所有 quota 转换使用 checked 饱和函数，异常进入管理员审计。
+`completionTokens` 是客户结算依据；`pointConsume` 仅记录为 Provider exposure 证据，必须为有限正数且顶层/输出值一致。成功结算写入私有 `provider_billing_evidence`；失败终态统一原子退款，unknown 保留 hold。计量缺失、非法、非正或超信任上界时进入 reconciliation 并保留预扣，不估算、不退款。所有 quota 转换使用 checked 饱和函数，异常进入管理员审计。
 
 ## 4. 与官方计价的解释
 

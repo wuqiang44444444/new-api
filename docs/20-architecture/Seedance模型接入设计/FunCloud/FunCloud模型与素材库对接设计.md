@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-25
+last-reviewed: 2026-09-06
 ---
 
 # FunCloud 模型与素材库对接设计
@@ -49,7 +49,7 @@ Channel 任一客户模型最终映射到 2.5，则不能选择该素材协议�
 据此只在两个事实同时成立时把缺失状态归一为 `active`，其它缺失或未知状态继续保持 `processing`。
 Provider 对非空组的级联删除虽已真实成功，平台仍按多人共享下游的保守合同完全不发布 FunCloud 素材组
 删除，避免掌握 opaque 组 ID 的调用方级联删除其他调用方放入同组的素材。完整脱敏证据记录在
-[Seedance 渠道素材库边界设计](../../../80-dev/2026-08-25-Seedance渠道素材库边界设计.md)。
+[Seedance 渠道素材库边界设计](../../../99-archive/2026/09/2026-08-25-Seedance渠道素材库边界设计.md)。
 
 当前 Provider 文档只明确 Standard/Fast 可以在视频请求中使用素材 `assetUrl`，没有给出 Mini 的相同
 声明。Channel 内 3 个模型查询同一素材已经通过，只能证明控制面共享；Mini 的视频素材引用能力仍需真实
@@ -57,7 +57,20 @@ Provider 对非空组的级联删除虽已真实成功，平台仍按多人共�
 
 ## 4. 异步与计量
 
-创建必须先建立 durable attempt；只有 `code=0 + data.taskId + status=processing` 才创建 Task。查询需校验 task ID、状态和唯一 HTTPS 结果。成功终态的 `data.completionTokens` 作为客户实际用量；非法、缺失、零、负数或超预扣上界进入 reconciliation，禁止用 `pointConsume`、价格或时长替代。未知结果不重发、不换渠道、不退款。
+创建必须先建立 durable attempt；只有 `code=0 + data.taskId + status=processing` 才创建 Task。查询需校验 task ID、状态和唯一 HTTPS 结果。成功终态的 `data.completionTokens` 作为客户实际用量；非法、缺失、零、负数进入 reconciliation，禁止用 `pointConsume`、价格或时长替代。未知结果不重发、不换渠道、不退款。
+
+计量边界分两层的当前事实：
+
+- 信任上界与预扣上界分离：成功证据是否合理由按冻结探针（`resolution + duration_seconds`）推导的
+  协议上界判定（实测 token 速率 × 不少于 2.4 倍余量：480p 30k/s、720p 60k/s、1080p 120k/s，时长缺省
+  30 秒，下限 100k），不复用预扣预算；超过信任上界才进入合同违例，并记录可解释的脱敏 `FailReason`。
+- 本地实测 token 速率（与分辨率面积成正比、跨模型一致）：480p ≈ 10.1k/s、720p ≈ 21.9k/s、
+  1080p ≈ 48.7k/s。预扣上界按满规格真实用量 × 1.25–1.3 余量配置，当前部署值见
+  [FunCloud 模型价格与计费](FunCloud模型价格与计费.md)。
+- 查询返回 HTTP 200 + `code=30003` 是确定性“任务不存在”，映射为 not-found：轮询按连续失败计数
+  （`TaskPollMaxFailures`，默认 20 次）宽限后判 `FAILURE` 并原子退款；不按合同违例无限 reconciliation。
+- 实际费用高于预扣时先对冻结资金来源原子补扣，资金不足进入可重试 `debt`（业务任务保持
+  `SUCCESS`）；失败终态统一原子退款，不在失败路径结算。
 
 ## 5. 代码事实
 

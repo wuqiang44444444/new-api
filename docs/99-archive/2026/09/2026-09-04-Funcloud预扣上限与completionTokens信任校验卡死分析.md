@@ -1,7 +1,12 @@
 ---
-status: accepted
+status: historical
 owner: Dev Team
 last-reviewed: 2026-09-05
+archived-at: 2026-09-06
+source-path: docs/80-dev/2026-09-04-Funcloud预扣上限与completionTokens信任校验卡死分析.md
+superseded-by:
+  - docs/20-architecture/账单计费-异步任务与计费事实架构.md
+  - docs/20-architecture/Seedance模型接入设计/FunCloud/FunCloud模型与素材库对接设计.md
 ---
 
 # Funcloud 预扣上限与 completionTokens 信任校验卡死任务分析
@@ -30,7 +35,7 @@ last-reviewed: 2026-09-05
    的 succeeded 分支），超限即返回 `UpstreamContractViolation`，`service/task_video_polling_link.go`
    的 `linkVideoContractViolationHandled` 随即把任务标记为 `RECONCILIATION_REQUIRED`。
 3. **520000 来自管理端预扣配置**：选项 `task_billing_setting.preconsume_tokens["seedance-2-f"]=520000`，
-   经 [task_tiered_price.go](../../relay/helper/task_tiered_price.go) 冻结进 `EstimatedTokens`。
+   经 [task_tiered_price.go](../../../../relay/helper/task_tiered_price.go) 冻结进 `EstimatedTokens`。
    预扣数学完全吻合：`520000 × 7.7 / 1e6 × 500000 × 0.87 = 1,741,740`，正是该任务扣费金额，同时反推
    probe 为 `1080p / 无视频输入 / group_ratio 0.87`。
 4. **RECONCILIATION_REQUIRED 非终态是设计行为**：该状态表示"当前观测不可采信，任务保持活动，计费

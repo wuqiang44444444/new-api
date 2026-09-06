@@ -1,7 +1,12 @@
 ---
-status: accepted
+status: historical
 owner: Dev Team
 last-reviewed: 2026-09-06
+archived-at: 2026-09-06
+source-path: docs/80-dev/2026-09-05-Gemini与Vertex标准图片接口适配方案.md
+superseded-by:
+  - docs/20-architecture/图片服务与异步Provider适配架构.md
+  - docs/50-planning/变更记录.md
 ---
 
 # 统一图片生成、编辑与异步查询方案
@@ -11,7 +16,7 @@ last-reviewed: 2026-09-06
 以“北向统一，南向适配”交付生成、参考图、编辑、多图融合及可选异步查询。
 本文件记录用户已接受的目标与待验证门槛，不是已发布合同；方案轮只做设计收敛，实施轮（同日，
 用户授权全量实施）已完成代码落地，修复说明见 §7。保留原文件名以维持引用，当前事实以正式架构、
-硬约束与[统一图片服务实施计划](../50-planning/2026-09-05-统一图片服务实施计划.md)为准。
+硬约束与[统一图片服务实施计划](2026-09-05-统一图片服务实施计划.md)为准。
 
 ### 1.1 唯一范围边界
 
@@ -58,21 +63,21 @@ OSS 从 TODO 升为本期异步依赖；结果由全局单图改为多图，Goog
 
 | 证据入口 | 本次核对的事实或后续接线关注点 |
 | --- | --- |
-| [硬约束](../00-context/硬约束.md) | 现行普通图片仍是请求内响应。本方案新增异步与受保护输入保存，对应局部修订草案见 §4.2；原生最小入侵、资金与安全要求不因此撤销。 |
-| [图片服务与中转 Provider 适配架构](../20-architecture/图片服务与异步Provider适配架构.md) | 现有图片中转有自己的协议、单 URL 结果与严格参数子集，不能直接作为 Google 的北向合同。 |
-| [渠道类型](../../constant/channel.go) | Gemini 为 24，Vertex 为 41，图片中转 `ChannelTypeAsyncImage` 为 63。渠道实例 ID 与类型编号不可混淆。 |
-| [原生路由](../../router/relay-router.go) | generations、edits 已有入口；variations 和 Files 相关路由仍指向未实现处理。 |
-| [图片 DTO](../../relaykit/dto/openai_image.go) | 共享安全上限 `MaxImageN` 为 128；未知字段收集与重新序列化需核对，不能假设 DTO 已完整支持拟发布合同。 |
-| [图片处理链路](../../relay/image_handler.go) | 请求复制、模型映射、转换、usage 与结算需要贯通核对；不能让新字段在复制或重编码时丢失。 |
-| [公开图片投影](../../pkg/publicmodel/image.go)、[渠道投影](../../model/public_image_model_api.go) | 新方案需要准确表达两个操作及其参数，不能直接复用现有仅生成的投影结果。 |
-| [计费表达式说明](../../pkg/billingexpr/expr.md) | 实施计费接线前必须完整阅读；客户价格继续由管理员配置。 |
-| [任务查询路由](../../router/task-router.go)、[查询实现](../../controller/task.go) | 已有 GET /v1/tasks/{task_id}，当前主要返回任务状态；图片结果、图片合同投影及 user_id + app_id 隔离需补齐，不能宣称现状已满足。 |
-| [异步任务架构](../20-architecture/账单计费-异步任务与计费事实架构.md)、[创建恢复](../../model/task_create_attempt_persistence.go) | 现有共享创建流程要求真实 Provider task ID，不能原样承载平台先受理、同步上游无 task ID 的图片任务。 |
-| [attempt 恢复](../../service/task_create_attempt_reconcile.go)、[任务轮询](../../service/task_polling.go) | 既有流程会关闭过期 prepared、处理超时及退款。新图片排队、待核实任务必须按显式类型隔离，不能被旧扫描规则误处理。 |
-| [OSS 配置](../../setting/system_setting/task_artifact_store.go)、[存储接口](../../service/task_artifact_store.go) | 只有配置与接口预留，实际存储实现禁用；配置 s3 会退回 upstream，并非开启配置即可使用。 |
-| [幂等中间件](../../middleware/task_create_idempotency.go)、[摘要](../../middleware/task_create_idempotency_digest.go)、[幂等模型](../../model/task_create_idempotency.go)、[视频接线](../../router/video-router.go) | 已有五态模型和重放机制；唯一键为 user_id + protocol + key_hash，没有独立 app/操作列。JSON 规范化、非 JSON 按原始正文摘要；现有重放不包含图片 202。图片复用与差异见 §3.7。 |
-| [产物访问签名](../../service/task_artifact_access.go)、[访问鉴权](../../middleware/task_artifact_access.go)、[产物控制器](../../controller/task.go) | 已有 artifacts 列表和 GET/HEAD 内容路由；HMAC capability 绑定任务/产物但不含到期时间。它是现有投递能力，不是 5 分钟 OSS 签名，图片选择见 §5。 |
-| [渠道测试](../../controller/channel-test.go)、[任务轮询](../../service/task_polling.go) | 管理测试须补本期图片能力；请求限流、下载并发保护或现有轮询调度均不能代替新增图片任务的跨节点受理容量与背压。 |
+| [硬约束](../../../00-context/硬约束.md) | 现行普通图片仍是请求内响应。本方案新增异步与受保护输入保存，对应局部修订草案见 §4.2；原生最小入侵、资金与安全要求不因此撤销。 |
+| [图片服务与中转 Provider 适配架构](../../../20-architecture/图片服务与异步Provider适配架构.md) | 现有图片中转有自己的协议、单 URL 结果与严格参数子集，不能直接作为 Google 的北向合同。 |
+| [渠道类型](../../../../constant/channel.go) | Gemini 为 24，Vertex 为 41，图片中转 `ChannelTypeAsyncImage` 为 63。渠道实例 ID 与类型编号不可混淆。 |
+| [原生路由](../../../../router/relay-router.go) | generations、edits 已有入口；variations 和 Files 相关路由仍指向未实现处理。 |
+| [图片 DTO](../../../../relaykit/dto/openai_image.go) | 共享安全上限 `MaxImageN` 为 128；未知字段收集与重新序列化需核对，不能假设 DTO 已完整支持拟发布合同。 |
+| [图片处理链路](../../../../relay/image_handler.go) | 请求复制、模型映射、转换、usage 与结算需要贯通核对；不能让新字段在复制或重编码时丢失。 |
+| [公开图片投影](../../../../pkg/publicmodel/image.go)、[渠道投影](../../../../model/public_image_model_api.go) | 新方案需要准确表达两个操作及其参数，不能直接复用现有仅生成的投影结果。 |
+| [计费表达式说明](../../../../pkg/billingexpr/expr.md) | 实施计费接线前必须完整阅读；客户价格继续由管理员配置。 |
+| [任务查询路由](../../../../router/task-router.go)、[查询实现](../../../../controller/task.go) | 已有 GET /v1/tasks/{task_id}，当前主要返回任务状态；图片结果、图片合同投影及 user_id + app_id 隔离需补齐，不能宣称现状已满足。 |
+| [异步任务架构](../../../20-architecture/账单计费-异步任务与计费事实架构.md)、[创建恢复](../../../../model/task_create_attempt_persistence.go) | 现有共享创建流程要求真实 Provider task ID，不能原样承载平台先受理、同步上游无 task ID 的图片任务。 |
+| [attempt 恢复](../../../../service/task_create_attempt_reconcile.go)、[任务轮询](../../../../service/task_polling.go) | 既有流程会关闭过期 prepared、处理超时及退款。新图片排队、待核实任务必须按显式类型隔离，不能被旧扫描规则误处理。 |
+| [OSS 配置](../../../../setting/system_setting/task_artifact_store.go)、[存储接口](../../../../service/task_artifact_store.go) | 只有配置与接口预留，实际存储实现禁用；配置 s3 会退回 upstream，并非开启配置即可使用。 |
+| [幂等中间件](../../../../middleware/task_create_idempotency.go)、[摘要](../../../../middleware/task_create_idempotency_digest.go)、[幂等模型](../../../../model/task_create_idempotency.go)、[视频接线](../../../../router/video-router.go) | 已有五态模型和重放机制；唯一键为 user_id + protocol + key_hash，没有独立 app/操作列。JSON 规范化、非 JSON 按原始正文摘要；现有重放不包含图片 202。图片复用与差异见 §3.7。 |
+| [产物访问签名](../../../../service/task_artifact_access.go)、[访问鉴权](../../../../middleware/task_artifact_access.go)、[产物控制器](../../../../controller/task.go) | 已有 artifacts 列表和 GET/HEAD 内容路由；HMAC capability 绑定任务/产物但不含到期时间。它是现有投递能力，不是 5 分钟 OSS 签名，图片选择见 §5。 |
+| [渠道测试](../../../../controller/channel-test.go)、[任务轮询](../../../../service/task_polling.go) | 管理测试须补本期图片能力；请求限流、下载并发保护或现有轮询调度均不能代替新增图片任务的跨节点受理容量与背压。 |
 
 上述入口区分既有机制与新增缺口；不得把“已有配置/表/路由”当成新图片合同已可用。
 
@@ -296,7 +301,7 @@ mask 是否占用张数或字节预算、混合 URL/二进制计数、单图/多
 
 ### 4.2 硬约束局部修订草案（实施前审定）
 
-下列文字是待审草案，尚未修改[硬约束](../00-context/硬约束.md)或正式架构；实施前先审定并更新唯一权威源，
+下列文字是待审草案，尚未修改[硬约束](../../../00-context/硬约束.md)或正式架构；实施前先审定并更新唯一权威源，
 本方案随后只保留引用。不改变 Seedance 素材、既有视频或其他原生入口合同。
 
 | 拟修订位置 | 草案 |
@@ -308,7 +313,7 @@ mask 是否占用张数或字节预算、混合 URL/二进制计数、单图/多
 
 ### 4.3 NEWAPI 原生代码最小接线
 
-通用准则以[硬约束 §7](../00-context/硬约束.md)及[上游代码合并指南](../30-engineering/上游代码合并指南.md)为权威。
+通用准则以[硬约束 §7](../../../00-context/硬约束.md)及[上游代码合并指南](../../../30-engineering/上游代码合并指南.md)为权威。
 本期优先新增图片专属文件；复用事实和稳定能力，不为抽象复用重写原生代码，允许少量局部重复降低合并冲突。
 
 | 接线面 | 拟采用的最小方式 | 禁止扩大的影响 |
@@ -362,8 +367,8 @@ OSS 是本期异步依赖，不全局强制普通同步请求使用；同步显�
 ## 7. 实施修复说明（2026-09-05 实施轮）
 
 本节记录实施轮的实际落点与对方案的解读性决策；阶段拆解、G0 接线清单与 G1 合同冻结表在
-[统一图片服务实施计划](../50-planning/2026-09-05-统一图片服务实施计划.md)，正式变更事实在
-[变更记录](../50-planning/变更记录.md)，此处不复制第二套合同。
+[统一图片服务实施计划](2026-09-05-统一图片服务实施计划.md)，正式变更事实在
+[变更记录](../../../50-planning/变更记录.md)，此处不复制第二套合同。
 
 ### 7.1 代码落点（按阶段）
 
@@ -377,7 +382,7 @@ OSS 是本期异步依赖，不全局强制普通同步请求使用；同步显�
 | F 投影与测试 | `pkg/publicmodel/image_gemini.go`（新）；`model/public_image_model_api.go`、`controller/channel_test_image_profile.go`、`controller/channel-test.go` | `api.image` 新增 gemini_image 族（按映射后 Provider 模型识别，发布 create+edit 操作）；渠道测试对 Gemini/Vertex imagine 模型默认图片 endpoint |
 | G 文档 | 硬约束 §4、图片架构、投影架构、运维手册、用户指南、OpenAPI/公开文档/变更记录/路线图 | 见 §7.5 验证清单 |
 
-原生文件改动严格限于 [实施计划 §1 G0 接线清单](../50-planning/2026-09-05-统一图片服务实施计划.md)
+原生文件改动严格限于 [实施计划 §1 G0 接线清单](2026-09-05-统一图片服务实施计划.md)
 所列的最小接线（`image_handler.go` 顶部异步分派、`controller/relay.go` 3 行预扣跳过、
 `router/relay-router.go` 2 行中间件、`model/task.go` 3 处 NULL 安全扫描谓词 + 1 个 PrivateData
 字段、`main.go`/system task 注册各 1 行）。
@@ -450,7 +455,7 @@ S1—S9、S11、S12、N1 全部成立，S10 部分成立（证据门控是方案
 
 本轮仅修复二次评审中的八项缺陷，并增加真实请求复制路径的校验回归；不将尚未实施的编辑参数、
 中转 edits、SSE、file_id 或真实 Provider/账单验证标成完成。当前架构以
-[图片服务架构](../20-architecture/图片服务与异步Provider适配架构.md) 为准。
+[图片服务架构](../../../20-architecture/图片服务与异步Provider适配架构.md) 为准。
 
 | 缺陷 | 当前修复及验收边界 |
 | --- | --- |

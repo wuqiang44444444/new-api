@@ -21,7 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 统一图片北向合同（G1 v1，docs/50-planning/2026-09-05-统一图片服务实施计划.md §2）。
+// 统一图片北向合同（G1 v1，字段合同以 docs/20-architecture/图片服务与异步Provider适配架构.md §2 为准）。
 // 该层只做与 Provider 无关的形状、预算与三态语义校验；族（模型）级字段生效矩阵由各
 // adapter 按已登记 profile 决定。
 
