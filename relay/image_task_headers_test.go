@@ -68,7 +68,7 @@ func TestFrozenImageHeadersReachEveryTransport(t *testing.T) {
 				_, apiErr := asyncimage.HeadlessPollOnly(context.Background(), info, headers, "existing-id")
 				require.Nil(t, apiErr)
 			case "moxing":
-				_, apiErr := moxingimage.HeadlessGenerate(context.Background(), info, headers, bytes.NewBufferString(`{}`))
+				_, _, apiErr := moxingimage.HeadlessGenerate(context.Background(), info, headers, bytes.NewBufferString(`{}`))
 				require.Nil(t, apiErr)
 			}
 			assert.Equal(t, 1, calls)

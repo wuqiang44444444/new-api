@@ -65,6 +65,9 @@ func ExecuteImageTask(ctx context.Context, task *model.Task) service.ImageTaskEx
 	if err != nil {
 		return executorFailureFromError(err)
 	}
+	if err := service.PrepareImageUpstreamRequest(ctx, converted); err != nil {
+		return executorFailureFromError(err)
+	}
 	body, err := common.Marshal(converted)
 	if err != nil {
 		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeFailure, FailureCode: "request_build_failed"}
@@ -128,6 +131,14 @@ func rebuildImageRequest(ctx context.Context, data *model.TaskImageExecutionData
 				items = append(items, input.URL)
 				continue
 			}
+			if data.ChannelOther.ImageUpstreamProtocol == dto.ImageUpstreamProtocolFunCloudAIGCV2 {
+				url, err := service.PresignImageInputURL(ctx, input.ObjectKey)
+				if err != nil {
+					return nil, err
+				}
+				items = append(items, url)
+				continue
+			}
 			objectBytes, err := service.FetchImageObjectBytes(ctx, input.ObjectKey)
 			if err != nil {
 				return nil, err
@@ -180,6 +191,7 @@ func executeImageRelayTask(ctx context.Context, task *model.Task, info *relaycom
 		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeUnknown, FailureCode: "headers_snapshot_unavailable"}
 	}
 	var urls []string
+	var usage *dto.Usage
 	var providerTaskID string
 	var apiErr *types.NewAPIError
 	switch info.ChannelOtherSettings.ImageUpstreamProtocol {
@@ -192,7 +204,7 @@ func executeImageRelayTask(ctx context.Context, task *model.Task, info *relaycom
 			}
 		})
 	case dto.ImageUpstreamProtocolMoxingImagesV1:
-		urls, apiErr = moxingimage.HeadlessGenerate(ctx, info, headers, bytes.NewReader(body))
+		urls, usage, apiErr = moxingimage.HeadlessGenerate(ctx, info, headers, bytes.NewReader(body))
 	default:
 		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeFailure, FailureCode: "image_upstream_protocol_missing"}
 	}
@@ -208,7 +220,7 @@ func executeImageRelayTask(ctx context.Context, task *model.Task, info *relaycom
 	}
 
 	// URL 结果下载后保存到私有 OSS（异步交付按 300 秒签名续签，§5）。
-	artifacts, uploadErr := storeImageResults(ctx, task, len(urls), nil, func(index int) ([]byte, string, error) {
+	artifacts, uploadErr := storeImageResults(ctx, task, len(urls), usage, func(index int) ([]byte, string, error) {
 		return downloadImageURL(ctx, urls[index])
 	})
 	if uploadErr != nil {
@@ -218,6 +230,7 @@ func executeImageRelayTask(ctx context.Context, task *model.Task, info *relaycom
 		Outcome:        service.ImageTaskOutcomeSuccess,
 		ProviderTaskID: providerTaskID,
 		Images:         artifacts,
+		Usage:          usage,
 	}
 }
 

@@ -71,6 +71,9 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 }
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (hosttypes.PriceData, error) {
+	if err := prepareImageRelayBilling(c, info); err != nil {
+		return hosttypes.PriceData{}, err
+	}
 	billingModelName := info.GetBillingModelName()
 	modelPrice, usePrice := ratio_setting.GetModelPrice(billingModelName, false)
 

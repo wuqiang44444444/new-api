@@ -62,7 +62,13 @@ func imageAsyncHelper(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPI
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 	}
 
-	contract, apiErr := service.ParseImageContract(c, info, mappedRequest)
+	var contract *service.ImageContract
+	var apiErr *types.NewAPIError
+	if info.ApiType == constant.APITypeAsyncImage {
+		contract, apiErr = service.ParseImageRelayContract(c, info, mappedRequest, info.ChannelOtherSettings.ImageUpstreamProtocol)
+	} else {
+		contract, apiErr = service.ParseImageContract(c, info, mappedRequest)
+	}
 	if apiErr != nil {
 		return apiErr
 	}

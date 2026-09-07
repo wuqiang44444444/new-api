@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -83,7 +84,7 @@ func TestImageSettlementRollbackAndRestartReconcile(t *testing.T) {
 	}
 	require.NoError(t, model.InsertImageTask(model.ImageTaskInsertParams{Task: task,
 		GlobalScope: model.ImageTaskAdmissionScopeGlobal(), AppScope: model.ImageTaskAdmissionScopeApp(task.UserId, task.AppID)}))
-	won, err := model.FinishImageTaskSuccess(task, []model.TaskImageArtifact{{ObjectKey: "images/tasks/test/result-0"}}, &dto.Usage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150})
+	won, err := model.FinishImageTaskSuccess(task, []model.TaskImageArtifact{{ObjectKey: "images/tasks/test/result-0"}}, &dto.Usage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150, InputImages: common.GetPointer(2)})
 	require.NoError(t, err)
 	require.True(t, won)
 	const callback = "image-settlement-fault"
@@ -104,6 +105,7 @@ func TestImageSettlementRollbackAndRestartReconcile(t *testing.T) {
 	assert.Equal(t, 800, getTokenRemainQuota(t, 9903))
 	assert.Equal(t, 200, getTokenUsedQuota(t, 9903))
 	persisted := reloadTask(t, task.ID)
+	require.Equal(t, common.GetPointer(2), persisted.PrivateData.ImageTask.Usage.InputImages)
 	assert.Equal(t, 200, persisted.Quota)
 	assert.Equal(t, model.TaskBillingStateSettled, persisted.PrivateData.AsyncBilling.State)
 	require.NoError(t, model.RebuildImageTaskSlots())
@@ -114,4 +116,20 @@ func TestImageSettlementRollbackAndRestartReconcile(t *testing.T) {
 	require.NoError(t, model.DB.First(&user, 9902).Error)
 	assert.Equal(t, 200, user.UsedQuota)
 	assert.Equal(t, 1, user.RequestCount)
+}
+
+func TestImageRelayEditBillingFreezesReferenceCount(t *testing.T) {
+	task := newWorkerImageTask(9991, 44286)
+	snapshot := tieredTestSnapshot(`tier("2K", (0.60 + (param("input_image_count") == nil ? 0 : max(param("input_image_count") - 1, 0) * 0.02)) / 7 * 1000000)`, 44286)
+	task.PrivateData.BillingContext = &model.TaskBillingContext{TieredSnapshot: snapshot}
+	task.PrivateData.AsyncBilling = &model.TaskAsyncBillingContext{State: model.TaskBillingStatePending}
+	task.PrivateData.ImageTask.Inputs = []model.TaskImageInputRef{{URL: "https://example.com/a"}, {URL: "https://example.com/b"}}
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeAsyncImage}, OriginModelName: "local-pro", TieredBillingSnapshot: snapshot}
+	request := &dto.ImageRequest{Model: "mapped-pro", Prompt: "edit", Images: []byte(`["https://example.com/a","https://example.com/b"]`)}
+	require.NoError(t, FreezeImageTaskBilling(task, info, request))
+	quota, clamp, err := imageTaskTargetQuota(task, &dto.Usage{CompletionTokens: 16384, TotalTokens: 16384, InputImages: common.GetPointer(2)})
+	require.NoError(t, err)
+	assert.Nil(t, clamp)
+	assert.Equal(t, 44286, quota)
+	assert.Empty(t, task.PrivateData.ImageTask.Parameters.Images)
 }

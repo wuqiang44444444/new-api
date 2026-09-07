@@ -69,7 +69,9 @@ func ImageAPI(customerModel string, protocol dto.ImageUpstreamProtocol, provider
 		return nil, false
 	}
 
-	return imageModelAPI(customerModel, parameters), true
+	api := imageModelAPI(customerModel, parameters)
+	imageRelayEditAPI(api, protocol, providerModel)
+	return api, true
 }
 
 func NativeImageAPI(customerModel string) *dto.PublicModelAPI {

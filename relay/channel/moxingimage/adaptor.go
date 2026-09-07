@@ -3,6 +3,7 @@ package moxingimage
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +33,7 @@ type Adaptor struct {
 }
 
 type imagePayload struct {
+	Image          any    `json:"image,omitempty"`
 	Capability     string `json:"capability"`
 	Model          string `json:"model"`
 	Prompt         string `json:"prompt"`
@@ -45,6 +47,7 @@ type providerImage struct {
 }
 
 type providerResponse struct {
+	Usage *imageUsage     `json:"usage,omitempty"`
 	Data  []providerImage `json:"data"`
 	Error json.RawMessage `json:"error"`
 	Model string          `json:"model"`
@@ -102,9 +105,13 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(*gin.Context, *relaycommon.Relay
 	return nil, errors.New("Moxing image channel does not support responses requests")
 }
 
-func (a *Adaptor) ConvertImageRequest(_ *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
-	if info == nil || info.RelayMode != relayconstant.RelayModeImagesGenerations {
+func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	if info == nil || (info.RelayMode != relayconstant.RelayModeImagesGenerations && info.RelayMode != relayconstant.RelayModeImagesEdits) {
 		return nil, badRequest("Moxing image channel only supports /v1/images/generations")
+	}
+	contract, apiErr := service.ParseImageRelayContract(c, info, &request, dto.ImageUpstreamProtocolMoxingImagesV1)
+	if apiErr != nil {
+		return nil, apiErr
 	}
 	if request.NExplicitZero || (request.N != nil && *request.N != 1) {
 		return nil, badRequest("n must be exactly 1 for Moxing image channels")
@@ -143,7 +150,22 @@ func (a *Adaptor) ConvertImageRequest(_ *gin.Context, info *relaycommon.RelayInf
 		return nil, badRequest(fmt.Sprintf("Moxing image model %q is currently published at fixed %s resolution", modelName, fixedSize))
 	}
 
+	var imageInput any
+	inputs := make([]string, 0, len(contract.Images))
+	for _, input := range contract.Images {
+		if input.IsURL() {
+			inputs = append(inputs, input.URL)
+		} else {
+			inputs = append(inputs, "data:"+input.MimeType+";base64,"+base64.StdEncoding.EncodeToString(input.Data))
+		}
+	}
+	if len(inputs) == 1 {
+		imageInput = inputs[0]
+	} else if len(inputs) > 1 {
+		imageInput = inputs
+	}
 	return imagePayload{
+		Image:          imageInput,
 		Capability:     "image_generation",
 		Model:          modelName,
 		Prompt:         prompt,
@@ -226,27 +248,22 @@ func (a *Adaptor) DoResponse(c *gin.Context, response *http.Response, info *rela
 	if err := common.Unmarshal(body, &provider); err != nil {
 		return nil, upstreamError("invalid image response")
 	}
-	if hasProviderError(provider.Error) {
-		return nil, providerApplicationError(provider.Error)
+	urls, usage, apiErr := normalizeResult(provider, info.UpstreamModelName)
+	if apiErr != nil {
+		return nil, apiErr
 	}
-	if modelName := strings.TrimSpace(provider.Model); modelName != "" && modelName != info.UpstreamModelName {
-		return nil, upstreamError("image response model does not match the request")
-	}
-	if len(provider.Data) != 1 {
-		return nil, upstreamError("image provider result must contain exactly one image")
-	}
-	imageURL := strings.TrimSpace(provider.Data[0].URL)
-	if !isHTTPURL(imageURL) || strings.TrimSpace(provider.Data[0].B64JSON) != "" {
-		return nil, upstreamError("image provider result must contain exactly one HTTP(S) URL")
-	}
+
 	if c == nil {
 		return nil, upstreamError("missing response context")
 	}
 	c.JSON(http.StatusOK, dto.ImageResponse{
 		Created: time.Now().Unix(),
-		Data:    []dto.ImageData{{Url: imageURL}},
+		Data:    []dto.ImageData{{Url: urls[0]}},
 	})
-	return &dto.Usage{}, nil
+	if usage == nil {
+		usage = &dto.Usage{}
+	}
+	return usage, nil
 }
 
 func (a *Adaptor) GetModelList() []string { return constant.MoxingImageProviderModels() }
@@ -263,9 +280,9 @@ func (a *Adaptor) httpClient(info *relaycommon.RelayInfo) (*http.Client, error) 
 func rejectUnsupportedImageFields(request dto.ImageRequest) error {
 	if request.Quality != "" || len(request.Style) > 0 || len(request.User) > 0 || len(request.Background) > 0 ||
 		len(request.Moderation) > 0 || len(request.OutputFormat) > 0 || len(request.OutputCompression) > 0 ||
-		len(request.PartialImages) > 0 || len(request.Images) > 0 || len(request.Mask) > 0 ||
+		len(request.PartialImages) > 0 || len(request.Mask) > 0 ||
 		len(request.InputFidelity) > 0 || request.Watermark != nil || len(request.WatermarkEnabled) > 0 ||
-		len(request.UserId) > 0 || len(request.Image) > 0 || len(request.Extra) > 0 ||
+		len(request.UserId) > 0 || len(request.Extra) > 0 ||
 		(request.Stream != nil && *request.Stream) {
 		return badRequest("request contains unsupported image fields")
 	}

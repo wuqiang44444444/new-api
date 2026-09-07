@@ -1,14 +1,14 @@
 ---
 page-id: images-edits
 kind: api-reference
-last-verified: 2026-08-28
+last-verified: 2026-09-07
 operations:
   - createImageEdit
 ---
 
 # 图片编辑
 
-`POST /v1/images/edits` · Bearer 鉴权 · `multipart/form-data`
+`POST /v1/images/edits` · Bearer 鉴权 · `multipart/form-data` 或模型声明的 `application/json`
 
 该接口上传一张或多张源图片，并默认在本次 HTTP 请求内返回编辑结果。模型目录声明异步能力时，
 可加 `Prefer: respond-async` 请求头显式异步受理（`202` + 任务 ID，与 `stream=true` 互斥），
@@ -37,6 +37,33 @@ curl "{{OPENAI_BASE_URL}}/images/edits" \
   -F "image=@product.png"
 ```
 
+## 图片中转的标准编辑输入
+
+已配置编辑能力的图片中转模型支持上述文件上传，也支持 JSON 单图 `image` 或多图 `images`，两者互斥：
+
+```json
+{
+  "model": "{{MODEL_ID_PLACEHOLDER}}",
+  "prompt": "将杯子改为红色，保持构图",
+  "images": ["https://example.com/reference.png"],
+  "n": 1,
+  "response_format": "url"
+}
+```
+
+数组项支持 HTTPS URL 或 JPEG/PNG/WebP Data URL。图片中转保持单图输出及原有尺寸档位；
+最大参考图数以 `api.image.edit.parameters` 为准（10 或 14 张）。字节输入每张最多 20 MiB，
+总计最多 50 MiB；部分模型单张限制更小，为 10,000,000 字节。来源 URL 不由网关主动下载校验，
+调用方须保证格式、尺寸和处理期间的可访问性。遮罩、流式及未公开字段仍不支持。
+
+默认同步返回图片 URL；加 `Prefer: respond-async` 后返回 202，再查询任务获得结果。异步结果存入
+平台对象存储，签名有效期为 300 秒，到期可重新查询。需要 URL 输入的服务会将字节参考图暂存私有
+对象存储，在实际发送时签发至少两小时的输入 URL；排队不会消耗该有效期。对象存储不可用时，
+需要上传的同步编辑及所有异步受理失败。同步结果 URL 可能来自上游，并不表示已由平台保存。
+
+Pro 多参考图需要管理员配置包含参考图数量的价格表达式；输入图费与输出图费依模型价格分别计算。
+具体服务的真实效果、供应商账单与生产发布状态由部署方验收，代码支持不代表生产验收完成。
+
 ## 请求参数
 
 | 表单字段 | 类型 | 必填 | 取值与说明 |
@@ -53,7 +80,7 @@ curl "{{OPENAI_BASE_URL}}/images/edits" \
 | `stream` | boolean string | 否 | 表单值必须是 `true` 或 `false`；仅支持流式编辑的模型可用 |
 | `watermark` | boolean string | 否 | 表单值为 `true` 或 `false`；仅公开该字段的模型可用 |
 
-`api.image.creation` 描述的是图片生成入口，不能单独证明同一模型支持编辑、遮罩或多图。编辑调用应以
+`api.image.creation` 描述的是图片生成入口，不能单独证明编辑能力；`api.image.edit` 描述编辑输入。编辑调用应以
 本页字段、当前部署公开的模型说明和管理员确认的服务能力为准；不支持的遮罩、多图、尺寸、质量或字段
 组合会以 `400` 拒绝，不会被静默删除或改写。
 

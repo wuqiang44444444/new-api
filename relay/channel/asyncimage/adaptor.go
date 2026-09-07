@@ -30,6 +30,8 @@ type Adaptor struct {
 }
 
 type imagePayload struct {
+	ImageURLs    []string `json:"imageUrls,omitempty"`
+	inputs       []service.ImageContractInput
 	Prompt       string `json:"prompt"`
 	GenType      string `json:"genType,omitempty"`
 	AspectRatio  string `json:"aspectRatio,omitempty"`
@@ -99,9 +101,13 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(*gin.Context, *relaycommon.Relay
 	return nil, errors.New("async image channel does not support responses requests")
 }
 
-func (a *Adaptor) ConvertImageRequest(_ *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
-	if info == nil || info.RelayMode != relayconstant.RelayModeImagesGenerations {
+func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	if info == nil || (info.RelayMode != relayconstant.RelayModeImagesGenerations && info.RelayMode != relayconstant.RelayModeImagesEdits) {
 		return nil, badRequest("async image channel only supports /v1/images/generations")
+	}
+	contract, apiErr := service.ParseImageRelayContract(c, info, &request, dto.ImageUpstreamProtocolFunCloudAIGCV2)
+	if apiErr != nil {
+		return nil, apiErr
 	}
 	if request.NExplicitZero || (request.N != nil && *request.N != 1) {
 		return nil, badRequest("n must be exactly 1 for async image channels")
@@ -132,11 +138,9 @@ func (a *Adaptor) ConvertImageRequest(_ *gin.Context, info *relaycommon.RelayInf
 	if err != nil {
 		return nil, err
 	}
-	// Until FunCloud input-image pricing is verified, the published contract is
-	// text-to-image only. Keeping this rejection here prevents a successful
-	// reference-image request from bypassing the fixed pre-consume price.
+	// Provider-private aliases are not part of the standard image contract.
 	if _, hasReferenceImages := extra["reference_images"]; hasReferenceImages {
-		return nil, badRequest("reference_images are not available until input-image pricing is configured")
+		return nil, badRequest("use image or images on /v1/images/edits instead of reference_images")
 	}
 	aspectRatio, err := parseStringField(extra, "aspect_ratio")
 	if err != nil {
@@ -176,6 +180,13 @@ func (a *Adaptor) ConvertImageRequest(_ *gin.Context, info *relaycommon.RelayInf
 	}
 	if info.UpstreamModelName == "" {
 		info.UpstreamModelName = modelName
+	}
+	if len(contract.Images) > 0 {
+		payload.inputs = contract.Images
+		if payload.GenType != "" {
+			payload.GenType = "i2i"
+		}
+		return &payload, nil
 	}
 	return payload, nil
 }
@@ -493,8 +504,8 @@ func validatePrompt(modelName, prompt string) error {
 
 func rejectUnsupportedImageFields(request dto.ImageRequest) error {
 	if len(request.Style) > 0 || len(request.User) > 0 || len(request.Background) > 0 || len(request.Moderation) > 0 ||
-		len(request.OutputCompression) > 0 || len(request.PartialImages) > 0 || len(request.Images) > 0 || len(request.Mask) > 0 ||
-		len(request.InputFidelity) > 0 || request.Watermark != nil || len(request.WatermarkEnabled) > 0 || len(request.UserId) > 0 || len(request.Image) > 0 ||
+		len(request.OutputCompression) > 0 || len(request.PartialImages) > 0 || len(request.Mask) > 0 ||
+		len(request.InputFidelity) > 0 || request.Watermark != nil || len(request.WatermarkEnabled) > 0 || len(request.UserId) > 0 ||
 		(request.Stream != nil && *request.Stream) || len(request.Extra) > 0 {
 		return badRequest("request contains unsupported image fields")
 	}

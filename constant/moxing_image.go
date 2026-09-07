@@ -8,13 +8,16 @@ const (
 )
 
 type moxingImageProfile struct {
-	providerModel string
-	fixedSize     string
+	providerModel        string
+	fixedSize            string
+	maxInputs            int
+	maxInputBytes        int
+	requiresInputPricing bool
 }
 
 var moxingImageProfiles = []moxingImageProfile{
-	{providerModel: MoxingImageProviderModelSeedream5Lite, fixedSize: MoxingImageSeedream5LiteSize},
-	{providerModel: MoxingImageProviderModelSeedream5Pro, fixedSize: MoxingImageSeedream5ProSize},
+	{providerModel: MoxingImageProviderModelSeedream5Lite, fixedSize: MoxingImageSeedream5LiteSize, maxInputs: 14, maxInputBytes: 20 << 20},
+	{providerModel: MoxingImageProviderModelSeedream5Pro, fixedSize: MoxingImageSeedream5ProSize, maxInputs: 10, maxInputBytes: 20 << 20, requiresInputPricing: true},
 }
 
 func MoxingImageFixedSize(providerModel string) (string, bool) {

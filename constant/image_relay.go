@@ -10,15 +10,18 @@ const (
 )
 
 type funCloudImageProfile struct {
-	providerModel string
-	publishedSize string
+	providerModel        string
+	publishedSize        string
+	maxInputs            int
+	maxInputBytes        int
+	requiresInputPricing bool
 }
 
 var funCloudImageProfiles = []funCloudImageProfile{
-	{providerModel: FunCloudImageProviderModelNanoBanana2Lite},
-	{providerModel: FunCloudImageProviderModelNanoBanana2, publishedSize: "1K"},
-	{providerModel: FunCloudImageProviderModelSeedream5Lite, publishedSize: "2K"},
-	{providerModel: FunCloudImageProviderModelSeedream5Pro, publishedSize: "1K"},
+	{providerModel: FunCloudImageProviderModelNanoBanana2Lite, maxInputs: 10, maxInputBytes: 20 << 20},
+	{providerModel: FunCloudImageProviderModelNanoBanana2, publishedSize: "1K", maxInputs: 14, maxInputBytes: 20 << 20},
+	{providerModel: FunCloudImageProviderModelSeedream5Lite, publishedSize: "2K", maxInputs: 14, maxInputBytes: 10_000_000},
+	{providerModel: FunCloudImageProviderModelSeedream5Pro, publishedSize: "1K", maxInputs: 10, maxInputBytes: 10_000_000, requiresInputPricing: true},
 }
 
 func FunCloudImageProviderModels() []string {

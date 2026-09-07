@@ -131,7 +131,7 @@ func TestDoRequestUsesFixedEndpointAndHeaders(t *testing.T) {
 	require.NotNil(t, response)
 }
 
-func TestDoResponseWritesUnifiedImageAndZeroUsage(t *testing.T) {
+func TestDoResponseWritesUnifiedImageAndProviderUsage(t *testing.T) {
 	c, recorder := moxingImageContext(context.Background())
 	info := moxingImageInfo("https://example.com")
 	response := testHTTPResponse(http.StatusOK, `{
@@ -144,7 +144,7 @@ func TestDoResponseWritesUnifiedImageAndZeroUsage(t *testing.T) {
 
 	require.Nil(t, apiErr)
 	require.IsType(t, &dto.Usage{}, usage)
-	assert.Equal(t, &dto.Usage{}, usage)
+	assert.Equal(t, &dto.Usage{OutputTokens: 16384, CompletionTokens: 16384, TotalTokens: 16384}, usage)
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	var imageResponse dto.ImageResponse
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &imageResponse))

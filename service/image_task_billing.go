@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -40,7 +41,11 @@ func FreezeImageTaskBilling(task *model.Task, info *relaycommon.RelayInfo, reque
 	// Keep the customer model in param("model"), not its southbound alias.
 	north := *parameters
 	north.Model = info.OriginModelName
-	probe.Body, err = common.Marshal(north)
+	if info.ChannelMeta != nil && info.ChannelType == constant.ChannelTypeAsyncImage {
+		probe.Body, err = ImageRelayBillingBody(&north, len(data.Inputs))
+	} else {
+		probe.Body, err = common.Marshal(north)
+	}
 	if err != nil {
 		return err
 	}
@@ -144,6 +149,7 @@ func settleImageTaskBilling(ctx context.Context, task *model.Task) {
 	if usage := task.PrivateData.ImageTask.Usage; usage != nil {
 		completionTokens = usage.CompletionTokens
 		other.SetPublic("prompt_tokens", usage.PromptTokens)
+		appendImageUsageForLog(other, usage)
 	}
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId: task.UserId, LogType: model.LogTypeConsume, ChannelId: task.ChannelId,

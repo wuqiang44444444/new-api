@@ -226,6 +226,8 @@ type CompletionsStreamResponse struct {
 }
 
 type Usage struct {
+	// InputImages preserves image counts separately from token usage.
+	InputImages          *int          `json:"input_images,omitempty"`
 	PromptTokens         int           `json:"prompt_tokens"`
 	CompletionTokens     int           `json:"completion_tokens"`
 	TotalTokens          int           `json:"total_tokens"`

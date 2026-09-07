@@ -23,7 +23,7 @@ HTTP `202` 与平台任务 ID，结果经 `GET /v1/tasks/{task_id}` 查询（见
 FunCloud 虽然南向创建任务并轮询，但 adaptor 在同一请求内完成等待。Moxing 南向使用一次同步 POST。
 两者都有代码固定的 10 分钟总时限，无需配置 `RELAY_TIMEOUT`；显式配置的更短正数只会提前终止。
 超时或取消按普通同步图片失败/退款语义处理。调用方
-不要盲目重发，因为 Provider 可能已经受理请求。Moxing 当前代码支持 Lite/Pro 固定 `2K` 单图文生图；
+不要盲目重发，因为 Provider 可能已经受理请求。Moxing 当前代码支持 Lite/Pro 固定 `2K` 单图生成与编辑；
 真实 Provider、账单与超时歧义尚未验收，管理员启用前不能把下述代码合同视为生产可用承诺。
 
 ## 2. 最小请求
@@ -83,10 +83,10 @@ curl -sS "$NEWAPI_BASE_URL/v1/images/edits" \
 
 | Provider 模型 | Prompt | 当前发布规格 | 参数 |
 | --- | --- | --- | --- |
-| `nano-banana-2-lite` | 最多 20000 字符 | 无参考图；单一分辨率 | 15 个宽高比（含 `auto`）；不支持 resolution/outputFormat |
-| `nano-banana-2` | 最多 20000 字符 | 无参考图；固定 `resolution=1K` | `outputFormat=jpg/png` |
-| `seedream-5.0-lite` | 3–3000 字符 | 无参考图；固定 `2K/basic` | 8 个宽高比 |
-| `seedream-5.0-pro` | 3–3000 字符 | 无参考图；固定 `1K/basic` | 7 个宽高比 |
+| `nano-banana-2-lite` | 最多 20000 字符 | 编辑最多 10 张；单一分辨率 | 15 个宽高比（含 `auto`）；不支持 resolution/outputFormat |
+| `nano-banana-2` | 最多 20000 字符 | 编辑最多 14 张；固定 `resolution=1K` | `outputFormat=jpg/png` |
+| `seedream-5.0-lite` | 3–3000 字符 | 编辑最多 14 张；固定 `2K/basic` | 8 个宽高比 |
+| `seedream-5.0-pro` | 3–3000 字符 | 编辑最多 10 张；固定 `1K/basic` | 7 个宽高比 |
 
 客户模型名可以不同；管理员通过 `model_mapping` 精确映射到 Provider 模型。请以 `GET /v1/models`
 的实时结果确认当前 Key 是否开放模型。
@@ -116,15 +116,21 @@ Moxing 客户模型名可由管理员定义；选择 `moxing_images_v1` 的一�
 客户模型和 `model_mapping` 均由管理员配置；选择协议不会创建或改写 mapping。代码只要求每个渠道模型
 经过 NEWAPI 原生映射链后，最终落到所选协议登记的 Provider profile。客户模型直接使用 Provider 模型名
 时可以不配置映射。
-两个模型当前都只允许 prompt 1—3000 字符、`n` 省略或为 `1`、固定 `2K`、URL 响应。参考图、组图、
+两个模型当前都只允许 prompt 1—3000 字符、`n` 省略或为 `1`、固定 `2K`、URL 响应。组图输出、
 联网搜索、Base64、stream、任意宽高、输出格式、watermark、未知顶层字段和非空 `extra_fields` 均在
 发送 Provider 请求前返回 HTTP `400`。客户模型名本身不赋予能力；映射目标不在代码登记表时同样拒绝。
 Pro `1K` 与按实际像素结算尚未开放，不能通过修改请求或 Param Override 绕过固定规格。
 
 ## 6. 请求字段与当前限制
 
-当前 FunCloud 渠道尚未发布参考图能力。由于 input-image 价格和失败扣费规则仍需核实，
-客户端传入 `extra_fields.reference_images` 会明确返回 HTTP `400`；不会静默删除或改义。
+FunCloud 与 Moxing 的编辑适配已实现，使用 `/v1/images/edits` 的标准 `image/images` 或 multipart 文件；
+客户端传入 `extra_fields.reference_images` 仍明确返回 HTTP `400`。FunCloud 字节输入通过 OSS 转 URL，
+Moxing 字节直接转 Data URL；异步 FunCloud 复用已存输入对象。Lite 最多 14 张、Pro 最多 10 张，
+Nano Lite 最多 10 张、Nano 2 最多 14 张。共同预算为单张 20 MiB、总计 50 MiB；FunCloud Seedream
+单张为 10,000,000 字节，Moxing 字节图片另验证尺寸。具体真实 Provider 账单及生产发布仍须验收。
+
+Pro 多参考图必须配置含内部 `param("input_image_count")` 的模型计费表达式；未配置表达式时，
+多参考图在预扣前拒绝，单参考图可沿用已配置固定价。同步和异步共用标准转换；异步查询支持结果托管。
 固定规格示例：
 
 ```json

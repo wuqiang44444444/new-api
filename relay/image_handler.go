@@ -73,6 +73,9 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed)
 		}
+		if err := service.PrepareImageUpstreamRequest(c.Request.Context(), convertedRequest); err != nil {
+			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
 		relaycommon.AppendRequestConversionFromRequest(info, convertedRequest)
 
 		switch convertedRequest.(type) {
