@@ -63,7 +63,6 @@ func TestTaskResponseFailsClosedWhenCompletionTokensAreUntrustworthy(t *testing.
 		name string
 		body string
 	}{
-		{name: "missing with pointConsume present", body: `{"code":0,"data":{"taskId":"task-1","status":"success","result":["https://cdn.example.com/video.mp4"],"pointConsume":"0.232731"}}`},
 		{name: "string", body: `{"code":0,"data":{"taskId":"task-1","status":"success","result":["https://cdn.example.com/video.mp4"],"completionTokens":"40594"}}`},
 		{name: "fractional", body: `{"code":0,"data":{"taskId":"task-1","status":"success","result":["https://cdn.example.com/video.mp4"],"completionTokens":40594.5}}`},
 		{name: "zero", body: `{"code":0,"data":{"taskId":"task-1","status":"success","result":["https://cdn.example.com/video.mp4"],"completionTokens":0}}`},
@@ -123,4 +122,18 @@ func TestTaskResponseMapsBusinessNotFoundCodeToUpstreamTaskNotFound(t *testing.T
 	var notFound *relaycommon.UpstreamTaskNotFound
 	assert.True(t, errors.As(err, &notFound))
 	assert.Equal(t, 30003, notFound.ProviderCode)
+}
+
+func TestTaskResponsePreservesSuccessWithoutCompletionTokens(t *testing.T) {
+	body := []byte(`{"code":0,"data":{"taskId":"task-1","status":"success","result":["https://cdn.example.com/video.mp4"],"pointConsume":"0.232731"}}`)
+	normalized, err := TaskResponse(body, "task-1", TaskResponseContext{ProviderModel: "seedance-2-fast", Resolution: "720p", MaxTokens: 100000})
+	require.NoError(t, err)
+	var payload struct {
+		Status string         `json:"status"`
+		Usage  map[string]any `json:"usage"`
+	}
+	require.NoError(t, common.Unmarshal(normalized, &payload))
+	assert.Equal(t, "succeeded", payload.Status)
+	assert.NotContains(t, payload.Usage, "completion_tokens", "missing must not become a reported zero")
+	assert.NotContains(t, payload.Usage, "total_tokens")
 }

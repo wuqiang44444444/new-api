@@ -35,10 +35,11 @@ var videoAdapterRevisionRules = map[struct {
 	ChannelType int
 	Profile     dto.VideoUpstreamProfile
 }]videoAdapterRevisionRule{
-	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyRelay}:            {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
-	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyMoxingModelArk}:   {Current: VideoAdapterRevisionV1, Supported: []string{VideoAdapterRevisionV1}, AllowEmpty: false},
-	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos}:     {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV1, VideoAdapterRevisionV2}, AllowEmpty: false},
-	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedance}: {Current: VideoAdapterRevisionV3, Supported: []string{VideoAdapterRevisionV3}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3}: {Current: VideoAdapterRevisionV1, Supported: []string{VideoAdapterRevisionV1}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyRelay}:              {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV2}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyMoxingModelArk}:     {Current: VideoAdapterRevisionV1, Supported: []string{VideoAdapterRevisionV1}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos}:       {Current: VideoAdapterRevisionV2, Supported: []string{VideoAdapterRevisionV1, VideoAdapterRevisionV2}, AllowEmpty: false},
+	{ChannelType: constant.ChannelTypeSeedanceLink, Profile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedance}:   {Current: VideoAdapterRevisionV3, Supported: []string{VideoAdapterRevisionV3}, AllowEmpty: false},
 }
 
 func (version VideoSouthboundAdapterVersion) String() string {

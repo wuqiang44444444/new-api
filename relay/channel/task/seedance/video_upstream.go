@@ -25,7 +25,7 @@ func videoCreatePath(profile dto.VideoUpstreamProfile, configuredCreatePath stri
 		dto.VideoUpstreamProfileThirdPartyMoxingModelArk,
 		dto.VideoUpstreamProfileThirdPartyReverseProxy,
 		dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
-		dto.VideoUpstreamProfileThirdPartyFunCloudSeedance:
+		dto.VideoUpstreamProfileThirdPartyFunCloudSeedance, dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3:
 		if strings.TrimSpace(configuredCreatePath) == "" {
 			return "", fmt.Errorf("video_upstream_create_path is required for third-party profile")
 		}
@@ -45,7 +45,7 @@ func videoTaskPath(profile dto.VideoUpstreamProfile, configuredQueryTemplate, ta
 		dto.VideoUpstreamProfileThirdPartyMoxingModelArk,
 		dto.VideoUpstreamProfileThirdPartyReverseProxy,
 		dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
-		dto.VideoUpstreamProfileThirdPartyFunCloudSeedance:
+		dto.VideoUpstreamProfileThirdPartyFunCloudSeedance, dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3:
 		if strings.TrimSpace(configuredQueryTemplate) == "" {
 			return "", fmt.Errorf("video_upstream_query_path_template is required for third-party profile")
 		}
@@ -90,6 +90,8 @@ func normalizeVideoCreateResponse(profile dto.VideoUpstreamProfile, body []byte)
 		return thirdparty.RelayCreateResponse(body)
 	case dto.VideoUpstreamProfileThirdPartyFeicaiVideos:
 		return feicai.CreateResponse(body)
+	case dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3:
+		return thirdparty.FunCloudModelArkCreateResponse(body)
 	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedance:
 		return funcloud.CreateResponse(body)
 	default:
@@ -126,6 +128,8 @@ func normalizeVideoTaskResponse(
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "unsupported video adapter revision"}
 		}
 		return feicai.TaskResponse(body, expectedTaskID, feicai.TaskResponseContext{BaseURL: baseURL})
+	case dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3:
+		return thirdparty.FunCloudModelArkTaskResponse(body, expectedTaskID)
 	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedance:
 		if !adapterVersion.IsFunCloudSeedanceV3() {
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "unsupported video adapter revision"}

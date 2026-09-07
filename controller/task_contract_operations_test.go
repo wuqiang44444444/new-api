@@ -17,6 +17,7 @@ func TestTaskContractWriteOperationsRequireSessionBoundSecurityProof(t *testing.
 		path    string
 		handler gin.HandlerFunc
 	}{
+		{name: "usage review", path: "/api/task-contract/usage-recovery/task_1/review", handler: ReviewTaskUsage},
 		{
 			name:    "attempt recovery",
 			path:    "/api/task-contract/attempts/attempt_1/recover",

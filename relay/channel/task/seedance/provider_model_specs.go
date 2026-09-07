@@ -64,6 +64,8 @@ func providerSpec(protocol kitdto.VideoUpstreamProtocol, model string) (provider
 				defaultGenerateAudio: true, outputFormats: stringSet("mp4", "mov"),
 			}, true
 		}
+	case kitdto.VideoUpstreamProtocolFunCloudModelArkV3:
+		return funCloudModelArkProviderSpec(model)
 	case kitdto.VideoUpstreamProtocolFunCloudSeedance:
 		return funCloudProviderSpec(model)
 	}

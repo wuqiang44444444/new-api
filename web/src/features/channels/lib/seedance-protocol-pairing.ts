@@ -21,6 +21,7 @@ const DEFAULT_ASSET_PROTOCOL_BY_VIDEO: Record<
   ark_media_v1: 'ark_assets_v1',
   feicai_videos_v1: 'none',
   funcloud_seedance: 'funcloud_material',
+  funcloud_modelark_v3: 'funcloud_material',
 }
 
 export function getDefaultSeedanceAssetProtocol(

@@ -83,6 +83,7 @@ func isAllowedSecurityProofScope(scope string) bool {
 	case securityProofScopeChannelKeyRead,
 		securityProofScopePasskeyRegister,
 		securityProofScopePasskeyDelete,
+		securityProofScopeTaskUsageReview,
 		securityProofScopeTaskContractAttemptRecover,
 		securityProofScopeTaskContractAttemptReject:
 		return true

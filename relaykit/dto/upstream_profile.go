@@ -9,12 +9,13 @@ import (
 type VideoUpstreamProfile string
 
 const (
-	VideoUpstreamProfileOfficial                   VideoUpstreamProfile = "official"
-	VideoUpstreamProfileThirdPartyRelay            VideoUpstreamProfile = "third_party_relay"
-	VideoUpstreamProfileThirdPartyMoxingModelArk   VideoUpstreamProfile = "third_party_moxing_modelark"
-	VideoUpstreamProfileThirdPartyReverseProxy     VideoUpstreamProfile = "third_party_reverse_proxy"
-	VideoUpstreamProfileThirdPartyFeicaiVideos     VideoUpstreamProfile = "third_party_feicai_videos"
-	VideoUpstreamProfileThirdPartyFunCloudSeedance VideoUpstreamProfile = "third_party_funcloud_seedance"
+	VideoUpstreamProfileOfficial                     VideoUpstreamProfile = "official"
+	VideoUpstreamProfileThirdPartyRelay              VideoUpstreamProfile = "third_party_relay"
+	VideoUpstreamProfileThirdPartyMoxingModelArk     VideoUpstreamProfile = "third_party_moxing_modelark"
+	VideoUpstreamProfileThirdPartyReverseProxy       VideoUpstreamProfile = "third_party_reverse_proxy"
+	VideoUpstreamProfileThirdPartyFeicaiVideos       VideoUpstreamProfile = "third_party_feicai_videos"
+	VideoUpstreamProfileThirdPartyFunCloudSeedance   VideoUpstreamProfile = "third_party_funcloud_seedance"
+	VideoUpstreamProfileThirdPartyFunCloudModelArkV3 VideoUpstreamProfile = "third_party_funcloud_modelark_v3"
 )
 
 func (p VideoUpstreamProfile) IsOfficial() bool {
@@ -26,7 +27,7 @@ func (p VideoUpstreamProfile) IsThirdParty() bool {
 		p == VideoUpstreamProfileThirdPartyMoxingModelArk ||
 		p == VideoUpstreamProfileThirdPartyReverseProxy ||
 		p == VideoUpstreamProfileThirdPartyFeicaiVideos ||
-		p == VideoUpstreamProfileThirdPartyFunCloudSeedance
+		p == VideoUpstreamProfileThirdPartyFunCloudSeedance || p == VideoUpstreamProfileThirdPartyFunCloudModelArkV3
 }
 
 func (p VideoUpstreamProfile) IsValid() bool {
@@ -36,7 +37,7 @@ func (p VideoUpstreamProfile) IsValid() bool {
 		VideoUpstreamProfileThirdPartyMoxingModelArk,
 		VideoUpstreamProfileThirdPartyReverseProxy,
 		VideoUpstreamProfileThirdPartyFeicaiVideos,
-		VideoUpstreamProfileThirdPartyFunCloudSeedance:
+		VideoUpstreamProfileThirdPartyFunCloudSeedance, VideoUpstreamProfileThirdPartyFunCloudModelArkV3:
 		return true
 	}
 	return false

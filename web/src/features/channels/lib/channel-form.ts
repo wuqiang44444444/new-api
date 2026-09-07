@@ -295,6 +295,7 @@ export const channelFormSchema = z
         'ark_media_v1',
         'feicai_videos_v1',
         'funcloud_seedance',
+        'funcloud_modelark_v3',
       ])
       .optional(),
     asset_upstream_protocol: z

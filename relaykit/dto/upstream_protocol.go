@@ -18,6 +18,7 @@ const (
 	VideoUpstreamProtocolArkMediaV1           VideoUpstreamProtocol = "ark_media_v1"
 	VideoUpstreamProtocolFeicaiVideosV1       VideoUpstreamProtocol = "feicai_videos_v1"
 	VideoUpstreamProtocolFunCloudSeedance     VideoUpstreamProtocol = "funcloud_seedance"
+	VideoUpstreamProtocolFunCloudModelArkV3   VideoUpstreamProtocol = "funcloud_modelark_v3"
 )
 
 func (p VideoUpstreamProtocol) IsValid() bool {
@@ -30,7 +31,7 @@ func (p VideoUpstreamProtocol) IsValid() bool {
 		VideoUpstreamProtocolMoxingModelArkV1,
 		VideoUpstreamProtocolArkMediaV1,
 		VideoUpstreamProtocolFeicaiVideosV1,
-		VideoUpstreamProtocolFunCloudSeedance:
+		VideoUpstreamProtocolFunCloudSeedance, VideoUpstreamProtocolFunCloudModelArkV3:
 		return true
 	default:
 		return false
@@ -60,6 +61,8 @@ func (p VideoUpstreamProtocol) TransportProfile() VideoUpstreamProfile {
 		return VideoUpstreamProfileThirdPartyReverseProxy
 	case VideoUpstreamProtocolFeicaiVideosV1:
 		return VideoUpstreamProfileThirdPartyFeicaiVideos
+	case VideoUpstreamProtocolFunCloudModelArkV3:
+		return VideoUpstreamProfileThirdPartyFunCloudModelArkV3
 	case VideoUpstreamProtocolFunCloudSeedance:
 		return VideoUpstreamProfileThirdPartyFunCloudSeedance
 	default:
@@ -77,6 +80,8 @@ func (p VideoUpstreamProtocol) TransportPaths(providerModel string) (string, str
 		return "/v1/ark/media/generations", "/v1/ark/media/tasks/{task_id}"
 	case VideoUpstreamProtocolFeicaiVideosV1:
 		return "/v1/videos", "/v1/videos/{task_id}"
+	case VideoUpstreamProtocolFunCloudModelArkV3:
+		return "/api/v3/contents/generations/tasks", "/api/v3/contents/generations/tasks/{task_id}"
 	case VideoUpstreamProtocolFunCloudSeedance:
 		createPath, ok := map[string]string{
 			"seedance-2":      "/api/v2/open/aigc/seedance2-0",

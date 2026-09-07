@@ -16,13 +16,32 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 	if async == nil || async.TieredSnapshot == nil {
 		return false
 	}
+	if task.HasSeedanceBillingFacts() {
+		// Re-read accepted facts under the row lock before deriving any funding instruction.
+		if err := task.UpdateBilling(); err != nil {
+			logger.LogWarn(ctx, "failed to load frozen task billing facts: "+err.Error())
+			return true
+		}
+		async = task.PrivateData.AsyncBilling
+		actualTokens = async.ActualTokens
+		if async.State != model.TaskBillingStateSettled && async.TargetQuota != nil {
+			recalculateTaskQuotaWithReconcile(ctx, task, *async.TargetQuota, async.Reason, async.QuotaClamp)
+			return true
+		}
+	}
+	if async.State == model.TaskBillingStateSettled {
+		return true
+	}
 	// 与 prepareTerminalTaskBilling 一致地记录真实 token，供结算/退款日志的 completion_tokens
 	// 列回填（recalculateTaskQuotaWithReconcile 读取）。直接调用本函数的路径（如补偿/单测）也生效。
 	async.ActualTokens = actualTokens
 	if actualTokens > 0 {
 		async.ActualUsageReported = true
 	}
-	if !async.ActualUsageReported {
+	if !async.ActualUsageReported && (!task.HasSeedanceBillingFacts() || billingexpr.RequiresUsage(async.TieredSnapshot.ExprString)) {
+		if awaitSeedanceUsage(ctx, task) {
+			return true
+		}
 		async.Operation = "settle"
 		async.Reason = "表达式结算：上游未返回可计费用量，保持预扣额度"
 		target := task.Quota
@@ -55,6 +74,10 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 		return true
 	}
 	actualQuota := result.ActualQuotaAfterGroup
+	if result.ActualQuotaBeforeGroup < 0 || actualQuota < 0 {
+		persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, fmt.Errorf("frozen task billing expression returned negative cost"))
+		return true
+	}
 	if task.PrivateData.BillingContext != nil && task.PrivateData.BillingContext.ContractFact != nil {
 		modelQuota := decimal.NewFromFloat(result.ActualQuotaBeforeGroup).
 			Mul(decimal.NewFromFloat(async.TieredSnapshot.GroupRatio))
@@ -66,6 +89,10 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 		actualQuota, result.Clamp = common.QuotaRoundChecked(modelQuota.InexactFloat64())
 	}
 
+	if actualQuota < 0 {
+		persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, fmt.Errorf("frozen task billing contract returned negative cost"))
+		return true
+	}
 	reason := fmt.Sprintf("表达式结算：tokens=%d, tier=%s", actualTokens, result.MatchedTier)
 	async.Operation = "settle"
 	async.Reason = reason
@@ -74,6 +101,10 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 		persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, err)
 		return true
 	}
-	recalculateTaskQuotaWithReconcile(ctx, task, actualQuota, reason, result.Clamp)
+	// A concurrent writer may have installed the target or completed funding.
+	async = task.PrivateData.AsyncBilling
+	if async.State != model.TaskBillingStateSettled && async.TargetQuota != nil {
+		recalculateTaskQuotaWithReconcile(ctx, task, *async.TargetQuota, async.Reason, result.Clamp)
+	}
 	return true
 }

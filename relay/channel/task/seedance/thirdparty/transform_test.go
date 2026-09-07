@@ -195,7 +195,7 @@ func TestRelayTaskResponseFormsBillableUsageOnlyFromVerifiedFields(t *testing.T)
 		wantSource     string
 	}{
 		{name: "root output token", usage: `null,"output_tokens":2345`, wantCompletion: 2345, wantTotal: 2345, wantSource: "output_tokens"},
-		{name: "invalid completion falls back to total", usage: `{"completion_tokens":-1,"total_tokens":4567}`, wantCompletion: 4567, wantTotal: 4567, wantSource: "usage.total_tokens"},
+		{name: "invalid completion waits for evidence", usage: `{"completion_tokens":-1,"total_tokens":4567}`},
 		{name: "total minus prompt", usage: `{"prompt_tokens":100,"total_tokens":500}`, wantCompletion: 400, wantTotal: 500, wantSource: "usage.total_tokens-usage.prompt_tokens"},
 		{name: "explicit completion zero", usage: `{"completion_tokens":0}`, wantCompletion: 0, wantTotal: 0, wantSource: "usage.completion_tokens"},
 	}
@@ -209,7 +209,14 @@ func TestRelayTaskResponseFormsBillableUsageOnlyFromVerifiedFields(t *testing.T)
 
 			require.NoError(t, err)
 			result := decodeObject(t, body)
-			usage := result["usage"].(map[string]any)
+			if test.wantSource == "" {
+				assert.NotContains(t, result, "usage")
+				assert.NotContains(t, result, "usage_source")
+				assert.Contains(t, result, "usage_evidence")
+				return
+			}
+			usage, ok := result["usage"].(map[string]any)
+			require.True(t, ok)
 			assert.Equal(t, test.wantCompletion, usage["completion_tokens"])
 			assert.Equal(t, test.wantTotal, usage["total_tokens"])
 			assert.Equal(t, test.wantSource, result["usage_source"])

@@ -15,7 +15,7 @@ type TaskBillingReconcileSummary struct {
 
 func prepareTerminalTaskBilling(task *model.Task, result *relaycommon.TaskInfo) {
 	async := task.PrivateData.AsyncBilling
-	if async == nil {
+	if async == nil || (async.State == model.TaskBillingStateSettled && !task.HasSeedanceBillingFacts()) {
 		return
 	}
 	async.ActualTokens = result.CompletionTokens
@@ -24,7 +24,7 @@ func prepareTerminalTaskBilling(task *model.Task, result *relaycommon.TaskInfo) 
 	}
 	async.ActualUsageReported = result.UsageReported || result.CompletionTokens > 0 || result.TotalTokens > 0
 	async.ActualUsageSource = result.UsageSource
-	if len(result.UsageEvidence) > 0 {
+	if len(result.UsageEvidence) > 0 || task.HasSeedanceBillingFacts() {
 		async.ActualUsageEvidence = result.UsageEvidence
 	}
 	if result.ProviderBillingEvidence != nil {

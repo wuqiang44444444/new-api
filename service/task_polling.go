@@ -171,6 +171,7 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 	ReconcileTaskCreateAttempts(ctx)
 	sweepTimedOutTasks(ctx)
 	ReconcileTaskBilling(ctx, refundReconciliationLimit)
+	ReconcileTaskUsage(ctx)
 	if GetTaskAdaptorFunc == nil {
 		return summary
 	}
@@ -548,8 +549,11 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if !proceed {
 		return nil
 	}
-	resp, err := adaptor.FetchTask(taskVideoUpstreamQueryBaseURL(task, ch, baseURL), key, task, proxy)
+	resp, err := fetchVideoTaskWithContext(ctx, adaptor, taskVideoUpstreamQueryBaseURL(task, ch, baseURL), key, task, proxy)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if handled, markErr := linkVideoContractViolationHandled(ctx, task, err); handled {
 			if markErr != nil {
 				return fmt.Errorf("mark reconciliation required for task %s: %w", taskId, markErr)
@@ -611,6 +615,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassHookError, resp.StatusCode, err.Error())
 	}
 
+	if seedanceTaskSucceeded(task) && taskResult.Status != model.TaskStatusSuccess {
+		return fmt.Errorf("provider usage observation cannot change a successful task status")
+	}
 	task.Data = linkVideoRedactResponse(adapterVersion, responseBody)
 
 	logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
@@ -685,14 +692,24 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		won, err := task.UpdateWithStatus(snap.Status)
 		if err != nil {
 			logger.LogError(ctx, fmt.Sprintf("UpdateWithStatus failed for task %s: %s", task.TaskID, err.Error()))
+			if task.HasSeedanceBillingFacts() {
+				return err
+			}
 			shouldFinalizeBilling = false
 		} else if !won {
 			logger.LogWarn(ctx, fmt.Sprintf("Task %s CAS lost or no-op update, skip billing", task.TaskID))
 			shouldFinalizeBilling = false
 		}
-	} else if !snap.Equal(task.Snapshot()) {
-		if _, err := task.UpdateWithStatus(snap.Status); err != nil {
+	} else if !snap.Equal(task.Snapshot()) || seedanceTaskSucceeded(task) {
+		won, err := task.UpdateWithStatus(snap.Status)
+		if err != nil {
 			logger.LogError(ctx, fmt.Sprintf("Failed to update task %s: %s", task.TaskID, err.Error()))
+			if task.HasSeedanceBillingFacts() {
+				return err
+			}
+			shouldFinalizeBilling = false
+		} else if !won {
+			shouldFinalizeBilling = false
 		}
 	} else {
 		// No changes, skip update
@@ -864,6 +881,12 @@ func unrecognizedPollDetail(reason string, body []byte) string {
 }
 
 func recordPollFailure(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, fromStatus model.TaskStatus, class string, statusCode int, detail string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if seedanceTaskSucceeded(task) {
+		return fmt.Errorf("provider usage observation failed (%s, HTTP %d)", class, statusCode)
+	}
 	task.PrivateData.PollFailures++
 	if class == pollClassUnrecognized || class == pollClassHookError {
 		// The redacted body is intentionally not persisted to Task.Data on these

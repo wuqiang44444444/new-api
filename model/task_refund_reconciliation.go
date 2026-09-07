@@ -24,7 +24,7 @@ func GetUnrefundedFailedTasks(updatedBefore int64, limit int) []*Task {
 // HasTaskPollingWork reports whether polling has unfinished work or a failed
 // task that still needs refund reconciliation.
 func HasTaskPollingWork() bool {
-	if HasUnfinishedSyncTasks() {
+	if HasUnfinishedSyncTasks() || HasDueTaskUsageChecks(GetDBTimestamp()) {
 		return true
 	}
 	if HasTaskCreateAttemptWork(GetDBTimestamp()) {

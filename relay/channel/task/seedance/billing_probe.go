@@ -111,5 +111,11 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 		probe["size_multiplier"] = 1.0
 		probe["billing_mode"] = feicai.BillingModePerSecond
 	}
+	if a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 {
+		probe["billing_mode"] = "per-second"
+		if payload.Duration != nil && *payload.Duration == -1 {
+			probe["billing_mode"] = "per-token"
+		}
+	}
 	return probe, nil
 }

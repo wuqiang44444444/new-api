@@ -112,7 +112,7 @@ func validateSeedanceChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *
 		}
 		settings.AssetProviderProject = "default"
 	case dto.AssetUpstreamProtocolFunCloudMaterial:
-		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudSeedance {
+		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudSeedance && settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudModelArkV3 {
 			return fmt.Errorf("FunCloud material protocol requires the FunCloud Seedance video protocol")
 		}
 	case dto.AssetUpstreamProtocolCMCCAICCV2:

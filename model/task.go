@@ -54,6 +54,7 @@ const (
 const TaskRefundLegacyCutoff int64 = 1771718400 // 2026-02-22 00:00:00 UTC
 
 type Task struct {
+	TaskUsageRecovery       `gorm:"embedded" json:"-"`
 	ID                      int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
 	CreatedAt               int64                 `json:"created_at" gorm:"index"`
 	UpdatedAt               int64                 `json:"updated_at"`
@@ -580,6 +581,9 @@ func (t *Task) UpdateQuota() error {
 // falls back to INSERT ON CONFLICT when the WHERE-guarded UPDATE matches
 // zero rows, which silently bypasses the CAS guard.
 func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
+	if t.HasSeedanceBillingFacts() {
+		return t.updateSeedanceObservation(fromStatus)
+	}
 	result := DB.Model(t).Where("status = ?", fromStatus).Select("*").Updates(t)
 	if result.Error != nil {
 		return false, result.Error

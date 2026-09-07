@@ -149,6 +149,7 @@ func (t *Task) ToModelArkVideoTask() *dto.ModelArkVideoTask {
 			result.Usage.ToolUsage = &dto.ModelArkVideoToolUsage{WebSearch: upstream.Usage.ToolUsage.WebSearch}
 		}
 	}
+	t.projectSeedanceAcceptedUsage(result)
 	switch t.Status {
 	case TaskStatusSuccess:
 		result.Content = &dto.ModelArkVideoTaskContent{VideoURL: "/v1/videos/" + t.TaskID + "/content"}

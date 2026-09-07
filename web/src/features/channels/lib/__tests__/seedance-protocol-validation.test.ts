@@ -42,6 +42,7 @@ describe('Seedance protocol validation', () => {
       ['ark_media_v1', 'ark_assets_v1'],
       ['feicai_videos_v1', 'none'],
       ['funcloud_seedance', 'funcloud_material'],
+      ['funcloud_modelark_v3', 'funcloud_material'],
     ]
 
     for (const [videoProtocol, assetProtocol] of cases) {
@@ -153,6 +154,24 @@ describe('Seedance protocol validation', () => {
       asset_min_url_ttl_seconds: 3600,
     })
     assert.equal(mismatchedAsset.success, false)
+  })
+
+  test('allows the V3 quartet to share the existing material library', () => {
+    const mapping =
+      '{"v3-standard":"seedance-2-0","v3-fast":"seedance-2-0-fast","v3-mini":"seedance-2-0-mini","v3-next":"seedance-2-5"}'
+    const result = channelFormSchema.safeParse({
+      ...seedanceForm,
+      models: 'v3-standard,v3-fast,v3-mini,v3-next',
+      model_mapping: mapping,
+      video_upstream_protocol: 'funcloud_modelark_v3',
+      asset_upstream_protocol: 'funcloud_material',
+      asset_min_url_ttl_seconds: 3600,
+    })
+    assert.equal(result.success, true)
+    assert.deepEqual(
+      getCompatibleSeedanceAssetProtocols('funcloud_modelark_v3', mapping),
+      ['funcloud_material', 'none']
+    )
   })
 
   test('rejects FunCloud 2.5 with the FunCloud material library', () => {

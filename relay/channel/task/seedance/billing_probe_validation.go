@@ -10,6 +10,9 @@ import (
 // keeping this protocol-specific part beside BuildTaskBillingProbe prevents a
 // Feicai-only field from being accepted for other Seedance channels.
 func BillingProbeValidationExtraFields(protocol dto.VideoUpstreamProtocol) map[string]any {
+	if protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 {
+		return map[string]any{"billing_mode": "per-second"}
+	}
 	if protocol.TransportProfile() != dto.VideoUpstreamProfileThirdPartyFeicaiVideos {
 		return nil
 	}

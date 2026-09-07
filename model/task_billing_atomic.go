@@ -55,6 +55,9 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 		if async.State == TaskBillingStateSettled {
 			return nil
 		}
+		if err := enforceSeedanceBillingTarget(&locked, targetQuota); err != nil {
+			return err
+		}
 		if requestedOperation != "" {
 			async.Operation = requestedOperation
 		}
@@ -168,12 +171,13 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 	if err != nil {
 		return false, 0, err
 	}
+	task.Quota = locked.Quota
+	task.PrivateData = locked.PrivateData
+	task.BillingState = locked.PrivateData.AsyncBilling.State
 	if !applied {
 		return false, 0, nil
 	}
 
-	task.Quota = locked.Quota
-	task.PrivateData = locked.PrivateData
 	if delta != 0 && !(locked.PrivateData.BillingSource == "subscription" && locked.PrivateData.SubscriptionId > 0) {
 		gopool.Go(func() {
 			var cacheErr error

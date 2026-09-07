@@ -3,6 +3,7 @@ package seedance
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
@@ -146,7 +147,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		return service.TaskErrorWrapperLocal(err, "invalid_video_contract", http.StatusBadRequest)
 	}
 	info.Action = modelArkTaskAction(payload)
-	if (a.protocol == dto.VideoUpstreamProtocolFunCloudSeedance ||
+	if (a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolFunCloudSeedance ||
 		a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC) &&
 		billing_setting.GetBillingMode(info.OriginModelName) != billing_setting.BillingModeTieredExpr {
 		return service.TaskErrorWrapperLocal(
@@ -177,7 +178,7 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	if a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC {
 		return nil
 	}
-	if a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedance {
+	if a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3 || a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedance {
 		return nil
 	}
 	if a.profile == dto.VideoUpstreamProfileThirdPartyRelay &&
@@ -236,6 +237,8 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		return nil, err
 	}
 	switch a.protocol {
+	case dto.VideoUpstreamProtocolFunCloudModelArkV3:
+		data, err = buildFunCloudModelArkRequest(body)
 	case dto.VideoUpstreamProtocolMoxingMediaTaskV1:
 		data, err = thirdparty.MoxingMediaCreateRequest(data)
 	case dto.VideoUpstreamProtocolMoxingModelArkV1:
@@ -283,6 +286,10 @@ func (a *TaskAdaptor) ParseResponse(_ *gin.Context, resp *http.Response, _ *rela
 // profile、adapter 版本与查询路径模板都只读创建时冻结的 PrivateData 快照，
 // 缺失时失败关闭，不回退到当前渠道配置。
 func (a *TaskAdaptor) FetchTask(baseURL, key string, task *model.Task, proxy string) (*http.Response, error) {
+	return a.FetchTaskWithContext(context.Background(), baseURL, key, task, proxy)
+}
+
+func (a *TaskAdaptor) FetchTaskWithContext(ctx context.Context, baseURL, key string, task *model.Task, proxy string) (*http.Response, error) {
 	if task == nil {
 		return nil, fmt.Errorf("task is required")
 	}
@@ -305,7 +312,7 @@ func (a *TaskAdaptor) FetchTask(baseURL, key string, task *model.Task, proxy str
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest(http.MethodGet, joinVideoUpstreamURL(baseURL, path), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, joinVideoUpstreamURL(baseURL, path), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +325,7 @@ func (a *TaskAdaptor) FetchTask(baseURL, key string, task *model.Task, proxy str
 	}
 	resp, err := client.Do(req)
 	service.AttachRawTaskPollingEvidence(task, req, resp, err)
-	if err != nil || resp == nil || profile.IsOfficial() || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+	if err != nil || resp == nil || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return resp, err
 	}
 	responseBody, err := io.ReadAll(resp.Body)
@@ -326,14 +333,18 @@ func (a *TaskAdaptor) FetchTask(baseURL, key string, task *model.Task, proxy str
 	if err != nil {
 		return nil, fmt.Errorf("read upstream task response: %w", err)
 	}
-	responseBody, err = normalizeVideoTaskResponse(
-		profile,
-		adapterVersion,
-		responseBody,
-		taskID,
-		baseURL,
-		frozenVideoBillingContext(task),
-	)
+	if profile.IsOfficial() {
+		responseBody, err = normalizeOfficialTaskUsage(responseBody, taskID)
+	} else {
+		responseBody, err = normalizeVideoTaskResponse(
+			profile,
+			adapterVersion,
+			responseBody,
+			taskID,
+			baseURL,
+			frozenVideoBillingContext(task),
+		)
+	}
 	if err != nil {
 		return nil, err
 	}

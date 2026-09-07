@@ -116,7 +116,7 @@ func VideoAPI(customerModel string, protocol dto.VideoUpstreamProtocol, provider
 			{Operation: "create_video", Method: http.MethodPost, Path: "/api/v3/contents/generations/tasks", Supported: true},
 			{Operation: "list_videos", Method: http.MethodGet, Path: "/api/v3/contents/generations/tasks", Supported: true},
 			{Operation: "get_video", Method: http.MethodGet, Path: "/api/v3/contents/generations/tasks/{task_id}", Supported: true},
-			{Operation: "delete_video", Method: http.MethodDelete, Path: "/api/v3/contents/generations/tasks/{task_id}", Supported: true},
+			{Operation: "delete_video", Method: http.MethodDelete, Path: "/api/v3/contents/generations/tasks/{task_id}", Supported: protocol != dto.VideoUpstreamProtocolFunCloudModelArkV3},
 			{Operation: "get_video_content", Method: http.MethodGet, Path: "/v1/videos/{task_id}/content", Supported: true},
 		},
 		Creation: dto.PublicVideoCreation{
@@ -182,6 +182,8 @@ func publicVideoSpec(protocol dto.VideoUpstreamProtocol, model string) (videoSpe
 				allowGenerateAudio: true, allowWatermark: true, allowSeed: true, outputFormats: []string{"mp4", "mov"},
 			}, true
 		}
+	case dto.VideoUpstreamProtocolFunCloudModelArkV3:
+		return funCloudModelArkVideoSpec(model)
 	case dto.VideoUpstreamProtocolFunCloudSeedance:
 		switch model {
 		case "seedance-2":

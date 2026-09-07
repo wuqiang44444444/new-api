@@ -26,12 +26,13 @@ func (a *TaskAdaptor) ValidateMappedRequest(c *gin.Context, info *relaycommon.Re
 	} else if a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 ||
 		a.protocol == dto.VideoUpstreamProtocolMoxingMediaTaskV1 ||
 		a.protocol == dto.VideoUpstreamProtocolMoxingModelArkV1 ||
+		a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 ||
 		a.protocol == dto.VideoUpstreamProtocolFunCloudSeedance {
 		if err := validateProviderModelRequest(a.protocol, info.UpstreamModelName, contract.ModelArk); err != nil {
 			return service.TaskErrorWrapperLocal(err, "invalid_video_parameter", http.StatusBadRequest)
 		}
 	}
-	if a.protocol == dto.VideoUpstreamProtocolFunCloudSeedance {
+	if a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolFunCloudSeedance {
 		createPath, queryPath := a.protocol.TransportPaths(info.UpstreamModelName)
 		if createPath == "" || queryPath == "" {
 			return service.TaskErrorWrapperLocal(

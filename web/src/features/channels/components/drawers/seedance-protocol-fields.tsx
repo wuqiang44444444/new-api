@@ -82,6 +82,7 @@ const SEEDANCE_VIDEO_PROTOCOL_OPTIONS = [
     labelKey: 'Feicai Videos V1 (URL Only, No Asset Library)',
   },
   { value: 'funcloud_seedance', labelKey: 'FunCloud Seedance' },
+  { value: 'funcloud_modelark_v3', labelKey: 'FunCloud ModelArk V3' },
 ] as const
 
 const SEEDANCE_ASSET_PROTOCOL_OPTIONS = [

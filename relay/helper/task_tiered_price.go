@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
@@ -31,7 +33,7 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 		return types.PriceData{}, err
 	}
 	estimatedTokens, ok := billing_setting.GetTaskPreConsumeTokens(info.OriginModelName)
-	if !ok {
+	if !ok && (info.ChannelMeta == nil || info.ChannelType != constant.ChannelTypeSeedanceLink || info.ChannelOtherSettings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudModelArkV3 || billingexpr.RequiresUsage(exprString)) {
 		return types.PriceData{}, fmt.Errorf("model %s task pre-consume token upper bound is not configured", info.OriginModelName)
 	}
 

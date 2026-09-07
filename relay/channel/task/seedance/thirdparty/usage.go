@@ -15,10 +15,13 @@ type terminalTokenUsageCandidate struct {
 }
 
 type terminalTokenUsageCandidates struct {
-	completion []terminalTokenUsageCandidate
-	total      []terminalTokenUsageCandidate
-	prompt     []terminalTokenUsageCandidate
-	generic    []terminalTokenUsageCandidate
+	completion        []terminalTokenUsageCandidate
+	total             []terminalTokenUsageCandidate
+	prompt            []terminalTokenUsageCandidate
+	generic           []terminalTokenUsageCandidate
+	invalidCompletion bool
+	invalidTotal      bool
+	invalidPrompt     bool
 }
 
 // TerminalTokenUsage is the outcome of scanning a successful terminal response
@@ -71,11 +74,13 @@ func normalizeTerminalTokenUsage(data map[string]any) TerminalTokenUsage {
 			usage["total_tokens"] = completion.value
 		}
 		source = completion.path
-	case hasTotal && hasPrompt && total.value >= prompt.value:
+	case candidates.invalidCompletion:
+		return TerminalTokenUsage{Evidence: evidence}
+	case hasTotal && hasPrompt && !candidates.invalidTotal && !candidates.invalidPrompt && total.value >= prompt.value:
 		usage["completion_tokens"] = total.value - prompt.value
 		usage["total_tokens"] = total.value
 		source = total.path + "-" + prompt.path
-	case hasTotal && !hasPrompt:
+	case hasTotal && !hasPrompt && !candidates.invalidTotal && !candidates.invalidPrompt:
 		usage["completion_tokens"] = total.value
 		usage["total_tokens"] = total.value
 		source = total.path
@@ -107,7 +112,20 @@ func collectTerminalTokenUsage(value any, inUsage bool, path string, candidates 
 		tokenField := strings.Contains(normalizedKey, "token")
 		usageContext := inUsage || usageField
 
-		if amount, valid := terminalTokenAmount(fieldValue); valid && (usageContext || tokenField) {
+		amount, valid := terminalTokenAmount(fieldValue)
+		// A present but malformed billing field must not disappear and permit
+		// a lower-priority total to masquerade as completion usage.
+		if fieldValue != nil && !valid && tokenField && !strings.HasSuffix(normalizedKey, "details") {
+			switch {
+			case strings.Contains(normalizedKey, "completion") || strings.Contains(normalizedKey, "output") || strings.Contains(normalizedKey, "generated"):
+				candidates.invalidCompletion = true
+			case strings.Contains(normalizedKey, "total"):
+				candidates.invalidTotal = true
+			case strings.Contains(normalizedKey, "prompt") || strings.Contains(normalizedKey, "input"):
+				candidates.invalidPrompt = true
+			}
+		}
+		if valid && (usageContext || tokenField) {
 			candidate := terminalTokenUsageCandidate{path: fieldPath, value: amount}
 			switch {
 			case tokenField && (strings.Contains(normalizedKey, "completion") || strings.Contains(normalizedKey, "output") || strings.Contains(normalizedKey, "generated")):

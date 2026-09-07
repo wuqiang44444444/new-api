@@ -24,6 +24,9 @@ const reconciliationReasonMaxChars = 200
 // state after an upstream contract violation, preserving progress context and
 // the violation reason so operators can diagnose without upstream access.
 func markTaskReconciliationRequired(ctx context.Context, task *model.Task, reason string) error {
+	if seedanceTaskSucceeded(task) {
+		return fmt.Errorf("provider usage observation is untrusted: %s", reason)
+	}
 	if task == nil {
 		return nil
 	}

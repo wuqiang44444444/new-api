@@ -10,6 +10,8 @@ func registerTaskContractRoutes(apiRouter *gin.RouterGroup) {
 	route := apiRouter.Group("/task-contract")
 	route.Use(middleware.RootAuth(), middleware.DisableCache())
 	{
+		route.GET("/usage-recovery", controller.ListTaskUsageRecovery)
+		route.POST("/usage-recovery/:task_id/review", middleware.CriticalRateLimit(), controller.ReviewTaskUsage)
 		route.GET("/attempts", controller.ListTaskCreateAttemptsForRecovery)
 		route.POST(
 			"/attempts/:attempt_id/recover",

@@ -126,11 +126,13 @@ func TaskResponse(body []byte, expectedTaskID string, responseContext TaskRespon
 	completionTokens := 0
 	var billingEvidence *relaycommon.ProviderBillingEvidence
 	if status == "succeeded" {
-		if envelope.Data.CompletionTokens == nil || *envelope.Data.CompletionTokens <= 0 ||
-			responseContext.MaxTokens <= 0 || *envelope.Data.CompletionTokens > responseContext.MaxTokens {
+		if envelope.Data.CompletionTokens != nil && (*envelope.Data.CompletionTokens <= 0 ||
+			responseContext.MaxTokens <= 0 || *envelope.Data.CompletionTokens > responseContext.MaxTokens) {
 			return violation("FunCloud completionTokens is not trustworthy")
 		}
-		completionTokens = *envelope.Data.CompletionTokens
+		if envelope.Data.CompletionTokens != nil {
+			completionTokens = *envelope.Data.CompletionTokens
+		}
 		pointConsume := strings.TrimSpace(envelope.Data.PointConsume)
 		outputPointConsume := strings.TrimSpace(envelope.Data.Output.PointConsume)
 		if pointConsume == "" {
@@ -157,6 +159,9 @@ func TaskResponse(body []byte, expectedTaskID string, responseContext TaskRespon
 			ProviderModel:   strings.TrimSpace(responseContext.ProviderModel),
 			Resolution:      strings.ToLower(strings.TrimSpace(responseContext.Resolution)),
 			HasVideoInput:   responseContext.HasVideoInput,
+		}
+		if envelope.Data.CompletionTokens == nil {
+			billingEvidence.TokenSource = ""
 		}
 		if pointConsume == "" {
 			billingEvidence.ConsumptionUnit = ""

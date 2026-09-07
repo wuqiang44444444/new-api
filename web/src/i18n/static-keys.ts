@@ -573,7 +573,7 @@ export const STATIC_I18N_KEYS = [
   'This user account is disabled.',
   'Telegram binding failed. Please try again.',
   'Verification scope is missing',
-// Local Link extension keys
+  // Local Link extension keys
   'Ark Assets V1',
   'Ark Media V1',
   'BytePlus ModelArk V3',
@@ -585,6 +585,7 @@ export const STATIC_I18N_KEYS = [
   'FunCloud Material Library',
   'FunCloud Material requires the FunCloud Seedance video protocol',
   'FunCloud Seedance',
+  'FunCloud ModelArk V3',
   'FunCloud Seedance 2.5 does not support the FunCloud Material Library',
   'Image Relay',
   'Moxing Images V1',

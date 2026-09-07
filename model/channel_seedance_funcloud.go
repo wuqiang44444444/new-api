@@ -14,6 +14,9 @@ var funCloudSeedanceProviderModels = map[string]struct{}{
 }
 
 func validateFunCloudSeedanceChannel(channel *Channel, settings *dto.ChannelOtherSettings) error {
+	if settings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 {
+		return validateFunCloudModelArkChannel(channel, settings)
+	}
 	if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudSeedance {
 		if settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolFunCloudMaterial {
 			return fmt.Errorf("FunCloud material protocol requires the FunCloud Seedance video protocol")

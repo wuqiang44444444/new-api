@@ -87,7 +87,8 @@ export function refineSeedanceProtocols(
   }
   if (
     assetProtocol === 'funcloud_material' &&
-    data.video_upstream_protocol !== 'funcloud_seedance'
+    data.video_upstream_protocol !== 'funcloud_seedance' &&
+    data.video_upstream_protocol !== 'funcloud_modelark_v3'
   ) {
     addIssue(
       'asset_upstream_protocol',
@@ -98,6 +99,7 @@ export function refineSeedanceProtocols(
   }
   if (
     assetProtocol === 'funcloud_material' &&
+    data.video_upstream_protocol === 'funcloud_seedance' &&
     isFunCloud25ProviderModel(data.model_mapping)
   ) {
     addIssue(
@@ -113,9 +115,7 @@ export function refineSeedanceProtocols(
   ) {
     addIssue(
       'asset_upstream_protocol',
-      i18next.t(
-        'CMCC AICC Assets requires the CMCC ModelArk V3 video protocol'
-      )
+      i18next.t('CMCC AICC Assets requires the CMCC ModelArk V3 video protocol')
     )
   }
   if (
@@ -151,10 +151,7 @@ export function refineSeedanceProtocols(
       )
     )
   } else if (accessKeyID === '' && !data.asset_credential_configured) {
-    addIssue(
-      'asset_access_key_id',
-      i18next.t('Asset credentials are required')
-    )
+    addIssue('asset_access_key_id', i18next.t('Asset credentials are required'))
   }
   if (assetProtocol === 'cmcc_aicc_assets_v2') return
 
@@ -179,9 +176,7 @@ export function refineSeedanceProtocols(
   ) {
     addIssue(
       'asset_region',
-      i18next.t(
-        'Region must use a Provider region ID such as ap-southeast-1'
-      )
+      i18next.t('Region must use a Provider region ID such as ap-southeast-1')
     )
   }
 }

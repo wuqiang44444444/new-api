@@ -18,6 +18,7 @@ const (
 )
 
 type TaskAsyncBillingContext struct {
+	UsageDiscrepancy        *TaskUsageDiscrepancy                `json:"usage_discrepancy,omitempty"`
 	TieredSnapshot          *billingexpr.BillingSnapshot         `json:"tiered_snapshot,omitempty"`
 	BillingProbe            *billingexpr.RequestInput            `json:"billing_probe,omitempty"`
 	EstimatedTokens         int                                  `json:"estimated_tokens,omitempty"`
@@ -89,6 +90,9 @@ func deriveBillingState(pd TaskPrivateData) TaskBillingState {
 }
 
 func (t *Task) UpdateBilling() error {
+	if t.HasSeedanceBillingFacts() {
+		return t.updateSeedanceBillingFacts()
+	}
 	return DB.Model(t).Updates(map[string]any{
 		"quota":         t.Quota,
 		"private_data":  t.PrivateData,

@@ -409,6 +409,9 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		))
 		if service.RequiresVideoTaskCreateAttempt(info) {
 			disposition := taskCreateHTTPDisposition(info, resp.StatusCode, upstreamErr.providerCode)
+			if isFunCloudModelArkCreateRejection(info, resp.StatusCode, responseBody) {
+				disposition = relaycommon.TaskCreateTerminalRejection
+			}
 			relaycommon.SetTaskCreateDisposition(c, disposition)
 			if disposition == relaycommon.TaskCreateOutcomeUnknown {
 				markAmbiguousTaskCreate(c, info)

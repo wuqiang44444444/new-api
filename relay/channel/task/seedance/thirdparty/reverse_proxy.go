@@ -52,18 +52,14 @@ func ReverseProxyTaskResponse(body []byte) ([]byte, error) {
 	if videoURL != "" {
 		result["content"] = map[string]any{"video_url": videoURL}
 	}
-	if usage := mapValue(data["usage"]); usage != nil {
-		actual := map[string]any{}
-		sources := make([]string, 0, 2)
-		for _, field := range []string{"completion_tokens", "total_tokens"} {
-			if value, exists := usage[field]; exists {
-				actual[field] = value
-				sources = append(sources, "usage."+field)
-			}
+	if status == "succeeded" {
+		terminal := normalizeTerminalTokenUsage(map[string]any{"usage": data["usage"]})
+		if terminal.Usage != nil {
+			result["usage"] = terminal.Usage
+			result["usage_source"] = terminal.Source
 		}
-		if len(actual) > 0 {
-			result["usage"] = actual
-			result["usage_source"] = strings.Join(sources, ",")
+		if len(terminal.Evidence) > 0 {
+			result["usage_evidence"] = terminal.Evidence
 		}
 	}
 	if message := findString(data, []string{"error", "message"}, []string{"message"}); message != "" {
