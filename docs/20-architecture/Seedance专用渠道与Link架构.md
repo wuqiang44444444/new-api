@@ -131,6 +131,7 @@ moxing_modelark_media_v1
 ark_media_v1
 feicai_videos_v1
 funcloud_seedance
+funcloud_modelark_v3
 ```
 
 当前素材协议为：

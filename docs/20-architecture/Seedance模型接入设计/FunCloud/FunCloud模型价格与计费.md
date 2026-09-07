@@ -1,10 +1,16 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-06
+last-reviewed: 2026-09-07
 ---
 
 # FunCloud 模型价格与计费
+
+本文记录现有 V2 接入的报价资料与平台 Token 结算方式，不是最新 V3 费率确认。
+最新 V3 文档描述 2.0 系列按秒计费、2.5 智能时长按 Token 计费，且用量可能缺失，
+见[原始技术文档整理](FunCloud供应商原始技术文档整理.md)。不能直接沿用本表作为 V3 上游账单依据；
+V3 已增加纯参数表达式无需 Token 上限的窄接线；Token 表达式继续要求预扣上限，结算复用现有冻结快照。
+用户确认 V3 计费与当前 FunCloud 一致；独立测试模型复制对应现有价格与上限，原模型价格不变。
 
 ## 1. Provider 价格
 
@@ -39,11 +45,11 @@ last-reviewed: 2026-09-06
 
 ## 3. 结算与 Provider 成本分账
 
-`completionTokens` 是客户结算依据；`pointConsume` 仅记录为 Provider exposure 证据，必须为有限正数且顶层/输出值一致。成功结算写入私有 `provider_billing_evidence`；失败终态统一原子退款，unknown 保留 hold。计量缺失、非法、非正或超信任上界时进入 reconciliation 并保留预扣，不估算、不退款。所有 quota 转换使用 checked 饱和函数，异常进入管理员审计。
+`completionTokens` 是客户结算依据；`pointConsume` 仅记录为 Provider exposure 证据，必须为有限正数且顶层/输出值一致。成功结算写入私有 `provider_billing_evidence`；失败终态统一原子退款，unknown 保留 hold。可信成功但计量缺失时进入 awaiting_usage，由后台有限补查，超限转运营并保留预扣；已报告非法、非正或超信任上界的计量仍进入 reconciliation，不估算、不退款。所有 quota 转换使用 checked 饱和函数，异常进入管理员审计。
 
 ## 4. 与官方计价的解释
 
-官方与 FunCloud 都按成功视频的 Token 量计费，但官方价格按地区与输入视频档分开；FunCloud 是第三方报价，不能因为数值接近就把线路映射为官方渠道，也不能把官方资源包/汇率带入客户表达式。价格变化只影响新 Task，历史任务使用冻结表达式。
+当前 V2 接入的官方对照与 FunCloud 客户表达式都按成功视频的 Token 量计费，但官方价格按地区与输入视频档分开；FunCloud 是第三方报价，不能因为数值接近就把线路映射为官方渠道，也不能把官方资源包/汇率带入客户表达式。价格变化只影响新 Task，历史任务使用冻结表达式。
 
 ## 5. 证据状态
 

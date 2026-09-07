@@ -38,3 +38,8 @@ quota = actual_tokens / 1,000,000 × price × QuotaPerUnit × group_ratio
 
 官方失败任务通常不收费的资料口径仍需目标账号账单验证；unknown 保留 hold，不以“官方失败不收费”推断平台可自动退款。价格变更只影响新 Task，Provider exposure 未知保持未知。
 
+
+
+成功任务缺失合法 completion_tokens 时保留预扣，进入共享 awaiting_usage；由平台后台有限补查，
+超限转运营对账，不依赖客户查询。total/prompt 单独存在不能替代 completion 结算。取得可信用量后仍按
+创建时冻结价格幂等结算；该处理不自动改写历史已结算记录。详见上位异步任务与计费事实架构。

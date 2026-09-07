@@ -1,12 +1,14 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-06
+last-reviewed: 2026-09-07
 ---
 
 # FunCloud 模型与素材库对接设计
 
-## 1. 身份与模型映射
+代码同时登记旧 V2 与独立 V3 协议。V3 已完成本地实现与自动测试，真实验收进行中；现有渠道未自动迁移，不能视为生产发布。V2 事实见第 1–5 节，V3 边界见第 6 节。
+
+## 1. V2 身份与模型映射
 
 协议固定为 `video_upstream_protocol=funcloud_seedance`；可配模型与路径如下：
 
@@ -22,13 +24,13 @@ last-reviewed: 2026-09-06
 最终 Provider 模型属于上表登记范围。路径由映射后的 Provider 模型精确查表，不使用
 `contains("fast")`、默认模型或 fallback，也不要求一个模型独占一个 Channel。
 
-## 2. 视频合同
+## 2. V2 视频合同
 
 ModelArk V3 的 `content` 转为 FunCloud 富内容；支持 text/image/video/audio、`ratio`、`duration`、`resolution`、`generate_audio`、`watermark`。Standard/Fast/Mini 为 4–15 秒、图片≤3/视频≤1/音频≤1；2.5 为 4–30 秒或 `-1`、图片≤9/视频≤3/音频≤3。2.5 仅支持 480p/720p；Fast/Mini 不支持 1080p；Standard 支持至 1080p。
 
 当前合同支持标准比例与 `adaptive`，但不开放 callback、output_format、tools、draft、priority、frames、`480pto720p` 或 Provider 私有任务类型。显式传入合同外字段必须在预扣、hold 和 Provider POST 前拒绝。
 
-## 3. 素材库对接
+## 3. 既有素材传输与 V2 配对
 
 `funcloud_material` 只与 Standard/Fast/Mini 配对。同一素材连接的三个模型可以配置在一个 Channel；如果
 Channel 任一客户模型最终映射到 2.5，则不能选择该素材协议：
@@ -51,11 +53,11 @@ Provider 对非空组的级联删除虽已真实成功，平台仍按多人共�
 删除，避免掌握 opaque 组 ID 的调用方级联删除其他调用方放入同组的素材。完整脱敏证据记录在
 [Seedance 渠道素材库边界设计](../../../99-archive/2026/09/2026-08-25-Seedance渠道素材库边界设计.md)。
 
-当前 Provider 文档只明确 Standard/Fast 可以在视频请求中使用素材 `assetUrl`，没有给出 Mini 的相同
-声明。Channel 内 3 个模型查询同一素材已经通过，只能证明控制面共享；Mini 的视频素材引用能力仍需真实
+最新 Mini 文档已明确视频请求可以引用素材 `assetUrl`，见[原始技术文档整理](FunCloud供应商原始技术文档整理.md)。
+Channel 内 3 个模型查询同一素材已经通过，只能证明控制面共享；Mini 的视频素材引用能力仍需真实
 付费任务验证，不能由查询成功或相同 `reuse_scope` 推断。
 
-## 4. 异步与计量
+## 4. V2 异步与计量
 
 创建必须先建立 durable attempt；只有 `code=0 + data.taskId + status=processing` 才创建 Task。查询需校验 task ID、状态和唯一 HTTPS 结果。成功终态的 `data.completionTokens` 作为客户实际用量；非法、缺失、零、负数进入 reconciliation，禁止用 `pointConsume`、价格或时长替代。未知结果不重发、不换渠道、不退款。
 
@@ -75,3 +77,51 @@ Provider 对非空组的级联删除虽已真实成功，平台仍按多人共�
 ## 5. 代码事实
 
 `relaykit/dto/upstream_protocol.go`、`relay/channel/task/seedance/funcloud_models.go`、`thirdparty/funcloud/`、`assets/funcloud.go` 和 `model/channel_seedance_public_catalog.go` 是唯一实现依据。
+
+## 6. V3 统一视频与素材配对
+
+新视频协议为 `funcloud_modelark_v3`，独立传输 profile 为 `third_party_funcloud_modelark_v3`，
+冻结 adapter revision 为 `v1`。创建与查询统一使用 `/api/v3/contents/generations/tasks` 和 `/{task_id}`。
+管理员精确映射到 `seedance-2-0`、`seedance-2-0-fast`、`seedance-2-0-mini` 或 `seedance-2-5`。
+旧 `seedance-2` 等名称不是 V3 别名。四模型可配置在一个 Channel，配对已有 `funcloud_material` 或 `none`。
+
+模型范围、时长、分辨率和数量唯一登记在 `relaykit/dto/funcloud_modelark_models.go`，运行时与公开投影共读。
+四模型均支持 9 图、3 视频、3 音频；2.0 系列 4–15 秒、480/720p；2.5 为 4–30 秒或 -1、480/720/1080p。
+第 10 张图在预扣前拒绝，URL 与 asset 图片合计计数；图片顺序、role 与 opaque 引用保持原值。
+
+请求使用类型化 ModelArk 内容，显式 false/0 保留。未传时长时明确发送北向默认 5 秒，未传分辨率发送 720p；
+音频缺省按现有 Seedance 模型规则发送 true。参考视频在南向内部设置 `omni_reference_task_type=reference`，
+防止上游自动编辑模式覆盖时长；该私有字段不接受客户透传。当前发布参数范围沿用既有验证，另支持 mp4/mov。
+
+创建只接受顶层可信 id；查询识别 submitted/running/succeeded/failed，验证 ID 对应关系与 HTTPS 视频 URL。
+终态 Token 使用现有通用归一逻辑，保留来源及用量证据；缺失用量不制造 Token，也不改变视频成功状态。
+按现有表达式与创建时冻结探针结算。纯参数表达式无需 Token 预扣上限，依赖 Token 的表达式仍要求配置上限。
+
+任务内容读取可用，取消排队及删除终态任务不支持，不继承官方渠道生命周期能力。任务列表仍来自本地用户与
+应用隔离的 Task。旧任务继续按冻结 V2 连接、协议和价格查询，V3 请求不回退 V2。
+
+素材传输、上传限制、组策略与第 3 节相同，只有 V3 的四模型配对范围扩展。平台不增加 Asset 表或 resolver。
+改变视频协议仍触发租户替换确认；确认后生成新 identity/reuse_scope 并清除本地默认组关联，管理员可重新关联
+确认同域的原 Provider 组。Provider 原组、素材和引用均不删除、不重建、不重传。
+
+当前 FunCloud 价格继续适用（用户确认），独立测试模型复制对应旧客户模型的价格配置。真实四模型生成、
+统一素材引用、九图及账单验收记录在[实施方案](../../../80-dev/2026-09-07-FunCloud新版视频协议与统一素材库实施方案.md)。
+
+
+### Mini 素材引用验收边界
+
+当前 V3 的 Mini 素材引用仍未通过真实验收：使用 Mini 自己创建的独立素材组与图片素材，生成前后
+通过 Mini 查询均为 ready，但视频生成侧返回 InvalidParameter、素材不存在。修复版后台已将该实际
+失败任务结算并全额退回客户预扣；供应商账单未核验。素材控制面 ready 不构成生成侧可用的证明，
+不得据此宣称 Mini 素材生成已发布，也不得增加隐式重传或跨渠道 fallback。具体证据见
+[实施记录第 13 节](../../../80-dev/2026-09-07-FunCloud新版视频协议与统一素材库实施方案.md)。
+
+
+### Mini 同图对照的验收结论
+
+新建独立素材组和真实图片素材后，Mini 素材引用生成及一次明确失败后的重试均报素材不存在，
+失败前后同一素材查询仍为 ready；相同图片的普通 URL 独立生成成功并完成后台结算。
+现有证据将问题限定在素材引用链路，尚不能区分供应商内部素材域、权限或模型绑定原因。
+普通 URL 对照不代表素材库验收通过，不改变 adapter 原样传递引用、禁止自动 fallback 的合同。
+成功视频的 generate_audio=false 仍有非静音 AAC 音轨；音频开关和供应商账单验收仍未完成。
+具体任务、费用与媒体检查见实施方案第 14 节。
