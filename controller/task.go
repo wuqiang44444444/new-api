@@ -101,9 +101,13 @@ func writeTaskArtifacts(c *gin.Context, task *model.Task, dashboard bool) {
 		writeTaskArtifactProjectionError(c, err)
 		return
 	}
+	buildContentURL := service.BuildTaskArtifactContentURL
+	if dashboard {
+		buildContentURL = service.BuildDashboardTaskArtifactContentURL
+	}
 	items := make([]taskArtifactResponse, 0, len(artifacts))
 	for _, artifact := range artifacts {
-		contentURL, buildErr := service.BuildTaskArtifactContentURL(task.TaskID, artifact.Key)
+		contentURL, buildErr := buildContentURL(task.TaskID, artifact.Key)
 		if buildErr != nil {
 			writeTaskArtifactError(c, http.StatusInternalServerError, "artifact_url_error", "Failed to build artifact content URL")
 			return
@@ -117,7 +121,7 @@ func writeTaskArtifacts(c *gin.Context, task *model.Task, dashboard bool) {
 	}
 	response := gin.H{"task_id": task.TaskID, "artifacts": items}
 	if legacyVideoAvailable(task) {
-		legacyContentURL, buildErr := service.BuildTaskArtifactContentURL(task.TaskID, "video")
+		legacyContentURL, buildErr := buildContentURL(task.TaskID, "video")
 		if buildErr != nil {
 			writeTaskArtifactError(c, http.StatusInternalServerError, "artifact_url_error", "Failed to build artifact content URL")
 			return

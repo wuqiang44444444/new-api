@@ -228,7 +228,6 @@ describe('task artifact projection', () => {
       'data:text/plain,artifact',
       'https:media.example.com/task',
       '//media.example.com/task',
-      `/v1/tasks/task-public/artifacts/video-main/content?access=${artifactAccessToken}`,
       '/\\media.example.com/task',
       validContentUrl.replace('https://', 'https://user:secret@'),
       validContentUrl.replace('https://', 'https://@'),

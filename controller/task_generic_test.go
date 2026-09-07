@@ -176,7 +176,9 @@ func TestDashboardTaskArtifactsReturnsLegacyCapabilityWithoutUpstreamURL(t *test
 	assert.Empty(t, response.Data.Artifacts)
 	contentURL, err := url.Parse(response.Data.LegacyContentURL)
 	require.NoError(t, err)
-	assert.Equal(t, "/prefix/v1/tasks/"+task.TaskID+"/artifacts/video/content", contentURL.Path)
+	assert.Empty(t, contentURL.Host)
+	assert.Empty(t, contentURL.Scheme)
+	assert.Equal(t, "/v1/tasks/"+task.TaskID+"/artifacts/video/content", contentURL.Path)
 	assert.True(t, service.VerifyTaskArtifactAccess(
 		contentURL.Query().Get(service.TaskArtifactAccessQueryParameter),
 		task.TaskID,

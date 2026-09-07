@@ -279,10 +279,7 @@ function TaskArtifactCard(props: { artifact: TaskArtifact }) {
       </CardHeader>
       <CardContent>{cardContent}</CardContent>
       <CardFooter className='gap-2'>
-        <ResultLinkActions
-          url={props.artifact.content_url}
-          fileName={props.artifact.key}
-        />
+        <ResultLinkActions url={props.artifact.content_url} />
         <Button
           variant='outline'
           size='sm'
@@ -310,20 +307,24 @@ function TaskArtifactCard(props: { artifact: TaskArtifact }) {
 
 // ResultLinkActions 提供经授权的结果操作：在新标签打开平台内容链接并复制。
 // 链接仅在产物/详情展示处出现，不写入通用日志或遥测。
-function ResultLinkActions(props: { url: string; fileName?: string }) {
+function ResultLinkActions(props: { url: string }) {
   const { t } = useTranslation()
   return (
-    <>
+    <div className='flex min-w-0 flex-1 flex-wrap gap-2'>
+      <span className='text-muted-foreground w-full break-all font-mono text-xs'>
+        {props.url}
+      </span>
       <Button
         variant='outline'
         size='sm'
         nativeButton={false}
+        role='link'
         render={
           <a
             href={props.url}
             target='_blank'
             rel='noopener noreferrer'
-            aria-label={t('Open video')}
+            aria-label={t('Open')}
           />
         }
       >
@@ -346,7 +347,7 @@ function ResultLinkActions(props: { url: string; fileName?: string }) {
         />
         {t('Copy link')}
       </Button>
-    </>
+    </div>
   )
 }
 
@@ -525,33 +526,32 @@ export function TaskArtifactsCell(props: { log: TaskLog }) {
 
 interface LegacyVideoMediaProps {
   contentUrl: string
-  showActions?: boolean
 }
 
 function LegacyVideoMedia(props: LegacyVideoMediaProps) {
   const [mediaFailed, setMediaFailed] = useState(false)
   const [mediaRevision, setMediaRevision] = useState(0)
 
-  return mediaFailed ? (
-    <MediaFailure
-      onRetry={() => {
-        setMediaFailed(false)
-        setMediaRevision((revision) => revision + 1)
-      }}
-    />
-  ) : (
+  return (
     <div className='space-y-2'>
-      <video
-        key={mediaRevision}
-        src={props.contentUrl}
-        controls
-        preload='metadata'
-        className='max-h-[60vh] w-full rounded-md bg-black'
-        onError={() => setMediaFailed(true)}
-      />
-      {props.showActions ? (
-        <ResultLinkActions url={props.contentUrl} />
-      ) : null}
+      {mediaFailed ? (
+        <MediaFailure
+          onRetry={() => {
+            setMediaFailed(false)
+            setMediaRevision((revision) => revision + 1)
+          }}
+        />
+      ) : (
+        <video
+          key={mediaRevision}
+          src={props.contentUrl}
+          controls
+          preload='metadata'
+          className='max-h-[60vh] w-full rounded-md bg-black'
+          onError={() => setMediaFailed(true)}
+        />
+      )}
+      <ResultLinkActions url={props.contentUrl} />
     </div>
   )
 }
@@ -564,7 +564,11 @@ export function SuccessWithoutVideoNote() {
     <Empty>
       <EmptyHeader>
         <EmptyMedia variant='icon'>
-          <HugeiconsIcon icon={Video01Icon} strokeWidth={2} aria-hidden='true' />
+          <HugeiconsIcon
+            icon={Video01Icon}
+            strokeWidth={2}
+            aria-hidden='true'
+          />
         </EmptyMedia>
         <EmptyTitle>{t('Task succeeded')}</EmptyTitle>
         <EmptyDescription>
@@ -577,5 +581,5 @@ export function SuccessWithoutVideoNote() {
 
 // LegacyVideoResult 在详情弹窗中展示 legacy 平台视频并附带打开/复制操作。
 export function LegacyVideoResult(props: { contentUrl: string }) {
-  return <LegacyVideoMedia contentUrl={props.contentUrl} showActions />
+  return <LegacyVideoMedia contentUrl={props.contentUrl} />
 }

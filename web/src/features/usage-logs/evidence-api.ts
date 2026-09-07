@@ -50,3 +50,50 @@ export async function downloadEvidence(id: number, eventId: number) {
   anchor.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
+
+// Read recorded bodies rather than reconstructing requests from current settings.
+export async function getTaskRequestBodies(
+  taskId: string,
+  stage: 'north_receive' | 'southbound_send'
+) {
+  const bodies: {
+    requestId: string
+    eventId: number
+    complete: boolean
+    expired: boolean
+    text: string | null
+  }[] = []
+  let page = 1
+  let total = 0
+  do {
+    const list = await getEvidenceList({ task_id: taskId }, page)
+    total = list.total
+    for (const item of list.items) {
+      const detail = await getEvidenceDetail(item.id)
+      for (const event of detail.events.filter(
+        (event) => event.stage === stage
+      )) {
+        let text: string | null = null
+        if (event.has_body && !detail.evidence.body_expired) {
+          const response = await api.get<string>(
+            `/api/task_request_evidence/${item.id}/events/${event.id}/object`,
+            {
+              responseType: 'text',
+              transformResponse: [(value: string) => value],
+            }
+          )
+          text = response.data
+        }
+        bodies.push({
+          requestId: item.request_id,
+          eventId: event.id,
+          complete: event.complete,
+          expired: detail.evidence.body_expired,
+          text,
+        })
+      }
+    }
+    page++
+  } while ((page - 1) * 20 < total)
+  return bodies
+}

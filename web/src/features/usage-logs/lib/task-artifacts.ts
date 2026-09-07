@@ -57,7 +57,7 @@ function parseContentUrl(value: unknown): string {
     contentUrl.length === 0 ||
     contentUrl !== value ||
     contentUrl.includes('#') ||
-    !/^https?:\/\//i.test(contentUrl)
+    (!/^https?:\/\//i.test(contentUrl) && !contentUrl.startsWith('/v1/tasks/'))
   ) {
     throw new TaskArtifactApiError('invalid_content_url')
   }
@@ -69,7 +69,7 @@ function parseContentUrl(value: unknown): string {
   }
 
   try {
-    const url = new URL(contentUrl)
+    const url = new URL(contentUrl, window.location.origin)
     const authorityStart = contentUrl.indexOf('//') + 2
     const pathStart = contentUrl.indexOf('/', authorityStart)
     const authority = contentUrl.slice(
@@ -95,7 +95,7 @@ function parseContentUrl(value: unknown): string {
     ) {
       throw new TaskArtifactApiError('invalid_content_url')
     }
-    return contentUrl
+    return url.href
   } catch (error) {
     if (error instanceof TaskArtifactApiError) throw error
     throw new TaskArtifactApiError('invalid_content_url')

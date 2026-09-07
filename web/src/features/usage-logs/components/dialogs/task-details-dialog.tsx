@@ -40,6 +40,7 @@ import {
   SuccessWithoutVideoNote,
   TaskArtifacts,
 } from '../task-artifacts'
+import { TaskRequestDetails } from '../task-request-details'
 import { TaskEvidence } from '../task-evidence'
 import { TaskVideoParameters } from '../task-video-parameters'
 
@@ -129,6 +130,12 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
       bodyClassName='pr-2 sm:pr-4'
     >
       <div className='space-y-3'>
+        {props.open && props.isRoot ? (
+          <TaskRequestDetails
+            key={props.log.task_id}
+            taskId={props.log.task_id}
+          />
+        ) : null}
         {props.open && props.isAdmin ? (
           <TaskEvidence
             key={props.log.task_id}
