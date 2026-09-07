@@ -12,7 +12,7 @@ import (
 // 存储运行时装载（本地扩展）。数据库是配置的唯一持久事实：观察者收到该
 // 命名空间的最新配置后，以完整不可变快照构造新的存储实例并原子替换；
 // revision 未变化时不重建，单次操作期间持有的始终是同一个实例。任何解析、
-// 校验或解密失败都失败关闭为禁用并记录告警，不保留半更新状态。
+// 校验失败都失败关闭为禁用并记录告警，不保留半更新状态。
 
 const taskArtifactStoreBackendAzureBlob = system_setting.ObjectStorageBackendAzureBlob
 
@@ -106,15 +106,12 @@ func decodeObjectStorageSetting(raw string) (system_setting.ObjectStorageConfig,
 }
 
 // buildTaskArtifactStore 以完整配置快照构造对应 backend 的存储实例。
-// credential 为空且密文非空时解密密文；解密失败（如主密钥不一致）失败关闭。
+// 凭据来自专用数据库配置，与渠道密钥相同，不依赖进程加密主密钥。
 func buildTaskArtifactStore(config system_setting.ObjectStorageConfig) (TaskArtifactStore, error) {
 	if config.Backend == "" || config.Backend == system_setting.ObjectStorageBackendUpstream {
 		return &disabledArtifactStore{}, nil
 	}
-	credential, err := common.DecryptObjectStorageCredential(config.CredentialCiphertext)
-	if err != nil {
-		return nil, err
-	}
+	credential := config.Credential
 	if err := system_setting.ValidateObjectStorageConfig(config, credential); err != nil {
 		return nil, err
 	}
@@ -164,7 +161,7 @@ func BuildObjectStorageEnvImportPreview() (map[string]any, bool) {
 	}, true
 }
 
-// CommitObjectStorageEnvImport 把环境变量配置落库（含加密凭据），作为一次
+// CommitObjectStorageEnvImport 把环境变量配置落库（含凭据），作为一次
 // 性显式导入。导入完成后数据库是唯一配置源，旧变量不再参与运行期装载，
 // 也不再作为失败 fallback。
 func CommitObjectStorageEnvImport() (system_setting.ObjectStorageConfig, error) {
@@ -176,11 +173,7 @@ func CommitObjectStorageEnvImport() (system_setting.ObjectStorageConfig, error) 
 		return config, errors.New("no importable object storage environment configuration")
 	}
 	legacy := system_setting.LoadTaskArtifactStoreConfig()
-	ciphertext, err := common.EncryptObjectStorageCredential(legacy.S3SecretKey)
-	if err != nil {
-		return config, err
-	}
-	config.CredentialCiphertext = ciphertext
+	config.Credential = legacy.S3SecretKey
 	config.Revision = common.GetUUID()
 	if err := saveValidatedObjectStorageSetting(config); err != nil {
 		return config, err
@@ -189,7 +182,7 @@ func CommitObjectStorageEnvImport() (system_setting.ObjectStorageConfig, error) 
 }
 
 // saveValidatedObjectStorageSetting 校验并原子保存完整配置文档；调用方负责
-// 先完成连通性验证、加密凭据与 revision 生成。
+// 先完成连通性验证、凭据与 revision 生成。
 func saveValidatedObjectStorageSetting(config system_setting.ObjectStorageConfig) error {
 	if err := system_setting.ValidateObjectStorageConfig(config, ""); err != nil {
 		return err

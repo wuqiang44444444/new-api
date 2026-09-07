@@ -51,7 +51,7 @@ func TestObjectStorageLocationRequiresOfflineMaintenance(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	require.NoError(t, db.AutoMigrate(&Option{}))
-	original := system_setting.ObjectStorageConfig{Backend: "azure_blob", Endpoint: "https://account.blob.core.windows.net", Bucket: "artifacts", AccountName: "account", Prefix: "prod", CredentialCiphertext: "old"}
+	original := system_setting.ObjectStorageConfig{Backend: "azure_blob", Endpoint: "https://account.blob.core.windows.net", Bucket: "artifacts", AccountName: "account", Prefix: "prod", Credential: "old"}
 	encoded, err := common.Marshal(original)
 	require.NoError(t, err)
 	require.NoError(t, SaveObjectStorageSetting(string(encoded)))
@@ -82,7 +82,7 @@ func TestObjectStorageLocationRequiresOfflineMaintenance(t *testing.T) {
 			assert.Equal(t, string(encoded), raw)
 		})
 	}
-	original.CredentialCiphertext = "rotated"
+	original.Credential = "rotated"
 	encoded, err = common.Marshal(original)
 	require.NoError(t, err)
 	require.NoError(t, SaveObjectStorageSetting(string(encoded)))

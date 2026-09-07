@@ -136,9 +136,9 @@ GET /v1/tasks/{task_id} -> 图片投影（user_id + app_id 双重归属）
 MinIO/R2/OSS 等兼容端点可用）、`azure_blob`（原生 Azure Blob，Shared Key 请求签名与
 service SAS 由官方 azblob SDK 承担；凭据支持连接字符串或手动录入，连接字符串按首个
 等号拆分、保留 Base64 尾部等号，冲突重复属性与 SharedKey 之外的鉴权方式显式拒绝，
-含 BlobEndpoint 时显式生效；标准化后不保存原始连接字符串）。加密信封主密钥从部署侧
-稳定主密钥（`CRYPTO_SECRET`/`SESSION_SECRET`）域分隔派生，不与数据库密文同表存储；
-各节点主密钥必须一致，解密失败存储失败关闭为禁用并告警。配置读写与连通性测试走专用
+含 BlobEndpoint 时显式生效；标准化后不保存原始连接字符串）。凭据与渠道密钥一样直接
+保存在数据库中，不依赖部署侧加密主密钥，不进入通用 OptionMap，也不在管理接口回显。
+数据库及其备份包含可用凭据。配置读写与连通性测试走专用
 最高管理员接口（`/api/option/object_storage*`）：读取返回脱敏账号与
 `credential_configured`；「测试连接」只测当前表单值、密钥未修改时后端按
 backend+账号复用已存密钥；「保存并启用」对同一完整配置先校验再验证、通过后原子保存，

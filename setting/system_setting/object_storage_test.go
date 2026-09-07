@@ -69,10 +69,10 @@ func TestValidateObjectStorageConfig(t *testing.T) {
 	t.Run("azure blob requires endpoint container account and credential", func(t *testing.T) {
 		require.NoError(t, ValidateObjectStorageConfig(validAzure, "a2V5"))
 
-		// 密文非空即视为已配置；两者皆空才是不完整配置。
-		withCiphertext := validAzure
-		withCiphertext.CredentialCiphertext = "objstore.v1.c2FtcGxl"
-		require.NoError(t, ValidateObjectStorageConfig(withCiphertext, ""))
+		// 校验请求或持久化配置中的凭据。
+		withCredential := validAzure
+		withCredential.Credential = "a2V5"
+		require.NoError(t, ValidateObjectStorageConfig(withCredential, ""))
 		require.Error(t, ValidateObjectStorageConfig(validAzure, ""))
 
 		noEndpoint := validAzure
@@ -154,6 +154,6 @@ func TestObjectStorageConfigFromLegacyEnv(t *testing.T) {
 		assert.Equal(t, "us-east-1", config.Region)
 		assert.Equal(t, "AKIAIOSFODNN7EXAMPLE", config.AccountName)
 		// 环境变量密钥不进入标准化配置文档。
-		assert.Empty(t, config.CredentialCiphertext)
+		assert.Empty(t, config.Credential)
 	})
 }

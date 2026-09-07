@@ -212,7 +212,7 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/waffo-pancake/subscription-product", controller.CreateWaffoPancakeSubscriptionProduct)
 			optionRoute.GET("/waffo-pancake/subscription-product-options", controller.ListWaffoPancakeSubscriptionProductOptions)
 
-			// 对象存储配置（本地扩展）：含加密凭据，只能经专用接口读写，
+			// 对象存储配置（本地扩展）：含凭据，只能经专用接口读写，
 			// 普通选项接口不得读取或绕过校验写入该命名空间。
 			optionRoute.GET("/object_storage", controller.GetObjectStorageSetting)
 			optionRoute.PUT("/object_storage", controller.UpdateObjectStorageSetting)

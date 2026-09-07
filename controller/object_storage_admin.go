@@ -62,7 +62,7 @@ func GetObjectStorageSetting(c *gin.Context) {
 			"region":                config.Region,
 			"account_name":          config.AccountName,
 			"account_name_masked":   system_setting.MaskObjectStorageAccountName(config.AccountName),
-			"credential_configured": config.CredentialCiphertext != "",
+			"credential_configured": config.Credential != "",
 			"revision":              config.Revision,
 			"last_test_status":      lastTestStatus,
 			"last_test_at":          config.LastTestAt,
@@ -109,7 +109,7 @@ func UpdateObjectStorageSetting(c *gin.Context) {
 		config.Region = ""
 		config.AccountName = ""
 
-		config.CredentialCiphertext = ""
+		config.Credential = ""
 		config.Revision = common.GetUUID()
 		config.LastTestStatus = ""
 		config.LastTestAt = 0
@@ -135,12 +135,7 @@ func UpdateObjectStorageSetting(c *gin.Context) {
 		return
 	}
 
-	ciphertext, err := common.EncryptObjectStorageCredential(credential)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	config.CredentialCiphertext = ciphertext
+	config.Credential = credential
 	config.Revision = common.GetUUID()
 	config.LastTestStatus = "passed"
 	config.LastTestAt = time.Now().Unix()
@@ -262,14 +257,10 @@ func resolveStoredObjectStorageCredential(config system_setting.ObjectStorageCon
 	if err := common.UnmarshalJsonStr(raw, &stored); err != nil {
 		return "", err
 	}
-	if stored.Backend != config.Backend || stored.AccountName != config.AccountName || stored.CredentialCiphertext == "" {
+	if stored.Backend != config.Backend || stored.AccountName != config.AccountName || stored.Credential == "" {
 		return "", errors.New("账号或存储类型已变化，请提供访问密钥")
 	}
-	credential, err := common.DecryptObjectStorageCredential(stored.CredentialCiphertext)
-	if err != nil {
-		return "", errors.New("已保存密钥解密失败，请重新提供访问密钥")
-	}
-	return credential, nil
+	return stored.Credential, nil
 }
 
 func respondObjectStorageTestResult(c *gin.Context, result *service.ObjectStorageTestResult) {

@@ -569,7 +569,7 @@ export function ObjectStorageSection() {
                         </FormControl>
                         <FormDescription>
                           {t(
-                            'Only SharedKey credentials are supported. The key is stored encrypted and is never displayed again.'
+                            'Only SharedKey credentials are supported. The key is saved in the database and is never displayed again.'
                           )}
                         </FormDescription>
                         <FormMessage />

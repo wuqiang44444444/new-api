@@ -23,14 +23,6 @@ func restoreRuntime(t *testing.T) {
 
 func buildRuntimeTestConfig(t *testing.T, backend string) system_setting.ObjectStorageConfig {
 	t.Helper()
-	t.Setenv("CRYPTO_SECRET", "runtime-test-master-key")
-	previous := common.CryptoSecret
-	common.CryptoSecret = "runtime-test-master-key"
-	t.Cleanup(func() { common.CryptoSecret = previous })
-
-	// Azure Shared Key 要求凭据本身是合法 Base64（SDK 会解码为字节密钥）。
-	ciphertext, err := common.EncryptObjectStorageCredential("dGVzdC1zZWNyZXQ=")
-	require.NoError(t, err)
 	// Azure Storage Account 只允许小写字母与数字；S3 Access Key ID 允许更多字符。
 	accountName := "access-key-id"
 	endpoint := "https://storage.example.com"
@@ -39,13 +31,13 @@ func buildRuntimeTestConfig(t *testing.T, backend string) system_setting.ObjectS
 		endpoint = "https://storeaccount.blob.core.windows.net"
 	}
 	return system_setting.ObjectStorageConfig{
-		Backend:              backend,
-		Endpoint:             endpoint,
-		Bucket:               "task-artifacts",
-		Region:               "us-east-1",
-		AccountName:          accountName,
-		CredentialCiphertext: ciphertext,
-		Revision:             "rev-1",
+		Backend:     backend,
+		Endpoint:    endpoint,
+		Bucket:      "task-artifacts",
+		Region:      "us-east-1",
+		AccountName: accountName,
+		Credential:  "dGVzdC1zZWNyZXQ=",
+		Revision:    "rev-1",
 	}
 }
 
@@ -111,14 +103,50 @@ func TestApplyTaskArtifactStoreSetting(t *testing.T) {
 		assert.False(t, GetTaskArtifactStore().Enabled())
 	})
 
-	t.Run("undecryptable credential fails closed", func(t *testing.T) {
+	t.Run("missing credential fails closed", func(t *testing.T) {
 		config := buildRuntimeTestConfig(t, system_setting.ObjectStorageBackendS3)
-		config.CredentialCiphertext = "objstore.v1.bm90LXZhbGlk"
+		config.Credential = ""
 		data, err := common.Marshal(config)
 		require.NoError(t, err)
 		applyTaskArtifactStoreSetting(string(data))
 		assert.False(t, GetTaskArtifactStore().Enabled())
 	})
+}
+
+func TestObjectStorageCredentialSurvivesProcessSecretChange(t *testing.T) {
+	restoreRuntime(t)
+	t.Setenv("CRYPTO_SECRET", "")
+	t.Setenv("SESSION_SECRET", "")
+	previousSecret := common.CryptoSecret
+	t.Cleanup(func() { common.CryptoSecret = previousSecret })
+	for _, backend := range []string{system_setting.ObjectStorageBackendS3, system_setting.ObjectStorageBackendAzureBlob} {
+		t.Run(backend, func(t *testing.T) {
+			config := buildRuntimeTestConfig(t, backend)
+			data, err := common.Marshal(config)
+			require.NoError(t, err)
+			for _, secret := range []string{"first-process-secret", "restarted-process-secret"} {
+				common.CryptoSecret = secret
+				applyTaskArtifactStoreSetting("")
+				applyTaskArtifactStoreSetting(string(data))
+				require.True(t, GetTaskArtifactStore().Enabled())
+			}
+		})
+	}
+}
+
+func TestObjectStorageOldEncryptedConfigurationRequiresCredentialReentry(t *testing.T) {
+	restoreRuntime(t)
+	raw := `{"backend":"s3","endpoint":"https://storage.example.com","bucket":"task-artifacts","region":"us-east-1","account_name":"account","credential_ciphertext":"objstore.v1.previous","revision":"old"}`
+	applyTaskArtifactStoreSetting(raw)
+	require.False(t, GetTaskArtifactStore().Enabled())
+	config, err := decodeObjectStorageSetting(raw)
+	require.NoError(t, err)
+	config.Credential = "replacement-secret"
+	config.Revision = "resaved"
+	data, err := common.Marshal(config)
+	require.NoError(t, err)
+	applyTaskArtifactStoreSetting(string(data))
+	require.True(t, GetTaskArtifactStore().Enabled())
 }
 
 func TestDecodeObjectStorageSetting(t *testing.T) {

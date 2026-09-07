@@ -19,13 +19,8 @@ import (
 )
 
 func TestImageQueryStorageDeliveryAndOwnership(t *testing.T) {
-	t.Setenv("CRYPTO_SECRET", "image-query-test-secret")
 	setupGenericTaskTest(t)
-	previousSecret := common.CryptoSecret
-	common.CryptoSecret = "image-query-test-secret"
-	t.Cleanup(func() { common.CryptoSecret = previousSecret; model.NotifyObjectStorageSettingUpdate("") })
-	cipher, err := common.EncryptObjectStorageCredential("test-key")
-	require.NoError(t, err)
+	t.Cleanup(func() { model.NotifyObjectStorageSettingUpdate("") })
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -43,7 +38,7 @@ func TestImageQueryStorageDeliveryAndOwnership(t *testing.T) {
 		}
 	}))
 	t.Cleanup(server.Close)
-	config := system_setting.ObjectStorageConfig{Backend: "s3", Endpoint: server.URL, Bucket: "images", Prefix: "prod", AccountName: "account", Region: "us-east-1", CredentialCiphertext: cipher, Revision: "image-query"}
+	config := system_setting.ObjectStorageConfig{Backend: "s3", Endpoint: server.URL, Bucket: "images", Prefix: "prod", AccountName: "account", Region: "us-east-1", Credential: "test-key", Revision: "image-query"}
 	encoded, err := common.Marshal(config)
 	require.NoError(t, err)
 	model.NotifyObjectStorageSettingUpdate(string(encoded))

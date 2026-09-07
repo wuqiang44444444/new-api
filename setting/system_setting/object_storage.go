@@ -27,7 +27,7 @@ const (
 
 	// AzureConnectionInputMode / ManualConnectionInputMode 是 Azure 连接
 	// 信息的两种输入格式；连接字符串只作为输入格式，解析后只保存标准化字段。
-	AzureConnectionInputMode = "connection_string"
+	AzureConnectionInputMode  = "connection_string"
 	ManualConnectionInputMode = "manual"
 )
 
@@ -47,9 +47,9 @@ type ObjectStorageConfig struct {
 	Prefix      string `json:"prefix,omitempty"`
 	Region      string `json:"region,omitempty"` // 仅 S3 使用
 	AccountName string `json:"account_name,omitempty"`
-	// CredentialCiphertext 是加密后的 Account Key / Secret Key；明文凭据
-	// 不落库、不进入通用可读 OptionMap。
-	CredentialCiphertext string `json:"credential_ciphertext,omitempty"`
+	// Credential 与渠道密钥一样保存在数据库中，仅专用内部配置读取；
+	// 不进入通用 OptionMap，管理员查询也不回显。
+	Credential string `json:"credential,omitempty"`
 	// Revision 在每次完整保存时重新生成，用于多节点缓存刷新判定。
 	Revision string `json:"revision"`
 	// 以下为审计元数据，不参与运行期合同。
@@ -142,7 +142,7 @@ func ParseAzureBlobConnectionString(raw string) (*AzureStorageAccount, error) {
 }
 
 // ValidateObjectStorageConfig 校验标准化配置语法。credential 是明文凭据；
-// 为空表示沿用已保存密文（此时要求密文非空）。只做语法检查，不做网络访问。
+// 为空时校验已保存凭据。只做语法检查，不做网络访问。
 func ValidateObjectStorageConfig(config ObjectStorageConfig, credential string) error {
 	switch config.Backend {
 	case ObjectStorageBackendUpstream:
@@ -192,7 +192,10 @@ func ValidateObjectStorageConfig(config ObjectStorageConfig, credential string) 
 	} else if len(config.AccountName) > 256 || config.AccountName != strings.TrimSpace(config.AccountName) {
 		return errors.New("storage account name syntax is invalid")
 	}
-	if credential == "" && config.CredentialCiphertext == "" {
+	if credential == "" {
+		credential = config.Credential
+	}
+	if credential == "" {
 		return errors.New("storage credential is required")
 	}
 	if err := validateObjectStorageSecret(credential); err != nil {

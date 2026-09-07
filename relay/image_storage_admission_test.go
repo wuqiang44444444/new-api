@@ -20,8 +20,7 @@ import (
 )
 
 func TestImageAdmissionStorageFailurePrecedesTaskAndDebit(t *testing.T) {
-	t.Setenv("CRYPTO_SECRET", "image-admission-test-secret")
-	previousDB, previousSecret := model.DB, common.CryptoSecret
+	previousDB := model.DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
@@ -29,12 +28,10 @@ func TestImageAdmissionStorageFailurePrecedesTaskAndDebit(t *testing.T) {
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() {
 		model.DB = previousDB
-		common.CryptoSecret = previousSecret
 		model.NotifyObjectStorageSettingUpdate("")
 		_ = sqlDB.Close()
 	})
 	model.DB = db
-	common.CryptoSecret = "image-admission-test-secret"
 	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.User{}))
 	require.NoError(t, db.Create(&model.User{Id: 771, Username: "image-admission", Quota: 1000}).Error)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,9 +39,7 @@ func TestImageAdmissionStorageFailurePrecedesTaskAndDebit(t *testing.T) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	t.Cleanup(server.Close)
-	cipher, err := common.EncryptObjectStorageCredential("test-secret")
-	require.NoError(t, err)
-	config := system_setting.ObjectStorageConfig{Backend: "s3", Endpoint: server.URL, Bucket: "images", AccountName: "account", Region: "us-east-1", CredentialCiphertext: cipher, Revision: "image-admission"}
+	config := system_setting.ObjectStorageConfig{Backend: "s3", Endpoint: server.URL, Bucket: "images", AccountName: "account", Region: "us-east-1", Credential: "test-secret", Revision: "image-admission"}
 	encoded, err := common.Marshal(config)
 	require.NoError(t, err)
 	for index, raw := range []string{"", string(encoded), "", string(encoded)} {
