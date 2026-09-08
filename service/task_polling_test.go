@@ -823,7 +823,7 @@ func TestUpdateVideoSingleTaskPollClassification(t *testing.T) {
 			wantStatus:    model.TaskStatusFailure,
 			wantFailures:  3,
 			wantRefund:    true,
-			wantReason:    "poll failed: transient (HTTP 429)",
+			wantReason:    "Task status could not be retrieved. Please contact support with the request ID.",
 		},
 		{
 			name:          "UNKNOWN increments",

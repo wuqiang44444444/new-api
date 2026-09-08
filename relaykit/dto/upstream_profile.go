@@ -98,6 +98,7 @@ const (
 	AssetUpstreamProfileMoxingVolc       AssetUpstreamProfile = "moxing_volc_assets"
 	AssetUpstreamProfileOfficial         AssetUpstreamProfile = "official_action_assets"
 	AssetUpstreamProfileFunCloudMaterial AssetUpstreamProfile = "funcloud_material"
+	AssetUpstreamProfileFunCloudHosted   AssetUpstreamProfile = "funcloud_material_hosted"
 	AssetUpstreamProfileCMCCAICCV2       AssetUpstreamProfile = "cmcc_aicc_assets_v2"
 )
 
@@ -105,7 +106,7 @@ func (p AssetUpstreamProfile) IsValid() bool {
 	switch p {
 	case "", AssetUpstreamProfileNone, AssetUpstreamProfileArk, AssetUpstreamProfileRelay,
 		AssetUpstreamProfileMoxingJoyCreator, AssetUpstreamProfileMoxingVolc, AssetUpstreamProfileOfficial,
-		AssetUpstreamProfileFunCloudMaterial, AssetUpstreamProfileCMCCAICCV2:
+		AssetUpstreamProfileFunCloudMaterial, AssetUpstreamProfileFunCloudHosted, AssetUpstreamProfileCMCCAICCV2:
 		return true
 	default:
 		return false
@@ -116,7 +117,7 @@ func (p AssetUpstreamProfile) IsRoutable() bool {
 	return p == AssetUpstreamProfileArk || p == AssetUpstreamProfileRelay ||
 		p == AssetUpstreamProfileMoxingJoyCreator || p == AssetUpstreamProfileMoxingVolc ||
 		p == AssetUpstreamProfileOfficial || p == AssetUpstreamProfileFunCloudMaterial ||
-		p == AssetUpstreamProfileCMCCAICCV2
+		p == AssetUpstreamProfileFunCloudHosted || p == AssetUpstreamProfileCMCCAICCV2
 }
 
 func ValidateAssetUpstreamProfile(p AssetUpstreamProfile) error {

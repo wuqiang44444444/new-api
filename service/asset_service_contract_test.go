@@ -47,11 +47,16 @@ func TestUnsupportedAdapterOperationHasExplicitPublicSentinel(t *testing.T) {
 func TestSeedanceAssetAdapterDistinguishesUnsupportedFromInvalidProtocol(t *testing.T) {
 	channel := &model.Channel{Type: constant.ChannelTypeSeedanceLink, Key: "unused"}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone})
-	_, err := seedanceAssetAdapter(channel)
+	_, err := seedanceAssetAdapter(channel, 0, "")
 	assert.ErrorIs(t, err, ErrAssetLibraryUnsupported)
 
 	channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocol("unknown_asset_protocol")})
-	_, err = seedanceAssetAdapter(channel)
+	_, err = seedanceAssetAdapter(channel, 0, "")
 	assert.ErrorIs(t, err, ErrAssetLibraryUnavailable)
 	assert.NotErrorIs(t, err, ErrAssetLibraryUnsupported)
+}
+
+func TestHostedAssetLocalFailuresKeepPublicErrorSemantics(t *testing.T) {
+	assert.ErrorIs(t, normalizeAssetAdapterError(context.Background(), "create", "model", nil, 0, fmt.Errorf("%w: invalid image", ErrInvalidAssetRequest)), ErrInvalidAssetRequest)
+	assert.ErrorIs(t, normalizeAssetAdapterError(context.Background(), "get", "model", nil, 0, ErrTaskArtifactStoreDisabled), ErrAssetUpstreamUnavailable)
 }

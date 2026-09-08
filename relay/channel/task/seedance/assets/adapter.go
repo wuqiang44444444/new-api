@@ -181,6 +181,9 @@ func (e *upstreamHTTPError) Error() string {
 }
 
 func upstreamNotFound(err error) bool {
+	if errors.Is(err, ErrAssetResourceNotFound) {
+		return true
+	}
 	var statusErr *upstreamHTTPError
 	if errors.As(err, &statusErr) {
 		return statusErr.StatusCode == http.StatusNotFound

@@ -32,7 +32,7 @@ func KlingVideoGet(c *gin.Context) {
 	result := gin.H{
 		"task_id":         task.TaskID,
 		"task_status":     klingTaskStatus(task.Status),
-		"task_status_msg": task.FailReason,
+		"task_status_msg": task.PublicFailReason(),
 		"created_at":      task.CreatedAt,
 		"updated_at":      task.UpdatedAt,
 	}
@@ -80,9 +80,13 @@ func JimengVideo(c *gin.Context) {
 	if task.Status == model.TaskStatusSuccess {
 		data["video_url"] = task.GetResultURL()
 	}
+	message := "Success"
+	if task.Status == model.TaskStatusFailure {
+		message = task.PublicVideoFailure().Message
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":       10000,
-		"message":    "Success",
+		"message":    message,
 		"request_id": c.GetString(common.RequestIdKey),
 		"status":     10000,
 		"data":       data,

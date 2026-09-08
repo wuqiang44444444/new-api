@@ -70,7 +70,11 @@ func validateSeedanceChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *
 			return err
 		}
 	}
-	if settings.AssetUpstreamProtocol != dto.AssetUpstreamProtocolNone && settings.AssetMinURLTTLSeconds <= 0 {
+	// The hosted FunCloud path copies the source into platform storage at
+	// creation time, so no Provider fetch window has to be guaranteed.
+	if settings.AssetUpstreamProtocol != dto.AssetUpstreamProtocolNone &&
+		settings.AssetUpstreamProtocol != dto.AssetUpstreamProtocolFunCloudHosted &&
+		settings.AssetMinURLTTLSeconds <= 0 {
 		return fmt.Errorf("Seedance asset protocol requires a positive remote URL minimum TTL")
 	}
 	switch settings.AssetUpstreamProtocol {
@@ -114,6 +118,10 @@ func validateSeedanceChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *
 	case dto.AssetUpstreamProtocolFunCloudMaterial:
 		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudSeedance && settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudModelArkV3 {
 			return fmt.Errorf("FunCloud material protocol requires the FunCloud Seedance video protocol")
+		}
+	case dto.AssetUpstreamProtocolFunCloudHosted:
+		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudModelArkV3 {
+			return fmt.Errorf("FunCloud hosted material protocol requires the FunCloud ModelArk V3 video protocol")
 		}
 	case dto.AssetUpstreamProtocolCMCCAICCV2:
 		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolModelArkV3CMCC {

@@ -56,6 +56,7 @@ func TestFunCloudModelArkMappedRequestAndWireContract(t *testing.T) {
 				require.NoError(t, common.Unmarshal(data, &actual))
 				assert.Equal(t, providerModel, actual["model"])
 				assert.Equal(t, false, actual["generate_audio"])
+				assert.Equal(t, true, actual["real_person_mode"])
 				assert.Equal(t, float64(0), actual["seed"])
 				assert.Equal(t, float64(4), actual["duration"])
 				content := actual["content"].([]any)
@@ -86,12 +87,13 @@ func TestFunCloudModelArkMappedRequestAndWireContract(t *testing.T) {
 
 func TestFunCloudModelArkDefaultsAndReferenceVideo(t *testing.T) {
 	payload := &requestPayload{Model: "seedance-2-5", Content: []ContentItem{{Type: "video_url", Role: "reference_video", VideoURL: &MediaURL{URL: "asset://original-video"}}}}
-	raw, err := buildFunCloudModelArkRequest(payload)
+	raw, err := buildFunCloudModelArkRequest(nil, payload)
 	require.NoError(t, err)
 	var actual map[string]any
 	require.NoError(t, common.Unmarshal(raw, &actual))
 	assert.Equal(t, float64(5), actual["duration"])
 	assert.Equal(t, "reference", actual["omni_reference_task_type"])
+	assert.Equal(t, true, actual["real_person_mode"])
 	assert.Nil(t, payload.Duration)
 	assert.Equal(t, "", payload.Resolution)
 }

@@ -37,7 +37,11 @@ export function refineSeedanceProtocols(
 
   const assetProtocol = data.asset_upstream_protocol || 'none'
   if (assetProtocol === 'none') return
-  if (!data.asset_min_url_ttl_seconds) {
+  // 托管素材在创建调用内复制源图片，不要求调用方 URL 的上游取图窗口。
+  if (
+    assetProtocol !== 'funcloud_material_hosted' &&
+    !data.asset_min_url_ttl_seconds
+  ) {
     addIssue(
       'asset_min_url_ttl_seconds',
       i18next.t('A verified Provider URL fetch window is required')
@@ -106,6 +110,17 @@ export function refineSeedanceProtocols(
       'asset_upstream_protocol',
       i18next.t(
         'FunCloud Seedance 2.5 does not support the FunCloud Material Library'
+      )
+    )
+  }
+  if (
+    assetProtocol === 'funcloud_material_hosted' &&
+    data.video_upstream_protocol !== 'funcloud_modelark_v3'
+  ) {
+    addIssue(
+      'asset_upstream_protocol',
+      i18next.t(
+        'FunCloud hosted material requires the FunCloud ModelArk V3 video protocol'
       )
     )
   }

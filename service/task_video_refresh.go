@@ -13,6 +13,9 @@ func RefreshVideoTask(ctx context.Context, task *model.Task) error {
 	if task == nil {
 		return errors.New("video task is required")
 	}
+	if task.Status.IsTerminal() && task.Status != model.TaskStatusSuccess {
+		return nil // The accepted failure/cancellation reason is already durable.
+	}
 	if GetTaskAdaptorFunc == nil {
 		return errors.New("video task adaptor factory is unavailable")
 	}

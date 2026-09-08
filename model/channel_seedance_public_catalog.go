@@ -143,6 +143,11 @@ func seedancePublicModelAPI(
 	return dto.PublicModelAPI{Video: video, Assets: &assets}, true
 }
 
+// hostedPlatformReuseScope is published for the FunCloud hosted path. Hosted
+// assets are scoped by platform user instead of an upstream asset tenant, so
+// the value intentionally does not derive from the Channel identity.
+const hostedPlatformReuseScope = "platform_hosted_user"
+
 func seedancePublicAssetAPI(
 	modelName string,
 	protocol dto.AssetUpstreamProtocol,
@@ -176,7 +181,10 @@ func seedancePublicAssetAPI(
 		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
 		groupCreate, groupRead = true, true
 	case dto.AssetUpstreamProtocolFunCloudMaterial:
-		assetCreate, assetRead = true, true
+		assetCreate, assetRead, assetDelete = true, true, true
+		groupCreate, groupRead = true, true
+	case dto.AssetUpstreamProtocolFunCloudHosted:
+		assetCreate, assetRead, assetDelete = true, true, true
 		groupCreate, groupRead = true, true
 	case dto.AssetUpstreamProtocolCMCCAICCV2:
 		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
@@ -184,10 +192,18 @@ func seedancePublicAssetAPI(
 		realPerson = true
 	}
 	if assetCreate {
-		if protocol.GeneralAssetGroupPolicy() == dto.GeneralAssetGroupPolicyDefaultFallback {
+		if policy := protocol.GeneralAssetGroupPolicy(); policy == dto.GeneralAssetGroupPolicyDefaultFallback || policy == dto.GeneralAssetGroupPolicyHosted {
 			assetGroupRequirement = dto.PublicAssetGroupOptional
 		}
-		media = publicAssetMedia(realPerson, assetGroupRequirement)
+		if protocol == dto.AssetUpstreamProtocolFunCloudHosted {
+			// Hosted assets copy images into platform storage; only general
+			// images are published for this first FunCloud-hosted phase.
+			media = []dto.PublicAssetMedia{
+				{Kind: AssetKindGeneral, MediaType: "image", AssetGroupRequirement: dto.PublicAssetGroupOptional},
+			}
+		} else {
+			media = publicAssetMedia(realPerson, assetGroupRequirement)
+		}
 		if protocol == dto.AssetUpstreamProtocolCMCCAICCV2 {
 			media = append(media,
 				dto.PublicAssetMedia{Kind: AssetKindRealPerson, MediaType: "video", AssetGroupRequirement: dto.PublicAssetGroupRequired},
@@ -197,13 +213,19 @@ func seedancePublicAssetAPI(
 	}
 
 	supported := protocol != "" && protocol != dto.AssetUpstreamProtocolNone
+	managementMode := "caller_managed_stateless"
+	reuseScopeForModel := reuseScope
+	if protocol == dto.AssetUpstreamProtocolFunCloudHosted {
+		managementMode = "platform_hosted"
+		reuseScopeForModel = hostedPlatformReuseScope
+	}
 	api := dto.PublicAssetAPI{
 		Supported:         supported,
 		DocumentationPath: "/docs/api-reference/assets",
-		ManagementMode:    "caller_managed_stateless",
+		ManagementMode:    managementMode,
 		RequiresModel:     true,
 		ReferenceFormat:   "asset://{opaque_upstream_asset_id}",
-		ReuseScope:        reuseScope,
+		ReuseScope:        reuseScopeForModel,
 		Media:             media,
 		Operations: []dto.PublicAPIOperation{
 			publicAPIOperation("create_asset", http.MethodPost, "/v1/assets", assetCreate),
@@ -227,6 +249,18 @@ func seedancePublicAssetAPI(
 		source := dto.PublicAssetSourceContract{
 			Type: "url", URLScheme: "https", PublicNetworkOnly: true, Port: 443,
 			MaxURLLength: config.RemoteURLMaxLength, ExpiresAtMinRemainingSeconds: assetMinURLTTLSeconds,
+		}
+		if protocol == dto.AssetUpstreamProtocolFunCloudHosted {
+			// Hosted creation copies the source into platform storage during the
+			// create call, so no Provider fetch window is required from the caller.
+			source.ExpiresAtMinRemainingSeconds = 0
+			source.MaxPixels = dto.PublicAssetHostedMaxPixels
+			source.MaxBytes = dto.PublicAssetFunCloudMaxBytes
+			source.RedirectLimit = dto.PublicAssetFunCloudRedirectLimit
+			source.ContentTypeMustMatchMedia = true
+			source.AcceptedContentTypes = []dto.PublicAssetSourceMediaTypes{
+				{MediaType: "image", ContentTypes: []string{"image/jpeg", "image/png", "image/webp", "image/bmp", "image/tiff", "image/gif"}},
+			}
 		}
 		if protocol == dto.AssetUpstreamProtocolFunCloudMaterial {
 			source.MaxBytes = dto.PublicAssetFunCloudMaxBytes

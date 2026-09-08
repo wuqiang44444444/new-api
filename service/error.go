@@ -192,13 +192,15 @@ func parseStatusCodeMappingValue(value any) (int, bool) {
 }
 
 func TaskErrorWrapperLocal(err error, code string, statusCode int) *taskdto.TaskError {
-	openaiErr := TaskErrorWrapper(err, code, statusCode)
-	openaiErr.LocalError = true
-	return openaiErr
+	text := sanitizeTaskErrorText(err)
+	return &taskdto.TaskError{
+		Code: code, Message: text, StatusCode: statusCode,
+		LocalError: true, Error: errors.New(text),
+	}
 }
 
 func TaskErrorWrapper(err error, code string, statusCode int) *taskdto.TaskError {
-	text := sanitizeTaskErrorText(err)
+	code, text := taskErrorDetails(err, code, statusCode)
 	//避免暴露内部错误
 	taskError := &taskdto.TaskError{
 		Code:       code,

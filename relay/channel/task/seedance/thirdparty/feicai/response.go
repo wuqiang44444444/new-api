@@ -74,20 +74,13 @@ func TaskResponse(body []byte, expectedTaskID string, responseContext TaskRespon
 }
 
 func sanitize(value string, limit int) string {
-	value = strings.TrimSpace(value)
-	lower := strings.ToLower(value)
-	for _, sensitive := range []string{"http://", "https://", "bearer ", "authorization", "api_key", "api-key", "cookie"} {
-		if strings.Contains(lower, sensitive) {
-			return "upstream task failed"
-		}
-	}
-	runes := []rune(value)
+	runes := []rune(common.PublicTaskErrorMessage(value))
 	if len(runes) > limit {
 		runes = runes[:limit]
 	}
-	for index, character := range runes {
-		if unicode.IsControl(character) {
-			runes[index] = ' '
+	for i, r := range runes {
+		if unicode.IsControl(r) {
+			runes[i] = ' '
 		}
 	}
 	return strings.TrimSpace(string(runes))

@@ -23,9 +23,16 @@ import (
 )
 
 func TestFunCloudCreateRouteCommitsHoldBeforeProviderBytes(t *testing.T) {
-	for _, outcome := range []string{"accepted", "ambiguous"} {
+	for _, outcome := range []string{"accepted", "ambiguous", "copyright", "sensitive"} {
 		t.Run(outcome, func(t *testing.T) {
 			service.InitHttpClient()
+			policyMessage := ""
+			if outcome == "copyright" {
+				policyMessage = "The request failed because the output video may be related to copyright restrictions."
+			}
+			if outcome == "sensitive" {
+				policyMessage = "输入内容可能包含敏感信息，请检查后重试。"
+			}
 			common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 			events := []string{}
 			db := setupTaskSubmissionDatabase(t, true, &events)
@@ -88,6 +95,13 @@ func TestFunCloudCreateRouteCommitsHoldBeforeProviderBytes(t *testing.T) {
 				assert.Contains(t, string(body), `"model":"seedance-2-0"`)
 				assert.Contains(t, string(body), "asset://opaque-reference")
 				w.Header().Set("Content-Type", "application/json")
+				if policyMessage != "" {
+					w.WriteHeader(http.StatusForbidden)
+					response, err := common.Marshal(map[string]any{"error": map[string]any{"code": "ContentPolicyViolation", "message": policyMessage}})
+					assert.NoError(t, err)
+					_, _ = w.Write(response)
+					return
+				}
 				if outcome == "ambiguous" {
 					_, _ = w.Write([]byte(`{"unexpected":"no-trusted-task-id"}`))
 					return
@@ -119,6 +133,22 @@ func TestFunCloudCreateRouteCommitsHoldBeforeProviderBytes(t *testing.T) {
 				assert.Equal(t, 700, tasks[0].Quota)
 				assert.NotContains(t, recorder.Body.String(), "provider-video-123")
 				assert.Equal(t, model.TaskCreateAttemptBillingTransferred, attempt.BillingHoldState)
+			} else if policyMessage != "" {
+				assert.Equal(t, http.StatusForbidden, recorder.Code)
+				var response struct {
+					Error struct {
+						Code    string `json:"code"`
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+				assert.Equal(t, "ContentPolicyViolation", response.Error.Code)
+				assert.Contains(t, response.Error.Message, policyMessage)
+				assert.NotContains(t, response.Error.Message, "HTTP 403")
+				assert.NotContains(t, response.Error.Message, "credentials")
+				assert.Empty(t, tasks)
+				assert.Equal(t, model.TaskCreateAttemptRejected, attempt.Status)
+				assert.Equal(t, model.TaskCreateAttemptBillingReleased, attempt.BillingHoldState)
 			} else {
 				assert.GreaterOrEqual(t, recorder.Code, 400)
 				assert.Empty(t, tasks)
@@ -127,7 +157,11 @@ func TestFunCloudCreateRouteCommitsHoldBeforeProviderBytes(t *testing.T) {
 			}
 			var finalUser model.User
 			require.NoError(t, db.First(&finalUser, user.Id).Error)
-			assert.Equal(t, 9300, finalUser.Quota)
+			if policyMessage != "" {
+				assert.Equal(t, 10000, finalUser.Quota)
+			} else {
+				assert.Equal(t, 9300, finalUser.Quota)
+			}
 		})
 	}
 }

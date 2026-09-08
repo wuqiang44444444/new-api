@@ -393,7 +393,6 @@ func TestFunCloudMaterialAdapterUsesPublishedGroupAndVirtualUploadContracts(t *t
 
 	_, err = adapter.UpdateAsset(context.Background(), "material-1", "new-name")
 	require.ErrorIs(t, err, ErrAssetOperationUnsupported)
-	require.ErrorIs(t, adapter.DeleteAsset(context.Background(), "material-1"), ErrAssetOperationUnsupported)
 }
 
 func TestFunCloudMaterialListInfersActiveFromVerifiedReferenceWhenStatusIsOmitted(t *testing.T) {

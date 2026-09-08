@@ -1,9 +1,10 @@
 package dto
 
 const (
-	PublicAssetNameMaxCharacters     = 64
-	PublicAssetFunCloudMaxBytes      = 100 * 1024 * 1024
-	PublicAssetFunCloudRedirectLimit = 5
+	PublicAssetNameMaxCharacters           = 64
+	PublicAssetHostedMaxPixels       int64 = PublicAssetFunCloudMaxBytes / 8
+	PublicAssetFunCloudMaxBytes            = 100 * 1024 * 1024
+	PublicAssetFunCloudRedirectLimit       = 5
 
 	PublicAssetGroupRequired    = "required"
 	PublicAssetGroupOptional    = "optional"
@@ -27,6 +28,7 @@ type PublicAssetSourceContract struct {
 	Port                         int                           `json:"port"`
 	MaxURLLength                 int                           `json:"max_url_length"`
 	ExpiresAtMinRemainingSeconds int64                         `json:"expires_at_min_remaining_seconds"`
+	MaxPixels                    int64                         `json:"max_pixels,omitempty"`
 	MaxBytes                     int64                         `json:"max_bytes,omitempty"`
 	RedirectLimit                int                           `json:"redirect_limit,omitempty"`
 	ContentTypeMustMatchMedia    bool                          `json:"content_type_must_match_media_type"`

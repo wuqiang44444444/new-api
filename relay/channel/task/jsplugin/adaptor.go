@@ -454,6 +454,7 @@ func (a *TaskAdaptor) ParseResponse(c *gin.Context, resp *http.Response, info *r
 	maps.Copy(headers, resp.Header)
 	value, err := a.plugin.Engine.Call(c.Request.Context(), "parseSubmitResponse", a.submitContext(c, info), map[string]any{"statusCode": resp.StatusCode, "headers": headers, "body": responseBody})
 	if err != nil {
+		logger.LogWarn(c, "task plugin submit response failed: "+common.SanitizeTaskDiagnostic(err.Error()))
 		logger.LogDebug(
 			c,
 			"task_plugin subsystem=adaptor event=parse_submit_failed plugin=%q stage=parse_submit_response reason=hook_failed status=%d elapsed_ms=%d",
@@ -818,6 +819,9 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	rendered.CreatedAt = host.CreatedAt
 	rendered.Model = host.Model
 	rendered.CompletedAt = host.CompletedAt
+	if task.Status == model.TaskStatusFailure {
+		rendered.Error = publicPluginVideoError(task, rendered.Error, host.Error)
+	}
 	for key := range rendered.Metadata {
 		if strings.EqualFold(key, "url") {
 			delete(rendered.Metadata, key)

@@ -262,7 +262,7 @@ func TestVideoPollingRetiresMissingUpstreamTaskAfterBoundedGrace(t *testing.T) {
 	require.NoError(t, model.DB.First(task, task.ID).Error)
 	assert.Equal(t, model.TaskStatus(model.TaskStatusFailure), task.Status)
 	assert.Equal(t, 2, notFound.fetchCount)
-	assert.Contains(t, task.FailReason, "upstream task missing")
+	assert.Equal(t, "Video task could not be found by the video service.", task.FailReason)
 	assert.Equal(t, "100%", task.Progress)
 	assert.Zero(t, task.Quota)
 	require.NotNil(t, task.PrivateData.AsyncBilling)

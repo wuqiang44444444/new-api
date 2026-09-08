@@ -847,7 +847,7 @@ func TestServeTaskPluginProtocolNonStreamTaskFailureSkipsFinalHook(t *testing.T)
 			Platform:   constant.TaskPlatform(pinned.Plugin.Meta.Key),
 			UserId:     71,
 			Status:     model.TaskStatusFailure,
-			FailReason: "upstream credential at https://secret.invalid/",
+			FailReason: "Image URL expired https://secret.invalid/; api_key=hidden",
 		}
 		task.SetData(map[string]any{"secret": "database-secret"})
 		return task, true, nil
@@ -860,8 +860,8 @@ func TestServeTaskPluginProtocolNonStreamTaskFailureSkipsFinalHook(t *testing.T)
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	assert.Equal(t, "failed", response.Status)
 	require.NotNil(t, response.Error)
-	assert.Equal(t, "server_error", response.Error.Code)
-	assert.Equal(t, "The task failed.", response.Error.Message)
+	assert.Equal(t, "generation_failed", response.Error.Code)
+	assert.Equal(t, "Image URL expired [URL]; [redacted]", response.Error.Message)
 	assert.Empty(t, response.Output)
 	assert.NotContains(t, recorder.Body.String(), "secret")
 	assert.NotContains(t, recorder.Body.String(), "credential")
@@ -895,7 +895,7 @@ func TestServeTaskPluginProtocolStreamTaskFailureSuppressesPluginAndDatabaseDeta
 			Platform:   constant.TaskPlatform(pinned.Plugin.Meta.Key),
 			UserId:     71,
 			Status:     model.TaskStatusFailure,
-			FailReason: "database-secret https://database.invalid/?token=hidden",
+			FailReason: "输入内容可能包含敏感信息，请检查后重试。 https://database.invalid/?token=hidden",
 		}
 		task.SetData(map[string]any{"secret": "private-result"})
 		return task, true, nil
@@ -904,8 +904,8 @@ func TestServeTaskPluginProtocolStreamTaskFailureSuppressesPluginAndDatabaseDeta
 	serveTaskPluginProtocol(c, pinned, deps)
 
 	assert.Equal(t, []string{"response.created", "response.failed"}, pluginProtocolTestSSEEventTypes(recorder.Body.String()))
-	assert.Contains(t, recorder.Body.String(), `"code":"server_error"`)
-	assert.Contains(t, recorder.Body.String(), `"message":"The task failed."`)
+	assert.Contains(t, recorder.Body.String(), `"code":"generation_failed"`)
+	assert.Contains(t, recorder.Body.String(), `"message":"输入内容可能包含敏感信息，请检查后重试。 [URL]"`)
 	assert.Contains(t, recorder.Body.String(), `"task_status":"failed"`)
 	assert.NotContains(t, recorder.Body.String(), "secret")
 	assert.NotContains(t, recorder.Body.String(), "invalid")
@@ -1244,7 +1244,7 @@ func TestRetrieveTaskPluginResponseStreamOnlyPendingAndFailureStayHostEnvelopes(
 		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 		assert.Equal(t, "failed", response.Status)
 		require.NotNil(t, response.Error)
-		assert.Equal(t, "The task failed.", response.Error.Message)
+		assert.Equal(t, "Video generation failed", response.Error.Message)
 	})
 }
 
@@ -1306,8 +1306,8 @@ func TestRetrieveTaskPluginResponseFailureUsesFailedEnvelope(t *testing.T) {
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	assert.Equal(t, "failed", response.Status)
 	require.NotNil(t, response.Error)
-	assert.Equal(t, "server_error", response.Error.Code)
-	assert.Equal(t, "The task failed.", response.Error.Message)
+	assert.Equal(t, "generation_failed", response.Error.Code)
+	assert.Equal(t, "Video generation failed", response.Error.Message)
 }
 
 func TestRetrieveTaskPluginResponseNotFound(t *testing.T) {
@@ -1392,7 +1392,7 @@ func TestRespondPluginProtocolSubmissionErrorPassesValidationMessage(t *testing.
 	assert.NotContains(t, recorder.Body.String(), "Invalid task protocol request")
 }
 
-func TestRespondPluginProtocolSubmissionErrorKeepsGenericNonValidation400(t *testing.T) {
+func TestRespondPluginProtocolSubmissionErrorExplainsMissingTask(t *testing.T) {
 	pinned := compilePluginProtocolTestEndpoint(t, "protocol-generic-400", `
 		export const protocols = {openai_responses: {
 			renderEvents: function() { return {events: [], done: false}; },
@@ -1413,7 +1413,7 @@ func TestRespondPluginProtocolSubmissionErrorKeepsGenericNonValidation400(t *tes
 	serveTaskPluginProtocol(c, pinned, deps)
 
 	assert.Equal(t, http.StatusBadRequest, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Invalid task protocol request")
+	assert.Contains(t, recorder.Body.String(), "Video resource was not found")
 	assert.NotContains(t, recorder.Body.String(), "task_origin_not_exist")
 }
 

@@ -812,7 +812,7 @@ func executeTaskSubmissionWith(
 			task.FinishTime = time.Now().Unix()
 		}
 		if immediate.Status == model.TaskStatusFailure {
-			task.FailReason = immediate.Reason
+			task.FailReason = task.PublicVideoErrorMessage(immediate.Reason)
 		}
 		if immediate.Url != "" {
 			task.PrivateData.ResultURL = immediate.Url

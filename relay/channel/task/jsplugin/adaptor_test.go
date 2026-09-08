@@ -605,7 +605,7 @@ func TestTaskAdaptorPreservesOpenAIVideoFailureSlotsAndOwnsLifecycle(t *testing.
 	task := &model.Task{
 		TaskID:     "task_public",
 		Status:     model.TaskStatusFailure,
-		FailReason: "provider secret",
+		FailReason: "输入内容可能包含敏感信息，请检查后重试。",
 		CreatedAt:  10,
 		UpdatedAt:  20,
 		Properties: model.Properties{OriginModelName: "origin-model"},
@@ -615,6 +615,15 @@ func TestTaskAdaptorPreservesOpenAIVideoFailureSlotsAndOwnsLifecycle(t *testing.
 
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"id":"task_public","object":"video","model":"origin-model","status":"failed","progress":0,"created_at":10,"error":{"message":"provider rejected request","code":"provider_error"}}`, string(rendered))
+	task.FailReason = ""
+	task.Data = []byte(`{"result":{"reason":"provider rejected request"}}`)
+	rendered, err = adaptor.ConvertToOpenAIVideo(task)
+	require.NoError(t, err)
+	var video dto.OpenAIVideo
+	require.NoError(t, common.Unmarshal(rendered, &video))
+	require.NotNil(t, video.Error)
+	assert.Equal(t, "provider_error", video.Error.Code)
+	assert.Equal(t, "provider rejected request", video.Error.Message)
 }
 
 func TestTaskAdaptorBoundsNativeUsageBeforeQuotaCalculation(t *testing.T) {

@@ -57,6 +57,7 @@ func StageVideoTaskCreateAttemptRecovery(
 	}
 	model.AttachAsyncTaskBilling(&task.PrivateData, info, task.Quota)
 	stageTaskProtocolSnapshot(c, task, info)
+	StageFunCloudHostedMediaSnapshot(c, task)
 	return model.RecordTaskCreateAttemptRecoveryTemplate(attemptID, task)
 }
 

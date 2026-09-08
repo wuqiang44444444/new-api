@@ -287,7 +287,7 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 			}
 		}
 		err = model.TaskBulkUpdateByID(failedIDs, map[string]any{
-			"fail_reason": fmt.Sprintf("获取渠道信息失败，请联系管理员，渠道ID：%d", channelId),
+			"fail_reason": "视频服务配置不可用，请联系管理员",
 			"status":      "FAILURE",
 			"progress":    "100%",
 		})
@@ -599,7 +599,6 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		taskResult.Url = t.GetResultURL()
 		taskResult.Progress = t.Progress
 		taskResult.Reason = t.FailReason
-		task.Data = t.Data
 	} else if taskResult, err = adaptor.ParseTaskResult(task, resp, responseBody); err != nil {
 		if handled, markErr := linkVideoContractViolationHandled(ctx, task, err); handled {
 			if markErr != nil {
@@ -618,17 +617,16 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if seedanceTaskSucceeded(task) && taskResult.Status != model.TaskStatusSuccess {
 		return fmt.Errorf("provider usage observation cannot change a successful task status")
 	}
-	task.Data = linkVideoRedactResponse(adapterVersion, responseBody)
-
 	logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
 
 	parsedStatus := model.TaskStatus(taskResult.Status)
 	if parsedStatus == model.TaskStatusUnknown || parsedStatus == "" || !knownPollStatus(parsedStatus) {
-		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassUnrecognized, resp.StatusCode, unrecognizedPollDetail(taskResult.Reason, responseBody))
+		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassUnrecognized, resp.StatusCode, taskResult.Reason)
 	}
 	if classifyPollHTTP(resp.StatusCode) == pollClassOtherClient && isNonTerminalPollStatus(parsedStatus) {
-		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassUnrecognized, resp.StatusCode, unrecognizedPollDetail(taskResult.Reason, responseBody))
+		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassUnrecognized, resp.StatusCode, taskResult.Reason)
 	}
+	task.Data = linkVideoRedactResponse(adapterVersion, responseBody)
 
 	if len(taskResult.PluginState) > 0 {
 		task.PrivateData.PluginState = taskResult.PluginState
@@ -674,7 +672,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		if task.FinishTime == 0 {
 			task.FinishTime = now
 		}
-		task.FailReason = taskResult.Reason
+		task.FailReason = task.PublicVideoErrorMessage(taskResult.Reason)
 		logger.LogInfo(ctx, fmt.Sprintf("Task %s failed: %s", task.TaskID, task.FailReason))
 		taskResult.Progress = taskcommon.ProgressComplete
 		shouldFinalizeBilling = true
@@ -866,21 +864,8 @@ func pollFailureReason(class string, statusCode int, detail string) string {
 	return reason
 }
 
-// unrecognizedPollDetail pairs the plugin's reason with a bounded copy of the
-// upstream body so the WARN line is enough to diagnose a parser gap.
-func unrecognizedPollDetail(reason string, body []byte) string {
-	const maxBodyChars = 512
-	redacted := string(redactVideoResponseBody(body))
-	if len(redacted) > maxBodyChars {
-		redacted = redacted[:maxBodyChars] + "…"
-	}
-	if strings.TrimSpace(reason) == "" {
-		return "body=" + redacted
-	}
-	return reason + "; body=" + redacted
-}
-
 func recordPollFailure(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, fromStatus model.TaskStatus, class string, statusCode int, detail string) error {
+	detail = common.SanitizeTaskDiagnostic(detail)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -889,9 +874,7 @@ func recordPollFailure(ctx context.Context, adaptor TaskPollingAdaptor, task *mo
 	}
 	task.PrivateData.PollFailures++
 	if class == pollClassUnrecognized || class == pollClassHookError {
-		// The redacted body is intentionally not persisted to Task.Data on these
-		// paths, so the WARN line is the only operator-visible copy of what the
-		// plugin could not interpret.
+		// Raw bodies belong to protected evidence, never FailReason or ordinary logs.
 		logger.LogWarn(ctx, fmt.Sprintf("task %s poll %s (failures=%d, http=%d): %s", task.TaskID, class, task.PrivateData.PollFailures, statusCode, detail))
 	}
 	// TASK_POLL_MAX_FAILURES <= 0 disables the consecutive-failure cutoff, matching
@@ -925,7 +908,8 @@ func failTaskFromPoll(ctx context.Context, adaptor TaskPollingAdaptor, task *mod
 	if task.FinishTime == 0 {
 		task.FinishTime = now
 	}
-	task.FailReason = reason
+	logger.LogWarn(ctx, fmt.Sprintf("task %s polling failed: %s", task.TaskID, common.SanitizeTaskDiagnostic(reason)))
+	task.FailReason = task.PublicVideoErrorMessage(reason)
 	won, err := task.UpdateWithStatus(fromStatus)
 	if err != nil {
 		return err

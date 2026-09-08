@@ -17,7 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/asset_setting"
 )
 
-func CreateRemoteAsset(ctx context.Context, group string, req dto.CreateAssetRequest) (dto.AssetResponse, error) {
+func CreateRemoteAsset(ctx context.Context, group string, userID int, req dto.CreateAssetRequest) (dto.AssetResponse, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.AssetKind = strings.TrimSpace(req.AssetKind)
 	req.MediaType = strings.TrimSpace(req.MediaType)
@@ -38,16 +38,18 @@ func CreateRemoteAsset(ctx context.Context, group string, req dto.CreateAssetReq
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
-	channel, adapter, err := assetAdapterForModel(group, req.Model)
+	channel, adapter, err := assetAdapterForModel(group, req.Model, userID)
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
 	settings := channel.GetOtherSettings()
-	if settings.AssetMinURLTTLSeconds <= 0 {
-		return dto.AssetResponse{}, ErrAssetUpstreamUnavailable
-	}
-	if err := validateRemoteAssetTTL(req.Source.ExpiresAt, settings.AssetMinURLTTLSeconds, time.Now()); err != nil {
-		return dto.AssetResponse{}, err
+	if settings.AssetUpstreamProtocol != dto.AssetUpstreamProtocolFunCloudHosted {
+		if settings.AssetMinURLTTLSeconds <= 0 {
+			return dto.AssetResponse{}, ErrAssetUpstreamUnavailable
+		}
+		if err := validateRemoteAssetTTL(req.Source.ExpiresAt, settings.AssetMinURLTTLSeconds, time.Now()); err != nil {
+			return dto.AssetResponse{}, err
+		}
 	}
 	if !adapter.Supports(req.AssetKind, req.MediaType) {
 		return dto.AssetResponse{}, ErrUnsupportedAssetType
@@ -63,7 +65,7 @@ func CreateRemoteAsset(ctx context.Context, group string, req dto.CreateAssetReq
 		Name:            req.Name,
 		MediaType:       req.MediaType,
 	}
-	if settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolFunCloudMaterial {
+	if settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolFunCloudMaterial || settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolFunCloudHosted {
 		source, sourceErr := openFunCloudAssetSource(ctx, remoteURL, req.MediaType)
 		if sourceErr != nil {
 			return dto.AssetResponse{}, sourceErr
@@ -86,12 +88,12 @@ func CreateRemoteAsset(ctx context.Context, group string, req dto.CreateAssetReq
 	return assetResponse(req.Model, result.ResourceID, result), nil
 }
 
-func GetRemoteAsset(ctx context.Context, group, modelName, resourceID string) (dto.AssetResponse, error) {
+func GetRemoteAsset(ctx context.Context, group string, userID int, modelName, resourceID string) (dto.AssetResponse, error) {
 	modelName, resourceID, err := validateAssetLookup(modelName, resourceID)
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
-	channel, adapter, err := assetAdapterForModel(group, modelName)
+	channel, adapter, err := assetAdapterForModel(group, modelName, userID)
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
@@ -103,7 +105,7 @@ func GetRemoteAsset(ctx context.Context, group, modelName, resourceID string) (d
 	return assetResponse(modelName, resourceID, result), nil
 }
 
-func UpdateRemoteAsset(ctx context.Context, group, resourceID string, req dto.UpdateAssetRequest) (dto.AssetResponse, error) {
+func UpdateRemoteAsset(ctx context.Context, group string, userID int, resourceID string, req dto.UpdateAssetRequest) (dto.AssetResponse, error) {
 	req.Model = strings.TrimSpace(req.Model)
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" || len([]rune(req.Name)) > dto.PublicAssetNameMaxCharacters {
@@ -113,7 +115,7 @@ func UpdateRemoteAsset(ctx context.Context, group, resourceID string, req dto.Up
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
-	channel, adapter, err := assetAdapterForModel(group, modelName)
+	channel, adapter, err := assetAdapterForModel(group, modelName, userID)
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
@@ -125,12 +127,12 @@ func UpdateRemoteAsset(ctx context.Context, group, resourceID string, req dto.Up
 	return assetResponse(modelName, resourceID, result), nil
 }
 
-func DeleteRemoteAsset(ctx context.Context, group, modelName, resourceID string) error {
+func DeleteRemoteAsset(ctx context.Context, group string, userID int, modelName, resourceID string) error {
 	modelName, resourceID, err := validateAssetLookup(modelName, resourceID)
 	if err != nil {
 		return err
 	}
-	channel, adapter, err := assetAdapterForModel(group, modelName)
+	channel, adapter, err := assetAdapterForModel(group, modelName, userID)
 	if err != nil {
 		return err
 	}
@@ -139,7 +141,7 @@ func DeleteRemoteAsset(ctx context.Context, group, modelName, resourceID string)
 	return normalizeAssetAdapterError(ctx, "delete", modelName, channel, time.Since(startedAt), err)
 }
 
-func CreateAssetGroup(ctx context.Context, group string, req dto.CreateAssetGroupRequest) (dto.AssetGroupResponse, error) {
+func CreateAssetGroup(ctx context.Context, group string, userID int, req dto.CreateAssetGroupRequest) (dto.AssetGroupResponse, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)
 	req.GroupKind = strings.TrimSpace(req.GroupKind)
@@ -157,7 +159,7 @@ func CreateAssetGroup(ctx context.Context, group string, req dto.CreateAssetGrou
 	if req.GroupKind == model.AssetKindGeneral && req.Name == DefaultAssetGroupName {
 		return dto.AssetGroupResponse{}, ErrReservedAssetGroupName
 	}
-	channel, adapter, err := assetAdapterForModel(group, req.Model)
+	channel, adapter, err := assetAdapterForModel(group, req.Model, userID)
 	if err != nil {
 		return dto.AssetGroupResponse{}, err
 	}
@@ -211,12 +213,12 @@ func CreateAssetGroup(ctx context.Context, group string, req dto.CreateAssetGrou
 	return assetGroupResponse(req.Model, result.ResourceID, result), nil
 }
 
-func GetRemoteAssetGroup(ctx context.Context, group, modelName, resourceID string, verificationSession bool) (dto.AssetGroupResponse, error) {
+func GetRemoteAssetGroup(ctx context.Context, group string, userID int, modelName, resourceID string, verificationSession bool) (dto.AssetGroupResponse, error) {
 	modelName, resourceID, err := validateAssetLookup(modelName, resourceID)
 	if err != nil {
 		return dto.AssetGroupResponse{}, err
 	}
-	channel, adapter, err := assetAdapterForModel(group, modelName)
+	channel, adapter, err := assetAdapterForModel(group, modelName, userID)
 	if err != nil {
 		return dto.AssetGroupResponse{}, err
 	}
@@ -251,7 +253,7 @@ func GetRemoteAssetGroup(ctx context.Context, group, modelName, resourceID strin
 }
 
 func CheckAssetChannelConnectivity(ctx context.Context, channel *model.Channel) error {
-	adapter, err := seedanceAssetAdapter(channel)
+	adapter, err := seedanceAssetAdapter(channel, 0, "")
 	if err != nil {
 		return assetChannelConfigurationError(err)
 	}
@@ -269,7 +271,7 @@ func CheckAssetChannelConnectivity(ctx context.Context, channel *model.Channel) 
 	return nil
 }
 
-func assetAdapterForModel(group, modelName string) (*model.Channel, assetadapter.Adapter, error) {
+func assetAdapterForModel(group, modelName string, userID int) (*model.Channel, assetadapter.Adapter, error) {
 	if !asset_setting.Current().Enabled {
 		return nil, nil, ErrAssetLibraryUnavailable
 	}
@@ -293,14 +295,14 @@ func assetAdapterForModel(group, modelName string) (*model.Channel, assetadapter
 		}
 		return nil, nil, ErrAssetModelNotFound
 	}
-	adapter, err := seedanceAssetAdapter(channel)
+	adapter, err := seedanceAssetAdapter(channel, userID, modelName)
 	if err != nil {
 		return nil, nil, err
 	}
 	return channel, adapter, nil
 }
 
-func seedanceAssetAdapter(channel *model.Channel) (assetadapter.Adapter, error) {
+func seedanceAssetAdapter(channel *model.Channel, userID int, modelName string) (assetadapter.Adapter, error) {
 	if channel == nil || channel.Type != constant.ChannelTypeSeedanceLink {
 		return nil, ErrAssetUpstreamUnavailable
 	}
@@ -310,6 +312,11 @@ func seedanceAssetAdapter(channel *model.Channel) (assetadapter.Adapter, error) 
 	}
 	if !settings.AssetUpstreamProtocol.IsValid() {
 		return nil, ErrAssetLibraryUnavailable
+	}
+	if settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolFunCloudHosted {
+		// 托管路径不访问 Provider：不解析渠道凭据、不建立上游 HTTP 客户端；
+		// 无效用户身份由 model 层查询按失败关闭处理。
+		return newFunCloudHostedMaterialAdapter(userID, modelName), nil
 	}
 	key, err := model.ResolveAssetChannelCredential(channel)
 	if err != nil {
@@ -395,6 +402,12 @@ func assetGroupResponse(modelName, fallbackID string, result assetadapter.GroupR
 func normalizeAssetAdapterError(ctx context.Context, operation, modelName string, channel *model.Channel, elapsed time.Duration, err error) error {
 	if err == nil {
 		return nil
+	}
+	if errors.Is(err, ErrInvalidAssetRequest) {
+		return ErrInvalidAssetRequest
+	}
+	if errors.Is(err, ErrTaskArtifactStoreDisabled) {
+		return ErrAssetUpstreamUnavailable
 	}
 	if errors.Is(err, assetadapter.ErrAssetOperationUnsupported) {
 		return ErrUnsupportedAssetOperation

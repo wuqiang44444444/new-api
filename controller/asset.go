@@ -18,7 +18,7 @@ func CreateAsset(c *gin.Context) {
 		assetAPIError(c, http.StatusBadRequest, "invalid_request", "invalid asset request")
 		return
 	}
-	response, err := service.CreateRemoteAsset(c.Request.Context(), assetRequestGroup(c), req)
+	response, err := service.CreateRemoteAsset(c.Request.Context(), assetRequestGroup(c), c.GetInt("id"), req)
 	if err != nil {
 		if requiredTTL, ok := service.RequiredAssetURLTTL(err); ok {
 			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
@@ -37,7 +37,7 @@ func CreateAsset(c *gin.Context) {
 
 func GetAsset(c *gin.Context) {
 	response, err := service.GetRemoteAsset(
-		c.Request.Context(), assetRequestGroup(c), c.Query("model"), c.Param("asset_id"),
+		c.Request.Context(), assetRequestGroup(c), c.GetInt("id"), c.Query("model"), c.Param("asset_id"),
 	)
 	if err != nil {
 		writeAssetServiceError(c, err)
@@ -52,7 +52,7 @@ func UpdateAsset(c *gin.Context) {
 		assetAPIError(c, http.StatusBadRequest, "invalid_request", "invalid asset request")
 		return
 	}
-	response, err := service.UpdateRemoteAsset(c.Request.Context(), assetRequestGroup(c), c.Param("asset_id"), req)
+	response, err := service.UpdateRemoteAsset(c.Request.Context(), assetRequestGroup(c), c.GetInt("id"), c.Param("asset_id"), req)
 	if err != nil {
 		writeAssetServiceError(c, err)
 		return
@@ -62,7 +62,7 @@ func UpdateAsset(c *gin.Context) {
 
 func DeleteAsset(c *gin.Context) {
 	if err := service.DeleteRemoteAsset(
-		c.Request.Context(), assetRequestGroup(c), c.Query("model"), c.Param("asset_id"),
+		c.Request.Context(), assetRequestGroup(c), c.GetInt("id"), c.Query("model"), c.Param("asset_id"),
 	); err != nil {
 		writeAssetServiceError(c, err)
 		return
@@ -76,7 +76,7 @@ func CreateAssetGroup(c *gin.Context) {
 		assetAPIError(c, http.StatusBadRequest, "invalid_request", "invalid asset group request")
 		return
 	}
-	response, err := service.CreateAssetGroup(c.Request.Context(), assetRequestGroup(c), req)
+	response, err := service.CreateAssetGroup(c.Request.Context(), assetRequestGroup(c), c.GetInt("id"), req)
 	if err != nil {
 		writeAssetServiceError(c, err)
 		return
@@ -86,7 +86,7 @@ func CreateAssetGroup(c *gin.Context) {
 
 func GetAssetGroup(c *gin.Context) {
 	response, err := service.GetRemoteAssetGroup(
-		c.Request.Context(), assetRequestGroup(c), c.Query("model"), c.Param("group_id"),
+		c.Request.Context(), assetRequestGroup(c), c.GetInt("id"), c.Query("model"), c.Param("group_id"),
 		strings.EqualFold(strings.TrimSpace(c.Query("verification_session")), "true"),
 	)
 	if err != nil {

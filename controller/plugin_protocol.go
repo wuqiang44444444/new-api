@@ -471,6 +471,7 @@ func streamTaskPluginProtocol(
 		}
 		previousStatus := lastStatus
 		lastStatus = string(task.Status)
+		setTaskPluginFailure(machine, task)
 		if lastStatus != previousStatus {
 			logger.LogDebug(
 				c,
@@ -709,6 +710,7 @@ func waitTaskPluginProtocol(
 		if !loadOverloaded {
 			previousStatus := lastStatus
 			lastStatus = string(task.Status)
+			setTaskPluginFailure(machine, task)
 			if lastStatus != previousStatus {
 				logger.LogDebug(
 					c,
@@ -1005,6 +1007,7 @@ func retrieveTaskPluginResponse(c *gin.Context, deps pluginProtocolBridgeDeps) {
 
 	if task.Status == model.TaskStatusFailure {
 		logger.LogDebug(c, "task_plugin subsystem=protocol event=retrieve_final generation=%d plugin=%q public_task_id=%q status=%q", generationNumber, plugin.Meta.Key, task.TaskID, taskPluginDebugStatus(string(task.Status)))
+		setTaskPluginFailure(machine, task)
 		writeTaskPluginProtocolFailureResponse(c, machine, string(task.Status))
 		return
 	}
@@ -1243,26 +1246,7 @@ func writeTaskPluginProtocolEvent(c *gin.Context, event dto.PluginResponsesStrea
 }
 
 func respondPluginProtocolSubmissionError(c *gin.Context, taskErr *dto.TaskError) {
-	status := http.StatusInternalServerError
-	if taskErr != nil && taskErr.StatusCode >= 400 && taskErr.StatusCode <= 599 {
-		status = taskErr.StatusCode
-	}
-	switch status {
-	case http.StatusBadRequest:
-		message := "Invalid task protocol request"
-		if taskErr != nil && taskErr.Message != "" && (taskErr.Code == "invalid_request" || strings.HasPrefix(taskErr.Code, "invalid_request")) {
-			message = taskErr.Message
-		}
-		respondPluginProtocolError(c, status, "invalid_request_error", message)
-	case http.StatusUnauthorized:
-		respondPluginProtocolError(c, status, "authentication_error", "Authentication failed")
-	case http.StatusForbidden:
-		respondPluginProtocolError(c, status, "permission_denied", "Task protocol request was denied")
-	case http.StatusTooManyRequests:
-		respondPluginProtocolError(c, status, "rate_limit_exceeded", "Too many requests")
-	default:
-		respondPluginProtocolError(c, status, "task_protocol_error", "Task protocol request failed")
-	}
+	respondPublicPluginSubmissionError(c, taskErr)
 }
 
 func respondPluginProtocolError(c *gin.Context, status int, code, message string) {

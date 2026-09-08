@@ -15,6 +15,11 @@ type taskUpstreamHTTPError struct {
 	providerMessage string
 }
 
+// TaskErrorDetails keeps the business message separate from diagnostic prefixes.
+func (e *taskUpstreamHTTPError) TaskErrorDetails() (string, string) {
+	return e.providerCode, e.providerMessage
+}
+
 func (e *taskUpstreamHTTPError) Error() string {
 	base := fmt.Sprintf("upstream task request returned HTTP %d", e.statusCode)
 	switch {

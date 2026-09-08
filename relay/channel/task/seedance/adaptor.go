@@ -147,6 +147,9 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		return service.TaskErrorWrapperLocal(err, "invalid_video_contract", http.StatusBadRequest)
 	}
 	info.Action = modelArkTaskAction(payload)
+	if taskErr := service.ValidateFunCloudHostedVideoMedia(c, info); taskErr != nil {
+		return taskErr
+	}
 	if (a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolFunCloudSeedance ||
 		a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC) &&
 		billing_setting.GetBillingMode(info.OriginModelName) != billing_setting.BillingModeTieredExpr {
@@ -238,7 +241,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	}
 	switch a.protocol {
 	case dto.VideoUpstreamProtocolFunCloudModelArkV3:
-		data, err = buildFunCloudModelArkRequest(body)
+		data, err = buildFunCloudModelArkRequest(c, body)
 	case dto.VideoUpstreamProtocolMoxingMediaTaskV1:
 		data, err = thirdparty.MoxingMediaCreateRequest(data)
 	case dto.VideoUpstreamProtocolMoxingModelArkV1:
@@ -420,8 +423,9 @@ func (*TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, error)
 	video.CreatedAt = originTask.CreatedAt
 	video.CompletedAt = originTask.UpdatedAt
 	video.Model = originTask.Properties.OriginModelName
-	if providerTask.Status == "failed" {
-		video.Error = &dto.OpenAIVideoError{Message: providerTask.Error.Message, Code: providerTask.Error.Code}
+	if originTask.Status == model.TaskStatusFailure {
+		failure := originTask.PublicVideoFailure()
+		video.Error = &dto.OpenAIVideoError{Message: failure.Message, Code: failure.Code}
 	}
 	return common.Marshal(video)
 }

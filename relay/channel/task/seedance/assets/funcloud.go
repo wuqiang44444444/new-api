@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode"
@@ -282,8 +283,27 @@ func (*FunCloudMaterialAdapter) UpdateAsset(context.Context, string, string) (As
 	return AssetResult{}, ErrAssetOperationUnsupported
 }
 
-func (*FunCloudMaterialAdapter) DeleteAsset(context.Context, string) error {
-	return ErrAssetOperationUnsupported
+func (a *FunCloudMaterialAdapter) DeleteAsset(ctx context.Context, resourceID string) error {
+	// Undocumented single-material endpoint verified against the provider on 2026-09-07.
+	// Never substitute the group endpoint, which deletes other materials too.
+	var envelope struct {
+		Code *int `json:"code"`
+	}
+	path := funCloudMaterialRoot + "/delete?" + url.Values{"materialId": {resourceID}}.Encode()
+	if err := a.request(ctx, http.MethodPost, path, nil, &envelope); err != nil {
+		return err
+	}
+	if envelope.Code == nil {
+		return invalidUpstreamResponse(fmt.Errorf("FunCloud material delete response has no code"))
+	}
+	switch *envelope.Code {
+	case 0:
+		return nil
+	case 90003:
+		return ErrAssetResourceNotFound
+	default:
+		return &upstreamApplicationError{provider: "FunCloud material", code: *envelope.Code}
+	}
 }
 
 func decodeFunCloudList[T any](data []byte) ([]T, error) {

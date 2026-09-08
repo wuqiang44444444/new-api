@@ -586,6 +586,8 @@ export const STATIC_I18N_KEYS = [
   'FunCloud Material requires the FunCloud Seedance video protocol',
   'FunCloud Seedance',
   'FunCloud ModelArk V3',
+  'FunCloud Hosted Material Library',
+  'FunCloud hosted material requires the FunCloud ModelArk V3 video protocol',
   'FunCloud Seedance 2.5 does not support the FunCloud Material Library',
   'Image Relay',
   'Moxing Images V1',

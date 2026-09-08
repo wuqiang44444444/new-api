@@ -373,6 +373,7 @@ type PluginResponsesMachine struct {
 	totalOutputBytes int
 	usage            *dto.PluginResponsesUsage
 	background       bool
+	taskFailure      *dto.PluginResponsesError
 }
 
 func NewPluginResponsesMachine(taskID, model string, createdAt int64, limits PluginProtocolLimits) *PluginResponsesMachine {
@@ -590,10 +591,7 @@ func (m *PluginResponsesMachine) FinalResponse(payload any, taskStatus string) (
 		return nil, errors.New("final response requires a terminal task")
 	}
 	m.terminal = true
-	response, err := pluginResponseMap(m.responseSnapshot(&dto.PluginResponsesError{
-		Code:    "server_error",
-		Message: "The task failed.",
-	}))
+	response, err := pluginResponseMap(m.responseSnapshot(m.publicTaskFailure()))
 	if err != nil {
 		return nil, err
 	}
@@ -955,6 +953,9 @@ func (m *PluginResponsesMachine) incomplete() dto.PluginResponsesStreamEvent {
 }
 
 func (m *PluginResponsesMachine) fail(code, message string) dto.PluginResponsesStreamEvent {
+	if m.taskFailure != nil && m.metadata["task_status"] == pluginResponseStatusFailed {
+		code, message = m.taskFailure.Code, m.taskFailure.Message
+	}
 	m.status = pluginResponseStatusFailed
 	m.terminal = true
 	return m.event(dto.PluginResponsesStreamEvent{

@@ -53,7 +53,7 @@ func GetTask(c *gin.Context) {
 	if createdAt == 0 {
 		createdAt = task.SubmitTime
 	}
-	failReason := task.FailReason
+	failReason := task.PublicFailReason()
 	if task.Status == model.TaskStatusSuccess && taskFailReasonIsLegacyResultURL(task.FailReason) {
 		failReason = ""
 	}

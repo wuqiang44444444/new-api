@@ -170,8 +170,31 @@ describe('Seedance protocol validation', () => {
     assert.equal(result.success, true)
     assert.deepEqual(
       getCompatibleSeedanceAssetProtocols('funcloud_modelark_v3', mapping),
-      ['funcloud_material', 'none']
+      ['funcloud_material', 'funcloud_material_hosted', 'none']
     )
+  })
+
+  test('allows the V3 hosted material library without a Provider fetch window', () => {
+    const result = channelFormSchema.safeParse({
+      ...seedanceForm,
+      models: 'v3-hosted',
+      model_mapping: '{"v3-hosted":"seedance-2-0"}',
+      video_upstream_protocol: 'funcloud_modelark_v3',
+      asset_upstream_protocol: 'funcloud_material_hosted',
+    })
+    assert.equal(result.success, true)
+  })
+
+  test('rejects the hosted material library with a non-V3 video protocol', () => {
+    const result = channelFormSchema.safeParse({
+      ...seedanceForm,
+      models: 'v3-hosted',
+      model_mapping: '{"v3-hosted":"seedance-2"}',
+      video_upstream_protocol: 'funcloud_seedance',
+      asset_upstream_protocol: 'funcloud_material_hosted',
+      asset_min_url_ttl_seconds: 3600,
+    })
+    assert.equal(result.success, false)
   })
 
   test('rejects FunCloud 2.5 with the FunCloud material library', () => {

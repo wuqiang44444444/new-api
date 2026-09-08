@@ -214,19 +214,5 @@ func normalizedStatus(value string) (string, bool) {
 }
 
 func sanitizeProviderText(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	lower := strings.ToLower(value)
-	for _, unsafe := range []string{"http://", "https://", "authorization", "bearer ", "cookie", "token="} {
-		if strings.Contains(lower, unsafe) {
-			return "upstream task failed"
-		}
-	}
-	runes := []rune(value)
-	if len(runes) > 512 {
-		value = string(runes[:512])
-	}
-	return value
+	return common.PublicTaskErrorMessage(value)
 }

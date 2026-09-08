@@ -109,6 +109,7 @@ const (
 	AssetUpstreamProtocolMoxingJoyCreatorV1 AssetUpstreamProtocol = "moxing_joycreator_assets_v1"
 	AssetUpstreamProtocolMoxingVolcAssetsV1 AssetUpstreamProtocol = "moxing_volc_assets_v1"
 	AssetUpstreamProtocolFunCloudMaterial   AssetUpstreamProtocol = "funcloud_material"
+	AssetUpstreamProtocolFunCloudHosted     AssetUpstreamProtocol = "funcloud_material_hosted"
 	AssetUpstreamProtocolCMCCAICCV2         AssetUpstreamProtocol = "cmcc_aicc_assets_v2"
 )
 
@@ -141,6 +142,8 @@ func (p AssetUpstreamProtocol) TransportProfile() AssetUpstreamProfile {
 		return AssetUpstreamProfileMoxingVolc
 	case AssetUpstreamProtocolFunCloudMaterial:
 		return AssetUpstreamProfileFunCloudMaterial
+	case AssetUpstreamProtocolFunCloudHosted:
+		return AssetUpstreamProfileFunCloudHosted
 	case AssetUpstreamProtocolCMCCAICCV2:
 		return AssetUpstreamProfileCMCCAICCV2
 	default:

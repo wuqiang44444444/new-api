@@ -67,7 +67,7 @@ func TestTaskProtocolErrorFieldsSeparatesClientAndProviderAuthentication(t *test
 		},
 		{
 			name: "provider permission", local: false, status: http.StatusForbidden,
-			wantStatus: http.StatusBadGateway, wantCode: "upstream_auth_error", wantType: "server_error",
+			wantStatus: http.StatusForbidden, wantCode: "upstream_rejected", wantType: "invalid_request_error",
 		},
 		{
 			name: "not found", local: true, status: http.StatusNotFound,

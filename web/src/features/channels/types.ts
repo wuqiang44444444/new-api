@@ -139,6 +139,7 @@ export interface ChannelOtherSettings {
     | 'moxing_joycreator_assets_v1'
     | 'moxing_volc_assets_v1'
     | 'funcloud_material'
+    | 'funcloud_material_hosted'
     | 'cmcc_aicc_assets_v2'
 }
 

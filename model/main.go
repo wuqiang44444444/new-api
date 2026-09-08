@@ -370,6 +370,8 @@ func migrateDB() error {
 		&ChannelAssetCredential{},
 		&ChannelAssetScopeIdentity{},
 		&ChannelDefaultAssetGroup{},
+		&FunCloudHostedAssetGroup{},
+		&FunCloudHostedAsset{},
 		&CasbinRule{},
 		&AuthzRole{},
 		&CustomerModelContract{},

@@ -157,9 +157,12 @@ type TaskPrivateData struct {
 	VideoUpstreamQueryPathTemplate string                     `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
 	VideoUpstreamProxy             string                     `json:"video_upstream_proxy,omitempty"`               // 创建时的代理快照，避免在途任务随渠道配置漂移
 	ClientRequest                  *TaskClientRequestSnapshot `json:"client_request,omitempty"`
-	AppID                          int                        `json:"app_id,omitempty"`
-	SkipTokenQuota                 bool                       `json:"skip_token_quota,omitempty"` // Playground 等不参与令牌额度记账的任务
-	AsyncBilling                   *TaskAsyncBillingContext   `json:"async_billing,omitempty"`
+	// HostedMedia 冻结创建时已接受的 FunCloud 托管素材事实（素材 ID、本站
+	// 对象 key、MIME、字节数）。只记录对象位置，不记录签名 URL 或来源 URL。
+	HostedMedia    []TaskHostedMediaFact    `json:"hosted_media,omitempty"`
+	AppID          int                      `json:"app_id,omitempty"`
+	SkipTokenQuota bool                     `json:"skip_token_quota,omitempty"` // Playground 等不参与令牌额度记账的任务
+	AsyncBilling   *TaskAsyncBillingContext `json:"async_billing,omitempty"`
 	// ImageTask 是显式图片执行协议（image_openai_v1）的受保护快照。
 	ImageTask *TaskImageExecutionData `json:"image_task,omitempty"`
 }
@@ -677,6 +680,10 @@ func (t *Task) ToOpenAIVideo() *dto.OpenAIVideo {
 	openAIVideo.Model = t.Properties.OriginModelName
 	openAIVideo.SetProgressStr(t.Progress)
 	openAIVideo.CreatedAt = t.CreatedAt
+	if t.Status == TaskStatusFailure {
+		failure := t.PublicVideoFailure()
+		openAIVideo.Error = &dto.OpenAIVideoError{Code: failure.Code, Message: failure.Message}
+	}
 	if t.Status == TaskStatusSuccess {
 		if t.FinishTime != 0 {
 			openAIVideo.CompletedAt = t.FinishTime

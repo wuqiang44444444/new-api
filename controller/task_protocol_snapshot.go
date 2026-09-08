@@ -6,6 +6,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -14,6 +15,7 @@ func attachTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycom
 		return
 	}
 	task.ClientProtocol = info.TaskRelayInfo.ClientProtocol
+	service.StageFunCloudHostedMediaSnapshot(c, task)
 	if _, ok := relaycommon.GetVideoContractRequest(c); ok {
 		profile := info.ChannelOtherSettings.VideoUpstreamProfile
 		if info.ChannelType == constant.ChannelTypeSeedanceLink {

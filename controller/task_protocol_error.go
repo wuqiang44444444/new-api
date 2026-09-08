@@ -52,15 +52,29 @@ func respondTaskProtocolError(c *gin.Context, taskErr *dto.TaskError) bool {
 func taskProtocolErrorFields(taskErr *dto.TaskError) (status int, code, errorType, message string) {
 	status = taskErr.StatusCode
 	code = strings.TrimSpace(taskErr.Code)
-	if code == "" {
-		code = "task_request_failed"
+	message = taskErr.Message
+	if common.PublicTaskErrorCode(code) == "" && code != "" {
+		// Internal operation codes must not expose their diagnostic message.
+		message = ""
 	}
+	code = common.PublicTaskErrorCode(code)
 	switch {
-	case !taskErr.LocalError && (status == http.StatusUnauthorized || status == http.StatusForbidden):
+	case !taskErr.LocalError && status == http.StatusUnauthorized:
 		status = http.StatusBadGateway
 		errorType = "server_error"
 		code = "upstream_auth_error"
 		message = "Video service credentials are unavailable"
+	case !taskErr.LocalError && status == http.StatusForbidden:
+		errorType = "invalid_request_error"
+		if code == "" {
+			code = "upstream_rejected"
+		}
+		message = common.PublicTaskErrorMessage(message)
+		if message == "" {
+			message = "Video service rejected the request"
+		}
+	case !taskErr.LocalError && status == http.StatusPaymentRequired:
+		status, code, errorType, message = http.StatusBadGateway, "upstream_unavailable", "server_error", "Video service is temporarily unavailable"
 	case status == http.StatusTooManyRequests:
 		errorType = "rate_limit_error"
 		code = "rate_limit_exceeded"
@@ -77,7 +91,7 @@ func taskProtocolErrorFields(taskErr *dto.TaskError) (status int, code, errorTyp
 		errorType = "insufficient_quota"
 		code = "insufficient_quota"
 		message = "Insufficient quota"
-	case status == http.StatusNotFound:
+	case status == http.StatusNotFound || (taskErr.LocalError && code == "task_not_exist"):
 		errorType = "invalid_request_error"
 		code = "not_found"
 		message = "Video resource was not found"
@@ -92,11 +106,19 @@ func taskProtocolErrorFields(taskErr *dto.TaskError) (status int, code, errorTyp
 			message = "Video service encountered an internal error"
 			break
 		}
-		code = "upstream_unavailable"
-		message = "Video service is temporarily unavailable"
+		if code == "" {
+			code = "upstream_unavailable"
+		}
+		message = common.PublicTaskErrorMessage(message)
+		if message == "" {
+			message = "Video service is temporarily unavailable"
+		}
 	default:
 		errorType = "invalid_request_error"
-		message = strings.TrimSpace(taskErr.Message)
+		if code == "" {
+			code = "invalid_request"
+		}
+		message = common.PublicTaskErrorMessage(message)
 		if message == "" {
 			message = "Invalid video request"
 		}

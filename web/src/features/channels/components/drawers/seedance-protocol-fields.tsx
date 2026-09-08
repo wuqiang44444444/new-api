@@ -110,6 +110,10 @@ const SEEDANCE_ASSET_PROTOCOL_OPTIONS = [
     labelKey: 'FunCloud Material Library',
   },
   {
+    value: 'funcloud_material_hosted',
+    labelKey: 'FunCloud Hosted Material Library',
+  },
+  {
     value: 'cmcc_aicc_assets_v2',
     labelKey: 'CMCC AICC Assets V2',
   },
@@ -132,6 +136,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
   })
   const models = useWatch({ control: props.control, name: 'models' })
   const usesAssets = assetProtocol && assetProtocol !== 'none'
+  const usesHostedAssets = assetProtocol === 'funcloud_material_hosted'
   const usesOfficialAssets = isOfficialSeedanceAssetProtocol(assetProtocol)
   const usesVolcengineAssets =
     assetProtocol === 'volcengine_assets_action_v2024_01_01'
@@ -360,7 +365,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
         }}
       />
 
-      {usesAssets ? (
+      {usesAssets && !usesHostedAssets ? (
         <FormField
           control={props.control}
           name='asset_min_url_ttl_seconds'

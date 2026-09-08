@@ -42,6 +42,9 @@ export function getCompatibleSeedanceAssetProtocols(
   modelMapping?: string
 ): SeedanceAssetProtocol[] {
   if (!videoProtocol) return ['none']
+  if (videoProtocol === 'funcloud_modelark_v3') {
+    return ['funcloud_material', 'funcloud_material_hosted', 'none']
+  }
   const defaultProtocol = getDefaultSeedanceAssetProtocol(
     videoProtocol,
     modelMapping

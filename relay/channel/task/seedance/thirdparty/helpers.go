@@ -27,16 +27,7 @@ func unwrapData(root map[string]any) map[string]any {
 
 // sanitizeMessage 屏蔽上游错误信息中的敏感片段并截断过长内容，避免凭证泄露到客户端。
 func sanitizeMessage(message string) string {
-	normalized := strings.ToLower(message)
-	for _, sensitive := range []string{"http://", "https://", "bearer ", "api_key", "api-key", "cookie", "authorization"} {
-		if strings.Contains(normalized, sensitive) {
-			return "upstream request failed"
-		}
-	}
-	if len(message) > 512 {
-		return message[:512]
-	}
-	return message
+	return common.PublicTaskErrorMessage(message)
 }
 
 // firstString 返回对象中首个非空字符串字段（按给定 key 顺序）。

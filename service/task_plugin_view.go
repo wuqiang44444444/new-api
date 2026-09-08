@@ -18,7 +18,7 @@ func BuildTaskPluginView(task *model.Task) (dto.TaskView, error) {
 		Platform:   string(task.Platform),
 		Status:     string(task.Status),
 		Progress:   task.Progress,
-		FailReason: task.FailReason,
+		FailReason: task.PublicFailReason(),
 		CreatedAt:  createdAt,
 		UpdatedAt:  task.UpdatedAt,
 		FinishedAt: task.FinishTime,

@@ -23,6 +23,10 @@ func resolveAssetGroupID(channel *model.Channel, assetKind, providedGroupID stri
 	switch channel.GetOtherSettings().AssetUpstreamProtocol.GeneralAssetGroupPolicy() {
 	case dto.GeneralAssetGroupPolicyNone:
 		return "", nil
+	case dto.GeneralAssetGroupPolicyHosted:
+		// 托管组是平台事实：显式组 ID 由托管 adapter 校验归属；未传组时
+		// 直接创建无组素材，不回退任何 Provider 默认组。
+		return strings.TrimSpace(providedGroupID), nil
 	case dto.GeneralAssetGroupPolicyDefaultFallback:
 		if strings.TrimSpace(providedGroupID) != "" {
 			return providedGroupID, nil

@@ -7,6 +7,11 @@ type GeneralAssetGroupPolicy string
 const (
 	GeneralAssetGroupPolicyNone            GeneralAssetGroupPolicy = "none"
 	GeneralAssetGroupPolicyDefaultFallback GeneralAssetGroupPolicy = "default_fallback"
+	// GeneralAssetGroupPolicyHosted marks the platform-hosted FunCloud path:
+	// the caller's optional group ID names a platform-hosted group relation, no
+	// Provider group or Channel default group exists, and assets resolve inside
+	// the platform instead of upstream.
+	GeneralAssetGroupPolicyHosted GeneralAssetGroupPolicy = "hosted"
 )
 
 // GeneralAssetGroupPolicy returns the single code-backed policy used by both
@@ -24,6 +29,8 @@ func (p AssetUpstreamProtocol) GeneralAssetGroupPolicy() GeneralAssetGroupPolicy
 		AssetUpstreamProtocolFunCloudMaterial,
 		AssetUpstreamProtocolCMCCAICCV2:
 		return GeneralAssetGroupPolicyDefaultFallback
+	case AssetUpstreamProtocolFunCloudHosted:
+		return GeneralAssetGroupPolicyHosted
 	default:
 		return ""
 	}

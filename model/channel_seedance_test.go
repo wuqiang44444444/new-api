@@ -208,7 +208,7 @@ func TestConfiguredSeedancePublicModelsIncludeDisabledAPIContracts(t *testing.T)
 	funCloud := byModel["seedance-funcloud-disabled"]
 	assert.True(t, funCloud.API.Assets.Supported)
 	assert.False(t, publicOperationSupported(funCloud.API.Assets.Operations, "update_asset"))
-	assert.False(t, publicOperationSupported(funCloud.API.Assets.Operations, "delete_asset"))
+	assert.True(t, publicOperationSupported(funCloud.API.Assets.Operations, "delete_asset"))
 	assert.False(t, publicOperationExists(funCloud.API.Assets.Operations, "delete_asset_group"))
 	require.NotNil(t, funCloud.API.Assets.Creation)
 	assert.NotContains(t, funCloud.API.Assets.Creation.RequiredFields, "asset_group_id")

@@ -293,7 +293,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 			}
 		} else {
 			if !exists {
-				return nil, service.TaskErrorWrapper(fmt.Errorf("task model %s has no usage expression or meter", modelName), "model_price_error", http.StatusBadRequest)
+			return nil, service.TaskErrorWrapperLocal(errors.New("Requested model has no usage expression or meter"), "model_price_error", http.StatusBadRequest)
 			}
 			var facts map[string]any
 			if validatedProvider, ok := adaptor.(channel.TaskValidatedUsageFactsProvider); ok {
@@ -381,6 +381,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	// 9. 发送请求
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
+		logger.LogWarn(c, "task submit transport failed: "+common.SanitizeTaskDiagnostic(err.Error()))
 		// 音视频证据拒绝边界：尚未发送任何字节，不标记 unknown，
 		// 返回本地不可重试错误并进入既有 ReleaseRejectedTaskCreateAttempt 释放路径。
 		if service.IsTaskRequestEvidenceUnavailable(err) {
@@ -399,6 +400,9 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 			responseBody, _ = io.ReadAll(io.LimitReader(resp.Body, 32<<10))
 		}
 		upstreamErr := parseTaskUpstreamHTTPError(resp.StatusCode, responseBody)
+		if info.UpstreamModelName != "" && info.UpstreamModelName != info.OriginModelName {
+			upstreamErr.providerMessage = strings.ReplaceAll(upstreamErr.providerMessage, info.UpstreamModelName, "requested model")
+		}
 		logger.LogWarn(c, fmt.Sprintf(
 			"upstream task submit rejected: channel_id=%d status=%d provider_code=%q provider_message=%q upstream_request_id=%q",
 			info.ChannelId,
@@ -706,8 +710,8 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Quota:      task.Quota,
 		Action:     constant.NormalizeTaskAction(task.Action),
 		Status:     string(task.Status),
-		FailReason: task.FailReason,
-		ResultURL:  task.GetResultURL(),
+		FailReason: task.PublicFailReason(),
+		ResultURL:  task.PublicVideoResultURL(),
 		SubmitTime: task.SubmitTime,
 		StartTime:  task.StartTime,
 		FinishTime: task.FinishTime,

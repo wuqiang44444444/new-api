@@ -15,7 +15,9 @@ func TestTaskErrorWrapperDoesNotExposeRawUpstreamBodiesOrURLs(t *testing.T) {
 	}
 	for _, text := range tests {
 		taskError := TaskErrorWrapper(errors.New(text), "upstream_failed", 502)
-		assert.Equal(t, "upstream task request failed", taskError.Message)
+		assert.NotContains(t, taskError.Message, "secret")
+		assert.NotContains(t, taskError.Message, "https://")
+		assert.NotContains(t, taskError.Message, "{\"error\"")
 		assert.Equal(t, taskError.Message, taskError.Error.Error())
 	}
 }

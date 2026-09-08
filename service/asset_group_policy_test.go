@@ -97,7 +97,7 @@ func TestCreateRemoteAssetUsesConfiguredDefaultGroupForMissingOrBlankID(t *testi
 	require.NoError(t, model.SaveChannelDefaultAssetGroup(channel.Id, "system-default-group"))
 
 	for _, groupID := range []string{"", " \t\n "} {
-		response, err := CreateRemoteAsset(context.Background(), "default", generalAssetPolicyRequest(groupID))
+		response, err := CreateRemoteAsset(context.Background(), "default", 1, generalAssetPolicyRequest(groupID))
 		require.NoError(t, err)
 		assert.Equal(t, "asset-1", response.ID)
 		assert.Equal(t, "system-default-group", (<-requests)["GroupId"])
@@ -116,7 +116,7 @@ func TestCreateRemoteAssetPreservesExplicitGroupWithoutDefault(t *testing.T) {
 	createMoxingAssetPolicyChannel(t, db, "https://upstream.example")
 
 	explicitID := " provider-opaque-group "
-	response, err := CreateRemoteAsset(context.Background(), "default", generalAssetPolicyRequest(explicitID))
+	response, err := CreateRemoteAsset(context.Background(), "default", 1, generalAssetPolicyRequest(explicitID))
 
 	require.NoError(t, err)
 	assert.Equal(t, "asset-2", response.ID)
@@ -132,7 +132,7 @@ func TestCreateRemoteAssetFailsClosedWhenDefaultGroupIsMissing(t *testing.T) {
 	})
 	createMoxingAssetPolicyChannel(t, db, "https://upstream.example")
 
-	_, err := CreateRemoteAsset(context.Background(), "default", generalAssetPolicyRequest(""))
+	_, err := CreateRemoteAsset(context.Background(), "default", 1, generalAssetPolicyRequest(""))
 
 	require.ErrorIs(t, err, ErrDefaultAssetGroupNotConfigured)
 	assert.Zero(t, requestCount)
@@ -155,9 +155,28 @@ func TestResolveAssetGroupIDKeepsRealPersonSeparateAndNoneIgnoresField(t *testin
 }
 
 func TestCreateAssetGroupRejectsReservedGeneralNameBeforeRouting(t *testing.T) {
-	_, err := CreateAssetGroup(context.Background(), "default", dto.CreateAssetGroupRequest{
+	_, err := CreateAssetGroup(context.Background(), "default", 1, dto.CreateAssetGroupRequest{
 		Name: DefaultAssetGroupName, GroupKind: model.AssetKindGeneral, Model: "customer-model",
 	})
 
 	require.ErrorIs(t, err, ErrReservedAssetGroupName)
+}
+
+// A cancelled source read is a request failure, never a missing multipart source
+// inside the FunCloud adapter. This exercises the service-level protocol branch.
+func TestFunCloudMaterialServiceOpensSourceBeforeUpload(t *testing.T) {
+	db := withAssetGroupPolicyDB(t)
+	channel := createMoxingAssetPolicyChannel(t, db, "https://upstream.example")
+	channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3, AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial, AssetMinURLTTLSeconds: 1})
+	require.NoError(t, db.Save(channel).Error)
+	calls := 0
+	withAssetPolicyHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		calls++
+		return nil, fmt.Errorf("unexpected provider request")
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := CreateRemoteAsset(ctx, "default", 1, generalAssetPolicyRequest("explicit-group"))
+	require.ErrorIs(t, err, ErrInvalidAssetRequest)
+	assert.Zero(t, calls)
 }

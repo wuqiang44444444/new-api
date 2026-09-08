@@ -88,7 +88,7 @@ func TestTaskResponseMapsVerifiedStatuses(t *testing.T) {
 	require.NoError(t, common.Unmarshal(failed, &failedResponse))
 	assert.Equal(t, "failed", failedResponse.Status)
 	assert.Equal(t, "bad_request", failedResponse.Error.Code)
-	assert.Equal(t, "upstream task failed", failedResponse.Error.Message)
+	assert.Equal(t, "Video generation failed", failedResponse.Error.Message)
 }
 
 func TestTaskResponseRejectsContractViolations(t *testing.T) {

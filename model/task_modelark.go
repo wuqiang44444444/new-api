@@ -157,7 +157,7 @@ func (t *Task) ToModelArkVideoTask() *dto.ModelArkVideoTask {
 			result.Content.LastFrameURL = "/v1/videos/" + t.TaskID + "/content?part=last_frame"
 		}
 	case TaskStatusFailure:
-		result.Error = &dto.ModelArkVideoTaskError{Code: "generation_failed", Message: "Video generation failed"}
+		result.Error = t.PublicVideoFailure()
 	case TaskStatusProviderContractFailure:
 		result.Error = &dto.ModelArkVideoTaskError{Code: "provider_contract_failure", Message: "The provider result violated the published video contract"}
 	case TaskStatusCancelled:

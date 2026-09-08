@@ -26,9 +26,11 @@ const (
 	AssetUpstreamProtocolMoxingJoyCreatorV1 = kitdto.AssetUpstreamProtocolMoxingJoyCreatorV1
 	AssetUpstreamProtocolMoxingVolcAssetsV1 = kitdto.AssetUpstreamProtocolMoxingVolcAssetsV1
 	AssetUpstreamProtocolFunCloudMaterial   = kitdto.AssetUpstreamProtocolFunCloudMaterial
+	AssetUpstreamProtocolFunCloudHosted     = kitdto.AssetUpstreamProtocolFunCloudHosted
 	AssetUpstreamProtocolCMCCAICCV2         = kitdto.AssetUpstreamProtocolCMCCAICCV2
 
 	GeneralAssetGroupPolicyNone            = kitdto.GeneralAssetGroupPolicyNone
+	GeneralAssetGroupPolicyHosted          = kitdto.GeneralAssetGroupPolicyHosted
 	GeneralAssetGroupPolicyDefaultFallback = kitdto.GeneralAssetGroupPolicyDefaultFallback
 )
 

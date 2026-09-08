@@ -30,10 +30,11 @@ func TestParseTaskUpstreamHTTPErrorExtractsAllowlistedDetails(t *testing.T) {
 			wantError:   "upstream task request returned HTTP 400 (BadRequest): invalid duration",
 		},
 		{
-			name:      "unsafe message is not surfaced",
-			body:      `{"error":{"code":"BadRequest","message":"inspect https://provider.example/private?token=secret"}}`,
-			wantCode:  "BadRequest",
-			wantError: "upstream task request returned HTTP 400 (BadRequest)",
+			name:        "URL removed while explanation remains",
+			body:        `{"error":{"code":"BadRequest","message":"inspect https://provider.example/private?token=secret"}}`,
+			wantCode:    "BadRequest",
+			wantError:   "upstream task request returned HTTP 400 (BadRequest): inspect [URL]",
+			wantMessage: "inspect [URL]",
 		},
 		{
 			name:        "invalid provider code is not surfaced",

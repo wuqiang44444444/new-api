@@ -15,9 +15,9 @@ func validateFunCloudModelArkChannel(channel *Channel, settings *dto.ChannelOthe
 		return err
 	}
 	switch settings.AssetUpstreamProtocol {
-	case dto.AssetUpstreamProtocolNone, dto.AssetUpstreamProtocolFunCloudMaterial:
+	case dto.AssetUpstreamProtocolNone, dto.AssetUpstreamProtocolFunCloudMaterial, dto.AssetUpstreamProtocolFunCloudHosted:
 		return nil
 	default:
-		return fmt.Errorf("FunCloud Seedance channels require funcloud_material or none")
+		return fmt.Errorf("FunCloud ModelArk V3 channels require funcloud_material, funcloud_material_hosted, or none")
 	}
 }
