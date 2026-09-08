@@ -99,7 +99,7 @@ func TestTaskProtocolErrorFieldsSeparatesClientAndProviderAuthentication(t *test
 			status, code, errorType, message := taskProtocolErrorFields(&dto.TaskError{
 				StatusCode: test.status,
 				LocalError: test.local,
-			})
+			}, nil)
 
 			assert.Equal(t, test.wantStatus, status)
 			assert.Equal(t, test.wantCode, code)

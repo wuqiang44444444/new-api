@@ -9,7 +9,7 @@ import (
 var (
 	taskErrorAuthHeader = regexp.MustCompile(`(?i)\b(?:authorization|cookie)["']?\s*[:：=]`)
 	taskErrorURL        = regexp.MustCompile(`(?i)https?://[^\s<>"'，。；）;]+`)
-	taskErrorCredential = regexp.MustCompile(`(?i)\b(?:api[_-]?key|access[_-]?token|token|client_secret|bytedtoken)\s*[:：=]\s*(?:bearer\s+)?[^\s,;，；]+|\bbearer\s+[^\s,;]+|\bsk-[a-zA-Z0-9_-]+`)
+	taskErrorCredential = regexp.MustCompile(`(?i)["']?\b(?:api[_-]?key|access[_-]?token|token|client_secret|bytedtoken)["']?\s*[:：=]\s*(?:"(?:\\.|[^"\\])*(?:"|\\?$)|'(?:\\.|[^'\\])*(?:'|\\?$)|(?:bearer\s+)?[^\s,;，；]+)|\bbearer\s+[^\s,;]+|\bsk-[a-zA-Z0-9_-]+`)
 	taskErrorBody       = regexp.MustCompile(`(?i)(?:^|[;\n]\s*)body\s*[:=]\s*[\{\[]`)
 	taskErrorChannel    = regexp.MustCompile(`(?i)(?:channel[ _-]*id|渠道\s*ID)\s*[:：=]?\s*\d+|(?:channel|渠道)\s*#\s*\d+`)
 	taskErrorProvider   = regexp.MustCompile(`(?i)\b(?:funcloud|leonecloud|moxing|volcengine|byteplus|tokensave|feicai|openai|bytedance)\b|火山引擎|字节跳动|墨行|飞彩`)
@@ -20,6 +20,12 @@ var (
 // bodies are never messages; URLs, credentials and routing identity are removed
 // without replacing an otherwise useful copyright/parameter/moderation error.
 func PublicTaskErrorMessage(message string) string {
+	return PublicTaskErrorMessageForModel(message, "", "")
+}
+
+// PublicTaskErrorMessageForModel uses the identity frozen by the request/task,
+// never a current channel mapping. Customer model names remain public names.
+func PublicTaskErrorMessageForModel(message, originModel, upstreamModel string) string {
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return ""
@@ -31,8 +37,27 @@ func PublicTaskErrorMessage(message string) string {
 	if strings.HasPrefix(lower, "poll failed:") {
 		return "Task status could not be retrieved. Please contact support with the request ID."
 	}
-	message = SanitizeTaskDiagnostic(message)
+	// Remove credentials before protecting model names: a public alias such as
+	// "token" must never hide the key of a credential assignment from the filter.
+	message = sanitizeTaskDiagnostic(message)
+	const customerModel = "\x00customer-model\x00"
+	var identities []string
+	if upstreamModel != "" && upstreamModel != originModel {
+		identities = append(identities, upstreamModel, "requested model")
+	}
+	if originModel != "" {
+		// Match the longer name first when one identity is a prefix of the other.
+		if len(originModel) > len(upstreamModel) {
+			identities = append([]string{originModel, customerModel}, identities...)
+		} else {
+			identities = append(identities, originModel, customerModel)
+		}
+	}
+	if len(identities) > 0 {
+		message = strings.NewReplacer(identities...).Replace(message)
+	}
 	message = taskErrorProvider.ReplaceAllString(message, "video service")
+	message = strings.ReplaceAll(message, customerModel, originModel)
 	if message == "[URL]" || message == "[redacted]" {
 		return "Video generation failed"
 	}
@@ -42,6 +67,12 @@ func PublicTaskErrorMessage(message string) string {
 // SanitizeTaskDiagnostic keeps technical explanations for operator logs. It
 // removes access details but does not turn parser/transport errors into user copy.
 func SanitizeTaskDiagnostic(message string) string {
+	return truncateTaskErrorMessage(sanitizeTaskDiagnostic(message))
+}
+
+// Keep truncation at the public/log boundary so it cannot split a credential or
+// upstream model identity before redaction has inspected the complete message.
+func sanitizeTaskDiagnostic(message string) string {
 	message = strings.TrimSpace(message)
 	// Authentication headers can contain several space/semicolon-separated secrets.
 	// Do not attempt to retain parts of a diagnostic that includes them.
@@ -62,7 +93,7 @@ func SanitizeTaskDiagnostic(message string) string {
 	message = taskErrorCredential.ReplaceAllString(message, "[redacted]")
 	message = taskErrorChannel.ReplaceAllString(message, "")
 	message = strings.TrimSpace(strings.ToValidUTF8(MaskSensitiveInfo(message), ""))
-	return truncateTaskErrorMessage(message)
+	return message
 }
 
 func truncateTaskErrorMessage(message string) string {

@@ -1,8 +1,6 @@
 package model
 
 import (
-	"strings"
-
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 )
@@ -19,14 +17,7 @@ func (t *Task) PublicFailReason() string {
 // PublicVideoErrorMessage normalizes an accepted video error or a historical
 // projection without changing the task or its status/CAS semantics.
 func (t *Task) PublicVideoErrorMessage(message string) string {
-	const customerModel = "\x00customer-model\x00"
-	if t.Properties.OriginModelName != "" {
-		message = strings.ReplaceAll(message, t.Properties.OriginModelName, customerModel)
-	}
-	if upstream := t.Properties.UpstreamModelName; upstream != "" && upstream != t.Properties.OriginModelName {
-		message = strings.ReplaceAll(message, upstream, "requested model")
-	}
-	return strings.ReplaceAll(common.PublicTaskErrorMessage(message), customerModel, t.Properties.OriginModelName)
+	return common.PublicTaskErrorMessageForModel(message, t.Properties.OriginModelName, t.Properties.UpstreamModelName)
 }
 
 // PublicVideoResultURL exposes results only for successful tasks, including

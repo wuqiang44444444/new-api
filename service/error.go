@@ -200,7 +200,7 @@ func TaskErrorWrapperLocal(err error, code string, statusCode int) *taskdto.Task
 }
 
 func TaskErrorWrapper(err error, code string, statusCode int) *taskdto.TaskError {
-	code, text := taskErrorDetails(err, code, statusCode)
+	code, text := taskErrorDetails(err, code, statusCode, "", "")
 	//避免暴露内部错误
 	taskError := &taskdto.TaskError{
 		Code:       code,

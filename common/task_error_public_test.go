@@ -46,3 +46,42 @@ func TestTaskErrorDoesNotExposeAuthenticationHeaders(t *testing.T) {
 		assert.Equal(t, "Video service request failed", SanitizeTaskDiagnostic(message))
 	}
 }
+
+func TestTaskErrorRedactsQuotedCredentials(t *testing.T) {
+	for _, diagnostic := range []string{
+		`"api_key": "fixture-secret"`,
+		`'access_token': 'fixture-secret with spaces'`,
+		`"client_secret" = "fixture-secret, with; separators"`,
+		`"bytedtoken": "fixture-secret\"escaped quote"`,
+		`"token": "fixture-secret with no closing quote`,
+		`"token": "fixture-secret with a dangling escape\`,
+		`api_key: fixture-secret`,
+	} {
+		t.Run(diagnostic, func(t *testing.T) {
+			message := "request rejected: " + diagnostic
+			for _, safe := range []string{PublicTaskErrorMessage(message), SanitizeTaskDiagnostic(message)} {
+				assert.Contains(t, safe, "request rejected:")
+				assert.Contains(t, safe, "[redacted]")
+				for _, fragment := range []string{"fixture-secret", "with spaces", "separators", "escaped quote", "no closing quote", "dangling escape"} {
+					assert.NotContains(t, safe, fragment)
+				}
+			}
+		})
+	}
+}
+
+func TestPublicTaskErrorUsesFrozenModelIdentities(t *testing.T) {
+	for _, tc := range []struct{ origin, upstream, input, want string }{
+		{"customer-funcloud", "seedance-2-0-mini", "model customer-funcloud (seedance-2-0-mini) rejected", "model customer-funcloud (requested model) rejected"},
+		{"seedance", "seedance-2-0-mini", "model seedance (seedance-2-0-mini) rejected", "model seedance (requested model) rejected"},
+		{"seedance-2-0-mini-public", "seedance-2-0-mini", "model seedance-2-0-mini-public (seedance-2-0-mini) rejected", "model seedance-2-0-mini-public (requested model) rejected"},
+		{"funcloud/model", "funcloud/model", "model funcloud/model rejected", "model funcloud/model rejected"},
+		{"token", "seedance-2-0-mini", `model token rejected: "token": "fixture-secret"`, "model token rejected: [redacted]"},
+	} {
+		safe := PublicTaskErrorMessageForModel(tc.input, tc.origin, tc.upstream)
+		assert.Equal(t, tc.want, safe)
+		assert.Equal(t, safe, PublicTaskErrorMessageForModel(safe, tc.origin, tc.upstream))
+	}
+	safe := PublicTaskErrorMessageForModel(strings.Repeat("x", 505)+"seedance-2-0-mini", "customer", "seedance-2-0-mini")
+	assert.NotContains(t, safe, "seedanc", "truncate only after replacing the complete private model")
+}

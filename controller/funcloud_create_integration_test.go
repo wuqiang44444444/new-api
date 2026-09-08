@@ -23,7 +23,7 @@ import (
 )
 
 func TestFunCloudCreateRouteCommitsHoldBeforeProviderBytes(t *testing.T) {
-	for _, outcome := range []string{"accepted", "ambiguous", "copyright", "sensitive"} {
+	for _, outcome := range []string{"accepted", "ambiguous", "copyright", "sensitive", "model_identity", "quoted_credential"} {
 		t.Run(outcome, func(t *testing.T) {
 			service.InitHttpClient()
 			policyMessage := ""
@@ -32,6 +32,12 @@ func TestFunCloudCreateRouteCommitsHoldBeforeProviderBytes(t *testing.T) {
 			}
 			if outcome == "sensitive" {
 				policyMessage = "输入内容可能包含敏感信息，请检查后重试。"
+			}
+			if outcome == "model_identity" {
+				policyMessage = "model customer-funcloud (seedance-2-0) rejected: invalid duration"
+			}
+			if outcome == "quoted_credential" {
+				policyMessage = `request rejected: "api_key": "fixture-secret"`
 			}
 			common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 			events := []string{}
@@ -143,7 +149,17 @@ func TestFunCloudCreateRouteCommitsHoldBeforeProviderBytes(t *testing.T) {
 				}
 				require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 				assert.Equal(t, "ContentPolicyViolation", response.Error.Code)
-				assert.Contains(t, response.Error.Message, policyMessage)
+				wantMessage := policyMessage
+				if outcome == "model_identity" {
+					wantMessage = "model customer-funcloud (requested model) rejected: invalid duration"
+				}
+				if outcome == "quoted_credential" {
+					assert.Contains(t, response.Error.Message, "request rejected:")
+					assert.NotContains(t, recorder.Body.String(), "fixture-secret")
+				} else {
+					assert.Equal(t, common.MessageWithRequestId(wantMessage, ""), response.Error.Message)
+				}
+				assert.NotContains(t, recorder.Body.String(), "seedance-2-0")
 				assert.NotContains(t, response.Error.Message, "HTTP 403")
 				assert.NotContains(t, response.Error.Message, "credentials")
 				assert.Empty(t, tasks)

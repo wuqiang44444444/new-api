@@ -51,7 +51,7 @@ func TestParseTaskUpstreamHTTPErrorExtractsAllowlistedDetails(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := parseTaskUpstreamHTTPError(400, []byte(test.body))
+			result := parseTaskUpstreamHTTPError(400, []byte(test.body), nil)
 
 			assert.Equal(t, test.wantCode, result.providerCode)
 			assert.Equal(t, test.wantMessage, result.providerMessage)
@@ -61,7 +61,7 @@ func TestParseTaskUpstreamHTTPErrorExtractsAllowlistedDetails(t *testing.T) {
 }
 
 func TestParseTaskUpstreamHTTPErrorBoundsProviderMessage(t *testing.T) {
-	result := parseTaskUpstreamHTTPError(502, []byte(`{"message":"`+strings.Repeat("猫", 400)+`"}`))
+	result := parseTaskUpstreamHTTPError(502, []byte(`{"message":"`+strings.Repeat("猫", 400)+`"}`), nil)
 
 	assert.NotEmpty(t, result.providerMessage)
 	assert.True(t, strings.HasSuffix(result.providerMessage, "…"))

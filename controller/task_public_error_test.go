@@ -51,7 +51,7 @@ func TestCreationErrorsDistinguishBusinessFailureAndInternalDiagnostics(t *testi
 	}
 	for _, code := range []string{"do_request_failed", "plugin_submit_response_failed", "build_request_failed"} {
 		for _, status := range []int{400, 403, 502} {
-			_, actualCode, _, message := taskProtocolErrorFields(&dto.TaskError{Code: code, Message: `Post "https://private.invalid": dial tcp 10.2.3.4:443: connect: connection refused`, StatusCode: status})
+			_, actualCode, _, message := taskProtocolErrorFields(&dto.TaskError{Code: code, Message: `Post "https://private.invalid": dial tcp 10.2.3.4:443: connect: connection refused`, StatusCode: status}, nil)
 			assert.NotEqual(t, code, actualCode)
 			assert.NotContains(t, message, "dial tcp")
 			assert.NotContains(t, message, "10.2.3.4")
@@ -59,7 +59,7 @@ func TestCreationErrorsDistinguishBusinessFailureAndInternalDiagnostics(t *testi
 	}
 	for _, status := range []int{403, 502} {
 		err := service.TaskErrorWrapper(publicHTTPFailure{}, "fail_to_fetch_task", status)
-		_, _, _, message := taskProtocolErrorFields(err)
+		_, _, _, message := taskProtocolErrorFields(err, nil)
 		if status == 502 {
 			assert.Equal(t, "Video service is temporarily unavailable", message)
 		} else {

@@ -6,6 +6,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 // 对象存储配置的持久化与分发。配置以单行 Option 持久化，但不进入通用
@@ -47,7 +48,9 @@ func SaveObjectStorageSetting(value string) error {
 	if err := common.UnmarshalJsonStr(value, &next); err != nil {
 		return err
 	}
-	err := DB.Transaction(func(tx *gorm.DB) error {
+	// The value contains credentials. DEBUG enables interpolated SQL even for
+	// successful writes, so protect the entire transaction with a private session.
+	err := DB.Session(&gorm.Session{Logger: DB.Logger.LogMode(gormlogger.Silent)}).Transaction(func(tx *gorm.DB) error {
 		option := Option{Key: system_setting.ObjectStorageSettingOptionKey}
 		if err := tx.FirstOrCreate(&option, Option{Key: option.Key}).Error; err != nil {
 			return err

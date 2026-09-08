@@ -206,6 +206,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		relaycommon.SetTaskCreateDisposition(c, relaycommon.TaskCreateSafeToRetryBeforeCreate)
 	}
 	info.InitChannelMeta(c)
+	recordLinkTaskErrorContext(c, info)
 
 	// 1. 确定 platform → 创建适配器 → 验证请求
 	platform := constant.TaskPlatform(c.GetString("platform"))
@@ -399,10 +400,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		if resp.Body != nil {
 			responseBody, _ = io.ReadAll(io.LimitReader(resp.Body, 32<<10))
 		}
-		upstreamErr := parseTaskUpstreamHTTPError(resp.StatusCode, responseBody)
-		if info.UpstreamModelName != "" && info.UpstreamModelName != info.OriginModelName {
-			upstreamErr.providerMessage = strings.ReplaceAll(upstreamErr.providerMessage, info.UpstreamModelName, "requested model")
-		}
+		upstreamErr := parseTaskUpstreamHTTPError(resp.StatusCode, responseBody, info)
 		logger.LogWarn(c, fmt.Sprintf(
 			"upstream task submit rejected: channel_id=%d status=%d provider_code=%q provider_message=%q upstream_request_id=%q",
 			info.ChannelId,
@@ -421,11 +419,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 				markAmbiguousTaskCreate(c, info)
 			}
 		}
-		return nil, service.TaskErrorWrapper(
-			upstreamErr,
-			"fail_to_fetch_task",
-			resp.StatusCode,
-		)
+		return nil, taskUpstreamSubmissionError(upstreamErr, info)
 	}
 
 	// 10. Parse only. The controller presents the response after the durable
@@ -698,7 +692,7 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 }
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
-	return &dto.TaskDto{
+	return projectLinkTaskPublicFields(task, &dto.TaskDto{
 		ID:         task.ID,
 		CreatedAt:  task.CreatedAt,
 		UpdatedAt:  task.UpdatedAt,
@@ -719,5 +713,5 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Properties: task.Properties,
 		Username:   task.Username,
 		Data:       task.Data,
-	}
+	})
 }

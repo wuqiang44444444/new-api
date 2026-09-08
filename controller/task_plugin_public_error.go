@@ -24,7 +24,7 @@ func respondPublicPluginSubmissionError(c *gin.Context, taskErr *dto.TaskError) 
 	if input.StatusCode < 400 || input.StatusCode > 599 {
 		input.StatusCode = http.StatusInternalServerError
 	}
-	status, code, _, message := taskProtocolErrorFields(&input)
+	status, code, _, message := taskProtocolErrorFields(&input, nil)
 	if input.LocalError && status == http.StatusBadRequest {
 		code = "invalid_request_error"
 	}

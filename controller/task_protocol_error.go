@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,7 +22,8 @@ func respondTaskProtocolError(c *gin.Context, taskErr *dto.TaskError) bool {
 		protocol != model.TaskClientProtocolJimeng {
 		return false
 	}
-	status, code, _, message := taskProtocolErrorFields(taskErr)
+	info, _ := common.GetContextKeyType[*relaycommon.RelayInfo](c, constant.ContextKeyTaskErrorRelayInfo)
+	status, code, _, message := taskProtocolErrorFields(taskErr, info)
 	if protocol == model.TaskClientProtocolModelArkV3 {
 		modelArkVideoError(c, status, code, message)
 		return true
@@ -49,7 +51,11 @@ func respondTaskProtocolError(c *gin.Context, taskErr *dto.TaskError) bool {
 	return false
 }
 
-func taskProtocolErrorFields(taskErr *dto.TaskError) (status int, code, errorType, message string) {
+func taskProtocolErrorFields(taskErr *dto.TaskError, info *relaycommon.RelayInfo) (status int, code, errorType, message string) {
+	originModel, upstreamModel := "", ""
+	if info != nil {
+		originModel, upstreamModel = info.OriginModelName, info.UpstreamModelName
+	}
 	status = taskErr.StatusCode
 	code = strings.TrimSpace(taskErr.Code)
 	message = taskErr.Message
@@ -69,7 +75,7 @@ func taskProtocolErrorFields(taskErr *dto.TaskError) (status int, code, errorTyp
 		if code == "" {
 			code = "upstream_rejected"
 		}
-		message = common.PublicTaskErrorMessage(message)
+		message = common.PublicTaskErrorMessageForModel(message, originModel, upstreamModel)
 		if message == "" {
 			message = "Video service rejected the request"
 		}
@@ -109,7 +115,7 @@ func taskProtocolErrorFields(taskErr *dto.TaskError) (status int, code, errorTyp
 		if code == "" {
 			code = "upstream_unavailable"
 		}
-		message = common.PublicTaskErrorMessage(message)
+		message = common.PublicTaskErrorMessageForModel(message, originModel, upstreamModel)
 		if message == "" {
 			message = "Video service is temporarily unavailable"
 		}
@@ -118,7 +124,7 @@ func taskProtocolErrorFields(taskErr *dto.TaskError) (status int, code, errorTyp
 		if code == "" {
 			code = "invalid_request"
 		}
-		message = common.PublicTaskErrorMessage(message)
+		message = common.PublicTaskErrorMessageForModel(message, originModel, upstreamModel)
 		if message == "" {
 			message = "Invalid video request"
 		}
