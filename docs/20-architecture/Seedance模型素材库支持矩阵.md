@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-07
+last-reviewed: 2026-09-08
 ---
 
 # Seedance 模型素材库支持矩阵
@@ -39,7 +39,7 @@ Provider 和生产灰度仍需逐线路验收。不得把代码合同写成全�
 | 已配置无素材组协议的模型 | `true` | 南向不使用 | 可直接创建普通素材；统一北向允许携带 `asset_group_id`，adapter 不发送该字段 |
 | 已配置可选素材组协议的模型 | `true` | 普通素材北向可选；真人素材按 `media` 要求 | 调用方 ID 优先，省略或无效时使用 Channel 默认组 |
 | 已配置南向必需素材组协议的模型 | `true` | 普通素材北向仍可选 | Channel 默认组满足南向必填，调用方无需先创建组 |
-| 已配置 FunCloud 托管协议（`funcloud_material_hosted`）的模型 | `true` | 平台托管普通组（仅普通图片素材） | 素材保存在本站对象存储并按 `user_id` 隔离共享；见无状态素材代理架构第 7 节 |
+| 已配置本站托管协议（`funcloud_material_hosted`）的模型 | `true` | 平台托管普通组（仅普通图片素材） | 素材保存在本站对象存储并按 `user_id` 隔离共享；见无状态素材代理架构第 7 节 |
 | 未配置素材协议的其它模型 | `false` | 不适用 | 不得因为名称不含固定分辨率就推断支持 |
 
 固定分辨率系列当前不支持素材库，是接入文档、已注册协议和实际配置共同确认的事实：现有上游合同只有
@@ -51,12 +51,16 @@ adapter 后，矩阵才可以改变。
 同一 Channel 投影相同非空复用域；视频协议变更确认后会产生新复用域并清除本地默认组关联。
 代码接线与实际跨模型素材可用性分别验收，不能以相同 scope 代替真实生成验证。
 
+本站托管图片协议可配对 FunCloud V3 与 Synlink Video V1；保留 `funcloud_material_hosted` 配置标识。
+两者按同一 `user_id` 共享平台素材，素材 ID 与对象无需迁移。Synlink 不接收其它 Provider opaque ID，
+这类引用在预扣前返回错误；HTTP(S) URL 原值传递。跨供应商真实生成仍需单独验收。
+
 ## 3. `api.assets` 公开字段
 
 | 字段 | 含义 | 调用方规则 |
 | --- | --- | --- |
 | `supported` | 当前客户模型是否配置已验证素材协议 | `false` 时不得调用素材操作 |
-| `management_mode` | 无状态代理固定为 `caller_managed_stateless`；FunCloud 托管协议固定为 `platform_hosted` | 调用方自行保存 Provider opaque ID；托管素材由平台持久化并按用户共享 |
+| `management_mode` | 无状态代理固定为 `caller_managed_stateless`；本站托管协议固定为 `platform_hosted` | 调用方自行保存 Provider opaque ID；托管素材由平台持久化并按用户共享 |
 | `requires_model` | 固定为 `true` | 查询、删除和视频引用都必须保留客户模型名 |
 | `reference_format` | 固定为 `asset://{opaque_upstream_asset_id}` | 只把 Provider 返回的 opaque 引用作为视频素材引用；托管协议返回平台 `fhas_*` ID |
 | `reuse_scope` | 匿名素材复用域；不支持素材时省略或为空 | 仅非空且完全相同的 scope 表示“可以尝试复用”；托管协议发布固定托管复用域，不随上游账号轮换失效 |

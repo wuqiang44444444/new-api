@@ -187,7 +187,9 @@ export function OfficialChannelConnectivityPanel(
     queryFn: async () => {
       const response = await getChannelDefaultAssetGroup(props.channelId)
       if (!response.success || !response.data) {
-        throw new Error(response.message || 'Unable to load default asset group status.')
+        throw new Error(
+          response.message || 'Unable to load default asset group status.'
+        )
       }
       return response.data
     },
@@ -446,8 +448,7 @@ export function OfficialChannelConnectivityPanel(
                 {t(
                   'Creates or reuses the system group {{name}} for this channel.',
                   {
-                    name:
-                      defaultGroupQuery.data?.name || 'aigctokenaigeneral',
+                    name: defaultGroupQuery.data?.name || 'aigctokenaigeneral',
                   }
                 )}
               </p>
@@ -484,6 +485,15 @@ export function OfficialChannelConnectivityPanel(
                 ? t('Creating or reusing...')
                 : t('Create or reuse default asset group')}
             </Button>
+          </div>
+        ) : null}
+        {defaultGroupQuery.isSuccess &&
+        defaultGroupQuery.data.supported === false ? (
+          <div className='border-border/60 border-t pt-3'>
+            <p className='text-sm font-medium'>{t('Default asset group')}</p>
+            <p className='text-muted-foreground mt-1 text-xs'>
+              {t('No system asset group required')}
+            </p>
           </div>
         ) : null}
         {credentialConfigured ? (

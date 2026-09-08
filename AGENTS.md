@@ -62,7 +62,7 @@ web/           — Frontend (React 19, Rsbuild, Base UI, Tailwind)
   模型发现与价格接口只读取等价投影。Task、create attempt、计费和审计快照描述已经发生的事实；
   素材控制面是调用方自管的无状态单资源代理，不建立客户 Asset/AssetGroup 事实；每个支持普通 AIGC
   素材组的 Channel 可以保存一个内部默认 Provider group ID，但它只是南向履约配置。
-- 唯一例外是 `funcloud_material_hosted`（FunCloud 托管素材，只配对 `funcloud_modelark_v3`）：素材组
+- 唯一例外是 `funcloud_material_hosted`（本站托管图片，配对 `funcloud_modelark_v3` / `synlink_video_v1`）：素材组
   与素材按 `user_id` 隔离共享并由平台持久化，源图在创建调用内复制进本站私有对象存储；视频引用
   `asset://fhas_*` 在资金 hold 前校验并冻结事实，发送时替换为内部签发的临时 URL；删除只停止新引用，
   不删除对象、不清理、不去重。FunCloud V3 adapter 南向写死启用真人模式字段。真实 Provider 验收
@@ -200,7 +200,8 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 - 素材和素材组 ID 是 Provider 返回的不透明 ID；平台可返回 `asset://<opaque-id>`，但不得返回 Provider
   名称、Channel ID、账号、Region/Project、协议细节或上游原始模型。调用方保存 `model + id + reference`。
 - 视频请求中的 `asset://<opaque-id>` 不查询本地数据库，也不验证所有权、应用、状态、模型、Channel、
-  账号或 Provider 作用域；所选视频 adapter 原样接收引用，最终兼容性由 Provider 判定。
+  账号或 Provider 作用域；所选视频 adapter 原样接收引用，最终兼容性由 Provider 判定。本站托管图片与
+  Synlink 不支持 opaque 引用的已登记例外以 `docs/00-context/硬约束.md` 第 5 节为准。
 - 平台不建立客户 Asset/AssetGroup、素材 binding、resolver、列表索引、跨 Provider 探测、fallback、
   迁移或自动物化。允许每个支持普通 AIGC 素材组的 Channel 保存一个固定名称
   `aigctokenaigeneral` 的内部默认 Provider group ID；它不是客户资源，也不得扩展成通用 AssetGroup

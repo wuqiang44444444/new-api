@@ -7,7 +7,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
-	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,31 +37,10 @@ func buildFunCloudModelArkRequest(c *gin.Context, body *requestPayload) ([]byte,
 	if payload.Resolution == "" {
 		payload.Resolution = "720p"
 	}
-	facts := service.GetFunCloudHostedMediaFacts(c)
-	if len(facts) > 0 {
-		content := make([]ContentItem, len(payload.Content))
-		copy(content, payload.Content)
-		payload.Content = content
-		signed := make(map[string]string, len(facts))
-		for i := range payload.Content {
-			item := &payload.Content[i]
-			if item.ImageURL == nil {
-				continue
-			}
-			ref := strings.TrimSpace(item.ImageURL.URL)
-			fact, ok := facts[ref]
-			if !ok {
-				continue
-			}
-			if signed[ref] == "" {
-				url, err := service.SignFunCloudHostedAssetURL(c.Request.Context(), fact)
-				if err != nil {
-					return nil, err
-				}
-				signed[ref] = url
-			}
-			item.ImageURL = &MediaURL{URL: signed[ref]}
-		}
+	var err error
+	payload.Content, err = resolveHostedImageContent(c, payload.Content)
+	if err != nil {
+		return nil, err
 	}
 	if err := rejectUnresolvedHostedMedia(payload.Content); err != nil {
 		return nil, err

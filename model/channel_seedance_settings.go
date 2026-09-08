@@ -53,6 +53,9 @@ func validateSeedanceChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *
 	if err := dto.ValidateAssetUpstreamProtocol(settings.AssetUpstreamProtocol); err != nil {
 		return err
 	}
+	if err := validateSynlinkChannel(channel, settings); err != nil {
+		return err
+	}
 	if err := validateFunCloudSeedanceChannel(channel, settings); err != nil {
 		return err
 	}
@@ -120,8 +123,8 @@ func validateSeedanceChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *
 			return fmt.Errorf("FunCloud material protocol requires the FunCloud Seedance video protocol")
 		}
 	case dto.AssetUpstreamProtocolFunCloudHosted:
-		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudModelArkV3 {
-			return fmt.Errorf("FunCloud hosted material protocol requires the FunCloud ModelArk V3 video protocol")
+		if !settings.VideoUpstreamProtocol.SupportsPlatformHostedImages() {
+			return fmt.Errorf("hosted material requires a registered hosted-image video protocol")
 		}
 	case dto.AssetUpstreamProtocolCMCCAICCV2:
 		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolModelArkV3CMCC {

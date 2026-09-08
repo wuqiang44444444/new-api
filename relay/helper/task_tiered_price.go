@@ -33,7 +33,7 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 		return types.PriceData{}, err
 	}
 	estimatedTokens, ok := billing_setting.GetTaskPreConsumeTokens(info.OriginModelName)
-	if !ok && (info.ChannelMeta == nil || info.ChannelType != constant.ChannelTypeSeedanceLink || info.ChannelOtherSettings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudModelArkV3 || billingexpr.RequiresUsage(exprString)) {
+	if !ok && (info.ChannelMeta == nil || info.ChannelType != constant.ChannelTypeSeedanceLink || (info.ChannelOtherSettings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudModelArkV3 && info.ChannelOtherSettings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolSynlinkVideoV1) || billingexpr.RequiresUsage(exprString)) {
 		return types.PriceData{}, fmt.Errorf("model %s task pre-consume token upper bound is not configured", info.OriginModelName)
 	}
 

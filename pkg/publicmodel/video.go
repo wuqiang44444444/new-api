@@ -59,6 +59,9 @@ func NativeVideoAPI(customerModel string) *dto.PublicModelAPI {
 }
 
 func VideoAPI(customerModel string, protocol dto.VideoUpstreamProtocol, providerModel string, allowServiceTier bool) (*dto.PublicVideoAPI, bool) {
+	if protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+		return synlinkVideoAPI(customerModel, strings.TrimSpace(providerModel))
+	}
 	spec, ok := publicVideoSpec(protocol, strings.TrimSpace(providerModel))
 	if !ok {
 		return nil, false

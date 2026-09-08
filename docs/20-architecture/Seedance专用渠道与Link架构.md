@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-28
+last-reviewed: 2026-09-08
 ---
 
 # Seedance 专用渠道与 Link 架构
@@ -132,6 +132,7 @@ ark_media_v1
 feicai_videos_v1
 funcloud_seedance
 funcloud_modelark_v3
+synlink_video_v1
 ```
 
 当前素材协议为：
@@ -145,6 +146,7 @@ tokensave_assets_v1
 moxing_joycreator_assets_v1
 moxing_volc_assets_v1
 funcloud_material
+funcloud_material_hosted
 cmcc_aicc_assets_v2
 ```
 
@@ -183,6 +185,36 @@ identity 建立后，Channel Type 不可修改。Base URL、视频协议、素�
 和引用可能不可用，平台不迁移、探测或删除旧租户素材。未确认请求返回冲突且不产生任何配置或 identity
 变化。仅轮换 Key/AK/SK 时仍须显式确认“素材租户未变化”；后端记录两类确认及具体边界字段，但不记录
 凭据内容，也不声称能独立证明 Provider 租户归属。
+
+### 5.4 Synlink 视频协议
+
+`synlink_video_v1` 复用 Seedance 专用渠道，南向创建为 `/v1/video/generate`，查询为
+`/v1/video/tasks/{task_id}`。响应严格读取 `task` 包裹、`id` 与 `outputs`；当前文档仅证明
+`pending` 和 `completed`。查询非 2xx、未知状态及身份／结果合同违例先由该 adapter 标记为
+不可采信观察，不落入通用 404/410 立即退款分支：活动任务进入 `RECONCILIATION_REQUIRED`，
+已成功任务保留已接受事实，后续可信观察继续恢复或补齐用量；单次观察不制造失败或退款。
+既有明确本地超时与人工核查规则不变。创建只有
+可信 `task.id + pending` 才建立 Task，其它不明确结果进入现有 unknown 流程。
+
+Provider 四模型由 `relaykit/dto/synlink_video.go` 登记，保存／启用时校验最终映射；不根据模型名
+推断协议。允许配对 `funcloud_material_hosted` 或 `none`，共享图片合同见素材架构第 7 节。
+保留配置标识、既有素材表及对象 ID；管理员可另建同类型 Channel，不更改已有 FunCloud Channel。
+
+本地请求校验沿用统一北向正时长安全上限和媒体结构；模型专属时长、分辨率及内容数量上限
+尚未取得完整供应商证据，不借用其它供应商限制。目录中的通用参数形状不构成所有模型规格均已验收。
+自动时长 `-1` 因缺少可冻结上限暂未发布；callback、seed、camera_fixed、output_format 等
+未确认的交付／南向字段也未发布，显式请求明确拒绝，不静默删除。默认发送 5 秒、720p、
+`generate_audio=false`，与冻结计费探针一致；显式布尔值保持原值。
+
+`return_last_frame` 按请求事实冻结，成功查询投影本站 `content?part=last_frame`。内容入口按冻结
+连接与 task ID 构造 `/v1/video/files/{task_id}/last-frame`，仅向该地址附供应商凭据，保留
+SSRF 检查并禁止重定向；供应商地址和凭据不进入客户响应。南向尾帧真实交付仍待验证。
+列表继续查询本站 Task；未登记取消与终态删除能力，沿用既有 HTTP 409 状态语义。
+
+终态 `task.usage` 进入通用可信用量归一。客户必须配置冻结的表达式计费；纯参数表达式
+不要求 Token 预扣上限，依赖用量的表达式必须配置上限，成功缺用量沿用 awaiting_usage。
+供应商价格与账单未验证，不自动复制 FunCloud 价格。代码接入不代表生产发布；
+剩余验收由[分阶段实施计划](../50-planning/2026-09-08-Synlink海外火山中转分阶段实施计划.md)管理。
 
 ## 6. ModelArk V3 北向合同
 

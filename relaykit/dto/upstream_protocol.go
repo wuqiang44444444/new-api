@@ -9,6 +9,7 @@ import (
 type VideoUpstreamProtocol string
 
 const (
+	VideoUpstreamProtocolSynlinkVideoV1       VideoUpstreamProtocol = "synlink_video_v1"
 	VideoUpstreamProtocolModelArkV3Volcengine VideoUpstreamProtocol = "modelark_v3_volcengine"
 	VideoUpstreamProtocolModelArkV3BytePlus   VideoUpstreamProtocol = "modelark_v3_byteplus"
 	VideoUpstreamProtocolModelArkV3CMCC       VideoUpstreamProtocol = "modelark_v3_cmcc"
@@ -23,7 +24,7 @@ const (
 
 func (p VideoUpstreamProtocol) IsValid() bool {
 	switch p {
-	case VideoUpstreamProtocolModelArkV3Volcengine,
+	case VideoUpstreamProtocolSynlinkVideoV1, VideoUpstreamProtocolModelArkV3Volcengine,
 		VideoUpstreamProtocolModelArkV3BytePlus,
 		VideoUpstreamProtocolModelArkV3CMCC,
 		VideoUpstreamProtocolTokenSaveMediaTaskV1,
@@ -49,6 +50,8 @@ func ValidateVideoUpstreamProtocol(p VideoUpstreamProtocol) error {
 // code-backed Seedance adapter. It is not persisted as Seedance configuration.
 func (p VideoUpstreamProtocol) TransportProfile() VideoUpstreamProfile {
 	switch p {
+	case VideoUpstreamProtocolSynlinkVideoV1:
+		return VideoUpstreamProfileThirdPartySynlinkVideoV1
 	case VideoUpstreamProtocolModelArkV3Volcengine,
 		VideoUpstreamProtocolModelArkV3BytePlus,
 		VideoUpstreamProtocolModelArkV3CMCC:
@@ -72,6 +75,8 @@ func (p VideoUpstreamProtocol) TransportProfile() VideoUpstreamProfile {
 
 func (p VideoUpstreamProtocol) TransportPaths(providerModel string) (string, string) {
 	switch p {
+	case VideoUpstreamProtocolSynlinkVideoV1:
+		return "/v1/video/generate", "/v1/video/tasks/{task_id}"
 	case VideoUpstreamProtocolTokenSaveMediaTaskV1,
 		VideoUpstreamProtocolMoxingMediaTaskV1,
 		VideoUpstreamProtocolMoxingModelArkV1:

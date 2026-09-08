@@ -145,4 +145,7 @@ func stageTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycomm
 		RemixedFromVideoID: info.OriginTaskID,
 		ServiceTier:        serviceTier,
 	}
+	if contract, ok := relaycommon.GetVideoContractRequest(c); ok && contract.ModelArk != nil {
+		task.PrivateData.ClientRequest.ReturnLastFrame = contract.ModelArk.ReturnLastFrame
+	}
 }

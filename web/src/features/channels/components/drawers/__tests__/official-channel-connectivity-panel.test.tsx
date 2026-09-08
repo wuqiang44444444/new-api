@@ -60,13 +60,20 @@ beforeAll(async () => {
   })
 })
 
-function ConnectivityPanelHarness(props: { tokenSave?: boolean }) {
-  const assetProtocol = props.tokenSave
-    ? 'tokensave_assets_v1'
-    : 'volcengine_assets_action_v2024_01_01'
-  const videoProtocol = props.tokenSave
-    ? 'tokensave_media_task_v1'
-    : 'modelark_v3_volcengine'
+function ConnectivityPanelHarness(props: {
+  tokenSave?: boolean
+  hosted?: boolean
+}) {
+  let assetProtocol: ChannelFormValues['asset_upstream_protocol'] =
+    props.tokenSave
+      ? 'tokensave_assets_v1'
+      : 'volcengine_assets_action_v2024_01_01'
+  let videoProtocol: ChannelFormValues['video_upstream_protocol'] =
+    props.tokenSave ? 'tokensave_media_task_v1' : 'modelark_v3_volcengine'
+  if (props.hosted) {
+    assetProtocol = 'funcloud_material_hosted'
+    videoProtocol = 'funcloud_modelark_v3'
+  }
   const form = useForm<ChannelFormValues>({
     defaultValues: {
       ...CHANNEL_FORM_DEFAULT_VALUES,
@@ -102,6 +109,48 @@ function ConnectivityPanelHarness(props: { tokenSave?: boolean }) {
 }
 
 describe('Official channel default asset group', () => {
+  test('shows that no system asset group is required when the saved protocol does not support one', async () => {
+    vi.mocked(getChannelDefaultAssetGroup).mockResolvedValue({
+      success: true,
+      data: { supported: false, configured: false, name: 'aigctokenaigeneral' },
+    })
+    render(<ConnectivityPanelHarness hosted />)
+
+    expect(
+      await screen.findByText('No system asset group required')
+    ).toBeTruthy()
+    expect(
+      screen.queryByText('Unable to load default asset group status.')
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: 'Create or reuse default asset group',
+      })
+    ).toBeNull()
+    expect(
+      screen.queryByText(
+        'Creates or reuses the system group {{name}} for this channel.'
+      )
+    ).toBeNull()
+  })
+
+  test('keeps a failed status request distinct from a protocol that needs no system group', async () => {
+    vi.mocked(getChannelDefaultAssetGroup).mockRejectedValue(
+      new Error('network unavailable')
+    )
+    render(<ConnectivityPanelHarness />)
+
+    expect(
+      await screen.findByText('Unable to load default asset group status.')
+    ).toBeTruthy()
+    expect(screen.queryByText('No system asset group required')).toBeNull()
+    expect(
+      screen
+        .getByRole('button', { name: 'Create or reuse default asset group' })
+        .hasAttribute('disabled')
+    ).toBe(true)
+  })
+
   test('shows the action below connectivity tests and refreshes configured status', async () => {
     vi.mocked(getChannelDefaultAssetGroup).mockResolvedValue({
       success: true,

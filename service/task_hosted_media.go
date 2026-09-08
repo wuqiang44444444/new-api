@@ -14,10 +14,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// FunCloud 托管素材的视频引用边界。在 durable hold 与 Provider POST 之前，
+// 已登记本站托管协议的视频引用边界。在 durable hold 与 Provider POST 之前，
 // 校验 asset://fhas_* 引用的用户归属与可引用状态并冻结素材事实；发送阶段
 // 派生内部临时 URL 替换引用，接受后不再读取当前素材状态。不带托管前缀的
-// 引用原样透传，不探测、不双读、不回退。
+// 引用在 FunCloud 原样透传；Synlink 无法消费素材 ID，预扣前拒绝。
 
 const funCloudHostedMediaFactsKey = "funcloud_hosted_media_facts"
 
@@ -36,13 +36,13 @@ func GetFunCloudHostedMediaFacts(c *gin.Context) map[string]model.TaskHostedMedi
 }
 
 // ValidateFunCloudHostedVideoMedia 在资金 hold 之前解析并冻结托管素材引用。
-// 非 FunCloud V3 时保持原有透传合同；V3 非托管渠道明确拒绝托管引用；跨用户、已删除或不存在的引用返回
+// 仅处理已登记托管视频协议；非托管渠道明确拒绝托管引用；跨用户、已删除或不存在的引用返回
 // invalid_video_parameter，不泄漏其它用户素材的存在性。
 func ValidateFunCloudHostedVideoMedia(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskError {
 	if c == nil || info == nil || info.TaskRelayInfo == nil || info.ChannelMeta == nil {
 		return nil
 	}
-	if info.ChannelType != constant.ChannelTypeSeedanceLink || info.ChannelOtherSettings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudModelArkV3 {
+	if info.ChannelType != constant.ChannelTypeSeedanceLink || !info.ChannelOtherSettings.VideoUpstreamProtocol.SupportsPlatformHostedImages() {
 		return nil
 	}
 	contract, ok := relaycommon.GetVideoContractRequest(c)
@@ -58,6 +58,9 @@ func ValidateFunCloudHostedVideoMedia(c *gin.Context, info *relaycommon.RelayInf
 			}
 			ref := strings.TrimSpace(media.URL)
 			if !strings.HasPrefix(ref, "asset://"+model.FunCloudHostedAssetIDPrefix) {
+				if info.ChannelOtherSettings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolSynlinkVideoV1 && strings.HasPrefix(ref, "asset://") {
+					return TaskErrorWrapperLocal(errors.New("this video protocol requires a platform-hosted image or a media URL"), "invalid_video_parameter", http.StatusBadRequest)
+				}
 				continue
 			}
 			if info.ChannelOtherSettings.AssetUpstreamProtocol != dto.AssetUpstreamProtocolFunCloudHosted || item.Type != "image_url" || slot != 0 {

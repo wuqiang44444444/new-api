@@ -7,6 +7,7 @@ type AssetUpstreamProtocol = kitdto.AssetUpstreamProtocol
 type GeneralAssetGroupPolicy = kitdto.GeneralAssetGroupPolicy
 
 const (
+	VideoUpstreamProtocolSynlinkVideoV1       = kitdto.VideoUpstreamProtocolSynlinkVideoV1
 	VideoUpstreamProtocolFunCloudModelArkV3   = kitdto.VideoUpstreamProtocolFunCloudModelArkV3
 	VideoUpstreamProtocolModelArkV3Volcengine = kitdto.VideoUpstreamProtocolModelArkV3Volcengine
 	VideoUpstreamProtocolModelArkV3BytePlus   = kitdto.VideoUpstreamProtocolModelArkV3BytePlus

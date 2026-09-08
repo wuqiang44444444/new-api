@@ -31,6 +31,24 @@ const seedanceForm = {
 }
 
 describe('Seedance protocol validation', () => {
+  test('allows Synlink with shared hosted images and rejects Provider material libraries', () => {
+    for (const assetProtocol of [
+      'funcloud_material_hosted',
+      'none',
+      'funcloud_material',
+    ] as const) {
+      const result = channelFormSchema.safeParse({
+        ...seedanceForm,
+        video_upstream_protocol: 'synlink_video_v1',
+        asset_upstream_protocol: assetProtocol,
+      })
+      assert.equal(result.success, assetProtocol !== 'funcloud_material')
+    }
+    assert.deepEqual(getCompatibleSeedanceAssetProtocols('synlink_video_v1'), [
+      'funcloud_material_hosted',
+      'none',
+    ])
+  })
   test('links every video protocol to its default asset library', () => {
     const cases: Array<[SeedanceVideoProtocol, string]> = [
       ['modelark_v3_volcengine', 'volcengine_assets_action_v2024_01_01'],

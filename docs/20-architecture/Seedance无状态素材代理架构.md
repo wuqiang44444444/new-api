@@ -14,7 +14,7 @@ last-reviewed: 2026-08-29
 
 中转站用户是自行管理最终用户和素材记录的受信应用。素材 API 是按客户模型选路的无状态单资源代理，
 不是平台素材目录。平台不保存媒体二进制，也不持久化客户 Asset/AssetGroup 映射、所有权、状态或
-Provider 作用域事实。唯一例外是第 7 节的 FunCloud 托管素材路径：它是代码明确登记的托管协议，
+Provider 作用域事实。唯一例外是第 7 节的本站托管图片路径：它是代码明确登记的托管协议，
 按其自身边界持久化组、素材与本站对象。
 
 Channel 默认素材组能力不改变该边界：平台只为每个支持普通 AIGC 素材组的 Channel 保存一个内部
@@ -144,26 +144,29 @@ ModelArk V3 接受 HTTP/HTTPS URL、Data URL 和 `asset://<opaque-id>`。素材�
 迁移。旧 `ast_*` / `astgrp_*` 是硬切换前的历史合同，不双读、不做别名；需要提取历史 Provider ID 时，
 由管理员在升级前离线处理。存量 Channel 不自动创建或回填默认组，必须由管理员逐个配置。
 
-## 7. FunCloud 托管素材例外
+## 7. 本站托管图片例外
 
-`funcloud_material_hosted` 是为 FunCloud V3 官方素材流程登记的托管协议，只允许配对
-`funcloud_modelark_v3`。它不访问 FunCloud 素材接口：素材组与素材是平台持久化事实，源图片在创建
+`funcloud_material_hosted` 保留既有配置标识，作为本站托管图片协议配对
+`funcloud_modelark_v3` 与 `synlink_video_v1`，管理端显示为本站托管图片库。
+它不访问供应商素材接口，不新增表、不迁移既有 ID 或对象路径：素材组与素材是平台持久化事实，源图片在创建
 调用内经既有 SSRF、重定向、媒体类型与大小校验后复制进本站私有对象存储。
 
 - 隔离与共享：托管素材组与素材按 `user_id` 隔离，同账号所有 API Key 共享；不绑定创建时的 Key、
-  Channel 或 FunCloud 上游账号，凭据轮换不使已保存素材失效。
+  Channel 或供应商上游账号，凭据轮换不使已保存素材失效。
 - 命名与重复：平台生成 `fhgrp_*` / `fhas_*` 不透明 ID 和随机对象名，不使用客户 URL 文件名；同
   URL、同用户、跨用户、客户端重试均不去重、不合并、不建幂等键。复制成功但记录写入失败时不返回
   可用素材，留下的无引用对象不做删除补偿或后台清理。
 - 视频引用：`asset://fhas_*` 在资金 hold 与 Provider POST 之前按 `user_id` 与可引用状态校验，并把
   素材对象事实冻结进 create attempt；发送时按冻结事实签发内部临时 URL 替换引用，接受后不再读取
-  当前素材状态。签名 URL 只存在于当次南向请求字节与既有证据通道。不带托管前缀的引用保持原样
-  透传；解析缺口失败关闭，不回退、不双读、不迁移旧 opaque ID。
+  当前素材状态。签名 URL 只存在于当次南向请求字节与既有证据通道。FunCloud 的非本站 opaque 引用继续透传；
+  Synlink 无法消费素材 ID，使用非本站 opaque 引用的操作无法履约，预扣前明确拒绝。
+  两者解析缺口均失败关闭，不回退、不双读、不迁移旧 opaque ID；其它协议语义不变。
 - 删除：只停止该 ID 的新引用，已受理任务继续；不调用任何 OSS 删除，系统不做定时清理、孤儿扫描
   或过期删除。对象长期保存依赖部署方对象存储运维策略。
 - 公开元数据：`management_mode` 发布为 `platform_hosted`，操作矩阵发布素材创建/查询/删除与组
   创建/查询，`reuse_scope` 发布为固定托管复用域，创建约束不要求上游取图 TTL。
-- 南向固定启用真人模式字段（写死，不开放配置）；托管引用与直接 URL 两条路径一致。
+- 仅 FunCloud V3 南向固定启用真人模式字段（写死，不开放配置）；Synlink 不发送 FunCloud 私有字段。
+  两条线路均允许托管图片与直接 URL 混合，并保持内容顺序和 role。
 
 托管素材保存非敏感的存储 backend、endpoint、bucket/container、prefix 与对象 key；
 引用时必须与当前存储位置一致，否则明确返回不可用，不在当前桶中重新解释旧 key。凭据轮换不改变
@@ -174,7 +177,7 @@ ModelArk V3 接受 HTTP/HTTPS URL、Data URL 和 `asset://<opaque-id>`。素材�
 `api.assets.creation.source.max_pixels`（13,107,200 像素）的图片，解码像素预算由 100 MiB / 8 字节推导。
 创建的编码字节上限仍为 100 MiB。格式继续包括 JPEG、PNG、WebP、BMP、TIFF 与 GIF。
 
-FunCloud V3 托管引用仅允许出现在图片槽位。非托管 FunCloud V3 渠道收到托管前缀引用时返回 400；
+FunCloud V3 与 Synlink 的托管引用仅允许出现在图片槽位。非托管渠道收到本站托管前缀引用时返回 400；
 其他视频协议继续其原有 opaque 引用合同。引用归属、删除状态、存储位置和对象 HEAD 检查在 hold 前
 完成；已知对象缺失或不可访问返回 503。HEAD 是当次观察，不承诺稍后 Provider 必然取图成功。
 对每个引用，读取到可用素材事实是删除与新引用的接受交界；重复引用在请求内只检查一次。

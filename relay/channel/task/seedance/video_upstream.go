@@ -21,7 +21,7 @@ func videoCreatePath(profile dto.VideoUpstreamProfile, configuredCreatePath stri
 	switch profile {
 	case "", dto.VideoUpstreamProfileOfficial:
 		return officialVideoCreatePath, nil
-	case dto.VideoUpstreamProfileThirdPartyRelay,
+	case dto.VideoUpstreamProfileThirdPartySynlinkVideoV1, dto.VideoUpstreamProfileThirdPartyRelay,
 		dto.VideoUpstreamProfileThirdPartyMoxingModelArk,
 		dto.VideoUpstreamProfileThirdPartyReverseProxy,
 		dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
@@ -41,7 +41,7 @@ func videoTaskPath(profile dto.VideoUpstreamProfile, configuredQueryTemplate, ta
 	switch profile {
 	case "", dto.VideoUpstreamProfileOfficial:
 		return officialVideoCreatePath + "/" + escapedTaskID, nil
-	case dto.VideoUpstreamProfileThirdPartyRelay,
+	case dto.VideoUpstreamProfileThirdPartySynlinkVideoV1, dto.VideoUpstreamProfileThirdPartyRelay,
 		dto.VideoUpstreamProfileThirdPartyMoxingModelArk,
 		dto.VideoUpstreamProfileThirdPartyReverseProxy,
 		dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
@@ -80,6 +80,8 @@ func convertVideoCreateRequest(profile dto.VideoUpstreamProfile, body []byte) ([
 // normalizeVideoCreateResponse 按协议归一化创建响应到内部 {"id": ...} 合同。
 func normalizeVideoCreateResponse(profile dto.VideoUpstreamProfile, body []byte) ([]byte, error) {
 	switch profile {
+	case dto.VideoUpstreamProfileThirdPartySynlinkVideoV1:
+		return thirdparty.SynlinkCreateResponse(body)
 	case "", dto.VideoUpstreamProfileOfficial:
 		return body, nil
 	case dto.VideoUpstreamProfileThirdPartyReverseProxy:
@@ -109,6 +111,8 @@ func normalizeVideoTaskResponse(
 	billingContext *relaycommon.VideoTaskBillingContext,
 ) ([]byte, error) {
 	switch profile {
+	case dto.VideoUpstreamProfileThirdPartySynlinkVideoV1:
+		return thirdparty.SynlinkTaskResponse(body, expectedTaskID)
 	case "", dto.VideoUpstreamProfileOfficial:
 		return body, nil
 	case dto.VideoUpstreamProfileThirdPartyReverseProxy:

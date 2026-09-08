@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
@@ -32,9 +33,13 @@ type ChannelDefaultAssetGroupResult struct {
 
 func GetChannelDefaultAssetGroupStatus(channel *model.Channel) (ChannelDefaultAssetGroupStatus, error) {
 	status := ChannelDefaultAssetGroupStatus{Name: DefaultAssetGroupName}
-	// 托管素材协议没有 Provider 默认组概念；管理端动作只属于 Provider 素材租户。
-	if channel.GetOtherSettings().AssetUpstreamProtocol == dto.AssetUpstreamProtocolFunCloudHosted {
-		return status, ErrUnsupportedAssetOperation
+	if channel == nil || channel.Type != constant.ChannelTypeSeedanceLink {
+		return status, ErrAssetUpstreamUnavailable
+	}
+	// 无素材协议和托管素材均不需要 Provider 默认组；查询不适用状态不是操作失败。
+	switch channel.GetOtherSettings().AssetUpstreamProtocol.GeneralAssetGroupPolicy() {
+	case dto.GeneralAssetGroupPolicyNone, dto.GeneralAssetGroupPolicyHosted:
+		return status, nil
 	}
 	adapter, err := seedanceAssetAdapter(channel, 0, "")
 	if err != nil {

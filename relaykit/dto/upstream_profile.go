@@ -9,6 +9,7 @@ import (
 type VideoUpstreamProfile string
 
 const (
+	VideoUpstreamProfileThirdPartySynlinkVideoV1     VideoUpstreamProfile = "third_party_synlink_video_v1"
 	VideoUpstreamProfileOfficial                     VideoUpstreamProfile = "official"
 	VideoUpstreamProfileThirdPartyRelay              VideoUpstreamProfile = "third_party_relay"
 	VideoUpstreamProfileThirdPartyMoxingModelArk     VideoUpstreamProfile = "third_party_moxing_modelark"
@@ -23,7 +24,7 @@ func (p VideoUpstreamProfile) IsOfficial() bool {
 }
 
 func (p VideoUpstreamProfile) IsThirdParty() bool {
-	return p == VideoUpstreamProfileThirdPartyRelay ||
+	return p == VideoUpstreamProfileThirdPartySynlinkVideoV1 || p == VideoUpstreamProfileThirdPartyRelay ||
 		p == VideoUpstreamProfileThirdPartyMoxingModelArk ||
 		p == VideoUpstreamProfileThirdPartyReverseProxy ||
 		p == VideoUpstreamProfileThirdPartyFeicaiVideos ||
@@ -32,7 +33,7 @@ func (p VideoUpstreamProfile) IsThirdParty() bool {
 
 func (p VideoUpstreamProfile) IsValid() bool {
 	switch p {
-	case VideoUpstreamProfileOfficial,
+	case VideoUpstreamProfileThirdPartySynlinkVideoV1, VideoUpstreamProfileOfficial,
 		VideoUpstreamProfileThirdPartyRelay,
 		VideoUpstreamProfileThirdPartyMoxingModelArk,
 		VideoUpstreamProfileThirdPartyReverseProxy,

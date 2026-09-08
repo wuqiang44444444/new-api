@@ -178,6 +178,13 @@ func proxyLinkVideoContent(c *gin.Context) bool {
 	if lastFrameURL != "" {
 		videoURL = lastFrameURL
 		req.Header.Del("Authorization")
+		if handled, sourceErr := applySynlinkLastFrameSource(task, req, &videoURL); handled {
+			if sourceErr != nil {
+				modelArkVideoError(c, http.StatusBadGateway, "frozen_upstream_unavailable", "Frozen video connection details are unavailable")
+				return true
+			}
+			rejectRedirects = true
+		}
 	}
 	videoURL = strings.TrimSpace(videoURL)
 	if videoURL == "" {

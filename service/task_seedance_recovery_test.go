@@ -15,6 +15,7 @@ import (
 )
 
 var recoveryProtocols = []dto.VideoUpstreamProtocol{
+	dto.VideoUpstreamProtocolSynlinkVideoV1,
 	dto.VideoUpstreamProtocolModelArkV3Volcengine, dto.VideoUpstreamProtocolModelArkV3BytePlus,
 	dto.VideoUpstreamProtocolModelArkV3CMCC, dto.VideoUpstreamProtocolMoxingModelArkV1,
 	dto.VideoUpstreamProtocolFunCloudSeedance, dto.VideoUpstreamProtocolFunCloudModelArkV3,

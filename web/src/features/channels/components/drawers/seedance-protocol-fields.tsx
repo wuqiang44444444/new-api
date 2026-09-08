@@ -83,6 +83,7 @@ const SEEDANCE_VIDEO_PROTOCOL_OPTIONS = [
   },
   { value: 'funcloud_seedance', labelKey: 'FunCloud Seedance' },
   { value: 'funcloud_modelark_v3', labelKey: 'FunCloud ModelArk V3' },
+  { value: 'synlink_video_v1', labelKey: 'Synlink Video V1' },
 ] as const
 
 const SEEDANCE_ASSET_PROTOCOL_OPTIONS = [
@@ -111,7 +112,7 @@ const SEEDANCE_ASSET_PROTOCOL_OPTIONS = [
   },
   {
     value: 'funcloud_material_hosted',
-    labelKey: 'FunCloud Hosted Material Library',
+    labelKey: 'Platform Hosted Image Library',
   },
   {
     value: 'cmcc_aicc_assets_v2',

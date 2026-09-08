@@ -6,10 +6,30 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestChannelDefaultAssetGroupNotRequired(t *testing.T) {
+	for _, protocol := range []dto.AssetUpstreamProtocol{dto.AssetUpstreamProtocolFunCloudHosted, dto.AssetUpstreamProtocolNone} {
+		t.Run(string(protocol), func(t *testing.T) {
+			channel := &model.Channel{Id: 72, Type: constant.ChannelTypeSeedanceLink}
+			channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: protocol})
+
+			status, err := GetChannelDefaultAssetGroupStatus(channel)
+			require.NoError(t, err)
+			assert.False(t, status.Supported)
+			assert.False(t, status.Configured)
+
+			_, err = CreateOrReuseChannelDefaultAssetGroup(context.Background(), channel)
+			assert.True(t, errors.Is(err, ErrUnsupportedAssetOperation) || errors.Is(err, ErrAssetLibraryUnsupported))
+		})
+	}
+}
 
 type defaultGroupAdapterFake struct {
 	created int

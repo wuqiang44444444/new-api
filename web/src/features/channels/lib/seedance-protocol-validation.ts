@@ -115,12 +115,13 @@ export function refineSeedanceProtocols(
   }
   if (
     assetProtocol === 'funcloud_material_hosted' &&
-    data.video_upstream_protocol !== 'funcloud_modelark_v3'
+    data.video_upstream_protocol !== 'funcloud_modelark_v3' &&
+    data.video_upstream_protocol !== 'synlink_video_v1'
   ) {
     addIssue(
       'asset_upstream_protocol',
       i18next.t(
-        'FunCloud hosted material requires the FunCloud ModelArk V3 video protocol'
+        'Hosted images require FunCloud ModelArk V3 or Synlink Video V1'
       )
     )
   }

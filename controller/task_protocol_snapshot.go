@@ -38,6 +38,7 @@ func attachTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycom
 	resolution := ""
 	ratio := ""
 	var generateAudio *bool
+	var returnLastFrame *bool
 	if contract, ok := relaycommon.GetVideoContractRequest(c); ok && contract.ModelArk != nil {
 		if contract.ModelArk.ServiceTier != nil {
 			serviceTier = *contract.ModelArk.ServiceTier
@@ -49,6 +50,7 @@ func attachTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycom
 			ratio = *contract.ModelArk.Ratio
 		}
 		generateAudio = contract.ModelArk.GenerateAudio
+		returnLastFrame = contract.ModelArk.ReturnLastFrame
 	}
 	task.PrivateData.ClientRequest = &model.TaskClientRequestSnapshot{
 		Prompt:             req.Prompt,
@@ -59,5 +61,6 @@ func attachTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycom
 		Resolution:         resolution,
 		Ratio:              ratio,
 		GenerateAudio:      generateAudio,
+		ReturnLastFrame:    returnLastFrame,
 	}
 }
