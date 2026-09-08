@@ -62,6 +62,11 @@ web/           — Frontend (React 19, Rsbuild, Base UI, Tailwind)
   模型发现与价格接口只读取等价投影。Task、create attempt、计费和审计快照描述已经发生的事实；
   素材控制面是调用方自管的无状态单资源代理，不建立客户 Asset/AssetGroup 事实；每个支持普通 AIGC
   素材组的 Channel 可以保存一个内部默认 Provider group ID，但它只是南向履约配置。
+- 唯一例外是 `funcloud_material_hosted`（FunCloud 托管素材，只配对 `funcloud_modelark_v3`）：素材组
+  与素材按 `user_id` 隔离共享并由平台持久化，源图在创建调用内复制进本站私有对象存储；视频引用
+  `asset://fhas_*` 在资金 hold 前校验并冻结事实，发送时替换为内部签发的临时 URL；删除只停止新引用，
+  不删除对象、不清理、不去重。FunCloud V3 adapter 南向写死启用真人模式字段。真实 Provider 验收
+  完成前不得视为生产可用。
 - 客户模型可使用部署方自定义名称，`model_mapping` 精确映射到代码协议登记的上游模型。公开元数据
   不返回上游身份；素材支持以 `api.assets` 为准，相同非空 `reuse_scope` 仅表示可尝试复用同一素材域。
 
@@ -206,7 +211,7 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
   或空白时使用 Channel 默认组。北向结构不合法时返回 `invalid_request`，不得静默改用默认组；Provider
   拒绝显式 ID 后也不得回退。默认组缺失时返回 `default_asset_group_not_configured`。
 - `asset_group_id` 是统一北向素材创建协议的合法可选字段。普通素材组策略必须由代码注册的唯一
-  `GeneralAssetGroupPolicy`（`none` / `default_fallback`）同时驱动运行时和公开元数据，不得从
+  `GeneralAssetGroupPolicy`（`none` / `default_fallback` / `hosted`）同时驱动运行时和公开元数据，不得从
   `GroupAdapter`、requirement 接口或模型名重复推断。`none` 时 adapter 不发送组字段并继续履约；直接
   素材组操作无法履约时继续返回既有 `unsupported_asset_operation`。
 - `aigctokenaigeneral` 是普通北向素材组创建的系统保留名称。Channel 停用保留默认 ID，复制不继承，

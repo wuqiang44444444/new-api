@@ -42,7 +42,11 @@ Channel 任一客户模型最终映射到 2.5，则不能选择该素材协议�
 | 删除组 | `/material/group/delete`；Provider 会级联删除组内素材 | 不发布；多人共享下游不允许通过公共 API 级联删除整组素材 |
 | 上传虚拟素材 | `/material/virtual/upload` | HTTPS 安全回源、流式 multipart，≤100MB |
 | 查询素材 | `/material/list`；实际列表可能省略 `assetStatus` | 单资源查询，返回 `asset://`；缺失状态仅在 `isAsset=true` 且引用合法时归一为可用 |
-| 组更新、单素材改名/删除、真人组 | — | `unsupported_asset_operation` |
+| 删除单素材 | `POST /api/v2/open/material/delete?materialId=...` | `code=0` 返回 204；`90003`（不存在或无权限）返回 404 `asset_not_found`；其它失败沿用上游错误映射 |
+| 组更新、单素材改名、真人组 | — | `unsupported_asset_operation` |
+
+单素材删除端点依据 2026-09-07 Provider 实测，供应商文档尚未登记；当前代码已接入，
+修复版本的北向真实生命周期验收仍待执行。不使用素材组级联删除替代单素材删除。
 
 平台不持久化 Asset/AssetGroup 或 source URL，不提供列表；视频中的 `asset://<opaque-id>` 不查询本地，直接进入 FunCloud 请求，由 Provider 判断存在性、权限和兼容性。2.5 的素材 CRUD 明确不支持。
 

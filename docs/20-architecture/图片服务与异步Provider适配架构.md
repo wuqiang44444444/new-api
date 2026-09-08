@@ -11,8 +11,8 @@ last-reviewed: 2026-09-06
 本文描述代码已实现的事实。统一图片服务的“已实现 / 待实现 / 证据门控”三分口径以
 [路线图](../50-planning/路线图.md) 第 4 项未完成项清单为唯一权威（历史拆解见
 [归档的实施计划](../99-archive/2026/09/2026-09-05-统一图片服务实施计划.md) §5）；
-编辑参数面（quality/mask/透明背景等）、中转 edits、SSE 流式与 file_id 等在取证/实现完成前
-显式 `400`，不属于已发布能力。
+未支持的编辑参数（quality/mask/透明背景等）、SSE 流式与 file_id 等仍显式拒绝。
+图片中转标准 edits 的同步/异步实现见第 6 节，逐模型真实验收状态不由代码支持推定。
 
 ## 1. 范围与状态
 
@@ -124,7 +124,7 @@ GET /v1/tasks/{task_id} -> 图片投影（user_id + app_id 双重归属）
 ## 5. 对象存储（upstream / S3 兼容 / Azure Blob，G9）
 
 数据库是对象存储配置的唯一持久事实：完整标准化配置以单行 JSON 持久化在 Option 表
-（`ObjectStorageSetting` 命名空间，凭据为 `objstore.v1.` 加密信封密文），由
+（`ObjectStorageSetting` 命名空间，凭据直接保存在 `credential` 字段），由
 `updateOptionMap` 唯一接线点转发给 service 观察者装载；普通选项接口不进入、也绕不过
 该命名空间。装载即初始化（替代旧的包 `init` 环境变量装载），每次以完整不可变配置
 快照原子替换存储实例，revision 未变化不重建；多节点经既有 `SyncOptions` 周期刷新。
@@ -189,11 +189,16 @@ Azure SAS 的起止时间统一使用 UTC；生效时间向前容错两分钟，
 | `funcloud_aigc_v2` | FunCloud `/api/v2/open/aigc/*` | 创建后在本次请求内轮询 | worker 内创建+轮询（`asyncimage/headless.go`） |
 | `moxing_images_v1` | Moxing `/v1/images/generations` | 单次同步 POST | worker 内单次 POST（`moxingimage/headless.go`） |
 
-- 同步模式继续返回 Provider URL；成功结果按 `data[]` 交付 Provider 返回的全部合法 URL
-  （零合法 URL 失败关闭），不补生成（R2/R3）。
+- 同步模式继续返回 Provider URL；FunCloud 交付 Provider 返回的全部合法结果 URL，零合法 URL
+  失败关闭，不补生成。Moxing 的固定单图合同要求恰好一个合法 URL，多图或混合非法结果明确失败。
 - 异步模式下结果下载后保存私有 OSS 并按 300 秒签名交付。
-- edits、mask、参考图与 `stream=true` 在 Provider 计费证据完成前显式 `400`（B7/G 门控）；
-  该未发布状态是证据门控，不是合同缺失。
+- 两协议支持标准 `POST /v1/images/edits` 的同步与显式异步模式，复用公共图片输入合同；
+  数量、字节、格式及适用尺寸约束来自既有模型 profile。`mask` 与 `stream=true` 仍不支持。
+- FunCloud 将参考图转换为 `imageUrls`，Seedream 使用 `genType=i2i`；字节输入在执行时上传并签名，
+  异步直接签名已暂存输入。Moxing 使用单图字符串或多图数组 `image`，保持 `image_generation`。
+- 图片中转要求按张价格或不依赖 Token 用量的表达式。公共解析器提供真实 `input_image_count`，
+  用于同步预扣和异步冻结计费；Pro 多图未配置表达式时拒绝。具体价格由部署配置负责。
+  逐模型效果、取图窗口与供应商失败/超时收费仍须真实验收，代码支持不等于生产已发布。
 - 10 分钟总时限（`relay/channel/image_relay_timeout.go`）只约束同步模式；异步模式使用
   worker 的排队/执行/存储预算。
 
@@ -235,7 +240,7 @@ Azure SAS 的起止时间统一使用 UTC；生效时间向前容错两分钟，
 - `relay/channel/gemini/image_generate_content.go`、`relay/channel/vertex/adaptor.go`（窄分支）；
 - `relay/channel/asyncimage/headless.go`、`relay/channel/moxingimage/headless.go`；
 - `service/sigv4.go`、`service/task_artifact_store_s3.go`、`service/task_artifact_store_azure.go`、`service/task_artifact_store_runtime.go`、`service/task_artifact_store_image.go`、`service/object_storage_probe.go`（S3/Azure 存储、运行时装载、图片能力接口与连通性测试）；
-- `setting/system_setting/object_storage.go`、`common/object_storage_credential.go`、`model/object_storage_setting.go`、`controller/object_storage_admin.go`（标准化配置、凭据信封、持久化分发与专用管理接口）；
+- `setting/system_setting/object_storage.go`、`model/object_storage_setting.go`、`controller/object_storage_admin.go`（标准化配置、凭据直接保存、持久化分发与专用管理接口）；
 - `middleware/image_create_idempotency.go`、`controller/image_task_query.go`、
   `controller/system_task_image_handler.go`；
 - `pkg/publicmodel/image_gemini.go`、`model/public_image_model_api.go`、

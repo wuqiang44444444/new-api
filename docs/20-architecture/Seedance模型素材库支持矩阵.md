@@ -39,6 +39,7 @@ Provider 和生产灰度仍需逐线路验收。不得把代码合同写成全�
 | 已配置无素材组协议的模型 | `true` | 南向不使用 | 可直接创建普通素材；统一北向允许携带 `asset_group_id`，adapter 不发送该字段 |
 | 已配置可选素材组协议的模型 | `true` | 普通素材北向可选；真人素材按 `media` 要求 | 调用方 ID 优先，省略或无效时使用 Channel 默认组 |
 | 已配置南向必需素材组协议的模型 | `true` | 普通素材北向仍可选 | Channel 默认组满足南向必填，调用方无需先创建组 |
+| 已配置 FunCloud 托管协议（`funcloud_material_hosted`）的模型 | `true` | 平台托管普通组（仅普通图片素材） | 素材保存在本站对象存储并按 `user_id` 隔离共享；见无状态素材代理架构第 7 节 |
 | 未配置素材协议的其它模型 | `false` | 不适用 | 不得因为名称不含固定分辨率就推断支持 |
 
 固定分辨率系列当前不支持素材库，是接入文档、已注册协议和实际配置共同确认的事实：现有上游合同只有
@@ -55,10 +56,10 @@ adapter 后，矩阵才可以改变。
 | 字段 | 含义 | 调用方规则 |
 | --- | --- | --- |
 | `supported` | 当前客户模型是否配置已验证素材协议 | `false` 时不得调用素材操作 |
-| `management_mode` | 固定为 `caller_managed_stateless` | 调用方自行保存 Provider opaque ID；平台不提供素材目录 |
+| `management_mode` | 无状态代理固定为 `caller_managed_stateless`；FunCloud 托管协议固定为 `platform_hosted` | 调用方自行保存 Provider opaque ID；托管素材由平台持久化并按用户共享 |
 | `requires_model` | 固定为 `true` | 查询、删除和视频引用都必须保留客户模型名 |
-| `reference_format` | 固定为 `asset://{opaque_upstream_asset_id}` | 只把 Provider 返回的 opaque 引用作为视频素材引用 |
-| `reuse_scope` | 匿名素材复用域；不支持素材时省略或为空 | 仅非空且完全相同的 scope 表示“可以尝试复用” |
+| `reference_format` | 固定为 `asset://{opaque_upstream_asset_id}` | 只把 Provider 返回的 opaque 引用作为视频素材引用；托管协议返回平台 `fhas_*` ID |
+| `reuse_scope` | 匿名素材复用域；不支持素材时省略或为空 | 仅非空且完全相同的 scope 表示“可以尝试复用”；托管协议发布固定托管复用域，不随上游账号轮换失效 |
 | `media` | 按 `kind` 与 `media_type` 描述素材组要求 | 普通 AIGC 在默认组落地后统一为北向可选；`real_person` 仍可为 `required`；`unsupported` 表示南向不使用，不表示统一北向字段非法 |
 | `operations` | 每项操作的 HTTP 方法、路径和 `supported` | 不支持的操作必须停止，不得换 Provider 或 fallback |
 | `creation` | URL TTL、长度、MIME、大小和重定向限制 | 只提交满足该模型返回限制的创建请求 |
@@ -132,6 +133,10 @@ group ID。该名称是普通北向素材组创建的系统保留名称；默认
 adapter，由 Provider 最终判断存在性、权限、审核和模型兼容性。旧 `asset://ast_*`、`asset://pubref_*`
 不是平台命名空间，也没有兼容 resolver。
 
+唯一例外是托管协议模型中的 `asset://fhas_*`：该前缀是平台托管素材命名空间，平台在资金 hold 之前
+按 `user_id` 校验归属与可引用状态，发送时把引用替换为内部签发的临时 URL；跨用户、已删除或不存在的
+托管引用明确拒绝，不回退为上游引用。托管素材删除只停止新引用，已受理任务继续。
+
 ## 6. 错误语义
 
 | 情况 | HTTP/错误码 | 处理原则 |
@@ -165,3 +170,11 @@ source URL、签名 URL、媒体二进制和原始 Provider 响应。共享 Prov
 Link 架构](Seedance专用渠道与Link架构.md)、[异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md) 和
 [ADR-0017：调用方自管无状态素材代理](decisions/0017-调用方自管无状态素材代理.md)、
 [ADR-0018：Channel 默认素材组基础设施配置](decisions/0018-Channel默认素材组基础设施配置.md) 负责。
+
+
+### 托管图片的可用性边界
+
+`platform_hosted` 创建同时检查实际图片内容、MIME 与像素数；公开创建约束中的 `max_pixels`
+为 13,107,200，编码字节上限仍为 100 MiB。查询时已知对象缺失、存储不可用或位置配置不一致不会返回
+虚假的 ready。视频托管引用只适用于图片槽位；不符合条件返回 400，存储不可用返回 503，均在资金
+hold 与 Provider POST 前拒绝。直接 URL 路径不建立素材或访问本站存储。
