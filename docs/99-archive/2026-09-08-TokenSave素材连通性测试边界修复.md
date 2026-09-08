@@ -1,7 +1,12 @@
 ---
-status: implemented
+status: historical
 owner: Dev Team
 last-reviewed: 2026-09-08
+archived-at: 2026-09-09
+source-path: docs/80-dev/2026-09-08-TokenSave素材连通性测试边界修复.md
+superseded-by:
+  - docs/20-architecture/Seedance专用渠道与Link架构.md
+  - docs/20-architecture/Seedance无状态素材代理架构.md
 ---
 
 # TokenSave 素材连通性测试边界修复
