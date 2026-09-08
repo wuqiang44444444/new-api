@@ -1,7 +1,7 @@
 ---
 page-id: videos-jimeng
 kind: api-reference
-last-verified: 2026-08-28
+last-verified: 2026-09-09
 operations:
   - createJimengVideo
 ---
@@ -11,8 +11,7 @@ operations:
 即梦使用一个 `POST /jimeng/` 入口，并通过查询参数 `Action` 区分创建和查询。`Action`、`Version`、请求
 字段和响应信封都是合同的一部分，不能改用 Kling、ModelArk 或 OpenAI Videos 字段。
 
-当前内置适配器登记的 `req_key` 为 `jimeng_vgfm_t2v_l20`。实际可用范围仍以 `GET /v1/models` 和当前
-API Key 权限为准。本合同不提供任务列表、删除、取消或平台内容下载接口。
+`req_key` 填写模型目录返回、且支持本页入口的客户模型 ID。不要把上游示例中的固定值直接复制到请求中。本合同不提供任务列表、删除、取消或平台内容下载接口。
 
 ## 提交任务
 
@@ -24,7 +23,7 @@ curl "{{SITE_BASE_URL}}/jimeng/?Action=CVSync2AsyncSubmitTask&Version=2022-08-31
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: jimeng-example-001" \
   -d '{
-    "req_key": "jimeng_vgfm_t2v_l20",
+    "req_key": "{{MODEL_ID_PLACEHOLDER}}",
     "prompt": "阳光穿过窗帘，房间里的植物轻轻摇曳",
     "seed": 12345,
     "aspect_ratio": "16:9",
@@ -38,7 +37,7 @@ curl "{{SITE_BASE_URL}}/jimeng/?Action=CVSync2AsyncSubmitTask&Version=2022-08-31
 | --- | --- | --- | --- |
 | `Action` | query string | 是 | 创建固定为 `CVSync2AsyncSubmitTask` |
 | `Version` | query string | 是 | 固定为 `2022-08-31` |
-| `req_key` | body string | 是 | 客户模型标识；当前内置值为 `jimeng_vgfm_t2v_l20` |
+| `req_key` | body string | 是 | 模型目录返回的客户模型 ID，填入 `{{MODEL_ID_PLACEHOLDER}}` 所在位置 |
 | `prompt` | body string | 是 | 视频描述，去除首尾空白后不能为空 |
 | `binary_data_base64` | body string[] | 否 | Base64 图片数组；仅在模型支持图片输入时使用 |
 | `image_urls` | body string[] | 否 | 图片 URL 或 `asset://` 引用数组；仅在模型支持图片输入时使用 |
@@ -123,11 +122,17 @@ curl "{{SITE_BASE_URL}}/jimeng/?Action=CVSync2AsyncGetResult&Version=2022-08-31"
 
 ## 幂等、计费与重试
 
-提交 Action 支持可选 `Idempotency-Key`，最大 `191` 个字符，同一键在 `24` 小时内应绑定同一请求。
-相同请求可恢复同一个任务；同一键配不同请求或原结果仍待核查时返回 `409`。查询 Action 不使用幂等键。
+创建支持可选 `Idempotency-Key`；即梦的查询 Action 不使用幂等键。首尾空白会被去除，非空键最多
+`191` 个 UTF-8 字节，建议使用 ASCII UUID 或业务订单标识。每个新生成意图使用新键，网络重试沿用原键。
 
-创建结果不明时平台不自动重发、换渠道或退款。网络中断后使用原幂等键恢复，不能换新键盲目提交。
-任务费用使用创建时冻结的客户模型和计费事实。
+- 同账号、同协议下键不可与另一请求复用。用原 API Key、原入口和完全相同的正文重试，才能确认同次受理。
+- 换 API Key、修改参数或在文生与图生入口之间切换，可能形成不同请求并返回 `409`；不能借此恢复原调用。
+- 原结果已可重放时返回同一个任务；仍在处理、待核查、请求冲突或结果无法重放时返回 `409`，先读取公开错误。
+- 幂等记录以 `24` 小时为保留窗口；已完成记录过期后，同键可能触发新的创建。已有任务 ID 时优先查询，
+  不把幂等键当作永久订单去重。处理中或结果不明的请求不能因超过 24 小时就按新请求提交。
+
+创建结果不明时平台不会自动重发或退款。保留任务 ID、请求 ID 和业务幂等键；没有任务 ID 时核查原受理，
+不要更换新键盲目创建。任务费用使用创建时确定的客户模型和计费事实，单次查询失败不代表生成失败。
 
 ## 错误响应
 
@@ -149,4 +154,4 @@ curl "{{SITE_BASE_URL}}/jimeng/?Action=CVSync2AsyncGetResult&Version=2022-08-31"
 | `429` | `50430` | 请求过多或额度限制 |
 | `5xx` | `50500` | 平台或上游失败；创建结果可能需要核查 |
 
-HTTP 非 `2xx` 时先按 HTTP 状态处理。错误消息已经脱敏，不应从中推断上游 Provider 或内部渠道。
+HTTP 非 `2xx` 时先按 HTTP 状态处理。错误消息已经脱敏，不应从中推断内部服务身份。

@@ -1,7 +1,7 @@
 ---
 page-id: quickstart
 kind: guide
-last-verified: 2026-07-29
+last-verified: 2026-09-09
 operations: []
 ---
 
@@ -11,7 +11,7 @@ operations: []
 
 ## 准备 API Key
 
-在控制台创建 API Key，并只把它保存在服务端环境变量或密钥管理系统中。不要把 Key 提交到仓库、浏览器脚本、移动端安装包或日志。
+在控制台创建 API Key。服务应用将它保存在服务端环境变量或密钥管理系统中；个人 CLI 或桌面工具可使用受保护的本地配置。不要把 Key 提交到仓库、浏览器脚本、移动端安装包或日志，详见[鉴权](authentication)。
 
 ## 查询可用模型
 
@@ -20,7 +20,7 @@ curl "{{OPENAI_BASE_URL}}/models" \
   -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
 ```
 
-从响应的 `data[].id` 中选择当前 Key 可访问的模型。不要假设部署一定提供某个固定模型。
+从响应的 `data[].id` 中选择支持文本入口的模型；若条目包含 `available`，还需确认它为 `true`。模型出现在列表中不一定代表可立即调用。参数和权限判断见[模型与参数](concepts/model-parameters)。
 
 ## 发起第一次请求
 

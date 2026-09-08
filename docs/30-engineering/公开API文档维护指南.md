@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-09-09
 ---
 
 # 公开 API 文档维护指南
@@ -153,6 +153,7 @@ operations:
 
 ```bash
 bun run docs:validate
+bun run docs:test
 bun run test
 bun run build
 ```
@@ -161,12 +162,18 @@ bun run build
 
 | 命令 | 验证内容 |
 | --- | --- |
-| `bun run docs:validate` | Manifest、目录清单、Markdown、安全、OpenAPI 和搜索索引 |
+| `bun run docs:validate` | Manifest、目录清单、Markdown 安全与 JSON 示例语法、公开 OpenAPI 引用及示例 schema、搜索索引 |
+| `bun run docs:test` | 文档示例校验器回归：媒体输入互斥、错误信封、任务层级和未公开字段 |
 | `bun run test` | Docs 加载、解析、交互与相关前端回归 |
 | `bun run build` | 文档校验、Rsbuild、最终 `dist` 审计和品牌校验 |
 
 `bun run dev` 也会先执行 `docs:validate`。生产验收不能只运行独立校验，必须完成 `bun run build`，
 因为最终产物审计只发生在构建后。
+
+公开示例使用 Ajv 直接校验 Relay OpenAPI 中已批准 operation 及其引用的 schema，不另建一套字段合同。
+该检查不等于真实服务验收：逐模型约束、生效条件和实际行为仍需对照代码及专项测试核对。Markdown 的
+JSON 代码块与 curl 内联 JSON 会做语法检查；Python 轮询与下载示例修改后应使用模拟响应验证，不能用真实
+计费调用替代文档测试。
 
 仓库级再运行：
 

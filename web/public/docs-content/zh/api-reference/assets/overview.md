@@ -1,7 +1,7 @@
 ---
 page-id: assets-lifecycle
 kind: api-reference
-last-verified: 2026-08-28
+last-verified: 2026-09-09
 operations:
   - createAsset
   - getAsset
@@ -18,7 +18,7 @@ operations:
 `reference`；两种模式都不提供素材或素材组列表。
 
 所有操作使用 Bearer 鉴权。路径中的素材 ID 和素材组 ID 都是服务端返回的不透明字符串，客户端不能解析、
-改写或根据前缀判断来源。
+改写或根据前缀判断来源。素材用于视频参考，不是图片生成或图片编辑的任务结果。
 
 > **AIGC 普通素材的推荐流程：直接创建素材，不要默认先创建素材组。** 调用
 > `POST /v1/assets` 时优先省略 `asset_group_id`（发送空字符串也按未填写处理），这样不同模型可以保持
@@ -40,6 +40,9 @@ operations:
 | `creation.source` | URL 协议、端口、最大长度、最短剩余有效期、MIME、编码大小、`max_pixels` 像素上限和重定向限制 |
 | `reuse_scope` | 匿名素材复用域；仅两个非空值完全相同时才可尝试跨模型复用 |
 
+`asset_group_requirement=optional` 表示可省略组；`required` 表示该素材类型必须提供专用组；
+`unsupported` 表示普通组不参与该模型履约，省略组即可创建，不能把这个值理解成素材创建也不支持。
+
 `reuse_scope` 相同不证明素材所有权、ready 状态或永久兼容，只表示可以把同一个 opaque ID 交给另一个
 模型尝试。不同或缺失时不得跨模型发送素材 ID。
 
@@ -53,7 +56,7 @@ operations:
   查看同组模型清单。
 - 卡片没有标签：该模型未发布素材库（`api.assets.supported` 不为 `true` 或模型当前不可用），不能
   调用素材 API，也没有可比较的复用域；不得把其它模型的素材引用交给它。
-- 标签文本（如 `4AFE`）是匿名复用域的短哈希，只用于界面区分，不代表上游身份或渠道信息。
+- 标签文本（如 `4AFE`）仅用于界面区分；程序必须比较完整的非空 `reuse_scope`，不要比较短标签来判断可复用性。
 - 相同标签只表示“可以尝试复用”，不保证素材一定被接受；最终存在性、权限、状态和兼容性仍由当前
   模型选定的上游判断，规则与逐模型比较 `reuse_scope` 完全一致。
 
@@ -86,14 +89,13 @@ curl "{{OPENAI_BASE_URL}}/assets" \
   -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "品牌片头",
+    "name": "商品参考图",
     "asset_kind": "general",
-    "media_type": "video",
+    "media_type": "image",
     "model": "{{MODEL_ID_PLACEHOLDER}}",
     "source": {
       "type": "url",
-      "url": "https://example.com/brand-intro.mp4",
-      "expires_at": 1800000000
+      "url": "https://example.com/product.png"
     }
   }'
 ```
@@ -127,9 +129,9 @@ HTTP `201`：
 ```json
 {
   "object": "asset",
-  "id": "provider-resource-id",
+  "id": "example-asset-id",
   "model": "customer-model-name",
-  "reference": "asset://provider-reference-id",
+  "reference": "asset://example-reference-id",
   "status": "ready"
 }
 ```
@@ -137,7 +139,7 @@ HTTP `201`：
 | 字段 | 类型 | 是否总是存在 | 说明 |
 | --- | --- | --- | --- |
 | `object` | string | 是 | 固定为 `asset` |
-| `id` | string | 是 | 上游素材资源 opaque ID；用于查询、更新和删除 |
+| `id` | string | 是 | 素材资源的不透明 ID；用于查询、更新和删除 |
 | `model` | string | 是 | 本次请求使用的客户模型名 |
 | `reference` | string | 否 | 可用于视频生成的 `asset://<opaque-id>` 引用；未 ready 时可能暂不返回 |
 | `status` | string | 是 | `processing`、`ready` 或 `failed` |
@@ -152,7 +154,7 @@ HTTP `201`：
 `GET /v1/assets/{asset_id}?model={customer_model}`
 
 ```bash
-curl "{{OPENAI_BASE_URL}}/assets/provider-resource-id?model={{MODEL_ID_PLACEHOLDER}}" \
+curl "{{OPENAI_BASE_URL}}/assets/example-asset-id?model={{MODEL_ID_PLACEHOLDER}}" \
   -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
 ```
 
@@ -161,15 +163,15 @@ curl "{{OPENAI_BASE_URL}}/assets/provider-resource-id?model={{MODEL_ID_PLACEHOLD
 | `asset_id` | path | 是 | 创建响应的 `id`，原样 URL 编码后放入路径 |
 | `model` | query | 是 | 创建该素材时保存的客户模型名 |
 
-HTTP `200` 返回与创建相同的 `Asset` 对象。查询只请求当前客户模型选定的上游，不会探测 ID 的真实
-来源，也不会换模型或 fallback。
+HTTP `200` 返回与创建相同的 `Asset` 对象。代理模式只查询当前模型的素材服务；托管模式查询当前账号
+的托管图片。模型与 ID 不匹配时不探测其他来源，也不自动换模型。
 
 ## 更新素材名称
 
 `PATCH /v1/assets/{asset_id}` · `application/json`
 
 ```bash
-curl -X PATCH "{{OPENAI_BASE_URL}}/assets/provider-resource-id" \
+curl -X PATCH "{{OPENAI_BASE_URL}}/assets/example-asset-id" \
   -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -192,7 +194,7 @@ HTTP `200` 返回更新后的 `Asset` 对象。只有 `operations` 中 `update_a
 `DELETE /v1/assets/{asset_id}?model={customer_model}`
 
 ```bash
-curl -X DELETE "{{OPENAI_BASE_URL}}/assets/provider-resource-id?model={{MODEL_ID_PLACEHOLDER}}" \
+curl -X DELETE "{{OPENAI_BASE_URL}}/assets/example-asset-id?model={{MODEL_ID_PLACEHOLDER}}" \
   -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
 ```
 
@@ -235,7 +237,7 @@ HTTP `201`：
 ```json
 {
   "object": "asset_group",
-  "id": "provider-group-id",
+  "id": "example-group-id",
   "model": "customer-model-name",
   "status": "ready"
 }
@@ -244,7 +246,7 @@ HTTP `201`：
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `object` | string | 普通组固定为 `asset_group` |
-| `id` | string | 上游素材组 opaque ID；业务需要自定义分组时可把它放入普通素材的 `asset_group_id` |
+| `id` | string | 素材组的不透明 ID；业务需要自定义分组时可把它放入普通素材的 `asset_group_id` |
 | `model` | string | 创建素材组时使用的客户模型名 |
 | `status` | string | `processing`、`ready` 或 `failed` |
 
@@ -266,7 +268,7 @@ HTTP `201` 示例：
 ```json
 {
   "object": "asset_group_verification",
-  "id": "provider-session-id",
+  "id": "example-session-id",
   "model": "customer-model-name",
   "status": "processing",
   "verification_url": "https://verification.example.com/session-placeholder",
@@ -310,6 +312,17 @@ GET /v1/asset-groups/{session_id}?model={customer_model}&verification_session=tr
 HTTP `200` 返回 `AssetGroup` 对象。真人认证完成后，响应中的 `group_id` 才是创建真人素材时应填写的
 `asset_group_id`。不要把会话 `id` 当作最终素材组 ID。
 
+需要在组内创建图片时，将组创建响应的 `id` 放入素材请求的 `asset_group_id`，其余字段与直接创建图片一致。
+普通组的单项查询示例：
+
+```bash
+curl --get "{{OPENAI_BASE_URL}}/asset-groups/example-group-id" \
+  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}" \
+  --data-urlencode "model={{MODEL_ID_PLACEHOLDER}}"
+```
+
+查询或删除素材时，`model` 同样应进行 URL 查询参数编码；可以用 `--get --data-urlencode` 构造查询。
+
 平台没有注册 `GET /v1/assets`、`GET /v1/asset-groups` 列表，也没有素材组更新或删除接口。素材组可能
 包含多项资源并产生级联影响，确需清理由上游管理员确认归属后执行。
 
@@ -320,13 +333,41 @@ HTTP `200` 返回 `AssetGroup` 对象。真人认证完成后，响应中的 `gr
 ```json
 {
   "type": "image_url",
-  "image_url": {"url": "asset://provider-reference-id"},
+  "image_url": {"url": "asset://example-reference-id"},
   "role": "reference_image"
 }
 ```
 
-平台不会在视频生成前查询素材，也不会校验所有权、ready 状态、创建模型或上游作用域。最终存在性、
-权限、兼容性和内容审核由当前客户模型选定的上游判断；素材单项查询成功也不保证视频一定生成成功。
+普通代理引用的存在性、权限、兼容性和审核由素材服务判断，平台不建立本地所有权校验。
+托管图片则在视频预扣前校验当前账号归属、有效引用和图片位置；无效、已删除或跨账号引用会被拒绝。
+无论哪种模式，素材 ready 都不保证视频一定生成成功。
+
+完整视频请求示例（先确认模型公开 `reference_image`）：
+
+```bash
+curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "{{MODEL_ID_PLACEHOLDER}}",
+    "content": [
+      {"type": "text", "text": "保持商品外观，镜头缓慢环绕展示"},
+      {
+        "type": "image_url",
+        "role": "reference_image",
+        "image_url": {"url": "asset://example-reference-id"}
+      }
+    ],
+    "duration": 5,
+    "resolution": "720p",
+    "ratio": "16:9"
+  }'
+```
+
+将示例引用完整替换为创建或查询返回的 `reference`，不要从 `id` 自行拼接。时长、分辨率、画幅仍按模型
+合同取值。创建成功保存视频任务 `id`，随后按[ModelArk V3 视频](api-reference/videos/modelark)查询与下载。
+
+同账号 API Key 共享托管素材，但不共享视频或图片任务；不要把素材共享规则套用到任务查询。
 
 ## 状态处理
 
@@ -361,7 +402,7 @@ HTTP `200` 返回 `AssetGroup` 对象。真人认证完成后，响应中的 `gr
 | `400` | `asset_url_ttl_insufficient` | URL 剩余有效期不足；读取 `error.details.required_min_ttl_seconds` 后换用更长有效期 URL |
 | `404` | `model_not_found` | 客户模型不存在；重新读取模型目录 |
 | `404` | `asset_not_found` | 当前模型选定的上游未找到该素材或素材组 |
-| `409` | `default_asset_group_not_configured` | 所选 Channel 尚未配置系统默认组；由管理员在渠道编辑页创建或复用后重试 |
+| `409` | `default_asset_group_not_configured` | 当前模型的默认素材组未配置；联系管理员完成配置，或按业务需要使用已创建的合法组 ID |
 | `422` | `unsupported_asset_type` | 当前模型不支持该 `asset_kind + media_type` 组合 |
 | `422` | `unsupported_asset_operation` | 当前模型未发布该素材或素材组操作 |
 | `502` | `asset_upstream_error` | 上游拒绝或返回无效结果；不要改成其它 Provider ID 探测 |

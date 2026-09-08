@@ -1,7 +1,7 @@
 ---
 page-id: videos-modelark
 kind: api-reference
-last-verified: 2026-08-28
+last-verified: 2026-09-09
 operations:
   - listModelArkVideoModels
   - retrieveModel
@@ -14,8 +14,11 @@ operations:
 
 # ModelArk V3 Seedance 视频
 
-所有 Seedance 客户模型统一使用 ModelArk V3 任务合同。`/v1/video/generations` 属于 NEWAPI 原生视频
-合同，不是本接口的别名；ModelArk、Kling、即梦和 OpenAI Videos 的字段不能混用。
+所有 Seedance 客户模型统一使用 ModelArk V3 任务合同。`/v1/video/generations` 属于原生通用视频
+协议，不是本接口的别名；ModelArk、Kling、即梦和 OpenAI Videos 的字段不能混用。
+
+完整流程是：查询模型 → POST 创建 → 保存 `id` → GET 轮询 → 成功后鉴权下载。
+可复制的轮询脚本见[图片与视频调用实战](guides/media-workflow)。所有步骤使用创建时的同一 API Key。
 
 ## 查询模型与参数合同
 
@@ -26,7 +29,17 @@ GET /v1/models/{customer_model}
 GET /api/v3/contents/generations/models
 ```
 
-ModelArk 模型列表返回：
+查询当前 Key 可用的视频模型：
+
+```bash
+curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models" \
+  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
+```
+
+也可以通过 `{{OPENAI_BASE_URL}}/models/{{MODEL_ID_PLACEHOLDER}}` 读取单个模型；路径中的模型名
+须先进行 URL 编码。ModelArk 创建路径从站点根 `/api/v3` 开始，不拼到 `/v1` 后面。
+
+以下列表为结构示意，省略了部分操作和参数；时长与媒体上限不能直接套用到其他模型：
 
 ```json
 {
@@ -117,6 +130,87 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
   }'
 ```
 
+### 文生视频
+
+将上例的 `content` 替换为仅含文本的数组即可。以下为完整请求体；发送到相同创建路径。
+示例中的 5 秒、720p 和 16:9 仅用于演示，调用前核对模型参数，补齐模型声明的其他必填字段：
+
+```json
+{
+  "model": "{{MODEL_ID_PLACEHOLDER}}",
+  "content": [{"type": "text", "text": "清晨的海面上，一艘帆船缓缓驶过，镜头平稳推进"}],
+  "duration": 5,
+  "resolution": "720p",
+  "ratio": "16:9"
+}
+```
+
+### 首尾帧与多参考素材
+
+模型公开对应 `type + role` 时，可将 `content` 替换为下列数组。首帧与末帧控制起止画面，
+`reference_image` 用作参考素材，不能把角色互换来绕过不支持的组合。
+
+首尾帧示例：
+
+```json
+[
+  {
+    "type": "text",
+    "text": "镜头从空桌面平滑推进到摆好餐具的桌面"
+  },
+  {
+    "type": "image_url",
+    "role": "first_frame",
+    "image_url": {
+      "url": "https://example.com/start.png"
+    }
+  },
+  {
+    "type": "image_url",
+    "role": "last_frame",
+    "image_url": {
+      "url": "https://example.com/end.png"
+    }
+  }
+]
+```
+
+多模态参考示例，仅用于同时支持这些类型和组合的模型：
+
+```json
+[
+  {
+    "type": "text",
+    "text": "保持参考图中的商品外观，参考视频的镜头运动和音频节奏"
+  },
+  {
+    "type": "image_url",
+    "role": "reference_image",
+    "image_url": {
+      "url": "https://example.com/product.png"
+    }
+  },
+  {
+    "type": "video_url",
+    "role": "reference_video",
+    "video_url": {
+      "url": "https://example.com/motion.mp4"
+    }
+  },
+  {
+    "type": "audio_url",
+    "role": "reference_audio",
+    "audio_url": {
+      "url": "https://example.com/rhythm.mp3"
+    }
+  }
+]
+```
+
+每张参考图分别占一个内容项。不要同时照抄全部示例；组合、总数量及文件规格以模型公开能力为准。
+媒体地址必须在处理期间可读取，不能使用本地文件路径。长期复用图片可先调用
+[素材与素材组](api-reference/assets)，再原样使用返回的 `reference`。
+
 ### 顶层请求参数
 
 | 字段 | 类型 | 结构必填 | 公共结构约束 |
@@ -124,7 +218,7 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 | `model` | string | 是 | 客户模型名；必须可用于当前 Key |
 | `content` | array | 是 | 至少一项；每项只能表达一种文本或媒体内容 |
 | `duration` | integer | 否 | `-1` 表示智能时长，或 `1`～`3600`；具体模型通常有更窄范围，`0` 无效 |
-| `callback_url` | string | 否 | 回调 URI；只有模型合同公开该字段时可用 |
+| `callback_url` | string | 否 | 回调 URI；只有模型合同公开该字段时可用，未声明时使用 GET 轮询，不假设平台提供统一回调或重试保证 |
 | `resolution` | string | 否 | 输出分辨率；枚举与必填性以模型合同为准 |
 | `ratio` | string | 否 | 输出画幅；枚举、默认值和自适应支持以模型合同为准 |
 | `output_format` | string | 否 | `mp4` 或 `mov`；只有明确发布该字段的模型接受 |
@@ -141,9 +235,15 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 | `seed` | integer | 否 | `-1`～`2147483647` |
 | `camera_fixed` | boolean | 否 | 是否固定相机；仅模型公开时可用 |
 
-公共结构允许字段不等于所选模型允许字段。提交前必须再按
-`api.video.creation.parameters` 过滤；`additional_properties=false` 时，列表外字段直接返回
+公共结构允许字段不等于所选模型允许字段。提交前必须按
+`api.video.creation.parameters` 组装请求；不要提交后再静默删字段重试。
+其中 `fixed_value` 为固定值，`default_value` 为缺省值，`special_values` 表示额外允许的特殊值。
+只有 `duration.special_values` 明确含 `-1` 时才能请求智能时长；需要固定输出时长时直接传合法正整数。
+`additional_properties=false` 时，列表外字段直接返回
 `400 unsupported_parameter`。
+
+已发布字段按统一协议的条件生效，服务负责必要的转换；不要求调用方填写内部参数或改写请求结构。
+例如是否返回末帧仍需检查成功响应中是否实际存在 `last_frame_url`，不能仅凭提交了字段就假定结果存在。
 
 ### `content` 内容项
 
@@ -159,7 +259,7 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 ```json
 {
   "type": "image_url",
-  "image_url": {"url": "asset://provider-reference-id"},
+  "image_url": {"url": "asset://example-reference-id"},
   "role": "reference_image"
 }
 ```
@@ -296,6 +396,13 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks?page_num=1&page_size=2
 
 `DELETE /api/v3/contents/generations/tasks/{task_id}`
 
+请求示例：
+
+```bash
+curl -X DELETE "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
+  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
+```
+
 成功返回 HTTP `200` 和空对象：
 
 ```json
@@ -318,12 +425,21 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks?page_num=1&page_size=2
 任务为 `succeeded` 后，使用任务响应中返回的内容路径：
 
 ```bash
-curl "{{OPENAI_BASE_URL}}/videos/task-public-id/content" \
+curl --fail "{{OPENAI_BASE_URL}}/videos/task-public-id/content" \
   -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}" \
   --output result.mp4
 ```
 
-如响应包含 `last_frame_url`，按该路径下载末帧。内容代理要求任务已成功，并按创建任务的鉴权主体隔离。
+如响应包含 `last_frame_url`，按该路径下载末帧。例如：
+
+```bash
+curl --fail "{{OPENAI_BASE_URL}}/videos/task-public-id/content?part=last_frame" \
+  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}" \
+  --output last-frame.jpg
+```
+
+末帧是否提供取决于模型和任务结果，扩展名应按实际媒体类型选择。
+内容代理要求任务已成功，并按创建任务的鉴权主体隔离。
 下载前先检查 HTTP 状态和 `Content-Type`；失败响应是 JSON，不是视频或图片字节。
 
 | HTTP 状态 | 常见错误码 | 说明 |
@@ -335,15 +451,24 @@ curl "{{OPENAI_BASE_URL}}/videos/task-public-id/content" \
 
 ## 素材引用
 
-视频请求可直接使用请求级媒体，也可以使用素材 API 返回的 `asset://<opaque-id>`。平台不查询该 ID，
-不验证所有权、ready 状态、创建模型或 Provider 作用域，也不尝试其它 Provider；当前模型选定的上游
-最终判断素材存在性、权限、兼容性与内容审核。
+视频请求可直接使用请求级媒体，也可以使用素材 API 返回的 `reference`。读取当前模型的
+`api.assets.management_mode` 区分两种流程：
+
+- `caller_managed_stateless`：普通代理 ID 不在本地验证所有权、ready 状态或作用域，由素材服务判断
+  存在性、权限、兼容性与审核；不能通过改模型探测 ID。
+- `platform_hosted`：本站托管图片会在视频预扣前校验当前账号归属、删除状态和引用位置。
+  只将图片 reference 放入 `image_url.url`，不能当作视频或音频。相同账号的 API Key 共享托管素材，
+  但视频任务仍仅属于创建它的 API Key。删除素材只阻止新引用，已受理视频继续执行。
+
+部分模型只能使用直接媒体 URL 或本站托管图片，不能消费普通代理素材 ID。不要手工构造或猜测引用，
+以模型发布的素材能力和创建响应为准。
 
 跨模型复用前比较两个模型的 `api.assets.reuse_scope`。只有两个非空值完全相同时才可尝试复用；scope
-不同或缺失时不得复用。素材创建、素材组和真人认证的详细参数见素材 API 页面。
+不同或缺失时不得复用。素材创建、素材组和真人认证的详细参数见[素材与素材组](api-reference/assets)。
 
 控制台模型广场的模型卡片按同一规则显示“素材共享组”短标签：标签相同的模型位于同一素材复用域，
-可以把同一个 `asset://` 引用交给同组其它模型尝试；没有标签的模型未发布素材库，也没有可比较的
+可以把同一个 `asset://` 引用交给同组其它模型尝试；程序应比较完整非空 `reuse_scope`，不能仅比较短标签。
+没有标签的模型未发布素材库，也没有可比较的
 复用域，不得把其它模型的素材引用交给它。标签只是复用提示，最终存在性、权限和兼容性由当前模型
 选定的上游判断。
 
@@ -353,8 +478,15 @@ ModelArk 创建请求最多发送一次上游 POST，当前不接受客户幂等
 `create_outcome_unknown`，平台不会自动重发、换模型或退款。客户端必须停止自动创建，保存
 `request_id` 并联系技术人员核查。
 
-任务成功建立后，预扣、结算、差额和退款使用创建时冻结的模型、执行路径和计费事实。轮询 GET 可以有界
-重试；创建 POST 不能因为客户端超时而盲目重放。
+任务成功建立后，费用按创建时确定的模型、请求参数和价格规则处理。成功视频可以先交付，结算随后完成：
+
+- 按实际用量计费时，缺少 `usage` 不代表零费用，预扣可能保留到用量补齐后再结算；
+- 明确返回 `completion_tokens=0` 与未返回该字段不同，客户端应按字段存在性读取；
+- 最终费用可能高于或低于预扣，差额按实际规则补扣或退还；不要用预扣值当最终账单；
+- 成功后的费用核实不要求重新生成视频，查询也不会重新触发生成。
+
+轮询 GET 可以有界重试；创建 POST 不能因为客户端超时而盲目重放。下载应在内容有效期内完成，
+`410 video_content_expired` 不能通过重新查询保证恢复。
 
 ## 错误响应
 

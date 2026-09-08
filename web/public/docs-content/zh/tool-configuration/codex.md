@@ -1,11 +1,14 @@
 ---
 page-id: tool-codex
 kind: guide
-last-verified: 2026-08-27
+last-verified: 2026-09-09
 operations: []
 ---
 
 # Codex
+
+本文按官方配置说明核对，未声明某个客户端版本已经实机验收。设置名称和界面位置可能随版本变化；
+升级后先用一条最小会话验证连接，并确认所选客户模型支持该工具需要的协议与工具调用。
 
 按下面两份文件配置。API Key 保存在本机，不需要设置环境变量。
 
@@ -39,7 +42,8 @@ macOS、Linux 或 WSL 再执行：
 chmod 600 ~/.codex/auth.json
 ```
 
-Windows 的目录是 `%USERPROFILE%\.codex`。
+Windows 默认目录是 `%USERPROFILE%\.codex`。若你设置过 `CODEX_HOME`，应修改该目录中的配置与凭据文件。
+使用 `file` 存储时 Key 以本地文件保存，不要把该目录上传到共享空间。
 
 ## 3. 重新启动
 

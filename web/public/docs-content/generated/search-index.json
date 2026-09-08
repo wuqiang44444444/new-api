@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-09-05.3",
+  "contentVersion": "2026-09-09.2",
   "locales": {
     "zh": [
       {
@@ -77,6 +77,11 @@
             "depth": 2,
             "id": "安全要求",
             "text": "安全要求"
+          },
+          {
+            "depth": 2,
+            "id": "任务与素材使用哪一把-key",
+            "text": "任务与素材使用哪一把 Key"
           },
           {
             "depth": 2,
@@ -191,6 +196,35 @@
         ]
       },
       {
+        "pageId": "model-parameters",
+        "slug": "concepts/model-parameters",
+        "title": "模型与参数",
+        "description": "理解模型可用性、默认值、互选输入和逐模型参数限制",
+        "keywords": ["模型", "参数", "默认值", "required_one_of"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "1-确认当前模型可调用",
+            "text": "1. 确认当前模型可调用"
+          },
+          {
+            "depth": 2,
+            "id": "2-读取参数约束",
+            "text": "2. 读取参数约束"
+          },
+          {
+            "depth": 2,
+            "id": "3-区分通用上限与模型规格",
+            "text": "3. 区分通用上限与模型规格"
+          },
+          {
+            "depth": 2,
+            "id": "4-保存调用上下文",
+            "text": "4. 保存调用上下文"
+          }
+        ]
+      },
+      {
         "pageId": "errors",
         "slug": "concepts/errors",
         "title": "错误与重试",
@@ -223,28 +257,33 @@
         "pageId": "async-tasks",
         "slug": "concepts/async-tasks",
         "title": "异步任务",
-        "description": "轮询明确返回任务 ID 的视频任务",
+        "description": "区分图片与视频的受理、轮询、结果交付和重试边界",
         "keywords": ["任务", "轮询", "状态"],
         "headings": [
           {
             "depth": 2,
-            "id": "状态机",
-            "text": "状态机"
+            "id": "按接口选择生命周期",
+            "text": "按接口选择生命周期"
           },
           {
             "depth": 2,
-            "id": "轮询建议",
-            "text": "轮询建议"
+            "id": "图片异步与流式的区别",
+            "text": "图片异步与流式的区别"
           },
           {
             "depth": 2,
-            "id": "任务隔离",
-            "text": "任务隔离"
+            "id": "轮询流程",
+            "text": "轮询流程"
           },
           {
             "depth": 2,
-            "id": "内容下载",
-            "text": "内容下载"
+            "id": "重试与幂等",
+            "text": "重试与幂等"
+          },
+          {
+            "depth": 2,
+            "id": "权限与交付",
+            "text": "权限与交付"
           }
         ]
       },
@@ -277,6 +316,11 @@
           },
           {
             "depth": 2,
+            "id": "如何读取结果与流式输出",
+            "text": "如何读取结果与流式输出"
+          },
+          {
+            "depth": 2,
             "id": "计费与错误",
             "text": "计费与错误"
           }
@@ -286,9 +330,14 @@
         "pageId": "images-generations",
         "slug": "api-reference/images/generations",
         "title": "图片生成",
-        "description": "查看图片生成参数、同步与流式响应及错误处理",
+        "description": "从模型参数到同步、流式和显式异步图片生成的完整调用",
         "keywords": ["图片生成", "响应", "流式"],
         "headings": [
+          {
+            "depth": 2,
+            "id": "调用前确认模型",
+            "text": "调用前确认模型"
+          },
           {
             "depth": 2,
             "id": "最小请求",
@@ -300,9 +349,19 @@
             "text": "请求参数"
           },
           {
+            "depth": 3,
+            "id": "尺寸-画幅和参考图",
+            "text": "尺寸、画幅和参考图"
+          },
+          {
             "depth": 2,
             "id": "异步受理-可选",
             "text": "异步受理（可选）"
+          },
+          {
+            "depth": 3,
+            "id": "提交异步生成",
+            "text": "提交异步生成"
           },
           {
             "depth": 2,
@@ -330,7 +389,7 @@
         "pageId": "images-edits",
         "slug": "api-reference/images/edits",
         "title": "图片编辑",
-        "description": "查看图片编辑表单、文件要求与响应字段",
+        "description": "使用文件、URL 或 Data URL 编辑图片，并选择同步或异步结果",
         "keywords": ["图片编辑", "multipart", "响应"],
         "headings": [
           {
@@ -340,8 +399,13 @@
           },
           {
             "depth": 2,
-            "id": "图片中转的标准编辑输入",
-            "text": "图片中转的标准编辑输入"
+            "id": "json-参考图输入",
+            "text": "JSON 参考图输入"
+          },
+          {
+            "depth": 2,
+            "id": "异步编辑完整示例",
+            "text": "异步编辑完整示例"
           },
           {
             "depth": 2,
@@ -379,18 +443,38 @@
         "pageId": "images-tasks",
         "slug": "images/tasks",
         "title": "图片任务查询",
-        "description": "查询异步图片任务的状态与 300 秒签名结果地址",
+        "description": "查询图片生成与编辑任务，处理状态、部分结果和签名地址续签",
         "keywords": ["图片", "任务", "异步", "查询"],
         "headings": [
           {
             "depth": 2,
-            "id": "请求",
-            "text": "请求"
+            "id": "查询请求",
+            "text": "查询请求"
+          },
+          {
+            "depth": 2,
+            "id": "响应示例",
+            "text": "响应示例"
           },
           {
             "depth": 2,
             "id": "响应字段",
             "text": "响应字段"
+          },
+          {
+            "depth": 2,
+            "id": "状态与轮询动作",
+            "text": "状态与轮询动作"
+          },
+          {
+            "depth": 2,
+            "id": "结果保存与地址过期",
+            "text": "结果保存与地址过期"
+          },
+          {
+            "depth": 2,
+            "id": "查询错误",
+            "text": "查询错误"
           }
         ]
       },
@@ -398,7 +482,7 @@
         "pageId": "videos-openai",
         "slug": "api-reference/videos/openai",
         "title": "OpenAI Videos",
-        "description": "查看 OpenAI Videos 创建、查询、Remix、下载和通用视频合同",
+        "description": "查看 OpenAI Videos 创建、查询、Remix 和内容下载",
         "keywords": ["OpenAI Videos", "Sora", "响应"],
         "headings": [
           {
@@ -438,8 +522,8 @@
           },
           {
             "depth": 2,
-            "id": "通用视频生成合同",
-            "text": "通用视频生成合同"
+            "id": "其他视频协议",
+            "text": "其他视频协议"
           },
           {
             "depth": 2,
@@ -452,7 +536,7 @@
         "pageId": "videos-modelark",
         "slug": "api-reference/videos/modelark",
         "title": "ModelArk V3 Seedance 视频",
-        "description": "查看 ModelArk 视频参数、任务响应、状态、列表和下载",
+        "description": "文生、图生与多模态视频的创建、轮询、下载、素材引用和费用说明",
         "keywords": ["ModelArk", "参数", "响应"],
         "headings": [
           {
@@ -464,6 +548,16 @@
             "depth": 2,
             "id": "创建任务",
             "text": "创建任务"
+          },
+          {
+            "depth": 3,
+            "id": "文生视频",
+            "text": "文生视频"
+          },
+          {
+            "depth": 3,
+            "id": "首尾帧与多参考素材",
+            "text": "首尾帧与多参考素材"
           },
           {
             "depth": 3,
@@ -606,10 +700,34 @@
         ]
       },
       {
+        "pageId": "videos-generations",
+        "slug": "api-reference/videos/generations",
+        "title": "通用视频生成",
+        "description": "使用通用视频入口，正确解析任务信封、状态和结果",
+        "keywords": ["视频", "查询", "data", "状态"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "创建任务",
+            "text": "创建任务"
+          },
+          {
+            "depth": 2,
+            "id": "查询任务",
+            "text": "查询任务"
+          },
+          {
+            "depth": 2,
+            "id": "错误-轮询与结果",
+            "text": "错误、轮询与结果"
+          }
+        ]
+      },
+      {
         "pageId": "assets-lifecycle",
         "slug": "api-reference/assets",
         "title": "素材与素材组",
-        "description": "直接创建 AIGC 素材，并按需使用素材组和真人认证",
+        "description": "创建图片素材与可选素材组，区分代理和托管模式并引用到视频",
         "keywords": ["AIGC 素材", "素材组", "参数", "响应"],
         "headings": [
           {
@@ -696,6 +814,79 @@
             "depth": 2,
             "id": "错误响应",
             "text": "错误响应"
+          }
+        ]
+      },
+      {
+        "pageId": "media-workflow",
+        "slug": "guides/media-workflow",
+        "title": "图片与视频调用实战",
+        "description": "用 curl 和 Python 完成图片、视频创建、任务轮询与结果保存",
+        "keywords": ["图片", "视频", "异步", "Python", "curl", "轮询", "下载"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "1-准备地址与-api-key",
+            "text": "1. 准备地址与 API Key"
+          },
+          {
+            "depth": 2,
+            "id": "2-确认模型和参数",
+            "text": "2. 确认模型和参数"
+          },
+          {
+            "depth": 2,
+            "id": "3-创建图片-同步或异步二选一",
+            "text": "3. 创建图片：同步或异步二选一"
+          },
+          {
+            "depth": 2,
+            "id": "4-创建视频",
+            "text": "4. 创建视频"
+          },
+          {
+            "depth": 2,
+            "id": "5-用-python-轮询原任务",
+            "text": "5. 用 Python 轮询原任务"
+          },
+          {
+            "depth": 2,
+            "id": "6-保存图片或视频",
+            "text": "6. 保存图片或视频"
+          },
+          {
+            "depth": 2,
+            "id": "7-常见问题",
+            "text": "7. 常见问题"
+          }
+        ]
+      },
+      {
+        "pageId": "image-results",
+        "slug": "guides/image-results",
+        "title": "图片结果保存",
+        "description": "下载 URL 或解码 Base64，逐张保存图片并为过期地址续签",
+        "keywords": ["图片", "下载", "Base64", "续签", "Python"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "1-准备结果文件",
+            "text": "1. 准备结果文件"
+          },
+          {
+            "depth": 2,
+            "id": "2-逐张保存-url-或-base64-图片",
+            "text": "2. 逐张保存 URL 或 Base64 图片"
+          },
+          {
+            "depth": 2,
+            "id": "3-图片任务地址过期后续签",
+            "text": "3. 图片任务地址过期后续签"
+          },
+          {
+            "depth": 2,
+            "id": "4-部分结果与失败",
+            "text": "4. 部分结果与失败"
           }
         ]
       },

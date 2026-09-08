@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-09-05.3",
+  "contentVersion": "2026-09-09.2",
   "defaultLocale": "zh",
   "locales": {
     "zh": {
@@ -136,6 +136,20 @@
           "title": "通用概念",
           "pages": [
             {
+              "id": "model-parameters",
+              "title": "模型与参数",
+              "slug": "concepts/model-parameters",
+              "file": "zh/concepts/model-parameters.md",
+              "description": "理解模型可用性、默认值、互选输入和逐模型参数限制",
+              "keywords": [
+                "模型",
+                "参数",
+                "默认值",
+                "required_one_of"
+              ],
+              "assets": []
+            },
+            {
               "id": "errors",
               "title": "错误与重试",
               "slug": "concepts/errors",
@@ -153,7 +167,7 @@
               "title": "异步任务",
               "slug": "concepts/async-tasks",
               "file": "zh/concepts/async-tasks.md",
-              "description": "轮询明确返回任务 ID 的视频任务",
+              "description": "区分图片与视频的受理、轮询、结果交付和重试边界",
               "keywords": [
                 "任务",
                 "轮询",
@@ -192,7 +206,7 @@
               "title": "图片生成",
               "slug": "api-reference/images/generations",
               "file": "zh/api-reference/images/generations.md",
-              "description": "查看图片生成参数、同步与流式响应及错误处理",
+              "description": "从模型参数到同步、流式和显式异步图片生成的完整调用",
               "keywords": [
                 "图片生成",
                 "响应",
@@ -205,7 +219,7 @@
               "title": "图片编辑",
               "slug": "api-reference/images/edits",
               "file": "zh/api-reference/images/edits.md",
-              "description": "查看图片编辑表单、文件要求与响应字段",
+              "description": "使用文件、URL 或 Data URL 编辑图片，并选择同步或异步结果",
               "keywords": [
                 "图片编辑",
                 "multipart",
@@ -218,7 +232,7 @@
               "title": "图片任务查询",
               "slug": "images/tasks",
               "file": "zh/api-reference/images/tasks.md",
-              "description": "查询异步图片任务的状态与 300 秒签名结果地址",
+              "description": "查询图片生成与编辑任务，处理状态、部分结果和签名地址续签",
               "keywords": [
                 "图片",
                 "任务",
@@ -238,7 +252,7 @@
               "title": "OpenAI Videos",
               "slug": "api-reference/videos/openai",
               "file": "zh/api-reference/videos/openai.md",
-              "description": "查看 OpenAI Videos 创建、查询、Remix、下载和通用视频合同",
+              "description": "查看 OpenAI Videos 创建、查询、Remix 和内容下载",
               "keywords": [
                 "OpenAI Videos",
                 "Sora",
@@ -251,7 +265,7 @@
               "title": "ModelArk V3 Seedance 视频",
               "slug": "api-reference/videos/modelark",
               "file": "zh/api-reference/videos/modelark.md",
-              "description": "查看 ModelArk 视频参数、任务响应、状态、列表和下载",
+              "description": "文生、图生与多模态视频的创建、轮询、下载、素材引用和费用说明",
               "keywords": [
                 "ModelArk",
                 "参数",
@@ -284,6 +298,20 @@
                 "响应"
               ],
               "assets": []
+            },
+            {
+              "id": "videos-generations",
+              "title": "通用视频生成",
+              "slug": "api-reference/videos/generations",
+              "file": "zh/api-reference/videos/generations.md",
+              "description": "使用通用视频入口，正确解析任务信封、状态和结果",
+              "keywords": [
+                "视频",
+                "查询",
+                "data",
+                "状态"
+              ],
+              "assets": []
             }
           ]
         },
@@ -296,7 +324,7 @@
               "title": "素材与素材组",
               "slug": "api-reference/assets",
               "file": "zh/api-reference/assets/overview.md",
-              "description": "直接创建 AIGC 素材，并按需使用素材组和真人认证",
+              "description": "创建图片素材与可选素材组，区分代理和托管模式并引用到视频",
               "keywords": [
                 "AIGC 素材",
                 "素材组",
@@ -311,6 +339,38 @@
           "id": "guides",
           "title": "指南",
           "pages": [
+            {
+              "id": "media-workflow",
+              "title": "图片与视频调用实战",
+              "slug": "guides/media-workflow",
+              "file": "zh/guides/media-workflow.md",
+              "description": "用 curl 和 Python 完成图片、视频创建、任务轮询与结果保存",
+              "keywords": [
+                "图片",
+                "视频",
+                "异步",
+                "Python",
+                "curl",
+                "轮询",
+                "下载"
+              ],
+              "assets": []
+            },
+            {
+              "id": "image-results",
+              "title": "图片结果保存",
+              "slug": "guides/image-results",
+              "file": "zh/guides/image-results.md",
+              "description": "下载 URL 或解码 Base64，逐张保存图片并为过期地址续签",
+              "keywords": [
+                "图片",
+                "下载",
+                "Base64",
+                "续签",
+                "Python"
+              ],
+              "assets": []
+            },
             {
               "id": "troubleshooting",
               "title": "排障清单",

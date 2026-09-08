@@ -1,7 +1,7 @@
 ---
 page-id: videos-kling
 kind: api-reference
-last-verified: 2026-08-28
+last-verified: 2026-09-09
 operations:
   - createKlingText2Video
   - getKlingText2Video
@@ -14,8 +14,8 @@ operations:
 Kling 合同分别提供文生视频和图生视频入口。两类任务使用相同请求字段与响应信封，但路径、必填媒体和
 查询路径不同。当前合同不提供列表、删除、取消或平台内容下载接口。
 
-当前内置适配器登记的模型为 `kling-v1`、`kling-v1-6` 和 `kling-v2-master`。实际可用模型仍以
-`GET /v1/models` 和当前 API Key 权限为准。
+`model_name` 使用 `GET /v1/models` 返回、且支持本页入口的客户模型 ID。不要依赖固定模型名；
+实际可调用范围由当前 Key 的权限和模型发布状态决定。
 
 ## 创建文生视频
 
@@ -78,7 +78,7 @@ curl "{{SITE_BASE_URL}}/kling/v1/videos/image2video" \
 | `camera_control` | object | 否 | 镜头控制对象 |
 | `camera_control.type` | string | 否 | 镜头控制类型 |
 | `camera_control.config` | object | 否 | 只允许 `horizontal`、`vertical`、`pan`、`tilt`、`roll`、`zoom` 数值字段 |
-| `callback_url` | string | 否 | Kling 回调地址；是否可用由模型和渠道决定 |
+| `callback_url` | string | 否 | Kling 回调地址；是否可用由该模型的公开能力决定 |
 | `external_task_id` | string | 否 | 调用方外部任务标识 |
 
 请求采用严格字段白名单。未知顶层字段、`dynamic_masks` 未知子字段和 `camera_control` 未知子字段都会
@@ -161,12 +161,17 @@ HTTP `200` 示例：
 
 ## 幂等、计费与重试
 
-创建接口支持可选 `Idempotency-Key`，最大 `191` 个字符，同一键在 `24` 小时内应绑定完全相同的协议和
-请求体。相同请求成功后可返回同一个任务；同一键配不同请求返回 `409`；原请求仍在处理或等待核查时也
-返回 `409`。遇到网络中断时应携带原键重试，不能换新键盲目创建。
+创建支持可选 `Idempotency-Key`；即梦的查询 Action 不使用幂等键。首尾空白会被去除，非空键最多
+`191` 个 UTF-8 字节，建议使用 ASCII UUID 或业务订单标识。每个新生成意图使用新键，网络重试沿用原键。
 
-任务费用按创建时冻结的客户模型和计费事实处理。创建结果不明时平台不自动重发、换渠道或退款；保留
-`request_id` 和幂等键，查询已有任务或联系管理员。
+- 同账号、同协议下键不可与另一请求复用。用原 API Key、原入口和完全相同的正文重试，才能确认同次受理。
+- 换 API Key、修改参数或在文生与图生入口之间切换，可能形成不同请求并返回 `409`；不能借此恢复原调用。
+- 原结果已可重放时返回同一个任务；仍在处理、待核查、请求冲突或结果无法重放时返回 `409`，先读取公开错误。
+- 幂等记录以 `24` 小时为保留窗口；已完成记录过期后，同键可能触发新的创建。已有任务 ID 时优先查询，
+  不把幂等键当作永久订单去重。处理中或结果不明的请求不能因超过 24 小时就按新请求提交。
+
+创建结果不明时平台不会自动重发或退款。保留任务 ID、请求 ID 和业务幂等键；没有任务 ID 时核查原受理，
+不要更换新键盲目创建。任务费用使用创建时确定的客户模型和计费事实，单次查询失败不代表生成失败。
 
 ## 错误响应
 

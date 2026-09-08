@@ -24,6 +24,10 @@ import {
   relayOpenAPIPath,
 } from './common.mjs'
 import { validateDocsContent } from './validate-content.mjs'
+import {
+  validateMarkdownJSONExamples,
+  validateOpenAPIExamples,
+} from './validate-examples.mjs'
 
 export async function validateDocsContracts(contentResult) {
   const content = contentResult ?? (await validateDocsContent())
@@ -90,6 +94,9 @@ export async function validateDocsContracts(contentResult) {
       `public operation ${operationId} 没有对应 API Reference`
     )
   }
+
+  validateOpenAPIExamples(openapi, approved)
+  validateMarkdownJSONExamples(content.documents)
 
   return { ...content, openapi, allowlist, openapiOperations, approved }
 }

@@ -1,7 +1,7 @@
 ---
 page-id: text-api
 kind: api-reference
-last-verified: 2026-07-29
+last-verified: 2026-09-09
 operations:
   - listModels
   - retrieveModel
@@ -12,7 +12,7 @@ operations:
 
 # 文本与模型
 
-文本能力在 Link 合同中提供 OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages 三种明确的客户 API 协议。选择一种与你的 SDK 和响应解析逻辑一致的协议。
+文本 API 提供原生 OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages 三种协议。选择与客户端一致、且目标模型支持的入口；视频与素材的扩展协议不改变这些文本接口的请求和响应。
 
 ## 查询模型
 
@@ -33,7 +33,7 @@ curl "{{OPENAI_BASE_URL}}/models" \
 - `additional_properties=false` 表示列表外字段不受支持；视频的 `content_types` 另列媒体类型、角色与数量。
 
 `GET /v1/models/{model}` 与列表中的同名条目使用同一合同。不要从模型后缀猜测参数，也不要发送目录
-没有登记的字段。
+没有登记的字段。完整的模型可用性、参数默认值和互选输入说明见[模型与参数](concepts/model-parameters)。
 
 ## Chat Completions
 
@@ -50,7 +50,7 @@ curl "{{OPENAI_BASE_URL}}/chat/completions" \
   }'
 ```
 
-`model` 和 `messages` 必填。可选标量会保留显式的 `0` 或 `false`；不要用未知字段传递渠道私有配置。
+`model` 和 `messages` 必填。仅使用该模型与所选文本协议支持的参数；`0`、`false` 与未填写含义不同，不要在客户端序列化时丢弃显式值。
 
 ## Responses
 
@@ -85,6 +85,21 @@ curl "{{ANTHROPIC_BASE_URL}}/v1/messages" \
 ```
 
 `max_tokens` 必填且必须为正整数。流式事件也遵循 Messages 协议，不应按 OpenAI SSE 数据结构解析。
+
+## 如何读取结果与流式输出
+
+| 协议 | 非流式正文 | 流式处理 |
+| --- | --- | --- |
+| Chat Completions | 读取 `choices[].message`；文本通常在 `content`，工具调用在 `tool_calls` | 设置 `stream=true`，按 SSE 的 `choices[].delta` 累积文本或工具参数 |
+| Responses | 按 `output[]` 条目的 `type` 处理消息和工具调用；文本在消息的 `content[]` 中 | 设置 `stream=true`，按事件类型处理文本增量、工具调用和完成事件 |
+| Messages | 按 `content[]` 块的 `type` 区分 `text` 与 `tool_use`，同时检查 `stop_reason` | 设置 `stream=true`，处理消息、内容块增量与结束事件 |
+
+工具调用结果不等于最终文本；应用执行工具后，需按原协议提交对应的工具结果，再继续读取回答。
+没有文本时先检查工具调用和结束原因，不要立即重发完整请求。
+
+curl 查看流式输出时使用 `-N` 禁用客户端缓冲，并在原 JSON 中增加 `"stream": true`。
+网络分块不等于完整 SSE 事件，应按空行分隔事件后解析；连接中断不代表已正常完成，也不保证没有产生费用。
+通用客户端不应把三个协议的终止事件和用量字段混为一套格式。
 
 ## 计费与错误
 

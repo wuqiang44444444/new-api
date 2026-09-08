@@ -1,7 +1,7 @@
 ---
 page-id: overview
 kind: guide
-last-verified: 2026-08-25
+last-verified: 2026-09-09
 operations: []
 ---
 
@@ -16,7 +16,9 @@ operations: []
 1. [快速开始](quickstart)
 2. [鉴权](authentication)
 3. [Base URL](base-url)
-4. [错误与重试](concepts/errors)
+4. [模型与参数](concepts/model-parameters)
+5. [错误与重试](concepts/errors)
+6. [图片与视频调用实战](guides/media-workflow)
 
 文档中的 Base URL 会根据当前部署动态显示。API Key 和模型 ID 始终是固定占位符，不会读取你的登录信息或自动填充真实凭据。
 
@@ -26,9 +28,9 @@ operations: []
 | -------- | ------------------------------------------------------- | ------------------------- |
 | 模型发现 | `GET /v1/models`                                        | 查询模型入口、可用状态与逐模型参数合同 |
 | 文本     | `/v1/chat/completions`、`/v1/responses`、`/v1/messages` | 选择与你的 SDK 相同的协议 |
-| 图片     | `/v1/images/generations`、`/v1/images/edits`            | 在本次请求内返回同步响应 |
-| 视频     | ModelArk、Kling、即梦 Link 合同                       | 不同协议的字段不能混用    |
-| 素材     | `/v1/assets`                                            | 代理单项素材操作，调用方保存不透明 ID |
+| 图片     | `/v1/images/generations`、`/v1/images/edits`            | 默认同步；支持时显式选择异步任务或流式 |
+| 视频     | ModelArk V3、OpenAI Videos、Kling、即梦                       | 不同协议的字段不能混用    |
+| 素材     | `/v1/assets`                                            | 按模型声明代理或托管素材，调用方保存 ID 与引用 |
 
 ## 兼容性边界
 
