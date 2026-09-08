@@ -252,6 +252,7 @@ export const TaskUsagePricingEditor = memo(function TaskUsagePricingEditor(
   props: TaskUsagePricingEditorProps
 ) {
   const { t, i18n } = useTranslation()
+  const [modeError, setModeError] = useState(false)
   const [editorMode, setEditorMode] = useState<EditorMode>(() =>
     props.billingExpr &&
     !tryParseTaskMatrixConfig(props.billingExpr, props.usageSchema)
@@ -346,6 +347,7 @@ export const TaskUsagePricingEditor = memo(function TaskUsagePricingEditor(
   }
 
   const handleRawChange = (value: string) => {
+    setModeError(false)
     setRawExpr(value)
     const split = splitBillingExprAndRequestRules(value)
     props.onBillingExprChange(split.billingExpr)
@@ -359,6 +361,10 @@ export const TaskUsagePricingEditor = memo(function TaskUsagePricingEditor(
         split.billingExpr,
         props.usageSchema
       )
+      if (split.billingExpr.trim() && !parsed) {
+        setModeError(true)
+        return
+      }
       const nextRows = (
         parsed ?? createDefaultTaskMatrixConfig(props.usageSchema)
       ).rows
@@ -380,6 +386,7 @@ export const TaskUsagePricingEditor = memo(function TaskUsagePricingEditor(
       setRawExpr(combineBillingExpr(expression, props.requestRuleExpr))
     }
     setEditorMode(nextMode)
+    setModeError(false)
   }
 
   const handlePreviewSampleChange = (field: string, value: number | string) => {
@@ -424,6 +431,16 @@ export const TaskUsagePricingEditor = memo(function TaskUsagePricingEditor(
           </Select>
         </Field>
       </div>
+
+      {modeError && (
+        <Alert variant='destructive'>
+          <AlertDescription>
+            {t(
+              'This expression cannot be converted to the visual editor without changing its pricing. Continue editing the expression.'
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Alert>
         <AlertDescription className='text-xs'>

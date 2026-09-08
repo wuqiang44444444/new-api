@@ -146,6 +146,9 @@ func UpdateOption(c *gin.Context) {
 	default:
 		option.Value = fmt.Sprintf("%v", option.Value)
 	}
+	if !validateSeedancePricingOption(c, option) {
+		return
+	}
 	switch option.Key {
 	case system_setting.ObjectStorageSettingOptionKey:
 		// 对象存储命名空间（本地扩展）只能经专用管理员接口写入，避免绕过

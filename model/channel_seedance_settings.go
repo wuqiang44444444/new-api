@@ -158,11 +158,17 @@ func validateMoxingTokenSaveModelMapping(channel *Channel, protocol dto.VideoUps
 	return err
 }
 
-// ValidateSeedanceChannelModelUniqueness enforces the administrator-facing
-// one-model/one-channel rule only on management writes. Runtime routing does
-// not repeat this audit or repair invalid direct database edits.
+// ValidateSeedanceChannelModelUniqueness keeps Link/native price keys distinct
+// and enforces one enabled Seedance channel per model on management writes.
+// Runtime routing does not repeat this audit or repair direct database edits.
 func ValidateSeedanceChannelModelUniqueness(tx *gorm.DB, channel *Channel) error {
-	if channel == nil || channel.Type != constant.ChannelTypeSeedanceLink || channel.Status != common.ChannelStatusEnabled {
+	if channel == nil {
+		return nil
+	}
+	if err := validateSeedancePricingOwnership(tx, channel); err != nil {
+		return err
+	}
+	if channel.Type != constant.ChannelTypeSeedanceLink || channel.Status != common.ChannelStatusEnabled {
 		return nil
 	}
 	if tx == nil {

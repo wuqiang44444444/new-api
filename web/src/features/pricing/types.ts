@@ -70,6 +70,8 @@ export type PricingModel = {
   billing_mode?: string
   /** Raw expression describing dynamic / tiered billing */
   billing_expr?: string
+  /** Different channel contracts have claimed the same customer price key. */
+  billing_contract_conflict?: boolean
   /** Task-plugin usage facts and their billing units. */
   billing_usage_schema?: BillingUsageSchema
   /** Display-only labeled usage vectors for pricing examples. */

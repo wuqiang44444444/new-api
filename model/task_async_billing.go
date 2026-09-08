@@ -41,6 +41,11 @@ func AttachAsyncTaskBilling(privateData *TaskPrivateData, info *relaycommon.Rela
 	if privateData == nil || info == nil {
 		return
 	}
+	// Native usage expressions own their UsageFacts and USD settlement path.
+	// They must not acquire the local c/_task billing state machine.
+	if info.TieredBillingSnapshot != nil && info.TieredBillingSnapshot.TaskUsageBilling {
+		return
+	}
 	clientProtocol := ""
 	if info.TaskRelayInfo != nil {
 		clientProtocol = info.TaskRelayInfo.ClientProtocol
@@ -130,7 +135,7 @@ func GetTerminalTasksPendingBilling(now int64, limit int) []*Task {
 			state := task.PrivateData.AsyncBilling
 			// 资金不足形成的 debt 不能因为达到普通故障重试上限而永久退出扫描。
 			// 用户后续充值后，正常轮询必须仍能按冻结 TargetQuota 原子补扣并结清。
-			if state == nil || (state.State != TaskBillingStateDebt && state.Attempts >= 10) || state.NextRetryAt > now {
+			if state == nil || task.HasTaskUsageBilling() || (state.State != TaskBillingStateDebt && state.Attempts >= 10) || state.NextRetryAt > now {
 				continue
 			}
 			tasks = append(tasks, task)

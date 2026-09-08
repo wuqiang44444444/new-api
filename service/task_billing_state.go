@@ -59,6 +59,9 @@ func persistTaskBillingFailure(ctx context.Context, task *model.Task, state mode
 }
 
 func refundTaskWithReconcile(ctx context.Context, task *model.Task, reason string) {
+	if rejectTaskUsageAsyncBilling(ctx, task) {
+		return
+	}
 	reason = taskTerminalBillingReason(task, reason)
 	async := task.PrivateData.AsyncBilling
 	if async == nil {
@@ -102,6 +105,9 @@ func refundTaskWithReconcile(ctx context.Context, task *model.Task, reason strin
 }
 
 func recalculateTaskQuotaWithReconcile(ctx context.Context, task *model.Task, actualQuota int, reason string, clamps ...*common.QuotaClamp) {
+	if rejectTaskUsageAsyncBilling(ctx, task) {
+		return
+	}
 	async := task.PrivateData.AsyncBilling
 	if async == nil {
 		RecalculateTaskQuota(ctx, task, actualQuota, reason, clamps...)
@@ -212,6 +218,9 @@ func calculateTaskQuotaByTokens(task *model.Task, totalTokens int) (int, *common
 }
 
 func settleTaskBillingWithState(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, result *relaycommon.TaskInfo) bool {
+	if rejectTaskUsageAsyncBilling(ctx, task) {
+		return true
+	}
 	async := task.PrivateData.AsyncBilling
 	if async == nil {
 		return false

@@ -18,6 +18,8 @@ import (
 )
 
 type Pricing struct {
+	BillingContractConflict bool `json:"billing_contract_conflict,omitempty"`
+
 	ModelName              string                               `json:"model_name"`
 	Description            string                               `json:"description,omitempty"`
 	Icon                   string                               `json:"icon,omitempty"`
@@ -394,6 +396,7 @@ func updatePricing() {
 		}
 		pricing.API = mediaAPIByModel[model]
 		seedanceCatalog.apply(model, &pricing)
+		_, isSeedance := seedanceCatalog[model]
 
 		// 补充模型元数据（描述、标签、供应商、状态）
 		if meta, ok := metaMap[model]; ok {
@@ -440,7 +443,7 @@ func updatePricing() {
 				pricing.BillingMode = billingMode
 				pricing.BillingExpr = expr
 			}
-		} else if target, resolved := ResolveTaskModelAlias(pluginGeneration, model); resolved && target.Declared != "" {
+		} else if target, resolved := ResolveTaskModelAlias(pluginGeneration, model); !isSeedance && resolved && target.Declared != "" {
 			if tailMode := billing_setting.GetBillingMode(target.Declared); tailMode == "tiered_expr" {
 				if expr, ok := billing_setting.GetBillingExpr(target.Declared); ok && strings.TrimSpace(expr) != "" {
 					pricing.BillingMode = tailMode
@@ -454,7 +457,7 @@ func updatePricing() {
 				plugin, ok = pluginGeneration.Get(target.PluginKey)
 			}
 		}
-		if ok && plugin != nil && len(plugin.Meta.UsageSchema) > 0 {
+		if !isSeedance && ok && plugin != nil && len(plugin.Meta.UsageSchema) > 0 {
 			pricing.BillingUsageSchema = make(map[string]jsplugin.UsageFieldSchema, len(plugin.Meta.UsageSchema))
 			for key, field := range plugin.Meta.UsageSchema {
 				field.Enum = append([]string(nil), field.Enum...)

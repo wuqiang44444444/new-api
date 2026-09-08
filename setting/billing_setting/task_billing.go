@@ -89,11 +89,10 @@ func smokeTestLinkExpr(exprStr string, requireTier bool, taskModel bool, taskPro
 	if _, err := billingexpr.CompileFromCache(exprStr); err != nil {
 		return err
 	}
-	if !taskModel {
-		usageKeys := billingexpr.UsedUsageKeys(exprStr)
-		if len(usageKeys) > 0 {
-			return fmt.Errorf("expression references usage keys %v but the model has no task plugin usage schema", usageKeys)
-		}
+	// Native plugin expressions are validated by SmokeTestTaskExpr. Link task
+	// probes have no UsageFacts, including when a nil branch would evaluate.
+	if billingexpr.UsedVars(exprStr)["u"] {
+		return fmt.Errorf("expression references u() but the model has no task plugin usage schema")
 	}
 
 	vectors := []billingexpr.TokenParams{

@@ -12,6 +12,9 @@ import (
 )
 
 func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualTokens int) bool {
+	if rejectTaskUsageAsyncBilling(ctx, task) {
+		return true
+	}
 	async := task.PrivateData.AsyncBilling
 	if async == nil || async.TieredSnapshot == nil {
 		return false

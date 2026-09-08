@@ -37,12 +37,17 @@ export function parseTaskResult() { return {}; }
 		name, customerModel   string
 		protocol              dto.VideoUpstreamProtocol
 		expression, errorText string
+		disabled              bool
 	}{
-		{"mapped plugin model", "customer-video", dto.VideoUpstreamProtocolMoxingModelArkV1, `tier("base", param("_task.duration_seconds") * 67741.935484)`, ""},
-		{"direct plugin model", "declared-video", dto.VideoUpstreamProtocolModelArkV3Volcengine, `tier("base", param("_task.duration_seconds") * 2)`, ""},
-		{"feicai probe", "customer-video", dto.VideoUpstreamProtocolFeicaiVideosV1, `tier("base", param("_task.duration_seconds") * param("_task.size_multiplier"))`, ""},
-		{"foreign protocol field", "customer-video", dto.VideoUpstreamProtocolModelArkV3Volcengine, `tier("base", param("_task.duration_seconds") * param("_task.size_multiplier"))`, "size_multiplier"},
-		{"negative price", "customer-video", dto.VideoUpstreamProtocolMoxingModelArkV1, `tier("base", -1)`, "non-negative"},
+		{"mapped plugin model", "customer-video", dto.VideoUpstreamProtocolMoxingModelArkV1, `tier("base", param("_task.duration_seconds") * 67741.935484)`, "", false},
+		{"direct plugin model", "declared-video", dto.VideoUpstreamProtocolModelArkV3Volcengine, `tier("base", param("_task.duration_seconds") * 2)`, "", false},
+		{"feicai probe", "customer-video", dto.VideoUpstreamProtocolFeicaiVideosV1, `tier("base", param("_task.duration_seconds") * param("_task.size_multiplier"))`, "", false},
+		{"foreign protocol field", "customer-video", dto.VideoUpstreamProtocolModelArkV3Volcengine, `tier("base", param("_task.duration_seconds") * param("_task.size_multiplier"))`, "size_multiplier", false},
+		{"negative price", "customer-video", dto.VideoUpstreamProtocolMoxingModelArkV1, `tier("base", -1)`, "non-negative", false},
+		{"disabled direct plugin model", "declared-video", dto.VideoUpstreamProtocolModelArkV3Volcengine, `tier("base", param("_task.duration_seconds") * 2)`, "", true},
+		{"disabled plugin expression rejected", "declared-video", dto.VideoUpstreamProtocolModelArkV3Volcengine, `tier("base", u("seconds") * 2)`, "no task plugin usage schema", true},
+		{"plugin null branch rejected", "declared-video", dto.VideoUpstreamProtocolModelArkV3Volcengine, `tier("base", u("seconds") == nil ? 0.0 : u("seconds") * 2)`, "no task plugin usage schema", false},
+		{"dynamic plugin usage rejected", "declared-video", dto.VideoUpstreamProtocolModelArkV3Volcengine, `tier("base", u(param("_task.input_mode")) == nil ? 0.0 : 1.0)`, "no task plugin usage schema", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setupBillingAliasOptionDB(t)
@@ -57,6 +62,9 @@ export function parseTaskResult() { return {}; }
 				Name: "billing-fixture", Models: tc.customerModel, Group: "default", ModelMapping: common.GetPointer(string(mapping)),
 			}
 			channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: tc.protocol})
+			if tc.disabled {
+				channel.Status = common.ChannelStatusManuallyDisabled
+			}
 			require.NoError(t, model.DB.Create(&channel).Error)
 			model.InitChannelCache()
 			generation := jsplugin.DefaultRegistry.Generation()
@@ -91,6 +99,69 @@ export function parseTaskResult() { return {}; }
 				var option model.Option
 				require.NoError(t, model.DB.Where("key = ?", "billing_setting.billing_expr").First(&option).Error)
 				assert.JSONEq(t, string(expressions), option.Value)
+			}
+		})
+	}
+}
+
+func TestSeedancePricingConflictRejectsAllPricingOptionWrites(t *testing.T) {
+	for _, key := range []string{"billing_setting.billing_expr", "billing_setting.billing_mode", "task_billing_setting.preconsume_tokens", "ModelPrice", "ModelRatio", "ImageRatio", "CompletionRatio", "CacheRatio", "CreateCacheRatio", "AudioRatio", "AudioCompletionRatio"} {
+		t.Run(key, func(t *testing.T) {
+			setupBillingAliasOptionDB(t)
+			for _, channelType := range []int{constant.ChannelTypeSeedanceLink, constant.ChannelTypeDoubaoVideo} {
+				require.NoError(t, model.DB.Create(&model.Channel{Type: channelType, Status: common.ChannelStatusManuallyDisabled, Models: "shared-price"}).Error)
+			}
+			require.NoError(t, model.DB.Create(&model.Option{Key: key, Value: `{}`}).Error)
+			var value any = 250000
+			if key == "billing_setting.billing_expr" {
+				value = `tier("base", u("tokens") * 5 / 1000000)`
+			} else if key == "billing_setting.billing_mode" {
+				value = "tiered_expr"
+			}
+			values, err := common.Marshal(map[string]any{"shared-price": value})
+			require.NoError(t, err)
+			body, err := common.Marshal(OptionUpdateRequest{Key: key, Value: string(values)})
+			require.NoError(t, err)
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPut, "/api/option/", strings.NewReader(string(body)))
+			UpdateOption(c)
+			var response struct {
+				Success bool   `json:"success"`
+				Message string `json:"message"`
+			}
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+			assert.False(t, response.Success)
+			assert.Contains(t, response.Message, "distinct customer model names")
+			var stored model.Option
+			require.NoError(t, model.DB.Where("key = ?", key).First(&stored).Error)
+			assert.JSONEq(t, `{}`, stored.Value)
+		})
+	}
+}
+
+func TestSeedancePriceValidationPrefersActiveProtocolButChecksAllInactiveContracts(t *testing.T) {
+	for _, active := range []bool{true, false} {
+		name := "inactive contracts"
+		if active {
+			name = "active contract"
+		}
+		t.Run(name, func(t *testing.T) {
+			setupBillingAliasOptionDB(t)
+			for _, protocol := range []dto.VideoUpstreamProtocol{dto.VideoUpstreamProtocolModelArkV3Volcengine, dto.VideoUpstreamProtocolFeicaiVideosV1} {
+				channel := model.Channel{Type: constant.ChannelTypeSeedanceLink, Models: "shared-price", Status: common.ChannelStatusManuallyDisabled}
+				if active && protocol == dto.VideoUpstreamProtocolFeicaiVideosV1 {
+					channel.Status = common.ChannelStatusEnabled
+				}
+				channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: protocol})
+				require.NoError(t, model.DB.Create(&channel).Error)
+			}
+			handled, err := validateSeedanceBillingExpression("shared-price", `tier("base", param("_task.duration_seconds") * param("_task.size_multiplier"))`)
+			assert.True(t, handled)
+			if active {
+				require.NoError(t, err, "an inactive channel must not constrain the active protocol")
+			} else {
+				require.ErrorContains(t, err, "size_multiplier", "all inactive contracts must accept a shared price")
 			}
 		})
 	}

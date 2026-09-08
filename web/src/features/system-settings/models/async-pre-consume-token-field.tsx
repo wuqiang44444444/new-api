@@ -91,7 +91,7 @@ export function AsyncPreConsumeTokenField({
         </h4>
         <p className='text-muted-foreground text-xs'>
           {t(
-            'Billable token upper bound frozen at async task creation. Settlement uses completion_tokens, then total_tokens; missing usage keeps the pre-consume amount, while an overrun enters billing debt instead of charging beyond the bound.'
+            'Token budget used to calculate the pre-consume amount at task creation, not a final charge cap. Settlement refunds or charges the difference using verified usage. Insufficient funds enter billing debt; missing usage is handled by the task protocol.'
           )}
         </p>
       </div>

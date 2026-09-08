@@ -1831,11 +1831,15 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
   onTaskPreConsumeTokensChange,
 }: TieredPricingEditorProps) {
   const { t } = useTranslation()
+  const [modeError, setModeError] = useState(false)
   // 首帧即按表达式能否被可视化解析决定模式：含 param() 条件或单变量 tier（如视频任务
   // 按 _task 分档）的表达式无法可视化解析，直接进入 raw 模式，避免首帧 visual+null 配置
   // 生成 'p * 0 + c * 0' 并被回写 effect 写回父表单，污染已保存的表达式。
   const [editorMode, setEditorMode] = useState<EditorMode>(() =>
-    currentExpr && !tryParseVisualConfig(currentExpr) ? 'raw' : 'visual'
+    (currentExpr && !tryParseVisualConfig(currentExpr)) ||
+    (currentRequestRuleExpr && !tryParseRequestRuleExpr(currentRequestRuleExpr))
+      ? 'raw'
+      : 'visual'
   )
   const [visualConfig, setVisualConfig] = useState<VisualConfig | null>(() =>
     tryParseVisualConfig(currentExpr)
@@ -1852,11 +1856,14 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
     if (initRef.current) return
     initRef.current = true
     const parsedConfig = tryParseVisualConfig(currentExpr)
-    if (parsedConfig) {
+    if (
+      parsedConfig &&
+      (!currentRequestRuleExpr || tryParseRequestRuleExpr(currentRequestRuleExpr))
+    ) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setVisualConfig(parsedConfig)
       setEditorMode('visual')
-    } else if (currentExpr) {
+    } else if (currentExpr || currentRequestRuleExpr) {
       setVisualConfig(null)
       setEditorMode('raw')
     } else {
@@ -1910,6 +1917,7 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
 
   const handleRawChange = useCallback(
     (value: string) => {
+      setModeError(false)
       setRawExpr(value)
       const { requestRuleExpr: ruleStr } =
         splitBillingExprAndRequestRules(value)
@@ -1924,12 +1932,19 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
         const { billingExpr, requestRuleExpr: ruleStr } =
           splitBillingExprAndRequestRules(rawExpr)
         const parsed = tryParseVisualConfig(billingExpr)
+        const parsedGroups = tryParseRequestRuleExpr(ruleStr)
+        if (
+          (billingExpr.trim() && !parsed) ||
+          (ruleStr.trim() && !parsedGroups)
+        ) {
+          setModeError(true)
+          return
+        }
         if (parsed) {
           setVisualConfig(parsed)
         } else {
           setVisualConfig(createDefaultVisualConfig())
         }
-        const parsedGroups = tryParseRequestRuleExpr(ruleStr)
         setRequestRuleGroups(parsedGroups || [])
         onRequestRuleExprChange(ruleStr)
       } else {
@@ -1938,12 +1953,14 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
         setRawExpr(combineBillingExpr(expr, ruleExpr) || expr)
       }
       setEditorMode(next)
+      setModeError(false)
     },
     [rawExpr, visualConfig, requestRuleGroups, onRequestRuleExprChange]
   )
 
   const applyPreset = useCallback(
     (preset: Preset) => {
+      setModeError(false)
       const presetGroups = preset.requestRules || []
       const ruleExpr = buildRequestRuleExpr(presetGroups)
       const combined = combineBillingExpr(preset.expr, ruleExpr) || preset.expr
@@ -1998,6 +2015,16 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
       </div>
 
       <PresetSection applyPreset={applyPreset} />
+
+      {modeError && (
+        <Alert variant='destructive'>
+          <AlertDescription>
+            {t(
+              'This expression cannot be converted to the visual editor without changing its pricing. Continue editing the expression.'
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className='bg-muted/30 space-y-3 rounded-md border p-3'>
         {editorMode === 'visual' ? (

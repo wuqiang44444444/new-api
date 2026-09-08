@@ -193,6 +193,11 @@ export const ModelPricingEditorPanel = forwardRef<
     },
   })
   const watchedValues = form.watch()
+  const billingContractConflict = pricingModels.some(
+    (model) =>
+      model.model_name === watchedValues.name.trim() &&
+      model.billing_contract_conflict
+  )
   const usageSchemaByModel = useMemo(
     () =>
       new Map(
@@ -541,15 +546,28 @@ export const ModelPricingEditorPanel = forwardRef<
     ref,
     () => ({
       commitDraft: async () => {
+        if (billingContractConflict) return null
         const isValid = await form.trigger()
         if (!isValid || !validatePricingValues()) return null
         return buildSubmitData(form.getValues())
       },
     }),
-    [form, validatePricingValues, buildSubmitData]
+    [form, validatePricingValues, buildSubmitData, billingContractConflict]
   )
 
   const showActions = Boolean(onSave)
+
+  if (billingContractConflict) {
+    return (
+      <Alert variant='destructive'>
+        <AlertDescription>
+          {t(
+            'This model is configured in both Seedance Link and native channels. Use distinct customer model names before editing prices.'
+          )}
+        </AlertDescription>
+      </Alert>
+    )
+  }
 
   return (
     <div

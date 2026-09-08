@@ -1,8 +1,6 @@
 package controller
 
 import (
-	"strings"
-
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel/task/seedance"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
@@ -15,18 +13,15 @@ func validateSeedanceBillingExpression(modelName, expression string) (bool, erro
 	if model.DB == nil {
 		return false, nil
 	}
-	channels, err := model.GetEnabledSeedanceChannelsForBillingValidation()
+	channels, err := model.GetSeedanceChannelsForBillingValidation(modelName)
 	if err != nil {
 		return true, err
 	}
 	for i := range channels {
-		for _, customerModel := range channels[i].GetModels() {
-			if strings.TrimSpace(customerModel) != modelName {
-				continue
-			}
-			extraFields := seedance.BillingProbeValidationExtraFields(channels[i].GetOtherSettings().VideoUpstreamProtocol)
-			return true, billing_setting.ValidateOneBillingExpression(modelName, expression, billing_setting.GetBillingExprCopy()[modelName], extraFields, true)
+		extraFields := seedance.BillingProbeValidationExtraFields(channels[i].GetOtherSettings().VideoUpstreamProtocol)
+		if err := billing_setting.ValidateOneBillingExpression(modelName, expression, billing_setting.GetBillingExprCopy()[modelName], extraFields, true); err != nil {
+			return true, err
 		}
 	}
-	return false, nil
+	return len(channels) > 0, nil
 }
