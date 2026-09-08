@@ -11,7 +11,8 @@ type PublicImageAPI struct {
 	Operations        []PublicAPIOperation `json:"operations"`
 	Creation          PublicImageCreation  `json:"creation"`
 	// Edit 是 /v1/images/edits 的合同投影；仅同时发布编辑能力的模型族填写。
-	Edit *PublicImageCreation `json:"edit,omitempty"`
+	Edit  *PublicImageCreation `json:"edit,omitempty"`
+	Async *PublicImageAsync    `json:"async,omitempty"`
 }
 
 type PublicImageCreation struct {

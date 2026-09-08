@@ -20,8 +20,11 @@ import (
 
 // FreezeImageTaskBilling preserves the same request/price evidence used by native
 // billing. Media lives in OSS, never in the billing probe; headers are encrypted.
-func FreezeImageTaskBilling(task *model.Task, info *relaycommon.RelayInfo, request *dto.ImageRequest) error {
+func FreezeImageTaskBilling(ctx context.Context, task *model.Task, info *relaycommon.RelayInfo, request *dto.ImageRequest) error {
 	data := task.PrivateData.ImageTask
+	if data.NativeRequest != nil {
+		return freezeNativeImageBilling(ctx, task, info, request)
+	}
 	parameters, err := common.DeepCopy(request)
 	if err != nil {
 		return err
@@ -60,8 +63,8 @@ func FreezeImageTaskBilling(task *model.Task, info *relaycommon.RelayInfo, reque
 	return err
 }
 
-// imageTaskTargetQuota is pure: no wallet, Token, Task or logging writes.
-func imageTaskTargetQuota(task *model.Task, usage *dto.Usage) (int, *common.QuotaClamp, error) {
+// imageTaskTargetQuota restores frozen evidence without ledger or Task writes.
+func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usage) (int, *common.QuotaClamp, error) {
 	data := task.PrivateData.ImageTask
 	bc := task.PrivateData.BillingContext
 	if data == nil || bc == nil {
@@ -70,11 +73,35 @@ func imageTaskTargetQuota(task *model.Task, usage *dto.Usage) (int, *common.Quot
 	if data.FreeModel {
 		return 0, nil, nil
 	}
-	if bc.PerCallBilling || usage == nil {
+	if data.NativeRequest != nil {
+		// Persist actual evidence (including absent vs zero usage). Apply the
+		// native ImageHelper's billing defaults only to a calculation copy.
+		nativeUsage := dto.Usage{}
+		if usage != nil {
+			nativeUsage = *usage
+		}
+		if nativeUsage.TotalTokens == 0 {
+			nativeUsage.TotalTokens = 1
+		}
+		if nativeUsage.PromptTokens == 0 {
+			nativeUsage.PromptTokens = 1
+		}
+		usage = &nativeUsage
+	}
+	if (bc.PerCallBilling && data.NativeRequest == nil) || usage == nil {
 		return data.HeldQuota, nil, nil
 	}
 	if bc.TieredSnapshot != nil {
 		input := billingexpr.RequestInput{}
+		if data.NativeRequest != nil && len(data.NativeRequest.BillingProbe) > 0 {
+			encoded, err := restoreNativeImageBilling(ctx, task)
+			if err != nil {
+				return 0, nil, err
+			}
+			if err := common.Unmarshal([]byte(encoded), &input); err != nil {
+				return 0, nil, err
+			}
+		}
 		if data.BillingRequestCiphertext != "" {
 			encoded, err := common.DecryptShortLivedSecretForScope("image-billing:"+task.TaskID, data.BillingRequestCiphertext)
 			if err != nil {
@@ -103,6 +130,9 @@ func imageTaskTargetQuota(task *model.Task, usage *dto.Usage) (int, *common.Quot
 	}
 	price := *data.Price
 	price.ReplaceOtherRatios(bc.OtherRatios)
+	if data.NativeRequest != nil && bc.PerCallBilling && data.ImageCount > 0 && data.ImageCount <= int(dto.MaxImageN) {
+		price.AddOtherRatio("n", float64(data.ImageCount))
+	}
 	info := &relaycommon.RelayInfo{
 		ChannelMeta:     data.BuildImageTaskChannelMeta(task.ChannelId),
 		OriginModelName: taskModelName(task), PriceData: price,
@@ -123,7 +153,7 @@ func settleImageTaskBilling(ctx context.Context, task *model.Task) {
 	if async == nil || async.State == model.TaskBillingStateSettled {
 		return
 	}
-	target, clamp, err := imageTaskTargetQuota(task, task.PrivateData.ImageTask.Usage)
+	target, clamp, err := imageTaskTargetQuota(ctx, task, task.PrivateData.ImageTask.Usage)
 	if task.Status.ShouldRefundOnTerminal() {
 		target, clamp, err = 0, nil, nil
 	}

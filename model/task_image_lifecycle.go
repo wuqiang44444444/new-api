@@ -52,14 +52,15 @@ type TaskImageExecutionData struct {
 	N              uint   `json:"n,omitempty"`
 
 	// 输入：二进制输入已落私有 OSS（对象引用）；直传 URL 原样冻结。
-	Parameters               *dto.ImageRequest    `json:"parameters,omitempty"` // scalar request only; input bytes stay in OSS
-	Price                    *hosttypes.PriceData `json:"price,omitempty"`
-	BillingRequestCiphertext string               `json:"billing_request_ciphertext,omitempty"`
-	Usage                    *dto.Usage           `json:"usage,omitempty"`
-	GenerationComplete       bool                 `json:"generation_complete,omitempty"`
-	ExpectedImages           int                  `json:"expected_images,omitempty"`
-	ResultManifest           []TaskImageArtifact  `json:"result_manifest,omitempty"`
-	Inputs                   []TaskImageInputRef  `json:"inputs,omitempty"`
+	Parameters               *dto.ImageRequest       `json:"parameters,omitempty"` // scalar request only; input bytes stay in OSS
+	Price                    *hosttypes.PriceData    `json:"price,omitempty"`
+	BillingRequestCiphertext string                  `json:"billing_request_ciphertext,omitempty"`
+	Usage                    *dto.Usage              `json:"usage,omitempty"`
+	GenerationComplete       bool                    `json:"generation_complete,omitempty"`
+	ExpectedImages           int                     `json:"expected_images,omitempty"`
+	ResultManifest           []TaskImageArtifact     `json:"result_manifest,omitempty"`
+	Inputs                   []TaskImageInputRef     `json:"inputs,omitempty"`
+	NativeRequest            *TaskNativeImageRequest `json:"native_request,omitempty"`
 
 	FundsHeld bool `json:"funds_held"`
 	HeldQuota int  `json:"held_quota,omitempty"`
@@ -116,12 +117,13 @@ func (d *TaskImageExecutionData) BuildImageTaskChannelMeta(channelID int) *relay
 
 // ImageTaskInsertParams carries everything the acceptance transaction needs.
 type ImageTaskInsertParams struct {
-	Task          *Task
-	IdempotencyID int64
-	GlobalScope   string
-	GlobalLimit   int
-	AppScope      string
-	AppLimit      int
+	Task              *Task
+	IdempotencyID     int64
+	GlobalScope       string
+	GlobalLimit       int
+	AppScope          string
+	AppLimit          int
+	FundingPreference string
 }
 
 // InsertImageTask atomically reserves admission capacity, creates the task,
@@ -142,14 +144,21 @@ func InsertImageTask(params ImageTaskInsertParams) error {
 		if err := reserveImageSlotsTx(tx, params.GlobalScope, params.GlobalLimit, params.AppScope, params.AppLimit); err != nil {
 			return err
 		}
-		if task.Quota > 0 {
-			wallet := tx.Model(&User{}).Where("id = ? AND quota >= ?", task.UserId, task.Quota).
-				Update("quota", gorm.Expr("quota - ?", task.Quota))
-			if wallet.Error != nil {
-				return wallet.Error
+		if task.PrivateData.ImageTask.NativeRequest != nil {
+			if err := holdNativeImageFundingTx(tx, task, params.FundingPreference); err != nil {
+				return err
 			}
-			if wallet.RowsAffected != 1 {
-				return ErrTaskAttemptInsufficientQuota
+		}
+		if task.Quota > 0 {
+			if task.PrivateData.ImageTask.NativeRequest == nil {
+				wallet := tx.Model(&User{}).Where("id = ? AND quota >= ?", task.UserId, task.Quota).
+					Update("quota", gorm.Expr("quota - ?", task.Quota))
+				if wallet.Error != nil {
+					return wallet.Error
+				}
+				if wallet.RowsAffected != 1 {
+					return ErrTaskAttemptInsufficientQuota
+				}
 			}
 			if task.PrivateData.TokenId > 0 && !task.PrivateData.SkipTokenQuota {
 				var token Token
@@ -199,9 +208,12 @@ func InsertImageTask(params ImageTaskInsertParams) error {
 	}
 	if task.Quota > 0 {
 		userID, heldQuota := task.UserId, task.Quota
+		subscriptionFunded := task.PrivateData.BillingSource == "subscription"
 		gopool.Go(func() {
-			if err := cacheDecrUserQuota(userID, int64(heldQuota)); err != nil {
-				common.SysError("image wallet cache update failed: " + err.Error())
+			if !subscriptionFunded {
+				if err := cacheDecrUserQuota(userID, int64(heldQuota)); err != nil {
+					common.SysError("image wallet cache update failed: " + err.Error())
+				}
 			}
 			if tokenKey != "" && common.RedisEnabled && common.RDB != nil {
 				if err := cacheDecrTokenQuota(tokenKey, int64(heldQuota)); err != nil {

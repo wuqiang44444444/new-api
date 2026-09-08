@@ -38,6 +38,12 @@ func ImageCreateIdempotency() gin.HandlerFunc {
 			abortImageIdempotency(c, http.StatusBadRequest, "invalid_idempotency_key", "Idempotency-Key requires Prefer: respond-async for image requests")
 			return
 		}
+		if !service.ImageAsyncExecutionRequested(c) {
+			// Native image responses do not create a platform task to bind this
+			// key to. Leave their request and billing lifecycle unchanged.
+			c.Next()
+			return
+		}
 		if len(rawKey) > 191 {
 			abortImageIdempotency(c, http.StatusBadRequest, "invalid_idempotency_key", "Idempotency-Key is too long")
 			return
@@ -90,6 +96,10 @@ func imageCreateRequestHash(c *gin.Context) (string, error) {
 	contentType := c.GetHeader("Content-Type")
 	if !strings.HasPrefix(contentType, "multipart/form-data") {
 		return taskCreateRequestHash(c, model.TaskClientProtocolImageOpenAIV1)
+	}
+	channelType := common.GetContextKeyInt(c, constant.ContextKeyChannelType)
+	if channelType == constant.ChannelTypeOpenAI || channelType == constant.ChannelTypeAzure {
+		return nativeImageMultipartHash(c)
 	}
 	form, err := common.ParseMultipartFormReusable(c)
 	if err != nil {

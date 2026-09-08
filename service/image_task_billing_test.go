@@ -28,14 +28,14 @@ func TestImageBillingFreezesEncryptedRequestProbe(t *testing.T) {
 		BillingRequestInput: &billingexpr.RequestInput{Headers: map[string]string{"X-Factor": "double", "Authorization": "test-secret-not-for-persistence"}},
 	}
 	request := &dto.ImageRequest{Model: "gemini-3.1-flash-image", Prompt: "p", Size: "1024x1024"}
-	require.NoError(t, FreezeImageTaskBilling(task, info, request))
+	require.NoError(t, FreezeImageTaskBilling(t.Context(), task, info, request))
 	encoded, err := common.Marshal(task.PrivateData)
 	require.NoError(t, err)
 	assert.NotContains(t, string(encoded), "test-secret-not-for-persistence")
 	restored, err := common.DeepCopy(task)
 	require.NoError(t, err)
 	info.BillingRequestInput.Headers["X-Factor"] = "changed"
-	quota, _, err := imageTaskTargetQuota(restored, &dto.Usage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150})
+	quota, _, err := imageTaskTargetQuota(t.Context(), restored, &dto.Usage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150})
 	require.NoError(t, err)
 	assert.Equal(t, 300, quota, "customer model and headers must retain admission-time meaning")
 }
@@ -46,7 +46,7 @@ func TestImageQuotaUsesActualTokensAndFrozenPrices(t *testing.T) {
 		OriginModelName: "image-test-frozen", TieredSnapshot: tieredTestSnapshot(`tier("base", p * 2 + c * 4)`, 100),
 	}
 	usage := &dto.Usage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150}
-	quota, _, err := imageTaskTargetQuota(task, usage)
+	quota, _, err := imageTaskTargetQuota(t.Context(), task, usage)
 	require.NoError(t, err)
 	assert.Equal(t, 200, quota, "p and c must be actual usage, not empty TokenParams")
 	task.PrivateData.BillingContext.TieredSnapshot = nil
@@ -60,13 +60,13 @@ func TestImageQuotaUsesActualTokensAndFrozenPrices(t *testing.T) {
 		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(string(encoded)))
 	})
 	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"image-test-frozen":999}`))
-	quota, _, err = imageTaskTargetQuota(task, usage)
+	quota, _, err = imageTaskTargetQuota(t.Context(), task, usage)
 	require.NoError(t, err)
 	assert.Equal(t, 600, quota, "settlement must not use the administrator's edited ratio")
-	quota, _, err = imageTaskTargetQuota(task, nil)
+	quota, _, err = imageTaskTargetQuota(t.Context(), task, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 100, quota, "absent usage preserves the frozen hold")
-	quota, _, err = imageTaskTargetQuota(task, &dto.Usage{})
+	quota, _, err = imageTaskTargetQuota(t.Context(), task, &dto.Usage{})
 	require.NoError(t, err)
 	assert.Zero(t, quota, "explicit zero usage is not fabricated")
 }
@@ -126,8 +126,8 @@ func TestImageRelayEditBillingFreezesReferenceCount(t *testing.T) {
 	task.PrivateData.ImageTask.Inputs = []model.TaskImageInputRef{{URL: "https://example.com/a"}, {URL: "https://example.com/b"}}
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeAsyncImage}, OriginModelName: "local-pro", TieredBillingSnapshot: snapshot}
 	request := &dto.ImageRequest{Model: "mapped-pro", Prompt: "edit", Images: []byte(`["https://example.com/a","https://example.com/b"]`)}
-	require.NoError(t, FreezeImageTaskBilling(task, info, request))
-	quota, clamp, err := imageTaskTargetQuota(task, &dto.Usage{CompletionTokens: 16384, TotalTokens: 16384, InputImages: common.GetPointer(2)})
+	require.NoError(t, FreezeImageTaskBilling(t.Context(), task, info, request))
+	quota, clamp, err := imageTaskTargetQuota(t.Context(), task, &dto.Usage{CompletionTokens: 16384, TotalTokens: 16384, InputImages: common.GetPointer(2)})
 	require.NoError(t, err)
 	assert.Nil(t, clamp)
 	assert.Equal(t, 44286, quota)

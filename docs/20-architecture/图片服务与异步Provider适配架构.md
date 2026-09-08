@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-06
+last-reviewed: 2026-09-08
 ---
 
 # 图片服务与中转 Provider 适配架构
@@ -11,7 +11,8 @@ last-reviewed: 2026-09-06
 本文描述代码已实现的事实。统一图片服务的“已实现 / 待实现 / 证据门控”三分口径以
 [路线图](../50-planning/路线图.md) 第 4 项未完成项清单为唯一权威（历史拆解见
 [归档的实施计划](../99-archive/2026/09/2026-09-05-统一图片服务实施计划.md) §5）；
-未支持的编辑参数（quality/mask/透明背景等）、SSE 流式与 file_id 等仍显式拒绝。
+统一图片合同未支持的编辑参数（quality/mask/透明背景等）、SSE 流式与 file_id 等仍显式拒绝；
+这些限制不适用于原生 OpenAI／Azure 图片入口。
 图片中转标准 edits 的同步/异步实现见第 6 节，逐模型真实验收状态不由代码支持推定。
 
 ## 1. 范围与状态
@@ -30,7 +31,21 @@ last-reviewed: 2026-09-06
 显式异步由代码登记的图片执行协议 `image_openai_v1` 承载（硬约束 §4）。受限 v1 代码已实现
 （完成度三分表见上）；真实 Provider、账单与生产灰度尚未验收，“代码已实现”不等于“生产已发布”。
 
+`Prefer: respond-async` 是执行偏好。OpenAI（1）与 Azure（3）的非流式生成、编辑接入平台任务；
+Gemini、Vertex、图片中转继续使用既有执行器。资格来自明确 ChannelType，不从模型名或
+`APITypeOpenAI` 推断；其他渠道忽略该偏好，继续原生响应，不因此返回 `400`。
+
+执行模式在首次分发后、幂等与预扣之前确定，一次请求内保持不变。OpenAI／Azure 在共享 body
+storage 上读取 stream：JSON 使用 `*bool`，multipart 使用首值去空白后 `ParseBool`；非法输入
+留给原生完整校验报错。`stream=true` 优先原生流式，不认领平台任务幂等键、不跳过原生预扣。
+原生图片处理仅保留模式分派接线；Controller、Router 和 OpenAI adapter 无新增改动。
+
+OpenAI／Azure 的代码路径已通过本地模拟 Provider 测试；真实部署、用量账单和生产灰度仍须单独验收。
+
 ## 2. 统一北向合同层（G1 v1）
+
+以下规则仅适用于统一图片族。OpenAI／Azure 原生请求在异步受理时提前分派，继续由原生校验器与
+adapter 决定字段语义，支持其已有 JSON／multipart、mask、多图、参数覆盖及透传。
 
 `service/image_contract.go` 是与 Provider 无关的合同解析层，被同步 relay、受理事务与异步
 worker 共同复用；族（模型）级字段生效矩阵由各 adapter 决定。字段合同冻结表的历史现场见
@@ -45,7 +60,7 @@ worker 共同复用；族（模型）级字段生效矩阵由各 adapter 决定�
   按解码字节计。
 - `mask`：v1 全族未发布，统一 `400`，不降级为提示词（E2/C3）。
 - 三态字段语义：未传、`null`、显式空串视为未设置；显式 `false`/`0` 合法（E6）。
-- `Prefer: respond-async` 与 `stream=true` 互斥，在受理、预扣、上游调用前报冲突（P14）。
+- 统一图片族选择平台异步执行时，`Prefer: respond-async` 与 `stream=true` 互斥，在受理、预扣、上游调用前报冲突（P14）；忽略异步偏好的原生渠道沿用其流式处理。
 
 ## 3. gemini_image 族（Gemini 24 / Vertex 41）
 
@@ -78,13 +93,13 @@ Gemini/Vertex 的 `generateContent` 图片模型（imagine 登记表，`setting/
 ```text
 POST /v1/images/{generations|edits} + Prefer: respond-async
   -> ImageHelper 窄分派 imageAsyncHelper（controller 跳过请求级预扣）
-  -> 合同/族校验 -> 输入二进制落私有 OSS（URL 不搬运）
-  -> 受理事务：容量槽位 + 钱包/令牌额度预扣 + Task(QUEUED/FundsHeld) + 幂等绑定，一次提交
+  -> 按族校验与准备：统一族存输入；OpenAI/Azure 冻结最终请求到私有 OSS
+  -> 受理事务：容量槽位 + 资金/令牌额度预扣 + Task(QUEUED/FundsHeld) + 幂等绑定，一次提交
   -> 202 {id, status:queued, query_url}
 后台 image_task_execute system task（10s 周期）：
   恢复扫描（排队过期/租约过期/已保存结果） -> 领取(CAS+执行槽位)
   -> SENDING 持久提交（发送许可，之后才允许写出请求字节）
-  -> 冻结事实驱动 Provider 调用（复用各 adaptor ConvertImageRequest）
+  -> 冻结事实驱动 Provider 调用（统一族执行时转换；OpenAI/Azure 直发已准备请求）
   -> 结果归一 -> 生成结果清单/实际 usage 持久化 -> 下载/上传 OSS，逐图登记
   -> 终态 CAS -> 按冻结价格与实际 usage 计算目标 -> 共享原子结算（失败退款；未知待核实）
 GET /v1/tasks/{task_id} -> 图片投影（user_id + app_id 双重归属）
@@ -99,10 +114,13 @@ GET /v1/tasks/{task_id} -> 图片投影（user_id + app_id 双重归属）
    分页使用更新时间与 ID，避免持续不可恢复的首批任务挡住后续候选。
 2. 已证实从未发送（`SentAt=0`）的过期租约释放执行槽位回队重派；排队期限（
    `IMAGE_ASYNC_QUEUE_SECONDS`）已过且从未发送的任务安全失败并退款。
-3. 资金单一所有者：受理的全部事实与钱包/令牌预扣同事务；失败整笔回滚，不创建“已结算”补偿任务。
+3. 资金单一所有者：受理的全部事实与资金/令牌预扣同事务；失败整笔回滚，不创建“已结算”补偿任务。
    `service/image_task_billing.go` 只用冻结价格、表达式、加密请求探针与持久化实际 usage 计算目标；
    资金差额、Task 计费状态、最终用量统计及受理槽释放由 `ApplyTaskBillingTarget` 同事务提交。
-   不调用旧非原子重算入口。固定价或缺失 usage 保留预扣，显式零 usage 不伪造 Token。异步 v1 使用钱包。
+   不调用旧非原子重算入口。统一图片族固定价或缺失 usage 保留预扣，继续使用钱包。
+   OpenAI／Azure 按返回图片数更新按次倍率，持久化归一 usage（保留缺失与零值区别）；仅在计算副本
+   应用原生图片计费的缺省值。其受理事务遵循 wallet_only／subscription_only／wallet_first／
+   subscription_first 及订阅钱包溢出规则，复用现有订阅 hold，转移给 Task 后禁止请求退款重复释放。
 4. 容量与背压（§3.10）：受理上限（全局等待 `IMAGE_ASYNC_MAX_WAITING`、每 user+app 未完成
    `IMAGE_ASYNC_MAX_PER_APP`）与执行并发（`IMAGE_ASYNC_EXECUTE_CONCURRENCY`、每渠道
    `IMAGE_ASYNC_CHANNEL_EXECUTE_CONCURRENCY`）以 `image_task_slots` 计数行在事务内
@@ -111,15 +129,46 @@ GET /v1/tasks/{task_id} -> 图片投影（user_id + app_id 双重归属）
    应用超限 `429`、全局受理容量耗尽 `503`，均不受理、不预扣、不发送。
 5. 旧视频轮询 feeder、通用超时退款与请求结束退款按 `client_protocol` 排除图片任务（NULL
    安全谓词）；图片任务的退款/结算复用 `AsyncBilling` 状态机与补偿扫描。
-6. 幂等（§3.7）：`Idempotency-Key` 仅异步模式支持（同步请求携带返回 `400`）；键域
+6. 幂等（§3.7）：`Idempotency-Key` 仅实际异步模式提供任务幂等（未携带 Prefer 时仍返回 `400`；OpenAI／Azure 流式优先或其他渠道忽略 Prefer 时不认领）；键域
    user + app(token) + 操作 + 客户键，摘要进既有 `TaskCreateIdempotency` 表；重放返回原
    任务 ID；不同请求体 `409`；绑定任务未终态期间 claim 到期不重置；multipart 摘要忽略
-   boundary；受理未完成窗口内重放返回 `in_progress`，不签发第二个 202。
+   boundary；原生 multipart 保留重复值和文件顺序，摘要包含完整文件而非 64 MiB 前缀；受理未完成窗口内重放返回 `in_progress`，不签发第二个 202。
 7. 输入/结果对象键为 `images/tasks/{taskID}/input-N|result-N`。结果上传前持久化清单与 usage，
    上传失败在执行预算内只重试保存，逐图登记失败不丢弃其它已生成图片。恢复领取占用相同执行槽位，
    并通过版本 CAS 排除过期 worker；无 Provider ID 也能按清单 HEAD 补登记。部分结果在待核实时可查询。
    没有成功落存储、没有可重查来源且进程已丢失的字节不能凭对象键恢复，保留待核实并转人工处置；
    不自动重生成或退款。FunCloud 恢复每轮只查询一次已有任务。
+
+
+### 4.1 原生 OpenAI／Azure 的冻结请求
+
+`relay/image_native_request.go` 在受理期复用模型映射、原生 ConvertImageRequest、参数覆盖与透传
+规则；默认认证之后应用请求头覆盖。最终 URL（含 Azure 部署名、API 版本、旧渠道去点规则）、
+最终 Headers（含 multipart boundary）和代理设置一起以任务作用域加密。Task 不另存明文 ChannelKey。
+完整请求体按 8 MiB 分片放私有对象存储，Task 只保存引用；表达式的原始请求探针加密后同样存对象，
+避免图片内容进入 Task JSON。
+
+`relay/image_native_executor.go` 在 SENDING 提交后恢复请求到私有临时文件，直发一次，不再运行
+转换器、不重新选渠、不重建认证。禁用重定向与请求体自动重放；临时文件调用结束即关闭删除。
+这是有意的族间转换时机差异，共用同一任务、容量、结果存储及结算状态机。
+
+客户 stream 决定交付模式；渠道参数覆盖只影响已冻结的南向请求。若覆盖使上游返回 SSE，后台
+在同一响应预算内读取完整流，只收集 `image_generation.completed`／`image_edit.completed`
+图片，忽略预览图，复用原生 usage 归一并保留最后有效用量；不把累计 usage 相加。流中错误、
+非法事件、没有完成图片或读取中断保持待核实。已受理任务仍通过 Task 查询交付，不翻转模式、
+不删除参数覆盖、不改原生流式处理器。客户显式 stream=true 的原生流式优先规则不变。
+
+连接与计费探针的根密钥来自 `CRYPTO_SECRET`，缺省取 `SESSION_SECRET`；两者均未固定时
+使用进程随机值，不能保证重启或跨节点解密。持久异步部署必须固定并在全部受理、执行节点共享
+同一根密钥；在途任务未处置完毕前不得直接轮换。连接快照不可解密标为
+`connection_snapshot_unreadable` 并保持待核实，不从当前渠道补取凭据或自动重发。
+请求冻结失败只记录请求关联 ID 与失败阶段，不记录 adapter／覆盖／存储错误的原始正文。
+
+原生响应读取预算为单次 512 MiB，读上限加一明确检测超限；单张结果仍限 50 MiB。该预算用于容纳
+多图 Base64，不代表所有 Provider 最大规格已完成容量验收。部署需结合执行并发核对内存；
+超限标为 `response_size_limit`，非法结果标为 `invalid_provider_response`，读中断标为
+`response_read_failed`，均保持待核实，不重发、不自动退款。明确 4xx 拒绝失败退款；408、429、
+5xx、非预期重定向及无法判定的成功响应保持待核实。成功结果支持 URL 下载或 Base64 解码并落存储。
 
 ## 5. 对象存储（upstream / S3 兼容 / Azure Blob，G9）
 
@@ -203,6 +252,10 @@ Azure SAS 的起止时间统一使用 UTC；生效时间向前容错两分钟，
   worker 的排队/执行/存储预算。
 
 ## 7. 公开投影与管理测试
+
+- 原生图片候选渠道的基础生成合同必须一致；edit、async 与对应操作仅在所有候选均一致时发布。
+  OpenAI／Azure 与其他原生图片渠道混用时，新增能力的差异不隐藏共同生成合同。基础参数冲突
+  或统一图片族的合同冲突仍不发布；该聚合只影响公开说明，不修改 Ability、渠道类型或分发资格。
 
 - `api.image` 投影新增 gemini_image 族（`pkg/publicmodel/image_gemini.go`）：按管理员映射后
   落在 imagine 登记表的 Provider 模型识别（不从客户模型名推断），同时发布 `create_image`

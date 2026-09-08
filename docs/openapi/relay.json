@@ -395,7 +395,7 @@
             "name": "Prefer",
             "in": "header",
             "required": false,
-            "description": "传 respond-async 显式选择异步受理（仅已发布异步能力的图片模型支持）；与 stream=true 互斥。",
+            "description": "传 respond-async 表达异步偏好。OpenAI、Azure 的非流式图片生成与编辑返回 202；stream=true 优先原生流式，不创建任务。Gemini、Vertex、图片中转仍与 stream=true 互斥。其它渠道忽略此偏好，继续原生响应，不因此返回 400。",
             "schema": {
               "type": "string",
               "enum": [
@@ -407,7 +407,7 @@
             "name": "Idempotency-Key",
             "in": "header",
             "required": false,
-            "description": "可选幂等键，仅异步模式支持；同键等价请求重放原受理结果，不同请求体返回 409。长度 ≤ 191。",
+            "description": "可选幂等键，仅实际进入平台异步模式时生效；同键等价请求重放原受理结果，不同请求体返回 409。长度 ≤ 191。渠道忽略异步偏好时，此键不提供平台任务幂等保证。",
             "schema": {
               "type": "string",
               "maxLength": 191
@@ -487,7 +487,7 @@
             "name": "Prefer",
             "in": "header",
             "required": false,
-            "description": "传 respond-async 显式选择异步受理（仅已发布异步能力的图片模型支持）；与 stream=true 互斥。",
+            "description": "传 respond-async 表达异步偏好。OpenAI、Azure 的非流式图片生成与编辑返回 202；stream=true 优先原生流式，不创建任务。Gemini、Vertex、图片中转仍与 stream=true 互斥。其它渠道忽略此偏好，继续原生响应，不因此返回 400。",
             "schema": {
               "type": "string",
               "enum": [
@@ -499,7 +499,7 @@
             "name": "Idempotency-Key",
             "in": "header",
             "required": false,
-            "description": "可选幂等键，仅异步模式支持；同键等价请求重放原受理结果，不同请求体返回 409。长度 ≤ 191。",
+            "description": "可选幂等键，仅实际进入平台异步模式时生效；同键等价请求重放原受理结果，不同请求体返回 409。长度 ≤ 191。渠道忽略异步偏好时，此键不提供平台任务幂等保证。",
             "schema": {
               "type": "string",
               "maxLength": 191

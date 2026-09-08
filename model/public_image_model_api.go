@@ -111,6 +111,7 @@ func GetPublicMediaModelAPIs(modelNames []string, groups []string) (map[string]*
 		}
 
 		var contract *dto.PublicModelAPI
+		allNativeImages := true
 		sawMediaContract := false
 		sawMissingContract := false
 		consistent := true
@@ -122,6 +123,7 @@ func GetPublicMediaModelAPIs(modelNames []string, groups []string) (map[string]*
 			}
 
 			var api *dto.PublicModelAPI
+			nativeImage := false
 			if channel.Type == constant.ChannelTypeAsyncImage {
 				providerModel, err := mappedCustomerModel(channel, modelName)
 				if err != nil {
@@ -143,19 +145,41 @@ func GetPublicMediaModelAPIs(modelNames []string, groups []string) (map[string]*
 					api = publicmodel.GeminiImageAPI(modelName)
 				} else if common.IsImageGenerationModel(modelName) {
 					api = publicmodel.NativeImageAPI(modelName)
+					nativeImage = true
+				}
+			} else if channel.Type == constant.ChannelTypeOpenAI || channel.Type == constant.ChannelTypeAzure {
+				providerModel, err := mappedCustomerModel(channel, modelName)
+				// Azure deployment names need not describe a model family. Keep
+				// the known customer image profile when that mapping is opaque.
+				if !common.IsImageGenerationModel(providerModel) && common.IsImageGenerationModel(modelName) {
+					providerModel = modelName
+				}
+				if err == nil && common.IsImageGenerationModel(providerModel) {
+					api = publicmodel.NativeAsyncImageAPI(modelName, providerModel)
+					nativeImage = true
 				}
 			} else if channel.Type == constant.ChannelTypeSora {
 				api = publicmodel.NativeVideoAPI(modelName)
 			} else if common.IsImageGenerationModel(modelName) {
 				api = publicmodel.NativeImageAPI(modelName)
+				nativeImage = true
 			}
 			if api == nil {
 				sawMissingContract = true
 				continue
 			}
 			sawMediaContract = true
+			allNativeImages = allNativeImages && nativeImage
 			if contract == nil {
 				contract = api
+				continue
+			}
+			if allNativeImages {
+				contract = publicmodel.CommonNativeImageAPI(contract, api)
+				if contract == nil {
+					consistent = false
+					break
+				}
 				continue
 			}
 			if !reflect.DeepEqual(contract, api) {

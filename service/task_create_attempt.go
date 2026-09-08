@@ -137,6 +137,8 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 	return nil
 }
 
+// Native image Task acceptance mirrors these preferences in
+// model.holdNativeImageFundingTx inside its own atomic acceptance transaction.
 func holdTaskAttemptForBilling(info *relaycommon.RelayInfo, attemptID int64) (*model.TaskAttemptHoldResult, error) {
 	hold := func(source string) (*model.TaskAttemptHoldResult, error) {
 		return model.HoldTaskCreateAttempt(model.TaskAttemptHoldParams{

@@ -14,9 +14,11 @@ last-reviewed: 2026-09-06
 
 已发布图片异步能力的模型可显式选择异步模式：请求头 `Prefer: respond-async`。受理成功返回
 HTTP `202` 与平台任务 ID，结果经 `GET /v1/tasks/{task_id}` 查询（见 §6）；客户端断开不取消任务。
-`Prefer: respond-async` 与 `stream=true` 互斥。
+OpenAI／Azure 原生图片的 `stream=true` 优先流式响应，不创建平台任务；Gemini／Vertex 和图片中转
+仍与 `stream=true` 互斥。未接入平台任务的其他渠道忽略异步偏好，继续原生响应。
+原生生成、JSON／multipart 编辑及 mask 沿用已有支持；异步需要已启用私有对象存储和后台图片任务。
 
-渠道类型分两类：原生 Gemini/Vertex 渠道上的 imagine 图片模型（如映射到 `gemini-3.1-flash-image`
+统一图片合同的渠道类型分两类：原生 Gemini/Vertex 渠道上的 imagine 图片模型（如映射到 `gemini-3.1-flash-image`
 的客户模型，见 §4），以及管理端「图片中转」渠道类型（每条渠道显式选择 `funcloud_aigc_v2` 或
 `moxing_images_v1`，见 §3）。
 
@@ -181,7 +183,7 @@ HTTP 202
   有效，附带 `url_expires_at`；过期后重新查询即续签）或创建时显式 `b64_json` 的原文；`deleted`
   表示对象已被部署方删除（不影响其余图片），`unavailable` 表示暂不可访问、稍后重查；
 - `failed/expired` 给出脱敏 `error`；`unknown` 表示结果待核实（不会自动退款），联系平台核实；
-- `Idempotency-Key` 仅异步模式支持（同步请求携带返回 `400`）：同 key 等价请求重放原任务 ID，
+- `Idempotency-Key` 仅实际异步提供任务幂等（未传 Prefer 时仍返回 `400`；原生流式优先或忽略 Prefer 时不认领）：同 key 等价请求重放原任务 ID，
   不同请求体返回 `409`；未携带 key 视为新的创建意图。
 - 背压：应用未完成任务超限返回 `429`，平台排队容量耗尽返回 `503`；两者都没有受理、扣费或发送，
   可安全稍后重试。

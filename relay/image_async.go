@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -24,20 +25,10 @@ import (
 // 选择本路径；受理事务原子占用容量、写入可执行 Task 并完成幂等绑定，
 // 钱包与令牌额度同时提交，失败不留下半完成的受理事实。
 
-// imageAsyncSupportedAPIType 限定本期显式图片执行类型的渠道族。
-func imageAsyncSupportedAPIType(apiType int) bool {
-	switch apiType {
-	case constant.APITypeGemini, constant.APITypeVertexAi, constant.APITypeAsyncImage:
-		return true
-	default:
-		return false
-	}
-}
-
 // ImageAsyncPreferRequested is used by the controller to skip the generic
-// request-scoped pre-consume（受理事务自持资金，§4.3 在原请求预扣前确定生命周期）。
+// request-scoped pre-consume only when a platform task will own the funds.
 func ImageAsyncPreferRequested(c *gin.Context) bool {
-	return service.PreferRespondAsync(c)
+	return service.ImageAsyncExecutionRequested(c)
 }
 
 func imageAsyncHelper(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
@@ -50,10 +41,6 @@ func imageAsyncHelper(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPI
 		// 调用上游前报参数冲突。
 		return types.NewErrorWithStatusCode(errors.New("stream=true cannot be combined with Prefer: respond-async"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
-	if !imageAsyncSupportedAPIType(info.ApiType) {
-		return types.NewErrorWithStatusCode(errors.New("Prefer: respond-async is not supported by the selected channel for this model"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
-	}
-
 	// 评审 S3：异步路径必须在族判断与冻结快照之前完成管理员模型映射，
 	// 与同步路径（ModelMappedHelper 在 ImageHelper 内）保持同一语义；
 	// 否则客户别名（如 nano-banana-2-gemini）会被当成 Provider 模型拒判。
@@ -64,7 +51,20 @@ func imageAsyncHelper(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPI
 
 	var contract *service.ImageContract
 	var apiErr *types.NewAPIError
-	if info.ApiType == constant.APITypeAsyncImage {
+	native := info.ChannelType == constant.ChannelTypeOpenAI || info.ChannelType == constant.ChannelTypeAzure
+	if native {
+		// Native validation already ran in the controller. Do not impose the
+		// unified image contract (notably its mask rejection) on native edits.
+		operation := service.ImageOperationGenerations
+		if info.RelayMode == relayconstant.RelayModeImagesEdits {
+			operation = service.ImageOperationEdits
+		}
+		n := uint(1)
+		if mappedRequest.N != nil {
+			n = *mappedRequest.N
+		}
+		contract = &service.ImageContract{Operation: operation, N: n, Prompt: mappedRequest.Prompt, Size: mappedRequest.Size, ResponseFormat: mappedRequest.ResponseFormat}
+	} else if info.ApiType == constant.APITypeAsyncImage {
 		contract, apiErr = service.ParseImageRelayContract(c, info, mappedRequest, info.ChannelOtherSettings.ImageUpstreamProtocol)
 	} else {
 		contract, apiErr = service.ParseImageContract(c, info, mappedRequest)
@@ -103,35 +103,50 @@ func imageAsyncHelper(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPI
 	// 评审 S6：taskID 先于输入落位生成，输入/结果对象键均为确定性键
 	// （images/tasks/{taskID}/input-N|result-N），崩溃后可按键补登记/续传。
 	taskID := model.GenerateTaskID()
-	headersCiphertext, err := freezeImageTaskHeaders(taskID, c, info)
-	if err != nil {
-		return types.NewError(err, types.ErrorCodeChannelHeaderOverrideInvalid, types.ErrOptionWithSkipRetry())
+	var task *model.Task
+	if native {
+		frozen, freezeErr := freezeNativeImageRequest(c, info, taskID, mappedRequest)
+		if freezeErr != nil {
+			return types.NewErrorWithStatusCode(errors.New("native image request could not be prepared for async execution"), types.ErrorCodeConvertRequestFailed, http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
+		}
+		task = buildImageTask(taskID, c, info, contract, nil, int64(quota), config)
+		data := task.PrivateData.ImageTask
+		data.NativeRequest = frozen
+		// Connection/authentication live only in the encrypted snapshot.
+		data.ChannelKey, data.ChannelBaseUrl, data.ChannelProxy = "", "", ""
+		data.ChannelSettings = dto.ChannelSettings{}
+		data.Prompt = ""
+	} else {
+		headersCiphertext, err := freezeImageTaskHeaders(taskID, c, info)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeChannelHeaderOverrideInvalid, types.ErrOptionWithSkipRetry())
+		}
+		inputRefs, apiErr := stageImageTaskInputs(c, taskID, contract)
+		if apiErr != nil {
+			return apiErr
+		}
+		task = buildImageTask(taskID, c, info, contract, inputRefs, int64(quota), config)
+		task.PrivateData.ImageTask.HeadersCiphertext = headersCiphertext
 	}
-	inputRefs, apiErr := stageImageTaskInputs(c, taskID, contract)
-	if apiErr != nil {
-		return apiErr
-	}
-
-	task := buildImageTask(taskID, c, info, contract, inputRefs, int64(quota), config)
-	task.PrivateData.ImageTask.HeadersCiphertext = headersCiphertext
 	// 挂接持久化计费状态机（billing_state 投影 + 幂等结算/退款与补偿扫描）。
 	info.TaskRelayInfo = &relaycommon.TaskRelayInfo{
 		ClientProtocol: model.TaskClientProtocolImageOpenAIV1,
 		AppID:          appID,
 	}
 	model.AttachAsyncTaskBilling(&task.PrivateData, info, int(quota))
-	if err := service.FreezeImageTaskBilling(task, info, mappedRequest); err != nil {
+	if err := service.FreezeImageTaskBilling(c.Request.Context(), task, info, mappedRequest); err != nil {
 		return types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithSkipRetry())
 	}
 
 	idempotencyID := int64(common.GetContextKeyInt(c, constant.ContextKeyTaskIdempotencyID))
 	if err := model.InsertImageTask(model.ImageTaskInsertParams{
-		Task:          task,
-		IdempotencyID: idempotencyID,
-		GlobalScope:   globalScope,
-		GlobalLimit:   config.MaxWaiting,
-		AppScope:      appScope,
-		AppLimit:      config.MaxPerApp,
+		Task:              task,
+		FundingPreference: info.UserSetting.BillingPreference,
+		IdempotencyID:     idempotencyID,
+		GlobalScope:       globalScope,
+		GlobalLimit:       config.MaxWaiting,
+		AppScope:          appScope,
+		AppLimit:          config.MaxPerApp,
 	}); err != nil {
 		return imageAdmissionError(err)
 	}
@@ -268,8 +283,8 @@ func stageImageTaskInputs(c *gin.Context, taskID string, contract *service.Image
 }
 
 func imageAdmissionError(err error) *types.NewAPIError {
-	if errors.Is(err, model.ErrTaskAttemptInsufficientQuota) {
-		return types.NewErrorWithStatusCode(errors.New("insufficient wallet or token quota"), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+	if errors.Is(err, model.ErrTaskAttemptInsufficientQuota) || errors.Is(err, model.ErrTaskAttemptSubscriptionUnavailable) {
+		return types.NewErrorWithStatusCode(errors.New("insufficient funding or token quota"), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 	}
 	if model.IsImageSlotLimitError(err) {
 		if model.IsImageSlotAppLimit(err) {

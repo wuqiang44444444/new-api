@@ -11,9 +11,17 @@ operations:
 `POST /v1/images/edits` · Bearer 鉴权 · `multipart/form-data` 或模型声明的 `application/json`
 
 该接口上传一张或多张源图片，并默认在本次 HTTP 请求内返回编辑结果。模型目录声明异步能力时，
-可加 `Prefer: respond-async` 请求头显式异步受理（`202` + 任务 ID，与 `stream=true` 互斥），
+可加 `Prefer: respond-async` 请求头显式异步受理（`202` + 任务 ID），
 结果经[图片任务查询](images/tasks)获取。不要手工设置 multipart boundary；
 让 HTTP 客户端根据表单自动生成 `Content-Type`。
+
+原生 GPT 图片编辑支持该模式，JSON／multipart、源图顺序及模型支持的 mask 沿用原生编辑语义。
+`stream=true` 时优先原生流式响应，不创建任务；同时携带的幂等键不提供平台任务幂等保证。
+统一图片合同仍拒绝 `stream=true` 与异步偏好同时使用。具体行为以 `api.image.async.stream_priority` 为准。
+异步受理需要平台私有对象存储；存储不可用返回 `503`，不扣费也不发送上游。
+
+尚未提供平台异步执行的模型会忽略该偏好，继续在本次
+请求内返回编辑结果，不因携带此头返回 `400`。此时一并携带的 `Idempotency-Key` 不提供平台任务幂等保证。
 
 ## 最小请求
 

@@ -45,6 +45,9 @@ func ExecuteImageTask(ctx context.Context, task *model.Task) service.ImageTaskEx
 	if data == nil {
 		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeFailure, FailureCode: "execution_data_missing"}
 	}
+	if data.NativeRequest != nil {
+		return executeNativeImageTask(ctx, task)
+	}
 	headless := newHeadlessGinContext(ctx)
 	info := buildFrozenImageRelayInfo(task, data)
 

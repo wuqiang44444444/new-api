@@ -25,7 +25,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	// 显式异步受理（Prefer: respond-async）：在原请求预扣与渠道调用之前
 	// 确定生命周期（§4.3），其余同步路径保持不变。
-	if service.PreferRespondAsync(c) {
+	if ImageAsyncPreferRequested(c) {
 		return imageAsyncHelper(c, info)
 	}
 
