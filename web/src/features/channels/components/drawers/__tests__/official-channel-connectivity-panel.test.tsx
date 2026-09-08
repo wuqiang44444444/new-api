@@ -30,6 +30,7 @@ import { Form } from '@/components/ui/form'
 import {
   createOrReuseChannelDefaultAssetGroup,
   getChannelDefaultAssetGroup,
+  testChannelAssetAction,
 } from '../../../api'
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
@@ -43,6 +44,7 @@ vi.mock('../../../api', async (importOriginal) => {
     ...original,
     createOrReuseChannelDefaultAssetGroup: vi.fn(),
     getChannelDefaultAssetGroup: vi.fn(),
+    testChannelAssetAction: vi.fn(),
   }
 })
 
@@ -58,13 +60,19 @@ beforeAll(async () => {
   })
 })
 
-function ConnectivityPanelHarness() {
+function ConnectivityPanelHarness(props: { tokenSave?: boolean }) {
+  const assetProtocol = props.tokenSave
+    ? 'tokensave_assets_v1'
+    : 'volcengine_assets_action_v2024_01_01'
+  const videoProtocol = props.tokenSave
+    ? 'tokensave_media_task_v1'
+    : 'modelark_v3_volcengine'
   const form = useForm<ChannelFormValues>({
     defaultValues: {
       ...CHANNEL_FORM_DEFAULT_VALUES,
       type: 62,
-      video_upstream_protocol: 'modelark_v3_volcengine',
-      asset_upstream_protocol: 'volcengine_assets_action_v2024_01_01',
+      video_upstream_protocol: videoProtocol,
+      asset_upstream_protocol: assetProtocol,
     },
   })
   const [queryClient] = useState(
@@ -82,8 +90,8 @@ function ConnectivityPanelHarness() {
             channelId={27}
             control={form.control}
             credentialConfigured
-            savedAssetProtocol='volcengine_assets_action_v2024_01_01'
-            savedVideoProtocol='modelark_v3_volcengine'
+            savedAssetProtocol={assetProtocol}
+            savedVideoProtocol={videoProtocol}
             sensitiveLocked={false}
             onCredentialCleared={vi.fn()}
           />
@@ -133,4 +141,32 @@ describe('Official channel default asset group', () => {
       expect(screen.getByText('Configured')).toBeTruthy()
     })
   })
+})
+
+test('TokenSave shows why its read-only test is disabled and sends no test request', async () => {
+  vi.mocked(getChannelDefaultAssetGroup).mockResolvedValue({
+    success: true,
+    data: { supported: true, configured: true, name: 'aigctokenaigeneral' },
+  })
+  vi.mocked(testChannelAssetAction).mockClear()
+  render(<ConnectivityPanelHarness tokenSave />)
+  const button = screen.getByRole('button', { name: 'Test Asset Library' })
+  expect(button.hasAttribute('disabled')).toBe(true)
+  expect(
+    screen.getByText(
+      'Read-only connectivity testing is not supported for this asset protocol.'
+    )
+  ).toBeTruthy()
+  expect(
+    screen.queryByText(
+      'Lists at most one asset and never creates or deletes an upstream resource.'
+    )
+  ).toBeNull()
+  expect(
+    screen.queryByText(
+      'The saved asset channel is tested with a read-only list request.'
+    )
+  ).toBeNull()
+  await userEvent.setup().click(button)
+  expect(testChannelAssetAction).not.toHaveBeenCalled()
 })

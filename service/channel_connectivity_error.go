@@ -3,6 +3,7 @@ package service
 import "errors"
 
 const (
+	ChannelConnectivityAssetUnsupported        = "asset_connectivity_unsupported"
 	ChannelConnectivityAssetNotConfigured      = "asset_action_not_configured"
 	ChannelConnectivityAssetInvalidConfig      = "asset_action_invalid_configuration"
 	ChannelConnectivityAssetRejected           = "asset_action_upstream_rejected"

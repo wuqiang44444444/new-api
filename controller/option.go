@@ -366,7 +366,9 @@ func UpdateOption(c *gin.Context) {
 		generation := jsplugin.DefaultRegistry.Generation()
 		for _, modelName := range models {
 			expression := expressions[modelName]
-			if plugin, ok := generation.GetByModel(modelName); ok {
+			if handled, linkErr := validateSeedanceBillingExpression(modelName, expression); handled {
+				err = linkErr
+			} else if plugin, ok := generation.GetByModel(modelName); ok {
 				err = billing_setting.SmokeTestTaskExpr(expression, plugin.Meta.UsageSchema)
 			} else if target, resolved := model.ResolveTaskModelAlias(generation, modelName); resolved {
 				if plugin, ok := generation.Get(target.PluginKey); ok {
@@ -375,7 +377,7 @@ func UpdateOption(c *gin.Context) {
 					err = billing_setting.SmokeTestExpr(expression)
 				}
 			} else {
-				err = validateLinkBillingExpression(modelName, expression)
+				err = billing_setting.ValidateOneBillingExpression(modelName, expression, billing_setting.GetBillingExprCopy()[modelName], nil, false)
 			}
 			if err != nil {
 				common.ApiErrorMsg(c, fmt.Sprintf("模型 %s 的计费表达式无效: %v", modelName, err))

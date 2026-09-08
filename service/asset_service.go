@@ -260,9 +260,9 @@ func CheckAssetChannelConnectivity(ctx context.Context, channel *model.Channel) 
 	connectivity, ok := adapter.(assetadapter.ConnectivityAdapter)
 	if !ok {
 		return newChannelConnectivityError(
-			ChannelConnectivityAssetInvalidConfig,
-			"asset action configuration is invalid",
-			ErrUnsupportedAssetType,
+			ChannelConnectivityAssetUnsupported,
+			"Read-only connectivity testing is not supported for this asset protocol.",
+			ErrUnsupportedAssetOperation,
 		)
 	}
 	if err := connectivity.CheckConnectivity(ctx); err != nil {

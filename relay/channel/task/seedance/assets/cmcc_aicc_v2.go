@@ -217,7 +217,7 @@ func (a *CMCCAICCV2Adapter) request(ctx context.Context, method, path string, bo
 		return fmt.Errorf("CMCC AICC response exceeds size limit")
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return &upstreamHTTPError{StatusCode: resp.StatusCode}
+		return cmccAssetHTTPError(method, path, resp.StatusCode, responseBody)
 	}
 	var envelope cmccEnvelope
 	if err := common.Unmarshal(responseBody, &envelope); err != nil {

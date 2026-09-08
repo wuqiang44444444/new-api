@@ -372,15 +372,17 @@ export function OfficialChannelConnectivityPanel(
       <div className='border-border/60 bg-muted/10 space-y-3 rounded-lg border p-4'>
         <div>
           <h4 className='text-sm font-medium'>{t('Connectivity tests')}</h4>
-          <p className='text-muted-foreground mt-1 text-xs'>
-            {showVideoTest
-              ? t(
-                  'Video and asset credentials are tested separately with read-only requests.'
-                )
-              : t(
-                  'The saved asset channel is tested with a read-only list request.'
-                )}
-          </p>
+          {(showVideoTest || availability.assetProtocolSupportsTest) && (
+            <p className='text-muted-foreground mt-1 text-xs'>
+              {showVideoTest
+                ? t(
+                    'Video and asset credentials are tested separately with read-only requests.'
+                  )
+                : t(
+                    'The saved asset channel is tested with a read-only list request.'
+                  )}
+            </p>
+          )}
         </div>
         {availability.hasUnsavedTestChanges ? (
           <p className='text-warning text-xs'>
@@ -403,9 +405,15 @@ export function OfficialChannelConnectivityPanel(
           ) : null}
           <ConnectivityTestCard
             title={officialAssetAction ? t('Asset Action') : t('Asset Library')}
-            description={t(
-              'Lists at most one asset and never creates or deletes an upstream resource.'
-            )}
+            description={
+              availability.assetProtocolSupportsTest
+                ? t(
+                    'Lists at most one asset and never creates or deletes an upstream resource.'
+                  )
+                : t(
+                    'Read-only connectivity testing is not supported for this asset protocol.'
+                  )
+            }
             buttonLabel={
               officialAssetAction
                 ? t('Test Asset Action')

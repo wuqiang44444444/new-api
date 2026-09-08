@@ -45,6 +45,16 @@ describe('official channel connectivity', () => {
     )
   })
 
+  test('reports an unsupported asset probe without a configuration error', () => {
+    assert.equal(
+      getOfficialConnectivityMessage(
+        { success: false, error_code: 'asset_connectivity_unsupported' },
+        'fallback'
+      ),
+      'Read-only connectivity testing is not supported for this asset protocol.'
+    )
+  })
+
   test('masks asset credential hints without exposing their original length', () => {
     assert.equal(maskAssetCredentialHint('abc'), '***')
     assert.equal(maskAssetCredentialHint('AK123456789'), 'AK******789')
@@ -145,7 +155,6 @@ describe('official channel connectivity', () => {
   test('enables saved bearer-key asset profiles without separate credentials', () => {
     const cases = [
       ['ark_assets_v1', 'ark_media_v1'],
-      ['tokensave_assets_v1', 'tokensave_media_task_v1'],
       ['moxing_volc_assets_v1', 'moxing_modelark_media_v1'],
       ['funcloud_material', 'funcloud_seedance'],
     ] as const

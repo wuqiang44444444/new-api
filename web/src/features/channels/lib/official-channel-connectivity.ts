@@ -2,6 +2,8 @@ import type { ChannelTestResponse } from '../types'
 import { isOfficialSeedanceAssetProtocol } from './seedance-protocol-pairing'
 
 const connectivityMessages: Record<string, string> = {
+  asset_connectivity_unsupported:
+    'Read-only connectivity testing is not supported for this asset protocol.',
   asset_action_not_configured:
     'Official asset Action credentials are not configured.',
   asset_action_invalid_configuration:
@@ -65,7 +67,6 @@ export function getOfficialConnectivityAvailability(input: {
     !input.hasPendingVideoKey
   const assetProtocolSupportsTest = [
     'ark_assets_v1',
-    'tokensave_assets_v1',
     'moxing_volc_assets_v1',
     'funcloud_material',
     'volcengine_assets_action_v2024_01_01',
@@ -91,6 +92,7 @@ export function getOfficialConnectivityAvailability(input: {
     !input.sensitiveLocked
 
   return {
+    assetProtocolSupportsTest,
     videoCanTest,
     assetCanTest,
     canClearCredential,
