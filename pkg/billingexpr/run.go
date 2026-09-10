@@ -54,7 +54,7 @@ func runProgram(prog *vm.Program, requestRules []RequestRuleTrace, params TokenP
 	}
 	headers := normalizeHeaders(request.Headers)
 
-	env := map[string]interface{}{
+	env := map[string]any{
 		"p":     params.P,
 		"c":     params.C,
 		"len":   params.Len,
@@ -91,7 +91,7 @@ func runProgram(prog *vm.Program, requestRules []RequestRuleTrace, params TokenP
 		"header": func(key string) string {
 			return headers[strings.ToLower(strings.TrimSpace(key))]
 		},
-		"param": func(path string) interface{} {
+		"param": func(path string) any {
 			path = strings.TrimSpace(path)
 			if path == "" || len(request.Body) == 0 {
 				return nil
@@ -102,23 +102,23 @@ func runProgram(prog *vm.Program, requestRules []RequestRuleTrace, params TokenP
 			}
 			return result.Value()
 		},
-		"u": func(name string) interface{} {
+		"u": func(name string) any {
 			if request.Usage == nil {
 				return nil
 			}
 			return request.Usage[strings.TrimSpace(name)]
 		},
-		"has": func(source interface{}, substr string) bool {
+		"has": func(source any, substr string) bool {
 			if source == nil || substr == "" {
 				return false
 			}
 			return strings.Contains(fmt.Sprint(source), substr)
 		},
-		"hour":    func(tz string) int { return timeInZone(tz).Hour() },
-		"minute":  func(tz string) int { return timeInZone(tz).Minute() },
-		"weekday": func(tz string) int { return int(timeInZone(tz).Weekday()) },
-		"month":   func(tz string) int { return int(timeInZone(tz).Month()) },
-		"day":     func(tz string) int { return timeInZone(tz).Day() },
+		"hour":    func(tz string) int { return pricingTimeInZone(request.PricingTime, tz).Hour() },
+		"minute":  func(tz string) int { return pricingTimeInZone(request.PricingTime, tz).Minute() },
+		"weekday": func(tz string) int { return int(pricingTimeInZone(request.PricingTime, tz).Weekday()) },
+		"month":   func(tz string) int { return int(pricingTimeInZone(request.PricingTime, tz).Month()) },
+		"day":     func(tz string) int { return pricingTimeInZone(request.PricingTime, tz).Day() },
 		"max":     math.Max,
 		"min":     math.Min,
 		"abs":     math.Abs,
@@ -137,14 +137,26 @@ func runProgram(prog *vm.Program, requestRules []RequestRuleTrace, params TokenP
 	return f, trace, nil
 }
 
-func timeInZone(tz string) time.Time {
+// pricingTimeInZone resolves the evaluation instant for the time functions.
+// An explicit frozen pricing time always wins; without one the functions keep
+// reading the current time, preserving native call semantics.
+func pricingTimeInZone(pricingTime *time.Time, tz string) time.Time {
 	tz = strings.TrimSpace(tz)
 	if tz == "" {
+		if pricingTime != nil {
+			return pricingTime.UTC()
+		}
 		return time.Now().UTC()
 	}
 	loc, err := time.LoadLocation(tz)
 	if err != nil {
+		if pricingTime != nil {
+			return pricingTime.UTC()
+		}
 		return time.Now().UTC()
+	}
+	if pricingTime != nil {
+		return pricingTime.In(loc)
 	}
 	return time.Now().In(loc)
 }

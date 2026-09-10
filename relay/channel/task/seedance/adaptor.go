@@ -16,7 +16,6 @@ import (
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
-	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -110,6 +109,10 @@ type TaskAdaptor struct {
 	protocol    dto.VideoUpstreamProtocol
 	profile     dto.VideoUpstreamProfile
 	createPath  string
+	// pluginCreate caches the extension-plugin conversion for the current
+	// submission: the billing probe and the request body derive from one
+	// deterministic buildCreate result.
+	pluginCreate *seedancePluginCreateConversion
 }
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
@@ -150,7 +153,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if taskErr := service.ValidateFunCloudHostedVideoMedia(c, info); taskErr != nil {
 		return taskErr
 	}
-	if (a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolFunCloudSeedance ||
+	if (a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 ||
 		a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC) &&
 		billing_setting.GetBillingMode(info.OriginModelName) != billing_setting.BillingModeTieredExpr {
 		return service.TaskErrorWrapperLocal(
@@ -181,7 +184,7 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	if a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC {
 		return nil
 	}
-	if a.profile == dto.VideoUpstreamProfileThirdPartySynlinkVideoV1 || a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3 || a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedance {
+	if a.profile == dto.VideoUpstreamProfileThirdPartySynlinkVideoV1 || a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3 {
 		return nil
 	}
 	if a.profile == dto.VideoUpstreamProfileThirdPartyRelay &&
@@ -207,11 +210,14 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayInfo) (io.Reader, error) {
-	if data, handled, err := buildFunCloudVideoCreateRequest(c, info, a.profile); handled {
+	if data, handled, err := a.buildSeedancePluginCreateRequestBody(c, info, a.profile); handled {
 		if err != nil {
 			return nil, err
 		}
 		return bytes.NewReader(data), nil
+	}
+	if a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedance || a.protocol == dto.VideoUpstreamProtocolMoxingMediaTaskV1 {
+		return nil, fmt.Errorf("the configured video protocol is retired")
 	}
 	if data, handled, err := buildFeicaiVideoCreateRequest(c, info, a.profile); handled {
 		if err != nil {
@@ -244,10 +250,8 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		data, err = buildSynlinkRequest(c, body)
 	case dto.VideoUpstreamProtocolFunCloudModelArkV3:
 		data, err = buildFunCloudModelArkRequest(c, body)
-	case dto.VideoUpstreamProtocolMoxingMediaTaskV1:
-		data, err = thirdparty.MoxingMediaCreateRequest(data)
 	case dto.VideoUpstreamProtocolMoxingModelArkV1:
-		// The Moxing ModelArk protocol consumes the typed payload directly.
+		data, err = buildMoxingModelArkRequest(c, body)
 	default:
 		data, err = convertVideoCreateRequest(a.profile, data)
 	}
@@ -262,13 +266,13 @@ func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, req
 }
 
 // ParseResponse 只解析上游创建响应，不写客户端响应；展示由控制器负责。
-func (a *TaskAdaptor) ParseResponse(_ *gin.Context, resp *http.Response, _ *relaycommon.RelayInfo) (*channel.TaskSubmitResponse, *taskdto.TaskError) {
+func (a *TaskAdaptor) ParseResponse(c *gin.Context, resp *http.Response, _ *relaycommon.RelayInfo) (*channel.TaskSubmitResponse, *taskdto.TaskError) {
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, service.TaskErrorWrapper(err, "read_response_body_failed", http.StatusInternalServerError)
 	}
 	_ = resp.Body.Close()
-	responseBody, err = normalizeVideoCreateResponse(a.profile, responseBody)
+	responseBody, err = normalizeSeedanceVideoCreateResponse(c, a, responseBody)
 	if err != nil {
 		return nil, service.TaskErrorWrapper(err, "normalize_response_body_failed", http.StatusBadGateway)
 	}
@@ -348,7 +352,9 @@ func (a *TaskAdaptor) FetchTaskWithContext(ctx context.Context, baseURL, key str
 	if profile.IsOfficial() {
 		responseBody, err = normalizeOfficialTaskUsage(responseBody, taskID)
 	} else {
-		responseBody, err = normalizeVideoTaskResponse(
+		responseBody, err = normalizeSeedanceVideoTaskResponse(
+			ctx,
+			task,
 			profile,
 			adapterVersion,
 			responseBody,

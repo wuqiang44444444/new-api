@@ -103,7 +103,7 @@ type Properties struct {
 	OriginModelName   string `json:"origin_model_name,omitempty"`
 }
 
-func (m *Properties) Scan(val interface{}) error {
+func (m *Properties) Scan(val any) error {
 	bytesValue := jsonScanBytes(val)
 	if len(bytesValue) == 0 {
 		*m = Properties{}
@@ -225,7 +225,7 @@ func GenerateTaskID() string {
 	return "task_" + key
 }
 
-func (p *TaskPrivateData) Scan(val interface{}) error {
+func (p *TaskPrivateData) Scan(val any) error {
 	bytesValue := jsonScanBytes(val)
 	if len(bytesValue) == 0 {
 		return nil
@@ -400,6 +400,9 @@ func GetTimedOutUnfinishedTasks(cutoffUnix int64, limit int) []*Task {
 		// 显式图片执行类型由图片 worker 按自身排队/执行预算处理，
 		// 通用超时退款扫描不得提前释放其资金（NULL 安全谓词兼容历史空值）。
 		Where("client_protocol IS NULL OR client_protocol <> ?", TaskClientProtocolImageOpenAIV1).
+		// Batch 作业由专用 SystemTask 处理器推进；24 小时目标不是超时，
+		// 通用超时退款扫描不得按媒体任务预算终止或退款 Batch 作业。
+		Where("platform <> ?", constant.TaskPlatformAzureBatch).
 		Where("submit_time < ?", cutoffUnix).
 		Order("submit_time").
 		Limit(limit).
@@ -416,6 +419,7 @@ func GetAllUnFinishSyncTasks(limit int) []*Task {
 	// get all tasks progress is not 100%
 	err = DB.Where("progress != ?", "100%").Where("status NOT IN ?", TerminalTaskStatuses()).
 		Where("client_protocol IS NULL OR client_protocol <> ?", TaskClientProtocolImageOpenAIV1).
+		Where("platform <> ?", constant.TaskPlatformAzureBatch).
 		Limit(limit).Order("id").Find(&tasks).Error
 	if err != nil {
 		return nil
@@ -433,6 +437,7 @@ func HasUnfinishedSyncTasks() bool {
 		Where("progress != ?", "100%").
 		Where("status NOT IN ?", TerminalTaskStatuses()).
 		Where("client_protocol IS NULL OR client_protocol <> ?", TaskClientProtocolImageOpenAIV1).
+		Where("platform <> ?", constant.TaskPlatformAzureBatch).
 		Limit(1).
 		Pluck("id", &id).Error
 	return err == nil && id != 0

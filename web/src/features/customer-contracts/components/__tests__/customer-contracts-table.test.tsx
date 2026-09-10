@@ -32,6 +32,8 @@ const { getCustomerContracts, toastError } = vi.hoisted(() => ({
 
 vi.mock('../../api', () => ({
   getCustomerContracts: () => getCustomerContracts(),
+  getCustomerContractMigrationPreview: vi.fn(),
+  migrateCustomerContract: vi.fn(),
 }))
 
 vi.mock('@/hooks', () => ({
@@ -55,11 +57,13 @@ vi.mock('sonner', () => ({
 vi.mock('@/features/users/components/user-contract-drawer', () => ({
   UserContractDrawer: (props: {
     user: { id: number; username: string }
+    contractId?: number
     onSuccess: () => void
     onOpenChange: (open: boolean) => void
   }) => (
     <div role='dialog' aria-label='Mock contract drawer'>
       <span>{props.user.username}</span>
+      <span>contract:{props.contractId}</span>
       <button type='button' onClick={props.onSuccess}>
         Mock contract saved
       </button>
@@ -79,14 +83,17 @@ const activeResponse: CustomerContractAdminListResponse = {
     summary: { total: 3, active: 1, zero_access: 1, inactive: 1 },
     items: [
       {
+        contract_id: 31,
+        contract_name: 'Team contract',
         user_id: 7,
         username: 'customer-a',
         display_name: 'Customer A',
-        contract_mode: true,
+        contract_enabled: true,
         contract_status: 'active',
         contract_version: 3,
         rule_count: 2,
         unavailable_rule_count: 1,
+        bound_token_count: 5,
         updated_at: 1_786_982_400,
         admin_user_id: 1,
         admin_username: 'root',
@@ -115,11 +122,13 @@ describe('customer contracts admin table', () => {
 
     expect(await screen.findByText('customer-a')).toBeTruthy()
     expect(screen.getByText('All contracts')).toBeTruthy()
-    expect(screen.getByText('Active contracts')).toBeTruthy()
-    expect(screen.getByText('No model access')).toBeTruthy()
-    expect(screen.getByText('Inactive contracts')).toBeTruthy()
+    // The status filter and the summary cards repeat these labels.
+    expect(screen.getAllByText('Active contracts').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('No model access').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Inactive contracts').length).toBeGreaterThan(0)
+    expect(screen.getByText('Team contract')).toBeTruthy()
     expect(screen.getByText('Unavailable: 1')).toBeTruthy()
-    expect(screen.getByText('Contract active · 2 rules')).toBeTruthy()
+    expect(screen.getByText('5')).toBeTruthy()
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Manage model contract' })
@@ -128,6 +137,7 @@ describe('customer contracts admin table', () => {
       screen.getByRole('dialog', { name: 'Mock contract drawer' })
     ).toBeTruthy()
     expect(screen.getAllByText('customer-a').length).toBeGreaterThan(1)
+    expect(screen.getByText('contract:31')).toBeTruthy()
   })
 
   it('refreshes the aggregate list after the existing contract editor saves', async () => {

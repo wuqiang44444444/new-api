@@ -75,6 +75,9 @@ func InsertTaskWithCreateAttempt(task *Task, idempotencyID, attemptID int64) err
 		if err := tx.Create(task).Error; err != nil {
 			return err
 		}
+		if err := createBatchJobForTaskTx(tx, &attempt, task); err != nil {
+			return err
+		}
 		attemptResult := tx.Model(&TaskCreateAttempt{}).
 			Where("id = ? AND status = ? AND billing_hold_state = ?",
 				attemptID, TaskCreateAttemptUpstreamSucceeded, TaskCreateAttemptBillingHeld).
@@ -160,6 +163,9 @@ func RecoverTaskCreateAttempt(id int64) (*Task, error) {
 			return err
 		}
 		if err := tx.Create(&task).Error; err != nil {
+			return err
+		}
+		if err := createBatchJobForTaskTx(tx, &attempt, &task); err != nil {
 			return err
 		}
 		result := tx.Model(&TaskCreateAttempt{}).

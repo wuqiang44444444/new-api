@@ -22,6 +22,7 @@ import { DataTableColumnHeader } from '@/components/data-table/core/column-heade
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
 import { StatusBadge } from '@/components/status-badge'
 import { Checkbox } from '@/components/ui/checkbox'
+import type { BillingDisplayProjection } from '@/features/pricing/types'
 
 import {
   getModeLabel,
@@ -47,6 +48,8 @@ type BuildModelRatioColumnsOptions = {
   deleteDisabled?: boolean
   taskModelNames?: Set<string>
   t: (key: string) => string
+  /** 后端投影读取器；null 表示尚未取得或不可展开，不猜价。 */
+  billingDisplayFor?: (expression: string) => BillingDisplayProjection | null
 }
 
 export function buildModelRatioColumns({
@@ -55,6 +58,7 @@ export function buildModelRatioColumns({
   deleteDisabled,
   taskModelNames,
   t,
+  billingDisplayFor,
 }: BuildModelRatioColumnsOptions): ColumnDef<ModelRow>[] {
   return [
     {
@@ -170,7 +174,11 @@ export function buildModelRatioColumns({
       cell: ({ row }) => (
         <div className='flex min-w-0 flex-col gap-1'>
           <span className='truncate font-medium'>
-            {getPriceSummary(row.original, t)}
+            {getPriceSummary(
+              row.original,
+              t,
+              billingDisplayFor?.(row.original.billingExpr || '')
+            )}
           </span>
           <span className='text-muted-foreground truncate text-xs'>
             {getPriceDetail(row.original, t)}
@@ -178,8 +186,16 @@ export function buildModelRatioColumns({
         </div>
       ),
       sortingFn: (rowA, rowB) =>
-        getPriceSummary(rowA.original, t).localeCompare(
-          getPriceSummary(rowB.original, t)
+        getPriceSummary(
+          rowA.original,
+          t,
+          billingDisplayFor?.(rowA.original.billingExpr || '')
+        ).localeCompare(
+          getPriceSummary(
+            rowB.original,
+            t,
+            billingDisplayFor?.(rowB.original.billingExpr || '')
+          )
         ),
       meta: { label: t('Price summary') },
     },

@@ -28,7 +28,7 @@ func TestSeedanceHTTPObservationAndBackgroundSettlement(t *testing.T) {
 		dto.VideoUpstreamProtocolModelArkV3CMCC, dto.VideoUpstreamProtocolMoxingModelArkV1,
 		dto.VideoUpstreamProtocolFunCloudSeedance, dto.VideoUpstreamProtocolFunCloudModelArkV3,
 		dto.VideoUpstreamProtocolArkMediaV1, dto.VideoUpstreamProtocolTokenSaveMediaTaskV1,
-		dto.VideoUpstreamProtocolMoxingMediaTaskV1, dto.VideoUpstreamProtocolFeicaiVideosV1,
+		dto.VideoUpstreamProtocolFeicaiVideosV1,
 	} {
 		t.Run(string(protocol), func(t *testing.T) {
 			events := []string{}
@@ -52,7 +52,7 @@ func TestSeedanceHTTPObservationAndBackgroundSettlement(t *testing.T) {
 				common.MemoryCacheEnabled, common.RedisEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled = oldMemory, oldRedis, oldBatch, oldConsume
 			})
 			var calls atomic.Int32
-			seconds := protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 || protocol == dto.VideoUpstreamProtocolMoxingMediaTaskV1 || protocol == dto.VideoUpstreamProtocolFeicaiVideosV1
+			seconds := protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 || protocol == dto.VideoUpstreamProtocolFeicaiVideosV1
 			_, path := protocol.TransportPaths("seedance-2-fast")
 			if path == "" {
 				path = "/api/v3/contents/generations/tasks/{task_id}"

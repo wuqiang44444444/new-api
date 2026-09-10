@@ -55,7 +55,6 @@ func TestDefaultFallbackProtocolsExposeAdministrativeGroupCapability(t *testing.
 		{protocol: dto.AssetUpstreamProtocolBytePlusAction, adapter: bytePlus},
 		{protocol: dto.AssetUpstreamProtocolArkAssetsV1, adapter: NewArkAdapter("https://upstream.example", "key", nil)},
 		{protocol: dto.AssetUpstreamProtocolTokenSaveAssetsV1, adapter: NewTokenSaveAssetAdapter("https://upstream.example", "key", nil)},
-		{protocol: dto.AssetUpstreamProtocolMoxingJoyCreatorV1, adapter: NewMoxingJoyCreatorAdapter("https://upstream.example", "key", nil)},
 		{protocol: dto.AssetUpstreamProtocolMoxingVolcAssetsV1, adapter: NewMoxingVolcAdapter("https://upstream.example", "key", nil)},
 		{protocol: dto.AssetUpstreamProtocolFunCloudMaterial, adapter: NewFunCloudMaterialAdapter("https://upstream.example", "key", nil)},
 		{protocol: dto.AssetUpstreamProtocolCMCCAICCV2, adapter: cmcc},
@@ -113,67 +112,32 @@ func TestProtocolAdaptersNormalizeCreationContracts(t *testing.T) {
 	}
 }
 
-func TestMoxingAssetAdaptersUseProviderSpecificContracts(t *testing.T) {
-	tests := []struct {
-		name      string
-		adapter   Adapter
-		wantPath  string
-		wantID    string
-		wantRefID string
-	}{
-		{
-			name: "JoyCreator", wantPath: "/joycreator/openApi/v1/asset/create", wantID: "52", wantRefID: "asset-joy-1",
-			adapter: NewMoxingJoyCreatorAdapter("https://moxing.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
-				return assetJSONResponse(`{"requestId":"request-1","error":null,"result":{"id":"52","assetId":"asset-joy-1","vendorStatus":"Active","status":1}}`), nil
-			})),
-		},
-		{
-			name: "Volcengine", wantPath: "/v1/volc/assets", wantID: "asset-volc-1", wantRefID: "asset-volc-1",
-			adapter: NewMoxingVolcAdapter("https://moxing.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
-				return assetJSONResponse(`{"RequestId":"request-2","Result":{"Id":"asset-volc-1","Status":"Active"}}`), nil
-			})),
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var requestedPath string
-			switch adapter := test.adapter.(type) {
-			case *MoxingJoyCreatorAdapter:
-				original := adapter.http
-				adapter.http = assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
-					requestedPath = req.URL.Path
-					return original.Do(req)
-				})
-			case *MoxingVolcAdapter:
-				original := adapter.http
-				adapter.http = assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
-					requestedPath = req.URL.Path
-					return original.Do(req)
-				})
-			}
-			result, err := test.adapter.CreateAsset(context.Background(), AssetRequest{
-				GroupResourceID: "group-1", URL: "https://blob.example/source.png", Name: "source", MediaType: "image",
-			})
-			require.NoError(t, err)
-			assert.Equal(t, test.wantPath, requestedPath)
-			assert.Equal(t, test.wantID, result.ResourceID)
-			assert.Equal(t, test.wantRefID, result.ReferenceValue)
-			assert.Equal(t, "active", result.Status)
-		})
-	}
-}
-
-func TestMoxingJoyCreatorNormalizesDirectGroupCreationResult(t *testing.T) {
-	adapter := NewMoxingJoyCreatorAdapter("https://moxing.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
-		return assetJSONResponse(`{"requestId":"request-1","error":null,"result":{"id":"34","groupId":"group-provider-1"}}`), nil
+func TestMoxingVolcAdapterUsesProviderSpecificContract(t *testing.T) {
+	var requestedPath string
+	adapter := NewMoxingVolcAdapter("https://moxing.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+		requestedPath = req.URL.Path
+		return assetJSONResponse(`{"RequestId":"request-2","Result":{"Id":"asset-volc-1","Status":"Active"}}`), nil
 	}))
 
-	group, err := adapter.CreateGroup(context.Background(), GroupRequest{Name: "group"})
+	result, err := adapter.CreateAsset(context.Background(), AssetRequest{
+		GroupResourceID: "group-1", URL: "https://blob.example/source.png", Name: "source", MediaType: "image",
+	})
 	require.NoError(t, err)
-	assert.Equal(t, "34", group.ResourceID)
-	assert.Equal(t, "group-provider-1", group.BusinessID)
-	assert.Equal(t, "active", group.Status)
+	assert.Equal(t, "/v1/volc/assets", requestedPath)
+	assert.Equal(t, "asset-volc-1", result.ResourceID)
+	assert.Equal(t, "asset-volc-1", result.ReferenceValue)
+	assert.Equal(t, "active", result.Status)
+}
+
+// The gateway rejects an asset upload with unsupported_asset_type when the
+// channel adapter's Supports gate refuses the media type. The Moxing Volc
+// asset library must therefore accept general audio before any video request
+// referencing audio assets can succeed.
+func TestMoxingVolcAssetLibraryAcceptsGeneralAudio(t *testing.T) {
+	adapter := NewMoxingVolcAdapter("https://moxing.example", "key", nil)
+
+	assert.True(t, adapter.Supports("general", "audio"), "general audio assets must pass the local type gate")
+	assert.True(t, adapter.Supports("general", "video"))
 }
 
 func TestMoxingVolcCreateGroupOmitsProjectName(t *testing.T) {
@@ -192,7 +156,7 @@ func TestMoxingVolcCreateGroupOmitsProjectName(t *testing.T) {
 }
 
 func TestMoxingAndBytePlusImplementUnifiedRealPersonContract(t *testing.T) {
-	moxing := NewArkAdapter("https://tokensave.pro", "moxing-key", nil)
+	moxing := NewMoxingVolcAdapter("https://moxing.example", "moxing-key", nil)
 	bytePlus, err := NewBytePlusActionAdapter(
 		"ACCESS|SECRET",
 		"ap-southeast-1",
@@ -266,7 +230,7 @@ func TestCreateErrorClassificationSeparatesRejectedFromUnknownOutcomes(t *testin
 	}
 }
 
-func TestMoxingJoyCreatorApplicationErrorsPreserveUnknownServerOutcomes(t *testing.T) {
+func TestMoxingVolcApplicationErrorsPreserveUnknownServerOutcomes(t *testing.T) {
 	for _, test := range []struct {
 		code       int
 		definitive bool
@@ -274,8 +238,8 @@ func TestMoxingJoyCreatorApplicationErrorsPreserveUnknownServerOutcomes(t *testi
 		{code: 400, definitive: true},
 		{code: 500, definitive: false},
 	} {
-		adapter := NewMoxingJoyCreatorAdapter("https://moxing.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
-			return assetJSONResponse(fmt.Sprintf(`{"requestId":"request-1","error":{"code":%d,"message":"failed"},"result":{}}`, test.code)), nil
+		adapter := NewMoxingVolcAdapter("https://moxing.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+			return assetJSONResponse(fmt.Sprintf(`{"RequestId":"request-1","Error":{"Code":%d,"Message":"failed"},"Result":{}}`, test.code)), nil
 		}))
 		_, err := adapter.CreateAsset(context.Background(), AssetRequest{URL: "https://example.com/source.png", MediaType: "image"})
 		require.Error(t, err)

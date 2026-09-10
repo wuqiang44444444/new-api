@@ -86,6 +86,7 @@ export type Channel = z.infer<typeof channelSchema>
 // ============================================================================
 
 export interface ChannelSettings {
+  task_plugin_key?: string
   force_format?: boolean
   thinking_to_content?: boolean
   proxy?: string
@@ -124,11 +125,9 @@ export interface ChannelOtherSettings {
     | 'modelark_v3_byteplus'
     | 'modelark_v3_cmcc'
     | 'tokensave_media_task_v1'
-    | 'moxing_media_task_v1'
     | 'moxing_modelark_media_v1'
     | 'ark_media_v1'
     | 'feicai_videos_v1'
-    | 'funcloud_seedance'
     | 'funcloud_modelark_v3'
     | 'synlink_video_v1'
   asset_upstream_protocol?:
@@ -137,7 +136,6 @@ export interface ChannelOtherSettings {
     | 'byteplus_assets_action_v2024_01_01'
     | 'ark_assets_v1'
     | 'tokensave_assets_v1'
-    | 'moxing_joycreator_assets_v1'
     | 'moxing_volc_assets_v1'
     | 'funcloud_material'
     | 'funcloud_material_hosted'

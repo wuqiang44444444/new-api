@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFunCloudModelArkTenImagesRejectedBeforePricingAndHold(t *testing.T) {
+func TestFunCloudModelArkExcessImagesRejectedBeforePricingAndHold(t *testing.T) {
 	saveBillingConfig(t)
 	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{"billing_setting.billing_mode": `{"customer":"tiered_expr"}`, "billing_setting.billing_expr": `{}`}))
 	calls := 0
@@ -25,7 +25,7 @@ func TestFunCloudModelArkTenImagesRejectedBeforePricingAndHold(t *testing.T) {
 	}))
 	defer provider.Close()
 	request := &dto.ModelArkVideoCreateRequest{Model: "customer", Content: []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("A landscape")}}}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 31; i++ {
 		request.Content = append(request.Content, dto.ModelArkVideoContent{Type: "image_url", Role: common.GetPointer("reference_image"), ImageURL: &dto.VideoMediaURL{URL: "asset://existing-image"}})
 	}
 	raw, err := common.Marshal(request)

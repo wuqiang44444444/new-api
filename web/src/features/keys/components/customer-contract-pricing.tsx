@@ -33,7 +33,7 @@ export function CustomerContractPricing() {
     queryFn: getSelfCustomerContract,
     staleTime: 60 * 1000,
   })
-  const contract = data?.data
+  const contracts = data?.data?.contracts ?? []
 
   if (isLoading) {
     return (
@@ -42,7 +42,7 @@ export function CustomerContractPricing() {
       </div>
     )
   }
-  if (isError || !data?.success || !contract) {
+  if (isError || !data?.success) {
     return (
       <Alert variant='destructive'>
         <AlertTitle>
@@ -56,64 +56,7 @@ export function CustomerContractPricing() {
       </Alert>
     )
   }
-  if (!contract.contract_mode && contract.contract_version === 0) return null
-
-  let contractContent
-  if (!contract.contract_mode) {
-    contractContent = (
-      <Alert>
-        <AlertTitle>{t('Contract mode is inactive')}</AlertTitle>
-      </Alert>
-    )
-  } else if (contract.models.length === 0) {
-    contractContent = (
-      <Empty className='border'>
-        <EmptyHeader>
-          <EmptyTitle>{t('No models are currently authorized')}</EmptyTitle>
-          <EmptyDescription>
-            {t('All model calls from every API key are currently denied.')}
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    )
-  } else {
-    contractContent = (
-      <div className='divide-y rounded-lg border'>
-        {contract.models.map((rule) => {
-          const channelMultiplier = rule.channel_discount || '1'
-          const effectiveMultiplier =
-            rule.effective_multiplier || rule.discount
-          return (
-          <div
-            key={rule.model}
-            className='grid gap-2 p-3 md:grid-cols-[minmax(200px,1fr)_130px_minmax(240px,1fr)] md:items-start'
-          >
-            <div className='flex min-w-0 items-center gap-2'>
-              <span className='truncate font-mono text-sm'>{rule.model}</span>
-              <Badge variant={rule.available ? 'secondary' : 'destructive'}>
-                {rule.available ? t('Available') : t('Unavailable')}
-              </Badge>
-            </div>
-            <div className='text-sm'>
-              <div>{t('Contract discount')}: {rule.discount}</div>
-              <div className='text-muted-foreground text-xs'>
-                {t('Channel multiplier')}: {channelMultiplier}
-              </div>
-            </div>
-            <div className='min-w-0 text-sm'>
-              <ContractPriceDetails
-                price={rule.price}
-                channelMultiplier={channelMultiplier}
-                contractDiscount={rule.discount}
-                effectiveMultiplier={effectiveMultiplier}
-              />
-            </div>
-          </div>
-          )
-        })}
-      </div>
-    )
-  }
+  if (contracts.length === 0) return null
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -121,10 +64,10 @@ export function CustomerContractPricing() {
         <CardHeader>
           <CardTitle>{t('Your model contract pricing')}</CardTitle>
           <CardDescription>
-            {contract.contract_mode
-              ? t('These model and price rules apply to all of your API keys.')
+            {contracts.length === 1
+              ? t('These rules apply only to API keys bound to this contract.')
               : t(
-                  'Contract mode is inactive; native model permissions and pricing currently apply.'
+                  'Each API key follows the pricing of the contract bound to it.'
                 )}
           </CardDescription>
           <CardAction>
@@ -143,7 +86,102 @@ export function CustomerContractPricing() {
           </CardAction>
         </CardHeader>
         <CollapsibleContent>
-          <CardContent>{contractContent}</CardContent>
+          <CardContent>
+            <div className='flex flex-col gap-4'>
+              {contracts.map((contract) => {
+                let contractContent
+                if (!contract.enabled) {
+                  contractContent = (
+                    <Alert>
+                      <AlertTitle>{t('Contract mode is inactive')}</AlertTitle>
+                      <AlertDescription>
+                        {t(
+                          'This contract is disabled. Bound API keys currently follow native logic.'
+                        )}
+                      </AlertDescription>
+                    </Alert>
+                  )
+                } else if (contract.models.length === 0) {
+                  contractContent = (
+                    <Empty className='border'>
+                      <EmptyHeader>
+                        <EmptyTitle>
+                          {t('No models are currently authorized')}
+                        </EmptyTitle>
+                        <EmptyDescription>
+                          {t(
+                            'API keys bound to this contract cannot call models until rules are available.'
+                          )}
+                        </EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  )
+                } else {
+                  contractContent = (
+                    <div className='divide-y rounded-lg border'>
+                      {contract.models.map((rule) => {
+                        const channelMultiplier = rule.channel_discount || '1'
+                        const effectiveMultiplier =
+                          rule.effective_multiplier || rule.discount
+                        return (
+                          <div
+                            key={rule.model}
+                            className='grid gap-2 p-3 md:grid-cols-[minmax(200px,1fr)_130px_minmax(240px,1fr)] md:items-start'
+                          >
+                            <div className='flex min-w-0 items-center gap-2'>
+                              <span className='truncate font-mono text-sm'>
+                                {rule.model}
+                              </span>
+                              <Badge
+                                variant={
+                                  rule.available ? 'secondary' : 'destructive'
+                                }
+                              >
+                                {rule.available
+                                  ? t('Available')
+                                  : t('Unavailable')}
+                              </Badge>
+                            </div>
+                            <div className='text-sm'>
+                              <div>
+                                {t('Contract discount')}: {rule.discount}
+                              </div>
+                              <div className='text-muted-foreground text-xs'>
+                                {t('Channel multiplier')}: {channelMultiplier}
+                              </div>
+                            </div>
+                            <div className='min-w-0 text-sm'>
+                              <ContractPriceDetails
+                                price={rule.price}
+                                channelMultiplier={channelMultiplier}
+                                contractDiscount={rule.discount}
+                                effectiveMultiplier={effectiveMultiplier}
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                }
+                return (
+                  <div key={contract.id} className='flex flex-col gap-2'>
+                    <div className='flex items-center gap-2'>
+                      <span className='font-medium text-sm'>
+                        {contract.name}
+                      </span>
+                      <Badge
+                        variant={contract.enabled ? 'secondary' : 'outline'}
+                      >
+                        {contract.enabled ? t('Enabled') : t('Disabled')}
+                      </Badge>
+                    </div>
+                    {contractContent}
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
         </CollapsibleContent>
       </Card>
     </Collapsible>

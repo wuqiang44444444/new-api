@@ -19,14 +19,17 @@ For commercial licensing, please contact support@quantumnous.com
 export type CustomerContractAdminStatus = 'active' | 'zero_access' | 'inactive'
 
 export interface CustomerContractAdminListItem {
+  contract_id: number
+  contract_name: string
   user_id: number
   username: string
   display_name: string
-  contract_mode: boolean
+  contract_enabled: boolean
   contract_status: CustomerContractAdminStatus
   contract_version: number
   rule_count: number
   unavailable_rule_count: number
+  bound_token_count: number
   updated_at: number
   admin_user_id: number
   admin_username: string
@@ -72,4 +75,29 @@ export const EMPTY_CUSTOMER_CONTRACT_SUMMARY: CustomerContractAdminSummary = {
   active: 0,
   zero_access: 0,
   inactive: 0,
+}
+
+export interface CustomerContractMigrationRulePreview {
+  public_model: string
+  route_group: string
+  ratio_units: number
+  channel_ids: number[]
+  resolved_channel_id: number
+  needs_decision: boolean
+}
+
+export interface CustomerContractMigrationPreview {
+  user_id: number
+  username: string
+  contract_enabled: boolean
+  bound_token_count: number
+  already_migrated: boolean
+  rules: CustomerContractMigrationRulePreview[]
+}
+
+export interface CustomerContractMigrationPayload {
+  user_id: number
+  contract_name: string
+  reason: string
+  channel_overrides: Record<string, number>
 }

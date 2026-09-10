@@ -52,11 +52,9 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { TaskEvidence } from '../task-evidence'
 import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
-import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { Label } from '@/components/ui/label'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
@@ -65,6 +63,7 @@ import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
+import { AuditDetailFields } from '../../audit/components/audit-detail-fields'
 import type { UsageLog } from '../../data/schema'
 import {
   parseLogOther,
@@ -79,6 +78,7 @@ import {
   getReasoningEffortVariant,
   renderAuditContent,
 } from '../../lib/format'
+import { buildQuotaAuditOperation } from '../../lib/quota-audit-operation'
 import {
   getLogTypeConfig,
   isPerCallBilling,
@@ -86,6 +86,8 @@ import {
 } from '../../lib/utils'
 import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
 import { PluginAuthorLink } from '../plugin-author-link'
+import { TaskEvidence } from '../task-evidence'
+import { DetailRow, DetailSection } from './log-detail-layout'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
 // to its i18n label key for display in the audit details.
@@ -104,68 +106,6 @@ function timingTextColorClass(
   if (variant === 'success') return 'text-emerald-600'
   if (variant === 'warning') return 'text-amber-600'
   return 'text-rose-600'
-}
-
-function DetailRow(props: {
-  label: React.ReactNode
-  value: React.ReactNode
-  mono?: boolean
-  muted?: boolean
-}) {
-  return (
-    <div className='grid min-w-0 grid-cols-[5.25rem_minmax(0,1fr)] gap-2 text-sm sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-3'>
-      <span className='text-muted-foreground min-w-0 text-xs'>
-        {props.label}
-      </span>
-      <span
-        className={cn(
-          'max-w-full min-w-0 text-xs break-all sm:wrap-break-word',
-          props.mono && 'font-mono',
-          props.muted && 'text-muted-foreground'
-        )}
-      >
-        {props.value}
-      </span>
-    </div>
-  )
-}
-
-function DetailSection(props: {
-  icon?: React.ReactNode
-  iconTone?: IconBadgeTone
-  label: string
-  variant?: 'default' | 'danger'
-  children: React.ReactNode
-}) {
-  const isDanger = props.variant === 'danger'
-  const iconTone = isDanger ? 'destructive' : props.iconTone
-  return (
-    <div className='min-w-0 space-y-1.5'>
-      <Label
-        className={cn(
-          'flex items-center gap-1.5 text-xs font-semibold',
-          isDanger && 'text-red-500'
-        )}
-      >
-        {props.icon && (
-          <IconBadge tone={iconTone} size='xs'>
-            {props.icon}
-          </IconBadge>
-        )}
-        {props.label}
-      </Label>
-      <div
-        className={cn(
-          'min-w-0 space-y-1 overflow-hidden rounded-md border p-2.5 max-sm:p-2',
-          isDanger
-            ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20'
-            : 'bg-muted/30'
-        )}
-      >
-        {props.children}
-      </div>
-    </div>
-  )
 }
 
 function formatRatio(ratio: number | undefined): string {
@@ -241,24 +181,24 @@ function BillingBreakdown(props: {
       label: t('Billing Mode'),
       value: t('Dynamic Pricing'),
     })
-    if (tieredSummary) {
-      if (tieredSummary.tier.label) {
-        rows.push({
-          label: t('Matched Tier'),
-          value: tieredSummary.tier.label,
-        })
-      }
+    // 命中档位来自当次结算运行痕迹（matched_tier），是日志事实，与单价
+    // 投影是否可展开无关；单价条目只在后端投影可用时展示。
+    rows.push({
+      label: t('Matched Tier'),
+      value: other.matched_tier || t('No matching results'),
+    })
+    if (tieredSummary?.conditionResultsUnavailable) {
+      rows.push({
+        label: t('Dynamic Pricing'),
+        value: t('Historical condition results are unavailable.'),
+      })
+    } else if (tieredSummary) {
       for (const entry of tieredSummary.priceEntries) {
         rows.push({
           label: t(entry.shortLabel),
-          value: `${fmtPrice(entry.price)}/M`,
+          value: `${fmtPrice(entry.price)}/${entry.unit === 'request' ? t('request') : 'M'}`,
         })
       }
-    } else {
-      rows.push({
-        label: t('Matched Tier'),
-        value: t('No matching results'),
-      })
     }
   } else if (isPerCall) {
     rows.push({ label: t('Billing Mode'), value: t('Per-call') })
@@ -512,7 +452,6 @@ interface DetailsDialogProps {
 export function DetailsDialog(props: DetailsDialogProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
-  const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
   const typeConfig = getLogTypeConfig(props.log.type)
 
@@ -588,9 +527,17 @@ export function DetailsDialog(props: DetailsDialogProps) {
     return String(adminInfo.auth_method)
   })()
 
-  // Localized operation text rendered from the language-independent op
-  // descriptor (shared by audit type=3 and login type=7).
+  // Top-up, audit, and login logs share the language-independent descriptor.
+  const quotaOperation = isTopup
+    ? buildQuotaAuditOperation(
+        other?.op?.action ?? '',
+        other?.op?.params ?? {},
+        true,
+        t
+      )
+    : null
   const operationText = renderAuditContent(other, t)
+  const details = (isTopup ? operationText : null) ?? props.log.content ?? ''
   const auditRoute = isManage && props.isAdmin ? other?.audit_info : undefined
   // Channel update records which fields changed (stable field tokens); render
   // them with their localized labels for admins.
@@ -672,7 +619,13 @@ export function DetailsDialog(props: DetailsDialogProps) {
       contentHeight='min(72dvh, 720px)'
       bodyClassName='pr-2 sm:pr-4'
     >
- {props.open && props.isAdmin && props.log.request_id ? <TaskEvidence key={props.log.request_id} requestId={props.log.request_id} isRoot={props.isRoot} /> : null}
+      {props.open && props.isAdmin && props.log.request_id ? (
+        <TaskEvidence
+          key={props.log.request_id}
+          requestId={props.log.request_id}
+          isRoot={props.isRoot}
+        />
+      ) : null}
       <div className='w-full max-w-full min-w-0 space-y-2.5 overflow-x-hidden py-1 sm:space-y-3'>
         {/* Overview section - key identifiers */}
         <div className='min-w-0 space-y-1'>
@@ -991,6 +944,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         )}
 
+        {quotaOperation && (
+          <DetailSection label={t('Quota adjustment details')}>
+            <AuditDetailFields fields={quotaOperation.fields} />
+          </DetailSection>
+        )}
+
         {/* Manage operator (type=3, admin only) */}
         {manageOperator && (
           <DetailRow
@@ -1176,6 +1135,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <DynamicPricingBreakdown
               compact
               billingExpr={decodeBillingExprB64(other.expr_b64)}
+              billingDisplay={other.billing_display}
               matchedTierLabel={other.matched_tier}
               requestRules={other.request_rules}
               hideCacheColumns={!hasAnyCacheTokens(other)}

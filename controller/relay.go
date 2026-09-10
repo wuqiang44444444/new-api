@@ -499,6 +499,11 @@ func RelayNotImplemented(c *gin.Context) {
 }
 
 func RelayNotFound(c *gin.Context) {
+	// The web fallback may already have applied static-asset cache headers.
+	// A missing API or asset can appear after an upgrade; never cache its 404.
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private, max-age=0")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	err := types.OpenAIError{
 		Message: fmt.Sprintf("Invalid URL (%s %s)", c.Request.Method, c.Request.URL.Path),
 		Type:    "invalid_request_error",
@@ -633,11 +638,9 @@ func executeTaskSubmissionWith(
 	// 音视频证据（一期）：北向证据在验证与选渠前持久化；写入不可用或正文
 	// 超限时直接拒绝，不创建资金 hold，不触发任何 Provider 调用。
 	if evidenceErr := service.BeginTaskRequestEvidence(c, service.TaskRequestEvidenceKindForTaskRelay(c)); evidenceErr != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(evidenceErr, service.ErrTaskRequestEvidenceBodyTooLarge) {
-			status = http.StatusRequestEntityTooLarge
-		}
-		return nil, service.TaskErrorWrapperLocal(evidenceErr, "task_evidence_unavailable", status)
+		// 证据拒绝边界：唯一分类映射输出稳定 code 与文案，替代固定状态。
+		service.LogTaskRequestEvidenceRejection(c, evidenceErr)
+		return nil, service.TaskErrorForEvidenceRejection(evidenceErr)
 	}
 	defer func() {
 		// 上游 durable 语义保留：任务行落库后不再退款。本地 SkipRequestRefund

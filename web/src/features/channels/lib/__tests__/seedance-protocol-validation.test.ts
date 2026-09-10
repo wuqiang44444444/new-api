@@ -55,11 +55,10 @@ describe('Seedance protocol validation', () => {
       ['modelark_v3_byteplus', 'byteplus_assets_action_v2024_01_01'],
       ['modelark_v3_cmcc', 'cmcc_aicc_assets_v2'],
       ['tokensave_media_task_v1', 'tokensave_assets_v1'],
-      ['moxing_media_task_v1', 'moxing_joycreator_assets_v1'],
       ['moxing_modelark_media_v1', 'moxing_volc_assets_v1'],
       ['ark_media_v1', 'ark_assets_v1'],
       ['feicai_videos_v1', 'none'],
-      ['funcloud_seedance', 'funcloud_material'],
+      ['funcloud_modelark_v3', 'funcloud_material'],
       ['funcloud_modelark_v3', 'funcloud_material'],
     ]
 
@@ -81,33 +80,20 @@ describe('Seedance protocol validation', () => {
       ['tokensave_assets_v1', 'none']
     )
     assert.deepEqual(
-      getCompatibleSeedanceAssetProtocols('moxing_media_task_v1'),
-      ['moxing_joycreator_assets_v1', 'none']
-    )
-    assert.deepEqual(
       getCompatibleSeedanceAssetProtocols('moxing_modelark_media_v1'),
       ['moxing_volc_assets_v1', 'none']
     )
     assert.deepEqual(getCompatibleSeedanceAssetProtocols('feicai_videos_v1'), [
       'none',
     ])
-    assert.deepEqual(getCompatibleSeedanceAssetProtocols('funcloud_seedance'), [
+    assert.deepEqual(getCompatibleSeedanceAssetProtocols('funcloud_modelark_v3'), [
       'funcloud_material',
+      'funcloud_material_hosted',
       'none',
     ])
-    assert.deepEqual(
-      getCompatibleSeedanceAssetProtocols(
-        'funcloud_seedance',
-        '{"customer-next":"seedance-2-5"}'
-      ),
-      ['none']
-    )
     assert.equal(
-      getDefaultSeedanceAssetProtocol(
-        'funcloud_seedance',
-        '{"customer-next":"seedance-2-5"}'
-      ),
-      'none'
+      getDefaultSeedanceAssetProtocol('funcloud_modelark_v3'),
+      'funcloud_material'
     )
   })
 
@@ -187,7 +173,7 @@ describe('Seedance protocol validation', () => {
     })
     assert.equal(result.success, true)
     assert.deepEqual(
-      getCompatibleSeedanceAssetProtocols('funcloud_modelark_v3', mapping),
+      getCompatibleSeedanceAssetProtocols('funcloud_modelark_v3'),
       ['funcloud_material', 'funcloud_material_hosted', 'none']
     )
   })
@@ -215,7 +201,7 @@ describe('Seedance protocol validation', () => {
     assert.equal(result.success, false)
   })
 
-  test('rejects FunCloud 2.5 with the FunCloud material library', () => {
+  test('rejects retired FunCloud V2 even with a valid material library', () => {
     const result = channelFormSchema.safeParse({
       ...seedanceForm,
       models: 'customer-next',
@@ -227,7 +213,7 @@ describe('Seedance protocol validation', () => {
     assert.equal(result.success, false)
   })
 
-  test('rejects FunCloud 2.5 when it is one of multiple administrator mappings', () => {
+  test('rejects retired FunCloud V2 with multiple mappings', () => {
     const result = channelFormSchema.safeParse({
       ...seedanceForm,
       models: 'customer-standard,customer-next',

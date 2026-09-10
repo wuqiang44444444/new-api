@@ -1,6 +1,7 @@
 package seedance
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -15,6 +16,8 @@ import (
 
 func TestBuildFeicaiVideoCreateRequestUsesMappedProviderModelWithoutClientNameRules(t *testing.T) {
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
+	pinSeedanceExtensionForTest(t, context)
 	duration, resolution, ratio := 4, "720p", "21:9"
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 		ContractID: dto.VideoContractModelArkV3,
@@ -30,7 +33,11 @@ func TestBuildFeicaiVideoCreateRequestUsesMappedProviderModelWithoutClientNameRu
 		},
 	})
 
-	body, handled, err := buildFeicaiVideoCreateRequest(
+	adaptor := &TaskAdaptor{
+		protocol: dto.VideoUpstreamProtocolFeicaiVideosV1,
+		profile:  dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
+	}
+	body, handled, err := adaptor.buildSeedancePluginCreateRequestBody(
 		context,
 		&relaycommon.RelayInfo{
 			ChannelMeta: &relaycommon.ChannelMeta{

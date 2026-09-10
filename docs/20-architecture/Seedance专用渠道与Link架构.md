@@ -98,10 +98,13 @@ customer_model
 ### 4.2 不进入原生分发池
 
 Seedance 客户模型不写入 NEWAPI 原生 Ability 或通用渠道分发缓存。模型发现和价格展示使用只读
-投影：所有已配置客户模型均进入目录，是否可调用由 `available` / `availability` 单独表达；目录还投影
+投影：具有当前公开创建合同的已配置客户模型进入目录，是否可调用由 `available` / `availability` 单独表达；目录还投影
 统一 ModelArk V3 北向操作、逐模型创建参数合同和客户安全素材操作矩阵。创建参数以允许字段白名单、
 必填性、固定值、默认值、枚举、上下限及逐内容类型数量表达；未登记字段即不支持。该投影不能获得
 `/v1/video/generations` 履约资格，也不暴露 Provider 模型、Channel、南向协议或私有路径。
+
+已登记为退役的协议不进入创建目录，保留的 Channel 配置及历史任务事实不受目录读取影响。仍受支持
+但停用的渠道继续以 disabled 展示；未知协议或无效参数合同仍显式报错，不静默忽略配置错误。
 
 通用 `GET /v1/models` 和 ModelArk 专用 `GET /api/v3/contents/generations/models` 复用该投影；后者只
 筛出 Seedance 条目，不建立第二套模型事实或 Provider capability 注册表。
@@ -126,11 +129,9 @@ modelark_v3_volcengine
 modelark_v3_byteplus
 modelark_v3_cmcc
 tokensave_media_task_v1
-moxing_media_task_v1
 moxing_modelark_media_v1
 ark_media_v1
 feicai_videos_v1
-funcloud_seedance
 funcloud_modelark_v3
 synlink_video_v1
 ```
@@ -143,7 +144,6 @@ volcengine_assets_action_v2024_01_01
 byteplus_assets_action_v2024_01_01
 ark_assets_v1
 tokensave_assets_v1
-moxing_joycreator_assets_v1
 moxing_volc_assets_v1
 funcloud_material
 funcloud_material_hosted

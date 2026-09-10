@@ -79,7 +79,7 @@ Powered by [expr-lang/expr](https://github.com/expr-lang/expr). Expressions are 
 | `param` | `param(path) → any` | Reads a JSON path from the request body (uses gjson) |
 | `header` | `header(key) → string` | Reads a request header value |
 | `has` | `has(source, substr) → bool` | Substring check |
-| `hour` | `hour(tz) → int` | Current hour in timezone (0-23) |
+| `hour` | `hour(tz) → int` | Current hour in timezone (0-23), or the frozen pricing time when provided |
 | `minute` | `minute(tz) → int` | Current minute (0-59) |
 | `weekday` | `weekday(tz) → int` | Day of week (0=Sunday, 6=Saturday) |
 | `month` | `month(tz) → int` | Month (1-12) |
@@ -288,6 +288,25 @@ After the upstream response returns with actual token usage:
 Backend: `InjectTieredBillingInfo()` adds `billing_mode`, `expr_b64` (base64 expression), `matched_tier`, and the structured `request_rules` trace list to the log's `other` JSON.
 
 Frontend: Detects `billing_mode === "tiered_expr"`, decodes `expr_b64`, parses tiers via shared `parseTiersFromExpr()`, and renders request multipliers from `request_rules` when present. Without log traces, it falls back to parsing the stored expression.
+
+---
+
+## Frozen Pricing Time (request context)
+
+`RequestInput.PricingTime` is an optional `*time.Time`. When a caller provides
+it, the `hour`/`minute`/`weekday`/`month`/`day` functions convert that exact
+instant into the expression's timezone instead of reading `time.Now()`. When
+it is nil, native call semantics are unchanged.
+
+Durable async products (Azure Batch) persist one UTC instant at job creation
+(`BatchFrozenSnapshot.pricing_time`) and pass the same value to the
+pre-consume estimate, every line-level settlement run and any recovery run, so
+a time-conditional price can never drift between estimate and settlement. The
+pricing time is per-run state threaded through `runProgram`; the shared
+compile cache never captures it, and reusing a cached program across jobs or
+requests cannot leak one job's time into another. Timezone conversion follows
+each call site's `tz` argument exactly as before (`hour("Asia/Shanghai")`
+evaluates the frozen instant in Asia/Shanghai).
 
 ---
 

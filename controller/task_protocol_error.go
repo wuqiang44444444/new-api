@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -59,6 +60,14 @@ func taskProtocolErrorFields(taskErr *dto.TaskError, info *relaycommon.RelayInfo
 	status = taskErr.StatusCode
 	code = strings.TrimSpace(taskErr.Code)
 	message = taskErr.Message
+	// 已登记安全投影的证据错误：由唯一分类映射输出证据故障类别；未知
+	// 本地 5xx 仍走下方通用文案。
+	if rejection, ok := service.ClassifyTaskRequestEvidenceRejection(taskErr.Error); ok {
+		if rejection.Status >= http.StatusInternalServerError {
+			return rejection.Status, rejection.Code, "server_error", rejection.Message
+		}
+		return rejection.Status, rejection.Code, "invalid_request_error", rejection.Message
+	}
 	if common.PublicTaskErrorCode(code) == "" && code != "" {
 		// Internal operation codes must not expose their diagnostic message.
 		message = ""

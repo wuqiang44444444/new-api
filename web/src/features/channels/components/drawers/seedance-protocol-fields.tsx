@@ -71,7 +71,6 @@ const SEEDANCE_VIDEO_PROTOCOL_OPTIONS = [
     value: 'tokensave_media_task_v1',
     labelKey: 'TokenSave Media Task V1',
   },
-  { value: 'moxing_media_task_v1', labelKey: 'Moxing Media Task V1' },
   {
     value: 'moxing_modelark_media_v1',
     labelKey: 'Moxing ModelArk Media Task V1',
@@ -81,7 +80,6 @@ const SEEDANCE_VIDEO_PROTOCOL_OPTIONS = [
     value: 'feicai_videos_v1',
     labelKey: 'Feicai Videos V1 (URL Only, No Asset Library)',
   },
-  { value: 'funcloud_seedance', labelKey: 'FunCloud Seedance' },
   { value: 'funcloud_modelark_v3', labelKey: 'FunCloud ModelArk V3' },
   { value: 'synlink_video_v1', labelKey: 'Synlink Video V1' },
 ] as const
@@ -98,10 +96,6 @@ const SEEDANCE_ASSET_PROTOCOL_OPTIONS = [
   },
   { value: 'ark_assets_v1', labelKey: 'Ark Assets V1' },
   { value: 'tokensave_assets_v1', labelKey: 'TokenSave Asset Library V1' },
-  {
-    value: 'moxing_joycreator_assets_v1',
-    labelKey: 'Moxing JoyCreator Asset Library V1',
-  },
   {
     value: 'moxing_volc_assets_v1',
     labelKey: 'Moxing Volcengine Asset Library V1',
@@ -131,10 +125,6 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
     control: props.control,
     name: 'asset_upstream_protocol',
   })
-  const modelMapping = useWatch({
-    control: props.control,
-    name: 'model_mapping',
-  })
   const models = useWatch({ control: props.control, name: 'models' })
   const usesAssets = assetProtocol && assetProtocol !== 'none'
   const usesHostedAssets = assetProtocol === 'funcloud_material_hosted'
@@ -143,8 +133,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
     assetProtocol === 'volcengine_assets_action_v2024_01_01'
   const usesCMCCAssets = assetProtocol === 'cmcc_aicc_assets_v2'
   const compatibleAssetProtocols = getCompatibleSeedanceAssetProtocols(
-    videoProtocol,
-    modelMapping
+    videoProtocol
   )
   const compatibleAssetOptions = SEEDANCE_ASSET_PROTOCOL_OPTIONS.filter(
     (option) =>
@@ -233,8 +222,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
                 onValueChange={(value) => {
                   const nextVideoProtocol = value as SeedanceVideoProtocol
                   const nextAssetProtocol = getDefaultSeedanceAssetProtocol(
-                    nextVideoProtocol,
-                    modelMapping
+                    nextVideoProtocol
                   )
                   field.onChange(nextVideoProtocol)
                   form.setValue('asset_upstream_protocol', nextAssetProtocol, {

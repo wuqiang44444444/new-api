@@ -82,7 +82,7 @@ func CaptureTaskPollingEvidence(
 		}),
 		CreatedAt: common.GetTimestamp(),
 	}
-	if err := persistTaskEvidenceBody(event, responseBody); err != nil {
+	if err := persistTaskEvidenceBody(event, responseBody, TaskRequestEvidenceSourceResponse); err != nil {
 		common.SysError("evidence polling event unavailable")
 	}
 }

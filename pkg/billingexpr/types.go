@@ -3,6 +3,7 @@ package billingexpr
 import (
 	"crypto/sha256"
 	"fmt"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 )
@@ -11,6 +12,14 @@ type RequestInput struct {
 	Headers map[string]string
 	Body    []byte
 	Usage   map[string]any
+	// PricingTime freezes the wall-clock instant used by the hour/minute/
+	// weekday/month/day time functions. When nil the functions keep reading
+	// the current time (native call semantics). Durable async products (for
+	// example Azure Batch) persist one UTC instant at creation and pass the
+	// same value to every later evaluation, so settlement can never re-read
+	// a drifted clock. The value is per-run state and is never captured by
+	// the shared compile cache.
+	PricingTime *time.Time
 }
 
 // TokenParams holds all token dimensions passed into an Expr evaluation.

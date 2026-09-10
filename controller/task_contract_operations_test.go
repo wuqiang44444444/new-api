@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
@@ -48,5 +49,6 @@ func TestTaskContractWriteOperationsRequireSessionBoundSecurityProof(t *testing.
 }
 
 func TestTaskContractAttemptRejectSecurityProofScopeIsAllowed(t *testing.T) {
-	assert.True(t, isAllowedSecurityProofScope(securityProofScopeTaskContractAttemptReject))
+	_, err := service.BindVerificationOperation(service.VerificationOperation{Scope: securityProofScopeTaskContractAttemptReject})
+	assert.NoError(t, err)
 }

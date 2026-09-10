@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"maps"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -34,16 +36,14 @@ func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string
 }
 
 func GetPricing(c *gin.Context) {
-	if respondCustomerContractPricing(c) {
+	if respondCustomerContractPricing(c) || respondBatchPricing(c) {
 		return
 	}
 	pricing := model.GetPricing()
 	userId, exists := c.Get("id")
 	usableGroup := map[string]string{}
 	groupRatio := map[string]float64{}
-	for s, f := range ratio_setting.GetGroupRatioCopy() {
-		groupRatio[s] = f
-	}
+	maps.Copy(groupRatio, ratio_setting.GetGroupRatioCopy())
 	var group string
 	if exists {
 		user, err := model.GetUserCache(userId.(int))
@@ -60,6 +60,8 @@ func GetPricing(c *gin.Context) {
 
 	usableGroup = service.GetUserUsableGroups(group)
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
+	// 只读展示投影：在可见性过滤之后附加，可重建、不参与计费。
+	service.AttachPricingBillingDisplay(pricing)
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
 		if _, ok := usableGroup[group]; !ok {

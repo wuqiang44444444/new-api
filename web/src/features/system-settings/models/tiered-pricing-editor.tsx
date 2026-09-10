@@ -21,6 +21,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -40,6 +41,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { Combobox } from '@/components/ui/combobox'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -53,6 +55,17 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  formatPricingAmount,
+  USD_PRICING_CURRENCY,
+  type PricingCurrency,
+} from '@/features/model-pricing/currency'
+import { PricingAmountInput } from '@/features/model-pricing/pricing-amount-input'
+import { billingConditionText } from '@/features/pricing/lib/billing-condition-text'
+import {
+  previewBillingExpressions,
+  type BillingExprPreviewEvaluation,
+} from '@/features/pricing/lib/billing-display-preview'
 import {
   BILLING_EXTRA_VARS,
   COMMON_TIMEZONES,
@@ -91,7 +104,6 @@ import {
   type VisualConfig,
   type VisualTier,
   createDefaultVisualConfig,
-  evalExprLocally,
   exprUsesExtraVars,
   generateExprFromVisualConfig,
   getTierCacheMode,
@@ -99,21 +111,21 @@ import {
   normalizeVisualTier,
   tryParseVisualConfig,
 } from '@/features/pricing/lib/tier-expr'
+import type { BillingDisplayProjection } from '@/features/pricing/types'
 import { cn } from '@/lib/utils'
-import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { AsyncPreConsumeTokenField } from './async-pre-consume-token-field'
+import { BillingPreviewContext } from './billing-preview-context'
+import { parseBillingPreviewContext } from './billing-preview-input'
 import {
   type EstimatorDraft,
   type EstimatorResolution,
-  convertRawCost,
   createDefaultDraft,
   loadDraft,
   probeToRequestBody,
   saveDraft,
 } from './tiered-pricing-estimator-state'
 
-const PRICE_SUFFIX = '$/1M tokens'
 const CACHE_PRICE_VARS = BILLING_EXTRA_VARS.filter(
   (variable) => variable.group === 'cache'
 )
@@ -344,8 +356,9 @@ function formatTokenHint(n: number | string | null | undefined): string {
 
 function formatNumberDraft(value: number | string): string {
   if (value === '') return ''
-  if (typeof value === 'number')
+  if (typeof value === 'number') {
     return Number.isFinite(value) ? String(value) : '0'
+  }
   return value
 }
 
@@ -448,12 +461,10 @@ function ConditionRow({ condition, onChange, onRemove }: ConditionRowProps) {
   return (
     <div className='flex items-center gap-2'>
       <Select
-        items={[
-          ...CONDITION_INPUT_OPTIONS.map((option) => ({
-            value: option.value,
-            label: t(option.labelKey),
-          })),
-        ]}
+        items={CONDITION_INPUT_OPTIONS.map((option) => ({
+          value: option.value,
+          label: t(option.labelKey),
+        }))}
         value={condition.var}
         onValueChange={(value) =>
           onChange({ ...condition, var: value as TierConditionInput['var'] })
@@ -524,21 +535,32 @@ function ConditionRow({ condition, onChange, onRemove }: ConditionRowProps) {
 // ---------------------------------------------------------------------------
 
 type PriceFieldProps = {
+  currency: PricingCurrency
   label: string
   hint?: string
   value: number
   onChange: (next: number) => void
 }
 
-function PriceField({ label, hint, value, onChange }: PriceFieldProps) {
+function PriceField({
+  label,
+  hint,
+  value,
+  onChange,
+  currency,
+}: PriceFieldProps) {
+  const id = useId()
   return (
     <div className='w-36 space-y-0.5'>
-      <Label className='text-muted-foreground text-xs'>{label}</Label>
-      <DraftNumberInput
-        min={0}
-        step={0.000001}
-        value={Number.isFinite(value) ? value : 0}
-        onValueChange={onChange}
+      <Label htmlFor={id} className='text-muted-foreground text-xs'>
+        {label}
+      </Label>
+      <PricingAmountInput
+        id={id}
+        currency={currency}
+        aria-label={label}
+        value={value}
+        onChange={(next) => onChange(Number(next))}
         className='h-8 w-full'
       />
       {hint && <p className='text-muted-foreground text-xs'>{hint}</p>}
@@ -551,6 +573,7 @@ function PriceField({ label, hint, value, onChange }: PriceFieldProps) {
 // ---------------------------------------------------------------------------
 
 type VisualTierCardProps = {
+  currency: PricingCurrency
   tier: VisualTier
   index: number
   total: number
@@ -560,6 +583,7 @@ type VisualTierCardProps = {
 }
 
 function VisualTierCard({
+  currency,
   tier,
   index,
   total,
@@ -619,6 +643,7 @@ function VisualTierCard({
 
     return (
       <PriceField
+        currency={currency}
         key={variable.key}
         label={t(variable.label)}
         value={value}
@@ -679,6 +704,7 @@ function VisualTierCard({
         ) : (
           tier.conditions.map((condition, conditionIndex) => (
             <ConditionRow
+              // eslint-disable-next-line react/no-array-index-key -- Parsed editor rows have no IDs; preserve input identity while their editable labels and values change.
               key={conditionIndex}
               condition={condition}
               onChange={(next) => handleConditionChange(conditionIndex, next)}
@@ -692,13 +718,14 @@ function VisualTierCard({
         <div className='flex items-center justify-between gap-3'>
           <Label className='text-sm font-semibold'>{t('Token prices')}</Label>
           <span className='bg-muted text-muted-foreground rounded-md px-2 py-1 text-xs'>
-            {PRICE_SUFFIX}
+            {currency.symbol}/{t('1M token')}
           </span>
         </div>
 
         <div className='space-y-3'>
           <div className='flex flex-wrap gap-x-4 gap-y-2'>
             <PriceField
+              currency={currency}
               label={t('Input price')}
               value={inputUnitPrice}
               onChange={(value) =>
@@ -706,6 +733,7 @@ function VisualTierCard({
               }
             />
             <PriceField
+              currency={currency}
               label={t('Output price')}
               value={outputUnitPrice}
               onChange={(value) =>
@@ -782,11 +810,12 @@ function VisualTierCard({
 // ---------------------------------------------------------------------------
 
 type VisualEditorProps = {
+  currency: PricingCurrency
   visualConfig: VisualConfig | null
   onChange: (next: VisualConfig) => void
 }
 
-function VisualEditor({ visualConfig, onChange }: VisualEditorProps) {
+function VisualEditor({ visualConfig, onChange, currency }: VisualEditorProps) {
   const { t } = useTranslation()
   const config = useMemo(
     () => normalizeVisualConfig(visualConfig),
@@ -861,6 +890,8 @@ function VisualEditor({ visualConfig, onChange }: VisualEditorProps) {
       </p>
       {config.tiers.map((tier, index) => (
         <VisualTierCard
+          currency={currency}
+          // eslint-disable-next-line react/no-array-index-key -- Parsed editor rows have no IDs; preserve input identity while their editable labels and values change.
           key={index}
           tier={tier}
           index={index}
@@ -979,12 +1010,9 @@ function RuleConditionRow({
         return timeFunc
     }
   }
-  const sourceLabel =
-    condition.source === SOURCE_PARAM
-      ? t('Body param')
-      : condition.source === SOURCE_HEADER
-        ? t('Header')
-        : t('Time')
+  let sourceLabel = t('Time')
+  if (condition.source === SOURCE_PARAM) sourceLabel = t('Body param')
+  else if (condition.source === SOURCE_HEADER) sourceLabel = t('Header')
 
   const handleSourceChange = (source: string) => {
     if (source === SOURCE_TIME) {
@@ -1004,12 +1032,10 @@ function RuleConditionRow({
   const renderTimeCondition = (timeCond: TimeCondition) => (
     <>
       <Select
-        items={[
-          ...TIME_FUNCS.map((fn) => ({
-            value: fn,
-            label: getTimeFuncLabel(fn),
-          })),
-        ]}
+        items={TIME_FUNCS.map((fn) => ({
+          value: fn,
+          label: getTimeFuncLabel(fn),
+        }))}
         value={timeCond.timeFunc}
         onValueChange={(value) =>
           onChange({ ...timeCond, timeFunc: value as TimeFunc })
@@ -1028,41 +1054,22 @@ function RuleConditionRow({
           </SelectGroup>
         </SelectContent>
       </Select>
-      <Select
-        items={[
-          ...COMMON_TIMEZONES.map((tz) => ({
-            value: tz.value,
-            label: tz.label,
-          })),
-        ]}
+      <Combobox
+        options={COMMON_TIMEZONES.map((tz) => ({
+          value: tz.value,
+          label: tz.label,
+        }))}
         value={timeCond.timezone}
         onValueChange={(value) =>
           value !== null && onChange({ ...timeCond, timezone: value })
         }
-      >
-        <SelectTrigger className='w-56' size='sm'>
-          <SelectValue>
-            {COMMON_TIMEZONES.find((tz) => tz.value === timeCond.timezone)
-              ?.label ?? timeCond.timezone}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false}>
-          <SelectGroup>
-            {COMMON_TIMEZONES.map((tz) => (
-              <SelectItem key={tz.value} value={tz.value}>
-                {tz.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+        className='w-56'
+      />
       <Select
-        items={[
-          ...matchOptions.map((option) => ({
-            value: option.value,
-            label: getMatchLabel(option.value),
-          })),
-        ]}
+        items={matchOptions.map((option) => ({
+          value: option.value,
+          label: getMatchLabel(option.value),
+        }))}
         value={timeCond.mode}
         onValueChange={(v) => v !== null && handleModeChange(v)}
       >
@@ -1123,12 +1130,10 @@ function RuleConditionRow({
         className='w-44'
       />
       <Select
-        items={[
-          ...matchOptions.map((option) => ({
-            value: option.value,
-            label: getMatchLabel(option.value),
-          })),
-        ]}
+        items={matchOptions.map((option) => ({
+          value: option.value,
+          label: getMatchLabel(option.value),
+        }))}
         value={phCond.mode}
         onValueChange={(v) => v !== null && handleModeChange(v)}
       >
@@ -1258,6 +1263,7 @@ function RuleGroupCard({
       <div className='space-y-2'>
         {group.conditions.map((condition, conditionIndex) => (
           <RuleConditionRow
+            // eslint-disable-next-line react/no-array-index-key -- Parsed editor rows have no IDs; preserve input identity while their editable labels and values change.
             key={conditionIndex}
             condition={condition}
             onChange={(next) => handleConditionChange(conditionIndex, next)}
@@ -1375,7 +1381,10 @@ function PresetSection({ applyPreset }: PresetSectionProps) {
 // ---------------------------------------------------------------------------
 
 type EstimatorProps = {
+  currency: PricingCurrency
   effectiveExpr: string
+  /** 完整待保存表达式（含请求倍率与换算），试算必须提交它而非基础片段。 */
+  fullExpr: string
   modelName?: string
 }
 
@@ -1386,14 +1395,18 @@ const RESOLUTION_OPTIONS: EstimatorResolution[] = [
   '4k',
 ]
 
-function CostEstimator({ effectiveExpr, modelName }: EstimatorProps) {
-  const { t } = useTranslation()
-  // 仅当服务端 QuotaPerUnit 已确认（非 loading）时才参与配额换算，避免在配置尚未
-  // 加载或加载失败时用默认 500000 展示「准确配额」（方案 6.2 / 风险表 L509）。
-  const quotaLoading = useSystemConfigStore((s) => s.loading)
-  const quotaPerUnit = useSystemConfigStore(
-    (s) => s.config.currency?.quotaPerUnit ?? 0
-  )
+function CostEstimator({
+  effectiveExpr,
+  fullExpr,
+  modelName,
+  currency,
+}: EstimatorProps) {
+  const [simulationTime, setSimulationTime] = useState('')
+  const [probeJSON, setProbeJSON] = useState('')
+  const [allowMissing, setAllowMissing] = useState(false)
+  const inputId = useId()
+  const outputId = useId()
+  const { t, i18n } = useTranslation()
   const [draft, setDraft] = useState<EstimatorDraft>(() => createDefaultDraft())
 
   // 按模型身份加载本地草稿；新建模型（无名称）只用组件内默认状态，不落盘
@@ -1415,52 +1428,122 @@ function CostEstimator({ effectiveExpr, modelName }: EstimatorProps) {
     [effectiveExpr]
   )
   // 仅 _task 探针有页面输入；非 _task 的 param() 与 header() 缺试算上下文，单独提示
-  const usesTaskProbe = useMemo(
-    () => effectiveExpr.includes('_task'),
-    [effectiveExpr]
-  )
+  const usesTaskProbe = useMemo(() => fullExpr.includes('_task'), [fullExpr])
   const usesAsyncForbiddenContext = useMemo(
     () =>
       usesTaskProbe &&
-      /\b(?:header|hour|minute|weekday|month|day)\s*\(/.test(effectiveExpr),
-    [effectiveExpr, usesTaskProbe]
+      /\b(?:header|hour|minute|weekday|month|day)\s*\(/.test(fullExpr),
+    [fullExpr, usesTaskProbe]
   )
   const usesUnguardedContext = useMemo(() => {
     // 剥离 param("_task...") 调用起点后，若仍残留 param(，说明存在无探针的 param 路径
-    const nonTaskParam = effectiveExpr
-      .replaceAll(/param\(\s*["']_task/g, '')
-      .includes('param(')
-    return nonTaskParam || effectiveExpr.includes('header(')
-  }, [effectiveExpr])
+    const nonTaskParam = fullExpr.replaceAll(/\bparam\s*\(\s*["']_task/g, '')
+    const usesParam = /\bparam\s*\(/.test(nonTaskParam)
+    return usesParam || /\bheader\s*\(/.test(fullExpr)
+  }, [fullExpr])
 
-  const result = useMemo(() => {
-    const requestInput = { body: probeToRequestBody(draft.taskProbe) }
-    return evalExprLocally(
-      effectiveExpr,
-      draft.promptTokens,
-      draft.completionTokens,
-      draft.extras,
-      requestInput
-    )
-  }, [effectiveExpr, draft])
-
-  // loading 时传 0 → convertRawCost 返回 quota=null，UI 标记配额不可计算
-  const { usd, quota } = convertRawCost(
-    result.cost,
-    quotaLoading ? 0 : quotaPerUnit
+  // 试算语义：OpenAI 总输入（含缓存）或 Anthropic 文本输入（缓存另计）。
+  const [usageSemantic, setUsageSemantic] = useState<'openai' | 'anthropic'>(
+    'openai'
   )
 
-  // 配额展示文案：用早返回避免 JSX 嵌套三元（no-nested-ternary）
-  const formatQuota = () => {
-    if (quotaLoading) {
-      return `${t('Estimated quota')}: —`
-    }
-    if (quota === null) {
-      return t('Quota unavailable (QuotaPerUnit not configured)')
-    }
-    return `${t('Estimated quota')}: ${quota.toLocaleString()} (${t('excluding group ratio')})`
-  }
+  // 试算状态：未试算 / 进行中 / 成功 / 失败。金额与 quota 全部来自后端
+  // 引擎（GroupRatio=1），浏览器不再本地求值或重复换算。
+  const [preview, setPreview] = useState<{
+    status: 'idle' | 'loading' | 'success' | 'error' | 'context'
+    rawCostUSD?: number
+    quota?: number
+    matchedTier?: string
+    pricingTime?: string
+    error?: string
+    evaluation?: BillingExprPreviewEvaluation
+    projection?: BillingDisplayProjection
+  }>({ status: 'idle' })
 
+  useEffect(() => {
+    if (!fullExpr?.trim()) {
+      setPreview({ status: 'idle' })
+      return
+    }
+    const context = parseBillingPreviewContext(simulationTime, probeJSON)
+    if (context.error) {
+      setPreview({ status: 'context', error: context.error })
+      return
+    }
+    if (usesUnguardedContext && !probeJSON.trim() && !allowMissing) {
+      setPreview({
+        status: 'context',
+        error: 'Provide trial context or explicitly simulate missing values.',
+      })
+      return
+    }
+    let cancelled = false
+    setPreview({ status: 'loading' })
+    const timer = setTimeout(() => {
+      previewBillingExpressions([
+        {
+          key: 'estimator',
+          expression: fullExpr,
+          sample: {
+            usage_semantic: usageSemantic,
+            prompt_tokens: draft.promptTokens,
+            completion_tokens: draft.completionTokens,
+            cache_read_tokens: draft.extras.cacheReadTokens,
+            cache_creation_tokens: draft.extras.cacheCreateTokens,
+            cache_creation_tokens_1h: draft.extras.cacheCreate1hTokens,
+            image_tokens: draft.extras.imageTokens,
+            image_output_tokens: draft.extras.imageOutputTokens,
+            audio_input_tokens: draft.extras.audioInputTokens,
+            audio_output_tokens: draft.extras.audioOutputTokens,
+            body: { ...probeToRequestBody(draft.taskProbe), ...context.body },
+            headers: context.headers,
+            pricing_time: context.pricingTime,
+          },
+        },
+      ])
+        .then((results) => {
+          if (cancelled) return
+          const item = results[0]
+          if (!item || item.error || !item.evaluation) {
+            setPreview({
+              status: 'error',
+              error: item?.error ?? 'preview failed',
+            })
+            return
+          }
+          setPreview({
+            status: 'success',
+            rawCostUSD: item.evaluation.raw_cost_usd,
+            quota: item.evaluation.quota,
+            matchedTier: item.evaluation.matched_tier,
+            pricingTime: item.evaluation.pricing_time,
+            evaluation: item.evaluation,
+            projection: item.projection,
+          })
+        })
+        .catch((cause: unknown) => {
+          if (cancelled) return
+          setPreview({
+            status: 'error',
+            error: cause instanceof Error ? cause.message : String(cause),
+          })
+        })
+    }, 400)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [
+    fullExpr,
+    draft,
+    usageSemantic,
+    simulationTime,
+    probeJSON,
+    allowMissing,
+    usesUnguardedContext,
+  ])
+
+  const ruleOccurrences = new Map<string, number>()
   const setExtra = (stateKey: keyof ExtraTokenValues, value: number) =>
     setDraft((prev) => ({
       ...prev,
@@ -1472,7 +1555,7 @@ function CostEstimator({ effectiveExpr, modelName }: EstimatorProps) {
       <div className='space-y-1'>
         <div className='flex items-center justify-between gap-2'>
           <h4 className='text-sm font-medium'>
-            {t('Cost estimator (browser local draft)')}
+            {t('Cost estimator (server expression engine)')}
           </h4>
           <Button
             type='button'
@@ -1486,7 +1569,7 @@ function CostEstimator({ effectiveExpr, modelName }: EstimatorProps) {
         </div>
         <p className='text-muted-foreground text-xs'>
           {t(
-            'Preview only. NOT saved as model price or pre-consume config; real billing follows the backend expression.'
+            'Preview only. The full draft expression is evaluated by the backend engine; nothing is saved as model price or pre-consume config.'
           )}
         </p>
         {usesUnguardedContext && (
@@ -1504,10 +1587,22 @@ function CostEstimator({ effectiveExpr, modelName }: EstimatorProps) {
           </p>
         )}
       </div>
+      <BillingPreviewContext
+        time={simulationTime}
+        onTimeChange={setSimulationTime}
+        needsContext={usesUnguardedContext}
+        json={probeJSON}
+        onJSONChange={setProbeJSON}
+        allowMissing={allowMissing}
+        onAllowMissingChange={setAllowMissing}
+      />
       <div className='grid grid-cols-2 gap-3'>
         <div className='space-y-1'>
-          <Label className='text-xs'>{t('Input tokens')}</Label>
+          <Label htmlFor={inputId} className='text-xs'>
+            {t('Input tokens')}
+          </Label>
           <DraftNumberInput
+            id={inputId}
             min={0}
             value={draft.promptTokens}
             onValueChange={(v) =>
@@ -1516,14 +1611,50 @@ function CostEstimator({ effectiveExpr, modelName }: EstimatorProps) {
           />
         </div>
         <div className='space-y-1'>
-          <Label className='text-xs'>{t('Output tokens')}</Label>
+          <Label htmlFor={outputId} className='text-xs'>
+            {t('Output tokens')}
+          </Label>
           <DraftNumberInput
+            id={outputId}
             min={0}
             value={draft.completionTokens}
             onValueChange={(v) =>
               setDraft((prev) => ({ ...prev, completionTokens: v }))
             }
           />
+        </div>
+        <div className='space-y-1'>
+          <Label className='text-xs'>{t('Usage input semantics')}</Label>
+          <Select
+            items={[
+              {
+                value: 'openai',
+                label: t('OpenAI: prompt tokens include cache'),
+              },
+              {
+                value: 'anthropic',
+                label: t('Anthropic: prompt tokens are text-only'),
+              },
+            ]}
+            value={usageSemantic}
+            onValueChange={(value) =>
+              setUsageSemantic(value === 'anthropic' ? 'anthropic' : 'openai')
+            }
+          >
+            <SelectTrigger className='w-full' size='sm'>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              <SelectGroup>
+                <SelectItem value='openai'>
+                  {t('OpenAI: prompt tokens include cache')}
+                </SelectItem>
+                <SelectItem value='anthropic'>
+                  {t('Anthropic: prompt tokens are text-only')}
+                </SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </div>
       </div>
       {usesExtras && (
@@ -1624,34 +1755,86 @@ function CostEstimator({ effectiveExpr, modelName }: EstimatorProps) {
           </div>
         </div>
       )}
-      <div
-        className={cn(
-          'rounded-md border p-3 text-sm',
-          result.error
-            ? 'border-destructive/50 bg-destructive/10 text-destructive'
-            : 'border-primary/50 bg-primary/10'
-        )}
-      >
-        {result.error ? (
-          <span>
-            {t('Expression error')}: {result.error}
-          </span>
-        ) : (
+      {preview.status === 'idle' && (
+        <div className='bg-muted/50 text-muted-foreground rounded-md border p-3 text-sm'>
+          {t(
+            'Enter usage above and the backend engine will evaluate the full expression.'
+          )}
+        </div>
+      )}
+      {preview.status === 'loading' && (
+        <div className='bg-muted/50 text-muted-foreground rounded-md border p-3 text-sm'>
+          {t('Evaluating on the server…')}
+        </div>
+      )}
+      {preview.status === 'context' && (
+        <p role='status' className='text-muted-foreground text-sm'>
+          {t(preview.error ?? '')}
+        </p>
+      )}
+      {preview.status === 'error' && (
+        <div className='border-destructive/50 bg-destructive/10 text-destructive rounded-md border p-3 text-sm'>
+          {t('Preview failed')}: {preview.error}
+        </div>
+      )}
+      {preview.status === 'success' && (
+        <div
+          role='status'
+          className='border-primary/50 bg-primary/10 space-y-2 rounded-md border p-3 text-sm'
+        >
           <div className='flex flex-wrap items-center gap-x-4 gap-y-1'>
-            {result.matchedTier && (
+            {preview.matchedTier && (
               <Badge variant='outline' className='text-xs'>
-                {t('Hit tier')}: {result.matchedTier}
+                {t('Hit tier')}: {preview.matchedTier}
               </Badge>
             )}
             <span className='font-medium'>
-              {t('Estimated cost')}: ${usd.toFixed(6)}
+              {t('Estimated cost')}:{' '}
+              {formatPricingAmount(Number(preview.rawCostUSD ?? 0), currency)}
             </span>
             <span className='text-muted-foreground text-xs'>
-              {formatQuota()}
+              {t('Estimated quota')}: {(preview.quota ?? 0).toLocaleString()} (
+              {t('excluding group ratio')})
             </span>
+            {preview.pricingTime && (
+              <span className='text-muted-foreground text-xs'>
+                {t('Simulated time')}: {preview.pricingTime}
+              </span>
+            )}
           </div>
-        )}
-      </div>
+          {preview.evaluation && (
+            <p className='text-muted-foreground text-xs'>
+              {t('Normalized usage')}:{' '}
+              {Object.entries(preview.evaluation.normalized_usage)
+                .filter(([, value]) => value !== 0)
+                .map(([key, value]) => `${key}: ${value.toLocaleString()}`)
+                .join(' · ')}
+            </p>
+          )}
+          {preview.evaluation?.request_rules?.map((rule) => {
+            const identity = JSON.stringify(rule)
+            const occurrence = ruleOccurrences.get(identity) ?? 0
+            ruleOccurrences.set(identity, occurrence + 1)
+            const condition = preview.projection?.rules?.find(
+              (item) => item.text === rule.cond
+            )
+            return (
+              <p key={`${identity}:${occurrence}`} className='text-xs'>
+                {condition
+                  ? billingConditionText(condition, t, i18n.language)
+                  : rule.cond}
+                {' · '}
+                {rule.matched ? t('Matched') : t('Not matched')}
+              </p>
+            )
+          })}
+          {preview.evaluation?.saturated && (
+            <p className='text-destructive text-xs'>
+              {t('Quota limit reached; this estimate is capped.')}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -1749,7 +1932,7 @@ function LlmPromptHelper({ modelName }: LlmPromptHelperProps) {
 
   const prompt = useMemo(() => {
     if (modelName) {
-      return LLM_PROMPT_TEMPLATE + `\n\nCurrent model: ${modelName}`
+      return `${LLM_PROMPT_TEMPLATE}\n\nCurrent model: ${modelName}`
     }
     return LLM_PROMPT_TEMPLATE
   }, [modelName])
@@ -1809,6 +1992,7 @@ function LlmPromptHelper({ modelName }: LlmPromptHelperProps) {
 // ---------------------------------------------------------------------------
 
 export type TieredPricingEditorProps = {
+  currency?: PricingCurrency
   modelName?: string
   billingExpr: string
   requestRuleExpr: string
@@ -1822,6 +2006,7 @@ export type TieredPricingEditorProps = {
 type EditorMode = 'visual' | 'raw'
 
 export const TieredPricingEditor = memo(function TieredPricingEditor({
+  currency = USD_PRICING_CURRENCY,
   modelName,
   billingExpr: currentExpr,
   requestRuleExpr: currentRequestRuleExpr,
@@ -1858,7 +2043,8 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
     const parsedConfig = tryParseVisualConfig(currentExpr)
     if (
       parsedConfig &&
-      (!currentRequestRuleExpr || tryParseRequestRuleExpr(currentRequestRuleExpr))
+      (!currentRequestRuleExpr ||
+        tryParseRequestRuleExpr(currentRequestRuleExpr))
     ) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setVisualConfig(parsedConfig)
@@ -1888,9 +2074,12 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
     if (editorMode === 'visual') {
       return generateExprFromVisualConfig(visualConfig)
     }
+    if (rawExpr === combineBillingExpr(currentExpr, currentRequestRuleExpr)) {
+      return currentExpr
+    }
     const { billingExpr } = splitBillingExprAndRequestRules(rawExpr)
     return billingExpr
-  }, [editorMode, visualConfig, rawExpr])
+  }, [editorMode, visualConfig, rawExpr, currentExpr, currentRequestRuleExpr])
 
   useEffect(() => {
     if (effectiveExpr !== currentExpr) {
@@ -2014,6 +2203,11 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
         )}
       </div>
 
+      <p className='text-muted-foreground text-xs'>
+        {t(
+          'Raw expressions and presets use USD. Currency selection only converts visual price inputs and monetary previews.'
+        )}
+      </p>
       <PresetSection applyPreset={applyPreset} />
 
       {modeError && (
@@ -2029,6 +2223,7 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
       <div className='bg-muted/30 space-y-3 rounded-md border p-3'>
         {editorMode === 'visual' ? (
           <VisualEditor
+            currency={currency}
             visualConfig={visualConfig}
             onChange={handleVisualChange}
           />
@@ -2061,6 +2256,7 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
               <>
                 {requestRuleGroups.map((group, groupIndex) => (
                   <RuleGroupCard
+                    // eslint-disable-next-line react/no-array-index-key -- Parsed editor rows have no IDs; preserve input identity while their editable labels and values change.
                     key={groupIndex}
                     group={group}
                     index={groupIndex}
@@ -2111,7 +2307,12 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
           </p>
         )}
 
-      <CostEstimator effectiveExpr={effectiveExpr} modelName={modelName} />
+      <CostEstimator
+        effectiveExpr={effectiveExpr}
+        fullExpr={combineBillingExpr(effectiveExpr, currentRequestRuleExpr)}
+        modelName={modelName}
+        currency={currency}
+      />
     </div>
   )
 })

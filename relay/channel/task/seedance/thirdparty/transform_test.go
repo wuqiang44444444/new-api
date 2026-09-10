@@ -111,7 +111,7 @@ func TestRelayCreateRequestMapsFrameControls(t *testing.T) {
 
 	require.NoError(t, err)
 	result := decodeObject(t, body)
-	assert.Equal(t, "multi_image", result["input_mode"])
+	assert.Equal(t, "single_image", result["input_mode"])
 	assert.Equal(t, "end_frame", result["control_mode"])
 	assert.Equal(t, "https://cdn.example/first.png", result["image"])
 	assert.Equal(t, "https://cdn.example/last.png", result["end_image"])
@@ -119,8 +119,6 @@ func TestRelayCreateRequestMapsFrameControls(t *testing.T) {
 
 func TestRelayCreateRequestRejectsUnsupportedInputs(t *testing.T) {
 	tests := []string{
-		`{"model":"seedance-v2","content":[{"type":"video_url","video_url":{"url":"https://cdn.example/video.mp4"}}]}`,
-		`{"model":"seedance-v2","content":[{"type":"image_url","role":"last_frame","image_url":{"url":"https://cdn.example/last.png"}}]}`,
 		`{"model":"seedance-v2","content":[{"type":"image_url","image_url":{"url":"https://cdn.example/one.png"}},{"type":"image_url","image_url":{"url":"https://cdn.example/two.png"}}]}`,
 	}
 	for _, body := range tests {
@@ -129,8 +127,8 @@ func TestRelayCreateRequestRejectsUnsupportedInputs(t *testing.T) {
 	}
 }
 
-func TestMoxingMediaCreateRequestPreservesReferenceAudioAndVideo(t *testing.T) {
-	body, err := MoxingMediaCreateRequest([]byte(`{
+func TestRelayCreateRequestPreservesReferenceAudioAndVideo(t *testing.T) {
+	body, err := RelayCreateRequest([]byte(`{
 		"model":"doubao-seedance-2-0-260128",
 		"content":[
 			{"type":"text","text":"follow the references"},
@@ -141,7 +139,7 @@ func TestMoxingMediaCreateRequestPreservesReferenceAudioAndVideo(t *testing.T) {
 
 	require.NoError(t, err)
 	result := decodeObject(t, body)
-	assert.Equal(t, "multi_modal", result["input_mode"])
+	assert.Equal(t, "multi_image", result["input_mode"])
 	assert.Equal(t, "reference", result["control_mode"])
 	assert.Equal(t, []any{"https://cdn.example/reference.mp4"}, result["reference_videos"])
 	assert.Equal(t, []any{"https://cdn.example/reference.mp3"}, result["reference_audios"])

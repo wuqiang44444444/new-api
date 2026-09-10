@@ -1,3 +1,4 @@
+import { BatchBillingDetails } from '../batch-billing-details'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -130,6 +131,7 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
       bodyClassName='pr-2 sm:pr-4'
     >
       <div className='space-y-3'>
+        {props.open && props.log.platform === 'azure_batch' && <BatchBillingDetails id={props.log.task_id} />}
         {props.open && props.isRoot ? (
           <TaskRequestDetails
             key={props.log.task_id}

@@ -8,7 +8,6 @@ const (
 	AssetUpstreamProfileNone             = kitdto.AssetUpstreamProfileNone
 	AssetUpstreamProfileArk              = kitdto.AssetUpstreamProfileArk
 	AssetUpstreamProfileRelay            = kitdto.AssetUpstreamProfileRelay
-	AssetUpstreamProfileMoxingJoyCreator = kitdto.AssetUpstreamProfileMoxingJoyCreator
 	AssetUpstreamProfileMoxingVolc       = kitdto.AssetUpstreamProfileMoxingVolc
 	AssetUpstreamProfileOfficial         = kitdto.AssetUpstreamProfileOfficial
 	AssetUpstreamProfileFunCloudMaterial = kitdto.AssetUpstreamProfileFunCloudMaterial

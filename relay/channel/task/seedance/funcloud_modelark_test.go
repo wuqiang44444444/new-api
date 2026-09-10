@@ -22,7 +22,7 @@ import (
 func TestFunCloudModelArkMappedRequestAndWireContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, providerModel := range kitdto.FunCloudModelArkModels() {
-		for _, count := range []int{4, 9, 10} {
+		for _, count := range []int{10, 30, 31} {
 			t.Run(fmt.Sprintf("%s/%d", providerModel, count), func(t *testing.T) {
 				request := providerTestRequest()
 				request.Model = "isolated-customer"
@@ -43,7 +43,7 @@ func TestFunCloudModelArkMappedRequestAndWireContract(t *testing.T) {
 				info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeSeedanceLink, IsModelMapped: true, UpstreamModelName: providerModel, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3}}}
 				adaptor := &TaskAdaptor{}
 				adaptor.Init(info)
-				if count == 10 {
+				if count == 31 {
 					require.NotNil(t, adaptor.ValidateMappedRequest(c, info))
 					return
 				}
@@ -74,7 +74,7 @@ func TestFunCloudModelArkMappedRequestAndWireContract(t *testing.T) {
 				assert.Equal(t, "per-second", probe["billing_mode"])
 				api, ok := publicmodel.VideoAPI(request.Model, dto.VideoUpstreamProtocolFunCloudModelArkV3, providerModel, false)
 				require.True(t, ok)
-				assert.Equal(t, 9, api.Creation.ContentTypes[1].MaxItems)
+				assert.Equal(t, 30, api.Creation.ContentTypes[1].MaxItems)
 				for _, op := range api.Operations {
 					if op.Operation == "delete_video" {
 						assert.False(t, op.Supported)
@@ -146,9 +146,8 @@ func TestFunCloudModelArkFrozenVersionAndLifecycle(t *testing.T) {
 func TestFunCloudModelArkReferenceMediaLimits(t *testing.T) {
 	for _, name := range kitdto.FunCloudModelArkModels() {
 		for _, kind := range []string{"video_url", "audio_url"} {
-			for _, count := range []int{3, 4} {
+			for _, count := range []int{1, 4, 10, 11} {
 				req := providerTestRequest()
-				req.Content = append(req.Content, dto.ModelArkVideoContent{Type: "image_url", Role: common.GetPointer("reference_image"), ImageURL: &dto.VideoMediaURL{URL: "asset://image"}})
 				for i := 0; i < count; i++ {
 					item := dto.ModelArkVideoContent{Type: kind}
 					if kind == "video_url" {
@@ -161,7 +160,7 @@ func TestFunCloudModelArkReferenceMediaLimits(t *testing.T) {
 					req.Content = append(req.Content, item)
 				}
 				err := validateProviderModelRequest(dto.VideoUpstreamProtocolFunCloudModelArkV3, name, req)
-				if count == 3 {
+				if count <= 10 {
 					assert.NoError(t, err)
 				} else {
 					assert.Error(t, err)

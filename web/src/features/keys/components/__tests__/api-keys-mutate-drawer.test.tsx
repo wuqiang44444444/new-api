@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test } from 'vitest'
 
 const { createInstance } = await import('i18next')
@@ -70,6 +71,26 @@ function installApiFixtures(createdPayloads: Array<Record<string, unknown>>) {
           data: {
             success: true,
             data: { groups: ['vip', 'default'], max_count: 3 },
+          },
+        }
+      case '/api/user/self/contract':
+        return {
+          data: {
+            success: true,
+            data: {
+              contracts: [
+                {
+                  id: 3,
+                  name: 'Team contract',
+                  enabled: true,
+                  version: 4,
+                  models: [
+                    { model: 'claude-sonnet-5', discount: '0.8', available: true, price: { price_type: 'model_ratio', final_model_ratio: '0.4' } },
+                    { model: 'gemini-3-pro', discount: '0.9', available: true, price: { price_type: 'model_ratio', final_model_ratio: '0.9' } },
+                  ],
+                },
+              ],
+            },
           },
         }
       default:
@@ -237,8 +258,7 @@ describe('API keys mutate drawer Auto group integration', () => {
     }
   })
 
-  test('preserves an unsaved custom order and mode after Auto to ordinary to Auto changes', async () => {
-    const createdPayloads: Array<Record<string, unknown>> = []
+  test('preserves an unsaved custom order and mode after Auto to ordinary to Auto changes', async () => {    const createdPayloads: Array<Record<string, unknown>> = []
     installApiFixtures(createdPayloads)
     await renderCreateDrawer()
 
@@ -276,5 +296,39 @@ describe('API keys mutate drawer Auto group integration', () => {
     fireEvent.click(findButton('Save changes', true))
     await waitFor(() => expect(createdPayloads).toHaveLength(1))
     expect(createdPayloads[0]?.auto_groups).toEqual(['vip'])
+  })
+
+  test('defaults to no contract binding and sends contract_id when one is selected', async () => {
+    const user = userEvent.setup()
+    const createdPayloads: Array<Record<string, unknown>> = []
+    installApiFixtures(createdPayloads)
+    await renderCreateDrawer()
+
+    await screen.findByText('Customer contract')
+    const contractTrigger = document.querySelector<HTMLButtonElement>(
+      '[data-slot="select-trigger"]'
+    )
+    if (!contractTrigger) {
+      throw new Error('Expected customer contract selector')
+    }
+    expect(contractTrigger.textContent).toContain('Do not bind a contract')
+
+    changeInput(getControlByLabel('Name'), 'bound')
+    fireEvent.click(findButton('Save changes', true))
+    await waitFor(() => expect(createdPayloads).toHaveLength(1))
+    expect(createdPayloads[0]?.contract_id).toBe(0)
+
+    await user.click(contractTrigger)
+    await user.click(
+      await screen.findByRole('option', { name: /Team contract/ })
+    )
+
+    expect(await screen.findByText('claude-sonnet-5')).toBeTruthy()
+    expect(screen.getByText('gemini-3-pro')).toBeTruthy()
+
+    changeInput(getControlByLabel('Name'), 'bound-2')
+    fireEvent.click(findButton('Save changes', true))
+    await waitFor(() => expect(createdPayloads).toHaveLength(2))
+    expect(createdPayloads[1]?.contract_id).toBe(3)
   })
 })

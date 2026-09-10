@@ -17,11 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { History } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { DataTablePage, useDataTable } from '@/components/data-table'
+import { Button } from '@/components/ui/button'
 import { UserContractDrawer } from '@/features/users/components/user-contract-drawer'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState, type NavigateFn } from '@/hooks/use-table-url-state'
@@ -34,6 +36,7 @@ import {
 } from '../types'
 import { useCustomerContractColumns } from './customer-contract-columns'
 import { CustomerContractSummary } from './customer-contract-summary'
+import { CustomerContractMigrationDialog } from './customer-contract-migration-dialog'
 
 interface CustomerContractsTableProps {
   search: CustomerContractsSearch
@@ -51,6 +54,7 @@ export function CustomerContractsTable(props: CustomerContractsTableProps) {
   const onSearchChange = props.onSearchChange
   const [selectedContract, setSelectedContract] =
     useState<CustomerContractAdminListItem | null>(null)
+  const [migrationOpen, setMigrationOpen] = useState(false)
 
   const navigate = useCallback<NavigateFn>(
     (options) => {
@@ -149,10 +153,21 @@ export function CustomerContractsTable(props: CustomerContractsTableProps) {
 
   return (
     <div className='flex h-full min-h-0 flex-col gap-3'>
-      <CustomerContractSummary
-        summary={query.data?.summary ?? EMPTY_CUSTOMER_CONTRACT_SUMMARY}
-        isLoading={query.isLoading}
-      />
+      <div className='flex items-center justify-between gap-3'>
+        <CustomerContractSummary
+          summary={query.data?.summary ?? EMPTY_CUSTOMER_CONTRACT_SUMMARY}
+          isLoading={query.isLoading}
+        />
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          onClick={() => setMigrationOpen(true)}
+        >
+          <History data-icon='inline-start' />
+          {t('Legacy contract migrations')}
+        </Button>
+      </div>
 
       <div className='min-h-0 flex-1'>
         <DataTablePage
@@ -189,9 +204,15 @@ export function CustomerContractsTable(props: CustomerContractsTableProps) {
             id: selectedContract.user_id,
             username: selectedContract.username,
           }}
+          contractId={selectedContract.contract_id}
           onSuccess={handleContractSaved}
         />
       )}
+
+      <CustomerContractMigrationDialog
+        open={migrationOpen}
+        onOpenChange={setMigrationOpen}
+      />
     </div>
   )
 }

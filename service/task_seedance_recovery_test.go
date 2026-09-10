@@ -15,12 +15,13 @@ import (
 )
 
 var recoveryProtocols = []dto.VideoUpstreamProtocol{
+	dto.VideoUpstreamProtocolMoxingMediaTaskV1,
 	dto.VideoUpstreamProtocolSynlinkVideoV1,
 	dto.VideoUpstreamProtocolModelArkV3Volcengine, dto.VideoUpstreamProtocolModelArkV3BytePlus,
 	dto.VideoUpstreamProtocolModelArkV3CMCC, dto.VideoUpstreamProtocolMoxingModelArkV1,
 	dto.VideoUpstreamProtocolFunCloudSeedance, dto.VideoUpstreamProtocolFunCloudModelArkV3,
 	dto.VideoUpstreamProtocolArkMediaV1, dto.VideoUpstreamProtocolTokenSaveMediaTaskV1,
-	dto.VideoUpstreamProtocolMoxingMediaTaskV1, dto.VideoUpstreamProtocolFeicaiVideosV1,
+	dto.VideoUpstreamProtocolFeicaiVideosV1,
 }
 
 func persistedSeedanceBillingTask(t *testing.T, protocol dto.VideoUpstreamProtocol, wallet int, expr string) *model.Task {

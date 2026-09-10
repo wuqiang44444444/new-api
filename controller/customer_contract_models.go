@@ -10,28 +10,47 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 )
+
+// tokenContractSnapshotForRequest resolves the API key's bound contract for
+// dashboard read endpoints. A nil snapshot with a nil error means the key has
+// no active contract binding and native behavior applies; a non-nil error is a
+// load failure the caller must fail closed on.
+func tokenContractSnapshotForRequest(c *gin.Context) (*model.ContractEntitySnapshot, error) {
+	contractId, _ := common.GetContextKeyType[int](c, constant.ContextKeyTokenContractId)
+	if contractId <= 0 {
+		return nil, nil
+	}
+	authVersion, _ := common.GetContextKeyType[int64](c, constant.ContextKeyAuthVersion)
+	snapshot, err := service.LoadContractEntityForRequest(c.GetInt("id"), authVersion, contractId)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot == nil || !snapshot.Enabled {
+		return nil, nil
+	}
+	if err := model.RefreshContractEntityAvailability(snapshot); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
+}
 
 func listCustomerContractModels(c *gin.Context, modelType int) bool {
 	return listCustomerContractModelsFiltered(c, modelType, false)
 }
 
 func listCustomerContractModelsFiltered(c *gin.Context, modelType int, seedanceOnly bool) bool {
-	if !common.GetContextKeyBool(c, constant.ContextKeyContractMode) {
+	snapshot, err := tokenContractSnapshotForRequest(c)
+	if err != nil {
+		respondCustomerContractModelLoadError(c)
+		return true
+	}
+	if snapshot == nil {
 		return false
-	}
-	version, ok := common.GetContextKeyType[int64](c, constant.ContextKeyContractVersion)
-	if !ok {
-		respondCustomerContractModelLoadError(c)
-		return true
-	}
-	snapshot, err := service.LoadCustomerContractSnapshot(c.GetInt("id"), version)
-	if err != nil || service.RefreshCustomerContractAvailability(snapshot) != nil {
-		respondCustomerContractModelLoadError(c)
-		return true
 	}
 
 	acceptUnsetRatioModel := operation_setting.SelfUseModeEnabled
@@ -50,6 +69,15 @@ func listCustomerContractModelsFiltered(c *gin.Context, modelType int, seedanceO
 	for _, item := range seedanceCatalog {
 		seedanceByModel[item.ModelName] = item
 	}
+	channelIDs := make([]int, 0, len(snapshot.Rules))
+	for _, rule := range snapshot.Rules {
+		channelIDs = append(channelIDs, rule.ChannelId)
+	}
+	batchChannels, err := model.BatchContractChannelIDs(channelIDs)
+	if err != nil {
+		respondCustomerContractModelLoadError(c)
+		return true
+	}
 	models := make([]dto.OpenAIModels, 0, len(snapshot.Rules))
 	for _, rule := range snapshot.Rules {
 		if !rule.Available {
@@ -61,7 +89,13 @@ func listCustomerContractModelsFiltered(c *gin.Context, modelType int, seedanceO
 				continue
 			}
 		}
-		if !acceptUnsetRatioModel && !helper.HasModelBillingConfig(rule.PublicModel) {
+		var hasPrice bool
+		if batchChannels[rule.ChannelId] {
+			_, hasPrice = billing_setting.GetBatchBillingExpr(rule.PublicModel)
+		} else {
+			hasPrice = helper.HasModelBillingConfig(rule.PublicModel)
+		}
+		if !acceptUnsetRatioModel && !hasPrice {
 			continue
 		}
 		_, isSeedance := seedanceByModel[rule.PublicModel]
@@ -82,18 +116,13 @@ func listCustomerContractModelsFiltered(c *gin.Context, modelType int, seedanceO
 }
 
 func retrieveCustomerContractModel(c *gin.Context, modelType int, modelName string) bool {
-	if !common.GetContextKeyBool(c, constant.ContextKeyContractMode) {
+	snapshot, err := tokenContractSnapshotForRequest(c)
+	if err != nil {
+		respondCustomerContractModelLoadError(c)
+		return true
+	}
+	if snapshot == nil {
 		return false
-	}
-	version, ok := common.GetContextKeyType[int64](c, constant.ContextKeyContractVersion)
-	if !ok {
-		respondCustomerContractModelLoadError(c)
-		return true
-	}
-	snapshot, err := service.LoadCustomerContractSnapshot(c.GetInt("id"), version)
-	if err != nil || service.RefreshCustomerContractAvailability(snapshot) != nil {
-		respondCustomerContractModelLoadError(c)
-		return true
 	}
 	if common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled) {
 		value, exists := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
@@ -179,4 +208,38 @@ func respondCustomerContractModelLoadError(c *gin.Context) {
 	c.JSON(http.StatusInternalServerError, gin.H{
 		"success": false, "message": "customer contract is temporarily unavailable",
 	})
+}
+
+func listDashboardContractModels(c *gin.Context) bool {
+	contracts, err := model.ListContractEntitiesForUser(c.GetInt("id"), false)
+	if err != nil {
+		respondCustomerContractModelLoadError(c)
+		return true
+	}
+	if len(contracts) > 0 {
+		models := make([]string, 0)
+		seen := make(map[string]struct{})
+		for i := range contracts {
+			if !contracts[i].Enabled {
+				continue
+			}
+			if err := model.RefreshContractEntityAvailability(&contracts[i]); err != nil {
+				respondCustomerContractModelLoadError(c)
+				return true
+			}
+			for _, rule := range contracts[i].Rules {
+				if !rule.Available {
+					continue
+				}
+				if _, exists := seen[rule.PublicModel]; exists {
+					continue
+				}
+				seen[rule.PublicModel] = struct{}{}
+				models = append(models, rule.PublicModel)
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": map[int][]string{0: models}})
+		return true
+	}
+	return false
 }

@@ -17,9 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import type { ApiResponse, UserContractEntities } from '@/features/users/types'
 
 import type {
   CustomerContractAdminListResponse,
+  CustomerContractMigrationPayload,
+  CustomerContractMigrationPreview,
   GetCustomerContractsParams,
 } from './types'
 
@@ -27,5 +30,19 @@ export async function getCustomerContracts(
   params: GetCustomerContractsParams
 ): Promise<CustomerContractAdminListResponse> {
   const res = await api.get('/api/customer-contracts', { params })
+  return res.data
+}
+
+export async function getCustomerContractMigrationPreview(): Promise<
+  ApiResponse<CustomerContractMigrationPreview[]>
+> {
+  const res = await api.get('/api/customer-contracts/migration/preview')
+  return res.data
+}
+
+export async function migrateCustomerContract(
+  payload: CustomerContractMigrationPayload
+): Promise<ApiResponse<UserContractEntities>> {
+  const res = await api.post('/api/customer-contracts/migration', payload)
   return res.data
 }

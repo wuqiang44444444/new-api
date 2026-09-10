@@ -85,7 +85,7 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 		} else if originTask.Properties.UpstreamModelName != "" {
 			info.OriginModelName = originTask.Properties.UpstreamModelName
 		} else {
-			var taskData map[string]interface{}
+			var taskData map[string]any
 			_ = common.Unmarshal(originTask.Data, &taskData)
 			if m, ok := taskData["model"].(string); ok && m != "" {
 				info.OriginModelName = m
@@ -127,7 +127,7 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 			}
 		} else {
 			// 旧的 remix 逻辑：直接从 task data 解析 seconds 和 size（如果存在）
-			var taskData map[string]interface{}
+			var taskData map[string]any
 			_ = common.Unmarshal(originTask.Data, &taskData)
 			secondsStr, _ := taskData["seconds"].(string)
 			seconds, _ := strconv.Atoi(secondsStr)
@@ -294,7 +294,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 			}
 		} else {
 			if !exists {
-			return nil, service.TaskErrorWrapperLocal(errors.New("Requested model has no usage expression or meter"), "model_price_error", http.StatusBadRequest)
+				return nil, service.TaskErrorWrapperLocal(errors.New("Requested model has no usage expression or meter"), "model_price_error", http.StatusBadRequest)
 			}
 			var facts map[string]any
 			if validatedProvider, ok := adaptor.(channel.TaskValidatedUsageFactsProvider); ok {
@@ -386,7 +386,8 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		// 音视频证据拒绝边界：尚未发送任何字节，不标记 unknown，
 		// 返回本地不可重试错误并进入既有 ReleaseRejectedTaskCreateAttempt 释放路径。
 		if service.IsTaskRequestEvidenceUnavailable(err) {
-			return nil, service.TaskErrorWrapperLocal(err, "task_evidence_unavailable", http.StatusInternalServerError)
+			service.LogTaskRequestEvidenceRejection(c, err)
+			return nil, service.TaskErrorForEvidenceRejection(err)
 		}
 		markAmbiguousTaskCreate(c, info)
 		return nil, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)

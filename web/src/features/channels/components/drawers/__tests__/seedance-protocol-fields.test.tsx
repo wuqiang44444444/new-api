@@ -44,19 +44,16 @@ beforeAll(async () => {
           'Volcengine ModelArk V3': 'Volcengine ModelArk V3',
           'BytePlus ModelArk V3': 'BytePlus ModelArk V3',
           'TokenSave Media Task V1': 'TokenSave Media Task V1',
-          'Moxing Media Task V1': 'Moxing Media Task V1',
           'Moxing ModelArk Media Task V1': 'Moxing ModelArk Media Task V1',
           'Ark Media V1': 'Ark Proxy Video API',
           'Feicai Videos V1 (URL Only, No Asset Library)':
             'Feicai Videos V1 (URL Only, No Asset Library)',
-          'FunCloud Seedance': 'FunCloud',
+          'FunCloud ModelArk V3': 'FunCloud ModelArk V3',
           'FunCloud Material Library': 'FunCloud Material Library',
           'Volcengine Official Assets': 'Volcengine Official Assets',
           'BytePlus Official Assets': 'BytePlus Official Assets',
           'No Asset Protocol': 'No Asset Protocol',
           'TokenSave Asset Library V1': 'TokenSave Asset Library V1',
-          'Moxing JoyCreator Asset Library V1':
-            'Moxing JoyCreator Asset Library V1',
           'Moxing Volcengine Asset Library V1':
             'Moxing Volcengine Asset Library V1',
           'Ark Assets V1': 'Ark Proxy Asset Library',
@@ -165,12 +162,12 @@ describe('Seedance protocol fields', () => {
     await user.click(videoTrigger)
     await user.click(
       await screen.findByRole('option', {
-        name: 'Moxing Media Task V1',
+        name: 'Moxing ModelArk Media Task V1',
       })
     )
 
     expect(assetTrigger.textContent).toContain(
-      'Moxing JoyCreator Asset Library V1'
+      'Moxing Volcengine Asset Library V1'
     )
   })
 
@@ -198,14 +195,9 @@ describe('Seedance protocol fields', () => {
     expect(assetTrigger.textContent).toContain('No Asset Protocol')
   })
 
-  test('selects no asset library for a customer model mapped to FunCloud 2.5', async () => {
+  test('pairs FunCloud ModelArk V3 with the FunCloud material library', async () => {
     const user = userEvent.setup()
-    render(
-      <SeedanceProtocolFieldsHarness
-        models='customer-next'
-        modelMapping='{"customer-next":"seedance-2-5"}'
-      />
-    )
+    render(<SeedanceProtocolFieldsHarness />)
 
     const videoTrigger = screen.getByRole('combobox', {
       name: 'Seedance Video Protocol',
@@ -214,15 +206,17 @@ describe('Seedance protocol fields', () => {
       name: 'Seedance Asset Protocol',
     })
     await user.click(videoTrigger)
-    await user.click(await screen.findByRole('option', { name: 'FunCloud' }))
+    await user.click(
+      await screen.findByRole('option', { name: 'FunCloud ModelArk V3' })
+    )
 
-    expect(assetTrigger.textContent).toContain('No Asset Protocol')
+    expect(assetTrigger.textContent).toContain('FunCloud Material Library')
     await user.click(assetTrigger)
     const listbox = await screen.findByRole('listbox')
     expect(
-      within(listbox).queryByRole('option', {
+      within(listbox).getByRole('option', {
         name: 'FunCloud Material Library',
       })
-    ).toBeNull()
+    ).toBeTruthy()
   })
 })

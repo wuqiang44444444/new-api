@@ -22,6 +22,8 @@ import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
 import { describe, expect, test } from 'vitest'
 
+import { getPricingQueryKey } from '@/features/pricing/hooks/use-pricing-data'
+
 import type { ModelRatioData } from '../model-pricing-core'
 import {
   ModelPricingEditorPanel,
@@ -39,7 +41,7 @@ describe('separate Seedance and native task pricing editors', () => {
     // Seed the public API response into the real query cache, preserving the
     // backend contract: the Link entry has no native plugin usage schema.
     client.setQueryData(['status'], { price: 1 })
-    client.setQueryData(['pricing'], {
+    client.setQueryData(getPricingQueryKey(undefined), {
       vendors: [],
       data: [
         {
@@ -70,7 +72,7 @@ describe('separate Seedance and native task pricing editors', () => {
         />
       </QueryClientProvider>
     )
-    await user.click(screen.getAllByRole('combobox')[0])
+    await user.click(screen.getAllByRole('combobox').filter((item) => /Visual editor|Expression editor/.test(item.textContent || ''))[0])
     await user.click(
       await screen.findByRole('option', { name: 'Visual editor' })
     )
@@ -111,7 +113,7 @@ describe('separate Seedance and native task pricing editors', () => {
     expect(screen.queryByPlaceholderText('250000')).not.toBeInTheDocument()
     expect(
       screen.getByText(
-        'Task usage prices are USD per declared unit. Token fields use dollars per 1M tokens; the editor writes / 1000000 into the expression. Other units are not divided by one million.'
+        /Prices are in .*with units shown below/
       )
     ).toBeInTheDocument()
     await act(async () => {
@@ -136,7 +138,7 @@ describe('separate Seedance and native task pricing editors', () => {
   test('blocks all price editing for a cross-channel contract conflict', async () => {
     const client = new QueryClient()
     client.setQueryData(['status'], { price: 1 })
-    client.setQueryData(['pricing'], {
+    client.setQueryData(getPricingQueryKey(undefined), {
       vendors: [],
       data: [{ model_name: 'conflict', billing_contract_conflict: true }],
     })
@@ -170,7 +172,7 @@ describe('separate Seedance and native task pricing editors', () => {
     const user = userEvent.setup()
     const client = new QueryClient()
     client.setQueryData(['status'], { price: 1 })
-    client.setQueryData(['pricing'], { vendors: [], data: [] })
+    client.setQueryData(getPricingQueryKey(undefined), { vendors: [], data: [] })
     const ref = createRef<ModelPricingEditorPanelHandle>()
     const billingExpr = 'tier("base", p * 1 + c * 5)'
     const requestRuleExpr = 'param("_task.duration_seconds") * 2'
@@ -193,7 +195,7 @@ describe('separate Seedance and native task pricing editors', () => {
         requestRuleExpr,
       })
     })
-    await user.click(screen.getAllByRole('combobox')[0])
+    await user.click(screen.getAllByRole('combobox').filter((item) => /Visual editor|Expression editor/.test(item.textContent || ''))[0])
     await user.click(
       await screen.findByRole('option', { name: 'Visual editor' })
     )
@@ -209,7 +211,7 @@ describe('separate Seedance and native task pricing editors', () => {
     const user = userEvent.setup()
     const client = new QueryClient()
     client.setQueryData(['status'], { price: 1 })
-    client.setQueryData(['pricing'], { vendors: [], data: [] })
+    client.setQueryData(getPricingQueryKey(undefined), { vendors: [], data: [] })
     const ref = createRef<ModelPricingEditorPanelHandle>()
     const billingExpr = 'tier("base", p * 1 + c * 5)'
     render(
@@ -224,11 +226,11 @@ describe('separate Seedance and native task pricing editors', () => {
         />
       </QueryClientProvider>
     )
-    await user.click(screen.getAllByRole('combobox')[0])
+    await user.click(screen.getAllByRole('combobox').filter((item) => /Visual editor|Expression editor/.test(item.textContent || ''))[0])
     await user.click(
       await screen.findByRole('option', { name: 'Expression editor' })
     )
-    await user.click(screen.getAllByRole('combobox')[0])
+    await user.click(screen.getAllByRole('combobox').filter((item) => /Visual editor|Expression editor/.test(item.textContent || ''))[0])
     await user.click(
       await screen.findByRole('option', { name: 'Visual editor' })
     )

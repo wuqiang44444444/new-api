@@ -16,10 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import {
-  parseTiersFromExpr,
-  splitBillingExprAndRequestRules,
-} from '@/features/pricing/lib/billing-expr'
+import { splitBillingExprAndRequestRules } from '@/features/pricing/lib/billing-expr'
+import { isUsableBillingDisplay } from '@/features/pricing/lib/billing-display'
+import type { BillingDisplayProjection } from '@/features/pricing/types'
 
 import { safeJsonParse } from '../utils/json-parser'
 import { formatPricingNumber } from './pricing-format'
@@ -99,18 +98,21 @@ export const getModeVariant = (
 
 const getExpressionSummary = (
   row: ModelPricingSnapshot,
-  t: (key: string) => string
+  t: (key: string) => string,
+  projection?: BillingDisplayProjection | null
 ) => {
   const expr = row.billingExpr || ''
-  const tiers = parseTiersFromExpr(expr)
-  const tierCount = tiers.length || (expr.match(/tier\(/g) || []).length
+  const tierCount = (expr.match(/tier\(/g) || []).length
   if (tierCount === 0) {
     return t('Expression pricing')
   }
-  // 提取各档非零单价（c=输出、p=输入）聚合成 min/max 价格区间；视频等只用 c 的
-  // 表达式也能正确显示。系数口径为 USD/1M tokens，与表达式计费单位一致。
-  const unitPrices = tiers
-    .flatMap((tier) => [Number(tier.outputPrice), Number(tier.inputPrice)])
+  // 单价区间只来自后端投影；投影缺失或不可展开时不展示任何猜测数值。
+  if (!isUsableBillingDisplay(projection)) {
+    return `${t('Tiered pricing')} · ${tierCount} ${t('tiers')}`
+  }
+  // 各档非零单价聚合成 min/max 价格区间；系数口径为 USD/1M tokens。
+  const unitPrices = (projection.tiers ?? [])
+    .flatMap((tier) => Object.values(tier.unit_prices))
     .filter((v) => Number.isFinite(v) && v > 0)
   if (unitPrices.length === 0) {
     return `${t('Tiered pricing')} · ${tierCount} ${t('tiers')}`
@@ -123,10 +125,11 @@ const getExpressionSummary = (
 
 export const getPriceSummary = (
   row: ModelPricingSnapshot,
-  t: (key: string) => string
+  t: (key: string) => string,
+  projection?: BillingDisplayProjection | null
 ) => {
   if (row.billingMode === 'tiered_expr') {
-    return getExpressionSummary(row, t)
+    return getExpressionSummary(row, t, projection)
   }
   if (row.billingMode === 'per-request') {
     return row.price ? `$${row.price} / ${t('request')}` : t('Unset price')
@@ -135,18 +138,7 @@ export const getPriceSummary = (
   const inputPrice = ratioToPrice(row.ratio)
   if (!inputPrice) return t('Unset price')
 
-  const extraCount = [
-    row.completionRatio,
-    row.cacheRatio,
-    row.createCacheRatio,
-    row.imageRatio,
-    row.audioRatio,
-    row.audioCompletionRatio,
-  ].filter(hasPricingValue).length
-
-  return extraCount > 0
-    ? `${t('Input')} $${inputPrice} · ${extraCount} ${t('extras')}`
-    : `${t('Input')} $${inputPrice}`
+  return `${t('Input')} $${inputPrice}`
 }
 
 export const getPriceDetail = (
@@ -245,7 +237,7 @@ export const buildModelSnapshots = ({
     ...Object.keys(billingExprMap),
   ])
 
-  return Array.from(modelNames).map((name) => {
+  return [...modelNames].map((name) => {
     const price = priceMap[name]?.toString() || ''
     const ratio = ratioMap[name]?.toString() || ''
     const cache = cacheMap[name]?.toString() || ''

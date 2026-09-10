@@ -19,7 +19,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupCustomerContractControllerDB(t *testing.T) (model.User, model.User) {
+func setupCustomerContractControllerDB(t *testing.T) (model.User, model.User, model.ContractEntitySnapshot) {
 	t.Helper()
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB
@@ -33,7 +33,9 @@ func setupCustomerContractControllerDB(t *testing.T) (model.User, model.User) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&model.User{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.Vendor{},
-		&model.CustomerModelContract{}, &model.CustomerContractAudit{}, &model.Log{},
+		&model.Token{}, &model.CustomerModelContract{},
+		&model.CustomerContract{}, &model.CustomerContractEntityRule{}, &model.CustomerContractEntityAudit{},
+		&model.Log{},
 	))
 	model.DB = db
 	model.LOG_DB = db
@@ -43,7 +45,7 @@ func setupCustomerContractControllerDB(t *testing.T) (model.User, model.User) {
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"contract-api":0.87}`))
 	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"contract-model":1}`))
 	model.InvalidatePricingCache()
-	service.ResetCustomerContractCacheForTest()
+	service.ResetContractEntityCacheForTest()
 
 	admin := model.User{Username: "contract-api-admin", AffCode: "contract-api-admin-aff", Role: common.RoleAdminUser, AuthVersion: 1}
 	user := model.User{Username: "contract-api-user", AffCode: "contract-api-user-aff", Role: common.RoleCommonUser, Group: "default", AuthVersion: 1}
@@ -55,12 +57,20 @@ func setupCustomerContractControllerDB(t *testing.T) (model.User, model.User) {
 	require.NoError(t, db.Create(&model.Ability{
 		Group: "contract-api", Model: "contract-model", ChannelId: channel.Id, Enabled: true, Priority: &priority,
 	}).Error)
+	snapshot, err := model.CreateCustomerContractEntity(model.CreateCustomerContractParams{
+		UserId: user.Id, AdminUserId: admin.Id, Name: "API Contract", Enabled: true,
+		Reason: "activate test contract",
+		Rules: []model.CustomerContractEntityRuleInput{{
+			PublicModel: "contract-model", ChannelId: channel.Id, RouteGroup: "contract-api", RatioUnits: 80_000_000,
+		}},
+	})
+	require.NoError(t, err)
 	model.InitChannelCache()
 
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		service.ResetCustomerContractCacheForTest()
+		service.ResetContractEntityCacheForTest()
 		model.InvalidatePricingCache()
 		model.DB = previousDB
 		model.LOG_DB = previousLogDB
@@ -74,7 +84,7 @@ func setupCustomerContractControllerDB(t *testing.T) (model.User, model.User) {
 			model.InitChannelCache()
 		}
 	})
-	return admin, user
+	return admin, user, *snapshot
 }
 
 func customerContractAdminContext(method string, path string, body string, admin model.User, target model.User) (*gin.Context, *httptest.ResponseRecorder) {
@@ -89,56 +99,48 @@ func customerContractAdminContext(method string, path string, body string, admin
 	return c, recorder
 }
 
-func TestCustomerContractAdminAPIAtomicallyCreatesAndAutoEnablesFirstRules(t *testing.T) {
+func TestCustomerContractAdminAPICreatesEntityAndAppliesNativeRatioBeforeDiscount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	admin, user := setupCustomerContractControllerDB(t)
-	c, recorder := customerContractAdminContext(http.MethodPut, "/api/user/1/contract", `{
-		"expected_version":0,"enabled":false,"reason":"signed contract",
-		"rules":[{"model":"contract-model","route_group":"contract-api","discount":"8折"}]
+	admin, user, contract := setupCustomerContractControllerDB(t)
+	c, recorder := customerContractAdminContext(http.MethodPost, fmt.Sprintf("/api/user/%d/contract", user.Id), `{
+		"enabled":true,"name":"Second Contract","reason":"signed contract",
+		"rules":[{"model":"contract-model","channel_id":1,"route_group":"contract-api","discount":"8折"}]
 	}`, admin, user)
 
-	PutCustomerContract(c)
+	PostCustomerContractEntity(c)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), `"contract_mode":true`)
-	assert.Contains(t, recorder.Body.String(), `"discount":"0.8"`)
-	assert.Contains(t, recorder.Body.String(), `"native_group_ratio":"0.87"`)
-	assert.Contains(t, recorder.Body.String(), `"effective_multiplier":"0.696"`)
-	snapshot, err := model.GetCustomerContractSnapshot(user.Id)
+	body := recorder.Body.String()
+	assert.Contains(t, body, `"discount":"0.8"`)
+	assert.Contains(t, body, `"native_group_ratio":"0.87"`)
+	assert.Contains(t, body, `"effective_multiplier":"0.696"`)
+	list, err := model.ListContractEntitiesForUser(user.Id, false)
 	require.NoError(t, err)
-	assert.True(t, snapshot.Enabled)
-	assert.EqualValues(t, 1, snapshot.Version)
-	require.Len(t, snapshot.Rules, 1)
+	require.Len(t, list, 2, "a user can hold multiple contracts")
+	assert.Equal(t, contract.Id, list[0].Id)
+	assert.Equal(t, "Second Contract", list[1].Name)
 }
 
 func TestCustomerContractAdminAPIRejectsStaleExpectedVersion(t *testing.T) {
-	admin, user := setupCustomerContractControllerDB(t)
-	_, err := model.ReplaceCustomerContract(model.ReplaceCustomerContractParams{
-		UserId: user.Id, AdminUserId: admin.Id, ExpectedVersion: 0, Enabled: true, Reason: "first version",
-		Rules: []model.CustomerContractRule{{PublicModel: "contract-model", RouteGroup: "contract-api", RatioUnits: 80_000_000}},
-	})
-	require.NoError(t, err)
-	c, recorder := customerContractAdminContext(http.MethodPut, "/api/user/1/contract", `{
-		"expected_version":0,"enabled":true,"reason":"stale edit",
-		"rules":[{"model":"contract-model","route_group":"contract-api","discount":"50%"}]
-	}`, admin, user)
+	admin, user, contract := setupCustomerContractControllerDB(t)
+	channelId := contract.Rules[0].ChannelId
+	c, recorder := customerContractAdminContext(http.MethodPut, fmt.Sprintf("/api/contract/%d", contract.Id), fmt.Sprintf(`{
+		"expected_version":0,"enabled":true,"name":"API Contract","reason":"stale edit",
+		"rules":[{"model":"contract-model","channel_id":%d,"route_group":"contract-api","discount":"50%%"}]
+	}`, channelId), admin, user)
+	c.Params = append(c.Params, gin.Param{Key: "contract_id", Value: fmt.Sprintf("%d", contract.Id)})
 
-	PutCustomerContract(c)
+	PutCustomerContractEntity(c)
 
-	assert.Equal(t, http.StatusConflict, recorder.Code)
-	current, err := model.GetCustomerContractSnapshot(user.Id)
+	assert.Equal(t, http.StatusConflict, recorder.Code, recorder.Body.String())
+	current, err := model.GetContractEntitySnapshot(contract.Id, false)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, current.Version)
 	assert.EqualValues(t, 80_000_000, current.Rules[0].RatioUnits)
 }
 
 func TestSelfCustomerContractResponseHidesInternalRouteAndProviderFacts(t *testing.T) {
-	admin, user := setupCustomerContractControllerDB(t)
-	_, err := model.ReplaceCustomerContract(model.ReplaceCustomerContractParams{
-		UserId: user.Id, AdminUserId: admin.Id, ExpectedVersion: 0, Enabled: true, Reason: "customer-visible contract",
-		Rules: []model.CustomerContractRule{{PublicModel: "contract-model", RouteGroup: "contract-api", RatioUnits: 60_000_000}},
-	})
-	require.NoError(t, err)
+	_, user, _ := setupCustomerContractControllerDB(t)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/user/self/contract", nil)
@@ -148,8 +150,8 @@ func TestSelfCustomerContractResponseHidesInternalRouteAndProviderFacts(t *testi
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	body := recorder.Body.String()
-	assert.Contains(t, body, `"contract_mode":true`)
-	assert.Contains(t, body, `"discount":"0.6"`)
+	assert.Contains(t, body, `"enabled":true`)
+	assert.Contains(t, body, `"discount":"0.8"`)
 	assert.NotContains(t, body, "route_group")
 	assert.NotContains(t, body, "contract-api")
 	assert.NotContains(t, body, "channel_id")
@@ -157,7 +159,7 @@ func TestSelfCustomerContractResponseHidesInternalRouteAndProviderFacts(t *testi
 }
 
 func TestCustomerContractAdminAPIEnforcesTargetRoleBoundary(t *testing.T) {
-	admin, user := setupCustomerContractControllerDB(t)
+	admin, user, _ := setupCustomerContractControllerDB(t)
 	peer := user
 	peer.Id = 0
 	peer.Username = "peer-admin"
@@ -172,35 +174,25 @@ func TestCustomerContractAdminAPIEnforcesTargetRoleBoundary(t *testing.T) {
 	assert.Contains(t, recorder.Body.String(), `"success":false`)
 }
 
-func createEnabledCustomerContract(t *testing.T, admin model.User, user model.User) {
-	t.Helper()
-	_, err := model.ReplaceCustomerContract(model.ReplaceCustomerContractParams{
-		UserId: user.Id, AdminUserId: admin.Id, ExpectedVersion: 0, Enabled: true, Reason: "activate test contract",
-		Rules: []model.CustomerContractRule{{PublicModel: "contract-model", RouteGroup: "contract-api", RatioUnits: 80_000_000}},
-	})
-	require.NoError(t, err)
-}
-
-func customerContractUserContext(method string, path string, user model.User) (*gin.Context, *httptest.ResponseRecorder) {
+func customerContractTokenContext(method string, path string, user model.User, contractId int) (*gin.Context, *httptest.ResponseRecorder) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(method, path, nil)
 	c.Set("id", user.Id)
 	common.SetContextKey(c, constant.ContextKeyUserGroup, user.Group)
-	common.SetContextKey(c, constant.ContextKeyContractMode, true)
-	common.SetContextKey(c, constant.ContextKeyContractVersion, int64(1))
+	common.SetContextKey(c, constant.ContextKeyAuthVersion, user.AuthVersion)
+	common.SetContextKey(c, constant.ContextKeyTokenContractId, contractId)
 	return c, recorder
 }
 
 func TestCustomerContractModelDiscoveryReturnsOnlyExactContractModels(t *testing.T) {
-	admin, user := setupCustomerContractControllerDB(t)
-	createEnabledCustomerContract(t, admin, user)
+	_, user, contract := setupCustomerContractControllerDB(t)
 	outside := model.Channel{Name: "outside", Group: "default", Models: "outside-model", Key: "key", Status: common.ChannelStatusEnabled}
 	require.NoError(t, model.DB.Create(&outside).Error)
 	priority := int64(0)
 	require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "outside-model", ChannelId: outside.Id, Enabled: true, Priority: &priority}).Error)
 
-	c, recorder := customerContractUserContext(http.MethodGet, "/v1/models", user)
+	c, recorder := customerContractTokenContext(http.MethodGet, "/v1/models", user, contract.Id)
 	ListModels(c, constant.ChannelTypeOpenAI)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
@@ -210,7 +202,14 @@ func TestCustomerContractModelDiscoveryReturnsOnlyExactContractModels(t *testing
 	assert.NotContains(t, body, "outside-model")
 	assert.NotContains(t, body, "contract-api")
 
-	limited, limitedRecorder := customerContractUserContext(http.MethodGet, "/v1/models", user)
+	// An unbound key keeps the native discovery path instead of the contract
+	// projection (the native metadata list is empty in this fixture).
+	native, nativeRecorder := customerContractTokenContext(http.MethodGet, "/v1/models", user, 0)
+	ListModels(native, constant.ChannelTypeOpenAI)
+	assert.Equal(t, http.StatusOK, nativeRecorder.Code)
+	assert.NotContains(t, nativeRecorder.Body.String(), "contract-model")
+
+	limited, limitedRecorder := customerContractTokenContext(http.MethodGet, "/v1/models", user, contract.Id)
 	common.SetContextKey(limited, constant.ContextKeyTokenModelLimitEnabled, true)
 	common.SetContextKey(limited, constant.ContextKeyTokenModelLimit, map[string]bool{})
 	ListModels(limited, constant.ChannelTypeOpenAI)
@@ -218,25 +217,23 @@ func TestCustomerContractModelDiscoveryReturnsOnlyExactContractModels(t *testing
 }
 
 func TestCustomerContractRetrieveModelUsesExactCase(t *testing.T) {
-	admin, user := setupCustomerContractControllerDB(t)
-	createEnabledCustomerContract(t, admin, user)
+	_, user, contract := setupCustomerContractControllerDB(t)
 
-	c, recorder := customerContractUserContext(http.MethodGet, "/v1/models/contract-model", user)
+	c, recorder := customerContractTokenContext(http.MethodGet, "/v1/models/contract-model", user, contract.Id)
 	c.Params = gin.Params{{Key: "model", Value: "contract-model"}}
 	RetrieveModel(c, constant.ChannelTypeOpenAI)
 	assert.Contains(t, recorder.Body.String(), `"id":"contract-model"`)
 
-	wrongCase, wrongCaseRecorder := customerContractUserContext(http.MethodGet, "/v1/models/Contract-Model", user)
+	wrongCase, wrongCaseRecorder := customerContractTokenContext(http.MethodGet, "/v1/models/Contract-Model", user, contract.Id)
 	wrongCase.Params = gin.Params{{Key: "model", Value: "Contract-Model"}}
 	RetrieveModel(wrongCase, constant.ChannelTypeOpenAI)
 	assert.Contains(t, wrongCaseRecorder.Body.String(), `"code":"model_not_found"`)
 }
 
 func TestCustomerContractPricingUsesPerModelEffectiveMultiplierWithoutRouteLeak(t *testing.T) {
-	admin, user := setupCustomerContractControllerDB(t)
-	createEnabledCustomerContract(t, admin, user)
+	_, user, contract := setupCustomerContractControllerDB(t)
 
-	c, recorder := customerContractUserContext(http.MethodGet, "/api/pricing", user)
+	c, recorder := customerContractTokenContext(http.MethodGet, "/api/pricing", user, contract.Id)
 	GetPricing(c)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
@@ -248,13 +245,13 @@ func TestCustomerContractPricingUsesPerModelEffectiveMultiplierWithoutRouteLeak(
 }
 
 func TestCustomerContractAdminPreviewUsesNativeSpecialGroupRatioBeforeDiscount(t *testing.T) {
-	admin, user := setupCustomerContractControllerDB(t)
+	admin, user, _ := setupCustomerContractControllerDB(t)
 	previous := ratio_setting.GroupGroupRatio2JSONString()
 	require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(`{"default":{"contract-api":0.9}}`))
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(previous))
 	})
-	createEnabledCustomerContract(t, admin, user)
+	service.ResetContractEntityCacheForTest()
 
 	c, recorder := customerContractAdminContext(http.MethodGet, "/api/user/1/contract", "", admin, user)
 	GetCustomerContract(c)
@@ -265,9 +262,8 @@ func TestCustomerContractAdminPreviewUsesNativeSpecialGroupRatioBeforeDiscount(t
 	assert.Contains(t, body, `"special_group_ratio":true`)
 }
 
-func TestCustomerContractAdminOptionsAndAuditAreOperationalAndSafe(t *testing.T) {
-	admin, user := setupCustomerContractControllerDB(t)
-	createEnabledCustomerContract(t, admin, user)
+func TestCustomerContractAdminOptionsChannelsAndAuditAreOperationalAndSafe(t *testing.T) {
+	admin, user, contract := setupCustomerContractControllerDB(t)
 
 	optionsContext, optionsRecorder := customerContractAdminContext(http.MethodGet, "/api/user/1/contract/options", "", admin, user)
 	GetCustomerContractOptions(optionsContext)
@@ -276,12 +272,61 @@ func TestCustomerContractAdminOptionsAndAuditAreOperationalAndSafe(t *testing.T)
 	assert.Contains(t, optionsRecorder.Body.String(), `"current_discounted_price":"0.87"`)
 	assert.NotContains(t, optionsRecorder.Body.String(), `"group":"auto"`)
 
-	auditContext, auditRecorder := customerContractAdminContext(http.MethodGet, "/api/user/1/contract/audits", "", admin, user)
-	GetCustomerContractAudits(auditContext)
+	channelsContext, channelsRecorder := customerContractAdminContext(http.MethodGet, "/api/user/1/contract/channels", "", admin, user)
+	GetCustomerContractChannelOptions(channelsContext)
+	assert.Contains(t, channelsRecorder.Body.String(), `"group":"contract-api"`)
+
+	auditContext, auditRecorder := customerContractAdminContext(http.MethodGet, fmt.Sprintf("/api/contract/%d/audits", contract.Id), "", admin, user)
+	auditContext.Params = append(auditContext.Params, gin.Param{Key: "contract_id", Value: fmt.Sprintf("%d", contract.Id)})
+	GetCustomerContractEntityAudits(auditContext)
 	auditBody := auditRecorder.Body.String()
 	assert.Contains(t, auditBody, `"admin_username":"contract-api-admin"`)
-	assert.Contains(t, auditBody, `"before_rule_count":0`)
-	assert.Contains(t, auditBody, `"after_rule_count":1`)
+	assert.Contains(t, auditBody, `"operation":"create"`)
 	assert.NotContains(t, auditBody, "before_state")
 	assert.NotContains(t, auditBody, "after_state")
+}
+
+func TestTokenBindingRejectsContractsTheUserDoesNotOwn(t *testing.T) {
+	admin, user, _ := setupCustomerContractControllerDB(t)
+	otherSnapshot, err := model.CreateCustomerContractEntity(model.CreateCustomerContractParams{
+		UserId: admin.Id, AdminUserId: admin.Id, Name: "Admin Contract", Enabled: true,
+		Reason: "owner boundary fixture",
+		Rules: []model.CustomerContractEntityRuleInput{{
+			PublicModel: "contract-model", ChannelId: 1, RouteGroup: "contract-api", RatioUnits: 80_000_000,
+		}},
+	})
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/token/", strings.NewReader(fmt.Sprintf(
+		`{"name":"bound-key","expired_time":-1,"remain_quota":1000,"unlimited_quota":true,"contract_id":%d}`, otherSnapshot.Id)))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("id", user.Id)
+	AddToken(c)
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "not owned by the user")
+}
+
+func TestContractSessionPricingRequiresExplicitOwnedSelection(t *testing.T) {
+	_, user, contract := setupCustomerContractControllerDB(t)
+	c, w := gin.CreateTestContext(httptest.NewRecorder())
+	_ = w
+	c.Request = httptest.NewRequest("GET", "/api/pricing", nil)
+	c.Set("id", user.Id)
+	assert.False(t, respondCustomerContractPricing(c), "no implicit default contract")
+	response := httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(response)
+	c.Request = httptest.NewRequest("GET", fmt.Sprintf("/api/pricing?contract_id=%d", contract.Id), nil)
+	c.Set("id", user.Id)
+	common.SetContextKey(c, constant.ContextKeyUserGroup, user.Group)
+	assert.True(t, respondCustomerContractPricing(c))
+	assert.Equal(t, http.StatusOK, response.Code)
+	response = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(response)
+	c.Request = httptest.NewRequest("GET", fmt.Sprintf("/api/pricing?contract_id=%d", contract.Id), nil)
+	c.Set("id", user.Id+1000)
+	assert.True(t, respondCustomerContractPricing(c))
+	assert.NotEqual(t, http.StatusOK, response.Code)
 }

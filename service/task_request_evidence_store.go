@@ -96,7 +96,7 @@ func (s *localEncryptedEvidenceStore) Put(key string, plaintext []byte) error {
 	select {
 	case evidenceWriteSlots <- struct{}{}:
 	default:
-		return fmt.Errorf("evidence store busy")
+		return ErrTaskRequestEvidenceStoreBusy
 	}
 	result := make(chan error, 1)
 	go func() { defer func() { <-evidenceWriteSlots }(); result <- s.writeAtomically(key, sealed) }()
@@ -104,7 +104,7 @@ func (s *localEncryptedEvidenceStore) Put(key string, plaintext []byte) error {
 	case err := <-result:
 		return err
 	case <-timer.C:
-		return fmt.Errorf("evidence write timeout")
+		return ErrTaskRequestEvidenceWriteTimeout
 	}
 }
 

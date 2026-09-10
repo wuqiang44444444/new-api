@@ -19,7 +19,6 @@ func TestTaskCreateHTTPDispositionRequiresVerifiedRejection(t *testing.T) {
 		rejected bool
 	}{
 		{"TokenSave quota", dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, 403, `{"error":{"code":"user_quota_insufficient","message":"Insufficient quota"}}`, true},
-		{"Moxing quota", dto.VideoUpstreamProtocolMoxingMediaTaskV1, 403, `{"code":"user_quota_insufficient","message":"Insufficient quota"}`, true},
 		{"Moxing ModelArk quota", dto.VideoUpstreamProtocolMoxingModelArkV1, 403, `{"code":"user_quota_insufficient","message":"Insufficient quota"}`, true},
 		{"TokenSave permission", dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, 403, `{"error":{"code":"group_model_permission_denied","message":"Model unavailable in current group"}}`, true},
 		{"official authentication", dto.VideoUpstreamProtocolModelArkV3Volcengine, 401, `{"error":{"code":"AuthenticationError","message":"The API key status is not active."}}`, true},

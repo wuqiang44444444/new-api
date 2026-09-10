@@ -16,6 +16,7 @@ type videoSpec struct {
 	durationRequired         bool
 	resolutions              []string
 	resolutionRequired       bool
+	freeResolution           bool
 	ratios                   []string
 	ratioRequired            bool
 	maxImages, maxVideos     int
@@ -88,6 +89,11 @@ func VideoAPI(customerModel string, protocol dto.VideoUpstreamProtocol, provider
 			resolution.DefaultValue = "720p"
 		}
 		parameters = append(parameters, resolution)
+	} else if spec.freeResolution {
+		// The Moxing documentation enumerates no resolution values (720p is
+		// only a recommendation), so the catalog publishes a free string with
+		// the northbound default and the provider judges unlisted values.
+		parameters = append(parameters, dto.PublicAPIParameter{Name: "resolution", Type: "string", DefaultValue: "720p"})
 	}
 	if len(spec.ratios) > 0 {
 		parameters = append(parameters, stringEnumParameter("ratio", spec.ratioRequired, spec.ratios))
@@ -110,6 +116,12 @@ func VideoAPI(customerModel string, protocol dto.VideoUpstreamProtocol, provider
 	}
 	if spec.fullModelArk {
 		parameters = append(parameters, fullModelArkParameters(allowServiceTier)...)
+	}
+	if protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 {
+		parameters = append(parameters,
+			dto.PublicAPIParameter{Name: "return_last_frame", Type: "boolean"},
+			integerRangeParameter("priority", false, 0, 9),
+		)
 	}
 
 	return &dto.PublicVideoAPI{
@@ -148,7 +160,7 @@ func publicVideoSpec(protocol dto.VideoUpstreamProtocol, model string) (videoSpe
 		}
 		return videoSpec{
 			minDuration: 4, maxDuration: 15, resolutions: []string{"480p", "720p", "1080p"},
-			ratios: []string{"16:9", "9:16", "1:1"}, allowGenerateAudio: true, allowWatermark: true,
+			ratios: []string{"16:9", "9:16", "1:1"}, allowVideos: true, allowAudios: true, allowGenerateAudio: true, allowWatermark: true,
 		}, true
 	case dto.VideoUpstreamProtocolTokenSaveMediaTaskV1:
 		if model != "doubao-seedance-2-0-260128" {
@@ -157,59 +169,16 @@ func publicVideoSpec(protocol dto.VideoUpstreamProtocol, model string) (videoSpe
 		return videoSpec{
 			minDuration: 4, maxDuration: 15, intelligentDuration: true,
 			resolutions: []string{"480p", "720p", "1080p"}, ratios: modelArkRatios,
+			allowVideos: true, allowAudios: true,
 			allowGenerateAudio: true, allowWatermark: true, allowSeed: true, allowCameraFixed: true,
 		}, true
-	case dto.VideoUpstreamProtocolMoxingMediaTaskV1:
-		if model != "doubao-seedance-2-0-260128" {
-			return videoSpec{}, false
-		}
-		return videoSpec{
-			minDuration: 4, maxDuration: 15, intelligentDuration: true,
-			resolutions: []string{"480p", "720p"}, ratios: modelArkRatios,
-			allowVideos: true, allowAudios: true, allowGenerateAudio: true, allowWatermark: true,
-		}, true
 	case dto.VideoUpstreamProtocolMoxingModelArkV1:
-		switch model {
-		case "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-0-mini-260615":
-			return videoSpec{
-				minDuration: 4, maxDuration: 15, intelligentDuration: true,
-				resolutions: []string{"480p", "720p"}, ratios: modelArkRatios,
-				maxImages: 9, maxVideos: 3, maxAudios: 3, allowVideos: true, allowAudios: true,
-				allowGenerateAudio: true, allowWatermark: true,
-			}, true
-		case "doubao-seedance-2-5-260628":
-			return videoSpec{
-				minDuration: 4, maxDuration: 30, intelligentDuration: true,
-				resolutions: []string{"480p", "720p"}, ratios: modelArkRatios,
-				maxImages: 30, maxVideos: 10, maxAudios: 10, allowVideos: true, allowAudios: true,
-				allowGenerateAudio: true, allowWatermark: true, allowSeed: true, outputFormats: []string{"mp4", "mov"},
-			}, true
-		}
-	case dto.VideoUpstreamProtocolFunCloudModelArkV3:
-		return funCloudModelArkVideoSpec(model)
-	case dto.VideoUpstreamProtocolFunCloudSeedance:
-		switch model {
-		case "seedance-2":
-			return videoSpec{
-				minDuration: 4, maxDuration: 15, resolutions: []string{"480p", "720p", "1080p"}, ratios: modelArkRatios,
-				maxImages: 3, maxVideos: 1, maxAudios: 1, allowVideos: true, allowAudios: true,
-				allowGenerateAudio: true, allowWatermark: true, allowSeed: true, allowCameraFixed: true,
-			}, true
-		case "seedance-2-fast", "seedance-2-mini":
-			return videoSpec{
-				minDuration: 4, maxDuration: 15, resolutions: []string{"480p", "720p"}, ratios: modelArkRatios,
-				maxImages: 3, maxVideos: 1, maxAudios: 1, allowVideos: true, allowAudios: true,
-				allowGenerateAudio: true, allowWatermark: true, allowSeed: true, allowCameraFixed: true,
-			}, true
-		case "seedance-2-5":
-			return videoSpec{
-				minDuration: 4, maxDuration: 30, intelligentDuration: true,
-				resolutions: []string{"480p", "720p"}, ratios: modelArkRatios,
-				maxImages: 9, maxVideos: 3, maxAudios: 3, allowVideos: true, allowAudios: true,
-				allowGenerateAudio: true, allowWatermark: true, allowSeed: true, allowCameraFixed: true,
-			}, true
+		if contract, ok := dto.MoxingVideoModelContractFor(model); ok {
+			return moxingPublicVideoSpec(contract), true
 		}
 		return videoSpec{}, false
+	case dto.VideoUpstreamProtocolFunCloudModelArkV3:
+		return funCloudModelArkVideoSpec(model)
 	case dto.VideoUpstreamProtocolFeicaiVideosV1:
 		if spec, ok := feicaiVideoSpec(model); ok {
 			return spec, true
@@ -248,6 +217,31 @@ func officialVideoSpec(model string) (videoSpec, bool) {
 		return base, true
 	default:
 		return videoSpec{}, false
+	}
+}
+
+// moxingPublicVideoSpec derives the public contract from the same single Moxing
+// registry the runtime validator reads, so runtime acceptance and catalog
+// display can never diverge for these models. The Moxing documentation
+// enumerates no resolution values (720p is only a recommendation), so the
+// catalog publishes resolution as a free string with the northbound default.
+func moxingPublicVideoSpec(contract dto.MoxingVideoModelContract) videoSpec {
+	return videoSpec{
+		minDuration:         contract.MinDurationSeconds,
+		maxDuration:         contract.MaxDurationSeconds,
+		intelligentDuration: contract.IntelligentDurationSeconds > 0,
+		freeResolution:      true,
+		ratios:              modelArkRatios,
+		maxImages:           contract.MaxImages,
+		maxVideos:           contract.MaxVideos,
+		maxAudios:           contract.MaxAudios,
+		allowVideos:         contract.AllowReferenceVideos,
+		allowAudios:         contract.AllowReferenceAudios,
+		allowGenerateAudio:  true,
+		allowWatermark:      true,
+		allowSeed:           true,
+		allowCameraFixed:    true,
+		fullModelArk:        true,
 	}
 }
 

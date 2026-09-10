@@ -59,7 +59,7 @@ func FinishTaskRequestEvidenceClientDelivery(c *gin.Context) {
 	contentType := writer.Header().Get("Content-Type")
 	event := &model.TaskRequestEvidenceEvent{EvidenceId: session.evidenceID, Stage: model.TaskRequestEvidenceStageClientDelivery, Phase: phase, StatusCode: writer.Status(), ContentType: contentType, ByteCount: writer.written, Complete: complete, CreatedAt: common.GetTimestamp()}
 	if strings.Contains(contentType, "json") || strings.HasPrefix(contentType, "text/") {
-		if err := persistTaskEvidenceBody(event, writer.body.Bytes()); err != nil {
+		if err := persistTaskEvidenceBody(event, writer.body.Bytes(), TaskRequestEvidenceSourceResponse); err != nil {
 			common.SysError("evidence client response unavailable")
 		}
 	} else {

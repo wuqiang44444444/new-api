@@ -22,13 +22,25 @@ import { useTranslation } from 'react-i18next'
 
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
-import { getContractStatusPresentation } from '@/features/users/components/user-contract-status'
 import { formatTimestampToDate } from '@/lib/format'
 
-import type { CustomerContractAdminListItem } from '../types'
+import type {
+  CustomerContractAdminListItem,
+  CustomerContractAdminStatus,
+} from '../types'
 
 interface CustomerContractColumnsOptions {
   onManage: (item: CustomerContractAdminListItem) => void
+}
+
+function contractStatusPresentation(status: CustomerContractAdminStatus, t: (key: string) => string) {
+  if (status === 'active') {
+    return { label: t('Active contracts'), variant: 'warning' as const }
+  }
+  if (status === 'zero_access') {
+    return { label: t('No model access'), variant: 'danger' as const }
+  }
+  return { label: t('Inactive contracts'), variant: 'neutral' as const }
 }
 
 export function useCustomerContractColumns(
@@ -38,9 +50,22 @@ export function useCustomerContractColumns(
 
   return [
     {
+      accessorKey: 'contract_name',
+      header: t('Contract name'),
+      meta: { mobileTitle: true },
+      cell: ({ row }) => (
+        <div className='min-w-[160px]'>
+          <div className='truncate font-medium'>{row.original.contract_name}</div>
+          <div className='text-muted-foreground truncate text-xs'>
+            v{row.original.contract_version}
+          </div>
+        </div>
+      ),
+      size: 220,
+    },
+    {
       accessorKey: 'username',
       header: t('Customer'),
-      meta: { mobileTitle: true },
       cell: ({ row }) => (
         <div className='min-w-[160px]'>
           <div className='truncate font-medium'>{row.original.username}</div>
@@ -57,12 +82,8 @@ export function useCustomerContractColumns(
       header: t('Contract status'),
       meta: { mobileBadge: true },
       cell: ({ row }) => {
-        const status = getContractStatusPresentation(
-          {
-            contractMode: row.original.contract_mode,
-            contractVersion: row.original.contract_version,
-            ruleCount: row.original.rule_count,
-          },
+        const status = contractStatusPresentation(
+          row.original.contract_status,
           t
         )
         return (
@@ -73,7 +94,7 @@ export function useCustomerContractColumns(
           />
         )
       },
-      size: 210,
+      size: 190,
     },
     {
       accessorKey: 'rule_count',
@@ -98,12 +119,12 @@ export function useCustomerContractColumns(
       size: 190,
     },
     {
-      accessorKey: 'contract_version',
-      header: t('Contract version'),
+      accessorKey: 'bound_token_count',
+      header: t('Bound keys'),
       meta: { mobileOrder: 20 },
       cell: ({ row }) => (
-        <span className='font-mono text-sm'>
-          v{row.original.contract_version}
+        <span className='font-medium tabular-nums'>
+          {row.original.bound_token_count}
         </span>
       ),
       size: 130,

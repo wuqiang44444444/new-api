@@ -16,7 +16,6 @@ func TestGeneralAssetGroupPolicyRegistry(t *testing.T) {
 		{AssetUpstreamProtocolBytePlusAction, GeneralAssetGroupPolicyDefaultFallback},
 		{AssetUpstreamProtocolArkAssetsV1, GeneralAssetGroupPolicyDefaultFallback},
 		{AssetUpstreamProtocolTokenSaveAssetsV1, GeneralAssetGroupPolicyDefaultFallback},
-		{AssetUpstreamProtocolMoxingJoyCreatorV1, GeneralAssetGroupPolicyDefaultFallback},
 		{AssetUpstreamProtocolMoxingVolcAssetsV1, GeneralAssetGroupPolicyDefaultFallback},
 		{AssetUpstreamProtocolFunCloudMaterial, GeneralAssetGroupPolicyDefaultFallback},
 		{AssetUpstreamProtocolCMCCAICCV2, GeneralAssetGroupPolicyDefaultFallback},

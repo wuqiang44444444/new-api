@@ -21,7 +21,8 @@ func AudioHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	// 音视频证据（一期）：北向证据在转换与预扣前持久化。
 	// 失败时返回本地不可重试错误，不产生任何 Provider 调用。
 	if evidenceErr := service.BeginTaskRequestEvidence(c, evidenceKindForAudioPath(c)); evidenceErr != nil {
-		return types.NewError(evidenceErr, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+		service.LogTaskRequestEvidenceRejection(c, evidenceErr)
+		return service.APIErrorForTaskRequestEvidenceRejection(evidenceErr)
 	}
 
 	audioReq, ok := info.Request.(*dto.AudioRequest)
@@ -53,7 +54,8 @@ func AudioHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	resp, err := adaptor.DoRequest(c, info, ioReader)
 	if err != nil {
 		if service.IsTaskRequestEvidenceUnavailable(err) {
-			return types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+			service.LogTaskRequestEvidenceRejection(c, err)
+			return service.APIErrorForTaskRequestEvidenceRejection(err)
 		}
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}

@@ -3,10 +3,7 @@ import { z } from 'zod'
 
 import { CHANNEL_TYPE_SEEDANCE_LINK } from '../constants'
 import type { ChannelFormValues } from './channel-form'
-import {
-  isFunCloud25ProviderModel,
-  isOfficialSeedanceAssetProtocol,
-} from './seedance-protocol-pairing'
+import { isOfficialSeedanceAssetProtocol } from './seedance-protocol-pairing'
 
 const officialAssetRegionPattern = /^[a-z]{2}(?:-[a-z]+)+-\d+$/
 
@@ -68,17 +65,6 @@ export function refineSeedanceProtocols(
     )
   }
   if (
-    assetProtocol === 'moxing_joycreator_assets_v1' &&
-    data.video_upstream_protocol !== 'moxing_media_task_v1'
-  ) {
-    addIssue(
-      'asset_upstream_protocol',
-      i18next.t(
-        'Moxing JoyCreator Assets requires the Moxing Media Task video protocol'
-      )
-    )
-  }
-  if (
     assetProtocol === 'moxing_volc_assets_v1' &&
     data.video_upstream_protocol !== 'moxing_modelark_media_v1'
   ) {
@@ -91,25 +77,12 @@ export function refineSeedanceProtocols(
   }
   if (
     assetProtocol === 'funcloud_material' &&
-    data.video_upstream_protocol !== 'funcloud_seedance' &&
     data.video_upstream_protocol !== 'funcloud_modelark_v3'
   ) {
     addIssue(
       'asset_upstream_protocol',
       i18next.t(
         'FunCloud Material requires the FunCloud Seedance video protocol'
-      )
-    )
-  }
-  if (
-    assetProtocol === 'funcloud_material' &&
-    data.video_upstream_protocol === 'funcloud_seedance' &&
-    isFunCloud25ProviderModel(data.model_mapping)
-  ) {
-    addIssue(
-      'asset_upstream_protocol',
-      i18next.t(
-        'FunCloud Seedance 2.5 does not support the FunCloud Material Library'
       )
     )
   }

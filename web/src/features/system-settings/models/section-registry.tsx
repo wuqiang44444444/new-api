@@ -20,6 +20,7 @@ import { ChannelAffinitySection } from '../general/channel-affinity'
 import { IoNetDeploymentSettingsSection } from '../integrations/ionet-deployment-settings-section'
 import type { ModelSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { BatchPricingCard } from './batch-pricing-card'
 import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
@@ -37,6 +38,7 @@ function formatJsonForEditor(value: string, fallback: string) {
 }
 
 const MODELS_SECTIONS = [
+  { id: 'batch-pricing', titleKey: 'Batch billing expressions', build: (settings: ModelSettings) => <BatchPricingCard key={settings['batch_billing_setting.batch_billing_expr']} value={settings['batch_billing_setting.batch_billing_expr'] || '{}'} /> },
   {
     id: 'global',
     titleKey: 'Global Model Configuration',

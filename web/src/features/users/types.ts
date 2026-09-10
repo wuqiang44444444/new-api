@@ -92,9 +92,12 @@ export interface CustomerContractPricePreview {
   base_image_ratio?: string
   final_image_ratio?: string
   current_discounted_price?: string
+  billing_expr?: string
+  usage_schema?: import('@/features/pricing/types').BillingUsageSchema
 }
 
 export interface CustomerContractRule {
+  channel_id?: number
   model: string
   route_group: string
   discount: string
@@ -105,13 +108,24 @@ export interface CustomerContractRule {
   price: CustomerContractPricePreview
 }
 
-export interface CustomerContract {
+/** Editable rule state in the admin drawer; channel_id stays 0 until a channel is picked. */
+export interface ContractRuleDraft extends CustomerContractRule {
+  channel_id: number
+}
+
+/** One contract entity owned by a user, as shown in the admin drawer. */
+export interface ContractEntityAdminView {
+  id: number
+  name: string
+  enabled: boolean
+  version: number
+  rules: CustomerContractRule[]
+}
+
+export interface UserContractEntities {
   user_id: number
   username: string
-  contract_mode: boolean
-  contract_version: number
-  rules: CustomerContractRule[]
-  disable_warning?: string
+  contracts: ContractEntityAdminView[]
 }
 
 export interface CustomerContractGroupOption {
@@ -122,13 +136,34 @@ export interface CustomerContractGroupOption {
   special_group_ratio: boolean
 }
 
+export interface CustomerContractChannelOption {
+  id: number
+  name: string
+}
+
+export interface CustomerContractGroupModelChannels {
+  model: string
+  channels: CustomerContractChannelOption[]
+}
+
+export interface CustomerContractChannelGroupOption {
+  group: string
+  native_group_ratio: string
+  special_group_ratio: boolean
+  models: CustomerContractGroupModelChannels[]
+}
+
 export interface CustomerContractAudit {
   id: number
+  contract_id: number
+  user_id: number
   contract_version: number
   admin_user_id: number
   admin_username: string
-  operation: 'create' | 'update' | 'enable' | 'disable'
+  operation: 'create' | 'update' | 'enable' | 'disable' | 'migrate'
   reason: string
+  before_enabled: boolean
+  after_enabled: boolean
   before_rule_count: number
   after_rule_count: number
   created_at: number
@@ -141,11 +176,22 @@ export interface CustomerContractAuditPage {
   page_size: number
 }
 
-export interface CustomerContractWritePayload {
-  expected_version: number
+export interface CustomerContractRulePayload {
+  model: string
+  channel_id: number
+  route_group: string
+  discount: string
+}
+
+export interface ContractEntityWritePayload {
+  name: string
   enabled: boolean
   reason: string
-  rules: Array<{ model: string; route_group: string; discount: string }>
+  rules: CustomerContractRulePayload[]
+}
+
+export interface ContractEntityUpdatePayload extends ContractEntityWritePayload {
+  expected_version: number
 }
 
 export type UserSortBy =

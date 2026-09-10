@@ -56,8 +56,10 @@ func validateSeedanceChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *
 	if err := validateSynlinkChannel(channel, settings); err != nil {
 		return err
 	}
-	if err := validateFunCloudSeedanceChannel(channel, settings); err != nil {
-		return err
+	if settings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 {
+		if err := validateFunCloudModelArkChannel(channel, settings); err != nil {
+			return err
+		}
 	}
 	if err := validateCMCCSeedanceChannel(channel, settings); err != nil {
 		return err
@@ -109,18 +111,14 @@ func validateSeedanceChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *
 		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 {
 			return fmt.Errorf("TokenSave asset protocol requires the TokenSave Media Task V1 video protocol")
 		}
-	case dto.AssetUpstreamProtocolMoxingJoyCreatorV1:
-		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolMoxingMediaTaskV1 {
-			return fmt.Errorf("Moxing JoyCreator asset protocol requires the Moxing Media Task V1 video protocol")
-		}
 	case dto.AssetUpstreamProtocolMoxingVolcAssetsV1:
 		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolMoxingModelArkV1 {
 			return fmt.Errorf("Moxing Volcengine asset protocol requires the Moxing ModelArk Media V1 video protocol")
 		}
 		settings.AssetProviderProject = "default"
 	case dto.AssetUpstreamProtocolFunCloudMaterial:
-		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudSeedance && settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudModelArkV3 {
-			return fmt.Errorf("FunCloud material protocol requires the FunCloud Seedance video protocol")
+		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudModelArkV3 {
+			return fmt.Errorf("FunCloud material protocol requires funcloud_modelark_v3")
 		}
 	case dto.AssetUpstreamProtocolFunCloudHosted:
 		if !settings.VideoUpstreamProtocol.SupportsPlatformHostedImages() {
@@ -145,12 +143,11 @@ func validateMoxingTokenSaveModelMapping(channel *Channel, protocol dto.VideoUps
 	switch protocol {
 	case dto.VideoUpstreamProtocolTokenSaveMediaTaskV1:
 		providerModels["doubao-seedance-2-0-260128"] = struct{}{}
-	case dto.VideoUpstreamProtocolMoxingMediaTaskV1:
-		providerModels["doubao-seedance-2-0-260128"] = struct{}{}
 	case dto.VideoUpstreamProtocolMoxingModelArkV1:
-		providerModels["doubao-seedance-2-0-fast-260128"] = struct{}{}
-		providerModels["doubao-seedance-2-0-mini-260615"] = struct{}{}
-		providerModels["doubao-seedance-2-5-260628"] = struct{}{}
+		// The single Moxing protocol registration owns all four precise models.
+		for _, contract := range dto.MoxingVideoModelContracts {
+			providerModels[contract.ProviderModel] = struct{}{}
+		}
 	default:
 		return nil
 	}

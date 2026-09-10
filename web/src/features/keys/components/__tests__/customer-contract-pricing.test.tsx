@@ -3,8 +3,8 @@ Copyright (C) 2023-2026 QuantumNous
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,8 +37,8 @@ vi.mock('@/lib/currency', async (importOriginal) => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, values?: Record<string, string>) =>
-      key.replace('{{discount}}', values?.discount || ''),
+    t: (key: string, values?: Record<string, unknown>) =>
+      key.replace('{{discount}}', String(values?.discount ?? '')),
   }),
 }))
 
@@ -61,7 +61,7 @@ describe('customer contract pricing on the API key page', () => {
   it('does not change the native API key page for users without a contract', async () => {
     getSelfCustomerContract.mockResolvedValue({
       success: true,
-      data: { contract_mode: false, contract_version: 0, models: [] },
+      data: { contracts: [] },
     })
 
     const { container } = renderPricing()
@@ -73,30 +73,36 @@ describe('customer contract pricing on the API key page', () => {
     getSelfCustomerContract.mockResolvedValue({
       success: true,
       data: {
-        contract_mode: true,
-        contract_version: 4,
-        models: [
+        contracts: [
           {
-            model: 'claude-sonnet-5',
-            discount: '0.8',
-            channel_discount: '0.5',
-            effective_multiplier: '0.4',
-            available: true,
-            price: {
-              price_type: 'model_ratio',
-              base_model_ratio: '0.5',
-              final_model_ratio: '0.2',
-              completion_ratio: '4',
-              current_discounted_price: '0.2',
-            },
-          },
-          {
-            model: 'claude-opus-4-8',
-            discount: '0.6',
-            channel_discount: '1',
-            effective_multiplier: '0.6',
-            available: false,
-            price: { price_type: 'tiered_multiplier' },
+            id: 3,
+            name: 'Team contract',
+            enabled: true,
+            version: 4,
+            models: [
+              {
+                model: 'claude-sonnet-5',
+                discount: '0.8',
+                channel_discount: '0.5',
+                effective_multiplier: '0.4',
+                available: true,
+                price: {
+                  price_type: 'model_ratio',
+                  base_model_ratio: '0.5',
+                  final_model_ratio: '0.2',
+                  completion_ratio: '4',
+                  current_discounted_price: '0.2',
+                },
+              },
+              {
+                model: 'claude-opus-4-8',
+                discount: '0.6',
+                channel_discount: '1',
+                effective_multiplier: '0.6',
+                available: false,
+                price: { price_type: 'tiered_multiplier' },
+              },
+            ],
           },
         ],
       },
@@ -113,10 +119,63 @@ describe('customer contract pricing on the API key page', () => {
     expect(container.textContent).not.toContain('provider')
   })
 
+  it('renders several contracts separately and marks disabled ones', async () => {
+    getSelfCustomerContract.mockResolvedValue({
+      success: true,
+      data: {
+        contracts: [
+          {
+            id: 3,
+            name: 'Team contract',
+            enabled: true,
+            version: 4,
+            models: [
+              {
+                model: 'claude-sonnet-5',
+                discount: '0.8',
+                channel_discount: '1',
+                effective_multiplier: '0.8',
+                available: true,
+                price: { price_type: 'model_ratio', current_discounted_price: '0.4' },
+              },
+            ],
+          },
+          {
+            id: 9,
+            name: 'Old contract',
+            enabled: false,
+            version: 2,
+            models: [],
+          },
+        ],
+      },
+    })
+
+    renderPricing()
+
+    expect(await screen.findByText('Team contract')).toBeTruthy()
+    expect(screen.getByText('Old contract')).toBeTruthy()
+    expect(
+      screen.getByText(
+        'This contract is disabled. Bound API keys currently follow native logic.'
+      )
+    ).toBeTruthy()
+  })
+
   it('makes an enabled zero-rule contract visibly fail closed', async () => {
     getSelfCustomerContract.mockResolvedValue({
       success: true,
-      data: { contract_mode: true, contract_version: 2, models: [] },
+      data: {
+        contracts: [
+          {
+            id: 3,
+            name: 'Team contract',
+            enabled: true,
+            version: 2,
+            models: [],
+          },
+        ],
+      },
     })
 
     renderPricing()
@@ -126,7 +185,7 @@ describe('customer contract pricing on the API key page', () => {
     ).toBeTruthy()
     expect(
       screen.getByText(
-        'All model calls from every API key are currently denied.'
+        'API keys bound to this contract cannot call models until rules are available.'
       )
     ).toBeTruthy()
   })

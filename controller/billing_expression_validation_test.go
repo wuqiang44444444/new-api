@@ -156,7 +156,7 @@ func TestSeedancePriceValidationPrefersActiveProtocolButChecksAllInactiveContrac
 				channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: protocol})
 				require.NoError(t, model.DB.Create(&channel).Error)
 			}
-			handled, err := validateSeedanceBillingExpression("shared-price", `tier("base", param("_task.duration_seconds") * param("_task.size_multiplier"))`)
+			handled, err := model.ValidateSeedanceBillingExpression("shared-price", `tier("base", param("_task.duration_seconds") * param("_task.size_multiplier"))`)
 			assert.True(t, handled)
 			if active {
 				require.NoError(t, err, "an inactive channel must not constrain the active protocol")

@@ -11,21 +11,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const userCacheSchemaVersion = 3
+const userCacheSchemaVersion = 4
 
 type UserBase struct {
-	Id              int    `json:"id"`
-	Group           string `json:"group"`
-	Email           string `json:"email"`
-	Quota           int    `json:"quota"`
-	Status          int    `json:"status"`
-	Role            int    `json:"role"`
-	Username        string `json:"username"`
-	Setting         string `json:"setting"`
-	AuthVersion     int64  `json:"-"`
-	CacheSchema     int    `json:"-"`
-	ContractMode    bool   `json:"contract_mode"`
-	ContractVersion int64  `json:"contract_version"`
+	Id          int    `json:"id"`
+	Group       string `json:"group"`
+	Email       string `json:"email"`
+	Quota       int    `json:"quota"`
+	Status      int    `json:"status"`
+	Role        int    `json:"role"`
+	Username    string `json:"username"`
+	Setting     string `json:"setting"`
+	AuthVersion int64  `json:"-"`
+	CacheSchema int    `json:"-"`
 }
 
 func (user *UserBase) WriteContext(c *gin.Context) {
@@ -33,10 +31,8 @@ func (user *UserBase) WriteContext(c *gin.Context) {
 	common.SetContextKey(c, constant.ContextKeyUserQuota, user.Quota)
 	common.SetContextKey(c, constant.ContextKeyUserStatus, user.Status)
 	common.SetContextKey(c, constant.ContextKeyUserEmail, user.Email)
-	common.SetContextKey(c, constant.ContextKeyUserName, user.Username)
 	common.SetContextKey(c, constant.ContextKeyUserSetting, user.GetSetting())
-	common.SetContextKey(c, constant.ContextKeyContractMode, user.ContractMode)
-	common.SetContextKey(c, constant.ContextKeyContractVersion, user.ContractVersion)
+	common.SetContextKey(c, constant.ContextKeyAuthVersion, user.AuthVersion)
 }
 
 func (user *UserBase) GetSetting() dto.UserSetting {
@@ -257,7 +253,7 @@ func updateUserSettingCache(userId int, setting string) error {
 // updateUserCacheField prevents individual cache refreshes from bypassing the
 // auth-version fence. It intentionally does nothing when the complete hash is
 // absent; the next GetUserCache call will repopulate it from the database.
-func updateUserCacheField(userId int, field string, value interface{}) error {
+func updateUserCacheField(userId int, field string, value any) error {
 	if !common.RedisEnabled {
 		return nil
 	}

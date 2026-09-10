@@ -33,6 +33,7 @@ export type BillingUsageFieldSchema = {
   type?: 'number' | 'boolean'
   unit?: BillingUsageUnit
   enum?: string[]
+  enumLabels?: Record<string, string | Record<string, string>>
   description?: string | Record<string, string>
 }
 
@@ -70,6 +71,8 @@ export type PricingModel = {
   billing_mode?: string
   /** Raw expression describing dynamic / tiered billing */
   billing_expr?: string
+  /** Backend-generated read-only display projection of `billing_expr`. */
+  billing_display?: BillingDisplayProjection
   /** Different channel contracts have claimed the same customer price key. */
   billing_contract_conflict?: boolean
   /** Task-plugin usage facts and their billing units. */
@@ -143,3 +146,54 @@ export type PriceType =
   | 'audio_input'
   | 'audio_output'
 export type QuotaType = 0 | 1 // 0: token-based, 1: per-request
+/** One comparison inside a projected tier condition. */
+export type BillingDisplayCondition = {
+  var: string
+  op: string
+  value: number
+}
+
+/** One projected price branch with per-variable unit prices (USD / 1M tokens). */
+export type BillingDisplayTier = {
+  label: string
+  conditions?: BillingDisplayCondition[]
+  condition_text?: string
+  condition?: BillingDisplayRule
+  unit_prices: Record<string, number>
+  constant?: number
+  has_constant?: boolean
+}
+
+/** One node of the projected conditional-multiplier tree. */
+export type BillingDisplayRule = {
+  text: string
+  multiplier: number
+  fallback?: number
+  op?: 'and' | 'or' | 'not' | ''
+  children?: BillingDisplayRule[]
+  source?: 'time' | 'param' | 'header' | 'text' | 'token'
+  time_func?: string
+  timezone?: string
+  compare_op?: string
+  value?: string
+  path?: string
+  text_only?: boolean
+}
+
+/**
+ * Backend-generated strict read-only projection of a saved billing
+ * expression. `exact` means every money structure was explained; `opaque`
+ * projections must never be turned into guessed unit prices on the client.
+ */
+export type BillingDisplayProjection = {
+  status: 'exact' | 'opaque'
+  reason?: string
+  unit: string
+  display_version: number
+  expression_version: number
+  expression_hash: string
+  tiers?: BillingDisplayTier[]
+  rules?: BillingDisplayRule[]
+  constant_charge?: number
+  scenarios?: Array<{ matched: boolean; tiers: BillingDisplayTier[] }>
+}

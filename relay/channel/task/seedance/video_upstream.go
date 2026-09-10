@@ -25,11 +25,13 @@ func videoCreatePath(profile dto.VideoUpstreamProfile, configuredCreatePath stri
 		dto.VideoUpstreamProfileThirdPartyMoxingModelArk,
 		dto.VideoUpstreamProfileThirdPartyReverseProxy,
 		dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
-		dto.VideoUpstreamProfileThirdPartyFunCloudSeedance, dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3:
+		dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3:
 		if strings.TrimSpace(configuredCreatePath) == "" {
 			return "", fmt.Errorf("video_upstream_create_path is required for third-party profile")
 		}
 		return configuredCreatePath, nil
+	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedance:
+		return "", fmt.Errorf("the configured video protocol is retired")
 	default:
 		return "", dto.ValidateVideoUpstreamProfile(profile)
 	}
@@ -91,7 +93,9 @@ func normalizeVideoCreateResponse(profile dto.VideoUpstreamProfile, body []byte)
 	case dto.VideoUpstreamProfileThirdPartyMoxingModelArk:
 		return thirdparty.RelayCreateResponse(body)
 	case dto.VideoUpstreamProfileThirdPartyFeicaiVideos:
-		return feicai.CreateResponse(body)
+		// feicai 创建响应归一化已迁移到 seedance-link 插件；该分支只可能
+		// 在插件转换缺失的防御路径到达，失败关闭。
+		return nil, fmt.Errorf("the selected video adapter requires the Seedance extension")
 	case dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3:
 		return thirdparty.FunCloudModelArkCreateResponse(body)
 	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedance:

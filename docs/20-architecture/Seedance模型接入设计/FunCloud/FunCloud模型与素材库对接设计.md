@@ -80,7 +80,7 @@ Channel 内 3 个模型查询同一素材已经通过，只能证明控制面共
 
 ## 5. 代码事实
 
-`relaykit/dto/upstream_protocol.go`、`relay/channel/task/seedance/funcloud_models.go`、`thirdparty/funcloud/`、`assets/funcloud.go` 和 `model/channel_seedance_public_catalog.go` 是唯一实现依据。
+`relaykit/dto/upstream_protocol.go`、`relaykit/dto/funcloud_modelark_models.go`、`thirdparty/funcloud/`、`assets/funcloud.go` 和 `model/channel_seedance_public_catalog.go` 是唯一实现依据。
 
 ## 6. V3 统一视频与素材配对
 

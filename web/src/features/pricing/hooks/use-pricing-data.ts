@@ -20,16 +20,29 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 
 import { useStatus } from '@/hooks/use-status'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { getPricing } from '../api'
 import { buildAssetShareGroups } from '../lib/asset-share-groups'
 
-export function usePricingData(enabled = true) {
+/**
+ * Pricing query 的唯一 key 构造器：缓存播种（测试）与失效必须使用同一
+ * 形状，避免 key 演进时静默分叉。
+ */
+export function getPricingQueryKey(
+  userId: number | undefined,
+  contractId: number | 'batch' | null = null
+): ['pricing', number | undefined, number | 'batch' | null] {
+  return ['pricing', userId, contractId]
+}
+
+export function usePricingData(enabled = true, contractId: number | 'batch' | null = null) {
   const { status } = useStatus()
+  const userId = useAuthStore(state => state.auth.user?.id)
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['pricing'],
-    queryFn: getPricing,
+    queryKey: getPricingQueryKey(userId, contractId),
+    queryFn: () => getPricing(contractId),
     staleTime: 5 * 60 * 1000,
     enabled,
   })

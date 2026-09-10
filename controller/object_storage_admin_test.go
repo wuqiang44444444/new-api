@@ -63,7 +63,7 @@ func TestObjectStorageSaveWithoutEnvironmentSecret(t *testing.T) {
 	previousLogDB := model.LOG_DB
 	model.LOG_DB = model.DB
 	t.Cleanup(func() { model.LOG_DB = previousLogDB })
-	require.NoError(t, model.DB.AutoMigrate(&model.Log{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.AuditLog{}))
 	t.Cleanup(func() { model.NotifyObjectStorageSettingUpdate("") })
 	require.NoError(t, model.DB.AutoMigrate(&model.Option{}))
 	require.NoError(t, model.DB.Where("key = ?", system_setting.ObjectStorageSettingOptionKey).Delete(&model.Option{}).Error)
@@ -112,7 +112,7 @@ func TestObjectStorageSaveWithoutEnvironmentSecret(t *testing.T) {
 	require.NoError(t, common.UnmarshalJsonStr(option.Value, &stored))
 	assert.Equal(t, "test-save-secret", stored.Credential)
 	assert.Equal(t, "passed", stored.LastTestStatus)
-	var logs []model.Log
+	var logs []model.AuditLog
 	require.NoError(t, model.LOG_DB.Find(&logs).Error)
 	require.NotEmpty(t, logs)
 	audit, err := common.Marshal(logs)

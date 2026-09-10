@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
@@ -22,5 +21,13 @@ func verifyEvidenceAttemptBeforeSend(c *gin.Context, info *relaycommon.RelayInfo
 	}
 	common.SetContextKey(c, constant.ContextKeyTaskCreateOutcomeUnknown, true)
 	info.SkipRequestRefund = true
-	return fmt.Errorf("%w: attempt send permission unavailable", ErrTaskRequestEvidenceUnavailable)
+	failure := evidenceUnavailableFailure(
+		TaskRequestEvidenceCategorySendUnverifiable,
+		TaskRequestEvidenceStageSendVerify,
+		TaskRequestEvidenceSourceNone,
+	)
+	if err != nil {
+		failure.WithCause(err)
+	}
+	return failure
 }

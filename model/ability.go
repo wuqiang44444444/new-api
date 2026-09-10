@@ -217,6 +217,9 @@ func (channel *Channel) AddAbilitiesWithActor(tx *gorm.DB, actorID int) error {
 		}
 		return nil
 	}
+	if channelSkipsGenericAbilities(channel.Type) {
+		return nil
+	}
 	useDB := DB
 	if tx != nil {
 		useDB = tx
@@ -304,9 +307,15 @@ func (channel *Channel) UpdateAbilitiesWithActor(tx *gorm.DB, actorID int) error
 		}
 		return nil
 	}
+	if channelSkipsGenericAbilities(channel.Type) {
+		if isNewTx {
+			return tx.Commit().Error
+		}
+		return nil
+	}
 
 	// Then add new abilities
-	models_ := strings.Split(channel.Models, ",")
+	models_ := channel.GetModels()
 	groups_ := strings.Split(channel.Group, ",")
 	abilitySet := make(map[string]struct{})
 	abilities := make([]Ability, 0, len(models_))
@@ -360,6 +369,9 @@ func updateAbilityStatusTx(tx *gorm.DB, channel *Channel, status bool, actorID i
 		}
 	}
 	if channel.Type == constant.ChannelTypeSeedanceLink {
+		return tx.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error
+	}
+	if channelSkipsGenericAbilities(channel.Type) {
 		return tx.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error
 	}
 	return tx.Model(&Ability{}).Where("channel_id = ?", channel.Id).Select("enabled").Update("enabled", status).Error

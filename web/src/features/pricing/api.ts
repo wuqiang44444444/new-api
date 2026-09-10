@@ -25,7 +25,10 @@ import type { PricingData } from './types'
 // ----------------------------------------------------------------------------
 
 // Get model pricing data
-export async function getPricing(): Promise<PricingData> {
-  const res = await api.get('/api/pricing')
+export async function getPricing(contractId?: number | 'batch' | null): Promise<PricingData> {
+  let params: { execution_mode?: string; contract_id?: number } | undefined
+  if (contractId === 'batch') params = { execution_mode: 'batch' }
+  else if (contractId) params = { contract_id: contractId }
+  const res = await api.get('/api/pricing', { params })
   return res.data
 }

@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestCustomerContractPersistenceAcrossSupportedServerDatabases(t *testing.T) {
+func TestCustomerContractEntityPersistenceAcrossSupportedServerDatabases(t *testing.T) {
 	tests := []struct {
 		name      string
 		env       string
@@ -34,7 +34,7 @@ func TestCustomerContractPersistenceAcrossSupportedServerDatabases(t *testing.T)
 
 			db, err := gorm.Open(test.dialector(dsn), &gorm.Config{})
 			require.NoError(t, err)
-			for _, table := range []any{&User{}, &Channel{}, &Ability{}, &CustomerModelContract{}, &CustomerContractAudit{}} {
+			for _, table := range []any{&User{}, &Channel{}, &Ability{}, &Token{}, &CustomerContract{}, &CustomerContractEntityRule{}, &CustomerContractEntityAudit{}} {
 				if db.Migrator().HasTable(table) {
 					t.Skipf("refusing to use non-empty %s test database", test.name)
 				}
@@ -54,7 +54,7 @@ func TestCustomerContractPersistenceAcrossSupportedServerDatabases(t *testing.T)
 			managedTables := false
 			t.Cleanup(func() {
 				if managedTables {
-					_ = db.Migrator().DropTable(&CustomerContractAudit{}, &CustomerModelContract{}, &Ability{}, &Channel{}, &User{})
+					_ = db.Migrator().DropTable(&CustomerContractEntityAudit{}, &CustomerContractEntityRule{}, &CustomerContract{}, &CustomerModelContract{}, &Token{}, &Ability{}, &Channel{}, &User{})
 				}
 				DB = previousDB
 				common.RedisEnabled = previousRedis
@@ -71,46 +71,52 @@ func TestCustomerContractPersistenceAcrossSupportedServerDatabases(t *testing.T)
 				&User{},
 				&Channel{},
 				&Ability{},
+				&Token{},
 				&CustomerModelContract{},
-				&CustomerContractAudit{},
+				&CustomerContract{},
+				&CustomerContractEntityRule{},
+				&CustomerContractEntityAudit{},
 			))
 			managedTables = true
 
 			admin, user := createCustomerContractFixture(t, db)
-			createCustomerContractAbility(t, db, "contract-cross-db", "cross-db-model", common.ChannelStatusEnabled)
-			_, err = ReplaceCustomerContract(ReplaceCustomerContractParams{
-				UserId: user.Id, AdminUserId: admin.Id, ExpectedVersion: 0, Enabled: true,
+			channel := createCustomerContractAbility(t, db, "contract-cross-db", "cross-db-model", common.ChannelStatusEnabled)
+
+			_, err = CreateCustomerContractEntity(CreateCustomerContractParams{
+				UserId: user.Id, AdminUserId: admin.Id, Name: "Cross DB", Enabled: true,
 				Reason: "case-only duplicates are rejected consistently",
-				Rules: []CustomerContractRule{
-					{PublicModel: "Cross-DB-Model", RouteGroup: "contract-cross-db", RatioUnits: 80_000_000},
-					{PublicModel: "cross-db-model", RouteGroup: "contract-cross-db", RatioUnits: 80_000_000},
+				Rules: []CustomerContractEntityRuleInput{
+					{PublicModel: "Cross-DB-Model", ChannelId: channel.Id, RouteGroup: "contract-cross-db", RatioUnits: 80_000_000},
+					{PublicModel: "cross-db-model", ChannelId: channel.Id, RouteGroup: "contract-cross-db", RatioUnits: 80_000_000},
 				},
 			})
 			require.ErrorIs(t, err, ErrCustomerContractInvalidRule)
 
-			snapshot, err := ReplaceCustomerContract(ReplaceCustomerContractParams{
-				UserId: user.Id, AdminUserId: admin.Id, ExpectedVersion: 0, Enabled: true,
+			snapshot, err := CreateCustomerContractEntity(CreateCustomerContractParams{
+				UserId: user.Id, AdminUserId: admin.Id, Name: "Cross DB", Enabled: true,
 				Reason: "cross database contract transaction",
-				Rules:  []CustomerContractRule{{PublicModel: "cross-db-model", RouteGroup: "contract-cross-db", RatioUnits: 80_000_000}},
+				Rules:  []CustomerContractEntityRuleInput{{PublicModel: "cross-db-model", ChannelId: channel.Id, RouteGroup: "contract-cross-db", RatioUnits: 80_000_000}},
 			})
 			require.NoError(t, err)
 			assert.True(t, snapshot.Enabled)
 			assert.EqualValues(t, 1, snapshot.Version)
 			require.Len(t, snapshot.Rules, 1)
+			assert.Equal(t, channel.Id, snapshot.Rules[0].ChannelId)
 
-			duplicate := CustomerModelContract{
-				UserId: user.Id, PublicModel: "cross-db-model", RouteGroup: "contract-cross-db", RatioUnits: 50_000_000,
+			duplicate := CustomerContractEntityRule{
+				ContractId: snapshot.Id, PublicModel: "cross-db-model", ChannelId: channel.Id,
+				RouteGroup: "contract-cross-db", RatioUnits: 50_000_000,
 			}
-			require.Error(t, db.Create(&duplicate).Error, "the user/model unique index must be enforced")
+			require.Error(t, db.Create(&duplicate).Error, "the contract/model unique index must be enforced")
 
-			_, err = ReplaceCustomerContract(ReplaceCustomerContractParams{
-				UserId: user.Id, AdminUserId: admin.Id, ExpectedVersion: 0, Enabled: true,
+			_, err = ReplaceCustomerContractEntity(ReplaceCustomerContractEntityParams{
+				ContractId: snapshot.Id, AdminUserId: admin.Id, ExpectedVersion: 0, Name: "Cross DB",
 				Reason: "stale editor must lose",
-				Rules:  []CustomerContractRule{{PublicModel: "cross-db-model", RouteGroup: "contract-cross-db", RatioUnits: 50_000_000}},
+				Rules:  []CustomerContractEntityRuleInput{{PublicModel: "cross-db-model", ChannelId: channel.Id, RouteGroup: "contract-cross-db", RatioUnits: 50_000_000}},
 			})
 			require.ErrorIs(t, err, ErrCustomerContractVersionConflict)
 
-			audits, total, err := GetCustomerContractAudits(user.Id, 0, 20)
+			audits, total, err := GetContractEntityAudits(snapshot.Id, 0, 20)
 			require.NoError(t, err)
 			assert.EqualValues(t, 1, total)
 			require.Len(t, audits, 1)
@@ -123,6 +129,7 @@ func TestCustomerContractPersistenceAcrossSupportedServerDatabases(t *testing.T)
 			assert.EqualValues(t, 1, listTotal)
 			assert.EqualValues(t, 1, summary.Active)
 			require.Len(t, items, 1)
+			assert.Equal(t, snapshot.Id, items[0].ContractId)
 			assert.Equal(t, user.Id, items[0].UserId)
 			assert.Equal(t, CustomerContractAdminStatusActive, items[0].ContractStatus)
 
@@ -136,10 +143,10 @@ func TestCustomerContractPersistenceAcrossSupportedServerDatabases(t *testing.T)
 			for _, ratio := range []int64{60_000_000, 70_000_000} {
 				go func(ratioUnits int64) {
 					<-start
-					_, replaceErr := ReplaceCustomerContract(ReplaceCustomerContractParams{
-						UserId: concurrentUser.Id, AdminUserId: admin.Id, ExpectedVersion: 0, Enabled: true,
+					_, replaceErr := ReplaceCustomerContractEntity(ReplaceCustomerContractEntityParams{
+						ContractId: snapshot.Id, AdminUserId: admin.Id, ExpectedVersion: 1, Name: "Cross DB",
 						Reason: "concurrent editor",
-						Rules:  []CustomerContractRule{{PublicModel: "cross-db-model", RouteGroup: "contract-cross-db", RatioUnits: ratioUnits}},
+						Rules:  []CustomerContractEntityRuleInput{{PublicModel: "cross-db-model", ChannelId: channel.Id, RouteGroup: "contract-cross-db", RatioUnits: ratioUnits}},
 					})
 					results <- replaceErr
 				}(ratio)

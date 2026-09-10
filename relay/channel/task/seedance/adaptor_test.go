@@ -104,12 +104,20 @@ func TestSeedanceAdaptorRecordsModelArkGenerationMode(t *testing.T) {
 			expected: constant.TaskActionReferenceToVideo,
 		},
 		{
-			name: "video input remains generic generate",
+			name: "video reference reuses the reference-to-video action",
 			content: []dto.ModelArkVideoContent{
 				{Type: "text", Text: common.GetPointer("remix")},
 				{Type: "video_url", VideoURL: &dto.VideoMediaURL{URL: "https://example.com/source.mp4"}},
 			},
-			expected: constant.TaskActionImageToVideo,
+			expected: constant.TaskActionReferenceToVideo,
+		},
+		{
+			name: "audio-only reference reuses the reference-to-video action",
+			content: []dto.ModelArkVideoContent{
+				{Type: "text", Text: common.GetPointer("sing")},
+				{Type: "audio_url", AudioURL: &dto.VideoMediaURL{URL: "https://example.com/source.mp3"}},
+			},
+			expected: constant.TaskActionReferenceToVideo,
 		},
 	}
 
@@ -196,7 +204,7 @@ func TestMoxingFastTerminalUsageFlowsThroughNormalizationAndTaskParsing(t *testi
 	}, result.UsageEvidence)
 }
 
-func TestTokenSaveRejectsUnsupportedMediaDuringRequestValidation(t *testing.T) {
+func TestTokenSaveAcceptsReferenceMediaDuringRequestValidation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
 		name    string
@@ -239,14 +247,12 @@ func TestTokenSaveRejectsUnsupportedMediaDuringRequestValidation(t *testing.T) {
 			require.Nil(t, adaptor.ValidateRequestAndSetAction(context, info))
 			taskErr := adaptor.ValidateMappedRequest(context, info)
 
-			require.NotNil(t, taskErr)
-			assert.Equal(t, "invalid_video_parameter", taskErr.Code)
-			assert.Equal(t, http.StatusBadRequest, taskErr.StatusCode)
+			require.Nil(t, taskErr)
 		})
 	}
 }
 
-func TestMoxingRejectsUnsupportedSeedDuringMappedValidation(t *testing.T) {
+func TestMoxingAcceptsStandardSeedDuringMappedValidation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
 	context.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
@@ -261,14 +267,12 @@ func TestMoxingRejectsUnsupportedSeedDuringMappedValidation(t *testing.T) {
 			Seed: common.GetPointer(24),
 		},
 	})
-	adaptor := &TaskAdaptor{protocol: kitdto.VideoUpstreamProtocolMoxingMediaTaskV1}
+	adaptor := &TaskAdaptor{protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1}
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: modelSeedance20}}
 
 	taskErr := adaptor.ValidateMappedRequest(context, info)
 
-	require.NotNil(t, taskErr)
-	assert.Equal(t, "invalid_video_parameter", taskErr.Code)
-	assert.Equal(t, http.StatusBadRequest, taskErr.StatusCode)
+	require.Nil(t, taskErr)
 }
 
 func TestFunCloudRequiresTieredBillingBeforeProviderSubmission(t *testing.T) {
@@ -288,7 +292,7 @@ func TestFunCloudRequiresTieredBillingBeforeProviderSubmission(t *testing.T) {
 		relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 			ContractID: dto.VideoContractModelArkV3,
 			ModelArk: &dto.ModelArkVideoCreateRequest{
-				Model: modelFunCloud20Fast, Content: []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
+				Model: "seedance-2-0-fast", Content: []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
 				Duration: common.GetPointer(5), Resolution: common.GetPointer("720p"),
 			},
 		})
@@ -299,14 +303,14 @@ func TestFunCloudRequiresTieredBillingBeforeProviderSubmission(t *testing.T) {
 		return &relaycommon.RelayInfo{
 			OriginModelName: "seedance-2-fast-funcloud",
 			ChannelMeta: &relaycommon.ChannelMeta{
-				UpstreamModelName: modelFunCloud20Fast,
+				UpstreamModelName: "seedance-2-0-fast",
 			},
 			TaskRelayInfo: &relaycommon.TaskRelayInfo{},
 		}
 	}
 	adaptor := &TaskAdaptor{
-		protocol: kitdto.VideoUpstreamProtocolFunCloudSeedance,
-		profile:  kitdto.VideoUpstreamProfileThirdPartyFunCloudSeedance,
+		protocol: kitdto.VideoUpstreamProtocolFunCloudModelArkV3,
+		profile:  kitdto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3,
 		baseURL:  "https://funcloud.example.com",
 	}
 	taskErr := adaptor.ValidateRequestAndSetAction(newContext(), info())
@@ -441,7 +445,7 @@ func TestFunCloudMappedValidationBindsExactProviderPath(t *testing.T) {
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 		ContractID: dto.VideoContractModelArkV3,
 		ModelArk: &dto.ModelArkVideoCreateRequest{
-			Model: modelFunCloud20Mini, Content: []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
+			Model: "seedance-2-0-mini", Content: []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
 			Duration: common.GetPointer(5), Resolution: common.GetPointer("720p"),
 		},
 	})
@@ -450,18 +454,18 @@ func TestFunCloudMappedValidationBindsExactProviderPath(t *testing.T) {
 			UpstreamModelName: "seedance-2-mini-funcloud",
 			ChannelBaseUrl:    "https://funcloud.example.com",
 			ChannelOtherSettings: dto.ChannelOtherSettings{
-				VideoUpstreamProtocol: kitdto.VideoUpstreamProtocolFunCloudSeedance,
+				VideoUpstreamProtocol: kitdto.VideoUpstreamProtocolFunCloudModelArkV3,
 			},
 		},
 	}
 	adaptor := &TaskAdaptor{}
 	adaptor.Init(info)
-	assert.Empty(t, adaptor.createPath, "customer model must not be guessed as a Provider path")
-	info.UpstreamModelName = modelFunCloud20Mini
+	assert.Equal(t, "/api/v3/contents/generations/tasks", adaptor.createPath)
+	info.UpstreamModelName = "seedance-2-0-mini"
 	require.Nil(t, adaptor.ValidateMappedRequest(context, info))
 	requestURL, err := adaptor.BuildRequestURL(info)
 	require.NoError(t, err)
-	assert.Equal(t, "https://funcloud.example.com/api/v2/open/aigc/seedance2-0-mini", requestURL)
-	assert.Equal(t, "/api/v2/open/aigc/seedance2-0-mini", info.ChannelOtherSettings.VideoUpstreamCreatePath)
-	assert.Equal(t, "/api/v2/open/aigc/{task_id}", info.ChannelOtherSettings.VideoUpstreamQueryPathTemplate)
+	assert.Equal(t, "https://funcloud.example.com/api/v3/contents/generations/tasks", requestURL)
+	assert.Equal(t, "/api/v3/contents/generations/tasks", info.ChannelOtherSettings.VideoUpstreamCreatePath)
+	assert.Equal(t, "/api/v3/contents/generations/tasks/{task_id}", info.ChannelOtherSettings.VideoUpstreamQueryPathTemplate)
 }

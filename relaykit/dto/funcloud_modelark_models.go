@@ -11,11 +11,13 @@ type FunCloudModelArkModelSpec struct {
 	MaxImages, MaxVideos, MaxAudios int
 }
 
+// Limits from the shared V3 content table, checked 2026-09-10:
+// https://docs.leonecloud.com/docs/seedance-2-5-v3-protocol/
 var funCloudModelArkModels = map[string]FunCloudModelArkModelSpec{
-	"seedance-2-0":      {MinDuration: 4, MaxDuration: 15, Resolutions: []string{"480p", "720p"}, MaxImages: 9, MaxVideos: 3, MaxAudios: 3},
-	"seedance-2-0-fast": {MinDuration: 4, MaxDuration: 15, Resolutions: []string{"480p", "720p"}, MaxImages: 9, MaxVideos: 3, MaxAudios: 3},
-	"seedance-2-0-mini": {MinDuration: 4, MaxDuration: 15, Resolutions: []string{"480p", "720p"}, MaxImages: 9, MaxVideos: 3, MaxAudios: 3},
-	"seedance-2-5":      {MinDuration: 4, MaxDuration: 30, IntelligentDuration: true, Resolutions: []string{"480p", "720p", "1080p"}, MaxImages: 9, MaxVideos: 3, MaxAudios: 3},
+	"seedance-2-0":      {MinDuration: 4, MaxDuration: 15, Resolutions: []string{"480p", "720p"}, MaxImages: 30, MaxVideos: 10, MaxAudios: 10},
+	"seedance-2-0-fast": {MinDuration: 4, MaxDuration: 15, Resolutions: []string{"480p", "720p"}, MaxImages: 30, MaxVideos: 10, MaxAudios: 10},
+	"seedance-2-0-mini": {MinDuration: 4, MaxDuration: 15, Resolutions: []string{"480p", "720p"}, MaxImages: 30, MaxVideos: 10, MaxAudios: 10},
+	"seedance-2-5":      {MinDuration: 4, MaxDuration: 30, IntelligentDuration: true, Resolutions: []string{"480p", "720p", "1080p"}, MaxImages: 30, MaxVideos: 10, MaxAudios: 10},
 }
 
 func FunCloudModelArkModels() []string {

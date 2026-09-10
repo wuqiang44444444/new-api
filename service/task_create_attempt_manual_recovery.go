@@ -57,6 +57,8 @@ func StageVideoTaskCreateAttemptRecovery(
 	}
 	model.AttachAsyncTaskBilling(&task.PrivateData, info, task.Quota)
 	stageTaskProtocolSnapshot(c, task, info)
+	// unknown 恢复模板冻结插件身份，恢复后的任务按同一插件版本履约。
+	task.PrivateData.Execution = TaskExecutionSnapshotFromContext(c)
 	StageFunCloudHostedMediaSnapshot(c, task)
 	return model.RecordTaskCreateAttemptRecoveryTemplate(attemptID, task)
 }

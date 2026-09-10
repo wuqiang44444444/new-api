@@ -56,18 +56,9 @@ type relayCreateRequest struct {
 }
 
 // RelayCreateRequest 把现有 DoubaoVideo 请求转换为第三方中转的统一媒体任务合同。
-// 不支持的媒体类型或冲突的首帧、尾帧、参考图组合 fail closed（方案 §3.2）。
+// TokenSave reference mode uses multi_image for image, video and audio references.
+// Source: https://tokensave.pro/docs/models/doubao-seedance-2-0-260128 (2026-09-10).
 func RelayCreateRequest(body []byte) ([]byte, error) {
-	return relayCreateRequestForProvider(body, false)
-}
-
-// MoxingMediaCreateRequest converts the domestic Seedance 2.0 façade while
-// preserving its documented reference video and reference audio fields.
-func MoxingMediaCreateRequest(body []byte) ([]byte, error) {
-	return relayCreateRequestForProvider(body, true)
-}
-
-func relayCreateRequestForProvider(body []byte, allowReferenceAudioVideo bool) ([]byte, error) {
 	var input relayFacadeRequest
 	if err := common.Unmarshal(body, &input); err != nil {
 		return nil, fmt.Errorf("invalid JSON request")
@@ -118,21 +109,15 @@ func relayCreateRequestForProvider(body []byte, allowReferenceAudioVideo bool) (
 				return nil, fmt.Errorf("unsupported image role %q", item.Role)
 			}
 		case "video_url":
-			if !allowReferenceAudioVideo {
-				return nil, fmt.Errorf("TokenSave does not accept video_url content through this adaptor")
-			}
 			if item.VideoURL == nil || strings.TrimSpace(item.VideoURL.URL) == "" {
 				return nil, fmt.Errorf("video_url.url is required")
 			}
-			output.ReferenceVideos = append(output.ReferenceVideos, strings.TrimSpace(item.VideoURL.URL))
+			output.ReferenceVideos = append(output.ReferenceVideos, item.VideoURL.URL)
 		case "audio_url":
-			if !allowReferenceAudioVideo {
-				return nil, fmt.Errorf("TokenSave does not accept audio_url content through this adaptor")
-			}
 			if item.AudioURL == nil || strings.TrimSpace(item.AudioURL.URL) == "" {
 				return nil, fmt.Errorf("audio_url.url is required")
 			}
-			output.ReferenceAudios = append(output.ReferenceAudios, strings.TrimSpace(item.AudioURL.URL))
+			output.ReferenceAudios = append(output.ReferenceAudios, item.AudioURL.URL)
 		default:
 			return nil, fmt.Errorf("unsupported content type %q", item.Type)
 		}
@@ -144,32 +129,20 @@ func relayCreateRequestForProvider(body []byte, allowReferenceAudioVideo bool) (
 	if len(firstFrameImages) == 1 {
 		output.Image = firstFrameImages[0]
 	}
-	if output.EndImage != "" && output.Image == "" {
-		return nil, fmt.Errorf("last_frame requires a first_frame image")
-	}
-	if output.EndImage != "" && len(output.ReferenceImages) > 0 {
-		return nil, fmt.Errorf("end-frame and reference-image controls cannot be combined")
-	}
 
 	switch {
-	case len(output.ReferenceImages) > 0 || len(output.ReferenceVideos) > 0 || len(output.ReferenceAudios) > 0:
-		if len(output.ReferenceVideos) > 0 || len(output.ReferenceAudios) > 0 {
-			output.InputMode = "multi_modal"
-		} else {
-			output.InputMode = "multi_image"
-		}
-		output.ControlMode = "reference"
-		if output.Image != "" {
-			output.ReferenceImages = append([]string{output.Image}, output.ReferenceImages...)
-			output.Image = ""
-		}
-	case output.EndImage != "":
+	case len(output.ReferenceImages)+len(output.ReferenceVideos)+len(output.ReferenceAudios) > 0:
 		output.InputMode = "multi_image"
+		output.ControlMode = "reference"
+		// Preserve frame roles even in reference mode; the provider decides
+		// whether the supplied combination is supported.
+	case output.EndImage != "":
+		output.InputMode = "single_image"
 		output.ControlMode = "end_frame"
 	case output.Image != "":
 		output.InputMode = "single_image"
 	}
-	if output.Prompt == "" && output.Image == "" && len(output.ReferenceImages) == 0 && len(output.ReferenceVideos) == 0 && len(output.ReferenceAudios) == 0 {
+	if output.Prompt == "" && output.Image == "" && output.EndImage == "" && len(output.ReferenceImages)+len(output.ReferenceVideos)+len(output.ReferenceAudios) == 0 {
 		return nil, fmt.Errorf("prompt or media content is required")
 	}
 	return common.Marshal(output)

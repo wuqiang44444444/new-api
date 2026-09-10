@@ -508,5 +508,8 @@ ModelArk 错误信封：
 | `401` / `403` | 鉴权或权限错误 | 检查 API Key、模型可用状态和分组 |
 | `404` | `task_not_found` | 当前应用范围内没有该 ModelArk 任务 |
 | `409` | 取消或删除冲突码 | 当前任务状态不允许该操作 |
+| `413` | `request_body_too_large` | 请求正文或内联媒体超过上限，减少大小后再提交 |
 | `429` | 限流或额度错误 | 根据错误码区分并退避 |
 | `503` | `create_outcome_unknown`、`upstream_unavailable`、`cancellation_unknown` | 不要重发创建；查询或联系管理员核查 |
+
+请求记录相关的 `evidence_*` 错误及重试边界见[错误与重试](concepts/errors#请求记录相关错误)。

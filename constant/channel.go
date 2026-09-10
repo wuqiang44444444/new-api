@@ -61,7 +61,8 @@ const (
 	ChannelTypeTaskPlugin     = 61
 	ChannelTypeSeedanceLink   = 62
 	ChannelTypeAsyncImage     = 63
-	ChannelTypeDummy          = 64 // count sentinel; explicit because a bare identifier repeats the previous literal, it does not increment
+	ChannelTypeAzureBatch     = 66
+	ChannelTypeDummy          = 67 // count sentinel; explicit because a bare identifier repeats the previous literal, it does not increment
 )
 
 var ChannelBaseURLs = []string{
@@ -129,7 +130,8 @@ var ChannelBaseURLs = []string{
 	"",                                          //61
 	"https://ark.cn-beijing.volces.com",         //62
 	"https://mm-internal-cn.leonecloud.com",     //63
-	"",                                          //64 sentinel
+	"",                                          //65 retired Moxing slot (reserved)
+	"",                                          //66 Azure Batch (configured per channel)
 }
 
 func GetChannelBaseURL(channelType int) string {
@@ -200,6 +202,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeTaskPlugin:     "Task Plugin",
 	ChannelTypeSeedanceLink:   "Seedance Link",
 	ChannelTypeAsyncImage:     "Image Relay",
+	ChannelTypeAzureBatch:     "Azure Batch",
 }
 
 func GetChannelTypeName(channelType int) string {

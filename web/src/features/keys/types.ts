@@ -46,6 +46,7 @@ export const apiKeySchema = z.object({
   model_limits_enabled: z.boolean(),
   model_limits: z.string().nullish().default(''),
   allow_ips: z.string().nullish().default(''),
+  contract_id: z.number().nullish(),
 })
 
 export type ApiKey = z.infer<typeof apiKeySchema>
@@ -94,6 +95,7 @@ export interface ApiKeyFormData {
   group: string
   auto_groups: string[]
   cross_group_retry: boolean
+  contract_id: number
 }
 
 export interface TokenAutoGroupsConfig {
@@ -118,13 +120,21 @@ export interface SelfCustomerContractRule {
     base_image_ratio?: string
     final_image_ratio?: string
     current_discounted_price?: string
+    billing_expr?: string
+    usage_schema?: import('@/features/pricing/types').BillingUsageSchema
   }
 }
 
-export interface SelfCustomerContract {
-  contract_mode: boolean
-  contract_version: number
+export interface SelfContractSummary {
+  id: number
+  name: string
+  enabled: boolean
+  version: number
   models: SelfCustomerContractRule[]
+}
+
+export interface SelfCustomerContract {
+  contracts: SelfContractSummary[]
 }
 
 // ============================================================================

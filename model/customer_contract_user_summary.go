@@ -1,5 +1,7 @@
 package model
 
+// populateUserContractRuleCounts fills User.ContractRuleCount with the total
+// number of rules across all contract entities owned by each user.
 func populateUserContractRuleCounts(users []*User) error {
 	if len(users) == 0 {
 		return nil
@@ -13,10 +15,11 @@ func populateUserContractRuleCounts(users []*User) error {
 		Count  int
 	}
 	var counts []ruleCount
-	if err := DB.Model(&CustomerModelContract{}).
-		Select("user_id, COUNT(*) AS count").
-		Where("user_id IN ?", ids).
-		Group("user_id").
+	if err := DB.Model(&CustomerContractEntityRule{}).
+		Select("customer_contracts.user_id AS user_id, COUNT(*) AS count").
+		Joins("JOIN customer_contracts ON customer_contracts.id = customer_contract_entity_rules.contract_id").
+		Where("customer_contracts.user_id IN ?", ids).
+		Group("customer_contracts.user_id").
 		Scan(&counts).Error; err != nil {
 		return err
 	}

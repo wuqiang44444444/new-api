@@ -23,6 +23,13 @@ type modelArkVideoCreateRequest = dto.ModelArkVideoCreateRequest
 func ModelArkVideoCreateConvert() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if err := service.BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindVideoTask); err != nil {
+			// 证据拒绝边界：按唯一分类映射输出稳定 code 与文案，替代固定
+			// 503；此时尚未选渠、未建立资金 hold，Provider 调用次数为零。
+			service.LogTaskRequestEvidenceRejection(c, err)
+			if rejection, ok := service.ClassifyTaskRequestEvidenceRejection(err); ok {
+				abortModelArkVideo(c, rejection.Status, rejection.Code, rejection.Message)
+				return
+			}
 			abortModelArkVideo(c, http.StatusServiceUnavailable, "evidence_unavailable", "request evidence unavailable")
 			return
 		}

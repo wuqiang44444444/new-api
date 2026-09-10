@@ -33,3 +33,15 @@ func GetTaskForProtocol(userID int, taskID, protocol string, includeDeleted bool
 	}
 	return &task, true, nil
 }
+
+// GetTaskById loads a task by primary key for background settlement paths.
+func GetTaskById(id int64) (*Task, error) {
+	if id <= 0 {
+		return nil, errors.New("invalid task id")
+	}
+	var task Task
+	if err := DB.First(&task, id).Error; err != nil {
+		return nil, err
+	}
+	return &task, nil
+}

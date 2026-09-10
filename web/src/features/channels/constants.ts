@@ -27,6 +27,8 @@ export const CHANNEL_TYPE_TASK_PLUGIN = 61
 
 export const CHANNEL_TYPE_SEEDANCE_LINK = 62
 
+export const CHANNEL_TYPE_AZURE_BATCH = 66
+
 export const CHANNEL_TYPE_ASYNC_IMAGE = 63
 
 export const CHANNEL_TYPES = {
@@ -90,6 +92,7 @@ export const CHANNEL_TYPES = {
   61: 'Task Plugin',
   62: 'Seedance Dedicated Channel',
   63: 'Image Relay',
+  66: 'Azure Batch',
 } as const
 
 const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [

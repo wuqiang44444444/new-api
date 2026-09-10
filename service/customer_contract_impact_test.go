@@ -21,14 +21,20 @@ func TestPreviewCustomerContractRatioImpactCountsOnlyChangedActiveContracts(t *t
 		require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(previousSpecialGroups))
 	})
 
-	active := &model.User{Username: "impact-active", AffCode: "impact-active-aff", Group: "default", Status: common.UserStatusEnabled, ContractMode: true, ContractVersion: 1}
-	inactive := &model.User{Username: "impact-inactive", AffCode: "impact-inactive-aff", Group: "default", Status: common.UserStatusEnabled, ContractMode: false, ContractVersion: 1}
+	active := &model.User{Username: "impact-active", AffCode: "impact-active-aff", Group: "default", Status: common.UserStatusEnabled}
+	inactive := &model.User{Username: "impact-inactive", AffCode: "impact-inactive-aff", Group: "default", Status: common.UserStatusEnabled}
 	require.NoError(t, model.DB.Create(active).Error)
 	require.NoError(t, model.DB.Create(inactive).Error)
-	require.NoError(t, model.DB.Create([]model.CustomerModelContract{
-		{UserId: active.Id, PublicModel: "model-a", RouteGroup: "contract-a", RatioUnits: 80_000_000},
-		{UserId: active.Id, PublicModel: "model-b", RouteGroup: "contract-b", RatioUnits: 80_000_000},
-		{UserId: inactive.Id, PublicModel: "model-c", RouteGroup: "contract-a", RatioUnits: 80_000_000},
+	// One enabled contract with two rules and one disabled contract; only the
+	// enabled contract's rules are affected by native group ratio changes.
+	activeContract := &model.CustomerContract{UserId: active.Id, Name: "Impact Active", Enabled: true, Version: 1}
+	inactiveContract := &model.CustomerContract{UserId: inactive.Id, Name: "Impact Inactive", Enabled: false, Version: 1}
+	require.NoError(t, model.DB.Create(activeContract).Error)
+	require.NoError(t, model.DB.Create(inactiveContract).Error)
+	require.NoError(t, model.DB.Create([]model.CustomerContractEntityRule{
+		{ContractId: activeContract.Id, PublicModel: "model-a", ChannelId: 1, RouteGroup: "contract-a", RatioUnits: 80_000_000},
+		{ContractId: activeContract.Id, PublicModel: "model-b", ChannelId: 1, RouteGroup: "contract-b", RatioUnits: 80_000_000},
+		{ContractId: inactiveContract.Id, PublicModel: "model-c", ChannelId: 1, RouteGroup: "contract-a", RatioUnits: 80_000_000},
 	}).Error)
 
 	impact, err := PreviewCustomerContractRatioImpact(

@@ -21,6 +21,8 @@ import { render, screen } from '@testing-library/react'
 import i18next from 'i18next'
 import { afterEach, beforeAll, describe, expect, test } from 'vitest'
 
+import { getPricingQueryKey } from '@/features/pricing/hooks/use-pricing-data'
+
 import type { UsageLog } from '../../data/schema'
 import type { LogOtherData } from '../../types'
 import { DetailsDialog } from '../dialogs/details-dialog'
@@ -71,7 +73,7 @@ function renderDetails(other: LogOtherData): QueryClient {
   const freshAt = Date.now() + 60_000
   queryClient.setQueryData(['status'], {}, { updatedAt: freshAt })
   queryClient.setQueryData(
-    ['pricing'],
+    getPricingQueryKey(undefined),
     { data: [], vendors: [] },
     { updatedAt: freshAt }
   )

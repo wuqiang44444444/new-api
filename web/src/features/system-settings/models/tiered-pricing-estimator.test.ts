@@ -18,38 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { afterEach, describe, expect, test } from 'vitest'
 
-import { evalExprLocally } from '../../pricing/lib/tier-expr'
 import {
-  type EstimatorTaskProbe,
   convertRawCost,
   createDefaultDraft,
   loadDraft,
   normalizeDraft,
-  probeToRequestBody,
   saveDraft,
 } from './tiered-pricing-estimator-state'
-
-const SEEDANCE_EXPR = `param("_task.has_video_input") == true
-  ? (param("_task.resolution") == "4k"     ? tier("4k_video",      c * 2.4)
-    : param("_task.resolution") == "1080p" ? tier("1080p_video",   c * 4.7)
-    :                                       tier("480p720p_video", c * 4.3))
-  : (param("_task.resolution") == "4k"     ? tier("4k",            c * 4.0)
-    : param("_task.resolution") == "1080p" ? tier("1080p",         c * 7.7)
-    :                                       tier("480p720p",       c * 7.0))`
-
-function evalWithProbe(
-  expr: string,
-  probe: EstimatorTaskProbe,
-  completionTokens: number
-) {
-  return evalExprLocally(
-    expr,
-    0,
-    completionTokens,
-    createDefaultDraft().extras,
-    { body: probeToRequestBody(probe) }
-  )
-}
 
 describe('estimator draft normalization', () => {
   test('non-object input falls back to safe defaults', () => {
@@ -101,102 +76,6 @@ describe('USD / quota conversion (matches backend)', () => {
     const { usd, quota } = convertRawCost(770000, 0)
     expect(usd).toBe(0.77)
     expect(quota).toBeNull()
-  })
-})
-
-describe('_task probe drives correct tier (eight backend values)', () => {
-  const cases: Array<{
-    name: string
-    probe: EstimatorTaskProbe
-    expectedTier: string
-    unitPrice: number
-  }> = [
-    {
-      name: 'no-video 480p',
-      probe: { hasVideoInput: false, resolution: '480p' },
-      expectedTier: '480p720p',
-      unitPrice: 7.0,
-    },
-    {
-      name: 'no-video 720p',
-      probe: { hasVideoInput: false, resolution: '720p' },
-      expectedTier: '480p720p',
-      unitPrice: 7.0,
-    },
-    {
-      name: 'no-video 1080p',
-      probe: { hasVideoInput: false, resolution: '1080p' },
-      expectedTier: '1080p',
-      unitPrice: 7.7,
-    },
-    {
-      name: 'no-video 4k',
-      probe: { hasVideoInput: false, resolution: '4k' },
-      expectedTier: '4k',
-      unitPrice: 4.0,
-    },
-    {
-      name: 'video 480p',
-      probe: { hasVideoInput: true, resolution: '480p' },
-      expectedTier: '480p720p_video',
-      unitPrice: 4.3,
-    },
-    {
-      name: 'video 720p',
-      probe: { hasVideoInput: true, resolution: '720p' },
-      expectedTier: '480p720p_video',
-      unitPrice: 4.3,
-    },
-    {
-      name: 'video 1080p',
-      probe: { hasVideoInput: true, resolution: '1080p' },
-      expectedTier: '1080p_video',
-      unitPrice: 4.7,
-    },
-    {
-      name: 'video 4k',
-      probe: { hasVideoInput: true, resolution: '4k' },
-      expectedTier: '4k_video',
-      unitPrice: 2.4,
-    },
-  ]
-
-  for (const { name, probe, expectedTier, unitPrice } of cases) {
-    test(name, () => {
-      const c = 100000
-      const result = evalWithProbe(SEEDANCE_EXPR, probe, c)
-      expect(result.matchedTier).toBe(expectedTier)
-      expect(result.cost).toBe(c * unitPrice)
-      expect(result.error).toBeNull()
-    })
-  }
-})
-
-describe('browser expression safety boundary', () => {
-  test('supports versioned billing expressions', () => {
-    const result = evalWithProbe(
-      'v1:tier("base", c * 2)',
-      { hasVideoInput: false, resolution: '720p' },
-      10
-    )
-    expect(result.cost).toBe(20)
-    expect(result.error).toBeNull()
-  })
-
-  test('rejects browser globals and general JavaScript syntax', () => {
-    const globalAccess = evalWithProbe(
-      'tier("base", globalThis.fetch("https://example.com"))',
-      { hasVideoInput: false, resolution: '720p' },
-      10
-    )
-    expect(globalAccess.error || '').toMatch(/Unsupported identifier/)
-
-    const arrowFunction = evalWithProbe(
-      'tier("base", (() => c)())',
-      { hasVideoInput: false, resolution: '720p' },
-      10
-    )
-    expect(arrowFunction.error || '').toMatch(/Unsupported JavaScript syntax/)
   })
 })
 

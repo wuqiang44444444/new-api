@@ -26,6 +26,12 @@ type taskCreateFrozenConnection struct {
 	Profile           string `json:"profile"`
 	CreatePath        string `json:"create_path,omitempty"`
 	QueryPathTemplate string `json:"query_path_template,omitempty"`
+	// PluginKey/PluginVersion freeze the extension-plugin identity at prepared
+	// time, the earliest durable record of a creation. Deletion protection
+	// reads this snapshot so a concurrent version deletion cannot orphan an
+	// in-flight creation between middleware pinning and recovery staging.
+	PluginKey     string `json:"plugin_key,omitempty"`
+	PluginVersion string `json:"plugin_version,omitempty"`
 }
 
 type taskCreateBillingSnapshot struct {
@@ -61,7 +67,7 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 	if profile == "" {
 		profile = string(dto.VideoUpstreamProfileOfficial)
 	}
-	frozen, err := common.Marshal(taskCreateFrozenConnection{
+	frozenConnection := taskCreateFrozenConnection{
 		BaseURL:           info.ChannelBaseUrl,
 		Key:               info.ApiKey,
 		Proxy:             info.ChannelSetting.Proxy,
@@ -69,7 +75,17 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 		Profile:           profile,
 		CreatePath:        info.ChannelOtherSettings.VideoUpstreamCreatePath,
 		QueryPathTemplate: info.ChannelOtherSettings.VideoUpstreamQueryPathTemplate,
-	})
+	}
+	// prepared 是创建意图最早的持久记录：在此冻结插件身份，删除保护才能
+	// 在 middleware 打 pin 与恢复模板落库之间看住并发删除。
+	execution := TaskExecutionSnapshotFromContext(c)
+	var taskPlugin *model.TaskPluginSnapshot
+	if execution != nil && execution.TaskPlugin != nil {
+		taskPlugin = execution.TaskPlugin
+		frozenConnection.PluginKey = execution.TaskPlugin.Key
+		frozenConnection.PluginVersion = execution.TaskPlugin.Version
+	}
+	frozen, err := common.Marshal(frozenConnection)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
@@ -89,6 +105,7 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 	}
 	idempotencyID := int64(common.GetContextKeyInt(c, constant.ContextKeyTaskIdempotencyID))
 	attempt, err := model.CreatePreparedTaskAttempt(model.TaskCreateAttemptParams{
+		TaskPlugin:       taskPlugin,
 		IdempotencyID:    idempotencyID,
 		PublicTaskID:     info.PublicTaskID,
 		UserID:           info.UserId,

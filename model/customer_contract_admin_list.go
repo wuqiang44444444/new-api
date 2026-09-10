@@ -23,15 +23,21 @@ type CustomerContractAdminListFilter struct {
 	Limit     int
 }
 
+// CustomerContractAdminListItem is one contract entity in the admin overview.
+// The overview is a read-only projection; writes only happen through the
+// entity replace endpoint.
 type CustomerContractAdminListItem struct {
+	ContractId           int    `json:"contract_id" gorm:"column:contract_id"`
+	ContractName         string `json:"contract_name" gorm:"column:contract_name"`
 	UserId               int    `json:"user_id" gorm:"column:user_id"`
 	Username             string `json:"username"`
 	DisplayName          string `json:"display_name" gorm:"column:display_name"`
-	ContractMode         bool   `json:"contract_mode" gorm:"column:contract_mode"`
+	ContractEnabled      bool   `json:"contract_enabled" gorm:"column:contract_enabled"`
 	ContractStatus       string `json:"contract_status" gorm:"-"`
 	ContractVersion      int64  `json:"contract_version" gorm:"column:contract_version"`
 	RuleCount            int    `json:"rule_count" gorm:"column:rule_count"`
 	UnavailableRuleCount int    `json:"unavailable_rule_count" gorm:"-"`
+	BoundTokenCount      int    `json:"bound_token_count" gorm:"column:bound_token_count"`
 	UpdatedAt            int64  `json:"updated_at" gorm:"column:updated_at"`
 	AdminUserId          int    `json:"admin_user_id" gorm:"column:admin_user_id"`
 	AdminUsername        string `json:"admin_username" gorm:"column:admin_username"`
@@ -64,9 +70,9 @@ func GetCustomerContractAdminList(filter CustomerContractAdminListFilter) ([]Cus
 		filter.Limit = common.ItemsPerPage
 	}
 
-	ruleCounts := DB.Model(&CustomerModelContract{}).
-		Select("user_id, COUNT(*) AS rule_count").
-		Group("user_id")
+	ruleCounts := DB.Model(&CustomerContractEntityRule{}).
+		Select("contract_id, COUNT(*) AS rule_count").
+		Group("contract_id")
 
 	query := customerContractAdminBaseQuery(filter.AdminRole, ruleCounts)
 	query = applyCustomerContractAdminKeyword(query, filter.Keyword)
@@ -79,18 +85,20 @@ func GetCustomerContractAdminList(filter CustomerContractAdminListFilter) ([]Cus
 
 	var items []CustomerContractAdminListItem
 	err := query.
-		Select(`users.id AS user_id, users.username, users.display_name,
-			users.contract_mode, users.contract_version,
+		Select(`customer_contracts.id AS contract_id, customer_contracts.name AS contract_name,
+			customer_contracts.user_id, customer_contracts.enabled AS contract_enabled,
+			customer_contracts.version AS contract_version, customer_contracts.updated_at AS updated_at,
+			users.username, users.display_name,
 			COALESCE(contract_rule_counts.rule_count, 0) AS rule_count,
-			COALESCE(current_contract_audit.created_at, 0) AS updated_at,
+			(SELECT COUNT(*) FROM tokens WHERE tokens.contract_id = customer_contracts.id AND tokens.deleted_at IS NULL) AS bound_token_count,
 			COALESCE(current_contract_audit.admin_user_id, 0) AS admin_user_id,
 			COALESCE(contract_admin.username, '') AS admin_username`).
-		Joins(`LEFT JOIN customer_contract_audits AS current_contract_audit
-			ON current_contract_audit.user_id = users.id
-			AND current_contract_audit.contract_version = users.contract_version`).
+		Joins(`LEFT JOIN customer_contract_entity_audits AS current_contract_audit
+			ON current_contract_audit.contract_id = customer_contracts.id
+			AND current_contract_audit.contract_version = customer_contracts.version`).
 		Joins("LEFT JOIN users AS contract_admin ON contract_admin.id = current_contract_audit.admin_user_id").
-		Order("updated_at DESC").
-		Order("users.id DESC").
+		Order("customer_contracts.updated_at DESC").
+		Order("customer_contracts.id DESC").
 		Offset(filter.Offset).
 		Limit(filter.Limit).
 		Scan(&items).Error
@@ -98,7 +106,7 @@ func GetCustomerContractAdminList(filter CustomerContractAdminListFilter) ([]Cus
 		return nil, 0, CustomerContractAdminSummary{}, err
 	}
 	for i := range items {
-		items[i].ContractStatus = customerContractAdminStatus(items[i].ContractMode, items[i].RuleCount)
+		items[i].ContractStatus = customerContractAdminStatus(items[i].ContractEnabled, items[i].RuleCount)
 	}
 	if err := populateCustomerContractAdminAvailability(items); err != nil {
 		return nil, 0, CustomerContractAdminSummary{}, err
@@ -112,9 +120,9 @@ func GetCustomerContractAdminList(filter CustomerContractAdminListFilter) ([]Cus
 }
 
 func customerContractAdminBaseQuery(adminRole int, ruleCounts *gorm.DB) *gorm.DB {
-	query := DB.Model(&User{}).
-		Joins("LEFT JOIN (?) AS contract_rule_counts ON contract_rule_counts.user_id = users.id", ruleCounts).
-		Where("users.contract_version > ?", 0)
+	query := DB.Model(&CustomerContract{}).
+		Joins("JOIN users ON users.id = customer_contracts.user_id AND users.deleted_at IS NULL").
+		Joins("LEFT JOIN (?) AS contract_rule_counts ON contract_rule_counts.contract_id = customer_contracts.id", ruleCounts)
 	if adminRole != common.RoleRootUser {
 		query = query.Where("users.role < ?", adminRole)
 	}
@@ -127,14 +135,15 @@ func applyCustomerContractAdminKeyword(query *gorm.DB, keyword string) *gorm.DB 
 		return query
 	}
 	pattern := "%" + strings.ToLower(keyword) + "%"
-	condition := `LOWER(users.username) LIKE ? OR LOWER(users.display_name) LIKE ? OR EXISTS (
-		SELECT 1 FROM customer_model_contracts AS searched_contract_rule
-		WHERE searched_contract_rule.user_id = users.id
+	condition := `LOWER(users.username) LIKE ? OR LOWER(users.display_name) LIKE ?
+		OR LOWER(customer_contracts.name) LIKE ? OR EXISTS (
+		SELECT 1 FROM customer_contract_entity_rules AS searched_contract_rule
+		WHERE searched_contract_rule.contract_id = customer_contracts.id
 		AND LOWER(searched_contract_rule.public_model) LIKE ?
 	)`
-	args := []any{pattern, pattern, pattern}
+	args := []any{pattern, pattern, pattern, pattern}
 	if userId, err := strconv.Atoi(keyword); err == nil {
-		condition = "users.id = ? OR " + condition
+		condition = "customer_contracts.user_id = ? OR " + condition
 		args = append([]any{userId}, args...)
 	}
 	return query.Where("("+condition+")", args...)
@@ -143,13 +152,13 @@ func applyCustomerContractAdminKeyword(query *gorm.DB, keyword string) *gorm.DB 
 func applyCustomerContractAdminStatus(query *gorm.DB, status string) *gorm.DB {
 	switch status {
 	case CustomerContractAdminStatusActive:
-		return query.Where("users.contract_mode = ?", true).
+		return query.Where("customer_contracts.enabled = ?", true).
 			Where("COALESCE(contract_rule_counts.rule_count, 0) > 0")
 	case CustomerContractAdminStatusZeroAccess:
-		return query.Where("users.contract_mode = ?", true).
+		return query.Where("customer_contracts.enabled = ?", true).
 			Where("COALESCE(contract_rule_counts.rule_count, 0) = 0")
 	case CustomerContractAdminStatusInactive:
-		return query.Where("users.contract_mode = ?", false)
+		return query.Where("customer_contracts.enabled = ?", false)
 	default:
 		return query
 	}
@@ -169,34 +178,24 @@ func populateCustomerContractAdminAvailability(items []CustomerContractAdminList
 	if len(items) == 0 {
 		return nil
 	}
-	userIds := make([]int, 0, len(items))
+	contractIds := make([]int, 0, len(items))
 	itemIndex := make(map[int]int, len(items))
 	for i := range items {
-		userIds = append(userIds, items[i].UserId)
-		itemIndex[items[i].UserId] = i
+		contractIds = append(contractIds, items[i].ContractId)
+		itemIndex[items[i].ContractId] = i
 	}
 
-	var rules []CustomerModelContract
-	if err := DB.Select("user_id", "public_model", "route_group").
-		Where("user_id IN ?", userIds).
+	var rules []CustomerContractEntityRule
+	if err := DB.Select("contract_id", "public_model", "route_group", "channel_id").
+		Where("contract_id IN ?", contractIds).
 		Find(&rules).Error; err != nil {
 		return err
 	}
-	availableByGroup := make(map[string]map[string]struct{})
 	for _, rule := range rules {
-		availableModels, ok := availableByGroup[rule.RouteGroup]
-		if !ok {
-			var err error
-			availableModels, err = customerContractAvailableModelsForGroup(DB, rule.RouteGroup)
-			if err != nil {
-				return err
-			}
-			availableByGroup[rule.RouteGroup] = availableModels
-		}
-		if _, available := availableModels[rule.PublicModel]; available {
+		if validateCustomerContractEntityChannel(DB, rule.ChannelId, rule.RouteGroup, rule.PublicModel) == nil {
 			continue
 		}
-		if index, ok := itemIndex[rule.UserId]; ok {
+		if index, ok := itemIndex[rule.ContractId]; ok {
 			items[index].UnavailableRuleCount++
 		}
 	}

@@ -16,7 +16,7 @@ import (
 )
 
 func TestAssetConnectivityWithoutDocumentedProbeDoesNotCallProvider(t *testing.T) {
-	for _, protocol := range []dto.AssetUpstreamProtocol{dto.AssetUpstreamProtocolTokenSaveAssetsV1, dto.AssetUpstreamProtocolMoxingJoyCreatorV1} {
+	for _, protocol := range []dto.AssetUpstreamProtocol{dto.AssetUpstreamProtocolTokenSaveAssetsV1} {
 		t.Run(string(protocol), func(t *testing.T) {
 			var calls atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

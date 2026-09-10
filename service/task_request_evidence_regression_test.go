@@ -233,7 +233,7 @@ func TestEvidenceConcurrentEventsKeepIndependentBodies(t *testing.T) {
 	results := make(chan error, 2)
 	for _, body := range []string{`{"stage":"poll"}`, `{"stage":"delivery"}`} {
 		go func(payload string) {
-			results <- persistTaskEvidenceBody(&model.TaskRequestEvidenceEvent{EvidenceId: index.Id, Stage: model.TaskRequestEvidenceStagePolling, Phase: model.TaskRequestEvidencePhaseCompleted, ContentType: "application/json", Complete: true}, []byte(payload))
+			results <- persistTaskEvidenceBody(&model.TaskRequestEvidenceEvent{EvidenceId: index.Id, Stage: model.TaskRequestEvidenceStagePolling, Phase: model.TaskRequestEvidencePhaseCompleted, ContentType: "application/json", Complete: true}, []byte(payload), TaskRequestEvidenceSourceResponse)
 		}(body)
 	}
 	require.NoError(t, <-results)

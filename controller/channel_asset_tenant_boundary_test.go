@@ -37,7 +37,7 @@ func setupAssetTenantControllerTestDB(t *testing.T) *gorm.DB {
 		&model.Ability{},
 		&model.ChannelAssetCredential{},
 		&model.ChannelAssetScopeIdentity{},
-		&model.Log{},
+		&model.Log{}, &model.AuditLog{},
 	))
 	model.DB = db
 	model.LOG_DB = db
@@ -167,11 +167,11 @@ func TestConfirmedAssetTenantCredentialRotationIsAuditedWithoutSecrets(t *testin
 	require.NoError(t, err)
 	assert.Equal(t, newVideoSecret, stored.Key)
 
-	var logs []model.Log
-	require.NoError(t, db.Where("type = ?", model.LogTypeManage).Find(&logs).Error)
+	var logs []model.AuditLog
+	require.NoError(t, db.Find(&logs).Error)
 	require.Len(t, logs, 1)
 	var other map[string]any
-	require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
+	require.NoError(t, common.Unmarshal(mustMarshalAuditOther(t, logs[0].Other), &other))
 	op, ok := other["op"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "channel.update", op["action"])
@@ -180,7 +180,7 @@ func TestConfirmedAssetTenantCredentialRotationIsAuditedWithoutSecrets(t *testin
 	assert.Equal(t, true, params["asset_tenant_unchanged_confirmed"])
 	assert.Contains(t, params["changed_fields"], "key")
 
-	auditRecord := logs[0].Content + logs[0].Other
+	auditRecord := logs[0].Content + string(mustMarshalAuditOther(t, logs[0].Other))
 	assert.NotContains(t, auditRecord, oldVideoSecret)
 	assert.NotContains(t, auditRecord, newVideoSecret)
 }
@@ -276,18 +276,18 @@ func TestConfirmedAssetTenantReplacementKeepsChannelAndModelsAndRotatesScope(t *
 	require.NoError(t, err)
 	assert.NotEqual(t, originalScope, replacedScope)
 
-	var logs []model.Log
-	require.NoError(t, db.Where("type = ?", model.LogTypeManage).Find(&logs).Error)
+	var logs []model.AuditLog
+	require.NoError(t, db.Find(&logs).Error)
 	require.Len(t, logs, 1)
 	var other map[string]any
-	require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
+	require.NoError(t, common.Unmarshal(mustMarshalAuditOther(t, logs[0].Other), &other))
 	op, ok := other["op"].(map[string]any)
 	require.True(t, ok)
 	params, ok := op["params"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, true, params["asset_tenant_replaced"])
 	assert.Contains(t, params["asset_tenant_boundary_changed_fields"], "asset_provider_project")
-	assert.NotContains(t, logs[0].Content+logs[0].Other, "asset-secret")
+	assert.NotContains(t, logs[0].Content+string(mustMarshalAuditOther(t, logs[0].Other)), "asset-secret")
 }
 
 func TestPartialChannelUpdateWithoutPersistedBoundaryChangeDoesNotAuditReplacement(t *testing.T) {
@@ -354,11 +354,11 @@ func TestPartialChannelUpdateWithoutPersistedBoundaryChangeDoesNotAuditReplaceme
 	require.NoError(t, err)
 	assert.Equal(t, originalScope, scopeAfter)
 
-	var logs []model.Log
-	require.NoError(t, db.Where("type = ?", model.LogTypeManage).Find(&logs).Error)
+	var logs []model.AuditLog
+	require.NoError(t, db.Find(&logs).Error)
 	require.Len(t, logs, 1)
 	var other map[string]any
-	require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
+	require.NoError(t, common.Unmarshal(mustMarshalAuditOther(t, logs[0].Other), &other))
 	op, ok := other["op"].(map[string]any)
 	require.True(t, ok)
 	params, ok := op["params"].(map[string]any)
@@ -366,4 +366,11 @@ func TestPartialChannelUpdateWithoutPersistedBoundaryChangeDoesNotAuditReplaceme
 	assert.Equal(t, false, params["asset_tenant_replaced"])
 	assert.Empty(t, params["asset_tenant_boundary_changed_fields"])
 	assert.Empty(t, params["changed_fields"])
+}
+
+func mustMarshalAuditOther(t *testing.T, other model.AuditOther) []byte {
+	t.Helper()
+	data, err := common.Marshal(other)
+	require.NoError(t, err)
+	return data
 }

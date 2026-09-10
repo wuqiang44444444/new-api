@@ -66,6 +66,9 @@ func TestMain(m *testing.M) {
 		&ChannelAssetCredential{},
 		&CustomerModelContract{},
 		&CustomerContractAudit{},
+		&CustomerContract{},
+		&CustomerContractEntityRule{},
+		&CustomerContractEntityAudit{},
 		&ImageTaskSlot{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
@@ -306,7 +309,7 @@ func TestUpdateWithStatus_ConcurrentWinner(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
 
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		go func(idx int) {
 			defer wg.Done()
 			t := &Task{}

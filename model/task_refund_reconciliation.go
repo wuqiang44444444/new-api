@@ -1,5 +1,7 @@
 package model
 
+import "github.com/QuantumNous/new-api/constant"
+
 // GetUnrefundedFailedTasks returns failed tasks whose non-zero quota marks a
 // pending refund. Legacy timeout tasks are excluded before LIMIT is applied.
 func GetUnrefundedFailedTasks(updatedBefore int64, limit int) []*Task {
@@ -10,6 +12,7 @@ func GetUnrefundedFailedTasks(updatedBefore int64, limit int) []*Task {
 	var tasks []*Task
 	err := DB.Where("status = ?", TaskStatusFailure).
 		Where("quota != ?", 0).
+		Where("platform <> ?", constant.TaskPlatformAzureBatch).
 		Where("updated_at <= ?", updatedBefore).
 		Where("(submit_time <= ? OR submit_time >= ?)", 0, TaskRefundLegacyCutoff).
 		Order("id").
@@ -35,6 +38,7 @@ func HasTaskPollingWork() bool {
 	err := DB.Model(&Task{}).
 		Where("status = ?", TaskStatusFailure).
 		Where("quota != ?", 0).
+		Where("platform <> ?", constant.TaskPlatformAzureBatch).
 		Where("(submit_time <= ? OR submit_time >= ?)", 0, TaskRefundLegacyCutoff).
 		Limit(1).
 		Pluck("id", &id).Error

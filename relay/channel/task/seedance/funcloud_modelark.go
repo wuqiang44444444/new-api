@@ -19,7 +19,7 @@ func funCloudModelArkProviderSpec(model string) (providerModelSpec, bool) {
 		minDuration: spec.MinDuration, maxDuration: spec.MaxDuration,
 		intelligentDuration: spec.MaxDuration, allowIntelligentDuration: spec.IntelligentDuration,
 		resolutions: stringSet(spec.Resolutions...), maxImages: spec.MaxImages, maxVideos: spec.MaxVideos, maxAudios: spec.MaxAudios,
-		allowVideos: true, allowAudios: true, defaultGenerateAudio: true, outputFormats: stringSet("mp4", "mov"),
+		allowVideos: true, allowAudios: true, allowAudioOnly: true, defaultGenerateAudio: true, outputFormats: stringSet("mp4", "mov"),
 	}, true
 }
 

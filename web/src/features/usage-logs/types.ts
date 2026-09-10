@@ -20,6 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
  * Type definitions for usage logs
  */
 import type { RequestRuleTrace } from '@/features/pricing/lib/billing-expr'
+import type { BillingDisplayProjection } from '@/features/pricing/types'
 
 import type { UsageLog } from './data/schema'
 // ============================================================================
@@ -206,6 +207,9 @@ export interface LogOtherData {
   expr_b64?: string
   matched_tier?: string
   request_rules?: RequestRuleTrace[]
+  // Backend-attached read-only projection of the frozen expression. Absent
+  // for legacy logs; unit-price display must not guess without it.
+  billing_display?: BillingDisplayProjection
   usage_facts?: Record<string, string | number>
   reasoning_effort?: string
   image?: boolean

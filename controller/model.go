@@ -34,7 +34,7 @@ var channelId2Models map[int][]string
 
 func init() {
 	// https://platform.openai.com/docs/models/model-endpoint-compatibility
-	for i := 0; i < constant.APITypeDummy; i++ {
+	for i := range constant.APITypeDummy {
 		if i == constant.APITypeAIProxyLibrary {
 			continue
 		}
@@ -254,7 +254,7 @@ func ListModels(c *gin.Context, modelType int) {
 	models := service.GetGroupsEnabledModels(ownerGroups)
 	for _, modelName := range models {
 		if modelLimitEnable {
-			matchingName := ratio_setting.FormatMatchingModelName(modelName)
+			matchingName := ratio_setting.RoutingMatchModelName(modelName)
 			if !tokenModelLimit[modelName] && !tokenModelLimit[matchingName] {
 				continue
 			}
@@ -339,25 +339,11 @@ func ChannelListModels(c *gin.Context) {
 	})
 }
 
+// DashboardListModels serves the session-auth dashboard model list. Users with
+// contract entities see the union of their enabled contracts' available public
+// models; users without any contract keep the native channel-type listing.
 func DashboardListModels(c *gin.Context) {
-	if common.GetContextKeyBool(c, constant.ContextKeyContractMode) {
-		version, ok := common.GetContextKeyType[int64](c, constant.ContextKeyContractVersion)
-		if !ok {
-			respondCustomerContractModelLoadError(c)
-			return
-		}
-		snapshot, err := service.LoadCustomerContractSnapshot(c.GetInt("id"), version)
-		if err != nil || service.RefreshCustomerContractAvailability(snapshot) != nil {
-			respondCustomerContractModelLoadError(c)
-			return
-		}
-		models := make([]string, 0, len(snapshot.Rules))
-		for _, rule := range snapshot.Rules {
-			if rule.Available {
-				models = append(models, rule.PublicModel)
-			}
-		}
-		c.JSON(http.StatusOK, gin.H{"success": true, "data": map[int][]string{0: models}})
+	if listDashboardContractModels(c) {
 		return
 	}
 	modelsByChannel := make(map[int][]string, len(channelId2Models))

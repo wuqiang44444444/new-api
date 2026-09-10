@@ -1,0 +1,95 @@
+package service
+
+import (
+	"errors"
+	"fmt"
+	"sync"
+
+	"github.com/QuantumNous/new-api/model"
+	hosttypes "github.com/QuantumNous/new-api/types"
+)
+
+type cachedContractEntity struct {
+	authVersion int64
+	snapshot    *model.ContractEntitySnapshot
+}
+
+// customerContractEntityCache caches loaded contract entities by contract id.
+// Entries are fenced by the owner's authentication version: every contract
+// write bumps that version, so a stale entry can never be reused.
+var customerContractEntityCache sync.Map
+
+// LoadContractEntityForRequest loads one contract entity for request-side
+// resolution. A mismatched or missing authorization version is an
+// authorization failure, never a native-mode fallback.
+func LoadContractEntityForRequest(userId int, authVersion int64, contractId int) (*model.ContractEntitySnapshot, error) {
+	if userId <= 0 || contractId <= 0 || authVersion <= 0 {
+		return nil, fmt.Errorf("%w: invalid user or contract", ErrCustomerContractUnavailable)
+	}
+	if authVersion > 0 {
+		if cached, ok := customerContractEntityCache.Load(contractId); ok {
+			entry := cached.(cachedContractEntity)
+			if entry.authVersion == authVersion && entry.snapshot.UserId == userId {
+				return cloneContractEntitySnapshot(entry.snapshot), nil
+			}
+		}
+	}
+	snapshot, err := model.GetContractEntitySnapshot(contractId, false)
+	if err != nil {
+		if errors.Is(err, model.ErrCustomerContractEntityNotFound) {
+			return nil, fmt.Errorf("%w: contract %d does not exist", ErrCustomerContractUnavailable, contractId)
+		}
+		return nil, fmt.Errorf("%w: %v", ErrCustomerContractUnavailable, err)
+	}
+	if snapshot.UserId != userId {
+		return nil, fmt.Errorf("%w: contract owner mismatch", ErrCustomerContractUnavailable)
+	}
+	stored := cloneContractEntitySnapshot(snapshot)
+	customerContractEntityCache.Store(contractId, cachedContractEntity{authVersion: authVersion, snapshot: stored})
+	return cloneContractEntitySnapshot(stored), nil
+}
+
+func cloneContractEntitySnapshot(snapshot *model.ContractEntitySnapshot) *model.ContractEntitySnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	clone := *snapshot
+	clone.Rules = append([]model.ContractEntityRule(nil), snapshot.Rules...)
+	return &clone
+}
+
+// ResolveContractEntityRule freezes the contract billing fact for one public
+// model of a key-bound contract. A disabled contract returns a nil fact so the
+// request falls back to native handling.
+func ResolveContractEntityRule(userId int, authVersion int64, contractId int, publicModel string) (*hosttypes.ContractBillingFact, error) {
+	snapshot, err := LoadContractEntityForRequest(userId, authVersion, contractId)
+	if err != nil {
+		return nil, err
+	}
+	if !snapshot.Enabled {
+		return nil, nil
+	}
+	for _, rule := range snapshot.Rules {
+		if rule.PublicModel == publicModel {
+			return &hosttypes.ContractBillingFact{
+				UserId: userId, ContractId: snapshot.Id, ContractVersion: snapshot.Version,
+				PublicModel: rule.PublicModel, RouteGroup: rule.RouteGroup,
+				ChannelId: rule.ChannelId, RatioUnits: rule.RatioUnits,
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: %s", ErrCustomerContractModelDenied, publicModel)
+}
+
+// InvalidateContractEntityCache drops one contract's cached snapshot after a
+// committed write.
+func InvalidateContractEntityCache(contractId int) {
+	customerContractEntityCache.Delete(contractId)
+}
+
+func ResetContractEntityCacheForTest() {
+	customerContractEntityCache.Range(func(key any, _ any) bool {
+		customerContractEntityCache.Delete(key)
+		return true
+	})
+}

@@ -10,28 +10,15 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 )
 
-const moxingJoyCreatorAssetRoot = "/joycreator/openApi/v1/asset"
-
+// joyCreatorAssetAdapter implements the JoyCreator-family asset facade shared
+// by the remaining registered protocol (TokenSave). The Moxing JoyCreator
+// registration was removed when Moxing models converged onto the single
+// domestic Moxing Volcengine asset library.
 type joyCreatorAssetAdapter struct {
 	client
 	root         string
 	profile      dto.AssetUpstreamProfile
 	providerName string
-}
-
-type MoxingJoyCreatorAdapter struct {
-	*joyCreatorAssetAdapter
-}
-
-func NewMoxingJoyCreatorAdapter(baseURL, apiKey string, httpClient HTTPDoer) *MoxingJoyCreatorAdapter {
-	return &MoxingJoyCreatorAdapter{joyCreatorAssetAdapter: newJoyCreatorAssetAdapter(
-		baseURL,
-		apiKey,
-		httpClient,
-		moxingJoyCreatorAssetRoot,
-		dto.AssetUpstreamProfileMoxingJoyCreator,
-		"Moxing JoyCreator",
-	)}
 }
 
 func newJoyCreatorAssetAdapter(

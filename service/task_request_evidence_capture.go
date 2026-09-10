@@ -79,19 +79,33 @@ func BeginTaskRequestEvidence(c *gin.Context, kind string) error {
 		return nil
 	}
 	if err := system_setting.ValidateTaskRequestEvidenceConfig(system_setting.GetTaskRequestEvidenceConfig()); err != nil {
-		return fmt.Errorf("%w: invalid configuration", ErrTaskRequestEvidenceUnavailable)
+		return evidenceUnavailableFailure(
+			TaskRequestEvidenceCategoryConfiguration,
+			TaskRequestEvidenceStageConfiguration,
+			TaskRequestEvidenceSourceNone,
+		).WithCause(err)
 	}
 	storage, err := common.GetBodyStorage(c)
 	if err != nil {
-		return fmt.Errorf("evidence read request body failed: %w", err)
+		return evidenceUnavailableFailure(
+			TaskRequestEvidenceCategoryBodyRead,
+			TaskRequestEvidenceStageBodyCache,
+			TaskRequestEvidenceSourceNorth,
+		).WithCause(err)
 	}
 	if storage.Size() > evidenceMaxBodyBytes() {
-		return fmt.Errorf("%w: north body %d bytes exceeds limit %d",
-			ErrTaskRequestEvidenceBodyTooLarge, storage.Size(), evidenceMaxBodyBytes())
+		return evidenceTooLargeFailure(
+			TaskRequestEvidenceStageNorthCapacity,
+			TaskRequestEvidenceSourceNorth,
+			storage.Size(),
+			evidenceMaxBodyBytes(),
+		)
 	}
 	body, err := storage.Bytes()
 	if err != nil {
-		return fmt.Errorf("evidence read request body failed: %w", err)
+		return evidenceUnavailableFailure(
+			TaskRequestEvidenceCategoryBodyRead, TaskRequestEvidenceStageBodyCache, TaskRequestEvidenceSourceNorth,
+		).WithCause(err)
 	}
 
 	session := &taskRequestEvidenceSession{kind: kind}
@@ -121,7 +135,11 @@ func evidencePersistNorth(c *gin.Context, session *taskRequestEvidenceSession, b
 		evidence.UpstreamProtocol = c.Request.URL.Path
 	}
 	if err := model.CreateTaskRequestEvidence(evidence); err != nil {
-		return fmt.Errorf("%w: create evidence index failed: %v", ErrTaskRequestEvidenceUnavailable, err)
+		return evidenceUnavailableFailure(
+			TaskRequestEvidenceCategoryEventDatabase,
+			TaskRequestEvidenceStageIndexCreate,
+			TaskRequestEvidenceSourceNorth,
+		).WithCause(err)
 	}
 	session.evidenceID = evidence.Id
 
@@ -132,7 +150,11 @@ func evidencePersistNorth(c *gin.Context, session *taskRequestEvidenceSession, b
 	}
 	store := GetTaskRequestEvidenceStore()
 	if store == nil {
-		return fmt.Errorf("%w: store not initialized", ErrTaskRequestEvidenceUnavailable)
+		return evidenceUnavailableFailure(
+			TaskRequestEvidenceCategoryObjectStorage,
+			TaskRequestEvidenceStageObjectWrite,
+			TaskRequestEvidenceSourceNorth,
+		).WithCause(errors.New("evidence store not initialized"))
 	}
 	event := &model.TaskRequestEvidenceEvent{
 		EvidenceId:  evidence.Id,
@@ -151,7 +173,7 @@ func evidencePersistNorth(c *gin.Context, session *taskRequestEvidenceSession, b
 		}),
 		CreatedAt: now,
 	}
-	if err := persistTaskEvidenceBody(event, body); err != nil {
+	if err := persistTaskEvidenceBody(event, body, TaskRequestEvidenceSourceNorth); err != nil {
 		return err
 	}
 	return nil
@@ -207,14 +229,22 @@ func CaptureSouthboundTaskRequestEvidence(
 	}
 	store := GetTaskRequestEvidenceStore()
 	if store == nil {
-		return fmt.Errorf("%w: store not initialized", ErrTaskRequestEvidenceUnavailable)
+		return evidenceUnavailableFailure(
+			TaskRequestEvidenceCategoryObjectStorage,
+			TaskRequestEvidenceStageObjectWrite,
+			TaskRequestEvidenceSourceSouth,
+		).WithCause(errors.New("evidence store not initialized"))
 	}
 	session.mu.Lock()
 	evidenceID := session.evidenceID
 	attemptSeq := session.bumpAttemptSeq()
 	session.mu.Unlock()
 	if evidenceID <= 0 {
-		return fmt.Errorf("%w: evidence index missing", ErrTaskRequestEvidenceUnavailable)
+		return evidenceUnavailableFailure(
+			TaskRequestEvidenceCategoryUnavailable,
+			TaskRequestEvidenceStageIndexCreate,
+			TaskRequestEvidenceSourceSouth,
+		)
 	}
 
 	profile := info.ChannelOtherSettings.VideoUpstreamProfile
@@ -254,7 +284,7 @@ func CaptureSouthboundTaskRequestEvidence(
 			"host":    req.URL.Host,
 		}),
 	}
-	if err := persistTaskEvidenceBody(event, body); err != nil {
+	if err := persistTaskEvidenceBody(event, body, TaskRequestEvidenceSourceSouth); err != nil {
 		return err
 	}
 	return verifyEvidenceAttemptBeforeSend(c, info)
@@ -289,10 +319,12 @@ func evidenceSnapshotRequestBody(req *http.Request, maxBytes int64) ([]byte, err
 	limited := io.LimitReader(req.Body, maxBytes+1)
 	snapshot, readErr := io.ReadAll(limited)
 	if readErr != nil {
-		return nil, fmt.Errorf("evidence snapshot southbound body failed: %w", readErr)
+		return nil, evidenceUnavailableFailure(
+			TaskRequestEvidenceCategoryBodyRead, TaskRequestEvidenceStageBodySnapshot, TaskRequestEvidenceSourceSouth,
+		).WithCause(readErr)
 	}
 	if int64(len(snapshot)) > maxBytes {
-		return nil, fmt.Errorf("%w: southbound body exceeds limit %d", ErrTaskRequestEvidenceBodyTooLarge, maxBytes)
+		return nil, evidenceTooLargeFailure(TaskRequestEvidenceStageBodySnapshot, TaskRequestEvidenceSourceSouth, int64(len(snapshot)), maxBytes)
 	}
 	req.Body = io.NopCloser(bytes.NewReader(snapshot))
 	if req.ContentLength == -1 {
@@ -304,10 +336,12 @@ func evidenceSnapshotRequestBody(req *http.Request, maxBytes int64) ([]byte, err
 func evidenceReadBounded(reader io.Reader, maxBytes int64) ([]byte, error) {
 	payload, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("evidence snapshot read failed: %w", err)
+		return nil, evidenceUnavailableFailure(
+			TaskRequestEvidenceCategoryBodyRead, TaskRequestEvidenceStageBodySnapshot, TaskRequestEvidenceSourceSouth,
+		).WithCause(err)
 	}
 	if int64(len(payload)) > maxBytes {
-		return nil, fmt.Errorf("%w: body exceeds limit %d", ErrTaskRequestEvidenceBodyTooLarge, maxBytes)
+		return nil, evidenceTooLargeFailure(TaskRequestEvidenceStageBodySnapshot, TaskRequestEvidenceSourceSouth, int64(len(payload)), maxBytes)
 	}
 	return payload, nil
 }
@@ -417,8 +451,13 @@ func (t *evidenceResponseBodyTee) Close() error {
 		Target: t.target, ContentType: t.contentType, ByteCount: t.observed, Complete: complete,
 		Detail: evidenceMarshalDetail(map[string]any{"eof": t.eof, "truncated": t.phase != "", "read_failed": t.readErr != nil, "close_failed": t.closeErr != nil, "headers": EvidenceRedactHeaders(t.headers)}),
 	}
-	if err := persistTaskEvidenceBody(event, t.buffer.Bytes()); err != nil {
-		common.SysError("evidence response unavailable")
+	if err := persistTaskEvidenceBody(event, t.buffer.Bytes(), TaskRequestEvidenceSourceResponse); err != nil {
+		// 发送已发生：证据写入故障只记录净化诊断，不改变业务响应。
+		if rejection, ok := ClassifyTaskRequestEvidenceRejection(err); ok {
+			common.SysError("evidence response unavailable: " + rejection.Diagnostic)
+		} else {
+			common.SysError("evidence response unavailable")
+		}
 	}
 	t.buffer.Reset()
 	return t.closeErr

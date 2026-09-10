@@ -87,6 +87,7 @@ import {
   type ApiKeyGroupOption,
 } from './api-key-group-combobox'
 import { useApiKeys } from './api-keys-provider'
+import { ApiKeyContractField } from './api-key-contract-field'
 import { AutoGroupOrderEditor } from './auto-group-order-editor'
 
 type ApiKeyMutateDrawerProps = {
@@ -441,6 +442,8 @@ export function ApiKeysMutateDrawer({
                   </FormItem>
                 )}
               />
+
+              <ApiKeyContractField form={form} open={open} />
 
               {selectedGroup === 'auto' && (
                 <FormField

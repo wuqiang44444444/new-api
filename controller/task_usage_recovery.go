@@ -7,10 +7,11 @@ import (
 
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
-const securityProofScopeTaskUsageReview = "task_contract.usage.review"
+const securityProofScopeTaskUsageReview = service.VerificationScopeTaskUsageReview
 
 func ListTaskUsageRecovery(c *gin.Context) {
 	limit, err := strconv.Atoi(c.DefaultQuery("limit", "50"))
@@ -28,7 +29,7 @@ func ListTaskUsageRecovery(c *gin.Context) {
 }
 
 func ReviewTaskUsage(c *gin.Context) {
-	if !middleware.RequireSecurityProof(c, securityProofScopeTaskUsageReview, []string{"2fa", "passkey"}) {
+	if middleware.RequireSecurityProof(c, service.VerificationOperation{Scope: securityProofScopeTaskUsageReview}) == nil {
 		return
 	}
 	var request struct {

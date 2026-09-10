@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	securityProofScopeTaskContractAttemptRecover = "task_contract.attempt.recover"
-	securityProofScopeTaskContractAttemptReject  = "task_contract.attempt.reject"
+	securityProofScopeTaskContractAttemptRecover = service.VerificationScopeTaskAttemptRecover
+	securityProofScopeTaskContractAttemptReject  = service.VerificationScopeTaskAttemptReject
 )
 
 func ListTaskCreateAttemptsForRecovery(c *gin.Context) {
@@ -41,11 +41,7 @@ type taskCreateAttemptRecoveryRequest struct {
 }
 
 func RecoverTaskCreateAttempt(c *gin.Context) {
-	if !middleware.RequireSecurityProof(
-		c,
-		securityProofScopeTaskContractAttemptRecover,
-		[]string{"2fa", "passkey"},
-	) {
+	if middleware.RequireSecurityProof(c, service.VerificationOperation{Scope: securityProofScopeTaskContractAttemptRecover}) == nil {
 		return
 	}
 	attemptID := strings.TrimSpace(c.Param("attempt_id"))
@@ -88,11 +84,7 @@ type taskCreateAttemptRejectionRequest struct {
 }
 
 func RejectTaskCreateAttempt(c *gin.Context) {
-	if !middleware.RequireSecurityProof(
-		c,
-		securityProofScopeTaskContractAttemptReject,
-		[]string{"2fa", "passkey"},
-	) {
+	if middleware.RequireSecurityProof(c, service.VerificationOperation{Scope: securityProofScopeTaskContractAttemptReject}) == nil {
 		return
 	}
 	attemptID := strings.TrimSpace(c.Param("attempt_id"))

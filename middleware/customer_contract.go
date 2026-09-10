@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
@@ -18,36 +19,50 @@ import (
 )
 
 // applyCustomerContractRequest is the single request-side contract guard used
-// by native distribution and the dedicated Seedance route. Native users return
-// immediately without a contract-table read.
+// by native distribution and the dedicated Seedance route. Keys without a
+// contract binding return immediately without a contract-table read.
 func applyCustomerContractRequest(c *gin.Context, publicModel string) (*hosttypes.ContractBillingFact, error) {
-	if !common.GetContextKeyBool(c, constant.ContextKeyContractMode) {
+	contractId, _ := common.GetContextKeyType[int](c, constant.ContextKeyTokenContractId)
+	if contractId <= 0 {
 		return nil, nil
 	}
 	if strings.TrimSpace(publicModel) == "" {
-		return nil, fmt.Errorf("model is required by the customer contract")
+		return nil, fmt.Errorf("model is required by the contract")
 	}
-	version, ok := common.GetContextKeyType[int64](c, constant.ContextKeyContractVersion)
-	if !ok {
-		return nil, fmt.Errorf("customer contract version is unavailable")
+	authVersion, ok := common.GetContextKeyType[int64](c, constant.ContextKeyAuthVersion)
+	if !ok || authVersion <= 0 {
+		return nil, fmt.Errorf("%w: authorization version is unavailable", service.ErrCustomerContractUnavailable)
 	}
-	fact, err := service.ResolveCustomerContractRule(
+	fact, err := service.ResolveContractEntityRule(
 		common.GetContextKeyInt(c, constant.ContextKeyUserId),
-		version,
+		authVersion,
+		contractId,
 		publicModel,
 	)
 	if err != nil {
 		return nil, err
 	}
+	if fact == nil {
+		return nil, nil
+	}
 	common.SetContextKey(c, constant.ContextKeyUsingGroup, fact.RouteGroup)
 	common.SetContextKey(c, constant.ContextKeyTokenGroup, fact.RouteGroup)
 	common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, false)
 	common.SetContextKey(c, constant.ContextKeyContractFact, fact)
+	service.GetChannelConstraints(c).AddPin(dto.ChannelPin{
+		ChannelId: fact.ChannelId,
+		Source:    dto.PinSourceContract,
+		Rank:      dto.PinRankContract,
+		RetryMode: dto.PinRetrySingleAttempt,
+	})
 	return fact, nil
 }
 
 func channelSatisfiesCustomerContract(channel *model.Channel, fact *hosttypes.ContractBillingFact) bool {
 	if channel == nil || fact == nil || channel.Status != common.ChannelStatusEnabled {
+		return false
+	}
+	if fact.ChannelId > 0 && channel.Id != fact.ChannelId {
 		return false
 	}
 	if channel.Type == constant.ChannelTypeSeedanceLink {
@@ -116,4 +131,16 @@ func applyCustomerContractDistributeGate(c *gin.Context, publicModel string, sho
 		}
 	}
 	return contractFact, false
+}
+
+// Only a verified enabled binding bypasses the obsolete native token group.
+func activeTokenContract(token *model.Token, authVersion int64) (bool, error) {
+	if token.ContractId <= 0 {
+		return false, nil
+	}
+	snapshot, err := service.LoadContractEntityForRequest(token.UserId, authVersion, token.ContractId)
+	if err != nil {
+		return false, err
+	}
+	return snapshot.Enabled, nil
 }

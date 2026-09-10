@@ -22,28 +22,34 @@ Affinity、随机选渠、失败重选和 fallback 均不参与。
 | `modelark_v3_volcengine` | 火山方舟国内官方 | 官方 `/api/v3/contents/generations/tasks` |
 | `modelark_v3_byteplus` | BytePlus 官方 | 官方 `/api/v3/contents/generations/tasks` |
 | `tokensave_media_task_v1` | TokenSave 2.0 | `/v1/media/generations`、`/v1/media/tasks/{task_id}` |
-| `moxing_media_task_v1` | 墨行国内 2.0 | `/v1/media/generations`、`/v1/media/tasks/{task_id}` |
-| `moxing_modelark_media_v1` | 墨行 Fast、Mini、2.5 | `/v1/media/generations`、`/v1/media/tasks/{task_id}` |
+| `moxing_modelark_media_v1` | 墨行 2.0、Fast、Mini、2.5 | `/v1/media/generations`、`/v1/media/tasks/{task_id}` |
 | `ark_media_v1` | Ark 反代 | `/v1/ark/media/generations`、`/v1/ark/media/tasks/{task_id}` |
 | `feicai_videos_v1` | 飞彩；仅 URL，不支持素材库 | `/v1/videos`、`/v1/videos/{task_id}` |
-| `funcloud_seedance` | FunCloud Standard/Fast/Mini/2.5 | 四个 Provider 模型均在代码中精确注册创建路径 |
+| `funcloud_modelark_v3` | FunCloud Standard/Fast/Mini/2.5 | 共用 `/api/v3/contents/generations/tasks` |
 
 这些路径不出现在管理员 JSON 配置中。不要把第三方协议挂回 `DoubaoVideo`，也不要让客户端调用第三方
 私有路径。
 
-FunCloud 四个客户模型和路径必须精确对应：
+墨行统一为 `moxing_modelark_media_v1` 单协议，四个精确 Provider 模型
+（`doubao-seedance-2-0-260128`、`...-fast-...`、`...-mini-...`、`...2-5-...`）登记于
+`relaykit/dto/moxing_video_models.go` 唯一注册表。旧 `moxing_media_task_v1` 与
+`moxing_joycreator_assets_v1` 不再接受保存或创建；存量渠道直接在同一渠道原地改协议即可，
+无需专门的素材租户迁移、盘点或默认组处理。缺省时长由 adapter 显式南向落实为 5 秒，显式 `-1`
+原样发送并按登记预算上限估算。已创建的旧协议任务继续按创建时冻结事实查询与结算，不重发、不迁移。
 
-| 客户模型 | Provider 模型 | 创建路径 |
-| --- | --- | --- |
-| `seedance-2-funcloud` | `seedance-2` | `/api/v2/open/aigc/seedance2-0` |
-| `seedance-2-fast-funcloud` | `seedance-2-fast` | `/api/v2/open/aigc/seedance2-0-fast` |
-| `seedance-2-mini-funcloud` | `seedance-2-mini` | `/api/v2/open/aigc/seedance2-0-mini` |
-| `seedance-2-5-funcloud` | `seedance-2-5` | `/api/v2/open/aigc/seedance2-5` |
+FunCloud 仅允许 `funcloud_modelark_v3` 新配置和新提交，四模型共用
+`/api/v3/contents/generations/tasks`，查询使用该路径加 `/{task_id}`。
 
-一个 Channel 可以包含表中多个客户模型。Models、客户名称和 `model_mapping` 由管理员维护；保存时逐项
-解析 Channel Models，并确认最终 Provider 模型属于表中登记范围。Standard/Fast/Mini 可以在启用
-`funcloud_material` 的同一 Channel，2.5 只能位于素材协议为 `none` 的 Channel。查询路径统一为
-`/api/v2/open/aigc/{task_id}`，创建路径按最终 Provider 模型由代码注册，管理员不填写。
+| 客户模型示例 | Provider 模型 |
+| --- | --- |
+| `seedance-2-funcloud` | `seedance-2-0` |
+| `seedance-2-fast-funcloud` | `seedance-2-0-fast` |
+| `seedance-2-mini-funcloud` | `seedance-2-0-mini` |
+| `seedance-2-5-funcloud` | `seedance-2-5` |
+
+四模型可配置在同一 Channel 并配对 `funcloud_material`。旧 `funcloud_seedance` 不再接受保存或创建；
+管理员必须显式核对 V3 模型映射、连接、素材租户与价格后切换，不能只替换协议字符串。
+已创建 V2 任务继续按冻结 V2 事实查询和结算；unknown 创建不得重发到 V3。平台不自动修改存量渠道。
 
 ## 3. 素材协议清单
 
@@ -54,13 +60,12 @@ FunCloud 四个客户模型和路径必须精确对应：
 | `byteplus_assets_action_v2024_01_01` | `modelark_v3_byteplus` | 素材 AK/SK、Project、Region、TTL |
 | `ark_assets_v1` | `ark_media_v1` | Base URL、同一单 Key、TTL |
 | `tokensave_assets_v1` | `tokensave_media_task_v1` | Base URL、同一单 Key、TTL |
-| `moxing_joycreator_assets_v1` | `moxing_media_task_v1` | Base URL、同一单 Key、TTL |
 | `moxing_volc_assets_v1` | `moxing_modelark_media_v1` | Base URL、同一单 Key、TTL |
-| `funcloud_material` | `funcloud_seedance` | Base URL、同一单 Key、TTL；仅 Standard/Fast/Mini |
+| `funcloud_material` | `funcloud_modelark_v3` | Base URL、同一单 Key、TTL；四模型均可用 |
 
 国内火山与 BytePlus 使用不同协议标识和账号作用域，不得互换 Host、Region 或素材 ID。使用同一墨行
 连接、`moxing_modelark_media_v1` 和 `moxing_volc_assets_v1` 的 Fast、Mini、2.5 可以配置在同一个
-Channel；不同连接或协议仍须分开。飞彩、FunCloud 2.5 选择 `none`，不得配置 `funcloud_material`。
+Channel；不同连接或协议仍须分开。飞彩选择 `none`；FunCloud V3 四模型均可配对 `funcloud_material`。
 
 启用素材协议时，一个 Channel 就代表一个上游素材租户。需要共享素材的所有客户模型必须放在同一个
 Channel；不同租户或无法确认同租户时必须分开。首次保存会生成内部随机 identity；建立后 Channel Type

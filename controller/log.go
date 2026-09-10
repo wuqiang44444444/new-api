@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,6 +34,8 @@ func GetAllLogs(c *gin.Context) {
 	} else {
 		model.FormatRootLogs(logs)
 	}
+	// 只读投影：权限过滤与脱敏之后，为冻结表达式附加响应级展示投影。
+	service.AttachLogsBillingDisplay(logs)
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(logs)
 	common.ApiSuccess(c, pageInfo)
@@ -56,6 +59,8 @@ func GetUserLogs(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// 只读投影：脱敏之后为冻结表达式附加响应级展示投影。
+	service.AttachLogsBillingDisplay(logs)
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(logs)
 	common.ApiSuccess(c, pageInfo)
@@ -95,6 +100,7 @@ func GetLogByKey(c *gin.Context) {
 		})
 		return
 	}
+	service.AttachLogsBillingDisplay(logs)
 	c.JSON(200, gin.H{
 		"success": true,
 		"message": "",

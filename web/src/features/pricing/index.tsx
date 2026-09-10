@@ -1,3 +1,4 @@
+import { ContractPricingSelect } from './components/contract-pricing-select'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -38,6 +39,7 @@ import { usePricingData } from './hooks/use-pricing-data'
 
 export function Pricing() {
   const { t } = useTranslation()
+  const [contractId, setContractId] = useState<number | 'batch' | null>(null)
   const [selectedModelName, setSelectedModelName] = useState<string | null>(
     null
   )
@@ -52,7 +54,7 @@ export function Pricing() {
     isLoading,
     priceRate,
     usdExchangeRate,
-  } = usePricingData()
+  } = usePricingData(true, contractId)
 
   const {
     searchInput,
@@ -191,6 +193,7 @@ export function Pricing() {
                 'Discover curated AI models, compare pricing and capabilities, and choose the right model for every scenario.'
               )}
             </p>
+            <ContractPricingSelect value={contractId} onChange={setContractId} />
             <SearchBar
               value={searchInput}
               onChange={setSearchInput}
@@ -202,7 +205,7 @@ export function Pricing() {
             />
           </header>
 
-          <div className='grid gap-4 xl:grid-cols-[330px_minmax(0,1fr)]'>
+          <div className='grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]'>
             <PricingSidebar
               quotaTypeFilter={quotaTypeFilter}
               endpointTypeFilter={endpointTypeFilter}
@@ -221,7 +224,7 @@ export function Pricing() {
               models={models || []}
               hasActiveFilters={hasActiveFilters}
               onClearFilters={clearFilters}
-              className='hover-scrollbar sticky top-4 hidden max-h-[calc(100dvh-2rem)] self-start overflow-y-auto xl:block'
+              className='hover-scrollbar sticky top-20 hidden max-h-[calc(100dvh-6rem)] self-start overflow-y-auto xl:block'
             />
 
             <main className='min-w-0 space-y-4'>

@@ -86,20 +86,24 @@ func TestPendingUserAuthFenceRejectsStaleCacheWrite(t *testing.T) {
 	assert.False(t, server.Exists(getUserCacheKey(userID)))
 }
 
-func TestUserAuthCacheRoundTripsCustomerContractFenceFields(t *testing.T) {
+func TestUserAuthCacheRejectsStaleSchemaHash(t *testing.T) {
 	useUserCacheMiniRedis(t)
 	const userID = 4203
 	require.NoError(t, writeUserCache(&UserBase{
-		Id: userID, Group: "default", Username: "contract-cache", AuthVersion: 9,
-		CacheSchema: userCacheSchemaVersion, ContractMode: true, ContractVersion: 6,
+		Id: userID, Group: "default", Username: "schema-cache", AuthVersion: 9,
+		CacheSchema: userCacheSchemaVersion,
 	}, true))
 
 	cached, err := cacheGetUserBase(userID)
 	require.NoError(t, err)
-	assert.True(t, cached.ContractMode)
-	assert.EqualValues(t, 6, cached.ContractVersion)
 	assert.EqualValues(t, 9, cached.AuthVersion)
 	assert.Equal(t, userCacheSchemaVersion, cached.CacheSchema)
+
+	// A hash left behind by a previous cache schema must be treated as stale
+	// instead of silently re-authorizing requests after an upgrade.
+	require.NoError(t, common.RDB.HSet(t.Context(), getUserCacheKey(userID), "CacheSchema", userCacheSchemaVersion-1).Err())
+	_, err = cacheGetUserBase(userID)
+	require.Error(t, err)
 }
 
 func TestUserAuthFieldUpdateRejectsVersionMismatch(t *testing.T) {

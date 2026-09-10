@@ -31,6 +31,9 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    server: {
+      deps: { inline: [/@lobehub\//, /antd-style/] },
+    },
     setupFiles: ['./src/test-setup.ts', './src/features/docs/__tests__/setup.ts'],
     clearMocks: true,
     restoreMocks: true,

@@ -1,4 +1,19 @@
-import type { CustomerContractRule } from '../types'
+import type {
+  CustomerContractChannelGroupOption,
+  CustomerContractChannelOption,
+  CustomerContractRule,
+} from '../types'
+
+export function channelOptionsForRule(
+  channelGroups: CustomerContractChannelGroupOption[],
+  rule: Pick<CustomerContractRule, 'route_group' | 'model'>
+): CustomerContractChannelOption[] {
+  return (
+    channelGroups
+      .find((group) => group.group === rule.route_group)
+      ?.models.find((entry) => entry.model === rule.model)?.channels ?? []
+  )
+}
 
 export function parseContractDiscount(raw: string): number | null {
   const value = raw.trim()

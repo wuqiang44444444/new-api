@@ -16,56 +16,50 @@ import {
 } from '@/components/ui/select'
 
 import type {
-  CustomerContractGroupOption,
-  CustomerContractRule,
+  ContractRuleDraft,
+  CustomerContractChannelGroupOption,
 } from '../types'
 import {
-  draftPricePreview,
+  channelOptionsForRule,
   draftEffectiveMultiplier,
+  draftPricePreview,
   normalizeContractDiscount,
   parseContractDiscount,
 } from './user-contract-utils'
 
 type CustomerContractRuleListProps = {
-  rules: CustomerContractRule[]
-  options: CustomerContractGroupOption[]
+  rules: ContractRuleDraft[]
+  channelGroups: CustomerContractChannelGroupOption[]
   search: string
   onSearchChange: (value: string) => void
-  onUpdate: (index: number, patch: Partial<CustomerContractRule>) => void
+  onUpdate: (index: number, patch: Partial<ContractRuleDraft>) => void
   onRemove: (index: number) => void
 }
 
-export function CustomerContractRuleList({
-  rules,
-  options,
-  search,
-  onSearchChange,
-  onUpdate,
-  onRemove,
-}: CustomerContractRuleListProps) {
+export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
   const { t } = useTranslation()
   return (
     <div className='flex flex-col gap-3'>
       <Input
-        value={search}
-        onChange={(event) => onSearchChange(event.target.value)}
+        value={props.search}
+        onChange={(event) => props.onSearchChange(event.target.value)}
         placeholder={t('Search models...')}
         aria-label={t('Search models')}
       />
-      {rules.map((rule, index) => {
+      {props.rules.map((rule, index) => {
         if (
-          search &&
-          !rule.model.toLowerCase().includes(search.toLowerCase())
+          props.search &&
+          !rule.model.toLowerCase().includes(props.search.toLowerCase())
         ) {
           return null
         }
-        const groupModels =
-          options.find((option) => option.group === rule.route_group)?.models ||
-          []
+        const channelOptions = channelOptionsForRule(props.channelGroups, rule)
+        const groupRatio = rule.native_group_ratio
+        const specialRatio = rule.special_group_ratio
         return (
           <div
             key={rule.model}
-            className='grid gap-3 rounded-lg border p-3 lg:grid-cols-[minmax(200px,1fr)_170px_140px_160px_160px_auto] lg:items-end'
+            className='grid gap-3 rounded-lg border p-3 lg:grid-cols-[minmax(180px,1fr)_140px_190px_150px_minmax(220px,1fr)_auto] lg:items-end'
           >
             <Field>
               <FieldLabel>{t('Public model')}</FieldLabel>
@@ -78,51 +72,50 @@ export function CustomerContractRuleList({
             </Field>
             <Field>
               <FieldLabel>{t('Route group')}</FieldLabel>
+              <div className='flex h-8 items-center gap-2 font-mono text-sm'>
+                {rule.route_group}
+              </div>
+              {!channelOptions.length && (
+                <FieldDescription>
+                  {t('No qualifying channel is available for this model')}
+                </FieldDescription>
+              )}
+            </Field>
+            <Field>
+              <FieldLabel>{t('Channel')}</FieldLabel>
               <Select
-                items={options.map((option) => ({
-                  value: option.group,
-                  label: option.group,
+                items={channelOptions.map((channel) => ({
+                  value: String(channel.id),
+                  label: channel.name,
                 }))}
-                value={rule.route_group}
+                value={String(rule.channel_id || '')}
                 onValueChange={(value) => {
                   if (!value) return
-                  const option = options.find(
-                    (candidate) => candidate.group === value
-                  )
-                  onUpdate(index, {
-                    route_group: value,
-                    native_group_ratio: option?.native_group_ratio || '1',
-                    special_group_ratio: option?.special_group_ratio || false,
-                    price: option?.prices?.[rule.model] || rule.price,
-                    effective_multiplier: option?.native_group_ratio || '1',
-                  })
+                  props.onUpdate(index, { channel_id: Number(value) })
                 }}
               >
                 <SelectTrigger className='w-full'>
-                  <SelectValue>{rule.route_group}</SelectValue>
+                  <SelectValue>
+                    {rule.channel_id
+                      ? channelOptions.find(
+                          (channel) => channel.id === rule.channel_id
+                        )?.name
+                      : t('Select channel')}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
                   <SelectGroup>
-                    {options
-                      .filter(
-                        (option) =>
-                          option.group === rule.route_group ||
-                          option.models.includes(rule.model)
-                      )
-                      .map((option) => (
-                        <SelectItem key={option.group} value={option.group}>
-                          {option.group}
-                        </SelectItem>
-                      ))}
+                    {channelOptions.map((channel) => (
+                      <SelectItem key={channel.id} value={String(channel.id)}>
+                        {channel.name}
+                      </SelectItem>
+                    ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
-              <FieldDescription>
-                {t('Route group')}: {rule.route_group}
-              </FieldDescription>
-              {!groupModels.includes(rule.model) && (
+              {!rule.channel_id && channelOptions.length > 1 && (
                 <FieldDescription>
-                  {t('Model is unavailable in this group')}
+                  {t('Select the channel that serves this model')}
                 </FieldDescription>
               )}
             </Field>
@@ -134,14 +127,14 @@ export function CustomerContractRuleList({
                 id={`contract-discount-${index}`}
                 value={rule.discount}
                 onChange={(event) =>
-                  onUpdate(index, { discount: event.target.value })
+                  props.onUpdate(index, { discount: event.target.value })
                 }
                 onBlur={(event) => {
                   const normalized = normalizeContractDiscount(
                     event.target.value
                   )
                   if (normalized !== null) {
-                    onUpdate(index, { discount: normalized })
+                    props.onUpdate(index, { discount: normalized })
                   }
                 }}
                 placeholder={t('e.g. 0.8, 80%, or 8折')}
@@ -157,11 +150,11 @@ export function CustomerContractRuleList({
               <FieldLabel>{t('Pricing details')}</FieldLabel>
               <ContractPriceDetails
                 price={draftPricePreview(rule)}
-                channelMultiplier={rule.native_group_ratio}
+                channelMultiplier={groupRatio}
                 contractDiscount={rule.discount}
                 effectiveMultiplier={draftEffectiveMultiplier(rule)}
               />
-              {rule.special_group_ratio && (
+              {specialRatio && (
                 <FieldDescription>
                   {t('A special native group ratio also applies')}
                 </FieldDescription>
@@ -172,7 +165,7 @@ export function CustomerContractRuleList({
               variant='ghost'
               size='icon'
               aria-label={t('Remove contract rule')}
-              onClick={() => onRemove(index)}
+              onClick={() => props.onRemove(index)}
             >
               <Trash2 />
             </Button>

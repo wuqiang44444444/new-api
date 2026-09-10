@@ -1,0 +1,506 @@
+{
+  "hour(\"Asia/Shanghai\") \u003e= 9 ? tier(\"peak\", p * 3) : tier(\"base\", p * 1.5)": {
+    "status": "exact",
+    "unit": "usd_per_million_tokens",
+    "display_version": 2,
+    "expression_version": 1,
+    "expression_hash": "e43850d8184ce6ca0e0a71ab0e58c5ab160145081dc5ab12601561864c5eb8b5",
+    "tiers": [
+      {
+        "label": "peak",
+        "condition_text": "hour(\"Asia/Shanghai\") \u003e= 9",
+        "condition": {
+          "text": "hour(\"Asia/Shanghai\") \u003e= 9",
+          "multiplier": 1,
+          "fallback": 1,
+          "source": "time",
+          "time_func": "hour",
+          "timezone": "Asia/Shanghai",
+          "compare_op": "\u003e=",
+          "value": "9"
+        },
+        "unit_prices": { "p": 3 }
+      },
+      {
+        "label": "base",
+        "condition_text": "!(hour(\"Asia/Shanghai\") \u003e= 9)",
+        "condition": {
+          "text": "!(hour(\"Asia/Shanghai\") \u003e= 9)",
+          "multiplier": 1,
+          "fallback": 1,
+          "op": "not",
+          "children": [
+            {
+              "text": "hour(\"Asia/Shanghai\") \u003e= 9",
+              "multiplier": 1,
+              "fallback": 1,
+              "source": "time",
+              "time_func": "hour",
+              "timezone": "Asia/Shanghai",
+              "compare_op": "\u003e=",
+              "value": "9"
+            }
+          ]
+        },
+        "unit_prices": { "p": 1.5 }
+      }
+    ]
+  },
+  "len \u003c= 200000 ? tier(\"standard\", p * 3 + c * 15) : tier(\"long\", p * 6 + c * 22.5)": {
+    "status": "exact",
+    "unit": "usd_per_million_tokens",
+    "display_version": 2,
+    "expression_version": 1,
+    "expression_hash": "09793fdaaf477ee6c957e4da5b4923e53c7879ce5975b683f2bd600cfd53fc3f",
+    "tiers": [
+      {
+        "label": "standard",
+        "conditions": [{ "var": "len", "op": "\u003c=", "value": 200000 }],
+        "condition_text": "len \u003c= 200000",
+        "condition": {
+          "text": "len \u003c= 200000",
+          "multiplier": 1,
+          "fallback": 1,
+          "source": "token",
+          "compare_op": "\u003c=",
+          "value": "200000",
+          "path": "len"
+        },
+        "unit_prices": { "c": 15, "p": 3 }
+      },
+      {
+        "label": "long",
+        "condition_text": "!(len \u003c= 200000)",
+        "condition": {
+          "text": "!(len \u003c= 200000)",
+          "multiplier": 1,
+          "fallback": 1,
+          "op": "not",
+          "children": [
+            {
+              "text": "len \u003c= 200000",
+              "multiplier": 1,
+              "fallback": 1,
+              "source": "token",
+              "compare_op": "\u003c=",
+              "value": "200000",
+              "path": "len"
+            }
+          ]
+        },
+        "unit_prices": { "c": 22.5, "p": 6 }
+      }
+    ]
+  },
+  "len \u003c= 200000 ? tier(\"standard\", p * 3 + c * 15) : tier(\"long_context\", p * 6 + c * 30)": {
+    "status": "exact",
+    "unit": "usd_per_million_tokens",
+    "display_version": 2,
+    "expression_version": 1,
+    "expression_hash": "117cc7ed3b10c2e972771596b6fe66782d5c8abf0bda3b224a5f704e5bb7a894",
+    "tiers": [
+      {
+        "label": "standard",
+        "conditions": [{ "var": "len", "op": "\u003c=", "value": 200000 }],
+        "condition_text": "len \u003c= 200000",
+        "condition": {
+          "text": "len \u003c= 200000",
+          "multiplier": 1,
+          "fallback": 1,
+          "source": "token",
+          "compare_op": "\u003c=",
+          "value": "200000",
+          "path": "len"
+        },
+        "unit_prices": { "c": 15, "p": 3 }
+      },
+      {
+        "label": "long_context",
+        "condition_text": "!(len \u003c= 200000)",
+        "condition": {
+          "text": "!(len \u003c= 200000)",
+          "multiplier": 1,
+          "fallback": 1,
+          "op": "not",
+          "children": [
+            {
+              "text": "len \u003c= 200000",
+              "multiplier": 1,
+              "fallback": 1,
+              "source": "token",
+              "compare_op": "\u003c=",
+              "value": "200000",
+              "path": "len"
+            }
+          ]
+        },
+        "unit_prices": { "c": 30, "p": 6 }
+      }
+    ]
+  },
+  "tier(\"base\", p * 1.5 + cr * 0.05 + c * 4.5) * (\n  weekday(\"Asia/Shanghai\") \u003e= 1 \u0026\u0026\n  weekday(\"Asia/Shanghai\") \u003c= 5 \u0026\u0026\n  (\n    (hour(\"Asia/Shanghai\") \u003e= 9 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 12) ||\n    (hour(\"Asia/Shanghai\") \u003e= 14 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 18)\n  )\n  ? 2 : 1\n) / 6.71": {
+    "status": "exact",
+    "unit": "usd_per_million_tokens",
+    "display_version": 2,
+    "expression_version": 1,
+    "expression_hash": "f3222f243c6ae63b14837d9e39aca3077e4f45216c4045fa0e49be183c17975f",
+    "tiers": [
+      {
+        "label": "base",
+        "unit_prices": {
+          "c": 0.6706408345752608,
+          "cr": 0.007451564828614009,
+          "p": 0.22354694485842025
+        }
+      }
+    ],
+    "rules": [
+      {
+        "text": "weekday(\"Asia/Shanghai\") \u003e= 1 \u0026\u0026 weekday(\"Asia/Shanghai\") \u003c= 5 \u0026\u0026 ((hour(\"Asia/Shanghai\") \u003e= 9 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 12) || (hour(\"Asia/Shanghai\") \u003e= 14 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 18))",
+        "multiplier": 2,
+        "fallback": 1,
+        "op": "and",
+        "children": [
+          {
+            "text": "weekday(\"Asia/Shanghai\") \u003e= 1 \u0026\u0026 weekday(\"Asia/Shanghai\") \u003c= 5",
+            "multiplier": 2,
+            "fallback": 1,
+            "op": "and",
+            "children": [
+              {
+                "text": "weekday(\"Asia/Shanghai\") \u003e= 1",
+                "multiplier": 2,
+                "fallback": 1,
+                "source": "time",
+                "time_func": "weekday",
+                "timezone": "Asia/Shanghai",
+                "compare_op": "\u003e=",
+                "value": "1"
+              },
+              {
+                "text": "weekday(\"Asia/Shanghai\") \u003c= 5",
+                "multiplier": 2,
+                "fallback": 1,
+                "source": "time",
+                "time_func": "weekday",
+                "timezone": "Asia/Shanghai",
+                "compare_op": "\u003c=",
+                "value": "5"
+              }
+            ]
+          },
+          {
+            "text": "(hour(\"Asia/Shanghai\") \u003e= 9 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 12) || (hour(\"Asia/Shanghai\") \u003e= 14 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 18)",
+            "multiplier": 2,
+            "fallback": 1,
+            "op": "or",
+            "children": [
+              {
+                "text": "hour(\"Asia/Shanghai\") \u003e= 9 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 12",
+                "multiplier": 2,
+                "fallback": 1,
+                "op": "and",
+                "children": [
+                  {
+                    "text": "hour(\"Asia/Shanghai\") \u003e= 9",
+                    "multiplier": 2,
+                    "fallback": 1,
+                    "source": "time",
+                    "time_func": "hour",
+                    "timezone": "Asia/Shanghai",
+                    "compare_op": "\u003e=",
+                    "value": "9"
+                  },
+                  {
+                    "text": "hour(\"Asia/Shanghai\") \u003c 12",
+                    "multiplier": 2,
+                    "fallback": 1,
+                    "source": "time",
+                    "time_func": "hour",
+                    "timezone": "Asia/Shanghai",
+                    "compare_op": "\u003c",
+                    "value": "12"
+                  }
+                ]
+              },
+              {
+                "text": "hour(\"Asia/Shanghai\") \u003e= 14 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 18",
+                "multiplier": 2,
+                "fallback": 1,
+                "op": "and",
+                "children": [
+                  {
+                    "text": "hour(\"Asia/Shanghai\") \u003e= 14",
+                    "multiplier": 2,
+                    "fallback": 1,
+                    "source": "time",
+                    "time_func": "hour",
+                    "timezone": "Asia/Shanghai",
+                    "compare_op": "\u003e=",
+                    "value": "14"
+                  },
+                  {
+                    "text": "hour(\"Asia/Shanghai\") \u003c 18",
+                    "multiplier": 2,
+                    "fallback": 1,
+                    "source": "time",
+                    "time_func": "hour",
+                    "timezone": "Asia/Shanghai",
+                    "compare_op": "\u003c",
+                    "value": "18"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "scenarios": [
+      {
+        "matched": false,
+        "tiers": [
+          {
+            "label": "base",
+            "unit_prices": {
+              "c": 0.6706408345752608,
+              "cr": 0.007451564828614009,
+              "p": 0.22354694485842025
+            }
+          }
+        ]
+      },
+      {
+        "matched": true,
+        "tiers": [
+          {
+            "label": "base",
+            "unit_prices": {
+              "c": 1.3412816691505216,
+              "cr": 0.014903129657228018,
+              "p": 0.4470938897168405
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "tier(\"base\", p * 1.5 + cr * 0.05 + c * 4.5) * (\n  weekday(\"Asia/Shanghai\") \u003e= 1 \u0026\u0026\n  weekday(\"Asia/Shanghai\") \u003c= 5 \u0026\u0026\n  (\n    (hour(\"Asia/Shanghai\") \u003e= 9 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 12) ||\n    (hour(\"Asia/Shanghai\") \u003e= 14 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 18)\n  )\n  ? 2 : 1\n) / 6.9": {
+    "status": "exact",
+    "unit": "usd_per_million_tokens",
+    "display_version": 2,
+    "expression_version": 1,
+    "expression_hash": "87096ec97f2f35ab5516d147038974c02188d34e3ec4222c76f4bfa2eafc745d",
+    "tiers": [
+      {
+        "label": "base",
+        "unit_prices": {
+          "c": 0.6521739130434783,
+          "cr": 0.007246376811594204,
+          "p": 0.2173913043478261
+        }
+      }
+    ],
+    "rules": [
+      {
+        "text": "weekday(\"Asia/Shanghai\") \u003e= 1 \u0026\u0026 weekday(\"Asia/Shanghai\") \u003c= 5 \u0026\u0026 ((hour(\"Asia/Shanghai\") \u003e= 9 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 12) || (hour(\"Asia/Shanghai\") \u003e= 14 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 18))",
+        "multiplier": 2,
+        "fallback": 1,
+        "op": "and",
+        "children": [
+          {
+            "text": "weekday(\"Asia/Shanghai\") \u003e= 1 \u0026\u0026 weekday(\"Asia/Shanghai\") \u003c= 5",
+            "multiplier": 2,
+            "fallback": 1,
+            "op": "and",
+            "children": [
+              {
+                "text": "weekday(\"Asia/Shanghai\") \u003e= 1",
+                "multiplier": 2,
+                "fallback": 1,
+                "source": "time",
+                "time_func": "weekday",
+                "timezone": "Asia/Shanghai",
+                "compare_op": "\u003e=",
+                "value": "1"
+              },
+              {
+                "text": "weekday(\"Asia/Shanghai\") \u003c= 5",
+                "multiplier": 2,
+                "fallback": 1,
+                "source": "time",
+                "time_func": "weekday",
+                "timezone": "Asia/Shanghai",
+                "compare_op": "\u003c=",
+                "value": "5"
+              }
+            ]
+          },
+          {
+            "text": "(hour(\"Asia/Shanghai\") \u003e= 9 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 12) || (hour(\"Asia/Shanghai\") \u003e= 14 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 18)",
+            "multiplier": 2,
+            "fallback": 1,
+            "op": "or",
+            "children": [
+              {
+                "text": "hour(\"Asia/Shanghai\") \u003e= 9 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 12",
+                "multiplier": 2,
+                "fallback": 1,
+                "op": "and",
+                "children": [
+                  {
+                    "text": "hour(\"Asia/Shanghai\") \u003e= 9",
+                    "multiplier": 2,
+                    "fallback": 1,
+                    "source": "time",
+                    "time_func": "hour",
+                    "timezone": "Asia/Shanghai",
+                    "compare_op": "\u003e=",
+                    "value": "9"
+                  },
+                  {
+                    "text": "hour(\"Asia/Shanghai\") \u003c 12",
+                    "multiplier": 2,
+                    "fallback": 1,
+                    "source": "time",
+                    "time_func": "hour",
+                    "timezone": "Asia/Shanghai",
+                    "compare_op": "\u003c",
+                    "value": "12"
+                  }
+                ]
+              },
+              {
+                "text": "hour(\"Asia/Shanghai\") \u003e= 14 \u0026\u0026 hour(\"Asia/Shanghai\") \u003c 18",
+                "multiplier": 2,
+                "fallback": 1,
+                "op": "and",
+                "children": [
+                  {
+                    "text": "hour(\"Asia/Shanghai\") \u003e= 14",
+                    "multiplier": 2,
+                    "fallback": 1,
+                    "source": "time",
+                    "time_func": "hour",
+                    "timezone": "Asia/Shanghai",
+                    "compare_op": "\u003e=",
+                    "value": "14"
+                  },
+                  {
+                    "text": "hour(\"Asia/Shanghai\") \u003c 18",
+                    "multiplier": 2,
+                    "fallback": 1,
+                    "source": "time",
+                    "time_func": "hour",
+                    "timezone": "Asia/Shanghai",
+                    "compare_op": "\u003c",
+                    "value": "18"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "scenarios": [
+      {
+        "matched": false,
+        "tiers": [
+          {
+            "label": "base",
+            "unit_prices": {
+              "c": 0.6521739130434783,
+              "cr": 0.007246376811594204,
+              "p": 0.2173913043478261
+            }
+          }
+        ]
+      },
+      {
+        "matched": true,
+        "tiers": [
+          {
+            "label": "base",
+            "unit_prices": {
+              "c": 1.3043478260869565,
+              "cr": 0.014492753623188408,
+              "p": 0.4347826086956522
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "tier(\"base\", p * 2 + 10000) + 20000": {
+    "status": "exact",
+    "unit": "usd_per_million_tokens",
+    "display_version": 2,
+    "expression_version": 1,
+    "expression_hash": "456dd6b36b8fd1fd8a3863f08859be9acc3016348fb5681455cbaf50f12049ef",
+    "tiers": [
+      {
+        "label": "base",
+        "unit_prices": { "p": 2 },
+        "constant": 0.01,
+        "has_constant": true
+      }
+    ],
+    "constant_charge": 0.02
+  },
+  "tier(\"base\", p * 3 + c * 15 + cr * 0.3)": {
+    "status": "exact",
+    "unit": "usd_per_million_tokens",
+    "display_version": 2,
+    "expression_version": 1,
+    "expression_hash": "8688c9a975fb8799a46064c9e869461c7947d00a14590ebd077dd87973f4a937",
+    "tiers": [
+      { "label": "base", "unit_prices": { "c": 15, "cr": 0.3, "p": 3 } }
+    ]
+  },
+  "tier(\"base\", p * 3 + c * 15)": {
+    "status": "exact",
+    "unit": "usd_per_million_tokens",
+    "display_version": 2,
+    "expression_version": 1,
+    "expression_hash": "b6d32cc066104d2533b980a262e4432cad6820728ab1fb7dc833c48fa59c10ed",
+    "tiers": [{ "label": "base", "unit_prices": { "c": 15, "p": 3 } }]
+  },
+  "tier(\"free\", p * 0 + c * 0)": {
+    "status": "exact",
+    "unit": "usd_per_million_tokens",
+    "display_version": 2,
+    "expression_version": 1,
+    "expression_hash": "84287a0f3d56ee01ba0cd6e140b1aec183d3dd2bf1076495a37d0096bfc7a060",
+    "tiers": [{ "label": "free", "unit_prices": { "c": 0, "p": 0 } }]
+  },
+  "v1:(tier(\"base\", p * 2 + c * 8)) * (header(\"x-priority\") == \"high\" ? 2 : 1)": {
+    "status": "exact",
+    "unit": "usd_per_million_tokens",
+    "display_version": 2,
+    "expression_version": 1,
+    "expression_hash": "0a90dc437126ce6f10da9adac4d72de74f1e83e48a02a55812846073df2c06dc",
+    "tiers": [{ "label": "base", "unit_prices": { "c": 8, "p": 2 } }],
+    "rules": [
+      {
+        "text": "header(\"x-priority\") == \"high\"",
+        "multiplier": 2,
+        "fallback": 1,
+        "source": "header",
+        "compare_op": "==",
+        "value": "high",
+        "path": "x-priority"
+      }
+    ],
+    "scenarios": [
+      {
+        "matched": false,
+        "tiers": [{ "label": "base", "unit_prices": { "c": 8, "p": 2 } }]
+      },
+      {
+        "matched": true,
+        "tiers": [{ "label": "base", "unit_prices": { "c": 16, "p": 4 } }]
+      }
+    ]
+  }
+}

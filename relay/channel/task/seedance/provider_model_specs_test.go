@@ -33,48 +33,67 @@ func TestProviderModelSpecsEnforcePerModelContracts(t *testing.T) {
 			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Resolution = common.GetPointer("1080p") },
 		},
 		{
-			name: "TokenSave 2.0 rejects video input before submission", protocol: kitdto.VideoUpstreamProtocolTokenSaveMediaTaskV1, model: modelSeedance20,
+			name: "TokenSave retains its callback boundary", protocol: kitdto.VideoUpstreamProtocolTokenSaveMediaTaskV1, model: modelSeedance20,
+			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.CallbackURL = common.GetPointer("https://example.com/callback") }, wantErr: true,
+		},
+		{
+			name: "TokenSave 2.0 accepts video input before submission", protocol: kitdto.VideoUpstreamProtocolTokenSaveMediaTaskV1, model: modelSeedance20,
 			mutate: func(request *dto.ModelArkVideoCreateRequest) {
 				request.Content = []dto.ModelArkVideoContent{{
 					Type: "video_url", Role: common.GetPointer("reference_video"),
 					VideoURL: &dto.VideoMediaURL{URL: "https://example.com/video.mp4"},
 				}}
-			}, wantErr: true,
+			},
 		},
 		{
-			name: "TokenSave 2.0 rejects audio input before submission", protocol: kitdto.VideoUpstreamProtocolTokenSaveMediaTaskV1, model: modelSeedance20,
+			name: "TokenSave 2.0 accepts audio input before submission", protocol: kitdto.VideoUpstreamProtocolTokenSaveMediaTaskV1, model: modelSeedance20,
 			mutate: func(request *dto.ModelArkVideoCreateRequest) {
 				request.Content = []dto.ModelArkVideoContent{{
 					Type: "audio_url", Role: common.GetPointer("reference_audio"),
 					AudioURL: &dto.VideoMediaURL{URL: "https://example.com/audio.mp3"},
 				}}
+			},
+		},
+		{
+			name: "Moxing 2.0 accepts unlisted resolution without a local enum", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20,
+			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Resolution = common.GetPointer("1080p") },
+		},
+		{
+			name: "Moxing 2.0 accepts seed", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20,
+			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Seed = common.GetPointer(24) },
+		},
+		{
+			name: "Moxing 2.0 accepts explicit false camera fixed", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20,
+			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.CameraFixed = common.GetPointer(false) },
+		},
+		{
+			name: "Moxing 2.0 keeps the documented audio pairing rule", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20,
+			mutate: func(request *dto.ModelArkVideoCreateRequest) {
+				request.Content = []dto.ModelArkVideoContent{{Type: "audio_url", Role: common.GetPointer("reference_audio"), AudioURL: &dto.VideoMediaURL{URL: "https://example.com/audio.mp3"}}}
 			}, wantErr: true,
 		},
 		{
-			name: "Moxing 2.0 rejects 1080p", protocol: kitdto.VideoUpstreamProtocolMoxingMediaTaskV1, model: modelSeedance20,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Resolution = common.GetPointer("1080p") }, wantErr: true,
-		},
-		{
-			name: "Moxing 2.0 rejects seed", protocol: kitdto.VideoUpstreamProtocolMoxingMediaTaskV1, model: modelSeedance20,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Seed = common.GetPointer(24) }, wantErr: true,
-		},
-		{
-			name: "Moxing 2.0 rejects explicit false camera fixed", protocol: kitdto.VideoUpstreamProtocolMoxingMediaTaskV1, model: modelSeedance20,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.CameraFixed = common.GetPointer(false) }, wantErr: true,
+			name: "Moxing 2.0 accepts audio paired with a reference video", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20,
+			mutate: func(request *dto.ModelArkVideoCreateRequest) {
+				request.Content = []dto.ModelArkVideoContent{
+					{Type: "video_url", Role: common.GetPointer("reference_video"), VideoURL: &dto.VideoMediaURL{URL: "https://example.com/video.mp4"}},
+					{Type: "audio_url", Role: common.GetPointer("reference_audio"), AudioURL: &dto.VideoMediaURL{URL: "https://example.com/audio.mp3"}},
+				}
+			},
 		},
 		{
 			name: "Moxing Fast rejects duration 16", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20Fast,
 			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Duration = common.GetPointer(16) }, wantErr: true,
 		},
 		{
-			name: "Moxing Fast rejects seed", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20Fast,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Seed = common.GetPointer(24) }, wantErr: true,
+			name: "Moxing Fast accepts seed", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20Fast,
+			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Seed = common.GetPointer(24) },
 		},
 		{
-			name: "Moxing Mini rejects audio only", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20Mini,
+			name: "Moxing Mini accepts audio only", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20Mini,
 			mutate: func(request *dto.ModelArkVideoCreateRequest) {
 				request.Content = []dto.ModelArkVideoContent{{Type: "audio_url", Role: common.GetPointer("reference_audio"), AudioURL: &dto.VideoMediaURL{URL: "https://example.com/audio.mp3"}}}
-			}, wantErr: true,
+			},
 		},
 		{
 			name: "Moxing 2.5 accepts audio only and mov", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance25,
@@ -89,54 +108,12 @@ func TestProviderModelSpecsEnforcePerModelContracts(t *testing.T) {
 			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Seed = common.GetPointer(24) },
 		},
 		{
-			name: "Moxing 2.5 rejects explicit false camera fixed", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance25,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.CameraFixed = common.GetPointer(false) }, wantErr: true,
+			name: "Moxing 2.5 accepts explicit false camera fixed", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance25,
+			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.CameraFixed = common.GetPointer(false) },
 		},
 		{
-			name: "Moxing Fast rejects output format", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20Fast,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.OutputFormat = common.GetPointer("mp4") }, wantErr: true,
-		},
-		{
-			name: "FunCloud standard accepts 1080p", protocol: kitdto.VideoUpstreamProtocolFunCloudSeedance, model: modelFunCloud20,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Resolution = common.GetPointer("1080p") },
-		},
-		{
-			name: "FunCloud fast rejects 1080p", protocol: kitdto.VideoUpstreamProtocolFunCloudSeedance, model: modelFunCloud20Fast,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Resolution = common.GetPointer("1080p") }, wantErr: true,
-		},
-		{
-			name: "FunCloud mini follows fast limits", protocol: kitdto.VideoUpstreamProtocolFunCloudSeedance, model: modelFunCloud20Mini,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) {
-				request.Content = []dto.ModelArkVideoContent{
-					{Type: "image_url", ImageURL: &dto.VideoMediaURL{URL: "https://example.com/1.png"}},
-					{Type: "image_url", ImageURL: &dto.VideoMediaURL{URL: "https://example.com/2.png"}},
-					{Type: "image_url", ImageURL: &dto.VideoMediaURL{URL: "https://example.com/3.png"}},
-				}
-			},
-		},
-		{
-			name: "FunCloud 2.5 accepts documented maximum duration", protocol: kitdto.VideoUpstreamProtocolFunCloudSeedance, model: modelFunCloud25,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Duration = common.GetPointer(30) },
-		},
-		{
-			name: "FunCloud standard rejects intelligent duration", protocol: kitdto.VideoUpstreamProtocolFunCloudSeedance, model: modelFunCloud20,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Duration = common.GetPointer(-1) }, wantErr: true,
-		},
-		{
-			name: "FunCloud fast rejects intelligent duration", protocol: kitdto.VideoUpstreamProtocolFunCloudSeedance, model: modelFunCloud20Fast,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Duration = common.GetPointer(-1) }, wantErr: true,
-		},
-		{
-			name: "FunCloud mini rejects intelligent duration", protocol: kitdto.VideoUpstreamProtocolFunCloudSeedance, model: modelFunCloud20Mini,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Duration = common.GetPointer(-1) }, wantErr: true,
-		},
-		{
-			name: "FunCloud 2.5 accepts intelligent duration", protocol: kitdto.VideoUpstreamProtocolFunCloudSeedance, model: modelFunCloud25,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Duration = common.GetPointer(-1) },
-		},
-		{
-			name: "FunCloud rejects unsupported provider private fields", protocol: kitdto.VideoUpstreamProtocolFunCloudSeedance, model: modelFunCloud20,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Priority = common.GetPointer(1) }, wantErr: true,
+			name: "Moxing Fast accepts output format", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20Fast,
+			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.OutputFormat = common.GetPointer("mp4") },
 		},
 	}
 
@@ -156,7 +133,7 @@ func TestProviderModelSpecsEnforcePerModelContracts(t *testing.T) {
 
 func TestProviderModelValidationErrorsDoNotExposeProviderIdentity(t *testing.T) {
 	providerModel := "private-provider-model"
-	protocol := kitdto.VideoUpstreamProtocolFunCloudSeedance
+	protocol := kitdto.VideoUpstreamProtocolFunCloudModelArkV3
 	err := validateProviderModelRequest(protocol, providerModel, providerTestRequest())
 
 	require.Error(t, err)

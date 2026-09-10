@@ -2,7 +2,6 @@ package service
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -245,7 +244,9 @@ func evidenceRedactBody(body []byte, contentType string) ([]byte, error) {
 	if strings.Contains(mediaType, "json") || (len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[')) {
 		var decoded any
 		if err := common.Unmarshal(trimmed, &decoded); err != nil {
-			return nil, fmt.Errorf("structured evidence is incomplete")
+			// 解析现场保留带类型的原始 cause；是否归属客户由分类映射结合
+			// 正文来源与 JSON 合同标记判定，不在此处先行丢失类型。
+			return nil, &evidenceJSONParseError{cause: err}
 		}
 		return common.Marshal(evidenceRedactValue(decoded))
 	}

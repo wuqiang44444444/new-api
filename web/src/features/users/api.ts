@@ -29,10 +29,12 @@ import type {
   ManageUserAction,
   ManageUserQuotaPayload,
   ApiResponse,
-  CustomerContract,
   CustomerContractAuditPage,
+  CustomerContractChannelGroupOption,
   CustomerContractGroupOption,
-  CustomerContractWritePayload,
+  ContractEntityUpdatePayload,
+  ContractEntityWritePayload,
+  UserContractEntities,
 } from './types'
 
 // ============================================================================
@@ -179,9 +181,10 @@ export async function getPermissionCatalog(): Promise<PermissionCatalog> {
   }
 }
 
-export async function getCustomerContract(
+/** Get every contract entity owned by a user (admin drawer). */
+export async function getUserContracts(
   userId: number
-): Promise<ApiResponse<CustomerContract>> {
+): Promise<ApiResponse<UserContractEntities>> {
   const res = await api.get(`/api/user/${userId}/contract`)
   return res.data
 }
@@ -193,21 +196,36 @@ export async function getCustomerContractOptions(
   return res.data
 }
 
-export async function getCustomerContractAudits(
-  userId: number,
+export async function getCustomerContractChannels(
+  userId: number
+): Promise<ApiResponse<CustomerContractChannelGroupOption[]>> {
+  const res = await api.get(`/api/user/${userId}/contract/channels`)
+  return res.data
+}
+
+export async function getContractEntityAudits(
+  contractId: number,
   page = 1
 ): Promise<ApiResponse<CustomerContractAuditPage>> {
-  const res = await api.get(`/api/user/${userId}/contract/audits`, {
+  const res = await api.get(`/api/contract/${contractId}/audits`, {
     params: { p: page },
   })
   return res.data
 }
 
-export async function updateCustomerContract(
+export async function createUserContract(
   userId: number,
-  payload: CustomerContractWritePayload
-): Promise<ApiResponse<CustomerContract>> {
-  const res = await api.put(`/api/user/${userId}/contract`, payload)
+  payload: ContractEntityWritePayload
+): Promise<ApiResponse<UserContractEntities>> {
+  const res = await api.post(`/api/user/${userId}/contract`, payload)
+  return res.data
+}
+
+export async function updateContractEntity(
+  contractId: number,
+  payload: ContractEntityUpdatePayload
+): Promise<ApiResponse<UserContractEntities>> {
+  const res = await api.put(`/api/contract/${contractId}`, payload)
   return res.data
 }
 

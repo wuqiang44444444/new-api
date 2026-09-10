@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	taskseedance "github.com/QuantumNous/new-api/relay/channel/task/seedance"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -41,8 +42,12 @@ func ResolveSeedanceChannel() gin.HandlerFunc {
 		}
 
 		specificChannelID := 0
-		if pin, found, _ := service.GetChannelConstraints(c).ResolvedPin(); found && pin.Source == dto.PinSourceToken {
+		if pin, found, _ := service.GetChannelConstraints(c).ResolvedPin(); found {
 			specificChannelID = pin.ChannelId
+		}
+		if contractFact != nil && specificChannelID != contractFact.ChannelId {
+			abortModelArkVideo(c, http.StatusForbidden, "model_not_found", "the requested model does not exist")
+			return
 		}
 
 		usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
@@ -76,6 +81,12 @@ func ResolveSeedanceChannel() gin.HandlerFunc {
 		}
 		if setupErr := SetupContextForSelectedChannel(c, channel, customerModel); setupErr != nil {
 			abortModelArkVideo(c, http.StatusServiceUnavailable, "upstream_unavailable", "Seedance channel is unavailable")
+			return
+		}
+		// 已迁移协议在进入计价/预扣前固定 seedance-link 插件版本；插件不可
+		// 用时失败关闭，不产生任何资金动作。未迁移协议不打 pin，继续 Go 路径。
+		if pinErr := taskseedance.PinSeedanceExtensionForChannel(c, channel.GetOtherSettings().VideoUpstreamProtocol); pinErr != nil {
+			abortModelArkVideo(c, http.StatusServiceUnavailable, "seedance_plugin_unavailable", "Seedance plugin extension is unavailable")
 			return
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())

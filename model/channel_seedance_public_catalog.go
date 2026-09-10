@@ -25,15 +25,23 @@ func GetConfiguredSeedancePublicModels() ([]SeedancePublicModel, error) {
 		return nil, err
 	}
 	assetChannelIDs := make([]int, 0, len(channels))
+	currentChannels := channels[:0]
 	for i := range channels {
 		settings, err := parsedChannelOtherSettings(&channels[i])
 		if err != nil {
 			return nil, err
 		}
+		// Retired protocols remain on historical channels for task lifecycle
+		// handling, but have no public creation contract to project.
+		if settings.VideoUpstreamProtocol.IsValid() && dto.ValidateVideoUpstreamProtocol(settings.VideoUpstreamProtocol) != nil {
+			continue
+		}
+		currentChannels = append(currentChannels, channels[i])
 		if settings.AssetUpstreamProtocol != "" && settings.AssetUpstreamProtocol != dto.AssetUpstreamProtocolNone {
 			assetChannelIDs = append(assetChannelIDs, channels[i].Id)
 		}
 	}
+	channels = currentChannels
 	reuseScopes, err := loadChannelAssetReuseScopes(DB, assetChannelIDs)
 	if err != nil {
 		return nil, err
@@ -175,9 +183,6 @@ func seedancePublicAssetAPI(
 		groupCreate, groupRead = true, true
 		realPerson = true
 	case dto.AssetUpstreamProtocolTokenSaveAssetsV1:
-		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
-		groupCreate, groupRead = true, true
-	case dto.AssetUpstreamProtocolMoxingJoyCreatorV1:
 		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
 		groupCreate, groupRead = true, true
 	case dto.AssetUpstreamProtocolFunCloudMaterial:

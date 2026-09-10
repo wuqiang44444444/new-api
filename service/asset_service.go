@@ -336,8 +336,6 @@ func seedanceAssetAdapter(channel *model.Channel, userID int, modelName string) 
 		adapter = assetadapter.NewArkAdapter(channel.GetBaseURL(), key, httpClient)
 	case dto.AssetUpstreamProtocolTokenSaveAssetsV1:
 		adapter = assetadapter.NewTokenSaveAssetAdapter(channel.GetBaseURL(), key, httpClient)
-	case dto.AssetUpstreamProtocolMoxingJoyCreatorV1:
-		adapter = assetadapter.NewMoxingJoyCreatorAdapter(channel.GetBaseURL(), key, httpClient)
 	case dto.AssetUpstreamProtocolMoxingVolcAssetsV1:
 		adapter = assetadapter.NewMoxingVolcAdapter(channel.GetBaseURL(), key, httpClient)
 	case dto.AssetUpstreamProtocolFunCloudMaterial:

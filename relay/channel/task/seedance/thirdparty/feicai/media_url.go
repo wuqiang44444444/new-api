@@ -34,12 +34,14 @@ func validateMediaURL(value, mediaType string) error {
 		return nil
 	}
 	if strings.HasPrefix(value, "data:") {
-		if mediaType != mediaImage {
-			return fmt.Errorf("data URL is not supported for this media type")
-		}
 		comma := strings.IndexByte(value, ',')
 		if comma <= len("data:") {
 			return fmt.Errorf("invalid data URL")
+		}
+		// The provider does not prohibit audio/video data URLs. Keep the
+		// reference intact and let it validate the actual media.
+		if mediaType != mediaImage {
+			return nil
 		}
 		metadata := strings.Split(value[len("data:"):comma], ";")
 		mime := strings.ToLower(strings.TrimSpace(metadata[0]))
@@ -57,9 +59,6 @@ func validateMediaURL(value, mediaType string) error {
 			return fmt.Errorf("media URL must be an http(s) URL or an image data URL")
 		}
 		return fmt.Errorf("media URL must be an http(s) URL")
-	}
-	if mediaType != mediaImage && parsed.Scheme != "https" {
-		return fmt.Errorf("media URL must be an https URL")
 	}
 	return nil
 }

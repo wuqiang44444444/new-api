@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-11
+last-reviewed: 2026-09-10
 ---
 
 # doubao-seedance-2.0
@@ -10,7 +10,7 @@ last-reviewed: 2026-08-11
 
 - **模型 ID**: `doubao-seedance-2-0-260128`
 - **提供商**: 豆包
-- **类型**: video
+- **类型**: 视频
 - **创建入口**: `https://www.moxing.pro/v1/media/generations`
 
 ## 能力与接口
@@ -36,11 +36,13 @@ last-reviewed: 2026-08-11
 | `control_mode` | string | 是 | 控制模式；文生视频固定 `none`；图生视频可用 `none` 或 `end_frame`；参考生视频固定 `reference`。示例：`none` |
 | `duration_seconds` | integer | 否 | 视频时长（秒）；支持 4-15 秒，或 `-1` 表示自动。示例：`4` |
 | `input_mode` | string | 是 | 输入模式；文生视频使用 `text`；图生视频使用 `single_image`；参考生视频使用 `multi_image`。示例：`text` |
-| `model` | string | 是 | 模型 ID；固定使用 `doubao-seedance-2-0-260128`。 |
+| `model` | string | 是 | 模型 ID；要调用的视频模型 logical key |
 | `prompt` | string | 是 | 提示词；描述想要生成的视频内容，最长 2500 字符。参考生视频场景中用于描述基于参考素材生成的目标效果。示例：图片1中的人物站在海边，夕阳下回眸一笑 |
 | `resolution` | string | 否 | 分辨率；支持 `480p` / `720p`。示例：`480p` |
 | `with_audio` | boolean | 否 | 同步生成音频；`true` 时同步生成音频；`false` 时不生成音频。示例：`true` |
-| `watermark` | string | 否 | 水印；上游官方字段；`true` 含水印，`false` 无水印。平台原样透传，缺省时以上游默认为准。模型专属/上游扩展：不属于平台公共基础参数；按本行说明放入 extra 或对应平台兼容字段后，平台会透传或映射到上游。示例：`false` |
+| `watermark` | string | 否 | 水印；上游官方字段；`true` 含水印，`false` 无水印。平台原样透传，缺省时以上游默认为准。示例：`false` |
+
+> 说明：`watermark` 为模型专属/上游扩展字段，不属于平台公共基础参数；需放入 `extra` 或对应平台兼容字段后，由平台透传或映射到上游。
 
 #### 响应格式
 
@@ -59,6 +61,8 @@ last-reviewed: 2026-08-11
 `GET /v1/media/tasks/:id`
 
 创建任务后先保留 `task_id`，再轮询这个接口直到 `succeeded` 或 `failed`。图片和视频模型都适用。
+
+创建入口：`https://www.moxing.pro/v1/media/generations`
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -104,7 +108,9 @@ curl -sS "https://www.moxing.pro/v1/media/tasks/:id" \
 
 ## 错误与限制
 
-### 错误码
+### 常见错误
+
+调用失败时，可根据 HTTP 状态和错误码快速定位问题。
 
 | 错误码 | HTTP | 说明 |
 | --- | --- | --- |
@@ -116,7 +122,9 @@ curl -sS "https://www.moxing.pro/v1/media/tasks/:id" \
 | `internal_server_error` | 500 | 平台内部异常；可重试，持续异常请联系技术支持 |
 | `upstream_unavailable` | 502 | 模型服务暂时不可用或超时；建议稍后重试 |
 
-### Limits
+### 使用限制
+
+提交任务前请确认模型支持的输入范围与组合规则。
 
 | 限制项 | 说明 |
 | --- | --- |
@@ -126,9 +134,7 @@ curl -sS "https://www.moxing.pro/v1/media/tasks/:id" \
 | 画幅比例 | `16:9` / `4:3` / `1:1` / `3:4` / `9:16` / `21:9` / `adaptive` |
 | 视频时长 | 4-15 秒，或 `-1` 自动 |
 
-## 素材库
-
-### 推荐流程
+## 推荐流程
 
 创建素材组 → 上传素材 → 等待 Active → 引用素材生成视频
 
@@ -136,13 +142,13 @@ curl -sS "https://www.moxing.pro/v1/media/tasks/:id" \
 2. 查询素材状态；仅 `Active` 状态的素材可以用于视频生成。
 3. 切换到模型 API，在 `reference_images[]` 中传入 `asset://{素材 ID}`。
 
-### 接口范围
+## 接口范围
 
 接口根路径：`https://www.moxing.pro/joycreator/openApi/v1/asset`
 
 素材库接口独立于统一 `/v1/*` 网关路径，当前用于 JoyCreator TOB 素材组与素材管理。
 
-鉴权方式为平台 API Key：`Authorization: Bearer sk-...`。
+鉴权方式仍为平台 API Key：`Authorization: Bearer sk-...`。
 
 ### 接口清单
 
@@ -158,18 +164,45 @@ curl -sS "https://www.moxing.pro/v1/media/tasks/:id" \
 
 ### 关键约定
 
-- 接口返回中的 `id` 为后续调用的主键，不是本地数据库自增 id。
+- 接口返回中的 `id` 为后续调用用的主键，不是本地数据库自增 id。
 - 素材组详情返回的 `groupId` 与素材详情返回的 `assetId` 为上游业务标识，可用于排障和对账。
 - 创建素材后通常需要轮询 `/asset/detail/:id`，直到 `status=1` 且拿到 `vendorUrl`。
 - 创建图片素材时，URL 支持 HTTP/HTTPS 链接或 base64 图片；base64 会先转存为资源 URL 后再提交上游，素材记录不保存原始 base64。
 
-### 创建素材组
+### 请求参数
+
+#### 创建素材组
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `Name` | string | 是 | 素材组名称，最长 64 字符。 |
 | `Description` | string | 否 | 素材组描述，最长 300 字符。 |
 | `GroupType` | string | 否 | 当前仅支持 `AIGC`。 |
+
+#### 创建素材
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `groupId` | string / number | 是 | 使用创建素材组接口返回的 `id`。 |
+| `URL` | string | 是 | 素材地址。`AssetType=Image` 时支持 HTTP(S) URL、`data:image/...;base64,...` 或裸 base64；Video/Audio 仍需 HTTP(S) URL。 |
+| `AssetType` | string | 是 | 支持 `Image` / `Video` / `Audio`。 |
+| `Name` | string | 否 | 素材名称，最长 64 字符。 |
+
+#### 更新素材组
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `Name` / `Description` | string | 二选一 | 至少传一个字段。 |
+
+#### 更新素材
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `Name` | string | 是 | 更新后的素材名称。 |
+
+### 调用示例
+
+#### 创建素材组
 
 ```bash
 curl -X POST 'https://www.moxing.pro/joycreator/openApi/v1/asset/group/create' \
@@ -182,14 +215,7 @@ curl -X POST 'https://www.moxing.pro/joycreator/openApi/v1/asset/group/create' \
   }'
 ```
 
-### 创建素材
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `groupId` | string / number | 是 | 使用创建素材组接口返回的 `id`。 |
-| `URL` | string | 是 | 素材地址。`AssetType=Image` 时支持 HTTP(S) URL、`data:image/...;base64,...` 或裸 base64；Video/Audio 仍需 HTTP(S) URL。 |
-| `AssetType` | string | 是 | 支持 `Image` / `Video` / `Audio`。 |
-| `Name` | string | 否 | 素材名称，最长 64 字符。 |
+#### 创建素材
 
 ```bash
 curl -X POST 'https://www.moxing.pro/joycreator/openApi/v1/asset/create' \
@@ -203,26 +229,14 @@ curl -X POST 'https://www.moxing.pro/joycreator/openApi/v1/asset/create' \
   }'
 ```
 
-### 更新素材组
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `Name` / `Description` | string | 二选一 | 至少传一个字段。 |
-
-### 更新素材
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `Name` | string | 是 | 更新后的素材名称。 |
-
-### 查询素材详情
+#### 查询素材详情
 
 ```bash
 curl -X POST 'https://www.moxing.pro/joycreator/openApi/v1/asset/detail/52' \
   -H 'Authorization: Bearer sk-xxxx'
 ```
 
-### 素材组详情响应
+#### 素材组详情响应
 
 ```json
 {
@@ -311,3 +325,195 @@ curl -X POST 'https://www.moxing.pro/v1/media/generations' \
   "result": {}
 }
 ```
+
+图生视频
+
+请求参数
+参数	类型	必填	说明
+aspect_ratio	string	否	画幅比例；支持 16:9 / 4:3 / 1:1 / 3:4 / 9:16 / 21:9 / adaptive。；示例：16:9
+capability	string	是	能力类型；固定为 video_generation
+control_mode	string	是	控制模式；文生视频固定 none；图生视频可用 none 或 end_frame；参考生视频固定 reference。；示例：none
+duration_seconds	integer	否	视频时长（秒）；支持 4-15 秒，或 -1 表示自动。；示例：4
+end_image	string	否	尾帧图片；图生视频可选。传入后用于首尾帧生成。支持 HTTP(S) URL、data:image/...;base64,... 或裸 base64；平台会在创建任务时先转存 base64，再以 URL 进入后续任务链路。；示例：https://example.com/last-frame.png
+image	string	是	首帧图片；图生视频必传。支持公网可访问图片 URL。支持 HTTP(S) URL、data:image/...;base64,... 或裸 base64；平台会在创建任务时先转存 base64，再以 URL 进入后续任务链路。；示例：https://example.com/first-frame.png
+input_mode	string	是	输入模式；文生视频使用 text；图生视频使用 single_image；参考生视频使用 multi_image。；示例：text
+model	string	是	模型 ID；要调用的视频模型 logical key
+prompt	string	是	提示词；描述想要生成的视频内容，最长 2500 字符。参考生视频场景中用于描述基于参考素材生成的目标效果。；示例：图片1中的人物站在海边，夕阳下回眸一笑
+resolution	string	否	分辨率；支持 480p / 720p。；示例：480p
+with_audio	boolean	否	同步生成音频；true 时同步生成音频；false 时不生成音频。；示例：true
+watermark	string	否	水印；上游官方字段；true 含水印，false 无水印。平台原样透传，缺省时以上游默认为准。；模型专属/上游扩展：不属于平台公共基础参数；按本行说明放入 extra 或对应平台兼容字段后，平台会透传或映射到上游。；示例：false
+响应格式
+字段	类型	说明
+created_at	string	任务创建时间（Unix 时间戳）
+error_message	string	终态失败时的错误描述
+progress	string	0-100 之间的整数，表示生成进度
+result	string	终态成功时返回视频/资源信息，包含 url、duration_seconds 等字段
+status	string	queued / running / succeeded / failed
+task_id	string	任务唯一 ID，用于轮询 GET /v1/media/tasks/:id
+usage	string	本次任务的额度消耗（如有）
+异步查询生成结果
+GET /v1/media/tasks/:id
+创建任务后先保留 task_id，再轮询这个接口直到 succeeded 或 failed。 图片和视频模型都适用。
+
+创建入口：https://www.moxing.pro/v1/media/generations
+
+字段	类型	说明
+task_id	string	任务唯一标识。
+status	string	queued / running / succeeded / failed。
+status_code	integer	queued / running 通常为 202，succeeded 为 200，failed 为 400。
+result	object	视频任务成功后，result 通常包含主视频地址、带水印地址和封面图。
+error_message	string	失败时返回，说明失败原因。
+建议保留退避轮询，不要把这个接口当同步请求反复高频调用。
+
+text
+复制
+curl -sS "https://www.moxing.pro/v1/media/tasks/:id" \
+  -H "Authorization: Bearer sk-xxxx"
+响应示例：
+
+json
+复制
+{
+  "object": "media.task",
+  "task_id": "df6b6427206441c9adaad913bee84f8e",
+  "status": "succeeded",
+  "status_code": 200,
+  "capability": "video_generation",
+  "model": "your-video-model",
+  "created_at": 1774834768,
+  "updated_at": 1774834790,
+  "result": {
+    "type": "video",
+    "primary_url": "https://resource.moxing.pro/video/df6b6427206441c9adaad913bee84f8e/main.mp4",
+    "urls": [
+      "https://resource.moxing.pro/video/df6b6427206441c9adaad913bee84f8e/main.mp4"
+    ],
+    "watermark_url": "https://resource.moxing.pro/video/df6b6427206441c9adaad913bee84f8e/watermark.mp4",
+    "watermark_urls": [
+      "https://resource.moxing.pro/video/df6b6427206441c9adaad913bee84f8e/watermark.mp4"
+    ],
+    "cover_url": "https://resource.moxing.pro/image/df6b6427206441c9adaad913bee84f8e/cover.jpg"
+  }
+}
+错误与限制
+常见错误
+调用失败时，可根据 HTTP 状态和错误码快速定位问题。
+
+查看完整错误码
+错误码	HTTP	说明
+invalid_request_error	400	请求参数缺失、格式错误或字段值不在允许范围内
+invalid_api_key	401	API Key 为空、格式错误或已失效；请确认 Authorization: Bearer sk-...
+insufficient_quota	403	账户余额或配额不足；请充值或申请扩容
+model_not_found	404	请求的 model 不存在或当前账户无权访问
+rate_limit_exceeded	429	触发并发或 RPM 限流；建议指数退避后重试
+internal_server_error	500	平台内部异常；可重试，持续异常请联系技术支持
+upstream_unavailable	502	模型服务暂时不可用或超时；建议稍后重试
+使用限制
+提交任务前请确认模型支持的输入范围与组合规则。
+
+分辨率
+480p / 720p
+参考素材
+普通资产参考可传公网 URL 或 asset://upstream_id；人像库参考传 asset://upstream_id。
+平台到上游字段映射
+平台字段与火山方舟 Seedance 2.0 官方字段基本一致，duration_seconds、aspect_ratio、with_audio、watermark、image、end_image、reference_images、reference_videos、reference_audios 均按官方接口透传；input_mode、control_mode 为平台侧场景编排字段，不直接传给上游。
+画幅比例
+16:9 / 4:3 / 1:1 / 3:4 / 9:16 / 21:9 / adaptive
+视频时长
+4-15 秒，或 -1 自动
+
+参考生视频
+请求参数
+参数	类型	必填	说明
+aspect_ratio	string	否	画幅比例；支持 16:9 / 4:3 / 1:1 / 3:4 / 9:16 / 21:9 / adaptive。；示例：16:9
+capability	string	是	能力类型；固定为 video_generation
+control_mode	string	是	控制模式；文生视频固定 none；图生视频可用 none 或 end_frame；参考生视频固定 reference。；示例：none
+duration_seconds	integer	否	视频时长（秒）；支持 4-15 秒，或 -1 表示自动。；示例：4
+input_mode	string	是	输入模式；文生视频使用 text；图生视频使用 single_image；参考生视频使用 multi_image。；示例：text
+model	string	是	模型 ID；要调用的视频模型 logical key
+prompt	string	是	提示词；描述想要生成的视频内容，最长 2500 字符。参考生视频场景中用于描述基于参考素材生成的目标效果。；示例：图片1中的人物站在海边，夕阳下回眸一笑
+reference_audios	array	否	参考音频列表；参考生视频可选。不能只传音频，至少同时提供参考图片或参考视频。；示例：["https://example.com/reference-audio.wav"]
+reference_images	array	是	参考图片列表；参考生视频必传。普通资产可传公网 URL 或 asset://upstream_id；人像库参考传 asset://upstream_id。；示例：["asset://asset-20260519163832-jhsv9","https://upload.nextself.top/api/files/170764587@qq.com/202605/scene.png"]
+reference_videos	array	否	参考视频列表；参考生视频可选。用于参考运动、节奏或镜头风格。；示例：["https://example.com/reference-clip.mp4"]
+resolution	string	否	分辨率；支持 480p / 720p。；示例：480p
+with_audio	boolean	否	同步生成音频；true 时同步生成音频；false 时不生成音频。；示例：true
+watermark	string	否	水印；上游官方字段；true 含水印，false 无水印。平台原样透传，缺省时以上游默认为准。；模型专属/上游扩展：不属于平台公共基础参数；按本行说明放入 extra 或对应平台兼容字段后，平台会透传或映射到上游。；示例：false
+响应格式
+字段	类型	说明
+created_at	string	任务创建时间（Unix 时间戳）
+error_message	string	终态失败时的错误描述
+progress	string	0-100 之间的整数，表示生成进度
+result	string	终态成功时返回视频/资源信息，包含 url、duration_seconds 等字段
+status	string	queued / running / succeeded / failed
+task_id	string	任务唯一 ID，用于轮询 GET /v1/media/tasks/:id
+usage	string	本次任务的额度消耗（如有）
+异步查询生成结果
+GET /v1/media/tasks/:id
+创建任务后先保留 task_id，再轮询这个接口直到 succeeded 或 failed。 图片和视频模型都适用。
+
+创建入口：https://www.moxing.pro/v1/media/generations
+
+字段	类型	说明
+task_id	string	任务唯一标识。
+status	string	queued / running / succeeded / failed。
+status_code	integer	queued / running 通常为 202，succeeded 为 200，failed 为 400。
+result	object	视频任务成功后，result 通常包含主视频地址、带水印地址和封面图。
+error_message	string	失败时返回，说明失败原因。
+建议保留退避轮询，不要把这个接口当同步请求反复高频调用。
+
+text
+复制
+curl -sS "https://www.moxing.pro/v1/media/tasks/:id" \
+  -H "Authorization: Bearer sk-xxxx"
+响应示例：
+
+json
+复制
+{
+  "object": "media.task",
+  "task_id": "df6b6427206441c9adaad913bee84f8e",
+  "status": "succeeded",
+  "status_code": 200,
+  "capability": "video_generation",
+  "model": "your-video-model",
+  "created_at": 1774834768,
+  "updated_at": 1774834790,
+  "result": {
+    "type": "video",
+    "primary_url": "https://resource.moxing.pro/video/df6b6427206441c9adaad913bee84f8e/main.mp4",
+    "urls": [
+      "https://resource.moxing.pro/video/df6b6427206441c9adaad913bee84f8e/main.mp4"
+    ],
+    "watermark_url": "https://resource.moxing.pro/video/df6b6427206441c9adaad913bee84f8e/watermark.mp4",
+    "watermark_urls": [
+      "https://resource.moxing.pro/video/df6b6427206441c9adaad913bee84f8e/watermark.mp4"
+    ],
+    "cover_url": "https://resource.moxing.pro/image/df6b6427206441c9adaad913bee84f8e/cover.jpg"
+  }
+}
+错误与限制
+常见错误
+调用失败时，可根据 HTTP 状态和错误码快速定位问题。
+
+查看完整错误码
+错误码	HTTP	说明
+invalid_request_error	400	请求参数缺失、格式错误或字段值不在允许范围内
+invalid_api_key	401	API Key 为空、格式错误或已失效；请确认 Authorization: Bearer sk-...
+insufficient_quota	403	账户余额或配额不足；请充值或申请扩容
+model_not_found	404	请求的 model 不存在或当前账户无权访问
+rate_limit_exceeded	429	触发并发或 RPM 限流；建议指数退避后重试
+internal_server_error	500	平台内部异常；可重试，持续异常请联系技术支持
+upstream_unavailable	502	模型服务暂时不可用或超时；建议稍后重试
+使用限制
+提交任务前请确认模型支持的输入范围与组合规则。
+
+分辨率
+480p / 720p
+参考素材
+普通资产参考可传公网 URL 或 asset://upstream_id；人像库参考传 asset://upstream_id。
+平台到上游字段映射
+平台字段与火山方舟 Seedance 2.0 官方字段基本一致，duration_seconds、aspect_ratio、with_audio、watermark、image、end_image、reference_images、reference_videos、reference_audios 均按官方接口透传；input_mode、control_mode 为平台侧场景编排字段，不直接传给上游。
+画幅比例
+16:9 / 4:3 / 1:1 / 3:4 / 9:16 / 21:9 / adaptive
+视频时长
+4-15 秒，或 -1 自动

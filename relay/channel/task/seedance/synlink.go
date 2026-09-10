@@ -44,6 +44,11 @@ func validateSynlinkRequest(providerModel string, request *dto.ModelArkVideoCrea
 			if strings.HasPrefix(ref, "asset://"+model.FunCloudHostedAssetIDPrefix) && item.Type == "image_url" && media == item.ImageURL {
 				continue
 			}
+			// No documented prohibition of audio/video data URLs. Opaque asset
+			// references still require the registered hosted-image conversion.
+			if (item.Type == "audio_url" || item.Type == "video_url") && strings.HasPrefix(ref, "data:") && strings.IndexByte(ref, ',') > len("data:") {
+				continue
+			}
 			parsed, err := url.Parse(ref)
 			if err != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 				return fmt.Errorf("this video protocol requires a platform-hosted image or an HTTP(S) media URL")

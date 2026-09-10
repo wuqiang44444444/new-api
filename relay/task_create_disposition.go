@@ -51,7 +51,7 @@ func taskCreateHTTPDisposition(
 		return relaycommon.TaskCreateOutcomeUnknown
 	}
 	switch info.ChannelOtherSettings.VideoUpstreamProtocol {
-	case dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, dto.VideoUpstreamProtocolMoxingMediaTaskV1, dto.VideoUpstreamProtocolMoxingModelArkV1:
+	case dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, dto.VideoUpstreamProtocolMoxingModelArkV1:
 		if status == http.StatusForbidden && code == "user_quota_insufficient" {
 			return relaycommon.TaskCreateTerminalRejection
 		}

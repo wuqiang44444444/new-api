@@ -50,7 +50,15 @@ func FunCloudModelArkTaskResponse(body []byte, expectedTaskID string) ([]byte, e
 		if err != nil {
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "invalid video result URL"}
 		}
-		result["content"] = map[string]any{"video_url": videoURL}
+		content := map[string]any{"video_url": videoURL}
+		if lastFrameURL := firstString(mapValue(root["content"]), "last_frame_url"); lastFrameURL != "" {
+			lastFrameURL, err = relaycommon.ValidateHTTPSVideoResultURL(lastFrameURL)
+			if err != nil {
+				return nil, &relaycommon.UpstreamContractViolation{Reason: "invalid last frame result URL"}
+			}
+			content["last_frame_url"] = lastFrameURL
+		}
+		result["content"] = content
 		terminal := normalizeTerminalTokenUsage(root)
 		if terminal.Usage != nil {
 			result["usage"] = terminal.Usage

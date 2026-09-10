@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"sort"
 	"strings"
@@ -554,6 +556,13 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if errors.Is(err, relaycommon.ErrUpstreamObservationUnavailable) {
+			// 本地观察基础设施不可用（如插件引擎准入/执行超时）不是上游事实：
+			// 跳过本轮，不计入连续失败阈值，不改变任务与资金状态；整体超时
+			// 清扫仍是唯一兜底。
+			logger.LogWarn(ctx, fmt.Sprintf("task %s poll skipped: %v", taskId, err))
+			return nil
+		}
 		if handled, markErr := linkVideoContractViolationHandled(ctx, task, err); handled {
 			if markErr != nil {
 				return fmt.Errorf("mark reconciliation required for task %s: %w", taskId, markErr)
@@ -778,12 +787,8 @@ func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor
 			return false
 		}
 		usageFacts := make(map[string]any, len(bc.TieredSnapshot.UsageFacts)+len(taskResult.UsageFacts))
-		for key, value := range bc.TieredSnapshot.UsageFacts {
-			usageFacts[key] = value
-		}
-		for key, value := range taskResult.UsageFacts {
-			usageFacts[key] = value
-		}
+		maps.Copy(usageFacts, bc.TieredSnapshot.UsageFacts)
+		maps.Copy(usageFacts, taskResult.UsageFacts)
 		result, err := billingexpr.ComputeTieredQuotaWithRequest(bc.TieredSnapshot, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: usageFacts})
 		if err != nil {
 			logger.LogWarn(ctx, fmt.Sprintf("任务 %s 表达式结算失败，保留预扣额度: %v", task.TaskID, err))

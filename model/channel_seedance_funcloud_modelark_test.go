@@ -32,12 +32,13 @@ func TestFunCloudModelArkSharesExistingMaterialAcrossFourModels(t *testing.T) {
 }
 
 func TestFunCloudVideoUpgradeRequiresTenantConfirmation(t *testing.T) {
-	withSeedanceChannelDB(t)
+	db := withSeedanceChannelDB(t)
 	channel := seedanceTestChannel("upgrade-customer", common.ChannelStatusEnabled)
 	channel.BaseURL = common.GetPointer("https://funcloud.example.com")
 	channel.ModelMapping = common.GetPointer(`{"upgrade-customer":"seedance-2"}`)
 	channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance, AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial, AssetMinURLTTLSeconds: 3600})
-	require.NoError(t, channel.Insert())
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, ensureChannelAssetScopeIdentityTx(db, channel))
 	require.NoError(t, SaveChannelDefaultAssetGroup(channel.Id, "existing-provider-group"))
 	scope, err := ChannelAssetReuseScope(channel.Id)
 	require.NoError(t, err)

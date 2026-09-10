@@ -5,29 +5,29 @@ import { Button } from '@/components/ui/button'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { formatTimestamp } from '@/lib/format'
 
-import { getCustomerContractAudits } from '../api'
+import { getContractEntityAudits } from '../api'
 import type { CustomerContractAudit } from '../types'
 
-function AuditOperation({
-  operation,
-}: {
+function AuditOperation(props: {
   operation: CustomerContractAudit['operation']
 }) {
   const { t } = useTranslation()
-  switch (operation) {
+  switch (props.operation) {
     case 'create':
-      return <>{t('Created')}</>
+      return <span>{t('Created')}</span>
     case 'enable':
-      return <>{t('Enabled')}</>
+      return <span>{t('Enabled')}</span>
     case 'disable':
-      return <>{t('Disabled')}</>
+      return <span>{t('Disabled')}</span>
+    case 'migrate':
+      return <span>{t('Migrated')}</span>
     default:
-      return <>{t('Updated')}</>
+      return <span>{t('Updated')}</span>
   }
 }
 
 type CustomerContractAuditProps = {
-  userId: number
+  contractId: number
   audits: CustomerContractAudit[]
   page: number
   total: number
@@ -35,16 +35,9 @@ type CustomerContractAuditProps = {
   setPage: Dispatch<SetStateAction<number>>
 }
 
-export function CustomerContractAuditHistory({
-  userId,
-  audits,
-  page,
-  total,
-  setAudits,
-  setPage,
-}: CustomerContractAuditProps) {
+export function CustomerContractAuditHistory(props: CustomerContractAuditProps) {
   const { t } = useTranslation()
-  if (audits.length === 0) {
+  if (props.audits.length === 0) {
     return (
       <Empty className='border'>
         <EmptyHeader>
@@ -54,19 +47,21 @@ export function CustomerContractAuditHistory({
     )
   }
 
-  const pageCount = Math.ceil(total / 20)
+  const pageCount = Math.ceil(props.total / 20)
   const loadPage = (nextPage: number) => {
-    void getCustomerContractAudits(userId, nextPage).then((response) => {
-      if (response.success && response.data) {
-        setAudits(response.data.items)
-        setPage(nextPage)
+    void getContractEntityAudits(props.contractId, nextPage).then(
+      (response) => {
+        if (response.success && response.data) {
+          props.setAudits(response.data.items)
+          props.setPage(nextPage)
+        }
       }
-    })
+    )
   }
 
   return (
     <div className='flex flex-col gap-3'>
-      {audits.map((audit) => (
+      {props.audits.map((audit) => (
         <div key={audit.id} className='rounded-lg border p-3'>
           <div className='flex flex-wrap items-center justify-between gap-2'>
             <div className='font-medium'>
@@ -90,20 +85,20 @@ export function CustomerContractAuditHistory({
             type='button'
             variant='outline'
             size='sm'
-            disabled={page <= 1}
-            onClick={() => loadPage(page - 1)}
+            disabled={props.page <= 1}
+            onClick={() => loadPage(props.page - 1)}
           >
             {t('Previous')}
           </Button>
           <span className='text-muted-foreground text-sm'>
-            {page} / {pageCount}
+            {props.page} / {pageCount}
           </span>
           <Button
             type='button'
             variant='outline'
             size='sm'
-            disabled={page >= pageCount}
-            onClick={() => loadPage(page + 1)}
+            disabled={props.page >= pageCount}
+            onClick={() => loadPage(props.page + 1)}
           >
             {t('Next')}
           </Button>

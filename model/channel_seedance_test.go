@@ -157,14 +157,14 @@ func TestConfiguredSeedancePublicModelsIncludeDisabledAPIContracts(t *testing.T)
 		AssetMinURLTTLSeconds: 3600,
 	})
 	channels[1].SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance,
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3,
 		AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial,
 		AssetMinURLTTLSeconds: 3600,
 	})
-	channels[1].ModelMapping = common.GetPointer(`{"seedance-funcloud-disabled":"seedance-2"}`)
+	channels[1].ModelMapping = common.GetPointer(`{"seedance-funcloud-disabled":"seedance-2-0"}`)
 	channels[2].SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMoxingMediaTaskV1,
-		AssetUpstreamProtocol: dto.AssetUpstreamProtocolMoxingJoyCreatorV1,
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMoxingModelArkV1,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
 		AssetMinURLTTLSeconds: 3600,
 	})
 	channels[2].ModelMapping = common.GetPointer(`{"seedance-moxing-disabled":"doubao-seedance-2-0-260128"}`)
@@ -243,7 +243,6 @@ func TestPublishedAssetProtocolsKeepGeneralGroupOptional(t *testing.T) {
 		dto.AssetUpstreamProtocolBytePlusAction,
 		dto.AssetUpstreamProtocolArkAssetsV1,
 		dto.AssetUpstreamProtocolTokenSaveAssetsV1,
-		dto.AssetUpstreamProtocolMoxingJoyCreatorV1,
 		dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
 		dto.AssetUpstreamProtocolFunCloudMaterial,
 		dto.AssetUpstreamProtocolCMCCAICCV2,
@@ -282,7 +281,6 @@ func TestSeedancePublicAssetAPINeverPublishesGroupDeletion(t *testing.T) {
 		dto.AssetUpstreamProtocolBytePlusAction,
 		dto.AssetUpstreamProtocolArkAssetsV1,
 		dto.AssetUpstreamProtocolTokenSaveAssetsV1,
-		dto.AssetUpstreamProtocolMoxingJoyCreatorV1,
 		dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
 		dto.AssetUpstreamProtocolFunCloudMaterial,
 		dto.AssetUpstreamProtocolCMCCAICCV2,
@@ -379,7 +377,7 @@ func TestMoxingTokenSaveSettingsValidateProviderModelMappings(t *testing.T) {
 		},
 		{
 			name: "standard line B", customerModel: "customer-standard-b", providerModel: "doubao-seedance-2-0-260128",
-			video: dto.VideoUpstreamProtocolMoxingMediaTaskV1, asset: dto.AssetUpstreamProtocolMoxingJoyCreatorV1,
+			video: dto.VideoUpstreamProtocolMoxingModelArkV1, asset: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
 		},
 		{
 			name: "fast line", customerModel: "customer-fast", providerModel: "doubao-seedance-2-0-fast-260128",
@@ -442,76 +440,14 @@ func TestMoxingTokenSaveSettingsAcceptMultipleAdministratorMappings(t *testing.T
 	require.ErrorContains(t, channel.ValidateSettings(), `model_mapping for customer model "customer-mini"`)
 }
 
-func TestFunCloudSettingsValidateProviderModelsAndMaterialSupport(t *testing.T) {
-	tests := []struct {
-		customerModel string
-		providerModel string
-		material      bool
-	}{
-		{customerModel: "public-standard", providerModel: "seedance-2", material: true},
-		{customerModel: "public-fast", providerModel: "seedance-2-fast", material: true},
-		{customerModel: "public-mini", providerModel: "seedance-2-mini", material: true},
-		{customerModel: "public-next", providerModel: "seedance-2-5", material: false},
+func TestFunCloudV2SettingsAreRetired(t *testing.T) {
+	for _, providerModel := range []string{"seedance-2", "seedance-2-fast", "seedance-2-mini", "seedance-2-5"} {
+		channel := seedanceTestChannel("customer", common.ChannelStatusEnabled)
+		channel.BaseURL = common.GetPointer("https://funcloud.example.com")
+		channel.ModelMapping = common.GetPointer(fmt.Sprintf(`{"customer":"%s"}`, providerModel))
+		channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance, AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone})
+		require.ErrorContains(t, channel.ValidateSettings(), "video protocol is retired")
 	}
-
-	for _, test := range tests {
-		t.Run(test.customerModel, func(t *testing.T) {
-			channel := seedanceTestChannel(test.customerModel, common.ChannelStatusEnabled)
-			channel.BaseURL = common.GetPointer("https://funcloud.example.com")
-			channel.ModelMapping = common.GetPointer(fmt.Sprintf(`{"%s":"%s"}`, test.customerModel, test.providerModel))
-			assetProtocol := dto.AssetUpstreamProtocolNone
-			if test.material {
-				assetProtocol = dto.AssetUpstreamProtocolFunCloudMaterial
-			}
-			channel.SetOtherSettings(dto.ChannelOtherSettings{
-				VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance,
-				AssetUpstreamProtocol: assetProtocol,
-				AssetMinURLTTLSeconds: 3600,
-			})
-			require.NoError(t, channel.ValidateSettings())
-
-			channel.ModelMapping = common.GetPointer(fmt.Sprintf(`{"%s":"wrong"}`, test.customerModel))
-			require.ErrorContains(t, channel.ValidateSettings(), "model_mapping")
-		})
-	}
-
-	unsupportedMaterial := seedanceTestChannel("public-next", common.ChannelStatusEnabled)
-	unsupportedMaterial.BaseURL = common.GetPointer("https://funcloud.example.com")
-	unsupportedMaterial.ModelMapping = common.GetPointer(`{"public-next":"seedance-2-5"}`)
-	unsupportedMaterial.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance,
-		AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial,
-		AssetMinURLTTLSeconds: 3600,
-	})
-	require.ErrorContains(t, unsupportedMaterial.ValidateSettings(), "2.5 does not support")
-}
-
-func TestFunCloudSettingsAcceptMultipleAdministratorMappings(t *testing.T) {
-	channel := seedanceTestChannel("public-standard", common.ChannelStatusEnabled)
-	channel.Models = "public-standard,public-fast,public-mini"
-	channel.BaseURL = common.GetPointer("https://funcloud.example.com")
-	channel.ModelMapping = common.GetPointer(`{
-		"public-standard":"seedance-2",
-		"public-fast":"seedance-2-fast",
-		"public-mini":"seedance-2-mini",
-		"unused-admin-entry":"seedance-2"
-	}`)
-	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance,
-		AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial,
-		AssetMinURLTTLSeconds: 3600,
-	})
-
-	require.NoError(t, channel.ValidateSettings())
-
-	channel.Models += ",public-next"
-	channel.ModelMapping = common.GetPointer(`{
-		"public-standard":"seedance-2",
-		"public-fast":"seedance-2-fast",
-		"public-mini":"seedance-2-mini",
-		"public-next":"seedance-2-5"
-	}`)
-	require.ErrorContains(t, channel.ValidateSettings(), `customer model "public-next"`)
 }
 
 func TestSeedanceTagEditReusesProviderModelValidation(t *testing.T) {
@@ -519,23 +455,23 @@ func TestSeedanceTagEditReusesProviderModelValidation(t *testing.T) {
 	channel := seedanceTestChannel("public-standard", common.ChannelStatusEnabled)
 	channel.Tag = common.GetPointer("seedance-bulk")
 	channel.BaseURL = common.GetPointer("https://funcloud.example.com")
-	channel.ModelMapping = common.GetPointer(`{"public-standard":"seedance-2"}`)
+	channel.ModelMapping = common.GetPointer(`{"public-standard":"seedance-2-0"}`)
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance,
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3,
 		AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial,
 		AssetMinURLTTLSeconds: 3600,
 	})
 	require.NoError(t, channel.Insert())
 
-	invalidMapping := `{"public-standard":"seedance-2-5"}`
+	invalidMapping := `{"public-standard":"invalid-provider-model"}`
 	err := EditChannelByTagWithActor(
 		"seedance-bulk", nil, &invalidMapping, nil, nil, nil, nil, nil, nil, 0,
 	)
-	require.ErrorContains(t, err, "does not support the FunCloud material protocol")
+	require.ErrorContains(t, err, "model_mapping")
 
 	stored, err := GetChannelById(channel.Id, true)
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"public-standard":"seedance-2"}`, stored.GetModelMapping())
+	assert.JSONEq(t, `{"public-standard":"seedance-2-0"}`, stored.GetModelMapping())
 }
 
 func TestSeedancePublicAssetReuseScopeFollowsChannelBoundary(t *testing.T) {

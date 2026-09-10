@@ -2,10 +2,8 @@ package seedance
 
 import (
 	"fmt"
-	"strings"
 
 	taskdto "github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/feicai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 )
@@ -18,16 +16,7 @@ func buildFeicaiVideoCreateRequest(
 	if profile != taskdto.VideoUpstreamProfileThirdPartyFeicaiVideos {
 		return nil, false, nil
 	}
-	contract, ok := relaycommon.GetVideoContractRequest(c)
-	if !ok || contract.ContractID != taskdto.VideoContractModelArkV3 || contract.ModelArk == nil {
-		return nil, true, fmt.Errorf("the selected video adapter requires a ModelArk request")
-	}
-	upstreamModel := strings.TrimSpace(contract.ModelArk.Model)
-	if info != nil && info.IsModelMapped {
-		upstreamModel = strings.TrimSpace(info.UpstreamModelName)
-	} else if info != nil {
-		info.UpstreamModelName = upstreamModel
-	}
-	body, err := feicai.CreateRequest(contract.ModelArk, upstreamModel)
-	return body, true, err
+	// feicai_videos_v1 的南向转换已迁移到 seedance-link 扩展插件；
+	// 旧 Go 转换不再服务新请求，缺少插件时失败关闭，不回退。
+	return nil, true, fmt.Errorf("the selected video adapter requires the Seedance extension")
 }

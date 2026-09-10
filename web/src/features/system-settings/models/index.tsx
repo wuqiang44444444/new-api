@@ -54,6 +54,7 @@ const defaultModelSettings: ModelSettings = {
   ExposeRatioEnabled: false,
   'billing_setting.billing_mode': '{}',
   'billing_setting.billing_expr': '{}',
+  'batch_billing_setting.batch_billing_expr': '{}',
   'task_billing_setting.preconsume_tokens': '{}',
   'tool_price_setting.prices': '{}',
   TopupGroupRatio: '',

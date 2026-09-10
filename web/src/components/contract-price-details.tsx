@@ -4,6 +4,11 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
+import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
+import type {
+  BillingDisplayProjection,
+  BillingUsageSchema,
+} from '@/features/pricing/types'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 
 export type ContractPricePreview = {
@@ -17,6 +22,9 @@ export type ContractPricePreview = {
   base_image_ratio?: string
   final_image_ratio?: string
   current_discounted_price?: string
+  billing_expr?: string
+  billing_display?: BillingDisplayProjection
+  usage_schema?: BillingUsageSchema
 }
 
 type ContractPriceDetailsProps = {
@@ -155,6 +163,7 @@ export function ContractPriceDetails(props: ContractPriceDetailsProps) {
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <div className='flex min-w-0 items-center gap-1.5'>
+        {props.price.billing_mode === 'batch_expr' && <span className='text-muted-foreground text-xs'>{t('Azure Batch')}</span>}
         <span className={props.compact ? 'min-w-0 truncate text-xs' : 'min-w-0 truncate text-sm'}>
           {summary}
         </span>
@@ -171,6 +180,37 @@ export function ContractPriceDetails(props: ContractPriceDetailsProps) {
       </div>
       <CollapsibleContent>
         <div className='bg-muted/30 mt-2 space-y-1.5 rounded-md border p-2 text-xs'>
+          {isTiered && (
+            <div className='text-muted-foreground leading-relaxed'>
+              {Number.isFinite(effective) && effective > 0
+                ? t(
+                    'The tiered expression defines the base price; the effective contract multiplier {{multiplier}} applies to the billed amount, and tier thresholds are not discounted.',
+                    { multiplier: formatScalar(props.effectiveMultiplier) }
+                  )
+                : t('Tiered pricing')}
+            </div>
+          )}
+          {isTiered && props.price.billing_expr && (
+            <DynamicPricingBreakdown
+              billingExpr={props.price.billing_expr}
+              billingDisplay={props.price.billing_display}
+              usageSchema={
+                props.price.usage_schema &&
+                Object.keys(props.price.usage_schema).length > 0
+                  ? props.price.usage_schema
+                  : undefined
+              }
+              priceMultiplier={Number.isFinite(effective) && effective > 0 ? effective : undefined}
+              compact
+            />
+          )}
+          {isTiered && !props.price.billing_expr && (
+            <p className='text-muted-foreground leading-relaxed'>
+              {t(
+                'Tiered pricing is enabled for this model, but the billing expression is currently unavailable.'
+              )}
+            </p>
+          )}
           {props.price.price_type === 'model_price' && (
             <>
               {Number.isFinite(baseCallPrice) && (

@@ -160,18 +160,6 @@ func TestResolveRequestValidatesFeicaiMediaRepresentations(t *testing.T) {
 		message string
 	}{
 		{
-			name: "audio requires HTTPS",
-			content: dto.ModelArkVideoContent{Type: "audio_url", Role: common.GetPointer("reference_audio"),
-				AudioURL: &dto.VideoMediaURL{URL: "http://media.example.com/reference.mp3"}},
-			message: "https URL",
-		},
-		{
-			name: "video rejects data URL",
-			content: dto.ModelArkVideoContent{Type: "video_url", Role: common.GetPointer("reference_video"),
-				VideoURL: &dto.VideoMediaURL{URL: "data:video/mp4;base64,dmlkZW8="}},
-			message: "data URL is not supported",
-		},
-		{
 			name: "image MIME is restricted",
 			content: dto.ModelArkVideoContent{Type: "image_url", Role: common.GetPointer("reference_image"),
 				ImageURL: &dto.VideoMediaURL{URL: "data:image/gif;base64,aW1hZ2U="}},

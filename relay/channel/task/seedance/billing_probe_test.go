@@ -62,7 +62,17 @@ func TestBuildTaskBillingProbeNormalizesTrustedFields(t *testing.T) {
 					"video_url": map[string]any{"url": "https://example.com/input.mp4"},
 				}},
 			},
-			seconds: "5", resolution: "1080p", hasVideo: true, duration: 5, generateAudio: true, inputMode: "text", controlMode: "none",
+			seconds: "5", resolution: "1080p", hasVideo: true, duration: 5, generateAudio: true, inputMode: "multi_modal", controlMode: "reference",
+		},
+		{
+			name: "audio-only reference is multi-modal without becoming video input",
+			metadata: map[string]any{
+				"content": []any{map[string]any{
+					"type":      "audio_url",
+					"audio_url": map[string]any{"url": "https://example.com/input.mp3"},
+				}},
+			},
+			resolution: "720p", hasVideo: false, duration: 5, generateAudio: false, inputMode: "multi_modal", controlMode: "reference",
 		},
 		{
 			name: "empty video URL cannot select video tier",
@@ -150,6 +160,7 @@ func TestBuildTaskBillingProbeUsesFramesForSafePreConsume(t *testing.T) {
 
 func TestBuildTaskBillingProbeRejectsUnknownFeicaiModelBeforeHold(t *testing.T) {
 	context := probeContext(relaycommon.TaskSubmitReq{})
+	pinSeedanceExtensionForTest(t, context)
 	duration, resolution, ratio := 4, "720p", "9:16"
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 		ContractID: dto.VideoContractModelArkV3,
@@ -161,7 +172,7 @@ func TestBuildTaskBillingProbeRejectsUnknownFeicaiModelBeforeHold(t *testing.T) 
 			Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
 		},
 	})
-	_, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos}).BuildTaskBillingProbe(
+	_, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos, protocol: dto.VideoUpstreamProtocolFeicaiVideosV1}).BuildTaskBillingProbe(
 		context,
 		&relaycommon.RelayInfo{
 			OriginModelName: "customer-seedance-model",
@@ -188,7 +199,7 @@ func TestBuildTaskBillingProbeRequiresSelectedFeicaiChannelMeta(t *testing.T) {
 		},
 	})
 
-	_, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos}).BuildTaskBillingProbe(
+	_, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos, protocol: dto.VideoUpstreamProtocolFeicaiVideosV1}).BuildTaskBillingProbe(
 		context,
 		&relaycommon.RelayInfo{OriginModelName: "customer-seedance-1080p"},
 	)
@@ -197,6 +208,7 @@ func TestBuildTaskBillingProbeRequiresSelectedFeicaiChannelMeta(t *testing.T) {
 
 func TestBuildTaskBillingProbeUsesPerSecondModeAndActualRatioForFeicaiProPI(t *testing.T) {
 	context := probeContext(relaycommon.TaskSubmitReq{})
+	pinSeedanceExtensionForTest(t, context)
 	duration, resolution, ratio := 15, "720p", "21:9"
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 		ContractID: dto.VideoContractModelArkV3,
@@ -208,7 +220,7 @@ func TestBuildTaskBillingProbeUsesPerSecondModeAndActualRatioForFeicaiProPI(t *t
 			Content:    []dto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("move")}},
 		},
 	})
-	probe, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos}).BuildTaskBillingProbe(
+	probe, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos, protocol: dto.VideoUpstreamProtocolFeicaiVideosV1}).BuildTaskBillingProbe(
 		context,
 		&relaycommon.RelayInfo{
 			OriginModelName: "seedance-2.0-pro-pi-720p",
@@ -229,6 +241,7 @@ func TestBuildTaskBillingProbeKeepsAllFeicaiRatiosPriceNeutral(t *testing.T) {
 	for _, ratio := range []string{"21:9", "16:9", "4:3", "1:1", "3:4", "9:16"} {
 		t.Run(ratio, func(t *testing.T) {
 			context := probeContext(relaycommon.TaskSubmitReq{})
+			pinSeedanceExtensionForTest(t, context)
 			duration, resolution := 4, "720p"
 			relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 				ContractID: dto.VideoContractModelArkV3,
@@ -241,7 +254,7 @@ func TestBuildTaskBillingProbeKeepsAllFeicaiRatiosPriceNeutral(t *testing.T) {
 				},
 			})
 
-			probe, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos}).BuildTaskBillingProbe(
+			probe, err := (&TaskAdaptor{profile: dto.VideoUpstreamProfileThirdPartyFeicaiVideos, protocol: dto.VideoUpstreamProtocolFeicaiVideosV1}).BuildTaskBillingProbe(
 				context,
 				&relaycommon.RelayInfo{
 					OriginModelName: "administrator-defined-client-name",

@@ -67,6 +67,7 @@ type TaskCreateAttempt struct {
 }
 
 type TaskCreateAttemptParams struct {
+	TaskPlugin               *TaskPluginSnapshot
 	IdempotencyID            int64
 	PublicTaskID             string
 	UserID                   int
@@ -122,6 +123,9 @@ func CreatePreparedTaskAttempt(params TaskCreateAttemptParams) (*TaskCreateAttem
 		UpdatedAt:                now,
 	}
 	err = DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockSeedancePluginAttempt(tx, params.TaskPlugin, params.FrozenConnectionSnapshot); err != nil {
+			return err
+		}
 		if err := tx.Create(attempt).Error; err != nil {
 			return err
 		}

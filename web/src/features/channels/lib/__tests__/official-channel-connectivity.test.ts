@@ -156,7 +156,7 @@ describe('official channel connectivity', () => {
     const cases = [
       ['ark_assets_v1', 'ark_media_v1'],
       ['moxing_volc_assets_v1', 'moxing_modelark_media_v1'],
-      ['funcloud_material', 'funcloud_seedance'],
+      ['funcloud_material', 'funcloud_modelark_v3'],
     ] as const
     for (const [assetProtocol, videoProtocol] of cases) {
       const availability = getOfficialConnectivityAvailability({
@@ -175,16 +175,16 @@ describe('official channel connectivity', () => {
       assert.equal(availability.hasUnsavedTestChanges, false)
     }
 
-    const joyCreator = getOfficialConnectivityAvailability({
-      assetProtocol: 'moxing_joycreator_assets_v1',
-      savedAssetProtocol: 'moxing_joycreator_assets_v1',
-      videoProtocol: 'moxing_media_task_v1',
-      savedVideoProtocol: 'moxing_media_task_v1',
+    const tokensave = getOfficialConnectivityAvailability({
+      assetProtocol: 'tokensave_assets_v1',
+      savedAssetProtocol: 'tokensave_assets_v1',
+      videoProtocol: 'tokensave_media_task_v1',
+      savedVideoProtocol: 'tokensave_media_task_v1',
       credentialConfigured: false,
       hasPendingVideoKey: false,
       hasPendingAssetCredential: false,
       sensitiveLocked: false,
     })
-    assert.equal(joyCreator.assetCanTest, false)
+    assert.equal(tokensave.assetCanTest, false)
   })
 })

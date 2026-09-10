@@ -38,7 +38,7 @@ func TestAssetTenantBoundaryReplacementRequiresConfirmationAndRotatesScope(t *te
 		}},
 		{name: "asset protocol", mutate: func(channel *Channel) {
 			settings := channel.GetOtherSettings()
-			settings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolMoxingJoyCreatorV1
+			settings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolArkAssetsV1
 			channel.SetOtherSettings(settings)
 		}},
 		{name: "project", mutate: func(channel *Channel) {

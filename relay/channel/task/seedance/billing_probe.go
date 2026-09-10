@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/feicai"
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
@@ -34,8 +33,12 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 	}
 	providerModel := providerModelFromRelayInfo(info, payload.Model)
 	if spec, ok := providerSpec(a.protocol, providerModel); ok {
-		if _, allowed := spec.resolutions[resolution]; !allowed {
-			return nil, fmt.Errorf("resolution %q is not supported by the selected customer model", resolution)
+		// Registry-driven models may publish no resolution enum; unlisted
+		// values then stay a provider decision and are recorded as-is.
+		if len(spec.resolutions) > 0 {
+			if _, allowed := spec.resolutions[resolution]; !allowed {
+				return nil, fmt.Errorf("resolution %q is not supported by the selected customer model", resolution)
+			}
 		}
 	} else {
 		switch resolution {
@@ -79,6 +82,17 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 		generateAudio = bool(*payload.GenerateAudio)
 	}
 	inputMode, controlMode := relayBillingModes(payload)
+	if a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 {
+		if controlMode == "end_frame" {
+			inputMode = "single_image"
+		}
+		for _, item := range payload.Content {
+			if item.Type == "video_url" || item.Type == "audio_url" {
+				inputMode, controlMode = "multi_image", "reference"
+				break
+			}
+		}
+	}
 
 	probe := map[string]any{
 		"resolution":       resolution,
@@ -92,24 +106,20 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 		if info.ChannelMeta == nil {
 			return nil, fmt.Errorf("billing capability is unavailable for the selected customer model")
 		}
-		upstreamModel := strings.TrimSpace(info.UpstreamModelName)
-		if upstreamModel == "" {
-			upstreamModel = strings.TrimSpace(payload.Model)
-		}
 		contract, contractOK := common.GetVideoContractRequest(c)
 		if !contractOK || contract.ModelArk == nil {
 			return nil, fmt.Errorf("billing requires the ModelArk V3 request contract")
 		}
-		resolved, resolveErr := feicai.ResolveRequest(contract.ModelArk, upstreamModel)
-		if resolveErr != nil {
-			return nil, resolveErr
+		// feicai probe 字段（resolution/ratio/size_multiplier/billing_mode）由
+		// seedance-link 插件的 buildCreate 转换结果导出；转换错误保持与旧
+		// Go ResolveRequest 相同的消息与失败路径。
+		conversion, conversionErr := a.ensureSeedanceCreateConversion(c, info)
+		if conversionErr != nil {
+			return nil, conversionErr
 		}
-		probe["resolution"] = resolved.Spec.Resolution
-		probe["ratio"] = resolved.Ratio
-		// Existing administrator expressions may still multiply this frozen probe
-		// value. It is deliberately constant and carries no aspect-ratio semantics.
-		probe["size_multiplier"] = 1.0
-		probe["billing_mode"] = feicai.BillingModePerSecond
+		for key, value := range conversion.probe {
+			probe[key] = value
+		}
 	}
 	if a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 {
 		probe["billing_mode"] = "per-second"

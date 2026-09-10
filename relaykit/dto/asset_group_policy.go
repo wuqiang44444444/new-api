@@ -24,7 +24,6 @@ func (p AssetUpstreamProtocol) GeneralAssetGroupPolicy() GeneralAssetGroupPolicy
 		AssetUpstreamProtocolBytePlusAction,
 		AssetUpstreamProtocolArkAssetsV1,
 		AssetUpstreamProtocolTokenSaveAssetsV1,
-		AssetUpstreamProtocolMoxingJoyCreatorV1,
 		AssetUpstreamProtocolMoxingVolcAssetsV1,
 		AssetUpstreamProtocolFunCloudMaterial,
 		AssetUpstreamProtocolCMCCAICCV2:
