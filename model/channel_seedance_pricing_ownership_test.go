@@ -15,6 +15,7 @@ func TestSeedancePricingOwnershipRejectsCrossTypeChannelInsert(t *testing.T) {
 		for _, status := range []int{common.ChannelStatusEnabled, common.ChannelStatusManuallyDisabled} {
 			t.Run(fmt.Sprintf("%d/%d", existingType, status), func(t *testing.T) {
 				db := withSeedanceChannelDB(t)
+				seedPublishedSeedanceTestArtifact(t)
 				existing := seedanceTestChannel("shared-price", status)
 				existing.Type = existingType
 				require.NoError(t, db.Create(existing).Error)

@@ -96,10 +96,16 @@ func billingStatementTaskFacts(log billingReconciliationLog, other, snapshot map
 		parsed.billingMode = BillingStatementExpressionMode(string(expression), units)
 		return
 	}
-	// Version 1 task snapshots forced per_call even for a zero model_price and
-	// measured output tokens. These measured facts disprove that classification.
+	// Version 1 task snapshots forced per_call even when model_price was zero.
+	// A zero fixed price cannot explain a nonzero charge or refund. Without an
+	// expression or measured tokens, keep its meter unknown instead of inventing
+	// a separate per-call refund group. Explicit free per-call records remain valid.
 	price, ok := billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "model_price"))
-	if (isTask || taskID != "") && ok && price == 0 && log.CompletionTokens > 0 {
-		parsed.billingMode = BillingReconciliationModeToken
+	if (isTask || taskID != "") && ok && price == 0 {
+		if log.CompletionTokens > 0 {
+			parsed.billingMode = BillingReconciliationModeToken
+		} else if log.Quota > 0 && parsed.billingMode == BillingReconciliationModePerCall {
+			parsed.billingMode = BillingReconciliationModeUnknown
+		}
 	}
 }

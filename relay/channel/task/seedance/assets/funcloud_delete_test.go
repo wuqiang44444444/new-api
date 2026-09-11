@@ -2,6 +2,7 @@ package assets
 
 import (
 	"context"
+	"github.com/QuantumNous/new-api/dto"
 	"net/http"
 	"testing"
 
@@ -23,7 +24,7 @@ func TestFunCloudSingleMaterialDelete(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			calls := 0
-			adapter := NewFunCloudMaterialAdapter("https://provider.example", "fixture-key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+			adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolFunCloudMaterial, "https://provider.example", "fixture-key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 				calls++
 				assert.Equal(t, http.MethodPost, req.Method)
 				assert.Equal(t, "/api/v2/open/material/delete", req.URL.Path)

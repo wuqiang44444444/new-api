@@ -36,14 +36,21 @@ func GetChannelDefaultAssetGroupStatus(channel *model.Channel) (ChannelDefaultAs
 	if channel == nil || channel.Type != constant.ChannelTypeSeedanceLink {
 		return status, ErrAssetUpstreamUnavailable
 	}
-	// 无素材协议和托管素材均不需要 Provider 默认组；查询不适用状态不是操作失败。
-	switch channel.GetOtherSettings().AssetUpstreamProtocol.GeneralAssetGroupPolicy() {
-	case dto.GeneralAssetGroupPolicyNone, dto.GeneralAssetGroupPolicyHosted:
+	// 仅明确的"无素材协议"直接表达不适用。其余协议必须经同一次固定声明与
+	// adapter 判定；声明缺失时明确失败，不伪装为"配置正常但不需要默认组"。
+	if settings := channel.GetOtherSettings(); settings.AssetUpstreamProtocol == "" || settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolNone {
 		return status, nil
 	}
 	adapter, err := seedanceAssetAdapter(channel, 0, "")
 	if err != nil {
 		return status, err
+	}
+	policy, err := seedanceAssetGroupPolicy(adapter)
+	if err != nil {
+		return status, err
+	}
+	if policy != dto.GeneralAssetGroupPolicyDefaultFallback {
+		return status, nil
 	}
 	if _, ok := adapter.(assetadapter.GroupAdapter); !ok {
 		return status, nil
@@ -59,12 +66,16 @@ func GetChannelDefaultAssetGroupStatus(channel *model.Channel) (ChannelDefaultAs
 
 func CreateOrReuseChannelDefaultAssetGroup(ctx context.Context, channel *model.Channel) (ChannelDefaultAssetGroupResult, error) {
 	status := ChannelDefaultAssetGroupStatus{Name: DefaultAssetGroupName}
-	if channel.GetOtherSettings().AssetUpstreamProtocol == dto.AssetUpstreamProtocolFunCloudHosted {
-		return ChannelDefaultAssetGroupResult{ChannelDefaultAssetGroupStatus: status}, ErrUnsupportedAssetOperation
-	}
 	adapter, err := seedanceAssetAdapter(channel, 0, "")
 	if err != nil {
 		return ChannelDefaultAssetGroupResult{ChannelDefaultAssetGroupStatus: status}, err
+	}
+	policy, err := seedanceAssetGroupPolicy(adapter)
+	if err != nil {
+		return ChannelDefaultAssetGroupResult{ChannelDefaultAssetGroupStatus: status}, err
+	}
+	if policy != dto.GeneralAssetGroupPolicyDefaultFallback {
+		return ChannelDefaultAssetGroupResult{ChannelDefaultAssetGroupStatus: status}, ErrUnsupportedAssetOperation
 	}
 	groupAdapter, ok := adapter.(assetadapter.GroupAdapter)
 	if !ok {
@@ -84,7 +95,11 @@ func CreateOrReuseChannelDefaultAssetGroup(ctx context.Context, channel *model.C
 
 func createOrReuseDefaultAssetGroup(ctx context.Context, channel *model.Channel, adapter assetadapter.GroupAdapter) (string, string, error) {
 	startedAt := time.Now()
-	if search, ok := adapter.(assetadapter.GroupSearchAdapter); ok {
+	search, canSearch := adapter.(assetadapter.GroupSearchAdapter)
+	if declared, ok := adapter.(interface{ CanSearchGroups() bool }); ok {
+		canSearch = canSearch && declared.CanSearchGroups()
+	}
+	if canSearch {
 		seen := 0
 		for page := 1; page <= defaultAssetGroupMaxPages; page++ {
 			items, total, err := search.ListGroups(ctx, assetadapter.GroupListRequest{

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	"github.com/QuantumNous/new-api/plugins"
 	"io"
 	"net/http"
 	"net/url"
@@ -98,7 +100,11 @@ func verify(databasePath string, channelID int, timeout time.Duration) (verifica
 	if err != nil {
 		return report, err
 	}
-	asset, err := assetadapter.NewCMCCAICCV2Adapter(credential.AssetAccessKey+"|"+credential.AssetSecretKey, client)
+	plugin, definition, err := jsplugin.CompileSeedanceExtension(plugins.SeedanceSource(), jsplugin.Options{}, jsplugin.SeedanceHostContract())
+	if err != nil {
+		return report, errors.New("asset_plugin_invalid")
+	}
+	asset, err := assetadapter.NewPluginAssetAdapter(plugin, definition.Configuration.Asset("cmcc_aicc_assets_v2"), "cmcc_aicc_assets_v2", "", credential.AssetAccessKey+"|"+credential.AssetSecretKey, "", "", client)
 	if err != nil {
 		return report, errors.New("asset_credential_invalid")
 	}

@@ -2,6 +2,7 @@ package seedance
 
 import (
 	"context"
+	"github.com/QuantumNous/new-api/pkg/seedanceplugin"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -54,8 +55,8 @@ func TestSeedancePluginBase64MatchesGo(t *testing.T) {
 }
 
 func TestSeedancePluginCompileFailureStopsAdmissionAndIsVisible(t *testing.T) {
-	store := &seedanceExtensionStore{compiled: map[string]*seedanceExtensionEntry{}}
-	row := model.TaskPlugin{Key: SeedanceExtensionPluginKey, Version: "1.0.2", Source: plugins.SeedanceSource(), Enabled: true, Active: true}
+	store := seedanceplugin.NewStore()
+	row := model.TaskPlugin{Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), Source: plugins.SeedanceSource(), Enabled: true, Active: true}
 	row.SourceHash = sourceHashOf(row.Source)
 	require.NoError(t, store.SyncSnapshot(context.Background(), []model.TaskPlugin{row}))
 	pinned, err := store.ActiveFor(dto.VideoUpstreamProtocolFeicaiVideosV1)

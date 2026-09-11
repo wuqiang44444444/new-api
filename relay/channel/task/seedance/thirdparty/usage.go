@@ -33,6 +33,14 @@ type TerminalTokenUsage struct {
 	Evidence map[string]int
 }
 
+// NormalizeTerminalTokenUsage is the single host-owned usage derivation entry:
+// the frozen Go conversion path and the v3 plugin scan-root contract both
+// resolve billable usage through it, so quota semantics cannot drift between
+// the two contracts.
+func NormalizeTerminalTokenUsage(data map[string]any) TerminalTokenUsage {
+	return normalizeTerminalTokenUsage(data)
+}
+
 // normalizeTerminalTokenUsage collects every numeric usage value or token-named
 // value in a successful terminal response as Provider-reported usage evidence.
 // It does not depend on a model/provider allowlist or a runtime trust switch.

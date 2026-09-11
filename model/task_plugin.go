@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -62,6 +63,9 @@ func (plugin TaskPlugin) HasIcon() bool {
 
 func SaveTaskPlugin(plugin *TaskPlugin) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockSeedancePluginConfiguration(tx, plugin.Key); err != nil {
+			return err
+		}
 		var existing TaskPlugin
 		err := tx.Where(&TaskPlugin{Key: plugin.Key, Version: plugin.Version}).First(&existing).Error
 		if err == nil {
@@ -69,6 +73,11 @@ func SaveTaskPlugin(plugin *TaskPlugin) error {
 				return errors.New("plugin key and version already exist with different source")
 			}
 			updates := map[string]any{"enabled": plugin.Enabled, "remark": plugin.Remark}
+			if existing.Active && plugin.Enabled {
+				if err = validateSeedancePluginConfigurationActivation(tx, &existing); err != nil {
+					return err
+				}
+			}
 			if plugin.Icon != "" {
 				updates["icon"] = plugin.Icon
 				existing.Icon = plugin.Icon
@@ -90,6 +99,11 @@ func SaveTaskPlugin(plugin *TaskPlugin) error {
 			return err
 		}
 		plugin.Active = count == 0
+		if plugin.Active && plugin.Enabled {
+			if err = validateSeedancePluginConfigurationActivation(tx, plugin); err != nil {
+				return err
+			}
+		}
 		return tx.Create(plugin).Error
 	})
 }
@@ -187,8 +201,14 @@ func GetTaskPluginSyncSnapshot() (TaskPluginSyncSnapshot, error) {
 
 func ActivateTaskPlugin(key, version string) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockSeedancePluginConfiguration(tx, key); err != nil {
+			return err
+		}
 		var target TaskPlugin
 		if err := tx.Where(&TaskPlugin{Key: key, Version: version}).First(&target).Error; err != nil {
+			return err
+		}
+		if err := validateSeedancePluginConfigurationActivation(tx, &target); err != nil {
 			return err
 		}
 		if err := tx.Model(&TaskPlugin{}).Where(&TaskPlugin{Key: key}).Update("active", false).Error; err != nil {
@@ -199,6 +219,9 @@ func ActivateTaskPlugin(key, version string) error {
 }
 
 func SetTaskPluginEnabled(key string, enabled bool) error {
+	if key == jsplugin.SeedancePluginKey {
+		return setSeedancePluginConfigurationEnabled(key, enabled)
+	}
 	result := DB.Model(&TaskPlugin{}).Where(&TaskPlugin{Key: key, Active: true}).Update("enabled", enabled)
 	if result.Error != nil {
 		return result.Error
@@ -217,6 +240,9 @@ type TaskPluginDeleteResult struct {
 func DeleteTaskPluginVersion(key, version string) (TaskPluginDeleteResult, error) {
 	result := TaskPluginDeleteResult{}
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockSeedancePluginConfiguration(tx, key); err != nil {
+			return err
+		}
 		if err := guardSeedancePluginDeletion(tx, key, version); err != nil {
 			return err
 		}
@@ -225,6 +251,9 @@ func DeleteTaskPluginVersion(key, version string) (TaskPluginDeleteResult, error
 			return err
 		}
 		result.DeletedActive = plugin.Active
+		if err := validateSeedancePluginConfigurationDeletion(tx, &plugin); err != nil {
+			return err
+		}
 		if err := tx.Delete(&plugin).Error; err != nil {
 			return err
 		}

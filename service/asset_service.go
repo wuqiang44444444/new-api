@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/seedanceplugin"
 	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
 	"github.com/QuantumNous/new-api/setting/asset_setting"
 )
@@ -54,7 +55,11 @@ func CreateRemoteAsset(ctx context.Context, group string, userID int, req dto.Cr
 	if !adapter.Supports(req.AssetKind, req.MediaType) {
 		return dto.AssetResponse{}, ErrUnsupportedAssetType
 	}
-	assetGroupID, err := resolveAssetGroupID(channel, req.AssetKind, req.AssetGroupID)
+	groupPolicy, err := seedanceAssetGroupPolicy(adapter)
+	if err != nil {
+		return dto.AssetResponse{}, err
+	}
+	assetGroupID, err := resolveAssetGroupID(channel, req.AssetKind, req.AssetGroupID, groupPolicy)
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
@@ -258,6 +263,9 @@ func CheckAssetChannelConnectivity(ctx context.Context, channel *model.Channel) 
 		return assetChannelConfigurationError(err)
 	}
 	connectivity, ok := adapter.(assetadapter.ConnectivityAdapter)
+	if declared, hasDeclaration := adapter.(interface{ CanCheckConnectivity() bool }); hasDeclaration {
+		ok = ok && declared.CanCheckConnectivity()
+	}
 	if !ok {
 		return newChannelConnectivityError(
 			ChannelConnectivityAssetUnsupported,
@@ -313,38 +321,42 @@ func seedanceAssetAdapter(channel *model.Channel, userID int, modelName string) 
 	if !settings.AssetUpstreamProtocol.IsValid() {
 		return nil, ErrAssetLibraryUnavailable
 	}
-	if settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolFunCloudHosted {
-		// 托管路径不访问 Provider：不解析渠道凭据、不建立上游 HTTP 客户端；
-		// 无效用户身份由 model 层查询按失败关闭处理。
+	entry, err := seedanceplugin.Default.ActiveEntryFor(settings.VideoUpstreamProtocol)
+	if err != nil || entry.Info.Configuration == nil {
+		return nil, ErrAssetUpstreamUnavailable
+	}
+	declaration := entry.Info.Configuration.Asset(string(settings.AssetUpstreamProtocol))
+	if declaration == nil {
+		return nil, ErrAssetLibraryUnavailable
+	}
+	if declaration.GroupPolicy == "hosted" {
+		if settings.AssetUpstreamProtocol != dto.AssetUpstreamProtocolFunCloudHosted {
+			return nil, ErrAssetLibraryUnavailable
+		}
 		return newFunCloudHostedMaterialAdapter(userID, modelName), nil
 	}
-	key, err := model.ResolveAssetChannelCredential(channel)
-	if err != nil {
+	var key string
+	switch declaration.Credential {
+	case "asset_key_pair":
+		credential, err := model.GetChannelAssetCredential(channel.Id)
+		if err != nil || credential == nil || strings.TrimSpace(credential.AccessKeyID) == "" || strings.TrimSpace(credential.SecretAccessKey) == "" {
+			return nil, ErrAssetUpstreamUnavailable
+		}
+		key = strings.TrimSpace(credential.AccessKeyID) + "|" + strings.TrimSpace(credential.SecretAccessKey)
+	case "channel":
+		keys := channel.GetKeys()
+		if channel.ChannelInfo.IsMultiKey || len(keys) != 1 || strings.TrimSpace(keys[0]) == "" {
+			return nil, ErrAssetUpstreamUnavailable
+		}
+		key = strings.TrimSpace(keys[0])
+	default:
 		return nil, ErrAssetUpstreamUnavailable
 	}
 	httpClient, err := GetHttpClientWithProxy(channel.GetSetting().Proxy)
 	if err != nil {
 		return nil, err
 	}
-	var adapter assetadapter.Adapter
-	switch settings.AssetUpstreamProtocol {
-	case dto.AssetUpstreamProtocolVolcengineAction:
-		adapter, err = assetadapter.NewVolcengineActionAdapter(key, settings.AssetProviderProject, httpClient)
-	case dto.AssetUpstreamProtocolBytePlusAction:
-		adapter, err = assetadapter.NewBytePlusActionAdapter(key, settings.AssetRegion, settings.AssetProviderProject, httpClient)
-	case dto.AssetUpstreamProtocolArkAssetsV1:
-		adapter = assetadapter.NewArkAdapter(channel.GetBaseURL(), key, httpClient)
-	case dto.AssetUpstreamProtocolTokenSaveAssetsV1:
-		adapter = assetadapter.NewTokenSaveAssetAdapter(channel.GetBaseURL(), key, httpClient)
-	case dto.AssetUpstreamProtocolMoxingVolcAssetsV1:
-		adapter = assetadapter.NewMoxingVolcAdapter(channel.GetBaseURL(), key, httpClient)
-	case dto.AssetUpstreamProtocolFunCloudMaterial:
-		adapter = assetadapter.NewFunCloudMaterialAdapter(channel.GetBaseURL(), key, httpClient)
-	case dto.AssetUpstreamProtocolCMCCAICCV2:
-		adapter, err = assetadapter.NewCMCCAICCV2Adapter(key, httpClient)
-	default:
-		return nil, ErrAssetLibraryUnavailable
-	}
+	adapter, err := assetadapter.NewPluginAssetAdapter(entry.Plugin, declaration, settings.AssetUpstreamProtocol, channel.GetBaseURL(), key, settings.AssetRegion, settings.AssetProviderProject, httpClient)
 	if err != nil {
 		return nil, ErrAssetUpstreamUnavailable
 	}

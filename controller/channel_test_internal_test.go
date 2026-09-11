@@ -166,6 +166,7 @@ func TestCopyChannelRejectsInvalidLegacyProxySettings(t *testing.T) {
 
 func TestCopyChannelResetsSeparatedAssetCredentialProfilesWithoutCopyingCredential(t *testing.T) {
 	db := setupAssetTenantControllerTestDB(t)
+	seedPublishedSeedanceControllerArtifact(t)
 
 	tests := []struct {
 		name         string
@@ -370,6 +371,7 @@ func TestSeedanceHealthCheckCountsUnavailableProbeAsFailure(t *testing.T) {
 
 func TestSeedanceAssetProbeCannotAutoEnableVideoChannel(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
+	seedPublishedSeedanceControllerArtifact(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		assert.Equal(t, "/api/v2/open/material/list?page=1&pageSize=1", req.URL.RequestURI())
 		w.Header().Set("Content-Type", "application/json")
@@ -385,7 +387,7 @@ func TestSeedanceAssetProbeCannotAutoEnableVideoChannel(t *testing.T) {
 		Models: "seedance-test", Group: "default", Status: common.ChannelStatusAutoDisabled,
 		BaseURL: common.GetPointer(server.URL),
 	}
-	channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial})
+	channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3, AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial})
 	require.NoError(t, db.Create(channel).Error)
 
 	summary := testChannelForHealthCheck(context.Background(), channel, 0, false, 0)

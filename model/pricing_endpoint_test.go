@@ -109,6 +109,8 @@ func TestPricingAdvancedCustomUsesConfiguredEndpointTypes(t *testing.T) {
 
 func TestPricingIncludesDisabledSeedanceCatalogWithModelArkAndAssetAPI(t *testing.T) {
 	resetPricingEndpointTestTables(t)
+	seedPublishedSeedanceTestArtifact(t)
+	t.Cleanup(func() { require.NoError(t, DB.Where("key = ?", "seedance-link").Delete(&TaskPlugin{}).Error) })
 	channel := &Channel{
 		Id: 102, Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusManuallyDisabled,
 		Name: "disabled official", Key: "official-key", Group: "default", Models: "seedance-official-disabled",
@@ -121,7 +123,7 @@ func TestPricingIncludesDisabledSeedanceCatalogWithModelArkAndAssetAPI(t *testin
 		AssetMinURLTTLSeconds: 3600,
 	})
 	require.NoError(t, channel.ValidateSettings())
-	require.NoError(t, channel.Insert())
+	require.NoError(t, InsertChannelWithAssetCredential(channel, &dto.ChannelAssetCredentialInput{AccessKeyID: "fixture-access", SecretAccessKey: "fixture-secret"}))
 	InvalidatePricingCache()
 
 	pricing, exists := func() (Pricing, bool) {

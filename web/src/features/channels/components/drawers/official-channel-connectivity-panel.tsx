@@ -164,6 +164,7 @@ export function OfficialChannelConnectivityPanel(
     pendingVideoKey,
     pendingAccessKeyID,
     pendingSecretAccessKey,
+    configuration,
   ] = useWatch({
     control: props.control,
     name: [
@@ -172,6 +173,7 @@ export function OfficialChannelConnectivityPanel(
       'key',
       'asset_access_key_id',
       'asset_secret_access_key',
+      'seedance_plugin_configuration',
     ],
   })
 
@@ -206,6 +208,7 @@ export function OfficialChannelConnectivityPanel(
     pendingAccessKeyID?.trim() || pendingSecretAccessKey?.trim()
   )
   const availability = getOfficialConnectivityAvailability({
+ configuration,
     assetProtocol,
     savedAssetProtocol: props.savedAssetProtocol,
     videoProtocol,

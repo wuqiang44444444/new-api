@@ -12,6 +12,8 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
+	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -58,6 +60,7 @@ func withAssetGroupPolicyDB(t *testing.T) *gorm.DB {
 
 func createMoxingAssetPolicyChannel(t *testing.T, db *gorm.DB, baseURL string) *model.Channel {
 	t.Helper()
+	pinPublishedSeedanceServiceArtifact(t)
 	channel := &model.Channel{
 		Type:    constant.ChannelTypeSeedanceLink,
 		Status:  common.ChannelStatusEnabled,
@@ -142,16 +145,57 @@ func TestResolveAssetGroupIDKeepsRealPersonSeparateAndNoneIgnoresField(t *testin
 	channel := &model.Channel{}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone})
 
-	groupID, err := resolveAssetGroupID(channel, model.AssetKindGeneral, "caller-group")
+	groupID, err := resolveAssetGroupID(channel, model.AssetKindGeneral, "caller-group", channel.GetOtherSettings().AssetUpstreamProtocol.GeneralAssetGroupPolicy())
 	require.NoError(t, err)
 	assert.Empty(t, groupID)
 
-	_, err = resolveAssetGroupID(channel, model.AssetKindRealPerson, "  ")
+	_, err = resolveAssetGroupID(channel, model.AssetKindRealPerson, "  ", channel.GetOtherSettings().AssetUpstreamProtocol.GeneralAssetGroupPolicy())
 	require.ErrorIs(t, err, ErrInvalidAssetRequest)
 
-	groupID, err = resolveAssetGroupID(channel, model.AssetKindRealPerson, " real-person-group ")
+	groupID, err = resolveAssetGroupID(channel, model.AssetKindRealPerson, " real-person-group ", channel.GetOtherSettings().AssetUpstreamProtocol.GeneralAssetGroupPolicy())
 	require.NoError(t, err)
 	assert.Equal(t, " real-person-group ", groupID)
+}
+
+// adapterWithoutDeclaredPolicy models an adapter type that does not carry a
+// declared group policy: the legacy Go protocol table must not answer for it.
+type adapterWithoutDeclaredPolicy struct {
+	assetadapter.Adapter
+}
+
+func TestSeedanceAssetGroupPolicyRequiresDeclaredSource(t *testing.T) {
+	_, err := seedanceAssetGroupPolicy(adapterWithoutDeclaredPolicy{Adapter: hostedPolicyAdapterStub{}})
+	require.ErrorIs(t, err, ErrAssetUpstreamUnavailable)
+
+	policy, err := seedanceAssetGroupPolicy(hostedPolicyAdapterStub{})
+	require.NoError(t, err)
+	assert.Equal(t, dto.GeneralAssetGroupPolicyHosted, policy)
+}
+
+type hostedPolicyAdapterStub struct{}
+
+func (hostedPolicyAdapterStub) Profile() dto.AssetUpstreamProfile {
+	return kitdto.AssetUpstreamProfileFunCloudHosted
+}
+
+func (hostedPolicyAdapterStub) Supports(kind, mediaType string) bool { return kind == "general" && mediaType == "image" }
+
+func (hostedPolicyAdapterStub) CreateAsset(context.Context, assetadapter.AssetRequest) (assetadapter.AssetResult, error) {
+	return assetadapter.AssetResult{}, nil
+}
+
+func (hostedPolicyAdapterStub) GetAsset(_ context.Context, _ string) (assetadapter.AssetResult, error) {
+	return assetadapter.AssetResult{}, nil
+}
+
+func (hostedPolicyAdapterStub) UpdateAsset(_ context.Context, _ string, _ string) (assetadapter.AssetResult, error) {
+	return assetadapter.AssetResult{}, nil
+}
+
+func (hostedPolicyAdapterStub) DeleteAsset(_ context.Context, _ string) error { return nil }
+
+func (hostedPolicyAdapterStub) GeneralAssetGroupPolicy() dto.GeneralAssetGroupPolicy {
+	return dto.GeneralAssetGroupPolicyHosted
 }
 
 func TestCreateAssetGroupRejectsReservedGeneralNameBeforeRouting(t *testing.T) {

@@ -16,7 +16,7 @@ import (
 func TestCMCCAICCV2CreateAssetUsesSignedRESTContract(t *testing.T) {
 	var captured *http.Request
 	var requestBody map[string]any
-	adapter, err := NewCMCCAICCV2Adapter("ACCESS|SECRET", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter, err := publishedCMCCFixture(t, "ACCESS|SECRET", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		captured = req.Clone(req.Context())
 		body, readErr := io.ReadAll(req.Body)
 		require.NoError(t, readErr)
@@ -24,7 +24,7 @@ func TestCMCCAICCV2CreateAssetUsesSignedRESTContract(t *testing.T) {
 		return assetJSONResponse(`{"requestId":"request-1","state":"OK","errorCode":null,"errorMessage":null,"body":"asset-1"}`), nil
 	}))
 	require.NoError(t, err)
-	adapter.now = func() time.Time { return time.Date(2026, time.August, 21, 1, 2, 3, 0, time.UTC) }
+	adapter.cmcc.now = func() time.Time { return time.Date(2026, time.August, 21, 1, 2, 3, 0, time.UTC) }
 
 	result, err := adapter.CreateAsset(context.Background(), AssetRequest{
 		GroupResourceID: "group-1", URL: "https://cdn.example.com/source.png", Name: "portrait", MediaType: "image",
@@ -52,7 +52,7 @@ func TestCMCCAICCV2CreateAssetUsesSignedRESTContract(t *testing.T) {
 
 func TestCMCCAICCV2ImplementsReadOnlyConnectivityAssetCRUDAndGroupVerification(t *testing.T) {
 	requests := make([]string, 0, 8)
-	adapter, err := NewCMCCAICCV2Adapter("ACCESS|SECRET", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter, err := publishedCMCCFixture(t, "ACCESS|SECRET", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		key := req.Method + " " + req.URL.Path
 		requests = append(requests, key)
 		switch key {
@@ -78,7 +78,7 @@ func TestCMCCAICCV2ImplementsReadOnlyConnectivityAssetCRUDAndGroupVerification(t
 		}
 	}))
 	require.NoError(t, err)
-	adapter.now = func() time.Time { return time.Unix(1_800_000_000, 0).UTC() }
+	adapter.cmcc.now = func() time.Time { return time.Unix(1_800_000_000, 0).UTC() }
 
 	require.NoError(t, adapter.CheckConnectivity(context.Background()))
 	asset, err := adapter.GetAsset(context.Background(), "asset-1")
@@ -105,16 +105,16 @@ func TestCMCCAICCV2ImplementsReadOnlyConnectivityAssetCRUDAndGroupVerification(t
 }
 
 func TestCMCCAICCV2SignatureMatchesFixedProviderVector(t *testing.T) {
-	adapter, err := NewCMCCAICCV2Adapter("ACCESS|SECRET", nil)
+	adapter, err := publishedCMCCFixture(t, "ACCESS|SECRET", nil)
 	require.NoError(t, err)
-	adapter.readNonce = func(target []byte) (int, error) {
+	adapter.cmcc.readNonce = func(target []byte) (int, error) {
 		for index := range target {
 			target[index] = byte(index)
 		}
 		return len(target), nil
 	}
 
-	query, err := adapter.signedQuery(
+	query, err := adapter.cmcc.signedQuery(
 		http.MethodPost,
 		"/api/openapi-maas/exp/aicc/v2/asset-group",
 		time.Date(2026, time.August, 21, 1, 2, 3, 0, time.UTC),
@@ -128,7 +128,7 @@ func TestCMCCAICCV2SignatureMatchesFixedProviderVector(t *testing.T) {
 }
 
 func TestCMCCAICCV2CapabilitiesAndErrorBoundary(t *testing.T) {
-	adapter, err := NewCMCCAICCV2Adapter("ACCESS|SECRET", nil)
+	adapter, err := publishedCMCCFixture(t, "ACCESS|SECRET", nil)
 	require.NoError(t, err)
 	for _, kind := range []string{"general", "real_person"} {
 		for _, mediaType := range []string{"image", "video", "audio"} {
@@ -140,7 +140,7 @@ func TestCMCCAICCV2CapabilitiesAndErrorBoundary(t *testing.T) {
 	_, err = adapter.CreateVerificationSession(context.Background(), VerificationRequest{RedirectURL: "https://client.example/callback"})
 	require.ErrorIs(t, err, ErrAssetOperationUnsupported)
 
-	failed, err := NewCMCCAICCV2Adapter("ACCESS|SECRET", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+	failed, err := publishedCMCCFixture(t, "ACCESS|SECRET", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 		return assetJSONResponse(`{"requestId":"request-error","state":"ERROR","errorCode":"AUTH_DENIED","errorMessage":"sensitive provider text"}`), nil
 	}))
 	require.NoError(t, err)

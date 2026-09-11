@@ -1,3 +1,4 @@
+import { publishedSeedanceConfiguration } from './seedance-plugin-fixture'
 import assert from 'node:assert/strict'
 
 import { describe, test } from 'vitest'
@@ -63,6 +64,7 @@ describe('official channel connectivity', () => {
 
   test('keeps both tests visible but blocks persisted tests for draft secrets', () => {
     const available = getOfficialConnectivityAvailability({
+ configuration: publishedSeedanceConfiguration,
       assetProtocol: 'byteplus_assets_action_v2024_01_01',
       savedAssetProtocol: 'byteplus_assets_action_v2024_01_01',
       videoProtocol: 'modelark_v3_byteplus',
@@ -80,6 +82,7 @@ describe('official channel connectivity', () => {
 
   test('enables the saved Volcengine official asset test with stored credentials', () => {
     const availability = getOfficialConnectivityAvailability({
+ configuration: publishedSeedanceConfiguration,
       assetProtocol: 'volcengine_assets_action_v2024_01_01',
       savedAssetProtocol: 'volcengine_assets_action_v2024_01_01',
       videoProtocol: 'modelark_v3_volcengine',
@@ -97,6 +100,7 @@ describe('official channel connectivity', () => {
 
   test('enables both saved CMCC connectivity probes with stored credentials', () => {
     const availability = getOfficialConnectivityAvailability({
+ configuration: publishedSeedanceConfiguration,
       assetProtocol: 'cmcc_aicc_assets_v2',
       savedAssetProtocol: 'cmcc_aicc_assets_v2',
       videoProtocol: 'modelark_v3_cmcc',
@@ -114,6 +118,7 @@ describe('official channel connectivity', () => {
 
   test('allows explicit clear only after the official asset profile is saved disabled', () => {
     const active = getOfficialConnectivityAvailability({
+ configuration: publishedSeedanceConfiguration,
       assetProtocol: 'none',
       savedAssetProtocol: 'byteplus_assets_action_v2024_01_01',
       videoProtocol: 'modelark_v3_byteplus',
@@ -126,6 +131,7 @@ describe('official channel connectivity', () => {
     assert.equal(active.canClearCredential, false)
 
     const disabled = getOfficialConnectivityAvailability({
+ configuration: publishedSeedanceConfiguration,
       assetProtocol: 'none',
       savedAssetProtocol: 'none',
       videoProtocol: 'modelark_v3_byteplus',
@@ -139,6 +145,7 @@ describe('official channel connectivity', () => {
 
     assert.equal(
       getOfficialConnectivityAvailability({
+ configuration: publishedSeedanceConfiguration,
         assetProtocol: 'none',
         savedAssetProtocol: 'none',
         videoProtocol: 'modelark_v3_byteplus',
@@ -160,6 +167,7 @@ describe('official channel connectivity', () => {
     ] as const
     for (const [assetProtocol, videoProtocol] of cases) {
       const availability = getOfficialConnectivityAvailability({
+ configuration: publishedSeedanceConfiguration,
         assetProtocol,
         savedAssetProtocol: assetProtocol,
         videoProtocol,
@@ -176,6 +184,7 @@ describe('official channel connectivity', () => {
     }
 
     const tokensave = getOfficialConnectivityAvailability({
+ configuration: publishedSeedanceConfiguration,
       assetProtocol: 'tokensave_assets_v1',
       savedAssetProtocol: 'tokensave_assets_v1',
       videoProtocol: 'tokensave_media_task_v1',

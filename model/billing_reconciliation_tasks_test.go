@@ -64,7 +64,7 @@ func TestStatementListAggregatesSignedAmountsAcrossCustomersBeforeRounding(t *te
 		wantOriginal int64
 	}{
 		{"refund cancels charge", 80, "0.8", 0},
-		{"refund exceeds charge", 160, "0.8", 0},
+		{"refund exceeds charge", 160, "0.8", -100},
 		{"different discounts", 40, "0.5", 20},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -115,11 +115,12 @@ func TestStatementListRoundsOnlyOnceAndRejectsAggregateOverflow(t *testing.T) {
 }
 
 func TestCustomerStatementRefundNeedsFrozenPriceAndKeepsPeriodBoundary(t *testing.T) {
+	refundedOriginal := int64(-100)
 	for _, tc := range []struct {
 		name, other  string
 		wantOriginal *int64
 	}{
-		{"known refund", `{"model_price":1,"group_ratio":0.8}`, new(int64)},
+		{"known refund", `{"model_price":1,"group_ratio":0.8}`, &refundedOriginal},
 		{"missing refund price", `{"model_price":1}`, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -131,7 +132,7 @@ func TestCustomerStatementRefundNeedsFrozenPriceAndKeepsPeriodBoundary(t *testin
 			}).Error)
 			s, err := GetBillingCustomerStatement(7, 1000, 1200, "api_key", 0, "", "")
 			require.NoError(t, err)
-			assert.Zero(t, s.Summary.NetQuota)
+			assert.EqualValues(t, -80, s.Summary.NetQuota)
 			assert.EqualValues(t, 80, s.Summary.RefundQuota)
 			assert.Equal(t, tc.wantOriginal, s.OriginalQuota)
 		})

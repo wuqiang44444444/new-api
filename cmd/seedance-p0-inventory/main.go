@@ -60,6 +60,7 @@ type modelLine struct {
 
 func main() {
 	dsn := flag.String("dsn", "", "SQLite snapshot path (read-only)")
+	checkArtifacts := flag.Bool("check-plugin-artifacts", false, "check every stored Seedance version against the current compiler only")
 	flag.Parse()
 	if *dsn == "" {
 		fmt.Fprintln(os.Stderr, "usage: seedance-p0-inventory -dsn <sqlite file>")
@@ -68,6 +69,12 @@ func main() {
 	db, err := gorm.Open(sqlite.Open(*dsn+"?mode=ro"), &gorm.Config{Logger: logger.Discard})
 	if err != nil {
 		fail("open snapshot", err)
+	}
+	if *checkArtifacts {
+		if err := checkSeedancePluginArtifacts(db, os.Stdout); err != nil {
+			fail("check plugin artifacts", err)
+		}
+		return
 	}
 
 	var channels []channelRow

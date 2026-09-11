@@ -28,8 +28,8 @@ type MoxingVideoModelContract struct {
 	AllowReferenceVideos bool
 	AllowReferenceAudios bool
 	// AllowAudioOnly accepts audio-only reference input. Moxing documents this
-	// per model: 2.0 requires at least one reference image or video beside the
-	// audio, and that rule must not be copied to the other models.
+	// per model. Examples pairing audio with images do not establish a
+	// mandatory pairing rule for other valid northbound inputs.
 	AllowAudioOnly bool
 	// DefaultGenerateAudio is the documented output-sound default. It is a
 	// billing and request default and stays independent of reference audio
@@ -38,19 +38,20 @@ type MoxingVideoModelContract struct {
 }
 
 // MoxingVideoModelContracts lists the registered Moxing models in a fixed
-// order. The four precise model IDs are the protocol's full model list;
-// -0818 replacements are not registered.
+// order. The four precise model IDs are the protocol's full model list.
 var MoxingVideoModelContracts = []MoxingVideoModelContract{
 	{
-		// 2.0 documents that reference audio requires at least one reference
-		// image or video, so audio-only input stays rejected for this model.
-		ProviderModel:              "doubao-seedance-2-0-260128",
+		// The 0818 model uses official content and defaults output audio to true.
+		// Its documentation does not prohibit audio-only reference input.
+		ProviderModel:              "doubao-seedance-2-0-260128-0818",
 		DefaultDurationSeconds:     5,
 		MinDurationSeconds:         4,
 		MaxDurationSeconds:         15,
 		IntelligentDurationSeconds: 15,
 		AllowReferenceVideos:       true,
 		AllowReferenceAudios:       true,
+		AllowAudioOnly:             true,
+		DefaultGenerateAudio:       true,
 	},
 	{
 		ProviderModel:              "doubao-seedance-2-0-fast-260128",

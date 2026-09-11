@@ -95,6 +95,7 @@ func TestAssetTenantMutationErrorsExposeStableCodes(t *testing.T) {
 func TestConfirmedAssetTenantCredentialRotationIsAuditedWithoutSecrets(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupAssetTenantControllerTestDB(t)
+	version := seedPublishedSeedanceControllerArtifact(t)
 
 	const (
 		rootUserID     = 900
@@ -116,7 +117,7 @@ func TestConfirmedAssetTenantCredentialRotationIsAuditedWithoutSecrets(t *testin
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMoxingModelArkV1,
 		AssetUpstreamProtocol: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
-		AssetMinURLTTLSeconds: 3600,
+		AssetMinURLTTLSeconds: 3600, AssetProviderProject: "default",
 	})
 	require.NoError(t, channel.ValidateSettings())
 	require.NoError(t, channel.Insert())
@@ -124,15 +125,16 @@ func TestConfirmedAssetTenantCredentialRotationIsAuditedWithoutSecrets(t *testin
 	update := func(confirm bool) *httptest.ResponseRecorder {
 		t.Helper()
 		payload := map[string]any{
-			"id":            channel.Id,
-			"type":          channel.Type,
-			"name":          channel.Name,
-			"key":           newVideoSecret,
-			"models":        channel.Models,
-			"group":         channel.Group,
-			"base_url":      channel.BaseURL,
-			"model_mapping": channel.ModelMapping,
-			"settings":      channel.OtherSettings,
+			"id":                      channel.Id,
+			"type":                    channel.Type,
+			"name":                    channel.Name,
+			"key":                     newVideoSecret,
+			"models":                  channel.Models,
+			"group":                   channel.Group,
+			"base_url":                channel.BaseURL,
+			"model_mapping":           channel.ModelMapping,
+			"settings":                channel.OtherSettings,
+			"seedance_plugin_version": version,
 		}
 		if confirm {
 			payload["confirm_asset_tenant_unchanged"] = true
@@ -188,6 +190,7 @@ func TestConfirmedAssetTenantCredentialRotationIsAuditedWithoutSecrets(t *testin
 func TestConfirmedAssetTenantReplacementKeepsChannelAndModelsAndRotatesScope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupAssetTenantControllerTestDB(t)
+	pluginVersion := seedPublishedSeedanceControllerArtifact(t)
 
 	const (
 		rootUserID    = 901
@@ -227,7 +230,7 @@ func TestConfirmedAssetTenantReplacementKeepsChannelAndModelsAndRotatesScope(t *
 	update := func(confirm bool) *httptest.ResponseRecorder {
 		t.Helper()
 		payload := map[string]any{
-			"id": channel.Id, "type": channel.Type, "name": channel.Name,
+			"seedance_plugin_version": pluginVersion, "id": channel.Id, "type": channel.Type, "name": channel.Name,
 			"models": channel.Models, "group": channel.Group, "base_url": channel.BaseURL,
 			"model_mapping": channel.ModelMapping, "settings": channel.OtherSettings,
 		}
@@ -293,6 +296,7 @@ func TestConfirmedAssetTenantReplacementKeepsChannelAndModelsAndRotatesScope(t *
 func TestPartialChannelUpdateWithoutPersistedBoundaryChangeDoesNotAuditReplacement(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupAssetTenantControllerTestDB(t)
+	pluginVersion := seedPublishedSeedanceControllerArtifact(t)
 
 	const (
 		rootUserID    = 902
@@ -327,7 +331,7 @@ func TestPartialChannelUpdateWithoutPersistedBoundaryChangeDoesNotAuditReplaceme
 
 	// 请求省略 base_url：零值不会落库，即使携带替换确认也不构成实际边界变化。
 	payload := map[string]any{
-		"id": channel.Id, "type": channel.Type, "name": channel.Name,
+		"seedance_plugin_version": pluginVersion, "id": channel.Id, "type": channel.Type, "name": channel.Name,
 		"models": channel.Models, "group": channel.Group,
 		"settings":                         channel.OtherSettings,
 		"confirm_asset_tenant_replacement": true,

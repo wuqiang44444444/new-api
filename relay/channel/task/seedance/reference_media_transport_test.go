@@ -57,11 +57,11 @@ func TestReferenceMediaRepresentationsReachProviderBody(t *testing.T) {
 						req.GenerateAudio, req.Watermark = nil, nil
 					}
 					c := seedancePluginTestContext(t)
-					if protocol == dto.VideoUpstreamProtocolFeicaiVideosV1 {
+					if SeedanceExtensionProtocolMigrated(protocol) {
 						pinSeedanceExtensionForTest(t, c)
 					}
 					relaycommon.SetVideoContractRequest(c, dto.VideoContractRequest{ContractID: dto.VideoContractModelArkV3, ModelArk: req})
-					info := &relaycommon.RelayInfo{OriginModelName: req.Model, ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeSeedanceLink, IsModelMapped: true, UpstreamModelName: providerModel, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: protocol}}}
+					info := &relaycommon.RelayInfo{OriginModelName: req.Model, ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeSeedanceLink, ChannelBaseUrl: "https://provider.example", IsModelMapped: true, UpstreamModelName: providerModel, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: protocol}}}
 					adaptor := &TaskAdaptor{}
 					adaptor.Init(info)
 					require.Nil(t, adaptor.ValidateMappedRequest(c, info))

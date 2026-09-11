@@ -31,7 +31,7 @@ func TestCMCCMissingAssetErrorsStayScopedToVerifiedOperations(t *testing.T) {
 		{"malformed body", "delete", 400, `{`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			adapter, err := NewCMCCAICCV2Adapter("ACCESS|SECRET", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+			adapter, err := publishedCMCCFixture(t, "ACCESS|SECRET", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 				response := assetJSONResponse(tc.body)
 				response.StatusCode = tc.status
 				return response, nil

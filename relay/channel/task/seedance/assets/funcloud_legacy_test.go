@@ -20,7 +20,6 @@ import (
 
 const (
 	funCloudMaterialRoot           = "/api/v2/open/material"
-	funCloudUploadResponseMaxBytes = 1 << 20
 )
 
 type FunCloudMaterialAdapter struct{ client }

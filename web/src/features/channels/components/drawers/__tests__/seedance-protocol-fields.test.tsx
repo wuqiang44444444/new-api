@@ -30,38 +30,33 @@ import {
   CHANNEL_FORM_DEFAULT_VALUES,
   type ChannelFormValues,
 } from '../../../lib/channel-form'
+import { publishedSeedanceConfiguration } from '../../../lib/__tests__/seedance-plugin-fixture'
 import { SeedanceProtocolFields } from '../seedance-protocol-fields'
 
 beforeAll(async () => {
-  await i18next.init({
-    lng: 'en',
-    fallbackLng: 'en',
-    resources: {
-      en: {
-        translation: {
-          'Seedance Video Protocol': 'Seedance Video Protocol',
-          'Seedance Asset Protocol': 'Seedance Asset Protocol',
-          'Volcengine ModelArk V3': 'Volcengine ModelArk V3',
-          'BytePlus ModelArk V3': 'BytePlus ModelArk V3',
-          'TokenSave Media Task V1': 'TokenSave Media Task V1',
-          'Moxing ModelArk Media Task V1': 'Moxing ModelArk Media Task V1',
-          'Ark Media V1': 'Ark Proxy Video API',
-          'Feicai Videos V1 (URL Only, No Asset Library)':
-            'Feicai Videos V1 (URL Only, No Asset Library)',
-          'FunCloud ModelArk V3': 'FunCloud ModelArk V3',
-          'FunCloud Material Library': 'FunCloud Material Library',
-          'Volcengine Official Assets': 'Volcengine Official Assets',
-          'BytePlus Official Assets': 'BytePlus Official Assets',
-          'No Asset Protocol': 'No Asset Protocol',
-          'TokenSave Asset Library V1': 'TokenSave Asset Library V1',
-          'Moxing Volcengine Asset Library V1':
-            'Moxing Volcengine Asset Library V1',
-          'Ark Assets V1': 'Ark Proxy Asset Library',
-        },
-      },
-    },
-  })
+  // No translation resources: unregistered keys pass through, so option text
+  // equals the declared label from the repository artifact.
+  await i18next.init({ lng: 'en', fallbackLng: 'en' })
 })
+
+// Selector labels are asserted against the published repository artifact, not
+// a hand-copied provider list: a declaration change that drops a protocol or
+// renames a label must fail here.
+function declaredVideoLabel(protocol: string): string {
+  const video = publishedSeedanceConfiguration.videos.find(
+    (video) => video.protocol === protocol
+  )
+  if (!video) throw new Error(`missing declared video protocol: ${protocol}`)
+  return video.label
+}
+
+function declaredAssetLabel(protocol: string): string {
+  const asset = publishedSeedanceConfiguration.assets.find(
+    (asset) => asset.protocol === protocol
+  )
+  if (!asset) throw new Error(`missing declared asset protocol: ${protocol}`)
+  return asset.label
+}
 
 function SeedanceProtocolFieldsHarness(
   props: {
@@ -88,6 +83,7 @@ function SeedanceProtocolFieldsHarness(
           control={form.control}
           sensitiveLocked={false}
           boundaryChanges={props.boundaryChanges}
+          configuration={publishedSeedanceConfiguration}
         />
       </Form>
     </I18nextProvider>
@@ -131,6 +127,9 @@ describe('Seedance protocol fields', () => {
     const user = userEvent.setup()
     render(<SeedanceProtocolFieldsHarness />)
 
+    const volcengineAssetLabel = declaredAssetLabel(
+      'volcengine_assets_action_v2024_01_01'
+    )
     const videoTrigger = screen.getByRole('combobox', {
       name: 'Seedance Video Protocol',
     })
@@ -139,7 +138,7 @@ describe('Seedance protocol fields', () => {
     })
     expect(videoTrigger.className).toContain('max-w-2xl')
     expect(assetTrigger.className).toContain('max-w-2xl')
-    expect(assetTrigger.textContent).toContain('Volcengine Official Assets')
+    expect(assetTrigger.textContent).toContain(volcengineAssetLabel)
 
     await user.click(assetTrigger)
     const initialListbox = await screen.findByRole('listbox')
@@ -149,12 +148,12 @@ describe('Seedance protocol fields', () => {
     expect(assetPopup?.className).toContain('sm:min-w-[36rem]')
     expect(
       within(initialListbox).getByRole('option', {
-        name: 'Volcengine Official Assets',
+        name: volcengineAssetLabel,
       })
     ).toBeTruthy()
     expect(
       within(initialListbox).queryByRole('option', {
-        name: 'BytePlus Official Assets',
+        name: declaredAssetLabel('byteplus_assets_action_v2024_01_01'),
       })
     ).toBeNull()
     await user.keyboard('{Escape}')
@@ -162,12 +161,12 @@ describe('Seedance protocol fields', () => {
     await user.click(videoTrigger)
     await user.click(
       await screen.findByRole('option', {
-        name: 'Moxing ModelArk Media Task V1',
+        name: declaredVideoLabel('moxing_modelark_media_v1'),
       })
     )
 
     expect(assetTrigger.textContent).toContain(
-      'Moxing Volcengine Asset Library V1'
+      declaredAssetLabel('moxing_volc_assets_v1')
     )
   })
 
@@ -175,6 +174,7 @@ describe('Seedance protocol fields', () => {
     const user = userEvent.setup()
     render(<SeedanceProtocolFieldsHarness />)
 
+    const feicaiLabel = declaredVideoLabel('feicai_videos_v1')
     const videoTrigger = screen.getByRole('combobox', {
       name: 'Seedance Video Protocol',
     })
@@ -184,15 +184,13 @@ describe('Seedance protocol fields', () => {
 
     await user.click(videoTrigger)
     await user.click(
-      await screen.findByRole('option', {
-        name: 'Feicai Videos V1 (URL Only, No Asset Library)',
-      })
+      await screen.findByRole('option', { name: feicaiLabel })
     )
 
-    expect(videoTrigger.textContent).toContain(
-      'Feicai Videos V1 (URL Only, No Asset Library)'
+    expect(videoTrigger.textContent).toContain(feicaiLabel)
+    expect(assetTrigger.textContent).toContain(
+      declaredAssetLabel('none')
     )
-    expect(assetTrigger.textContent).toContain('No Asset Protocol')
   })
 
   test('pairs FunCloud ModelArk V3 with the FunCloud material library', async () => {
@@ -207,15 +205,19 @@ describe('Seedance protocol fields', () => {
     })
     await user.click(videoTrigger)
     await user.click(
-      await screen.findByRole('option', { name: 'FunCloud ModelArk V3' })
+      await screen.findByRole('option', {
+        name: declaredVideoLabel('funcloud_modelark_v3'),
+      })
     )
 
-    expect(assetTrigger.textContent).toContain('FunCloud Material Library')
+    expect(assetTrigger.textContent).toContain(
+      declaredAssetLabel('funcloud_material')
+    )
     await user.click(assetTrigger)
     const listbox = await screen.findByRole('listbox')
     expect(
       within(listbox).getByRole('option', {
-        name: 'FunCloud Material Library',
+        name: declaredAssetLabel('funcloud_material'),
       })
     ).toBeTruthy()
   })

@@ -2,6 +2,7 @@ package seedance
 
 import (
 	"context"
+	"github.com/QuantumNous/new-api/pkg/seedanceplugin"
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
@@ -14,17 +15,7 @@ import (
 // extension artifact. It never collides with the generic task-plugin key
 // space: control-plane compilation routes this key to the Seedance extension
 // contract, and the native registry never loads it.
-const SeedanceExtensionPluginKey = "seedance-link"
-
-// seedanceExtensionProtocols is the single migration registry. A protocol
-// listed here has its southbound conversion served by the seedance-link
-// extension plugin for new requests; when the plugin or a required hook is
-// unavailable, creation fails closed instead of falling back to Go. Protocols
-// absent from this table keep their Go implementation, and historical tasks
-// without a pinned plugin snapshot always run the Go path.
-var seedanceExtensionProtocols = map[dto.VideoUpstreamProtocol][]string{
-	dto.VideoUpstreamProtocolFeicaiVideosV1: {"buildCreate", "parseCreateResponse", "parseTaskObservation"},
-}
+const SeedanceExtensionPluginKey = pluginruntime.SeedancePluginKey
 
 // seedanceExtensionProbeFields lists the billing-probe keys a plugin
 // conversion may contribute per protocol. The whitelist is the host-owned
@@ -51,21 +42,19 @@ var seedanceExtensionPollAdmissionTimeout = 2 * time.Second
 // SeedanceExtensionContract returns the host-registered extension contract:
 // the reserved key plus the per-protocol required hooks.
 func SeedanceExtensionContract() pluginruntime.SeedanceExtensionContract {
-	contract := pluginruntime.SeedanceExtensionContract{Key: SeedanceExtensionPluginKey}
-	for protocol, hooks := range seedanceExtensionProtocols {
-		contract.Protocols = append(contract.Protocols, pluginruntime.SeedanceExtensionProtocol{
-			Name:  string(protocol),
-			Hooks: hooks,
-		})
-	}
-	return contract
+	return pluginruntime.SeedanceHostContract()
 }
 
 // SeedanceExtensionProtocolMigrated reports whether new requests for this
-// protocol are served by the extension plugin.
+// protocol are served by the extension plugin. The shared host contract is
+// the only migration registry; historical tasks keep their frozen execution.
 func SeedanceExtensionProtocolMigrated(protocol dto.VideoUpstreamProtocol) bool {
-	_, migrated := seedanceExtensionProtocols[protocol]
-	return migrated
+	for _, registered := range pluginruntime.SeedanceHostContract().Protocols {
+		if registered.Name == string(protocol) {
+			return true
+		}
+	}
+	return false
 }
 
 // CompileSeedanceExtensionSource compiles an administrator-provided artifact
@@ -78,18 +67,18 @@ func CompileSeedanceExtensionSource(source string) (*pluginruntime.LoadedPlugin,
 // EnsureSeededExtension seeds the embedded artifact into the version store
 // (idempotent per process and per version).
 func EnsureSeededExtension(ctx context.Context) error {
-	return seedanceExtensions.EnsureSeeded(ctx)
+	return seedanceplugin.Default.EnsureSeeded(ctx)
 }
 
 // SyncExtensionSnapshot publishes the active database rows to the extension
 // store.
 func SyncExtensionSnapshot(ctx context.Context, rows []model.TaskPlugin) error {
-	return seedanceExtensions.SyncSnapshot(ctx, rows)
+	return seedanceplugin.Default.SyncSnapshot(ctx, rows)
 }
 
 // DescribeExtension returns control-plane diagnostics for the extension.
 func DescribeExtension() (activeVersion string, syncErrors []string) {
-	return seedanceExtensions.Describe()
+	return seedanceplugin.Default.Describe()
 }
 
 // PinSeedanceExtensionForChannel resolves the active extension version for a
@@ -101,14 +90,34 @@ func DescribeExtension() (activeVersion string, syncErrors []string) {
 // ActiveFor; the request path performs no engine calls, so there is no
 // unbounded admission wait here.
 func PinSeedanceExtensionForChannel(c *gin.Context, videoProtocol dto.VideoUpstreamProtocol) error {
-	_, migrated := seedanceExtensionProtocols[videoProtocol]
-	if !migrated {
+	if !SeedanceExtensionProtocolMigrated(videoProtocol) {
 		return nil
 	}
-	plugin, err := seedanceExtensions.ActiveFor(videoProtocol)
+	entry, err := seedanceplugin.Default.ActiveEntryFor(videoProtocol)
 	if err != nil {
 		return err
 	}
-	c.Set(pluginruntime.ContextKeyPinnedPlugin, pluginruntime.PinnedPlugin{Plugin: plugin})
+	c.Set(seedanceConfigurationContextKey, entry)
+	c.Set(pluginruntime.ContextKeyPinnedPlugin, pluginruntime.PinnedPlugin{Plugin: entry.Plugin})
 	return nil
+}
+
+const seedanceConfigurationContextKey = "seedance_pinned_configuration"
+
+// PinnedSeedanceConfiguration returns only the declaration paired with this
+// request's code. Missing v2 declarations fail closed; historical v1 has none.
+func PinnedSeedanceConfiguration(c *gin.Context) (*pluginruntime.SeedanceChannelConfiguration, error) {
+	plugin := pinnedSeedanceExtension(c)
+	if plugin == nil {
+		return nil, seedanceplugin.ErrUnavailable
+	}
+	if plugin.Meta.APIVersion == pluginruntime.APIVersion1 {
+		return nil, nil
+	}
+	value, exists := c.Get(seedanceConfigurationContextKey)
+	entry, ok := value.(*seedanceplugin.CompiledVersion)
+	if !exists || !ok || entry.Plugin != plugin || entry.Info.Configuration == nil {
+		return nil, seedanceplugin.ErrUnavailable
+	}
+	return entry.Info.Configuration, nil
 }

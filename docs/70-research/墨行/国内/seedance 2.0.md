@@ -1,8 +1,397 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-10
+last-reviewed: 2026-09-11
 ---
+
+# 墨行 Seedance 2.0 API 来源记录
+
+## 当前模型与来源
+
+- 当前目标模型 ID：`doubao-seedance-2-0-260128-0818`。
+- [模型 API 原页](https://www.moxing.pro/docs/models/doubao-seedance-2-0-260128-0818)。
+- [素材库原页](https://www.moxing.pro/docs/models/doubao-seedance-2-0-260128-0818?tab=assets)。
+- 核对日期：2026-09-11；已读取模型 API、音频参考示例和素材库页。
+- 以下记录供应商字段与接口事实；“平台”在供应商内容中指墨行，不是本站。
+  供应商接口清单不代表本站已经发布全部操作。
+
+## 路径矛盾与用户确认
+
+网页能力说明写 `POST /v1/ark/media/generations` 和 `GET /v1/ark/media/tasks/:task_id`，
+但同页接口标题、异步查询模块和 cURL 示例写 `POST /v1/media/generations` 与
+`GET /v1/media/tasks/:id`。页面同时将无 `-0818` 的旧 ID 描述为历史协议模型。
+
+2026-09-11 用户明确确认：创建接口依然为 `POST /v1/media/generations`。
+本站据此继续统一 Media 创建协议及现有 `GET /v1/media/tasks/{task_id}` 查询路径；
+不新增 Ark 入口、不自动尝试另一条路径。页面矛盾保留作为外部验收事项。
+
+## 模型 API 字段记录
+
+| 参数 | 页面类型 | 必填 | 页面信息 |
+| --- | --- | --- | --- |
+| `model` | string | 是 | `doubao-seedance-2-0-260128-0818` |
+| `content` | object[] | 是 | 官方多模态数组；文本、图片、视频、音频分别为 `text`、`image_url`、`video_url`、`audio_url` |
+| `duration` | integer | 否 | 页面列出 4–15 秒，示例为 5 秒；本页未明确说明 `-1` |
+| `resolution` | string | 否 | 页面列出 `480p`、`720p`、`1080p`、`4k`，示例为 `720p` |
+| `ratio` | string | 否 | 示例 `16:9`；首尾帧、编辑与延长场景可用 `adaptive` |
+| `generate_audio` | string | 否 | 页面声明默认 true；实际 JSON 示例使用布尔值 |
+| `omni_reference_task_type` | string | 否 | 编辑 `editing`、延长 `extension`，其它可省略或用 `auto`；本站未发布该私有字段 |
+| `output_format` | string | 否 | 页面明确说明本路由不支持该字段，调用时不要传入 |
+| `watermark` | 示例为 boolean | — | 请求参数表未单列，文本与音频示例均发送布尔 false |
+
+媒体 URL 使用嵌套对象 `{"url":"..."}`；role 包括 `first_frame`、`last_frame`、
+`reference_image`、`reference_video`、`reference_audio`。
+页面提供文生、首帧、首尾帧、多模态参考、编辑、延长、音频参考七个场景。
+音频参考示例使用文本＋图片＋音频，但本页没有旧 ID 文档中的“不能只传音频”规则；
+示例组合不能推导为强制搭配限制。
+
+页面通用提示把部分官方字段描述为扩展字段，并提及 `extra`；具体示例却把 `content`、
+`generate_audio`、`ratio` 与 `watermark` 放在顶层。本站北向类型化合同不因此开放任意 `extra`。
+
+### 最小请求（按页面字段整理）
+
+```http
+POST /v1/media/generations
+Authorization: Bearer <API_KEY>
+Content-Type: application/json
+```
+
+```json
+{
+  "model": "doubao-seedance-2-0-260128-0818",
+  "content": [{"type": "text", "text": "海边日落"}],
+  "duration": 5,
+  "resolution": "720p",
+  "ratio": "16:9",
+  "generate_audio": true,
+  "watermark": false
+}
+```
+
+音频参考使用以下数组结构，页面对应示例时长为 10 秒：
+
+```json
+[
+  {"type": "text", "text": "按参考音频节奏生成产品视频"},
+  {"type": "image_url", "role": "reference_image", "image_url": {"url": "https://example.com/product.jpg"}},
+  {"type": "audio_url", "role": "reference_audio", "audio_url": {"url": "https://example.com/music.mp3"}}
+]
+```
+
+### 异步响应
+
+| 字段 | 页面语义 |
+| --- | --- |
+| `task_id` | 创建后保存，用于单任务查询 |
+| `status` | `queued` / `running` / `succeeded` / `failed` |
+| `status_code` | 等待或运行通常为 202，成功为 200，失败为 400 |
+| `created_at` / `updated_at` | Unix 时间戳；部分表格类型标为 string，示例是数字 |
+| `progress` | 0–100 进度 |
+| `result` | 成功结果对象，可含 `primary_url`、`urls`、水印地址、封面；部分表格类型标为 string |
+| `error_message` | 失败原因 |
+| `usage` | 用量（如有）；本页没有足以确定完整账单计量的合同 |
+
+查询继续使用 `GET /v1/media/tasks/{task_id}`。创建受理不等于生成成功；
+实际字段效果、时长、用量与素材复用仍需准确模型的真实终态验收。
+
+## 国内素材库
+
+新模型素材库页使用 `/v1/volc/assets`，明确列出 0818、Fast、Mini、2.5 的素材复用范围。
+以下国内素材接口记录与该页逐项核对一致；保留供应商的组列表、删除等接口用于查阅，
+本站只开放自身北向合同允许的单资源操作。
+
+## 推荐流程
+
+创建素材组 → 上传素材 → 等待 Active → 引用素材生成视频
+
+1. 使用本页国内官key素材库创建素材组，并上传图片、视频或音频素材。
+2. 查询素材状态；仅 `Active` 状态的素材可以用于视频生成。
+3. 切换到模型 API，在 `content[].image_url.url` / `video_url.url` / `audio_url.url` 中传入 `asset://{素材 ID}`。
+
+## 国内官key素材库
+
+本接口封装火山方舟国内私域素材库。客户端只使用平台 Bearer `sk-...`，不会看到火山 AK/SK、Action URL 或上游素材 ID。
+
+素材接口不传 `model`。平台素材 ID 可在 `doubao-seedance-2-0-260128-0818`、`doubao-seedance-2-0-fast-260128`、`doubao-seedance-2-0-mini-260615` 与 `doubao-seedance-2-5-260628` 之间复用。
+
+`ProjectName` 由服务端 `VOLC_CN_PROJECT_NAME` 配置；未配置时使用 `default`，客户端无需传入。
+
+请求/响应字段采用官方大驼峰结构；`Id`、`GroupId`、`SessionId` 均为平台 ID。
+
+### 接口清单
+
+| 能力 | 方法 | 路径 |
+| --- | --- | --- |
+| 创建 / 列出素材组 | POST | `/v1/volc/assets/groups` · `/groups/list` |
+| 查询素材组 | GET | `/v1/volc/assets/groups/:group_id` |
+| 更新 / 删除素材组 | POST | `/v1/volc/assets/groups/:group_id/update` · `/delete` |
+| 创建 / 列出素材 | POST | `/v1/volc/assets` · `/v1/volc/assets/list` |
+| 查询素材 | GET | `/v1/volc/assets/:asset_id` |
+| 更新 / 删除素材 | POST | `/v1/volc/assets/:asset_id/update` · `/delete` |
+| 创建真人认证 | POST | `/v1/volc/assets/visual-validate/sessions` |
+| 查询认证状态 / 结果 | GET | `/visual-validate/sessions/:id` · `/results/:id` |
+
+### 官方字段
+
+#### 创建素材组
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `Name` | string | 是 | 名称，最多 64 字符。 |
+| `Description` | string | 否 | 描述，最多 300 字符。 |
+| `GroupType` | string | 否 | API 直建当前使用 `AIGC`；真人分组通过 H5 认证生成。 |
+
+```bash
+curl -X POST 'https://www.moxing.pro/v1/volc/assets/groups' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: group-20260723-001' \
+  -d '{
+    "Name": "品牌虚拟人像",
+    "Description": "广告视频参考人物",
+    "GroupType": "AIGC"
+  }'
+```
+
+#### 创建素材
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `GroupId` | string | 是 | 平台素材组 ID。 |
+| `URL` | string | 是 | 公网 URL；官方不支持 Base64。 |
+| `Name` | string | 否 | 名称，最多 64 字符。 |
+| `AssetType` | string | 是 | `Image` / `Video` / `Audio`。 |
+
+```bash
+curl -X POST 'https://www.moxing.pro/v1/volc/assets' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: asset-20260723-001' \
+  -d '{
+    "GroupId": "group-volc-cn-平台分组ID",
+    "URL": "https://example.com/portrait.png",
+    "Name": "人物正面图",
+    "AssetType": "Image"
+  }'
+```
+
+### 素材组：列表、查询、更新与删除
+
+`POST /groups/list` 使用官方 `Filter.GroupIds` / `GroupType` / `Name`，以及 `PageNumber` / `PageSize` / `SortBy` / `SortOrder`。
+
+单项查询通过路径传平台 ID。更新组支持 `Name` / `Description`。
+
+#### 列出素材组
+
+```bash
+curl -X POST 'https://www.moxing.pro/v1/volc/assets/groups/list' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "Filter": {
+      "GroupType": "AIGC",
+      "Name": "品牌"
+    },
+    "PageNumber": 1,
+    "PageSize": 20,
+    "SortBy": "CreateTime",
+    "SortOrder": "Desc"
+  }'
+```
+
+#### 查询单个素材组
+
+```bash
+curl 'https://www.moxing.pro/v1/volc/assets/groups/group-volc-cn-平台分组ID' \
+  -H 'Authorization: Bearer sk-xxxx'
+```
+
+#### 更新素材组
+
+```bash
+curl -X POST 'https://www.moxing.pro/v1/volc/assets/groups/group-volc-cn-平台分组ID/update' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "Name": "更新后的分组名称",
+    "Description": "更新后的描述"
+  }'
+```
+
+#### 删除素材组
+
+```bash
+curl -X POST 'https://www.moxing.pro/v1/volc/assets/groups/group-volc-cn-平台分组ID/delete' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+### 素材：列表、查询、更新与删除
+
+`POST /list` 支持官方 `Filter.GroupIds` / `Statuses`（`Active` / `Processing` / `Failed`）/ `Name`，以及 `PageNumber` / `PageSize` / `SortBy` / `SortOrder`。
+
+单项查询通过路径传平台 ID。更新素材支持 `Name`。
+
+#### 列出素材
+
+```bash
+curl -X POST 'https://www.moxing.pro/v1/volc/assets/list' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "Filter": {
+      "GroupIds": ["group-volc-cn-平台分组ID"],
+      "Statuses": ["Active"],
+      "Name": "人物"
+    },
+    "PageNumber": 1,
+    "PageSize": 20,
+    "SortBy": "CreateTime",
+    "SortOrder": "Desc"
+  }'
+```
+
+#### 查询单个素材
+
+```bash
+curl 'https://www.moxing.pro/v1/volc/assets/asset-volc-cn-平台素材ID' \
+  -H 'Authorization: Bearer sk-xxxx'
+```
+
+#### 更新素材
+
+```bash
+curl -X POST 'https://www.moxing.pro/v1/volc/assets/asset-volc-cn-平台素材ID/update' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -H 'Content-Type: application/json' \
+  -d '{"Name": "更新后的素材名称"}'
+```
+
+#### 删除素材
+
+```bash
+curl -X POST 'https://www.moxing.pro/v1/volc/assets/asset-volc-cn-平台素材ID/delete' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+#### 素材状态
+
+| 状态 | 说明 |
+| --- | --- |
+| `Processing` | 异步处理中，不能用于视频生成。 |
+| `Active` | 处理完成，可使用 `asset://` 引用。 |
+| `Failed` | 处理失败，查看 `Error.Code` / `Error.Message`。 |
+
+### 真人人像认证
+
+真人素材组不能通过 `CreateAssetGroup` 直接创建，需要先完成 H5 人脸活体认证。流程如下：
+
+1. 创建认证会话，打开响应 `Result.H5Link` 让被授权人完成认证。
+2. 轮询 `GET /visual-validate/sessions/:session_id`，等待状态变为 `callback_received`。
+3. 调用 `GET /visual-validate/results/:session_id`，获得真人 `GroupId`（类型为 `LivenessFace`）。
+4. 使用普通创建素材接口，为该真人分组补充图片、视频或音频；火山会执行人脸一致性校验。
+
+真实 `BytedToken` 不对外暴露，平台用会话 ID 替代。服务端生成并校验官方回调，运维需配置公网 HTTPS 的 `VOLC_CN_ASSET_CALLBACK_BASE_URL`。客户端传入的 `CallbackURL` 会被平台安全覆盖。
+
+#### 步骤 1：创建认证会话
+
+```bash
+curl -X POST 'https://www.moxing.pro/v1/volc/assets/visual-validate/sessions' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: visual-20260723-001' \
+  -d '{}'
+```
+
+响应 `Result` 包含 `SessionId`（平台会话 ID）、`H5Link`（认证页面地址）。原始 `BytedToken` 已被替换，不对外暴露。
+
+#### 步骤 2：查询认证会话状态
+
+```bash
+curl 'https://www.moxing.pro/v1/volc/assets/visual-validate/sessions/session-volc-cn-平台会话ID' \
+  -H 'Authorization: Bearer sk-xxxx'
+```
+
+响应 `Result` 包含 `SessionId`、`Status`、`ProjectName`、`CreateTime`、`UpdateTime`。建议每 3–5 秒轮询一次。
+
+| 会话状态 | 说明 |
+| --- | --- |
+| `pending` | 等待 H5 认证，用户尚未完成。 |
+| `callback_received` | 收到官方成功回调，可查询结果。 |
+| `group_ready` | 已获得真人素材组，可直接使用 `GroupId`。 |
+| `failed` | 认证失败，需重新创建会话。 |
+
+#### 步骤 3：获取真人素材组
+
+```bash
+curl 'https://www.moxing.pro/v1/volc/assets/visual-validate/results/session-volc-cn-平台会话ID' \
+  -H 'Authorization: Bearer sk-xxxx'
+```
+
+响应 `Result.GroupId` 为平台真人分组 ID（`group-volc-cn-...`），类型为 `LivenessFace`。平台内部使用真实 `BytedToken` 调用官方接口，并自动创建分组映射。
+
+#### 步骤 4：为真人分组上传素材
+
+使用上方「创建素材」接口，将 `GroupId` 设为真人分组 ID 即可。火山会对上传的素材执行人脸一致性校验，不匹配时返回 `FaceMismatch` 错误。
+
+```bash
+curl -X POST 'https://www.moxing.pro/v1/volc/assets' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: asset-20260723-001' \
+  -d '{
+    "GroupId": "group-volc-cn-平台分组ID",
+    "URL": "https://example.com/portrait.png",
+    "Name": "人物正面图",
+    "AssetType": "Image"
+  }'
+```
+
+### 用于 fast / mini 视频
+
+素材达到 `Active` 后使用 `asset://asset-volc-cn-...`。平台会固定到素材创建时的同一 channel key；同一请求混用不同火山账号素材返回 409，不回退其他 key。
+
+```bash
+curl -X POST 'https://www.moxing.pro/v1/media/generations' \
+  -H 'Authorization: Bearer sk-xxxx' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "doubao-seedance-2-0-fast-260128",
+    "content": [
+      { "type": "text", "text": "图片1中的人物在海边自然行走，保持主体一致" },
+      {
+        "type": "image_url",
+        "role": "reference_image",
+        "image_url": { "url": "asset://asset-volc-cn-平台素材ID" }
+      }
+    ],
+    "duration": 5,
+    "resolution": "720p",
+    "ratio": "16:9",
+    "generate_audio": true,
+    "watermark": false
+  }'
+```
+
+## 错误处理
+
+| HTTP | 典型场景 |
+| --- | --- |
+| 400 | JSON 或官方参数无效。 |
+| 403 | 资源不属于当前用户。 |
+| 404 | 素材、分组或认证会话不存在。 |
+| 409 | 素材未 Active、跨火山账号混用、绑定 key 未挂载目标模型。 |
+| 429 | 平台或火山限流。 |
+| 502 | 火山上游调用失败。 |
+| 503 | 国内 AK/SK、回调地址或 channel key 未配置/不可用。 |
+
+
+## 历史原文：无 0818 的旧模型（2026-09-10）
+
+以下保留旧模型页面证据，供旧分析与调用记录追溯；不作为当前 0818 模型的请求或素材合同。
 
 # doubao-seedance-2.0
 

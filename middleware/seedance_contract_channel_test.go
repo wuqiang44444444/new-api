@@ -1,6 +1,11 @@
 package middleware
 
 import (
+	"context"
+	"fmt"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	"github.com/QuantumNous/new-api/pkg/seedanceplugin"
+	"github.com/QuantumNous/new-api/plugins"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,6 +33,13 @@ func TestSeedanceContractKeepsItsChannelWhenAvailabilityChanges(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, user, contract := setupCustomerContractMiddlewareDB(t)
+			source := plugins.SeedanceSource()
+			loaded, _, err := jsplugin.CompileSeedanceExtension(source, jsplugin.Options{}, jsplugin.SeedanceHostContract())
+			require.NoError(t, err)
+			previousStore := seedanceplugin.Default
+			seedanceplugin.Default = seedanceplugin.NewStore()
+			t.Cleanup(func() { seedanceplugin.Default = previousStore })
+			require.NoError(t, seedanceplugin.Default.SyncSnapshot(context.Background(), []model.TaskPlugin{{Key: loaded.Meta.Key, Version: loaded.Meta.Version, APIVersion: loaded.Meta.APIVersion, Source: source, SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true, Active: true}}))
 			var bound model.Channel
 			require.NoError(t, db.First(&bound, contract.Rules[0].ChannelId).Error)
 			bound.Type = constant.ChannelTypeSeedanceLink

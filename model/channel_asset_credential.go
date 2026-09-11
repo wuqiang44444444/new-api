@@ -6,43 +6,16 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	gormlogger "gorm.io/gorm/logger"
 )
 
-type ChannelAssetCredential struct {
-	ChannelID       int    `json:"-" gorm:"primaryKey;autoIncrement:false"`
-	AccessKeyID     string `json:"-" gorm:"type:text;not null"`
-	SecretAccessKey string `json:"-" gorm:"type:text;not null"`
-	CreatedTime     int64  `json:"-" gorm:"bigint"`
-	UpdatedTime     int64  `json:"-" gorm:"bigint"`
-}
-
 var ErrAssetCredentialProfileActive = errors.New("separate asset credential profile must be disabled before clearing its credential")
 
 const VolcengineAssetActionRegion = "cn-beijing"
-
-func GetChannelAssetCredential(channelID int) (*ChannelAssetCredential, error) {
-	return getChannelAssetCredential(DB, channelID)
-}
-
-func getChannelAssetCredential(tx *gorm.DB, channelID int) (*ChannelAssetCredential, error) {
-	var credential ChannelAssetCredential
-	result := tx.Session(&gorm.Session{Logger: tx.Logger.LogMode(gormlogger.Silent)}).
-		Where("channel_id = ?", channelID).
-		Limit(1).
-		Find(&credential)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected == 0 {
-		return nil, nil
-	}
-	return &credential, nil
-}
 
 func GetChannelAssetCredentialStatus(channelID int, includeHint bool) (dto.ChannelAssetCredentialStatus, error) {
 	credential, err := GetChannelAssetCredential(channelID)
@@ -83,38 +56,6 @@ func NormalizeChannelAssetCredential(input *dto.ChannelAssetCredentialInput) (*C
 	}, nil
 }
 
-func ResolveAssetChannelCredential(channel *Channel) (string, error) {
-	return resolveAssetChannelCredential(DB, channel, nil)
-}
-
-func resolveAssetChannelCredential(tx *gorm.DB, channel *Channel, override *ChannelAssetCredential) (string, error) {
-	if channel == nil || channel.Type != constant.ChannelTypeSeedanceLink || channel.ChannelInfo.IsMultiKey {
-		return "", errors.New("asset channel must use a single credential")
-	}
-	settings := channel.GetOtherSettings()
-	assetProfile := settings.AssetUpstreamProtocol.TransportProfile()
-	if assetProfile == dto.AssetUpstreamProfileOfficial || assetProfile == dto.AssetUpstreamProfileCMCCAICCV2 {
-		credential := override
-		var err error
-		if credential == nil {
-			credential, err = getChannelAssetCredential(tx, channel.Id)
-			if err != nil {
-				return "", err
-			}
-		}
-		if credential == nil || strings.TrimSpace(credential.AccessKeyID) == "" || strings.TrimSpace(credential.SecretAccessKey) == "" {
-			return "", errors.New("separate asset credential is not configured")
-		}
-		key := strings.TrimSpace(credential.AccessKeyID) + "|" + strings.TrimSpace(credential.SecretAccessKey)
-		return key, nil
-	}
-	keys := channel.GetKeys()
-	if len(keys) != 1 || strings.TrimSpace(keys[0]) == "" {
-		return "", errors.New("asset channel must contain exactly one credential")
-	}
-	return strings.TrimSpace(keys[0]), nil
-}
-
 func InsertChannelWithAssetCredential(channel *Channel, input *dto.ChannelAssetCredentialInput) error {
 	return InsertChannelWithAssetCredentialActor(channel, input, 0)
 }
@@ -131,15 +72,14 @@ func InsertChannelWithAssetCredentialActor(channel *Channel, input *dto.ChannelA
 		if err := tx.Create(channel).Error; err != nil {
 			return err
 		}
-		if err := channel.AddAbilitiesWithActor(tx, actorID); err != nil {
-			return err
-		}
 		now := common.GetTimestamp()
 		credential.ChannelID = channel.Id
 		credential.CreatedTime = now
 		credential.UpdatedTime = now
-		return tx.Session(&gorm.Session{Logger: tx.Logger.LogMode(gormlogger.Silent)}).
-			Create(credential).Error
+		if err := tx.Session(&gorm.Session{Logger: tx.Logger.LogMode(gormlogger.Silent)}).Create(credential).Error; err != nil {
+			return err
+		}
+		return channel.AddAbilitiesWithActor(tx, actorID)
 	})
 }
 
@@ -171,6 +111,13 @@ func UpdateChannelWithAssetCredentialActor(
 	)
 }
 
+// DeleteChannelAssetCredential refuses while the channel's published
+// declaration still binds this asset protocol to the separate key pair slot.
+// The declaration is read under the same publication lock as Channel writes
+// (channel row lock first, then the plugin configuration lock), so a concurrent
+// activation cannot flip the decision between check and commit. A missing or
+// unreadable declaration fails closed: no valid declaration never means
+// deletion permission.
 func DeleteChannelAssetCredential(channelID int) error {
 	if channelID <= 0 {
 		return errors.New("channel ID is required")
@@ -180,9 +127,30 @@ func DeleteChannelAssetCredential(channelID int) error {
 		if err != nil {
 			return err
 		}
-		settings := channel.GetOtherSettings()
-		assetProfile := settings.AssetUpstreamProtocol.TransportProfile()
-		if assetProfile == dto.AssetUpstreamProfileOfficial || assetProfile == dto.AssetUpstreamProfileCMCCAICCV2 {
+		if err := lockSeedancePluginConfiguration(tx, jsplugin.SeedancePluginKey); err != nil {
+			return err
+		}
+		var active TaskPlugin
+		err = lockForUpdate(tx).Where(&TaskPlugin{Key: jsplugin.SeedancePluginKey, Active: true}).First(&active).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) || err == nil && active.APIVersion < jsplugin.SeedanceConfigurationAPIVersion {
+			return errors.New("Seedance plugin configuration is unavailable")
+		}
+		if err != nil {
+			return err
+		}
+		configuration, err := seedanceConfigurationForArtifact(&active)
+		if err != nil {
+			return err
+		}
+		assetProtocol := string(channel.GetOtherSettings().AssetUpstreamProtocol)
+		if assetProtocol == "" {
+			assetProtocol = "none"
+		}
+		declaration := configuration.Asset(assetProtocol)
+		if declaration == nil {
+			return errors.New("Seedance plugin configuration is unavailable")
+		}
+		if declaration.Credential == "asset_key_pair" {
 			return ErrAssetCredentialProfileActive
 		}
 		return deleteChannelAssetCredentialsTx(tx, []int{channelID})

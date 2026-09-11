@@ -7,14 +7,18 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 )
 
+// The production CMCC provider-model validation moved into the seedance-link
+// plugin declaration. These symbols remain only as the differential-test
+// baseline: adaptor tests pin the plugin conversion against this independently
+// verified contract (field rejection, duration, resolution and ratio rules).
 const modelSeedance20CMCC = "doubao-seedance-2.0"
 
 var cmccSeedance20Resolutions = stringSet("480p", "720p", "1080p")
 var cmccSeedance20Ratios = stringSet("16:9", "9:16", "1:1")
 
-// validateCMCCProviderModelRequest keeps Mobile Cloud's independently verified
+// cmccBaseline keeps Mobile Cloud's independently verified
 // contract out of the shared third-party model-spec implementation.
-func validateCMCCProviderModelRequest(model string, request *dto.ModelArkVideoCreateRequest) error {
+func cmccBaselineProviderModelRequest(model string, request *dto.ModelArkVideoCreateRequest) error {
 	if strings.TrimSpace(model) != modelSeedance20CMCC {
 		return fmt.Errorf("the selected customer model is not supported by its configured video adapter")
 	}

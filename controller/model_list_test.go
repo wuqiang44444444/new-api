@@ -333,6 +333,7 @@ func TestListModelsIncludesTieredBillingModel(t *testing.T) {
 func TestListModelsReturnsDisabledSeedanceModelsWithPublicAPIContracts(t *testing.T) {
 	withSelfUseModeEnabled(t)
 	db := setupModelListControllerTestDB(t)
+	seedPublishedSeedanceControllerArtifact(t)
 
 	funCloud := &model.Channel{
 		Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusManuallyDisabled,

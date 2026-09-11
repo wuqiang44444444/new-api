@@ -58,7 +58,11 @@ import { formatQuotaWithCurrency } from '@/lib/currency'
 
 import { getAdminCustomerStatement, getSelfCustomerStatement } from '../api'
 import { billingModeLabel, formatInteger } from '../lib'
-import type { BillingDimension, CustomerModelSummary } from '../types'
+import type {
+  BillingDataQuality,
+  BillingDimension,
+  CustomerModelSummary,
+} from '../types'
 
 type CustomerStatementProps = {
   isAdmin: boolean
@@ -198,13 +202,10 @@ export function CustomerStatementView(props: CustomerStatementProps) {
         <StatementSkeleton />
       ) : (
         <>
-          {statement.data_quality?.status === 'partial' && (
-            <div className='border-warning/40 bg-warning/10 text-warning rounded-lg border px-3 py-2 text-sm'>
-              {t(
-                'Some usage details are unavailable or no longer match the settled statement snapshot. Refresh before exporting.'
-              )}
-            </div>
-          )}
+          {statement.data_quality &&
+            statement.data_quality.status !== 'complete' && (
+              <BillingQualityNotice quality={statement.data_quality} />
+            )}
           <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
             <SummaryCard
               title={t('Current balance')}
@@ -273,6 +274,10 @@ export function CustomerStatementView(props: CustomerStatementProps) {
                   <TableBody>
                     {groups.map((group) => {
                       const isExpanded = expanded.has(group.id)
+                      const fallbackName =
+                        props.dimension === 'channel'
+                          ? t('Channel #{{id}}', { id: group.id })
+                          : t('API Key #{{id}}', { id: group.id })
                       return [
                         <TableRow key={`group-${group.id}`}>
                           <TableCell>
@@ -302,9 +307,18 @@ export function CustomerStatementView(props: CustomerStatementProps) {
                             </Button>
                           </TableCell>
                           <TableCell>
-                            <div className='font-medium'>{group.name}</div>
-                            <div className='text-muted-foreground text-xs'>
-                              #{group.id}
+                            <div className='font-medium'>
+                              {group.deleted ? fallbackName : group.name}
+                            </div>
+                            <div
+                              data-table-text='secondary'
+                              className='text-muted-foreground max-w-sm text-xs whitespace-normal'
+                            >
+                              {group.deleted
+                                ? t(
+                                    'Record unavailable; historical charges are retained.'
+                                  )
+                                : `#${group.id}`}
                             </div>
                           </TableCell>
                           <TableCell className='text-right'>
@@ -377,22 +391,24 @@ function CustomerModelRow(props: {
               {t(billingModeLabel(props.model.billing_mode))}
             </Badge>
           </div>
-          <div className='text-muted-foreground mt-1 text-xs'>
-            {props.model.billing_mode === 'token'
-              ? t(
-                  'Input {{input}} · Cache read {{cacheRead}} · Cache write {{cacheWrite}} · Output {{output}}',
-                  {
-                    input: formatInteger(usage.input_tokens),
-                    cacheRead: formatInteger(usage.cache_read_tokens),
-                    cacheWrite: formatInteger(usage.cache_write_tokens),
-                    output: formatInteger(usage.output_tokens),
-                  }
-                )
-              : t('Billable {{billable}} · Refunded {{refunded}}', {
-                  billable: formatInteger(usage.billable_calls),
-                  refunded: formatInteger(usage.refunded_calls),
-                })}
-          </div>
+          {props.model.billing_mode !== 'unknown' && (
+            <div className='text-muted-foreground mt-1 text-xs'>
+              {props.model.billing_mode === 'token'
+                ? t(
+                    'Input {{input}} · Cache read {{cacheRead}} · Cache write {{cacheWrite}} · Output {{output}}',
+                    {
+                      input: formatInteger(usage.input_tokens),
+                      cacheRead: formatInteger(usage.cache_read_tokens),
+                      cacheWrite: formatInteger(usage.cache_write_tokens),
+                      output: formatInteger(usage.output_tokens),
+                    }
+                  )
+                : t('Billable {{billable}} · Refunded {{refunded}}', {
+                    billable: formatInteger(usage.billable_calls),
+                    refunded: formatInteger(usage.refunded_calls),
+                  })}
+            </div>
+          )}
         </div>
       </TableCell>
       <TableCell className='text-right'>
@@ -423,6 +439,61 @@ function CustomerModelRow(props: {
         </Button>
       </TableCell>
     </TableRow>
+  )
+}
+
+function BillingQualityNotice({ quality }: { quality: BillingDataQuality }) {
+  const { t } = useTranslation()
+  const reasons = [
+    [
+      quality.unknown_billing_mode_requests,
+      t('Unknown billing mode: {{count}} records', {
+        count: quality.unknown_billing_mode_requests,
+      }),
+    ],
+    [
+      quality.unavailable_requests,
+      t('Usage metadata unreadable: {{count}} records', {
+        count: quality.unavailable_requests,
+      }),
+    ],
+    [
+      quality.cache_write_unavailable_requests,
+      t('Cache write usage unavailable: {{count}} records', {
+        count: quality.cache_write_unavailable_requests,
+      }),
+    ],
+    [
+      quality.missing_historical_price_rows,
+      t('Historical prices unavailable: {{count}} records', {
+        count: quality.missing_historical_price_rows,
+      }),
+    ],
+    [
+      quality.provider_model_fallback_rows,
+      t('Upstream model identity missing: {{count}} records', {
+        count: quality.provider_model_fallback_rows,
+      }),
+    ],
+  ] as const
+  return (
+    <div
+      role='note'
+      className='border-warning/40 bg-warning/10 text-warning rounded-lg border px-3 py-2 text-sm'
+    >
+      <p>
+        {t(
+          'Some billing details could not be interpreted. Recorded charges and returns are still included.'
+        )}
+      </p>
+      <ul className='mt-1 list-inside list-disc'>
+        {reasons
+          .filter(([count]) => (count ?? 0) > 0)
+          .map(([, message]) => (
+            <li key={message}>{message}</li>
+          ))}
+      </ul>
+    </div>
   )
 }
 

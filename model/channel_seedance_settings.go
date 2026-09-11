@@ -3,7 +3,6 @@ package model
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -11,8 +10,6 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"gorm.io/gorm"
 )
-
-var officialAssetRegionPattern = regexp.MustCompile(`^[a-z]{2}(?:-[a-z]+)+-[0-9]+$`)
 
 func validateSeedanceChannelSettings(channel *Channel, settings *dto.ChannelOtherSettings) error {
 	return validateSeedanceChannelSettingsTx(DB, channel, settings)
@@ -44,24 +41,10 @@ func validateSeedanceChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *
 	if err := dto.ValidateVideoUpstreamProtocol(settings.VideoUpstreamProtocol); err != nil {
 		return err
 	}
-	if err := validateMoxingTokenSaveModelMapping(channel, settings.VideoUpstreamProtocol); err != nil {
-		return err
-	}
 	if settings.AssetUpstreamProtocol == "" {
 		settings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolNone
 	}
 	if err := dto.ValidateAssetUpstreamProtocol(settings.AssetUpstreamProtocol); err != nil {
-		return err
-	}
-	if err := validateSynlinkChannel(channel, settings); err != nil {
-		return err
-	}
-	if settings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 {
-		if err := validateFunCloudModelArkChannel(channel, settings); err != nil {
-			return err
-		}
-	}
-	if err := validateCMCCSeedanceChannel(channel, settings); err != nil {
 		return err
 	}
 
@@ -70,7 +53,7 @@ func validateSeedanceChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *
 
 	settings.VideoUpstreamCreatePath = ""
 	settings.VideoUpstreamQueryPathTemplate = ""
-	if !settings.VideoUpstreamProtocol.TransportProfile().IsOfficial() {
+	if channel.GetBaseURL() != "" || !settings.VideoUpstreamProtocol.TransportProfile().IsOfficial() || settings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolModelArkV3CMCC {
 		if err := dto.ValidateVideoUpstreamURL(channel.GetBaseURL(), "/create", "/tasks/{task_id}"); err != nil {
 			return err
 		}
@@ -82,53 +65,6 @@ func validateSeedanceChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *
 		settings.AssetMinURLTTLSeconds <= 0 {
 		return fmt.Errorf("Seedance asset protocol requires a positive remote URL minimum TTL")
 	}
-	switch settings.AssetUpstreamProtocol {
-	case dto.AssetUpstreamProtocolVolcengineAction:
-		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolModelArkV3Volcengine {
-			return fmt.Errorf("Volcengine asset protocol requires the Volcengine ModelArk V3 video protocol")
-		}
-		if strings.TrimSpace(settings.AssetProviderProject) == "" {
-			return fmt.Errorf("official Seedance asset protocol requires ProviderProject")
-		}
-		if strings.TrimSpace(settings.AssetRegion) != VolcengineAssetActionRegion {
-			return fmt.Errorf("Volcengine asset protocol Region must be %s", VolcengineAssetActionRegion)
-		}
-	case dto.AssetUpstreamProtocolBytePlusAction:
-		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolModelArkV3BytePlus {
-			return fmt.Errorf("BytePlus asset protocol requires the BytePlus ModelArk V3 video protocol")
-		}
-		if strings.TrimSpace(settings.AssetProviderProject) == "" || strings.TrimSpace(settings.AssetRegion) == "" {
-			return fmt.Errorf("official Seedance asset protocol requires ProviderProject and Region")
-		}
-		if !officialAssetRegionPattern.MatchString(strings.TrimSpace(settings.AssetRegion)) {
-			return fmt.Errorf("official Seedance asset protocol Region is invalid")
-		}
-	case dto.AssetUpstreamProtocolArkAssetsV1:
-		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolArkMediaV1 {
-			return fmt.Errorf("Ark asset protocol requires the Ark Media V1 video protocol")
-		}
-	case dto.AssetUpstreamProtocolTokenSaveAssetsV1:
-		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 {
-			return fmt.Errorf("TokenSave asset protocol requires the TokenSave Media Task V1 video protocol")
-		}
-	case dto.AssetUpstreamProtocolMoxingVolcAssetsV1:
-		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolMoxingModelArkV1 {
-			return fmt.Errorf("Moxing Volcengine asset protocol requires the Moxing ModelArk Media V1 video protocol")
-		}
-		settings.AssetProviderProject = "default"
-	case dto.AssetUpstreamProtocolFunCloudMaterial:
-		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudModelArkV3 {
-			return fmt.Errorf("FunCloud material protocol requires funcloud_modelark_v3")
-		}
-	case dto.AssetUpstreamProtocolFunCloudHosted:
-		if !settings.VideoUpstreamProtocol.SupportsPlatformHostedImages() {
-			return fmt.Errorf("hosted material requires a registered hosted-image video protocol")
-		}
-	case dto.AssetUpstreamProtocolCMCCAICCV2:
-		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolModelArkV3CMCC {
-			return fmt.Errorf("CMCC AICC assets require the CMCC ModelArk V3 video protocol")
-		}
-	}
 
 	normalized, err := common.Marshal(settings)
 	if err != nil {
@@ -138,29 +74,15 @@ func validateSeedanceChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *
 	return nil
 }
 
-func validateMoxingTokenSaveModelMapping(channel *Channel, protocol dto.VideoUpstreamProtocol) error {
-	providerModels := map[string]struct{}{}
-	switch protocol {
-	case dto.VideoUpstreamProtocolTokenSaveMediaTaskV1:
-		providerModels["doubao-seedance-2-0-260128"] = struct{}{}
-	case dto.VideoUpstreamProtocolMoxingModelArkV1:
-		// The single Moxing protocol registration owns all four precise models.
-		for _, contract := range dto.MoxingVideoModelContracts {
-			providerModels[contract.ProviderModel] = struct{}{}
-		}
-	default:
-		return nil
-	}
-	_, err := resolveSeedanceChannelProviderModels(channel, protocol, providerModels)
-	return err
-}
-
 // ValidateSeedanceChannelModelUniqueness keeps Link/native price keys distinct
 // and enforces one enabled Seedance channel per model on management writes.
 // Runtime routing does not repeat this audit or repair direct database edits.
 func ValidateSeedanceChannelModelUniqueness(tx *gorm.DB, channel *Channel) error {
 	if channel == nil {
 		return nil
+	}
+	if err := validateSeedancePublishedChannelConfiguration(tx, channel); err != nil {
+		return err
 	}
 	if err := validateSeedancePricingOwnership(tx, channel); err != nil {
 		return err

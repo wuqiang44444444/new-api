@@ -5,11 +5,12 @@ import (
 
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
 )
 
 // resolveAssetGroupID applies the unified northbound group contract after the
 // customer model has selected its single Seedance Channel.
-func resolveAssetGroupID(channel *model.Channel, assetKind, providedGroupID string) (string, error) {
+func resolveAssetGroupID(channel *model.Channel, assetKind, providedGroupID string, policy dto.GeneralAssetGroupPolicy) (string, error) {
 	if assetKind == model.AssetKindRealPerson {
 		if strings.TrimSpace(providedGroupID) == "" {
 			return "", ErrInvalidAssetRequest
@@ -20,7 +21,7 @@ func resolveAssetGroupID(channel *model.Channel, assetKind, providedGroupID stri
 		return "", ErrInvalidAssetRequest
 	}
 
-	switch channel.GetOtherSettings().AssetUpstreamProtocol.GeneralAssetGroupPolicy() {
+	switch policy {
 	case dto.GeneralAssetGroupPolicyNone:
 		return "", nil
 	case dto.GeneralAssetGroupPolicyHosted:
@@ -39,6 +40,25 @@ func resolveAssetGroupID(channel *model.Channel, assetKind, providedGroupID stri
 			return "", ErrDefaultAssetGroupNotConfigured
 		}
 		return strings.TrimSpace(record.ProviderGroupID), nil
+	default:
+		return "", ErrAssetUpstreamUnavailable
+	}
+}
+
+// seedanceAssetGroupPolicy reads the group policy from the adapter pinned to
+// the compiled declaration. The legacy Go protocol table is no longer a
+// fallback: an adapter without a declared policy is a configuration failure,
+// never an implicit "none".
+func seedanceAssetGroupPolicy(adapter assetadapter.Adapter) (dto.GeneralAssetGroupPolicy, error) {
+	configured, ok := adapter.(interface {
+		GeneralAssetGroupPolicy() dto.GeneralAssetGroupPolicy
+	})
+	if !ok {
+		return "", ErrAssetUpstreamUnavailable
+	}
+	switch policy := configured.GeneralAssetGroupPolicy(); policy {
+	case dto.GeneralAssetGroupPolicyNone, dto.GeneralAssetGroupPolicyDefaultFallback, dto.GeneralAssetGroupPolicyHosted:
+		return policy, nil
 	default:
 		return "", ErrAssetUpstreamUnavailable
 	}

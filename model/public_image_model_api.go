@@ -2,7 +2,6 @@ package model
 
 import (
 	"reflect"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -194,15 +193,4 @@ func GetPublicMediaModelAPIs(modelNames []string, groups []string) (map[string]*
 		}
 	}
 	return result, nil
-}
-
-func mappedCustomerModel(channel *Channel, customerModel string) (string, error) {
-	mapping := make(map[string]string)
-	if raw := strings.TrimSpace(channel.GetModelMapping()); raw != "" && raw != "{}" {
-		if err := common.UnmarshalJsonStr(raw, &mapping); err != nil {
-			return "", err
-		}
-	}
-	providerModel, _, err := ResolveModelMapping(customerModel, mapping)
-	return providerModel, err
 }

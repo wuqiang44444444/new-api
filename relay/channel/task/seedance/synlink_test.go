@@ -11,7 +11,6 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/pkg/publicmodel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/system_setting"
@@ -29,6 +28,7 @@ func TestSynlinkMappedWireAndPublishedContract(t *testing.T) {
 		req.ReturnLastFrame = common.GetPointer(true)
 		req.Content = append(req.Content, dto.ModelArkVideoContent{Type: "image_url", Role: common.GetPointer("reference_image"), ImageURL: &dto.VideoMediaURL{URL: "https://cdn.example/image.png?x=1&y=2"}})
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		pinSeedanceExtensionForTest(t, c)
 		c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
 		relaycommon.SetVideoContractRequest(c, dto.VideoContractRequest{ContractID: dto.VideoContractModelArkV3, ModelArk: req})
 		info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeSeedanceLink, IsModelMapped: true, UpstreamModelName: providerModel, ChannelBaseUrl: "https://provider.example", ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolSynlinkVideoV1}}}
@@ -54,7 +54,7 @@ func TestSynlinkMappedWireAndPublishedContract(t *testing.T) {
 		address, err := a.BuildRequestURL(info)
 		require.NoError(t, err)
 		assert.Equal(t, "https://provider.example/v1/video/generate", address)
-		api, ok := publicmodel.VideoAPI(req.Model, dto.VideoUpstreamProtocolSynlinkVideoV1, providerModel, false)
+		api, ok := publishedVideoFixture(req.Model, dto.VideoUpstreamProtocolSynlinkVideoV1, providerModel, false)
 		require.True(t, ok)
 		for _, op := range api.Operations {
 			if op.Operation == "list_videos" {

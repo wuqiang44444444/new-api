@@ -28,12 +28,13 @@ func cmccSeedanceTestChannel(customerModel string, status int) *Channel {
 
 func TestCMCCChannelValidationAndStableAssetScope(t *testing.T) {
 	db := withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	require.NoError(t, db.AutoMigrate(&ChannelAssetCredential{}, &ChannelAssetScopeIdentity{}))
 	channel := cmccSeedanceTestChannel("seedance-2.0-cmcc", common.ChannelStatusEnabled)
 	require.NoError(t, channel.ValidateSettings())
 	settings := channel.GetOtherSettings()
-	assert.Empty(t, settings.AssetProviderProject)
-	assert.Empty(t, settings.AssetRegion)
+	assert.Equal(t, "must-be-cleared", settings.AssetProviderProject)
+	assert.Equal(t, "must-be-cleared", settings.AssetRegion)
 	require.NoError(t, InsertChannelWithAssetCredential(channel, &dto.ChannelAssetCredentialInput{
 		AccessKeyID: "asset-access", SecretAccessKey: "asset-secret",
 	}))
@@ -83,9 +84,10 @@ func TestCMCCChannelValidationAndStableAssetScope(t *testing.T) {
 
 func TestCMCCChannelRejectsUnverifiedMappingAndAcceptsHTTPGatewayPath(t *testing.T) {
 	withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channel := cmccSeedanceTestChannel("seedance-2.0-cmcc", common.ChannelStatusEnabled)
 	channel.ModelMapping = common.GetPointer(`{"seedance-2.0-cmcc":"doubao-seedance-2-0-fast-260128"}`)
-	require.ErrorContains(t, channel.ValidateSettings(), "model_mapping")
+	require.ErrorContains(t, validateSeedancePublishedChannelConfiguration(DB, channel), "mapped Provider model")
 
 	channel = cmccSeedanceTestChannel("seedance-2.0-cmcc", common.ChannelStatusEnabled)
 	channel.BaseURL = common.GetPointer("http://zhenze-huhehaote.cmecloud.cn/path")
@@ -97,6 +99,7 @@ func TestCMCCChannelRejectsUnverifiedMappingAndAcceptsHTTPGatewayPath(t *testing
 
 func TestCMCCChannelAcceptsMultipleAdministratorModelsForRegisteredProviderModel(t *testing.T) {
 	withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channel := cmccSeedanceTestChannel("cmcc-public-a", common.ChannelStatusEnabled)
 	channel.Models = "cmcc-public-a,cmcc-public-b"
 	channel.ModelMapping = common.GetPointer(`{
@@ -111,5 +114,5 @@ func TestCMCCChannelAcceptsMultipleAdministratorModelsForRegisteredProviderModel
 		"cmcc-public-a":"doubao-seedance-2.0",
 		"cmcc-public-b":"unregistered-provider-model"
 	}`)
-	require.ErrorContains(t, channel.ValidateSettings(), `model_mapping for customer model "cmcc-public-b"`)
+	require.ErrorContains(t, validateSeedancePublishedChannelConfiguration(DB, channel), "mapped Provider model")
 }

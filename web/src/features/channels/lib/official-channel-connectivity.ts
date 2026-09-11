@@ -1,3 +1,4 @@
+import type { SeedancePluginConfiguration } from './seedance-plugin-configuration'
 import type { ChannelTestResponse } from '../types'
 import { isOfficialSeedanceAssetProtocol } from './seedance-protocol-pairing'
 
@@ -47,6 +48,7 @@ export function maskAssetCredentialHint(value?: string): string {
 }
 
 export function getOfficialConnectivityAvailability(input: {
+  configuration?: SeedancePluginConfiguration
   assetProtocol?: string
   savedAssetProtocol?: string
   videoProtocol?: string
@@ -65,19 +67,12 @@ export function getOfficialConnectivityAvailability(input: {
     (input.savedVideoProtocol === input.videoProtocol ||
       input.savedVideoProtocol === undefined) &&
     !input.hasPendingVideoKey
-  const assetProtocolSupportsTest = [
-    'ark_assets_v1',
-    'moxing_volc_assets_v1',
-    'funcloud_material',
-    'volcengine_assets_action_v2024_01_01',
-    'byteplus_assets_action_v2024_01_01',
-    'cmcc_aicc_assets_v2',
-  ].includes(input.assetProtocol || '')
+  const assetProtocolSupportsTest = input.configuration?.assets.find(asset=>asset.protocol===input.assetProtocol)?.connectivity === true
   const usesOfficialAssets = isOfficialSeedanceAssetProtocol(
-    input.assetProtocol
+    input.assetProtocol,input.configuration
   )
   const savedUsesOfficialAssets = isOfficialSeedanceAssetProtocol(
-    input.savedAssetProtocol
+    input.savedAssetProtocol,input.configuration
   )
   const assetCanTest =
     assetProtocolSupportsTest &&

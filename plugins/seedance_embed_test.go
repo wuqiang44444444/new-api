@@ -8,23 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func seedanceLinkTestContract() pluginruntime.SeedanceExtensionContract {
-	return pluginruntime.SeedanceExtensionContract{
-		Key: "seedance-link",
-		Protocols: []pluginruntime.SeedanceExtensionProtocol{
-			{Name: "feicai_videos_v1", Hooks: []string{"buildCreate", "parseCreateResponse", "parseTaskObservation"}},
-		},
-	}
-}
-
 func TestSeedanceLinkArtifactCompiles(t *testing.T) {
 	source := SeedanceSource()
 	assert.NotEmpty(t, source)
 
-	plugin, info, err := pluginruntime.CompileSeedanceExtension(source, pluginruntime.Options{Key: "seedance-link"}, seedanceLinkTestContract())
+	plugin, info, err := pluginruntime.CompileSeedanceExtension(source, pluginruntime.Options{Key: "seedance-link"}, pluginruntime.SeedanceHostContract())
 	require.NoError(t, err)
 	assert.Equal(t, "seedance-link", plugin.Meta.Key)
-	assert.Equal(t, []string{"feicai_videos_v1"}, info.Protocols)
+	assert.Equal(t, []string{"funcloud_modelark_v3", "synlink_video_v1", "feicai_videos_v1", "modelark_v3_volcengine", "modelark_v3_byteplus", "ark_media_v1", "tokensave_media_task_v1", "moxing_modelark_media_v1", "modelark_v3_cmcc"}, info.Protocols)
 
 	// The artifact must never be picked up by the generic task-plugin
 	// compilation path; if it starts passing, the isolation contract broke.

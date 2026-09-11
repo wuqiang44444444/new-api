@@ -8,7 +8,6 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/pkg/publicmodel"
 	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
@@ -51,8 +50,10 @@ func TestTokenSaveMixedReferencesPreserveFrameRoles(t *testing.T) {
 				req.Content = append(req.Content, dto.ModelArkVideoContent{Type: "audio_url", Role: common.GetPointer("reference_audio"), AudioURL: &dto.VideoMediaURL{URL: "https://media.example/ref.mp3"}})
 			}
 			c := seedancePluginTestContext(t)
+			pinSeedanceExtensionForTest(t, c)
 			relaycommon.SetVideoContractRequest(c, dto.VideoContractRequest{ContractID: dto.VideoContractModelArkV3, ModelArk: req})
-			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeSeedanceLink, IsModelMapped: true, UpstreamModelName: modelSeedance20, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolTokenSaveMediaTaskV1}}}
+			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "https://provider.example", ChannelType: constant.ChannelTypeSeedanceLink, IsModelMapped: true, UpstreamModelName: modelSeedance20, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolTokenSaveMediaTaskV1}}}
+			pinSeedanceExtensionForTest(t, c)
 			a := &TaskAdaptor{}
 			a.Init(info)
 			require.Nil(t, a.ValidateMappedRequest(c, info))
@@ -117,7 +118,8 @@ func TestFunCloudReferenceAudioWithPriorityAndLastFrame(t *testing.T) {
 				req.Content = append(req.Content, dto.ModelArkVideoContent{Type: "audio_url", Role: common.GetPointer("reference_audio"), AudioURL: &dto.VideoMediaURL{URL: "https://media.example/ref.mp3"}})
 				c := seedancePluginTestContext(t)
 				relaycommon.SetVideoContractRequest(c, dto.VideoContractRequest{ContractID: dto.VideoContractModelArkV3, ModelArk: req})
-				info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeSeedanceLink, IsModelMapped: true, UpstreamModelName: providerModel, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3}}}
+				info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "https://provider.example", ChannelType: constant.ChannelTypeSeedanceLink, IsModelMapped: true, UpstreamModelName: providerModel, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3}}}
+				pinSeedanceExtensionForTest(t, c)
 				a := &TaskAdaptor{}
 				a.Init(info)
 				require.Nil(t, a.ValidateMappedRequest(c, info))
@@ -136,7 +138,7 @@ func TestFunCloudReferenceAudioWithPriorityAndLastFrame(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, 5, probe["duration_seconds"])
 				assert.Equal(t, false, probe["has_video_input"])
-				api, ok := publicmodel.VideoAPI(req.Model, dto.VideoUpstreamProtocolFunCloudModelArkV3, providerModel, false)
+				api, ok := publishedVideoFixture(req.Model, dto.VideoUpstreamProtocolFunCloudModelArkV3, providerModel, false)
 				require.True(t, ok)
 				names := map[string]int{}
 				for _, p := range api.Creation.Parameters {

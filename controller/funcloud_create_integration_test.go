@@ -42,6 +42,7 @@ func TestFunCloudCreateRouteCommitsHoldBeforeProviderBytes(t *testing.T) {
 			common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 			events := []string{}
 			db := setupTaskSubmissionDatabase(t, true, &events)
+			seedPublishedSeedanceControllerArtifact(t)
 			sqlDB, err := db.DB()
 			require.NoError(t, err)
 			sqlDB.SetMaxOpenConns(1)

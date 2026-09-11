@@ -25,6 +25,7 @@ import {
   transformFormDataToCreatePayload,
   transformFormDataToUpdatePayload,
 } from '../channel-form'
+import { publishedSeedanceConfiguration } from './seedance-plugin-fixture'
 
 const officialForm = {
   ...CHANNEL_FORM_DEFAULT_VALUES,
@@ -37,6 +38,9 @@ const officialForm = {
   asset_min_url_ttl_seconds: 3600,
   asset_provider_project: 'project-a',
   asset_region: 'ap-southeast-1',
+  // Credential-slot detection is declaration-driven: the form carries the
+  // published repository artifact, never a hand-copied protocol table.
+  seedance_plugin_configuration: publishedSeedanceConfiguration,
 }
 
 describe('channel asset credential transforms', () => {

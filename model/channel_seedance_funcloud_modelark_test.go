@@ -10,6 +10,7 @@ import (
 
 func TestFunCloudModelArkSharesExistingMaterialAcrossFourModels(t *testing.T) {
 	withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channel := seedanceTestChannel("v3-standard", common.ChannelStatusEnabled)
 	channel.Models = "v3-standard,v3-fast,v3-mini,v3-next"
 	channel.BaseURL = common.GetPointer("https://funcloud.example.com")
@@ -28,11 +29,12 @@ func TestFunCloudModelArkSharesExistingMaterialAcrossFourModels(t *testing.T) {
 		assert.Equal(t, seedancePublicAssetAPI(name, dto.AssetUpstreamProtocolFunCloudMaterial, 3600, scope), *api.Assets)
 	}
 	channel.ModelMapping = common.GetPointer(`{"v3-standard":"seedance-2","v3-fast":"seedance-2-0-fast","v3-mini":"seedance-2-0-mini","v3-next":"seedance-2-5"}`)
-	require.ErrorContains(t, channel.ValidateSettings(), "model_mapping")
+	require.ErrorContains(t, validateSeedancePublishedChannelConfiguration(DB, channel), "mapped Provider model")
 }
 
 func TestFunCloudVideoUpgradeRequiresTenantConfirmation(t *testing.T) {
 	db := withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channel := seedanceTestChannel("upgrade-customer", common.ChannelStatusEnabled)
 	channel.BaseURL = common.GetPointer("https://funcloud.example.com")
 	channel.ModelMapping = common.GetPointer(`{"upgrade-customer":"seedance-2"}`)

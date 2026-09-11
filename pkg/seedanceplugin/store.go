@@ -1,4 +1,4 @@
-package seedance
+package seedanceplugin
 
 import (
 	"context"
@@ -15,33 +15,35 @@ import (
 )
 
 var (
-	errSeedanceExtensionUnavailable = errors.New("the seedance-link extension plugin is unavailable for the requested protocol")
+	ErrUnavailable = errors.New("the seedance-link extension plugin is unavailable for the requested protocol")
 
-	// ErrSeedanceExtensionVersionUnavailable is returned when the exact plugin
+	// ErrVersionUnavailable is returned when the exact plugin
 	// version frozen on a task cannot be resolved from the version store.
 	// Callers treat it as fail-closed (reconciliation), never as a refund or
 	// a fallback to the active version.
-	ErrSeedanceExtensionVersionUnavailable = errors.New("the frozen seedance-link plugin version is unavailable")
+	ErrVersionUnavailable = errors.New("the frozen seedance-link plugin version is unavailable")
 )
 
-type seedanceExtensionEntry struct {
+type CompiledVersion struct {
 	version    string
 	sourceHash string
-	plugin     *pluginruntime.LoadedPlugin
-	info       pluginruntime.SeedanceExtensionInfo
+	Plugin     *pluginruntime.LoadedPlugin
+	Info       pluginruntime.SeedanceExtensionInfo
 }
 
-type seedanceExtensionStore struct {
+type Store struct {
 	mu         sync.RWMutex
-	compiled   map[string]*seedanceExtensionEntry
-	active     *seedanceExtensionEntry
+	compiled   map[string]*CompiledVersion
+	active     *CompiledVersion
 	seeded     map[string]bool
 	syncErrors []string
 }
 
-var seedanceExtensions = &seedanceExtensionStore{
-	compiled: make(map[string]*seedanceExtensionEntry),
-	seeded:   make(map[string]bool),
+// Default is the single compiled-version store shared by video and asset operations.
+var Default = NewStore()
+
+func NewStore() *Store {
+	return &Store{compiled: make(map[string]*CompiledVersion), seeded: make(map[string]bool)}
 }
 
 func sourceHashOf(source string) string {
@@ -54,7 +56,7 @@ func sourceHashOf(source string) string {
 // are seeded non-active so activation stays an explicit administrator
 // action. Seeding is marked done only after the version is confirmed
 // persisted, so a transient database failure retries on the next sync.
-func (s *seedanceExtensionStore) EnsureSeeded(ctx context.Context) error {
+func (s *Store) EnsureSeeded(ctx context.Context) error {
 	// The embedded artifact cannot change during this process. Check completed
 	// seeding before compiling; only successful persistence sets this marker.
 	s.mu.RLock()
@@ -64,13 +66,13 @@ func (s *seedanceExtensionStore) EnsureSeeded(ctx context.Context) error {
 		return nil
 	}
 	source := plugins.SeedanceSource()
-	plugin, _, err := CompileSeedanceExtensionSource(source)
+	plugin, _, err := pluginruntime.CompileSeedanceExtension(source, pluginruntime.Options{}, pluginruntime.SeedanceHostContract())
 	if err != nil {
 		return fmt.Errorf("embedded seedance-link artifact is invalid: %w", err)
 	}
 	version := plugin.Meta.Version
 
-	existing, err := model.GetTaskPluginVersion(SeedanceExtensionPluginKey, version)
+	existing, err := model.GetTaskPluginVersion(pluginruntime.SeedancePluginKey, version)
 	if err == nil && existing != nil {
 		s.markSeeded(version)
 		return nil
@@ -79,7 +81,7 @@ func (s *seedanceExtensionStore) EnsureSeeded(ctx context.Context) error {
 		return err
 	}
 	seed := model.TaskPlugin{
-		Key:        SeedanceExtensionPluginKey,
+		Key:        pluginruntime.SeedancePluginKey,
 		APIVersion: plugin.Meta.APIVersion,
 		Version:    version,
 		Source:     source,
@@ -97,7 +99,7 @@ func (s *seedanceExtensionStore) EnsureSeeded(ctx context.Context) error {
 // markSeeded records a completed seed. Once set, the process does not seed
 // the same version again, so deleting a dependency-free version is not
 // undone by the sync loop itself.
-func (s *seedanceExtensionStore) markSeeded(version string) {
+func (s *Store) markSeeded(version string) {
 	s.mu.Lock()
 	s.seeded[version] = true
 	s.mu.Unlock()
@@ -106,12 +108,12 @@ func (s *seedanceExtensionStore) markSeeded(version string) {
 // SyncSnapshot publishes only validated active artifacts. Failed compilation
 // is visible and stops new admission; it never silently substitutes cached code.
 // Objects already pinned by running requests are not modified.
-func (s *seedanceExtensionStore) SyncSnapshot(ctx context.Context, rows []model.TaskPlugin) error {
-	var active *seedanceExtensionEntry
+func (s *Store) SyncSnapshot(ctx context.Context, rows []model.TaskPlugin) error {
+	var active *CompiledVersion
 	var syncErrors []string
 	for i := range rows {
 		row := rows[i]
-		if row.Key != SeedanceExtensionPluginKey {
+		if row.Key != pluginruntime.SeedancePluginKey {
 			continue
 		}
 		entry, entryErr := s.compileRow(&row)
@@ -134,21 +136,21 @@ func (s *seedanceExtensionStore) SyncSnapshot(ctx context.Context, rows []model.
 	return nil
 }
 
-func (s *seedanceExtensionStore) compileRow(row *model.TaskPlugin) (*seedanceExtensionEntry, error) {
+func (s *Store) compileRow(row *model.TaskPlugin) (*CompiledVersion, error) {
 	s.mu.RLock()
 	entry := s.compiled[row.Version]
 	s.mu.RUnlock()
 	if entry != nil && entry.sourceHash == row.SourceHash {
 		return entry, nil
 	}
-	plugin, info, err := CompileSeedanceExtensionSource(row.Source)
+	plugin, info, err := pluginruntime.CompileSeedanceExtension(row.Source, pluginruntime.Options{}, pluginruntime.SeedanceHostContract())
 	if err != nil {
 		return nil, err
 	}
 	if plugin.Meta.Version != row.Version {
 		return nil, fmt.Errorf("artifact meta version %s does not match stored version %s", plugin.Meta.Version, row.Version)
 	}
-	next := &seedanceExtensionEntry{version: row.Version, sourceHash: row.SourceHash, plugin: plugin, info: info}
+	next := &CompiledVersion{version: row.Version, sourceHash: row.SourceHash, Plugin: plugin, Info: info}
 	s.mu.Lock()
 	s.compiled[row.Version] = next
 	s.mu.Unlock()
@@ -157,37 +159,44 @@ func (s *seedanceExtensionStore) compileRow(row *model.TaskPlugin) (*seedanceExt
 
 // ActiveFor returns the active compiled extension when it declares the
 // migrated protocol. New requests fail closed otherwise.
-func (s *seedanceExtensionStore) ActiveFor(protocol dto.VideoUpstreamProtocol) (*pluginruntime.LoadedPlugin, error) {
+func (s *Store) ActiveFor(protocol dto.VideoUpstreamProtocol) (*pluginruntime.LoadedPlugin, error) {
+	entry, err := s.ActiveEntryFor(protocol)
+	if err != nil {
+		return nil, err
+	}
+	return entry.Plugin, nil
+}
+
+// ActiveEntryFor resolves code and its declaration under the same snapshot
+// lock. A request must never read the active declaration again after this pin.
+func (s *Store) ActiveEntryFor(protocol dto.VideoUpstreamProtocol) (*CompiledVersion, error) {
 	s.mu.RLock()
 	active := s.active
 	s.mu.RUnlock()
-	if active == nil {
-		return nil, errSeedanceExtensionUnavailable
+	if active == nil || !seedanceInfoDeclaresProtocol(active.Info, string(protocol)) {
+		return nil, ErrUnavailable
 	}
-	if !seedanceInfoDeclaresProtocol(active.info, string(protocol)) {
-		return nil, errSeedanceExtensionUnavailable
-	}
-	return active.plugin, nil
+	return active, nil
 }
 
 // ResolveVersion compiles (or reuses) the exact plugin version frozen on a
 // task. The database row is always read first so deleted versions stop
 // resolving; disabled-but-present versions keep resolving, which separates
 // "stop accepting new requests" from "stop executing history".
-func (s *seedanceExtensionStore) ResolveVersion(ctx context.Context, version string) (*pluginruntime.LoadedPlugin, error) {
-	row, err := model.GetTaskPluginVersion(SeedanceExtensionPluginKey, version)
+func (s *Store) ResolveVersion(ctx context.Context, version string) (*pluginruntime.LoadedPlugin, error) {
+	row, err := model.GetTaskPluginVersion(pluginruntime.SeedancePluginKey, version)
 	if err != nil || row == nil {
-		return nil, ErrSeedanceExtensionVersionUnavailable
+		return nil, ErrVersionUnavailable
 	}
 	entry, entryErr := s.compileRow(row)
 	if entryErr != nil {
-		return nil, ErrSeedanceExtensionVersionUnavailable
+		return nil, ErrVersionUnavailable
 	}
-	return entry.plugin, nil
+	return entry.Plugin, nil
 }
 
 // Describe returns control-plane diagnostics.
-func (s *seedanceExtensionStore) Describe() (activeVersion string, errors []string) {
+func (s *Store) Describe() (activeVersion string, errors []string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.active != nil {

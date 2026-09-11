@@ -11,7 +11,6 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/pkg/publicmodel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
@@ -38,9 +37,10 @@ func TestFunCloudModelArkMappedRequestAndWireContract(t *testing.T) {
 					request.Content = append(request.Content, dto.ModelArkVideoContent{Type: "image_url", Role: common.GetPointer("reference_image"), ImageURL: &dto.VideoMediaURL{URL: urls[i]}})
 				}
 				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				pinSeedanceExtensionForTest(t, c)
 				c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
 				relaycommon.SetVideoContractRequest(c, dto.VideoContractRequest{ContractID: dto.VideoContractModelArkV3, ModelArk: request})
-				info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeSeedanceLink, IsModelMapped: true, UpstreamModelName: providerModel, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3}}}
+				info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "https://provider.example", ChannelType: constant.ChannelTypeSeedanceLink, IsModelMapped: true, UpstreamModelName: providerModel, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3}}}
 				adaptor := &TaskAdaptor{}
 				adaptor.Init(info)
 				if count == 31 {
@@ -72,7 +72,7 @@ func TestFunCloudModelArkMappedRequestAndWireContract(t *testing.T) {
 				assert.Equal(t, 4, probe["duration_seconds"])
 				assert.Equal(t, false, probe["generate_audio"])
 				assert.Equal(t, "per-second", probe["billing_mode"])
-				api, ok := publicmodel.VideoAPI(request.Model, dto.VideoUpstreamProtocolFunCloudModelArkV3, providerModel, false)
+				api, ok := publishedVideoFixture(request.Model, dto.VideoUpstreamProtocolFunCloudModelArkV3, providerModel, false)
 				require.True(t, ok)
 				assert.Equal(t, 30, api.Creation.ContentTypes[1].MaxItems)
 				for _, op := range api.Operations {

@@ -3,11 +3,12 @@ package model
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/pkg/publicmodel"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/asset_setting"
 )
@@ -47,10 +48,43 @@ func GetConfiguredSeedancePublicModels() ([]SeedancePublicModel, error) {
 		return nil, err
 	}
 
+	var pluginConfiguration *jsplugin.SeedanceChannelConfiguration
+	pluginUnavailable := false
+	for _, channel := range channels {
+		migrated := false
+		for _, protocol := range jsplugin.SeedanceHostContract().Protocols {
+			if protocol.Name == string(channel.GetOtherSettings().VideoUpstreamProtocol) {
+				migrated = true
+				break
+			}
+		}
+		if migrated {
+			published, err := GetSeedancePluginConfiguration()
+			if err != nil {
+				pluginUnavailable = true
+				common.SysError("Seedance plugin declaration is unavailable for model projection")
+				break
+			}
+			pluginConfiguration = published.Configuration
+			break
+		}
+	}
 	models := make([]SeedancePublicModel, 0)
 	modelIndex := make(map[string]int)
 	for i := range channels {
 		settings := channels[i].GetOtherSettings()
+		if pluginUnavailable {
+			migrated := false
+			for _, protocol := range jsplugin.SeedanceHostContract().Protocols {
+				if protocol.Name == string(settings.VideoUpstreamProtocol) {
+					migrated = true
+					break
+				}
+			}
+			if migrated {
+				continue
+			}
+		}
 		reuseScope := reuseScopes[channels[i].Id]
 		if settings.AssetUpstreamProtocol != "" && settings.AssetUpstreamProtocol != dto.AssetUpstreamProtocolNone && reuseScope == "" {
 			common.SysError("Seedance asset reuse scope is unavailable for channel")
@@ -64,7 +98,8 @@ func GetConfiguredSeedancePublicModels() ([]SeedancePublicModel, error) {
 			if err != nil {
 				return nil, fmt.Errorf("resolve Seedance customer model contract: %w", err)
 			}
-			api, ok := seedancePublicModelAPI(
+			api, ok := seedancePublicModelAPIFromPlugin(
+				pluginConfiguration,
 				modelName,
 				settings.VideoUpstreamProtocol,
 				providerModel,
@@ -74,7 +109,8 @@ func GetConfiguredSeedancePublicModels() ([]SeedancePublicModel, error) {
 				reuseScope,
 			)
 			if !ok {
-				return nil, fmt.Errorf("Seedance customer model %q has no registered public parameter contract", modelName)
+				common.SysError("Seedance model has no published parameter declaration")
+				continue
 			}
 			candidate := SeedancePublicModel{
 				ModelName: modelName,
@@ -129,91 +165,36 @@ func mergePublicModelGroups(existing, additional []string) []string {
 	return existing
 }
 
-func seedancePublicModelAPI(
-	modelName string,
-	videoProtocol dto.VideoUpstreamProtocol,
-	providerModel string,
-	allowServiceTier bool,
-	assetProtocol dto.AssetUpstreamProtocol,
-	assetMinURLTTLSeconds int64,
-	reuseScope string,
-) (dto.PublicModelAPI, bool) {
-	video, ok := publicmodel.VideoAPI(modelName, videoProtocol, providerModel, allowServiceTier)
-	if !ok {
-		return dto.PublicModelAPI{}, false
-	}
-	assets := seedancePublicAssetAPI(
-		modelName,
-		assetProtocol,
-		assetMinURLTTLSeconds,
-		reuseScope,
-	)
-	return dto.PublicModelAPI{Video: video, Assets: &assets}, true
-}
-
 // hostedPlatformReuseScope is published for the FunCloud hosted path. Hosted
 // assets are scoped by platform user instead of an upstream asset tenant, so
 // the value intentionally does not derive from the Channel identity.
 const hostedPlatformReuseScope = "platform_hosted_user"
 
-func seedancePublicAssetAPI(
-	modelName string,
-	protocol dto.AssetUpstreamProtocol,
-	assetMinURLTTLSeconds int64,
-	reuseScope string,
-) dto.PublicAssetAPI {
+func seedancePublicAssetAPIWithDeclaration(modelName string, protocol dto.AssetUpstreamProtocol, assetMinURLTTLSeconds int64, reuseScope string, declaration *jsplugin.SeedanceAssetConfiguration) dto.PublicAssetAPI {
+
 	assetCreate, assetRead, assetUpdate, assetDelete := false, false, false, false
 	groupCreate, groupRead := false, false
 	realPerson := false
 	assetGroupRequirement := dto.PublicAssetGroupUnsupported
 	media := make([]dto.PublicAssetMedia, 0)
 
-	switch protocol {
-	case dto.AssetUpstreamProtocolVolcengineAction,
-		dto.AssetUpstreamProtocolBytePlusAction:
-		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
-		groupCreate, groupRead = true, true
-		realPerson = true
-	case dto.AssetUpstreamProtocolMoxingVolcAssetsV1:
-		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
-		groupCreate, groupRead = true, true
-		realPerson = true
-	case dto.AssetUpstreamProtocolArkAssetsV1:
-		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
-		groupCreate, groupRead = true, true
-		realPerson = true
-	case dto.AssetUpstreamProtocolTokenSaveAssetsV1:
-		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
-		groupCreate, groupRead = true, true
-	case dto.AssetUpstreamProtocolFunCloudMaterial:
-		assetCreate, assetRead, assetDelete = true, true, true
-		groupCreate, groupRead = true, true
-	case dto.AssetUpstreamProtocolFunCloudHosted:
-		assetCreate, assetRead, assetDelete = true, true, true
-		groupCreate, groupRead = true, true
-	case dto.AssetUpstreamProtocolCMCCAICCV2:
-		assetCreate, assetRead, assetUpdate, assetDelete = true, true, true, true
-		groupCreate, groupRead = true, true
-		realPerson = true
-	}
-	if assetCreate {
-		if policy := protocol.GeneralAssetGroupPolicy(); policy == dto.GeneralAssetGroupPolicyDefaultFallback || policy == dto.GeneralAssetGroupPolicyHosted {
+	if declaration != nil {
+		assetCreate = slices.Contains(declaration.Operations, "create_asset")
+		assetRead = slices.Contains(declaration.Operations, "get_asset")
+		assetUpdate = slices.Contains(declaration.Operations, "update_asset")
+		assetDelete = slices.Contains(declaration.Operations, "delete_asset")
+		groupCreate = slices.Contains(declaration.Operations, "create_asset_group")
+		groupRead = slices.Contains(declaration.Operations, "get_asset_group")
+		realPerson = slices.Contains(declaration.Operations, "get_asset_group_verification")
+		if declaration.GroupPolicy == "default_fallback" || declaration.GroupPolicy == "hosted" {
 			assetGroupRequirement = dto.PublicAssetGroupOptional
 		}
-		if protocol == dto.AssetUpstreamProtocolFunCloudHosted {
-			// Hosted assets copy images into platform storage; only general
-			// images are published for this first FunCloud-hosted phase.
-			media = []dto.PublicAssetMedia{
-				{Kind: AssetKindGeneral, MediaType: "image", AssetGroupRequirement: dto.PublicAssetGroupOptional},
+		for _, item := range declaration.Media {
+			requirement := assetGroupRequirement
+			if item.Kind == AssetKindRealPerson {
+				requirement = dto.PublicAssetGroupRequired
 			}
-		} else {
-			media = publicAssetMedia(realPerson, assetGroupRequirement)
-		}
-		if protocol == dto.AssetUpstreamProtocolCMCCAICCV2 {
-			media = append(media,
-				dto.PublicAssetMedia{Kind: AssetKindRealPerson, MediaType: "video", AssetGroupRequirement: dto.PublicAssetGroupRequired},
-				dto.PublicAssetMedia{Kind: AssetKindRealPerson, MediaType: "audio", AssetGroupRequirement: dto.PublicAssetGroupRequired},
-			)
+			media = append(media, dto.PublicAssetMedia{Kind: item.Kind, MediaType: item.MediaType, AssetGroupRequirement: requirement})
 		}
 	}
 

@@ -39,6 +39,7 @@ import {
   stringifyAdvancedCustomConfig,
   validateAdvancedCustomConfig,
 } from './advanced-custom'
+import type { SeedancePluginConfiguration } from './seedance-plugin-configuration'
 import { refineSeedanceProtocols } from './seedance-protocol-validation'
 
 // ============================================================================
@@ -279,6 +280,10 @@ export const channelFormSchema = z
     asset_access_key_id: z.string().optional(),
     asset_secret_access_key: z.string().optional(),
     asset_credential_configured: z.boolean().optional(),
+    seedance_plugin_version: z.string().optional(),
+    seedance_plugin_configuration: z
+      .custom<SeedancePluginConfiguration>()
+      .optional(),
     confirm_asset_tenant_unchanged: z.boolean().optional(),
     confirm_asset_tenant_replacement: z.boolean().optional(),
     image_upstream_protocol: z
@@ -750,6 +755,9 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
  * Build the settings JSON string (for type-specific config like vertex_key_type)
  */
 function buildSettingsJSON(formData: ChannelFormValues): string {
+  const assetDefinition = formData.seedance_plugin_configuration?.assets.find(
+    (asset) => asset.protocol === formData.asset_upstream_protocol
+  )
   let settingsObj: Record<string, unknown> = {}
 
   // Try to parse existing settings first
@@ -801,14 +809,14 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     delete settingsObj.video_upstream_create_path
     delete settingsObj.video_upstream_query_path_template
     delete settingsObj.asset_upstream_profile
-    if (
-      formData.asset_upstream_protocol ===
-        'volcengine_assets_action_v2024_01_01' ||
-      formData.asset_upstream_protocol === 'byteplus_assets_action_v2024_01_01'
-    ) {
-      settingsObj.asset_provider_project =
-        formData.asset_provider_project?.trim() || ''
-      settingsObj.asset_region = formData.asset_region?.trim() || ''
+    if (assetDefinition) {
+      if (assetDefinition.project)
+        {settingsObj.asset_provider_project =
+          formData.asset_provider_project?.trim() || ''}
+      else delete settingsObj.asset_provider_project
+      if (assetDefinition.region)
+        {settingsObj.asset_region = formData.asset_region?.trim() || ''}
+      else delete settingsObj.asset_region
     } else {
       delete settingsObj.asset_provider_project
       delete settingsObj.asset_region
@@ -934,6 +942,15 @@ function normalizeBaseUrl(value: string | undefined): string {
 /**
  * Transform form data to API payload for creating channel
  */
+function seedanceUsesSeparateAssetCredential(
+  formData: ChannelFormValues
+): boolean {
+  const asset = formData.seedance_plugin_configuration?.assets.find(
+    (item) => item.protocol === formData.asset_upstream_protocol
+  )
+  return asset?.credential === 'asset_key_pair'
+}
+
 export function transformFormDataToCreatePayload(
   formData: ChannelFormValues
 ): AddChannelRequest {
@@ -948,6 +965,10 @@ export function transformFormDataToCreatePayload(
     models: formData.models,
     group: formatGroups(formData.group),
     model_mapping: formData.model_mapping || null,
+    seedance_plugin_version:
+      formData.type === CHANNEL_TYPE_SEEDANCE_LINK
+        ? formData.seedance_plugin_version
+        : undefined,
     priority:
       formData.type === CHANNEL_TYPE_SEEDANCE_LINK
         ? null
@@ -986,11 +1007,7 @@ export function transformFormDataToCreatePayload(
   }
   if (
     formData.type === CHANNEL_TYPE_SEEDANCE_LINK &&
-    (formData.asset_upstream_protocol ===
-      'volcengine_assets_action_v2024_01_01' ||
-      formData.asset_upstream_protocol ===
-        'byteplus_assets_action_v2024_01_01' ||
-      formData.asset_upstream_protocol === 'cmcc_aicc_assets_v2') &&
+    seedanceUsesSeparateAssetCredential(formData) &&
     formData.asset_access_key_id?.trim() &&
     formData.asset_secret_access_key?.trim()
   ) {
@@ -1018,6 +1035,10 @@ export function transformFormDataToUpdatePayload(
     models: formData.models,
     group: formatGroups(formData.group),
     model_mapping: formData.model_mapping || null,
+    seedance_plugin_version:
+      formData.type === CHANNEL_TYPE_SEEDANCE_LINK
+        ? formData.seedance_plugin_version
+        : undefined,
     priority:
       formData.type === CHANNEL_TYPE_SEEDANCE_LINK
         ? 0
@@ -1042,11 +1063,7 @@ export function transformFormDataToUpdatePayload(
   }
   if (
     formData.type === CHANNEL_TYPE_SEEDANCE_LINK &&
-    (formData.asset_upstream_protocol ===
-      'volcengine_assets_action_v2024_01_01' ||
-      formData.asset_upstream_protocol ===
-        'byteplus_assets_action_v2024_01_01' ||
-      formData.asset_upstream_protocol === 'cmcc_aicc_assets_v2') &&
+    seedanceUsesSeparateAssetCredential(formData) &&
     formData.asset_access_key_id?.trim() &&
     formData.asset_secret_access_key?.trim()
   ) {

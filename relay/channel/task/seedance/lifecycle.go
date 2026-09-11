@@ -48,7 +48,7 @@ func (*TaskAdaptor) deleteOfficialTask(ctx context.Context, task *model.Task, pr
 			proxy = providerChannel.GetSetting().Proxy
 		}
 	}
-	path, err := videoTaskPath(dto.VideoUpstreamProfileOfficial, "", task.GetUpstreamTaskID())
+	path, err := seedanceTaskPath(task, dto.VideoUpstreamProfileOfficial, task.GetUpstreamTaskID(), baseURL)
 	if err != nil {
 		return err
 	}

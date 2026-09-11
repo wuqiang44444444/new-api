@@ -144,7 +144,7 @@ it('uses Chinese labels that identify precharge flows and the missing billing-mo
   expect(
     screen.getByText('累计扣减包含预扣；累计退回包含预扣退差额及退款。')
   ).toBeTruthy()
-  expect(screen.getByText('计费方式未记录：370 条')).toBeTruthy()
+  expect(screen.getByText('计费方式暂未识别：370 条')).toBeTruthy()
   expect(screen.queryByRole('columnheader', { name: '实付消费' })).toBeNull()
   view.cleanup()
 })

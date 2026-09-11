@@ -46,11 +46,14 @@ type SeedanceExtensionProtocol struct {
 type SeedanceExtensionContract struct {
 	Key       string
 	Protocols []SeedanceExtensionProtocol
+	// AssetProtocols lists implemented host operations, not Provider pairing rules.
+	AssetProtocols []string
 }
 
 // SeedanceExtensionInfo reports the protocols a compiled extension declares.
 type SeedanceExtensionInfo struct {
-	Protocols []string
+	Protocols     []string
+	Configuration *SeedanceChannelConfiguration
 }
 
 // CompileSeedanceExtension compiles and validates a Seedance link extension
@@ -78,7 +81,16 @@ func CompileSeedanceExtension(source string, options Options, contract SeedanceE
 	if err = validateSeedanceExtensionHooks(engine, contract, protocols); err != nil {
 		return nil, SeedanceExtensionInfo{}, err
 	}
-	return &LoadedPlugin{Meta: meta, Engine: engine}, SeedanceExtensionInfo{Protocols: protocols}, nil
+	configuration, err := decodeSeedanceChannelConfiguration(value, meta.APIVersion, protocols, contract.AssetProtocols)
+	if err != nil {
+		return nil, SeedanceExtensionInfo{}, err
+	}
+	if configuration != nil {
+		if err = validateSeedanceAssetHooks(engine, configuration); err != nil {
+			return nil, SeedanceExtensionInfo{}, err
+		}
+	}
+	return &LoadedPlugin{Meta: meta, Engine: engine}, SeedanceExtensionInfo{Protocols: protocols, Configuration: configuration}, nil
 }
 
 func validateSeedanceExtensionContract(contract *SeedanceExtensionContract) error {
@@ -115,7 +127,7 @@ func decodeSeedanceExtensionMeta(value any, contract SeedanceExtensionContract) 
 	}
 	for field := range object {
 		switch field {
-		case "apiVersion", "key", "name", "icon", "description", "version", "author", "seedanceProtocols":
+		case "apiVersion", "key", "name", "icon", "description", "version", "author", "seedanceProtocols", "channelConfiguration":
 		default:
 			return Meta{}, nil, fmt.Errorf("plugin meta has unknown field %q", field)
 		}
@@ -163,7 +175,7 @@ func decodeSeedanceExtensionMeta(value any, contract SeedanceExtensionContract) 
 	if err != nil {
 		return Meta{}, nil, err
 	}
-	if meta.APIVersion != APIVersion1 {
+	if meta.APIVersion != APIVersion1 && meta.APIVersion != SeedanceConfigurationAPIVersion && meta.APIVersion != SeedanceUsageScanAPIVersion {
 		return Meta{}, nil, fmt.Errorf("unsupported plugin apiVersion %d", meta.APIVersion)
 	}
 	if strings.TrimSpace(meta.Key) == "" || strings.TrimSpace(meta.Name) == "" || strings.TrimSpace(meta.Version) == "" {
@@ -244,6 +256,54 @@ func validateSeedanceExtensionHooks(engine *Engine, contract SeedanceExtensionCo
 		for member := range implementation {
 			if _, accepted := allowed[member]; !accepted {
 				return fmt.Errorf("plugin %s seedance protocol %q has unsupported member %q", contract.Key, protocol, member)
+			}
+		}
+	}
+	return nil
+}
+
+// Remote assets use bounded operations in the same artifact and engine as video.
+// Hosted and none have no southbound JavaScript operations.
+func validateSeedanceAssetHooks(engine *Engine, configuration *SeedanceChannelConfiguration) error {
+	declared := make(map[string]bool)
+	for _, asset := range configuration.Assets {
+		if asset.Protocol != "none" && asset.GroupPolicy != "hosted" {
+			declared[asset.Protocol] = true
+		}
+	}
+	if len(declared) == 0 {
+		return nil
+	}
+	value, err := engine.Export(context.Background(), "seedanceAssets")
+	if err != nil {
+		return err
+	}
+	root, ok := value.(map[string]any)
+	if !ok {
+		return fmt.Errorf("seedanceAssets must be an object")
+	}
+	for protocol := range root {
+		if !declared[protocol] {
+			return fmt.Errorf("undeclared asset implementation %q", protocol)
+		}
+	}
+	for protocol := range declared {
+		implementation, ok := root[protocol].(map[string]any)
+		if !ok {
+			return fmt.Errorf("missing asset implementation %q", protocol)
+		}
+		for _, hook := range []string{"buildRequest", "parseResponse"} {
+			callable, err := engine.HasCallablePath(context.Background(), "seedanceAssets", protocol, hook)
+			if err != nil {
+				return err
+			}
+			if !callable {
+				return fmt.Errorf("missing asset hook %s.%s", protocol, hook)
+			}
+		}
+		for hook := range implementation {
+			if hook != "buildRequest" && hook != "parseResponse" {
+				return fmt.Errorf("unsupported asset hook %s.%s", protocol, hook)
 			}
 		}
 	}

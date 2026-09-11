@@ -14,6 +14,8 @@ import (
 
 func TestSeedancePricingKeepsOwnBillingContractAcrossPluginNameAndAliasCollisions(t *testing.T) {
 	resetPricingEndpointTestTables(t)
+	seedPublishedSeedanceTestArtifact(t)
+	t.Cleanup(func() { require.NoError(t, DB.Where("key = ?", "seedance-link").Delete(&TaskPlugin{}).Error) })
 	const canonical = "doubao-seedance-2-0-fast-260128"
 	_, err := jsplugin.DefaultRegistry.Register(`
 export const meta = {apiVersion:1,key:"seedance-pricing-boundary",name:"Boundary",version:"1.0.0",author:{name:"Test"},

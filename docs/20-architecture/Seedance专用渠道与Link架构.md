@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-08
+last-reviewed: 2026-09-11
 ---
 
 # Seedance 专用渠道与 Link 架构
@@ -66,6 +66,21 @@ flowchart LR
 
 Link 不在这些概念之间插入 publication、Link SKU、逐模型 capability、`LinkImplementation`、
 execution binding、内容 hash、Link Access Plan 或候选等价证明。
+
+### 3.1.1 插件声明与渠道实例值
+
+`seedance-link` API v2 制品统一声明 9 种在用视频协议和 7 种远端素材协议的配置：Provider 模型、
+公开参数、素材配对、Project/Region、凭据槽位、素材操作/媒体、组策略与管理默认值。账号、连接、
+模型映射和素材配置实际值仍在 Channel 及受保护凭据表；声明不成为原生 `meta.models`、候选或 Ability。
+
+渠道表单通过管理接口获取一次声明快照，保存携带非持久化版本号。Channel 写事务与插件激活、
+重新启用及自动晋升共同协调版本和已有渠道兼容性。默认值仅用于管理编辑，不在升级或运行时自动
+覆盖配置。新视频与远端素材转换消费同一固定编译版本；签名、HTTP、密钥、资金与 Task 属于宿主。
+托管素材由声明选择原有宿主能力，资源归属、对象存储与临时 URL 签发继续在宿主履约。
+
+公开模型参数投影只读取插件声明。历史 v1 制品按原源码执行；仍有精确冻结依赖的旧 Go 轮询/响应
+实现只供历史履约。素材组状态查询及凭据删除保护尚存少量旧 Go 配置判断，清理范围见
+[实施记录](../80-dev/2026-09-11-Seedance配置统一实施记录.md)；当前不将全量清理或生产验收视为完成。
 
 ### 3.2 人与系统分工
 

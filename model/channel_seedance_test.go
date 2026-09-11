@@ -48,6 +48,7 @@ func seedanceTestChannel(modelName string, status int) *Channel {
 
 func TestSeedanceModelUniquenessIsEnforcedOnEnabledManagementWrite(t *testing.T) {
 	db := withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	existing := seedanceTestChannel("seedance-cn", common.ChannelStatusEnabled)
 	existing.Name = "CN production"
 	require.NoError(t, db.Create(existing).Error)
@@ -103,6 +104,7 @@ func TestGetEnabledSeedanceChannelUsesDedicatedRoutingWithoutPriorityDistributio
 
 func TestSeedanceChannelIsNotPublishedIntoNativeAbilities(t *testing.T) {
 	db := withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channel := seedanceTestChannel("seedance-isolated", common.ChannelStatusEnabled)
 	require.NoError(t, db.Create(channel).Error)
 	require.NoError(t, channel.AddAbilities(db))
@@ -144,6 +146,7 @@ func TestSeedanceChannelIsNotPublishedIntoNativeAbilities(t *testing.T) {
 
 func TestConfiguredSeedancePublicModelsIncludeDisabledAPIContracts(t *testing.T) {
 	db := withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channels := []*Channel{
 		seedanceTestChannel("seedance-official-disabled", common.ChannelStatusManuallyDisabled),
 		seedanceTestChannel("seedance-funcloud-disabled", common.ChannelStatusManuallyDisabled),
@@ -165,9 +168,10 @@ func TestConfiguredSeedancePublicModelsIncludeDisabledAPIContracts(t *testing.T)
 	channels[2].SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMoxingModelArkV1,
 		AssetUpstreamProtocol: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
+		AssetProviderProject:  "default",
 		AssetMinURLTTLSeconds: 3600,
 	})
-	channels[2].ModelMapping = common.GetPointer(`{"seedance-moxing-disabled":"doubao-seedance-2-0-260128"}`)
+	channels[2].ModelMapping = common.GetPointer(`{"seedance-moxing-disabled":"doubao-seedance-2-0-260128-0818"}`)
 	channels[3].SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFeicaiVideosV1,
 		AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone,
@@ -320,6 +324,8 @@ func TestSeedanceSettingsPersistOnlyCodeBackedProtocols(t *testing.T) {
 }
 
 func TestSeedanceSettingsRequireOneCredentialAndMatchingAssetProtocol(t *testing.T) {
+	withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	multiKey := seedanceTestChannel("seedance-cn", common.ChannelStatusEnabled)
 	multiKey.Key = "first-key\nsecond-key"
 	require.ErrorContains(t, multiKey.ValidateSettings(), "one channel credential")
@@ -332,7 +338,8 @@ func TestSeedanceSettingsRequireOneCredentialAndMatchingAssetProtocol(t *testing
 		AssetProviderProject:  "project-a",
 		AssetRegion:           "ap-southeast-1",
 	})
-	require.ErrorContains(t, mismatched.ValidateSettings(), "Media Task V1")
+	require.NoError(t, mismatched.ValidateSettings())
+	require.ErrorContains(t, validateSeedancePublishedChannelConfiguration(DB, mismatched), "not paired")
 
 	matched := seedanceTestChannel("customer-standard-a", common.ChannelStatusEnabled)
 	baseURL := "https://relay.example.com"
@@ -347,6 +354,8 @@ func TestSeedanceSettingsRequireOneCredentialAndMatchingAssetProtocol(t *testing
 }
 
 func TestSeedanceSettingsAcceptVolcengineOfficialAssetProtocol(t *testing.T) {
+	db := withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channel := seedanceTestChannel("seedance-cn", common.ChannelStatusEnabled)
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
@@ -360,10 +369,15 @@ func TestSeedanceSettingsAcceptVolcengineOfficialAssetProtocol(t *testing.T) {
 	settings := channel.GetOtherSettings()
 	settings.AssetRegion = "ap-southeast-1"
 	channel.SetOtherSettings(settings)
-	require.ErrorContains(t, channel.ValidateSettings(), VolcengineAssetActionRegion)
+	require.ErrorContains(t, InsertChannelWithAssetCredential(channel, &dto.ChannelAssetCredentialInput{AccessKeyID: "test-access", SecretAccessKey: "test-secret"}), "fixed value")
+	var count int64
+	require.NoError(t, db.Model(&ChannelAssetCredential{}).Count(&count).Error)
+	assert.Zero(t, count)
 }
 
 func TestMoxingTokenSaveSettingsValidateProviderModelMappings(t *testing.T) {
+	withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	tests := []struct {
 		name          string
 		customerModel string
@@ -376,7 +390,7 @@ func TestMoxingTokenSaveSettingsValidateProviderModelMappings(t *testing.T) {
 			video: dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, asset: dto.AssetUpstreamProtocolTokenSaveAssetsV1,
 		},
 		{
-			name: "standard line B", customerModel: "customer-standard-b", providerModel: "doubao-seedance-2-0-260128",
+			name: "standard line B", customerModel: "customer-standard-b", providerModel: "doubao-seedance-2-0-260128-0818",
 			video: dto.VideoUpstreamProtocolMoxingModelArkV1, asset: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
 		},
 		{
@@ -399,7 +413,7 @@ func TestMoxingTokenSaveSettingsValidateProviderModelMappings(t *testing.T) {
 			channel.BaseURL = common.GetPointer("https://provider.example.com")
 			channel.ModelMapping = common.GetPointer(fmt.Sprintf(`{"%s":"%s"}`, test.customerModel, test.providerModel))
 			channel.SetOtherSettings(dto.ChannelOtherSettings{
-				VideoUpstreamProtocol: test.video, AssetUpstreamProtocol: test.asset, AssetMinURLTTLSeconds: 3600,
+				VideoUpstreamProtocol: test.video, AssetUpstreamProtocol: test.asset, AssetMinURLTTLSeconds: 3600, AssetProviderProject: "default",
 			})
 			require.NoError(t, channel.ValidateSettings())
 			if test.asset == dto.AssetUpstreamProtocolMoxingVolcAssetsV1 {
@@ -407,12 +421,14 @@ func TestMoxingTokenSaveSettingsValidateProviderModelMappings(t *testing.T) {
 			}
 
 			channel.ModelMapping = common.GetPointer(fmt.Sprintf(`{"%s":"wrong-model"}`, test.customerModel))
-			require.ErrorContains(t, channel.ValidateSettings(), "model_mapping")
+			require.ErrorContains(t, validateSeedancePublishedChannelConfiguration(DB, channel), "mapped Provider model")
 		})
 	}
 }
 
 func TestMoxingTokenSaveSettingsAcceptMultipleAdministratorMappings(t *testing.T) {
+	withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channel := seedanceTestChannel("customer-fast", common.ChannelStatusEnabled)
 	channel.Models = "customer-fast,customer-mini,customer-next"
 	channel.BaseURL = common.GetPointer("https://provider.example.com")
@@ -426,6 +442,7 @@ func TestMoxingTokenSaveSettingsAcceptMultipleAdministratorMappings(t *testing.T
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMoxingModelArkV1,
 		AssetUpstreamProtocol: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
+		AssetProviderProject:  "default",
 		AssetMinURLTTLSeconds: 3600,
 	})
 
@@ -437,7 +454,7 @@ func TestMoxingTokenSaveSettingsAcceptMultipleAdministratorMappings(t *testing.T
 		"customer-mini":"unsupported-provider-model",
 		"customer-next":"doubao-seedance-2-5-260628"
 	}`)
-	require.ErrorContains(t, channel.ValidateSettings(), `model_mapping for customer model "customer-mini"`)
+	require.ErrorContains(t, validateSeedancePublishedChannelConfiguration(DB, channel), "mapped Provider model")
 }
 
 func TestFunCloudV2SettingsAreRetired(t *testing.T) {
@@ -452,6 +469,7 @@ func TestFunCloudV2SettingsAreRetired(t *testing.T) {
 
 func TestSeedanceTagEditReusesProviderModelValidation(t *testing.T) {
 	withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channel := seedanceTestChannel("public-standard", common.ChannelStatusEnabled)
 	channel.Tag = common.GetPointer("seedance-bulk")
 	channel.BaseURL = common.GetPointer("https://funcloud.example.com")
@@ -467,7 +485,7 @@ func TestSeedanceTagEditReusesProviderModelValidation(t *testing.T) {
 	err := EditChannelByTagWithActor(
 		"seedance-bulk", nil, &invalidMapping, nil, nil, nil, nil, nil, nil, 0,
 	)
-	require.ErrorContains(t, err, "model_mapping")
+	require.ErrorContains(t, err, "mapped Provider model")
 
 	stored, err := GetChannelById(channel.Id, true)
 	require.NoError(t, err)
@@ -476,6 +494,7 @@ func TestSeedanceTagEditReusesProviderModelValidation(t *testing.T) {
 
 func TestSeedancePublicAssetReuseScopeFollowsChannelBoundary(t *testing.T) {
 	db := withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	first := seedanceTestChannel("public-fast-a,public-mini-a", common.ChannelStatusEnabled)
 	first.BaseURL = common.GetPointer("https://assets.example.com")
 	first.ModelMapping = common.GetPointer(`{
@@ -485,6 +504,7 @@ func TestSeedancePublicAssetReuseScopeFollowsChannelBoundary(t *testing.T) {
 	first.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMoxingModelArkV1,
 		AssetUpstreamProtocol: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
+		AssetProviderProject:  "default", AssetMinURLTTLSeconds: 3600,
 	})
 	require.NoError(t, first.Insert())
 
@@ -494,6 +514,7 @@ func TestSeedancePublicAssetReuseScopeFollowsChannelBoundary(t *testing.T) {
 	second.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolMoxingModelArkV1,
 		AssetUpstreamProtocol: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
+		AssetProviderProject:  "default", AssetMinURLTTLSeconds: 3600,
 	})
 	require.NoError(t, second.Insert())
 

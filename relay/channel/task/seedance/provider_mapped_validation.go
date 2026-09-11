@@ -20,32 +20,17 @@ func (a *TaskAdaptor) ValidateMappedRequest(c *gin.Context, info *relaycommon.Re
 		return service.TaskErrorWrapperLocal(errors.New("Seedance channels require the ModelArk V3 request contract"), "invalid_video_contract", http.StatusBadRequest)
 	}
 	if a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
-		if err := validateSynlinkRequest(info.UpstreamModelName, contract.ModelArk); err != nil {
-			return service.TaskErrorWrapperLocal(err, "invalid_video_parameter", http.StatusBadRequest)
-		}
-	} else if a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC {
-		if err := validateCMCCProviderModelRequest(info.UpstreamModelName, contract.ModelArk); err != nil {
-			return service.TaskErrorWrapperLocal(err, "invalid_video_parameter", http.StatusBadRequest)
-		}
-	} else if a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 ||
-		a.protocol == dto.VideoUpstreamProtocolMoxingModelArkV1 ||
-		a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 {
-		if err := validateProviderModelRequest(a.protocol, info.UpstreamModelName, contract.ModelArk); err != nil {
+		if err := validateSynlinkMedia(contract.ModelArk); err != nil {
 			return service.TaskErrorWrapperLocal(err, "invalid_video_parameter", http.StatusBadRequest)
 		}
 	}
-	if a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 {
-		createPath, queryPath := a.protocol.TransportPaths(info.UpstreamModelName)
-		if createPath == "" || queryPath == "" {
-			return service.TaskErrorWrapperLocal(
-				errors.New("the selected customer model has no registered transport path"),
-				"invalid_video_parameter",
-				http.StatusBadRequest,
-			)
+	if SeedanceExtensionProtocolMigrated(a.protocol) {
+		if a.protocol == dto.VideoUpstreamProtocolMoxingModelArkV1 || a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 || a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+			if _, err := a.ensureSeedanceCreateConversion(c, info); err != nil {
+				return service.TaskErrorWrapperLocal(err, "invalid_video_parameter", http.StatusBadRequest)
+			}
 		}
-		a.createPath = createPath
-		info.ChannelOtherSettings.VideoUpstreamCreatePath = createPath
-		info.ChannelOtherSettings.VideoUpstreamQueryPathTemplate = queryPath
+		return nil
 	}
-	return nil
+	return service.TaskErrorWrapperLocal(errors.New("video protocol is not registered for new requests"), "invalid_video_parameter", http.StatusBadRequest)
 }

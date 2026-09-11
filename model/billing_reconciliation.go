@@ -307,6 +307,7 @@ func GetBillingCustomerStatement(
 	for key, accumulator := range models {
 		finalizeBillingReconciliationUsage(&accumulator.model.Usage)
 		finalizeBillingReconciliationPrice(accumulator)
+		finalizeBillingReconciliationQuality(&accumulator.model.DataQuality)
 		accumulateBillingReconciliationQuality(&statement.DataQuality, accumulator.model.DataQuality)
 		group := groups[groupKey{id: key.groupId}]
 		group.Models = append(group.Models, accumulator.model)
@@ -315,7 +316,7 @@ func GetBillingCustomerStatement(
 	for key, group := range groups {
 		name, ok := groupNames[key.id]
 		if !ok || strings.TrimSpace(name) == "" {
-			group.Deleted = key.id > 0
+			group.Deleted = key.id > 0 && !ok
 			if dimension == "api_key" {
 				name = fmt.Sprintf("API Key #%d", key.id)
 			} else {
@@ -627,10 +628,7 @@ func billingStatementOriginalQuota(amount decimal.Decimal) *int64 {
 	if amount.Abs().Round(0).GreaterThan(decimal.NewFromInt(math.MaxInt64)) {
 		return nil
 	}
-	value := int64(0)
-	if amount.IsPositive() {
-		value = amount.Round(0).IntPart()
-	}
+	value := amount.Round(0).IntPart()
 	return &value
 }
 
@@ -693,11 +691,9 @@ func accumulateBillingReconciliationUsage(target *BillingReconciliationUsage, so
 }
 
 func finalizeBillingReconciliationUsage(target *BillingReconciliationUsage) {
-	if target.GrossQuota > target.RefundQuota {
-		target.NetQuota = target.GrossQuota - target.RefundQuota
-	} else {
-		target.NetQuota = 0
-	}
+	// A refund-only period or model is a credit in the statement, not a zero
+	// charge. Keeping the sign makes filtered rows add up to their parent total.
+	target.NetQuota = target.GrossQuota - target.RefundQuota
 }
 
 type ProviderBillingPlatformSummary struct {

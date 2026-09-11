@@ -91,7 +91,7 @@ func TestSyncSeedanceExtensionPluginsSeedsEmbeddedArtifact(t *testing.T) {
 
 	version, err := model.GetTaskPluginVersion("seedance-link", "")
 	require.NoError(t, err)
-	assert.Equal(t, "1.0.2", version.Version)
+	assert.Equal(t, plugins.SeedanceVersion(), version.Version)
 	assert.True(t, version.Active)
 	assert.Equal(t, fmt.Sprintf("%x", common.Sha256Raw([]byte(plugins.SeedanceSource()))), version.SourceHash)
 
@@ -114,7 +114,7 @@ func TestApplySeedanceExtensionListItemProjectsRealStatus(t *testing.T) {
 
 	// Healthy active extension with the seeded row synced.
 	rows := []model.TaskPlugin{{
-		Key: "seedance-link", Version: "1.0.2", Source: plugins.SeedanceSource(),
+		Key: "seedance-link", Version: plugins.SeedanceVersion(), Source: plugins.SeedanceSource(),
 		SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(plugins.SeedanceSource()))),
 		Enabled:    true, Active: true,
 	}}

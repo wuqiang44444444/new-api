@@ -34,7 +34,9 @@ func TestProviderModelSpecsEnforcePerModelContracts(t *testing.T) {
 		},
 		{
 			name: "TokenSave retains its callback boundary", protocol: kitdto.VideoUpstreamProtocolTokenSaveMediaTaskV1, model: modelSeedance20,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.CallbackURL = common.GetPointer("https://example.com/callback") }, wantErr: true,
+			mutate: func(request *dto.ModelArkVideoCreateRequest) {
+				request.CallbackURL = common.GetPointer("https://example.com/callback")
+			}, wantErr: true,
 		},
 		{
 			name: "TokenSave 2.0 accepts video input before submission", protocol: kitdto.VideoUpstreamProtocolTokenSaveMediaTaskV1, model: modelSeedance20,
@@ -55,25 +57,25 @@ func TestProviderModelSpecsEnforcePerModelContracts(t *testing.T) {
 			},
 		},
 		{
-			name: "Moxing 2.0 accepts unlisted resolution without a local enum", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20,
+			name: "Moxing 2.0 accepts unlisted resolution without a local enum", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: "doubao-seedance-2-0-260128-0818",
 			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Resolution = common.GetPointer("1080p") },
 		},
 		{
-			name: "Moxing 2.0 accepts seed", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20,
+			name: "Moxing 2.0 accepts seed", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: "doubao-seedance-2-0-260128-0818",
 			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Seed = common.GetPointer(24) },
 		},
 		{
-			name: "Moxing 2.0 accepts explicit false camera fixed", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20,
+			name: "Moxing 2.0 accepts explicit false camera fixed", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: "doubao-seedance-2-0-260128-0818",
 			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.CameraFixed = common.GetPointer(false) },
 		},
 		{
-			name: "Moxing 2.0 keeps the documented audio pairing rule", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20,
+			name: "Moxing 0818 does not inherit the old audio pairing rule", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: "doubao-seedance-2-0-260128-0818",
 			mutate: func(request *dto.ModelArkVideoCreateRequest) {
 				request.Content = []dto.ModelArkVideoContent{{Type: "audio_url", Role: common.GetPointer("reference_audio"), AudioURL: &dto.VideoMediaURL{URL: "https://example.com/audio.mp3"}}}
-			}, wantErr: true,
+			},
 		},
 		{
-			name: "Moxing 2.0 accepts audio paired with a reference video", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20,
+			name: "Moxing 2.0 accepts audio paired with a reference video", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: "doubao-seedance-2-0-260128-0818",
 			mutate: func(request *dto.ModelArkVideoCreateRequest) {
 				request.Content = []dto.ModelArkVideoContent{
 					{Type: "video_url", Role: common.GetPointer("reference_video"), VideoURL: &dto.VideoMediaURL{URL: "https://example.com/video.mp4"}},
@@ -161,13 +163,14 @@ func TestMoxingModelArkRequestPreservesTypedOutputFormat(t *testing.T) {
 			"duration": 30, "resolution": "720p", "output_format": "mov",
 		},
 	})
+	pinSeedanceExtensionForTest(t, context)
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{
 		UpstreamModelName: modelSeedance25,
 		IsModelMapped:     true,
 	}}
 	reader, err := (&TaskAdaptor{
-		protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1,
-		profile:  kitdto.VideoUpstreamProfileThirdPartyMoxingModelArk,
+		protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, baseURL: "https://provider.example",
+		profile: kitdto.VideoUpstreamProfileThirdPartyMoxingModelArk,
 	}).BuildRequestBody(context, info)
 	require.NoError(t, err)
 

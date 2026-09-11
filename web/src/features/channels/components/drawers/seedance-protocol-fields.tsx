@@ -45,15 +45,13 @@ import {
 } from '../../lib/asset-tenant-boundary'
 import type { ChannelFormValues } from '../../lib/channel-form'
 import { maskAssetCredentialHint } from '../../lib/official-channel-connectivity'
-import {
-  getCompatibleSeedanceAssetProtocols,
-  getDefaultSeedanceAssetProtocol,
-  isOfficialSeedanceAssetProtocol,
-  type SeedanceAssetProtocol,
-  type SeedanceVideoProtocol,
+import type { SeedancePluginConfiguration } from '../../lib/seedance-plugin-configuration'
+import type {
+  SeedanceAssetProtocol,
+  SeedanceVideoProtocol,
 } from '../../lib/seedance-protocol-pairing'
 
-type SeedanceProtocolFieldsProps = {
+export type SeedanceProtocolFieldsProps = {
   control: Control<ChannelFormValues>
   sensitiveLocked: boolean
   credentialStatus?: {
@@ -61,58 +59,11 @@ type SeedanceProtocolFieldsProps = {
     access_key_id_hint?: string
   }
   boundaryChanges?: AssetTenantBoundaryChange[]
+  // Required: every selector and default here is derived from the published
+  // plugin declaration. Callers must gate on a loaded snapshot (the configured
+  // wrapper owns loading and failure states).
+  configuration: SeedancePluginConfiguration
 }
-
-const SEEDANCE_VIDEO_PROTOCOL_OPTIONS = [
-  { value: 'modelark_v3_volcengine', labelKey: 'Volcengine ModelArk V3' },
-  { value: 'modelark_v3_byteplus', labelKey: 'BytePlus ModelArk V3' },
-  { value: 'modelark_v3_cmcc', labelKey: 'CMCC Mobile Cloud ModelArk V3' },
-  {
-    value: 'tokensave_media_task_v1',
-    labelKey: 'TokenSave Media Task V1',
-  },
-  {
-    value: 'moxing_modelark_media_v1',
-    labelKey: 'Moxing ModelArk Media Task V1',
-  },
-  { value: 'ark_media_v1', labelKey: 'Ark Media V1' },
-  {
-    value: 'feicai_videos_v1',
-    labelKey: 'Feicai Videos V1 (URL Only, No Asset Library)',
-  },
-  { value: 'funcloud_modelark_v3', labelKey: 'FunCloud ModelArk V3' },
-  { value: 'synlink_video_v1', labelKey: 'Synlink Video V1' },
-] as const
-
-const SEEDANCE_ASSET_PROTOCOL_OPTIONS = [
-  { value: 'none', labelKey: 'No Asset Protocol' },
-  {
-    value: 'volcengine_assets_action_v2024_01_01',
-    labelKey: 'Volcengine Official Assets',
-  },
-  {
-    value: 'byteplus_assets_action_v2024_01_01',
-    labelKey: 'BytePlus Official Assets',
-  },
-  { value: 'ark_assets_v1', labelKey: 'Ark Assets V1' },
-  { value: 'tokensave_assets_v1', labelKey: 'TokenSave Asset Library V1' },
-  {
-    value: 'moxing_volc_assets_v1',
-    labelKey: 'Moxing Volcengine Asset Library V1',
-  },
-  {
-    value: 'funcloud_material',
-    labelKey: 'FunCloud Material Library',
-  },
-  {
-    value: 'funcloud_material_hosted',
-    labelKey: 'Platform Hosted Image Library',
-  },
-  {
-    value: 'cmcc_aicc_assets_v2',
-    labelKey: 'CMCC AICC Assets V2',
-  },
-] as const
 
 export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
   const { t } = useTranslation()
@@ -126,18 +77,24 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
     name: 'asset_upstream_protocol',
   })
   const models = useWatch({ control: props.control, name: 'models' })
+  const videoConfiguration = props.configuration.videos.find(
+    (video) => video.protocol === videoProtocol
+  )
+  const assetConfiguration = props.configuration.assets.find(
+    (asset) => asset.protocol === assetProtocol
+  )
+  const videoOptions = props.configuration.videos.map(video => ({value:video.protocol,labelKey:video.label}))
+  const assetOptions = props.configuration.assets.map(asset => ({value:asset.protocol,labelKey:asset.label}))
   const usesAssets = assetProtocol && assetProtocol !== 'none'
-  const usesHostedAssets = assetProtocol === 'funcloud_material_hosted'
-  const usesOfficialAssets = isOfficialSeedanceAssetProtocol(assetProtocol)
+  const usesHostedAssets = assetConfiguration?.groupPolicy === 'hosted'
+  const usesOfficialAssets = assetConfiguration?.credential === 'asset_key_pair'
   const usesVolcengineAssets =
     assetProtocol === 'volcengine_assets_action_v2024_01_01'
   const usesCMCCAssets = assetProtocol === 'cmcc_aicc_assets_v2'
-  const compatibleAssetProtocols = getCompatibleSeedanceAssetProtocols(
-    videoProtocol
-  )
-  const compatibleAssetOptions = SEEDANCE_ASSET_PROTOCOL_OPTIONS.filter(
-    (option) =>
-      compatibleAssetProtocols.includes(option.value as SeedanceAssetProtocol)
+  const compatibleAssetProtocols =
+    videoConfiguration?.assetProtocols ?? []
+  const compatibleAssetOptions = assetOptions.filter((option) =>
+    compatibleAssetProtocols.includes(option.value as SeedanceAssetProtocol)
   )
   let newOfficialCredentialDescription = t(
     'Used only for BytePlus official asset operations.'
@@ -210,7 +167,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
         control={props.control}
         name='video_upstream_protocol'
         render={({ field }) => {
-          const selectedOption = SEEDANCE_VIDEO_PROTOCOL_OPTIONS.find(
+          const selectedOption = videoOptions.find(
             (option) => option.value === field.value
           )
 
@@ -221,9 +178,15 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
                 value={field.value}
                 onValueChange={(value) => {
                   const nextVideoProtocol = value as SeedanceVideoProtocol
-                  const nextAssetProtocol = getDefaultSeedanceAssetProtocol(
-                    nextVideoProtocol
-                  )
+                  const nextAssetProtocol =
+                    props.configuration.videos.find(
+                      (video) => video.protocol === nextVideoProtocol
+                    )?.defaultAssetProtocol ??
+                    'none'
+                  const nextAssetConfiguration =
+                    props.configuration.assets.find(
+                      (asset) => asset.protocol === nextAssetProtocol
+                    )
                   field.onChange(nextVideoProtocol)
                   form.setValue('asset_upstream_protocol', nextAssetProtocol, {
                     shouldDirty: true,
@@ -231,18 +194,25 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
                   })
                   form.setValue(
                     'asset_min_url_ttl_seconds',
-                    nextAssetProtocol === 'none' ? 0 : 3600,
+                    nextAssetConfiguration?.defaultURLTTLSeconds ??
+                      0,
                     { shouldDirty: true, shouldValidate: true }
                   )
-                  form.setValue('asset_provider_project', '', {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  })
+                  form.setValue(
+                    'asset_provider_project',
+                    nextAssetConfiguration?.project?.fixed ??
+                      nextAssetConfiguration?.project?.default ??
+                      '',
+                    {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    }
+                  )
                   form.setValue(
                     'asset_region',
-                    nextAssetProtocol === 'volcengine_assets_action_v2024_01_01'
-                      ? 'cn-beijing'
-                      : '',
+                    nextAssetConfiguration?.region?.fixed ??
+                      nextAssetConfiguration?.region?.default ??
+                      '',
                     { shouldDirty: true, shouldValidate: true }
                   )
                   form.setValue('asset_access_key_id', '', {
@@ -268,7 +238,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
                   className='max-w-[calc(100vw-2rem)] min-w-80 sm:min-w-[36rem]'
                 >
                   <SelectGroup>
-                    {SEEDANCE_VIDEO_PROTOCOL_OPTIONS.map((option) => (
+                    {videoOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {t(option.labelKey)}
                       </SelectItem>
@@ -291,7 +261,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
         control={props.control}
         name='asset_upstream_protocol'
         render={({ field }) => {
-          const selectedOption = SEEDANCE_ASSET_PROTOCOL_OPTIONS.find(
+          const selectedOption = assetOptions.find(
             (option) => option.value === field.value
           )
 
@@ -303,23 +273,33 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
                 onValueChange={(value) => {
                   const nextAssetProtocol = value as SeedanceAssetProtocol
                   field.onChange(nextAssetProtocol)
-                  if (nextAssetProtocol === 'none') {
-                    form.setValue('asset_min_url_ttl_seconds', 0)
-                  } else if (!form.getValues('asset_min_url_ttl_seconds')) {
-                    form.setValue('asset_min_url_ttl_seconds', 3600)
+                  const declared = props.configuration.assets.find(
+                    (asset) => asset.protocol === nextAssetProtocol
+                  )
+                  if (declared) {
+                    if (!declared.defaultURLTTLSeconds) {
+                      form.setValue('asset_min_url_ttl_seconds', 0)
+                    } else if (!form.getValues('asset_min_url_ttl_seconds')) {
+                      form.setValue(
+                        'asset_min_url_ttl_seconds',
+                        declared.defaultURLTTLSeconds
+                      )
+                    }
+                    form.setValue(
+                      'asset_provider_project',
+                      declared.project?.fixed ?? declared.project?.default ?? ''
+                    )
+                    form.setValue(
+                      'asset_region',
+                      declared.region?.fixed ?? declared.region?.default ?? ''
+                    )
+                    if (declared.credential !== 'asset_key_pair') {
+                      form.setValue('asset_access_key_id', '')
+                      form.setValue('asset_secret_access_key', '')
+                    }
+                    return
                   }
-                  if (!isOfficialSeedanceAssetProtocol(nextAssetProtocol)) {
-                    form.setValue('asset_provider_project', '')
-                    form.setValue('asset_region', '')
-                    form.setValue('asset_access_key_id', '')
-                    form.setValue('asset_secret_access_key', '')
-                  } else if (
-                    nextAssetProtocol === 'volcengine_assets_action_v2024_01_01'
-                  ) {
-                    form.setValue('asset_region', 'cn-beijing')
-                  } else if (form.getValues('asset_region') === 'cn-beijing') {
-                    form.setValue('asset_region', '')
-                  }
+
                 }}
                 disabled={props.sensitiveLocked}
               >
@@ -432,48 +412,60 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
               </FormItem>
             )}
           />
-          {!usesCMCCAssets ? (
-            <FormField
-              control={props.control}
-              name='asset_provider_project'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Provider Project')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      disabled={props.sensitiveLocked}
-                      value={field.value || ''}
-                      onChange={field.onChange}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          ) : null}
-          {!usesCMCCAssets ? (
-            <FormField
-              control={props.control}
-              name='asset_region'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Provider Region')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={
-                        usesVolcengineAssets ? 'cn-beijing' : 'ap-southeast-1'
-                      }
-                      disabled={props.sensitiveLocked || usesVolcengineAssets}
-                      value={field.value || ''}
-                      onChange={field.onChange}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          ) : null}
         </>
+      ) : null}
+      {(
+        assetConfiguration?.project
+      ) ? (
+        <FormField
+          control={props.control}
+          name='asset_provider_project'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Provider Project')}</FormLabel>
+              <FormControl>
+                <Input
+                  disabled={
+                    props.sensitiveLocked ||
+                    Boolean(assetConfiguration?.project?.fixed)
+                  }
+                  value={field.value || ''}
+                  onChange={field.onChange}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      ) : null}
+      {(
+        assetConfiguration?.region
+      ) ? (
+        <FormField
+          control={props.control}
+          name='asset_region'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Provider Region')}</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder={
+                    assetConfiguration?.region?.fixed ??
+                    assetConfiguration?.region?.default ??
+                    ''
+                  }
+                  disabled={
+                    props.sensitiveLocked ||
+                    Boolean(assetConfiguration?.region?.fixed)
+                  }
+                  value={field.value || ''}
+                  onChange={field.onChange}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
       ) : null}
     </>
   )

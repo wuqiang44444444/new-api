@@ -166,7 +166,8 @@ func seedanceGoodExtensionRows() []model.TaskPlugin {
 	source := plugins.SeedanceSource()
 	return []model.TaskPlugin{{
 		Key:        taskseedance.SeedanceExtensionPluginKey,
-		Version:    "1.0.2",
+		Version:    plugins.SeedanceVersion(),
+		APIVersion: 3,
 		Source:     source,
 		SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))),
 		Enabled:    true,
@@ -235,7 +236,7 @@ func (fx *seedanceFundsFixture) assertHeldAttemptAtPost() {
 	}
 	require.NoError(fx.t, common.Unmarshal(attempt.FrozenConnectionSnapshot, &frozen))
 	assert.Equal(fx.t, taskseedance.SeedanceExtensionPluginKey, frozen.PluginKey)
-	assert.Equal(fx.t, "1.0.2", frozen.PluginVersion)
+	assert.Equal(fx.t, plugins.SeedanceVersion(), frozen.PluginVersion)
 }
 
 // interposer runs between channel pinning and task submission. It stays empty
@@ -377,7 +378,7 @@ func TestSeedancePluginFundsChainCreateToSettle(t *testing.T) {
 	require.NotNil(t, task.PrivateData.Execution)
 	require.NotNil(t, task.PrivateData.Execution.TaskPlugin)
 	assert.Equal(t, taskseedance.SeedanceExtensionPluginKey, task.PrivateData.Execution.TaskPlugin.Key)
-	assert.Equal(t, "1.0.2", task.PrivateData.Execution.TaskPlugin.Version)
+	assert.Equal(t, plugins.SeedanceVersion(), task.PrivateData.Execution.TaskPlugin.Version)
 	require.NotNil(t, task.PrivateData.AsyncBilling)
 	assert.Equal(t, model.TaskBillingStatePending, task.PrivateData.AsyncBilling.State)
 	require.NotNil(t, task.PrivateData.AsyncBilling.TieredSnapshot)
@@ -481,7 +482,7 @@ func TestSeedancePluginFundsChainUnknownOutcomeRetainsHold(t *testing.T) {
 func TestSeedancePluginFundsChainDeletedVersionRejectedBeforeHold(t *testing.T) {
 	fx := newSeedanceFundsFixture(t)
 	fx.onInterpose(func(*gin.Context) {
-		_, err := model.DeleteTaskPluginVersion(taskseedance.SeedanceExtensionPluginKey, "1.0.2")
+		_, err := model.DeleteTaskPluginVersion(taskseedance.SeedanceExtensionPluginKey, plugins.SeedanceVersion())
 		require.NoError(t, err)
 	})
 	body := fx.submitCreate()

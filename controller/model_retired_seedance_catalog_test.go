@@ -17,6 +17,7 @@ import (
 func TestRetiredSeedanceChannelsDoNotBlockModelAndPriceCatalogs(t *testing.T) {
 	withSelfUseModeEnabled(t)
 	db := setupModelListControllerTestDB(t)
+	seedPublishedSeedanceControllerArtifact(t)
 	withTieredBillingConfig(t, map[string]string{"native-chat": "tiered_expr", "current-video": "tiered_expr"},
 		map[string]string{"native-chat": "p + c", "current-video": "c * 5"})
 	for _, tc := range []struct {
@@ -62,4 +63,12 @@ func TestRetiredSeedanceChannelsDoNotBlockModelAndPriceCatalogs(t *testing.T) {
 	var count int64
 	require.NoError(t, db.Model(&model.Channel{}).Where("status = ?", common.ChannelStatusManuallyDisabled).Count(&count).Error)
 	assert.EqualValues(t, 3, count, "catalog reads do not migrate or delete historical channels")
+	// Losing the extension definition removes only its own projection. It must
+	// not prevent native channels from appearing in the price/model catalog.
+	require.NoError(t, db.Where("key = ?", "seedance-link").Delete(&model.TaskPlugin{}).Error)
+	model.InvalidatePricingCache()
+	prices = pricingByModelName(model.GetPricing())
+	assert.Contains(t, prices, "native-chat")
+	assert.NotContains(t, prices, "current-video")
+
 }

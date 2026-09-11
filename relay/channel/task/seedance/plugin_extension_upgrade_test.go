@@ -2,7 +2,8 @@ package seedance
 
 import (
 	"context"
-	"strings"
+	_ "embed"
+	"github.com/QuantumNous/new-api/pkg/seedanceplugin"
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
@@ -14,10 +15,13 @@ import (
 	"gorm.io/gorm"
 )
 
+//go:embed testdata/seedance-link-v1.0.2.js
+var seedanceV1HistoricalSource string
+
 func TestSeedanceEmbeddedUpgradePreservesOldVersionUntilActivation(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.TaskPlugin{}))
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.TaskPlugin{}))
 	original := model.DB
 	model.DB = db
 	t.Cleanup(func() {
@@ -26,25 +30,24 @@ func TestSeedanceEmbeddedUpgradePreservesOldVersionUntilActivation(t *testing.T)
 		require.NoError(t, err)
 		require.NoError(t, sqlDB.Close())
 	})
-	// A synthetic previously installed artifact exercises version persistence;
-	// this fixture does not claim to reproduce the released 1.0.1 source.
-	oldSource := strings.Replace(plugins.SeedanceSource(), `version: "1.0.2"`, `version: "1.0.1"`, 1)
+	// Exact v1 artifact from the pre-migration baseline; history is not rewritten.
+	oldSource := seedanceV1HistoricalSource
 	require.NotEqual(t, plugins.SeedanceSource(), oldSource)
-	old := model.TaskPlugin{Key: SeedanceExtensionPluginKey, Version: "1.0.1", APIVersion: 1,
+	old := model.TaskPlugin{Key: SeedanceExtensionPluginKey, Version: "1.0.2", APIVersion: 1,
 		Source: oldSource, SourceHash: sourceHashOf(oldSource), Enabled: true}
 	require.NoError(t, model.SaveTaskPlugin(&old))
-	store := &seedanceExtensionStore{compiled: map[string]*seedanceExtensionEntry{}, seeded: map[string]bool{}}
+	store := seedanceplugin.NewStore()
 	require.NoError(t, store.EnsureSeeded(context.Background()))
 	require.NoError(t, store.EnsureSeeded(context.Background()))
 	versions, err := model.ListTaskPluginVersions(SeedanceExtensionPluginKey)
 	require.NoError(t, err)
 	require.Len(t, versions, 2)
-	installed, err := model.GetTaskPluginVersion(SeedanceExtensionPluginKey, "1.0.1")
+	installed, err := model.GetTaskPluginVersion(SeedanceExtensionPluginKey, "1.0.2")
 	require.NoError(t, err)
 	assert.True(t, installed.Active)
 	assert.Equal(t, oldSource, installed.Source)
 	assert.Equal(t, old.SourceHash, installed.SourceHash)
-	upgrade, err := model.GetTaskPluginVersion(SeedanceExtensionPluginKey, "1.0.2")
+	upgrade, err := model.GetTaskPluginVersion(SeedanceExtensionPluginKey, plugins.SeedanceVersion())
 	require.NoError(t, err)
 	assert.False(t, upgrade.Active)
 	assert.Equal(t, plugins.SeedanceSource(), upgrade.Source)

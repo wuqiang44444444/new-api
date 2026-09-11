@@ -15,8 +15,9 @@ func assetBoundaryTestChannel(name string, status int) *Channel {
 	channel.Name = name
 	channel.BaseURL = common.GetPointer("https://assets.example.com")
 	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
-		AssetUpstreamProtocol: dto.AssetUpstreamProtocolMoxingVolcAssetsV1,
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolArkMediaV1,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolArkAssetsV1,
+		AssetMinURLTTLSeconds: 3600,
 		AssetProviderProject:  "project-a",
 		AssetRegion:           "cn-beijing",
 	})
@@ -25,6 +26,7 @@ func assetBoundaryTestChannel(name string, status int) *Channel {
 
 func TestAssetTenantBoundaryReplacementRequiresConfirmationAndRotatesScope(t *testing.T) {
 	withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 
 	tests := []struct {
 		name   string
@@ -33,12 +35,14 @@ func TestAssetTenantBoundaryReplacementRequiresConfirmationAndRotatesScope(t *te
 		{name: "base url", mutate: func(channel *Channel) { channel.BaseURL = common.GetPointer("https://other.example.com") }},
 		{name: "video protocol", mutate: func(channel *Channel) {
 			settings := channel.GetOtherSettings()
-			settings.VideoUpstreamProtocol = dto.VideoUpstreamProtocolModelArkV3BytePlus
+			settings.VideoUpstreamProtocol = dto.VideoUpstreamProtocolTokenSaveMediaTaskV1
+			settings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolTokenSaveAssetsV1
+			channel.ModelMapping = common.GetPointer(`{"` + channel.Models + `":"doubao-seedance-2-0-260128"}`)
 			channel.SetOtherSettings(settings)
 		}},
 		{name: "asset protocol", mutate: func(channel *Channel) {
 			settings := channel.GetOtherSettings()
-			settings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolArkAssetsV1
+			settings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolNone
 			channel.SetOtherSettings(settings)
 		}},
 		{name: "project", mutate: func(channel *Channel) {
@@ -78,8 +82,12 @@ func TestAssetTenantBoundaryReplacementRequiresConfirmationAndRotatesScope(t *te
 
 			require.NoError(t, channel.UpdateWithActorAndAssetTenantConfirmation(0, false, true))
 			replacedScope, err := ChannelAssetReuseScope(channel.Id)
-			require.NoError(t, err)
-			assert.NotEqual(t, originalScope, replacedScope)
+			if channel.GetOtherSettings().AssetUpstreamProtocol == dto.AssetUpstreamProtocolNone {
+				require.ErrorIs(t, err, errChannelAssetScopeIdentityMissing)
+			} else {
+				require.NoError(t, err)
+				assert.NotEqual(t, originalScope, replacedScope)
+			}
 			defaultGroup, err = GetChannelDefaultAssetGroup(channel.Id)
 			require.NoError(t, err)
 			assert.Nil(t, defaultGroup)
@@ -89,6 +97,7 @@ func TestAssetTenantBoundaryReplacementRequiresConfirmationAndRotatesScope(t *te
 
 func TestAssetTenantBoundaryReplacementCannotChangeChannelType(t *testing.T) {
 	withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channel := assetBoundaryTestChannel("boundary-channel-type", common.ChannelStatusManuallyDisabled)
 	require.NoError(t, channel.Insert())
 	channel.Type = constant.ChannelTypeOpenAI
@@ -101,6 +110,7 @@ func TestAssetTenantBoundaryReplacementCannotChangeChannelType(t *testing.T) {
 
 func TestAssetCredentialRotationRequiresExplicitTenantConfirmation(t *testing.T) {
 	withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channel := assetBoundaryTestChannel("credential-rotation", common.ChannelStatusManuallyDisabled)
 	require.NoError(t, channel.Insert())
 	originalScope, err := ChannelAssetReuseScope(channel.Id)
@@ -122,13 +132,16 @@ func TestAssetCredentialRotationRequiresExplicitTenantConfirmation(t *testing.T)
 
 func TestFirstAssetProtocolActivationCreatesPermanentIdentity(t *testing.T) {
 	withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channel := seedanceTestChannel("first-asset-activation", common.ChannelStatusManuallyDisabled)
+	channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolArkMediaV1, AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone})
 	require.NoError(t, channel.Insert())
 	_, err := ChannelAssetReuseScope(channel.Id)
 	require.ErrorIs(t, err, errChannelAssetScopeIdentityMissing)
 
 	settings := channel.GetOtherSettings()
-	settings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolMoxingVolcAssetsV1
+	settings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolArkAssetsV1
+	settings.AssetMinURLTTLSeconds = 3600
 	channel.SetOtherSettings(settings)
 	require.NoError(t, channel.UpdateWithActor(0))
 	_, err = ChannelAssetReuseScope(channel.Id)
@@ -145,6 +158,7 @@ func TestFirstAssetProtocolActivationCreatesPermanentIdentity(t *testing.T) {
 
 func TestAssetScopeIdentityBackfillIncludesDisabledChannels(t *testing.T) {
 	db := withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	enabled := assetBoundaryTestChannel("backfill-enabled", common.ChannelStatusEnabled)
 	disabled := assetBoundaryTestChannel("backfill-disabled", common.ChannelStatusManuallyDisabled)
 	withoutAssets := seedanceTestChannel("backfill-none", common.ChannelStatusManuallyDisabled)
@@ -163,6 +177,7 @@ func TestAssetScopeIdentityBackfillIncludesDisabledChannels(t *testing.T) {
 
 func TestAssetScopeIdentityIsUniqueAcrossChannels(t *testing.T) {
 	db := withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	require.NoError(t, db.Create(&ChannelAssetScopeIdentity{ChannelID: 1001, Identity: "same-identity"}).Error)
 	err := db.Create(&ChannelAssetScopeIdentity{ChannelID: 1002, Identity: "same-identity"}).Error
 	require.Error(t, err)

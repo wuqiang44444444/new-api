@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/QuantumNous/new-api/pkg/seedanceplugin"
 	"math"
 	"strings"
 	"unicode"
@@ -81,6 +82,9 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 	if plugin == nil {
 		return nil, fmt.Errorf("the seedance-link extension plugin is unavailable for this request")
 	}
+	if _, err := PinnedSeedanceConfiguration(c); err != nil {
+		return nil, err
+	}
 	contract, ok := relaycommon.GetVideoContractRequest(c)
 	if !ok || contract.ContractID != taskdto.VideoContractModelArkV3 || contract.ModelArk == nil {
 		return nil, fmt.Errorf("the selected video adapter requires a ModelArk request")
@@ -91,7 +95,15 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 		// upstream model snapshot keeps the resolved provider model.
 		info.UpstreamModelName = upstreamModel
 	}
-	requestBytes, err := common.Marshal(contract.ModelArk)
+	var sourceRequest any = contract.ModelArk
+	if a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || a.protocol == dto.VideoUpstreamProtocolModelArkV3Volcengine || a.protocol == dto.VideoUpstreamProtocolModelArkV3BytePlus || a.protocol == dto.VideoUpstreamProtocolArkMediaV1 {
+		payload, _, err := a.modelArkContractPayload(c)
+		if err != nil {
+			return nil, err
+		}
+		sourceRequest = payload
+	}
+	requestBytes, err := common.Marshal(sourceRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -105,16 +117,63 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 		"request":       requestMap,
 		"limits":        map[string]any{"maxDurationSeconds": relaycommon.MaxTaskDurationSeconds},
 	}
+	if a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+		northBytes, err := common.Marshal(contract.ModelArk)
+		if err != nil {
+			return nil, err
+		}
+		var north map[string]any
+		if err = common.Unmarshal(northBytes, &north); err != nil {
+			return nil, err
+		}
+		input["northRequest"] = north
+	}
 	result, callErr := plugin.Engine.CallPathWithAdmissionTimeout(
 		seedancePluginRequestContext(c), seedanceExtensionCreateAdmissionTimeout,
 		"seedance", []string{string(a.protocol), "buildCreate"}, input,
 	)
 	if callErr != nil {
-		return nil, seedanceHookError(callErr)
+		return nil, relaycommon.NewVideoContractError("invalid_video_parameter", seedanceHookError(callErr).Error())
 	}
-	conversion, decodeErr := decodeSeedanceCreateConversion(result, a.protocol, upstreamModel, contract.ModelArk.Duration)
+	if a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolModelArkV3Volcengine || a.protocol == dto.VideoUpstreamProtocolModelArkV3BytePlus || a.protocol == dto.VideoUpstreamProtocolArkMediaV1 {
+		object, ok := result.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid official plugin conversion")
+		}
+		if err := validateOfficialPluginBillingRequest(object["body"], requestMap, upstreamModel); err != nil {
+			return nil, err
+		}
+	}
+	var conversion *seedancePluginCreateConversion
+	var decodeErr error
+	if a.protocol == dto.VideoUpstreamProtocolMoxingModelArkV1 || a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+		spec, _, err := a.pinnedProviderSpec(c, upstreamModel)
+		if err != nil {
+			return nil, err
+		}
+		var pricedPayload *requestPayload
+		if a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 {
+			priced, typed, payloadErr := a.modelArkContractPayload(c)
+			if payloadErr != nil || !typed || priced == nil {
+				return nil, fmt.Errorf("media plugin conversion requires the priced request contract")
+			}
+			pricedPayload = priced
+		}
+		conversion, decodeErr = decodeMediaPluginCreate(result, requestMap, upstreamModel, a.protocol, spec, pricedPayload)
+	} else {
+		conversion, decodeErr = decodeSeedanceCreateConversion(result, a.protocol, upstreamModel, contract.ModelArk.Duration)
+	}
 	if decodeErr != nil {
 		return nil, decodeErr
+	}
+	if path, ok := result.(map[string]any)["createPath"].(string); ok {
+		query, _ := result.(map[string]any)["queryPath"].(string)
+		if err := dto.ValidateVideoUpstreamURL(a.baseURL, path, query); err != nil {
+			return nil, err
+		}
+		a.createPath = path
+		info.ChannelOtherSettings.VideoUpstreamCreatePath = path
+		info.ChannelOtherSettings.VideoUpstreamQueryPathTemplate = query
 	}
 	conversion.plugin = plugin
 	a.pluginCreate = conversion
@@ -134,6 +193,9 @@ func decodeSeedanceCreateConversion(result any, protocol dto.VideoUpstreamProtoc
 	body, ok := object["body"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("seedance plugin buildCreate returned an invalid body")
+	}
+	if protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || protocol == dto.VideoUpstreamProtocolModelArkV3Volcengine || protocol == dto.VideoUpstreamProtocolModelArkV3BytePlus || protocol == dto.VideoUpstreamProtocolArkMediaV1 {
+		return decodeOfficialPluginCreate(body, object["probe"], expectedModel, expectedDuration)
 	}
 	wire := seedanceFeicaiCreateWireRequest{}
 	model, err := seedancePluginStringField(body, "model", 191)
@@ -304,12 +366,16 @@ func seedancePluginStringSliceField(object map[string]any, name string, maxItems
 // The prepared transaction already protects the frozen version until its
 // execution references are released; HTTP needs no repeated existence query.
 func (a *TaskAdaptor) buildSeedancePluginCreateRequestBody(c *gin.Context, info *relaycommon.RelayInfo, profile dto.VideoUpstreamProfile) ([]byte, bool, error) {
-	if profile != dto.VideoUpstreamProfileThirdPartyFeicaiVideos || !SeedanceExtensionProtocolMigrated(a.protocol) {
+	if !SeedanceExtensionProtocolMigrated(a.protocol) {
 		return nil, false, nil
 	}
 	conversion, err := a.ensureSeedanceCreateConversion(c, info)
 	if err != nil {
 		return nil, true, err
+	}
+	if a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+		body, err := resolvePluginHostedContent(c, conversion.body, a.protocol)
+		return body, true, err
 	}
 	return conversion.body, true, nil
 }
@@ -318,7 +384,7 @@ func (a *TaskAdaptor) buildSeedancePluginCreateRequestBody(c *gin.Context, info 
 // submissions converted by the plugin parse through the plugin hook; every
 // other profile keeps the legacy Go normalization.
 func normalizeSeedanceVideoCreateResponse(c *gin.Context, a *TaskAdaptor, body []byte) ([]byte, error) {
-	if a.pluginCreate != nil && a.profile == dto.VideoUpstreamProfileThirdPartyFeicaiVideos {
+	if a.pluginCreate != nil {
 		return parseSeedancePluginCreateResponse(c, a, body)
 	}
 	return normalizeVideoCreateResponse(a.profile, body)
@@ -375,20 +441,44 @@ func normalizeSeedanceVideoTaskResponse(
 	if snapshot == nil || snapshot.Key != SeedanceExtensionPluginKey || snapshot.Version == "" {
 		return normalizeVideoTaskResponse(profile, adapterVersion, body, expectedTaskID, baseURL, billingContext)
 	}
-	plugin, err := seedanceExtensions.ResolveVersion(ctx, snapshot.Version)
+	plugin, err := seedanceplugin.Default.ResolveVersion(ctx, snapshot.Version)
 	if err != nil {
 		return nil, &relaycommon.UpstreamContractViolation{
 			Reason: fmt.Sprintf("seedance plugin version %q is unavailable", snapshot.Version),
 		}
 	}
 	protocol := task.PrivateData.VideoUpstreamProtocol
+	// Official ModelArk usage is derived by the host from the raw upstream
+	// bytes before the artifact sees the body: the strict integer lexeme
+	// semantics cannot survive the JavaScript number boundary, and charging
+	// facts must not depend on artifact behavior. Frozen v2 artifacts keep
+	// their own embedded-usage contract.
+	if plugin.Meta.APIVersion >= pluginruntime.SeedanceUsageScanAPIVersion && seedanceOfficialUsageProtocol(protocol) {
+		body, err = normalizeOfficialTaskUsage(body, expectedTaskID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	result, callErr := plugin.Engine.CallPathWithAdmissionTimeout(
 		ctx, seedanceExtensionPollAdmissionTimeout,
 		"seedance", []string{string(protocol), "parseTaskObservation"},
-		map[string]any{"taskId": expectedTaskID, "body": string(body)},
+		seedanceObservationInput(body, expectedTaskID),
 	)
 	if callErr != nil {
 		return nil, seedancePollObservationError(callErr)
+	}
+	if protocol != dto.VideoUpstreamProtocolFeicaiVideosV1 {
+		normalized, err := decodeOfficialPluginObservation(result, expectedTaskID, plugin.Meta.APIVersion, protocol)
+		if err != nil {
+			return nil, err
+		}
+		if plugin.Meta.APIVersion >= pluginruntime.SeedanceUsageScanAPIVersion && seedanceOfficialUsageProtocol(protocol) {
+			// The v3 official hook validates the observation without converting
+			// its wire shape. Return the host-normalized body so a hook cannot
+			// replace, remove or invent the usage facts derived above.
+			return body, nil
+		}
+		return validatePluginProviderObservation(normalized, protocol)
 	}
 	return decodeSeedanceTaskObservation(result, expectedTaskID, baseURL)
 }

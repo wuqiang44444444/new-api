@@ -17,6 +17,7 @@ import (
 func TestConfiguredSeedanceModelAvailabilityUsesCallerAccess(t *testing.T) {
 	withSelfUseModeEnabled(t)
 	setupModelListControllerTestDB(t)
+	seedPublishedSeedanceControllerArtifact(t)
 
 	enabled := &model.Channel{
 		Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusEnabled,
@@ -24,7 +25,7 @@ func TestConfiguredSeedanceModelAvailabilityUsesCallerAccess(t *testing.T) {
 	}
 	enabled.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
-		AssetUpstreamProtocol: dto.AssetUpstreamProtocolVolcengineAction,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone,
 	})
 	disabled := &model.Channel{
 		Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusManuallyDisabled,
@@ -32,7 +33,7 @@ func TestConfiguredSeedanceModelAvailabilityUsesCallerAccess(t *testing.T) {
 	}
 	disabled.SetOtherSettings(dto.ChannelOtherSettings{
 		VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
-		AssetUpstreamProtocol: dto.AssetUpstreamProtocolVolcengineAction,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone,
 	})
 	require.NoError(t, enabled.Insert())
 	require.NoError(t, disabled.Insert())

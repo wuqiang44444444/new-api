@@ -229,6 +229,7 @@ func TestTokenSaveAcceptsReferenceMediaDuringRequestValidation(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			context, _ := gin.CreateTestContext(httptest.NewRecorder())
+			pinSeedanceExtensionForTest(t, context)
 			context.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
 			relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 				ContractID: dto.VideoContractModelArkV3,
@@ -239,7 +240,7 @@ func TestTokenSaveAcceptsReferenceMediaDuringRequestValidation(t *testing.T) {
 			})
 			context.Set(string(constant.ContextKeyTaskPromptValidated), true)
 
-			adaptor := &TaskAdaptor{protocol: kitdto.VideoUpstreamProtocolTokenSaveMediaTaskV1}
+			adaptor := &TaskAdaptor{baseURL: "https://provider.example", protocol: kitdto.VideoUpstreamProtocolTokenSaveMediaTaskV1}
 			info := &relaycommon.RelayInfo{
 				ChannelMeta:   &relaycommon.ChannelMeta{UpstreamModelName: modelSeedance20},
 				TaskRelayInfo: &relaycommon.TaskRelayInfo{},
@@ -255,11 +256,12 @@ func TestTokenSaveAcceptsReferenceMediaDuringRequestValidation(t *testing.T) {
 func TestMoxingAcceptsStandardSeedDuringMappedValidation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	pinSeedanceExtensionForTest(t, context)
 	context.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 		ContractID: dto.VideoContractModelArkV3,
 		ModelArk: &dto.ModelArkVideoCreateRequest{
-			Model: modelSeedance20,
+			Model: "doubao-seedance-2-0-260128-0818",
 			Content: []dto.ModelArkVideoContent{{
 				Type: "text", Text: common.GetPointer("generate"),
 			}},
@@ -267,8 +269,8 @@ func TestMoxingAcceptsStandardSeedDuringMappedValidation(t *testing.T) {
 			Seed: common.GetPointer(24),
 		},
 	})
-	adaptor := &TaskAdaptor{protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1}
-	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: modelSeedance20}}
+	adaptor := &TaskAdaptor{baseURL: "https://provider.example", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1}
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "doubao-seedance-2-0-260128-0818"}}
 
 	taskErr := adaptor.ValidateMappedRequest(context, info)
 
@@ -335,6 +337,7 @@ func TestCMCCMappedRequestSetsTrustedVideoHeaderAndProviderModel(t *testing.T) {
 	}))
 
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	pinSeedanceExtensionForTest(t, context)
 	context.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
 	contract := &dto.ModelArkVideoCreateRequest{
 		Model: "seedance-2.0-cmcc",
@@ -354,7 +357,7 @@ func TestCMCCMappedRequestSetsTrustedVideoHeaderAndProviderModel(t *testing.T) {
 		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: modelSeedance20CMCC, IsModelMapped: true},
 		TaskRelayInfo:   &relaycommon.TaskRelayInfo{},
 	}
-	adaptor := &TaskAdaptor{protocol: kitdto.VideoUpstreamProtocolModelArkV3CMCC, profile: kitdto.VideoUpstreamProfileOfficial, apiKey: "video-key"}
+	adaptor := &TaskAdaptor{baseURL: "https://cmcc.example", protocol: kitdto.VideoUpstreamProtocolModelArkV3CMCC, profile: kitdto.VideoUpstreamProfileOfficial, apiKey: "video-key"}
 
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(context, info))
 	require.Nil(t, adaptor.ValidateMappedRequest(context, info))
@@ -376,6 +379,7 @@ func TestCMCCMappedRequestSetsTrustedVideoHeaderAndProviderModel(t *testing.T) {
 
 func TestCMCCDefaultDurationKeepsBillingAndOptionalPayloadSemanticsAligned(t *testing.T) {
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	pinSeedanceExtensionForTest(t, context)
 	context.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
 	contract := &dto.ModelArkVideoCreateRequest{
 		Model:      "seedance-2.0-cmcc",
@@ -394,7 +398,7 @@ func TestCMCCDefaultDurationKeepsBillingAndOptionalPayloadSemanticsAligned(t *te
 		},
 		TaskRelayInfo: &relaycommon.TaskRelayInfo{},
 	}
-	adaptor := &TaskAdaptor{
+	adaptor := &TaskAdaptor{baseURL: "https://cmcc.example",
 		protocol: kitdto.VideoUpstreamProtocolModelArkV3CMCC,
 		profile:  kitdto.VideoUpstreamProfileOfficial,
 	}
@@ -434,7 +438,7 @@ func TestCMCCProviderContractFailsClosedOnUnverifiedParameters(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			request := base
 			test.mutate(&request)
-			require.Error(t, validateCMCCProviderModelRequest(modelSeedance20CMCC, &request))
+			require.Error(t, cmccBaselineProviderModelRequest(modelSeedance20CMCC, &request))
 		})
 	}
 }
@@ -458,6 +462,7 @@ func TestFunCloudMappedValidationBindsExactProviderPath(t *testing.T) {
 			},
 		},
 	}
+	pinSeedanceExtensionForTest(t, context)
 	adaptor := &TaskAdaptor{}
 	adaptor.Init(info)
 	assert.Equal(t, "/api/v3/contents/generations/tasks", adaptor.createPath)

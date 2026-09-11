@@ -62,23 +62,6 @@ func joinVideoUpstreamURL(baseURL, path string) string {
 	return strings.TrimRight(baseURL, "/") + path
 }
 
-// convertVideoCreateRequest 按协议转换创建请求体：第三方中转协议转换为统一媒体任务结构，其余透传。
-func convertVideoCreateRequest(profile dto.VideoUpstreamProfile, body []byte) ([]byte, error) {
-	switch profile {
-	case "", dto.VideoUpstreamProfileOfficial, dto.VideoUpstreamProfileThirdPartyReverseProxy,
-		dto.VideoUpstreamProfileThirdPartyMoxingModelArk:
-		return body, nil
-	case dto.VideoUpstreamProfileThirdPartyRelay:
-		return thirdparty.RelayCreateRequest(body)
-	case dto.VideoUpstreamProfileThirdPartyFeicaiVideos:
-		return nil, fmt.Errorf("the selected video adapter requires the typed capability path")
-	case dto.VideoUpstreamProfileThirdPartyFunCloudSeedance:
-		return nil, fmt.Errorf("the selected video adapter requires the typed capability path")
-	default:
-		return nil, dto.ValidateVideoUpstreamProfile(profile)
-	}
-}
-
 // normalizeVideoCreateResponse 按协议归一化创建响应到内部 {"id": ...} 合同。
 func normalizeVideoCreateResponse(profile dto.VideoUpstreamProfile, body []byte) ([]byte, error) {
 	switch profile {

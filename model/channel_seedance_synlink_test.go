@@ -12,6 +12,7 @@ import (
 
 func TestSynlinkChannelModelMappingAndHostedProjection(t *testing.T) {
 	withSeedanceChannelDB(t)
+	seedPublishedSeedanceTestArtifact(t)
 	channel := seedanceTestChannel("synlink-customer", common.ChannelStatusEnabled)
 	channel.BaseURL = common.GetPointer("http://provider.example")
 	settings := dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolSynlinkVideoV1, AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudHosted}
@@ -33,9 +34,9 @@ func TestSynlinkChannelModelMappingAndHostedProjection(t *testing.T) {
 		assert.NotContains(t, string(encoded), "synlink_video_v1")
 	}
 	channel.ModelMapping = common.GetPointer(`{"synlink-customer":"doubao-seedance-2-0-mini-260615-max"}`)
-	require.Error(t, channel.ValidateSettings())
+	require.Error(t, validateSeedancePublishedChannelConfiguration(DB, channel))
 	channel.ModelMapping = common.GetPointer(`{"synlink-customer":"doubao-seedance-2-0-260128"}`)
 	settings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolFunCloudMaterial
 	channel.SetOtherSettings(settings)
-	require.Error(t, channel.ValidateSettings())
+	require.Error(t, validateSeedancePublishedChannelConfiguration(DB, channel))
 }

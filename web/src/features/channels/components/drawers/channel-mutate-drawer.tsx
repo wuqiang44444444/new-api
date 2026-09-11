@@ -206,7 +206,7 @@ import {
   ChannelEditorLoadingState,
   ChannelModelsSection,
 } from './sections'
-import { SeedanceProtocolFields } from './seedance-protocol-fields'
+import { SeedanceConfiguredProtocolFields } from './seedance-configured-protocol-fields'
 
 type ChannelMutateDrawerProps = {
   open: boolean
@@ -2375,29 +2375,29 @@ export function ChannelMutateDrawer({
                                   )}
                                 />
                                 {currentType === 3 && (
-                                <FormField
-                                  control={form.control}
-                                  name='azure_responses_version'
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel>
-                                        {t('Responses API Version')}
-                                      </FormLabel>
-                                      <FormControl>
-                                        <Input
-                                          placeholder={t('e.g., preview')}
-                                          {...field}
-                                        />
-                                      </FormControl>
-                                      <FormDescription>
-                                        {t(
-                                          'Default Responses API version, if empty, will use the API version above'
-                                        )}
-                                      </FormDescription>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
+                                  <FormField
+                                    control={form.control}
+                                    name='azure_responses_version'
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>
+                                          {t('Responses API Version')}
+                                        </FormLabel>
+                                        <FormControl>
+                                          <Input
+                                            placeholder={t('e.g., preview')}
+                                            {...field}
+                                          />
+                                        </FormControl>
+                                        <FormDescription>
+                                          {t(
+                                            'Default Responses API version, if empty, will use the API version above'
+                                          )}
+                                        </FormDescription>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
                                 )}
                               </>
                             )}
@@ -2547,7 +2547,8 @@ export function ChannelMutateDrawer({
                             )}
 
                             {currentType === CHANNEL_TYPE_SEEDANCE_LINK && (
-                              <SeedanceProtocolFields
+                              <SeedanceConfiguredProtocolFields
+                                key={channelId ?? 'new'}
                                 control={form.control}
                                 sensitiveLocked={sensitiveLocked}
                                 boundaryChanges={

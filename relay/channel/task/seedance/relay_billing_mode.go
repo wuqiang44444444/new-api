@@ -54,6 +54,23 @@ func relayBillingModes(payload *requestPayload) (string, string) {
 	}
 }
 
+// tokenSaveBillingModes derives the TokenSave billing modes from the typed
+// northbound payload. It is the single classification shared by the pricing
+// probe and the hold-time conversion check, so a converted body whose modes
+// drift from the priced content is rejected before any hold or send.
+func tokenSaveBillingModes(payload *requestPayload) (string, string) {
+	inputMode, controlMode := relayBillingModes(payload)
+	if controlMode == "end_frame" {
+		inputMode = "single_image"
+	}
+	for _, item := range payload.Content {
+		if item.Type == "video_url" || item.Type == "audio_url" {
+			return "multi_image", "reference"
+		}
+	}
+	return inputMode, controlMode
+}
+
 // modelArkTaskAction records the customer-visible generation mode from the
 // same typed payload used for the Seedance request and billing probe.
 // Reference video/audio input reuses the existing reference-to-video action.

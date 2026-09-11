@@ -32,7 +32,14 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 		resolution = "720p"
 	}
 	providerModel := providerModelFromRelayInfo(info, payload.Model)
-	if spec, ok := providerSpec(a.protocol, providerModel); ok {
+	if SeedanceExtensionProtocolMigrated(a.protocol) && info.ChannelMeta == nil {
+		return nil, fmt.Errorf("billing capability is unavailable for the selected customer model")
+	}
+	spec, hasSpec, specErr := a.pinnedProviderSpec(c, providerModel)
+	if specErr != nil {
+		return nil, specErr
+	}
+	if hasSpec && (a.protocol == dto.VideoUpstreamProtocolMoxingModelArkV1 || a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || !SeedanceExtensionProtocolMigrated(a.protocol)) {
 		// Registry-driven models may publish no resolution enum; unlisted
 		// values then stay a provider decision and are recorded as-is.
 		if len(spec.resolutions) > 0 {
@@ -56,6 +63,9 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 		}
 	}
 	durationSeconds := 5
+	if hasSpec && spec.defaultDuration > 0 {
+		durationSeconds = spec.defaultDuration
+	}
 	if payload.Duration != nil {
 		durationSeconds = int(*payload.Duration)
 	}
@@ -67,31 +77,23 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 	// actual usage may later settle below this frozen upper bound.
 	if durationSeconds == -1 {
 		durationSeconds = modelArkIntelligentDurationBillingSeconds
-		if intelligentDuration, _, ok := providerBillingDefaults(a.protocol, providerModel); ok {
-			durationSeconds = intelligentDuration
+		if hasSpec && spec.intelligentDuration > 0 {
+			durationSeconds = spec.intelligentDuration
 		}
 	}
 	if durationSeconds < 0 || durationSeconds > common.MaxTaskDurationSeconds {
 		return nil, fmt.Errorf("duration_seconds must be between 0 and %d", common.MaxTaskDurationSeconds)
 	}
 	generateAudio := false
-	if _, defaultGenerateAudio, ok := providerBillingDefaults(a.protocol, providerModel); ok {
-		generateAudio = defaultGenerateAudio
+	if hasSpec {
+		generateAudio = spec.defaultGenerateAudio
 	}
 	if payload.GenerateAudio != nil {
 		generateAudio = bool(*payload.GenerateAudio)
 	}
 	inputMode, controlMode := relayBillingModes(payload)
 	if a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 {
-		if controlMode == "end_frame" {
-			inputMode = "single_image"
-		}
-		for _, item := range payload.Content {
-			if item.Type == "video_url" || item.Type == "audio_url" {
-				inputMode, controlMode = "multi_image", "reference"
-				break
-			}
-		}
+		inputMode, controlMode = tokenSaveBillingModes(payload)
 	}
 
 	probe := map[string]any{
@@ -102,7 +104,7 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(c *gin.Context, info *common.RelayIn
 		"input_mode":       inputMode,
 		"control_mode":     controlMode,
 	}
-	if a.profile == dto.VideoUpstreamProfileThirdPartyFeicaiVideos {
+	if SeedanceExtensionProtocolMigrated(a.protocol) {
 		if info.ChannelMeta == nil {
 			return nil, fmt.Errorf("billing capability is unavailable for the selected customer model")
 		}

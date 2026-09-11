@@ -9,7 +9,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/pkg/publicmodel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
@@ -21,6 +20,7 @@ func moxingTestContext(t *testing.T, request *dto.ModelArkVideoCreateRequest) *g
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	pinSeedanceExtensionForTest(t, context)
 	context.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
 	relaycommon.SetVideoContractRequest(context, dto.VideoContractRequest{
 		ContractID: dto.VideoContractModelArkV3,
@@ -31,8 +31,8 @@ func moxingTestContext(t *testing.T, request *dto.ModelArkVideoCreateRequest) *g
 
 func moxingAdaptor() *TaskAdaptor {
 	return &TaskAdaptor{
-		protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1,
-		profile:  kitdto.VideoUpstreamProfileThirdPartyMoxingModelArk,
+		protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, baseURL: "https://provider.example",
+		profile: kitdto.VideoUpstreamProfileThirdPartyMoxingModelArk,
 	}
 }
 
@@ -82,7 +82,7 @@ func firstFrameImage(url string) dto.ModelArkVideoContent {
 }
 
 func TestMoxingUnifiedAdapterSendsOfficialMultimodalBody(t *testing.T) {
-	models := []string{modelSeedance20, modelSeedance20Fast, modelSeedance20Mini, modelSeedance25}
+	models := []string{"doubao-seedance-2-0-260128-0818", modelSeedance20Fast, modelSeedance20Mini, modelSeedance25}
 	scenarios := []struct {
 		name    string
 		content []dto.ModelArkVideoContent
@@ -139,7 +139,7 @@ func TestMoxingUnifiedAdapterSendsOfficialMultimodalBody(t *testing.T) {
 }
 
 func TestMoxingUnifiedAdapterAllowsDocumentedAudioOnlyInput(t *testing.T) {
-	for _, model := range []string{modelSeedance20Fast, modelSeedance20Mini, modelSeedance25} {
+	for _, model := range []string{"doubao-seedance-2-0-260128-0818", modelSeedance20Fast, modelSeedance20Mini, modelSeedance25} {
 		t.Run(model, func(t *testing.T) {
 			request := &dto.ModelArkVideoCreateRequest{
 				Model:      "customer-" + model,
@@ -154,15 +154,6 @@ func TestMoxingUnifiedAdapterAllowsDocumentedAudioOnlyInput(t *testing.T) {
 			assert.Equal(t, "asset://ref-audio-1", content[1].(map[string]any)["audio_url"].(map[string]any)["url"])
 		})
 	}
-}
-
-func TestMoxingUnifiedAdapterKeepsDocumented20AudioPairingRule(t *testing.T) {
-	request := &dto.ModelArkVideoCreateRequest{
-		Model:      "customer-2-0",
-		Content:    contentItems(audioReference("asset://ref-audio-1")),
-		Resolution: common.GetPointer("720p"),
-	}
-	require.Error(t, validateProviderModelRequest(kitdto.VideoUpstreamProtocolMoxingModelArkV1, modelSeedance20, request))
 }
 
 // Reproduces the reported incident end to end: a customer model mapped to the
@@ -336,7 +327,7 @@ func TestMoxingUnifiedAdapterRecordsMixedMediaFacts(t *testing.T) {
 func TestMoxingUnifiedModelsPublishAllFourInputTypes(t *testing.T) {
 	for _, contract := range kitdto.MoxingVideoModelContracts {
 		t.Run(contract.ProviderModel, func(t *testing.T) {
-			api, ok := publicmodel.VideoAPI("customer-model", kitdto.VideoUpstreamProtocolMoxingModelArkV1, contract.ProviderModel, false)
+			api, ok := publishedVideoFixture("customer-model", kitdto.VideoUpstreamProtocolMoxingModelArkV1, contract.ProviderModel, false)
 			require.True(t, ok)
 			types := make(map[string]int)
 			for index, contentType := range api.Creation.ContentTypes {

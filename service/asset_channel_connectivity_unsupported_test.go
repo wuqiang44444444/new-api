@@ -16,6 +16,7 @@ import (
 )
 
 func TestAssetConnectivityWithoutDocumentedProbeDoesNotCallProvider(t *testing.T) {
+	pinPublishedSeedanceServiceArtifact(t)
 	for _, protocol := range []dto.AssetUpstreamProtocol{dto.AssetUpstreamProtocolTokenSaveAssetsV1} {
 		t.Run(string(protocol), func(t *testing.T) {
 			var calls atomic.Int32
@@ -25,7 +26,7 @@ func TestAssetConnectivityWithoutDocumentedProbeDoesNotCallProvider(t *testing.T
 			}))
 			defer server.Close()
 			channel := &model.Channel{Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusEnabled, BaseURL: &server.URL, Key: "fixture-secret-key"}
-			channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: protocol})
+			channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, AssetUpstreamProtocol: protocol})
 			err := CheckAssetChannelConnectivity(context.Background(), channel)
 			require.Error(t, err)
 			assert.Equal(t, "asset_connectivity_unsupported", ChannelConnectivityErrorCode(err))

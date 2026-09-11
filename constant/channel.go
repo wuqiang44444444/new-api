@@ -59,7 +59,6 @@ const (
 	ChannelTypeSub2API        = 59
 	ChannelTypeNewAPI         = 60
 	ChannelTypeTaskPlugin     = 61
-	ChannelTypeSeedanceLink   = 62
 	ChannelTypeAsyncImage     = 63
 	ChannelTypeAzureBatch     = 66
 	ChannelTypeDummy          = 67 // count sentinel; explicit because a bare identifier repeats the previous literal, it does not increment

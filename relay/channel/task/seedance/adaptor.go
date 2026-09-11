@@ -166,6 +166,9 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 }
 
 func (a *TaskAdaptor) BuildRequestURL(_ *relaycommon.RelayInfo) (string, error) {
+	if a.pluginCreate != nil && a.createPath != "" {
+		return joinVideoUpstreamURL(a.baseURL, a.createPath), nil
+	}
 	path, err := videoCreatePath(a.profile, a.createPath)
 	if err != nil {
 		return "", err
@@ -216,49 +219,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		}
 		return bytes.NewReader(data), nil
 	}
-	if a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudSeedance || a.protocol == dto.VideoUpstreamProtocolMoxingMediaTaskV1 {
-		return nil, fmt.Errorf("the configured video protocol is retired")
-	}
-	if data, handled, err := buildFeicaiVideoCreateRequest(c, info, a.profile); handled {
-		if err != nil {
-			return nil, err
-		}
-		return bytes.NewReader(data), nil
-	}
-	body, typed, err := a.modelArkContractPayload(c)
-	if err != nil {
-		return nil, errors.Wrap(err, "convert Seedance request payload failed")
-	}
-	if !typed {
-		return nil, relaycommon.NewVideoContractError("invalid_video_contract", "Seedance requires the ModelArk V3 request contract")
-	}
-	if info.IsModelMapped {
-		body.Model = info.UpstreamModelName
-	} else {
-		info.UpstreamModelName = body.Model
-	}
-	if _, defaultGenerateAudio, ok := providerBillingDefaults(a.protocol, body.Model); ok && defaultGenerateAudio && body.GenerateAudio == nil {
-		value := dto.BoolValue(true)
-		body.GenerateAudio = &value
-	}
-	data, err := common.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	switch a.protocol {
-	case dto.VideoUpstreamProtocolSynlinkVideoV1:
-		data, err = buildSynlinkRequest(c, body)
-	case dto.VideoUpstreamProtocolFunCloudModelArkV3:
-		data, err = buildFunCloudModelArkRequest(c, body)
-	case dto.VideoUpstreamProtocolMoxingModelArkV1:
-		data, err = buildMoxingModelArkRequest(c, body)
-	default:
-		data, err = convertVideoCreateRequest(a.profile, data)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return bytes.NewReader(data), nil
+	return nil, fmt.Errorf("video protocol is retired or not registered for new requests")
 }
 
 func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (*http.Response, error) {
@@ -317,7 +278,7 @@ func (a *TaskAdaptor) FetchTaskWithContext(ctx context.Context, baseURL, key str
 	if err != nil {
 		return nil, err
 	}
-	path, err := videoTaskPath(profile, task.PrivateData.VideoUpstreamQueryPathTemplate, taskID)
+	path, err := seedanceTaskPath(task, profile, taskID, baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +310,7 @@ func (a *TaskAdaptor) FetchTaskWithContext(ctx context.Context, baseURL, key str
 	if err != nil {
 		return nil, fmt.Errorf("read upstream task response: %w", err)
 	}
-	if profile.IsOfficial() {
+	if profile.IsOfficial() && seedancePluginTaskSnapshot(task) == nil {
 		responseBody, err = normalizeOfficialTaskUsage(responseBody, taskID)
 	} else {
 		responseBody, err = normalizeSeedanceVideoTaskResponse(

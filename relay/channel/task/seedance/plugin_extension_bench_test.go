@@ -2,6 +2,7 @@ package seedance
 
 import (
 	"fmt"
+	"github.com/QuantumNous/new-api/pkg/seedanceplugin"
 	"net/http/httptest"
 	"testing"
 
@@ -40,21 +41,22 @@ func benchVideoContract(prompt string) *taskdto.ModelArkVideoCreateRequest {
 	}
 }
 
-func benchPinPlugin(b *testing.B) *pluginruntime.LoadedPlugin {
+func benchPinPlugin(b *testing.B) *seedanceplugin.CompiledVersion {
 	b.Helper()
-	plugin, _, err := CompileSeedanceExtensionSource(plugins.SeedanceSource())
+	plugin, info, err := CompileSeedanceExtensionSource(plugins.SeedanceSource())
 	if err != nil {
 		b.Fatal(err)
 	}
-	return plugin
+	return &seedanceplugin.CompiledVersion{Plugin: plugin, Info: info}
 }
 
-func benchConversionContext(b *testing.B, plugin *pluginruntime.LoadedPlugin, request *taskdto.ModelArkVideoCreateRequest) *gin.Context {
+func benchConversionContext(b *testing.B, entry *seedanceplugin.CompiledVersion, request *taskdto.ModelArkVideoCreateRequest) *gin.Context {
 	b.Helper()
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest("POST", "/api/v3/contents/generations/tasks", nil)
-	c.Set(pluginruntime.ContextKeyPinnedPlugin, pluginruntime.PinnedPlugin{Plugin: plugin})
+	c.Set(seedanceConfigurationContextKey, entry)
+	c.Set(pluginruntime.ContextKeyPinnedPlugin, pluginruntime.PinnedPlugin{Plugin: entry.Plugin})
 	relaycommon.SetVideoContractRequest(c, taskdto.VideoContractRequest{
 		ContractID: taskdto.VideoContractModelArkV3, ModelArk: request,
 	})
@@ -107,7 +109,7 @@ func BenchmarkSeedancePluginCapacityParseObservationHot(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		result, err := plugin.Engine.CallPathWithAdmissionTimeout(
+		result, err := plugin.Plugin.Engine.CallPathWithAdmissionTimeout(
 			b.Context(), seedanceExtensionPollAdmissionTimeout,
 			"seedance", []string{string(dto.VideoUpstreamProtocolFeicaiVideosV1), "parseTaskObservation"},
 			map[string]any{"taskId": "fca-20260910-bench-0001", "body": body},
@@ -132,7 +134,7 @@ func BenchmarkSeedancePluginCapacityQueueOversubscribed(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		input := map[string]any{"taskId": "fca-20260910-bench-0001", "body": body}
 		for pb.Next() {
-			result, err := plugin.Engine.CallPathWithAdmissionTimeout(
+			result, err := plugin.Plugin.Engine.CallPathWithAdmissionTimeout(
 				b.Context(), seedanceExtensionPollAdmissionTimeout,
 				"seedance", []string{string(dto.VideoUpstreamProtocolFeicaiVideosV1), "parseTaskObservation"},
 				input,

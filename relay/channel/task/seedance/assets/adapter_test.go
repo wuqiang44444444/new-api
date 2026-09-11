@@ -86,7 +86,7 @@ func TestProtocolAdaptersNormalizeCreationContracts(t *testing.T) {
 		},
 		{
 			name: "tokensave", wantPath: "/v1/asset/create", wantStatus: "active", wantID: "52", wantRefType: "asset_uri_id",
-			adapter: NewTokenSaveAssetAdapter("https://upstream.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+			adapter: publishedAssetFixture(t, dto.AssetUpstreamProtocolTokenSaveAssetsV1, "https://upstream.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 				return assetJSONResponse(`{"requestId":"request-1","error":null,"result":{"id":"52","assetId":"asset-tokensave","vendorStatus":"Active","status":1}}`), nil
 			})),
 		},
@@ -98,9 +98,9 @@ func TestProtocolAdaptersNormalizeCreationContracts(t *testing.T) {
 			case *ArkAdapter:
 				original := adapter.http
 				adapter.http = assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) { requestedPath = req.URL.Path; return original.Do(req) })
-			case *TokenSaveAssetAdapter:
-				original := adapter.http
-				adapter.http = assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) { requestedPath = req.URL.Path; return original.Do(req) })
+			case *PluginAssetAdapter:
+				original := adapter.bearer.http
+				adapter.bearer.http = assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) { requestedPath = req.URL.Path; return original.Do(req) })
 			}
 			result, err := tc.adapter.CreateAsset(context.Background(), AssetRequest{GroupResourceID: "group-1", URL: "https://blob.example/source", Name: "asset", MediaType: "image"})
 			require.NoError(t, err)
@@ -114,7 +114,7 @@ func TestProtocolAdaptersNormalizeCreationContracts(t *testing.T) {
 
 func TestMoxingVolcAdapterUsesProviderSpecificContract(t *testing.T) {
 	var requestedPath string
-	adapter := NewMoxingVolcAdapter("https://moxing.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolMoxingVolcAssetsV1, "https://moxing.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		requestedPath = req.URL.Path
 		return assetJSONResponse(`{"RequestId":"request-2","Result":{"Id":"asset-volc-1","Status":"Active"}}`), nil
 	}))
@@ -134,14 +134,14 @@ func TestMoxingVolcAdapterUsesProviderSpecificContract(t *testing.T) {
 // asset library must therefore accept general audio before any video request
 // referencing audio assets can succeed.
 func TestMoxingVolcAssetLibraryAcceptsGeneralAudio(t *testing.T) {
-	adapter := NewMoxingVolcAdapter("https://moxing.example", "key", nil)
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolMoxingVolcAssetsV1, "https://moxing.example", "key", nil)
 
 	assert.True(t, adapter.Supports("general", "audio"), "general audio assets must pass the local type gate")
 	assert.True(t, adapter.Supports("general", "video"))
 }
 
 func TestMoxingVolcCreateGroupOmitsProjectName(t *testing.T) {
-	adapter := NewMoxingVolcAdapter("https://moxing.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolMoxingVolcAssetsV1, "https://moxing.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		var body map[string]any
 		require.NoError(t, common.DecodeJson(req.Body, &body))
 		assert.Equal(t, "group", body["Name"])
@@ -156,7 +156,7 @@ func TestMoxingVolcCreateGroupOmitsProjectName(t *testing.T) {
 }
 
 func TestMoxingAndBytePlusImplementUnifiedRealPersonContract(t *testing.T) {
-	moxing := NewMoxingVolcAdapter("https://moxing.example", "moxing-key", nil)
+	moxing := publishedAssetFixture(t, dto.AssetUpstreamProtocolMoxingVolcAssetsV1, "https://moxing.example", "moxing-key", nil)
 	bytePlus, err := NewBytePlusActionAdapter(
 		"ACCESS|SECRET",
 		"ap-southeast-1",
@@ -189,7 +189,7 @@ func TestProxyConnectivityUsesDocumentedReadOnlyListEndpoints(t *testing.T) {
 			name:     "Moxing Volcengine assets",
 			wantPath: "/v1/volc/assets/list",
 			adapter: func(client HTTPDoer) ConnectivityAdapter {
-				return NewMoxingVolcAdapter("https://upstream.example", "channel-key", client)
+				return publishedAssetFixture(t, dto.AssetUpstreamProtocolMoxingVolcAssetsV1, "https://upstream.example", "channel-key", client)
 			},
 		},
 	}
@@ -238,7 +238,7 @@ func TestMoxingVolcApplicationErrorsPreserveUnknownServerOutcomes(t *testing.T) 
 		{code: 400, definitive: true},
 		{code: 500, definitive: false},
 	} {
-		adapter := NewMoxingVolcAdapter("https://moxing.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+		adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolMoxingVolcAssetsV1, "https://moxing.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 			return assetJSONResponse(fmt.Sprintf(`{"RequestId":"request-1","Error":{"Code":%d,"Message":"failed"},"Result":{}}`, test.code)), nil
 		}))
 		_, err := adapter.CreateAsset(context.Background(), AssetRequest{URL: "https://example.com/source.png", MediaType: "image"})
@@ -270,14 +270,14 @@ func TestArkVerificationAdapterUsesDocumentedSessionAndResultEndpoints(t *testin
 }
 
 func TestAdapterDeletionIsIdempotent(t *testing.T) {
-	adapter := NewTokenSaveAssetAdapter("https://upstream.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolTokenSaveAssetsV1, "https://upstream.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(`{"detail":"missing"}`))}, nil
 	}))
 	require.NoError(t, adapter.DeleteAsset(context.Background(), "missing"))
 }
 
 func TestUpstreamHTTPErrorDoesNotExposeResponseBody(t *testing.T) {
-	adapter := NewTokenSaveAssetAdapter("https://upstream.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolTokenSaveAssetsV1, "https://upstream.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader(`{"sas":"secret-token","detail":"internal"}`))}, nil
 	}))
 	_, err := adapter.GetAsset(context.Background(), "asset-1")
@@ -287,7 +287,7 @@ func TestUpstreamHTTPErrorDoesNotExposeResponseBody(t *testing.T) {
 }
 
 func TestUpstreamNotFoundIsExplicitlyClassified(t *testing.T) {
-	adapter := NewTokenSaveAssetAdapter("https://upstream.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolTokenSaveAssetsV1, "https://upstream.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader(`{"detail":"missing"}`)),
@@ -331,7 +331,7 @@ func TestFunCloudMaterialAdapterUsesPublishedGroupAndVirtualUploadContracts(t *t
 			return nil, fmt.Errorf("unexpected request %s", req.URL.RequestURI())
 		}
 	})
-	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "funcloud-key", client)
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolFunCloudMaterial, "https://funcloud.example", "funcloud-key", client)
 	assert.Equal(t, "funcloud_material", string(adapter.Profile()))
 	assert.True(t, adapter.Supports("general", "image"))
 	assert.False(t, adapter.Supports("real_person", "image"))
@@ -360,7 +360,7 @@ func TestFunCloudMaterialAdapterUsesPublishedGroupAndVirtualUploadContracts(t *t
 }
 
 func TestFunCloudMaterialListInfersActiveFromVerifiedReferenceWhenStatusIsOmitted(t *testing.T) {
-	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolFunCloudMaterial, "https://funcloud.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 		return assetJSONResponse(`{"code":0,"data":{"list":[{"materialId":"material-1","isAsset":true,"assetUrl":"asset://provider-asset-1"}]}}`), nil
 	}))
 
@@ -372,7 +372,7 @@ func TestFunCloudMaterialListInfersActiveFromVerifiedReferenceWhenStatusIsOmitte
 }
 
 func TestFunCloudMaterialListKeepsMissingStatusWithoutVerifiedReferenceProcessing(t *testing.T) {
-	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolFunCloudMaterial, "https://funcloud.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 		return assetJSONResponse(`{"code":0,"data":{"list":[{"materialId":"material-1","isAsset":false,"assetUrl":"asset://provider-asset-1"}]}}`), nil
 	}))
 
@@ -393,7 +393,7 @@ func TestFunCloudMaterialListAndAssetNormalizationFailClosed(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+			adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolFunCloudMaterial, "https://funcloud.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 				return assetJSONResponse(`{"code":0,"data":` + test.data + `}`), nil
 			}))
 			_, err := adapter.GetAsset(context.Background(), "material-1")
@@ -407,7 +407,7 @@ func TestFunCloudMaterialListAndAssetNormalizationFailClosed(t *testing.T) {
 
 func TestFunCloudMaterialConnectivityUsesReadOnlyListAndRejectsApplicationErrors(t *testing.T) {
 	requestedURI := ""
-	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolFunCloudMaterial, "https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
 		return assetJSONResponse(`{"code":10002,"msg":"invalid"}`), nil
 	}))
@@ -416,7 +416,7 @@ func TestFunCloudMaterialConnectivityUsesReadOnlyListAndRejectsApplicationErrors
 }
 
 func TestFunCloudMaterialUploadEnforcesStreamingLimit(t *testing.T) {
-	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolFunCloudMaterial, "https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		_, err := io.Copy(io.Discard, req.Body)
 		return nil, err
 	}))
@@ -430,7 +430,7 @@ func TestFunCloudMaterialUploadEnforcesStreamingLimit(t *testing.T) {
 }
 
 func TestFunCloudMaterialUploadRequiresGroup(t *testing.T) {
-	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolFunCloudMaterial, "https://funcloud.example", "key", assetHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 		t.Fatal("request must not be sent without a group")
 		return nil, nil
 	}))
@@ -442,7 +442,7 @@ func TestFunCloudMaterialUploadRequiresGroup(t *testing.T) {
 }
 
 func TestFunCloudMaterialUploadRejectsOversizedResponse(t *testing.T) {
-	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolFunCloudMaterial, "https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		_, err := io.Copy(io.Discard, req.Body)
 		require.NoError(t, err)
 		return assetJSONResponse(strings.Repeat("x", funCloudUploadResponseMaxBytes+1)), nil
@@ -459,7 +459,7 @@ func TestFunCloudMaterialUploadRejectsOversizedResponse(t *testing.T) {
 func TestFunCloudMaterialUploadDoesNotWaitForBlockedSourceAfterDoFailure(t *testing.T) {
 	source := &blockingAssetSource{started: make(chan struct{}), release: make(chan struct{})}
 	defer close(source.release)
-	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolFunCloudMaterial, "https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		go func() {
 			_, _ = io.Copy(io.Discard, req.Body)
 		}()
@@ -490,7 +490,7 @@ func TestFunCloudMaterialUploadDoesNotWaitForBlockedSourceAfterDoFailure(t *test
 }
 
 func TestFunCloudMaterialUploadClassifiesFailureAfterBodyAsWaitResponse(t *testing.T) {
-	adapter := NewFunCloudMaterialAdapter("https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+	adapter := publishedAssetFixture(t, dto.AssetUpstreamProtocolFunCloudMaterial, "https://funcloud.example", "key", assetHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		_, err := io.Copy(io.Discard, req.Body)
 		require.NoError(t, err)
 		return nil, errors.New("response connection failed")

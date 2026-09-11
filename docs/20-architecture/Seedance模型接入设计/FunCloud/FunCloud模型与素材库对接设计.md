@@ -80,7 +80,10 @@ Channel 内 3 个模型查询同一素材已经通过，只能证明控制面共
 
 ## 5. 代码事实
 
-`relaykit/dto/upstream_protocol.go`、`relaykit/dto/funcloud_modelark_models.go`、`thirdparty/funcloud/`、`assets/funcloud.go` 和 `model/channel_seedance_public_catalog.go` 是唯一实现依据。
+新请求的 Provider 配置、视频和远端素材转换以 `plugins/seedance-link/plugin.js` 为权威；
+`relay/channel/task/seedance/plugin_extension_bridge.go` 与 `assets/plugin_adapter.go` 负责宿主接线，
+`pkg/publicmodel/seedance_plugin.go` 负责公开投影。仍有冻结 Task 依赖的 `thirdparty/funcloud/` 仅保留
+历史履约职责；托管素材继续由 `service/asset_hosted_funcloud.go` 持有资源与存储语义。
 
 ## 6. V3 统一视频与素材配对
 

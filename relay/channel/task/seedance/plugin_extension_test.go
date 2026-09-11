@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/QuantumNous/new-api/pkg/seedanceplugin"
 	"math"
 	"net/http/httptest"
 	"strings"
@@ -29,8 +30,9 @@ import (
 // way ResolveSeedanceChannel does in production.
 func pinSeedanceExtensionForTest(t *testing.T, c *gin.Context) *pluginruntime.LoadedPlugin {
 	t.Helper()
-	plugin, _, err := CompileSeedanceExtensionSource(plugins.SeedanceSource())
+	plugin, info, err := CompileSeedanceExtensionSource(plugins.SeedanceSource())
 	require.NoError(t, err)
+	c.Set(seedanceConfigurationContextKey, &seedanceplugin.CompiledVersion{Plugin: plugin, Info: info})
 	c.Set(pluginruntime.ContextKeyPinnedPlugin, pluginruntime.PinnedPlugin{Plugin: plugin})
 	return plugin
 }
@@ -398,10 +400,10 @@ func TestSeedanceExtensionSyncLeavesNativeRegistryUntouched(t *testing.T) {
 	source := plugins.SeedanceSource()
 	hash := func() string { return string(common.Sha256Raw([]byte(source))) }
 	rows := []model.TaskPlugin{{
-		Key: SeedanceExtensionPluginKey, Version: "1.0.2", Source: source,
+		Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), Source: source,
 		SourceHash: hash(), Enabled: true, Active: true,
 	}}
-	require.NoError(t, seedanceExtensions.SyncSnapshot(context.Background(), rows))
+	require.NoError(t, seedanceplugin.Default.SyncSnapshot(context.Background(), rows))
 
 	assert.Equal(t, nativeBefore, pluginruntime.DefaultRegistry.Snapshot())
 	assert.Same(t, generationBefore, pluginruntime.DefaultRegistry.Generation())
@@ -412,10 +414,10 @@ func TestSeedanceExtensionSyncLeavesNativeRegistryUntouched(t *testing.T) {
 func TestSeedanceExtensionPinBehavior(t *testing.T) {
 	source := plugins.SeedanceSource()
 	rows := []model.TaskPlugin{{
-		Key: SeedanceExtensionPluginKey, Version: "1.0.2", Source: source,
+		Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), Source: source,
 		SourceHash: string(common.Sha256Raw([]byte(source))), Enabled: true, Active: true,
 	}}
-	require.NoError(t, seedanceExtensions.SyncSnapshot(context.Background(), rows))
+	require.NoError(t, seedanceplugin.Default.SyncSnapshot(context.Background(), rows))
 
 	c := seedancePluginTestContext(t)
 	require.NoError(t, PinSeedanceExtensionForChannel(c, dto.VideoUpstreamProtocolFeicaiVideosV1))
@@ -428,15 +430,15 @@ func TestSeedanceExtensionPinBehavior(t *testing.T) {
 
 	// Non-migrated protocols pin nothing and never fail.
 	other := seedancePluginTestContext(t)
-	require.NoError(t, PinSeedanceExtensionForChannel(other, dto.VideoUpstreamProtocolModelArkV3Volcengine))
+	require.NoError(t, PinSeedanceExtensionForChannel(other, dto.VideoUpstreamProtocol("unregistered")))
 	_, exists = other.Get(pluginruntime.ContextKeyPinnedPlugin)
 	assert.False(t, exists)
 
 	// With no active entry, migrated protocols fail closed.
-	emptyStore := &seedanceExtensionStore{compiled: map[string]*seedanceExtensionEntry{}, seeded: map[string]bool{}}
-	previous := seedanceExtensions
-	seedanceExtensions = emptyStore
-	defer func() { seedanceExtensions = previous }()
+	emptyStore := seedanceplugin.NewStore()
+	previous := seedanceplugin.Default
+	seedanceplugin.Default = emptyStore
+	defer func() { seedanceplugin.Default = previous }()
 	unavailable := seedancePluginTestContext(t)
 	err := PinSeedanceExtensionForChannel(unavailable, dto.VideoUpstreamProtocolFeicaiVideosV1)
 	require.Error(t, err)
@@ -614,22 +616,22 @@ func TestSeedanceExtensionSeedingRetriesAfterTransientFailure(t *testing.T) {
 	model.DB = broken // no AutoMigrate: version lookup fails with a database error
 	t.Cleanup(func() { model.DB = originalDB })
 
-	store := &seedanceExtensionStore{compiled: map[string]*seedanceExtensionEntry{}, seeded: map[string]bool{}}
+	store := seedanceplugin.NewStore()
 	require.Error(t, store.EnsureSeeded(context.Background()))
 
 	// The failure is not sticky: with a healthy database the same store seeds.
 	healthy, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, healthy.AutoMigrate(&model.TaskPlugin{}, &model.Task{}, &model.TaskCreateAttempt{}))
+	require.NoError(t, healthy.AutoMigrate(&model.Channel{}, &model.TaskPlugin{}, &model.Task{}, &model.TaskCreateAttempt{}))
 	model.DB = healthy
 	require.NoError(t, store.EnsureSeeded(context.Background()))
 	version, err := model.GetTaskPluginVersion(SeedanceExtensionPluginKey, "")
 	require.NoError(t, err)
-	assert.Equal(t, "1.0.2", version.Version)
+	assert.Equal(t, plugins.SeedanceVersion(), version.Version)
 
 	// Success is sticky within the process: the version is not re-seeded
 	// after an administrator deletes it (dependency-free).
-	_, deleteErr := model.DeleteTaskPluginVersion(SeedanceExtensionPluginKey, "1.0.2")
+	_, deleteErr := model.DeleteTaskPluginVersion(SeedanceExtensionPluginKey, plugins.SeedanceVersion())
 	require.NoError(t, deleteErr)
 	require.NoError(t, store.EnsureSeeded(context.Background()))
 	versions, err := model.ListTaskPluginVersions(SeedanceExtensionPluginKey)
@@ -658,15 +660,56 @@ func TestSeedanceExtensionActiveForRequiresProtocolCoverage(t *testing.T) {
 	source := plugins.SeedanceSource()
 	entrySource := source
 	rows := []model.TaskPlugin{{
-		Key: SeedanceExtensionPluginKey, Version: "1.0.2", Source: entrySource,
+		Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), Source: entrySource,
 		SourceHash: string(common.Sha256Raw([]byte(entrySource))), Enabled: true, Active: true,
 	}}
-	require.NoError(t, seedanceExtensions.SyncSnapshot(context.Background(), rows))
+	require.NoError(t, seedanceplugin.Default.SyncSnapshot(context.Background(), rows))
 
-	plugin, err := seedanceExtensions.ActiveFor(dto.VideoUpstreamProtocolFeicaiVideosV1)
+	plugin, err := seedanceplugin.Default.ActiveFor(dto.VideoUpstreamProtocolFeicaiVideosV1)
 	require.NoError(t, err)
-	assert.Equal(t, "1.0.2", plugin.Meta.Version)
+	assert.Equal(t, plugins.SeedanceVersion(), plugin.Meta.Version)
 
-	_, err = seedanceExtensions.ActiveFor(dto.VideoUpstreamProtocolSynlinkVideoV1)
+	_, err = seedanceplugin.Default.ActiveFor(dto.VideoUpstreamProtocol("unregistered"))
 	require.Error(t, err)
+}
+
+func TestSeedanceConfigurationRemainsBoundToPinnedCodeAcrossActivation(t *testing.T) {
+	previous := seedanceplugin.Default
+	seedanceplugin.Default = seedanceplugin.NewStore()
+	t.Cleanup(func() { seedanceplugin.Default = previous })
+	oldSource := plugins.SeedanceSource()
+	old := model.TaskPlugin{Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), APIVersion: 3,
+		Source: oldSource, SourceHash: sourceHashOf(oldSource), Enabled: true, Active: true}
+	require.NoError(t, SyncExtensionSnapshot(t.Context(), []model.TaskPlugin{old}))
+	request := seedancePluginTestContext(t)
+	require.NoError(t, PinSeedanceExtensionForChannel(request, dto.VideoUpstreamProtocolFeicaiVideosV1))
+	pinned, err := PinnedSeedanceConfiguration(request)
+	require.NoError(t, err)
+	require.NotNil(t, pinned)
+	originalLabel := pinned.Videos[0].Label
+	newSource := oldSource + `
+meta.version = "99.0.0";`
+	newSource = strings.Replace(newSource, originalLabel, "Changed label", 1)
+	newVersion := model.TaskPlugin{Key: old.Key, Version: "99.0.0", APIVersion: 3,
+		Source: newSource, SourceHash: sourceHashOf(newSource), Enabled: true, Active: true}
+	require.NoError(t, SyncExtensionSnapshot(t.Context(), []model.TaskPlugin{newVersion}))
+	stillPinned, err := PinnedSeedanceConfiguration(request)
+	require.NoError(t, err)
+	assert.Equal(t, originalLabel, stillPinned.Videos[0].Label)
+	assert.Equal(t, plugins.SeedanceVersion(), pinnedSeedanceExtension(request).Meta.Version)
+	newRequest := seedancePluginTestContext(t)
+	require.NoError(t, PinSeedanceExtensionForChannel(newRequest, dto.VideoUpstreamProtocolFeicaiVideosV1))
+	newConfiguration, err := PinnedSeedanceConfiguration(newRequest)
+	require.NoError(t, err)
+	assert.Equal(t, "Changed label", newConfiguration.Videos[0].Label)
+	assert.Equal(t, "99.0.0", pinnedSeedanceExtension(newRequest).Meta.Version)
+
+	// Combining the old declaration with another engine is not a valid pin.
+	request.Set(pluginruntime.ContextKeyPinnedPlugin, pluginruntime.PinnedPlugin{Plugin: pinnedSeedanceExtension(newRequest)})
+	_, err = PinnedSeedanceConfiguration(request)
+	require.Error(t, err)
+}
+
+func sourceHashOf(source string) string {
+	return fmt.Sprintf("%x", common.Sha256Raw([]byte(source)))
 }

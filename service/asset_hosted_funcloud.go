@@ -45,6 +45,12 @@ func (*funCloudHostedMaterialAdapter) Profile() dto.AssetUpstreamProfile {
 	return dto.AssetUpstreamProfileFunCloudHosted
 }
 
+// GeneralAssetGroupPolicy 固定表达宿主托管语义；工厂入口已核对声明中的
+// groupPolicy 与本能力一致，运行时不再从旧协议表推导。
+func (*funCloudHostedMaterialAdapter) GeneralAssetGroupPolicy() dto.GeneralAssetGroupPolicy {
+	return dto.GeneralAssetGroupPolicyHosted
+}
+
 // Supports 首期只登记普通图片素材；视频与音频引用仍由调用方直接提供 URL。
 func (*funCloudHostedMaterialAdapter) Supports(kind, mediaType string) bool {
 	return kind == model.AssetKindGeneral && mediaType == "image"

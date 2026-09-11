@@ -9,26 +9,61 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/seedanceplugin"
 	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestChannelDefaultAssetGroupNotRequired(t *testing.T) {
-	for _, protocol := range []dto.AssetUpstreamProtocol{dto.AssetUpstreamProtocolFunCloudHosted, dto.AssetUpstreamProtocolNone} {
-		t.Run(string(protocol), func(t *testing.T) {
-			channel := &model.Channel{Id: 72, Type: constant.ChannelTypeSeedanceLink}
-			channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: protocol})
+	t.Run("none protocol needs no declaration", func(t *testing.T) {
+		channel := &model.Channel{Id: 72, Type: constant.ChannelTypeSeedanceLink}
+		channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone})
 
-			status, err := GetChannelDefaultAssetGroupStatus(channel)
-			require.NoError(t, err)
-			assert.False(t, status.Supported)
-			assert.False(t, status.Configured)
+		status, err := GetChannelDefaultAssetGroupStatus(channel)
+		require.NoError(t, err)
+		assert.False(t, status.Supported)
+		assert.False(t, status.Configured)
 
-			_, err = CreateOrReuseChannelDefaultAssetGroup(context.Background(), channel)
-			assert.True(t, errors.Is(err, ErrUnsupportedAssetOperation) || errors.Is(err, ErrAssetLibraryUnsupported))
+		_, err = CreateOrReuseChannelDefaultAssetGroup(context.Background(), channel)
+		assert.True(t, errors.Is(err, ErrUnsupportedAssetOperation) || errors.Is(err, ErrAssetLibraryUnsupported))
+	})
+
+	t.Run("hosted follows the published declaration", func(t *testing.T) {
+		withAssetGroupPolicyDB(t)
+		pinPublishedSeedanceServiceArtifact(t)
+		channel := &model.Channel{Id: 72, Type: constant.ChannelTypeSeedanceLink}
+		channel.SetOtherSettings(dto.ChannelOtherSettings{
+			VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3,
+			AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudHosted,
 		})
-	}
+
+		status, err := GetChannelDefaultAssetGroupStatus(channel)
+		require.NoError(t, err)
+		assert.False(t, status.Supported)
+		assert.False(t, status.Configured)
+
+		_, err = CreateOrReuseChannelDefaultAssetGroup(context.Background(), channel)
+		require.ErrorIs(t, err, ErrUnsupportedAssetOperation)
+	})
+
+	t.Run("hosted without declaration fails closed", func(t *testing.T) {
+		previous := seedanceplugin.Default
+		pluginstore := seedanceplugin.NewStore()
+		seedanceplugin.Default = pluginstore
+		t.Cleanup(func() { seedanceplugin.Default = previous })
+		channel := &model.Channel{Id: 72, Type: constant.ChannelTypeSeedanceLink}
+		channel.SetOtherSettings(dto.ChannelOtherSettings{
+			VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3,
+			AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudHosted,
+		})
+
+		_, err := GetChannelDefaultAssetGroupStatus(channel)
+		require.ErrorIs(t, err, ErrAssetUpstreamUnavailable,
+			"a missing declaration must fail, not masquerade as not-required")
+		_, err = CreateOrReuseChannelDefaultAssetGroup(context.Background(), channel)
+		require.ErrorIs(t, err, ErrAssetUpstreamUnavailable)
+	})
 }
 
 type defaultGroupAdapterFake struct {

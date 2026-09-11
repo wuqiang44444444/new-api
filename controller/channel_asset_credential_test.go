@@ -112,6 +112,7 @@ func TestGetChannelReturnsOnlyAssetCredentialStatus(t *testing.T) {
 
 func TestDeleteChannelAssetCredentialRequiresSavedProfileToBeDisabled(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
+	seedPublishedSeedanceControllerArtifact(t)
 	require.NoError(t, db.AutoMigrate(
 		&model.ChannelAssetCredential{},
 	))
@@ -133,6 +134,50 @@ func TestDeleteChannelAssetCredentialRequiresSavedProfileToBeDisabled(t *testing
 
 	assert.Equal(t, http.StatusConflict, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), `"error_code":"asset_credential_profile_active"`)
+	credential, err := model.GetChannelAssetCredential(channel.Id)
+	require.NoError(t, err)
+	assert.NotNil(t, credential)
+}
+
+func TestDeleteChannelAssetCredentialAllowsUnusedSlot(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	seedPublishedSeedanceControllerArtifact(t)
+	require.NoError(t, db.AutoMigrate(&model.ChannelAssetCredential{}))
+	channel := officialAssetControllerTestChannel()
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		VideoUpstreamProtocol: dto.VideoUpstreamProtocolFeicaiVideosV1,
+		AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone,
+	})
+	channel.Name = "credential-clear-unused"
+	channel.Models = "video-model"
+	channel.Group = "default"
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, db.Create(&model.ChannelAssetCredential{
+		ChannelID:       channel.Id,
+		AccessKeyID:     "access",
+		SecretAccessKey: "secret",
+	}).Error)
+
+	require.NoError(t, model.DeleteChannelAssetCredential(channel.Id))
+	credential, err := model.GetChannelAssetCredential(channel.Id)
+	require.NoError(t, err)
+	assert.Nil(t, credential, "a slot the declaration does not bind to a key pair must be deletable")
+}
+
+func TestDeleteChannelAssetCredentialFailsClosedWithoutDeclaration(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.ChannelAssetCredential{}, &model.TaskPlugin{}))
+	channel := officialAssetControllerTestChannel()
+	channel.Name = "credential-clear-no-declaration"
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, db.Create(&model.ChannelAssetCredential{
+		ChannelID:       channel.Id,
+		AccessKeyID:     "access",
+		SecretAccessKey: "secret",
+	}).Error)
+
+	require.ErrorContains(t, model.DeleteChannelAssetCredential(channel.Id), "configuration is unavailable",
+		"no valid declaration must never become deletion permission")
 	credential, err := model.GetChannelAssetCredential(channel.Id)
 	require.NoError(t, err)
 	assert.NotNil(t, credential)

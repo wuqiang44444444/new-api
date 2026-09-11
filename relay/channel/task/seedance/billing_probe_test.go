@@ -293,7 +293,8 @@ func TestTokenSaveDoubaoRelayDoesNotApplyOfficialTokenPriceRatio(t *testing.T) {
 
 func TestMoxing25BillingProbeUsesThirtySecondAudioDefault(t *testing.T) {
 	context := probeContext(relaycommon.TaskSubmitReq{Metadata: map[string]any{"duration": float64(-1)}})
-	probe, err := (&TaskAdaptor{protocol: dto.VideoUpstreamProtocolMoxingModelArkV1}).BuildTaskBillingProbe(
+	pinSeedanceExtensionForTest(t, context)
+	probe, err := (&TaskAdaptor{protocol: dto.VideoUpstreamProtocolMoxingModelArkV1, baseURL: "https://provider.example"}).BuildTaskBillingProbe(
 		context,
 		&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: modelSeedance25}},
 	)

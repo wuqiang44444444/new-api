@@ -102,7 +102,12 @@ func TestVideoFailureQueriesAndListKeepReadableHistoricalReason(t *testing.T) {
 	assert.Equal(t, 200, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), "输入内容可能包含敏感信息，请检查后重试。")
 	assert.NotContains(t, recorder.Body.String(), "FunCloud")
-	assert.NotContains(t, recorder.Body.String(), "72")
+	var response struct {
+		FailReason string `json:"fail_reason"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.NotContains(t, response.FailReason, "72")
+	assert.NotContains(t, recorder.Body.String(), `"channel_id"`)
 	list := tasksToDto([]*model.Task{task}, false, common.RoleCommonUser)
 	require.Len(t, list, 1)
 	assert.Equal(t, task.PublicFailReason(), list[0].FailReason)

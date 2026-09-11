@@ -43,6 +43,7 @@ func TestSeedanceCreateRejectionReleasesHoldWithoutRetry(t *testing.T) {
 			t.Cleanup(func() { common.SetDatabaseTypes(previousDBType, previousLogType) })
 			events := []string{}
 			db := setupTaskSubmissionDatabase(t, true, &events)
+			seedPublishedSeedanceControllerArtifact(t)
 			sqlDB, err := db.DB()
 			require.NoError(t, err)
 			sqlDB.SetMaxOpenConns(1)

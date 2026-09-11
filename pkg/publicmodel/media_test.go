@@ -103,7 +103,7 @@ func TestAllRegisteredVideoProfilesPublishParameters(t *testing.T) {
 		{dto.VideoUpstreamProtocolModelArkV3Volcengine, "doubao-seedance-2-0-mini-260615"},
 		{dto.VideoUpstreamProtocolModelArkV3Volcengine, "doubao-seedance-2-5-260628"},
 		{dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, "doubao-seedance-2-0-260128"},
-		{dto.VideoUpstreamProtocolMoxingModelArkV1, "doubao-seedance-2-0-260128"},
+		{dto.VideoUpstreamProtocolMoxingModelArkV1, "doubao-seedance-2-0-260128-0818"},
 		{dto.VideoUpstreamProtocolMoxingModelArkV1, "doubao-seedance-2-0-fast-260128"},
 		{dto.VideoUpstreamProtocolMoxingModelArkV1, "doubao-seedance-2-0-mini-260615"},
 		{dto.VideoUpstreamProtocolMoxingModelArkV1, "doubao-seedance-2-5-260628"},
