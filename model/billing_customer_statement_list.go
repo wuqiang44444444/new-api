@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -19,6 +20,7 @@ type BillingCustomerStatementListItem struct {
 	DiscountQuota  *int64                            `json:"discount_quota,omitempty"`
 	DataQuality    *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
 	LastActivityAt int64                             `json:"last_activity_at"`
+	originalQuota  decimal.Decimal
 }
 
 type BillingReconciliationUserIdentity struct {
@@ -92,6 +94,7 @@ func GetBillingCustomerStatementList(
 	}
 
 	rows, err := LOG_DB.Model(&Log{}).
+		Scopes(customerSettlementLogs).
 		Select("user_id, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(other, '') AS other").
 		Where("type IN ? AND created_at >= ? AND created_at <= ?", []int{LogTypeConsume, LogTypeRefund}, startTimestamp, endTimestamp).
 		Rows()
@@ -174,12 +177,13 @@ func GetBillingCustomerStatementList(
 		finalizeBillingReconciliationUsage(&accumulator.item.Usage)
 		finalizeBillingReconciliationPrice(&accumulator.price)
 		accumulator.item.OriginalQuota = accumulator.price.model.OriginalQuota
-		if accumulator.item.Usage.GrossQuota == 0 && accumulator.item.OriginalQuota == nil {
+		accumulator.item.originalQuota = accumulator.price.model.originalQuota
+		if accumulator.item.Usage.GrossQuota == 0 && accumulator.item.Usage.RefundQuota == 0 && accumulator.item.OriginalQuota == nil {
 			zero := int64(0)
 			accumulator.item.OriginalQuota = &zero
 		}
 		if accumulator.item.OriginalQuota != nil {
-			discountQuota := *accumulator.item.OriginalQuota - accumulator.item.Usage.GrossQuota
+			discountQuota := *accumulator.item.OriginalQuota - accumulator.item.Usage.NetQuota
 			accumulator.item.DiscountQuota = &discountQuota
 		}
 		accumulator.item.DataQuality = accumulator.price.model.DataQuality
@@ -216,24 +220,28 @@ func GetBillingCustomerStatementList(
 
 func summarizeBillingCustomerStatementList(items []BillingCustomerStatementListItem) BillingCustomerStatementListSummary {
 	summary := BillingCustomerStatementListSummary{CustomerCount: int64(len(items))}
-	originalQuota := int64(0)
+	originalQuota := decimal.Zero
 	originalQuotaComplete := true
 	for _, item := range items {
 		accumulateBillingReconciliationUsage(&summary.Usage, item.Usage)
 		accumulateBillingReconciliationQuality(&summary.DataQuality, item.DataQuality)
-		if item.Usage.GrossQuota > 0 && item.OriginalQuota == nil {
+		if (item.Usage.GrossQuota > 0 || item.Usage.RefundQuota > 0) && item.OriginalQuota == nil {
 			originalQuotaComplete = false
 		} else if item.OriginalQuota != nil {
-			originalQuota += *item.OriginalQuota
+			originalQuota = originalQuota.Add(item.originalQuota)
 		}
 	}
 	finalizeBillingReconciliationUsage(&summary.Usage)
-	finalizeBillingReconciliationQuality(&summary.DataQuality)
 	if originalQuotaComplete {
-		summary.OriginalQuota = &originalQuota
-		discountQuota := originalQuota - summary.Usage.GrossQuota
-		summary.DiscountQuota = &discountQuota
+		summary.OriginalQuota = billingStatementOriginalQuota(originalQuota)
+		if summary.OriginalQuota == nil {
+			ensureBillingReconciliationQuality(&summary.DataQuality).MissingHistoricalPriceRows++
+		} else {
+			discountQuota := *summary.OriginalQuota - summary.Usage.NetQuota
+			summary.DiscountQuota = &discountQuota
+		}
 	}
+	finalizeBillingReconciliationQuality(&summary.DataQuality)
 	return summary
 }
 

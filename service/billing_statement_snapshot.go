@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/base64"
 	"strings"
 
 	"github.com/QuantumNous/new-api/model"
@@ -47,6 +48,13 @@ func appendBillingStatementIdentitySnapshotWithMode(other *model.LogOther, origi
 		billingMode = "per_call"
 	}
 	values := other.Snapshot()
+	if encoded, ok := values["expr_b64"].(string); ok && encoded != "" {
+		billingMode = model.BillingReconciliationModeUnknown
+		if expression, err := base64.StdEncoding.DecodeString(encoded); err == nil {
+			units, _ := values["usage_units"].(map[string]string)
+			billingMode = model.BillingStatementExpressionMode(string(expression), units)
+		}
+	}
 	snapshot := map[string]interface{}{
 		"snapshot_version": 1,
 		"billing_mode":     billingMode,
@@ -54,7 +62,7 @@ func appendBillingStatementIdentitySnapshotWithMode(other *model.LogOther, origi
 	}
 	for _, key := range []string{
 		"model_price", "model_ratio", "completion_ratio", "cache_ratio",
-		"group_ratio", "user_group_ratio", "expr_b64",
+		"group_ratio", "user_group_ratio", "expr_b64", "usage_units",
 		"contract_discount", "contract_version",
 	} {
 		if value, exists := values[key]; exists {

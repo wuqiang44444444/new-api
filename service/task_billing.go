@@ -52,13 +52,13 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 	if info.PriceData.GroupRatioInfo.HasSpecialRatio {
 		other.SetPublic("user_group_ratio", info.PriceData.GroupRatioInfo.GroupSpecialRatio)
 	}
-	appendPerCallBillingStatementSnapshot(info, other)
 	if info.IsModelMapped {
 		other.SetPublic("is_model_mapped", true)
 		other.SetPublic("upstream_model_name", info.UpstreamModelName)
 	}
 	if snap := info.TieredBillingSnapshot; snap != nil {
 		other.SetPublic("billing_mode", "tiered_expr")
+		other.SetPublic("usage_units", snap.UsageUnits)
 		other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(snap.ExprString)))
 		other.SetPublic("matched_tier", snap.EstimatedTier)
 		if len(snap.UsageFacts) > 0 {
@@ -67,6 +67,8 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 	}
 	appendTaskLogInfo(task, other)
 	appendCustomerContractBillingInfo(other, info.ContractBillingFact)
+	other.SetPublic("task_billing_event", "create")
+	appendPerCallBillingStatementSnapshot(info, other)
 	attachQuotaSaturation(c, info, other)
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
@@ -152,6 +154,7 @@ func taskBillingOther(task *model.Task) *model.LogOther {
 		}
 		if snap := bc.TieredSnapshot; snap != nil {
 			other.SetPublic("billing_mode", "tiered_expr")
+			other.SetPublic("usage_units", snap.UsageUnits)
 			other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(snap.ExprString)))
 			other.SetPublic("matched_tier", snap.EstimatedTier)
 			if len(snap.UsageFacts) > 0 {
@@ -159,16 +162,22 @@ func taskBillingOther(task *model.Task) *model.LogOther {
 			}
 		}
 	}
+	if async := task.PrivateData.AsyncBilling; async != nil && async.TieredSnapshot != nil {
+		other.SetPublic("billing_mode", "tiered_expr")
+		other.SetPublic("usage_units", async.TieredSnapshot.UsageUnits)
+		other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(async.TieredSnapshot.ExprString)))
+	}
 	props := task.Properties
 	if props.UpstreamModelName != "" && props.UpstreamModelName != props.OriginModelName {
 		other.SetPublic("is_model_mapped", true)
 		other.SetPublic("upstream_model_name", props.UpstreamModelName)
 	}
 	appendTaskLogInfo(task, other)
-	appendBillingStatementIdentitySnapshotWithMode(other, props.OriginModelName, props.UpstreamModelName, "per_call")
 	if task.PrivateData.BillingContext != nil {
 		appendCustomerContractBillingInfo(other, task.PrivateData.BillingContext.ContractFact)
 	}
+	other.SetPublic("task_billing_event", "adjustment")
+	appendBillingStatementIdentitySnapshotWithMode(other, props.OriginModelName, props.UpstreamModelName, "per_call")
 	appendProviderBillingEvidence(other, task)
 	return other
 }
@@ -240,6 +249,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 	other := taskBillingOther(task)
 	other.SetPublic("task_id", task.TaskID)
 	other.SetPublic("reason", reason)
+	other.SetPublic("task_billing_event", "refund")
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId:    task.UserId,
 		LogType:   model.LogTypeRefund,

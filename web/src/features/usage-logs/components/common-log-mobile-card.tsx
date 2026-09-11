@@ -139,7 +139,8 @@ export function CommonLogMobileCard<TData>(props: {
     (log.prompt_tokens > 0 ||
       log.completion_tokens > 0 ||
       cacheRead > 0 ||
-      cacheWrite > 0)
+      cacheWrite > 0 ||
+      other?.cache_write_unavailable)
 
   return (
     <div className='min-w-0 space-y-2.5 text-sm leading-5'>
@@ -303,6 +304,11 @@ export function CommonLogMobileCard<TData>(props: {
           {cacheRead > 0 && (
             <span>
               {t('Cache')} ↓ {cacheRead.toLocaleString()}
+            </span>
+          )}
+          {other?.cache_write_unavailable && (
+            <span>
+              {t('Cache Write')}: {t('Not recorded')}
             </span>
           )}
           {cacheWrite > 0 && (

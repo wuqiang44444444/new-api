@@ -28,10 +28,14 @@ import type { CustomerContractMigrationPreview } from '../../types'
 import { CustomerContractMigrationDialog } from '../customer-contract-migration-dialog'
 
 const { getPreview, migrate } = vi.hoisted(() => ({
-  getPreview: vi.fn<() => Promise<ApiResponse<CustomerContractMigrationPreview[]>>>(),
-  migrate: vi.fn<
-    (payload: Record<string, unknown>) => Promise<ApiResponse<UserContractEntities>>
-  >(),
+  getPreview:
+    vi.fn<() => Promise<ApiResponse<CustomerContractMigrationPreview[]>>>(),
+  migrate:
+    vi.fn<
+      (
+        payload: Record<string, unknown>
+      ) => Promise<ApiResponse<UserContractEntities>>
+    >(),
 }))
 
 vi.mock('../../api', () => ({
@@ -42,7 +46,10 @@ vi.mock('../../api', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, values?: Record<string, unknown>) =>
+      key.replaceAll(/\{\{(\w+)\}\}/g, (_, name: string) =>
+        String(values?.[name] ?? '')
+      ),
   }),
 }))
 
@@ -92,17 +99,16 @@ function renderDialog() {
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      <CustomerContractMigrationDialog
-        open
-        onOpenChange={vi.fn()}
-      />
+      <CustomerContractMigrationDialog open onOpenChange={vi.fn()} />
     </QueryClientProvider>
   )
 }
 
 function selectTriggers(): HTMLButtonElement[] {
   return [
-    ...document.querySelectorAll<HTMLButtonElement>('[data-slot="select-trigger"]'),
+    ...document.querySelectorAll<HTMLButtonElement>(
+      '[data-slot="select-trigger"]'
+    ),
   ]
 }
 
@@ -130,7 +136,9 @@ describe('legacy contract migration dialog', () => {
     expect(await screen.findByText('customer-a')).toBeTruthy()
     expect(screen.getByText('migrated-user')).toBeTruthy()
     expect(screen.getByText('Migrated')).toBeTruthy()
-    expect(screen.getByText('This user has already been migrated.')).toBeTruthy()
+    expect(
+      screen.getByText('This user has already been migrated.')
+    ).toBeTruthy()
 
     const migrateButton = screen.getByRole('button', { name: 'Migrate' })
     expect(migrateButton.hasAttribute('disabled')).toBe(true)
@@ -138,17 +146,41 @@ describe('legacy contract migration dialog', () => {
   })
 
   it('allows migration after refreshing a previously unavailable channel without losing the reason', async () => {
-    const initial = { ...previews[0], rules: [{ ...previews[0].rules[0], channel_ids: [], resolved_channel_id: 0, needs_decision: true }] }
+    const initial = {
+      ...previews[0],
+      rules: [
+        {
+          ...previews[0].rules[0],
+          channel_ids: [],
+          resolved_channel_id: 0,
+          needs_decision: true,
+        },
+      ],
+    }
     getPreview.mockResolvedValueOnce({ success: true, data: [initial] })
     renderDialog()
     await screen.findByText('customer-a')
-    fireEvent.change(screen.getByLabelText('Change reason'), { target: { value: 'channel repaired' } })
+    fireEvent.change(screen.getByLabelText('Change reason'), {
+      target: { value: 'channel repaired' },
+    })
     expect(screen.getByRole('button', { name: 'Migrate' })).toBeDisabled()
-    getPreview.mockResolvedValue({ success: true, data: [{ ...initial, rules: [previews[0].rules[0]] }] })
+    getPreview.mockResolvedValue({
+      success: true,
+      data: [{ ...initial, rules: [previews[0].rules[0]] }],
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Migrate' })).toBeEnabled())
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Migrate' })).toBeEnabled()
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Migrate' }))
-    await vi.waitFor(() => expect(migrate).toHaveBeenCalledWith(expect.objectContaining({ reason: 'channel repaired', channel_overrides: { 'claude-sonnet-5': 11 } })))
+    await vi.waitFor(() =>
+      expect(migrate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: 'channel repaired',
+          channel_overrides: { 'claude-sonnet-5': 11 },
+        })
+      )
+    )
   })
 
   it('submits the explicit channel decision with the contract name and reason', async () => {
@@ -199,6 +231,134 @@ describe('legacy contract migration dialog', () => {
       expect(toast.error).toHaveBeenCalledWith(
         'This user has already been migrated or has no rules to migrate.'
       )
+    )
+  })
+  it('migrates all ready users with one confirmation and skips unresolved and migrated users', async () => {
+    const ready = {
+      ...previews[0],
+      user_id: 9,
+      username: 'ready-a',
+      rules: [previews[0].rules[0]],
+    }
+    getPreview.mockResolvedValue({
+      success: true,
+      data: [
+        ...previews,
+        ready,
+        { ...ready, user_id: 10, username: 'ready-b' },
+      ],
+    })
+    renderDialog()
+    await screen.findByText('ready-a')
+    fireEvent.click(screen.getByRole('button', { name: 'One-click migration' }))
+    expect(migrate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Start migration' }))
+    await vi.waitFor(() => expect(migrate).toHaveBeenCalledTimes(2))
+    expect(migrate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        user_id: 9,
+        reason: 'Bulk legacy contract migration',
+        channel_overrides: { 'claude-sonnet-5': 11 },
+      })
+    )
+    expect(migrate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ user_id: 10 })
+    )
+  })
+
+  it('continues after a failed user and reports unconfirmed migrations separately', async () => {
+    const ready = { ...previews[0], rules: [previews[0].rules[0]] }
+    getPreview.mockResolvedValue({
+      success: true,
+      data: [ready, { ...ready, user_id: 9, username: 'ready-b' }],
+    })
+    migrate.mockRejectedValueOnce(new Error('connection interrupted'))
+    renderDialog()
+    await screen.findByText('customer-a')
+    fireEvent.click(screen.getByRole('button', { name: 'One-click migration' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start migration' }))
+    await vi.waitFor(() => expect(migrate).toHaveBeenCalledTimes(2))
+    expect(
+      await screen.findByText(
+        'Migration not confirmed. Refresh the preview before retrying.'
+      )
+    ).toBeTruthy()
+  })
+
+  it('disables the bulk action when every remaining contract still needs a channel decision', async () => {
+    renderDialog()
+    await screen.findByText('customer-a')
+    expect(
+      screen.getByRole('button', { name: 'One-click migration' })
+    ).toBeDisabled()
+    expect(migrate).not.toHaveBeenCalled()
+  })
+  it('includes an explicitly chosen channel in the shared batch and uses one audit reason', async () => {
+    const user = userEvent.setup()
+    renderDialog()
+    await screen.findByText('customer-a')
+    await pickChannel(user, selectTriggers()[1], '#13')
+    fireEvent.change(screen.getByLabelText('Contract name'), {
+      target: { value: 'Named contract' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'One-click migration' }))
+    fireEvent.change(screen.getByLabelText('Batch change reason'), {
+      target: { value: '' },
+    })
+    expect(
+      screen.getByRole('button', { name: 'Start migration' })
+    ).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Batch change reason'), {
+      target: { value: 'Release migration' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Start migration' }))
+    await vi.waitFor(() =>
+      expect(migrate).toHaveBeenCalledWith({
+        user_id: 7,
+        contract_name: 'Named contract',
+        reason: 'Release migration',
+        channel_overrides: { 'claude-sonnet-5': 11, 'gemini-3-pro': 13 },
+      })
+    )
+  })
+
+  it('locks other migration controls while processing users sequentially', async () => {
+    const ready = { ...previews[0], rules: [previews[0].rules[0]] }
+    getPreview.mockResolvedValue({
+      success: true,
+      data: [ready, { ...ready, user_id: 9, username: 'ready-b' }],
+    })
+    let resolveMigration!: (value: ApiResponse<UserContractEntities>) => void
+    migrate.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveMigration = resolve
+      })
+    )
+    renderDialog()
+    await screen.findByText('customer-a')
+    fireEvent.click(screen.getByRole('button', { name: 'One-click migration' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start migration' }))
+    await vi.waitFor(() => expect(migrate).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: 'One-click migration' })
+    ).toBeDisabled()
+    for (const button of screen.getAllByRole('button', {
+      name: /^Migrate$/,
+    })) {
+      expect(button).toBeDisabled()
+    }
+    expect(
+      screen.getByRole('progressbar', { name: 'Migration progress' })
+    ).toHaveAttribute('aria-valuenow', '0')
+    resolveMigration({ success: true })
+    expect(
+      await screen.findByText('Processed 2 / 2 · Migrated 2 · Unconfirmed 0')
+    ).toBeTruthy()
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled()
     )
   })
 })

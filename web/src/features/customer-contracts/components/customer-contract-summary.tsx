@@ -69,14 +69,16 @@ export function CustomerContractSummary(props: CustomerContractSummaryProps) {
   ]
 
   return (
-    <div className='grid shrink-0 grid-cols-2 gap-2.5 lg:grid-cols-4'>
+    <div className='grid w-full min-w-0 shrink-0 grid-cols-2 gap-3 lg:grid-cols-4'>
       {cards.map((card) => {
         const Icon = card.icon
         return (
-          <Card key={card.key} size='sm'>
-            <CardHeader>
-              <CardDescription>{card.label}</CardDescription>
-              <CardAction>
+          <Card key={card.key} size='sm' className='min-w-0'>
+            <CardHeader className='flex items-start justify-between gap-2'>
+              <CardDescription className='min-w-0 break-normal'>
+                {card.label}
+              </CardDescription>
+              <CardAction className='shrink-0'>
                 <Icon
                   aria-hidden='true'
                   className={`size-4 ${card.iconClassName}`}

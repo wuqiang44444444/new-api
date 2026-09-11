@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,11 +63,12 @@ func migrateBillingReconciliationDB() error {
 }
 
 type BillingReconciliationDataQuality struct {
-	Status                     string `json:"status"`
-	UnavailableRequests        int64  `json:"unavailable_requests,omitempty"`
-	UnknownBillingModeRequests int64  `json:"unknown_billing_mode_requests,omitempty"`
-	ProviderModelFallbackRows  int64  `json:"provider_model_fallback_rows,omitempty"`
-	MissingHistoricalPriceRows int64  `json:"missing_historical_price_rows,omitempty"`
+	CacheWriteUnavailableRequests int64  `json:"cache_write_unavailable_requests,omitempty"`
+	Status                        string `json:"status"`
+	UnavailableRequests           int64  `json:"unavailable_requests,omitempty"`
+	UnknownBillingModeRequests    int64  `json:"unknown_billing_mode_requests,omitempty"`
+	ProviderModelFallbackRows     int64  `json:"provider_model_fallback_rows,omitempty"`
+	MissingHistoricalPriceRows    int64  `json:"missing_historical_price_rows,omitempty"`
 }
 
 type BillingReconciliationUsage struct {
@@ -83,6 +85,7 @@ type BillingReconciliationUsage struct {
 }
 
 type BillingReconciliationModelSummary struct {
+	originalQuota             decimal.Decimal
 	ModelName                 string                            `json:"model_name"`
 	BillingMode               string                            `json:"billing_mode"`
 	Usage                     BillingReconciliationUsage        `json:"usage"`
@@ -97,6 +100,7 @@ type BillingReconciliationModelSummary struct {
 }
 
 type BillingReconciliationGroupSummary struct {
+	originalQuota decimal.Decimal
 	Id            int64                               `json:"id"`
 	Name          string                              `json:"name"`
 	Usage         BillingReconciliationUsage          `json:"usage"`
@@ -110,7 +114,7 @@ type BillingReconciliationDetailFilter struct {
 	StartTimestamp int64  `json:"start_timestamp"`
 	EndTimestamp   int64  `json:"end_timestamp"`
 	UserId         int    `json:"user_id,omitempty"`
-	TokenId        int    `json:"token_id,omitempty"`
+	TokenId        int    `json:"token_id"`
 	ChannelId      int    `json:"channel_id,omitempty"`
 	ModelName      string `json:"model_name,omitempty"`
 	BillingMode    string `json:"billing_mode,omitempty"`
@@ -131,6 +135,7 @@ type BillingCustomerStatement struct {
 }
 
 type billingReconciliationLog struct {
+	Content          string
 	UserId           int
 	TokenId          int
 	TokenName        string
@@ -151,7 +156,7 @@ type billingReconciliationModelAccumulator struct {
 	contractDiscountSeen      bool
 	contractDiscountRatio     float64
 	multipleContractDiscounts bool
-	originalQuota             int64
+	originalQuota             decimal.Decimal
 	originalQuotaKnown        bool
 	originalQuotaComplete     bool
 	priceSnapshotMarkers      map[string]struct{}
@@ -179,7 +184,8 @@ func GetBillingCustomerStatement(
 	}
 
 	query := LOG_DB.Model(&Log{}).
-		Select("user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(other, '') AS other").
+		Scopes(customerSettlementLogs).
+		Select("user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other").
 		Where("user_id = ? AND type IN ? AND created_at >= ? AND created_at <= ?", userId, []int{LogTypeConsume, LogTypeRefund}, startTimestamp, endTimestamp)
 	if modelName != "" {
 		query = query.Where("model_name = ?", modelName)
@@ -212,7 +218,7 @@ func GetBillingCustomerStatement(
 
 	for rows.Next() {
 		var log billingReconciliationLog
-		if err := rows.Scan(&log.UserId, &log.TokenId, &log.TokenName, &log.ChannelId, &log.ModelName, &log.Type, &log.CreatedAt, &log.PromptTokens, &log.CompletionTokens, &log.Quota, &log.Other); err != nil {
+		if err := rows.Scan(&log.UserId, &log.TokenId, &log.TokenName, &log.ChannelId, &log.ModelName, &log.Type, &log.CreatedAt, &log.PromptTokens, &log.CompletionTokens, &log.Quota, &log.Content, &log.Other); err != nil {
 			return statement, err
 		}
 		parsed := parseBillingReconciliationLog(log)
@@ -356,17 +362,21 @@ func finalizeBillingReconciliationOriginalQuota(group *BillingReconciliationGrou
 	if group == nil {
 		return
 	}
-	originalQuota := int64(0)
+	originalQuota := decimal.Zero
 	for _, item := range group.Models {
-		if item.Usage.GrossQuota > 0 && item.OriginalQuota == nil {
+		if (item.Usage.GrossQuota > 0 || item.Usage.RefundQuota > 0) && item.OriginalQuota == nil {
 			return
 		}
 		if item.OriginalQuota != nil {
-			originalQuota += *item.OriginalQuota
+			originalQuota = originalQuota.Add(item.originalQuota)
 		}
 	}
-	discountQuota := originalQuota - group.Usage.GrossQuota
-	group.OriginalQuota = &originalQuota
+	group.originalQuota = originalQuota
+	group.OriginalQuota = billingStatementOriginalQuota(originalQuota)
+	if group.OriginalQuota == nil {
+		return
+	}
+	discountQuota := *group.OriginalQuota - group.Usage.NetQuota
 	group.DiscountQuota = &discountQuota
 }
 
@@ -374,22 +384,28 @@ func finalizeBillingCustomerStatementOriginalQuota(statement *BillingCustomerSta
 	if statement == nil {
 		return
 	}
-	originalQuota := int64(0)
+	originalQuota := decimal.Zero
 	for _, group := range statement.Groups {
-		if group.Usage.GrossQuota > 0 && group.OriginalQuota == nil {
+		if (group.Usage.GrossQuota > 0 || group.Usage.RefundQuota > 0) && group.OriginalQuota == nil {
 			return
 		}
 		if group.OriginalQuota != nil {
-			originalQuota += *group.OriginalQuota
+			originalQuota = originalQuota.Add(group.originalQuota)
 		}
 	}
-	discountQuota := originalQuota - statement.Summary.GrossQuota
-	statement.OriginalQuota = &originalQuota
+	statement.OriginalQuota = billingStatementOriginalQuota(originalQuota)
+	if statement.OriginalQuota == nil {
+		return
+	}
+	discountQuota := *statement.OriginalQuota - statement.Summary.NetQuota
 	statement.DiscountQuota = &discountQuota
 }
 
 type parsedBillingReconciliationLog struct {
+	cacheWriteUnavailable bool
 	billingMode           string
+	isRequest             bool
+	isRefund              bool
 	cacheReadTokens       int64
 	cacheWrite            billingStatementCacheWriteTokens
 	discountRatio         *float64
@@ -401,7 +417,7 @@ type parsedBillingReconciliationLog struct {
 }
 
 func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingReconciliationLog {
-	parsed := parsedBillingReconciliationLog{billingMode: BillingReconciliationModeUnknown}
+	parsed := parsedBillingReconciliationLog{cacheWriteUnavailable: isNativeChannelTestLog(log.Type, log.TokenId, log.TokenName, log.Content), billingMode: BillingReconciliationModeUnknown, isRequest: log.Type == LogTypeConsume, isRefund: log.Type == LogTypeRefund}
 	if strings.TrimSpace(log.Other) == "" {
 		if log.PromptTokens > 0 || log.CompletionTokens > 0 {
 			parsed.billingMode = BillingReconciliationModeToken
@@ -416,6 +432,7 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 	}
 	parsed.cacheReadTokens, _ = billingBreakdownNonNegativeInt(other["cache_tokens"])
 	parsed.cacheWrite = normalizedBillingBreakdownCacheWriteTokens(other)
+	parsed.cacheWriteUnavailable = !parsed.cacheWrite.known && isNativeChannelTestLog(log.Type, log.TokenId, log.TokenName, log.Content)
 	parsed.providerModel = billingBreakdownString(other["upstream_model_name"])
 	isModelMapped, _ := billingReconciliationBool(other["is_model_mapped"])
 	if parsed.providerModel == "" && !isModelMapped {
@@ -493,6 +510,8 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 			break
 		}
 	}
+	billingStatementTaskFacts(log, other, snapshot, &parsed)
+	parsed.cacheWriteUnavailable = parsed.cacheWriteUnavailable && parsed.billingMode != BillingReconciliationModePerCall
 	return parsed
 }
 
@@ -509,14 +528,14 @@ func billingReconciliationFloat(raw json.RawMessage) (float64, bool) {
 	}
 	var value float64
 	if err := common.Unmarshal(raw, &value); err == nil {
-		return value, true
+		return value, !math.IsNaN(value) && !math.IsInf(value, 0)
 	}
 	var text string
 	if err := common.Unmarshal(raw, &text); err != nil {
 		return 0, false
 	}
 	value, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
-	return value, err == nil
+	return value, err == nil && !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func billingReconciliationBool(raw json.RawMessage) (bool, bool) {
@@ -540,7 +559,7 @@ func billingReconciliationRawMarker(raw json.RawMessage) string {
 func accumulateBillingReconciliationLog(target *BillingReconciliationUsage, log billingReconciliationLog, parsed parsedBillingReconciliationLog) {
 	quota := max(int64(log.Quota), int64(0))
 	if log.Type == LogTypeConsume {
-		if !strings.Contains(log.Other, `"task_id"`) {
+		if parsed.isRequest {
 			target.Requests++
 			if parsed.billingMode == BillingReconciliationModePerCall {
 				target.BillableCalls++
@@ -548,7 +567,7 @@ func accumulateBillingReconciliationLog(target *BillingReconciliationUsage, log 
 		}
 		target.GrossQuota += quota
 	} else if log.Type == LogTypeRefund {
-		if !strings.Contains(log.Other, `"task_id"`) && parsed.billingMode == BillingReconciliationModePerCall {
+		if parsed.isRefund && parsed.billingMode == BillingReconciliationModePerCall {
 			target.RefundedCalls++
 		}
 		target.RefundQuota += quota
@@ -560,7 +579,7 @@ func accumulateBillingReconciliationLog(target *BillingReconciliationUsage, log 
 }
 
 func accumulateBillingReconciliationPrice(accumulator *billingReconciliationModelAccumulator, log billingReconciliationLog, parsed parsedBillingReconciliationLog) {
-	if log.Type != LogTypeConsume {
+	if log.Type != LogTypeConsume && log.Type != LogTypeRefund {
 		return
 	}
 	if parsed.priceMarker != "" {
@@ -593,17 +612,36 @@ func accumulateBillingReconciliationPrice(accumulator *billingReconciliationMode
 			}
 		}
 
-		original, _ := common.QuotaRoundChecked(float64(quota) / ratio / contractRatio)
-		accumulator.originalQuota += int64(max(original, 0))
+		original := decimal.NewFromInt(quota).Div(decimal.NewFromFloat(ratio)).Div(decimal.NewFromFloat(contractRatio))
+		if log.Type == LogTypeRefund {
+			original = original.Neg()
+		}
+		accumulator.originalQuota = accumulator.originalQuota.Add(original)
 		accumulator.originalQuotaKnown = true
 	}
+}
+
+// Billing statements aggregate signed refunds before rounding. These int64
+// display totals are not individual wallet charges (which use int32 bounds).
+func billingStatementOriginalQuota(amount decimal.Decimal) *int64 {
+	if amount.Abs().Round(0).GreaterThan(decimal.NewFromInt(math.MaxInt64)) {
+		return nil
+	}
+	value := int64(0)
+	if amount.IsPositive() {
+		value = amount.Round(0).IntPart()
+	}
+	return &value
 }
 
 func finalizeBillingReconciliationPrice(accumulator *billingReconciliationModelAccumulator) {
 	accumulator.model.PriceVersions = int64(len(accumulator.priceSnapshotMarkers))
 	if accumulator.originalQuotaKnown && accumulator.originalQuotaComplete {
-		value := accumulator.originalQuota
-		accumulator.model.OriginalQuota = &value
+		accumulator.model.originalQuota = accumulator.originalQuota
+		accumulator.model.OriginalQuota = billingStatementOriginalQuota(accumulator.originalQuota)
+		if accumulator.model.OriginalQuota == nil {
+			ensureBillingReconciliationQuality(&accumulator.model.DataQuality).MissingHistoricalPriceRows++
+		}
 	}
 	if accumulator.discountSeen && !accumulator.model.MultipleDiscounts {
 		value := accumulator.discountRatio
@@ -629,6 +667,7 @@ func accumulateBillingReconciliationQuality(target **BillingReconciliationDataQu
 	}
 	quality := ensureBillingReconciliationQuality(target)
 	quality.UnavailableRequests += source.UnavailableRequests
+	quality.CacheWriteUnavailableRequests += source.CacheWriteUnavailableRequests
 	quality.UnknownBillingModeRequests += source.UnknownBillingModeRequests
 	quality.ProviderModelFallbackRows += source.ProviderModelFallbackRows
 	quality.MissingHistoricalPriceRows += source.MissingHistoricalPriceRows
@@ -636,7 +675,7 @@ func accumulateBillingReconciliationQuality(target **BillingReconciliationDataQu
 
 func finalizeBillingReconciliationQuality(target **BillingReconciliationDataQuality) {
 	quality := ensureBillingReconciliationQuality(target)
-	if quality.UnavailableRequests > 0 || quality.UnknownBillingModeRequests > 0 || quality.ProviderModelFallbackRows > 0 || quality.MissingHistoricalPriceRows > 0 {
+	if quality.UnavailableRequests > 0 || quality.CacheWriteUnavailableRequests > 0 || quality.UnknownBillingModeRequests > 0 || quality.ProviderModelFallbackRows > 0 || quality.MissingHistoricalPriceRows > 0 {
 		quality.Status = "partial"
 	}
 }
@@ -718,7 +757,7 @@ func GetProviderBillingSummary(startTimestamp int64, endTimestamp int64, periodS
 		Channels: make([]ProviderBillingChannelSummary, 0),
 	}
 	query := LOG_DB.Model(&Log{}).
-		Select("user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(other, '') AS other").
+		Select("user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other").
 		Where("type = ? AND created_at >= ? AND created_at <= ?", LogTypeConsume, startTimestamp, endTimestamp)
 	if channelId > 0 {
 		query = query.Where("channel_id = ?", channelId)
@@ -732,7 +771,7 @@ func GetProviderBillingSummary(startTimestamp int64, endTimestamp int64, periodS
 	platform := make(map[providerBillingSummaryKey]*ProviderBillingPlatformSummary)
 	for rows.Next() {
 		var log billingReconciliationLog
-		if err := rows.Scan(&log.UserId, &log.TokenId, &log.TokenName, &log.ChannelId, &log.ModelName, &log.Type, &log.CreatedAt, &log.PromptTokens, &log.CompletionTokens, &log.Quota, &log.Other); err != nil {
+		if err := rows.Scan(&log.UserId, &log.TokenId, &log.TokenName, &log.ChannelId, &log.ModelName, &log.Type, &log.CreatedAt, &log.PromptTokens, &log.CompletionTokens, &log.Quota, &log.Content, &log.Other); err != nil {
 			return summary, err
 		}
 		parsed := parseBillingReconciliationLog(log)
@@ -778,6 +817,9 @@ func GetProviderBillingSummary(startTimestamp int64, endTimestamp int64, periodS
 		}
 		if parsed.unavailable {
 			ensureBillingReconciliationQuality(&item.DataQuality).UnavailableRequests++
+		}
+		if parsed.cacheWriteUnavailable {
+			ensureBillingReconciliationQuality(&item.DataQuality).CacheWriteUnavailableRequests++
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -850,7 +892,7 @@ func GetProviderBillingSummary(startTimestamp int64, endTimestamp int64, periodS
 }
 
 func accumulateProviderBillingLog(target *ProviderBillingUsage, log billingReconciliationLog, parsed parsedBillingReconciliationLog) {
-	if !strings.Contains(log.Other, `"task_id"`) {
+	if parsed.isRequest {
 		target.Requests++
 		if parsed.billingMode == BillingReconciliationModePerCall {
 			target.BillableCalls++

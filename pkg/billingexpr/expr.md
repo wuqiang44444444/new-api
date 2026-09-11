@@ -221,6 +221,11 @@ completion hook retain their submission values. The same expression is then
 evaluated again; a changed fact can therefore produce a settlement delta and a
 different matched tier. Evaluation failure keeps the pre-consumed charge.
 
+The host also freezes the selected adapter's declared meter units in
+`BillingSnapshot.UsageUnits` for statement classification. This metadata is
+display-only: it does not change evaluation, normalization, or quota conversion.
+Historical statements never consult the current plugin schema to infer missing units.
+
 ---
 
 ## Architecture

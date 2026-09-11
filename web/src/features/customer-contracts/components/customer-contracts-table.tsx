@@ -17,12 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { History } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { BadgePercent, History, RefreshCw, Users } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { DataTablePage, useDataTable } from '@/components/data-table'
+import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { Button } from '@/components/ui/button'
 import { UserContractDrawer } from '@/features/users/components/user-contract-drawer'
 import { useMediaQuery } from '@/hooks'
@@ -35,8 +38,8 @@ import {
   type CustomerContractsSearch,
 } from '../types'
 import { useCustomerContractColumns } from './customer-contract-columns'
-import { CustomerContractSummary } from './customer-contract-summary'
 import { CustomerContractMigrationDialog } from './customer-contract-migration-dialog'
+import { CustomerContractSummary } from './customer-contract-summary'
 
 interface CustomerContractsTableProps {
   search: CustomerContractsSearch
@@ -55,6 +58,7 @@ export function CustomerContractsTable(props: CustomerContractsTableProps) {
   const [selectedContract, setSelectedContract] =
     useState<CustomerContractAdminListItem | null>(null)
   const [migrationOpen, setMigrationOpen] = useState(false)
+  const [filterResetKey, setFilterResetKey] = useState(0)
 
   const navigate = useCallback<NavigateFn>(
     (options) => {
@@ -151,50 +155,134 @@ export function CustomerContractsTable(props: CustomerContractsTableProps) {
     void queryClient.invalidateQueries({ queryKey: ['customer-contracts'] })
   }
 
+  const hasFilters = Boolean(globalFilter || statusFilter.length)
+  const emptyTitle = hasFilters
+    ? t('No matching contracts')
+    : t('No customer contracts')
+  const emptyDescription = hasFilters
+    ? t(
+        'Try a different customer, contract name or model, or clear the filters.'
+      )
+    : t(
+        'Create a contract for a customer from the Users page. Legacy user-level contracts appear here only after migration.'
+      )
+  const emptyAction = hasFilters ? (
+    <Button
+      variant='outline'
+      onClick={() => {
+        setFilterResetKey((key) => key + 1)
+        table.setGlobalFilter('')
+        onSearchChange({ filter: '', status: [], page: 1 })
+      }}
+    >
+      {t('Clear filters')}
+    </Button>
+  ) : (
+    <Button variant='outline' onClick={() => setMigrationOpen(true)}>
+      <History aria-hidden='true' data-icon='inline-start' />
+      {t('Review legacy contracts')}
+    </Button>
+  )
+
   return (
-    <div className='flex h-full min-h-0 flex-col gap-3'>
-      <div className='flex items-center justify-between gap-3'>
-        <CustomerContractSummary
-          summary={query.data?.summary ?? EMPTY_CUSTOMER_CONTRACT_SUMMARY}
-          isLoading={query.isLoading}
-        />
-        <Button
-          type='button'
-          variant='outline'
-          size='sm'
-          onClick={() => setMigrationOpen(true)}
-        >
-          <History data-icon='inline-start' />
-          {t('Legacy contract migrations')}
-        </Button>
+    <div className='flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto'>
+      <div className='flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Manage customer model access, contract status and API key bindings.'
+          )}
+        </p>
+        <div className='flex shrink-0 flex-wrap items-center gap-2'>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={() => setMigrationOpen(true)}
+          >
+            <History aria-hidden='true' data-icon='inline-start' />
+            {t('Legacy contract migrations')}
+          </Button>
+          <Button
+            size='sm'
+            nativeButton={false}
+            role='link'
+            render={<Link to='/users' />}
+          >
+            <Users aria-hidden='true' data-icon='inline-start' />
+            {t('Go to Users')}
+          </Button>
+        </div>
       </div>
 
-      <div className='min-h-0 flex-1'>
-        <DataTablePage
-          table={table}
-          columns={columns}
-          isLoading={query.isLoading}
-          isFetching={query.isFetching}
-          emptyTitle={t('No customer contracts')}
-          emptyDescription={t(
-            'Create a contract from the Users page or adjust your search and filters.'
-          )}
-          skeletonKeyPrefix='customer-contracts-skeleton'
-          applyHeaderSize
-          toolbarProps={{
-            searchPlaceholder: t('Search customers or public models...'),
-            searchDebounceMs: 500,
-            filters: [
-              {
-                columnId: 'contract_status',
-                title: t('Contract status'),
-                options: statusOptions,
-                singleSelect: true,
-              },
-            ],
-          }}
-        />
-      </div>
+      {query.isError ? (
+        <div role='alert' className='min-h-0 flex-1 rounded-xl border'>
+          <ErrorState
+            title={t('Failed to load customer contracts')}
+            description={t(
+              'Contract data could not be loaded. Retry to check the current contracts.'
+            )}
+            onRetry={() => void query.refetch()}
+          />
+        </div>
+      ) : (
+        <>
+          <CustomerContractSummary
+            summary={query.data?.summary ?? EMPTY_CUSTOMER_CONTRACT_SUMMARY}
+            isLoading={query.isPending}
+          />
+          <div className='min-h-80 flex-1'>
+            <DataTablePage
+              key={filterResetKey}
+              table={table}
+              columns={columns}
+              isLoading={query.isPending}
+              isFetching={query.isFetching}
+              emptyTitle={emptyTitle}
+              emptyDescription={emptyDescription}
+              emptyIcon={<BadgePercent />}
+              emptyAction={emptyAction}
+              mobile={
+                query.isSuccess && items.length === 0 ? (
+                  <EmptyState
+                    bordered
+                    icon={BadgePercent}
+                    title={emptyTitle}
+                    description={emptyDescription}
+                    action={emptyAction}
+                  />
+                ) : undefined
+              }
+              skeletonKeyPrefix='customer-contracts-skeleton'
+              applyHeaderSize
+              toolbarProps={{
+                searchPlaceholder: t(
+                  'Search customers, contracts or models...'
+                ),
+                searchDebounceMs: 500,
+                preActions: (
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    disabled={query.isFetching}
+                    onClick={() => void query.refetch()}
+                  >
+                    <RefreshCw aria-hidden='true' data-icon='inline-start' />
+                    {t('Refresh')}
+                  </Button>
+                ),
+                filters: [
+                  {
+                    columnId: 'contract_status',
+                    title: t('Contract status'),
+                    options: statusOptions,
+                    singleSelect: true,
+                  },
+                ],
+              }}
+            />
+          </div>
+        </>
+      )}
 
       {selectedContract && (
         <UserContractDrawer

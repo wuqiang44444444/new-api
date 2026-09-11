@@ -275,7 +275,7 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
             value={formatInteger(result.summary.usage.requests)}
           />
           <ListMetric
-            label={t('Original amount')}
+            label={t('Settled list price')}
             value={formatQuotaWithCurrency(result.summary.original_quota)}
           />
           <ListMetric
@@ -297,6 +297,15 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
             {t('Database generated at {{time}} · Asia/Shanghai', {
               time: formatTimestampToDate(query.data.generated_at),
             })}
+          </CardDescription>
+          <CardDescription>
+            {t('Settled list price − discounts = net settled amount.')}{' '}
+            {t('Total charges − total returns = net settled amount.')}
+          </CardDescription>
+          <CardDescription>
+            {t(
+              'Total charges include precharges. Total returns include released precharges and refunds.'
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className='px-0'>
@@ -329,7 +338,7 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
                     align='right'
                   />
                   <SortableHead
-                    label={t('Original amount')}
+                    label={t('Settled list price')}
                     sortKey='original_quota'
                     activeSort={sortBy}
                     sortOrder={sortOrder}
@@ -337,18 +346,20 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
                     align='right'
                   />
                   <TableHead className='text-right'>{t('Discount')}</TableHead>
-                  <TableHead className='text-right'>
-                    {t('Settled amount')}
-                  </TableHead>
-                  <TableHead className='text-right'>{t('Refunds')}</TableHead>
                   <SortableHead
-                    label={t('Net amount')}
+                    label={t('Net settled amount')}
                     sortKey='net_quota'
                     activeSort={sortBy}
                     sortOrder={sortOrder}
                     onSort={setSort}
                     align='right'
                   />
+                  <TableHead className='text-muted-foreground border-l text-right'>
+                    {t('Total charges')}
+                  </TableHead>
+                  <TableHead className='text-muted-foreground text-right'>
+                    {t('Total returns')}
+                  </TableHead>
                   <TableHead>{t('Data quality')}</TableHead>
                   <TableHead>{t('Last activity')}</TableHead>
                   <TableHead className='text-right'>{t('Actions')}</TableHead>
@@ -469,14 +480,14 @@ function CustomerStatementListRow(props: {
       <TableCell className='text-success text-right'>
         {formatQuotaWithCurrency(item.discount_quota)}
       </TableCell>
-      <TableCell className='text-right'>
-        {formatQuotaWithCurrency(item.usage.gross_quota)}
-      </TableCell>
-      <TableCell className='text-right'>
-        {formatQuotaWithCurrency(item.usage.refund_quota)}
-      </TableCell>
       <TableCell className='text-right font-medium'>
         {formatQuotaWithCurrency(item.usage.net_quota)}
+      </TableCell>
+      <TableCell className='text-muted-foreground border-l text-right'>
+        {formatQuotaWithCurrency(item.usage.gross_quota)}
+      </TableCell>
+      <TableCell className='text-muted-foreground text-right'>
+        {formatQuotaWithCurrency(item.usage.refund_quota)}
       </TableCell>
       <TableCell>
         <Badge
@@ -488,6 +499,16 @@ function CustomerStatementListRow(props: {
             ? t('Partial data')
             : t('Complete')}
         </Badge>
+        {(item.data_quality?.unknown_billing_mode_requests ?? 0) > 0 && (
+          <div
+            className='text-muted-foreground mt-1 max-w-40'
+            data-table-text='secondary'
+          >
+            {t('Unknown billing mode: {{count}} records', {
+              count: item.data_quality?.unknown_billing_mode_requests,
+            })}
+          </div>
+        )}
       </TableCell>
       <TableCell>{formatTimestampToDate(item.last_activity_at)}</TableCell>
       <TableCell className='text-right'>

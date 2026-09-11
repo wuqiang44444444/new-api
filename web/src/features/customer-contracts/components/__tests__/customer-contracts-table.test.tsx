@@ -17,6 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -74,7 +80,7 @@ vi.mock('@/features/users/components/user-contract-drawer', () => ({
   ),
 }))
 
-const activeResponse: CustomerContractAdminListResponse = {
+const activeResponse = {
   success: true,
   data: {
     page: 1,
@@ -100,14 +106,21 @@ const activeResponse: CustomerContractAdminListResponse = {
       },
     ],
   },
-}
+} satisfies CustomerContractAdminListResponse
 
 function renderTable(children: ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+  const routeTree = createRootRoute({ component: () => children })
+  const router = createRouter({
+    routeTree,
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+  })
   return render(
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   )
 }
 
@@ -168,7 +181,7 @@ describe('customer contracts admin table', () => {
     expect(await screen.findByText('No customer contracts')).toBeTruthy()
     expect(
       screen.getByText(
-        'Create a contract from the Users page or adjust your search and filters.'
+        'Create a contract for a customer from the Users page. Legacy user-level contracts appear here only after migration.'
       )
     ).toBeTruthy()
   })
@@ -181,5 +194,76 @@ describe('customer contracts admin table', () => {
       expect(toastError).toHaveBeenCalledWith('list unavailable')
     )
     expect(screen.queryByText('customer-a')).toBeNull()
+    expect(screen.queryByText('No customer contracts')).toBeNull()
+    expect(screen.queryByText('All contracts')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('Team contract')).toBeTruthy()
+  })
+  it('offers clearing filters when a search has no results while keeping the global totals', async () => {
+    getCustomerContracts.mockResolvedValueOnce({
+      success: true,
+      data: { ...activeResponse.data, total: 0, items: [] },
+    })
+    const onSearchChange = vi.fn()
+    renderTable(
+      <CustomerContractsTable
+        search={{ filter: 'missing', page: 2 }}
+        onSearchChange={onSearchChange}
+      />
+    )
+    expect(await screen.findByText('No matching contracts')).toBeTruthy()
+    expect(screen.queryByText('No customer contracts')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(onSearchChange).toHaveBeenCalledWith({
+      filter: '',
+      status: [],
+      page: 1,
+    })
+    expect(await screen.findByText('Team contract')).toBeTruthy()
+    expect(
+      screen.getByPlaceholderText('Search customers, contracts or models...')
+    ).toHaveValue('')
+  })
+
+  it('provides a direct users entry for creating a customer contract', async () => {
+    renderTable(<CustomerContractsTable search={{}} onSearchChange={vi.fn()} />)
+    expect(
+      await screen.findByRole('link', { name: 'Go to Users' })
+    ).toHaveAttribute('href', '/users')
+  })
+  it('does not report missing contracts while the first request is still pending', async () => {
+    let resolveResponse!: (value: CustomerContractAdminListResponse) => void
+    const response = new Promise<CustomerContractAdminListResponse>(
+      (resolve) => {
+        resolveResponse = resolve
+      }
+    )
+    getCustomerContracts.mockReturnValueOnce(response)
+    renderTable(<CustomerContractsTable search={{}} onSearchChange={vi.fn()} />)
+    await screen.findByText('All contracts')
+    expect(screen.queryByText('No customer contracts')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeDisabled()
+    resolveResponse(activeResponse)
+    expect(await screen.findByText('Team contract')).toBeTruthy()
+  })
+  it('clears a typed search without restoring the previous search draft', async () => {
+    getCustomerContracts
+      .mockResolvedValueOnce(activeResponse)
+      .mockResolvedValueOnce({
+        success: true,
+        data: { ...activeResponse.data, total: 0, items: [] },
+      })
+    renderTable(<CustomerContractsTable search={{}} onSearchChange={vi.fn()} />)
+    await screen.findByText('Team contract')
+    const input = screen.getByPlaceholderText(
+      'Search customers, contracts or models...'
+    )
+    fireEvent.change(input, { target: { value: 'missing' } })
+    await screen.findByText('No matching contracts')
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(
+      screen.getByPlaceholderText('Search customers, contracts or models...')
+    ).toHaveValue('')
+    expect(await screen.findByText('Team contract')).toBeTruthy()
   })
 })

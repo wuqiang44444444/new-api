@@ -41,6 +41,7 @@ import { parseLogOther } from '../lib/format'
 import { fetchLogsByCategory } from '../lib/utils'
 import type { LogCategory } from '../types'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
+import { CommonLogsStats } from './common-logs-stats'
 import { TaskLogsFilterBar } from './task-logs-filter-bar'
 import { UsageLogsMobileList } from './usage-logs-mobile-card'
 import { useLogsViewScope, type LogsViewAccess } from './usage-logs-provider'
@@ -212,11 +213,24 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
         />
       }
       toolbar={
-        isCommon ? (
-          <CommonLogsFilterBar table={table} />
-        ) : (
-          <TaskLogsFilterBar table={table} logCategory={logCategory} />
-        )
+        <>
+          {isCommon && searchParams.billing && (
+            <div className='space-y-2'>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'Customer billing details exclude channel tests and use the statement filters.'
+                )}
+              </p>
+              <CommonLogsStats />
+            </div>
+          )}
+          {isCommon && !searchParams.billing && (
+            <CommonLogsFilterBar table={table} />
+          )}
+          {!isCommon && (
+            <TaskLogsFilterBar table={table} logCategory={logCategory} />
+          )}
+        </>
       }
       renderRow={(row) => {
         const logType = (row.original as Record<string, unknown>).type as

@@ -64,6 +64,7 @@ func GetUserBillingStatement(
 	// quota, but they are not additional model calls.
 	const taskSettlementPattern = `%"task_id"%`
 	query := LOG_DB.Model(&Log{}).
+		Scopes(customerSettlementLogs).
 		Select(`
 			token_id,
 			token_name,

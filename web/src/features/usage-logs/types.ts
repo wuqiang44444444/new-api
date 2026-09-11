@@ -179,6 +179,7 @@ export interface LogOtherData {
   text_input?: number
   text_output?: number
   cache_tokens?: number
+  cache_write_unavailable?: boolean
   cache_creation_tokens?: number
   cache_creation_tokens_5m?: number
   cache_creation_tokens_1h?: number
@@ -414,6 +415,9 @@ export interface TaskArtifactsResponse {
 // ============================================================================
 
 export interface GetLogsParams {
+  billing_statement?: boolean
+  user_id?: number
+  billing_mode?: string
   p?: number
   page_size?: number
   type?: number
@@ -441,6 +445,9 @@ export interface GetLogsResponse {
 }
 
 export interface GetLogStatsParams {
+  billing_statement?: boolean
+  user_id?: number
+  billing_mode?: string
   type?: number
   username?: string
   token_name?: string

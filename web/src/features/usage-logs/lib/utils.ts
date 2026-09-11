@@ -186,7 +186,17 @@ export function buildApiParams(config: {
     ...(searchParams.type ? { type: processType(searchParams.type) } : {}),
     ...(searchParams.model ? { model_name: String(searchParams.model) } : {}),
     ...(searchParams.token ? { token_name: String(searchParams.token) } : {}),
-    ...(searchParams.tokenId ? { token_id: Number(searchParams.tokenId) } : {}),
+    ...(searchParams.billing
+      ? {
+          billing_statement: true,
+          user_id: Number(searchParams.billingUserId),
+          billing_mode: String(searchParams.billingMode ?? ''),
+        }
+      : {}),
+    ...(searchParams.tokenId != null &&
+    (searchParams.billing || Number(searchParams.tokenId) > 0)
+      ? { token_id: Number(searchParams.tokenId) }
+      : {}),
     ...(searchParams.group ? { group: String(searchParams.group) } : {}),
     ...(isAdmin && searchParams.channel
       ? { channel: Number(searchParams.channel) || 0 }

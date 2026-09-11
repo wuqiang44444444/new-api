@@ -736,11 +736,18 @@ export function useCommonLogsColumns(
               {promptTokens.toLocaleString()} /{' '}
               {completionTokens.toLocaleString()}
             </span>
-            {(cacheReadTokens > 0 || cacheWriteTokens > 0) && (
+            {(cacheReadTokens > 0 ||
+              cacheWriteTokens > 0 ||
+              other?.cache_write_unavailable) && (
               <div className='flex items-center gap-1 text-[11px]'>
                 {cacheReadTokens > 0 && (
                   <span className='text-muted-foreground/60'>
                     {t('Cache')}↓ {cacheReadTokens.toLocaleString()}
+                  </span>
+                )}
+                {other?.cache_write_unavailable && (
+                  <span>
+                    {t('Cache Write')}: {t('Not recorded')}
                   </span>
                 )}
                 {cacheWriteTokens > 0 && (

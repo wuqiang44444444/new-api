@@ -67,6 +67,13 @@ export function billingDataQualityReasons(
 ) {
   if (!quality || quality.status === 'complete') return []
   const reasons: string[] = []
+  if (quality.cache_write_unavailable_requests) {
+    reasons.push(
+      t('{{count}} channel test records have no recorded cache write usage.', {
+        count: quality.cache_write_unavailable_requests,
+      })
+    )
+  }
   if (quality.unavailable_requests) {
     reasons.push(
       t('{{count}} records are missing readable billing metadata.', {
@@ -184,7 +191,9 @@ function upstreamStatementCsvRow(
     options.t(billingModeLabel(model.billing_mode)),
     model.usage.input_tokens,
     model.usage.cache_read_tokens,
-    model.usage.cache_write_tokens,
+    model.data_quality?.cache_write_unavailable_requests
+      ? options.t('Not recorded')
+      : model.usage.cache_write_tokens,
     model.usage.output_tokens,
     model.usage.requests,
     model.usage.billable_calls,

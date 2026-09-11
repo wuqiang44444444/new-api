@@ -72,6 +72,7 @@ type BillingDetailFilter = {
 
 export type BillingDataQuality = {
   status: 'complete' | 'partial' | 'unavailable'
+  cache_write_unavailable_requests?: number
   unavailable_requests?: number
   unknown_billing_mode_requests?: number
   provider_model_fallback_rows?: number

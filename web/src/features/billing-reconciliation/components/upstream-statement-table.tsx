@@ -141,7 +141,13 @@ function ChannelRow(props: {
       <TableCell>—</TableCell>
       <UsageCell value={usage.input_tokens} parent />
       <UsageCell value={usage.cache_read_tokens} parent />
-      <UsageCell value={usage.cache_write_tokens} parent />
+      <UsageCell
+        value={usage.cache_write_tokens}
+        unavailable={
+          !!props.channel.data_quality?.cache_write_unavailable_requests
+        }
+        parent
+      />
       <UsageCell value={usage.output_tokens} parent />
       <UsageCell value={usage.billable_calls} parent />
       <TableCell>
@@ -188,6 +194,10 @@ function ModelRow(props: { last: boolean; model: ProviderModelSummary }) {
       />
       <UsageCell
         value={tokenBilling ? props.model.usage.cache_write_tokens : null}
+        unavailable={
+          tokenBilling &&
+          !!props.model.data_quality?.cache_write_unavailable_requests
+        }
       />
       <UsageCell
         value={tokenBilling ? props.model.usage.output_tokens : null}
@@ -215,13 +225,19 @@ function ModelRow(props: { last: boolean; model: ProviderModelSummary }) {
   )
 }
 
-function UsageCell(props: { value: number | null; parent?: boolean }) {
-  const { i18n } = useTranslation()
+function UsageCell(props: {
+  value: number | null
+  parent?: boolean
+  unavailable?: boolean
+}) {
+  const { t, i18n } = useTranslation()
   return (
     <TableCell
       className={props.parent ? 'text-right font-semibold' : 'text-right'}
     >
-      {formatStatementUsage(props.value, i18n.language)}
+      {props.unavailable
+        ? t('Not recorded')
+        : formatStatementUsage(props.value, i18n.language)}
     </TableCell>
   )
 }

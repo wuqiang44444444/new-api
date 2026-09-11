@@ -88,7 +88,7 @@ export function CommonLogsStats() {
   return (
     <div className='flex flex-wrap items-center gap-2'>
       <StatBadge
-        label={t('Usage')}
+        label={searchParams.billing ? t('Net amount') : t('Usage')}
         value={sensitiveVisible ? formatLogQuota(stats?.quota || 0) : '••••'}
         accent='bg-sky-500/70'
       />

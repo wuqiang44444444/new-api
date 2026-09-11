@@ -151,3 +151,28 @@ describe('upstream statement hierarchy', () => {
     ).toBeTruthy()
   })
 })
+
+it('shows unrecorded cache writes for both the channel and its model', () => {
+  const quality = {
+    status: 'partial' as const,
+    cache_write_unavailable_requests: 1,
+  }
+  const partial = {
+    ...channel,
+    data_quality: quality,
+    models: channel.models.map((model) => ({
+      ...model,
+      data_quality: quality,
+    })),
+  }
+  render(
+    <I18nextProvider i18n={i18n}>
+      <UpstreamStatementTable
+        channels={[partial]}
+        expandedChannels={new Set([18])}
+        onToggleChannel={() => undefined}
+      />
+    </I18nextProvider>
+  )
+  expect(screen.getAllByText('Not recorded')).toHaveLength(2)
+})

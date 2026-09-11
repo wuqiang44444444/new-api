@@ -71,6 +71,9 @@ type BillingSnapshot struct {
 	ExprVersion               int            `json:"expr_version"`
 	TaskUsageBilling          bool           `json:"task_usage_billing,omitempty"`
 	UsageFacts                map[string]any `json:"usage_facts,omitempty"`
+	// UsageUnits freezes declared meter units for historical statement display.
+	// Enum/boolean fields retain their type; this never affects evaluation.
+	UsageUnits map[string]string `json:"usage_units,omitempty"`
 }
 
 // TieredResult holds everything needed after running tiered settlement.

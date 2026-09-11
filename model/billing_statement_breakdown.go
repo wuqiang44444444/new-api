@@ -96,6 +96,7 @@ func GetUserBillingStatementBreakdown(
 	modelName string,
 ) ([]BillingStatementBreakdownItem, BillingStatementBreakdownSummary, error) {
 	query := LOG_DB.Model(&Log{}).
+		Scopes(customerSettlementLogs).
 		Select(`
 			token_id,
 			COALESCE(token_name, '') AS token_name,
@@ -269,23 +270,26 @@ func GetUserBillingStatementBreakdown(
 }
 
 type billingStatementCacheWriteTokens struct {
+	known       bool
 	total       int64
 	fiveMinutes int64
 	oneHour     int64
 }
 
 func normalizedBillingBreakdownCacheWriteTokens(other map[string]json.RawMessage) billingStatementCacheWriteTokens {
-	fiveMinutes, _ := billingBreakdownNonNegativeInt(other["cache_creation_tokens_5m"])
-	oneHour, _ := billingBreakdownNonNegativeInt(other["cache_creation_tokens_1h"])
+	fiveMinutes, fiveMinutesKnown := billingBreakdownNonNegativeInt(other["cache_creation_tokens_5m"])
+	oneHour, oneHourKnown := billingBreakdownNonNegativeInt(other["cache_creation_tokens_1h"])
 	writeTokens := billingStatementCacheWriteTokens{
 		fiveMinutes: fiveMinutes,
 		oneHour:     oneHour,
 	}
 	if tokens, ok := billingBreakdownNonNegativeInt(other["cache_write_tokens"]); ok {
+		writeTokens.known = true
 		writeTokens.total = tokens
 		return writeTokens
 	}
-	total, _ := billingBreakdownNonNegativeInt(other["cache_creation_tokens"])
+	total, totalKnown := billingBreakdownNonNegativeInt(other["cache_creation_tokens"])
+	writeTokens.known = totalKnown || fiveMinutesKnown || oneHourKnown
 	split := fiveMinutes
 	addBillingStatementValue(&split, oneHour)
 	writeTokens.total = max(total, split)

@@ -155,3 +155,28 @@ describe('upstream statement utilities', () => {
     ])
   })
 })
+
+it('exports missing historical cache writes as unrecorded', () => {
+  const source = structuredClone(channels)
+  const model = source[0]?.models[0]
+  if (!model) throw new Error('Missing model fixture')
+  model.data_quality = {
+    status: 'partial',
+    cache_write_unavailable_requests: 1,
+  }
+  const csv = buildUpstreamStatementCsv({
+    channels: source,
+    generatedAt: 1700000000,
+    month: '2026-09',
+    t: ((key: string) => key) as TFunction,
+  })
+  expect(csv).toContain('Not recorded')
+  expect(
+    billingDataQualityReasons(
+      model.data_quality,
+      ((key: string) => key) as TFunction
+    )
+  ).toContain(
+    '{{count}} channel test records have no recorded cache write usage.'
+  )
+})

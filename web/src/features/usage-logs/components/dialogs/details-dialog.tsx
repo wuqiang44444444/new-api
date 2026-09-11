@@ -387,7 +387,7 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
   const cacheWrite1h = other.cache_creation_tokens_1h || 0
   const hasTokens = promptTokens > 0 || completionTokens > 0
 
-  if (!hasTokens) return null
+  if (!hasTokens && !other.cache_write_unavailable) return null
 
   const rows: Array<{ label: string; value: string }> = []
 
@@ -397,6 +397,9 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
     value: completionTokens.toLocaleString(),
   })
 
+  if (other.cache_write_unavailable) {
+    rows.push({ label: t('Cache Write'), value: t('Not recorded') })
+  }
   if (cacheRead > 0) {
     rows.push({
       label: t('Cache Read'),

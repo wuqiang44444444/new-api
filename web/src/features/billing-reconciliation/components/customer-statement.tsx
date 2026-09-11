@@ -212,7 +212,7 @@ export function CustomerStatementView(props: CustomerStatementProps) {
               description={t('Read directly from the main database')}
             />
             <SummaryCard
-              title={t('Original amount')}
+              title={t('Settled list price')}
               value={formatQuotaWithCurrency(statement.original_quota)}
               description={t(
                 'Unavailable when historical price snapshots are missing'
@@ -221,7 +221,7 @@ export function CustomerStatementView(props: CustomerStatementProps) {
             <SummaryCard
               title={t('Discount savings')}
               value={formatQuotaWithCurrency(statement.discount_quota)}
-              description={t('Original amount minus settled gross amount')}
+              description={t('Original amount minus net settled amount')}
             />
             <SummaryCard
               title={t('Net settled amount')}
@@ -260,7 +260,7 @@ export function CustomerStatementView(props: CustomerStatementProps) {
                         {t('Requests')}
                       </TableHead>
                       <TableHead className='text-right'>
-                        {t('Original amount')}
+                        {t('Settled list price')}
                       </TableHead>
                       <TableHead className='text-right'>
                         {t('Discount')}
@@ -326,7 +326,7 @@ export function CustomerStatementView(props: CustomerStatementProps) {
                                 key={`model-${group.id}-${model.model_name}-${model.billing_mode}`}
                                 model={model}
                                 dimension={props.dimension}
-                                username={statement.username}
+                                userId={statement.user_id}
                               />
                             ))
                           : []),
@@ -346,20 +346,22 @@ export function CustomerStatementView(props: CustomerStatementProps) {
 function CustomerModelRow(props: {
   model: CustomerModelSummary
   dimension: BillingDimension
-  username?: string
+  userId: number
 }) {
   const { t } = useTranslation()
   const filter = props.model.detail_filter
   const params = new URLSearchParams({
+    billing: 'true',
+    billingUserId: String(props.userId),
+    billingMode: props.model.billing_mode,
     model: props.model.model_name,
     startTime: String(filter.start_timestamp * 1000),
     endTime: String(filter.end_timestamp * 1000),
   })
-  if (props.username) params.set('username', props.username)
   if (props.dimension === 'channel') {
     params.set('channel', String(filter.channel_id ?? ''))
   }
-  if (props.dimension === 'api_key' && filter.token_id) {
+  if (props.dimension === 'api_key' && filter.token_id != null) {
     params.set('tokenId', String(filter.token_id))
   }
   const detailHref = `/usage-logs/common?${params.toString()}`
@@ -434,10 +436,12 @@ function customerDiscountLabel(
   if (model.discount_ratio == null && model.contract_discount_ratio == null) {
     return translate('Unknown')
   }
-  const group = model.discount_ratio == null ? '1' : model.discount_ratio.toFixed(4)
-  const contract = model.contract_discount_ratio == null
-    ? '1'
-    : model.contract_discount_ratio.toFixed(4)
+  const group =
+    model.discount_ratio == null ? '1' : model.discount_ratio.toFixed(4)
+  const contract =
+    model.contract_discount_ratio == null
+      ? '1'
+      : model.contract_discount_ratio.toFixed(4)
   return `${group} × ${contract}`
 }
 

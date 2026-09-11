@@ -97,6 +97,7 @@ func refundTaskWithReconcile(ctx context.Context, task *model.Task, reason strin
 	other := taskBillingOther(task)
 	other.SetPublic("task_id", task.TaskID)
 	other.SetPublic("reason", reason)
+	other.SetPublic("task_billing_event", "refund")
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId: task.UserId, LogType: model.LogTypeRefund, ChannelId: task.ChannelId,
 		ModelName: taskModelName(task), Quota: quota, TokenId: task.PrivateData.TokenId,
