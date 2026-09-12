@@ -97,17 +97,14 @@ func officialVideoSpec(model string) (videoSpec, bool) {
 	}
 }
 
-// moxingPublicVideoSpec derives the public contract from the same single Moxing
-// registry the runtime validator reads, so runtime acceptance and catalog
-// display can never diverge for these models. The Moxing documentation
-// enumerates no resolution values (720p is only a recommendation), so the
-// catalog publishes resolution as a free string with the northbound default.
+// moxingPublicVideoSpec supplies the Go reference for plugin migration tests.
 func moxingPublicVideoSpec(contract dto.MoxingVideoModelContract) videoSpec {
 	return videoSpec{
 		minDuration:         contract.MinDurationSeconds,
 		maxDuration:         contract.MaxDurationSeconds,
 		intelligentDuration: contract.IntelligentDurationSeconds > 0,
-		freeResolution:      true,
+		freeResolution:      len(contract.Resolutions) == 0,
+		resolutions:         contract.Resolutions,
 		ratios:              modelArkRatios,
 		maxImages:           contract.MaxImages,
 		maxVideos:           contract.MaxVideos,
@@ -119,6 +116,9 @@ func moxingPublicVideoSpec(contract dto.MoxingVideoModelContract) videoSpec {
 		allowSeed:           true,
 		allowCameraFixed:    true,
 		fullModelArk:        true,
+
+		suggestedResolutions: contract.SuggestedResolutions,
+		omitOutputFormat:     contract.OmitOutputFormat,
 	}
 }
 

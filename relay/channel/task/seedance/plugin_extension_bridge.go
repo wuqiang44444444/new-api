@@ -366,6 +366,17 @@ func seedancePluginStringSliceField(object map[string]any, name string, maxItems
 // The prepared transaction already protects the frozen version until its
 // execution references are released; HTTP needs no repeated existence query.
 func (a *TaskAdaptor) buildSeedancePluginCreateRequestBody(c *gin.Context, info *relaycommon.RelayInfo, profile dto.VideoUpstreamProfile) ([]byte, bool, error) {
+	if contract, ok := relaycommon.GetVideoContractRequest(c); ok && contract.ModelArk != nil {
+		for _, item := range contract.ModelArk.Content {
+			if item.Type != "audio_url" || item.AudioURL == nil {
+				continue
+			}
+			ref := strings.TrimSpace(item.AudioURL.URL)
+			if !strings.HasPrefix(ref, "https://") && !strings.HasPrefix(ref, "http://") && !strings.HasPrefix(ref, "asset://") {
+				return nil, true, fmt.Errorf("reference audio was not uploaded before request build")
+			}
+		}
+	}
 	if !SeedanceExtensionProtocolMigrated(a.protocol) {
 		return nil, false, nil
 	}

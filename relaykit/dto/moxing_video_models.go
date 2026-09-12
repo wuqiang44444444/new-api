@@ -1,12 +1,13 @@
 package dto
 
-// MoxingVideoModelContract is the single code-backed registration of one
-// precise Moxing provider model served by VideoUpstreamProtocolMoxingModelArkV1.
-// The runtime southbound validator and the read-only public model projection
-// both derive from this registry so a model can never be accepted at runtime
-// while missing from the catalog, or limited by an undocumented local rule.
+// MoxingVideoModelContract describes the Go reference contract used by
+// migration regression fixtures. Runtime validation and public projection read
+// the pinned Seedance plugin metadata in plugins/seedance-link/plugin.js.
 type MoxingVideoModelContract struct {
-	ProviderModel string
+	ProviderModel        string
+	Resolutions          []string
+	SuggestedResolutions []string
+	OmitOutputFormat     bool
 	// DefaultDurationSeconds is the published northbound default fulfilled
 	// southbound when the client omits duration.
 	DefaultDurationSeconds int
@@ -44,6 +45,8 @@ var MoxingVideoModelContracts = []MoxingVideoModelContract{
 		// The 0818 model uses official content and defaults output audio to true.
 		// Its documentation does not prohibit audio-only reference input.
 		ProviderModel:              "doubao-seedance-2-0-260128-0818",
+		Resolutions:                []string{"480p", "720p", "1080p", "4k"},
+		OmitOutputFormat:           true,
 		DefaultDurationSeconds:     5,
 		MinDurationSeconds:         4,
 		MaxDurationSeconds:         15,
@@ -55,6 +58,8 @@ var MoxingVideoModelContracts = []MoxingVideoModelContract{
 	},
 	{
 		ProviderModel:              "doubao-seedance-2-0-fast-260128",
+		SuggestedResolutions:       []string{"480p", "720p"},
+		OmitOutputFormat:           true,
 		DefaultDurationSeconds:     5,
 		MinDurationSeconds:         4,
 		MaxDurationSeconds:         15,
@@ -66,6 +71,8 @@ var MoxingVideoModelContracts = []MoxingVideoModelContract{
 	},
 	{
 		ProviderModel:              "doubao-seedance-2-0-mini-260615",
+		SuggestedResolutions:       []string{"480p", "720p"},
+		OmitOutputFormat:           true,
 		DefaultDurationSeconds:     5,
 		MinDurationSeconds:         4,
 		MaxDurationSeconds:         15,
@@ -79,6 +86,7 @@ var MoxingVideoModelContracts = []MoxingVideoModelContract{
 		// 2.5 documents the 30/10/10 per-type caps, the 50-item total, the
 		// independent audio reference, seed and the mp4/mov output formats.
 		ProviderModel:              "doubao-seedance-2-5-260628",
+		Resolutions:                []string{"480p", "720p"},
 		DefaultDurationSeconds:     5,
 		MinDurationSeconds:         4,
 		MaxDurationSeconds:         30,

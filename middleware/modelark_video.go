@@ -36,8 +36,8 @@ func ModelArkVideoCreateConvert() gin.HandlerFunc {
 		defer service.FinishTaskRequestEvidenceClientDelivery(c)
 		var request modelArkVideoCreateRequest
 		var body map[string]any
-		if err := common.UnmarshalBodyReusable(c, &body); err != nil {
-			abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", "invalid request body")
+		if err := readModelArkVideoBody(c, &body); err != nil {
+			abortModelArkVideo(c, http.StatusBadRequest, "invalid_request", "invalid ModelArk JSON or audio upload")
 			return
 		}
 		if err := rejectUnknownVideoFields(
@@ -188,8 +188,14 @@ func validateModelArkVideoMediaItem(index int, item modelArkVideoContent, media 
 		item.Type != "audio_url" && item.AudioURL != nil {
 		return fmt.Errorf("content[%d] has multiple media payloads", index)
 	}
-	if err := validateModelArkVideoMediaURL(media.URL); err != nil {
-		return fmt.Errorf("content[%d]: %w", index, err)
+	// Inline audio bytes are validated once at ingress; file references are bound
+	// to this request there. Their encoded representation is not a URL-size limit.
+	audioSource := strings.TrimSpace(media.URL)
+	inlineAudio := item.Type == "audio_url" && (strings.HasPrefix(audioSource, "data:") || strings.HasPrefix(audioSource, "file://") || !strings.Contains(audioSource, ":"))
+	if !inlineAudio {
+		if err := validateModelArkVideoMediaURL(media.URL); err != nil {
+			return fmt.Errorf("content[%d]: %w", index, err)
+		}
 	}
 	role := strings.TrimSpace(videoStringValue(item.Role))
 	if role == "" || !modelArkVideoValueAllowed(role, roles...) {

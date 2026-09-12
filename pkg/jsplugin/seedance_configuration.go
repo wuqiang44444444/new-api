@@ -167,7 +167,7 @@ func decodeSeedanceChannelConfiguration(value any, apiVersion int, protocols, ho
 			}
 		}
 		for _, spec := range specs {
-			if _, err = seedanceConfigurationObject(spec, "ModelArk metadata", "omitDurationMaximum", "publishGenerateAudioDefault", "allowReturnLastFrame", "allowPriority", "deleteVideo", "defaultDuration", "intelligentDurationSeconds", "defaultGenerateAudio", "allowAudioOnly", "maxTotalMedia", "minDuration", "maxDuration", "intelligentDuration", "durationRequired", "resolutions", "resolutionRequired", "freeResolution", "ratios", "ratioRequired", "maxImages", "maxVideos", "minImages", "maxAudios", "allowVideos", "allowAudios", "allowGenerateAudio", "allowWatermark", "allowSeed", "allowCameraFixed", "outputFormats", "fullModelArk"); err != nil {
+			if _, err = seedanceConfigurationObject(spec, "ModelArk metadata", "omitDurationMaximum", "publishGenerateAudioDefault", "allowReturnLastFrame", "allowPriority", "deleteVideo", "defaultDuration", "intelligentDurationSeconds", "defaultGenerateAudio", "allowAudioOnly", "maxTotalMedia", "minDuration", "maxDuration", "intelligentDuration", "durationRequired", "resolutions", "suggestedResolutions", "resolutionRequired", "freeResolution", "ratios", "ratioRequired", "maxImages", "maxVideos", "minImages", "maxAudios", "allowVideos", "allowAudios", "allowGenerateAudio", "allowWatermark", "allowSeed", "allowCameraFixed", "outputFormats", "omitOutputFormat", "fullModelArk"); err != nil {
 				return nil, err
 			}
 		}

@@ -15,7 +15,7 @@ func TestMoxingStandardFieldsSurviveMappedSubmission(t *testing.T) {
 		t.Run(model.ProviderModel, func(t *testing.T) {
 			request := &dto.ModelArkVideoCreateRequest{
 				Model: "customer-model", Content: contentItems(textItem("generate")),
-				Duration: common.GetPointer(5), OutputFormat: common.GetPointer("mp4"),
+				Duration:    common.GetPointer(5),
 				CameraFixed: common.GetPointer(false), Seed: common.GetPointer(0),
 				ReturnLastFrame: common.GetPointer(false), Priority: common.GetPointer(0),
 				CallbackURL: common.GetPointer(""), SafetyIdentifier: common.GetPointer(""),
@@ -23,6 +23,9 @@ func TestMoxingStandardFieldsSurviveMappedSubmission(t *testing.T) {
 				Tools:         common.GetPointer([]dto.ModelArkVideoTool{}),
 				GenerateAudio: common.GetPointer(false), Watermark: common.GetPointer(false),
 				ServiceTier: common.GetPointer("default"),
+			}
+			if !model.OmitOutputFormat {
+				request.OutputFormat = common.GetPointer("mp4")
 			}
 			context := moxingTestContext(t, request)
 			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{

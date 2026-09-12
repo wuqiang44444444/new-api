@@ -1,16 +1,22 @@
 package seedance
 
 import (
+	"encoding/base64"
 	"io"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/feicai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,9 +25,12 @@ import (
 // These are wire-contract tests, not claims that a provider will accept or use
 // a particular media payload. No media is downloaded or generation purchased.
 func TestReferenceMediaRepresentationsReachProviderBody(t *testing.T) {
-	for _, protocol := range []dto.VideoUpstreamProtocol{dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, dto.VideoUpstreamProtocolSynlinkVideoV1, dto.VideoUpstreamProtocolFunCloudModelArkV3, dto.VideoUpstreamProtocolFeicaiVideosV1} {
+	for _, protocol := range []dto.VideoUpstreamProtocol{dto.VideoUpstreamProtocolTokenSaveMediaTaskV1, dto.VideoUpstreamProtocolSynlinkVideoV1, dto.VideoUpstreamProtocolFunCloudModelArkV3, dto.VideoUpstreamProtocolFeicaiVideosV1, dto.VideoUpstreamProtocolMoxingModelArkV1, dto.VideoUpstreamProtocolModelArkV3CMCC, dto.VideoUpstreamProtocolModelArkV3Volcengine, dto.VideoUpstreamProtocolModelArkV3BytePlus, dto.VideoUpstreamProtocolArkMediaV1} {
 		for _, kind := range []string{"audio_url", "video_url"} {
-			for _, scheme := range []string{"http", "data"} {
+			for _, scheme := range []string{"http", "https", "data", "base64", "file"} {
+				if kind != "audio_url" && (scheme == "base64" || scheme == "file") {
+					continue
+				}
 				t.Run(string(protocol)+"/"+kind+"/"+scheme, func(t *testing.T) {
 					ref := "http://media.example.com/reference.mp4"
 					if scheme == "data" {
@@ -34,9 +43,23 @@ func TestReferenceMediaRepresentationsReachProviderBody(t *testing.T) {
 						if scheme == "data" {
 							ref = "data:audio/mpeg;base64,YXVkaW8="
 						}
+						if scheme == "base64" {
+							ref = "YXVkaW8="
+						}
+						if scheme == "file" {
+							ref = "file://audio"
+						}
 						role, field = "reference_audio", "reference_audios"
 						item.VideoURL = nil
 						item.AudioURL = &dto.VideoMediaURL{URL: ref}
+					}
+					if scheme == "https" {
+						ref = strings.Replace(ref, "http://", "https://", 1)
+						if kind == "audio_url" {
+							item.AudioURL.URL = ref
+						} else {
+							item.VideoURL.URL = ref
+						}
 					}
 					item.Role = common.GetPointer(role)
 					req := providerTestRequest()
@@ -46,6 +69,13 @@ func TestReferenceMediaRepresentationsReachProviderBody(t *testing.T) {
 					req.Watermark = common.GetPointer(false)
 					providerModel := modelSeedance20
 					switch protocol {
+					case dto.VideoUpstreamProtocolMoxingModelArkV1:
+						providerModel = "doubao-seedance-2-0-260128-0818"
+					case dto.VideoUpstreamProtocolModelArkV3CMCC:
+						providerModel = "doubao-seedance-2.0"
+						req.Ratio = common.GetPointer("16:9")
+					case dto.VideoUpstreamProtocolModelArkV3Volcengine, dto.VideoUpstreamProtocolModelArkV3BytePlus, dto.VideoUpstreamProtocolArkMediaV1:
+						providerModel = "ep-audio-test"
 					case dto.VideoUpstreamProtocolSynlinkVideoV1:
 						providerModel = kitdto.SynlinkVideoModels()[0]
 					case dto.VideoUpstreamProtocolFunCloudModelArkV3:
@@ -61,10 +91,40 @@ func TestReferenceMediaRepresentationsReachProviderBody(t *testing.T) {
 						pinSeedanceExtensionForTest(t, c)
 					}
 					relaycommon.SetVideoContractRequest(c, dto.VideoContractRequest{ContractID: dto.VideoContractModelArkV3, ModelArk: req})
-					info := &relaycommon.RelayInfo{OriginModelName: req.Model, ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeSeedanceLink, ChannelBaseUrl: "https://provider.example", IsModelMapped: true, UpstreamModelName: providerModel, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: protocol}}}
+					info := &relaycommon.RelayInfo{UserId: 7, OriginModelName: req.Model, ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeSeedanceLink, ChannelBaseUrl: "https://provider.example", IsModelMapped: true, UpstreamModelName: providerModel, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: protocol}}}
+					if kind == "audio_url" && (scheme == "data" || scheme == "base64" || scheme == "file") {
+						store := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+							assert.Equal(t, http.MethodPut, r.Method)
+							data, err := io.ReadAll(r.Body)
+							assert.NoError(t, err)
+							assert.Equal(t, []byte("audio"), data)
+							assert.Equal(t, "audio/mpeg", r.Header.Get("Content-Type"))
+							w.WriteHeader(200)
+						}))
+						t.Cleanup(store.Close)
+						previous := http.DefaultTransport
+						http.DefaultTransport = store.Client().Transport
+						t.Cleanup(func() { http.DefaultTransport = previous })
+						config, err := common.Marshal(system_setting.ObjectStorageConfig{Backend: "s3", Endpoint: store.URL, Bucket: "audio", AccountName: "fixture", Credential: "fixture", Region: "us-east-1", Revision: t.Name()})
+						require.NoError(t, err)
+						model.NotifyObjectStorageSettingUpdate(string(config))
+						t.Cleanup(func() { model.NotifyObjectStorageSettingUpdate("") })
+						data, err := base64.StdEncoding.DecodeString("YXVkaW8=")
+						require.NoError(t, err)
+						service.SetVideoReferenceAudioInputs(c, map[int]service.VideoReferenceAudioInput{len(req.Content) - 1: {Source: ref, Data: data, MimeType: "audio/mpeg"}})
+					}
 					adaptor := &TaskAdaptor{}
 					adaptor.Init(info)
 					require.Nil(t, adaptor.ValidateMappedRequest(c, info))
+					if kind == "audio_url" && (scheme == "data" || scheme == "base64" || scheme == "file") {
+						ref = req.Content[len(req.Content)-1].AudioURL.URL
+						snapshot := &model.Task{}
+						service.StageVideoReferenceAudioSnapshot(c, snapshot)
+						require.Len(t, snapshot.PrivateData.ReferenceAudio, 1)
+						assert.True(t, strings.HasPrefix(ref, "https://"))
+						assert.Contains(t, ref, "/audio/"+snapshot.PrivateData.ReferenceAudio[0].ObjectKey+"?")
+					}
+
 					reader, err := adaptor.BuildRequestBody(c, info)
 					require.NoError(t, err)
 					raw, err := io.ReadAll(reader)
@@ -98,6 +158,8 @@ func TestReferenceMediaRepresentationsReachProviderBody(t *testing.T) {
 						require.True(t, ok)
 						require.Len(t, content, 2)
 						media := content[1].(map[string]any)
+						assert.Equal(t, kind, media["type"])
+						assert.NotContains(t, media, "image_url")
 						assert.Equal(t, role, media["role"])
 						assert.Equal(t, ref, media[kind].(map[string]any)["url"])
 						assert.Equal(t, false, wire["generate_audio"])

@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-08
+last-reviewed: 2026-09-12
 ---
 
 # FunCloud 模型与素材库对接设计
@@ -114,6 +114,24 @@ Channel 内 3 个模型查询同一素材已经通过，只能证明控制面共
 当前 FunCloud 价格继续适用（用户确认），独立测试模型复制对应旧客户模型的价格配置。真实四模型生成、
 统一素材引用、九图及账单验收记录在[归档实施方案](../../../99-archive/2026/09/2026-09-07-FunCloud新版视频协议与统一素材库实施方案.md)。
 
+
+### 参考音频传输与错误边界
+
+参考音频保持 ModelArk V3 的 `type=audio_url`、`audio_url.url` 与
+`role=reference_audio`。调用方使用 OSS 音频 HTTPS 地址时，adapter 保持地址、媒体类型、内容顺序和
+角色，不下载后转为 Base64，不改写为 `image_url`，也不把音频纳入本站托管图片的引用解析。
+本站托管图片只转换 `image_url.url` 中已冻结的图片引用；音频 URL 不触发图片素材创建。
+
+参考音频文件的实际时长与媒体可用性由 Provider 判断，中转站不下载或解码音频以检查时长，不自动
+裁剪、补齐或转码。该边界不改变生成视频的 `duration` 参数与既有计费安全校验。
+Provider 返回的错误码与消息经既有脱敏路径透传；未明确指出具体媒体与原因时，不把错误重新归因为
+音频时长、本站素材 ID 缺失或图片创建失败。视频任务终态错误与此前独立素材创建的结果分别保存。
+
+北向音频 HTTPS URL 原样透传；音频 Data URL、裸 Base64 或 multipart 文件由网关在资金 hold 前
+上传并签名，按内容序号把 `audio_url.url` 替换为本站 OSS HTTPS URL，再交给 adapter。调用方无需针对
+FunCloud 改变媒体准备流程。音频不会创建图片 Asset，也不会转换为 `image_url`；
+`real_person_mode=true` 保持原有合同。上传、签名、冻结事实和文件请求形状以
+[Seedance参考音频传输架构](../../Seedance参考音频传输架构.md)为准。真实 Provider 验收仍单独执行。
 
 ### Mini 素材引用验收边界
 

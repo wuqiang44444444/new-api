@@ -16,6 +16,7 @@ func attachTaskProtocolSnapshot(c *gin.Context, task *model.Task, info *relaycom
 	}
 	task.ClientProtocol = info.TaskRelayInfo.ClientProtocol
 	service.StageFunCloudHostedMediaSnapshot(c, task)
+	service.StageVideoReferenceAudioSnapshot(c, task)
 	if _, ok := relaycommon.GetVideoContractRequest(c); ok {
 		profile := info.ChannelOtherSettings.VideoUpstreamProfile
 		if info.ChannelType == constant.ChannelTypeSeedanceLink {

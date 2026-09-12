@@ -423,6 +423,24 @@ const MOXING_MODEL_METADATA = Object.fromEntries(
   ])
 );
 
+// Moxing model pages distinguish exhaustive supported values from suggestions.
+// Suggestions must never become a request rejection rule.
+Object.assign(MOXING_MODEL_METADATA["doubao-seedance-2-0-260128-0818"], {
+  freeResolution: false,
+  resolutions: ["480p", "720p", "1080p", "4k"],
+  omitOutputFormat: true,
+});
+Object.assign(MOXING_MODEL_METADATA["doubao-seedance-2-5-260628"], {
+  freeResolution: false,
+  resolutions: ["480p", "720p"],
+});
+for (const model of ["doubao-seedance-2-0-fast-260128", "doubao-seedance-2-0-mini-260615"]) {
+  Object.assign(MOXING_MODEL_METADATA[model], {
+    suggestedResolutions: ["480p", "720p"],
+    omitOutputFormat: true,
+  });
+}
+
 const CMCC_MODEL_METADATA = {
   "doubao-seedance-2.0": {
     minDuration: 4,
@@ -493,7 +511,7 @@ export const meta = {
     en: "Seedance Link southbound protocol adapters",
     zh: "Seedance Link 南向协议适配",
   },
-  version: "1.3.0",
+  version: "1.3.1",
   author: { name: "yuan-gateway" },
   seedanceProtocols: [
     "funcloud_modelark_v3",
@@ -1340,6 +1358,7 @@ function validateMediaModelRequest(request, spec, fullModelArk) {
     if (!MODELARK_RATIOS.includes(ratio)) throw new Error('ratio "' + ratio + '" is not supported by the selected customer model');
   }
   if (request.output_format != null) {
+    if (spec.omitOutputFormat) throw new Error("output_format is not supported by the selected customer model");
     const format = trimSpace(request.output_format);
     if (!format) throw new Error("output_format must not be empty");
     if (!(fullModelArk ? ["mp4", "mov"] : spec.outputFormats || []).includes(format))

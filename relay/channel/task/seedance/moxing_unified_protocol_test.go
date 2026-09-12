@@ -345,9 +345,11 @@ func TestMoxingUnifiedModelsPublishAllFourInputTypes(t *testing.T) {
 				assert.NotContains(t, parameters, parameter.Name, "each field must have one public definition")
 				parameters[parameter.Name] = parameter
 			}
-			for _, name := range []string{"camera_fixed", "seed", "return_last_frame", "priority", "callback_url", "execution_expires_after", "draft", "tools", "safety_identifier", "frames", "output_format"} {
+			for _, name := range []string{"camera_fixed", "seed", "return_last_frame", "priority", "callback_url", "execution_expires_after", "draft", "tools", "safety_identifier", "frames"} {
 				assert.Contains(t, parameters, name, "accepted standard fields must be discoverable")
 			}
+			_, hasOutputFormat := parameters["output_format"]
+			assert.Equal(t, !contract.OmitOutputFormat, hasOutputFormat)
 			assert.NotContains(t, parameters, "service_tier", "the existing channel setting still governs service tier")
 			assert.False(t, api.Creation.AdditionalProperties, "provider-private fields remain outside the contract")
 		})

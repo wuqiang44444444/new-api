@@ -64,6 +64,9 @@ type PublicAPIParameter struct {
 	MaxLength     *int     `json:"max_length,omitempty"`
 	MinItems      *int     `json:"min_items,omitempty"`
 	MaxItems      *int     `json:"max_items,omitempty"`
+
+	// SuggestedValues are non-exhaustive recommendations, never a validation enum.
+	SuggestedValues []string `json:"suggested_values,omitempty"`
 }
 
 type PublicVideoContentType struct {

@@ -18,7 +18,7 @@ import (
 //go:embed testdata/seedance-link-v1.0.2.js
 var seedanceV1HistoricalSource string
 
-func TestSeedanceEmbeddedUpgradePreservesOldVersionUntilActivation(t *testing.T) {
+func TestSeedanceEmbeddedUpgradeActivatesLatestAndPreservesHistory(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.TaskPlugin{}))
@@ -44,15 +44,14 @@ func TestSeedanceEmbeddedUpgradePreservesOldVersionUntilActivation(t *testing.T)
 	require.Len(t, versions, 2)
 	installed, err := model.GetTaskPluginVersion(SeedanceExtensionPluginKey, "1.0.2")
 	require.NoError(t, err)
-	assert.True(t, installed.Active)
+	assert.False(t, installed.Active)
 	assert.Equal(t, oldSource, installed.Source)
 	assert.Equal(t, old.SourceHash, installed.SourceHash)
 	upgrade, err := model.GetTaskPluginVersion(SeedanceExtensionPluginKey, plugins.SeedanceVersion())
 	require.NoError(t, err)
-	assert.False(t, upgrade.Active)
+	assert.True(t, upgrade.Active)
 	assert.Equal(t, plugins.SeedanceSource(), upgrade.Source)
 
-	require.NoError(t, model.ActivateTaskPlugin(SeedanceExtensionPluginKey, upgrade.Version))
 	active, err := model.ListActiveTaskPlugins()
 	require.NoError(t, err)
 	require.NoError(t, store.SyncSnapshot(context.Background(), active))

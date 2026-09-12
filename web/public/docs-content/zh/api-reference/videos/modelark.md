@@ -1,7 +1,7 @@
 ---
 page-id: videos-modelark
 kind: api-reference
-last-verified: 2026-09-09
+last-verified: 2026-09-12
 operations:
   - listModelArkVideoModels
   - retrieveModel
@@ -75,7 +75,8 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models" \
             "parameters": [
               {"name": "model", "type": "string", "required": true},
               {"name": "content", "type": "array", "required": true, "min_items": 1},
-              {"name": "duration", "type": "integer", "minimum": 4, "maximum": 15}
+              {"name": "duration", "type": "integer", "minimum": 4, "maximum": 15},
+              {"name": "resolution", "type": "string", "required": false, "default_value": "720p", "enum": ["480p", "720p"]}
             ],
             "content_types": [
               {"type": "text", "required_fields": ["type", "text"]},
@@ -98,13 +99,59 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models" \
 | 字段 | 用途 |
 | --- | --- |
 | `available` / `availability` | 当前 Key 是否能创建任务；不可用模型仍可能保留在目录中 |
-| `api.video.creation.parameters` | 顶层字段的类型、必填性、固定值、默认值、枚举和上下限 |
+| `api.video.creation.parameters` | 顶层字段的类型、必填性、固定值、默认值、枚举、推荐值和上下限 |
 | `api.video.creation.content_types` | `content` 允许的媒体类型、角色、子字段和数量边界 |
 | `api.video.operations` | 创建、列表、查询、删除与内容下载的路径和支持状态 |
 | `api.assets` | 素材类型、操作、创建限制、引用格式与匿名复用域 |
 
 模型名由部署方定义。客户端只能发送目录中的客户模型名，不能从名称推断分辨率、时长、媒体组合、
 上游模型或 Provider。
+
+### 分辨率：允许值与推荐值
+
+读取 `parameters` 中 `name=resolution` 的项：
+
+- 存在 `enum` 时，只发送其中的值。例如 `["480p", "720p"]` 不支持 `1080p` 或 `4k`。
+- `suggested_values` 是非穷举推荐值。例如 `["480p", "720p"]` 可用于展示常用选项，但不能当作
+  `enum`；没有 enum 也不表示任意分辨率都能成功，其它值仍由上游判定。
+- `default_value` 表示省略字段后的本站默认值；推荐值不是默认值。按目录中的大小写发送，
+  不要自行把 `4k` 改写成 `4K`。
+
+推荐值的结构示意：
+
+```json
+{
+  "name": "resolution",
+  "type": "string",
+  "required": false,
+  "default_value": "720p",
+  "suggested_values": ["480p", "720p"]
+}
+```
+
+模型可以只支持两档分辨率，也可以支持四档；不能因为模型版本更新就假定分辨率更高。
+调用方不应硬编码全部模型共享的分辨率列表。
+
+### 输出格式与场景限制
+
+仅当模型参数列表含 `output_format` 时才发送该字段，并遵守其枚举。不支持格式参数的模型应省略
+整个字段，不能默认给所有视频请求添加 `output_format=mp4`；显式传入未发布字段会失败。
+
+平面的参数枚举、媒体类型和数量上限不能完整表达场景间的组合限制。使用部署方确认对应
+Seedance 2.5 能力的客户模型时，还需遵守以下上游规则：
+
+- 首帧、首尾帧、视频延长仅支持 `ratio=adaptive`；这些场景不要照抄文生视频的 `16:9`。
+- 首帧/首尾帧与多模态参考素材不能混用。
+- 图片最多 30 项、视频最多 10 项、音频最多 10 项，总素材最多 50 项；参考视频、参考音频各自
+  总时长不得超过 30 秒。支持纯音频参考，视频编辑尚未开放。
+- 上游根据内容角色与提示词判定任务类型，部分场景错误可能在任务开始后异步返回。
+  网关不根据提示词替调用方选择场景，也不改写画幅。
+
+Fast/Mini 的音频参考应搭配图片或视频，文档不建议仅传音频；不能把接受 `audio_url` 视为纯音频
+生成已经验证。2.0（0818）页面未禁止纯音频，也没有提供真实履约保证。
+
+四款对应的本站合同缺省时长为 5 秒；2.5 上游自身默认 -1 不改变本站默认值。模型名称可由部署方
+自定义，以上场景说明不能用于从客户模型名推断 Provider 或能力。
 
 ## 创建任务
 
@@ -125,7 +172,7 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
       }
     ],
     "duration": 5,
-    "ratio": "16:9",
+    "ratio": "adaptive",
     "generate_audio": false
   }'
 ```
@@ -150,7 +197,7 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 模型公开对应 `type + role` 时，可将 `content` 替换为下列数组。首帧与末帧控制起止画面，
 `reference_image` 用作参考素材，不能把角色互换来绕过不支持的组合。
 
-首尾帧示例：
+首尾帧示例：替换 `content` 时同时核对 `ratio`；2.5 必须使用 `adaptive`。
 
 ```json
 [
@@ -271,7 +318,34 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 - 非空的 `asset://<opaque-id>` 引用。
 
 具体模型允许哪些 `type + role`、每种内容的数量以及组合规则，以
-`api.video.creation.content_types` 为准。不支持的组合会明确失败，不会静默删字段或降级为文生视频。
+`api.video.creation.content_types` 与上述场景说明为准。部分组合由上游异步校验，不能仅凭每种媒体
+分别受支持就认定其组合有效；失败不会静默删字段或降级为文生视频。
+
+### 参考音频的 URL、Base64 与文件
+
+`type=audio_url`、`role=reference_audio` 和 `audio_url.url` 保持不变：
+
+- HTTPS 地址由网关原样传递，无需预先复制到本站 OSS。
+- 音频 Data URL（例如 `data:audio/wav;base64,...`）或裸 Base64 由网关上传到本站 OSS，使用本站
+  HTTPS URL 发送。未声明 MIME 时可根据文件头识别，但识别结果不会作为音频有效性的拒绝条件。
+- 文件使用同一路径的 `multipart/form-data`：`request` 表单项包含完整 ModelArk JSON，音频附件通过
+  `audio_url.url` 中的 `file://<表单项名称>` 引用。它只引用本次上传的附件，不是服务器文件路径。
+
+文件上传示例（模型须支持参考音频与该组合）：
+
+```bash
+curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
+  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}" \
+  -F 'request={"model":"{{MODEL_ID_PLACEHOLDER}}","content":[{"type":"text","text":"蓝色陶瓷杯，镜头缓慢推进"},{"type":"image_url","image_url":{"url":"https://example.com/cup.png"},"role":"reference_image"},{"type":"audio_url","audio_url":{"url":"file://audio"},"role":"reference_audio"}]};type=application/json' \
+  -F 'audio=@reference.wav;type=audio/wav'
+```
+
+附件表单项名称必须唯一，所有附件都必须被音频内容项引用；每个上传文件或解码后的 Base64 音频最多
+15 MiB（含上限，按文件实际字节数计算），全请求仍受站点请求体上限限制。本站 OSS 不可用、上传或签名失败时返回
+`503 reference_audio_unavailable`，不提交生成任务、不预扣生成费用。HTTPS URL 无需本站 OSS。
+
+网关不检查参考音频的实际时长、不转码；媒体是否有效以及是否满足模型限制由上游判断，错误信息经
+脱敏后返回。音频上传不会创建图片素材，也不会把 `audio_url` 改成 `image_url`。
 
 ### 创建响应
 

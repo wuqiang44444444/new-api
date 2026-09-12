@@ -30,6 +30,9 @@ func VideoAPIFromPlugin(customerModel string, protocol dto.VideoUpstreamProtocol
 		allowCameraFixed:    metadata.AllowCameraFixed,
 		outputFormats:       metadata.OutputFormats,
 		fullModelArk:        metadata.FullModelArk,
+
+		suggestedResolutions: metadata.SuggestedResolutions,
+		omitOutputFormat:     metadata.OmitOutputFormat,
 	}
 	api, ok := modelArkVideoAPI(customerModel, "", spec, allowServiceTier)
 	if !ok {

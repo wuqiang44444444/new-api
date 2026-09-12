@@ -25,12 +25,11 @@ func providerSpec(protocol kitdto.VideoUpstreamProtocol, model string) (provider
 	return providerModelSpec{}, false
 }
 
-// moxingProviderSpec derives the runtime rules from the single Moxing model
-// registry. It adds no per-model restriction beyond the registered contract:
-// undocumented caps (reference media quantities for 2.0/Fast/Mini and the
-// resolution enum) stay unset so the provider judges unlisted inputs.
+// moxingProviderSpec is the Go reference used by migration regression tests.
+// Undocumented reference caps and Fast/Mini resolution enums stay unset.
 func moxingProviderSpec(contract kitdto.MoxingVideoModelContract) providerModelSpec {
-	return providerModelSpec{
+	spec := providerModelSpec{
+		resolutions:              stringSet(contract.Resolutions...),
 		minDuration:              contract.MinDurationSeconds,
 		maxDuration:              contract.MaxDurationSeconds,
 		intelligentDuration:      contract.IntelligentDurationSeconds,
@@ -46,6 +45,10 @@ func moxingProviderSpec(contract kitdto.MoxingVideoModelContract) providerModelS
 		// These are the published northbound formats, not inferred per-model capabilities.
 		outputFormats: stringSet("mp4", "mov"),
 	}
+	if contract.OmitOutputFormat {
+		spec.outputFormats = nil
+	}
+	return spec
 }
 
 func validateProviderModelRequest(protocol kitdto.VideoUpstreamProtocol, model string, request *dto.ModelArkVideoCreateRequest) error {
@@ -85,7 +88,7 @@ func validateProviderModelRequest(protocol kitdto.VideoUpstreamProtocol, model s
 			return fmt.Errorf("resolution must not be empty")
 		}
 	}
-	// A model with no registered resolution enum (the Moxing models) leaves
+	// A model with no registered resolution enum leaves
 	// unlisted values to the provider instead of guessing its spec locally.
 	if len(spec.resolutions) > 0 {
 		if _, allowed := spec.resolutions[resolution]; !allowed {

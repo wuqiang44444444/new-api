@@ -2611,6 +2611,23 @@
               "schema": {
                 "$ref": "#/components/schemas/ModelArkVideoCreateRequest"
               }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["request"],
+                "properties": {
+                  "request": {
+                    "type": "string",
+                    "description": "完整 ModelArkVideoCreateRequest JSON 字符串。audio_url.url 使用 file://<附件表单项名称> 引用本次上传的音频文件。"
+                  }
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "被 request 中 audio_url 引用的音频附件；名称唯一；MIME 仅用于存储，不验证媒体有效性；单文件最多 15 MiB（含上限，按实际字节数计算）。"
+                }
+              }
             }
           }
         },
@@ -3572,6 +3589,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "suggested_values": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "非穷举推荐值，可用于展示常用选项；不是 enum，不参与拒绝其它值。没有 enum 不代表任意值均已获上游支持。"
           },
           "fixed_value": {
             "description": "发送该字段时唯一允许的值。"
@@ -6601,7 +6623,8 @@
                   "$ref": "#/components/schemas/VideoMediaURL"
                 },
                 "audio_url": {
-                  "$ref": "#/components/schemas/VideoMediaURL"
+                  "allOf": [{"$ref": "#/components/schemas/VideoMediaURL"}],
+                  "description": "参考音频：HTTPS URL 原样传递；音频 Data URL 或裸 Base64 由网关上传 OSS 后发送 HTTPS URL。multipart 可用 file://<附件名称>。网关不检查实际音频时长。"
                 }
               }
             }
@@ -6618,11 +6641,11 @@
           },
           "resolution": {
             "type": "string",
-            "description": "输出分辨率。可选值和必填性由当前已发布模型 capability 决定。"
+            "description": "输出分辨率。穷举允许值与必填性由 api.video.creation.parameters 中对应项决定；enum 为硬限制，suggested_values 仅为非穷举推荐。不能把推荐列表当白名单，也不能把缺少 enum 当作任意分辨率均已验证。"
           },
           "ratio": {
             "type": "string",
-            "description": "画幅。可选值、默认值与 adaptive 支持由当前已发布模型 capability 决定。"
+            "description": "画幅。可选值、默认值与 adaptive 支持以模型公开参数为准。Seedance 2.5 的首帧、首尾帧和视频延长仅允许 adaptive；场景组合规则见 ModelArk API 文档。"
           },
           "output_format": {
             "type": "string",
@@ -6630,7 +6653,7 @@
               "mp4",
               "mov"
             ],
-            "description": "显式类型化输出格式。仅已登记支持该字段的客户模型接受 mp4 或 mov；其它模型传入时会明确失败。"
+            "description": "显式类型化输出格式。仅当模型公开参数列表包含 output_format 时才可发送，并遵守该模型的枚举；其它模型应省略整个字段，即使 mp4 也不能默认附加。未发布字段会明确失败。"
           },
           "service_tier": {
             "type": "string"

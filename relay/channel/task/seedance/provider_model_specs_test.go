@@ -57,7 +57,7 @@ func TestProviderModelSpecsEnforcePerModelContracts(t *testing.T) {
 			},
 		},
 		{
-			name: "Moxing 2.0 accepts unlisted resolution without a local enum", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: "doubao-seedance-2-0-260128-0818",
+			name: "Moxing 2.0 accepts documented 1080p", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: "doubao-seedance-2-0-260128-0818",
 			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.Resolution = common.GetPointer("1080p") },
 		},
 		{
@@ -114,8 +114,8 @@ func TestProviderModelSpecsEnforcePerModelContracts(t *testing.T) {
 			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.CameraFixed = common.GetPointer(false) },
 		},
 		{
-			name: "Moxing Fast accepts output format", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20Fast,
-			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.OutputFormat = common.GetPointer("mp4") },
+			name: "Moxing Fast rejects unpublished output format", protocol: kitdto.VideoUpstreamProtocolMoxingModelArkV1, model: modelSeedance20Fast,
+			mutate: func(request *dto.ModelArkVideoCreateRequest) { request.OutputFormat = common.GetPointer("mp4") }, wantErr: true,
 		},
 	}
 

@@ -191,7 +191,7 @@ func evidenceRedactBody(body []byte, contentType string) ([]byte, error) {
 			}
 			if isEvidenceCredentialKey(part.FormName()) {
 				payload = []byte(evidenceRedactedPlaceholder)
-			} else if part.FileName() == "" && strings.Contains(part.Header.Get("Content-Type"), "json") {
+			} else if part.FileName() == "" && (part.FormName() == "request" || strings.Contains(part.Header.Get("Content-Type"), "json")) {
 				payload, err = evidenceRedactBody(payload, "application/json")
 				if err != nil {
 					return nil, err

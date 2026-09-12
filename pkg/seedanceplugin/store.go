@@ -51,11 +51,9 @@ func sourceHashOf(source string) string {
 }
 
 // EnsureSeeded inserts the embedded extension artifact into the version
-// store when the exact version is absent. The first version of the key
-// becomes active through SaveTaskPlugin semantics; later embedded versions
-// are seeded non-active so activation stays an explicit administrator
-// action. Seeding is marked done only after the version is confirmed
-// persisted, so a transient database failure retries on the next sync.
+// store when absent, then automatically promotes a newer bundled version.
+// Publication validates existing Channels and preserves immutable history.
+// Completion is recorded only after promotion succeeds, so failures retry.
 func (s *Store) EnsureSeeded(ctx context.Context) error {
 	// The embedded artifact cannot change during this process. Check completed
 	// seeding before compiling; only successful persistence sets this marker.
@@ -74,6 +72,12 @@ func (s *Store) EnsureSeeded(ctx context.Context) error {
 
 	existing, err := model.GetTaskPluginVersion(pluginruntime.SeedancePluginKey, version)
 	if err == nil && existing != nil {
+		if existing.Source != source || existing.APIVersion != plugin.Meta.APIVersion {
+			return errors.New("embedded Seedance version conflicts with its stored artifact; publish a new version")
+		}
+		if err := model.PromoteEmbeddedSeedancePlugin(version, sourceHashOf(source)); err != nil {
+			return err
+		}
 		s.markSeeded(version)
 		return nil
 	}
@@ -91,6 +95,9 @@ func (s *Store) EnsureSeeded(ctx context.Context) error {
 	}
 	if err = model.SaveTaskPlugin(&seed); err != nil {
 		return fmt.Errorf("seed embedded seedance-link artifact %s: %w", version, err)
+	}
+	if err = model.PromoteEmbeddedSeedancePlugin(version, seed.SourceHash); err != nil {
+		return err
 	}
 	s.markSeeded(version)
 	return nil

@@ -10,6 +10,7 @@ import (
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	taskseedance "github.com/QuantumNous/new-api/relay/channel/task/seedance"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // compileTaskPluginSource routes an administrator-provided source to the
@@ -53,9 +54,22 @@ func splitSeedanceExtensionRows(rows []model.TaskPlugin) (native []model.TaskPlu
 func syncSeedanceExtensionPlugins(ctx context.Context, rows []model.TaskPlugin) {
 	key := taskseedance.SeedanceExtensionPluginKey
 	if err := taskseedance.EnsureSeededExtension(ctx); err != nil {
+		_ = taskseedance.SyncExtensionSnapshot(ctx, nil)
 		taskPluginSyncState.errors[key] = err.Error()
 		common.SysError(fmt.Sprintf("sync seedance extension: %v", err))
 		return
+	}
+	// The caller's snapshot predates bundled-version promotion. Read the
+	// committed active row so the first sync publishes the new version.
+	rows = nil
+	active, err := model.GetTaskPluginVersion(key, "")
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		_ = taskseedance.SyncExtensionSnapshot(ctx, nil)
+		taskPluginSyncState.errors[key] = "cannot read active Seedance plugin"
+		return
+	}
+	if err == nil && active.Enabled {
+		rows = append(rows, *active)
 	}
 	if err := taskseedance.SyncExtensionSnapshot(ctx, rows); err != nil {
 		taskPluginSyncState.errors[key] = err.Error()

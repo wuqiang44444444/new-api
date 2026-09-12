@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-29
+last-reviewed: 2026-09-12
 ---
 
 # Seedance 无状态素材代理架构
@@ -9,6 +9,9 @@ last-reviewed: 2026-08-29
 本文只描述素材代理的内部边界、路由责任和安全不变量，不重复列出每个客户模型的公开能力矩阵。
 对外调用合同、操作支持和 `api.assets` 字段以
 [Seedance 模型素材库支持矩阵](Seedance模型素材库支持矩阵.md) 为唯一入口。
+
+视频创建入口的 Base64/文件参考音频由网关上传 OSS，属于
+[请求级音频传输](Seedance参考音频传输架构.md)，不属于本节素材控制面的无状态代理，也不创建音频 Asset。
 
 ## 1. 架构边界
 

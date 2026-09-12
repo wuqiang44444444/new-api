@@ -13,6 +13,7 @@ type videoSpec struct {
 	resolutions              []string
 	resolutionRequired       bool
 	freeResolution           bool
+	suggestedResolutions     []string
 	ratios                   []string
 	ratioRequired            bool
 	maxImages, maxVideos     int
@@ -23,6 +24,7 @@ type videoSpec struct {
 	allowSeed                bool
 	allowCameraFixed         bool
 	outputFormats            []string
+	omitOutputFormat         bool
 	fullModelArk             bool
 }
 
@@ -79,10 +81,8 @@ func modelArkVideoAPI(customerModel string, protocol dto.VideoUpstreamProtocol, 
 		}
 		parameters = append(parameters, resolution)
 	} else if spec.freeResolution {
-		// The Moxing documentation enumerates no resolution values (720p is
-		// only a recommendation), so the catalog publishes a free string with
-		// the northbound default and the provider judges unlisted values.
-		parameters = append(parameters, dto.PublicAPIParameter{Name: "resolution", Type: "string", DefaultValue: "720p"})
+		// A recommendation does not establish an exhaustive supported-value enum.
+		parameters = append(parameters, dto.PublicAPIParameter{Name: "resolution", Type: "string", DefaultValue: "720p", SuggestedValues: spec.suggestedResolutions})
 	}
 	if len(spec.ratios) > 0 {
 		parameters = append(parameters, stringEnumParameter("ratio", spec.ratioRequired, spec.ratios))
@@ -104,7 +104,12 @@ func modelArkVideoAPI(customerModel string, protocol dto.VideoUpstreamProtocol, 
 		parameters = append(parameters, stringEnumParameter("output_format", false, spec.outputFormats))
 	}
 	if spec.fullModelArk {
-		parameters = append(parameters, fullModelArkParameters(allowServiceTier)...)
+		for _, parameter := range fullModelArkParameters(allowServiceTier) {
+			if parameter.Name == "output_format" && (spec.omitOutputFormat || len(spec.outputFormats) > 0) {
+				continue
+			}
+			parameters = append(parameters, parameter)
+		}
 	}
 	if protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 {
 		parameters = append(parameters,

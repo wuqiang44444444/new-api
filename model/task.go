@@ -160,6 +160,7 @@ type TaskPrivateData struct {
 	// HostedMedia 冻结创建时已接受的 FunCloud 托管素材事实（素材 ID、本站
 	// 对象 key、MIME、字节数）。只记录对象位置，不记录签名 URL 或来源 URL。
 	HostedMedia    []TaskHostedMediaFact    `json:"hosted_media,omitempty"`
+	ReferenceAudio []TaskReferenceAudioFact `json:"reference_audio,omitempty"`
 	AppID          int                      `json:"app_id,omitempty"`
 	SkipTokenQuota bool                     `json:"skip_token_quota,omitempty"` // Playground 等不参与令牌额度记账的任务
 	AsyncBilling   *TaskAsyncBillingContext `json:"async_billing,omitempty"`

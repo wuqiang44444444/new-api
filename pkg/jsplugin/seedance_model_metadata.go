@@ -23,6 +23,7 @@ type SeedanceVideoModelMetadata struct {
 	IntelligentDuration         bool     `json:"intelligentDuration,omitempty"`
 	DurationRequired            bool     `json:"durationRequired,omitempty"`
 	Resolutions                 []string `json:"resolutions,omitempty"`
+	SuggestedResolutions        []string `json:"suggestedResolutions,omitempty"`
 	ResolutionRequired          bool     `json:"resolutionRequired,omitempty"`
 	FreeResolution              bool     `json:"freeResolution,omitempty"`
 	Ratios                      []string `json:"ratios,omitempty"`
@@ -38,6 +39,7 @@ type SeedanceVideoModelMetadata struct {
 	AllowSeed                   bool     `json:"allowSeed,omitempty"`
 	AllowCameraFixed            bool     `json:"allowCameraFixed,omitempty"`
 	OutputFormats               []string `json:"outputFormats,omitempty"`
+	OmitOutputFormat            bool     `json:"omitOutputFormat,omitempty"`
 	FullModelArk                bool     `json:"fullModelArk,omitempty"`
 }
 
@@ -75,7 +77,10 @@ func (spec *SeedanceVideoModelMetadata) validate() error {
 	if spec.RatioRequired && len(spec.Ratios) == 0 {
 		return fmt.Errorf("required ratio needs declared ratio options")
 	}
-	for _, values := range [][]string{spec.Resolutions, spec.Ratios, spec.OutputFormats} {
+	if spec.OmitOutputFormat && len(spec.OutputFormats) > 0 {
+		return fmt.Errorf("unsupported output format cannot declare format options")
+	}
+	for _, values := range [][]string{spec.Resolutions, spec.SuggestedResolutions, spec.Ratios, spec.OutputFormats} {
 		if len(values) > 32 {
 			return fmt.Errorf("too many ModelArk metadata enum values")
 		}
