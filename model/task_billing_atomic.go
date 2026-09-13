@@ -30,7 +30,9 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 	requestedOperation := ""
 	requestedReason := ""
 	requestedTargetQuota := (*int)(nil)
+	requestedClamp := (*common.QuotaClamp)(nil)
 	if task.PrivateData.AsyncBilling != nil {
+		requestedClamp = task.PrivateData.AsyncBilling.QuotaClamp
 		requestedOperation = task.PrivateData.AsyncBilling.Operation
 		requestedReason = task.PrivateData.AsyncBilling.Reason
 		if task.PrivateData.AsyncBilling.TargetQuota != nil {
@@ -67,6 +69,9 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 		if requestedTargetQuota != nil {
 			target := *requestedTargetQuota
 			async.TargetQuota = &target
+		}
+		if requestedClamp != nil {
+			async.QuotaClamp = requestedClamp
 		}
 
 		delta = targetQuota - locked.Quota
@@ -151,6 +156,16 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 			}
 		}
 
+		event := "adjustment"
+		if async.Operation == "refund" {
+			event = "refund"
+		}
+		if IsImageTask(&locked) {
+			event = "complete"
+		}
+		if err := queueTaskBillingDeliveryTx(tx, &locked, event, locked.Quota, targetQuota); err != nil {
+			return err
+		}
 		locked.Quota = targetQuota
 		async.State = TaskBillingStateSettled
 		async.Error = ""

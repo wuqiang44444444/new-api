@@ -109,3 +109,19 @@ func billingStatementTaskFacts(log billingReconciliationLog, other, snapshot map
 		}
 	}
 }
+
+// Customer refunds are not provider credits. Only a task settlement adjustment
+// may carry final usage on a refund row; ordinary refunds never enter this view.
+func isProviderTaskUsageAdjustment(log billingReconciliationLog) bool {
+	var other map[string]json.RawMessage
+	if common.UnmarshalJsonStr(log.Other, &other) != nil || billingBreakdownString(other["task_id"]) == "" {
+		return false
+	}
+	event := billingBreakdownString(other["task_billing_event"])
+	if event == "refund" || event == "create" {
+		return false
+	}
+	_, actual := other["actual_quota"]
+	_, pre := other["pre_consumed_quota"]
+	return event == "adjustment" || (actual && pre)
+}

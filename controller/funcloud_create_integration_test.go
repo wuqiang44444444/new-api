@@ -67,7 +67,7 @@ func TestFunCloudCreateRouteCommitsHoldBeforeProviderBytes(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(saved)) })
 			require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
 				"billing_setting.billing_mode": `{"customer-funcloud":"tiered_expr"}`,
-				"billing_setting.billing_expr": `{"customer-funcloud":"tier(\"fixed\", 1400)"}`,
+				"billing_setting.billing_expr": `{"customer-funcloud":"tier(\"fixed\", 0.0014)"}`,
 			}))
 			user := model.User{Id: 8190, Username: "funcloud-integration", Quota: 10000, Status: common.UserStatusEnabled, Group: "default"}
 			user.SetSetting(kitdto.UserSetting{BillingPreference: "wallet_only"})

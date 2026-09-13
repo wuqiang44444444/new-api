@@ -158,6 +158,13 @@ const ModelRatioVisualEditorComponent = forwardRef<
     editData?.name ? [editData.name] : [],
     Boolean(editData?.name)
   )
+  // 管理价格接口对当前编辑模型返回的 Seedance 归属事实，桌面面板与窄屏抽屉同源。
+  const pricingEntry = pricingConfig.data?.entries.find(
+    (entry) => entry.model_name === editData?.name
+  )
+  const preconsumeTokenBudget =
+    pricingEntry?.preconsume_token_budget === true
+
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = useState('')
@@ -775,11 +782,8 @@ const ModelRatioVisualEditorComponent = forwardRef<
               key={editData?.name || '__new_model__'}
               ref={editorPanelRef}
               editData={editData}
-              usageSchema={
-                pricingConfig.data?.entries.find(
-                  (entry) => entry.model_name === editData?.name
-                )?.usage_schema
-              }
+              usageSchema={pricingEntry?.usage_schema}
+              preconsumeTokenBudget={preconsumeTokenBudget}
               onSave={onSave}
               isSaving={isSaving}
               className='h-full min-h-0'
@@ -820,11 +824,8 @@ const ModelRatioVisualEditorComponent = forwardRef<
           open={sheetOpen}
           onOpenChange={setSheetOpen}
           editData={editData}
-          usageSchema={
-            pricingConfig.data?.entries.find(
-              (entry) => entry.model_name === editData?.name
-            )?.usage_schema
-          }
+          usageSchema={pricingEntry?.usage_schema}
+          preconsumeTokenBudget={preconsumeTokenBudget}
           onSave={onSave}
           isSaving={isSaving}
         />

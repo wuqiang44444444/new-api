@@ -140,7 +140,7 @@ export interface LogOtherData {
     quota_saturation?: {
       op: string
       kind: 'overflow' | 'underflow' | 'nan'
-      original: number
+      original: number | 'NaN' | '+Inf' | '-Inf'
       clamped: number
     }
     // Reject / intercept reason (admin only)

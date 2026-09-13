@@ -3,8 +3,13 @@
 // 普通素材组策略、定价模式、用量依赖、预扣状态与表达式可编译性，并单独列出
 // 跨原生/Link 价格键冲突、mode/expr 不一致、预扣缺失与无渠道引用的价格条目。
 //
+// 价格、表达式与预扣一律按精确客户模型键读取，与运行时一致；Provider 映射只作
+// 独立履约事实展示，不充当价格来源。映射键与客户键的差异单独输出为确定性报告。
+// 用量依赖使用与运行时相同的 Seedance 实测依赖规则（pkg/seedancebilling）。
+//
 // 工具只读取本地数据库快照，按构造脱敏：不查询密钥列，不输出 Base URL、
-// 代理、Provider Project/Region、素材 ID 或 Task 私有数据。
+// 代理、Provider Project/Region、素材 ID 或 Task 私有数据。快照来源与时点由
+// -dsn 参数指定，输出头部固定打印，不宣称覆盖 MySQL/PostgreSQL 生产库。
 package main
 
 import (
@@ -13,10 +18,13 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/pkg/seedancebilling"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -47,15 +55,17 @@ type pluginRow struct {
 }
 
 type modelLine struct {
-	Channel      int
-	Status       int
-	Model        string
-	Mapped       string
-	Mode         string
-	ExprOK       bool
-	UsageDep     bool
-	Preconsume   bool
-	ChannelRefer bool
+	Channel          int
+	Status           int
+	Model            string
+	Mapped           string
+	Mode             string
+	ExprOK           bool
+	UsageDep         bool
+	Preconsume       bool
+	BudgetRequired   bool
+	BudgetConfigured bool
+	ContractOK       bool
 }
 
 func main() {
@@ -97,15 +107,35 @@ func main() {
 	}
 
 	mode := map[string]string{}
-	_ = common.UnmarshalJsonStr(options["billing_setting.billing_mode"], &mode)
+	if raw := options["billing_setting.billing_mode"]; raw != "" {
+		if err := common.UnmarshalJsonStr(raw, &mode); err != nil || mode == nil {
+			fail("invalid billing_setting.billing_mode", fmt.Errorf("expected a valid model map"))
+		}
+	}
 	expr := map[string]string{}
-	_ = common.UnmarshalJsonStr(options["billing_setting.billing_expr"], &expr)
+	if raw := options["billing_setting.billing_expr"]; raw != "" {
+		if err := common.UnmarshalJsonStr(raw, &expr); err != nil || expr == nil {
+			fail("invalid billing_setting.billing_expr", fmt.Errorf("expected a valid model map"))
+		}
+	}
 	preconsume := map[string]int{}
-	_ = common.UnmarshalJsonStr(options["task_billing_setting.preconsume_tokens"], &preconsume)
+	if raw := options["task_billing_setting.preconsume_tokens"]; raw != "" {
+		if err := common.UnmarshalJsonStr(raw, &preconsume); err != nil || preconsume == nil {
+			fail("invalid task_billing_setting.preconsume_tokens", fmt.Errorf("expected a valid model map"))
+		}
+	}
 	modelPrice := map[string]float64{}
-	_ = common.UnmarshalJsonStr(options["ModelPrice"], &modelPrice)
+	if raw := options["ModelPrice"]; raw != "" {
+		if err := common.UnmarshalJsonStr(raw, &modelPrice); err != nil || modelPrice == nil {
+			fail("invalid ModelPrice", fmt.Errorf("expected a valid model map"))
+		}
+	}
 	modelRatio := map[string]float64{}
-	_ = common.UnmarshalJsonStr(options["ModelRatio"], &modelRatio)
+	if raw := options["ModelRatio"]; raw != "" {
+		if err := common.UnmarshalJsonStr(raw, &modelRatio); err != nil || modelRatio == nil {
+			fail("invalid ModelRatio", fmt.Errorf("expected a valid model map"))
+		}
+	}
 
 	var statusCounts []taskStatusCount
 	if err = db.Table("tasks").
@@ -154,9 +184,11 @@ func main() {
 		}
 		mapping := map[string]string{}
 		if ch.ModelMapping != "" {
-			_ = common.UnmarshalJsonStr(ch.ModelMapping, &mapping)
+			if err := common.UnmarshalJsonStr(ch.ModelMapping, &mapping); err != nil {
+				fail("read channel mapping", fmt.Errorf("invalid mapping for channel %d", ch.Id))
+			}
 		}
-		for target := range mapping {
+		for _, target := range mapping {
 			mappingTarget[target] = true
 		}
 	}
@@ -166,42 +198,44 @@ func main() {
 	modeWithoutExpr := []string{}
 	unpriced := []string{}
 	preconsumeMissing := map[string]bool{}
+	// 客户键缺失但 Provider 映射键已配置：运行时按客户键读取，报告不把上游价格
+	// 冒充客户价格；两者都配置但内容不同：同样必须点名，不能静默接受。
+	customerKeyMissingButMappedConfigured := []string{}
+	mappedKeyDiffersFromCustomerKey := []string{}
 	for _, ch := range channels {
 		if ch.Type != 62 {
 			continue
 		}
 		mapping := map[string]string{}
 		if ch.ModelMapping != "" {
-			_ = common.UnmarshalJsonStr(ch.ModelMapping, &mapping)
+			if err := common.UnmarshalJsonStr(ch.ModelMapping, &mapping); err != nil {
+				fail("read channel mapping", fmt.Errorf("invalid mapping for channel %d", ch.Id))
+			}
+		}
+		settings := dto.ChannelOtherSettings{}
+		if err := common.UnmarshalJsonStr(ch.Settings, &settings); err != nil {
+			fail("read channel settings", fmt.Errorf("invalid settings for channel %d", ch.Id))
 		}
 		for _, model := range splitModels(ch.Models) {
 			line := modelLine{
 				Channel: ch.Id, Status: ch.Status, Model: model, Mapped: mapping[model],
 			}
-			exprKey := model
-			if line.Mode = mode[model]; line.Mode == "" && line.Mapped != "" {
-				// 与请求路径一致：客户模型未配置时按映射尾名回退。
-				if line.Mode = mode[line.Mapped]; line.Mode != "" {
-					exprKey = line.Mapped
-				}
-			}
+			// 盘点接入迁移前删除映射价格回退：模式、表达式、预算均按精确客户价格键
+			// 判断，与运行时（OriginModelName 键）一致；Provider 映射只作独立履约事实。
+			line.Mode = mode[model]
+			expression := expr[model]
 			switch line.Mode {
 			case "tiered_expr":
-				expression := expr[exprKey]
 				line.ExprOK = expression != ""
 				if line.ExprOK {
 					if _, err = billingexpr.CompileFromCache(expression); err != nil {
 						line.ExprOK = false
-						exprFailures = append(exprFailures, fmt.Sprintf("%d/%s: %v", ch.Id, model, err))
+						exprFailures = append(exprFailures, fmt.Sprintf("%d/%s: invalid expression", ch.Id, model))
 					}
-					line.UsageDep = billingexpr.RequiresUsage(expression)
-				}
-			case "":
-				if line.Mapped != "" && mode[line.Mapped] == "tiered_expr" {
-					line.Mode = "tiered_expr(tail)"
-					expression := expr[line.Mapped]
-					line.ExprOK = expression != ""
-					line.UsageDep = line.ExprOK && billingexpr.RequiresUsage(expression)
+					line.ContractOK = seedancebilling.ValidateTaskExpression(expression, seedancebilling.UsageFieldsForProtocol(settings.VideoUpstreamProtocol)) == nil
+					// Only a validated current contract uses measured-field semantics.
+					// Other rows retain legacy dependency diagnostics and remain invalid.
+					line.UsageDep = seedancebilling.RequiresMeasuredTaskUsage(&billingexpr.BillingSnapshot{ExprString: expression, TaskUsageBilling: line.ContractOK})
 				}
 			default:
 				line.Mode = "ratio"
@@ -215,13 +249,29 @@ func main() {
 				}
 			}
 			if strings.HasPrefix(line.Mode, "tiered_expr") {
-				_, ok := preconsume[model]
-				if !ok && line.Mapped != "" {
-					_, ok = preconsume[line.Mapped]
-				}
-				line.Preconsume = ok
-				if !ok {
+				budget, exists := preconsume[model]
+				line.BudgetConfigured = exists
+				line.Preconsume = exists && budget > 0 && budget <= billing_setting.MaxTaskPreConsumeTokens
+				line.BudgetRequired = seedancebilling.RequiresTokenBudget(settings.VideoUpstreamProtocol, expression) || line.UsageDep
+				if (line.BudgetRequired || exists) && !line.Preconsume {
 					preconsumeMissing[model] = true
+				}
+			}
+			if line.Mapped != "" {
+				_, customerMode := mode[line.Model]
+				_, customerExpr := expr[line.Model]
+				_, customerPre := preconsume[line.Model]
+				_, mappedMode := mode[line.Mapped]
+				mappedExpr, mappedExprSet := expr[line.Mapped]
+				_, mappedPre := preconsume[line.Mapped]
+				mappedConfigured := mappedMode || mappedExprSet || mappedPre
+				customerConfigured := customerMode || customerExpr || customerPre
+				switch {
+				case mappedConfigured && !customerConfigured:
+					customerKeyMissingButMappedConfigured = append(customerKeyMissingButMappedConfigured, fmt.Sprintf("%d/%s->%s", ch.Id, line.Model, line.Mapped))
+				case customerConfigured && mappedConfigured &&
+					(mode[line.Model] != mode[line.Mapped] || expr[line.Model] != mappedExpr || customerPre != mappedPre || preconsume[line.Model] != preconsume[line.Mapped]):
+					mappedKeyDiffersFromCustomerKey = append(mappedKeyDiffersFromCustomerKey, fmt.Sprintf("%d/%s->%s", ch.Id, line.Model, line.Mapped))
 				}
 			}
 			lines = append(lines, line)
@@ -242,7 +292,7 @@ func main() {
 	}
 	sort.Strings(conflicts)
 	for model := range mode {
-		if expr[model] == "" {
+		if mode[model] == "tiered_expr" && expr[model] == "" {
 			modeWithoutExpr = append(modeWithoutExpr, model)
 		}
 	}
@@ -261,6 +311,11 @@ func main() {
 	appendUnreferenced("preconsume", sortedKeyList(preconsume))
 	sort.Strings(unreferenced)
 
+	fmt.Println("== 盘点数据来源与时点 ==")
+	fmt.Printf("snapshot_dsn: %s\n", *dsn)
+	fmt.Printf("generated_at_utc: %s\n", time.Now().UTC().Format(time.RFC3339))
+	fmt.Println("note: 本报告只覆盖该本地 SQLite 快照；不宣称覆盖 MySQL/PostgreSQL 生产库，不能以不完整快照证明存量资金为空。")
+	fmt.Println()
 	fmt.Println("== 渠道矩阵（62 专用渠道，启用+停用）==")
 	fmt.Println("channel | status | group | protocol | policy | default_group_present")
 	for _, ch := range channels {
@@ -277,12 +332,12 @@ func main() {
 	}
 	fmt.Println()
 	fmt.Println("== 模型定价矩阵 ==")
-	fmt.Println("channel | status | model | mapped | mode | expr_ok | usage_dependent | preconsume")
+	fmt.Println("channel | status | model | mapped | mode | expr_ok | usage_dependent | preconsume | current_contract_ok")
 	for _, line := range lines {
-		fmt.Printf("%d | %s | %s | %s | %s | %s | %s | %s\n",
+		fmt.Printf("%d | %s | %s | %s | %s | %s | %s | %s | %s\n",
 			line.Channel, channelStatus(line.Status), line.Model,
 			valueOr(line.Mapped, "-"), valueOr(line.Mode, "NONE"),
-			yesno(line.ExprOK), yesno(line.UsageDep), triPreconsume(line))
+			yesno(line.ExprOK), yesno(line.UsageDep), triPreconsume(line), yesno(line.ContractOK))
 	}
 	fmt.Println()
 	fmt.Println("== 特殊记录（有待处理项的线路不进入切换批次）==")
@@ -290,7 +345,9 @@ func main() {
 	fmt.Printf("tiered 模式缺表达式: %s\n", listOrNone(modeWithoutExpr))
 	fmt.Printf("表达式编译失败: %s\n", listOrNone(exprFailures))
 	fmt.Printf("无价格条目模型: %s\n", listOrNone(dedupe(unpriced)))
-	fmt.Printf("tiered 模型缺预扣: %s\n", listOrNone(sortedKeys(preconsumeMissing)))
+	fmt.Printf("tiered 模型缺少或非法必需预扣: %s\n", listOrNone(sortedKeys(preconsumeMissing)))
+	fmt.Printf("客户键未配置但映射键已配置: %s\n", listOrNone(dedupe(customerKeyMissingButMappedConfigured)))
+	fmt.Printf("客户键与映射键均配置但内容不同: %s\n", listOrNone(dedupe(mappedKeyDiffersFromCustomerKey)))
 	fmt.Printf("无渠道引用的价格条目: %s\n", listOrNone(unreferenced))
 	fmt.Printf("客户合同覆盖的 Link 模型: %s\n", listOrNone(intersect(contractModels, linkModels)))
 	fmt.Println()
@@ -298,6 +355,9 @@ func main() {
 	fmt.Println("tasks(62) status × billing_state:")
 	for _, row := range statusCounts {
 		fmt.Printf("  %s | %s | %d\n", row.Status, stateOrEmpty(row.BillingState), row.Count)
+	}
+	if err := printAttemptBillingInventory(db, os.Stdout); err != nil {
+		fail("read task create attempts", err)
 	}
 	fmt.Println("task_plugins:")
 	for _, row := range plugins {
@@ -415,6 +475,9 @@ func yesno(value bool) string {
 func triPreconsume(line modelLine) string {
 	if !strings.HasPrefix(line.Mode, "tiered_expr") {
 		return "n/a"
+	}
+	if !line.BudgetRequired && !line.BudgetConfigured {
+		return "not_required"
 	}
 	return yesno(line.Preconsume)
 }

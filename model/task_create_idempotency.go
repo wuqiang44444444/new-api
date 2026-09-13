@@ -206,7 +206,7 @@ func RecoverTaskCreateIdempotency(id int64) (*Task, error) {
 			task.PrivateData.UpstreamTaskID != claim.UpstreamTaskID || task.ChannelId != claim.ChannelID {
 			return errors.New("task recovery snapshot does not match its idempotency journal")
 		}
-		if err := tx.Create(&task).Error; err != nil {
+		if err := createTaskAndBillingLogTx(tx, &task); err != nil {
 			return err
 		}
 		result := tx.Model(&TaskCreateIdempotency{}).
@@ -268,10 +268,10 @@ func InsertTaskWithIdempotency(task *Task, idempotencyID int64) error {
 	}
 	task.BillingState = deriveBillingState(task.PrivateData)
 	if idempotencyID == 0 {
-		return DB.Create(task).Error
+		return DB.Transaction(func(tx *gorm.DB) error { return createTaskAndBillingLogTx(tx, task) })
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(task).Error; err != nil {
+		if err := createTaskAndBillingLogTx(tx, task); err != nil {
 			return err
 		}
 		result := tx.Model(&TaskCreateIdempotency{}).

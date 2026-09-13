@@ -3948,6 +3948,7 @@
     "No permission to perform this action": "Vous n’avez pas l’autorisation d’effectuer cette action",
     "No plans available": "Aucun plan disponible",
     "No platform or supplier usage in this billing period.": "Aucune utilisation plateforme ou fournisseur sur cette période.",
+    "No pre-consume token upper bound is set. Requests that require a token budget will be rejected.": "Aucun plafond de tokens à prélever n’est défini. Les requêtes nécessitant un budget de tokens seront refusées.",
     "No preference": "Aucune préférence",
     "No prefill groups yet": "Aucun groupe de préremplissage pour l'instant",
     "No price differences found": "Aucune différence de prix trouvée",

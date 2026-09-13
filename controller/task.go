@@ -96,6 +96,9 @@ func GetDashboardTaskArtifacts(c *gin.Context) {
 
 func writeTaskArtifacts(c *gin.Context, task *model.Task, dashboard bool) {
 	c.Header("Cache-Control", "private, no-store")
+	if !authorizeSeedanceTaskArtifact(c, task) {
+		return
+	}
 	artifacts, err := projectTaskArtifacts(task)
 	if err != nil {
 		writeTaskArtifactProjectionError(c, err)
@@ -136,6 +139,9 @@ func writeTaskArtifacts(c *gin.Context, task *model.Task, dashboard bool) {
 }
 
 func projectTaskArtifacts(task *model.Task) ([]relaychannel.TaskArtifact, error) {
+	if artifacts, handled := projectSeedanceTaskArtifacts(task); handled {
+		return artifacts, nil
+	}
 	if task == nil || task.Status != model.TaskStatusSuccess || !taskHasPluginExecution(task) {
 		return []relaychannel.TaskArtifact{}, nil
 	}
@@ -295,6 +301,9 @@ func TaskArtifactContent(c *gin.Context) {
 		writeTaskArtifactError(c, http.StatusNotFound, "artifact_not_found", "Task or artifact not found")
 		return
 	}
+	if !authorizeSeedanceTaskArtifact(c, task) {
+		return
+	}
 	artifactKey := strings.TrimSpace(c.Param("artifact_key"))
 	if !taskArtifactKeyPattern.MatchString(artifactKey) {
 		writeTaskArtifactError(c, http.StatusNotFound, "artifact_not_found", "Task or artifact not found")
@@ -302,6 +311,9 @@ func TaskArtifactContent(c *gin.Context) {
 	}
 	if task.Status != model.TaskStatusSuccess {
 		writeTaskArtifactError(c, http.StatusConflict, "artifact_not_ready", "Task artifacts are not ready")
+		return
+	}
+	if serveSeedanceTaskArtifact(c, task, artifactKey) {
 		return
 	}
 	if !taskHasPluginExecution(task) {

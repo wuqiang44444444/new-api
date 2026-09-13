@@ -365,7 +365,7 @@ func setupTaskSubmissionDatabase(t *testing.T, migrate bool, events *[]string) *
 		*events = append(*events, "insert")
 	}))
 	if migrate {
-		require.NoError(t, database.AutoMigrate(&model.Task{}))
+		require.NoError(t, database.AutoMigrate(&model.Task{}, &model.TaskBillingDelivery{}, &model.QuotaData{}))
 	}
 	model.DB = database
 	t.Cleanup(func() { model.DB = previousDB })

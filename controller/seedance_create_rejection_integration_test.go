@@ -62,7 +62,7 @@ func TestSeedanceCreateRejectionReleasesHoldWithoutRetry(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(saved)) })
 			require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
 				"billing_setting.billing_mode":           `{"customer-video":"tiered_expr"}`,
-				"billing_setting.billing_expr":           `{"customer-video":"tier(\"fixed\", 1400)"}`,
+				"billing_setting.billing_expr":           `{"customer-video":"tier(\"fixed\", 0.0014)"}`,
 				"task_billing_setting.preconsume_tokens": `{"customer-video":100000}`,
 			}))
 			user := model.User{Id: 8191, Username: "rejection-fixture", Quota: 10000, Status: common.UserStatusEnabled, Group: "default"}

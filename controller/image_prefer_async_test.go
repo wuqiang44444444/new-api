@@ -60,7 +60,7 @@ func TestGPTImage2SynchronousGenerationAndEditPreserveBilling(t *testing.T) {
 			common.RedisEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled, constant.CountToken = false, false, false, false
 			t.Setenv("LOG_SQL_DSN", "")
 			require.NoError(t, model.InitLogDB())
-			require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Task{}, &model.TaskCreateIdempotency{}, &model.Log{}))
+			require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Task{}, &model.TaskBillingDelivery{}, &model.QuotaData{}, &model.TaskCreateIdempotency{}, &model.Log{}))
 			require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"gpt-image-2":0.04}`))
 			require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
 			withTieredBillingConfig(t, map[string]string{}, map[string]string{})

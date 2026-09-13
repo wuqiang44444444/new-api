@@ -69,6 +69,8 @@ export type ModelRatioData = {
   requestRuleExpr?: string
   // tiered_expr 模型的异步任务预扣 token 上界；与浏览器本地费用试算值无关。
   taskPreConsumeTokens?: number
+  // 管理价格接口返回的 Seedance 归属事实：跨渠道合同冲突阻止编辑保存。
+  billingContractConflict?: boolean
 }
 
 export type PreviewRow = {

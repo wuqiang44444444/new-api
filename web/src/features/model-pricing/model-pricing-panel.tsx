@@ -63,7 +63,11 @@ export function ModelPricingPanel(props: {
       values['billing_setting.billing_expr'] =
         entry.effective['billing_setting.billing_expr']
     }
-    return pricingRow(entry.model_name, values)
+    return {
+      ...pricingRow(entry.model_name, values),
+      // 管理价格接口的 Seedance 归属事实：与公开价格接口一致报告冲突。
+      billingContractConflict: entry.billing_contract_conflict === true,
+    }
   }, [entry])
 
   useEffect(() => {
@@ -233,6 +237,7 @@ export function ModelPricingPanel(props: {
         ref={editor}
         editData={editData}
         usageSchema={entry.usage_schema}
+        preconsumeTokenBudget={entry.preconsume_token_budget === true}
         onDirtyChange={props.onDirtyChange}
         onSave={() => persist()}
         isSaving={save.isPending}

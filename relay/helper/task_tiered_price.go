@@ -5,8 +5,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/pkg/seedancebilling"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -21,6 +21,12 @@ type TaskBillingProbeProvider interface {
 // ModelPriceHelperTaskTiered evaluates a task expression with an
 // administrator-configured maximum billable-token estimate. The expression,
 // trusted request probe and estimate are frozen on RelayInfo for settlement.
+//
+// Seedance Link customer models price through the upstream u() engine with the
+// controlled usage facts built from the same typed probe: u("tokens") carries
+// the administrator budget at submission and is replaced by accepted actual
+// usage at settlement, while every other declared field stays a frozen request
+// condition. Other task channel types retain their existing token contract.
 func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, adaptor any) (types.PriceData, error) {
 	exprString, ok := billing_setting.GetBillingExpr(info.OriginModelName)
 	if !ok {
@@ -29,11 +35,21 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 	// 异步任务 tiered 表达式禁止非确定性函数（P1-B）：预扣与终态结算分别求值同一表达式，
 	// 而快照只冻结 _task body 与 token，不冻结请求头与求值时间，header()/hour() 等会导致两次
 	// 求值结果不一致。同步请求只求值一次，不受此约束（走 ModelPriceHelper 路径）。
-	if err := validateAsyncExprDeterminism(exprString); err != nil {
+	if err := billingexpr.ValidateAsyncDeterminism(exprString); err != nil {
 		return types.PriceData{}, err
 	}
 	estimatedTokens, ok := billing_setting.GetTaskPreConsumeTokens(info.OriginModelName)
-	if !ok && (info.ChannelMeta == nil || info.ChannelType != constant.ChannelTypeSeedanceLink || (info.ChannelOtherSettings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolFunCloudModelArkV3 && info.ChannelOtherSettings.VideoUpstreamProtocol != dto.VideoUpstreamProtocolSynlinkVideoV1) || billingexpr.RequiresUsage(exprString)) {
+	// 已登记的 FunCloud/Synlink 纯冻结参数表达式例外：无实测用量依赖时不强制预扣预算；
+	// 依赖 u("tokens") 的新 Seedance 表达式仍然要求有效预算（不随迁移放宽既有协议规则）。
+	taskUsageBilling := info.ChannelMeta != nil && info.ChannelType == constant.ChannelTypeSeedanceLink
+	if taskUsageBilling {
+		if err := seedancebilling.ValidateTaskExpressionInputs(exprString, seedancebilling.UsageFieldsForProtocol(info.ChannelOtherSettings.VideoUpstreamProtocol)); err != nil {
+			return types.PriceData{}, err
+		}
+	} else if vars := billingexpr.UsedVars(exprString); vars["u"] {
+		return types.PriceData{}, fmt.Errorf("model %s task usage expression requires the Seedance Link channel contract", info.OriginModelName)
+	}
+	if !ok && (!taskUsageBilling || seedancebilling.RequiresTokenBudget(info.ChannelOtherSettings.VideoUpstreamProtocol, exprString)) {
 		return types.PriceData{}, fmt.Errorf("model %s task pre-consume token upper bound is not configured", info.OriginModelName)
 	}
 
@@ -54,10 +70,20 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 		Body:    probeBody,
 	}
 
+	params := billingexpr.TokenParams{}
+	var usageFacts map[string]any
+	if taskUsageBilling {
+		usageFacts, err = seedancebilling.ControlledFacts(probeBody, estimatedTokens)
+		if err != nil {
+			return types.PriceData{}, err
+		}
+		requestInput.Usage = usageFacts
+	} else {
+		params = billingexpr.TokenParams{C: float64(estimatedTokens)}
+	}
+
 	groupRatioInfo := HandleGroupRatio(c, info)
-	rawCost, trace, err := billingexpr.RunExprWithRequest(exprString, billingexpr.TokenParams{
-		C: float64(estimatedTokens),
-	}, requestInput)
+	rawCost, trace, err := billingexpr.RunExprWithRequest(exprString, params, requestInput)
 	if err != nil {
 		return types.PriceData{}, fmt.Errorf("model %s task tiered expr run failed: %w", info.OriginModelName, err)
 	}
@@ -65,7 +91,12 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 		return types.PriceData{}, fmt.Errorf("model %s task tiered expr returned negative cost", info.OriginModelName)
 	}
 
+	// u() 任务表达式已经输出美元（上游引擎 TaskUsageBilling 合同）；c/_task 旧表达式
+	// 系数为 $/1M tokens，沿用宿主百万换算。单位由快照冻结标记分派，结算与补查一致。
 	quotaBeforeGroup := rawCost / 1_000_000 * common.QuotaPerUnit
+	if taskUsageBilling {
+		quotaBeforeGroup = rawCost * common.QuotaPerUnit
+	}
 	estimatedQuota, err := applyCustomerContractToFloat(quotaBeforeGroup*groupRatioInfo.GroupRatio, info)
 	if err != nil {
 		return types.PriceData{}, err
@@ -80,7 +111,7 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 		freeModel = true
 	}
 
-	info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{
+	snapshot := &billingexpr.BillingSnapshot{
 		BillingMode:               billing_setting.BillingModeTieredExpr,
 		ModelName:                 info.OriginModelName,
 		ExprString:                exprString,
@@ -92,7 +123,14 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 		EstimatedTier:             trace.MatchedTier,
 		QuotaPerUnit:              common.QuotaPerUnit,
 		ExprVersion:               billingexpr.ExprVersion(exprString),
+		TaskUsageBilling:          taskUsageBilling,
+		UsageFacts:                usageFacts,
 	}
+	if taskUsageBilling {
+		snapshot.UsageUnits = seedancebilling.UsageUnitsForSchema(
+			seedancebilling.UsageFieldsForProtocol(info.ChannelOtherSettings.VideoUpstreamProtocol))
+	}
+	info.TieredBillingSnapshot = snapshot
 	info.BillingRequestInput = &requestInput
 
 	priceData := types.PriceData{
@@ -102,28 +140,4 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 	}
 	info.PriceData = priceData
 	return priceData, nil
-}
-
-// asyncForbiddenExprVars 列出异步任务 tiered 表达式禁止使用的非确定性标识符。
-// 异步任务预扣与终态结算分别求值同一表达式，而 BillingSnapshot 只冻结 _task body 探针和
-// token 估算，不冻结请求头（header）与求值时间（hour/minute/weekday/month/day）。
-// 允许这些函数会使预扣价与结算价不一致，违背确定性复算不变量（P1-B）。
-var asyncForbiddenExprVars = map[string]bool{
-	"header":  true,
-	"hour":    true,
-	"minute":  true,
-	"weekday": true,
-	"month":   true,
-	"day":     true,
-}
-
-// validateAsyncExprDeterminism 拒绝异步任务 tiered 表达式使用非确定性函数。同步请求只求值一次，
-// header()/hour() 合法；异步任务预扣与结算两次求值上下文不同，必须禁用以保证价格一致。
-func validateAsyncExprDeterminism(exprString string) error {
-	for name := range billingexpr.UsedVars(exprString) {
-		if asyncForbiddenExprVars[name] {
-			return fmt.Errorf("model task tiered expr must not use non-deterministic function %q: header/time are not frozen across pre-consume and settlement", name)
-		}
-	}
-	return nil
 }

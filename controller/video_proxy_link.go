@@ -57,6 +57,13 @@ func proxyLinkVideoContent(c *gin.Context) bool {
 		}
 		return false
 	}
+	return proxyLinkVideoTaskContent(c, task)
+}
+
+// proxyLinkVideoTaskContent serves an already-authorized task from its frozen
+// connection. Both the ModelArk content route and Seedance artifacts use it.
+func proxyLinkVideoTaskContent(c *gin.Context, task *model.Task) bool {
+	taskID := task.TaskID
 	if task.ClientDeletedAt != 0 {
 		modelArkVideoError(c, http.StatusNotFound, "video_not_found", "Task not found")
 		return true
@@ -118,7 +125,11 @@ func proxyLinkVideoContent(c *gin.Context) bool {
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Minute)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "", nil)
+	method := http.MethodGet
+	if c.Request.Method == http.MethodHead {
+		method = http.MethodHead
+	}
+	req, err := http.NewRequestWithContext(ctx, method, "", nil)
 	if err != nil {
 		modelArkVideoError(c, http.StatusInternalServerError, "internal_error", "Failed to create proxy request")
 		return true
@@ -244,6 +255,9 @@ func proxyLinkVideoContent(c *gin.Context) bool {
 	c.Writer.Header().Set("Cache-Control", "private, no-store")
 	c.Writer.Header().Set("Pragma", "no-cache")
 	c.Writer.WriteHeader(resp.StatusCode)
+	if method == http.MethodHead {
+		return true
+	}
 	// 音视频证据（一期）：统计本次结果交付的实际写出字节。
 	recorder := beginTaskContentDeliveryEvidence(c, task)
 	if _, err = io.Copy(recorder.WriterFor(c.Writer), resp.Body); err != nil {

@@ -14,6 +14,7 @@ type taskLogIntegrity struct {
 	Status                                                     string
 	SettledQuota, NetDifference                                int64
 	MissingInitialLogs, UnlinkedInitialLogs, UnreconciledTasks int
+	UsageMismatches, MissingFinalLogs                          int
 }
 
 func inspectTaskLogIntegrity(tasks map[string]*model.Task, logs []model.Log, s scope) taskLogIntegrity {
@@ -27,6 +28,8 @@ func inspectTaskLogIntegrity(tasks map[string]*model.Task, logs []model.Log, s s
 		result.SettledQuota += int64(task.Quota)
 	}
 	creates := make(map[string]int)
+	finals := make(map[string]int)
+	outputs := make(map[string]int64)
 	nets := make(map[string]int64)
 	totalCreates, net := 0, int64(0)
 	for _, log := range logs {
@@ -67,10 +70,24 @@ func inspectTaskLogIntegrity(tasks map[string]*model.Task, logs []model.Log, s s
 			continue
 		}
 		nets[taskID] += quota
+		if !create && (other["task_billing_event"] == "adjustment" || other["actual_quota"] != nil || other["pre_consumed_quota"] != nil) {
+			finals[taskID]++
+			outputs[taskID] += int64(log.CompletionTokens)
+		}
 	}
 	result.NetDifference = result.SettledQuota - net
 	result.MissingInitialLogs = max(len(tasks)-totalCreates, 0)
 	for id, task := range tasks {
+		async := task.PrivateData.AsyncBilling
+		if async != nil && task.Status == model.TaskStatusSuccess && async.TieredSnapshot != nil &&
+			(async.ActualUsageReported || (!async.TieredSnapshot.TaskUsageBilling && async.ActualTokens > 0)) {
+			if finals[id] == 0 {
+				result.MissingFinalLogs++
+			}
+			if finals[id] != 1 || outputs[id] != int64(async.ActualTokens) {
+				result.UsageMismatches++
+			}
+		}
 		if creates[id] > 1 || (creates[id] == 1 && nets[id] != int64(task.Quota)) {
 			result.UnreconciledTasks++
 		}
@@ -78,7 +95,7 @@ func inspectTaskLogIntegrity(tasks map[string]*model.Task, logs []model.Log, s s
 	switch {
 	case incomplete:
 		result.Status = "incomplete"
-	case result.NetDifference != 0 || totalCreates != len(tasks) || result.UnreconciledTasks > 0:
+	case result.NetDifference != 0 || totalCreates != len(tasks) || result.UnreconciledTasks > 0 || result.UsageMismatches > 0:
 		result.Status = "mismatch"
 	case result.UnlinkedInitialLogs > 0:
 		result.Status = "aggregate_matched"

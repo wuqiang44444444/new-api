@@ -46,6 +46,7 @@ func TestMain(m *testing.M) {
 	common.LogConsumeEnabled = true
 
 	if err := db.AutoMigrate(
+		&model.TaskBillingDelivery{}, &model.QuotaData{},
 		&model.Task{},
 		&model.TaskCreateIdempotency{},
 		&model.User{},
@@ -80,6 +81,7 @@ func truncate(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
 		model.DB.Exec("DELETE FROM tasks")
+		model.DB.Exec("DELETE FROM task_billing_deliveries")
 		model.DB.Exec("DELETE FROM users")
 		model.DB.Exec("DELETE FROM tokens")
 		model.DB.Exec("DELETE FROM logs")

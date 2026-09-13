@@ -72,6 +72,7 @@ import type {
   BillingUsageSchema,
 } from '@/features/pricing/types'
 
+import { AsyncPreConsumeTokenField } from './async-pre-consume-token-field'
 import { formatPricingNumber } from './pricing-format'
 import { TaskPricingMatrix } from './task-pricing-matrix'
 
@@ -83,6 +84,12 @@ type TaskUsagePricingEditorProps = {
   usageExamples?: BillingUsageExample[]
   onBillingExprChange: (next: string) => void
   onRequestRuleExprChange: (next: string) => void
+  // Seedance contract: the field definitions and whether a token budget is
+  // required are two separate facts. When enabled, render the real pre-consume
+  // budget field, kept strictly separate from the preview calculator.
+  showPreconsumeBudget?: boolean
+  taskPreConsumeTokens?: number
+  onTaskPreConsumeTokensChange?: (next: number) => void
 }
 
 type EditorMode = 'visual' | 'raw'
@@ -417,6 +424,12 @@ export const TaskUsagePricingEditor = memo(function TaskUsagePricingEditor(
     enumFields.length > 0 &&
     !tryParseTaskMatrixConfig(props.billingExpr, props.usageSchema)
   )
+  // Budget requirements belong to the selected backend protocol. Show a
+  // conditional reminder for any empty Link budget without parsing a second
+  // version of the expression dependency rules in the browser.
+  const showMissingBudgetWarning =
+    Boolean(props.showPreconsumeBudget) &&
+    (!props.taskPreConsumeTokens || props.taskPreConsumeTokens <= 0)
 
   return (
     <div className='space-y-5'>
@@ -665,6 +678,20 @@ export const TaskUsagePricingEditor = memo(function TaskUsagePricingEditor(
           </div>
         )}
       </div>
+
+      {props.showPreconsumeBudget && (
+        <AsyncPreConsumeTokenField
+          value={props.taskPreConsumeTokens}
+          onChange={props.onTaskPreConsumeTokensChange}
+        />
+      )}
+      {showMissingBudgetWarning && (
+        <p className='text-xs text-amber-600 dark:text-amber-500'>
+          {t(
+            'No pre-consume token upper bound is set. Requests that require a token budget will be rejected.'
+          )}
+        </p>
+      )}
     </div>
   )
 })

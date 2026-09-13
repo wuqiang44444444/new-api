@@ -529,7 +529,7 @@ func (Task *Task) Insert() error {
 }
 
 func (Task *Task) InsertWithContext(ctx context.Context) error {
-	return DB.WithContext(ctx).Create(Task).Error
+	return InsertTaskWithBillingLogContext(ctx, Task)
 }
 
 type taskSnapshot struct {

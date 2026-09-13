@@ -17,12 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 
 import { getPricingQueryKey } from '@/features/pricing/hooks/use-pricing-data'
+
+import { TaskUsagePricingEditor } from '../task-usage-pricing-editor'
 
 import type { ModelRatioData } from '../model-pricing-core'
 import {
@@ -30,7 +32,86 @@ import {
   type ModelPricingEditorPanelHandle,
 } from '../model-pricing-sheet'
 
+function getEditorModeSelect() {
+  const element = screen
+    .getAllByRole('combobox')
+    .find((item) => /Visual editor|Expression editor/.test(item.textContent || ''))
+  if (!element) throw new Error('Pricing editor mode select was not rendered')
+  return element
+}
+
 describe('separate Seedance and native task pricing editors', () => {
+  test('renders the Seedance task editor with an editable budget when admin data passes the Link schema', async () => {
+    // 管理价格接口（props）传入的是 Seedance u() 字段合同，而不是原生插件 schema：
+    // 编辑器进入任务用量编辑器，同时独立的预扣预算字段保持可读、可改、可提交。
+    const user = userEvent.setup()
+    const client = new QueryClient()
+    client.setQueryData(['status'], { price: 1 })
+    client.setQueryData(getPricingQueryKey(undefined), {
+      vendors: [],
+      data: [
+        {
+          model_name: 'seedance-link-model',
+          billing_mode: 'tiered_expr',
+          billing_expr: 'tier("base", u("tokens") * 5 / 1000000)',
+        },
+      ],
+    })
+    const onDirtyChange = vi.fn()
+    const ref = createRef<ModelPricingEditorPanelHandle>()
+    const rendered = render(
+      <QueryClientProvider client={client}>
+        <ModelPricingEditorPanel
+          key='seedance-link-model'
+          ref={ref}
+          editData={{
+            name: 'seedance-link-model',
+            billingMode: 'tiered_expr',
+            billingExpr: 'tier("base", u("tokens") * 5 / 1000000)',
+            taskPreConsumeTokens: 300000,
+          }}
+          usageSchema={{
+            tokens: { type: 'number', unit: 'token' },
+            resolution: { enum: ['480p', '720p', '1080p', '4k'] },
+            has_video_input: { type: 'boolean' },
+            duration_seconds: { type: 'number', unit: 'second' },
+            generate_audio: { type: 'boolean' },
+            input_mode: { enum: ['text', 'single_image', 'multi_image', 'multi_modal'] },
+            control_mode: { enum: ['none', 'reference', 'end_frame'] },
+          }}
+          preconsumeTokenBudget
+          onDirtyChange={onDirtyChange}
+        />
+      </QueryClientProvider>
+    )
+    expect(
+      screen.getByText('Async task pre-consume token upper bound')
+    ).toBeInTheDocument()
+    const budget = screen.getByPlaceholderText('250000')
+    expect(budget).toHaveValue('300000')
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false))
+    await user.clear(budget)
+    await user.type(budget, '400000')
+    await user.tab()
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true))
+    await user.clear(budget)
+    await user.type(budget, '300000')
+    await user.tab()
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false))
+    await user.clear(budget)
+    await user.type(budget, '400000')
+    await user.tab()
+    await act(async () => {
+      await expect(ref.current?.commitDraft()).resolves.toMatchObject({
+        name: 'seedance-link-model',
+        billingExpr: 'tier("base", u("tokens") * 5 / 1000000)',
+        taskPreConsumeTokens: 400000,
+      })
+    })
+    client.clear()
+    rendered.unmount()
+  })
+
   test('edits the Seedance pre-consume budget without changing its price or native usage pricing', async () => {
     const user = userEvent.setup()
     const client = new QueryClient()
@@ -72,7 +153,7 @@ describe('separate Seedance and native task pricing editors', () => {
         />
       </QueryClientProvider>
     )
-    await user.click(screen.getAllByRole('combobox').filter((item) => /Visual editor|Expression editor/.test(item.textContent || ''))[0])
+    await user.click(getEditorModeSelect())
     await user.click(
       await screen.findByRole('option', { name: 'Visual editor' })
     )
@@ -195,7 +276,7 @@ describe('separate Seedance and native task pricing editors', () => {
         requestRuleExpr,
       })
     })
-    await user.click(screen.getAllByRole('combobox').filter((item) => /Visual editor|Expression editor/.test(item.textContent || ''))[0])
+    await user.click(getEditorModeSelect())
     await user.click(
       await screen.findByRole('option', { name: 'Visual editor' })
     )
@@ -226,11 +307,11 @@ describe('separate Seedance and native task pricing editors', () => {
         />
       </QueryClientProvider>
     )
-    await user.click(screen.getAllByRole('combobox').filter((item) => /Visual editor|Expression editor/.test(item.textContent || ''))[0])
+    await user.click(getEditorModeSelect())
     await user.click(
       await screen.findByRole('option', { name: 'Expression editor' })
     )
-    await user.click(screen.getAllByRole('combobox').filter((item) => /Visual editor|Expression editor/.test(item.textContent || ''))[0])
+    await user.click(getEditorModeSelect())
     await user.click(
       await screen.findByRole('option', { name: 'Visual editor' })
     )
@@ -238,5 +319,31 @@ describe('separate Seedance and native task pricing editors', () => {
       expect(await ref.current?.commitDraft()).toMatchObject({ billingExpr })
     })
     client.clear()
+  })
+})
+
+
+describe('missing Seedance budget reminder', () => {
+  test.each([
+    `tier("base", u("tokens") * 5 / 1000000)`,
+    `tier("base", u ( 'tokens' ) * 5 / 1000000)`,
+    `tier("fixed", 0.5)`,
+  ])('shows a conditional reminder without guessing the contract: %s', (billingExpr) => {
+    const props = {
+      billingExpr,
+      requestRuleExpr: '',
+      usageSchema: { tokens: { type: 'number' as const, unit: 'token' as const } },
+      showPreconsumeBudget: true,
+      onBillingExprChange: vi.fn(),
+      onRequestRuleExprChange: vi.fn(),
+    }
+    const view = render(<TaskUsagePricingEditor {...props} />)
+    const message = 'No pre-consume token upper bound is set. Requests that require a token budget will be rejected.'
+    expect(screen.getByText(message)).toBeInTheDocument()
+    view.rerender(<TaskUsagePricingEditor {...props} taskPreConsumeTokens={300000} />)
+    expect(screen.queryByText(message)).not.toBeInTheDocument()
+    view.rerender(<TaskUsagePricingEditor {...props} showPreconsumeBudget={false} />)
+    expect(screen.queryByText(message)).not.toBeInTheDocument()
+    view.unmount()
   })
 })

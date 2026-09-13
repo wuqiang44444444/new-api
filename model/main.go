@@ -353,7 +353,7 @@ func migrateDB() error {
 		&TopUp{},
 		&QuotaData{},
 		&Task{},
-		&TaskPlugin{}, &TaskCreateIdempotency{}, &TaskCreateAttempt{}, &ProviderCostExposure{}, &Model{}, &ImageTaskSlot{},
+		&TaskBillingDelivery{}, &TaskPlugin{}, &TaskCreateIdempotency{}, &TaskCreateAttempt{}, &ProviderCostExposure{}, &Model{}, &ImageTaskSlot{},
 		&TaskRequestEvidence{}, &TaskRequestEvidenceEvent{}, &TaskRequestEvidenceAccessLog{},
 		&Vendor{},
 		&PrefillGroup{},

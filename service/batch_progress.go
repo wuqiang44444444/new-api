@@ -376,6 +376,7 @@ func applyBatchSettlement(ctx context.Context, job *model.BatchJob, target int) 
 	other := taskBillingOther(task)
 	other.SetPublic("task_id", task.TaskID)
 	other.SetPublic("billing_mode", "azure_batch")
+	other.SetPublic("task_billing_event", "create")
 	other.SetPublic("batch_line_count", job.LineCount)
 	lines, err := model.ListBatchJobLines(job.Id)
 	if err != nil {

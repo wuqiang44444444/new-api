@@ -406,6 +406,7 @@ type parsedBillingReconciliationLog struct {
 	cacheWriteUnavailable bool
 	billingMode           string
 	isRequest             bool
+	requestCount          int64
 	isRefund              bool
 	cacheReadTokens       int64
 	cacheWrite            billingStatementCacheWriteTokens
@@ -512,6 +513,7 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 		}
 	}
 	billingStatementTaskFacts(log, other, snapshot, &parsed)
+	billingStatementBatchFacts(log, other, &parsed)
 	parsed.cacheWriteUnavailable = parsed.cacheWriteUnavailable && parsed.billingMode != BillingReconciliationModePerCall
 	return parsed
 }
@@ -561,7 +563,7 @@ func accumulateBillingReconciliationLog(target *BillingReconciliationUsage, log 
 	quota := max(int64(log.Quota), int64(0))
 	if log.Type == LogTypeConsume {
 		if parsed.isRequest {
-			target.Requests++
+			target.Requests += billingStatementRequestCount(parsed)
 			if parsed.billingMode == BillingReconciliationModePerCall {
 				target.BillableCalls++
 			}
@@ -754,7 +756,7 @@ func GetProviderBillingSummary(startTimestamp int64, endTimestamp int64, periodS
 	}
 	query := LOG_DB.Model(&Log{}).
 		Select("user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other").
-		Where("type = ? AND created_at >= ? AND created_at <= ?", LogTypeConsume, startTimestamp, endTimestamp)
+		Where("type IN ? AND created_at >= ? AND created_at <= ?", []int{LogTypeConsume, LogTypeRefund}, startTimestamp, endTimestamp)
 	if channelId > 0 {
 		query = query.Where("channel_id = ?", channelId)
 	}
@@ -771,6 +773,9 @@ func GetProviderBillingSummary(startTimestamp int64, endTimestamp int64, periodS
 			return summary, err
 		}
 		parsed := parseBillingReconciliationLog(log)
+		if log.Type == LogTypeRefund && !isProviderTaskUsageAdjustment(log) {
+			continue
+		}
 		providerModel := strings.TrimSpace(parsed.providerModel)
 		fallback := false
 		if providerModel == "" {
@@ -889,7 +894,7 @@ func GetProviderBillingSummary(startTimestamp int64, endTimestamp int64, periodS
 
 func accumulateProviderBillingLog(target *ProviderBillingUsage, log billingReconciliationLog, parsed parsedBillingReconciliationLog) {
 	if parsed.isRequest {
-		target.Requests++
+		target.Requests += billingStatementRequestCount(parsed)
 		if parsed.billingMode == BillingReconciliationModePerCall {
 			target.BillableCalls++
 		}

@@ -1,7 +1,6 @@
 package model
 
 import (
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"gorm.io/gorm"
 )
@@ -18,18 +17,8 @@ func getSeedanceChannelsForBillingValidation(db *gorm.DB, modelName string) ([]C
 	if err := db.Where("type = ?", constant.ChannelTypeSeedanceLink).Order("id").Find(&channels).Error; err != nil {
 		return nil, err
 	}
-	var enabled, disabled []Channel
-	for _, channel := range channels {
-		if !channelContainsModel(&channel, modelName) {
-			continue
-		}
-		if channel.Status == common.ChannelStatusEnabled {
-			enabled = append(enabled, channel)
-		} else {
-			disabled = append(disabled, channel)
-		}
-	}
-	if len(enabled)+len(disabled) > 0 {
+	selected := SeedancePricingChannels(channels)[modelName]
+	if len(selected) > 0 {
 		nativeModels, err := oppositeSeedancePricingModels(db, constant.ChannelTypeSeedanceLink, 0)
 		if err != nil {
 			return nil, err
@@ -38,8 +27,5 @@ func getSeedanceChannelsForBillingValidation(db *gorm.DB, modelName string) ([]C
 			return nil, seedancePricingOwnershipError(modelName)
 		}
 	}
-	if len(enabled) > 0 {
-		return enabled, nil
-	}
-	return disabled, nil
+	return selected, nil
 }

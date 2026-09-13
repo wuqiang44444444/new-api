@@ -3948,6 +3948,7 @@
     "No permission to perform this action": "Không có quyền thực hiện thao tác này",
     "No plans available": "Không có gói nào khả dụng",
     "No platform or supplier usage in this billing period.": "Không có mức dùng nền tảng hoặc nhà cung cấp trong kỳ này.",
+    "No pre-consume token upper bound is set. Requests that require a token budget will be rejected.": "Chưa đặt giới hạn token khấu trừ trước. Yêu cầu cần ngân sách token sẽ bị từ chối.",
     "No preference": "Không có ưu tiên",
     "No prefill groups yet": "Chưa có nhóm điền sẵn nào",
     "No price differences found": "Không tìm thấy sự khác biệt về giá",

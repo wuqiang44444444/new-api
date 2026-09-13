@@ -182,12 +182,12 @@ export const TASK_ACTIONS = {
   MUSIC: 'MUSIC', // 生成音乐
   LYRICS: 'LYRICS', // 生成歌词
 
-  // Video generation (camelCase)
-  GENERATE: 'generate', // 图生视频
-  TEXT_GENERATE: 'textGenerate', // 文生视频
-  FIRST_TAIL_GENERATE: 'firstTailGenerate', // 首尾生视频
-  REFERENCE_GENERATE: 'referenceGenerate', // 参照生视频
-  REMIX_GENERATE: 'remixGenerate', // 视频 Remix
+  // Canonical video actions returned by the task API
+  GENERATE: 'image_to_video', // 图生视频
+  TEXT_GENERATE: 'text_to_video', // 文生视频
+  FIRST_TAIL_GENERATE: 'first_tail_to_video', // 首尾生视频
+  REFERENCE_GENERATE: 'reference_to_video', // 参照生视频
+  REMIX_GENERATE: 'remix', // 视频 Remix
 } as const
 
 /**

@@ -145,6 +145,9 @@ func CompleteBatchSettlement(job *BatchJob, task *Task, target int, other *LogOt
 				return err
 			}
 		}
+		if err := recordBatchQuotaDataTx(tx, current, task, target, promptTokens, completionTokens); err != nil {
+			return err
+		}
 		// Commit the terminal Task projection with the completed job. Otherwise a
 		// crash after completing the job removes it from polling before the Task
 		// can reach its terminal state.

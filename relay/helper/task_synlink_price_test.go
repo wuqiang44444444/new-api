@@ -10,7 +10,7 @@ import (
 )
 
 func TestSynlinkPricingRequiresAnEstimateOnlyForUsageExpressions(t *testing.T) {
-	loadTaskPricingConfig(t, map[string]string{"fixed": `tier("fixed", 1000000)`, "usage": `tier("usage", c)`}, nil)
+	loadTaskPricingConfig(t, map[string]string{"fixed": `tier("fixed", 1)`, "usage": `tier("usage", u("tokens") / 1000000)`}, nil)
 	info := &relaycommon.RelayInfo{OriginModelName: "fixed", UserGroup: "default", UsingGroup: "default", ChannelMeta: &relaycommon.ChannelMeta{
 		ChannelType:          constant.ChannelTypeSeedanceLink,
 		ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolSynlinkVideoV1},

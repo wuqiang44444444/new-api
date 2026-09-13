@@ -68,11 +68,11 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(saved)) })
 	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
 		"billing_setting.billing_mode": `{"customer-funcloud":"tiered_expr"}`,
-		"billing_setting.billing_expr": `{"customer-funcloud":"tier(\"fixed\", 1400)"}`,
+		"billing_setting.billing_expr": `{"customer-funcloud":"tier(\"fixed\", 0.0014)"}`,
 	}))
 	if outcome == "polling_lifecycle" {
 		require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
-			"billing_setting.billing_expr":           `{"customer-funcloud":"tier(\"tokens\", c * 2)"}`,
+			"billing_setting.billing_expr":           `{"customer-funcloud":"tier(\"tokens\", u(\"tokens\") * 2 / 1000000)"}`,
 			"task_billing_setting.preconsume_tokens": `{"customer-funcloud":700}`,
 		}))
 	}

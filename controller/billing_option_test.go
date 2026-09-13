@@ -11,10 +11,8 @@ import (
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/gin-gonic/gin"
-	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
 
 func TestUpdateOptionRejectsInvalidTaskBillingExpressions(t *testing.T) {
@@ -109,27 +107,38 @@ func setupBillingAliasOptionDB(t *testing.T) {
 	t.Helper()
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB
-	previousType := common.MainDatabaseType()
+	previousMain, previousLog := common.MainDatabaseType(), common.LogDatabaseType()
 	previousCache := common.MemoryCacheEnabled
 	previousMap := common.OptionMap
 	previousRedis := common.RedisEnabled
-	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Option{}, &model.Log{}, &model.AuditLog{}, &model.User{}))
-	model.DB = database
+	previousMaster, previousSQLite := common.IsMasterNode, common.SQLitePath
+	// InitDB 初始化模型包的方言列名（commonKeyCol 等）；手工 gorm.Open 不会执行
+	// initCol，UpdateModelPricingOptions 的锁定读取会生成空列名的 SQL。
+	database, isolatedDSN := newAuditTestDatabase(t, "sqlite", "")
+	common.SQLitePath = isolatedDSN
+	common.IsMasterNode = true
+	t.Setenv("SQL_DSN", "local")
+	t.Setenv("LOG_SQL_DSN", "")
+	require.NoError(t, model.InitDB())
+	database = model.DB
 	model.LOG_DB = database
-	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
+	require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Option{}, &model.Log{}, &model.AuditLog{}, &model.User{}))
 	common.MemoryCacheEnabled = false
 	common.RedisEnabled = false
 	common.OptionMap = map[string]string{}
 	t.Cleanup(func() {
 		model.DB = previousDB
 		model.LOG_DB = previousLogDB
-		common.SetMainDatabaseType(previousType)
+		common.SetDatabaseTypes(previousMain, previousLog)
 		common.MemoryCacheEnabled = previousCache
 		common.OptionMap = previousMap
 		common.RedisEnabled = previousRedis
+		common.IsMasterNode, common.SQLitePath = previousMaster, previousSQLite
 		model.InitChannelCache()
+		connection, err := database.DB()
+		if err == nil {
+			require.NoError(t, connection.Close())
+		}
 	})
 }
 

@@ -105,6 +105,8 @@ type ModelPricingSheetProps = {
   isSaving?: boolean
   usageSchema?: BillingUsageSchema
   onDirtyChange?: (dirty: boolean) => void
+  // Seedance 归属（管理价格接口 entry）：显示独立预扣预算字段。
+  preconsumeTokenBudget?: boolean
 }
 
 type ModelPricingEditorPanelProps = Omit<
@@ -133,6 +135,7 @@ export const ModelPricingSheet = forwardRef<
     isSaving,
     usageSchema,
     onDirtyChange,
+    preconsumeTokenBudget,
   },
   ref
 ) {
@@ -158,6 +161,7 @@ export const ModelPricingSheet = forwardRef<
           onDirtyChange={onDirtyChange}
           onSave={onSave}
           isSaving={isSaving}
+          preconsumeTokenBudget={preconsumeTokenBudget}
           className='h-full rounded-none border-0'
         />
       </SheetContent>
@@ -176,6 +180,7 @@ export const ModelPricingEditorPanel = forwardRef<
     isSaving,
     usageSchema,
     onDirtyChange,
+    preconsumeTokenBudget,
     embedded = false,
   },
   ref
@@ -232,11 +237,13 @@ export const ModelPricingEditorPanel = forwardRef<
     },
   })
   const watchedValues = form.watch()
-  const billingContractConflict = pricingModels.some(
-    (model) =>
-      model.model_name === watchedValues.name.trim() &&
-      model.billing_contract_conflict
-  )
+  const billingContractConflict =
+    editData?.billingContractConflict === true ||
+    pricingModels.some(
+      (model) =>
+        model.model_name === watchedValues.name.trim() &&
+        model.billing_contract_conflict
+    )
   const usageSchemaByModel = useMemo(
     () =>
       new Map(
@@ -347,7 +354,8 @@ export const ModelPricingEditorPanel = forwardRef<
       form.formState.isDirty ||
         pricingMode !== originalMode ||
         billingExpr !== (editData?.billingExpr ?? '') ||
-        requestRuleExpr !== (editData?.requestRuleExpr ?? '')
+        requestRuleExpr !== (editData?.requestRuleExpr ?? '') ||
+        taskPreConsumeTokens !== (editData?.taskPreConsumeTokens ?? 0)
     )
   }, [
     onDirtyChange,
@@ -355,6 +363,7 @@ export const ModelPricingEditorPanel = forwardRef<
     pricingMode,
     billingExpr,
     requestRuleExpr,
+    taskPreConsumeTokens,
     editData,
   ])
 
@@ -905,6 +914,9 @@ export const ModelPricingEditorPanel = forwardRef<
                           usageExamples={taskUsageExamples}
                           onBillingExprChange={setBillingExpr}
                           onRequestRuleExprChange={setRequestRuleExpr}
+                          showPreconsumeBudget={preconsumeTokenBudget}
+                          taskPreConsumeTokens={taskPreConsumeTokens}
+                          onTaskPreConsumeTokensChange={setTaskPreConsumeTokens}
                         />
                       ) : (
                         <TieredPricingEditor

@@ -171,19 +171,5 @@ func settleImageTaskBilling(ctx context.Context, task *model.Task) {
 	if !applied {
 		return
 	}
-	other := taskBillingOther(task)
-	other.SetPublic("task_id", task.TaskID)
-	other.SetPublic("image_count", task.PrivateData.ImageTask.ImageCount)
-	attachQuotaSaturationToOther(other, clamp)
-	completionTokens := 0
-	if usage := task.PrivateData.ImageTask.Usage; usage != nil {
-		completionTokens = usage.CompletionTokens
-		other.SetPublic("prompt_tokens", usage.PromptTokens)
-		appendImageUsageForLog(other, usage)
-	}
-	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
-		UserId: task.UserId, LogType: model.LogTypeConsume, ChannelId: task.ChannelId,
-		ModelName: taskModelName(task), Quota: target, TokenId: task.PrivateData.TokenId,
-		Group: task.Group, Other: other, CompletionTokens: completionTokens,
-	})
+	DeliverTaskBillingLogs(ctx, task.ID, 10)
 }

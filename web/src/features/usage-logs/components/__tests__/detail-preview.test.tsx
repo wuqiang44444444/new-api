@@ -155,21 +155,24 @@ test.each([
   expect(preview.textContent).toBe(expected)
 })
 
-test('quota saturation remains first and only billing adds to the counter', () => {
-  const preview = renderPreview({
-    model_price: 0.25,
-    admin_info: {
-      task_plugin: plugin,
-      quota_saturation: {
-        op: 'round',
-        kind: 'overflow',
-        original: 3e9,
-        clamped: 2147483647,
+test.each([3e9, '+Inf', '-Inf', 'NaN'] as const)(
+  'quota saturation %s remains visible and only billing adds to the counter',
+  (original) => {
+    const preview = renderPreview({
+      model_price: 0.25,
+      admin_info: {
+        task_plugin: plugin,
+        quota_saturation: {
+          op: 'round',
+          kind: 'overflow',
+          original,
+          clamped: 2147483647,
+        },
       },
-    },
-  })
-  expect(preview.textContent).toBe('Quota clamped+1')
-})
+    })
+    expect(preview.textContent).toBe('Quota clamped+1')
+  }
+)
 
 test.each([true, false])(
   'plugin information in the opened dialog respects admin=%s',

@@ -12,7 +12,7 @@ import (
 
 func TestFunCloudModelArkSecondsPricingDoesNotInventTokens(t *testing.T) {
 	const name = "v3-seconds-test"
-	loadTaskPricingConfig(t, map[string]string{name: `tier("seconds", param("_task.duration_seconds") * 100000)`}, map[string]int{})
+	loadTaskPricingConfig(t, map[string]string{name: `tier("seconds", u("duration_seconds") * 0.1)`}, map[string]int{})
 	info := &relaycommon.RelayInfo{OriginModelName: name, UserGroup: "default", UsingGroup: "default", ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeSeedanceLink, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3}}}
 	price, err := ModelPriceHelperTaskTiered(taskPriceContext(), info, fixedTaskProbe{"duration_seconds": 4})
 	require.NoError(t, err)
@@ -23,7 +23,7 @@ func TestFunCloudModelArkSecondsPricingDoesNotInventTokens(t *testing.T) {
 
 func TestFunCloudModelArkTokenPricingStillRequiresBound(t *testing.T) {
 	const name = "v3-token-test"
-	loadTaskPricingConfig(t, map[string]string{name: `tier("tokens", c * 10)`}, map[string]int{})
+	loadTaskPricingConfig(t, map[string]string{name: `tier("tokens", u("tokens") * 10 / 1000000)`}, map[string]int{})
 	info := &relaycommon.RelayInfo{OriginModelName: name, UserGroup: "default", UsingGroup: "default", ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeSeedanceLink, ChannelOtherSettings: dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3}}}
 	_, err := ModelPriceHelperTaskTiered(taskPriceContext(), info, fixedTaskProbe{})
 	require.ErrorContains(t, err, "pre-consume token upper bound is not configured")

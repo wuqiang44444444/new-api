@@ -1,9 +1,11 @@
 package model
 
 import (
+	"context"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
@@ -42,8 +44,12 @@ func AttachAsyncTaskBilling(privateData *TaskPrivateData, info *relaycommon.Rela
 		return
 	}
 	// Native usage expressions own their UsageFacts and USD settlement path.
-	// They must not acquire the local c/_task billing state machine.
-	if info.TieredBillingSnapshot != nil && info.TieredBillingSnapshot.TaskUsageBilling {
+	// They must not acquire the local c/_task billing state machine. Seedance
+	// Link tasks are the registered exception: their funding lifecycle comes
+	// from the frozen typed channel identity (VideoUpstreamProtocol), so a
+	// USD-denominated Seedance expression still establishes the one async
+	// billing state machine used for holds, awaits, refunds and debt.
+	if info.TieredBillingSnapshot != nil && info.TieredBillingSnapshot.TaskUsageBilling && !isSeedanceChannelRelayInfo(info) {
 		return
 	}
 	clientProtocol := ""
@@ -63,6 +69,9 @@ func AttachAsyncTaskBilling(privateData *TaskPrivateData, info *relaycommon.Rela
 	// 普通视频任务保留原有 PerCallBilling 语义，只增加持久化幂等门闩。
 	if info.TieredBillingSnapshot != nil {
 		privateData.BillingContext.PerCallBilling = false
+		// 正常创建与 unknown 恢复模板共用本函数，BillingContext 与 AsyncBilling 的
+		// 表达式快照必须同源生成；结算以 AsyncBilling 中的冻结上下文为权威。
+		privateData.BillingContext.TieredSnapshot = info.TieredBillingSnapshot
 	}
 	// 仅持久化计费探针的 Body（_task 字段），不落库请求头，避免 Authorization/Cookie 泄露。
 	// 结算时表达式只读 _task body 字段（见方案 §5.4），不依赖 Headers。
@@ -83,6 +92,14 @@ func AttachAsyncTaskBilling(privateData *TaskPrivateData, info *relaycommon.Rela
 		State:           TaskBillingStatePending,
 		EstimatedTokens: estimatedTokens,
 	}
+}
+
+// isSeedanceChannelRelayInfo reports the typed channel identity at first
+// attachment, before any fact is frozen. Task recovery never re-reads the
+// current channel: it trusts the frozen AsyncBilling/probe snapshot attached
+// here.
+func isSeedanceChannelRelayInfo(info *relaycommon.RelayInfo) bool {
+	return info.ChannelMeta != nil && info.ChannelMeta.ChannelType == constant.ChannelTypeSeedanceLink
 }
 
 // deriveBillingState 把 private_data 中的计费状态投影到可索引列。
@@ -135,7 +152,9 @@ func GetTerminalTasksPendingBilling(now int64, limit int) []*Task {
 			state := task.PrivateData.AsyncBilling
 			// 资金不足形成的 debt 不能因为达到普通故障重试上限而永久退出扫描。
 			// 用户后续充值后，正常轮询必须仍能按冻结 TargetQuota 原子补扣并结清。
-			if state == nil || task.HasTaskUsageBilling() || (state.State != TaskBillingStateDebt && state.Attempts >= 10) || state.NextRetryAt > now {
+			// 原生任务用量计价不进入本地补偿扫描；Seedance 用量计价任务按其冻结的
+			// 类型化身份（VideoUpstreamProtocol）保持 pending/debt/failed 补偿资格。
+			if state == nil || (task.HasTaskUsageBilling() && !task.HasSeedanceBillingFacts()) || (state.State != TaskBillingStateDebt && state.Attempts >= 10) || state.NextRetryAt > now {
 				continue
 			}
 			tasks = append(tasks, task)
@@ -150,5 +169,9 @@ func GetTerminalTasksPendingBilling(now int64, limit int) []*Task {
 }
 
 func HasTerminalTasksPendingBilling() bool {
-	return len(GetTerminalTasksPendingBilling(time.Now().Unix(), 1)) > 0
+	if len(GetTerminalTasksPendingBilling(time.Now().Unix(), 1)) > 0 {
+		return true
+	}
+	events, err := PendingTaskBillingDeliveries(context.Background(), 0, 1)
+	return err == nil && len(events) > 0
 }

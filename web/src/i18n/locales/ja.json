@@ -3948,6 +3948,7 @@
     "No permission to perform this action": "この操作を実行する権限がありません",
     "No plans available": "利用可能なプランがありません",
     "No platform or supplier usage in this billing period.": "この期間にプラットフォームまたは仕入先の利用はありません。",
+    "No pre-consume token upper bound is set. Requests that require a token budget will be rejected.": "事前引き落としのトークン上限が未設定です。トークン予算が必要なリクエストは拒否されます。",
     "No preference": "設定なし",
     "No prefill groups yet": "まだ事前入力グループはありません",
     "No price differences found": "価格差異は見つかりませんでした",

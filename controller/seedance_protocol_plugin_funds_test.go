@@ -36,7 +36,7 @@ func TestSeedanceMigratedProtocolsPreserveFundsBarrier(t *testing.T) {
 				channel.ModelMapping = common.GetPointer(string(mapping))
 				channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: protocol.video, AssetUpstreamProtocol: dto.AssetUpstreamProtocolNone})
 				require.NoError(t, fx.db.Save(&channel).Error)
-				require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{"billing_setting.billing_expr": `{"customer-video":"tier(\"fixed\", 1000000)"}`}))
+				require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{"billing_setting.billing_expr": `{"customer-video":"tier(\"fixed\", 1)"}`}))
 				fx.assertAttemptAtPost.Store(true)
 				if outcome == "unknown" {
 					fx.createStatus.Store(http.StatusInternalServerError)

@@ -6,7 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/pkg/seedancebilling"
 	"gorm.io/gorm"
 )
 
@@ -176,8 +176,10 @@ func enforceSeedanceBillingTarget(task *Task, target int) error {
 	if !task.Status.IsTerminal() {
 		return fmt.Errorf("cannot settle a nonterminal task")
 	}
+	// 与提交、结算、补查共用 §5.5 的实测依赖规则：u() 表达式只等 tokens 实测，
+	// 纯冻结条件表达式不误等待；旧 c/_task 表达式保持通用用量依赖。
 	if task.Status == TaskStatusSuccess && async.TieredSnapshot != nil &&
-		billingexpr.RequiresUsage(async.TieredSnapshot.ExprString) && !async.ActualUsageReported {
+		seedancebilling.RequiresMeasuredTaskUsage(async.TieredSnapshot) && !async.ActualUsageReported {
 		return fmt.Errorf("cannot settle without required provider usage")
 	}
 	return nil

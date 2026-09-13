@@ -3948,6 +3948,7 @@
     "No permission to perform this action": "Нет прав для выполнения этого действия",
     "No plans available": "Нет доступных планов",
     "No platform or supplier usage in this billing period.": "За этот период нет данных платформы или поставщика.",
+    "No pre-consume token upper bound is set. Requests that require a token budget will be rejected.": "Лимит токенов для предварительного списания не задан. Запросы, требующие бюджета токенов, будут отклонены.",
     "No preference": "Без предпочтений",
     "No prefill groups yet": "Пока нет групп предзаполнения",
     "No price differences found": "Различий в ценах не найдено",

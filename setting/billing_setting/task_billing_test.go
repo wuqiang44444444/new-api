@@ -34,53 +34,22 @@ func TestGetTaskPreConsumeTokensRejectsOutOfRangeStoredValue(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestValidateBillingExpressionsRequiresTierMarker(t *testing.T) {
-	// 新增模型（oldValue 无该 key）：强制 tier()
-	require.NoError(t, ValidateBillingExpressionsJSON(`{"external-model":"tier(\"base\", c * 2)"}`, nil, nil))
-	require.ErrorContains(t, ValidateBillingExpressionsJSON(`{"external-model":"c * 2"}`, nil, nil), "tier")
-	require.Error(t, ValidateBillingExpressionsJSON(`{"external-model":"tier(\"base\", -1)"}`, nil, nil))
-	// 未变更的存量表达式（oldValue 相同）：走 relaxed，允许无 tier()
-	require.NoError(t, ValidateBillingExpressionsJSON(`{"legacy":"c * 2"}`, map[string]string{"legacy": "c * 2"}, nil))
-	// 修改存量表达式：重新强制 tier()
-	require.ErrorContains(t, ValidateBillingExpressionsJSON(`{"legacy":"c * 3"}`, map[string]string{"legacy": "c * 2"}, nil), "tier")
-}
-
-func TestValidateBillingExpressionsSupportsCommonTaskProbeParameters(t *testing.T) {
-	expressions := `{
-		"seedance-2.0-4k":"v1:tier(\"base\", param(\"_task.duration_seconds\") * 741114.000000)",
-		"seedance-2-5-m":"v1:param(\"_task.has_video_input\") == true ? (param(\"_task.resolution\") == \"720p\" ? tier(\"720p_video\", param(\"_task.duration_seconds\") * 354838.709677) : tier(\"480p_video\", param(\"_task.duration_seconds\") * 164809.384164)) : (param(\"_task.resolution\") == \"720p\" ? tier(\"720p\", param(\"_task.duration_seconds\") * 145747.800587) : tier(\"480p\", param(\"_task.duration_seconds\") * 67741.935484))"
-	}`
-
-	taskModels := map[string]map[string]any{
-		"seedance-2.0-4k": {},
-		"seedance-2-5-m":  {},
+func TestGenericExpressionValidationContract(t *testing.T) {
+	for _, tc := range []struct {
+		expression, old string
+		valid           bool
+	}{
+		{`tier("base", c * 2)`, "", true}, {`c * 2`, "", false},
+		{`tier("base", -1)`, "", false}, {`c * 2`, `c * 2`, true}, {`c * 3`, `c * 2`, false},
+		{`param("_task.duration_seconds") == 5 ? tier("task", c * 2) : tier("invalid", -1)`, "", false},
+	} {
+		t.Run(tc.expression, func(t *testing.T) {
+			err := ValidateOneBillingExpression("generic", tc.expression, tc.old)
+			if tc.valid {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
 	}
-	require.NoError(t, ValidateBillingExpressionsJSON(expressions, nil, taskModels))
-}
-
-func TestValidateBillingExpressionsScopesProtocolSpecificTaskProbeParameters(t *testing.T) {
-	expression := `{"custom-feicai-model":"v1:param(\"_task.billing_mode\") == \"per-second\" && param(\"_task.ratio\") == \"16:9\" ? tier(\"base\", param(\"_task.duration_seconds\") * param(\"_task.size_multiplier\")) : tier(\"invalid_probe\", -1)"}`
-	feicaiFields := map[string]map[string]any{
-		"custom-feicai-model": {
-			"ratio":           "16:9",
-			"size_multiplier": 1.0,
-			"billing_mode":    "per-second",
-		},
-	}
-
-	require.NoError(t, ValidateBillingExpressionsJSON(expression, nil, feicaiFields))
-	require.Error(t, ValidateBillingExpressionsJSON(expression, nil, map[string]map[string]any{"custom-feicai-model": {}}))
-}
-
-func TestValidateBillingExpressionsRejectsUnknownNumericTaskParameter(t *testing.T) {
-	expression := `{"external-model":"v1:tier(\"base\", param(\"_task.unsupported_numeric\") * 2)"}`
-
-	require.ErrorContains(t, ValidateBillingExpressionsJSON(expression, nil, map[string]map[string]any{"external-model": {}}), "<nil> *")
-}
-
-func TestValidateBillingExpressionsDoesNotExposeTaskProbeToGenericModels(t *testing.T) {
-	expression := `{"external-model":"v1:param(\"_task.duration_seconds\") == 5 ? tier(\"task\", c * 2) : tier(\"invalid_context\", -1)"}`
-
-	require.Error(t, ValidateBillingExpressionsJSON(expression, nil, nil))
-	require.NoError(t, ValidateBillingExpressionsJSON(expression, nil, map[string]map[string]any{"external-model": {}}))
 }

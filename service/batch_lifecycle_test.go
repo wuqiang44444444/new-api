@@ -99,6 +99,9 @@ func batchLifecycleFixture(t *testing.T, createStatus int, createBody string) (*
 }
 
 func TestBatchCreateProgressSettlesAndDeliversBothFilesOnce(t *testing.T) {
+	oldExport := common.DataExportEnabled
+	common.DataExportEnabled = true
+	t.Cleanup(func() { common.DataExportEnabled = oldExport; model.DB.Exec("DELETE FROM quota_data") })
 	c, request, calls := batchLifecycleFixture(t, 200, `{"id":"provider-1","status":"validating"}`)
 	result, err := CreateBatchJob(c, request)
 	require.NoError(t, err)
@@ -133,6 +136,19 @@ func TestBatchCreateProgressSettlesAndDeliversBothFilesOnce(t *testing.T) {
 	var user model.User
 	require.NoError(t, model.DB.First(&user, 1701).Error)
 	assert.Equal(t, 99980, user.Quota)
+	assert.Equal(t, 20, user.UsedQuota)
+	assert.Equal(t, 2, user.RequestCount)
+	assert.False(t, model.UsesTaskBillingDelivery(task), "Batch has its own durable completion owner")
+	var data struct{ Count, Quota, Tokens int }
+	require.NoError(t, model.DB.Model(&model.QuotaData{}).Select("SUM(count) AS count, SUM(quota) AS quota, SUM(token_used) AS tokens").Where("user_id = ?", 1701).Scan(&data).Error)
+	assert.Equal(t, 2, data.Count)
+	assert.Equal(t, 20, data.Quota)
+	assert.Equal(t, 15, data.Tokens)
+	statement, err := model.GetBillingCustomerStatement(1701, 1, common.GetTimestamp()+10, "api_key", 0, "", "")
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, statement.Summary.Requests)
+	assert.EqualValues(t, 20, statement.Summary.NetQuota)
+
 	require.NoError(t, progressBatchJob(context.Background(), job))
 	var count int64
 	require.NoError(t, model.DB.Model(&model.Log{}).Where("request_id = ?", job.Id).Count(&count).Error)

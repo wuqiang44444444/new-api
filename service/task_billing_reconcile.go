@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
@@ -15,7 +14,7 @@ type TaskBillingReconcileSummary struct {
 
 func prepareTerminalTaskBilling(task *model.Task, result *relaycommon.TaskInfo) {
 	async := task.PrivateData.AsyncBilling
-	if async == nil || task.HasTaskUsageBilling() || (async.State == model.TaskBillingStateSettled && !task.HasSeedanceBillingFacts()) {
+	if async == nil || (task.HasTaskUsageBilling() && !task.HasSeedanceBillingFacts()) || (async.State == model.TaskBillingStateSettled && !task.HasSeedanceBillingFacts()) {
 		return
 	}
 	async.ActualTokens = result.CompletionTokens
@@ -41,6 +40,7 @@ func prepareTerminalTaskBilling(task *model.Task, result *relaycommon.TaskInfo) 
 // from provider polling. Stored targets make retries deterministic and prevent
 // administrator price changes from affecting in-flight tasks.
 func ReconcileTaskBilling(ctx context.Context, limit int) TaskBillingReconcileSummary {
+	defer DeliverTaskBillingLogs(ctx, 0, max(limit, 100))
 	tasks := model.GetTerminalTasksPendingBilling(time.Now().Unix(), limit)
 	summary := TaskBillingReconcileSummary{Scanned: len(tasks)}
 	for _, task := range tasks {
@@ -81,10 +81,7 @@ func ReconcileTaskBilling(ctx context.Context, limit int) TaskBillingReconcileSu
 			recalculateTaskQuotaWithReconcile(ctx, task, actualQuota, reason, clamp)
 			continue
 		}
-		setTaskBillingState(task, model.TaskBillingStateSettled, "")
-		if err := task.UpdateBilling(); err != nil {
-			logger.LogWarn(ctx, "failed to finalize task billing state: "+err.Error())
-		}
+		recalculateTaskQuotaWithReconcile(ctx, task, task.Quota, "按冻结预扣完成计费")
 	}
 	return summary
 }

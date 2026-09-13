@@ -18,6 +18,10 @@ import (
 // LogTaskConsumption 记录任务消费日志和统计信息（仅记录，不涉及实际扣费）。
 // 实际扣费已由 BillingSession（PreConsumeBilling + SettleBilling）完成。
 func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model.Task) {
+	if model.UsesTaskBillingDelivery(task) {
+		DeliverTaskBillingLogs(c.Request.Context(), task.ID, 10)
+		return
+	}
 	tokenName := c.GetString("token_name")
 	logContent := fmt.Sprintf("操作 %s", info.Action)
 	// 支持任务仅按次计费
@@ -156,17 +160,21 @@ func taskBillingOther(task *model.Task) *model.LogOther {
 			other.SetPublic("billing_mode", "tiered_expr")
 			other.SetPublic("usage_units", snap.UsageUnits)
 			other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(snap.ExprString)))
-			other.SetPublic("matched_tier", snap.EstimatedTier)
-			if len(snap.UsageFacts) > 0 {
-				other.SetPublic("usage_facts", snap.UsageFacts)
+			if task.PrivateData.AsyncBilling == nil {
+				other.SetPublic("matched_tier", snap.EstimatedTier)
+				if len(snap.UsageFacts) > 0 {
+					other.SetPublic("usage_facts", snap.UsageFacts)
+				}
 			}
 		}
 	}
 	if async := task.PrivateData.AsyncBilling; async != nil && async.TieredSnapshot != nil {
+		other.SetPublic("group_ratio", async.TieredSnapshot.GroupRatio)
 		other.SetPublic("billing_mode", "tiered_expr")
 		other.SetPublic("usage_units", async.TieredSnapshot.UsageUnits)
 		other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(async.TieredSnapshot.ExprString)))
 	}
+	appendTaskSettlementExpressionFacts(task, other)
 	props := task.Properties
 	if props.UpstreamModelName != "" && props.UpstreamModelName != props.OriginModelName {
 		other.SetPublic("is_model_mapped", true)

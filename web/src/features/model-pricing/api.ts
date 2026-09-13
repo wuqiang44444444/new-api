@@ -44,6 +44,10 @@ export type ModelPricingEntry = {
   effective: PricingValues
   usage_schema?: BillingUsageSchema
   billing_display?: BillingDisplayProjection
+  /** Seedance Link attribution: a cross-channel conflict blocks editing. */
+  billing_contract_conflict?: boolean
+  /** Seedance Link attribution: the token-budget field applies to this model. */
+  preconsume_token_budget?: boolean
 }
 
 export type ModelPricingConfig = {

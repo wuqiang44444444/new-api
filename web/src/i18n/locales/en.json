@@ -3948,6 +3948,7 @@
     "No permission to perform this action": "No permission to perform this action",
     "No plans available": "No plans available",
     "No platform or supplier usage in this billing period.": "No platform or supplier usage in this billing period.",
+    "No pre-consume token upper bound is set. Requests that require a token budget will be rejected.": "No pre-consume token upper bound is set. Requests that require a token budget will be rejected.",
     "No preference": "No preference",
     "No prefill groups yet": "No prefill groups yet",
     "No price differences found": "No price differences found",

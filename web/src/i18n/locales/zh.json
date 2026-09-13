@@ -3948,6 +3948,7 @@
     "No permission to perform this action": "无权进行此操作",
     "No plans available": "暂无可购买套餐",
     "No platform or supplier usage in this billing period.": "本账期没有平台或供应商用量。",
+    "No pre-consume token upper bound is set. Requests that require a token budget will be rejected.": "尚未设置预扣 Token 上限。需要 Token 预算的请求将被拒绝。",
     "No preference": "无偏好",
     "No prefill groups yet": "暂无预填充分组",
     "No price differences found": "未发现价格差异",

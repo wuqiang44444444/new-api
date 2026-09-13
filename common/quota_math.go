@@ -66,7 +66,7 @@ func (c *QuotaClamp) AuditMap() map[string]any {
 	return map[string]any{
 		"op":       c.Op,
 		"kind":     c.Kind,
-		"original": c.Original,
+		"original": quotaClampJSONValue(c.Original),
 		"clamped":  c.Clamped,
 	}
 }

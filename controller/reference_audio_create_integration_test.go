@@ -67,7 +67,7 @@ func testReferenceAudioCreation(t *testing.T, protocol dto.VideoUpstreamProtocol
 	saved := map[string]string{}
 	require.NoError(t, config.GlobalConfig.SaveToDB(func(k, v string) error { saved[k] = v; return nil }))
 	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(saved)) })
-	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{"billing_setting.billing_mode": `{"customer-audio":"tiered_expr"}`, "billing_setting.billing_expr": `{"customer-audio":"tier(\"fixed\", 1400)"}`}))
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{"billing_setting.billing_mode": `{"customer-audio":"tiered_expr"}`, "billing_setting.billing_expr": `{"customer-audio":"tier(\"fixed\", 0.0014)"}`}))
 	user := model.User{Id: 8191, Username: "audio-integration", Quota: 10000, Status: common.UserStatusEnabled, Group: "default"}
 	user.SetSetting(kitdto.UserSetting{BillingPreference: "wallet_only"})
 	require.NoError(t, db.Create(&user).Error)

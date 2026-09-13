@@ -72,7 +72,7 @@ func InsertTaskWithCreateAttempt(task *Task, idempotencyID, attemptID int64) err
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(task).Error; err != nil {
+		if err := createTaskAndBillingLogTx(tx, task); err != nil {
 			return err
 		}
 		if err := createBatchJobForTaskTx(tx, &attempt, task); err != nil {
@@ -162,7 +162,7 @@ func RecoverTaskCreateAttempt(id int64) (*Task, error) {
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&task).Error; err != nil {
+		if err := createTaskAndBillingLogTx(tx, &task); err != nil {
 			return err
 		}
 		if err := createBatchJobForTaskTx(tx, &attempt, &task); err != nil {

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/gin-gonic/gin"
@@ -160,4 +162,87 @@ func TestModelPriceHelperTaskTieredRejectsNondeterministicExpr(t *testing.T) {
 
 	_, err = ModelPriceHelperTaskTiered(taskPriceContext(), baseInfo(headerModel), fixedTaskProbe{})
 	require.ErrorContains(t, err, "non-deterministic")
+}
+
+// TestModelPriceHelperTaskTieredSeedanceUsageExpression 覆盖迁移后的 Seedance
+// u() 预扣路径：美元求值、受控 facts 冻结、预算缺失 fail-closed。
+func TestModelPriceHelperTaskTieredSeedanceUsageExpression(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	const usageModel = "seedance-usage-model"
+	const frozenModel = "seedance-frozen-model"
+	const legacyModel = "seedance-legacy-model"
+	loadTaskPricingConfig(t, map[string]string{
+		usageModel:  `tier("base", u("tokens") * 5 / 1000000)`,
+		frozenModel: `u("resolution") == "4k" ? tier("4k", 0.7) : tier("base", 0.5)`,
+		legacyModel: taskSixTierExpression,
+	}, map[string]int{
+		usageModel:  300000,
+		frozenModel: 0,
+		legacyModel: 100000,
+	})
+
+	seedanceInfo := func(model string) *relaycommon.RelayInfo {
+		return &relaycommon.RelayInfo{
+			OriginModelName: model,
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelType: constant.ChannelTypeSeedanceLink,
+				ChannelOtherSettings: dto.ChannelOtherSettings{
+					VideoUpstreamProtocol: dto.VideoUpstreamProtocolModelArkV3Volcengine,
+				},
+			},
+			UserGroup:  "default",
+			UsingGroup: "default",
+		}
+	}
+
+	t.Run("usd evaluation freezes controlled facts and units", func(t *testing.T) {
+		info := seedanceInfo(usageModel)
+		price, err := ModelPriceHelperTaskTiered(taskPriceContext(), info, fixedTaskProbe{"resolution": "1080p"})
+		require.NoError(t, err)
+		// 300000 tokens × $5/1M = $1.50 → 1.5 × QuotaPerUnit。
+		expected, clamp := common.QuotaRoundChecked(1.5 * common.QuotaPerUnit)
+		require.Nil(t, clamp)
+		assert.Equal(t, expected, price.Quota)
+		snap := info.TieredBillingSnapshot
+		require.NotNil(t, snap)
+		assert.True(t, snap.TaskUsageBilling)
+		assert.Equal(t, float64(300000), snap.UsageFacts["tokens"])
+		assert.Equal(t, "1080p", snap.UsageFacts["resolution"])
+		assert.Equal(t, "token", snap.UsageUnits["tokens"])
+		assert.Equal(t, "enum", snap.UsageUnits["resolution"])
+	})
+
+	t.Run("missing budget fails closed for a measured dependency", func(t *testing.T) {
+		loadTaskPricingConfig(t, map[string]string{
+			"seedance-unbudgeted": `tier("base", u("tokens") * 5 / 1000000)`,
+		}, map[string]int{})
+		_, err := ModelPriceHelperTaskTiered(taskPriceContext(), seedanceInfo("seedance-unbudgeted"), fixedTaskProbe{"resolution": "1080p"})
+		require.ErrorContains(t, err, "pre-consume token upper bound is not configured")
+	})
+
+	t.Run("pure frozen conditions settle without a budget on the registered protocols", func(t *testing.T) {
+		info := seedanceInfo(frozenModel)
+		info.ChannelMeta.ChannelOtherSettings.VideoUpstreamProtocol = dto.VideoUpstreamProtocolSynlinkVideoV1
+		price, err := ModelPriceHelperTaskTiered(taskPriceContext(), info, fixedTaskProbe{"resolution": "4k"})
+		require.NoError(t, err)
+		expected, clamp := common.QuotaRoundChecked(0.7 * common.QuotaPerUnit)
+		require.Nil(t, clamp)
+		assert.Equal(t, expected, price.Quota)
+	})
+
+	t.Run("usage expressions are rejected outside the Seedance Link contract", func(t *testing.T) {
+		native := &relaycommon.RelayInfo{
+			OriginModelName: usageModel,
+			ChannelMeta:     &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeDoubaoVideo},
+			UserGroup:       "default",
+			UsingGroup:      "default",
+		}
+		_, err := ModelPriceHelperTaskTiered(taskPriceContext(), native, fixedTaskProbe{"resolution": "1080p"})
+		require.ErrorContains(t, err, "Seedance Link channel contract")
+	})
+
+	t.Run("legacy Seedance prices cannot accept new tasks", func(t *testing.T) {
+		_, err := ModelPriceHelperTaskTiered(taskPriceContext(), seedanceInfo(legacyModel), fixedTaskProbe{"resolution": "1080p", "has_video_input": false})
+		require.ErrorContains(t, err, "declared u() fields")
+	})
 }

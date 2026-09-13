@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/pkg/billingexpr"
-	"github.com/shopspring/decimal"
+	"github.com/QuantumNous/new-api/pkg/seedancebilling"
 )
 
 func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualTokens int) bool {
@@ -36,66 +34,33 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 		return true
 	}
 	// 与 prepareTerminalTaskBilling 一致地记录真实 token，供结算/退款日志的 completion_tokens
-	// 列回填（recalculateTaskQuotaWithReconcile 读取）。直接调用本函数的路径（如补偿/单测）也生效。
+	// 与提交 UsageFacts 中可能存在的预算投影严格区分：Seedance 已接受事实重读后，
+	// actualTokens 只来自持久化的已接受实测（ActualUsageReported 决定可信性），
+	// 预算不写入 ActualTokens、不推导出已报告标记、也不落入通用 facts 合并路径。
 	async.ActualTokens = actualTokens
-	if actualTokens > 0 {
+	if actualTokens > 0 && !task.HasSeedanceBillingFacts() {
 		async.ActualUsageReported = true
 	}
-	if !async.ActualUsageReported && (!task.HasSeedanceBillingFacts() || billingexpr.RequiresUsage(async.TieredSnapshot.ExprString)) {
+	// §5.5 实测依赖规则（与补查、资金目标保护同一实现）：u() 表达式只在读取实测
+	// token 时等待；纯冻结条件表达式按冻结事实直接结算；旧 c/_task 表达式保持
+	// 通用用量依赖。
+	if !async.ActualUsageReported && (!task.HasSeedanceBillingFacts() || seedancebilling.RequiresMeasuredTaskUsage(async.TieredSnapshot)) {
 		if awaitSeedanceUsage(ctx, task) {
 			return true
 		}
-		async.Operation = "settle"
-		async.Reason = "表达式结算：上游未返回可计费用量，保持预扣额度"
-		target := task.Quota
-		async.TargetQuota = &target
-		setTaskBillingState(task, model.TaskBillingStateSettled, "")
-		if err := task.UpdateBilling(); err != nil {
-			logger.LogWarn(ctx, fmt.Sprintf("任务 %s 计费状态回写失败: %s", task.TaskID, err.Error()))
-		}
+		recalculateTaskQuotaWithReconcile(ctx, task, task.Quota, "表达式结算：上游未返回可计费用量，保持预扣额度")
 		return true
 	}
 
-	// The lenient compile environment resolves unknown identifiers to zero, so
-	// a broken frozen expression must be rejected before settlement.
-	if err := billingexpr.UnknownIdentifier(async.TieredSnapshot.ExprString); err != nil {
-		persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, fmt.Errorf("frozen task billing expression failed: %w", err))
-		return true
-	}
-
-	requestInput := billingexpr.RequestInput{}
-	if async.BillingProbe != nil {
-		requestInput = *async.BillingProbe
-	}
-	result, err := billingexpr.ComputeTieredQuotaWithRequest(
-		async.TieredSnapshot,
-		billingexpr.TokenParams{C: float64(actualTokens)},
-		requestInput,
-	)
+	result, _, err := ComputeTaskTieredBilling(task)
 	if err != nil {
+		if result.Clamp != nil {
+			async.QuotaClamp = result.Clamp
+		}
 		persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, fmt.Errorf("frozen task billing expression failed: %w", err))
 		return true
 	}
 	actualQuota := result.ActualQuotaAfterGroup
-	if result.ActualQuotaBeforeGroup < 0 || actualQuota < 0 {
-		persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, fmt.Errorf("frozen task billing expression returned negative cost"))
-		return true
-	}
-	if task.PrivateData.BillingContext != nil && task.PrivateData.BillingContext.ContractFact != nil {
-		modelQuota := decimal.NewFromFloat(result.ActualQuotaBeforeGroup).
-			Mul(decimal.NewFromFloat(async.TieredSnapshot.GroupRatio))
-		modelQuota, err = ApplyCustomerContractRatio(modelQuota, task.PrivateData.BillingContext.ContractFact)
-		if err != nil {
-			persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, err)
-			return true
-		}
-		actualQuota, result.Clamp = common.QuotaRoundChecked(modelQuota.InexactFloat64())
-	}
-
-	if actualQuota < 0 {
-		persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, fmt.Errorf("frozen task billing contract returned negative cost"))
-		return true
-	}
 	reason := fmt.Sprintf("表达式结算：tokens=%d, tier=%s", actualTokens, result.MatchedTier)
 	async.Operation = "settle"
 	async.Reason = reason

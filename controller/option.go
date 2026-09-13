@@ -397,7 +397,7 @@ func UpdateOption(c *gin.Context) {
 					err = billing_setting.SmokeTestExpr(expression)
 				}
 			} else {
-				err = billing_setting.ValidateOneBillingExpression(modelName, expression, billing_setting.GetBillingExprCopy()[modelName], nil, false)
+				err = billing_setting.ValidateOneBillingExpression(modelName, expression, billing_setting.GetBillingExprCopy()[modelName])
 			}
 			if err != nil {
 				common.ApiErrorMsg(c, fmt.Sprintf("模型 %s 的计费表达式无效: %v", modelName, err))

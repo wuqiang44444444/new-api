@@ -11,8 +11,8 @@ import (
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
-"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -32,12 +32,19 @@ type ModelPricingChange struct {
 }
 
 type ModelPricingEntry struct {
- BillingDisplay *billingexpr.DisplayProjection `json:"billing_display,omitempty"`
-	ModelName   string                               `json:"model_name"`
-	Version     string                               `json:"version"`
-	Configured  PricingValues                        `json:"configured"`
-	Effective   PricingValues                        `json:"effective"`
-	UsageSchema map[string]jsplugin.UsageFieldSchema `json:"usage_schema,omitempty"`
+	BillingDisplay *billingexpr.DisplayProjection       `json:"billing_display,omitempty"`
+	ModelName      string                               `json:"model_name"`
+	Version        string                               `json:"version"`
+	Configured     PricingValues                        `json:"configured"`
+	Effective      PricingValues                        `json:"effective"`
+	UsageSchema    map[string]jsplugin.UsageFieldSchema `json:"usage_schema,omitempty"`
+	// Seedance Link attribution uses the same typed facts as the public
+	// pricing surface: a cross-channel conflict blocks editing and saving on
+	// both; a Seedance usage schema marks the declared u() field contract the
+	// task usage editor consumes together with the separate token-budget
+	// field.
+	BillingContractConflict bool `json:"billing_contract_conflict,omitempty"`
+	PreconsumeTokenBudget   bool `json:"preconsume_token_budget,omitempty"`
 }
 
 type ModelPricingSnapshot struct {
@@ -171,12 +178,23 @@ func GetModelPricingSnapshot(names []string) (*ModelPricingSnapshot, error) {
 		}
 	}
 	sort.Strings(names)
+	attribution, err := loadSeedancePricingAttribution(DB)
+	if err != nil {
+		return nil, err
+	}
 	result := &ModelPricingSnapshot{Entries: make([]ModelPricingEntry, 0, len(names)), Options: make(map[string]string), EmptyVersion: ModelPricingVersion(PricingValues{})}
 	generation := jsplugin.DefaultRegistry.Generation()
 	for _, name := range names {
 		configured := modelPricingValues(values, name)
 		entry := ModelPricingEntry{ModelName: name, Version: ModelPricingVersion(configured), Configured: configured, Effective: effectiveModelPricing(values, name)}
-		if plugin, ok := generation.GetByModel(name); ok {
+		// Seedance 归属优先于通用插件模型索引或 alias：客户模型已由类型化渠道归
+		// Seedance 时，管理端与公开端一致使用 Seedance 字段合同，原生 usage_schema
+		// 不得使 UI 进入原生任务编辑器（本次故障根因）。
+		if schema, ok := attribution.schemas[name]; ok {
+			entry.UsageSchema = schema
+			entry.PreconsumeTokenBudget = true
+			entry.BillingContractConflict = attribution.pricingContractConflict(name)
+		} else if plugin, ok := generation.GetByModel(name); ok {
 			entry.UsageSchema = plugin.Meta.UsageSchema
 		} else if target, ok := ResolveTaskModelAlias(generation, name); ok {
 			if plugin, ok := generation.Get(target.PluginKey); ok {
@@ -210,7 +228,7 @@ func GetModelPricingSnapshot(names []string) (*ModelPricingSnapshot, error) {
 }
 
 func ValidateModelPricing(name string, values PricingValues) error {
- return validateModelPricing(DB, name, values)
+	return validateModelPricing(DB, name, values)
 }
 
 func validateModelPricing(db *gorm.DB, name string, values PricingValues) error {
@@ -233,7 +251,9 @@ func validateModelPricing(db *gorm.DB, name string, values PricingValues) error 
 				return errors.New("billing expression is required")
 			}
 			if handled, err := validateSeedanceBillingExpression(db, name, expression); handled {
-				if err != nil { return err }
+				if err != nil {
+					return err
+				}
 				continue
 			}
 			generation := jsplugin.DefaultRegistry.Generation()
@@ -256,8 +276,12 @@ func validateModelPricing(db *gorm.DB, name string, values PricingValues) error 
 		}
 		if key == billing_setting.TaskPreConsumeTokensOption {
 			encoded, err := common.Marshal(map[string]any{name: value})
-			if err != nil { return err }
-			if err := billing_setting.ValidateTaskPreConsumeTokensJSON(string(encoded)); err != nil { return err }
+			if err != nil {
+				return err
+			}
+			if err := billing_setting.ValidateTaskPreConsumeTokensJSON(string(encoded)); err != nil {
+				return err
+			}
 			continue
 		}
 		number, ok := value.(float64)
@@ -272,7 +296,7 @@ func validateModelPricing(db *gorm.DB, name string, values PricingValues) error 
 			}
 		}
 	}
-	return nil
+	return validateSeedancePricingConfiguration(db, name, values)
 }
 
 func UpdateModelPricing(changes []ModelPricingChange) error {
@@ -288,9 +312,6 @@ func UpdateModelPricing(changes []ModelPricingChange) error {
 		if change.ExpectedVersion == "" {
 			return ErrModelPricingConflict
 		}
-		if err := ValidateModelPricing(change.ModelName, change.Pricing); err != nil {
-			return err
-		}
 	}
 	return mutateModelPricingOptions(func(tx *gorm.DB, values map[string]map[string]any) error {
 		defaults := defaultPricingMaps()
@@ -301,6 +322,9 @@ func UpdateModelPricing(changes []ModelPricingChange) error {
 			pricing := change.Pricing
 			if change.Reset {
 				pricing = modelPricingValues(defaults, change.ModelName)
+			}
+			if err := validateModelPricing(tx, change.ModelName, pricing); err != nil {
+				return err
 			}
 			for _, key := range modelPricingOptionKeys {
 				delete(values[key], change.ModelName)

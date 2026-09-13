@@ -42,9 +42,9 @@ import (
 const seedanceFundsInitialQuota = 10_000_000
 
 // seedanceFundsHold is the frozen pre-consume for the fixture expression
-// tier("feicai", param("_task.duration_seconds") * param("_task.size_multiplier") * 250000)
+// tier("feicai", u("duration_seconds") * 0.25)
 // evaluated over the plugin probe of the fixture request:
-// 4 × 1 × 250000 = 1_000_000 → /1e6 × common.QuotaPerUnit(500000) = 500000 quota.
+// 4 × $0.25 × common.QuotaPerUnit(500000) = 500000 quota.
 const seedanceFundsHold = 500_000
 
 type seedanceFundsFixture struct {
@@ -88,7 +88,7 @@ func newSeedanceFundsFixture(t *testing.T) *seedanceFundsFixture {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
-		&model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}, &model.Task{},
+		&model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}, &model.Task{}, &model.TaskBillingDelivery{}, &model.QuotaData{},
 		&model.TaskCreateIdempotency{}, &model.TaskCreateAttempt{}, &model.UserSubscription{},
 		&model.TaskPlugin{}, &model.SubscriptionPreConsumeRecord{},
 	))
@@ -117,7 +117,7 @@ func newSeedanceFundsFixture(t *testing.T) *seedanceFundsFixture {
 	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(saved)) })
 	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
 		"billing_setting.billing_mode":           `{"customer-video":"tiered_expr"}`,
-		"billing_setting.billing_expr":           `{"customer-video":"tier(\"feicai\", param(\"_task.duration_seconds\") * param(\"_task.size_multiplier\") * 250000)"}`,
+		"billing_setting.billing_expr":           `{"customer-video":"tier(\"feicai\", u(\"duration_seconds\") * 0.25)"}`,
 		"task_billing_setting.preconsume_tokens": `{"customer-video":100000}`,
 	}))
 
@@ -382,7 +382,7 @@ func TestSeedancePluginFundsChainCreateToSettle(t *testing.T) {
 	require.NotNil(t, task.PrivateData.AsyncBilling)
 	assert.Equal(t, model.TaskBillingStatePending, task.PrivateData.AsyncBilling.State)
 	require.NotNil(t, task.PrivateData.AsyncBilling.TieredSnapshot)
-	assert.False(t, task.PrivateData.AsyncBilling.TieredSnapshot.TaskUsageBilling, "the plugin must not enter the native usage-billing branch")
+	assert.True(t, task.PrivateData.AsyncBilling.TieredSnapshot.TaskUsageBilling, "USD evaluation retains the attached Seedance funding lifecycle")
 	require.NotNil(t, task.PrivateData.AsyncBilling.BillingProbe)
 	assert.Contains(t, string(task.PrivateData.AsyncBilling.BillingProbe.Body), `"duration_seconds":4`)
 	assert.Contains(t, string(task.PrivateData.AsyncBilling.BillingProbe.Body), `"size_multiplier":1`)
@@ -413,7 +413,8 @@ func TestSeedancePluginFundsChainCreateToSettle(t *testing.T) {
 	assert.Equal(t, seedanceFundsInitialQuota-seedanceFundsHold, remain)
 	assert.Equal(t, seedanceFundsHold, used)
 	logs = fx.logsByType()
-	require.Len(t, logs[model.LogTypeConsume], 1)
+	require.Len(t, logs[model.LogTypeConsume], 2)
+	assert.Zero(t, logs[model.LogTypeConsume][1].Quota, "completed usage has a zero-amount adjustment")
 	assert.Empty(t, logs[model.LogTypeRefund])
 }
 

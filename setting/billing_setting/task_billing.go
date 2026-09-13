@@ -49,48 +49,28 @@ func ValidateTaskPreConsumeTokensJSON(value string) error {
 	return nil
 }
 
-func ValidateBillingExpressionsJSON(
-	value string,
-	oldValue map[string]string,
-	taskProbeExtraFieldsByModel map[string]map[string]any,
-) error {
-	var expressions map[string]string
-	if err := common.UnmarshalJsonStr(value, &expressions); err != nil {
-		return err
-	}
-	for model, expression := range expressions {
-		extraFields, taskModel := taskProbeExtraFieldsByModel[model]
-		if err := ValidateOneBillingExpression(model, expression, oldValue[model], extraFields, taskModel); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // ValidateOneBillingExpression validates a single model expression with the
-// Link contract semantics: only new or modified expressions must wrap prices
-// in tier(), unchanged legacy expressions stay relaxed so saving historical
-// configuration never blocks.
-func ValidateOneBillingExpression(modelName, expression, oldValue string, extraFields map[string]any, taskModel bool) error {
+// generic token contract: new or modified expressions must wrap prices in tier().
+// Unchanged generic expressions retain the existing tier requirement exemption.
+// Seedance and native plugin expressions are validated by their own owners.
+func ValidateOneBillingExpression(modelName, expression, oldValue string) error {
 	requireTier := oldValue != expression
-	if err := smokeTestLinkExpr(expression, requireTier, taskModel, extraFields); err != nil {
+	if err := smokeTestGenericExpression(expression, requireTier); err != nil {
 		return fmt.Errorf("invalid billing expression for model %s: %w", modelName, err)
 	}
 	return nil
 }
 
-// smokeTestLinkExpr validates a Link contract expression: compilable, vector
-// results non-negative, tier() wrapping required when requireTier is set, and
-// task models probed with protocol-specific request fields. It duplicates the
+// smokeTestGenericExpression validates finite, non-negative token prices with
+// generic request fields and requires tier() when requested. It duplicates the
 // shared smoke vectors loop locally so setting/billing_setting/tiered_billing.go
 // stays byte-identical to upstream (allowed narrow duplication per the
 // minimal-invasion rule).
-func smokeTestLinkExpr(exprStr string, requireTier bool, taskModel bool, taskProbeExtraFields map[string]any) error {
+func smokeTestGenericExpression(exprStr string, requireTier bool) error {
 	if _, err := billingexpr.CompileFromCache(exprStr); err != nil {
 		return err
 	}
-	// Native plugin expressions are validated by SmokeTestTaskExpr. Link task
-	// probes have no UsageFacts, including when a nil branch would evaluate.
+	// This generic model has no declared usage facts, including for nil branches.
 	if billingexpr.UsedVars(exprStr)["u"] {
 		return fmt.Errorf("expression references u() but the model has no task plugin usage schema")
 	}
@@ -103,13 +83,6 @@ func smokeTestLinkExpr(exprStr string, requireTier bool, taskModel bool, taskPro
 	}
 
 	requests := billingExprSmokeRequests()
-	if taskModel {
-		var err error
-		requests, err = taskBillingSmokeRequests(taskProbeExtraFields)
-		if err != nil {
-			return err
-		}
-	}
 
 	for _, v := range vectors {
 		for _, request := range requests {

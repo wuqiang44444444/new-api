@@ -75,7 +75,6 @@ func refundTaskWithReconcile(ctx context.Context, task *model.Task, reason strin
 	async.Reason = reason
 	targetQuota := 0
 	async.TargetQuota = &targetQuota
-	quota := task.Quota
 	var applied bool
 	var err error
 	if task.Status == model.TaskStatusProviderContractFailure || reason == upstreamOutcomeUnresolvedReason {
@@ -90,19 +89,7 @@ func refundTaskWithReconcile(ctx context.Context, task *model.Task, reason strin
 	if !applied {
 		return
 	}
-	if quota == 0 {
-		return
-	}
-
-	other := taskBillingOther(task)
-	other.SetPublic("task_id", task.TaskID)
-	other.SetPublic("reason", reason)
-	other.SetPublic("task_billing_event", "refund")
-	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
-		UserId: task.UserId, LogType: model.LogTypeRefund, ChannelId: task.ChannelId,
-		ModelName: taskModelName(task), Quota: quota, TokenId: task.PrivateData.TokenId,
-		Group: task.Group, Other: other,
-	})
+	DeliverTaskBillingLogs(ctx, task.ID, 10)
 }
 
 func recalculateTaskQuotaWithReconcile(ctx context.Context, task *model.Task, actualQuota int, reason string, clamps ...*common.QuotaClamp) {
@@ -117,7 +104,6 @@ func recalculateTaskQuotaWithReconcile(ctx context.Context, task *model.Task, ac
 	if actualQuota < 0 || async.State == model.TaskBillingStateSettled {
 		return
 	}
-	preConsumedQuota := task.Quota
 	async.Operation = "settle"
 	async.Reason = reason
 	async.TargetQuota = &actualQuota
@@ -127,7 +113,7 @@ func recalculateTaskQuotaWithReconcile(ctx context.Context, task *model.Task, ac
 			break
 		}
 	}
-	applied, quotaDelta, err := model.ApplyTaskBillingTarget(task, actualQuota)
+	applied, _, err := model.ApplyTaskBillingTarget(task, actualQuota)
 	if err != nil {
 		state := model.TaskBillingStateFailed
 		if errors.Is(err, model.ErrTaskBillingInsufficientFunding) {
@@ -139,29 +125,7 @@ func recalculateTaskQuotaWithReconcile(ctx context.Context, task *model.Task, ac
 	if !applied {
 		return
 	}
-	if quotaDelta == 0 {
-		return
-	}
-
-	logType, logQuota := model.LogTypeRefund, -quotaDelta
-	if quotaDelta > 0 {
-		logType, logQuota = model.LogTypeConsume, quotaDelta
-		model.UpdateUserUsedQuotaAndRequestCount(task.UserId, quotaDelta)
-		model.UpdateChannelUsedQuota(task.ChannelId, quotaDelta)
-	}
-	other := taskBillingOther(task)
-	other.SetPublic("task_id", task.TaskID)
-	other.SetPublic("pre_consumed_quota", preConsumedQuota)
-	other.SetPublic("actual_quota", actualQuota)
-	for _, clamp := range clamps {
-		attachQuotaSaturationToOther(other, clamp)
-	}
-	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
-		UserId: task.UserId, LogType: logType, Content: reason, ChannelId: task.ChannelId,
-		ModelName: taskModelName(task), Quota: logQuota, TokenId: task.PrivateData.TokenId,
-		Group: task.Group, Other: other, NodeName: task.PrivateData.NodeName,
-		CompletionTokens: async.ActualTokens,
-	})
+	DeliverTaskBillingLogs(ctx, task.ID, 10)
 }
 
 func calculateTaskQuotaByTokens(task *model.Task, totalTokens int) (int, *common.QuotaClamp, string, bool) {
@@ -233,10 +197,7 @@ func settleTaskBillingWithState(ctx context.Context, adaptor TaskPollingAdaptor,
 		return false
 	}
 	if task.PrivateData.BillingContext != nil && task.PrivateData.BillingContext.PerCallBilling {
-		setTaskBillingState(task, model.TaskBillingStateSettled, "")
-		if err := task.UpdateBilling(); err != nil {
-			logger.LogWarn(ctx, fmt.Sprintf("任务 %s 计费状态回写失败: %s", task.TaskID, err.Error()))
-		}
+		recalculateTaskQuotaWithReconcile(ctx, task, task.Quota, "按冻结预扣完成计费")
 		return true
 	}
 	actualTokens := result.CompletionTokens
@@ -263,9 +224,6 @@ func settleTaskBillingWithState(ctx context.Context, adaptor TaskPollingAdaptor,
 		recalculateTaskQuotaWithReconcile(ctx, task, actualQuota, reason, clamp)
 		return true
 	}
-	setTaskBillingState(task, model.TaskBillingStateSettled, "")
-	if err := task.UpdateBilling(); err != nil {
-		logger.LogWarn(ctx, fmt.Sprintf("任务 %s 计费状态回写失败: %s", task.TaskID, err.Error()))
-	}
+	recalculateTaskQuotaWithReconcile(ctx, task, task.Quota, "按冻结预扣完成计费")
 	return true
 }

@@ -172,3 +172,62 @@ func setupTaskLogRepair(t *testing.T) (*gorm.DB, scope) {
 	s := scope{UserID: 9, TokenID: 4, Model: "video", Start: 1000, End: 1200, CreateTaskID: task.ID}
 	return db, s
 }
+
+func TestRepairNewUsageExpressionUsesActualFrozenInput(t *testing.T) {
+	db, s := setupTaskLogRepair(t)
+	var task model.Task
+	require.NoError(t, db.First(&task, s.CreateTaskID).Error)
+	async := task.PrivateData.AsyncBilling
+	async.TieredSnapshot.ExprString = `tier("base", u("tokens") / 1000000)`
+	async.TieredSnapshot.ExprHash = billingexpr.ExprHashString(async.TieredSnapshot.ExprString)
+	async.TieredSnapshot.TaskUsageBilling = true
+	async.TieredSnapshot.UsageUnits = map[string]string{"tokens": "token"}
+	async.TieredSnapshot.UsageFacts = map[string]any{"tokens": float64(999999)}
+	async.ActualUsageReported = true
+	task.PrivateData.VideoUpstreamProtocol = "modelark_v3_volcengine"
+	require.NoError(t, db.Save(&task).Error)
+	first, err := repair(db, s, true)
+	require.NoError(t, err)
+	assert.Equal(t, 1, first.Creates)
+	again, err := repair(db, s, true)
+	require.NoError(t, err)
+	assert.Zero(t, again.Creates)
+	assert.Zero(t, again.MetadataUpdates)
+	var after model.Task
+	require.NoError(t, db.First(&after, task.ID).Error)
+	assert.Equal(t, task.PrivateData, after.PrivateData)
+	assert.Equal(t, 40, after.Quota)
+}
+
+func TestRepairMissingZeroDeltaCompletionRequiresExplicitTask(t *testing.T) {
+	db, s := setupTaskLogRepair(t)
+	var task model.Task
+	require.NoError(t, db.First(&task, s.CreateTaskID).Error)
+	task.FinishTime = 1110
+	require.NoError(t, db.Save(&task).Error)
+	require.NoError(t, db.Where("1 = 1").Delete(&model.Log{}).Error)
+	require.NoError(t, db.Create(&model.Log{UserId: 9, TokenId: 4, ChannelId: 8, ModelName: "video", Type: model.LogTypeConsume, Quota: 40, CreatedAt: 1100, Other: `{"task_id":"public-task","task_billing_event":"create","group_ratio":1}`}).Error)
+	s.CreateTaskID = 0
+	preview, err := repair(db, s, false)
+	require.NoError(t, err)
+	assert.Zero(t, preview.After.NetDifference)
+	assert.Equal(t, "mismatch", preview.After.Status)
+	assert.Equal(t, 1, preview.After.MissingFinalLogs)
+	s.FinalTaskID = task.ID
+	fixed, err := repair(db, s, true)
+	require.NoError(t, err)
+	assert.Equal(t, 1, fixed.FinalLogs)
+	assert.Equal(t, "matched", fixed.After.Status)
+	again, err := repair(db, s, true)
+	require.NoError(t, err)
+	assert.Zero(t, again.FinalLogs)
+	var logs []model.Log
+	require.NoError(t, db.Order("id").Find(&logs).Error)
+	require.Len(t, logs, 2)
+	assert.Zero(t, logs[1].Quota)
+	assert.Equal(t, 80, logs[1].CompletionTokens)
+	var user model.User
+	require.NoError(t, db.First(&user, 9).Error)
+	assert.Equal(t, 9999, user.Quota)
+	assert.Equal(t, 40, user.UsedQuota)
+}
