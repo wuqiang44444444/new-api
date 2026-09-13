@@ -51,6 +51,7 @@ import {
   billingDataQualityLabel,
   billingDataQualityReasons,
   formatStatementUsage,
+  upstreamModelLabel,
 } from '../upstream-statement-utils'
 
 type UpstreamStatementTableProps = {
@@ -181,7 +182,9 @@ function ModelRow(props: { last: boolean; model: ProviderModelSummary }) {
               : 'border-muted-foreground/25 absolute top-0 bottom-0 left-7 w-5 border-b border-l'
           }
         />
-        <span className='font-medium'>{props.model.provider_model}</span>
+        <span className='inline-block max-w-lg font-medium break-words whitespace-normal'>
+          {upstreamModelLabel(props.model)}
+        </span>
       </TableCell>
       <TableCell>
         <Badge variant='secondary'>

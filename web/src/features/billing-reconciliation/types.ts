@@ -109,7 +109,7 @@ export type CustomerStatement = {
   display_name: string
   deleted?: boolean
   dimension: BillingDimension
-  current_balance: number
+  current_balance: number | null
   summary: BillingUsage
   original_quota?: number
   discount_quota?: number
@@ -167,6 +167,7 @@ export type ProviderModelSummary = {
   channel_id: number
   channel_name: string
   provider_model: string
+  customer_models: string[]
   provider_model_fallback?: boolean
   billing_mode: BillingMode
   usage: ProviderUsage

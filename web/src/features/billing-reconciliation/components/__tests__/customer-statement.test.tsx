@@ -105,7 +105,8 @@ it('shows token usage and explains savings against the net settled amount', asyn
 
 async function renderQualityStatement(
   quality: BillingDataQuality,
-  language = 'en'
+  language = 'en',
+  balance: number | null = 1781719699
 ) {
   const i18n = createInstance().use(initReactI18next)
   await i18n.init({ lng: language, resources: { en: { translation: {} }, zh } })
@@ -128,7 +129,7 @@ async function renderQualityStatement(
       result: {
         user_id: 91,
         username: 'randy',
-        current_balance: 1781719699,
+        current_balance: balance,
         summary: { ...usage, requests: 12313, net_quota: 831775936 },
         original_quota: 956064294,
         discount_quota: 124288358,
@@ -294,6 +295,22 @@ it('preserves the negative sign of a refund-only model and its group', async () 
   fireEvent.click(screen.getByRole('button', { name: 'Expand models' }))
   expect(screen.getAllByText('-$16.48')).toHaveLength(3)
   expect(screen.getAllByText('-$18.95')).toHaveLength(2)
+  view.unmount()
+  client.clear()
+})
+
+it('shows an unavailable balance for a deleted customer while keeping historical totals', async () => {
+  const { view, client } = await renderQualityStatement(
+    { status: 'complete' },
+    'en',
+    null
+  )
+  expect(screen.getByText('Unavailable')).toBeTruthy()
+  expect(screen.queryByText('Read directly from the main database')).toBeNull()
+  expect(screen.getByText('$1,663.55')).toBeTruthy()
+  const balanceCard = screen.getByText('Current balance').parentElement
+  if (!balanceCard) throw new Error('Missing balance card')
+  expect(balanceCard.textContent).toBe('Current balance-')
   view.unmount()
   client.clear()
 })

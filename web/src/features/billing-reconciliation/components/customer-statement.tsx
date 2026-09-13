@@ -210,7 +210,11 @@ export function CustomerStatementView(props: CustomerStatementProps) {
             <SummaryCard
               title={t('Current balance')}
               value={formatQuotaWithCurrency(statement.current_balance)}
-              description={t('Read directly from the main database')}
+              description={
+                statement.current_balance === null
+                  ? t('Unavailable')
+                  : t('Read directly from the main database')
+              }
             />
             <SummaryCard
               title={t('Settled list price')}

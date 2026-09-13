@@ -71,7 +71,8 @@ func TestBillingCustomerStatementAggregatesByDimensionAndBillingMode(t *testing.
 	statement, err := GetBillingCustomerStatement(7, 1000, 1500, "api_key", 0, "", "")
 	require.NoError(t, err)
 	require.Len(t, statement.Groups, 2)
-	assert.Equal(t, 8800, statement.CurrentBalance)
+	require.NotNil(t, statement.CurrentBalance)
+	assert.Equal(t, 8800, *statement.CurrentBalance)
 	assert.EqualValues(t, 3, statement.Summary.Requests)
 	assert.EqualValues(t, 2200, statement.Summary.GrossQuota)
 	assert.EqualValues(t, 400, statement.Summary.RefundQuota)
@@ -202,6 +203,7 @@ func TestProviderBillingSummaryUsesUnmappedCustomerModelAsExactProviderIdentity(
 	require.Len(t, summary.Channels[0].Models, 1)
 	item := summary.Channels[0].Models[0]
 	assert.Equal(t, "gpt-5.6-sol", item.ProviderModel)
+	assert.Equal(t, []string{"gpt-5.6-sol"}, item.CustomerModels)
 	assert.False(t, item.ProviderModelFallback)
 	assert.Equal(t, BillingReconciliationModeToken, item.BillingMode)
 	assert.Zero(t, item.DataQuality.ProviderModelFallbackRows)
@@ -299,13 +301,17 @@ func TestProviderBillingDetailDoesNotNarrowMergedProviderModelToOneCustomerModel
 	db := setupBillingReconciliationTestDB(t)
 	require.NoError(t, db.Create(&Channel{Id: 51, Name: "provider"}).Error)
 	require.NoError(t, db.Create(&[]Log{
-		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, ChannelId: 51, ModelName: "customer-a", PromptTokens: 10, Other: `{"admin_info":{"statement_snapshot":{"billing_mode":"token","provider_model":"provider-model"}}}`},
-		{UserId: 7, CreatedAt: 1200, Type: LogTypeConsume, ChannelId: 51, ModelName: "customer-b", PromptTokens: 20, Other: `{"admin_info":{"statement_snapshot":{"billing_mode":"token","provider_model":"provider-model"}}}`},
+		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, ChannelId: 51, ModelName: "customer-b", PromptTokens: 10, Other: `{"admin_info":{"statement_snapshot":{"billing_mode":"token","provider_model":"provider-model"}}}`},
+		{UserId: 7, CreatedAt: 1200, Type: LogTypeConsume, ChannelId: 51, ModelName: "customer-a", PromptTokens: 20, Other: `{"admin_info":{"statement_snapshot":{"billing_mode":"token","provider_model":"provider-model"}}}`},
 	}).Error)
+
+	require.NoError(t, db.Create(&Log{UserId: 7, CreatedAt: 1300, Type: LogTypeConsume, ChannelId: 51, ModelName: "customer-b", PromptTokens: 5, Other: `{ "admin_info": { "statement_snapshot": { "billing_mode": "token", "provider_model": "provider-model" } } }`}).Error)
 
 	summary, err := GetProviderBillingSummary(1000, 1500, 1000, 51, "", "", 9)
 	require.NoError(t, err)
 	require.Len(t, summary.Channels, 1)
 	require.Len(t, summary.Channels[0].Models, 1)
 	assert.Empty(t, summary.Channels[0].Models[0].DetailFilter.ModelName)
+	assert.Equal(t, []string{"customer-a", "customer-b"}, summary.Channels[0].Models[0].CustomerModels)
+	assert.EqualValues(t, 35, summary.Channels[0].Models[0].Usage.InputTokens)
 }

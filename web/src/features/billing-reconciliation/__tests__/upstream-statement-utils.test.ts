@@ -23,7 +23,6 @@ import type { ProviderChannelSummary } from '../types'
 import {
   billingDataQualityReasons,
   buildUpstreamStatementCsv,
-  filterProviderChannels,
   formatStatementUsage,
 } from '../upstream-statement-utils'
 
@@ -44,6 +43,7 @@ const channels: ProviderChannelSummary[] = [
         channel_id: 18,
         channel_name: '=unsafe-channel',
         provider_model: '@unsafe-model',
+        customer_models: ['@display-model'],
         billing_mode: 'token',
         usage: {
           requests: 1,
@@ -61,6 +61,7 @@ const channels: ProviderChannelSummary[] = [
         channel_id: 18,
         channel_name: '=unsafe-channel',
         provider_model: 'other-model',
+        customer_models: ['other-display'],
         billing_mode: 'per_call',
         usage: {
           requests: 2,
@@ -80,17 +81,6 @@ const channels: ProviderChannelSummary[] = [
 ]
 
 describe('upstream statement utilities', () => {
-  it('filters model child rows without changing authoritative channel totals', () => {
-    const filtered = filterProviderChannels(channels, {
-      channel: '18',
-      model: '@unsafe-model',
-    })
-
-    expect(filtered).toHaveLength(1)
-    expect(filtered[0]?.models).toHaveLength(1)
-    expect(filtered[0]?.usage.input_tokens).toBe(245)
-  })
-
   it('exports one CSV row per visible model and neutralizes formulas', () => {
     const t = ((key: string) => key) as TFunction
     const csv = buildUpstreamStatementCsv({
@@ -103,9 +93,9 @@ describe('upstream statement utilities', () => {
 
     expect(lines).toHaveLength(3)
     expect(lines[1]).toContain("'=unsafe-channel")
-    expect(lines[1]).toContain("'@unsafe-model")
+    expect(lines[1]).toContain("'@display-model - @unsafe-model")
     expect(lines[1]).toContain('245,0,0,385,1,0,Complete')
-    expect(lines[2]).toContain('other-model,Per-call billing')
+    expect(lines[2]).toContain('other-display - other-model,Per-call billing')
   })
 
   it('neutralizes signed and whitespace-prefixed spreadsheet formulas', () => {
@@ -118,7 +108,9 @@ describe('upstream statement utilities', () => {
         {
           ...source,
           channel_name: ' +SUM(A1:A2)',
-          models: [{ ...model, provider_model: '-2+3' }],
+          models: [
+            { ...model, provider_model: '-2+3', customer_models: ['-display'] },
+          ],
         },
       ],
       generatedAt: 1_700_000_000,
@@ -127,7 +119,7 @@ describe('upstream statement utilities', () => {
     })
 
     expect(csv).toContain("' +SUM(A1:A2)")
-    expect(csv).toContain("'-2+3")
+    expect(csv).toContain("'-display - -2+3")
   })
 
   it('keeps small usage exact and compacts large Chinese usage values', () => {

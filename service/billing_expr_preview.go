@@ -44,6 +44,7 @@ type BillingExprPreviewSample struct {
 	// 空串，结果按「未模拟真实请求上下文」对待。
 	Body    map[string]any    `json:"body,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
+	Usage   map[string]any    `json:"usage,omitempty"`
 }
 
 // BillingExprPreviewItem 是一次批量试算中的单项。
@@ -51,6 +52,8 @@ type BillingExprPreviewItem struct {
 	Key        string                    `json:"key"`
 	Expression string                    `json:"expression"`
 	Sample     *BillingExprPreviewSample `json:"sample,omitempty"`
+	// Explicit unit, including constant task prices; never infer it from u().
+	TaskUsage bool `json:"task_usage,omitempty"`
 }
 
 // BillingExprPreviewEvaluation 是真实引擎执行后的只读结果。scope 是模型
@@ -93,6 +96,9 @@ func previewBillingExpressionItem(item BillingExprPreviewItem) BillingExprPrevie
 	if len(item.Expression) > BillingExprPreviewMaxExpressionLength {
 		result.Error = "expression exceeds the length limit"
 		return result
+	}
+	if item.TaskUsage {
+		return previewTaskUsageExpression(item)
 	}
 	if len(billingexpr.UsedUsageKeys(item.Expression)) > 0 {
 		result.Error = "task usage expressions use a different unit contract and are not supported by this preview"

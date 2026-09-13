@@ -66,7 +66,9 @@ export async function getAdminCustomerStatements(
   return response.data
 }
 
-export async function getAdminUpstreamStatement(params: PeriodParams) {
+export async function getAdminUpstreamStatement(
+  params: PeriodParams & { channel_id?: number; model_name?: string }
+) {
   const response = await api.get<ApiResponse<BillingEnvelope<ProviderSummary>>>(
     '/api/billing/admin/upstream-summary',
     { params }

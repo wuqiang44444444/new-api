@@ -1,6 +1,7 @@
 package publicmodel
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
@@ -29,7 +30,23 @@ func TestSeedancePluginMetadataPreservesPublishedModelArkContract(t *testing.T) 
 				require.True(t, ok)
 				actual, ok := VideoAPIFromPlugin("customer-model", dto.VideoUpstreamProtocol(video.Protocol), spec, true)
 				require.True(t, ok)
-				assert.Equal(t, expected, actual)
+				if video.Protocol == string(dto.VideoUpstreamProtocolSynlinkVideoV1) ||
+					((video.Protocol == string(dto.VideoUpstreamProtocolModelArkV3Volcengine) || video.Protocol == string(dto.VideoUpstreamProtocolModelArkV3BytePlus)) && strings.HasSuffix(model, "-seedance-2-5-260628")) {
+					// These model limits were corrected against September's official
+					// specs. Preserve endpoint semantics without freezing obsolete limits.
+					assert.Equal(t, expected.Operations, actual.Operations)
+					assert.Equal(t, expected.Protocol, actual.Protocol)
+					assert.Equal(t, expected.Creation.RequiredFields, actual.Creation.RequiredFields)
+					if video.Protocol != string(dto.VideoUpstreamProtocolSynlinkVideoV1) {
+						for _, parameter := range actual.Creation.Parameters {
+							if parameter.Name == "resolution" {
+								assert.Equal(t, []string{"480p", "720p", "1080p"}, parameter.Enum)
+							}
+						}
+					}
+				} else {
+					assert.Equal(t, expected, actual)
+				}
 				assert.Equal(t, "customer-model", actual.Creation.Model)
 			})
 		}

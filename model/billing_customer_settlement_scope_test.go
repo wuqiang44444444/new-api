@@ -36,7 +36,8 @@ func TestCustomerStatementsExcludeChannelTestsButKeepWalletAndProviderUsage(t *t
 		assert.EqualValues(t, 300, statement.Summary.GrossQuota)
 		assert.EqualValues(t, 50, statement.Summary.RefundQuota)
 		assert.EqualValues(t, 250, statement.Summary.NetQuota)
-		assert.EqualValues(t, 1000, statement.CurrentBalance)
+		require.NotNil(t, statement.CurrentBalance)
+		assert.EqualValues(t, 1000, *statement.CurrentBalance)
 		if dimension == "api_key" {
 			require.Len(t, statement.Groups, 2)
 			for _, group := range statement.Groups {

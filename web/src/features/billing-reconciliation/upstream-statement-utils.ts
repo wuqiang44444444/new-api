@@ -25,31 +25,12 @@ import type {
   ProviderModelSummary,
 } from './types'
 
-export type UpstreamStatementFilters = {
-  channel: string
-  model: string
-}
-
-export function filterProviderChannels(
-  channels: ProviderChannelSummary[],
-  filters: UpstreamStatementFilters
-) {
-  return channels.flatMap((channel) => {
-    if (
-      filters.channel !== 'all' &&
-      String(channel.channel_id) !== filters.channel
-    ) {
-      return []
-    }
-    const models =
-      filters.model === 'all'
-        ? channel.models
-        : channel.models.filter(
-            (model) => model.provider_model === filters.model
-          )
-    if (models.length === 0) return []
-    return [{ ...channel, models }]
-  })
+export function upstreamModelLabel(model: ProviderModelSummary): string {
+  const customerModels = model.customer_models.join(' / ') || '—'
+  const providerModel = model.provider_model_fallback
+    ? '—'
+    : model.provider_model
+  return `${customerModels} - ${providerModel}`
 }
 
 export function billingDataQualityLabel(
@@ -187,7 +168,7 @@ function upstreamStatementCsvRow(
     options.month,
     channel.channel_name,
     channel.channel_id,
-    model.provider_model,
+    upstreamModelLabel(model),
     options.t(billingModeLabel(model.billing_mode)),
     model.usage.input_tokens,
     model.usage.cache_read_tokens,

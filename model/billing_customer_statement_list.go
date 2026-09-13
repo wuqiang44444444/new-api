@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -28,7 +29,7 @@ type BillingReconciliationUserIdentity struct {
 	Username       string `json:"username"`
 	DisplayName    string `json:"display_name"`
 	Deleted        bool   `json:"deleted,omitempty"`
-	CurrentBalance int    `json:"current_balance"`
+	CurrentBalance *int   `json:"current_balance"`
 }
 
 type BillingCustomerStatementListSummary struct {
@@ -66,13 +67,25 @@ func GetBillingReconciliationUserById(userId int) (BillingReconciliationUserIden
 		Select("id, username, display_name, quota, deleted_at").
 		Where("id = ?", userId).
 		Take(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		var history struct{ UserId int }
+		if err := LOG_DB.Model(&Log{}).Scopes(customerSettlementLogs).
+			Select("user_id").Where("user_id = ? AND type IN ?", userId, []int{LogTypeConsume, LogTypeRefund}).
+			Take(&history).Error; err != nil {
+			return BillingReconciliationUserIdentity{}, err
+		}
+		return BillingReconciliationUserIdentity{Id: userId, Username: fmt.Sprintf("User #%d", userId), Deleted: true}, nil
+	}
+	if err != nil {
+		return BillingReconciliationUserIdentity{}, err
+	}
 	return BillingReconciliationUserIdentity{
 		Id:             user.Id,
 		Username:       user.Username,
 		DisplayName:    user.DisplayName,
 		Deleted:        user.DeletedAt.Valid,
-		CurrentBalance: user.Quota,
-	}, err
+		CurrentBalance: &user.Quota,
+	}, nil
 }
 
 func GetBillingCustomerStatementList(

@@ -348,6 +348,7 @@ for (const prefix of ["doubao", "dreamina"]) {
   OFFICIAL_MODEL_METADATA[prefix + "-seedance-2-0-mini-260615"] = OFFICIAL_BASE_METADATA;
   OFFICIAL_MODEL_METADATA[prefix + "-seedance-2-5-260628"] = {
     ...OFFICIAL_BASE_METADATA,
+    resolutions: ["480p", "720p", "1080p"],
     maxDuration: 30,
     intelligentDuration: true,
     maxImages: 30,
@@ -486,13 +487,18 @@ const SYNLINK_MODEL_METADATA = Object.fromEntries(
   ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-0-mini-260615", "doubao-seedance-2-5-260628"].map((model) => [
     model,
     {
-      minDuration: 1,
-      maxDuration: 60,
-      omitDurationMaximum: true,
+      // Synlink delegates model limits to ModelArk. Common request examples
+      // are not an exhaustive capability list for every model.
+      ...OFFICIAL_MODEL_METADATA[model],
+      intelligentDuration: false,
+      allowSeed: false,
+      outputFormats: [],
       defaultDuration: 5,
       publishGenerateAudioDefault: true,
       defaultGenerateAudio: false,
-      resolutions: ["480p", "720p", "1080p", "4k", "4K"],
+      resolutions: OFFICIAL_MODEL_METADATA[model].resolutions.map((value) => value.toLowerCase()),
+      allowAudioOnly: model === "doubao-seedance-2-5-260628",
+      maxTotalMedia: model === "doubao-seedance-2-5-260628" ? 50 : 12,
       ratios: MODELARK_RATIOS,
       allowVideos: true,
       allowAudios: true,
@@ -511,7 +517,7 @@ export const meta = {
     en: "Seedance Link southbound protocol adapters",
     zh: "Seedance Link 南向协议适配",
   },
-  version: "1.3.1",
+  version: "1.3.2",
   author: { name: "yuan-gateway" },
   seedanceProtocols: [
     "funcloud_modelark_v3",
@@ -1815,10 +1821,7 @@ function buildSynlinkVideoCreate(input) {
     "output_format",
   ])
     if (r[field] != null) throw new Error("request contains a parameter not published for this video protocol");
-  if (r.duration != null && (r.duration < 1 || r.duration > input.limits.maxDurationSeconds))
-    throw new Error("duration must be between 1 and " + input.limits.maxDurationSeconds + "; automatic duration is not verified");
-  if (r.resolution != null && !spec.resolutions.includes(r.resolution)) throw new Error("resolution is outside the published video request format");
-  if (r.ratio != null && !spec.ratios.includes(r.ratio)) throw new Error("ratio is outside the published video request format");
+  validateMediaModelRequest(r, spec, false);
   const body = { ...input.request, model: input.providerModel };
   if (body.duration == null) body.duration = spec.defaultDuration;
   if (!body.resolution) body.resolution = "720p";

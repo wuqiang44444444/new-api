@@ -126,7 +126,7 @@ type BillingCustomerStatement struct {
 	DisplayName    string                              `json:"display_name"`
 	Deleted        bool                                `json:"deleted,omitempty"`
 	Dimension      string                              `json:"dimension"`
-	CurrentBalance int                                 `json:"current_balance"`
+	CurrentBalance *int                                `json:"current_balance"`
 	Summary        BillingReconciliationUsage          `json:"summary"`
 	OriginalQuota  *int64                              `json:"original_quota,omitempty"`
 	DiscountQuota  *int64                              `json:"discount_quota,omitempty"`
@@ -154,6 +154,7 @@ type billingReconciliationModelAccumulator struct {
 	discountSeen              bool
 	discountRatio             float64
 	contractDiscountSeen      bool
+	hasContractDiscountFact   bool
 	contractDiscountRatio     float64
 	multipleContractDiscounts bool
 	originalQuota             decimal.Decimal
@@ -607,12 +608,13 @@ func accumulateBillingReconciliationPrice(accumulator *billingReconciliationMode
 		contractRatio := 1.0
 		if parsed.contractDiscountRatio != nil && *parsed.contractDiscountRatio > 0 {
 			contractRatio = *parsed.contractDiscountRatio
-			if !accumulator.contractDiscountSeen {
-				accumulator.contractDiscountSeen = true
-				accumulator.contractDiscountRatio = contractRatio
-			} else if accumulator.contractDiscountRatio != contractRatio {
-				accumulator.multipleContractDiscounts = true
-			}
+			accumulator.hasContractDiscountFact = true
+		}
+		if !accumulator.contractDiscountSeen {
+			accumulator.contractDiscountSeen = true
+			accumulator.contractDiscountRatio = contractRatio
+		} else if accumulator.contractDiscountRatio != contractRatio {
+			accumulator.multipleContractDiscounts = true
 		}
 
 		original := decimal.NewFromInt(quota).Div(decimal.NewFromFloat(ratio)).Div(decimal.NewFromFloat(contractRatio))
@@ -647,7 +649,7 @@ func finalizeBillingReconciliationPrice(accumulator *billingReconciliationModelA
 		value := accumulator.discountRatio
 		accumulator.model.DiscountRatio = &value
 	}
-	if accumulator.contractDiscountSeen && !accumulator.multipleContractDiscounts {
+	if accumulator.hasContractDiscountFact && !accumulator.multipleContractDiscounts {
 		value := accumulator.contractDiscountRatio
 		accumulator.model.ContractDiscountRatio = &value
 	}
@@ -702,6 +704,7 @@ type ProviderBillingPlatformSummary struct {
 	ChannelId             int                               `json:"channel_id"`
 	ChannelName           string                            `json:"channel_name"`
 	ProviderModel         string                            `json:"provider_model"`
+	CustomerModels        []string                          `json:"customer_models"`
 	ProviderModelFallback bool                              `json:"provider_model_fallback,omitempty"`
 	BillingMode           string                            `json:"billing_mode"`
 	Usage                 ProviderBillingUsage              `json:"usage"`
@@ -709,6 +712,7 @@ type ProviderBillingPlatformSummary struct {
 	DataQuality           *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
 	DetailFilter          BillingReconciliationDetailFilter `json:"detail_filter"`
 	detailModelName       string                            `json:"-"`
+	customerModels        map[string]struct{}               `json:"-"`
 }
 
 // ProviderBillingUsage contains only usage facts persisted by this platform.
@@ -804,10 +808,14 @@ func GetProviderBillingSummary(startTimestamp int64, endTimestamp int64, periodS
 					BillingMode:    parsed.billingMode,
 				},
 				detailModelName: log.ModelName,
+				customerModels:  make(map[string]struct{}),
 			}
 			platform[itemKey] = item
 		} else if item.detailModelName != log.ModelName {
 			item.DetailFilter.ModelName = ""
+		}
+		if log.ModelName != "" {
+			item.customerModels[log.ModelName] = struct{}{}
 		}
 		accumulateProviderBillingLog(&item.Usage, log, parsed)
 		if fallback {
@@ -856,6 +864,11 @@ func GetProviderBillingSummary(startTimestamp int64, endTimestamp int64, periodS
 
 	channels := make(map[int]*ProviderBillingChannelSummary)
 	for itemKey, item := range platform {
+		item.CustomerModels = make([]string, 0, len(item.customerModels))
+		for customerModel := range item.customerModels {
+			item.CustomerModels = append(item.CustomerModels, customerModel)
+		}
+		sort.Strings(item.CustomerModels)
 		finalizeBillingReconciliationQuality(&item.DataQuality)
 		accumulateBillingReconciliationQuality(&summary.DataQuality, item.DataQuality)
 		item.Discount = discounts[itemKey]

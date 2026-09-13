@@ -41,12 +41,14 @@ export type BillingExprPreviewSample = {
   /** 合成探针上下文（如 param("_task.resolution")），仅本次试算可见。 */
   body?: Record<string, unknown>
   headers?: Record<string, string>
+  usage?: Record<string, number | string | boolean>
 }
 
 export type BillingExprPreviewItem = {
   key: string
   expression: string
   sample?: BillingExprPreviewSample
+  task_usage?: boolean
 }
 
 export type BillingExprPreviewEvaluation = {

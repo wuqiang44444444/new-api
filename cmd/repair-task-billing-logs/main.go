@@ -12,6 +12,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -23,11 +24,13 @@ type scope struct {
 	Model                    string
 	Start, End, CreateTaskID int64
 	FinalTaskID              int64
+	LinkInitialLogs          bool
 }
 
 type repairReport struct {
 	Tasks, MetadataUpdates, Creates int
 	FinalLogs                       int
+	LinkedInitialLogs               int
 	NetBefore, NetAfter             int64
 	Before, After                   taskLogIntegrity
 }
@@ -44,6 +47,7 @@ func main() {
 	flag.Int64Var(&s.End, "end", 0, "inclusive Unix timestamp")
 	flag.Int64Var(&s.CreateTaskID, "repair-create-task-id", 0, "explicit internal task row ID with missing initial log")
 	flag.Int64Var(&s.FinalTaskID, "repair-final-task-id", 0, "explicit internal task row ID with missing completion log")
+	flag.BoolVar(&s.LinkInitialLogs, "link-initial-logs", false, "link initial logs using exact frozen Provider request IDs and transferred holds")
 	flag.Parse()
 	if *dsn == "" || s.UserID <= 0 || s.TokenID <= 0 || s.Model == "" || s.Start <= 0 || s.End < s.Start || s.End-s.Start > 31*86400 {
 		fmt.Fprintln(os.Stderr, "explicit database, user, key, model and a period of at most 31 days are required")
@@ -80,6 +84,7 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("applied=%t tasks=%d metadata_updates=%d initial_logs_added=%d final_logs_added=%d net_quota_before=%d net_quota_after=%d\n", *apply, r.Tasks, r.MetadataUpdates, r.Creates, r.FinalLogs, r.NetBefore, r.NetAfter)
+	fmt.Printf("initial_logs_linked=%d\n", r.LinkedInitialLogs)
 	fmt.Printf("integrity_before=%s integrity_after=%s settled_quota=%d net_difference_before=%d net_difference_after=%d missing_initial_logs=%d unlinked_initial_logs=%d unreconciled_tasks=%d usage_mismatches=%d missing_final_logs=%d\n", r.Before.Status, r.After.Status, r.After.SettledQuota, r.Before.NetDifference, r.After.NetDifference, r.After.MissingInitialLogs, r.After.UnlinkedInitialLogs, r.After.UnreconciledTasks, r.After.UsageMismatches, r.After.MissingFinalLogs)
 	if r.After.Status == "mismatch" || r.After.Status == "incomplete" {
 		os.Exit(1)
@@ -124,11 +129,18 @@ func repair(db *gorm.DB, s scope, apply bool) (repairReport, error) {
 		// Read the complete scoped log history so a delayed or cross-period
 		// initial entry cannot be mistaken for a missing charge.
 		var logs []model.Log
-		if tx.Select("id", "user_id", "token_id", "channel_id", "model_name", "type", "quota", "created_at", "other", "completion_tokens", "prompt_tokens", "username", "token_name", "group").
+		if tx.Select("id", "user_id", "token_id", "channel_id", "model_name", "type", "quota", "created_at", "other", "completion_tokens", "prompt_tokens", "username", "token_name", "group", "upstream_request_id").
 			Where("user_id = ? AND token_id = ? AND model_name = ? AND type IN ?", s.UserID, s.TokenID, s.Model, []int{model.LogTypeConsume, model.LogTypeRefund}).Find(&logs).Error != nil {
 			return fmt.Errorf("cannot read scoped logs")
 		}
 		report.Before = inspectTaskLogIntegrity(byID, logs, s)
+		if s.LinkInitialLogs {
+			var err error
+			logs, err = linkInitialTaskLogs(tx, byID, logs, s, apply, &report)
+			if err != nil {
+				return err
+			}
+		}
 		createExists := false
 		createNet := int64(0)
 		unlinkedCreate := false
@@ -171,8 +183,8 @@ func repair(db *gorm.DB, s scope, apply bool) (repairReport, error) {
 			}
 			snap := t.PrivateData.AsyncBilling.TieredSnapshot
 			mode := model.BillingStatementExpressionMode(snap.ExprString, snap.UsageUnits)
-			if mode != model.BillingReconciliationModeToken {
-				return fmt.Errorf("task %d is not verified token expression billing", t.ID)
+			if _, err := billingexpr.CompileFromCache(snap.ExprString); err != nil {
+				return fmt.Errorf("task %d has an invalid frozen expression", t.ID)
 			}
 			expr := base64.StdEncoding.EncodeToString([]byte(snap.ExprString))
 			if existing, ok := other["expr_b64"].(string); ok && existing != expr {
@@ -195,11 +207,21 @@ func repair(db *gorm.DB, s scope, apply bool) (repairReport, error) {
 			if err != nil {
 				return fmt.Errorf("cannot encode log %d", log.Id)
 			}
+			// A zero-value failure diagnostic is not a settlement event. Rewriting
+			// it as an adjustment would duplicate the final Task usage.
+			state, _ := admin["task_billing_state"].(string)
+			if log.Type == model.LogTypeConsume && log.Quota == 0 && log.PromptTokens == 0 && log.CompletionTokens == 0 &&
+				!isCreate && other["task_billing_event"] == nil && other["actual_quota"] == nil && other["pre_consumed_quota"] == nil &&
+				(state == string(model.TaskBillingStateFailed) || state == string(model.TaskBillingStateDebt)) {
+				continue
+			}
 			event := "adjustment"
 			if isCreate {
 				event = "create"
 			} else if log.Type == model.LogTypeRefund && other["actual_quota"] == nil && other["pre_consumed_quota"] == nil {
 				event = "refund"
+			} else if other["task_billing_event"] != "adjustment" && other["actual_quota"] == nil && other["pre_consumed_quota"] == nil {
+				return fmt.Errorf("unrecognized task billing event at log %d", log.Id)
 			}
 			other["task_billing_event"] = event
 			other["billing_mode"] = "tiered_expr"
@@ -278,6 +300,15 @@ func repair(db *gorm.DB, s scope, apply bool) (repairReport, error) {
 			return fmt.Errorf("an unlinked initial log may belong to the requested task")
 		}
 		async := createTask.PrivateData.AsyncBilling
+		if tx.Migrator().HasTable(&model.TaskBillingDelivery{}) {
+			var count int64
+			if err := tx.Model(&model.TaskBillingDelivery{}).Where("task_row_id = ?", createTask.ID).Count(&count).Error; err != nil {
+				return err
+			}
+			if count > 0 {
+				return fmt.Errorf("task has durable delivery records; use normal log recovery")
+			}
+		}
 		if async.State != model.TaskBillingStateSettled || async.TargetQuota == nil || *async.TargetQuota != createTask.Quota {
 			return fmt.Errorf("task settlement is not complete")
 		}
@@ -317,7 +348,7 @@ func repair(db *gorm.DB, s scope, apply bool) (repairReport, error) {
 		}
 		other.SetPublic("model_price", 0)
 		other.SetPublic("group_ratio", snap.GroupRatio)
-		other.SetAdmin("statement_snapshot", map[string]any{"snapshot_version": 1, "billing_mode": "token", "group_ratio": snap.GroupRatio, "expr_b64": expr, "provider_model": createTask.Properties.UpstreamModelName, "usage_units": snap.UsageUnits})
+		other.SetAdmin("statement_snapshot", map[string]any{"snapshot_version": 1, "billing_mode": model.BillingStatementExpressionMode(snap.ExprString, snap.UsageUnits), "group_ratio": snap.GroupRatio, "expr_b64": expr, "provider_model": createTask.Properties.UpstreamModelName, "usage_units": snap.UsageUnits})
 		other.SetAdmin("billing_statement_repair", map[string]any{"version": 1, "task_row_id": createTask.ID, "attempt_row_id": a.ID, "at": time.Now().Unix(), "reason": "missing_initial_log_from_transferred_hold"})
 		log := model.Log{UserId: s.UserID, Username: user.Username, TokenId: s.TokenID, TokenName: token.Name, ModelName: s.Model, ChannelId: createTask.ChannelId, Group: createTask.Group, CreatedAt: createTask.SubmitTime, Type: model.LogTypeConsume, Quota: a.HeldQuota, Other: other.JSONString(), Content: "Initial task hold log restored from durable facts", RequestId: fmt.Sprintf("billing-log-repair:%d:create", a.ID)}
 		if apply && tx.Create(&log).Error != nil {

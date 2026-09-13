@@ -25,6 +25,10 @@ export default defineConfig(({ envMode }) => {
 
   return {
     plugins: [pluginReact(), pluginTailwindcss({ optimize: false })],
+    dev: {
+      // Compile the full dev module graph before serving TanStack devtools chunks.
+      lazyCompilation: false,
+    },
     // Rsbuild 2: replaces deprecated `performance.chunkSplit` (RSPack 2 aligned)
     splitChunks: {
       preset: 'default',

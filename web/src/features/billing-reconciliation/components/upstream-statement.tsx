@@ -50,7 +50,6 @@ import { getAdminUpstreamStatement } from '../api'
 import {
   billingDataQualityLabel,
   downloadUpstreamStatementCsv,
-  filterProviderChannels,
 } from '../upstream-statement-utils'
 import { UpstreamStatementTable } from './upstream-statement-table'
 
@@ -67,7 +66,7 @@ export function UpstreamStatementView(props: UpstreamStatementProps) {
   const [expandedChannels, setExpandedChannels] = useState<Set<number> | null>(
     null
   )
-  const query = useQuery({
+  const allQuery = useQuery({
     queryKey: [
       'billing-upstream-reconciliation',
       props.period.start_timestamp,
@@ -86,9 +85,37 @@ export function UpstreamStatementView(props: UpstreamStatementProps) {
     retry: false,
   })
 
+  const hasFilters = channelFilter !== 'all' || modelFilter !== 'all'
+  const filteredQuery = useQuery({
+    queryKey: [
+      'billing-upstream-reconciliation',
+      props.period.start_timestamp,
+      props.period.end_timestamp,
+      channelFilter,
+      modelFilter,
+    ],
+    queryFn: async () => {
+      const response = await getAdminUpstreamStatement({
+        ...props.period,
+        ...(channelFilter !== 'all' && { channel_id: Number(channelFilter) }),
+        ...(modelFilter !== 'all' && { model_name: modelFilter }),
+      })
+      if (!response.success || !response.data) {
+        throw new Error(
+          response.message || t('Unable to load upstream reconciliation.')
+        )
+      }
+      return response.data
+    },
+    enabled: hasFilters,
+    staleTime: 30_000,
+    retry: false,
+  })
+  const query = hasFilters ? filteredQuery : allQuery
+
   const channels = useMemo(
-    () => query.data?.result.channels ?? [],
-    [query.data?.result.channels]
+    () => allQuery.data?.result.channels ?? [],
+    [allQuery.data?.result.channels]
   )
   const channelItems = useMemo(
     () => [
@@ -111,12 +138,8 @@ export function UpstreamStatementView(props: UpstreamStatementProps) {
     ]
   }, [channels, t])
   const visibleChannels = useMemo(
-    () =>
-      filterProviderChannels(channels, {
-        channel: channelFilter,
-        model: modelFilter,
-      }),
-    [channelFilter, channels, modelFilter]
+    () => query.data?.result.channels ?? [],
+    [query.data?.result.channels]
   )
   const defaultExpandedChannels = useMemo(
     () => new Set(visibleChannels.slice(0, 2).map((item) => item.channel_id)),
@@ -124,32 +147,33 @@ export function UpstreamStatementView(props: UpstreamStatementProps) {
   )
   const effectiveExpandedChannels = expandedChannels ?? defaultExpandedChannels
 
-  if (query.isError) {
+  if (allQuery.isError) {
     return (
       <ErrorState
         title={t('Unable to load upstream reconciliation')}
         description={
-          query.error instanceof Error
-            ? query.error.message
+          allQuery.error instanceof Error
+            ? allQuery.error.message
             : t('Please try again later.')
         }
-        onRetry={() => query.refetch()}
+        onRetry={() => allQuery.refetch()}
       />
     )
   }
-  if (query.isPending || !query.data) {
+  if (allQuery.isPending || !allQuery.data) {
     return <Skeleton className='h-96 rounded-xl' />
   }
 
-  const modelCount = channels.reduce(
+  const modelCount = visibleChannels.reduce(
     (total, channel) => total + channel.models.length,
     0
   )
   const qualityLabel = billingDataQualityLabel(
-    query.data.result.data_quality,
+    query.data?.result.data_quality,
     t
   )
   const handleExport = () => {
+    if (!query.data || query.isFetching || query.isError) return
     try {
       downloadUpstreamStatementCsv({
         channels: visibleChannels,
@@ -161,6 +185,48 @@ export function UpstreamStatementView(props: UpstreamStatementProps) {
     } catch {
       toast.error(t('Unable to export statement.'))
     }
+  }
+
+  let statementContent
+  if (query.isError) {
+    statementContent = (
+      <ErrorState
+        title={t('Unable to load upstream reconciliation')}
+        description={query.error.message}
+        onRetry={() => query.refetch()}
+      />
+    )
+  } else if (query.isPending) {
+    statementContent = (
+      <div aria-busy='true'>
+        <Skeleton className='h-96 rounded-xl' />
+      </div>
+    )
+  } else if (visibleChannels.length === 0) {
+    statementContent = (
+      <Empty className='min-h-64 border-0'>
+        <EmptyHeader>
+          <EmptyTitle>{t('No upstream usage')}</EmptyTitle>
+          <EmptyDescription>
+            {t(
+              'No upstream usage matches the current billing period and filters.'
+            )}
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    )
+  } else {
+    statementContent = (
+      <UpstreamStatementTable
+        channels={visibleChannels}
+        expandedChannels={effectiveExpandedChannels}
+        onToggleChannel={(channelId) =>
+          setExpandedChannels((current) =>
+            toggleSet(current ?? defaultExpandedChannels, channelId)
+          )
+        }
+      />
+    )
   }
 
   return (
@@ -199,7 +265,12 @@ export function UpstreamStatementView(props: UpstreamStatementProps) {
             }}
           />
         </div>
-        <Button disabled={visibleChannels.length === 0} onClick={handleExport}>
+        <Button
+          disabled={
+            visibleChannels.length === 0 || query.isFetching || query.isError
+          }
+          onClick={handleExport}
+        >
           <HugeiconsIcon
             icon={DownloadIcon}
             strokeWidth={2}
@@ -209,19 +280,21 @@ export function UpstreamStatementView(props: UpstreamStatementProps) {
         </Button>
       </div>
 
-      <div className='text-muted-foreground text-sm'>
-        {t(
-          '{{channels}} channels · {{models}} models · {{quality}} · Generated at {{time}} (Asia/Shanghai)',
-          {
-            channels: channels.length,
-            models: modelCount,
-            quality: qualityLabel,
-            time: formatTimestampToDate(query.data.generated_at),
-          }
-        )}
-      </div>
+      {query.data && (
+        <div className='text-muted-foreground text-sm'>
+          {t(
+            '{{channels}} channels · {{models}} models · {{quality}} · Generated at {{time}} (Asia/Shanghai)',
+            {
+              channels: visibleChannels.length,
+              models: modelCount,
+              quality: qualityLabel,
+              time: formatTimestampToDate(query.data.generated_at),
+            }
+          )}
+        </div>
+      )}
 
-      {query.data.result.data_quality?.status === 'partial' ? (
+      {query.data?.result.data_quality?.status === 'partial' ? (
         <Alert>
           <HugeiconsIcon icon={InformationCircleIcon} strokeWidth={2} />
           <AlertTitle>{t('Partial data')}</AlertTitle>
@@ -237,30 +310,7 @@ export function UpstreamStatementView(props: UpstreamStatementProps) {
         <CardHeader>
           <CardTitle>{t('Channel statement details')}</CardTitle>
         </CardHeader>
-        <CardContent className='px-0'>
-          {visibleChannels.length === 0 ? (
-            <Empty className='min-h-64 border-0'>
-              <EmptyHeader>
-                <EmptyTitle>{t('No upstream usage')}</EmptyTitle>
-                <EmptyDescription>
-                  {t(
-                    'No upstream usage matches the current billing period and filters.'
-                  )}
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <UpstreamStatementTable
-              channels={visibleChannels}
-              expandedChannels={effectiveExpandedChannels}
-              onToggleChannel={(channelId) =>
-                setExpandedChannels((current) =>
-                  toggleSet(current ?? defaultExpandedChannels, channelId)
-                )
-              }
-            />
-          )}
-        </CardContent>
+        <CardContent className='px-0'>{statementContent}</CardContent>
       </Card>
     </div>
   )

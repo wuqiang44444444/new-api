@@ -51,6 +51,7 @@ const channel: ProviderChannelSummary = {
       channel_id: 18,
       channel_name: 'Channel 18',
       provider_model: 'gpt-5.6-sol',
+      customer_models: ['display-model'],
       billing_mode: 'token',
       usage: {
         requests: 1,
@@ -66,7 +67,7 @@ const channel: ProviderChannelSummary = {
         start_timestamp: 1,
         end_timestamp: 2,
         channel_id: 18,
-        model_name: 'gpt-5.6-sol',
+        model_name: 'display-model',
       },
     },
   ],
@@ -102,7 +103,7 @@ describe('upstream statement hierarchy', () => {
     expect(screen.queryByText('Supplier statement')).toBeNull()
     expect(screen.queryByText('Reference amount')).toBeNull()
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(screen.queryByText('gpt-5.6-sol')).toBeNull()
+    expect(screen.queryByText('display-model - gpt-5.6-sol')).toBeNull()
 
     await user.click(toggle)
 
@@ -111,8 +112,10 @@ describe('upstream statement hierarchy', () => {
         .getByRole('button', { name: 'Collapse models' })
         .getAttribute('aria-expanded')
     ).toBe('true')
-    expect(screen.getAllByText('gpt-5.6-sol')).toHaveLength(1)
-    const modelRow = screen.getByText('gpt-5.6-sol').closest('tr')
+    expect(screen.getAllByText('display-model - gpt-5.6-sol')).toHaveLength(1)
+    const modelRow = screen
+      .getByText('display-model - gpt-5.6-sol')
+      .closest('tr')
     expect(modelRow).not.toBeNull()
     expect(
       within(modelRow as HTMLTableRowElement).getByText('245')
@@ -122,6 +125,16 @@ describe('upstream statement hierarchy', () => {
         name: 'View details',
       })
     ).toBeTruthy()
+    const detailLink = within(modelRow as HTMLTableRowElement).getByRole(
+      'link',
+      { name: 'View details' }
+    )
+    expect(
+      new URL(
+        detailLink.getAttribute('href') ?? '',
+        'https://example.test'
+      ).searchParams.get('model')
+    ).toBe('display-model')
   })
 
   it('shows the concrete reasons when a partial-data badge is hovered', async () => {
@@ -175,4 +188,33 @@ it('shows unrecorded cache writes for both the channel and its model', () => {
     </I18nextProvider>
   )
   expect(screen.getAllByText('Not recorded')).toHaveLength(2)
+})
+
+it.each([
+  {
+    customer_models: ['display-a', 'display-b'],
+    provider_model_fallback: false,
+    expected: 'display-a / display-b - gpt-5.6-sol',
+  },
+  {
+    customer_models: ['display-a'],
+    provider_model_fallback: true,
+    expected: 'display-a - —',
+  },
+])('shows model identities honestly for $expected', (example) => {
+  render(
+    <I18nextProvider i18n={i18n}>
+      <UpstreamStatementTable
+        channels={[
+          {
+            ...channel,
+            models: channel.models.map((model) => ({ ...model, ...example })),
+          },
+        ]}
+        expandedChannels={new Set([18])}
+        onToggleChannel={() => undefined}
+      />
+    </I18nextProvider>
+  )
+  expect(screen.getByText(example.expected)).toBeTruthy()
 })

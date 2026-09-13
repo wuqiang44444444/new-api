@@ -78,6 +78,11 @@ func TestReferenceMediaRepresentationsReachProviderBody(t *testing.T) {
 						providerModel = "ep-audio-test"
 					case dto.VideoUpstreamProtocolSynlinkVideoV1:
 						providerModel = kitdto.SynlinkVideoModels()[0]
+						if kind == "audio_url" {
+							// 2.5 supports audio-only references. Keep this test focused
+							// on transporting each representation, not invalid model input.
+							providerModel = "doubao-seedance-2-5-260628"
+						}
 					case dto.VideoUpstreamProtocolFunCloudModelArkV3:
 						providerModel = "seedance-2-0-mini"
 					case dto.VideoUpstreamProtocolFeicaiVideosV1:

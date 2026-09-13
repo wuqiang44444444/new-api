@@ -74,6 +74,7 @@ import type {
 
 import { AsyncPreConsumeTokenField } from './async-pre-consume-token-field'
 import { formatPricingNumber } from './pricing-format'
+import { TaskExpressionPreview } from './task-expression-preview'
 import { TaskPricingMatrix } from './task-pricing-matrix'
 
 type TaskUsagePricingEditorProps = {
@@ -95,6 +96,7 @@ type TaskUsagePricingEditorProps = {
 type EditorMode = 'visual' | 'raw'
 
 type TaskBillingPreviewProps = {
+  expression: string
   currency?: PricingCurrency
   config: TaskVisualConfig | null
   requestRuleExpr: string
@@ -115,11 +117,11 @@ function TaskBillingPreview(props: TaskBillingPreviewProps) {
 
   if (!result) {
     return (
-      <div className='bg-muted/30 rounded-md border p-3'>
-        <p className='text-muted-foreground text-xs'>
-          {t('Preview is unavailable for custom expressions.')}
-        </p>
-      </div>
+      <TaskExpressionPreview
+        expression={props.expression}
+        schema={props.usageSchema}
+        currency={props.currency}
+      />
     )
   }
 
@@ -604,6 +606,10 @@ export const TaskUsagePricingEditor = memo(function TaskUsagePricingEditor(
             )}
 
             <TaskBillingPreview
+              expression={combineBillingExpr(
+                props.billingExpr,
+                props.requestRuleExpr
+              )}
               currency={props.currency}
               config={previewConfig}
               requestRuleExpr={previewRequestRuleExpr}
@@ -658,6 +664,7 @@ export const TaskUsagePricingEditor = memo(function TaskUsagePricingEditor(
               </AlertDescription>
             </Alert>
             <Textarea
+              aria-label={t('Expression')}
               value={rawExpr}
               onChange={(event) => handleRawChange(event.target.value)}
               placeholder='tier("base", u("seconds") * 0.4)'
@@ -666,6 +673,7 @@ export const TaskUsagePricingEditor = memo(function TaskUsagePricingEditor(
               spellCheck={false}
             />
             <TaskBillingPreview
+              expression={rawExpr}
               currency={props.currency}
               config={previewConfig}
               requestRuleExpr={previewRequestRuleExpr}
