@@ -85,26 +85,3 @@ func TestCustomerContractAvailabilityUsesExactCaseAndEnabledChannels(t *testing.
 	assert.NotContains(t, models, "model-a")
 	assert.NotContains(t, models, "disabled-model")
 }
-
-func TestUserListIncludesCustomerContractRuleCount(t *testing.T) {
-	db := setupCustomerContractTestDB(t)
-	admin, user := createCustomerContractFixture(t, db)
-	channel := createCustomerContractAbility(t, db, "contract-a", "model-a", common.ChannelStatusEnabled)
-	require.NoError(t, db.Create([]CustomerContractEntityRule{
-		{ContractId: 1, PublicModel: "model-a", ChannelId: channel.Id, RouteGroup: "contract-a", RatioUnits: 80_000_000},
-	}).Error)
-	require.NoError(t, db.Create(&CustomerContract{Id: 1, UserId: user.Id, Name: "first", Enabled: true, Version: 1}).Error)
-	_ = admin
-
-	users, _, err := GetAllUsers(&common.PageInfo{Page: 1, PageSize: 20}, NewUserSortOptions("id", "asc"))
-	require.NoError(t, err)
-	var listed *User
-	for _, candidate := range users {
-		if candidate.Id == user.Id {
-			listed = candidate
-			break
-		}
-	}
-	require.NotNil(t, listed)
-	assert.Equal(t, 1, listed.ContractRuleCount)
-}

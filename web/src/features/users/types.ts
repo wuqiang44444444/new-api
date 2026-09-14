@@ -62,9 +62,12 @@ export const userSchema = z.object({
   admin_permissions: z
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
-  contract_mode: z.boolean().optional().default(false),
-  contract_version: z.number().optional().default(0),
-  contract_rule_count: z.number().optional().default(0),
+  contract_summary: z
+    .object({
+      total: z.number().int().nonnegative(),
+      enabled: z.number().int().nonnegative(),
+    })
+    .optional(),
 })
 export type User = z.infer<typeof userSchema>
 

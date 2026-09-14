@@ -103,6 +103,12 @@ func TestCustomerContractEntityPersistenceAcrossSupportedServerDatabases(t *test
 			require.Len(t, snapshot.Rules, 1)
 			assert.Equal(t, channel.Id, snapshot.Rules[0].ChannelId)
 
+			listedUsers, _, err := SearchUsers(user.Username, "", nil, nil, 0, 20)
+			require.NoError(t, err)
+			require.Len(t, listedUsers, 1)
+			require.NotNil(t, listedUsers[0].ContractSummary)
+			assert.Equal(t, UserContractSummary{Total: 1, Enabled: 1}, *listedUsers[0].ContractSummary)
+
 			duplicate := CustomerContractEntityRule{
 				ContractId: snapshot.Id, PublicModel: "cross-db-model", ChannelId: channel.Id,
 				RouteGroup: "contract-cross-db", RatioUnits: 50_000_000,

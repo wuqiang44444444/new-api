@@ -30,9 +30,7 @@ import { UsersProvider } from '../users-provider'
 
 const target: User = {
   id: 2,
-  contract_mode: false,
-  contract_version: 0,
-  contract_rule_count: 0,
+  contract_summary: { total: 0, enabled: 0 },
   username: 'managed-admin',
   display_name: 'Managed admin',
   role: 10,

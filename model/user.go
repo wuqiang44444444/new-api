@@ -114,7 +114,7 @@ type User struct {
 	AdminPermissions     map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 	ContractMode         bool                       `json:"contract_mode" gorm:"column:contract_mode"`
 	ContractVersion      int64                      `json:"contract_version" gorm:"type:bigint;column:contract_version"`
-	ContractRuleCount    int                        `json:"contract_rule_count" gorm:"-"`
+	ContractSummary      *UserContractSummary       `json:"contract_summary,omitempty" gorm:"-"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -448,7 +448,7 @@ func GetAllUsers(pageInfo *common.PageInfo, sortOptions ...UserSortOptions) (use
 	if err = tx.Commit().Error; err != nil {
 		return nil, 0, err
 	}
-	if err = populateUserContractRuleCounts(users); err != nil {
+	if err = populateUserContractSummaries(users); err != nil {
 		return nil, 0, err
 	}
 
@@ -520,7 +520,7 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 	if err = tx.Commit().Error; err != nil {
 		return nil, 0, err
 	}
-	if err = populateUserContractRuleCounts(users); err != nil {
+	if err = populateUserContractSummaries(users); err != nil {
 		return nil, 0, err
 	}
 

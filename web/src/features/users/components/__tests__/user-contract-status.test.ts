@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
-import type { User } from '../../types'
+import { userSchema } from '../../types'
 import { getUserContractStatus } from '../user-contract-status'
 
-const t = (key: string, options?: Record<string, unknown>) =>
-  options?.count === undefined ? key : `${key}:${options.count}`
+const t = (key: string, options?: Record<string, unknown>) => {
+  if (!options) return key
+  return key.replaceAll(/{{(\w+)}}/g, (_, name: string) =>
+    String(options[name])
+  )
+}
 
-function user(patch: Partial<User>): User {
-  return {
+function user(summary?: { total: number; enabled: number }) {
+  return userSchema.parse({
     id: 1,
     username: 'customer',
     display_name: 'Customer',
@@ -17,37 +21,45 @@ function user(patch: Partial<User>): User {
     group: 'default',
     status: 1,
     role: 1,
-    contract_mode: false,
-    contract_version: 0,
+    contract_mode: true,
+    contract_version: 8,
     contract_rule_count: 0,
-    ...patch,
-  }
+    contract_summary: summary,
+  })
 }
 
 describe('user contract status', () => {
-  it('distinguishes native, active, zero-access and inactive contracts', () => {
-    expect(getUserContractStatus(user({}), t).variant).toBe('success')
-    expect(
-      getUserContractStatus(
-        user({ contract_mode: true, contract_version: 1 }),
-        t
-      ).variant
-    ).toBe('danger')
-    expect(
-      getUserContractStatus(
-        user({
-          contract_mode: true,
-          contract_version: 1,
-          contract_rule_count: 3,
-        }),
-        t
-      ).label
-    ).toBe('Contract active · {{count}} rules:3')
-    expect(
-      getUserContractStatus(
-        user({ contract_version: 2, contract_rule_count: 4 }),
-        t
-      ).label
-    ).toBe('Contract inactive · {{count}} retained rules:4')
+  it('shows migrated entity counts despite stale legacy flags and zero rule count', () => {
+    expect(getUserContractStatus(user({ total: 1, enabled: 1 }), t)).toEqual({
+      label: 'Contracts: 1 · enabled: 1',
+      variant: 'info',
+    })
+  })
+
+  it('shows mixed enabled and disabled contracts without claiming user-wide model access', () => {
+    expect(getUserContractStatus(user({ total: 3, enabled: 1 }), t).label).toBe(
+      'Contracts: 3 · enabled: 1'
+    )
+  })
+
+  it('shows disabled entities despite the legacy enabled flag', () => {
+    expect(getUserContractStatus(user({ total: 2, enabled: 0 }), t)).toEqual({
+      label: 'Contracts: 2 · enabled: 0',
+      variant: 'neutral',
+    })
+  })
+
+  it('shows no contracts when only legacy state exists', () => {
+    expect(getUserContractStatus(user({ total: 0, enabled: 0 }), t)).toEqual({
+      label: 'No contracts',
+      variant: 'neutral',
+    })
+  })
+
+  it('does not interpret a missing summary as zero access or native mode', () => {
+    expect(getUserContractStatus(user(), t)).toEqual({
+      label: 'Contract summary unavailable',
+      variant: 'neutral',
+    })
   })
 })

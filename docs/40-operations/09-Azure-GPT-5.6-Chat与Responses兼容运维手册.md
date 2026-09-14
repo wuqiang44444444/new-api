@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-06
+last-reviewed: 2026-09-14
 ---
 
 # 09 Azure GPT-5.6 Chat 与 Responses 兼容运维手册
@@ -123,7 +123,31 @@ Azure API Version、模型部署映射或渠道配置，可以排除本地代码
 - 依赖旧 Azure API Version：不能保证支持 GPT-5.6，也不能消除端点合同差异。
 - 对所有模型、所有渠道全量启用转换：扩大兼容转换影响面，不适合作为本次问题的初始处置。
 
-## 4. 参考
+## 4. Chat 参数兼容现状（rc.36 同步后）
+
+接取上游 rc.36 后，OpenAI/Azure Chat 参数兼容由 adapter 能力表（`GetOpenAIChatCapabilities`）
+驱动，按**映射后的上游模型名**判定，与客户别名无关：
+
+- 已登记模型（含 GPT-5 系列、GPT-6 Astra 及日期快照）自动启用 `max_completion_tokens`、
+  `developer` 系统角色，并移除 `temperature`、`top_p`、`logprobs`、`top_logprobs`。
+- 精确名称 `gpt-chat-latest` 已按当前 GPT-5.6 参数规则登记（滚动更新名称，不拼接版本日期）；
+  客户别名通过 `model_mapping` 精确映射到该名称时同样生效。裸名 `chat-latest`、
+  不透明部署名、`gpt-chat-latest-preview` 不自动纳入。
+
+排查渠道测试 `max_tokens` 参数 400 时的已核边界：
+
+| 现象 | 结论与处置 |
+| --- | --- |
+| 客户别名映射到已登记模型后仍带 `max_tokens` | 检查渠道/全局“请求体透传”是否开启；透传会绕过 adapter 转换与参数覆盖 |
+| 参数覆盖又写回 `max_tokens` | 参数覆盖执行于 adapter 转换之后；两个 token 字段同时非零时旧字段不被清除（上游现状边界） |
+| 渠道测试按钮失败但正式请求正常 | Chat→Responses 兼容策略只作用于正式 Chat 入口，渠道测试不调用该策略；不能以测试按钮作为策略验证手段 |
+| 需要裸名或不透明部署名的兼容 | 升级不能解决识别缺口；供应商支持 Responses 时先显式选择 Responses 端点，或关闭透传后使用 Chat→Responses 策略 |
+
+测试预算默认 16 token 含推理预算时可能不足以产生可见输出；出现空输出时先核对结束原因，调高
+测试预算不属于参数兼容修复。原 2026-08-05 的 `reasoning_effort + tools` 端点限制与 §3 的
+Chat→Responses 策略配置继续有效。
+
+## 5. 参考
 
 - [OpenAI GPT-5.6 指南](https://developers.openai.com/api/docs/guides/latest-model)
 - [Azure Responses API 文档](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/responses)

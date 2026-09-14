@@ -63,6 +63,7 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 | Seedance 代理 | [Seedance无状态素材代理架构](Seedance无状态素材代理架构.md) | opaque ID、无状态路由、Provider 边界和安全不变量 | 素材 Service、`asset_upstream_protocol` adapter |
 | 公开元数据 | [公开模型元数据投影架构](公开模型元数据投影架构.md) | 模型目录 `api` 投影的入口、一致性与脱敏规则 | `channel_seedance_public_catalog.go`、`public_image_model_api.go`、`pkg/publicmodel/` |
 | 异步与计费 | [账单计费-异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md) | create attempt、Task、资金、结算和 Provider exposure | `model/task*.go`、Task billing、exposure |
+| Azure Batch | [AzureBatch渠道与批处理作业架构](AzureBatch渠道与批处理作业架构.md) | Batch 渠道身份、`/v1/files`/`/v1/batches` 北向、行级计费与客户文件交付 | `ChannelTypeAzureBatch`、`router/batch_relay_router.go`、`service/batch_*.go` |
 | 计费表达式 | [账单计费-计费表达式与协议探针架构](账单计费-计费表达式与协议探针架构.md) | 表达式校验、协议探针、价格快照和终态结算 | `pkg/billingexpr/`、`setting/billing_setting/` |
 | 图片数据面 | [图片服务与异步Provider适配架构](图片服务与异步Provider适配架构.md) | 原生图片入口、显式上游协议、异步 Provider 内联轮询、同步 Provider 适配和计费边界 | `ChannelTypeAsyncImage`、`image_upstream_protocol`、图片 dispatch 与专用 adaptor |
 | 音视频证据 | [音视频请求证据架构](音视频请求证据架构.md) | 请求证据一期的索引、加密对象存储、采集点、权限与覆盖边界 | `task_request_evidences`、证据事件与访问审计、`TaskRequestEvidenceObjectStore` |

@@ -1,8 +1,14 @@
 package model
 
-// populateUserContractRuleCounts fills User.ContractRuleCount with the total
-// number of rules across all contract entities owned by each user.
-func populateUserContractRuleCounts(users []*User) error {
+// UserContractSummary describes owned entities, not permissions of every API key.
+type UserContractSummary struct {
+	Total   int `json:"total"`
+	Enabled int `json:"enabled"`
+}
+
+// populateUserContractSummaries uses only current entities. Legacy user flags
+// remain untouched as migration input and never determine this projection.
+func populateUserContractSummaries(users []*User) error {
 	if len(users) == 0 {
 		return nil
 	}
@@ -10,25 +16,31 @@ func populateUserContractRuleCounts(users []*User) error {
 	for _, user := range users {
 		ids = append(ids, user.Id)
 	}
-	type ruleCount struct {
-		UserId int
-		Count  int
+	type contractCount struct {
+		UserId  int
+		Enabled bool
+		Count   int
 	}
-	var counts []ruleCount
-	if err := DB.Model(&CustomerContractEntityRule{}).
-		Select("customer_contracts.user_id AS user_id, COUNT(*) AS count").
-		Joins("JOIN customer_contracts ON customer_contracts.id = customer_contract_entity_rules.contract_id").
-		Where("customer_contracts.user_id IN ?", ids).
-		Group("customer_contracts.user_id").
+	var counts []contractCount
+	if err := DB.Model(&CustomerContract{}).
+		Select("user_id, enabled, COUNT(*) AS count").
+		Where("user_id IN ?", ids).
+		Group("user_id, enabled").
 		Scan(&counts).Error; err != nil {
 		return err
 	}
-	byUser := make(map[int]int, len(counts))
+	byUser := make(map[int]UserContractSummary, len(users))
 	for _, item := range counts {
-		byUser[item.UserId] = item.Count
+		summary := byUser[item.UserId]
+		summary.Total += item.Count
+		if item.Enabled {
+			summary.Enabled += item.Count
+		}
+		byUser[item.UserId] = summary
 	}
 	for _, user := range users {
-		user.ContractRuleCount = byUser[user.Id]
+		summary := byUser[user.Id]
+		user.ContractSummary = &summary
 	}
 	return nil
 }

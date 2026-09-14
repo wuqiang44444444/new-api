@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-28
+last-reviewed: 2026-09-14
 ---
 
 # 07 Seedance 渠道配置清单
@@ -26,13 +26,15 @@ Affinity、随机选渠、失败重选和 fallback 均不参与。
 | `ark_media_v1` | Ark 反代 | `/v1/ark/media/generations`、`/v1/ark/media/tasks/{task_id}` |
 | `feicai_videos_v1` | 飞彩；仅 URL，不支持素材库 | `/v1/videos`、`/v1/videos/{task_id}` |
 | `funcloud_modelark_v3` | FunCloud Standard/Fast/Mini/2.5 | 共用 `/api/v3/contents/generations/tasks` |
+| `synlink_video_v1` | Synlink 海外火山中转 | `/v1/video/generate`、`/v1/video/tasks/{task_id}` |
 
 这些路径不出现在管理员 JSON 配置中。不要把第三方协议挂回 `DoubaoVideo`，也不要让客户端调用第三方
 私有路径。
 
 墨行统一为 `moxing_modelark_media_v1` 单协议，四个精确 Provider 模型
-（`doubao-seedance-2-0-260128`、`...-fast-...`、`...-mini-...`、`...2-5-...`）登记于
-`relaykit/dto/moxing_video_models.go` 唯一注册表。旧 `moxing_media_task_v1` 与
+（`doubao-seedance-2-0-260128-0818`、`...-fast-260128`、`...-mini-260615`、`doubao-seedance-2-5-260628`）
+登记于 `relaykit/dto/moxing_video_models.go` 唯一注册表。墨行未登记的新 Provider ID 会在保存和请求
+校验被拒绝；映射目标改名时由技术人员更新该登记表，通常无需改 adapter。旧 `moxing_media_task_v1` 与
 `moxing_joycreator_assets_v1` 不再接受保存或创建；存量渠道直接在同一渠道原地改协议即可，
 无需专门的素材租户迁移、盘点或默认组处理。缺省时长由 adapter 显式南向落实为 5 秒，显式 `-1`
 原样发送并按登记预算上限估算。已创建的旧协议任务继续按创建时冻结事实查询与结算，不重发、不迁移。
@@ -62,6 +64,7 @@ FunCloud 仅允许 `funcloud_modelark_v3` 新配置和新提交，四模型共�
 | `tokensave_assets_v1` | `tokensave_media_task_v1` | Base URL、同一单 Key、TTL |
 | `moxing_volc_assets_v1` | `moxing_modelark_media_v1` | Base URL、同一单 Key、TTL |
 | `funcloud_material` | `funcloud_modelark_v3` | Base URL、同一单 Key、TTL；四模型均可用 |
+| `funcloud_material_hosted` | `funcloud_modelark_v3`、`synlink_video_v1` | 本站托管图片库；配对后启用平台托管素材能力 |
 
 国内火山与 BytePlus 使用不同协议标识和账号作用域，不得互换 Host、Region 或素材 ID。使用同一墨行
 连接、`moxing_modelark_media_v1` 和 `moxing_volc_assets_v1` 的 Fast、Mini、2.5 可以配置在同一个
@@ -92,7 +95,19 @@ Provider 模型；价格和 Group 已审批。
 FunCloud 还需按[FunCloud 四模型 Token 价格](01-计费与分组运维手册.md#25-funcloud-seedance-四模型-token-价格)
 配置美元表达式和预扣上界。任何旧按秒 Standard/Fast 配置都必须在开放前替换，不得与新客户模型混用。
 
-飞彩固定使用 VIP 五模型与性价比五模型两个 Channel。除 SD2 只接受 `16:9`、`9:16` 外，其余九个
-模型接受代码登记的六种画幅；南向只发送 `ratio`，模型的 720p/1080p/4K 档位来自精确 Provider 模型。
-两个 Channel 的启停分别影响各自五个模型，不存在逐模型 Ability；一次性开放十模型前必须完成全部
-十行验收，再同时启用两个 Channel。
+飞彩固定使用 VIP 五模型与性价比五模型两个 Channel（渠道 66、71）。飞彩协议当前只提供完成状态和
+产物，没有已接通的实测 Token 计量合同；**两个飞彩渠道现已停用**，等待可信实测 Token 计费接通并
+补齐真实账单证据后再逐模型灰度，不得把按秒/按次旧表达式强行切换为实测 Token 收费。除 SD2 只接受
+`16:9`、`9:16` 外，其余九个模型接受代码登记的六种画幅；南向只发送 `ratio`。
+
+## 5. 价格与预扣预算
+
+- 当前 Seedance 客户模型统一按火山官方人民币刊例价 × 系数 `0.147 USD/CNY` 换算的美元单价配置
+  表达式（见[计费与分组运维手册](01-计费与分组运维手册.md#23-seedance-当前统一标价)）；
+  表达式输出美元，使用 NEWAPI 任务用量字段（`u("tokens")` 等），不再接受旧 `c`/`param("_task.*")`
+  语法保存或用于新受理。
+- 依赖 `u("tokens")` 的表达式**必须配置预扣 Token 预算**；FunCloud V3 / Synlink 的纯固定或冻结
+  条件表达式可以不配置。预算是平台预扣估算的资金授信上界，不是官网承诺上限或最终扣费封顶；
+  结算仍按可信实测用量多退少补，缺实测进入等待补查。
+- 价格保存在客户模型上；启用中的同一客户模型只能归属一个渠道。管理保存会校验表达式编译、字段
+  合法性、预算完整性与跨类型同名冲突，冲突时拒绝保存。
