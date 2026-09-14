@@ -233,12 +233,18 @@ identity 建立后，Channel Type 不可修改。Base URL、视频协议、素�
 ### 5.4 Synlink 视频协议
 
 `synlink_video_v1` 复用 Seedance 专用渠道，南向创建为 `/v1/video/generate`，查询为
-`/v1/video/tasks/{task_id}`。响应严格读取 `task` 包裹、`id` 与 `outputs`；当前文档仅证明
-`pending` 和 `completed`。查询非 2xx、未知状态及身份／结果合同违例先由该 adapter 标记为
+`/v1/video/tasks/{task_id}`。响应严格读取 `task` 包裹、`id` 与 `outputs`；查询状态合同已按上游
+实际响应取证与本地回归验证三态映射：`pending → queued`、`processing → running`、
+`completed` 且结果可信 `→ succeeded`。状态唯一读取 `task.status`，不读取 `metadata.status`
+作为备用状态或完成信号；`processing` 不要求 metadata 存在，即使载荷携带内部成功状态、URL
+或 usage 也不提前交付或结算。
+查询非 2xx、未知状态及身份／结果合同违例先由该 adapter 标记为
 不可采信观察，不落入通用 404/410 立即退款分支：活动任务进入 `RECONCILIATION_REQUIRED`，
 已成功任务保留已接受事实，后续可信观察继续恢复或补齐用量；单次观察不制造失败或退款。
 既有明确本地超时与人工核查规则不变。创建只有
 可信 `task.id + pending` 才建立 Task，其它不明确结果进入现有 unknown 流程。
+`processing` 映射由本地插件 `1.3.3` 承载；新版发布、制品激活与多节点加载核对，以及真实
+Provider 查询观察到完整三阶段序列的验收未完成，由[路线图](../50-planning/路线图.md)跟踪。
 
 Provider 四模型由 `relaykit/dto/synlink_video.go` 登记，保存／启用时校验最终映射；不根据模型名
 推断协议。允许配对 `funcloud_material_hosted` 或 `none`，共享图片合同见素材架构第 7 节。

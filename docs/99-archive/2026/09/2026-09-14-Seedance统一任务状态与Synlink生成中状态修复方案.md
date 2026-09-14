@@ -1,7 +1,13 @@
 ---
-status: pending-external-validation
+status: historical
 owner: Dev Team
 last-reviewed: 2026-09-14
+archived-at: 2026-09-14
+source-path: docs/80-dev/2026-09-14-Seedance统一任务状态与Synlink生成中状态修复方案.md
+superseded-by:
+  - docs/20-architecture/Seedance专用渠道与Link架构.md
+  - docs/10-product/Seedance视频与素材产品设计.md
+  - docs/50-planning/路线图.md
 ---
 
 # Seedance 统一任务状态与 Synlink 生成中状态修复方案
