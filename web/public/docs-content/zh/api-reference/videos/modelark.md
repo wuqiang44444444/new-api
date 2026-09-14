@@ -1,7 +1,7 @@
 ---
 page-id: videos-modelark
 kind: api-reference
-last-verified: 2026-09-12
+last-verified: 2026-09-14
 operations:
   - listModelArkVideoModels
   - retrieveModel
@@ -417,8 +417,8 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
 | `safety_identifier` | string | 创建时的公开安全标识；存在时返回 |
 | `priority` | integer | 创建时的优先级；保留显式 `0` |
 | `service_tier` | string | 服务档位；未指定时通常为 `default` |
-| `usage.completion_tokens` | integer | 可选完成用量 |
-| `usage.total_tokens` | integer | 可选总用量 |
+| `usage.completion_tokens` | integer | 可选完成用量；当前响应省略零值，字段缺失不能区分零用量与未报告 |
+| `usage.total_tokens` | integer | 可选总用量；当前响应省略零值，不能用字段缺失推算费用 |
 | `usage.tool_usage.web_search` | integer | 可选工具用量 |
 | `error.code` | string | 失败、取消或过期时的公开错误码 |
 | `error.message` | string | 脱敏错误说明 |
@@ -427,6 +427,8 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
 终态任务的公开错误码包括 `generation_failed`、`provider_contract_failure`、`cancelled` 和 `expired`。
 一次上游查询异常不会立刻把已有任务判为业务失败；接口可能返回最后一次持久化状态，客户端应继续有界
 轮询。
+`running` 也可能表示执行结果仍在核实，不保证上游正在生成。等待超过客户端时限后保留原任务 ID，
+稍后继续查询或联系管理员，不重新创建任务，也不据此认定失败或退款。
 
 ## 列出任务
 
@@ -555,7 +557,8 @@ ModelArk 创建请求最多发送一次上游 POST，当前不接受客户幂等
 任务成功建立后，费用按创建时确定的模型、请求参数和价格规则处理。成功视频可以先交付，结算随后完成：
 
 - 按实际用量计费时，缺少 `usage` 不代表零费用，预扣可能保留到用量补齐后再结算；
-- 明确返回 `completion_tokens=0` 与未返回该字段不同，客户端应按字段存在性读取；
+- 当前响应会省略零值用量字段，`usage` 也可能为空对象；字段缺失不能区分已确认零用量与尚未报告，
+  不得补零作为计费依据，也不能仅凭 `usage` 是否存在判断结算完成；
 - 最终费用可能高于或低于预扣，差额按实际规则补扣或退还；不要用预扣值当最终账单；
 - 成功后的费用核实不要求重新生成视频，查询也不会重新触发生成。
 

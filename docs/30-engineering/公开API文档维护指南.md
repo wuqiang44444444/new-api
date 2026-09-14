@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-09
+last-reviewed: 2026-09-14
 ---
 
 # 公开 API 文档维护指南
@@ -44,6 +44,11 @@ web/src/routes/docs/                       # /docs 路由
 
 需要改变方法、路径、字段或错误时，先更新并验证 OpenAPI，再更新白名单和 Markdown。白名单只保存
 operationId 与必要发布状态，不复制 schema，也不通过 `/v1`、`/api` 等路径前缀推断公开范围。
+
+“已实现”与“已批准公开”分开维护。Files 的四个已实现操作及 Batch 的创建、列表、查询、取消操作已在
+`relay.json` 记录当前代码合同，标记为未公开，暂不加入白名单或公开导航。真实验收状态以
+[Azure Batch 架构](../20-architecture/AzureBatch渠道与批处理作业架构.md) 为准；不能继续用“未实现/501”
+描述这些 handler，也不能因为补齐 schema 就自动发布。`DELETE /v1/files/{file_id}` 仍未实现。
 
 ### 2.3 新增或修改页面
 
@@ -170,10 +175,12 @@ bun run build
 `bun run dev` 也会先执行 `docs:validate`。生产验收不能只运行独立校验，必须完成 `bun run build`，
 因为最终产物审计只发生在构建后。
 
-公开示例使用 Ajv 直接校验 Relay OpenAPI 中已批准 operation 及其引用的 schema，不另建一套字段合同。
-该检查不等于真实服务验收：逐模型约束、生效条件和实际行为仍需对照代码及专项测试核对。Markdown 的
-JSON 代码块与 curl 内联 JSON 会做语法检查；Python 轮询与下载示例修改后应使用模拟响应验证，不能用真实
-计费调用替代文档测试。
+OpenAPI 内嵌示例使用 Ajv 校验已批准 operation 及其引用的 schema，不另建一套字段合同。Markdown 的
+JSON 代码块与 curl 内联 JSON 只做语法检查，不自动绑定到请求 DTO；工程调用指南也不属于该公开目录
+扫描范围。修改这些示例时须另用对应 schema 或边界测试校验，不能把 JSON 语法通过视为调用可成功。
+尚未加入白名单的合同候选须单独检查 schema 引用与请求/响应示例，公开校验通过不能证明候选已验证。
+逐模型约束、生效条件和实际行为仍需对照代码及专项测试核对；Python 轮询与下载示例修改后应使用模拟
+响应验证，不能用真实计费调用替代文档测试。
 
 仓库级再运行：
 

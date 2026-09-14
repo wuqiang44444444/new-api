@@ -165,6 +165,60 @@ test('generic video query examples require the data envelope', () => {
   )
 })
 
+test('ModelArk media examples require the matching role and exactly one payload', () => {
+  const image = {
+    type: 'image_url',
+    role: 'first_frame',
+    image_url: { url: 'https://example.com/frame.png' },
+  }
+  const video = {
+    type: 'video_url',
+    role: 'reference_video',
+    video_url: { url: 'https://example.com/reference.mp4' },
+  }
+  const audio = {
+    type: 'audio_url',
+    role: 'reference_audio',
+    audio_url: { url: 'https://example.com/reference.wav' },
+  }
+  const text = { type: 'text', text: 'A blue cup' }
+  for (const content of [[text], [text, image], [text, video], [text, audio]]) {
+    assert.doesNotThrow(() =>
+      validateOpenAPIExamples(
+        responseExample('ModelArkVideoCreateRequest', {
+          model: 'customer-video-model',
+          content,
+        }),
+        approved
+      )
+    )
+  }
+  for (const item of [
+    { type: image.type, image_url: image.image_url },
+    { type: video.type, video_url: video.video_url },
+    { type: audio.type, audio_url: audio.audio_url },
+    { ...image, role: 'reference_audio' },
+    { ...video, role: 'first_frame' },
+    { ...audio, role: 'reference_video' },
+    { ...image, video_url: video.video_url },
+    { ...text, image_url: image.image_url },
+    { type: 'image_url', role: 'first_frame' },
+    { type: 'text' },
+  ]) {
+    assert.throws(
+      () =>
+        validateOpenAPIExamples(
+          responseExample('ModelArkVideoCreateRequest', {
+            model: 'customer-video-model',
+            content: [item],
+          }),
+          approved
+        ),
+      /示例不符合合同/
+    )
+  }
+})
+
 test('hosted asset metadata and file / array parameter types are valid public examples', () => {
   const assets = {
     supported: true,

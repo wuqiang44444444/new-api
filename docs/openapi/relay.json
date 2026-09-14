@@ -68,6 +68,10 @@
     },
     {
       "name": "未实现/Files"
+    },
+    {
+      "name": "Batch/Files（未公开）",
+      "description": "已实现的 Batch 文件与作业合同候选；公开资格仍由 public-operations.json 白名单控制。"
     }
   ],
   "paths": {
@@ -2368,25 +2372,48 @@
     },
     "/v1/files": {
       "get": {
-        "summary": "列出文件 (未实现)",
+        "summary": "列出 Batch 文件（已实现，未公开）",
         "deprecated": false,
-        "description": "此接口尚未实现",
+        "description": "代码已实现，尚未进入公开 operation 白名单；真实 Provider、三数据库迁移、容量与生产灰度验收未完成，不代表生产已发布。\n\n文件和作业按用户及创建时的应用（API Key）隔离，同账号其他 Key 不能访问。\n\n列出当前应用的输入、结果与错误文件，不支持其它用途的通用 Files 合同。",
         "operationId": "listFiles",
         "tags": [
-          "未实现/Files"
+          "Batch/Files（未公开）"
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页建议 1～100，默认 20；缺失、无法解析、非正数或大于 100 时使用 20。",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "上一页 last_id。按 created_at、id 降序分页；游标须属于当前应用。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "501": {
-            "description": "未实现",
+          "200": {
+            "description": "文件列表。",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/BatchFileList"
                 }
               }
-            },
-            "headers": {}
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/BatchResourceNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/BatchProcessingUnavailable"
           }
         },
         "security": [
@@ -2396,28 +2423,35 @@
         ]
       },
       "post": {
-        "summary": "上传文件 (未实现)",
+        "summary": "上传 Batch 输入文件（已实现，未公开）",
         "deprecated": false,
-        "description": "此接口尚未实现",
+        "description": "代码已实现，尚未进入公开 operation 白名单；真实 Provider、三数据库迁移、容量与生产灰度验收未完成，不代表生产已发布。\n\n文件和作业按用户及创建时的应用（API Key）隔离，同账号其他 Key 不能访问。\n\nmultipart 文件只支持 Batch JSONL，用途填写 batch（大小写不敏感）。每个文件最多 20 MiB（20,971,520 字节）、10,000 行请求；空文件、空行、重复 JSON 键、重复 custom_id、混合模型或坏行整批拒绝。每行设置唯一非空 custom_id（最多 255 UTF-8 字节）、method=POST、url=/v1/chat/completions 与 body。body.model 为同一客户模型，messages 为数组，仅支持文本内容；不支持 audio、modalities 或 stream=true。每行必须提供适用于模型的 max_completion_tokens 或 max_tokens，均须为 1～1,073,741,823 的整数；若同时提供，均校验且预算采用 max_completion_tokens。可选 n 为 1～128。文件保存不等于创建作业；创建时重新校验文件与模型资格。上传不提供客户幂等键，超时后不要盲目重复 POST。",
         "operationId": "createFile",
         "tags": [
-          "未实现/Files"
+          "Batch/Files（未公开）"
         ],
         "parameters": [],
         "requestBody": {
+          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "type": "object",
+                "required": [
+                  "file",
+                  "purpose"
+                ],
                 "properties": {
                   "file": {
                     "type": "string",
                     "format": "binary",
-                    "example": ""
+                    "description": "包含 JSONL 请求的本地文件，最多 20 MiB；各行限制见操作说明。"
                   },
                   "purpose": {
                     "type": "string",
-                    "example": ""
+                    "pattern": "^[bB][aA][tT][cC][hH]$",
+                    "example": "batch",
+                    "description": "填写 batch；当前也接受大小写变体。"
                   }
                 }
               }
@@ -2425,16 +2459,24 @@
           }
         },
         "responses": {
-          "501": {
-            "description": "未实现",
+          "200": {
+            "description": "文件已保存。",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/BatchFile"
                 }
               }
-            },
-            "headers": {}
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BatchInvalidRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/BatchProcessingUnavailable"
+          },
+          "503": {
+            "$ref": "#/components/responses/BatchStorageUnavailable"
           }
         },
         "security": [
@@ -2446,36 +2488,40 @@
     },
     "/v1/files/{file_id}": {
       "get": {
-        "summary": "获取文件信息 (未实现)",
+        "summary": "获取 Batch 文件信息（已实现，未公开）",
         "deprecated": false,
-        "description": "此接口尚未实现",
+        "description": "代码已实现，尚未进入公开 operation 白名单；真实 Provider、三数据库迁移、容量与生产灰度验收未完成，不代表生产已发布。\n\n文件和作业按用户及创建时的应用（API Key）隔离，同账号其他 Key 不能访问。\n\n返回本站文件元数据；processed 不保证对象随后仍可下载。",
         "operationId": "retrieveFile",
         "tags": [
-          "未实现/Files"
+          "Batch/Files（未公开）"
         ],
         "parameters": [
           {
             "name": "file_id",
             "in": "path",
-            "description": "",
             "required": true,
-            "example": "",
+            "description": "本站返回的不透明 ID。",
             "schema": {
               "type": "string"
             }
           }
         ],
         "responses": {
-          "501": {
-            "description": "未实现",
+          "200": {
+            "description": "文件信息。",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/BatchFile"
                 }
               }
-            },
-            "headers": {}
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/BatchResourceNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/BatchProcessingUnavailable"
           }
         },
         "security": [
@@ -2526,36 +2572,265 @@
     },
     "/v1/files/{file_id}/content": {
       "get": {
-        "summary": "获取文件内容 (未实现)",
+        "summary": "下载 Batch 文件内容（已实现，未公开）",
         "deprecated": false,
-        "description": "此接口尚未实现",
+        "description": "代码已实现，尚未进入公开 operation 白名单；真实 Provider、三数据库迁移、容量与生产灰度验收未完成，不代表生产已发布。\n\n文件和作业按用户及创建时的应用（API Key）隔离，同账号其他 Key 不能访问。\n\n返回 JSONL 文件字节，需要原应用 Key 鉴权。输入文件保持上传内容；结果按 custom_id 关联请求，回答正文与 usage 保持原义，response.body.model 使用冻结的客户模型名，行级错误脱敏为 request_failed。文件不可用不回滚历史结算。当前该处理器的错误正文也是 JSON，但 Content-Type 仍可能为 application/jsonl；下载失败或中途断流不得当作完整结果。",
         "operationId": "downloadFile",
         "tags": [
-          "未实现/Files"
+          "Batch/Files（未公开）"
         ],
         "parameters": [
           {
             "name": "file_id",
             "in": "path",
-            "description": "",
             "required": true,
-            "example": "",
+            "description": "本站返回的不透明 ID。",
             "schema": {
               "type": "string"
             }
           }
         ],
         "responses": {
-          "501": {
-            "description": "未实现",
+          "200": {
+            "description": "JSONL 内容。",
+            "content": {
+              "application/jsonl": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "文件、作业或游标不存在、不属于当前应用，或文件对象已不可用。",
+            "content": {
+              "application/jsonl": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchHTTPError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "处理失败或受理结果无法确认；不能据此认定未受理、已退款或可自动重发。",
+            "content": {
+              "application/jsonl": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchHTTPError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Batch 文件存储暂不可用。",
+            "content": {
+              "application/jsonl": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchHTTPError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/batches": {
+      "post": {
+        "summary": "创建 Batch 作业（已实现，未公开）",
+        "deprecated": false,
+        "description": "代码已实现，尚未进入公开 operation 白名单；真实 Provider、三数据库迁移、容量与生产灰度验收未完成，不代表生产已发布。\n\n文件和作业按用户及创建时的应用（API Key）隔离，同账号其他 Key 不能访问。\n\nJSON 请求体最多 128 KiB。使用本站输入文件 ID 创建文本 Chat Completions 批处理，客户模型来自文件，不能用顶层 model 改选。成功返回 200 和本站作业对象，不是 202 图片任务。没有客户幂等键；创建超时或返回 500 时，受理结果可能待核实且预扣保留，不自动重发、换渠道或退款。已有 ID 时只查询原作业；没有 ID 时联系管理员核查原请求。",
+        "operationId": "createBatch",
+        "tags": [
+          "Batch/Files（未公开）"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchCreateRequest"
+              },
+              "example": {
+                "input_file_id": "file-example",
+                "endpoint": "/v1/chat/completions",
+                "completion_window": "24h"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "作业已受理；按 status 查询后续结果。",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/BatchJob"
                 }
               }
-            },
-            "headers": {}
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BatchInvalidRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/BatchResourceNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/BatchProcessingUnavailable"
+          },
+          "503": {
+            "$ref": "#/components/responses/BatchStorageUnavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "列出 Batch 作业（已实现，未公开）",
+        "deprecated": false,
+        "description": "代码已实现，尚未进入公开 operation 白名单；真实 Provider、三数据库迁移、容量与生产灰度验收未完成，不代表生产已发布。\n\n文件和作业按用户及创建时的应用（API Key）隔离，同账号其他 Key 不能访问。\n\n读取当前应用的作业投影。",
+        "operationId": "listBatches",
+        "tags": [
+          "Batch/Files（未公开）"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页建议 1～100，默认 20；缺失、无法解析、非正数或大于 100 时使用 20。",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "上一页 last_id。按 created_at、id 降序分页；游标须属于当前应用。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "作业列表。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchJobList"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/BatchResourceNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/BatchProcessingUnavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/batches/{batch_id}": {
+      "get": {
+        "summary": "查询 Batch 作业（已实现，未公开）",
+        "deprecated": false,
+        "description": "代码已实现，尚未进入公开 operation 白名单；真实 Provider、三数据库迁移、容量与生产灰度验收未完成，不代表生产已发布。\n\n文件和作业按用户及创建时的应用（API Key）隔离，同账号其他 Key 不能访问。\n\n返回本地持久化的最近可信状态，HTTP 200 不代表作业完成。完成不保证所有行成功；结果文件 ID 只在本站交付就绪后出现，随后通过 /v1/files/{file_id}/content 下载。超过 24 小时不触发自动退款。",
+        "operationId": "retrieveBatch",
+        "tags": [
+          "Batch/Files（未公开）"
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "description": "本站返回的不透明 ID。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "作业投影。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchJob"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/BatchResourceNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/BatchProcessingUnavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/batches/{batch_id}/cancel": {
+      "post": {
+        "summary": "请求取消 Batch 作业（已实现，未公开）",
+        "deprecated": false,
+        "description": "代码已实现，尚未进入公开 operation 白名单；真实 Provider、三数据库迁移、容量与生产灰度验收未完成，不代表生产已发布。\n\n文件和作业按用户及创建时的应用（API Key）隔离，同账号其他 Key 不能访问。\n\n无需请求体。取消中的或终态作业直接返回当前对象；上游明确拒绝取消时也可能返回原状态并继续跟踪，因此 200 不等于已取消。取消后仍按已执行请求的实际可计费事实结算，不承诺全额退款；继续查询原作业及结果文件。",
+        "operationId": "cancelBatch",
+        "tags": [
+          "Batch/Files（未公开）"
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "description": "本站返回的不透明 ID。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前作业状态；检查 status，不以 HTTP 成功确认取消完成。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BatchInvalidRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/BatchResourceNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/BatchProcessingUnavailable"
           }
         },
         "security": [
@@ -3229,6 +3504,432 @@
   },
   "components": {
     "schemas": {
+      "BatchFile": {
+        "type": "object",
+        "required": [
+          "id",
+          "object",
+          "bytes",
+          "created_at",
+          "filename",
+          "purpose",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "本站文件 ID；后续查询与下载使用此值。"
+          },
+          "object": {
+            "type": "string",
+            "enum": [
+              "file"
+            ]
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "文件实际字节数；结果文件按客户交付内容计算。"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix 秒。"
+          },
+          "filename": {
+            "type": "string",
+            "description": "文件名，不是文件路径或下载地址。"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "batch",
+              "batch_output",
+              "batch_error"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "processed"
+            ],
+            "description": "当前为 processed，表示文件已保存，不表示关联作业完成。"
+          }
+        }
+      },
+      "BatchCreateRequest": {
+        "type": "object",
+        "required": [
+          "input_file_id",
+          "endpoint",
+          "completion_window"
+        ],
+        "properties": {
+          "input_file_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "同一应用上传、purpose=batch 的本站文件 ID。"
+          },
+          "endpoint": {
+            "type": "string",
+            "enum": [
+              "/v1/chat/completions"
+            ]
+          },
+          "completion_window": {
+            "type": "string",
+            "enum": [
+              "24h"
+            ],
+            "description": "必填，只接受 24h；这是处理目标，不是超时退款截止时间。"
+          },
+          "metadata": {
+            "type": "object",
+            "maxProperties": 16,
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "description": "最多 16 对字符串；键最多 64 个 Unicode 字符，值最多 512 个。"
+          }
+        }
+      },
+      "BatchRequestCounts": {
+        "type": "object",
+        "required": [
+          "total",
+          "completed",
+          "failed",
+          "expired"
+        ],
+        "description": "最近一次可信观察的请求数量；errored、cancelled 为零时可省略。completed 作业不保证每一行成功。",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "completed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expired": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "errored": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cancelled": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "BatchUsage": {
+        "type": "object",
+        "required": [
+          "input_tokens",
+          "output_tokens",
+          "total_tokens"
+        ],
+        "description": "可选用量投影；零缓存用量可省略。用量缺失不代表免费或结算完成。",
+        "properties": {
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "input_cached": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_tokens": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "BatchJob": {
+        "type": "object",
+        "required": [
+          "id",
+          "object",
+          "endpoint",
+          "model",
+          "status",
+          "completion_window",
+          "created_at",
+          "input_file_id"
+        ],
+        "description": "作业状态、文件交付与结算是不同事实。终态也可能暂时没有结果文件 ID；保留原 ID 继续查询，不重发创建。取消、失败或过期不等于全额退款，按已执行请求的实际可计费事实结算。",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "本站作业 ID。"
+          },
+          "object": {
+            "type": "string",
+            "enum": [
+              "batch"
+            ]
+          },
+          "endpoint": {
+            "type": "string",
+            "enum": [
+              "/v1/chat/completions"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "description": "输入文件中的客户模型名。"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "validating",
+              "in_progress",
+              "finalizing",
+              "cancelling",
+              "completed",
+              "failed",
+              "expired",
+              "cancelled"
+            ],
+            "description": "最近一次可信作业状态；一次查询异常不直接判为失败。"
+          },
+          "completion_window": {
+            "type": "string",
+            "enum": [
+              "24h"
+            ]
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix 秒。"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "可选 Unix 秒；不作为本站自动超时退款依据。"
+          },
+          "cancelling_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "本站记录的取消请求时间，Unix 秒；未记录时省略。"
+          },
+          "cancelled_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "可选取消时间，Unix 秒。"
+          },
+          "failed_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "可选失败时间，Unix 秒。"
+          },
+          "completed_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "可选完成时间，Unix 秒。"
+          },
+          "metadata": {
+            "type": "object",
+            "maxProperties": 16,
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "description": "最多 16 对字符串；键最多 64 个 Unicode 字符，值最多 512 个。"
+          },
+          "input_file_id": {
+            "type": "string",
+            "description": "本站输入文件 ID。"
+          },
+          "error_file_id": {
+            "type": "string",
+            "description": "客户错误文件就绪后才返回的本站 ID。"
+          },
+          "output_file_id": {
+            "type": "string",
+            "description": "客户结果文件就绪后才返回的本站 ID。"
+          },
+          "request_counts": {
+            "$ref": "#/components/schemas/BatchRequestCounts"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/BatchUsage"
+          },
+          "errors": {
+            "type": "object",
+            "required": [
+              "object",
+              "data"
+            ],
+            "properties": {
+              "object": {
+                "type": "string",
+                "enum": [
+                  "list"
+                ]
+              },
+              "data": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "job_error"
+                      ]
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "脱敏作业错误。"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "BatchHTTPError": {
+        "type": "object",
+        "required": [
+          "success",
+          "error"
+        ],
+        "description": "Batch 处理器错误信封。当前没有稳定 error.code；鉴权失败遵循公共 Token 鉴权响应。",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "message",
+              "type"
+            ],
+            "properties": {
+              "message": {
+                "type": "string",
+                "description": "脱敏错误说明，不应按错误文本推断是否已受理。"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "invalid_request_error",
+                  "service_unavailable"
+                ]
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "JSONL 校验错误涉及的 1 起始行号；非行级错误省略。"
+              }
+            }
+          }
+        }
+      },
+      "BatchFileList": {
+        "type": "object",
+        "required": [
+          "object",
+          "data",
+          "total",
+          "has_more",
+          "first_id",
+          "last_id"
+        ],
+        "properties": {
+          "object": {
+            "type": "string",
+            "enum": [
+              "list"
+            ]
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchFile"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "当前应用所有记录总数，不是游标后的剩余数量。"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "first_id": {
+            "type": "string",
+            "description": "本页第一项 ID；空页为空字符串。"
+          },
+          "last_id": {
+            "type": "string",
+            "description": "本页最后一项 ID；空页为空字符串。"
+          }
+        }
+      },
+      "BatchJobList": {
+        "type": "object",
+        "required": [
+          "object",
+          "data",
+          "total",
+          "has_more",
+          "first_id",
+          "last_id"
+        ],
+        "properties": {
+          "object": {
+            "type": "string",
+            "enum": [
+              "list"
+            ]
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchJob"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "当前应用所有记录总数，不是游标后的剩余数量。"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "first_id": {
+            "type": "string",
+            "description": "本页第一项 ID；空页为空字符串。"
+          },
+          "last_id": {
+            "type": "string",
+            "description": "本页最后一项 ID；空页为空字符串。"
+          }
+        }
+      },
       "ErrorResponse": {
         "type": "object",
         "properties": {
@@ -6623,10 +7324,173 @@
                   "$ref": "#/components/schemas/VideoMediaURL"
                 },
                 "audio_url": {
-                  "allOf": [{"$ref": "#/components/schemas/VideoMediaURL"}],
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/VideoMediaURL"
+                    }
+                  ],
                   "description": "参考音频：HTTPS URL 原样传递；音频 Data URL 或裸 Base64 由网关上传 OSS 后发送 HTTPS URL。multipart 可用 file://<附件名称>。网关不检查实际音频时长。"
                 }
-              }
+              },
+              "oneOf": [
+                {
+                  "required": [
+                    "type",
+                    "text"
+                  ],
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "text"
+                      ]
+                    },
+                    "text": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "image_url"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "video_url"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "audio_url"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "role"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "type",
+                    "image_url",
+                    "role"
+                  ],
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "image_url"
+                      ]
+                    },
+                    "role": {
+                      "enum": [
+                        "first_frame",
+                        "last_frame",
+                        "reference_image"
+                      ]
+                    }
+                  },
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "text"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "video_url"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "audio_url"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "type",
+                    "video_url",
+                    "role"
+                  ],
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "video_url"
+                      ]
+                    },
+                    "role": {
+                      "enum": [
+                        "reference_video"
+                      ]
+                    }
+                  },
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "text"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "image_url"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "audio_url"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "type",
+                    "audio_url",
+                    "role"
+                  ],
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "audio_url"
+                      ]
+                    },
+                    "role": {
+                      "enum": [
+                        "reference_audio"
+                      ]
+                    }
+                  },
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "text"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "image_url"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "video_url"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
             }
           },
           "duration": {
@@ -6741,7 +7605,8 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "description": "running 也可能表示执行结果仍在核实，不保证上游正在生成；保留原任务 ID 有界查询，不重复创建或自行认定退款。"
           },
           "content": {
             "type": "object",
@@ -6797,10 +7662,12 @@
             "type": "object",
             "properties": {
               "completion_tokens": {
-                "type": "integer"
+                "type": "integer",
+                "description": "可选完成用量；当前零值省略，不能把字段缺失补零作为计费依据。"
               },
               "total_tokens": {
-                "type": "integer"
+                "type": "integer",
+                "description": "可选总用量；当前零值省略。"
               },
               "tool_usage": {
                 "type": "object",
@@ -6810,7 +7677,8 @@
                   }
                 }
               }
-            }
+            },
+            "description": "可选用量投影，当前零值字段会省略，usage 也可能为空对象；缺失不能区分已确认零用量与尚未报告，不代表免费或结算完成。"
           },
           "error": {
             "$ref": "#/components/schemas/VideoTaskError"
@@ -7571,7 +8439,48 @@
         }
       }
     },
-    "responses": {},
+    "responses": {
+      "BatchInvalidRequest": {
+        "description": "参数、JSONL 或模型资格无效，或上游明确拒绝；有行号时读取 error.line。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BatchHTTPError"
+            }
+          }
+        }
+      },
+      "BatchResourceNotFound": {
+        "description": "文件、作业或游标不存在、不属于当前应用，或文件对象已不可用。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BatchHTTPError"
+            }
+          }
+        }
+      },
+      "BatchProcessingUnavailable": {
+        "description": "处理失败或受理结果无法确认；不能据此认定未受理、已退款或可自动重发。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BatchHTTPError"
+            }
+          }
+        }
+      },
+      "BatchStorageUnavailable": {
+        "description": "Batch 文件存储暂不可用。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BatchHTTPError"
+            }
+          }
+        }
+      }
+    },
     "securitySchemes": {
       "BearerAuth": {
         "type": "http",
