@@ -37,9 +37,6 @@ function contractStatusPresentation(status: CustomerContractAdminStatus, t: (key
   if (status === 'active') {
     return { label: t('Active contracts'), variant: 'warning' as const }
   }
-  if (status === 'zero_access') {
-    return { label: t('No model access'), variant: 'danger' as const }
-  }
   return { label: t('Inactive contracts'), variant: 'neutral' as const }
 }
 

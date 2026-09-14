@@ -69,7 +69,7 @@ describe('customer contract pricing on the API key page', () => {
     await vi.waitFor(() => expect(container.textContent).toBe(''))
   })
 
-  it('shows customer-visible model, discount, channel multiplier, and price facts', async () => {
+  it('shows one model and contract discount row per public model without channel facts', async () => {
     getSelfCustomerContract.mockResolvedValue({
       success: true,
       data: {
@@ -80,28 +80,9 @@ describe('customer contract pricing on the API key page', () => {
             enabled: true,
             version: 4,
             models: [
-              {
-                model: 'claude-sonnet-5',
-                discount: '0.8',
-                channel_discount: '0.5',
-                effective_multiplier: '0.4',
-                available: true,
-                price: {
-                  price_type: 'model_ratio',
-                  base_model_ratio: '0.5',
-                  final_model_ratio: '0.2',
-                  completion_ratio: '4',
-                  current_discounted_price: '0.2',
-                },
-              },
-              {
-                model: 'claude-opus-4-8',
-                discount: '0.6',
-                channel_discount: '1',
-                effective_multiplier: '0.6',
-                available: false,
-                price: { price_type: 'tiered_multiplier' },
-              },
+              // The owner API has already merged same-model channel rules.
+              { model: 'claude-sonnet-5', discount: '0.8' },
+              { model: 'gemini-3-pro', discount: '0.9' },
             ],
           },
         ],
@@ -111,15 +92,15 @@ describe('customer contract pricing on the API key page', () => {
     const { container } = renderPricing()
 
     expect(await screen.findByText('claude-sonnet-5')).toBeTruthy()
-    expect(screen.getByText('Input $0.4/M · Output $1.6/M')).toBeTruthy()
-    expect(screen.getByText(/Channel multiplier: 0\.5/)).toBeTruthy()
-    expect(screen.getByText('Tiered price × 0.6')).toBeTruthy()
-    expect(screen.getByText('Unavailable')).toBeTruthy()
+    expect(screen.getByText('gemini-3-pro')).toBeTruthy()
+    expect(screen.getAllByText('0.8')).toHaveLength(1)
+    expect(screen.getByText('0.9')).toBeTruthy()
     expect(container.textContent).not.toContain('route_group')
+    expect(container.textContent).not.toContain('channel')
     expect(container.textContent).not.toContain('provider')
   })
 
-  it('renders several contracts separately and marks disabled ones', async () => {
+  it('renders several contracts separately and marks disabled ones as not in effect', async () => {
     getSelfCustomerContract.mockResolvedValue({
       success: true,
       data: {
@@ -128,24 +109,15 @@ describe('customer contract pricing on the API key page', () => {
             id: 3,
             name: 'Team contract',
             enabled: true,
-            version: 4,
-            models: [
-              {
-                model: 'claude-sonnet-5',
-                discount: '0.8',
-                channel_discount: '1',
-                effective_multiplier: '0.8',
-                available: true,
-                price: { price_type: 'model_ratio', current_discounted_price: '0.4' },
-              },
-            ],
+            version: 2,
+            models: [{ model: 'claude-sonnet-5', discount: '0.8' }],
           },
           {
             id: 9,
             name: 'Old contract',
             enabled: false,
             version: 2,
-            models: [],
+            models: [{ model: 'legacy-model', discount: '0.7' }],
           },
         ],
       },
@@ -157,12 +129,12 @@ describe('customer contract pricing on the API key page', () => {
     expect(screen.getByText('Old contract')).toBeTruthy()
     expect(
       screen.getByText(
-        'This contract is disabled. Bound API keys currently follow native logic.'
+        'This contract is disabled. Its discounts are not in effect.'
       )
     ).toBeTruthy()
   })
 
-  it('makes an enabled zero-rule contract visibly fail closed', async () => {
+  it('marks an enabled contract without rules as carrying no discounts', async () => {
     getSelfCustomerContract.mockResolvedValue({
       success: true,
       data: {
@@ -181,16 +153,11 @@ describe('customer contract pricing on the API key page', () => {
     renderPricing()
 
     expect(
-      await screen.findByText('No models are currently authorized')
-    ).toBeTruthy()
-    expect(
-      screen.getByText(
-        'API keys bound to this contract cannot call models until rules are available.'
-      )
+      await screen.findByText('This contract carries no model discounts')
     ).toBeTruthy()
   })
 
-  it('shows a fail-closed warning when contract facts cannot be loaded', async () => {
+  it('shows a loading failure instead of pretending the contract is unbound', async () => {
     getSelfCustomerContract.mockRejectedValue(new Error('database unavailable'))
 
     renderPricing()
@@ -200,7 +167,7 @@ describe('customer contract pricing on the API key page', () => {
     ).toBeTruthy()
     expect(
       screen.getByText(
-        'Model access remains fail-closed until the contract can be loaded.'
+        'Discount details stay unavailable until the contract can be loaded.'
       )
     ).toBeTruthy()
   })

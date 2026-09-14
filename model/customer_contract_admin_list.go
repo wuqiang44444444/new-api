@@ -10,9 +10,8 @@ import (
 )
 
 const (
-	CustomerContractAdminStatusActive     = "active"
-	CustomerContractAdminStatusZeroAccess = "zero_access"
-	CustomerContractAdminStatusInactive   = "inactive"
+	CustomerContractAdminStatusActive   = "active"
+	CustomerContractAdminStatusInactive = "inactive"
 )
 
 type CustomerContractAdminListFilter struct {
@@ -44,15 +43,14 @@ type CustomerContractAdminListItem struct {
 }
 
 type CustomerContractAdminSummary struct {
-	Total      int64 `json:"total"`
-	Active     int64 `json:"active"`
-	ZeroAccess int64 `json:"zero_access"`
-	Inactive   int64 `json:"inactive"`
+	Total    int64 `json:"total"`
+	Active   int64 `json:"active"`
+	Inactive int64 `json:"inactive"`
 }
 
 func IsCustomerContractAdminStatus(value string) bool {
 	switch value {
-	case "", CustomerContractAdminStatusActive, CustomerContractAdminStatusZeroAccess, CustomerContractAdminStatusInactive:
+	case "", CustomerContractAdminStatusActive, CustomerContractAdminStatusInactive:
 		return true
 	default:
 		return false
@@ -106,7 +104,7 @@ func GetCustomerContractAdminList(filter CustomerContractAdminListFilter) ([]Cus
 		return nil, 0, CustomerContractAdminSummary{}, err
 	}
 	for i := range items {
-		items[i].ContractStatus = customerContractAdminStatus(items[i].ContractEnabled, items[i].RuleCount)
+		items[i].ContractStatus = customerContractAdminStatus(items[i].ContractEnabled)
 	}
 	if err := populateCustomerContractAdminAvailability(items); err != nil {
 		return nil, 0, CustomerContractAdminSummary{}, err
@@ -152,11 +150,9 @@ func applyCustomerContractAdminKeyword(query *gorm.DB, keyword string) *gorm.DB 
 func applyCustomerContractAdminStatus(query *gorm.DB, status string) *gorm.DB {
 	switch status {
 	case CustomerContractAdminStatusActive:
-		return query.Where("customer_contracts.enabled = ?", true).
-			Where("COALESCE(contract_rule_counts.rule_count, 0) > 0")
-	case CustomerContractAdminStatusZeroAccess:
-		return query.Where("customer_contracts.enabled = ?", true).
-			Where("COALESCE(contract_rule_counts.rule_count, 0) = 0")
+		// Enabled contracts are active regardless of rule count: rules are
+		// discount details and never gate the bound keys' native access.
+		return query.Where("customer_contracts.enabled = ?", true)
 	case CustomerContractAdminStatusInactive:
 		return query.Where("customer_contracts.enabled = ?", false)
 	default:
@@ -164,12 +160,9 @@ func applyCustomerContractAdminStatus(query *gorm.DB, status string) *gorm.DB {
 	}
 }
 
-func customerContractAdminStatus(enabled bool, ruleCount int) string {
+func customerContractAdminStatus(enabled bool) string {
 	if !enabled {
 		return CustomerContractAdminStatusInactive
-	}
-	if ruleCount == 0 {
-		return CustomerContractAdminStatusZeroAccess
 	}
 	return CustomerContractAdminStatusActive
 }
@@ -210,9 +203,7 @@ func getCustomerContractAdminSummary(adminRole int, ruleCounts *gorm.DB) (Custom
 	}{
 		{target: &summary.Total},
 		{target: &summary.Active, status: CustomerContractAdminStatusActive},
-		{target: &summary.ZeroAccess, status: CustomerContractAdminStatusZeroAccess},
-		{target: &summary.Inactive, status: CustomerContractAdminStatusInactive},
-	}
+		{target: &summary.Inactive, status: CustomerContractAdminStatusInactive},	}
 	for _, count := range counts {
 		query := customerContractAdminBaseQuery(adminRole, ruleCounts)
 		query = applyCustomerContractAdminStatus(query, count.status)

@@ -322,10 +322,11 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 		service.GetTaskAdaptorFunc = func(constant.TaskPlatform) service.TaskPollingAdaptor { return &seedance.TaskAdaptor{} }
 		t.Cleanup(func() { service.GetTaskAdaptorFunc = oldFactory })
 		task := tasks[0]
-		for _, stage := range []int{404, 410, 401, 403, 429, 500, 1, 2, 3, 404, 4} {
+		var startedAt int64
+		for _, stage := range []int{404, 410, 401, 403, 429, 500, 2, 1, 1, 3, 404, 1, 4} {
 			pollStage.Store(int32(stage))
 			err := service.RefreshVideoTask(context.Background(), &task)
-			if stage == 404 && task.Status == model.TaskStatusSuccess {
+			if (stage == 404 || stage == 1) && task.Status == model.TaskStatusSuccess {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
@@ -349,6 +350,16 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 				expected := model.TaskStatusReconciliationRequired
 				if stage == 2 {
 					expected = model.TaskStatusQueued
+				} else if stage == 1 {
+					expected = model.TaskStatusInProgress
+					require.NotZero(t, task.StartTime)
+					if startedAt == 0 {
+						startedAt = task.StartTime
+					}
+					assert.Equal(t, startedAt, task.StartTime)
+					assert.Empty(t, task.FailReason)
+					assert.Empty(t, task.PrivateData.ResultURL)
+					assert.False(t, task.PrivateData.AsyncBilling.ActualUsageReported)
 				}
 				require.Equal(t, expected, task.Status)
 				assert.Equal(t, 700, task.Quota)

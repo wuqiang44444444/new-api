@@ -228,7 +228,7 @@ function ModelRow(props: { last: boolean; model: ProviderModelSummary }) {
   )
 }
 
-function UsageCell(props: {
+export function UsageCell(props: {
   value: number | null
   parent?: boolean
   unavailable?: boolean
@@ -245,7 +245,7 @@ function UsageCell(props: {
   )
 }
 
-function QualityBadge(props: { quality?: BillingDataQuality }) {
+export function QualityBadge(props: { quality?: BillingDataQuality }) {
   const { t } = useTranslation()
   let variant: 'secondary' | 'warning' | 'outline' = 'secondary'
   if (props.quality?.status === 'partial') variant = 'warning'

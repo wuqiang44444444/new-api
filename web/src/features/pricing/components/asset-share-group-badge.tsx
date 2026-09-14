@@ -36,14 +36,18 @@ export function AssetShareGroupBadge(props: { model: PricingModel }) {
   return (
     <Tooltip>
       <TooltipTrigger
+        tabIndex={0}
         render={
-          <Badge variant='outline' className='gap-1 font-mono font-normal' />
+          <Badge variant='outline' className='max-w-full gap-1 font-normal' />
         }
       >
         <Boxes className='size-3' aria-hidden='true' />
-        {t('Asset share group {{label}}', { label: group.label })}
+        <span className='min-w-0 truncate'>
+          {t('Asset share group {{label}}', { label: group.label })}
+        </span>
       </TooltipTrigger>
-      <TooltipContent className='max-w-sm'>
+      <TooltipContent className='max-w-[min(24rem,calc(100vw-2rem))] flex-col items-start'>
+        <p>{t('Asset share group {{label}}', { label: group.label })}</p>
         <p className='font-medium'>{t('Models sharing this asset library')}</p>
         <p className='mt-1 break-words'>{group.models.join(', ')}</p>
       </TooltipContent>

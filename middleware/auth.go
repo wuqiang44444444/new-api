@@ -467,12 +467,7 @@ func TokenAuth() func(c *gin.Context) {
 
 		userGroup := userCache.Group
 		tokenGroup := token.Group
-		activeContract, err := activeTokenContract(token, userCache.AuthVersion)
-		if err != nil {
-			abortWithOpenAiMessage(c, http.StatusServiceUnavailable, "Contract authorization is unavailable")
-			return
-		}
-		if tokenGroup != "" && !activeContract {
+		if tokenGroup != "" {
 			// check common.UserUsableGroups[userGroup]
 			if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
 				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("无权访问 %s 分组", tokenGroup))

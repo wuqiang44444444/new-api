@@ -64,29 +64,18 @@ func CreateBatchJob(c *gin.Context, request *dto.BatchCreateRequest) (*BatchCrea
 		return nil, &dto.BatchValidateError{Message: "the stored batch file has no resolvable model"}
 	}
 
-	// Contract keys keep their authorization boundary: the bound rule must
-	// authorize this model and must resolve to a Batch channel, otherwise the
-	// request is rejected before any hold or upload.
+	// The contract provides the discount only; batch channel eligibility and
+	// selection stay entirely native (the key's own group). An unlisted model
+	// resolves a nil fact and keeps native handling.
 	fact, err := resolveBatchContractFact(c, userId, publicModel)
 	if err != nil {
 		return nil, err
 	}
 	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 	group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-	if fact != nil {
-		group = fact.RouteGroup
-	}
-
-	pin := 0
-	if fact != nil {
-		pin = fact.ChannelId
-	}
-	channel, err := model.SelectEnabledBatchChannel(group, publicModel, pin)
+	channel, err := model.SelectEnabledBatchChannel(group, publicModel)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrBatchJobModelDenied, err)
-	}
-	if fact != nil && fact.ChannelId > 0 && fact.ChannelId != channel.Id {
-		return nil, fmt.Errorf("%w: the bound contract rule does not resolve to the batch channel", ErrBatchJobModelDenied)
 	}
 	mapping := map[string]string{}
 	if raw := channel.GetModelMapping(); raw != "" {

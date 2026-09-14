@@ -587,20 +587,16 @@ func RelayTask(c *gin.Context) {
 		return
 	}
 
-	// 冻结 Link 客户合同事实：必须在 executeTaskSubmission 之前完成，
-	// 使后续渠道选择与计费使用合同解析出的 RouteGroup；依赖
-	// ApplyOriginTaskAffinity 已写入的 LockedChannel。
+	// 冻结 Link 客户合同折扣事实：必须在 executeTaskSubmission 之前完成。
+	// 合同只提供折扣；实际执行组与渠道沿用原生分发与任务亲和结果。
 	if relayInfo.ContractBillingFact == nil && relayInfo.OriginModelName != "" {
-		lockedChannel, _ := relayInfo.LockedChannel.(*model.Channel)
-		contractFact, contractErr := middleware.ApplyCustomerContractResolvedModel(c, relayInfo.OriginModelName, lockedChannel)
+		contractFact, contractErr := middleware.ApplyCustomerContractResolvedModel(c, relayInfo.OriginModelName)
 		if contractErr != nil {
 			respondTaskSubmissionError(c, service.TaskErrorWrapperLocal(contractErr, "model_not_allowed", http.StatusForbidden))
 			return
 		}
 		if contractFact != nil {
 			relayInfo.ContractBillingFact = contractFact
-			relayInfo.UsingGroup = contractFact.RouteGroup
-			relayInfo.TokenGroup = contractFact.RouteGroup
 		}
 	}
 

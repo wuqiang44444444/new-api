@@ -26,7 +26,7 @@ func TestTaskPrivateDataRoundTripsFrozenCustomerContractFact(t *testing.T) {
 		OriginModelName: "contract-model", ModelRatio: 2, GroupRatio: 0.87,
 		ContractFact: &hosttypes.ContractBillingFact{
 			UserId: 7, ContractVersion: 12, PublicModel: "contract-model",
-			RouteGroup: "contract-route", RatioUnits: 80_000_000,
+			RatioUnits: 80_000_000,
 		},
 	}}
 

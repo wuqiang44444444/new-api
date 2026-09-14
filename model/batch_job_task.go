@@ -8,22 +8,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// BatchContractChannelIDs projects only typed identity, never credentials or
-// generic routing abilities, for the contract price view.
-func BatchContractChannelIDs(ids []int) (map[int]bool, error) {
-	var channels []Channel
-	if len(ids) > 0 {
-		if err := DB.Select("id").Where("id IN ? AND type = ?", ids, constant.ChannelTypeAzureBatch).Find(&channels).Error; err != nil {
-			return nil, err
-		}
-	}
-	result := make(map[int]bool, len(channels))
-	for _, channel := range channels {
-		result[channel.Id] = true
-	}
-	return result, nil
-}
-
 // createBatchJobForTaskTx participates in BOTH initial commit and shared attempt
 // recovery. No accepted task may exist without its durable Batch execution facts.
 func createBatchJobForTaskTx(tx *gorm.DB, attempt *TaskCreateAttempt, task *Task) error {
@@ -63,7 +47,7 @@ func GetBatchJobByTaskRowId(taskRowId int64) (*BatchJob, error) {
 // SelectEnabledBatchChannel returns the deterministic enabled Batch channel
 // for one group and public model: the lowest id wins. Batch routing is
 // typed and explicit; it never uses priority, weight or random dispatch.
-func SelectEnabledBatchChannel(group string, publicModel string, pinnedChannelID ...int) (*Channel, error) {
+func SelectEnabledBatchChannel(group string, publicModel string) (*Channel, error) {
 	if group == "" || publicModel == "" {
 		return nil, errors.New("batch channel selection requires group and model")
 	}
@@ -71,9 +55,6 @@ func SelectEnabledBatchChannel(group string, publicModel string, pinnedChannelID
 	query := ApplyChannelGroupFilter(DB.Model(&Channel{}), group).
 		Where("type = ? AND status = ?", constant.ChannelTypeAzureBatch, common.ChannelStatusEnabled).
 		Order("id ASC")
-	if len(pinnedChannelID) > 0 && pinnedChannelID[0] > 0 {
-		query = query.Where("id = ?", pinnedChannelID[0])
-	}
 	if err := query.Find(&channels).Error; err != nil {
 		return nil, err
 	}

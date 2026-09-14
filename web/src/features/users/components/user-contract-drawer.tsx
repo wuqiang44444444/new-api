@@ -261,13 +261,27 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
       toast.error(t('Invalid contract discount'))
       return
     }
-    if (
-      draft.rules.some(
-        (rule) => rule.model.toLowerCase() === addModel.toLowerCase()
-      )
-    ) {
+    const sameModelRules = draft.rules.filter(
+      (rule) => rule.model.toLowerCase() === addModel.toLowerCase()
+    )
+    if (sameModelRules.some((rule) => rule.model !== addModel)) {
       toast.error(
         t('Model names that differ only by letter case cannot coexist')
+      )
+      return
+    }
+    if (sameModelRules.some((rule) => rule.channel_id === channelId)) {
+      toast.error(t('This model already binds the selected channel'))
+      return
+    }
+    if (
+      sameModelRules.length > 0 &&
+      sameModelRules.some((rule) => rule.discount !== normalizedDiscount)
+    ) {
+      toast.error(
+        t(
+          'All channels of one model must share the same contract discount in this save'
+        )
       )
       return
     }
@@ -348,6 +362,27 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
     if (draft.rules.some((rule) => rule.channel_id <= 0)) {
       toast.error(t('Select a channel for every contract rule'))
       return
+    }
+    // One save commits the complete ruleset: every rule of one model must
+    // carry the same discount, so same-model channels cannot drift apart.
+    const discountByModel = new Map<string, string>()
+    for (const rule of draft.rules) {
+      const normalized = parseContractDiscount(rule.discount)
+      const key = rule.model.toLowerCase()
+      const existing = discountByModel.get(key)
+      if (existing === undefined) {
+        discountByModel.set(key, String(normalized))
+        continue
+      }
+      if (existing !== String(normalized)) {
+        toast.error(
+          t(
+            'Model {{model}} must keep one identical discount across all of its channels in this save',
+            { model: rule.model }
+          )
+        )
+        return
+      }
     }
     const payloadRules = draft.rules.map((rule) => ({
       model: rule.model,
@@ -561,7 +596,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                     <AlertDescription>
                       {draft.enabled
                         ? t(
-                            'API keys bound to this contract can only call the models listed below.'
+                            'Keys bound to this contract receive the model discounts listed below; model access and routing stay native.'
                           )
                         : t(
                             'API keys bound to this contract currently follow native model permissions and pricing.'
@@ -588,9 +623,6 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
 
                   <CustomerContractAddRule
                     channelGroups={channels}
-                    existingModels={draft.rules.map((rule) =>
-                      rule.model.toLowerCase()
-                    )}
                     group={addGroup}
                     model={addModel}
                     channelId={addChannel}
@@ -609,10 +641,10 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                         <EmptyDescription>
                           {draft.enabled
                             ? t(
-                                'The contract is active, so all model calls are currently denied.'
+                                'The contract is enabled but carries no model discounts.'
                               )
                             : t(
-                                'Add a model rule to define which models this contract can call.'
+                                'Add a model rule to define which models receive this contract discount.'
                               )}
                         </EmptyDescription>
                       </EmptyHeader>
@@ -721,7 +753,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
         onOpenChange={setDisableConfirmOpen}
         title={t('Disable contract mode?')}
         desc={t(
-          'API keys bound to this contract will immediately return to native model permissions and pricing.'
+          'API keys bound to this contract will immediately lose its model discounts and follow native pricing.'
         )}
         destructive
         confirmText={t('Disable and save')}

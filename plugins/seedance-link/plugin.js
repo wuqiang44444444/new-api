@@ -517,7 +517,7 @@ export const meta = {
     en: "Seedance Link southbound protocol adapters",
     zh: "Seedance Link 南向协议适配",
   },
-  version: "1.3.2",
+  version: "1.3.3",
   author: { name: "yuan-gateway" },
   seedanceProtocols: [
     "funcloud_modelark_v3",
@@ -1855,6 +1855,7 @@ function parseSynlinkVideoTask(input) {
   }
   const status = firstResponseString(task, "status");
   if (status === "pending") result.status = "queued";
+  else if (status === "processing") result.status = "running";
   else if (status === "completed") {
     if (!Array.isArray(task.outputs) || task.outputs.length !== 1 || typeof task.outputs[0] !== "string")
       return { violation: "Synlink completion requires one video output" };

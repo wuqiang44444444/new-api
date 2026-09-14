@@ -156,35 +156,6 @@ func DeleteCurrentCustomerContractRulesWithTx(tx *gorm.DB, userId int) error {
 	return tx.Unscoped().Where("user_id = ?", userId).Delete(&CustomerModelContract{}).Error
 }
 
-func normalizeCustomerContractRules(rules []CustomerContractRule) ([]CustomerContractRule, error) {
-	normalized := make([]CustomerContractRule, 0, len(rules))
-	seen := make(map[string]struct{}, len(rules))
-	for _, rule := range rules {
-		rule.PublicModel = strings.TrimSpace(rule.PublicModel)
-		rule.RouteGroup = strings.TrimSpace(rule.RouteGroup)
-		rule.Available = false
-		if rule.PublicModel == "" || len(rule.PublicModel) > 255 {
-			return nil, fmt.Errorf("%w: public model is required and must not exceed 255 characters", ErrCustomerContractInvalidRule)
-		}
-		if rule.RouteGroup == "" || len(rule.RouteGroup) > 64 || strings.EqualFold(rule.RouteGroup, "auto") || NormalizeChannelGroupFilter(rule.RouteGroup) == "" {
-			return nil, fmt.Errorf("%w: route group must be a concrete group", ErrCustomerContractInvalidRule)
-		}
-		if !ratio_setting.ContainsGroupRatio(rule.RouteGroup) {
-			return nil, fmt.Errorf("%w: route group %q has no native ratio", ErrCustomerContractInvalidRule, rule.RouteGroup)
-		}
-		if rule.RatioUnits <= 0 || rule.RatioUnits > hosttypes.CustomerContractRatioScale {
-			return nil, fmt.Errorf("%w: ratio must be greater than zero and no greater than one", ErrCustomerContractInvalidRule)
-		}
-		modelKey := strings.ToLower(rule.PublicModel)
-		if _, exists := seen[modelKey]; exists {
-			return nil, fmt.Errorf("%w: duplicate or case-only duplicate public model %q", ErrCustomerContractInvalidRule, rule.PublicModel)
-		}
-		seen[modelKey] = struct{}{}
-		normalized = append(normalized, rule)
-	}
-	return normalized, nil
-}
-
 func customerContractAvailableModelsForGroup(tx *gorm.DB, group string) (map[string]struct{}, error) {
 	models := make(map[string]struct{})
 	var abilities []Ability

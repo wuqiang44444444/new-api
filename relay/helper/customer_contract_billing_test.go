@@ -41,7 +41,7 @@ func TestCustomerContractDiscountAppliesAfterNativeGroupRatioInPriceHelpers(t *t
 		if withContract {
 			info.ContractBillingFact = &hosttypes.ContractBillingFact{
 				UserId: 1, ContractVersion: 3, PublicModel: modelName,
-				RouteGroup: "contract-price", RatioUnits: 80_000_000,
+				RatioUnits: 80_000_000,
 			}
 		}
 		return ctx, info

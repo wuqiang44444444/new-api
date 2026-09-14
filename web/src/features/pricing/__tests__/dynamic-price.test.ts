@@ -31,7 +31,10 @@ import {
 } from '../lib/dynamic-price'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import type { PricingModel } from '../types'
-import { billingDisplayFixture } from './billing-display-fixtures'
+import {
+  billingDisplayFixture,
+  taskBillingDisplayFixture,
+} from './billing-display-fixtures'
 
 function pricingModel(overrides: Partial<PricingModel>): PricingModel {
   return {
@@ -55,6 +58,33 @@ const summaryOptions = {
 }
 
 describe('expression price summaries', () => {
+  test('shows native token charges and per-request surcharges together in K units', () => {
+    const summary = getDynamicPricingSummary(
+      pricingModel({
+        billing_mode: 'tiered_expr',
+        billing_expr: 'tier("base", p * 2 + c * 8 + 100000)',
+        billing_display: {
+          display_version: 2,
+          expression_version: 1,
+          expression_hash: 'fixture',
+          unit: 'usd_per_million_tokens',
+          status: 'exact',
+          tiers: [
+            { label: 'base', unit_prices: { p: 2, c: 8 }, constant: 0.1, has_constant: true },
+            { label: 'premium', unit_prices: { p: 4, c: 16 }, constant: 0.2, has_constant: true },
+          ],
+        },
+      }),
+      { tokenUnit: 'K' }
+    )
+    expect(summary?.primaryEntries.map((entry) => entry.field)).toEqual([
+      'inputPrice', 'outputPrice', 'constant',
+    ])
+    const fixed = summary?.primaryEntries.find((entry) => entry.unit === 'request')
+    expect(fixed?.formatted).toBe('$0.1')
+    expect(fixed?.formattedRange).toBe('$0.1 – $0.2')
+  })
+
   test('preserves a versioned parenthesized base price and its request rule', () => {
     const summary = getDynamicPricingSummary(
       pricingModel({
@@ -105,6 +135,9 @@ describe('expression price summaries', () => {
         billing_mode: 'tiered_expr',
         billing_expr:
           'u("mode") == "pro" ? tier("pro", u("seconds") * 0.8) : tier("free", u("seconds") * 0)',
+        billing_display: taskBillingDisplayFixture(
+          'u("mode") == "pro" ? tier("pro", u("seconds") * 0.8) : tier("free", u("seconds") * 0)'
+        ),
         billing_usage_schema: {
           seconds: { type: 'number', unit: 'second' },
           mode: { enum: ['free', 'pro'] },
@@ -123,6 +156,9 @@ describe('task dynamic pricing', () => {
       billing_mode: 'tiered_expr',
       billing_expr:
         'u("mode") == "pro" ? tier("pro", u("seconds") * 0.8) : tier("std", u("seconds") * 0.4)',
+      billing_display: taskBillingDisplayFixture(
+        'u("mode") == "pro" ? tier("pro", u("seconds") * 0.8) : tier("std", u("seconds") * 0.4)'
+      ),
       billing_usage_schema: {
         seconds: { type: 'number', unit: 'second' },
         mode: { enum: ['std', 'pro'] },
@@ -162,6 +198,9 @@ describe('task dynamic pricing', () => {
       billing_mode: 'tiered_expr',
       billing_expr:
         'u("mode") == "pro" ? tier("pro", u("seconds") * 0.8) : tier("std", u("seconds") * 0.4)',
+      billing_display: taskBillingDisplayFixture(
+        'u("mode") == "pro" ? tier("pro", u("seconds") * 0.8) : tier("std", u("seconds") * 0.4)'
+      ),
       billing_usage_schema: {
         seconds: { type: 'number', unit: 'second' },
         mode: { enum: ['std', 'pro'] },
@@ -181,6 +220,7 @@ describe('task dynamic pricing', () => {
     const model = pricingModel({
       billing_mode: 'tiered_expr',
       billing_expr: 'tier("base", u("seconds") * 0.4)',
+      billing_display: taskBillingDisplayFixture('tier("base", u("seconds") * 0.4)'),
       billing_usage_schema: {
         seconds: { type: 'number', unit: 'second' },
       },
@@ -215,6 +255,7 @@ describe('task dynamic pricing', () => {
     const model = pricingModel({
       billing_mode: 'tiered_expr',
       billing_expr: 'tier("base", u("seconds") * 0.4)',
+      billing_display: taskBillingDisplayFixture('tier("base", u("seconds") * 0.4)'),
       billing_usage_schema: {
         seconds: { type: 'number', unit: 'second' },
       },
@@ -242,6 +283,7 @@ describe('task dynamic pricing', () => {
     const model = pricingModel({
       billing_mode: 'tiered_expr',
       billing_expr: 'tier("base", u("tokens") * 9.8 / 1000000)',
+      billing_display: taskBillingDisplayFixture('tier("base", u("tokens") * 9.8 / 1000000)'),
       billing_usage_schema: {
         tokens: { type: 'number', unit: 'token' },
       },
@@ -283,6 +325,7 @@ describe('task dynamic pricing', () => {
     const model = pricingModel({
       billing_mode: 'tiered_expr',
       billing_expr: 'tier("base", u("units") * 0.14)',
+      billing_display: taskBillingDisplayFixture('tier("base", u("units") * 0.14)'),
       billing_usage_schema: {
         units: { type: 'number', unit: 'credit' },
       },
@@ -376,6 +419,7 @@ describe('task dynamic pricing', () => {
     const tokenModel = pricingModel({
       billing_mode: 'tiered_expr',
       billing_expr: 'tier("base", 0.1 + u("tokens") * 9.8 / 1000000)',
+      billing_display: taskBillingDisplayFixture('tier("base", 0.1 + u("tokens") * 9.8 / 1000000)'),
       billing_usage_schema: {
         tokens: { type: 'number', unit: 'token' },
       },
@@ -384,16 +428,21 @@ describe('task dynamic pricing', () => {
     assert.ok(tokenSummary)
     assert.equal(tokenSummary.primaryEntries[0]?.shortLabel, 'tokens')
     assert.equal(tokenSummary.primaryEntries[0]?.labelKind, 'schema')
+    // 用量费与固定附加费同时作为主要价格展示。
     assert.equal(
-      tokenSummary.secondaryEntries[0]?.shortLabel,
+      tokenSummary.primaryEntries[1]?.shortLabel,
       'Additional charge'
     )
-    assert.equal(tokenSummary.secondaryEntries[0]?.labelKind, 'i18n')
+    assert.equal(tokenSummary.primaryEntries[1]?.labelKind, 'i18n')
+    assert.equal(tokenSummary.secondaryEntries.length, 0)
 
     const multiFieldModel = pricingModel({
       billing_mode: 'tiered_expr',
       billing_expr:
         'tier("base", u("seconds") * 0.4 + u("tokens") * 9.8 / 1000000)',
+      billing_display: taskBillingDisplayFixture(
+        'tier("base", u("seconds") * 0.4 + u("tokens") * 9.8 / 1000000)'
+      ),
       billing_usage_schema: {
         seconds: { type: 'number', unit: 'second' },
         tokens: { type: 'number', unit: 'token' },
@@ -430,8 +479,9 @@ describe('task dynamic pricing', () => {
         tokens: { type: 'number', unit: 'token' },
       },
       billing_usage_examples: [
-        { label: '720p · 5s', facts: { tokens: 108000 } },
-        { label: '1080p · 5s', facts: { tokens: 243000 } },
+        // total 由后端按冻结表达式求值：9.8/1e6 × tokens。
+        { label: '720p · 5s', facts: { tokens: 108000 }, total: 1.0584 },
+        { label: '1080p · 5s', facts: { tokens: 243000 }, total: 2.3814 },
       ],
     })
 
@@ -473,5 +523,80 @@ describe('task dynamic pricing', () => {
       null
     )
     assert.equal(getCardExamplePrice(pricingModel({}), summaryOptions), null)
+  })
+})
+
+describe('task fixed surcharges and multiplier scenarios', () => {
+  test('keeps the fixed surcharge primary and ranges over provable scenarios', () => {
+    const expression =
+      '(u("generate_audio") ? 2 : 1) * tier("base", u("duration_seconds") * 0.4)'
+    const model = pricingModel({
+      billing_mode: 'tiered_expr',
+      billing_expr: expression,
+      billing_display: taskBillingDisplayFixture(expression),
+      billing_usage_schema: {
+        duration_seconds: { type: 'number', unit: 'second' },
+        generate_audio: { type: 'boolean' },
+      },
+    })
+
+    const summary = getDynamicPricingSummary(model, summaryOptions)
+
+    assert.ok(summary)
+    // 倍率场景进入用量费范围:0.4 与 0.4×2。
+    const usageEntry = summary.primaryEntries.find(
+      (entry) => entry.unit === 'second'
+    )
+    assert.ok(usageEntry)
+    assert.match(usageEntry.formattedRange ?? '', /0[.,]4/)
+    assert.match(usageEntry.formattedRange ?? '', /0[.,]8/)
+    // 该公式没有固定附加费,不虚构常量条目。
+    assert.equal(
+      summary.primaryEntries.find((entry) => entry.unit === 'request'),
+      undefined
+    )
+  })
+
+  test('shows declared fixed charges as real prices instead of missing values', () => {
+    const model = pricingModel({
+      billing_mode: 'tiered_expr',
+      billing_expr: 'tier("base", 0.4 + u("duration_seconds") * 0.2)',
+      billing_display: taskBillingDisplayFixture(
+        'tier("base", 0.4 + u("duration_seconds") * 0.2)'
+      ),
+      billing_usage_schema: {
+        duration_seconds: { type: 'number', unit: 'second' },
+      },
+    })
+
+    const summary = getDynamicPricingSummary(model, summaryOptions)
+
+    assert.ok(summary)
+    const constantEntry = summary.primaryEntries.find(
+      (entry) => entry.unit === 'request'
+    )
+    assert.ok(constantEntry)
+    assert.equal(constantEntry.value, 0.4)
+  })
+
+  test('shows an explicit zero constant as a real price instead of a missing value', () => {
+    const model = pricingModel({
+      billing_mode: 'tiered_expr',
+      billing_expr: 'tier("base", 0)',
+      billing_display: taskBillingDisplayFixture('tier("base", 0)'),
+      billing_usage_schema: {
+        duration_seconds: { type: 'number', unit: 'second' },
+      },
+    })
+
+    const summary = getDynamicPricingSummary(model, summaryOptions)
+
+    assert.ok(summary)
+    // 显式零价是有效报价:主项存在且值为 0,不得当作缺失。
+    const constantEntry = summary.primaryEntries.find(
+      (entry) => entry.unit === 'request'
+    )
+    assert.ok(constantEntry)
+    assert.equal(constantEntry.value, 0)
   })
 })

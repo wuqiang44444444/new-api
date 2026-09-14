@@ -28,15 +28,21 @@ import type {
 } from '../types'
 import {
   BILLING_PRICING_VARS,
+  type ParsedTaskTier,
   type ParsedTier,
   type RequestCondition,
   type RequestRuleGroup,
   type RequestRuleTrace,
+  type TaskTierCondition,
   type TierCondition,
 } from './billing-expr'
 
 /** 当前前端支持的投影版本；不一致时按投影缺失处理。 */
 export const SUPPORTED_BILLING_DISPLAY_VERSION = 2
+
+const TOKEN_DISPLAY_UNIT = 'usd_per_million_tokens'
+/** 任务 USD 投影单位：单价按各声明字段自身单位（token 字段为每百万）。 */
+export const TASK_DISPLAY_UNIT = 'usd_per_usage_unit'
 
 const TIER_CONDITION_VARS = new Set(['p', 'c', 'len'])
 
@@ -55,16 +61,119 @@ const COMPARE_OP_TO_MODE: Record<string, string> = {
   '<=': 'lte',
 }
 
-export function isUsableBillingDisplay(
-  projection: BillingDisplayProjection | null | undefined
+function isUsableProjectionWithUnit(
+  projection: BillingDisplayProjection | null | undefined,
+  unit: string
 ): projection is BillingDisplayProjection {
   return (
     !!projection &&
     projection.display_version === SUPPORTED_BILLING_DISPLAY_VERSION &&
-    projection.unit === 'usd_per_million_tokens' &&
+    projection.unit === unit &&
     projection.status === 'exact' &&
     (projection.tiers?.length ?? 0) > 0
   )
+}
+
+export function isUsableBillingDisplay(
+  projection: BillingDisplayProjection | null | undefined
+): projection is BillingDisplayProjection {
+  return isUsableProjectionWithUnit(projection, TOKEN_DISPLAY_UNIT)
+}
+
+export function isUsableTaskBillingDisplay(
+  projection: BillingDisplayProjection | null | undefined
+): projection is BillingDisplayProjection {
+  return isUsableProjectionWithUnit(projection, TASK_DISPLAY_UNIT)
+}
+
+/**
+ * 把任务投影档位映射为展示组件已消费的 ParsedTaskTier 形状。条件从结构化
+ * usage 叶子提取，无法展平为 AND 等值叶子的条件保留原文；金额一律来自
+ * 投影，绝不本地解析表达式。
+ */
+export function taskTiersFromBillingDisplay(
+  projection: BillingDisplayProjection | null | undefined
+): ParsedTaskTier[] {
+  if (!isUsableTaskBillingDisplay(projection)) return []
+  return (projection.tiers ?? []).map((tier) =>
+    taskTierFromBillingDisplay(tier, projection)
+  )
+}
+
+function taskTierFromBillingDisplay(
+  tier: BillingDisplayTier,
+  projection: BillingDisplayProjection
+): ParsedTaskTier {
+  return {
+    label: tier.label,
+    conditions: usageConditionsFromBillingRule(tier.condition),
+    conditionText: tier.condition_text,
+    conditionTree: tier.condition,
+    constant: (tier.constant ?? 0) + (projection.constant_charge ?? 0),
+    hasConstant: tier.has_constant || projection.constant_charge != null,
+    unitPrices: { ...tier.unit_prices },
+  }
+}
+
+/**
+ * 任务投影的可证明条件倍率场景（每档单价已乘以该分支倍率）。公开价格没有
+ * 结算 traces，卡片范围与详情说明都以场景集合为准。
+ */
+export function taskScenarioTiersFromBillingDisplay(
+  projection: BillingDisplayProjection | null | undefined
+): { matched: boolean; tiers: ParsedTaskTier[] }[] {
+  if (!isUsableTaskBillingDisplay(projection)) return []
+  return (projection.scenarios ?? []).map((scenario) => ({
+    matched: scenario.matched,
+    tiers: scenario.tiers.map((tier) =>
+      taskTierFromBillingDisplay(tier, projection)
+    ),
+  }))
+}
+
+/** token 投影的可证明条件倍率场景，形状与任务场景一致。 */
+export function tokenScenarioTiersFromBillingDisplay(
+  projection: BillingDisplayProjection | null | undefined
+): { matched: boolean; tiers: ParsedTier[] }[] {
+  if (!isUsableBillingDisplay(projection)) return []
+  return (projection.scenarios ?? []).map((scenario) => ({
+    matched: scenario.matched,
+    tiers: scenario.tiers.map((tier) => ({
+      ...tierFromBillingDisplay(tier),
+      constantCharge: (tier.constant ?? 0) + (projection.constant_charge ?? 0),
+      hasConstant: tier.has_constant || projection.constant_charge != null,
+    })),
+  }))
+}
+
+function usageConditionsFromBillingRule(
+  rule: BillingDisplayRule | undefined
+): TaskTierCondition[] {
+  const flattened = flattenUsageEqualityLeaves(rule)
+  return flattened ?? []
+}
+
+function flattenUsageEqualityLeaves(
+  rule: BillingDisplayRule | undefined
+): TaskTierCondition[] | null {
+  if (!rule) return null
+  if (rule.text_only || rule.op === 'or' || rule.op === 'not') return null
+  if (!rule.op) {
+    if (rule.source === 'usage' && rule.compare_op === '==') {
+      return [{ field: rule.path ?? '', value: rule.value ?? '' }]
+    }
+    return null
+  }
+  if (rule.op === 'and') {
+    const conditions: TaskTierCondition[] = []
+    for (const child of rule.children ?? []) {
+      const nested = flattenUsageEqualityLeaves(child)
+      if (!nested) return null
+      conditions.push(...nested)
+    }
+    return conditions
+  }
+  return null
 }
 
 /**
@@ -78,6 +187,7 @@ export function tiersFromBillingDisplay(
   return (projection.tiers ?? []).map((tier) => ({
     ...tierFromBillingDisplay(tier),
     constantCharge: (tier.constant ?? 0) + (projection.constant_charge ?? 0),
+    hasConstant: tier.has_constant || projection.constant_charge != null,
   }))
 }
 
@@ -104,6 +214,7 @@ function tierFromBillingDisplay(tier: BillingDisplayTier): ParsedTier {
     conditionText: tier.condition_text,
     conditionTree: tier.condition,
     constantCharge: tier.constant,
+    hasConstant: tier.has_constant,
   }
   for (const variable of BILLING_PRICING_VARS) {
     if (!variable.field) continue
@@ -133,7 +244,13 @@ function tierFromBillingDisplay(tier: BillingDisplayTier): ParsedTier {
 export function ruleGroupsFromBillingDisplay(
   projection: BillingDisplayProjection | null | undefined
 ): RequestRuleGroup[] {
-  if (!isUsableBillingDisplay(projection)) return []
+  // 条件倍率树与单价单位无关：token 与任务 USD 投影都可读取。
+  if (
+    !isUsableBillingDisplay(projection) &&
+    !isUsableTaskBillingDisplay(projection)
+  ) {
+    return []
+  }
   return (projection.rules ?? []).map((rule) =>
     ruleGroupFromBillingDisplay(rule)
   )
@@ -183,7 +300,9 @@ function structuredLeafCondition(
     rule.text_only ||
     !rule.source ||
     rule.source === 'text' ||
-    rule.source === 'token'
+    rule.source === 'token' ||
+    // 任务用量字段条件不是请求条件，只保留规范化原文。
+    rule.source === 'usage'
   ) {
     return null
   }

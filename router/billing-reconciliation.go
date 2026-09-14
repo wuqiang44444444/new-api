@@ -21,6 +21,7 @@ func registerBillingReconciliationRoutes(apiRouter *gin.RouterGroup) {
 		adminRoute.GET("/customer-logs/stat", controller.GetAdminBillingStatementLogs)
 		adminRoute.GET("/customer-summary", controller.GetAdminCustomerBillingReconciliation)
 		adminRoute.GET("/upstream-summary", controller.GetAdminUpstreamBillingReconciliation)
+		adminRoute.GET("/upstream-url-summary", controller.GetAdminUpstreamBillingURLReconciliation)
 		adminRoute.PUT("/upstream-discounts", controller.PutAdminProviderBillingDiscount)
 	}
 }

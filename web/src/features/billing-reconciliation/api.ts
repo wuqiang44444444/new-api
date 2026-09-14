@@ -27,6 +27,7 @@ import type {
   CustomerStatementListSortBy,
   CustomerStatementListSortOrder,
   ProviderSummary,
+  ProviderUrlSummary,
 } from './types'
 
 type PeriodParams = {
@@ -73,5 +74,14 @@ export async function getAdminUpstreamStatement(
     '/api/billing/admin/upstream-summary',
     { params }
   )
+  return response.data
+}
+
+export async function getAdminUpstreamUrlStatement(
+  params: PeriodParams & { url_key?: string }
+) {
+  const response = await api.get<
+    ApiResponse<BillingEnvelope<ProviderUrlSummary>>
+  >('/api/billing/admin/upstream-url-summary', { params })
   return response.data
 }

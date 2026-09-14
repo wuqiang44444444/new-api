@@ -25,7 +25,12 @@ import type {
   ProviderModelSummary,
 } from './types'
 
-export function upstreamModelLabel(model: ProviderModelSummary): string {
+export function upstreamModelLabel(
+  model: Pick<
+    ProviderModelSummary,
+    'provider_model' | 'provider_model_fallback' | 'customer_models'
+  >
+): string {
   const customerModels = model.customer_models.join(' / ') || '—'
   const providerModel = model.provider_model_fallback
     ? '—'
@@ -150,7 +155,7 @@ export function buildUpstreamStatementCsv(
   return lines.join('\n')
 }
 
-function escapeCsvCell(value: string | number) {
+export function escapeCsvCell(value: string | number) {
   let text = String(value)
   if (typeof value === 'string' && /^[\t\r ]*[=+@-]/.test(text)) {
     text = `'${text}`

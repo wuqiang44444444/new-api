@@ -1,0 +1,902 @@
+{
+  "(u(\"generate_audio\") ? 0.5 : 0.25) * tier(\"base\", u(\"duration_seconds\") * 0.4 + 1)": {
+    "fields": { "duration_seconds": "second", "generate_audio": "" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "55ed62a800479f4e37ae00a31cd446f66eebcbe711ec601f399377e3114610bb",
+      "expression_version": 1,
+      "rules": [
+        {
+          "compare_op": "==",
+          "fallback": 0.25,
+          "multiplier": 0.5,
+          "path": "generate_audio",
+          "source": "usage",
+          "text": "u(\"generate_audio\")",
+          "value": "true"
+        }
+      ],
+      "scenarios": [
+        {
+          "matched": false,
+          "tiers": [
+            {
+              "constant": 0.25,
+              "has_constant": true,
+              "label": "base",
+              "unit_prices": { "duration_seconds": 0.1 }
+            }
+          ]
+        },
+        {
+          "matched": true,
+          "tiers": [
+            {
+              "constant": 0.5,
+              "has_constant": true,
+              "label": "base",
+              "unit_prices": { "duration_seconds": 0.2 }
+            }
+          ]
+        }
+      ],
+      "status": "exact",
+      "tiers": [
+        {
+          "constant": 1,
+          "has_constant": true,
+          "label": "base",
+          "unit_prices": { "duration_seconds": 0.4 }
+        }
+      ],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "(u(\"generate_audio\") ? 2 : 1) * tier(\"base\", u(\"duration_seconds\") * 0.4)": {
+    "fields": { "duration_seconds": "second", "generate_audio": "" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "024f96c0458c8aa5cec9148fad622b29d53ea07968d94dc501428cd114629778",
+      "expression_version": 1,
+      "rules": [
+        {
+          "compare_op": "==",
+          "fallback": 1,
+          "multiplier": 2,
+          "path": "generate_audio",
+          "source": "usage",
+          "text": "u(\"generate_audio\")",
+          "value": "true"
+        }
+      ],
+      "scenarios": [
+        {
+          "matched": false,
+          "tiers": [
+            { "label": "base", "unit_prices": { "duration_seconds": 0.4 } }
+          ]
+        },
+        {
+          "matched": true,
+          "tiers": [
+            { "label": "base", "unit_prices": { "duration_seconds": 0.8 } }
+          ]
+        }
+      ],
+      "status": "exact",
+      "tiers": [
+        { "label": "base", "unit_prices": { "duration_seconds": 0.4 } }
+      ],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "tier(\"base\", 0)": {
+    "fields": { "duration_seconds": "second" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "745592cf8b1d4406197f895e0145e8cf19bfe5b7666ba1b6fce2d5331de004b7",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [{ "has_constant": true, "label": "base", "unit_prices": {} }],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "tier(\"base\", 0.1 + u(\"tokens\") * 9.8 / 1000000)": {
+    "fields": { "tokens": "token" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "fbe690f4a0360315cb394b99c90fc3c6ce1266e3a65f581aa9f3df5ea681dc05",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [
+        {
+          "constant": 0.1,
+          "has_constant": true,
+          "label": "base",
+          "unit_prices": { "tokens": 9.8 }
+        }
+      ],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "tier(\"base\", 0.4 + u(\"duration_seconds\") * 0.2)": {
+    "fields": { "duration_seconds": "second" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "d8e610de30bf409f45ff7eab41169f35118b5fd6665fcc6e99580191699fa2aa",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [
+        {
+          "constant": 0.4,
+          "has_constant": true,
+          "label": "base",
+          "unit_prices": { "duration_seconds": 0.2 }
+        }
+      ],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "tier(\"base\", u(\"seconds\") * 0.4 + u(\"tokens\") * 9.8 / 1000000)": {
+    "fields": { "seconds": "second", "tokens": "token" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "5b263937c61af929a492fa6f57772aae92db33610888182c6fd5f59d8e3e1ae9",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [
+        { "label": "base", "unit_prices": { "seconds": 0.4, "tokens": 9.8 } }
+      ],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "tier(\"base\", u(\"seconds\") * 0.4)": {
+    "fields": { "seconds": "second" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "5ca5a3899cd1839d7270feeaa4d021db061ea763c492883ffcbef184f734049b",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [{ "label": "base", "unit_prices": { "seconds": 0.4 } }],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "tier(\"base\", u(\"tokens\") * 9.8 / 1000000)": {
+    "fields": { "tokens": "token" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "e60782af2ca9e919bfb609c44ecd20c2bc3ae5daf3d81a510eaefa527e67e3ca",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [{ "label": "base", "unit_prices": { "tokens": 9.8 } }],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "tier(\"base\", u(\"units\") * 0.14)": {
+    "fields": { "units": "credit" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "05e8838bdefd75a4eafbf1b873ef62505b885c667cf4bcc188e2e1b170b80373",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [{ "label": "base", "unit_prices": { "units": 0.14 } }],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "tier(\"music\", u(\"clips\") * 0.22)": {
+    "fields": { "action": "", "clips": "count" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "796295667df725da7d5e10a752ac5509be0f8d3fcc4f1c7103b95dda2161c320",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [{ "label": "music", "unit_prices": { "clips": 0.22 } }],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "u(\"generate_audio\") ? tier(\"audio\", 1 + u(\"duration_seconds\") * 0.8 + u(\"clips\") * 0.2 + u(\"tokens\") * 2 / 1000000) : tier(\"silent\", u(\"duration_seconds\") * 0.4)": {
+    "fields": {
+      "clips": "count",
+      "duration_seconds": "second",
+      "generate_audio": "",
+      "tokens": "token"
+    },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "572ee84ab7621c776891b1738e56a986482e1c6007c6eee3e31a660008e72f7a",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [
+        {
+          "condition": {
+            "compare_op": "==",
+            "fallback": 1,
+            "multiplier": 1,
+            "path": "generate_audio",
+            "source": "usage",
+            "text": "u(\"generate_audio\")",
+            "value": "true"
+          },
+          "condition_text": "u(\"generate_audio\")",
+          "constant": 1,
+          "has_constant": true,
+          "label": "audio",
+          "unit_prices": { "clips": 0.2, "duration_seconds": 0.8, "tokens": 2 }
+        },
+        {
+          "condition": {
+            "children": [
+              {
+                "compare_op": "==",
+                "fallback": 1,
+                "multiplier": 1,
+                "path": "generate_audio",
+                "source": "usage",
+                "text": "u(\"generate_audio\")",
+                "value": "true"
+              }
+            ],
+            "fallback": 1,
+            "multiplier": 1,
+            "op": "not",
+            "text": "!u(\"generate_audio\")"
+          },
+          "condition_text": "!u(\"generate_audio\")",
+          "label": "silent",
+          "unit_prices": { "duration_seconds": 0.4 }
+        }
+      ],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "u(\"has_video_input\") ? tier(\"base\", u(\"resolution\") == \"1080p\" ? u(\"tokens\") * 6.762 / 1000000 : u(\"tokens\") * 6.174 / 1000000) : tier(\"base\", u(\"resolution\") == \"1080p\" ? u(\"tokens\") * 11.319 / 1000000 : u(\"tokens\") * 10.29 / 1000000)": {
+    "fields": { "has_video_input": "", "resolution": "", "tokens": "token" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "3790810c8c9745defdec0d17d1fac04865e10074e5ce923f5a7372e10f01eb0a",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [
+        {
+          "condition": {
+            "children": [
+              {
+                "compare_op": "==",
+                "fallback": 1,
+                "multiplier": 1,
+                "path": "has_video_input",
+                "source": "usage",
+                "text": "u(\"has_video_input\")",
+                "value": "true"
+              },
+              {
+                "compare_op": "==",
+                "fallback": 1,
+                "multiplier": 1,
+                "path": "resolution",
+                "source": "usage",
+                "text": "u(\"resolution\") == \"1080p\"",
+                "value": "1080p"
+              }
+            ],
+            "fallback": 1,
+            "multiplier": 1,
+            "op": "and",
+            "text": "u(\"has_video_input\") \u0026\u0026 u(\"resolution\") == \"1080p\""
+          },
+          "condition_text": "u(\"has_video_input\") \u0026\u0026 u(\"resolution\") == \"1080p\"",
+          "label": "base",
+          "unit_prices": { "tokens": 6.761999999999999 }
+        },
+        {
+          "condition": {
+            "children": [
+              {
+                "compare_op": "==",
+                "fallback": 1,
+                "multiplier": 1,
+                "path": "has_video_input",
+                "source": "usage",
+                "text": "u(\"has_video_input\")",
+                "value": "true"
+              },
+              {
+                "children": [
+                  {
+                    "compare_op": "==",
+                    "fallback": 1,
+                    "multiplier": 1,
+                    "path": "resolution",
+                    "source": "usage",
+                    "text": "u(\"resolution\") == \"1080p\"",
+                    "value": "1080p"
+                  }
+                ],
+                "fallback": 1,
+                "multiplier": 1,
+                "op": "not",
+                "text": "!(u(\"resolution\") == \"1080p\")"
+              }
+            ],
+            "fallback": 1,
+            "multiplier": 1,
+            "op": "and",
+            "text": "u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"1080p\")"
+          },
+          "condition_text": "u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"1080p\")",
+          "label": "base",
+          "unit_prices": { "tokens": 6.174 }
+        },
+        {
+          "condition": {
+            "children": [
+              {
+                "children": [
+                  {
+                    "compare_op": "==",
+                    "fallback": 1,
+                    "multiplier": 1,
+                    "path": "has_video_input",
+                    "source": "usage",
+                    "text": "u(\"has_video_input\")",
+                    "value": "true"
+                  }
+                ],
+                "fallback": 1,
+                "multiplier": 1,
+                "op": "not",
+                "text": "!u(\"has_video_input\")"
+              },
+              {
+                "compare_op": "==",
+                "fallback": 1,
+                "multiplier": 1,
+                "path": "resolution",
+                "source": "usage",
+                "text": "u(\"resolution\") == \"1080p\"",
+                "value": "1080p"
+              }
+            ],
+            "fallback": 1,
+            "multiplier": 1,
+            "op": "and",
+            "text": "!u(\"has_video_input\") \u0026\u0026 u(\"resolution\") == \"1080p\""
+          },
+          "condition_text": "!u(\"has_video_input\") \u0026\u0026 u(\"resolution\") == \"1080p\"",
+          "label": "base",
+          "unit_prices": { "tokens": 11.318999999999999 }
+        },
+        {
+          "condition": {
+            "children": [
+              {
+                "children": [
+                  {
+                    "compare_op": "==",
+                    "fallback": 1,
+                    "multiplier": 1,
+                    "path": "has_video_input",
+                    "source": "usage",
+                    "text": "u(\"has_video_input\")",
+                    "value": "true"
+                  }
+                ],
+                "fallback": 1,
+                "multiplier": 1,
+                "op": "not",
+                "text": "!u(\"has_video_input\")"
+              },
+              {
+                "children": [
+                  {
+                    "compare_op": "==",
+                    "fallback": 1,
+                    "multiplier": 1,
+                    "path": "resolution",
+                    "source": "usage",
+                    "text": "u(\"resolution\") == \"1080p\"",
+                    "value": "1080p"
+                  }
+                ],
+                "fallback": 1,
+                "multiplier": 1,
+                "op": "not",
+                "text": "!(u(\"resolution\") == \"1080p\")"
+              }
+            ],
+            "fallback": 1,
+            "multiplier": 1,
+            "op": "and",
+            "text": "!u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"1080p\")"
+          },
+          "condition_text": "!u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"1080p\")",
+          "label": "base",
+          "unit_prices": { "tokens": 10.289999999999997 }
+        }
+      ],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "u(\"has_video_input\") ? tier(\"reference_video\", u(\"tokens\") * (u(\"resolution\") == \"4k\" ? 2.352 : u(\"resolution\") == \"1080p\" ? 4.557 : 4.116) / 1000000) : tier(\"no_video\", u(\"tokens\") * (u(\"resolution\") == \"4k\" ? 3.822 : u(\"resolution\") == \"1080p\" ? 7.497 : 6.762) / 1000000)": {
+    "fields": { "has_video_input": "", "resolution": "", "tokens": "token" },
+    "projection": {
+      "status": "exact",
+      "unit": "usd_per_usage_unit",
+      "display_version": 2,
+      "expression_version": 1,
+      "expression_hash": "4e6658f823b578b15ecb8c1abd4819cb550c2815461ad2d3a0d6568907e303f0",
+      "tiers": [
+        {
+          "label": "reference_video",
+          "condition_text": "u(\"has_video_input\") \u0026\u0026 u(\"resolution\") == \"4k\"",
+          "condition": {
+            "text": "u(\"has_video_input\") \u0026\u0026 u(\"resolution\") == \"4k\"",
+            "multiplier": 1,
+            "fallback": 1,
+            "op": "and",
+            "children": [
+              {
+                "text": "u(\"has_video_input\")",
+                "multiplier": 1,
+                "fallback": 1,
+                "source": "usage",
+                "compare_op": "==",
+                "value": "true",
+                "path": "has_video_input"
+              },
+              {
+                "text": "u(\"resolution\") == \"4k\"",
+                "multiplier": 1,
+                "fallback": 1,
+                "source": "usage",
+                "compare_op": "==",
+                "value": "4k",
+                "path": "resolution"
+              }
+            ]
+          },
+          "unit_prices": { "tokens": 2.352 }
+        },
+        {
+          "label": "reference_video",
+          "condition_text": "u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"4k\") \u0026\u0026 u(\"resolution\") == \"1080p\"",
+          "condition": {
+            "text": "u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"4k\") \u0026\u0026 u(\"resolution\") == \"1080p\"",
+            "multiplier": 1,
+            "fallback": 1,
+            "op": "and",
+            "children": [
+              {
+                "text": "u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"4k\")",
+                "multiplier": 1,
+                "fallback": 1,
+                "op": "and",
+                "children": [
+                  {
+                    "text": "u(\"has_video_input\")",
+                    "multiplier": 1,
+                    "fallback": 1,
+                    "source": "usage",
+                    "compare_op": "==",
+                    "value": "true",
+                    "path": "has_video_input"
+                  },
+                  {
+                    "text": "!(u(\"resolution\") == \"4k\")",
+                    "multiplier": 1,
+                    "fallback": 1,
+                    "op": "not",
+                    "children": [
+                      {
+                        "text": "u(\"resolution\") == \"4k\"",
+                        "multiplier": 1,
+                        "fallback": 1,
+                        "source": "usage",
+                        "compare_op": "==",
+                        "value": "4k",
+                        "path": "resolution"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "text": "u(\"resolution\") == \"1080p\"",
+                "multiplier": 1,
+                "fallback": 1,
+                "source": "usage",
+                "compare_op": "==",
+                "value": "1080p",
+                "path": "resolution"
+              }
+            ]
+          },
+          "unit_prices": { "tokens": 4.557 }
+        },
+        {
+          "label": "reference_video",
+          "condition_text": "u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"4k\") \u0026\u0026 !(u(\"resolution\") == \"1080p\")",
+          "condition": {
+            "text": "u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"4k\") \u0026\u0026 !(u(\"resolution\") == \"1080p\")",
+            "multiplier": 1,
+            "fallback": 1,
+            "op": "and",
+            "children": [
+              {
+                "text": "u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"4k\")",
+                "multiplier": 1,
+                "fallback": 1,
+                "op": "and",
+                "children": [
+                  {
+                    "text": "u(\"has_video_input\")",
+                    "multiplier": 1,
+                    "fallback": 1,
+                    "source": "usage",
+                    "compare_op": "==",
+                    "value": "true",
+                    "path": "has_video_input"
+                  },
+                  {
+                    "text": "!(u(\"resolution\") == \"4k\")",
+                    "multiplier": 1,
+                    "fallback": 1,
+                    "op": "not",
+                    "children": [
+                      {
+                        "text": "u(\"resolution\") == \"4k\"",
+                        "multiplier": 1,
+                        "fallback": 1,
+                        "source": "usage",
+                        "compare_op": "==",
+                        "value": "4k",
+                        "path": "resolution"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "text": "!(u(\"resolution\") == \"1080p\")",
+                "multiplier": 1,
+                "fallback": 1,
+                "op": "not",
+                "children": [
+                  {
+                    "text": "u(\"resolution\") == \"1080p\"",
+                    "multiplier": 1,
+                    "fallback": 1,
+                    "source": "usage",
+                    "compare_op": "==",
+                    "value": "1080p",
+                    "path": "resolution"
+                  }
+                ]
+              }
+            ]
+          },
+          "unit_prices": { "tokens": 4.116 }
+        },
+        {
+          "label": "no_video",
+          "condition_text": "!u(\"has_video_input\") \u0026\u0026 u(\"resolution\") == \"4k\"",
+          "condition": {
+            "text": "!u(\"has_video_input\") \u0026\u0026 u(\"resolution\") == \"4k\"",
+            "multiplier": 1,
+            "fallback": 1,
+            "op": "and",
+            "children": [
+              {
+                "text": "!u(\"has_video_input\")",
+                "multiplier": 1,
+                "fallback": 1,
+                "op": "not",
+                "children": [
+                  {
+                    "text": "u(\"has_video_input\")",
+                    "multiplier": 1,
+                    "fallback": 1,
+                    "source": "usage",
+                    "compare_op": "==",
+                    "value": "true",
+                    "path": "has_video_input"
+                  }
+                ]
+              },
+              {
+                "text": "u(\"resolution\") == \"4k\"",
+                "multiplier": 1,
+                "fallback": 1,
+                "source": "usage",
+                "compare_op": "==",
+                "value": "4k",
+                "path": "resolution"
+              }
+            ]
+          },
+          "unit_prices": { "tokens": 3.822 }
+        },
+        {
+          "label": "no_video",
+          "condition_text": "!u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"4k\") \u0026\u0026 u(\"resolution\") == \"1080p\"",
+          "condition": {
+            "text": "!u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"4k\") \u0026\u0026 u(\"resolution\") == \"1080p\"",
+            "multiplier": 1,
+            "fallback": 1,
+            "op": "and",
+            "children": [
+              {
+                "text": "!u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"4k\")",
+                "multiplier": 1,
+                "fallback": 1,
+                "op": "and",
+                "children": [
+                  {
+                    "text": "!u(\"has_video_input\")",
+                    "multiplier": 1,
+                    "fallback": 1,
+                    "op": "not",
+                    "children": [
+                      {
+                        "text": "u(\"has_video_input\")",
+                        "multiplier": 1,
+                        "fallback": 1,
+                        "source": "usage",
+                        "compare_op": "==",
+                        "value": "true",
+                        "path": "has_video_input"
+                      }
+                    ]
+                  },
+                  {
+                    "text": "!(u(\"resolution\") == \"4k\")",
+                    "multiplier": 1,
+                    "fallback": 1,
+                    "op": "not",
+                    "children": [
+                      {
+                        "text": "u(\"resolution\") == \"4k\"",
+                        "multiplier": 1,
+                        "fallback": 1,
+                        "source": "usage",
+                        "compare_op": "==",
+                        "value": "4k",
+                        "path": "resolution"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "text": "u(\"resolution\") == \"1080p\"",
+                "multiplier": 1,
+                "fallback": 1,
+                "source": "usage",
+                "compare_op": "==",
+                "value": "1080p",
+                "path": "resolution"
+              }
+            ]
+          },
+          "unit_prices": { "tokens": 7.497 }
+        },
+        {
+          "label": "no_video",
+          "condition_text": "!u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"4k\") \u0026\u0026 !(u(\"resolution\") == \"1080p\")",
+          "condition": {
+            "text": "!u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"4k\") \u0026\u0026 !(u(\"resolution\") == \"1080p\")",
+            "multiplier": 1,
+            "fallback": 1,
+            "op": "and",
+            "children": [
+              {
+                "text": "!u(\"has_video_input\") \u0026\u0026 !(u(\"resolution\") == \"4k\")",
+                "multiplier": 1,
+                "fallback": 1,
+                "op": "and",
+                "children": [
+                  {
+                    "text": "!u(\"has_video_input\")",
+                    "multiplier": 1,
+                    "fallback": 1,
+                    "op": "not",
+                    "children": [
+                      {
+                        "text": "u(\"has_video_input\")",
+                        "multiplier": 1,
+                        "fallback": 1,
+                        "source": "usage",
+                        "compare_op": "==",
+                        "value": "true",
+                        "path": "has_video_input"
+                      }
+                    ]
+                  },
+                  {
+                    "text": "!(u(\"resolution\") == \"4k\")",
+                    "multiplier": 1,
+                    "fallback": 1,
+                    "op": "not",
+                    "children": [
+                      {
+                        "text": "u(\"resolution\") == \"4k\"",
+                        "multiplier": 1,
+                        "fallback": 1,
+                        "source": "usage",
+                        "compare_op": "==",
+                        "value": "4k",
+                        "path": "resolution"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "text": "!(u(\"resolution\") == \"1080p\")",
+                "multiplier": 1,
+                "fallback": 1,
+                "op": "not",
+                "children": [
+                  {
+                    "text": "u(\"resolution\") == \"1080p\"",
+                    "multiplier": 1,
+                    "fallback": 1,
+                    "source": "usage",
+                    "compare_op": "==",
+                    "value": "1080p",
+                    "path": "resolution"
+                  }
+                ]
+              }
+            ]
+          },
+          "unit_prices": { "tokens": 6.761999999999999 }
+        }
+      ]
+    }
+  },
+  "u(\"mode\") == \"pro\" ? tier(\"pro\", u(\"seconds\") * 0.8) : tier(\"free\", u(\"seconds\") * 0)": {
+    "fields": { "mode": "", "seconds": "second" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "85ad6fa0f0fbade35b37cd063bfb48ae65c0b430531ec09c4623a3deb12cb437",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [
+        {
+          "condition": {
+            "compare_op": "==",
+            "fallback": 1,
+            "multiplier": 1,
+            "path": "mode",
+            "source": "usage",
+            "text": "u(\"mode\") == \"pro\"",
+            "value": "pro"
+          },
+          "condition_text": "u(\"mode\") == \"pro\"",
+          "label": "pro",
+          "unit_prices": { "seconds": 0.8 }
+        },
+        {
+          "condition": {
+            "children": [
+              {
+                "compare_op": "==",
+                "fallback": 1,
+                "multiplier": 1,
+                "path": "mode",
+                "source": "usage",
+                "text": "u(\"mode\") == \"pro\"",
+                "value": "pro"
+              }
+            ],
+            "fallback": 1,
+            "multiplier": 1,
+            "op": "not",
+            "text": "!(u(\"mode\") == \"pro\")"
+          },
+          "condition_text": "!(u(\"mode\") == \"pro\")",
+          "label": "free",
+          "unit_prices": { "seconds": 0 }
+        }
+      ],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "u(\"mode\") == \"pro\" ? tier(\"pro\", u(\"seconds\") * 0.8) : tier(\"std\", u(\"seconds\") * 0.4)": {
+    "fields": { "mode": "", "seconds": "second" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "dfdac5a256f024c391e9058b837b7be4879633601bb69203851f12d8f4ff9df9",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [
+        {
+          "condition": {
+            "compare_op": "==",
+            "fallback": 1,
+            "multiplier": 1,
+            "path": "mode",
+            "source": "usage",
+            "text": "u(\"mode\") == \"pro\"",
+            "value": "pro"
+          },
+          "condition_text": "u(\"mode\") == \"pro\"",
+          "label": "pro",
+          "unit_prices": { "seconds": 0.8 }
+        },
+        {
+          "condition": {
+            "children": [
+              {
+                "compare_op": "==",
+                "fallback": 1,
+                "multiplier": 1,
+                "path": "mode",
+                "source": "usage",
+                "text": "u(\"mode\") == \"pro\"",
+                "value": "pro"
+              }
+            ],
+            "fallback": 1,
+            "multiplier": 1,
+            "op": "not",
+            "text": "!(u(\"mode\") == \"pro\")"
+          },
+          "condition_text": "!(u(\"mode\") == \"pro\")",
+          "label": "std",
+          "unit_prices": { "seconds": 0.4 }
+        }
+      ],
+      "unit": "usd_per_usage_unit"
+    }
+  },
+  "u(\"mode\") == \"pro\" ? tier(\"pro\", u(\"tokens\") * 70 / 1000000) : tier(\"std\", u(\"tokens\") * 42 / 1000000)": {
+    "fields": { "mode": "", "tokens": "token" },
+    "projection": {
+      "display_version": 2,
+      "expression_hash": "db36fd0462be835126b7ab5724d9de583e5f1285b586ddea401328f4cc2a8700",
+      "expression_version": 1,
+      "status": "exact",
+      "tiers": [
+        {
+          "condition": {
+            "compare_op": "==",
+            "fallback": 1,
+            "multiplier": 1,
+            "path": "mode",
+            "source": "usage",
+            "text": "u(\"mode\") == \"pro\"",
+            "value": "pro"
+          },
+          "condition_text": "u(\"mode\") == \"pro\"",
+          "label": "pro",
+          "unit_prices": { "tokens": 70 }
+        },
+        {
+          "condition": {
+            "children": [
+              {
+                "compare_op": "==",
+                "fallback": 1,
+                "multiplier": 1,
+                "path": "mode",
+                "source": "usage",
+                "text": "u(\"mode\") == \"pro\"",
+                "value": "pro"
+              }
+            ],
+            "fallback": 1,
+            "multiplier": 1,
+            "op": "not",
+            "text": "!(u(\"mode\") == \"pro\")"
+          },
+          "condition_text": "!(u(\"mode\") == \"pro\")",
+          "label": "std",
+          "unit_prices": { "tokens": 42 }
+        }
+      ],
+      "unit": "usd_per_usage_unit"
+    }
+  }
+}

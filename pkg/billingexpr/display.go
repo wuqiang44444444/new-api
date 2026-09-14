@@ -697,6 +697,15 @@ func (b *displayBuilder) buildRule(cond ast.Node, multiplier, fallback float64, 
 func (b *displayBuilder) buildRuleLeaf(cond ast.Node, rule DisplayRule) DisplayRule {
 	rule.TextOnly = true
 	rule.Source = "text"
+	// 任务合同的裸布尔字段条件 u("f"):结构化为 usage 字段等价 true。
+	if field, ok := usageCallField(cond); ok {
+		rule.TextOnly = false
+		rule.Source = "usage"
+		rule.Path = field
+		rule.CompareOp = "=="
+		rule.Value = "true"
+		return rule
+	}
 	binary, isBinary := cond.(*ast.BinaryNode)
 	if isBinary {
 		switch binary.Operator {
@@ -758,6 +767,10 @@ func describeRuleSubject(node ast.Node) (source, path, timeFunc, timezone string
 	}
 	if callee.Value == "header" {
 		return "header", argument.Value, "", "", true
+	}
+	if callee.Value == "u" {
+		// 任务合同的条件主语：已声明用量字段，路径即字段名。
+		return "usage", argument.Value, "", "", true
 	}
 	return "", "", "", "", false
 }

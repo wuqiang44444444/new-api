@@ -28,7 +28,7 @@ For commercial licensing, please contact support@quantumnous.com
  * expression syntax.
  */
 
-import type { BillingUsageSchema } from '../types'
+import type { BillingDisplayRule, BillingUsageSchema } from '../types'
 
 // ---------------------------------------------------------------------------
 // Variable registry
@@ -258,7 +258,13 @@ export type TaskTierCondition = {
 export type ParsedTaskTier = {
   label: string
   conditions: TaskTierCondition[]
+  /** 结构化条件不可展平时保留的规范化条件原文。 */
+  conditionText?: string
+  /** 后端投影的完整条件树，用于本地化渲染否定、或与数值比较。 */
+  conditionTree?: BillingDisplayRule
   constant: number
+  /** 档位是否声明了常数项（含显式零价）。 */
+  hasConstant?: boolean
   unitPrices: Record<string, number>
 }
 

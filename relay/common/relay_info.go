@@ -169,8 +169,9 @@ type RelayInfo struct {
 	ParamOverrideAudit                    []string
 
 	PriceData hosttypes.PriceData
-	// ContractBillingFact is frozen before channel selection and is nil for the
-	// untouched NEWAPI native path.
+	// ContractBillingFact is the frozen contract discount fact (discount only:
+	// no channel or group). It is nil unless the key-bound enabled contract
+	// lists this exact public model.
 	ContractBillingFact *hosttypes.ContractBillingFact
 
 	// QuotaClamp is set (non-nil) when a quota conversion saturated at the

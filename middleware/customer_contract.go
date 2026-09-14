@@ -7,10 +7,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/i18n"
-	"github.com/QuantumNous/new-api/logger"
-	"github.com/QuantumNous/new-api/model"
 	relaykittypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -18,9 +14,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// applyCustomerContractRequest is the single request-side contract guard used
-// by native distribution and the dedicated Seedance route. Keys without a
-// contract binding return immediately without a contract-table read.
+// applyCustomerContractRequest is the single request-side discount resolver
+// used by native distribution, the dedicated Seedance route and the task
+// post-resolution path. The contract provides the discount only: it never
+// sets or overrides UsingGroup/TokenGroup, never adds a channel pin, never
+// filters candidates and never suppresses native retry. Keys without a
+// contract binding return immediately without a contract-table read. An
+// enabled contract that does not list the model returns a nil fact so the
+// request keeps native pricing; load, version and consistency anomalies fail
+// closed.
 func applyCustomerContractRequest(c *gin.Context, publicModel string) (*hosttypes.ContractBillingFact, error) {
 	contractId, _ := common.GetContextKeyType[int](c, constant.ContextKeyTokenContractId)
 	if contractId <= 0 {
@@ -42,36 +44,16 @@ func applyCustomerContractRequest(c *gin.Context, publicModel string) (*hosttype
 	if err != nil {
 		return nil, err
 	}
-	if fact == nil {
-		return nil, nil
+	if fact != nil {
+		common.SetContextKey(c, constant.ContextKeyContractFact, fact)
 	}
-	common.SetContextKey(c, constant.ContextKeyUsingGroup, fact.RouteGroup)
-	common.SetContextKey(c, constant.ContextKeyTokenGroup, fact.RouteGroup)
-	common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, false)
-	common.SetContextKey(c, constant.ContextKeyContractFact, fact)
-	service.GetChannelConstraints(c).AddPin(dto.ChannelPin{
-		ChannelId: fact.ChannelId,
-		Source:    dto.PinSourceContract,
-		Rank:      dto.PinRankContract,
-		RetryMode: dto.PinRetrySingleAttempt,
-	})
 	return fact, nil
 }
 
-func channelSatisfiesCustomerContract(channel *model.Channel, fact *hosttypes.ContractBillingFact) bool {
-	if channel == nil || fact == nil || channel.Status != common.ChannelStatusEnabled {
-		return false
-	}
-	if fact.ChannelId > 0 && channel.Id != fact.ChannelId {
-		return false
-	}
-	if channel.Type == constant.ChannelTypeSeedanceLink {
-		selected, err := model.GetEnabledSeedanceChannel(fact.RouteGroup, fact.PublicModel, channel.Id)
-		return err == nil && selected != nil && selected.Id == channel.Id
-	}
-	return model.IsChannelEnabledForExactCustomerContractModel(fact.RouteGroup, fact.PublicModel, channel.Id)
-}
-
+// validateCustomerContractTokenModelLimit re-checks the token model limit for
+// paths that resolve the fact after distribution (task remix), where the
+// native distributor check cannot see the model yet. This is the only extra
+// gate beyond native checks for contract keys.
 func validateCustomerContractTokenModelLimit(c *gin.Context, publicModel string) error {
 	if !common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled) {
 		return nil
@@ -85,19 +67,12 @@ func validateCustomerContractTokenModelLimit(c *gin.Context, publicModel string)
 	return nil
 }
 
-func abortCustomerContractChannelUnavailable(c *gin.Context, fact *hosttypes.ContractBillingFact, detail string) {
-	logger.LogError(c.Request.Context(), fmt.Sprintf(
-		"customer contract channel unavailable: user=%d model=%q group=%q detail=%s",
-		common.GetContextKeyInt(c, constant.ContextKeyUserId), fact.PublicModel, fact.RouteGroup, detail,
-	))
-	abortWithOpenAiMessage(c, http.StatusServiceUnavailable, "The requested model does not exist", relaykittypes.ErrorCodeModelNotFound)
-}
-
 // ApplyCustomerContractResolvedModel covers model calls whose public model is
 // resolved from an existing task only after the distributor has run (for
-// example, video remix). It reuses the same exact-match guard and validates the
-// locked origin channel without changing native requests.
-func ApplyCustomerContractResolvedModel(c *gin.Context, publicModel string, lockedChannel *model.Channel) (*hosttypes.ContractBillingFact, error) {
+// example, video remix). It resolves the discount fact and re-checks the
+// token model limit; the locked origin channel keeps following native
+// affinity rules and never needs to appear in contract details.
+func ApplyCustomerContractResolvedModel(c *gin.Context, publicModel string) (*hosttypes.ContractBillingFact, error) {
 	fact, err := applyCustomerContractRequest(c, publicModel)
 	if err != nil || fact == nil {
 		return fact, err
@@ -105,42 +80,20 @@ func ApplyCustomerContractResolvedModel(c *gin.Context, publicModel string, lock
 	if err := validateCustomerContractTokenModelLimit(c, publicModel); err != nil {
 		return nil, err
 	}
-	if lockedChannel != nil && !channelSatisfiesCustomerContract(lockedChannel, fact) {
-		return nil, fmt.Errorf("locked channel is outside the customer contract")
-	}
 	return fact, nil
 }
 
-// applyCustomerContractDistributeGate resolves the customer contract fact for
-// a distributed request and enforces the token model limit under contract
-// mode. It returns the resolved fact (nil outside contract scope) and whether
-// the request was aborted.
-func applyCustomerContractDistributeGate(c *gin.Context, publicModel string, shouldSelectChannel bool) (*hosttypes.ContractBillingFact, bool) {
+// applyCustomerContractDistributeGate resolves the discount fact for a
+// distributed request. Resolution failure aborts with 503 (fail closed —
+// never native fallback); an unlisted model aborts nothing and keeps native
+// behavior.
+func applyCustomerContractDistributeGate(c *gin.Context, publicModel string, shouldSelectChannel bool) bool {
 	if !shouldSelectChannel {
-		return nil, false
+		return false
 	}
-	contractFact, err := applyCustomerContractRequest(c, publicModel)
-	if err != nil {
-		abortWithOpenAiMessage(c, http.StatusForbidden, "The requested model does not exist", relaykittypes.ErrorCodeModelNotFound)
-		return nil, true
+	if _, err := applyCustomerContractRequest(c, publicModel); err != nil {
+		abortWithOpenAiMessage(c, http.StatusServiceUnavailable, "Contract authorization is unavailable", relaykittypes.ErrorCodeModelNotFound)
+		return true
 	}
-	if contractFact != nil {
-		if err := validateCustomerContractTokenModelLimit(c, publicModel); err != nil {
-			abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": publicModel}))
-			return nil, true
-		}
-	}
-	return contractFact, false
-}
-
-// Only a verified enabled binding bypasses the obsolete native token group.
-func activeTokenContract(token *model.Token, authVersion int64) (bool, error) {
-	if token.ContractId <= 0 {
-		return false, nil
-	}
-	snapshot, err := service.LoadContractEntityForRequest(token.UserId, authVersion, token.ContractId)
-	if err != nil {
-		return false, err
-	}
-	return snapshot.Enabled, nil
+	return false
 }

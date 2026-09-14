@@ -443,7 +443,12 @@ export function ApiKeysMutateDrawer({
                 )}
               />
 
-              <ApiKeyContractField form={form} open={open} />
+              <ApiKeyContractField
+                form={form}
+                open={open}
+                ready={isFormInitialized}
+                isUpdate={isUpdate}
+              />
 
               {selectedGroup === 'auto' && (
                 <FormField

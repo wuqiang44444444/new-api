@@ -40,6 +40,7 @@ import {
   type RequestRuleGroup,
   type RequestRuleTrace,
 } from '../lib/billing-expr'
+import { ruleGroupsFromBillingDisplay } from '../lib/billing-display'
 import { isBreakdownTierMatched } from '../lib/breakdown-tier-match'
 import {
   formatTaskUsageUnitPrice,
@@ -49,7 +50,7 @@ import {
 import { getTaskPricingDisplayTiers } from '../lib/task-matrix-display'
 import {
   taskPriceLabel,
-  taskPricingConditions,
+  taskPricingConditionSummary,
 } from '../lib/task-price-display'
 import type {
   BillingDisplayProjection,
@@ -87,6 +88,11 @@ type DynamicPricingBreakdownProps = {
    */
   compact?: boolean
   usageSchema?: BillingUsageSchema
+  /**
+   * 投影驱动的任务档位。定价页面从后端任务 USD 投影取得；未提供时（日志
+   * 详情等历史合同场景）沿用既有表达式解析展示，两者不互为回退。
+   */
+  tiers?: ParsedTaskTier[]
   taskPriceOptions?: Pick<
     DynamicPriceOptions,
     'showRechargePrice' | 'priceRate' | 'usdExchangeRate'
@@ -140,10 +146,7 @@ function formatBreakdownConditionSummary(
   language: string,
   tierCount: number
 ): string {
-  return (
-    taskPricingConditions(tier.conditions, schema, language, t) ||
-    t(tierCount > 1 ? 'Other cases' : 'All requests')
-  )
+  return taskPricingConditionSummary(tier, schema, language, t, tierCount)
 }
 
 function formatBreakdownPrice(
@@ -242,6 +245,7 @@ export function DynamicPricingBreakdown(props: DynamicPricingBreakdownProps) {
 
 function TaskPricingBreakdown({
   billingExpr,
+  billingDisplay,
   matchedTierLabel,
   requestRules,
   compact = false,
@@ -249,10 +253,21 @@ function TaskPricingBreakdown({
   taskPriceOptions,
   priceMultiplier = 1,
   usageFacts,
+  tiers: projectionTiers,
 }: DynamicPricingBreakdownProps & { usageSchema: BillingUsageSchema }) {
   const { t, i18n } = useTranslation()
   const expr = billingExpr || ''
   const { tiers, ruleGroups } = useMemo(() => {
+    if (projectionTiers) {
+      // 定价页面：金额、条件与可证明倍率只来自后端投影，绝不回退本地解析。
+      return {
+        tiers: projectionTiers,
+        ruleGroups:
+          requestRules != null
+            ? requestRuleGroupsFromTrace(requestRules)
+            : ruleGroupsFromBillingDisplay(billingDisplay),
+      }
+    }
     const split = splitBillingExprAndRequestRules(expr)
     const parsedTiers = getTaskPricingDisplayTiers(
       split.billingExpr,
@@ -266,7 +281,7 @@ function TaskPricingBreakdown({
       tiers: parsedTiers,
       ruleGroups: parsedRules || [],
     }
-  }, [expr, usageSchema, requestRules])
+  }, [expr, usageSchema, requestRules, projectionTiers, billingDisplay])
 
   const hasTiers = tiers.length > 0
   const hasRules = ruleGroups.length > 0
@@ -291,12 +306,20 @@ function TaskPricingBreakdown({
             </div>
           </div>
         )}
-        <div className='text-muted-foreground mb-1 text-[10px] font-medium tracking-wider uppercase'>
-          {t('Raw expression')}
-        </div>
-        <code className='text-muted-foreground block text-xs break-all'>
-          {expr}
-        </code>
+        {projectionTiers ? (
+          <div className='text-muted-foreground text-xs'>
+            {t('Pricing details temporarily unavailable')}
+          </div>
+        ) : (
+          <>
+            <div className='text-muted-foreground mb-1 text-[10px] font-medium tracking-wider uppercase'>
+              {t('Raw expression')}
+            </div>
+            <code className='text-muted-foreground block text-xs break-all'>
+              {expr}
+            </code>
+          </>
+        )}
       </section>
     )
   }
@@ -306,7 +329,12 @@ function TaskPricingBreakdown({
       ([field, definition]) =>
         definition.type === 'number' &&
         Boolean(definition.unit) &&
-        tiers.some((tier) => Number(tier.unitPrices[field] || 0) > 0)
+        // 显式零价也是有效报价：按字段存在性展示，缺失才省略。
+        tiers.some(
+          (tier) =>
+            tier.unitPrices[field] != null &&
+            Number.isFinite(Number(tier.unitPrices[field]))
+        )
     )
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([field, definition]) => ({
@@ -316,7 +344,9 @@ function TaskPricingBreakdown({
       unit: definition.unit as BillingUsageUnit,
       value: (tier) => Number(tier.unitPrices[field] || 0),
     }))
-  if (tiers.some((tier) => tier.constant > 0)) {
+  if (
+    tiers.some((tier) => tier.hasConstant || tier.constant > 0)
+  ) {
     visiblePriceFields.push({
       id: 'constant',
       label: 'Additional charge',
@@ -332,6 +362,14 @@ function TaskPricingBreakdown({
     Number.isFinite(priceMultiplier) && priceMultiplier >= 0
       ? priceMultiplier
       : 1
+  // 显式零价是有效报价：字段存在即渲染金额，只有缺失才显示“-”。
+  const isFieldPresent = (tier: ParsedTaskTier, field: BreakdownPriceField) => {
+    if (field.id === 'constant') {
+      return tier.hasConstant || tier.constant !== 0
+    }
+    const raw = tier.unitPrices[field.id]
+    return raw != null && Number.isFinite(Number(raw))
+  }
 
   return (
     <section className={cn('min-w-0', !compact && 'py-3 sm:py-4')}>
@@ -384,31 +422,28 @@ function TaskPricingBreakdown({
                     visiblePriceFields.length > 1 && 'grid-cols-2'
                   )}
                 >
-                  {visiblePriceFields.map((field) => {
-                    const value = field.value(tier) * effectiveMultiplier
-                    return (
-                      <div key={field.id} className='min-w-0'>
-                        <div className='text-muted-foreground text-xs font-medium break-words whitespace-normal'>
-                          {breakdownPriceFieldLabel(field, t)}
-                        </div>
-                        <div
-                          className={cn(
-                            'break-words font-mono',
-                            compact ? 'text-xs' : 'text-sm font-semibold'
-                          )}
-                        >
-                          {value > 0
-                            ? formatBreakdownPrice(
-                                value,
-                                field,
-                                t,
-                                taskPriceOptions
-                              )
-                            : '-'}
-                        </div>
+                  {visiblePriceFields.map((field) => (
+                    <div key={field.id} className='min-w-0'>
+                      <div className='text-muted-foreground text-xs font-medium break-words whitespace-normal'>
+                        {breakdownPriceFieldLabel(field, t)}
                       </div>
-                    )
-                  })}
+                      <div
+                        className={cn(
+                          'break-words font-mono',
+                          compact ? 'text-xs' : 'text-sm font-semibold'
+                        )}
+                      >
+                        {isFieldPresent(tier, field)
+                          ? formatBreakdownPrice(
+                              field.value(tier) * effectiveMultiplier,
+                              field,
+                              t,
+                              taskPriceOptions
+                            )
+                          : '-'}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )
@@ -495,13 +530,12 @@ function TaskPricingBreakdown({
                 compact ? 'py-2' : 'py-2.5'
               ),
               cell: (tier: ParsedTaskTier) => {
+                if (!isFieldPresent(tier, field)) return '-'
                 const value = field.value(tier) * effectiveMultiplier
-                return value > 0 ? (
+                return (
                   <span className={cn(!compact && 'font-semibold')}>
                     {formatBreakdownPrice(value, field, t, taskPriceOptions)}
                   </span>
-                ) : (
-                  '-'
                 )
               },
             })),

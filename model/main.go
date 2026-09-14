@@ -330,6 +330,9 @@ func migrateDB() error {
 	if err := migrateCustomerModelContractUniqueness(DB); err != nil {
 		return err
 	}
+	if err := migrateCustomerContractEntityRuleIndex(DB); err != nil {
+		return err
+	}
 	// Migrate price_amount column from float/double to decimal for existing tables
 	migrateSubscriptionPlanPriceAmount()
 	// Migrate model_limits column from varchar to text for existing tables

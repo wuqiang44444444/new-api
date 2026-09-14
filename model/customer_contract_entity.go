@@ -8,6 +8,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"gorm.io/gorm"
 )
@@ -32,13 +34,17 @@ type CustomerContract struct {
 }
 
 // CustomerContractEntityRule binds one public model inside one contract to an
-// explicit channel, a native route group and an eight-decimal fixed point
-// discount. (contract_id, public_model) is unique within a contract.
+// explicit channel source, a management route group and an eight-decimal
+// fixed point discount. (contract_id, public_model, channel_id) is unique
+// within a contract: the same public model may list several channels, but
+// only when every rule of that model carries the identical discount. Channel
+// and route group are management details; they never take part in runtime
+// discount matching.
 type CustomerContractEntityRule struct {
 	Id          int    `json:"id"`
-	ContractId  int    `json:"contract_id" gorm:"index;uniqueIndex:idx_cc_entity_rule_contract_model"`
-	PublicModel string `json:"public_model" gorm:"type:varchar(255);uniqueIndex:idx_cc_entity_rule_contract_model"`
-	ChannelId   int    `json:"channel_id" gorm:"index"`
+	ContractId  int    `json:"contract_id" gorm:"index;uniqueIndex:idx_cc_entity_rule_contract_model_channel"`
+	PublicModel string `json:"public_model" gorm:"type:varchar(255);uniqueIndex:idx_cc_entity_rule_contract_model_channel"`
+	ChannelId   int    `json:"channel_id" gorm:"index;uniqueIndex:idx_cc_entity_rule_contract_model_channel"`
 	RouteGroup  string `json:"route_group" gorm:"type:varchar(64);index"`
 	RatioUnits  int64  `json:"ratio_units" gorm:"type:bigint"`
 	CreatedAt   int64  `json:"created_at" gorm:"autoCreateTime"`
@@ -118,42 +124,60 @@ type customerContractEntityAuditState struct {
 	Rules   []ContractEntityRule `json:"rules"`
 }
 
+// normalizeCustomerContractEntityRules validates one complete rule set at the
+// entity save boundary. The same public model may appear on several channels,
+// but only under one identical discount; identical model+channel pairs and
+// names differing only by letter case are rejected.
 func normalizeCustomerContractEntityRules(rules []CustomerContractEntityRuleInput) ([]CustomerContractEntityRuleInput, error) {
 	if len(rules) == 0 {
 		return nil, fmt.Errorf("%w: contract requires at least one rule", ErrCustomerContractInvalidRule)
 	}
-	legacy := make([]CustomerContractRule, 0, len(rules))
+	normalized := make([]CustomerContractEntityRuleInput, 0, len(rules))
+	modelDiscounts := make(map[string]int64, len(rules))
+	modelNames := make(map[string]string, len(rules))
+	usedPairs := make(map[string]struct{}, len(rules))
 	for _, rule := range rules {
-		legacy = append(legacy, CustomerContractRule{
-			PublicModel: rule.PublicModel,
-			RouteGroup:  rule.RouteGroup,
-			RatioUnits:  rule.RatioUnits,
-		})
-	}
-	normalizedLegacy, err := normalizeCustomerContractRules(legacy)
-	if err != nil {
-		return nil, err
-	}
-	normalized := make([]CustomerContractEntityRuleInput, 0, len(normalizedLegacy))
-	for i := range normalizedLegacy {
-		channelId := rules[i].ChannelId
-		if channelId <= 0 {
-			return nil, fmt.Errorf("%w: rule for model %q must bind a concrete channel", ErrCustomerContractInvalidRule, normalizedLegacy[i].PublicModel)
+		rule.PublicModel = strings.TrimSpace(rule.PublicModel)
+		rule.RouteGroup = strings.TrimSpace(rule.RouteGroup)
+		if rule.PublicModel == "" || len(rule.PublicModel) > 255 {
+			return nil, fmt.Errorf("%w: public model is required and must not exceed 255 characters", ErrCustomerContractInvalidRule)
 		}
-		normalized = append(normalized, CustomerContractEntityRuleInput{
-			PublicModel: normalizedLegacy[i].PublicModel,
-			ChannelId:   channelId,
-			RouteGroup:  normalizedLegacy[i].RouteGroup,
-			RatioUnits:  normalizedLegacy[i].RatioUnits,
-		})
+		if rule.RouteGroup == "" || len(rule.RouteGroup) > 64 || strings.EqualFold(rule.RouteGroup, "auto") || NormalizeChannelGroupFilter(rule.RouteGroup) == "" {
+			return nil, fmt.Errorf("%w: route group must be a concrete group", ErrCustomerContractInvalidRule)
+		}
+		if rule.RatioUnits <= 0 || rule.RatioUnits > hosttypes.CustomerContractRatioScale {
+			return nil, fmt.Errorf("%w: ratio must be greater than zero and no greater than one", ErrCustomerContractInvalidRule)
+		}
+		if rule.ChannelId <= 0 {
+			return nil, fmt.Errorf("%w: rule for model %q must bind a concrete channel", ErrCustomerContractInvalidRule, rule.PublicModel)
+		}
+		modelKey := strings.ToLower(rule.PublicModel)
+		if existingName, exists := modelNames[modelKey]; exists && existingName != rule.PublicModel {
+			return nil, fmt.Errorf("%w: duplicate or case-only duplicate public model %q", ErrCustomerContractInvalidRule, rule.PublicModel)
+		}
+		if existingUnits, exists := modelDiscounts[modelKey]; exists && existingUnits != rule.RatioUnits {
+			return nil, fmt.Errorf("%w: model %q must keep one identical discount across all of its channels", ErrCustomerContractInvalidRule, rule.PublicModel)
+		}
+		pairKey := modelKey + "\x00" + strconv.Itoa(rule.ChannelId)
+		if _, exists := usedPairs[pairKey]; exists {
+			return nil, fmt.Errorf("%w: model %q already binds channel %d", ErrCustomerContractInvalidRule, rule.PublicModel, rule.ChannelId)
+		}
+		modelNames[modelKey] = rule.PublicModel
+		modelDiscounts[modelKey] = rule.RatioUnits
+		usedPairs[pairKey] = struct{}{}
+		normalized = append(normalized, rule)
 	}
 	return normalized, nil
 }
 
 // validateCustomerContractEntityChannel verifies that one rule's channel is an
 // enabled channel that serves the public model in the rule's route group. It
-// runs on every save so structural mistakes never reach runtime.
+// runs only for newly added or changed sources; accepted historical sources
+// do not depend on current channel or group availability.
 func validateCustomerContractEntityChannel(tx *gorm.DB, channelId int, routeGroup string, publicModel string) error {
+	if !ratio_setting.ContainsGroupRatio(routeGroup) {
+		return fmt.Errorf("%w: route group %q has no native ratio", ErrCustomerContractInvalidRule, routeGroup)
+	}
 	if channelId <= 0 {
 		return fmt.Errorf("%w: channel is required", ErrCustomerContractEntityInvalidChannel)
 	}
@@ -196,6 +220,8 @@ func validateCustomerContractEntityChannel(tx *gorm.DB, channelId int, routeGrou
 	return nil
 }
 
+// validateCustomerContractEntityRules verifies the channel reference of every
+// submitted rule.
 func validateCustomerContractEntityRules(tx *gorm.DB, rules []CustomerContractEntityRuleInput) error {
 	for _, rule := range rules {
 		if err := validateCustomerContractEntityChannel(tx, rule.ChannelId, rule.RouteGroup, rule.PublicModel); err != nil {
@@ -203,6 +229,37 @@ func validateCustomerContractEntityRules(tx *gorm.DB, rules []CustomerContractEn
 		}
 	}
 	return nil
+}
+
+// validateCustomerContractEntityNewSources validates only the channel
+// references whose (public model, channel, route group) triple is not already
+// stored for this contract. Already accepted sources stay accepted even when
+// they later become unavailable: they must never block saving other discounts
+// or re-enabling the contract.
+func validateCustomerContractEntityNewSources(tx *gorm.DB, contractId int, rules []CustomerContractEntityRuleInput) error {
+	existing, err := loadCustomerContractEntityRules(tx, contractId, false)
+	if err != nil {
+		return err
+	}
+	known := make(map[string]struct{}, len(existing))
+	for _, rule := range existing {
+		known[customerContractEntitySourceKey(rule.PublicModel, rule.ChannelId, rule.RouteGroup)] = struct{}{}
+	}
+	for _, rule := range rules {
+		if _, stored := known[customerContractEntitySourceKey(rule.PublicModel, rule.ChannelId, rule.RouteGroup)]; stored {
+			continue
+		}
+		if err := validateCustomerContractEntityChannel(tx, rule.ChannelId, rule.RouteGroup, rule.PublicModel); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// customerContractEntitySourceKey builds the dedup key for one rule source
+// triple (case-insensitive public model).
+func customerContractEntitySourceKey(publicModel string, channelId int, routeGroup string) string {
+	return strings.ToLower(publicModel) + "\x00" + strconv.Itoa(channelId) + "\x00" + routeGroup
 }
 
 func customerContractEntityRulesFromInputs(inputs []CustomerContractEntityRuleInput) []ContractEntityRule {
@@ -326,19 +383,18 @@ func ReplaceCustomerContractEntity(params ReplaceCustomerContractEntityParams) (
 		if params.Enabled != nil {
 			enabled = *params.Enabled
 		}
-		// Disabling must remain possible after a bound channel is removed.
-		// Re-enabling validates the complete current routing definition.
-		if enabled {
-			if err := validateCustomerContractEntityRules(tx, rules); err != nil {
-				return err
-			}
+		// Only new or changed rule sources are reference-validated. Sources
+		// accepted in an earlier version stay accepted even when they later
+		// become unavailable, so they cannot block saving other discounts or
+		// re-enabling the contract.
+		if err := validateCustomerContractEntityNewSources(tx, contract.Id, rules); err != nil {
+			return err
 		}
 		beforeRules, err := loadCustomerContractEntityRules(tx, contract.Id, false)
 		if err != nil {
 			return err
 		}
 		before := customerContractEntityAuditState{Name: contract.Name, Enabled: contract.Enabled, Version: contract.Version, Rules: beforeRules}
-
 		if _, err := IncrementUserAuthVersionWithTx(tx, contract.UserId); err != nil {
 			return err
 		}

@@ -27,12 +27,31 @@ func respondBatchPricing(c *gin.Context) bool {
 		}
 		userGroup = user.Group
 	}
-	channels, err := model.BatchPricingChannels()
+	usable := service.GetUserUsableGroups(userGroup)
+	items, err := batchPricingForGroups(usable)
 	if err != nil {
 		respondCustomerContractPricingLoadError(c)
 		return true
 	}
-	usable := service.GetUserUsableGroups(userGroup)
+	ratios := map[string]float64{}
+	for group := range usable {
+		ratio := ratio_setting.GetGroupRatio(group)
+		if special, ok := ratio_setting.GetGroupGroupRatio(userGroup, group); ok {
+			ratio = special
+		}
+		ratios[group] = ratio
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": items, "vendors": []model.PricingVendor{}, "group_ratio": ratios, "usable_group": usable, "supported_endpoint": model.GetSupportedEndpointMap(), "auto_groups": []string{}, "pricing_version": "azure-batch", "execution_mode": "batch"})
+	return true
+}
+
+// batchPricingForGroups is the shared Batch base-price projection for native
+// and contract views. It never reads ordinary synchronous model prices.
+func batchPricingForGroups(usable map[string]string) ([]model.Pricing, error) {
+	channels, err := model.BatchPricingChannels()
+	if err != nil {
+		return nil, err
+	}
 	groups := map[string]map[string]bool{}
 	for _, channel := range channels {
 		for _, name := range channel.GetModels() {
@@ -62,14 +81,5 @@ func respondBatchPricing(c *gin.Context) bool {
 		items = append(items, model.Pricing{ModelName: name, OwnerBy: "new-api", BillingMode: billing_setting.BillingModeTieredExpr, BillingExpr: expr, EnableGroup: enabled, Available: true, Availability: "available"})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ModelName < items[j].ModelName })
-	ratios := map[string]float64{}
-	for group := range usable {
-		ratio := ratio_setting.GetGroupRatio(group)
-		if special, ok := ratio_setting.GetGroupGroupRatio(userGroup, group); ok {
-			ratio = special
-		}
-		ratios[group] = ratio
-	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": items, "vendors": []model.PricingVendor{}, "group_ratio": ratios, "usable_group": usable, "supported_endpoint": model.GetSupportedEndpointMap(), "auto_groups": []string{}, "pricing_version": "azure-batch", "execution_mode": "batch"})
-	return true
+	return items, nil
 }

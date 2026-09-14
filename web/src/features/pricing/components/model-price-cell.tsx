@@ -69,20 +69,19 @@ export function ModelPriceCell(props: {
 
   if (dynamic) {
     if (dynamic.isSpecialExpression) {
+      // 合法但无法证明的价格保持明确的不可展开状态；原式不面向客户。
       return (
         <span className='block max-w-full min-w-0'>
           <span className='text-muted-foreground block truncate text-sm'>
             {t('Special billing expression')}
           </span>
-          {props.showExpression !== false && (
-            <code className='text-muted-foreground mt-1 line-clamp-2 block text-xs break-all whitespace-normal'>
-              {dynamic.rawExpression}
-            </code>
-          )}
+          <span className='text-muted-foreground mt-1 block truncate text-xs'>
+            {t('Pricing details temporarily unavailable')}
+          </span>
         </span>
       )
     }
-    metrics = dynamic.primaryEntries.slice(0, 2).map((entry) => {
+    metrics = dynamic.primaryEntries.map((entry) => {
       const unit = getDynamicPriceUnitLabelKey(entry)
       return {
         label:
@@ -110,6 +109,13 @@ export function ModelPriceCell(props: {
       )
     }
     const tokenBased = isTokenBasedModel(props.model)
+    if (tokenBased && props.model.basis_price_configured === false) {
+      return (
+        <span className='text-muted-foreground text-sm'>
+          {t('Not configured')}
+        </span>
+      )
+    }
     if (
       !Number.isFinite(
         tokenBased ? props.model.model_ratio : props.model.model_price

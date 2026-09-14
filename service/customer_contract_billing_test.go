@@ -23,7 +23,7 @@ import (
 func contractBillingFact() *hosttypes.ContractBillingFact {
 	return &hosttypes.ContractBillingFact{
 		UserId: 10, ContractVersion: 4, PublicModel: "contract-model",
-		RouteGroup: "contract-group", RatioUnits: 80_000_000,
+		RatioUnits: 80_000_000,
 	}
 }
 

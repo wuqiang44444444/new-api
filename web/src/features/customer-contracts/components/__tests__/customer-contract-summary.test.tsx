@@ -25,7 +25,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
-const summary = { total: 123456, active: 123450, zero_access: 2, inactive: 4 }
+const summary = { total: 123456, active: 123452, inactive: 4 }
 
 describe('customer contract summary layout', () => {
   it('uses the available width with two mobile columns and four desktop columns', () => {

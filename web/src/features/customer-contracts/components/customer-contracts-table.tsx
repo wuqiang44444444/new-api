@@ -147,7 +147,6 @@ export function CustomerContractsTable(props: CustomerContractsTableProps) {
 
   const statusOptions = [
     { label: t('Active contracts'), value: 'active' },
-    { label: t('No model access'), value: 'zero_access' },
     { label: t('Inactive contracts'), value: 'inactive' },
   ]
 

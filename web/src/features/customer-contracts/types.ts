@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export type CustomerContractAdminStatus = 'active' | 'zero_access' | 'inactive'
+export type CustomerContractAdminStatus = 'active' | 'inactive'
 
 export interface CustomerContractAdminListItem {
   contract_id: number
@@ -38,7 +38,6 @@ export interface CustomerContractAdminListItem {
 export interface CustomerContractAdminSummary {
   total: number
   active: number
-  zero_access: number
   inactive: number
 }
 
@@ -73,7 +72,6 @@ export interface CustomerContractsSearch {
 export const EMPTY_CUSTOMER_CONTRACT_SUMMARY: CustomerContractAdminSummary = {
   total: 0,
   active: 0,
-  zero_access: 0,
   inactive: 0,
 }
 

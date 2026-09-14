@@ -27,23 +27,19 @@ import type {
 } from '../types'
 import {
   ruleGroupsFromBillingDisplay,
+  taskScenarioTiersFromBillingDisplay,
+  taskTiersFromBillingDisplay,
+  tokenScenarioTiersFromBillingDisplay,
   tiersFromBillingDisplay,
 } from './billing-display'
 import {
   BILLING_PRICING_VARS,
-  parseTaskTiersFromExpr,
-  splitBillingExprAndRequestRules,
-  tryParseRequestRuleExpr,
   type BillingVar,
   type ParsedTaskTier,
   type ParsedTier,
 } from './billing-expr'
 import { getDisplayGroupRatio } from './model-helpers'
-import {
-  evaluateTaskVisualConfig,
-  getTaskNumberFields,
-  tryParseTaskVisualConfig,
-} from './task-expr'
+import { getTaskNumberFields } from './task-expr'
 
 export type DynamicPriceOptions = {
   tokenUnit: TokenUnit
@@ -122,7 +118,7 @@ export function getDynamicPriceUnitLabelKey(
   return null
 }
 
-const PRIMARY_DYNAMIC_FIELDS = new Set(['inputPrice', 'outputPrice'])
+const PRIMARY_DYNAMIC_FIELDS = new Set(['inputPrice', 'outputPrice', 'imageOutputPrice'])
 
 function isTaskPricingTier(tier: DynamicPricingTier): tier is ParsedTaskTier {
   return (
@@ -227,24 +223,15 @@ export function getDynamicPricingTiers(
   model: PricingModel
 ): DynamicPricingTier[] {
   if (!isDynamicPricingModel(model)) return []
-  // 金额展示只信任后端投影；任务用量模型继续走 schema 驱动的既有解析。
+  // 金额展示只信任后端投影；任务用量模型读取任务 USD 单位的严格投影。
   if (isTaskUsagePricingModel(model)) {
-    const { billingExpr } = splitBillingExprAndRequestRules(
-      model.billing_expr || ''
-    )
-    return parseTaskTiersFromExpr(billingExpr, model.billing_usage_schema, true)
+    return taskTiersFromBillingDisplay(model.billing_display)
   }
   return tiersFromBillingDisplay(model.billing_display)
 }
 
 export function hasDynamicRequestRules(model: PricingModel): boolean {
   if (!isDynamicPricingModel(model)) return false
-  if (isTaskUsagePricingModel(model)) {
-    const { requestRuleExpr } = splitBillingExprAndRequestRules(
-      model.billing_expr || ''
-    )
-    return Boolean(tryParseRequestRuleExpr(requestRuleExpr || '')?.length)
-  }
   return ruleGroupsFromBillingDisplay(model.billing_display).length > 0
 }
 
@@ -274,7 +261,7 @@ export function getDynamicPriceEntries(
         } satisfies DynamicPriceEntry,
       ]
     })
-    if (tier.constant > 0) {
+    if (tier.hasConstant || tier.constant > 0) {
       usageEntries.push({
         key: 'constant',
         field: 'constant',
@@ -316,7 +303,10 @@ export function getDynamicPriceEntries(
     return 0
   })
   const fixedCharge = Number((tier as ParsedTier).constantCharge ?? 0)
-  if (Number.isFinite(fixedCharge) && fixedCharge !== 0) {
+  const hasFixedCharge =
+    Number.isFinite(fixedCharge) &&
+    (fixedCharge !== 0 || Boolean((tier as ParsedTier).hasConstant))
+  if (hasFixedCharge) {
     entries.push({
       key: 'constant',
       field: 'constant',
@@ -340,36 +330,73 @@ export function getDynamicPricingSummary(
   const tiers = getDynamicPricingTiers(model)
   const isTaskUsage = isTaskUsagePricingModel(model)
   const tier = isTaskUsage ? (tiers.at(-1) ?? null) : (tiers[0] ?? null)
-  let entries = getDynamicPriceEntries(tier, {
-    ...options,
-    usageSchema: model.billing_usage_schema,
-  })
-  if (isTaskUsage) {
-    const priceRanges = new Map<string, { min: number; max: number }>()
-    for (const [field] of getTaskNumberFields(model.billing_usage_schema)) {
-      let min = Number.POSITIVE_INFINITY
-      let max = Number.NEGATIVE_INFINITY
-      for (const taskTier of tiers) {
-        if (!isTaskPricingTier(taskTier)) continue
-        const value = Number(taskTier.unitPrices[field])
-        if (!Number.isFinite(value) || value < 0) continue
-        min = Math.min(min, value)
-        max = Math.max(max, value)
-      }
-      if (Number.isFinite(min) && Number.isFinite(max)) {
-        priceRanges.set(field, { min, max })
-      }
-    }
-    entries = entries.map((entry) => {
-      const range = priceRanges.get(entry.field)
-      if (!range || range.min === range.max) return entry
-      return {
-        ...entry,
-        formattedRange: `${formatTaskUsageUnitPrice(range.min, options)} – ${formatTaskUsageUnitPrice(range.max, options)}`,
-      }
-    })
+  const entryOptions = { ...options, usageSchema: model.billing_usage_schema }
+  // 倍率场景已经覆盖实际分支，不再混入未乘倍率的底价；固定附加费也参与范围。
+  const scenarios = isTaskUsage
+    ? taskScenarioTiersFromBillingDisplay(model.billing_display)
+    : tokenScenarioTiersFromBillingDisplay(model.billing_display)
+  const rangeTiers: DynamicPricingTier[] = scenarios.length > 0 ? [] : [...tiers]
+  for (const scenario of scenarios) {
+    rangeTiers.push(...scenario.tiers)
   }
+  const entriesByTier = rangeTiers.map((tier) =>
+    new Map(
+      getDynamicPriceEntries(tier, entryOptions).map((entry) => [entry.field, entry])
+    )
+  )
+  const representativeEntries = new Map(
+    getDynamicPriceEntries(tier, entryOptions).map((entry) => [entry.field, entry])
+  )
+  const allEntries = new Map(representativeEntries)
+  for (const tierEntries of entriesByTier) {
+    for (const [field, entry] of tierEntries) {
+      if (!allEntries.has(field)) allEntries.set(field, entry)
+    }
+  }
+  const entries = [...allEntries.values()].map((entry) => {
+    const format = (value: number) =>
+      isTaskUsage || entry.unit === 'request'
+        ? formatTaskUsageUnitPrice(value, options)
+        : formatDynamicUnitPrice(value, options)
+    // 只汇总投影中实际出现的收费项；某档没有该项表示该档不收取此项费用。
+    const values = entriesByTier.map(
+      (tierEntries) => tierEntries.get(entry.field)?.value ?? 0
+    )
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    const representative = representativeEntries.get(entry.field) ?? {
+      ...entry,
+      value: 0,
+      formatted: format(0),
+    }
+    let formattedRange: string | undefined
+    if (min !== max) {
+      formattedRange = `${format(min)} – ${format(max)}`
+    } else if (min !== representative.value) {
+      // 多个场景同价时仍展示实际金额，不能退回未乘倍率的底价。
+      formattedRange = format(min)
+    }
+    return {
+      ...representative,
+      formattedRange,
+    }
+  })
   const rawExpression = model.billing_expr || ''
+
+  const constantEntry = entries.find((entry) => entry.unit === 'request')
+  let primaryEntries = isTaskUsage
+    ? entries.filter((entry) => entry.unit !== 'request')
+    : entries.filter((entry) => PRIMARY_DYNAMIC_FIELDS.has(entry.field))
+  const secondaryEntries = isTaskUsage
+    ? entries.filter((entry) => entry.unit === 'request' && entry !== constantEntry)
+    : entries.filter(
+        (entry) =>
+          !PRIMARY_DYNAMIC_FIELDS.has(entry.field) && entry !== constantEntry
+      )
+  if (constantEntry) {
+    // 固定附加费与用量费同时可见，纯固定费也保留显式零价。
+    primaryEntries = [...primaryEntries, constantEntry]
+  }
 
   return {
     tiers,
@@ -379,12 +406,8 @@ export function getDynamicPricingSummary(
     isSpecialExpression: rawExpression.trim().length > 0 && tiers.length === 0,
     rawExpression,
     entries,
-    primaryEntries: isTaskUsage
-      ? entries.filter((entry) => entry.unit !== 'request')
-      : entries.filter((entry) => PRIMARY_DYNAMIC_FIELDS.has(entry.field)),
-    secondaryEntries: isTaskUsage
-      ? entries.filter((entry) => entry.unit === 'request')
-      : entries.filter((entry) => !PRIMARY_DYNAMIC_FIELDS.has(entry.field)),
+    primaryEntries,
+    secondaryEntries,
     isTaskUsage,
   }
 }
@@ -394,21 +417,11 @@ export function getCardExamplePrice(
   options: DynamicPriceOptions
 ): CardExamplePrice | null {
   if (!isTaskUsagePricingModel(model)) return null
-  const schema = model.billing_usage_schema
+  // 示例金额由后端按冻结表达式求值；本地不再对示例求值。
   const firstExample = model.billing_usage_examples?.[0]
-  if (!schema || !firstExample) return null
-
-  const { billingExpr } = splitBillingExprAndRequestRules(
-    model.billing_expr || ''
-  )
-  const config = tryParseTaskVisualConfig(billingExpr, schema)
-  if (!config) return null
-
-  const result = evaluateTaskVisualConfig(config, firstExample.facts, schema)
-  if (!result) return null
-
+  if (!firstExample || !Number.isFinite(firstExample.total)) return null
   return {
     label: firstExample.label,
-    formatted: formatTaskUsageUnitPrice(result.total, options),
+    formatted: formatTaskUsageUnitPrice(firstExample.total as number, options),
   }
 }

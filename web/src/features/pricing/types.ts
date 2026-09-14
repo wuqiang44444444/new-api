@@ -42,6 +42,8 @@ export type BillingUsageSchema = Record<string, BillingUsageFieldSchema>
 export type BillingUsageExample = {
   label: string
   facts: Record<string, string | number>
+  /** 后端按冻结表达式对 facts 求值得到的 USD 金额；缺失表示不可复算。 */
+  total?: number
 }
 
 export type PricingModel = {
@@ -55,6 +57,8 @@ export type PricingModel = {
   vendor_description?: string
   quota_type: number
   model_ratio: number
+  /** false 表示倍率基础价来自缺价默认值而非显式配置。 */
+  basis_price_configured?: boolean
   completion_ratio: number
   model_price?: number
   cache_ratio?: number | null
@@ -171,7 +175,7 @@ export type BillingDisplayRule = {
   fallback?: number
   op?: 'and' | 'or' | 'not' | ''
   children?: BillingDisplayRule[]
-  source?: 'time' | 'param' | 'header' | 'text' | 'token'
+  source?: 'time' | 'param' | 'header' | 'text' | 'token' | 'usage'
   time_func?: string
   timezone?: string
   compare_op?: string

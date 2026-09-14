@@ -76,15 +76,15 @@ import { parseTags } from '../lib/filters'
 import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
 import {
-  evaluateTaskUsageExamples,
   getTaskEnumFields,
   getTaskNumberFields,
 } from '../lib/task-expr'
-import { getTaskPricingDisplayTiers } from '../lib/task-matrix-display'
+import { taskTiersFromBillingDisplay } from '../lib/billing-display'
+import { nameFallbackTierConditions } from '../lib/task-matrix-display'
 import {
   hasSimpleTaskPricing,
   taskPriceLabel,
-  taskPricingConditions,
+  taskPricingConditionSummary,
 } from '../lib/task-price-display'
 import type {
   ModelCapability,
@@ -715,16 +715,8 @@ function PriceSection(props: {
               {t('Special billing expression')}
             </div>
             <p className='text-muted-foreground mt-1 text-xs'>
-              {t('Unable to parse structured pricing')}
+              {t('Pricing details temporarily unavailable')}
             </p>
-            <div className='mt-3'>
-              <div className='text-muted-foreground mb-1 text-[10px] font-medium tracking-wider uppercase'>
-                {t('Raw expression')}
-              </div>
-              <code className='text-muted-foreground bg-background/80 block max-h-28 overflow-auto rounded-md border px-2 py-1.5 font-mono text-xs break-all'>
-                {dynamicSummary.rawExpression}
-              </code>
-            </div>
           </div>
         </section>
       )
@@ -799,6 +791,15 @@ function PriceSection(props: {
       <section>
         <SectionTitle>{t('Base Price')}</SectionTitle>
         <UnconfiguredTaskPricingNotice model={props.model} />
+      </section>
+    )
+  }
+
+  if (isTokenBased && props.model.basis_price_configured === false) {
+    return (
+      <section>
+        <SectionTitle>{t('Base Price')}</SectionTitle>
+        <p className='text-muted-foreground text-sm'>{t('Not configured')}</p>
       </section>
     )
   }
@@ -1047,8 +1048,8 @@ function GroupPricingSection(props: {
 
   if (isDynamicPricingModel(props.model)) {
     const dynamicTiers = props.model.billing_usage_schema
-      ? getTaskPricingDisplayTiers(
-          props.model.billing_expr,
+      ? nameFallbackTierConditions(
+          taskTiersFromBillingDisplay(props.model.billing_display),
           props.model.billing_usage_schema
         )
       : getDynamicPricingTiers(props.model)
@@ -1063,28 +1064,20 @@ function GroupPricingSection(props: {
               {t('Special billing expression')}
             </div>
             <p className='text-muted-foreground mt-1 text-xs'>
-              {t(
-                'Group prices cannot be expanded because this expression is not a standard tiered pricing expression.'
-              )}
+              {t('Pricing details temporarily unavailable')}
             </p>
-            <div className='mt-3'>
-              <div className='text-muted-foreground mb-1 text-[10px] font-medium tracking-wider uppercase'>
-                {t('Raw expression')}
-              </div>
-              <code className='text-muted-foreground bg-background/80 block max-h-28 overflow-auto rounded-md border px-2 py-1.5 font-mono text-xs break-all'>
-                {props.model.billing_expr}
-              </code>
-            </div>
           </div>
         </section>
       )
     }
 
-    const usageExampleRows = evaluateTaskUsageExamples(
-      props.model.billing_expr,
-      props.model.billing_usage_schema,
-      props.model.billing_usage_examples
-    )
+    // 示例金额由后端按冻结表达式求值；不可复算的示例不展示价格行。
+    const usageExampleRows = (props.model.billing_usage_examples ?? [])
+      .filter((example) => Number.isFinite(example.total))
+      .map((example) => ({
+        label: example.label,
+        total: example.total as number,
+      }))
     const priceFields = getDynamicPriceFields(dynamicTiers, {
       tokenUnit: props.tokenUnit,
       showRechargePrice,
@@ -1095,7 +1088,7 @@ function GroupPricingSection(props: {
     })
     const formattedPricesByGroup = new Map(
       availableGroups.map((group) => {
-        const ratio = props.groupRatio[group] || 1
+        const ratio = props.groupRatio[group] ?? 1
         return [
           group,
           getDynamicFormattedPricesByTier(dynamicTiers, {
@@ -1116,7 +1109,7 @@ function GroupPricingSection(props: {
         <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
         <div className='space-y-3'>
           {availableGroups.map((group) => {
-            const ratio = props.groupRatio[group] || 1
+            const ratio = props.groupRatio[group] ?? 1
             const formattedPricesByTier =
               formattedPricesByGroup.get(group) ??
               new Map<DynamicPricingTier, Map<string, string>>()
@@ -1151,16 +1144,12 @@ function GroupPricingSection(props: {
                               'text-muted-foreground py-2.5 whitespace-normal break-words',
                             cell: (tier: DynamicPricingTier) =>
                               'unitPrices' in tier
-                                ? taskPricingConditions(
-                                    (tier as ParsedTaskTier).conditions,
+                                ? taskPricingConditionSummary(
+                                    tier as ParsedTaskTier,
                                     props.model.billing_usage_schema,
                                     i18n.language,
-                                    t
-                                  ) ||
-                                  t(
-                                    dynamicTiers.length > 1
-                                      ? 'Other cases'
-                                      : 'All requests'
+                                    t,
+                                    dynamicTiers.length
                                   )
                                 : tier.label || t('Default'),
                           },
@@ -1257,6 +1246,16 @@ function GroupPricingSection(props: {
     )
   }
 
+  if (isTokenBasedModel(props.model) && props.model.basis_price_configured === false) {
+    return (
+      <section>
+        <SectionTitle>{t('Pricing by Group')}</SectionTitle>
+        <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
+        <p className='text-muted-foreground text-sm'>{t('Not configured')}</p>
+      </section>
+    )
+  }
+
   const renderGroupPrice = (group: string, type: PriceType) =>
     formatGroupPrice(
       props.model,
@@ -1301,7 +1300,7 @@ function GroupPricingSection(props: {
             header: t('Ratio'),
             className: thClass,
             cellClassName: 'text-muted-foreground py-2.5 font-mono',
-            cell: (group) => `${props.groupRatio[group] || 1}x`,
+            cell: (group) => `${props.groupRatio[group] ?? 1}x`,
           },
           ...(isTokenBased
             ? [
@@ -1382,14 +1381,29 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
     Boolean(props.model.billing_expr)
 
   const simpleTaskPricing = hasSimpleTaskPricing(props.model)
-  const taskTiers = getTaskPricingDisplayTiers(
-    props.model.billing_expr,
-    props.model.billing_usage_schema
-  )
+  const taskTiers = props.model.billing_usage_schema
+    ? nameFallbackTierConditions(
+        taskTiersFromBillingDisplay(props.model.billing_display),
+        props.model.billing_usage_schema
+      )
+    : []
+  const tokenTiers = props.model.billing_usage_schema
+    ? []
+    : getDynamicPricingTiers(props.model)
+  // 不可展开是整个定价区域的单一状态：父组件只渲染一次提示，
+  // 不再由基础价格、档位与分组视图各自重复输出失败说明。
+  const pricingUnexpandable =
+    isDynamic &&
+    !simpleTaskPricing &&
+    !isUnconfiguredTaskUsageModel(props.model) &&
+    (props.model.billing_usage_schema
+      ? taskTiers.length === 0
+      : tokenTiers.length === 0)
   const showBasePrices =
-    !props.model.billing_usage_schema ||
-    simpleTaskPricing ||
-    taskTiers.length === 0
+    !pricingUnexpandable &&
+    (!props.model.billing_usage_schema ||
+      simpleTaskPricing ||
+      taskTiers.length === 0)
 
   return (
     <div className='@container/details space-y-4'>
@@ -1426,28 +1440,42 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
                 showRechargePrice={showRechargePrice}
               />
             )}
-            {isDynamic && !simpleTaskPricing && (
-              <DynamicPricingBreakdown
-                billingExpr={props.model.billing_expr}
-                billingDisplay={props.model.billing_display}
-                usageSchema={props.model.billing_usage_schema}
-                taskPriceOptions={{
-                  showRechargePrice,
-                  priceRate: props.priceRate,
-                  usdExchangeRate: props.usdExchangeRate,
-                }}
-              />
+            {pricingUnexpandable ? (
+              <div className='rounded-lg border border-amber-200/70 bg-amber-50/70 p-3 dark:border-amber-500/20 dark:bg-amber-500/10'>
+                <div className='text-sm font-medium text-amber-800 dark:text-amber-200'>
+                  {t('Special billing expression')}
+                </div>
+                <p className='text-muted-foreground mt-1 text-xs'>
+                  {t('Pricing details temporarily unavailable')}
+                </p>
+              </div>
+            ) : (
+              <>
+                {isDynamic && !simpleTaskPricing && (
+                  <DynamicPricingBreakdown
+                    billingExpr={props.model.billing_expr}
+                    billingDisplay={props.model.billing_display}
+                    usageSchema={props.model.billing_usage_schema}
+                    tiers={taskTiers}
+                    taskPriceOptions={{
+                      showRechargePrice,
+                      priceRate: props.priceRate,
+                      usdExchangeRate: props.usdExchangeRate,
+                    }}
+                  />
+                )}
+                <GroupPricingSection
+                  model={props.model}
+                  groupRatio={props.model.group_ratio ?? props.groupRatio}
+                  usableGroup={props.usableGroup}
+                  autoGroups={props.autoGroups}
+                  priceRate={props.priceRate}
+                  usdExchangeRate={props.usdExchangeRate}
+                  tokenUnit={props.tokenUnit}
+                  showRechargePrice={showRechargePrice}
+                />
+              </>
             )}
-            <GroupPricingSection
-              model={props.model}
-              groupRatio={props.groupRatio}
-              usableGroup={props.usableGroup}
-              autoGroups={props.autoGroups}
-              priceRate={props.priceRate}
-              usdExchangeRate={props.usdExchangeRate}
-              tokenUnit={props.tokenUnit}
-              showRechargePrice={showRechargePrice}
-            />
           </section>
 
           <ModelBackendDetailsSection model={props.model} />

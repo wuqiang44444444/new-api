@@ -4,61 +4,66 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/model"
+	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/shopspring/decimal"
 )
 
-const CustomerContractPublicPricingGroup = "contract"
-
+// CustomerContractPricingView is one native pricing entry with an optional
+// contract discount overlay. GroupRatio, when set, carries the per-group
+// effective ratio (native group ratio × contract discount) for contracted
+// models; uncontracted models keep the global native group ratios.
 type CustomerContractPricingView struct {
 	model.Pricing
-	GroupRatio    map[string]float64 `json:"group_ratio"`
-	ExecutionMode string             `json:"execution_mode,omitempty"`
+	GroupRatio       map[string]float64 `json:"group_ratio,omitempty"`
+	ContractDiscount string             `json:"contract_discount,omitempty"`
 }
 
-// BuildContractEntityPricing builds the public pricing projection of one
-// contract entity. Each rule becomes exactly one entry; availability comes
-// from the snapshot's already refreshed rules.
-func BuildContractEntityPricing(snapshot *model.ContractEntitySnapshot, userGroup string) ([]CustomerContractPricingView, error) {
+// ContractDiscountsFromSnapshot reduces one contract snapshot to an
+// exact-model → ratio_units map with one entry per public model. The save
+// boundary enforces one identical discount per model; any residual mismatch
+// is a hard error.
+func ContractDiscountsFromSnapshot(snapshot *model.ContractEntitySnapshot) (map[string]int64, error) {
 	if snapshot == nil {
-		return nil, fmt.Errorf("contract snapshot is nil")
+		return nil, fmt.Errorf("%w: contract snapshot is nil", ErrCustomerContractUnavailable)
 	}
-	adminRules, err := buildContractEntityRuleViews(snapshot, userGroup)
+	discounts := make(map[string]int64, len(snapshot.Rules))
+	for _, rule := range snapshot.Rules {
+		if rule.RatioUnits <= 0 || rule.RatioUnits > hosttypes.CustomerContractRatioScale {
+			return nil, fmt.Errorf("%w: invalid discount for model %q", ErrCustomerContractUnavailable, rule.PublicModel)
+		}
+		units, exists := discounts[rule.PublicModel]
+		if exists && units != rule.RatioUnits {
+			return nil, fmt.Errorf("%w: inconsistent discount for model %q", ErrCustomerContractUnavailable, rule.PublicModel)
+		}
+		discounts[rule.PublicModel] = rule.RatioUnits
+	}
+	return discounts, nil
+}
+
+// ApplyContractDiscountOverlay marks every contracted model's pricing entry
+// with the contract discount and a per-group effective ratio (native group
+// ratio × contract discount). Prices of uncontracted models stay native.
+func ApplyContractDiscountOverlay(pricing []model.Pricing, usableGroups []string, userGroup string, snapshot *model.ContractEntitySnapshot) ([]CustomerContractPricingView, error) {
+	discounts, err := ContractDiscountsFromSnapshot(snapshot)
 	if err != nil {
 		return nil, err
 	}
-	pricing := customerContractPricingIndex()
-	result := make([]CustomerContractPricingView, 0, len(adminRules))
-	for _, rule := range adminRules {
-		item, exists := pricing[rule.Model]
-		if !exists {
-			item = model.Pricing{ModelName: rule.Model}
+	result := make([]CustomerContractPricingView, 0, len(pricing))
+	for _, item := range pricing {
+		units, contracted := discounts[item.ModelName]
+		if !contracted {
+			result = append(result, CustomerContractPricingView{Pricing: item})
+			continue
 		}
-		effective, err := decimal.NewFromString(rule.EffectiveMultiplier)
-		if err != nil {
-			return nil, err
+		discount := decimal.NewFromInt(units).Div(decimal.NewFromInt(hosttypes.CustomerContractRatioScale))
+		view := CustomerContractPricingView{Pricing: item, ContractDiscount: discount.String()}
+		perGroup := make(map[string]float64)
+		for _, group := range usableGroups {
+			nativeRatio, _ := ResolveCustomerContractNativeGroupRatio(userGroup, group)
+			perGroup[group] = nativeRatio * discount.InexactFloat64()
 		}
-		item.OwnerBy = "new-api"
-		executionMode := ""
-		if rule.Price.BillingMode == "batch_expr" {
-			// A same-named synchronous model must not supply Batch prices.
-			item = model.Pricing{ModelName: rule.Model, OwnerBy: "new-api", BillingMode: "tiered_expr", BillingExpr: rule.Price.BillingExpr}
-			executionMode = "batch"
-		}
-		item.VendorID = 0
-		item.EnableGroup = []string{CustomerContractPublicPricingGroup}
-		item.Available = rule.Available
-		if rule.Available {
-			item.Availability = "available"
-		} else {
-			item.Availability = "restricted"
-		}
-		result = append(result, CustomerContractPricingView{
-			Pricing:       item,
-			ExecutionMode: executionMode,
-			GroupRatio: map[string]float64{
-				CustomerContractPublicPricingGroup: effective.InexactFloat64(),
-			},
-		})
+		view.GroupRatio = perGroup
+		result = append(result, view)
 	}
 	return result, nil
 }

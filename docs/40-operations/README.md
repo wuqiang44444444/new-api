@@ -30,6 +30,7 @@ last-reviewed: 2026-08-20
 - [09 Azure GPT-5.6 Chat 与 Responses 兼容运维手册](09-Azure-GPT-5.6-Chat与Responses兼容运维手册.md)
 - [10 用户模型合同运维手册](10-用户模型合同运维手册.md)
 - [环境配置（反代转发头与 ServerAddress）](环境配置.md)
+- [SQLite 历史日志用户名补齐手册](SQLite历史日志用户名补齐手册.md)：独立脚本预览、备份、补齐与重跑
 
 历史专题资料已移至 [99-archive](../99-archive/README.md)，Seedance 配置与验收统一按 `02`、`04`、`07`
 执行；旧模型 capability 接口不再存在。

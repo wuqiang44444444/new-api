@@ -10,7 +10,6 @@ import (
 
 var (
 	ErrCustomerContractUnavailable = errors.New("customer contract unavailable")
-	ErrCustomerContractModelDenied = errors.New("model is not included in the customer contract")
 )
 
 // ParseCustomerContractRatio accepts the admin UI's decimal, percentage and

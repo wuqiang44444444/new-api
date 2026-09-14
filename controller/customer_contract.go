@@ -312,13 +312,7 @@ func GetSelfCustomerContract(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "customer contract is temporarily unavailable"})
 		return
 	}
-	for i := range snapshots {
-		if err := model.RefreshContractEntityAvailability(&snapshots[i]); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "customer contract is temporarily unavailable"})
-			return
-		}
-	}
-	views, err := service.BuildContractEntityUserViews(snapshots, user.Group)
+	views, err := service.BuildContractEntityUserViews(snapshots)
 	if err != nil {
 		common.ApiError(c, err)
 		return

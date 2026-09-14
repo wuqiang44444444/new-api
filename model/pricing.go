@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 )
@@ -28,6 +29,9 @@ type Pricing struct {
 	VendorID               int                     `json:"vendor_id,omitempty"`
 	QuotaType              int                     `json:"quota_type"`
 	ModelRatio             float64                 `json:"model_ratio"`
+	// BasisPriceConfigured 表示倍率基础价来自显式配置而非缺价默认值；
+	// 自用模式下兜底开关使配置存在性不可判定，此时恒为 true。
+	BasisPriceConfigured bool `json:"basis_price_configured"`
 	ModelPrice             float64                 `json:"model_price"`
 	OwnerBy                string                  `json:"owner_by"`
 	CompletionRatio        float64                 `json:"completion_ratio"`
@@ -376,10 +380,14 @@ func updatePricing() {
 			pricing.ModelPrice = modelPrice
 			pricing.QuotaType = 1
 		} else {
-			modelRatio, _, _ := ratio_setting.GetModelRatio(model)
+			modelRatio, found, _ := ratio_setting.GetModelRatio(model)
 			pricing.ModelRatio = modelRatio
 			pricing.CompletionRatio = ratio_setting.GetCompletionRatio(model)
 			pricing.QuotaType = 0
+			// GetModelRatio 未命中时的第二个返回值是自用模式兜底开关，此时
+			// 配置存在性不可判定，按已配置处理；非自用模式返回 false 即证明
+			// 缺价，展示层据此区分缺价与显式合法的默认倍率。
+			pricing.BasisPriceConfigured = found || operation_setting.SelfUseModeEnabled
 		}
 		if cacheRatio, ok := ratio_setting.GetCacheRatio(model); ok {
 			pricing.CacheRatio = &cacheRatio

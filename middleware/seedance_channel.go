@@ -27,9 +27,11 @@ func ResolveSeedanceChannel() gin.HandlerFunc {
 			return
 		}
 		customerModel := strings.TrimSpace(contract.ModelArk.Model)
-		contractFact, err := applyCustomerContractRequest(c, customerModel)
-		if err != nil {
-			abortModelArkVideo(c, http.StatusForbidden, "model_not_found", "the requested model does not exist")
+		// The contract provides the discount only. It never picks or constrains
+		// the Seedance channel or group: a model without a contract discount
+		// keeps native behavior, and resolution anomalies fail closed.
+		if _, err := applyCustomerContractRequest(c, customerModel); err != nil {
+			abortModelArkVideo(c, http.StatusServiceUnavailable, "upstream_unavailable", "Contract authorization is unavailable")
 			return
 		}
 		if common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled) {
@@ -45,15 +47,8 @@ func ResolveSeedanceChannel() gin.HandlerFunc {
 		if pin, found, _ := service.GetChannelConstraints(c).ResolvedPin(); found {
 			specificChannelID = pin.ChannelId
 		}
-		if contractFact != nil && specificChannelID != contractFact.ChannelId {
-			abortModelArkVideo(c, http.StatusForbidden, "model_not_found", "the requested model does not exist")
-			return
-		}
 
 		usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-		if contractFact != nil {
-			usingGroup = contractFact.RouteGroup
-		}
 		groups := []string{usingGroup}
 		if usingGroup == "auto" {
 			groups = service.GetRequestAutoGroups(c, common.GetContextKeyString(c, constant.ContextKeyUserGroup))

@@ -62,7 +62,7 @@ func TestCustomerContractAdminListPreservesStatusScopeAndAvailability(t *testing
 	})
 	require.NoError(t, err)
 	assert.EqualValues(t, 3, total, "contracts of deleted owners are excluded")
-	assert.Equal(t, CustomerContractAdminSummary{Total: 3, Active: 1, ZeroAccess: 1, Inactive: 1}, summary)
+	assert.Equal(t, CustomerContractAdminSummary{Total: 3, Active: 2, Inactive: 1}, summary)
 	require.Len(t, items, 3)
 	// All contracts share one update second in the fixture, so the newest id
 	// leads; the deleted owner's contract is gone.
@@ -78,6 +78,11 @@ func TestCustomerContractAdminListPreservesStatusScopeAndAvailability(t *testing
 	assert.Equal(t, CustomerContractAdminStatusActive, activeItem.ContractStatus)
 	assert.Equal(t, 2, activeItem.RuleCount)
 	assert.Equal(t, 1, activeItem.UnavailableRuleCount)
+	// An enabled contract without rules is active: it no longer means the
+	// bound keys lose access, it only carries no discount rows.
+	zeroItem := byContract[zeroContract.Id]
+	assert.Equal(t, CustomerContractAdminStatusActive, zeroItem.ContractStatus)
+	assert.Equal(t, 0, zeroItem.RuleCount)
 	inactiveItem := byContract[inactiveContract.Id]
 	assert.Equal(t, CustomerContractAdminStatusInactive, inactiveItem.ContractStatus)
 	assert.Equal(t, 0, inactiveItem.UnavailableRuleCount)
@@ -109,13 +114,13 @@ func TestCustomerContractAdminListFiltersWithoutChangingSummary(t *testing.T) {
 	assert.EqualValues(t, 3, summary.Total)
 
 	items, total, summary, err = GetCustomerContractAdminList(CustomerContractAdminListFilter{
-		AdminRole: common.RoleAdminUser, Keyword: "zero-customer", Status: CustomerContractAdminStatusZeroAccess, Limit: 20,
+		AdminRole: common.RoleAdminUser, Keyword: "zero-customer", Status: CustomerContractAdminStatusActive, Limit: 20,
 	})
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, zeroContract.Id, items[0].ContractId)
 	assert.EqualValues(t, 1, total)
-	assert.EqualValues(t, 1, summary.ZeroAccess)
+	assert.EqualValues(t, 2, summary.Active)
 
 	items, total, _, err = GetCustomerContractAdminList(CustomerContractAdminListFilter{
 		AdminRole: common.RoleAdminUser, Keyword: strconv.Itoa(zero.Id), Limit: 1,

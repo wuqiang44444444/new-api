@@ -216,9 +216,6 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 }
 
 func ListModels(c *gin.Context, modelType int) {
-	if listCustomerContractModels(c, modelType) {
-		return
-	}
 	acceptUnsetRatioModel := operation_setting.SelfUseModeEnabled
 	if !acceptUnsetRatioModel {
 		userId := c.GetInt("id")
@@ -339,13 +336,10 @@ func ChannelListModels(c *gin.Context) {
 	})
 }
 
-// DashboardListModels serves the session-auth dashboard model list. Users with
-// contract entities see the union of their enabled contracts' available public
-// models; users without any contract keep the native channel-type listing.
+// DashboardListModels serves the session-auth dashboard model list. It keeps
+// the native channel-type listing; customer contracts provide discounts only
+// and never gate or extend the model list.
 func DashboardListModels(c *gin.Context) {
-	if listDashboardContractModels(c) {
-		return
-	}
 	modelsByChannel := make(map[int][]string, len(channelId2Models))
 	for channelType, models := range channelId2Models {
 		modelsByChannel[channelType] = append([]string(nil), models...)
@@ -370,9 +364,6 @@ func EnabledListModels(c *gin.Context) {
 
 func RetrieveModel(c *gin.Context, modelType int) {
 	modelId := c.Param("model")
-	if retrieveCustomerContractModel(c, modelType, modelId) {
-		return
-	}
 	if respondConfiguredSeedanceModel(c, modelType, modelId) {
 		return
 	}

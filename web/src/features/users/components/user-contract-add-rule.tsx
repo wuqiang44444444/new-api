@@ -19,7 +19,6 @@ import { parseContractDiscount } from './user-contract-utils'
 
 type CustomerContractAddRuleProps = {
   channelGroups: CustomerContractChannelGroupOption[]
-  existingModels: string[]
   group: string
   model: string
   channelId: string
@@ -36,11 +35,9 @@ export function CustomerContractAddRule(props: CustomerContractAddRuleProps) {
   const selectedGroupModels =
     props.channelGroups.find((group) => group.group === props.group)?.models ||
     []
-  const availableModels = selectedGroupModels
-    .map((entry) => entry.model)
-    .filter(
-      (model) => !props.existingModels.includes(model.toLowerCase())
-    )
+  // Every model of the group stays selectable: the same public model may be
+  // listed on several channels as long as the discount matches.
+  const availableModels = selectedGroupModels.map((entry) => entry.model)
   const channelOptions =
     selectedGroupModels.find((entry) => entry.model === props.model)?.channels ||
     []
@@ -131,7 +128,9 @@ export function CustomerContractAddRule(props: CustomerContractAddRuleProps) {
         </Button>
       </div>
       <FieldDescription>
-        {t('Each public model can bind to exactly one route group.')}
+        {t(
+          'One public model may list several channels; every rule of a model must share the same discount.'
+        )}
       </FieldDescription>
     </Field>
   )

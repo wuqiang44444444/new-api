@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CustomerStatementView } from './components/customer-statement'
 import { CustomerStatementsListView } from './components/customer-statements-list'
 import { UpstreamStatementView } from './components/upstream-statement'
+import { UpstreamUrlStatementView } from './components/upstream-url-statement'
 import { currentShanghaiMonth, resolveShanghaiMonth } from './lib'
 import type {
   AdminBillingSearch,
@@ -50,14 +51,22 @@ export function AdminBillingReconciliation(
   const dimension: BillingDimension = props.search.dimension ?? 'api_key'
   const period = resolveShanghaiMonth(month)
   const isUpstream = section === 'upstream'
-  const pageTitle = isUpstream
-    ? t('Upstream reconciliation')
-    : t('Billing reconciliation')
-  const pageDescription = isUpstream
-    ? t('Summarize platform-recorded Token usage or billable calls by channel.')
-    : t(
-        'Customer charges and platform-recorded upstream usage use separate views.'
-      )
+  const isUpstreamUrl = section === 'upstream_url'
+  let pageTitle = t('Billing reconciliation')
+  let pageDescription = t(
+    'Customer charges and platform-recorded upstream usage use separate views.'
+  )
+  if (isUpstreamUrl) {
+    pageTitle = t('Upstream URL summary')
+    pageDescription = t(
+      'Merge platform-recorded usage across channels that share the same current base URL.'
+    )
+  } else if (isUpstream) {
+    pageTitle = t('Upstream reconciliation')
+    pageDescription = t(
+      'Summarize platform-recorded Token usage or billable calls by channel.'
+    )
+  }
 
   return (
     <SectionPageLayout>
@@ -113,6 +122,9 @@ export function AdminBillingReconciliation(
               <TabsTrigger value='upstream'>
                 {t('Upstream reconciliation')}
               </TabsTrigger>
+              <TabsTrigger value='upstream_url'>
+                {t('Upstream URL summary')}
+              </TabsTrigger>
             </TabsList>
             <TabsContent value='customer'>
               {props.search.userId ? (
@@ -137,6 +149,17 @@ export function AdminBillingReconciliation(
             </TabsContent>
             <TabsContent value='upstream'>
               <UpstreamStatementView
+                month={month}
+                period={period}
+                onMonthChange={(nextMonth) =>
+                  props.onSearchChange({
+                    month: nextMonth || currentShanghaiMonth(),
+                  })
+                }
+              />
+            </TabsContent>
+            <TabsContent value='upstream_url'>
+              <UpstreamUrlStatementView
                 month={month}
                 period={period}
                 onMonthChange={(nextMonth) =>

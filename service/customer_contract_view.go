@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -39,13 +40,12 @@ type CustomerContractAdminRuleView struct {
 	Price               CustomerContractPricePreview `json:"price"`
 }
 
+// CustomerContractUserRuleView is one deduplicated model/discount row of the
+// owner-visible contract view. It expresses the agreed contract discount per
+// public model and carries no channel, group or availability facts.
 type CustomerContractUserRuleView struct {
-	Model               string                       `json:"model"`
-	Discount            string                       `json:"discount"`
-	ChannelDiscount     string                       `json:"channel_discount"`
-	EffectiveMultiplier string                       `json:"effective_multiplier"`
-	Available           bool                         `json:"available"`
-	Price               CustomerContractPricePreview `json:"price"`
+	Model    string `json:"model"`
+	Discount string `json:"discount"`
 }
 
 // ContractEntityAdminView is the admin drawer view of one contract entity.
@@ -67,7 +67,9 @@ type ContractEntityUserView struct {
 }
 
 // buildContractEntityRuleViews mirrors the legacy admin rule view builder for
-// contract entities. Snapshots must already carry refreshed availability.
+// contract entities. Each (model, channel) rule becomes exactly one entry;
+// availability is management information only. Snapshots must already carry
+// refreshed availability.
 func buildContractEntityRuleViews(snapshot *model.ContractEntitySnapshot, userGroup string) ([]CustomerContractAdminRuleView, error) {
 	if snapshot == nil {
 		return nil, fmt.Errorf("contract snapshot is nil")
@@ -77,7 +79,7 @@ func buildContractEntityRuleViews(snapshot *model.ContractEntitySnapshot, userGr
 	for _, rule := range snapshot.Rules {
 		channelIDs = append(channelIDs, rule.ChannelId)
 	}
-	batchChannels, err := model.BatchContractChannelIDs(channelIDs)
+	batchSources, err := model.CustomerContractBatchSourceIDs(channelIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -90,14 +92,12 @@ func buildContractEntityRuleViews(snapshot *model.ContractEntitySnapshot, userGr
 		groupRatio, hasSpecialRatio := ResolveCustomerContractNativeGroupRatio(userGroup, rule.RouteGroup)
 		effective := decimal.NewFromFloat(groupRatio).Mul(decimal.RequireFromString(discount))
 		price := buildCustomerContractPricePreview(pricing[rule.PublicModel], effective)
-		available := rule.Available
-		if batchChannels[rule.ChannelId] {
-			expr, configured := billing_setting.GetBatchBillingExpr(rule.PublicModel)
+		if batchSources[rule.ChannelId] {
+			expr, _ := billing_setting.GetBatchBillingExpr(rule.PublicModel)
 			price = CustomerContractPricePreview{PriceType: "tiered_multiplier", BillingMode: "batch_expr", BillingExpr: expr}
-			available = available && configured
 		}
 		result = append(result, CustomerContractAdminRuleView{
-			ChannelId: rule.ChannelId, Model: rule.PublicModel, RouteGroup: rule.RouteGroup, Discount: discount, Available: available,
+			ChannelId: rule.ChannelId, Model: rule.PublicModel, RouteGroup: rule.RouteGroup, Discount: discount, Available: rule.Available,
 			NativeGroupRatio: decimal.NewFromFloat(groupRatio).String(), EffectiveMultiplier: effective.String(),
 			SpecialGroupRatio: hasSpecialRatio,
 			Price:             price,
@@ -124,24 +124,28 @@ func BuildContractEntityAdminViews(snapshots []model.ContractEntitySnapshot, use
 }
 
 // BuildContractEntityUserViews builds owner-visible views for contract
-// entities. Snapshots must already carry refreshed availability.
-func BuildContractEntityUserViews(snapshots []model.ContractEntitySnapshot, userGroup string) ([]ContractEntityUserView, error) {
-	adminRules, err := BuildContractEntityAdminViews(snapshots, userGroup)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]ContractEntityUserView, 0, len(adminRules))
-	for i := range adminRules {
-		models := make([]CustomerContractUserRuleView, 0, len(adminRules[i].Rules))
-		for _, rule := range adminRules[i].Rules {
-			models = append(models, CustomerContractUserRuleView{
-				Model: rule.Model, Discount: rule.Discount, ChannelDiscount: rule.NativeGroupRatio,
-				EffectiveMultiplier: rule.EffectiveMultiplier, Available: rule.Available, Price: rule.Price,
-			})
+// entities: one deduplicated row per public model with its contract discount.
+// A model with several same-discount channel rules appears exactly once; an
+// unavailable model keeps its agreed discount row.
+func BuildContractEntityUserViews(snapshots []model.ContractEntitySnapshot) ([]ContractEntityUserView, error) {
+	result := make([]ContractEntityUserView, 0, len(snapshots))
+	for i := range snapshots {
+		discounts, err := ContractDiscountsFromSnapshot(&snapshots[i])
+		if err != nil {
+			return nil, err
 		}
+		models := make([]CustomerContractUserRuleView, 0, len(discounts))
+		for publicModel, units := range discounts {
+			discount, err := FormatCustomerContractRatio(units)
+			if err != nil {
+				return nil, err
+			}
+			models = append(models, CustomerContractUserRuleView{Model: publicModel, Discount: discount})
+		}
+		sort.Slice(models, func(i, j int) bool { return models[i].Model < models[j].Model })
 		result = append(result, ContractEntityUserView{
-			Id: adminRules[i].Id, Name: adminRules[i].Name, Enabled: adminRules[i].Enabled,
-			Version: adminRules[i].Version, Models: models,
+			Id: snapshots[i].Id, Name: snapshots[i].Name, Enabled: snapshots[i].Enabled,
+			Version: snapshots[i].Version, Models: models,
 		})
 	}
 	return result, nil

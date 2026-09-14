@@ -262,14 +262,16 @@ func TestBatchResourcesRequireTheOwningApp(t *testing.T) {
 	assert.Zero(t, *calls)
 }
 
-func TestBatchContractPinsSelectedChannelAndAppliesItsDiscount(t *testing.T) {
+func TestBatchContractAppliesDiscountWithoutChannelCoupling(t *testing.T) {
 	c, request, _ := batchLifecycleFixture(t, 200, `{"id":"provider-1","status":"validating"}`)
 	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 1701).Update("auth_version", 1).Error)
-	// A lower-ID alternative must never override the contract's explicit pin.
-	require.NoError(t, model.DB.Create(&model.Channel{Id: 1700, Type: constant.ChannelTypeAzureBatch, Status: common.ChannelStatusEnabled, Models: "batch-text", Group: "default"}).Error)
+	// The contract rule names a batch channel that native selection would not
+	// pick: selection stays native (lowest id wins) and the discount follows
+	// the model, not a channel.
+	require.NoError(t, model.DB.Create(&model.Channel{Id: 1702, Type: constant.ChannelTypeAzureBatch, Status: common.ChannelStatusEnabled, Models: "batch-text", Group: "default"}).Error)
 	contract := model.CustomerContract{UserId: 1701, Name: "Batch contract", Enabled: true, Version: 1}
 	require.NoError(t, model.DB.Create(&contract).Error)
-	require.NoError(t, model.DB.Create(&model.CustomerContractEntityRule{ContractId: contract.Id, PublicModel: "batch-text", ChannelId: 1701, RouteGroup: "default", RatioUnits: 50000000}).Error)
+	require.NoError(t, model.DB.Create(&model.CustomerContractEntityRule{ContractId: contract.Id, PublicModel: "batch-text", ChannelId: 1702, RouteGroup: "default", RatioUnits: 50000000}).Error)
 	ResetContractEntityCacheForTest()
 	t.Cleanup(ResetContractEntityCacheForTest)
 	t.Cleanup(func() {
@@ -278,20 +280,17 @@ func TestBatchContractPinsSelectedChannelAndAppliesItsDiscount(t *testing.T) {
 	})
 	common.SetContextKey(c, constant.ContextKeyTokenContractId, contract.Id)
 	common.SetContextKey(c, constant.ContextKeyAuthVersion, int64(1))
-	snapshot, err := model.GetContractEntitySnapshot(contract.Id, true)
+	fact, err := ResolveContractEntityRule(1701, 1, contract.Id, "batch-text")
 	require.NoError(t, err)
-	prices, err := BuildContractEntityPricing(snapshot, "default")
-	require.NoError(t, err)
-	require.Len(t, prices, 1)
-	assert.Equal(t, "batch", prices[0].ExecutionMode)
-	assert.Equal(t, "p * 2 + c * 4", prices[0].BillingExpr)
+	require.NotNil(t, fact)
+	assert.EqualValues(t, 50000000, fact.RatioUnits)
 	result, err := CreateBatchJob(c, request)
 	require.NoError(t, err)
-	assert.Equal(t, 1701, result.Job.ChannelId)
+	assert.Equal(t, 1701, result.Job.ChannelId, "batch channel selection stays native")
 	require.NoError(t, progressBatchJob(context.Background(), result.Job))
 	task, err := model.GetTaskById(result.Job.TaskRowId)
 	require.NoError(t, err)
-	assert.Equal(t, 10, task.Quota)
+	assert.Equal(t, 10, task.Quota, "the contract discount still applies to the batch job")
 	_, err = LoadContractEntityForRequest(1702, 1, contract.Id)
 	require.ErrorIs(t, err, ErrCustomerContractUnavailable)
 }

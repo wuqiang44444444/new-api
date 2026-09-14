@@ -60,7 +60,13 @@ export function parseTaskResult(){return {};}
 	prices := pricingByModel(GetPricing())
 	for _, name := range []string{"doubao-seedance-2-0-260128", "link-priced", "link-unpriced", "link-disabled"} {
 		require.Contains(t, prices, name)
-		assert.Empty(t, prices[name].BillingUsageSchema, name)
+		// 同源字段合同:Seedance 模型从类型化渠道事实取得自己的用量字段,
+		// 不再依赖通用插件模型索引,也不继承插件示例。
+		schema := prices[name].BillingUsageSchema
+		require.NotEmpty(t, schema, name)
+		assert.Equal(t, "token", schema["tokens"].Unit, name)
+		assert.Contains(t, schema, "duration_seconds", name)
+		assert.Contains(t, schema, "resolution", name)
 		assert.Empty(t, prices[name].BillingUsageExamples, name)
 		if name == "link-priced" {
 			assert.Equal(t, `tier("base", c * 5)`, prices[name].BillingExpr)

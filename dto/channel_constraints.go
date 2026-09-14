@@ -4,13 +4,11 @@ type ChannelPinSource string
 
 const (
 	PinSourceToken      ChannelPinSource = "token"       // Rank 0, highest
-	PinSourceContract   ChannelPinSource = "contract"    // Rank 0, key-bound customer contract
 	PinSourceOriginTask ChannelPinSource = "origin_task" // Rank 10
 )
 
 const (
 	PinRankToken      = 0
-	PinRankContract   = 0
 	PinRankOriginTask = 10
 )
 

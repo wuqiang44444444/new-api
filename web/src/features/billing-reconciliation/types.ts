@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export type BillingSection = 'customer' | 'upstream'
+export type BillingSection = 'customer' | 'upstream' | 'upstream_url'
 export type BillingDimension = 'api_key' | 'channel'
 export type BillingMode = 'token' | 'per_call' | 'unknown'
 export type CustomerStatementListQuality = 'all' | 'complete' | 'partial'
@@ -186,6 +186,36 @@ export type ProviderChannelSummary = {
 
 export type ProviderSummary = {
   channels: ProviderChannelSummary[]
+  data_quality?: BillingDataQuality
+}
+
+export type ProviderUrlChannelSummary = Omit<ProviderModelSummary, 'discount'>
+
+export type ProviderUrlModelSummary = {
+  provider_model: string
+  provider_model_fallback?: boolean
+  billing_mode: BillingMode
+  usage: ProviderUsage
+  channels: ProviderUrlChannelSummary[]
+  data_quality?: BillingDataQuality
+}
+
+export type ProviderUrlGroupSummary = {
+  url_key: string
+  display_name: string
+  base_url?: string
+  unidentified?: boolean
+  deleted?: boolean
+  channel_ids: number[]
+  channel_count: number
+  model_count: number
+  usage: ProviderUsage
+  models: ProviderUrlModelSummary[]
+  data_quality?: BillingDataQuality
+}
+
+export type ProviderUrlSummary = {
+  url_groups: ProviderUrlGroupSummary[]
   data_quality?: BillingDataQuality
 }
 

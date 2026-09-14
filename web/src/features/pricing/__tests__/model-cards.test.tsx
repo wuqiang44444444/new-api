@@ -31,7 +31,10 @@ import {
 import { ModelCard } from '../components/model-card'
 import { ModelCardGrid } from '../components/model-card-grid'
 import type { PricingModel } from '../types'
-import { billingDisplayFixture } from './billing-display-fixtures'
+import {
+  billingDisplayFixture,
+  taskBillingDisplayFixture,
+} from './billing-display-fixtures'
 
 function pricingModel(overrides: Partial<PricingModel> = {}): PricingModel {
   return {
@@ -97,22 +100,58 @@ describe('model cards', () => {
     expect(onClick).toHaveBeenCalledOnce()
   })
 
-  it('retains a neutral health strip and missing values when metrics are unavailable', () => {
+  it('omits empty description and unavailable metrics while retaining details', () => {
     render(<ModelCard model={pricingModel()} onClick={vi.fn()} />)
-    const metrics = screen.getByLabelText(
-      'Performance metrics for the last 24 hours'
-    )
-    expect(within(metrics).getByText('—%')).toBeVisible()
-    expect(within(metrics).getByText('—s')).toBeVisible()
-    expect(within(metrics).getByText('—t/s')).toBeVisible()
-    expect(within(metrics).queryByText(/100/)).not.toBeInTheDocument()
     expect(
-      within(metrics).getByRole('img', {
-        name: 'Recent success-rate samples; gray bars indicate missing data.',
-      })
-    ).toBeVisible()
-    expect(screen.getByText('No description available.')).toBeVisible()
+      screen.queryByLabelText('Performance metrics for the last 24 hours')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('No description available.')
+    ).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Details' })).toBeEnabled()
+  })
+
+  it('keeps asset sharing outside the decorative icon and allows its row to wrap', () => {
+    render(
+      <ModelCard
+        model={pricingModel({
+          model_name: 'seedance-with-a-long-customer-model-name',
+          asset_share_group: {
+            label: '8018',
+            models: [
+              'seedance-with-a-long-customer-model-name',
+              'another-model',
+            ],
+          },
+        })}
+        onClick={vi.fn()}
+      />
+    )
+    const badge = screen.getByText('Asset share group 8018')
+    expect(badge.closest('[aria-hidden="true"]')).toBeNull()
+    expect(badge.closest('[tabindex="0"]')).toHaveClass('max-w-full')
+    expect(badge.closest('[tabindex="0"]')?.parentElement).toHaveClass(
+      'flex-wrap'
+    )
+    expect(screen.getByRole('heading')).toHaveClass('[overflow-wrap:anywhere]')
+  })
+
+  it('reveals the complete asset sharing label and models on keyboard focus', async () => {
+    const user = userEvent.setup()
+    render(
+      <ModelCard
+        model={pricingModel({
+          asset_share_group: {
+            label: '8018',
+            models: ['first-model', 'second-model'],
+          },
+        })}
+        onClick={vi.fn()}
+      />
+    )
+    await user.tab()
+    expect(await screen.findByText('first-model, second-model')).toBeVisible()
+    expect(screen.getAllByText('Asset share group 8018')).toHaveLength(2)
   })
 
   it('keeps group, endpoint and tag overflow counts with their own metadata', () => {
@@ -142,6 +181,10 @@ describe('model cards', () => {
     if (!groupField || !endpointField) {
       throw new Error('Expected labeled group and endpoint fields')
     }
+    expect(groupField.parentElement).toHaveClass(
+      'grid-cols-1',
+      '@min-[360px]:grid-cols-2'
+    )
     const tagField = screen.getByRole('group', { name: 'Tags' })
     expect(within(groupField).getByText(groups[0])).toBeVisible()
     expect(within(groupField).getByText('+2')).toHaveAttribute(
@@ -280,6 +323,9 @@ describe('model cards', () => {
           billing_mode: 'tiered_expr',
           billing_expr:
             'u("mode") == "pro" ? tier("pro", u("seconds") * 0.8) : tier("std", u("seconds") * 0.4)',
+          billing_display: taskBillingDisplayFixture(
+            'u("mode") == "pro" ? tier("pro", u("seconds") * 0.8) : tier("std", u("seconds") * 0.4)'
+          ),
           billing_usage_schema: {
             seconds: { type: 'number', unit: 'second' },
             mode: { enum: ['std', 'pro'] },
@@ -292,6 +338,56 @@ describe('model cards', () => {
     expect(screen.getByText(/0.4.*0.8/)).toHaveTextContent(/0.4 – \$0.8/)
     expect(screen.getByText(/^\/\s*s$/)).toBeVisible()
     expect(screen.queryByText(/1K|1M/)).not.toBeInTheDocument()
+  })
+
+  it('expands the resolution matrix formula into a ranged card summary', () => {
+    // 线上截图公式形状:tier() 内部按分辨率选择单价,外层按是否带参考视频分档。
+    const expression =
+      'u("has_video_input") ? tier("base", u("resolution") == "1080p" ? u("tokens") * 6.762 / 1000000 : u("tokens") * 6.174 / 1000000) : tier("base", u("resolution") == "1080p" ? u("tokens") * 11.319 / 1000000 : u("tokens") * 10.29 / 1000000)'
+    render(
+      <ModelCard
+        model={pricingModel({
+          billing_mode: 'tiered_expr',
+          billing_expr: expression,
+          billing_display: taskBillingDisplayFixture(expression),
+          billing_usage_schema: {
+            tokens: { type: 'number', unit: 'token' },
+            resolution: { enum: ['1080p'] },
+            has_video_input: { type: 'boolean' },
+          },
+        })}
+        onClick={vi.fn()}
+        tokenUnit='K'
+      />
+    )
+    // 卡片显示跨全部条件档位的范围,不显示第一档价格,也不显示原式。
+    expect(screen.getByText(/\$6\.174 – \$11\.319/)).toBeVisible()
+    expect(screen.queryByText(/u\("has_video_input"\)/)).not.toBeInTheDocument()
+  })
+
+  it('shows every resolution rate when the saved formula multiplies usage by a conditional price', () => {
+    // Use the saved multiplicative formula, not an algebraically rewritten fixture.
+    const expression =
+      'u("has_video_input") ? tier("reference_video", u("tokens") * (u("resolution") == "4k" ? 2.352 : u("resolution") == "1080p" ? 4.557 : 4.116) / 1000000) : tier("no_video", u("tokens") * (u("resolution") == "4k" ? 3.822 : u("resolution") == "1080p" ? 7.497 : 6.762) / 1000000)'
+    render(
+      <ModelCard
+        model={pricingModel({
+          billing_mode: 'tiered_expr',
+          billing_expr: expression,
+          billing_display: taskBillingDisplayFixture(expression),
+          billing_usage_schema: {
+            tokens: { type: 'number', unit: 'token' },
+            resolution: { enum: ['480p', '720p', '1080p', '4k'] },
+            has_video_input: { type: 'boolean' },
+          },
+        })}
+        onClick={vi.fn()}
+        tokenUnit='K'
+      />
+    )
+    // 卡片显示跨全部条件档位的范围,不显示第一档价格,也不显示原式。
+    expect(screen.getByText(/\$2\.352 – \$7\.497/)).toBeVisible()
+    expect(screen.queryByText(/u\("has_video_input"\)/)).not.toBeInTheDocument()
   })
 
   it('shows the unconfigured usage message without inventing a token price', () => {
@@ -316,12 +412,20 @@ describe('model cards', () => {
           billing_mode: 'tiered_expr',
           billing_expr:
             'u("mode") == "pro" ? tier("pro", u("tokens") * 70 / 1000000) : tier("std", u("tokens") * 42 / 1000000)',
+          billing_display: taskBillingDisplayFixture(
+            'u("mode") == "pro" ? tier("pro", u("tokens") * 70 / 1000000) : tier("std", u("tokens") * 42 / 1000000)'
+          ),
           billing_usage_schema: {
             tokens: { type: 'number', unit: 'token' },
             mode: { enum: ['std', 'pro'] },
           },
           billing_usage_examples: [
-            { label: '480p · 5s', facts: { tokens: 48000, mode: 'std' } },
+            // total 由后端求值：42/1e6 × 48000。
+            {
+              label: '480p · 5s',
+              facts: { tokens: 48000, mode: 'std' },
+              total: 2.016,
+            },
           ],
         })}
         onClick={vi.fn()}
@@ -334,7 +438,7 @@ describe('model cards', () => {
     expect(screen.getByText(/480p · 5s ≈/)).toBeVisible()
   })
 
-  it('keeps an unrecognized expression visible with the special billing message', () => {
+  it('keeps an unrecognized expression unexpanded with the special billing message', () => {
     const expression =
       'u("seconds") > 30 ? tier("long", u("seconds") * 0.3) : tier("short", u("seconds") * 0.4)'
     render(
@@ -348,10 +452,14 @@ describe('model cards', () => {
       />
     )
     expect(screen.getByText('Special billing expression')).toBeVisible()
-    expect(screen.getByText(expression)).toBeVisible()
+    // 无法证明的投影保持不可展开状态；原式不作为价格展示给客户。
+    expect(
+      screen.getByText('Pricing details temporarily unavailable')
+    ).toBeVisible()
+    expect(screen.queryByText(expression)).not.toBeInTheDocument()
   })
 
-  it('keeps browsing and neutral health placeholders available after the metrics request fails', async () => {
+  it('keeps browsing available without empty metrics after the metrics request fails', async () => {
     const request = vi
       .spyOn(api, 'get')
       .mockRejectedValue(new Error('metrics unavailable'))
@@ -370,10 +478,8 @@ describe('model cards', () => {
       params: { hours: 24 },
     })
     expect(
-      within(
-        screen.getByLabelText('Performance metrics for the last 24 hours')
-      ).getAllByText(/^—/)
-    ).toHaveLength(3)
+      screen.queryByLabelText('Performance metrics for the last 24 hours')
+    ).not.toBeInTheDocument()
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Details' }))
     expect(onModelClick).toHaveBeenCalledWith('example-model')

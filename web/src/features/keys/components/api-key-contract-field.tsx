@@ -1,9 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, type ReactNode } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
-import { ContractPriceDetails } from '@/components/contract-price-details'
 import {
   FormControl,
   FormDescription,
@@ -27,22 +26,57 @@ import type { ApiKeyFormValues } from '../lib'
 export function ApiKeyContractField(props: {
   form: UseFormReturn<ApiKeyFormValues>
   open: boolean
+  /** True once the mutate drawer has applied its form defaults. */
+  ready: boolean
+  isUpdate: boolean
 }) {
   const { t } = useTranslation()
   // Self-service contract list for binding an API key to one customer contract.
-  const { data: contractsData } = useQuery({
+  const { data: contractsData, isError: contractsError } = useQuery({
     queryKey: ['self-customer-contract'],
     queryFn: getSelfCustomerContract,
     enabled: props.open,
     staleTime: 60 * 1000,
   })
 
-  // Self-service contract list for binding an API key to one customer contract.
   const contracts = useMemo(
     () => contractsData?.data?.contracts ?? [],
     [contractsData]
   )
   const selectedContractId = props.form.watch('contract_id')
+  // A manual selection (including explicitly unbinding) is never overwritten
+  // by re-renders or data refreshes.
+  const manualSelectionRef = useRef(false)
+  const autoSelectRef = useRef(false)
+  useEffect(() => {
+    if (!props.open) {
+      manualSelectionRef.current = false
+      autoSelectRef.current = false
+    }
+  }, [props.open])
+
+  // New-key default: when the loaded list holds exactly one contract and that
+  // contract is enabled, select it once as the initial value. The decision is
+  // based on the total contract count (not the filtered enabled count); a
+  // failed or incomplete load never infers a default. Existing keys keep
+  // their stored binding.
+  useEffect(() => {
+    if (!props.open || props.isUpdate || !props.ready) return
+    if (manualSelectionRef.current || autoSelectRef.current) return
+    if (!contractsData?.success || !contractsData.data) return
+    if (contracts.length !== 1 || !contracts[0].enabled) return
+    if ((Number(props.form.getValues('contract_id')) || 0) !== 0) return
+    autoSelectRef.current = true
+    props.form.setValue('contract_id', contracts[0].id, { shouldDirty: true })
+  }, [
+    props.open,
+    props.isUpdate,
+    props.ready,
+    contractsData,
+    contracts,
+    props.form,
+  ])
+
   const contractOptions = useMemo(() => {
     const options = contracts
       .filter((contract) => contract.enabled)
@@ -75,39 +109,57 @@ export function ApiKeyContractField(props: {
   const selected = contracts.find(
     (contract) => contract.id === Number(selectedContractId)
   )
+  // A failed load must never look like "no contract": the discount list is
+  // simply unavailable until the contract can be read again.
+  if (
+    contractsError ||
+    (contractsData && (!contractsData.success || !contractsData.data))
+  ) {
+    return (
+      <FormItem>
+        <FormLabel>{t('Customer contract')}</FormLabel>
+        <FormDescription className='text-destructive'>
+          {t('Contract discount details failed to load')}
+        </FormDescription>
+        <FormMessage />
+      </FormItem>
+    )
+  }
   if (contracts.length === 0 && !Number(selectedContractId)) return null
   let preview: ReactNode = null
   if (selected && !selected.enabled) {
     preview = (
       <p className='text-muted-foreground text-sm'>
-        {t(
-          'This contract is disabled. Bound API keys currently follow native logic.'
-        )}
+        {t('This contract is disabled. Its discounts are not in effect.')}
       </p>
     )
   } else if (selected && selected.models.length === 0) {
     preview = (
       <p className='text-muted-foreground text-sm'>
-        {t('No models are currently authorized')}
+        {t('This contract carries no model discounts')}
       </p>
     )
   } else if (selected) {
     preview = (
-      <div className='max-h-64 divide-y overflow-y-auto rounded-md border'>
-        {selected.models.map((rule) => (
-          <div key={rule.model} className='min-w-0 space-y-1 p-3 text-sm'>
-            <div className='font-mono break-all'>{rule.model}</div>
-            <div className='text-muted-foreground'>
-              {rule.available ? t('Available') : t('Unavailable')}
-            </div>
-            <ContractPriceDetails
-              price={rule.price}
-              channelMultiplier={rule.channel_discount || '1'}
-              contractDiscount={rule.discount}
-              effectiveMultiplier={rule.effective_multiplier || rule.discount}
-            />
-          </div>
-        ))}
+      <div className='max-h-64 overflow-y-auto rounded-md border'>
+        <table className='w-full text-sm'>
+          <thead>
+            <tr className='text-muted-foreground border-b'>
+              <th className='px-3 py-2 text-left font-medium'>{t('Model')}</th>
+              <th className='px-3 py-2 text-left font-medium'>
+                {t('Contract discount')}
+              </th>
+            </tr>
+          </thead>
+          <tbody className='divide-y'>
+            {selected.models.map((rule) => (
+              <tr key={rule.model}>
+                <td className='px-3 py-2 font-mono break-all'>{rule.model}</td>
+                <td className='px-3 py-2'>{rule.discount}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     )
   }
@@ -125,7 +177,10 @@ export function ApiKeyContractField(props: {
                 { value: '0', label: t('Do not bind a contract') },
               ]}
               value={String(field.value ?? 0)}
-              onValueChange={(value) => field.onChange(Number(value || 0))}
+              onValueChange={(value) => {
+                manualSelectionRef.current = true
+                field.onChange(Number(value || 0))
+              }}
             >
               <SelectTrigger className='w-full'>
                 <SelectValue>
@@ -152,7 +207,7 @@ export function ApiKeyContractField(props: {
           </FormControl>
           <FormDescription>
             {t(
-              "Keys bound to a contract can only call that contract's models."
+              'Keys bound to a contract receive its model discounts; model access and routing stay native.'
             )}
           </FormDescription>
           {preview}

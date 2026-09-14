@@ -28,6 +28,7 @@ import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { taskActionMapper, taskStatusMapper } from '../../lib/mappers'
+import { TASK_STATUS } from '../../constants'
 import {
   resolveTaskPreviewMode,
   shouldLoadTaskArtifacts,
@@ -101,6 +102,7 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
   const plugin = access.plugin
   const runtime = access.runtime
   const properties = props.log.properties
+  const needsReconciliation = props.log.status === TASK_STATUS.RECONCILIATION_REQUIRED
   const previewMode = resolveTaskPreviewMode(props.log)
   const showVideoResult =
     shouldLoadTaskArtifacts(props.log, props.open) && previewMode !== 'none'
@@ -187,7 +189,15 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
             />
           ) : null}
           {props.log.fail_reason ? (
-            <DetailRow label={t('Fail Reason')} value={props.log.fail_reason} />
+            <DetailRow
+              label={needsReconciliation ? t('Verification reason') : t('Fail Reason')}
+              value={props.log.fail_reason}
+            />
+          ) : null}
+          {needsReconciliation ? (
+            <p role='status' className='text-xs text-amber-600 dark:text-amber-400'>
+              {t('The latest result is not yet confirmed. We will keep checking. Please do not submit again.')}
+            </p>
           ) : null}
         </DetailSection>
 

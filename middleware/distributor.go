@@ -45,8 +45,7 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
-		contractFact, aborted := applyCustomerContractDistributeGate(c, modelRequest.Model, shouldSelectChannel)
-		if aborted {
+		if applyCustomerContractDistributeGate(c, modelRequest.Model, shouldSelectChannel) {
 			return
 		}
 		if pin, found, overridden := constraints.ResolvedPin(); found {
@@ -80,15 +79,11 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelRequest.Model}), types.ErrorCode(kind))
 				return
 			}
-			if contractFact != nil && !channelSatisfiesCustomerContract(channel, contractFact) {
-				abortWithOpenAiMessage(c, http.StatusForbidden, "The requested model does not exist", types.ErrorCodeModelNotFound)
-				return
-			}
 		} else {
 			// Select a channel for the user
 			// check token model mapping
 			modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
-			if modelLimitEnable && contractFact == nil {
+			if modelLimitEnable {
 				s, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
 				if !ok {
 					// token model limit is empty, all models are not allowed
@@ -114,7 +109,7 @@ func Distribute() func(c *gin.Context) {
 				var selectGroup string
 				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 				// check path is /pg/chat/completions
-				if contractFact == nil && strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
+				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
 					playgroundRequest := &dto.PlayGroundRequest{}
 					err = common.UnmarshalBodyReusable(c, playgroundRequest)
 					if err != nil {
@@ -173,10 +168,6 @@ func Distribute() func(c *gin.Context) {
 						Retry:       common.GetPointer(0),
 					})
 					if err != nil {
-						if contractFact != nil {
-							abortCustomerContractChannelUnavailable(c, contractFact, err.Error())
-							return
-						}
 						showGroup := usingGroup
 						if usingGroup == "auto" {
 							showGroup = fmt.Sprintf("auto(%s)", selectGroup)
@@ -191,17 +182,9 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if channel == nil {
-						if contractFact != nil {
-							abortCustomerContractChannelUnavailable(c, contractFact, "no enabled channel")
-							return
-						}
 						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, noAvailableChannelMessage(c, usingGroup, modelRequest.Model), types.ErrorCodeModelNotFound)
 						return
 					}
-				}
-				if contractFact != nil && !channelSatisfiesCustomerContract(channel, contractFact) {
-					abortCustomerContractChannelUnavailable(c, contractFact, fmt.Sprintf("selected channel %d failed exact contract validation", channel.Id))
-					return
 				}
 			}
 		}

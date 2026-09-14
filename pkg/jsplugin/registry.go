@@ -115,6 +115,9 @@ func (m Meta) ProtocolSupports(protocol, mode string) bool {
 type UsageExample struct {
 	Label string         `json:"label"`
 	Facts map[string]any `json:"facts"`
+	// Total 是响应装配阶段按冻结表达式对 Facts 求值得到的 USD 金额，属于
+	// 只读展示投影；保存的插件声明不携带该字段，求值失败时保持为零。
+	Total float64 `json:"total,omitempty"`
 }
 
 type AuthorMeta struct {

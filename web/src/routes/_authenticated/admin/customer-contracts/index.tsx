@@ -32,7 +32,7 @@ const customerContractsSearchSchema = z.object({
   pageSize: z.number().int().positive().max(100).optional().catch(undefined),
   filter: z.string().max(255).optional().catch(''),
   status: z
-    .array(z.enum(['active', 'zero_access', 'inactive']))
+    .array(z.enum(['active', 'inactive']))
     .optional()
     .catch([]),
 })

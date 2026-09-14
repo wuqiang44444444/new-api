@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { BadgePercent, CircleCheck, CircleOff, ShieldX } from 'lucide-react'
+import { BadgePercent, CircleCheck, CircleOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -51,13 +51,6 @@ export function CustomerContractSummary(props: CustomerContractSummaryProps) {
       value: props.summary.active,
       icon: CircleCheck,
       iconClassName: 'text-success',
-    },
-    {
-      key: 'zero-access',
-      label: t('No model access'),
-      value: props.summary.zero_access,
-      icon: ShieldX,
-      iconClassName: 'text-destructive',
     },
     {
       key: 'inactive',

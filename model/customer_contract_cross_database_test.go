@@ -34,7 +34,7 @@ func TestCustomerContractEntityPersistenceAcrossSupportedServerDatabases(t *test
 
 			db, err := gorm.Open(test.dialector(dsn), &gorm.Config{})
 			require.NoError(t, err)
-			for _, table := range []any{&User{}, &Channel{}, &Ability{}, &Token{}, &CustomerContract{}, &CustomerContractEntityRule{}, &CustomerContractEntityAudit{}} {
+			for _, table := range []any{&User{}, &Channel{}, &Ability{}, &Token{}, &CustomerModelContract{}, &CustomerContract{}, &CustomerContractEntityRule{}, &CustomerContractEntityAudit{}} {
 				if db.Migrator().HasTable(table) {
 					t.Skipf("refusing to use non-empty %s test database", test.name)
 				}
@@ -78,6 +78,9 @@ func TestCustomerContractEntityPersistenceAcrossSupportedServerDatabases(t *test
 				&CustomerContractEntityAudit{},
 			))
 			managedTables = true
+			// Recreate the pre-upgrade index with a real persisted single-channel rule.
+			require.NoError(t, db.Migrator().DropIndex(&CustomerContractEntityRule{}, "idx_cc_entity_rule_contract_model_channel"))
+			require.NoError(t, db.Exec("CREATE UNIQUE INDEX idx_cc_entity_rule_contract_model ON customer_contract_entity_rules (contract_id, public_model)").Error)
 
 			admin, user := createCustomerContractFixture(t, db)
 			channel := createCustomerContractAbility(t, db, "contract-cross-db", "cross-db-model", common.ChannelStatusEnabled)
@@ -103,6 +106,17 @@ func TestCustomerContractEntityPersistenceAcrossSupportedServerDatabases(t *test
 			require.Len(t, snapshot.Rules, 1)
 			assert.Equal(t, channel.Id, snapshot.Rules[0].ChannelId)
 
+			var original CustomerContractEntityRule
+			require.NoError(t, db.Where("contract_id = ?", snapshot.Id).First(&original).Error)
+			for range 2 {
+				require.NoError(t, migrateCustomerContractEntityRuleIndex(db))
+				require.NoError(t, db.AutoMigrate(&CustomerContractEntityRule{}))
+				assert.False(t, db.Migrator().HasIndex(&CustomerContractEntityRule{}, "idx_cc_entity_rule_contract_model"))
+				var preserved CustomerContractEntityRule
+				require.NoError(t, db.First(&preserved, original.Id).Error)
+				assert.Equal(t, original, preserved, "upgrade must not rewrite historical rule facts")
+			}
+
 			listedUsers, _, err := SearchUsers(user.Username, "", nil, nil, 0, 20)
 			require.NoError(t, err)
 			require.Len(t, listedUsers, 1)
@@ -113,7 +127,19 @@ func TestCustomerContractEntityPersistenceAcrossSupportedServerDatabases(t *test
 				ContractId: snapshot.Id, PublicModel: "cross-db-model", ChannelId: channel.Id,
 				RouteGroup: "contract-cross-db", RatioUnits: 50_000_000,
 			}
-			require.Error(t, db.Create(&duplicate).Error, "the contract/model unique index must be enforced")
+			require.Error(t, db.Create(&duplicate).Error, "the contract/model/channel unique index must be enforced")
+
+			// The same model on another channel and another model on the same
+			// channel are both legal under the new unique index.
+			otherChannel := createCustomerContractAbility(t, db, "contract-cross-db-b", "cross-db-model", common.ChannelStatusEnabled)
+			require.NoError(t, db.Create(&CustomerContractEntityRule{
+				ContractId: snapshot.Id, PublicModel: "cross-db-model", ChannelId: otherChannel.Id,
+				RouteGroup: "contract-cross-db", RatioUnits: 80_000_000,
+			}).Error)
+			require.NoError(t, db.Create(&CustomerContractEntityRule{
+				ContractId: snapshot.Id, PublicModel: "cross-db-model-2", ChannelId: channel.Id,
+				RouteGroup: "contract-cross-db", RatioUnits: 80_000_000,
+			}).Error)
 
 			_, err = ReplaceCustomerContractEntity(ReplaceCustomerContractEntityParams{
 				ContractId: snapshot.Id, AdminUserId: admin.Id, ExpectedVersion: 0, Name: "Cross DB",

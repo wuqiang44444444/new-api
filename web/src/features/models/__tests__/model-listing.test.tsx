@@ -16,7 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { billingDisplayFixture } from '@/features/pricing/__tests__/billing-display-fixtures'
+import { billingDisplayFixture ,
+  taskBillingDisplayFixture,
+} from '@/features/pricing/__tests__/billing-display-fixtures'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   createRootRoute,
@@ -573,7 +575,7 @@ it.each([
       billing_expr:
         'len <= 200000 ? tier("standard", p * 3 + c * 15) : tier("long", p * 6 + c * 22.5)',
     },
-    text: 'Input3Output15',
+    text: 'Input3–6Output15–22.5',
   },
   {
     name: 'free-request',
@@ -657,6 +659,7 @@ it('shows task tier ranges in the schema unit and converts site currency only on
           'billing_setting.billing_expr': expression,
         },
         usage_schema: schema,
+        billing_display: taskBillingDisplayFixture(expression),
       },
     ],
   })

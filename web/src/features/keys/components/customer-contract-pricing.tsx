@@ -15,13 +15,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from '@/components/ui/empty'
-import { ContractPriceDetails } from '@/components/contract-price-details'
+import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 
 import { getSelfCustomerContract } from '../api'
 
@@ -42,7 +36,7 @@ export function CustomerContractPricing() {
       </div>
     )
   }
-  if (isError || !data?.success) {
+  if (isError || !data?.success || !data.data) {
     return (
       <Alert variant='destructive'>
         <AlertTitle>
@@ -50,7 +44,7 @@ export function CustomerContractPricing() {
         </AlertTitle>
         <AlertDescription>
           {t(
-            'Model access remains fail-closed until the contract can be loaded.'
+            'Discount details stay unavailable until the contract can be loaded.'
           )}
         </AlertDescription>
       </Alert>
@@ -62,12 +56,12 @@ export function CustomerContractPricing() {
     <Collapsible open={open} onOpenChange={setOpen}>
       <Card size='sm'>
         <CardHeader>
-          <CardTitle>{t('Your model contract pricing')}</CardTitle>
+          <CardTitle>{t('Your model contract discounts')}</CardTitle>
           <CardDescription>
             {contracts.length === 1
-              ? t('These rules apply only to API keys bound to this contract.')
+              ? t('These discounts apply to API keys bound to this contract.')
               : t(
-                  'Each API key follows the pricing of the contract bound to it.'
+                  'Each API key follows the discounts of the contract bound to it.'
                 )}
           </CardDescription>
           <CardAction>
@@ -96,7 +90,7 @@ export function CustomerContractPricing() {
                       <AlertTitle>{t('Contract mode is inactive')}</AlertTitle>
                       <AlertDescription>
                         {t(
-                          'This contract is disabled. Bound API keys currently follow native logic.'
+                          'This contract is disabled. Its discounts are not in effect.'
                         )}
                       </AlertDescription>
                     </Alert>
@@ -106,68 +100,43 @@ export function CustomerContractPricing() {
                     <Empty className='border'>
                       <EmptyHeader>
                         <EmptyTitle>
-                          {t('No models are currently authorized')}
+                          {t('This contract carries no model discounts')}
                         </EmptyTitle>
-                        <EmptyDescription>
-                          {t(
-                            'API keys bound to this contract cannot call models until rules are available.'
-                          )}
-                        </EmptyDescription>
                       </EmptyHeader>
                     </Empty>
                   )
                 } else {
                   contractContent = (
-                    <div className='divide-y rounded-lg border'>
-                      {contract.models.map((rule) => {
-                        const channelMultiplier = rule.channel_discount || '1'
-                        const effectiveMultiplier =
-                          rule.effective_multiplier || rule.discount
-                        return (
-                          <div
-                            key={rule.model}
-                            className='grid gap-2 p-3 md:grid-cols-[minmax(200px,1fr)_130px_minmax(240px,1fr)] md:items-start'
-                          >
-                            <div className='flex min-w-0 items-center gap-2'>
-                              <span className='truncate font-mono text-sm'>
+                    <div className='overflow-hidden rounded-lg border'>
+                      <table className='w-full text-sm'>
+                        <thead>
+                          <tr className='text-muted-foreground border-b'>
+                            <th className='px-3 py-2 text-left font-medium'>
+                              {t('Model')}
+                            </th>
+                            <th className='px-3 py-2 text-left font-medium'>
+                              {t('Contract discount')}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className='divide-y'>
+                          {contract.models.map((rule) => (
+                            <tr key={rule.model}>
+                              <td className='px-3 py-2 font-mono break-all'>
                                 {rule.model}
-                              </span>
-                              <Badge
-                                variant={
-                                  rule.available ? 'secondary' : 'destructive'
-                                }
-                              >
-                                {rule.available
-                                  ? t('Available')
-                                  : t('Unavailable')}
-                              </Badge>
-                            </div>
-                            <div className='text-sm'>
-                              <div>
-                                {t('Contract discount')}: {rule.discount}
-                              </div>
-                              <div className='text-muted-foreground text-xs'>
-                                {t('Channel multiplier')}: {channelMultiplier}
-                              </div>
-                            </div>
-                            <div className='min-w-0 text-sm'>
-                              <ContractPriceDetails
-                                price={rule.price}
-                                channelMultiplier={channelMultiplier}
-                                contractDiscount={rule.discount}
-                                effectiveMultiplier={effectiveMultiplier}
-                              />
-                            </div>
-                          </div>
-                        )
-                      })}
+                              </td>
+                              <td className='px-3 py-2'>{rule.discount}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )
                 }
                 return (
                   <div key={contract.id} className='flex flex-col gap-2'>
                     <div className='flex items-center gap-2'>
-                      <span className='font-medium text-sm'>
+                      <span className='text-sm font-medium'>
                         {contract.name}
                       </span>
                       <Badge

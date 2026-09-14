@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, cleanup } from '@testing-library/react'
 import i18next from 'i18next'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 
@@ -32,10 +32,44 @@ import {
   taskPriceLabel,
   taskEnumLabel,
   taskPricingConditions,
+  taskPricingConditionSummary,
 } from '../lib/task-price-display'
 import type { PricingModel, BillingUsageSchema } from '../types'
+import { taskBillingDisplayFixture } from './billing-display-fixtures'
+import { taskTiersFromBillingDisplay } from '../lib/billing-display'
 
 vi.mock('@visactor/react-vchart', () => ({ VChart: () => null }))
+
+const matrixExpression =
+  'u("has_video_input") ? tier("base", u("resolution") == "1080p" ? u("tokens") * 6.762 / 1000000 : u("tokens") * 6.174 / 1000000) : tier("base", u("resolution") == "1080p" ? u("tokens") * 11.319 / 1000000 : u("tokens") * 10.29 / 1000000)'
+
+it('renders the projected resolution matrix with localized negated conditions', () => {
+  const schema: BillingUsageSchema = {
+    tokens: { type: 'number', unit: 'token', description: { en: 'Token price' } },
+    resolution: { enum: ['1080p'], description: { en: 'Resolution' } },
+    has_video_input: {
+      type: 'boolean',
+      description: { en: 'Reference video' },
+    },
+  }
+  render(
+    <DynamicPricingBreakdown
+      billingExpr={matrixExpression}
+      billingDisplay={taskBillingDisplayFixture(matrixExpression)}
+      usageSchema={schema}
+      tiers={taskTiersFromBillingDisplay(taskBillingDisplayFixture(matrixExpression))}
+    />
+  )
+  // 四个分支各自带本地化条件,否定分支不再是“其他情况”。
+  expect(screen.getAllByText('Reference video: Yes · Resolution: 1080p').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('Reference video: Yes · Resolution ≠ 1080p').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('Reference video: No · Resolution: 1080p').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('Reference video: No · Resolution ≠ 1080p').length).toBeGreaterThan(0)
+  expect(screen.getAllByText(/6\.762/).length).toBeGreaterThan(0)
+  expect(screen.getAllByText(/11\.319/).length).toBeGreaterThan(0)
+  expect(screen.queryByText('Other cases')).not.toBeInTheDocument()
+  expect(screen.queryByText(/u\("has_video_input"\)/)).not.toBeInTheDocument()
+})
 
 const model: PricingModel = {
   id: 1,
@@ -46,6 +80,7 @@ const model: PricingModel = {
   enable_groups: ['default'],
   billing_mode: 'tiered_expr',
   billing_expr: 'tier("music", u("clips") * 0.22)',
+  billing_display: taskBillingDisplayFixture('tier("music", u("clips") * 0.22)'),
   billing_usage_schema: {
     clips: {
       type: 'number',
@@ -60,6 +95,22 @@ const model: PricingModel = {
   },
 }
 const clients: QueryClient[] = []
+it('does not invent ordinary token prices in standard or group details when pricing is missing', () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.push(client)
+  render(
+    <QueryClientProvider client={client}>
+      <ModelDetailsContent
+        model={{ id: 99, model_name: 'missing-price', quota_type: 0, model_ratio: 37.5, completion_ratio: 1, basis_price_configured: false, enable_groups: ['default'] }}
+        groupRatio={{ default: 1 }} usableGroup={{ default: { desc: '', ratio: 1 } }}
+        endpointMap={{}} autoGroups={[]} priceRate={1} usdExchangeRate={7} tokenUnit='M'
+      />
+    </QueryClientProvider>
+  )
+  expect(screen.getAllByText('Not configured')).toHaveLength(2)
+  expect(screen.queryByText('$75')).not.toBeInTheDocument()
+})
+
 afterEach(async () => {
   cleanup()
   clients.forEach((client) => client.clear())
@@ -146,17 +197,37 @@ it('preserves condition tables, boolean states and additional charges', () => {
 })
 
 it('keeps rules and custom expressions out of the simple price layout', () => {
+  if (!model.billing_display) throw new Error('Missing billing fixture')
   expect(hasSimpleTaskPricing(model)).toBe(true)
+  // 条件倍率来自投影规则，而不是表达式文本。
   expect(
     hasSimpleTaskPricing({
       ...model,
-      billing_expr: `${model.billing_expr}|||when(header("x-fast") == "true") * 2`,
+      billing_display: {
+        ...model.billing_display,
+        rules: [
+          {
+            text: 'header("x-fast") == "true"',
+            multiplier: 2,
+            fallback: 1,
+            source: 'header',
+            path: 'x-fast',
+            compare_op: '==',
+            value: 'true',
+          },
+        ],
+      },
     })
   ).toBe(false)
+  // 投影整体 opaque 时不进入简单价格布局。
   expect(
     hasSimpleTaskPricing({
       ...model,
-      billing_expr: 'max(u("clips"), 2) * 0.22',
+      billing_display: {
+        ...model.billing_display,
+        status: 'opaque',
+        tiers: [],
+      },
     })
   ).toBe(false)
   expect(taskPriceLabel(undefined, 'clips', 'fr')).toBe('clips')
@@ -267,4 +338,106 @@ it('uses the same recharge conversion and token unit in task condition prices', 
   )
   expect(screen.getAllByText('$5/1M token')).toHaveLength(2)
   expect(screen.getAllByText('$3/1M token')).toHaveLength(2)
+})
+
+describe('taskPricingConditionSummary', () => {
+  const schema: BillingUsageSchema = {
+    resolution: {
+      enum: ['1080p'],
+      description: { en: 'Resolution' },
+    },
+    seconds: {
+      type: 'number',
+      unit: 'second',
+      description: { en: 'Seconds' },
+    },
+  }
+  const t = (key: string) => key
+
+  it('renders negated boolean leaves as localized no-states', () => {
+    const text = taskPricingConditionSummary(
+      {
+        conditions: [],
+        conditionTree: {
+          text: 'x',
+          multiplier: 1,
+          op: 'not',
+          children: [
+            {
+              text: 'u("has_video_input")',
+              multiplier: 1,
+              source: 'usage',
+              path: 'has_video_input',
+              compare_op: '==',
+              value: 'true',
+            },
+          ],
+        },
+      },
+      {
+        has_video_input: {
+          type: 'boolean',
+          description: { en: 'Reference video' },
+        },
+      },
+      'en',
+      t,
+      2
+    )
+    expect(text).toBe('Reference video: No')
+  })
+
+  it('renders or branches and numeric comparisons from the condition tree', () => {
+    const text = taskPricingConditionSummary(
+      {
+        conditions: [],
+        conditionTree: {
+          text: 'x',
+          multiplier: 1,
+          op: 'or',
+          children: [
+            {
+              text: 'a',
+              multiplier: 1,
+              source: 'usage',
+              path: 'resolution',
+              compare_op: '==',
+              value: '1080p',
+            },
+            {
+              text: 'b',
+              multiplier: 1,
+              source: 'usage',
+              path: 'seconds',
+              compare_op: '>',
+              value: '30',
+            },
+          ],
+        },
+      },
+      schema,
+      'en',
+      t,
+      2
+    )
+    expect(text).toBe('Resolution: 1080p or Seconds > 30')
+  })
+
+  it('falls back to the other-cases copy only when nothing is renderable', () => {
+    const text = taskPricingConditionSummary(
+      {
+        conditions: [],
+        conditionTree: {
+          text: 'complex',
+          multiplier: 1,
+          text_only: true,
+        },
+      },
+      schema,
+      'en',
+      t,
+      2
+    )
+    expect(text).toBe('Other cases')
+  })
 })

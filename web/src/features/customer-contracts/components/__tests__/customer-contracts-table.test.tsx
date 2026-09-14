@@ -86,7 +86,7 @@ const activeResponse = {
     page: 1,
     page_size: 20,
     total: 1,
-    summary: { total: 3, active: 1, zero_access: 1, inactive: 1 },
+    summary: { total: 3, active: 2, inactive: 1 },
     items: [
       {
         contract_id: 31,
@@ -137,7 +137,6 @@ describe('customer contracts admin table', () => {
     expect(screen.getByText('All contracts')).toBeTruthy()
     // The status filter and the summary cards repeat these labels.
     expect(screen.getAllByText('Active contracts').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('No model access').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Inactive contracts').length).toBeGreaterThan(0)
     expect(screen.getByText('Team contract')).toBeTruthy()
     expect(screen.getByText('Unavailable: 1')).toBeTruthy()
@@ -172,7 +171,7 @@ describe('customer contracts admin table', () => {
         page: 1,
         page_size: 20,
         total: 0,
-        summary: { total: 0, active: 0, zero_access: 0, inactive: 0 },
+        summary: { total: 0, active: 0, inactive: 0 },
         items: [],
       },
     })

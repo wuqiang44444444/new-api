@@ -80,3 +80,25 @@ func TestDisplayFrontendFixturesMatchBackendContract(t *testing.T) {
 		})
 	}
 }
+
+func TestTaskDisplayFrontendFixturesMatchBackendContract(t *testing.T) {
+	data, err := os.ReadFile("../../web/src/features/pricing/__tests__/task-billing-display-fixtures.json")
+	require.NoError(t, err)
+	var fixtures map[string]struct {
+		Fields     map[string]string  `json:"fields"`
+		Projection *DisplayProjection `json:"projection"`
+	}
+	require.NoError(t, common.Unmarshal(data, &fixtures))
+	require.NotEmpty(t, fixtures)
+	for expression, fixture := range fixtures {
+		t.Run(expression, func(t *testing.T) {
+			fields := make(map[string]TaskUsageFieldInfo, len(fixture.Fields))
+			for name, unit := range fixture.Fields {
+				fields[name] = TaskUsageFieldInfo{Unit: unit}
+			}
+			actual, err := BuildTaskDisplayProjection(expression, fields)
+			require.NoError(t, err)
+			assert.Equal(t, fixture.Projection, actual)
+		})
+	}
+}

@@ -54,14 +54,15 @@ export function getTaskMatrixDisplayTiers(
   }))
 }
 
-/** Display explicit conditions for a fallback only when its complement is unique.
- * Unlike the editor matrix, unrelated schema fields do not expand the price table.
+/**
+ * Name the fallback tier's explicit conditions when its complement is unique.
+ * Works on any parsed tier source (backend projection or editor parser), so
+ * the pricing page and the log dialog share the same naming rule.
  */
-export function getTaskPricingDisplayTiers(
-  expression: string | null | undefined,
+export function nameFallbackTierConditions(
+  tiers: ParsedTaskTier[],
   schema: BillingUsageSchema | null | undefined
 ): ParsedTaskTier[] {
-  const tiers = parseTaskTiersFromExpr(expression || '', schema, true)
   const fallback = tiers.at(-1)
   if (!schema || tiers.length < 2 || !fallback) return tiers
   const previous = tiers.slice(0, -1)
@@ -98,4 +99,14 @@ export function getTaskPricingDisplayTiers(
   )
   if (remaining.length !== 1) return tiers
   return [...previous, { ...fallback, conditions: remaining[0] }]
+}
+
+export function getTaskPricingDisplayTiers(
+  expression: string | null | undefined,
+  schema: BillingUsageSchema | null | undefined
+): ParsedTaskTier[] {
+  return nameFallbackTierConditions(
+    parseTaskTiersFromExpr(expression || '', schema, true),
+    schema
+  )
 }

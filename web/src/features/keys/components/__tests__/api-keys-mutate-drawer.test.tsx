@@ -44,6 +44,21 @@ type RenderedDrawer = {
 }
 
 const apiClient = api as unknown as MockableApi
+
+const contractFixtures: { contracts: Array<Record<string, unknown>> } = {
+  contracts: [
+    {
+      id: 3,
+      name: 'Team contract',
+      enabled: true,
+      version: 4,
+      models: [
+        { model: 'claude-sonnet-5', discount: '0.8' },
+        { model: 'gemini-3-pro', discount: '0.9' },
+      ],
+    },
+  ],
+}
 const originalGet = apiClient.get
 const originalPost = apiClient.post
 let renderedDrawer: RenderedDrawer | null = null
@@ -77,20 +92,7 @@ function installApiFixtures(createdPayloads: Array<Record<string, unknown>>) {
         return {
           data: {
             success: true,
-            data: {
-              contracts: [
-                {
-                  id: 3,
-                  name: 'Team contract',
-                  enabled: true,
-                  version: 4,
-                  models: [
-                    { model: 'claude-sonnet-5', discount: '0.8', available: true, price: { price_type: 'model_ratio', final_model_ratio: '0.4' } },
-                    { model: 'gemini-3-pro', discount: '0.9', available: true, price: { price_type: 'model_ratio', final_model_ratio: '0.9' } },
-                  ],
-                },
-              ],
-            },
+            data: { contracts: contractFixtures.contracts },
           },
         }
       default:
@@ -217,6 +219,18 @@ function selectComboboxOption(
 afterEach(() => {
   apiClient.get = originalGet
   apiClient.post = originalPost
+  contractFixtures.contracts = [
+    {
+      id: 3,
+      name: 'Team contract',
+      enabled: true,
+      version: 4,
+      models: [
+        { model: 'claude-sonnet-5', discount: '0.8' },
+        { model: 'gemini-3-pro', discount: '0.9' },
+      ],
+    },
+  ]
   localStorage.clear()
   if (renderedDrawer) {
     renderedDrawer.queryClient.clear()
@@ -298,8 +312,59 @@ describe('API keys mutate drawer Auto group integration', () => {
     expect(createdPayloads[0]?.auto_groups).toEqual(['vip'])
   })
 
-  test('defaults to no contract binding and sends contract_id when one is selected', async () => {
+  test('auto-selects the only enabled contract on create and shows its discount list', async () => {
+    const createdPayloads: Array<Record<string, unknown>> = []
+    installApiFixtures(createdPayloads)
+    await renderCreateDrawer()
+
+    await screen.findByText('Customer contract')
+    const contractTrigger = document.querySelector<HTMLButtonElement>(
+      '[data-slot="select-trigger"]'
+    )
+    if (!contractTrigger) {
+      throw new Error('Expected customer contract selector')
+    }
+    expect(contractTrigger.textContent).toContain('Team contract')
+    expect(await screen.findByText('claude-sonnet-5')).toBeTruthy()
+    expect(screen.getByText('gemini-3-pro')).toBeTruthy()
+    expect(screen.getByText('0.8')).toBeTruthy()
+
+    changeInput(getControlByLabel('Name'), 'auto-bound')
+    fireEvent.click(findButton('Save changes', true))
+    await waitFor(() => expect(createdPayloads).toHaveLength(1))
+    expect(createdPayloads[0]?.contract_id).toBe(3)
+  })
+
+  test('keeps a manual unbind after the auto-selection and submits zero', async () => {
     const user = userEvent.setup()
+    const createdPayloads: Array<Record<string, unknown>> = []
+    installApiFixtures(createdPayloads)
+    await renderCreateDrawer()
+
+    await screen.findByText('Customer contract')
+    const contractTrigger = document.querySelector<HTMLButtonElement>(
+      '[data-slot="select-trigger"]'
+    )
+    if (!contractTrigger) {
+      throw new Error('Expected customer contract selector')
+    }
+    expect(contractTrigger.textContent).toContain('Team contract')
+
+    await user.click(contractTrigger)
+    await user.click(await screen.findByRole('option', { name: /Do not bind/ }))
+    expect(contractTrigger.textContent).toContain('Do not bind a contract')
+
+    changeInput(getControlByLabel('Name'), 'unbound')
+    fireEvent.click(findButton('Save changes', true))
+    await waitFor(() => expect(createdPayloads).toHaveLength(1))
+    expect(createdPayloads[0]?.contract_id).toBe(0)
+  })
+
+  test('does not auto-select when several contracts exist', async () => {
+    contractFixtures.contracts = [
+      contractFixtures.contracts[0],
+      { id: 4, name: 'Other contract', enabled: true, version: 1, models: [{ model: 'm-1', discount: '0.7' }] },
+    ]
     const createdPayloads: Array<Record<string, unknown>> = []
     installApiFixtures(createdPayloads)
     await renderCreateDrawer()
@@ -313,22 +378,56 @@ describe('API keys mutate drawer Auto group integration', () => {
     }
     expect(contractTrigger.textContent).toContain('Do not bind a contract')
 
-    changeInput(getControlByLabel('Name'), 'bound')
+    changeInput(getControlByLabel('Name'), 'multi')
     fireEvent.click(findButton('Save changes', true))
     await waitFor(() => expect(createdPayloads).toHaveLength(1))
     expect(createdPayloads[0]?.contract_id).toBe(0)
+  })
 
-    await user.click(contractTrigger)
-    await user.click(
-      await screen.findByRole('option', { name: /Team contract/ })
+  test('does not auto-select when one of two contracts is enabled and the other disabled', async () => {
+    contractFixtures.contracts = [
+      contractFixtures.contracts[0],
+      { id: 6, name: 'Disabled contract', enabled: false, version: 1, models: [] },
+    ]
+    const createdPayloads: Array<Record<string, unknown>> = []
+    installApiFixtures(createdPayloads)
+    await renderCreateDrawer()
+
+    await screen.findByText('Customer contract')
+    const contractTrigger = document.querySelector<HTMLButtonElement>(
+      '[data-slot="select-trigger"]'
     )
+    if (!contractTrigger) {
+      throw new Error('Expected customer contract selector')
+    }
+    expect(contractTrigger.textContent).toContain('Do not bind a contract')
 
-    expect(await screen.findByText('claude-sonnet-5')).toBeTruthy()
-    expect(screen.getByText('gemini-3-pro')).toBeTruthy()
-
-    changeInput(getControlByLabel('Name'), 'bound-2')
+    changeInput(getControlByLabel('Name'), 'mixed')
     fireEvent.click(findButton('Save changes', true))
-    await waitFor(() => expect(createdPayloads).toHaveLength(2))
-    expect(createdPayloads[1]?.contract_id).toBe(3)
+    await waitFor(() => expect(createdPayloads).toHaveLength(1))
+    expect(createdPayloads[0]?.contract_id).toBe(0)
+  })
+
+  test('does not auto-select the only contract when it is disabled', async () => {
+    contractFixtures.contracts = [
+      { id: 5, name: 'Disabled contract', enabled: false, version: 2, models: [{ model: 'm-2', discount: '0.6' }] },
+    ]
+    const createdPayloads: Array<Record<string, unknown>> = []
+    installApiFixtures(createdPayloads)
+    await renderCreateDrawer()
+
+    await screen.findByText('Customer contract')
+    const contractTrigger = document.querySelector<HTMLButtonElement>(
+      '[data-slot="select-trigger"]'
+    )
+    if (!contractTrigger) {
+      throw new Error('Expected customer contract selector')
+    }
+    expect(contractTrigger.textContent).toContain('Do not bind a contract')
+
+    changeInput(getControlByLabel('Name'), 'disabled-only')
+    fireEvent.click(findButton('Save changes', true))
+    await waitFor(() => expect(createdPayloads).toHaveLength(1))
+    expect(createdPayloads[0]?.contract_id).toBe(0)
   })
 })

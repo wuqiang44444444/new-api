@@ -58,9 +58,13 @@ func cloneContractEntitySnapshot(snapshot *model.ContractEntitySnapshot) *model.
 	return &clone
 }
 
-// ResolveContractEntityRule freezes the contract billing fact for one public
-// model of a key-bound contract. A disabled contract returns a nil fact so the
-// request falls back to native handling.
+// ResolveContractEntityRule freezes the contract discount fact for one public
+// model of a key-bound contract. The three outcomes are: discount fact (the
+// enabled contract lists the model), nil fact (disabled contract, or the
+// contract simply does not list the model — native handling applies), or an
+// error (binding, read, version or discount-consistency anomaly: fail closed,
+// never a silent native fallback). All rules of one public model must agree on
+// the discount; any disagreement is a hard failure.
 func ResolveContractEntityRule(userId int, authVersion int64, contractId int, publicModel string) (*hosttypes.ContractBillingFact, error) {
 	snapshot, err := LoadContractEntityForRequest(userId, authVersion, contractId)
 	if err != nil {
@@ -69,16 +73,18 @@ func ResolveContractEntityRule(userId int, authVersion int64, contractId int, pu
 	if !snapshot.Enabled {
 		return nil, nil
 	}
-	for _, rule := range snapshot.Rules {
-		if rule.PublicModel == publicModel {
-			return &hosttypes.ContractBillingFact{
-				UserId: userId, ContractId: snapshot.Id, ContractVersion: snapshot.Version,
-				PublicModel: rule.PublicModel, RouteGroup: rule.RouteGroup,
-				ChannelId: rule.ChannelId, RatioUnits: rule.RatioUnits,
-			}, nil
-		}
+	discounts, err := ContractDiscountsFromSnapshot(snapshot)
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("%w: %s", ErrCustomerContractModelDenied, publicModel)
+	discount, found := discounts[publicModel]
+	if !found {
+		return nil, nil
+	}
+	return &hosttypes.ContractBillingFact{
+		UserId: userId, ContractId: snapshot.Id, ContractVersion: snapshot.Version,
+		PublicModel: publicModel, RatioUnits: discount,
+	}, nil
 }
 
 // InvalidateContractEntityCache drops one contract's cached snapshot after a

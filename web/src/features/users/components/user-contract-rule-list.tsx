@@ -58,7 +58,7 @@ export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
         const specialRatio = rule.special_group_ratio
         return (
           <div
-            key={rule.model}
+            key={`${index}-${rule.model}-${rule.channel_id}`}
             className='grid gap-3 rounded-lg border p-3 lg:grid-cols-[minmax(180px,1fr)_140px_190px_150px_minmax(220px,1fr)_auto] lg:items-end'
           >
             <Field>

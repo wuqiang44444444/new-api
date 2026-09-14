@@ -27,7 +27,10 @@ import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 const adminBillingSearchSchema = z.object({
-  section: z.enum(['customer', 'upstream']).optional().catch('customer'),
+  section: z
+    .enum(['customer', 'upstream', 'upstream_url'])
+    .optional()
+    .catch('customer'),
   month: z
     .string()
     .regex(/^\d{4}-\d{2}$/)
