@@ -63,12 +63,13 @@ func migrateBillingReconciliationDB() error {
 }
 
 type BillingReconciliationDataQuality struct {
-	CacheWriteUnavailableRequests int64  `json:"cache_write_unavailable_requests,omitempty"`
-	Status                        string `json:"status"`
-	UnavailableRequests           int64  `json:"unavailable_requests,omitempty"`
-	UnknownBillingModeRequests    int64  `json:"unknown_billing_mode_requests,omitempty"`
-	ProviderModelFallbackRows     int64  `json:"provider_model_fallback_rows,omitempty"`
-	MissingHistoricalPriceRows    int64  `json:"missing_historical_price_rows,omitempty"`
+	InputTokensUnavailableRequests int64  `json:"input_tokens_unavailable_requests,omitempty"`
+	CacheWriteUnavailableRequests  int64  `json:"cache_write_unavailable_requests,omitempty"`
+	Status                         string `json:"status"`
+	UnavailableRequests            int64  `json:"unavailable_requests,omitempty"`
+	UnknownBillingModeRequests     int64  `json:"unknown_billing_mode_requests,omitempty"`
+	ProviderModelFallbackRows      int64  `json:"provider_model_fallback_rows,omitempty"`
+	MissingHistoricalPriceRows     int64  `json:"missing_historical_price_rows,omitempty"`
 }
 
 type BillingReconciliationUsage struct {
@@ -188,9 +189,6 @@ func GetBillingCustomerStatement(
 		Scopes(customerSettlementLogs).
 		Select("user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other").
 		Where("user_id = ? AND type IN ? AND created_at >= ? AND created_at <= ?", userId, []int{LogTypeConsume, LogTypeRefund}, startTimestamp, endTimestamp)
-	if modelName != "" {
-		query = query.Where("model_name = ?", modelName)
-	}
 	if groupId > 0 {
 		if dimension == "api_key" {
 			query = query.Where("token_id = ?", groupId)
@@ -223,6 +221,10 @@ func GetBillingCustomerStatement(
 			return statement, err
 		}
 		parsed := parseBillingReconciliationLog(log)
+		log.ModelName = parsed.customerModel
+		if modelName != "" && log.ModelName != modelName {
+			continue
+		}
 		if billingMode != "" && parsed.billingMode != billingMode {
 			continue
 		}
@@ -272,6 +274,9 @@ func GetBillingCustomerStatement(
 			models[mk] = accumulator
 		}
 		accumulateBillingReconciliationLog(&accumulator.model.Usage, log, parsed)
+		if parsed.inputTokensUnavailable {
+			ensureBillingReconciliationQuality(&accumulator.model.DataQuality).InputTokensUnavailableRequests++
+		}
 		if parsed.unavailable {
 			ensureBillingReconciliationQuality(&accumulator.model.DataQuality).UnavailableRequests++
 		}
@@ -404,23 +409,32 @@ func finalizeBillingCustomerStatementOriginalQuota(statement *BillingCustomerSta
 }
 
 type parsedBillingReconciliationLog struct {
-	cacheWriteUnavailable bool
-	billingMode           string
-	isRequest             bool
-	requestCount          int64
-	isRefund              bool
-	cacheReadTokens       int64
-	cacheWrite            billingStatementCacheWriteTokens
-	discountRatio         *float64
-	contractDiscountRatio *float64
-	hasAuxiliaryCharge    bool
-	priceMarker           string
-	providerModel         string
-	unavailable           bool
+	customerModel          string
+	inputTokens            int64
+	recordedInputTokens    int64
+	outputTokens           int64
+	inputTokensUnavailable bool
+	cacheWriteUnavailable  bool
+	billingMode            string
+	isRequest              bool
+	requestCount           int64
+	isRefund               bool
+	cacheReadTokens        int64
+	cacheWrite             billingStatementCacheWriteTokens
+	discountRatio          *float64
+	contractDiscountRatio  *float64
+	hasAuxiliaryCharge     bool
+	priceMarker            string
+	providerModel          string
+	unavailable            bool
 }
 
 func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingReconciliationLog {
 	parsed := parsedBillingReconciliationLog{cacheWriteUnavailable: isNativeChannelTestLog(log.Type, log.TokenId, log.TokenName, log.Content), billingMode: BillingReconciliationModeUnknown, isRequest: log.Type == LogTypeConsume, isRefund: log.Type == LogTypeRefund}
+	parsed.customerModel = log.ModelName
+	parsed.inputTokens = max(int64(log.PromptTokens), 0)
+	parsed.recordedInputTokens = parsed.inputTokens
+	parsed.outputTokens = max(int64(log.CompletionTokens), 0)
 	if strings.TrimSpace(log.Other) == "" {
 		if log.PromptTokens > 0 || log.CompletionTokens > 0 {
 			parsed.billingMode = BillingReconciliationModeToken
@@ -463,6 +477,9 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 			}
 			if providerModel := billingBreakdownString(snapshot["provider_model"]); providerModel != "" {
 				parsed.providerModel = providerModel
+			}
+			if customerModel := billingBreakdownString(snapshot["customer_model"]); customerModel != "" {
+				parsed.customerModel = customerModel
 			}
 		}
 	}
@@ -515,6 +532,14 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 	}
 	billingStatementTaskFacts(log, other, snapshot, &parsed)
 	billingStatementBatchFacts(log, other, &parsed)
+	if total, known := billingBreakdownInputTokens(billingStatementBreakdownLog{PromptTokens: log.PromptTokens}, other, parsed.cacheReadTokens, parsed.cacheWrite.total); known {
+		parsed.inputTokens = total
+	} else if parsed.cacheReadTokens > 0 || parsed.cacheWrite.total > 0 {
+		// Cache-bearing rows without a frozen input semantic cannot be added
+		// to normalized totals. Keep known money and cache usage independently.
+		parsed.inputTokens = 0
+		parsed.inputTokensUnavailable = true
+	}
 	parsed.cacheWriteUnavailable = parsed.cacheWriteUnavailable && parsed.billingMode != BillingReconciliationModePerCall
 	return parsed
 }
@@ -576,8 +601,8 @@ func accumulateBillingReconciliationLog(target *BillingReconciliationUsage, log 
 		}
 		target.RefundQuota += quota
 	}
-	target.InputTokens += max(int64(log.PromptTokens), int64(0))
-	target.OutputTokens += max(int64(log.CompletionTokens), int64(0))
+	target.InputTokens += parsed.inputTokens
+	target.OutputTokens += parsed.outputTokens
 	target.CacheReadTokens += parsed.cacheReadTokens
 	target.CacheWriteTokens += parsed.cacheWrite.total
 }
@@ -668,6 +693,7 @@ func accumulateBillingReconciliationQuality(target **BillingReconciliationDataQu
 		return
 	}
 	quality := ensureBillingReconciliationQuality(target)
+	quality.InputTokensUnavailableRequests += source.InputTokensUnavailableRequests
 	quality.UnavailableRequests += source.UnavailableRequests
 	quality.CacheWriteUnavailableRequests += source.CacheWriteUnavailableRequests
 	quality.UnknownBillingModeRequests += source.UnknownBillingModeRequests
@@ -677,7 +703,7 @@ func accumulateBillingReconciliationQuality(target **BillingReconciliationDataQu
 
 func finalizeBillingReconciliationQuality(target **BillingReconciliationDataQuality) {
 	quality := ensureBillingReconciliationQuality(target)
-	if quality.UnavailableRequests > 0 || quality.CacheWriteUnavailableRequests > 0 || quality.UnknownBillingModeRequests > 0 || quality.ProviderModelFallbackRows > 0 || quality.MissingHistoricalPriceRows > 0 {
+	if quality.InputTokensUnavailableRequests > 0 || quality.UnavailableRequests > 0 || quality.CacheWriteUnavailableRequests > 0 || quality.UnknownBillingModeRequests > 0 || quality.ProviderModelFallbackRows > 0 || quality.MissingHistoricalPriceRows > 0 {
 		quality.Status = "partial"
 	}
 }
@@ -912,8 +938,8 @@ func accumulateProviderBillingLog(target *ProviderBillingUsage, log billingRecon
 			target.BillableCalls++
 		}
 	}
-	target.InputTokens += max(int64(log.PromptTokens), int64(0))
-	target.OutputTokens += max(int64(log.CompletionTokens), int64(0))
+	target.InputTokens += parsed.recordedInputTokens
+	target.OutputTokens += parsed.outputTokens
 	target.CacheReadTokens += parsed.cacheReadTokens
 	target.CacheWriteTokens += parsed.cacheWrite.total
 }

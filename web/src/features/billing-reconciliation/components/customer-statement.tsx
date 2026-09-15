@@ -21,11 +21,13 @@ import {
   ArrowDown01Icon,
   ArrowRight01Icon,
   LinkSquare02Icon,
+  Download01Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { ErrorState } from '@/components/error-state'
 import { Badge } from '@/components/ui/badge'
@@ -54,10 +56,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { formatQuotaWithCurrency } from '@/lib/currency'
 
 import { getAdminCustomerStatement, getSelfCustomerStatement } from '../api'
-import { billingModeLabel, formatInteger } from '../lib'
+import { downloadCustomerStatementCsv } from '../customer-statement-csv'
+import {
+  billingModeLabel,
+  formatInteger,
+  formatCustomerStatementQuota,
+} from '../lib'
 import type {
   BillingDataQuality,
   BillingDimension,
@@ -111,6 +117,24 @@ export function CustomerStatementView(props: CustomerStatementProps) {
 
   const statement = statementQuery.data?.result
   const groups = statement?.groups ?? []
+  const handleDownload = () => {
+    if (
+      props.isAdmin ||
+      props.dimension !== 'api_key' ||
+      !statementQuery.data ||
+      statementQuery.isFetching ||
+      statementQuery.isError ||
+      groups.length === 0
+    ) {
+      return
+    }
+    try {
+      downloadCustomerStatementCsv(statementQuery.data, t)
+      toast.success(t('Statement CSV exported.'))
+    } catch {
+      toast.error(t('Unable to export statement.'))
+    }
+  }
   if (statementQuery.isError) {
     return (
       <ErrorState
@@ -198,6 +222,25 @@ export function CustomerStatementView(props: CustomerStatementProps) {
         </CardContent>
       </Card>
 
+      {!props.isAdmin && props.dimension === 'api_key' && (
+        <div className='flex justify-end'>
+          <Button
+            variant='outline'
+            disabled={
+              !statement || statementQuery.isFetching || groups.length === 0
+            }
+            onClick={handleDownload}
+          >
+            <HugeiconsIcon
+              icon={Download01Icon}
+              strokeWidth={2}
+              data-icon='inline-start'
+            />
+            {t('Download statement')}
+          </Button>
+        </div>
+      )}
+
       {statementQuery.isPending || !statement ? (
         <StatementSkeleton />
       ) : (
@@ -209,7 +252,7 @@ export function CustomerStatementView(props: CustomerStatementProps) {
           <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
             <SummaryCard
               title={t('Current balance')}
-              value={formatQuotaWithCurrency(statement.current_balance)}
+              value={formatCustomerStatementQuota(statement.current_balance)}
               description={
                 statement.current_balance === null
                   ? t('Unavailable')
@@ -217,25 +260,30 @@ export function CustomerStatementView(props: CustomerStatementProps) {
               }
             />
             <SummaryCard
-              title={t('Settled list price')}
-              value={formatQuotaWithCurrency(statement.original_quota)}
+              title={t('Estimated list price')}
+              value={formatCustomerStatementQuota(statement.original_quota)}
               description={t(
                 'Unavailable when historical price snapshots are missing'
               )}
             />
             <SummaryCard
-              title={t('Discount savings')}
-              value={formatQuotaWithCurrency(statement.discount_quota)}
-              description={t('Original amount minus net settled amount')}
+              title={t('Estimated savings')}
+              value={formatCustomerStatementQuota(statement.discount_quota)}
+              description={t('Estimated list price minus net settled amount')}
             />
             <SummaryCard
               title={t('Net settled amount')}
-              value={formatQuotaWithCurrency(statement.summary.net_quota)}
+              value={formatCustomerStatementQuota(statement.summary.net_quota)}
               description={t('{{count}} aggregated requests', {
                 count: statement.summary.requests,
               })}
             />
           </div>
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'List price and savings are estimates reconstructed from rounded charges and historical discounts. Net amounts include task holds and adjustments.'
+            )}
+          </p>
 
           <Card>
             <CardHeader>
@@ -265,7 +313,7 @@ export function CustomerStatementView(props: CustomerStatementProps) {
                         {t('Requests')}
                       </TableHead>
                       <TableHead className='text-right'>
-                        {t('Settled list price')}
+                        {t('Estimated list price')}
                       </TableHead>
                       <TableHead className='text-right'>
                         {t('Discount')}
@@ -329,13 +377,15 @@ export function CustomerStatementView(props: CustomerStatementProps) {
                             {formatInteger(group.usage.requests)}
                           </TableCell>
                           <TableCell className='text-right'>
-                            {formatQuotaWithCurrency(group.original_quota)}
+                            {formatCustomerStatementQuota(group.original_quota)}
                           </TableCell>
                           <TableCell className='text-right'>
-                            {formatQuotaWithCurrency(group.discount_quota)}
+                            {formatCustomerStatementQuota(group.discount_quota)}
                           </TableCell>
                           <TableCell className='text-right font-medium'>
-                            {formatQuotaWithCurrency(group.usage.net_quota)}
+                            {formatCustomerStatementQuota(
+                              group.usage.net_quota
+                            )}
                           </TableCell>
                         </TableRow>,
                         ...(isExpanded
@@ -401,7 +451,10 @@ function CustomerModelRow(props: {
                 ? t(
                     'Input {{input}} · Cache read {{cacheRead}} · Cache write {{cacheWrite}} · Output {{output}}',
                     {
-                      input: formatInteger(usage.input_tokens),
+                      input: props.model.data_quality
+                        ?.input_tokens_unavailable_requests
+                        ? t('Unknown')
+                        : formatInteger(usage.input_tokens),
                       cacheRead: formatInteger(usage.cache_read_tokens),
                       cacheWrite: formatInteger(usage.cache_write_tokens),
                       output: formatInteger(usage.output_tokens),
@@ -419,14 +472,14 @@ function CustomerModelRow(props: {
         {formatInteger(usage.requests)}
       </TableCell>
       <TableCell className='text-right'>
-        {formatQuotaWithCurrency(props.model.original_quota)}
+        {formatCustomerStatementQuota(props.model.original_quota)}
       </TableCell>
       <TableCell className='text-right'>
         {customerDiscountLabel(props.model, t)}
       </TableCell>
       <TableCell className='text-right'>
         <div className='font-medium'>
-          {formatQuotaWithCurrency(usage.net_quota)}
+          {formatCustomerStatementQuota(usage.net_quota)}
         </div>
         <Button
           variant='link'
@@ -449,6 +502,12 @@ function CustomerModelRow(props: {
 function BillingQualityNotice({ quality }: { quality: BillingDataQuality }) {
   const { t } = useTranslation()
   const reasons = [
+    [
+      quality.input_tokens_unavailable_requests,
+      t('Input token totals unavailable: {{count}} records', {
+        count: quality.input_tokens_unavailable_requests,
+      }),
+    ],
     [
       quality.unknown_billing_mode_requests,
       t('Unknown billing mode: {{count}} records', {

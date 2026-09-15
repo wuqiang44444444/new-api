@@ -71,11 +71,10 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useDebounce } from '@/hooks/use-debounce'
-import { formatQuotaWithCurrency } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
 
 import { getAdminCustomerStatements } from '../api'
-import { formatInteger } from '../lib'
+import { formatInteger, formatCustomerStatementQuota } from '../lib'
 import type {
   AdminBillingSearch,
   CustomerStatementListItem,
@@ -275,17 +274,17 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
             value={formatInteger(result.summary.usage.requests)}
           />
           <ListMetric
-            label={t('Settled list price')}
-            value={formatQuotaWithCurrency(result.summary.original_quota)}
+            label={t('Estimated list price')}
+            value={formatCustomerStatementQuota(result.summary.original_quota)}
           />
           <ListMetric
-            label={t('Discount savings')}
-            value={formatQuotaWithCurrency(result.summary.discount_quota)}
+            label={t('Estimated savings')}
+            value={formatCustomerStatementQuota(result.summary.discount_quota)}
             valueClassName='text-success'
           />
           <ListMetric
             label={t('Net settled amount')}
-            value={formatQuotaWithCurrency(result.summary.usage.net_quota)}
+            value={formatCustomerStatementQuota(result.summary.usage.net_quota)}
           />
         </CardContent>
       </Card>
@@ -299,7 +298,9 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
             })}
           </CardDescription>
           <CardDescription>
-            {t('Settled list price − discounts = net settled amount.')}{' '}
+            {t(
+              'Estimated list price minus estimated savings equals net settled amount.'
+            )}{' '}
             {t('Total charges − total returns = net settled amount.')}
           </CardDescription>
           <CardDescription>
@@ -338,7 +339,7 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
                     align='right'
                   />
                   <SortableHead
-                    label={t('Settled list price')}
+                    label={t('Estimated list price')}
                     sortKey='original_quota'
                     activeSort={sortBy}
                     sortOrder={sortOrder}
@@ -475,19 +476,19 @@ function CustomerStatementListRow(props: {
         {formatInteger(item.usage.requests)}
       </TableCell>
       <TableCell className='text-right'>
-        {formatQuotaWithCurrency(item.original_quota)}
+        {formatCustomerStatementQuota(item.original_quota)}
       </TableCell>
       <TableCell className='text-success text-right'>
-        {formatQuotaWithCurrency(item.discount_quota)}
+        {formatCustomerStatementQuota(item.discount_quota)}
       </TableCell>
       <TableCell className='text-right font-medium'>
-        {formatQuotaWithCurrency(item.usage.net_quota)}
+        {formatCustomerStatementQuota(item.usage.net_quota)}
       </TableCell>
       <TableCell className='text-muted-foreground border-l text-right'>
-        {formatQuotaWithCurrency(item.usage.gross_quota)}
+        {formatCustomerStatementQuota(item.usage.gross_quota)}
       </TableCell>
       <TableCell className='text-muted-foreground text-right'>
-        {formatQuotaWithCurrency(item.usage.refund_quota)}
+        {formatCustomerStatementQuota(item.usage.refund_quota)}
       </TableCell>
       <TableCell>
         <Badge

@@ -254,16 +254,13 @@ function getFailureStatusDisplay({
   const rawError = errorText?.trim()
 
   if (!rawError) {
-    return { summary: fallbackSummary }
+    // 价格类错误在缺失后端文本时仍显示价格提示，而不是“测试失败”。
+    return { summary: isModelPriceError ? modelPriceSummary : fallbackSummary }
   }
 
-  if (isModelPriceError) {
-    return {
-      summary: modelPriceSummary,
-      details: rawError === modelPriceSummary ? undefined : rawError,
-    }
-  }
-
+  // 价格类错误的主因可能是价格未配置，也可能是表达式与渠道合同不兼容；
+  // 摘要直接采用后端具体原因，保持主因与后端错误一致，不再统一替换为
+  // “模型价格未配置”。
   const firstLine = getFirstErrorLine(rawError) ?? rawError
   const summary = truncateFailureSummary(normalizeInlineError(firstLine))
   const normalizedRawError = normalizeInlineError(rawError)

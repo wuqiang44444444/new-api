@@ -1,12 +1,19 @@
 package controller
 
 import (
+	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relay"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -73,6 +80,82 @@ func TestBuildChannelTestImageRequestForImageRelayUsesSelectedProtocolProfile(t 
 			require.NotNil(t, request.N)
 			assert.Equal(t, uint(1), *request.N)
 			assert.Equal(t, test.wantSize, request.Size)
+		})
+	}
+}
+
+// Exercise the same endpoint selection, mapping and conversion used by channel tests.
+func TestBuildChannelTestImageRequestForGeminiUsesContractValidSize(t *testing.T) {
+	for _, tc := range []struct {
+		name, customerModel, providerModel string
+		channelType                        int
+	}{
+		{"Gemini alias", "nano-banana-2", "gemini-3.1-flash-image", constant.ChannelTypeGemini},
+		{"Gemini lite alias", "nano-banana-2-lite", "gemini-3.1-flash-image", constant.ChannelTypeGemini},
+		{"Gemini direct model", "gemini-3.1-flash-image", "", constant.ChannelTypeGemini},
+		{"Vertex alias", "nano-banana-2", "gemini-3.1-flash-image", constant.ChannelTypeVertexAi},
+		{"Imagen alias", "nano-banana-2", "imagen-4.0-generate-001", constant.ChannelTypeGemini},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			channel := &model.Channel{Type: tc.channelType}
+			providerModel := tc.customerModel
+			if tc.providerModel != "" {
+				mapping, err := common.Marshal(map[string]string{tc.customerModel: tc.providerModel})
+				require.NoError(t, err)
+				channel.ModelMapping = common.GetPointer(string(mapping))
+				providerModel = tc.providerModel
+			}
+			endpoint := normalizeChannelTestEndpoint(channel, tc.customerModel, "")
+			if tc.name == "Imagen alias" {
+				// Imagen aliases use the explicitly selected image endpoint.
+				endpoint = normalizeChannelTestEndpoint(channel, tc.customerModel, string(constant.EndpointTypeImageGeneration))
+			}
+			require.Equal(t, string(constant.EndpointTypeImageGeneration), endpoint)
+			request, ok := buildTestRequest(tc.customerModel, endpoint, channel, false).(*dto.ImageRequest)
+			require.True(t, ok)
+			assert.Equal(t, "1024x1024", request.Size)
+			require.NotNil(t, request.N)
+			assert.Equal(t, uint(1), *request.N)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest("POST", "/v1/images/generations", nil)
+			c.Set("model_mapping", channel.GetModelMapping())
+			apiType, supported := common.ChannelType2APIType(channel.Type)
+			require.True(t, supported)
+			info := &relaycommon.RelayInfo{
+				OriginModelName: tc.customerModel, Request: request, RelayMode: relayconstant.RelayModeImagesGenerations,
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ApiType: apiType, UpstreamModelName: tc.customerModel, ChannelBaseUrl: "https://provider.invalid",
+					ChannelOtherSettings: dto.ChannelOtherSettings{VertexKeyType: dto.VertexKeyTypeAPIKey},
+				},
+			}
+			require.NoError(t, helper.ModelMappedHelper(c, info, request))
+			assert.Equal(t, providerModel, request.Model)
+			assert.Equal(t, providerModel, info.UpstreamModelName)
+			assert.Equal(t, tc.customerModel, info.GetBillingModelName(), "mapping must not change the customer's pricing identity")
+			adaptor := relay.GetAdaptor(apiType)
+			require.NotNil(t, adaptor)
+			adaptor.Init(info)
+			converted, err := adaptor.ConvertImageRequest(c, info, *request)
+			require.NoError(t, err)
+			requestURL, err := adaptor.GetRequestURL(info)
+			require.NoError(t, err)
+			parsedURL, err := url.Parse(requestURL)
+			require.NoError(t, err)
+			if tc.name == "Imagen alias" {
+				imagen, ok := converted.(dto.GeminiImageRequest)
+				require.True(t, ok)
+				assert.Equal(t, 1, imagen.Parameters.SampleCount)
+				assert.Equal(t, "1:1", imagen.Parameters.AspectRatio)
+				assert.Contains(t, parsedURL.Path, "/models/"+providerModel+":predict")
+				return
+			}
+			geminiRequest, ok := converted.(*dto.GeminiChatRequest)
+			require.True(t, ok)
+			assert.Equal(t, []string{"TEXT", "IMAGE"}, geminiRequest.GenerationConfig.ResponseModalities)
+			require.Len(t, geminiRequest.Contents, 1)
+			require.Len(t, geminiRequest.Contents[0].Parts, 1)
+			assert.Equal(t, request.Prompt, geminiRequest.Contents[0].Parts[0].Text)
+			assert.Contains(t, parsedURL.Path, "/models/"+providerModel+":generateContent")
 		})
 	}
 }

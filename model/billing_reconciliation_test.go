@@ -60,7 +60,7 @@ func TestBillingCustomerStatementAggregatesByDimensionAndBillingMode(t *testing.
 	require.NoError(t, db.Create(&User{Id: 7, Username: "customer", Quota: 8800}).Error)
 	require.NoError(t, db.Create(&[]Channel{{Id: 21, Name: "primary"}, {Id: 22, Name: "secondary"}}).Error)
 	logs := []Log{
-		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "token-model", PromptTokens: 100, CompletionTokens: 20, Quota: 1200, Other: `{"group_ratio":0.8,"model_ratio":1,"cache_tokens":5,"cache_creation_tokens":3}`},
+		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "token-model", PromptTokens: 100, CompletionTokens: 20, Quota: 1200, Other: `{"usage_semantic":"openai","group_ratio":0.8,"model_ratio":1,"cache_tokens":5,"cache_creation_tokens":3}`},
 		{UserId: 7, CreatedAt: 1200, Type: LogTypeConsume, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "call-model", Quota: 400, Other: `{"group_ratio":1,"model_price":0.002}`},
 		{UserId: 7, CreatedAt: 1250, Type: LogTypeRefund, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "call-model", Quota: 400, Other: `{"group_ratio":1,"model_price":0.002}`},
 		{UserId: 7, CreatedAt: 1300, Type: LogTypeConsume, TokenId: 12, TokenName: "key-b", ChannelId: 22, ModelName: "token-model", PromptTokens: 50, CompletionTokens: 10, Quota: 600, Other: `{"group_ratio":0.8,"model_ratio":1}`},

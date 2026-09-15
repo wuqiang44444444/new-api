@@ -56,6 +56,9 @@ func buildChannelTestImageRequestForChannel(channel *model.Channel, customerMode
 	}
 	if channel.Type == constant.ChannelTypeGemini || channel.Type == constant.ChannelTypeVertexAi {
 		// gemini_image 族测试默认 1024x1024（含明确 imageConfig 档位）。
+		// 客户别名尺寸（如 nano-banana-2 的 1K）是南向协议档位，不属于
+		// Gemini 北向合同的合法取值，不得随别名泄漏进测试请求。
+		request.Size = "1024x1024"
 		return request
 	}
 	size, supported := constant.ImageRelayTestSize(channel.GetOtherSettings().ImageUpstreamProtocol, providerModel)

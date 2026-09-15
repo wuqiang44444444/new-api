@@ -533,6 +533,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
 	appendCustomerContractBillingInfo(other, relayInfo.ContractBillingFact)
+	appendTextStatementUsage(other, relayInfo, billingUsage, summary)
 
 	attachQuotaSaturation(ctx, relayInfo, other)
 

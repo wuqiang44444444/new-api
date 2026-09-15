@@ -89,7 +89,7 @@ it('separates settled prices from precharge flows for the randy statement', asyn
     .getAllByRole('columnheader')
     .map((cell) => cell.textContent)
   expect(headers.slice(2, 7)).toEqual([
-    'Settled list price',
+    'Estimated list price',
     'Discount',
     'Net settled amount',
     'Total charges',
@@ -98,16 +98,19 @@ it('separates settled prices from precharge flows for the randy statement', asyn
   const row = screen.getByRole('row', { name: /randy/ })
   const cells = within(row).getAllByRole('cell')
   expect(cells.slice(2, 7).map((cell) => cell.textContent)).toEqual([
-    '$1,912.13',
-    '$248.58',
-    '$1,663.55',
-    '$3,655.81',
-    '$1,992.26',
+    '$1,912.128588',
+    '$248.576716',
+    '$1,663.551872',
+    '$3,655.811442',
+    '$1,992.25957',
   ])
   expect(
-    screen.getByText('Settled list price − discounts = net settled amount.', {
-      exact: false,
-    })
+    screen.getByText(
+      'Estimated list price minus estimated savings equals net settled amount.',
+      {
+        exact: false,
+      }
+    )
   ).toBeTruthy()
   expect(
     screen.getByText(
@@ -135,7 +138,7 @@ it('uses Chinese labels that identify precharge flows and the missing billing-mo
     .getAllByRole('columnheader')
     .map((cell) => cell.textContent)
   expect(headers.slice(2, 7)).toEqual([
-    '结算原价',
+    '估算原价',
     '优惠',
     '净结算金额',
     '累计扣减',
@@ -155,6 +158,6 @@ it('keeps settled list price and savings unknown when the API lacks historical p
   const cells = within(row).getAllByRole('cell')
   expect(cells[2].textContent).toBe('-')
   expect(cells[3].textContent).toBe('-')
-  expect(cells[4].textContent).toBe('$1,663.55')
+  expect(cells[4].textContent).toBe('$1,663.551872')
   view.cleanup()
 })

@@ -64,15 +64,31 @@ func TestImageRelayRejectsTokenPricingBeforeSending(t *testing.T) {
 		"billing_setting.billing_mode": `{"local-nano":"tiered_expr"}`,
 		"billing_setting.billing_expr": `{"local-nano":"p * 0.5 + img_o * 60"}`,
 	}))
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest("POST", "/v1/images/generations", nil)
-	common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeAsyncImage)
-	common.SetContextKey(c, constant.ContextKeyOriginalModel, "local-nano")
-	common.SetContextKey(c, constant.ContextKeyChannelOtherSetting, dto.ChannelOtherSettings{ImageUpstreamProtocol: dto.ImageUpstreamProtocolFunCloudAIGCV2})
-	c.Set("model_mapping", `{"local-nano":"nano-banana-2"}`)
-	info := &relaycommon.RelayInfo{OriginModelName: "local-nano", Request: &dto.ImageRequest{Model: "local-nano", Prompt: "red cup"}}
-	require.ErrorContains(t, prepareImageRelayBilling(c, info), "per-image pricing")
-	assert.Nil(t, info.BillingRequestInput)
+	for _, tc := range []struct {
+		name     string
+		protocol dto.ImageUpstreamProtocol
+		model    string
+	}{
+		{"FunCloud", dto.ImageUpstreamProtocolFunCloudAIGCV2, "nano-banana-2"},
+		{"FunCloud lite", dto.ImageUpstreamProtocolFunCloudAIGCV2, "nano-banana-2-lite"},
+		{"Moxing partial usage", dto.ImageUpstreamProtocolMoxingImagesV1, "doubao-seedream-5-0-260128"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest("POST", "/v1/images/generations", nil)
+			common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeAsyncImage)
+			common.SetContextKey(c, constant.ContextKeyOriginalModel, "local-nano")
+			common.SetContextKey(c, constant.ContextKeyChannelOtherSetting, dto.ChannelOtherSettings{ImageUpstreamProtocol: tc.protocol})
+			mapping, err := common.Marshal(map[string]string{"local-nano": tc.model})
+			require.NoError(t, err)
+			c.Set("model_mapping", string(mapping))
+			info := &relaycommon.RelayInfo{OriginModelName: "local-nano", Request: &dto.ImageRequest{Model: "local-nano", Prompt: "red cup"}}
+			err = prepareImageRelayBilling(c, info)
+			require.EqualError(t, err, "the current image adapter cannot supply the verified usage required by this billing expression")
+			assert.Nil(t, info.BillingRequestInput)
+			assert.NotContains(t, err.Error(), string(tc.protocol), "public errors must not expose the selected upstream protocol")
+		})
+	}
 }
 
 func TestImageRelayPricingContract(t *testing.T) {

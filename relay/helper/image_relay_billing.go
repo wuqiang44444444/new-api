@@ -23,6 +23,8 @@ func prepareImageRelayBilling(c *gin.Context, info *relaycommon.RelayInfo) error
 	}
 	mapped := *request
 	mappedInfo := *info
+	// InitChannelMeta resets its request model; keep that reset on the pricing copy.
+	mappedInfo.Request = &mapped
 	mappedInfo.InitChannelMeta(c)
 	if err := ModelMappedHelper(c, &mappedInfo, &mapped); err != nil {
 		return err
@@ -34,7 +36,9 @@ func prepareImageRelayBilling(c *gin.Context, info *relaycommon.RelayInfo) error
 	if billing_setting.GetBillingMode(info.GetBillingModelName()) == billing_setting.BillingModeTieredExpr {
 		expr, _ := billing_setting.GetBillingExpr(info.GetBillingModelName())
 		if billingexpr.RequiresUsage(expr) {
-			return errors.New("image relay requires per-image pricing; usage-dependent expressions are not supported")
+			// 当前图片中转适配尚未支持用量表达式结算；部分协议已返回部分用量，
+			// 因此不能将适配缺口描述为所有 Provider 均不提供用量，也不能伪造缺失事实。
+			return errors.New("the current image adapter cannot supply the verified usage required by this billing expression")
 		}
 	}
 	if billing_setting.GetBillingMode(info.GetBillingModelName()) != billing_setting.BillingModeTieredExpr {

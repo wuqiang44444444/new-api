@@ -37,7 +37,7 @@ func GetBillingStatementLogs(filter BillingStatementLogFilter, page, pageSize, r
 		query = query.Where("channel_id = ?", *filter.ChannelId)
 	}
 	for column, value := range map[string]string{
-		"model_name": filter.ModelName, "token_name": filter.TokenName, "username": filter.Username,
+		"token_name": filter.TokenName, "username": filter.Username,
 		"group": filter.Group, "request_id": filter.RequestId, "upstream_request_id": filter.UpstreamRequestId,
 	} {
 		if value != "" {
@@ -65,6 +65,12 @@ func GetBillingStatementLogs(filter BillingStatementLogFilter, page, pageSize, r
 		}
 		fact := billingReconciliationLog{UserId: log.UserId, TokenId: log.TokenId, TokenName: log.TokenName, ChannelId: log.ChannelId, ModelName: log.ModelName, Type: log.Type, CreatedAt: log.CreatedAt, PromptTokens: log.PromptTokens, CompletionTokens: log.CompletionTokens, Quota: log.Quota, Other: log.Other}
 		parsed := parseBillingReconciliationLog(fact)
+		if filter.ModelName != "" && parsed.customerModel != filter.ModelName {
+			continue
+		}
+		log.ModelName = parsed.customerModel
+		log.PromptTokens = int(parsed.recordedInputTokens)
+		log.CompletionTokens = int(parsed.outputTokens)
 		if filter.BillingMode != "" && parsed.billingMode != filter.BillingMode {
 			continue
 		}

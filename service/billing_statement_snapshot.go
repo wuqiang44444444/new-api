@@ -59,6 +59,7 @@ func appendBillingStatementIdentitySnapshotWithMode(other *model.LogOther, origi
 		"snapshot_version": 1,
 		"billing_mode":     billingMode,
 		"provider_model":   providerModel,
+		"customer_model":   originModel,
 	}
 	for _, key := range []string{
 		"model_price", "model_ratio", "completion_ratio", "cache_ratio",

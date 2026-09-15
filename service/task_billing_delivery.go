@@ -48,6 +48,7 @@ func BuildTaskBillingDeliveryLog(task *model.Task, event model.TaskBillingDelive
 			if usage := data.Usage; usage != nil {
 				completion, prompt = usage.CompletionTokens, usage.PromptTokens
 				appendImageUsageForLog(other, usage)
+				appendImageStatementUsage(other, usage)
 			}
 		}
 	} else if event.Event == "refund" {

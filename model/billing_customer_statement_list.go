@@ -137,6 +137,9 @@ func GetBillingCustomerStatementList(
 
 		parsed := parseBillingReconciliationLog(log)
 		accumulateBillingReconciliationLog(&accumulator.item.Usage, log, parsed)
+		if parsed.inputTokensUnavailable {
+			ensureBillingReconciliationQuality(&accumulator.price.model.DataQuality).InputTokensUnavailableRequests++
+		}
 		if parsed.unavailable {
 			ensureBillingReconciliationQuality(&accumulator.price.model.DataQuality).UnavailableRequests++
 		}

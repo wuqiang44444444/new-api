@@ -83,7 +83,10 @@ it('shows token usage and explains savings against the net settled amount', asyn
     </I18nextProvider>
   )
   expect(
-    screen.getByText('Original amount minus net settled amount')
+    screen.getByText('Estimated list price minus net settled amount')
+  ).toBeTruthy()
+  expect(
+    screen.getByRole('button', { name: 'Download statement' })
   ).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Expand models' }))
   expect(screen.getByText('Token billing')).toBeTruthy()
@@ -188,7 +191,7 @@ it('explains the actual quality reason and missing channel without inventing usa
   expect(screen.getByText('Channel #97')).toBeTruthy()
   expect(screen.queryByText('#97')).toBeNull()
   expect(screen.getByText('current channel')).toBeTruthy()
-  expect(screen.getByText('$1,663.55')).toBeTruthy()
+  expect(screen.getByText('$1,663.551872')).toBeTruthy()
   fireEvent.click(screen.getAllByRole('button', { name: 'Expand models' })[0])
   expect(screen.queryByText('Billable 0 · Refunded 0')).toBeNull()
   const url = new URL(
@@ -293,8 +296,8 @@ it('preserves the negative sign of a refund-only model and its group', async () 
     </I18nextProvider>
   )
   fireEvent.click(screen.getByRole('button', { name: 'Expand models' }))
-  expect(screen.getAllByText('-$16.48')).toHaveLength(3)
-  expect(screen.getAllByText('-$18.95')).toHaveLength(2)
+  expect(screen.getAllByText('-$16.48407')).toHaveLength(3)
+  expect(screen.getAllByText('-$18.947206')).toHaveLength(2)
   view.unmount()
   client.clear()
 })
@@ -307,7 +310,7 @@ it('shows an unavailable balance for a deleted customer while keeping historical
   )
   expect(screen.getByText('Unavailable')).toBeTruthy()
   expect(screen.queryByText('Read directly from the main database')).toBeNull()
-  expect(screen.getByText('$1,663.55')).toBeTruthy()
+  expect(screen.getByText('$1,663.551872')).toBeTruthy()
   const balanceCard = screen.getByText('Current balance').parentElement
   if (!balanceCard) throw new Error('Missing balance card')
   expect(balanceCard.textContent).toBe('Current balance-')

@@ -16,7 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { formatQuotaWithCurrency } from '@/lib/currency'
+
 import type { BillingMode } from './types'
+
+// Statements retain small charges and refunds without the balance UI's
+// minimum nonzero display floor. Page and CSV must use the same precision.
+export function formatCustomerStatementQuota(quota: number | null | undefined) {
+  return formatQuotaWithCurrency(quota, {
+    digitsLarge: 8,
+    digitsSmall: 8,
+    compact: false,
+    abbreviate: false,
+    minimumNonZero: Number.MIN_VALUE,
+  })
+}
 
 export function currentShanghaiMonth() {
   const parts = new Intl.DateTimeFormat('en-CA', {

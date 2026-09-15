@@ -393,13 +393,21 @@ func applyBatchSettlement(ctx context.Context, job *model.BatchJob, target int) 
 			break
 		}
 	}
-	var input, output decimal.Decimal
+	var input, output, cached decimal.Decimal
 	for _, line := range lines {
 		input = input.Add(decimal.NewFromInt(line.InputTokens))
 		output = output.Add(decimal.NewFromInt(line.OutputTokens))
+		cached = cached.Add(decimal.NewFromInt(line.CachedTokens))
 	}
 	promptTokens, inputClamp := common.QuotaFromDecimalChecked(input)
 	completionTokens, outputClamp := common.QuotaFromDecimalChecked(output)
+	// CommitBatchResultLines validated these aggregate totals against int64.
+	// The legacy log columns stay int32, but statement facts must not truncate
+	// a whole batch to the single-charge quota bound.
+	other.SetPublic("input_tokens_total", input.IntPart())
+	other.SetPublic("output_tokens_total", output.IntPart())
+	other.SetPublic("cache_tokens", cached.IntPart())
+	other.SetPublic("usage_semantic", "openai")
 	for _, clamp := range []*common.QuotaClamp{inputClamp, outputClamp} {
 		if clamp != nil {
 			other.SetAdmin("token_saturation", clamp.AuditMap())
