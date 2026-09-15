@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/plugins"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,6 +23,10 @@ func TestSynlinkPluginTaskStatusContract(t *testing.T) {
 		{"processing without metadata", `{"task":{"id":"task","status":"processing"}}`, model.TaskStatusInProgress},
 		{"processing ignores premature completion", `{"task":{"id":"task","status":"processing","outputs":["https://result.example/video"],"usage":{"total_tokens":20},"metadata":{"status":"succeeded","usage":{"total_tokens":20}}}}`, model.TaskStatusInProgress},
 		{"completed uses wrapper usage once", `{"task":{"id":"task","status":"completed","outputs":["https://result.example/video"],"usage":{"total_tokens":20},"metadata":{"status":"succeeded","usage":{"total_tokens":20}}}}`, model.TaskStatusSuccess},
+		{"OpenAI in_progress is not Synlink processing", `{"task":{"id":"task","status":"in_progress"}}`, ""},
+		{"normalized queued is not Synlink pending", `{"task":{"id":"task","status":"queued"}}`, ""},
+		{"normalized running is not Synlink processing", `{"task":{"id":"task","status":"running"}}`, ""},
+		{"OpenAI envelope is not Synlink task", `{"id":"task","object":"video","status":"completed"}`, ""},
 		{"unknown", `{"task":{"id":"task","status":"mystery"}}`, ""},
 		{"missing", `{"task":{"id":"task"}}`, ""},
 		{"wrong type", `{"task":{"id":"task","status":1}}`, ""},
@@ -33,10 +38,15 @@ func TestSynlinkPluginTaskStatusContract(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			output, err := plugin.Engine.CallPath(context.Background(), "seedance", []string{string(dto.VideoUpstreamProtocolSynlinkVideoV1), "parseTaskObservation"}, seedanceObservationInput([]byte(tc.body), "task"))
-			require.NoError(t, err)
+			if err != nil {
+				require.Empty(t, tc.status)
+				var violation *relaycommon.UpstreamContractViolation
+				require.ErrorAs(t, seedancePollObservationError(err), &violation)
+				return
+			}
 			normalized, err := decodeOfficialPluginObservation(output, "task", plugin.Meta.APIVersion, dto.VideoUpstreamProtocolSynlinkVideoV1)
 			if err == nil {
-				normalized, err = validatePluginProviderObservation(normalized, dto.VideoUpstreamProtocolSynlinkVideoV1)
+				normalized, err = validatePluginProviderObservation(normalized, dto.VideoUpstreamProtocolSynlinkVideoV1, "", "")
 			}
 			if tc.status == "" {
 				require.Error(t, err)

@@ -518,11 +518,17 @@ curl --fail "{{OPENAI_BASE_URL}}/videos/task-public-id/content?part=last_frame" 
 内容代理要求任务已成功，并按创建任务的鉴权主体隔离。
 下载前先检查 HTTP 状态和 `Content-Type`；失败响应是 JSON，不是视频或图片字节。
 
+视频仅临时可下载，生成成功后请及时下载保存；平台不提供长期视频存储。
+可用时间由实际内容和下载地址决定，不保证完成后固定 24 小时可用。没有明确到期时间时，
+不能按任务创建或完成时间推算。内容过期后不保证可以恢复，重新查询不会自动延长下载期限。
+下载不可用不会把已成功的生成任务改为失败，也不会自动触发退款；有效期内读取失败请保留
+本站任务 ID 与请求 ID 联系技术人员核查。
+
 | HTTP 状态 | 常见错误码 | 说明 |
 | --- | --- | --- |
 | `400` | `video_not_ready`、`invalid_content_part` | 任务尚未成功，或 `part` 不是 `last_frame` |
 | `404` | `video_not_found`、`content_not_found` | 任务、视频或末帧不存在 |
-| `410` | `video_content_expired` | 上游内容已过期 |
+| `410` | `video_content_expired` | 内容或下载签名已明确到期 |
 | `403` / `502` | `content_url_not_allowed`、`upstream_unavailable` | 内容来源被安全策略阻止或上游读取失败 |
 
 ## 素材引用

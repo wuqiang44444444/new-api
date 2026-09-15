@@ -295,11 +295,14 @@ func (a *TaskAdaptor) FetchTaskWithContext(ctx context.Context, baseURL, key str
 	}
 	resp, err := client.Do(req)
 	service.AttachRawTaskPollingEvidence(task, req, resp, err)
-	// Synlink has no verified non-2xx query contract. Do not let a proxy's
+	// Synlink has no verified terminal contract for non-2xx queries. Do not let a proxy's
 	// 404/410 become a definitive missing-task result in the shared poller.
 	if err == nil && resp != nil && profile == dto.VideoUpstreamProfileThirdPartySynlinkVideoV1 && (resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices) {
 		_, _ = io.Copy(io.Discard, resp.Body) // Preserve the existing protected response evidence tee.
 		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, &relaycommon.UpstreamContractViolation{Reason: "Upstream task query returned HTTP 404; the result is unconfirmed"}
+		}
 		return nil, &relaycommon.UpstreamContractViolation{Reason: fmt.Sprintf("unverified Synlink query HTTP status %d", resp.StatusCode)}
 	}
 	if err != nil || resp == nil || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {

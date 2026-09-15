@@ -22,6 +22,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
+import { CHANNEL_TYPE_SEEDANCE_LINK } from '@/features/channels/constants'
 import { StatusBadge } from '@/components/status-badge'
 import { Label } from '@/components/ui/label'
 import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
@@ -203,6 +204,11 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
 
         {showVideoResult ? (
           <DetailSection label={t('Video Result')}>
+            {props.log.platform === String(CHANNEL_TYPE_SEEDANCE_LINK) ? (
+              <p className='text-muted-foreground text-xs'>
+                {t('Video downloads are temporary. Download your video promptly; long-term storage is not provided.')}
+              </p>
+            ) : null}
             {previewMode === 'legacy-suno' ? (
               <LegacyAudioPreview data={props.log.data} />
             ) : (

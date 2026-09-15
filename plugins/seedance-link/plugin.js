@@ -517,7 +517,7 @@ export const meta = {
     en: "Seedance Link southbound protocol adapters",
     zh: "Seedance Link 南向协议适配",
   },
-  version: "1.3.3",
+  version: "1.3.5",
   author: { name: "yuan-gateway" },
   seedanceProtocols: [
     "funcloud_modelark_v3",
@@ -1839,7 +1839,41 @@ function parseSynlinkVideoTask(input) {
   const root = responseObject(input.body),
     task = root.task || {},
     id = trustedRelayID(firstResponseString(task, "id"));
-  if (id !== input.taskId || root.error != null || task.error != null) return { violation: "untrusted Synlink task identity" };
+  if (id !== input.taskId) return { violation: "Synlink task id mismatch" };
+  if (root.error != null) return { violation: "untrusted Synlink query response" };
+  const status = firstResponseString(task, "status");
+  // The Synlink task wrapper owns the business state. Verified failures carry
+  // a string or a code/message object; metadata is not an error fallback.
+  if (status === "failed") {
+    if (task.outputs != null && (!Array.isArray(task.outputs) || task.outputs.length !== 0))
+      return { violation: "invalid Synlink task failure" };
+    let code = "upstream_task_failed",
+      message = "";
+    const failure = task.error;
+    if (typeof failure === "string") message = trimSpace(failure);
+    else if (failure != null) {
+      if (
+        typeof failure !== "object" ||
+        Array.isArray(failure) ||
+        (failure.code != null && typeof failure.code !== "string") ||
+        (failure.message != null && typeof failure.message !== "string")
+      )
+        return { violation: "invalid Synlink task failure" };
+      code = trimSpace(failure.code || "") || code;
+      message = trimSpace(failure.message || "");
+    }
+    return {
+      body: JSON.stringify({
+        id,
+        status: "failed",
+        error: {
+          code,
+          message: message || "Video generation failed",
+        },
+      }),
+    };
+  }
+  if (task.error != null) return { violation: "unexpected Synlink task error" };
   const result = { id };
   if (Number.isInteger(task.duration_seconds) && task.duration_seconds >= 1 && task.duration_seconds <= 60) result.duration = task.duration_seconds;
   for (const [from, to] of [
@@ -1853,7 +1887,6 @@ function parseSynlinkVideoTask(input) {
       if (Number.isFinite(seconds) && seconds >= 0) result[to] = seconds;
     }
   }
-  const status = firstResponseString(task, "status");
   if (status === "pending") result.status = "queued";
   else if (status === "processing") result.status = "running";
   else if (status === "completed") {

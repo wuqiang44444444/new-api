@@ -489,7 +489,7 @@ func normalizeSeedanceVideoTaskResponse(
 			// replace, remove or invent the usage facts derived above.
 			return body, nil
 		}
-		return validatePluginProviderObservation(normalized, protocol)
+		return validatePluginProviderObservation(normalized, protocol, task.Properties.OriginModelName, task.Properties.UpstreamModelName)
 	}
 	return decodeSeedanceTaskObservation(result, expectedTaskID, baseURL)
 }

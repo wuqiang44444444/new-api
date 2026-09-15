@@ -8,7 +8,7 @@ import (
 
 // Provider errors are never trusted public text. URL validation is also a host
 // boundary; it does not select fields or infer a Provider status.
-func validatePluginProviderObservation(body []byte, protocol dto.VideoUpstreamProtocol) ([]byte, error) {
+func validatePluginProviderObservation(body []byte, protocol dto.VideoUpstreamProtocol, originModel, upstreamModel string) ([]byte, error) {
 	if protocol == dto.VideoUpstreamProtocolModelArkV3Volcengine || protocol == dto.VideoUpstreamProtocolModelArkV3BytePlus || protocol == dto.VideoUpstreamProtocolModelArkV3CMCC {
 		return body, nil
 	}
@@ -19,7 +19,7 @@ func validatePluginProviderObservation(body []byte, protocol dto.VideoUpstreamPr
 	if failure, ok := result["error"].(map[string]any); ok {
 		for _, key := range []string{"code", "message"} {
 			if value, ok := failure[key].(string); ok {
-				failure[key] = common.PublicTaskErrorMessage(value)
+				failure[key] = common.PublicTaskErrorMessageForModel(value, originModel, upstreamModel)
 			}
 		}
 	}

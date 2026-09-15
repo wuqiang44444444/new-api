@@ -12,7 +12,7 @@ var (
 	taskErrorCredential = regexp.MustCompile(`(?i)["']?\b(?:api[_-]?key|access[_-]?token|token|client_secret|bytedtoken)["']?\s*[:：=]\s*(?:"(?:\\.|[^"\\])*(?:"|\\?$)|'(?:\\.|[^'\\])*(?:'|\\?$)|(?:bearer\s+)?[^\s,;，；]+)|\bbearer\s+[^\s,;]+|\bsk-[a-zA-Z0-9_-]+`)
 	taskErrorBody       = regexp.MustCompile(`(?i)(?:^|[;\n]\s*)body\s*[:=]\s*[\{\[]`)
 	taskErrorChannel    = regexp.MustCompile(`(?i)(?:channel[ _-]*id|渠道\s*ID)\s*[:：=]?\s*\d+|(?:channel|渠道)\s*#\s*\d+`)
-	taskErrorProvider   = regexp.MustCompile(`(?i)\b(?:funcloud|leonecloud|moxing|volcengine|byteplus|tokensave|feicai|openai|bytedance)\b|火山引擎|字节跳动|墨行|飞彩`)
+	taskErrorProvider   = regexp.MustCompile(`(?i)\b(?:synlink|funcloud|leonecloud|moxing|volcengine|byteplus|tokensave|feicai|openai|bytedance)\b|火山引擎|字节跳动|墨行|飞彩`)
 	taskErrorCode       = regexp.MustCompile(`^[a-zA-Z0-9_.:-]{1,128}$`)
 )
 

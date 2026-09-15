@@ -198,6 +198,10 @@ func proxyLinkVideoTaskContent(c *gin.Context, task *model.Task) bool {
 		}
 	}
 	videoURL = strings.TrimSpace(videoURL)
+	if synlinkVideoSignatureExpired(task, videoURL, time.Now()) {
+		modelArkVideoError(c, http.StatusGone, "video_content_expired", "Video download link has expired")
+		return true
+	}
 	if videoURL == "" {
 		modelArkVideoError(c, http.StatusBadGateway, "upstream_unavailable", "Failed to fetch video content")
 		return true

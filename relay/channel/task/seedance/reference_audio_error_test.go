@@ -20,7 +20,7 @@ func TestFunCloudReferenceMediaFailurePreservesProviderReason(t *testing.T) {
 	require.NoError(t, err)
 	raw, err := decodeOfficialPluginObservation(result, "fixture-task", plugin.Meta.APIVersion, dto.VideoUpstreamProtocolFunCloudModelArkV3)
 	require.NoError(t, err)
-	raw, err = validatePluginProviderObservation(raw, dto.VideoUpstreamProtocolFunCloudModelArkV3)
+	raw, err = validatePluginProviderObservation(raw, dto.VideoUpstreamProtocolFunCloudModelArkV3, "", "")
 	require.NoError(t, err)
 	var body map[string]any
 	require.NoError(t, common.Unmarshal(raw, &body))

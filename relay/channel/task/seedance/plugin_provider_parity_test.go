@@ -25,7 +25,6 @@ func TestPluginProviderObservationsPreserveTerminalEvidence(t *testing.T) {
 		{dto.VideoUpstreamProtocolFunCloudModelArkV3, `{"id":"task","status":"failed","error":{"code":"BadRequest","message":"api_key=fixture-secret invalid duration"}}`, thirdparty.FunCloudModelArkTaskResponse},
 		{dto.VideoUpstreamProtocolFunCloudModelArkV3, `{"id":"task","status":"succeeded","content":{"video_url":"http://invalid.example/video"}}`, thirdparty.FunCloudModelArkTaskResponse},
 		{dto.VideoUpstreamProtocolSynlinkVideoV1, `{"task":{"id":"task","status":"completed","outputs":["https://result.example/video"],"duration_seconds":5,"created_at":"2026-09-01T08:00:00+08:00","usage":{"total_tokens":20,"prompt_tokens":4}}}`, thirdparty.SynlinkTaskResponse},
-		{dto.VideoUpstreamProtocolSynlinkVideoV1, `{"task":{"id":"task","status":"failed","outputs":[]}}`, thirdparty.SynlinkTaskResponse},
 		{dto.VideoUpstreamProtocolSynlinkVideoV1, `{"task":{"id":"task","status":"completed","outputs":["https://user:pass@invalid.example/video"]}}`, thirdparty.SynlinkTaskResponse},
 	} {
 		t.Run(string(tc.protocol)+tc.body, func(t *testing.T) {
@@ -34,7 +33,7 @@ func TestPluginProviderObservationsPreserveTerminalEvidence(t *testing.T) {
 			require.NoError(t, err)
 			actual, err := decodeOfficialPluginObservation(output, "task", plugin.Meta.APIVersion, "tokensave_media_task_v1")
 			if err == nil {
-				actual, err = validatePluginProviderObservation(actual, tc.protocol)
+				actual, err = validatePluginProviderObservation(actual, tc.protocol, "", "")
 			}
 			if oldErr != nil {
 				require.Error(t, err)

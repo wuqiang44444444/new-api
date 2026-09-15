@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-13
+last-reviewed: 2026-09-15
 ---
 
 # Seedance 专用渠道与 Link 架构
@@ -233,18 +233,43 @@ identity 建立后，Channel Type 不可修改。Base URL、视频协议、素�
 ### 5.4 Synlink 视频协议
 
 `synlink_video_v1` 复用 Seedance 专用渠道，南向创建为 `/v1/video/generate`，查询为
-`/v1/video/tasks/{task_id}`。响应严格读取 `task` 包裹、`id` 与 `outputs`；查询状态合同已按上游
-实际响应取证与本地回归验证三态映射：`pending → queued`、`processing → running`、
-`completed` 且结果可信 `→ succeeded`。状态唯一读取 `task.status`，不读取 `metadata.status`
+`/v1/video/tasks/{task_id}`。该协议由 Synlink 实测响应定义，保持专属解析，不因为字段相似而套用
+OpenAI `/v1/videos` 的返回合同；不自动尝试 `root/task/data` 多种包裹、不探测其它接口，
+也不接收未经 Synlink 取证的 OpenAI 状态别名。响应严格读取 `task` 包裹、`id` 与 `outputs`；查询状态合同已按上游
+实际响应取证与本地回归验证状态映射：`pending → queued`、`processing → running`、
+`completed` 且结果可信 `→ succeeded`、可信 `failed → failed`。状态唯一读取 `task.status`，不读取 `metadata.status`
 作为备用状态或完成信号；`processing` 不要求 metadata 存在，即使载荷携带内部成功状态、URL
 或 usage 也不提前交付或结算。
+失败响应须具有匹配的 `task.id`，且根级接口错误不存在或为 null。`task.error` 支持字符串或非数组错误对象
+`{code,message}`；对象字段可缺失或为 null，存在且非 null 的字段必须为字符串。错误说明缺失或空白使用通用
+失败说明，错误码缺失或空白使用 `upstream_task_failed`；错误对象的其它字段不传播。数字、布尔、
+数组或字段类型错误保持不可采信，不从根级 `error` 或 `task.metadata.error` 回退提取失败原因。
+`outputs` 缺失、null 或空数组表示没有失败结果；
+非空或错误类型与失败相冲突，保持不可采信。失败只归一业务状态和错误说明，由宿主脱敏后进入
+已有失败退款流程；错误按冻结模型身份脱敏并保留客户模型别名，不暴露 Synlink 名称或凭据。
+不保存内部 metadata，不交付失败输出，不把失败中的 usage 用作成功计费证据。
+身份不匹配、根级查询错误、非失败状态携带错误及畸形失败分别提供脱敏诊断，不混称身份错误。
 查询非 2xx、未知状态及身份／结果合同违例先由该 adapter 标记为
 不可采信观察，不落入通用 404/410 立即退款分支：活动任务进入 `RECONCILIATION_REQUIRED`，
 已成功任务保留已接受事实，后续可信观察继续恢复或补齐用量；单次观察不制造失败或退款。
+查询 HTTP 404 的诊断明确为“上游任务查询返回 404，结果仍未确认”，不依据错误页、响应重复次数或
+`task_not_found` 字样推导生成失败；其它非 2xx 继续保留 HTTP 状态诊断。
 既有明确本地超时与人工核查规则不变。创建只有
 可信 `task.id + pending` 才建立 Task，其它不明确结果进入现有 unknown 流程。
-`processing` 映射由本地插件 `1.3.3` 承载；新版发布、制品激活与多节点加载核对，以及真实
-Provider 查询观察到完整三阶段序列的验收未完成，由[路线图](../50-planning/路线图.md)跟踪。
+`processing` 映射由插件 `1.3.3` 引入，字符串失败由 `1.3.4` 承载，对象型失败由 `1.3.5` 补齐；新版发布、制品激活与多节点加载核对，
+以及真实 Provider 完整成功／失败生命周期验收未完成，由[路线图](../50-planning/路线图.md)跟踪。
+存量 Task 保留精确冻结版本，不自动迁移或回退 active；人工核实处置见
+[Synlink 失败任务处置手册](../40-operations/Synlink失败任务处置手册.md)。
+
+视频只提供临时下载，不承诺长期保存或固定的完成后 24 小时有效期。内容代理在既有鉴权之后，
+仅对 Synlink 当前选中的 HTTPS 内容 URL 识别 TOS4 签名：`X-Tos-Date` 为 UTC 签名时间，
+`X-Tos-Expires` 为 1—604800 秒的有效时长；算法、日期、有效时长和非空签名必须各出现一次。
+日期／参数缺失、重复、畸形或算法未知时不推断过期，继续原有受保护回源。
+明确到期返回 `410 video_content_expired`；已有 `expires_at` 到期检查保持有效。
+仅凭 HTTP 403、404 或网络错误不宣称链接过期。下载检查不改变成功 Task、计费或冻结 URL，
+不重新查询签名、不后台重试、不重新生成或退款；本地回归通过仍须生产发布验收。
+签名时间语义依据 [TOS 预签名 URL 文档](https://www.volcengine.com/docs/6349/1844841?lang=en)与
+[TOS URL 签名参数](https://console.cloud.vnet.com/docs/6615/139389)，签名有效期不保证对象在该时间内始终可用。
 
 Provider 四模型由 `relaykit/dto/synlink_video.go` 登记，保存／启用时校验最终映射；不根据模型名
 推断协议。允许配对 `funcloud_material_hosted` 或 `none`，共享图片合同见素材架构第 7 节。
