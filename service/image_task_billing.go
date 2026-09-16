@@ -23,6 +23,7 @@ import (
 func FreezeImageTaskBilling(ctx context.Context, task *model.Task, info *relaycommon.RelayInfo, request *dto.ImageRequest) error {
 	data := task.PrivateData.ImageTask
 	if data.NativeRequest != nil {
+		freezeImageTaskViolationFeePolicy(task)
 		return freezeNativeImageBilling(ctx, task, info, request)
 	}
 	parameters, err := common.DeepCopy(request)
@@ -155,7 +156,7 @@ func settleImageTaskBilling(ctx context.Context, task *model.Task) {
 	}
 	target, clamp, err := imageTaskTargetQuota(ctx, task, task.PrivateData.ImageTask.Usage)
 	if task.Status.ShouldRefundOnTerminal() {
-		target, clamp, err = 0, nil, nil
+		target, clamp, err = frozenImageTaskViolationFee(task)
 	}
 	if err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("image task %s billing evidence could not be evaluated", task.TaskID))

@@ -495,6 +495,7 @@ func tasksToDto(tasks []*model.Task, fillUser bool, viewerRole int) []*dto.TaskD
 				item.RootInfo = rootInfo
 			}
 		}
+		appendTaskImageDiagnostics(item, task, viewerRole)
 		result[i] = item
 	}
 	return result

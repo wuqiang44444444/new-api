@@ -30,6 +30,14 @@ type ImageTaskExecution struct {
 	ProviderTaskID string
 	Images         []model.TaskImageArtifact
 	Usage          *dto.Usage
+	// 受限执行证据（F3）：上游 HTTP 状态、白名单请求关联 ID 与既有违规
+	// 扣费固定标记命中。都是事实字段，不含 Provider 原文或任意 code/type。
+	UpstreamStatus    int
+	ProviderRequestID string
+	ViolationMarker   bool
+	// Result retrieval is a separate HTTP exchange from generation. Its status
+	// is diagnostic only and must never drive provider rejection/refund logic.
+	DownloadHTTPStatus int
 }
 
 const (
@@ -97,7 +105,9 @@ func resumeImageTaskUnknowns(ctx context.Context, config system_setting.ImageTas
 				}
 			default:
 				// 仍处理中/不可采信：释放执行槽，保持待核实与资金占用。
-				_, _ = model.FinishImageTaskFailure(task, model.TaskStatusReconciliationRequired, result.FailureCode)
+				// Recovery observations must not overwrite the original failure
+				// evidence; native tasks normally have no Provider task ID.
+				_, _ = model.FinishImageTaskFailure(task, model.TaskStatusReconciliationRequired, task.PrivateData.ImageTask.FailureCode)
 			}
 		})
 	}
@@ -213,19 +223,23 @@ func executeImageTask(ctx context.Context, task *model.Task, config system_setti
 			settleImageTaskBilling(ctx, task)
 		}
 	case ImageTaskOutcomeFailure:
-		won, err := model.FinishImageTaskFailure(task, model.TaskStatusFailure, result.FailureCode)
+		evidence := model.TaskImageFailureEvidence{UpstreamStatus: result.UpstreamStatus, ProviderRequestID: result.ProviderRequestID, ViolationMarker: result.ViolationMarker}
+		won, err := model.FinishImageTaskFailureWithEvidence(task, model.TaskStatusFailure, result.FailureCode, evidence)
 		if err != nil {
 			logger.LogWarn(ctx, fmt.Sprintf("image task %s failure commit failed: %s", task.TaskID, err.Error()))
 		}
 		if won {
+			emitImageTaskExecutionDiag(task, model.TaskStatusFailure, result)
 			settleImageTaskBilling(ctx, task)
 		}
 	default:
-		won, err := model.FinishImageTaskFailure(task, model.TaskStatusReconciliationRequired, result.FailureCode)
+		evidence := model.TaskImageFailureEvidence{UpstreamStatus: result.UpstreamStatus, ProviderRequestID: result.ProviderRequestID, ViolationMarker: result.ViolationMarker}
+		won, err := model.FinishImageTaskFailureWithEvidence(task, model.TaskStatusReconciliationRequired, result.FailureCode, evidence)
 		if err != nil {
 			logger.LogWarn(ctx, fmt.Sprintf("image task %s unknown commit failed: %s", task.TaskID, err.Error()))
 		}
 		if won {
+			emitImageTaskExecutionDiag(task, model.TaskStatusReconciliationRequired, result)
 			// 待核实任务保持资金与受理占用，仅释放执行槽位。
 			logger.LogWarn(ctx, fmt.Sprintf("image task %s outcome unknown (%s); manual reconciliation required", task.TaskID, result.FailureCode))
 		}

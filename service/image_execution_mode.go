@@ -4,8 +4,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/gin-gonic/gin"
-	"strconv"
-	"strings"
 )
 
 // ImageAsyncExecutionRequested selects the platform task lifecycle after initial
@@ -26,28 +24,14 @@ func ImageAsyncExecutionRequested(c *gin.Context) bool {
 		channelType == constant.ChannelTypeVertexAi ||
 		channelType == constant.ChannelTypeAsyncImage
 	if channelType == constant.ChannelTypeOpenAI || channelType == constant.ChannelTypeAzure {
-		// This is mode selection, not a second image contract. Read through the
-		// shared storage before idempotency can claim the request. Invalid input
-		// stays native so the authoritative request validator reports the error.
-		var stream bool
-		var err error
-		if strings.HasPrefix(c.Request.Header.Get("Content-Type"), "multipart/form-data") {
-			form, parseErr := common.ParseMultipartFormReusable(c)
-			err = parseErr
-			if err == nil {
-				defer form.RemoveAll()
-				if values := form.Value["stream"]; len(values) > 0 && strings.TrimSpace(values[0]) != "" {
-					stream, err = strconv.ParseBool(strings.TrimSpace(values[0]))
-				}
-			}
-		} else {
-			var mode struct {
-				Stream *bool `json:"stream"`
-			}
-			err = common.UnmarshalBodyReusable(c, &mode)
-			stream = mode.Stream != nil && *mode.Stream
-		}
-		async = err == nil && !stream
+		// Task priority: an explicit async preference selects the platform task
+		// lifecycle even when the client also asks for stream=true. The frozen
+		// request keeps stream, and the background worker consumes the upstream
+		// stream before delivering through the task query. This is mode
+		// selection, not a second image contract: body-level errors (invalid
+		// JSON, invalid stream value, limits) stay with the authoritative
+		// native request validator, which runs before admission.
+		async = true
 	}
 	c.Set(contextKey, async)
 	return async

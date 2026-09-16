@@ -10,9 +10,11 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
@@ -114,15 +116,36 @@ func (a *funCloudHostedMaterialAdapter) CreateAsset(ctx context.Context, req ass
 	}
 	data, err := readHostedAssetSource(req.Source, req.SourceMaxBytes)
 	if err != nil {
+		reason := "source_read_failed"
+		if errors.Is(err, errHostedSourceTooLarge) {
+			reason = "source_too_large"
+		}
+		clienterrlog.Attach(ctx, clienterrlog.Report{Stage: "content_validation", Reason: reason})
 		return assetadapter.AssetResult{}, err
 	}
 	contentType := strings.TrimSpace(req.SourceType)
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	expectedType := map[string]string{"jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp", "bmp": "image/bmp", "tiff": "image/tiff"}[format]
-	if err != nil || expectedType == "" || contentType != expectedType || cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width) > dto.PublicAssetHostedMaxPixels/int64(cfg.Height) {
+	if err != nil || expectedType == "" {
+		clienterrlog.Attach(ctx, clienterrlog.Report{Stage: "content_validation", Reason: "invalid_image"})
+		return assetadapter.AssetResult{}, fmt.Errorf("%w: invalid hosted image content or dimensions", ErrInvalidAssetRequest)
+	}
+	if contentType != expectedType {
+		clienterrlog.Attach(ctx, clienterrlog.Report{
+			Stage: "content_validation", Reason: "content_type_mismatch",
+			Detail: map[string]string{"source_content_type": contentType},
+		})
+		return assetadapter.AssetResult{}, fmt.Errorf("%w: invalid hosted image content or dimensions", ErrInvalidAssetRequest)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width) > dto.PublicAssetHostedMaxPixels/int64(cfg.Height) {
+		clienterrlog.Attach(ctx, clienterrlog.Report{
+			Stage: "content_validation", Reason: "image_dimensions_exceeded",
+			Detail: map[string]string{"decoded_width": strconv.Itoa(cfg.Width), "decoded_height": strconv.Itoa(cfg.Height)},
+		})
 		return assetadapter.AssetResult{}, fmt.Errorf("%w: invalid hosted image content or dimensions", ErrInvalidAssetRequest)
 	}
 	if _, _, err := image.Decode(bytes.NewReader(data)); err != nil {
+		clienterrlog.Attach(ctx, clienterrlog.Report{Stage: "content_validation", Reason: "invalid_image"})
 		return assetadapter.AssetResult{}, fmt.Errorf("%w: invalid hosted image content", ErrInvalidAssetRequest)
 	}
 	storeCtx, err := WithImageObjectStore(ctx)
@@ -203,6 +226,11 @@ func hostedAssetResult(record *model.FunCloudHostedAsset) assetadapter.AssetResu
 	}
 }
 
+var (
+	errHostedSourceUnreadable = errors.New("hosted asset source could not be read")
+	errHostedSourceTooLarge   = errors.New("hosted asset source exceeds the upload limit")
+)
+
 // readHostedAssetSource 读取全部源字节并执行已登记的大小上限。
 func readHostedAssetSource(source io.Reader, maxBytes int64) ([]byte, error) {
 	if maxBytes <= 0 {
@@ -210,10 +238,10 @@ func readHostedAssetSource(source io.Reader, maxBytes int64) ([]byte, error) {
 	}
 	data, err := io.ReadAll(io.LimitReader(source, maxBytes+1))
 	if err != nil {
-		return nil, errors.New("hosted asset source could not be read")
+		return nil, errHostedSourceUnreadable
 	}
 	if int64(len(data)) > maxBytes {
-		return nil, errors.New("hosted asset source exceeds the upload limit")
+		return nil, errHostedSourceTooLarge
 	}
 	return data, nil
 }

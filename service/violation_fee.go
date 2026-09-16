@@ -5,14 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/model_setting"
-
-	"github.com/shopspring/decimal"
 
 	"github.com/gin-gonic/gin"
 )
@@ -82,19 +79,7 @@ func shouldChargeViolationFee(err *types.NewAPIError) bool {
 }
 
 func calcViolationFeeQuota(amount, groupRatio float64) int {
-	if amount <= 0 {
-		return 0
-	}
-	if groupRatio <= 0 {
-		return 0
-	}
-	quota := common.QuotaFromDecimal(decimal.NewFromFloat(amount).
-		Mul(decimal.NewFromFloat(common.QuotaPerUnit)).
-		Mul(decimal.NewFromFloat(groupRatio)).
-		Round(0))
-	if quota <= 0 {
-		return 0
-	}
+	quota, _ := calcViolationFeeQuotaChecked(amount, groupRatio)
 	return quota
 }
 

@@ -1,7 +1,7 @@
 ---
 page-id: async-tasks
 kind: guide
-last-verified: 2026-09-09
+last-verified: 2026-09-16
 operations: []
 ---
 
@@ -28,9 +28,11 @@ Kling、即梦和[通用视频生成](api-reference/videos/generations)使用各
 - SSE 流式：同一连接接收部分图和完成事件；不因为流式就获得平台任务 ID。
 - 显式异步：收到 `202` 后保存 ID，断开连接仍继续执行，使用 GET 查询。
 
-图片模型不支持平台异步时可能忽略偏好并返回同步结果。`api.image.async.stream_priority=true` 时，
-`stream=true` 优先流式；其他异步图片模型拒绝两种模式同时使用。需要可靠的任务接入时先检查模型声明，
-不要同时请求流式，并以实际响应状态和对象类型确认。
+图片模型不支持平台异步时可能忽略偏好并返回同步结果。声明 `api.image.async` 的模型收到
+`Prefer: respond-async` 后选择平台任务，通过参数、资金及存储等受理检查后返回 `202`。
+OpenAI／Azure 原生图片入口同时传 `stream=true` 时由后台接收上游结果，创建连接不返回 SSE；
+Gemini／Vertex／图片中转入口仍拒绝两者同时使用。`stream_priority=false` 不代表支持流式参数。
+先检查模型声明，并以实际响应状态和对象类型确认是否受理。
 
 ## 轮询流程
 

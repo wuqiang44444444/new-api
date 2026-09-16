@@ -227,6 +227,7 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	}
 	client = channel.ImageRelayHTTPClient(client, info.StartTime)
 	resp, err := client.Do(req)
+	service.ObserveImageHTTPExchange(req.Context(), req, resp, err, "upstream_response")
 	if err != nil {
 		if errors.Is(err, context.Canceled) || (c != nil && c.Request != nil && errors.Is(c.Request.Context().Err(), context.Canceled)) {
 			return nil, channel.ImageRelayClientCanceledError()
@@ -309,6 +310,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 			applyHeaderOverride(request, key, value)
 		}
 		pollResp, err := client.Do(request)
+		service.ObserveImageHTTPExchange(request.Context(), request, pollResp, err, "polling")
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return nil, channel.ImageRelayClientCanceledError()

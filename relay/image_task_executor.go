@@ -36,9 +36,13 @@ import (
 const maxImageResultBytes = 50 * 1024 * 1024
 
 // ExecuteImageTask runs the frozen image task against its provider.
-func ExecuteImageTask(ctx context.Context, task *model.Task) service.ImageTaskExecution {
+func ExecuteImageTask(ctx context.Context, task *model.Task) (outcome service.ImageTaskExecution) {
+	capture := service.NewImageTaskErrorEvidence(task)
+	ctx = service.WithImageErrorEvidence(ctx, capture)
+	defer func() { capture.Finish(outcome.Outcome != service.ImageTaskOutcomeSuccess) }()
 	ctx, err := service.WithImageObjectStore(ctx)
 	if err != nil {
+		service.RecordImageDeliveryError(ctx, "result_store_config", err)
 		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeUnknown, FailureCode: "storage_unavailable"}
 	}
 	data := task.PrivateData.ImageTask
@@ -179,7 +183,7 @@ func executeGeminiImageTask(ctx context.Context, c *gin.Context, task *model.Tas
 	})
 	if uploadErr != nil {
 		// 生成成功而保存失败是交付异常：保持待核实，不判生成失败（§3.9）。
-		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeUnknown, FailureCode: "result_store_failed"}
+		return imageResultFailure(uploadErr)
 	}
 	return service.ImageTaskExecution{
 		Outcome: service.ImageTaskOutcomeSuccess,
@@ -227,7 +231,7 @@ func executeImageRelayTask(ctx context.Context, task *model.Task, info *relaycom
 		return downloadImageURL(ctx, urls[index])
 	})
 	if uploadErr != nil {
-		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeUnknown, FailureCode: "result_store_failed"}
+		return imageResultFailure(uploadErr)
 	}
 	return service.ImageTaskExecution{
 		Outcome:        service.ImageTaskOutcomeSuccess,
@@ -268,6 +272,7 @@ func postFrozenImageRequest(ctx context.Context, c *gin.Context, info *relaycomm
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
 	}
 	resp, err := client.Do(req)
+	service.ObserveImageHTTPExchange(ctx, req, resp, err, "generation")
 	if err != nil {
 		return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeDoRequestFailed, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
 	}
@@ -296,33 +301,34 @@ func storeImageResults(ctx context.Context, task *model.Task, count int, usage *
 	for index := range manifest {
 		key, err := service.BuildImageTaskObjectKey(task.TaskID, fmt.Sprintf("result-%d", index))
 		if err != nil {
-			return nil, err
+			return nil, &imageResultError{Code: "result_manifest_failed"}
 		}
 		manifest[index].ObjectKey = key
 	}
 	won, err := model.RecordImageTaskGeneration(task, manifest, usage)
 	if err != nil {
-		return nil, err
+		service.RecordImageDeliveryError(ctx, "result_manifest", err)
+		return nil, &imageResultError{Code: "result_manifest_failed"}
 	}
 	if !won {
-		return nil, errors.New("image execution lease lost")
+		return nil, &imageResultError{Code: "result_lease_lost"}
 	}
 	artifacts := make([]model.TaskImageArtifact, 0, count)
 	var deliveryErr error
 	for index, planned := range manifest {
 		if ctx.Err() != nil {
-			return artifacts, ctx.Err()
+			return artifacts, &imageResultError{Code: "result_delivery_cancelled"}
 		}
 		exists, err := service.HeadImageObject(ctx, planned.ObjectKey)
 		if err != nil {
-			deliveryErr = errors.New("image storage is unavailable")
+			deliveryErr = &imageResultError{Code: "result_storage_check_failed"}
 			continue
 		}
 		artifact := planned
 		if !exists {
 			data, mimeType, err := fetch(index)
 			if err != nil {
-				deliveryErr = errors.New("image result could not be read")
+				deliveryErr = err
 				continue
 			}
 			if mimeType == "" || !strings.HasPrefix(strings.ToLower(mimeType), "image/") {
@@ -339,13 +345,13 @@ func storeImageResults(ctx context.Context, task *model.Task, count int, usage *
 					select {
 					case <-ctx.Done():
 						timer.Stop()
-						return artifacts, ctx.Err()
+						return artifacts, &imageResultError{Code: "result_delivery_cancelled"}
 					case <-timer.C:
 					}
 				}
 			}
 			if err != nil {
-				deliveryErr = errors.New("image result could not be stored")
+				deliveryErr = &imageResultError{Code: "result_store_failed"}
 				continue
 			}
 			artifact.MimeType, artifact.Size = mimeType, int64(len(data))
@@ -355,11 +361,12 @@ func storeImageResults(ctx context.Context, task *model.Task, count int, usage *
 		if err != nil {
 			// Keep storing the other already-generated images; the persisted manifest
 			// lets a later worker register them without another Provider POST.
-			deliveryErr = errors.New("image artifact registration did not commit")
+			service.RecordImageDeliveryError(ctx, "result_registration", err)
+			deliveryErr = &imageResultError{Code: "result_registration_failed"}
 			continue
 		}
 		if !won {
-			return artifacts, errors.New("image execution lease lost")
+			return artifacts, &imageResultError{Code: "result_lease_lost"}
 		}
 	}
 	return artifacts, deliveryErr
@@ -371,24 +378,25 @@ func storeImageResults(ctx context.Context, task *model.Task, count int, usage *
 func downloadImageURL(ctx context.Context, imageURL string) ([]byte, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
 	if err != nil {
-		return nil, "", err
+		return nil, "", &imageResultError{Code: "result_download_request_failed"}
 	}
 	bounded := *service.GetSSRFProtectedHTTPClient()
 	bounded.Timeout = 60 * time.Second
 	resp, err := bounded.Do(req)
+	service.ObserveImageHTTPExchange(ctx, req, resp, err, "result_download")
 	if err != nil {
-		return nil, "", err
+		return nil, "", &imageResultError{Code: "result_download_transport_failed"}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, "", fmt.Errorf("result download returned HTTP %d", resp.StatusCode)
+		return nil, "", &imageResultError{Code: "result_download_http_error", DownloadHTTPStatus: resp.StatusCode}
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageResultBytes+1))
 	if err != nil {
-		return nil, "", err
+		return nil, "", &imageResultError{Code: "result_download_read_failed", DownloadHTTPStatus: resp.StatusCode}
 	}
 	if len(data) > maxImageResultBytes {
-		return nil, "", errors.New("result image exceeds the storage size limit")
+		return nil, "", &imageResultError{Code: "result_size_limit", DownloadHTTPStatus: resp.StatusCode}
 	}
 	mimeType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	return data, mimeType, nil
@@ -414,22 +422,26 @@ func executorFailureFromError(err error) service.ImageTaskExecution {
 	return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeFailure, FailureCode: "request_build_failed"}
 }
 
-// ResumeImageTaskPoll 恢复一个已持久化可信上游任务 ID 的待核实任务：
-// 只查询既有 Provider 任务，绝不重建（R7/§3.8 恢复表）。当前仅
-// funcloud_aigc_v2 提供异步上游；无 ID 的任务不进入本路径。
-func ResumeImageTaskPoll(ctx context.Context, task *model.Task) service.ImageTaskExecution {
+// ResumeImageTaskPoll first recovers persisted objects, including native tasks
+// with no Provider ID. Only a real Provider task can be polled; never recreate.
+func ResumeImageTaskPoll(ctx context.Context, task *model.Task) (outcome service.ImageTaskExecution) {
+	capture := service.NewImageTaskErrorEvidence(task)
+	ctx = service.WithImageErrorEvidence(ctx, capture)
+	defer func() { capture.Finish(outcome.Outcome != service.ImageTaskOutcomeSuccess) }()
 	ctx, err := service.WithImageObjectStore(ctx)
 	if err != nil {
+		service.RecordImageDeliveryError(ctx, "result_store_config", err)
 		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeUnknown, FailureCode: "storage_unavailable"}
 	}
 	data := task.PrivateData.ImageTask
 	if result, err := service.RecoverImageTaskArtifacts(ctx, task); err != nil {
+		service.RecordImageDeliveryError(ctx, "result_recovery", err)
 		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeUnknown, FailureCode: "result_recovery_failed"}
 	} else if result != nil {
 		return *result
 	}
 	if data == nil || strings.TrimSpace(data.ProviderTaskID) == "" {
-		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeUnknown, FailureCode: "no_provider_task_id"}
+		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeUnknown, FailureCode: "result_recovery_incomplete"}
 	}
 	info := buildFrozenImageRelayInfo(task, data)
 	switch info.ChannelOtherSettings.ImageUpstreamProtocol {
@@ -450,7 +462,7 @@ func ResumeImageTaskPoll(ctx context.Context, task *model.Task) service.ImageTas
 			return downloadImageURL(ctx, urls[index])
 		})
 		if uploadErr != nil {
-			return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeUnknown, FailureCode: "result_store_failed"}
+			return imageResultFailure(uploadErr)
 		}
 		return service.ImageTaskExecution{
 			Outcome:        service.ImageTaskOutcomeSuccess,

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
@@ -75,6 +76,8 @@ func authHelper(c *gin.Context, minRole int) {
 		auditWriter = beginAdminAudit(c)
 	}
 
+	markDashboardClientErrorAuth(c, useAccessToken)
+
 	c.Next()
 
 	finishAdminAudit(c, auditWriter)
@@ -92,6 +95,7 @@ func TryUserAuth() func(c *gin.Context) {
 		}
 		if credentialKind != dashboardCredentialUnmatched {
 			setDashboardAuthContext(c, user, identity, credentialKind == dashboardCredentialPAT)
+			markDashboardClientErrorAuth(c, credentialKind == dashboardCredentialPAT)
 		}
 		c.Next()
 	}
@@ -354,6 +358,7 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 		c.Set("id", token.UserId)
 		c.Set("token_id", token.Id)
 		c.Set("token_key", token.Key)
+		clienterrlog.MarkAuthPassed(c, clienterrlog.AuthSourceAPITokenReadOnly)
 		c.Next()
 	}
 }
@@ -488,6 +493,7 @@ func TokenAuth() func(c *gin.Context) {
 		if err != nil {
 			return
 		}
+		clienterrlog.MarkAuthPassed(c, clienterrlog.AuthSourceAPIToken)
 		c.Next()
 	}
 }

@@ -12,7 +12,7 @@ func NativeAsyncImageAPI(customerModel, providerModel string) *dto.PublicModelAP
 	api := NativeImageAPI(providerModel)
 	api.Image.Creation.Model = customerModel
 	api.Image.Creation.Parameters[0] = fixedParameter("model", "string", true, customerModel)
-	api.Image.Async = &dto.PublicImageAsync{RequestHeader: "Prefer", RequestValue: "respond-async", QueryPath: "/v1/tasks/{task_id}", StreamPriority: true}
+	api.Image.Async = &dto.PublicImageAsync{RequestHeader: "Prefer", RequestValue: "respond-async", QueryPath: "/v1/tasks/{task_id}", StreamPriority: false}
 	api.Image.Operations = append(api.Image.Operations, dto.PublicAPIOperation{Operation: "query_image", Method: http.MethodGet, Path: "/v1/tasks/{task_id}", Supported: true})
 	// DALL-E 3 has no native edit operation. Other native profiles publish the
 	// gateway edit surface; provider-specific support remains provider-owned.

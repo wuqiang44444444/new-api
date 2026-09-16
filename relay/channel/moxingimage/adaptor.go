@@ -210,6 +210,7 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	}
 	client = channel.ImageRelayHTTPClient(client, info.StartTime)
 	response, err := client.Do(request)
+	service.ObserveImageHTTPExchange(request.Context(), request, response, err, "upstream_response")
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, channel.ImageRelayClientCanceledError()

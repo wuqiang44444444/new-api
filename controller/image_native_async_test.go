@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -23,6 +24,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -32,6 +34,14 @@ import (
 
 func nativeImageTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	oldEvidence := system_setting.GetTaskRequestEvidenceConfig()
+	disabledEvidence := oldEvidence
+	disabledEvidence.Enabled = false
+	system_setting.SetTaskRequestEvidenceConfig(disabledEvidence)
+	t.Cleanup(func() {
+		require.Eventually(t, func() bool { return service.ImageErrorEvidenceHealth()["active"] == 0 }, 3*time.Second, time.Millisecond)
+		system_setting.SetTaskRequestEvidenceConfig(oldEvidence)
+	})
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
@@ -43,6 +53,10 @@ func nativeImageTestDB(t *testing.T) *gorm.DB {
 	oldPrice, oldGroup := ratio_setting.ModelPrice2JSONString(), ratio_setting.GroupRatio2JSONString()
 	oldExecutor, oldResume := service.ImageTaskExecuteFunc, service.ImageTaskResumePollFunc
 	t.Cleanup(func() {
+		// Native synchronous settlement schedules metrics/cache updates. Drain
+		// those jobs before restoring their global settings and closing the DB.
+		require.Eventually(t, func() bool { return gopool.WorkerCount() == 0 }, 3*time.Second, 10*time.Millisecond)
+		waitImageDiagDelivery(t)
 		model.DB, model.LOG_DB = oldDB, oldLog
 		common.SetDatabaseTypes(oldMain, oldLogType)
 		common.RedisEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled, constant.CountToken = oldRedis, oldBatch, oldConsume, oldCount
@@ -98,12 +112,28 @@ func nativeImageTestDB(t *testing.T) *gorm.DB {
 func TestNativeImageAsyncAcceptanceExecutionAndQuery(t *testing.T) {
 	for _, channelType := range []int{constant.ChannelTypeOpenAI, constant.ChannelTypeAzure} {
 		for _, operation := range []string{"generations", "edits"} {
-			for _, stream := range []bool{false, true} {
-				for _, wireMode := range []string{"converted", "passthrough", "override", "stream_override"} {
-					if wireMode != "converted" && (stream || (operation != "generations" && wireMode != "stream_override")) {
+			for _, scenario := range []struct {
+				name         string
+				clientStream bool
+				preferAsync  bool
+				wireMode     string
+			}{
+				{name: "task", clientStream: false, preferAsync: true, wireMode: "converted"},
+				{name: "task_passthrough", clientStream: false, preferAsync: true, wireMode: "passthrough"},
+				{name: "task_override", clientStream: false, preferAsync: true, wireMode: "override"},
+				{name: "task_stream_override", clientStream: false, preferAsync: true, wireMode: "stream_override"},
+				// Task 优先：显式异步偏好下 stream=true 也受理平台任务，
+				// 冻结请求保留 stream，由后台接收上游结果。
+				{name: "task_priority_client_stream", clientStream: true, preferAsync: true, wireMode: "converted"},
+				// 无异步头的原生流式保护：不创建平台任务、不认领幂等键。
+				{name: "native_stream_without_prefer", clientStream: true, preferAsync: false, wireMode: "converted"},
+			} {
+				{
+					wireMode := scenario.wireMode
+					if wireMode != "converted" && (scenario.clientStream || (operation != "generations" && wireMode != "stream_override")) {
 						continue
 					}
-					t.Run(strconv.Itoa(channelType)+"/"+operation+"/stream="+strconv.FormatBool(stream)+"/"+wireMode, func(t *testing.T) {
+					t.Run(strconv.Itoa(channelType)+"/"+operation+"/"+scenario.name+"/"+wireMode, func(t *testing.T) {
 						db := nativeImageTestDB(t)
 						user := model.User{Id: 8911, Username: "native-image", Quota: 100000, Group: "default", Status: common.UserStatusEnabled}
 						token := model.Token{Id: 8911, UserId: user.Id, Key: strings.Repeat("n", 32), RemainQuota: 100000, Status: common.TokenStatusEnabled, ExpiredTime: -1}
@@ -114,7 +144,7 @@ func TestNativeImageAsyncAcceptanceExecutionAndQuery(t *testing.T) {
 							calls.Add(1)
 							var held model.User
 							assert.NoError(t, db.First(&held, user.Id).Error)
-							if !stream {
+							if scenario.preferAsync {
 								assert.Equal(t, 60000, held.Quota, "n=2 is held before provider POST")
 							}
 							expectedPath := "/v1/images/" + operation
@@ -152,6 +182,9 @@ func TestNativeImageAsyncAcceptanceExecutionAndQuery(t *testing.T) {
 									if operation == "edits" {
 										assert.Equal(t, "data:image/png;base64,aW1hZ2U=", body["image"])
 									}
+								}
+								if scenario.clientStream {
+									assert.Equal(t, true, body["stream"])
 								}
 								assert.Equal(t, float64(0), body["output_compression"])
 								assert.NotContains(t, body, "response_format", "absence must stay absent for GPT image")
@@ -206,7 +239,7 @@ func TestNativeImageAsyncAcceptanceExecutionAndQuery(t *testing.T) {
 						engine.GET("/v1/tasks/:key", auth, GetTask)
 						var taskID string
 						for attempt := 0; attempt < 2; attempt++ {
-							body := bytes.NewBufferString(`{"model":"gpt-image-2","prompt":"draw","n":2,"output_compression":0,"stream":` + strconv.FormatBool(stream) + `}`)
+							body := bytes.NewBufferString(`{"model":"gpt-image-2","prompt":"draw","n":2,"output_compression":0,"stream":` + strconv.FormatBool(scenario.clientStream) + `}`)
 							contentType := "application/json"
 							if operation == "edits" && wireMode == "stream_override" {
 								body = bytes.NewBufferString(`{"model":"gpt-image-2","prompt":"draw","n":2,"output_compression":0,"stream":false,"image":"data:image/png;base64,aW1hZ2U="}`)
@@ -214,7 +247,7 @@ func TestNativeImageAsyncAcceptanceExecutionAndQuery(t *testing.T) {
 							if operation == "edits" && wireMode != "stream_override" {
 								body.Reset()
 								writer := multipart.NewWriter(body)
-								for _, pair := range [][2]string{{"model", "gpt-image-2"}, {"prompt", "draw"}, {"n", "2"}, {"stream", strconv.FormatBool(stream)}, {"user", "first"}, {"user", "second"}, {"output_compression", "0"}} {
+								for _, pair := range [][2]string{{"model", "gpt-image-2"}, {"prompt", "draw"}, {"n", "2"}, {"stream", strconv.FormatBool(scenario.clientStream)}, {"user", "first"}, {"user", "second"}, {"output_compression", "0"}} {
 									require.NoError(t, writer.WriteField(pair[0], pair[1]))
 								}
 								for _, field := range []string{"image", "image", "mask"} {
@@ -228,12 +261,14 @@ func TestNativeImageAsyncAcceptanceExecutionAndQuery(t *testing.T) {
 							}
 							request := httptest.NewRequest(http.MethodPost, path, body)
 							request.Header.Set("Content-Type", contentType)
-							request.Header.Set("Prefer", "respond-async")
-							request.Header.Set("Idempotency-Key", "native-key")
+							if scenario.preferAsync {
+								request.Header.Set("Prefer", "respond-async")
+								request.Header.Set("Idempotency-Key", "native-key")
+							}
 							request.Header.Set("X-Freeze", "frozen-header")
 							recorder := httptest.NewRecorder()
 							engine.ServeHTTP(recorder, request)
-							if stream {
+							if !scenario.preferAsync {
 								require.Equal(t, 200, recorder.Code, recorder.Body.String())
 								assert.Contains(t, recorder.Body.String(), "image_generation.completed")
 							} else {
@@ -253,7 +288,7 @@ func TestNativeImageAsyncAcceptanceExecutionAndQuery(t *testing.T) {
 						}
 						var count int64
 						require.NoError(t, db.Model(&model.TaskCreateIdempotency{}).Count(&count).Error)
-						if stream {
+						if !scenario.preferAsync {
 							assert.Zero(t, count)
 							require.NoError(t, db.Model(&model.Task{}).Count(&count).Error)
 							assert.Zero(t, count)
@@ -336,13 +371,11 @@ func TestNativeImageAsyncUnknownNeverResendsOrRefunds(t *testing.T) {
 			}))
 			t.Cleanup(provider.Close)
 			channel := model.Channel{Id: 8941, Type: constant.ChannelTypeOpenAI, Key: "fixture", BaseURL: &provider.URL, Status: common.ChannelStatusEnabled}
-			var diagnostics bytes.Buffer
+			var diagnostics *imageDiagBuffer
 			if tc.preparationError {
 				override := `{"operations":[{"path":"prompt","mode":"unsupported-private-mode","value":"private-body"}]}`
 				channel.ParamOverride = &override
-				oldWriter := gin.DefaultErrorWriter
-				gin.DefaultErrorWriter = &diagnostics
-				t.Cleanup(func() { gin.DefaultErrorWriter = oldWriter })
+				diagnostics = captureNativeImageDiag(t)
 			}
 			require.NoError(t, db.Create(&channel).Error)
 			engine := gin.New()

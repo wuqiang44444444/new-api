@@ -1,7 +1,7 @@
 ---
 page-id: images-edits
 kind: api-reference
-last-verified: 2026-09-09
+last-verified: 2026-09-16
 operations:
   - createImageEdit
 ---
@@ -17,9 +17,11 @@ operations:
 
 先确认 `api.image.operations` 中 `edit_image.supported=true`，再读取 `api.image.edit` 的输入字段、
 数量和格式。JSON／multipart、源图顺序及模型支持的 mask 以该编辑合同为准。
-`api.image.async.stream_priority=true` 时，`stream=true` 优先流式响应，不创建任务；同时携带的
-幂等键不提供平台任务幂等保证。其他异步图片模型不接受 `stream=true` 与异步偏好同时使用。
-异步受理需要平台私有对象存储；存储不可用返回 `503`，不扣费也不发送上游。
+`api.image.async.stream_priority=false` 表示流式不优先于异步偏好，不代表模型支持 `stream` 参数。
+OpenAI／Azure 原生图片入口同时传 `stream=true` 时，通过受理检查后返回 `202`，由后台接收结果；
+Gemini／Vertex／图片中转入口仍拒绝这一组合。受理后的幂等键提供平台任务幂等保证。
+异步受理需要平台私有对象存储；存储不可用返回 `503`，
+不扣费也不发送上游。
 
 尚未提供平台异步执行的模型会忽略该偏好，继续在本次
 请求内返回编辑结果，不因携带此头返回 `400`。此时一并携带的 `Idempotency-Key` 不提供平台任务幂等保证。

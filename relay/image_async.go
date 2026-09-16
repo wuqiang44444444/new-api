@@ -36,9 +36,11 @@ func imageAsyncHelper(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPI
 	if !ok {
 		return types.NewErrorWithStatusCode(fmt.Errorf("invalid request type, expected dto.ImageRequest, got %T", info.Request), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
-	if imageReq.Stream != nil && *imageReq.Stream {
-		// P14：Prefer: respond-async 与 stream=true 互斥，在受理、预扣、
-		// 调用上游前报参数冲突。
+	native := info.ChannelType == constant.ChannelTypeOpenAI || info.ChannelType == constant.ChannelTypeAzure
+	if imageReq.Stream != nil && *imageReq.Stream && !native {
+		// P14：统一图片族 Prefer: respond-async 与 stream=true 互斥，在受理、
+		// 预扣、调用上游前报参数冲突。原生 OpenAI／Azure 走 Task 优先：
+		// stream=true 由冻结请求原样保留，后台接收上游流式结果。
 		return types.NewErrorWithStatusCode(errors.New("stream=true cannot be combined with Prefer: respond-async"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
 	// 评审 S3：异步路径必须在族判断与冻结快照之前完成管理员模型映射，
@@ -51,7 +53,6 @@ func imageAsyncHelper(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPI
 
 	var contract *service.ImageContract
 	var apiErr *types.NewAPIError
-	native := info.ChannelType == constant.ChannelTypeOpenAI || info.ChannelType == constant.ChannelTypeAzure
 	if native {
 		// Native validation already ran in the controller. Do not impose the
 		// unified image contract (notably its mask rejection) on native edits.

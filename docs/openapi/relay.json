@@ -389,7 +389,7 @@
       "post": {
         "summary": "创建图片",
         "deprecated": false,
-        "description": "图片生成默认返回同步结果。模型声明 api.image.async 时，可通过 Prefer: respond-async 请求显式异步；只有实际返回 202 才创建可查询的图片任务。流式与异步组合以 stream_priority 为准。",
+        "description": "图片生成默认返回同步结果。模型声明 api.image.async 时，可通过 Prefer: respond-async 显式选择平台任务；通过参数、资金及存储等受理检查后返回 202。OpenAI／Azure 原生图片入口同时支持 stream=true，由后台接收上游结果；Gemini／Vertex／图片中转入口仍拒绝 stream=true 与此偏好同时使用。未声明异步能力的模型忽略此偏好并返回同步结果。",
         "operationId": "createImageGeneration",
         "tags": [
           "图片生成/OpenAI兼容格式"
@@ -399,7 +399,7 @@
             "name": "Prefer",
             "in": "header",
             "required": false,
-            "description": "使用 respond-async 请求异步。是否支持以 api.image.async 为准；stream_priority=true 时 stream=true 优先流式，否则不允许同时请求流式和异步。不支持异步的模型可忽略此偏好并返回同步结果。",
+            "description": "使用 respond-async 显式选择平台任务。是否支持以 api.image.async 为准；通过受理检查后返回 202。OpenAI／Azure 原生图片入口可同时使用 stream=true；Gemini／Vertex／图片中转入口仍拒绝这一组合。不支持异步的模型可忽略此偏好并返回同步结果。",
             "schema": {
               "type": "string",
               "enum": [
@@ -411,7 +411,7 @@
             "name": "Idempotency-Key",
             "in": "header",
             "required": false,
-            "description": "仅实际异步受理生效；首尾去空白后最多 191 个 UTF-8 字节。同应用、同操作、同键等价请求可重放；不同请求 409。只有此键而无异步偏好返回 400；同步和流式无平台任务幂等保证。",
+            "description": "仅实际异步受理生效；首尾去空白后最多 191 个 UTF-8 字节。同应用、同操作、同键等价请求可重放；不同请求 409。只有此键而无异步偏好返回 400；未携带异步偏好的请求不提供平台任务幂等保证。",
             "schema": {
               "type": "string",
               "maxLength": 191
@@ -481,7 +481,7 @@
       "post": {
         "summary": "编辑图片",
         "deprecated": false,
-        "description": "图片编辑默认返回同步结果。模型声明 api.image.async 时，可通过 Prefer: respond-async 请求显式异步；只有实际返回 202 才创建可查询的图片任务。流式与异步组合以 stream_priority 为准。",
+        "description": "图片编辑默认返回同步结果。模型声明 api.image.async 时，可通过 Prefer: respond-async 显式选择平台任务；通过参数、资金及存储等受理检查后返回 202。OpenAI／Azure 原生图片入口同时支持 stream=true，由后台接收上游结果；Gemini／Vertex／图片中转入口仍拒绝 stream=true 与此偏好同时使用。未声明异步能力的模型忽略此偏好并返回同步结果。",
         "operationId": "createImageEdit",
         "tags": [
           "图片生成/OpenAI兼容格式"
@@ -491,7 +491,7 @@
             "name": "Prefer",
             "in": "header",
             "required": false,
-            "description": "使用 respond-async 请求异步。是否支持以 api.image.async 为准；stream_priority=true 时 stream=true 优先流式，否则不允许同时请求流式和异步。不支持异步的模型可忽略此偏好并返回同步结果。",
+            "description": "使用 respond-async 显式选择平台任务。是否支持以 api.image.async 为准；通过受理检查后返回 202。OpenAI／Azure 原生图片入口可同时使用 stream=true；Gemini／Vertex／图片中转入口仍拒绝这一组合。不支持异步的模型可忽略此偏好并返回同步结果。",
             "schema": {
               "type": "string",
               "enum": [
@@ -503,7 +503,7 @@
             "name": "Idempotency-Key",
             "in": "header",
             "required": false,
-            "description": "仅实际异步受理生效；首尾去空白后最多 191 个 UTF-8 字节。同应用、同操作、同键等价请求可重放；不同请求 409。只有此键而无异步偏好返回 400；同步和流式无平台任务幂等保证。",
+            "description": "仅实际异步受理生效；首尾去空白后最多 191 个 UTF-8 字节。同应用、同操作、同键等价请求可重放；不同请求 409。只有此键而无异步偏好返回 400；未携带异步偏好的请求不提供平台任务幂等保证。",
             "schema": {
               "type": "string",
               "maxLength": 191
@@ -8072,14 +8072,14 @@
           },
           "stream_priority": {
             "type": "boolean",
-            "description": "true 时 stream=true 优先使用流式；false 时流式与异步偏好互斥。"
+            "description": "false 表示 stream=true 不优先于异步偏好；不代表该模型支持 stream 参数。OpenAI／Azure 原生图片入口以后台任务接收流式；Gemini／Vertex／图片中转入口仍拒绝两者同时使用。"
           }
         },
         "example": {
           "request_header": "Prefer",
           "request_value": "respond-async",
           "query_path": "/v1/tasks/{task_id}",
-          "stream_priority": true
+          "stream_priority": false
         }
       },
       "ImageEditJSONRequest": {

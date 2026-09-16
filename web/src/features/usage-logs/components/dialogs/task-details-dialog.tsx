@@ -269,6 +269,19 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
                 mono
               />
             ) : null}
+            {props.log.admin_info?.image_execution ? (
+              <>
+                <DetailRow
+                  label={t('Upstream HTTP status')}
+                  value={props.log.admin_info.image_execution.upstream_status ?? '-'}
+                  mono
+                />
+                <DetailRow
+                  label={t('Violation policy matched')}
+                  value={props.log.admin_info.image_execution.violation_marker ? t('Yes') : t('No')}
+                />
+              </>
+            ) : null}
             {plugin ? (
               <>
                 <DetailRow

@@ -85,6 +85,14 @@ type TaskImageExecutionData struct {
 
 	ImageCount  int    `json:"image_count,omitempty"`
 	FailureCode string `json:"failure_code,omitempty"`
+
+	// 受限执行证据（F3）：与 FailureCode 同事务提交的事实字段。上游 HTTP
+	// 状态与脱敏请求关联 ID 是事实，违规标记是既有收费政策的固定标记命中
+	// 布尔；不含 Provider 原始正文或任意 code/type。
+	FailureStatus      int                          `json:"failure_status,omitempty"`
+	ProviderRequestID  string                       `json:"provider_request_id,omitempty"`
+	ViolationMarker    bool                         `json:"violation_marker,omitempty"`
+	ViolationFeePolicy *TaskImageViolationFeePolicy `json:"violation_fee_policy,omitempty"`
 }
 
 type TaskImageInputRef struct {

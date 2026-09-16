@@ -42,6 +42,7 @@ func BuildTaskBillingDeliveryLog(task *model.Task, event model.TaskBillingDelive
 		}
 	} else if event.Event == "complete" {
 		quota = event.AfterQuota
+		appendImageTaskViolationFeeLog(other, &copy, quota)
 		other.SetPublic("task_billing_event", "create") // Images log one completed request, without an initial consume row.
 		if data := task.PrivateData.ImageTask; data != nil {
 			other.SetPublic("image_count", data.ImageCount)

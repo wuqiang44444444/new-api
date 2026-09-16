@@ -47,30 +47,64 @@ func TestImageExecutionModePreservesNativeRequestsAndTaskBilling(t *testing.T) {
 	}
 }
 
-func TestNativeImageModeReadsStreamBeforeIdempotencyWithoutChangingBody(t *testing.T) {
+// Task priority: with an explicit async preference, OpenAI/Azure select the
+// platform task lifecycle regardless of stream. stream stays in the request
+// for the background worker; every body-level error stays with the native
+// request validator, which runs before admission.
+func TestNativeImageTaskPrioritySelectsTaskEvenWithStream(t *testing.T) {
 	for _, tc := range []struct {
-		body string
-		want bool
+		name   string
+		body   string
+		prefer string
+		want   bool
 	}{
-		{`{"stream":true}`, false},
-		{`{"stream":false}`, true},
-		{`{"stream":null}`, true},
-		{`{"stream":"true"}`, false},
-		{`{"stream":`, false},
+		{"stream_true", `{"stream":true}`, "respond-async", true},
+		{"stream_false", `{"stream":false}`, "respond-async", true},
+		{"stream_null", `{"stream":null}`, "respond-async", true},
+		{"stream_wrong_type", `{"stream":"true"}`, "respond-async", true},
+		{"stream_truncated_json", `{"stream":`, "respond-async", true},
+		// 无异步头的原生流式保持原生路径，不进入 Task。
+		{"no_prefer_native_stream", `{"stream":true}`, "", false},
 	} {
-		t.Run(tc.body, func(t *testing.T) {
-			c, _ := gin.CreateTestContext(httptest.NewRecorder())
-			c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(tc.body))
-			c.Request.Header.Set("Prefer", "respond-async")
-			c.Request.Header.Set("Content-Type", "application/json")
-			common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeOpenAI)
-			assert.Equal(t, tc.want, ImageAsyncExecutionRequested(c))
-			storage, err := common.GetBodyStorage(c)
-			require.NoError(t, err)
-			data, err := storage.Bytes()
-			require.NoError(t, err)
-			assert.Equal(t, tc.body, string(data))
-			assert.Equal(t, tc.want, ImageAsyncExecutionRequested(c))
+		t.Run(tc.name, func(t *testing.T) {
+			for _, channel := range []int{constant.ChannelTypeOpenAI, constant.ChannelTypeAzure} {
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(tc.body))
+				c.Request.Header.Set("Prefer", tc.prefer)
+				c.Request.Header.Set("Content-Type", "application/json")
+				common.SetContextKey(c, constant.ContextKeyChannelType, channel)
+				assert.Equal(t, tc.want, ImageAsyncExecutionRequested(c))
+				storage, err := common.GetBodyStorage(c)
+				require.NoError(t, err)
+				data, err := storage.Bytes()
+				require.NoError(t, err)
+				assert.Equal(t, tc.body, string(data))
+				assert.Equal(t, tc.want, ImageAsyncExecutionRequested(c))
+			}
 		})
 	}
+}
+
+// Multipart edits follow the same task-priority contract: the mode decision
+// no longer depends on the stream form value.
+func TestNativeImageMultipartTaskPriorityWithStream(t *testing.T) {
+	body := "--BOUNDARY\r\n" +
+		"Content-Disposition: form-data; name=\"model\"\r\n\r\n" +
+		"gpt-image-2\r\n" +
+		"--BOUNDARY\r\n" +
+		"Content-Disposition: form-data; name=\"stream\"\r\n\r\n" +
+		"true\r\n" +
+		"--BOUNDARY--\r\n"
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", strings.NewReader(body))
+	c.Request.Header.Set("Prefer", "respond-async")
+	c.Request.Header.Set("Content-Type", "multipart/form-data; boundary=BOUNDARY")
+	common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeAzure)
+	assert.True(t, ImageAsyncExecutionRequested(c))
+
+	noPrefer, _ := gin.CreateTestContext(httptest.NewRecorder())
+	noPrefer.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", strings.NewReader(body))
+	noPrefer.Request.Header.Set("Content-Type", "multipart/form-data; boundary=BOUNDARY")
+	common.SetContextKey(noPrefer, constant.ContextKeyChannelType, constant.ChannelTypeAzure)
+	assert.False(t, ImageAsyncExecutionRequested(noPrefer))
 }

@@ -1,7 +1,7 @@
 ---
 page-id: images-generations
 kind: api-reference
-last-verified: 2026-09-09
+last-verified: 2026-09-16
 operations:
   - createImageGeneration
 ---
@@ -83,12 +83,12 @@ curl "{{OPENAI_BASE_URL}}/images/generations" \
 
 | 请求头 | 说明 |
 | --- | --- |
-| `Prefer: respond-async` | 显式选择异步受理；`api.image.async.stream_priority=true` 时 `stream=true` 优先流式响应，不创建任务；其他异步图片模型不接受流式与异步同时使用 |
+| `Prefer: respond-async` | 显式选择平台任务，通过参数、资金及存储等受理检查后返回 `202`。OpenAI／Azure 原生图片入口可同时传 `stream=true`，由后台接收结果；Gemini／Vertex／图片中转入口仍拒绝这一组合 |
 | `Idempotency-Key` | 可选幂等键，仅异步模式支持；同键等价请求重放原任务 ID，不同请求体返回 `409`，去除首尾空白后最多 191 字节 |
 
 已发布此能力的图片生成与编辑沿用现有模型、参数和 Key。模型详情中的
-`api.image.async` 声明请求头与查询路径；`stream_priority=true` 表示流式优先。原生流式请求同时
-携带此偏好与幂等键时不创建平台任务，也不提供平台任务幂等保证。
+`api.image.async` 声明请求头与查询路径；`stream_priority=false` 表示流式不优先于异步偏好，
+不代表模型支持 `stream` 参数。未携带异步偏好的请求不提供平台任务幂等保证。
 
 异步受理需要平台已启用私有对象存储及后台图片任务执行。存储不可用返回 `503`，不扣费也不发送上游。
 

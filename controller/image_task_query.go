@@ -43,6 +43,8 @@ func projectImageTaskQuery(c *gin.Context, taskID string) bool {
 		return true
 	}
 
+	capture := service.NewImageTaskErrorEvidence(task)
+	defer service.CaptureImageClientResponse(c, capture)()
 	data := task.PrivateData.ImageTask
 	response := gin.H{
 		"id":         task.TaskID,
@@ -75,6 +77,7 @@ func projectImageTaskQuery(c *gin.Context, taskID string) bool {
 		headCtx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
 		defer cancel()
 		headCtx, storeErr := service.WithImageObjectStore(headCtx)
+		service.RecordImageDeliveryError(headCtx, "result_store_config", storeErr)
 		for _, artifact := range data.Artifacts {
 			if storeErr != nil {
 				items = append(items, imageTaskQueryDataItem{MimeType: artifact.MimeType, Status: "unavailable"})

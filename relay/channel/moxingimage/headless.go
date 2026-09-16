@@ -45,6 +45,7 @@ func HeadlessGenerate(ctx context.Context, info *relaycommon.RelayInfo, headers 
 		return nil, nil, upstreamError("failed to initialize image provider client")
 	}
 	resp, err := client.Do(req)
+	service.ObserveImageHTTPExchange(ctx, req, resp, err, "upstream_response")
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, nil, timeoutError(err)

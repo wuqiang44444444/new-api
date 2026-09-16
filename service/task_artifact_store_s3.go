@@ -178,6 +178,7 @@ func (s *s3ArtifactStore) putObject(ctx context.Context, objectKey, mimeType str
 	defer cancel()
 	req = req.WithContext(putCtx)
 	resp, err := s.httpClient.Do(req)
+	ObserveImageHTTPExchange(ctx, req, resp, err, "result_store")
 	if err != nil {
 		return 0, errors.New("upload artifact to object store failed")
 	}
@@ -201,6 +202,10 @@ func (s *s3ArtifactStore) HeadObject(ctx context.Context, objectKey string) (boo
 	}
 	client := &http.Client{Timeout: 15 * time.Second, CheckRedirect: rejectObjectStorageRedirect}
 	resp, err := client.Do(req)
+	// A missing object is the expected pre-upload probe, not a failed request.
+	if err != nil || (resp != nil && resp.StatusCode != http.StatusNotFound) {
+		ObserveImageHTTPExchange(ctx, req, resp, err, "result_storage_check")
+	}
 	if err != nil {
 		return false, errors.New("object storage HEAD request failed")
 	}

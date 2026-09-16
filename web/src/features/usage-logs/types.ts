@@ -327,6 +327,10 @@ export interface TaskLog {
   status: string // NOT_START, SUBMITTED, IN_PROGRESS, SUCCESS, FAILURE, QUEUED, UNKNOWN
   video_details?: TaskVideoDetails
   admin_info?: {
+    image_execution?: {
+      upstream_status?: number
+      violation_marker: boolean
+    }
     request_id?: string
     request_path?: string
     task_plugin?: TaskPluginInfo

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
@@ -38,11 +39,11 @@ func TokenModelAccess() gin.HandlerFunc {
 		value, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
 		allowed, typeOK := value.(map[string]bool)
 		if !ok || !typeOK {
-			abortTokenModelAccess(c, i18n.T(c, i18n.MsgDistributorTokenNoModelAccess))
+			abortTokenModelAccess(c, request.Model, i18n.T(c, i18n.MsgDistributorTokenNoModelAccess))
 			return
 		}
 		if _, permitted := allowed[ratio_setting.FormatMatchingModelName(request.Model)]; !permitted {
-			abortTokenModelAccess(c, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": request.Model}))
+			abortTokenModelAccess(c, request.Model, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": request.Model}))
 			return
 		}
 		c.Next()
@@ -66,18 +67,21 @@ func TokenModelAccessFromQuery() gin.HandlerFunc {
 		value, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
 		allowed, typeOK := value.(map[string]bool)
 		if !ok || !typeOK {
-			abortTokenModelAccess(c, i18n.T(c, i18n.MsgDistributorTokenNoModelAccess))
+			abortTokenModelAccess(c, modelName, i18n.T(c, i18n.MsgDistributorTokenNoModelAccess))
 			return
 		}
 		if _, permitted := allowed[ratio_setting.FormatMatchingModelName(modelName)]; !permitted {
-			abortTokenModelAccess(c, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelName}))
+			abortTokenModelAccess(c, modelName, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelName}))
 			return
 		}
 		c.Next()
 	}
 }
 
-func abortTokenModelAccess(c *gin.Context, message string) {
+func abortTokenModelAccess(c *gin.Context, modelName, message string) {
+	clienterrlog.Attach(c.Request.Context(), clienterrlog.Report{
+		Model: modelName, Stage: "model_access", Reason: "token_model_forbidden", PublicCode: "token_model_forbidden",
+	})
 	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{
 		"message": message,
 		"type":    "asset_error",

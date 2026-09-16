@@ -52,10 +52,12 @@ func currentImageObjectStore(ctx context.Context) (imageObjectStore, error) {
 // objectKey 由调用方按任务身份派生（见 BuildImageTaskObjectKey）。
 func PutImageObject(ctx context.Context, objectKey, mimeType string, data []byte) (*ImageObjectRef, error) {
 	session, err := imageObjectSessionForContext(ctx)
+	RecordImageDeliveryError(ctx, "result_store_config", err)
 	if err != nil {
 		return nil, err
 	}
 	ref, err := session.store.putImageObject(ctx, objectKey, mimeType, data)
+	RecordImageDeliveryError(ctx, "result_store", err)
 	if err != nil {
 		// A real write failure invalidates an earlier successful readiness probe.
 		session.mu.Lock()
@@ -68,31 +70,40 @@ func PutImageObject(ctx context.Context, objectKey, mimeType string, data []byte
 // PresignImageObjectURL issues the fixed 300-second result URL plus expiry.
 func PresignImageObjectURL(ctx context.Context, objectKey string) (string, int64, error) {
 	store, err := currentImageObjectStore(ctx)
+	RecordImageDeliveryError(ctx, "result_sign", err)
 	if err != nil {
 		return "", 0, err
 	}
-	return store.presignImageObjectURL(objectKey)
+	url, expiresAt, err := store.presignImageObjectURL(objectKey)
+	RecordImageDeliveryError(ctx, "result_sign", err)
+	return url, expiresAt, err
 }
 
 // HeadImageObject reports whether a stored image object still exists.
 func HeadImageObject(ctx context.Context, objectKey string) (bool, error) {
 	store, err := currentImageObjectStore(ctx)
+	RecordImageDeliveryError(ctx, "result_storage_check", err)
 	if err != nil {
 		return false, err
 	}
-	return store.headImageObject(ctx, objectKey)
+	exists, err := store.headImageObject(ctx, objectKey)
+	RecordImageDeliveryError(ctx, "result_storage_check", err)
+	return exists, err
 }
 
 // FetchImageObjectBytes downloads one stored image object（显式 b64_json 的
 // 逐张读取，§5）。下载走短期签名 URL，签名不进入日志或响应。
 func FetchImageObjectBytes(ctx context.Context, objectKey string) ([]byte, error) {
 	store, err := currentImageObjectStore(ctx)
+	RecordImageDeliveryError(ctx, "result_storage_read", err)
 	if err != nil {
 		return nil, err
 	}
 	readCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	return store.fetchImageObjectBytes(readCtx, objectKey)
+	data, err := store.fetchImageObjectBytes(readCtx, objectKey)
+	RecordImageDeliveryError(ctx, "result_storage_read", err)
+	return data, err
 }
 
 // PutEphemeralImageResult stores a synchronous-mode image result (explicit
@@ -128,6 +139,7 @@ func fetchImageObjectViaPresignedURL(ctx context.Context, url string) ([]byte, e
 	}
 	client := &http.Client{Timeout: 60 * time.Second, CheckRedirect: rejectObjectStorageRedirect}
 	resp, err := client.Do(req)
+	ObserveImageHTTPExchange(ctx, req, resp, err, "result_storage_read")
 	if err != nil {
 		return nil, errors.New("object storage download failed")
 	}

@@ -536,6 +536,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 	service.MarkTaskCreateAttemptUpstreamStarted(c)
 	resp, err := relayClient.Do(req)
+	service.ObserveImageHTTPExchange(c.Request.Context(), req, resp, err, "generation")
 	if err != nil {
 		service.CaptureTaskEvidenceTransportFailure(c)
 		service.MarkTaskCreateAttemptOutcomeUnknown(c, info)

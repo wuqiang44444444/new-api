@@ -141,6 +141,7 @@ func headlessPost(ctx context.Context, info *relaycommon.RelayInfo, headers map[
 		return nil, upstreamError("failed to initialize upstream client")
 	}
 	resp, err := client.Do(req)
+	service.ObserveImageHTTPExchange(ctx, req, resp, err, "upstream_response")
 	if err != nil {
 		return nil, headlessContextError(err)
 	}
@@ -169,6 +170,7 @@ func headlessGet(ctx context.Context, info *relaycommon.RelayInfo, headers map[s
 		return nil, upstreamError("failed to initialize polling client")
 	}
 	resp, err := client.Do(req)
+	service.ObserveImageHTTPExchange(ctx, req, resp, err, "upstream_response")
 	if err != nil {
 		return nil, headlessContextError(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
@@ -213,6 +214,7 @@ func TokenOrTaskArtifactAccessAuth(taskParam, artifactParam string) gin.HandlerF
 		defer release()
 
 		c.Set(TaskArtifactAccessContextKey, true)
+		clienterrlog.MarkAuthPassed(c, clienterrlog.AuthSourceArtifactAccess)
 		c.Next()
 	}
 }

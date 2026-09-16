@@ -182,6 +182,7 @@ func (s *azureBlobArtifactStore) putObject(ctx context.Context, objectKey, mimeT
 		HTTPHeaders: httpHeaders,
 	})
 	if err != nil {
+		RecordImageDeliveryError(ctx, "result_store", err)
 		return 0, azureStoreError("upload artifact to object store failed", err)
 	}
 	return int64(len(data)), nil
@@ -199,12 +200,14 @@ func (s *azureBlobArtifactStore) headObject(ctx context.Context, objectKey strin
 	if bloberror.HasCode(err, bloberror.BlobNotFound) {
 		return false, nil
 	}
+	RecordImageDeliveryError(ctx, "result_storage_check", err)
 	return false, azureStoreError("object store HEAD failed", err)
 }
 
 func (s *azureBlobArtifactStore) fetchObjectBytes(ctx context.Context, objectKey string) ([]byte, error) {
 	download, err := s.blobClient(objectKey).DownloadStream(ctx, nil)
 	if err != nil {
+		RecordImageDeliveryError(ctx, "result_storage_read", err)
 		return nil, azureStoreError("download image object failed", err)
 	}
 	defer func() { _ = download.Body.Close() }()

@@ -35,7 +35,7 @@ func TestNativeImageMetadataPreservesAzureDeploymentAndCustomerAlias(t *testing.
 			api := apis[tc.customer].Image
 			require.NotNil(t, api)
 			require.NotNil(t, api.Async)
-			assert.True(t, api.Async.StreamPriority)
+			assert.False(t, api.Async.StreamPriority)
 			assert.Equal(t, "/v1/tasks/{task_id}", api.Async.QueryPath)
 			require.NotNil(t, api.Edit)
 			assert.Equal(t, "/v1/images/edits", api.Edit.Path)

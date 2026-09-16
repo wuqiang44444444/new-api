@@ -12,6 +12,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -19,6 +20,14 @@ import (
 )
 
 func TestImageQueryStorageDeliveryAndOwnership(t *testing.T) {
+	oldEvidence := system_setting.GetTaskRequestEvidenceConfig()
+	disabled := oldEvidence
+	disabled.Enabled = false
+	system_setting.SetTaskRequestEvidenceConfig(disabled)
+	t.Cleanup(func() {
+		require.Eventually(t, func() bool { return service.ImageErrorEvidenceHealth()["active"] == 0 }, time.Second, time.Millisecond)
+		system_setting.SetTaskRequestEvidenceConfig(oldEvidence)
+	})
 	setupGenericTaskTest(t)
 	t.Cleanup(func() { model.NotifyObjectStorageSettingUpdate("") })
 	var requests atomic.Int32

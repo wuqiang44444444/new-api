@@ -752,6 +752,27 @@ func TestBuildTieredTokenParams_GPT_WithImage(t *testing.T) {
 	}
 }
 
+// The measured Azure Images task usage shape after the output_tokens_details
+// fix (input 19 / output 196 with image_tokens=196): pricing img_o separately
+// removes the subclass from c exactly once, without it the tokens stay in c.
+func TestBuildTieredTokenParams_ImageTaskOutputDetails(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens:     19,
+		CompletionTokens: 196,
+		CompletionTokenDetails: dto.OutputTokenDetails{
+			ImageTokens: 196,
+		},
+	}
+	imgOSplit := BuildTieredTokenParams(usage, false, map[string]bool{"img_o": true})
+	assert.Equal(t, float64(196), imgOSplit.ImgO)
+	assert.Equal(t, float64(0), imgOSplit.C, "img_o priced separately: image output leaves c exactly once")
+	assert.Equal(t, float64(19), imgOSplit.P)
+	assert.Equal(t, float64(19), imgOSplit.Len)
+
+	plain := BuildTieredTokenParams(usage, false, map[string]bool{})
+	assert.Equal(t, float64(196), plain.C, "img_o unused: image output stays in the ordinary output")
+}
+
 func TestBuildTieredTokenParams_Claude_WithCache(t *testing.T) {
 	usage := &dto.Usage{
 		PromptTokens:     800,

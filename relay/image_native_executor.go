@@ -74,14 +74,23 @@ func executeNativeImageTask(ctx context.Context, task *model.Task) service.Image
 	oneShot := *client
 	oneShot.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := oneShot.Do(req)
+	service.ObserveImageHTTPExchange(ctx, req, resp, err, "generation")
 	if err != nil {
 		return unknown
 	}
 	defer resp.Body.Close()
+	unknown.UpstreamStatus = resp.StatusCode
+	unknown.ProviderRequestID = nativeImageRequestID(resp)
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusRequestTimeout && resp.StatusCode != http.StatusTooManyRequests {
-		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeFailure, FailureCode: "provider_rejected"}
+		evidence := inspectNativeImageRejection(resp)
+		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeFailure, FailureCode: "provider_rejected",
+			UpstreamStatus: evidence.StatusCode, ProviderRequestID: evidence.ProviderRequestID, ViolationMarker: evidence.ViolationMarker}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		evidence := inspectNativeImageRejection(resp)
+		unknown.UpstreamStatus = evidence.StatusCode
+		unknown.ProviderRequestID = evidence.ProviderRequestID
+		unknown.ViolationMarker = evidence.ViolationMarker
 		return unknown
 	}
 	raw, err := readNativeImageResponse(resp.Body, maxNativeImageResponseBytes)
@@ -115,17 +124,23 @@ func executeNativeImageTask(ctx context.Context, task *model.Task) service.Image
 		item := result.Data[index]
 		if item.B64Json != "" {
 			if base64.StdEncoding.DecodedLen(len(item.B64Json)) > maxImageResultBytes {
-				return nil, "", errors.New("image result exceeds storage budget")
+				return nil, "", &imageResultError{Code: "result_size_limit"}
 			}
 			decoded, err := base64.StdEncoding.DecodeString(item.B64Json)
-			return decoded, "", err
+			if err != nil {
+				return nil, "", &imageResultError{Code: "result_decode_failed"}
+			}
+			return decoded, "", nil
 		}
 		if strings.TrimSpace(item.Url) != "" {
 			return downloadImageURL(ctx, item.Url)
 		}
-		return nil, "", errors.New("image result is missing")
+		return nil, "", &imageResultError{Code: "result_missing"}
 	})
 	if err != nil {
+		delivery := imageResultFailure(err)
+		unknown.FailureCode = delivery.FailureCode
+		unknown.DownloadHTTPStatus = delivery.DownloadHTTPStatus
 		return unknown
 	}
 	return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeSuccess, Images: artifacts, Usage: usage}

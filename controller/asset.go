@@ -3,8 +3,10 @@ package controller
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
@@ -12,15 +14,31 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// attachAssetDiag merges safe diagnostics into the unified 4xx event; the nil
+// request guard keeps bare unit fixtures without an *http.Request intact.
+func attachAssetDiag(c *gin.Context, report clienterrlog.Report) {
+	if c.Request == nil {
+		return
+	}
+	clienterrlog.Attach(c.Request.Context(), report)
+}
+
 func CreateAsset(c *gin.Context) {
 	var req dto.CreateAssetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		attachAssetDiag(c, clienterrlog.Report{
+			Stage: "request_validation", Reason: "malformed_json",
+		})
 		assetAPIError(c, http.StatusBadRequest, "invalid_request", "invalid asset request")
 		return
 	}
 	response, err := service.CreateRemoteAsset(c.Request.Context(), assetRequestGroup(c), c.GetInt("id"), req)
 	if err != nil {
 		if requiredTTL, ok := service.RequiredAssetURLTTL(err); ok {
+			attachAssetDiag(c, clienterrlog.Report{
+				Stage: "source_validation", Reason: "url_ttl_insufficient", PublicCode: "asset_url_ttl_insufficient",
+				Detail: map[string]string{"required_min_ttl_seconds": strconv.FormatInt(requiredTTL, 10)},
+			})
 			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
 				"message": "asset URL expires before the upstream fetch window",
 				"type":    "asset_error", "code": "asset_url_ttl_insufficient",
@@ -49,6 +67,9 @@ func GetAsset(c *gin.Context) {
 func UpdateAsset(c *gin.Context) {
 	var req dto.UpdateAssetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		attachAssetDiag(c, clienterrlog.Report{
+			Stage: "request_validation", Reason: "malformed_json",
+		})
 		assetAPIError(c, http.StatusBadRequest, "invalid_request", "invalid asset request")
 		return
 	}
@@ -73,6 +94,9 @@ func DeleteAsset(c *gin.Context) {
 func CreateAssetGroup(c *gin.Context) {
 	var req dto.CreateAssetGroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		attachAssetDiag(c, clienterrlog.Report{
+			Stage: "request_validation", Reason: "malformed_json",
+		})
 		assetAPIError(c, http.StatusBadRequest, "invalid_request", "invalid asset group request")
 		return
 	}
@@ -100,7 +124,15 @@ func assetRequestGroup(c *gin.Context) string {
 	return common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 }
 
+// assetServiceErrorReport maps a service contract error to its controlled
+// stage/reason; empty when the error settles as a 5xx.
+func assetServiceErrorReport(err error) clienterrlog.Report {
+	stage, reason := service.AssetClientErrorDiagnostic(err)
+	return clienterrlog.Report{Stage: stage, Reason: reason}
+}
+
 func writeAssetServiceError(c *gin.Context, err error) {
+	attachAssetDiag(c, assetServiceErrorReport(err))
 	switch {
 	case errors.Is(err, service.ErrInvalidAssetRequest), errors.Is(err, service.ErrAssetURLRequired),
 		errors.Is(err, service.ErrUnsafeAssetURL), errors.Is(err, service.ErrAssetURLTTLInsufficient):
@@ -127,6 +159,7 @@ func writeAssetServiceError(c *gin.Context, err error) {
 }
 
 func assetAPIError(c *gin.Context, status int, code, message string) {
+	attachAssetDiag(c, clienterrlog.Report{PublicCode: code})
 	c.JSON(status, gin.H{"error": gin.H{
 		"message": message, "type": "asset_error", "code": code,
 		"request_id": c.GetString(common.RequestIdKey),

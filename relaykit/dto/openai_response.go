@@ -241,6 +241,12 @@ type Usage struct {
 	InputTokens            int                `json:"input_tokens"`
 	OutputTokens           int                `json:"output_tokens"`
 	InputTokensDetails     *InputTokenDetails `json:"input_tokens_details"`
+	// OutputTokensDetails is the output-side sibling of InputTokensDetails as
+	// reported by the OpenAI Images usage shape
+	// (output_tokens_details.image_tokens) and the Responses API
+	// (output_tokens_details.reasoning_tokens). Presence of the object, not
+	// its zero-ness, carries the upstream evidence.
+	OutputTokensDetails *OutputTokenDetails `json:"output_tokens_details,omitempty"`
 
 	// claude cache 1h
 	ClaudeCacheCreation5mTokens int `json:"claude_cache_creation_5_m_tokens"`
