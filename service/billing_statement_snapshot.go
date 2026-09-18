@@ -64,7 +64,7 @@ func appendBillingStatementIdentitySnapshotWithMode(other *model.LogOther, origi
 	for _, key := range []string{
 		"model_price", "model_ratio", "completion_ratio", "cache_ratio",
 		"group_ratio", "user_group_ratio", "expr_b64", "usage_units",
-		"contract_discount", "contract_version",
+		"contract_discount", "contract_id", "contract_version", "contract_name", "contract_applicable",
 	} {
 		if value, exists := values[key]; exists {
 			snapshot[key] = value

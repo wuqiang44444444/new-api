@@ -161,13 +161,14 @@ func TestNativeVideoProfilePublishesOpenAIVideosParameters(t *testing.T) {
 }
 
 func TestNativeImageAPIPublishesModelSpecificGenerationParameters(t *testing.T) {
-	t.Run("gpt image excludes edit and legacy response fields", func(t *testing.T) {
+	t.Run("gpt image exposes delivery format without edit fields", func(t *testing.T) {
 		api := NativeImageAPI("gpt-image-2")
 		require.NotNil(t, api.Image)
 		names := parameterNames(api.Image.Creation.Parameters)
 		assert.Contains(t, names, "output_compression")
 		assert.Contains(t, names, "partial_images")
-		assert.NotContains(t, names, "response_format")
+		assert.Equal(t, []string{"url", "b64_json"}, parameterByName(t, api.Image.Creation.Parameters, "response_format").Enum)
+		assert.Equal(t, "b64_json", parameterByName(t, api.Image.Creation.Parameters, "response_format").DefaultValue)
 		assert.NotContains(t, names, "images")
 		assert.NotContains(t, names, "watermark")
 		assert.Empty(t, parameterByName(t, api.Image.Creation.Parameters, "size").Enum)

@@ -8,7 +8,7 @@ import (
 
 func SetAssetRouter(router *gin.Engine) {
 	assets := router.Group("/v1")
-	assets.Use(middleware.RouteTag("asset"), middleware.TokenAuth())
+	assets.Use(middleware.RouteTag("asset"), middleware.TokenAuth(), middleware.CustomerContractAssetAccess())
 	{
 		assets.POST("/assets", middleware.TokenModelAccess(), controller.CreateAsset)
 		assets.GET("/assets/:asset_id", middleware.TokenModelAccessFromQuery(), controller.GetAsset)

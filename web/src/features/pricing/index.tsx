@@ -1,4 +1,3 @@
-import { ContractPricingSelect } from './components/contract-pricing-select'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -33,6 +32,7 @@ import {
   ModelCardGrid,
   ModelDetailsDrawer,
 } from './components'
+import { ContractPricingSelect } from './components/contract-pricing-select'
 import { EXCLUDED_GROUPS, VIEW_MODES } from './constants'
 import { useFilters } from './hooks/use-filters'
 import { usePricingData } from './hooks/use-pricing-data'
@@ -193,7 +193,10 @@ export function Pricing() {
                 'Discover curated AI models, compare pricing and capabilities, and choose the right model for every scenario.'
               )}
             </p>
-            <ContractPricingSelect value={contractId} onChange={setContractId} />
+            <ContractPricingSelect
+              value={contractId}
+              onChange={setContractId}
+            />
             <SearchBar
               value={searchInput}
               onChange={setSearchInput}

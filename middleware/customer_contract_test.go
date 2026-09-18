@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -24,6 +25,9 @@ import (
 func setupCustomerContractMiddlewareDB(t *testing.T) (*gorm.DB, model.User, model.ContractEntitySnapshot) {
 	t.Helper()
 	require.NoError(t, i18n.Init())
+	previousUsable := setting.UserUsableGroups2JSONString()
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","contract-route":"Contract"}`))
+	t.Cleanup(func() { require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(previousUsable)) })
 	previousDB := model.DB
 	previousType := common.MainDatabaseType()
 	previousRedis := common.RedisEnabled
@@ -33,7 +37,7 @@ func setupCustomerContractMiddlewareDB(t *testing.T) (*gorm.DB, model.User, mode
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&model.User{}, &model.Channel{}, &model.Ability{}, &model.Token{},
+		&model.User{}, &model.Channel{}, &model.Ability{}, &model.Token{}, &model.Log{},
 		&model.CustomerModelContract{},
 		&model.CustomerContract{}, &model.CustomerContractEntityRule{}, &model.CustomerContractEntityAudit{},
 	))
@@ -41,6 +45,10 @@ func setupCustomerContractMiddlewareDB(t *testing.T) (*gorm.DB, model.User, mode
 	common.RedisEnabled = false
 	common.MemoryCacheEnabled = true
 	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
+	previousLogDB := model.LOG_DB
+	t.Setenv("LOG_SQL_DSN", "")
+	require.NoError(t, model.InitLogDB())
+	t.Cleanup(func() { model.LOG_DB = previousLogDB })
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"contract-route":0.87}`))
 	user := model.User{Username: "contract-middleware-user", AffCode: "contract-middleware-aff", Group: "default", AuthVersion: 2}
 	require.NoError(t, db.Create(&user).Error)
@@ -102,7 +110,7 @@ func TestCustomerContractGuardLeavesUnboundKeyUntouched(t *testing.T) {
 	assert.False(t, exists)
 }
 
-func TestCustomerContractGuardResolvesDiscountWithoutRouteCoupling(t *testing.T) {
+func TestCustomerContractGuardFreezesDiscountAndRejectsUnlistedModels(t *testing.T) {
 	_, user, contract := setupCustomerContractMiddlewareDB(t)
 	c := customerContractGinContext(user, contract.Id)
 
@@ -121,16 +129,16 @@ func TestCustomerContractGuardResolvesDiscountWithoutRouteCoupling(t *testing.T)
 		t.Fatal("the contract never pins a channel")
 	}
 
-	// A model the contract does not list falls back to native handling.
+	// An enabled contract denies an unlisted model.
 	unlisted := customerContractGinContext(user, contract.Id)
 	unlistedFact, unlistedErr := applyCustomerContractRequest(unlisted, "Other-Model")
-	require.NoError(t, unlistedErr)
-	assert.Nil(t, unlistedFact, "an unlisted model keeps native pricing")
+	require.ErrorIs(t, unlistedErr, service.ErrCustomerContractScope)
+	assert.Nil(t, unlistedFact, "an unlisted model has no billing fact")
 	_, exists := common.GetContextKey(unlisted, constant.ContextKeyContractFact)
 	assert.False(t, exists) // Case-insensitive model names are rejected at save time, so a lookup
 	// uses the exact public model only.
 	caseFact, caseErr := applyCustomerContractRequest(customerContractGinContext(user, contract.Id), "model-a")
-	require.NoError(t, caseErr)
+	require.ErrorIs(t, caseErr, service.ErrCustomerContractScope)
 	assert.Nil(t, caseFact, "matching uses the exact public model name")
 }
 
@@ -179,10 +187,10 @@ func TestDistributeKeepsNativeTokenModelLimitAuthorityForContractKeys(t *testing
 
 	assert.True(t, c.IsAborted())
 	assert.Equal(t, 403, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "no access to model Model-A")
+	assert.Contains(t, recorder.Body.String(), "Contract model or channel is unavailable")
 }
 
-func TestDistributeIgnoresContractChannelListWhenSelectingChannel(t *testing.T) {
+func TestDistributeRestrictsContractChannelsAndPreservesNativeUnboundRouting(t *testing.T) {
 	for _, cached := range []bool{false, true} {
 		t.Run(fmt.Sprintf("cache=%t", cached), func(t *testing.T) {
 			db, user, contract := setupCustomerContractMiddlewareDB(t)
@@ -191,8 +199,6 @@ func TestDistributeIgnoresContractChannelListWhenSelectingChannel(t *testing.T) 
 			other := model.Channel{Name: "native-priority-winner", Group: "default", Models: "Model-A", Key: "test-key", Status: common.ChannelStatusEnabled, Priority: &priority}
 			require.NoError(t, db.Create(&other).Error)
 			require.NoError(t, db.Create(&model.Ability{Group: "default", Model: "Model-A", ChannelId: other.Id, Enabled: true, Priority: &priority}).Error)
-			require.NoError(t, db.Model(&model.Channel{}).Where("id = ?", contract.Rules[0].ChannelId).Update("group", "default").Error)
-			require.NoError(t, db.Model(&model.Ability{}).Where("channel_id = ?", contract.Rules[0].ChannelId).Update("group", "default").Error)
 			model.InitChannelCache()
 			for _, bound := range []int{0, contract.Id} {
 				recorder := httptest.NewRecorder()
@@ -209,8 +215,12 @@ func TestDistributeIgnoresContractChannelListWhenSelectingChannel(t *testing.T) 
 				Distribute()(c)
 				require.False(t, c.IsAborted(), recorder.Body.String())
 				require.NotNil(t, channelOf(c))
-				assert.Equal(t, other.Id, channelOf(c).Id, "binding must preserve the native priority winner")
-				assert.Equal(t, "default", common.GetContextKeyString(c, constant.ContextKeyUsingGroup))
+				expectedID, expectedGroup := other.Id, "default"
+				if bound != 0 {
+					expectedID, expectedGroup = contract.Rules[0].ChannelId, "contract-route"
+				}
+				assert.Equal(t, expectedID, channelOf(c).Id)
+				assert.Equal(t, expectedGroup, common.GetContextKeyString(c, constant.ContextKeyUsingGroup))
 				stored, ok := common.GetContextKeyType[*hosttypes.ContractBillingFact](c, constant.ContextKeyContractFact)
 				if bound != 0 {
 					require.True(t, ok)

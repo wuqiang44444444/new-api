@@ -283,8 +283,8 @@ func TestEvidenceTaskAssociationAndViews(t *testing.T) {
 	}))
 	events := evidenceEventRows(t, session.evidenceID)
 	require.NotEmpty(t, events)
-	previews := GetEvidenceEventPreviews(session.evidenceID, events, false)
-	rootPreviews := GetEvidenceEventPreviews(session.evidenceID, events, true)
+	previews := GetEvidenceEventPreviews(events, false, false)
+	rootPreviews := GetEvidenceEventPreviews(events, true, false)
 	_ = previews
 	_ = rootPreviews
 }

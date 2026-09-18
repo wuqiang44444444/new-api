@@ -39,3 +39,19 @@ func TestValidCopiedProviderBillingPeriodOnlyAllowsPreviousNaturalMonth(t *testi
 	assert.True(t, validCopiedProviderBillingPeriod(august, july))
 	assert.False(t, validCopiedProviderBillingPeriod(august, june))
 }
+
+func TestBillingStatementFiltersAcceptDurationAndRejectUnsupportedModes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, mode := range []string{"per_second", "token", "per_call", "unknown", "invalid"} {
+		context, _ := gin.CreateTestContext(httptest.NewRecorder())
+		context.Request = httptest.NewRequest("GET", "/?billing_mode="+mode, nil)
+		_, got, ok := parseBillingReconciliationModelFilters(context)
+		assert.Equal(t, mode != "invalid", ok)
+		if ok {
+			assert.Equal(t, mode, got)
+		}
+	}
+	period := time.Date(2026, time.September, 1, 0, 0, 0, 0, billingSettlementLocation).Unix()
+	assert.True(t, validProviderBillingKey(period, 1, "model", "per_second"))
+	assert.False(t, validProviderBillingKey(period, 1, "model", "unknown"))
+}

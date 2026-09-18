@@ -58,7 +58,7 @@ export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
         const specialRatio = rule.special_group_ratio
         return (
           <div
-            key={`${index}-${rule.model}-${rule.channel_id}`}
+            key={`${rule.route_group}-${rule.model}-${rule.channel_id}`}
             className='grid gap-3 rounded-lg border p-3 lg:grid-cols-[minmax(180px,1fr)_140px_190px_150px_minmax(220px,1fr)_auto] lg:items-end'
           >
             <Field>
@@ -68,6 +68,11 @@ export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
                 <Badge variant={rule.available ? 'secondary' : 'destructive'}>
                   {rule.available ? t('Available') : t('Unavailable')}
                 </Badge>
+                {rule.group_allowed === false && (
+                  <Badge variant='destructive'>
+                    {t('Contract group access is unavailable')}
+                  </Badge>
+                )}
               </div>
             </Field>
             <Field>

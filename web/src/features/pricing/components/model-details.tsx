@@ -60,6 +60,7 @@ import { cn } from '@/lib/utils'
 
 import { DEFAULT_TOKEN_UNIT } from '../constants'
 import { usePricingData } from '../hooks/use-pricing-data'
+import { taskTiersFromBillingDisplay } from '../lib/billing-display'
 import type { ParsedTaskTier } from '../lib/billing-expr'
 import {
   formatTaskUsageUnitPrice,
@@ -75,11 +76,7 @@ import {
 import { parseTags } from '../lib/filters'
 import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
-import {
-  getTaskEnumFields,
-  getTaskNumberFields,
-} from '../lib/task-expr'
-import { taskTiersFromBillingDisplay } from '../lib/billing-display'
+import { getTaskEnumFields, getTaskNumberFields } from '../lib/task-expr'
 import { nameFallbackTierConditions } from '../lib/task-matrix-display'
 import {
   hasSimpleTaskPricing,
@@ -1246,7 +1243,10 @@ function GroupPricingSection(props: {
     )
   }
 
-  if (isTokenBasedModel(props.model) && props.model.basis_price_configured === false) {
+  if (
+    isTokenBasedModel(props.model) &&
+    props.model.basis_price_configured === false
+  ) {
     return (
       <section>
         <SectionTitle>{t('Pricing by Group')}</SectionTitle>

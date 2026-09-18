@@ -1,7 +1,8 @@
-import { parseTaskArtifactsResponse } from '../lib/task-artifacts'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+
 import { LegacyVideoResult } from '../components/task-artifacts'
+import { parseTaskArtifactsResponse } from '../lib/task-artifacts'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -27,16 +28,15 @@ describe('Task video result', () => {
 })
 
 it('resolves dashboard media on the current site without using the public domain', () => {
-  const path =
-    `/v1/tasks/task-1/artifacts/video/content?access=${  'A'.repeat(43)}`
+  const path = `/v1/tasks/task-1/artifacts/video/content?access=${'A'.repeat(43)}`
   const result = parseTaskArtifactsResponse({
     success: true,
     data: { artifacts: [], legacy_content_url: path },
   })
   expect(result.legacyContentUrl).toBe(window.location.origin + path)
   for (const bad of [
-    `//foreign.example${  path}`,
-    `/v1/tasks/\\foreign.example/content?access=${  'A'.repeat(43)}`,
+    `//foreign.example${path}`,
+    `/v1/tasks/\\foreign.example/content?access=${'A'.repeat(43)}`,
   ]) {
     expect(() =>
       parseTaskArtifactsResponse({

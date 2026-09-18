@@ -73,5 +73,51 @@ export function formatInteger(value: number | null | undefined) {
 export function billingModeLabel(mode: BillingMode) {
   if (mode === 'token') return 'Token billing'
   if (mode === 'per_call') return 'Per-call billing'
+  if (mode === 'per_second') return 'Duration billing'
   return 'Unknown billing mode'
+}
+
+// 折扣展示语言（方案 1.2/确认决定）：主要显示“5 折、1.5 折”，同时保留
+// ×0.5、×0.15。倍率大于 1 是加价，不称“折扣”；0 表示免费。
+export function formatDiscountTier(
+  ratio: number,
+  t: (key: string, options: Record<string, string>) => string
+): string {
+  if (!Number.isFinite(ratio) || ratio <= 0) return ''
+  if (ratio === 1) return '×1'
+  if (ratio > 1) {
+    return `×${trimTrailingZeros(ratio)}`
+  }
+  const tier = trimTrailingZeros(ratio * 10)
+  return t('{{percent}}% off', {
+    percent: trimTrailingZeros((1 - ratio) * 100),
+    tier,
+  })
+}
+
+export function formatDiscountFactor(ratio: number): string {
+  if (!Number.isFinite(ratio) || ratio <= 0) return ''
+  return `×${trimTrailingZeros(ratio)}`
+}
+
+function trimTrailingZeros(value: number): string {
+  return String(Number(value.toFixed(6)))
+}
+
+// 最终折扣 G×C（1.1）：两个因子都已知时才给出乘积。
+export function combinedDiscountFactor(
+  groupRatio: number | null | undefined,
+  contractRatio: number | null | undefined
+): number | null {
+  if (
+    groupRatio == null ||
+    !Number.isFinite(groupRatio) ||
+    groupRatio <= 0 ||
+    contractRatio == null ||
+    !Number.isFinite(contractRatio) ||
+    contractRatio <= 0
+  ) {
+    return null
+  }
+  return groupRatio * contractRatio
 }

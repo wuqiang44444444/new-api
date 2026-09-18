@@ -38,8 +38,8 @@ type CustomerContract struct {
 // fixed point discount. (contract_id, public_model, channel_id) is unique
 // within a contract: the same public model may list several channels, but
 // only when every rule of that model carries the identical discount. Channel
-// and route group are management details; they never take part in runtime
-// discount matching.
+// and route group define allowed routing combinations; discount matching
+// remains exact-model and independent of the selected combination.
 type CustomerContractEntityRule struct {
 	Id          int    `json:"id"`
 	ContractId  int    `json:"contract_id" gorm:"index;uniqueIndex:idx_cc_entity_rule_contract_model_channel"`

@@ -129,12 +129,12 @@ describe('customer contract pricing on the API key page', () => {
     expect(screen.getByText('Old contract')).toBeTruthy()
     expect(
       screen.getByText(
-        'This contract is disabled. Its discounts are not in effect.'
+        'This contract is disabled. Bound keys use their own group routing and pricing.'
       )
     ).toBeTruthy()
   })
 
-  it('marks an enabled contract without rules as carrying no discounts', async () => {
+  it('shows that an enabled contract has no model rules', async () => {
     getSelfCustomerContract.mockResolvedValue({
       success: true,
       data: {
@@ -153,8 +153,45 @@ describe('customer contract pricing on the API key page', () => {
     renderPricing()
 
     expect(
-      await screen.findByText('This contract carries no model discounts')
+      await screen.findByText('This contract has no model rules')
     ).toBeTruthy()
+  })
+
+  it('keeps unavailable contract terms visible with their reason', async () => {
+    getSelfCustomerContract.mockResolvedValue({
+      success: true,
+      data: {
+        contracts: [
+          {
+            id: 3,
+            name: 'Team contract',
+            enabled: true,
+            version: 2,
+            models: [
+              {
+                model: 'unavailable-model',
+                discount: '0.8',
+                availability: 'unavailable',
+              },
+              {
+                model: 'restricted-model',
+                discount: '0.9',
+                availability: 'group_denied',
+              },
+            ],
+          },
+        ],
+      },
+    })
+    renderPricing()
+    expect(await screen.findByText('unavailable-model')).toBeTruthy()
+    expect(screen.getByText('restricted-model')).toBeTruthy()
+    expect(screen.getByText('No available contract channel')).toBeTruthy()
+    expect(
+      screen.getByText('Contract group access is unavailable')
+    ).toBeTruthy()
+    expect(screen.getByText('0.8')).toBeTruthy()
+    expect(screen.getByText('0.9')).toBeTruthy()
   })
 
   it('shows a loading failure instead of pretending the contract is unbound', async () => {

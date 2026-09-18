@@ -59,27 +59,27 @@ curl "{{SITE_BASE_URL}}/kling/v1/videos/image2video" \
 
 ## 创建请求参数
 
-| 字段 | 类型 | 必填 | 取值与说明 |
-| --- | --- | --- | --- |
-| `model_name` | string | 是 | 当前 Key 可访问的客户模型名；映射后的上游模型不会公开 |
-| `prompt` | string | 是 | 视频描述，去除首尾空白后不能为空 |
-| `image` | string | 图生视频是 | 首帧 URL、Base64 或 `asset://` 引用；文生视频禁止 |
-| `image_tail` | string | 否 | 尾帧；仅图生视频可用，且要求同时存在 `image` |
-| `negative_prompt` | string | 否 | 负向提示词 |
-| `mode` | string | 否 | `std` 或 `pro`；省略时为 `std` |
-| `duration` | string | 否 | `"5"` 或 `"10"`；必须是字符串，省略时为 `"5"` |
-| `aspect_ratio` | string | 否 | `16:9`、`9:16` 或 `1:1`；省略时为 `1:1` |
-| `cfg_scale` | number | 否 | `0`～`1`；省略时为 `0.5` |
-| `static_mask` | string | 否 | 静态遮罩；格式由 Kling 模型合同决定 |
-| `dynamic_masks` | array | 否 | 动态遮罩数组 |
-| `dynamic_masks[].mask` | string | 否 | 单个动态遮罩 |
-| `dynamic_masks[].trajectories` | array | 否 | 轨迹点数组 |
-| `dynamic_masks[].trajectories[].x` / `.y` | integer | 否 | 轨迹点坐标 |
-| `camera_control` | object | 否 | 镜头控制对象 |
-| `camera_control.type` | string | 否 | 镜头控制类型 |
-| `camera_control.config` | object | 否 | 只允许 `horizontal`、`vertical`、`pan`、`tilt`、`roll`、`zoom` 数值字段 |
-| `callback_url` | string | 否 | Kling 回调地址；是否可用由该模型的公开能力决定 |
-| `external_task_id` | string | 否 | 调用方外部任务标识 |
+| 字段                                      | 类型    | 必填       | 取值与说明                                                              |
+| ----------------------------------------- | ------- | ---------- | ----------------------------------------------------------------------- |
+| `model_name`                              | string  | 是         | 当前 Key 可访问的客户模型名；映射后的上游模型不会公开                   |
+| `prompt`                                  | string  | 是         | 视频描述，去除首尾空白后不能为空                                        |
+| `image`                                   | string  | 图生视频是 | 首帧 URL、Base64 或 `asset://` 引用；文生视频禁止                       |
+| `image_tail`                              | string  | 否         | 尾帧；仅图生视频可用，且要求同时存在 `image`                            |
+| `negative_prompt`                         | string  | 否         | 负向提示词                                                              |
+| `mode`                                    | string  | 否         | `std` 或 `pro`；省略时为 `std`                                          |
+| `duration`                                | string  | 否         | `"5"` 或 `"10"`；必须是字符串，省略时为 `"5"`                           |
+| `aspect_ratio`                            | string  | 否         | `16:9`、`9:16` 或 `1:1`；省略时为 `1:1`                                 |
+| `cfg_scale`                               | number  | 否         | `0`～`1`；省略时为 `0.5`                                                |
+| `static_mask`                             | string  | 否         | 静态遮罩；格式由 Kling 模型合同决定                                     |
+| `dynamic_masks`                           | array   | 否         | 动态遮罩数组                                                            |
+| `dynamic_masks[].mask`                    | string  | 否         | 单个动态遮罩                                                            |
+| `dynamic_masks[].trajectories`            | array   | 否         | 轨迹点数组                                                              |
+| `dynamic_masks[].trajectories[].x` / `.y` | integer | 否         | 轨迹点坐标                                                              |
+| `camera_control`                          | object  | 否         | 镜头控制对象                                                            |
+| `camera_control.type`                     | string  | 否         | 镜头控制类型                                                            |
+| `camera_control.config`                   | object  | 否         | 只允许 `horizontal`、`vertical`、`pan`、`tilt`、`roll`、`zoom` 数值字段 |
+| `callback_url`                            | string  | 否         | Kling 回调地址；是否可用由该模型的公开能力决定                          |
+| `external_task_id`                        | string  | 否         | 调用方外部任务标识                                                      |
 
 请求采用严格字段白名单。未知顶层字段、`dynamic_masks` 未知子字段和 `camera_control` 未知子字段都会
 返回 `400`，不会透传给上游。
@@ -100,13 +100,13 @@ HTTP `200`：
 }
 ```
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `code` | integer | `0` 表示本次 API 操作成功 |
-| `message` | string | 成功时为 `SUCCEED` |
-| `request_id` | string | 请求追踪 ID，排障时保留 |
-| `data.task_id` | string | 平台任务 ID；立即保存 |
-| `data.task_status` | string | 创建响应固定为 `submitted` |
+| 字段               | 类型    | 说明                       |
+| ------------------ | ------- | -------------------------- |
+| `code`             | integer | `0` 表示本次 API 操作成功  |
+| `message`          | string  | 成功时为 `SUCCEED`         |
+| `request_id`       | string  | 请求追踪 ID，排障时保留    |
+| `data.task_id`     | string  | 平台任务 ID；立即保存      |
+| `data.task_status` | string  | 创建响应固定为 `submitted` |
 
 ## 查询任务
 
@@ -134,9 +134,7 @@ HTTP `200` 示例：
     "task_status": "succeed",
     "task_status_msg": "",
     "task_result": {
-      "videos": [
-        {"url": "https://example.com/generated-video.mp4"}
-      ]
+      "videos": [{ "url": "https://example.com/generated-video.mp4" }]
     },
     "created_at": 1760000000,
     "updated_at": 1760000120
@@ -144,17 +142,17 @@ HTTP `200` 示例：
 }
 ```
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `code` | integer | `0` 表示查询成功；任务业务状态仍看 `data.task_status` |
-| `message` | string | API 操作消息 |
-| `request_id` | string | 本次查询的追踪 ID |
-| `data.task_id` | string | 平台任务 ID |
-| `data.task_status` | string | `submitted`、`processing`、`succeed` 或 `failed` |
-| `data.task_status_msg` | string | 任务失败原因；可能为空 |
-| `data.task_result.videos` | array | 成功时的视频结果数组；当前平台投影一项 |
-| `data.task_result.videos[].url` | string | 视频结果 URL，应及时下载或转存 |
-| `data.created_at` / `data.updated_at` | integer | Unix 秒时间戳 |
+| 字段                                  | 类型    | 说明                                                  |
+| ------------------------------------- | ------- | ----------------------------------------------------- |
+| `code`                                | integer | `0` 表示查询成功；任务业务状态仍看 `data.task_status` |
+| `message`                             | string  | API 操作消息                                          |
+| `request_id`                          | string  | 本次查询的追踪 ID                                     |
+| `data.task_id`                        | string  | 平台任务 ID                                           |
+| `data.task_status`                    | string  | `submitted`、`processing`、`succeed` 或 `failed`      |
+| `data.task_status_msg`                | string  | 任务失败原因；可能为空                                |
+| `data.task_result.videos`             | array   | 成功时的视频结果数组；当前平台投影一项                |
+| `data.task_result.videos[].url`       | string  | 视频结果 URL，应及时下载或转存                        |
+| `data.created_at` / `data.updated_at` | integer | Unix 秒时间戳                                         |
 
 `submitted` 和 `processing` 使用退避轮询；`succeed` 或 `failed` 后停止。查询接口不会返回平台内容代理
 路径，客户端直接使用成功响应中的 URL。
@@ -186,16 +184,16 @@ Kling 错误始终使用相同信封：
 }
 ```
 
-| HTTP 状态 | `code` | 含义 |
-| --- | --- | --- |
-| `400` | `1200` | JSON、字段、类型、必填项或模型参数无效 |
-| `401` | `1000` | API Key 无效 |
-| `402` | `1101` | 额度不足 |
-| `403` | `1103` | 模型或分组权限不足 |
-| `404` | `1203` | 当前调用方下没有该 Kling 任务 |
-| `429` | `1303` | 请求过多 |
-| `500` | `5000` | 平台或上游处理失败 |
-| `503` | `5001` | 上游不可用或创建结果需要核查 |
-| `504` | `5002` | 上游超时 |
+| HTTP 状态 | `code` | 含义                                   |
+| --------- | ------ | -------------------------------------- |
+| `400`     | `1200` | JSON、字段、类型、必填项或模型参数无效 |
+| `401`     | `1000` | API Key 无效                           |
+| `402`     | `1101` | 额度不足                               |
+| `403`     | `1103` | 模型或分组权限不足                     |
+| `404`     | `1203` | 当前调用方下没有该 Kling 任务          |
+| `429`     | `1303` | 请求过多                               |
+| `500`     | `5000` | 平台或上游处理失败                     |
+| `503`     | `5001` | 上游不可用或创建结果需要核查           |
+| `504`     | `5002` | 上游超时                               |
 
 HTTP 非 `2xx` 时先按 HTTP 状态处理；不要只检查数值 `code`。错误消息已经脱敏，不能据此推断上游身份。

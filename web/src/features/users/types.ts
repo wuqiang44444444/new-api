@@ -105,6 +105,7 @@ export interface CustomerContractRule {
   route_group: string
   discount: string
   available: boolean
+  group_allowed?: boolean
   native_group_ratio: string
   effective_multiplier: string
   special_group_ratio: boolean

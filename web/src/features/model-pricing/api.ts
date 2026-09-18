@@ -25,7 +25,10 @@ import {
 import { isAxiosError } from 'axios'
 import { t } from 'i18next'
 
-import type { BillingDisplayProjection, BillingUsageSchema } from '@/features/pricing/types'
+import type {
+  BillingDisplayProjection,
+  BillingUsageSchema,
+} from '@/features/pricing/types'
 import { api } from '@/lib/api'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'

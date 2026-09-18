@@ -178,7 +178,9 @@ func (hostedPolicyAdapterStub) Profile() dto.AssetUpstreamProfile {
 	return kitdto.AssetUpstreamProfileFunCloudHosted
 }
 
-func (hostedPolicyAdapterStub) Supports(kind, mediaType string) bool { return kind == "general" && mediaType == "image" }
+func (hostedPolicyAdapterStub) Supports(kind, mediaType string) bool {
+	return kind == "general" && mediaType == "image"
+}
 
 func (hostedPolicyAdapterStub) CreateAsset(context.Context, assetadapter.AssetRequest) (assetadapter.AssetResult, error) {
 	return assetadapter.AssetResult{}, nil

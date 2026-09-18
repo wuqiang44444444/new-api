@@ -48,7 +48,12 @@ func GetAdminCustomerBillingStatements(c *gin.Context) {
 		return
 	}
 
-	result, err := model.GetBillingCustomerStatementList(
+	versions, err := model.CurrentBillingStatementListItems(c.Request.Context(), period.StartTimestamp, period.EndTimestamp)
+	if err != nil {
+		respondBillingStatementVersionError(c, err)
+		return
+	}
+	result, err := model.GetBillingCustomerStatementList(c.Request.Context(),
 		period.StartTimestamp,
 		period.EndTimestamp,
 		search,
@@ -57,14 +62,16 @@ func GetAdminCustomerBillingStatements(c *gin.Context) {
 		sortOrder,
 		page,
 		pageSize,
+		versions...,
 	)
 	if err != nil {
-		common.ApiError(c, err)
+		respondBillingStatementVersionError(c, err)
 		return
 	}
 	respondBillingReconciliation(c, period, gin.H{
 		"search": search, "quality_status": qualityStatus,
 		"sort_by": sortBy, "sort_order": sortOrder,
 		"page": page, "page_size": pageSize,
+		"billing_version_amounts": "confirmed_customers_use_confirmed_versions",
 	}, result, "main_database+log_database")
 }

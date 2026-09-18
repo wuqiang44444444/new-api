@@ -144,12 +144,13 @@ func TestRepairRejectsUntransferredHoldAndRollsBackMetadata(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "reject.db")), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskCreateAttempt{}, &model.Log{}))
+	setupRepairMaintenance(t, db)
 	quota := 40
 	task := model.Task{TaskID: "public-task", UserId: 9, Quota: 40, SubmitTime: 1100, Properties: model.Properties{OriginModelName: "video"}, PrivateData: model.TaskPrivateData{TokenId: 4, AsyncBilling: &model.TaskAsyncBillingContext{State: model.TaskBillingStateSettled, TargetQuota: &quota, TieredSnapshot: &billingexpr.BillingSnapshot{ExprString: `tier("base", c)`, GroupRatio: 1}}}}
 	require.NoError(t, db.Create(&task).Error)
 	log := model.Log{UserId: 9, TokenId: 4, ModelName: "video", CreatedAt: 1110, Type: model.LogTypeRefund, Quota: 60, Other: `{"task_id":"public-task","group_ratio":1,"actual_quota":40}`}
 	require.NoError(t, db.Create(&log).Error)
-	_, err = repair(db, scope{UserID: 9, TokenID: 4, Model: "video", Start: 1000, End: 1200, CreateTaskID: task.ID}, true)
+	_, err = repair(db, scope{UserID: 9, TokenID: 4, Model: "video", Start: 1000, End: 1200, CreateTaskID: task.ID, MaintenanceGeneration: 2}, true)
 	require.ErrorContains(t, err, "creation attempt")
 	var after model.Log
 	require.NoError(t, db.First(&after, log.Id).Error)
@@ -161,6 +162,7 @@ func setupTaskLogRepair(t *testing.T) (*gorm.DB, scope) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "repair.db")), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskCreateAttempt{}, &model.User{}, &model.Token{}, &model.Log{}))
+	setupRepairMaintenance(t, db)
 	require.NoError(t, db.Create(&model.User{Id: 9, Username: "customer", Quota: 9999, UsedQuota: 40}).Error)
 	require.NoError(t, db.Create(&model.Token{Id: 4, UserId: 9, Name: "key", RemainQuota: 8888, UsedQuota: 40}).Error)
 	quota := 40
@@ -169,7 +171,7 @@ func setupTaskLogRepair(t *testing.T) (*gorm.DB, scope) {
 	attempt := model.TaskCreateAttempt{AttemptID: "attempt", PublicTaskID: task.TaskID, UserID: 9, TokenID: 4, AppID: 1, ChannelID: 8, PublicModel: "video", HeldQuota: 100, Status: model.TaskCreateAttemptComplete, BillingHoldState: model.TaskCreateAttemptBillingTransferred}
 	require.NoError(t, db.Create(&attempt).Error)
 	require.NoError(t, db.Create(&model.Log{UserId: 9, TokenId: 4, ModelName: "video", ChannelId: 8, CreatedAt: 1110, Type: model.LogTypeRefund, Quota: 60, Other: `{"task_id":"public-task","model_price":0,"group_ratio":1,"pre_consumed_quota":100,"actual_quota":40}`}).Error)
-	s := scope{UserID: 9, TokenID: 4, Model: "video", Start: 1000, End: 1200, CreateTaskID: task.ID}
+	s := scope{UserID: 9, TokenID: 4, Model: "video", Start: 1000, End: 1200, CreateTaskID: task.ID, MaintenanceGeneration: 2}
 	return db, s
 }
 

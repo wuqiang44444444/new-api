@@ -16,8 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { splitBillingExprAndRequestRules } from '@/features/pricing/lib/billing-expr'
 import { isUsableBillingDisplay } from '@/features/pricing/lib/billing-display'
+import { splitBillingExprAndRequestRules } from '@/features/pricing/lib/billing-expr'
 import type { BillingDisplayProjection } from '@/features/pricing/types'
 
 import { safeJsonParse } from '../utils/json-parser'

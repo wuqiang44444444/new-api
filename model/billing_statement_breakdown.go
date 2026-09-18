@@ -306,8 +306,11 @@ func billingBreakdownInputTokens(
 		return tokens, true
 	}
 
-	usageSemantic := strings.ToLower(billingBreakdownString(other["usage_semantic"]))
 	promptTokens := max(int64(log.PromptTokens), int64(0))
+	usageSemantic := strings.ToLower(billingBreakdownString(other["usage_semantic"]))
+	if usageSemantic == "" {
+		usageSemantic = recoverBillingBreakdownInputSemantic(other, cacheReadTokens, promptTokens)
+	}
 	switch usageSemantic {
 	case "anthropic":
 		total := promptTokens

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	common2 "github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/common"
@@ -535,6 +536,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		return nil, err
 	}
 	service.MarkTaskCreateAttemptUpstreamStarted(c)
+	clienterrlog.WrapUpstreamRequest(c.Request.Context(), req)
 	resp, err := relayClient.Do(req)
 	service.ObserveImageHTTPExchange(c.Request.Context(), req, resp, err, "generation")
 	if err != nil {
@@ -564,6 +566,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 
 	// 音视频证据（一期）：包装响应体，边转发边有界捕获。
 	service.AttachTaskRequestEvidenceUpstreamResponse(c, resp)
+	clienterrlog.EnsureUpstreamResponseCapture(c.Request.Context(), resp)
 
 	_ = req.Body.Close()
 	_ = c.Request.Body.Close()

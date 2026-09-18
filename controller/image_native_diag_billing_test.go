@@ -72,7 +72,7 @@ func newNativeDiagFixture(t *testing.T, status int, body string, headers map[str
 	require.NoError(t, db.Create(&channel).Error)
 	engine := gin.New()
 	engine.Use(middleware.ImageErrorEvidence())
-	engine.POST("/v1/images/generations", func(c *gin.Context) {
+	handlers := []gin.HandlerFunc{func(c *gin.Context) {
 		common.SetContextKey(c, constant.ContextKeyUserId, user.Id)
 		common.SetContextKey(c, constant.ContextKeyUserQuota, 100000)
 		common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
@@ -82,7 +82,9 @@ func newNativeDiagFixture(t *testing.T, status int, body string, headers map[str
 		common.SetContextKey(c, constant.ContextKeyTokenKey, token.Key)
 		require.Nil(t, middleware.SetupContextForSelectedChannel(c, &channel, "gpt-image-2"))
 		c.Next()
-	}, middleware.ImageCreateIdempotency(), func(c *gin.Context) { Relay(c, types.RelayFormatOpenAIImage) })
+	}, middleware.ImageCreateIdempotency(), func(c *gin.Context) { Relay(c, types.RelayFormatOpenAIImage) }}
+	engine.POST("/v1/images/generations", handlers...)
+	engine.POST("/v1/images/edits", handlers...)
 	return &nativeDiagFixture{db: db, user: user, token: token, engine: engine, calls: &calls}
 }
 

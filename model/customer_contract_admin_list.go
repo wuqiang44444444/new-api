@@ -203,7 +203,7 @@ func getCustomerContractAdminSummary(adminRole int, ruleCounts *gorm.DB) (Custom
 	}{
 		{target: &summary.Total},
 		{target: &summary.Active, status: CustomerContractAdminStatusActive},
-		{target: &summary.Inactive, status: CustomerContractAdminStatusInactive},	}
+		{target: &summary.Inactive, status: CustomerContractAdminStatusInactive}}
 	for _, count := range counts {
 		query := customerContractAdminBaseQuery(adminRole, ruleCounts)
 		query = applyCustomerContractAdminStatus(query, count.status)

@@ -46,7 +46,10 @@ export type PricingValues = Partial<Record<PricingKey, number | string>>
 export type PricingOptions = Record<PricingKey, string>
 
 export function modelPricingDisplay(
-  entry: Pick<ModelPricingEntry, 'model_name' | 'effective' | 'usage_schema' | 'billing_display'>
+  entry: Pick<
+    ModelPricingEntry,
+    'model_name' | 'effective' | 'usage_schema' | 'billing_display'
+  >
 ): PricingModel {
   const values = entry.effective
   return {
@@ -108,7 +111,8 @@ export function pricingOptions(
       let value = values[key]
       if (key === 'billing_setting.billing_mode') value ??= values.BillingMode
       if (key === 'billing_setting.billing_expr') value ??= values.BillingExpr
-      if (key === 'task_billing_setting.preconsume_tokens') value ??= values.TaskPreConsumeTokens
+      if (key === 'task_billing_setting.preconsume_tokens')
+        value ??= values.TaskPreConsumeTokens
       return [key, typeof value === 'string' ? value : '{}']
     })
   ) as PricingOptions
@@ -143,7 +147,15 @@ export function pricingRow(
   let billingMode: ModelRatioData['billingMode'] = 'per-token'
   if (row?.billingMode === 'tiered_expr') billingMode = 'tiered_expr'
   else if (row?.price) billingMode = 'per-request'
-  return { ...row, name, billingMode, taskPreConsumeTokens: values['task_billing_setting.preconsume_tokens'] === undefined ? undefined : Number(values['task_billing_setting.preconsume_tokens']) }
+  return {
+    ...row,
+    name,
+    billingMode,
+    taskPreConsumeTokens:
+      values['task_billing_setting.preconsume_tokens'] === undefined
+        ? undefined
+        : Number(values['task_billing_setting.preconsume_tokens']),
+  }
 }
 
 export function pricingFromDraft(data: ModelRatioData): PricingValues {
@@ -168,7 +180,9 @@ export function pricingFromDraft(data: ModelRatioData): PricingValues {
     }
   }
   if (data.billingMode === 'tiered_expr') {
-    if (data.taskPreConsumeTokens !== undefined) values['task_billing_setting.preconsume_tokens'] = data.taskPreConsumeTokens
+    if (data.taskPreConsumeTokens !== undefined)
+      values['task_billing_setting.preconsume_tokens'] =
+        data.taskPreConsumeTokens
     values['billing_setting.billing_expr'] = combineBillingExpr(
       data.billingExpr || '',
       data.requestRuleExpr || ''

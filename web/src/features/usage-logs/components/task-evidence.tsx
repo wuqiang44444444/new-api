@@ -9,6 +9,7 @@ import {
   getEvidenceDetail,
   getEvidenceList,
 } from '../evidence-api'
+import { EvidenceBodyStatus } from './evidence-body-status'
 
 export function TaskEvidence(props: {
   taskId?: string
@@ -150,7 +151,10 @@ function EvidenceDetails(props: {
                   {event.preview}
                 </pre>
               )}
-              {!event.has_body && <p>{t('Evidence body unavailable')}</p>}
+              {!event.has_body && <EvidenceBodyStatus status='not_recorded' />}
+              {event.has_body && event.body_status && (
+                <EvidenceBodyStatus status={event.body_status} />
+              )}
               {props.isRoot &&
                 event.has_body &&
                 !query.data?.evidence.body_expired && (

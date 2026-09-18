@@ -157,7 +157,7 @@ function PricingFormFixture(props: {
     BillingMode: '{}',
     BillingExpr: '{}',
     ExposeRatioEnabled: false,
-  TaskPreConsumeTokens: '{}',
+    TaskPreConsumeTokens: '{}',
   }
   const [actionsContainer, setActionsContainer] =
     useState<HTMLDivElement | null>(null)

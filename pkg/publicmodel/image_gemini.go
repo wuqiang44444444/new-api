@@ -3,19 +3,30 @@ package publicmodel
 import (
 	"net/http"
 
+	"github.com/QuantumNous/new-api/pkg/geminiimage"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 )
 
 // GeminiImageAPI 发布 gemini_image 族（Gemini 24 / Vertex 41 的
 // generateContent 图片模型）的客户合同（G1 §2.1）。识别依据是管理员映射
 // 后落在 imagine 登记表内的 Provider 模型，不是客户模型名。
-func GeminiImageAPI(customerModel string) *dto.PublicModelAPI {
+func GeminiImageAPI(customerModel, providerModel string, channelType int) *dto.PublicModelAPI {
 	minImages, maxImages := 1, 14
+	policy := geminiimage.Policy(providerModel)
+	size := dto.PublicAPIParameter{Name: "size", Type: "string", DefaultValue: "auto",
+		SizeConstraints: &dto.PublicImageSizeConstraints{
+			Format: "WxH", MinDimension: 1, MaxDimension: policy.MaxDimension, AspectRatios: policy.AspectRatios,
+		},
+	}
+	if policy.NativeOutput {
+		size.SizeConstraints = nil
+		size.Enum = policy.Sizes
+	}
 	parameters := []dto.PublicAPIParameter{
 		fixedParameter("model", "string", true, customerModel),
 		stringLengthParameter("prompt", true, 1, 20000),
 		fixedParameterWithDefault("n", "integer", false, 1, 1),
-		{Name: "size", Type: "string", DefaultValue: "auto"},
+		size,
 		stringEnumParameterWithDefault("response_format", false, []string{"b64_json", "url"}, "b64_json"),
 		{Name: "stream", Type: "boolean", FixedValue: false, DefaultValue: false},
 		userParameter(),
@@ -27,10 +38,17 @@ func GeminiImageAPI(customerModel string) *dto.PublicModelAPI {
 		fixedParameterWithDefault("n", "integer", false, 1, 1),
 		{Name: "image", Type: "string"},
 		{Name: "images", Type: "array", ItemType: "string", MinItems: &minImages, MaxItems: &maxImages},
-		{Name: "size", Type: "string", Required: false, DefaultValue: "auto"},
+		size,
 		stringEnumParameterWithDefault("response_format", false, []string{"b64_json", "url"}, "b64_json"),
 		{Name: "stream", Type: "boolean", FixedValue: false, DefaultValue: false},
 		userParameter(),
+	}
+	if limit := geminiimage.InlineImageLimit(providerModel, channelType); limit > 0 {
+		for i := range editParameters {
+			if editParameters[i].Name == "image" || editParameters[i].Name == "images" {
+				editParameters[i].MaxDecodedBytes = &limit
+			}
+		}
 	}
 
 	return &dto.PublicModelAPI{Image: &dto.PublicImageAPI{

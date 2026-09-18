@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relaykittypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
@@ -74,6 +75,8 @@ func taskProtocolErrorFields(taskErr *dto.TaskError, info *relaycommon.RelayInfo
 	}
 	code = common.PublicTaskErrorCode(code)
 	switch {
+	case taskErr.LocalError && status == http.StatusForbidden && code == string(relaykittypes.ErrorCodeInsufficientUserQuota):
+		errorType, code, message = "insufficient_quota", "insufficient_quota", "Insufficient quota"
 	case !taskErr.LocalError && status == http.StatusUnauthorized:
 		status = http.StatusBadGateway
 		errorType = "server_error"

@@ -66,3 +66,32 @@ func TestGeminiImageUsageDoesNotInventZeroCompletion(t *testing.T) {
 	require.Nil(t, apiErr)
 	assert.Nil(t, usage, "absent metadata must remain absent")
 }
+
+func TestLiteNativePixelsAreNeverResampled(t *testing.T) {
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gemini-3.1-flash-lite-image"}}
+	for _, tc := range []struct {
+		size          string
+		width, height int
+		valid         bool
+	}{
+		{"1024x1024", 1024, 1024, true},
+		{"1024x1024", 512, 512, false},
+		{"auto", 1376, 768, true},
+	} {
+		var original bytes.Buffer
+		require.NoError(t, png.Encode(&original, image.NewNRGBA(image.Rect(0, 0, tc.width, tc.height))))
+		encoded, err := common.Marshal(map[string]any{"candidates": []any{map[string]any{"content": map[string]any{"parts": []any{map[string]any{"inlineData": map[string]any{"mimeType": "image/png", "data": original.Bytes()}}}}}}})
+		require.NoError(t, err)
+		c := &gin.Context{}
+		c.Set(geminiImageSizeKey, tc.size)
+		results, _, apiErr := ParseGenerateContentImageResponseBody(c, info, encoded)
+		if !tc.valid {
+			require.NotNil(t, apiErr)
+			assert.True(t, types.IsSkipRetryError(apiErr))
+			continue
+		}
+		require.Nil(t, apiErr)
+		require.Len(t, results, 1)
+		assert.Equal(t, original.Bytes(), results[0].Data, "native bytes, including metadata, are delivered unchanged")
+	}
+}

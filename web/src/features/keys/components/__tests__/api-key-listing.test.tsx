@@ -50,7 +50,12 @@ import {
   useSystemConfigStore,
 } from '@/stores/system-config-store'
 
-import { apiKeySchema, type ApiKey } from '../../types'
+import {
+  apiKeySchema,
+  type ApiKey,
+  type ApiResponse,
+  type SelfCustomerContract,
+} from '../../types'
 import { ApiKeyQuotaCell } from '../api-key-quota-cell'
 import { useApiKeysColumns } from '../api-keys-columns'
 import { ApiKeysProvider } from '../api-keys-provider'
@@ -303,9 +308,34 @@ function KeysPage() {
   )
 }
 
-async function renderKeysPage(status = 1, overrides: Partial<ApiKey> = {}) {
+async function renderKeysPage(
+  status = 1,
+  overrides: Partial<ApiKey> = {},
+  contracts: ApiResponse<SelfCustomerContract> = {
+    success: true,
+    data: {
+      contracts: [
+        {
+          id: 11,
+          name: 'Standard agreement',
+          enabled: true,
+          version: 1,
+          models: [],
+        },
+        {
+          id: 22,
+          name: 'Legacy agreement',
+          enabled: false,
+          version: 1,
+          models: [],
+        },
+      ],
+    },
+  }
+) {
   let currentKey = { ...key, status, ...overrides }
   vi.mocked(api.get).mockImplementation(async (url) => {
+    if (url === '/api/user/self/contract') return { data: contracts }
     if (url.startsWith('/api/token/')) {
       return {
         data: { success: true, data: { items: [currentKey], total: 1 } },
@@ -524,4 +554,43 @@ it('keeps mobile quota readable and opens complete model and IP restrictions by 
   details = await screen.findByRole('dialog')
   expect(within(details).getByText('192.0.2.1')).toBeVisible()
   expect(within(details).getByText('2001:db8::1')).toBeVisible()
+})
+
+it.each([
+  [11, 'Standard agreement'],
+  [22, 'Legacy agreement'],
+  [0, 'No contract'],
+])(
+  'shows the stored contract binding %s in the API key list',
+  async (contractId, label) => {
+    await renderKeysPage(1, { contract_id: contractId })
+    expect(screen.getByRole('columnheader', { name: 'Contract' })).toBeVisible()
+    expect(await screen.findByRole('cell', { name: label })).toBeVisible()
+  }
+)
+
+it.each([
+  { success: false, message: 'Contract read failed' },
+  { success: true, data: { contracts: [] } },
+])(
+  'preserves bound identity when contract details are unavailable: %j',
+  async (contracts) => {
+    await renderKeysPage(1, { contract_id: 22 }, contracts)
+    expect(
+      await screen.findByRole('cell', { name: /Contract #22.*Unavailable/ })
+    ).toBeVisible()
+    expect(screen.queryByText('No contract')).not.toBeInTheDocument()
+  }
+)
+
+it('shows the bound contract name on mobile', async () => {
+  const matchMedia = window.matchMedia
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+    ...matchMedia(query),
+    matches: query.includes('max-width'),
+  }))
+  await renderKeysPage(1, { contract_id: 22 })
+  expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  expect(await screen.findByText('Legacy agreement')).toBeVisible()
+  expect(screen.getByText('Contract', { exact: true })).toBeVisible()
 })

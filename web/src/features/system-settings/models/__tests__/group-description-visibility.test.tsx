@@ -16,9 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { afterAll, describe, expect, test } from 'vitest'
-
 import { Window } from 'happy-dom'
+import { afterAll, describe, expect, test } from 'vitest'
 
 const domWindow = new Window()
 const domGlobals = [

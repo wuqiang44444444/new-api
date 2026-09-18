@@ -515,6 +515,9 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 	fullRequestURL := fmt.Sprintf("%s%s", baseURL, requestURL)
 
 	modelName := service.CovertMjpActionToModelName(midjRequest.Action)
+	if err := prepareCustomerContractMidjourney(c, relayInfo, modelName); err != nil {
+		return service.MidjourneyErrorWrapper(constant.MjRequestError, "contract_model_or_channel_unavailable")
+	}
 
 	priceData, err := helper.ModelPriceHelperPerCall(c, relayInfo)
 	if err != nil {

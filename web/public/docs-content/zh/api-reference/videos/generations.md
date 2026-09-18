@@ -28,18 +28,18 @@ curl "{{OPENAI_BASE_URL}}/video/generations" \
   }'
 ```
 
-| 字段 | 类型 | 使用条件 |
-| --- | --- | --- |
-| `model` | string | 填写支持本入口的客户模型 ID |
-| `prompt` | string | 必填视频描述，不能为空 |
-| `image` | string | 模型支持时使用单张参考图片 |
-| `images` | string[] | 模型支持时使用多张参考图片；不要与 `image` 同时填写 |
-| `size` | string | 模型明确支持的尺寸 |
-| `duration` | integer | 视频秒数；安全上限 `3600`，实际允许范围通常小得多，按模型说明填写 |
-| `seconds` | string | 仅在模型明确要求时使用；不要与 `duration` 同时填写 |
-| `mode` | string | 模型公开的生成模式 |
-| `input_reference` | string 或 object | 模型明确支持时使用；对象只选 `file_id` 或 `image_url` 之一 |
-| `metadata` | object | 仅填写目标模型已经公开说明的扩展字段；没有说明时省略 |
+| 字段              | 类型             | 使用条件                                                          |
+| ----------------- | ---------------- | ----------------------------------------------------------------- |
+| `model`           | string           | 填写支持本入口的客户模型 ID                                       |
+| `prompt`          | string           | 必填视频描述，不能为空                                            |
+| `image`           | string           | 模型支持时使用单张参考图片                                        |
+| `images`          | string[]         | 模型支持时使用多张参考图片；不要与 `image` 同时填写               |
+| `size`            | string           | 模型明确支持的尺寸                                                |
+| `duration`        | integer          | 视频秒数；安全上限 `3600`，实际允许范围通常小得多，按模型说明填写 |
+| `seconds`         | string           | 仅在模型明确要求时使用；不要与 `duration` 同时填写                |
+| `mode`            | string           | 模型公开的生成模式                                                |
+| `input_reference` | string 或 object | 模型明确支持时使用；对象只选 `file_id` 或 `image_url` 之一        |
+| `metadata`        | object           | 仅填写目标模型已经公开说明的扩展字段；没有说明时省略              |
 
 这些字段不是每个模型都支持。顶层 `width`、`height`、`fps`、`n`、`seed` 和 `response_format`
 不是本页发布的通用参数，不能据此控制输出。不要把其他视频协议的私有字段塞进 `metadata`。
@@ -99,12 +99,12 @@ HTTP `200` 表示查询成功。先检查 `code=success`，再解析 `data`。�
 }
 ```
 
-| 状态语义 | 常规 `data.status` | 简化 `data.status` | 客户端动作 |
-| --- | --- | --- | --- |
-| 排队 | `NOT_START`、`SUBMITTED`、`QUEUED` | `queued` | 等待后查询 |
-| 处理中 | `IN_PROGRESS` | `processing` | 退避查询 |
-| 成功 | `SUCCESS` | `succeeded` | 分别读取 `data.result_url` 或 `data.url` |
-| 失败 | `FAILURE` | `failed` | 停止轮询；常规形状读取 `data.fail_reason` |
+| 状态语义 | 常规 `data.status`                 | 简化 `data.status` | 客户端动作                                |
+| -------- | ---------------------------------- | ------------------ | ----------------------------------------- |
+| 排队     | `NOT_START`、`SUBMITTED`、`QUEUED` | `queued`           | 等待后查询                                |
+| 处理中   | `IN_PROGRESS`                      | `processing`       | 退避查询                                  |
+| 成功     | `SUCCESS`                          | `succeeded`        | 分别读取 `data.result_url` 或 `data.url`  |
+| 失败     | `FAILURE`                          | `failed`           | 停止轮询；常规形状读取 `data.fail_reason` |
 
 按每次响应的 `data` 形状解析；不要假设同一任务每次都使用简化形状。`progress` 为带百分号的字符串，
 不能凭进度判断成功。`metadata`、`error` 可以为 `null`，不要假设一定提供时长、分辨率或错误详情。

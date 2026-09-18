@@ -71,6 +71,16 @@ func freezeNativeImageRequest(c *gin.Context, info *relaycommon.RelayInfo, taskI
 			body = bytes.NewReader(encoded)
 		}
 	}
+	stage = "response_format"
+	formattedBody, formatCloser, err := prepareNativeImageFormatBody(c, info, body)
+	if err != nil {
+		return nil, err
+	}
+	if formatCloser != nil {
+		defer formatCloser.Close()
+	}
+	body = formattedBody
+
 	stage = "request_url"
 	url, err := adaptor.GetRequestURL(info)
 	if err != nil {

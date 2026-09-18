@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,7 +39,7 @@ func TestBillingStatementLogsPreserveScopeAndNetAcrossPages(t *testing.T) {
 	for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser, common.RoleRootUser} {
 		var seen int
 		for page := 1; page <= 3; page++ {
-			result, err := GetBillingStatementLogs(filter, page, 1, role)
+			result, err := GetBillingStatementLogs(context.Background(), filter, page, 1, role)
 			require.NoError(t, err)
 			assert.EqualValues(t, 3, result.Total)
 			assert.EqualValues(t, 260, result.Quota)
@@ -53,7 +54,7 @@ func TestBillingStatementLogsPreserveScopeAndNetAcrossPages(t *testing.T) {
 		}
 		assert.Equal(t, 3, seen)
 	}
-	statement, err := GetBillingCustomerStatement(1, 1000, 1500, "api_key", 0, "model", "token")
+	statement, err := GetBillingCustomerStatement(context.Background(), 1, 1000, 1500, "api_key", 0, "model", "token")
 	require.NoError(t, err)
 	for _, group := range statement.Groups {
 		if group.Id == 0 {
@@ -64,13 +65,13 @@ func TestBillingStatementLogsPreserveScopeAndNetAcrossPages(t *testing.T) {
 		}
 	}
 	filter.TokenId = nil
-	result, err := GetBillingStatementLogs(filter, 1, 20, common.RoleCommonUser)
+	result, err := GetBillingStatementLogs(context.Background(), filter, 1, 20, common.RoleCommonUser)
 	require.NoError(t, err)
 	assert.EqualValues(t, 4, result.Total)
 	assert.EqualValues(t, 960, result.Quota)
 	filter.TokenId = &zero
 	filter.BillingMode = "per_call"
-	result, err = GetBillingStatementLogs(filter, 1, 20, common.RoleCommonUser)
+	result, err = GetBillingStatementLogs(context.Background(), filter, 1, 20, common.RoleCommonUser)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, result.Total)
 	assert.EqualValues(t, 900, result.Quota)

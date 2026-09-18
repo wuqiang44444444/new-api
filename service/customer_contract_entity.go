@@ -60,9 +60,8 @@ func cloneContractEntitySnapshot(snapshot *model.ContractEntitySnapshot) *model.
 
 // ResolveContractEntityRule freezes the contract discount fact for one public
 // model of a key-bound contract. The three outcomes are: discount fact (the
-// enabled contract lists the model), nil fact (disabled contract, or the
-// contract simply does not list the model — native handling applies), or an
-// error (binding, read, version or discount-consistency anomaly: fail closed,
+// enabled contract lists the model), nil fact (disabled contract), or an
+// error (unlisted model, binding, read, version or discount-consistency anomaly: fail closed,
 // never a silent native fallback). All rules of one public model must agree on
 // the discount; any disagreement is a hard failure.
 func ResolveContractEntityRule(userId int, authVersion int64, contractId int, publicModel string) (*hosttypes.ContractBillingFact, error) {
@@ -73,17 +72,22 @@ func ResolveContractEntityRule(userId int, authVersion int64, contractId int, pu
 	if !snapshot.Enabled {
 		return nil, nil
 	}
+	return resolveContractBillingFact(snapshot, publicModel)
+}
+
+func resolveContractBillingFact(snapshot *model.ContractEntitySnapshot, publicModel string) (*hosttypes.ContractBillingFact, error) {
 	discounts, err := ContractDiscountsFromSnapshot(snapshot)
 	if err != nil {
 		return nil, err
 	}
 	discount, found := discounts[publicModel]
 	if !found {
-		return nil, nil
+		return nil, ErrCustomerContractScope
 	}
 	return &hosttypes.ContractBillingFact{
-		UserId: userId, ContractId: snapshot.Id, ContractVersion: snapshot.Version,
-		PublicModel: publicModel, RatioUnits: discount,
+		UserId: snapshot.UserId, ContractId: snapshot.Id, ContractVersion: snapshot.Version,
+		ContractName: snapshot.Name,
+		PublicModel:  publicModel, RatioUnits: discount,
 	}, nil
 }
 

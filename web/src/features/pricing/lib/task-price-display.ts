@@ -27,11 +27,11 @@ import type {
   BillingUsageSchema,
   PricingModel,
 } from '../types'
-import type { TaskTierCondition } from './billing-expr'
 import {
   ruleGroupsFromBillingDisplay,
   taskTiersFromBillingDisplay,
 } from './billing-display'
+import type { TaskTierCondition } from './billing-expr'
 
 export function taskPriceLabel(
   description: LocalizedTextValue | undefined,
@@ -139,7 +139,13 @@ function renderTaskConditionLeaf(
   )
   const op = rule.compare_op ?? '=='
   if (op === '==') {
-    return renderUsageValueText(rule.path ?? '', rule.value ?? '', schema, language, t)
+    return renderUsageValueText(
+      rule.path ?? '',
+      rule.value ?? '',
+      schema,
+      language,
+      t
+    )
   }
   const symbol = COMPARE_OP_SYMBOLS[op]
   if (!symbol) return ''
@@ -152,11 +158,19 @@ function renderInvertedLeaf(
   language: string,
   t: (key: string) => string
 ): string {
-  if (rule.text_only || rule.source !== 'usage' || (rule.compare_op ?? '==') !== '==') {
+  if (
+    rule.text_only ||
+    rule.source !== 'usage' ||
+    (rule.compare_op ?? '==') !== '=='
+  ) {
     return ''
   }
   const definition = schema?.[rule.path ?? '']
-  const label = taskPriceLabel(definition?.description, rule.path ?? '', language)
+  const label = taskPriceLabel(
+    definition?.description,
+    rule.path ?? '',
+    language
+  )
   if (definition?.type === 'boolean') {
     return `${label}: ${rule.value === 'true' ? t('No') : t('Yes')}`
   }

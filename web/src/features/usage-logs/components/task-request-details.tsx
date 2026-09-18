@@ -6,6 +6,7 @@ import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 
 import { getTaskRequestBodies } from '../evidence-api'
+import { EvidenceBodyStatus } from './evidence-body-status'
 
 export function TaskRequestDetails(props: { taskId: string }) {
   const { t } = useTranslation()
@@ -55,23 +56,32 @@ export function TaskRequestDetails(props: { taskId: string }) {
           {query.data?.map((body) => (
             <section key={body.eventId} className='space-y-2'>
               {query.data.length > 1 && (
-                <p className='break-all text-xs'>{body.requestId}</p>
+                <p className='text-xs break-all'>{body.requestId}</p>
               )}
               {!body.complete && <p>{t('Incomplete')}</p>}
               {body.text !== null ? (
-                <pre className='max-h-[65vh] overflow-auto rounded-md border p-3 font-mono text-xs whitespace-pre-wrap break-all'>
+                <pre className='max-h-[65vh] overflow-auto rounded-md border p-3 font-mono text-xs break-all whitespace-pre-wrap'>
                   {body.text}
                 </pre>
               ) : (
-                <p>
-                  {body.expired
-                    ? t('Evidence body expired')
-                    : t('Evidence body unavailable')}
-                </p>
+                <EvidenceBodyStatus status={body.bodyStatus} />
               )}
             </section>
           ))}
         </div>
+        {query.data?.some(
+          (body) =>
+            body.bodyStatus === 'read_failed' ||
+            body.bodyStatus === 'storage_unavailable'
+        ) && (
+          <Button
+            variant='outline'
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            {t('Retry')}
+          </Button>
+        )}
       </Dialog>
     </>
   )

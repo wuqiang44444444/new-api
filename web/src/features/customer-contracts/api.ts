@@ -16,8 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { api } from '@/lib/api'
 import type { ApiResponse, UserContractEntities } from '@/features/users/types'
+import { api } from '@/lib/api'
 
 import type {
   CustomerContractAdminListResponse,

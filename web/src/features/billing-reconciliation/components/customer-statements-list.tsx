@@ -81,6 +81,7 @@ import type {
   CustomerStatementListQuality,
   CustomerStatementListSortBy,
 } from '../types'
+import { BillingQualityNotice } from './billing-quality-notice'
 
 type CustomerStatementsListProps = {
   period: { start_timestamp: number; end_timestamp: number }
@@ -275,16 +276,28 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
           />
           <ListMetric
             label={t('Estimated list price')}
-            value={formatCustomerStatementQuota(result.summary.original_quota)}
+            value={
+              result.summary.money_usd
+                ? formatStatementUSD(result.summary.money_usd.original)
+                : formatCustomerStatementQuota(result.summary.original_quota)
+            }
           />
           <ListMetric
             label={t('Estimated savings')}
-            value={formatCustomerStatementQuota(result.summary.discount_quota)}
+            value={
+              result.summary.money_usd
+                ? formatStatementUSD(result.summary.money_usd.discount)
+                : formatCustomerStatementQuota(result.summary.discount_quota)
+            }
             valueClassName='text-success'
           />
           <ListMetric
             label={t('Net settled amount')}
-            value={formatCustomerStatementQuota(result.summary.usage.net_quota)}
+            value={
+              result.summary.money_usd
+                ? formatStatementUSD(result.summary.money_usd.net)
+                : formatCustomerStatementQuota(result.summary.usage.net_quota)
+            }
           />
         </CardContent>
       </Card>
@@ -466,7 +479,14 @@ function CustomerStatementListRow(props: {
   return (
     <TableRow>
       <TableCell>
-        <div className='font-medium'>{customerListItemLabel(item)}</div>
+        <div className='font-medium'>
+          {customerListItemLabel(item)}{' '}
+          {item.billing_version && (
+            <Badge variant='secondary'>
+              {t('Confirmed')} v{item.billing_version.version_number}
+            </Badge>
+          )}
+        </div>
         <div className='text-muted-foreground text-xs'>
           {item.username} · #{item.user_id}
           {item.deleted ? ` · ${t('Deleted')}` : ''}
@@ -476,40 +496,38 @@ function CustomerStatementListRow(props: {
         {formatInteger(item.usage.requests)}
       </TableCell>
       <TableCell className='text-right'>
-        {formatCustomerStatementQuota(item.original_quota)}
+        {item.money_usd
+          ? formatStatementUSD(item.money_usd.original)
+          : formatCustomerStatementQuota(item.original_quota)}
       </TableCell>
       <TableCell className='text-success text-right'>
-        {formatCustomerStatementQuota(item.discount_quota)}
+        {item.money_usd
+          ? formatStatementUSD(item.money_usd.discount)
+          : formatCustomerStatementQuota(item.discount_quota)}
       </TableCell>
       <TableCell className='text-right font-medium'>
-        {formatCustomerStatementQuota(item.usage.net_quota)}
+        {item.money_usd
+          ? formatStatementUSD(item.money_usd.net)
+          : formatCustomerStatementQuota(item.usage.net_quota)}
       </TableCell>
       <TableCell className='text-muted-foreground border-l text-right'>
-        {formatCustomerStatementQuota(item.usage.gross_quota)}
+        {item.money_usd
+          ? formatStatementUSD(item.money_usd.gross)
+          : formatCustomerStatementQuota(item.usage.gross_quota)}
       </TableCell>
       <TableCell className='text-muted-foreground text-right'>
-        {formatCustomerStatementQuota(item.usage.refund_quota)}
+        {item.money_usd
+          ? formatStatementUSD(item.money_usd.refund)
+          : formatCustomerStatementQuota(item.usage.refund_quota)}
       </TableCell>
       <TableCell>
-        <Badge
-          variant={
-            item.data_quality?.status === 'partial' ? 'warning' : 'secondary'
+        <BillingQualityNotice
+          quality={item.data_quality}
+          estimateAvailable={
+            item.original_quota != null && item.discount_quota != null
           }
-        >
-          {item.data_quality?.status === 'partial'
-            ? t('Partial data')
-            : t('Complete')}
-        </Badge>
-        {(item.data_quality?.unknown_billing_mode_requests ?? 0) > 0 && (
-          <div
-            className='text-muted-foreground mt-1 max-w-40'
-            data-table-text='secondary'
-          >
-            {t('Unknown billing mode: {{count}} records', {
-              count: item.data_quality?.unknown_billing_mode_requests,
-            })}
-          </div>
-        )}
+          compact
+        />
       </TableCell>
       <TableCell>{formatTimestampToDate(item.last_activity_at)}</TableCell>
       <TableCell className='text-right'>
@@ -615,4 +633,9 @@ function customerStatementPageItems(
     'ellipsis-trailing',
     totalPages,
   ]
+}
+
+function formatStatementUSD(value: string | null) {
+  if (value == null) return '—'
+  return value.startsWith('-') ? `-$${value.slice(1)}` : `$${value}`
 }

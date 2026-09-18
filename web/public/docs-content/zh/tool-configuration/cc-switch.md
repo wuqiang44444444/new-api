@@ -17,12 +17,12 @@ operations: []
 1. 打开 `Codex` 页面，点击右上角 `+`，选择 `自定义`。
 2. 填写：
 
-| 项目 | 填写内容 |
-| --- | --- |
-| 供应商名称 | `{{SYSTEM_NAME}}` |
-| API Key | `{{API_KEY_PLACEHOLDER}}` |
-| API 请求地址 | `{{OPENAI_BASE_URL}}` |
-| 默认模型 | `{{MODEL_ID_PLACEHOLDER}}` |
+| 项目         | 填写内容                   |
+| ------------ | -------------------------- |
+| 供应商名称   | `{{SYSTEM_NAME}}`          |
+| API Key      | `{{API_KEY_PLACEHOLDER}}`  |
+| API 请求地址 | `{{OPENAI_BASE_URL}}`      |
+| 默认模型     | `{{MODEL_ID_PLACEHOLDER}}` |
 
 3. 保持原生 Responses 配置，不要开启“需要本地路由映射”。
 4. 不要开启 1M 上下文，除非该模型的公开说明明确支持。

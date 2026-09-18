@@ -1,7 +1,7 @@
 ---
 page-id: model-parameters
 kind: guide
-last-verified: 2026-09-09
+last-verified: 2026-09-17
 operations: []
 ---
 
@@ -16,35 +16,36 @@ operations: []
 路径编码，请求 JSON 中则保留原始 ID。目录可能列出不可用模型：返回 `available` 时必须为 `true`，
 否则查看 `availability`，不要仅凭列表中存在就提交生成。
 
-| 字段 | 如何使用 |
-| --- | --- |
-| `id` | 请求中使用的客户模型 ID，不自行改名或追加后缀 |
-| `supported_endpoint_types` | 已公开的接口类型，不能据此猜测另一协议的可用性 |
-| `api.image.creation` | 图片生成方法、路径、内容类型和参数 |
-| `api.image.edit` | 图片编辑输入；不能用生成参数表代替 |
-| `api.image.async` | 图片显式异步请求头、查询路径和流式优先规则 |
-| `api.video.protocol` / `creation` | 视频协议及创建合同 |
-| `api.assets` | 素材操作、媒体类型、管理模式和复用域 |
-| `operations[]` | 找到目标 `operation`，确认 `supported=true`，使用对应方法和路径 |
+| 字段                              | 如何使用                                                        |
+| --------------------------------- | --------------------------------------------------------------- |
+| `id`                              | 请求中使用的客户模型 ID，不自行改名或追加后缀                   |
+| `supported_endpoint_types`        | 已公开的接口类型，不能据此猜测另一协议的可用性                  |
+| `api.image.creation`              | 图片生成方法、路径、内容类型和参数                              |
+| `api.image.edit`                  | 图片编辑输入；不能用生成参数表代替                              |
+| `api.image.async`                 | 图片显式异步请求头、查询路径和流式优先规则                      |
+| `api.video.protocol` / `creation` | 视频协议及创建合同                                              |
+| `api.assets`                      | 素材操作、媒体类型、管理模式和复用域                            |
+| `operations[]`                    | 找到目标 `operation`，确认 `supported=true`，使用对应方法和路径 |
 
 缺少某项元数据不等于自动支持该能力，也不要把文本模型没有 `api.image` 解释为文本不可用。
 
 ## 2. 读取参数约束
 
-| 参数合同字段 | 含义与处理 |
-| --- | --- |
-| `required_fields` | 请求的必填字段；有点号时为嵌套字段 |
-| `required_one_of` | 多个输入字段中恰好选择一个，例如 JSON 编辑的 `image` 与 `images` |
-| `parameters[].required` | 对应参数是否必填 |
-| `type` / `item_type` | JSON 类型与数组元素类型；表单中的数值和布尔值按文档使用文本 |
-| `fixed_value` | 字段被固定；显式发送时必须使用该值 |
-| `default_value` | 省略时采用的值；不是所有模型共享的默认值 |
-| `enum` | 允许的值集合，大小写与类型都应保持一致 |
-| `minimum` / `maximum` | 数值范围 |
-| `special_values` | 明确允许的特殊值；不能由范围自行推导，例如视频的自动时长值 |
-| `min_length` / `max_length` | 字符串长度约束 |
-| `min_items` / `max_items` | 数组长度约束；参考图数量与输出图片数量分开计算 |
-| `additional_properties=false` | 不发送参数表未发布的字段 |
+| 参数合同字段                  | 含义与处理                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| `required_fields`             | 请求的必填字段；有点号时为嵌套字段                                                   |
+| `required_one_of`             | 请求级：多个输入字段中恰好选一；参数级：对象内部或每个对象数组元素内部的属性恰好选一 |
+| 图片 `content_type`           | 当前参数表描述的推荐请求编码；其他编码的字段形状见接口文档                           |
+| `parameters[].required`       | 对应参数是否必填                                                                     |
+| `type` / `item_type`          | JSON 类型与数组元素类型；表单中的数值和布尔值按文档使用文本                          |
+| `fixed_value`                 | 字段被固定；显式发送时必须使用该值                                                   |
+| `default_value`               | 省略时采用的值；不是所有模型共享的默认值                                             |
+| `enum`                        | 允许的值集合，大小写与类型都应保持一致                                               |
+| `minimum` / `maximum`         | 数值范围                                                                             |
+| `special_values`              | 明确允许的特殊值；不能由范围自行推导，例如视频的自动时长值                           |
+| `min_length` / `max_length`   | 字符串长度约束                                                                       |
+| `min_items` / `max_items`     | 数组长度约束；参考图数量与输出图片数量分开计算                                       |
+| `additional_properties=false` | 不发送参数表未发布的字段                                                             |
 
 `fixed_value=false`、`default_value=0` 都是有效值。程序应判断字段是否存在，不用“是否为真”决定是否读取。
 `false`、`0`、空字符串与省略不等价；可选字段没有值时省略，不统一发送 `null`。
@@ -53,10 +54,16 @@ operations: []
 `extra_fields` 对象中的 `resolution` 字段，不能发送名为 `"extra_fields.resolution"` 的顶层键。
 `extra_fields` 也不是任意字段透传入口，只填写模型公开的子字段。
 
+`images[].image_url` 表示 `images` 数组中每个对象的 `image_url` 字符串属性。原生 GPT Image 的
+`item_type=object` 要求对象数组；统一图片适配的 `item_type=string` 要求字符串数组，两者不可混用。
+对象参数的 `required_one_of=["image_url", "file_id"]` 表示每个对象恰好提供其中一个属性；
+可选 `mask` 对象省略时不需要这些子字段。完整示例见[图片编辑](api-reference/images/edits)。
+
 ## 3. 区分通用上限与模型规格
 
 公开 API 的总参数表表示各模型支持字段的范围，不能证明某个模型支持整张表。
-例如图片数量有公共安全上限，某个模型仍可能固定 `n=1`；参考图最多 14 张的输入规范也可能被模型收紧。
+例如图片数量有公共安全上限，某个模型仍可能固定 `n=1`；统一图片适配的参考图上限为 14 张或更少，
+原生 GPT Image 对象数组最多 16 张，不能统一套用 14 张限制。
 
 第一次调用优先只填必需字段，再逐项加入尺寸、质量、数量等选项。示例中的 `720p`、`16:9`、时长和数量
 都需要核对当前模型，不应当作所有模型的通用组合。
@@ -71,3 +78,10 @@ operations: []
 
 素材另外保存 `model + id + reference`。判断跨模型可尝试复用时比较完整、非空的 `reuse_scope`，
 不能比较界面短标签、模型名或资源前缀。详情见[素材与素材组](api-reference/assets)。
+
+## 图片返回格式
+
+标准图片生成与编辑通过 `response_format` 选择非流式 `url` 或 `b64_json`，不需要额外布尔开关。
+元数据中的默认值按模型表达；省略参数继续使用既有默认行为。平台异步查询的默认 URL 与同步
+模型默认值需要分别理解。GPT Image 的 URL 交付由本站适配；已有 Provider URL 不强制转存。
+流式事件沿用模型原协议，不能由这个字段推定 SSE 事件也会返回 URL。

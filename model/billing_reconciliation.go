@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,9 +18,10 @@ import (
 )
 
 const (
-	BillingReconciliationModeToken   = "token"
-	BillingReconciliationModePerCall = "per_call"
-	BillingReconciliationModeUnknown = "unknown"
+	BillingReconciliationModeToken     = "token"
+	BillingReconciliationModePerCall   = "per_call"
+	BillingReconciliationModePerSecond = "per_second"
+	BillingReconciliationModeUnknown   = "unknown"
 )
 
 var ErrBillingReconciliationVersionConflict = errors.New("billing reconciliation version conflict")
@@ -86,6 +88,8 @@ type BillingReconciliationUsage struct {
 }
 
 type BillingReconciliationModelSummary struct {
+	DiscountQuota             *int64   `json:"discount_quota,omitempty"`
+	EstimateReasons           []string `json:"estimate_reasons,omitempty"`
 	originalQuota             decimal.Decimal
 	ModelName                 string                            `json:"model_name"`
 	BillingMode               string                            `json:"billing_mode"`
@@ -101,14 +105,15 @@ type BillingReconciliationModelSummary struct {
 }
 
 type BillingReconciliationGroupSummary struct {
-	originalQuota decimal.Decimal
-	Id            int64                               `json:"id"`
-	Name          string                              `json:"name"`
-	Usage         BillingReconciliationUsage          `json:"usage"`
-	OriginalQuota *int64                              `json:"original_quota,omitempty"`
-	DiscountQuota *int64                              `json:"discount_quota,omitempty"`
-	Models        []BillingReconciliationModelSummary `json:"models"`
-	Deleted       bool                                `json:"deleted,omitempty"`
+	EstimateReasons []string `json:"estimate_reasons,omitempty"`
+	originalQuota   decimal.Decimal
+	Id              int64                               `json:"id"`
+	Name            string                              `json:"name"`
+	Usage           BillingReconciliationUsage          `json:"usage"`
+	OriginalQuota   *int64                              `json:"original_quota,omitempty"`
+	DiscountQuota   *int64                              `json:"discount_quota,omitempty"`
+	Models          []BillingReconciliationModelSummary `json:"models"`
+	Deleted         bool                                `json:"deleted,omitempty"`
 }
 
 type BillingReconciliationDetailFilter struct {
@@ -122,20 +127,27 @@ type BillingReconciliationDetailFilter struct {
 }
 
 type BillingCustomerStatement struct {
-	UserId         int                                 `json:"user_id"`
-	Username       string                              `json:"username"`
-	DisplayName    string                              `json:"display_name"`
-	Deleted        bool                                `json:"deleted,omitempty"`
-	Dimension      string                              `json:"dimension"`
-	CurrentBalance *int                                `json:"current_balance"`
-	Summary        BillingReconciliationUsage          `json:"summary"`
-	OriginalQuota  *int64                              `json:"original_quota,omitempty"`
-	DiscountQuota  *int64                              `json:"discount_quota,omitempty"`
-	Groups         []BillingReconciliationGroupSummary `json:"groups"`
-	DataQuality    *BillingReconciliationDataQuality   `json:"data_quality,omitempty"`
+	EstimateReasons []string                            `json:"estimate_reasons,omitempty"`
+	UserId          int                                 `json:"user_id"`
+	Username        string                              `json:"username"`
+	DisplayName     string                              `json:"display_name"`
+	Deleted         bool                                `json:"deleted,omitempty"`
+	Dimension       string                              `json:"dimension"`
+	CurrentBalance  *int                                `json:"current_balance"`
+	Summary         BillingReconciliationUsage          `json:"summary"`
+	OriginalQuota   *int64                              `json:"original_quota,omitempty"`
+	DiscountQuota   *int64                              `json:"discount_quota,omitempty"`
+	Groups          []BillingReconciliationGroupSummary `json:"groups"`
+	// DiscountCombinations is the plan-section-4 discount-combination
+	// projection: the same settled logs, one row per frozen discount-fact
+	// combination, reconcilable with the statement totals.
+	DiscountCombinations []BillingDiscountCombination      `json:"discount_combinations,omitempty"`
+	DataQuality          *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
 }
 
 type billingReconciliationLog struct {
+	RequestId        string
+	GroupName        string
 	Content          string
 	UserId           int
 	TokenId          int
@@ -165,6 +177,7 @@ type billingReconciliationModelAccumulator struct {
 }
 
 func GetBillingCustomerStatement(
+	ctx context.Context,
 	userId int,
 	startTimestamp int64,
 	endTimestamp int64,
@@ -172,6 +185,7 @@ func GetBillingCustomerStatement(
 	groupId int,
 	modelName string,
 	billingMode string,
+	readPolicies ...BillingStatementReadPolicy,
 ) (BillingCustomerStatement, error) {
 	statement := BillingCustomerStatement{
 		UserId:    userId,
@@ -181,13 +195,13 @@ func GetBillingCustomerStatement(
 	if dimension != "api_key" && dimension != "channel" {
 		return statement, errors.New("invalid billing dimension")
 	}
-	if billingMode != "" && billingMode != BillingReconciliationModeToken && billingMode != BillingReconciliationModePerCall && billingMode != BillingReconciliationModeUnknown {
+	if billingMode != "" && billingMode != BillingReconciliationModeToken && billingMode != BillingReconciliationModePerCall && billingMode != BillingReconciliationModePerSecond && billingMode != BillingReconciliationModeUnknown {
 		return statement, errors.New("invalid billing mode")
 	}
 
-	query := LOG_DB.Model(&Log{}).
+	query := LOG_DB.WithContext(ctx).Model(&Log{}).
 		Scopes(customerSettlementLogs).
-		Select("user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other").
+		Select("user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other, "+billingStatementGroupSelect()).
 		Where("user_id = ? AND type IN ? AND created_at >= ? AND created_at <= ?", userId, []int{LogTypeConsume, LogTypeRefund}, startTimestamp, endTimestamp)
 	if groupId > 0 {
 		if dimension == "api_key" {
@@ -196,12 +210,6 @@ func GetBillingCustomerStatement(
 			query = query.Where("channel_id = ?", groupId)
 		}
 	}
-
-	rows, err := query.Rows()
-	if err != nil {
-		return statement, err
-	}
-	defer rows.Close()
 
 	type groupKey struct {
 		id int64
@@ -214,19 +222,19 @@ func GetBillingCustomerStatement(
 	groups := make(map[groupKey]*BillingReconciliationGroupSummary)
 	models := make(map[modelKey]*billingReconciliationModelAccumulator)
 	groupNames := make(map[int64]string)
+	combinations := newBillingDiscountCombinationAccumulator()
 
-	for rows.Next() {
-		var log billingReconciliationLog
-		if err := rows.Scan(&log.UserId, &log.TokenId, &log.TokenName, &log.ChannelId, &log.ModelName, &log.Type, &log.CreatedAt, &log.PromptTokens, &log.CompletionTokens, &log.Quota, &log.Content, &log.Other); err != nil {
-			return statement, err
-		}
-		parsed := parseBillingReconciliationLog(log)
+	var policy BillingStatementReadPolicy
+	if len(readPolicies) > 0 {
+		policy = readPolicies[0]
+	}
+	err := scanBillingStatementFacts(ctx, query, policy, func(log billingReconciliationLog, parsed parsedBillingReconciliationLog) error {
 		log.ModelName = parsed.customerModel
 		if modelName != "" && log.ModelName != modelName {
-			continue
+			return nil
 		}
 		if billingMode != "" && parsed.billingMode != billingMode {
-			continue
+			return nil
 		}
 
 		selectedGroupId := int64(log.TokenId)
@@ -235,6 +243,7 @@ func GetBillingCustomerStatement(
 			selectedGroupId = int64(log.ChannelId)
 			selectedGroupName = ""
 		}
+		combinations.observe(log, selectedGroupId, parsed)
 		gk := groupKey{id: selectedGroupId}
 		group, ok := groups[gk]
 		if !ok {
@@ -284,8 +293,12 @@ func GetBillingCustomerStatement(
 			ensureBillingReconciliationQuality(&accumulator.model.DataQuality).UnknownBillingModeRequests++
 		}
 		accumulateBillingReconciliationPrice(accumulator, log, parsed)
-	}
-	if err := rows.Err(); err != nil {
+		if policy.MaxGroups > 0 && len(models) > policy.MaxGroups {
+			return errors.New("statement aggregation group budget exceeded")
+		}
+		return nil
+	})
+	if err != nil {
 		return statement, err
 	}
 
@@ -347,6 +360,7 @@ func GetBillingCustomerStatement(
 	finalizeBillingReconciliationUsage(&statement.Summary)
 	finalizeBillingCustomerStatementOriginalQuota(&statement)
 	finalizeBillingReconciliationQuality(&statement.DataQuality)
+	statement.DiscountCombinations = combinations.finalize()
 	sort.Slice(statement.Groups, func(i, j int) bool {
 		if statement.Groups[i].Usage.NetQuota != statement.Groups[j].Usage.NetQuota {
 			return statement.Groups[i].Usage.NetQuota > statement.Groups[j].Usage.NetQuota
@@ -369,6 +383,10 @@ func finalizeBillingReconciliationOriginalQuota(group *BillingReconciliationGrou
 	if group == nil {
 		return
 	}
+	group.EstimateReasons = nil
+	for _, item := range group.Models {
+		group.EstimateReasons = mergeBillingEstimateReasons(group.EstimateReasons, item.EstimateReasons...)
+	}
 	originalQuota := decimal.Zero
 	for _, item := range group.Models {
 		if (item.Usage.GrossQuota > 0 || item.Usage.RefundQuota > 0) && item.OriginalQuota == nil {
@@ -381,6 +399,7 @@ func finalizeBillingReconciliationOriginalQuota(group *BillingReconciliationGrou
 	group.originalQuota = originalQuota
 	group.OriginalQuota = billingStatementOriginalQuota(originalQuota)
 	if group.OriginalQuota == nil {
+		group.EstimateReasons = mergeBillingEstimateReasons(group.EstimateReasons, BillingEstimateAmountOutOfRange)
 		return
 	}
 	discountQuota := *group.OriginalQuota - group.Usage.NetQuota
@@ -390,6 +409,10 @@ func finalizeBillingReconciliationOriginalQuota(group *BillingReconciliationGrou
 func finalizeBillingCustomerStatementOriginalQuota(statement *BillingCustomerStatement) {
 	if statement == nil {
 		return
+	}
+	statement.EstimateReasons = nil
+	for _, group := range statement.Groups {
+		statement.EstimateReasons = mergeBillingEstimateReasons(statement.EstimateReasons, group.EstimateReasons...)
 	}
 	originalQuota := decimal.Zero
 	for _, group := range statement.Groups {
@@ -402,6 +425,7 @@ func finalizeBillingCustomerStatementOriginalQuota(statement *BillingCustomerSta
 	}
 	statement.OriginalQuota = billingStatementOriginalQuota(originalQuota)
 	if statement.OriginalQuota == nil {
+		statement.EstimateReasons = mergeBillingEstimateReasons(statement.EstimateReasons, BillingEstimateAmountOutOfRange)
 		return
 	}
 	discountQuota := *statement.OriginalQuota - statement.Summary.NetQuota
@@ -409,29 +433,40 @@ func finalizeBillingCustomerStatementOriginalQuota(statement *BillingCustomerSta
 }
 
 type parsedBillingReconciliationLog struct {
-	customerModel          string
-	inputTokens            int64
-	recordedInputTokens    int64
-	outputTokens           int64
-	inputTokensUnavailable bool
-	cacheWriteUnavailable  bool
-	billingMode            string
-	isRequest              bool
-	requestCount           int64
-	isRefund               bool
-	cacheReadTokens        int64
-	cacheWrite             billingStatementCacheWriteTokens
-	discountRatio          *float64
-	contractDiscountRatio  *float64
-	hasAuxiliaryCharge     bool
-	priceMarker            string
-	providerModel          string
-	unavailable            bool
+	customerModel           string
+	refundTaskID            string
+	inputTokens             int64
+	recordedInputTokens     int64
+	outputTokens            int64
+	inputTokensUnavailable  bool
+	cacheWriteUnavailable   bool
+	billingMode             string
+	isRequest               bool
+	requestCount            int64
+	isRefund                bool
+	cacheReadTokens         int64
+	cacheWrite              billingStatementCacheWriteTokens
+	discountRatio           *float64
+	groupName               string
+	groupRatioSource        string
+	contractDiscountRatio   *float64
+	contractEvidence        bool
+	contractApplicableKnown bool
+	contractApplicable      bool
+	contractId              float64
+	contractVersion         float64
+	contractName            string
+	refundPreauthLogId      int64
+	hasAuxiliaryCharge      bool
+	priceMarker             string
+	providerModel           string
+	unavailable             bool
 }
 
 func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingReconciliationLog {
 	parsed := parsedBillingReconciliationLog{cacheWriteUnavailable: isNativeChannelTestLog(log.Type, log.TokenId, log.TokenName, log.Content), billingMode: BillingReconciliationModeUnknown, isRequest: log.Type == LogTypeConsume, isRefund: log.Type == LogTypeRefund}
 	parsed.customerModel = log.ModelName
+	parsed.groupName = log.GroupName
 	parsed.inputTokens = max(int64(log.PromptTokens), 0)
 	parsed.recordedInputTokens = parsed.inputTokens
 	parsed.outputTokens = max(int64(log.CompletionTokens), 0)
@@ -468,11 +503,22 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 			}
 		}
 	}
+	if log.Type == LogTypeRefund {
+		// 人工退款关联（质量方案阶段 B）：只读取显式的原预扣引用身份，
+		// 不按时间、金额或模型猜测关联；引用有效性由退款事实层校验。
+		if adminRaw := other["admin_info"]; len(adminRaw) > 0 {
+			var adminInfo map[string]json.RawMessage
+			if common.Unmarshal(adminRaw, &adminInfo) == nil {
+				preauthId, _ := billingReconciliationFloat(adminInfo["original_preauth_log_id"])
+				parsed.refundPreauthLogId = int64(preauthId)
+			}
+		}
+	}
 	var snapshot map[string]json.RawMessage
 	if len(snapshotRaw) > 0 {
 		if common.Unmarshal(snapshotRaw, &snapshot) == nil {
 			snapshotMode := billingBreakdownString(snapshot["billing_mode"])
-			if snapshotMode == BillingReconciliationModeToken || snapshotMode == BillingReconciliationModePerCall {
+			if snapshotMode == BillingReconciliationModeToken || snapshotMode == BillingReconciliationModePerCall || snapshotMode == BillingReconciliationModePerSecond {
 				parsed.billingMode = snapshotMode
 			}
 			if providerModel := billingBreakdownString(snapshot["provider_model"]); providerModel != "" {
@@ -504,10 +550,28 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 	}
 	if ratio, ok := billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "group_ratio")); ok && ratio > 0 {
 		parsed.discountRatio = &ratio
+		parsed.groupRatioSource = "group"
+	}
+	if ratio, ok := billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "user_group_ratio")); ok && ratio > 0 {
+		parsed.discountRatio = &ratio
+		parsed.groupRatioSource = "user_exclusive"
 	}
 	if ratio, ok := billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "contract_discount")); ok && ratio > 0 {
 		parsed.contractDiscountRatio = &ratio
 	}
+	// 折扣组合的键事实（1.3）：合同适用状态、身份与版本只取发生时冻结值；
+	// 未命中合同时显式记录 false；历史完全无合同记录时按合同因子 1 估算。
+	parsed.contractEvidence = len(billingReconciliationSnapshotRaw(snapshot, other, "contract_discount")) > 0 || len(billingReconciliationSnapshotRaw(snapshot, other, "contract_applicable")) > 0
+	if applicable, ok := billingReconciliationBool(billingReconciliationSnapshotRaw(snapshot, other, "contract_applicable")); ok {
+		parsed.contractApplicableKnown = true
+		parsed.contractApplicable = applicable
+	}
+	if parsed.contractApplicableKnown && !parsed.contractApplicable && parsed.contractDiscountRatio != nil {
+		parsed.unavailable = true
+	}
+	parsed.contractId, _ = billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "contract_id"))
+	parsed.contractVersion, _ = billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "contract_version"))
+	parsed.contractName = billingBreakdownString(billingReconciliationSnapshotRaw(snapshot, other, "contract_name"))
 	// Tool and operation surcharges are appended after the model charge and do
 	// not carry a separate historical quota amount. Do not pretend the whole
 	// settled quota can be reversed by a price ratio when such a surcharge is
@@ -618,7 +682,8 @@ func accumulateBillingReconciliationPrice(accumulator *billingReconciliationMode
 	if quota == 0 {
 		return
 	}
-	if parsed.discountRatio == nil || *parsed.discountRatio <= 0 || parsed.hasAuxiliaryCharge {
+	if reasons := billingStatementEstimateReasons(parsed); len(reasons) > 0 {
+		accumulator.model.EstimateReasons = mergeBillingEstimateReasons(accumulator.model.EstimateReasons, reasons...)
 		accumulator.originalQuotaComplete = false
 		ensureBillingReconciliationQuality(&accumulator.model.DataQuality).MissingHistoricalPriceRows++
 	} else {
@@ -663,13 +728,15 @@ func billingStatementOriginalQuota(amount decimal.Decimal) *int64 {
 
 func finalizeBillingReconciliationPrice(accumulator *billingReconciliationModelAccumulator) {
 	accumulator.model.PriceVersions = int64(len(accumulator.priceSnapshotMarkers))
-	if accumulator.originalQuotaKnown && accumulator.originalQuotaComplete {
+	if accumulator.originalQuotaComplete && (accumulator.originalQuotaKnown || (accumulator.model.Usage.GrossQuota == 0 && accumulator.model.Usage.RefundQuota == 0)) {
 		accumulator.model.originalQuota = accumulator.originalQuota
 		accumulator.model.OriginalQuota = billingStatementOriginalQuota(accumulator.originalQuota)
 		if accumulator.model.OriginalQuota == nil {
+			accumulator.model.EstimateReasons = mergeBillingEstimateReasons(accumulator.model.EstimateReasons, BillingEstimateAmountOutOfRange)
 			ensureBillingReconciliationQuality(&accumulator.model.DataQuality).MissingHistoricalPriceRows++
 		}
 	}
+	finalizeBillingModelSavings(&accumulator.model)
 	if accumulator.discountSeen && !accumulator.model.MultipleDiscounts {
 		value := accumulator.discountRatio
 		accumulator.model.DiscountRatio = &value

@@ -51,7 +51,7 @@ func GetTaskRequestEvidenceDetail(c *gin.Context) {
 		return
 	}
 	isRoot := isRootViewer(c)
-	previews := service.GetEvidenceEventPreviews(evidence.Id, events, isRoot)
+	previews := service.GetEvidenceEventPreviews(events, isRoot, evidence.BodyExpired)
 	eventViews := make([]gin.H, 0, len(events))
 	for _, event := range events {
 		eventViews = append(eventViews, evidenceEventView(event, previews[event.Id]))
@@ -73,18 +73,16 @@ func GetTaskRequestEvidenceObject(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Evidence event not found"})
 		return
 	}
-	if event.ObjectKey == "" || evidence.BodyExpired {
-		c.JSON(http.StatusGone, gin.H{"success": false, "message": "Evidence body expired"})
-		return
-	}
-	store := service.GetTaskRequestEvidenceStore()
-	if store == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "Evidence storage is not enabled"})
-		return
-	}
-	payload, err := store.Get(event.ObjectKey)
-	if err != nil || service.EvidenceSha256Hex(payload) != event.Sha256 {
-		c.JSON(http.StatusGone, gin.H{"success": false, "message": "Evidence body is no longer available"})
+	payload, bodyStatus := service.ReadEvidenceEventBody(event, evidence.BodyExpired)
+	if bodyStatus != "available" {
+		status, message := http.StatusGone, "Evidence body is no longer available"
+		if bodyStatus == "expired" || bodyStatus == "not_recorded" {
+			message = "Evidence body expired"
+		}
+		if bodyStatus == "storage_unavailable" {
+			status, message = http.StatusServiceUnavailable, "Evidence storage is not enabled"
+		}
+		c.JSON(status, gin.H{"success": false, "message": message, "body_status": bodyStatus})
 		return
 	}
 	model.RecordTaskRequestEvidenceAccess(evidence.Id, int64(c.GetInt("id")), "download", "original")
@@ -130,7 +128,7 @@ func evidenceIndexView(evidence *model.TaskRequestEvidence, includeDiagnostics b
 	return view
 }
 
-func evidenceEventView(event *model.TaskRequestEvidenceEvent, preview string) gin.H {
+func evidenceEventView(event *model.TaskRequestEvidenceEvent, preview service.EvidenceEventPreview) gin.H {
 	return gin.H{
 		"id":           event.Id,
 		"seq":          event.Seq,
@@ -144,7 +142,8 @@ func evidenceEventView(event *model.TaskRequestEvidenceEvent, preview string) gi
 		"stored_bytes": event.StoredBytes,
 		"complete":     event.Complete,
 		"redacted":     event.Redacted,
-		"preview":      preview,
+		"preview":      preview.Text,
+		"body_status":  preview.BodyStatus,
 		"detail":       service.EvidenceAdminPreview(event.Detail),
 		"created_at":   event.CreatedAt,
 		"has_body":     event.ObjectKey != "",

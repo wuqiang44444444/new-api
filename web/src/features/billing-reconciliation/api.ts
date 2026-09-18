@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
+import { assertCustomerBillingPrecision } from './billing-precision'
 import type {
   ApiResponse,
   BillingEnvelope,
@@ -39,6 +40,7 @@ export async function getSelfCustomerStatement(params: PeriodParams) {
   const response = await api.get<
     ApiResponse<BillingEnvelope<CustomerStatement>>
   >('/api/billing/statement/self', { params })
+  assertCustomerBillingPrecision(response.data)
   return response.data
 }
 
@@ -48,6 +50,7 @@ export async function getAdminCustomerStatement(
   const response = await api.get<
     ApiResponse<BillingEnvelope<CustomerStatement>>
   >('/api/billing/admin/customer-summary', { params })
+  assertCustomerBillingPrecision(response.data)
   return response.data
 }
 
@@ -64,6 +67,7 @@ export async function getAdminCustomerStatements(
   const response = await api.get<
     ApiResponse<BillingEnvelope<CustomerStatementList>>
   >('/api/billing/admin/customer-statements', { params })
+  assertCustomerBillingPrecision(response.data)
   return response.data
 }
 

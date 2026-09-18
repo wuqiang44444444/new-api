@@ -25,12 +25,12 @@ import { beforeAll, describe, expect, test } from 'vitest'
 
 import { Form } from '@/components/ui/form'
 
+import { publishedSeedanceConfiguration } from '../../../lib/__tests__/seedance-plugin-fixture'
 import type { AssetTenantBoundaryChange } from '../../../lib/asset-tenant-boundary'
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
   type ChannelFormValues,
 } from '../../../lib/channel-form'
-import { publishedSeedanceConfiguration } from '../../../lib/__tests__/seedance-plugin-fixture'
 import { SeedanceProtocolFields } from '../seedance-protocol-fields'
 
 beforeAll(async () => {
@@ -183,14 +183,10 @@ describe('Seedance protocol fields', () => {
     })
 
     await user.click(videoTrigger)
-    await user.click(
-      await screen.findByRole('option', { name: feicaiLabel })
-    )
+    await user.click(await screen.findByRole('option', { name: feicaiLabel }))
 
     expect(videoTrigger.textContent).toContain(feicaiLabel)
-    expect(assetTrigger.textContent).toContain(
-      declaredAssetLabel('none')
-    )
+    expect(assetTrigger.textContent).toContain(declaredAssetLabel('none'))
   })
 
   test('pairs FunCloud ModelArk V3 with the FunCloud material library', async () => {

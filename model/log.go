@@ -100,7 +100,7 @@ func ensureLogRequestId(log *Log) {
 
 func createLog(log *Log) error {
 	ensureLogRequestId(log)
-	return LOG_DB.Create(log).Error
+	return trackBillingStatementLogWriteFailure(log, LOG_DB.Create(log).Error)
 }
 
 func clickHouseLogOrder(prefix string) string {
@@ -732,6 +732,17 @@ func DeleteOldLogBatch(ctx context.Context, targetTimestamp int64, limit int) (i
 		return total, nil
 	}
 
+	// 账单版本固化保留接线（docs/80-dev/2026-09-17 方案 10.6）：同库来源跟踪已接线时（不受功能开关影响），
+	// 在删除同一集合的同事务标记受影响客户月的来源保留状态并递增修订；其余情况保持原有直删。
+	if ShouldTrackBillingStatementRevision() {
+		var affected int64
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			var err error
+			affected, err = DeleteBillingStatementSettlementLogsTx(ctx, tx, targetTimestamp, limit)
+			return err
+		})
+		return affected, err
+	}
 	result := LOG_DB.WithContext(ctx).Where("created_at < ?", targetTimestamp).Limit(limit).Delete(&Log{})
 	if nil != result.Error {
 		return 0, result.Error

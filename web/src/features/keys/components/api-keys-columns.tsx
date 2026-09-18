@@ -28,6 +28,7 @@ import { getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay } from '@/lib/currency'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
+import { getSelfCustomerContract } from '../api'
 import { API_KEY_STATUSES } from '../constants'
 import type { ApiKey } from '../types'
 import { ApiKeyGroupCell } from './api-key-group-cell'
@@ -69,6 +70,11 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
   const { meta: currency } = getCurrencyDisplay()
   const quotaUnit = currency.kind === 'tokens' ? t('Tokens') : currency.symbol
   const groupRatios = useGroupRatios()
+  const contractsQuery = useQuery({
+    queryKey: ['self-customer-contract'],
+    queryFn: getSelfCustomerContract,
+    staleTime: 60 * 1000,
+  })
   const shouldReduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const justNowLabel = t('Just now')
@@ -104,6 +110,44 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       ),
       size: 180,
       meta: { mobileTitle: true },
+    },
+    {
+      accessorKey: 'contract_id',
+      header: t('Contract'),
+      cell: ({ row }) => {
+        const contractId = row.original.contract_id
+        if (!contractId) {
+          return (
+            <span className='text-muted-foreground'>{t('No contract')}</span>
+          )
+        }
+        const contract =
+          !contractsQuery.isError && contractsQuery.data?.success
+            ? contractsQuery.data.data?.contracts.find(
+                (item) => item.id === contractId
+              )
+            : undefined
+        return (
+          <div className='min-w-0 break-words whitespace-normal'>
+            {contract ? (
+              contract.name
+            ) : (
+              <>
+                <span>{t('Contract #{{id}}', { id: contractId })}</span>
+                <span className='text-muted-foreground ml-2'>
+                  {contractsQuery.isLoading
+                    ? t('Loading...')
+                    : t('Unavailable')}
+                </span>
+              </>
+            )}
+          </div>
+        )
+      },
+      enableSorting: false,
+      size: 200,
+      minSize: 160,
+      meta: { mobileHidden: true },
     },
     {
       accessorKey: 'status',

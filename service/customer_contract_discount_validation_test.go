@@ -40,7 +40,7 @@ func TestContractDiscountConsumersRejectInvalidSnapshots(t *testing.T) {
 	}
 }
 
-func TestContractDiscountConsumersPreserveUnlistedAndDeduplicatedModels(t *testing.T) {
+func TestContractDiscountConsumersRejectUnlistedAndDeduplicateModels(t *testing.T) {
 	snapshot := &model.ContractEntitySnapshot{Id: 903, UserId: 904, Version: 2, Enabled: true, Rules: []model.ContractEntityRule{
 		{PublicModel: "demo", ChannelId: 1, RatioUnits: 80_000_000},
 		{PublicModel: "demo", ChannelId: 2, RatioUnits: 80_000_000},
@@ -52,7 +52,7 @@ func TestContractDiscountConsumersPreserveUnlistedAndDeduplicatedModels(t *testi
 	require.NotNil(t, fact)
 	assert.Equal(t, int64(80_000_000), fact.RatioUnits)
 	fact, err = ResolveContractEntityRule(snapshot.UserId, 1, snapshot.Id, "unlisted")
-	require.NoError(t, err)
+	require.ErrorIs(t, err, ErrCustomerContractScope)
 	assert.Nil(t, fact)
 	views, err := BuildContractEntityUserViews([]model.ContractEntitySnapshot{*snapshot})
 	require.NoError(t, err)

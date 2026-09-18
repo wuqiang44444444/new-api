@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/geminiimage"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -38,6 +39,16 @@ func SetupGenerateContentImageHeader(c *gin.Context, header *http.Header) {
 	}
 }
 
+// HasGenerateContentImageRequest preserves the family chosen before sending,
+// even if an administrator changes the registration while Google is responding.
+func HasGenerateContentImageRequest(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	_, converted := c.Get(geminiImageResponseFormatKey)
+	return converted
+}
+
 // SupportsGenerateContentImage reports whether the mapped upstream model is a
 // registered imagine model served through generateContent.
 func SupportsGenerateContentImage(upstreamModel string) bool {
@@ -59,7 +70,7 @@ func ConvertImageRequestToGenerateContent(c *gin.Context, info *relaycommon.Rela
 		c.Set(geminiImageResponseFormatKey, contract.ResponseFormat)
 		c.Set(geminiImageSizeKey, contract.Size)
 	}
-	if info != nil && info.UpstreamModelName == "" {
+	if info != nil && info.ChannelMeta != nil && info.UpstreamModelName == "" {
 		info.UpstreamModelName = contract.Model
 	}
 	return geminiRequest, nil
@@ -89,9 +100,21 @@ func ParseGeminiImageContract(c *gin.Context, info *relaycommon.RelayInfo, reque
 		// P14：显式 stream=true 未发布（无 SSE 中间成品，不拿 thought 冒充）。
 		return nil, GeminiImageBadRequest("stream is not supported for gemini image models")
 	}
-	if !IsValidGeminiImageSizeToken(contract.Size) {
+	providerModel := contract.Model
+	if info != nil && info.ChannelMeta != nil && info.UpstreamModelName != "" {
+		providerModel = info.UpstreamModelName
+	}
+	if _, _, err := geminiimage.Resolve(providerModel, contract.Size); err != nil {
 		// E6：非法 size 显式报错，不静默回退 Provider 默认（评审 S10）。
-		return nil, GeminiImageBadRequest("size must be auto or a supported WxH size with an exact aspect ratio (dimensions up to 4096)")
+		return nil, GeminiImageBadRequest(err.Error())
+	}
+	if info != nil && info.ChannelMeta != nil {
+		limit := geminiimage.InlineImageLimit(providerModel, info.ChannelType)
+		for _, input := range contract.Images {
+			if !input.IsURL() && limit > 0 && len(input.Data) > limit {
+				return nil, GeminiImageBadRequest(fmt.Sprintf("each inline image must not exceed %d decoded bytes", limit))
+			}
+		}
 	}
 	if contract.ResponseFormat == "url" {
 		ctx := context.Background()
@@ -108,7 +131,7 @@ func ParseGeminiImageContract(c *gin.Context, info *relaycommon.RelayInfo, reque
 	}
 	parsed := &GeminiImageContract{
 		Operation: contract.Operation,
-		Model:     contract.Model,
+		Model:     providerModel,
 		Prompt:    contract.Prompt,
 		Size:      contract.Size,
 		Images:    contract.Images,
@@ -135,6 +158,10 @@ type GeminiImageContract struct {
 // BuildGenerateContentImageRequest is the pure conversion core shared by the
 // sync relay path and the async image worker.
 func BuildGenerateContentImageRequest(contract *GeminiImageContract) (*dto.GeminiChatRequest, error) {
+	aspectRatio, imageSize, err := geminiimage.Resolve(contract.Model, contract.Size)
+	if err != nil {
+		return nil, GeminiImageBadRequest(err.Error())
+	}
 	parts := make([]dto.GeminiPart, 0, len(contract.Images)+1)
 	parts = append(parts, dto.GeminiPart{Text: contract.Prompt})
 	for _, image := range contract.Images {
@@ -153,7 +180,7 @@ func BuildGenerateContentImageRequest(contract *GeminiImageContract) (*dto.Gemin
 	generationConfig := dto.GeminiChatGenerationConfig{
 		ResponseModalities: []string{"TEXT", "IMAGE"},
 	}
-	if aspectRatio, imageSize, ok := SizeToGeminiImageConfig(contract.Size); ok {
+	if aspectRatio != "" {
 		imageConfig := map[string]any{"aspectRatio": aspectRatio}
 		if imageSize != "" {
 			imageConfig["imageSize"] = imageSize
@@ -177,89 +204,12 @@ func BuildGenerateContentImageRequest(contract *GeminiImageContract) (*dto.Gemin
 // aspect-ratio + resolution-tier vocabulary (P4/P5)。ok=false 表示使用
 // Provider 默认（不发送 imageConfig）。
 func SizeToGeminiImageConfig(size string) (aspectRatio, imageSize string, ok bool) {
-	size = strings.TrimSpace(size)
-	if size == "" || strings.EqualFold(size, "auto") {
-		return "", "", false
-	}
-
-	width, height, err := parsePixelSize(size)
-	if err != nil {
-		return "", "", false
-	}
-	ratio := PixelSizeToGeminiAspectRatio(width, height)
-	return ratio, PixelSizeToGeminiImageSize(width, height), ratio != "" && width <= 4096 && height <= 4096
-}
-
-// IsValidGeminiImageSizeToken 报告 size 是否属于本族已发布取值：空、
-// auto 或精确支持比例的 WxH；不接受 Provider 私有比例字符串。
-func IsValidGeminiImageSizeToken(size string) bool {
-	size = strings.TrimSpace(size)
-	if size == "" || strings.EqualFold(size, "auto") {
-		return true
-	}
-	w, h, err := parsePixelSize(size)
-	return err == nil && w <= 4096 && h <= 4096 && PixelSizeToGeminiAspectRatio(w, h) != ""
+	aspectRatio, imageSize, err := geminiimage.Resolve("", size)
+	return aspectRatio, imageSize, err == nil && aspectRatio != ""
 }
 
 func parsePixelSize(size string) (int, int, error) {
-	lower := strings.ToLower(size)
-	x := strings.Index(lower, "x")
-	if x <= 0 || x == len(size)-1 {
-		return 0, 0, fmt.Errorf("invalid size %q", size)
-	}
-	width, err := atoiPositive(size[:x])
-	if err != nil {
-		return 0, 0, err
-	}
-	height, err := atoiPositive(size[x+1:])
-	if err != nil {
-		return 0, 0, err
-	}
-	return width, height, nil
-}
-
-func atoiPositive(value string) (int, error) {
-	parsed := 0
-	for _, r := range value {
-		if r < '0' || r > '9' {
-			return 0, fmt.Errorf("invalid number %q", value)
-		}
-		parsed = parsed*10 + int(r-'0')
-		if parsed > 1_000_000 {
-			return 0, fmt.Errorf("size dimension %q is out of range", value)
-		}
-	}
-	if parsed == 0 {
-		return 0, fmt.Errorf("size dimension must be positive")
-	}
-	return parsed, nil
-}
-
-// PixelSizeToGeminiAspectRatio picks Google's closest supported aspect ratio
-// without cropping or stretching (P5)。
-func PixelSizeToGeminiAspectRatio(width, height int) string {
-	for _, ratio := range [][2]int{{1, 1}, {2, 3}, {3, 2}, {3, 4}, {4, 3}, {4, 5}, {5, 4}, {9, 16}, {16, 9}, {21, 9}} {
-		if width*ratio[1] == height*ratio[0] {
-			return fmt.Sprintf("%d:%d", ratio[0], ratio[1])
-		}
-	}
-	return ""
-}
-
-// PixelSizeToGeminiImageSize picks the resolution tier by long edge (P4)。
-func PixelSizeToGeminiImageSize(width, height int) string {
-	longEdge := width
-	if height > longEdge {
-		longEdge = height
-	}
-	switch {
-	case longEdge >= 3000:
-		return "4K"
-	case longEdge >= 1700:
-		return "2K"
-	default:
-		return "1K"
-	}
+	return geminiimage.ParsePixels(size)
 }
 
 // GeminiImageResult is one final provider image (headless execution shape).
@@ -288,7 +238,14 @@ func ParseGenerateContentImageResponseBody(c *gin.Context, info *relaycommon.Rel
 		if err != nil {
 			return nil, nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
-		result, err := normalizeGeminiImagePixels(c, GeminiImageResult{MimeType: image.mimeType, Data: data})
+		result := GeminiImageResult{MimeType: image.mimeType, Data: data}
+		// Lite delivers native bytes, including provenance metadata. Other models
+		// retain their existing exact-pixel delivery contract.
+		if info == nil || info.ChannelMeta == nil || !geminiimage.Policy(info.UpstreamModelName).NativeOutput {
+			result, err = normalizeGeminiImagePixels(c, result)
+		} else {
+			err = validateNativeGeminiImagePixels(c, result)
+		}
 		if err != nil {
 			return nil, nil, types.NewError(err, types.ErrorCodeBadResponseBody, types.ErrOptionWithSkipRetry())
 		}
@@ -316,6 +273,11 @@ func GeminiGenerateContentImageHandler(c *gin.Context, info *relaycommon.RelayIn
 	decoded, usage, apiErr := ParseGenerateContentImageResponseBody(c, info, responseBody)
 	if apiErr != nil {
 		return nil, apiErr
+	}
+	if info != nil && info.ChannelMeta != nil {
+		if err := service.ValidateGeminiImageUsage(info.UpstreamModelName, usage); err != nil {
+			return nil, types.NewErrorWithStatusCode(err, "image_usage_incomplete", http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+		}
 	}
 
 	response := dto.ImageResponse{

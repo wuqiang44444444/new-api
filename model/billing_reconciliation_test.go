@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -19,7 +20,7 @@ func TestBillingReconciliationEmptyCollectionsEncodeAsArrays(t *testing.T) {
 	db := setupBillingReconciliationTestDB(t)
 	require.NoError(t, db.Create(&User{Id: 6, Username: "empty", Quota: 100}).Error)
 
-	statement, err := GetBillingCustomerStatement(6, 1000, 1500, "api_key", 0, "", "")
+	statement, err := GetBillingCustomerStatement(context.Background(), 6, 1000, 1500, "api_key", 0, "", "")
 	require.NoError(t, err)
 	require.NotNil(t, statement.Groups)
 	statementJSON, err := common.Marshal(statement)
@@ -43,7 +44,7 @@ func setupBillingReconciliationTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	DB, LOG_DB = db, db
-	require.NoError(t, db.AutoMigrate(&User{}, &Channel{}, &Log{}))
+	require.NoError(t, db.AutoMigrate(&User{}, &Channel{}, &Log{}, &Task{}))
 	require.NoError(t, migrateBillingReconciliationDB())
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
@@ -60,15 +61,15 @@ func TestBillingCustomerStatementAggregatesByDimensionAndBillingMode(t *testing.
 	require.NoError(t, db.Create(&User{Id: 7, Username: "customer", Quota: 8800}).Error)
 	require.NoError(t, db.Create(&[]Channel{{Id: 21, Name: "primary"}, {Id: 22, Name: "secondary"}}).Error)
 	logs := []Log{
-		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "token-model", PromptTokens: 100, CompletionTokens: 20, Quota: 1200, Other: `{"usage_semantic":"openai","group_ratio":0.8,"model_ratio":1,"cache_tokens":5,"cache_creation_tokens":3}`},
-		{UserId: 7, CreatedAt: 1200, Type: LogTypeConsume, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "call-model", Quota: 400, Other: `{"group_ratio":1,"model_price":0.002}`},
-		{UserId: 7, CreatedAt: 1250, Type: LogTypeRefund, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "call-model", Quota: 400, Other: `{"group_ratio":1,"model_price":0.002}`},
-		{UserId: 7, CreatedAt: 1300, Type: LogTypeConsume, TokenId: 12, TokenName: "key-b", ChannelId: 22, ModelName: "token-model", PromptTokens: 50, CompletionTokens: 10, Quota: 600, Other: `{"group_ratio":0.8,"model_ratio":1}`},
-		{UserId: 8, CreatedAt: 1300, Type: LogTypeConsume, TokenId: 11, TokenName: "other", ChannelId: 21, ModelName: "token-model", PromptTokens: 999, Quota: 999, Other: `{"group_ratio":1,"model_ratio":1}`},
+		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "token-model", PromptTokens: 100, CompletionTokens: 20, Quota: 1200, Other: `{"contract_applicable":false,"usage_semantic":"openai","group_ratio":0.8,"model_ratio":1,"cache_tokens":5,"cache_creation_tokens":3}`},
+		{UserId: 7, CreatedAt: 1200, Type: LogTypeConsume, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "call-model", Quota: 400, Other: `{"contract_applicable":false,"group_ratio":1,"model_price":0.002}`},
+		{UserId: 7, CreatedAt: 1250, Type: LogTypeRefund, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "call-model", Quota: 400, Other: `{"contract_applicable":false,"group_ratio":1,"model_price":0.002}`},
+		{UserId: 7, CreatedAt: 1300, Type: LogTypeConsume, TokenId: 12, TokenName: "key-b", ChannelId: 22, ModelName: "token-model", PromptTokens: 50, CompletionTokens: 10, Quota: 600, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1}`},
+		{UserId: 8, CreatedAt: 1300, Type: LogTypeConsume, TokenId: 11, TokenName: "other", ChannelId: 21, ModelName: "token-model", PromptTokens: 999, Quota: 999, Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`},
 	}
 	require.NoError(t, db.Create(&logs).Error)
 
-	statement, err := GetBillingCustomerStatement(7, 1000, 1500, "api_key", 0, "", "")
+	statement, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1500, "api_key", 0, "", "")
 	require.NoError(t, err)
 	require.Len(t, statement.Groups, 2)
 	require.NotNil(t, statement.CurrentBalance)
@@ -98,7 +99,7 @@ func TestBillingCustomerStatementAggregatesByDimensionAndBillingMode(t *testing.
 	assert.EqualValues(t, 1, callItem.Usage.RefundedCalls)
 	assert.Zero(t, callItem.Usage.NetQuota)
 
-	channelStatement, err := GetBillingCustomerStatement(7, 1000, 1500, "channel", 21, "", "")
+	channelStatement, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1500, "channel", 21, "", "")
 	require.NoError(t, err)
 	require.Len(t, channelStatement.Groups, 1)
 	assert.Equal(t, "primary", channelStatement.Groups[0].Name)
@@ -109,11 +110,11 @@ func TestBillingCustomerStatementDoesNotExposePartialOriginalQuota(t *testing.T)
 	db := setupBillingReconciliationTestDB(t)
 	require.NoError(t, db.Create(&User{Id: 17, Username: "partial", Quota: 1000}).Error)
 	require.NoError(t, db.Create(&[]Log{
-		{UserId: 17, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "key", ChannelId: 21, ModelName: "model", PromptTokens: 10, Quota: 800, Other: `{"group_ratio":0.8,"model_ratio":1}`},
+		{UserId: 17, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "key", ChannelId: 21, ModelName: "model", PromptTokens: 10, Quota: 800, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1}`},
 		{UserId: 17, CreatedAt: 1200, Type: LogTypeConsume, TokenId: 11, TokenName: "key", ChannelId: 21, ModelName: "model", PromptTokens: 10, Quota: 500, Other: `{"model_ratio":1}`},
 	}).Error)
 
-	statement, err := GetBillingCustomerStatement(17, 1000, 1500, "api_key", 0, "", "")
+	statement, err := GetBillingCustomerStatement(context.Background(), 17, 1000, 1500, "api_key", 0, "", "")
 	require.NoError(t, err)
 	require.Len(t, statement.Groups, 1)
 	require.Len(t, statement.Groups[0].Models, 1)
@@ -129,7 +130,7 @@ func TestBillingCustomerStatementDoesNotExposePartialOriginalQuota(t *testing.T)
 func TestBillingReconciliationUsesFrozenSnapshotPricingBeforeLegacyTopLevelFacts(t *testing.T) {
 	parsed := parseBillingReconciliationLog(billingReconciliationLog{
 		PromptTokens: 10,
-		Other:        `{"group_ratio":0.5,"admin_info":{"statement_snapshot":{"snapshot_version":1,"billing_mode":"token","provider_model":"provider-model","group_ratio":0.8,"model_ratio":2}}}`,
+		Other:        `{"contract_applicable":false,"group_ratio":0.5,"admin_info":{"statement_snapshot":{"snapshot_version":1,"billing_mode":"token","provider_model":"provider-model","group_ratio":0.8,"model_ratio":2}}}`,
 	})
 
 	require.NotNil(t, parsed.discountRatio)
@@ -147,7 +148,7 @@ func TestBillingReconciliationSeparatesContractDiscountFromGroupRatio(t *testing
 		Other: `{"group_ratio":0.8,"contract_discount":"0.5","model_ratio":1}`,
 	}).Error)
 
-	statement, err := GetBillingCustomerStatement(18, 1000, 1500, "api_key", 0, "", "")
+	statement, err := GetBillingCustomerStatement(context.Background(), 18, 1000, 1500, "api_key", 0, "", "")
 	require.NoError(t, err)
 	item := statement.Groups[0].Models[0]
 	require.NotNil(t, item.OriginalQuota)

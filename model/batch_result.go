@@ -110,7 +110,10 @@ func SumBatchJobQuota(jobID string) (int64, error) {
 // The task's settled balance is durable before log projection. The job stays
 // pending until its deterministic log is present, so a crash can retry safely.
 func CompleteBatchSettlement(job *BatchJob, task *Task, target int, other *LogOther, promptTokens, completionTokens int) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+	var terminalStatus TaskStatus = TaskStatusFailure
+	settledThisCall := false
+	terminalFailReason := ""
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		current, err := lockBatchPollTx(tx, job)
 		if err != nil {
 			return err
@@ -151,20 +154,33 @@ func CompleteBatchSettlement(job *BatchJob, task *Task, target int, other *LogOt
 		// Commit the terminal Task projection with the completed job. Otherwise a
 		// crash after completing the job removes it from polling before the Task
 		// can reach its terminal state.
-		status := TaskStatusFailure
+		var status TaskStatus = TaskStatusFailure
 		if current.PublicStatus == "completed" {
 			status = TaskStatusSuccess
 		} else if current.PublicStatus == "cancelled" {
 			status = TaskStatusCancelled
 		}
+		terminalStatus = status
+		terminalFailReason = current.SanitizeError
 		if err := tx.Model(&Task{}).Where("id = ?", task.ID).Updates(map[string]any{
 			"status": status, "progress": "100%", "finish_time": common.GetTimestamp(),
 			"fail_reason": current.SanitizeError,
 		}).Error; err != nil {
 			return err
 		}
+		settledThisCall = true
 		return tx.Model(current).Updates(map[string]any{"settle_state": BatchSettleSettled, "target_quota": target}).Error
 	})
+	if err == nil && settledThisCall && (terminalStatus == TaskStatusFailure || terminalStatus == TaskStatusExpired) {
+		// 错误事件（仅观察）：settle_state 幂等保证只在本次真实结算提交后记录；
+		// 失败可见不等到资金结算成功之后的口径由 settle 事务本身保证。
+		// 用副本携带终态，不改写调用方的 task。
+		settledTask := *task
+		settledTask.Status = terminalStatus
+		settledTask.FailReason = terminalFailReason
+		submitTaskFailureEvent(&settledTask, "", "batch_settlement")
+	}
+	return err
 }
 
 type BatchBillingLineView struct {

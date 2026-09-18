@@ -6,9 +6,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	taskdto "github.com/QuantumNous/new-api/dto"
@@ -95,6 +97,16 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	defer func() {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
+			// 错误事件诊断（仅观察）：补充公开错误类型/码与最终失败尝试的模型、渠道，
+			// 不改变响应语义；详见 docs/80-dev/2026-09-17-全量错误日志独立菜单分析与方案.md。
+			clienterrlog.Attach(c.Request.Context(), clienterrlog.Report{
+				Stage:      "relay",
+				Reason:     clienterrlog.SanitizeLogValue(string(newAPIError.GetErrorType()), 64),
+				PublicCode: clienterrlog.SanitizeLogValue(string(newAPIError.GetErrorCode()), 64),
+				Model:      c.GetString("original_model"),
+				ChannelID:  common.GetContextKeyInt(c, constant.ContextKeyChannelId),
+				Detail:     map[string]string{"source_status": strconv.Itoa(newAPIError.StatusCode)},
+			})
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
@@ -128,6 +140,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	if newAPIError = relay.PrepareImageResponseFormat(c, relayInfo); newAPIError != nil {
+		return
+	}
+	// 流式异常观察（仅观察）：退出时读取最终尝试的流式状态，经请求载体合并进
+	// 请求级错误事件；正常完成不产生标记，不改变流式与返回语义。
+	defer service.ObserveRelayStreamError(c, relayInfo)
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
 	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
@@ -208,6 +226,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		// 显式图片异步受理由受理事务自持资金：组级 tiered 预扣也必须跳过，
 		// 否则与受理内钱包预扣形成第二条资金路径（评审 S2）。
 		if !(relayFormat == types.RelayFormatOpenAIImage && relay.ImageAsyncPreferRequested(c)) {
+			if billingErr := prepareCustomerContractRelayBilling(c, relayInfo, tokens, meta); billingErr != nil {
+				newAPIError = billingErr
+				break
+			}
 			if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
 				newAPIError = billingErr
 				break
@@ -587,9 +609,8 @@ func RelayTask(c *gin.Context) {
 		return
 	}
 
-	// 冻结 Link 客户合同折扣事实：必须在 executeTaskSubmission 之前完成。
-	// 合同只提供折扣；实际执行组与渠道沿用原生分发与任务亲和结果。
-	if relayInfo.ContractBillingFact == nil && relayInfo.OriginModelName != "" {
+	// 新提交在原任务解析后校验当前合同，并冻结本次折扣与实际组。
+	if relayInfo.OriginModelName != "" {
 		contractFact, contractErr := middleware.ApplyCustomerContractResolvedModel(c, relayInfo.OriginModelName)
 		if contractErr != nil {
 			respondTaskSubmissionError(c, service.TaskErrorWrapperLocal(contractErr, "model_not_allowed", http.StatusForbidden))
@@ -597,6 +618,7 @@ func RelayTask(c *gin.Context) {
 		}
 		if contractFact != nil {
 			relayInfo.ContractBillingFact = contractFact
+			relayInfo.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, relayInfo)
 		}
 	}
 

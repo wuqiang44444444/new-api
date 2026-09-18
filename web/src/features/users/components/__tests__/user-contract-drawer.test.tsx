@@ -418,7 +418,9 @@ describe('admin customer contract entity drawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save contract' }))
     await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
     expect(toast.success).toHaveBeenCalledWith('Customer contract saved')
-    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith('Loading failed'))
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Loading failed')
+    )
     expect(toast.error).not.toHaveBeenCalledWith('audit read unavailable')
     expect(
       (screen.getByLabelText('Change reason') as HTMLInputElement).value

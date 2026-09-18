@@ -435,7 +435,7 @@ func GetAllUnFinishSyncTasks(limit int) []*Task {
 func HasUnfinishedSyncTasks() bool {
 	var id int64
 	err := DB.Model(&Task{}).
-		Where("progress != ?", "100%").
+		Where("(progress < ? OR progress > ?)", "100%", "100%").
 		Where("status NOT IN ?", TerminalTaskStatuses()).
 		Where("client_protocol IS NULL OR client_protocol <> ?", TaskClientProtocolImageOpenAIV1).
 		Where("platform <> ?", constant.TaskPlatformAzureBatch).
@@ -591,11 +591,20 @@ func (t *Task) UpdateQuota() error {
 // zero rows, which silently bypasses the CAS guard.
 func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
 	if t.HasSeedanceBillingFacts() {
-		return t.updateSeedanceObservation(fromStatus)
+		won, err := t.updateSeedanceObservation(fromStatus)
+		if won {
+			// 错误事件（仅观察）：失败终态真实迁移提交后登记，CAS 结果天然防重。
+			submitTaskFailureEvent(t, fromStatus, "task_lifecycle")
+		}
+		return won, err
 	}
 	result := DB.Model(t).Where("status = ?", fromStatus).Select("*").Updates(t)
 	if result.Error != nil {
 		return false, result.Error
+	}
+	if result.RowsAffected > 0 {
+		// 错误事件（仅观察）：同上；won=false（他人已迁移）不产生事件。
+		submitTaskFailureEvent(t, fromStatus, "task_lifecycle")
 	}
 	return result.RowsAffected > 0, nil
 }

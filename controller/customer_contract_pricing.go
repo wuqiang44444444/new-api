@@ -22,7 +22,7 @@ func tokenContractSnapshotForRequest(c *gin.Context) (*model.ContractEntitySnaps
 		return nil, nil
 	}
 	authVersion, _ := common.GetContextKeyType[int64](c, constant.ContextKeyAuthVersion)
-	snapshot, err := service.LoadContractEntityForRequest(c.GetInt("id"), authVersion, contractId)
+	snapshot, err := service.CustomerContractForRequest(c, c.GetInt("id"), authVersion, contractId)
 	if err != nil {
 		return nil, err
 	}
@@ -33,6 +33,7 @@ func tokenContractSnapshotForRequest(c *gin.Context) (*model.ContractEntitySnaps
 }
 
 func respondCustomerContractPricingLoadError(c *gin.Context) {
+	c.Abort()
 	c.JSON(http.StatusInternalServerError, gin.H{
 		"success": false,
 		"message": "customer contract pricing is temporarily unavailable",
@@ -75,9 +76,8 @@ func respondCustomerContractPricing(c *gin.Context) bool {
 	return respondContractDiscountOverlayPricing(c, snapshot)
 }
 
-// respondContractDiscountOverlayPricing serves the native pricing projection
-// (accessible models, execution modes, native group ratios) with the bound
-// contract's discounts applied on top. It mirrors GetPricing's native shape;
+// respondContractDiscountOverlayPricing scopes native model/group projections
+// to the selected contract. It mirrors GetPricing's native shape;
 // contracted models carry a per-group effective ratio override
 // (native group ratio × contract discount).
 func respondContractDiscountOverlayPricing(c *gin.Context, snapshot *model.ContractEntitySnapshot) bool {
@@ -118,11 +118,7 @@ func respondContractDiscountOverlayPricing(c *gin.Context, snapshot *model.Contr
 			delete(groupRatio, g)
 		}
 	}
-	usableGroups := make([]string, 0, len(usableGroup))
-	for g := range usableGroup {
-		usableGroups = append(usableGroups, g)
-	}
-	views, err := service.ApplyContractDiscountOverlay(pricing, usableGroups, userGroup, snapshot)
+	views, err := service.ProjectCustomerContractPricing(c, pricing, userGroup, snapshot, batch)
 	if err != nil {
 		respondCustomerContractPricingLoadError(c)
 		return true

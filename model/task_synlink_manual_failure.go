@@ -53,6 +53,7 @@ func RecoverSynlinkFailedTask(scope SynlinkFailureRecovery, apply bool) (*Task, 
 		return nil, ErrSynlinkRecoveryInvalidInput
 	}
 	var task Task
+	transitioned := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var operator User
 		if err := tx.Select("id", "username", "role", "status").First(&operator, scope.OperatorID).Error; err != nil {
@@ -138,12 +139,17 @@ func RecoverSynlinkFailedTask(scope SynlinkFailureRecovery, apply bool) (*Task, 
 		if result.RowsAffected != 1 {
 			return ErrSynlinkRecoveryTaskChanged
 		}
+		transitioned = true
 		return tx.Create(&AuditLog{EventId: eventID, UserId: operator.Id, Username: operator.Username, ActorRole: operator.Role,
 			CreatedAt: task.FinishTime, Category: AuditCategoryOperation, Action: "task.synlink_verified_failure", AuthMethod: "offline_maintenance", Success: true,
 			Content: "Manually verified historical video failure; refund requested", Other: AuditOther{RootInfo: AuditFields{"recovery": scope}}}).Error
 	})
 	if err != nil {
 		return nil, err
+	}
+	// Only the committed transition emits an event; audit-backed retries are reads.
+	if transitioned {
+		submitTaskFailureEvent(&task, TaskStatusReconciliationRequired, "manual_verification")
 	}
 	return &task, nil
 }

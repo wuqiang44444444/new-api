@@ -22,14 +22,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSeedanceContractProvidesDiscountOnlyAndKeepsNativeChannelRules(t *testing.T) {
+func TestSeedanceContractScopeUsesTypedEligibilityAndFailsClosed(t *testing.T) {
 	for _, tc := range []struct {
 		name                  string
 		enabled, dropContract bool
 		status                int
 	}{
 		{"bound-channel-enabled", true, false, http.StatusNoContent},
-		{"bound-channel-disabled-replacement-enabled", false, false, http.StatusNoContent},
+		{"bound-channel-disabled-replacement-enabled", false, false, http.StatusServiceUnavailable},
 		{"missing-contract-fails-closed", true, true, http.StatusServiceUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestSeedanceContractProvidesDiscountOnlyAndKeepsNativeChannelRules(t *testi
 			assert.Equal(t, tc.status == http.StatusNoContent, enteredSubmission, "rejected routing cannot reach pricing, hold or Provider submission")
 			assert.Equal(t, tc.status, recorder.Code)
 			if tc.status != http.StatusNoContent {
-				assert.Contains(t, recorder.Body.String(), "upstream_unavailable")
+				assert.Contains(t, recorder.Body.String(), "unavailable")
 			}
 		})
 	}

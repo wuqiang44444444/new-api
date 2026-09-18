@@ -53,6 +53,138 @@ function responseExample(schema, value) {
 }
 
 const approved = new Set(['example'])
+
+test('published JSON edit examples match their declared native or unified contract', () => {
+  const page = readFileSync(
+    new URL(
+      '../../public/docs-content/zh/api-reference/images/edits.md',
+      import.meta.url
+    ),
+    'utf8'
+  )
+  for (const [heading, schema] of [
+    ['### 原生 OpenAI JSON 编辑：对象数组', 'NativeImageEditJSONRequest'],
+    ['### 统一图片适配：字符串引用', 'UnifiedImageEditJSONRequest'],
+  ]) {
+    const start = page.indexOf(heading)
+    assert.ok(start >= 0)
+    const end = page.indexOf('\n##', start + heading.length)
+    const section = page.slice(start, end < 0 ? undefined : end)
+    let count = 0
+    for (const [, language, body] of section.matchAll(
+      /^```(json|bash)\n([\s\S]*?)^```/gm
+    )) {
+      const values =
+        language === 'json'
+          ? [body]
+          : [...body.matchAll(/-d\s+'([^']*)'/g)].map((match) => match[1])
+      for (const value of values) {
+        assert.doesNotThrow(() =>
+          validateOpenAPIExamples(
+            responseExample(schema, JSON.parse(value)),
+            approved
+          )
+        )
+        count += 1
+      }
+    }
+    assert.ok(count > 0, `${schema} needs a published example`)
+  }
+})
+
+test('native JSON edits require ordered reference objects and keep unified strings separate', () => {
+  const base = { model: 'customer-image-model', prompt: 'Red cup' }
+  const image = { image_url: 'https://example.com/cup.png' }
+  for (const value of [
+    { ...base, images: [image] },
+    { ...base, images: [image], response_format: 'url' },
+    { ...base, images: [image, { file_id: 'file-example' }], mask: image },
+    { ...base, images: Array(16).fill(image), quality: 'max' },
+  ]) {
+    assert.doesNotThrow(() =>
+      validateOpenAPIExamples(
+        responseExample('NativeImageEditJSONRequest', value),
+        approved
+      )
+    )
+    assert.doesNotThrow(() =>
+      validateOpenAPIExamples(
+        responseExample('ImageEditJSONRequest', value),
+        approved
+      )
+    )
+    assert.throws(
+      () =>
+        validateOpenAPIExamples(
+          responseExample('UnifiedImageEditJSONRequest', value),
+          approved
+        ),
+      /示例不符合合同/
+    )
+  }
+  for (const value of [
+    { ...base, image: image.image_url },
+    { ...base, images: [image.image_url] },
+    { ...base, images: [] },
+    { ...base, images: [image], image: image.image_url },
+    { ...base, images: [image, image.image_url] },
+    { ...base, images: [{ image_url: { url: image.image_url } }] },
+    { ...base, images: [{}] },
+    { ...base, images: [{ ...image, file_id: 'file-example' }] },
+    { ...base, images: Array(17).fill(image) },
+    { ...base, images: [image], mask: image.image_url },
+    { ...base, images: [image], response_format: 'invalid-format' },
+    { ...base, images: [image], n: 11 },
+  ]) {
+    assert.throws(
+      () =>
+        validateOpenAPIExamples(
+          responseExample('NativeImageEditJSONRequest', value),
+          approved
+        ),
+      /示例不符合合同/
+    )
+  }
+  assert.throws(
+    () =>
+      validateOpenAPIExamples(
+        responseExample('ImageEditJSONRequest', {
+          ...base,
+          images: [image, image.image_url],
+        }),
+        approved
+      ),
+    /示例不符合合同/
+  )
+})
+
+test('multipart image edits accept one file field convention', () => {
+  const base = { model: 'customer-image-model', prompt: 'Red cup' }
+  for (const value of [
+    { ...base, image: 'file bytes' },
+    { ...base, 'image[]': ['first', 'second'] },
+  ]) {
+    assert.doesNotThrow(() =>
+      validateOpenAPIExamples(
+        responseExample('ImageEditRequest', value),
+        approved
+      )
+    )
+  }
+  assert.throws(
+    () =>
+      validateOpenAPIExamples(
+        responseExample('ImageEditRequest', {
+          ...base,
+          image: 'first',
+          'image[]': ['second'],
+        }),
+        approved
+      ),
+    /示例不符合合同/
+  )
+})
+
 const edit = {
   model: 'customer-image-model',
   prompt: 'Red cup',

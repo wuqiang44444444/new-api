@@ -56,6 +56,7 @@
 
 ### 3.1 国际化
 
+- **语言范围（硬约束）**：仅需简体中文 `zh` 和英文 `en` 两个版本；新增、修改和验收文案只要求维护这两个版本，其他语言不要求补齐。技能或脚本说明中的全语言要求以[项目硬约束](../docs/00-context/硬约束.md)第 1 节为准。
 - **页面文本**：所有面向用户的文案均需支持 i18n，使用 `useTranslation()` 的 `t()` 进行翻译。
 - **使用场景**
   - **React 组件**：必须使用 `const { t } = useTranslation()`，以保证语言切换时组件会重新渲染。
@@ -92,14 +93,14 @@
 
 以下为常用检索入口，不能把本表当作完整组件清单：
 
-| 场景 | 优先检查的项目入口 |
-| --- | --- |
-| 通用弹窗布局 | `@/components/dialog` |
-| 删除、危险操作及普通确认 | `@/components/confirm-dialog` |
-| 复制按钮与剪贴板交互 | `@/components/copy-button`、`@/hooks/use-copy-to-clipboard` |
-| 空状态、加载状态、错误状态 | `@/components/empty-state`、`@/components/loading-state`、`@/components/error-state` |
-| 表格、分页、工具栏及列表布局 | `@/components/data-table`，先读该目录的 `README.md` 和公开导出 |
-| 按钮、输入、选择、提示等基础控件 | `@/components/ui/`，以 `components.json` 和本地实现为准 |
+| 场景                             | 优先检查的项目入口                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------ |
+| 通用弹窗布局                     | `@/components/dialog`                                                                |
+| 删除、危险操作及普通确认         | `@/components/confirm-dialog`                                                        |
+| 复制按钮与剪贴板交互             | `@/components/copy-button`、`@/hooks/use-copy-to-clipboard`                          |
+| 空状态、加载状态、错误状态       | `@/components/empty-state`、`@/components/loading-state`、`@/components/error-state` |
+| 表格、分页、工具栏及列表布局     | `@/components/data-table`，先读该目录的 `README.md` 和公开导出                       |
+| 按钮、输入、选择、提示等基础控件 | `@/components/ui/`，以 `components.json` 和本地实现为准                              |
 
 - 使用函数式组件与 Hooks，单一职责；组件 props 须有明确类型（接口或类型别名）。
 - **Props 使用**：组件 props 非必要不要解构，直接使用 `props.xxx` 访问属性，保持代码清晰（详见 [3.2 代码风格与类型](#32-代码风格与类型)）。

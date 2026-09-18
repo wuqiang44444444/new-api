@@ -83,16 +83,21 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
   const assetConfiguration = props.configuration.assets.find(
     (asset) => asset.protocol === assetProtocol
   )
-  const videoOptions = props.configuration.videos.map(video => ({value:video.protocol,labelKey:video.label}))
-  const assetOptions = props.configuration.assets.map(asset => ({value:asset.protocol,labelKey:asset.label}))
+  const videoOptions = props.configuration.videos.map((video) => ({
+    value: video.protocol,
+    labelKey: video.label,
+  }))
+  const assetOptions = props.configuration.assets.map((asset) => ({
+    value: asset.protocol,
+    labelKey: asset.label,
+  }))
   const usesAssets = assetProtocol && assetProtocol !== 'none'
   const usesHostedAssets = assetConfiguration?.groupPolicy === 'hosted'
   const usesOfficialAssets = assetConfiguration?.credential === 'asset_key_pair'
   const usesVolcengineAssets =
     assetProtocol === 'volcengine_assets_action_v2024_01_01'
   const usesCMCCAssets = assetProtocol === 'cmcc_aicc_assets_v2'
-  const compatibleAssetProtocols =
-    videoConfiguration?.assetProtocols ?? []
+  const compatibleAssetProtocols = videoConfiguration?.assetProtocols ?? []
   const compatibleAssetOptions = assetOptions.filter((option) =>
     compatibleAssetProtocols.includes(option.value as SeedanceAssetProtocol)
   )
@@ -181,8 +186,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
                   const nextAssetProtocol =
                     props.configuration.videos.find(
                       (video) => video.protocol === nextVideoProtocol
-                    )?.defaultAssetProtocol ??
-                    'none'
+                    )?.defaultAssetProtocol ?? 'none'
                   const nextAssetConfiguration =
                     props.configuration.assets.find(
                       (asset) => asset.protocol === nextAssetProtocol
@@ -194,8 +198,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
                   })
                   form.setValue(
                     'asset_min_url_ttl_seconds',
-                    nextAssetConfiguration?.defaultURLTTLSeconds ??
-                      0,
+                    nextAssetConfiguration?.defaultURLTTLSeconds ?? 0,
                     { shouldDirty: true, shouldValidate: true }
                   )
                   form.setValue(
@@ -299,7 +302,6 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
                     }
                     return
                   }
-
                 }}
                 disabled={props.sensitiveLocked}
               >
@@ -414,9 +416,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
           />
         </>
       ) : null}
-      {(
-        assetConfiguration?.project
-      ) ? (
+      {assetConfiguration?.project ? (
         <FormField
           control={props.control}
           name='asset_provider_project'
@@ -438,9 +438,7 @@ export function SeedanceProtocolFields(props: SeedanceProtocolFieldsProps) {
           )}
         />
       ) : null}
-      {(
-        assetConfiguration?.region
-      ) ? (
+      {assetConfiguration?.region ? (
         <FormField
           control={props.control}
           name='asset_region'

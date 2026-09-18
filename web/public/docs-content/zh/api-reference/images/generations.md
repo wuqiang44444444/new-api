@@ -1,7 +1,7 @@
 ---
 page-id: images-generations
 kind: api-reference
-last-verified: 2026-09-16
+last-verified: 2026-09-17
 operations:
   - createImageGeneration
 ---
@@ -49,24 +49,24 @@ curl "{{OPENAI_BASE_URL}}/images/generations" \
 
 ## 请求参数
 
-| 字段 | 类型 | 必填 | 取值与说明 |
-| --- | --- | --- | --- |
-| `model` | string | 是 | `GET /v1/models` 返回且当前 Key 可访问的图片模型 |
-| `prompt` | string | 是 | 图片描述或生成指令 |
-| `n` | integer | 否 | 输出数量；公共安全上限为 `128`，实际范围读取模型的 `minimum` / `maximum` / `fixed_value`；许多模型固定为 `1`，不能按公共上限批量请求 |
-| `size` | string | 否 | 输出尺寸或分辨率；只发送模型目录列出的值，使用小写字母 `x`，不要使用乘号 `×` |
-| `quality` | string | 否 | 质量档位；可选值和默认值由模型合同决定 |
-| `style` | string | 否 | 风格；公共 OpenAPI 值为 `vivid` 或 `natural`，仅模型公开该字段时可用 |
-| `response_format` | string | 否 | `url` 或 `b64_json`；默认行为由模型决定 |
-| `user` | string | 否 | 调用方自定义的最终用户标识；仅模型公开该字段时使用 |
-| `background` | string | 否 | 背景设置，例如透明背景能力；取值由模型合同决定 |
-| `moderation` | string | 否 | 内容审核设置；取值由模型合同决定 |
-| `output_format` | string | 否 | 输出文件格式；取值由模型合同决定 |
-| `output_compression` | integer | 否 | 输出压缩参数；范围由模型合同决定 |
-| `partial_images` | integer | 否 | 流式响应中希望接收的部分图片数量；仅支持流式图片的模型可用 |
-| `stream` | boolean | 否 | `true` 返回 SSE；只有模型明确公开流式能力时才能使用 |
-| `watermark` | boolean | 否 | 是否添加水印；显式 `false` 会被保留，只有模型公开该字段时可用 |
-| `extra_fields` | object | 否 | 只接受模型参数表明确列出的子字段；例如 `extra_fields.aspect_ratio`，不得作为任意参数透传入口 |
+| 字段                 | 类型    | 必填 | 取值与说明                                                                                                                           |
+| -------------------- | ------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `model`              | string  | 是   | `GET /v1/models` 返回且当前 Key 可访问的图片模型                                                                                     |
+| `prompt`             | string  | 是   | 图片描述或生成指令                                                                                                                   |
+| `n`                  | integer | 否   | 输出数量；公共安全上限为 `128`，实际范围读取模型的 `minimum` / `maximum` / `fixed_value`；许多模型固定为 `1`，不能按公共上限批量请求 |
+| `size`               | string  | 否   | 输出尺寸或分辨率；有 `enum` 时从枚举选择，否则按模型支持的尺寸规则填写；使用小写字母 `x`，不要使用乘号 `×`                           |
+| `quality`            | string  | 否   | 质量档位；可选值和默认值由模型合同决定                                                                                               |
+| `style`              | string  | 否   | 风格；公共 OpenAPI 值为 `vivid` 或 `natural`，仅模型公开该字段时可用                                                                 |
+| `response_format`    | string  | 否   | `url` 或 `b64_json`；默认行为由模型决定                                                                                              |
+| `user`               | string  | 否   | 调用方自定义的最终用户标识；仅模型公开该字段时使用                                                                                   |
+| `background`         | string  | 否   | 背景设置，例如透明背景能力；取值由模型合同决定                                                                                       |
+| `moderation`         | string  | 否   | 内容审核设置；取值由模型合同决定                                                                                                     |
+| `output_format`      | string  | 否   | 输出文件格式；取值由模型合同决定                                                                                                     |
+| `output_compression` | integer | 否   | 输出压缩参数；范围由模型合同决定                                                                                                     |
+| `partial_images`     | integer | 否   | 流式响应中希望接收的部分图片数量；仅支持流式图片的模型可用                                                                           |
+| `stream`             | boolean | 否   | `true` 返回 SSE；只有模型明确公开流式能力时才能使用                                                                                  |
+| `watermark`          | boolean | 否   | 是否添加水印；显式 `false` 会被保留，只有模型公开该字段时可用                                                                        |
+| `extra_fields`       | object  | 否   | 只接受模型参数表明确列出的子字段；例如 `extra_fields.aspect_ratio`，不得作为任意参数透传入口                                         |
 
 ### 尺寸、画幅和参考图
 
@@ -74,6 +74,9 @@ curl "{{OPENAI_BASE_URL}}/images/generations" \
   只有模型公开对应值时才发送。不要把 `16:9` 填入像素尺寸字段。
 - 参数名 `extra_fields.aspect_ratio` 表示嵌套 JSON；仅当模型公开该字段和 `16:9` 时，才可发送
   `"extra_fields": {"aspect_ratio": "16:9"}`。不能发送名为 `"extra_fields.aspect_ratio"` 的顶层键。
+- 原生 GPT Image 默认返回 Base64，可用 `response_format` 选择非流式返回格式；URL 转换由本站完成；
+  `output_format` 是图片编码格式，与 URL／Base64 的交付方式不同。
+- `quality` 的档位以模型 `enum` 为准，不要把所有模型都限制为 low／medium／high。
 - 图片生成使用文本提示词；参考图请使用[图片编辑](api-reference/images/edits)的 `image` / `images`
   或文件表单，不要在生成请求中添加未公开的参考图字段。
 
@@ -81,10 +84,10 @@ curl "{{OPENAI_BASE_URL}}/images/generations" \
 
 已发布异步能力的模型可携带以下请求头：
 
-| 请求头 | 说明 |
-| --- | --- |
+| 请求头                  | 说明                                                                                                                                                                       |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Prefer: respond-async` | 显式选择平台任务，通过参数、资金及存储等受理检查后返回 `202`。OpenAI／Azure 原生图片入口可同时传 `stream=true`，由后台接收结果；Gemini／Vertex／图片中转入口仍拒绝这一组合 |
-| `Idempotency-Key` | 可选幂等键，仅异步模式支持；同键等价请求重放原任务 ID，不同请求体返回 `409`，去除首尾空白后最多 191 字节 |
+| `Idempotency-Key`       | 可选幂等键，仅异步模式支持；同键等价请求重放原任务 ID，不同请求体返回 `409`，去除首尾空白后最多 191 字节                                                                   |
 
 已发布此能力的图片生成与编辑沿用现有模型、参数和 Key。模型详情中的
 `api.image.async` 声明请求头与查询路径；`stream_priority=false` 表示流式不优先于异步偏好，
@@ -148,6 +151,39 @@ curl "{{OPENAI_BASE_URL}}/tasks/task_xxxxxxxx" \
 原生兼容入口保留其协议行为，调用方不要依赖未发布字段被忽略或透传。显式的 `false`、`0` 和空字符串是否有意义由对应字段合同决定，不能用“省略”
 代替显式零值。
 
+## 返回格式
+
+生成与编辑接口通过可选的 `response_format` 控制完整图片结果的返回形式：
+
+```json
+{
+  "model": "{{MODEL_ID_PLACEHOLDER}}",
+  "prompt": "雾中灯塔的水彩插画",
+  "response_format": "url"
+}
+```
+
+- **不传参数保持原有行为**：GPT Image 和 Gemini/Vertex generateContent 默认 Base64，
+  图片中转同步默认 URL；平台异步任务未指定格式时沿用 URL 查询结果。
+- `url` 返回 `data[].url`。已有 Provider URL 时直接交付；只有 Base64 时由平台保存并签名。
+  URL 不保证来自本站域名。GPT Image 上游不支持此参数时，由本站消费并完成转换。
+- `b64_json` 返回 `data[].b64_json`；只有 URL 时由平台安全下载并编码。
+  两种格式均保留 usage、提示词改写等结果元数据。multipart 使用 `-F 'response_format=url'`。
+- 本站签名 URL 有效期 300 秒，并返回 `url_expires_at`；Provider URL 的有效期由 Provider 决定。
+  同步结果不能通过任务查询续签，需要再次查询结果时使用已发布的显式异步能力。
+- 原生同步 SSE 沿用原事件协议，不把事件中的 Base64 转为 URL；上述格式保证适用于完整 JSON
+  结果与平台异步查询。流式和异步的可用组合仍以模型合同为准。
+- 已知需要本站转存而存储不可用时，在预扣与上游调用前返回 `503`。
+  若生成成功后下载、转存或签名失败，返回 `502 image_delivery_failed`；生成仍计费，
+  不自动重生成或退款，调用方也不应自动重发生成请求。失败响应的 `data` 保留已生成的原始图片
+  （Base64 或原 URL），`requested_response_format` 标识未完成的目标格式。请保留并读取该错误正文取图，
+  不要只保存错误消息。成功响应仍按请求格式返回。同步交付没有后台恢复任务；客户端断连或原 URL
+  过期时，不能保证通过该错误正文恢复。
+- 显式同步格式转换采用文件和流处理大图，不再因本站原有的 50 MiB 单图／512 MiB 响应阈值丢弃结果。
+  结果下载、转存和签名在本次交付预算内最多尝试三次，仅重试交付，不重复调用生成接口。
+- 网关内的下载、编码、上传、签名计入服务端处理耗时；客户另行下载 URL 和显示图片的时间不在
+  原生成请求日志内。
+
 ## 非流式响应
 
 HTTP `200` 返回 JSON：
@@ -164,19 +200,19 @@ HTTP `200` 返回 JSON：
 }
 ```
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `created` | integer | 响应创建时间，Unix 秒 |
-| `data` | array | 图片结果数组；通常与实际生成数量一致 |
-| `data[].url` | string | 临时图片地址；返回该字段时应及时下载或转存 |
-| `data[].b64_json` | string | Base64 图片内容；通常在 `response_format=b64_json` 时返回 |
-| `data[].revised_prompt` | string | 模型改写后的提示词；并非所有模型都会返回 |
-| `metadata` | object | 可选的公开扩展元数据；不要依赖未在模型合同中说明的键 |
-| `usage` | object | 部分模型返回的用量信息；不存在时不要自行推算为服务端结算值 |
-| `usage.input_tokens` | integer | 可选输入 Token 数 |
-| `usage.output_tokens` | integer | 可选输出 Token 数 |
-| `usage.total_tokens` | integer | 可选总 Token 数 |
-| `usage.input_tokens_details` | object | 可选输入明细，例如文本、图片或缓存 Token；按字段存在性读取 |
+| 字段                         | 类型    | 说明                                                       |
+| ---------------------------- | ------- | ---------------------------------------------------------- |
+| `created`                    | integer | 响应创建时间，Unix 秒                                      |
+| `data`                       | array   | 图片结果数组；通常与实际生成数量一致                       |
+| `data[].url`                 | string  | 临时图片地址；返回该字段时应及时下载或转存                 |
+| `data[].b64_json`            | string  | Base64 图片内容；通常在 `response_format=b64_json` 时返回  |
+| `data[].revised_prompt`      | string  | 模型改写后的提示词；并非所有模型都会返回                   |
+| `metadata`                   | object  | 可选的公开扩展元数据；不要依赖未在模型合同中说明的键       |
+| `usage`                      | object  | 部分模型返回的用量信息；不存在时不要自行推算为服务端结算值 |
+| `usage.input_tokens`         | integer | 可选输入 Token 数                                          |
+| `usage.output_tokens`        | integer | 可选输出 Token 数                                          |
+| `usage.total_tokens`         | integer | 可选总 Token 数                                            |
+| `usage.input_tokens_details` | object  | 可选输入明细，例如文本、图片或缓存 Token；按字段存在性读取 |
 
 单个结果通常在 `url` 和 `b64_json` 中返回一种。客户端应按字段是否存在处理，不要假定某个模型始终返回
 同一种格式。错误响应仍是 JSON，不能当作图片字节或 Base64 解码。
@@ -196,14 +232,14 @@ data: {"type":"image_generation.completed","b64_json":"...","created_at":1760000
 data: [DONE]
 ```
 
-| 事件字段 | 说明 |
-| --- | --- |
-| `type` | `image_generation.partial_image`、`image_generation.completed` 或错误事件类型 |
-| `partial_image_index` | 部分图片序号；仅部分事件可能返回 |
-| `url` / `b64_json` | 当前图片结果，具体形式由模型决定 |
-| `revised_prompt` | 可选的改写提示词 |
-| `created_at` | 可选的事件创建时间 |
-| `usage` | 可选用量；一般以最后一个有效用量对象为准 |
+| 事件字段              | 说明                                                                          |
+| --------------------- | ----------------------------------------------------------------------------- |
+| `type`                | `image_generation.partial_image`、`image_generation.completed` 或错误事件类型 |
+| `partial_image_index` | 部分图片序号；仅部分事件可能返回                                              |
+| `url` / `b64_json`    | 当前图片结果，具体形式由模型决定                                              |
+| `revised_prompt`      | 可选的改写提示词                                                              |
+| `created_at`          | 可选的事件创建时间                                                            |
+| `usage`               | 可选用量；一般以最后一个有效用量对象为准                                      |
 
 客户端必须持续读取到 `data: [DONE]` 或连接结束。收到错误事件、HTTP 非 `2xx` 或连接中断时，不要把
 已经收到的部分图误认为全部结果。
@@ -237,9 +273,22 @@ data: [DONE]
 
 `param`、`code` 和 `request_id` 可能省略；客户端应先检查 HTTP 状态，再读取存在的字段。
 
-| HTTP 状态 | 常见原因 | 处理建议 |
-| --- | --- | --- |
-| `400` | 缺少字段、字段类型错误、取值超范围或模型不支持该参数 | 修正请求后再提交 |
-| `401` / `403` | API Key 无效、模型权限或分组不允许 | 修复鉴权或权限，不重试原请求 |
-| `429` | 频率、并发或额度限制 | 区分限流与余额问题；可重试时使用退避 |
-| `5xx` | 服务暂时不可用或上游异常 | 保存公开请求 ID；只有能接受重复生成风险时才有限重试 |
+| HTTP 状态     | 常见原因                                             | 处理建议                                            |
+| ------------- | ---------------------------------------------------- | --------------------------------------------------- |
+| `400`         | 缺少字段、字段类型错误、取值超范围或模型不支持该参数 | 修正请求后再提交                                    |
+| `401` / `403` | API Key 无效、模型权限或分组不允许                   | 修复鉴权或权限，不重试原请求                        |
+| `429`         | 频率、并发或额度限制                                 | 区分限流与余额问题；可重试时使用退避                |
+| `5xx`         | 服务暂时不可用或上游异常                             | 保存公开请求 ID；只有能接受重复生成风险时才有限重试 |
+
+## Gemini Lite 图片模型
+
+Gemini 3.1 Flash-Lite Image 使用本页标准接口。生成使用 JSON，编辑使用已发布的 JSON 图片引用
+或 multipart 文件。显式设置 `response_format=url`（multipart 使用同名表单字段），成功结果为
+`data[].url`；不要把 `response_format` 写成 `image_url`。
+
+Lite 的标准接口目前仅发布 `size=auto`（也可省略）和 `size=1024x1024`，以模型详情的 `size.enum`
+为准。前者由 Provider 决定原生 1K 输出比例，后者请求原生 1K 正方形；网关不缩放、裁切或重新编码。
+不接受 `size=1K`、任意 WxH 或 2K/4K；不把其他 Gemini 型号的像素表套用到 Lite。
+Vertex Lite 每张内联编辑图最多 7,000,000 解码字节，参数 `max_decoded_bytes` 发布该限制；
+客户端仍提交标准 `image` / `images` 或 multipart 文件，南向差异由网关适配。
+请以当前 Key 的模型可用性和管理员确认的验收范围为准。

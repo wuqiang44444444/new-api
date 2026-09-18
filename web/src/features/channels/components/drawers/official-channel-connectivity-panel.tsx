@@ -208,7 +208,7 @@ export function OfficialChannelConnectivityPanel(
     pendingAccessKeyID?.trim() || pendingSecretAccessKey?.trim()
   )
   const availability = getOfficialConnectivityAvailability({
- configuration,
+    configuration,
     assetProtocol,
     savedAssetProtocol: props.savedAssetProtocol,
     videoProtocol,

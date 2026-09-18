@@ -22,16 +22,16 @@ import (
 type Pricing struct {
 	BillingContractConflict bool `json:"billing_contract_conflict,omitempty"`
 
-	ModelName              string                  `json:"model_name"`
-	Description            string                  `json:"description,omitempty"`
-	Icon                   string                  `json:"icon,omitempty"`
-	Tags                   string                  `json:"tags,omitempty"`
-	VendorID               int                     `json:"vendor_id,omitempty"`
-	QuotaType              int                     `json:"quota_type"`
-	ModelRatio             float64                 `json:"model_ratio"`
+	ModelName   string  `json:"model_name"`
+	Description string  `json:"description,omitempty"`
+	Icon        string  `json:"icon,omitempty"`
+	Tags        string  `json:"tags,omitempty"`
+	VendorID    int     `json:"vendor_id,omitempty"`
+	QuotaType   int     `json:"quota_type"`
+	ModelRatio  float64 `json:"model_ratio"`
 	// BasisPriceConfigured 表示倍率基础价来自显式配置而非缺价默认值；
 	// 自用模式下兜底开关使配置存在性不可判定，此时恒为 true。
-	BasisPriceConfigured bool `json:"basis_price_configured"`
+	BasisPriceConfigured   bool                    `json:"basis_price_configured"`
 	ModelPrice             float64                 `json:"model_price"`
 	OwnerBy                string                  `json:"owner_by"`
 	CompletionRatio        float64                 `json:"completion_ratio"`

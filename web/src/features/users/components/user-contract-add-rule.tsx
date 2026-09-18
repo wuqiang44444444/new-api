@@ -39,8 +39,8 @@ export function CustomerContractAddRule(props: CustomerContractAddRuleProps) {
   // listed on several channels as long as the discount matches.
   const availableModels = selectedGroupModels.map((entry) => entry.model)
   const channelOptions =
-    selectedGroupModels.find((entry) => entry.model === props.model)?.channels ||
-    []
+    selectedGroupModels.find((entry) => entry.model === props.model)
+      ?.channels || []
 
   return (
     <Field>
@@ -89,7 +89,9 @@ export function CustomerContractAddRule(props: CustomerContractAddRuleProps) {
               label: channel.name,
             }))}
             value={props.channelId}
-            onValueChange={(value) => props.onChannelChange(value ? String(value) : '')}
+            onValueChange={(value) =>
+              props.onChannelChange(value ? String(value) : '')
+            }
           >
             <SelectTrigger className='w-full'>
               <SelectValue>

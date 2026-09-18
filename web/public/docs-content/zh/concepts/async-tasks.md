@@ -12,12 +12,12 @@ operations: []
 
 ## 按接口选择生命周期
 
-| 接口 | 创建成功 | 查询入口 | 成功状态 |
-| --- | --- | --- | --- |
-| 图片生成 / 编辑（同步） | `200`，`data[]` | 无平台任务查询 | 直接读取图片结果 |
-| 图片生成 / 编辑（显式异步） | `202`，`id` 和 `query_url` | `GET /v1/tasks/{task_id}` | `succeeded` |
-| ModelArk V3 视频 | `200`，`id` | `GET /api/v3/contents/generations/tasks/{task_id}` | `succeeded` |
-| OpenAI Videos | 任务对象 | `GET /v1/videos/{video_id}` | `completed` |
+| 接口                        | 创建成功                   | 查询入口                                           | 成功状态         |
+| --------------------------- | -------------------------- | -------------------------------------------------- | ---------------- |
+| 图片生成 / 编辑（同步）     | `200`，`data[]`            | 无平台任务查询                                     | 直接读取图片结果 |
+| 图片生成 / 编辑（显式异步） | `202`，`id` 和 `query_url` | `GET /v1/tasks/{task_id}`                          | `succeeded`      |
+| ModelArk V3 视频            | `200`，`id`                | `GET /api/v3/contents/generations/tasks/{task_id}` | `succeeded`      |
+| OpenAI Videos               | 任务对象                   | `GET /v1/videos/{video_id}`                        | `completed`      |
 
 Kling、即梦和[通用视频生成](api-reference/videos/generations)使用各自的任务响应与查询路径，详见对应 API Reference。不要将不同协议的 ID、字段或状态名
 混用。素材接口返回素材或素材组 ID，使用自己的 `processing` / `ready` / `failed` 状态。

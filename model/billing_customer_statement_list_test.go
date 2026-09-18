@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,13 +16,13 @@ func TestBillingCustomerStatementListAggregatesFiltersAndPaginates(t *testing.T)
 		{Id: 43, Username: "partial", DisplayName: "Partial Customer", AffCode: "partial-code"},
 	}).Error)
 	require.NoError(t, db.Create(&[]Log{
-		{UserId: 41, CreatedAt: 1100, Type: LogTypeConsume, Quota: 800, PromptTokens: 10, Other: `{"group_ratio":0.8,"model_ratio":1}`},
-		{UserId: 41, CreatedAt: 1200, Type: LogTypeRefund, Quota: 100, Other: `{"admin_info":{"statement_snapshot":{"billing_mode":"token","group_ratio":0.8,"model_ratio":1}}}`},
-		{UserId: 42, CreatedAt: 1300, Type: LogTypeConsume, Quota: 500, PromptTokens: 5, Other: `{"group_ratio":1,"model_ratio":1}`},
+		{UserId: 41, CreatedAt: 1100, Type: LogTypeConsume, Quota: 800, PromptTokens: 10, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1}`},
+		{UserId: 41, CreatedAt: 1200, Type: LogTypeRefund, Quota: 100, Other: `{"contract_applicable":false,"admin_info":{"statement_snapshot":{"billing_mode":"token","group_ratio":0.8,"model_ratio":1}}}`},
+		{UserId: 42, CreatedAt: 1300, Type: LogTypeConsume, Quota: 500, PromptTokens: 5, Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`},
 		{UserId: 43, CreatedAt: 1400, Type: LogTypeConsume, Quota: 300, PromptTokens: 3, Other: `{"model_ratio":1}`},
 	}).Error)
 
-	result, err := GetBillingCustomerStatementList(1000, 1500, "", "", "net_quota", "desc", 1, 20)
+	result, err := GetBillingCustomerStatementList(context.Background(), 1000, 1500, "", "", "net_quota", "desc", 1, 20)
 	require.NoError(t, err)
 	require.Len(t, result.Items, 3)
 	assert.Equal(t, 41, result.Items[0].UserId)
@@ -36,19 +37,19 @@ func TestBillingCustomerStatementListAggregatesFiltersAndPaginates(t *testing.T)
 	require.NotNil(t, result.Summary.DataQuality)
 	assert.Equal(t, "partial", result.Summary.DataQuality.Status)
 
-	complete, err := GetBillingCustomerStatementList(1000, 1500, "", "complete", "net_quota", "desc", 1, 20)
+	complete, err := GetBillingCustomerStatementList(context.Background(), 1000, 1500, "", "complete", "net_quota", "desc", 1, 20)
 	require.NoError(t, err)
 	require.Len(t, complete.Items, 2)
 	require.NotNil(t, complete.Summary.OriginalQuota)
 	assert.EqualValues(t, 1375, *complete.Summary.OriginalQuota)
 	assert.EqualValues(t, 175, *complete.Summary.DiscountQuota)
 
-	searched, err := GetBillingCustomerStatementList(1000, 1500, "second", "", "net_quota", "desc", 1, 20)
+	searched, err := GetBillingCustomerStatementList(context.Background(), 1000, 1500, "second", "", "net_quota", "desc", 1, 20)
 	require.NoError(t, err)
 	require.Len(t, searched.Items, 1)
 	assert.Equal(t, 42, searched.Items[0].UserId)
 
-	paged, err := GetBillingCustomerStatementList(1000, 1500, "", "", "net_quota", "desc", 2, 1)
+	paged, err := GetBillingCustomerStatementList(context.Background(), 1000, 1500, "", "", "net_quota", "desc", 2, 1)
 	require.NoError(t, err)
 	require.Len(t, paged.Items, 1)
 	assert.Equal(t, 42, paged.Items[0].UserId)

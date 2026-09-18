@@ -33,7 +33,10 @@ interface CustomerContractColumnsOptions {
   onManage: (item: CustomerContractAdminListItem) => void
 }
 
-function contractStatusPresentation(status: CustomerContractAdminStatus, t: (key: string) => string) {
+function contractStatusPresentation(
+  status: CustomerContractAdminStatus,
+  t: (key: string) => string
+) {
   if (status === 'active') {
     return { label: t('Active contracts'), variant: 'warning' as const }
   }
@@ -52,7 +55,9 @@ export function useCustomerContractColumns(
       meta: { mobileTitle: true },
       cell: ({ row }) => (
         <div className='min-w-[160px]'>
-          <div className='truncate font-medium'>{row.original.contract_name}</div>
+          <div className='truncate font-medium'>
+            {row.original.contract_name}
+          </div>
           <div className='text-muted-foreground truncate text-xs'>
             v{row.original.contract_version}
           </div>

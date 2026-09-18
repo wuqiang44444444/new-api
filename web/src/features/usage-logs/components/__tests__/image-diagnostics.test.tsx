@@ -13,13 +13,29 @@ test.each([
   { isAdmin: true, isRoot: true },
 ])('image diagnostics respect role $isAdmin/$isRoot', (role) => {
   const task: TaskLog = {
-    id: 1, user_id: 1, task_id: 'task_image', platform: '1',
-    channel_id: 1, group: 'default', quota: 0, submit_time: 1,
-    action: 'image_generation', status: 'FAILURE',
-    admin_info: { image_execution: { upstream_status: 422, violation_marker: false } },
+    id: 1,
+    user_id: 1,
+    task_id: 'task_image',
+    platform: '1',
+    channel_id: 1,
+    group: 'default',
+    quota: 0,
+    submit_time: 1,
+    action: 'image_generation',
+    status: 'FAILURE',
+    admin_info: {
+      image_execution: { upstream_status: 422, violation_marker: false },
+    },
     root_info: { upstream_request_id: 'provider-correlation' },
   }
-  render(<TaskDetailsDialog log={task} {...role} open onOpenChange={() => undefined} />)
+  render(
+    <TaskDetailsDialog
+      log={task}
+      {...role}
+      open
+      onOpenChange={() => undefined}
+    />
+  )
   if (role.isAdmin) {
     expect(screen.getByText('Upstream HTTP status')).toBeVisible()
     expect(screen.getByText('422')).toBeVisible()
@@ -27,7 +43,9 @@ test.each([
     expect(screen.getByText('No')).toBeVisible()
   } else {
     expect(screen.queryByText('Upstream HTTP status')).not.toBeInTheDocument()
-    expect(screen.queryByText('Violation policy matched')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Violation policy matched')
+    ).not.toBeInTheDocument()
   }
   if (role.isRoot) {
     expect(screen.getByText('provider-correlation')).toBeVisible()

@@ -78,8 +78,8 @@ func TestCustomerContractAdminListPreservesStatusScopeAndAvailability(t *testing
 	assert.Equal(t, CustomerContractAdminStatusActive, activeItem.ContractStatus)
 	assert.Equal(t, 2, activeItem.RuleCount)
 	assert.Equal(t, 1, activeItem.UnavailableRuleCount)
-	// An enabled contract without rules is active: it no longer means the
-	// bound keys lose access, it only carries no discount rows.
+	// Enabled is the administrative state, distinct from runtime availability:
+	// an enabled empty contract rejects new model calls.
 	zeroItem := byContract[zeroContract.Id]
 	assert.Equal(t, CustomerContractAdminStatusActive, zeroItem.ContractStatus)
 	assert.Equal(t, 0, zeroItem.RuleCount)

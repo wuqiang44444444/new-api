@@ -1,5 +1,5 @@
-import type { SeedancePluginConfiguration } from './seedance-plugin-configuration'
 import type { ChannelTestResponse } from '../types'
+import type { SeedancePluginConfiguration } from './seedance-plugin-configuration'
 import { isOfficialSeedanceAssetProtocol } from './seedance-protocol-pairing'
 
 const connectivityMessages: Record<string, string> = {
@@ -67,12 +67,17 @@ export function getOfficialConnectivityAvailability(input: {
     (input.savedVideoProtocol === input.videoProtocol ||
       input.savedVideoProtocol === undefined) &&
     !input.hasPendingVideoKey
-  const assetProtocolSupportsTest = input.configuration?.assets.find(asset=>asset.protocol===input.assetProtocol)?.connectivity === true
+  const assetProtocolSupportsTest =
+    input.configuration?.assets.find(
+      (asset) => asset.protocol === input.assetProtocol
+    )?.connectivity === true
   const usesOfficialAssets = isOfficialSeedanceAssetProtocol(
-    input.assetProtocol,input.configuration
+    input.assetProtocol,
+    input.configuration
   )
   const savedUsesOfficialAssets = isOfficialSeedanceAssetProtocol(
-    input.savedAssetProtocol,input.configuration
+    input.savedAssetProtocol,
+    input.configuration
   )
   const assetCanTest =
     assetProtocolSupportsTest &&

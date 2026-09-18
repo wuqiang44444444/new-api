@@ -33,17 +33,17 @@ curl "{{SITE_BASE_URL}}/jimeng/?Action=CVSync2AsyncSubmitTask&Version=2022-08-31
 
 ### 提交参数
 
-| 参数 | 位置/类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `Action` | query string | 是 | 创建固定为 `CVSync2AsyncSubmitTask` |
-| `Version` | query string | 是 | 固定为 `2022-08-31` |
-| `req_key` | body string | 是 | 模型目录返回的客户模型 ID，填入 `{{MODEL_ID_PLACEHOLDER}}` 所在位置 |
-| `prompt` | body string | 是 | 视频描述，去除首尾空白后不能为空 |
-| `binary_data_base64` | body string[] | 否 | Base64 图片数组；仅在模型支持图片输入时使用 |
-| `image_urls` | body string[] | 否 | 图片 URL 或 `asset://` 引用数组；仅在模型支持图片输入时使用 |
-| `seed` | body integer | 否 | 随机种子；允许范围由当前模型合同决定 |
-| `aspect_ratio` | body string | 否 | 输出画幅；允许值由当前模型合同决定 |
-| `frames` | body integer | 否 | 输出帧数；省略时当前适配器使用 `121`，显式值按模型合同校验 |
+| 参数                 | 位置/类型     | 必填 | 说明                                                                |
+| -------------------- | ------------- | ---- | ------------------------------------------------------------------- |
+| `Action`             | query string  | 是   | 创建固定为 `CVSync2AsyncSubmitTask`                                 |
+| `Version`            | query string  | 是   | 固定为 `2022-08-31`                                                 |
+| `req_key`            | body string   | 是   | 模型目录返回的客户模型 ID，填入 `{{MODEL_ID_PLACEHOLDER}}` 所在位置 |
+| `prompt`             | body string   | 是   | 视频描述，去除首尾空白后不能为空                                    |
+| `binary_data_base64` | body string[] | 否   | Base64 图片数组；仅在模型支持图片输入时使用                         |
+| `image_urls`         | body string[] | 否   | 图片 URL 或 `asset://` 引用数组；仅在模型支持图片输入时使用         |
+| `seed`               | body integer  | 否   | 随机种子；允许范围由当前模型合同决定                                |
+| `aspect_ratio`       | body string   | 否   | 输出画幅；允许值由当前模型合同决定                                  |
+| `frames`             | body integer  | 否   | 输出帧数；省略时当前适配器使用 `121`，显式值按模型合同校验          |
 
 请求采用严格字段白名单，任何未列出的顶层字段都会返回 `400`。`image_urls` 和
 `binary_data_base64` 是两种图片传输方式；除非当前模型明确支持，不要同时发送，也不要把视频入口的
@@ -65,13 +65,13 @@ HTTP `200`：
 }
 ```
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `code` | integer | `10000` 表示 API 操作成功 |
-| `status` | integer | 成功时同为 `10000` |
-| `message` | string | API 操作消息 |
-| `request_id` | string | 请求追踪 ID |
-| `data.task_id` | string | 平台任务 ID；立即保存并用于查询 |
+| 字段           | 类型    | 说明                            |
+| -------------- | ------- | ------------------------------- |
+| `code`         | integer | `10000` 表示 API 操作成功       |
+| `status`       | integer | 成功时同为 `10000`              |
+| `message`      | string  | API 操作消息                    |
+| `request_id`   | string  | 请求追踪 ID                     |
+| `data.task_id` | string  | 平台任务 ID；立即保存并用于查询 |
 
 ## 查询结果
 
@@ -86,11 +86,11 @@ curl "{{SITE_BASE_URL}}/jimeng/?Action=CVSync2AsyncGetResult&Version=2022-08-31"
 
 查询请求体只允许 `task_id`：
 
-| 参数 | 位置/类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `Action` | query string | 是 | 查询固定为 `CVSync2AsyncGetResult` |
-| `Version` | query string | 是 | 固定为 `2022-08-31` |
-| `task_id` | body string | 是 | 创建响应中的平台任务 ID |
+| 参数      | 位置/类型    | 必填 | 说明                               |
+| --------- | ------------ | ---- | ---------------------------------- |
+| `Action`  | query string | 是   | 查询固定为 `CVSync2AsyncGetResult` |
+| `Version` | query string | 是   | 固定为 `2022-08-31`                |
+| `task_id` | body string  | 是   | 创建响应中的平台任务 ID            |
 
 成功任务响应：
 
@@ -108,14 +108,14 @@ curl "{{SITE_BASE_URL}}/jimeng/?Action=CVSync2AsyncGetResult&Version=2022-08-31"
 }
 ```
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
+| 字段              | 类型    | 说明                                         |
+| ----------------- | ------- | -------------------------------------------- |
 | `code` / `status` | integer | `10000` 表示查询操作成功，不等于任务已经完成 |
-| `message` | string | API 操作消息 |
-| `request_id` | string | 本次查询的追踪 ID |
-| `data.task_id` | string | 平台任务 ID |
-| `data.status` | string | `in_queue`、`generating`、`done` 或 `failed` |
-| `data.video_url` | string | `done` 时返回的视频地址；应及时下载或转存 |
+| `message`         | string  | API 操作消息                                 |
+| `request_id`      | string  | 本次查询的追踪 ID                            |
+| `data.task_id`    | string  | 平台任务 ID                                  |
+| `data.status`     | string  | `in_queue`、`generating`、`done` 或 `failed` |
+| `data.video_url`  | string  | `done` 时返回的视频地址；应及时下载或转存    |
 
 `in_queue` 和 `generating` 使用退避轮询；`done` 或 `failed` 后停止。单次查询异常不能证明任务失败，
 可保留任务 ID 后再次查询。
@@ -146,12 +146,12 @@ curl "{{SITE_BASE_URL}}/jimeng/?Action=CVSync2AsyncGetResult&Version=2022-08-31"
 }
 ```
 
-| HTTP 状态 | `code` / `status` | 含义 |
-| --- | --- | --- |
-| `400` | `50200` | Action、Version、JSON、字段、类型或必填项无效 |
-| `401` / `403` | `50400` | API Key、模型或分组权限错误 |
-| `404` | `50200` | 当前调用方下没有该任务 |
-| `429` | `50430` | 请求过多或额度限制 |
-| `5xx` | `50500` | 平台或上游失败；创建结果可能需要核查 |
+| HTTP 状态     | `code` / `status` | 含义                                          |
+| ------------- | ----------------- | --------------------------------------------- |
+| `400`         | `50200`           | Action、Version、JSON、字段、类型或必填项无效 |
+| `401` / `403` | `50400`           | API Key、模型或分组权限错误                   |
+| `404`         | `50200`           | 当前调用方下没有该任务                        |
+| `429`         | `50430`           | 请求过多或额度限制                            |
+| `5xx`         | `50500`           | 平台或上游失败；创建结果可能需要核查          |
 
 HTTP 非 `2xx` 时先按 HTTP 状态处理。错误消息已经脱敏，不应从中推断内部服务身份。

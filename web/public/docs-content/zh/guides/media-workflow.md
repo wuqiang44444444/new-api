@@ -54,13 +54,13 @@ with urllib.request.urlopen(request, timeout=30) as response:
 PY
 ```
 
-| 想做什么 | 检查哪些公开字段 |
-| --- | --- |
-| 生成图片 | `available` 返回时为 `true`，`api.image.operations` 中 `create_image.supported=true` |
-| 编辑图片 | `edit_image.supported=true`，并读取 `api.image.edit` |
-| 图片异步任务 | 存在 `api.image.async`，按其中的请求头和值选择异步 |
-| ModelArk V3 视频 | `api.video.protocol=modelark_v3`，`create_video.supported=true` |
-| 视频参考素材 | `api.assets.supported=true`，并核对媒体类型、操作与管理模式 |
+| 想做什么         | 检查哪些公开字段                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| 生成图片         | `available` 返回时为 `true`，`api.image.operations` 中 `create_image.supported=true` |
+| 编辑图片         | `edit_image.supported=true`，并读取 `api.image.edit`                                 |
+| 图片异步任务     | 存在 `api.image.async`，按其中的请求头和值选择异步                                   |
+| ModelArk V3 视频 | `api.video.protocol=modelark_v3`，`create_video.supported=true`                      |
+| 视频参考素材     | `api.assets.supported=true`，并核对媒体类型、操作与管理模式                          |
 
 按 `parameters` 中的 `required`、`fixed_value`、`default_value`、`enum`、上下限组装请求。
 `additional_properties=false` 时不要发送未列出的字段；带点的参数名代表嵌套字段。
@@ -134,7 +134,7 @@ curl --fail-with-body \
 {
   "model": "{{MODEL_ID_PLACEHOLDER}}",
   "content": [
-    {"type": "text", "text": "镜头缓慢环绕蓝色陶瓷杯，柔和光线，背景整洁"}
+    { "type": "text", "text": "镜头缓慢环绕蓝色陶瓷杯，柔和光线，背景整洁" }
   ],
   "duration": 5,
   "resolution": "720p",
@@ -261,16 +261,16 @@ curl --fail "$MEDIA_API_BASE/v1/videos/task-public-id/content" \
 
 ## 7. 常见问题
 
-| 现象 | 处理方式 |
-| --- | --- |
-| 图片带了异步偏好却返回 `200` | 检查模型异步声明，按实际同步结果处理 |
-| 图片异步返回 `409 idempotency_conflict` | 同键对应的请求内容不同；先确认原订单，不自动改键 |
-| 图片异步返回 `409 idempotency_in_progress` | 原受理尚未确认，等待后使用原键原内容确认 |
-| 查询 `404` | 核对查询路径、任务 ID 和创建时的同一 Key |
-| 创建超时或视频 `create_outcome_unknown` | 保留业务订单和公开请求 ID，停止盲目重发并核查 |
-| 图片 `unknown` | 不等于失败或退款，保留部分结果并核查 |
-| 图片 URL 过期 | 查询原任务续签，不重新生成 |
-| 视频成功但没有 `usage` | 不代表免费，等待费用核实；不重新生成 |
-| 多图、分辨率或字段返回 `400` | 读取当前模型参数，按明确支持范围修正请求 |
+| 现象                                       | 处理方式                                         |
+| ------------------------------------------ | ------------------------------------------------ |
+| 图片带了异步偏好却返回 `200`               | 检查模型异步声明，按实际同步结果处理             |
+| 图片异步返回 `409 idempotency_conflict`    | 同键对应的请求内容不同；先确认原订单，不自动改键 |
+| 图片异步返回 `409 idempotency_in_progress` | 原受理尚未确认，等待后使用原键原内容确认         |
+| 查询 `404`                                 | 核对查询路径、任务 ID 和创建时的同一 Key         |
+| 创建超时或视频 `create_outcome_unknown`    | 保留业务订单和公开请求 ID，停止盲目重发并核查    |
+| 图片 `unknown`                             | 不等于失败或退款，保留部分结果并核查             |
+| 图片 URL 过期                              | 查询原任务续签，不重新生成                       |
+| 视频成功但没有 `usage`                     | 不代表免费，等待费用核实；不重新生成             |
+| 多图、分辨率或字段返回 `400`               | 读取当前模型参数，按明确支持范围修正请求         |
 
 排障时只提供公开任务 ID、请求 ID、接口、时间和错误码，不提交 Key、完整签名 URL 或媒体原文。

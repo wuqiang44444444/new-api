@@ -1,14 +1,17 @@
 // Package clienterrlog records one diagnostic event per API request that passed
-// the formal authentication entrance and finally returned a 4xx to the caller.
+// the formal authentication entrance and finally returned a 4xx/5xx to the caller.
 //
-// 边界（docs/80-dev/2026-09-16-系统4xx日志缺失问题分析与修复方案.md）：
+// 边界（docs/80-dev/2026-09-16-系统4xx日志缺失问题分析与修复方案.md、
+// docs/80-dev/2026-09-17-全量错误日志独立菜单分析与方案.md）：
 //   - `MarkAuthPassed` 只表示本请求已通过正式鉴权入口并放行下游，不参与权限判定，
 //     不持久化、不缓存，不构成另一套认证事实源。
 //   - 健康容量内每个「已鉴权 + 最终 4xx」请求写一条 WARN；故障时业务优先，丢失可观察。
+//   - relay/asset 模块的 API 调用最终 4xx/5xx 额外交由注册的 persister 持久化到
+//     错误事件表（仅本模块；dashboard/web 等页面流量不持久化）。
 //   - 业务失败处通过 `Attach` 提供白名单诊断（阶段/原因码/受控上下文）；未分类的
 //     事件以 reason=unclassified 记录，不因分类缺失而漏记。
-//   - 事件不包含查询参数、Cookie、凭据、源 URL、签名参数、原始请求体或响应体；
-//     所有字符串字段经净化（去控制字符、限长）。
+//   - 普通文本日志不包含请求/响应正文；管理员错误详情另存有界脱敏 JSON 快照。
+//     查询参数、Cookie、凭据、源 URL、签名参数和媒体二进制不进入快照。
 package clienterrlog
 
 import (
@@ -78,6 +81,14 @@ type Report struct {
 
 type contextKey struct{}
 
+type streamDiag struct {
+	set        bool
+	reason     string
+	endReason  string
+	severity   string
+	errorCount int
+}
+
 type requestReport struct {
 	mu         sync.Mutex
 	auth       authPassMarker
@@ -89,6 +100,7 @@ type requestReport struct {
 	channelID  int
 	protocol   string
 	detail     map[string]string
+	stream     streamDiag
 }
 
 // Attach 把诊断合并进当前请求的统一事件；ctx 未携带记录载体时为安全 no-op。
@@ -124,6 +136,40 @@ func PeekReport(ctx context.Context) (Report, bool) {
 		Protocol:   target.protocol,
 		Detail:     copiesDetail(target.detail),
 	}, true
+}
+
+// StreamErrorReport 携带一次受控流式异常观察。Reason 必须是固定原因码，
+// 不保存原始响应内容；正常完成的请求不得产生该报告。
+type StreamErrorReport struct {
+	Reason     string
+	EndReason  string
+	Severity   string
+	ErrorCount int
+}
+
+// AttachStreamError 把流式异常观察合并进当前请求的统一事件载体；同请求先到的
+// 观察优先。ctx 未携带载体时为安全 no-op，自身 panic 被隔离。
+func AttachStreamError(ctx context.Context, report StreamErrorReport) {
+	defer isolateDiagnosticPanic()
+	if ctx == nil {
+		return
+	}
+	target, ok := ctx.Value(contextKey{}).(*requestReport)
+	if !ok {
+		return
+	}
+	target.mu.Lock()
+	defer target.mu.Unlock()
+	if target.stream.set {
+		return
+	}
+	target.stream = streamDiag{
+		set:        true,
+		reason:     SanitizeLogValue(report.Reason, 64),
+		endReason:  SanitizeLogValue(report.EndReason, 32),
+		severity:   SanitizeLogValue(report.Severity, 16),
+		errorCount: report.ErrorCount,
+	}
 }
 
 func (r *requestReport) merge(report Report) {

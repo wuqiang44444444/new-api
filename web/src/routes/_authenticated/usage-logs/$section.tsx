@@ -43,7 +43,9 @@ const usageLogsSearchSchema = z.object({
   tokenId: z.number().int().nonnegative().optional(),
   billing: z.boolean().optional(),
   billingUserId: z.number().int().positive().optional(),
-  billingMode: z.enum(['token', 'per_call', 'unknown']).optional(),
+  billingMode: z
+    .enum(['token', 'per_call', 'per_second', 'unknown'])
+    .optional(),
   channel: z.string().optional().catch(''),
   group: z.string().optional().catch(''),
   username: z.string().optional().catch(''),

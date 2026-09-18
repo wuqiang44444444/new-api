@@ -46,6 +46,10 @@ import {
 } from '@/components/ui/select'
 import { formatDateTimeStr } from '@/lib/format'
 
+import { SettingsForm } from '../components/settings-form-layout'
+import { SettingsPageFormActions } from '../components/settings-page-context'
+import { SettingsSection } from '../components/settings-section'
+import { useResetForm } from '../hooks/use-reset-form'
 import {
   getObjectStorageSetting,
   importObjectStorageEnvConfig,
@@ -58,10 +62,6 @@ import {
   type ObjectStorageTestResult,
 } from './object-storage-api'
 import { ObjectStorageTestResultAlert } from './object-storage-test-result'
-import { SettingsForm } from '../components/settings-form-layout'
-import { SettingsPageFormActions } from '../components/settings-page-context'
-import { SettingsSection } from '../components/settings-section'
-import { useResetForm } from '../hooks/use-reset-form'
 
 const BACKEND_LABELS: Record<ObjectStorageBackend, string> = {
   upstream: 'Disabled (no object storage)',
@@ -168,7 +168,9 @@ export function ObjectStorageSection() {
       region: view?.region ?? '',
       account_name: view?.account_name ?? '',
       credential: '',
-      inputMode: (view?.credential_configured ? 'manual' : 'connection_string') as 'connection_string' | 'manual',
+      inputMode: (view?.credential_configured
+        ? 'manual'
+        : 'connection_string') as 'connection_string' | 'manual',
       connectionString: '',
     }),
     [view]
@@ -178,8 +180,9 @@ export function ObjectStorageSection() {
   const backend = form.watch('backend')
   const effectiveInputMode = form.watch('inputMode') ?? 'connection_string'
 
-
-  function buildRequest(values: ObjectStorageFormValues): ObjectStorageSettingRequest {
+  function buildRequest(
+    values: ObjectStorageFormValues
+  ): ObjectStorageSettingRequest {
     return {
       backend: values.backend,
       endpoint: (values.endpoint ?? '').trim(),
@@ -204,7 +207,13 @@ export function ObjectStorageSection() {
     setTestResult(null)
     try {
       const res = await testObjectStorageConnection(buildRequest(values))
-      setTestResult(res.data ?? { success: false, cleanup_failed: false, message: res.message })
+      setTestResult(
+        res.data ?? {
+          success: false,
+          cleanup_failed: false,
+          message: res.message,
+        }
+      )
       if (res.success) {
         toast.success(t(res.message || 'Connection successful'))
       }
@@ -227,7 +236,7 @@ export function ObjectStorageSection() {
           queryKey: ['object-storage-setting'],
         })
         form.setValue('credential', '')
- form.setValue('connectionString', '')
+        form.setValue('connectionString', '')
       } else {
         if (res.data) {
           setTestResult(res.data)
@@ -293,20 +302,20 @@ export function ObjectStorageSection() {
           />
 
           {view?.active ? (
- <p className='text-sm text-muted-foreground'>
- {t('Storage location changes require offline maintenance and data migration; only credentials can be updated here.')}
- </p>
- ) : null}
+            <p className='text-muted-foreground text-sm'>
+              {t(
+                'Storage location changes require offline maintenance and data migration; only credentials can be updated here.'
+              )}
+            </p>
+          ) : null}
 
- {view ? (
+          {view ? (
             <Alert variant='default'>
               <AlertDescription>
                 <div className='space-y-1 text-sm'>
                   <div>
                     {t('Current status')}:{' '}
-                    {view.active
-                      ? t('Enabled')
-                      : t('Disabled')}
+                    {view.active ? t('Enabled') : t('Disabled')}
                     {view.backend
                       ? ` · ${t(BACKEND_LABELS[view.backend] ?? view.backend)}`
                       : ''}
@@ -328,8 +337,7 @@ export function ObjectStorageSection() {
                     </div>
                   ) : null}
                   <div>
-                    {t('Verification status')}:{' '}
-                    {verificationLabel}
+                    {t('Verification status')}: {verificationLabel}
                     {lastTestAt ? ` · ${lastTestAt}` : ''}
                   </div>
                 </div>
@@ -339,7 +347,9 @@ export function ObjectStorageSection() {
 
           {view?.env_import_available ? (
             <Alert variant='default'>
-              <AlertTitle>{t('Legacy environment configuration detected')}</AlertTitle>
+              <AlertTitle>
+                {t('Legacy environment configuration detected')}
+              </AlertTitle>
               <AlertDescription>
                 <div className='space-y-2'>
                   <p>
@@ -350,13 +360,28 @@ export function ObjectStorageSection() {
                   {envPreview ? (
                     <ul className='list-disc space-y-1 pl-5 text-sm'>
                       <li>
-                        {t('Type')}: {t(BACKEND_LABELS[envPreview.backend as ObjectStorageBackend] ?? envPreview.backend)}
+                        {t('Type')}:{' '}
+                        {t(
+                          BACKEND_LABELS[
+                            envPreview.backend as ObjectStorageBackend
+                          ] ?? envPreview.backend
+                        )}
                       </li>
-                      <li>{t('Endpoint')}: {envPreview.endpoint}</li>
-                      <li>{t('Bucket / Container')}: {envPreview.bucket}</li>
-                      <li>{t('Region')}: {envPreview.region || '-'}</li>
-                      <li>{t('Object prefix')}: {envPreview.prefix || '-'}</li>
-                      <li>{t('Account name')}: {envPreview.account_name_masked}</li>
+                      <li>
+                        {t('Endpoint')}: {envPreview.endpoint}
+                      </li>
+                      <li>
+                        {t('Bucket / Container')}: {envPreview.bucket}
+                      </li>
+                      <li>
+                        {t('Region')}: {envPreview.region || '-'}
+                      </li>
+                      <li>
+                        {t('Object prefix')}: {envPreview.prefix || '-'}
+                      </li>
+                      <li>
+                        {t('Account name')}: {envPreview.account_name_masked}
+                      </li>
                     </ul>
                   ) : null}
                   <div className='flex gap-2'>
@@ -425,9 +450,7 @@ export function ObjectStorageSection() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      {backend === 'azure_blob'
-                        ? t('Container')
-                        : t('Bucket')}
+                      {backend === 'azure_blob' ? t('Container') : t('Bucket')}
                     </FormLabel>
                     <FormControl>
                       <Input placeholder='task-artifacts' {...field} />
@@ -474,7 +497,9 @@ export function ObjectStorageSection() {
                             ? 'default'
                             : 'outline'
                         }
-                        onClick={() => form.setValue('inputMode', 'connection_string')}
+                        onClick={() =>
+                          form.setValue('inputMode', 'connection_string')
+                        }
                       >
                         {t('Connection string')}
                       </Button>
@@ -482,7 +507,9 @@ export function ObjectStorageSection() {
                         type='button'
                         size='sm'
                         variant={
-                          effectiveInputMode === 'manual' ? 'default' : 'outline'
+                          effectiveInputMode === 'manual'
+                            ? 'default'
+                            : 'outline'
                         }
                         onClick={() => form.setValue('inputMode', 'manual')}
                       >
@@ -560,7 +587,9 @@ export function ObjectStorageSection() {
                             type='password'
                             placeholder={
                               view?.credential_configured
-                                ? t('Configured; leave blank to keep the existing key')
+                                ? t(
+                                    'Configured; leave blank to keep the existing key'
+                                  )
                                 : t('Enter new key to update')
                             }
                             autoComplete='new-password'
@@ -633,7 +662,9 @@ export function ObjectStorageSection() {
                             type='password'
                             placeholder={
                               view?.credential_configured
-                                ? t('Configured; leave blank to keep the existing key')
+                                ? t(
+                                    'Configured; leave blank to keep the existing key'
+                                  )
                                 : t('Enter new key to update')
                             }
                             autoComplete='new-password'
@@ -664,7 +695,6 @@ export function ObjectStorageSection() {
               {testResult ? (
                 <ObjectStorageTestResultAlert result={testResult} />
               ) : null}
-
             </>
           ) : null}
         </SettingsForm>
@@ -672,4 +702,3 @@ export function ObjectStorageSection() {
     </SettingsSection>
   )
 }
-

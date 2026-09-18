@@ -74,6 +74,7 @@ func AttachPricingBillingDisplay(items []model.Pricing) {
 // 自身记录为准，投影仅解释当次冻结的表达式。历史 `_task` 快照沿用既有
 // 历史合同解释，不按新任务单位投影重写。
 func AttachLogsBillingDisplay(logs []*model.Log) {
+	attachCustomerBillingExplanations(logs)
 	projections := make(map[string]*billingexpr.DisplayProjection)
 	for i := range logs {
 		other := logs[i].Other

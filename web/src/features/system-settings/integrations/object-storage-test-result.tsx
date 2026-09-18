@@ -55,7 +55,10 @@ export function ObjectStorageTestResultAlert({
         )}
         <div>
           <AlertTitle>
-            {title ?? (result.success ? t('Connection successful') : t('Connection failed'))}
+            {title ??
+              (result.success
+                ? t('Connection successful')
+                : t('Connection failed'))}
           </AlertTitle>
           {result.message ? (
             <AlertDescription>{t(result.message)}</AlertDescription>

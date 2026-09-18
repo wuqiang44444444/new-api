@@ -25,6 +25,8 @@ const (
 	SystemTaskTypeImageTask      = "image_task_execute"
 	// 音视频证据保留期清理（一期）。
 	SystemTaskTypeTaskRequestEvidenceRetention = "task_request_evidence_retention"
+	// 每小时系统运行与错误邮件报告（本地扩展）。
+	SystemTaskTypeErrorReport = "error_report"
 )
 
 var ErrSystemTaskLockLost = errors.New("system task lock lost")

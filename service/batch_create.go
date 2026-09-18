@@ -64,16 +64,17 @@ func CreateBatchJob(c *gin.Context, request *dto.BatchCreateRequest) (*BatchCrea
 		return nil, &dto.BatchValidateError{Message: "the stored batch file has no resolvable model"}
 	}
 
-	// The contract provides the discount only; batch channel eligibility and
-	// selection stay entirely native (the key's own group). An unlisted model
-	// resolves a nil fact and keeps native handling.
+	// Resolve scope and discount before deterministic Batch channel selection.
 	fact, err := resolveBatchContractFact(c, userId, publicModel)
 	if err != nil {
 		return nil, err
 	}
 	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 	group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-	channel, err := model.SelectEnabledBatchChannel(group, publicModel)
+	channel, err := selectCustomerContractBatchChannel(c, group, publicModel)
+	if ActiveCustomerContract(c) != nil {
+		group = common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrBatchJobModelDenied, err)
 	}
@@ -262,7 +263,10 @@ func resolveBatchContractFact(c *gin.Context, userId int, publicModel string) (*
 	if !ok || authVersion <= 0 {
 		return nil, fmt.Errorf("%w: authorization version is unavailable", ErrCustomerContractUnavailable)
 	}
-	fact, err := ResolveContractEntityRule(userId, authVersion, contractId, publicModel)
+	if _, err := CustomerContractForRequest(c, userId, authVersion, contractId); err != nil {
+		return nil, err
+	}
+	fact, err := ResolveCustomerContractRequest(c, publicModel)
 	if err != nil {
 		return nil, err
 	}

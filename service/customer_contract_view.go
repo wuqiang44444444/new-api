@@ -34,6 +34,7 @@ type CustomerContractAdminRuleView struct {
 	RouteGroup          string                       `json:"route_group"`
 	Discount            string                       `json:"discount"`
 	Available           bool                         `json:"available"`
+	GroupAllowed        bool                         `json:"group_allowed"`
 	NativeGroupRatio    string                       `json:"native_group_ratio"`
 	EffectiveMultiplier string                       `json:"effective_multiplier"`
 	SpecialGroupRatio   bool                         `json:"special_group_ratio"`
@@ -44,8 +45,9 @@ type CustomerContractAdminRuleView struct {
 // owner-visible contract view. It expresses the agreed contract discount per
 // public model and carries no channel, group or availability facts.
 type CustomerContractUserRuleView struct {
-	Model    string `json:"model"`
-	Discount string `json:"discount"`
+	Model        string `json:"model"`
+	Discount     string `json:"discount"`
+	Availability string `json:"availability,omitempty"`
 }
 
 // ContractEntityAdminView is the admin drawer view of one contract entity.
@@ -98,6 +100,7 @@ func buildContractEntityRuleViews(snapshot *model.ContractEntitySnapshot, userGr
 		}
 		result = append(result, CustomerContractAdminRuleView{
 			ChannelId: rule.ChannelId, Model: rule.PublicModel, RouteGroup: rule.RouteGroup, Discount: discount, Available: rule.Available,
+			GroupAllowed:     IsUserSelectableGroup(userGroup, rule.RouteGroup),
 			NativeGroupRatio: decimal.NewFromFloat(groupRatio).String(), EffectiveMultiplier: effective.String(),
 			SpecialGroupRatio: hasSpecialRatio,
 			Price:             price,

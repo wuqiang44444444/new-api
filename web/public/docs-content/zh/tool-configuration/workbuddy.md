@@ -18,12 +18,12 @@ API Key 直接保存在 WorkBuddy 的本地模型设置中，不需要环境变�
 2. 若所用版本将此入口放在设置页，进入模型设置并找到添加自定义模型。
 3. 按下面填写：
 
-| 项目 | 填写内容 |
-| --- | --- |
-| Provider | `Custom` |
-| Endpoint | `{{OPENAI_BASE_URL}}/chat/completions` |
-| API Key | `{{API_KEY_PLACEHOLDER}}` |
-| Model Name | `{{MODEL_ID_PLACEHOLDER}}` |
+| 项目       | 填写内容                               |
+| ---------- | -------------------------------------- |
+| Provider   | `Custom`                               |
+| Endpoint   | `{{OPENAI_BASE_URL}}/chat/completions` |
+| API Key    | `{{API_KEY_PLACEHOLDER}}`              |
+| Model Name | `{{MODEL_ID_PLACEHOLDER}}`             |
 
 4. 只有模型明确支持时，才在高级选项中开启 `Tool Calling`、`Image Input` 或 `Reasoning`。
 5. 保存，选择刚添加的模型，然后新建会话测试。

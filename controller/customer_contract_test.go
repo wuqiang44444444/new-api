@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -21,6 +22,9 @@ import (
 
 func setupCustomerContractControllerDB(t *testing.T) (model.User, model.User, model.ContractEntitySnapshot) {
 	t.Helper()
+	previousUsable := setting.UserUsableGroups2JSONString()
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","contract-api":"Contract"}`))
+	t.Cleanup(func() { require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(previousUsable)) })
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB
 	previousType := common.MainDatabaseType()
@@ -198,7 +202,7 @@ func customerContractTokenContext(method string, path string, user model.User, c
 	return c, recorder
 }
 
-func TestModelDiscoveryKeepsNativeProjectionForContractKeys(t *testing.T) {
+func TestModelDiscoveryUsesContractScopeAcrossGroups(t *testing.T) {
 	_, user, contract := setupCustomerContractControllerDB(t)
 	outside := model.Channel{Name: "outside", Group: "default", Models: "outside-model", Key: "key", Status: common.ChannelStatusEnabled}
 	require.NoError(t, model.DB.Create(&outside).Error)
@@ -206,17 +210,17 @@ func TestModelDiscoveryKeepsNativeProjectionForContractKeys(t *testing.T) {
 	require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "outside-model", ChannelId: outside.Id, Enabled: true, Priority: &priority}).Error)
 	model.InitChannelCache()
 
-	// A contract-bound key keeps the native permission projection: the model
-	// list follows its groups, not the contract's rule list.
+	// A bound key discovers effective contract models outside its saved group.
 	c, recorder := customerContractTokenContext(http.MethodGet, "/v1/models", user, contract.Id)
 	ListModels(c, constant.ChannelTypeOpenAI)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	body := recorder.Body.String()
-	assert.Contains(t, body, `"id":"outside-model"`)
+	assert.NotContains(t, body, `"id":"outside-model"`)
+	assert.Contains(t, body, `"id":"contract-model"`)
 	assert.NotContains(t, body, "contract-api")
 
-	// An unbound key sees exactly the same native projection.
+	// An unbound key retains the native projection.
 	native, nativeRecorder := customerContractTokenContext(http.MethodGet, "/v1/models", user, 0)
 	ListModels(native, constant.ChannelTypeOpenAI)
 	assert.Equal(t, http.StatusOK, nativeRecorder.Code)
@@ -229,7 +233,7 @@ func TestModelDiscoveryKeepsNativeProjectionForContractKeys(t *testing.T) {
 	assert.NotContains(t, limitedRecorder.Body.String(), "outside-model")
 }
 
-func TestRetrieveModelKeepsNativeVisibilityForContractKeys(t *testing.T) {
+func TestRetrieveModelUsesContractScopeAcrossGroups(t *testing.T) {
 	_, user, contract := setupCustomerContractControllerDB(t)
 	outside := model.Channel{Name: "outside", Group: "default", Models: "outside-model", Key: "key", Status: common.ChannelStatusEnabled}
 	require.NoError(t, model.DB.Create(&outside).Error)
@@ -241,14 +245,14 @@ func TestRetrieveModelKeepsNativeVisibilityForContractKeys(t *testing.T) {
 	c, recorder := customerContractTokenContext(http.MethodGet, "/v1/models/outside-model", user, contract.Id)
 	c.Params = gin.Params{{Key: "model", Value: "outside-model"}}
 	RetrieveModel(c, constant.ChannelTypeOpenAI)
-	assert.Contains(t, recorder.Body.String(), `"id":"outside-model"`)
+	assert.Contains(t, recorder.Body.String(), `"code":"model_not_found"`)
 
-	// A model the contract lists but native permission does not cover stays
-	// invisible: contract membership never grants discovery.
+	// The user can access the contract group even though the saved Key group
+	// does not contain this model.
 	denied, deniedRecorder := customerContractTokenContext(http.MethodGet, "/v1/models/contract-model", user, contract.Id)
 	denied.Params = gin.Params{{Key: "model", Value: "contract-model"}}
 	RetrieveModel(denied, constant.ChannelTypeOpenAI)
-	assert.Contains(t, deniedRecorder.Body.String(), `"code":"model_not_found"`)
+	assert.Contains(t, deniedRecorder.Body.String(), `"id":"contract-model"`)
 }
 
 func TestContractPricingOverlaysDiscountOnNativeProjection(t *testing.T) {
@@ -263,11 +267,10 @@ func TestContractPricingOverlaysDiscountOnNativeProjection(t *testing.T) {
 	// applies the contract discount on top of the native group ratio.
 	assert.Contains(t, body, `"model_name":"default-model"`)
 	assert.Contains(t, body, `"contract_discount":"0.9"`)
-	assert.Contains(t, body, `"group_ratio":{"default":0.9,"vip":0.9}`, "per-group effective ratio = native group ratio × contract discount")
-	// Models outside the key's native groups keep the native projection rule:
-	// they are not listed, and the rule's route group never leaks.
-	assert.NotContains(t, body, "contract-model")
-	assert.NotContains(t, body, "contract-api", "the rule's route group never leaks into the projection")
+	assert.Contains(t, body, `"group_ratio":{"default":0.9}`, "per-group effective ratio = native group ratio × contract discount")
+	// Contract models outside the saved Key group use their actual group price.
+	assert.Contains(t, body, "contract-model")
+	assert.Contains(t, body, `"group_ratio":{"contract-api":0.696}`, "only the contract group contributes to this quote")
 	assert.NotContains(t, body, "channel_id")
 }
 
@@ -356,4 +359,22 @@ func TestContractSessionPricingRequiresExplicitOwnedSelection(t *testing.T) {
 	c.Set("id", user.Id+1000)
 	assert.True(t, respondCustomerContractPricing(c))
 	assert.NotEqual(t, http.StatusOK, response.Code)
+}
+
+func TestCustomerContractSeedanceCatalogDoesNotAdvertiseOtherSources(t *testing.T) {
+	_, user, contract := setupCustomerContractControllerDB(t)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("id", user.Id)
+	common.SetContextKey(c, constant.ContextKeyTokenContractId, contract.Id)
+	common.SetContextKey(c, constant.ContextKeyAuthVersion, user.AuthVersion)
+	common.SetContextKey(c, constant.ContextKeyUserGroup, user.Group)
+	catalog := []model.SeedancePublicModel{{ModelName: "contract-model", Enabled: true}, {ModelName: "outside-model", Enabled: true}}
+	filtered, err := customerContractSeedanceCatalog(c, catalog)
+	require.NoError(t, err)
+	assert.Empty(t, filtered, "ordinary sources do not advertise same-name Seedance capabilities")
+	require.NoError(t, model.DB.Model(&model.Channel{}).Where("id = ?", contract.Rules[0].ChannelId).Update("type", constant.ChannelTypeSeedanceLink).Error)
+	filtered, err = customerContractSeedanceCatalog(c, catalog)
+	require.NoError(t, err)
+	require.Len(t, filtered, 1)
+	assert.Equal(t, "contract-model", filtered[0].ModelName)
 }

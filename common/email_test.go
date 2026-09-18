@@ -2,6 +2,7 @@ package common
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -391,7 +392,7 @@ func TestNewSMTPClientHonorsExplicitStartTLSWhenPortIs465(t *testing.T) {
 	SMTPStartTLSEnabled = true
 	SMTPInsecureSkipVerify = true
 
-	client, err := newSMTPClient(fmt.Sprintf("%s:%d", server.host, server.port))
+	_, client, err := newSMTPClient(context.Background(), fmt.Sprintf("%s:%d", server.host, server.port))
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -414,7 +415,7 @@ func TestNewSMTPClientKeepsImplicitTLSForLegacyPort465(t *testing.T) {
 	SMTPStartTLSEnabled = false
 	SMTPInsecureSkipVerify = true
 
-	client, err := newSMTPClient(fmt.Sprintf("%s:%d", server.host, server.port))
+	_, client, err := newSMTPClient(context.Background(), fmt.Sprintf("%s:%d", server.host, server.port))
 	require.NoError(t, err)
 	defer client.Close()
 }

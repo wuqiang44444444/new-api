@@ -272,7 +272,8 @@ describe('API keys mutate drawer Auto group integration', () => {
     }
   })
 
-  test('preserves an unsaved custom order and mode after Auto to ordinary to Auto changes', async () => {    const createdPayloads: Array<Record<string, unknown>> = []
+  test('preserves an unsaved custom order and mode after Auto to ordinary to Auto changes', async () => {
+    const createdPayloads: Array<Record<string, unknown>> = []
     installApiFixtures(createdPayloads)
     await renderCreateDrawer()
 
@@ -363,7 +364,13 @@ describe('API keys mutate drawer Auto group integration', () => {
   test('does not auto-select when several contracts exist', async () => {
     contractFixtures.contracts = [
       contractFixtures.contracts[0],
-      { id: 4, name: 'Other contract', enabled: true, version: 1, models: [{ model: 'm-1', discount: '0.7' }] },
+      {
+        id: 4,
+        name: 'Other contract',
+        enabled: true,
+        version: 1,
+        models: [{ model: 'm-1', discount: '0.7' }],
+      },
     ]
     const createdPayloads: Array<Record<string, unknown>> = []
     installApiFixtures(createdPayloads)
@@ -387,7 +394,13 @@ describe('API keys mutate drawer Auto group integration', () => {
   test('does not auto-select when one of two contracts is enabled and the other disabled', async () => {
     contractFixtures.contracts = [
       contractFixtures.contracts[0],
-      { id: 6, name: 'Disabled contract', enabled: false, version: 1, models: [] },
+      {
+        id: 6,
+        name: 'Disabled contract',
+        enabled: false,
+        version: 1,
+        models: [],
+      },
     ]
     const createdPayloads: Array<Record<string, unknown>> = []
     installApiFixtures(createdPayloads)
@@ -410,7 +423,13 @@ describe('API keys mutate drawer Auto group integration', () => {
 
   test('does not auto-select the only contract when it is disabled', async () => {
     contractFixtures.contracts = [
-      { id: 5, name: 'Disabled contract', enabled: false, version: 2, models: [{ model: 'm-2', discount: '0.6' }] },
+      {
+        id: 5,
+        name: 'Disabled contract',
+        enabled: false,
+        version: 2,
+        models: [{ model: 'm-2', discount: '0.6' }],
+      },
     ]
     const createdPayloads: Array<Record<string, unknown>> = []
     installApiFixtures(createdPayloads)

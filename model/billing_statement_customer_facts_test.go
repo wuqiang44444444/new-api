@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -19,16 +20,16 @@ func TestCustomerStatementUsesPublicModelForAggregationAndDetail(t *testing.T) {
 	} {
 		require.NoError(t, db.Create(&row).Error)
 	}
-	s, err := GetBillingCustomerStatement(7, 1000, 1200, "api_key", 4, "", "")
+	s, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1200, "api_key", 4, "", "")
 	require.NoError(t, err)
 	require.Len(t, s.Groups, 1)
 	assert.Len(t, s.Groups[0].Models, 3)
 	assert.EqualValues(t, 120, s.Summary.NetQuota)
-	filtered, err := GetBillingCustomerStatement(7, 1000, 1200, "api_key", 4, "public-a", "token")
+	filtered, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1200, "api_key", 4, "public-a", "token")
 	require.NoError(t, err)
 	assert.EqualValues(t, 80, filtered.Summary.NetQuota)
 	tokenID := 4
-	detail, err := GetBillingStatementLogs(BillingStatementLogFilter{UserId: 7, Start: 1000, End: 1200, TokenId: &tokenID, ModelName: "public-a", BillingMode: "token"}, 1, 10, common.RoleCommonUser)
+	detail, err := GetBillingStatementLogs(context.Background(), BillingStatementLogFilter{UserId: 7, Start: 1000, End: 1200, TokenId: &tokenID, ModelName: "public-a", BillingMode: "token"}, 1, 10, common.RoleCommonUser)
 	require.NoError(t, err)
 	assert.EqualValues(t, 80, detail.Quota)
 	require.Len(t, detail.Items, 1)
@@ -49,7 +50,7 @@ func TestCustomerStatementNormalizesTotalInputAcrossUsageSemantics(t *testing.T)
 	} {
 		require.NoError(t, db.Create(&Log{UserId: 7, Type: LogTypeConsume, CreatedAt: 1100, PromptTokens: tc.prompt, Quota: 10, Other: tc.other}).Error)
 	}
-	s, err := GetBillingCustomerStatement(7, 1000, 1200, "api_key", 0, "", "")
+	s, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1200, "api_key", 0, "", "")
 	require.NoError(t, err)
 	assert.EqualValues(t, 3000, s.Summary.InputTokens)
 	assert.EqualValues(t, 2600, s.Summary.CacheReadTokens)
@@ -61,7 +62,7 @@ func TestCustomerStatementMarksUninterpretableCachedInputWithoutLosingMoney(t *t
 	db := setupBillingReconciliationTestDB(t)
 	require.NoError(t, db.Create(&User{Id: 7, Username: "customer"}).Error)
 	require.NoError(t, db.Create(&Log{UserId: 7, Type: LogTypeConsume, CreatedAt: 1100, PromptTokens: 100, Quota: 80, Other: `{"cache_tokens":900,"group_ratio":1,"model_ratio":1}`}).Error)
-	s, err := GetBillingCustomerStatement(7, 1000, 1200, "api_key", 0, "", "")
+	s, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1200, "api_key", 0, "", "")
 	require.NoError(t, err)
 	assert.EqualValues(t, 80, s.Summary.NetQuota)
 	assert.Equal(t, "partial", s.DataQuality.Status)

@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -113,6 +114,16 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				imageCommitted = true
 			}
 		case "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
+			// 流式诊断（仅观察）：协议失败/未完成/取消登记受控标记供错误事件
+			// 分类使用；不改变流继续、计费或返回语义。
+			switch streamResponse.Type {
+			case "response.failed":
+				sr.Error(errors.New("response_failed"))
+			case "response.incomplete":
+				sr.Error(errors.New("response_incomplete"))
+			default:
+				sr.Error(errors.New("response_cancelled"))
+			}
 			if !imageCommitted {
 				imageCounter.Reset()
 				imageCounter.Commit(info)

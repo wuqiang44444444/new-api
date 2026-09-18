@@ -360,7 +360,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 				// imagine 模型时被劫持为 Images 响应（评审 S4）。
 				if info.RelayMode == constant.RelayModeImagesGenerations ||
 					info.RelayMode == constant.RelayModeImagesEdits {
-					if gemini.SupportsGenerateContentImage(info.UpstreamModelName) {
+					if gemini.HasGenerateContentImageRequest(c) || gemini.SupportsGenerateContentImage(info.UpstreamModelName) {
 						return gemini.GeminiGenerateContentImageHandler(c, info, resp)
 					}
 				}

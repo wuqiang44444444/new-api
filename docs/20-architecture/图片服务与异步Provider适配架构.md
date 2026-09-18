@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-08
+last-reviewed: 2026-09-17
 ---
 
 # 图片服务与中转 Provider 适配架构
@@ -31,13 +31,14 @@ last-reviewed: 2026-09-08
 显式异步由代码登记的图片执行协议 `image_openai_v1` 承载（硬约束 §4）。受限 v1 代码已实现
 （完成度三分表见上）；真实 Provider、账单与生产灰度尚未验收，“代码已实现”不等于“生产已发布”。
 
-`Prefer: respond-async` 是执行偏好。OpenAI（1）与 Azure（3）的非流式生成、编辑接入平台任务；
+`Prefer: respond-async` 是执行偏好。OpenAI（1）与 Azure（3）的生成、编辑接入平台任务，包括同时携带 `stream=true` 的请求；
 Gemini、Vertex、图片中转继续使用既有执行器。资格来自明确 ChannelType，不从模型名或
 `APITypeOpenAI` 推断；其他渠道忽略该偏好，继续原生响应，不因此返回 `400`。
 
 执行模式在首次分发后、幂等与预扣之前确定，一次请求内保持不变。OpenAI／Azure 在共享 body
 storage 上读取 stream：JSON 使用 `*bool`，multipart 使用首值去空白后 `ParseBool`；非法输入
-留给原生完整校验报错。`stream=true` 优先原生流式，不认领平台任务幂等键、不跳过原生预扣。
+留给原生完整校验报错。同时携带异步偏好和 `stream=true` 时优先平台任务，由后台接收上游流；
+未携带异步偏好时才沿用原生流式。
 原生图片处理仅保留模式分派接线；Controller、Router 和 OpenAI adapter 无新增改动。
 
 OpenAI／Azure 的代码路径已通过本地模拟 Provider 测试；真实部署、用量账单和生产灰度仍须单独验收。
@@ -46,6 +47,9 @@ OpenAI／Azure 的代码路径已通过本地模拟 Provider 测试；真实部�
 
 以下规则仅适用于统一图片族。OpenAI／Azure 原生请求在异步受理时提前分派，继续由原生校验器与
 adapter 决定字段语义，支持其已有 JSON／multipart、mask、多图、参数覆盖及透传。
+原生 GPT Image JSON 使用 `images` 对象数组（每项 `image_url` / `file_id` 恰好选一），
+JSON mask 为同形对象；统一图片族使用字符串引用。原生 adapter 不进行字符串到对象转换，
+下面 14 张与字节预算不套用到原生入口。
 
 `service/image_contract.go` 是与 Provider 无关的合同解析层，被同步 relay、受理事务与异步
 worker 共同复用；族（模型）级字段生效矩阵由各 adapter 决定。字段合同冻结表的历史现场见
@@ -70,17 +74,28 @@ Gemini/Vertex 的 `generateContent` 图片模型（imagine 登记表，`setting/
 
 - 请求：`contents=[{role:user, parts:[text, 输入图…]}]`、
   `generationConfig.responseModalities=["TEXT","IMAGE"]`；`size` 映射 `imageConfig`
-  （`auto`→不发送；`WxH`→精确宽高比 + 按长边映射 1K/2K/4K 档）。每边不超过 4096，
-  且比例必须属于南向支持集合；不接受 `a:b` 或“最近比例”。返回图片仅允许等比例缩放到请求像素，
-  上游比例不符时报交付错误，不裁切、补边或拉伸；`n` 恒为 1，其它值在 Provider 调用前 `400`。
-- 二进制输入转 `inlineData`；HTTPS URL 以 `fileData` 原样透传（不下载、不改写）。
+  （`auto`→不发送；`WxH`→精确宽高比 + 按长边映射档位，并受逐模型允许档位约束）。
+  尺寸规则由 `pkg/geminiimage` 同时供运行时与公开投影使用；普通登记模型每边不超过 4096，
+  `gemini-3.1-flash-lite-image` 只发布 `auto` 与 `1024x1024`（后者发送 `1:1` / `1K`），
+  输出保留 Google 原始图片字节，不缩放、裁切或重新编码；显式 1024x1024 收到其他像素时拒绝交付，
+  不放大冒充。其他型号保留原有精确比例、等比例缩放规则。
+  Lite 的其他精确像素规格缺少官方逐比例像素表及真实验收，保持未发布；不从其他 Gemini 型号推断。
+  不接受 `a:b` 或“最近比例”；`n` 恒为 1，其它值在 Provider 调用前 `400`。
+- 二进制输入转 `inlineData`；HTTPS URL 以 `fileData` 原样透传（不下载、不改写）。Vertex Lite
+  的每张内联输入不得超过 7,000,000 解码字节；该限制与公开参数 `max_decoded_bytes` 共用
+  `pkg/geminiimage`。Gemini 原生渠道继续使用平台公共输入预算，不误用 Vertex 的限制。
 - 未发布字段显式拒绝：`quality`、`style`、`background`、`moderation`、`output_format`、
   `output_compression`、`watermark`、`input_fidelity`、`partial_images`、`stream=true`、
   未知顶层字段（缺证据即阻断，C3/P7—P11）。
 - 响应：只取最终图片 parts（`thought` 标记、纯文本、非图片 inlineData 排除）；零图 +
-  安全拒绝显式失败，不当成功空数组（R1/R5）；usage 采用可信 `usageMetadata`（R4）。
+  安全拒绝显式失败，不当成功空数组（R1/R5）；usage 采用可信 `usageMetadata`（R4）。Lite 必须有
+  图片输出 Token 分类，并且分类、输出总量、总 Token、缓存范围一致。同步证据缺失返回
+  `502 image_usage_incomplete`、禁止自动重试，由原生失败路径退还客户预扣；不宣称供应商未收费。
+  异步成功图片可交付，但证据不足时结算保持 pending，不以预扣估算或文本价格代替实际图片费用。
+- 已转换的同步请求按当次转换标记处理响应；已受理的异步请求复用转换核心，不重新查询当前 imagine
+  登记。管理员删除登记只阻止新调用，不改变已发送请求或已受理任务的模型族。
 - `response_format`：默认 `b64_json`；显式 `url` 在对象存储启用时逐张返回 300 秒签名 URL，
-  否则 `400`（P13，不以 Data URL 冒充）。
+  否则在标准入口预检返回 `503`（不以 Data URL 冒充）。
 - 同步标准 Google 图片请求的 HTTP 交换失败不证明未发送，传输错误禁止自动重试；
   该保护仅接入图片错误出口，不改变原生聊天或其它模型的重试策略。
 - Gemini/Vertex 图片转换成功后，南向请求头使用 `application/json` 匹配 generateContent
@@ -117,7 +132,7 @@ GET /v1/tasks/{task_id} -> 图片投影（user_id + app_id 双重归属）
 3. 资金单一所有者：受理的全部事实与资金/令牌预扣同事务；失败整笔回滚，不创建“已结算”补偿任务。
    `service/image_task_billing.go` 只用冻结价格、表达式、加密请求探针与持久化实际 usage 计算目标；
    资金差额、Task 计费状态、最终用量统计及受理槽释放由 `ApplyTaskBillingTarget` 同事务提交。
-   不调用旧非原子重算入口。统一图片族固定价或缺失 usage 保留预扣，继续使用钱包。
+   不调用旧非原子重算入口。统一图片族固定价或缺失 usage 通常沿用预扣目标，继续使用钱包；Lite 的缺失或不完整 usage 例外保持待结算。
    OpenAI／Azure 按返回图片数更新按次倍率，持久化归一 usage（保留缺失与零值区别）；仅在计算副本
    应用原生图片计费的缺省值。其受理事务遵循 wallet_only／subscription_only／wallet_first／
    subscription_first 及订阅钱包溢出规则，复用现有订阅 hold，转移给 Task 后禁止请求退款重复释放。
@@ -129,7 +144,7 @@ GET /v1/tasks/{task_id} -> 图片投影（user_id + app_id 双重归属）
    应用超限 `429`、全局受理容量耗尽 `503`，均不受理、不预扣、不发送。
 5. 旧视频轮询 feeder、通用超时退款与请求结束退款按 `client_protocol` 排除图片任务（NULL
    安全谓词）；图片任务的退款/结算复用 `AsyncBilling` 状态机与补偿扫描。
-6. 幂等（§3.7）：`Idempotency-Key` 仅实际异步模式提供任务幂等（未携带 Prefer 时仍返回 `400`；OpenAI／Azure 流式优先或其他渠道忽略 Prefer 时不认领）；键域
+6. 幂等（§3.7）：`Idempotency-Key` 仅实际异步模式提供任务幂等（未携带 Prefer 时仍返回 `400`；其他渠道忽略 Prefer 时不认领）；键域
    user + app(token) + 操作 + 客户键，摘要进既有 `TaskCreateIdempotency` 表；重放返回原
    任务 ID；不同请求体 `409`；绑定任务未终态期间 claim 到期不重置；multipart 摘要忽略
    boundary；原生 multipart 保留重复值和文件顺序，摘要包含完整文件而非 64 MiB 前缀；受理未完成窗口内重放返回 `in_progress`，不签发第二个 202。
@@ -156,7 +171,7 @@ GET /v1/tasks/{task_id} -> 图片投影（user_id + app_id 双重归属）
 在同一响应预算内读取完整流，只收集 `image_generation.completed`／`image_edit.completed`
 图片，忽略预览图，复用原生 usage 归一并保留最后有效用量；不把累计 usage 相加。流中错误、
 非法事件、没有完成图片或读取中断保持待核实。已受理任务仍通过 Task 查询交付，不翻转模式、
-不删除参数覆盖、不改原生流式处理器。客户显式 stream=true 的原生流式优先规则不变。
+不删除参数覆盖、不改原生流式处理器。客户同时请求异步和 stream=true 时优先平台任务，冻结 stream 参数后由后台读取结果。
 
 连接与计费探针的根密钥来自 `CRYPTO_SECRET`，缺省取 `SESSION_SECRET`；两者均未固定时
 使用进程随机值，不能保证重启或跨节点解密。持久异步部署必须固定并在全部受理、执行节点共享
@@ -228,6 +243,41 @@ Azure SAS 的起止时间统一使用 UTC；生效时间向前容错两分钟，
   同账号容器内轮换密钥经测试后保存；不保存第二把备用 Key，不自动尝试旧凭据。
 - 清理由部署方桶生命周期策略承担；平台不新增图片清理任务。
 
+### 5.1 标准返回格式交付
+
+两个图片入口使用已有 `response_format`，缺省请求保持原路径与默认格式，不增加存储依赖。
+显式 `url` / `b64_json` 的完整 JSON 结果由 `relay/image_delivery.go` 统一交付；已有目标格式
+直接使用，只有格式不匹配时才存储签名或安全下载编码。保留 usage、提示词改写与结果顺序。
+Provider URL 不强制转存；平台 URL 使用 300 秒签名并返回 `url_expires_at`。
+
+`relay/image_response_format.go` 在 Controller 预扣前校验明确格式与已知的存储依赖，
+副本先从原生上下文初始化实际渠道，再使用原生模型映射器评估，不参与选渠。
+ImageHelper 在每次选渠后重新检查，覆盖原生重试切换渠道的情况。Gemini/Vertex 标准入口请求 Base64，图片中转请求 URL；
+Ali/Replicate 的显式格式转换也交给统一交付层，避免 adapter 下载失败落入生成重试出口。
+原生 GPT Image 显式格式在转换、参数覆盖或透传之后，从最终南向 JSON/multipart 移除；
+异步请求冻结复用相同处理，客户格式仍保留在冻结任务中。缺失参数不重写原始正文。
+
+原生同步 SSE 保持原事件协议，不做 URL 转换；若渠道覆盖产生 SSE，交付写入器按响应类型直接转发。
+平台异步继续使用既有执行模式、任务存储、格式冻结与查询，不新增任务或账本。
+显式同步 JSON 交付使用权限为 0600 的临时文件保存完整响应，并按 JSON 字段的文件区间逐图转换。
+Base64 解码、URL 下载、编码、S3/Azure 上传和最终响应均通过文件或流完成；本交付层不再使用
+50 MiB 单图与 512 MiB 响应拒绝阈值。上游 adapter 仍负责原生协议校验与 usage 归一，交付层不另建
+Provider 解析或计费规则。文件区间索引只处理已由 adapter 验证的 JSON，未知结果字段保持原值。
+
+结果 GET、同对象键 PUT 与签名在原交付总预算内最多尝试三次，GET 的明确 4xx 不重试；每次下载
+重置临时文件，避免拼接失败前缀。URL 继续使用原 SSRF 与重定向保护。生成成功后的交付失败仍按
+可信生成用量结算一次，返回 502 `image_delivery_failed`，同时在 `data` 保留原始图片结果，并以
+`requested_response_format` 标识未能完成的目标格式；成功响应仍严格使用请求格式。这是明确失败时
+的结果救回入口，客户端须读取错误响应正文里的 Base64 或原 URL，不应重新发送生成请求。
+不进入 Controller 生成重试、换渠、禁用或退款路径。首次依赖预检失败不预扣、不调用上游；重试选渠后
+复检失败释放请求预扣，不发生该渠道的生成费用。临时文件在请求退出时关闭删除，不新增同步 Task、
+后台恢复或跨请求存储状态；客户端断连无法保证收到错误正文，Provider URL 也仍受其自身有效期约束。
+格式转换在消费耗时计算前完成；客户端后续下载不包含在生成请求日志内。
+
+原生接线仅为 Controller 的预检、ImageHelper 的请求格式准备与响应交付、原生异步冻结前的
+正文格式处理；具体实现隔离在新增文件。未来上游同步须复核这些窄接线与响应适配器契约。
+实现与本地验证不代表所有真实 Provider、真实账单或生产灰度已验收。
+
 ## 6. 图片中转渠道（ChannelTypeAsyncImage=63）
 
 管理面仍只有 `ChannelTypeAsyncImage` 一个图片中转类型，协议、模型映射与保存校验
@@ -238,7 +288,7 @@ Azure SAS 的起止时间统一使用 UTC；生效时间向前容错两分钟，
 | `funcloud_aigc_v2` | FunCloud `/api/v2/open/aigc/*` | 创建后在本次请求内轮询 | worker 内创建+轮询（`asyncimage/headless.go`） |
 | `moxing_images_v1` | Moxing `/v1/images/generations` | 单次同步 POST | worker 内单次 POST（`moxingimage/headless.go`） |
 
-- 同步模式继续返回 Provider URL；FunCloud 交付 Provider 返回的全部合法结果 URL，零合法 URL
+- 同步模式默认返回 Provider URL，显式 `b64_json` 由交付层下载编码；FunCloud 交付 Provider 返回的全部合法结果 URL，零合法 URL
   失败关闭，不补生成。Moxing 的固定单图合同要求恰好一个合法 URL，多图或混合非法结果明确失败。
 - 异步模式下结果下载后保存私有 OSS 并按 300 秒签名交付。
 - 两协议支持标准 `POST /v1/images/edits` 的同步与显式异步模式，复用公共图片输入合同；
@@ -259,7 +309,8 @@ Azure SAS 的起止时间统一使用 UTC；生效时间向前容错两分钟，
 
 - `api.image` 投影新增 gemini_image 族（`pkg/publicmodel/image_gemini.go`）：按管理员映射后
   落在 imagine 登记表的 Provider 模型识别（不从客户模型名推断），同时发布 `create_image`
-  与 `edit_image` 操作及逐字段参数；图片中转与原生图片模型投影规则不变。
+  与 `edit_image` 操作及逐字段参数；`size.size_constraints` 描述 WxH、每边范围与精确比例，
+  生成与编辑读取映射后的同一尺寸规则，`auto` 保持默认；图片中转与原生图片模型投影规则不变。
 - 管理端渠道测试：Gemini/Vertex 渠道在映射模型为 imagine 登记模型时默认使用图片生成
   endpoint（`controller/channel_test_image_profile.go`）；图片中转渠道测试维持协议感知尺寸。
 

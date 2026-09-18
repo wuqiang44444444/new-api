@@ -58,23 +58,25 @@ export function MyBilling(props: MyBillingProps) {
                 )}
               </p>
             </div>
-            <label className='w-full space-y-1.5 sm:w-44'>
-              <span className='text-muted-foreground text-xs font-medium'>
-                {t('Billing month')}
-              </span>
-              <Input
-                type='month'
-                value={month}
-                onChange={(event) =>
-                  props.onMonthChange(
-                    event.target.value || currentShanghaiMonth()
-                  )
-                }
-              />
-            </label>
           </div>
 
           <CustomerStatementView
+            toolbar={
+              <label className='w-full space-y-1.5 sm:w-44'>
+                <span className='text-muted-foreground text-xs font-medium'>
+                  {t('Billing month')}
+                </span>
+                <Input
+                  type='month'
+                  value={month}
+                  onChange={(event) =>
+                    props.onMonthChange(
+                      event.target.value || currentShanghaiMonth()
+                    )
+                  }
+                />
+              </label>
+            }
             isAdmin={false}
             period={period}
             dimension='api_key'

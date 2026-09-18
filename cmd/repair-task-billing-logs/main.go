@@ -25,6 +25,7 @@ type scope struct {
 	Start, End, CreateTaskID int64
 	FinalTaskID              int64
 	LinkInitialLogs          bool
+	MaintenanceGeneration    int64
 }
 
 type repairReport struct {
@@ -40,6 +41,13 @@ func main() {
 	dsn := flag.String("dsn", "", "local SQLite database (main and logs together)")
 	apply := flag.Bool("apply", false, "apply verified log-only changes")
 	backup := flag.String("backup", "", "new backup path, required with -apply")
+	holdPlan := flag.String("hold-plan", "", "write a new read-only zero-preauth correction plan")
+	holdApply := flag.String("hold-apply", "", "apply an explicitly reviewed zero-preauth plan")
+	approvedSHA := flag.String("approved-plan-sha256", "", "reviewed correction plan checksum")
+	maintenance := flag.String("maintenance", "", "begin or end statement maintenance; separate from repair")
+	evidence := flag.String("evidence", "", "maintenance reason or verified reconciliation evidence reference")
+	operatorID := flag.Int("operator-id", 0, "active root operator for maintenance")
+	flag.Int64Var(&s.MaintenanceGeneration, "maintenance-generation", 0, "current maintenance generation, required for apply and maintenance end")
 	flag.IntVar(&s.UserID, "user-id", 0, "required customer ID")
 	flag.IntVar(&s.TokenID, "token-id", 0, "required API key ID")
 	flag.StringVar(&s.Model, "model", "", "required customer model")
@@ -49,13 +57,21 @@ func main() {
 	flag.Int64Var(&s.FinalTaskID, "repair-final-task-id", 0, "explicit internal task row ID with missing completion log")
 	flag.BoolVar(&s.LinkInitialLogs, "link-initial-logs", false, "link initial logs using exact frozen Provider request IDs and transferred holds")
 	flag.Parse()
-	if *dsn == "" || s.UserID <= 0 || s.TokenID <= 0 || s.Model == "" || s.Start <= 0 || s.End < s.Start || s.End-s.Start > 31*86400 {
+	if *dsn == "" || (*maintenance == "" && *holdPlan == "" && *holdApply == "" && (s.UserID <= 0 || s.TokenID <= 0 || s.Model == "" || s.Start <= 0 || s.End < s.Start || s.End-s.Start > 31*86400)) {
 		fmt.Fprintln(os.Stderr, "explicit database, user, key, model and a period of at most 31 days are required")
 		os.Exit(2)
 	}
+	if (*holdPlan != "" && (*apply || *holdApply != "" || *maintenance != "")) || (*holdApply != "" && (!*apply || *maintenance != "")) {
+		fail("hold-plan is read-only; hold-apply requires apply and separate maintenance")
+	}
+
+	if (*holdPlan != "" || *holdApply != "") && (s.UserID != 0 || s.TokenID != 0 || s.Model != "" || s.Start != 0 || s.End != 0 || s.CreateTaskID != 0 || s.FinalTaskID != 0 || s.LinkInitialLogs) {
+		fail("hold correction plans cannot be combined with legacy repair scope flags")
+	}
+
 	mode := "ro"
 	transactionOptions := ""
-	if *apply {
+	if *apply || *maintenance != "" {
 		mode = "rw"
 		// Reserve the SQLite writer before reading the repair plan. A deferred
 		// read transaction cannot upgrade after a live worker commits in WAL mode.
@@ -64,6 +80,18 @@ func main() {
 	db, err := gorm.Open(sqlite.Open(*dsn+"?mode="+mode+transactionOptions), &gorm.Config{Logger: logger.Discard})
 	if err != nil {
 		fail("open database")
+	}
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	if *maintenance != "" {
+		if *apply {
+			fail("maintenance and apply must be separate operations")
+		}
+		state, err := repairMaintenance(db, *maintenance, *evidence, s.MaintenanceGeneration, *operatorID)
+		if err != nil {
+			fail(maintenanceFailureMessage(err))
+		}
+		fmt.Printf("maintenance=%t generation=%d confirmation_enabled=false\n", state.Enabled, state.Generation)
+		return
 	}
 	if *apply {
 		if *backup == "" {
@@ -78,6 +106,14 @@ func main() {
 			fail("create consistent SQLite backup")
 		}
 	}
+	if *holdPlan != "" || *holdApply != "" {
+		if err := runHeldProjectionCommand(db, *holdPlan, *holdApply, *approvedSHA, s.MaintenanceGeneration, *operatorID, *evidence); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	r, err := repair(db, s, *apply)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -99,6 +135,11 @@ func fail(message string) {
 func repair(db *gorm.DB, s scope, apply bool) (repairReport, error) {
 	var report repairReport
 	err := db.Transaction(func(tx *gorm.DB) error {
+		if apply {
+			if err := model.RequireBillingStatementMaintenanceTx(tx, s.MaintenanceGeneration); err != nil {
+				return fmt.Errorf("repair requires the current statement maintenance generation: %w", err)
+			}
+		}
 		var tasks []model.Task
 		if tx.Select("id", "task_id", "user_id", "app_id", "channel_id", "group", "platform", "quota", "status", "billing_state", "submit_time", "finish_time", "properties", "private_data").
 			Where("user_id = ? AND submit_time >= ? AND submit_time <= ?", s.UserID, s.Start, s.End).Find(&tasks).Error != nil {

@@ -49,14 +49,8 @@ func TestContractPricingPreservesBatchScope(t *testing.T) {
 			}
 			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 			assert.Equal(t, "batch", response.ExecutionMode)
-			require.Len(t, response.Data, 2)
-			assert.Equal(t, "batch-only", response.Data[0].Model)
-			assert.Equal(t, "p * 3", response.Data[0].Expr)
-			assert.Empty(t, response.Data[0].Discount)
-			assert.Equal(t, "default-model", response.Data[1].Model)
-			assert.Equal(t, "p * 7", response.Data[1].Expr)
-			assert.Equal(t, "0.9", response.Data[1].Discount)
-			assert.Equal(t, 0.9, response.Data[1].Ratios["default"])
+			require.Empty(t, response.Data, "no Batch sources were selected by this contract")
+
 		})
 	}
 }

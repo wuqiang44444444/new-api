@@ -70,6 +70,7 @@ import {
 import type { LogOtherData } from '../../types'
 import { DetailsDialog } from '../dialogs/details-dialog'
 import { LogCostDisplay } from '../log-cost-display'
+import { LogDiscountCell } from '../log-discount-cell'
 import { ModelBadge } from '../model-badge'
 import { TimingMetricsCell, StreamTpsCell } from '../timing-metrics-cell'
 import { useUsageLogsContext } from '../usage-logs-provider'
@@ -759,6 +760,19 @@ export function useCommonLogsColumns(
             )}
           </div>
         )
+      },
+    },
+    {
+      accessorKey: 'discount',
+      header: t('Discount factors'),
+      size: 280,
+      minSize: 256,
+      cell: ({ row }) => {
+        const log = row.original
+        if (!isDisplayableLogType(log.type)) return null
+
+        const other = parseLogOther(log.other)
+        return <LogDiscountCell other={other} t={t} />
       },
     },
     {

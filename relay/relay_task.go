@@ -282,7 +282,9 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 			}
 		}
 	}
-	if useTiered {
+	if frozen, ok := restoreCustomerContractTaskPrice(c, info); ok {
+		priceData = frozen
+	} else if useTiered {
 		provider, supported := adaptor.(channel.TaskUsageFactsProvider)
 		if !supported {
 			// Link/Seedance adaptors do not meter usage facts; the local tiered
@@ -325,12 +327,13 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 			return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
 		}
 	}
+	mergeCustomerContractOriginRatios(info, &priceData)
 	info.PriceData = priceData
 
 	// 5. 计费估算：让适配器根据用户请求提供 OtherRatios（时长、分辨率等）
 	//    必须在 ModelPriceHelperPerCall 之后调用（它会重建 PriceData）。
 	//    ResolveOriginTask 可能已在 remix 路径中预设了 OtherRatios，此处合并。
-	if info.TieredBillingSnapshot == nil {
+	if info.TieredBillingSnapshot == nil && !customerContractTaskPriceFrozen(c) {
 		var estimatedRatios map[string]float64
 		if validatedProvider, ok := adaptor.(channel.TaskValidatedBillingProvider); ok {
 			estimatedRatios, err = validatedProvider.EstimateBillingValidated(c, info)
@@ -348,13 +351,16 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	}
 
 	// 6. 将 OtherRatios 应用到基础额度（饱和转换，防止溢出成负数）
-	if info.TieredBillingSnapshot == nil && !common.StringsContains(constant.TaskPricePatches, modelName) {
+	if info.TieredBillingSnapshot == nil && !common.StringsContains(constant.TaskPricePatches, modelName) && !customerContractTaskPriceFrozen(c) {
 		quotaWithRatios := info.PriceData.ApplyOtherRatiosToFloat(float64(info.PriceData.Quota))
 		quota, clamp := common.QuotaFromFloatChecked(quotaWithRatios)
 		info.PriceData.Quota = quota
 		noteTaskQuotaClamp(info, clamp)
 	}
 
+	if err := refreshCustomerContractTaskPrice(c, info, modelName); err != nil {
+		return nil, service.TaskErrorWrapperLocal(err, "model_price_error", http.StatusBadRequest)
+	}
 	// 7. All published video Link contracts require a durable attempt.
 	// Legacy non-video Task routes retain their existing billing path.
 	if service.RequiresVideoTaskCreateAttempt(info) {
@@ -371,6 +377,12 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		}
 	}
 
+	if info.ContractBillingFact != nil && !service.RequiresVideoTaskCreateAttempt(info) && info.Billing != nil {
+		if err := info.Billing.Reserve(info.PriceData.Quota); err != nil {
+			return nil, service.TaskErrorWrapperLocal(err, "billing_reserve_failed", http.StatusForbidden)
+		}
+		info.FinalPreConsumedQuota = info.Billing.GetPreConsumedQuota()
+	}
 	// 8. 构建请求体
 	requestBody, err := adaptor.BuildRequestBody(c, info)
 	if err != nil {

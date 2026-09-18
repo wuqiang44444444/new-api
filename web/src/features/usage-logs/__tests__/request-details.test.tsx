@@ -1,9 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { AxiosError, AxiosHeaders } from 'axios'
 import { describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+
 import { TaskRequestDetails } from '../components/task-request-details'
+import { getTaskRequestBodies } from '../evidence-api'
 
 vi.mock('@/lib/api', () => ({ api: { get: vi.fn() } }))
 vi.mock('react-i18next', () => ({
@@ -118,3 +121,120 @@ describe('Request detail shortcuts', () => {
     expect(await screen.findByText('No request evidence recorded')).toBeTruthy()
   })
 })
+
+function recordedEvents(events: Record<string, unknown>[]) {
+  vi.mocked(api.get)
+    .mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: { items: [{ id: 1, request_id: 'request-1' }], total: 1 },
+      },
+    })
+    .mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          evidence: { body_expired: false },
+          events: events.map((event) => ({
+            stage: 'north_receive',
+            has_body: true,
+            complete: true,
+            body_status: 'available',
+            ...event,
+          })),
+        },
+      },
+    })
+}
+
+function objectReadError(status: number, data: string) {
+  const config = { headers: new AxiosHeaders() }
+  return new AxiosError(
+    'Object request failed',
+    'ERR_BAD_RESPONSE',
+    config,
+    undefined,
+    { data, status, statusText: 'Failed', headers: {}, config }
+  )
+}
+
+it('keeps readable records when other bodies cannot be decrypted, are missing or are binary', async () => {
+  recordedEvents([
+    { id: 11, body_status: 'decrypt_failed' },
+    { id: 12 },
+    { id: 13, body_status: 'missing' },
+    { id: 14, body_status: 'binary' },
+    { id: 15 },
+  ])
+  vi.mocked(api.get)
+    .mockResolvedValueOnce({ data: 'readable original' })
+    .mockResolvedValueOnce({ data: '' })
+  show()
+  fireEvent.click(screen.getByRole('button', { name: 'User request details' }))
+  expect(await screen.findByText('readable original')).toBeTruthy()
+  expect(
+    screen.getByText('Evidence body cannot be decrypted or authenticated')
+  ).toBeTruthy()
+  expect(screen.getByText('Evidence body file is missing')).toBeTruthy()
+  expect(screen.getByText('Binary evidence has no text preview')).toBeTruthy()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(document.querySelectorAll('pre')).toHaveLength(2)
+  expect(api.get).toHaveBeenCalledTimes(4)
+})
+
+it.each([
+  [410, '{"body_status":"missing"}', 'Evidence body file is missing'],
+  [
+    503,
+    '{"body_status":"storage_unavailable"}',
+    'Evidence storage is unavailable',
+  ],
+  [503, '<html>gateway unavailable</html>', 'Evidence body could not be read'],
+])(
+  'isolates HTTP %s failures between preview and download',
+  async (status, data, message) => {
+    recordedEvents([{ id: 11 }, { id: 12 }])
+    vi.mocked(api.get)
+      .mockRejectedValueOnce(objectReadError(status, data))
+      .mockResolvedValueOnce({ data: 'second original' })
+    show()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'User request details' })
+    )
+    expect(await screen.findByText('second original')).toBeTruthy()
+    expect(screen.getByText(message)).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByText(data)).toBeNull()
+  }
+)
+
+it('allows a transient per-object failure to be retried without discarding readable records', async () => {
+  recordedEvents([{ id: 11 }, { id: 12 }])
+  vi.mocked(api.get)
+    .mockRejectedValueOnce(new AxiosError('offline', 'ERR_NETWORK'))
+    .mockResolvedValueOnce({ data: 'second original' })
+  show()
+  fireEvent.click(screen.getByRole('button', { name: 'User request details' }))
+  expect(await screen.findByText('second original')).toBeTruthy()
+  expect(screen.getByText('Evidence body could not be read')).toBeTruthy()
+  recordedEvents([{ id: 11 }, { id: 12 }])
+  vi.mocked(api.get)
+    .mockResolvedValueOnce({ data: 'recovered original' })
+    .mockResolvedValueOnce({ data: 'second original' })
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+  expect(await screen.findByText('recovered original')).toBeTruthy()
+  expect(screen.queryByText('Evidence body could not be read')).toBeNull()
+})
+
+it.each([401, 403])(
+  'keeps HTTP %s as an authentication failure',
+  async (status) => {
+    recordedEvents([{ id: 11 }, { id: 12 }])
+    const error = objectReadError(status, '{"message":"Access denied"}')
+    vi.mocked(api.get).mockRejectedValueOnce(error)
+    await expect(getTaskRequestBodies('task-1', 'north_receive')).rejects.toBe(
+      error
+    )
+    expect(api.get).toHaveBeenCalledTimes(3)
+  }
+)

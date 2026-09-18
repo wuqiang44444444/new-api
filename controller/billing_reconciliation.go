@@ -48,8 +48,12 @@ func GetSelfBillingReconciliation(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// 版本绑定（方案 13）：明确版本或已有当前确认版时读取冻结视图，否则走实时查询。
+	if tryRespondBillingStatementVersion(c, period, c.GetInt("id"), "api_key", false) {
+		return
+	}
 	statement, err := model.GetBillingCustomerStatement(
-		c.GetInt("id"), period.StartTimestamp, period.EndTimestamp, "api_key",
+		c.Request.Context(), c.GetInt("id"), period.StartTimestamp, period.EndTimestamp, "api_key",
 		tokenId, modelName, billingMode,
 	)
 	if err != nil {
@@ -69,14 +73,6 @@ func GetAdminCustomerBillingReconciliation(c *gin.Context) {
 		common.ApiErrorMsg(c, "invalid user_id")
 		return
 	}
-	if _, err := model.GetBillingReconciliationUserById(userId); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "user not found"})
-			return
-		}
-		common.ApiError(c, err)
-		return
-	}
 	dimension := strings.TrimSpace(c.DefaultQuery("dimension", "api_key"))
 	groupId := parsePositiveQueryId(c, "group_id")
 	if groupId < 0 {
@@ -86,8 +82,20 @@ func GetAdminCustomerBillingReconciliation(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// 版本绑定（方案 13）：管理员可明确草稿/历史版本；未指定时自动落到当前确认版。
+	if tryRespondBillingStatementVersion(c, period, userId, dimension, true) {
+		return
+	}
+	if _, err := model.GetBillingReconciliationUserById(userId); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "user not found"})
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
 	statement, err := model.GetBillingCustomerStatement(
-		userId, period.StartTimestamp, period.EndTimestamp, dimension, groupId,
+		c.Request.Context(), userId, period.StartTimestamp, period.EndTimestamp, dimension, groupId,
 		modelName, billingMode,
 	)
 	if err != nil {
@@ -180,7 +188,7 @@ func parseBillingReconciliationModelFilters(c *gin.Context) (string, string, boo
 		return "", "", false
 	}
 	billingMode := strings.TrimSpace(c.Query("billing_mode"))
-	if billingMode != "" && billingMode != model.BillingReconciliationModeToken && billingMode != model.BillingReconciliationModePerCall && billingMode != model.BillingReconciliationModeUnknown {
+	if billingMode != "" && billingMode != model.BillingReconciliationModeToken && billingMode != model.BillingReconciliationModePerCall && billingMode != model.BillingReconciliationModePerSecond && billingMode != model.BillingReconciliationModeUnknown {
 		common.ApiErrorMsg(c, "invalid billing_mode")
 		return "", "", false
 	}
@@ -210,7 +218,7 @@ func validProviderBillingKey(periodStart int64, channelId int, providerModel str
 	if periodStart != time.Date(period.Year(), period.Month(), 1, 0, 0, 0, 0, billingSettlementLocation).Unix() {
 		return false
 	}
-	return billingMode == model.BillingReconciliationModeToken || billingMode == model.BillingReconciliationModePerCall
+	return billingMode == model.BillingReconciliationModeToken || billingMode == model.BillingReconciliationModePerCall || billingMode == model.BillingReconciliationModePerSecond
 }
 
 func validCopiedProviderBillingPeriod(periodStart int64, copiedFromPeriod int64) bool {

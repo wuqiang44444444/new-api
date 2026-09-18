@@ -5,7 +5,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRONTEND_DIR="$ROOT_DIR/web"
 LOG_DIR="$ROOT_DIR/logs"
-# All component ports stay inside 3500-3510.
+# Default development ports; callers can override them explicitly.
 FRONTEND_PORT="${FRONTEND_PORT:-3500}"
 BACKEND_PORT="${BACKEND_PORT:-3501}"
 STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-300}"
@@ -13,6 +13,7 @@ FRONTEND_LOG="$LOG_DIR/frontend.log"
 BACKEND_LOG="$LOG_DIR/backend.log"
 FRONTEND_PID=""
 BACKEND_PID=""
+TAIL_PID=""
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -39,103 +40,117 @@ prepare_frontend() {
   fi
 }
 
-stop_port() {
-  local port="$1"
-  local pid
-  local pids=()
-
-  while IFS= read -r pid; do
-    [[ -n "$pid" ]] && pids+=("$pid")
-  done < <(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
-  if (( ${#pids[@]} == 0 )); then
-    return
+# Stops any process listening on the port, then waits for the port to be freed.
+# Fails only when the port cannot be freed.
+stop_port_occupiers() {
+  local port="$1" pids pid
+  pids=$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+  if [[ -z "$pids" ]]; then
+    return 0
   fi
-
-  echo "正在停止占用端口 $port 的进程：${pids[*]}"
-  kill "${pids[@]}" 2>/dev/null || true
-
-  for _ in {1..20}; do
-    if ! lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-      return
-    fi
-    sleep 0.25
+  for pid in $pids; do
+    echo "端口 $port 被占用：PID ${pid}（$(ps -p "$pid" -o command= 2>/dev/null || true)），正在停止。"
   done
-
-  pids=()
-  while IFS= read -r pid; do
-    [[ -n "$pid" ]] && pids+=("$pid")
-  done < <(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
-  if (( ${#pids[@]} > 0 )); then
-    echo "进程未及时退出，强制释放端口 ${port}：${pids[*]}"
-    kill -KILL "${pids[@]}" 2>/dev/null || true
+  # shellcheck disable=SC2086 # Intentional word splitting of the PID list.
+  kill -TERM $pids 2>/dev/null || true
+  local deadline=$((SECONDS + 5))
+  while (( SECONDS < deadline )); do
+    pids=$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+    if [[ -z "$pids" ]]; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "占用进程未响应 SIGTERM，强制停止。"
+  # shellcheck disable=SC2086 # Intentional word splitting of the PID list.
+  kill -KILL $pids 2>/dev/null || true
+  sleep 0.5
+  if lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "端口 $port 仍被占用，无法自动释放，请手动处理。" >&2
+    return 1
   fi
-
-  for _ in {1..20}; do
-    if ! lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-      return
-    fi
-    sleep 0.25
-  done
-
-  echo "无法释放端口 $port，请手动检查占用进程。" >&2
-  return 1
 }
 
-wait_for_port() {
-  local name="$1"
-  local port="$2"
-  local pid="$3"
-  local log_file="$4"
-  local timeout="$5"
-  local attempts=$((timeout * 2))
-
-  for ((i = 0; i < attempts; i++)); do
-    if lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-      echo "$name 已启动：http://localhost:$port"
-      return
-    fi
-
+wait_for_health() {
+  local name="$1" port="$2" pid="$3" log_file="$4" endpoint="$5"
+  local deadline=$((SECONDS + STARTUP_TIMEOUT))
+  local response
+  while (( SECONDS < deadline )); do
     if ! kill -0 "$pid" 2>/dev/null; then
       echo "$name 启动失败，最近日志如下：" >&2
       tail -n 80 "$log_file" >&2 || true
       return 1
     fi
+    if response=$(curl --noproxy '*' --fail --silent --max-time 1 "http://127.0.0.1:$port$endpoint"); then
+      if [[ "$endpoint" != "/api/status" ]] || [[ "$response" =~ \"success\"[[:space:]]*:[[:space:]]*true ]]; then
+        echo "$name 已启动：http://localhost:$port"
+        return 0
+      fi
+    fi
     sleep 0.5
   done
-
-  echo "$name 在 ${timeout} 秒内未监听端口 ${port}，最近日志如下：" >&2
+  echo "$name 在 ${STARTUP_TIMEOUT} 秒内未通过健康检查，最近日志如下：" >&2
   tail -n 80 "$log_file" >&2 || true
   return 1
 }
 
+# shellcheck disable=SC2329 # Called by the EXIT trap; it clears traps before exiting.
 cleanup() {
+  local exit_code=$?
   trap - EXIT INT TERM
-
-  if [[ -n "$FRONTEND_PID" ]]; then
-    kill "$FRONTEND_PID" 2>/dev/null || true
-  fi
-  if [[ -n "$BACKEND_PID" ]]; then
-    kill "$BACKEND_PID" 2>/dev/null || true
-  fi
-
-  stop_port "$FRONTEND_PORT"
-  stop_port "$BACKEND_PORT"
+  # Job control gives each launched job its own group, including go/bun children.
+  # Signal only groups created by this invocation, even if a parent already died.
+  local pid
+  for pid in "$TAIL_PID" "$FRONTEND_PID" "$BACKEND_PID"; do
+    [[ -z "$pid" ]] || kill -TERM -- "-$pid" 2>/dev/null || true
+  done
+  local deadline=$((SECONDS + 5)) alive
+  while (( SECONDS < deadline )); do
+    alive=false
+    for pid in "$TAIL_PID" "$FRONTEND_PID" "$BACKEND_PID"; do
+      if [[ -n "$pid" ]] && kill -0 -- "-$pid" 2>/dev/null; then alive=true; fi
+    done
+    if [[ "$alive" == false ]]; then break; fi
+    sleep 0.1
+  done
+  for pid in "$TAIL_PID" "$FRONTEND_PID" "$BACKEND_PID"; do
+    if [[ -n "$pid" ]]; then
+      kill -KILL -- "-$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+  done
+  exit "$exit_code"
 }
-
-trap cleanup EXIT
-trap 'exit 130' INT TERM
 
 require_command bun
 require_command go
 require_command lsof
+require_command curl
 
-if [[ ! "$STARTUP_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
-  echo "STARTUP_TIMEOUT 必须是正整数（秒）：$STARTUP_TIMEOUT" >&2
+if [[ ! "$STARTUP_TIMEOUT" =~ ^[1-9][0-9]{0,9}$ ]] || (( STARTUP_TIMEOUT > 2147483647 )); then
+  echo "STARTUP_TIMEOUT 必须是 1 到 2147483647 的整数（秒）：$STARTUP_TIMEOUT" >&2
+  exit 1
+fi
+for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
+  if [[ ! "$port" =~ ^[1-9][0-9]{0,4}$ ]] || (( port > 65535 )); then
+    echo "端口必须是 1 到 65535 的整数：$port" >&2
+    exit 1
+  fi
+done
+if [[ "$BACKEND_PORT" == "$FRONTEND_PORT" ]]; then
+  echo "前后端端口不能相同。" >&2
   exit 1
 fi
 
-stop_port "$FRONTEND_PORT"
-stop_port "$BACKEND_PORT"
+# Validate the complete configuration before stopping either running service.
+for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
+  stop_port_occupiers "$port"
+done
+
+trap 'cleanup' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+set -m
 
 prepare_frontend
 
@@ -150,6 +165,8 @@ echo "正在启动后端，端口：$BACKEND_PORT"
 ) >>"$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
 
+wait_for_health "后端" "$BACKEND_PORT" "$BACKEND_PID" "$BACKEND_LOG" "/api/status"
+
 echo "正在启动前端，端口：$FRONTEND_PORT"
 (
   cd "$FRONTEND_DIR"
@@ -158,8 +175,13 @@ echo "正在启动前端，端口：$FRONTEND_PORT"
 ) >>"$FRONTEND_LOG" 2>&1 &
 FRONTEND_PID=$!
 
-wait_for_port "后端" "$BACKEND_PORT" "$BACKEND_PID" "$BACKEND_LOG" "$STARTUP_TIMEOUT"
-wait_for_port "前端" "$FRONTEND_PORT" "$FRONTEND_PID" "$FRONTEND_LOG" "$STARTUP_TIMEOUT"
+wait_for_health "前端" "$FRONTEND_PORT" "$FRONTEND_PID" "$FRONTEND_LOG" "/"
 
 echo "持续监控前后端日志，按 Ctrl+C 停止服务。"
-tail -n 100 -F "$BACKEND_LOG" "$FRONTEND_LOG"
+tail -n 100 -F "$BACKEND_LOG" "$FRONTEND_LOG" &
+TAIL_PID=$!
+while kill -0 "$BACKEND_PID" 2>/dev/null && kill -0 "$FRONTEND_PID" 2>/dev/null && kill -0 "$TAIL_PID" 2>/dev/null; do
+  sleep 1
+done
+echo "前后端服务或日志监控已退出，正在清理本次启动的进程。" >&2
+exit 1

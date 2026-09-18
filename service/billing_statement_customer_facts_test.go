@@ -37,7 +37,7 @@ func TestBatchCompletionCarriesCachedInputIntoCustomerStatement(t *testing.T) {
 	result, err := CreateBatchJob(c, request)
 	require.NoError(t, err)
 	require.NoError(t, progressBatchJob(context.Background(), result.Job))
-	s, err := model.GetBillingCustomerStatement(1701, 1, common.GetTimestamp()+10, "api_key", 0, "", "")
+	s, err := model.GetBillingCustomerStatement(context.Background(), 1701, 1, common.GetTimestamp()+10, "api_key", 0, "", "")
 	require.NoError(t, err)
 	assert.EqualValues(t, 10, s.Summary.InputTokens)
 	assert.EqualValues(t, 8, s.Summary.CacheReadTokens)

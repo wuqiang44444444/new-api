@@ -102,7 +102,7 @@ func GetChannel(
 	filters []dto.ChannelFilter,
 ) (*Channel, error) {
 	var abilities []Ability
-	err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).Order("priority DESC, weight DESC").Find(&abilities).Error
+	err := channelRouteAbilityQuery(group, model, filters).Order("priority DESC, weight DESC").Find(&abilities).Error
 	if err != nil {
 		return nil, err
 	}

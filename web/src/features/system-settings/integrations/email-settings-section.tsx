@@ -45,6 +45,12 @@ import { SettingsSection } from '../components/settings-section'
 import { useResetForm } from '../hooks/use-reset-form'
 import { useUpdateOption } from '../hooks/use-update-option'
 
+const emailAddressList = (value: string) =>
+  value
+    .split(/[;,\s]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+
 const createEmailSchema = (t: (key: string) => string) =>
   z.object({
     SMTPServer: z.string(),
@@ -64,12 +70,35 @@ const createEmailSchema = (t: (key: string) => string) =>
     SMTPStartTLSEnabled: z.boolean(),
     SMTPInsecureSkipVerify: z.boolean(),
     SMTPForceAuthLogin: z.boolean(),
+    error_report_setting: z
+      .object({
+        enabled: z.boolean(),
+        recipients: z.string(),
+      })
+      .refine(
+        (value) =>
+          !value.enabled || emailAddressList(value.recipients).length > 0,
+        {
+          message: t('Configure at least one recipient to enable the report'),
+          path: ['recipients'],
+        }
+      )
+      .refine(
+        (value) =>
+          emailAddressList(value.recipients).every((address) =>
+            /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)
+          ),
+        { message: t('Invalid recipient email address'), path: ['recipients'] }
+      ),
   })
 
 type EmailFormValues = z.infer<ReturnType<typeof createEmailSchema>>
 
 type EmailSettingsSectionProps = {
-  defaultValues: EmailFormValues
+  defaultValues: Omit<EmailFormValues, 'error_report_setting'> & {
+    'error_report_setting.enabled': boolean
+    'error_report_setting.recipients': string
+  }
 }
 
 type SmtpSecurityMode = 'none' | 'ssl_tls' | 'starttls'
@@ -90,12 +119,18 @@ export function EmailSettingsSection({
   const updateOption = useUpdateOption()
   const emailSchema = createEmailSchema(t)
 
+  const formDefaults: EmailFormValues = {
+    ...defaultValues,
+    error_report_setting: {
+      enabled: defaultValues['error_report_setting.enabled'] ?? false,
+      recipients: defaultValues['error_report_setting.recipients'] ?? '',
+    },
+  }
   const form = useForm<EmailFormValues>({
     resolver: zodResolver(emailSchema),
-    defaultValues,
+    defaultValues: formDefaults,
   })
-
-  useResetForm(form, defaultValues)
+  useResetForm(form, form.formState.isSubmitting ? undefined : formDefaults)
 
   const onSubmit = async (values: EmailFormValues) => {
     const securityMode = getSmtpSecurityMode(values)
@@ -111,6 +146,9 @@ export function EmailSettingsSection({
       SMTPForceAuthLogin: values.SMTPForceAuthLogin,
     }
 
+    const reportEnabled = values.error_report_setting.enabled
+    const reportRecipients = values.error_report_setting.recipients.trim()
+
     const initial = {
       SMTPServer: defaultValues.SMTPServer.trim(),
       SMTPPort: defaultValues.SMTPPort.trim(),
@@ -123,7 +161,18 @@ export function EmailSettingsSection({
       SMTPForceAuthLogin: defaultValues.SMTPForceAuthLogin,
     }
 
+    const initialReportEnabled =
+      defaultValues['error_report_setting.enabled'] ?? false
+    const initialReportRecipients = (
+      defaultValues['error_report_setting.recipients'] ?? ''
+    ).trim()
+
     const updates: Array<{ key: string; value: string | boolean }> = []
+
+    // Disable first; enabling must wait until SMTP and recipients are saved.
+    if (!reportEnabled && initialReportEnabled) {
+      updates.push({ key: 'error_report_setting.enabled', value: false })
+    }
 
     if (sanitized.SMTPServer !== initial.SMTPServer) {
       updates.push({ key: 'SMTPServer', value: sanitized.SMTPServer })
@@ -173,8 +222,18 @@ export function EmailSettingsSection({
       })
     }
 
+    if (reportRecipients !== initialReportRecipients) {
+      updates.push({
+        key: 'error_report_setting.recipients',
+        value: reportRecipients,
+      })
+    }
+    if (reportEnabled && !initialReportEnabled) {
+      updates.push({ key: 'error_report_setting.enabled', value: true })
+    }
     for (const update of updates) {
-      await updateOption.mutateAsync(update)
+      const response = await updateOption.mutateAsync(update)
+      if (!response.success) return
     }
   }
 
@@ -184,7 +243,7 @@ export function EmailSettingsSection({
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)} autoComplete='off'>
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
-            isSaving={updateOption.isPending}
+            isSaving={form.formState.isSubmitting}
             saveLabel='Save SMTP settings'
           />
           <FormField
@@ -405,6 +464,55 @@ export function EmailSettingsSection({
               </FormItem>
             )}
           />
+
+          <FormField
+            control={form.control}
+            name='error_report_setting.enabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t('Hourly system & error report')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Send an hourly email report of system status and all logged errors for the previous Beijing-time hour'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+
+          {form.watch('error_report_setting.enabled') && (
+            <FormField
+              control={form.control}
+              name='error_report_setting.recipients'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Report recipients')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      autoComplete='off'
+                      placeholder='ops@example.com; backup@example.com'
+                      {...field}
+                      onChange={(event) => field.onChange(event.target.value)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Separate multiple addresses with semicolons or commas. Reports are sent to these addresses only; removing an address stops its pending deliveries. Overlong reports are split into numbered parts without omitting any logged error.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
         </SettingsForm>
       </Form>
     </SettingsSection>

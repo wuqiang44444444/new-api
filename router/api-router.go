@@ -334,6 +334,10 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.GET("/self", middleware.UserAuth(), controller.GetUserLogs)
 		logRoute.GET("/self/search", middleware.UserAuth(), middleware.SearchRateLimit(), controller.SearchUserLogs)
 
+		// 错误事件查询（relay/asset 已鉴权 API 调用的最终 4xx/5xx），路由注册为唯一接入点。
+		errorLogRoute := apiRouter.Group("/error_log")
+		errorLogRoute.GET("/", middleware.AdminAuth(), controller.GetErrorLogs)
+
 		billingRoute := apiRouter.Group("/billing")
 		billingRoute.GET("/self", middleware.UserAuth(), controller.GetUserBillingStatement)
 		billingRoute.GET("/self/breakdown", middleware.UserAuth(), controller.GetUserBillingStatementBreakdown)

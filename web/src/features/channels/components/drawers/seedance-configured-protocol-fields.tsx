@@ -60,11 +60,16 @@ export function SeedanceConfiguredProtocolFields(
     return <ErrorState onRetry={() => void configuration.refetch()} />
   }
   if (!snapshot) return <LoadingState />
-  if (!snapshot.configuration) return <ErrorState onRetry={() => { setSnapshot(undefined); void configuration.refetch() }} />
+  if (!snapshot.configuration)
+    return (
+      <ErrorState
+        onRetry={() => {
+          setSnapshot(undefined)
+          void configuration.refetch()
+        }}
+      />
+    )
   return (
-    <SeedanceProtocolFields
-      {...props}
-      configuration={snapshot.configuration}
-    />
+    <SeedanceProtocolFields {...props} configuration={snapshot.configuration} />
   )
 }

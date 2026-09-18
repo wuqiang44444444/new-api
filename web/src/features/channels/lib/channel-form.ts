@@ -810,13 +810,13 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     delete settingsObj.video_upstream_query_path_template
     delete settingsObj.asset_upstream_profile
     if (assetDefinition) {
-      if (assetDefinition.project)
-        {settingsObj.asset_provider_project =
-          formData.asset_provider_project?.trim() || ''}
-      else delete settingsObj.asset_provider_project
-      if (assetDefinition.region)
-        {settingsObj.asset_region = formData.asset_region?.trim() || ''}
-      else delete settingsObj.asset_region
+      if (assetDefinition.project) {
+        settingsObj.asset_provider_project =
+          formData.asset_provider_project?.trim() || ''
+      } else delete settingsObj.asset_provider_project
+      if (assetDefinition.region) {
+        settingsObj.asset_region = formData.asset_region?.trim() || ''
+      } else delete settingsObj.asset_region
     } else {
       delete settingsObj.asset_provider_project
       delete settingsObj.asset_region

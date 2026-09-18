@@ -36,10 +36,7 @@ import {
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
 import { isTokenBasedModel } from '../lib/model-helpers'
-import {
-  formatPrice,
-  stripTrailingZeros,
-} from '../lib/price'
+import { formatPrice, stripTrailingZeros } from '../lib/price'
 import type { PricingModel } from '../types'
 import { AssetShareGroupBadge } from './asset-share-group-badge'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'

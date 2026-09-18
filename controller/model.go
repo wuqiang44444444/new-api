@@ -186,6 +186,11 @@ type modelListGroups struct {
 }
 
 func getModelListGroups(c *gin.Context) (modelListGroups, error) {
+	if _, groups, active, err := customerContractModelProjection(c); err != nil {
+		return modelListGroups{}, err
+	} else if active {
+		return modelListGroups{ownerGroups: groups}, nil
+	}
 	tokenGroup := common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
 	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 	if userGroup == "" && (tokenGroup == "" || tokenGroup == "auto") {
@@ -249,6 +254,14 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 	models := service.GetGroupsEnabledModels(ownerGroups)
+	contractModels, contractGroups, contractActive, contractErr := customerContractModelProjection(c)
+	if contractErr != nil {
+		respondCustomerContractPricingLoadError(c)
+		return
+	}
+	if contractActive {
+		models, ownerGroups = contractModels, contractGroups
+	}
 	for _, modelName := range models {
 		if modelLimitEnable {
 			matchingName := ratio_setting.RoutingMatchModelName(modelName)
@@ -266,18 +279,33 @@ func ListModels(c *gin.Context, modelType int) {
 	if len(ownerGroups) > 0 {
 		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
 	}
-	mediaAPIByModel, err := model.GetPublicMediaModelAPIs(userModelNames, ownerGroups)
+	mediaAPIByModel, contractMetadata, err := customerContractModelMetadata(c, userModelNames, ownerGroups)
 	if err != nil {
+		if contractActive {
+			respondCustomerContractPricingLoadError(c)
+			return
+		}
 		common.SysLog(fmt.Sprintf("GetPublicMediaModelAPIs error: %v", err))
 		mediaAPIByModel = map[string]*dto.PublicModelAPI{}
 	}
 	userOpenAiModels := make([]dto.OpenAIModels, 0, len(userModelNames))
 	for _, modelName := range userModelNames {
 		item := buildOpenAIModel(modelName, ownerByModel)
+		if contractActive {
+			item.SupportedEndpointTypes = contractMetadata[modelName].SupportedEndpointTypes
+		}
 		applyPublicMediaMetadata(&item, mediaAPIByModel[modelName])
 		userOpenAiModels = append(userOpenAiModels, item)
 	}
-	userOpenAiModels = appendConfiguredSeedanceModels(userOpenAiModels)
+	if contractActive {
+		userOpenAiModels, err = applyCustomerContractSeedanceModels(c, userOpenAiModels)
+		if err != nil {
+			respondCustomerContractPricingLoadError(c)
+			return
+		}
+	} else {
+		userOpenAiModels = appendConfiguredSeedanceModels(userOpenAiModels)
+	}
 
 	switch modelType {
 	case constant.ChannelTypeAnthropic:
@@ -337,8 +365,7 @@ func ChannelListModels(c *gin.Context) {
 }
 
 // DashboardListModels serves the session-auth dashboard model list. It keeps
-// the native channel-type listing; customer contracts provide discounts only
-// and never gate or extend the model list.
+// the native channel-type listing; a session has no implicit Key contract.
 func DashboardListModels(c *gin.Context) {
 	modelsByChannel := make(map[int][]string, len(channelId2Models))
 	for channelType, models := range channelId2Models {
@@ -364,10 +391,15 @@ func EnabledListModels(c *gin.Context) {
 
 func RetrieveModel(c *gin.Context, modelType int) {
 	modelId := c.Param("model")
+	if !customerContractModelVisible(c, modelId) {
+		return
+	}
 	if respondConfiguredSeedanceModel(c, modelType, modelId) {
 		return
 	}
-	if aiModel, ok := modelMetadataForRetrieve(c, modelId); ok {
+	if aiModel, ok := modelMetadataForRetrieve(c, modelId); c.IsAborted() {
+		return
+	} else if ok {
 		switch modelType {
 		case constant.ChannelTypeAnthropic:
 			c.JSON(200, dto.AnthropicModel{

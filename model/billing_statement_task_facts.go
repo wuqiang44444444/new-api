@@ -9,61 +9,84 @@ import (
 	"github.com/expr-lang/expr/ast"
 )
 
-// BillingStatementExpressionMode classifies the frozen expression, never the
-// model name or today's pricing. Other usage units need their own display;
-// unknown is preferable to falsely calling seconds or credits token billing.
+// BillingStatementExpressionMode classifies only frozen meter facts. The
+// reserved _task.duration_seconds probe has always been seconds; arbitrary
+// client parameter names and undeclared u() units are not meter evidence.
 func BillingStatementExpressionMode(expression string, usageUnits map[string]string) string {
 	vars := billingexpr.UsedVars(expression)
 	if vars == nil {
 		return BillingReconciliationModeUnknown
 	}
-	if vars["u"] {
-		program, err := billingexpr.CompileFromCache(expression)
-		if err != nil {
-			return BillingReconciliationModeUnknown
-		}
-		valid, token := true, false
-		identifiers, calls := 0, 0
-		ast.Find(program.Node(), func(node ast.Node) bool {
-			if id, ok := node.(*ast.IdentifierNode); ok && id.Value == "u" {
-				identifiers++
-			}
-			call, ok := node.(*ast.CallNode)
-			if !ok {
-				return false
-			}
-			callee, ok := call.Callee.(*ast.IdentifierNode)
-			if !ok || callee.Value != "u" {
-				return false
-			}
-			calls++
-			if len(call.Arguments) != 1 {
-				valid = false
-				return false
-			}
-			key, ok := call.Arguments[0].(*ast.StringNode)
-			if !ok {
-				valid = false
-				return false
-			}
-			switch usageUnits[key.Value] {
-			case "token":
-				token = true
-			case "enum", "boolean": // Declared conditions do not change the meter unit.
-			default:
-				valid = false
-			}
-			return false
-		})
-		if valid && token && calls == identifiers {
-			return BillingReconciliationModeToken
-		}
+	token, seconds := false, false
+	for _, name := range []string{"p", "c", "cr", "cc", "cc1h", "img", "img_o", "ai", "ao", "len"} {
+		token = token || vars[name]
+	}
+	program, err := billingexpr.CompileFromCache(expression)
+	if err != nil {
 		return BillingReconciliationModeUnknown
 	}
-	for _, name := range []string{"p", "c", "cr", "cc", "cc1h", "img", "img_o", "ai", "ao", "len"} {
-		if vars[name] {
-			return BillingReconciliationModeToken
+	valid, untypedParam := true, false
+	identifiers, calls := 0, 0
+	ast.Find(program.Node(), func(node ast.Node) bool {
+		if id, ok := node.(*ast.IdentifierNode); ok && id.Value == "u" {
+			identifiers++
 		}
+		call, ok := node.(*ast.CallNode)
+		if !ok {
+			return false
+		}
+		callee, ok := call.Callee.(*ast.IdentifierNode)
+		if !ok || (callee.Value != "u" && callee.Value != "param") {
+			return false
+		}
+		if callee.Value == "u" {
+			calls++
+		}
+		if len(call.Arguments) != 1 {
+			valid = false
+			return false
+		}
+		key, ok := call.Arguments[0].(*ast.StringNode)
+		if !ok {
+			if callee.Value == "u" {
+				valid = false
+			} else {
+				untypedParam = true
+			}
+			return false
+		}
+		if callee.Value == "param" {
+			switch key.Value {
+			case "_task.duration_seconds":
+				seconds = true
+			case "_task.resolution", "_task.has_video_input", "_task.generate_audio", "_task.input_mode", "_task.control_mode", "_task.size_multiplier":
+				// Historical probe conditions and the dimensionless size multiplier
+				// do not introduce another meter. This only classifies frozen facts;
+				// it does not authorize these fields in new pricing contracts.
+			default:
+				untypedParam = true
+			}
+			return false
+		}
+		switch usageUnits[key.Value] {
+		case "token":
+			token = true
+		case "second":
+			seconds = true
+		case "enum", "boolean":
+		default:
+			valid = false
+		}
+		return false
+	})
+	if !valid || calls != identifiers || (token && seconds) {
+		return BillingReconciliationModeUnknown
+	}
+	if seconds && !untypedParam {
+		return BillingReconciliationModePerSecond
+	}
+	if token {
+		return BillingReconciliationModeToken
 	}
 	return BillingReconciliationModeUnknown
 }
@@ -102,10 +125,13 @@ func billingStatementTaskFacts(log billingReconciliationLog, other, snapshot map
 	// a separate per-call refund group. Explicit free per-call records remain valid.
 	price, ok := billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "model_price"))
 	if (isTask || taskID != "") && ok && price == 0 {
-		if log.CompletionTokens > 0 {
+		if log.CompletionTokens > 0 && parsed.billingMode != BillingReconciliationModePerSecond {
 			parsed.billingMode = BillingReconciliationModeToken
 		} else if log.Quota > 0 && parsed.billingMode == BillingReconciliationModePerCall {
 			parsed.billingMode = BillingReconciliationModeUnknown
+		}
+		if log.Type == LogTypeRefund && parsed.billingMode == BillingReconciliationModeUnknown {
+			parsed.refundTaskID = taskID
 		}
 	}
 }

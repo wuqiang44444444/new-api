@@ -22,6 +22,8 @@ func TestNativeImageMetadataPreservesAzureDeploymentAndCustomerAlias(t *testing.
 	}{
 		{"azure-deployment", "gpt-image-2", "private-deploy.v2", constant.ChannelTypeAzure},
 		{"openai-alias", "customer-picture", "gpt-image-2", constant.ChannelTypeOpenAI},
+		{"openai-image-25-alias", "customer-picture", "gpt-image-2.5-flare", constant.ChannelTypeOpenAI},
+		{"openai-image-25-snapshot", "customer-picture", "gpt-image-2.5-sunburst-2026-09-08", constant.ChannelTypeOpenAI},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setupModelListControllerTestDB(t)
@@ -40,6 +42,8 @@ func TestNativeImageMetadataPreservesAzureDeploymentAndCustomerAlias(t *testing.
 			require.NotNil(t, api.Edit)
 			assert.Equal(t, "/v1/images/edits", api.Edit.Path)
 			assert.Equal(t, tc.customer, api.Edit.Model)
+			assert.Equal(t, "application/json", api.Edit.ContentType)
+			assert.Equal(t, []string{"model", "prompt", "images"}, api.Edit.RequiredFields)
 			encoded, err := common.Marshal(api)
 			require.NoError(t, err)
 			assert.NotContains(t, string(encoded), tc.provider)

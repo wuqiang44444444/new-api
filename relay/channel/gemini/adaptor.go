@@ -281,7 +281,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 
 	// 标准图片入口（generations/edits）由 generateContent 图片模型履约。
 	if info.RelayMode == constant.RelayModeImagesGenerations || info.RelayMode == constant.RelayModeImagesEdits {
-		if SupportsGenerateContentImage(info.UpstreamModelName) {
+		if HasGenerateContentImageRequest(c) || SupportsGenerateContentImage(info.UpstreamModelName) {
 			return GeminiGenerateContentImageHandler(c, info, resp)
 		}
 	}

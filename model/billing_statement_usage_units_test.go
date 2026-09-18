@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"encoding/base64"
 	"testing"
 
@@ -17,7 +18,7 @@ func TestStatementClassifiesFrozenUsageUnits(t *testing.T) {
 		{"tokens", `tier("base", u("meter") * 7 / 1000000)`, "token", map[string]string{"meter": "token"}},
 		{"enum token tier", `u("mode") == "pro" ? tier("pro", u("meter") * 9 / 1000000) : tier("base", u("meter") * 7 / 1000000)`, "token", map[string]string{"meter": "token", "mode": "enum"}},
 		{"boolean token tier", `u("audio") ? tier("audio", u("meter") * 9 / 1000000) : tier("base", u("meter") * 7 / 1000000)`, "token", map[string]string{"meter": "token", "audio": "boolean"}},
-		{"name is not a unit", `tier("base", u("tokens") * 7)`, "unknown", map[string]string{"tokens": "second"}},
+		{"name is not a unit", `tier("base", u("tokens") * 7)`, "per_second", map[string]string{"tokens": "second"}},
 		{"credits", `tier("base", u("meter") * 7)`, "unknown", map[string]string{"meter": "credit"}},
 		{"mixed meters", `tier("base", u("meter") * 7 / 1000000 + u("seconds"))`, "unknown", map[string]string{"meter": "token", "seconds": "second"}},
 		{"historical missing unit", `tier("base", u("tokens") * 7 / 1000000)`, "unknown", nil},
@@ -31,7 +32,7 @@ func TestStatementClassifiesFrozenUsageUnits(t *testing.T) {
 				"admin_info": map[string]any{"statement_snapshot": map[string]any{"billing_mode": "per_call", "usage_units": tc.units}}})
 			require.NoError(t, err)
 			require.NoError(t, db.Create(&Log{UserId: 7, TokenId: 4, ModelName: "video", Type: LogTypeConsume, CreatedAt: 1100, Quota: 80, Other: string(other)}).Error)
-			s, err := GetBillingCustomerStatement(7, 1000, 1200, "api_key", 4, "", "")
+			s, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1200, "api_key", 4, "", "")
 			require.NoError(t, err)
 			require.Len(t, s.Groups, 1)
 			require.Len(t, s.Groups[0].Models, 1)

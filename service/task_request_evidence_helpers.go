@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
@@ -42,26 +43,58 @@ func (w *EvidenceCountingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// GetEvidenceEventPreviews 为证据详情返回每个事件的正文预览：
-// 文本类正文截断预览并对签名 URL 遮盖（管理员视图），二进制只给摘要。
-func GetEvidenceEventPreviews(evidenceId int64, events []*model.TaskRequestEvidenceEvent, isRoot bool) map[int64]string {
-	previews := make(map[int64]string)
+// EvidenceEventPreview separates present readability from historical capture facts.
+type EvidenceEventPreview struct {
+	Text       string
+	BodyStatus string
+}
+
+// ReadEvidenceEventBody is shared by preview and download so both report the
+// same safe error category. Authentication failure cannot distinguish a wrong
+// key from modified ciphertext; never claim that the key alone is the cause.
+func ReadEvidenceEventBody(event *model.TaskRequestEvidenceEvent, expired bool) ([]byte, string) {
+	if expired {
+		return nil, "expired"
+	}
+	if event.ObjectKey == "" {
+		return nil, "not_recorded"
+	}
 	store := GetTaskRequestEvidenceStore()
 	if store == nil {
-		return previews
+		return nil, "storage_unavailable"
 	}
+	payload, err := store.Get(event.ObjectKey)
+	switch {
+	case errors.Is(err, ErrTaskRequestEvidenceUnavailable):
+		return nil, "missing"
+	case errors.Is(err, ErrEvidenceDecryptFailed):
+		return nil, "decrypt_failed"
+	case errors.Is(err, ErrEvidenceIntegrityFailed):
+		return nil, "integrity_failed"
+	case err != nil:
+		return nil, "read_failed"
+	case EvidenceSha256Hex(payload) != event.Sha256:
+		return nil, "integrity_failed"
+	default:
+		return payload, "available"
+	}
+}
+
+// GetEvidenceEventPreviews reads each object once and preserves URL masking.
+func GetEvidenceEventPreviews(events []*model.TaskRequestEvidenceEvent, isRoot, expired bool) map[int64]EvidenceEventPreview {
+	previews := make(map[int64]EvidenceEventPreview, len(events))
 	for _, event := range events {
-		if event.ObjectKey == "" {
-			continue
+		payload, status := ReadEvidenceEventBody(event, expired)
+		preview := EvidenceEventPreview{BodyStatus: status}
+		if status == "available" {
+			contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(event.ContentType, ";", 2)[0]))
+			if strings.HasPrefix(contentType, "audio/") || strings.HasPrefix(contentType, "video/") || strings.HasPrefix(contentType, "image/") || contentType == "application/octet-stream" {
+				preview.BodyStatus = "binary"
+			} else {
+				preview.Text = evidencePreviewText(payload, isRoot)
+			}
 		}
-		payload, err := store.Get(event.ObjectKey)
-		if err != nil || EvidenceSha256Hex(payload) != event.Sha256 {
-			continue
-		}
-		if strings.HasPrefix(event.ContentType, "audio/") || strings.HasPrefix(event.ContentType, "video/") || event.ContentType == "application/octet-stream" {
-			continue
-		}
-		previews[event.Id] = evidencePreviewText(payload, isRoot)
+		previews[event.Id] = preview
 	}
 	return previews
 }

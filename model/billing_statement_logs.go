@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"github.com/QuantumNous/new-api/common"
 )
 
@@ -26,9 +27,9 @@ type BillingStatementLogs struct {
 	TPM      float64 `json:"tpm"`
 }
 
-func GetBillingStatementLogs(filter BillingStatementLogFilter, page, pageSize, role int) (BillingStatementLogs, error) {
+func GetBillingStatementLogs(ctx context.Context, filter BillingStatementLogFilter, page, pageSize, role int) (BillingStatementLogs, error) {
 	result := BillingStatementLogs{Items: make([]*Log, 0), Page: page, PageSize: pageSize}
-	query := LOG_DB.Model(&Log{}).Scopes(customerSettlementLogs).
+	query := LOG_DB.WithContext(ctx).Model(&Log{}).Scopes(customerSettlementLogs).
 		Where("user_id = ? AND type IN ? AND created_at >= ? AND created_at <= ?", filter.UserId, []int{LogTypeConsume, LogTypeRefund}, filter.Start, filter.End)
 	if filter.TokenId != nil {
 		query = query.Where("token_id = ?", *filter.TokenId)
@@ -47,6 +48,10 @@ func GetBillingStatementLogs(filter BillingStatementLogFilter, page, pageSize, r
 	if filter.LogType != 0 {
 		query = query.Where("type = ?", filter.LogType)
 	}
+	refundEvidence, err := loadBillingStatementRefundEvidence(ctx, query)
+	if err != nil {
+		return result, err
+	}
 	order := "id desc"
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		order = clickHouseLogOrder("")
@@ -63,8 +68,9 @@ func GetBillingStatementLogs(filter BillingStatementLogFilter, page, pageSize, r
 		if err := LOG_DB.ScanRows(rows, &log); err != nil {
 			return result, err
 		}
-		fact := billingReconciliationLog{UserId: log.UserId, TokenId: log.TokenId, TokenName: log.TokenName, ChannelId: log.ChannelId, ModelName: log.ModelName, Type: log.Type, CreatedAt: log.CreatedAt, PromptTokens: log.PromptTokens, CompletionTokens: log.CompletionTokens, Quota: log.Quota, Other: log.Other}
+		fact := billingReconciliationLog{GroupName: log.Group, UserId: log.UserId, TokenId: log.TokenId, TokenName: log.TokenName, ChannelId: log.ChannelId, ModelName: log.ModelName, Type: log.Type, CreatedAt: log.CreatedAt, PromptTokens: log.PromptTokens, CompletionTokens: log.CompletionTokens, Quota: log.Quota, Other: log.Other}
 		parsed := parseBillingReconciliationLog(fact)
+		refundEvidence.apply(fact, &parsed)
 		if filter.ModelName != "" && parsed.customerModel != filter.ModelName {
 			continue
 		}
@@ -76,6 +82,9 @@ func GetBillingStatementLogs(filter BillingStatementLogFilter, page, pageSize, r
 		}
 		accumulateBillingReconciliationLog(&usage, fact, parsed)
 		if result.Total >= start && len(result.Items) < pageSize {
+			if err := attachBillingStatementLogFacts(&log, fact, parsed); err != nil {
+				return result, err
+			}
 			result.Items = append(result.Items, &log)
 		}
 		result.Total++

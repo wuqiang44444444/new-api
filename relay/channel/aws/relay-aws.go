@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/claude"
@@ -308,6 +309,21 @@ streamLoop:
 		}
 	}
 
+	// 流式诊断（仅观察）：SDK 事件流非正常关闭时登记受控标记；不改变返回值，
+	// 静默跳出仍按原语义处理。正常关闭（stream.Err()==nil）不产生标记。
+	if ctx.Err() != nil {
+		clienterrlog.AttachStreamError(c.Request.Context(), clienterrlog.StreamErrorReport{
+			Reason:    "client_disconnected",
+			EndReason: "client_gone",
+			Severity:  "client",
+		})
+	} else if streamErr := stream.Err(); streamErr != nil {
+		clienterrlog.AttachStreamError(c.Request.Context(), clienterrlog.StreamErrorReport{
+			Reason:    "aws_event_stream_error",
+			EndReason: "stream_closed",
+			Severity:  "fatal",
+		})
+	}
 	_ = stream.Close()
 	claude.HandleStreamFinalResponse(c, info, claudeInfo)
 	return nil, claudeInfo.Usage

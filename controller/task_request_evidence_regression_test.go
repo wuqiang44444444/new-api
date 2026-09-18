@@ -55,6 +55,27 @@ func TestEvidenceDetailMasksNestedSignedURLForAdmin(t *testing.T) {
 			assert.Contains(t, writer.Body.String(), "secret")
 		}
 	}
+	wrongConfig := config
+	wrongConfig.EncryptionKeyHex = strings.Repeat("02", 32)
+	require.NoError(t, service.InitTaskRequestEvidenceStore(wrongConfig))
+	for _, download := range []bool{false, true} {
+		writer := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(writer)
+		c.Set("id", 7)
+		c.Set("role", common.RoleRootUser)
+		c.Params = gin.Params{{Key: "id", Value: "1"}, {Key: "event_id", Value: "1"}}
+		c.Request = httptest.NewRequest("GET", "/api/task_request_evidence/1", nil)
+		if download {
+			GetTaskRequestEvidenceObject(c)
+			assert.Equal(t, 410, writer.Code)
+		} else {
+			GetTaskRequestEvidenceDetail(c)
+			assert.Equal(t, 200, writer.Code)
+		}
+		assert.Contains(t, writer.Body.String(), `"body_status":"decrypt_failed"`)
+		assert.NotContains(t, writer.Body.String(), "test/body.bin")
+		assert.NotContains(t, writer.Body.String(), "sig=secret")
+	}
 	rows, total := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{UpstreamRequestID: "upstream-1"})
 	require.EqualValues(t, 1, total)
 	require.Len(t, rows, 1)

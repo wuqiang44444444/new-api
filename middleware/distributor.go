@@ -48,7 +48,13 @@ func Distribute() func(c *gin.Context) {
 		if applyCustomerContractDistributeGate(c, modelRequest.Model, shouldSelectChannel) {
 			return
 		}
-		if pin, found, overridden := constraints.ResolvedPin(); found {
+		if service.ActiveCustomerContract(c) != nil && shouldSelectChannel {
+			channel, _, err = service.SelectCustomerContractChannel(&service.RetryParam{Ctx: c, ModelName: modelRequest.Model, TokenGroup: common.GetContextKeyString(c, constant.ContextKeyUsingGroup)}, true)
+			if err != nil {
+				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, "合同范围内无可用模型或渠道 / Contract model or channel is unavailable", types.ErrorCodeModelNotFound)
+				return
+			}
+		} else if pin, found, overridden := constraints.ResolvedPin(); found {
 			for _, lost := range overridden {
 				logger.LogWarn(c, fmt.Sprintf(
 					"channel pin overridden: winning_source=%s winning_channel_id=%d overridden_source=%s overridden_channel_id=%d",

@@ -38,6 +38,11 @@ func ListSeedanceModels(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "get Seedance model catalog failed"})
 		return
 	}
+	catalog, err = customerContractSeedanceCatalog(c, catalog)
+	if err != nil {
+		respondCustomerContractPricingLoadError(c)
+		return
+	}
 	catalogNames := make(map[string]struct{}, len(catalog))
 	for _, item := range catalog {
 		catalogNames[item.ModelName] = struct{}{}
@@ -99,7 +104,17 @@ func applyConfiguredSeedanceModels(models []dto.OpenAIModels, catalog []model.Se
 func configuredSeedanceModel(c *gin.Context, modelName string) (dto.OpenAIModels, bool) {
 	catalog, err := model.GetConfiguredSeedancePublicModels()
 	if err != nil {
+		if service.ActiveCustomerContract(c) != nil {
+			respondCustomerContractPricingLoadError(c)
+		}
 		common.SysLog("GetConfiguredSeedancePublicModels error: " + err.Error())
+		return dto.OpenAIModels{}, false
+	}
+	catalog, err = customerContractSeedanceCatalog(c, catalog)
+	if err != nil {
+		if service.ActiveCustomerContract(c) != nil {
+			respondCustomerContractPricingLoadError(c)
+		}
 		return dto.OpenAIModels{}, false
 	}
 	for i := range catalog {
@@ -116,7 +131,7 @@ func configuredSeedanceModel(c *gin.Context, modelName string) (dto.OpenAIModels
 func respondConfiguredSeedanceModel(c *gin.Context, modelType int, modelName string) bool {
 	seedanceModel, ok := configuredSeedanceModel(c, modelName)
 	if !ok {
-		return false
+		return c.IsAborted()
 	}
 	if modelType == constant.ChannelTypeAnthropic {
 		c.JSON(http.StatusOK, dto.AnthropicModel{

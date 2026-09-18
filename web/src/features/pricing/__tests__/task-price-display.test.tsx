@@ -26,6 +26,7 @@ import { api } from '@/lib/api'
 import { DynamicPricingBreakdown } from '../components/dynamic-pricing-breakdown'
 import { ModelCard } from '../components/model-card'
 import { ModelDetailsContent } from '../components/model-details'
+import { taskTiersFromBillingDisplay } from '../lib/billing-display'
 import { getTaskPricingDisplayTiers } from '../lib/task-matrix-display'
 import {
   hasSimpleTaskPricing,
@@ -36,7 +37,6 @@ import {
 } from '../lib/task-price-display'
 import type { PricingModel, BillingUsageSchema } from '../types'
 import { taskBillingDisplayFixture } from './billing-display-fixtures'
-import { taskTiersFromBillingDisplay } from '../lib/billing-display'
 
 vi.mock('@visactor/react-vchart', () => ({ VChart: () => null }))
 
@@ -45,7 +45,11 @@ const matrixExpression =
 
 it('renders the projected resolution matrix with localized negated conditions', () => {
   const schema: BillingUsageSchema = {
-    tokens: { type: 'number', unit: 'token', description: { en: 'Token price' } },
+    tokens: {
+      type: 'number',
+      unit: 'token',
+      description: { en: 'Token price' },
+    },
     resolution: { enum: ['1080p'], description: { en: 'Resolution' } },
     has_video_input: {
       type: 'boolean',
@@ -57,14 +61,24 @@ it('renders the projected resolution matrix with localized negated conditions', 
       billingExpr={matrixExpression}
       billingDisplay={taskBillingDisplayFixture(matrixExpression)}
       usageSchema={schema}
-      tiers={taskTiersFromBillingDisplay(taskBillingDisplayFixture(matrixExpression))}
+      tiers={taskTiersFromBillingDisplay(
+        taskBillingDisplayFixture(matrixExpression)
+      )}
     />
   )
   // 四个分支各自带本地化条件,否定分支不再是“其他情况”。
-  expect(screen.getAllByText('Reference video: Yes · Resolution: 1080p').length).toBeGreaterThan(0)
-  expect(screen.getAllByText('Reference video: Yes · Resolution ≠ 1080p').length).toBeGreaterThan(0)
-  expect(screen.getAllByText('Reference video: No · Resolution: 1080p').length).toBeGreaterThan(0)
-  expect(screen.getAllByText('Reference video: No · Resolution ≠ 1080p').length).toBeGreaterThan(0)
+  expect(
+    screen.getAllByText('Reference video: Yes · Resolution: 1080p').length
+  ).toBeGreaterThan(0)
+  expect(
+    screen.getAllByText('Reference video: Yes · Resolution ≠ 1080p').length
+  ).toBeGreaterThan(0)
+  expect(
+    screen.getAllByText('Reference video: No · Resolution: 1080p').length
+  ).toBeGreaterThan(0)
+  expect(
+    screen.getAllByText('Reference video: No · Resolution ≠ 1080p').length
+  ).toBeGreaterThan(0)
   expect(screen.getAllByText(/6\.762/).length).toBeGreaterThan(0)
   expect(screen.getAllByText(/11\.319/).length).toBeGreaterThan(0)
   expect(screen.queryByText('Other cases')).not.toBeInTheDocument()
@@ -80,7 +94,9 @@ const model: PricingModel = {
   enable_groups: ['default'],
   billing_mode: 'tiered_expr',
   billing_expr: 'tier("music", u("clips") * 0.22)',
-  billing_display: taskBillingDisplayFixture('tier("music", u("clips") * 0.22)'),
+  billing_display: taskBillingDisplayFixture(
+    'tier("music", u("clips") * 0.22)'
+  ),
   billing_usage_schema: {
     clips: {
       type: 'number',
@@ -96,14 +112,29 @@ const model: PricingModel = {
 }
 const clients: QueryClient[] = []
 it('does not invent ordinary token prices in standard or group details when pricing is missing', () => {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   clients.push(client)
   render(
     <QueryClientProvider client={client}>
       <ModelDetailsContent
-        model={{ id: 99, model_name: 'missing-price', quota_type: 0, model_ratio: 37.5, completion_ratio: 1, basis_price_configured: false, enable_groups: ['default'] }}
-        groupRatio={{ default: 1 }} usableGroup={{ default: { desc: '', ratio: 1 } }}
-        endpointMap={{}} autoGroups={[]} priceRate={1} usdExchangeRate={7} tokenUnit='M'
+        model={{
+          id: 99,
+          model_name: 'missing-price',
+          quota_type: 0,
+          model_ratio: 37.5,
+          completion_ratio: 1,
+          basis_price_configured: false,
+          enable_groups: ['default'],
+        }}
+        groupRatio={{ default: 1 }}
+        usableGroup={{ default: { desc: '', ratio: 1 } }}
+        endpointMap={{}}
+        autoGroups={[]}
+        priceRate={1}
+        usdExchangeRate={7}
+        tokenUnit='M'
       />
     </QueryClientProvider>
   )

@@ -30,6 +30,7 @@ import {
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
 import { buildQuotaAuditOperation } from './quota-audit-operation'
+import { projectStatementLogFacts } from './statement-log-facts'
 
 export { normalizeTierLabel }
 
@@ -163,7 +164,7 @@ export function hasToolSurcharge(other: LogOtherData | null): boolean {
 export function parseLogOther(other: string): LogOtherData | null {
   if (!other) return null
   try {
-    return JSON.parse(other) as LogOtherData
+    return projectStatementLogFacts(JSON.parse(other) as LogOtherData)
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to parse log other field:', error)

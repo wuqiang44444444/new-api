@@ -1,4 +1,3 @@
-import { publishedSeedanceConfiguration } from './seedance-plugin-fixture'
 import assert from 'node:assert/strict'
 
 import { describe, test } from 'vitest'
@@ -18,11 +17,12 @@ import {
   isOfficialSeedanceAssetProtocol,
   type SeedanceVideoProtocol,
 } from '../seedance-protocol-pairing'
+import { publishedSeedanceConfiguration } from './seedance-plugin-fixture'
 
 const seedanceForm = {
   ...CHANNEL_FORM_DEFAULT_VALUES,
   seedance_plugin_configuration: publishedSeedanceConfiguration,
-  seedance_plugin_version:'1.2.0',
+  seedance_plugin_version: '1.2.0',
   name: 'seedance',
   type: 62,
   key: 'one-key',
@@ -47,10 +47,13 @@ describe('Seedance protocol validation', () => {
       })
       assert.equal(result.success, assetProtocol !== 'funcloud_material')
     }
-    assert.deepEqual(getCompatibleSeedanceAssetProtocols('synlink_video_v1', publishedSeedanceConfiguration), [
-      'funcloud_material_hosted',
-      'none',
-    ])
+    assert.deepEqual(
+      getCompatibleSeedanceAssetProtocols(
+        'synlink_video_v1',
+        publishedSeedanceConfiguration
+      ),
+      ['funcloud_material_hosted', 'none']
+    )
   })
   test('links every video protocol to its default asset library', () => {
     const cases: Array<[SeedanceVideoProtocol, string]> = [
@@ -67,7 +70,10 @@ describe('Seedance protocol validation', () => {
 
     for (const [videoProtocol, assetProtocol] of cases) {
       assert.equal(
-        getDefaultSeedanceAssetProtocol(videoProtocol, publishedSeedanceConfiguration),
+        getDefaultSeedanceAssetProtocol(
+          videoProtocol,
+          publishedSeedanceConfiguration
+        ),
         assetProtocol
       )
     }
@@ -75,41 +81,78 @@ describe('Seedance protocol validation', () => {
 
   test('allows manual disable but never offers an incompatible library', () => {
     assert.deepEqual(
-      getCompatibleSeedanceAssetProtocols('modelark_v3_volcengine', publishedSeedanceConfiguration),
+      getCompatibleSeedanceAssetProtocols(
+        'modelark_v3_volcengine',
+        publishedSeedanceConfiguration
+      ),
       ['volcengine_assets_action_v2024_01_01', 'none']
     )
     assert.deepEqual(
-      getCompatibleSeedanceAssetProtocols('tokensave_media_task_v1', publishedSeedanceConfiguration),
+      getCompatibleSeedanceAssetProtocols(
+        'tokensave_media_task_v1',
+        publishedSeedanceConfiguration
+      ),
       ['tokensave_assets_v1', 'none']
     )
     assert.deepEqual(
-      getCompatibleSeedanceAssetProtocols('moxing_modelark_media_v1', publishedSeedanceConfiguration),
+      getCompatibleSeedanceAssetProtocols(
+        'moxing_modelark_media_v1',
+        publishedSeedanceConfiguration
+      ),
       ['moxing_volc_assets_v1', 'none']
     )
-    assert.deepEqual(getCompatibleSeedanceAssetProtocols('feicai_videos_v1', publishedSeedanceConfiguration), [
-      'none',
-    ])
     assert.deepEqual(
-      getCompatibleSeedanceAssetProtocols('funcloud_modelark_v3', publishedSeedanceConfiguration),
+      getCompatibleSeedanceAssetProtocols(
+        'feicai_videos_v1',
+        publishedSeedanceConfiguration
+      ),
+      ['none']
+    )
+    assert.deepEqual(
+      getCompatibleSeedanceAssetProtocols(
+        'funcloud_modelark_v3',
+        publishedSeedanceConfiguration
+      ),
       ['funcloud_material', 'funcloud_material_hosted', 'none']
     )
     assert.equal(
-      getDefaultSeedanceAssetProtocol('funcloud_modelark_v3', publishedSeedanceConfiguration),
+      getDefaultSeedanceAssetProtocol(
+        'funcloud_modelark_v3',
+        publishedSeedanceConfiguration
+      ),
       'funcloud_material'
     )
   })
 
   test('treats domestic and overseas official libraries as credentialed', () => {
     assert.equal(
-      isOfficialSeedanceAssetProtocol('volcengine_assets_action_v2024_01_01', publishedSeedanceConfiguration),
+      isOfficialSeedanceAssetProtocol(
+        'volcengine_assets_action_v2024_01_01',
+        publishedSeedanceConfiguration
+      ),
       true
     )
     assert.equal(
-      isOfficialSeedanceAssetProtocol('byteplus_assets_action_v2024_01_01', publishedSeedanceConfiguration),
+      isOfficialSeedanceAssetProtocol(
+        'byteplus_assets_action_v2024_01_01',
+        publishedSeedanceConfiguration
+      ),
       true
     )
-    assert.equal(isOfficialSeedanceAssetProtocol('cmcc_aicc_assets_v2', publishedSeedanceConfiguration), true)
-    assert.equal(isOfficialSeedanceAssetProtocol('tokensave_assets_v1', publishedSeedanceConfiguration), false)
+    assert.equal(
+      isOfficialSeedanceAssetProtocol(
+        'cmcc_aicc_assets_v2',
+        publishedSeedanceConfiguration
+      ),
+      true
+    )
+    assert.equal(
+      isOfficialSeedanceAssetProtocol(
+        'tokensave_assets_v1',
+        publishedSeedanceConfiguration
+      ),
+      false
+    )
   })
 
   test('uses the dedicated channel name in the localized type selector', () => {
@@ -175,7 +218,10 @@ describe('Seedance protocol validation', () => {
     })
     assert.equal(result.success, true)
     assert.deepEqual(
-      getCompatibleSeedanceAssetProtocols('funcloud_modelark_v3', publishedSeedanceConfiguration),
+      getCompatibleSeedanceAssetProtocols(
+        'funcloud_modelark_v3',
+        publishedSeedanceConfiguration
+      ),
       ['funcloud_material', 'funcloud_material_hosted', 'none']
     )
   })

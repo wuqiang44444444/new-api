@@ -35,7 +35,9 @@ type CustomerContractAuditProps = {
   setPage: Dispatch<SetStateAction<number>>
 }
 
-export function CustomerContractAuditHistory(props: CustomerContractAuditProps) {
+export function CustomerContractAuditHistory(
+  props: CustomerContractAuditProps
+) {
   const { t } = useTranslation()
   if (props.audits.length === 0) {
     return (

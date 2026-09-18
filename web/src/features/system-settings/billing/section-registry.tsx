@@ -26,6 +26,7 @@ import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 import { ContextThresholdSettingsSection } from './context-threshold-settings-section'
+import { StatementVersionSettingsSection } from './statement-version-settings-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
@@ -137,6 +138,15 @@ const BILLING_SECTIONS = [
     build: (settings: BillingSettings) => (
       <ContextThresholdSettingsSection
         defaultValue={settings['billing_statement_setting.context_thresholds']}
+      />
+    ),
+  },
+  {
+    id: 'statement-version',
+    titleKey: 'Statement Version Confirmation',
+    build: (settings: BillingSettings) => (
+      <StatementVersionSettingsSection
+        defaultValue={settings.BillingStatementVersionEnabled ?? false}
       />
     ),
   },

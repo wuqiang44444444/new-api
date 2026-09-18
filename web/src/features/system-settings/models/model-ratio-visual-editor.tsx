@@ -73,8 +73,8 @@ import {
   buildModelRatioColumns,
   TASK_PRICING_MODE_FILTER,
 } from './model-ratio-table-columns'
-import { useBillingDisplayCache } from './use-billing-display-cache'
 import { applyTaskPreConsumeTokenChanges } from './task-preconsume-map'
+import { useBillingDisplayCache } from './use-billing-display-cache'
 
 type ModelRatioVisualEditorProps = {
   savedModelPrice: string
@@ -162,8 +162,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
   const pricingEntry = pricingConfig.data?.entries.find(
     (entry) => entry.model_name === editData?.name
   )
-  const preconsumeTokenBudget =
-    pricingEntry?.preconsume_token_budget === true
+  const preconsumeTokenBudget = pricingEntry?.preconsume_token_budget === true
 
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])

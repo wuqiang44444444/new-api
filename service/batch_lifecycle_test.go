@@ -144,7 +144,7 @@ func TestBatchCreateProgressSettlesAndDeliversBothFilesOnce(t *testing.T) {
 	assert.Equal(t, 2, data.Count)
 	assert.Equal(t, 20, data.Quota)
 	assert.Equal(t, 15, data.Tokens)
-	statement, err := model.GetBillingCustomerStatement(1701, 1, common.GetTimestamp()+10, "api_key", 0, "", "")
+	statement, err := model.GetBillingCustomerStatement(context.Background(), 1701, 1, common.GetTimestamp()+10, "api_key", 0, "", "")
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, statement.Summary.Requests)
 	assert.EqualValues(t, 20, statement.Summary.NetQuota)
@@ -262,13 +262,15 @@ func TestBatchResourcesRequireTheOwningApp(t *testing.T) {
 	assert.Zero(t, *calls)
 }
 
-func TestBatchContractAppliesDiscountWithoutChannelCoupling(t *testing.T) {
+func TestBatchContractSelectsAllowedChannelAndAppliesDiscount(t *testing.T) {
 	c, request, _ := batchLifecycleFixture(t, 200, `{"id":"provider-1","status":"validating"}`)
 	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 1701).Update("auth_version", 1).Error)
-	// The contract rule names a batch channel that native selection would not
-	// pick: selection stays native (lowest id wins) and the discount follows
-	// the model, not a channel.
-	require.NoError(t, model.DB.Create(&model.Channel{Id: 1702, Type: constant.ChannelTypeAzureBatch, Status: common.ChannelStatusEnabled, Models: "batch-text", Group: "default"}).Error)
+	// A contract-selected Batch channel replaces the lowest native channel,
+	// while keeping typed selection and its model discount.
+	var allowedChannel model.Channel
+	require.NoError(t, model.DB.First(&allowedChannel, 1701).Error)
+	allowedChannel.Id = 1702
+	require.NoError(t, model.DB.Create(&allowedChannel).Error)
 	contract := model.CustomerContract{UserId: 1701, Name: "Batch contract", Enabled: true, Version: 1}
 	require.NoError(t, model.DB.Create(&contract).Error)
 	require.NoError(t, model.DB.Create(&model.CustomerContractEntityRule{ContractId: contract.Id, PublicModel: "batch-text", ChannelId: 1702, RouteGroup: "default", RatioUnits: 50000000}).Error)
@@ -286,7 +288,7 @@ func TestBatchContractAppliesDiscountWithoutChannelCoupling(t *testing.T) {
 	assert.EqualValues(t, 50000000, fact.RatioUnits)
 	result, err := CreateBatchJob(c, request)
 	require.NoError(t, err)
-	assert.Equal(t, 1701, result.Job.ChannelId, "batch channel selection stays native")
+	assert.Equal(t, 1702, result.Job.ChannelId, "batch selection stays inside the contract")
 	require.NoError(t, progressBatchJob(context.Background(), result.Job))
 	task, err := model.GetTaskById(result.Job.TaskRowId)
 	require.NoError(t, err)

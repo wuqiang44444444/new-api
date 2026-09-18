@@ -6,6 +6,8 @@ import { pluginReact } from '@rsbuild/plugin-react'
 import { pluginTailwindcss } from '@rsbuild/plugin-tailwindcss'
 import { tanstackRouter } from '@tanstack/router-plugin/rspack'
 
+import { createDevProxyLogger } from './scripts/dev-proxy-logger'
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig(({ envMode }) => {
@@ -19,9 +21,13 @@ export default defineConfig(({ envMode }) => {
   const devProxy = Object.fromEntries(
     (['/api', '/v1', '/mj', '/pg'] as const).map((key) => [
       key,
-      { target: serverUrl, changeOrigin: true },
+      {
+        target: serverUrl,
+        changeOrigin: true,
+        logger: createDevProxyLogger(serverUrl, key),
+      },
     ])
-  ) as Record<string, { target: string; changeOrigin: boolean }>
+  )
 
   return {
     plugins: [pluginReact(), pluginTailwindcss({ optimize: false })],

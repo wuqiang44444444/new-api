@@ -38,7 +38,7 @@ i18n/          — Backend internationalization (go-i18n, en/zh)
 oauth/         — OAuth provider implementations
 pkg/           — Internal packages (cachex, ionet)
 web/           — Frontend (React 19, Rsbuild, Base UI, Tailwind)
-  src/i18n/    — Frontend internationalization (i18next, en/zh/zh-TW/fr/ru/ja/vi)
+  src/i18n/    — Frontend internationalization (i18next; required locales: en/zh)
 ```
 
 ### Current contract boundaries
@@ -72,13 +72,15 @@ web/           — Frontend (React 19, Rsbuild, Base UI, Tailwind)
 
 ## Internationalization (i18n)
 
+**硬约束：所有 i18n 仅需中文（简体）和英文两个版本。** 前端、后端、邮件、通知、导出等文案的新增、修改和验收均以这两个版本为范围；不要求补齐其他语言。技能、脚本说明或其他文档中的全语言要求与此冲突时，以 [docs/00-context/硬约束.md](docs/00-context/硬约束.md) 第 1 节为准。
+
 ### Backend (`i18n/`)
 - Library: `nicksnyder/go-i18n/v2`
 - Languages: en, zh
 
 ### Frontend (`web/src/i18n/`)
 - Library: `i18next` + `react-i18next` + `i18next-browser-languagedetector`
-- Languages: en (base), zh (fallback), zh-TW, fr, ru, ja, vi
+- Required languages: en (base), zh (Simplified Chinese, fallback)
 - Translation files: `web/src/i18n/locales/{lang}.json` — flat JSON, keys are English source strings
 - Usage: `useTranslation()` hook, call `t('English key')` in components
 - CLI tools: `bun run i18n:sync` (from `web/`)

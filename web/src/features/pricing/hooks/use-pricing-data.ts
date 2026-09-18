@@ -36,9 +36,12 @@ export function getPricingQueryKey(
   return ['pricing', userId, contractId]
 }
 
-export function usePricingData(enabled = true, contractId: number | 'batch' | null = null) {
+export function usePricingData(
+  enabled = true,
+  contractId: number | 'batch' | null = null
+) {
   const { status } = useStatus()
-  const userId = useAuthStore(state => state.auth.user?.id)
+  const userId = useAuthStore((state) => state.auth.user?.id)
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: getPricingQueryKey(userId, contractId),

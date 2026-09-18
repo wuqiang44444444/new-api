@@ -24,6 +24,7 @@ import { StaticDataTable } from '@/components/data-table'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
+import { ruleGroupsFromBillingDisplay } from '../lib/billing-display'
 import {
   MATCH_CONTAINS,
   MATCH_EQ,
@@ -40,7 +41,6 @@ import {
   type RequestRuleGroup,
   type RequestRuleTrace,
 } from '../lib/billing-expr'
-import { ruleGroupsFromBillingDisplay } from '../lib/billing-display'
 import { isBreakdownTierMatched } from '../lib/breakdown-tier-match'
 import {
   formatTaskUsageUnitPrice,
@@ -344,9 +344,7 @@ function TaskPricingBreakdown({
       unit: definition.unit as BillingUsageUnit,
       value: (tier) => Number(tier.unitPrices[field] || 0),
     }))
-  if (
-    tiers.some((tier) => tier.hasConstant || tier.constant > 0)
-  ) {
+  if (tiers.some((tier) => tier.hasConstant || tier.constant > 0)) {
     visiblePriceFields.push({
       id: 'constant',
       label: 'Additional charge',

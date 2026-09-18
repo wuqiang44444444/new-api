@@ -1,3 +1,5 @@
+import { isAxiosError } from 'axios'
+
 import { api } from '@/lib/api'
 
 export interface EvidenceIndex {
@@ -11,6 +13,7 @@ export interface EvidenceEvent {
   phase: string
   complete: boolean
   has_body: boolean
+  body_status?: string
   preview: string
   byte_count: number
   status_code: number
@@ -60,7 +63,7 @@ export async function getTaskRequestBodies(
     requestId: string
     eventId: number
     complete: boolean
-    expired: boolean
+    bodyStatus: string
     text: string | null
   }[] = []
   let page = 1
@@ -74,21 +77,53 @@ export async function getTaskRequestBodies(
         (event) => event.stage === stage
       )) {
         let text: string | null = null
-        if (event.has_body && !detail.evidence.body_expired) {
-          const response = await api.get<string>(
-            `/api/task_request_evidence/${item.id}/events/${event.id}/object`,
-            {
-              responseType: 'text',
-              transformResponse: [(value: string) => value],
+        let bodyStatus = event.body_status ?? 'available'
+        if (detail.evidence.body_expired) bodyStatus = 'expired'
+        else if (!event.has_body) bodyStatus = 'not_recorded'
+        if (bodyStatus === 'available') {
+          try {
+            const response = await api.get<string>(
+              `/api/task_request_evidence/${item.id}/events/${event.id}/object`,
+              {
+                responseType: 'text',
+                transformResponse: [(value: string) => value],
+                skipErrorHandler: true,
+              }
+            )
+            text = response.data
+          } catch (error) {
+            if (
+              !isAxiosError(error) ||
+              error.response?.status === 401 ||
+              error.response?.status === 403
+            ) {
+              throw error
             }
-          )
-          text = response.data
+            bodyStatus = 'read_failed'
+            // The object may disappear after the detail request. Preserve the
+            // server's safe category, never display its raw response as a body.
+            if (
+              error.response?.status === 410 ||
+              error.response?.status === 503
+            ) {
+              try {
+                const failure: { body_status?: unknown } | null = JSON.parse(
+                  error.response.data
+                )
+                if (typeof failure?.body_status === 'string') {
+                  bodyStatus = failure.body_status
+                }
+              } catch {
+                // A proxy may return HTML; it is still a per-object read failure.
+              }
+            }
+          }
         }
         bodies.push({
           requestId: item.request_id,
           eventId: event.id,
           complete: event.complete,
-          expired: detail.evidence.body_expired,
+          bodyStatus,
           text,
         })
       }

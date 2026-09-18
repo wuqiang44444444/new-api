@@ -36,11 +36,13 @@ type ChannelPin struct {
 type ChannelFilterKind string
 
 const (
+	FilterContractRoutes     ChannelFilterKind = "contract_routes"
 	FilterRequestPath        ChannelFilterKind = "request_path"
 	FilterTaskPluginIdentity ChannelFilterKind = "task_plugin_identity"
 )
 
 type ChannelFilter struct {
+	Routes                 map[int]string
 	Kind                   ChannelFilterKind
 	RequestPath            string
 	TaskPluginKey          string

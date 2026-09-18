@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"encoding/base64"
 	"testing"
 
@@ -13,12 +14,12 @@ func TestCustomerStatementReportsUnclassifiedExpressionWithoutLosingAmounts(t *t
 	db := setupBillingReconciliationTestDB(t)
 	require.NoError(t, db.Create(&User{Id: 91, Username: "randy"}).Error)
 	other, err := common.Marshal(map[string]any{
-		"expr_b64":    base64.StdEncoding.EncodeToString([]byte(`tier("seconds", param("_task.duration_seconds") * 145747.800587)`)),
-		"group_ratio": 0.87,
+		"expr_b64":    base64.StdEncoding.EncodeToString([]byte(`tier("custom", param("custom_meter") * 145747.800587)`)),
+		"group_ratio": 0.87, "contract_applicable": false,
 	})
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&Log{UserId: 91, TokenId: 40, ChannelId: 76, ModelName: "video", Type: LogTypeConsume, CreatedAt: 1100, Quota: 870, Other: string(other)}).Error)
-	s, err := GetBillingCustomerStatement(91, 1000, 1200, "channel", 0, "", "")
+	s, err := GetBillingCustomerStatement(context.Background(), 91, 1000, 1200, "channel", 0, "", "")
 	require.NoError(t, err)
 	require.Len(t, s.Groups, 1)
 	require.Len(t, s.Groups[0].Models, 1)
@@ -42,7 +43,7 @@ func TestCustomerStatementDistinguishesMissingAndUnnamedChannels(t *testing.T) {
 	for _, id := range []int{76, 97, 98} {
 		require.NoError(t, db.Create(&Log{UserId: 91, TokenId: 40, ChannelId: id, ModelName: "video", Type: LogTypeConsume, CreatedAt: 1100, Quota: 100, Other: `{"model_price":1,"group_ratio":1}`}).Error)
 	}
-	s, err := GetBillingCustomerStatement(91, 1000, 1200, "channel", 0, "", "")
+	s, err := GetBillingCustomerStatement(context.Background(), 91, 1000, 1200, "channel", 0, "", "")
 	require.NoError(t, err)
 	require.Len(t, s.Groups, 3)
 	for _, g := range s.Groups {

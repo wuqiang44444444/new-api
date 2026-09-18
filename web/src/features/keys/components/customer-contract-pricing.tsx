@@ -18,6 +18,7 @@ import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 
 import { getSelfCustomerContract } from '../api'
+import { ContractModelAvailability } from './contract-model-availability'
 
 export function CustomerContractPricing() {
   const { t } = useTranslation()
@@ -90,7 +91,7 @@ export function CustomerContractPricing() {
                       <AlertTitle>{t('Contract mode is inactive')}</AlertTitle>
                       <AlertDescription>
                         {t(
-                          'This contract is disabled. Its discounts are not in effect.'
+                          'This contract is disabled. Bound keys use their own group routing and pricing.'
                         )}
                       </AlertDescription>
                     </Alert>
@@ -100,7 +101,7 @@ export function CustomerContractPricing() {
                     <Empty className='border'>
                       <EmptyHeader>
                         <EmptyTitle>
-                          {t('This contract carries no model discounts')}
+                          {t('This contract has no model rules')}
                         </EmptyTitle>
                       </EmptyHeader>
                     </Empty>
@@ -124,6 +125,9 @@ export function CustomerContractPricing() {
                             <tr key={rule.model}>
                               <td className='px-3 py-2 font-mono break-all'>
                                 {rule.model}
+                                <ContractModelAvailability
+                                  availability={rule.availability}
+                                />
                               </td>
                               <td className='px-3 py-2'>{rule.discount}</td>
                             </tr>

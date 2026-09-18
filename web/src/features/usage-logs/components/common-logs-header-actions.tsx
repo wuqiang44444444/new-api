@@ -27,14 +27,15 @@ import {
 } from '@/components/ui/tooltip'
 
 import { CommonLogsStats } from './common-logs-stats'
+import { ExportUsageLogsButton } from './export-usage-logs-button'
 import { useUsageLogsContext } from './usage-logs-provider'
 
 /**
- * Page-header actions for the Common Logs view: live usage stats plus a
- * toggle for masking sensitive values (token names, usernames, group names,
- * and the quota figure shown in stats). Both controls live in the page
- * header so the toolbar below stays focused on filter inputs and form
- * actions only.
+ * Page-header actions for the Common Logs view: live usage stats, the async
+ * export entry for the current filters, plus a toggle for masking sensitive
+ * values (token names, usernames, group names, and the quota figure shown in
+ * stats). All controls live in the page header so the toolbar below stays
+ * focused on filter inputs and form actions only.
  */
 export function CommonLogsHeaderActions() {
   const { t } = useTranslation()
@@ -43,6 +44,7 @@ export function CommonLogsHeaderActions() {
   return (
     <div className='flex flex-wrap items-center gap-2'>
       <CommonLogsStats />
+      <ExportUsageLogsButton />
       <Tooltip>
         <TooltipTrigger
           render={

@@ -74,6 +74,11 @@ func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usag
 	if data.FreeModel {
 		return 0, nil, nil
 	}
+	if data.NativeRequest == nil && (data.ChannelType == constant.ChannelTypeGemini || data.ChannelType == constant.ChannelTypeVertexAi) {
+		if err := ValidateGeminiImageUsage(data.UpstreamModel, usage); err != nil {
+			return 0, nil, err
+		}
+	}
 	if data.NativeRequest != nil {
 		// Persist actual evidence (including absent vs zero usage). Apply the
 		// native ImageHelper's billing defaults only to a calculation copy.

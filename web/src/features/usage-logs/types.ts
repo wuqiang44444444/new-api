@@ -189,8 +189,11 @@ export interface LogOtherData {
   model_price?: number
   group_ratio?: number
   user_group_ratio?: number
+  contract_id?: number
   contract_discount?: string | number
   contract_version?: number
+  contract_name?: string
+  contract_applicable?: boolean
   cache_ratio?: number
   cache_creation_ratio?: number
   cache_creation_ratio_5m?: number
@@ -210,6 +213,34 @@ export interface LogOtherData {
   request_rules?: RequestRuleTrace[]
   // Backend-attached read-only projection of the frozen expression. Absent
   // for legacy logs; unit-price display must not guess without it.
+  // Response-only statement facts; shared with the server export projection.
+  billing_facts?: {
+    billing_mode: 'token' | 'per_call' | 'per_second' | 'unknown'
+    group_name: string
+    group_ratio: number | null
+    group_ratio_source: '' | 'group' | 'user_exclusive'
+    contract_applicable: 'yes' | 'no' | 'unrecorded' | 'unknown'
+    contract_ratio: number | null
+    contract_name: string
+    contract_version: number
+    input_tokens: number
+    input_tokens_unavailable: boolean
+    output_tokens: number
+    cache_read_tokens: number
+    cache_write_tokens: number
+  }
+  billing_explanation?: {
+    current_quota_conversion?: boolean
+    lines: Array<{
+      label: string
+      quantity: number
+      unit: string
+      unit_price_usd: number
+      subtotal_usd: number
+    }>
+    original_quota_estimated: string
+    has_auxiliary_charge: boolean
+  }
   billing_display?: BillingDisplayProjection
   usage_facts?: Record<string, string | number>
   reasoning_effort?: string

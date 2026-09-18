@@ -85,3 +85,52 @@ it('queries synchronous audio evidence by platform request ID without a task ID'
     params: { request_id: 'audio-request', p: 1, page_size: 20 },
   })
 })
+
+it.each([
+  ['decrypt_failed', 'Evidence body cannot be decrypted or authenticated'],
+  ['missing', 'Evidence body file is missing'],
+  ['integrity_failed', 'Evidence body integrity check failed'],
+  ['binary', 'Binary evidence has no text preview'],
+])(
+  'explains %s without rewriting capture completeness',
+  async (status, message) => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: { items: [{ id: 1, request_id: 'req-readability' }], total: 1 },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            evidence: { body_expired: false },
+            events: [
+              {
+                id: 2,
+                stage: 'upstream_response',
+                phase: 'completed',
+                complete: true,
+                has_body: true,
+                preview: '',
+                body_status: status,
+                byte_count: 8,
+              },
+            ],
+          },
+        },
+      })
+    show(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Request evidence' }))
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'req-readability' })
+    )
+    expect(await screen.findByText(message)).toBeTruthy()
+    expect(screen.getByText(/Complete/)).toBeTruthy()
+    // Root can retry a download after temporary storage failure; permissions stay unchanged.
+    expect(
+      screen.getByRole('button', { name: 'Download original evidence' })
+    ).toBeTruthy()
+  }
+)

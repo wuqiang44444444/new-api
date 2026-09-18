@@ -29,8 +29,7 @@ import (
 // 图片任务 Provider 执行器（由 main 注入 service.ImageTaskExecuteFunc）。
 // 只做冻结事实驱动的南向调用与结果归一，不写任何 Task 状态；发送许可、
 // 终态与结算由 service worker 持有（R7：不因当前配置重选渠道）。
-// 请求构建复用各 adaptor 的 ConvertImageRequest，合同校验因此与同步路径
-// 完全一致。
+// 请求构建复用同步转换核心；已受理 Gemini 任务不再查询当前模型登记。
 
 // maxImageResultBytes 单张结果图片（或回读输入）的字节上限。
 const maxImageResultBytes = 50 * 1024 * 1024
@@ -68,7 +67,14 @@ func ExecuteImageTask(ctx context.Context, task *model.Task) (outcome service.Im
 	if info.ApiType == constant.APITypeAsyncImage {
 		request.ResponseFormat = "url"
 	}
-	converted, err := adaptor.ConvertImageRequest(headless, info, *request)
+	var converted any
+	if info.ApiType == constant.APITypeGemini || info.ApiType == constant.APITypeVertexAi {
+		// Admission already froze the generateContent family. Current model
+		// registration controls new calls, not previously accepted tasks.
+		converted, err = gemini.ConvertImageRequestToGenerateContent(headless, info, *request)
+	} else {
+		converted, err = adaptor.ConvertImageRequest(headless, info, *request)
+	}
 	if err != nil {
 		return executorFailureFromError(err)
 	}

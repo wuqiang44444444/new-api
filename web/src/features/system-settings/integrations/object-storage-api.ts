@@ -78,19 +78,19 @@ type ObjectStorageApiResponse<T> = {
 }
 
 export async function getObjectStorageSetting() {
-  const res =
-    await api.get<ObjectStorageApiResponse<ObjectStorageSettingView>>(
-      '/api/option/object_storage'
-    )
+  const res = await api.get<ObjectStorageApiResponse<ObjectStorageSettingView>>(
+    '/api/option/object_storage'
+  )
   return res.data
 }
 
 export async function testObjectStorageConnection(
   request: ObjectStorageSettingRequest
 ) {
-  const res = await api.post<
-    ObjectStorageApiResponse<ObjectStorageTestResult>
-  >('/api/option/object_storage/test', request)
+  const res = await api.post<ObjectStorageApiResponse<ObjectStorageTestResult>>(
+    '/api/option/object_storage/test',
+    request
+  )
   return res.data
 }
 

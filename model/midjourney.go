@@ -196,6 +196,10 @@ func (midjourney *Midjourney) UpdateWithStatus(fromStatus string) (bool, error) 
 	if result.Error != nil {
 		return false, result.Error
 	}
+	if result.RowsAffected > 0 {
+		// 错误事件（仅观察）：失败终态真实迁移后登记；轮询重复同状态提交不记录。
+		submitMidjourneyFailureEvent(midjourney, fromStatus)
+	}
 	return result.RowsAffected > 0, nil
 }
 

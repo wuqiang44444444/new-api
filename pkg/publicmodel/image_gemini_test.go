@@ -19,7 +19,7 @@ func geminiParameterByName(t *testing.T, parameters []dto.PublicAPIParameter, na
 }
 
 func TestGeminiImageAPIContractShape(t *testing.T) {
-	api := GeminiImageAPI("nano-banana-2-gemini")
+	api := GeminiImageAPI("nano-banana-2-gemini", "gemini-3.1-flash-image", 24)
 	require.NotNil(t, api)
 	require.NotNil(t, api.Image)
 	require.Len(t, api.Image.Operations, 2)

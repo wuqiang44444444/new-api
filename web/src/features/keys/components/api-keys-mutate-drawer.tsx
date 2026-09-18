@@ -82,12 +82,12 @@ import {
   transformApiKeyToFormDefaults,
 } from '../lib'
 import type { ApiKey } from '../types'
+import { ApiKeyContractField } from './api-key-contract-field'
 import {
   ApiKeyGroupCombobox,
   type ApiKeyGroupOption,
 } from './api-key-group-combobox'
 import { useApiKeys } from './api-keys-provider'
-import { ApiKeyContractField } from './api-key-contract-field'
 import { AutoGroupOrderEditor } from './auto-group-order-editor'
 
 type ApiKeyMutateDrawerProps = {

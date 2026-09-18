@@ -56,15 +56,20 @@ import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { billingModeLabel } from '@/features/billing-reconciliation/lib'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { formatBillingCurrencyFromUSD } from '@/lib/currency'
+import {
+  formatBillingCurrencyFromUSD,
+  getCurrencyDisplay,
+} from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { AuditDetailFields } from '../../audit/components/audit-detail-fields'
 import type { UsageLog } from '../../data/schema'
+import { getContractDiscountFact } from '../../lib/discount-display'
 import {
   parseLogOther,
   getParamOverrideActionLabel,
@@ -85,6 +90,7 @@ import {
   isTimingLogType,
 } from '../../lib/utils'
 import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
+import { LogDiscountCell } from '../log-discount-cell'
 import { PluginAuthorLink } from '../plugin-author-link'
 import { TaskEvidence } from '../task-evidence'
 import { DetailRow, DetailSection } from './log-detail-layout'
@@ -174,9 +180,40 @@ function BillingBreakdown(props: {
   const rows: Array<{ label: string; value: string }> = []
   const priceOpts = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
   const fmtPrice = (usd: number) => formatBillingCurrencyFromUSD(usd, priceOpts)
-  const baseInputUSD = other.model_ratio != null ? other.model_ratio * 2.0 : 0
+  const baseInputUSD =
+    other.model_ratio != null
+      ? (other.model_ratio * 1000000) / getCurrencyDisplay().config.quotaPerUnit
+      : 0
+  const explanation = other.billing_explanation
+  const hasAuxiliaryCharge =
+    explanation?.has_auxiliary_charge ||
+    other.tool_surcharges != null ||
+    other.fee_quota != null ||
+    other.web_search_price != null ||
+    other.file_search_price != null ||
+    other.image_generation_call_price != null
 
-  if (isTieredExpr) {
+  if (explanation?.lines.length) {
+    rows.push({
+      label: t('Billing Mode'),
+      value: isTieredExpr
+        ? t('Dynamic Pricing')
+        : t(isPerCall ? 'Per-call' : 'Per-token'),
+    })
+    for (const line of explanation.lines) {
+      const unit = line.unit === 'token' ? 'M token' : t(line.unit)
+      rows.push({
+        label: t(line.label),
+        value: `${line.quantity.toLocaleString()} ${t(line.unit)} × ${fmtPrice(line.unit_price_usd)}/${unit} = ${fmtPrice(line.subtotal_usd)}`,
+      })
+    }
+    if (explanation.current_quota_conversion) {
+      rows.push({
+        label: t('Amount'),
+        value: t('Amounts use the current quota conversion rate.'),
+      })
+    }
+  } else if (isTieredExpr) {
     rows.push({
       label: t('Billing Mode'),
       value: t('Dynamic Pricing'),
@@ -234,15 +271,88 @@ function BillingBreakdown(props: {
     })
   }
 
-  const contractDiscount = Number(other.contract_discount)
-  if (Number.isFinite(contractDiscount) && contractDiscount > 0) {
+  // 与列表共用合同判定：普通日志无合同字段按无合同展示；
+  // 明确未知或存在不完整/冲突合同事实时不推算合同因子。
+  const contractFact = getContractDiscountFact(other)
+  const contractDiscount = contractFact.ratio ?? 0
+  const hasContractDiscount = contractFact.state === 'applied'
+  if (hasContractDiscount) {
     rows.push({
       label: t('Contract discount'),
-      value: `${formatRatio(contractDiscount)}x`,
+      value: other.contract_name
+        ? `${other.contract_name} · ${formatRatio(contractDiscount)}x`
+        : `${formatRatio(contractDiscount)}x`,
+    })
+  } else if (contractFact.state === 'not_applied') {
+    rows.push({
+      label: t('Contract discount'),
+      value: t('No contract'),
+    })
+  } else {
+    rows.push({
+      label: t('Contract discount'),
+      value: t('Not recorded'),
     })
   }
 
-  if (!isTieredExpr && isClaude && hasAnyCacheTokens(other)) {
+  // 统一费用解释：折前小计 × 分组倍率 × 合同折扣 = 实付（方案 1.1）。
+  // 折前小计由已入账金额反推，永远标注为估算；历史合同状态未知时不构造 C=1。
+  const groupRatioKnown =
+    effectiveGR != null && Number.isFinite(effectiveGR) && effectiveGR > 0
+  let contractFactor: number | null = null
+  if (hasContractDiscount) {
+    contractFactor = contractDiscount
+  } else if (contractFact.state === 'not_applied') {
+    contractFactor = 1
+  }
+  if (groupRatioKnown && contractFactor != null) {
+    const finalFactor = effectiveGR * contractFactor
+    const factorText =
+      contractFactor === 1
+        ? `${formatRatio(effectiveGR)}x`
+        : `${formatRatio(effectiveGR)} × ${formatRatio(contractFactor)} = ${formatRatio(finalFactor)}x`
+    rows.push({ label: t('Final discount'), value: factorText })
+    const original = explanation?.original_quota_estimated
+    const preDiscountQuota = original ? Number(original) : null
+    if (
+      preDiscountQuota != null &&
+      Number.isFinite(preDiscountQuota) &&
+      Math.abs(preDiscountQuota) <= Number.MAX_SAFE_INTEGER &&
+      Math.abs(preDiscountQuota - log.quota) <= Number.MAX_SAFE_INTEGER &&
+      !hasAuxiliaryCharge &&
+      log.type === 2
+    ) {
+      rows.push({
+        label: t('Pre-discount subtotal (estimated)'),
+        value: formatLogQuota(preDiscountQuota),
+      })
+      rows.push({
+        label: t('Estimated savings'),
+        value: formatLogQuota(preDiscountQuota - log.quota),
+      })
+    }
+  }
+  if (
+    other.tool_surcharges != null ||
+    other.fee_quota != null ||
+    other.web_search_price != null ||
+    other.file_search_price != null ||
+    other.image_generation_call_price != null
+  ) {
+    rows.push({
+      label: t('Auxiliary charges'),
+      value: t(
+        'Contract discounts apply to the model subtotal only; auxiliary charges follow their own rules.'
+      ),
+    })
+  }
+
+  if (
+    !explanation?.lines.length &&
+    !isTieredExpr &&
+    isClaude &&
+    hasAnyCacheTokens(other)
+  ) {
     if (other.cache_ratio != null && other.cache_ratio !== 1) {
       rows.push({
         label: t('Cache Read'),
@@ -379,19 +489,35 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
   const { t } = useTranslation()
   const { log, other } = props
 
-  const promptTokens = log.prompt_tokens || 0
-  const completionTokens = log.completion_tokens || 0
-  const cacheRead = other.cache_tokens || 0
-  const cacheWrite = other.cache_creation_tokens || 0
+  const promptTokens =
+    other.billing_facts?.input_tokens ?? (log.prompt_tokens || 0)
+  const completionTokens =
+    other.billing_facts?.output_tokens ?? (log.completion_tokens || 0)
+  const cacheRead =
+    other.billing_facts?.cache_read_tokens ?? (other.cache_tokens || 0)
+  const cacheWrite =
+    other.billing_facts?.cache_write_tokens ??
+    (other.cache_creation_tokens || 0)
   const cacheWrite5m = other.cache_creation_tokens_5m || 0
   const cacheWrite1h = other.cache_creation_tokens_1h || 0
   const hasTokens = promptTokens > 0 || completionTokens > 0
 
-  if (!hasTokens && !other.cache_write_unavailable) return null
+  if (
+    !hasTokens &&
+    !other.cache_write_unavailable &&
+    !other.billing_facts?.input_tokens_unavailable
+  ) {
+    return null
+  }
 
   const rows: Array<{ label: string; value: string }> = []
 
-  rows.push({ label: t('Input Tokens'), value: promptTokens.toLocaleString() })
+  rows.push({
+    label: t('Input Tokens'),
+    value: other.billing_facts?.input_tokens_unavailable
+      ? t('Not recorded')
+      : promptTokens.toLocaleString(),
+  })
   rows.push({
     label: t('Output Tokens'),
     value: completionTokens.toLocaleString(),
@@ -846,16 +972,29 @@ export function DetailsDialog(props: DetailsDialogProps) {
         )}
 
         {/* Refund details (type=6) */}
-        {isRefund && other && (other.task_id || other.reason) && (
-          <DetailSection label={t('Refund Details')}>
-            {other.task_id && (
-              <DetailRow label={t('Task ID')} value={other.task_id} mono />
-            )}
-            {other.reason && (
-              <DetailRow label={t('Reason')} value={other.reason} />
-            )}
-          </DetailSection>
-        )}
+        {isRefund &&
+          other &&
+          (other.task_id || other.reason || other.billing_facts) && (
+            <DetailSection label={t('Refund Details')}>
+              {other.billing_facts && (
+                <>
+                  <DetailRow
+                    label={t('Billing Mode')}
+                    value={t(
+                      billingModeLabel(other.billing_facts.billing_mode)
+                    )}
+                  />
+                  <LogDiscountCell other={other} t={t} />
+                </>
+              )}
+              {other.task_id && (
+                <DetailRow label={t('Task ID')} value={other.task_id} mono />
+              )}
+              {other.reason && (
+                <DetailRow label={t('Reason')} value={other.reason} />
+              )}
+            </DetailSection>
+          )}
 
         {props.isAdmin && adminInfo?.task_plugin ? (
           <DetailSection label={t('Task Plugin')}>

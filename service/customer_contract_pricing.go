@@ -60,7 +60,7 @@ func ApplyContractDiscountOverlay(pricing []model.Pricing, usableGroups []string
 		perGroup := make(map[string]float64)
 		for _, group := range usableGroups {
 			nativeRatio, _ := ResolveCustomerContractNativeGroupRatio(userGroup, group)
-			perGroup[group] = nativeRatio * discount.InexactFloat64()
+			perGroup[group] = decimal.NewFromFloat(nativeRatio).Mul(discount).InexactFloat64()
 		}
 		view.GroupRatio = perGroup
 		result = append(result, view)

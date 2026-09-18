@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,11 +16,11 @@ func TestDeletedCustomerStatementRetainsHistoryWithoutInventingBalance(t *testin
 		{UserId: 7, TokenId: 4, ChannelId: 8, ModelName: "model", Type: LogTypeRefund, CreatedAt: 1101, Quota: 20, Other: `{"model_ratio":1,"group_ratio":1}`},
 		{UserId: 8, Type: LogTypeConsume, CreatedAt: 1100, Quota: 900, TokenName: "模型测试", Content: "模型测试"},
 	}).Error)
-	list, err := GetBillingCustomerStatementList(1000, 1200, "", "", "net_quota", "desc", 1, 20)
+	list, err := GetBillingCustomerStatementList(context.Background(), 1000, 1200, "", "", "net_quota", "desc", 1, 20)
 	require.NoError(t, err)
 	require.Len(t, list.Items, 1)
 	for _, dimension := range []string{"api_key", "channel"} {
-		statement, err := GetBillingCustomerStatement(7, 1000, 1200, dimension, 0, "", "")
+		statement, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1200, dimension, 0, "", "")
 		require.NoError(t, err)
 		assert.True(t, statement.Deleted)
 		assert.Equal(t, list.Items[0].Username, statement.Username)

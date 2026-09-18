@@ -27,6 +27,8 @@ import {
 } from './section-registry.tsx'
 
 const defaultOperationsSettings: OperationsSettings = {
+  'error_report_setting.enabled': false,
+  'error_report_setting.recipients': '',
   DefaultCollapseSidebar: false,
   DemoSiteEnabled: false,
   SelfUseModeEnabled: false,

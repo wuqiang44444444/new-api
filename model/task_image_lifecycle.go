@@ -403,7 +403,13 @@ func transitionImageTask(task *Task, toStatus TaskStatus, mutate func(*TaskImage
 		return nil
 	})
 	if err == nil && won {
+		previousStatus := task.Status
 		*task = *next
+		// 错误事件（仅观察）：失败终态（不含待核实）真实迁移后登记；
+		// 终态互斥保护保证同任务不重复。
+		if toStatus == TaskStatusFailure || toStatus == TaskStatusExpired {
+			submitTaskFailureEvent(task, previousStatus, "image_task_lifecycle")
+		}
 	}
 	return won && err == nil, err
 }

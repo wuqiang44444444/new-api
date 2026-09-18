@@ -14,7 +14,7 @@ import (
 )
 
 func TestPublishedImageEditAlternativesMatchParser(t *testing.T) {
-	edit := publicmodel.GeminiImageAPI("customer-image").Image.Edit
+	edit := publicmodel.GeminiImageAPI("customer-image", "gemini-3.1-flash-image", 24).Image.Edit
 	for _, input := range edit.RequiredOneOf {
 		t.Run(input, func(t *testing.T) {
 			body := map[string]any{"model": edit.Model, "prompt": "edit"}

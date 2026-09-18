@@ -38,7 +38,16 @@ function formatJsonForEditor(value: string, fallback: string) {
 }
 
 const MODELS_SECTIONS = [
-  { id: 'batch-pricing', titleKey: 'Batch billing expressions', build: (settings: ModelSettings) => <BatchPricingCard key={settings['batch_billing_setting.batch_billing_expr']} value={settings['batch_billing_setting.batch_billing_expr'] || '{}'} /> },
+  {
+    id: 'batch-pricing',
+    titleKey: 'Batch billing expressions',
+    build: (settings: ModelSettings) => (
+      <BatchPricingCard
+        key={settings['batch_billing_setting.batch_billing_expr']}
+        value={settings['batch_billing_setting.batch_billing_expr'] || '{}'}
+      />
+    ),
+  },
   {
     id: 'global',
     titleKey: 'Global Model Configuration',

@@ -29,8 +29,8 @@ import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import { taskActionMapper, taskStatusMapper } from '../../lib/mappers'
 import { TASK_STATUS } from '../../constants'
+import { taskActionMapper, taskStatusMapper } from '../../lib/mappers'
 import type { TaskLog } from '../../types'
 import { TaskDetailsDialog } from '../dialogs/task-details-dialog'
 import { PluginAuthorLink } from '../plugin-author-link'
@@ -67,12 +67,14 @@ function TaskDetailsCell(props: {
           {t('View details')}
         </button>
         {props.log.fail_reason ? (
-          <span className={cn(
-            'max-w-full truncate text-xs',
-            props.log.status === TASK_STATUS.RECONCILIATION_REQUIRED
-              ? 'text-amber-600 dark:text-amber-400'
-              : 'text-red-600 dark:text-red-400'
-          )}>
+          <span
+            className={cn(
+              'max-w-full truncate text-xs',
+              props.log.status === TASK_STATUS.RECONCILIATION_REQUIRED
+                ? 'text-amber-600 dark:text-amber-400'
+                : 'text-red-600 dark:text-red-400'
+            )}
+          >
             {props.log.fail_reason}
           </span>
         ) : null}

@@ -24,18 +24,19 @@ import { describe, expect, test, vi } from 'vitest'
 
 import { getPricingQueryKey } from '@/features/pricing/hooks/use-pricing-data'
 
-import { TaskUsagePricingEditor } from '../task-usage-pricing-editor'
-
 import type { ModelRatioData } from '../model-pricing-core'
 import {
   ModelPricingEditorPanel,
   type ModelPricingEditorPanelHandle,
 } from '../model-pricing-sheet'
+import { TaskUsagePricingEditor } from '../task-usage-pricing-editor'
 
 function getEditorModeSelect() {
   const element = screen
     .getAllByRole('combobox')
-    .find((item) => /Visual editor|Expression editor/.test(item.textContent || ''))
+    .find((item) =>
+      /Visual editor|Expression editor/.test(item.textContent || '')
+    )
   if (!element) throw new Error('Pricing editor mode select was not rendered')
   return element
 }
@@ -76,7 +77,9 @@ describe('separate Seedance and native task pricing editors', () => {
             has_video_input: { type: 'boolean' },
             duration_seconds: { type: 'number', unit: 'second' },
             generate_audio: { type: 'boolean' },
-            input_mode: { enum: ['text', 'single_image', 'multi_image', 'multi_modal'] },
+            input_mode: {
+              enum: ['text', 'single_image', 'multi_image', 'multi_modal'],
+            },
             control_mode: { enum: ['none', 'reference', 'end_frame'] },
           }}
           preconsumeTokenBudget
@@ -193,9 +196,7 @@ describe('separate Seedance and native task pricing editors', () => {
     )
     expect(screen.queryByPlaceholderText('250000')).not.toBeInTheDocument()
     expect(
-      screen.getByText(
-        /Prices are in .*with units shown below/
-      )
+      screen.getByText(/Prices are in .*with units shown below/)
     ).toBeInTheDocument()
     await act(async () => {
       expect(await ref.current?.commitDraft()).toMatchObject({
@@ -253,7 +254,10 @@ describe('separate Seedance and native task pricing editors', () => {
     const user = userEvent.setup()
     const client = new QueryClient()
     client.setQueryData(['status'], { price: 1 })
-    client.setQueryData(getPricingQueryKey(undefined), { vendors: [], data: [] })
+    client.setQueryData(getPricingQueryKey(undefined), {
+      vendors: [],
+      data: [],
+    })
     const ref = createRef<ModelPricingEditorPanelHandle>()
     const billingExpr = 'tier("base", p * 1 + c * 5)'
     const requestRuleExpr = 'param("_task.duration_seconds") * 2'
@@ -292,7 +296,10 @@ describe('separate Seedance and native task pricing editors', () => {
     const user = userEvent.setup()
     const client = new QueryClient()
     client.setQueryData(['status'], { price: 1 })
-    client.setQueryData(getPricingQueryKey(undefined), { vendors: [], data: [] })
+    client.setQueryData(getPricingQueryKey(undefined), {
+      vendors: [],
+      data: [],
+    })
     const ref = createRef<ModelPricingEditorPanelHandle>()
     const billingExpr = 'tier("base", p * 1 + c * 5)'
     render(
@@ -322,28 +329,37 @@ describe('separate Seedance and native task pricing editors', () => {
   })
 })
 
-
 describe('missing Seedance budget reminder', () => {
   test.each([
     `tier("base", u("tokens") * 5 / 1000000)`,
     `tier("base", u ( 'tokens' ) * 5 / 1000000)`,
     `tier("fixed", 0.5)`,
-  ])('shows a conditional reminder without guessing the contract: %s', (billingExpr) => {
-    const props = {
-      billingExpr,
-      requestRuleExpr: '',
-      usageSchema: { tokens: { type: 'number' as const, unit: 'token' as const } },
-      showPreconsumeBudget: true,
-      onBillingExprChange: vi.fn(),
-      onRequestRuleExprChange: vi.fn(),
+  ])(
+    'shows a conditional reminder without guessing the contract: %s',
+    (billingExpr) => {
+      const props = {
+        billingExpr,
+        requestRuleExpr: '',
+        usageSchema: {
+          tokens: { type: 'number' as const, unit: 'token' as const },
+        },
+        showPreconsumeBudget: true,
+        onBillingExprChange: vi.fn(),
+        onRequestRuleExprChange: vi.fn(),
+      }
+      const view = render(<TaskUsagePricingEditor {...props} />)
+      const message =
+        'No pre-consume token upper bound is set. Requests that require a token budget will be rejected.'
+      expect(screen.getByText(message)).toBeInTheDocument()
+      view.rerender(
+        <TaskUsagePricingEditor {...props} taskPreConsumeTokens={300000} />
+      )
+      expect(screen.queryByText(message)).not.toBeInTheDocument()
+      view.rerender(
+        <TaskUsagePricingEditor {...props} showPreconsumeBudget={false} />
+      )
+      expect(screen.queryByText(message)).not.toBeInTheDocument()
+      view.unmount()
     }
-    const view = render(<TaskUsagePricingEditor {...props} />)
-    const message = 'No pre-consume token upper bound is set. Requests that require a token budget will be rejected.'
-    expect(screen.getByText(message)).toBeInTheDocument()
-    view.rerender(<TaskUsagePricingEditor {...props} taskPreConsumeTokens={300000} />)
-    expect(screen.queryByText(message)).not.toBeInTheDocument()
-    view.rerender(<TaskUsagePricingEditor {...props} showPreconsumeBudget={false} />)
-    expect(screen.queryByText(message)).not.toBeInTheDocument()
-    view.unmount()
-  })
+  )
 })

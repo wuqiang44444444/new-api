@@ -137,6 +137,9 @@ function ApiKeysMobileList({
       {rows.map((row) => {
         const apiKey = row.original
         const statusConfig = API_KEY_STATUSES[apiKey.status]
+        const contractCell = row
+          .getAllCells()
+          .find((cell) => cell.column.id === 'contract_id')
         const groupCell = row
           .getAllCells()
           .find((cell) => cell.column.id === 'group')
@@ -167,6 +170,16 @@ function ApiKeysMobileList({
                 />
               )}
             </div>
+
+            {contractCell && (
+              <div className='grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2'>
+                <span className='text-muted-foreground'>{t('Contract')}</span>
+                {flexRender(
+                  contractCell.column.columnDef.cell,
+                  contractCell.getContext()
+                )}
+              </div>
+            )}
 
             <div className='flex min-w-0 items-center justify-between gap-2'>
               <div className='min-w-0 flex-1 [&_button:first-child]:max-w-full [&_button:first-child]:truncate [&_button:first-child]:px-0'>

@@ -236,7 +236,13 @@ func InitLogDB() (err error) {
 		common.SetLogDatabaseType(common.MainDatabaseType())
 		initCol()
 		if common.IsMasterNode {
-			return MigrateAuditLogs()
+			if err := MigrateAuditLogs(); err != nil {
+				return err
+			}
+			if err := MigrateErrorEvents(); err != nil {
+				return err
+			}
+			return migrateBillingStatementLogIndex(LOG_DB)
 		}
 		return
 	}
@@ -373,6 +379,10 @@ func migrateDB() error {
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
+		&ErrorReportSchedule{},
+		&ErrorReport{},
+		&ErrorReportPart{},
+		&ErrorReportDelivery{},
 		&ChannelAssetCredential{},
 		&ChannelAssetScopeIdentity{},
 		&ChannelDefaultAssetGroup{},
@@ -392,10 +402,22 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := migrateTaskUsageCheckIndex(DB); err != nil {
+		return err
+	}
+	if err := migrateErrorReportPeriods(); err != nil {
+		return err
+	}
 	if err := backfillChannelAssetScopeIdentities(); err != nil {
 		return err
 	}
 	if err := migrateBillingReconciliationDB(); err != nil {
+		return err
+	}
+	if err := migrateCustomerExportDB(); err != nil {
+		return err
+	}
+	if err := migrateBillingStatementVersionDB(); err != nil {
 		return err
 	}
 	if err := migrateFunCloudProtocolNames(); err != nil {
@@ -435,10 +457,16 @@ func migrateLOGDB() error {
 	if err := MigrateAuditLogs(); err != nil {
 		return err
 	}
+	if err := MigrateErrorEvents(); err != nil {
+		return err
+	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return migrateClickHouseLogDB()
 	}
-	return LOG_DB.AutoMigrate(&Log{})
+	if err := LOG_DB.AutoMigrate(&Log{}); err != nil {
+		return err
+	}
+	return migrateBillingStatementLogIndex(LOG_DB)
 }
 
 func migrateClickHouseLogDB() error {

@@ -18,13 +18,13 @@ operations:
 
 先调用 `GET /v1/models/{model}`，读取 `api.video`：
 
-| 字段 | 说明 |
-| --- | --- |
-| `protocol` | 本页模型应为 `openai_videos` |
-| `creation.path` | 创建路径，原生 OpenAI Videos 为 `/v1/videos` |
-| `creation.content_type` | 请求 Content-Type |
-| `creation.parameters` | 当前客户模型允许的字段、枚举、默认值和长度边界 |
-| `operations[]` | 查询、Remix 和内容下载等操作是否可用 |
+| 字段                    | 说明                                           |
+| ----------------------- | ---------------------------------------------- |
+| `protocol`              | 本页模型应为 `openai_videos`                   |
+| `creation.path`         | 创建路径，原生 OpenAI Videos 为 `/v1/videos`   |
+| `creation.content_type` | 请求 Content-Type                              |
+| `creation.parameters`   | 当前客户模型允许的字段、枚举、默认值和长度边界 |
+| `operations[]`          | 查询、Remix 和内容下载等操作是否可用           |
 
 模型目录是逐模型合同。不要根据模型名或其它视频接口推断时长、尺寸、参考图或 Remix 能力。
 
@@ -71,13 +71,13 @@ curl "{{OPENAI_BASE_URL}}/videos" \
 
 ### 创建参数
 
-| 表单字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `model` | string | 是 | 当前 Key 可访问、且 `api.video.protocol=openai_videos` 的客户模型名 |
-| `prompt` | string | 是 | 视频描述；当前公开模型合同最大 `32000` 个字符 |
-| `seconds` | integer string | 否 | 当前公开 Sora 合同允许 `"4"`、`"8"`、`"12"`，默认 `"4"` |
-| `size` | string | 否 | 当前模型允许的输出尺寸；普通模型为 `720x1280`、`1280x720`，部分 Pro 模型还支持更大尺寸 |
-| `input_reference` | file | 否 | 参考图片文件；是否支持及文件限制以当前模型合同为准 |
+| 表单字段          | 类型           | 必填 | 说明                                                                                   |
+| ----------------- | -------------- | ---- | -------------------------------------------------------------------------------------- |
+| `model`           | string         | 是   | 当前 Key 可访问、且 `api.video.protocol=openai_videos` 的客户模型名                    |
+| `prompt`          | string         | 是   | 视频描述；当前公开模型合同最大 `32000` 个字符                                          |
+| `seconds`         | integer string | 否   | 当前公开 Sora 合同允许 `"4"`、`"8"`、`"12"`，默认 `"4"`                                |
+| `size`            | string         | 否   | 当前模型允许的输出尺寸；普通模型为 `720x1280`、`1280x720`，部分 Pro 模型还支持更大尺寸 |
+| `input_reference` | file           | 否   | 参考图片文件；是否支持及文件限制以当前模型合同为准                                     |
 
 JSON 中 `seconds` 仍用字符串。需要 JSON 参考输入时，仅按模型公开的 `input_reference` 对象合同
 提供 `file_id` 或 `image_url` 之一；文件上传继续使用表单，不将本地文件路径当作公网 URL。
@@ -102,23 +102,23 @@ HTTP `200` 返回视频任务对象：
 }
 ```
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | string | 平台视频任务 ID；后续查询、Remix 和下载都使用该值 |
-| `task_id` | string | 兼容字段，可能存在；新客户端使用 `id` |
-| `object` | string | `video` |
-| `model` | string | 创建任务时使用的客户模型 |
-| `status` | string | `queued`、`in_progress`、`completed` 或 `failed` |
-| `progress` | integer | 进度百分比；不能单独作为成功依据 |
-| `created_at` | integer | 创建时间，Unix 秒 |
-| `completed_at` | integer | 完成时间，终态时可能返回 |
-| `expires_at` | integer | 内容过期时间，Provider 提供时返回 |
-| `prompt` | string | 提示词，Provider 返回时存在 |
-| `seconds` | string | 视频时长 |
-| `size` | string | 视频尺寸 |
-| `remixed_from_video_id` | string | Remix 任务的源视频 ID |
-| `error.code` / `error.message` | string | 失败任务的错误码和错误说明 |
-| `metadata` | object | 公开扩展结果；其中可能包含内容 URL，按实际键存在性读取 |
+| 字段                           | 类型    | 说明                                                   |
+| ------------------------------ | ------- | ------------------------------------------------------ |
+| `id`                           | string  | 平台视频任务 ID；后续查询、Remix 和下载都使用该值      |
+| `task_id`                      | string  | 兼容字段，可能存在；新客户端使用 `id`                  |
+| `object`                       | string  | `video`                                                |
+| `model`                        | string  | 创建任务时使用的客户模型                               |
+| `status`                       | string  | `queued`、`in_progress`、`completed` 或 `failed`       |
+| `progress`                     | integer | 进度百分比；不能单独作为成功依据                       |
+| `created_at`                   | integer | 创建时间，Unix 秒                                      |
+| `completed_at`                 | integer | 完成时间，终态时可能返回                               |
+| `expires_at`                   | integer | 内容过期时间，Provider 提供时返回                      |
+| `prompt`                       | string  | 提示词，Provider 返回时存在                            |
+| `seconds`                      | string  | 视频时长                                               |
+| `size`                         | string  | 视频尺寸                                               |
+| `remixed_from_video_id`        | string  | Remix 任务的源视频 ID                                  |
+| `error.code` / `error.message` | string  | 失败任务的错误码和错误说明                             |
+| `metadata`                     | object  | 公开扩展结果；其中可能包含内容 URL，按实际键存在性读取 |
 
 HTTP `200` 只表示任务已经创建，不表示视频已经完成。
 
@@ -133,12 +133,12 @@ curl "{{OPENAI_BASE_URL}}/videos/task-public-id" \
 
 HTTP `200` 返回与创建响应相同的视频任务对象。处理规则：
 
-| `status` | 客户端行为 |
-| --- | --- |
-| `queued` | 任务排队中，退避后继续查询 |
+| `status`      | 客户端行为                             |
+| ------------- | -------------------------------------- |
+| `queued`      | 任务排队中，退避后继续查询             |
 | `in_progress` | 任务执行中，可结合 `progress` 展示进度 |
-| `completed` | 停止轮询，通过内容端点下载结果 |
-| `failed` | 停止轮询，读取 `error` 并保留请求 ID |
+| `completed`   | 停止轮询，通过内容端点下载结果         |
+| `failed`      | 停止轮询，读取 `error` 并保留请求 ID   |
 
 查询不到任务时返回 `404`。任务按认证账户隔离，只能查询当前账户可见的任务。
 
@@ -153,10 +153,10 @@ curl -X POST "{{OPENAI_BASE_URL}}/videos/task-public-id/remix" \
   -d '{"prompt":"保持构图，将天气改为雪天"}'
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `video_id` | path string | 是 | 当前调用方可见的源视频任务 ID |
-| `prompt` | string | 是 | Remix 指令，去除首尾空白后不能为空 |
+| 字段       | 类型        | 必填 | 说明                               |
+| ---------- | ----------- | ---- | ---------------------------------- |
+| `video_id` | path string | 是   | 当前调用方可见的源视频任务 ID      |
+| `prompt`   | string      | 是   | Remix 指令，去除首尾空白后不能为空 |
 
 源任务必须仍可读取，且当前服务支持该任务的 Remix 操作。成功返回新的 OpenAI 视频任务对象；新任务
 使用自己的 `id` 查询。不要把源任务 ID 当作新任务 ID。

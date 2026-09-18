@@ -522,14 +522,41 @@
                 "$ref": "#/components/schemas/ImageEditJSONRequest"
               },
               "examples": {
-                "single": {
+                "nativeSingle": {
+                  "summary": "原生 JSON 单图对象数组",
+                  "value": {
+                    "model": "customer-image-model",
+                    "prompt": "将杯子改成红色",
+                    "images": [
+                      {
+                        "image_url": "https://example.com/cup.png"
+                      }
+                    ]
+                  }
+                },
+                "nativeMultiple": {
+                  "summary": "原生 JSON 多图对象数组",
+                  "value": {
+                    "model": "customer-image-model",
+                    "prompt": "把第二张图中的杯子放到第一张图的桌面上",
+                    "images": [
+                      {
+                        "image_url": "https://example.com/scene.png"
+                      },
+                      {
+                        "image_url": "https://example.com/cup.png"
+                      }
+                    ]
+                  }
+                },
+                "unifiedSingle": {
                   "value": {
                     "model": "customer-image-model",
                     "prompt": "将杯子改成红色",
                     "image": "https://example.com/cup.png"
                   }
                 },
-                "multiple": {
+                "unifiedMultiple": {
                   "value": {
                     "model": "customer-image-model",
                     "prompt": "把第二张图中的杯子放到第一张图的桌面上",
@@ -2890,7 +2917,9 @@
             "multipart/form-data": {
               "schema": {
                 "type": "object",
-                "required": ["request"],
+                "required": [
+                  "request"
+                ],
                 "properties": {
                   "request": {
                     "type": "string",
@@ -4127,7 +4156,8 @@
             "enum": [
               "application/json",
               "multipart/form-data"
-            ]
+            ],
+            "description": "本条 parameters 所描述的推荐请求编码；不是该端点全部传输格式的枚举。文件上传的字段与 JSON 字段不同，见编辑文档。"
           },
           "required_fields": {
             "type": "array",
@@ -4269,7 +4299,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "字段名；嵌套字段使用点路径。"
+            "description": "字段名；嵌套字段使用点路径，数组对象子字段使用 images[].image_url 等路径，不是字面量顶层键。"
           },
           "type": {
             "type": "string",
@@ -4293,7 +4323,9 @@
           },
           "suggested_values": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "description": "非穷举推荐值，可用于展示常用选项；不是 enum，不参与拒绝其它值。没有 enum 不代表任意值均已获上游支持。"
           },
           "fixed_value": {
@@ -4333,6 +4365,13 @@
           "item_type": {
             "type": "string",
             "description": "数组元素类型；存在时按该类型构造每个元素。"
+          },
+          "required_one_of": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "对象内恰好选一个的属性名；item_type=object 时作用于每个数组元素。可选对象省略时不要求其子字段。"
           }
         }
       },
@@ -5989,7 +6028,7 @@
               "url",
               "b64_json"
             ],
-            "description": "支持值和省略时默认值以模型 parameters 为准。"
+            "description": "可选返回格式；省略保持模型及执行模式原有默认值。非流式显式 url 返回 URL，b64_json 返回 Base64。GPT Image 的 URL 交付由平台适配；流式事件沿用原协议。"
           },
           "user": {
             "type": "string"
@@ -6049,7 +6088,6 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "image",
           "model",
           "prompt"
         ],
@@ -6089,7 +6127,12 @@
             "type": "string"
           },
           "response_format": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ],
+            "description": "可选返回格式；省略保持模型及执行模式原有默认值。非流式显式 url 返回 URL，b64_json 返回 Base64。GPT Image 的 URL 交付由平台适配；流式事件沿用原协议。"
           },
           "quality": {
             "type": "string"
@@ -6147,9 +6190,37 @@
                 "description": "仅当前模型发布时可用。"
               }
             }
+          },
+          "image[]": {
+            "description": "文件数组字段名；重复 image[] 或重复 image，选一种发送。",
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "binary"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            ]
           }
         },
-        "description": "multipart 文件编辑的公共字段集合；只发送当前模型编辑合同发布的字段。image 可重复；也可按合同使用 image[]，不要混用。"
+        "description": "multipart 文件编辑的公共字段集合；只发送当前模型编辑合同发布的字段。image 可重复；也可按合同使用 image[]，不要混用。",
+        "oneOf": [
+          {
+            "required": [
+              "image"
+            ]
+          },
+          {
+            "required": [
+              "image[]"
+            ]
+          }
+        ]
       },
       "ImageResponse": {
         "type": "object",
@@ -6170,6 +6241,11 @@
                 },
                 "revised_prompt": {
                   "type": "string"
+                },
+                "url_expires_at": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "本站签名 URL 的过期时间（Unix 秒）；Provider URL 不保证提供该字段。"
                 }
               }
             }
@@ -8083,124 +8159,15 @@
         }
       },
       "ImageEditJSONRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "description": "仅用于模型 api.image.edit 已发布的 JSON 编辑输入。image 与 images 恰好选一，模型未发布的参数不可发送。",
-        "required": [
-          "model",
-          "prompt"
-        ],
+        "description": "JSON 编辑按 api.image.edit.parameters 选择对象数组或字符串引用合同；这两个分支不允许混用，也不表示同一模型支持两种结构。",
         "oneOf": [
           {
-            "required": [
-              "image"
-            ]
+            "$ref": "#/components/schemas/NativeImageEditJSONRequest"
           },
           {
-            "required": [
-              "images"
-            ]
+            "$ref": "#/components/schemas/UnifiedImageEditJSONRequest"
           }
-        ],
-        "properties": {
-          "model": {
-            "type": "string",
-            "example": "customer-image-model"
-          },
-          "prompt": {
-            "type": "string",
-            "description": "图像描述"
-          },
-          "n": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 128,
-            "default": 1,
-            "description": "公共安全上限 128 不代表模型可生成这么多；统一图片合同及逐模型限制可更低，部分模型固定为 1。"
-          },
-          "size": {
-            "type": "string",
-            "description": "所选模型支持的尺寸或分辨率"
-          },
-          "quality": {
-            "type": "string",
-            "description": "所选模型支持的质量档位"
-          },
-          "response_format": {
-            "type": "string",
-            "enum": [
-              "url",
-              "b64_json"
-            ],
-            "description": "支持值和省略时默认值以模型 parameters 为准。"
-          },
-          "user": {
-            "type": "string"
-          },
-          "background": {
-            "type": "string"
-          },
-          "moderation": {
-            "type": "string"
-          },
-          "output_format": {
-            "type": "string"
-          },
-          "output_compression": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 100
-          },
-          "partial_images": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 3
-          },
-          "stream": {
-            "type": "boolean"
-          },
-          "watermark": {
-            "type": "boolean"
-          },
-          "extra_fields": {
-            "type": "object",
-            "additionalProperties": false,
-            "description": "仅发送当前模型 parameters 发布的子字段；不是任意扩展字段透传入口。",
-            "properties": {
-              "aspect_ratio": {
-                "type": "string",
-                "description": "仅当前模型发布时可用。"
-              },
-              "resolution": {
-                "type": "string",
-                "description": "仅当前模型发布时可用。"
-              },
-              "quality": {
-                "type": "string",
-                "description": "仅当前模型发布时可用。"
-              },
-              "output_format": {
-                "type": "string",
-                "description": "仅当前模型发布时可用。"
-              }
-            }
-          },
-          "image": {
-            "type": "string",
-            "minLength": 1,
-            "description": "HTTPS 图片 URL 或 JPEG/PNG/WebP Data URL。"
-          },
-          "images": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 14,
-            "items": {
-              "type": "string",
-              "minLength": 1
-            },
-            "description": "有序 HTTPS URL 或 Data URL 数组；模型可设置更低的数量限制。"
-          }
-        }
+        ]
       },
       "ImageTaskError": {
         "type": "object",
@@ -8403,6 +8370,249 @@
           }
         },
         "description": "模型声明支持的 OpenAI Videos JSON 输入；不混用其他协议字段。"
+      },
+      "UnifiedImageEditJSONRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "统一图片适配的 JSON 编辑输入：image 字符串与 images 字符串数组恰好选一。仅适用于模型元数据声明此形状的模型，不适用于原生 GPT Image JSON 编辑。",
+        "required": [
+          "model",
+          "prompt"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "image"
+            ]
+          },
+          {
+            "required": [
+              "images"
+            ]
+          }
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "customer-image-model"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "图像描述"
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 128,
+            "default": 1,
+            "description": "公共安全上限 128 不代表模型可生成这么多；统一图片合同及逐模型限制可更低，部分模型固定为 1。"
+          },
+          "size": {
+            "type": "string",
+            "description": "所选模型支持的尺寸或分辨率"
+          },
+          "quality": {
+            "type": "string",
+            "description": "所选模型支持的质量档位"
+          },
+          "response_format": {
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ],
+            "description": "可选返回格式；省略保持模型及执行模式原有默认值。非流式显式 url 返回 URL，b64_json 返回 Base64。GPT Image 的 URL 交付由平台适配；流式事件沿用原协议。"
+          },
+          "user": {
+            "type": "string"
+          },
+          "background": {
+            "type": "string"
+          },
+          "moderation": {
+            "type": "string"
+          },
+          "output_format": {
+            "type": "string"
+          },
+          "output_compression": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "partial_images": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "watermark": {
+            "type": "boolean"
+          },
+          "extra_fields": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "仅发送当前模型 parameters 发布的子字段；不是任意扩展字段透传入口。",
+            "properties": {
+              "aspect_ratio": {
+                "type": "string",
+                "description": "仅当前模型发布时可用。"
+              },
+              "resolution": {
+                "type": "string",
+                "description": "仅当前模型发布时可用。"
+              },
+              "quality": {
+                "type": "string",
+                "description": "仅当前模型发布时可用。"
+              },
+              "output_format": {
+                "type": "string",
+                "description": "仅当前模型发布时可用。"
+              }
+            }
+          },
+          "image": {
+            "type": "string",
+            "minLength": 1,
+            "description": "HTTPS 图片 URL 或 JPEG/PNG/WebP Data URL。"
+          },
+          "images": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 14,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "有序 HTTPS URL 或 Data URL 数组；模型可设置更低的数量限制。"
+          }
+        }
+      },
+      "NativeImageReference": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "image_url 与 file_id 恰好选一。image_url 是 URL 或 Data URL 字符串，不是 {url: ...} 对象。file_id 必须是当前原生图片服务可访问的图片文件 ID，不是本站 Batch 文件 ID。",
+        "oneOf": [
+          {
+            "required": [
+              "image_url"
+            ]
+          },
+          {
+            "required": [
+              "file_id"
+            ]
+          }
+        ],
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20971520
+          },
+          "file_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "NativeImageEditJSONRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "原生 GPT Image JSON 编辑；单图和多图均为 images 对象数组，不套用统一适配的 image 字符串或 14 张上限。默认 Base64，可用 response_format 选择非流式返回格式。",
+        "required": [
+          "model",
+          "prompt",
+          "images"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "customer-image-model"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "图像描述",
+            "minLength": 1,
+            "maxLength": 32000
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 1
+          },
+          "size": {
+            "type": "string",
+            "description": "所选模型支持的尺寸或分辨率"
+          },
+          "quality": {
+            "type": "string",
+            "description": "以模型元数据为准；xhigh、max 仅支持这些档位的模型可用。",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              "auto"
+            ]
+          },
+          "user": {
+            "type": "string"
+          },
+          "background": {
+            "type": "string"
+          },
+          "moderation": {
+            "type": "string"
+          },
+          "output_format": {
+            "type": "string"
+          },
+          "output_compression": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "partial_images": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "images": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/components/schemas/NativeImageReference"
+            }
+          },
+          "mask": {
+            "$ref": "#/components/schemas/NativeImageReference"
+          },
+          "input_fidelity": {
+            "type": "string",
+            "enum": [
+              "high",
+              "low"
+            ]
+          },
+          "response_format": {
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ],
+            "description": "可选返回格式；省略保持模型及执行模式原有默认值。非流式显式 url 返回 URL，b64_json 返回 Base64。GPT Image 的 URL 交付由平台适配；流式事件沿用原协议。"
+          }
+        }
       }
     },
     "parameters": {

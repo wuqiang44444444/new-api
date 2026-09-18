@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
@@ -87,6 +88,7 @@ func ClaudeErrorWrapperLocal(err error, code string, statusCode int) *dto.Claude
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 
+	clienterrlog.EnsureUpstreamResponseCapture(ctx, resp)
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return

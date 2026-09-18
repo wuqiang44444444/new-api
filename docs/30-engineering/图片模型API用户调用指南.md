@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-06
+last-reviewed: 2026-09-17
 ---
 
 # 图片模型 API 用户调用指南
@@ -14,8 +14,8 @@ last-reviewed: 2026-09-06
 
 已发布图片异步能力的模型可显式选择异步模式：请求头 `Prefer: respond-async`。受理成功返回
 HTTP `202` 与平台任务 ID，结果经 `GET /v1/tasks/{task_id}` 查询（见 §6）；客户端断开不取消任务。
-OpenAI／Azure 原生图片的 `stream=true` 优先流式响应，不创建平台任务；Gemini／Vertex 和图片中转
-仍与 `stream=true` 互斥。未接入平台任务的其他渠道忽略异步偏好，继续原生响应。
+OpenAI／Azure 同时传 `stream=true` 时仍优先异步受理，由后台接收上游流式结果；未传异步偏好时
+沿用原生流式响应。Gemini／Vertex 和图片中转的异步偏好仍与 `stream=true` 互斥。未接入平台任务的其他渠道忽略异步偏好，继续原生响应。
 原生生成、JSON／multipart 编辑及 mask 沿用已有支持；异步需要已启用私有对象存储和后台图片任务。
 
 统一图片合同的渠道类型分两类：原生 Gemini/Vertex 渠道上的 imagine 图片模型（如映射到 `gemini-3.1-flash-image`
@@ -27,6 +27,23 @@ FunCloud 虽然南向创建任务并轮询，但 adaptor 在同一请求内完�
 超时或取消按普通同步图片失败/退款语义处理。调用方
 不要盲目重发，因为 Provider 可能已经受理请求。Moxing 当前代码支持 Lite/Pro 固定 `2K` 单图生成与编辑；
 真实 Provider、账单与超时歧义尚未验收，管理员启用前不能把下述代码合同视为生产可用承诺。
+
+### 原生 GPT Image JSON 编辑
+
+OpenAI 原生 GPT Image 2、2.5 的 JSON 编辑均要求 `images` 对象数组，单图也保留数组。
+例如 `{"images":[{"image_url":"https://example.com/reference.png"}]}`；URL 或 Data URL 放在
+字符串 `image_url` 内，不使用字符串数组，也不嵌套 `{url: ...}`。每个元素在 `image_url` 与
+当前原生服务可访问的 `file_id` 中恰好选一；本站 Batch 文件 ID 不能用于此处。
+
+模型元数据的 `api.image.edit.content_type=application/json` 描述推荐编码；`images.item_type=object`、
+`images[].image_url` 和参数级 `required_one_of` 描述对象结构，最多 16 张输入、输出 `n` 为 1～10。
+可选 `mask` 为同形引用对象。multipart 上传继续使用 `image` / `image[]` 文件，不受 JSON 字段名影响。
+同步默认 Base64，显式 `response_format=url` 时由平台转换交付；2.5 质量档位包含 `xhigh`、`max`，2 不包含。
+客户别名通过已有模型映射获得公开参数，运行时不新增按名称猜测或格式转换。
+
+下面 Gemini/Vertex、FunCloud、Moxing 的字符串引用合同及 14 张预算不适用于原生 OpenAI。
+完整示例见 `web/public/docs-content/zh/api-reference/images/edits.md`；协议依据为
+[OpenAI 图片编辑接口](https://developers.openai.com/api/reference/resources/images/methods/edit)。
 
 ## 2. 最小请求
 
@@ -80,6 +97,22 @@ curl -sS "$NEWAPI_BASE_URL/v1/images/edits" \
   -F "prompt=把天空改成日落" \
   -F "image=@input.png"
 ```
+
+### Gemini 3.1 Flash-Lite Image
+
+Lite 沿用标准 `POST /v1/images/generations` 与 `POST /v1/images/edits`，客户端无需使用 Google
+原生请求。两者显式设置 `response_format=url`，成功通过 `data[].url` 返回图片。
+生成使用 JSON；编辑支持现有 JSON 图片引用或 multipart `image`/`image[]` 文件。
+
+Lite 的标准接口目前仅发布 `size=auto`（也可省略）和 `size=1024x1024`，以模型详情的 `size.enum`
+为准。前者由 Provider 决定原生 1K 输出比例，后者请求原生 1K 正方形；网关不缩放、裁切或重新编码。
+不接受 `size=1K`、任意 WxH 或 2K/4K；不把其他 Gemini 型号的像素表套用到 Lite。
+Vertex Lite 每张内联编辑图最多 7,000,000 解码字节，参数 `max_decoded_bytes` 发布该限制；
+客户端仍提交标准 `image` / `images` 或 multipart 文件，南向差异由网关适配。
+
+代码已登记及通过自动化测试不代表所有渠道均已完成真实履约。部署前应核对当前模型列表覆盖项，
+并分别验证生成、编辑、适用的异步执行及 URL 交付。Gemini 按实际 Token 用量计费，文本与图片输出
+单价可能不同；未配置 ModelPrice 不能据此认定缺价，亦不能据此改成按张收费。
 
 ## 4. FunCloud 模型兼容子集
 
@@ -183,7 +216,7 @@ HTTP 202
   有效，附带 `url_expires_at`；过期后重新查询即续签）或创建时显式 `b64_json` 的原文；`deleted`
   表示对象已被部署方删除（不影响其余图片），`unavailable` 表示暂不可访问、稍后重查；
 - `failed/expired` 给出脱敏 `error`；`unknown` 表示结果待核实（不会自动退款），联系平台核实；
-- `Idempotency-Key` 仅实际异步提供任务幂等（未传 Prefer 时仍返回 `400`；原生流式优先或忽略 Prefer 时不认领）：同 key 等价请求重放原任务 ID，
+- `Idempotency-Key` 仅实际异步提供任务幂等（未传 Prefer 时仍返回 `400`；未提供异步执行的渠道忽略 Prefer 时不认领）：同 key 等价请求重放原任务 ID，
   不同请求体返回 `409`；未携带 key 视为新的创建意图。
 - 背压：应用未完成任务超限返回 `429`，平台排队容量耗尽返回 `503`；两者都没有受理、扣费或发送，
   可安全稍后重试。
@@ -204,3 +237,26 @@ HTTP 202
 - API Key 只放在服务端环境变量或密钥管理系统中；不要写入 URL、前端代码或日志。
 - 不要记录完整签名 URL、参考图 URL、Base64、提示词或 Provider 原始响应。
 - 结果 URL 由 Provider 控制有效期和访问权限，业务应按自己的存储与合规策略处理。
+
+## 图片返回格式
+
+两个标准图片入口统一使用可选 `response_format=url|b64_json`。省略时保持各模型与执行模式原有
+默认格式，不能全局假定 URL。multipart 对应 `-F 'response_format=url'`。
+已有目标格式直接交付；Base64 转 URL 保存到平台存储并签发 300 秒 URL，返回 `url_expires_at`；
+Provider URL 直接复用，有效期由 Provider 决定。URL 转 Base64 复用受保护下载。
+GPT Image 上游不支持的格式字段由网关消费，不转发；原生 SSE 事件保持原有格式。
+显式异步查询遵循受理时冻结的返回格式；同步结果没有任务接口续签或后台交付恢复。
+已知需要存储的请求预检失败返回 503；可信生成成功后的交付失败返回 502 `image_delivery_failed`，
+按生成事实结算一次，不自动退款或重生成。格式转换计入服务端处理耗时，客户端后续下载不计入。
+
+
+## 同步图片交付失败时取回结果
+
+显式 `response_format` 的同步 JSON 转换失败时，HTTP 为 `502`，错误码为 `image_delivery_failed`。
+生成已完成且只结算一次；失败正文同时保留 `data` 中的原始图片结果，可能为 `b64_json` 或原始 `url`，
+并包含 `requested_response_format`。客户端应保存错误正文，解码 Base64 或及时下载 URL；不要把再次
+发送生成 POST 当成下载重试。成功响应仍严格采用请求格式。
+
+网关在本次交付预算内重试结果 GET、同对象键上传或签名，最多三次；已收到的图片通过私有临时文件
+转换，不再因同步交付层原有 50 MiB 单图／512 MiB 响应阈值被丢弃。请求退出后临时文件删除，
+不建立同步任务查询；断连未收到正文、Provider URL 已过期的情况不能由该机制保证恢复。

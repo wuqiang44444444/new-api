@@ -232,7 +232,9 @@ describe('overview setup guide', () => {
     await renderOverview()
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Hide setup guide' })).toBeVisible()
+      expect(
+        screen.getByRole('button', { name: 'Hide setup guide' })
+      ).toBeVisible()
     )
     expect(
       screen.queryByRole('button', { name: 'Setup guide' })

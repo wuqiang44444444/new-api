@@ -226,6 +226,9 @@ func validateOptionValue(key string, value string) error {
 }
 
 func UpdateOption(key string, value string) error {
+	if key == "error_report_setting.enabled" || key == "error_report_setting.recipients" {
+		return UpdateErrorReportOption(key, value, time.Now())
+	}
 	if IsModelPricingOption(key) {
 		return UpdateModelPricingOptions(map[string]string{key: value})
 	}

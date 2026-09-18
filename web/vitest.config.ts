@@ -34,7 +34,10 @@ export default defineConfig({
     server: {
       deps: { inline: [/@lobehub\//, /antd-style/] },
     },
-    setupFiles: ['./src/test-setup.ts', './src/features/docs/__tests__/setup.ts'],
+    setupFiles: [
+      './src/test-setup.ts',
+      './src/features/docs/__tests__/setup.ts',
+    ],
     clearMocks: true,
     restoreMocks: true,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],

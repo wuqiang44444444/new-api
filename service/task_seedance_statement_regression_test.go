@@ -57,7 +57,7 @@ func TestSeedanceSettlementStatementFacts(t *testing.T) {
 			assert.Equal(t, float64(tc.tokens), other["usage_facts"].(map[string]any)["tokens"])
 			frozen := reloadTask(t, task.ID).PrivateData.AsyncBilling.TieredSnapshot
 			assert.Equal(t, float64(300000), frozen.UsageFacts["tokens"])
-			statement, err := model.GetBillingCustomerStatement(8991, 1, time.Now().Unix()+10, "api_key", 0, "", "")
+			statement, err := model.GetBillingCustomerStatement(context.Background(), 8991, 1, time.Now().Unix()+10, "api_key", 0, "", "")
 			require.NoError(t, err)
 			assert.EqualValues(t, 1, statement.Summary.Requests)
 			assert.EqualValues(t, tc.tokens, statement.Summary.OutputTokens)

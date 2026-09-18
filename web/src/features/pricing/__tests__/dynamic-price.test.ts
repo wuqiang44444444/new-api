@@ -70,17 +70,31 @@ describe('expression price summaries', () => {
           unit: 'usd_per_million_tokens',
           status: 'exact',
           tiers: [
-            { label: 'base', unit_prices: { p: 2, c: 8 }, constant: 0.1, has_constant: true },
-            { label: 'premium', unit_prices: { p: 4, c: 16 }, constant: 0.2, has_constant: true },
+            {
+              label: 'base',
+              unit_prices: { p: 2, c: 8 },
+              constant: 0.1,
+              has_constant: true,
+            },
+            {
+              label: 'premium',
+              unit_prices: { p: 4, c: 16 },
+              constant: 0.2,
+              has_constant: true,
+            },
           ],
         },
       }),
       { tokenUnit: 'K' }
     )
     expect(summary?.primaryEntries.map((entry) => entry.field)).toEqual([
-      'inputPrice', 'outputPrice', 'constant',
+      'inputPrice',
+      'outputPrice',
+      'constant',
     ])
-    const fixed = summary?.primaryEntries.find((entry) => entry.unit === 'request')
+    const fixed = summary?.primaryEntries.find(
+      (entry) => entry.unit === 'request'
+    )
     expect(fixed?.formatted).toBe('$0.1')
     expect(fixed?.formattedRange).toBe('$0.1 – $0.2')
   })
@@ -220,7 +234,9 @@ describe('task dynamic pricing', () => {
     const model = pricingModel({
       billing_mode: 'tiered_expr',
       billing_expr: 'tier("base", u("seconds") * 0.4)',
-      billing_display: taskBillingDisplayFixture('tier("base", u("seconds") * 0.4)'),
+      billing_display: taskBillingDisplayFixture(
+        'tier("base", u("seconds") * 0.4)'
+      ),
       billing_usage_schema: {
         seconds: { type: 'number', unit: 'second' },
       },
@@ -255,7 +271,9 @@ describe('task dynamic pricing', () => {
     const model = pricingModel({
       billing_mode: 'tiered_expr',
       billing_expr: 'tier("base", u("seconds") * 0.4)',
-      billing_display: taskBillingDisplayFixture('tier("base", u("seconds") * 0.4)'),
+      billing_display: taskBillingDisplayFixture(
+        'tier("base", u("seconds") * 0.4)'
+      ),
       billing_usage_schema: {
         seconds: { type: 'number', unit: 'second' },
       },
@@ -283,7 +301,9 @@ describe('task dynamic pricing', () => {
     const model = pricingModel({
       billing_mode: 'tiered_expr',
       billing_expr: 'tier("base", u("tokens") * 9.8 / 1000000)',
-      billing_display: taskBillingDisplayFixture('tier("base", u("tokens") * 9.8 / 1000000)'),
+      billing_display: taskBillingDisplayFixture(
+        'tier("base", u("tokens") * 9.8 / 1000000)'
+      ),
       billing_usage_schema: {
         tokens: { type: 'number', unit: 'token' },
       },
@@ -325,7 +345,9 @@ describe('task dynamic pricing', () => {
     const model = pricingModel({
       billing_mode: 'tiered_expr',
       billing_expr: 'tier("base", u("units") * 0.14)',
-      billing_display: taskBillingDisplayFixture('tier("base", u("units") * 0.14)'),
+      billing_display: taskBillingDisplayFixture(
+        'tier("base", u("units") * 0.14)'
+      ),
       billing_usage_schema: {
         units: { type: 'number', unit: 'credit' },
       },
@@ -419,7 +441,9 @@ describe('task dynamic pricing', () => {
     const tokenModel = pricingModel({
       billing_mode: 'tiered_expr',
       billing_expr: 'tier("base", 0.1 + u("tokens") * 9.8 / 1000000)',
-      billing_display: taskBillingDisplayFixture('tier("base", 0.1 + u("tokens") * 9.8 / 1000000)'),
+      billing_display: taskBillingDisplayFixture(
+        'tier("base", 0.1 + u("tokens") * 9.8 / 1000000)'
+      ),
       billing_usage_schema: {
         tokens: { type: 'number', unit: 'token' },
       },

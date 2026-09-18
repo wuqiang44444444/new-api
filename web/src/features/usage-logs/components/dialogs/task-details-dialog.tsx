@@ -1,4 +1,3 @@
-import { BatchBillingDetails } from '../batch-billing-details'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -22,20 +21,21 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
-import { CHANNEL_TYPE_SEEDANCE_LINK } from '@/features/channels/constants'
 import { StatusBadge } from '@/components/status-badge'
 import { Label } from '@/components/ui/label'
+import { CHANNEL_TYPE_SEEDANCE_LINK } from '@/features/channels/constants'
 import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import { taskActionMapper, taskStatusMapper } from '../../lib/mappers'
 import { TASK_STATUS } from '../../constants'
+import { taskActionMapper, taskStatusMapper } from '../../lib/mappers'
 import {
   resolveTaskPreviewMode,
   shouldLoadTaskArtifacts,
 } from '../../lib/task-artifacts'
 import { resolveTaskDetailAccess } from '../../lib/task-details'
 import type { TaskLog } from '../../types'
+import { BatchBillingDetails } from '../batch-billing-details'
 import { PluginAuthorLink } from '../plugin-author-link'
 import {
   LegacyAudioPreview,
@@ -43,8 +43,8 @@ import {
   SuccessWithoutVideoNote,
   TaskArtifacts,
 } from '../task-artifacts'
-import { TaskRequestDetails } from '../task-request-details'
 import { TaskEvidence } from '../task-evidence'
+import { TaskRequestDetails } from '../task-request-details'
 import { TaskVideoParameters } from '../task-video-parameters'
 
 function DetailRow(props: {
@@ -103,7 +103,8 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
   const plugin = access.plugin
   const runtime = access.runtime
   const properties = props.log.properties
-  const needsReconciliation = props.log.status === TASK_STATUS.RECONCILIATION_REQUIRED
+  const needsReconciliation =
+    props.log.status === TASK_STATUS.RECONCILIATION_REQUIRED
   const previewMode = resolveTaskPreviewMode(props.log)
   const showVideoResult =
     shouldLoadTaskArtifacts(props.log, props.open) && previewMode !== 'none'
@@ -134,7 +135,9 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
       bodyClassName='pr-2 sm:pr-4'
     >
       <div className='space-y-3'>
-        {props.open && props.log.platform === 'azure_batch' && <BatchBillingDetails id={props.log.task_id} />}
+        {props.open && props.log.platform === 'azure_batch' && (
+          <BatchBillingDetails id={props.log.task_id} />
+        )}
         {props.open && props.isRoot ? (
           <TaskRequestDetails
             key={props.log.task_id}
@@ -191,13 +194,22 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
           ) : null}
           {props.log.fail_reason ? (
             <DetailRow
-              label={needsReconciliation ? t('Verification reason') : t('Fail Reason')}
+              label={
+                needsReconciliation
+                  ? t('Verification reason')
+                  : t('Fail Reason')
+              }
               value={props.log.fail_reason}
             />
           ) : null}
           {needsReconciliation ? (
-            <p role='status' className='text-xs text-amber-600 dark:text-amber-400'>
-              {t('The latest result is not yet confirmed. We will keep checking. Please do not submit again.')}
+            <p
+              role='status'
+              className='text-xs text-amber-600 dark:text-amber-400'
+            >
+              {t(
+                'The latest result is not yet confirmed. We will keep checking. Please do not submit again.'
+              )}
             </p>
           ) : null}
         </DetailSection>
@@ -206,7 +218,9 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
           <DetailSection label={t('Video Result')}>
             {props.log.platform === String(CHANNEL_TYPE_SEEDANCE_LINK) ? (
               <p className='text-muted-foreground text-xs'>
-                {t('Video downloads are temporary. Download your video promptly; long-term storage is not provided.')}
+                {t(
+                  'Video downloads are temporary. Download your video promptly; long-term storage is not provided.'
+                )}
               </p>
             ) : null}
             {previewMode === 'legacy-suno' ? (
@@ -273,12 +287,18 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
               <>
                 <DetailRow
                   label={t('Upstream HTTP status')}
-                  value={props.log.admin_info.image_execution.upstream_status ?? '-'}
+                  value={
+                    props.log.admin_info.image_execution.upstream_status ?? '-'
+                  }
                   mono
                 />
                 <DetailRow
                   label={t('Violation policy matched')}
-                  value={props.log.admin_info.image_execution.violation_marker ? t('Yes') : t('No')}
+                  value={
+                    props.log.admin_info.image_execution.violation_marker
+                      ? t('Yes')
+                      : t('No')
+                  }
                 />
               </>
             ) : null}

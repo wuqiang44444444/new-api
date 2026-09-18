@@ -22,12 +22,21 @@ import (
 
 func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
+	if err := PrepareImageResponseFormat(c, info); err != nil {
+		return err
+	}
 
 	// 显式异步受理（Prefer: respond-async）：在原请求预扣与渠道调用之前
 	// 确定生命周期（§4.3），其余同步路径保持不变。
 	if ImageAsyncPreferRequested(c) {
 		return imageAsyncHelper(c, info)
 	}
+
+	delivery, deliveryErr := beginImageDelivery(c, info)
+	if deliveryErr != nil {
+		return deliveryErr
+	}
+	defer delivery.cleanup(c)
 
 	imageReq, ok := info.Request.(*dto.ImageRequest)
 	if !ok {
@@ -43,6 +52,8 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 	}
+
+	prepareImageProviderFormat(info, request)
 
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {
@@ -110,6 +121,16 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		}
 	}
 
+	formattedBody, formatCloser, err := prepareNativeImageFormatBody(c, info, requestBody)
+	if err != nil {
+		return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+	}
+
+	if formatCloser != nil {
+		defer formatCloser.Close()
+	}
+	requestBody = formattedBody
+
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 
 	resp, err := adaptor.DoRequest(c, info, requestBody)
@@ -131,7 +152,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 		if httpResp.StatusCode != http.StatusOK {
 			if strictImageAPI {
-				usage, newAPIError = adaptor.DoResponse(c, httpResp, info)
+				usage, newAPIError = delivery.doResponse(c, adaptor, httpResp, info)
 				responseHandled = true
 			} else if httpResp.StatusCode == http.StatusCreated && info.ApiType == constant.APITypeReplicate {
 				// replicate channel returns 201 Created when using Prefer: wait, treat it as success.
@@ -149,7 +170,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	}
 
 	if !responseHandled {
-		usage, newAPIError = adaptor.DoResponse(c, httpResp, info)
+		usage, newAPIError = delivery.doResponse(c, adaptor, httpResp, info)
 	}
 	if newAPIError != nil {
 		service.MarkTaskCreateAttemptOutcomeUnknown(c, info)
@@ -186,6 +207,8 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		logContent = append(logContent, fmt.Sprintf("生成数量 %d", imageN))
 	}
 
+	delivery.prepare(c)
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), logContent)
+	delivery.send(c)
 	return nil
 }

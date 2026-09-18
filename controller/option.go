@@ -166,6 +166,17 @@ func UpdateOption(c *gin.Context) {
 		// 校验、连通性验证与凭据加密。
 		common.ApiErrorMsg(c, "对象存储配置请使用专用接口维护")
 		return
+	case model.BillingStatementVersionEnabledKey:
+		// 账单版本固化开关（本地扩展）必须与维护控制点同事务切换，与确认发布
+		// 建立明确先后边界（方案 10.7）；不允许绕过专用控制逻辑直接写 Option。
+		enabled := option.Value.(string) == "true"
+		if err := model.SetBillingStatementVersionEnabled(c.Request.Context(), enabled, c.GetInt("id")); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		recordManageAudit(c, "option.update", map[string]interface{}{"key": option.Key})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+		return
 	case "QuotaForInviter", "QuotaForInvitee":
 		if isPositiveOptionValue(option.Value.(string)) && !operation_setting.IsPaymentComplianceConfirmed() {
 			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
@@ -334,6 +345,22 @@ func UpdateOption(c *gin.Context) {
 		if err = billing_setting.ValidateTaskPreConsumeTokensJSON(option.Value.(string)); err != nil {
 			common.ApiErrorMsg(c, err.Error())
 			return
+		}
+	case "error_report_setting.recipients":
+		if _, err := operation_setting.ValidateErrorReportRecipients(option.Value.(string)); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+	case "error_report_setting.enabled":
+		if option.Value == "true" {
+			if len(operation_setting.ParseErrorReportRecipients(operation_setting.GetErrorReportSetting().Recipients)) == 0 {
+				common.ApiErrorMsg(c, "启用每小时报告前请先配置至少一个合法收件人")
+				return
+			}
+			if common.SMTPServer == "" || common.SMTPAccount == "" {
+				common.ApiErrorMsg(c, "启用每小时报告前请先配置 SMTP 服务器与账号")
+				return
+			}
 		}
 	case billing_statement_setting.ContextThresholdsOption:
 		if err = billing_statement_setting.ValidateContextThresholdsJSON(option.Value.(string)); err != nil {

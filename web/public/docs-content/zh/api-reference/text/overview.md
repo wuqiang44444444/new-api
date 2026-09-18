@@ -88,11 +88,11 @@ curl "{{ANTHROPIC_BASE_URL}}/v1/messages" \
 
 ## 如何读取结果与流式输出
 
-| 协议 | 非流式正文 | 流式处理 |
-| --- | --- | --- |
-| Chat Completions | 读取 `choices[].message`；文本通常在 `content`，工具调用在 `tool_calls` | 设置 `stream=true`，按 SSE 的 `choices[].delta` 累积文本或工具参数 |
-| Responses | 按 `output[]` 条目的 `type` 处理消息和工具调用；文本在消息的 `content[]` 中 | 设置 `stream=true`，按事件类型处理文本增量、工具调用和完成事件 |
-| Messages | 按 `content[]` 块的 `type` 区分 `text` 与 `tool_use`，同时检查 `stop_reason` | 设置 `stream=true`，处理消息、内容块增量与结束事件 |
+| 协议             | 非流式正文                                                                   | 流式处理                                                           |
+| ---------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Chat Completions | 读取 `choices[].message`；文本通常在 `content`，工具调用在 `tool_calls`      | 设置 `stream=true`，按 SSE 的 `choices[].delta` 累积文本或工具参数 |
+| Responses        | 按 `output[]` 条目的 `type` 处理消息和工具调用；文本在消息的 `content[]` 中  | 设置 `stream=true`，按事件类型处理文本增量、工具调用和完成事件     |
+| Messages         | 按 `content[]` 块的 `type` 区分 `text` 与 `tool_use`，同时检查 `stop_reason` | 设置 `stream=true`，处理消息、内容块增量与结束事件                 |
 
 工具调用结果不等于最终文本；应用执行工具后，需按原协议提交对应的工具结果，再继续读取回答。
 没有文本时先检查工具调用和结束原因，不要立即重发完整请求。

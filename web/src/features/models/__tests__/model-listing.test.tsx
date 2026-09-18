@@ -16,9 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { billingDisplayFixture ,
-  taskBillingDisplayFixture,
-} from '@/features/pricing/__tests__/billing-display-fixtures'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   createRootRoute,
@@ -49,6 +46,10 @@ import type {
   ModelPricingEntry,
 } from '@/features/model-pricing/api'
 import { pricingOptions } from '@/features/model-pricing/pricing'
+import {
+  billingDisplayFixture,
+  taskBillingDisplayFixture,
+} from '@/features/pricing/__tests__/billing-display-fixtures'
 import { usePricingColumns } from '@/features/pricing/components/pricing-columns'
 import type { PricingModel } from '@/features/pricing/types'
 import fr from '@/i18n/locales/fr.json'
@@ -606,7 +607,17 @@ it.each([
   async ({ name, effective, catalog, text }) => {
     const model = { ...channel, model_name: name }
     await renderList([model], {
-      pricing: [{ model_name: name, version: 'v1', configured: {}, effective, billing_display: billingDisplayFixture(effective['billing_setting.billing_expr']) }],
+      pricing: [
+        {
+          model_name: name,
+          version: 'v1',
+          configured: {},
+          effective,
+          billing_display: billingDisplayFixture(
+            effective['billing_setting.billing_expr']
+          ),
+        },
+      ],
     })
     const button = screen.getByRole('button', {
       name: `View pricing for ${name}`,
@@ -624,7 +635,9 @@ it.each([
           completion_ratio: 0,
           enable_groups: [],
           ...catalog,
-          billing_display: billingDisplayFixture(effective['billing_setting.billing_expr']),
+          billing_display: billingDisplayFixture(
+            effective['billing_setting.billing_expr']
+          ),
         }}
       />
     )

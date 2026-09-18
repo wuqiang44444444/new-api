@@ -49,13 +49,14 @@ export function draftEffectiveMultiplier(rule: CustomerContractRule): string {
   return formatted || '0'
 }
 
-export function draftPricePreview(rule: CustomerContractRule): CustomerContractRule['price'] {
+export function draftPricePreview(
+  rule: CustomerContractRule
+): CustomerContractRule['price'] {
   const discount = parseContractDiscount(rule.discount)
   const channel = Number(rule.native_group_ratio)
   if (discount === null || !Number.isFinite(channel)) return rule.price
   const effective = channel * discount
-  const format = (value: number) =>
-    value.toFixed(8).replace(/\.?0+$/, '')
+  const format = (value: number) => value.toFixed(8).replace(/\.?0+$/, '')
   const price = { ...rule.price }
   if (price.base_model_ratio) {
     price.final_model_ratio = format(Number(price.base_model_ratio) * effective)

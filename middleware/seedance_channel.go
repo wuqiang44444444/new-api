@@ -27,9 +27,7 @@ func ResolveSeedanceChannel() gin.HandlerFunc {
 			return
 		}
 		customerModel := strings.TrimSpace(contract.ModelArk.Model)
-		// The contract provides the discount only. It never picks or constrains
-		// the Seedance channel or group: a model without a contract discount
-		// keeps native behavior, and resolution anomalies fail closed.
+		// Resolve the request contract before typed routing and billing.
 		if _, err := applyCustomerContractRequest(c, customerModel); err != nil {
 			abortModelArkVideo(c, http.StatusServiceUnavailable, "upstream_unavailable", "Contract authorization is unavailable")
 			return
@@ -55,6 +53,15 @@ func ResolveSeedanceChannel() gin.HandlerFunc {
 		}
 		var selectedGroup string
 		var channel *model.Channel
+		if service.ActiveCustomerContract(c) != nil {
+			var err error
+			channel, selectedGroup, err = service.CustomerContractTypedChannel(c, customerModel, constant.ChannelTypeSeedanceLink, specificChannelID)
+			if err != nil {
+				abortModelArkVideo(c, http.StatusServiceUnavailable, "model_not_found", "合同范围内无可用模型或渠道 / Contract model or channel is unavailable")
+				return
+			}
+			groups = nil
+		}
 		for _, group := range groups {
 			candidate, err := model.GetEnabledSeedanceChannel(group, customerModel, specificChannelID)
 			if err != nil {

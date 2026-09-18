@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/middleware"
@@ -40,6 +41,10 @@ type testResult struct {
 	context     *gin.Context
 	localErr    error
 	newAPIError *types.NewAPIError
+	// testedModel/upstreamStatus 由 testChannel 退出前统一冻结：实际测试模型与
+	// 读取上游响应处的真实状态码（0=未取得），供错误事件使用。
+	testedModel    string
+	upstreamStatus int
 }
 
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
@@ -88,10 +93,16 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 	return rootUser.Id, nil
 }
 
-func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
+func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) (result testResult) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	var upstreamStatus int
+	defer func() {
+		// 所有返回路径统一冻结错误事件所需的测试事实；不改变任何既有结果。
+		result.testedModel = testModel
+		result.upstreamStatus = upstreamStatus
+	}()
 	tik := time.Now()
 	var unsupportedTestChannelTypes = []int{
 		constant.ChannelTypeMidjourney,
@@ -184,6 +195,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		requestPath = strings.Replace(requestPath, ":generateContent", ":streamGenerateContent", 1)
 	}
 	c.Request = httptest.NewRequestWithContext(ctx, http.MethodPost, requestPath, nil)
+	clienterrlog.InstallHTTPExchange(c)
 
 	cache, err := model.GetUserCache(testUserID)
 	if err != nil {
@@ -262,6 +274,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	}
 
 	request := buildTestRequest(testModel, endpointType, channel, isStream)
+	service.ObserveChannelTestRequest(c, request, string(relayFormat))
 
 	info, err := relaycommon.GenRelayInfo(c, relayFormat, request, nil)
 
@@ -465,6 +478,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		}
 	}
 
+	clienterrlog.ObserveHTTPBody(c.Request.Context(), "upstream_request", jsonData, 0)
 	requestBody := bytes.NewBuffer(jsonData)
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
 	resp, err := adaptor.DoRequest(c, info, requestBody)
@@ -478,7 +492,10 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	var httpResp *http.Response
 	if resp != nil {
 		httpResp = resp.(*http.Response)
+		clienterrlog.EnsureUpstreamResponseCapture(c.Request.Context(), httpResp)
 		if httpResp.StatusCode != http.StatusOK {
+			// 在读取响应处冻结真实上游状态；不得从包装后的错误反推。
+			upstreamStatus = httpResp.StatusCode
 			err := service.RelayErrorHandler(c.Request.Context(), httpResp, true)
 			common.SysError(fmt.Sprintf(
 				"channel test bad response: channel_id=%d name=%s type=%d model=%s endpoint_type=%s status=%d err=%v",
@@ -513,8 +530,8 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			newAPIError: types.NewOpenAIError(usageErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError),
 		}
 	}
-	result := w.Result()
-	respBody, err := readTestResponseBody(result.Body, isStream)
+	httpResult := w.Result()
+	respBody, err := readTestResponseBody(httpResult.Body, isStream)
 	if err != nil {
 		return testResult{
 			context:     c,
@@ -905,6 +922,8 @@ func TestChannel(c *gin.Context) {
 	}
 	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream)
 	if result.localErr != nil {
+		// 错误事件（仅观察）：管理接口实际返回 200，事件按「渠道测试」类型保存。
+		service.RecordManualChannelTestFailureEvent(c, channel, result.testedModel, endpointType, isStream, result.context, result.localErr, result.newAPIError, result.upstreamStatus, time.Since(tik).Milliseconds())
 		resp := gin.H{
 			"success": false,
 			"message": result.localErr.Error(),
@@ -921,6 +940,8 @@ func TestChannel(c *gin.Context) {
 	go channel.UpdateResponseTime(milliseconds)
 	consumedTime := float64(milliseconds) / 1000.0
 	if result.newAPIError != nil {
+		// 错误事件（仅观察）：非 localErr 失败出口走同一条事件合同。
+		service.RecordManualChannelTestFailureEvent(c, channel, result.testedModel, endpointType, isStream, result.context, result.localErr, result.newAPIError, result.upstreamStatus, milliseconds)
 		c.JSON(http.StatusOK, gin.H{
 			"success":    false,
 			"message":    result.newAPIError.Error(),
@@ -967,6 +988,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	summary.Tested++
 
 	shouldBanChannel := false
+	thresholdExceeded := false
 	newAPIError := result.newAPIError
 	if newAPIError != nil && !isSeedanceLink {
 		shouldBanChannel = service.ShouldDisableChannel(result.newAPIError)
@@ -977,6 +999,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 			err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
 			newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
 			shouldBanChannel = true
+			thresholdExceeded = true
 		}
 	}
 
@@ -984,6 +1007,9 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		summary.Succeeded++
 	} else {
 		summary.Failed++
+		// 错误事件（仅观察）：取消/跳过的测试在上面提前返回，不产生事件；
+		// finalAPIError 已含阈值判定，Seedance 只读探针失败按 probe 分类。
+		service.RecordAutoChannelTestFailureEvent(channel, result.testedModel, result.context, result.localErr, newAPIError, result.upstreamStatus, milliseconds, thresholdExceeded, shouldUseStreamForAutomaticChannelTest(channel))
 	}
 
 	if allowDisable && isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {

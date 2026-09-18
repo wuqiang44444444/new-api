@@ -14,7 +14,7 @@ import (
 // routing may select at the caller's first matching group and highest priority.
 // A contract is published only when those channels agree. Internal protocol and
 // mapped Provider model identities never leave this function.
-func GetPublicMediaModelAPIs(modelNames []string, groups []string) (map[string]*dto.PublicModelAPI, error) {
+func GetPublicMediaModelAPIs(modelNames []string, groups []string, allowedRoutes ...map[string]map[int]string) (map[string]*dto.PublicModelAPI, error) {
 	modelNames = normalizeLookupValues(modelNames)
 	groups = normalizeLookupValues(groups)
 	result := make(map[string]*dto.PublicModelAPI)
@@ -41,6 +41,30 @@ func GetPublicMediaModelAPIs(modelNames []string, groups []string) (map[string]*
 		return nil, err
 	}
 
+	if len(allowedRoutes) > 0 {
+		filtered := rows[:0]
+		for _, row := range rows {
+			if group, allowed := allowedRoutes[0][row.Model][row.ChannelID]; allowed && group == row.GroupName {
+				filtered = append(filtered, row)
+			}
+		}
+		rows = filtered
+		// Contract candidates compete across groups before projection.
+		maxPriority := make(map[string]int64)
+		for _, row := range rows {
+			if priority, found := maxPriority[row.Model]; !found || row.Priority > priority {
+				maxPriority[row.Model] = row.Priority
+			}
+		}
+		filtered = rows[:0]
+		for _, row := range rows {
+			if row.Priority == maxPriority[row.Model] {
+				filtered = append(filtered, row)
+			}
+		}
+		rows = filtered
+		allGroups = true
+	}
 	channelIDs := make([]int, 0, len(rows))
 	seenChannels := make(map[int]struct{}, len(rows))
 	for _, row := range rows {
@@ -141,7 +165,7 @@ func GetPublicMediaModelAPIs(modelNames []string, groups []string) (map[string]*
 					continue
 				}
 				if model_setting.IsGeminiModelSupportImagine(providerModel) {
-					api = publicmodel.GeminiImageAPI(modelName)
+					api = publicmodel.GeminiImageAPI(modelName, providerModel, channel.Type)
 				} else if common.IsImageGenerationModel(modelName) {
 					api = publicmodel.NativeImageAPI(modelName)
 					nativeImage = true

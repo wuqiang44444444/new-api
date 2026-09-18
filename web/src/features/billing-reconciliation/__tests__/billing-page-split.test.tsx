@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
@@ -7,8 +8,13 @@ import { AdminBillingReconciliation } from '../admin-billing-reconciliation'
 import { MyBilling } from '../my-billing'
 
 vi.mock('../components/customer-statement', () => ({
-  CustomerStatementView: (props: { isAdmin: boolean }) => (
-    <div data-testid={props.isAdmin ? 'admin-statement' : 'self-statement'} />
+  CustomerStatementView: (props: {
+    isAdmin: boolean
+    toolbar?: React.ReactNode
+  }) => (
+    <div data-testid={props.isAdmin ? 'admin-statement' : 'self-statement'}>
+      {props.toolbar}
+    </div>
   ),
 }))
 
@@ -36,7 +42,14 @@ beforeAll(async () => {
 })
 
 function renderWithI18n(node: React.ReactNode) {
-  return render(<I18nextProvider i18n={i18n}>{node}</I18nextProvider>)
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  return render(
+    <QueryClientProvider client={client}>
+      <I18nextProvider i18n={i18n}>{node}</I18nextProvider>
+    </QueryClientProvider>
+  )
 }
 
 describe('billing page split', () => {

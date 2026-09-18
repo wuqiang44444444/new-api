@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,7 +31,7 @@ func TestCustomerStatementsExcludeChannelTestsButKeepWalletAndProviderUsage(t *t
 	require.NoError(t, db.Create(&logs).Error)
 
 	for _, dimension := range []string{"api_key", "channel"} {
-		statement, err := GetBillingCustomerStatement(1, 1000, 1500, dimension, 0, "", "")
+		statement, err := GetBillingCustomerStatement(context.Background(), 1, 1000, 1500, dimension, 0, "", "")
 		require.NoError(t, err)
 		assert.EqualValues(t, 2, statement.Summary.Requests)
 		assert.EqualValues(t, 300, statement.Summary.GrossQuota)
@@ -50,7 +51,7 @@ func TestCustomerStatementsExcludeChannelTestsButKeepWalletAndProviderUsage(t *t
 		}
 	}
 
-	list, err := GetBillingCustomerStatementList(1000, 1500, "", "", "net_quota", "desc", 1, 20)
+	list, err := GetBillingCustomerStatementList(context.Background(), 1000, 1500, "", "", "net_quota", "desc", 1, 20)
 	require.NoError(t, err)
 	require.Len(t, list.Items, 1)
 	assert.Equal(t, 1, list.Items[0].UserId)
@@ -96,4 +97,19 @@ func TestCustomerSettlementScopeKeepsUnmarkedFreeAndRefundRecords(t *testing.T) 
 	for i := range logs {
 		assert.Equal(t, logs[i].Id, got[i].Id)
 	}
+}
+
+func TestCustomerSettlementKeepsMidjourneyAndPlaygroundCharges(t *testing.T) {
+	db := setupBillingReconciliationTestDB(t)
+	require.NoError(t, db.Create(&User{Id: 7, Username: "scope-fixture"}).Error)
+	for _, row := range []Log{
+		{UserId: 7, Type: LogTypeConsume, TokenId: 0, Quota: 25, CreatedAt: 1100, Other: `{"request_path":"/mj/submit/imagine","is_task":true,"model_price":1,"group_ratio":1}`},
+		{UserId: 7, Type: LogTypeConsume, TokenId: 0, TokenName: "playground-default", Quota: 30, CreatedAt: 1101, Other: `{"request_path":"/v1/chat/completions","usage_semantic":"openai","group_ratio":1}`},
+	} {
+		require.NoError(t, db.Create(&row).Error)
+	}
+	got, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1200, "api_key", 0, "", "")
+	require.NoError(t, err)
+	assert.EqualValues(t, 55, got.Summary.NetQuota)
+	assert.EqualValues(t, 2, got.Summary.Requests)
 }

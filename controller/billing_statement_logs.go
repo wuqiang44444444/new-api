@@ -62,7 +62,7 @@ func getBillingStatementLogs(c *gin.Context, admin bool) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid pagination"})
 		return
 	}
-	result, err := model.GetBillingStatementLogs(filter, page.GetPage(), page.GetPageSize(), role)
+	result, err := model.GetBillingStatementLogs(c.Request.Context(), filter, page.GetPage(), page.GetPageSize(), role)
 	if err != nil {
 		common.ApiError(c, err)
 		return

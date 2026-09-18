@@ -35,6 +35,7 @@ it('shows token usage and explains savings against the net settled amount', asyn
       'api_key',
       1000,
       1200,
+      null,
     ],
     {
       result: {
@@ -86,7 +87,7 @@ it('shows token usage and explains savings against the net settled amount', asyn
     screen.getByText('Estimated list price minus net settled amount')
   ).toBeTruthy()
   expect(
-    screen.getByRole('button', { name: 'Download statement' })
+    screen.getByRole('button', { name: 'Export and download' })
   ).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Expand models' }))
   expect(screen.getByText('Token billing')).toBeTruthy()
@@ -109,7 +110,8 @@ it('shows token usage and explains savings against the net settled amount', asyn
 async function renderQualityStatement(
   quality: BillingDataQuality,
   language = 'en',
-  balance: number | null = 1781719699
+  balance: number | null = 1781719699,
+  mode = 'unknown'
 ) {
   const i18n = createInstance().use(initReactI18next)
   await i18n.init({ lng: language, resources: { en: { translation: {} }, zh } })
@@ -127,7 +129,7 @@ async function renderQualityStatement(
     net_quota: 172397981,
   }
   client.setQueryData(
-    ['billing-customer-reconciliation', true, 91, 'channel', 1000, 1200],
+    ['billing-customer-reconciliation', true, 91, 'channel', 1000, 1200, null],
     {
       result: {
         user_id: 91,
@@ -146,7 +148,7 @@ async function renderQualityStatement(
             models: [
               {
                 model_name: 'video',
-                billing_mode: 'unknown',
+                billing_mode: mode,
                 usage,
                 detail_filter: {
                   start_timestamp: 1000,
@@ -221,7 +223,7 @@ it('renders each reported quality cause and missing channel explanation in Chine
     '计费方式暂未识别：370 条',
     '用量信息不可读取：2 条',
     '缓存写入用量不可用：3 条',
-    '历史价格不可用：4 条',
+    '无法完成原价与优惠估算：4 条',
     '上游模型身份未记录：5 条',
     '渠道 #97',
     '记录已不存在，历史费用仍保留。',
@@ -251,7 +253,7 @@ it('preserves the negative sign of a refund-only model and its group', async () 
     net_quota: -8242035,
   }
   client.setQueryData(
-    ['billing-customer-reconciliation', true, 91, 'channel', 1000, 1200],
+    ['billing-customer-reconciliation', true, 91, 'channel', 1000, 1200, null],
     {
       result: {
         user_id: 91,
@@ -308,12 +310,38 @@ it('shows an unavailable balance for a deleted customer while keeping historical
     'en',
     null
   )
-  expect(screen.getByText('Unavailable')).toBeTruthy()
+  expect(
+    screen.getByText(
+      'Customer record unavailable; current balance cannot be read.'
+    )
+  ).toBeTruthy()
   expect(screen.queryByText('Read directly from the main database')).toBeNull()
   expect(screen.getByText('$1,663.551872')).toBeTruthy()
   const balanceCard = screen.getByText('Current balance').parentElement
   if (!balanceCard) throw new Error('Missing balance card')
   expect(balanceCard.textContent).toBe('Current balance-')
+  view.unmount()
+  client.clear()
+})
+
+it('shows duration billing without token or per-call counters and preserves the detail filter', async () => {
+  const { view, client } = await renderQualityStatement(
+    { status: 'complete' },
+    'en',
+    0,
+    'per_second'
+  )
+  fireEvent.click(screen.getAllByRole('button', { name: 'Expand models' })[0])
+  expect(screen.getByText('Duration billing')).toBeTruthy()
+  expect(screen.queryByText('Unknown billing mode')).toBeNull()
+  expect(screen.queryByText(/Billable 0/)).toBeNull()
+  expect(screen.queryByText(/Output 0/)).toBeNull()
+  const detail = new URL(
+    screen.getByRole('button', { name: 'View details' }).getAttribute('href') ??
+      '',
+    'http://localhost'
+  )
+  expect(detail.searchParams.get('billingMode')).toBe('per_second')
   view.unmount()
   client.clear()
 })

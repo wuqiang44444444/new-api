@@ -19,7 +19,7 @@ func ImageAPI(customerModel string, protocol dto.ImageUpstreamProtocol, provider
 		fixedParameter("model", "string", true, customerModel),
 		stringLengthParameter("prompt", true, 1, 0),
 		fixedParameterWithDefault("n", "integer", false, 1, 1),
-		stringEnumParameterWithDefault("response_format", false, []string{"url"}, "url"),
+		stringEnumParameterWithDefault("response_format", false, []string{"url", "b64_json"}, "url"),
 	}
 
 	switch protocol {
@@ -79,6 +79,10 @@ func NativeImageAPI(customerModel string) *dto.PublicModelAPI {
 		fixedParameter("model", "string", true, customerModel),
 		stringLengthParameter("prompt", true, 1, nativeImagePromptMaxLength(customerModel)),
 	}
+	if gptParameters := nativeGPTImageGenerationParameters(customerModel); gptParameters != nil {
+		parameters[1].MaxLength = intPointer(32000)
+		return imageModelAPI(customerModel, append(parameters, gptParameters...))
+	}
 
 	switch customerModel {
 	case "dall-e-2", "dall-e":
@@ -97,10 +101,6 @@ func NativeImageAPI(customerModel string) *dto.PublicModelAPI {
 			stringEnumParameterWithDefault("style", false, []string{"vivid", "natural"}, "vivid"),
 			userParameter(),
 		)
-	case "gpt-image-2":
-		parameters = append(parameters, nativeGPTImageParameters(true)...)
-	case "gpt-image-1", "gpt-image-1-mini", "gpt-image-1.5", "chatgpt-image-latest":
-		parameters = append(parameters, nativeGPTImageParameters(false)...)
 	default:
 		// Other OpenAI-compatible image models only publish the stable gateway
 		// surface. Provider-specific fields stay absent rather than being guessed.
@@ -108,7 +108,7 @@ func NativeImageAPI(customerModel string) *dto.PublicModelAPI {
 			integerRangeParameter("n", false, 1, dto.MaxImageN),
 			dto.PublicAPIParameter{Name: "size", Type: "string"},
 			dto.PublicAPIParameter{Name: "quality", Type: "string"},
-			dto.PublicAPIParameter{Name: "response_format", Type: "string"},
+			stringEnumParameter("response_format", false, []string{"url", "b64_json"}),
 			userParameter(),
 		)
 	}
@@ -121,8 +121,6 @@ func nativeImagePromptMaxLength(model string) int {
 		return 1000
 	case "dall-e-3":
 		return 4000
-	case "gpt-image-2", "gpt-image-1", "gpt-image-1-mini", "gpt-image-1.5", "chatgpt-image-latest":
-		return 32000
 	default:
 		return 0
 	}
@@ -136,6 +134,7 @@ func nativeGPTImageParameters(flexibleSize bool) []dto.PublicAPIParameter {
 	return []dto.PublicAPIParameter{
 		integerRangeParameterWithDefault("n", false, 1, 10, 1),
 		size,
+		stringEnumParameterWithDefault("response_format", false, []string{"url", "b64_json"}, "b64_json"),
 		stringEnumParameterWithDefault("quality", false, []string{"low", "medium", "high", "auto"}, "auto"),
 		stringEnumParameterWithDefault("background", false, []string{"transparent", "opaque", "auto"}, "auto"),
 		stringEnumParameterWithDefault("moderation", false, []string{"low", "auto"}, "auto"),

@@ -70,7 +70,7 @@ func TestRepairMissingInitialSupportsFrozenParameterExpressionWithoutInventingTo
 	var other map[string]any
 	require.NoError(t, common.UnmarshalJsonStr(initial.Other, &other))
 	snapshot := other["admin_info"].(map[string]any)["statement_snapshot"].(map[string]any)
-	assert.Equal(t, "unknown", snapshot["billing_mode"])
+	assert.Equal(t, "per_second", snapshot["billing_mode"])
 	assert.Zero(t, initial.CompletionTokens)
 }
 

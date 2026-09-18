@@ -22,6 +22,7 @@ import {
 
 import { getSelfCustomerContract } from '../api'
 import type { ApiKeyFormValues } from '../lib'
+import { ContractModelAvailability } from './contract-model-availability'
 
 export function ApiKeyContractField(props: {
   form: UseFormReturn<ApiKeyFormValues>
@@ -44,6 +45,7 @@ export function ApiKeyContractField(props: {
     [contractsData]
   )
   const selectedContractId = props.form.watch('contract_id')
+  const modelLimits = props.form.watch('model_limits')
   // A manual selection (including explicitly unbinding) is never overwritten
   // by re-renders or data refreshes.
   const manualSelectionRef = useRef(false)
@@ -130,18 +132,27 @@ export function ApiKeyContractField(props: {
   if (selected && !selected.enabled) {
     preview = (
       <p className='text-muted-foreground text-sm'>
-        {t('This contract is disabled. Its discounts are not in effect.')}
+        {t(
+          'This contract is disabled. Bound keys use their own group routing and pricing.'
+        )}
       </p>
     )
   } else if (selected && selected.models.length === 0) {
     preview = (
       <p className='text-muted-foreground text-sm'>
-        {t('This contract carries no model discounts')}
+        {t('This contract has no model rules')}
       </p>
     )
   } else if (selected) {
     preview = (
       <div className='max-h-64 overflow-y-auto rounded-md border'>
+        {modelLimits.length > 0 && (
+          <p className='text-muted-foreground p-3 text-sm'>
+            {t('This key also restricts models to: {{models}}', {
+              models: modelLimits?.join(', ') || t('None'),
+            })}
+          </p>
+        )}
         <table className='w-full text-sm'>
           <thead>
             <tr className='text-muted-foreground border-b'>
@@ -154,7 +165,10 @@ export function ApiKeyContractField(props: {
           <tbody className='divide-y'>
             {selected.models.map((rule) => (
               <tr key={rule.model}>
-                <td className='px-3 py-2 font-mono break-all'>{rule.model}</td>
+                <td className='px-3 py-2 font-mono break-all'>
+                  {rule.model}
+                  <ContractModelAvailability availability={rule.availability} />
+                </td>
                 <td className='px-3 py-2'>{rule.discount}</td>
               </tr>
             ))}
@@ -207,7 +221,7 @@ export function ApiKeyContractField(props: {
           </FormControl>
           <FormDescription>
             {t(
-              'Keys bound to a contract receive its model discounts; model access and routing stay native.'
+              'An active contract defines model and channel scope and discounts. Disabling or unbinding it restores the key group routing and pricing.'
             )}
           </FormDescription>
           {preview}

@@ -38,7 +38,11 @@ type ContractPriceDetailsProps = {
 // 1 ratio unit equals $2 per 1M tokens — the same convention as the
 // usage-log billing breakdown (model_ratio * 2.0).
 const USD_PER_MILLION_PER_RATIO = 2.0
-const PRICE_FORMAT_OPTIONS = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
+const PRICE_FORMAT_OPTIONS = {
+  digitsLarge: 4,
+  digitsSmall: 6,
+  abbreviate: false,
+}
 
 function toNumber(value: string | undefined): number {
   if (!value) return Number.NaN
@@ -108,24 +112,46 @@ export function ContractPriceDetails(props: ContractPriceDetailsProps) {
   const effective = toNumber(props.effectiveMultiplier)
 
   const baseInputRatio = toNumber(props.price.base_model_ratio)
-  const finalInputRatio = resolveFinalValue(props.price.final_model_ratio, baseInputRatio, effective)
-  const baseOutputRatio = hasCompletion ? baseInputRatio * completion : Number.NaN
-  const finalOutputRatio = hasCompletion ? finalInputRatio * completion : Number.NaN
+  const finalInputRatio = resolveFinalValue(
+    props.price.final_model_ratio,
+    baseInputRatio,
+    effective
+  )
+  const baseOutputRatio = hasCompletion
+    ? baseInputRatio * completion
+    : Number.NaN
+  const finalOutputRatio = hasCompletion
+    ? finalInputRatio * completion
+    : Number.NaN
   const baseImageRatio = toNumber(props.price.base_image_ratio)
-  const finalImageRatio = resolveFinalValue(props.price.final_image_ratio, baseImageRatio, effective)
+  const finalImageRatio = resolveFinalValue(
+    props.price.final_image_ratio,
+    baseImageRatio,
+    effective
+  )
 
   const baseCallPrice = toNumber(props.price.base_model_price)
-  const finalCallPrice = resolveFinalValue(props.price.final_model_price, baseCallPrice, effective)
+  const finalCallPrice = resolveFinalValue(
+    props.price.final_model_price,
+    baseCallPrice,
+    effective
+  )
 
   const finalTokenParts: string[] = []
   if (finalInputRatio > 0) {
-    finalTokenParts.push(`${t('Input')} ${formatUsdPerMillion(finalInputRatio)}`)
+    finalTokenParts.push(
+      `${t('Input')} ${formatUsdPerMillion(finalInputRatio)}`
+    )
   }
   if (hasCompletion && finalOutputRatio > 0) {
-    finalTokenParts.push(`${t('Output')} ${formatUsdPerMillion(finalOutputRatio)}`)
+    finalTokenParts.push(
+      `${t('Output')} ${formatUsdPerMillion(finalOutputRatio)}`
+    )
   }
   if (finalImageRatio > 0) {
-    finalTokenParts.push(`${t('Image')} ${formatUsdPerMillion(finalImageRatio)}`)
+    finalTokenParts.push(
+      `${t('Image')} ${formatUsdPerMillion(finalImageRatio)}`
+    )
   }
 
   let summary = '—'
@@ -152,7 +178,8 @@ export function ContractPriceDetails(props: ContractPriceDetailsProps) {
   } else if (finalTokenParts.length > 0) {
     summary = finalTokenParts.join(' · ')
   } else {
-    const finalRatio = props.price.final_model_ratio || props.price.current_discounted_price
+    const finalRatio =
+      props.price.final_model_ratio || props.price.current_discounted_price
     if (finalRatio) {
       summary = `${formatScalar(props.channelMultiplier)} × ${formatScalar(props.contractDiscount)} = ${formatRatio(finalRatio)}`
     } else {
@@ -163,8 +190,18 @@ export function ContractPriceDetails(props: ContractPriceDetailsProps) {
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <div className='flex min-w-0 items-center gap-1.5'>
-        {props.price.billing_mode === 'batch_expr' && <span className='text-muted-foreground text-xs'>{t('Azure Batch')}</span>}
-        <span className={props.compact ? 'min-w-0 truncate text-xs' : 'min-w-0 truncate text-sm'}>
+        {props.price.billing_mode === 'batch_expr' && (
+          <span className='text-muted-foreground text-xs'>
+            {t('Azure Batch')}
+          </span>
+        )}
+        <span
+          className={
+            props.compact
+              ? 'min-w-0 truncate text-xs'
+              : 'min-w-0 truncate text-sm'
+          }
+        >
           {summary}
         </span>
         <Button
@@ -172,7 +209,9 @@ export function ContractPriceDetails(props: ContractPriceDetailsProps) {
           variant='ghost'
           size='icon-sm'
           className='size-6 shrink-0'
-          aria-label={open ? t('Hide pricing details') : t('Show pricing details')}
+          aria-label={
+            open ? t('Hide pricing details') : t('Show pricing details')
+          }
           onClick={() => setOpen((current) => !current)}
         >
           {open ? <ChevronDown /> : <ChevronRight />}
@@ -200,7 +239,11 @@ export function ContractPriceDetails(props: ContractPriceDetailsProps) {
                   ? props.price.usage_schema
                   : undefined
               }
-              priceMultiplier={Number.isFinite(effective) && effective > 0 ? effective : undefined}
+              priceMultiplier={
+                Number.isFinite(effective) && effective > 0
+                  ? effective
+                  : undefined
+              }
               compact
             />
           )}
@@ -214,15 +257,29 @@ export function ContractPriceDetails(props: ContractPriceDetailsProps) {
           {props.price.price_type === 'model_price' && (
             <>
               {Number.isFinite(baseCallPrice) && (
-                <PriceRow label={t('Base request price')} value={formatUsd(baseCallPrice)} />
+                <PriceRow
+                  label={t('Base request price')}
+                  value={formatUsd(baseCallPrice)}
+                />
               )}
-              <PriceRow label={t('Channel multiplier')} value={formatRatio(props.channelMultiplier)} />
-              <PriceRow label={t('Contract discount')} value={formatRatio(props.contractDiscount)} />
-              <PriceRow label={t('Effective multiplier')} value={formatRatio(props.effectiveMultiplier)} />
+              <PriceRow
+                label={t('Channel multiplier')}
+                value={formatRatio(props.channelMultiplier)}
+              />
+              <PriceRow
+                label={t('Contract discount')}
+                value={formatRatio(props.contractDiscount)}
+              />
+              <PriceRow
+                label={t('Effective multiplier')}
+                value={formatRatio(props.effectiveMultiplier)}
+              />
               {Number.isFinite(finalCallPrice) && (
                 <div className='flex justify-between gap-3 border-t pt-1.5 font-medium'>
                   <span>{t('Final request price')}</span>
-                  <span className='font-mono tabular-nums'>{formatUsd(finalCallPrice)}</span>
+                  <span className='font-mono tabular-nums'>
+                    {formatUsd(finalCallPrice)}
+                  </span>
                 </div>
               )}
             </>
@@ -230,27 +287,56 @@ export function ContractPriceDetails(props: ContractPriceDetailsProps) {
           {props.price.price_type === 'model_ratio' && (
             <>
               {baseInputRatio > 0 && (
-                <PriceRow label={t('Base input price')} value={formatUsdPerMillion(baseInputRatio)} />
+                <PriceRow
+                  label={t('Base input price')}
+                  value={formatUsdPerMillion(baseInputRatio)}
+                />
               )}
               {hasCompletion && baseOutputRatio > 0 && (
-                <PriceRow label={t('Base output price')} value={formatUsdPerMillion(baseOutputRatio)} />
+                <PriceRow
+                  label={t('Base output price')}
+                  value={formatUsdPerMillion(baseOutputRatio)}
+                />
               )}
               {baseImageRatio > 0 && (
-                <PriceRow label={t('Base image token price')} value={formatUsdPerMillion(baseImageRatio)} />
+                <PriceRow
+                  label={t('Base image token price')}
+                  value={formatUsdPerMillion(baseImageRatio)}
+                />
               )}
-              <PriceRow label={t('Channel multiplier')} value={formatRatio(props.channelMultiplier)} />
-              <PriceRow label={t('Contract discount')} value={formatRatio(props.contractDiscount)} />
-              <PriceRow label={t('Effective multiplier')} value={formatRatio(props.effectiveMultiplier)} />
-              {(finalInputRatio > 0 || (hasCompletion && finalOutputRatio > 0) || finalImageRatio > 0) && (
+              <PriceRow
+                label={t('Channel multiplier')}
+                value={formatRatio(props.channelMultiplier)}
+              />
+              <PriceRow
+                label={t('Contract discount')}
+                value={formatRatio(props.contractDiscount)}
+              />
+              <PriceRow
+                label={t('Effective multiplier')}
+                value={formatRatio(props.effectiveMultiplier)}
+              />
+              {(finalInputRatio > 0 ||
+                (hasCompletion && finalOutputRatio > 0) ||
+                finalImageRatio > 0) && (
                 <div className='border-t pt-1.5 font-medium'>
                   {finalInputRatio > 0 && (
-                    <PriceRow label={t('Final input price')} value={formatUsdPerMillion(finalInputRatio)} />
+                    <PriceRow
+                      label={t('Final input price')}
+                      value={formatUsdPerMillion(finalInputRatio)}
+                    />
                   )}
                   {hasCompletion && finalOutputRatio > 0 && (
-                    <PriceRow label={t('Final output price')} value={formatUsdPerMillion(finalOutputRatio)} />
+                    <PriceRow
+                      label={t('Final output price')}
+                      value={formatUsdPerMillion(finalOutputRatio)}
+                    />
                   )}
                   {finalImageRatio > 0 && (
-                    <PriceRow label={t('Final image token price')} value={formatUsdPerMillion(finalImageRatio)} />
+                    <PriceRow
+                      label={t('Final image token price')}
+                      value={formatUsdPerMillion(finalImageRatio)}
+                    />
                   )}
                 </div>
               )}

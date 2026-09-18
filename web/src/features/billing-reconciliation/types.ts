@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 export type BillingSection = 'customer' | 'upstream' | 'upstream_url'
 export type BillingDimension = 'api_key' | 'channel'
-export type BillingMode = 'token' | 'per_call' | 'unknown'
+export type BillingMode = 'token' | 'per_call' | 'per_second' | 'unknown'
 export type CustomerStatementListQuality = 'all' | 'complete' | 'partial'
 export type CustomerStatementListSortBy =
   | 'net_quota'
@@ -80,7 +80,42 @@ export type BillingDataQuality = {
   missing_historical_price_rows?: number
 }
 
+// 优惠构成组合行（方案 §4）：后端按冻结折扣事实聚合的同一批结算日志投影。
+export type BillingDiscountCombination = {
+  estimate_reasons?: string[]
+  group_name?: string
+  group_ratio_source?: '' | 'group' | 'user_exclusive'
+  group_id: number
+  model_name: string
+  billing_mode: string
+  group_ratio?: number
+  contract_applicable: 'yes' | 'no' | 'unrecorded' | 'unknown'
+  contract_name?: string
+  contract_id_known?: boolean
+  contract_id?: number
+  contract_version?: number
+  contract_ratio?: number
+  usage: {
+    requests: number
+    billable_calls: number
+    refunded_calls: number
+    input_tokens: number
+    cache_read_tokens: number
+    cache_write_tokens: number
+    output_tokens: number
+    gross_quota: number
+    refund_quota: number
+    net_quota: number
+  }
+  original_known: boolean
+  original_quota?: number
+  discount_quota?: number
+  other?: boolean
+}
+
 export type CustomerModelSummary = {
+  discount_quota?: number
+  estimate_reasons?: string[]
   model_name: string
   billing_mode: BillingMode
   usage: BillingUsage
@@ -95,6 +130,7 @@ export type CustomerModelSummary = {
 }
 
 type CustomerGroupSummary = {
+  estimate_reasons?: string[]
   id: number
   name: string
   usage: BillingUsage
@@ -105,6 +141,7 @@ type CustomerGroupSummary = {
 }
 
 export type CustomerStatement = {
+  estimate_reasons?: string[]
   user_id: number
   username: string
   display_name: string
@@ -115,10 +152,13 @@ export type CustomerStatement = {
   original_quota?: number
   discount_quota?: number
   groups: CustomerGroupSummary[]
+  discount_combinations?: BillingDiscountCombination[]
   data_quality?: BillingDataQuality
 }
 
 export type CustomerStatementListItem = {
+  billing_version?: { version_number: number; confirmed_at: number }
+  money_usd?: StatementListMoney
   user_id: number
   username: string
   display_name: string
@@ -131,6 +171,7 @@ export type CustomerStatementListItem = {
 }
 
 type CustomerStatementListSummary = {
+  money_usd?: StatementListMoney
   customer_count: number
   usage: BillingUsage
   original_quota?: number
@@ -233,4 +274,12 @@ export type ApiResponse<T> = {
   success: boolean
   message: string
   data?: T
+}
+
+export type StatementListMoney = {
+  gross: string
+  refund: string
+  net: string
+  original: string | null
+  discount: string | null
 }

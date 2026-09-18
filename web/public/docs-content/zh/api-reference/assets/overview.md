@@ -29,16 +29,16 @@ operations:
 
 先调用 `GET /v1/models/{customer_model}` 并读取 `api.assets`：
 
-| 字段 | 用途 |
-| --- | --- |
-| `management_mode` | `caller_managed_stateless` 为代理模式，`platform_hosted` 为平台托管模式 |
-| `supported` | `false` 表示该客户模型不能使用素材 API |
-| `operations[]` | 每个创建、查询、更新、删除、素材组和认证操作是否支持，以及对应方法与路径 |
-| `media[]` | 支持的 `asset_kind`、`media_type` 组合及 `asset_group_requirement` |
-| `creation.required_fields` | 当前模型创建素材时必须提交的字段 |
-| `creation.name_max_characters` | `name` 最大字符数，当前公共上限为 `64` |
-| `creation.source` | URL 协议、端口、最大长度、最短剩余有效期、MIME、编码大小、`max_pixels` 像素上限和重定向限制 |
-| `reuse_scope` | 匿名素材复用域；仅两个非空值完全相同时才可尝试跨模型复用 |
+| 字段                           | 用途                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------- |
+| `management_mode`              | `caller_managed_stateless` 为代理模式，`platform_hosted` 为平台托管模式                     |
+| `supported`                    | `false` 表示该客户模型不能使用素材 API                                                      |
+| `operations[]`                 | 每个创建、查询、更新、删除、素材组和认证操作是否支持，以及对应方法与路径                    |
+| `media[]`                      | 支持的 `asset_kind`、`media_type` 组合及 `asset_group_requirement`                          |
+| `creation.required_fields`     | 当前模型创建素材时必须提交的字段                                                            |
+| `creation.name_max_characters` | `name` 最大字符数，当前公共上限为 `64`                                                      |
+| `creation.source`              | URL 协议、端口、最大长度、最短剩余有效期、MIME、编码大小、`max_pixels` 像素上限和重定向限制 |
+| `reuse_scope`                  | 匿名素材复用域；仅两个非空值完全相同时才可尝试跨模型复用                                    |
 
 `asset_group_requirement=optional` 表示可省略组；`required` 表示该素材类型必须提供专用组；
 `unsupported` 表示普通组不参与该模型履约，省略组即可创建，不能把这个值理解成素材创建也不支持。
@@ -102,17 +102,17 @@ curl "{{OPENAI_BASE_URL}}/assets" \
 
 ### 创建请求参数
 
-| 字段 | 类型 | 必填 | 取值与说明 |
-| --- | --- | --- | --- |
-| `name` | string | 是 | 素材名称；去除首尾空白后不能为空，最多 `64` 个字符 |
-| `asset_kind` | string | 是 | `general` 或 `real_person` |
-| `media_type` | string | 是 | `image`、`video` 或 `audio`；必须出现在当前模型的 `api.assets.media` 中 |
-| `model` | string | 是 | 客户模型名；用于选择唯一素材执行路径，必须使用模型目录中的原值 |
-| `asset_group_id` | string | 条件使用 | AIGC 普通素材可省略；代理模式按模型策略使用默认组，裁剪后非空时原值交给上游；托管模式未填写时不分组，填写时校验当前账号组归属。`real_person` 必须传认证产生的专用组 ID |
-| `source` | object | 是 | 本次创建使用的源对象 |
-| `source.type` | string | 是 | 当前固定为 `url` |
-| `source.url` | string | 是 | 上游可访问的公网 HTTPS 绝对 URL |
-| `source.expires_at` | integer | 否 | URL 过期时间，Unix 秒；填写时必须满足模型公开的最短剩余有效期 |
+| 字段                | 类型    | 必填     | 取值与说明                                                                                                                                                             |
+| ------------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`              | string  | 是       | 素材名称；去除首尾空白后不能为空，最多 `64` 个字符                                                                                                                     |
+| `asset_kind`        | string  | 是       | `general` 或 `real_person`                                                                                                                                             |
+| `media_type`        | string  | 是       | `image`、`video` 或 `audio`；必须出现在当前模型的 `api.assets.media` 中                                                                                                |
+| `model`             | string  | 是       | 客户模型名；用于选择唯一素材执行路径，必须使用模型目录中的原值                                                                                                         |
+| `asset_group_id`    | string  | 条件使用 | AIGC 普通素材可省略；代理模式按模型策略使用默认组，裁剪后非空时原值交给上游；托管模式未填写时不分组，填写时校验当前账号组归属。`real_person` 必须传认证产生的专用组 ID |
+| `source`            | object  | 是       | 本次创建使用的源对象                                                                                                                                                   |
+| `source.type`       | string  | 是       | 当前固定为 `url`                                                                                                                                                       |
+| `source.url`        | string  | 是       | 上游可访问的公网 HTTPS 绝对 URL                                                                                                                                        |
+| `source.expires_at` | integer | 否       | URL 过期时间，Unix 秒；填写时必须满足模型公开的最短剩余有效期                                                                                                          |
 
 `source.url` 还必须满足以下公共边界：
 
@@ -136,15 +136,15 @@ HTTP `201`：
 }
 ```
 
-| 字段 | 类型 | 是否总是存在 | 说明 |
-| --- | --- | --- | --- |
-| `object` | string | 是 | 固定为 `asset` |
-| `id` | string | 是 | 素材资源的不透明 ID；用于查询、更新和删除 |
-| `model` | string | 是 | 本次请求使用的客户模型名 |
-| `reference` | string | 否 | 可用于视频生成的 `asset://<opaque-id>` 引用；未 ready 时可能暂不返回 |
-| `status` | string | 是 | `processing`、`ready` 或 `failed` |
-| `error_code` | string | 否 | 素材失败时的脱敏错误码，当前公开值为 `upstream_asset_failed` |
-| `error` | string | 否 | 脱敏错误说明；不会返回原始上游错误 |
+| 字段         | 类型   | 是否总是存在 | 说明                                                                 |
+| ------------ | ------ | ------------ | -------------------------------------------------------------------- |
+| `object`     | string | 是           | 固定为 `asset`                                                       |
+| `id`         | string | 是           | 素材资源的不透明 ID；用于查询、更新和删除                            |
+| `model`      | string | 是           | 本次请求使用的客户模型名                                             |
+| `reference`  | string | 否           | 可用于视频生成的 `asset://<opaque-id>` 引用；未 ready 时可能暂不返回 |
+| `status`     | string | 是           | `processing`、`ready` 或 `failed`                                    |
+| `error_code` | string | 否           | 素材失败时的脱敏错误码，当前公开值为 `upstream_asset_failed`         |
+| `error`      | string | 否           | 脱敏错误说明；不会返回原始上游错误                                   |
 
 `id` 与 `reference` 中的 opaque ID 可能不同，必须分别保存。`processing` 时使用 `model + id` 查询；
 不要自行拼接 `asset://` 代替尚未返回的 `reference`。
@@ -158,10 +158,10 @@ curl "{{OPENAI_BASE_URL}}/assets/example-asset-id?model={{MODEL_ID_PLACEHOLDER}}
   -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
 ```
 
-| 参数 | 位置 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `asset_id` | path | 是 | 创建响应的 `id`，原样 URL 编码后放入路径 |
-| `model` | query | 是 | 创建该素材时保存的客户模型名 |
+| 参数       | 位置  | 必填 | 说明                                     |
+| ---------- | ----- | ---- | ---------------------------------------- |
+| `asset_id` | path  | 是   | 创建响应的 `id`，原样 URL 编码后放入路径 |
+| `model`    | query | 是   | 创建该素材时保存的客户模型名             |
 
 HTTP `200` 返回与创建相同的 `Asset` 对象。代理模式只查询当前模型的素材服务；托管模式查询当前账号
 的托管图片。模型与 ID 不匹配时不探测其他来源，也不自动换模型。
@@ -180,11 +180,11 @@ curl -X PATCH "{{OPENAI_BASE_URL}}/assets/example-asset-id" \
   }'
 ```
 
-| 参数 | 位置 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `asset_id` | path | 是 | 要更新的素材 opaque ID |
-| `model` | body | 是 | 创建时使用的客户模型名 |
-| `name` | body | 是 | 新名称；去除首尾空白后不能为空，最多 `64` 个字符 |
+| 参数       | 位置 | 必填 | 说明                                             |
+| ---------- | ---- | ---- | ------------------------------------------------ |
+| `asset_id` | path | 是   | 要更新的素材 opaque ID                           |
+| `model`    | body | 是   | 创建时使用的客户模型名                           |
+| `name`     | body | 是   | 新名称；去除首尾空白后不能为空，最多 `64` 个字符 |
 
 HTTP `200` 返回更新后的 `Asset` 对象。只有 `operations` 中 `update_asset.supported=true` 时才能调用；
 不支持更新的模型返回 `422 unsupported_asset_operation`。
@@ -222,13 +222,13 @@ curl "{{OPENAI_BASE_URL}}/asset-groups" \
 
 ### 素材组请求参数
 
-| 字段 | 类型 | 必填 | 取值与说明 |
-| --- | --- | --- | --- |
-| `name` | string | 是 | 素材组名称；最多 `64` 个字符；`aigctokenaigeneral` 为系统保留名称，调用方不得创建 |
-| `description` | string | 否 | 素材组说明；最多 `300` 个字符 |
-| `group_kind` | string | 是 | 普通组使用 `general`；真人认证流程使用 `real_person` |
-| `model` | string | 是 | 客户模型名 |
-| `redirect_url` | string | 条件使用 | 真人认证完成后的客户端 HTTPS 跳转地址；普通组通常省略 |
+| 字段           | 类型   | 必填     | 取值与说明                                                                        |
+| -------------- | ------ | -------- | --------------------------------------------------------------------------------- |
+| `name`         | string | 是       | 素材组名称；最多 `64` 个字符；`aigctokenaigeneral` 为系统保留名称，调用方不得创建 |
+| `description`  | string | 否       | 素材组说明；最多 `300` 个字符                                                     |
+| `group_kind`   | string | 是       | 普通组使用 `general`；真人认证流程使用 `real_person`                              |
+| `model`        | string | 是       | 客户模型名                                                                        |
+| `redirect_url` | string | 条件使用 | 真人认证完成后的客户端 HTTPS 跳转地址；普通组通常省略                             |
 
 ### 普通素材组响应
 
@@ -243,12 +243,12 @@ HTTP `201`：
 }
 ```
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `object` | string | 普通组固定为 `asset_group` |
-| `id` | string | 素材组的不透明 ID；业务需要自定义分组时可把它放入普通素材的 `asset_group_id` |
-| `model` | string | 创建素材组时使用的客户模型名 |
-| `status` | string | `processing`、`ready` 或 `failed` |
+| 字段     | 类型   | 说明                                                                         |
+| -------- | ------ | ---------------------------------------------------------------------------- |
+| `object` | string | 普通组固定为 `asset_group`                                                   |
+| `id`     | string | 素材组的不透明 ID；业务需要自定义分组时可把它放入普通素材的 `asset_group_id` |
+| `model`  | string | 创建素材组时使用的客户模型名                                                 |
+| `status` | string | `processing`、`ready` 或 `failed`                                            |
 
 ## 创建真人认证会话
 
@@ -276,15 +276,15 @@ HTTP `201` 示例：
 }
 ```
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `object` | string | 真人流程固定为 `asset_group_verification` |
-| `id` | string | 此阶段是上游认证会话 ID，不是最终素材组 ID |
-| `model` | string | 请求使用的客户模型名 |
-| `group_id` | string | 上游已同步返回实际素材组时可能存在；通常在认证完成查询后出现 |
-| `status` | string | `processing`、`ready` 或 `failed` |
-| `verification_url` | string | 交给真人本人打开的上游 HTTPS 认证地址；只在有效期内使用 |
-| `expires_at` | integer | 认证会话或地址过期时间，Unix 秒 |
+| 字段               | 类型    | 说明                                                         |
+| ------------------ | ------- | ------------------------------------------------------------ |
+| `object`           | string  | 真人流程固定为 `asset_group_verification`                    |
+| `id`               | string  | 此阶段是上游认证会话 ID，不是最终素材组 ID                   |
+| `model`            | string  | 请求使用的客户模型名                                         |
+| `group_id`         | string  | 上游已同步返回实际素材组时可能存在；通常在认证完成查询后出现 |
+| `status`           | string  | `processing`、`ready` 或 `failed`                            |
+| `verification_url` | string  | 交给真人本人打开的上游 HTTPS 认证地址；只在有效期内使用      |
+| `expires_at`       | integer | 认证会话或地址过期时间，Unix 秒                              |
 
 中转站不采集人脸、证件、活体或授权表单。调用方只能把 `verification_url` 交给本人，并自行保存
 `model + session id` 以便查询。
@@ -303,11 +303,11 @@ GET /v1/asset-groups/{group_id}?model={customer_model}
 GET /v1/asset-groups/{session_id}?model={customer_model}&verification_session=true
 ```
 
-| 参数 | 位置 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `group_id` / `session_id` | path | 是 | 普通组 ID 或认证会话 ID |
-| `model` | query | 是 | 创建组或会话时使用的客户模型名 |
-| `verification_session` | query | 真人查询是 | 传 `true` 表示按认证会话查询；省略表示查询普通素材组 |
+| 参数                      | 位置  | 必填       | 说明                                                 |
+| ------------------------- | ----- | ---------- | ---------------------------------------------------- |
+| `group_id` / `session_id` | path  | 是         | 普通组 ID 或认证会话 ID                              |
+| `model`                   | query | 是         | 创建组或会话时使用的客户模型名                       |
+| `verification_session`    | query | 真人查询是 | 传 `true` 表示按认证会话查询；省略表示查询普通素材组 |
 
 HTTP `200` 返回 `AssetGroup` 对象。真人认证完成后，响应中的 `group_id` 才是创建真人素材时应填写的
 `asset_group_id`。不要把会话 `id` 当作最终素材组 ID。
@@ -333,7 +333,7 @@ curl --get "{{OPENAI_BASE_URL}}/asset-groups/example-group-id" \
 ```json
 {
   "type": "image_url",
-  "image_url": {"url": "asset://example-reference-id"},
+  "image_url": { "url": "asset://example-reference-id" },
   "role": "reference_image"
 }
 ```
@@ -371,11 +371,11 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 
 ## 状态处理
 
-| 状态 | 客户端行为 |
-| --- | --- |
-| `processing` | 保存 `model + id`，有界轮询对应单项查询接口 |
-| `ready` | 保存 `reference`；需要跨模型复用时仍先比较非空 `reuse_scope` |
-| `failed` | 停止轮询，记录公开 `error_code` 和请求 ID，不解析原始上游身份 |
+| 状态         | 客户端行为                                                    |
+| ------------ | ------------------------------------------------------------- |
+| `processing` | 保存 `model + id`，有界轮询对应单项查询接口                   |
+| `ready`      | 保存 `reference`；需要跨模型复用时仍先比较非空 `reuse_scope`  |
+| `failed`     | 停止轮询，记录公开 `error_code` 和请求 ID，不解析原始上游身份 |
 
 素材 POST 不支持客户幂等键。超时不代表创建一定失败，自动重复 POST 可能产生多个上游素材；不要自动
 换模型、换路径或 fallback。
@@ -395,16 +395,16 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 }
 ```
 
-| HTTP 状态 | `error.code` | 含义与处理 |
-| --- | --- | --- |
-| `400` | `invalid_request` | JSON、必填字段、名称、URL、有效期或参数组合无效；修正后再请求 |
-| `400` | `reserved_asset_group_name` | 普通调用方试图创建系统保留素材组名称；改用其它业务名称 |
-| `400` | `asset_url_ttl_insufficient` | URL 剩余有效期不足；读取 `error.details.required_min_ttl_seconds` 后换用更长有效期 URL |
-| `404` | `model_not_found` | 客户模型不存在；重新读取模型目录 |
-| `404` | `asset_not_found` | 当前模型选定的上游未找到该素材或素材组 |
-| `409` | `default_asset_group_not_configured` | 当前模型的默认素材组未配置；联系管理员完成配置，或按业务需要使用已创建的合法组 ID |
-| `422` | `unsupported_asset_type` | 当前模型不支持该 `asset_kind + media_type` 组合 |
-| `422` | `unsupported_asset_operation` | 当前模型未发布该素材或素材组操作 |
-| `502` | `asset_upstream_error` | 上游拒绝或返回无效结果；不要改成其它 Provider ID 探测 |
-| `503` | `asset_upstream_unavailable` | 素材服务或凭据暂不可用；保留请求 ID 后联系管理员 |
-| `500` | `internal_error` | 平台内部错误；不要依赖错误文本判断素材是否已创建 |
+| HTTP 状态 | `error.code`                         | 含义与处理                                                                             |
+| --------- | ------------------------------------ | -------------------------------------------------------------------------------------- |
+| `400`     | `invalid_request`                    | JSON、必填字段、名称、URL、有效期或参数组合无效；修正后再请求                          |
+| `400`     | `reserved_asset_group_name`          | 普通调用方试图创建系统保留素材组名称；改用其它业务名称                                 |
+| `400`     | `asset_url_ttl_insufficient`         | URL 剩余有效期不足；读取 `error.details.required_min_ttl_seconds` 后换用更长有效期 URL |
+| `404`     | `model_not_found`                    | 客户模型不存在；重新读取模型目录                                                       |
+| `404`     | `asset_not_found`                    | 当前模型选定的上游未找到该素材或素材组                                                 |
+| `409`     | `default_asset_group_not_configured` | 当前模型的默认素材组未配置；联系管理员完成配置，或按业务需要使用已创建的合法组 ID      |
+| `422`     | `unsupported_asset_type`             | 当前模型不支持该 `asset_kind + media_type` 组合                                        |
+| `422`     | `unsupported_asset_operation`        | 当前模型未发布该素材或素材组操作                                                       |
+| `502`     | `asset_upstream_error`               | 上游拒绝或返回无效结果；不要改成其它 Provider ID 探测                                  |
+| `503`     | `asset_upstream_unavailable`         | 素材服务或凭据暂不可用；保留请求 ID 后联系管理员                                       |
+| `500`     | `internal_error`                     | 平台内部错误；不要依赖错误文本判断素材是否已创建                                       |

@@ -118,7 +118,11 @@ export function getDynamicPriceUnitLabelKey(
   return null
 }
 
-const PRIMARY_DYNAMIC_FIELDS = new Set(['inputPrice', 'outputPrice', 'imageOutputPrice'])
+const PRIMARY_DYNAMIC_FIELDS = new Set([
+  'inputPrice',
+  'outputPrice',
+  'imageOutputPrice',
+])
 
 function isTaskPricingTier(tier: DynamicPricingTier): tier is ParsedTaskTier {
   return (
@@ -335,17 +339,25 @@ export function getDynamicPricingSummary(
   const scenarios = isTaskUsage
     ? taskScenarioTiersFromBillingDisplay(model.billing_display)
     : tokenScenarioTiersFromBillingDisplay(model.billing_display)
-  const rangeTiers: DynamicPricingTier[] = scenarios.length > 0 ? [] : [...tiers]
+  const rangeTiers: DynamicPricingTier[] =
+    scenarios.length > 0 ? [] : [...tiers]
   for (const scenario of scenarios) {
     rangeTiers.push(...scenario.tiers)
   }
-  const entriesByTier = rangeTiers.map((tier) =>
-    new Map(
-      getDynamicPriceEntries(tier, entryOptions).map((entry) => [entry.field, entry])
-    )
+  const entriesByTier = rangeTiers.map(
+    (tier) =>
+      new Map(
+        getDynamicPriceEntries(tier, entryOptions).map((entry) => [
+          entry.field,
+          entry,
+        ])
+      )
   )
   const representativeEntries = new Map(
-    getDynamicPriceEntries(tier, entryOptions).map((entry) => [entry.field, entry])
+    getDynamicPriceEntries(tier, entryOptions).map((entry) => [
+      entry.field,
+      entry,
+    ])
   )
   const allEntries = new Map(representativeEntries)
   for (const tierEntries of entriesByTier) {
@@ -388,7 +400,9 @@ export function getDynamicPricingSummary(
     ? entries.filter((entry) => entry.unit !== 'request')
     : entries.filter((entry) => PRIMARY_DYNAMIC_FIELDS.has(entry.field))
   const secondaryEntries = isTaskUsage
-    ? entries.filter((entry) => entry.unit === 'request' && entry !== constantEntry)
+    ? entries.filter(
+        (entry) => entry.unit === 'request' && entry !== constantEntry
+      )
     : entries.filter(
         (entry) =>
           !PRIMARY_DYNAMIC_FIELDS.has(entry.field) && entry !== constantEntry

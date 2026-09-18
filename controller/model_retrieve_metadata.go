@@ -16,6 +16,10 @@ func modelMetadataForRetrieve(c *gin.Context, modelName string) (dto.OpenAIModel
 	_, static := openAIModelsMap[modelName]
 	groups, err := getModelListGroups(c)
 	if err != nil {
+		if service.ActiveCustomerContract(c) != nil {
+			respondCustomerContractPricingLoadError(c)
+			return dto.OpenAIModels{}, false
+		}
 		if static {
 			return buildOpenAIModel(modelName, nil), true
 		}
@@ -37,8 +41,14 @@ func modelMetadataForRetrieve(c *gin.Context, modelName string) (dto.OpenAIModel
 
 	ownerByModel := getPreferredModelOwners([]string{modelName}, groups.ownerGroups)
 	result := buildOpenAIModel(modelName, ownerByModel)
-	if apiByModel, apiErr := model.GetPublicMediaModelAPIs([]string{modelName}, groups.ownerGroups); apiErr == nil {
+	if apiByModel, metadata, apiErr := customerContractModelMetadata(c, []string{modelName}, groups.ownerGroups); apiErr == nil {
+		if metadata != nil {
+			result.SupportedEndpointTypes = metadata[modelName].SupportedEndpointTypes
+		}
 		applyPublicMediaMetadata(&result, apiByModel[modelName])
+	} else if service.ActiveCustomerContract(c) != nil {
+		respondCustomerContractPricingLoadError(c)
+		return dto.OpenAIModels{}, false
 	}
 	return result, true
 }

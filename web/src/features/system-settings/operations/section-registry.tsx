@@ -84,6 +84,10 @@ const OPERATIONS_SECTIONS = [
           SMTPStartTLSEnabled: settings.SMTPStartTLSEnabled,
           SMTPInsecureSkipVerify: settings.SMTPInsecureSkipVerify,
           SMTPForceAuthLogin: settings.SMTPForceAuthLogin,
+          'error_report_setting.enabled':
+            settings['error_report_setting.enabled'] ?? false,
+          'error_report_setting.recipients':
+            settings['error_report_setting.recipients'] ?? '',
         }}
       />
     ),

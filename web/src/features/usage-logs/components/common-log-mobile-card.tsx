@@ -32,6 +32,7 @@ import dayjs from '@/lib/dayjs'
 import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 
 import type { UsageLog } from '../data/schema'
+import { buildDiscountDisplay } from '../lib/discount-display'
 import { formatModelName, parseLogOther } from '../lib/format'
 import {
   getLogTypeConfig,
@@ -133,6 +134,7 @@ export function CommonLogMobileCard<TData>(props: {
       (other?.cache_creation_tokens_1h || 0) ||
     other?.cache_creation_tokens ||
     0
+  const discount = buildDiscountDisplay(other, (key, opts) => t(key, opts))
   const showTokens =
     displayable &&
     props.cells.has('prompt_tokens') &&
@@ -316,6 +318,25 @@ export function CommonLogMobileCard<TData>(props: {
               {t('Cache')} ↑ {cacheWrite.toLocaleString()}
             </span>
           )}
+        </div>
+      )}
+      {discount.visible && (
+        <div className='text-muted-foreground text-xs [overflow-wrap:anywhere]'>
+          <span className='tabular-nums'>
+            {[
+              discount.groupTier
+                ? `${discount.groupTier} ${discount.groupFactor}`
+                : '',
+              discount.contractState === 'applied' && discount.contractTier
+                ? `${discount.contractLabel} ${discount.contractTier} ${discount.contractFactor}`
+                : discount.contractLabel,
+              discount.finalTier
+                ? `${t('Final discount')} ${discount.finalTier} ${discount.finalFactor}`
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' × ')}
+          </span>
         </div>
       )}
       {contentCell && (

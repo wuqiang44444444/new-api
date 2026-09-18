@@ -88,5 +88,8 @@ export function refineSeedanceProtocols(
     }
     return
   }
-  addIssue('video_upstream_protocol', i18next.t('Select a Seedance video protocol'))
+  addIssue(
+    'video_upstream_protocol',
+    i18next.t('Select a Seedance video protocol')
+  )
 }

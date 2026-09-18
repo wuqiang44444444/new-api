@@ -16,7 +16,8 @@ import (
 func TestTaskStatementSnapshotUsesFrozenExpressionAndContract(t *testing.T) {
 	for _, tc := range []struct{ name, expression, mode string }{
 		{"tokens", `tier("base", c * 7)`, "token"},
-		{"seconds", `tier("base", u("seconds") * 0.4)`, "unknown"},
+		{"undeclared seconds", `tier("base", u("seconds") * 0.4)`, "unknown"},
+		{"frozen task duration", `tier("base", param("_task.duration_seconds") * 100000)`, "per_second"},
 		{"invalid", `tier("broken",`, "unknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

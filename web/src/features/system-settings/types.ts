@@ -296,6 +296,7 @@ export type BillingSettings = {
   'batch_billing_setting.batch_billing_expr'?: string
   'task_billing_setting.preconsume_tokens': string
   'billing_statement_setting.context_thresholds': string
+  BillingStatementVersionEnabled: boolean
   'tool_price_setting.prices': string
   TopupGroupRatio: string
   GroupRatio: string
@@ -371,6 +372,8 @@ export type OperationsSettings = {
   SMTPStartTLSEnabled: boolean
   SMTPInsecureSkipVerify: boolean
   SMTPForceAuthLogin: boolean
+  'error_report_setting.enabled': boolean
+  'error_report_setting.recipients': string
   WorkerUrl: string
   WorkerValidKey: string
   WorkerAllowHttpImageRequestEnabled: boolean

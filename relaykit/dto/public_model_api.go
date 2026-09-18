@@ -64,9 +64,15 @@ type PublicAPIParameter struct {
 	MaxLength     *int     `json:"max_length,omitempty"`
 	MinItems      *int     `json:"min_items,omitempty"`
 	MaxItems      *int     `json:"max_items,omitempty"`
+	// RequiredOneOf names mutually exclusive required properties of an object,
+	// or of each item when ItemType is object. Nested parameters use []. paths.
+	RequiredOneOf []string `json:"required_one_of,omitempty"`
 
 	// SuggestedValues are non-exhaustive recommendations, never a validation enum.
-	SuggestedValues []string `json:"suggested_values,omitempty"`
+	SuggestedValues []string                    `json:"suggested_values,omitempty"`
+	SizeConstraints *PublicImageSizeConstraints `json:"size_constraints,omitempty"`
+	// MaxDecodedBytes applies to each inline image, including array items.
+	MaxDecodedBytes *int `json:"max_decoded_bytes,omitempty"`
 }
 
 type PublicVideoContentType struct {

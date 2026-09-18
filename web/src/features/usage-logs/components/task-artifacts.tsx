@@ -32,7 +32,6 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { Dialog } from '@/components/dialog'
 import {
   Alert,
@@ -58,6 +57,7 @@ import {
 } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
+import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { cn } from '@/lib/utils'
 
 import { getTaskArtifacts } from '../api'
@@ -311,7 +311,7 @@ function ResultLinkActions(props: { url: string }) {
   const { t } = useTranslation()
   return (
     <div className='flex min-w-0 flex-1 flex-wrap gap-2'>
-      <span className='text-muted-foreground w-full break-all font-mono text-xs'>
+      <span className='text-muted-foreground w-full font-mono text-xs break-all'>
         {props.url}
       </span>
       <Button

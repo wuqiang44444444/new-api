@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
@@ -139,6 +140,15 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 		)
 		if errors.Is(holdErr, model.ErrTaskAttemptInsufficientQuota) ||
 			errors.Is(holdErr, model.ErrTaskAttemptSubscriptionUnavailable) {
+			reason := "insufficient_quota"
+			if errors.Is(holdErr, model.ErrTaskAttemptSubscriptionUnavailable) {
+				reason = "subscription_unavailable"
+			}
+			clienterrlog.Attach(c.Request.Context(), clienterrlog.Report{
+				Stage: "billing_preconsume", Reason: reason, PublicCode: "insufficient_quota",
+				Model: info.OriginModelName, ChannelID: info.ChannelId,
+				Protocol: string(info.ChannelOtherSettings.VideoUpstreamProtocol),
+			})
 			return types.NewErrorWithStatusCode(
 				holdErr, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
 				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog(),

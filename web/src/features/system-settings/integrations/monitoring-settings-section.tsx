@@ -240,9 +240,7 @@ export function MonitoringSettingsSection({
           <div>
             <h4 className='font-medium'>{t('Notification emails')}</h4>
             <p className='text-muted-foreground mt-1 text-xs'>
-              {t(
-                'Send an email to the user when these account events happen.'
-              )}
+              {t('Send an email to the user when these account events happen.')}
             </p>
           </div>
 

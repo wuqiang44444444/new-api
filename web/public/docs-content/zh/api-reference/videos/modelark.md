@@ -73,13 +73,29 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models" \
             "model": "customer-seedance-model",
             "additional_properties": false,
             "parameters": [
-              {"name": "model", "type": "string", "required": true},
-              {"name": "content", "type": "array", "required": true, "min_items": 1},
-              {"name": "duration", "type": "integer", "minimum": 4, "maximum": 15},
-              {"name": "resolution", "type": "string", "required": false, "default_value": "720p", "enum": ["480p", "720p"]}
+              { "name": "model", "type": "string", "required": true },
+              {
+                "name": "content",
+                "type": "array",
+                "required": true,
+                "min_items": 1
+              },
+              {
+                "name": "duration",
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 15
+              },
+              {
+                "name": "resolution",
+                "type": "string",
+                "required": false,
+                "default_value": "720p",
+                "enum": ["480p", "720p"]
+              }
             ],
             "content_types": [
-              {"type": "text", "required_fields": ["type", "text"]},
+              { "type": "text", "required_fields": ["type", "text"] },
               {
                 "type": "image_url",
                 "roles": ["first_frame", "last_frame", "reference_image"],
@@ -96,13 +112,13 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models" \
 
 每个模型的 `api.video` 是创建和任务操作的机器可读合同：
 
-| 字段 | 用途 |
-| --- | --- |
-| `available` / `availability` | 当前 Key 是否能创建任务；不可用模型仍可能保留在目录中 |
-| `api.video.creation.parameters` | 顶层字段的类型、必填性、固定值、默认值、枚举、推荐值和上下限 |
-| `api.video.creation.content_types` | `content` 允许的媒体类型、角色、子字段和数量边界 |
-| `api.video.operations` | 创建、列表、查询、删除与内容下载的路径和支持状态 |
-| `api.assets` | 素材类型、操作、创建限制、引用格式与匿名复用域 |
+| 字段                               | 用途                                                         |
+| ---------------------------------- | ------------------------------------------------------------ |
+| `available` / `availability`       | 当前 Key 是否能创建任务；不可用模型仍可能保留在目录中        |
+| `api.video.creation.parameters`    | 顶层字段的类型、必填性、固定值、默认值、枚举、推荐值和上下限 |
+| `api.video.creation.content_types` | `content` 允许的媒体类型、角色、子字段和数量边界             |
+| `api.video.operations`             | 创建、列表、查询、删除与内容下载的路径和支持状态             |
+| `api.assets`                       | 素材类型、操作、创建限制、引用格式与匿名复用域               |
 
 模型名由部署方定义。客户端只能发送目录中的客户模型名，不能从名称推断分辨率、时长、媒体组合、
 上游模型或 Provider。
@@ -185,7 +201,9 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 ```json
 {
   "model": "{{MODEL_ID_PLACEHOLDER}}",
-  "content": [{"type": "text", "text": "清晨的海面上，一艘帆船缓缓驶过，镜头平稳推进"}],
+  "content": [
+    { "type": "text", "text": "清晨的海面上，一艘帆船缓缓驶过，镜头平稳推进" }
+  ],
   "duration": 5,
   "resolution": "720p",
   "ratio": "16:9"
@@ -260,27 +278,27 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 
 ### 顶层请求参数
 
-| 字段 | 类型 | 结构必填 | 公共结构约束 |
-| --- | --- | --- | --- |
-| `model` | string | 是 | 客户模型名；必须可用于当前 Key |
-| `content` | array | 是 | 至少一项；每项只能表达一种文本或媒体内容 |
-| `duration` | integer | 否 | `-1` 表示智能时长，或 `1`～`3600`；具体模型通常有更窄范围，`0` 无效 |
-| `callback_url` | string | 否 | 回调 URI；只有模型合同公开该字段时可用，未声明时使用 GET 轮询，不假设平台提供统一回调或重试保证 |
-| `resolution` | string | 否 | 输出分辨率；枚举与必填性以模型合同为准 |
-| `ratio` | string | 否 | 输出画幅；枚举、默认值和自适应支持以模型合同为准 |
-| `output_format` | string | 否 | `mp4` 或 `mov`；只有明确发布该字段的模型接受 |
-| `service_tier` | string | 否 | 服务档位；可选值由模型合同决定 |
-| `generate_audio` | boolean | 否 | 是否生成音频；模型可以只允许固定 `true` 或固定 `false` |
-| `watermark` | boolean | 否 | 是否添加水印；仅模型公开时可用 |
-| `return_last_frame` | boolean | 否 | 是否返回末帧；成功任务可能据此提供 `last_frame_url` |
-| `execution_expires_after` | integer | 否 | 执行有效期，范围 `3600`～`259200` 秒 |
-| `draft` | boolean | 否 | 草稿模式；仅模型公开时可用 |
-| `tools` | array | 否 | 工具数组；每项当前只允许 `type`，可用类型由模型合同决定 |
-| `safety_identifier` | string | 否 | 调用方安全标识；仅模型公开时可用 |
-| `priority` | integer | 否 | `0`～`9`；仅模型公开时可用 |
-| `frames` | integer | 否 | `29`～`289` 且满足 `25 + 4n`；与 `duration` 同时存在时按模型合同处理 |
-| `seed` | integer | 否 | `-1`～`2147483647` |
-| `camera_fixed` | boolean | 否 | 是否固定相机；仅模型公开时可用 |
+| 字段                      | 类型    | 结构必填 | 公共结构约束                                                                                    |
+| ------------------------- | ------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `model`                   | string  | 是       | 客户模型名；必须可用于当前 Key                                                                  |
+| `content`                 | array   | 是       | 至少一项；每项只能表达一种文本或媒体内容                                                        |
+| `duration`                | integer | 否       | `-1` 表示智能时长，或 `1`～`3600`；具体模型通常有更窄范围，`0` 无效                             |
+| `callback_url`            | string  | 否       | 回调 URI；只有模型合同公开该字段时可用，未声明时使用 GET 轮询，不假设平台提供统一回调或重试保证 |
+| `resolution`              | string  | 否       | 输出分辨率；枚举与必填性以模型合同为准                                                          |
+| `ratio`                   | string  | 否       | 输出画幅；枚举、默认值和自适应支持以模型合同为准                                                |
+| `output_format`           | string  | 否       | `mp4` 或 `mov`；只有明确发布该字段的模型接受                                                    |
+| `service_tier`            | string  | 否       | 服务档位；可选值由模型合同决定                                                                  |
+| `generate_audio`          | boolean | 否       | 是否生成音频；模型可以只允许固定 `true` 或固定 `false`                                          |
+| `watermark`               | boolean | 否       | 是否添加水印；仅模型公开时可用                                                                  |
+| `return_last_frame`       | boolean | 否       | 是否返回末帧；成功任务可能据此提供 `last_frame_url`                                             |
+| `execution_expires_after` | integer | 否       | 执行有效期，范围 `3600`～`259200` 秒                                                            |
+| `draft`                   | boolean | 否       | 草稿模式；仅模型公开时可用                                                                      |
+| `tools`                   | array   | 否       | 工具数组；每项当前只允许 `type`，可用类型由模型合同决定                                         |
+| `safety_identifier`       | string  | 否       | 调用方安全标识；仅模型公开时可用                                                                |
+| `priority`                | integer | 否       | `0`～`9`；仅模型公开时可用                                                                      |
+| `frames`                  | integer | 否       | `29`～`289` 且满足 `25 + 4n`；与 `duration` 同时存在时按模型合同处理                            |
+| `seed`                    | integer | 否       | `-1`～`2147483647`                                                                              |
+| `camera_fixed`            | boolean | 否       | 是否固定相机；仅模型公开时可用                                                                  |
 
 公共结构允许字段不等于所选模型允许字段。提交前必须按
 `api.video.creation.parameters` 组装请求；不要提交后再静默删字段重试。
@@ -294,19 +312,19 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 
 ### `content` 内容项
 
-| `type` | 必填子字段 | `role` | 说明 |
-| --- | --- | --- | --- |
-| `text` | `text` | 不允许 | 文本不能为空；一项中不能同时带任何媒体字段 |
-| `image_url` | `image_url.url` | `first_frame`、`last_frame` 或 `reference_image` | 图片首帧、末帧或参考图 |
-| `video_url` | `video_url.url` | `reference_video` | 参考视频 |
-| `audio_url` | `audio_url.url` | `reference_audio` | 参考音频 |
+| `type`      | 必填子字段      | `role`                                           | 说明                                       |
+| ----------- | --------------- | ------------------------------------------------ | ------------------------------------------ |
+| `text`      | `text`          | 不允许                                           | 文本不能为空；一项中不能同时带任何媒体字段 |
+| `image_url` | `image_url.url` | `first_frame`、`last_frame` 或 `reference_image` | 图片首帧、末帧或参考图                     |
+| `video_url` | `video_url.url` | `reference_video`                                | 参考视频                                   |
+| `audio_url` | `audio_url.url` | `reference_audio`                                | 参考音频                                   |
 
 每个媒体项必须且只能带与 `type` 对应的 URL 对象，并且必须提供有效 `role`：
 
 ```json
 {
   "type": "image_url",
-  "image_url": {"url": "asset://example-reference-id"},
+  "image_url": { "url": "asset://example-reference-id" },
   "role": "reference_image"
 }
 ```
@@ -398,31 +416,31 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
 
 ### 任务响应字段
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | string | 平台任务 ID |
-| `model` | string | 创建时冻结的客户模型名 |
-| `status` | string | `queued`、`running`、`succeeded`、`failed`、`cancelled` 或 `expired` |
-| `content.video_url` | string | 成功后的视频内容代理路径 |
-| `content.last_frame_url` | string | 成功且存在末帧时返回的末帧代理路径 |
-| `seed` | integer | 实际或上游返回的随机种子；不存在时省略 |
-| `resolution` | string | 实际输出分辨率；不存在时省略 |
-| `duration` | integer | 实际时长；不存在时省略 |
-| `frames` | integer | 实际帧数；不存在时省略 |
-| `framespersecond` | integer | 实际帧率；不存在时省略 |
-| `ratio` | string | 实际画幅；不存在时省略 |
-| `generate_audio` | boolean | 是否生成音频；保留显式 `false` |
-| `draft` | boolean | 是否为草稿任务；保留显式 `false` |
-| `draft_task_id` | string | 相关草稿任务 ID；模型返回时存在 |
-| `safety_identifier` | string | 创建时的公开安全标识；存在时返回 |
-| `priority` | integer | 创建时的优先级；保留显式 `0` |
-| `service_tier` | string | 服务档位；未指定时通常为 `default` |
-| `usage.completion_tokens` | integer | 可选完成用量；当前响应省略零值，字段缺失不能区分零用量与未报告 |
-| `usage.total_tokens` | integer | 可选总用量；当前响应省略零值，不能用字段缺失推算费用 |
-| `usage.tool_usage.web_search` | integer | 可选工具用量 |
-| `error.code` | string | 失败、取消或过期时的公开错误码 |
-| `error.message` | string | 脱敏错误说明 |
-| `created_at` / `updated_at` | integer | Unix 秒时间戳 |
+| 字段                          | 类型    | 说明                                                                 |
+| ----------------------------- | ------- | -------------------------------------------------------------------- |
+| `id`                          | string  | 平台任务 ID                                                          |
+| `model`                       | string  | 创建时冻结的客户模型名                                               |
+| `status`                      | string  | `queued`、`running`、`succeeded`、`failed`、`cancelled` 或 `expired` |
+| `content.video_url`           | string  | 成功后的视频内容代理路径                                             |
+| `content.last_frame_url`      | string  | 成功且存在末帧时返回的末帧代理路径                                   |
+| `seed`                        | integer | 实际或上游返回的随机种子；不存在时省略                               |
+| `resolution`                  | string  | 实际输出分辨率；不存在时省略                                         |
+| `duration`                    | integer | 实际时长；不存在时省略                                               |
+| `frames`                      | integer | 实际帧数；不存在时省略                                               |
+| `framespersecond`             | integer | 实际帧率；不存在时省略                                               |
+| `ratio`                       | string  | 实际画幅；不存在时省略                                               |
+| `generate_audio`              | boolean | 是否生成音频；保留显式 `false`                                       |
+| `draft`                       | boolean | 是否为草稿任务；保留显式 `false`                                     |
+| `draft_task_id`               | string  | 相关草稿任务 ID；模型返回时存在                                      |
+| `safety_identifier`           | string  | 创建时的公开安全标识；存在时返回                                     |
+| `priority`                    | integer | 创建时的优先级；保留显式 `0`                                         |
+| `service_tier`                | string  | 服务档位；未指定时通常为 `default`                                   |
+| `usage.completion_tokens`     | integer | 可选完成用量；当前响应省略零值，字段缺失不能区分零用量与未报告       |
+| `usage.total_tokens`          | integer | 可选总用量；当前响应省略零值，不能用字段缺失推算费用                 |
+| `usage.tool_usage.web_search` | integer | 可选工具用量                                                         |
+| `error.code`                  | string  | 失败、取消或过期时的公开错误码                                       |
+| `error.message`               | string  | 脱敏错误说明                                                         |
+| `created_at` / `updated_at`   | integer | Unix 秒时间戳                                                        |
 
 终态任务的公开错误码包括 `generation_failed`、`provider_contract_failure`、`cancelled` 和 `expired`。
 一次上游查询异常不会立刻把已有任务判为业务失败；接口可能返回最后一次持久化状态，客户端应继续有界
@@ -439,14 +457,14 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks?page_num=1&page_size=2
   -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
 ```
 
-| 查询参数 | 默认值 | 约束与说明 |
-| --- | --- | --- |
-| `page_num` | `1` | `1`～`500` |
-| `page_size` | `10` | `1`～`500` |
-| `filter.status` | 全部 | `queued`、`running`、`succeeded`、`failed`、`cancelled` 或 `expired` |
-| `filter.task_ids` | 无 | 可重复查询参数，最多 `500` 个，例如 `?filter.task_ids=id1&filter.task_ids=id2` |
-| `filter.model` | 无 | 精确匹配创建时的客户模型名 |
-| `filter.service_tier` | `default` | 精确匹配服务档位 |
+| 查询参数              | 默认值    | 约束与说明                                                                     |
+| --------------------- | --------- | ------------------------------------------------------------------------------ |
+| `page_num`            | `1`       | `1`～`500`                                                                     |
+| `page_size`           | `10`      | `1`～`500`                                                                     |
+| `filter.status`       | 全部      | `queued`、`running`、`succeeded`、`failed`、`cancelled` 或 `expired`           |
+| `filter.task_ids`     | 无        | 可重复查询参数，最多 `500` 个，例如 `?filter.task_ids=id1&filter.task_ids=id2` |
+| `filter.model`        | 无        | 精确匹配创建时的客户模型名                                                     |
+| `filter.service_tier` | `default` | 精确匹配服务档位                                                               |
 
 列表只返回当前 API Key 应用范围内、最近 7 天、尚未被客户端删除的 ModelArk 任务，按创建时间倒序排列：
 
@@ -524,12 +542,12 @@ curl --fail "{{OPENAI_BASE_URL}}/videos/task-public-id/content?part=last_frame" 
 下载不可用不会把已成功的生成任务改为失败，也不会自动触发退款；有效期内读取失败请保留
 本站任务 ID 与请求 ID 联系技术人员核查。
 
-| HTTP 状态 | 常见错误码 | 说明 |
-| --- | --- | --- |
-| `400` | `video_not_ready`、`invalid_content_part` | 任务尚未成功，或 `part` 不是 `last_frame` |
-| `404` | `video_not_found`、`content_not_found` | 任务、视频或末帧不存在 |
-| `410` | `video_content_expired` | 内容或下载签名已明确到期 |
-| `403` / `502` | `content_url_not_allowed`、`upstream_unavailable` | 内容来源被安全策略阻止或上游读取失败 |
+| HTTP 状态     | 常见错误码                                        | 说明                                      |
+| ------------- | ------------------------------------------------- | ----------------------------------------- |
+| `400`         | `video_not_ready`、`invalid_content_part`         | 任务尚未成功，或 `part` 不是 `last_frame` |
+| `404`         | `video_not_found`、`content_not_found`            | 任务、视频或末帧不存在                    |
+| `410`         | `video_content_expired`                           | 内容或下载签名已明确到期                  |
+| `403` / `502` | `content_url_not_allowed`、`upstream_unavailable` | 内容来源被安全策略阻止或上游读取失败      |
 
 ## 素材引用
 
@@ -585,14 +603,14 @@ ModelArk 错误信封：
 }
 ```
 
-| HTTP 状态 | 常见错误码 | 说明 |
-| --- | --- | --- |
-| `400` | `invalid_request`、`unsupported_parameter`、`invalid_page_size`、`invalid_status` | 请求结构、字段、分页或过滤条件错误 |
-| `401` / `403` | 鉴权或权限错误 | 检查 API Key、模型可用状态和分组 |
-| `404` | `task_not_found` | 当前应用范围内没有该 ModelArk 任务 |
-| `409` | 取消或删除冲突码 | 当前任务状态不允许该操作 |
-| `413` | `request_body_too_large` | 请求正文或内联媒体超过上限，减少大小后再提交 |
-| `429` | 限流或额度错误 | 根据错误码区分并退避 |
-| `503` | `create_outcome_unknown`、`upstream_unavailable`、`cancellation_unknown` | 不要重发创建；查询或联系管理员核查 |
+| HTTP 状态     | 常见错误码                                                                        | 说明                                         |
+| ------------- | --------------------------------------------------------------------------------- | -------------------------------------------- |
+| `400`         | `invalid_request`、`unsupported_parameter`、`invalid_page_size`、`invalid_status` | 请求结构、字段、分页或过滤条件错误           |
+| `401` / `403` | 鉴权或权限错误                                                                    | 检查 API Key、模型可用状态和分组             |
+| `404`         | `task_not_found`                                                                  | 当前应用范围内没有该 ModelArk 任务           |
+| `409`         | 取消或删除冲突码                                                                  | 当前任务状态不允许该操作                     |
+| `413`         | `request_body_too_large`                                                          | 请求正文或内联媒体超过上限，减少大小后再提交 |
+| `429`         | 限流或额度错误                                                                    | 根据错误码区分并退避                         |
+| `503`         | `create_outcome_unknown`、`upstream_unavailable`、`cancellation_unknown`          | 不要重发创建；查询或联系管理员核查           |
 
 请求记录相关的 `evidence_*` 错误及重试边界见[错误与重试](concepts/errors#请求记录相关错误)。

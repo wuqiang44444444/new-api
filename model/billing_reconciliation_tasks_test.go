@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"encoding/base64"
 	"math"
 	"testing"
@@ -27,6 +28,7 @@ func TestCustomerStatementCountsTaskCreatesAndReversesPreconsumeRefunds(t *testi
 		var other map[string]any
 		require.NoError(t, common.UnmarshalJsonStr(row.other, &other))
 		other["group_ratio"] = 0.87
+		other["contract_applicable"] = false
 		other["model_price"] = 0
 		other["billing_mode"] = "tiered_expr"
 		other["expr_b64"] = base64.StdEncoding.EncodeToString([]byte(`tier("base", c * 7)`))
@@ -35,7 +37,7 @@ func TestCustomerStatementCountsTaskCreatesAndReversesPreconsumeRefunds(t *testi
 		require.NoError(t, err)
 		require.NoError(t, db.Create(&Log{UserId: 91, TokenId: 40, ModelName: "customer-video", Type: row.typ, CreatedAt: 1100, Quota: row.quota, CompletionTokens: row.tokens, Other: string(encoded)}).Error)
 	}
-	statement, err := GetBillingCustomerStatement(91, 1000, 1200, "api_key", 40, "", "")
+	statement, err := GetBillingCustomerStatement(context.Background(), 91, 1000, 1200, "api_key", 40, "", "")
 	require.NoError(t, err)
 	require.Len(t, statement.Groups, 1)
 	require.Len(t, statement.Groups[0].Models, 1)
@@ -48,7 +50,7 @@ func TestCustomerStatementCountsTaskCreatesAndReversesPreconsumeRefunds(t *testi
 	assert.EqualValues(t, 607951, *item.OriginalQuota)
 	require.NotNil(t, statement.DiscountQuota)
 	assert.EqualValues(t, 79034, *statement.DiscountQuota)
-	list, err := GetBillingCustomerStatementList(1000, 1200, "", "", "net_quota", "desc", 1, 20)
+	list, err := GetBillingCustomerStatementList(context.Background(), 1000, 1200, "", "", "net_quota", "desc", 1, 20)
 	require.NoError(t, err)
 	require.Len(t, list.Items, 1)
 	assert.Equal(t, statement.Summary, list.Items[0].Usage)
@@ -71,16 +73,16 @@ func TestStatementListAggregatesSignedAmountsAcrossCustomersBeforeRounding(t *te
 			db := setupBillingReconciliationTestDB(t)
 			require.NoError(t, db.Create(&[]User{{Id: 7, Username: "charge", AffCode: "charge"}, {Id: 8, Username: "refund", AffCode: "refund"}}).Error)
 			require.NoError(t, db.Create(&[]Log{
-				{UserId: 7, Type: LogTypeConsume, CreatedAt: 1100, Quota: 80, Other: `{"model_price":1,"group_ratio":0.8}`},
-				{UserId: 8, Type: LogTypeRefund, CreatedAt: 1100, Quota: tc.refund, Other: `{"model_price":1,"group_ratio":` + tc.ratio + `}`},
+				{UserId: 7, Type: LogTypeConsume, CreatedAt: 1100, Quota: 80, Other: `{"contract_applicable":false,"model_price":1,"group_ratio":0.8}`},
+				{UserId: 8, Type: LogTypeRefund, CreatedAt: 1100, Quota: tc.refund, Other: `{"contract_applicable":false,"model_price":1,"group_ratio":` + tc.ratio + `}`},
 			}).Error)
-			list, err := GetBillingCustomerStatementList(1000, 1200, "", "", "net_quota", "desc", 1, 1)
+			list, err := GetBillingCustomerStatementList(context.Background(), 1000, 1200, "", "", "net_quota", "desc", 1, 1)
 			require.NoError(t, err)
 			require.Len(t, list.Items, 1) // Summary includes customers outside the page.
 			require.NotNil(t, list.Summary.OriginalQuota)
 			assert.Equal(t, tc.wantOriginal, *list.Summary.OriginalQuota)
 			assert.Equal(t, tc.wantOriginal-list.Summary.Usage.NetQuota, *list.Summary.DiscountQuota)
-			filtered, err := GetBillingCustomerStatementList(1000, 1200, "charge", "", "net_quota", "desc", 1, 1)
+			filtered, err := GetBillingCustomerStatementList(context.Background(), 1000, 1200, "charge", "", "net_quota", "desc", 1, 1)
 			require.NoError(t, err)
 			assert.EqualValues(t, 100, *filtered.Summary.OriginalQuota)
 		})
@@ -100,10 +102,10 @@ func TestStatementListRoundsOnlyOnceAndRejectsAggregateOverflow(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupBillingReconciliationTestDB(t)
 			require.NoError(t, db.Create(&[]Log{
-				{UserId: 7, Type: LogTypeConsume, CreatedAt: 1100, Quota: tc.quota, Other: `{"model_price":1,"group_ratio":` + tc.ratio + `}`},
-				{UserId: 8, Type: LogTypeConsume, CreatedAt: 1100, Quota: tc.quota, Other: `{"model_price":1,"group_ratio":` + tc.ratio + `}`},
+				{UserId: 7, Type: LogTypeConsume, CreatedAt: 1100, Quota: tc.quota, Other: `{"contract_applicable":false,"model_price":1,"group_ratio":` + tc.ratio + `}`},
+				{UserId: 8, Type: LogTypeConsume, CreatedAt: 1100, Quota: tc.quota, Other: `{"contract_applicable":false,"model_price":1,"group_ratio":` + tc.ratio + `}`},
 			}).Error)
-			list, err := GetBillingCustomerStatementList(1000, 1200, "", "", "net_quota", "desc", 1, 20)
+			list, err := GetBillingCustomerStatementList(context.Background(), 1000, 1200, "", "", "net_quota", "desc", 1, 20)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, list.Summary.OriginalQuota)
 			if tc.want == nil {
@@ -120,17 +122,17 @@ func TestCustomerStatementRefundNeedsFrozenPriceAndKeepsPeriodBoundary(t *testin
 		name, other  string
 		wantOriginal *int64
 	}{
-		{"known refund", `{"model_price":1,"group_ratio":0.8}`, &refundedOriginal},
+		{"known refund", `{"contract_applicable":false,"model_price":1,"group_ratio":0.8}`, &refundedOriginal},
 		{"missing refund price", `{"model_price":1}`, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupBillingReconciliationTestDB(t)
 			require.NoError(t, db.Create(&User{Id: 7, Username: "customer"}).Error)
 			require.NoError(t, db.Create(&[]Log{
-				{UserId: 7, Type: LogTypeConsume, CreatedAt: 900, Quota: 80, Other: `{"model_price":1,"group_ratio":0.8}`},
+				{UserId: 7, Type: LogTypeConsume, CreatedAt: 900, Quota: 80, Other: `{"contract_applicable":false,"model_price":1,"group_ratio":0.8}`},
 				{UserId: 7, Type: LogTypeRefund, CreatedAt: 1100, Quota: 80, Other: tc.other},
 			}).Error)
-			s, err := GetBillingCustomerStatement(7, 1000, 1200, "api_key", 0, "", "")
+			s, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1200, "api_key", 0, "", "")
 			require.NoError(t, err)
 			assert.EqualValues(t, -80, s.Summary.NetQuota)
 			assert.EqualValues(t, 80, s.Summary.RefundQuota)
@@ -156,15 +158,15 @@ func TestStatementRefundAcrossModelsIsNettedBeforeSummaryRounding(t *testing.T) 
 	db := setupBillingReconciliationTestDB(t)
 	require.NoError(t, db.Create(&User{Id: 7, Username: "customer"}).Error)
 	require.NoError(t, db.Create(&[]Log{
-		{UserId: 7, TokenId: 1, ModelName: "new", Type: LogTypeConsume, CreatedAt: 1100, Quota: 80, Other: `{"model_price":1,"group_ratio":0.8}`},
-		{UserId: 7, TokenId: 2, ModelName: "previous", Type: LogTypeRefund, CreatedAt: 1100, Quota: 80, Other: `{"model_price":1,"group_ratio":0.8}`},
+		{UserId: 7, TokenId: 1, ModelName: "new", Type: LogTypeConsume, CreatedAt: 1100, Quota: 80, Other: `{"contract_applicable":false,"model_price":1,"group_ratio":0.8}`},
+		{UserId: 7, TokenId: 2, ModelName: "previous", Type: LogTypeRefund, CreatedAt: 1100, Quota: 80, Other: `{"contract_applicable":false,"model_price":1,"group_ratio":0.8}`},
 	}).Error)
-	s, err := GetBillingCustomerStatement(7, 1000, 1200, "api_key", 0, "", "")
+	s, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1200, "api_key", 0, "", "")
 	require.NoError(t, err)
 	require.NotNil(t, s.OriginalQuota)
 	assert.Zero(t, *s.OriginalQuota)
 	assert.Zero(t, *s.DiscountQuota)
-	list, err := GetBillingCustomerStatementList(1000, 1200, "", "", "net_quota", "desc", 1, 20)
+	list, err := GetBillingCustomerStatementList(context.Background(), 1000, 1200, "", "", "net_quota", "desc", 1, 20)
 	require.NoError(t, err)
 	assert.Equal(t, s.OriginalQuota, list.Items[0].OriginalQuota)
 	assert.Equal(t, s.DiscountQuota, list.Items[0].DiscountQuota)
@@ -178,7 +180,7 @@ func TestStatementInvalidHistoricalRatioDoesNotInventOriginalAmount(t *testing.T
 			other, err := common.Marshal(map[string]any{"group_ratio": ratio, "model_price": 1})
 			require.NoError(t, err)
 			require.NoError(t, db.Create(&Log{UserId: 7, Type: LogTypeConsume, CreatedAt: 1100, Quota: 100, Other: string(other)}).Error)
-			s, err := GetBillingCustomerStatement(7, 1000, 1200, "api_key", 0, "", "")
+			s, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1200, "api_key", 0, "", "")
 			require.NoError(t, err)
 			assert.EqualValues(t, 100, s.Summary.NetQuota)
 			assert.Nil(t, s.OriginalQuota)

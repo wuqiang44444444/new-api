@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	logtest "github.com/QuantumNous/new-api/clienterrlog/testutil"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -18,6 +19,10 @@ import (
 
 func TestClientErrorRecorderAcrossActualPluginDispatcher(t *testing.T) {
 	setupRelayRouterTestDB(t)
+	// 本测试只验证 WARN 出口与请求行为；显式关闭全局持久化钩子，
+	// 避免事件落入测试 SQLite（其中没有 error_events 表）。
+	clienterrlog.SetEventPersister(nil)
+	t.Cleanup(func() { clienterrlog.SetEventPersister(nil) })
 	user := model.User{Username: "plugin-client-error", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "default"}
 	require.NoError(t, model.DB.Create(&user).Error)
 	token := model.Token{UserId: user.Id, Key: "clienterrorpluginfixture", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
@@ -42,8 +47,8 @@ func TestClientErrorRecorderAcrossActualPluginDispatcher(t *testing.T) {
 			require.Equal(t, status, response.Code)
 			assert.Equal(t, "original response", response.Body.String())
 			assert.Equal(t, 1, handlerCalls)
-			log := capture.String()
 			if status >= 400 && status < 500 {
+				log := capture.String()
 				assert.Equal(t, 1, strings.Count(log, "event=authenticated_api_client_error"))
 				assert.Contains(t, log, "route=/vendor/diagnostic/:task_id")
 				assert.Contains(t, log, "module=relay")
@@ -52,7 +57,10 @@ func TestClientErrorRecorderAcrossActualPluginDispatcher(t *testing.T) {
 				assert.NotContains(t, log, "private-task")
 				assert.NotContains(t, log, token.Key)
 			} else {
-				assert.Empty(t, log)
+				// 200：不产生事件；502（relay 模块）只走持久化出口，不写 WARN 行。
+				expectedAccepted := map[int]uint64{200: 0, 502: 1}[status]
+				assert.Equal(t, expectedAccepted, capture.Health().Accepted)
+				assert.Zero(t, capture.Health().Written)
 			}
 			before := capture.Health().Accepted
 			rejected := httptest.NewRecorder()

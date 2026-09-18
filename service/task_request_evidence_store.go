@@ -34,8 +34,10 @@ type localEncryptedEvidenceStore struct {
 }
 
 var (
-	evidenceObjectStore   TaskRequestEvidenceObjectStore
-	evidenceStoreInitOnce sync.Once
+	evidenceObjectStore        TaskRequestEvidenceObjectStore
+	evidenceStoreInitOnce      sync.Once
+	ErrEvidenceDecryptFailed   = errors.New("evidence object could not be decrypted or authenticated")
+	ErrEvidenceIntegrityFailed = errors.New("evidence object integrity check failed")
 )
 
 // GetTaskRequestEvidenceStore 惰性装配证据存储：首次调用发生在 InitEnv
@@ -171,11 +173,11 @@ func (s *localEncryptedEvidenceStore) Get(key string) ([]byte, error) {
 	}
 	nonceSize := s.aead.NonceSize()
 	if len(sealed) < nonceSize {
-		return nil, errors.New("evidence object is truncated")
+		return nil, ErrEvidenceIntegrityFailed
 	}
 	plaintext, err := s.aead.Open(nil, sealed[:nonceSize], sealed[nonceSize:], nil)
 	if err != nil {
-		return nil, fmt.Errorf("evidence object decrypt failed: %w", err)
+		return nil, ErrEvidenceDecryptFailed
 	}
 	return plaintext, nil
 }

@@ -67,16 +67,15 @@ interface UserContractDrawerProps {
   contractId?: number
 }
 
-function buildDraft(
-  contract: ContractEntityAdminView | null
-): ContractDraft {
+function buildDraft(contract: ContractEntityAdminView | null): ContractDraft {
   if (!contract) return { name: '', enabled: false, rules: [] }
   return {
     name: contract.name,
     enabled: contract.enabled,
-    rules: contract.rules.map((rule) =>
-      ({ ...rule, channel_id: rule.channel_id ?? 0 })
-    ),
+    rules: contract.rules.map((rule) => ({
+      ...rule,
+      channel_id: rule.channel_id ?? 0,
+    })),
   }
 }
 
@@ -85,9 +84,9 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
   const [contracts, setContracts] = useState<ContractEntityAdminView[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [creating, setCreating] = useState(false)
-  const [channels, setChannels] = useState<CustomerContractChannelGroupOption[]>(
-    []
-  )
+  const [channels, setChannels] = useState<
+    CustomerContractChannelGroupOption[]
+  >([])
   const [options, setOptions] = useState<CustomerContractGroupOption[]>([])
   const [draft, setDraft] = useState<ContractDraft>({
     name: '',
@@ -136,9 +135,9 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
         const contractList = contractResponse.data.contracts || []
         const channelGroups = channelResponse.data || []
         const initial =
-          contractList.find(
-            (contract) => contract.id === props.contractId
-          ) ?? contractList[0] ?? null
+          contractList.find((contract) => contract.id === props.contractId) ??
+          contractList[0] ??
+          null
         setContracts(contractList)
         setChannels(channelGroups)
         setOptions(optionsResponse.data || [])
@@ -241,10 +240,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
     setAddModel(model)
     // With exactly one qualifying channel there is nothing to decide.
     const candidates = model
-      ? channelOptionsForRule(
-          channels,
-          { route_group: addGroup, model }
-        )
+      ? channelOptionsForRule(channels, { route_group: addGroup, model })
       : []
     setAddChannel(candidates.length === 1 ? String(candidates[0].id) : '')
   }
@@ -348,14 +344,18 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
       return
     }
     if (
-      draft.rules.some((rule) => !rule.model || !rule.route_group || !rule.discount)
+      draft.rules.some(
+        (rule) => !rule.model || !rule.route_group || !rule.discount
+      )
     ) {
       toast.error(
         t('Every contract rule must include a model, route group, and discount')
       )
       return
     }
-    if (draft.rules.some((rule) => parseContractDiscount(rule.discount) === null)) {
+    if (
+      draft.rules.some((rule) => parseContractDiscount(rule.discount) === null)
+    ) {
       toast.error(t('Invalid contract discount'))
       return
     }
@@ -532,8 +532,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
             ) : (
               <div className='grid gap-2 sm:grid-cols-2 lg:grid-cols-3'>
                 {contracts.map((contract) => {
-                  const selected =
-                    !creating && contract.id === selectedId
+                  const selected = !creating && contract.id === selectedId
                   return (
                     <button
                       key={contract.id}
@@ -596,10 +595,10 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                     <AlertDescription>
                       {draft.enabled
                         ? t(
-                            'Keys bound to this contract receive the model discounts listed below; model access and routing stay native.'
+                            'Bound keys use the selected contract models and channels. Native channel priority, weight and group pricing still apply.'
                           )
                         : t(
-                            'API keys bound to this contract currently follow native model permissions and pricing.'
+                            'This contract is disabled. Bound keys use their own group routing and pricing.'
                           )}
                     </AlertDescription>
                   </Alert>
@@ -641,7 +640,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                         <EmptyDescription>
                           {draft.enabled
                             ? t(
-                                'The contract is enabled but carries no model discounts.'
+                                'The contract is enabled but has no available models. Bound keys cannot submit model requests.'
                               )
                             : t(
                                 'Add a model rule to define which models receive this contract discount.'
@@ -753,7 +752,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
         onOpenChange={setDisableConfirmOpen}
         title={t('Disable contract mode?')}
         desc={t(
-          'API keys bound to this contract will immediately lose its model discounts and follow native pricing.'
+          'Disabling this contract immediately restores bound keys to their own group routing and pricing. This may allow channels outside the contract.'
         )}
         destructive
         confirmText={t('Disable and save')}
