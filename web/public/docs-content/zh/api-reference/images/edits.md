@@ -1,7 +1,7 @@
 ---
 page-id: images-edits
 kind: api-reference
-last-verified: 2026-09-17
+last-verified: 2026-09-19
 operations:
   - createImageEdit
 ---
@@ -27,7 +27,7 @@ Gemini／Vertex／图片中转入口仍拒绝这一组合。受理后的幂等�
 尚未提供平台异步执行的模型会忽略该偏好，继续在本次
 请求内返回编辑结果，不因携带此头返回 `400`。此时一并携带的 `Idempotency-Key` 不提供平台任务幂等保证。
 
-## 最小请求
+## 请求 URL 结果
 
 ```bash
 curl "{{OPENAI_BASE_URL}}/images/edits" \
@@ -35,7 +35,8 @@ curl "{{OPENAI_BASE_URL}}/images/edits" \
   -F "model={{MODEL_ID_PLACEHOLDER}}" \
   -F "prompt=把天空改成日落" \
   -F "image=@input.png" \
-  -F "n=1"
+  -F "n=1" \
+  -F "response_format=url"
 ```
 
 多图编辑时重复发送同名 `image` 字段：
@@ -46,7 +47,8 @@ curl "{{OPENAI_BASE_URL}}/images/edits" \
   -F "model={{MODEL_ID_PLACEHOLDER}}" \
   -F "prompt=把第二张图中的商品放到第一张图的桌面上" \
   -F "image=@scene.png" \
-  -F "image=@product.png"
+  -F "image=@product.png" \
+  -F "response_format=url"
 ```
 
 ## JSON 参考图输入
@@ -72,6 +74,7 @@ curl "{{OPENAI_BASE_URL}}/images/edits" \
   -d '{
     "model": "{{MODEL_ID_PLACEHOLDER}}",
     "prompt": "把第二张图中的杯子放到第一张图的桌面上，保持杯子外观",
+    "response_format": "url",
     "images": [
       {"image_url": "https://example.com/scene.png"},
       {"image_url": "https://example.com/cup.png"}
@@ -85,6 +88,7 @@ curl "{{OPENAI_BASE_URL}}/images/edits" \
 {
   "model": "{{MODEL_ID_PLACEHOLDER}}",
   "prompt": "将杯子改为红色，保持构图",
+  "response_format": "url",
   "images": [{ "image_url": "https://example.com/reference.png" }]
 }
 ```
@@ -93,7 +97,7 @@ curl "{{OPENAI_BASE_URL}}/images/edits" \
 `file_id` 必须是当前原生图片服务可访问的图片文件 ID，不能使用本站 Batch 文件 ID、图片任务 ID 或素材 ID。
 JSON `mask` 同样使用单个引用对象，仅在模型声明支持时发送。原生 GPT Image 输入最多 16 张，
 输出 `n` 为 1～10；模型实际支持范围以元数据和服务说明为准。同步默认返回 `b64_json`，
-默认返回 Base64；可用 `response_format: "url"` 请求非流式 URL 交付，转换由本站适配。
+可用 `response_format: "url"` 请求非流式 URL 交付，转换由本站适配。上述示例已显式选择 URL。
 
 协议来源：[OpenAI 图片编辑接口](https://developers.openai.com/api/reference/resources/images/methods/edit)。
 
@@ -106,6 +110,7 @@ JSON `mask` 同样使用单个引用对象，仅在模型声明支持时发送�
 {
   "model": "{{MODEL_ID_PLACEHOLDER}}",
   "prompt": "把第二张图中的杯子放到第一张图的桌面上，保持杯子外观",
+  "response_format": "url",
   "images": ["https://example.com/scene.png", "https://example.com/cup.png"]
 }
 ```
@@ -138,7 +143,8 @@ curl -i "{{OPENAI_BASE_URL}}/images/edits" \
   -H "Idempotency-Key: edit-order-example-001" \
   -F "model={{MODEL_ID_PLACEHOLDER}}" \
   -F "prompt=把天空改成日落，保留建筑外观" \
-  -F "image=@input.png"
+  -F "image=@input.png" \
+  -F "response_format=url"
 ```
 
 成功为 HTTP `202`，正文包含 `id`、`object=image_task`、`status=queued` 和
@@ -191,14 +197,15 @@ JSON 的图片字段按上述对象／字符串合同分别填写；表单的 `i
 
 ## 非流式响应
 
-HTTP `200` 与图片生成使用相同的 JSON 结构：
+上述示例显式请求 `response_format=url`，HTTP `200` 与图片生成使用相同的 JSON 结构：
 
 ```json
 {
-  "created": 1760000000,
+  "created": 1785207950,
   "data": [
     {
-      "b64_json": "...",
+      "url": "https://example.com/edited-image.png",
+      "url_expires_at": 1785208250,
       "revised_prompt": "Place the product on the table at sunset"
     }
   ]
@@ -210,13 +217,20 @@ HTTP `200` 与图片生成使用相同的 JSON 结构：
 | `created`               | integer | 响应创建时间，Unix 秒                                                                      |
 | `data`                  | array   | 编辑结果数组                                                                               |
 | `data[].url`            | string  | 临时图片地址；存在时应及时下载或转存                                                       |
+| `data[].url_expires_at` | integer | 本站签名 URL 的到期时间，Unix 秒；外部 URL 可省略 |
 | `data[].b64_json`       | string  | Base64 图片内容                                                                            |
 | `data[].revised_prompt` | string  | 可选的模型改写提示词                                                                       |
 | `metadata`              | object  | 可选公开扩展元数据                                                                         |
 | `usage`                 | object  | 部分模型返回的可选用量信息，常见子字段为 `input_tokens`、`output_tokens` 和 `total_tokens` |
 
-单项通常返回 `url` 或 `b64_json` 之一。客户端必须先检查 HTTP 状态和 `Content-Type`，错误响应是 JSON，
-不能当作图片保存或解码。
+返回地址读取 `data[].url`，不能读取 `data[].image_url`。`images[].image_url` 是原生 JSON 编辑的
+参考图输入，不是结果字段；`response_format=image_url` 不是合法取值。
+
+请求 `response_format=b64_json` 时读取并解码 `data[].b64_json`，不含 Data URL 前缀；
+省略格式时按模型默认返回。上例为本站签名 URL（300 秒有效）；外部结果地址不保证相同有效期。
+客户端先检查 HTTP 状态和 `Content-Type`。若为 `502 image_delivery_failed`，仍应检查存在的
+`data[]` 并取回原始 URL 或 Base64，生成已计费，不要重复编辑。详见
+[交付失败与返回格式示例](api-reference/images/generations)。
 
 ## 流式响应
 
@@ -267,7 +281,8 @@ data: [DONE]
 | `401` / `403` | API Key、模型权限或分组不允许                                    | 修复鉴权或权限                                    |
 | `413`         | 请求体或文件超过部署限制                                         | 压缩文件或减少数量，不要原样重试                  |
 | `429`         | 频率、并发或额度限制                                             | 根据错误码判断并退避                              |
-| `5xx`         | 服务暂时不可用或上游异常                                         | 保存公开请求 ID；评估重复编辑风险后再决定是否重试 |
+| `502 image_delivery_failed` | 生成完成，格式交付失败 | 读取原始 `data` 保存图片，不重发编辑 |
+| 其他 `5xx`   | 服务暂时不可用或上游异常                                         | 保存公开请求 ID；评估重复编辑风险后再决定是否重试 |
 
 ## 返回格式
 

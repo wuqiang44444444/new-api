@@ -51,7 +51,7 @@ func GeminiImageAPI(customerModel, providerModel string, channelType int) *dto.P
 		}
 	}
 
-	return &dto.PublicModelAPI{Image: &dto.PublicImageAPI{
+	api := &dto.PublicModelAPI{Image: &dto.PublicImageAPI{
 		DocumentationPath: "/docs/api-reference/images/generations",
 		Operations: []dto.PublicAPIOperation{
 			{Operation: "create_image", Method: http.MethodPost, Path: "/v1/images/generations", Supported: true},
@@ -68,4 +68,6 @@ func GeminiImageAPI(customerModel, providerModel string, channelType int) *dto.P
 			AdditionalProperties: false, Parameters: editParameters,
 		},
 	}}
+	publishImageTaskMetadata(api)
+	return api
 }

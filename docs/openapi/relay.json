@@ -79,7 +79,7 @@
       "get": {
         "summary": "获取模型列表",
         "deprecated": false,
-        "description": "获取模型目录。普通 NEWAPI 模型仍按当前 Key 的可用范围返回；所有已配置 Seedance Link 客户模型都会返回，并通过 `available`、`availability` 区分当前可调用、已禁用或受当前 Key 限制。图片和视频条目的 api 字段包含北向入口、完整允许参数及约束；视频条目还包含逐模型素材接口能力。公开元数据不会暴露 Provider 模型、渠道、凭据或南向私有路径。\n\n根据请求头自动识别返回格式：\n- 包含 `x-api-key` 和 `anthropic-version` 头时返回 Anthropic 格式\n- 包含 `x-goog-api-key` 头或 `key` 查询参数时返回 Gemini 格式\n- 其他情况返回 OpenAI 格式\n",
+        "description": "获取模型目录。普通 NEWAPI 模型仍按当前 Key 的可用范围返回；未启用合同绑定时，所有已配置 Seedance Link 客户模型都会返回，并通过 `available`、`availability` 区分当前可调用、已禁用或受当前 Key 限制。图片和视频条目的 api 字段包含北向入口、完整允许参数及约束；视频条目还包含逐模型素材接口能力。公开元数据不会暴露 Provider 模型、渠道、凭据或南向私有路径。\n\n根据请求头自动识别返回格式：\n- 包含 `x-api-key` 和 `anthropic-version` 头时返回 Anthropic 格式\n- 包含 `x-goog-api-key` 头或 `key` 查询参数时返回 Gemini 格式\n- 其他情况返回 OpenAI 格式\n\n启用合同绑定的 API Key 仅展示合同当前有效范围与 Key 模型限制共同允许的模型；不同 Key 的目录可能不同。 / An active contract-bound API key sees models allowed by both its effective contract and its model restrictions.",
         "operationId": "listModels",
         "tags": [
           "获取模型列表"
@@ -148,6 +148,30 @@
               }
             },
             "headers": {}
+          },
+          "500": {
+            "description": "合同目录投影加载失败。 / Contract discovery projection unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDiscoveryError"
+                },
+                "example": {
+                  "success": false,
+                  "message": "customer contract pricing is temporarily unavailable"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "合同授权加载暂不可用。 / Contract authorization temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -161,7 +185,7 @@
       "get": {
         "summary": "获取单个模型元数据",
         "deprecated": false,
-        "description": "按客户模型名获取与列表同构的单模型元数据。图片和视频条目返回北向入口、完整允许参数及约束；视频条目还返回逐操作素材能力和匿名素材复用域。响应不包含 Provider、上游原始模型名、Channel、凭据或南向路径。",
+        "description": "按客户模型名获取与列表同构的单模型元数据。图片和视频条目返回北向入口、完整允许参数及约束；视频条目还返回逐操作素材能力和匿名素材复用域。响应不包含 Provider、上游原始模型名、Channel、凭据或南向路径。 启用合同绑定的 API Key 仅展示合同当前有效范围与 Key 模型限制共同允许的模型；不同 Key 的目录可能不同。 / An active contract-bound API key sees models allowed by both its effective contract and its model restrictions.",
         "operationId": "retrieveModel",
         "tags": [
           "获取模型列表"
@@ -179,7 +203,7 @@
         ],
         "responses": {
           "200": {
-            "description": "模型元数据；模型不存在时按兼容合同返回 model_not_found 错误信封。",
+            "description": "模型元数据；非合同路径模型不存在时保留 HTTP 200 的 model_not_found 错误信封，合同范围外使用 404。 / Model metadata; non-contract unknown models retain the HTTP 200 error envelope, while models outside an active contract return 404.",
             "content": {
               "application/json": {
                 "schema": {
@@ -201,6 +225,47 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "合同目录投影加载失败。 / Contract discovery projection unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDiscoveryError"
+                },
+                "example": {
+                  "success": false,
+                  "message": "customer contract pricing is temporarily unavailable"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "合同授权加载暂不可用。 / Contract authorization temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "启用合同的 Key 无法访问该模型；非合同路径保留既有 200 错误信封。 / Model unavailable in the active contract; non-contract paths retain the existing 200 error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "type": "invalid_request_error",
+                    "code": "model_not_found",
+                    "message": "Model is unavailable in this contract"
+                  }
                 }
               }
             }
@@ -423,6 +488,11 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ImageGenerationRequest"
+              },
+              "example": {
+                "model": "customer-image-model",
+                "prompt": "A watercolor lighthouse in the fog",
+                "response_format": "url"
               }
             }
           },
@@ -435,6 +505,31 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ImageResponse"
+                },
+                "examples": {
+                  "url": {
+                    "summary": "response_format=url：本站签名 URL 示例 / Platform-signed URL example",
+                    "value": {
+                      "created": 1785207950,
+                      "data": [
+                        {
+                          "url": "https://example.com/generated-image.png",
+                          "url_expires_at": 1785208250
+                        }
+                      ]
+                    }
+                  },
+                  "b64_json": {
+                    "summary": "response_format=b64_json：1×1 PNG 演示图片 / Demonstration PNG",
+                    "value": {
+                      "created": 1785207950,
+                      "data": [
+                        {
+                          "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -461,6 +556,49 @@
           },
           "409": {
             "description": "幂等键冲突或原受理结果不可重放",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "上游或交付错误；image_delivery_failed 表示生成已计费，先读取可能存在的 data 取图，不自动重发。 / Upstream or delivery failure; image_delivery_failed means generation was charged. Recover data when present; do not regenerate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageDeliveryError"
+                    }
+                  ]
+                },
+                "examples": {
+                  "delivery_failed": {
+                    "value": {
+                      "error": {
+                        "code": "image_delivery_failed",
+                        "message": "Image generation completed. Format delivery failed; recover the original images from data. Generation was charged; do not regenerate."
+                      },
+                      "requested_response_format": "url",
+                      "data": [
+                        {
+                          "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "生成前的依赖或受理容量检查失败，未受理。 / Dependency or admission capacity check failed before generation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -566,6 +704,16 @@
                     ]
                   }
                 }
+              },
+              "example": {
+                "model": "customer-image-model",
+                "prompt": "Make the cup red",
+                "images": [
+                  {
+                    "image_url": "https://example.com/reference.png"
+                  }
+                ],
+                "response_format": "url"
               }
             }
           },
@@ -578,6 +726,31 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ImageResponse"
+                },
+                "examples": {
+                  "url": {
+                    "summary": "response_format=url：本站签名 URL 示例 / Platform-signed URL example",
+                    "value": {
+                      "created": 1785207950,
+                      "data": [
+                        {
+                          "url": "https://example.com/generated-image.png",
+                          "url_expires_at": 1785208250
+                        }
+                      ]
+                    }
+                  },
+                  "b64_json": {
+                    "summary": "response_format=b64_json：1×1 PNG 演示图片 / Demonstration PNG",
+                    "value": {
+                      "created": 1785207950,
+                      "data": [
+                        {
+                          "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -604,6 +777,49 @@
           },
           "409": {
             "description": "幂等键冲突或原受理结果不可重放",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "上游或交付错误；image_delivery_failed 表示生成已计费，先读取可能存在的 data 取图，不自动重发。 / Upstream or delivery failure; image_delivery_failed means generation was charged. Recover data when present; do not regenerate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageDeliveryError"
+                    }
+                  ]
+                },
+                "examples": {
+                  "delivery_failed": {
+                    "value": {
+                      "error": {
+                        "code": "image_delivery_failed",
+                        "message": "Image generation completed. Format delivery failed; recover the original images from data. Generation was charged; do not regenerate."
+                      },
+                      "requested_response_format": "url",
+                      "data": [
+                        {
+                          "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "生成前的依赖或受理容量检查失败，未受理。 / Dependency or admission capacity check failed before generation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4372,6 +4588,14 @@
               "type": "string"
             },
             "description": "对象内恰好选一个的属性名；item_type=object 时作用于每个数组元素。可选对象省略时不要求其子字段。"
+          },
+          "size_constraints": {
+            "$ref": "#/components/schemas/PublicImageSizeConstraints"
+          },
+          "max_decoded_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "每张内联参考图解码后的字节上限；数组中逐张计算，不是 URL 长度或整个数组的总预算。 / Maximum decoded bytes per inline reference image, including each array item."
           }
         }
       },
@@ -6028,7 +6252,7 @@
               "url",
               "b64_json"
             ],
-            "description": "可选返回格式；省略保持模型及执行模式原有默认值。非流式显式 url 返回 URL，b64_json 返回 Base64。GPT Image 的 URL 交付由平台适配；流式事件沿用原协议。"
+            "description": "非流式结果格式：url 对应 data[].url，b64_json 对应 data[].b64_json；image_url 不是合法取值或结果字段。省略时同步按模型默认，平台异步查询默认 URL；异步格式在创建时冻结，查询参数不能修改。GPT Image 的 URL 转换由平台完成；SSE 沿用原事件格式。 / Non-streaming format: url returns data[].url; b64_json returns data[].b64_json. image_url is not a format or result field. Omission preserves the synchronous model default; platform tasks default to URL. Task format is frozen at creation; SSE retains its event format."
           },
           "user": {
             "type": "string"
@@ -6132,7 +6356,7 @@
               "url",
               "b64_json"
             ],
-            "description": "可选返回格式；省略保持模型及执行模式原有默认值。非流式显式 url 返回 URL，b64_json 返回 Base64。GPT Image 的 URL 交付由平台适配；流式事件沿用原协议。"
+            "description": "非流式结果格式：url 对应 data[].url，b64_json 对应 data[].b64_json；image_url 不是合法取值或结果字段。省略时同步按模型默认，平台异步查询默认 URL；异步格式在创建时冻结，查询参数不能修改。GPT Image 的 URL 转换由平台完成；SSE 沿用原事件格式。 / Non-streaming format: url returns data[].url; b64_json returns data[].b64_json. image_url is not a format or result field. Omission preserves the synchronous model default; platform tasks default to URL. Task format is frozen at creation; SSE retains its event format."
           },
           "quality": {
             "type": "string"
@@ -6234,10 +6458,12 @@
               "type": "object",
               "properties": {
                 "url": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "图片下载地址，字段名为 url，不是 image_url；及时保存。仅本站签名 URL 固定 300 秒，其他地址有效期由图片服务决定。 / Download URL, named url rather than image_url. Only platform-signed URLs have a fixed 300-second lifetime."
                 },
                 "b64_json": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Base64 编码的完整图片字节，不含 Data URL 前缀；应解码后保存，不能当作下载地址。 / Base64-encoded image bytes without a Data URL prefix; decode before saving."
                 },
                 "revised_prompt": {
                   "type": "string"
@@ -8094,7 +8320,7 @@
         "properties": {
           "url": {
             "type": "string",
-            "description": "300 秒有效的签名下载地址"
+            "description": "创建时选择 url 或省略格式后，查询返回的 300 秒签名下载地址；字段名不是 image_url。 / A 300-second signed download URL when creation selected url or omitted the format."
           },
           "url_expires_at": {
             "type": "integer",
@@ -8102,7 +8328,7 @@
           },
           "b64_json": {
             "type": "string",
-            "description": "创建时显式 b64_json 的图片原文"
+            "description": "Base64 编码的完整图片字节，不含 Data URL 前缀；应解码后保存，不能当作下载地址。 / Base64-encoded image bytes without a Data URL prefix; decode before saving."
           },
           "mime_type": {
             "type": "string"
@@ -8421,7 +8647,7 @@
               "url",
               "b64_json"
             ],
-            "description": "可选返回格式；省略保持模型及执行模式原有默认值。非流式显式 url 返回 URL，b64_json 返回 Base64。GPT Image 的 URL 交付由平台适配；流式事件沿用原协议。"
+            "description": "非流式结果格式：url 对应 data[].url，b64_json 对应 data[].b64_json；image_url 不是合法取值或结果字段。省略时同步按模型默认，平台异步查询默认 URL；异步格式在创建时冻结，查询参数不能修改。GPT Image 的 URL 转换由平台完成；SSE 沿用原事件格式。 / Non-streaming format: url returns data[].url; b64_json returns data[].b64_json. image_url is not a format or result field. Omission preserves the synchronous model default; platform tasks default to URL. Task format is frozen at creation; SSE retains its event format."
           },
           "user": {
             "type": "string"
@@ -8610,9 +8836,121 @@
               "url",
               "b64_json"
             ],
-            "description": "可选返回格式；省略保持模型及执行模式原有默认值。非流式显式 url 返回 URL，b64_json 返回 Base64。GPT Image 的 URL 交付由平台适配；流式事件沿用原协议。"
+            "description": "非流式结果格式：url 对应 data[].url，b64_json 对应 data[].b64_json；image_url 不是合法取值或结果字段。省略时同步按模型默认，平台异步查询默认 URL；异步格式在创建时冻结，查询参数不能修改。GPT Image 的 URL 转换由平台完成；SSE 沿用原事件格式。 / Non-streaming format: url returns data[].url; b64_json returns data[].b64_json. image_url is not a format or result field. Omission preserves the synchronous model default; platform tasks default to URL. Task format is frozen at creation; SSE retains its event format."
           }
         }
+      },
+      "PublicImageSizeConstraints": {
+        "type": "object",
+        "required": [
+          "format",
+          "min_dimension",
+          "max_dimension",
+          "aspect_ratios"
+        ],
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "WxH"
+            ]
+          },
+          "min_dimension": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "max_dimension": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "aspect_ratios": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
+        },
+        "description": "显式像素尺寸须使用小写 x，两边均在范围内且宽高比精确匹配；auto 由参数 default_value 单独表达。 / Explicit pixel sizes use lowercase x, bounded dimensions and an exact listed aspect ratio; auto is described by default_value."
+      },
+      "ImageDeliveryError": {
+        "type": "object",
+        "required": [
+          "error",
+          "requested_response_format"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "image_delivery_failed"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          "requested_response_format": {
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "图片下载地址，字段名为 url，不是 image_url；及时保存。仅本站签名 URL 固定 300 秒，其他地址有效期由图片服务决定。 / Download URL, named url rather than image_url. Only platform-signed URLs have a fixed 300-second lifetime."
+                },
+                "b64_json": {
+                  "type": "string",
+                  "description": "Base64 编码的完整图片字节，不含 Data URL 前缀；应解码后保存，不能当作下载地址。 / Base64-encoded image bytes without a Data URL prefix; decode before saving."
+                },
+                "revised_prompt": {
+                  "type": "string"
+                },
+                "url_expires_at": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "本站签名 URL 的过期时间（Unix 秒）；Provider URL 不保证提供该字段。"
+                }
+              }
+            },
+            "description": "若已保留原始结果，可从中取回图片；格式可能不同于请求。没有可恢复结果时可省略。 / Original recoverable images, possibly in a different format; omitted when unavailable."
+          }
+        },
+        "description": "生成已完成并计费，格式交付失败；保存原始结果，不重发生成请求。 / Generation completed and was charged, but format delivery failed; recover originals without regenerating."
+      },
+      "ModelDiscoveryError": {
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "description": "合同模型目录加载失败；不能将其解释为空目录或无权限。 / Contract model discovery failed; this is not an empty catalog or an authorization denial."
       }
     },
     "parameters": {

@@ -1,7 +1,7 @@
 ---
 page-id: model-parameters
 kind: guide
-last-verified: 2026-09-17
+last-verified: 2026-09-19
 operations: []
 ---
 
@@ -29,6 +29,13 @@ operations: []
 
 缺少某项元数据不等于自动支持该能力，也不要把文本模型没有 `api.image` 解释为文本不可用。
 
+启用合同绑定的 Key 仅显示合同当前有效范围与 Key 模型限制共同允许的模型。不同 Key 的目录可能
+不同；不要用控制台或其他 Key 的模型清单替代当前 Key 的结果。合同读取异常不能解释为空目录。
+
+单模型查询在合同范围外返回 `404 model_not_found`；非合同路径可能保留 HTTP `200` 的错误信封，
+所以还需检查正文 `error`。合同目录投影失败为 `500` 的 `success=false` / `message` 正文；
+合同授权加载暂不可用可能返回 `503`。这些加载错误应有限重试查询，不应改用其他模型猜测权限。
+
 ## 2. 读取参数约束
 
 | 参数合同字段                  | 含义与处理                                                                           |
@@ -45,6 +52,9 @@ operations: []
 | `special_values`              | 明确允许的特殊值；不能由范围自行推导，例如视频的自动时长值                           |
 | `min_length` / `max_length`   | 字符串长度约束                                                                       |
 | `min_items` / `max_items`     | 数组长度约束；参考图数量与输出图片数量分开计算                                       |
+| `suggested_values` | 非穷举推荐值；不能当作 `enum` 白名单，也不能据此推断其他值均支持 |
+| `size_constraints` | 显式 WxH 的格式、每边上下限及精确宽高比；须同时满足，不能就近取比例 |
+| `max_decoded_bytes` | 每张内联参考图解码后的字节上限；对数组逐张计算，不是 URL 字符数 |
 | `additional_properties=false` | 不发送参数表未发布的字段                                                             |
 
 `fixed_value=false`、`default_value=0` 都是有效值。程序应判断字段是否存在，不用“是否为真”决定是否读取。
@@ -58,6 +68,11 @@ operations: []
 `item_type=object` 要求对象数组；统一图片适配的 `item_type=string` 要求字符串数组，两者不可混用。
 对象参数的 `required_one_of=["image_url", "file_id"]` 表示每个对象恰好提供其中一个属性；
 可选 `mask` 对象省略时不需要这些子字段。完整示例见[图片编辑](api-reference/images/edits)。
+
+`size_constraints.format=WxH` 使用小写 `x`；宽、高分别满足 `min_dimension` / `max_dimension`，
+且比例严格匹配 `aspect_ratios`。例如公布 16:9 时 `1600x900` 满足比例，而 `1600x901` 不满足。
+`auto` 是另外声明的默认值，不能按 WxH 解析。存在 `enum` 时仍须遵守枚举，不能用其他模型的尺寸
+范围代替。
 
 ## 3. 区分通用上限与模型规格
 
@@ -83,5 +98,7 @@ operations: []
 
 标准图片生成与编辑通过 `response_format` 选择非流式 `url` 或 `b64_json`，不需要额外布尔开关。
 元数据中的默认值按模型表达；省略参数继续使用既有默认行为。平台异步查询的默认 URL 与同步
-模型默认值需要分别理解。GPT Image 的 URL 交付由本站适配；已有 Provider URL 不强制转存。
+模型默认值需要分别理解：异步仅在创建时显式选择 `b64_json` 才交付 Base64，查询参数不改变格式。
+URL 结果字段为 `data[].url`；`images[].image_url` 是部分编辑协议的输入，不能作为返回字段或
+`response_format` 的取值。GPT Image 的 URL 交付由本站适配；已有 Provider URL 不强制转存。
 流式事件沿用模型原协议，不能由这个字段推定 SSE 事件也会返回 URL。

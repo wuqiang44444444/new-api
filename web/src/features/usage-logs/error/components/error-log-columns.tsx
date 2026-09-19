@@ -24,7 +24,7 @@ import { TruncatedCell } from '@/components/data-table'
 import dayjs from '@/lib/dayjs'
 
 import type { ErrorLogItem } from '../api'
-import { errorEventTypeLabel } from './error-event-type'
+import { AutomaticProbeLabel } from './automatic-probe-label'
 import { ErrorLogDetailsDialog } from './error-log-details-dialog'
 import { ErrorLogStatus } from './error-log-status'
 
@@ -46,18 +46,14 @@ export function useErrorLogColumns(): ColumnDef<ErrorLogItem>[] {
       {
         accessorKey: 'event_type',
         header: t('Event Type'),
-        size: 100,
-        cell: ({ row }) => (
-          <span className='text-muted-foreground'>
-            {errorEventTypeLabel(row.original.event_type, t)}
-          </span>
-        ),
+        size: 200,
+        cell: ({ row }) => <AutomaticProbeLabel entry={row.original} />,
         meta: { label: t('Event Type') },
       },
       {
         accessorKey: 'status',
         header: 'HTTP',
-        size: 180,
+        size: 240,
         cell: ({ row }) => <ErrorLogStatus entry={row.original} compact />,
         meta: { label: 'HTTP', mobileBadge: true },
       },

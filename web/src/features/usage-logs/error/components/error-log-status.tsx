@@ -21,12 +21,18 @@ import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/status-badge'
 
 import type { ErrorLogItem } from '../api'
+import { mediaAutoProbeDetail } from './auto-probe-detail'
+import { AutomaticProbeStatus } from './automatic-probe-label'
 
 export function ErrorLogStatus(props: {
   entry: ErrorLogItem
   compact?: boolean
 }) {
   const { t } = useTranslation()
+  const autoDetail = mediaAutoProbeDetail(props.entry)
+  if (autoDetail) {
+    return <AutomaticProbeStatus entry={props.entry} detail={autoDetail} />
+  }
   let status = props.entry.status
   let label = t('No client HTTP status')
   if (status > 0) {

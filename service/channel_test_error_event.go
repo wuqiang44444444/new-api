@@ -29,7 +29,7 @@ func RecordManualChannelTestFailureEvent(c *gin.Context, channel *model.Channel,
 	if channel == nil {
 		return
 	}
-	stage, reason, publicCode := classifyChannelTestFailure(localErr, apiError, "")
+	stage, reason, publicCode := ClassifyChannelTestFailure(localErr, apiError, "")
 	operatorID := 0
 	operatorName := ""
 	if c != nil {
@@ -54,45 +54,52 @@ func RecordManualChannelTestFailureEvent(c *gin.Context, channel *model.Channel,
 	})
 }
 
-// RecordAutoChannelTestFailureEvent 在自动健康检查出口登记一次失败事件：系统执行
-// 身份不归属任何用户（UserID=0，detail 标注 auto），status 为 0 表示无客户 HTTP
-// 状态。finalAPIError 已包含外层阈值判定结果；Seedance 只读探针失败按 probe 分类。
-func RecordAutoChannelTestFailureEvent(channel *model.Channel, testedModel string, testContext *gin.Context, localErr error, finalAPIError *types.NewAPIError, upstreamStatus int, elapsedMs int64, thresholdExceeded bool, isStream bool) {
+// ChannelAutoCheckResult is a per-channel observation in a system task run.
+// Detail contains only controlled codes, fixed summary keys and model identifiers.
+type ChannelAutoCheckResult struct {
+	ChannelID int               `json:"channel_id"`
+	Model     string            `json:"model"`
+	CheckedAt int64             `json:"checked_at"`
+	Detail    map[string]string `json:"detail"`
+}
+
+// A manual batch passes no checks and retains its existing event contract.
+func RecordAutoChannelTestFailureEvent(channel *model.Channel, testedModel string, testContext *gin.Context, localErr error, finalAPIError *types.NewAPIError, upstreamStatus int, elapsedMs int64, thresholdExceeded bool, isStream bool, checks []ChannelAutoCheckResult) {
 	if channel == nil {
 		return
 	}
-	stage, reason, publicCode := "unclassified", "unclassified", ""
+	stage, reason, publicCode := ClassifyChannelTestFailure(localErr, finalAPIError, "")
 	extra := map[string]string{}
+	if len(checks) > 0 {
+		testedModel = checks[0].Model
+		for key, value := range checks[0].Detail {
+			extra[key] = value
+		}
+	}
 	if thresholdExceeded {
 		stage, reason = ChannelTestStageResponseThreshold, ChannelTestReasonResponseTimeExceeded
 		extra["threshold_kind"] = "response_time"
-	} else {
-		stage, reason, publicCode = classifyChannelTestFailure(localErr, finalAPIError, "")
 	}
 	submitChannelTestFailureEvent(testContext, clienterrlog.BackendEvent{
-		EventType:         clienterrlog.EventChannelTest,
-		Module:            model.ErrorEventModuleRelay,
-		Stage:             stage,
-		Reason:            reason,
-		PublicCode:        publicCode,
-		Model:             testedModel,
-		ChannelID:         channel.Id,
-		RequestID:         common.NewRequestId(),
-		UpstreamRequestID: upstreamRequestIDFromTestContext(testContext),
-		ElapsedMs:         elapsedMs,
-		Detail:            channelTestEventDetail(channelTestModeAuto, "", isStream, upstreamStatus, extra),
+		EventType: clienterrlog.EventChannelTest, Module: model.ErrorEventModuleRelay,
+		Stage: stage, Reason: reason, PublicCode: publicCode, Model: testedModel,
+		ChannelID: channel.Id, RequestID: common.NewRequestId(),
+		UpstreamRequestID: upstreamRequestIDFromTestContext(testContext), ElapsedMs: elapsedMs,
+		Detail: channelTestEventDetail(channelTestModeAuto, "", isStream, upstreamStatus, extra),
 	})
 }
 
-// classifyChannelTestFailure 按结构化错误码分阶段与原因；前缀匹配只针对本仓库
+// ClassifyChannelTestFailure 按结构化错误码分阶段与原因；前缀匹配只针对本仓库
 // 固定错误文案（不支持类型、AzureBatch 连接、Seedance 探针）。
-func classifyChannelTestFailure(localErr error, apiError *types.NewAPIError, reasonOverride string) (string, string, string) {
+func ClassifyChannelTestFailure(localErr error, apiError *types.NewAPIError, reasonOverride string) (string, string, string) {
 	if reasonOverride != "" {
 		return "", reasonOverride, ""
 	}
 	if apiError != nil {
 		code := string(apiError.GetErrorCode())
 		switch {
+		case apiError.GetErrorCode() == types.ErrorCodeChannelResponseTimeExceeded:
+			return ChannelTestStageResponseThreshold, ChannelTestReasonResponseTimeExceeded, code
 		case strings.Contains(code, "model_mapped_error"),
 			strings.Contains(code, "param_override_invalid"),
 			strings.Contains(code, "model_price_error"),

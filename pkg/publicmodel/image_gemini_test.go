@@ -22,7 +22,7 @@ func TestGeminiImageAPIContractShape(t *testing.T) {
 	api := GeminiImageAPI("nano-banana-2-gemini", "gemini-3.1-flash-image", 24)
 	require.NotNil(t, api)
 	require.NotNil(t, api.Image)
-	require.Len(t, api.Image.Operations, 2)
+	require.Len(t, api.Image.Operations, 3)
 
 	creation := api.Image.Creation
 	assert.Equal(t, "/v1/images/generations", creation.Path)

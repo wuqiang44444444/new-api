@@ -116,7 +116,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 				acceptUnsetRatio = true
 			}
 			if !acceptUnsetRatio {
-				return hosttypes.PriceData{}, modelPriceNotConfiguredError(matchName, info.UserId)
+				return hosttypes.PriceData{}, common.NewBillingConfigError("price_not_configured", matchName, modelPriceNotConfiguredError(matchName, info.UserId))
 			}
 		}
 		completionRatio = ratio_setting.GetCompletionRatio(billingModelName)
@@ -340,7 +340,7 @@ func resolveBillingModelName(origin string) string {
 func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, billingModelName string, promptTokens int, meta *types.TokenCountMeta, groupRatioInfo hosttypes.GroupRatioInfo) (hosttypes.PriceData, error) {
 	exprStr, ok := billing_setting.GetBillingExpr(billingModelName)
 	if !ok {
-		return hosttypes.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", billingModelName)
+		return hosttypes.PriceData{}, common.NewBillingConfigError("billing_expr_missing", billingModelName, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", billingModelName))
 	}
 
 	estimatedCompletionTokens := meta.MaxTokens
@@ -359,7 +359,7 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, billing
 		Len: float64(promptTokens),
 	}, requestInput)
 	if err != nil {
-		return hosttypes.PriceData{}, fmt.Errorf("model %s tiered expr run failed: %w", billingModelName, err)
+		return hosttypes.PriceData{}, common.NewBillingConfigError("billing_expr_failed", billingModelName, fmt.Errorf("model %s tiered expr run failed: %w", billingModelName, err))
 	}
 
 	// Expression coefficients are $/1M tokens prices; convert to quota the same way per-call billing does.

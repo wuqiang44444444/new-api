@@ -2,7 +2,6 @@ package clienterrlog
 
 import (
 	"github.com/QuantumNous/new-api/common"
-	"sort"
 	"strconv"
 	"time"
 )
@@ -101,24 +100,19 @@ func buildBackendEvent(event BackendEvent) Event {
 	}
 }
 
-// sanitizedBackendDetail 对后台详情做键数与长度受控的净化；键同样净化，不保留任意原始输入。
+// sanitizedBackendDetail 由固定白名单限制键数，并限制每值长度；完整保留允许的诊断字段。
 func sanitizedBackendDetail(detail map[string]string) map[string]string {
 	if len(detail) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(detail))
-	for key := range detail {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	sanitized := make(map[string]string, len(keys))
-	for _, key := range keys {
+	sanitized := make(map[string]string)
+	for key, value := range detail {
 		switch key {
-		case "platform", "action", "create_upstream_request_id", "fail_reason", "test_mode", "endpoint_type", "probe_stream", "upstream_status", "threshold_kind":
+		case "platform", "action", "create_upstream_request_id", "fail_reason", "test_mode", "endpoint_type", "probe_stream", "upstream_status", "threshold_kind",
+			"check_scope", "config_check", "generation_evidence", "upstream_request", "config_reason", "config_entry", "config_summary", "readonly_check", "billing_model", "check_result", "check_reason", "check_code", "connection_result", "probe_media":
 		default:
 			continue
 		}
-		value := detail[key]
 		if key == "fail_reason" {
 			value = common.PublicTaskErrorMessage(value)
 		}
@@ -131,9 +125,6 @@ func sanitizedBackendDetail(detail map[string]string) map[string]string {
 			continue
 		}
 		sanitized[cleanKey] = value
-		if len(sanitized) >= 16 {
-			break
-		}
 	}
 	if len(sanitized) == 0 {
 		return nil

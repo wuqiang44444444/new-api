@@ -1,7 +1,7 @@
 ---
 page-id: media-workflow
 kind: guide
-last-verified: 2026-09-09
+last-verified: 2026-09-19
 operations: []
 ---
 
@@ -75,20 +75,25 @@ PY
 ```json
 {
   "model": "{{MODEL_ID_PLACEHOLDER}}",
-  "prompt": "白色桌面上的蓝色陶瓷杯，柔和自然光，产品摄影"
+  "prompt": "白色桌面上的蓝色陶瓷杯，柔和自然光，产品摄影",
+  "response_format": "url"
 }
 ```
+
+本例显式请求 URL，成功结果读取 `data[].url`，不是 `data[].image_url`；省略格式则按模型默认返回。
 
 同步调用：
 
 ```bash
-curl --fail-with-body "$MEDIA_API_BASE/v1/images/generations" \
+curl --fail-with-body -o image-result.json -w '%{http_code}\n' "$MEDIA_API_BASE/v1/images/generations" \
   -H "Authorization: Bearer $MEDIA_API_KEY" \
   -H "Content-Type: application/json" \
   --data-binary @image-request.json
 ```
 
-成功为 HTTP `200`，从 `data[]` 读取 `url` 或 `b64_json`。同步没有平台任务 ID。
+成功为 HTTP `200`，本例从 `data[]` 读取 `url`。同步没有平台任务 ID。
+若返回 `502 image_delivery_failed`，保存的正文可能含原始 Base64 或 URL，可按
+[图片结果保存](guides/image-results)取回；不要重新生成。
 JSON 中的模型 ID 不会自动从环境变量替换，必须在文件中填入真实的公开模型 ID。
 
 如果业务希望提交后断开连接，并且模型声明支持异步，改用以下请求；不要把两条命令都执行为同一个订单：
@@ -119,7 +124,8 @@ curl --fail-with-body \
   -H "Idempotency-Key: edit-order-example-001" \
   -F "model=$MEDIA_MODEL" \
   -F "prompt=把背景改成浅灰色，保留杯子外观" \
-  -F "image=@input.png"
+  -F "image=@input.png" \
+  -F "response_format=url"
 ```
 
 不要手工设置 multipart 的 `Content-Type`。JSON 多参考图、遮罩与输入上限见

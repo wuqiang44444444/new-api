@@ -39,6 +39,10 @@ last-reviewed: 2026-09-19
 - relay 最终错误在 defer 中单次 Attach；SSE 流式异常单行 defer + 五类分类，4xx 合并不重复记录；
   异步任务失败窄接线 + CAS 防重，`fail_reason` 走 `PublicTaskErrorMessage` 安全投影；渠道测试
   后台与手工测试共用提交入口，method/纯路径/协议在读取上游响应处冻结。
+- 渠道测试事件可携带受控分项字段（`check_result`、`check_reason`、`check_code`、已取得的
+  `upstream_status`），经白名单与数量/长度限制落库。定时自动检查事件以 `test_mode=auto` 标识，
+  前端仅对这类事件用分项组件展示并排除同名附加键；手工测试事件展示保持原行为。自动检查的
+  产品边界见[渠道自动检查与配置诊断](../10-product/渠道自动检查与配置诊断.md)。
 - 查询：`GET /api/error_log/`（AdminAuth），状态过滤在数据库层用四方言表达式先过滤后分页。
 
 ## 约束与取舍

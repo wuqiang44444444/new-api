@@ -75,6 +75,7 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 | 公开文档 | [公开API文档交付架构](公开API文档交付架构.md) | 公开合同的构建、校验和 Web 发布 | `web/src/features/docs/`、`web/scripts/docs/` |
 | 用户通知 | [运维-用户生命周期邮件通知架构](运维-用户生命周期邮件通知架构.md) | 账户、密码、API Key 事件邮件和开关 | `notification_setting`、通知 service |
 | 合同定价 | [账单计费-用户模型合同定价架构](账单计费-用户模型合同定价架构.md) | 模型授权、渠道组、缓存围栏和冻结计费事实 | `customer_contract` model/service/middleware |
+| 主库索引 | [主库索引读写平衡架构](主库索引读写平衡架构.md) | logs/tasks/error_events/casbin_rule 物理索引集合、迁移安全校验与部署约束 | `model/read_write_index_migration.go`、`model/billing_statement_task_index.go` |
 
 ## 事实与变更边界
 

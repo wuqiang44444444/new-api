@@ -313,3 +313,230 @@ it('shows upstream HTTP status in Chinese for historical automatic failures', as
   expect(screen.getAllByText('上游 HTTP 400')).toHaveLength(2)
   expect(screen.queryByText('无 HTTP 响应')).not.toBeInTheDocument()
 })
+
+it('keeps automatic-check key names visible in additional info for other event types', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        total: 1,
+        items: [
+          {
+            ...ERROR_ITEM,
+            detail: JSON.stringify({
+              config_check: 'other-event-value',
+              test_mode: 'auto',
+            }),
+          },
+        ],
+      },
+    },
+  })
+  await renderViewer()
+  await userEvent
+    .setup()
+    .click(await screen.findByRole('button', { name: 'Details' }))
+  expect(screen.getByText('other-event-value')).toBeVisible()
+  expect(screen.queryByText('Automatic check')).not.toBeInTheDocument()
+})
+
+it.each([
+  [
+    400,
+    'bad_response_status_code',
+    'Response received; probe request rejected',
+  ],
+  [400, 'model_not_supported', 'Response received; probe request rejected'],
+  [400, 'unknown_error', 'Response received; probe request rejected'],
+  [405, 'unknown_error', 'Response received; probe not applicable'],
+  [
+    401,
+    'unknown_error',
+    'Response received; authentication or permission issue',
+  ],
+  [
+    403,
+    'unknown_error',
+    'Response received; authentication or permission issue',
+  ],
+  [429, 'unknown_error', 'Response received; rate limited'],
+  [503, 'unknown_error', 'Service or gateway issue'],
+  [504, 'unknown_error', 'Service or gateway issue'],
+])(
+  'distinguishes media probe HTTP %s from customer errors',
+  async (status, code, message) => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          total: 1,
+          items: [
+            {
+              ...ERROR_ITEM,
+              event_type: 'channel_test',
+              model_name: 'gpt-image-2',
+              public_code: code,
+              status: 0,
+              detail: JSON.stringify({
+                test_mode: 'auto',
+                check_scope: 'readonly_probe',
+                probe_media: 'image',
+                upstream_status: String(status),
+              }),
+            },
+          ],
+        },
+      },
+    })
+    await renderViewer()
+    expect(await screen.findByText('Automatic connection probe')).toBeVisible()
+    expect(screen.getByText('Not a customer request')).toBeVisible()
+    expect(screen.getByText('Image probe')).toBeVisible()
+    expect(screen.getByText(message)).toBeVisible()
+    expect(screen.getByText(`Upstream HTTP ${status}`)).toBeVisible()
+  }
+)
+
+it('preserves automatic text probe presentation', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        total: 1,
+        items: [
+          {
+            ...ERROR_ITEM,
+            event_type: 'channel_test',
+            status: 0,
+            detail: JSON.stringify({
+              test_mode: 'auto',
+              check_scope: 'generation_probe',
+              upstream_status: '400',
+            }),
+          },
+        ],
+      },
+    },
+  })
+  await renderViewer()
+  expect(await screen.findByText('Channel Test')).toBeVisible()
+  expect(screen.getByText('Upstream HTTP 400')).toBeVisible()
+  expect(screen.queryByText('Not a customer request')).not.toBeInTheDocument()
+})
+
+it('labels historical video probes and explains their scope in Chinese', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        total: 1,
+        items: [
+          {
+            ...ERROR_ITEM,
+            event_type: 'channel_test',
+            model_name: 'Seedance2.0',
+            status: 0,
+            detail: JSON.stringify({
+              test_mode: 'auto',
+              check_scope: 'generation_probe',
+              upstream_status: '405',
+            }),
+          },
+        ],
+      },
+    },
+  })
+  await renderViewer('zh')
+  expect(await screen.findByText('自动生成探测（历史记录）')).toBeVisible()
+  expect(screen.getByText('非客户业务请求')).toBeVisible()
+  expect(screen.getByText('已收到响应，探测请求不适用')).toBeVisible()
+  await userEvent.setup().click(screen.getByRole('button', { name: '详情' }))
+  expect(
+    await screen.findByText(
+      '这是系统自动探测，非客户业务请求，不代表图片或视频生成失败；收到响应也不代表生成能力正常。'
+    )
+  ).toBeVisible()
+})
+
+it.each([
+  ['en', 'gpt-image-2'],
+  ['zh', 'Seedance2.0'],
+])(
+  'labels old media events without inventing a generation scope in %s',
+  async (language, model) => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          total: 1,
+          items: [
+            {
+              ...ERROR_ITEM,
+              event_type: 'channel_test',
+              model_name: model,
+              public_code: 'model_not_supported',
+              status: 0,
+              detail: JSON.stringify({
+                test_mode: 'auto',
+                upstream_status: '400',
+              }),
+            },
+          ],
+        },
+      },
+    })
+    await renderViewer(language)
+    const translations = language === 'zh' ? zh.translation : en.translation
+    expect(
+      await screen.findByText(translations['Automatic probe (historical)'])
+    ).toBeVisible()
+    expect(
+      screen.queryByText(
+        translations['Automatic generation probe (historical)']
+      )
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(translations['Response received; probe not applicable'])
+    ).toBeVisible()
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: translations.Details }))
+    expect(
+      screen.getAllByText(translations['Automatic probe (historical)'])
+    ).toHaveLength(2)
+  }
+)
+
+it.each([
+  ['gpt-4o', 'auto'],
+  ['gpt-image-2', 'manual'],
+])(
+  'keeps unscoped %s / %s events outside media auto labels',
+  async (model, mode) => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          total: 1,
+          items: [
+            {
+              ...ERROR_ITEM,
+              event_type: 'channel_test',
+              model_name: model,
+              detail: JSON.stringify({
+                test_mode: mode,
+                upstream_status: '400',
+              }),
+            },
+          ],
+        },
+      },
+    })
+    await renderViewer()
+    expect(await screen.findByText('Channel Test')).toBeVisible()
+    expect(
+      screen.queryByText('Automatic probe (historical)')
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Not a customer request')).not.toBeInTheDocument()
+  }
+)

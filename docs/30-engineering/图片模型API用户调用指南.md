@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-17
+last-reviewed: 2026-09-19
 ---
 
 # 图片模型 API 用户调用指南
@@ -180,7 +180,9 @@ Pro 多参考图必须配置含内部 `param("input_image_count")` 的模型计�
 }
 ```
 
-`callbackUrl`、`b64_json`、显式提交的 `stream`（包括 `false`）、未知字段和 Provider 私有 JSON 均返回 HTTP `400`。
+`response_format` 支持 `url` 和 `b64_json`；后者由网关下载原 URL 并编码交付，不作为南向参数。
+`callbackUrl`、顶层 `b64_json` 字段、显式提交的 `stream`（包括 `false`）、未知字段和 Provider 私有 JSON
+均返回 HTTP `400`。不能把返回格式值与同名结果字段混淆。
 更高分辨率/质量档位也会在请求校验阶段拒绝，直到对应预扣计费倍率完成配置和验收。
 
 `n` 必须为 `1`；不拆分多图请求。成功结果必须恰好包含一个 URL，否则返回上游响应错误。
@@ -198,8 +200,9 @@ curl -sS "$NEWAPI_BASE_URL/v1/images/generations" \
 
 受理成功：
 
+HTTP `202`：
+
 ```json
-HTTP 202
 {
   "created": 1785207890,
   "id": "task_xxxxxxxx",
@@ -242,6 +245,8 @@ HTTP 202
 
 两个标准图片入口统一使用可选 `response_format=url|b64_json`。省略时保持各模型与执行模式原有
 默认格式，不能全局假定 URL。multipart 对应 `-F 'response_format=url'`。
+成功地址是 `data[].url`，不是 `data[].image_url`；`image_url` 只用于部分协议的参考图输入，
+不能写成 `response_format=image_url`。显式 Base64 结果读取 `data[].b64_json` 并解码，不含 Data URL 前缀。
 已有目标格式直接交付；Base64 转 URL 保存到平台存储并签发 300 秒 URL，返回 `url_expires_at`；
 Provider URL 直接复用，有效期由 Provider 决定。URL 转 Base64 复用受保护下载。
 GPT Image 上游不支持的格式字段由网关消费，不转发；原生 SSE 事件保持原有格式。

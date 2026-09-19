@@ -21,6 +21,8 @@ import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
+import { AUTO_CHECK_DETAIL_KEYS } from '@/features/channels/components/channel-check-detail-keys'
+import { ChannelCheckDetails } from '@/features/channels/components/channel-check-details'
 import dayjs from '@/lib/dayjs'
 
 import {
@@ -28,7 +30,8 @@ import {
   DetailSection,
 } from '../../components/dialogs/log-detail-layout'
 import type { ErrorLogItem } from '../api'
-import { errorEventTypeLabel } from './error-event-type'
+import { mediaAutoProbeDetail } from './auto-probe-detail'
+import { AutomaticProbeLabel } from './automatic-probe-label'
 import { ErrorLogHTTPExchange } from './error-log-http-exchange'
 import { ErrorLogStatus } from './error-log-status'
 
@@ -40,18 +43,52 @@ function formatChannelLabel(entry: ErrorLogItem): string {
 
 export function ErrorLogDetailsDialog(props: { entry: ErrorLogItem }) {
   const { t } = useTranslation()
+  // 分项键只在自动渠道测试事件上隐藏于通用列表并进入"自动检查"区块；
+  // 其他事件即使携带同名键也保持原有逐项展示。
+  const isAutoChannelTest = useMemo(() => {
+    if (props.entry.event_type !== 'channel_test') return false
+    try {
+      const parsed: unknown = JSON.parse(props.entry.detail || '{}')
+      return (
+        !!parsed &&
+        typeof parsed === 'object' &&
+        (parsed as Record<string, string>)['test_mode'] === 'auto'
+      )
+    } catch {
+      return false
+    }
+  }, [props.entry.event_type, props.entry.detail])
   const detailEntries = useMemo(() => {
     if (!props.entry.detail) return []
     try {
       const parsed: unknown = JSON.parse(props.entry.detail)
       if (!parsed || typeof parsed !== 'object') return []
       return Object.entries(parsed as Record<string, string>).filter(
-        ([key, value]) => key !== 'http_exchange' && typeof value === 'string'
+        ([key, value]) =>
+          key !== 'http_exchange' &&
+          typeof value === 'string' &&
+          !(
+            isAutoChannelTest &&
+            (AUTO_CHECK_DETAIL_KEYS as readonly string[]).includes(key)
+          )
       )
     } catch {
       return []
     }
-  }, [props.entry.detail])
+  }, [props.entry.detail, isAutoChannelTest])
+  const autoCheckEntries = useMemo(() => {
+    if (!isAutoChannelTest) return []
+    try {
+      const parsed: unknown = JSON.parse(props.entry.detail || '{}')
+      if (!parsed || typeof parsed !== 'object') return []
+      const record = parsed as Record<string, string>
+      return AUTO_CHECK_DETAIL_KEYS.filter(
+        (key) => typeof record[key] === 'string' && record[key] !== ''
+      ).map((key) => [key, record[key]] as const)
+    } catch {
+      return []
+    }
+  }, [isAutoChannelTest, props.entry.detail])
   const channelValue = formatChannelLabel(props.entry)
   return (
     <Dialog
@@ -89,10 +126,17 @@ export function ErrorLogDetailsDialog(props: { entry: ErrorLogItem }) {
           )}
         </div>
       </div>
+      {mediaAutoProbeDetail(props.entry) && (
+        <p className='bg-muted text-muted-foreground rounded-md p-3 text-sm'>
+          {t(
+            'This is an automatic probe, not a customer request. It does not establish whether image or video generation succeeds.'
+          )}
+        </p>
+      )}
       <DetailSection label={t('Error information')}>
         <DetailRow
           label={t('Event Type')}
-          value={errorEventTypeLabel(props.entry.event_type, t)}
+          value={<AutomaticProbeLabel entry={props.entry} />}
         />
         <DetailRow
           label={t('Reason')}
@@ -117,6 +161,11 @@ export function ErrorLogDetailsDialog(props: { entry: ErrorLogItem }) {
           />
         )}
       </DetailSection>
+      {autoCheckEntries.length > 0 && (
+        <DetailSection label={t('Auto check')}>
+          <ChannelCheckDetails detail={Object.fromEntries(autoCheckEntries)} />
+        </DetailSection>
+      )}
       <DetailSection label={t('Caller')}>
         <DetailRow
           label={t('Username')}

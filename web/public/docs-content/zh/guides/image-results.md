@@ -1,7 +1,7 @@
 ---
 page-id: image-results
 kind: guide
-last-verified: 2026-09-09
+last-verified: 2026-09-19
 operations: []
 ---
 
@@ -14,9 +14,26 @@ operations: []
 
 将同步 HTTP `200` 的 JSON 正文保存为 `image-result.json`，或将任务查询结果保存为此文件。
 [调用实战](guides/media-workflow)中的轮询脚本写入 `media-result.json`，可直接使用该文件。
+`502 image_delivery_failed` 的正文若带有原始图片 `data[]`，也可保存到此文件后运行脚本。
 不要把创建时 `202` 的受理正文当作图片结果，也不要把视频响应交给本脚本。
 
 响应中的 URL 可能携带临时下载授权，应限制结果文件的读取权限，不上传到公开日志或诊断系统。
+
+例如，将同步请求正文保存为 `image-request.json`（需要 URL 时设置 `"response_format": "url"`），
+并把 HTTP 响应正文保存下来：
+
+```bash
+umask 077
+curl --fail-with-body -o image-result.json -w '%{http_code}\n' \
+  "{{OPENAI_BASE_URL}}/images/generations" \
+  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}" \
+  -H "Content-Type: application/json" \
+  --data-binary @image-request.json
+```
+
+`--fail-with-body` 在 HTTP 错误时仍保存正文。不要用 `&&` 把取图脚本只绑定到 curl 成功退出：
+`502 image_delivery_failed` 也可能带可恢复图片。先检查 HTTP 状态与 `error.code`，再处理 `data`；
+普通错误没有结果时停止，不自动重发生成。结果字段为 `url` 或 `b64_json`，不是 `image_url`。
 
 ## 2. 逐张保存 URL 或 Base64 图片
 

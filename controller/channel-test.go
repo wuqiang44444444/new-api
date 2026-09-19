@@ -45,6 +45,10 @@ type testResult struct {
 	// 读取上游响应处的真实状态码（0=未取得），供错误事件使用。
 	testedModel    string
 	upstreamStatus int
+	// Transport facts are observed independently; an attempt does not prove acceptance.
+	upstreamAttempted bool
+	upstreamResponded bool
+	checkUnsupported  bool
 }
 
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
@@ -98,10 +102,13 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		ctx = context.Background()
 	}
 	var upstreamStatus int
+	ctx, network := observeChannelTestNetwork(ctx)
 	defer func() {
 		// 所有返回路径统一冻结错误事件所需的测试事实；不改变任何既有结果。
 		result.testedModel = testModel
 		result.upstreamStatus = upstreamStatus
+		result.upstreamAttempted = network.attempted.Load()
+		result.upstreamResponded = network.received.Load()
 	}()
 	tik := time.Now()
 	var unsupportedTestChannelTypes = []int{
@@ -342,6 +349,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	common.SysLog(fmt.Sprintf("testing channel %d with model %s , info %+v ", channel.Id, testModel, info.ToString()))
 
 	priceData, err := helper.ModelPriceHelper(c, info, 0, request.GetTokenCountMeta())
+	c.Set("channel_test_billing_model", info.GetBillingModelName())
 	if err != nil {
 		return testResult{
 			context:     c,
@@ -481,6 +489,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	clienterrlog.ObserveHTTPBody(c.Request.Context(), "upstream_request", jsonData, 0)
 	requestBody := bytes.NewBuffer(jsonData)
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
+	// 网络执行事实由 transport trace 记录，进入 DoRequest 不等于已经发送。
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
 		return testResult{
@@ -493,6 +502,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	if resp != nil {
 		httpResp = resp.(*http.Response)
 		clienterrlog.EnsureUpstreamResponseCapture(c.Request.Context(), httpResp)
+		c.Set("channel_test_upstream_status", httpResp.StatusCode)
 		if httpResp.StatusCode != http.StatusOK {
 			// 在读取响应处冻结真实上游状态；不得从包装后的错误反推。
 			upstreamStatus = httpResp.StatusCode
@@ -960,20 +970,28 @@ func TestChannel(c *gin.Context) {
 // channelTestSummary records the outcome of one channel test cycle so the
 // system task can persist a per-run result for history.
 type channelTestSummary struct {
-	Tested    int `json:"tested"`
-	Succeeded int `json:"succeeded"`
-	Failed    int `json:"failed"`
-	Disabled  int `json:"disabled"`
-	Enabled   int `json:"enabled"`
+	Tested      int                              `json:"tested"`
+	Succeeded   int                              `json:"succeeded"`
+	Failed      int                              `json:"failed"`
+	Disabled    int                              `json:"disabled"`
+	Enabled     int                              `json:"enabled"`
+	Unsupported int                              `json:"unsupported,omitempty"`
+	Checks      []service.ChannelAutoCheckResult `json:"checks,omitempty"`
 }
 
-func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, disableThreshold int64) channelTestSummary {
+func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, disableThreshold int64, automatic bool) channelTestSummary {
 	summary := channelTestSummary{}
 	isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 	isSeedanceLink := seedanceLinkChannel(channel)
+	// 生成类目标渠道（图片/视频）的自动检查不发送生成请求：定时生成会产生真实
+	// 计费与资源创建副作用，也不构成生成能力证明。此类渠道只执行本地配置检查，
+	// 生成能力由真实业务结果与已登记只读探针表达。
+	scope := "generation_probe"
 	tik := time.Now()
 	var result testResult
-	if isSeedanceLink {
+	if automatic {
+		result, scope = runAutomaticChannelCheck(ctx, channel, testUserID)
+	} else if isSeedanceLink {
 		// Link 渠道只跑代码登记协议的只读探针，禁止 Chat 探针与响应时间禁用：
 		// 素材列表 ping 不代表视频履约时延。
 		result = seedanceLinkChannelHealthResult(ctx, channel)
@@ -987,14 +1005,19 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 
 	summary.Tested++
 
+	isConfigOnly := automatic && scope != "generation_probe" && scope != "readonly_probe"
 	shouldBanChannel := false
 	thresholdExceeded := false
 	newAPIError := result.newAPIError
-	if newAPIError != nil && !isSeedanceLink {
+	// 只有实际尝试生成探测的自动检查才参与上游故障禁用；
+	// 本地校验终止的失败没有上游观测，配置失败也不是上游故障，不得据此
+	// 禁用渠道或覆盖渠道延迟。
+	upstreamObserved := !isSeedanceLink && (!automatic || (scope == "generation_probe" && result.upstreamAttempted))
+	if newAPIError != nil && upstreamObserved {
 		shouldBanChannel = service.ShouldDisableChannel(result.newAPIError)
 	}
 
-	if common.AutomaticDisableChannelEnabled && !shouldBanChannel && !isSeedanceLink {
+	if common.AutomaticDisableChannelEnabled && !shouldBanChannel && upstreamObserved && (!automatic || result.upstreamResponded) {
 		if milliseconds > disableThreshold {
 			err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
 			newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
@@ -1003,13 +1026,20 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		}
 	}
 
-	if newAPIError == nil && result.localErr == nil {
+	if automatic {
+		finalResult := result
+		finalResult.newAPIError = newAPIError
+		summary.Checks = []service.ChannelAutoCheckResult{channelAutoCheckResult(channel, finalResult, scope)}
+	}
+	if automatic && result.checkUnsupported {
+		summary.Unsupported++
+	} else if newAPIError == nil && result.localErr == nil {
 		summary.Succeeded++
 	} else {
 		summary.Failed++
 		// 错误事件（仅观察）：取消/跳过的测试在上面提前返回，不产生事件；
 		// finalAPIError 已含阈值判定，Seedance 只读探针失败按 probe 分类。
-		service.RecordAutoChannelTestFailureEvent(channel, result.testedModel, result.context, result.localErr, newAPIError, result.upstreamStatus, milliseconds, thresholdExceeded, shouldUseStreamForAutomaticChannelTest(channel))
+		service.RecordAutoChannelTestFailureEvent(channel, result.testedModel, result.context, result.localErr, newAPIError, result.upstreamStatus, milliseconds, thresholdExceeded, !isConfigOnly && shouldUseStreamForAutomaticChannelTest(channel), summary.Checks)
 	}
 
 	if allowDisable && isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
@@ -1017,16 +1047,17 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		summary.Disabled++
 	}
 
-	// 素材只读探针成功只证明素材控制面可用，不能证明视频创建链路恢复，因此
-	// Seedance Link 渠道不得据此从自动禁用状态恢复。
-	if !isSeedanceLink && result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
+	// 只有携带真实上游往返的成功才具备恢复证明力：配置检查通过不能恢复因上游
+	// 故障自动禁用的渠道，素材只读探针也不能证明视频创建链路恢复。
+	if upstreamObserved && result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
 		service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 		summary.Enabled++
 	}
 
-	// 素材列表探针的耗时不是视频生成响应时间，不写入通用
-	// Channel response_time/test_time，避免管理端把素材控制面数据误解为视频健康。
-	if !isSeedanceLink {
+	// 上游响应时间只在真实上游往返时写入；素材列表探针与本地配置检查的耗时
+	// 不是履约时延，不写入通用 Channel response_time/test_time，避免管理端
+	// 把非履约数据误解为上游健康。
+	if !isSeedanceLink && (!automatic || (scope == "generation_probe" && result.upstreamResponded)) {
 		channel.UpdateResponseTime(milliseconds)
 	}
 	return summary
@@ -1117,6 +1148,8 @@ func runChannelTestWorkers(
 		summary.Failed += result.Failed
 		summary.Disabled += result.Disabled
 		summary.Enabled += result.Enabled
+		summary.Unsupported += result.Unsupported
+		summary.Checks = append(summary.Checks, result.Checks...)
 		processed++
 		if report != nil && ctx.Err() == nil {
 			report(processed, total)
@@ -1128,7 +1161,7 @@ func runChannelTestWorkers(
 // performChannelTests runs channel health checks with the configured bounded
 // concurrency and honors cancellation when a system-task runner loses its
 // lease.
-func performChannelTests(ctx context.Context, channels []*model.Channel, testUserID int, allowDisable bool, concurrency int, report func(processed, total int)) channelTestSummary {
+func performChannelTests(ctx context.Context, channels []*model.Channel, testUserID int, allowDisable bool, concurrency int, report func(processed, total int), automatic bool) channelTestSummary {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1141,7 +1174,7 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 		channels,
 		concurrency,
 		func(ctx context.Context, channel *model.Channel) channelTestSummary {
-			return testChannelForHealthCheck(ctx, channel, testUserID, allowDisable, disableThreshold)
+			return testChannelForHealthCheck(ctx, channel, testUserID, allowDisable, disableThreshold, automatic)
 		},
 		report,
 	)
@@ -1170,7 +1203,7 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 	selected := selectChannelsForAutomaticTest(channels, mode)
 	allowDisable := mode != operation_setting.ChannelTestModePassiveRecovery
 	concurrency := operation_setting.GetMonitorSetting().ChannelTestConcurrency
-	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, report)
+	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, report, !notify)
 	if notify && (ctx == nil || ctx.Err() == nil) {
 		service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成")
 	}

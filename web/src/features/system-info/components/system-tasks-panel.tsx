@@ -42,6 +42,8 @@ import { toIntlLocale } from '@/i18n/languages'
 import { formatTimestampRelative, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
+import { ChannelCheckResultsDialog } from './channel-check-results-dialog'
+
 const TASK_LIMIT = 20
 const ACTIVE_POLL_INTERVAL_MS = 8000
 
@@ -193,7 +195,13 @@ function SystemTasksTable(props: SystemTasksTableProps) {
                   className='text-destructive max-w-[220px] truncate py-3 pr-4 align-middle text-xs'
                   title={task.error || undefined}
                 >
-                  {task.error || '-'}
+                  {task.error ||
+                    (task.type === 'channel_test' &&
+                    Array.isArray(task.result?.checks) ? (
+                      <ChannelCheckResultsDialog checks={task.result.checks} />
+                    ) : (
+                      '-'
+                    ))}
                 </TableCell>
               </TableRow>
             )

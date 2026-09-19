@@ -1,7 +1,7 @@
 ---
 page-id: errors
 kind: guide
-last-verified: 2026-09-10
+last-verified: 2026-09-19
 operations: []
 ---
 
@@ -78,3 +78,10 @@ operations: []
 ## 限流与计费
 
 限流、并发和额度是不同约束。降低请求频率不能修复余额不足；切换模型可能改变计费和权限。始终保存自己的请求 ID、时间、模型与任务 ID，排障时不要记录完整敏感输入。
+
+## 图片已生成但格式交付失败
+
+`502 image_delivery_failed` 表示生成已完成并计费，但 URL／Base64 交付转换失败。错误正文可能
+同时包含 `requested_response_format` 和原始 `data[]`；应按实际 `url` / `b64_json` 取回图片，
+不要因 HTTP 非 2xx 丢弃正文，也不要自动重发生成或编辑请求。没有保留结果时 `data` 可省略。
+参见[图片返回格式与失败示例](api-reference/images/generations)。

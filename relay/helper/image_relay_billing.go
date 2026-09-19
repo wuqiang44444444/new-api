@@ -38,17 +38,17 @@ func prepareImageRelayBilling(c *gin.Context, info *relaycommon.RelayInfo) error
 		if billingexpr.RequiresUsage(expr) {
 			// 当前图片中转适配尚未支持用量表达式结算；部分协议已返回部分用量，
 			// 因此不能将适配缺口描述为所有 Provider 均不提供用量，也不能伪造缺失事实。
-			return errors.New("the current image adapter cannot supply the verified usage required by this billing expression")
+			return common.NewBillingConfigError("billing_usage_unavailable", info.GetBillingModelName(), errors.New("the current image adapter cannot supply the verified usage required by this billing expression"))
 		}
 	}
 	if billing_setting.GetBillingMode(info.GetBillingModelName()) != billing_setting.BillingModeTieredExpr {
 		if _, priced := ratio_setting.GetModelPrice(info.GetBillingModelName(), false); !priced {
-			return errors.New("image relay requires a per-image price or billing expression")
+			return common.NewBillingConfigError("image_price_not_configured", info.GetBillingModelName(), errors.New("image relay requires a per-image price or billing expression"))
 		}
 	}
 	pro := constant.ImageRelayRequiresInputPricing(mappedInfo.ChannelOtherSettings.ImageUpstreamProtocol, mapped.Model)
 	if pro && len(contract.Images) > 1 && billing_setting.GetBillingMode(info.GetBillingModelName()) != billing_setting.BillingModeTieredExpr {
-		return errors.New("multiple Pro reference images require an input-image billing expression")
+		return common.NewBillingConfigError("billing_expr_required", info.GetBillingModelName(), errors.New("multiple Pro reference images require an input-image billing expression"))
 	}
 	body, err := service.ImageRelayBillingBody(request, len(contract.Images))
 	if err != nil {

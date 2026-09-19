@@ -362,7 +362,7 @@ func TestSeedanceHealthCheckCountsUnavailableProbeAsFailure(t *testing.T) {
 	}
 	require.NoError(t, db.Create(channel).Error)
 
-	summary := testChannelForHealthCheck(context.Background(), channel, 0, false, 0)
+	summary := testChannelForHealthCheck(context.Background(), channel, 0, false, 0, true)
 
 	assert.Equal(t, 1, summary.Tested)
 	assert.Equal(t, 0, summary.Succeeded)
@@ -390,7 +390,7 @@ func TestSeedanceAssetProbeCannotAutoEnableVideoChannel(t *testing.T) {
 	channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudModelArkV3, AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial})
 	require.NoError(t, db.Create(channel).Error)
 
-	summary := testChannelForHealthCheck(context.Background(), channel, 0, false, 0)
+	summary := testChannelForHealthCheck(context.Background(), channel, 0, false, 0, true)
 
 	assert.Equal(t, 1, summary.Succeeded)
 	assert.Equal(t, 0, summary.Enabled)
@@ -417,7 +417,7 @@ func TestSeedanceRejectedAssetProbeCannotDisableOrOverwriteVideoHealth(t *testin
 	channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial})
 	require.NoError(t, db.Create(channel).Error)
 
-	summary := testChannelForHealthCheck(context.Background(), channel, 0, true, 0)
+	summary := testChannelForHealthCheck(context.Background(), channel, 0, true, 0, true)
 
 	assert.Equal(t, 1, summary.Failed)
 	assert.Zero(t, summary.Disabled)
@@ -456,7 +456,7 @@ func TestSeedanceApplicationProbeCannotDisableVideoChannel(t *testing.T) {
 			channel.SetOtherSettings(dto.ChannelOtherSettings{AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudMaterial})
 			require.NoError(t, db.Create(channel).Error)
 
-			summary := testChannelForHealthCheck(context.Background(), channel, 0, true, 0)
+			summary := testChannelForHealthCheck(context.Background(), channel, 0, true, 0, true)
 
 			assert.Equal(t, 1, summary.Failed)
 			assert.Zero(t, summary.Disabled)

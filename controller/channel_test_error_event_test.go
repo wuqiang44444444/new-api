@@ -72,7 +72,7 @@ func TestChannelTestFailurePersistsHTTPDiagnostics(t *testing.T) {
 				}
 			}))
 			if mode != "manual" {
-				summary := testChannelForHealthCheck(context.Background(), channel, user.Id, false, 0)
+				summary := testChannelForHealthCheck(context.Background(), channel, user.Id, false, 0, true)
 				assert.Equal(t, 1, summary.Failed)
 				assert.Zero(t, summary.Succeeded)
 			} else {

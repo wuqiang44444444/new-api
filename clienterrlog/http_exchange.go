@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
 	"sync"
 
@@ -93,6 +94,13 @@ func EnsureUpstreamResponseCapture(ctx context.Context, resp *http.Response) {
 // WrapUpstreamRequest leaves ContentLength, GetBody and all routing/transport
 // settings intact. It observes only bytes the transport actually consumes.
 func WrapUpstreamRequest(ctx context.Context, req *http.Request) {
+	// Native adaptors may construct requests without the incoming context.
+	// Propagate an installed diagnostic trace without changing cancellation.
+	if req != nil {
+		if trace := httptrace.ContextClientTrace(ctx); trace != nil && httptrace.ContextClientTrace(req.Context()) != trace {
+			*req = *req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+		}
+	}
 	capture, ok := ctx.Value(exchangeContextKey{}).(*exchangeCapture)
 	if !ok || req == nil || req.Body == nil {
 		return

@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-17
+last-reviewed: 2026-09-19
 ---
 
 # 图片服务与中转 Provider 适配架构
@@ -309,7 +309,7 @@ Provider 解析或计费规则。文件区间索引只处理已由 adapter 验�
 
 - `api.image` 投影新增 gemini_image 族（`pkg/publicmodel/image_gemini.go`）：按管理员映射后
   落在 imagine 登记表的 Provider 模型识别（不从客户模型名推断），同时发布 `create_image`
-  与 `edit_image` 操作及逐字段参数；`size.size_constraints` 描述 WxH、每边范围与精确比例，
+  与 `edit_image` 操作及逐字段参数，同时与已登记图片中转发布 `api.image.async` 和 `query_image`；`size.size_constraints` 描述 WxH、每边范围与精确比例，
   生成与编辑读取映射后的同一尺寸规则，`auto` 保持默认；图片中转与原生图片模型投影规则不变。
 - 管理端渠道测试：Gemini/Vertex 渠道在映射模型为 imagine 登记模型时默认使用图片生成
   endpoint（`controller/channel_test_image_profile.go`）；图片中转渠道测试维持协议感知尺寸。

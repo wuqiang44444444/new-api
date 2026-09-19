@@ -1,7 +1,7 @@
 ---
 page-id: images-tasks
 kind: api-reference
-last-verified: 2026-09-09
+last-verified: 2026-09-19
 operations:
   - retrieveImageTask
 ---
@@ -33,7 +33,8 @@ curl "{{OPENAI_BASE_URL}}/tasks/task_xxxxxxxx" \
 | `Authorization` | header | 是   | `Bearer` 加创建任务的 API Key              |
 
 任务按用户与应用（API Key）隔离；即使同账号，更换 Key 查询其他应用的任务也返回 `404`。
-不需要再次传入模型、提示词或参考图。查询参数不能改变创建时选择的结果格式。
+不需要再次传入模型、提示词或参考图。查询参数不能改变创建时选择的结果格式：创建时显式 `response_format=b64_json` 才返回 Base64，
+显式 `url` 或省略时查询返回 URL；不要在 GET 上追加 `response_format` 来切换格式。
 
 `/v1/tasks/{task_id}` 是共享查询入口。本页只描述图片任务投影；先确认返回的 `object=image_task`
 以及 `id` 与原任务一致，再按本页解析。其他任务可能返回不同形状，不保证因类型不同而返回 `404`。
@@ -67,6 +68,29 @@ curl "{{OPENAI_BASE_URL}}/tasks/task_xxxxxxxx" \
       "mime_type": "image/png",
       "url": "https://example.com/result.png",
       "url_expires_at": 1785208250
+    }
+  ]
+}
+```
+
+返回图片地址读取 `data[].url`，不是 `data[].image_url`。创建时的 `202` 仅表示受理，
+没有图片下载地址；URL 要从本接口已可用的结果项中读取。
+
+创建时显式选择 `response_format=b64_json` 后，可用结果示例（1×1 PNG 演示数据）：
+
+```json
+{
+  "id": "task_xxxxxxxx",
+  "object": "image_task",
+  "status": "succeeded",
+  "created_at": 1785207890,
+  "finished_at": 1785207950,
+  "image_count": 1,
+  "data": [
+    {
+      "status": "available",
+      "mime_type": "image/png",
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
     }
   ]
 }

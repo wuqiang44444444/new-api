@@ -423,3 +423,155 @@ test('Markdown JSON and inline curl bodies are parsed without executing commands
     )
   }
 })
+
+test('image response formats distinguish URL results from image_url reference inputs', () => {
+  for (const [schema, input] of [
+    [
+      'ImageGenerationRequest',
+      { model: 'customer-image-model', prompt: 'Red cup' },
+    ],
+    [
+      'NativeImageEditJSONRequest',
+      {
+        model: 'customer-image-model',
+        prompt: 'Red cup',
+        images: [{ image_url: 'https://example.com/reference.png' }],
+      },
+    ],
+    [
+      'UnifiedImageEditJSONRequest',
+      {
+        model: 'customer-image-model',
+        prompt: 'Red cup',
+        image: 'https://example.com/reference.png',
+      },
+    ],
+    [
+      'ImageEditRequest',
+      { model: 'customer-image-model', prompt: 'Red cup', image: 'file bytes' },
+    ],
+  ]) {
+    for (const format of ['url', 'b64_json']) {
+      assert.doesNotThrow(() =>
+        validateOpenAPIExamples(
+          responseExample(schema, { ...input, response_format: format }),
+          approved
+        )
+      )
+    }
+    assert.throws(
+      () =>
+        validateOpenAPIExamples(
+          responseExample(schema, { ...input, response_format: 'image_url' }),
+          approved
+        ),
+      /示例不符合合同/
+    )
+  }
+})
+
+test('published image result examples contain usable output fields and match response schemas', () => {
+  for (const name of ['generations', 'edits', 'tasks']) {
+    const page = readFileSync(
+      new URL(
+        `../../public/docs-content/zh/api-reference/images/${name}.md`,
+        import.meta.url
+      ),
+      'utf8'
+    )
+    let results = 0
+    for (const [, body] of page.matchAll(/^```json\n([\s\S]*?)^```/gm)) {
+      const value = JSON.parse(body)
+      if (!Array.isArray(value.data)) continue
+      let schema = 'ImageResponse'
+      if (value.error?.code === 'image_delivery_failed') {
+        schema = 'ImageDeliveryError'
+      } else if (value.object === 'image_task') {
+        schema = 'ImageTaskStatus'
+      }
+      assert.doesNotThrow(() =>
+        validateOpenAPIExamples(responseExample(schema, value), approved)
+      )
+      for (const item of value.data) {
+        assert.equal(
+          Object.hasOwn(item, 'image_url'),
+          false,
+          'image_url is an input reference, not an image result'
+        )
+        assert.ok(
+          item.url || item.b64_json,
+          'download examples need an actual result field'
+        )
+        if (item.url) assert.equal(new URL(item.url).protocol, 'https:')
+        if (item.b64_json) {
+          const bytes = Buffer.from(item.b64_json, 'base64')
+          assert.equal(
+            bytes.toString('base64'),
+            item.b64_json,
+            'use complete Base64 rather than an ellipsis or Data URL'
+          )
+          assert.equal(
+            bytes.subarray(0, 8).toString('hex'),
+            '89504e470d0a1a0a',
+            'the example promises a PNG'
+          )
+        }
+      }
+      results += 1
+    }
+    assert.ok(results > 0, `${name} must demonstrate image output`)
+  }
+})
+
+test('image parameter schemas validate published dimensions and per-image decoded byte limits', () => {
+  const valid = {
+    name: 'size',
+    type: 'string',
+    required: false,
+    default_value: 'auto',
+    size_constraints: {
+      format: 'WxH',
+      min_dimension: 1,
+      max_dimension: 4096,
+      aspect_ratios: ['1:1', '16:9'],
+    },
+  }
+  assert.doesNotThrow(() =>
+    validateOpenAPIExamples(
+      responseExample('PublicAPIParameter', valid),
+      approved
+    )
+  )
+  assert.doesNotThrow(() =>
+    validateOpenAPIExamples(
+      responseExample('PublicAPIParameter', {
+        name: 'images',
+        type: 'array',
+        required: false,
+        item_type: 'string',
+        max_decoded_bytes: 7000000,
+      }),
+      approved
+    )
+  )
+  for (const value of [
+    {
+      ...valid,
+      size_constraints: { ...valid.size_constraints, max_dimension: 0 },
+    },
+    {
+      ...valid,
+      size_constraints: { ...valid.size_constraints, format: '16:9' },
+    },
+    { name: 'image', type: 'string', required: false, max_decoded_bytes: -1 },
+  ]) {
+    assert.throws(
+      () =>
+        validateOpenAPIExamples(
+          responseExample('PublicAPIParameter', value),
+          approved
+        ),
+      /示例不符合合同/
+    )
+  }
+})

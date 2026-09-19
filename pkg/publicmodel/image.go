@@ -71,6 +71,7 @@ func ImageAPI(customerModel string, protocol dto.ImageUpstreamProtocol, provider
 
 	api := imageModelAPI(customerModel, parameters)
 	imageRelayEditAPI(api, protocol, providerModel)
+	publishImageTaskMetadata(api)
 	return api, true
 }
 

@@ -26,7 +26,7 @@ func TestImageRelayPublishesEditLimitsForEveryRegisteredModel(t *testing.T) {
 				}
 			}
 			assert.True(t, found)
-			require.Len(t, api.Image.Operations, 2)
+			require.Len(t, api.Image.Operations, 3)
 			assert.True(t, api.Image.Operations[1].Supported)
 		}
 	}

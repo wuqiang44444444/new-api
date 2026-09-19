@@ -1,7 +1,7 @@
 ---
 page-id: images-generations
 kind: api-reference
-last-verified: 2026-09-17
+last-verified: 2026-09-19
 operations:
   - createImageGeneration
 ---
@@ -35,7 +35,7 @@ curl "{{OPENAI_BASE_URL}}/models/{{MODEL_ID_PLACEHOLDER}}" \
 `{{OPENAI_BASE_URL}}` 已包含 `/v1`，下列示例不要再追加 `/v1`。
 完整接入步骤见[图片与视频调用实战](guides/media-workflow)。
 
-## 最小请求
+## 请求 URL 结果
 
 ```bash
 curl "{{OPENAI_BASE_URL}}/images/generations" \
@@ -43,9 +43,13 @@ curl "{{OPENAI_BASE_URL}}/images/generations" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "{{MODEL_ID_PLACEHOLDER}}",
-    "prompt": "雾中灯塔的水彩插画"
+    "prompt": "雾中灯塔的水彩插画",
+    "response_format": "url"
   }'
 ```
+
+上述请求显式选择 URL，成功时读取 `data[].url`。若省略 `response_format`，返回格式由模型默认值决定，
+不能保证得到 URL。
 
 ## 请求参数
 
@@ -105,7 +109,8 @@ curl -i "{{OPENAI_BASE_URL}}/images/generations" \
   -H "Idempotency-Key: image-order-example-001" \
   -d '{
     "model": "{{MODEL_ID_PLACEHOLDER}}",
-    "prompt": "雾中灯塔的水彩插画"
+    "prompt": "雾中灯塔的水彩插画",
+    "response_format": "url"
   }'
 ```
 
@@ -155,6 +160,16 @@ curl "{{OPENAI_BASE_URL}}/tasks/task_xxxxxxxx" \
 
 生成与编辑接口通过可选的 `response_format` 控制完整图片结果的返回形式：
 
+| 用途 | 正确写法 |
+| --- | --- |
+| 请求图片下载地址 | `"response_format": "url"` |
+| 读取返回的图片地址 | `data[0].url`；多图遍历 `data[]` |
+| 请求并读取 Base64 | `"response_format": "b64_json"` → `data[].b64_json` |
+| 原生 JSON 编辑的参考图输入 | `images[].image_url`，见图片编辑文档 |
+
+`image_url` 不是返回格式，也不是标准图片结果字段；不要发送 `response_format=image_url`，
+不要读取 `data[].image_url` 或添加 `image_url=true`。参考图输入与结果输出是不同字段。
+
 ```json
 {
   "model": "{{MODEL_ID_PLACEHOLDER}}",
@@ -186,14 +201,16 @@ curl "{{OPENAI_BASE_URL}}/tasks/task_xxxxxxxx" \
 
 ## 非流式响应
 
-HTTP `200` 返回 JSON：
+请求显式使用 `response_format=url` 时，HTTP `200` 返回如下 JSON。此例表示本站签名 URL；
+真实地址由响应提供，不要自行拼接；已有外部图片 URL 可能不带 `url_expires_at`：
 
 ```json
 {
-  "created": 1760000000,
+  "created": 1785207950,
   "data": [
     {
       "url": "https://example.com/generated-image.png",
+      "url_expires_at": 1785208250,
       "revised_prompt": "A watercolor lighthouse in the fog"
     }
   ]
@@ -205,6 +222,7 @@ HTTP `200` 返回 JSON：
 | `created`                    | integer | 响应创建时间，Unix 秒                                      |
 | `data`                       | array   | 图片结果数组；通常与实际生成数量一致                       |
 | `data[].url`                 | string  | 临时图片地址；返回该字段时应及时下载或转存                 |
+| `data[].url_expires_at` | integer | 本站 URL 到期时间，Unix 秒；外部 URL 不保证提供 |
 | `data[].b64_json`            | string  | Base64 图片内容；通常在 `response_format=b64_json` 时返回  |
 | `data[].revised_prompt`      | string  | 模型改写后的提示词；并非所有模型都会返回                   |
 | `metadata`                   | object  | 可选的公开扩展元数据；不要依赖未在模型合同中说明的键       |
@@ -214,8 +232,45 @@ HTTP `200` 返回 JSON：
 | `usage.total_tokens`         | integer | 可选总 Token 数                                            |
 | `usage.input_tokens_details` | object  | 可选输入明细，例如文本、图片或缓存 Token；按字段存在性读取 |
 
-单个结果通常在 `url` 和 `b64_json` 中返回一种。客户端应按字段是否存在处理，不要假定某个模型始终返回
-同一种格式。错误响应仍是 JSON，不能当作图片字节或 Base64 解码。
+显式 `response_format=b64_json` 的 HTTP `200` 示例（使用可解码的 1×1 PNG 演示数据，非真实生成结果）：
+
+```json
+{
+  "created": 1785207950,
+  "data": [
+    {
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+    }
+  ]
+}
+```
+
+成功的非流式显式格式请求按所选字段交付；省略格式时按实际返回字段处理。`b64_json` 不含
+`data:image/png;base64,` 前缀，须解码为图片字节。普通错误正文不能直接当作图片；
+下述 `image_delivery_failed` 是可带原始图片结果的明确例外。
+
+## 交付失败时保存原图
+
+请求了 URL，但生成后的格式转换失败时，可能收到 HTTP `502`：
+
+```json
+{
+  "error": {
+    "code": "image_delivery_failed",
+    "message": "Image generation completed. Format delivery failed; recover the original images from data. Generation was charged; do not regenerate."
+  },
+  "requested_response_format": "url",
+  "data": [
+    {
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+    }
+  ]
+}
+```
+
+先检查 `error.code=image_delivery_failed`，再读取存在的 `data[]`。本例应解码 `b64_json`，
+不能因为请求了 URL 就丢弃 Base64。反向转换失败也可能留下原 `url`；没有保留原始结果时 `data` 可省略。
+生成已计费，不要重发 POST。保存 JSON 后可用[图片结果保存](guides/image-results)中的脚本取图。
 
 ## 流式响应
 
@@ -278,13 +333,14 @@ data: [DONE]
 | `400`         | 缺少字段、字段类型错误、取值超范围或模型不支持该参数 | 修正请求后再提交                                    |
 | `401` / `403` | API Key 无效、模型权限或分组不允许                   | 修复鉴权或权限，不重试原请求                        |
 | `429`         | 频率、并发或额度限制                                 | 区分限流与余额问题；可重试时使用退避                |
-| `5xx`         | 服务暂时不可用或上游异常                             | 保存公开请求 ID；只有能接受重复生成风险时才有限重试 |
+| `502 image_delivery_failed` | 生成完成，格式交付失败 | 读取 `data` 保存原图；不重发、不假定退款 |
+| 其他 `5xx`   | 服务暂时不可用或上游异常                             | 保存公开请求 ID；只有能接受重复生成风险时才有限重试 |
 
 ## Gemini Lite 图片模型
 
 Gemini 3.1 Flash-Lite Image 使用本页标准接口。生成使用 JSON，编辑使用已发布的 JSON 图片引用
 或 multipart 文件。显式设置 `response_format=url`（multipart 使用同名表单字段），成功结果为
-`data[].url`；不要把 `response_format` 写成 `image_url`。
+`data[].url`；返回字段是 `url`，不是 `image_url`；返回格式值也不能写为 `image_url`。
 
 Lite 的标准接口目前仅发布 `size=auto`（也可省略）和 `size=1024x1024`，以模型详情的 `size.enum`
 为准。前者由 Provider 决定原生 1K 输出比例，后者请求原生 1K 正方形；网关不缩放、裁切或重新编码。

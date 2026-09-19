@@ -85,7 +85,7 @@ func TestClassifyChannelTestFailure(t *testing.T) {
 		{"unclassified", errors.New("something else"), nil, "unclassified", "unclassified"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			stage, reason, _ := classifyChannelTestFailure(tc.localErr, tc.apiError, "")
+			stage, reason, _ := ClassifyChannelTestFailure(tc.localErr, tc.apiError, "")
 			assert.Equal(t, tc.wantStage, stage)
 			assert.Equal(t, tc.wantReason, reason)
 		})
