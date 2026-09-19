@@ -11,7 +11,7 @@ import (
 // CustomerContractPricingView is one native pricing entry with an optional
 // contract discount overlay. GroupRatio, when set, carries the per-group
 // effective ratio (native group ratio × contract discount) for contracted
-// models; uncontracted models keep the global native group ratios.
+// models. Uncontracted models must not enter the projection.
 type CustomerContractPricingView struct {
 	model.Pricing
 	GroupRatio       map[string]float64 `json:"group_ratio,omitempty"`
@@ -42,8 +42,8 @@ func ContractDiscountsFromSnapshot(snapshot *model.ContractEntitySnapshot) (map[
 
 // ApplyContractDiscountOverlay marks every contracted model's pricing entry
 // with the contract discount and a per-group effective ratio (native group
-// ratio × contract discount). Prices of uncontracted models stay native.
-func ApplyContractDiscountOverlay(pricing []model.Pricing, usableGroups []string, userGroup string, snapshot *model.ContractEntitySnapshot) ([]CustomerContractPricingView, error) {
+// ratio × contract discount). Uncontracted models are rejected.
+func ApplyContractDiscountOverlay(pricing []model.Pricing, userGroup string, snapshot *model.ContractEntitySnapshot) ([]CustomerContractPricingView, error) {
 	discounts, err := ContractDiscountsFromSnapshot(snapshot)
 	if err != nil {
 		return nil, err
@@ -52,13 +52,12 @@ func ApplyContractDiscountOverlay(pricing []model.Pricing, usableGroups []string
 	for _, item := range pricing {
 		units, contracted := discounts[item.ModelName]
 		if !contracted {
-			result = append(result, CustomerContractPricingView{Pricing: item})
-			continue
+			return nil, ErrCustomerContractScope
 		}
 		discount := decimal.NewFromInt(units).Div(decimal.NewFromInt(hosttypes.CustomerContractRatioScale))
 		view := CustomerContractPricingView{Pricing: item, ContractDiscount: discount.String()}
 		perGroup := make(map[string]float64)
-		for _, group := range usableGroups {
+		for _, group := range item.EnableGroup {
 			nativeRatio, _ := ResolveCustomerContractNativeGroupRatio(userGroup, group)
 			perGroup[group] = decimal.NewFromFloat(nativeRatio).Mul(discount).InexactFloat64()
 		}

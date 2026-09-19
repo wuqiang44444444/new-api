@@ -8,7 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -90,38 +90,36 @@ func respondContractDiscountOverlayPricing(c *gin.Context, snapshot *model.Contr
 		}
 		userGroup = user.Group
 	}
-	groupRatio := map[string]float64{}
-	for g, r := range ratio_setting.GetGroupRatioCopy() {
-		groupRatio[g] = r
-	}
-	for g := range groupRatio {
-		if special, ok := ratio_setting.GetGroupGroupRatio(userGroup, g); ok {
-			groupRatio[g] = special
-		}
-	}
-	usableGroup := service.GetUserUsableGroups(userGroup)
 	var pricing []model.Pricing
 	batch := c.Query("execution_mode") == "batch"
 	if batch {
 		var err error
-		pricing, err = batchPricingForGroups(usableGroup)
+		contractGroups := make(map[string]string)
+		for _, rule := range snapshot.Rules {
+			contractGroups[rule.RouteGroup] = rule.RouteGroup
+		}
+		pricing, err = batchPricingForGroups(contractGroups)
 		if err != nil {
 			respondCustomerContractPricingLoadError(c)
 			return true
 		}
 	} else {
-		pricing = filterPricingByUsableGroups(model.GetPricing(), usableGroup)
-	}
-	service.AttachPricingBillingDisplay(pricing)
-	for g := range groupRatio {
-		if _, ok := usableGroup[g]; !ok {
-			delete(groupRatio, g)
-		}
+		pricing = model.GetPricing()
 	}
 	views, err := service.ProjectCustomerContractPricing(c, pricing, userGroup, snapshot, batch)
 	if err != nil {
 		respondCustomerContractPricingLoadError(c)
 		return true
+	}
+	// Publish only groups backed by effective contract sources for this mode.
+	usableGroup := make(map[string]string)
+	groupRatio := make(map[string]float64)
+	for i := range views {
+		service.AttachPricingBillingDisplayOne(&views[i].Pricing)
+		for _, group := range views[i].EnableGroup {
+			usableGroup[group] = setting.GetUsableGroupDescription(group)
+			groupRatio[group], _ = service.ResolveCustomerContractNativeGroupRatio(userGroup, group)
+		}
 	}
 	// 只读展示投影：合同折扣由展示层叠加，不并入原生计费数据。
 	response := gin.H{
@@ -131,12 +129,11 @@ func respondContractDiscountOverlayPricing(c *gin.Context, snapshot *model.Contr
 		"group_ratio":        groupRatio,
 		"usable_group":       usableGroup,
 		"supported_endpoint": model.GetSupportedEndpointMap(),
-		"auto_groups":        service.GetUserAutoGroup(userGroup),
+		"auto_groups":        []string{},
 		"pricing_version":    "customer-contract",
 	}
 	if batch {
 		response["execution_mode"] = "batch"
-		response["auto_groups"] = []string{}
 		response["vendors"] = []model.PricingVendor{}
 	}
 	c.JSON(http.StatusOK, response)

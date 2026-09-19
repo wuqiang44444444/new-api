@@ -63,29 +63,22 @@ func ContractTokenModelAllowed(c *gin.Context, publicModel string) bool {
 	return limits[publicModel] || limits[ratio_setting.FormatMatchingModelName(publicModel)] || limits[ratio_setting.RoutingMatchModelName(publicModel)]
 }
 
-// EffectiveContractRules is shared by runtime and projections. Invalid sources
-// are unavailable; database failures are errors, never an empty/native result.
-func EffectiveContractRules(snapshot *model.ContractEntitySnapshot, userGroup string) ([]model.ContractEntityRule, error) {
+// EffectiveContractRules uses the contract as the routing authorization source,
+// independent of user/Key groups. Runtime and projections share source validity;
+// database failures are errors, never an empty/native result.
+func EffectiveContractRules(snapshot *model.ContractEntitySnapshot) ([]model.ContractEntityRule, error) {
 	if _, err := ContractDiscountsFromSnapshot(snapshot); err != nil {
 		return nil, err
 	}
-	groups := GetUserUsableGroups(userGroup)
-	rules := make([]model.ContractEntityRule, 0, len(snapshot.Rules))
-	for _, rule := range snapshot.Rules {
-		if _, allowed := groups[rule.RouteGroup]; !allowed {
-			continue
+	availability, err := model.GetContractRouteAvailability(snapshot.Rules)
+	if err != nil {
+		return nil, fmt.Errorf("%w: route lookup failed", ErrCustomerContractUnavailable)
+	}
+	rules := make([]model.ContractEntityRule, 0, len(availability))
+	for _, rule := range availability {
+		if rule.Available {
+			rules = append(rules, rule)
 		}
-		if !ratio_setting.ContainsGroupRatio(rule.RouteGroup) {
-			continue
-		}
-		if err := model.ValidateContractRoute(rule); err != nil {
-			if errors.Is(err, model.ErrCustomerContractEntityInvalidChannel) || errors.Is(err, model.ErrCustomerContractInvalidRule) {
-				continue
-			}
-			return nil, fmt.Errorf("%w: route lookup failed", ErrCustomerContractUnavailable)
-		}
-		rule.Available = true
-		rules = append(rules, rule)
 	}
 	return rules, nil
 }
@@ -116,7 +109,7 @@ func customerContractRoutes(c *gin.Context, publicModel string) (map[int]string,
 			snapshot.Rules = append(snapshot.Rules, rule)
 		}
 	}
-	rules, err := EffectiveContractRules(&snapshot, common.GetContextKeyString(c, constant.ContextKeyUserGroup))
+	rules, err := EffectiveContractRules(&snapshot)
 	if err != nil {
 		return nil, err
 	}

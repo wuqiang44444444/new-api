@@ -174,9 +174,9 @@ describe('customer contract pricing on the API key page', () => {
                 availability: 'unavailable',
               },
               {
-                model: 'restricted-model',
+                model: 'internal-contract-model',
                 discount: '0.9',
-                availability: 'group_denied',
+                availability: 'available',
               },
             ],
           },
@@ -185,11 +185,11 @@ describe('customer contract pricing on the API key page', () => {
     })
     renderPricing()
     expect(await screen.findByText('unavailable-model')).toBeTruthy()
-    expect(screen.getByText('restricted-model')).toBeTruthy()
+    expect(screen.getByText('internal-contract-model')).toBeTruthy()
     expect(screen.getByText('No available contract channel')).toBeTruthy()
     expect(
-      screen.getByText('Contract group access is unavailable')
-    ).toBeTruthy()
+      screen.queryByText('Contract group access is unavailable')
+    ).toBeNull()
     expect(screen.getByText('0.8')).toBeTruthy()
     expect(screen.getByText('0.9')).toBeTruthy()
   })

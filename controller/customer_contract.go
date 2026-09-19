@@ -312,7 +312,7 @@ func GetSelfCustomerContract(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "customer contract is temporarily unavailable"})
 		return
 	}
-	views, err := service.BuildContractEntityUserScopeViews(snapshots, user.Group)
+	views, err := service.BuildContractEntityUserScopeViews(snapshots)
 	if err != nil {
 		common.ApiError(c, err)
 		return

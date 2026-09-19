@@ -458,7 +458,7 @@ func UpdateToken(c *gin.Context) {
 			cleanToken.CrossGroupRetry = false
 			_ = cleanToken.SetAutoGroups(nil)
 		} else if request.AutoGroups.Set {
-			if !setTokenAutoGroups(c, cleanToken, request.AutoGroups.Groups) {
+			if !setUpdatedTokenAutoGroups(c, cleanToken, previous, request.AutoGroups.Groups) {
 				return
 			}
 		}

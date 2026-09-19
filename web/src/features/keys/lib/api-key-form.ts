@@ -28,7 +28,11 @@ import type { ApiKey, ApiKeyFormData } from '../types'
 // Form Schema
 // ============================================================================
 
-export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
+export function getApiKeyFormSchema(
+  t: TFunction,
+  maxAutoGroups = 5,
+  storedKey?: ApiKey
+) {
   const autoGroupLimit =
     Number.isInteger(maxAutoGroups) && maxAutoGroups > 0 ? maxAutoGroups : 5
 
@@ -48,7 +52,14 @@ export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
       tokenCount: z.number().min(1).optional(),
     })
     .superRefine((data, ctx) => {
-      if (data.group === 'auto') {
+      const preservesContractRouting =
+        !!storedKey?.contract_id &&
+        storedKey.group === data.group &&
+        data.auto_groups.length === (storedKey.auto_groups ?? []).length &&
+        data.auto_groups.every(
+          (group, index) => group === storedKey.auto_groups?.[index]
+        )
+      if (data.group === 'auto' && !preservesContractRouting) {
         if (
           data.auto_groups_mode === 'custom' &&
           data.auto_groups.length === 0
@@ -173,9 +184,11 @@ export function transformApiKeyToFormDefaults(
 ): ApiKeyFormValues {
   const availableSet = new Set(availableAutoGroups)
   const storedAutoGroups = apiKey.auto_groups ?? []
-  const autoGroups = storedAutoGroups
-    .filter((group) => availableSet.has(group))
-    .slice(0, Math.max(0, maxAutoGroups))
+  const autoGroups = apiKey.contract_id
+    ? [...storedAutoGroups]
+    : storedAutoGroups
+        .filter((group) => availableSet.has(group))
+        .slice(0, Math.max(0, maxAutoGroups))
   const autoGroupsMode = storedAutoGroups.length > 0 ? 'custom' : 'inherit'
 
   return {

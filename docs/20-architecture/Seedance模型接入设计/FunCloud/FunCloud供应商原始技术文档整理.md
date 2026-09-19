@@ -15,7 +15,7 @@ last-reviewed: 2026-09-07
 - [Seedance 2.5 V2](https://docs.leonecloud.com/docs/seedance-2-5)：页面更新于 2026-09-02。
 
 本文区分供应商已公开的协议与平台当前实现。旧协议 `funcloud_seedance` 仍走 V2；新增 `funcloud_modelark_v3` 已完成本地实现和部分真实生成验收。
-旧离线资料中的数量与价格不能覆盖新版协议说明；真实验收范围以 80-dev 实施记录为准。
+旧离线资料中的数量与价格不能覆盖新版协议说明；真实验收范围以归档实施记录为准，未完成项见[路线图](../../../50-planning/路线图.md)。
 
 ## V3 统一接口
 

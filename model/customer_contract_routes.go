@@ -48,9 +48,3 @@ func channelRouteCandidateIDs(group, modelName string, filters []dto.ChannelFilt
 	sort.Ints(ids)
 	return ids
 }
-
-// ValidateContractRoute shares the management/runtime eligibility boundary.
-// Typed channels use their own group/model facts, never generic Ability rows.
-func ValidateContractRoute(rule ContractEntityRule) error {
-	return validateCustomerContractEntityChannel(DB, rule.ChannelId, rule.RouteGroup, rule.PublicModel)
-}

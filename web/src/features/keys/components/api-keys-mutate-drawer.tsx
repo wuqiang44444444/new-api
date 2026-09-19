@@ -190,8 +190,8 @@ export function ApiKeysMutateDrawer({
       ? Number(autoGroupsData?.data?.max_count)
       : 5
   const schema = useMemo(
-    () => getApiKeyFormSchema(t, maxAutoGroups),
-    [t, maxAutoGroups]
+    () => getApiKeyFormSchema(t, maxAutoGroups, apiKeyData?.data),
+    [t, maxAutoGroups, apiKeyData]
   )
 
   const form = useForm<ApiKeyFormValues>({
@@ -264,6 +264,13 @@ export function ApiKeysMutateDrawer({
   useEffect(() => {
     if (groups.length === 0) return
     const currentGroup = selectedGroup
+    if (
+      isUpdate &&
+      apiKeyData?.data?.contract_id &&
+      currentGroup === apiKeyData.data.group
+    ) {
+      return
+    }
     if (currentGroup && !groups.some((g) => g.value === currentGroup)) {
       const fallback =
         groups.find((g) => g.value === 'default')?.value ??
@@ -276,7 +283,7 @@ export function ApiKeysMutateDrawer({
         form.setValue('cross_group_retry', false)
       }
     }
-  }, [groups, form, selectedGroup])
+  }, [groups, form, selectedGroup, isUpdate, apiKeyData])
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     setIsSubmitting(true)

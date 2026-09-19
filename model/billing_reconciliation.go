@@ -58,10 +58,13 @@ type ProviderBillingAudit struct {
 }
 
 func migrateBillingReconciliationDB() error {
-	return DB.AutoMigrate(
+	if err := DB.AutoMigrate(
 		&ProviderBillingDiscount{},
 		&ProviderBillingAudit{},
-	)
+	); err != nil {
+		return err
+	}
+	return migrateBillingStatementTaskIndex(DB)
 }
 
 type BillingReconciliationDataQuality struct {

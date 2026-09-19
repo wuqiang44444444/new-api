@@ -116,7 +116,11 @@ func GetAdminBillingStatementVersionHistory(c *gin.Context) {
 		return
 	}
 	m, err := model.GetBillingStatementMonthByUserPeriod(c.Request.Context(), userId, period.StartTimestamp)
-	if err != nil || m == nil {
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if m == nil {
 		c.JSON(http.StatusOK, gin.H{"success": true, "versions": []any{}})
 		return
 	}

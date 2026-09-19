@@ -80,31 +80,44 @@ func TestStreamDiagnosticsMergeIntoApiError(t *testing.T) {
 
 // WARN 写失败不再阻断持久化：两个出口相互独立。
 func TestWarnFailureDoesNotBlockPersistence(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	persisted := make(chan clienterrlog.Event, 1)
-	clienterrlog.SetEventPersister(func(e clienterrlog.Event) error { persisted <- e; return nil })
-	t.Cleanup(func() { clienterrlog.SetEventPersister(nil) })
-	sink := clienterrlog.NewSink(ctx, 4, func(e clienterrlog.Event) error { return errors.New("log io down") })
-	engine := gin.New()
-	engine.Use(sink.Middleware())
-	engine.POST("/v1/x", func(c *gin.Context) {
-		c.Set("route_tag", "relay")
-		clienterrlog.MarkAuthPassed(c, clienterrlog.AuthSourceAPIToken)
-		c.Status(http.StatusBadRequest)
-	})
-	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/x", nil))
+	for _, mode := range []string{"error", "panic"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			persisted := make(chan clienterrlog.Event, 1)
+			clienterrlog.SetEventPersister(func(e clienterrlog.Event) error { persisted <- e; return nil })
+			t.Cleanup(func() { clienterrlog.SetEventPersister(nil) })
+			sink := clienterrlog.NewSink(ctx, 4, func(e clienterrlog.Event) error {
+				if mode == "panic" {
+					panic("log writer failed")
+				}
+				return errors.New("log io down")
+			})
+			engine := gin.New()
+			engine.Use(sink.Middleware())
+			engine.POST("/v1/x", func(c *gin.Context) {
+				c.Set("route_tag", "relay")
+				clienterrlog.MarkAuthPassed(c, clienterrlog.AuthSourceAPIToken)
+				c.Status(http.StatusBadRequest)
+			})
+			response := httptest.NewRecorder()
+			engine.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/x", nil))
+			assert.Equal(t, http.StatusBadRequest, response.Code)
 
-	select {
-	case event := <-persisted:
-		assert.Equal(t, clienterrlog.EventAPIError, event.EventType)
-		assert.Equal(t, 400, event.Status)
-	case <-time.After(2 * time.Second):
-		require.FailNow(t, "persistence blocked by WARN failure")
+			select {
+			case event := <-persisted:
+				assert.Equal(t, clienterrlog.EventAPIError, event.EventType)
+				assert.Equal(t, 400, event.Status)
+			case <-time.After(2 * time.Second):
+				require.FailNow(t, "persistence blocked by WARN failure")
+			}
+			require.Eventually(t, func() bool { return sink.Health().Persisted == 1 }, time.Second, time.Millisecond)
+			health := sink.Health()
+			assert.EqualValues(t, 1, health.Failed)
+			assert.Zero(t, health.Written)
+			assert.Zero(t, health.PersistFailed)
+		})
 	}
-	health := sink.Health()
-	assert.EqualValues(t, 1, health.Failed)
-	assert.EqualValues(t, 1, health.Persisted)
 }
 
 // 后台事件入口：任务失败事件带类型与公开任务 ID；未知类型按诊断故障计数丢弃。

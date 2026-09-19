@@ -23,7 +23,7 @@ const (
 //     ClickHouse GORM 插入回调的 Valuer 问题（见 audit_log.go 的 embedded workaround）。
 type ErrorEvent struct {
 	Id                int    `json:"id" gorm:"index:idx_error_created_at_id,priority:2"`
-	CreatedAt         int64  `json:"created_at" gorm:"type:bigint;index:idx_error_created_at_id,priority:1;index;index:idx_error_status_created,priority:2"`
+	CreatedAt         int64  `json:"created_at" gorm:"type:bigint;index:idx_error_created_at_id,priority:1;index:idx_error_status_created,priority:2"`
 	Module            string `json:"module" gorm:"type:varchar(16);index"`
 	Method            string `json:"method" gorm:"type:varchar(16)"`
 	Route             string `json:"route" gorm:"type:varchar(255)"`
@@ -130,6 +130,9 @@ func MigrateErrorEvents() error {
 	}
 	if !common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		if err := LOG_DB.AutoMigrate(&ErrorEvent{}); err != nil {
+			return err
+		}
+		if err := retireRedundantIndex(LOG_DB, &ErrorEvent{}, "idx_error_events_created_at", []string{"created_at"}, "idx_error_created_at_id", []string{"created_at", "id"}, false); err != nil {
 			return err
 		}
 		// 存量行按 api_error 归类（幂等：仅覆盖仍为空的行）。

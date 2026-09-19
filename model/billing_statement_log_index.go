@@ -27,5 +27,5 @@ func migrateBillingStatementLogIndex(db *gorm.DB) error {
 			}
 		}
 	}
-	return nil
+	return migrateLogReadWriteIndexes(db)
 }

@@ -17,7 +17,7 @@ import (
 
 // Opt-in server verification always creates a new database. It never migrates
 // or drops tables from the database named by the connection configuration.
-func setupBillingStatementServerDB(t *testing.T, dialect string) *gorm.DB {
+func setupBillingStatementServerDB(t testing.TB, dialect string) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("TEST_BILLING_STATEMENT_DSN")
 	require.NotEmpty(t, dsn)

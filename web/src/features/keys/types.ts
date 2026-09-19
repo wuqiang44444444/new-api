@@ -106,7 +106,7 @@ export interface TokenAutoGroupsConfig {
 export interface SelfCustomerContractRule {
   model: string
   discount: string
-  availability?: 'available' | 'unavailable' | 'group_denied' | 'disabled'
+  availability?: 'available' | 'unavailable' | 'disabled'
 }
 
 export interface SelfContractSummary {

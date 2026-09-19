@@ -5,6 +5,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 	"testing"
 )
 
@@ -29,8 +30,18 @@ func TestCustomerContractMetadataUsesOnlyAllowedChannelCapabilities(t *testing.T
 	assert.NotContains(t, metadata["contract-media"].SupportedEndpointTypes, constant.EndpointTypeOpenAIVideo)
 	// Once explicitly allowed, the higher-priority other-group source wins
 	// media projection, consistently with flattened runtime selection.
+	queries := 0
+	require.NoError(t, DB.Callback().Query().Before("gorm:query").Register("test:contract_metadata_reads", func(tx *gorm.DB) {
+		if tx.Statement.Table == "channels" {
+			queries++
+		}
+	}))
+	t.Cleanup(func() { _ = DB.Callback().Query().Remove("test:contract_metadata_reads") })
 	metadata, err = GetContractModelMetadata([]ContractEntityRule{rule, {PublicModel: "contract-media", ChannelId: 812, RouteGroup: "other"}})
 	require.NoError(t, err)
 	require.NotNil(t, metadata["contract-media"].API)
 	assert.NotNil(t, metadata["contract-media"].API.Video)
+	assert.LessOrEqual(t, queries, 2, "metadata must batch source reads, independently of rule count")
+	_, err = GetContractModelMetadata([]ContractEntityRule{{ChannelId: 99999, PublicModel: "missing"}})
+	require.Error(t, err, "a disappeared source must fail the complete projection")
 }

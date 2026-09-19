@@ -23,7 +23,7 @@ import (
 func setupCustomerContractControllerDB(t *testing.T) (model.User, model.User, model.ContractEntitySnapshot) {
 	t.Helper()
 	previousUsable := setting.UserUsableGroups2JSONString()
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","contract-api":"Contract"}`))
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default"}`))
 	t.Cleanup(func() { require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(previousUsable)) })
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB
@@ -225,6 +225,7 @@ func TestModelDiscoveryUsesContractScopeAcrossGroups(t *testing.T) {
 	ListModels(native, constant.ChannelTypeOpenAI)
 	assert.Equal(t, http.StatusOK, nativeRecorder.Code)
 	assert.Contains(t, nativeRecorder.Body.String(), `"id":"outside-model"`)
+	assert.NotContains(t, nativeRecorder.Body.String(), `"id":"contract-model"`, "contract access does not grant native access to the internal group")
 
 	limited, limitedRecorder := customerContractTokenContext(http.MethodGet, "/v1/models", user, contract.Id)
 	common.SetContextKey(limited, constant.ContextKeyTokenModelLimitEnabled, true)
@@ -247,8 +248,7 @@ func TestRetrieveModelUsesContractScopeAcrossGroups(t *testing.T) {
 	RetrieveModel(c, constant.ChannelTypeOpenAI)
 	assert.Contains(t, recorder.Body.String(), `"code":"model_not_found"`)
 
-	// The user can access the contract group even though the saved Key group
-	// does not contain this model.
+	// The contract authorizes an internal group unavailable to the user and saved Key.
 	denied, deniedRecorder := customerContractTokenContext(http.MethodGet, "/v1/models/contract-model", user, contract.Id)
 	denied.Params = gin.Params{{Key: "model", Value: "contract-model"}}
 	RetrieveModel(denied, constant.ChannelTypeOpenAI)

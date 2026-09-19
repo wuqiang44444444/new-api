@@ -20,6 +20,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test } from 'vitest'
 
+import type { ApiKey } from '../../types'
+
 const { createInstance } = await import('i18next')
 const { I18nextProvider, initReactI18next } = await import('react-i18next')
 const { QueryClient, QueryClientProvider } =
@@ -38,6 +40,7 @@ type ApiMethod = (url: string, data?: unknown) => Promise<{ data: unknown }>
 type MockableApi = {
   get: ApiMethod
   post: ApiMethod
+  put: ApiMethod
 }
 type RenderedDrawer = {
   queryClient: InstanceType<typeof QueryClient>
@@ -61,6 +64,7 @@ const contractFixtures: { contracts: Array<Record<string, unknown>> } = {
 }
 const originalGet = apiClient.get
 const originalPost = apiClient.post
+const originalPut = apiClient.put
 let renderedDrawer: RenderedDrawer | null = null
 
 function installApiFixtures(createdPayloads: Array<Record<string, unknown>>) {
@@ -107,7 +111,7 @@ function installApiFixtures(createdPayloads: Array<Record<string, unknown>>) {
   }
 }
 
-async function renderCreateDrawer(): Promise<void> {
+async function renderCreateDrawer(currentRow?: ApiKey): Promise<void> {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -148,7 +152,11 @@ async function renderCreateDrawer(): Promise<void> {
     <QueryClientProvider client={queryClient}>
       <I18nextProvider i18n={i18n}>
         <ApiKeysProvider>
-          <ApiKeysMutateDrawer open onOpenChange={() => undefined} />
+          <ApiKeysMutateDrawer
+            open
+            currentRow={currentRow}
+            onOpenChange={() => undefined}
+          />
         </ApiKeysProvider>
       </I18nextProvider>
     </QueryClientProvider>
@@ -219,6 +227,7 @@ function selectComboboxOption(
 afterEach(() => {
   apiClient.get = originalGet
   apiClient.post = originalPost
+  apiClient.put = originalPut
   contractFixtures.contracts = [
     {
       id: 3,
@@ -450,3 +459,53 @@ describe('API keys mutate drawer Auto group integration', () => {
     expect(createdPayloads[0]?.contract_id).toBe(0)
   })
 })
+
+for (const group of ['removed-native-group', 'auto']) {
+  test(`editing only the name preserves a contract key's saved ${group} routing`, async () => {
+    const payloads: Array<Record<string, unknown>> = []
+    installApiFixtures([])
+    const key: ApiKey = {
+      id: 17,
+      name: 'original',
+      key: 'masked',
+      status: 1,
+      remain_quota: 0,
+      used_quota: 0,
+      unlimited_quota: true,
+      expired_time: -1,
+      created_time: 1,
+      accessed_time: 0,
+      group,
+      auto_groups: group === 'auto' ? ['revoked', 'vip', 'default', 'old'] : [],
+      cross_group_retry: group === 'auto',
+      contract_id: 3,
+      model_limits_enabled: false,
+      model_limits: '',
+      allow_ips: '',
+    }
+    const fixtureGet = apiClient.get
+    apiClient.get = async (url) =>
+      url === '/api/token/17'
+        ? { data: { success: true, data: key } }
+        : fixtureGet(url)
+    apiClient.put = async (_url, payload) => {
+      payloads.push(payload as Record<string, unknown>)
+      return { data: { success: true } }
+    }
+    await renderCreateDrawer(key)
+    await waitFor(() =>
+      expect(getControlByLabel('Name')).toHaveValue('original')
+    )
+    expect(getControlByLabel('Group')).toHaveTextContent(group)
+    changeInput(getControlByLabel('Name'), 'renamed')
+    fireEvent.click(findButton('Save changes', true))
+    await waitFor(() => expect(payloads).toHaveLength(1))
+    expect(payloads[0]).toMatchObject({
+      name: 'renamed',
+      group,
+      auto_groups: key.auto_groups,
+      cross_group_retry: key.cross_group_retry,
+      contract_id: 3,
+    })
+  })
+}

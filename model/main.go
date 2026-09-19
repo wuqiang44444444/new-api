@@ -402,6 +402,9 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := migrateCasbinRuleIndex(DB); err != nil {
+		return err
+	}
 	if err := migrateTaskUsageCheckIndex(DB); err != nil {
 		return err
 	}

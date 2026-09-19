@@ -8,7 +8,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"gorm.io/gorm"
@@ -172,52 +171,15 @@ func normalizeCustomerContractEntityRules(rules []CustomerContractEntityRuleInpu
 
 // validateCustomerContractEntityChannel verifies that one rule's channel is an
 // enabled channel that serves the public model in the rule's route group. It
-// runs only for newly added or changed sources; accepted historical sources
-// do not depend on current channel or group availability.
+// validates newly added or changed management sources using the same facts and
+// policy as runtime availability. Historical sources remain editable.
 func validateCustomerContractEntityChannel(tx *gorm.DB, channelId int, routeGroup string, publicModel string) error {
-	if !ratio_setting.ContainsGroupRatio(routeGroup) {
-		return fmt.Errorf("%w: route group %q has no native ratio", ErrCustomerContractInvalidRule, routeGroup)
-	}
-	if channelId <= 0 {
-		return fmt.Errorf("%w: channel is required", ErrCustomerContractEntityInvalidChannel)
-	}
-	var channel Channel
-	if err := tx.Select("id", "type", "status", "models").First(&channel, channelId).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: channel %d does not exist", ErrCustomerContractEntityInvalidChannel, channelId)
-		}
+	rule := ContractEntityRule{ChannelId: channelId, RouteGroup: routeGroup, PublicModel: publicModel}
+	facts, err := loadContractRouteFacts(tx, []ContractEntityRule{rule})
+	if err != nil {
 		return err
 	}
-	if channel.Status != common.ChannelStatusEnabled {
-		return fmt.Errorf("%w: channel %d is disabled", ErrCustomerContractEntityInvalidChannel, channelId)
-	}
-	if channelSkipsGenericAbilities(channel.Type) {
-		query := ApplyChannelGroupFilter(tx.Model(&Channel{}), routeGroup).
-			Where("id = ? AND type = ? AND status = ?", channelId, channel.Type, common.ChannelStatusEnabled)
-		var count int64
-		if err := query.Count(&count).Error; err != nil {
-			return err
-		}
-		if count == 0 {
-			return fmt.Errorf("%w: channel %d is not in group %q", ErrCustomerContractEntityInvalidChannel, channelId, routeGroup)
-		}
-		for _, candidate := range strings.Split(channel.Models, ",") {
-			if strings.TrimSpace(candidate) == publicModel {
-				return nil
-			}
-		}
-		return fmt.Errorf("%w: channel %d does not serve model %q", ErrCustomerContractEntityInvalidChannel, channelId, publicModel)
-	}
-	var count int64
-	if err := tx.Model(&Ability{}).
-		Where(&Ability{Group: routeGroup, Model: publicModel, ChannelId: channelId, Enabled: true}).
-		Count(&count).Error; err != nil {
-		return err
-	}
-	if count == 0 {
-		return fmt.Errorf("%w: channel %d does not serve model %q in group %q", ErrCustomerContractEntityInvalidChannel, channelId, publicModel, routeGroup)
-	}
-	return nil
+	return facts.validate(rule)
 }
 
 // validateCustomerContractEntityRules verifies the channel reference of every
@@ -446,16 +408,12 @@ func loadCustomerContractEntityRules(tx *gorm.DB, contractId int, includeAvailab
 			PublicModel: row.PublicModel, ChannelId: row.ChannelId,
 			RouteGroup: row.RouteGroup, RatioUnits: row.RatioUnits,
 		}
-		if includeAvailability {
-			rule.Available = isCustomerContractEntityRuleAvailable(tx, rule.ChannelId, rule.RouteGroup, rule.PublicModel)
-		}
 		rules = append(rules, rule)
 	}
+	if includeAvailability {
+		return readContractRouteAvailability(tx, rules)
+	}
 	return rules, nil
-}
-
-func isCustomerContractEntityRuleAvailable(tx *gorm.DB, channelId int, routeGroup string, publicModel string) bool {
-	return validateCustomerContractEntityChannel(tx, channelId, routeGroup, publicModel) == nil
 }
 
 // GetContractEntitySnapshot loads one contract with its rules, optionally
@@ -538,9 +496,11 @@ func RefreshContractEntityAvailability(snapshot *ContractEntitySnapshot) error {
 	if snapshot == nil {
 		return fmt.Errorf("contract snapshot is nil")
 	}
-	for i := range snapshot.Rules {
-		snapshot.Rules[i].Available = validateCustomerContractEntityChannel(DB, snapshot.Rules[i].ChannelId, snapshot.Rules[i].RouteGroup, snapshot.Rules[i].PublicModel) == nil
+	rules, err := GetContractRouteAvailability(snapshot.Rules)
+	if err != nil {
+		return err
 	}
+	snapshot.Rules = rules
 	return nil
 }
 

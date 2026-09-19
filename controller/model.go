@@ -263,7 +263,7 @@ func ListModels(c *gin.Context, modelType int) {
 		models, ownerGroups = contractModels, contractGroups
 	}
 	for _, modelName := range models {
-		if modelLimitEnable {
+		if modelLimitEnable && !contractActive {
 			matchingName := ratio_setting.RoutingMatchModelName(modelName)
 			if !tokenModelLimit[modelName] && !tokenModelLimit[matchingName] {
 				continue

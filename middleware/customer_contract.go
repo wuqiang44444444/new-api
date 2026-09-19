@@ -38,10 +38,11 @@ func applyCustomerContractDistributeGate(c *gin.Context, publicModel string, sho
 	return false
 }
 
-// Contract state is read after identity checks, before the saved Key route group.
+// True means the request does not use the saved Key's native routing scope.
+// Historical resources use their own ownership checks, not current routing grants.
 func customerContractAuthGate(c *gin.Context, token *model.Token) (bool, error) {
 	if c.Request != nil && contractHistoricalOperation(c) {
-		return false, nil
+		return true, nil
 	}
 	version, _ := common.GetContextKeyType[int64](c, constant.ContextKeyAuthVersion)
 	snapshot, err := service.CustomerContractForRequest(c, token.UserId, version, token.ContractId)

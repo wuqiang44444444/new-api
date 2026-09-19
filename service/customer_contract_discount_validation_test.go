@@ -33,7 +33,7 @@ func TestContractDiscountConsumersRejectInvalidSnapshots(t *testing.T) {
 			views, err := BuildContractEntityUserViews([]model.ContractEntitySnapshot{*snapshot})
 			require.ErrorIs(t, err, ErrCustomerContractUnavailable)
 			assert.Nil(t, views)
-			prices, err := ApplyContractDiscountOverlay([]model.Pricing{{ModelName: "demo"}}, nil, "default", snapshot)
+			prices, err := ApplyContractDiscountOverlay([]model.Pricing{{ModelName: "demo"}}, "default", snapshot)
 			require.ErrorIs(t, err, ErrCustomerContractUnavailable)
 			assert.Nil(t, prices)
 		})

@@ -472,11 +472,11 @@ func TokenAuth() func(c *gin.Context) {
 
 		userGroup := userCache.Group
 		tokenGroup := token.Group
-		contractActive, contractErr := customerContractAuthGate(c, token)
+		skipNativeRouteGroup, contractErr := customerContractAuthGate(c, token)
 		if contractErr != nil {
 			return
 		}
-		if tokenGroup != "" && !contractActive {
+		if tokenGroup != "" && !skipNativeRouteGroup {
 			// check common.UserUsableGroups[userGroup]
 			if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
 				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("无权访问 %s 分组", tokenGroup))

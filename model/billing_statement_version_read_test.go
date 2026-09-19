@@ -99,12 +99,12 @@ func TestSetBillingStatementVersionEnabledPersistsOption(t *testing.T) {
 	require.NoError(t, SetBillingStatementVersionEnabled(ctx, true, 7))
 	assert.True(t, BillingStatementVersionEnabled())
 	var option Option
-	require.NoError(t, DB.Where("key = ?", BillingStatementVersionEnabledKey).First(&option).Error)
+	require.NoError(t, DB.Where(&Option{Key: BillingStatementVersionEnabledKey}).First(&option).Error)
 	assert.Equal(t, "true", option.Value)
 
 	require.NoError(t, SetBillingStatementVersionEnabled(ctx, false, 7))
 	assert.False(t, BillingStatementVersionEnabled())
-	require.NoError(t, DB.Where("key = ?", BillingStatementVersionEnabledKey).First(&option).Error)
+	require.NoError(t, DB.Where(&Option{Key: BillingStatementVersionEnabledKey}).First(&option).Error)
 	assert.Equal(t, "false", option.Value)
 }
 

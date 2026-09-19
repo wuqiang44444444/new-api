@@ -87,6 +87,13 @@ jobs:
       - name: Test root and relaykit modules
         run: make test
 
+      - name: Test billing index migrations on server databases
+        run: |
+          TEST_BILLING_STATEMENT_DIALECT=mysql TEST_BILLING_STATEMENT_DSN="$TEST_CUSTOMER_CONTRACT_MYSQL_DSN" \
+            go test ./model -run '^Test(ReadWriteIndex|BillingStatement(TaskIndex|LogIndex))' -count=1
+          TEST_BILLING_STATEMENT_DIALECT=postgres TEST_BILLING_STATEMENT_DSN="$TEST_CUSTOMER_CONTRACT_POSTGRES_DSN" \
+            go test ./model -run '^Test(ReadWriteIndex|BillingStatement(TaskIndex|LogIndex))' -count=1
+
   frontend:
     name: Frontend typecheck and test
     if: github.event.action != 'closed' || github.event.pull_request.merged == true

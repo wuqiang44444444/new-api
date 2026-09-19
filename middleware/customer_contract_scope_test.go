@@ -97,7 +97,7 @@ func TestCustomerContractScopePermissionsPinsAndFrozenRequest(t *testing.T) {
 
 	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default"}`))
 	_, _, err = service.SelectCustomerContractChannel(&service.RetryParam{Ctx: c, ModelName: "Model-A"}, false)
-	require.ErrorIs(t, err, service.ErrCustomerContractScope, "contract never grants user group permissions")
+	require.NoError(t, err, "user group visibility cannot revoke an accepted contract route")
 }
 
 func TestCustomerContractScopeAssetAndHistory(t *testing.T) {
@@ -107,12 +107,20 @@ func TestCustomerContractScopeAssetAndHistory(t *testing.T) {
 	require.NoError(t, db.Delete(&model.CustomerContract{}, contract.Id).Error)
 	active, err := customerContractAuthGate(c, &model.Token{UserId: user.Id, ContractId: contract.Id})
 	require.NoError(t, err, "historical task reads do not reload the current contract")
-	assert.False(t, active)
+	assert.True(t, active, "history bypasses current route-group checks")
 	c, _ = gin.CreateTestContext(httptest.NewRecorder())
 	common.SetContextKey(c, constant.ContextKeyAuthVersion, user.AuthVersion)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos/old-task/remix", nil)
 	_, err = customerContractAuthGate(c, &model.Token{UserId: user.Id, ContractId: contract.Id})
 	require.Error(t, err, "new remix must authorize current binding")
+	for _, path := range []string{"/v1/realtime", "/v1/models", "/api/pricing", "/v1/assets/opaque"} {
+		next, _ := gin.CreateTestContext(httptest.NewRecorder())
+		common.SetContextKey(next, constant.ContextKeyAuthVersion, user.AuthVersion)
+		next.Request = httptest.NewRequest(http.MethodGet, path, nil)
+		_, err := customerContractAuthGate(next, &model.Token{UserId: user.Id, ContractId: contract.Id})
+		require.Error(t, err, "%s must authorize the current binding", path)
+	}
+
 }
 
 func TestCustomerContractAssetAccessUsesTypedScopeWithoutAbility(t *testing.T) {

@@ -26,7 +26,7 @@ func setupCustomerContractMiddlewareDB(t *testing.T) (*gorm.DB, model.User, mode
 	t.Helper()
 	require.NoError(t, i18n.Init())
 	previousUsable := setting.UserUsableGroups2JSONString()
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","contract-route":"Contract"}`))
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default"}`))
 	t.Cleanup(func() { require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(previousUsable)) })
 	previousDB := model.DB
 	previousType := common.MainDatabaseType()

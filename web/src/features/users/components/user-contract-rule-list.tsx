@@ -68,11 +68,6 @@ export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
                 <Badge variant={rule.available ? 'secondary' : 'destructive'}>
                   {rule.available ? t('Available') : t('Unavailable')}
                 </Badge>
-                {rule.group_allowed === false && (
-                  <Badge variant='destructive'>
-                    {t('Contract group access is unavailable')}
-                  </Badge>
-                )}
               </div>
             </Field>
             <Field>

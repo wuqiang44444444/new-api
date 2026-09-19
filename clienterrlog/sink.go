@@ -168,28 +168,34 @@ func (s *Sink) run(ctx context.Context) {
 func (s *Sink) deliver(e Event) {
 	s.writeStarted.Store(time.Now().Unix())
 	defer s.writeStarted.Store(0)
-	defer func() {
-		if recover() != nil {
-			s.failed.Add(1)
-		}
-	}()
 	// The WARN outlet stays a 4xx diagnostic channel: legacy producers without
 	// an event type and request-scoped api_error events below 500. Stream,
 	// channel-test and task events never reach the log writer, so the native
 	// WARN 4xx statistics stay untouched by the extended sources.
 	if isWarnEligible(e) && (e.Status == 0 || e.Status < 500) {
-		if err := s.write(e); err != nil {
-			s.failed.Add(1)
-		} else {
-			s.written.Add(1)
-			s.lastSuccess.Store(time.Now().Unix())
-		}
+		s.writeWARN(e)
 	}
 	// A failed WARN write must not block persistence; the two outlets stay
 	// independent, so there is deliberately no early return after write errors.
 	if persist := loadEventPersister(); persist != nil && persistedModules[e.Module] {
 		s.persistEvent(persist, e)
 	}
+}
+
+// writeWARN isolates log-writer failures so persistence is attempted even when
+// the writer panics. Each outlet owns its own failure counter and recovery.
+func (s *Sink) writeWARN(e Event) {
+	defer func() {
+		if recover() != nil {
+			s.failed.Add(1)
+		}
+	}()
+	if err := s.write(e); err != nil {
+		s.failed.Add(1)
+		return
+	}
+	s.written.Add(1)
+	s.lastSuccess.Store(time.Now().Unix())
 }
 
 // isWarnEligible reports whether the event may reach the WARN log-line outlet.

@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -38,8 +39,17 @@ func TestBatchContractTokenAuthChecksSavedGroupOnlyInNativeMode(t *testing.T) {
 	// contract restores the original saved-group permission check.
 	stale := model.Token{UserId: user.Id, Key: "batchauthstalegroup", Status: common.TokenStatusEnabled, ExpiredTime: -1, RemainQuota: 1000, Group: "removed-native-group", ContractId: contract.Id}
 	require.NoError(t, db.Create(&stale).Error)
+	internal := model.Token{UserId: user.Id, Key: "batchauthinternalgroup", Status: common.TokenStatusEnabled, ExpiredTime: -1, RemainQuota: 1000, Group: "contract-route", ContractId: contract.Id}
+	require.NoError(t, db.Create(&internal).Error)
 	router := gin.New()
 	router.POST("/v1/batches", TokenAuth(), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	for _, path := range []string{"/v1/batches/:id", "/v1/files/:id/content", "/v1/videos/:id", "/v1/tasks/:id"} {
+		router.GET(path, TokenAuth(), func(c *gin.Context) {
+			assert.Nil(t, service.ActiveCustomerContract(c), "history must not load the current contract")
+			c.Status(http.StatusNoContent)
+		})
+	}
+	router.POST("/v1/batches/:id/cancel", TokenAuth(), func(c *gin.Context) { c.Status(http.StatusNoContent) })
 	for _, tc := range []struct {
 		enabled bool
 		status  int
@@ -61,5 +71,22 @@ func TestBatchContractTokenAuthChecksSavedGroupOnlyInNativeMode(t *testing.T) {
 			expected = 204
 		}
 		assert.Equal(t, expected, staleRecorder.Code, staleRecorder.Body.String())
+		internalRequest := httptest.NewRequest("POST", "/v1/batches", nil)
+		internalRequest.Header.Set("Authorization", "Bearer sk-"+internal.Key)
+		internalRecorder := httptest.NewRecorder()
+		router.ServeHTTP(internalRecorder, internalRequest)
+		assert.Equal(t, expected, internalRecorder.Code, "disabled contracts restore native group permission checks")
+		for _, path := range []string{"/v1/batches/owned", "/v1/files/owned/content", "/v1/videos/owned", "/v1/tasks/owned", "/v1/batches/owned/cancel"} {
+			method := http.MethodGet
+			if strings.HasSuffix(path, "/cancel") {
+				method = http.MethodPost
+			}
+			request := httptest.NewRequest(method, path, nil)
+			request.Header.Set("Authorization", "Bearer sk-"+stale.Key)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, request)
+			assert.Equal(t, http.StatusNoContent, recorder.Code, "%s enabled=%t", path, tc.enabled)
+		}
+
 	}
 }

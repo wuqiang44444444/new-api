@@ -10,9 +10,6 @@ export function ContractModelAvailability({
   const { t } = useTranslation()
   let label = ''
   if (availability === 'unavailable') label = t('No available contract channel')
-  if (availability === 'group_denied') {
-    label = t('Contract group access is unavailable')
-  }
   if (availability === 'disabled') label = t('Contract mode is inactive')
   if (!label) return null
   return (

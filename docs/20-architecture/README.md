@@ -58,6 +58,7 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 | 层次 | 文档 | 负责回答 | 主要代码事实 |
 | --- | --- | --- | --- |
 | 运维 | [系统错误报告架构](运维-系统错误报告架构.md) | 小时快照、有界生成、原子发布与公平投递 | `model/error_report*`、`service/error_report*` |
+| 错误日志 | [运维-API错误日志架构](运维-API错误日志架构.md) | 已鉴权 4xx 统一诊断、error_events 持久化与扩展采集、查询边界 | `clienterrlog/`、`model/error_event*`、`controller/error_log*` |
 | 全局 | [架构概览](架构概览.md) | 系统组成、边界和事实源 | `router/`、`controller/`、`service/`、`model/`、`relay/` |
 | Seedance Link | [Seedance专用渠道与Link架构](Seedance专用渠道与Link架构.md) | 专用渠道、ModelArk V3、代码协议、视频任务和素材代理 | `ChannelTypeSeedanceLink`、ModelArk V3 Router、协议注册表、Task |
 | Seedance 素材 | [Seedance模型素材库支持矩阵](Seedance模型素材库支持矩阵.md) | 客户模型的素材操作、素材组要求、引用和错误合同 | `PublicAssetAPI`、`seedancePublicAssetAPI`、素材 Controller |

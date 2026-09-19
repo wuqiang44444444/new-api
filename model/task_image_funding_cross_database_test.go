@@ -29,19 +29,19 @@ func TestNativeImageFundingAcrossServerDatabases(t *testing.T) {
 			sqlDB, err := db.DB()
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
-			tables := []any{&Channel{}, &User{}, &Token{}, &Task{}, &TaskCreateIdempotency{}, &ImageTaskSlot{}, &SubscriptionPlan{}, &UserSubscription{}, &SubscriptionPreConsumeRecord{}}
+			tables := []any{&Channel{}, &User{}, &Token{}, &Task{}, &TaskBillingDelivery{}, &ErrorEvent{}, &TaskCreateIdempotency{}, &ImageTaskSlot{}, &SubscriptionPlan{}, &UserSubscription{}, &SubscriptionPreConsumeRecord{}}
 			for _, table := range tables {
 				if db.Migrator().HasTable(table) {
 					t.Fatal("refusing to modify a non-empty image test database")
 				}
 			}
-			oldDB, oldMain, oldLog := DB, common.MainDatabaseType(), common.LogDatabaseType()
-			DB = db
+			oldDB, oldLogDB, oldMain, oldLog := DB, LOG_DB, common.MainDatabaseType(), common.LogDatabaseType()
+			DB, LOG_DB = db, db
 			common.SetDatabaseTypes(tc.kind, tc.kind)
 			initCol()
 			t.Cleanup(func() {
 				require.NoError(t, db.Migrator().DropTable(tables...))
-				DB = oldDB
+				DB, LOG_DB = oldDB, oldLogDB
 				common.SetDatabaseTypes(oldMain, oldLog)
 				initCol()
 			})

@@ -5,7 +5,6 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -18,15 +17,7 @@ func customerContractModelProjection(c *gin.Context) ([]string, []string, bool, 
 	if err != nil || snapshot == nil {
 		return nil, nil, false, err
 	}
-	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-	if userGroup == "" {
-		userGroup, err = model.GetUserGroup(c.GetInt("id"), false)
-		common.SetContextKey(c, constant.ContextKeyUserGroup, userGroup)
-		if err != nil {
-			return nil, nil, true, err
-		}
-	}
-	rules, err := service.EffectiveContractRules(snapshot, userGroup)
+	rules, err := customerContractProjectionRules(c, snapshot)
 	if err != nil {
 		return nil, nil, true, err
 	}
@@ -64,7 +55,7 @@ func customerContractModelMetadata(c *gin.Context, models, groups []string) (map
 		apis, err := model.GetPublicMediaModelAPIs(models, groups)
 		return apis, nil, err
 	}
-	rules, err := service.EffectiveContractRules(snapshot, common.GetContextKeyString(c, constant.ContextKeyUserGroup))
+	rules, err := customerContractProjectionRules(c, snapshot)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -84,16 +75,17 @@ func customerContractSeedanceCatalog(c *gin.Context, catalog []model.SeedancePub
 	if err != nil || snapshot == nil {
 		return catalog, err
 	}
-	rules, err := service.EffectiveContractRules(snapshot, common.GetContextKeyString(c, constant.ContextKeyUserGroup))
+	rules, err := customerContractProjectionRules(c, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	channels, err := model.GetContractSourceChannels(rules)
 	if err != nil {
 		return nil, err
 	}
 	allowed := make(map[string]bool)
 	for _, rule := range rules {
-		channel, err := model.GetChannelById(rule.ChannelId, false)
-		if err != nil {
-			return nil, err
-		}
+		channel := channels[rule.ChannelId]
 		if channel.Type == constant.ChannelTypeSeedanceLink && service.ContractTokenModelAllowed(c, rule.PublicModel) {
 			allowed[rule.PublicModel] = true
 		}
@@ -140,4 +132,19 @@ func customerContractModelVisible(c *gin.Context, publicModel string) bool {
 		return false
 	}
 	return true
+}
+
+// Only discovery projections reuse current eligibility within one response.
+// Runtime retries continue to recheck live channel eligibility independently.
+func customerContractProjectionRules(c *gin.Context, snapshot *model.ContractEntitySnapshot) ([]model.ContractEntityRule, error) {
+	const key = "customer_contract_projection_rules"
+	if value, exists := c.Get(key); exists {
+		return value.([]model.ContractEntityRule), nil
+	}
+	rules, err := service.EffectiveContractRules(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	c.Set(key, rules)
+	return rules, nil
 }

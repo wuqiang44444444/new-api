@@ -180,3 +180,19 @@ describe('API key Auto group form mapping', () => {
     )
   })
 })
+
+test('preserves revoked Auto groups on a contract key when only its name changes', () => {
+  const key = {
+    ...baseApiKey,
+    contract_id: 3,
+    auto_groups: ['revoked', 'vip', 'default'],
+  }
+  const defaults = transformApiKeyToFormDefaults(key, ['default'], 1)
+  defaults.name = 'renamed'
+  expect(transformFormDataToPayload(defaults).auto_groups).toEqual(
+    key.auto_groups
+  )
+  expect(getApiKeyFormSchema(t, 1, key).safeParse(defaults).success).toBe(true)
+  defaults.auto_groups = ['vip', 'default']
+  expect(getApiKeyFormSchema(t, 1, key).safeParse(defaults).success).toBe(false)
+})

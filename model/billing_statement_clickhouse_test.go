@@ -21,7 +21,7 @@ func TestGetUserBillingStatementWithClickHouse(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "/billing_statement_test", parsedDSN.Path, "integration test must use an isolated billing_statement_test database")
 
-	db, err := gorm.Open(clickhouse.Open(dsn), &gorm.Config{SkipDefaultTransaction: true})
+	db, err := gorm.Open(clickhouse.Open(dsn), newGormConfig(false))
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
 	require.NoError(t, err)

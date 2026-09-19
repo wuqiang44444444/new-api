@@ -3,6 +3,7 @@ package service
 import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
 	"sort"
 )
@@ -22,7 +23,7 @@ func selectCustomerContractBatchChannel(c *gin.Context, group, publicModel strin
 // Public model/group projections never expose channel identity. Sources must
 // match the execution mode; a Batch-only contract cannot advertise sync prices.
 func ProjectCustomerContractPricing(c *gin.Context, pricing []model.Pricing, userGroup string, snapshot *model.ContractEntitySnapshot, batch bool) ([]CustomerContractPricingView, error) {
-	rules, err := EffectiveContractRules(snapshot, userGroup)
+	rules, err := EffectiveContractRules(snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -46,11 +47,14 @@ func ProjectCustomerContractPricing(c *gin.Context, pricing []model.Pricing, use
 		}
 		groups[rule.PublicModel][rule.RouteGroup] = true
 	}
-	metadata, err := model.GetContractModelMetadata(selectedRules)
-	if err != nil {
-		return nil, err
+	var metadata map[string]dto.OpenAIModels
+	if !batch {
+		metadata, err = model.GetContractModelMetadata(selectedRules)
+		if err != nil {
+			return nil, err
+		}
 	}
-	views := make([]CustomerContractPricingView, 0, len(groups))
+	projected := make([]model.Pricing, 0, len(groups))
 	for _, item := range pricing {
 		allowed := groups[item.ModelName]
 		if len(allowed) == 0 {
@@ -65,11 +69,7 @@ func ProjectCustomerContractPricing(c *gin.Context, pricing []model.Pricing, use
 			item.EnableGroup = append(item.EnableGroup, group)
 		}
 		sort.Strings(item.EnableGroup)
-		items, err := ApplyContractDiscountOverlay([]model.Pricing{item}, item.EnableGroup, userGroup, snapshot)
-		if err != nil {
-			return nil, err
-		}
-		views = append(views, items...)
+		projected = append(projected, item)
 	}
-	return views, nil
+	return ApplyContractDiscountOverlay(projected, userGroup, snapshot)
 }

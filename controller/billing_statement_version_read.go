@@ -156,17 +156,23 @@ func respondBillingStatementVersionMonthStatus(c *gin.Context, userId int, perio
 	view["retention_status"] = retentionStatus
 	if month != nil {
 		if month.CurrentVersionId != nil {
-			if v, err := model.GetBillingStatementVersion(ctx, *month.CurrentVersionId); err == nil {
-				view["current_version"] = billingStatementVersionView(v, admin)
+			v, err := model.GetBillingStatementVersion(ctx, *month.CurrentVersionId)
+			if err != nil {
+				common.ApiError(c, err)
+				return
 			}
+			view["current_version"] = billingStatementVersionView(v, admin)
 		}
 		if month.ActiveDraftId != nil {
-			if v, err := model.GetBillingStatementVersion(ctx, *month.ActiveDraftId); err == nil {
-				if admin {
-					view["active_draft"] = billingStatementVersionView(v, true)
-				}
-				view["has_active_draft"] = true
+			v, err := model.GetBillingStatementVersion(ctx, *month.ActiveDraftId)
+			if err != nil {
+				common.ApiError(c, err)
+				return
 			}
+			if admin {
+				view["active_draft"] = billingStatementVersionView(v, true)
+			}
+			view["has_active_draft"] = true
 		}
 		versions, err := model.ListBillingStatementVersionsByMonth(ctx, month.ID)
 		if err != nil {
