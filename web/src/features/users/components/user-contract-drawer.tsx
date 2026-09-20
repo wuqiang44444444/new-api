@@ -17,6 +17,14 @@ import {
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -26,6 +34,16 @@ import {
 } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { ContractTemplateDrawer } from '@/features/customer-contracts/components/contract-template-drawer'
+import {
+  getContractTemplates,
+  getContractTemplate,
+} from '@/features/customer-contracts/template-api'
+import type {
+  ContractTemplateListItem,
+  ContractTemplateSnapshot,
+} from '@/features/customer-contracts/template-types'
+import { templateRuleToDraft } from '@/features/customer-contracts/template-utils'
 import { cn } from '@/lib/utils'
 
 import {
@@ -96,7 +114,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
   const [reason, setReason] = useState('')
   const [addGroup, setAddGroup] = useState('')
   const [addModel, setAddModel] = useState('')
-  const [addChannel, setAddChannel] = useState('')
+  const [addChannelIds, setAddChannelIds] = useState<string[]>([])
   const [addDiscount, setAddDiscount] = useState('1')
   const [ruleSearch, setRuleSearch] = useState('')
   const [audits, setAudits] = useState<CustomerContractAudit[]>([])
@@ -107,6 +125,17 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
   const [dirty, setDirty] = useState(false)
   const [disableConfirmOpen, setDisableConfirmOpen] = useState(false)
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
+  const [templates, setTemplates] = useState<ContractTemplateListItem[]>([])
+  const [selectedTemplate, setSelectedTemplate] = useState<{
+    id: number
+    version: number
+    name: string
+  } | null>(null)
+  const [templateConflict, setTemplateConflict] =
+    useState<ContractTemplateSnapshot | null>(null)
+  const [saveAsOpen, setSaveAsOpen] = useState(false)
+  const [saveAsDirtyWarn, setSaveAsDirtyWarn] = useState(false)
+  const templateRequest = useRef(0)
   const pendingActionRef = useRef<(() => void) | null>(null)
 
   const selectedContract =
@@ -115,43 +144,72 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
   useEffect(() => {
     if (!props.open) return
     let cancelled = false
+    const loadTemplates = async () => {
+      const items: ContractTemplateListItem[] = []
+      for (let page = 1; ; page++) {
+        const response = await getContractTemplates({ enabled: true, p: page, page_size: 100 })
+        if (cancelled || !response.success || !response.data) return response
+        items.push(...response.data.items)
+        if (!response.data.items.length || items.length >= response.data.total) {
+          return { ...response, data: { ...response.data, items } }
+        }
+      }
+    }
     setLoading(true)
     void Promise.all([
       getUserContracts(props.user.id),
       getCustomerContractChannels(props.user.id),
       getCustomerContractOptions(props.user.id),
+      loadTemplates(),
     ])
-      .then(([contractResponse, channelResponse, optionsResponse]) => {
-        if (cancelled) return
-        if (!contractResponse.success || !contractResponse.data) {
-          throw new Error(contractResponse.message || t('Loading failed'))
+      .then(
+        ([
+          contractResponse,
+          channelResponse,
+          optionsResponse,
+          templatesResponse,
+        ]) => {
+          if (cancelled) return
+          if (!contractResponse.success || !contractResponse.data) {
+            throw new Error(contractResponse.message || t('Loading failed'))
+          }
+          if (!channelResponse.success || !channelResponse.data) {
+            throw new Error(channelResponse.message || t('Loading failed'))
+          }
+          if (!optionsResponse.success || !optionsResponse.data) {
+            throw new Error(optionsResponse.message || t('Loading failed'))
+          }
+          const enabledTemplates =
+            templatesResponse.success && templatesResponse.data
+              ? templatesResponse.data.items || []
+              : []
+          if (!templatesResponse.success) {
+            toast.error(t('Failed to load contract templates'))
+          }
+          setTemplates(enabledTemplates)
+          const contractList = contractResponse.data.contracts || []
+          const channelGroups = channelResponse.data || []
+          const initial =
+            contractList.find((contract) => contract.id === props.contractId) ??
+            contractList[0] ??
+            null
+          setContracts(contractList)
+          setChannels(channelGroups)
+          setOptions(optionsResponse.data || [])
+          setSelectedId(initial?.id ?? null)
+          setCreating(!initial)
+          setDraft(buildDraft(initial))
+          setReason('')
+          setRuleSearch('')
+          setAddGroup(channelGroups[0]?.group || '')
+          setAddModel('')
+          setAddChannelIds([])
+          setAddDiscount('1')
+          setDirty(false)
+          setSelectedTemplate(null)
+          setTemplateConflict(null)
         }
-        if (!channelResponse.success || !channelResponse.data) {
-          throw new Error(channelResponse.message || t('Loading failed'))
-        }
-        if (!optionsResponse.success || !optionsResponse.data) {
-          throw new Error(optionsResponse.message || t('Loading failed'))
-        }
-        const contractList = contractResponse.data.contracts || []
-        const channelGroups = channelResponse.data || []
-        const initial =
-          contractList.find((contract) => contract.id === props.contractId) ??
-          contractList[0] ??
-          null
-        setContracts(contractList)
-        setChannels(channelGroups)
-        setOptions(optionsResponse.data || [])
-        setSelectedId(initial?.id ?? null)
-        setCreating(!initial)
-        setDraft(buildDraft(initial))
-        setReason('')
-        setRuleSearch('')
-        setAddGroup(channelGroups[0]?.group || '')
-        setAddModel('')
-        setAddChannel('')
-        setAddDiscount('1')
-        setDirty(false)
-      })
+      )
       .catch((error: unknown) => {
         if (!cancelled) {
           toast.error(
@@ -164,6 +222,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
       })
     return () => {
       cancelled = true
+      templateRequest.current++
     }
   }, [props.open, props.user.id, props.contractId, t])
 
@@ -209,6 +268,9 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
   }
 
   const selectContract = (contract: ContractEntityAdminView) => {
+    templateRequest.current++
+    setSelectedTemplate(null)
+    setTemplateConflict(null)
     setSelectedId(contract.id)
     setCreating(false)
     setDraft(buildDraft(contract))
@@ -218,12 +280,50 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
   }
 
   const startCreate = () => {
+    templateRequest.current++
     setSelectedId(null)
     setCreating(true)
     setDraft({ name: '', enabled: false, rules: [] })
     setReason('')
     setRuleSearch('')
     setDirty(false)
+    setSelectedTemplate(null)
+    setTemplateConflict(null)
+  }
+
+  // Applying a template fills the whole draft from server facts. A draft
+  // with edits is only replaced after an explicit discard confirmation.
+  const applyTemplate = (templateId: number) => {
+    requestDiscard(() => {
+      const request = ++templateRequest.current
+      void getContractTemplate(templateId)
+        .then((response) => {
+          if (request !== templateRequest.current) return
+          if (!response.success || !response.data) {
+            toast.error(response.message || t('Loading failed'))
+            return
+          }
+          const source = response.data
+          setDraft({
+            name: source.name,
+            enabled: true,
+            rules: source.rules.map((rule) =>
+              templateRuleToDraft(rule, channels, options)
+            ),
+          })
+          setSelectedTemplate({
+            id: source.id,
+            version: source.version,
+            name: source.name,
+          })
+          setTemplateConflict(null)
+          setDirty(true)
+        })
+        .catch(() => {
+          if (request !== templateRequest.current) return
+          toast.error(t('Loading failed'))
+        })
+    })
   }
 
   const updateRule = (index: number, patch: Partial<ContractRuleDraft>) => {
@@ -242,13 +342,17 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
     const candidates = model
       ? channelOptionsForRule(channels, { route_group: addGroup, model })
       : []
-    setAddChannel(candidates.length === 1 ? String(candidates[0].id) : '')
+    setAddChannelIds(candidates.length === 1 ? [String(candidates[0].id)] : [])
   }
 
+  // One add commits one rule per selected channel. All of them share the
+  // entered discount, so the same-model single-discount invariant holds by
+  // construction; channels already bound to this model are rejected
+  // explicitly instead of being skipped silently.
   const addRule = () => {
     if (!addGroup || !addModel) return
-    const channelId = Number(addChannel)
-    if (!channelId) {
+    const channelIds = addChannelIds.map(Number)
+    if (channelIds.length === 0) {
       toast.error(t('Select a channel for this model'))
       return
     }
@@ -266,14 +370,23 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
       )
       return
     }
-    if (sameModelRules.some((rule) => rule.channel_id === channelId)) {
-      toast.error(t('This model already binds the selected channel'))
+    const boundChannels = channelOptionsForRule(channels, {
+      route_group: addGroup,
+      model: addModel,
+    }).filter(
+      (channel) =>
+        channelIds.includes(channel.id) &&
+        sameModelRules.some((rule) => rule.channel_id === channel.id)
+    )
+    if (boundChannels.length > 0) {
+      toast.error(
+        t('This model already binds channels: {{channels}}', {
+          channels: boundChannels.map((channel) => channel.name).join(', '),
+        })
+      )
       return
     }
-    if (
-      sameModelRules.length > 0 &&
-      sameModelRules.some((rule) => rule.discount !== normalizedDiscount)
-    ) {
+    if (sameModelRules.some((rule) => rule.discount !== normalizedDiscount)) {
       toast.error(
         t(
           'All channels of one model must share the same contract discount in this save'
@@ -283,29 +396,77 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
     }
     const channelGroup = channels.find((group) => group.group === addGroup)
     const groupOption = options.find((option) => option.group === addGroup)
+    const newRules = channelIds.map((channelId) => ({
+      model: addModel,
+      channel_id: channelId,
+      route_group: addGroup,
+      discount: normalizedDiscount,
+      available: true,
+      native_group_ratio: channelGroup?.native_group_ratio || '1',
+      effective_multiplier: channelGroup?.native_group_ratio || '1',
+      special_group_ratio: channelGroup?.special_group_ratio || false,
+      price: groupOption?.prices?.[addModel] || {
+        price_type: 'model_ratio' as const,
+      },
+    }))
     setDraft((current) => ({
       ...current,
-      rules: [
-        ...current.rules,
-        {
-          model: addModel,
-          channel_id: channelId,
-          route_group: addGroup,
-          discount: normalizedDiscount,
-          available: true,
-          native_group_ratio: channelGroup?.native_group_ratio || '1',
-          effective_multiplier: channelGroup?.native_group_ratio || '1',
-          special_group_ratio: channelGroup?.special_group_ratio || false,
-          price: groupOption?.prices?.[addModel] || {
-            price_type: 'model_ratio' as const,
-          },
-        },
-      ],
+      rules: [...current.rules, ...newRules],
     }))
     setAddModel('')
-    setAddChannel('')
+    setAddChannelIds([])
     setDirty(true)
   }
+
+  // Template changed after apply: the two explicit resolutions from the
+  // plan — keep the customized rules after confirming the latest version,
+  // or re-apply the latest template rules. Closing the dialog changes
+  // nothing and the draft stays intact.
+  const confirmTemplateVersion = () => {
+    if (!templateConflict) return
+    const latestVersion = templateConflict.version
+    setSelectedTemplate((current) =>
+      current ? { ...current, version: latestVersion } : current
+    )
+    setTemplateConflict(null)
+    toast.success(
+      t('Latest template version confirmed. Review and save again.')
+    )
+  }
+
+  const reapplyTemplateRules = () => {
+    if (!templateConflict) return
+    const source = templateConflict
+    setDraft((current) => ({
+      name: current.name,
+      enabled: current.enabled,
+      rules: source.rules.map((rule) =>
+        templateRuleToDraft(rule, channels, options)
+      ),
+    }))
+    setSelectedTemplate({
+      id: source.id,
+      version: source.version,
+      name: source.name,
+    })
+    setTemplateConflict(null)
+    setDirty(true)
+  }
+
+  // Save-as-template always copies the saved server version of this
+  // contract, never unsaved draft edits.
+  const startSaveAsTemplate = () => {
+    if (!selectedContract) return
+    if (dirty) {
+      setSaveAsDirtyWarn(true)
+      return
+    }
+    setSaveAsOpen(true)
+  }
+
+  const saveAsInitial = selectedContract
+    ? { name: selectedContract.name, rules: buildDraft(selectedContract).rules }
+    : null
 
   const reloadAfterConflict = async (contractId: number) => {
     const [latest, latestAudits] = await Promise.all([
@@ -398,6 +559,12 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
           enabled: nextEnabled,
           reason: reason.trim(),
           rules: payloadRules,
+          ...(selectedTemplate
+            ? {
+                source_template_id: selectedTemplate.id,
+                source_template_version: selectedTemplate.version,
+              }
+            : {}),
         })
         if (!response.success || !response.data) {
           throw new Error(response.message || t('Save failed'))
@@ -443,6 +610,26 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
       }
       props.onSuccess()
     } catch (error: unknown) {
+      if (
+        isAxiosError(error) &&
+        error.response?.status === 409 &&
+        creating &&
+        selectedTemplate
+      ) {
+        // Template changed after apply: keep the whole draft, surface the
+        // latest template and let the administrator confirm explicitly.
+        try {
+          const latest = await getContractTemplate(selectedTemplate.id)
+          if (latest.success && latest.data) {
+            setTemplateConflict(latest.data)
+          } else {
+            toast.error(latest.message || t('Loading failed'))
+          }
+        } catch {
+          toast.error(t('Loading failed'))
+        }
+        return
+      }
       if (
         isAxiosError(error) &&
         error.response?.status === 409 &&
@@ -494,7 +681,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
         open={props.open}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
-            requestDiscard(() => props.onOpenChange(false))
+            requestDiscard(() => { templateRequest.current++; props.onOpenChange(false) })
             return
           }
           props.onOpenChange(nextOpen)
@@ -603,6 +790,82 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                     </AlertDescription>
                   </Alert>
 
+                  {creating && (
+                    <Field>
+                      <FieldLabel htmlFor='contract-template-source'>
+                        {t('Create from template')}
+                      </FieldLabel>
+                      <Select
+                        items={[
+                          { value: 'blank', label: t('Blank contract') },
+                          ...templates.map((template) => ({
+                            value: String(template.id),
+                            label: template.name,
+                          })),
+                        ]}
+                        value={
+                          selectedTemplate
+                            ? String(selectedTemplate.id)
+                            : 'blank'
+                        }
+                        onValueChange={(value) => {
+                          if (!value) return
+                          if (value === 'blank') {
+                            if (selectedTemplate) {
+                              requestDiscard(() => {
+                                templateRequest.current++
+                                setDraft({
+                                  name: '',
+                                  enabled: false,
+                                  rules: [],
+                                })
+                                setReason('')
+                                setSelectedTemplate(null)
+                                setTemplateConflict(null)
+                                setDirty(false)
+                              })
+                            }
+                            return
+                          }
+                          const templateId = Number(value)
+                          if (templateId !== selectedTemplate?.id) {
+                            applyTemplate(templateId)
+                          }
+                        }}
+                      >
+                        <SelectTrigger
+                          id='contract-template-source'
+                          className='w-full'
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value='blank'>
+                              {t('Blank contract')}
+                            </SelectItem>
+                            {templates.map((template) => (
+                              <SelectItem
+                                key={template.id}
+                                value={String(template.id)}
+                              >
+                                {template.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {selectedTemplate && (
+                        <p className='text-muted-foreground text-xs'>
+                          {t(
+                            'Applied template version {{version}}. Rules stay editable and failures must be fixed before saving.',
+                            { version: selectedTemplate.version }
+                          )}
+                        </p>
+                      )}
+                    </Field>
+                  )}
+
                   <Field>
                     <FieldLabel htmlFor='contract-entity-name'>
                       {t('Contract name')}
@@ -624,11 +887,11 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                     channelGroups={channels}
                     group={addGroup}
                     model={addModel}
-                    channelId={addChannel}
+                    channelIds={addChannelIds}
                     discount={addDiscount}
                     onGroupChange={setAddGroup}
                     onModelChange={handleAddModelChange}
-                    onChannelChange={setAddChannel}
+                    onChannelsChange={setAddChannelIds}
                     onDiscountChange={setAddDiscount}
                     onAdd={addRule}
                   />
@@ -714,7 +977,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                 type='button'
                 variant='outline'
                 disabled={saving}
-                onClick={() => requestDiscard(() => props.onOpenChange(false))}
+                onClick={() => requestDiscard(() => { templateRequest.current++; props.onOpenChange(false) })}
               >
                 {t('Cancel')}
               </Button>
@@ -735,6 +998,16 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                   ? t('Disable contract mode')
                   : t('Enable contract mode')}
               </Button>
+              {!creating && selectedContract && (
+                <Button
+                  type='button'
+                  variant='outline'
+                  disabled={saving}
+                  onClick={startSaveAsTemplate}
+                >
+                  {t('Save as template')}
+                </Button>
+              )}
             </div>
             <Button
               type='button'
@@ -771,6 +1044,48 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
         confirmText={t('Discard changes')}
         handleConfirm={runPendingAction}
       />
+
+      <ConfirmDialog
+        open={templateConflict !== null}
+        onOpenChange={(open) => {
+          if (!open) setTemplateConflict(null)
+        }}
+        title={t('Contract template changed')}
+        desc={t(
+          'The template was changed after you applied it and now sits at version {{version}}. Your draft is kept. Confirm the latest version to keep your customized rules, or re-apply the latest template rules.',
+          { version: templateConflict?.version ?? 0 }
+        )}
+        cancelBtnText={t('Decide later')}
+        confirmText={t('Re-apply template rules')}
+        handleConfirm={reapplyTemplateRules}
+      >
+        <Button variant='outline' onClick={confirmTemplateVersion}>
+          {t('Keep my rules and confirm the latest version')}
+        </Button>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={saveAsDirtyWarn}
+        onOpenChange={setSaveAsDirtyWarn}
+        title={t('Save this contract as a template?')}
+        desc={t(
+          'Unsaved edits in this drawer are not included: saving as a template always copies the saved contract version.'
+        )}
+        confirmText={t('Continue and copy saved version')}
+        handleConfirm={() => {
+          setSaveAsDirtyWarn(false)
+          setSaveAsOpen(true)
+        }}
+      />
+
+      {saveAsOpen && saveAsInitial && (
+        <ContractTemplateDrawer
+          open
+          onOpenChange={setSaveAsOpen}
+          templateId={null}
+          initial={saveAsInitial}
+        />
+      )}
     </>
   )
 }

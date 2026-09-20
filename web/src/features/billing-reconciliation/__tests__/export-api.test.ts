@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n/config'
 
+import { getAdminUpstreamDetails } from '../api'
 import {
   createSelfExport,
   resubmitExport,
@@ -13,10 +14,13 @@ import {
   verifyAdminStatementSource,
 } from '../version-api'
 
+const get = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ data: { success: true, data: {} } })
+)
 const post = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ data: { success: true, data: {} } })
 )
-vi.mock('@/lib/api', () => ({ api: { post } }))
+vi.mock('@/lib/api', () => ({ api: { post, get } }))
 
 it('registers source verification through the existing scoped admin endpoint', async () => {
   await verifyAdminStatementSource(
@@ -130,3 +134,31 @@ it.each([
     }
   }
 )
+
+it('sends the backend page parameter for upstream details', async () => {
+  await getAdminUpstreamDetails({
+    start_timestamp: 1000,
+    end_timestamp: 2000,
+    channel_id: 3,
+    page: 2,
+    page_size: 50,
+  })
+  expect(get).toHaveBeenLastCalledWith('/api/billing/admin/upstream-details', {
+    params: expect.objectContaining({ p: 2, page: undefined, page_size: 50 }),
+  })
+})
+it('regenerates upstream exports from their authorized frozen job scope', async () => {
+  await resubmitExport({
+    job_id: 'cex_fixture',
+    job_type: 'upstream_details',
+    filters: {
+      field_version: 11,
+      start_timestamp: 1000,
+      end_timestamp: 2000,
+      timezone: 'Asia/Shanghai',
+    },
+  } as CustomerExportJobView)
+  expect(post).toHaveBeenLastCalledWith('/api/billing/admin/upstream-exports', {
+    source_job_id: 'cex_fixture',
+  })
+})

@@ -1,18 +1,11 @@
 import { Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { MultiSelect } from '@/components/multi-select'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 
 import type { CustomerContractChannelGroupOption } from '../types'
 import { parseContractDiscount } from './user-contract-utils'
@@ -21,11 +14,11 @@ type CustomerContractAddRuleProps = {
   channelGroups: CustomerContractChannelGroupOption[]
   group: string
   model: string
-  channelId: string
+  channelIds: string[]
   discount: string
   onGroupChange: (value: string) => void
   onModelChange: (value: string) => void
-  onChannelChange: (value: string) => void
+  onChannelsChange: (values: string[]) => void
   onDiscountChange: (value: string) => void
   onAdd: () => void
 }
@@ -45,7 +38,7 @@ export function CustomerContractAddRule(props: CustomerContractAddRuleProps) {
   return (
     <Field>
       <FieldLabel>{t('Add model rule')}</FieldLabel>
-      <div className='grid gap-2 md:grid-cols-[170px_minmax(200px,1fr)_180px_150px_auto] md:items-end'>
+      <div className='grid gap-2 md:grid-cols-[170px_minmax(200px,1fr)_minmax(220px,1fr)_150px_auto] md:items-end'>
         <Field>
           <FieldLabel>{t('Route group')}</FieldLabel>
           <Combobox
@@ -57,7 +50,7 @@ export function CustomerContractAddRule(props: CustomerContractAddRuleProps) {
             onValueChange={(value) => {
               props.onGroupChange(value || '')
               props.onModelChange('')
-              props.onChannelChange('')
+              props.onChannelsChange([])
             }}
             placeholder={t('Select route group')}
             emptyText={t('No available model in this group')}
@@ -72,10 +65,10 @@ export function CustomerContractAddRule(props: CustomerContractAddRuleProps) {
               label: model,
             }))}
             value={props.model}
-            onValueChange={(value) => {
-              props.onModelChange(value || '')
-              props.onChannelChange('')
-            }}
+            // The parent's model handler owns the channel selection: it
+            // preselects the single candidate or clears the pick. Clearing
+            // channels here again would wipe that preselection.
+            onValueChange={(value) => props.onModelChange(value || '')}
             placeholder={t('Search and select a model')}
             emptyText={t('No available model in this group')}
             openOnFocus
@@ -83,35 +76,18 @@ export function CustomerContractAddRule(props: CustomerContractAddRuleProps) {
         </Field>
         <Field>
           <FieldLabel>{t('Channel')}</FieldLabel>
-          <Select
-            items={channelOptions.map((channel) => ({
+          <MultiSelect
+            options={channelOptions.map((channel) => ({
               value: String(channel.id),
               label: channel.name,
             }))}
-            value={props.channelId}
-            onValueChange={(value) =>
-              props.onChannelChange(value ? String(value) : '')
-            }
-          >
-            <SelectTrigger className='w-full'>
-              <SelectValue>
-                {props.channelId
-                  ? channelOptions.find(
-                      (channel) => String(channel.id) === props.channelId
-                    )?.name
-                  : t('Select channel')}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent alignItemWithTrigger={false}>
-              <SelectGroup>
-                {channelOptions.map((channel) => (
-                  <SelectItem key={channel.id} value={String(channel.id)}>
-                    {channel.name}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            selected={props.channelIds}
+            onChange={props.onChannelsChange}
+            placeholder={t('Select channels')}
+            emptyText={t('No available model in this group')}
+            selectAll
+            maxVisibleChips={2}
+          />
         </Field>
         <Field>
           <FieldLabel htmlFor='contract-batch-discount'>

@@ -5,6 +5,7 @@ import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { AdminBillingReconciliation } from '../admin-billing-reconciliation'
+import type { BillingSection } from '../types'
 import { MyBilling } from '../my-billing'
 
 vi.mock('../components/customer-statement', () => ({
@@ -22,12 +23,10 @@ vi.mock('../components/customer-statements-list', () => ({
   CustomerStatementsListView: () => <div data-testid='customer-list' />,
 }))
 
-vi.mock('../components/upstream-statement', () => ({
-  UpstreamStatementView: () => <div data-testid='upstream-statement' />,
-}))
-
-vi.mock('../components/upstream-url-statement', () => ({
-  UpstreamUrlStatementView: () => <div data-testid='upstream-url-statement' />,
+vi.mock('../components/upstream-reconciliation', () => ({
+  UpstreamReconciliationView: () => (
+    <div data-testid='upstream-reconciliation' />
+  ),
 }))
 
 const i18n = createInstance().use(initReactI18next)
@@ -83,7 +82,7 @@ describe('billing page split', () => {
     expect(screen.queryByTestId('self-statement')).toBeNull()
   })
 
-  it('keeps upstream reconciliation on the admin page', () => {
+  it('keeps upstream reconciliation on the admin page with exactly two sections', () => {
     renderWithI18n(
       <AdminBillingReconciliation
         search={{ section: 'upstream' }}
@@ -92,21 +91,21 @@ describe('billing page split', () => {
     )
 
     expect(screen.getAllByText('Upstream reconciliation')).toHaveLength(2)
-    expect(screen.getByTestId('upstream-statement')).toBeTruthy()
+    expect(screen.getByTestId('upstream-reconciliation')).toBeTruthy()
+    expect(screen.queryByTestId('upstream-url-statement')).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Upstream URL summary' })).toBeNull()
     expect(screen.queryByLabelText('Billing month')).toBeNull()
   })
 
-  it('opens the upstream URL summary tab directly from the page URL', () => {
+  it('lands the legacy upstream_url section on the merged upstream view', () => {
     renderWithI18n(
       <AdminBillingReconciliation
-        search={{ section: 'upstream_url', month: '2026-08' }}
+        search={{ section: 'upstream_url' as BillingSection, month: '2026-08' }}
         onSearchChange={vi.fn()}
       />
     )
 
-    expect(
-      screen.getByRole('tab', { name: 'Upstream URL summary' })
-    ).toBeTruthy()
-    expect(screen.getByTestId('upstream-url-statement')).toBeTruthy()
+    expect(screen.getByTestId('upstream-reconciliation')).toBeTruthy()
+    expect(screen.queryByTestId('customer-list')).toBeNull()
   })
 })

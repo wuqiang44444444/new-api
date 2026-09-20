@@ -59,10 +59,10 @@ func TestGetProviderBillingURLSummaryMergesChannelsByCurrentBaseURL(t *testing.T
 	}).Error)
 
 	logs := []Log{
-		{UserId: 7, CreatedAt: 1150, Type: LogTypeConsume, ChannelId: 22, ModelName: "shared-model", PromptTokens: 150, Quota: 900, Other: `{"group_ratio":1,"model_ratio":1}`},
-		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, ChannelId: 21, ModelName: "shared-model", PromptTokens: 100, Quota: 1200, Other: `{"group_ratio":1,"model_ratio":1}`},
-		{UserId: 7, CreatedAt: 1200, Type: LogTypeRefund, ChannelId: 22, ModelName: "shared-model", PromptTokens: 50, Quota: 300, Other: `{"task_id":"t-1","task_billing_event":"adjustment","actual_quota":300,"pre_consumed_quota":300,"statement_snapshot":{"billing_mode":"token"}}`},
-		{UserId: 7, CreatedAt: 1250, Type: LogTypeRefund, ChannelId: 21, ModelName: "shared-model", Quota: 400, Other: `{"group_ratio":1,"model_ratio":1}`},
+		{UserId: 7, CreatedAt: 1150, Type: LogTypeConsume, ChannelId: 22, ModelName: "shared-model", PromptTokens: 150, Quota: 900, Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`},
+		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, ChannelId: 21, ModelName: "shared-model", PromptTokens: 100, Quota: 1200, Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`},
+		{UserId: 7, CreatedAt: 1200, Type: LogTypeRefund, ChannelId: 22, ModelName: "shared-model", PromptTokens: 50, Quota: 300, Other: `{"task_id":"t-1","task_billing_event":"adjustment","actual_quota":300,"pre_consumed_quota":300,"contract_applicable":false,"group_ratio":1,"model_ratio":1,"statement_snapshot":{"billing_mode":"token"}}`},
+		{UserId: 7, CreatedAt: 1250, Type: LogTypeRefund, ChannelId: 21, ModelName: "shared-model", Quota: 400, Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`},
 		{UserId: 7, CreatedAt: 1300, Type: LogTypeConsume, ChannelId: 23, ModelName: "v2-model", PromptTokens: 100, Quota: 501, Other: `{"model_ratio":1}`},
 		{UserId: 7, CreatedAt: 1310, Type: LogTypeConsume, ChannelId: 24, ModelName: "orphan-model"},
 		{UserId: 7, CreatedAt: 1320, Type: LogTypeConsume, ChannelId: 25, ModelName: "ghost-model", PromptTokens: 30, Other: `{"model_ratio":1}`},
@@ -70,12 +70,13 @@ func TestGetProviderBillingURLSummaryMergesChannelsByCurrentBaseURL(t *testing.T
 	}
 	require.NoError(t, db.Create(&logs).Error)
 
-	summary, err := GetProviderBillingURLSummary(1000, 1500, "")
+	summary, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
 	require.Len(t, summary.Groups, 5)
 	encoded, err := common.Marshal(summary)
 	require.NoError(t, err)
-	assert.NotContains(t, string(encoded), `"discount":`)
+	assert.NotContains(t, string(encoded), `"discount":null`)
+	assert.Contains(t, string(encoded), `"value":"1","version":0,"source":"default"`)
 
 	merged := summary.Groups[0]
 	assert.Equal(t, "https://api.example.com", merged.UrlKey)
@@ -104,14 +105,20 @@ func TestGetProviderBillingURLSummaryMergesChannelsByCurrentBaseURL(t *testing.T
 	assert.Equal(t, 21, mergedModel.Channels[0].DetailFilter.ChannelId)
 	assert.Equal(t, "shared-model", mergedModel.Channels[0].DetailFilter.ModelName)
 
-	// Cross-check with the channel view: the URL group total equals the sum of
-	// its channels' upstream summaries.
-	channelSummaryAlpha, err := GetProviderBillingSummary(1000, 1500, 1000, 21, "", "", 9)
-	require.NoError(t, err)
-	channelSummaryBeta, err := GetProviderBillingSummary(1000, 1500, 1000, 22, "", "", 9)
-	require.NoError(t, err)
-	assert.EqualValues(t, channelSummaryAlpha.Channels[0].Usage.InputTokens+channelSummaryBeta.Channels[0].Usage.InputTokens, merged.Usage.InputTokens)
-	assert.EqualValues(t, channelSummaryAlpha.Channels[0].Usage.Requests+channelSummaryBeta.Channels[0].Usage.Requests, merged.Usage.Requests)
+	// The URL group total equals the sum of its channel contributions.
+	assert.EqualValues(t, mergedModel.Channels[0].Usage.InputTokens+mergedModel.Channels[1].Usage.InputTokens, merged.Usage.InputTokens)
+	assert.EqualValues(t, mergedModel.Channels[0].Usage.Requests+mergedModel.Channels[1].Usage.Requests, merged.Usage.Requests)
+	// Amounts: refunds provable as task adjustments stay negative in the
+	// official-price projection, including ordinary customer refunds.
+	require.NotNil(t, merged.OriginalAmount)
+	assert.EqualValues(t, 1400, *merged.OriginalAmount)
+	require.NotNil(t, merged.ReferenceAmount)
+	assert.EqualValues(t, 1400, *merged.ReferenceAmount)
+	assert.Zero(t, merged.DiscountPendingChannels)
+	assert.True(t, merged.ReferenceKnown)
+	require.Len(t, merged.ChannelDiscounts, 2)
+	require.NotNil(t, merged.ChannelDiscounts[0].Discount)
+	require.NotNil(t, merged.ChannelDiscounts[1].Discount)
 }
 
 func TestGetProviderBillingURLSummaryKeepsUnidentifiableAndDeletedChannelsSeparate(t *testing.T) {
@@ -128,7 +135,7 @@ func TestGetProviderBillingURLSummaryKeepsUnidentifiableAndDeletedChannelsSepara
 	}
 	require.NoError(t, db.Create(&logs).Error)
 
-	summary, err := GetProviderBillingURLSummary(1000, 1500, "")
+	summary, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
 	require.Len(t, summary.Groups, 3)
 
@@ -155,9 +162,9 @@ func TestGetProviderBillingURLSummaryKeepsUnidentifiableAndDeletedChannelsSepara
 	assert.EqualValues(t, 1, delta.DataQuality.UnavailableRequests)
 	assert.EqualValues(t, 1, delta.DataQuality.UnknownBillingModeRequests)
 
-	// The read-only URL view must not materialize monthly discount defaults.
+	// The read-only URL view must not materialize monthly discounts.
 	var discountRows int64
-	require.NoError(t, db.Model(&ProviderBillingDiscount{}).Count(&discountRows).Error)
+	require.NoError(t, db.Model(&ProviderChannelBillingDiscount{}).Count(&discountRows).Error)
 	assert.Zero(t, discountRows)
 }
 
@@ -176,20 +183,20 @@ func TestGetProviderBillingURLSummaryURLFilterReturnsOnlyMatchingGroup(t *testin
 	}
 	require.NoError(t, db.Create(&logs).Error)
 
-	filtered, err := GetProviderBillingURLSummary(1000, 1500, "https://api.example.com")
+	filtered, err := GetProviderBillingURLSummary(1000, 1500, 1000, "https://api.example.com")
 	require.NoError(t, err)
 	require.Len(t, filtered.Groups, 1)
 	assert.Equal(t, "https://api.example.com", filtered.Groups[0].UrlKey)
 	assert.Equal(t, []int{21}, filtered.Groups[0].ChannelIds)
 	assert.Equal(t, filtered.Groups[0].DataQuality, filtered.DataQuality)
 
-	unidentifiedFiltered, err := GetProviderBillingURLSummary(1000, 1500, "channel:24")
+	unidentifiedFiltered, err := GetProviderBillingURLSummary(1000, 1500, 1000, "channel:24")
 	require.NoError(t, err)
 	require.Len(t, unidentifiedFiltered.Groups, 1)
 	assert.Equal(t, "channel:24", unidentifiedFiltered.Groups[0].UrlKey)
 	assert.True(t, unidentifiedFiltered.Groups[0].Unidentified)
 
-	empty, err := GetProviderBillingURLSummary(1000, 1500, "https://api.example.com/other")
+	empty, err := GetProviderBillingURLSummary(1000, 1500, 1000, "https://api.example.com/other")
 	require.NoError(t, err)
 	assert.Empty(t, empty.Groups)
 	assert.Equal(t, &BillingReconciliationDataQuality{Status: "complete"}, empty.DataQuality)
@@ -212,7 +219,7 @@ func TestProviderBillingURLSummaryMatchesAllChannelUsageAndQualityDimensions(t *
 			{CreatedAt: 1102, Type: LogTypeConsume, ChannelId: channel, ModelName: "same-model"},
 		}).Error)
 	}
-	urls, err := GetProviderBillingURLSummary(1000, 1500, "")
+	urls, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
 	require.Len(t, urls.Groups, 1)
 	group := urls.Groups[0]
@@ -220,40 +227,31 @@ func TestProviderBillingURLSummaryMatchesAllChannelUsageAndQualityDimensions(t *
 	require.Len(t, group.Models, 3)
 	var total ProviderBillingUsage
 	var quality *BillingReconciliationDataQuality
-	for _, channelID := range []int{21, 22} {
-		summary, err := GetProviderBillingSummary(1000, 1500, 1000, channelID, "", "", 9)
-		require.NoError(t, err)
-		require.Len(t, summary.Channels, 1)
-		channel := summary.Channels[0]
-		total.Requests += channel.Usage.Requests
-		total.BillableCalls += channel.Usage.BillableCalls
-		total.InputTokens += channel.Usage.InputTokens
-		total.CacheReadTokens += channel.Usage.CacheReadTokens
-		total.CacheWriteTokens += channel.Usage.CacheWriteTokens
-		total.OutputTokens += channel.Usage.OutputTokens
-		accumulateBillingReconciliationQuality(&quality, channel.DataQuality)
-		for _, urlModel := range group.Models {
-			var expected *ProviderBillingPlatformSummary
-			for i := range channel.Models {
-				if channel.Models[i].BillingMode == urlModel.BillingMode {
-					expected = &channel.Models[i]
-				}
-			}
-			require.NotNil(t, expected)
-			var found bool
-			for _, leaf := range urlModel.Channels {
-				if leaf.ChannelId == channelID {
-					found = true
-					assert.Equal(t, expected.Usage, leaf.Usage)
-					assert.Equal(t, expected.DataQuality, leaf.DataQuality)
-				}
-			}
-			assert.True(t, found)
+	for _, urlModel := range group.Models {
+		for _, leaf := range urlModel.Channels {
+			total.Requests += leaf.Usage.Requests
+			total.BillableCalls += leaf.Usage.BillableCalls
+			total.InputTokens += leaf.Usage.InputTokens
+			total.CacheReadTokens += leaf.Usage.CacheReadTokens
+			total.CacheWriteTokens += leaf.Usage.CacheWriteTokens
+			total.OutputTokens += leaf.Usage.OutputTokens
+			accumulateBillingReconciliationQuality(&quality, leaf.DataQuality)
 		}
 	}
 	finalizeBillingReconciliationQuality(&quality)
 	assert.Equal(t, total, group.Usage)
 	assert.Equal(t, quality, group.DataQuality)
+	// Leaves reconcile with their model rows and the group total.
+	var modelTotal ProviderBillingUsage
+	for _, urlModel := range group.Models {
+		var rowTotal ProviderBillingUsage
+		for _, leaf := range urlModel.Channels {
+			accumulateProviderBillingUsage(&rowTotal, leaf.Usage)
+		}
+		assert.Equal(t, rowTotal, urlModel.Usage)
+		accumulateProviderBillingUsage(&modelTotal, urlModel.Usage)
+	}
+	assert.Equal(t, modelTotal, group.Usage)
 	assert.EqualValues(t, 6, group.Usage.Requests)
 	assert.EqualValues(t, 2, group.Usage.BillableCalls)
 	assert.Positive(t, group.Usage.CacheReadTokens)

@@ -23,7 +23,7 @@ func TestSeedanceSettlementStatementFacts(t *testing.T) {
 			truncate(t)
 			seedUser(t, 8991, 10000)
 			require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 8991).Update("request_count", 1).Error)
-			require.NoError(t, model.DB.AutoMigrate(&model.ProviderBillingDiscount{}, &model.ProviderBillingAudit{}))
+			require.NoError(t, model.DB.AutoMigrate(&model.ProviderBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderChannelBillingDiscount{}))
 			expr := `u("tokens") < 200000 ? tier("low", u("tokens") * 5 / 1000000) : tier("high", u("tokens") * 10 / 1000000)`
 			task := makeSeedanceUsageTask(t, expr, 300000, 3000)
 			task.Properties.OriginModelName = "statement-video"
@@ -62,12 +62,12 @@ func TestSeedanceSettlementStatementFacts(t *testing.T) {
 			assert.EqualValues(t, 1, statement.Summary.Requests)
 			assert.EqualValues(t, tc.tokens, statement.Summary.OutputTokens)
 			assert.EqualValues(t, tc.quota, statement.Summary.NetQuota)
-			upstream, err := model.GetProviderBillingSummary(1, time.Now().Unix()+10, 1000, 0, "", "", 1)
+			upstream, err := model.GetProviderBillingURLSummary(1, time.Now().Unix()+10, 1000, "")
 			require.NoError(t, err)
-			require.Len(t, upstream.Channels, 1)
-			require.Len(t, upstream.Channels[0].Models, 1)
-			assert.EqualValues(t, tc.tokens, upstream.Channels[0].Models[0].Usage.OutputTokens)
-			assert.EqualValues(t, 1, upstream.Channels[0].Models[0].Usage.Requests)
+			require.Len(t, upstream.Groups, 1)
+			require.Len(t, upstream.Groups[0].Models, 1)
+			assert.EqualValues(t, tc.tokens, upstream.Groups[0].Models[0].Usage.OutputTokens)
+			assert.EqualValues(t, 1, upstream.Groups[0].Models[0].Usage.Requests)
 			assert.Equal(t, 10000+3000-tc.quota, getUserQuota(t, 8991))
 			var user model.User
 			require.NoError(t, model.DB.First(&user, 8991).Error)

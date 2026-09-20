@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 
+import { toIntlLocale } from '@/i18n/languages'
+
 import type { BillingDisplayRule } from '../types'
 import { BILLING_VARS } from './billing-expr'
 
@@ -72,7 +74,7 @@ export function billingConditionText(
     numeric >= 0 &&
     numeric <= 6
   ) {
-    value = new Intl.DateTimeFormat(language, {
+    value = new Intl.DateTimeFormat(toIntlLocale(language), {
       weekday: 'long',
       timeZone: 'UTC',
     }).format(new Date(Date.UTC(2026, 8, 6 + numeric)))

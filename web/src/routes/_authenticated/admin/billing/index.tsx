@@ -26,6 +26,8 @@ import {
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
+// section 兼容旧地址中的 upstream_url：路由层仍解析它，页面组件将其并入
+// 统一的上游对账视图。
 const adminBillingSearchSchema = z.object({
   section: z
     .enum(['customer', 'upstream', 'upstream_url'])
@@ -80,9 +82,6 @@ function AdminBillingRoute() {
     })
 
   return (
-    <AdminBillingReconciliation
-      search={search}
-      onSearchChange={handleSearchChange}
-    />
+    <AdminBillingReconciliation search={search} onSearchChange={handleSearchChange} />
   )
 }

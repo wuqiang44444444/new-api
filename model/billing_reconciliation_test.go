@@ -27,12 +27,12 @@ func TestBillingReconciliationEmptyCollectionsEncodeAsArrays(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(statementJSON), `"groups":[]`)
 
-	summary, err := GetProviderBillingSummary(1000, 1500, 1000, 0, "", "", 1)
+	summary, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
-	require.NotNil(t, summary.Channels)
+	require.NotNil(t, summary.Groups)
 	summaryJSON, err := common.Marshal(summary)
 	require.NoError(t, err)
-	assert.Contains(t, string(summaryJSON), `"channels":[]`)
+	assert.Contains(t, string(summaryJSON), `"url_groups":[]`)
 }
 
 func setupBillingReconciliationTestDB(t *testing.T) *gorm.DB {
@@ -198,16 +198,21 @@ func TestProviderBillingSummaryUsesUnmappedCustomerModelAsExactProviderIdentity(
 		{UserId: 7, CreatedAt: 1200, Type: LogTypeConsume, ChannelId: 52, ModelName: "gpt-5.6-sol", Other: `{"request_path":"/v1/responses","model_price":-1,"model_ratio":2.5}`},
 	}).Error)
 
-	summary, err := GetProviderBillingSummary(1000, 1500, 1000, 52, "", "", 9)
+	summary, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
-	require.Len(t, summary.Channels, 1)
-	require.Len(t, summary.Channels[0].Models, 1)
-	item := summary.Channels[0].Models[0]
+	require.Len(t, summary.Groups, 1)
+	require.Len(t, summary.Groups[0].Models, 1)
+	item := summary.Groups[0].Models[0]
 	assert.Equal(t, "gpt-5.6-sol", item.ProviderModel)
-	assert.Equal(t, []string{"gpt-5.6-sol"}, item.CustomerModels)
 	assert.False(t, item.ProviderModelFallback)
 	assert.Equal(t, BillingReconciliationModeToken, item.BillingMode)
 	assert.Zero(t, item.DataQuality.ProviderModelFallbackRows)
+	require.Len(t, item.Channels, 1)
+	leaf := item.Channels[0]
+	assert.Equal(t, []string{"gpt-5.6-sol"}, leaf.CustomerModels)
+	require.NotNil(t, leaf.Discount)
+	assert.True(t, leaf.Discount.Value.Equal(decimal.NewFromInt(1)))
+	assert.Equal(t, "default", leaf.Discount.Source)
 	encoded, err := common.Marshal(summary)
 	require.NoError(t, err)
 	assert.NotContains(t, string(encoded), `"provider_usage"`)
@@ -227,11 +232,11 @@ func TestProviderBillingSummaryMarksOnlyBrokenMappedIdentityAsFallback(t *testin
 		Other: `{"is_model_mapped":true,"model_ratio":1}`,
 	}).Error)
 
-	summary, err := GetProviderBillingSummary(1000, 1500, 1000, 53, "", "", 9)
+	summary, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
-	require.Len(t, summary.Channels, 1)
-	require.Len(t, summary.Channels[0].Models, 1)
-	item := summary.Channels[0].Models[0]
+	require.Len(t, summary.Groups, 1)
+	require.Len(t, summary.Groups[0].Models, 1)
+	item := summary.Groups[0].Models[0]
 	assert.Equal(t, "customer-model", item.ProviderModel)
 	assert.True(t, item.ProviderModelFallback)
 	require.NotNil(t, item.DataQuality)
@@ -252,50 +257,108 @@ func TestUsageLogDetailFilterUsesStableTokenId(t *testing.T) {
 	assert.Equal(t, 101, logs[0].TokenId)
 }
 
-func TestProviderBillingDiscountInheritanceVersioningAndAudit(t *testing.T) {
+func TestProviderChannelDiscountInheritanceVersioningAndAudit(t *testing.T) {
 	db := setupBillingReconciliationTestDB(t)
 	location := time.FixedZone("Asia/Shanghai", 8*60*60)
 	july := time.Date(2026, time.July, 1, 0, 0, 0, 0, location).Unix()
 	august := time.Date(2026, time.August, 1, 0, 0, 0, 0, location).Unix()
+	september := time.Date(2026, time.September, 1, 0, 0, 0, 0, location).Unix()
 	require.NoError(t, db.Create(&Channel{Id: 31, Name: "provider"}).Error)
 
-	previous := &ProviderBillingDiscount{PeriodStart: july, ChannelId: 31, ProviderModel: "model-a", BillingMode: BillingReconciliationModeToken, Discount: decimal.RequireFromString("0.85"), Reason: "supplier contract"}
-	require.NoError(t, SaveProviderBillingDiscount(previous, 0, 9))
-	items := map[providerBillingSummaryKey]*ProviderBillingPlatformSummary{
-		{channelId: 31, model: "model-a", mode: BillingReconciliationModeToken}: {},
-	}
-	projections, err := getProviderBillingDiscountProjections(august, items, 10)
+	previous := &ProviderChannelBillingDiscount{PeriodStart: july, ChannelId: 31, Discount: decimal.RequireFromString("0.85"), Reason: "supplier contract"}
+	require.NoError(t, SaveProviderChannelBillingDiscount(previous, 0, 9))
+	outcomes, err := InitializeProviderChannelBillingDiscounts(august, []int{31}, 10)
 	require.NoError(t, err)
-	projection := projections[providerBillingSummaryKey{channelId: 31, model: "model-a", mode: BillingReconciliationModeToken}]
-	assert.True(t, projection.Value.Equal(decimal.RequireFromString("0.85")))
-	assert.Equal(t, "previous_period", projection.Source)
-	assert.Equal(t, july, projection.SourcePeriod)
-	assert.EqualValues(t, 1, projection.Version)
+	require.Len(t, outcomes, 1)
+	assert.Equal(t, "created", outcomes[0].Outcome)
 
-	var current ProviderBillingDiscount
-	require.NoError(t, db.Where("period_start = ? AND channel_id = ? AND provider_model = ? AND billing_mode = ?", august, 31, "model-a", BillingReconciliationModeToken).First(&current).Error)
-	assert.Equal(t, july, current.CopiedFromPeriod)
+	discounts, err := GetProviderChannelBillingDiscounts(august, []int{31})
+	require.NoError(t, err)
+	assert.True(t, discounts[31].Discount.Equal(decimal.RequireFromString("0.85")))
+	assert.Equal(t, july, discounts[31].CopiedFromPeriod)
+	assert.EqualValues(t, 1, discounts[31].Version)
+
+	// A late correction of July must not rewrite August's copied value.
 	previous.Discount = decimal.RequireFromString("0.7")
 	previous.Reason = "late July correction"
-	require.NoError(t, SaveProviderBillingDiscount(previous, 1, 9))
-	projectionAfterCorrection, err := getProviderBillingDiscountProjections(august, items, 10)
+	require.NoError(t, SaveProviderChannelBillingDiscount(previous, 1, 9))
+	discounts, err = GetProviderChannelBillingDiscounts(august, []int{31})
 	require.NoError(t, err)
-	assert.True(t, projectionAfterCorrection[providerBillingSummaryKey{channelId: 31, model: "model-a", mode: BillingReconciliationModeToken}].Value.Equal(decimal.RequireFromString("0.85")))
+	assert.True(t, discounts[31].Discount.Equal(decimal.RequireFromString("0.85")))
 
+	// Manual save cannot claim a copied period, and version conflicts fail.
+	rejected := &ProviderChannelBillingDiscount{PeriodStart: august, ChannelId: 31, Discount: decimal.RequireFromString("0.9"), CopiedFromPeriod: july, Reason: "bogus"}
+	require.Error(t, SaveProviderChannelBillingDiscount(rejected, 1, 9))
+	current := discounts[31]
 	current.Discount = decimal.RequireFromString("0.8")
 	current.Reason = "August adjustment"
-	require.ErrorIs(t, SaveProviderBillingDiscount(&current, 0, 10), ErrBillingReconciliationVersionConflict)
-	require.NoError(t, SaveProviderBillingDiscount(&current, 1, 10))
+	current.CopiedFromPeriod = 0
+	require.ErrorIs(t, SaveProviderChannelBillingDiscount(&current, 0, 10), ErrBillingReconciliationVersionConflict)
+	require.NoError(t, SaveProviderChannelBillingDiscount(&current, 1, 10))
 	assert.EqualValues(t, 2, current.Version)
 
+	// Re-initialization keeps manual values; September inherits the corrected 0.8.
+	outcomes, err = InitializeProviderChannelBillingDiscounts(august, []int{31}, 10)
+	require.NoError(t, err)
+	assert.Equal(t, "exists", outcomes[0].Outcome)
+	outcomes, err = InitializeProviderChannelBillingDiscounts(september, []int{31}, 10)
+	require.NoError(t, err)
+	assert.Equal(t, "created", outcomes[0].Outcome)
+	discounts, err = GetProviderChannelBillingDiscounts(september, []int{31})
+	require.NoError(t, err)
+	assert.True(t, discounts[31].Discount.Equal(decimal.RequireFromString("0.8")))
+	assert.Equal(t, august, discounts[31].CopiedFromPeriod)
+
 	var audits []ProviderBillingAudit
-	require.NoError(t, db.Where("entity_type = ?", "discount").Order("id").Find(&audits).Error)
-	require.Len(t, audits, 4)
+	require.NoError(t, db.Where("entity_type = ?", "channel_discount").Order("id").Find(&audits).Error)
+	require.Len(t, audits, 5)
 	assert.Equal(t, "create", audits[0].Action)
 	assert.Equal(t, "create", audits[1].Action)
+	assert.Equal(t, "update", audits[2].Action)
 	assert.Equal(t, "update", audits[3].Action)
+	assert.Equal(t, "create", audits[4].Action)
+	assert.Contains(t, audits[2].Before, `"discount":"0.85"`)
+	assert.Contains(t, audits[2].After, `"discount":"0.7"`)
 	assert.Contains(t, audits[3].Before, `"discount":"0.85"`)
 	assert.Contains(t, audits[3].After, `"discount":"0.8"`)
+}
+
+func TestProviderChannelDiscountInitializationPendingAndUnknownChannel(t *testing.T) {
+	db := setupBillingReconciliationTestDB(t)
+	location := time.FixedZone("Asia/Shanghai", 8*60*60)
+	july := time.Date(2026, time.July, 1, 0, 0, 0, 0, location).Unix()
+	august := time.Date(2026, time.August, 1, 0, 0, 0, 0, location).Unix()
+	require.NoError(t, db.Create(&Channel{Id: 41, Name: "first-month"}).Error)
+
+	// No previous-month source: initialize with coefficient 1.
+	outcomes, err := InitializeProviderChannelBillingDiscounts(july, []int{41}, 9)
+	require.NoError(t, err)
+	assert.Equal(t, "defaulted", outcomes[0].Outcome)
+	discounts, err := GetProviderChannelBillingDiscounts(july, []int{41})
+	require.NoError(t, err)
+	require.Contains(t, discounts, 41)
+	assert.True(t, discounts[41].Discount.Equal(decimal.NewFromInt(1)))
+
+	// Unknown channels are reported, not silently created.
+	outcomes, err = InitializeProviderChannelBillingDiscounts(july, []int{41, 999}, 9)
+	require.NoError(t, err)
+	byChannel := make(map[int]string)
+	for _, outcome := range outcomes {
+		byChannel[outcome.ChannelId] = outcome.Outcome
+	}
+	assert.Equal(t, "exists", byChannel[41])
+	assert.Equal(t, "invalid_channel", byChannel[999])
+
+	// Explicit confirmed no-discount (1) copies as 1 and differs from pending.
+	require.NoError(t, db.Create(&Channel{Id: 42, Name: "explicit-one"}).Error)
+	require.NoError(t, SaveProviderChannelBillingDiscount(&ProviderChannelBillingDiscount{PeriodStart: july, ChannelId: 42, Discount: decimal.NewFromInt(1), Reason: "confirmed no discount"}, 0, 9))
+	outcomes, err = InitializeProviderChannelBillingDiscounts(august, []int{42}, 9)
+	require.NoError(t, err)
+	assert.Equal(t, "created", outcomes[0].Outcome)
+	discounts, err = GetProviderChannelBillingDiscounts(august, []int{42})
+	require.NoError(t, err)
+	assert.True(t, discounts[42].Discount.Equal(decimal.NewFromInt(1)))
+	assert.Equal(t, july, discounts[42].CopiedFromPeriod)
 }
 
 func TestProviderBillingDetailDoesNotNarrowMergedProviderModelToOneCustomerModel(t *testing.T) {
@@ -308,11 +371,13 @@ func TestProviderBillingDetailDoesNotNarrowMergedProviderModelToOneCustomerModel
 
 	require.NoError(t, db.Create(&Log{UserId: 7, CreatedAt: 1300, Type: LogTypeConsume, ChannelId: 51, ModelName: "customer-b", PromptTokens: 5, Other: `{ "admin_info": { "statement_snapshot": { "billing_mode": "token", "provider_model": "provider-model" } } }`}).Error)
 
-	summary, err := GetProviderBillingSummary(1000, 1500, 1000, 51, "", "", 9)
+	summary, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
-	require.Len(t, summary.Channels, 1)
-	require.Len(t, summary.Channels[0].Models, 1)
-	assert.Empty(t, summary.Channels[0].Models[0].DetailFilter.ModelName)
-	assert.Equal(t, []string{"customer-a", "customer-b"}, summary.Channels[0].Models[0].CustomerModels)
-	assert.EqualValues(t, 35, summary.Channels[0].Models[0].Usage.InputTokens)
+	require.Len(t, summary.Groups, 1)
+	require.Len(t, summary.Groups[0].Models, 1)
+	modelRow := summary.Groups[0].Models[0]
+	require.Len(t, modelRow.Channels, 1)
+	assert.Empty(t, modelRow.Channels[0].DetailFilter.ModelName)
+	assert.Equal(t, []string{"customer-a", "customer-b"}, modelRow.Channels[0].CustomerModels)
+	assert.EqualValues(t, 35, modelRow.Usage.InputTokens)
 }

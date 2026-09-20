@@ -27,8 +27,8 @@ import type {
   CustomerStatementListQuality,
   CustomerStatementListSortBy,
   CustomerStatementListSortOrder,
-  ProviderSummary,
   ProviderUrlSummary,
+  UpstreamDetails,
 } from './types'
 
 type PeriodParams = {
@@ -71,21 +71,55 @@ export async function getAdminCustomerStatements(
   return response.data
 }
 
-export async function getAdminUpstreamStatement(
-  params: PeriodParams & { channel_id?: number; model_name?: string }
-) {
-  const response = await api.get<ApiResponse<BillingEnvelope<ProviderSummary>>>(
-    '/api/billing/admin/upstream-summary',
-    { params }
-  )
-  return response.data
-}
-
-export async function getAdminUpstreamUrlStatement(
+// 统一上游对账：URL 分组汇总 + 原价/折后参考金额 + 渠道月度折扣编辑区。
+export async function getAdminUpstreamReconciliation(
   params: PeriodParams & { url_key?: string }
 ) {
   const response = await api.get<
     ApiResponse<BillingEnvelope<ProviderUrlSummary>>
-  >('/api/billing/admin/upstream-url-summary', { params })
+  >('/api/billing/admin/upstream-summary', { params })
+  return response.data
+}
+
+export async function putAdminUpstreamDiscount(payload: {
+  period_start: number
+  channel_id: number
+  discount: string
+  expected_version: number
+  reason: string
+}) {
+  const response = await api.put<ApiResponse<unknown>>(
+    '/api/billing/admin/upstream-discounts',
+    payload
+  )
+  return response.data
+}
+
+export async function postAdminUpstreamDiscountInit(payload: {
+  period_start: number
+  channel_ids: number[]
+}) {
+  const response = await api.post<
+    ApiResponse<{ outcomes: Array<{ channel_id: number; outcome: string }> }>
+  >('/api/billing/admin/upstream-discounts/initialize', payload)
+  return response.data
+}
+
+export async function getAdminUpstreamDetails(
+  params: PeriodParams & {
+    channel_id?: number
+    url_key?: string
+    model_name?: string
+    billing_mode?: string
+    request_id?: string
+    upstream_request_id?: string
+    page?: number
+    page_size?: number
+  }
+) {
+  const response = await api.get<ApiResponse<BillingEnvelope<UpstreamDetails>>>(
+    '/api/billing/admin/upstream-details',
+    { params: { ...params, p: params.page, page: undefined } }
+  )
   return response.data
 }

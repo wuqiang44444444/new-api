@@ -33,9 +33,12 @@ func registerBillingReconciliationRoutes(apiRouter *gin.RouterGroup) {
 		adminRoute.GET("/customer-logs", controller.GetAdminBillingStatementLogs)
 		adminRoute.GET("/customer-logs/stat", controller.GetAdminBillingStatementLogs)
 		adminRoute.GET("/customer-summary", controller.GetAdminCustomerBillingReconciliation)
-		adminRoute.GET("/upstream-summary", controller.GetAdminUpstreamBillingReconciliation)
-		adminRoute.GET("/upstream-url-summary", controller.GetAdminUpstreamBillingURLReconciliation)
+		// 统一上游对账：URL 分组汇总 + 渠道月度折扣编辑 + 明细，替代原有两个上游 Tab。
+		adminRoute.GET("/upstream-summary", controller.GetAdminUpstreamReconciliation)
+		adminRoute.GET("/upstream-details", controller.GetAdminUpstreamBillingDetails)
+		adminRoute.POST("/upstream-exports", controller.CreateAdminUpstreamExport)
 		adminRoute.PUT("/upstream-discounts", controller.PutAdminProviderBillingDiscount)
+		adminRoute.POST("/upstream-discounts/initialize", controller.PostAdminProviderChannelDiscountInit)
 
 		// 管理员代客导出：显式目标客户，限单客户；任务列表仍只看本人发起。
 		adminExportRoute := adminRoute.Group("/customer-exports")

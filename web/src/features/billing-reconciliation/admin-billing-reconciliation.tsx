@@ -25,8 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { CustomerStatementView } from './components/customer-statement'
 import { CustomerStatementsListView } from './components/customer-statements-list'
-import { UpstreamStatementView } from './components/upstream-statement'
-import { UpstreamUrlStatementView } from './components/upstream-url-statement'
+import { UpstreamReconciliationView } from './components/upstream-reconciliation'
 import { currentShanghaiMonth, resolveShanghaiMonth } from './lib'
 import type {
   AdminBillingSearch,
@@ -46,27 +45,26 @@ export function AdminBillingReconciliation(
   props: AdminBillingReconciliationProps
 ) {
   const { t } = useTranslation()
-  const section: BillingSection = props.search.section ?? 'customer'
+  // 旧地址中的 upstream_url 已并入统一的上游对账视图；缺省仍是客户账单。
+  const rawSection: string | undefined = props.search.section
+  const section: BillingSection =
+    rawSection === 'upstream' || rawSection === 'upstream_url'
+      ? 'upstream'
+      : 'customer'
   const month = props.search.month ?? currentShanghaiMonth()
   const dimension: BillingDimension = props.search.dimension ?? 'api_key'
   const period = resolveShanghaiMonth(month)
   const isUpstream = section === 'upstream'
-  const isUpstreamUrl = section === 'upstream_url'
-  let pageTitle = t('Billing reconciliation')
-  let pageDescription = t(
-    'Customer charges and platform-recorded upstream usage use separate views.'
-  )
-  if (isUpstreamUrl) {
-    pageTitle = t('Upstream URL summary')
-    pageDescription = t(
-      'Merge platform-recorded usage across channels that share the same current base URL.'
-    )
-  } else if (isUpstream) {
-    pageTitle = t('Upstream reconciliation')
-    pageDescription = t(
-      'Summarize platform-recorded Token usage or billable calls by channel.'
-    )
-  }
+  const pageTitle = isUpstream
+    ? t('Upstream reconciliation')
+    : t('Billing reconciliation')
+  const pageDescription = isUpstream
+    ? t(
+        'Check monthly upstream usage, channel discounts, evidence and exports in one place.'
+      )
+    : t(
+        'Customer charges and platform-recorded upstream usage use separate views.'
+      )
 
   return (
     <SectionPageLayout>
@@ -81,11 +79,13 @@ export function AdminBillingReconciliation(
           <div className='flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
             <div>
               <p className='text-muted-foreground text-sm'>{pageDescription}</p>
-              <p className='text-muted-foreground mt-1 text-xs'>
-                {t(
-                  'Request-level records are available only through detail links.'
-                )}
-              </p>
+              {!isUpstream ? (
+                <p className='text-muted-foreground mt-1 text-xs'>
+                  {t(
+                    'Request-level records are available only through detail links.'
+                  )}
+                </p>
+              ) : null}
             </div>
             {!isUpstream ? (
               <label className='w-full space-y-1.5 sm:w-44'>
@@ -122,9 +122,6 @@ export function AdminBillingReconciliation(
               <TabsTrigger value='upstream'>
                 {t('Upstream reconciliation')}
               </TabsTrigger>
-              <TabsTrigger value='upstream_url'>
-                {t('Upstream URL summary')}
-              </TabsTrigger>
             </TabsList>
             <TabsContent value='customer'>
               {props.search.userId ? (
@@ -148,18 +145,7 @@ export function AdminBillingReconciliation(
               )}
             </TabsContent>
             <TabsContent value='upstream'>
-              <UpstreamStatementView
-                month={month}
-                period={period}
-                onMonthChange={(nextMonth) =>
-                  props.onSearchChange({
-                    month: nextMonth || currentShanghaiMonth(),
-                  })
-                }
-              />
-            </TabsContent>
-            <TabsContent value='upstream_url'>
-              <UpstreamUrlStatementView
+              <UpstreamReconciliationView
                 month={month}
                 period={period}
                 onMonthChange={(nextMonth) =>

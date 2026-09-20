@@ -69,12 +69,21 @@ func TestCustomerStatementsExcludeChannelTestsButKeepWalletAndProviderUsage(t *t
 	require.NotNil(t, breakdown.Cache)
 	assert.EqualValues(t, 6, breakdown.Cache.WriteTokens)
 
-	provider, err := GetProviderBillingSummary(1000, 1500, 1000, 21, "", "", 1)
+	provider, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
-	require.Len(t, provider.Channels, 1)
-	assert.EqualValues(t, 4, provider.Channels[0].Usage.Requests)
-	assert.EqualValues(t, 1730, provider.Channels[0].Usage.InputTokens)
-	assert.EqualValues(t, 12, provider.Channels[0].Usage.CacheWriteTokens)
+	require.Len(t, provider.Groups, 1)
+	assert.EqualValues(t, 4, provider.Groups[0].Usage.Requests)
+	assert.EqualValues(t, 1730, provider.Groups[0].Usage.InputTokens)
+	assert.EqualValues(t, 12, provider.Groups[0].Usage.CacheWriteTokens)
+	// Channel tests keep their usage but never become customer official price.
+	// Rows with a real token (token_id 9) remain customer settlements even
+	// when their names look like tests; only the native test shape is excluded.
+	require.NotNil(t, provider.Groups[0].DataQuality)
+	assert.EqualValues(t, 2, provider.Groups[0].DataQuality.UsageWithoutAmountRows)
+	require.NotNil(t, provider.Groups[0].OriginalAmount)
+	assert.EqualValues(t, 250, *provider.Groups[0].OriginalAmount)
+	require.NotNil(t, provider.Groups[0].ChannelDiscounts[0].Discount)
+	assert.Equal(t, "default", provider.Groups[0].ChannelDiscounts[0].Discount.Source)
 	var count int64
 	require.NoError(t, db.Model(&Log{}).Count(&count).Error)
 	assert.EqualValues(t, len(logs), count, "projections must not rewrite or delete original logs")

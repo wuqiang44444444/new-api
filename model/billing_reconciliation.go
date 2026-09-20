@@ -61,7 +61,11 @@ func migrateBillingReconciliationDB() error {
 	if err := DB.AutoMigrate(
 		&ProviderBillingDiscount{},
 		&ProviderBillingAudit{},
+		&ProviderChannelBillingDiscount{},
 	); err != nil {
+		return err
+	}
+	if err := migrateProviderModelDiscountsToChannel(); err != nil {
 		return err
 	}
 	return migrateBillingStatementTaskIndex(DB)
@@ -75,6 +79,11 @@ type BillingReconciliationDataQuality struct {
 	UnknownBillingModeRequests     int64  `json:"unknown_billing_mode_requests,omitempty"`
 	ProviderModelFallbackRows      int64  `json:"provider_model_fallback_rows,omitempty"`
 	MissingHistoricalPriceRows     int64  `json:"missing_historical_price_rows,omitempty"`
+	// UsageWithoutAmountRows counts upstream usage rows kept in the usage view
+	// but excluded from the official-price amount projection because they carry
+	// no customer settlement — native channel tests. Usage and amount coverage
+	// are deliberately different scopes and must never be conflated.
+	UsageWithoutAmountRows int64 `json:"usage_without_amount_rows,omitempty"`
 }
 
 type BillingReconciliationUsage struct {
@@ -769,11 +778,12 @@ func accumulateBillingReconciliationQuality(target **BillingReconciliationDataQu
 	quality.UnknownBillingModeRequests += source.UnknownBillingModeRequests
 	quality.ProviderModelFallbackRows += source.ProviderModelFallbackRows
 	quality.MissingHistoricalPriceRows += source.MissingHistoricalPriceRows
+	quality.UsageWithoutAmountRows += source.UsageWithoutAmountRows
 }
 
 func finalizeBillingReconciliationQuality(target **BillingReconciliationDataQuality) {
 	quality := ensureBillingReconciliationQuality(target)
-	if quality.InputTokensUnavailableRequests > 0 || quality.UnavailableRequests > 0 || quality.CacheWriteUnavailableRequests > 0 || quality.UnknownBillingModeRequests > 0 || quality.ProviderModelFallbackRows > 0 || quality.MissingHistoricalPriceRows > 0 {
+	if quality.InputTokensUnavailableRequests > 0 || quality.UnavailableRequests > 0 || quality.CacheWriteUnavailableRequests > 0 || quality.UnknownBillingModeRequests > 0 || quality.ProviderModelFallbackRows > 0 || quality.MissingHistoricalPriceRows > 0 || quality.UsageWithoutAmountRows > 0 {
 		quality.Status = "partial"
 	}
 }
@@ -804,11 +814,24 @@ type ProviderBillingPlatformSummary struct {
 	ProviderModelFallback bool                              `json:"provider_model_fallback,omitempty"`
 	BillingMode           string                            `json:"billing_mode"`
 	Usage                 ProviderBillingUsage              `json:"usage"`
-	Discount              ProviderBillingDiscountProjection `json:"discount"`
 	DataQuality           *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
 	DetailFilter          BillingReconciliationDetailFilter `json:"detail_filter"`
-	detailModelName       string                            `json:"-"`
-	customerModels        map[string]struct{}               `json:"-"`
+	// OriginalAmount is the signed official-price quota restored from the
+	// customer settlement facts (consume positive, provable task-settlement
+	// refunds negative). It stays nil unless every money-bearing row restored.
+	OriginalAmount  *int64   `json:"original_amount,omitempty"`
+	EstimateReasons []string `json:"estimate_reasons,omitempty"`
+	// UsageOnly marks an item whose rows carry no customer settlement at all
+	// (native channel tests): usage stays, amounts are neither claimed nor
+	// treated as a completeness gap for parents.
+	UsageOnly          bool
+	originalQuota      decimal.Decimal
+	originalQuotaKnown bool
+	originalComplete   bool
+	moneyRows          int
+	settlementRows     int
+	detailModelName    string              `json:"-"`
+	customerModels     map[string]struct{} `json:"-"`
 }
 
 // ProviderBillingUsage contains only usage facts persisted by this platform.
@@ -830,175 +853,11 @@ type ProviderBillingDiscountProjection struct {
 	SourcePeriod int64           `json:"source_period,omitempty"`
 }
 
-type ProviderBillingChannelSummary struct {
-	ChannelId   int                               `json:"channel_id"`
-	ChannelName string                            `json:"channel_name"`
-	Usage       ProviderBillingUsage              `json:"usage"`
-	Models      []ProviderBillingPlatformSummary  `json:"models"`
-	DataQuality *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
-}
-
-type ProviderBillingSummary struct {
-	Channels    []ProviderBillingChannelSummary   `json:"channels"`
-	DataQuality *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
-}
-
 type providerBillingSummaryKey struct {
 	channelId int
 	model     string
 	mode      string
 	fallback  bool
-}
-
-func GetProviderBillingSummary(startTimestamp int64, endTimestamp int64, periodStart int64, channelId int, modelName string, billingMode string, operatorId int) (ProviderBillingSummary, error) {
-	summary := ProviderBillingSummary{
-		Channels: make([]ProviderBillingChannelSummary, 0),
-	}
-	query := LOG_DB.Model(&Log{}).
-		Select("user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other").
-		Where("type IN ? AND created_at >= ? AND created_at <= ?", []int{LogTypeConsume, LogTypeRefund}, startTimestamp, endTimestamp)
-	if channelId > 0 {
-		query = query.Where("channel_id = ?", channelId)
-	}
-	rows, err := query.Rows()
-	if err != nil {
-		return summary, err
-	}
-	defer rows.Close()
-
-	platform := make(map[providerBillingSummaryKey]*ProviderBillingPlatformSummary)
-	for rows.Next() {
-		var log billingReconciliationLog
-		if err := rows.Scan(&log.UserId, &log.TokenId, &log.TokenName, &log.ChannelId, &log.ModelName, &log.Type, &log.CreatedAt, &log.PromptTokens, &log.CompletionTokens, &log.Quota, &log.Content, &log.Other); err != nil {
-			return summary, err
-		}
-		parsed := parseBillingReconciliationLog(log)
-		if log.Type == LogTypeRefund && !isProviderTaskUsageAdjustment(log) {
-			continue
-		}
-		providerModel := strings.TrimSpace(parsed.providerModel)
-		fallback := false
-		if providerModel == "" {
-			providerModel = log.ModelName
-			fallback = true
-		}
-		if modelName != "" && providerModel != modelName {
-			continue
-		}
-		if billingMode != "" && parsed.billingMode != billingMode {
-			continue
-		}
-		itemKey := providerBillingSummaryKey{channelId: log.ChannelId, model: providerModel, mode: parsed.billingMode, fallback: fallback}
-		item, ok := platform[itemKey]
-		if !ok {
-			item = &ProviderBillingPlatformSummary{
-				ChannelId:             log.ChannelId,
-				ProviderModel:         providerModel,
-				ProviderModelFallback: fallback,
-				BillingMode:           parsed.billingMode,
-				DetailFilter: BillingReconciliationDetailFilter{
-					StartTimestamp: startTimestamp,
-					EndTimestamp:   endTimestamp,
-					ChannelId:      log.ChannelId,
-					ModelName:      log.ModelName,
-					BillingMode:    parsed.billingMode,
-				},
-				detailModelName: log.ModelName,
-				customerModels:  make(map[string]struct{}),
-			}
-			platform[itemKey] = item
-		} else if item.detailModelName != log.ModelName {
-			item.DetailFilter.ModelName = ""
-		}
-		if log.ModelName != "" {
-			item.customerModels[log.ModelName] = struct{}{}
-		}
-		accumulateProviderBillingLog(&item.Usage, log, parsed)
-		if fallback {
-			ensureBillingReconciliationQuality(&item.DataQuality).ProviderModelFallbackRows++
-		}
-		if parsed.billingMode == BillingReconciliationModeUnknown {
-			ensureBillingReconciliationQuality(&item.DataQuality).UnknownBillingModeRequests++
-		}
-		if parsed.unavailable {
-			ensureBillingReconciliationQuality(&item.DataQuality).UnavailableRequests++
-		}
-		if parsed.cacheWriteUnavailable {
-			ensureBillingReconciliationQuality(&item.DataQuality).CacheWriteUnavailableRequests++
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return summary, err
-	}
-
-	discounts, err := getProviderBillingDiscountProjections(periodStart, platform, operatorId)
-	if err != nil {
-		return summary, err
-	}
-
-	channelIds := make([]int, 0)
-	channelIdSet := make(map[int]struct{})
-	for itemKey := range platform {
-		if _, ok := channelIdSet[itemKey.channelId]; !ok && itemKey.channelId > 0 {
-			channelIds = append(channelIds, itemKey.channelId)
-			channelIdSet[itemKey.channelId] = struct{}{}
-		}
-	}
-	channelNames := make(map[int]string)
-	if len(channelIds) > 0 {
-		var channels []struct {
-			Id   int
-			Name string
-		}
-		if err := DB.Model(&Channel{}).Select("id, name").Where("id IN ?", channelIds).Scan(&channels).Error; err != nil {
-			return summary, err
-		}
-		for _, channel := range channels {
-			channelNames[channel.Id] = channel.Name
-		}
-	}
-
-	channels := make(map[int]*ProviderBillingChannelSummary)
-	for itemKey, item := range platform {
-		item.CustomerModels = make([]string, 0, len(item.customerModels))
-		for customerModel := range item.customerModels {
-			item.CustomerModels = append(item.CustomerModels, customerModel)
-		}
-		sort.Strings(item.CustomerModels)
-		finalizeBillingReconciliationQuality(&item.DataQuality)
-		accumulateBillingReconciliationQuality(&summary.DataQuality, item.DataQuality)
-		item.Discount = discounts[itemKey]
-		name := channelNames[itemKey.channelId]
-		if strings.TrimSpace(name) == "" {
-			name = fmt.Sprintf("Channel #%d", itemKey.channelId)
-		}
-		item.ChannelName = name
-		channel, ok := channels[itemKey.channelId]
-		if !ok {
-			channel = &ProviderBillingChannelSummary{
-				ChannelId:   itemKey.channelId,
-				ChannelName: name,
-				Models:      make([]ProviderBillingPlatformSummary, 0),
-			}
-			channels[itemKey.channelId] = channel
-		}
-		accumulateProviderBillingUsage(&channel.Usage, item.Usage)
-		accumulateBillingReconciliationQuality(&channel.DataQuality, item.DataQuality)
-		channel.Models = append(channel.Models, *item)
-	}
-	for _, channel := range channels {
-		finalizeBillingReconciliationQuality(&channel.DataQuality)
-		sort.Slice(channel.Models, func(i, j int) bool {
-			if channel.Models[i].ProviderModel != channel.Models[j].ProviderModel {
-				return channel.Models[i].ProviderModel < channel.Models[j].ProviderModel
-			}
-			return channel.Models[i].BillingMode < channel.Models[j].BillingMode
-		})
-		summary.Channels = append(summary.Channels, *channel)
-	}
-	sort.Slice(summary.Channels, func(i, j int) bool { return summary.Channels[i].ChannelName < summary.Channels[j].ChannelName })
-	finalizeBillingReconciliationQuality(&summary.DataQuality)
-	return summary, nil
 }
 
 func accumulateProviderBillingLog(target *ProviderBillingUsage, log billingReconciliationLog, parsed parsedBillingReconciliationLog) {
@@ -1023,108 +882,6 @@ func accumulateProviderBillingUsage(target *ProviderBillingUsage, source Provide
 	target.OutputTokens += source.OutputTokens
 }
 
-func getProviderBillingDiscountProjections(periodStart int64, items map[providerBillingSummaryKey]*ProviderBillingPlatformSummary, operatorId int) (map[providerBillingSummaryKey]ProviderBillingDiscountProjection, error) {
-	if err := materializeProviderBillingDiscounts(periodStart, items, operatorId); err != nil {
-		return nil, err
-	}
-	result := make(map[providerBillingSummaryKey]ProviderBillingDiscountProjection, len(items))
-	var current []ProviderBillingDiscount
-	if err := DB.Where("period_start = ?", periodStart).Find(&current).Error; err != nil {
-		return nil, err
-	}
-	for _, discount := range current {
-		key := providerBillingSummaryKey{channelId: discount.ChannelId, model: discount.ProviderModel, mode: discount.BillingMode}
-		source := "database"
-		sourcePeriod := periodStart
-		if discount.CopiedFromPeriod > 0 && discount.Version == 1 {
-			source = "previous_period"
-			sourcePeriod = discount.CopiedFromPeriod
-		}
-		result[key] = ProviderBillingDiscountProjection{Value: discount.Discount, Version: discount.Version, Source: source, SourcePeriod: sourcePeriod}
-	}
-	for key := range items {
-		if _, ok := result[key]; !ok {
-			result[key] = ProviderBillingDiscountProjection{Value: decimal.NewFromInt(1), Source: "default"}
-		}
-	}
-	return result, nil
-}
-
-func materializeProviderBillingDiscounts(periodStart int64, items map[providerBillingSummaryKey]*ProviderBillingPlatformSummary, operatorId int) error {
-	if len(items) == 0 {
-		return nil
-	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		channelIds := make([]int, 0, len(items))
-		seenChannels := make(map[int]struct{})
-		for key := range items {
-			if key.channelId > 0 {
-				if _, exists := seenChannels[key.channelId]; !exists {
-					channelIds = append(channelIds, key.channelId)
-					seenChannels[key.channelId] = struct{}{}
-				}
-			}
-		}
-		if len(channelIds) > 0 {
-			sort.Ints(channelIds)
-			var channels []Channel
-			if err := lockForUpdate(tx).Select("id").Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
-				return err
-			}
-		}
-
-		var current []ProviderBillingDiscount
-		if err := tx.Where("period_start = ?", periodStart).Find(&current).Error; err != nil {
-			return err
-		}
-		currentKeys := make(map[providerBillingSummaryKey]struct{}, len(current))
-		for _, discount := range current {
-			currentKeys[providerBillingSummaryKey{channelId: discount.ChannelId, model: discount.ProviderModel, mode: discount.BillingMode}] = struct{}{}
-		}
-
-		previousPeriod := previousBillingPeriodStart(periodStart)
-		var previous []ProviderBillingDiscount
-		if previousPeriod > 0 {
-			if err := tx.Where("period_start = ?", previousPeriod).Find(&previous).Error; err != nil {
-				return err
-			}
-		}
-		previousByKey := make(map[providerBillingSummaryKey]ProviderBillingDiscount, len(previous))
-		for _, discount := range previous {
-			previousByKey[providerBillingSummaryKey{channelId: discount.ChannelId, model: discount.ProviderModel, mode: discount.BillingMode}] = discount
-		}
-
-		for key := range items {
-			if key.channelId <= 0 || (key.mode != BillingReconciliationModeToken && key.mode != BillingReconciliationModePerCall) {
-				continue
-			}
-			if item := items[key]; item != nil && item.DataQuality != nil && item.DataQuality.ProviderModelFallbackRows > 0 {
-				continue
-			}
-			if _, exists := currentKeys[key]; exists {
-				continue
-			}
-			discount := ProviderBillingDiscount{
-				PeriodStart: periodStart, ChannelId: key.channelId, ProviderModel: key.model, BillingMode: key.mode,
-				Discount: decimal.NewFromInt(1), Version: 1,
-				Reason: "automatic monthly default", CreatedBy: operatorId, UpdatedBy: operatorId,
-			}
-			if previousDiscount, exists := previousByKey[key]; exists {
-				discount.Discount = previousDiscount.Discount
-				discount.CopiedFromPeriod = previousPeriod
-				discount.Reason = "automatic copy from previous billing period"
-			}
-			if err := tx.Create(&discount).Error; err != nil {
-				return err
-			}
-			if err := createProviderBillingAudit(tx, "discount", providerBillingEntityKey(discount.PeriodStart, discount.ChannelId, discount.ProviderModel, discount.BillingMode), "create", nil, &discount, discount.Reason, operatorId); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
 func previousBillingPeriodStart(periodStart int64) int64 {
 	if periodStart <= 0 {
 		return 0
@@ -1132,49 +889,6 @@ func previousBillingPeriodStart(periodStart int64) int64 {
 	settlementLocation := time.FixedZone("Asia/Shanghai", 8*60*60)
 	period := time.Unix(periodStart, 0).In(settlementLocation)
 	return time.Date(period.Year(), period.Month()-1, 1, 0, 0, 0, 0, settlementLocation).Unix()
-}
-
-func SaveProviderBillingDiscount(discount *ProviderBillingDiscount, expectedVersion int64, operatorId int) error {
-	if discount == nil {
-		return errors.New("provider billing discount is required")
-	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		var existing ProviderBillingDiscount
-		err := lockForUpdate(tx).Where("period_start = ? AND channel_id = ? AND provider_model = ? AND billing_mode = ?", discount.PeriodStart, discount.ChannelId, discount.ProviderModel, discount.BillingMode).First(&existing).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			if expectedVersion != 0 {
-				return ErrBillingReconciliationVersionConflict
-			}
-			discount.Version = 1
-			discount.CreatedBy = operatorId
-			discount.UpdatedBy = operatorId
-			if err := tx.Create(discount).Error; err != nil {
-				return err
-			}
-			return createProviderBillingAudit(tx, "discount", providerBillingEntityKey(discount.PeriodStart, discount.ChannelId, discount.ProviderModel, discount.BillingMode), "create", nil, discount, discount.Reason, operatorId)
-		}
-		if err != nil {
-			return err
-		}
-		if existing.Version != expectedVersion {
-			return ErrBillingReconciliationVersionConflict
-		}
-		result := tx.Model(&ProviderBillingDiscount{}).Where("id = ? AND version = ?", existing.Id, expectedVersion).Updates(map[string]interface{}{
-			"discount": discount.Discount, "copied_from_period": discount.CopiedFromPeriod, "reason": discount.Reason,
-			"version": existing.Version + 1, "updated_by": operatorId,
-		})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrBillingReconciliationVersionConflict
-		}
-		discount.Id = existing.Id
-		discount.Version = existing.Version + 1
-		discount.CreatedBy = existing.CreatedBy
-		discount.UpdatedBy = operatorId
-		return createProviderBillingAudit(tx, "discount", providerBillingEntityKey(discount.PeriodStart, discount.ChannelId, discount.ProviderModel, discount.BillingMode), "update", &existing, discount, discount.Reason, operatorId)
-	})
 }
 
 func providerBillingEntityKey(periodStart int64, channelId int, providerModel string, billingMode string) string {

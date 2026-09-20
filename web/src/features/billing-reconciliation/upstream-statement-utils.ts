@@ -18,16 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 
-import { billingModeLabel } from './lib'
-import type {
-  BillingDataQuality,
-  ProviderChannelSummary,
-  ProviderModelSummary,
-} from './types'
+import type { BillingDataQuality, ProviderUrlChannelSummary } from './types'
 
 export function upstreamModelLabel(
   model: Pick<
-    ProviderModelSummary,
+    ProviderUrlChannelSummary,
     'provider_model' | 'provider_model_fallback' | 'customer_models'
   >
 ): string {
@@ -93,6 +88,15 @@ export function billingDataQualityReasons(
   return reasons
 }
 
+export function escapeCsvCell(value: string | number) {
+  let text = String(value)
+  if (typeof value === 'string' && /^[\t\r ]*[=+@-]/.test(text)) {
+    text = `'${text}`
+  }
+  if (!/[",\n]/.test(text)) return text
+  return `"${text.replaceAll('"', '""')}"`
+}
+
 export function formatStatementUsage(value: number | null, language: string) {
   if (value == null) return '—'
   const normalizedLanguage = language.toLowerCase().replaceAll(/[-_]/g, '')
@@ -115,92 +119,4 @@ export function formatStatementUsage(value: number | null, language: string) {
     maximumFractionDigits: 2,
     notation: Math.abs(value) >= 10_000 ? 'compact' : 'standard',
   }).format(value)
-}
-
-type UpstreamStatementCsvOptions = {
-  channels: ProviderChannelSummary[]
-  generatedAt: number
-  month: string
-  t: TFunction
-}
-
-export function buildUpstreamStatementCsv(
-  options: UpstreamStatementCsvOptions
-) {
-  const headers = [
-    options.t('Billing month'),
-    options.t('Upstream channel'),
-    'channel_id',
-    options.t('Model'),
-    options.t('Billing mode'),
-    options.t('Input tokens'),
-    options.t('Cache read tokens'),
-    options.t('Cache write tokens'),
-    options.t('Output tokens'),
-    options.t('Requests'),
-    options.t('Billable calls'),
-    options.t('Data quality'),
-    'generated_at',
-  ]
-  const lines = [headers.map(escapeCsvCell).join(',')]
-  for (const channel of options.channels) {
-    for (const model of channel.models) {
-      lines.push(
-        upstreamStatementCsvRow(options, channel, model)
-          .map(escapeCsvCell)
-          .join(',')
-      )
-    }
-  }
-  return lines.join('\n')
-}
-
-export function escapeCsvCell(value: string | number) {
-  let text = String(value)
-  if (typeof value === 'string' && /^[\t\r ]*[=+@-]/.test(text)) {
-    text = `'${text}`
-  }
-  if (!/[",\n]/.test(text)) return text
-  return `"${text.replaceAll('"', '""')}"`
-}
-
-function upstreamStatementCsvRow(
-  options: UpstreamStatementCsvOptions,
-  channel: ProviderChannelSummary,
-  model: ProviderModelSummary
-): Array<string | number> {
-  return [
-    options.month,
-    channel.channel_name,
-    channel.channel_id,
-    upstreamModelLabel(model),
-    options.t(billingModeLabel(model.billing_mode)),
-    model.usage.input_tokens,
-    model.usage.cache_read_tokens,
-    model.data_quality?.cache_write_unavailable_requests
-      ? options.t('Not recorded')
-      : model.usage.cache_write_tokens,
-    model.usage.output_tokens,
-    model.usage.requests,
-    model.usage.billable_calls,
-    billingDataQualityLabel(model.data_quality, options.t),
-    new Date(options.generatedAt * 1000).toISOString(),
-  ]
-}
-
-export function downloadUpstreamStatementCsv(
-  options: UpstreamStatementCsvOptions
-) {
-  const csv = buildUpstreamStatementCsv(options)
-  const blob = new Blob([`\uFEFF${csv}`], {
-    type: 'text/csv;charset=utf-8',
-  })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `upstream-usage-statement-${options.month}.csv`
-  document.body.append(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
 }

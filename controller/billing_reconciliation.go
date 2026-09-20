@@ -25,14 +25,16 @@ type billingReconciliationPeriod struct {
 }
 
 type providerBillingDiscountRequest struct {
-	PeriodStart      int64           `json:"period_start"`
-	ChannelId        int             `json:"channel_id"`
-	ProviderModel    string          `json:"provider_model"`
-	BillingMode      string          `json:"billing_mode"`
-	Discount         decimal.Decimal `json:"discount"`
-	CopiedFromPeriod int64           `json:"copied_from_period"`
-	ExpectedVersion  int64           `json:"expected_version"`
-	Reason           string          `json:"reason"`
+	PeriodStart     int64           `json:"period_start"`
+	ChannelId       int             `json:"channel_id"`
+	Discount        decimal.Decimal `json:"discount"`
+	ExpectedVersion int64           `json:"expected_version"`
+	Reason          string          `json:"reason"`
+}
+
+type providerChannelDiscountInitRequest struct {
+	PeriodStart int64 `json:"period_start"`
+	ChannelIds  []int `json:"channel_ids"`
 }
 
 func GetSelfBillingReconciliation(c *gin.Context) {
@@ -105,50 +107,80 @@ func GetAdminCustomerBillingReconciliation(c *gin.Context) {
 	respondBillingReconciliation(c, period, gin.H{"user_id": userId, "dimension": dimension, "group_id": groupId}, statement, "main_database+log_database")
 }
 
-func GetAdminUpstreamBillingReconciliation(c *gin.Context) {
+// GetAdminUpstreamReconciliation serves the unified admin upstream view: URL
+// groups with usage, official-price amounts, reference amounts and the
+// channel-month discount editing area. Provider model and billing mode stay
+// client-side filters of the loaded summary.
+func GetAdminUpstreamReconciliation(c *gin.Context) {
 	period, ok := parseBillingReconciliationPeriod(c)
 	if !ok {
 		return
 	}
-	channelId := parsePositiveQueryId(c, "channel_id")
-	if channelId < 0 {
+	urlKey := strings.TrimSpace(c.Query("url_key"))
+	if len(urlKey) > maxBillingURLKeyFilterLength {
+		common.ApiErrorMsg(c, "invalid url_key")
 		return
 	}
-	modelName, billingMode, ok := parseBillingReconciliationModelFilters(c)
-	if !ok {
-		return
-	}
-	summary, err := model.GetProviderBillingSummary(
-		period.StartTimestamp, period.EndTimestamp, period.PeriodStart, channelId,
-		modelName, billingMode, c.GetInt("id"),
-	)
+	summary, err := model.GetProviderBillingURLSummary(period.StartTimestamp, period.EndTimestamp, period.PeriodStart, urlKey)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	respondBillingReconciliation(c, period, gin.H{"channel_id": channelId}, summary, "main_database+log_database")
+	respondBillingReconciliation(c, period, gin.H{"url_key": urlKey}, summary, "main_database+log_database")
+}
+
+// PostAdminProviderChannelDiscountInit runs the explicit, idempotent month
+// initialization for the given channels. It only fills channels whose current
+// month has no record yet; manual values, corrected copies and migrated
+// values are never overwritten.
+func PostAdminProviderChannelDiscountInit(c *gin.Context) {
+	var request providerChannelDiscountInitRequest
+	if err := c.ShouldBindJSON(&request); err != nil || !validProviderBillingPeriod(request.PeriodStart) || len(request.ChannelIds) == 0 {
+		common.ApiErrorMsg(c, "invalid provider discount initialization")
+		return
+	}
+	for _, channelId := range request.ChannelIds {
+		if channelId <= 0 {
+			common.ApiErrorMsg(c, "invalid provider discount initialization")
+			return
+		}
+	}
+	// 已删除渠道不阻断整批初始化：模型层逐渠道返回 invalid_channel 结果。
+	outcomes, err := model.InitializeProviderChannelBillingDiscounts(request.PeriodStart, request.ChannelIds, c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"outcomes": outcomes})
 }
 
 func PutAdminProviderBillingDiscount(c *gin.Context) {
 	var request providerBillingDiscountRequest
-	if err := c.ShouldBindJSON(&request); err != nil || !validProviderBillingKey(request.PeriodStart, request.ChannelId, request.ProviderModel, request.BillingMode) || request.Discount.LessThanOrEqual(decimal.Zero) || request.Discount.GreaterThan(decimal.NewFromInt(1)) || request.ExpectedVersion < 0 || strings.TrimSpace(request.Reason) == "" || !validCopiedProviderBillingPeriod(request.PeriodStart, request.CopiedFromPeriod) {
+	if err := c.ShouldBindJSON(&request); err != nil || !validProviderBillingPeriod(request.PeriodStart) || request.Discount.LessThanOrEqual(decimal.Zero) || request.Discount.GreaterThan(decimal.NewFromInt(1)) || request.ExpectedVersion < 0 || strings.TrimSpace(request.Reason) == "" {
 		common.ApiErrorMsg(c, "invalid provider discount")
 		return
 	}
 	if !providerBillingChannelExists(c, request.ChannelId) {
 		return
 	}
-	discount := model.ProviderBillingDiscount{
-		PeriodStart: request.PeriodStart, ChannelId: request.ChannelId, ProviderModel: strings.TrimSpace(request.ProviderModel), BillingMode: request.BillingMode,
-		Discount: request.Discount, CopiedFromPeriod: request.CopiedFromPeriod, Reason: strings.TrimSpace(request.Reason),
+	discount := model.ProviderChannelBillingDiscount{
+		PeriodStart: request.PeriodStart, ChannelId: request.ChannelId,
+		Discount: request.Discount, Reason: strings.TrimSpace(request.Reason),
 	}
-	if err := model.SaveProviderBillingDiscount(&discount, request.ExpectedVersion, c.GetInt("id")); err != nil {
+	if err := model.SaveProviderChannelBillingDiscount(&discount, request.ExpectedVersion, c.GetInt("id")); err != nil {
 		respondBillingReconciliationWriteError(c, err)
 		return
 	}
 	common.ApiSuccess(c, discount)
 }
 
+func validProviderBillingPeriod(periodStart int64) bool {
+	if periodStart <= 0 {
+		return false
+	}
+	period := time.Unix(periodStart, 0).In(billingSettlementLocation)
+	return periodStart == time.Date(period.Year(), period.Month(), 1, 0, 0, 0, 0, billingSettlementLocation).Unix()
+}
 func parseBillingReconciliationPeriod(c *gin.Context) (billingReconciliationPeriod, bool) {
 	startTimestamp, endTimestamp, ok := parseFlowQuotaTimeRange(c)
 	if !ok {
@@ -210,35 +242,16 @@ func respondBillingReconciliationWriteError(c *gin.Context, err error) {
 	common.ApiError(c, err)
 }
 
-func validProviderBillingKey(periodStart int64, channelId int, providerModel string, billingMode string) bool {
-	if periodStart <= 0 || channelId <= 0 || strings.TrimSpace(providerModel) == "" || len(strings.TrimSpace(providerModel)) > 255 {
-		return false
+func providerBillingChannelExists(c *gin.Context, channelIds ...int) bool {
+	for _, channelId := range channelIds {
+		if _, err := model.GetChannelById(channelId, false); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "channel not found"})
+				return false
+			}
+			common.ApiError(c, err)
+			return false
+		}
 	}
-	period := time.Unix(periodStart, 0).In(billingSettlementLocation)
-	if periodStart != time.Date(period.Year(), period.Month(), 1, 0, 0, 0, 0, billingSettlementLocation).Unix() {
-		return false
-	}
-	return billingMode == model.BillingReconciliationModeToken || billingMode == model.BillingReconciliationModePerCall || billingMode == model.BillingReconciliationModePerSecond
-}
-
-func validCopiedProviderBillingPeriod(periodStart int64, copiedFromPeriod int64) bool {
-	if copiedFromPeriod == 0 {
-		return true
-	}
-	period := time.Unix(periodStart, 0).In(billingSettlementLocation)
-	previous := time.Date(period.Year(), period.Month()-1, 1, 0, 0, 0, 0, billingSettlementLocation).Unix()
-	return copiedFromPeriod == previous
-}
-
-func providerBillingChannelExists(c *gin.Context, channelId int) bool {
-	_, err := model.GetChannelById(channelId, false)
-	if err == nil {
-		return true
-	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "channel not found"})
-		return false
-	}
-	common.ApiError(c, err)
-	return false
+	return true
 }

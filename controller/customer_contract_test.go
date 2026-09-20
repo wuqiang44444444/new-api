@@ -39,6 +39,7 @@ func setupCustomerContractControllerDB(t *testing.T) (model.User, model.User, mo
 		&model.User{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.Vendor{},
 		&model.Token{}, &model.CustomerModelContract{},
 		&model.CustomerContract{}, &model.CustomerContractEntityRule{}, &model.CustomerContractEntityAudit{},
+		&model.CustomerContractTemplate{}, &model.CustomerContractTemplateRule{}, &model.CustomerContractTemplateAudit{},
 		&model.Log{},
 	))
 	model.DB = db

@@ -97,15 +97,15 @@ func TestHistoricalChannelTestCacheUnknownIsAReadOnlyProjection(t *testing.T) {
 		logs[i].Content = "模型测试"
 	}
 	require.NoError(t, db.Create(&logs).Error)
-	summary, err := GetProviderBillingSummary(1000, 1500, 1000, 21, "", "", 1)
+	summary, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
-	require.Len(t, summary.Channels, 1)
-	assert.EqualValues(t, 5, summary.Channels[0].Usage.Requests)
-	assert.EqualValues(t, 12, summary.Channels[0].Usage.CacheWriteTokens)
+	require.Len(t, summary.Groups, 1)
+	assert.EqualValues(t, 5, summary.Groups[0].Usage.Requests)
+	assert.EqualValues(t, 12, summary.Groups[0].Usage.CacheWriteTokens)
 	require.NotNil(t, summary.DataQuality)
 	assert.EqualValues(t, 1, summary.DataQuality.CacheWriteUnavailableRequests)
-	assert.Equal(t, "partial", summary.Channels[0].DataQuality.Status)
-	for _, item := range summary.Channels[0].Models {
+	assert.Equal(t, "partial", summary.Groups[0].DataQuality.Status)
+	for _, item := range summary.Groups[0].Models {
 		if item.BillingMode == BillingReconciliationModeToken {
 			assert.EqualValues(t, 1, item.DataQuality.CacheWriteUnavailableRequests)
 		} else {

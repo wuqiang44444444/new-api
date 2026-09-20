@@ -2,9 +2,9 @@
 Copyright (C) 2023-2026 QuantumNous
 
 This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -19,13 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   ArrowDown01Icon,
   ArrowRight01Icon,
-  LinkSquare02Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import {
   Table,
   TableBody,
@@ -34,31 +33,112 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
-import { billingModeLabel } from '../lib'
+import { billingModeLabel, formatCustomerStatementQuota } from '../lib'
 import type {
+  BillingDataQuality,
   ProviderUrlChannelSummary,
   ProviderUrlGroupSummary,
   ProviderUrlModelSummary,
 } from '../types'
-import { upstreamModelLabel } from '../upstream-statement-utils'
-import { upstreamUrlGroupLabel } from '../upstream-url-statement-utils'
-import { QualityBadge, UsageCell } from './upstream-statement-table'
+import {
+  upstreamDiscountLabel,
+  upstreamUrlGroupLabel,
+} from '../upstream-reconciliation-utils'
+import {
+  billingDataQualityLabel,
+  billingDataQualityReasons,
+  formatStatementUsage,
+  upstreamModelLabel,
+} from '../upstream-statement-utils'
 
-type UpstreamUrlStatementTableProps = {
+// 金额单元格：未知保持“未知”，绝不把缺失显示成 0。
+export function AmountCell(props: { value?: number | null; parent?: boolean }) {
+  const amount =
+    props.value == null ? (
+      <span className='text-muted-foreground'>—</span>
+    ) : (
+      formatCustomerStatementQuota(props.value)
+    )
+  return (
+    <TableCell
+      className={`text-right tabular-nums ${props.parent ? 'font-semibold' : ''}`}
+    >
+      {amount}
+    </TableCell>
+  )
+}
+
+export function QualityBadge(props: {
+  quality: BillingDataQuality | undefined
+}) {
+  const { t } = useTranslation()
+  const reasons = billingDataQualityReasons(props.quality, t)
+  const badge = (
+    <Badge
+      variant={
+        props.quality?.status === 'partial' || props.quality?.status === 'unavailable'
+          ? 'destructive'
+          : 'outline'
+      }
+    >
+      {billingDataQualityLabel(props.quality, t)}
+    </Badge>
+  )
+  if (reasons.length === 0) return badge
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger render={badge} />
+        <TooltipContent className='max-w-80'>
+          <ul className='list-disc space-y-1 pl-4 text-xs'>
+            {reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+export function UsageCell(props: {
+  value: number | null
+  unavailable?: boolean
+  parent?: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <TableCell
+      className={`text-right tabular-nums ${props.parent ? 'font-semibold' : ''}`}
+    >
+      {props.unavailable
+        ? t('Not recorded')
+        : formatStatementUsage(props.value, document.documentElement.lang || 'en')}
+    </TableCell>
+  )
+}
+
+type UpstreamReconciliationTableProps = {
   groups: ProviderUrlGroupSummary[]
   expandedGroups: Set<string>
   expandedModels: Set<string>
   onToggleGroup: (urlKey: string) => void
   onToggleModel: (modelKey: string) => void
+  onViewDetails: (props: { urlKey: string; channelId?: number; providerModel?: string; billingMode?: string }) => void
 }
 
-export function UpstreamUrlStatementTable(
-  props: UpstreamUrlStatementTableProps
-) {
+// 信息层级：上游 URL → 上游模型 × 计费方式 → 渠道贡献；金额列在用量列之后。
+export function UpstreamReconciliationTable(props: UpstreamReconciliationTableProps) {
   const { t } = useTranslation()
   return (
-    <Table className='min-w-260'>
+    <Table className='min-w-300'>
       <TableHeader>
         <TableRow>
           <TableHead className='min-w-56'>
@@ -68,11 +148,16 @@ export function UpstreamUrlStatementTable(
           <TableHead className='text-right'>{t('Requests')}</TableHead>
           <TableHead className='text-right'>{t('Input tokens')}</TableHead>
           <TableHead className='text-right'>{t('Cache read tokens')}</TableHead>
-          <TableHead className='text-right'>
-            {t('Cache write tokens')}
-          </TableHead>
+          <TableHead className='text-right'>{t('Cache write tokens')}</TableHead>
           <TableHead className='text-right'>{t('Output tokens')}</TableHead>
           <TableHead className='text-right'>{t('Billable calls')}</TableHead>
+          <TableHead className='text-right'>
+            {t('Original amount (local official price)')}
+          </TableHead>
+          <TableHead className='text-right'>
+            {t('Reference amount (after channel discount)')}
+          </TableHead>
+          <TableHead>{t('Channel discount')}</TableHead>
           <TableHead>{t('Data status')}</TableHead>
           <TableHead className='text-right'>{t('Actions')}</TableHead>
         </TableRow>
@@ -83,9 +168,10 @@ export function UpstreamUrlStatementTable(
           return [
             <UrlGroupRow
               key={`group-${group.url_key}`}
-              group={group}
               expanded={isExpanded}
+              group={group}
               onToggle={() => props.onToggleGroup(group.url_key)}
+              onViewDetails={props.onViewDetails}
             />,
             ...(isExpanded
               ? group.models.map((model) => {
@@ -94,17 +180,20 @@ export function UpstreamUrlStatementTable(
                   return [
                     <UrlModelRow
                       key={`model-${modelKey}`}
-                      model={model}
                       expanded={modelExpanded}
+                      model={model}
                       onToggle={() => props.onToggleModel(modelKey)}
+                      onViewDetails={props.onViewDetails}
+                      urlKey={group.url_key}
                     />,
                     ...(modelExpanded
-                      ? model.channels.map((channel, index) => (
+                      ? model.channels.map((channel) => (
                           <UrlChannelRow
-                            key={`channel-${modelKey}-${channel.channel_id}-${model.billing_mode}`}
+                            key={`channel-${modelKey}-${channel.channel_id}`}
                             channel={channel}
                             model={model}
-                            last={index === model.channels.length - 1}
+                            onViewDetails={props.onViewDetails}
+                            urlKey={group.url_key}
                           />
                         ))
                       : []),
@@ -122,10 +211,18 @@ function urlModelKey(urlKey: string, model: ProviderUrlModelSummary) {
   return `${urlKey}|${model.provider_model}|${model.billing_mode}|${model.provider_model_fallback ? 1 : 0}`
 }
 
+type ViewDetailsProps = {
+  urlKey: string
+  channelId?: number
+  providerModel?: string
+  billingMode?: string
+}
+
 function UrlGroupRow(props: {
   group: ProviderUrlGroupSummary
   expanded: boolean
   onToggle: () => void
+  onViewDetails: (props: ViewDetailsProps) => void
 }) {
   const { t } = useTranslation()
   const usage = props.group.usage
@@ -137,9 +234,7 @@ function UrlGroupRow(props: {
             variant='ghost'
             size='icon-sm'
             aria-expanded={props.expanded}
-            aria-label={
-              props.expanded ? t('Collapse models') : t('Expand models')
-            }
+            aria-label={props.expanded ? t('Collapse models') : t('Expand models')}
             onClick={props.onToggle}
           >
             <HugeiconsIcon
@@ -157,6 +252,9 @@ function UrlGroupRow(props: {
                 : t('Current channel base URL')}
               {' · '}
               {t('{{count}} channels', { count: props.group.channel_count })}
+              {props.group.discount_pending_channels > 0
+                ? ` · ${t('{{count}} channels pending discount', { count: props.group.discount_pending_channels })}`
+                : null}
             </div>
           </div>
         </div>
@@ -166,26 +264,43 @@ function UrlGroupRow(props: {
       <UsageCell value={usage.input_tokens} parent />
       <UsageCell value={usage.cache_read_tokens} parent />
       <UsageCell
-        value={usage.cache_write_tokens}
-        unavailable={
-          !!props.group.data_quality?.cache_write_unavailable_requests
-        }
         parent
+        unavailable={!!props.group.data_quality?.cache_write_unavailable_requests}
+        value={usage.cache_write_tokens}
       />
       <UsageCell value={usage.output_tokens} parent />
       <UsageCell value={usage.billable_calls} parent />
+      <AmountCell parent value={props.group.original_amount} />
+      <AmountCell parent value={props.group.reference_amount} />
+      <TableCell>
+        {props.group.reference_known ? null : (
+          <span className='text-muted-foreground text-xs'>
+            {t('Incomplete')}
+          </span>
+        )}
+      </TableCell>
       <TableCell>
         <QualityBadge quality={props.group.data_quality} />
       </TableCell>
-      <TableCell />
+      <TableCell className='text-right'>
+        <Button
+          variant='link'
+          size='xs'
+          onClick={() => props.onViewDetails({ urlKey: props.group.url_key })}
+        >
+          {t('View details')}
+        </Button>
+      </TableCell>
     </TableRow>
   )
 }
 
 function UrlModelRow(props: {
+  urlKey: string
   model: ProviderUrlModelSummary
   expanded: boolean
   onToggle: () => void
+  onViewDetails: (props: ViewDetailsProps) => void
 }) {
   const { t } = useTranslation()
   const tokenBilling = props.model.billing_mode === 'token'
@@ -202,9 +317,7 @@ function UrlModelRow(props: {
             variant='ghost'
             size='icon-sm'
             aria-expanded={props.expanded}
-            aria-label={
-              props.expanded ? t('Collapse channels') : t('Expand channels')
-            }
+            aria-label={props.expanded ? t('Collapse channels') : t('Expand channels')}
             onClick={props.onToggle}
           >
             <HugeiconsIcon
@@ -213,9 +326,7 @@ function UrlModelRow(props: {
             />
           </Button>
           <span className='inline-block max-w-lg font-medium wrap-break-word whitespace-normal'>
-            {props.model.provider_model_fallback
-              ? '—'
-              : props.model.provider_model}
+            {props.model.provider_model_fallback ? '—' : props.model.provider_model}
           </span>
         </div>
       </TableCell>
@@ -230,52 +341,62 @@ function UrlModelRow(props: {
         value={tokenBilling ? props.model.usage.cache_read_tokens : null}
       />
       <UsageCell
-        value={tokenBilling ? props.model.usage.cache_write_tokens : null}
         unavailable={
-          tokenBilling &&
-          !!props.model.data_quality?.cache_write_unavailable_requests
+          tokenBilling && !!props.model.data_quality?.cache_write_unavailable_requests
         }
+        value={tokenBilling ? props.model.usage.cache_write_tokens : null}
       />
-      <UsageCell
-        value={tokenBilling ? props.model.usage.output_tokens : null}
-      />
+      <UsageCell value={tokenBilling ? props.model.usage.output_tokens : null} />
       <UsageCell
         value={perCallBilling ? props.model.usage.billable_calls : null}
       />
+      <AmountCell value={props.model.original_amount} />
+      <AmountCell value={props.model.reference_amount} />
+      <TableCell>—</TableCell>
       <TableCell>
         <QualityBadge quality={props.model.data_quality} />
       </TableCell>
-      <TableCell />
+      <TableCell className='text-right'>
+        <Button
+          variant='link'
+          size='xs'
+          onClick={() =>
+            props.onViewDetails({
+              urlKey: props.urlKey,
+              providerModel: props.model.provider_model_fallback
+                ? undefined
+                : props.model.provider_model,
+              billingMode: props.model.billing_mode,
+            })
+          }
+        >
+          {t('View details')}
+        </Button>
+      </TableCell>
     </TableRow>
   )
 }
 
 function UrlChannelRow(props: {
+  urlKey: string
   channel: ProviderUrlChannelSummary
   model: ProviderUrlModelSummary
-  last: boolean
+  onViewDetails: (props: ViewDetailsProps) => void
 }) {
   const { t } = useTranslation()
-  const detailParams = new URLSearchParams({
-    channel: String(props.channel.detail_filter.channel_id),
-    startTime: String(props.channel.detail_filter.start_timestamp * 1000),
-    endTime: String(props.channel.detail_filter.end_timestamp * 1000),
-  })
-  if (props.channel.detail_filter.model_name) {
-    detailParams.set('model', props.channel.detail_filter.model_name)
-  }
   const tokenBilling = props.model.billing_mode === 'token'
   const perCallBilling = props.model.billing_mode === 'per_call'
+  const discountStatus = {
+    channel_id: props.channel.channel_id,
+    channel_name: props.channel.channel_name,
+    discount: props.channel.discount,
+  }
   return (
     <TableRow>
       <TableCell className='relative pl-24'>
         <span
           aria-hidden='true'
-          className={
-            props.last
-              ? 'border-muted-foreground/25 absolute top-0 bottom-1/2 left-14 w-5 border-b border-l'
-              : 'border-muted-foreground/25 absolute top-0 bottom-0 left-14 w-5 border-b border-l'
-          }
+          className='border-muted-foreground/25 absolute top-0 bottom-0 left-14 w-5 border-b border-l'
         />
         <div className='flex flex-col gap-0.5'>
           <span className='text-sm'>{props.channel.channel_name}</span>
@@ -297,11 +418,11 @@ function UrlChannelRow(props: {
         value={tokenBilling ? props.channel.usage.cache_read_tokens : null}
       />
       <UsageCell
-        value={tokenBilling ? props.channel.usage.cache_write_tokens : null}
         unavailable={
           tokenBilling &&
           !!props.channel.data_quality?.cache_write_unavailable_requests
         }
+        value={tokenBilling ? props.channel.usage.cache_write_tokens : null}
       />
       <UsageCell
         value={tokenBilling ? props.channel.usage.output_tokens : null}
@@ -309,21 +430,31 @@ function UrlChannelRow(props: {
       <UsageCell
         value={perCallBilling ? props.channel.usage.billable_calls : null}
       />
+      <AmountCell value={props.channel.original_amount} />
+      <AmountCell value={props.channel.reference_amount} />
+      <TableCell className='text-xs'>
+        {upstreamDiscountLabel(discountStatus, t)}
+      </TableCell>
       <TableCell>
         <QualityBadge quality={props.channel.data_quality} />
       </TableCell>
       <TableCell className='text-right'>
-        <a
-          className={buttonVariants({ variant: 'link', size: 'xs' })}
-          href={`/usage-logs/common?${detailParams.toString()}`}
+        <Button
+          variant='link'
+          size='xs'
+          onClick={() =>
+            props.onViewDetails({
+              urlKey: props.urlKey,
+              channelId: props.channel.channel_id,
+              providerModel: props.channel.provider_model_fallback
+                ? undefined
+                : props.channel.provider_model,
+              billingMode: props.channel.billing_mode,
+            })
+          }
         >
           {t('View details')}
-          <HugeiconsIcon
-            icon={LinkSquare02Icon}
-            strokeWidth={2}
-            data-icon='inline-end'
-          />
-        </a>
+        </Button>
       </TableCell>
     </TableRow>
   )

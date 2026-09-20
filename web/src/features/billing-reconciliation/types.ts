@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export type BillingSection = 'customer' | 'upstream' | 'upstream_url'
+export type BillingSection = 'customer' | 'upstream'
 export type BillingDimension = 'api_key' | 'channel'
 export type BillingMode = 'token' | 'per_call' | 'per_second' | 'unknown'
 export type CustomerStatementListQuality = 'all' | 'complete' | 'partial'
@@ -28,7 +28,8 @@ export type CustomerStatementListSortBy =
 export type CustomerStatementListSortOrder = 'asc' | 'desc'
 
 export type AdminBillingSearch = {
-  section?: BillingSection
+  // section 兼容旧地址里的 upstream_url；页面组件负责把它并入 upstream。
+  section?: BillingSection | 'upstream_url'
   month?: string
   userId?: number
   dimension?: BillingDimension
@@ -189,10 +190,10 @@ export type CustomerStatementList = {
   sort_order: CustomerStatementListSortOrder
 }
 
-type ProviderDiscount = {
+export type ProviderDiscount = {
   value: string
   version: number
-  source: 'database' | 'previous_period' | 'default'
+  source: 'database' | 'previous_period' | 'migrated' | 'default'
   source_period?: number
 }
 
@@ -205,7 +206,16 @@ type ProviderUsage = {
   output_tokens: number
 }
 
-export type ProviderModelSummary = {
+// 渠道折扣编辑区槽位：discount 为 null 表示当月待填写，绝不表示系数 1。
+export type ProviderChannelDiscountStatus = {
+  channel_id: number
+  channel_name: string
+  discount: ProviderDiscount | null
+  updated_at?: number
+  updated_by?: number
+}
+
+export type ProviderUrlChannelSummary = {
   channel_id: number
   channel_name: string
   provider_model: string
@@ -213,25 +223,13 @@ export type ProviderModelSummary = {
   provider_model_fallback?: boolean
   billing_mode: BillingMode
   usage: ProviderUsage
-  discount: ProviderDiscount
   data_quality?: BillingDataQuality
   detail_filter: BillingDetailFilter
+  original_amount?: number
+  reference_amount?: number
+  discount: ProviderDiscount | null
+  estimate_reasons?: string[]
 }
-
-export type ProviderChannelSummary = {
-  channel_id: number
-  channel_name: string
-  usage: ProviderUsage
-  models: ProviderModelSummary[]
-  data_quality?: BillingDataQuality
-}
-
-export type ProviderSummary = {
-  channels: ProviderChannelSummary[]
-  data_quality?: BillingDataQuality
-}
-
-export type ProviderUrlChannelSummary = Omit<ProviderModelSummary, 'discount'>
 
 export type ProviderUrlModelSummary = {
   provider_model: string
@@ -240,6 +238,9 @@ export type ProviderUrlModelSummary = {
   usage: ProviderUsage
   channels: ProviderUrlChannelSummary[]
   data_quality?: BillingDataQuality
+  original_amount?: number
+  reference_amount?: number
+  estimate_reasons?: string[]
 }
 
 export type ProviderUrlGroupSummary = {
@@ -254,11 +255,55 @@ export type ProviderUrlGroupSummary = {
   usage: ProviderUsage
   models: ProviderUrlModelSummary[]
   data_quality?: BillingDataQuality
+  channel_discounts: ProviderChannelDiscountStatus[]
+  original_amount?: number
+  reference_amount?: number
+  reference_known: boolean
+  discount_pending_channels: number
+  estimate_reasons?: string[]
 }
 
 export type ProviderUrlSummary = {
   url_groups: ProviderUrlGroupSummary[]
   data_quality?: BillingDataQuality
+}
+
+export type UpstreamDetailEvent =
+  | 'refund'
+  | 'call'
+  | 'task_create'
+  | 'task_adjustment'
+  | 'task_call'
+  | 'channel_test'
+
+export type UpstreamDetailItem = {
+  row_id: number
+  time: number
+  channel_id: number
+  channel_name: string
+  customer_model: string
+  provider_model: string
+  provider_model_fallback?: boolean
+  billing_mode: BillingMode
+  recorded_input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  original_amount?: number
+  estimate_reasons?: string[]
+  request_id: string
+  upstream_request_id: string
+  platform_task_id?: string
+  upstream_task_id?: string
+  event: UpstreamDetailEvent
+  data_quality?: BillingDataQuality
+}
+
+export type UpstreamDetails = {
+  items: UpstreamDetailItem[]
+  total: number
+  page: number
+  page_size: number
 }
 
 export type BillingEnvelope<T> = {

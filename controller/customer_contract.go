@@ -37,6 +37,10 @@ type customerContractWriteRequest struct {
 	Name            string                      `json:"name"`
 	Reason          string                      `json:"reason"`
 	Rules           []customerContractRuleInput `json:"rules"`
+	// Optional template provenance for creation; both must be provided
+	// together. Updates never change the stored source.
+	SourceTemplateId      *int   `json:"source_template_id"`
+	SourceTemplateVersion *int64 `json:"source_template_version"`
 }
 
 type customerContractRuleInput struct {
@@ -101,12 +105,30 @@ func PostCustomerContractEntity(c *gin.Context) {
 	if request.Enabled != nil {
 		enabled = *request.Enabled
 	}
+	sourceTemplateId, sourceTemplateVersion := 0, int64(0)
+	if request.SourceTemplateId != nil || request.SourceTemplateVersion != nil {
+		if request.SourceTemplateId == nil || request.SourceTemplateVersion == nil ||
+			*request.SourceTemplateId <= 0 || *request.SourceTemplateVersion <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "template source requires both source_template_id and source_template_version",
+			})
+			return
+		}
+		sourceTemplateId = *request.SourceTemplateId
+		sourceTemplateVersion = *request.SourceTemplateVersion
+	}
 	snapshot, err := model.CreateCustomerContractEntity(model.CreateCustomerContractParams{
 		UserId: target.Id, AdminUserId: c.GetInt("id"), Name: request.Name,
 		Enabled: enabled, Reason: request.Reason, Rules: rules,
+		SourceTemplateId: sourceTemplateId, SourceTemplateVersion: sourceTemplateVersion,
 	})
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		status := http.StatusBadRequest
+		if errors.Is(err, model.ErrCustomerContractTemplateVersionConflict) {
+			status = http.StatusConflict
+		}
+		c.JSON(status, gin.H{"success": false, "message": err.Error()})
 		return
 	}
 	view, err := service.BuildContractEntityAdminViews([]model.ContractEntitySnapshot{*snapshot}, target.Group)
@@ -116,6 +138,7 @@ func PostCustomerContractEntity(c *gin.Context) {
 	}
 	recordManageAuditFor(c, target.Id, "user.contract.create", map[string]interface{}{
 		"contract_id": snapshot.Id, "version": snapshot.Version, "enabled": snapshot.Enabled, "rule_count": len(snapshot.Rules),
+		"source_template_id": snapshot.SourceTemplateId,
 	})
 	common.ApiSuccess(c, gin.H{
 		"user_id": target.Id, "username": target.Username, "contracts": view,

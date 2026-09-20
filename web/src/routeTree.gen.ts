@@ -62,6 +62,7 @@ import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedWalletIndexRouteImport } from './routes/_authenticated/wallet/index'
 import { Route as PricingModelIdIndexRouteImport } from './routes/pricing/$modelId/index'
 import { Route as AuthenticatedAdminBillingIndexRouteImport } from './routes/_authenticated/admin/billing/index'
+import { Route as AuthenticatedAdminContractTemplatesIndexRouteImport } from './routes/_authenticated/admin/contract-templates/index'
 import { Route as AuthenticatedAdminCustomerContractsIndexRouteImport } from './routes/_authenticated/admin/customer-contracts/index'
 import { Route as AuthenticatedSystemSettingsAuthIndexRouteImport } from './routes/_authenticated/system-settings/auth/index'
 import { Route as AuthenticatedSystemSettingsAuthSectionRouteImport } from './routes/_authenticated/system-settings/auth/$section'
@@ -363,6 +364,12 @@ const AuthenticatedAdminBillingIndexRoute =
     path: '/admin/billing/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAdminContractTemplatesIndexRoute =
+  AuthenticatedAdminContractTemplatesIndexRouteImport.update({
+    id: '/admin/contract-templates/',
+    path: '/admin/contract-templates/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAdminCustomerContractsIndexRoute =
   AuthenticatedAdminCustomerContractsIndexRouteImport.update({
     id: '/admin/customer-contracts/',
@@ -513,6 +520,7 @@ export interface FileRoutesByFullPath {
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/admin/billing/': typeof AuthenticatedAdminBillingIndexRoute
+  '/admin/contract-templates/': typeof AuthenticatedAdminContractTemplatesIndexRoute
   '/admin/customer-contracts/': typeof AuthenticatedAdminCustomerContractsIndexRoute
   '/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
@@ -579,6 +587,7 @@ export interface FileRoutesByTo {
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/admin/billing': typeof AuthenticatedAdminBillingIndexRoute
+  '/admin/contract-templates': typeof AuthenticatedAdminContractTemplatesIndexRoute
   '/admin/customer-contracts': typeof AuthenticatedAdminCustomerContractsIndexRoute
   '/system-settings/auth': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing': typeof AuthenticatedSystemSettingsBillingIndexRoute
@@ -650,6 +659,7 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/_authenticated/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/_authenticated/admin/billing/': typeof AuthenticatedAdminBillingIndexRoute
+  '/_authenticated/admin/contract-templates/': typeof AuthenticatedAdminContractTemplatesIndexRoute
   '/_authenticated/admin/customer-contracts/': typeof AuthenticatedAdminCustomerContractsIndexRoute
   '/_authenticated/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/_authenticated/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
@@ -720,6 +730,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
     | '/admin/billing/'
+    | '/admin/contract-templates/'
     | '/admin/customer-contracts/'
     | '/system-settings/auth/'
     | '/system-settings/billing/'
@@ -786,6 +797,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
     | '/admin/billing'
+    | '/admin/contract-templates'
     | '/admin/customer-contracts'
     | '/system-settings/auth'
     | '/system-settings/billing'
@@ -856,6 +868,7 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/security/$section'
     | '/_authenticated/system-settings/site/$section'
     | '/_authenticated/admin/billing/'
+    | '/_authenticated/admin/contract-templates/'
     | '/_authenticated/admin/customer-contracts/'
     | '/_authenticated/system-settings/auth/'
     | '/_authenticated/system-settings/billing/'
@@ -1259,6 +1272,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminBillingIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/admin/contract-templates/': {
+      id: '/_authenticated/admin/contract-templates/'
+      path: '/admin/contract-templates'
+      fullPath: '/admin/contract-templates/'
+      preLoaderRoute: typeof AuthenticatedAdminContractTemplatesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/admin/customer-contracts/': {
       id: '/_authenticated/admin/customer-contracts/'
       path: '/admin/customer-contracts'
@@ -1476,6 +1496,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
   AuthenticatedAdminBillingIndexRoute: typeof AuthenticatedAdminBillingIndexRoute
+  AuthenticatedAdminContractTemplatesIndexRoute: typeof AuthenticatedAdminContractTemplatesIndexRoute
   AuthenticatedAdminCustomerContractsIndexRoute: typeof AuthenticatedAdminCustomerContractsIndexRoute
 }
 
@@ -1507,6 +1528,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,
   AuthenticatedAdminBillingIndexRoute: AuthenticatedAdminBillingIndexRoute,
+  AuthenticatedAdminContractTemplatesIndexRoute:
+    AuthenticatedAdminContractTemplatesIndexRoute,
   AuthenticatedAdminCustomerContractsIndexRoute:
     AuthenticatedAdminCustomerContractsIndexRoute,
 }

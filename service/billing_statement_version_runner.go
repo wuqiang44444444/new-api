@@ -87,7 +87,7 @@ func runBillingStatementVersionGeneration(ctx context.Context, job *model.Custom
 	if err := model.VerifyBillingStatementRetention(ctx, v.UserId, v.PeriodStart); err != nil {
 		return err
 	}
-	gate := customerExportSummaryGate(pressure, job)
+	gate := customerExportSummaryGate(pressure, job, nil)
 	beforeBatch := func(ctx context.Context) error {
 		if err := model.CheckBillingStatementGeneration(ctx, v, job); err != nil {
 			return err

@@ -7,6 +7,8 @@ import (
 )
 
 func registerCustomerContractAdminRoutes(apiRouter *gin.RouterGroup) {
+	registerCustomerContractTemplateRoutes(apiRouter)
+
 	route := apiRouter.Group("/customer-contracts")
 	route.Use(middleware.AdminAuth())
 	route.GET("", controller.GetCustomerContracts)

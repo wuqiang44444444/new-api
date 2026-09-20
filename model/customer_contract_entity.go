@@ -23,13 +23,18 @@ var (
 // version and rules live here — the legacy user-level contract columns on
 // users are no longer read at request time.
 type CustomerContract struct {
-	Id        int    `json:"id"`
-	UserId    int    `json:"user_id" gorm:"index"`
-	Name      string `json:"name" gorm:"type:varchar(128)"`
-	Enabled   bool   `json:"enabled"`
-	Version   int64  `json:"version" gorm:"type:bigint"`
-	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt int64  `json:"updated_at" gorm:"autoUpdateTime"`
+	Id      int    `json:"id"`
+	UserId  int    `json:"user_id" gorm:"index"`
+	Name    string `json:"name" gorm:"type:varchar(128)"`
+	Enabled bool   `json:"enabled"`
+	Version int64  `json:"version" gorm:"type:bigint"`
+	// Optional creation-time template provenance. Zero/empty on ordinary
+	// creates; never written again after creation and never read at runtime.
+	SourceTemplateId      int    `json:"source_template_id" gorm:"index"`
+	SourceTemplateVersion int64  `json:"source_template_version" gorm:"type:bigint"`
+	SourceTemplateName    string `json:"source_template_name" gorm:"type:varchar(128)"`
+	CreatedAt             int64  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt             int64  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 // CustomerContractEntityRule binds one public model inside one contract to an
@@ -82,12 +87,15 @@ type ContractEntityRule struct {
 
 // ContractEntitySnapshot is one immutable contract definition plus its rules.
 type ContractEntitySnapshot struct {
-	Id      int                  `json:"id"`
-	UserId  int                  `json:"user_id"`
-	Name    string               `json:"name"`
-	Enabled bool                 `json:"enabled"`
-	Version int64                `json:"version"`
-	Rules   []ContractEntityRule `json:"rules"`
+	Id                    int                  `json:"id"`
+	UserId                int                  `json:"user_id"`
+	Name                  string               `json:"name"`
+	Enabled               bool                 `json:"enabled"`
+	Version               int64                `json:"version"`
+	SourceTemplateId      int                  `json:"source_template_id,omitempty"`
+	SourceTemplateVersion int64                `json:"source_template_version,omitempty"`
+	SourceTemplateName    string               `json:"source_template_name,omitempty"`
+	Rules                 []ContractEntityRule `json:"rules"`
 }
 
 type CustomerContractEntityRuleInput struct {
@@ -104,6 +112,11 @@ type CreateCustomerContractParams struct {
 	Enabled     bool
 	Reason      string
 	Rules       []CustomerContractEntityRuleInput
+	// Optional template provenance: both fields must be provided together.
+	// When set, the creation transaction verifies the template still exists,
+	// is enabled and matches the confirmed version before writing.
+	SourceTemplateId      int
+	SourceTemplateVersion int64
 }
 
 type ReplaceCustomerContractEntityParams struct {
@@ -262,6 +275,9 @@ func CreateCustomerContractEntity(params CreateCustomerContractParams) (*Contrac
 	if params.UserId <= 0 || params.AdminUserId <= 0 {
 		return nil, fmt.Errorf("invalid contract owner or administrator")
 	}
+	if (params.SourceTemplateId <= 0) != (params.SourceTemplateVersion <= 0) {
+		return nil, fmt.Errorf("template source requires both template id and version")
+	}
 	params.Name = strings.TrimSpace(params.Name)
 	if params.Name == "" || len(params.Name) > 128 {
 		return nil, fmt.Errorf("contract name is required and must not exceed 128 characters")
@@ -274,11 +290,29 @@ func CreateCustomerContractEntity(params CreateCustomerContractParams) (*Contrac
 	if err != nil {
 		return nil, err
 	}
-	if err := validateCustomerContractEntityRules(DB, rules); err != nil {
-		return nil, err
+	useTemplate := params.SourceTemplateId > 0
+	if !useTemplate {
+		if err := validateCustomerContractEntityRules(DB, rules); err != nil {
+			return nil, err
+		}
 	}
 	contract := &CustomerContract{UserId: params.UserId, Name: params.Name, Enabled: params.Enabled, Version: 1}
 	err = DB.Transaction(func(tx *gorm.DB) error {
+		if useTemplate {
+			// Template-sourced creations verify the confirmed template and the
+			// final rules against the same transaction facts. The plain path
+			// keeps its existing pre-transaction validation timing.
+			template, err := checkCustomerContractTemplateSource(tx, params.SourceTemplateId, params.SourceTemplateVersion)
+			if err != nil {
+				return err
+			}
+			if err := validateCustomerContractEntityRules(tx, rules); err != nil {
+				return err
+			}
+			contract.SourceTemplateId = template.Id
+			contract.SourceTemplateVersion = template.Version
+			contract.SourceTemplateName = template.Name
+		}
 		if err := tx.Create(contract).Error; err != nil {
 			return err
 		}
@@ -435,7 +469,12 @@ func GetContractEntitySnapshot(contractId int, includeAvailability bool) (*Contr
 		if err != nil {
 			return err
 		}
-		snapshot = &ContractEntitySnapshot{Id: contract.Id, UserId: contract.UserId, Name: contract.Name, Enabled: contract.Enabled, Version: contract.Version, Rules: rules}
+		snapshot = &ContractEntitySnapshot{
+			Id: contract.Id, UserId: contract.UserId, Name: contract.Name, Enabled: contract.Enabled,
+			Version: contract.Version, SourceTemplateId: contract.SourceTemplateId,
+			SourceTemplateVersion: contract.SourceTemplateVersion, SourceTemplateName: contract.SourceTemplateName,
+			Rules: rules,
+		}
 		return nil
 	})
 	return snapshot, err
@@ -458,7 +497,11 @@ func ListContractEntitiesForUser(userId int, includeAvailability bool) ([]Contra
 		}
 		result = append(result, ContractEntitySnapshot{
 			Id: contracts[i].Id, UserId: contracts[i].UserId, Name: contracts[i].Name,
-			Enabled: contracts[i].Enabled, Version: contracts[i].Version, Rules: rules,
+			Enabled: contracts[i].Enabled, Version: contracts[i].Version,
+			SourceTemplateId:      contracts[i].SourceTemplateId,
+			SourceTemplateVersion: contracts[i].SourceTemplateVersion,
+			SourceTemplateName:    contracts[i].SourceTemplateName,
+			Rules:                 rules,
 		})
 	}
 	return result, nil

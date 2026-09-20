@@ -77,6 +77,12 @@ interface MultiSelectProps {
    * instead of being inert. The remove (×) button keeps its own behaviour.
    */
   copyChipOnClick?: boolean
+  /**
+   * Renders a pinned "Select all / Clear" row above the option list.
+   * "Select all" selects every option while keeping values that are already
+   * selected but not offered as options; "Clear" empties the selection.
+   */
+  selectAll?: boolean
 }
 
 const COMMA_REGEX = /[,，\n]/
@@ -245,6 +251,14 @@ export function MultiSelect(props: MultiSelectProps) {
     }
   }
 
+  const selectAllValues = () => {
+    const all = new Set(props.selected)
+    for (const option of props.options) {
+      all.add(option.value)
+    }
+    props.onChange([...all])
+  }
+
   return (
     <Combobox
       multiple
@@ -351,6 +365,36 @@ export function MultiSelect(props: MultiSelectProps) {
       </ComboboxChips>
 
       <ComboboxContent anchor={chipsAnchorRef}>
+        {props.selectAll && (
+          <div className='flex items-center justify-between border-b px-2 py-1'>
+            <button
+              type='button'
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                selectAllValues()
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+              disabled={props.options.length === 0}
+              className='hover:bg-muted hover:text-foreground rounded-sm px-1.5 py-1 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-50'
+            >
+              {t('Select all')}
+            </button>
+            <button
+              type='button'
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                props.onChange([])
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+              disabled={props.selected.length === 0}
+              className='hover:bg-muted hover:text-foreground rounded-sm px-1.5 py-1 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-50'
+            >
+              {t('Clear')}
+            </button>
+          </div>
+        )}
         <ComboboxList>
           <ComboboxCollection>
             {(item: string) => {

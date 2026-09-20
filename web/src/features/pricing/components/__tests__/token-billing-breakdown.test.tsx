@@ -27,8 +27,10 @@ import {
 import { billingDisplayFixture } from '../../__tests__/billing-display-fixtures'
 import { DynamicPricingBreakdown } from '../dynamic-pricing-breakdown'
 
+const i18n = vi.hoisted(() => ({ language: 'en' }))
+
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ i18n: { language: 'en' }, t: (key: string) => key }),
+  useTranslation: () => ({ i18n, t: (key: string) => key }),
 }))
 
 export const expression = `tier("base", p * 1.5 + cr * 0.05 + c * 4.5) * (
@@ -41,14 +43,32 @@ export const expression = `tier("base", p * 1.5 + cr * 0.05 + c * 4.5) * (
   ? 2 : 1
 ) / 6.71`
 
-beforeEach(() =>
+beforeEach(() => {
+  i18n.language = 'en'
   useSystemConfigStore.getState().setConfig({
     currency: { ...DEFAULT_CURRENCY_CONFIG, quotaDisplayType: 'USD' },
   })
-)
+})
 afterEach(cleanup)
 
 describe('complete token price display', () => {
+  it('renders weekday pricing conditions in Simplified Chinese', () => {
+    i18n.language = 'zhCN'
+    render(
+      <DynamicPricingBreakdown
+        billingExpr={expression}
+        billingDisplay={billingDisplayFixture(expression)}
+      />
+    )
+    const rows = screen.getAllByRole('row')
+    expect(rows).toHaveLength(3)
+    const peak = within(rows[2])
+    expect(peak.getByText(/星期一/)).toHaveTextContent('星期五')
+    expect(peak.getByText(/09:00/)).toHaveTextContent('12:00')
+    expect(peak.getByText(/14:00/)).toHaveTextContent('18:00')
+    expect(peak.getByText(/星期一/)).toHaveTextContent('Asia/Shanghai')
+  })
+
   it.each([6.71, 6.9])(
     'shows actual standard and adjusted prices using exchange rate %s',
     (exchange) => {

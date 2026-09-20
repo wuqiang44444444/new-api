@@ -377,6 +377,8 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 	defer os.RemoveAll(workDir)
 	if err == nil {
 		switch job.JobType {
+		case model.CustomerExportJobTypeUpstreamDetails:
+			artifact, err = executeUpstreamExport(ctx, job, filters, workDir, pressure)
 		case model.CustomerExportJobTypeStatementVersion:
 			err = runBillingStatementVersionGeneration(ctx, job, pressure)
 		case model.CustomerExportJobTypeStatementSummary:
@@ -696,7 +698,7 @@ func executeCustomerExportSummary(ctx context.Context, job *model.CustomerExport
 		0, "", "",
 		model.BillingStatementReadPolicy{
 			BatchTimeout: customerExportBatchTimeout, MaxGroups: 10000,
-			BeforeBatch: customerExportSummaryGate(&customerExportPressureTracker{}, job),
+			BeforeBatch: customerExportSummaryGate(&customerExportPressureTracker{}, job, nil),
 		},
 	)
 	if err != nil {

@@ -55,25 +55,26 @@ var (
 // CustomerExportFilters is the normalized, versioned submission scope. It is
 // frozen at acceptance and never re-resolved from current settings.
 type CustomerExportFilters struct {
-	StatementDraftId  string  `json:"statement_draft_id,omitempty"`
-	QuotaPerUnit      float64 `json:"quota_per_unit"`
-	Currency          string  `json:"currency"`
-	CurrencyRate      float64 `json:"currency_rate"`
-	FieldVersion      int     `json:"field_version"`
-	StartTimestamp    int64   `json:"start_timestamp"` // 含起点
-	EndTimestamp      int64   `json:"end_timestamp"`   // 不含终点（左闭右开）
-	LogTypes          []int   `json:"log_types,omitempty"`
-	TokenId           *int    `json:"token_id,omitempty"`
-	ChannelId         *int    `json:"channel_id,omitempty"`
-	TokenName         string  `json:"token_name,omitempty"`
-	Group             string  `json:"group,omitempty"`
-	RequestId         string  `json:"request_id,omitempty"`
-	UpstreamRequestId string  `json:"upstream_request_id,omitempty"`
-	Username          string  `json:"username,omitempty"`
-	ModelName         string  `json:"model_name,omitempty"`
-	BillingMode       string  `json:"billing_mode,omitempty"`
-	Timezone          string  `json:"timezone"`
-	Language          string  `json:"language,omitempty"`
+	Upstream          *UpstreamExportScope `json:"upstream,omitempty"`
+	StatementDraftId  string               `json:"statement_draft_id,omitempty"`
+	QuotaPerUnit      float64              `json:"quota_per_unit"`
+	Currency          string               `json:"currency"`
+	CurrencyRate      float64              `json:"currency_rate"`
+	FieldVersion      int                  `json:"field_version"`
+	StartTimestamp    int64                `json:"start_timestamp"` // 含起点
+	EndTimestamp      int64                `json:"end_timestamp"`   // 不含终点（左闭右开）
+	LogTypes          []int                `json:"log_types,omitempty"`
+	TokenId           *int                 `json:"token_id,omitempty"`
+	ChannelId         *int                 `json:"channel_id,omitempty"`
+	TokenName         string               `json:"token_name,omitempty"`
+	Group             string               `json:"group,omitempty"`
+	RequestId         string               `json:"request_id,omitempty"`
+	UpstreamRequestId string               `json:"upstream_request_id,omitempty"`
+	Username          string               `json:"username,omitempty"`
+	ModelName         string               `json:"model_name,omitempty"`
+	BillingMode       string               `json:"billing_mode,omitempty"`
+	Timezone          string               `json:"timezone"`
+	Language          string               `json:"language,omitempty"`
 }
 
 // CustomerExportProgress is throttled persisted scan state. Counts are
@@ -401,7 +402,7 @@ func GetCustomerExportJobForOwner(jobID string, userId int) (*CustomerExportJob,
 	if job.UserId != userId {
 		return nil, ErrCustomerExportNotFound
 	}
-	if err := AuthorizeCustomerExport(context.Background(), userId, job.TargetUserId); err != nil {
+	if err := AuthorizeCustomerExportJob(context.Background(), job); err != nil {
 		return nil, err
 	}
 	return job, nil
@@ -427,7 +428,16 @@ func ListCustomerExportJobs(userId int, limit int) ([]*CustomerExportJob, error)
 		query = query.Where("target_user_id = ?", userId)
 	}
 	err := query.Order("id desc").Limit(limit).Find(&jobs).Error
-	return jobs, err
+	if err != nil {
+		return nil, err
+	}
+	visible := jobs[:0]
+	for _, job := range jobs {
+		if job.JobType != CustomerExportJobTypeUpstreamDetails || AuthorizeCustomerExportJob(context.Background(), job) == nil {
+			visible = append(visible, job)
+		}
+	}
+	return visible, nil
 }
 
 // CancelCustomerExportJob 取消一个排队中的申请并原子释放配额与槽位；

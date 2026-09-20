@@ -74,8 +74,10 @@ func monitorCustomerExport(parent context.Context, job *model.CustomerExportJob,
 	return ctx, func() { cancel(context.Canceled); stopBudget(); <-done }
 }
 
-func customerExportSummaryGate(pressure *customerExportPressureTracker, job *model.CustomerExportJob) func(context.Context) error {
-	progress := model.CustomerExportProgress{}
+func customerExportSummaryGate(pressure *customerExportPressureTracker, job *model.CustomerExportJob, progress *model.CustomerExportProgress) func(context.Context) error {
+	if progress == nil {
+		progress = &model.CustomerExportProgress{}
+	}
 	return func(ctx context.Context) error {
 		// At most 500 candidates per 250ms, with every auxiliary read inside
 		// the batch timeout. No connection is held during either wait.
@@ -88,7 +90,7 @@ func customerExportSummaryGate(pressure *customerExportPressureTracker, job *mod
 			case <-timer.C:
 			}
 			pressure.step(model.CustomerExportLogDatabasePressure())
-			if err := pressure.publishWaiting(ctx, job.JobID, job.Executor, &progress); err != nil {
+			if err := pressure.publishWaiting(ctx, job.JobID, job.Executor, progress); err != nil {
 				return err
 			}
 			if !pressure.degraded {

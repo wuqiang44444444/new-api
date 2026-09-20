@@ -17,6 +17,7 @@ import (
 // 主体转换在 newBillingStatementVersionLine 中，保持 reader 只负责读取。
 type BillingStatementReadPolicy struct {
 	BeforeBatch  func(context.Context) error
+	AfterBatch   func(int) error // upstream export candidate counts, before display filters
 	BatchTimeout time.Duration
 	MaxGroups    int
 	ObserveFact  func(BillingStatementVersionLine, *Log) error

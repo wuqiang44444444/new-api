@@ -50,12 +50,17 @@ type CustomerContractUserRuleView struct {
 }
 
 // ContractEntityAdminView is the admin drawer view of one contract entity.
+// The optional template provenance is admin-only traceability; the
+// owner-visible ContractEntityUserView never carries it.
 type ContractEntityAdminView struct {
-	Id      int                             `json:"id"`
-	Name    string                          `json:"name"`
-	Enabled bool                            `json:"enabled"`
-	Version int64                           `json:"version"`
-	Rules   []CustomerContractAdminRuleView `json:"rules"`
+	Id                    int                             `json:"id"`
+	Name                  string                          `json:"name"`
+	Enabled               bool                            `json:"enabled"`
+	Version               int64                           `json:"version"`
+	SourceTemplateId      int                             `json:"source_template_id,omitempty"`
+	SourceTemplateVersion int64                           `json:"source_template_version,omitempty"`
+	SourceTemplateName    string                          `json:"source_template_name,omitempty"`
+	Rules                 []CustomerContractAdminRuleView `json:"rules"`
 }
 
 // ContractEntityUserView is the owner-visible view of one contract entity.
@@ -118,7 +123,10 @@ func BuildContractEntityAdminViews(snapshots []model.ContractEntitySnapshot, use
 		}
 		result = append(result, ContractEntityAdminView{
 			Id: snapshots[i].Id, Name: snapshots[i].Name, Enabled: snapshots[i].Enabled,
-			Version: snapshots[i].Version, Rules: rules,
+			Version: snapshots[i].Version, SourceTemplateId: snapshots[i].SourceTemplateId,
+			SourceTemplateVersion: snapshots[i].SourceTemplateVersion,
+			SourceTemplateName:    snapshots[i].SourceTemplateName,
+			Rules:                 rules,
 		})
 	}
 	return result, nil

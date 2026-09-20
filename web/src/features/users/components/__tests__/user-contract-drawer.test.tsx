@@ -16,9 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type {
+  ContractTemplateListResponse,
+  ContractTemplateSnapshotResponse,
+} from '@/features/customer-contracts/template-types'
 
 import type {
   ApiResponse,
@@ -60,8 +66,36 @@ const updateContractEntity =
       payload: ContractEntityUpdatePayload
     ) => Promise<ApiResponse<UserContractEntities>>
   >()
+const getContractTemplates =
+  vi.fn<() => Promise<ContractTemplateListResponse>>()
+const getContractTemplate =
+  vi.fn<(templateId: number) => Promise<ContractTemplateSnapshotResponse>>()
 
 const translate = (key: string) => key
+
+const pointerCaptureDescriptor = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  'setPointerCapture'
+)
+
+function stubPointerCapture() {
+  Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', {
+    configurable: true,
+    value: vi.fn(),
+  })
+}
+
+function restorePointerCapture() {
+  if (pointerCaptureDescriptor) {
+    Object.defineProperty(
+      HTMLElement.prototype,
+      'setPointerCapture',
+      pointerCaptureDescriptor
+    )
+  } else {
+    Reflect.deleteProperty(HTMLElement.prototype, 'setPointerCapture')
+  }
+}
 
 vi.mock('../../api', () => ({
   getUserContracts: () => getUserContracts(),
@@ -75,6 +109,11 @@ vi.mock('../../api', () => ({
     contractId: number,
     payload: ContractEntityUpdatePayload
   ) => updateContractEntity(contractId, payload),
+}))
+
+vi.mock('@/features/customer-contracts/template-api', () => ({
+  getContractTemplates: () => getContractTemplates(),
+  getContractTemplate: (templateId: number) => getContractTemplate(templateId),
 }))
 
 vi.mock('react-i18next', () => ({
@@ -218,6 +257,11 @@ describe('admin customer contract entity drawer', () => {
     getCustomerContractOptions
       .mockReset()
       .mockResolvedValue({ success: true, data: options })
+    getContractTemplates.mockReset().mockResolvedValue({
+      success: true,
+      data: { items: [], total: 0, page: 1, page_size: 20 },
+    })
+    getContractTemplate.mockReset().mockResolvedValue({ success: false })
     getContractEntityAudits.mockReset().mockResolvedValue({
       success: true,
       data: {
@@ -243,10 +287,13 @@ describe('admin customer contract entity drawer', () => {
     expect(await screen.findByText('Aux contract')).toBeTruthy()
     expect(screen.getByText('Main contract')).toBeTruthy()
     expect(screen.getByText('gemini-3-pro')).toBeTruthy()
-    // The gemini rule has two channel candidates, so none is assumed.
+    // The gemini rule has two channel candidates, so none is assumed: the
+    // per-rule decision stays a single select while the add row shows the
+    // multi-select placeholder until channels are picked.
     expect(screen.getAllByText('Select channel').length).toBeGreaterThanOrEqual(
-      2
+      1
     )
+    expect(screen.getByPlaceholderText('Select channels')).toBeTruthy()
   })
 
   it('keeps internal channel facts admin-only and recalculates draft pricing', async () => {
@@ -363,6 +410,98 @@ describe('admin customer contract entity drawer', () => {
     })
   })
 
+  it('adds one same-discount rule per selected channel via select all', async () => {
+    stubPointerCapture()
+    try {
+      renderDrawer()
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'New contract' })
+      )
+
+      const user = userEvent.setup()
+      await user.click(
+        await screen.findByPlaceholderText('Search and select a model')
+      )
+      await user.click(
+        await screen.findByRole('option', { name: 'gemini-3-pro' })
+      )
+      await user.click(await screen.findByPlaceholderText('Select channels'))
+      await user.click(
+        await screen.findByRole('button', { name: 'Select all' })
+      )
+      // Both candidate channels end up selected while the popup stays open
+      // for further batch picking.
+      expect(screen.getAllByText('primary').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('backup').length).toBeGreaterThanOrEqual(1)
+      // The open popup keeps the drawer inert for role queries; text queries
+      // still reach the add and save buttons.
+      fireEvent.click(screen.getByText('Add'))
+
+      fireEvent.change(screen.getByLabelText('Contract name'), {
+        target: { value: 'Expansion contract' },
+      })
+      fireEvent.change(screen.getByLabelText('Change reason'), {
+        target: { value: 'bind every gemini channel' },
+      })
+      fireEvent.click(screen.getByText('Create contract'))
+
+      await vi.waitFor(() =>
+        expect(createUserContract).toHaveBeenCalledTimes(1)
+      )
+      expect(createUserContract).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({
+          rules: [
+            expect.objectContaining({
+              model: 'gemini-3-pro',
+              channel_id: 11,
+              route_group: 'contract-route',
+              discount: '1',
+            }),
+            expect.objectContaining({
+              model: 'gemini-3-pro',
+              channel_id: 12,
+              route_group: 'contract-route',
+              discount: '1',
+            }),
+          ],
+        })
+      )
+    } finally {
+      restorePointerCapture()
+    }
+  })
+
+  it('rejects adding a channel the model already binds instead of skipping it', async () => {
+    stubPointerCapture()
+    try {
+      renderDrawer({ contractId: 5 })
+
+      const user = userEvent.setup()
+      // claude-sonnet-5 has exactly one candidate channel, so it is
+      // preselected, and that channel is already bound by the saved rule.
+      await user.click(
+        await screen.findByPlaceholderText('Search and select a model')
+      )
+      await user.click(
+        await screen.findByRole('option', { name: 'claude-sonnet-5' })
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+      await vi.waitFor(() =>
+        // The test i18n mock returns keys verbatim, so the rejected channel
+        // list surfaces inside the untranslated placeholder key.
+        expect(toast.error).toHaveBeenCalledWith(
+          'This model already binds channels: {{channels}}'
+        )
+      )
+      expect(createUserContract).not.toHaveBeenCalled()
+      expect(updateContractEntity).not.toHaveBeenCalled()
+    } finally {
+      restorePointerCapture()
+    }
+  })
+
   it('reloads the winning contracts after an optimistic-lock conflict', async () => {
     getUserContracts
       .mockResolvedValueOnce({ success: true, data: contractsData(contracts) })
@@ -455,4 +594,247 @@ describe('admin customer contract entity drawer', () => {
     expect(screen.getByText('migrated from legacy contract')).toBeTruthy()
     expect(getContractEntityAudits).toHaveBeenCalledWith(5, 1)
   })
+
+  it('ignores a template response after switching to an existing contract', async () => {
+    stubPointerCapture()
+    try {
+      const source = { id: 3, name: 'Delayed template', enabled: true, version: 1,
+        creator_id: 1, updater_id: 1, rules: [{ public_model: 'claude-sonnet-5',
+          channel_id: 11, route_group: 'contract-route', ratio_units: 50000000, available: true }] }
+      getContractTemplates.mockResolvedValue({ success: true, data: {
+        items: [{ ...source, model_count: 1, rule_count: 1, stale_rule_count: 0,
+          updater_name: 'admin', created_at: 0, updated_at: 0 }], total: 1, page: 1, page_size: 100 } })
+      let resolve!: (response: ContractTemplateSnapshotResponse) => void
+      getContractTemplate.mockReturnValue(new Promise((done) => { resolve = done }))
+      renderDrawer()
+      await screen.findByText('Main contract')
+      fireEvent.click(screen.getByRole('button', { name: 'New contract' }))
+      await userEvent.click(document.querySelector('#contract-template-source') as HTMLElement)
+      await userEvent.click(await screen.findByRole('option', { name: 'Delayed template' }))
+      fireEvent.click(screen.getByRole('button', { name: /Main contract/ }))
+      await act(async () => { resolve({ success: true, data: source }) })
+      expect(screen.getByLabelText('Contract name')).toHaveValue('Main contract')
+      expect(screen.getByDisplayValue('0.8')).toBeInTheDocument()
+      expect(screen.queryByDisplayValue('Delayed template')).not.toBeInTheDocument()
+    } finally { restorePointerCapture() }
+  })
+
+  it('loads enabled templates beyond the first page', async () => {
+    const template = { id: 1, name: 'Older template', enabled: true, version: 1,
+      model_count: 1, rule_count: 1, stale_rule_count: 0, creator_id: 1,
+      updater_id: 1, updater_name: 'admin', created_at: 0, updated_at: 0 }
+    getContractTemplates.mockResolvedValueOnce({ success: true, data: {
+      items: Array.from({ length: 100 }, (_, i) => ({ ...template, id: i + 2, name: `Template ${i + 2}` })),
+      total: 101, page: 1, page_size: 100 } }).mockResolvedValueOnce({ success: true,
+      data: { items: [template], total: 101, page: 2, page_size: 100 } })
+    stubPointerCapture()
+    try {
+      renderDrawer()
+      await screen.findByText('Main contract')
+      fireEvent.click(screen.getByRole('button', { name: 'New contract' }))
+      await userEvent.click(document.querySelector('#contract-template-source') as HTMLElement)
+      expect(await screen.findByRole('option', { name: 'Older template' })).toBeInTheDocument()
+    } finally { restorePointerCapture() }
+  })
+
+  it('applies an enabled template on create and submits the confirmed source', async () => {
+    stubPointerCapture()
+    try {
+      getContractTemplates.mockResolvedValue({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 3,
+              name: 'Starter',
+              enabled: true,
+              version: 4,
+              model_count: 1,
+              rule_count: 1,
+              stale_rule_count: 0,
+              creator_id: 1,
+              updater_id: 1,
+              updater_name: 'admin',
+              created_at: 0,
+              updated_at: 0,
+            },
+          ],
+          total: 1,
+          page: 1,
+          page_size: 20,
+        },
+      })
+      getContractTemplate.mockResolvedValue({
+        success: true,
+        data: {
+          id: 3,
+          name: 'Starter',
+          enabled: true,
+          version: 4,
+          creator_id: 1,
+          updater_id: 1,
+          rules: [
+            {
+              public_model: 'claude-sonnet-5',
+              channel_id: 11,
+              route_group: 'contract-route',
+              ratio_units: 80000000,
+              available: true,
+            },
+          ],
+        },
+      })
+
+      renderDrawer()
+      await screen.findByText('Main contract')
+      fireEvent.click(screen.getByRole('button', { name: 'New contract' }))
+      await screen.findByText('Create from template')
+      const picker = await vi.waitFor(() => {
+        const el = document.querySelector('#contract-template-source')
+        expect(el).toBeTruthy()
+        return el as HTMLElement
+      })
+      await userEvent.click(picker)
+      await userEvent.click(
+        await screen.findByRole('option', { name: 'Starter' })
+      )
+
+      expect(await screen.findByDisplayValue('0.8')).toBeTruthy()
+      expect(screen.getByDisplayValue('Starter')).toBeTruthy()
+      expect(
+        screen.getByText(
+          'Applied template version {{version}}. Rules stay editable and failures must be fixed before saving.'
+        )
+      ).toBeTruthy()
+
+      fireEvent.change(await screen.findByLabelText('Change reason'), {
+        target: { value: 'from template' },
+      })
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Save and enable contract' })
+      )
+      await vi.waitFor(() =>
+        expect(createUserContract).toHaveBeenCalledWith(
+          7,
+          expect.objectContaining({
+            source_template_id: 3,
+            source_template_version: 4,
+            rules: [
+              expect.objectContaining({
+                model: 'claude-sonnet-5',
+                channel_id: 11,
+                route_group: 'contract-route',
+                discount: '0.8',
+              }),
+            ],
+          })
+        )
+      )
+    } finally {
+      restorePointerCapture()
+    }
+  })
+  it.each([
+    ['Keep my rules and confirm the latest version', '0.6', 5],
+    ['Re-apply template rules', '0.7', 5],
+    ['Decide later', '0.6', 4],
+  ])(
+    'preserves explicit conflict choice: %s',
+    async (action, discount, sourceVersion) => {
+      stubPointerCapture()
+      try {
+        const source = {
+          id: 3,
+          name: 'Starter',
+          enabled: true,
+          version: 4,
+          creator_id: 1,
+          updater_id: 1,
+          rules: [
+            {
+              public_model: 'claude-sonnet-5',
+              channel_id: 11,
+              route_group: 'contract-route',
+              ratio_units: 80000000,
+              available: true,
+            },
+          ],
+        }
+        getContractTemplates.mockResolvedValue({
+          success: true,
+          data: {
+            items: [
+              {
+                ...source,
+                model_count: 1,
+                rule_count: 1,
+                stale_rule_count: 0,
+                updater_name: 'admin',
+                created_at: 0,
+                updated_at: 0,
+              },
+            ],
+            total: 1,
+            page: 1,
+            page_size: 20,
+          },
+        })
+        getContractTemplate
+          .mockResolvedValueOnce({ success: true, data: source })
+          .mockResolvedValue({
+            success: true,
+            data: {
+              ...source,
+              version: 5,
+              rules: source.rules.map((rule) => ({
+                ...rule,
+                ratio_units: 70000000,
+              })),
+            },
+          })
+        createUserContract.mockRejectedValueOnce({
+          isAxiosError: true,
+          response: { status: 409 },
+        })
+        renderDrawer()
+        await screen.findByText('Main contract')
+        fireEvent.click(screen.getByRole('button', { name: 'New contract' }))
+        await userEvent.click(
+          document.querySelector('#contract-template-source') as HTMLElement
+        )
+        await userEvent.click(
+          await screen.findByRole('option', { name: 'Starter' })
+        )
+        fireEvent.change(await screen.findByDisplayValue('0.8'), {
+          target: { value: '0.6' },
+        })
+        fireEvent.change(screen.getByLabelText('Change reason'), {
+          target: { value: 'customized draft' },
+        })
+        fireEvent.click(
+          screen.getByRole('button', { name: 'Save and enable contract' })
+        )
+        await screen.findByText('Contract template changed')
+        expect(screen.getByDisplayValue('0.6')).toBeTruthy()
+        fireEvent.click(screen.getByRole('button', { name: action }))
+        await vi.waitFor(() =>
+          expect(screen.queryByText('Contract template changed')).toBeNull()
+        )
+        expect(createUserContract).toHaveBeenCalledTimes(1)
+        expect(screen.getByDisplayValue(discount)).toBeTruthy()
+        fireEvent.click(
+          screen.getByRole('button', { name: 'Save and enable contract' })
+        )
+        await vi.waitFor(() =>
+          expect(createUserContract).toHaveBeenCalledTimes(2)
+        )
+        expect(createUserContract.mock.calls[1]?.[1]).toMatchObject({
+          source_template_version: sourceVersion,
+          rules: [expect.objectContaining({ discount })],
+        })
+      } finally {
+        restorePointerCapture()
+      }
+    }
+  )
 })

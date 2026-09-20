@@ -23,7 +23,7 @@ func CheckCustomerExportExecution(ctx context.Context, jobID, executor string, n
 	if job.CancelRequested {
 		return ErrCustomerExportCancelled
 	}
-	if err := AuthorizeCustomerExport(ctx, job.UserId, job.TargetUserId); err != nil {
+	if err := AuthorizeCustomerExportJob(ctx, &job); err != nil {
 		return err
 	}
 	if job.LeaseUntil >= now+119 {

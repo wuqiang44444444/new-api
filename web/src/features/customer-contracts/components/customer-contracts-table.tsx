@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { BadgePercent, History, RefreshCw, Users } from 'lucide-react'
+import { BadgePercent, FileStack, History, RefreshCw, Users } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -192,6 +192,15 @@ export function CustomerContractsTable(props: CustomerContractsTableProps) {
           )}
         </p>
         <div className='flex shrink-0 flex-wrap items-center gap-2'>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            render={<Link to='/admin/contract-templates' />}
+          >
+            <FileStack aria-hidden='true' data-icon='inline-start' />
+            {t('Contract templates')}
+          </Button>
           <Button
             type='button'
             variant='outline'

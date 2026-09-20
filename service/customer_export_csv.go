@@ -229,6 +229,14 @@ func (w *customerExportCsvWriter) AppendRow(row model.CustomerExportRow, scope c
 	if w.statementLanguage != nil {
 		record = customerStatementDetailRecord(*w.statementLanguage, record)
 	}
+	return w.AppendRecord(record)
+}
+
+// AppendRecord applies the shared size, sharding and durability limits to a CSV schema.
+func (w *customerExportCsvWriter) AppendRecord(record []string) error {
+	if err := w.ensureShard(); err != nil {
+		return err
+	}
 	var encoded bytes.Buffer
 	encoder := csv.NewWriter(&encoded)
 	if err := encoder.Write(record); err != nil {

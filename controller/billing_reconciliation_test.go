@@ -31,13 +31,11 @@ func TestParseBillingReconciliationPeriodRequiresShanghaiNaturalMonth(t *testing
 	assert.False(t, ok)
 }
 
-func TestValidCopiedProviderBillingPeriodOnlyAllowsPreviousNaturalMonth(t *testing.T) {
+func TestValidProviderBillingPeriodOnlyAcceptsNaturalMonthStarts(t *testing.T) {
 	august := time.Date(2026, time.August, 1, 0, 0, 0, 0, billingSettlementLocation).Unix()
-	july := time.Date(2026, time.July, 1, 0, 0, 0, 0, billingSettlementLocation).Unix()
-	june := time.Date(2026, time.June, 1, 0, 0, 0, 0, billingSettlementLocation).Unix()
-	assert.True(t, validCopiedProviderBillingPeriod(august, 0))
-	assert.True(t, validCopiedProviderBillingPeriod(august, july))
-	assert.False(t, validCopiedProviderBillingPeriod(august, june))
+	assert.True(t, validProviderBillingPeriod(august))
+	assert.False(t, validProviderBillingPeriod(0))
+	assert.False(t, validProviderBillingPeriod(august+1))
 }
 
 func TestBillingStatementFiltersAcceptDurationAndRejectUnsupportedModes(t *testing.T) {
@@ -52,6 +50,6 @@ func TestBillingStatementFiltersAcceptDurationAndRejectUnsupportedModes(t *testi
 		}
 	}
 	period := time.Date(2026, time.September, 1, 0, 0, 0, 0, billingSettlementLocation).Unix()
-	assert.True(t, validProviderBillingKey(period, 1, "model", "per_second"))
-	assert.False(t, validProviderBillingKey(period, 1, "model", "unknown"))
+	assert.True(t, validProviderBillingPeriod(period))
+	assert.False(t, validProviderBillingPeriod(period+60))
 }

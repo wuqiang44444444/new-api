@@ -33,6 +33,9 @@ func setupCustomerContractTestDB(t *testing.T) *gorm.DB {
 		&CustomerContract{},
 		&CustomerContractEntityRule{},
 		&CustomerContractEntityAudit{},
+		&CustomerContractTemplate{},
+		&CustomerContractTemplateRule{},
+		&CustomerContractTemplateAudit{},
 	))
 	DB = db
 	common.RedisEnabled = false

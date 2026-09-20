@@ -189,6 +189,8 @@ function exportTypeLabel(
   translate: (key: string) => string
 ) {
   switch (job.job_type) {
+    case 'upstream_details':
+      return translate('Upstream details')
     case 'statement_summary':
       return translate('Statement summary')
     case 'statement_details':
@@ -217,7 +219,11 @@ function ExportJobCard(props: {
   return (
     <article
       className='rounded-lg border p-3'
-      aria-label={t('Customer #{{id}}', { id: job.target_user_id })}
+      aria-label={
+        job.job_type === 'upstream_details'
+          ? t('Upstream details')
+          : t('Customer #{{id}}', { id: job.target_user_id })
+      }
     >
       <div className='flex items-center justify-between gap-2'>
         <span className='text-sm font-medium'>{exportTypeLabel(job, t)}</span>
@@ -227,7 +233,9 @@ function ExportJobCard(props: {
       </div>
       <div className='text-muted-foreground mt-1 space-y-0.5 text-xs'>
         <p className='font-medium'>
-          {t('Customer #{{id}}', { id: job.target_user_id })}
+          {job.job_type === 'upstream_details'
+            ? t('Upstream details')
+            : t('Customer #{{id}}', { id: job.target_user_id })}
         </p>
         <p>
           {period} · {job.filters.timezone}

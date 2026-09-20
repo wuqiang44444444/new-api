@@ -23,6 +23,7 @@ import { api } from '@/lib/api'
 import type { ApiResponse, BillingMode } from './types'
 
 export type ExportJobType =
+  | 'upstream_details'
   | 'usage_logs'
   | 'statement_details'
   | 'statement_summary'
@@ -37,6 +38,7 @@ export type ExportJobStatus =
   | 'cancelling'
 
 export type CustomerExportFiltersDto = {
+  upstream?: { url_key?: string; channel_ids: number[] }
   currency?: string
   field_version: number
   start_timestamp: number
@@ -96,6 +98,7 @@ export type CustomerExportJobView = {
 }
 
 export type CustomerExportSubmitPayload = {
+  url_key?: string
   job_type: ExportJobType
   start_timestamp: number
   end_timestamp: number
@@ -197,6 +200,13 @@ export async function resubmitExport(job: CustomerExportJobView) {
   payload.username = job.filters.username
   if (job.filters.model_name) payload.model_name = job.filters.model_name
   if (job.filters.billing_mode) payload.billing_mode = job.filters.billing_mode
+  if (job.job_type === 'upstream_details') {
+    const response = await api.post<ExportEnvelope>(
+      '/api/billing/admin/upstream-exports',
+      { source_job_id: job.job_id }
+    )
+    return assertOk(response.data) as unknown as CustomerExportJobView
+  }
   if (job.target_user_id !== job.user_id) {
     return createAdminExport(job.target_user_id, payload)
   }
@@ -243,4 +253,19 @@ export const activeExportStatuses: ExportJobStatus[] = [
 
 export function isExportJobActive(job: CustomerExportJobView) {
   return activeExportStatuses.includes(job.status)
+}
+
+export async function createUpstreamExport(
+  payload: CustomerExportSubmitPayload
+) {
+  const response = await api.post<ExportEnvelope>(
+    '/api/billing/admin/upstream-exports',
+    {
+      ...payload,
+      language: (payload.language ?? currentExportLanguage()).startsWith('zh')
+        ? 'zh'
+        : 'en',
+    }
+  )
+  return assertOk(response.data) as unknown as CustomerExportJobView
 }

@@ -24,10 +24,10 @@ func TestProviderSummaryCountsSettlementUsageWithoutCustomerRefunds(t *testing.T
 	}
 	require.NoError(t, db.Create(&logs).Error)
 	for _, period := range []struct{ start, requests int64 }{{800, 1}, {1000, 0}} {
-		summary, err := GetProviderBillingSummary(period.start, 1500, 1000, 21, "", "", 1)
+		summary, err := GetProviderBillingURLSummary(period.start, 1500, 1000, "")
 		require.NoError(t, err)
-		require.Len(t, summary.Channels, 1)
-		assert.EqualValues(t, 80, summary.Channels[0].Usage.OutputTokens)
-		assert.EqualValues(t, period.requests, summary.Channels[0].Usage.Requests)
+		require.Len(t, summary.Groups, 1)
+		assert.EqualValues(t, 80, summary.Groups[0].Usage.OutputTokens)
+		assert.EqualValues(t, period.requests, summary.Groups[0].Usage.Requests)
 	}
 }
