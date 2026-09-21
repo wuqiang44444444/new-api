@@ -32,8 +32,9 @@ func TestStatementImageCompletionPreservesCachedUsageWithoutDoubleSettlement(t *
 		CacheCreationRatio: 1.25, GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1}}
 	require.NoError(t, model.InsertImageTask(model.ImageTaskInsertParams{Task: task,
 		GlobalScope: model.ImageTaskAdmissionScopeGlobal(), AppScope: model.ImageTaskAdmissionScopeApp(task.UserId, task.AppID)}))
+	reported := true
 	won, err := model.FinishImageTaskSuccess(task, []model.TaskImageArtifact{{ObjectKey: "test-statement-image"}},
-		&dto.Usage{PromptTokens: 1000, CompletionTokens: 20, TotalTokens: 1020,
+		&dto.Usage{CacheReadTokensReported: &reported, CacheWriteTokensReported: &reported, PromptTokens: 1000, CompletionTokens: 20, TotalTokens: 1020,
 			PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 800, CacheWriteTokens: 100}})
 	require.NoError(t, err)
 	require.True(t, won)
@@ -49,6 +50,12 @@ func TestStatementImageCompletionPreservesCachedUsageWithoutDoubleSettlement(t *
 	assert.EqualValues(t, 260, statement.Summary.NetQuota)
 	assert.Equal(t, 99740, getUserQuota(t, 1830))
 	assert.Equal(t, 99740, getTokenRemainQuota(t, 1831))
+	var log model.Log
+	require.NoError(t, model.LOG_DB.Where("user_id = ? AND type = ?", 1830, model.LogTypeConsume).First(&log).Error)
+	var fields map[string]interface{}
+	require.NoError(t, common.UnmarshalJsonStr(log.Other, &fields))
+	assert.Equal(t, true, fields["cache_write_tokens_reported"])
+	assert.Equal(t, true, fields["cache_read_tokens_reported"], "the persisted completion usage must reach its log")
 }
 
 func TestStatementTextSettlementPreservesCachedUsageAndContractCharge(t *testing.T) {
@@ -126,7 +133,7 @@ func TestStatementBatchKeepsInt64UsageAcrossSettlementAndDetail(t *testing.T) {
 	require.Len(t, detail.Items, 1)
 	assert.EqualValues(t, 2600000000, detail.Items[0].PromptTokens)
 	assert.EqualValues(t, 3000000000, detail.Items[0].CompletionTokens)
-	require.NoError(t, model.DB.AutoMigrate(&model.ProviderBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderChannelBillingDiscount{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.ProviderBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderChannelBillingDiscount{}, &model.ProviderURLGroupDisplayName{}))
 	provider, err := model.GetProviderBillingURLSummary(1, common.GetTimestamp()+10, 1, "")
 	require.NoError(t, err)
 	require.Len(t, provider.Groups, 1)

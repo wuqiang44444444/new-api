@@ -65,9 +65,10 @@ func TestSeedanceSettlementStatementFacts(t *testing.T) {
 			upstream, err := model.GetProviderBillingURLSummary(1, time.Now().Unix()+10, 1000, "")
 			require.NoError(t, err)
 			require.Len(t, upstream.Groups, 1)
-			require.Len(t, upstream.Groups[0].Models, 1)
-			assert.EqualValues(t, tc.tokens, upstream.Groups[0].Models[0].Usage.OutputTokens)
-			assert.EqualValues(t, 1, upstream.Groups[0].Models[0].Usage.Requests)
+			require.Len(t, upstream.Groups[0].Channels, 1)
+			require.Len(t, upstream.Groups[0].Channels[0].Models, 1)
+			assert.EqualValues(t, tc.tokens, upstream.Groups[0].Channels[0].Models[0].Usage.OutputTokens)
+			assert.EqualValues(t, 1, upstream.Groups[0].Channels[0].Models[0].Usage.Requests)
 			assert.Equal(t, 10000+3000-tc.quota, getUserQuota(t, 8991))
 			var user model.User
 			require.NoError(t, model.DB.First(&user, 8991).Error)

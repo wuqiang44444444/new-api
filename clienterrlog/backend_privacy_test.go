@@ -29,7 +29,7 @@ func TestBackendEventPreservesCompleteDiagnostics(t *testing.T) {
 		"readonly_check": "unsupported", "billing_model": "customer-model",
 		"check_result": "failed", "check_reason": "test_upstream_rejected",
 		"check_code": "bad_response_status_code", "connection_result": "auth_error",
-		"probe_media": "image",
+		"probe_media": "image", "upstream_cost_status": "pending",
 	}
 	event := buildBackendEvent(BackendEvent{EventType: EventChannelTest, Detail: detail})
 	require.NotNil(t, event.Detail)

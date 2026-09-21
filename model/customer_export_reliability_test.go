@@ -21,7 +21,7 @@ func TestCustomerExportRevokedAdminCannotAccessCustomerArtifact(t *testing.T) {
 	assert.ErrorIs(t, err, ErrCustomerExportNotFound)
 	_, err = CancelCustomerExportJob(job.JobID, 1)
 	assert.ErrorIs(t, err, ErrCustomerExportNotFound)
-	jobs, err := ListCustomerExportJobs(1, 50)
+	jobs, _, err := ListCustomerExportJobs(context.Background(), 1, 1, 50)
 	require.NoError(t, err)
 	assert.Empty(t, jobs)
 	claimed, err := ClaimNextQueuedCustomerExportJob("exec", common.GetTimestamp()+120, 1800)

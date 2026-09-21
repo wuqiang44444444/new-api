@@ -295,7 +295,7 @@ func summarizeBillingCustomerStatementList(items []BillingCustomerStatementListI
 	if originalQuotaComplete {
 		summary.OriginalQuota = billingStatementOriginalQuota(originalQuota)
 		if summary.OriginalQuota == nil {
-			ensureBillingReconciliationQuality(&summary.DataQuality).MissingHistoricalPriceRows++
+			accumulateBillingEstimateReasonQuality(ensureBillingReconciliationQuality(&summary.DataQuality), []string{BillingEstimateAmountOutOfRange})
 		} else {
 			discountQuota := *summary.OriginalQuota - summary.Usage.NetQuota
 			summary.DiscountQuota = &discountQuota

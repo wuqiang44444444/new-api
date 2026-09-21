@@ -25,7 +25,7 @@ import (
 // statement details use a localized projection over those same safe values.
 
 const (
-	customerExportFieldVersion = 11
+	customerExportFieldVersion = 21
 	customerExportCsvBOM       = "\xEF\xBB\xBF"
 	// Plan-suggested starting cap for one CSV shard (100 MiB).
 	customerExportCsvShardBytes = 100 << 20

@@ -226,6 +226,10 @@ type CompletionsStreamResponse struct {
 }
 
 type Usage struct {
+	// CacheReadTokensReported preserves image meter presence across durable task
+	// storage. Nil denotes legacy/uninstrumented usage; it never affects pricing.
+	CacheReadTokensReported  *bool `json:"cache_read_tokens_reported,omitempty"`
+	CacheWriteTokensReported *bool `json:"cache_write_tokens_reported,omitempty"`
 	// InputImages preserves image counts separately from token usage.
 	InputImages          *int          `json:"input_images,omitempty"`
 	PromptTokens         int           `json:"prompt_tokens"`

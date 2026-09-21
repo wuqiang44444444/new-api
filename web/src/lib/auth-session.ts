@@ -80,11 +80,18 @@ const refreshRaceDelays = [80, 200, 500] as const
 let refreshPromise: Promise<RefreshOutcome> | null = null
 let authEpoch = 0
 
-class AuthRefreshSupersededError extends Error {
+export class AuthRefreshSupersededError extends Error {
   constructor() {
     super('Authentication refresh was superseded')
     this.name = 'AuthRefreshSupersededError'
   }
+}
+
+// A superseded refresh means another refresh already finished and the store
+// holds a fresh bundle; the caller only lost the epoch race and may simply
+// retry its request with the current token.
+export function isAuthRefreshSuperseded(error: unknown): boolean {
+  return error instanceof AuthRefreshSupersededError
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

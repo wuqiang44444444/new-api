@@ -24,6 +24,7 @@ import {
   applyAuthRotation,
   clearAuthentication,
   getFreshAuthHeaders,
+  isAuthRefreshSuperseded,
   refreshAuthentication,
 } from '@/lib/auth-session'
 import { getServerErrorMessageKey } from '@/lib/server-error-message'
@@ -110,6 +111,23 @@ api.interceptors.response.use(
         config.authRetry = true
         const outcome = await refreshAuthentication()
         if (outcome.kind === 'authenticated') {
+          const token = useAuthStore.getState().auth.accessToken
+          if (token) {
+            config.headers = {
+              ...config.headers,
+              Authorization: `Bearer ${token}`,
+            }
+          }
+          return api.request(config)
+        }
+
+        // A superseded refresh means another refresh already succeeded and
+        // the store holds a fresh bundle; this request only lost the epoch
+        // race. Retry with the current token instead of failing the caller.
+        if (
+          outcome.kind === 'transient_error' &&
+          isAuthRefreshSuperseded(outcome.error)
+        ) {
           const token = useAuthStore.getState().auth.accessToken
           if (token) {
             config.headers = {

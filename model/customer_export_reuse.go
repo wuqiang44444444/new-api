@@ -14,6 +14,8 @@ import (
 type CustomerExportReuse struct {
 	SourceVersion string
 	StoreIdentity string
+	// Regeneration requests a particular frozen snapshot, not just its filters.
+	RequireExactActiveFilters bool
 }
 
 // CustomerStatementExportSourceVersion uses the existing transactional billing

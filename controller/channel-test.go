@@ -144,6 +144,12 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	c.Set(service.ChannelTestUpstreamCostKey, "not_sent")
+	defer func() {
+		if result.context == nil {
+			result.context = c
+		}
+	}()
 
 	testModel = strings.TrimSpace(testModel)
 	if testModel == "" {
@@ -490,6 +496,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	requestBody := bytes.NewBuffer(jsonData)
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
 	// 网络执行事实由 transport trace 记录，进入 DoRequest 不等于已经发送。
+	c.Set(service.ChannelTestUpstreamCostKey, "pending")
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
 		return testResult{
@@ -532,6 +539,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			newAPIError: respErr,
 		}
 	}
+	usageEstimated := !isTestUsageValue(usageA, common.GetContextKeyBool(c, constant.ContextKeyLocalCountTokens))
 	usage, usageErr := coerceTestUsage(usageA, isStream, info.GetEstimatePromptTokens())
 	if usageErr != nil {
 		return testResult{
@@ -558,11 +566,17 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	}
 	info.SetEstimatePromptTokens(usage.PromptTokens)
 
-	quota, tieredResult := settleTestQuota(info, priceData, usage)
+	originUsage := usage
+	pricing := service.CalculateChannelTestQuota(c, info, priceData, usage)
+	quota, tieredResult, usage := pricing.Quota, pricing.Result, pricing.Usage
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
 	consumedTime := float64(milliseconds) / 1000.0
 	other := buildTestLogOther(c, info, priceData, usage, tieredResult)
+	if appendChannelTestPricing(other, info, quota, tieredResult, priceData, usageEstimated) == "settled" {
+		c.Set(service.ChannelTestUpstreamCostKey, "priced")
+	}
+	pricing.AppendLogInfo(c, info, other, originUsage)
 	model.RecordConsumeLog(c, testUserID, model.RecordConsumeLogParams{
 		ChannelId:        channel.Id,
 		PromptTokens:     usage.PromptTokens,
@@ -597,29 +611,6 @@ func attachTestBillingRequestInput(info *relaycommon.RelayInfo, request dto.Requ
 	return nil
 }
 
-func settleTestQuota(info *relaycommon.RelayInfo, priceData hosttypes.PriceData, usage *dto.Usage) (int, *billingexpr.TieredResult) {
-	if usage != nil && info != nil && info.TieredBillingSnapshot != nil {
-		isClaudeUsageSemantic := usage.UsageSemantic == "anthropic" || info.GetFinalRequestRelayFormat() == types.RelayFormatClaude
-		usedVars := billingexpr.UsedVars(info.TieredBillingSnapshot.ExprString)
-		if ok, quota, result := service.TryTieredSettle(info, service.BuildTieredTokenParams(usage, isClaudeUsageSemantic, usedVars)); ok {
-			return quota, result
-		}
-	}
-
-	quota := 0
-	if !priceData.UsePrice {
-		completionQuota := common.QuotaRound(float64(usage.CompletionTokens) * priceData.CompletionRatio)
-		quota = common.QuotaRound(float64(usage.PromptTokens) + float64(completionQuota))
-		quota = common.QuotaRound(float64(quota) * priceData.ModelRatio)
-		if priceData.ModelRatio != 0 && quota <= 0 {
-			quota = 1
-		}
-		return quota, nil
-	}
-
-	return common.QuotaFromFloat(priceData.ModelPrice * common.QuotaPerUnit), nil
-}
-
 func buildTestLogOther(c *gin.Context, info *relaycommon.RelayInfo, priceData hosttypes.PriceData, usage *dto.Usage, tieredResult *billingexpr.TieredResult) *model.LogOther {
 	other := service.GenerateTextOtherInfo(c, info, priceData.ModelRatio, priceData.GroupRatioInfo.GroupRatio, priceData.CompletionRatio,
 		usage.PromptTokensDetails.CachedTokens, priceData.CacheRatio, priceData.ModelPrice, priceData.GroupRatioInfo.GroupSpecialRatio)
@@ -633,6 +624,9 @@ func buildTestLogOther(c *gin.Context, info *relaycommon.RelayInfo, priceData ho
 func coerceTestUsage(usageAny any, isStream bool, estimatePromptTokens int) (*dto.Usage, error) {
 	switch u := usageAny.(type) {
 	case *dto.Usage:
+		if u == nil {
+			return nil, errors.New("usage is nil")
+		}
 		return u, nil
 	case dto.Usage:
 		return &u, nil

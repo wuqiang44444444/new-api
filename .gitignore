@@ -47,6 +47,7 @@ go.work
 go.work.sum
 /cmcc_seedance_*_probe.sh
 /verify-cmcc-seedance
+/网关模型能力测试报告-2026-09-21.md
 /*.before-cmcc-credentials-*.bak
 
 #

@@ -18,7 +18,8 @@ func TestUpstreamBillingDetailsEvidenceRowsAndFilters(t *testing.T) {
 		{UserId: 7, CreatedAt: 1101, Type: LogTypeConsume, ChannelId: 81, ModelName: "video", Quota: 100, RequestId: "req-2", UpstreamRequestId: "up-2", Other: `{"task_id":"t1","task_billing_event":"create","is_task":true,"contract_applicable":false,"group_ratio":1,"model_price":1}`},
 		{UserId: 7, CreatedAt: 1102, Type: LogTypeRefund, ChannelId: 81, ModelName: "video", Quota: 30, RequestId: "req-2", UpstreamRequestId: "up-3", Other: `{"task_id":"t1","task_billing_event":"adjustment","actual_quota":30,"pre_consumed_quota":100,"contract_applicable":false,"group_ratio":1,"model_price":1}`},
 		{UserId: 7, CreatedAt: 1103, Type: LogTypeRefund, ChannelId: 81, ModelName: "chat", Quota: 999, Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`},
-		{UserId: 8, CreatedAt: 1104, Type: LogTypeConsume, ChannelId: 81, ModelName: "chat", Quota: 1000, TokenId: 0, TokenName: "模型测试", Content: "模型测试", Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`},
+		// 测试行保存原生计价版本与原价，计入参考金额并保留依据。
+		{UserId: 8, CreatedAt: 1104, Type: LogTypeConsume, ChannelId: 81, ModelName: "chat", Quota: 1000, PromptTokens: 1000, TokenId: 0, TokenName: "模型测试", Content: "模型测试", Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1,"completion_ratio":1,"test_pricing":{"version":1,"mode":"ratio","status":"settled","original_quota":1000}}`},
 		{UserId: 9, CreatedAt: 1105, Type: LogTypeConsume, ChannelId: 82, ModelName: "chat", Quota: 55, RequestId: "req-9", Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`},
 	}
 	require.NoError(t, db.Create(&logs).Error)
@@ -43,7 +44,11 @@ func TestUpstreamBillingDetailsEvidenceRowsAndFilters(t *testing.T) {
 	require.NotNil(t, adjustment.OriginalAmount)
 	assert.EqualValues(t, -30, *adjustment.OriginalAmount)
 	assert.Equal(t, "channel_test", details.Items[4].Event)
-	assert.Nil(t, details.Items[4].OriginalAmount)
+	require.NotNil(t, details.Items[4].OriginalAmount)
+	assert.EqualValues(t, 1000, *details.Items[4].OriginalAmount)
+	require.NotNil(t, details.Items[4].TestPricing)
+	assert.Equal(t, "ratio", details.Items[4].TestPricing.Mode)
+	assert.Equal(t, "priced", details.Items[4].TestPricing.Status)
 
 	assert.Equal(t, "refund", details.Items[3].Event)
 	require.NotNil(t, details.Items[3].OriginalAmount)
@@ -58,7 +63,7 @@ func TestUpstreamBillingDetailsEvidenceRowsAndFilters(t *testing.T) {
 	for _, group := range summary.Groups {
 		if group.UrlKey == "https://detail.example.com" {
 			require.NotNil(t, group.OriginalAmount)
-			assert.EqualValues(t, 400+100-30-999, *group.OriginalAmount)
+			assert.EqualValues(t, 400+100-30-999+1000, *group.OriginalAmount)
 		}
 	}
 	// Double-sided request id search.
@@ -113,4 +118,47 @@ func TestUpstreamRefundUsesCustomerPreauthEvidence(t *testing.T) {
 	require.Len(t, summary.Groups, 1)
 	require.NotNil(t, summary.Groups[0].OriginalAmount)
 	assert.Zero(t, *summary.Groups[0].OriginalAmount)
+}
+
+func TestUpstreamDetailsKeepKnownAndFallbackIdentitiesSeparate(t *testing.T) {
+	db := setupBillingReconciliationTestDB(t)
+	require.NoError(t, db.Create(&[]Log{
+		{UserId: 7, ChannelId: 81, CreatedAt: 1100, Type: LogTypeConsume, ModelName: "same", Other: `{"model_ratio":1,"upstream_model_name":"same"}`},
+		{UserId: 7, ChannelId: 81, CreatedAt: 1101, Type: LogTypeConsume, ModelName: "same", Other: `{"model_ratio":1,"is_model_mapped":true}`},
+		{UserId: 7, ChannelId: 81, CreatedAt: 1102, Type: LogTypeConsume, ModelName: "different", Other: `{"model_ratio":1,"is_model_mapped":true}`},
+	}).Error)
+	for _, fallback := range []bool{false, true} {
+		details, err := GetUpstreamBillingDetails(context.Background(), UpstreamBillingDetailFilter{Start: 1000, End: 1500, ChannelIds: []int{81}, ProviderModel: "same", ProviderModelFallback: &fallback}, 1, 50, false)
+		require.NoError(t, err)
+		require.Len(t, details.Items, 1)
+		assert.Equal(t, fallback, details.Items[0].ProviderModelFallback)
+	}
+}
+
+func TestUpstreamSecondsUseFrozenUnitsAndSettlementFacts(t *testing.T) {
+	db := setupBillingReconciliationTestDB(t)
+	facts := `"statement_snapshot":{"billing_mode":"per_second"},"usage_units":{"duration":"second"},"usage_facts":{"duration":6.5}`
+	require.NoError(t, db.Create(&[]Log{
+		{UserId: 7, ChannelId: 81, CreatedAt: 1100, Type: LogTypeConsume, ModelName: "video", Other: `{` + facts + `,"task_id":"t","task_billing_event":"create"}`},
+		{UserId: 7, ChannelId: 81, CreatedAt: 1101, Type: LogTypeRefund, ModelName: "video", Other: `{` + facts + `,"task_id":"t","task_billing_event":"adjustment"}`},
+		{UserId: 7, ChannelId: 81, CreatedAt: 1102, Type: LogTypeRefund, ModelName: "video", Other: `{` + facts + `,"task_id":"t","task_billing_event":"refund"}`},
+		{UserId: 7, ChannelId: 81, CreatedAt: 1103, Type: LogTypeConsume, ModelName: "zero", Other: `{"statement_snapshot":{"billing_mode":"per_second"},"usage_units":{"seconds":"second"},"usage_facts":{"seconds":0}}`},
+		{UserId: 7, ChannelId: 81, CreatedAt: 1104, Type: LogTypeConsume, ModelName: "missing", Other: `{"statement_snapshot":{"billing_mode":"per_second"},"seconds":9}`},
+	}).Error)
+	details, err := GetUpstreamBillingDetails(context.Background(), UpstreamBillingDetailFilter{Start: 1000, End: 1500, ChannelIds: []int{81}}, 1, 50, false)
+	require.NoError(t, err)
+	require.Len(t, details.Items, 5)
+	assert.Nil(t, details.Items[0].Seconds)
+	require.NotNil(t, details.Items[1].Seconds)
+	assert.Equal(t, "6.5", details.Items[1].Seconds.String())
+	assert.Nil(t, details.Items[2].Seconds)
+	require.NotNil(t, details.Items[3].Seconds)
+	assert.Equal(t, "0", details.Items[3].Seconds.String())
+	assert.Nil(t, details.Items[4].Seconds)
+	summary, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
+	require.NoError(t, err)
+	require.Len(t, summary.Groups, 1)
+	require.NotNil(t, summary.Groups[0].Usage.Seconds)
+	assert.Equal(t, "6.5", summary.Groups[0].Usage.Seconds.String())
+	assert.EqualValues(t, 1, summary.Groups[0].Usage.SecondsUnavailableRows)
 }

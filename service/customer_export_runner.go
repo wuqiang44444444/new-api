@@ -112,20 +112,22 @@ func SubmitCustomerExportJob(initiatorId int, targetUserId int, request Customer
 
 // CustomerExportRequest 是控制台提交的原始范围；规范化后冻结进任务行。
 type CustomerExportRequest struct {
-	JobType           string
-	StartTimestamp    int64
-	EndTimestamp      int64
-	LogTypes          []int
-	TokenId           *int
-	ChannelId         *int   `json:"channel_id,omitempty"`
-	TokenName         string `json:"token_name,omitempty"`
-	Group             string `json:"group,omitempty"`
-	RequestId         string `json:"request_id,omitempty"`
-	UpstreamRequestId string `json:"upstream_request_id,omitempty"`
-	Username          string `json:"username,omitempty"`
-	ModelName         string
-	BillingMode       string
-	Language          string
+	UpstreamEvidenceFilter string
+	ProviderModelFallback  *bool
+	JobType                string
+	StartTimestamp         int64
+	EndTimestamp           int64
+	LogTypes               []int
+	TokenId                *int
+	ChannelId              *int   `json:"channel_id,omitempty"`
+	TokenName              string `json:"token_name,omitempty"`
+	Group                  string `json:"group,omitempty"`
+	RequestId              string `json:"request_id,omitempty"`
+	UpstreamRequestId      string `json:"upstream_request_id,omitempty"`
+	Username               string `json:"username,omitempty"`
+	ModelName              string
+	BillingMode            string
+	Language               string
 }
 
 // normalizeCustomerExportFilters 冻结提交时的规范化范围。使用记录导出可跨月
@@ -377,8 +379,12 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 	defer os.RemoveAll(workDir)
 	if err == nil {
 		switch job.JobType {
+		case model.CustomerExportJobTypeUpstreamSummary:
+			artifact, err = executeUpstreamSummaryExport(ctx, job, filters, workDir, pressure)
 		case model.CustomerExportJobTypeUpstreamDetails:
 			artifact, err = executeUpstreamExport(ctx, job, filters, workDir, pressure)
+		case model.CustomerExportJobTypeUsageSummary:
+			artifact, err = executeUsageAnalyticsExport(ctx, job, filters, workDir)
 		case model.CustomerExportJobTypeStatementVersion:
 			err = runBillingStatementVersionGeneration(ctx, job, pressure)
 		case model.CustomerExportJobTypeStatementSummary:

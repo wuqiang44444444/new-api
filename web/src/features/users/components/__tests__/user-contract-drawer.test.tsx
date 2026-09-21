@@ -598,43 +598,120 @@ describe('admin customer contract entity drawer', () => {
   it('ignores a template response after switching to an existing contract', async () => {
     stubPointerCapture()
     try {
-      const source = { id: 3, name: 'Delayed template', enabled: true, version: 1,
-        creator_id: 1, updater_id: 1, rules: [{ public_model: 'claude-sonnet-5',
-          channel_id: 11, route_group: 'contract-route', ratio_units: 50000000, available: true }] }
-      getContractTemplates.mockResolvedValue({ success: true, data: {
-        items: [{ ...source, model_count: 1, rule_count: 1, stale_rule_count: 0,
-          updater_name: 'admin', created_at: 0, updated_at: 0 }], total: 1, page: 1, page_size: 100 } })
+      const source = {
+        id: 3,
+        name: 'Delayed template',
+        enabled: true,
+        version: 1,
+        creator_id: 1,
+        updater_id: 1,
+        rules: [
+          {
+            public_model: 'claude-sonnet-5',
+            channel_id: 11,
+            route_group: 'contract-route',
+            ratio_units: 50000000,
+            available: true,
+          },
+        ],
+      }
+      getContractTemplates.mockResolvedValue({
+        success: true,
+        data: {
+          items: [
+            {
+              ...source,
+              model_count: 1,
+              rule_count: 1,
+              stale_rule_count: 0,
+              updater_name: 'admin',
+              created_at: 0,
+              updated_at: 0,
+            },
+          ],
+          total: 1,
+          page: 1,
+          page_size: 100,
+        },
+      })
       let resolve!: (response: ContractTemplateSnapshotResponse) => void
-      getContractTemplate.mockReturnValue(new Promise((done) => { resolve = done }))
+      getContractTemplate.mockReturnValue(
+        new Promise((done) => {
+          resolve = done
+        })
+      )
       renderDrawer()
       await screen.findByText('Main contract')
       fireEvent.click(screen.getByRole('button', { name: 'New contract' }))
-      await userEvent.click(document.querySelector('#contract-template-source') as HTMLElement)
-      await userEvent.click(await screen.findByRole('option', { name: 'Delayed template' }))
+      await userEvent.click(
+        document.querySelector('#contract-template-source') as HTMLElement
+      )
+      await userEvent.click(
+        await screen.findByRole('option', { name: 'Delayed template' })
+      )
       fireEvent.click(screen.getByRole('button', { name: /Main contract/ }))
-      await act(async () => { resolve({ success: true, data: source }) })
-      expect(screen.getByLabelText('Contract name')).toHaveValue('Main contract')
+      await act(async () => {
+        resolve({ success: true, data: source })
+      })
+      expect(screen.getByLabelText('Contract name')).toHaveValue(
+        'Main contract'
+      )
       expect(screen.getByDisplayValue('0.8')).toBeInTheDocument()
-      expect(screen.queryByDisplayValue('Delayed template')).not.toBeInTheDocument()
-    } finally { restorePointerCapture() }
+      expect(
+        screen.queryByDisplayValue('Delayed template')
+      ).not.toBeInTheDocument()
+    } finally {
+      restorePointerCapture()
+    }
   })
 
   it('loads enabled templates beyond the first page', async () => {
-    const template = { id: 1, name: 'Older template', enabled: true, version: 1,
-      model_count: 1, rule_count: 1, stale_rule_count: 0, creator_id: 1,
-      updater_id: 1, updater_name: 'admin', created_at: 0, updated_at: 0 }
-    getContractTemplates.mockResolvedValueOnce({ success: true, data: {
-      items: Array.from({ length: 100 }, (_, i) => ({ ...template, id: i + 2, name: `Template ${i + 2}` })),
-      total: 101, page: 1, page_size: 100 } }).mockResolvedValueOnce({ success: true,
-      data: { items: [template], total: 101, page: 2, page_size: 100 } })
+    const template = {
+      id: 1,
+      name: 'Older template',
+      enabled: true,
+      version: 1,
+      model_count: 1,
+      rule_count: 1,
+      stale_rule_count: 0,
+      creator_id: 1,
+      updater_id: 1,
+      updater_name: 'admin',
+      created_at: 0,
+      updated_at: 0,
+    }
+    getContractTemplates
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: Array.from({ length: 100 }, (_, i) => ({
+            ...template,
+            id: i + 2,
+            name: `Template ${i + 2}`,
+          })),
+          total: 101,
+          page: 1,
+          page_size: 100,
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { items: [template], total: 101, page: 2, page_size: 100 },
+      })
     stubPointerCapture()
     try {
       renderDrawer()
       await screen.findByText('Main contract')
       fireEvent.click(screen.getByRole('button', { name: 'New contract' }))
-      await userEvent.click(document.querySelector('#contract-template-source') as HTMLElement)
-      expect(await screen.findByRole('option', { name: 'Older template' })).toBeInTheDocument()
-    } finally { restorePointerCapture() }
+      await userEvent.click(
+        document.querySelector('#contract-template-source') as HTMLElement
+      )
+      expect(
+        await screen.findByRole('option', { name: 'Older template' })
+      ).toBeInTheDocument()
+    } finally {
+      restorePointerCapture()
+    }
   })
 
   it('applies an enabled template on create and submits the confirmed source', async () => {

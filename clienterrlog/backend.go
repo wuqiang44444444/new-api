@@ -109,7 +109,7 @@ func sanitizedBackendDetail(detail map[string]string) map[string]string {
 	for key, value := range detail {
 		switch key {
 		case "platform", "action", "create_upstream_request_id", "fail_reason", "test_mode", "endpoint_type", "probe_stream", "upstream_status", "threshold_kind",
-			"check_scope", "config_check", "generation_evidence", "upstream_request", "config_reason", "config_entry", "config_summary", "readonly_check", "billing_model", "check_result", "check_reason", "check_code", "connection_result", "probe_media":
+			"check_scope", "config_check", "generation_evidence", "upstream_request", "config_reason", "config_entry", "config_summary", "readonly_check", "billing_model", "check_result", "check_reason", "check_code", "connection_result", "probe_media", "upstream_cost_status":
 		default:
 			continue
 		}

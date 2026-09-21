@@ -62,27 +62,42 @@ func migrateBillingReconciliationDB() error {
 		&ProviderBillingDiscount{},
 		&ProviderBillingAudit{},
 		&ProviderChannelBillingDiscount{},
+		&ProviderURLGroupDisplayName{},
 	); err != nil {
-		return err
-	}
-	if err := migrateProviderModelDiscountsToChannel(); err != nil {
 		return err
 	}
 	return migrateBillingStatementTaskIndex(DB)
 }
 
 type BillingReconciliationDataQuality struct {
-	InputTokensUnavailableRequests int64  `json:"input_tokens_unavailable_requests,omitempty"`
-	CacheWriteUnavailableRequests  int64  `json:"cache_write_unavailable_requests,omitempty"`
-	Status                         string `json:"status"`
-	UnavailableRequests            int64  `json:"unavailable_requests,omitempty"`
-	UnknownBillingModeRequests     int64  `json:"unknown_billing_mode_requests,omitempty"`
-	ProviderModelFallbackRows      int64  `json:"provider_model_fallback_rows,omitempty"`
-	MissingHistoricalPriceRows     int64  `json:"missing_historical_price_rows,omitempty"`
-	// UsageWithoutAmountRows counts upstream usage rows kept in the usage view
-	// but excluded from the official-price amount projection because they carry
-	// no customer settlement — native channel tests. Usage and amount coverage
-	// are deliberately different scopes and must never be conflated.
+	TestRecordedOriginalRows int64 `json:"test_recorded_original_rows,omitempty"`
+	TestRecomputedRows       int64 `json:"test_recomputed_rows,omitempty"`
+	// Exclusive reasons partition UsageWithoutAmountRows; never add them to that total.
+	TestAmountPendingReasons       map[string]int64         `json:"test_amount_pending_reasons,omitempty"`
+	RecoveredBillingSecondsRows    int64                    `json:"recovered_billing_seconds_rows,omitempty"`
+	RefundedTaskHoldRows           int64                    `json:"refunded_task_hold_rows,omitempty"`
+	SecondsTaskLinkMissingRows     int64                    `json:"seconds_task_link_missing_rows,omitempty"`
+	LegacyTestCacheReadRows        int64                    `json:"legacy_test_cache_read_rows,omitempty"`
+	LegacyTestCacheWriteRows       int64                    `json:"legacy_test_cache_write_rows,omitempty"`
+	EvidenceCoverage               *BillingEvidenceCoverage `json:"evidence_coverage,omitempty"`
+	CacheReadUnreportedRequests    int64                    `json:"cache_read_unreported_requests,omitempty"`
+	CacheWriteUnreportedRequests   int64                    `json:"cache_write_unreported_requests,omitempty"`
+	CacheReadUnavailableRequests   int64                    `json:"cache_read_unavailable_requests,omitempty"`
+	SecondsUnavailableRows         int64                    `json:"seconds_unavailable_rows,omitempty"`
+	InputTokensUnavailableRequests int64                    `json:"input_tokens_unavailable_requests,omitempty"`
+	CacheWriteUnavailableRequests  int64                    `json:"cache_write_unavailable_requests,omitempty"`
+	Status                         string                   `json:"status"`
+	UnavailableRequests            int64                    `json:"unavailable_requests,omitempty"`
+	UnknownBillingModeRequests     int64                    `json:"unknown_billing_mode_requests,omitempty"`
+	ProviderModelFallbackRows      int64                    `json:"provider_model_fallback_rows,omitempty"`
+	MissingHistoricalPriceRows     int64                    `json:"missing_historical_price_rows,omitempty"`
+	AuxiliaryChargeRows            int64                    `json:"auxiliary_charge_rows,omitempty"`
+	TestPricedRows                 int64                    `json:"test_priced_rows,omitempty"`
+	SecondsValueMissingRows        int64                    `json:"seconds_value_missing_rows,omitempty"`
+	// UsageWithoutAmountRows counts native channel test rows kept in the usage
+	// view whose amount could not be confirmed from frozen pricing facts. Priced
+	// tests are counted in TestPricedRows and enter the reference amount, so
+	// this is no longer "all tests"; usage and amount coverage stay distinct.
 	UsageWithoutAmountRows int64 `json:"usage_without_amount_rows,omitempty"`
 }
 
@@ -444,6 +459,27 @@ func finalizeBillingCustomerStatementOriginalQuota(statement *BillingCustomerSta
 	statement.DiscountQuota = &discountQuota
 }
 
+// upstreamTestPricingRecord is the pricing evidence a channel test persists at
+// its own log boundary (other["test_pricing"]). New records carry the engine's
+// pre-discount original directly; historical rows lack it and fall back to
+// evidence-based classification.
+type upstreamTestPricingRecord struct {
+	Version       int    `json:"version"`
+	Mode          string `json:"mode"`
+	Status        string `json:"status"`
+	OriginalQuota *int64 `json:"original_quota"`
+	ExprVersion   int    `json:"expr_version,omitempty"`
+}
+
+const (
+	upstreamTestPricingModeRatio      = "ratio"
+	upstreamTestPricingModeFixedPrice = "fixed_price"
+	upstreamTestPricingModeTieredExpr = "tiered_expr"
+
+	upstreamTestPricingStatusSettled   = "settled"
+	upstreamTestPricingStatusEstimated = "estimated"
+)
+
 type parsedBillingReconciliationLog struct {
 	customerModel           string
 	refundTaskID            string
@@ -456,7 +492,20 @@ type parsedBillingReconciliationLog struct {
 	isRequest               bool
 	requestCount            int64
 	isRefund                bool
+	isChannelTest           bool
+	hasExpression           bool
+	taskID                  string
+	isTask                  bool
+	taskBillingEvent        string
+	hasImageCount           bool
+	modelRatio              *float64
+	completionRatio         *float64
+	modelPrice              *float64
+	testPricing             *upstreamTestPricingRecord
 	cacheReadTokens         int64
+	cacheReadUnavailable    bool
+	cacheReadEvidence       upstreamCacheEvidence
+	cacheWriteEvidence      upstreamCacheEvidence
 	cacheWrite              billingStatementCacheWriteTokens
 	discountRatio           *float64
 	groupName               string
@@ -476,7 +525,8 @@ type parsedBillingReconciliationLog struct {
 }
 
 func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingReconciliationLog {
-	parsed := parsedBillingReconciliationLog{cacheWriteUnavailable: isNativeChannelTestLog(log.Type, log.TokenId, log.TokenName, log.Content), billingMode: BillingReconciliationModeUnknown, isRequest: log.Type == LogTypeConsume, isRefund: log.Type == LogTypeRefund}
+	test := isNativeChannelTestLog(log.Type, log.TokenId, log.TokenName, log.Content)
+	parsed := parsedBillingReconciliationLog{isChannelTest: test, cacheWriteUnavailable: test, billingMode: BillingReconciliationModeUnknown, isRequest: log.Type == LogTypeConsume, isRefund: log.Type == LogTypeRefund}
 	parsed.customerModel = log.ModelName
 	parsed.groupName = log.GroupName
 	parsed.inputTokens = max(int64(log.PromptTokens), 0)
@@ -494,9 +544,25 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 		parsed.unavailable = true
 		return parsed
 	}
-	parsed.cacheReadTokens, _ = billingBreakdownNonNegativeInt(other["cache_tokens"])
+	cacheReadTokens, cacheReadKnown := billingBreakdownNonNegativeInt(other["cache_tokens"])
+	parsed.cacheReadTokens = cacheReadTokens
+	path := strings.TrimSuffix(billingBreakdownString(other["request_path"]), "/")
+	image := path == "/v1/images/generations" || path == "/v1/images/edits"
+	parsed.cacheReadEvidence = upstreamCacheMeterEvidence(other, "cache_read_tokens_reported", cacheReadKnown)
+	_, cacheReadInstrumented := other["cache_read_tokens_reported"]
+	parsed.cacheReadUnavailable = (image || cacheReadInstrumented) && parsed.cacheReadEvidence != upstreamCacheRecorded
 	parsed.cacheWrite = normalizedBillingBreakdownCacheWriteTokens(other)
-	parsed.cacheWriteUnavailable = !parsed.cacheWrite.known && isNativeChannelTestLog(log.Type, log.TokenId, log.TokenName, log.Content)
+	if !parsed.cacheWrite.known && (nativeUsageLogOmitsZeroCacheWrite(log, other) || historicalTestOmitsCacheWrite(log, other)) {
+		parsed.cacheWrite.known = true
+	}
+	parsed.cacheWriteEvidence = upstreamCacheMeterEvidence(other, "cache_write_tokens_reported", parsed.cacheWrite.known)
+	parsed.cacheWriteUnavailable = !parsed.cacheWrite.known && parsed.isChannelTest
+	if raw := other["test_pricing"]; len(raw) > 0 && parsed.isChannelTest {
+		var record upstreamTestPricingRecord
+		// An invalid explicit record must not fall through to historical pricing.
+		_ = common.Unmarshal(raw, &record)
+		parsed.testPricing = &record
+	}
 	parsed.providerModel = billingBreakdownString(other["upstream_model_name"])
 	isModelMapped, _ := billingReconciliationBool(other["is_model_mapped"])
 	if parsed.providerModel == "" && !isModelMapped {
@@ -543,6 +609,10 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 	}
 	requestPath := billingBreakdownString(other["request_path"])
 	isTask, _ := billingReconciliationBool(other["is_task"])
+	parsed.taskID = billingBreakdownString(other["task_id"])
+	parsed.isTask = isTask
+	parsed.taskBillingEvent = billingBreakdownString(other["task_billing_event"])
+	parsed.hasImageCount = len(other["image_count"]) > 0
 	if parsed.billingMode == BillingReconciliationModeUnknown && (isTask || billingBreakdownString(other["task_id"]) != "" || strings.Contains(requestPath, "/mj/")) {
 		parsed.billingMode = BillingReconciliationModePerCall
 	}
@@ -553,9 +623,19 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 	if parsed.billingMode == BillingReconciliationModeUnknown && modelPriceOk && modelPrice > 0 {
 		parsed.billingMode = BillingReconciliationModePerCall
 	}
+	if modelPriceOk {
+		parsed.modelPrice = &modelPrice
+	}
 	modelRatio, modelRatioOk := billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "model_ratio"))
 	if parsed.billingMode == BillingReconciliationModeUnknown && modelRatioOk && modelRatio > 0 {
 		parsed.billingMode = BillingReconciliationModeToken
+	}
+	// 渠道测试原价还原需要记录发生时的倍率证据；只冻结数值本身，不读当前配置。
+	if modelRatioOk {
+		parsed.modelRatio = &modelRatio
+	}
+	if completionRatio, ok := billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "completion_ratio")); ok {
+		parsed.completionRatio = &completionRatio
 	}
 	if parsed.billingMode == BillingReconciliationModeUnknown && (log.PromptTokens > 0 || log.CompletionTokens > 0 || parsed.cacheReadTokens > 0 || parsed.cacheWrite.total > 0) {
 		parsed.billingMode = BillingReconciliationModeToken
@@ -608,6 +688,7 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 	}
 	billingStatementTaskFacts(log, other, snapshot, &parsed)
 	billingStatementBatchFacts(log, other, &parsed)
+	applyUpstreamTaskCacheApplicability(log, other, snapshot, &parsed)
 	if total, known := billingBreakdownInputTokens(billingStatementBreakdownLog{PromptTokens: log.PromptTokens}, other, parsed.cacheReadTokens, parsed.cacheWrite.total); known {
 		parsed.inputTokens = total
 	} else if parsed.cacheReadTokens > 0 || parsed.cacheWrite.total > 0 {
@@ -697,7 +778,7 @@ func accumulateBillingReconciliationPrice(accumulator *billingReconciliationMode
 	if reasons := billingStatementEstimateReasons(parsed); len(reasons) > 0 {
 		accumulator.model.EstimateReasons = mergeBillingEstimateReasons(accumulator.model.EstimateReasons, reasons...)
 		accumulator.originalQuotaComplete = false
-		ensureBillingReconciliationQuality(&accumulator.model.DataQuality).MissingHistoricalPriceRows++
+		accumulateBillingEstimateReasonQuality(ensureBillingReconciliationQuality(&accumulator.model.DataQuality), reasons)
 	} else {
 		ratio := *parsed.discountRatio
 		if !accumulator.discountSeen {
@@ -745,7 +826,7 @@ func finalizeBillingReconciliationPrice(accumulator *billingReconciliationModelA
 		accumulator.model.OriginalQuota = billingStatementOriginalQuota(accumulator.originalQuota)
 		if accumulator.model.OriginalQuota == nil {
 			accumulator.model.EstimateReasons = mergeBillingEstimateReasons(accumulator.model.EstimateReasons, BillingEstimateAmountOutOfRange)
-			ensureBillingReconciliationQuality(&accumulator.model.DataQuality).MissingHistoricalPriceRows++
+			accumulateBillingEstimateReasonQuality(ensureBillingReconciliationQuality(&accumulator.model.DataQuality), []string{BillingEstimateAmountOutOfRange})
 		}
 	}
 	finalizeBillingModelSavings(&accumulator.model)
@@ -772,18 +853,51 @@ func accumulateBillingReconciliationQuality(target **BillingReconciliationDataQu
 		return
 	}
 	quality := ensureBillingReconciliationQuality(target)
+	if source.EvidenceCoverage != nil {
+		if quality.EvidenceCoverage == nil {
+			quality.EvidenceCoverage = &BillingEvidenceCoverage{}
+		}
+		quality.EvidenceCoverage.Rows += source.EvidenceCoverage.Rows
+		quality.EvidenceCoverage.GapRows += source.EvidenceCoverage.GapRows
+		quality.EvidenceCoverage.AmountGapRows += source.EvidenceCoverage.AmountGapRows
+		quality.EvidenceCoverage.UsageGapRows += source.EvidenceCoverage.UsageGapRows
+		quality.EvidenceCoverage.OtherGapRows += source.EvidenceCoverage.OtherGapRows
+	}
 	quality.InputTokensUnavailableRequests += source.InputTokensUnavailableRequests
+	quality.LegacyTestCacheReadRows += source.LegacyTestCacheReadRows
+	quality.LegacyTestCacheWriteRows += source.LegacyTestCacheWriteRows
+	quality.CacheReadUnavailableRequests += source.CacheReadUnavailableRequests
+	quality.CacheReadUnreportedRequests += source.CacheReadUnreportedRequests
+	quality.CacheWriteUnreportedRequests += source.CacheWriteUnreportedRequests
+	quality.RecoveredBillingSecondsRows += source.RecoveredBillingSecondsRows
+	quality.RefundedTaskHoldRows += source.RefundedTaskHoldRows
+	quality.SecondsTaskLinkMissingRows += source.SecondsTaskLinkMissingRows
+	quality.SecondsUnavailableRows += source.SecondsUnavailableRows
 	quality.UnavailableRequests += source.UnavailableRequests
 	quality.CacheWriteUnavailableRequests += source.CacheWriteUnavailableRequests
 	quality.UnknownBillingModeRequests += source.UnknownBillingModeRequests
 	quality.ProviderModelFallbackRows += source.ProviderModelFallbackRows
 	quality.MissingHistoricalPriceRows += source.MissingHistoricalPriceRows
+	quality.AuxiliaryChargeRows += source.AuxiliaryChargeRows
+	quality.TestPricedRows += source.TestPricedRows
+	quality.TestRecomputedRows += source.TestRecomputedRows
+	quality.TestRecordedOriginalRows += source.TestRecordedOriginalRows
+	quality.SecondsValueMissingRows += source.SecondsValueMissingRows
 	quality.UsageWithoutAmountRows += source.UsageWithoutAmountRows
+	if len(source.TestAmountPendingReasons) > 0 {
+		if quality.TestAmountPendingReasons == nil {
+			quality.TestAmountPendingReasons = make(map[string]int64)
+		}
+		for reason, count := range source.TestAmountPendingReasons {
+			quality.TestAmountPendingReasons[reason] += count
+		}
+	}
 }
 
+// Missing test amounts are evidence gaps; known tests alone do not lower quality.
 func finalizeBillingReconciliationQuality(target **BillingReconciliationDataQuality) {
 	quality := ensureBillingReconciliationQuality(target)
-	if quality.InputTokensUnavailableRequests > 0 || quality.UnavailableRequests > 0 || quality.CacheWriteUnavailableRequests > 0 || quality.UnknownBillingModeRequests > 0 || quality.ProviderModelFallbackRows > 0 || quality.MissingHistoricalPriceRows > 0 || quality.UsageWithoutAmountRows > 0 {
+	if quality.InputTokensUnavailableRequests > 0 || quality.CacheReadUnavailableRequests > 0 || quality.SecondsUnavailableRows > 0 || quality.UnavailableRequests > 0 || quality.CacheWriteUnavailableRequests > 0 || quality.UnknownBillingModeRequests > 0 || quality.ProviderModelFallbackRows > 0 || quality.MissingHistoricalPriceRows > 0 || quality.AuxiliaryChargeRows > 0 || quality.SecondsValueMissingRows > 0 || quality.UsageWithoutAmountRows > 0 {
 		quality.Status = "partial"
 	}
 }
@@ -821,11 +935,14 @@ type ProviderBillingPlatformSummary struct {
 	// refunds negative). It stays nil unless every money-bearing row restored.
 	OriginalAmount  *int64   `json:"original_amount,omitempty"`
 	EstimateReasons []string `json:"estimate_reasons,omitempty"`
-	// UsageOnly marks an item whose rows carry no customer settlement at all
-	// (native channel tests): usage stays, amounts are neither claimed nor
-	// treated as a completeness gap for parents.
+	// UsageOnly marks an item whose rows carry no customer settlement and no
+	// confirmable test amount: usage stays, amounts are neither claimed nor
+	// treated as a completeness gap for parents. Priced tests no longer make a
+	// channel usage-only.
 	UsageOnly          bool
+	testMoneyRows      int
 	originalQuota      decimal.Decimal
+	referenceQuota     decimal.Decimal
 	originalQuotaKnown bool
 	originalComplete   bool
 	moneyRows          int
@@ -838,12 +955,14 @@ type ProviderBillingPlatformSummary struct {
 // It intentionally excludes customer quota and refund fields, which are not
 // evidence of a supplier charge or credit.
 type ProviderBillingUsage struct {
-	Requests         int64 `json:"requests"`
-	BillableCalls    int64 `json:"billable_calls"`
-	InputTokens      int64 `json:"input_tokens"`
-	CacheReadTokens  int64 `json:"cache_read_tokens"`
-	CacheWriteTokens int64 `json:"cache_write_tokens"`
-	OutputTokens     int64 `json:"output_tokens"`
+	Seconds                *decimal.Decimal `json:"seconds"`
+	SecondsUnavailableRows int64            `json:"seconds_unavailable_rows,omitempty"`
+	Requests               int64            `json:"requests"`
+	BillableCalls          int64            `json:"billable_calls"`
+	InputTokens            int64            `json:"input_tokens"`
+	CacheReadTokens        int64            `json:"cache_read_tokens"`
+	CacheWriteTokens       int64            `json:"cache_write_tokens"`
+	OutputTokens           int64            `json:"output_tokens"`
 }
 
 type ProviderBillingDiscountProjection struct {
@@ -860,7 +979,19 @@ type providerBillingSummaryKey struct {
 	fallback  bool
 }
 
-func accumulateProviderBillingLog(target *ProviderBillingUsage, log billingReconciliationLog, parsed parsedBillingReconciliationLog) {
+func accumulateProviderBillingLog(target *ProviderBillingUsage, log billingReconciliationLog, parsed parsedBillingReconciliationLog) (secondsMissing bool, secondsUnitKnown bool) {
+	seconds, missing, unitKnown := upstreamBillingSeconds(log, parsed)
+	if missing {
+		target.SecondsUnavailableRows++
+	}
+	_ = seconds
+	if seconds != nil {
+		value := *seconds
+		if target.Seconds != nil {
+			value = target.Seconds.Add(value)
+		}
+		target.Seconds = &value
+	}
 	if parsed.isRequest {
 		target.Requests += billingStatementRequestCount(parsed)
 		if parsed.billingMode == BillingReconciliationModePerCall {
@@ -871,9 +1002,18 @@ func accumulateProviderBillingLog(target *ProviderBillingUsage, log billingRecon
 	target.OutputTokens += parsed.outputTokens
 	target.CacheReadTokens += parsed.cacheReadTokens
 	target.CacheWriteTokens += parsed.cacheWrite.total
+	return missing, unitKnown
 }
 
 func accumulateProviderBillingUsage(target *ProviderBillingUsage, source ProviderBillingUsage) {
+	target.SecondsUnavailableRows += source.SecondsUnavailableRows
+	if source.Seconds != nil {
+		value := *source.Seconds
+		if target.Seconds != nil {
+			value = target.Seconds.Add(value)
+		}
+		target.Seconds = &value
+	}
 	target.Requests += source.Requests
 	target.BillableCalls += source.BillableCalls
 	target.InputTokens += source.InputTokens

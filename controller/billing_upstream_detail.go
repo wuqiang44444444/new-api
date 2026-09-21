@@ -10,8 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const maxBillingDetailsPageSize = 200
-
 // GetAdminUpstreamBillingDetails serves the cross-customer evidence rows
 // behind the upstream reconciliation summary. Admin-only; the upstream task
 // id stays root-scoped like the rest of the platform.
@@ -20,17 +18,21 @@ func GetAdminUpstreamBillingDetails(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page := common.GetPageQuery(c)
-	if page.GetPage() < 1 || page.GetPageSize() < 1 || page.GetPageSize() > maxBillingDetailsPageSize {
-		common.ApiErrorMsg(c, "invalid pagination")
+	page, pageSize, valid := parseBillingPage(c)
+	if !valid {
 		return
 	}
 	filter := model.UpstreamBillingDetailFilter{
 		Start: period.StartTimestamp, End: period.EndTimestamp,
+		EvidenceFilter:    strings.TrimSpace(c.Query("evidence_filter")),
 		ProviderModel:     strings.TrimSpace(c.Query("model_name")),
 		BillingMode:       strings.TrimSpace(c.Query("billing_mode")),
 		RequestId:         strings.TrimSpace(c.Query("request_id")),
 		UpstreamRequestId: strings.TrimSpace(c.Query("upstream_request_id")),
+	}
+	if err := model.ValidateUpstreamEvidenceFilter(filter.EvidenceFilter); err != nil {
+		common.ApiError(c, err)
+		return
 	}
 	if len(filter.ProviderModel) > 255 || len(filter.RequestId) > 64 || len(filter.UpstreamRequestId) > 128 {
 		common.ApiErrorMsg(c, "invalid filter")
@@ -39,6 +41,14 @@ func GetAdminUpstreamBillingDetails(c *gin.Context) {
 	if filter.BillingMode != "" && !validBillingDetailMode(filter.BillingMode) {
 		common.ApiErrorMsg(c, "invalid billing_mode")
 		return
+	}
+	if value, present := c.GetQuery("provider_model_fallback"); present {
+		fallback, err := strconv.ParseBool(value)
+		if err != nil || filter.ProviderModel == "" {
+			common.ApiErrorMsg(c, "invalid provider_model_fallback")
+			return
+		}
+		filter.ProviderModelFallback = &fallback
 	}
 	channelId := parsePositiveQueryId(c, "channel_id")
 	if channelId < 0 {
@@ -60,18 +70,18 @@ func GetAdminUpstreamBillingDetails(c *gin.Context) {
 		}
 		filter.ChannelIds = channelIds
 	}
-	if len(filter.ChannelIds) == 0 {
+	if len(filter.ChannelIds) == 0 && (urlKey != "" || filter.EvidenceFilter == "") {
 		common.ApiErrorMsg(c, "upstream details require a URL or channel filter")
 		return
 	}
-	details, err := model.GetUpstreamBillingDetails(c.Request.Context(), filter, page.GetPage(), page.GetPageSize(), c.GetInt("role") >= common.RoleRootUser)
+	details, err := model.GetUpstreamBillingDetails(c.Request.Context(), filter, page, pageSize, c.GetInt("role") >= common.RoleRootUser)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	respondBillingReconciliation(c, period, gin.H{
 		"url_key": urlKey, "channel_id": channelId,
-		"model_name": filter.ProviderModel, "billing_mode": filter.BillingMode,
+		"evidence_filter": filter.EvidenceFilter, "model_name": filter.ProviderModel, "billing_mode": filter.BillingMode,
 	}, details, "log_database+main_database")
 }
 

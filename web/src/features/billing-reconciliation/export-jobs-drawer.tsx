@@ -40,6 +40,7 @@ import {
 import { LOG_TYPES } from '@/features/usage-logs/constants'
 import { formatTimestampToDate } from '@/lib/format'
 
+import { BillingPagination } from './components/billing-pagination'
 import {
   cancelExport,
   isExportJobActive,
@@ -63,21 +64,23 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
 
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const jobsQuery = useQuery({
-    queryKey: ['customer-export-jobs'],
+    queryKey: ['customer-export-jobs', page, pageSize],
     queryFn: async () => {
-      const jobs = await listSelfExports()
+      const jobs = await listSelfExports(page, pageSize)
       return jobs
     },
     enabled: props.open,
     refetchInterval: (query) => {
-      const jobs = query.state.data ?? []
+      const jobs = query.state.data?.items ?? []
       if (!props.open || !jobs.some(isExportJobActive)) return false
       return 5_000
     },
   })
 
-  const jobs = jobsQuery.data ?? []
+  const jobs = jobsQuery.data?.items ?? []
 
   const handleCancel = async (job: CustomerExportJobView) => {
     try {
@@ -144,6 +147,19 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
               />
             ))}
         </div>
+        <div className='p-4'>
+          <BillingPagination
+            label={t('Export job pages')}
+            page={page}
+            pageSize={pageSize}
+            total={jobsQuery.data?.total ?? 0}
+            disabled={jobsQuery.isFetching}
+            onChange={(p, size) => {
+              setPage(p)
+              setPageSize(size)
+            }}
+          />
+        </div>
       </SheetContent>
     </Sheet>
   )
@@ -189,6 +205,10 @@ function exportTypeLabel(
   translate: (key: string) => string
 ) {
   switch (job.job_type) {
+    case 'usage_summary':
+      return translate('Daily / weekly usage')
+    case 'upstream_summary':
+      return translate('Upstream cost statement')
     case 'upstream_details':
       return translate('Upstream details')
     case 'statement_summary':
@@ -220,8 +240,10 @@ function ExportJobCard(props: {
     <article
       className='rounded-lg border p-3'
       aria-label={
-        job.job_type === 'upstream_details'
-          ? t('Upstream details')
+        job.job_type === 'upstream_details' ||
+        job.job_type === 'upstream_summary' ||
+        (job.job_type === 'usage_summary' && job.target_user_id === 0)
+          ? exportTypeLabel(job, t)
           : t('Customer #{{id}}', { id: job.target_user_id })
       }
     >
@@ -233,13 +255,20 @@ function ExportJobCard(props: {
       </div>
       <div className='text-muted-foreground mt-1 space-y-0.5 text-xs'>
         <p className='font-medium'>
-          {job.job_type === 'upstream_details'
-            ? t('Upstream details')
+          {job.job_type === 'upstream_details' ||
+          job.job_type === 'upstream_summary' ||
+          (job.job_type === 'usage_summary' && job.target_user_id === 0)
+            ? exportTypeLabel(job, t)
             : t('Customer #{{id}}', { id: job.target_user_id })}
         </p>
         <p>
           {period} · {job.filters.timezone}
         </p>
+        {job.filters.upstream && (
+          <p className='break-all'>
+            {job.filters.upstream.group_name || job.filters.upstream.url_key}
+          </p>
+        )}
         <ExportScope job={job} />
         {job.filters.model_name && (
           <p>

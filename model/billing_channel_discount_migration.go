@@ -1,8 +1,11 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"math"
+	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 
@@ -45,6 +48,15 @@ type legacyProviderDiscountEvidence struct {
 	records map[string]ProviderBillingDiscount
 	audits  map[string][]ProviderBillingAudit
 	kinds   map[string]string
+}
+
+// InitProviderChannelBillingDiscounts runs after both databases are ready.
+// Legacy model rows cannot establish channel scope without the historical logs.
+func InitProviderChannelBillingDiscounts() error {
+	if !common.IsMasterNode {
+		return nil
+	}
+	return migrateProviderModelDiscountsToChannel()
 }
 
 // migrateProviderModelDiscountsToChannel converges the retired model-level
@@ -117,6 +129,12 @@ func migrateProviderModelDiscountsToChannel() error {
 				break
 			}
 		}
+		if uniform {
+			uniform, err = legacyProviderChannelDiscountScopeConfirmed(group.periodStart, group.channelId, recordKeys)
+			if err != nil {
+				return err
+			}
+		}
 		if !uniform {
 			if err := createMigratedProviderChannelDiscount(group.periodStart, group.channelId, decimal.Zero, len(recordKeys)); err != nil {
 				return err
@@ -131,6 +149,32 @@ func migrateProviderModelDiscountsToChannel() error {
 	}
 	common.SysLog(fmt.Sprintf("provider channel discount migration: %d channel-months converged, %d pending manual fill, %d already present", converged, pending, skipped))
 	return nil
+}
+
+// A uniform subset of old discounts is not a channel-wide agreement. Every
+// retained model × billing-mode fact in that channel-month must be represented
+// by the audited candidates. Missing logs or unknown model identities cannot
+// establish scope. Current channel models/mappings are deliberately not used.
+func legacyProviderChannelDiscountScopeConfirmed(periodStart int64, channelId int, recordKeys []string) (bool, error) {
+	keys := make(map[string]struct{}, len(recordKeys))
+	for _, key := range recordKeys {
+		keys[key] = struct{}{}
+	}
+	start := time.Unix(periodStart, 0).In(time.FixedZone("Asia/Shanghai", 8*60*60))
+	end := time.Date(start.Year(), start.Month()+1, 1, 0, 0, 0, 0, start.Location()).Unix() - 1
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	found, complete := false, true
+	err := scanUpstreamBillingFacts(ctx, UpstreamBillingDetailFilter{Start: periodStart, End: end, ChannelIds: []int{channelId}}, BillingStatementReadPolicy{}, func(_ Log, _ billingReconciliationLog, parsed parsedBillingReconciliationLog) error {
+		found = true
+		providerModel := strings.TrimSpace(parsed.providerModel)
+		key := providerBillingEntityKey(periodStart, channelId, providerModel, parsed.billingMode)
+		if _, ok := keys[key]; !ok || providerModel == "" || parsed.billingMode == BillingReconciliationModeUnknown {
+			complete = false
+		}
+		return nil
+	})
+	return found && complete, err
 }
 
 func providerChannelDiscountExists(periodStart int64, channelId int) (bool, error) {

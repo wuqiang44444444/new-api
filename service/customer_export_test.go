@@ -181,6 +181,7 @@ func TestExecuteCustomerExportLogScanEndToEnd(t *testing.T) {
 		})
 	}
 	require.NoError(t, model.DB.Create(&logs).Error)
+	t.Cleanup(func() { require.NoError(t, model.DB.Delete(&logs).Error) })
 
 	filters := model.CustomerExportFilters{
 		FieldVersion: 1, StartTimestamp: 9000, EndTimestamp: 9100, Timezone: "Asia/Shanghai",

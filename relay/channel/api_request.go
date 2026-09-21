@@ -562,7 +562,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 
 	// 始终覆盖（即便为空）：重试场景下若前次失败响应带 ID 而最终成功响应不带，
 	// 仅当非空才 Set 会残留失败请求的旧 ID，导致记录的 upstream_request_id 不准。
-	c.Set(common2.UpstreamRequestIdKey, resp.Header.Get(common2.RequestIdKey))
+	c.Set(common2.UpstreamRequestIdKey, upstreamResponseRequestID(resp.Header, info.ChannelType))
 
 	// 音视频证据（一期）：包装响应体，边转发边有界捕获。
 	service.AttachTaskRequestEvidenceUpstreamResponse(c, resp)

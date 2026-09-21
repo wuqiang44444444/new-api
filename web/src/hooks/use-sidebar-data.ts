@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  BarChart3,
   Activity,
   BadgePercent,
   Box,
@@ -132,6 +133,11 @@ export function useSidebarData(): SidebarData {
             icon: ReceiptText,
           },
           {
+            title: t('Usage statistics'),
+            url: '/usage',
+            icon: BarChart3,
+          },
+          {
             title: t('Profile'),
             url: '/profile',
             icon: User,
@@ -171,6 +177,11 @@ export function useSidebarData(): SidebarData {
             title: t('Billing reconciliation'),
             url: '/admin/billing',
             icon: Scale,
+          },
+          {
+            title: t('Usage statistics'),
+            url: '/admin/usage',
+            icon: BarChart3,
           },
           {
             title: t('Redemption Codes'),

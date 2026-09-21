@@ -302,6 +302,9 @@ func channelAutoCheckResult(channel *model.Channel, result testResult, scope str
 			detail["config_summary"] = "Check the channel protocol configuration."
 		}
 	}
+	if status := service.ChannelTestUpstreamCostStatus(result.context); status != "" {
+		detail[service.ChannelTestUpstreamCostKey] = status
+	}
 	if result.context != nil {
 		if billingModel := result.context.GetString("channel_test_billing_model"); billingModel != "" {
 			detail["billing_model"] = billingModel

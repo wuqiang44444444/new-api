@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/glebarez/sqlite"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +21,11 @@ func seedLegacyModelDiscount(t *testing.T, db *gorm.DB, periodStart int64, chann
 	}
 	require.NoError(t, db.Create(&row).Error)
 	require.NoError(t, createProviderBillingAudit(db, "discount", providerBillingEntityKey(periodStart, channelId, providerModel, billingMode), "create", nil, &row, reason, operatorId))
+	// The model-level record alone cannot prove the historical channel scope.
+	// Seed the persisted usage that this fixture's discount actually covered.
+	other, err := common.Marshal(map[string]interface{}{"upstream_model_name": providerModel, "statement_snapshot": map[string]string{"billing_mode": billingMode}})
+	require.NoError(t, err)
+	require.NoError(t, LOG_DB.Create(&Log{ChannelId: channelId, ModelName: providerModel, Type: LogTypeConsume, CreatedAt: periodStart + 1, Other: string(other)}).Error)
 	return row
 }
 
@@ -195,4 +202,86 @@ func TestMigrateChannelDiscountRejectsCurrentValueWithoutMatchingAudit(t *testin
 	require.NoError(t, db.Model(&row).Update("discount", decimal.RequireFromString("0.6")).Error)
 	require.NoError(t, migrateProviderModelDiscountsToChannel())
 	requireNoChannelDiscount(t, db, period, 99)
+}
+
+func TestMigrateChannelDiscountRequiresCompleteRecordedModelScope(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		other          string
+		removeEvidence bool
+	}{
+		{name: "another model without a discount", other: `{"upstream_model_name":"model-b","statement_snapshot":{"billing_mode":"token"}}`},
+		{name: "another billing mode without a discount", other: `{"upstream_model_name":"model-a","statement_snapshot":{"billing_mode":"per_call"}}`},
+		{name: "unknown upstream identity", other: `{"is_model_mapped":true,"statement_snapshot":{"billing_mode":"token"}}`},
+		{name: "no retained usage evidence", removeEvidence: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupBillingReconciliationTestDB(t)
+			period := channelDiscountPeriod(time.July, 2026)
+			require.NoError(t, db.Create(&Channel{Id: 100, Name: "partially configured"}).Error)
+			seedLegacyModelDiscount(t, db, period, 100, "model-a", BillingReconciliationModeToken, "0.8", 0, "confirmed", 7)
+			if tc.removeEvidence {
+				require.NoError(t, LOG_DB.Where("channel_id = ?", 100).Delete(&Log{}).Error)
+			} else {
+				require.NoError(t, LOG_DB.Create(&Log{ChannelId: 100, ModelName: "customer-model", Type: LogTypeConsume, CreatedAt: period + 2, Other: tc.other}).Error)
+			}
+			require.NoError(t, migrateProviderModelDiscountsToChannel())
+			requireNoChannelDiscount(t, db, period, 100)
+			outcomes, err := InitializeProviderChannelBillingDiscounts(period, []int{100}, 7)
+			require.NoError(t, err)
+			assert.Equal(t, "exists", outcomes[0].Outcome)
+			requireNoChannelDiscount(t, db, period, 100)
+		})
+	}
+}
+
+func TestMigrateChannelDiscountUsesSeparateLogDatabase(t *testing.T) {
+	db := setupBillingReconciliationTestDB(t)
+	logDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := logDB.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	require.NoError(t, logDB.AutoMigrate(&Log{}))
+	LOG_DB = logDB
+	period := channelDiscountPeriod(time.July, 2026)
+	seedLegacyModelDiscount(t, db, period, 101, "model-a", BillingReconciliationModeToken, "0.8", 0, "confirmed", 7)
+	seedLegacyModelDiscount(t, db, period, 102, "model-a", BillingReconciliationModeToken, "0.8", 0, "confirmed", 7)
+	require.NoError(t, logDB.Create(&Log{ChannelId: 102, ModelName: "model-b", Type: LogTypeConsume, CreatedAt: period + 2, Other: `{"upstream_model_name":"model-b","statement_snapshot":{"billing_mode":"token"}}`}).Error)
+	require.NoError(t, migrateProviderModelDiscountsToChannel())
+	assert.True(t, requireSingleChannelDiscount(t, db, period, 101).Discount.Equal(decimal.RequireFromString("0.8")))
+	requireNoChannelDiscount(t, db, period, 102)
+}
+
+func TestMigrateChannelDiscountReadFailureDoesNotWriteConfiguration(t *testing.T) {
+	db := setupBillingReconciliationTestDB(t)
+	period := channelDiscountPeriod(time.July, 2026)
+	seedLegacyModelDiscount(t, db, period, 103, "model-a", BillingReconciliationModeToken, "0.8", 0, "confirmed", 7)
+	require.NoError(t, LOG_DB.Migrator().DropTable(&Log{}))
+	require.Error(t, migrateProviderModelDiscountsToChannel())
+	var count int64
+	require.NoError(t, db.Model(&ProviderChannelBillingDiscount{}).Count(&count).Error)
+	assert.Zero(t, count)
+	require.NoError(t, db.Model(&ProviderBillingAudit{}).Where("entity_type = ?", providerChannelDiscountEntity).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestProviderChannelDiscountMigrationWaitsForLogInitialization(t *testing.T) {
+	db := setupBillingReconciliationTestDB(t)
+	period := channelDiscountPeriod(time.July, 2026)
+	seedLegacyModelDiscount(t, db, period, 104, "model-a", BillingReconciliationModeToken, "0.8", 0, "confirmed", 7)
+	LOG_DB = nil
+	require.NoError(t, migrateBillingReconciliationDB(), "schema migration must not read an uninitialized log DB")
+	LOG_DB = db
+	previousMaster := common.IsMasterNode
+	t.Cleanup(func() { common.IsMasterNode = previousMaster })
+	common.IsMasterNode = false
+	require.NoError(t, InitProviderChannelBillingDiscounts())
+	var count int64
+	require.NoError(t, db.Model(&ProviderChannelBillingDiscount{}).Count(&count).Error)
+	assert.Zero(t, count, "replicas do not migrate configuration")
+	common.IsMasterNode = true
+	require.NoError(t, InitProviderChannelBillingDiscounts())
+	assert.True(t, requireSingleChannelDiscount(t, db, period, 104).Discount.Equal(decimal.RequireFromString("0.8")))
 }

@@ -16,6 +16,8 @@ import (
 // 生成器在聚合的同时收集每条已解析事实作为版本明细，无需复制聚合/解析逻辑。
 // 主体转换在 newBillingStatementVersionLine 中，保持 reader 只负责读取。
 type BillingStatementReadPolicy struct {
+	// UpperLogID binds upstream export batches/channels to one log boundary.
+	UpperLogID   *int64
 	BeforeBatch  func(context.Context) error
 	AfterBatch   func(int) error // upstream export candidate counts, before display filters
 	BatchTimeout time.Duration

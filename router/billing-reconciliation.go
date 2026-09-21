@@ -39,6 +39,7 @@ func registerBillingReconciliationRoutes(apiRouter *gin.RouterGroup) {
 		adminRoute.POST("/upstream-exports", controller.CreateAdminUpstreamExport)
 		adminRoute.PUT("/upstream-discounts", controller.PutAdminProviderBillingDiscount)
 		adminRoute.POST("/upstream-discounts/initialize", controller.PostAdminProviderChannelDiscountInit)
+		adminRoute.PUT("/upstream-url-names", controller.PutAdminUpstreamURLGroupName)
 
 		// 管理员代客导出：显式目标客户，限单客户；任务列表仍只看本人发起。
 		adminExportRoute := adminRoute.Group("/customer-exports")

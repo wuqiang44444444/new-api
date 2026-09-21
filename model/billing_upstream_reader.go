@@ -54,11 +54,17 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 		}
 		return rows.Err()
 	}
-	boundCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	upper, err := CustomerExportLogUpperBound(boundCtx)
-	cancel()
-	if err != nil {
-		return err
+	var upper int64
+	if policy.UpperLogID != nil {
+		upper = *policy.UpperLogID
+	} else {
+		boundCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		var err error
+		upper, err = CustomerExportLogUpperBound(boundCtx)
+		cancel()
+		if err != nil {
+			return err
+		}
 	}
 	var cursor int64
 	for cursor < upper {
@@ -139,9 +145,15 @@ func upstreamOriginalQuota(log billingReconciliationLog, parsed parsedBillingRec
 	if log.Type == LogTypeRefund {
 		original = original.Neg()
 	}
-	return original, nil
+	return original.Round(0), nil
 }
 
 func upstreamBillingLogFact(log Log, groupName string) billingReconciliationLog {
 	return billingReconciliationLog{RequestId: log.RequestId, UserId: log.UserId, TokenId: log.TokenId, TokenName: log.TokenName, ChannelId: log.ChannelId, ModelName: log.ModelName, Type: log.Type, CreatedAt: log.CreatedAt, PromptTokens: log.PromptTokens, CompletionTokens: log.CompletionTokens, Quota: log.Quota, Content: log.Content, Other: log.Other, GroupName: groupName}
+}
+
+// UpstreamReferenceQuota quantizes one evidence row to the same quota unit as
+// its restored original. Summaries sum these values without rounding again.
+func UpstreamReferenceQuota(original, coefficient decimal.Decimal) decimal.Decimal {
+	return original.Mul(coefficient).Round(0)
 }

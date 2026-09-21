@@ -72,6 +72,23 @@ type BillingDetailFilter = {
 }
 
 export type BillingDataQuality = {
+  evidence_coverage?: {
+    rows: number
+    gap_rows: number
+    amount_gap_rows?: number
+    usage_gap_rows?: number
+    other_gap_rows?: number
+  }
+  legacy_test_cache_read_rows?: number
+  legacy_test_cache_write_rows?: number
+  cache_read_unreported_requests?: number
+  cache_write_unreported_requests?: number
+  cache_read_unavailable_requests?: number
+  seconds_unavailable_rows?: number
+  usage_without_amount_rows?: number
+  test_amount_pending_reasons?: Record<string, number>
+  test_recomputed_rows?: number
+  test_recorded_original_rows?: number
   status: 'complete' | 'partial' | 'unavailable'
   input_tokens_unavailable_requests?: number
   cache_write_unavailable_requests?: number
@@ -79,6 +96,12 @@ export type BillingDataQuality = {
   unknown_billing_mode_requests?: number
   provider_model_fallback_rows?: number
   missing_historical_price_rows?: number
+  auxiliary_charge_rows?: number
+  test_priced_rows?: number
+  recovered_billing_seconds_rows?: number
+  refunded_task_hold_rows?: number
+  seconds_task_link_missing_rows?: number
+  seconds_value_missing_rows?: number
 }
 
 // 优惠构成组合行（方案 §4）：后端按冻结折扣事实聚合的同一批结算日志投影。
@@ -198,6 +221,8 @@ export type ProviderDiscount = {
 }
 
 type ProviderUsage = {
+  seconds?: string | null
+  seconds_unavailable_rows?: number
   requests: number
   billable_calls: number
   input_tokens: number
@@ -206,46 +231,49 @@ type ProviderUsage = {
   output_tokens: number
 }
 
-// 渠道折扣编辑区槽位：discount 为 null 表示当月待填写，绝不表示系数 1。
-export type ProviderChannelDiscountStatus = {
+// 渠道行直接展开模型：渠道父行携带当月综合系数；discount 为 null 表示
+// 当月待确认（迁移冲突），绝不表示系数 1。
+export type ProviderUrlChannelGroupSummary = {
+  known_original_amount?: number
+  known_reference_amount?: number
   channel_id: number
   channel_name: string
   discount: ProviderDiscount | null
   updated_at?: number
   updated_by?: number
+  usage: ProviderUsage
+  models: ProviderUrlChannelModelSummary[]
+  data_quality?: BillingDataQuality
+  original_amount?: number
+  reference_amount?: number
+  estimate_reasons?: string[]
+  usage_only?: boolean
 }
 
-export type ProviderUrlChannelSummary = {
-  channel_id: number
-  channel_name: string
+// 渠道 × 上游模型 × 计费方式的叶子行；fallback 身份与计费方式不混行。
+export type ProviderUrlChannelModelSummary = {
+  known_original_amount?: number
+  known_reference_amount?: number
+  usage_only?: boolean
   provider_model: string
-  customer_models: string[]
   provider_model_fallback?: boolean
   billing_mode: BillingMode
+  customer_models: string[]
   usage: ProviderUsage
   data_quality?: BillingDataQuality
   detail_filter: BillingDetailFilter
-  original_amount?: number
-  reference_amount?: number
-  discount: ProviderDiscount | null
-  estimate_reasons?: string[]
-}
-
-export type ProviderUrlModelSummary = {
-  provider_model: string
-  provider_model_fallback?: boolean
-  billing_mode: BillingMode
-  usage: ProviderUsage
-  channels: ProviderUrlChannelSummary[]
-  data_quality?: BillingDataQuality
   original_amount?: number
   reference_amount?: number
   estimate_reasons?: string[]
 }
 
 export type ProviderUrlGroupSummary = {
+  usage_only?: boolean
+  known_original_amount?: number
+  known_reference_amount?: number
   url_key: string
   display_name: string
+  custom_name?: string
   base_url?: string
   unidentified?: boolean
   deleted?: boolean
@@ -253,9 +281,8 @@ export type ProviderUrlGroupSummary = {
   channel_count: number
   model_count: number
   usage: ProviderUsage
-  models: ProviderUrlModelSummary[]
+  channels: ProviderUrlChannelGroupSummary[]
   data_quality?: BillingDataQuality
-  channel_discounts: ProviderChannelDiscountStatus[]
   original_amount?: number
   reference_amount?: number
   reference_known: boolean
@@ -264,6 +291,12 @@ export type ProviderUrlGroupSummary = {
 }
 
 export type ProviderUrlSummary = {
+  page: number
+  page_size: number
+  total: number
+  model_count: number
+  channels: ProviderUrlChannelGroupSummary[]
+  models: ProviderUrlChannelModelSummary[]
   url_groups: ProviderUrlGroupSummary[]
   data_quality?: BillingDataQuality
 }
@@ -274,9 +307,12 @@ export type UpstreamDetailEvent =
   | 'task_create'
   | 'task_adjustment'
   | 'task_call'
+  | 'task_refunded_hold'
   | 'channel_test'
 
 export type UpstreamDetailItem = {
+  seconds_source?: 'recorded_usage' | 'billing_parameters' | 'refunded_hold'
+  seconds?: string | null
   row_id: number
   time: number
   channel_id: number
@@ -295,6 +331,15 @@ export type UpstreamDetailItem = {
   upstream_request_id: string
   platform_task_id?: string
   upstream_task_id?: string
+  test_pricing?: {
+    mode: string
+    status: string
+    reason?: string
+    basis?: string
+    replayed?: boolean
+    recorded_quota?: number
+    recomputed_quota?: number
+  }
   event: UpstreamDetailEvent
   data_quality?: BillingDataQuality
 }

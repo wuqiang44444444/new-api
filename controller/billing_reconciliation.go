@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -29,12 +30,12 @@ type providerBillingDiscountRequest struct {
 	ChannelId       int             `json:"channel_id"`
 	Discount        decimal.Decimal `json:"discount"`
 	ExpectedVersion int64           `json:"expected_version"`
-	Reason          string          `json:"reason"`
 }
 
 type providerChannelDiscountInitRequest struct {
-	PeriodStart int64 `json:"period_start"`
-	ChannelIds  []int `json:"channel_ids"`
+	EndTimestamp int64 `json:"end_timestamp"`
+	PeriodStart  int64 `json:"period_start"`
+	ChannelIds   []int `json:"channel_ids"`
 }
 
 func GetSelfBillingReconciliation(c *gin.Context) {
@@ -110,7 +111,7 @@ func GetAdminCustomerBillingReconciliation(c *gin.Context) {
 // GetAdminUpstreamReconciliation serves the unified admin upstream view: URL
 // groups with usage, official-price amounts, reference amounts and the
 // channel-month discount editing area. Provider model and billing mode stay
-// client-side filters of the loaded summary.
+// separately paginated levels of the selected scope.
 func GetAdminUpstreamReconciliation(c *gin.Context) {
 	period, ok := parseBillingReconciliationPeriod(c)
 	if !ok {
@@ -121,7 +122,21 @@ func GetAdminUpstreamReconciliation(c *gin.Context) {
 		common.ApiErrorMsg(c, "invalid url_key")
 		return
 	}
-	summary, err := model.GetProviderBillingURLSummary(period.StartTimestamp, period.EndTimestamp, period.PeriodStart, urlKey)
+	page, pageSize, valid := parseBillingPage(c)
+	if !valid {
+		return
+	}
+	channelID := parsePositiveQueryId(c, "channel_id")
+	if channelID < 0 {
+		return
+	}
+	level := c.DefaultQuery("level", "groups")
+	search := strings.TrimSpace(c.Query("search"))
+	if utf8.RuneCountInString(search) > 255 {
+		common.ApiErrorMsg(c, "invalid search")
+		return
+	}
+	summary, err := model.GetUpstreamSummaryPage(c.Request.Context(), period.StartTimestamp, period.EndTimestamp, period.PeriodStart, model.UpstreamSummaryPageFilter{Level: level, URLKey: urlKey, ChannelID: channelID, Search: search, Page: page, PageSize: pageSize})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -135,7 +150,25 @@ func GetAdminUpstreamReconciliation(c *gin.Context) {
 // values are never overwritten.
 func PostAdminProviderChannelDiscountInit(c *gin.Context) {
 	var request providerChannelDiscountInitRequest
-	if err := c.ShouldBindJSON(&request); err != nil || !validProviderBillingPeriod(request.PeriodStart) || len(request.ChannelIds) == 0 {
+	if err := c.ShouldBindJSON(&request); err != nil || !validProviderBillingPeriod(request.PeriodStart) {
+		common.ApiErrorMsg(c, "invalid provider discount initialization")
+		return
+	}
+	if request.EndTimestamp != 0 {
+		expectedEnd := time.Unix(request.PeriodStart, 0).In(billingSettlementLocation).AddDate(0, 1, 0).Unix()
+		if request.EndTimestamp != expectedEnd || len(request.ChannelIds) > 0 {
+			common.ApiErrorMsg(c, "invalid provider discount initialization")
+			return
+		}
+		counts, err := model.InitializeUpstreamPeriodDiscounts(c.Request.Context(), request.PeriodStart, request.EndTimestamp-1, c.GetInt("id"))
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ApiSuccess(c, gin.H{"counts": counts})
+		return
+	}
+	if len(request.ChannelIds) == 0 || len(request.ChannelIds) > 100 {
 		common.ApiErrorMsg(c, "invalid provider discount initialization")
 		return
 	}
@@ -154,9 +187,14 @@ func PostAdminProviderChannelDiscountInit(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"outcomes": outcomes})
 }
 
+// PutAdminProviderBillingDiscount saves one channel-month coefficient. The
+// operator no longer types a reason: the server records the fixed system
+// operation description so the audit trail stays complete without frontend
+// input. Period, channel, coefficient range, expected-version and admin
+// permission checks are unchanged; conflicts still require a refresh.
 func PutAdminProviderBillingDiscount(c *gin.Context) {
 	var request providerBillingDiscountRequest
-	if err := c.ShouldBindJSON(&request); err != nil || !validProviderBillingPeriod(request.PeriodStart) || request.Discount.LessThanOrEqual(decimal.Zero) || request.Discount.GreaterThan(decimal.NewFromInt(1)) || request.ExpectedVersion < 0 || strings.TrimSpace(request.Reason) == "" {
+	if err := c.ShouldBindJSON(&request); err != nil || !validProviderBillingPeriod(request.PeriodStart) || request.Discount.LessThanOrEqual(decimal.Zero) || request.Discount.GreaterThan(decimal.NewFromInt(1)) || request.ExpectedVersion < 0 {
 		common.ApiErrorMsg(c, "invalid provider discount")
 		return
 	}
@@ -165,7 +203,7 @@ func PutAdminProviderBillingDiscount(c *gin.Context) {
 	}
 	discount := model.ProviderChannelBillingDiscount{
 		PeriodStart: request.PeriodStart, ChannelId: request.ChannelId,
-		Discount: request.Discount, Reason: strings.TrimSpace(request.Reason),
+		Discount: request.Discount, Reason: model.ReasonChannelDiscountManualUpdate,
 	}
 	if err := model.SaveProviderChannelBillingDiscount(&discount, request.ExpectedVersion, c.GetInt("id")); err != nil {
 		respondBillingReconciliationWriteError(c, err)

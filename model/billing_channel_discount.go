@@ -34,12 +34,17 @@ type ProviderChannelBillingDiscount struct {
 const (
 	providerChannelDiscountEntity = "channel_discount"
 
-	// Reasons written by automatic flows. Manual saves always carry an
-	// operator-typed reason; never treat a value of 1 as confirmed no-discount
-	// unless a human wrote it.
+	// Reasons written by automatic flows and by the manual save path. Manual
+	// saves no longer ask the operator for a reason; the server records the
+	// fixed exported operation description instead. Never treat a value of 1
+	// as confirmed no-discount unless the audit evidence says a human wrote it.
 	reasonChannelDiscountDefault  = "default channel monthly coefficient"
 	reasonChannelDiscountAutoCopy = "automatic copy from previous billing period"
 	reasonChannelDiscountMigrated = "migrated from model-level monthly discounts"
+	// ReasonChannelDiscountManualUpdate is the system operation description the
+	// server records for every manual channel-discount save; clients cannot
+	// supply or forge an operator-typed reason anymore.
+	ReasonChannelDiscountManualUpdate = "manual update of channel monthly discount"
 )
 
 // SaveProviderChannelBillingDiscount creates or updates one channel-month
@@ -105,32 +110,52 @@ func SaveProviderChannelBillingDiscount(discount *ProviderChannelBillingDiscount
 }
 
 // GetProviderChannelBillingDiscounts is a read-only projection of the
-// channel-month coefficients. Summary and export reads never materialize
+// channel-month coefficients. Summary reads never materialize
 // missing discounts; an absent record projects coefficient 1 at version 0.
 // Persisted migration conflicts remain pending and never receive this default.
 func GetProviderChannelBillingDiscounts(periodStart int64, channelIds []int) (map[int]ProviderChannelBillingDiscount, error) {
+	records, err := loadProviderChannelBillingDiscounts(periodStart, channelIds)
+	if err != nil {
+		return nil, err
+	}
 	result := make(map[int]ProviderChannelBillingDiscount)
+	for id, record := range records {
+		if record.PendingReason == "" {
+			result[id] = record
+		}
+	}
+	for _, id := range channelIds {
+		if record, valid := providerChannelBillingDiscountFor(records, periodStart, id); valid {
+			result[id] = record
+		}
+	}
+	return result, nil
+}
+
+// A single read freezes both valid coefficients and pending markers for a report.
+func loadProviderChannelBillingDiscounts(periodStart int64, channelIds []int) (map[int]ProviderChannelBillingDiscount, error) {
 	query := DB.Where("period_start = ?", periodStart)
 	if len(channelIds) > 0 {
 		query = query.Where("channel_id IN ?", channelIds)
 	}
 	var rows []ProviderChannelBillingDiscount
-	if err := query.Find(&rows).Error; err != nil {
+	records := make(map[int]ProviderChannelBillingDiscount)
+	if err := query.FindInBatches(&rows, 500, func(tx *gorm.DB, batch int) error {
+		for _, row := range rows {
+			records[row.ChannelId] = row
+		}
+		return nil
+	}).Error; err != nil {
 		return nil, err
 	}
-	seen := make(map[int]bool, len(rows))
-	for _, row := range rows {
-		seen[row.ChannelId] = true
-		if row.PendingReason == "" {
-			result[row.ChannelId] = row
-		}
+	return records, nil
+}
+
+func providerChannelBillingDiscountFor(records map[int]ProviderChannelBillingDiscount, periodStart int64, id int) (ProviderChannelBillingDiscount, bool) {
+	if record, found := records[id]; found {
+		return record, record.PendingReason == ""
 	}
-	for _, id := range channelIds {
-		if !seen[id] {
-			result[id] = ProviderChannelBillingDiscount{PeriodStart: periodStart, ChannelId: id, Discount: decimal.NewFromInt(1), Reason: reasonChannelDiscountDefault}
-		}
-	}
-	return result, nil
+	return ProviderChannelBillingDiscount{PeriodStart: periodStart, ChannelId: id, Discount: decimal.NewFromInt(1), Reason: reasonChannelDiscountDefault}, true
 }
 
 type ProviderChannelDiscountInitOutcome struct {
@@ -202,19 +227,9 @@ func InitializeProviderChannelBillingDiscounts(periodStart int64, channelIds []i
 				// exists: keep manual values and previously copied months untouched.
 			} else {
 				source, hasSource := previous[channelId]
-				discount := ProviderChannelBillingDiscount{
-					PeriodStart: periodStart, ChannelId: channelId,
-					Discount:         source.Discount,
-					CopiedFromPeriod: previousPeriod,
-					Version:          1,
-					Reason:           reasonChannelDiscountAutoCopy,
-					CreatedBy:        operatorId, UpdatedBy: operatorId,
-				}
-				if !hasSource {
-					discount.Discount = decimal.NewFromInt(1)
-					discount.CopiedFromPeriod = 0
-					discount.Reason = reasonChannelDiscountDefault
-				}
+				discount := inheritedProviderChannelDiscount(periodStart, channelId, source, hasSource)
+				discount.Version = 1
+				discount.CreatedBy, discount.UpdatedBy = operatorId, operatorId
 				if err := tx.Create(&discount).Error; err != nil {
 					return err
 				}

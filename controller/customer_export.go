@@ -106,7 +106,11 @@ func CreateAdminCustomerExport(c *gin.Context) {
 }
 
 func ListSelfCustomerExports(c *gin.Context) {
-	jobs, err := model.ListCustomerExportJobs(c.GetInt("id"), 50)
+	page, pageSize, ok := parseBillingPage(c)
+	if !ok {
+		return
+	}
+	jobs, total, err := model.ListCustomerExportJobs(c.Request.Context(), c.GetInt("id"), page, pageSize)
 	if err != nil {
 		respondCustomerExportError(c, err)
 		return
@@ -115,7 +119,7 @@ func ListSelfCustomerExports(c *gin.Context) {
 	for _, job := range jobs {
 		views = append(views, job.ToView())
 	}
-	common.ApiSuccess(c, gin.H{"items": views})
+	common.ApiSuccess(c, gin.H{"items": views, "total": total, "page": page, "page_size": pageSize})
 }
 
 func GetSelfCustomerExport(c *gin.Context) {

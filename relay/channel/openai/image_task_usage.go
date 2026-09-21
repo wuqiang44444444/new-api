@@ -15,7 +15,7 @@ func ImageTaskUsage(info *relaycommon.RelayInfo, body []byte) (*dto.Usage, error
 	if err := common.Unmarshal(body, &response); err != nil {
 		return nil, err
 	}
-	normalizeOpenAIUsage(response.Usage)
+	normalizeOpenAIUsage(response.Usage, body)
 	applyUsagePostProcessing(info, response.Usage, body)
 	return response.Usage, nil
 }

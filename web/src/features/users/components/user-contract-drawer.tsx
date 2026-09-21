@@ -1,6 +1,6 @@
 import { isAxiosError } from 'axios'
 import { AlertTriangle, Plus } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -136,6 +136,9 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [saveAsDirtyWarn, setSaveAsDirtyWarn] = useState(false)
   const templateRequest = useRef(0)
+  const invalidateTemplateRequest = useCallback(() => {
+    templateRequest.current++
+  }, [])
   const pendingActionRef = useRef<(() => void) | null>(null)
 
   const selectedContract =
@@ -147,10 +150,17 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
     const loadTemplates = async () => {
       const items: ContractTemplateListItem[] = []
       for (let page = 1; ; page++) {
-        const response = await getContractTemplates({ enabled: true, p: page, page_size: 100 })
+        const response = await getContractTemplates({
+          enabled: true,
+          p: page,
+          page_size: 100,
+        })
         if (cancelled || !response.success || !response.data) return response
         items.push(...response.data.items)
-        if (!response.data.items.length || items.length >= response.data.total) {
+        if (
+          !response.data.items.length ||
+          items.length >= response.data.total
+        ) {
           return { ...response, data: { ...response.data, items } }
         }
       }
@@ -222,9 +232,15 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
       })
     return () => {
       cancelled = true
-      templateRequest.current++
+      invalidateTemplateRequest()
     }
-  }, [props.open, props.user.id, props.contractId, t])
+  }, [
+    props.open,
+    props.user.id,
+    props.contractId,
+    t,
+    invalidateTemplateRequest,
+  ])
 
   useEffect(() => {
     if (!props.open || creating || !selectedId) {
@@ -280,7 +296,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
   }
 
   const startCreate = () => {
-    templateRequest.current++
+    invalidateTemplateRequest()
     setSelectedId(null)
     setCreating(true)
     setDraft({ name: '', enabled: false, rules: [] })
@@ -681,7 +697,10 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
         open={props.open}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
-            requestDiscard(() => { templateRequest.current++; props.onOpenChange(false) })
+            requestDiscard(() => {
+              invalidateTemplateRequest()
+              props.onOpenChange(false)
+            })
             return
           }
           props.onOpenChange(nextOpen)
@@ -813,7 +832,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                           if (value === 'blank') {
                             if (selectedTemplate) {
                               requestDiscard(() => {
-                                templateRequest.current++
+                                invalidateTemplateRequest()
                                 setDraft({
                                   name: '',
                                   enabled: false,
@@ -977,7 +996,12 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                 type='button'
                 variant='outline'
                 disabled={saving}
-                onClick={() => requestDiscard(() => { templateRequest.current++; props.onOpenChange(false) })}
+                onClick={() =>
+                  requestDiscard(() => {
+                    invalidateTemplateRequest()
+                    props.onOpenChange(false)
+                  })
+                }
               >
                 {t('Cancel')}
               </Button>

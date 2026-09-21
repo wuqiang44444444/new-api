@@ -80,10 +80,13 @@ func TestCustomerStatementsExcludeChannelTestsButKeepWalletAndProviderUsage(t *t
 	// when their names look like tests; only the native test shape is excluded.
 	require.NotNil(t, provider.Groups[0].DataQuality)
 	assert.EqualValues(t, 2, provider.Groups[0].DataQuality.UsageWithoutAmountRows)
-	require.NotNil(t, provider.Groups[0].OriginalAmount)
-	assert.EqualValues(t, 250, *provider.Groups[0].OriginalAmount)
-	require.NotNil(t, provider.Groups[0].ChannelDiscounts[0].Discount)
-	assert.Equal(t, "default", provider.Groups[0].ChannelDiscounts[0].Discount.Source)
+	assert.EqualValues(t, 0, provider.Groups[0].DataQuality.TestPricedRows)
+	// 测试行记录的 quota 与冻结倍率证据不一致时保持待核算；渠道不再作为
+	// “有测试所以金额例外完整”的特例，总额必须标记不完整。
+	require.Nil(t, provider.Groups[0].OriginalAmount)
+	assert.Contains(t, provider.Groups[0].EstimateReasons, BillingEstimateTestAmountPending)
+	require.NotNil(t, provider.Groups[0].Channels[0].Discount)
+	assert.Equal(t, "default", provider.Groups[0].Channels[0].Discount.Source)
 	var count int64
 	require.NoError(t, db.Model(&Log{}).Count(&count).Error)
 	assert.EqualValues(t, len(logs), count, "projections must not rewrite or delete original logs")

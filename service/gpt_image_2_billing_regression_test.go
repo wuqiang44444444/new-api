@@ -76,9 +76,11 @@ func TestGPTImage2SynchronousBillingSnapshotDoesNotCreateTask(t *testing.T) {
 	assert.Equal(t, starting-expectedCost, getUserQuota(t, userID))
 	assert.Equal(t, starting-expectedCost, getTokenRemainQuota(t, tokenID))
 
+	reported := false
 	PostTextConsumeQuota(c, info, &dto.Usage{
-		PromptTokens: 1,
-		TotalTokens:  1,
+		CacheReadTokensReported: &reported,
+		PromptTokens:            1,
+		TotalTokens:             1,
 	}, []string{"大小 1024x1024", "生成数量 2"})
 
 	assert.Equal(t, starting-expectedCost, getUserQuota(t, userID))
@@ -109,4 +111,5 @@ func TestGPTImage2SynchronousBillingSnapshotDoesNotCreateTask(t *testing.T) {
 	assert.Equal(t, groupRatio, other["group_ratio"])
 	assert.Equal(t, "wallet", other["billing_source"])
 	assert.Equal(t, "/v1/images/generations", other["request_path"])
+	assert.Equal(t, false, other["cache_read_tokens_reported"])
 }

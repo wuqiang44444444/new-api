@@ -305,13 +305,15 @@ func TestSettleTestQuotaUsesTieredBilling(t *testing.T) {
 		},
 	}
 
-	quota, result := settleTestQuota(info, types.PriceData{
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	pricing := service.CalculateChannelTestQuota(ctx, info, types.PriceData{
 		ModelRatio:      1,
 		CompletionRatio: 2,
 	}, &dto.Usage{
 		PromptTokens: 1000,
 	})
 
+	quota, result := pricing.Quota, pricing.Result
 	require.Equal(t, 1500, quota)
 	require.NotNil(t, result)
 	require.Equal(t, "stream", result.MatchedTier)

@@ -154,6 +154,12 @@ func upstreamRequestIDFromTestContext(testContext *gin.Context) string {
 }
 
 func submitChannelTestFailureEvent(c *gin.Context, event clienterrlog.BackendEvent) {
+	if status := ChannelTestUpstreamCostStatus(c); status != "" {
+		if event.Detail == nil {
+			event.Detail = make(map[string]string)
+		}
+		event.Detail[ChannelTestUpstreamCostKey] = status
+	}
 	if c != nil && c.Request != nil {
 		event.Method = c.Request.Method
 		event.Route = c.Request.URL.Path

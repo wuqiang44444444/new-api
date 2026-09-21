@@ -103,6 +103,7 @@ func billingStatementTaskFacts(log billingReconciliationLog, other, snapshot map
 
 	encoded := billingBreakdownString(billingReconciliationSnapshotRaw(snapshot, other, "expr_b64"))
 	if encoded != "" {
+		parsed.hasExpression = true
 		expression, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil {
 			parsed.billingMode = BillingReconciliationModeUnknown

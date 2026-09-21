@@ -55,26 +55,29 @@ var (
 // CustomerExportFilters is the normalized, versioned submission scope. It is
 // frozen at acceptance and never re-resolved from current settings.
 type CustomerExportFilters struct {
-	Upstream          *UpstreamExportScope `json:"upstream,omitempty"`
-	StatementDraftId  string               `json:"statement_draft_id,omitempty"`
-	QuotaPerUnit      float64              `json:"quota_per_unit"`
-	Currency          string               `json:"currency"`
-	CurrencyRate      float64              `json:"currency_rate"`
-	FieldVersion      int                  `json:"field_version"`
-	StartTimestamp    int64                `json:"start_timestamp"` // 含起点
-	EndTimestamp      int64                `json:"end_timestamp"`   // 不含终点（左闭右开）
-	LogTypes          []int                `json:"log_types,omitempty"`
-	TokenId           *int                 `json:"token_id,omitempty"`
-	ChannelId         *int                 `json:"channel_id,omitempty"`
-	TokenName         string               `json:"token_name,omitempty"`
-	Group             string               `json:"group,omitempty"`
-	RequestId         string               `json:"request_id,omitempty"`
-	UpstreamRequestId string               `json:"upstream_request_id,omitempty"`
-	Username          string               `json:"username,omitempty"`
-	ModelName         string               `json:"model_name,omitempty"`
-	BillingMode       string               `json:"billing_mode,omitempty"`
-	Timezone          string               `json:"timezone"`
-	Language          string               `json:"language,omitempty"`
+	UsageView         string                          `json:"usage_view,omitempty"`
+	UsageSearch       string                          `json:"usage_search,omitempty"`
+	UsageDiscounts    *UsageAnalyticsDiscountSnapshot `json:"usage_discounts,omitempty"`
+	Upstream          *UpstreamExportScope            `json:"upstream,omitempty"`
+	StatementDraftId  string                          `json:"statement_draft_id,omitempty"`
+	QuotaPerUnit      float64                         `json:"quota_per_unit"`
+	Currency          string                          `json:"currency"`
+	CurrencyRate      float64                         `json:"currency_rate"`
+	FieldVersion      int                             `json:"field_version"`
+	StartTimestamp    int64                           `json:"start_timestamp"` // 含起点
+	EndTimestamp      int64                           `json:"end_timestamp"`   // 不含终点（左闭右开）
+	LogTypes          []int                           `json:"log_types,omitempty"`
+	TokenId           *int                            `json:"token_id,omitempty"`
+	ChannelId         *int                            `json:"channel_id,omitempty"`
+	TokenName         string                          `json:"token_name,omitempty"`
+	Group             string                          `json:"group,omitempty"`
+	RequestId         string                          `json:"request_id,omitempty"`
+	UpstreamRequestId string                          `json:"upstream_request_id,omitempty"`
+	Username          string                          `json:"username,omitempty"`
+	ModelName         string                          `json:"model_name,omitempty"`
+	BillingMode       string                          `json:"billing_mode,omitempty"`
+	Timezone          string                          `json:"timezone"`
+	Language          string                          `json:"language,omitempty"`
 }
 
 // CustomerExportProgress is throttled persisted scan state. Counts are
@@ -306,7 +309,7 @@ func createCustomerExportJobOnce(userId int, targetUserId int, jobType string, f
 		err := tx.Where("active_key = ?", activeKey).First(&existing).Error
 		if err == nil {
 			// 本人相同申请返回原记录；不同申请返回忙碌，不重复扫描。
-			if existing.JobType == jobType && existing.TargetUserId == targetUserId && existing.Filters == filtersText {
+			if existing.JobType == jobType && existing.TargetUserId == targetUserId && (!reuse.RequireExactActiveFilters || existing.Filters == filtersText) && sameActiveCustomerExportFilters(jobType, existing.Filters, filtersText) {
 				return errCustomerExportDuplicate(existing.JobID)
 			}
 			return ErrCustomerExportUserBusy
@@ -408,36 +411,49 @@ func GetCustomerExportJobForOwner(jobID string, userId int) (*CustomerExportJob,
 	return job, nil
 }
 
-func ListCustomerExportJobs(userId int, limit int) ([]*CustomerExportJob, error) {
-	if limit <= 0 {
-		limit = 50
+func ListCustomerExportJobs(ctx context.Context, userId, page, pageSize int) ([]*CustomerExportJob, int64, error) {
+	if page < 1 || page > 1000000 || pageSize < 1 || pageSize > 100 {
+		return nil, 0, errors.New("invalid pagination")
 	}
-	if limit > 200 {
-		limit = 200
-	}
-	var jobs []*CustomerExportJob
-	if err := AuthorizeCustomerExport(context.Background(), userId, userId); err != nil {
-		return nil, err
+	if err := AuthorizeCustomerExport(ctx, userId, userId); err != nil {
+		return nil, 0, err
 	}
 	var actor User
-	if err := DB.Select("role").First(&actor, userId).Error; err != nil {
-		return nil, err
+	if err := DB.WithContext(ctx).Select("role").First(&actor, userId).Error; err != nil {
+		return nil, 0, err
 	}
-	query := DB.Where("user_id = ? AND job_type <> ?", userId, CustomerExportJobTypeStatementVersion)
+	query := DB.WithContext(ctx).Where("user_id = ? AND job_type <> ?", userId, CustomerExportJobTypeStatementVersion)
 	if actor.Role < common.RoleAdminUser {
 		query = query.Where("target_user_id = ?", userId)
 	}
-	err := query.Order("id desc").Limit(limit).Find(&jobs).Error
-	if err != nil {
-		return nil, err
-	}
-	visible := jobs[:0]
-	for _, job := range jobs {
-		if job.JobType != CustomerExportJobTypeUpstreamDetails || AuthorizeCustomerExportJob(context.Background(), job) == nil {
-			visible = append(visible, job)
+	visible := make([]*CustomerExportJob, 0, pageSize)
+	var total, cursor int64
+	skip := int64(page-1) * int64(pageSize)
+	for {
+		batchQuery := query.Session(&gorm.Session{})
+		if cursor > 0 {
+			batchQuery = batchQuery.Where("id < ?", cursor)
 		}
+		var jobs []*CustomerExportJob
+		if err := batchQuery.Order("id desc").Limit(100).Find(&jobs).Error; err != nil {
+			return nil, 0, err
+		}
+		for _, job := range jobs {
+			jobAuthorizable := job.JobType == CustomerExportJobTypeUpstreamDetails || job.JobType == CustomerExportJobTypeUpstreamSummary || job.JobType == CustomerExportJobTypeUsageSummary
+			if jobAuthorizable && AuthorizeCustomerExportJob(ctx, job) != nil {
+				continue
+			}
+			if total >= skip && len(visible) < pageSize {
+				visible = append(visible, job)
+			}
+			total++
+		}
+		if len(jobs) < 100 {
+			break
+		}
+		cursor = jobs[len(jobs)-1].ID
 	}
-	return visible, nil
+	return visible, total, nil
 }
 
 // CancelCustomerExportJob 取消一个排队中的申请并原子释放配额与槽位；

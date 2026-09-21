@@ -278,16 +278,16 @@ export function ContractTemplateManager() {
             </Button>
           </div>
         </div>
-      </SectionPageLayout.Content>
 
-      {drawerOpen && (
-        <ContractTemplateDrawer
-          open
-          onOpenChange={closeDrawer}
-          templateId={editTemplateId}
-          onSaved={refresh}
-        />
-      )}
+        {drawerOpen && (
+          <ContractTemplateDrawer
+            open
+            onOpenChange={closeDrawer}
+            templateId={editTemplateId}
+            onSaved={refresh}
+          />
+        )}
+      </SectionPageLayout.Content>
     </SectionPageLayout>
   )
 }

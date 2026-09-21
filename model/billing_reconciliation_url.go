@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 // billingURLGroupChannelFallbackPrefix marks the per-channel group of a
@@ -27,22 +29,31 @@ type ProviderURLSummary struct {
 }
 
 type ProviderURLGroupSummary struct {
-	UrlKey       string                            `json:"url_key"`
-	DisplayName  string                            `json:"display_name"`
-	BaseURL      string                            `json:"base_url,omitempty"`
-	Unidentified bool                              `json:"unidentified,omitempty"`
-	Deleted      bool                              `json:"deleted,omitempty"`
-	ChannelIds   []int                             `json:"channel_ids"`
-	ChannelCount int64                             `json:"channel_count"`
-	ModelCount   int64                             `json:"model_count"`
-	Usage        ProviderBillingUsage              `json:"usage"`
-	Models       []ProviderURLModelSummary         `json:"models"`
-	DataQuality  *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
-	// ChannelDiscounts is the per-URL editing area: one slot per channel with
-	// usage in the group, pending slots included.
-	ChannelDiscounts []ProviderChannelDiscountStatus `json:"channel_discounts"`
+	UsageOnly bool `json:"usage_only,omitempty"`
+	// Known subtotals remain separate from complete amounts when evidence is missing.
+	KnownOriginalAmount  *int64 `json:"known_original_amount,omitempty"`
+	KnownReferenceAmount *int64 `json:"known_reference_amount,omitempty"`
+	UrlKey               string `json:"url_key"`
+	DisplayName          string `json:"display_name"`
+	// CustomName is the admin-defined alias persisted per grouping key. It
+	// only replaces the card title; unidentified and deleted markers always
+	// stay visible, and the safe base URL keeps being shown below the title.
+	CustomName   string               `json:"custom_name,omitempty"`
+	BaseURL      string               `json:"base_url,omitempty"`
+	Unidentified bool                 `json:"unidentified,omitempty"`
+	Deleted      bool                 `json:"deleted,omitempty"`
+	ChannelIds   []int                `json:"channel_ids"`
+	ChannelCount int64                `json:"channel_count"`
+	ModelCount   int64                `json:"model_count"`
+	Usage        ProviderBillingUsage `json:"usage"`
+	// Channels is the single channel table of the group: one parent row per
+	// channel carrying its month coefficient, its usage totals and its
+	// model × billing-mode leaves. It replaces the old parallel discount
+	// editing area and the old URL → model → channel tree.
+	Channels    []ProviderURLChannelGroupSummary  `json:"channels"`
+	DataQuality *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
 	// OriginalAmount / ReferenceAmount follow the same completeness rules as
-	// the model rows; a pending channel discount keeps the reference amount
+	// the channel rows; a pending channel discount keeps the reference amount
 	// incomplete even when that channel's original amount happens to be zero.
 	OriginalAmount          *int64   `json:"original_amount,omitempty"`
 	ReferenceAmount         *int64   `json:"reference_amount,omitempty"`
@@ -51,74 +62,103 @@ type ProviderURLGroupSummary struct {
 	EstimateReasons         []string `json:"estimate_reasons,omitempty"`
 }
 
-// ProviderURLModelSummary merges one upstream model identity across the
-// channels of a URL group. Records whose provider model identity fell back to
-// the customer model stay in separate fallback rows, and token, per-call and
-// unknown billing modes always remain separate rows.
-type ProviderURLModelSummary struct {
-	ProviderModel         string                            `json:"provider_model"`
-	ProviderModelFallback bool                              `json:"provider_model_fallback,omitempty"`
-	BillingMode           string                            `json:"billing_mode"`
-	Usage                 ProviderBillingUsage              `json:"usage"`
-	Channels              []ProviderURLChannelSummary       `json:"channels"`
-	DataQuality           *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
-	// OriginalAmount is the signed official-price quota of this model row
-	// within the URL group; nil means at least one money-bearing row could not
-	// be restored from frozen historical facts.
-	OriginalAmount *int64 `json:"original_amount,omitempty"`
-	// ReferenceAmount is the discount-adjusted reference amount (original
-	// price times the channel-month coefficient). It is nil — never zero —
-	// when any contributing channel lacks a discount or any amount is unknown.
-	ReferenceAmount *int64   `json:"reference_amount,omitempty"`
-	EstimateReasons []string `json:"estimate_reasons,omitempty"`
-}
-
-// ProviderURLChannelSummary is one channel's contribution to a model row. It
-// carries usage facts plus the local official-price amount and the reference
-// amount after the channel's month coefficient; it never implies what the
-// supplier actually charged.
-type ProviderURLChannelSummary struct {
-	ChannelId             int                                `json:"channel_id"`
-	ChannelName           string                             `json:"channel_name"`
-	ProviderModel         string                             `json:"provider_model"`
-	CustomerModels        []string                           `json:"customer_models"`
-	ProviderModelFallback bool                               `json:"provider_model_fallback,omitempty"`
-	BillingMode           string                             `json:"billing_mode"`
-	Usage                 ProviderBillingUsage               `json:"usage"`
-	DataQuality           *BillingReconciliationDataQuality  `json:"data_quality,omitempty"`
-	DetailFilter          BillingReconciliationDetailFilter  `json:"detail_filter"`
-	OriginalAmount        *int64                             `json:"original_amount,omitempty"`
-	ReferenceAmount       *int64                             `json:"reference_amount,omitempty"`
-	Discount              *ProviderBillingDiscountProjection `json:"discount"`
-	EstimateReasons       []string                           `json:"estimate_reasons,omitempty"`
-	// UsageOnly rows keep usage but no customer settlement, so the amount is
-	// not a completeness gap for their parents.
-	UsageOnly bool `json:"usage_only,omitempty"`
-}
-
-// ProviderChannelDiscountStatus is one channel's slot in the per-URL discount
-// editing area. A nil Discount means the month is pending manual fill — it is
-// never presented as coefficient 1.
-type ProviderChannelDiscountStatus struct {
-	ChannelId   int    `json:"channel_id"`
-	ChannelName string `json:"channel_name"`
+// ProviderURLChannelGroupSummary is one channel parent row. A nil Discount
+// means the channel-month is pending manual fill — it is never presented as
+// coefficient 1. Usage totals server-side over the same leaves shown below;
+// the frontend never recomputes amounts.
+type ProviderURLChannelGroupSummary struct {
+	// Known subtotals remain separate from complete amounts when evidence is missing.
+	KnownOriginalAmount  *int64 `json:"known_original_amount,omitempty"`
+	KnownReferenceAmount *int64 `json:"known_reference_amount,omitempty"`
+	ChannelId            int    `json:"channel_id"`
+	ChannelName          string `json:"channel_name"`
 	// Discount is nil when the channel-month is pending manual fill.
 	Discount  *ProviderBillingDiscountProjection `json:"discount"`
 	UpdatedAt int64                              `json:"updated_at,omitempty"`
 	UpdatedBy int                                `json:"updated_by,omitempty"`
+	Usage     ProviderBillingUsage               `json:"usage"`
+	// Models are this channel's provider model × billing-mode leaves. Same-named
+	// models of different channels stay inside their own channel row; confirmed
+	// and fallback model identities never merge.
+	Models      []ProviderURLChannelModelSummary  `json:"models"`
+	DataQuality *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
+	// OriginalAmount is the signed official-price quota of the channel; nil
+	// means at least one money-bearing row could not be restored from frozen
+	// historical facts.
+	OriginalAmount *int64 `json:"original_amount,omitempty"`
+	// ReferenceAmount is the discount-adjusted reference amount (original
+	// price times the channel-month coefficient). It is nil — never zero for
+	// money-bearing rows — when the channel lacks a discount or any amount is
+	// unknown.
+	ReferenceAmount *int64   `json:"reference_amount,omitempty"`
+	EstimateReasons []string `json:"estimate_reasons,omitempty"`
+	// UsageOnly identifies channels without settled money rows. Pending test
+	// amounts still make the channel and its parent totals incomplete.
+	UsageOnly bool `json:"usage_only,omitempty"`
+}
+
+// ProviderURLChannelModelSummary is one model × billing-mode leaf of a channel
+// row: the platform-recorded usage of that channel for one upstream model
+// identity, plus the restored official-price amount and the reference amount
+// after the channel's month coefficient. It never implies what the supplier
+// actually charged.
+type ProviderURLChannelModelSummary struct {
+	// Known subtotals remain separate from complete amounts when evidence is missing.
+	KnownOriginalAmount   *int64                            `json:"known_original_amount,omitempty"`
+	KnownReferenceAmount  *int64                            `json:"known_reference_amount,omitempty"`
+	UsageOnly             bool                              `json:"usage_only,omitempty"`
+	ProviderModel         string                            `json:"provider_model"`
+	ProviderModelFallback bool                              `json:"provider_model_fallback,omitempty"`
+	BillingMode           string                            `json:"billing_mode"`
+	CustomerModels        []string                          `json:"customer_models"`
+	Usage                 ProviderBillingUsage              `json:"usage"`
+	DataQuality           *BillingReconciliationDataQuality `json:"data_quality,omitempty"`
+	DetailFilter          BillingReconciliationDetailFilter `json:"detail_filter"`
+	OriginalAmount        *int64                            `json:"original_amount,omitempty"`
+	ReferenceAmount       *int64                            `json:"reference_amount,omitempty"`
+	EstimateReasons       []string                          `json:"estimate_reasons,omitempty"`
 }
 
 // GetProviderBillingURLSummary aggregates the platform-recorded upstream
 // usage, the local official-price amounts restored from customer settlement
-// facts, and the channel-month discount coefficients into URL groups. It is a
-// read-only reporting view: it never materializes discounts, never writes
-// audit rows and never feeds routing, billing or settlement. The reference
-// amount is original price times the channel-month coefficient; it is a
-// reference display figure under the "same official price on both sides"
-// business premise, not a verified supplier cost.
+// facts, and the channel-month discount coefficients into URL groups of
+// channel rows with model leaves. It is a read-only reporting view: it never
+// materializes discounts, never writes audit rows and never feeds routing,
+// billing or settlement. The reference amount is original price times the
+// channel-month coefficient; it is a reference display figure under the "same
+// official price on both sides" business premise, not a verified supplier
+// cost.
 func GetProviderBillingURLSummary(startTimestamp int64, endTimestamp int64, periodStart int64, urlKey string) (ProviderURLSummary, error) {
-	summary := ProviderURLSummary{Groups: make([]ProviderURLGroupSummary, 0)}
-	items, err := scanProviderBillingURLPlatformItems(startTimestamp, endTimestamp)
+	return getProviderBillingURLSummary(context.Background(), startTimestamp, endTimestamp, periodStart, urlKey, 0)
+}
+
+func getProviderBillingURLSummary(ctx context.Context, startTimestamp, endTimestamp, periodStart int64, urlKey string, channelID int) (ProviderURLSummary, error) {
+	summary := ProviderURLSummary{Groups: make([]ProviderURLGroupSummary, 0), DataQuality: &BillingReconciliationDataQuality{Status: "complete"}}
+	records, err := loadProviderChannelBillingDiscounts(periodStart, nil)
+	if err != nil {
+		return summary, err
+	}
+	var scopeIDs []int
+	if channelID > 0 {
+		scopeIDs = []int{channelID}
+	} else if urlKey != "" {
+		if raw, fallback := strings.CutPrefix(urlKey, billingURLGroupChannelFallbackPrefix); fallback {
+			id, parseErr := strconv.Atoi(raw)
+			if parseErr != nil || id <= 0 {
+				return summary, nil
+			}
+			scopeIDs = []int{id}
+		} else {
+			scopeIDs, err = GetChannelIdsByNormalizedBaseURL(urlKey)
+			if err != nil {
+				return summary, err
+			}
+			if len(scopeIDs) == 0 {
+				return summary, nil
+			}
+		}
+	}
+	items, err := scanProviderBillingURLPlatformItems(ctx, startTimestamp, endTimestamp, records, scopeIDs, BillingStatementReadPolicy{})
 	if err != nil {
 		return summary, err
 	}
@@ -135,7 +175,13 @@ func GetProviderBillingURLSummary(startTimestamp int64, endTimestamp int64, peri
 	if err != nil {
 		return summary, err
 	}
-	discounts, err := GetProviderChannelBillingDiscounts(periodStart, channelIds)
+	discounts := make(map[int]ProviderChannelBillingDiscount, len(channelIds))
+	for _, id := range channelIds {
+		if record, valid := providerChannelBillingDiscountFor(records, periodStart, id); valid {
+			discounts[id] = record
+		}
+	}
+	names, err := getProviderURLGroupNames()
 	if err != nil {
 		return summary, err
 	}
@@ -145,19 +191,25 @@ func GetProviderBillingURLSummary(startTimestamp int64, endTimestamp int64, peri
 		mode     string
 		fallback bool
 	}
+	type modelIdentity struct {
+		name     string
+		fallback bool
+	}
 	type channelBuild struct {
-		usage           ProviderBillingUsage
+		group           ProviderURLChannelGroupSummary
+		models          map[modelKey]*ProviderURLChannelModelSummary
 		original        decimal.Decimal
+		reference       decimal.Decimal
 		allKnown        bool
+		hasKnown        bool
 		usageOnly       bool
-		leafCount       int
 		estimateReasons []string
 	}
 	type groupBuild struct {
-		group      ProviderURLGroupSummary
-		models     map[modelKey]*ProviderURLModelSummary
-		channelIds map[int]struct{}
-		channels   map[int]*channelBuild
+		group           ProviderURLGroupSummary
+		channelIds      map[int]struct{}
+		channels        map[int]*channelBuild
+		modelIdentities map[modelIdentity]struct{}
 	}
 	groups := make(map[string]*groupBuild)
 
@@ -179,76 +231,87 @@ func GetProviderBillingURLSummary(startTimestamp int64, endTimestamp int64, peri
 	for itemKey, item := range items {
 		channel, found := channels[itemKey.channelId]
 		groupKey, displayName := billingURLGroupIdentity(channel, found, itemKey.channelId)
-		group, ok := groups[groupKey]
+		build, ok := groups[groupKey]
 		if !ok {
-			group = &groupBuild{
+			build = &groupBuild{
 				group: ProviderURLGroupSummary{
-					UrlKey:           groupKey,
-					DisplayName:      displayName,
-					Unidentified:     strings.HasPrefix(groupKey, billingURLGroupChannelFallbackPrefix),
-					Deleted:          strings.HasPrefix(groupKey, billingURLGroupChannelFallbackPrefix) && itemKey.channelId > 0 && !found,
-					ChannelIds:       make([]int, 0),
-					Models:           make([]ProviderURLModelSummary, 0),
-					ChannelDiscounts: make([]ProviderChannelDiscountStatus, 0),
+					UrlKey:       groupKey,
+					DisplayName:  displayName,
+					CustomName:   names[groupKey],
+					Unidentified: strings.HasPrefix(groupKey, billingURLGroupChannelFallbackPrefix),
+					Deleted:      strings.HasPrefix(groupKey, billingURLGroupChannelFallbackPrefix) && itemKey.channelId > 0 && !found,
+					ChannelIds:   make([]int, 0),
+					Channels:     make([]ProviderURLChannelGroupSummary, 0),
 				},
-				models:     make(map[modelKey]*ProviderURLModelSummary),
-				channelIds: make(map[int]struct{}),
-				channels:   make(map[int]*channelBuild),
+				channelIds:      make(map[int]struct{}),
+				channels:        make(map[int]*channelBuild),
+				modelIdentities: make(map[modelIdentity]struct{}),
 			}
-			if !group.group.Unidentified {
-				group.group.BaseURL = groupKey
+			if !build.group.Unidentified {
+				build.group.BaseURL = groupKey
 			}
-			groups[groupKey] = group
+			groups[groupKey] = build
 		}
-		if _, seen := group.channelIds[itemKey.channelId]; !seen {
-			group.channelIds[itemKey.channelId] = struct{}{}
-			group.group.ChannelIds = append(group.group.ChannelIds, itemKey.channelId)
+		if _, seen := build.channelIds[itemKey.channelId]; !seen {
+			build.channelIds[itemKey.channelId] = struct{}{}
+			build.group.ChannelIds = append(build.group.ChannelIds, itemKey.channelId)
 		}
-		cb := group.channels[itemKey.channelId]
+		cb := build.channels[itemKey.channelId]
 		if cb == nil {
-			cb = &channelBuild{allKnown: true, usageOnly: true}
-			group.channels[itemKey.channelId] = cb
+			cb = &channelBuild{
+				group: ProviderURLChannelGroupSummary{
+					ChannelId: itemKey.channelId, ChannelName: item.ChannelName,
+				},
+				models:   make(map[modelKey]*ProviderURLChannelModelSummary),
+				allKnown: true, usageOnly: true,
+			}
+			build.channels[itemKey.channelId] = cb
 		}
 
 		mk := modelKey{model: itemKey.model, mode: itemKey.mode, fallback: itemKey.fallback}
-		modelRow, ok := group.models[mk]
+		leaf, ok := cb.models[mk]
 		if !ok {
-			modelRow = &ProviderURLModelSummary{
-				ProviderModel:         itemKey.model,
-				ProviderModelFallback: itemKey.fallback,
-				BillingMode:           itemKey.mode,
-				Channels:              make([]ProviderURLChannelSummary, 0),
+			leaf = &ProviderURLChannelModelSummary{
+				UsageOnly:             item.UsageOnly,
+				ProviderModel:         item.ProviderModel,
+				ProviderModelFallback: item.ProviderModelFallback,
+				BillingMode:           item.BillingMode,
+				CustomerModels:        item.CustomerModels,
+				Usage:                 item.Usage,
+				DataQuality:           item.DataQuality,
+				DetailFilter:          item.DetailFilter,
+				OriginalAmount:        item.OriginalAmount,
+				EstimateReasons:       item.EstimateReasons,
 			}
-			group.models[mk] = modelRow
+			var discountProjection *ProviderBillingDiscountProjection
+			if record, ok := discounts[itemKey.channelId]; ok {
+				projection := providerChannelDiscountProjection(record)
+				discountProjection = &projection
+			}
+			if item.OriginalAmount != nil && discountProjection != nil {
+				leaf.ReferenceAmount = billingStatementOriginalQuota(item.referenceQuota)
+			}
+			if item.originalQuotaKnown {
+				leaf.KnownOriginalAmount = billingStatementOriginalQuota(item.originalQuota)
+				if discountProjection != nil {
+					leaf.KnownReferenceAmount = billingStatementOriginalQuota(item.referenceQuota)
+				}
+			}
+			cb.models[mk] = leaf
 		}
-		accumulateBillingReconciliationQuality(&group.group.DataQuality, item.DataQuality)
-		accumulateBillingReconciliationQuality(&modelRow.DataQuality, item.DataQuality)
-		var discountProjection *ProviderBillingDiscountProjection
-		if record, ok := discounts[itemKey.channelId]; ok {
-			projection := providerChannelDiscountProjection(record)
-			discountProjection = &projection
-		}
-		leaf := ProviderURLChannelSummary{
-			ChannelId: item.ChannelId, ChannelName: item.ChannelName,
-			ProviderModel: item.ProviderModel, CustomerModels: item.CustomerModels,
-			ProviderModelFallback: item.ProviderModelFallback, BillingMode: item.BillingMode,
-			Usage: item.Usage, DataQuality: item.DataQuality, DetailFilter: item.DetailFilter,
-			OriginalAmount: item.OriginalAmount, Discount: discountProjection,
-			EstimateReasons: item.EstimateReasons, UsageOnly: item.UsageOnly,
-		}
-		modelRow.Channels = append(modelRow.Channels, leaf)
-		accumulateProviderBillingUsage(&modelRow.Usage, item.Usage)
-		accumulateProviderBillingUsage(&group.group.Usage, item.Usage)
-		// 纯渠道测试叶子没有客户结算金额，对父级金额既不贡献也不造成不完整。
+		build.modelIdentities[modelIdentity{name: itemKey.model, fallback: itemKey.fallback}] = struct{}{}
+		accumulateProviderBillingUsage(&cb.group.Usage, item.Usage)
+		accumulateBillingReconciliationQuality(&cb.group.DataQuality, item.DataQuality)
+		accumulateProviderBillingUsage(&build.group.Usage, item.Usage)
+		accumulateBillingReconciliationQuality(&build.group.DataQuality, item.DataQuality)
+		// Every pending test is a money gap, even in an otherwise usage-only leaf.
 		cb.usageOnly = cb.usageOnly && item.UsageOnly
-		if item.UsageOnly {
-			cb.allKnown = cb.allKnown
-		} else if item.OriginalAmount != nil {
-			cb.original = cb.original.Add(item.originalQuota)
-		} else {
+		cb.hasKnown = cb.hasKnown || item.originalQuotaKnown || item.OriginalAmount != nil
+		cb.original = cb.original.Add(item.originalQuota)
+		cb.reference = cb.reference.Add(item.referenceQuota)
+		if item.OriginalAmount == nil {
 			cb.allKnown = false
 		}
-		cb.leafCount++
 		cb.estimateReasons = mergeBillingEstimateReasons(cb.estimateReasons, item.EstimateReasons...)
 	}
 
@@ -257,47 +320,88 @@ func GetProviderBillingURLSummary(startTimestamp int64, endTimestamp int64, peri
 		sort.Ints(build.group.ChannelIds)
 		build.group.ChannelCount = int64(len(build.channelIds))
 
-		// Channel-level finals: original amount, discount slot and reference
-		// amount per channel.
+		// Channel finals: model leaves, discount slot, amounts and completeness
+		// flags; group totals only ever add the same per-leaf rounded amounts.
+		knownOriginal, knownReference := decimal.Zero, decimal.Zero
+		hasKnownOriginal, hasKnownReference := false, false
 		groupOriginal := decimal.Zero
 		groupOriginalKnown := true
 		groupReference := decimal.Zero
 		groupReferenceKnown := true
 		for _, channelId := range build.group.ChannelIds {
 			cb := build.channels[channelId]
-			name := strings.TrimSpace(channels[channelId].Name)
-			if name == "" {
-				name = fmt.Sprintf("Channel #%d", channelId)
+			for _, leaf := range cb.models {
+				finalizeBillingReconciliationQuality(&leaf.DataQuality)
+				cb.group.Models = append(cb.group.Models, *leaf)
 			}
-			status := ProviderChannelDiscountStatus{ChannelId: channelId, ChannelName: name}
-			var discountValue decimal.Decimal
+			sort.Slice(cb.group.Models, func(i, j int) bool {
+				if cb.group.Models[i].ProviderModel != cb.group.Models[j].ProviderModel {
+					return cb.group.Models[i].ProviderModel < cb.group.Models[j].ProviderModel
+				}
+				if cb.group.Models[i].BillingMode != cb.group.Models[j].BillingMode {
+					return cb.group.Models[i].BillingMode < cb.group.Models[j].BillingMode
+				}
+				return cb.group.Models[i].ProviderModelFallback
+			})
+			finalizeBillingReconciliationQuality(&cb.group.DataQuality)
+
 			hasDiscount := false
 			if record, ok := discounts[channelId]; ok {
 				projection := providerChannelDiscountProjection(record)
-				status.Discount = &projection
-				status.UpdatedAt = record.UpdatedAt
-				status.UpdatedBy = record.UpdatedBy
-				discountValue = record.Discount
+				cb.group.Discount = &projection
+				cb.group.UpdatedAt = record.UpdatedAt
+				cb.group.UpdatedBy = record.UpdatedBy
 				hasDiscount = true
 			} else if !cb.usageOnly {
 				build.group.DiscountPendingChannels++
 			}
-			build.group.ChannelDiscounts = append(build.group.ChannelDiscounts, status)
-
-			channelReference := decimal.Zero
-			channelReferenceKnown := cb.usageOnly || (cb.allKnown && hasDiscount)
+			if cb.hasKnown {
+				cb.group.KnownOriginalAmount = billingStatementOriginalQuota(cb.original)
+				knownOriginal = knownOriginal.Add(cb.original)
+				hasKnownOriginal = true
+				if hasDiscount {
+					cb.group.KnownReferenceAmount = billingStatementOriginalQuota(cb.reference)
+					knownReference = knownReference.Add(cb.reference)
+					hasKnownReference = true
+				}
+			}
+			channelReferenceKnown := cb.allKnown && hasDiscount
 			if cb.allKnown {
 				groupOriginal = groupOriginal.Add(cb.original)
 			} else {
 				groupOriginalKnown = false
 			}
-			channelReference = cb.original.Mul(discountValue)
-			if !channelReferenceKnown {
-				groupReferenceKnown = false
+			if channelReferenceKnown {
+				groupReference = groupReference.Add(cb.reference)
 			} else {
-				groupReference = groupReference.Add(channelReference)
+				groupReferenceKnown = false
 			}
+			// Usage-only is a display classification, never an amount-completeness exception.
+			if !cb.usageOnly && cb.allKnown {
+				cb.group.OriginalAmount = billingStatementOriginalQuota(cb.original)
+				if cb.group.OriginalAmount == nil {
+					cb.group.EstimateReasons = mergeBillingEstimateReasons(cb.group.EstimateReasons, BillingEstimateAmountOutOfRange)
+				}
+			}
+			if !cb.usageOnly && channelReferenceKnown {
+				cb.group.ReferenceAmount = billingStatementOriginalQuota(cb.reference)
+			}
+			cb.group.EstimateReasons = cb.estimateReasons
+			cb.group.UsageOnly = cb.usageOnly
+			build.group.Channels = append(build.group.Channels, cb.group)
 			build.group.EstimateReasons = mergeBillingEstimateReasons(build.group.EstimateReasons, cb.estimateReasons...)
+		}
+		sort.Slice(build.group.Channels, func(i, j int) bool {
+			if build.group.Channels[i].ChannelName != build.group.Channels[j].ChannelName {
+				return build.group.Channels[i].ChannelName < build.group.Channels[j].ChannelName
+			}
+			return build.group.Channels[i].ChannelId < build.group.Channels[j].ChannelId
+		})
+		if hasKnownOriginal {
+			build.group.KnownOriginalAmount = billingStatementOriginalQuota(knownOriginal)
+		}
+		if hasKnownReference {
+			build.group.KnownReferenceAmount = billingStatementOriginalQuota(knownReference)
 		}
 		if groupOriginalKnown && len(build.channels) > 0 {
 			build.group.OriginalAmount = billingStatementOriginalQuota(groupOriginal)
@@ -311,80 +415,15 @@ func GetProviderBillingURLSummary(startTimestamp int64, endTimestamp int64, peri
 			build.group.ReferenceAmount = billingStatementOriginalQuota(groupReference)
 			build.group.ReferenceKnown = build.group.ReferenceAmount != nil
 		}
-
-		// Model-row finals aggregate the same leaves.
-		type modelIdentity struct {
-			name     string
-			fallback bool
-		}
-		modelIdentities := make(map[modelIdentity]struct{})
-		for mk, modelRow := range build.models {
-			modelIdentities[modelIdentity{modelRow.ProviderModel, modelRow.ProviderModelFallback}] = struct{}{}
-			finalizeBillingReconciliationQuality(&modelRow.DataQuality)
-			modelOriginal := decimal.Zero
-			modelOriginalKnown := true
-			modelReference := decimal.Zero
-			modelReferenceKnown := true
-			sort.Slice(modelRow.Channels, func(i, j int) bool {
-				if modelRow.Channels[i].ChannelName != modelRow.Channels[j].ChannelName {
-					return modelRow.Channels[i].ChannelName < modelRow.Channels[j].ChannelName
-				}
-				return modelRow.Channels[i].ChannelId < modelRow.Channels[j].ChannelId
-			})
-			for i := range modelRow.Channels {
-				leaf := &modelRow.Channels[i]
-				if leaf.UsageOnly {
-					continue
-				}
-				leafKnown := leaf.OriginalAmount != nil
-				leafOriginal := decimal.Zero
-				if leafKnown {
-					leafOriginal = items[providerBillingSummaryKey{channelId: leaf.ChannelId, model: mk.model, mode: mk.mode, fallback: mk.fallback}].originalQuota
-					modelOriginal = modelOriginal.Add(leafOriginal)
-				} else {
-					modelOriginalKnown = false
-				}
-				if leafKnown && leaf.Discount != nil {
-					leafReference := leafOriginal.Mul(leaf.Discount.Value)
-					leaf.ReferenceAmount = billingStatementOriginalQuota(leafReference)
-					modelReference = modelReference.Add(leafReference)
-				} else {
-					modelReferenceKnown = false
-				}
-			}
-			if modelOriginalKnown && len(modelRow.Channels) > 0 {
-				modelRow.OriginalAmount = billingStatementOriginalQuota(modelOriginal)
-				if modelRow.OriginalAmount == nil {
-					modelRow.EstimateReasons = mergeBillingEstimateReasons(modelRow.EstimateReasons, BillingEstimateAmountOutOfRange)
-				}
-			}
-			if modelReferenceKnown && len(modelRow.Channels) > 0 && modelRow.OriginalAmount != nil {
-				modelRow.ReferenceAmount = billingStatementOriginalQuota(modelReference)
-			}
-			build.group.Models = append(build.group.Models, *modelRow)
-		}
-		sort.Slice(build.group.Models, func(i, j int) bool {
-			if build.group.Models[i].ProviderModel != build.group.Models[j].ProviderModel {
-				return build.group.Models[i].ProviderModel < build.group.Models[j].ProviderModel
-			}
-			if build.group.Models[i].BillingMode != build.group.Models[j].BillingMode {
-				return build.group.Models[i].BillingMode < build.group.Models[j].BillingMode
-			}
-			return build.group.Models[i].ProviderModelFallback
-		})
-		build.group.ModelCount = int64(len(modelIdentities))
+		build.group.ModelCount = int64(len(build.modelIdentities))
 		finalizeBillingReconciliationQuality(&build.group.DataQuality)
 		if urlKey == "" || build.group.UrlKey == urlKey {
 			result = append(result, build.group)
 			accumulateBillingReconciliationQuality(&summary.DataQuality, build.group.DataQuality)
 		}
 	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].Unidentified != result[j].Unidentified {
-			return !result[i].Unidentified
-		}
-		return result[i].DisplayName < result[j].DisplayName
-	})
+	sort.Slice(result, func(i, j int) bool { return providerURLGroupLess(result[i], result[j]) })
+
 	summary.Groups = result
 	finalizeBillingReconciliationQuality(&summary.DataQuality)
 	return summary, nil
@@ -458,11 +497,14 @@ func getBillingURLChannelsById(channelIds []int) (map[int]Channel, error) {
 		BaseURL *string
 		Type    int
 	}
-	if err := DB.Model(&Channel{}).Select("id, name, base_url, type").Where("id IN ?", channelIds).Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	for _, row := range rows {
-		channels[row.Id] = Channel{Id: row.Id, Name: row.Name, BaseURL: row.BaseURL, Type: row.Type}
+	for offset := 0; offset < len(channelIds); offset += 500 {
+		ids := channelIds[offset:min(offset+500, len(channelIds))]
+		if err := DB.Model(&Channel{}).Select("id, name, base_url, type").Where("id IN ?", ids).Limit(500).Find(&rows).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			channels[row.Id] = Channel{Id: row.Id, Name: row.Name, BaseURL: row.BaseURL, Type: row.Type}
+		}
 	}
 	return channels, nil
 }
@@ -470,9 +512,11 @@ func getBillingURLChannelsById(channelIds []int) (map[int]Channel, error) {
 // scanProviderBillingURLPlatformItems shares signed customer settlement facts
 // with details and exports, while provider usage includes only consume rows and
 // provable task settlement usage. Keys retain provider identity and billing mode.
-func scanProviderBillingURLPlatformItems(startTimestamp int64, endTimestamp int64) (map[providerBillingSummaryKey]*ProviderBillingPlatformSummary, error) {
+func scanProviderBillingURLPlatformItems(ctx context.Context, startTimestamp, endTimestamp int64, discounts map[int]ProviderChannelBillingDiscount, channelIDs []int, policy BillingStatementReadPolicy) (map[providerBillingSummaryKey]*ProviderBillingPlatformSummary, error) {
 	platform := make(map[providerBillingSummaryKey]*ProviderBillingPlatformSummary)
-	err := scanUpstreamBillingFacts(context.Background(), UpstreamBillingDetailFilter{Start: startTimestamp, End: endTimestamp}, BillingStatementReadPolicy{}, func(_ Log, log billingReconciliationLog, parsed parsedBillingReconciliationLog) error {
+	taskCache := newUpstreamTaskCacheTracker()
+	coverage := upstreamEvidenceCoverage{}
+	err := scanUpstreamBillingFacts(ctx, UpstreamBillingDetailFilter{Start: startTimestamp, End: endTimestamp, ChannelIds: channelIDs}, policy, func(_ Log, log billingReconciliationLog, parsed parsedBillingReconciliationLog) error {
 		providerModel := strings.TrimSpace(parsed.providerModel)
 		fallback := false
 		if providerModel == "" {
@@ -482,6 +526,9 @@ func scanProviderBillingURLPlatformItems(startTimestamp int64, endTimestamp int6
 		itemKey := providerBillingSummaryKey{channelId: log.ChannelId, model: providerModel, mode: parsed.billingMode, fallback: fallback}
 		item, ok := platform[itemKey]
 		if !ok {
+			if policy.MaxGroups > 0 && len(platform) >= policy.MaxGroups {
+				return fmt.Errorf("upstream summary group limit exceeded")
+			}
 			item = &ProviderBillingPlatformSummary{
 				ChannelId:             log.ChannelId,
 				ProviderModel:         providerModel,
@@ -506,9 +553,27 @@ func scanProviderBillingURLPlatformItems(startTimestamp int64, endTimestamp int6
 			item.customerModels[log.ModelName] = struct{}{}
 		}
 		if log.Type != LogTypeRefund || isProviderTaskUsageAdjustment(log) {
-			accumulateProviderBillingLog(&item.Usage, log, parsed)
+			secondsMissing, secondsUnitKnown := accumulateProviderBillingLog(&item.Usage, log, parsed)
+			if secondsMissing {
+				quality := ensureBillingReconciliationQuality(&item.DataQuality)
+				quality.SecondsUnavailableRows++
+				if secondsUnitKnown {
+					quality.SecondsValueMissingRows++
+				}
+			}
+			// Cache quality measures final metering rows: creation pre-holds are
+			// estimates and one task's rows dedupe to a single missing count.
+			if !upstreamTaskCreatePreHold(parsed) {
+				if parsed.taskID != "" {
+					taskCache.observe(itemKey, log.UserId, parsed)
+				} else {
+					accumulateUpstreamCacheQuality(&item.DataQuality, parsed)
+				}
+			}
+
 		}
-		accumulateProviderBillingItemAmount(item, log, parsed)
+		discount, _ := providerChannelBillingDiscountFor(discounts, 0, log.ChannelId)
+		accumulateProviderBillingItemAmount(item, log, parsed, discount.Discount)
 		if fallback {
 			ensureBillingReconciliationQuality(&item.DataQuality).ProviderModelFallbackRows++
 		}
@@ -518,11 +583,17 @@ func scanProviderBillingURLPlatformItems(startTimestamp int64, endTimestamp int6
 		if parsed.unavailable {
 			ensureBillingReconciliationQuality(&item.DataQuality).UnavailableRequests++
 		}
-		if parsed.cacheWriteUnavailable {
-			ensureBillingReconciliationQuality(&item.DataQuality).CacheWriteUnavailableRequests++
+		coverage.observe(itemKey, log, parsed)
+		if len(coverage.rows) >= upstreamDetailFlushSize {
+			return coverage.flush(ctx, platform)
 		}
 		return nil
 	})
+	if err == nil {
+		err = coverage.flush(ctx, platform)
+	}
+	taskCache.flushInto(platform)
+
 	return platform, err
 }
 
@@ -533,9 +604,9 @@ func scanProviderBillingURLPlatformItems(startTimestamp int64, endTimestamp int6
 // so they stay in the usage view, never enter the amount, and are counted
 // separately. Rows whose frozen price evidence is incomplete leave the amount
 // unknown instead of being dropped or zero-filled.
-func accumulateProviderBillingItemAmount(item *ProviderBillingPlatformSummary, log billingReconciliationLog, parsed parsedBillingReconciliationLog) {
-	if isNativeChannelTestLog(log.Type, log.TokenId, log.TokenName, log.Content) {
-		ensureBillingReconciliationQuality(&item.DataQuality).UsageWithoutAmountRows++
+func accumulateProviderBillingItemAmount(item *ProviderBillingPlatformSummary, log billingReconciliationLog, parsed parsedBillingReconciliationLog, coefficient decimal.Decimal) {
+	if parsed.isChannelTest && log.Type == LogTypeConsume {
+		accumulateUpstreamTestAmount(item, log, parsed, coefficient)
 		return
 	}
 	if log.Type != LogTypeConsume && log.Type != LogTypeRefund {
@@ -551,10 +622,11 @@ func accumulateProviderBillingItemAmount(item *ProviderBillingPlatformSummary, l
 	if len(reasons) > 0 {
 		item.EstimateReasons = mergeBillingEstimateReasons(item.EstimateReasons, reasons...)
 		item.originalComplete = false
-		ensureBillingReconciliationQuality(&item.DataQuality).MissingHistoricalPriceRows++
+		accumulateBillingEstimateReasonQuality(ensureBillingReconciliationQuality(&item.DataQuality), reasons)
 		return
 	}
 	item.originalQuota = item.originalQuota.Add(original)
+	item.referenceQuota = item.referenceQuota.Add(UpstreamReferenceQuota(original, coefficient))
 	item.originalQuotaKnown = true
 }
 
@@ -562,7 +634,7 @@ func accumulateProviderBillingItemAmount(item *ProviderBillingPlatformSummary, l
 // from the accumulated decimals, and keeps estimate reasons as the quality
 // marker when any money-bearing row could not be restored.
 func finalizeProviderBillingItemAmount(item *ProviderBillingPlatformSummary) {
-	item.UsageOnly = item.settlementRows == 0
+	item.UsageOnly = item.settlementRows == 0 && item.testMoneyRows == 0
 	if item.originalComplete && (item.originalQuotaKnown || (item.settlementRows > 0 && item.moneyRows == 0)) {
 		item.OriginalAmount = billingStatementOriginalQuota(item.originalQuota)
 		if item.OriginalAmount == nil {
@@ -583,7 +655,7 @@ func providerChannelDiscountProjection(record ProviderChannelBillingDiscount) Pr
 	} else if strings.HasPrefix(record.Reason, reasonChannelDiscountMigrated) {
 		source = "migrated"
 		sourcePeriod = record.PeriodStart
-	} else if record.CopiedFromPeriod > 0 && record.Version == 1 {
+	} else if record.CopiedFromPeriod > 0 && record.Version <= 1 {
 		source = "previous_period"
 		sourcePeriod = record.CopiedFromPeriod
 	}
@@ -596,15 +668,17 @@ func providerChannelDiscountProjection(record ProviderChannelBillingDiscount) Pr
 // documented reporting behavior and never rewrites history.
 func GetChannelIdsByNormalizedBaseURL(urlKey string) ([]int, error) {
 	var channels []Channel
-	if err := DB.Select("id, base_url, type").Find(&channels).Error; err != nil {
-		return nil, err
-	}
 	ids := make([]int, 0)
-	for _, channel := range channels {
-		key, _ := billingURLGroupIdentity(channel, true, channel.Id)
-		if key == urlKey {
-			ids = append(ids, channel.Id)
+	if err := DB.Select("id, base_url, type").FindInBatches(&channels, 500, func(tx *gorm.DB, batch int) error {
+		for _, channel := range channels {
+			key, _ := billingURLGroupIdentity(channel, true, channel.Id)
+			if key == urlKey {
+				ids = append(ids, channel.Id)
+			}
 		}
+		return nil
+	}).Error; err != nil {
+		return nil, err
 	}
 	return ids, nil
 }

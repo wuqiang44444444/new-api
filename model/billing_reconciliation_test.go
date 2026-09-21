@@ -201,18 +201,17 @@ func TestProviderBillingSummaryUsesUnmappedCustomerModelAsExactProviderIdentity(
 	summary, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
 	require.Len(t, summary.Groups, 1)
-	require.Len(t, summary.Groups[0].Models, 1)
-	item := summary.Groups[0].Models[0]
-	assert.Equal(t, "gpt-5.6-sol", item.ProviderModel)
-	assert.False(t, item.ProviderModelFallback)
-	assert.Equal(t, BillingReconciliationModeToken, item.BillingMode)
-	assert.Zero(t, item.DataQuality.ProviderModelFallbackRows)
-	require.Len(t, item.Channels, 1)
-	leaf := item.Channels[0]
+	require.Len(t, summary.Groups[0].Channels, 1)
+	leaf := summary.Groups[0].Channels[0].Models[0]
+	assert.Equal(t, "gpt-5.6-sol", leaf.ProviderModel)
+	assert.False(t, leaf.ProviderModelFallback)
+	assert.Equal(t, BillingReconciliationModeToken, leaf.BillingMode)
+	assert.Zero(t, leaf.DataQuality.ProviderModelFallbackRows)
+	assert.Equal(t, 52, leaf.DetailFilter.ChannelId)
 	assert.Equal(t, []string{"gpt-5.6-sol"}, leaf.CustomerModels)
-	require.NotNil(t, leaf.Discount)
-	assert.True(t, leaf.Discount.Value.Equal(decimal.NewFromInt(1)))
-	assert.Equal(t, "default", leaf.Discount.Source)
+	require.NotNil(t, summary.Groups[0].Channels[0].Discount)
+	assert.True(t, summary.Groups[0].Channels[0].Discount.Value.Equal(decimal.NewFromInt(1)))
+	assert.Equal(t, "default", summary.Groups[0].Channels[0].Discount.Source)
 	encoded, err := common.Marshal(summary)
 	require.NoError(t, err)
 	assert.NotContains(t, string(encoded), `"provider_usage"`)
@@ -235,12 +234,12 @@ func TestProviderBillingSummaryMarksOnlyBrokenMappedIdentityAsFallback(t *testin
 	summary, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
 	require.Len(t, summary.Groups, 1)
-	require.Len(t, summary.Groups[0].Models, 1)
-	item := summary.Groups[0].Models[0]
-	assert.Equal(t, "customer-model", item.ProviderModel)
-	assert.True(t, item.ProviderModelFallback)
-	require.NotNil(t, item.DataQuality)
-	assert.EqualValues(t, 1, item.DataQuality.ProviderModelFallbackRows)
+	require.Len(t, summary.Groups[0].Channels, 1)
+	leaf := summary.Groups[0].Channels[0].Models[0]
+	assert.Equal(t, "customer-model", leaf.ProviderModel)
+	assert.True(t, leaf.ProviderModelFallback)
+	require.NotNil(t, leaf.DataQuality)
+	assert.EqualValues(t, 1, leaf.DataQuality.ProviderModelFallbackRows)
 }
 
 func TestUsageLogDetailFilterUsesStableTokenId(t *testing.T) {
@@ -374,10 +373,10 @@ func TestProviderBillingDetailDoesNotNarrowMergedProviderModelToOneCustomerModel
 	summary, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
 	require.Len(t, summary.Groups, 1)
-	require.Len(t, summary.Groups[0].Models, 1)
-	modelRow := summary.Groups[0].Models[0]
-	require.Len(t, modelRow.Channels, 1)
-	assert.Empty(t, modelRow.Channels[0].DetailFilter.ModelName)
-	assert.Equal(t, []string{"customer-a", "customer-b"}, modelRow.Channels[0].CustomerModels)
-	assert.EqualValues(t, 35, modelRow.Usage.InputTokens)
+	require.Len(t, summary.Groups[0].Channels, 1)
+	leaf := summary.Groups[0].Channels[0].Models[0]
+	assert.Empty(t, leaf.DetailFilter.ModelName)
+	assert.Equal(t, []string{"customer-a", "customer-b"}, leaf.CustomerModels)
+	assert.EqualValues(t, 35, leaf.Usage.InputTokens)
+	assert.EqualValues(t, 35, summary.Groups[0].Usage.InputTokens)
 }

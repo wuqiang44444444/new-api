@@ -1,5 +1,5 @@
 import { Info } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -96,6 +96,8 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
   const [auditLoading, setAuditLoading] = useState(false)
   const [version, setVersion] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
 
@@ -107,6 +109,7 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
     if (!props.open) return
     let cancelled = false
     setLoading(true)
+    setLoadError(null)
     const load = async () => {
       try {
         const [optionsResponse, snapshotResponse] = await Promise.all([
@@ -139,29 +142,40 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
           })
           setVersion(source.version)
         } else if (props.initial) {
-          setDraft((current) => ({ ...current, rules: current.rules.map((rule) =>
-            templateRuleToDraft({ public_model: rule.model, channel_id: rule.channel_id,
-              route_group: rule.route_group, ratio_units: Math.round(Number(rule.discount) * 100_000_000),
-              available: rule.available }, channelGroups, groupOptions)
-          ) }))
+          setDraft((current) => ({
+            ...current,
+            rules: current.rules.map((rule) =>
+              templateRuleToDraft(
+                {
+                  public_model: rule.model,
+                  channel_id: rule.channel_id,
+                  route_group: rule.route_group,
+                  ratio_units: Math.round(Number(rule.discount) * 100_000_000),
+                  available: rule.available,
+                },
+                channelGroups,
+                groupOptions
+              )
+            ),
+          }))
         }
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
     load().catch((error: unknown) => {
-      if (!cancelled) {
-        toast.error(
-          error instanceof Error ? error.message : t('Loading failed')
-        )
-      }
+      if (cancelled) return
+      const message =
+        error instanceof Error ? error.message : t('Loading failed')
+      setLoadError(message)
+      toast.error(message)
     })
     return () => {
       cancelled = true
     }
     // Runs once per open/template switch; parents mount this drawer fresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.open, templateId])
+  }, [props.open, templateId, reloadToken])
 
   const updateRule = (index: number, patch: Partial<ContractRuleDraft>) => {
     setDraft((current) => ({
@@ -342,6 +356,153 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
       .finally(() => setAuditLoading(false))
   }
 
+  let configurationBody: ReactNode
+  if (loading) {
+    configurationBody = (
+      <div className='text-muted-foreground py-12 text-center'>
+        {t('Loading...')}
+      </div>
+    )
+  } else if (loadError) {
+    configurationBody = (
+      <Alert>
+        <Info />
+        <AlertTitle>{t('Loading failed')}</AlertTitle>
+        <AlertDescription>
+          <p>{loadError}</p>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={() => setReloadToken((token) => token + 1)}
+          >
+            {t('Retry')}
+          </Button>
+        </AlertDescription>
+      </Alert>
+    )
+  } else {
+    configurationBody = (
+      <FieldGroup>
+        <Alert>
+          <Info />
+          <AlertTitle>{t('No customer price context')}</AlertTitle>
+          <AlertDescription>
+            {t(
+              'Template price references use the plain native group ratio. Target customers settle with their own group ratios and the contract discount.'
+            )}
+          </AlertDescription>
+        </Alert>
+
+        <Field>
+          <FieldLabel htmlFor='contract-template-name'>
+            {t('Template name')}
+          </FieldLabel>
+          <Input
+            id='contract-template-name'
+            value={draft.name}
+            maxLength={128}
+            onChange={(event) => {
+              const name = event.target.value
+              setDraft((current) => ({ ...current, name }))
+              setDirty(true)
+            }}
+            placeholder={t('Enter a name')}
+          />
+        </Field>
+
+        <Field className='flex-row items-center justify-between rounded-lg border p-3'>
+          <div>
+            <FieldLabel htmlFor='contract-template-enabled'>
+              {t('Enable template')}
+            </FieldLabel>
+            <p className='text-muted-foreground text-xs'>
+              {t('Only enabled templates can create customer contracts.')}
+            </p>
+          </div>
+          <Switch
+            id='contract-template-enabled'
+            checked={draft.enabled}
+            onCheckedChange={(checked) => {
+              setDraft((current) => ({ ...current, enabled: checked }))
+              setDirty(true)
+            }}
+          />
+        </Field>
+
+        <CustomerContractAddRule
+          channelGroups={channels}
+          group={addGroup}
+          model={addModel}
+          channelIds={addChannelIds}
+          discount={addDiscount}
+          onGroupChange={setAddGroup}
+          onModelChange={(model) => {
+            setAddModel(model)
+            const candidates = model
+              ? channelOptionsForRule(channels, {
+                  route_group: addGroup,
+                  model,
+                })
+              : []
+            setAddChannelIds(
+              candidates.length === 1 ? [String(candidates[0].id)] : []
+            )
+          }}
+          onChannelsChange={setAddChannelIds}
+          onDiscountChange={setAddDiscount}
+          onAdd={addRule}
+        />
+
+        {draft.rules.length === 0 ? (
+          <Empty className='border'>
+            <EmptyHeader>
+              <EmptyTitle>{t('No contract models')}</EmptyTitle>
+              <EmptyDescription>
+                {t(
+                  'Add a model rule to define which models receive this contract discount.'
+                )}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <CustomerContractRuleList
+            rules={draft.rules}
+            channelGroups={channels}
+            search={ruleSearch}
+            onSearchChange={setRuleSearch}
+            onUpdate={updateRule}
+            onRemove={(index) => {
+              setDraft((current) => ({
+                ...current,
+                rules: current.rules.filter(
+                  (_, ruleIndex) => ruleIndex !== index
+                ),
+              }))
+              setDirty(true)
+            }}
+          />
+        )}
+
+        <Field>
+          <FieldLabel htmlFor='contract-template-reason'>
+            {t('Change reason')}
+          </FieldLabel>
+          <Textarea
+            id='contract-template-reason'
+            value={reason}
+            onChange={(event) => {
+              setReason(event.target.value)
+              setDirty(true)
+            }}
+            maxLength={500}
+            placeholder={t('Required for audit history')}
+          />
+        </Field>
+      </FieldGroup>
+    )
+  }
+
   return (
     <Sheet open={props.open} onOpenChange={props.onOpenChange}>
       <SheetContent className='w-[96vw] sm:max-w-[1080px]'>
@@ -376,131 +537,7 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
             value='configuration'
             className='min-h-0 overflow-y-auto pb-4'
           >
-            {loading ? (
-              <div className='text-muted-foreground py-12 text-center'>
-                {t('Loading...')}
-              </div>
-            ) : (
-              <FieldGroup>
-                <Alert>
-                  <Info />
-                  <AlertTitle>{t('No customer price context')}</AlertTitle>
-                  <AlertDescription>
-                    {t(
-                      'Template price references use the plain native group ratio. Target customers settle with their own group ratios and the contract discount.'
-                    )}
-                  </AlertDescription>
-                </Alert>
-
-                <Field>
-                  <FieldLabel htmlFor='contract-template-name'>
-                    {t('Template name')}
-                  </FieldLabel>
-                  <Input
-                    id='contract-template-name'
-                    value={draft.name}
-                    maxLength={128}
-                    onChange={(event) => {
-                      const name = event.target.value
-                      setDraft((current) => ({ ...current, name }))
-                      setDirty(true)
-                    }}
-                    placeholder={t('Enter a name')}
-                  />
-                </Field>
-
-                <Field className='flex-row items-center justify-between rounded-lg border p-3'>
-                  <div>
-                    <FieldLabel htmlFor='contract-template-enabled'>
-                      {t('Enable template')}
-                    </FieldLabel>
-                    <p className='text-muted-foreground text-xs'>
-                      {t(
-                        'Only enabled templates can create customer contracts.'
-                      )}
-                    </p>
-                  </div>
-                  <Switch
-                    id='contract-template-enabled'
-                    checked={draft.enabled}
-                    onCheckedChange={(checked) => {
-                      setDraft((current) => ({ ...current, enabled: checked }))
-                      setDirty(true)
-                    }}
-                  />
-                </Field>
-
-                <CustomerContractAddRule
-                  channelGroups={channels}
-                  group={addGroup}
-                  model={addModel}
-                  channelIds={addChannelIds}
-                  discount={addDiscount}
-                  onGroupChange={setAddGroup}
-                  onModelChange={(model) => {
-                    setAddModel(model)
-                    const candidates = model
-                      ? channelOptionsForRule(channels, {
-                          route_group: addGroup,
-                          model,
-                        })
-                      : []
-                    setAddChannelIds(
-                      candidates.length === 1 ? [String(candidates[0].id)] : []
-                    )
-                  }}
-                  onChannelsChange={setAddChannelIds}
-                  onDiscountChange={setAddDiscount}
-                  onAdd={addRule}
-                />
-
-                {draft.rules.length === 0 ? (
-                  <Empty className='border'>
-                    <EmptyHeader>
-                      <EmptyTitle>{t('No contract models')}</EmptyTitle>
-                      <EmptyDescription>
-                        {t(
-                          'Add a model rule to define which models receive this contract discount.'
-                        )}
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                ) : (
-                  <CustomerContractRuleList
-                    rules={draft.rules}
-                    channelGroups={channels}
-                    search={ruleSearch}
-                    onSearchChange={setRuleSearch}
-                    onUpdate={updateRule}
-                    onRemove={(index) => {
-                      setDraft((current) => ({
-                        ...current,
-                        rules: current.rules.filter(
-                          (_, ruleIndex) => ruleIndex !== index
-                        ),
-                      }))
-                      setDirty(true)
-                    }}
-                  />
-                )}
-
-                <Field>
-                  <FieldLabel htmlFor='contract-template-reason'>
-                    {t('Change reason')}
-                  </FieldLabel>
-                  <Textarea
-                    id='contract-template-reason'
-                    value={reason}
-                    onChange={(event) => {
-                      setReason(event.target.value)
-                      setDirty(true)
-                    }}
-                    maxLength={500}
-                    placeholder={t('Required for audit history')}
-                  />
-                </Field>
-              </FieldGroup>
-            )}
+            {configurationBody}
           </TabsContent>
 
           {editing && (

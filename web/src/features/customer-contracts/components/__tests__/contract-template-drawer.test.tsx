@@ -126,16 +126,77 @@ it('loads audit history on first opening and distinguishes failed loads from emp
   expect(screen.queryByText('No contract changes yet')).not.toBeInTheDocument()
 })
 
+it('surfaces a failed options load with an inline retry that recovers', async () => {
+  api.options.mockResolvedValueOnce({
+    success: false,
+    message: 'options unavailable',
+  })
+  render(<ContractTemplateDrawer open onOpenChange={vi.fn()} templateId={null} />)
+  expect(await screen.findByRole('alert')).toHaveTextContent('Loading failed')
+  expect(screen.getByText('options unavailable')).toBeInTheDocument()
+  expect(screen.queryByLabelText('Template name')).not.toBeInTheDocument()
+
+  api.options.mockResolvedValue({
+    success: true,
+    data: { channels: [], options: [] },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+  expect(await screen.findByLabelText('Template name')).toBeInTheDocument()
+  expect(api.options).toHaveBeenCalledTimes(2)
+})
+
 it('rebuilds save-as pricing with ordinary template group ratios', async () => {
-  api.options.mockResolvedValue({ success: true, data: {
-    channels: [{ group: 'default', native_group_ratio: '1', special_group_ratio: false, models: [] }],
-    options: [{ group: 'default', native_group_ratio: '1', models: ['chat'],
-      prices: { chat: { price_type: 'model_ratio', base_model_ratio: '1' } } }] } })
-  render(<ContractTemplateDrawer open onOpenChange={vi.fn()} initial={{ name: 'Copy', rules: [{
-    model: 'chat', channel_id: 11, route_group: 'default', discount: '0.8', available: true,
-    native_group_ratio: '0.25', effective_multiplier: '0.2', special_group_ratio: true,
-    price: { price_type: 'model_ratio', base_model_ratio: '1', final_model_ratio: '0.2' },
-  }] }} />)
+  api.options.mockResolvedValue({
+    success: true,
+    data: {
+      channels: [
+        {
+          group: 'default',
+          native_group_ratio: '1',
+          special_group_ratio: false,
+          models: [],
+        },
+      ],
+      options: [
+        {
+          group: 'default',
+          native_group_ratio: '1',
+          models: ['chat'],
+          prices: {
+            chat: { price_type: 'model_ratio', base_model_ratio: '1' },
+          },
+        },
+      ],
+    },
+  })
+  render(
+    <ContractTemplateDrawer
+      open
+      onOpenChange={vi.fn()}
+      initial={{
+        name: 'Copy',
+        rules: [
+          {
+            model: 'chat',
+            channel_id: 11,
+            route_group: 'default',
+            discount: '0.8',
+            available: true,
+            native_group_ratio: '0.25',
+            effective_multiplier: '0.2',
+            special_group_ratio: true,
+            price: {
+              price_type: 'model_ratio',
+              base_model_ratio: '1',
+              final_model_ratio: '0.2',
+            },
+          },
+        ],
+      }}
+    />
+  )
   await screen.findByLabelText('Template name')
-  expect(screen.queryByText('A special native group ratio also applies')).not.toBeInTheDocument()
+  expect(
+    screen.queryByText('A special native group ratio also applies')
+  ).not.toBeInTheDocument()
 })

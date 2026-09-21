@@ -19,10 +19,11 @@ import "github.com/QuantumNous/new-api/relaykit/dto"
 // completion_tokens_details; when absent, completion_tokens_details is kept
 // as decoded. Missing details are never inferred from the totals, and
 // duplicate representations of the same tokens are never added together.
-func normalizeOpenAIUsage(usage *dto.Usage) {
+func normalizeOpenAIUsage(usage *dto.Usage, body []byte) {
 	if usage == nil {
 		return
 	}
+	recordImageCacheReadEvidence(usage, body)
 	if usage.InputTokens != 0 {
 		usage.PromptTokens = usage.InputTokens
 	}

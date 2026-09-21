@@ -73,11 +73,30 @@ export async function getAdminCustomerStatements(
 
 // 统一上游对账：URL 分组汇总 + 原价/折后参考金额 + 渠道月度折扣编辑区。
 export async function getAdminUpstreamReconciliation(
-  params: PeriodParams & { url_key?: string }
+  params: PeriodParams & {
+    url_key?: string
+    level?: 'groups' | 'channels' | 'models' | 'options'
+    channel_id?: number
+    search?: string
+    page?: number
+    page_size?: number
+  },
+  signal?: AbortSignal
 ) {
   const response = await api.get<
     ApiResponse<BillingEnvelope<ProviderUrlSummary>>
-  >('/api/billing/admin/upstream-summary', { params })
+  >('/api/billing/admin/upstream-summary', {
+    // React Query owns deduplication and cancellation for this request.
+    disableDuplicate: !!signal,
+    skipErrorHandler: true,
+    signal,
+    params: {
+      ...params,
+      p: params.page ?? 1,
+      page_size: params.page_size ?? 20,
+      page: undefined,
+    },
+  })
   return response.data
 }
 
@@ -86,7 +105,6 @@ export async function putAdminUpstreamDiscount(payload: {
   channel_id: number
   discount: string
   expected_version: number
-  reason: string
 }) {
   const response = await api.put<ApiResponse<unknown>>(
     '/api/billing/admin/upstream-discounts',
@@ -95,12 +113,28 @@ export async function putAdminUpstreamDiscount(payload: {
   return response.data
 }
 
+// 上游名称：按 URL 分组键保存或清空（空名称恢复默认安全 URL 展示）。
+export async function putAdminUpstreamURLName(payload: {
+  url_key: string
+  name: string
+}) {
+  const response = await api.put<ApiResponse<unknown>>(
+    '/api/billing/admin/upstream-url-names',
+    payload
+  )
+  return response.data
+}
+
 export async function postAdminUpstreamDiscountInit(payload: {
   period_start: number
-  channel_ids: number[]
+  channel_ids?: number[]
+  end_timestamp?: number
 }) {
   const response = await api.post<
-    ApiResponse<{ outcomes: Array<{ channel_id: number; outcome: string }> }>
+    ApiResponse<{
+      outcomes?: Array<{ channel_id: number; outcome: string }>
+      counts?: Record<string, number>
+    }>
   >('/api/billing/admin/upstream-discounts/initialize', payload)
   return response.data
 }
@@ -109,7 +143,9 @@ export async function getAdminUpstreamDetails(
   params: PeriodParams & {
     channel_id?: number
     url_key?: string
+    evidence_filter?: string
     model_name?: string
+    provider_model_fallback?: boolean
     billing_mode?: string
     request_id?: string
     upstream_request_id?: string

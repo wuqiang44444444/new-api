@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -81,6 +82,7 @@ func TestGetProviderBillingURLSummaryMergesChannelsByCurrentBaseURL(t *testing.T
 	merged := summary.Groups[0]
 	assert.Equal(t, "https://api.example.com", merged.UrlKey)
 	assert.Equal(t, "https://api.example.com", merged.BaseURL)
+	assert.Empty(t, merged.CustomName, "no alias is saved for this grouping key")
 	assert.False(t, merged.Unidentified)
 	assert.False(t, merged.Deleted)
 	assert.Equal(t, []int{21, 22}, merged.ChannelIds)
@@ -90,24 +92,28 @@ func TestGetProviderBillingURLSummaryMergesChannelsByCurrentBaseURL(t *testing.T
 	assert.EqualValues(t, 0, merged.Usage.BillableCalls)
 	assert.EqualValues(t, 300, merged.Usage.InputTokens)
 
-	require.Len(t, merged.Models, 1)
-	mergedModel := merged.Models[0]
-	assert.Equal(t, "shared-model", mergedModel.ProviderModel)
-	assert.Equal(t, BillingReconciliationModeToken, mergedModel.BillingMode)
-	assert.False(t, mergedModel.ProviderModelFallback)
-	assert.EqualValues(t, 2, mergedModel.Usage.Requests)
-	assert.EqualValues(t, 300, mergedModel.Usage.InputTokens)
-	require.Len(t, mergedModel.Channels, 2)
-	assert.Equal(t, "alpha", mergedModel.Channels[0].ChannelName)
-	assert.EqualValues(t, 100, mergedModel.Channels[0].Usage.InputTokens)
-	assert.Equal(t, "beta", mergedModel.Channels[1].ChannelName)
-	assert.EqualValues(t, 200, mergedModel.Channels[1].Usage.InputTokens)
-	assert.Equal(t, 21, mergedModel.Channels[0].DetailFilter.ChannelId)
-	assert.Equal(t, "shared-model", mergedModel.Channels[0].DetailFilter.ModelName)
+	// One channel parent row per channel; same-named models stay inside their
+	// own channel row with their per-channel coefficient.
+	require.Len(t, merged.Channels, 2)
+	alpha := merged.Channels[0]
+	assert.Equal(t, "alpha", alpha.ChannelName)
+	assert.Equal(t, 21, alpha.ChannelId)
+	require.Len(t, alpha.Models, 1)
+	assert.Equal(t, "shared-model", alpha.Models[0].ProviderModel)
+	assert.False(t, alpha.Models[0].ProviderModelFallback)
+	assert.Equal(t, BillingReconciliationModeToken, alpha.Models[0].BillingMode)
+	assert.EqualValues(t, 100, alpha.Models[0].Usage.InputTokens)
+	assert.Equal(t, "shared-model", alpha.Models[0].DetailFilter.ModelName)
+	assert.Equal(t, 21, alpha.Models[0].DetailFilter.ChannelId)
+	beta := merged.Channels[1]
+	assert.Equal(t, "beta", beta.ChannelName)
+	require.Len(t, beta.Models, 1)
+	assert.EqualValues(t, 200, beta.Models[0].Usage.InputTokens)
+	assert.EqualValues(t, 200, beta.Usage.InputTokens)
 
-	// The URL group total equals the sum of its channel contributions.
-	assert.EqualValues(t, mergedModel.Channels[0].Usage.InputTokens+mergedModel.Channels[1].Usage.InputTokens, merged.Usage.InputTokens)
-	assert.EqualValues(t, mergedModel.Channels[0].Usage.Requests+mergedModel.Channels[1].Usage.Requests, merged.Usage.Requests)
+	// Channel usage totals reconcile with their leaves and the group total.
+	assert.EqualValues(t, merged.Channels[0].Usage.InputTokens+merged.Channels[1].Usage.InputTokens, merged.Usage.InputTokens)
+	assert.EqualValues(t, merged.Channels[0].Usage.Requests+merged.Channels[1].Usage.Requests, merged.Usage.Requests)
 	// Amounts: refunds provable as task adjustments stay negative in the
 	// official-price projection, including ordinary customer refunds.
 	require.NotNil(t, merged.OriginalAmount)
@@ -116,9 +122,8 @@ func TestGetProviderBillingURLSummaryMergesChannelsByCurrentBaseURL(t *testing.T
 	assert.EqualValues(t, 1400, *merged.ReferenceAmount)
 	assert.Zero(t, merged.DiscountPendingChannels)
 	assert.True(t, merged.ReferenceKnown)
-	require.Len(t, merged.ChannelDiscounts, 2)
-	require.NotNil(t, merged.ChannelDiscounts[0].Discount)
-	require.NotNil(t, merged.ChannelDiscounts[1].Discount)
+	require.NotNil(t, alpha.Discount)
+	require.NotNil(t, beta.Discount)
 }
 
 func TestGetProviderBillingURLSummaryKeepsUnidentifiableAndDeletedChannelsSeparate(t *testing.T) {
@@ -224,11 +229,11 @@ func TestProviderBillingURLSummaryMatchesAllChannelUsageAndQualityDimensions(t *
 	require.Len(t, urls.Groups, 1)
 	group := urls.Groups[0]
 	assert.EqualValues(t, 2, group.ModelCount, "token and per-call share one identity; unknown fallback stays separate")
-	require.Len(t, group.Models, 3)
+	require.Len(t, group.Channels, 2)
 	var total ProviderBillingUsage
 	var quality *BillingReconciliationDataQuality
-	for _, urlModel := range group.Models {
-		for _, leaf := range urlModel.Channels {
+	for _, channel := range group.Channels {
+		for _, leaf := range channel.Models {
 			total.Requests += leaf.Usage.Requests
 			total.BillableCalls += leaf.Usage.BillableCalls
 			total.InputTokens += leaf.Usage.InputTokens
@@ -241,19 +246,61 @@ func TestProviderBillingURLSummaryMatchesAllChannelUsageAndQualityDimensions(t *
 	finalizeBillingReconciliationQuality(&quality)
 	assert.Equal(t, total, group.Usage)
 	assert.Equal(t, quality, group.DataQuality)
-	// Leaves reconcile with their model rows and the group total.
-	var modelTotal ProviderBillingUsage
-	for _, urlModel := range group.Models {
+	// Channel totals reconcile with their model leaves and the group total.
+	var channelTotal ProviderBillingUsage
+	for _, channel := range group.Channels {
 		var rowTotal ProviderBillingUsage
-		for _, leaf := range urlModel.Channels {
+		for _, leaf := range channel.Models {
 			accumulateProviderBillingUsage(&rowTotal, leaf.Usage)
 		}
-		assert.Equal(t, rowTotal, urlModel.Usage)
-		accumulateProviderBillingUsage(&modelTotal, urlModel.Usage)
+		assert.Equal(t, rowTotal, channel.Usage)
+		accumulateProviderBillingUsage(&channelTotal, channel.Usage)
 	}
-	assert.Equal(t, modelTotal, group.Usage)
+	assert.Equal(t, channelTotal, group.Usage)
 	assert.EqualValues(t, 6, group.Usage.Requests)
 	assert.EqualValues(t, 2, group.Usage.BillableCalls)
 	assert.Positive(t, group.Usage.CacheReadTokens)
 	assert.Positive(t, group.Usage.CacheWriteTokens)
+}
+
+// The same provider model name used by two channels of one URL group stays in
+// its own channel row; amounts still reconcile from leaves to group.
+func TestProviderBillingURLSummaryKeepsSameModelInsideEachChannel(t *testing.T) {
+	db := setupBillingReconciliationTestDB(t)
+	require.NoError(t, db.Create(&[]Channel{
+		{Id: 31, Name: "one", BaseURL: urlPtr("https://split.example.com")},
+		{Id: 32, Name: "two", BaseURL: urlPtr("https://split.example.com/")},
+	}).Error)
+	require.NoError(t, SaveProviderChannelBillingDiscount(&ProviderChannelBillingDiscount{PeriodStart: 1000, ChannelId: 31, Discount: decimal.RequireFromString("0.5"), Reason: "half"}, 0, 9))
+	require.NoError(t, db.Create(&[]Log{
+		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, ChannelId: 31, ModelName: "shared", PromptTokens: 10, Quota: 1000, Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`},
+		{UserId: 7, CreatedAt: 1101, Type: LogTypeConsume, ChannelId: 32, ModelName: "shared", PromptTokens: 20, Quota: 400, Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`},
+	}).Error)
+
+	summary, err := GetProviderBillingURLSummary(1000, 1500, 1000, "https://split.example.com")
+	require.NoError(t, err)
+	require.Len(t, summary.Groups, 1)
+	group := summary.Groups[0]
+	assert.EqualValues(t, 1, group.ModelCount, "one model identity across both channels")
+	require.Len(t, group.Channels, 2)
+	for _, channel := range group.Channels {
+		require.Len(t, channel.Models, 1)
+		assert.Equal(t, "shared", channel.Models[0].ProviderModel)
+	}
+	one, two := group.Channels[0], group.Channels[1]
+	assert.Equal(t, "one", one.ChannelName)
+	require.NotNil(t, one.OriginalAmount)
+	require.NotNil(t, one.ReferenceAmount)
+	assert.EqualValues(t, 1000, *one.OriginalAmount)
+	assert.EqualValues(t, 500, *one.ReferenceAmount, "the saved coefficient applies only inside its channel")
+	require.NotNil(t, two.OriginalAmount)
+	require.NotNil(t, two.ReferenceAmount)
+	assert.EqualValues(t, 400, *two.OriginalAmount)
+	assert.EqualValues(t, 400, *two.ReferenceAmount, "an unconfigured channel projects the default coefficient 1")
+	require.NotNil(t, group.OriginalAmount)
+	assert.EqualValues(t, 1400, *group.OriginalAmount)
+	require.NotNil(t, group.ReferenceAmount)
+	assert.EqualValues(t, 900, *group.ReferenceAmount)
+	assert.True(t, group.ReferenceKnown)
+	assert.Equal(t, 0, group.DiscountPendingChannels, "unconfigured channels are defaults, not migration-pending")
 }

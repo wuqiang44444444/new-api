@@ -103,13 +103,17 @@ func TestHistoricalChannelTestCacheUnknownIsAReadOnlyProjection(t *testing.T) {
 	assert.EqualValues(t, 5, summary.Groups[0].Usage.Requests)
 	assert.EqualValues(t, 12, summary.Groups[0].Usage.CacheWriteTokens)
 	require.NotNil(t, summary.DataQuality)
-	assert.EqualValues(t, 1, summary.DataQuality.CacheWriteUnavailableRequests)
+	// 缓存缺失按计量证据统计：第 1 行（测试）与第 4 行（普通行，同样无缓存
+	// 写入证据）都缺证据，因此计数为 2 而不是只统计测试行。
+	assert.EqualValues(t, 2, summary.DataQuality.CacheWriteUnavailableRequests)
 	assert.Equal(t, "partial", summary.Groups[0].DataQuality.Status)
-	for _, item := range summary.Groups[0].Models {
-		if item.BillingMode == BillingReconciliationModeToken {
-			assert.EqualValues(t, 1, item.DataQuality.CacheWriteUnavailableRequests)
-		} else {
-			assert.Zero(t, item.DataQuality.CacheWriteUnavailableRequests)
+	for _, channel := range summary.Groups[0].Channels {
+		for _, leaf := range channel.Models {
+			if leaf.BillingMode == BillingReconciliationModeToken {
+				assert.EqualValues(t, 2, leaf.DataQuality.CacheWriteUnavailableRequests)
+			} else {
+				assert.Zero(t, leaf.DataQuality.CacheWriteUnavailableRequests)
+			}
 		}
 	}
 	for _, format := range []func([]*Log){FormatRootLogs, FormatAdminLogs, func(logs []*Log) { formatUserLogs(logs, 0) }} {

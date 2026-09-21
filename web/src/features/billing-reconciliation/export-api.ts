@@ -1,3 +1,5 @@
+import { isAxiosError } from 'axios'
+
 import i18n from '@/i18n/config'
 import { toIntlLocale } from '@/i18n/languages'
 /*
@@ -19,11 +21,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { getServerErrorMessageKey } from '@/lib/server-error-message'
 
 import type { ApiResponse, BillingMode } from './types'
 
 export type ExportJobType =
+  | 'usage_summary'
   | 'upstream_details'
+  | 'upstream_summary'
   | 'usage_logs'
   | 'statement_details'
   | 'statement_summary'
@@ -38,7 +43,15 @@ export type ExportJobStatus =
   | 'cancelling'
 
 export type CustomerExportFiltersDto = {
-  upstream?: { url_key?: string; channel_ids: number[] }
+  usage_view?: string
+  usage_search?: string
+  upstream?: {
+    all_channels?: boolean
+    group_name?: string
+    url_key?: string
+    channel_ids: number[]
+    provider_model_fallback?: boolean
+  }
   currency?: string
   field_version: number
   start_timestamp: number
@@ -98,6 +111,7 @@ export type CustomerExportJobView = {
 }
 
 export type CustomerExportSubmitPayload = {
+  evidence_filter?: string
   url_key?: string
   job_type: ExportJobType
   start_timestamp: number
@@ -111,6 +125,7 @@ export type CustomerExportSubmitPayload = {
   upstream_request_id?: string
   username?: string
   model_name?: string
+  provider_model_fallback?: boolean
   billing_mode?: string
   language?: string
 }
@@ -126,6 +141,9 @@ export type CustomerExportDownloadFile = {
 
 type ExportEnvelope = ApiResponse<{
   items?: CustomerExportJobView[]
+  total?: number
+  page?: number
+  page_size?: number
   job?: CustomerExportJobView
   files?: CustomerExportDownloadFile[]
   empty_result?: boolean
@@ -182,6 +200,15 @@ export async function createAdminExport(
 // 重新生成（6.2）：按任务自身冻结的范围重新提交一次新尝试。发起人即当前
 // 用户；管理员对历史代客任务继续作用于同一目标客户。
 export async function resubmitExport(job: CustomerExportJobView) {
+  if (job.job_type === 'usage_summary') {
+    const self = job.target_user_id === job.user_id
+    const response = await api.post<ExportEnvelope>(
+      self ? '/api/usage/self/exports' : '/api/usage/admin/exports',
+      { source_job_id: job.job_id },
+      { skipErrorHandler: true }
+    )
+    return assertOk(response.data) as unknown as CustomerExportJobView
+  }
   const payload: CustomerExportSubmitPayload = {
     job_type: job.job_type,
     start_timestamp: job.filters.start_timestamp,
@@ -200,12 +227,11 @@ export async function resubmitExport(job: CustomerExportJobView) {
   payload.username = job.filters.username
   if (job.filters.model_name) payload.model_name = job.filters.model_name
   if (job.filters.billing_mode) payload.billing_mode = job.filters.billing_mode
-  if (job.job_type === 'upstream_details') {
-    const response = await api.post<ExportEnvelope>(
-      '/api/billing/admin/upstream-exports',
-      { source_job_id: job.job_id }
-    )
-    return assertOk(response.data) as unknown as CustomerExportJobView
+  if (
+    job.job_type === 'upstream_details' ||
+    job.job_type === 'upstream_summary'
+  ) {
+    return submitUpstreamExport({ source_job_id: job.job_id })
   }
   if (job.target_user_id !== job.user_id) {
     return createAdminExport(job.target_user_id, payload)
@@ -213,10 +239,17 @@ export async function resubmitExport(job: CustomerExportJobView) {
   return createSelfExport(payload)
 }
 
-export async function listSelfExports() {
-  const response = await api.get<ExportEnvelope>('/api/billing/exports')
+export async function listSelfExports(page = 1, pageSize = 20) {
+  const response = await api.get<ExportEnvelope>('/api/billing/exports', {
+    params: { p: page, page_size: pageSize },
+  })
   const data = assertOk(response.data)
-  return data.items ?? []
+  return {
+    items: data.items ?? [],
+    total: data.total ?? 0,
+    page: data.page ?? page,
+    page_size: data.page_size ?? pageSize,
+  }
 }
 
 export async function getExport(jobId: string) {
@@ -258,14 +291,43 @@ export function isExportJobActive(job: CustomerExportJobView) {
 export async function createUpstreamExport(
   payload: CustomerExportSubmitPayload
 ) {
-  const response = await api.post<ExportEnvelope>(
-    '/api/billing/admin/upstream-exports',
-    {
-      ...payload,
-      language: (payload.language ?? currentExportLanguage()).startsWith('zh')
-        ? 'zh'
-        : 'en',
+  return submitUpstreamExport({
+    ...payload,
+    language: (payload.language ?? currentExportLanguage()).startsWith('zh')
+      ? 'zh'
+      : 'en',
+  })
+}
+
+// Callers own the single toast. Normalize both HTTP and business failures here
+// so new submissions and regeneration preserve the server's specific reason.
+async function submitUpstreamExport(
+  payload: CustomerExportSubmitPayload | { source_job_id: string }
+) {
+  try {
+    const response = await api.post<ExportEnvelope>(
+      '/api/billing/admin/upstream-exports',
+      payload,
+      { skipErrorHandler: true, skipBusinessError: true }
+    )
+    if (!response.data.success) {
+      const key = getServerErrorMessageKey(response.data)
+      if (key) throw new Error(i18n.t(key))
     }
-  )
-  return assertOk(response.data) as unknown as CustomerExportJobView
+    return assertOk(response.data) as unknown as CustomerExportJobView
+  } catch (error) {
+    const key = getServerErrorMessageKey(error)
+    const serverMessage: unknown = isAxiosError(error)
+      ? error.response?.data?.message
+      : undefined
+    if (key) throw new Error(i18n.t(key))
+    if (typeof serverMessage === 'string' && serverMessage.trim()) {
+      throw new Error(i18n.t(serverMessage))
+    }
+    throw new Error(
+      error instanceof Error && error.message
+        ? i18n.t(error.message)
+        : i18n.t('Unable to submit export.')
+    )
+  }
 }

@@ -147,18 +147,25 @@ it('sends the backend page parameter for upstream details', async () => {
     params: expect.objectContaining({ p: 2, page: undefined, page_size: 50 }),
   })
 })
-it('regenerates upstream exports from their authorized frozen job scope', async () => {
-  await resubmitExport({
-    job_id: 'cex_fixture',
-    job_type: 'upstream_details',
-    filters: {
-      field_version: 11,
-      start_timestamp: 1000,
-      end_timestamp: 2000,
-      timezone: 'Asia/Shanghai',
-    },
-  } as CustomerExportJobView)
-  expect(post).toHaveBeenLastCalledWith('/api/billing/admin/upstream-exports', {
-    source_job_id: 'cex_fixture',
-  })
-})
+it.each(['upstream_details', 'upstream_summary'] as const)(
+  'regenerates %s from its authorized frozen job scope',
+  async (jobType) => {
+    await resubmitExport({
+      job_id: 'cex_fixture',
+      job_type: jobType,
+      filters: {
+        field_version: 11,
+        start_timestamp: 1000,
+        end_timestamp: 2000,
+        timezone: 'Asia/Shanghai',
+      },
+    } as CustomerExportJobView)
+    expect(post).toHaveBeenLastCalledWith(
+      '/api/billing/admin/upstream-exports',
+      {
+        source_job_id: 'cex_fixture',
+      },
+      { skipErrorHandler: true, skipBusinessError: true }
+    )
+  }
+)

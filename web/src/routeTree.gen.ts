@@ -58,12 +58,14 @@ import { Route as AuthenticatedUsageLogsIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedUsageLogsSectionRouteImport } from './routes/_authenticated/usage-logs/$section'
 import { Route as AuthenticatedUsageLogsAuditRouteImport } from './routes/_authenticated/usage-logs/audit'
 import { Route as AuthenticatedUsageLogsErrorRouteImport } from './routes/_authenticated/usage-logs/error'
+import { Route as AuthenticatedUsageIndexRouteImport } from './routes/_authenticated/usage/index'
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedWalletIndexRouteImport } from './routes/_authenticated/wallet/index'
 import { Route as PricingModelIdIndexRouteImport } from './routes/pricing/$modelId/index'
 import { Route as AuthenticatedAdminBillingIndexRouteImport } from './routes/_authenticated/admin/billing/index'
 import { Route as AuthenticatedAdminContractTemplatesIndexRouteImport } from './routes/_authenticated/admin/contract-templates/index'
 import { Route as AuthenticatedAdminCustomerContractsIndexRouteImport } from './routes/_authenticated/admin/customer-contracts/index'
+import { Route as AuthenticatedAdminUsageIndexRouteImport } from './routes/_authenticated/admin/usage/index'
 import { Route as AuthenticatedSystemSettingsAuthIndexRouteImport } from './routes/_authenticated/system-settings/auth/index'
 import { Route as AuthenticatedSystemSettingsAuthSectionRouteImport } from './routes/_authenticated/system-settings/auth/$section'
 import { Route as AuthenticatedSystemSettingsBillingIndexRouteImport } from './routes/_authenticated/system-settings/billing/index'
@@ -342,6 +344,11 @@ const AuthenticatedUsageLogsErrorRoute =
     path: '/usage-logs/error',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedUsageIndexRoute = AuthenticatedUsageIndexRouteImport.update({
+  id: '/usage/',
+  path: '/usage/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedUsersIndexRoute = AuthenticatedUsersIndexRouteImport.update({
   id: '/users/',
   path: '/users/',
@@ -374,6 +381,12 @@ const AuthenticatedAdminCustomerContractsIndexRoute =
   AuthenticatedAdminCustomerContractsIndexRouteImport.update({
     id: '/admin/customer-contracts/',
     path: '/admin/customer-contracts/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAdminUsageIndexRoute =
+  AuthenticatedAdminUsageIndexRouteImport.update({
+    id: '/admin/usage/',
+    path: '/admin/usage/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedSystemSettingsAuthIndexRoute =
@@ -509,6 +522,7 @@ export interface FileRoutesByFullPath {
   '/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/task-plugins/': typeof AuthenticatedTaskPluginsIndexRoute
   '/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
+  '/usage/': typeof AuthenticatedUsageIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
   '/wallet/': typeof AuthenticatedWalletIndexRoute
   '/pricing/$modelId/': typeof PricingModelIdIndexRoute
@@ -522,6 +536,7 @@ export interface FileRoutesByFullPath {
   '/admin/billing/': typeof AuthenticatedAdminBillingIndexRoute
   '/admin/contract-templates/': typeof AuthenticatedAdminContractTemplatesIndexRoute
   '/admin/customer-contracts/': typeof AuthenticatedAdminCustomerContractsIndexRoute
+  '/admin/usage/': typeof AuthenticatedAdminUsageIndexRoute
   '/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/system-settings/content/': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -576,6 +591,7 @@ export interface FileRoutesByTo {
   '/system-settings': typeof AuthenticatedSystemSettingsIndexRoute
   '/task-plugins': typeof AuthenticatedTaskPluginsIndexRoute
   '/usage-logs': typeof AuthenticatedUsageLogsIndexRoute
+  '/usage': typeof AuthenticatedUsageIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
   '/wallet': typeof AuthenticatedWalletIndexRoute
   '/pricing/$modelId': typeof PricingModelIdIndexRoute
@@ -589,6 +605,7 @@ export interface FileRoutesByTo {
   '/admin/billing': typeof AuthenticatedAdminBillingIndexRoute
   '/admin/contract-templates': typeof AuthenticatedAdminContractTemplatesIndexRoute
   '/admin/customer-contracts': typeof AuthenticatedAdminCustomerContractsIndexRoute
+  '/admin/usage': typeof AuthenticatedAdminUsageIndexRoute
   '/system-settings/auth': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/system-settings/content': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -648,6 +665,7 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/_authenticated/task-plugins/': typeof AuthenticatedTaskPluginsIndexRoute
   '/_authenticated/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
+  '/_authenticated/usage/': typeof AuthenticatedUsageIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
   '/_authenticated/wallet/': typeof AuthenticatedWalletIndexRoute
   '/pricing/$modelId/': typeof PricingModelIdIndexRoute
@@ -661,6 +679,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/billing/': typeof AuthenticatedAdminBillingIndexRoute
   '/_authenticated/admin/contract-templates/': typeof AuthenticatedAdminContractTemplatesIndexRoute
   '/_authenticated/admin/customer-contracts/': typeof AuthenticatedAdminCustomerContractsIndexRoute
+  '/_authenticated/admin/usage/': typeof AuthenticatedAdminUsageIndexRoute
   '/_authenticated/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/_authenticated/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/_authenticated/system-settings/content/': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -719,6 +738,7 @@ export interface FileRouteTypes {
     | '/system-settings/'
     | '/task-plugins/'
     | '/usage-logs/'
+    | '/usage/'
     | '/users/'
     | '/wallet/'
     | '/pricing/$modelId/'
@@ -732,6 +752,7 @@ export interface FileRouteTypes {
     | '/admin/billing/'
     | '/admin/contract-templates/'
     | '/admin/customer-contracts/'
+    | '/admin/usage/'
     | '/system-settings/auth/'
     | '/system-settings/billing/'
     | '/system-settings/content/'
@@ -786,6 +807,7 @@ export interface FileRouteTypes {
     | '/system-settings'
     | '/task-plugins'
     | '/usage-logs'
+    | '/usage'
     | '/users'
     | '/wallet'
     | '/pricing/$modelId'
@@ -799,6 +821,7 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/contract-templates'
     | '/admin/customer-contracts'
+    | '/admin/usage'
     | '/system-settings/auth'
     | '/system-settings/billing'
     | '/system-settings/content'
@@ -857,6 +880,7 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/'
     | '/_authenticated/task-plugins/'
     | '/_authenticated/usage-logs/'
+    | '/_authenticated/usage/'
     | '/_authenticated/users/'
     | '/_authenticated/wallet/'
     | '/pricing/$modelId/'
@@ -870,6 +894,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/billing/'
     | '/_authenticated/admin/contract-templates/'
     | '/_authenticated/admin/customer-contracts/'
+    | '/_authenticated/admin/usage/'
     | '/_authenticated/system-settings/auth/'
     | '/_authenticated/system-settings/billing/'
     | '/_authenticated/system-settings/content/'
@@ -1244,6 +1269,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedUsageLogsErrorRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/usage/': {
+      id: '/_authenticated/usage/'
+      path: '/usage'
+      fullPath: '/usage/'
+      preLoaderRoute: typeof AuthenticatedUsageIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/users/': {
       id: '/_authenticated/users/'
       path: '/users'
@@ -1284,6 +1316,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/customer-contracts'
       fullPath: '/admin/customer-contracts/'
       preLoaderRoute: typeof AuthenticatedAdminCustomerContractsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/admin/usage/': {
+      id: '/_authenticated/admin/usage/'
+      path: '/admin/usage'
+      fullPath: '/admin/usage/'
+      preLoaderRoute: typeof AuthenticatedAdminUsageIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/system-settings/auth/': {
@@ -1493,11 +1532,13 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSystemInfoIndexRoute: typeof AuthenticatedSystemInfoIndexRoute
   AuthenticatedTaskPluginsIndexRoute: typeof AuthenticatedTaskPluginsIndexRoute
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
+  AuthenticatedUsageIndexRoute: typeof AuthenticatedUsageIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
   AuthenticatedAdminBillingIndexRoute: typeof AuthenticatedAdminBillingIndexRoute
   AuthenticatedAdminContractTemplatesIndexRoute: typeof AuthenticatedAdminContractTemplatesIndexRoute
   AuthenticatedAdminCustomerContractsIndexRoute: typeof AuthenticatedAdminCustomerContractsIndexRoute
+  AuthenticatedAdminUsageIndexRoute: typeof AuthenticatedAdminUsageIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -1525,6 +1566,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSystemInfoIndexRoute: AuthenticatedSystemInfoIndexRoute,
   AuthenticatedTaskPluginsIndexRoute: AuthenticatedTaskPluginsIndexRoute,
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
+  AuthenticatedUsageIndexRoute: AuthenticatedUsageIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,
   AuthenticatedAdminBillingIndexRoute: AuthenticatedAdminBillingIndexRoute,
@@ -1532,6 +1574,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedAdminContractTemplatesIndexRoute,
   AuthenticatedAdminCustomerContractsIndexRoute:
     AuthenticatedAdminCustomerContractsIndexRoute,
+  AuthenticatedAdminUsageIndexRoute: AuthenticatedAdminUsageIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
