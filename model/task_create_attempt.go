@@ -30,6 +30,9 @@ const (
 )
 
 type TaskCreateAttempt struct {
+	FundTarget               string `json:"-" gorm:"size:32"`
+	ActualRefundQuota        *int   `json:"-"`
+	VideoRefund              `json:"-"`
 	ID                       int64                             `json:"-" gorm:"primaryKey"`
 	AttemptID                string                            `json:"-" gorm:"type:varchar(64);uniqueIndex"`
 	PublicTaskID             string                            `json:"-" gorm:"type:varchar(191);index"`
@@ -59,11 +62,20 @@ type TaskCreateAttempt struct {
 	OutcomeUnknownAt         int64                             `json:"-" gorm:"bigint;index"`
 	NextAttemptAt            int64                             `json:"-" gorm:"bigint;index"`
 	TaskDeadlineAt           int64                             `json:"-" gorm:"bigint;index"`
-	ManualRecoveryAt         int64                             `json:"-" gorm:"bigint;index"`
-	ManualRecoveryBy         int                               `json:"-"`
-	ManualRecoveryNote       string                            `json:"-" gorm:"type:text"`
-	CreatedAt                int64                             `json:"-" gorm:"bigint;index"`
-	UpdatedAt                int64                             `json:"-" gorm:"bigint"`
+	// 资金保障事实：期限在预扣成功时冻结（预扣时间 + 24h），与 Task 执行期限
+	// （TaskDeadlineAt）语义不同，不得互相复用。FundRetryAt 是失败退款的下一次
+	// 补偿时间；ReleaseReason 记录资金处置原因（业务状态仍由 Status 表达）。
+	FundsDeadlineAt    int64  `json:"-" gorm:"bigint;index"`
+	FundRetryAt        int64  `json:"-" gorm:"bigint;index"`
+	ReleaseReason      string `json:"-" gorm:"type:varchar(64);index"`
+	RefundCompletedAt  int64  `json:"-" gorm:"bigint"`
+	RefundFailure      string `json:"-" gorm:"type:varchar(512)"`
+	RefundOperatorID   int    `json:"-"`
+	ManualRecoveryAt   int64  `json:"-" gorm:"bigint;index"`
+	ManualRecoveryBy   int    `json:"-"`
+	ManualRecoveryNote string `json:"-" gorm:"type:text"`
+	CreatedAt          int64  `json:"-" gorm:"bigint;index"`
+	UpdatedAt          int64  `json:"-" gorm:"bigint"`
 }
 
 type TaskCreateAttemptParams struct {

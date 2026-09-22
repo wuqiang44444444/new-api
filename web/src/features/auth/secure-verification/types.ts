@@ -25,6 +25,7 @@ export type VerificationMethod =
   | 'oauth'
   | 'session'
 export type SecurityProofScope =
+  | 'video.funds.refund'
   | 'channel.key.read'
   | 'passkey.register'
   | 'passkey.delete'
@@ -40,6 +41,15 @@ export type SecurityProofScope =
   | 'account.delete'
 
 export type VerificationOperation =
+  | {
+      scope: 'video.funds.refund'
+      context: {
+        kind: 'attempt' | 'task'
+        id: number
+        version: string
+        note: string
+      }
+    }
   | { scope: 'channel.key.read'; context: { channel_id: number } }
   | {
       scope: 'account.binding.bind'
@@ -49,7 +59,10 @@ export type VerificationOperation =
   | {
       scope: Exclude<
         SecurityProofScope,
-        'channel.key.read' | 'account.binding.bind' | 'account.binding.unbind'
+        | 'video.funds.refund'
+        | 'channel.key.read'
+        | 'account.binding.bind'
+        | 'account.binding.unbind'
       >
       context?: Record<string, never>
     }

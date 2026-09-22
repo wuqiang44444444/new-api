@@ -13,7 +13,10 @@ import (
 // BuildTaskBillingDeliveryLog projects frozen Task facts; it performs no writes.
 func BuildTaskBillingDeliveryLog(task *model.Task, event model.TaskBillingDelivery) (*model.Log, error) {
 	copy := *task
-	async := *task.PrivateData.AsyncBilling
+	async := model.TaskAsyncBillingContext{}
+	if task.PrivateData.AsyncBilling != nil {
+		async = *task.PrivateData.AsyncBilling
+	}
 	copy.PrivateData.AsyncBilling = &async
 	async.ActualTokens, async.ActualUsageReported = event.CompletionTokens, event.UsageReported
 	async.Operation, async.State = "settle", model.TaskBillingStateSettled
@@ -23,8 +26,11 @@ func BuildTaskBillingDeliveryLog(task *model.Task, event model.TaskBillingDelive
 	if event.Event == "complete" {
 		async.Operation = ""
 	}
-	if event.Event == "refund" {
+	if event.Event == "refund" || event.Event == "customer_refund" {
 		async.Operation = "refund"
+	}
+	if event.Event == "customer_refund" {
+		async.Reason = "customer_refund"
 	}
 	other := taskBillingOther(&copy)
 	other.SetPublic("task_billing_event", event.Event)
@@ -52,7 +58,7 @@ func BuildTaskBillingDeliveryLog(task *model.Task, event model.TaskBillingDelive
 				appendImageStatementUsage(other, usage)
 			}
 		}
-	} else if event.Event == "refund" {
+	} else if event.Event == "refund" || event.Event == "customer_refund" {
 		logType, quota, completion = model.LogTypeRefund, event.BeforeQuota-event.AfterQuota, 0
 		other.SetPublic("reason", async.Reason)
 	} else {

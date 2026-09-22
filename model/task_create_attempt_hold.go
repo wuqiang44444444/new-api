@@ -111,6 +111,10 @@ func HoldTaskCreateAttempt(params TaskAttemptHoldParams) (*TaskAttemptHoldResult
 				}
 			}
 		}
+		var fundsDeadline int64
+		if IsLinkVideoTaskClientProtocol(attempt.ClientProtocol) && source == "wallet" {
+			fundsDeadline = common.GetTimestamp() + TaskCreateFundsGuaranteeSeconds
+		}
 		updated := tx.Model(&TaskCreateAttempt{}).
 			Where("id = ? AND status = ? AND billing_hold_state = ?",
 				attempt.ID, TaskCreateAttemptPrepared, TaskCreateAttemptBillingUnheld).
@@ -122,6 +126,7 @@ func HoldTaskCreateAttempt(params TaskAttemptHoldParams) (*TaskAttemptHoldResult
 				"held_quota":          heldQuota,
 				"token_quota_tracked": result.TokenTracked,
 				"token_quota_held":    result.TokenDebited,
+				"funds_deadline_at":   fundsDeadline,
 				"updated_at":          common.GetTimestamp(),
 			})
 		if updated.Error != nil {

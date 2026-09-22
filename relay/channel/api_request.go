@@ -537,11 +537,12 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 	service.MarkTaskCreateAttemptUpstreamStarted(c)
 	clienterrlog.WrapUpstreamRequest(c.Request.Context(), req)
+	req = service.AttachTaskCreateTransportProbe(c, req, &relayClient)
 	resp, err := relayClient.Do(req)
 	service.ObserveImageHTTPExchange(c.Request.Context(), req, resp, err, "generation")
 	if err != nil {
 		service.CaptureTaskEvidenceTransportFailure(c)
-		service.MarkTaskCreateAttemptOutcomeUnknown(c, info)
+		service.SettleTaskCreateTransportOutcome(c, info, err)
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}

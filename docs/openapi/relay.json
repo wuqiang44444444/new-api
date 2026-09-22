@@ -3745,6 +3745,121 @@
           }
         ]
       }
+    },
+    "/api/video-funds/token": {
+      "get": {
+        "operationId": "listVideoFundProgress",
+        "summary": "查询当前 API Key 的视频资金进度 / List video funding progress for this API key",
+        "tags": [
+          "视频生成"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "p",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "task_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional platform task or attempt ID; omit to include pending creates without a returned task ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Video funding progress. Amounts are quota units; zero timestamps mean not applicable or not known.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer"
+                        },
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "task_id": {
+                                "type": "string"
+                              },
+                              "request_id": {
+                                "type": "string"
+                              },
+                              "model": {
+                                "type": "string"
+                              },
+                              "fund_state": {
+                                "type": "string"
+                              },
+                              "quota": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "refunded_quota": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "created_at": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "deadline_at": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "refunded_at": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "retry_at": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "refund_amount_known": {
+                                "type": "boolean"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid API key"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "500": {
+            "description": "Funding query unavailable"
+          }
+        }
+      }
     }
   },
   "components": {

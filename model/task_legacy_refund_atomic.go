@@ -24,7 +24,7 @@ func RefundLegacyTaskQuota(task *Task) (bool, int, error) {
 		if err := lockForUpdate(tx).Where("id = ?", task.ID).First(&locked).Error; err != nil {
 			return err
 		}
-		if locked.Quota == 0 {
+		if locked.Quota == 0 || locked.VideoRefundState != "" {
 			return nil
 		}
 		refundedQuota = locked.Quota

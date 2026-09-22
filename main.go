@@ -353,6 +353,10 @@ func InitResources() error {
 	if err = model.InitProviderChannelBillingDiscounts(); err != nil {
 		return err
 	}
+	// 视频创建占款资金保障：为存量 held 记录回填冻结的 24 小时保障期限。
+	if err = model.InitTaskCreateAttemptFundsDeadline(); err != nil {
+		return err
+	}
 
 	if err = model.InitBillingStatementSourceTracking(); err != nil {
 		return err

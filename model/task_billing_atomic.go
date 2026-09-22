@@ -50,7 +50,14 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 		if err := lockForUpdate(tx).Where("id = ?", task.ID).First(&locked).Error; err != nil {
 			return err
 		}
+		if locked.VideoRefundState != "" {
+			return nil
+		}
 		async := locked.PrivateData.AsyncBilling
+		legacyVideo := async == nil && IsVideoFundTask(&locked)
+		if legacyVideo {
+			async = &TaskAsyncBillingContext{}
+		}
 		if async == nil {
 			return fmt.Errorf("task %s has no async billing state", locked.TaskID)
 		}
@@ -170,6 +177,13 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 		async.State = TaskBillingStateSettled
 		async.Error = ""
 		async.NextRetryAt = 0
+		if legacyVideo {
+			if err := tx.Model(&locked).Update("quota", targetQuota).Error; err != nil {
+				return err
+			}
+			applied = true
+			return nil
+		}
 		if err := tx.Model(&locked).Updates(map[string]any{
 			"quota":         targetQuota,
 			"private_data":  locked.PrivateData,
@@ -188,7 +202,7 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 	}
 	task.Quota = locked.Quota
 	task.PrivateData = locked.PrivateData
-	task.BillingState = locked.PrivateData.AsyncBilling.State
+	task.BillingState = locked.BillingState
 	if !applied {
 		return false, 0, nil
 	}

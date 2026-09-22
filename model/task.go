@@ -54,6 +54,9 @@ const (
 const TaskRefundLegacyCutoff int64 = 1771718400 // 2026-02-22 00:00:00 UTC
 
 type Task struct {
+	VideoFundingReady       bool   `json:"-"`
+	VideoDeliveryState      string `json:"-" gorm:"size:24"`
+	VideoRefund             `json:"-"`
 	TaskUsageRecovery       `gorm:"embedded" json:"-"`
 	ID                      int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
 	CreatedAt               int64                 `json:"created_at" gorm:"index"`
@@ -571,13 +574,17 @@ func (t *Task) Snapshot() taskSnapshot {
 }
 
 func (Task *Task) Update() error {
+	if IsVideoFundTask(Task) {
+		_, err := Task.updateVideoFundObservation(nil)
+		return err
+	}
 	var err error
 	err = DB.Save(Task).Error
 	return err
 }
 
 func (t *Task) UpdateQuota() error {
-	return DB.Model(t).Update("quota", t.Quota).Error
+	return DB.Model(t).Where("COALESCE(video_refund_state, '') = ''").Update("quota", t.Quota).Error
 }
 
 // UpdateWithStatus performs a conditional UPDATE guarded by fromStatus (CAS).
@@ -594,6 +601,13 @@ func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
 		won, err := t.updateSeedanceObservation(fromStatus)
 		if won {
 			// 错误事件（仅观察）：失败终态真实迁移提交后登记，CAS 结果天然防重。
+			submitTaskFailureEvent(t, fromStatus, "task_lifecycle")
+		}
+		return won, err
+	}
+	if IsVideoFundTask(t) {
+		won, err := t.updateVideoFundObservation(&fromStatus)
+		if won {
 			submitTaskFailureEvent(t, fromStatus, "task_lifecycle")
 		}
 		return won, err

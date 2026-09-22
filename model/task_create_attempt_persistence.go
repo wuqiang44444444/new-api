@@ -36,6 +36,7 @@ func RecordTaskCreateAttemptUpstreamSuccess(id int64, task *Task) error {
 		return err
 	}
 	result := DB.Model(&TaskCreateAttempt{}).
+		Where("COALESCE(fund_target, '') = '' AND COALESCE(video_refund_state, '') = ''").
 		Where("id = ? AND status IN ? AND billing_hold_state = ?",
 			id,
 			[]TaskCreateAttemptStatus{TaskCreateAttemptSending, TaskCreateAttemptUnknown},
@@ -62,9 +63,15 @@ func InsertTaskWithCreateAttempt(task *Task, idempotencyID, attemptID int64) err
 		return errors.New("task and create attempt are required")
 	}
 	var transfer taskAttemptTransferBillingResult
+	var warrantyRelease *TaskAttemptReleaseResult
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var attempt TaskCreateAttempt
 		if err := lockForUpdate(tx).First(&attempt, "id = ?", attemptID).Error; err != nil {
+			return err
+		}
+		if TaskCreateAttemptFundsDeadlineDue(&attempt, common.GetTimestamp()) {
+			var err error
+			warrantyRelease, err = releaseTaskCreateAttemptHoldWarrantyTx(tx, &attempt, TaskCreateAttemptReleaseWarrantyDeadline, 0)
 			return err
 		}
 		var err error
@@ -119,6 +126,10 @@ func InsertTaskWithCreateAttempt(task *Task, idempotencyID, attemptID int64) err
 		}
 		return nil
 	})
+	if err == nil && warrantyRelease != nil {
+		dispatchTaskAttemptReleaseCache(warrantyRelease)
+		return ErrTaskCreateAttemptMovedToWarrantyRefund
+	}
 	if err == nil {
 		syncTaskCreateAttemptTransferCache(transfer)
 	}
@@ -128,6 +139,8 @@ func InsertTaskWithCreateAttempt(task *Task, idempotencyID, attemptID int64) err
 func RecoverTaskCreateAttempt(id int64) (*Task, error) {
 	var recovered *Task
 	var transfer taskAttemptTransferBillingResult
+	var warrantyRelease *TaskAttemptReleaseResult
+	movedToWarrantyRefund := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var attempt TaskCreateAttempt
 		if err := lockForUpdate(tx).First(&attempt, "id = ?", id).Error; err != nil {
@@ -144,6 +157,20 @@ func RecoverTaskCreateAttempt(id int64) (*Task, error) {
 		}
 		if attempt.Status != TaskCreateAttemptUpstreamSucceeded || len(attempt.RecoverySnapshot) == 0 {
 			return errors.New("task create attempt is not recoverable")
+		}
+		// Funds guarantee: an upstream_succeeded hold past its frozen 24h
+		// deadline is released to the customer instead of building a chargeable
+		// Task. A later recover on a released row is refused below.
+		if TaskCreateAttemptFundsDeadlineDue(&attempt, common.GetTimestamp()) {
+			released, err := releaseTaskCreateAttemptHoldWarrantyTx(tx, &attempt, TaskCreateAttemptReleaseWarrantyDeadline, 0)
+			if err != nil {
+				return err
+			}
+			warrantyRelease = released
+			// 提交保障退款后以哨兵错误通知调用方；不能在事务回调里返回该
+			// 错误，否则资金释放会被一起回滚。
+			movedToWarrantyRefund = true
+			return nil
 		}
 		var snapshot taskAttemptRecoverySnapshot
 		if err := common.Unmarshal(attempt.RecoverySnapshot, &snapshot); err != nil {
@@ -204,6 +231,10 @@ func RecoverTaskCreateAttempt(id int64) (*Task, error) {
 		recovered = &task
 		return nil
 	})
+	if err == nil && movedToWarrantyRefund {
+		dispatchTaskAttemptReleaseCache(warrantyRelease)
+		return nil, ErrTaskCreateAttemptMovedToWarrantyRefund
+	}
 	if err == nil && recovered != nil {
 		syncTaskCreateAttemptTransferCache(transfer)
 	}

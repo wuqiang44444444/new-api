@@ -16,26 +16,47 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
+import { Button } from '@/components/ui/button'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { VideoFundLogs } from '../video-funds'
 import { ErrorLogViewer } from './components/error-log-viewer'
 
 export function ErrorLogs() {
   const { t } = useTranslation()
+  const [showFunds, setShowFunds] = useState(false)
   const user = useAuthStore((state) => state.auth.user)
   const canRead = !!user && user.role >= ROLE.ADMIN
+  const viewer = showFunds ? <VideoFundLogs /> : <ErrorLogViewer />
   return (
     <SectionPageLayout fixedContent>
       <SectionPageLayout.Title>{t('Error Logs')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='flex h-full min-h-0 flex-col gap-3'>
-          <div className='min-h-0 flex-1'>
+          {canRead && (
+            <div className='flex gap-2'>
+              <Button
+                variant={showFunds ? 'outline' : 'default'}
+                onClick={() => setShowFunds(false)}
+              >
+                {t('Error Logs')}
+              </Button>
+              <Button
+                variant={showFunds ? 'default' : 'outline'}
+                onClick={() => setShowFunds(true)}
+              >
+                {t('Funds hold logs')}
+              </Button>
+            </div>
+          )}
+          <div className='flex min-h-0 flex-1 flex-col'>
             {canRead ? (
-              <ErrorLogViewer />
+              viewer
             ) : (
               <p role='status' className='text-muted-foreground text-sm'>
                 {t('You do not have permission to perform this action.')}

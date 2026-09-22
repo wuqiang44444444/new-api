@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -30,7 +31,26 @@ func ReconcileTaskCreateAttempts(ctx context.Context) int {
 				processed++
 			}
 		case model.TaskCreateAttemptUpstreamSucceeded:
+			// 资金保障期限优先于创建恢复：超期记录转入保障退款，不能抢先
+			// 补建收费 Task 绕开期限（方案 §4.1/§6 验收项 17）。
+			if model.TaskCreateAttemptFundsDeadlineDue(attempt, now) {
+				if _, err := model.ReleaseTaskCreateAttemptHoldWarranty(
+					attempt.ID, model.TaskCreateAttemptReleaseWarrantyDeadline, 0); err != nil {
+					logger.LogWarn(ctx, fmt.Sprintf("warranty refund for task create attempt %s failed: %v", attempt.AttemptID, err))
+					if retryErr := model.MarkTaskCreateAttemptRefundRetry(attempt.ID, now, err.Error()); retryErr != nil {
+						logger.LogWarn(ctx, fmt.Sprintf("schedule warranty refund retry for task create attempt %s failed: %v", attempt.AttemptID, retryErr))
+					}
+					continue
+				}
+				processed++
+				continue
+			}
 			if _, err := model.RecoverTaskCreateAttempt(attempt.ID); err != nil {
+				if errors.Is(err, model.ErrTaskCreateAttemptMovedToWarrantyRefund) {
+					// 竞争中已被其他入口释放，本记录资金已收尾。
+					processed++
+					continue
+				}
 				logger.LogWarn(ctx, fmt.Sprintf("recover task create attempt %s failed: %v", attempt.AttemptID, err))
 				scheduleTaskCreateAttemptRetry(ctx, attempt, now)
 				continue

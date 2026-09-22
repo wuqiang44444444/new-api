@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -10,11 +11,12 @@ import (
 )
 
 type TaskAttemptReleaseResult struct {
-	UserID        int
-	TokenKey      string
-	ReleasedQuota int
-	TokenReleased bool
-	BillingSource string
+	UserID             int
+	TokenKey           string
+	TokenReleasedQuota int
+	ReleasedQuota      int
+	TokenReleased      bool
+	BillingSource      string
 }
 
 func MarkTaskCreateAttemptUnknown(id int64, upstreamRequestID string) error {
@@ -58,6 +60,13 @@ func MarkTaskCreateAttemptUnknown(id int64, upstreamRequestID string) error {
 }
 
 func ReleaseTaskCreateAttemptHold(id int64, terminal TaskCreateAttemptStatus) (*TaskAttemptReleaseResult, error) {
+	if terminal == TaskCreateAttemptRejected {
+		// A verified rejection remains a refund instruction even if the following
+		// funds transaction fails or the stale-sending scanner changes status.
+		if err := DB.Model(&TaskCreateAttempt{}).Where("id = ? AND client_protocol IN ? AND billing_hold_state = ? AND status IN ?", id, videoFundClientProtocols, TaskCreateAttemptBillingHeld, []TaskCreateAttemptStatus{TaskCreateAttemptSending, TaskCreateAttemptUnknown}).Updates(map[string]any{"fund_target": "verified_rejection", "fund_retry_at": common.GetTimestamp()}).Error; err != nil {
+			return nil, err
+		}
+	}
 	return releaseTaskCreateAttemptHold(id, terminal, taskAttemptReleaseOptions{})
 }
 
@@ -100,7 +109,13 @@ func releaseTaskCreateAttemptHold(
 		released.UserID = attempt.UserID
 		released.ReleasedQuota = attempt.HeldQuota
 		released.BillingSource = attempt.BillingSource
-		if attempt.HeldQuota > 0 {
+		if IsLinkVideoTaskClientProtocol(attempt.ClientProtocol) && attempt.BillingSource == "wallet" {
+			var err error
+			released, err = releaseTaskCreateAttemptFundsTx(tx, &attempt)
+			if err != nil {
+				return err
+			}
+		} else if attempt.HeldQuota > 0 {
 			switch attempt.BillingSource {
 			case "subscription":
 				update := tx.Model(&UserSubscription{}).
@@ -125,28 +140,49 @@ func releaseTaskCreateAttemptHold(
 			}
 			if attempt.TokenQuotaHeld {
 				var token Token
-				if err := lockForUpdate(tx).First(&token, "id = ?", attempt.TokenID).Error; err != nil {
-					return err
+				// Soft-deleted tokens must not block the customer refund:
+				// recognize the lifecycle state, skip the token quota
+				// adjustment, and keep processing customer funds (same
+				// semantics as task_billing_atomic.go).
+				lookup := lockForUpdate(tx).Unscoped().Where("id = ?", attempt.TokenID).First(&token)
+				if lookup.Error != nil {
+					if errors.Is(lookup.Error, gorm.ErrRecordNotFound) {
+						common.SysError("task attempt refund token row is missing: token_id=" + fmt.Sprintf("%d", attempt.TokenID))
+					} else {
+						return lookup.Error
+					}
+				} else if !token.DeletedAt.Valid {
+					if err := tx.Model(&Token{}).Where("id = ?", token.Id).Updates(map[string]any{
+						"remain_quota":  gorm.Expr("remain_quota + ?", attempt.HeldQuota),
+						"used_quota":    gorm.Expr("used_quota - ?", attempt.HeldQuota),
+						"accessed_time": common.GetTimestamp(),
+					}).Error; err != nil {
+						return err
+					}
+					released.TokenKey = token.Key
+					released.TokenReleased = true
+					released.TokenReleasedQuota = attempt.HeldQuota
 				}
-				if err := tx.Model(&Token{}).Where("id = ?", token.Id).Updates(map[string]any{
-					"remain_quota":  gorm.Expr("remain_quota + ?", attempt.HeldQuota),
-					"used_quota":    gorm.Expr("used_quota - ?", attempt.HeldQuota),
-					"accessed_time": common.GetTimestamp(),
-				}).Error; err != nil {
-					return err
-				}
-				released.TokenKey = token.Key
-				released.TokenReleased = true
 			}
 		}
 		now := common.GetTimestamp()
 		updates := map[string]any{
 			"status":                     terminal,
 			"billing_hold_state":         TaskCreateAttemptBillingReleased,
+			"release_reason":             TaskCreateAttemptReleaseVerifiedRejection,
+			"actual_refund_quota":        released.ReleasedQuota,
+			"refund_completed_at":        now,
+			"fund_retry_at":              0,
 			"frozen_connection_snapshot": nil,
 			"recovery_snapshot":          nil,
 			"next_attempt_at":            0,
 			"updated_at":                 now,
+		}
+		if attempt.VideoRefundState == "pending" {
+			updates["video_refund_state"] = "refunded"
+			updates["video_refund_completed_at"] = now
+			updates["video_refund_retry_at"] = 0
+			updates["video_refund_quota"] = released.ReleasedQuota
 		}
 		if options.operatorID > 0 {
 			updates["manual_recovery_at"] = now
@@ -191,21 +227,29 @@ func releaseTaskCreateAttemptHold(
 	if err != nil {
 		return nil, err
 	}
-	if released.ReleasedQuota > 0 {
-		if released.BillingSource == "wallet" {
-			gopool.Go(func() {
-				if err := cacheIncrUserQuota(released.UserID, int64(released.ReleasedQuota)); err != nil {
-					common.SysLog("failed to update released task attempt wallet cache: " + err.Error())
-				}
-			})
-		}
-		if released.TokenReleased && released.TokenKey != "" && common.RedisEnabled && common.RDB != nil {
-			gopool.Go(func() {
-				if err := cacheIncrTokenQuota(released.TokenKey, int64(released.ReleasedQuota)); err != nil {
-					common.SysLog("failed to update released task attempt token cache: " + err.Error())
-				}
-			})
-		}
-	}
+	dispatchTaskAttemptReleaseCache(released)
 	return released, nil
+}
+
+// dispatchTaskAttemptReleaseCache syncs the process caches after a hold
+// release transaction has committed. It is best-effort: cache rebuild is
+// always possible from the authoritative main database.
+func dispatchTaskAttemptReleaseCache(released *TaskAttemptReleaseResult) {
+	if released == nil {
+		return
+	}
+	if released.BillingSource == "wallet" && released.ReleasedQuota > 0 {
+		gopool.Go(func() {
+			if err := cacheIncrUserQuota(released.UserID, int64(released.ReleasedQuota)); err != nil {
+				common.SysLog("failed to update released task attempt wallet cache: " + err.Error())
+			}
+		})
+	}
+	if released.TokenReleased && released.TokenKey != "" && common.RedisEnabled && common.RDB != nil {
+		gopool.Go(func() {
+			if err := cacheIncrTokenQuota(released.TokenKey, int64(released.TokenReleasedQuota)); err != nil {
+				common.SysLog("failed to update released task attempt token cache: " + err.Error())
+			}
+		})
+	}
 }

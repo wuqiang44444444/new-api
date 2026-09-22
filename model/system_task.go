@@ -27,6 +27,8 @@ const (
 	SystemTaskTypeTaskRequestEvidenceRetention = "task_request_evidence_retention"
 	// 每小时系统运行与错误邮件报告（本地扩展）。
 	SystemTaskTypeErrorReport = "error_report"
+	// 视频创建占款资金保障：独立于 Provider 轮询开关的到期退款与退款补偿。
+	SystemTaskTypeTaskFundGuarantee = "task_fund_guarantee"
 )
 
 var ErrSystemTaskLockLost = errors.New("system task lock lost")

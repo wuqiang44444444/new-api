@@ -298,18 +298,31 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		reason,
 	))
 
-	// 调整资金来源
-	if err := taskAdjustFunding(task, quotaDelta); err != nil {
-		logger.LogError(ctx, fmt.Sprintf("差额结算资金调整失败 task %s: %s", task.TaskID, err.Error()))
-		return
-	}
+	if model.IsVideoFundTask(task) {
+		applied, delta, err := model.ApplyTaskBillingTarget(task, actualQuota)
+		if err != nil {
+			logger.LogError(ctx, "video funding adjustment failed")
+			return
+		}
+		if !applied {
+			return
+		}
+		quotaDelta = delta
+	} else {
+		// 调整资金来源
+		if err := taskAdjustFunding(task, quotaDelta); err != nil {
+			logger.LogError(ctx, fmt.Sprintf("差额结算资金调整失败 task %s: %s", task.TaskID, err.Error()))
+			return
+		}
 
-	// 调整令牌额度
-	taskAdjustTokenQuota(ctx, task, quotaDelta)
+		// 调整令牌额度
+		taskAdjustTokenQuota(ctx, task, quotaDelta)
 
-	task.Quota = actualQuota
-	if err := task.UpdateQuota(); err != nil {
-		logger.LogError(ctx, fmt.Sprintf("差额结算回写 quota 失败 task %s: %s", task.TaskID, err.Error()))
+		task.Quota = actualQuota
+		if err := task.UpdateQuota(); err != nil {
+			logger.LogError(ctx, fmt.Sprintf("差额结算回写 quota 失败 task %s: %s", task.TaskID, err.Error()))
+		}
+
 	}
 
 	// 提交阶段已经累计过一次请求；结算阶段只调整最终用量。

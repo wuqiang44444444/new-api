@@ -3,7 +3,9 @@ package controller
 import (
 	"net/http"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
@@ -40,8 +42,19 @@ func setTaskCreateContractResponse(c *gin.Context, task *model.Task) {
 
 func setTaskCreateContractPersistenceError(c *gin.Context, protocol string) {
 	requestID := c.GetString(common.RequestIdKey)
+	// 错误事件诊断（方案 §3.3）：unknown 合同出口补齐渠道、模型、阶段与稳定原因，
+	// 复用现有错误事件，不新增诊断表，不向客户暴露 Provider 私有信息。
+	if c.Request != nil {
+		clienterrlog.Attach(c.Request.Context(), clienterrlog.Report{
+			Stage:     "task_create_persist",
+			Reason:    "create_outcome_unknown",
+			Model:     clienterrlog.SanitizeLogValue(c.GetString("original_model"), 128),
+			ChannelID: common.GetContextKeyInt(c, constant.ContextKeyChannelId),
+			Protocol:  clienterrlog.SanitizeLogValue(protocol, 64),
+		})
+	}
 	var body any = gin.H{"error": gin.H{
-		"message":    common.MessageWithRequestId("Task creation outcome requires reconciliation", requestID),
+		"message":    common.MessageWithRequestId("Task creation outcome is unknown. Do not automatically retry; held funds are released after 24 hours", requestID),
 		"type":       "server_error",
 		"code":       "create_outcome_unknown",
 		"request_id": requestID,
@@ -49,14 +62,14 @@ func setTaskCreateContractPersistenceError(c *gin.Context, protocol string) {
 	if protocol == model.TaskClientProtocolModelArkV3 {
 		body = gin.H{"error": gin.H{
 			"code":       "create_outcome_unknown",
-			"message":    common.MessageWithRequestId("Task creation outcome requires reconciliation", requestID),
+			"message":    common.MessageWithRequestId("Task creation outcome is unknown. Do not automatically retry; held funds are released after 24 hours", requestID),
 			"request_id": requestID,
 		}}
 	}
 	if protocol == model.TaskClientProtocolKlingV1 {
 		body = dto.KlingVideoErrorResponse{
 			Code:      dto.KlingVideoErrorCode(http.StatusServiceUnavailable),
-			Message:   common.MessageWithRequestId("Task creation outcome requires reconciliation", requestID),
+			Message:   common.MessageWithRequestId("Task creation outcome is unknown. Do not automatically retry; held funds are released after 24 hours", requestID),
 			RequestID: requestID,
 			Data:      nil,
 		}
@@ -66,7 +79,7 @@ func setTaskCreateContractPersistenceError(c *gin.Context, protocol string) {
 		body = dto.JimengVideoErrorResponse{
 			Code:      code,
 			Data:      nil,
-			Message:   common.MessageWithRequestId("Task creation outcome requires reconciliation", requestID),
+			Message:   common.MessageWithRequestId("Task creation outcome is unknown. Do not automatically retry; held funds are released after 24 hours", requestID),
 			RequestID: requestID,
 			Status:    code,
 		}

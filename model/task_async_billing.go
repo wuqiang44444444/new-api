@@ -115,7 +115,7 @@ func (t *Task) UpdateBilling() error {
 	if t.HasSeedanceBillingFacts() {
 		return t.updateSeedanceBillingFacts()
 	}
-	return DB.Model(t).Updates(map[string]any{
+	return DB.Model(t).Where("COALESCE(video_refund_state, '') = ''").Updates(map[string]any{
 		"quota":         t.Quota,
 		"private_data":  t.PrivateData,
 		"billing_state": deriveBillingState(t.PrivateData),
@@ -154,7 +154,7 @@ func GetTerminalTasksPendingBilling(now int64, limit int) []*Task {
 			// 用户后续充值后，正常轮询必须仍能按冻结 TargetQuota 原子补扣并结清。
 			// 原生任务用量计价不进入本地补偿扫描；Seedance 用量计价任务按其冻结的
 			// 类型化身份（VideoUpstreamProtocol）保持 pending/debt/failed 补偿资格。
-			if state == nil || (task.HasTaskUsageBilling() && !task.HasSeedanceBillingFacts()) || (state.State != TaskBillingStateDebt && state.Attempts >= 10) || state.NextRetryAt > now {
+			if task.VideoRefundState != "" || state == nil || (task.HasTaskUsageBilling() && !task.HasSeedanceBillingFacts()) || (state.State != TaskBillingStateDebt && state.Attempts >= 10) || state.NextRetryAt > now {
 				continue
 			}
 			tasks = append(tasks, task)

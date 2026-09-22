@@ -65,10 +65,15 @@ func RecoverTaskCreateAttempt(c *gin.Context) {
 	)
 	if err != nil {
 		status := http.StatusConflict
+		message := err.Error()
+		if errors.Is(err, model.ErrTaskCreateAttemptMovedToWarrantyRefund) {
+			// 资金保障期限已过：记录已转保障退款，不再建立收费 Task。
+			message = "attempt passed its funds guarantee deadline and was released via warranty refund"
+		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			status = http.StatusNotFound
 		}
-		c.JSON(status, gin.H{"success": false, "message": err.Error()})
+		c.JSON(status, gin.H{"success": false, "message": message})
 		return
 	}
 	recordManageAudit(c, "task_contract.attempt_recover", map[string]interface{}{

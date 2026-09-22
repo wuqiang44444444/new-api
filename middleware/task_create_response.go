@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -66,6 +67,7 @@ func (w *taskCreateCaptureWriter) Flush() {}
 
 func TaskCreateResponseContract() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		defer service.BeginVideoClientDelivery(c)()
 		original := c.Writer
 		capture := &taskCreateCaptureWriter{ResponseWriter: original}
 		c.Writer = capture

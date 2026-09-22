@@ -7,6 +7,7 @@ import (
 )
 
 func registerTaskContractRoutes(apiRouter *gin.RouterGroup) {
+	registerVideoFundRoutes(apiRouter)
 	route := apiRouter.Group("/task-contract")
 	route.Use(middleware.RootAuth(), middleware.DisableCache())
 	{

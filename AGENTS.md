@@ -189,7 +189,10 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 
 - 适用的异步 Provider POST 在发送请求字节前必须建立 durable `TaskCreateAttempt`；资金 hold、必要的额度 reservation 与 `sending` 状态必须在同一事务提交。
 - 未取得可信 Provider task ID 时不得创建 `Task`。Task 创建、attempt hold 转移和 attempt 完成必须原子提交。
-- 创建结果为 `unknown` 时禁止自动重发、换渠道或退款；单次轮询结果不可采信时不得直接判定业务失败。
+- 创建结果为 `unknown` 时禁止自动重发或换渠道；单次轮询结果不可采信时不得直接判定业务失败。视频
+  创建占款自预扣成功起有 24 小时客户资金保障期限（ADR-0021）：到期仍 held 且未完成 Task 原子转移的
+  sending/unknown/upstream_succeeded 记录必须由系统自动释放客户预扣，潜在 Provider 成本由平台承担并
+  保持未知，不伪造 Provider 业务终态。
 - Task 生命周期必须使用创建时冻结的客户模型、Channel、Provider 模型、代码协议/adapter 版本、连接、
   素材和计费事实，不因当前配置、凭据或价格变化而重新选渠或重解释。
 - 预扣、结算、差额、退款和补偿必须幂等。客户退款与 Provider exposure 分账；Provider 金额未知时必须保持未知，不得以客户 quota 冒充供应商成本。

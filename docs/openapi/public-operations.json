@@ -150,6 +150,11 @@
       "operationId": "retrieveImageTask",
       "status": "published",
       "family": "images"
+    },
+    {
+      "operationId": "listVideoFundProgress",
+      "status": "published",
+      "family": "video-modelark"
     }
   ]
 }

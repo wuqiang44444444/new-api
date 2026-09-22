@@ -82,6 +82,12 @@ func BindVerificationOperation(operation VerificationOperation) (VerificationBin
 	}
 	var normalized any
 	switch operation.Scope {
+	case VerificationScopeVideoRefund:
+		var context VideoRefundContext
+		if len(fields) != 4 || common.Unmarshal(operation.Context, &context) != nil || (context.Kind != "attempt" && context.Kind != "task") || context.ID <= 0 || len(context.Version) != 64 || strings.TrimSpace(context.Note) == "" || len(context.Note) > 1000 {
+			return VerificationBinding{}, ErrVerificationContextInvalid
+		}
+		normalized = context
 	case VerificationScopeChannelKeyRead:
 		var context ChannelKeyReadContext
 		if len(fields) != 1 || common.Unmarshal(fields["channel_id"], &context.ChannelID) != nil || context.ChannelID <= 0 {
@@ -179,7 +185,7 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 		methods = append(methods, VerificationMethodPasskey)
 	}
 	switch scope {
-	case VerificationScopeChannelKeyRead, VerificationScopePasskeyDelete, VerificationScopeLogin,
+	case VerificationScopeVideoRefund, VerificationScopeChannelKeyRead, VerificationScopePasskeyDelete, VerificationScopeLogin,
 		VerificationScopeTaskUsageReview, VerificationScopeTaskAttemptRecover, VerificationScopeTaskAttemptReject:
 	case VerificationScopeTwoFADisable, VerificationScopeTwoFABackupCodes:
 		if !state.HasTwoFA {
@@ -233,7 +239,7 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 	if state.Status != common.UserStatusEnabled || state.AuthVersion != identity.UserAuthVersion {
 		return nil, ErrAuthTokenInvalid
 	}
-	if scope == VerificationScopeChannelKeyRead && state.Role != common.RoleRootUser {
+	if (scope == VerificationScopeChannelKeyRead || scope == VerificationScopeVideoRefund) && state.Role != common.RoleRootUser {
 		return nil, ErrVerificationForbidden
 	}
 	methods, err := securityVerificationPolicy(scope, *state)

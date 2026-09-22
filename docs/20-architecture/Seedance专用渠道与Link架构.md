@@ -361,9 +361,9 @@ sequenceDiagram
 请求已经发送但无法确认 Provider 是否创建任务时，attempt 进入 `unknown`：
 
 - 保留资金 hold、冻结执行事实和 Provider 暴露记录；
-- 不自动重发、换渠道、退款或进入 `released_with_exposure`；
-- 只有技术人员确认 Provider 明确未创建后才能人工拒绝并幂等释放资金；
-- 取得可信 task ID 后可以按冻结事实恢复并创建 Task。
+- 不自动重发或换渠道；视频钱包创建 hold 按 ADR-0021 冻结 24 小时资金保障期限，到期自动退款；
+- Provider 明确未创建时走拒绝释放；管理员政策退款只改变客户资金，不伪造 Provider 拒绝；
+- 未到资金期限且没有退款指令时，取得可信 task ID 后可以按冻结事实恢复并创建 Task；已退款不得重开收费。
 
 单次轮询返回无效 JSON、未知状态、ID 不匹配或缺失结果，只能证明本次观测不可采信，不能直接把
 业务任务判为失败或退款。
@@ -512,7 +512,8 @@ Provider 响应归一负责“如实取得实际用量”，冻结计费上下�
 2. 所有 Seedance 线路使用 `ChannelTypeSeedanceLink`，南向差异由代码协议表达。
 3. 一个已启用客户模型只对应一个 Seedance Channel。
 4. Seedance 不进入原生分发池，不使用 Priority/Weight/重试/切换。
-5. 每个视频创建只发送一次 Provider POST；`unknown` 不自动退款。
+5. 每个视频创建只发送一次 Provider POST；创建占款满 24 小时客户资金保障期限后
+   自动释放（ADR-0021），不自动重发或换渠道。
 6. Task 按创建时冻结的 Channel、协议、连接、素材和计费事实执行。
 7. 素材 API 不提供列表或本地资源身份；opaque ID 由调用方保存，视频调用不做本地素材可用性校验。
 8. 真人认证直接使用 Provider 页面，平台不保存生物识别材料。

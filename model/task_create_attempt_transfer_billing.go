@@ -29,6 +29,9 @@ func settleTaskCreateAttemptTransferTx(
 	if tx == nil || attempt == nil || task == nil || task.Quota < 0 {
 		return result, errors.New("task attempt transfer billing is incomplete")
 	}
+	if attempt.VideoRefundState != "" || attempt.FundTarget != "" {
+		return result, errors.New("video refund pending")
+	}
 	if attempt.Status != TaskCreateAttemptUpstreamSucceeded ||
 		attempt.BillingHoldState != TaskCreateAttemptBillingHeld {
 		return result, errors.New("task create attempt has no transferable hold")

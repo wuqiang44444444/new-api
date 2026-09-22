@@ -25,6 +25,8 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(imageTaskExecuteHandler{})
 	// 音视频证据保留期清理（一期）。
 	service.RegisterSystemTaskHandler(evidenceRetentionHandler{})
+	// Video creation funds guarantee: independent of the provider polling switch.
+	service.RegisterSystemTaskHandler(taskFundGuaranteeHandler{})
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and

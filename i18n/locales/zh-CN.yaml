@@ -293,3 +293,6 @@ notify.password_changed.subject: "【{{.SiteName}}】您的密码已修改"
 notify.password_changed.body: "<p>{{.Username}} 您好，</p><p>您在 {{.SiteName}} 的账户密码刚刚被修改。如非本人操作，请立即重置密码或联系管理员。</p>"
 notify.token_created.subject: "【{{.SiteName}}】新 API 密钥已创建"
 notify.token_created.body: "<p>{{.Username}} 您好，</p><p>您的 {{.SiteName}} 账户刚刚创建了一个新的 API 密钥。如非本人操作，请立即检查您的密钥列表。</p>"
+
+notify.video_refund.subject: "【{{.SiteName}}】视频退款需要处理"
+notify.video_refund.body: "<p>视频资金扫描或退款操作失败，仍有退款待处理。请在错误日志的占款日志中核对失败原因和重试时间。已受理退款会继续排队处理，请勿直接修改余额。</p>"

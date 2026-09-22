@@ -402,7 +402,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 			service.LogTaskRequestEvidenceRejection(c, err)
 			return nil, service.TaskErrorForEvidenceRejection(err)
 		}
-		markAmbiguousTaskCreate(c, info)
+		// 传输结果分类先于 unknown 标记（方案 §3.1）：已判定确定未发送时
+		// 保持拒绝语义，不得被上层误改成 unknown。
+		if relaycommon.GetTaskCreateDisposition(c) != relaycommon.TaskCreateTerminalRejection {
+			markAmbiguousTaskCreate(c, info)
+		}
 		return nil, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
 	}
 	if resp == nil {

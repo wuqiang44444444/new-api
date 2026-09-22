@@ -1,7 +1,7 @@
 ---
 page-id: videos-modelark
 kind: api-reference
-last-verified: 2026-09-14
+last-verified: 2026-09-22
 operations:
   - listModelArkVideoModels
   - retrieveModel
@@ -10,6 +10,7 @@ operations:
   - getModelArkVideoTask
   - deleteModelArkVideoTask
   - getVideoContent
+  - listVideoFundProgress
 ---
 
 # ModelArk V3 Seedance 视频
@@ -575,8 +576,19 @@ curl --fail "{{OPENAI_BASE_URL}}/videos/task-public-id/content?part=last_frame" 
 ## 创建结果不明、计费与重试
 
 ModelArk 创建请求最多发送一次上游 POST，当前不接受客户幂等键。发送后结果不明时返回
-`create_outcome_unknown`，平台不会自动重发、换模型或退款。客户端必须停止自动创建，保存
-`request_id` 并联系技术人员核查。
+`create_outcome_unknown`，平台不会自动重发或换模型。客户端必须停止自动创建，保存
+`request_id`。创建阶段钱包占款满 24 小时后自动退回，后台每 15 秒检查，退款失败每 30 秒重试；
+服务停机、数据库故障或积压可能延迟实际到账。正式任务按任务计费合同处理，不因满 24 小时自动退款。
+
+控制台用量日志的“视频退款进度”显示本人请求，包括没有成功返回任务 ID 的创建占款。程序可用原
+API Key 请求 `GET /api/video-funds/token?p=1`，可选 `task_id` 按平台任务或占款请求 ID 精确筛选。
+每页 20 条；只返回该 Key 所属用户及应用的数据。金额单位为 quota，`refund_amount_known=false`
+表示历史退款额无法核实，零时间表示不适用或未知。退款不代表上游已取消；退款后不会自动补扣。
+
+Funding progress: use the original API key with `GET /api/video-funds/token?p=1`. Creation wallet holds
+are released after 24 hours; the worker checks every 15 seconds and retries failures after 30 seconds.
+Do not automatically repeat an unknown creation. Successfully accepted tasks follow their normal billing
+contract. The response is scoped to the authenticated user and application; amounts use quota units.
 
 任务成功建立后，费用按创建时确定的模型、请求参数和价格规则处理。成功视频可以先交付，结算随后完成：
 

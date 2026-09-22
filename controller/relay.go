@@ -890,6 +890,7 @@ func executeTaskSubmissionWith(
 		diagnostics.failed("settle", "billing_error", taskErr, true)
 		return nil, taskErr
 	}
+	service.MarkVideoTaskFundingReady(task)
 	service.LogTaskConsumption(c, relayInfo, task)
 	setTaskCreateContractResponse(c, task)
 	diagnostics.complete(task, result.Quota)
@@ -898,6 +899,7 @@ func executeTaskSubmissionWith(
 }
 
 func presentTaskSubmission(c *gin.Context, outcome *taskSubmissionOutcome) {
+	defer service.TrackVideoCreateDelivery(c, outcome.Task)()
 	diagnostics := newTaskPluginSubmitDiagnostics(c)
 	otherRatios := outcome.RelayInfo.PriceData.OtherRatios()
 	if otherRatios == nil {
