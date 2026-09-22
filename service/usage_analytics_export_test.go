@@ -114,3 +114,43 @@ func TestUsageAnalyticsRegenerationPreservesSnapshotAndAuthorization(t *testing.
 	_, err = SubmitUsageAnalyticsExport(42, UsageAnalyticsExportRequest{Period: "day", Date: "2026-09-16", View: "customers"})
 	require.Error(t, err)
 }
+
+func TestUsageExportIncludesDeliveredVideoCustomerRefund(t *testing.T) {
+	truncate(t)
+	setupCustomerExportServiceTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Task{}, &model.Token{}, &model.BatchJob{}, &model.TaskBillingDelivery{}, &model.ProviderChannelBillingDiscount{}))
+	require.NoError(t, model.DB.Create(&model.Token{Id: 991, UserId: 42, Name: "refund-export-key"}).Error)
+	period, err := model.ResolveUsageAnalyticsPeriod("day", "2026-09-16", 1789920000)
+	require.NoError(t, err)
+	task := model.Task{TaskID: "export-refunded-video", UserId: 42, ChannelId: 991, Platform: "video", Status: model.TaskStatusSuccess,
+		FinishTime: period.StartTimestamp + 10, BillingState: model.TaskBillingStateAwaitingUsage,
+		Properties:  model.Properties{OriginModelName: "video"},
+		PrivateData: model.TaskPrivateData{TokenId: 991, AsyncBilling: &model.TaskAsyncBillingContext{State: model.TaskBillingStateAwaitingUsage}},
+		VideoRefund: model.VideoRefund{VideoRefundState: "refunded", VideoRefundCompletedAt: period.EndTimestamp + 10}}
+	require.NoError(t, model.DB.Create(&task).Error)
+	for _, event := range []model.TaskBillingDelivery{
+		{TaskRowID: task.ID, Event: "create", AfterQuota: 100, CreatedAt: period.StartTimestamp - 10},
+		{TaskRowID: task.ID, Event: "customer_refund", BeforeQuota: 100, CreatedAt: period.EndTimestamp + 10},
+	} {
+		require.NoError(t, model.DB.Create(&event).Error)
+		require.NoError(t, model.DeliverTaskBillingLog(context.Background(), event.ID, BuildTaskBillingDeliveryLog))
+	}
+	snapshot, err := model.FreezeUsageAnalyticsDiscounts(context.Background(), period)
+	require.NoError(t, err)
+	filters := model.CustomerExportFilters{UsageDiscounts: snapshot}
+	for _, view := range []string{"customer", "customers", "upstream"} {
+		t.Run(view, func(t *testing.T) {
+			rows, err := usageAnalyticsExportRows(context.Background(), &model.CustomerExportJob{TargetUserId: 42}, view, period, filters, customerExportScopeColumns{QuotaPerUnit: 100, CurrencyRate: 1, Currency: "USD"})
+			require.NoError(t, err)
+			require.NotEmpty(t, rows)
+			cells := map[string]string{}
+			for i, h := range usageAnalyticsExportHeader("en") {
+				cells[h] = rows[0][i]
+			}
+			assert.Equal(t, "1", cells["Calls"])
+			assert.Equal(t, "100", cells["Gross quota"])
+			assert.Equal(t, "100", cells["Refund quota"])
+			assert.Equal(t, "0", cells["Net quota"])
+		})
+	}
+}

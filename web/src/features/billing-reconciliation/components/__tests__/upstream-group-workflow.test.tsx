@@ -644,7 +644,7 @@ it('keeps channel and model scope when viewing evidence and returns focus on clo
   const status = screen.getByRole('button', { name: /^Usage recorded:/ })
   await user.click(status)
   const trigger = screen.getByRole('button', {
-    name: 'View records: Original amount cannot be calculated: 1 records',
+    name: 'View records: Amounts that cannot be calculated yet: 1 records',
   })
   await user.click(trigger)
   await waitFor(() =>

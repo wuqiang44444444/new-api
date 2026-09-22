@@ -69,18 +69,29 @@ export function billingDataQualityLabel(
 
 export type BillingEvidenceEntry = { filter: string; text: string }
 
-export function billingDataQualityEntries(
-  quality: BillingDataQuality | undefined,
-  t: TFunction,
-  includePricedTests = true
-) {
-  if (!quality) return []
+// Evidence lines are grouped the way operators read them: money that cannot be
+// rebuilt, money that is settled but misses a usage dimension, and other
+// row-level gaps. Confirmed accounting results stay in their own block so
+// positive notes never read as failures.
+export type BillingEvidenceGroup = {
+  key: 'amount_gap' | 'usage_gap' | 'other_gap'
+  title: string
+  entries: BillingEvidenceEntry[]
+}
+
+// Unpriced channel tests dominate the amount gaps. The exclusive test reasons
+// come first and partition their total; the remaining lines are separate
+// row-level facts that may overlap the tests.
+function billingAmountGapEntries(
+  quality: BillingDataQuality,
+  t: TFunction
+): BillingEvidenceEntry[] {
   const reasons: BillingEvidenceEntry[] = []
   if (quality.usage_without_amount_rows) {
     reasons.push({
       filter: 'usage_without_amount_rows',
       text: t(
-        '{{count}} channel tests are excluded from the amount total; the reasons below partition these tests. Usage is retained.',
+        '{{count}} channel tests did not save the pricing evidence needed to rebuild their amount; usage is retained. The breakdown below partitions these tests.',
         { count: quality.usage_without_amount_rows }
       ),
     })
@@ -91,6 +102,51 @@ export function billingDataQualityEntries(
       text: t(
         '{{count}} tests used estimated usage or fees. Their cost is pending and excluded from confirmed totals; this does not mean zero cost.',
         { count: quality.test_amount_pending_reasons.estimated_usage }
+      ),
+    })
+  }
+  if (quality.test_amount_pending_reasons?.missing_cache_write) {
+    reasons.push({
+      filter: 'test:missing_cache_write',
+      text: t(
+        '{{count}} tests did not save cache-write usage required to recalculate their amount.',
+        { count: quality.test_amount_pending_reasons.missing_cache_write }
+      ),
+    })
+  }
+  if (quality.test_amount_pending_reasons?.missing_cache_read) {
+    reasons.push({
+      filter: 'test:missing_cache_read',
+      text: t(
+        '{{count}} tests did not save cache-read usage required by their pricing rule.',
+        { count: quality.test_amount_pending_reasons.missing_cache_read }
+      ),
+    })
+  }
+  if (quality.test_amount_pending_reasons?.missing_cache_ttl) {
+    reasons.push({
+      filter: 'test:missing_cache_ttl',
+      text: t(
+        '{{count}} tests lack the cache-write duration breakdown required by their pricing rule.',
+        { count: quality.test_amount_pending_reasons.missing_cache_ttl }
+      ),
+    })
+  }
+  if (quality.test_amount_pending_reasons?.missing_multimodal_usage) {
+    reasons.push({
+      filter: 'test:missing_multimodal_usage',
+      text: t(
+        '{{count}} tests lack the image or audio usage needed by their pricing rule.',
+        { count: quality.test_amount_pending_reasons.missing_multimodal_usage }
+      ),
+    })
+  }
+  if (quality.test_amount_pending_reasons?.missing_usage_semantic) {
+    reasons.push({
+      filter: 'test:missing_usage_semantic',
+      text: t(
+        '{{count}} tests lack the usage breakdown needed to apply their pricing rule.',
+        { count: quality.test_amount_pending_reasons.missing_usage_semantic }
       ),
     })
   }
@@ -123,33 +179,6 @@ export function billingDataQualityEntries(
       ),
     })
   }
-  if (quality.test_amount_pending_reasons?.missing_cache_write) {
-    reasons.push({
-      filter: 'test:missing_cache_write',
-      text: t(
-        '{{count}} tests did not save cache-write usage required to recalculate their amount.',
-        { count: quality.test_amount_pending_reasons.missing_cache_write }
-      ),
-    })
-  }
-  if (quality.test_amount_pending_reasons?.missing_cache_read) {
-    reasons.push({
-      filter: 'test:missing_cache_read',
-      text: t(
-        '{{count}} tests did not save cache-read usage required by their pricing rule.',
-        { count: quality.test_amount_pending_reasons.missing_cache_read }
-      ),
-    })
-  }
-  if (quality.test_amount_pending_reasons?.missing_cache_ttl) {
-    reasons.push({
-      filter: 'test:missing_cache_ttl',
-      text: t(
-        '{{count}} tests lack the cache-write duration breakdown required by their pricing rule.',
-        { count: quality.test_amount_pending_reasons.missing_cache_ttl }
-      ),
-    })
-  }
   if (quality.test_amount_pending_reasons?.missing_cache_write_price) {
     reasons.push({
       filter: 'test:missing_cache_write_price',
@@ -165,24 +194,6 @@ export function billingDataQualityEntries(
       text: t(
         '{{count}} tests have cache reads but lack the historical cache-read price.',
         { count: quality.test_amount_pending_reasons.missing_cache_read_price }
-      ),
-    })
-  }
-  if (quality.test_amount_pending_reasons?.missing_usage_semantic) {
-    reasons.push({
-      filter: 'test:missing_usage_semantic',
-      text: t(
-        '{{count}} tests lack the usage breakdown needed to apply their pricing rule.',
-        { count: quality.test_amount_pending_reasons.missing_usage_semantic }
-      ),
-    })
-  }
-  if (quality.test_amount_pending_reasons?.missing_multimodal_usage) {
-    reasons.push({
-      filter: 'test:missing_multimodal_usage',
-      text: t(
-        '{{count}} tests lack the image or audio usage needed by their pricing rule.',
-        { count: quality.test_amount_pending_reasons.missing_multimodal_usage }
       ),
     })
   }
@@ -224,7 +235,24 @@ export function billingDataQualityEntries(
       ),
     })
   }
-  if (includePricedTests) reasons.push(...billingAccountingEntries(quality, t))
+  if (quality.legacy_test_cache_read_rows) {
+    reasons.push({
+      filter: 'legacy_test_cache_read_rows',
+      text: t(
+        'Of the unpriced tests above, {{count}} also lack cache read details; these are the same records.',
+        { count: quality.legacy_test_cache_read_rows }
+      ),
+    })
+  }
+  if (quality.legacy_test_cache_write_rows) {
+    reasons.push({
+      filter: 'legacy_test_cache_write_rows',
+      text: t(
+        'Of the unpriced tests above, {{count}} also lack cache write details; these are the same records.',
+        { count: quality.legacy_test_cache_write_rows }
+      ),
+    })
+  }
   if (quality.auxiliary_charge_rows) {
     reasons.push({
       filter: 'auxiliary_charge_rows',
@@ -234,13 +262,35 @@ export function billingDataQualityEntries(
       ),
     })
   }
-  if (quality.legacy_test_cache_read_rows) {
+  if (quality.missing_historical_price_rows) {
     reasons.push({
-      filter: 'legacy_test_cache_read_rows',
+      filter: 'missing_historical_price_rows',
       text: t(
-        'Of the unpriced tests above, {{count}} also lack cache read details; these are the same records.',
-        { count: quality.legacy_test_cache_read_rows }
+        '{{count}} records are missing historical price or discount snapshots.',
+        { count: quality.missing_historical_price_rows }
       ),
+    })
+  }
+  return reasons
+}
+
+// Amounts stay settled in this block; only a usage dimension is unverifiable.
+function billingUsageGapEntries(
+  quality: BillingDataQuality,
+  t: TFunction
+): BillingEvidenceEntry[] {
+  const reasons: BillingEvidenceEntry[] = []
+  const writeUnreported = quality.cache_write_unreported_requests ?? 0
+  const writeHistorical =
+    (quality.cache_write_unavailable_requests ?? 0) -
+    writeUnreported -
+    (quality.legacy_test_cache_write_rows ?? 0)
+  if (writeHistorical > 0) {
+    reasons.push({
+      filter: 'cache_write_historical',
+      text: t('{{count}} billing records lack cache write details.', {
+        count: writeHistorical,
+      }),
     })
   }
   const readUnreported = quality.cache_read_unreported_requests ?? 0
@@ -256,6 +306,15 @@ export function billingDataQualityEntries(
       }),
     })
   }
+  if (writeUnreported > 0) {
+    reasons.push({
+      filter: 'cache_write_unreported_requests',
+      text: t(
+        '{{count}} responses did not provide a usable cache write meter; this does not imply a failed request.',
+        { count: writeUnreported }
+      ),
+    })
+  }
   if (readUnreported > 0) {
     reasons.push({
       filter: 'cache_read_unreported_requests',
@@ -263,17 +322,6 @@ export function billingDataQualityEntries(
         '{{count}} responses did not provide a usable cache read meter; this does not imply a failed request.',
         { count: readUnreported }
       ),
-    })
-  }
-  const secondsValueMissing = quality.seconds_value_missing_rows ?? 0
-  const secondsGeneric =
-    (quality.seconds_unavailable_rows ?? 0) - secondsValueMissing
-  if (secondsGeneric > 0) {
-    reasons.push({
-      filter: 'seconds_unit_missing',
-      text: t('{{count}} per-second records lack the recorded billing unit.', {
-        count: secondsGeneric,
-      }),
     })
   }
   const missingTaskLinks = quality.seconds_task_link_missing_rows ?? 0
@@ -286,6 +334,7 @@ export function billingDataQualityEntries(
       ),
     })
   }
+  const secondsValueMissing = quality.seconds_value_missing_rows ?? 0
   if (secondsValueMissing - missingTaskLinks > 0) {
     reasons.push({
       filter: 'seconds_value_missing',
@@ -293,6 +342,16 @@ export function billingDataQualityEntries(
         '{{count}} per-second records lack the billable duration used at the time; their amounts cannot be recalculated from usage.',
         { count: secondsValueMissing - missingTaskLinks }
       ),
+    })
+  }
+  const secondsGeneric =
+    (quality.seconds_unavailable_rows ?? 0) - secondsValueMissing
+  if (secondsGeneric > 0) {
+    reasons.push({
+      filter: 'seconds_unit_missing',
+      text: t('{{count}} per-second records lack the recorded billing unit.', {
+        count: secondsGeneric,
+      }),
     })
   }
   if (quality.input_tokens_unavailable_requests) {
@@ -303,37 +362,15 @@ export function billingDataQualityEntries(
       }),
     })
   }
-  if (quality.legacy_test_cache_write_rows) {
-    reasons.push({
-      filter: 'legacy_test_cache_write_rows',
-      text: t(
-        'Of the unpriced tests above, {{count}} also lack cache write details; these are the same records.',
-        { count: quality.legacy_test_cache_write_rows }
-      ),
-    })
-  }
-  const writeUnreported = quality.cache_write_unreported_requests ?? 0
-  const writeHistorical =
-    (quality.cache_write_unavailable_requests ?? 0) -
-    writeUnreported -
-    (quality.legacy_test_cache_write_rows ?? 0)
-  if (writeHistorical > 0) {
-    reasons.push({
-      filter: 'cache_write_historical',
-      text: t('{{count}} billing records lack cache write details.', {
-        count: writeHistorical,
-      }),
-    })
-  }
-  if (writeUnreported > 0) {
-    reasons.push({
-      filter: 'cache_write_unreported_requests',
-      text: t(
-        '{{count}} responses did not provide a usable cache write meter; this does not imply a failed request.',
-        { count: writeUnreported }
-      ),
-    })
-  }
+  return reasons
+}
+
+// Row-level facts that are neither an amount nor a usage-dimension gap.
+function billingOtherGapEntries(
+  quality: BillingDataQuality,
+  t: TFunction
+): BillingEvidenceEntry[] {
+  const reasons: BillingEvidenceEntry[] = []
   if (quality.unavailable_requests) {
     reasons.push({
       filter: 'unavailable_requests',
@@ -359,16 +396,85 @@ export function billingDataQualityEntries(
       ),
     })
   }
-  if (quality.missing_historical_price_rows) {
-    reasons.push({
-      filter: 'missing_historical_price_rows',
-      text: t(
-        '{{count}} records are missing historical price or discount snapshots.',
-        { count: quality.missing_historical_price_rows }
-      ),
+  return reasons
+}
+
+// Titles need the coverage partition row; leaner payloads stay heading-less
+// instead of showing a zero next to explained records.
+function billingEvidenceGroupTitle(
+  key: BillingEvidenceGroup['key'],
+  count: number | undefined,
+  t: TFunction
+): string {
+  if (count == null) return ''
+  if (key === 'amount_gap') {
+    return t('Amounts that cannot be calculated yet: {{count}} records', {
+      count: count.toLocaleString(),
     })
   }
-  return reasons
+  if (key === 'usage_gap') {
+    return t('Amount available, usage details missing: {{count}} records', {
+      count: count.toLocaleString(),
+    })
+  }
+  return t(
+    'Amount available, other billing details missing: {{count}} records',
+    {
+      count: count.toLocaleString(),
+    }
+  )
+}
+
+export function billingEvidenceGroups(
+  quality: BillingDataQuality | undefined,
+  t: TFunction
+): BillingEvidenceGroup[] {
+  const coverage = quality?.evidence_coverage
+  const groups: BillingEvidenceGroup[] = [
+    {
+      key: 'amount_gap',
+      title: billingEvidenceGroupTitle(
+        'amount_gap',
+        coverage?.amount_gap_rows,
+        t
+      ),
+      entries: quality ? billingAmountGapEntries(quality, t) : [],
+    },
+    {
+      key: 'usage_gap',
+      title: billingEvidenceGroupTitle(
+        'usage_gap',
+        coverage?.usage_gap_rows,
+        t
+      ),
+      entries: quality ? billingUsageGapEntries(quality, t) : [],
+    },
+    {
+      key: 'other_gap',
+      title: billingEvidenceGroupTitle(
+        'other_gap',
+        coverage?.other_gap_rows,
+        t
+      ),
+      entries: quality ? billingOtherGapEntries(quality, t) : [],
+    },
+  ]
+  return groups.filter((group) => group.entries.length > 0)
+}
+
+export function billingDataQualityEntries(
+  quality: BillingDataQuality | undefined,
+  t: TFunction,
+  includePricedTests = true
+) {
+  if (!quality) return []
+  const entries = [
+    ...billingAmountGapEntries(quality, t),
+    ...billingUsageGapEntries(quality, t),
+    ...billingOtherGapEntries(quality, t),
+  ]
+  if (includePricedTests) entries.push(...billingAccountingEntries(quality, t))
+  return entries
 }
 
 export function escapeCsvCell(value: string | number) {
@@ -426,31 +532,15 @@ export function cacheMeterUnavailableLabel(
   return t('Cache metering incomplete')
 }
 
+// Confirmed results only: every line here is a positive verification, so the
+// block stays separate from the gap groups. The priced-test total comes first
+// and its breakdown partitions it (replayed, recorded, remaining direct).
 export function billingAccountingEntries(
   quality: BillingDataQuality | undefined,
   t: TFunction
 ): BillingEvidenceEntry[] {
   if (!quality) return []
   const notes: BillingEvidenceEntry[] = []
-  if (quality.test_recomputed_rows) {
-    notes.push({
-      filter: 'test_recomputed_rows',
-      text: t(
-        'Of the priced tests, {{count}} were recalculated from their recorded prices and usage.',
-        { count: quality.test_recomputed_rows }
-      ),
-    })
-  }
-  if (quality.test_recorded_original_rows) {
-    notes.push({
-      filter: 'test_recorded_original_rows',
-      text: t(
-        'Of the priced tests, {{count}} use the saved successful expression result with a group multiplier of 1.',
-        { count: quality.test_recorded_original_rows }
-      ),
-    })
-  }
-
   if (quality.test_priced_rows) {
     notes.push({
       filter: 'test_priced_rows',
@@ -459,6 +549,37 @@ export function billingAccountingEntries(
         { count: quality.test_priced_rows }
       ),
     })
+    if (quality.test_recomputed_rows) {
+      notes.push({
+        filter: 'test_recomputed_rows',
+        text: t(
+          'Of the priced tests, {{count}} match their original settlement when recalculated from saved prices and usage.',
+          { count: quality.test_recomputed_rows }
+        ),
+      })
+    }
+    if (quality.test_recorded_original_rows) {
+      notes.push({
+        filter: 'test_recorded_original_rows',
+        text: t(
+          'Of the priced tests, {{count}} use the saved successful expression result with a group multiplier of 1.',
+          { count: quality.test_recorded_original_rows }
+        ),
+      })
+    }
+    const directRows =
+      quality.test_priced_rows -
+      (quality.test_recomputed_rows ?? 0) -
+      (quality.test_recorded_original_rows ?? 0)
+    if (directRows > 0) {
+      notes.push({
+        filter: '',
+        text: t(
+          'The remaining {{count}} priced tests read the amount directly from saved pricing records.',
+          { count: directRows }
+        ),
+      })
+    }
   }
   if (quality.recovered_billing_seconds_rows) {
     notes.push({

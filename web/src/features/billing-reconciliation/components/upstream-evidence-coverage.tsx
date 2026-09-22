@@ -33,7 +33,7 @@ export function UpstreamEvidenceCoverage(props: {
     {
       filter: 'amount_gap',
       count: coverage.amount_gap_rows ?? 0,
-      text: t('Original amount cannot be calculated: {{count}} records', {
+      text: t('Amounts that cannot be calculated yet: {{count}} records', {
         count: (coverage.amount_gap_rows ?? 0).toLocaleString(),
       }),
     },

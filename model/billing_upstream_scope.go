@@ -123,7 +123,7 @@ func upstreamSummaryMetadata(ctx context.Context, period int64) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	discounts, err := loadProviderChannelBillingDiscounts(period, nil)
+	discounts, err := loadProviderChannelBillingDiscounts(ctx, period, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -333,11 +333,14 @@ export function UpstreamViewGroups(props: {
   period: UsageAnalyticsPeriod
 }) {
   const { t } = useTranslation()
+  const dates = props.period.days.map((day) => day.date)
+  const futureFlags = props.period.days.map((day) => Boolean(day.future))
+  const weekly = props.period.period === 'week'
   return (
     <div className='flex flex-col gap-4'>
       <DayTotalsTable
-        dates={props.period.days.map((d) => d.date)}
-        futureFlags={props.period.days.map((d) => Boolean(d.future))}
+        dates={dates}
+        futureFlags={futureFlags}
         days={props.view.day_totals}
         total={props.view.total}
       />
@@ -354,6 +357,15 @@ export function UpstreamViewGroups(props: {
             <p className='text-muted-foreground text-sm'>
               {t('Unidentified URL grouping')}
             </p>
+          )}
+          {weekly && (
+            <DayTotalsTable
+              caption={group.display_name}
+              dates={dates}
+              futureFlags={futureFlags}
+              days={group.days}
+              total={group.total}
+            />
           )}
           {group.models.map((model) => (
             <section
@@ -384,7 +396,16 @@ export function UpstreamViewGroups(props: {
                   {formatCustomerStatementQuota(model.total.reference_amount)}
                 </div>
               </div>
-              <Collapsible>
+              {weekly && (
+                <DayTotalsTable
+                  caption={`${t('Provider model')} · ${model.provider_model === 'unknown' ? t('Unknown model') : model.provider_model}`}
+                  dates={dates}
+                  futureFlags={futureFlags}
+                  days={model.days}
+                  total={model.total}
+                />
+              )}
+              <Collapsible defaultOpen={weekly}>
                 <CollapsibleTrigger className='rounded px-2 py-1 text-sm underline focus-visible:outline-2'>
                   {t('Channels')} ({model.channels.length})
                 </CollapsibleTrigger>
@@ -403,63 +424,78 @@ export function UpstreamViewGroups(props: {
                       </thead>
                       <tbody>
                         {model.channels.map((channel) => (
-                          <tr
-                            key={channel.channel_id}
-                            className='border-b align-top'
-                          >
-                            <td className='p-2'>{channel.channel_name}</td>
-                            <td className='p-2'>
-                              <UsageCallsCell metrics={channel.total} />
-                            </td>
-                            <td className='p-2'>
-                              <UsageTokensCell metrics={channel.total} />
-                            </td>
-                            <td className='p-2'>
-                              {formatCustomerStatementQuota(
-                                channel.total.original_quota_estimate
-                              )}
-                            </td>
-                            <td className='p-2'>
-                              {formatCustomerStatementQuota(
-                                channel.total.reference_amount
-                              )}
-                              <UsageQualityCell metrics={channel.total} />
-                            </td>
-                            <td className='p-2'>
-                              <div className='flex flex-col gap-1 text-xs'>
-                                {channel.discounts.map((discount) => (
-                                  <span key={discount.period_start}>
-                                    {new Date(
-                                      discount.period_start * 1000
-                                    ).toLocaleDateString('en-CA', {
-                                      timeZone: 'Asia/Shanghai',
-                                      year: 'numeric',
-                                      month: '2-digit',
-                                    })}
-                                    : {discount.value} (
-                                    {discount.source === 'default'
-                                      ? t('Default')
-                                      : t('Configured')}
-                                    )
-                                  </span>
-                                ))}
-                                {channel.total.multiple_discounts && (
-                                  <span>{t('Multiple discounts')}</span>
+                          <Fragment key={channel.channel_id}>
+                            <tr className='border-b align-top'>
+                              <td className='p-2'>{channel.channel_name}</td>
+                              <td className='p-2'>
+                                <UsageCallsCell metrics={channel.total} />
+                              </td>
+                              <td className='p-2'>
+                                <UsageTokensCell metrics={channel.total} />
+                              </td>
+                              <td className='p-2'>
+                                {formatCustomerStatementQuota(
+                                  channel.total.original_quota_estimate
                                 )}
-                                {channel.usage_only && (
-                                  <span>{t('Unpriced channel tests')}</span>
+                              </td>
+                              <td className='p-2'>
+                                {formatCustomerStatementQuota(
+                                  channel.total.reference_amount
                                 )}
-                                {(channel.total.test_priced_rows ?? 0) > 0 && (
-                                  <span>
-                                    {t(
-                                      '{{count}} channel tests included in the reference amount.',
-                                      { count: channel.total.test_priced_rows }
-                                    )}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
+                                <UsageQualityCell metrics={channel.total} />
+                              </td>
+                              <td className='p-2'>
+                                <div className='flex flex-col gap-1 text-xs'>
+                                  {channel.discounts.map((discount) => (
+                                    <span key={discount.period_start}>
+                                      {new Date(
+                                        discount.period_start * 1000
+                                      ).toLocaleDateString('en-CA', {
+                                        timeZone: 'Asia/Shanghai',
+                                        year: 'numeric',
+                                        month: '2-digit',
+                                      })}
+                                      : {discount.value} (
+                                      {discount.source === 'default'
+                                        ? t('Default')
+                                        : t('Configured')}
+                                      )
+                                    </span>
+                                  ))}
+                                  {channel.total.multiple_discounts && (
+                                    <span>{t('Multiple discounts')}</span>
+                                  )}
+                                  {channel.usage_only && (
+                                    <span>{t('Unpriced channel tests')}</span>
+                                  )}
+                                  {(channel.total.test_priced_rows ?? 0) >
+                                    0 && (
+                                    <span>
+                                      {t(
+                                        '{{count}} channel tests included in the reference amount.',
+                                        {
+                                          count: channel.total.test_priced_rows,
+                                        }
+                                      )}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                            {weekly && (
+                              <tr>
+                                <td colSpan={6} className='p-2 pb-4'>
+                                  <DayTotalsTable
+                                    caption={`${t('Channel')} · ${channel.channel_name}`}
+                                    dates={dates}
+                                    futureFlags={futureFlags}
+                                    days={channel.days}
+                                    total={channel.total}
+                                  />
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>

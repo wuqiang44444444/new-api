@@ -24,8 +24,10 @@ import {
   upstreamDiscountSourceLabel,
 } from '../upstream-reconciliation-utils'
 import {
-  cacheMeterUnavailableLabel,
+  billingAccountingEntries,
   billingDataQualityReasons,
+  billingEvidenceGroups,
+  cacheMeterUnavailableLabel,
   formatStatementUsage,
 } from '../upstream-statement-utils'
 
@@ -84,15 +86,16 @@ describe('upstream reconciliation utilities', () => {
     )
 
     expect(reasons).toEqual([
-      '2 channel tests are excluded from the amount total; the reasons below partition these tests. Usage is retained.',
-      '6 channel tests are priced and included in the amount total.',
+      '2 channel tests did not save the pricing evidence needed to rebuild their amount; usage is retained. The breakdown below partitions these tests.',
       '1 records include tool surcharges; their official price cannot be fully restored yet.',
       '3 billing records lack cache read details.',
-      '3 per-second records lack the recorded billing unit.',
       '1 per-second records lack the billable duration used at the time; their amounts cannot be recalculated from usage.',
+      '3 per-second records lack the recorded billing unit.',
       '5 records have no confirmed total input usage.',
       '7 records do not contain a frozen billing mode.',
       '280 records do not contain the Provider model identity; the customer model is shown instead.',
+      '6 channel tests are priced and included in the amount total.',
+      'The remaining 6 priced tests read the amount directly from saved pricing records.',
     ])
   })
 
@@ -134,8 +137,8 @@ it('distinguishes optional unreported meters, historical evidence and mixed aggr
   ).toBeUndefined()
   expect(billingDataQualityReasons(q, t)).toEqual([
     '2 billing records lack cache read details.',
-    '1 responses did not provide a usable cache read meter; this does not imply a failed request.',
     '2 responses did not provide a usable cache write meter; this does not imply a failed request.',
+    '1 responses did not provide a usable cache read meter; this does not imply a failed request.',
   ])
 })
 
@@ -165,5 +168,82 @@ describe('Unpriced channel test explanations', () => {
     expect(reasons.join(' ')).toContain('excluded from confirmed totals')
     expect(reasons.join(' ')).toContain('does not mean zero cost')
     expect(reasons.join(' ')).not.toContain('lack reliable pricing records')
+  })
+})
+
+describe('Grouped reconciliation evidence', () => {
+  it('groups amount gaps, usage gaps and confirmed results with closed arithmetic', () => {
+    const t = ((key: string, options?: { count?: number | string }) =>
+      key.replace('{{count}}', String(options?.count ?? ''))) as TFunction
+    const quality = {
+      status: 'partial' as const,
+      evidence_coverage: {
+        rows: 91_816,
+        gap_rows: 14_646,
+        amount_gap_rows: 8_194,
+        usage_gap_rows: 6_452,
+        other_gap_rows: 0,
+      },
+      usage_without_amount_rows: 8_193,
+      test_amount_pending_reasons: {
+        missing_cache_write: 7_939,
+        estimated_usage: 245,
+        missing_multimodal_usage: 9,
+      },
+      legacy_test_cache_write_rows: 7_947,
+      cache_write_unavailable_requests: 14_332,
+      seconds_task_link_missing_rows: 67,
+      test_priced_rows: 14_907,
+      test_recomputed_rows: 7_741,
+      test_recorded_original_rows: 6_086,
+    }
+
+    const groups = billingEvidenceGroups(quality, t)
+    expect(groups.map((group) => group.key)).toEqual([
+      'amount_gap',
+      'usage_gap',
+    ])
+    expect(groups[0].title).toBe('Amounts that cannot be calculated yet: 8,194 records')
+    expect(groups[0].entries.map((entry) => entry.text)).toEqual([
+      '8193 channel tests did not save the pricing evidence needed to rebuild their amount; usage is retained. The breakdown below partitions these tests.',
+      '245 tests used estimated usage or fees. Their cost is pending and excluded from confirmed totals; this does not mean zero cost.',
+      '7939 tests did not save cache-write usage required to recalculate their amount.',
+      '9 tests lack the image or audio usage needed by their pricing rule.',
+      'Of the unpriced tests above, 7947 also lack cache write details; these are the same records.',
+    ])
+    expect(groups[1].title).toBe(
+      'Amount available, usage details missing: 6,452 records'
+    )
+    expect(groups[1].entries.map((entry) => entry.text)).toEqual([
+      '6385 billing records lack cache write details.',
+      '67 historical video records have no task link or recorded billing seconds.',
+    ])
+
+    const accounting = billingAccountingEntries(quality, t)
+    expect(accounting.map((entry) => entry.text)).toEqual([
+      '14907 channel tests are priced and included in the amount total.',
+      'Of the priced tests, 7741 match their original settlement when recalculated from saved prices and usage.',
+      'Of the priced tests, 6086 use the saved successful expression result with a group multiplier of 1.',
+      'The remaining 1080 priced tests read the amount directly from saved pricing records.',
+    ])
+    // The breakdown has no dedicated evidence filter, so it must not render a
+    // clickable link that would open the full priced-test view instead.
+    expect(accounting[3].filter).toBe('')
+  })
+
+  it('omits group headings when the coverage partition is missing', () => {
+    const t = ((key: string, options?: { count?: number }) =>
+      key.replace('{{count}}', String(options?.count ?? ''))) as TFunction
+    const groups = billingEvidenceGroups(
+      {
+        status: 'partial',
+        evidence_coverage: { rows: 3_920, gap_rows: 750 },
+        usage_without_amount_rows: 750,
+      },
+      t
+    )
+    expect(groups).toHaveLength(1)
+    expect(groups[0].key).toBe('amount_gap')
+    expect(groups[0].title).toBe('')
   })
 })

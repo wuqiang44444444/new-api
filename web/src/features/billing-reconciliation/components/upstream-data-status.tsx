@@ -32,7 +32,7 @@ import {
   type BillingEvidenceEntry,
   billingAccountingEntries,
   billingDataQualityLabel,
-  billingDataQualityEntries,
+  billingEvidenceGroups,
 } from '../upstream-statement-utils'
 import { UpstreamEvidenceCoverage } from './upstream-evidence-coverage'
 import { UpstreamEvidenceLink } from './upstream-evidence-link'
@@ -50,7 +50,12 @@ export function UpstreamDataStatus(props: {
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const openingEvidence = useRef(false)
-  const reasons = billingDataQualityEntries(props.quality, t, false)
+  const evidenceGroups = billingEvidenceGroups(props.quality, t)
+  const accountingNotes = billingAccountingEntries(props.quality, t)
+  const allEntries = [
+    ...evidenceGroups.flatMap((group) => group.entries),
+    ...accountingNotes,
+  ]
   const label = billingDataQualityLabel(props.quality, t)
   let amountLabel = t('Original amount complete')
   if (props.usageOnly) {
@@ -82,7 +87,7 @@ export function UpstreamDataStatus(props: {
               ref={trigger}
               variant='outline'
               size='xs'
-              aria-label={`${label}: ${reasons.map((entry) => entry.text).join(' ')}`}
+              aria-label={`${label}: ${allEntries.map((entry) => entry.text).join(' ')}`}
             />
           }
         >
@@ -99,38 +104,50 @@ export function UpstreamDataStatus(props: {
             quality={props.quality}
             onViewEvidence={viewEvidence}
           />
-          {reasons.length > 0 && (
+          {evidenceGroups.length > 0 && (
             <>
               <p className='text-xs font-medium'>
                 {t('Evidence gap categories')}
               </p>
               <p className='text-muted-foreground text-xs'>
                 {t(
-                  'Categories can overlap on the same record; do not add these counts together.'
+                  'Except for the mutually exclusive channel-test breakdown, categories may overlap on the same record; do not add these counts together.'
                 )}
               </p>
-              <ul className='list-disc space-y-1 pl-4 text-xs'>
-                {reasons.map((reason) => (
-                  <li key={reason.filter}>
-                    {reason.text}
-                    <UpstreamEvidenceLink
-                      entry={reason}
-                      onViewEvidence={viewEvidence}
-                    />
-                  </li>
-                ))}
-              </ul>
+              {evidenceGroups.map((group) => (
+                <div key={group.key} className='space-y-1 text-xs'>
+                  {group.title ? (
+                    <p className='font-medium'>{group.title}</p>
+                  ) : null}
+                  <ul className='list-disc space-y-1 pl-4'>
+                    {group.entries.map((entry) => (
+                      <li key={entry.filter || entry.text}>
+                        {entry.text}
+                        <UpstreamEvidenceLink
+                          entry={entry}
+                          onViewEvidence={viewEvidence}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </>
           )}
-          {billingAccountingEntries(props.quality, t).map((note) => (
-            <p key={note.filter} className='text-muted-foreground text-xs'>
-              {note.text}
-              <UpstreamEvidenceLink
-                entry={note}
-                onViewEvidence={viewEvidence}
-              />
-            </p>
-          ))}
+          {accountingNotes.length > 0 && (
+            <div className='text-muted-foreground space-y-1 text-xs'>
+              <p className='font-medium'>{t('Confirmed accounting results')}</p>
+              {accountingNotes.map((note) => (
+                <p key={note.filter || note.text}>
+                  {note.text}
+                  <UpstreamEvidenceLink
+                    entry={note}
+                    onViewEvidence={viewEvidence}
+                  />
+                </p>
+              ))}
+            </div>
+          )}
         </PopoverContent>
       </Popover>
     </div>

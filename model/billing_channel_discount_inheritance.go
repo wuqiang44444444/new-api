@@ -3,10 +3,11 @@ package model
 import (
 	"context"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 // The single inheritance rule used by both explicit initialization and the
-// read-only export snapshot. Version zero means no current-month row exists.
+// read-only report projections. Version zero means no current-month row exists.
 func inheritedProviderChannelDiscount(period int64, id int, source ProviderChannelBillingDiscount, found bool) ProviderChannelBillingDiscount {
 	result := ProviderChannelBillingDiscount{PeriodStart: period, ChannelId: id, Discount: decimal.NewFromInt(1), Reason: reasonChannelDiscountDefault}
 	if found && source.PendingReason == "" {
@@ -17,32 +18,39 @@ func inheritedProviderChannelDiscount(period int64, id int, source ProviderChann
 	return result
 }
 
-func upstreamExportDiscounts(ctx context.Context, period int64, ids []int) (map[int]ProviderChannelBillingDiscount, error) {
-	result := map[int]ProviderChannelBillingDiscount{}
-	for offset := 0; offset < len(ids); offset += 100 {
-		batch := ids[offset:min(offset+100, len(ids))]
+// loadProviderChannelBillingDiscounts resolves the same read-only month facts
+// for pages, day/week analytics and exports, including deleted channels.
+// Current conflicts stay pending; only an absent current row inherits.
+func loadProviderChannelBillingDiscounts(ctx context.Context, period int64, ids []int) (map[int]ProviderChannelBillingDiscount, error) {
+	current, previous := map[int]ProviderChannelBillingDiscount{}, map[int]ProviderChannelBillingDiscount{}
+	for offset := 0; offset < len(ids) || offset == 0; offset += 100 {
+		query := DB.WithContext(ctx).Where("period_start IN ?", []int64{period, previousBillingPeriodStart(period)})
+		if len(ids) > 0 {
+			query = query.Where("channel_id IN ?", ids[offset:min(offset+100, len(ids))])
+		}
 		var rows []ProviderChannelBillingDiscount
-		if err := DB.WithContext(ctx).Where("period_start IN ? AND channel_id IN ?", []int64{period, previousBillingPeriodStart(period)}, batch).Find(&rows).Error; err != nil {
+		if err := query.FindInBatches(&rows, 500, func(_ *gorm.DB, _ int) error {
+			for _, row := range rows {
+				if row.PeriodStart == period {
+					current[row.ChannelId] = row
+				} else {
+					previous[row.ChannelId] = row
+				}
+			}
+			return nil
+		}).Error; err != nil {
 			return nil, err
 		}
-		current, previous := map[int]ProviderChannelBillingDiscount{}, map[int]ProviderChannelBillingDiscount{}
-		for _, row := range rows {
-			if row.PeriodStart == period {
-				current[row.ChannelId] = row
-			} else {
-				previous[row.ChannelId] = row
-			}
-		}
-		for _, id := range batch {
-			if record, exists := current[id]; exists {
-				if record.PendingReason == "" {
-					result[id] = record
-				}
-				continue
-			}
-			source, found := previous[id]
-			result[id] = inheritedProviderChannelDiscount(period, id, source, found)
+	}
+	for id, source := range previous {
+		if _, exists := current[id]; !exists {
+			current[id] = inheritedProviderChannelDiscount(period, id, source, true)
 		}
 	}
-	return result, nil
+	for _, id := range ids {
+		if _, exists := current[id]; !exists {
+			current[id] = inheritedProviderChannelDiscount(period, id, ProviderChannelBillingDiscount{}, false)
+		}
+	}
+	return current, nil
 }

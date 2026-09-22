@@ -28,8 +28,12 @@ it.each([
       filters: {},
     } as CustomerExportJobView
     await resubmitExport(job)
-    expect(post).toHaveBeenCalledExactlyOnceWith(endpoint, {
-      source_job_id: 'source-job',
-    })
+    expect(post).toHaveBeenCalledExactlyOnceWith(
+      endpoint,
+      {
+        source_job_id: 'source-job',
+      },
+      { skipErrorHandler: true }
+    )
   }
 )

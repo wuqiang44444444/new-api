@@ -44,11 +44,23 @@ type VideoFundFilters struct {
 
 // The union is a read projection of the two existing funding owners. The
 // atomic transfer removes the attempt from the projection and exposes its Task.
-// No JSON SQL, provider identity inference, or new accounting ledger is used.
+// Result availability is read from the existing Task JSON, with an explicit
+// expression for each supported database; no copied state or ledger is stored.
 // The fund_state CASE below must stay equivalent to the Go derivation in
 // buildVideoFundLogEntry; TestVideoFundLogProjectionMatchesEntryDerivation
 // locks that equivalence.
 func videoFundProjection() (string, []any) {
+	// Task private_data is JSON in MySQL/PostgreSQL and serialized text in
+	// SQLite. Only the presence check enters SQL; result URLs are never selected.
+	resultURL := "CASE WHEN json_valid(private_data) THEN json_extract(private_data, '$.result_url') ELSE NULL END"
+	if common.UsingMainDatabase(common.DatabaseTypeMySQL) {
+		resultURL = "CASE WHEN JSON_TYPE(JSON_EXTRACT(private_data, '$.result_url')) = 'STRING' THEN JSON_UNQUOTE(JSON_EXTRACT(private_data, '$.result_url')) ELSE NULL END"
+	} else if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		resultURL = "private_data ->> 'result_url'"
+	}
+	// Match Task.GetResultURL, including the existing native legacy result field.
+	missingResult := "(status = 'SUCCESS' AND COALESCE(" + resultURL + ", '') = '' AND COALESCE(fail_reason, '') = '')"
+
 	sql := `SELECT 'attempt' AS kind, id, public_task_id AS task_id, user_id, app_id, channel_id, created_at,
  CASE WHEN billing_hold_state = 'held' THEN held_quota ELSE 0 END AS quota, funds_deadline_at AS deadline_at,
  CASE WHEN billing_hold_state = 'held' AND (status IN ('unknown','upstream_succeeded') OR funds_deadline_at <= ?) THEN 1 ELSE 0 END AS abnormal,
@@ -57,7 +69,7 @@ func videoFundProjection() (string, []any) {
  FROM task_create_attempts WHERE client_protocol IN ? AND billing_hold_state IN ('held','released')
  UNION ALL
  SELECT 'task' AS kind, id, task_id, user_id, app_id, channel_id, created_at, quota, 0 AS deadline_at,
- CASE WHEN quota > 0 AND (status = 'FAILURE' OR video_delivery_state IN ('write_failed','result_unavailable') OR billing_state IN ('debt','awaiting_usage')) THEN 1 ELSE 0 END AS abnormal,
+ CASE WHEN quota > 0 AND (status = 'FAILURE' OR ` + missingResult + ` OR video_delivery_state = 'write_failed' OR billing_state IN ('debt','awaiting_usage')) THEN 1 ELSE 0 END AS abnormal,
  CASE WHEN COALESCE(video_refund_failure,'') <> '' THEN 1 ELSE 0 END AS refund_failed,
  CASE WHEN video_refund_state = 'pending' THEN 'pending' WHEN video_refund_completed_at > 0 THEN 'refunded' WHEN quota = 0 AND EXISTS (SELECT 1 FROM task_billing_deliveries d WHERE d.task_row_id = tasks.id AND d.before_quota > d.after_quota) THEN 'refunded' WHEN quota = 0 THEN 'closed' WHEN billing_state = 'settled' OR status = 'SUCCESS' THEN 'charged' ELSE 'held' END AS fund_state
  FROM tasks WHERE (client_protocol IN ? OR action IN ?) AND platform NOT IN ('azure_batch','suno','mj') AND COALESCE(client_protocol,'') <> 'image_openai_v1'`
@@ -288,7 +300,7 @@ func buildVideoFundLogEntry(kind string, a *TaskCreateAttempt, t *Task, refundSu
 		if !IsLinkVideoTaskClientProtocol(t.ClientProtocol) && !t.VideoFundingReady {
 			entry.RefundAmountKnown = false
 		}
-		if t.Status == TaskStatusSuccess && t.PrivateData.ResultURL == "" {
+		if t.Status == TaskStatusSuccess && t.GetResultURL() == "" {
 			entry.Delivery = "result_unavailable"
 		}
 		entry.Version = videoTaskRefundVersion(t)

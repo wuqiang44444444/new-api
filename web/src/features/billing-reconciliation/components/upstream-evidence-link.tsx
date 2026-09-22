@@ -9,7 +9,9 @@ export function UpstreamEvidenceLink(props: {
   onViewEvidence?: (entry: BillingEvidenceEntry) => void
 }) {
   const { t } = useTranslation()
-  if (!props.onViewEvidence) return null
+  // Entries without a filter (display-only breakdown lines) have no evidence
+  // view to open.
+  if (!props.onViewEvidence || !props.entry.filter) return null
   return (
     <Button
       variant='link'

@@ -119,17 +119,19 @@ type usageAggregation struct {
 }
 
 type usageTaskRecord struct {
-	DeliveryIncomplete bool             `gorm:"-"`
-	RowID              int64            `gorm:"column:id"`
-	TaskID             string           `gorm:"column:task_id"`
-	UserID             int              `gorm:"column:user_id"`
-	ChannelID          int              `gorm:"column:channel_id"`
-	Status             TaskStatus       `gorm:"column:status"`
-	FinishTime         int64            `gorm:"column:finish_time"`
-	BillingState       TaskBillingState `gorm:"column:billing_state"`
-	Properties         Properties       `gorm:"column:properties"`
-	Quota              int              `gorm:"column:quota"`
-	PrivateData        TaskPrivateData  `gorm:"column:private_data"`
+	VideoRefundState       string
+	VideoRefundCompletedAt int64
+	DeliveryIncomplete     bool             `gorm:"-"`
+	RowID                  int64            `gorm:"column:id"`
+	TaskID                 string           `gorm:"column:task_id"`
+	UserID                 int              `gorm:"column:user_id"`
+	ChannelID              int              `gorm:"column:channel_id"`
+	Status                 TaskStatus       `gorm:"column:status"`
+	FinishTime             int64            `gorm:"column:finish_time"`
+	BillingState           TaskBillingState `gorm:"column:billing_state"`
+	Properties             Properties       `gorm:"column:properties"`
+	Quota                  int              `gorm:"column:quota"`
+	PrivateData            TaskPrivateData  `gorm:"column:private_data"`
 }
 
 func newUsageAggregation(period UsageAnalyticsPeriod, opts usageViewOptions) *usageAggregation {
@@ -248,7 +250,7 @@ func runUsageAggregation(ctx context.Context, period UsageAnalyticsPeriod, opts 
 }
 
 // usageDiscountBundle 预载范围覆盖的各自然月渠道系数；按记录结束日所属月份
-// 分别读取，不做平均或跨月继承。
+// 分别按共享月度规则读取，不做跨月平均。
 type usageDiscountBundle struct {
 	byMonth map[int64]map[int]ProviderChannelBillingDiscount
 }
@@ -260,12 +262,7 @@ func loadUsageDiscountBundle(ctx context.Context, period UsageAnalyticsPeriod) (
 		months[usageMonthStart(period.Days[i].Start)] = struct{}{}
 	}
 	for monthStart := range months {
-		var rows []ProviderChannelBillingDiscount
-		err := DB.WithContext(ctx).Where("period_start = ?", monthStart).Find(&rows).Error
-		records := make(map[int]ProviderChannelBillingDiscount, len(rows))
-		for _, row := range rows {
-			records[row.ChannelId] = row
-		}
+		records, err := loadProviderChannelBillingDiscounts(ctx, monthStart, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -274,7 +271,7 @@ func loadUsageDiscountBundle(ctx context.Context, period UsageAnalyticsPeriod) (
 	return bundle, nil
 }
 
-// coefficientFor 返回某渠道在某条记录结束月的有效系数（无配置投影为 1；
+// coefficientFor 返回某渠道在某条记录结束月的有效系数（缺少当月配置时继承上月有效值，否则为 1；
 // 迁移冲突保持待填写且不投影为 1）。
 func (b *usageDiscountBundle) coefficientFor(monthStart int64, channelId int) (decimal.Decimal, ProviderChannelBillingDiscount, bool) {
 	records := b.byMonth[monthStart]
@@ -563,7 +560,7 @@ func (agg *usageAggregation) appendTaskLogPiece(pieces *usageTaskPieces, row usa
 		pieces.estimateReasons = mergeBillingEstimateReasons(pieces.estimateReasons, reasons...)
 		pieces.originalIncomplete = true
 	}
-	if agg.opts.WantUpstream && !isNativeChannelTestLog(row.fact.Type, row.fact.TokenId, row.fact.TokenName, row.fact.Content) {
+	if agg.opts.WantUpstream && row.parsed.taskBillingEvent != "customer_refund" && !isNativeChannelTestLog(row.fact.Type, row.fact.TokenId, row.fact.TokenName, row.fact.Content) {
 		if original, reference, reasons, coefficient, known := usageUpstreamRowAmount(row, bundle); known {
 			pieces.upstreamOriginal = pieces.upstreamOriginal.Add(original)
 			pieces.upstreamReference = pieces.upstreamReference.Add(reference)
@@ -774,7 +771,7 @@ func (agg *usageAggregation) loadTasks(ctx context.Context) error {
 		}
 		var batch []usageTaskRecord
 		err := query.Session(&gorm.Session{}).
-			Select("id, task_id, user_id, channel_id, status, finish_time, billing_state, properties, quota, private_data").
+			Select("id, task_id, user_id, channel_id, status, finish_time, billing_state, properties, quota, private_data, video_refund_state, video_refund_completed_at").
 			Where("id > ?", lastID).Order("id asc").Limit(batchSize).Scan(&batch).Error
 		if err != nil {
 			return err
@@ -800,23 +797,19 @@ func usageDeliveryRequestID(rowID int64, event string) string {
 func (agg *usageAggregation) loadDeliveryLogs(ctx context.Context) error {
 	var rowIDs []int64
 	for i := range agg.tasks {
-		if agg.tasks[i].BillingState != "" {
-			rowIDs = append(rowIDs, agg.tasks[i].RowID)
-		}
+		rowIDs = append(rowIDs, agg.tasks[i].RowID)
 	}
 	if len(rowIDs) == 0 {
 		return nil
 	}
 	rowToTask := make(map[int64]*usageTaskRecord, len(rowIDs))
 	for i := range agg.tasks {
-		if agg.tasks[i].BillingState != "" {
-			rowToTask[agg.tasks[i].RowID] = &agg.tasks[i]
-		}
+		rowToTask[agg.tasks[i].RowID] = &agg.tasks[i]
 	}
-	requestToTask := make(map[string]*usageTaskRecord, len(rowIDs)*4)
+	requestToTask := make(map[string]*usageTaskRecord, len(rowIDs)*5)
 	var requestIDs []string
 	for _, rowID := range rowIDs {
-		for _, event := range []string{"create", "adjustment", "refund", "complete"} {
+		for _, event := range []string{"create", "adjustment", "refund", "complete", "customer_refund"} {
 			requestID := usageDeliveryRequestID(rowID, event)
 			requestIDs = append(requestIDs, requestID)
 			requestToTask[requestID] = rowToTask[rowID]
@@ -935,7 +928,8 @@ func (agg *usageAggregation) applyTasks(ctx context.Context) error {
 			continue
 		}
 		result := usageResultFromTaskStatus(task.Status)
-		settled := task.BillingState == "" || task.BillingState == TaskBillingStateSettled
+		settled := task.BillingState == "" || task.BillingState == TaskBillingStateSettled ||
+			(task.VideoRefundState == "refunded" && task.VideoRefundCompletedAt > 0 && task.Quota == 0)
 		hasRows := pieces != nil && pieces.rowsSeen > 0
 		if agg.opts.WantCustomer || agg.opts.WantOverview {
 			agg.applyTaskCustomer(task, pieces, hasRows, settled, result, day)
@@ -1045,6 +1039,10 @@ func (agg *usageAggregation) applyTaskUpstream(task *usageTaskRecord, pieces *us
 		if settled {
 			acc.m.GrossQuota = max(int64(task.Quota), 0)
 		}
+	}
+	// Customer funding can be closed while provider settlement is still unknown.
+	if task.VideoRefundState == "refunded" && task.BillingState != "" && task.BillingState != TaskBillingStateSettled {
+		acc.originalIncomplete = true
 	}
 	provider := strings.TrimSpace(task.Properties.UpstreamModelName)
 	fallback := false

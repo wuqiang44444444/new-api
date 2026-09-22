@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { formatCustomerStatementQuota } from '@/features/billing-reconciliation/lib'
@@ -14,13 +15,15 @@ import type {
   UsageCustomerView,
 } from './types'
 
-// One row per API Key × customer model, with the range total; a collapsible
-// section repeats the same leaves per day so weekly rows keep all seven days.
+// Week views show seven dates at each key/model level in full-width rows.
 export function CustomerUsageTable(props: {
   view: UsageCustomerView
   period: UsageAnalyticsPeriod
 }) {
   const { t } = useTranslation()
+  const dates = props.period.days.map((day) => day.date)
+  const futureFlags = props.period.days.map((day) => Boolean(day.future))
+  const weekly = props.period.period === 'week'
   return (
     <div className='flex flex-col gap-4'>
       {props.view.keys.length === 0 && (
@@ -40,58 +43,85 @@ export function CustomerUsageTable(props: {
             </tr>
           </thead>
           <tbody>
-            {props.view.keys.map((key) =>
-              key.models.map((model, modelIndex) => (
-                <tr
-                  key={`${key.token_id}-${model.model_name === 'unknown' ? t('Unknown model') : model.model_name}`}
-                  className='border-b align-top'
-                >
-                    <td className='py-2 pr-3'>
-                      {modelIndex === 0 && (
-                        <div className='flex flex-col'>
-                          <span>
-                            {key.token_id === 0
-                              ? t('No API Key')
-                              : key.token_name}
-                          </span>
-                          {key.token_deleted && (
-                            <span className='text-muted-foreground text-xs'>
-                              {t('Deleted key')}
+            {props.view.keys.map((key) => (
+              <Fragment key={key.token_id}>
+                {weekly && (
+                  <tr>
+                    <td colSpan={7} className='py-3'>
+                      <DayTotalsTable
+                        caption={`${t('API Key')} · ${key.token_id === 0 ? t('No API Key') : key.token_name}`}
+                        dates={dates}
+                        futureFlags={futureFlags}
+                        days={key.days}
+                        total={key.total}
+                      />
+                    </td>
+                  </tr>
+                )}
+                {key.models.map((model, modelIndex) => (
+                  <Fragment key={model.model_name}>
+                    <tr className='border-b align-top'>
+                      <td className='py-2 pr-3'>
+                        {modelIndex === 0 && (
+                          <div className='flex flex-col'>
+                            <span>
+                              {key.token_id === 0
+                                ? t('No API Key')
+                                : key.token_name}
                             </span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className='py-2 pr-3'>
-                      {model.model_name === 'unknown'
-                        ? t('Unknown model')
-                        : model.model_name}
-                    </td>
-                    <td className='py-2 pr-3'>
-                      <UsageCallsCell metrics={model.total} />
-                    </td>
-                    <td className='py-2 pr-3'>
-                      <UsageTokensCell metrics={model.total} />
-                    </td>
-                    <td className='py-2 pr-3'>
-                      <UsageMoneyCell metrics={model.total} />
-                    </td>
-                    <td className='py-2 pr-3'>
-                      {formatCustomerStatementQuota(
-                        model.total.original_quota_estimate
-                      )}
-                      {model.total.multiple_discounts && (
-                        <div className='text-muted-foreground text-xs'>
-                          {t('Multiple discounts')}
-                        </div>
-                      )}
-                    </td>
-                    <td className='py-2'>
-                      <UsageQualityCell metrics={model.total} />
-                    </td>
-                </tr>
-              ))
-            )}
+                            {key.token_deleted && (
+                              <span className='text-muted-foreground text-xs'>
+                                {t('Deleted key')}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className='py-2 pr-3'>
+                        {model.model_name === 'unknown'
+                          ? t('Unknown model')
+                          : model.model_name}
+                      </td>
+                      <td className='py-2 pr-3'>
+                        <UsageCallsCell metrics={model.total} />
+                      </td>
+                      <td className='py-2 pr-3'>
+                        <UsageTokensCell metrics={model.total} />
+                      </td>
+                      <td className='py-2 pr-3'>
+                        <UsageMoneyCell metrics={model.total} />
+                      </td>
+                      <td className='py-2 pr-3'>
+                        {formatCustomerStatementQuota(
+                          model.total.original_quota_estimate
+                        )}
+                        {model.total.multiple_discounts && (
+                          <div className='text-muted-foreground text-xs'>
+                            {t('Multiple discounts')}
+                          </div>
+                        )}
+                      </td>
+                      <td className='py-2'>
+                        <UsageQualityCell metrics={model.total} />
+                      </td>
+                    </tr>
+                    {weekly && (
+                      <tr>
+                        <td colSpan={7} className='pb-4'>
+                          <DayTotalsTable
+                            caption={`${t('Customer model')} · ${model.model_name === 'unknown' ? t('Unknown model') : model.model_name}`}
+                            dates={dates}
+                            futureFlags={futureFlags}
+                            days={model.days}
+                            total={model.total}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </Fragment>
+            ))}
             <tr className='font-medium'>
               <td className='py-2 pr-3'>{t('Total')}</td>
               <td />
@@ -117,8 +147,8 @@ export function CustomerUsageTable(props: {
         </table>
       </div>
       <DayTotalsTable
-        dates={props.period.days.map((day) => day.date)}
-        futureFlags={props.period.days.map((day) => Boolean(day.future))}
+        dates={dates}
+        futureFlags={futureFlags}
         days={props.view.day_totals}
         total={props.view.total}
       />
@@ -127,6 +157,7 @@ export function CustomerUsageTable(props: {
 }
 
 export function DayTotalsTable(props: {
+  caption?: string
   dates: string[]
   futureFlags: boolean[]
   days: UsageAnalyticsMetrics[]
@@ -137,12 +168,27 @@ export function DayTotalsTable(props: {
   const singleDay = props.dates.length === 1
   return (
     <div className='overflow-x-auto'>
-      <table className='w-full min-w-[640px] text-sm'>
+      <table
+        className={
+          singleDay
+            ? 'w-full min-w-[640px] text-sm'
+            : 'w-full min-w-[1120px] text-sm'
+        }
+      >
+        {props.caption && (
+          <caption className='pb-2 text-left font-medium'>
+            {props.caption}
+          </caption>
+        )}
         <thead>
           <tr className='text-muted-foreground border-b text-left'>
             <th className='py-2 pr-3'>{t('Day')}</th>
             {props.dates.map((date) => (
-              <th key={date} className='py-2 pr-3'>
+              <th
+                key={date}
+                scope='col'
+                className='py-2 pr-3 whitespace-nowrap'
+              >
                 {date}
               </th>
             ))}
@@ -207,7 +253,9 @@ export function DayTotalsTable(props: {
                     )}
                   </td>
                 ))}
-                {!singleDay && <td className='py-2'>{row.render(props.total)}</td>}
+                {!singleDay && (
+                  <td className='py-2'>{row.render(props.total)}</td>
+                )}
               </tr>
             ))}
         </tbody>

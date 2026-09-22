@@ -66,7 +66,7 @@ import {
 import {
   type BillingEvidenceEntry,
   billingAccountingEntries,
-  billingDataQualityEntries,
+  billingEvidenceGroups,
 } from '../upstream-statement-utils'
 import { BillingPagination } from './billing-pagination'
 import { UpstreamDataStatus } from './upstream-data-status'
@@ -159,7 +159,8 @@ function UpstreamReconciliationContent(props: UpstreamReconciliationViewProps) {
       evidenceFilter: entry.filter,
       evidenceLabel: entry.text,
     })
-  const qualityReasons = billingDataQualityEntries(visibleQuality, t, false)
+  const evidenceGroups = billingEvidenceGroups(visibleQuality, t)
+  const accountingNotes = billingAccountingEntries(visibleQuality, t)
   const selectedGroup = groups.find(
     (group) => group.url_key === detailSelection?.urlKey
   )
@@ -242,7 +243,9 @@ function UpstreamReconciliationContent(props: UpstreamReconciliationViewProps) {
         </p>
       </div>
 
-      {qualityReasons.length > 0 || visibleQuality?.evidence_coverage ? (
+      {evidenceGroups.length > 0 ||
+      accountingNotes.length > 0 ||
+      visibleQuality?.evidence_coverage ? (
         <Alert>
           <HugeiconsIcon icon={InformationCircleIcon} strokeWidth={2} />
           <AlertTitle>{t('Reconciliation evidence')}</AlertTitle>
@@ -251,33 +254,47 @@ function UpstreamReconciliationContent(props: UpstreamReconciliationViewProps) {
               quality={visibleQuality}
               onViewEvidence={viewEvidence}
             />
-            {qualityReasons.length > 0 ? (
-              <p className='text-xs'>
+            {evidenceGroups.length > 0 ? (
+              <p className='text-muted-foreground text-xs'>
                 {t(
-                  'Categories can overlap on the same record; do not add these counts together.'
+                  'Except for the mutually exclusive channel-test breakdown, categories may overlap on the same record; do not add these counts together.'
                 )}
               </p>
             ) : null}
-            <ul className='list-disc space-y-1 pl-4 text-xs'>
-              {qualityReasons.map((reason) => (
-                <li key={reason.filter}>
-                  {reason.text}
-                  <UpstreamEvidenceLink
-                    entry={reason}
-                    onViewEvidence={viewEvidence}
-                  />
-                </li>
-              ))}
-            </ul>
-            {billingAccountingEntries(visibleQuality, t).map((note) => (
-              <p key={note.filter} className='text-xs'>
-                {note.text}
-                <UpstreamEvidenceLink
-                  entry={note}
-                  onViewEvidence={viewEvidence}
-                />
-              </p>
+            {evidenceGroups.map((group) => (
+              <div key={group.key} className='space-y-1 text-xs'>
+                {group.title ? (
+                  <p className='font-medium'>{group.title}</p>
+                ) : null}
+                <ul className='list-disc space-y-1 pl-4'>
+                  {group.entries.map((entry) => (
+                    <li key={entry.filter || entry.text}>
+                      {entry.text}
+                      <UpstreamEvidenceLink
+                        entry={entry}
+                        onViewEvidence={viewEvidence}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
+            {accountingNotes.length > 0 ? (
+              <div className='space-y-1 text-xs'>
+                <p className='font-medium'>
+                  {t('Confirmed accounting results')}
+                </p>
+                {accountingNotes.map((note) => (
+                  <p key={note.filter || note.text}>
+                    {note.text}
+                    <UpstreamEvidenceLink
+                      entry={note}
+                      onViewEvidence={viewEvidence}
+                    />
+                  </p>
+                ))}
+              </div>
+            ) : null}
           </AlertDescription>
         </Alert>
       ) : null}

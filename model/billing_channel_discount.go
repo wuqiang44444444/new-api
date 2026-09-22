@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -111,10 +112,11 @@ func SaveProviderChannelBillingDiscount(discount *ProviderChannelBillingDiscount
 
 // GetProviderChannelBillingDiscounts is a read-only projection of the
 // channel-month coefficients. Summary reads never materialize
-// missing discounts; an absent record projects coefficient 1 at version 0.
+// missing discounts; an absent record inherits the previous month at version 0,
+// or projects coefficient 1 when that month has no valid record.
 // Persisted migration conflicts remain pending and never receive this default.
 func GetProviderChannelBillingDiscounts(periodStart int64, channelIds []int) (map[int]ProviderChannelBillingDiscount, error) {
-	records, err := loadProviderChannelBillingDiscounts(periodStart, channelIds)
+	records, err := loadProviderChannelBillingDiscounts(context.Background(), periodStart, channelIds)
 	if err != nil {
 		return nil, err
 	}
@@ -124,38 +126,14 @@ func GetProviderChannelBillingDiscounts(periodStart int64, channelIds []int) (ma
 			result[id] = record
 		}
 	}
-	for _, id := range channelIds {
-		if record, valid := providerChannelBillingDiscountFor(records, periodStart, id); valid {
-			result[id] = record
-		}
-	}
 	return result, nil
-}
-
-// A single read freezes both valid coefficients and pending markers for a report.
-func loadProviderChannelBillingDiscounts(periodStart int64, channelIds []int) (map[int]ProviderChannelBillingDiscount, error) {
-	query := DB.Where("period_start = ?", periodStart)
-	if len(channelIds) > 0 {
-		query = query.Where("channel_id IN ?", channelIds)
-	}
-	var rows []ProviderChannelBillingDiscount
-	records := make(map[int]ProviderChannelBillingDiscount)
-	if err := query.FindInBatches(&rows, 500, func(tx *gorm.DB, batch int) error {
-		for _, row := range rows {
-			records[row.ChannelId] = row
-		}
-		return nil
-	}).Error; err != nil {
-		return nil, err
-	}
-	return records, nil
 }
 
 func providerChannelBillingDiscountFor(records map[int]ProviderChannelBillingDiscount, periodStart int64, id int) (ProviderChannelBillingDiscount, bool) {
 	if record, found := records[id]; found {
 		return record, record.PendingReason == ""
 	}
-	return ProviderChannelBillingDiscount{PeriodStart: periodStart, ChannelId: id, Discount: decimal.NewFromInt(1), Reason: reasonChannelDiscountDefault}, true
+	return inheritedProviderChannelDiscount(periodStart, id, ProviderChannelBillingDiscount{}, false), true
 }
 
 type ProviderChannelDiscountInitOutcome struct {

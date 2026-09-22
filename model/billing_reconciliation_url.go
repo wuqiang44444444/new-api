@@ -134,7 +134,7 @@ func GetProviderBillingURLSummary(startTimestamp int64, endTimestamp int64, peri
 
 func getProviderBillingURLSummary(ctx context.Context, startTimestamp, endTimestamp, periodStart int64, urlKey string, channelID int) (ProviderURLSummary, error) {
 	summary := ProviderURLSummary{Groups: make([]ProviderURLGroupSummary, 0), DataQuality: &BillingReconciliationDataQuality{Status: "complete"}}
-	records, err := loadProviderChannelBillingDiscounts(periodStart, nil)
+	records, err := loadProviderChannelBillingDiscounts(ctx, periodStart, nil)
 	if err != nil {
 		return summary, err
 	}

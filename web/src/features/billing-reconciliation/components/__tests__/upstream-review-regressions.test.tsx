@@ -151,7 +151,7 @@ it('shows test-only coverage and distinguishes absent cache readings from explic
     await userEvent.click(button)
     expect(
       screen.getByText(
-        '2 channel tests are excluded from the amount total; the reasons below partition these tests. Usage is retained.'
+        '2 channel tests did not save the pricing evidence needed to rebuild their amount; usage is retained. The breakdown below partitions these tests.'
       )
     ).toBeVisible()
     await userEvent.click(button)
@@ -166,7 +166,7 @@ it('shows test-only coverage and distinguishes absent cache readings from explic
   expect(within(rows[2]).getAllByRole('cell')[5]).toHaveTextContent('0')
   expect(
     screen.getAllByRole('button', {
-      name: /Pricing evidence incomplete:.*excluded from the amount total/,
+      name: /Pricing evidence incomplete:.*did not save the pricing evidence/,
     })
   ).toHaveLength(2)
 })
@@ -406,12 +406,12 @@ it('reports a deduplicated denominator and does not present priced tests as issu
   ).toBeVisible()
   expect(
     screen.getByText(
-      'Categories can overlap on the same record; do not add these counts together.'
+      'Except for the mutually exclusive channel-test breakdown, categories may overlap on the same record; do not add these counts together.'
     )
   ).toBeVisible()
   expect(
     screen.getAllByText(
-      '750 channel tests are excluded from the amount total; the reasons below partition these tests. Usage is retained.'
+      '750 channel tests did not save the pricing evidence needed to rebuild their amount; usage is retained. The breakdown below partitions these tests.'
     )
   ).toHaveLength(1)
   expect(
@@ -459,7 +459,7 @@ it('explains the incomplete record total with mutually exclusive billing reasons
     screen.getByText('Amount and usage information complete: 4,753 records')
   ).toBeVisible()
   expect(
-    screen.getByText('Original amount cannot be calculated: 619 records')
+    screen.getByText('Amounts that cannot be calculated yet: 619 records')
   ).toBeVisible()
   expect(
     screen.getByText('Amount available, usage details missing: 9 records')
