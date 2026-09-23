@@ -997,6 +997,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		return summary
 	}
 
+	service.PrepareChannelTestAudit(result.context)
 	summary.Tested++
 
 	isConfigOnly := automatic && scope != "generation_probe" && scope != "readonly_probe"
@@ -1044,7 +1045,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	// 只有携带真实上游往返的成功才具备恢复证明力：配置检查通过不能恢复因上游
 	// 故障自动禁用的渠道，素材只读探针也不能证明视频创建链路恢复。
 	if upstreamObserved && result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
-		service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
+		service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name, service.ChannelStatusAuditForRequest(result.context, nil))
 		summary.Enabled++
 	}
 

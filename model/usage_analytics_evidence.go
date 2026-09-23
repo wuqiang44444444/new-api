@@ -17,7 +17,8 @@ func usageDiscountSource(record ProviderChannelBillingDiscount) string {
 }
 
 // Error logs describe attempts. Only the last failed attempt represents the
-// customer's outcome, and a consume log for the request supersedes all errors.
+// customer's outcome. A final consume owns the outcome (including stream
+// failure/cancellation), so previous error attempts must not count it again.
 // Look outside the selected period so a retry across midnight is not counted
 // once on each day. The log high-water mark also bounds these lookups.
 func (agg *usageAggregation) applyFinalErrors(ctx context.Context) error {
@@ -33,7 +34,7 @@ func (agg *usageAggregation) applyFinalErrors(ctx context.Context) error {
 			UserId    int
 			RequestId string
 			LastID    int64
-			Succeeded int
+			Consumed  int
 		}
 		outcomes := make(map[string]outcome)
 		if len(ids) > 0 {
@@ -45,7 +46,7 @@ func (agg *usageAggregation) applyFinalErrors(ctx context.Context) error {
 				query = query.Where("user_id = ?", agg.opts.UserID)
 			}
 			var rows []outcome
-			if err := query.Select("user_id, request_id, MAX(id) AS last_id, MAX(CASE WHEN type = ? THEN 1 ELSE 0 END) AS succeeded", LogTypeConsume).Group("user_id, request_id").Scan(&rows).Error; err != nil {
+			if err := query.Select("user_id, request_id, MAX(id) AS last_id, MAX(CASE WHEN type = ? THEN 1 ELSE 0 END) AS consumed", LogTypeConsume).Group("user_id, request_id").Scan(&rows).Error; err != nil {
 				return err
 			}
 			for _, row := range rows {
@@ -87,7 +88,7 @@ func (agg *usageAggregation) applyFinalErrors(ctx context.Context) error {
 		for _, row := range batch {
 			if row.fact.RequestId != "" {
 				final := outcomes[usageTaskIdentity(row.fact.UserId, row.fact.RequestId)]
-				if final.Succeeded > 0 || final.LastID != row.id {
+				if final.Consumed > 0 || final.LastID != row.id {
 					continue
 				}
 			}

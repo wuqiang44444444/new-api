@@ -46,6 +46,7 @@ export function templateRuleToDraft(
     route_group: rule.route_group,
     discount,
     available: rule.available,
+    unavailable_reason: rule.unavailable_reason,
     native_group_ratio: nativeRatio,
     effective_multiplier: nativeRatio,
     special_group_ratio: channelGroup?.special_group_ratio ?? false,

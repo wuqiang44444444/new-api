@@ -1,10 +1,14 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-18
+last-reviewed: 2026-09-23
 ---
 
 # 80-dev — 目标说明
+
+本目录 2026-09-18 至 09-23 的本轮 14 份记录，后续验收统一由
+[80目录方案验收清单](../50-planning/2026-09-23-80目录方案验收清单.md)跟进。原文保留历史证据；
+代码已实现但待部署／业务验收的功能方案使用 `implemented-pending-acceptance`，不代表生产发布。
 
 ## 目标
 

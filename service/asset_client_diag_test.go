@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -24,7 +25,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 素材合同错误 → 受控阶段/原因码的映射契约；5xx 错误必须返回空阶段。
+// 素材合同错误 → 受控阶段/原因码的映射契约；5xx 上游错误必须有结构化原因，
+// 只有未登记错误保持空阶段（由文本日志的 class=unclassified 兜底）。
 func TestAssetClientErrorDiagnosticMapping(t *testing.T) {
 	mapped := map[error][2]string{
 		ErrInvalidAssetRequest: {"request_validation", "invalid_request"},
@@ -44,10 +46,19 @@ func TestAssetClientErrorDiagnosticMapping(t *testing.T) {
 		assert.Equal(t, expected[0], stage, "%v", err)
 		assert.Equal(t, expected[1], reason, "%v", err)
 	}
-	for _, err := range []error{ErrAssetUpstreamError, ErrAssetUpstreamUnavailable, ErrAssetLibraryUnavailable, errors.New("unknown")} {
-		stage, _ := AssetClientErrorDiagnostic(err)
-		assert.Empty(t, stage, "%v must not map to a 4xx stage", err)
+	// 5xx 兜底映射：统一事件不再以空阶段记录上游不可用/上游错误。
+	fiveXX := map[error][2]string{
+		ErrAssetUpstreamError:       {"upstream_operation", "asset_upstream_error"},
+		ErrAssetUpstreamUnavailable: {"channel_resolution", "asset_upstream_unavailable"},
+		ErrAssetLibraryUnavailable:  {"capability_check", "asset_library_unavailable"},
 	}
+	for err, expected := range fiveXX {
+		stage, reason := AssetClientErrorDiagnostic(fmt.Errorf("wrapped: %w", err))
+		assert.Equal(t, expected[0], stage, "%v", err)
+		assert.Equal(t, expected[1], reason, "%v", err)
+	}
+	_, reason := AssetClientErrorDiagnostic(errors.New("unknown"))
+	assert.Empty(t, reason, "unregistered errors stay unmapped")
 }
 
 // 枚举类明细：合法值透传、非法值只记 invalid、空值省略。
@@ -148,6 +159,11 @@ func TestOpenFunCloudAssetSourceAttachesHttpAndMimeReasons(t *testing.T) {
 	httpReport := run("application/json", http.StatusBadGateway, "source_fetch", "source_http_error", "")
 	assert.Equal(t, "502", httpReport.Detail["source_status"])
 
+	for _, status := range []int{http.StatusForbidden, http.StatusNotFound} {
+		sourceReport := run("application/json", status, "source_fetch", "source_http_error", "")
+		assert.Equal(t, strconv.Itoa(status), sourceReport.Detail["source_status"])
+		assert.NotContains(t, sourceReport.Detail, "upstream_status")
+	}
 	run("text/plain", http.StatusOK, "content_validation", "content_type_mismatch", "text/plain")
 }
 
@@ -268,4 +284,68 @@ func TestAssetBusinessFailuresRetainResolvedContext(t *testing.T) {
 		})
 	}
 	assert.Equal(t, 1, providerCalls)
+}
+
+// 上游 5xx 失败必须把结构化诊断（阶段/类别/状态/Provider code）合并进统一事件：
+// 超时、HTTP 拒绝、业务错误与非法 JSON 各有固定原因码；公开响应保持 502
+// asset_upstream_error 不变，且不泄漏 URL 与上游正文。
+func TestNormalizeAssetAdapterErrorAttachesUpstreamDiagEvent(t *testing.T) {
+	db := withAssetGroupPolicyDB(t)
+	channel := createMoxingAssetPolicyChannel(t, db, "https://provider.invalid")
+
+	scenarios := []struct {
+		name         string
+		resp         *http.Response
+		respErr      error
+		expectReason string
+		expectStatus string
+	}{
+		{
+			name:         "timeout",
+			respErr:      &url.Error{Op: "Post", Err: context.DeadlineExceeded},
+			expectReason: "upstream_timeout",
+		},
+		{
+			name:         "http_reject",
+			resp:         &http.Response{StatusCode: 503, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":"private"}`))},
+			expectReason: "upstream_http_error",
+			expectStatus: "503",
+		},
+		{
+			name:         "invalid_json",
+			resp:         &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`not-json`))},
+			expectReason: "upstream_invalid_response",
+		},
+	}
+
+	for _, tc := range scenarios {
+		t.Run(tc.name, func(t *testing.T) {
+			withAssetPolicyHTTPClient(t, func(*http.Request) (*http.Response, error) {
+				return tc.resp, tc.respErr
+			})
+			var report clienterrlog.Report
+			var gotErr error
+			gin.SetMode(gin.TestMode)
+			engine := gin.New()
+			engine.POST("/v1/assets", logtest.New(t).Middleware(), func(c *gin.Context) {
+				clienterrlog.MarkAuthPassed(c, clienterrlog.AuthSourceAPIToken)
+				_, gotErr = GetRemoteAsset(c.Request.Context(), "default", 7, "customer-model", "opaque-secret")
+				report, _ = clienterrlog.PeekReport(c.Request.Context())
+				c.Status(http.StatusBadGateway)
+			})
+			engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/assets", nil))
+
+			require.ErrorIs(t, gotErr, ErrAssetUpstreamError)
+			assert.Equal(t, "upstream_operation", report.Stage)
+			assert.Equal(t, tc.expectReason, report.Reason)
+			assert.Equal(t, "customer-model", report.Model)
+			assert.Equal(t, "get", report.Detail["operation"])
+			assert.Equal(t, channel.Id, report.ChannelID)
+			if tc.expectStatus != "" {
+				assert.Equal(t, tc.expectStatus, report.Detail["upstream_status"])
+			}
+			assert.NotContains(t, report.Detail["provider_code"], "private")
+			assert.NotContains(t, report.Detail, "source_url")
+		})
+	}
 }

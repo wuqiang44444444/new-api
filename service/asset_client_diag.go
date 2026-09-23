@@ -6,11 +6,13 @@ import (
 
 	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/model"
+	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
 )
 
 // AssetClientErrorDiagnostic maps asset contract errors to controlled stage and
-// reason codes for the unified 4xx diagnostic event. An empty stage means the
-// error settles as a 5xx and is not covered by this event type.
+// reason codes for the unified diagnostic event. 4xx branches keep their
+// original mapping; upstream availability failures get structured 5xx reasons
+// so persisted events no longer settle with empty stage/reason.
 func AssetClientErrorDiagnostic(err error) (stage, reason string) {
 	switch {
 	case errors.Is(err, ErrInvalidAssetRequest):
@@ -33,6 +35,12 @@ func AssetClientErrorDiagnostic(err error) (stage, reason string) {
 		return "capability_check", "unsupported_asset_operation"
 	case errors.Is(err, ErrDefaultAssetGroupNotConfigured):
 		return "group_resolution", "default_asset_group_not_configured"
+	case errors.Is(err, ErrAssetUpstreamUnavailable):
+		return "channel_resolution", "asset_upstream_unavailable"
+	case errors.Is(err, ErrAssetLibraryUnavailable):
+		return "capability_check", "asset_library_unavailable"
+	case errors.Is(err, ErrAssetUpstreamError):
+		return "upstream_operation", "asset_upstream_error"
 	default:
 		return "", ""
 	}
@@ -80,4 +88,31 @@ func assetKindMediaDetail(kind, mediaType string) map[string]string {
 		detail["media_type"] = safeAssetEnumDetail(mediaType, model.ValidateAssetMediaType(mediaType))
 	}
 	return detail
+}
+
+// assetUpstreamReasonFromClass maps an adapter diagnostic class to a controlled
+// event reason; empty input falls back to the generic upstream error reason.
+func assetUpstreamReasonFromClass(class string) string {
+	switch class {
+	case assetadapter.AssetClassTimeout:
+		return "upstream_timeout"
+	case assetadapter.AssetClassConnect:
+		return "upstream_connect_failed"
+	case assetadapter.AssetClassReset:
+		return "upstream_connection_reset"
+	case assetadapter.AssetClassUpstreamHTTP:
+		return "upstream_http_error"
+	case assetadapter.AssetClassApplicationError:
+		return "upstream_business_error"
+	case assetadapter.AssetClassInvalidResponse:
+		return "upstream_invalid_response"
+	default:
+		return "upstream_transport_error"
+	}
+}
+
+// attachAssetUpstreamDiag merges one controlled asset upstream observation into
+// the request-scoped unified event; it never changes the business response.
+func attachAssetUpstreamDiag(ctx context.Context, stage, reason string, detail map[string]string) {
+	clienterrlog.Attach(ctx, clienterrlog.Report{Stage: stage, Reason: reason, Detail: detail})
 }

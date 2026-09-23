@@ -68,6 +68,8 @@ func RecordAutoChannelTestFailureEvent(channel *model.Channel, testedModel strin
 	if channel == nil {
 		return
 	}
+	PrepareChannelTestAudit(testContext)
+	observation := ChannelStatusAuditForRequest(testContext, finalAPIError)
 	stage, reason, publicCode := ClassifyChannelTestFailure(localErr, finalAPIError, "")
 	extra := map[string]string{}
 	if len(checks) > 0 {
@@ -83,7 +85,7 @@ func RecordAutoChannelTestFailureEvent(channel *model.Channel, testedModel strin
 	submitChannelTestFailureEvent(testContext, clienterrlog.BackendEvent{
 		EventType: clienterrlog.EventChannelTest, Module: model.ErrorEventModuleRelay,
 		Stage: stage, Reason: reason, PublicCode: publicCode, Model: testedModel,
-		ChannelID: channel.Id, RequestID: common.NewRequestId(),
+		ChannelID: channel.Id, RequestID: observation.RequestID,
 		UpstreamRequestID: upstreamRequestIDFromTestContext(testContext), ElapsedMs: elapsedMs,
 		Detail: channelTestEventDetail(channelTestModeAuto, "", isStream, upstreamStatus, extra),
 	})

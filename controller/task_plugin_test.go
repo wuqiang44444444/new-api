@@ -26,12 +26,20 @@ import (
 
 func setupTaskPluginControllerTest(t *testing.T) {
 	t.Helper()
-	originalDB := model.DB
+	originalDB, originalLogDB := model.DB, model.LOG_DB
+	previousRedis, previousCache := common.RedisEnabled, common.MemoryCacheEnabled
+	previousMain, previousLog := common.MainDatabaseType(), common.LogDatabaseType()
+	common.RedisEnabled, common.MemoryCacheEnabled = false, false
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, database.AutoMigrate(&model.TaskPlugin{}, &model.Channel{}, &model.Ability{}, &model.Task{}, &model.Option{}))
-	model.DB = database
-	t.Cleanup(func() { model.DB = originalDB })
+	require.NoError(t, database.AutoMigrate(&model.TaskPlugin{}, &model.Channel{}, &model.Ability{}, &model.Task{}, &model.Option{}, &model.User{}, &model.AuditLog{}))
+	model.DB, model.LOG_DB = database, database
+	t.Cleanup(func() {
+		model.DB, model.LOG_DB = originalDB, originalLogDB
+		common.RedisEnabled, common.MemoryCacheEnabled = previousRedis, previousCache
+		common.SetDatabaseTypes(previousMain, previousLog)
+	})
 }
 
 const lifecyclePluginSource = `

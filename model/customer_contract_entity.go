@@ -83,6 +83,10 @@ type ContractEntityRule struct {
 	RouteGroup  string `json:"route_group"`
 	RatioUnits  int64  `json:"ratio_units"`
 	Available   bool   `json:"available"`
+	// UnavailableCategory carries the controlled rejection category produced by
+	// the same availability validation for request-side diagnostics. It is a
+	// read-only annotation: never persisted and never serialized.
+	UnavailableCategory string `json:"-" gorm:"-"`
 }
 
 // ContractEntitySnapshot is one immutable contract definition plus its rules.

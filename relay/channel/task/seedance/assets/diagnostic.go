@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"syscall"
 )
 
@@ -70,34 +71,73 @@ func classifyTransportError(stage string, err error) error {
 	return &upstreamTransportError{Stage: stage, Class: class, Cause: err}
 }
 
-// SafeUpstreamDiagnostic returns only bounded, non-sensitive fields from known
-// asset adapter errors. Callers must not log the original error or response body.
-func SafeUpstreamDiagnostic(err error) (string, bool) {
+// UpstreamDiagnostic carries the bounded, non-sensitive fields already
+// produced by the asset adapter error types so text logs and the unified
+// error event share one source. Callers must not log the original error or
+// response body.
+type UpstreamDiagnostic struct {
+	Stage        string
+	Class        string
+	StatusCode   int
+	ProviderCode string
+}
+
+// UpstreamDiagnosticFields extracts the structured diagnostic from known
+// asset adapter errors.
+func UpstreamDiagnosticFields(err error) (UpstreamDiagnostic, bool) {
 	var transportErr *upstreamTransportError
 	if errors.As(err, &transportErr) {
-		return fmt.Sprintf("stage=%s class=%s", transportErr.Stage, transportErr.Class), true
+		return UpstreamDiagnostic{Stage: transportErr.Stage, Class: transportErr.Class}, true
 	}
 	var statusErr *upstreamHTTPError
 	if errors.As(err, &statusErr) {
-		providerCode := sanitizeProviderCodeForDiagnostic(statusErr.ProviderCode)
-		if providerCode != "" {
-			return fmt.Sprintf("stage=%s class=%s status=%d provider_code=%s", AssetStageWaitResponse, AssetClassUpstreamHTTP, statusErr.StatusCode, providerCode), true
-		}
-		return fmt.Sprintf("stage=%s class=%s status=%d", AssetStageWaitResponse, AssetClassUpstreamHTTP, statusErr.StatusCode), true
+		return UpstreamDiagnostic{
+			Stage:        AssetStageWaitResponse,
+			Class:        AssetClassUpstreamHTTP,
+			StatusCode:   statusErr.StatusCode,
+			ProviderCode: sanitizeProviderCodeForDiagnostic(statusErr.ProviderCode),
+		}, true
 	}
 	var applicationErr *upstreamApplicationError
 	if errors.As(err, &applicationErr) {
-		return fmt.Sprintf("stage=%s class=%s provider_code=%d", AssetStageDecodeResponse, AssetClassApplicationError, applicationErr.code), true
+		return UpstreamDiagnostic{
+			Stage:        AssetStageDecodeResponse,
+			Class:        AssetClassApplicationError,
+			ProviderCode: strconv.Itoa(applicationErr.code),
+		}, true
 	}
 	var stringApplicationErr *upstreamStringApplicationError
 	if errors.As(err, &stringApplicationErr) {
-		providerCode := sanitizeProviderCodeForDiagnostic(stringApplicationErr.code)
-		if providerCode != "" {
-			return fmt.Sprintf("stage=%s class=%s provider_code=%s", AssetStageDecodeResponse, AssetClassApplicationError, providerCode), true
-		}
-		return fmt.Sprintf("stage=%s class=%s", AssetStageDecodeResponse, AssetClassApplicationError), true
+		return UpstreamDiagnostic{
+			Stage:        AssetStageDecodeResponse,
+			Class:        AssetClassApplicationError,
+			ProviderCode: sanitizeProviderCodeForDiagnostic(stringApplicationErr.code),
+		}, true
 	}
-	return "", false
+	return UpstreamDiagnostic{}, false
+}
+
+// SafeUpstreamDiagnostic returns only bounded, non-sensitive fields from known
+// asset adapter errors. Callers must not log the original error or response body.
+func SafeUpstreamDiagnostic(err error) (string, bool) {
+	fields, ok := UpstreamDiagnosticFields(err)
+	if !ok {
+		return "", false
+	}
+	return formatUpstreamDiagnostic(fields), true
+}
+
+func formatUpstreamDiagnostic(diag UpstreamDiagnostic) string {
+	if diag.StatusCode > 0 && diag.ProviderCode != "" {
+		return fmt.Sprintf("stage=%s class=%s status=%d provider_code=%s", diag.Stage, diag.Class, diag.StatusCode, diag.ProviderCode)
+	}
+	if diag.StatusCode > 0 {
+		return fmt.Sprintf("stage=%s class=%s status=%d", diag.Stage, diag.Class, diag.StatusCode)
+	}
+	if diag.ProviderCode != "" {
+		return fmt.Sprintf("stage=%s class=%s provider_code=%s", diag.Stage, diag.Class, diag.ProviderCode)
+	}
+	return fmt.Sprintf("stage=%s class=%s", diag.Stage, diag.Class)
 }
 
 func sanitizeProviderCodeForDiagnostic(providerCode string) string {

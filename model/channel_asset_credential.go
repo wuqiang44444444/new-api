@@ -93,6 +93,7 @@ func UpdateChannelWithAssetCredentialActor(
 	actorID int,
 	assetTenantUnchanged bool,
 	assetTenantReplacementConfirmed bool,
+	audit ...ChannelStatusAudit,
 ) error {
 	credential, err := NormalizeChannelAssetCredential(input)
 	if err != nil {
@@ -108,6 +109,7 @@ func UpdateChannelWithAssetCredentialActor(
 		actorID,
 		assetTenantUnchanged,
 		assetTenantReplacementConfirmed,
+		audit...,
 	)
 }
 

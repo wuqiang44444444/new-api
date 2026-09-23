@@ -407,7 +407,7 @@ func (agg *usageAggregation) consumeLogRow(ctx context.Context, row usageLogRow,
 	switch row.fact.Type {
 	case LogTypeConsume:
 		isTest := isNativeChannelTestLog(row.fact.Type, row.fact.TokenId, row.fact.TokenName, row.fact.Content)
-		agg.applyStandalone(row, bundle, max(row.parsed.requestCount, 1), usageResultSuccess, isTest)
+		agg.applyStandalone(row, bundle, max(row.parsed.requestCount, 1), usageConsumeResult(row), isTest)
 	case LogTypeError:
 		agg.errorRows = append(agg.errorRows, row)
 	case LogTypeRefund:
@@ -436,8 +436,8 @@ func usageRowTokens(row usageLogRow, m *UsageAnalyticsMetrics) {
 
 // usageRowTokensMissing 判断一条日志是否缺乏用量证据：错误行基础字段恒为 0，
 // 无法与“确认无消耗”区分；缓存语义不可解释的行输入字段不可用。
-func usageRowTokensMissing(row usageLogRow, result string) bool {
-	if result == usageResultFailure {
+func usageRowTokensMissing(row usageLogRow) bool {
+	if row.fact.Type == LogTypeError {
 		return true
 	}
 	if row.parsed.unavailable || row.parsed.inputTokensUnavailable || row.parsed.cacheReadUnavailable || row.parsed.cacheWriteUnavailable {
@@ -553,7 +553,7 @@ func (agg *usageAggregation) appendTaskLogPiece(pieces *usageTaskPieces, row usa
 	} else if missing {
 		pieces.missingSeconds++
 	}
-	if usageRowTokensMissing(row, usageResultSuccess) {
+	if usageRowTokensMissing(row) {
 		pieces.missingTokens++
 	}
 	if row.parsed.billingMode != BillingReconciliationModeUnknown && pieces.billingMode == "" {
@@ -625,7 +625,7 @@ func (agg *usageAggregation) buildUpstreamStandalone(row usageLogRow, bundle *us
 	var tokens UsageAnalyticsMetrics
 	usageRowTokens(row, &tokens)
 	acc.mergeTokens(tokens)
-	if usageRowTokensMissing(row, result) {
+	if usageRowTokensMissing(row) {
 		acc.m.RowsMissingTokens += max(calls, 1)
 	}
 	if value, known, missing, unitKnown := usageRowSeconds(row); known {
@@ -681,7 +681,7 @@ func (agg *usageAggregation) buildCustomerStandalone(row usageLogRow, calls int6
 	var tokens UsageAnalyticsMetrics
 	usageRowTokens(row, &tokens)
 	acc.mergeTokens(tokens)
-	if usageRowTokensMissing(row, result) {
+	if usageRowTokensMissing(row) {
 		acc.m.RowsMissingTokens += max(calls, 1)
 	}
 	if value, known, missing, unitKnown := usageRowSeconds(row); known {

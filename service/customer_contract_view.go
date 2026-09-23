@@ -34,6 +34,7 @@ type CustomerContractAdminRuleView struct {
 	RouteGroup          string                       `json:"route_group"`
 	Discount            string                       `json:"discount"`
 	Available           bool                         `json:"available"`
+	UnavailableReason   string                       `json:"unavailable_reason,omitempty"`
 	NativeGroupRatio    string                       `json:"native_group_ratio"`
 	EffectiveMultiplier string                       `json:"effective_multiplier"`
 	SpecialGroupRatio   bool                         `json:"special_group_ratio"`
@@ -104,7 +105,8 @@ func buildContractEntityRuleViews(snapshot *model.ContractEntitySnapshot, userGr
 		}
 		result = append(result, CustomerContractAdminRuleView{
 			ChannelId: rule.ChannelId, Model: rule.PublicModel, RouteGroup: rule.RouteGroup, Discount: discount, Available: rule.Available,
-			NativeGroupRatio: decimal.NewFromFloat(groupRatio).String(), EffectiveMultiplier: effective.String(),
+			UnavailableReason: rule.UnavailableCategory,
+			NativeGroupRatio:  decimal.NewFromFloat(groupRatio).String(), EffectiveMultiplier: effective.String(),
 			SpecialGroupRatio: hasSpecialRatio,
 			Price:             price,
 		})

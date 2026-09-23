@@ -1,13 +1,14 @@
 package oairesponses
 
 import (
-	"fmt"
-	"strings"
-
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/internal/convdiag"
 	relaymedia "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/media"
 	sharedgemini "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/shared/gemini"
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
@@ -101,7 +102,12 @@ func OpenAIResponsesRequestToGeminiChat(c context.Context, req *dto.OpenAIRespon
 				continue
 			}
 		}
-		functions[i].Parameters = sharedgemini.CleanFunctionParameters(functions[i].Parameters)
+		cleaned, schemaDiagnostics := sharedgemini.CleanFunctionParametersWithDiagnostics(functions[i].Parameters)
+		functions[i].Parameters = cleaned
+		for d := range schemaDiagnostics {
+			schemaDiagnostics[d].Path = "tools[" + strconv.Itoa(i) + "].parameters" + schemaDiagnostics[d].Path
+		}
+		convdiag.Add(c, schemaDiagnostics...)
 	}
 	if len(functions) > 0 {
 		geminiRequest.SetTools([]dto.GeminiChatTool{

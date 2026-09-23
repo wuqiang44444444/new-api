@@ -1,4 +1,5 @@
 import { Trash2 } from 'lucide-react'
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ContractPriceDetails } from '@/components/contract-price-details'
@@ -38,6 +39,7 @@ type CustomerContractRuleListProps = {
 
 export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
   const { t } = useTranslation()
+  const id = useId()
   return (
     <div className='flex flex-col gap-3'>
       <Input
@@ -56,6 +58,29 @@ export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
         const channelOptions = channelOptionsForRule(props.channelGroups, rule)
         const groupRatio = rule.native_group_ratio
         const specialRatio = rule.special_group_ratio
+        let unavailableReason = ''
+        if (!rule.available) {
+          switch (rule.unavailable_reason) {
+            case 'channel_disabled':
+              unavailableReason = t('This channel is disabled')
+              break
+            case 'channel_missing':
+              unavailableReason = t('This channel no longer exists')
+              break
+            case 'capability_missing':
+              unavailableReason = t(
+                'This channel no longer serves this model in the route group'
+              )
+              break
+            case 'route_group_invalid':
+              unavailableReason = t('This route group is no longer configured')
+              break
+            default:
+              unavailableReason = t(
+                'This source is unavailable. Review its channel, model, and route group.'
+              )
+          }
+        }
         return (
           <div
             key={`${rule.route_group}-${rule.model}-${rule.channel_id}`}
@@ -82,7 +107,9 @@ export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
               )}
             </Field>
             <Field>
-              <FieldLabel>{t('Channel')}</FieldLabel>
+              <FieldLabel htmlFor={`${id}-channel-${index}`}>
+                {t('Channel')}
+              </FieldLabel>
               <Select
                 items={channelOptions.map((channel) => ({
                   value: String(channel.id),
@@ -91,10 +118,20 @@ export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
                 value={String(rule.channel_id || '')}
                 onValueChange={(value) => {
                   if (!value) return
-                  props.onUpdate(index, { channel_id: Number(value) })
+                  props.onUpdate(index, {
+                    channel_id: Number(value),
+                    available: true,
+                    unavailable_reason: undefined,
+                  })
                 }}
               >
-                <SelectTrigger className='w-full'>
+                <SelectTrigger
+                  id={`${id}-channel-${index}`}
+                  className='w-full'
+                  aria-describedby={
+                    unavailableReason ? `${id}-reason-${index}` : undefined
+                  }
+                >
                   <SelectValue>
                     {rule.channel_id
                       ? channelOptions.find(
@@ -113,6 +150,11 @@ export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
                   </SelectGroup>
                 </SelectContent>
               </Select>
+              {unavailableReason && (
+                <FieldDescription id={`${id}-reason-${index}`}>
+                  {unavailableReason}
+                </FieldDescription>
+              )}
               {!rule.channel_id && channelOptions.length > 1 && (
                 <FieldDescription>
                   {t('Select the channel that serves this model')}

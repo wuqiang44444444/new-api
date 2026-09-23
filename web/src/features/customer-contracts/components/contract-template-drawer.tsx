@@ -154,6 +154,7 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
                   route_group: rule.route_group,
                   ratio_units: Math.round(Number(rule.discount) * 100_000_000),
                   available: rule.available,
+                  unavailable_reason: rule.unavailable_reason,
                 },
                 channelGroups,
                 groupOptions

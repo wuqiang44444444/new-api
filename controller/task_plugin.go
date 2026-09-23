@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/plugins"
 	taskseedance "github.com/QuantumNous/new-api/relay/channel/task/seedance"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -528,7 +529,12 @@ func SetTaskPluginStatus(c *gin.Context) {
 		}
 		if cascade {
 			for _, channel := range channels {
-				if model.UpdateChannelStatus(channel.Id, "", common.ChannelStatusManuallyDisabled, "task plugin disabled") {
+				changed, err := model.UpdateChannelStatusWithActor(channel.Id, "", common.ChannelStatusManuallyDisabled, "task plugin disabled", c.GetInt("id"), service.ChannelStatusAuditForRequest(c, nil))
+				if err != nil {
+					common.ApiError(c, err)
+					return
+				}
+				if changed {
 					disabledChannels++
 				}
 			}

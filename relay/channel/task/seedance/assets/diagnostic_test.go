@@ -80,3 +80,32 @@ func TestClassifyTransportErrorUsesStableDiagnosticTaxonomy(t *testing.T) {
 		})
 	}
 }
+
+// UpstreamDiagnosticFields 是统一事件消费的结构化契约：阶段、类别、状态与已
+// 脱敏 Provider code 必须与字符串版诊断一致，未知错误保持不可解构。
+func TestUpstreamDiagnosticFieldsMatchStringContract(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantOK    bool
+		wantStage string
+		wantClass string
+		wantCode  string
+	}{
+		{name: "http status", err: &upstreamHTTPError{StatusCode: 429, ProviderCode: "RateLimit.Exceeded"}, wantOK: true, wantStage: AssetStageWaitResponse, wantClass: AssetClassUpstreamHTTP, wantCode: "RateLimit.Exceeded"},
+		{name: "http unsafe code dropped", err: &upstreamHTTPError{StatusCode: 502, ProviderCode: "secret value"}, wantOK: true, wantStage: AssetStageWaitResponse, wantClass: AssetClassUpstreamHTTP},
+		{name: "numeric business error", err: &upstreamApplicationError{provider: "provider", code: 40001}, wantOK: true, wantStage: AssetStageDecodeResponse, wantClass: AssetClassApplicationError, wantCode: "40001"},
+		{name: "string business error", err: &upstreamStringApplicationError{provider: "provider", code: "InvalidParameter"}, wantOK: true, wantStage: AssetStageDecodeResponse, wantClass: AssetClassApplicationError, wantCode: "InvalidParameter"},
+		{name: "timeout transport", err: classifyTransportError(AssetStageUploadBody, context.DeadlineExceeded), wantOK: true, wantStage: AssetStageUploadBody, wantClass: AssetClassTimeout},
+		{name: "unknown error", err: errors.New("opaque"), wantOK: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fields, ok := UpstreamDiagnosticFields(test.err)
+			assert.Equal(t, test.wantOK, ok)
+			assert.Equal(t, test.wantStage, fields.Stage)
+			assert.Equal(t, test.wantClass, fields.Class)
+			assert.Equal(t, test.wantCode, fields.ProviderCode)
+		})
+	}
+}

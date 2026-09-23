@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -67,6 +68,42 @@ func loadContractRouteFacts(tx *gorm.DB, rules []ContractEntityRule) (*contractR
 	return facts, nil
 }
 
+// Route rejection sub-categories, wrapped inside the existing sentinel errors
+// so management save paths keep matching ErrCustomerContractEntityInvalidChannel
+// while request-side diagnostics can distinguish the actual branch.
+var (
+	errContractRouteChannelMissing    = errors.New("channel does not exist")
+	errContractRouteChannelDisabled   = errors.New("channel is disabled")
+	errContractRouteCapabilityMissing = errors.New("channel does not serve the model in the route group")
+)
+
+// Controlled diagnostic categories for unavailable contract rules. Derived only
+// from the existing availability judgment; never a second admission rule.
+const (
+	ContractRouteUnavailableChannelMissing    = "channel_missing"
+	ContractRouteUnavailableChannelDisabled   = "channel_disabled"
+	ContractRouteUnavailableCapabilityMissing = "capability_missing"
+	ContractRouteUnavailableGroupInvalid      = "route_group_invalid"
+	ContractRouteUnavailableOther             = "other"
+)
+
+func contractRouteUnavailableCategory(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, errContractRouteChannelMissing):
+		return ContractRouteUnavailableChannelMissing
+	case errors.Is(err, errContractRouteChannelDisabled):
+		return ContractRouteUnavailableChannelDisabled
+	case errors.Is(err, errContractRouteCapabilityMissing):
+		return ContractRouteUnavailableCapabilityMissing
+	case errors.Is(err, ErrCustomerContractInvalidRule):
+		return ContractRouteUnavailableGroupInvalid
+	default:
+		return ContractRouteUnavailableOther
+	}
+}
+
 // validate is the common source policy for new management rules and derived
 // availability. Ordinary sources require Ability; typed sources use Channel.
 func (facts *contractRouteFacts) validate(rule ContractEntityRule) error {
@@ -78,14 +115,14 @@ func (facts *contractRouteFacts) validate(rule ContractEntityRule) error {
 	}
 	channel, exists := facts.channels[rule.ChannelId]
 	if !exists {
-		return fmt.Errorf("%w: channel %d does not exist", ErrCustomerContractEntityInvalidChannel, rule.ChannelId)
+		return fmt.Errorf("%w: channel %d: %w", ErrCustomerContractEntityInvalidChannel, rule.ChannelId, errContractRouteChannelMissing)
 	}
 	if channel.Status != common.ChannelStatusEnabled {
-		return fmt.Errorf("%w: channel %d is disabled", ErrCustomerContractEntityInvalidChannel, rule.ChannelId)
+		return fmt.Errorf("%w: channel %d: %w", ErrCustomerContractEntityInvalidChannel, rule.ChannelId, errContractRouteChannelDisabled)
 	}
 	if channelSkipsGenericAbilities(channel.Type) {
 		if !slices.Contains(channel.GetGroups(), rule.RouteGroup) {
-			return fmt.Errorf("%w: channel %d is not in group %q", ErrCustomerContractEntityInvalidChannel, rule.ChannelId, rule.RouteGroup)
+			return fmt.Errorf("%w: channel %d in group %q: %w", ErrCustomerContractEntityInvalidChannel, rule.ChannelId, rule.RouteGroup, errContractRouteCapabilityMissing)
 		}
 		for _, candidate := range strings.Split(channel.Models, ",") {
 			if strings.TrimSpace(candidate) == rule.PublicModel {
@@ -95,7 +132,7 @@ func (facts *contractRouteFacts) validate(rule ContractEntityRule) error {
 	} else if facts.abilities[contractRouteSource{rule.ChannelId, rule.RouteGroup, rule.PublicModel}] {
 		return nil
 	}
-	return fmt.Errorf("%w: channel %d does not serve model %q in group %q", ErrCustomerContractEntityInvalidChannel, rule.ChannelId, rule.PublicModel, rule.RouteGroup)
+	return fmt.Errorf("%w: channel %d does not serve model %q in group %q: %w", ErrCustomerContractEntityInvalidChannel, rule.ChannelId, rule.PublicModel, rule.RouteGroup, errContractRouteCapabilityMissing)
 }
 
 // GetContractRouteAvailability preserves rule order and returns no partial
@@ -116,7 +153,9 @@ func readContractRouteAvailability(tx *gorm.DB, rules []ContractEntityRule) ([]C
 			return nil, err
 		}
 		for i := range batch {
-			batch[i].Available = facts.validate(batch[i]) == nil
+			validateErr := facts.validate(batch[i])
+			batch[i].Available = validateErr == nil
+			batch[i].UnavailableCategory = contractRouteUnavailableCategory(validateErr)
 		}
 	}
 	return result, nil

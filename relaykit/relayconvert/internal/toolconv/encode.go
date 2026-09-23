@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -355,7 +356,12 @@ func attachGeminiRequest(request any, set Set) (any, []types.ConversionDiagnosti
 						cloned = nil
 					}
 				}
-				parameters = sharedgemini.CleanFunctionParameters(cloned)
+				cleaned, schemaDiagnostics := sharedgemini.CleanFunctionParametersWithDiagnostics(cloned)
+				parameters = cleaned
+				for d := range schemaDiagnostics {
+					schemaDiagnostics[d].Path = "tools[" + strconv.Itoa(index) + "].parameters" + schemaDiagnostics[d].Path
+				}
+				diagnostics = append(diagnostics, schemaDiagnostics...)
 			}
 			function := map[string]any{
 				"name":        definition.Function.Name,

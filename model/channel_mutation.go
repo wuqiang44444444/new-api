@@ -27,16 +27,19 @@ func updateChannelWithCredentialActor(
 	actorID int,
 	assetTenantUnchanged bool,
 	assetTenantReplacementConfirmed bool,
+	audit ...ChannelStatusAudit,
 ) error {
 	if channel.Id == 0 {
 		return errors.New("channel ID is 0")
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
+	var beforeStatus, afterStatus int
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		current, err := lockChannelForMutation(tx, channel.Id)
 		if err != nil {
 			return err
 		}
 		original := *current
+		beforeStatus = original.Status
 		if err := tx.Model(current).Updates(channel).Error; err != nil {
 			return err
 		}
@@ -78,8 +81,13 @@ func updateChannelWithCredentialActor(
 				return err
 			}
 		}
+		afterStatus = channel.Status
 		return channel.UpdateAbilitiesWithActor(tx, actorID)
 	})
+	if err == nil {
+		recordChannelStatusTransition(channel.Id, beforeStatus, afterStatus, ChannelStatusSourceManual, actorID, audit...)
+	}
+	return err
 }
 
 func deleteChannel(channel *Channel) error {

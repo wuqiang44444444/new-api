@@ -64,6 +64,7 @@ export interface ContractTemplateRuleView {
   route_group: string
   ratio_units: number
   available: boolean
+  unavailable_reason?: string
 }
 
 export interface ContractTemplateSnapshot {

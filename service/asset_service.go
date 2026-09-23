@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -424,9 +425,10 @@ func assetGroupResponse(modelName, fallbackID string, result assetadapter.GroupR
 	}
 }
 
-// normalizeAssetAdapterError 把素材 adapter 的上游错误归一为北向合同错误，并以
-// WARN 级别记录请求关联 ID、操作、客户模型与脱敏诊断（阶段/类别/状态/Provider code）。
-// 不得记录凭据、source URL、完整签名 URL 或上游原始响应。
+// normalizeAssetAdapterError merges the controlled structured upstream diagnostic
+// into the unified event (same source as the text log) and normalizes the error
+// to the northbound contract error. Never records credentials, source URLs,
+// signed URLs or raw upstream responses.
 func normalizeAssetAdapterError(ctx context.Context, operation, modelName string, channel *model.Channel, elapsed time.Duration, err error) error {
 	if err == nil {
 		return nil
@@ -436,6 +438,7 @@ func normalizeAssetAdapterError(ctx context.Context, operation, modelName string
 		return ErrInvalidAssetRequest
 	}
 	if errors.Is(err, ErrTaskArtifactStoreDisabled) {
+		attachAssetUpstreamDiag(ctx, "channel_resolution", "asset_upstream_unavailable", nil)
 		return ErrAssetUpstreamUnavailable
 	}
 	if errors.Is(err, assetadapter.ErrAssetOperationUnsupported) {
@@ -452,9 +455,24 @@ func normalizeAssetAdapterError(ctx context.Context, operation, modelName string
 		channelID = channel.Id
 		protocol = channel.GetOtherSettings().AssetUpstreamProtocol
 	}
-	if diagnostic, ok := assetadapter.SafeUpstreamDiagnostic(err); ok {
-		logger.LogWarn(ctx, fmt.Sprintf("Seedance asset failed: operation=%s model=%s channel_id=%d protocol=%s elapsed_ms=%d %s", operation, modelName, channelID, protocol, elapsed.Milliseconds(), diagnostic))
+	diagnosticText, _ := assetadapter.SafeUpstreamDiagnostic(err)
+	if fields, ok := assetadapter.UpstreamDiagnosticFields(err); ok {
+		reason := assetUpstreamReasonFromClass(fields.Class)
+		detail := map[string]string{
+			"operation":      operation,
+			"upstream_stage": fields.Stage,
+		}
+		if fields.StatusCode > 0 {
+			detail["upstream_status"] = strconv.Itoa(fields.StatusCode)
+		}
+		if fields.ProviderCode != "" {
+			detail["provider_code"] = fields.ProviderCode
+		}
+		attachAssetUpstreamDiag(ctx, "upstream_operation", reason, detail)
+		logger.LogWarn(ctx, fmt.Sprintf("Seedance asset failed: operation=%s model=%s channel_id=%d protocol=%s elapsed_ms=%d %s",
+			operation, modelName, channelID, protocol, elapsed.Milliseconds(), diagnosticText))
 	} else {
+		attachAssetUpstreamDiag(ctx, "upstream_operation", "asset_upstream_error", map[string]string{"operation": operation})
 		logger.LogWarn(ctx, fmt.Sprintf("Seedance asset failed: operation=%s model=%s channel_id=%d protocol=%s elapsed_ms=%d class=unclassified", operation, modelName, channelID, protocol, elapsed.Milliseconds()))
 	}
 	return ErrAssetUpstreamError

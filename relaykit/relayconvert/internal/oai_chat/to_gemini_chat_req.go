@@ -1,15 +1,16 @@
 package oaichat
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
-
-	"context"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/internal/convdiag"
 	relaymedia "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/media"
 	sharedgemini "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/shared/gemini"
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
@@ -158,7 +159,7 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 
 	if textRequest.Tools != nil {
 		functions := make([]dto.FunctionRequest, 0, len(textRequest.Tools))
-		for _, tool := range textRequest.Tools {
+		for toolIndex, tool := range textRequest.Tools {
 			if tool.Function.Parameters != nil {
 				if params, ok := tool.Function.Parameters.(map[string]any); ok {
 					if props, hasProps := params["properties"].(map[string]any); hasProps && len(props) == 0 {
@@ -166,7 +167,12 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 					}
 				}
 			}
-			tool.Function.Parameters = sharedgemini.CleanFunctionParameters(tool.Function.Parameters)
+			cleaned, schemaDiagnostics := sharedgemini.CleanFunctionParametersWithDiagnostics(tool.Function.Parameters)
+			tool.Function.Parameters = cleaned
+			for d := range schemaDiagnostics {
+				schemaDiagnostics[d].Path = "tools[" + strconv.Itoa(toolIndex) + "].parameters" + schemaDiagnostics[d].Path
+			}
+			convdiag.Add(c, schemaDiagnostics...)
 			functions = append(functions, tool.Function)
 		}
 		geminiTools := geminiRequest.GetTools()

@@ -197,7 +197,11 @@ func (r *requestReport) merge(report Report) {
 		r.channelID = report.ChannelID
 	}
 	// Iterate the fixed whitelist, never arbitrary input keys or an unbounded map.
-	for _, key := range []string{"asset_kind", "media_type", "group_kind", "operation", "field", "source_status", "source_content_type", "required_min_ttl_seconds", "decoded_width", "decoded_height"} {
+	// contract_*/candidates_* belong to the customer-contract rejection diagnostics;
+	// upstream_*/provider_code belong to the asset upstream safety diagnostics.
+	for _, key := range []string{"asset_kind", "media_type", "group_kind", "operation", "field", "source_status", "source_content_type", "required_min_ttl_seconds", "decoded_width", "decoded_height",
+		"contract_id", "contract_version", "candidates_total", "candidates_blocked",
+		"upstream_status", "provider_code", "upstream_stage"} {
 		if _, exists := r.detail[key]; exists {
 			continue
 		}

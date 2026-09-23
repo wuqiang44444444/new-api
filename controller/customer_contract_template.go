@@ -111,7 +111,7 @@ func GetCustomerContractTemplate(c *gin.Context) {
 		}
 		return
 	}
-	common.ApiSuccess(c, snapshot)
+	common.ApiSuccess(c, buildCustomerContractTemplateAdminView(snapshot))
 }
 
 func PostCustomerContractTemplate(c *gin.Context) {
@@ -140,7 +140,7 @@ func PostCustomerContractTemplate(c *gin.Context) {
 	recordManageAuditFor(c, 0, "contract_template.create", map[string]interface{}{
 		"template_id": snapshot.Id, "version": snapshot.Version, "enabled": snapshot.Enabled, "rule_count": len(snapshot.Rules),
 	})
-	common.ApiSuccess(c, snapshot)
+	common.ApiSuccess(c, buildCustomerContractTemplateAdminView(snapshot))
 }
 
 func PutCustomerContractTemplate(c *gin.Context) {
@@ -177,7 +177,7 @@ func PutCustomerContractTemplate(c *gin.Context) {
 	recordManageAuditFor(c, 0, "contract_template.update", map[string]interface{}{
 		"template_id": snapshot.Id, "version": snapshot.Version, "enabled": snapshot.Enabled, "rule_count": len(snapshot.Rules),
 	})
-	common.ApiSuccess(c, snapshot)
+	common.ApiSuccess(c, buildCustomerContractTemplateAdminView(snapshot))
 }
 
 func GetCustomerContractTemplateAudits(c *gin.Context) {

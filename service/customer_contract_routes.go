@@ -67,12 +67,9 @@ func ContractTokenModelAllowed(c *gin.Context, publicModel string) bool {
 // independent of user/Key groups. Runtime and projections share source validity;
 // database failures are errors, never an empty/native result.
 func EffectiveContractRules(snapshot *model.ContractEntitySnapshot) ([]model.ContractEntityRule, error) {
-	if _, err := ContractDiscountsFromSnapshot(snapshot); err != nil {
-		return nil, err
-	}
-	availability, err := model.GetContractRouteAvailability(snapshot.Rules)
+	availability, err := effectiveContractRulesDetailed(snapshot)
 	if err != nil {
-		return nil, fmt.Errorf("%w: route lookup failed", ErrCustomerContractUnavailable)
+		return nil, err
 	}
 	rules := make([]model.ContractEntityRule, 0, len(availability))
 	for _, rule := range availability {
@@ -83,18 +80,41 @@ func EffectiveContractRules(snapshot *model.ContractEntitySnapshot) ([]model.Con
 	return rules, nil
 }
 
+// effectiveContractRulesDetailed keeps every rule with its derived availability
+// and controlled unavailability category so rejection diagnostics can report
+// the actual blocking branch without re-running the judgment.
+func effectiveContractRulesDetailed(snapshot *model.ContractEntitySnapshot) ([]model.ContractEntityRule, error) {
+	if _, err := ContractDiscountsFromSnapshot(snapshot); err != nil {
+		return nil, err
+	}
+	availability, err := model.GetContractRouteAvailability(snapshot.Rules)
+	if err != nil {
+		return nil, fmt.Errorf("%w: route lookup failed", ErrCustomerContractUnavailable)
+	}
+	return availability, nil
+}
+
 func ResolveCustomerContractRequest(c *gin.Context, publicModel string) (*hosttypes.ContractBillingFact, error) {
 	authVersion, _ := common.GetContextKeyType[int64](c, constant.ContextKeyAuthVersion)
 	contractID, _ := common.GetContextKeyType[int](c, constant.ContextKeyTokenContractId)
 	snapshot, err := CustomerContractForRequest(c, common.GetContextKeyInt(c, constant.ContextKeyUserId), authVersion, contractID)
 	if err != nil || snapshot == nil {
+		if err != nil {
+			attachContractRejection(c, contractStageScope, contractReasonUnavailable, publicModel, nil)
+		}
 		return nil, err
 	}
 	if !ContractTokenModelAllowed(c, publicModel) {
+		attachContractRejection(c, "model_access", "token_model_forbidden", publicModel, nil)
 		return nil, ErrCustomerContractScope
 	}
 	fact, err := resolveContractBillingFact(snapshot, publicModel)
 	if err != nil {
+		if errors.Is(err, ErrCustomerContractScope) {
+			attachContractRejection(c, contractStageScope, contractReasonModelNotListed, publicModel, nil)
+		} else {
+			attachContractRejection(c, contractStageScope, contractReasonUnavailable, publicModel, nil)
+		}
 		return nil, err
 	}
 	common.SetContextKey(c, constant.ContextKeyContractFact, fact)
@@ -109,14 +129,15 @@ func customerContractRoutes(c *gin.Context, publicModel string) (map[int]string,
 			snapshot.Rules = append(snapshot.Rules, rule)
 		}
 	}
-	rules, err := EffectiveContractRules(&snapshot)
+	rules, err := effectiveContractRulesDetailed(&snapshot)
 	if err != nil {
+		attachContractRejection(c, contractStageSelection, contractReasonRouteLookupFailed, publicModel, nil)
 		return nil, err
 	}
 	routes := make(map[int]string)
 	firstGroup := c.GetString(contractFirstGroupKey)
 	for _, rule := range rules {
-		if rule.PublicModel != publicModel || !ContractTokenModelAllowed(c, publicModel) {
+		if !rule.Available || rule.PublicModel != publicModel || !ContractTokenModelAllowed(c, publicModel) {
 			continue
 		}
 		if firstGroup != "" && !common.GetContextKeyBool(c, constant.ContextKeyTokenCrossGroupRetry) && rule.RouteGroup != firstGroup {
@@ -125,6 +146,15 @@ func customerContractRoutes(c *gin.Context, publicModel string) (map[int]string,
 		routes[rule.ChannelId] = rule.RouteGroup
 	}
 	if len(routes) == 0 {
+		// 候选全部不可用与“有可用候选但被当前约束过滤空”是不同事实，分开记录。
+		attach := contractReasonCandidatesUnavailable
+		for _, rule := range rules {
+			if rule.Available {
+				attach = contractReasonNoSelectableChannel
+				break
+			}
+		}
+		attachContractRejection(c, contractStageSelection, attach, publicModel, contractCandidatesDetail(&snapshot, rules))
 		return nil, ErrCustomerContractScope
 	}
 	return routes, nil
@@ -150,6 +180,7 @@ func ValidateCustomerContractChannel(c *gin.Context, publicModel string, channel
 	}
 	group, allowed := routes[channelID]
 	if !allowed {
+		attachContractRejection(c, contractStageSelection, contractReasonChannelNotInScope, publicModel, nil)
 		return ErrCustomerContractScope
 	}
 	setCustomerContractGroup(c, group)
@@ -169,6 +200,7 @@ func SelectCustomerContractChannel(param *RetryParam, initial bool) (*model.Chan
 	var selected *model.Channel
 	if pin, pinned, _ := constraints.ResolvedPin(); pinned {
 		if _, allowed := routes[pin.ChannelId]; !allowed {
+			attachContractRejection(c, contractStageSelection, contractReasonChannelNotInScope, param.ModelName, nil)
 			return nil, "", ErrCustomerContractScope
 		}
 		selected, err = model.CacheGetChannel(pin.ChannelId)
@@ -176,6 +208,7 @@ func SelectCustomerContractChannel(param *RetryParam, initial bool) (*model.Chan
 			return nil, "", err
 		}
 		if ok, _ := model.ChannelSatisfiesFilters(selected, param.ModelName, filters); !ok {
+			attachContractRejection(c, contractStageSelection, contractReasonChannelNotInScope, param.ModelName, nil)
 			return nil, "", ErrCustomerContractScope
 		}
 	} else if initial {
@@ -199,6 +232,7 @@ func SelectCustomerContractChannel(param *RetryParam, initial bool) (*model.Chan
 		return nil, "", err
 	}
 	if selected == nil {
+		attachContractRejection(c, contractStageSelection, contractReasonNoSelectableChannel, param.ModelName, nil)
 		return nil, "", ErrCustomerContractScope
 	}
 	group := routes[selected.Id]
@@ -217,9 +251,13 @@ func CustomerContractTypedChannel(c *gin.Context, publicModel string, channelTyp
 		ids = append(ids, id)
 	}
 	sort.Ints(ids)
+	pinnedInRoutes := false
 	for _, id := range ids {
 		if pinnedID != 0 && pinnedID != id {
 			continue
+		}
+		if pinnedID != 0 {
+			pinnedInRoutes = true
 		}
 		channel, err := model.GetChannelById(id, true)
 		if err != nil {
@@ -230,6 +268,12 @@ func CustomerContractTypedChannel(c *gin.Context, publicModel string, channelTyp
 		}
 		setCustomerContractGroup(c, routes[id])
 		return channel, routes[id], nil
+	}
+	// 固定渠道在合同路由内但类型不匹配，与渠道根本不在合同范围内是不同事实。
+	if pinnedID == 0 || pinnedInRoutes {
+		attachContractRejection(c, contractStageSelection, contractReasonChannelMismatch, publicModel, nil)
+	} else {
+		attachContractRejection(c, contractStageSelection, contractReasonChannelNotInScope, publicModel, nil)
 	}
 	return nil, "", ErrCustomerContractScope
 }

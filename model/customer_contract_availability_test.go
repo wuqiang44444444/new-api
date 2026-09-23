@@ -113,6 +113,43 @@ func TestContractAvailabilityCrossesBatchBoundaryWithoutPartialResults(t *testin
 	}
 }
 
+
+// 每个不可用规则必须携带与既有判断一致的受控类别，供合同拒绝诊断使用；
+// 类别只描述阻塞分支，不参与任何准入判定。
+func TestContractAvailabilityReportsControlledUnavailableCategories(t *testing.T) {
+	db := setupCustomerContractTestDB(t)
+	enabled := createCustomerContractAbility(t, db, "contract-a", "model-a", common.ChannelStatusEnabled)
+	disabled := createCustomerContractAbility(t, db, "contract-a", "model-a", common.ChannelStatusAutoDisabled)
+	otherModel := createCustomerContractAbility(t, db, "contract-a", "model-b", common.ChannelStatusEnabled)
+	typed := Channel{Type: constant.ChannelTypeSeedanceLink, Status: common.ChannelStatusEnabled, Group: "contract-a", Models: "model-a"}
+	require.NoError(t, db.Create(&typed).Error)
+
+	snapshot := ContractEntitySnapshot{Rules: []ContractEntityRule{
+		{ChannelId: enabled.Id, RouteGroup: "contract-a", PublicModel: "model-a"},
+		{ChannelId: disabled.Id, RouteGroup: "contract-a", PublicModel: "model-a"},
+		{ChannelId: otherModel.Id, RouteGroup: "contract-a", PublicModel: "model-a"},
+		{ChannelId: 999, RouteGroup: "contract-a", PublicModel: "model-a"},
+		{ChannelId: enabled.Id, RouteGroup: "removed", PublicModel: "model-a"},
+		{ChannelId: typed.Id, RouteGroup: "contract-a", PublicModel: "model-b"},
+	}}
+	require.NoError(t, RefreshContractEntityAvailability(&snapshot))
+	categories := make([]string, len(snapshot.Rules))
+	for i, rule := range snapshot.Rules {
+		categories[i] = rule.UnavailableCategory
+		if rule.Available {
+			assert.Empty(t, rule.UnavailableCategory, "available rules carry no category")
+		}
+	}
+	assert.Equal(t, []string{
+		"",
+		ContractRouteUnavailableChannelDisabled,
+		ContractRouteUnavailableCapabilityMissing,
+		ContractRouteUnavailableChannelMissing,
+		ContractRouteUnavailableGroupInvalid,
+		ContractRouteUnavailableCapabilityMissing,
+	}, categories)
+}
+
 func TestContractTypedGroupsAreMembershipsNotListSearchFilters(t *testing.T) {
 	db := setupCustomerContractTestDB(t)
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"contract-a":1,"all":1,"null":1,"literal_%":1}`))

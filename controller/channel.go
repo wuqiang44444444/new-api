@@ -846,7 +846,7 @@ func DisableTagChannels(c *gin.Context) {
 		})
 		return
 	}
-	err = model.DisableChannelByTagWithActor(channelTag.Tag, c.GetInt("id"))
+	err = model.DisableChannelByTagWithActor(channelTag.Tag, c.GetInt("id"), service.ChannelStatusAuditForRequest(c, nil))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -872,7 +872,7 @@ func EnableTagChannels(c *gin.Context) {
 		})
 		return
 	}
-	err = model.EnableChannelByTagWithActor(channelTag.Tag, c.GetInt("id"))
+	err = model.EnableChannelByTagWithActor(channelTag.Tag, c.GetInt("id"), service.ChannelStatusAuditForRequest(c, nil))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -1185,12 +1185,14 @@ func UpdateChannel(c *gin.Context) {
 			c.GetInt("id"),
 			channel.ConfirmAssetTenantUnchanged,
 			channel.ConfirmAssetTenantReplacement,
+			service.ChannelStatusAuditForRequest(c, nil),
 		)
 	} else {
 		err = channel.UpdateWithActorAndAssetTenantConfirmation(
 			c.GetInt("id"),
 			channel.ConfirmAssetTenantUnchanged,
 			channel.ConfirmAssetTenantReplacement,
+			service.ChannelStatusAuditForRequest(c, nil),
 		)
 	}
 	if err != nil {
@@ -1289,7 +1291,7 @@ func UpdateChannelStatus(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	changed, err := model.UpdateChannelStatusWithActor(id, "", req.Status, "manual operation", c.GetInt("id"))
+	changed, err := model.UpdateChannelStatusWithActor(id, "", req.Status, "manual operation", c.GetInt("id"), service.ChannelStatusAuditForRequest(c, nil))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -1312,7 +1314,7 @@ func BatchUpdateChannelStatus(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	changedCount, err := model.UpdateChannelStatusesWithActor(req.Ids, req.Status, "manual batch operation", c.GetInt("id"))
+	changedCount, err := model.UpdateChannelStatusesWithActor(req.Ids, req.Status, "manual batch operation", c.GetInt("id"), service.ChannelStatusAuditForRequest(c, nil))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -1847,7 +1849,7 @@ func ManageMultiKeys(c *gin.Context) {
 
 		channel.ChannelInfo.MultiKeyStatusList[keyIndex] = 2 // disabled
 
-		err = channel.UpdateWithActor(c.GetInt("id"))
+		err = channel.UpdateWithActor(c.GetInt("id"), service.ChannelStatusAuditForRequest(c, nil))
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -1889,7 +1891,7 @@ func ManageMultiKeys(c *gin.Context) {
 			delete(channel.ChannelInfo.MultiKeyDisabledReason, keyIndex)
 		}
 
-		err = channel.UpdateWithActor(c.GetInt("id"))
+		err = channel.UpdateWithActor(c.GetInt("id"), service.ChannelStatusAuditForRequest(c, nil))
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -1913,7 +1915,7 @@ func ManageMultiKeys(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyDisabledTime = make(map[int]int64)
 		channel.ChannelInfo.MultiKeyDisabledReason = make(map[int]string)
 
-		err = channel.UpdateWithActor(c.GetInt("id"))
+		err = channel.UpdateWithActor(c.GetInt("id"), service.ChannelStatusAuditForRequest(c, nil))
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -1960,7 +1962,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 
-		err = channel.UpdateWithActor(c.GetInt("id"))
+		err = channel.UpdateWithActor(c.GetInt("id"), service.ChannelStatusAuditForRequest(c, nil))
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -2040,7 +2042,7 @@ func ManageMultiKeys(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyDisabledTime = newDisabledTime
 		channel.ChannelInfo.MultiKeyDisabledReason = newDisabledReason
 
-		err = channel.UpdateWithActor(c.GetInt("id"))
+		err = channel.UpdateWithActor(c.GetInt("id"), service.ChannelStatusAuditForRequest(c, nil))
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -2108,7 +2110,7 @@ func ManageMultiKeys(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyDisabledTime = newDisabledTime
 		channel.ChannelInfo.MultiKeyDisabledReason = newDisabledReason
 
-		err = channel.UpdateWithActor(c.GetInt("id"))
+		err = channel.UpdateWithActor(c.GetInt("id"), service.ChannelStatusAuditForRequest(c, nil))
 		if err != nil {
 			common.ApiError(c, err)
 			return

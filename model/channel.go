@@ -365,23 +365,6 @@ func (channel *Channel) Save() error {
 	return DB.Save(channel).Error
 }
 
-// saveStatusState persists only the fields owned by the channel status flow.
-// Keeping this allowlist here prevents a stale channel snapshot from
-// overwriting credentials, accounting counters, or channel configuration.
-func (channel *Channel) saveStatusState() error {
-	if channel.Id == 0 {
-		return errors.New("channel ID is 0")
-	}
-	updates := map[string]any{
-		"status":     channel.Status,
-		"other_info": channel.OtherInfo,
-	}
-	if channel.ChannelInfo.IsMultiKey {
-		updates["channel_info"] = channel.ChannelInfo
-	}
-	return DB.Model(&Channel{}).Where("id = ?", channel.Id).Updates(updates).Error
-}
-
 func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
 	var channels []*Channel
 	var err error
@@ -554,14 +537,15 @@ func (channel *Channel) Update() error {
 	return channel.UpdateWithActor(0)
 }
 
-func (channel *Channel) UpdateWithActor(actorID int) error {
-	return channel.UpdateWithActorAndAssetTenantConfirmation(actorID, false, false)
+func (channel *Channel) UpdateWithActor(actorID int, audit ...ChannelStatusAudit) error {
+	return channel.UpdateWithActorAndAssetTenantConfirmation(actorID, false, false, audit...)
 }
 
 func (channel *Channel) UpdateWithActorAndAssetTenantConfirmation(
 	actorID int,
 	assetTenantUnchanged bool,
 	assetTenantReplacementConfirmed bool,
+	audit ...ChannelStatusAudit,
 ) error {
 	// If this is a multi-key channel, recalculate MultiKeySize based on the current key list to avoid inconsistency after editing keys
 	if channel.ChannelInfo.IsMultiKey {
@@ -607,6 +591,7 @@ func (channel *Channel) UpdateWithActorAndAssetTenantConfirmation(
 		actorID,
 		assetTenantUnchanged,
 		assetTenantReplacementConfirmed,
+		audit...,
 	)
 }
 
@@ -735,81 +720,8 @@ func hasEnabledMultiKey(keys []string, statusList map[int]int) bool {
 
 var channelStatusLock sync.Mutex
 
-func UpdateChannelStatus(channelId int, usingKey string, status int, reason string) bool {
-	if common.MemoryCacheEnabled {
-		channelStatusLock.Lock()
-		defer channelStatusLock.Unlock()
-	}
-
-	// ChannelInfo stores both multi-key status and the polling cursor. Hold the
-	// same per-channel lock from the first read through persistence so neither
-	// writer can save a stale JSON snapshot over the other.
-	pollingLock := GetChannelPollingLock(channelId)
-	pollingLock.Lock()
-	defer pollingLock.Unlock()
-
-	if common.MemoryCacheEnabled {
-		channelCache, _ := CacheGetChannel(channelId)
-		if channelCache == nil {
-			return false
-		}
-		if channelCache.ChannelInfo.IsMultiKey {
-			beforeStatus := channelCache.Status
-			// 如果是多Key模式，更新缓存中的状态
-			handlerMultiKeyUpdate(channelCache, usingKey, status, reason)
-			if beforeStatus != channelCache.Status {
-				CacheUpdateChannelStatus(channelId, channelCache.Status)
-			}
-			//CacheUpdateChannel(channelCache)
-			//return true
-		} else {
-			// 如果缓存渠道存在，且状态已是目标状态，直接返回
-			if channelCache.Status == status {
-				return false
-			}
-			CacheUpdateChannelStatus(channelId, status)
-		}
-	}
-
-	shouldUpdateAbilities := false
-	defer func() {
-		if shouldUpdateAbilities {
-			err := UpdateAbilityStatus(channelId, status == common.ChannelStatusEnabled)
-			if err != nil {
-				common.SysLog(fmt.Sprintf("failed to update ability status: channel_id=%d, error=%v", channelId, err))
-			}
-		}
-	}()
-	channel, err := GetChannelById(channelId, true)
-	if err != nil {
-		common.SysLog(fmt.Sprintf("failed to update channel status: channel_id=%d, status=%d, error=%v", channelId, status, err))
-		return false
-	} else {
-		if channel.Status == status {
-			return false
-		}
-
-		if channel.ChannelInfo.IsMultiKey {
-			beforeStatus := channel.Status
-			handlerMultiKeyUpdate(channel, usingKey, status, reason)
-			if beforeStatus != channel.Status {
-				shouldUpdateAbilities = true
-			}
-		} else {
-			info := channel.GetOtherInfo()
-			info["status_reason"] = reason
-			info["status_time"] = common.GetTimestamp()
-			channel.SetOtherInfo(info)
-			channel.Status = status
-			shouldUpdateAbilities = true
-		}
-		err = channel.saveStatusState()
-		if err != nil {
-			common.SysLog(fmt.Sprintf("failed to update channel status: channel_id=%d, status=%d, error=%v", channel.Id, status, err))
-			return false
-		}
-	}
-	return true
+func UpdateChannelStatus(channelId int, usingKey string, status int, reason string, audit ...ChannelStatusAudit) bool {
+	return updateAutomaticChannelStatus(channelId, usingKey, status, reason, audit...)
 }
 
 func EnableChannelByTag(tag string) error {
