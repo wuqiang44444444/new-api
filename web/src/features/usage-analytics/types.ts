@@ -1,3 +1,5 @@
+import type { BillingDiscountCombination } from '@/features/billing-reconciliation/types'
+
 export interface UsageAnalyticsDay {
   date: string
   start: number
@@ -51,6 +53,7 @@ export interface UsageAnalyticsMetrics {
 }
 
 export interface UsageCustomerModelRow {
+  discount_combinations?: BillingDiscountCombination[]
   model_name: string
   days: UsageAnalyticsMetrics[]
   total: UsageAnalyticsMetrics

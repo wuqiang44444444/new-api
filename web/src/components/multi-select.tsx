@@ -58,6 +58,12 @@ interface MultiSelectProps {
   createLabel?: string
   /** Empty state text. Defaults to "No matching items". */
   emptyText?: string
+  /**
+   * Accessible name for the inner input, for instances whose visible
+   * placeholder alone would be ambiguous (e.g. one control per list row).
+   * Defaults to the placeholder.
+   */
+  inputAriaLabel?: string
   /** Optional `id` to wire labels/aria-describedby to the input. */
   id?: string
   /** Disable the entire control. */
@@ -360,7 +366,7 @@ export function MultiSelect(props: MultiSelectProps) {
               : undefined
           }
           onKeyDown={handleKeyDown}
-          aria-label={placeholder}
+          aria-label={props.inputAriaLabel ?? placeholder}
         />
       </ComboboxChips>
 

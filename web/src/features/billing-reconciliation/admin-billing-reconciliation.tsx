@@ -67,7 +67,7 @@ export function AdminBillingReconciliation(
       )
 
   return (
-    <SectionPageLayout>
+    <SectionPageLayout fixedContent>
       <SectionPageLayout.Title>
         <span className='inline-flex min-w-0 items-center gap-2'>
           <span className='truncate'>{pageTitle}</span>
@@ -75,8 +75,8 @@ export function AdminBillingReconciliation(
         </span>
       </SectionPageLayout.Title>
       <SectionPageLayout.Content>
-        <div className='space-y-3'>
-          <div className='flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
+        <div className='flex h-full min-h-0 flex-col gap-3'>
+          <div className='flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
             <div>
               <p className='text-muted-foreground text-sm'>{pageDescription}</p>
               {!isUpstream ? (
@@ -106,6 +106,7 @@ export function AdminBillingReconciliation(
           </div>
 
           <Tabs
+            className='min-h-0 flex-1'
             value={section}
             onValueChange={(value) =>
               value != null &&
@@ -123,7 +124,7 @@ export function AdminBillingReconciliation(
                 {t('Upstream reconciliation')}
               </TabsTrigger>
             </TabsList>
-            <TabsContent value='customer'>
+            <TabsContent className='min-h-0 flex-1' value='customer'>
               {props.search.userId ? (
                 <CustomerStatementView
                   isAdmin
@@ -144,7 +145,7 @@ export function AdminBillingReconciliation(
                 />
               )}
             </TabsContent>
-            <TabsContent value='upstream'>
+            <TabsContent className='min-h-0 flex-1' value='upstream'>
               <UpstreamReconciliationView
                 month={month}
                 period={period}

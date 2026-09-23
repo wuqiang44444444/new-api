@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it, vi } from 'vitest'
 
 import { ContractTemplateDrawer } from '../contract-template-drawer'
@@ -35,12 +36,40 @@ vi.mock('../../template-api', () => ({
   getContractTemplateAudits: api.audits,
   getContractTemplateOptions: api.options,
 }))
-vi.mock('@/features/users/components/user-contract-add-rule', () => ({
-  CustomerContractAddRule: () => null,
-}))
-const translate = (key: string) => key
+// Mirrors i18next's default interpolation so assertions can expect the
+// user-visible message instead of the raw key.
+const translate = (key: string, params?: Record<string, unknown>) =>
+  params
+    ? key.replaceAll(/\{\{\s*(\w+)\s*\}\}/g, (raw: string, name: string) =>
+        name in params ? String(params[name]) : raw
+      )
+    : key
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+
+const pointerCaptureDescriptor = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  'setPointerCapture'
+)
+
+function stubPointerCapture() {
+  Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', {
+    configurable: true,
+    value: vi.fn(),
+  })
+}
+
+function restorePointerCapture() {
+  if (pointerCaptureDescriptor) {
+    Object.defineProperty(
+      HTMLElement.prototype,
+      'setPointerCapture',
+      pointerCaptureDescriptor
+    )
+  } else {
+    Reflect.deleteProperty(HTMLElement.prototype, 'setPointerCapture')
+  }
+}
 const snapshot = {
   id: 31,
   name: 'Shared',
@@ -131,7 +160,9 @@ it('surfaces a failed options load with an inline retry that recovers', async ()
     success: false,
     message: 'options unavailable',
   })
-  render(<ContractTemplateDrawer open onOpenChange={vi.fn()} templateId={null} />)
+  render(
+    <ContractTemplateDrawer open onOpenChange={vi.fn()} templateId={null} />
+  )
   expect(await screen.findByRole('alert')).toHaveTextContent('Loading failed')
   expect(screen.getByText('options unavailable')).toBeInTheDocument()
   expect(screen.queryByLabelText('Template name')).not.toBeInTheDocument()
@@ -199,4 +230,78 @@ it('rebuilds save-as pricing with ordinary template group ratios', async () => {
   expect(
     screen.queryByText('A special native group ratio also applies')
   ).not.toBeInTheDocument()
+})
+
+it('adds several models with their own channels through the shared batch add', async () => {
+  api.options.mockResolvedValue({
+    success: true,
+    data: {
+      channels: [
+        {
+          group: 'default',
+          native_group_ratio: '1',
+          special_group_ratio: false,
+          models: [
+            { model: 'chat', channels: [{ id: 11, name: 'main' }] },
+            {
+              model: 'vision',
+              channels: [
+                { id: 11, name: 'main' },
+                { id: 12, name: 'spare' },
+              ],
+            },
+          ],
+        },
+      ],
+      options: [
+        {
+          group: 'default',
+          models: ['chat', 'vision'],
+          prices: {},
+          native_group_ratio: '1',
+          special_group_ratio: false,
+        },
+      ],
+    },
+  })
+  stubPointerCapture()
+  try {
+    render(
+      <ContractTemplateDrawer open onOpenChange={vi.fn()} templateId={null} />
+    )
+    fireEvent.change(await screen.findByLabelText('Change reason'), {
+      target: { value: 'batch add' },
+    })
+    const user = userEvent.setup()
+    await user.click(await screen.findByLabelText('Search and select models'))
+    await user.click(await screen.findByRole('option', { name: 'chat' }))
+    await user.keyboard('{Escape}')
+    await user.click(await screen.findByLabelText('Search and select models'))
+    await user.click(await screen.findByRole('option', { name: 'vision' }))
+    await user.keyboard('{Escape}')
+    // chat has one candidate and is auto-picked; vision is picked explicitly.
+    const visionChannels = await screen.findByLabelText(
+      'Channels for model vision'
+    )
+    await user.click(visionChannels)
+    await user.click(await screen.findByRole('button', { name: 'Select all' }))
+    fireEvent.click(screen.getByText('Add'))
+    fireEvent.change(screen.getByLabelText('Template name'), {
+      target: { value: 'Multi model template' },
+    })
+    fireEvent.click(screen.getByText('Save template'))
+
+    await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1))
+    expect(api.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rules: [
+          expect.objectContaining({ model: 'chat', channel_id: 11 }),
+          expect.objectContaining({ model: 'vision', channel_id: 11 }),
+          expect.objectContaining({ model: 'vision', channel_id: 12 }),
+        ],
+      })
+    )
+  } finally {
+    restorePointerCapture()
+  }
 })

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { formatCustomerStatementQuota } from '@/features/billing-reconciliation/lib'
 
+import { UsageDiscountCells } from './discount-details'
 import {
   UsageCallsCell,
   UsageMoneyCell,
@@ -30,7 +31,7 @@ export function CustomerUsageTable(props: {
         <p className='text-muted-foreground'>{t('No usage records')}</p>
       )}
       <div className='overflow-x-auto'>
-        <table className='w-full min-w-[720px] text-sm'>
+        <table className='w-full min-w-[1440px] text-sm'>
           <thead>
             <tr className='text-muted-foreground border-b text-left'>
               <th className='py-2 pr-3'>{t('API Key')}</th>
@@ -39,6 +40,10 @@ export function CustomerUsageTable(props: {
               <th className='py-2 pr-3'>{t('Usage')}</th>
               <th className='py-2 pr-3'>{t('Amount')}</th>
               <th className='py-2 pr-3'>{t('Original estimate')}</th>
+              <th className='py-2 pr-3'>{t('Group discount/ratio')}</th>
+              <th className='py-2 pr-3'>{t('Contract discount')}</th>
+              <th className='py-2 pr-3'>{t('Final discount')}</th>
+              <th className='py-2 pr-3'>{t('Estimated savings')}</th>
               <th className='py-2'>{t('Notes')}</th>
             </tr>
           </thead>
@@ -47,7 +52,7 @@ export function CustomerUsageTable(props: {
               <Fragment key={key.token_id}>
                 {weekly && (
                   <tr>
-                    <td colSpan={7} className='py-3'>
+                    <td colSpan={11} className='py-3'>
                       <DayTotalsTable
                         caption={`${t('API Key')} · ${key.token_id === 0 ? t('No API Key') : key.token_name}`}
                         dates={dates}
@@ -95,19 +100,21 @@ export function CustomerUsageTable(props: {
                         {formatCustomerStatementQuota(
                           model.total.original_quota_estimate
                         )}
-                        {model.total.multiple_discounts && (
-                          <div className='text-muted-foreground text-xs'>
-                            {t('Multiple discounts')}
-                          </div>
-                        )}
                       </td>
+                      <UsageDiscountCells
+                        combinations={model.discount_combinations}
+                        moneyIncomplete={
+                          (model.total.rows_missing_money ?? 0) > 0 ||
+                          (model.total.rows_money_pending ?? 0) > 0
+                        }
+                      />
                       <td className='py-2'>
                         <UsageQualityCell metrics={model.total} />
                       </td>
                     </tr>
                     {weekly && (
                       <tr>
-                        <td colSpan={7} className='pb-4'>
+                        <td colSpan={11} className='pb-4'>
                           <DayTotalsTable
                             caption={`${t('Customer model')} · ${model.model_name === 'unknown' ? t('Unknown model') : model.model_name}`}
                             dates={dates}
@@ -139,6 +146,10 @@ export function CustomerUsageTable(props: {
                   props.view.total.original_quota_estimate
                 )}
               </td>
+              <td className='py-2 pr-3'>—</td>
+              <td className='py-2 pr-3'>—</td>
+              <td className='py-2 pr-3'>—</td>
+              <td className='py-2 pr-3'>—</td>
               <td className='py-2'>
                 <UsageQualityCell metrics={props.view.total} />
               </td>

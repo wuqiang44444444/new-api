@@ -28,8 +28,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { CustomerContractAddRule } from '@/features/users/components/user-contract-add-rule'
 import { CustomerContractRuleList } from '@/features/users/components/user-contract-rule-list'
 import {
+  buildContractBatchRules,
   channelOptionsForRule,
-  normalizeContractDiscount,
   parseContractDiscount,
 } from '@/features/users/components/user-contract-utils'
 import type {
@@ -85,8 +85,10 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
   })
   const [reason, setReason] = useState('')
   const [addGroup, setAddGroup] = useState('')
-  const [addModel, setAddModel] = useState('')
-  const [addChannelIds, setAddChannelIds] = useState<string[]>([])
+  const [addModels, setAddModels] = useState<string[]>([])
+  const [addChannelIdsByModel, setAddChannelIdsByModel] = useState<
+    Record<string, string[]>
+  >({})
   const [addDiscount, setAddDiscount] = useState('1')
   const [ruleSearch, setRuleSearch] = useState('')
   const [audits, setAudits] = useState<ContractTemplateAudit[]>([])
@@ -187,76 +189,59 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
     setDirty(true)
   }
 
-  // One add commits one rule per selected channel. All of them share the
-  // entered discount, so the same-model single-discount invariant holds by
-  // construction; channels already bound to this model are rejected
-  // explicitly instead of being skipped silently.
-  const addRule = () => {
-    if (!addGroup || !addModel) return
-    const channelIds = addChannelIds.map(Number)
-    if (channelIds.length === 0) {
-      toast.error(t('Select a channel for this model'))
+  const handleAddModelsChange = (values: string[]) => {
+    setAddModels(values)
+    // A fresh pick initializes from the current candidates (single candidate
+    // auto-picked); removing a model drops its channels, so re-adding it
+    // re-initializes. Still-selected models keep their explicit picks.
+    setAddChannelIdsByModel((current) => {
+      const next: Record<string, string[]> = {}
+      for (const model of values) {
+        next[model] =
+          model in current
+            ? current[model]
+            : (() => {
+                const candidates = channelOptionsForRule(channels, {
+                  route_group: addGroup,
+                  model,
+                })
+                return candidates.length === 1 ? [String(candidates[0].id)] : []
+              })()
+      }
+      return next
+    })
+  }
+
+  const handleModelChannelsChange = (model: string, values: string[]) => {
+    setAddChannelIdsByModel((current) => ({ ...current, [model]: values }))
+  }
+
+  // One add validates the entire pending batch against itself and the draft,
+  // then appends all of its rules at once. All rules share the entered
+  // discount, so the same-model single-discount invariant holds by
+  // construction; any conflict rejects the whole batch and keeps the inputs.
+  const addRules = () => {
+    if (!addGroup || addModels.length === 0) return
+    const result = buildContractBatchRules({
+      channelGroups: channels,
+      groupOptions: options,
+      draftRules: draft.rules,
+      routeGroup: addGroup,
+      models: addModels,
+      channelIdsByModel: addChannelIdsByModel,
+      discount: addDiscount,
+    })
+    if (!result.ok) {
+      toast.error(t(result.error.key, result.error.params))
       return
     }
-    const normalizedDiscount = normalizeContractDiscount(addDiscount)
-    if (normalizedDiscount === null) {
-      toast.error(t('Invalid contract discount'))
-      return
-    }
-    const sameModelRules = draft.rules.filter(
-      (rule) => rule.model.toLowerCase() === addModel.toLowerCase()
-    )
-    if (sameModelRules.some((rule) => rule.model !== addModel)) {
-      toast.error(
-        t('Model names that differ only by letter case cannot coexist')
-      )
-      return
-    }
-    const boundChannels = channelOptionsForRule(channels, {
-      route_group: addGroup,
-      model: addModel,
-    }).filter(
-      (channel) =>
-        channelIds.includes(channel.id) &&
-        sameModelRules.some((rule) => rule.channel_id === channel.id)
-    )
-    if (boundChannels.length > 0) {
-      toast.error(
-        t('This model already binds channels: {{channels}}', {
-          channels: boundChannels.map((channel) => channel.name).join(', '),
-        })
-      )
-      return
-    }
-    if (sameModelRules.some((rule) => rule.discount !== normalizedDiscount)) {
-      toast.error(
-        t(
-          'All channels of one model must share the same contract discount in this save'
-        )
-      )
-      return
-    }
-    const channelGroup = channels.find((group) => group.group === addGroup)
-    const groupOption = options.find((option) => option.group === addGroup)
-    const newRules = channelIds.map((channelId) => ({
-      model: addModel,
-      channel_id: channelId,
-      route_group: addGroup,
-      discount: normalizedDiscount,
-      available: true,
-      native_group_ratio: channelGroup?.native_group_ratio || '1',
-      effective_multiplier: channelGroup?.native_group_ratio || '1',
-      special_group_ratio: false,
-      price: groupOption?.prices?.[addModel] || {
-        price_type: 'model_ratio' as const,
-      },
-    }))
+    if (result.rules.length === 0) return
     setDraft((current) => ({
       ...current,
-      rules: [...current.rules, ...newRules],
+      rules: [...current.rules, ...result.rules],
     }))
-    setAddModel('')
-    setAddChannelIds([])
+    setAddModels([])
+    setAddChannelIdsByModel({})
     setDirty(true)
   }
 
@@ -433,25 +418,14 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
         <CustomerContractAddRule
           channelGroups={channels}
           group={addGroup}
-          model={addModel}
-          channelIds={addChannelIds}
+          models={addModels}
+          channelIdsByModel={addChannelIdsByModel}
           discount={addDiscount}
           onGroupChange={setAddGroup}
-          onModelChange={(model) => {
-            setAddModel(model)
-            const candidates = model
-              ? channelOptionsForRule(channels, {
-                  route_group: addGroup,
-                  model,
-                })
-              : []
-            setAddChannelIds(
-              candidates.length === 1 ? [String(candidates[0].id)] : []
-            )
-          }}
-          onChannelsChange={setAddChannelIds}
+          onModelsChange={handleAddModelsChange}
+          onModelChannelsChange={handleModelChannelsChange}
           onDiscountChange={setAddDiscount}
-          onAdd={addRule}
+          onAdd={addRules}
         />
 
         {draft.rules.length === 0 ? (

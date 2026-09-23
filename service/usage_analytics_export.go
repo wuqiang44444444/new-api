@@ -92,7 +92,7 @@ func SubmitUsageAnalyticsExport(actorId int, request UsageAnalyticsExportRequest
 	}
 	filters := model.CustomerExportFilters{
 		UsageView: view, UsageSearch: strings.TrimSpace(request.Search),
-		FieldVersion:   3,
+		FieldVersion:   4,
 		QuotaPerUnit:   common.QuotaPerUnit,
 		Currency:       operation_setting.GetQuotaDisplayType(),
 		CurrencyRate:   operation_setting.GetUsdToCurrencyRate(operation_setting.USDExchangeRate),
@@ -211,9 +211,9 @@ func executeUsageAnalyticsExport(ctx context.Context, job *model.CustomerExportJ
 // usageAnalyticsExportHeader renders CSV headers per language (en/zh only).
 func usageAnalyticsExportHeader(language string) []string {
 	if language == "zh" {
-		return []string{"行类型", "日期", "客户 ID", "客户", "API Key ID", "API Key", "客户模型", "URL 归组", "渠道 ID", "渠道", "上游模型", "上游模型未记录", "计费方式", "调用次数", "成功", "失败", "取消", "其他终态", "输入 Token", "输出 Token", "缓存读取", "缓存写入", "图片张数", "秒数", "扣减 quota", "退款 quota", "净额 quota", "估算原价金额", "折后参考金额", "未关联退款", "缺用量行数", "缺金额行数", "金额待更新行数", "无金额用量行数", "已计价测试行数", "渠道折扣", "估算原因", "输入图片 Token", "输出图片 Token", "输入音频 Token", "输出音频 Token", "币种", "单位 quota", "汇率", "任务 ID", "生成时间", "周期开始", "周期结束", "时区"}
+		return []string{"行类型", "日期", "客户 ID", "客户", "API Key ID", "API Key", "客户模型", "URL 归组", "渠道 ID", "渠道", "上游模型", "上游模型未记录", "计费方式", "调用次数", "成功", "失败", "取消", "其他终态", "输入 Token", "输出 Token", "缓存读取", "缓存写入", "图片张数", "秒数", "扣减 quota", "退款 quota", "净额 quota", "估算原价金额", "折后参考金额", "未关联退款", "缺用量行数", "缺金额行数", "金额待更新行数", "无金额用量行数", "已计价测试行数", "渠道折扣", "估算原因", "输入图片 Token", "输出图片 Token", "输入音频 Token", "输出音频 Token", "币种", "单位 quota", "汇率", "任务 ID", "生成时间", "周期开始", "周期结束", "时区", "客户周期折扣构成"}
 	}
-	return []string{"Row type", "Date", "Customer ID", "Customer", "API Key ID", "API Key", "Customer model", "URL grouping", "Channel ID", "Channel", "Provider model", "Provider model fallback", "Billing mode", "Calls", "Success", "Failure", "Cancelled", "Other", "Input tokens", "Output tokens", "Cache read", "Cache write", "Images", "Seconds", "Gross quota", "Refund quota", "Net quota", "Original amount (estimated)", "Reference amount (after discount)", "Unlinked refund", "Missing-token rows", "Missing-money rows", "Money-pending rows", "Usage-only rows", "Test-priced rows", "Channel discounts", "Estimate reasons", "Image input tokens", "Image output tokens", "Audio input tokens", "Audio output tokens", "Currency", "Quota per unit", "Currency rate", "Job ID", "Generated at", "Period start", "Period end", "Time zone"}
+	return []string{"Row type", "Date", "Customer ID", "Customer", "API Key ID", "API Key", "Customer model", "URL grouping", "Channel ID", "Channel", "Provider model", "Provider model fallback", "Billing mode", "Calls", "Success", "Failure", "Cancelled", "Other", "Input tokens", "Output tokens", "Cache read", "Cache write", "Images", "Seconds", "Gross quota", "Refund quota", "Net quota", "Original amount (estimated)", "Reference amount (after discount)", "Unlinked refund", "Missing-token rows", "Missing-money rows", "Money-pending rows", "Usage-only rows", "Test-priced rows", "Channel discounts", "Estimate reasons", "Image input tokens", "Image output tokens", "Audio input tokens", "Audio output tokens", "Currency", "Quota per unit", "Currency rate", "Job ID", "Generated at", "Period start", "Period end", "Time zone", "Customer period discount combinations"}
 }
 
 // usageAnalyticsScopeTail renders the trailing scope cells shared by all rows.
@@ -312,6 +312,7 @@ func usageAnalyticsGroupCells(values ...string) []string {
 func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob, view string, period model.UsageAnalyticsPeriod, filters model.CustomerExportFilters, scope customerExportScopeColumns) ([][]string, error) {
 	records := make([][]string, 0, 64)
 	var rowDiscount string
+	var customerDiscounts string
 	appendRow := func(rowType string, date string, groupCells []string, metrics model.UsageAnalyticsMetrics) {
 		record := make([]string, 0, 48)
 		record = append(record, rowType, date)
@@ -331,7 +332,7 @@ func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob,
 		record = append(record, cells...)
 		record = append(record, usageAnalyticsScopeTail(scope)...)
 		record = append(record, job.JobID, formatExportTimestamp(scope.GeneratedAt),
-			formatExportTimestamp(filters.StartTimestamp), formatExportTimestamp(filters.EndTimestamp), filters.Timezone)
+			formatExportTimestamp(filters.StartTimestamp), formatExportTimestamp(filters.EndTimestamp), filters.Timezone, customerDiscounts)
 		records = append(records, record)
 	}
 	if view == "customers" {
@@ -396,7 +397,9 @@ func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob,
 				appendRow(usageAnalyticsRowTypeDaily, period.Days[dayIdx].Date, cells, dayMetrics)
 			}
 			cells := usageAnalyticsGroupCells(strconv.Itoa(target), scope.CustomerName, strconv.Itoa(key.TokenId), key.TokenName, modelRow.ModelName, "", "", "", "", "", "")
+			customerDiscounts = usageCustomerDiscountExport(modelRow, filters.Language, scope)
 			appendRow(usageAnalyticsRowTypePeriodTotal, "", cells, modelRow.Total)
+			customerDiscounts = ""
 		}
 	}
 	appendRow("grand_total", "", make([]string, 11), customerView.Total)
@@ -443,7 +446,7 @@ func ResubmitUsageAnalyticsExport(actorID int, sourceJobID string, selfOnly bool
 	if _, err = currentExportObjectStore(); err != nil {
 		return nil, err
 	}
-	filters.FieldVersion = 3
+	filters.FieldVersion = 4
 	job, created, err := model.CreateCustomerExportJob(actorID, source.TargetUserId, source.JobType, filters)
 	if err != nil {
 		return nil, err

@@ -752,4 +752,9 @@ export const STATIC_I18N_KEYS = [
   'No discount (×1)',
   'Estimated from recorded charges and historical discounts',
   'List price and savings could not be estimated: {{count}} records',
+  // Customer contract batch add keys (returned from user-contract-utils and
+  // passed to t() at the call sites).
+  'Model names that differ only by letter case cannot coexist',
+  'This model already binds channels: {{channels}}',
+  'All channels of one model must share the same contract discount in this save',
 ] as const

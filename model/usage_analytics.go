@@ -146,6 +146,7 @@ type UsageAnalyticsMetrics struct {
 // usageMetricsAcc 是指标累加器：数量用整数，秒数与原价用十进制中间值，
 // 到 finalize 才舍入/取整，避免部分合计与父级口径漂移。
 type usageMetricsAcc struct {
+	discounts          *billingDiscountCombinationAccumulator
 	m                  UsageAnalyticsMetrics
 	seconds            decimal.Decimal
 	secondsKnown       bool
@@ -291,9 +292,11 @@ type UsageAnalyticsDayBucket struct {
 
 // UsageCustomerModelRow 是客户侧 API Key 下的一个客户模型叶子行。
 type UsageCustomerModelRow struct {
-	ModelName string                  `json:"model_name"`
-	Days      []UsageAnalyticsMetrics `json:"days"`
-	Total     UsageAnalyticsMetrics   `json:"total"`
+	// DiscountCombinations 仅解释本周期模型金额；其中日志用量不代表逻辑调用次数。
+	DiscountCombinations []BillingDiscountCombination `json:"discount_combinations,omitempty"`
+	ModelName            string                       `json:"model_name"`
+	Days                 []UsageAnalyticsMetrics      `json:"days"`
+	Total                UsageAnalyticsMetrics        `json:"total"`
 }
 
 // UsageCustomerKeyGroup 是一个 API Key（按稳定 token_id 区分，改名不串组）。

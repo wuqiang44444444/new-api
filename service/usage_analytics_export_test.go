@@ -20,7 +20,7 @@ func TestUsageAnalyticsExportSchemaAlignment(t *testing.T) {
 	assert.Len(t, metrics, 28)
 	for _, language := range []string{"en", "zh"} {
 		header := usageAnalyticsExportHeader(language)
-		assert.Len(t, header, 49, "header layout: 2 + 11 group + 28 metrics + 8 scope")
+		assert.Len(t, header, 50, "header layout: 2 + 11 group + 28 metrics + 8 scope + customer discounts")
 	}
 }
 
@@ -75,6 +75,10 @@ func TestUsageAnalyticsExportRowsPreserveDailySchemaAndScope(t *testing.T) {
 			if view == "customer" {
 				assert.Equal(t, "'=unsafe", cells["API Key"])
 				assert.Empty(t, cells["Channel ID"])
+				discounts := rows[7][len(header)-1]
+				assert.Contains(t, discounts, "No contract discount applied")
+				assert.Contains(t, discounts, "final factor: 1")
+				assert.Empty(t, cells["Customer period discount combinations"], "period combinations do not masquerade as daily facts")
 			}
 			if view == "upstream" {
 				assert.Equal(t, "991", cells["Channel ID"])

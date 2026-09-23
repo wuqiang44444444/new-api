@@ -138,20 +138,26 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
 
   if (query.isError) {
     return (
-      <ErrorState
-        title={t('Unable to load customer statements')}
-        description={
-          query.error instanceof Error
-            ? query.error.message
-            : t('Please try again later.')
-        }
-        onRetry={() => query.refetch()}
-      />
+      <div className='min-h-0 flex-1 overflow-y-auto'>
+        <ErrorState
+          title={t('Unable to load customer statements')}
+          description={
+            query.error instanceof Error
+              ? query.error.message
+              : t('Please try again later.')
+          }
+          onRetry={() => query.refetch()}
+        />
+      </div>
     )
   }
 
   if (query.isPending || !query.data) {
-    return <CustomerStatementsListSkeleton />
+    return (
+      <div className='min-h-0 flex-1 overflow-y-auto'>
+        <CustomerStatementsListSkeleton />
+      </div>
+    )
   }
 
   const result = query.data.result
@@ -178,8 +184,8 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
   }
 
   return (
-    <div className='space-y-3'>
-      <Card size='sm'>
+    <div className='flex h-full min-h-0 flex-col gap-3'>
+      <Card size='sm' className='shrink-0'>
         <CardContent>
           <FieldGroup className='grid gap-3 md:grid-cols-[minmax(16rem,1fr)_14rem_10rem]'>
             <Field>
@@ -264,7 +270,7 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
         </CardContent>
       </Card>
 
-      <Card size='sm'>
+      <Card size='sm' className='shrink-0'>
         <CardContent className='grid gap-4 sm:grid-cols-2 xl:grid-cols-5 xl:divide-x xl:[&>div]:px-6 xl:[&>div:first-child]:pl-0 xl:[&>div:last-child]:pr-0'>
           <ListMetric
             label={t('Customers')}
@@ -302,8 +308,8 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
+      <Card className='flex min-h-0 flex-1 flex-col'>
+        <CardHeader className='shrink-0'>
           <CardTitle>{t('Customer statements')}</CardTitle>
           <CardDescription>
             {t('Database generated at {{time}} · Asia/Shanghai', {
@@ -322,7 +328,7 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent className='px-0'>
+        <CardContent className='flex min-h-0 flex-1 flex-col px-0'>
           {items.length === 0 ? (
             <Empty className='min-h-64 border-0'>
               <EmptyHeader>
@@ -333,66 +339,70 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
               </EmptyHeader>
             </Empty>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <SortableHead
-                    label={t('Customer')}
-                    sortKey='username'
-                    activeSort={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={setSort}
-                  />
-                  <SortableHead
-                    label={t('Requests')}
-                    sortKey='requests'
-                    activeSort={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={setSort}
-                    align='right'
-                  />
-                  <SortableHead
-                    label={t('Estimated list price')}
-                    sortKey='original_quota'
-                    activeSort={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={setSort}
-                    align='right'
-                  />
-                  <TableHead className='text-right'>{t('Discount')}</TableHead>
-                  <SortableHead
-                    label={t('Net settled amount')}
-                    sortKey='net_quota'
-                    activeSort={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={setSort}
-                    align='right'
-                  />
-                  <TableHead className='text-muted-foreground border-l text-right'>
-                    {t('Total charges')}
-                  </TableHead>
-                  <TableHead className='text-muted-foreground text-right'>
-                    {t('Total returns')}
-                  </TableHead>
-                  <TableHead>{t('Data quality')}</TableHead>
-                  <TableHead>{t('Last activity')}</TableHead>
-                  <TableHead className='text-right'>{t('Actions')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((item) => (
-                  <CustomerStatementListRow
-                    key={item.user_id}
-                    item={item}
-                    onSelect={() => props.onSelectUser(item.user_id)}
-                  />
-                ))}
-              </TableBody>
-            </Table>
+            <div className='min-h-0 flex-1 overflow-auto'>
+              <Table withContainer={false}>
+                <TableHeader className='sticky top-0 z-10 bg-(--table-header)'>
+                  <TableRow>
+                    <SortableHead
+                      label={t('Customer')}
+                      sortKey='username'
+                      activeSort={sortBy}
+                      sortOrder={sortOrder}
+                      onSort={setSort}
+                    />
+                    <SortableHead
+                      label={t('Requests')}
+                      sortKey='requests'
+                      activeSort={sortBy}
+                      sortOrder={sortOrder}
+                      onSort={setSort}
+                      align='right'
+                    />
+                    <SortableHead
+                      label={t('Estimated list price')}
+                      sortKey='original_quota'
+                      activeSort={sortBy}
+                      sortOrder={sortOrder}
+                      onSort={setSort}
+                      align='right'
+                    />
+                    <TableHead className='text-right'>
+                      {t('Discount')}
+                    </TableHead>
+                    <SortableHead
+                      label={t('Net settled amount')}
+                      sortKey='net_quota'
+                      activeSort={sortBy}
+                      sortOrder={sortOrder}
+                      onSort={setSort}
+                      align='right'
+                    />
+                    <TableHead className='text-muted-foreground border-l text-right'>
+                      {t('Total charges')}
+                    </TableHead>
+                    <TableHead className='text-muted-foreground text-right'>
+                      {t('Total returns')}
+                    </TableHead>
+                    <TableHead>{t('Data quality')}</TableHead>
+                    <TableHead>{t('Last activity')}</TableHead>
+                    <TableHead className='text-right'>{t('Actions')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => (
+                    <CustomerStatementListRow
+                      key={item.user_id}
+                      item={item}
+                      onSelect={() => props.onSelectUser(item.user_id)}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
         {result.total > 0 && (
-          <CardFooter className='block bg-transparent'>
+          <CardFooter className='block shrink-0 bg-transparent'>
             <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
               <div className='text-muted-foreground text-sm'>
                 {t('Showing {{start}}–{{end}} of {{total}}', {

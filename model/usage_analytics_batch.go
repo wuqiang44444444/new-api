@@ -70,10 +70,13 @@ func (agg *usageAggregation) applyBatchJobs(ctx context.Context) error {
 			customer.merge(&base)
 			upstream.merge(&base)
 			for _, log := range logs {
-				row := usageLogRow{fact: upstreamBillingLogFact(log, "")}
+				row := usageLogRow{fact: upstreamBillingLogFact(log, log.Group)}
 				row.fact.CreatedAt = finish
 				row.parsed = parseBillingReconciliationLog(row.fact)
 				_ = common.UnmarshalJsonStr(log.Other, &row.other)
+				if agg.opts.WantCustomer {
+					customer.observeCustomerDiscount(row)
+				}
 				if log.Type == LogTypeConsume {
 					customer.m.GrossQuota += int64(log.Quota)
 				} else {

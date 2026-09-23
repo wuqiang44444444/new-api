@@ -25,7 +25,7 @@ import {
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -118,6 +118,16 @@ export function CustomerStatementView(props: CustomerStatementProps) {
 function CustomerStatementBody(props: CustomerStatementProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set())
+  const [expandScrollTarget, setExpandScrollTarget] = useState<number | null>(
+    null
+  )
+  const firstModelRowRef = useRef<HTMLTableRowElement | null>(null)
+  // 分组展开后模型行可能落在封顶滚动容器的折叠区内，把首行滚入视野。
+  useEffect(() => {
+    if (expandScrollTarget == null) return
+    firstModelRowRef.current?.scrollIntoView({ block: 'nearest' })
+    setExpandScrollTarget(null)
+  }, [expandScrollTarget])
   const [exportDrawerOpen, setExportDrawerOpen] = useState(false)
   const [confirmExportOpen, setConfirmExportOpen] = useState(false)
   const [exportType, setExportType] = useState<
@@ -249,458 +259,474 @@ function CustomerStatementBody(props: CustomerStatementProps) {
   }
 
   return (
-    <div className='space-y-3'>
-      {props.isAdmin && props.onBack && (
-        <Button variant='ghost' size='sm' onClick={props.onBack}>
-          <HugeiconsIcon
-            icon={ArrowLeft01Icon}
-            strokeWidth={2}
-            data-icon='inline-start'
-          />
-          {t('Back to customer statements')}
-        </Button>
-      )}
-      <div className='flex flex-wrap items-end justify-end gap-2'>
-        {props.toolbar}
-        {props.dimension === 'api_key' && (
-          <Button
-            variant='outline'
-            disabled={
-              statementQuery.isFetching ||
-              statementQuery.isError ||
-              !statement ||
-              statementExport.isPending ||
-              versionDownload.isPending
-            }
-            onClick={() => {
-              setExportType('statement_summary')
-              setConfirmExportOpen(true)
-            }}
-          >
+    <div className='flex h-full min-h-0 flex-col'>
+      <div className='min-h-0 flex-1 space-y-3 overflow-y-auto'>
+        {props.isAdmin && props.onBack && (
+          <Button variant='ghost' size='sm' onClick={props.onBack}>
             <HugeiconsIcon
-              icon={Download01Icon}
+              icon={ArrowLeft01Icon}
               strokeWidth={2}
               data-icon='inline-start'
             />
-            {t('Export and download')}
+            {t('Back to customer statements')}
           </Button>
         )}
-        <Button variant='ghost' onClick={() => setExportDrawerOpen(true)}>
-          {t('Export jobs')}
-        </Button>
-        {props.dimension === 'api_key' &&
-          props.isAdmin &&
-          selectedUserId != null && (
+        <div className='flex flex-wrap items-end justify-end gap-2'>
+          {props.toolbar}
+          {props.dimension === 'api_key' && (
             <Button
-              variant='ghost'
+              variant='outline'
               disabled={
                 statementQuery.isFetching ||
                 statementQuery.isError ||
                 !statement ||
-                statementExport.isPending
+                statementExport.isPending ||
+                versionDownload.isPending
               }
               onClick={() => {
-                setExportType('usage_logs')
+                setExportType('statement_summary')
                 setConfirmExportOpen(true)
               }}
             >
-              {t('Export usage records')}
+              <HugeiconsIcon
+                icon={Download01Icon}
+                strokeWidth={2}
+                data-icon='inline-start'
+              />
+              {t('Export and download')}
             </Button>
           )}
-      </div>
-      <ConfirmDialog
-        open={confirmExportOpen}
-        onOpenChange={setConfirmExportOpen}
-        title={t('Confirm export and download')}
-        desc={exportDescription}
-        confirmText={t('Confirm export and download')}
-        isLoading={statementExport.isPending || versionDownload.isPending}
-        handleConfirm={() => {
-          if (statementExport.isPending || versionDownload.isPending) return
-          if (boundVersion && exportType !== 'usage_logs') {
-            versionDownload.mutate({
-              draftPublicId: boundVersion.draft_public_id,
-              role:
-                exportType === 'statement_details' ? 'detail_csv' : undefined,
-            })
-          } else {
-            statementExport.mutate()
-          }
-        }}
-      >
-        {exportType !== 'usage_logs' && (
-          <label className='space-y-1.5'>
-            <span className='text-sm font-medium'>{t('Export content')}</span>
-            <Select
-              items={[
-                { value: 'statement_summary', label: t('Statement summary') },
-                { value: 'statement_details', label: t('Statement details') },
-              ]}
-              value={exportType}
-              disabled={statementExport.isPending || versionDownload.isPending}
-              onValueChange={(value) => {
-                if (
-                  value === 'statement_summary' ||
-                  value === 'statement_details'
-                ) {
-                  setExportType(value)
+          <Button variant='ghost' onClick={() => setExportDrawerOpen(true)}>
+            {t('Export jobs')}
+          </Button>
+          {props.dimension === 'api_key' &&
+            props.isAdmin &&
+            selectedUserId != null && (
+              <Button
+                variant='ghost'
+                disabled={
+                  statementQuery.isFetching ||
+                  statementQuery.isError ||
+                  !statement ||
+                  statementExport.isPending
                 }
-              }}
-            >
-              <SelectTrigger
-                className='w-full'
-                aria-label={t('Export content')}
+                onClick={() => {
+                  setExportType('usage_logs')
+                  setConfirmExportOpen(true)
+                }}
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value='statement_summary'>
-                    {t('Statement summary')}
-                  </SelectItem>
-                  <SelectItem value='statement_details'>
-                    {t('Statement details')}
-                  </SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <p className='text-muted-foreground text-sm' aria-live='polite'>
-              {exportType === 'statement_summary'
-                ? t(
-                    'One row per API Key and model: requests, net amount, estimated list price and savings.'
-                  )
-                : t(
-                    'Per-call billing records: time, request ID, usage, amounts and discount factors. Charges and refunds are separate rows; refunds have negative net amounts.'
-                  )}
-            </p>
-          </label>
-        )}
-      </ConfirmDialog>
-      <Card size='sm'>
-        <CardContent className='grid gap-3 md:grid-cols-3'>
-          {props.isAdmin && statement && (
-            <div className='space-y-1.5'>
-              <div className='text-muted-foreground text-xs font-medium'>
-                {t('Customer')}
-              </div>
-              <div className='font-medium'>
-                {customerStatementLabel(statement)}
-              </div>
-              <div className='text-muted-foreground text-xs'>
-                {t('Customer ID')}: {statement.user_id}
-              </div>
-            </div>
-          )}
-          {props.isAdmin && (
+                {t('Export usage records')}
+              </Button>
+            )}
+        </div>
+        <ConfirmDialog
+          open={confirmExportOpen}
+          onOpenChange={setConfirmExportOpen}
+          title={t('Confirm export and download')}
+          desc={exportDescription}
+          confirmText={t('Confirm export and download')}
+          isLoading={statementExport.isPending || versionDownload.isPending}
+          handleConfirm={() => {
+            if (statementExport.isPending || versionDownload.isPending) return
+            if (boundVersion && exportType !== 'usage_logs') {
+              versionDownload.mutate({
+                draftPublicId: boundVersion.draft_public_id,
+                role:
+                  exportType === 'statement_details' ? 'detail_csv' : undefined,
+              })
+            } else {
+              statementExport.mutate()
+            }
+          }}
+        >
+          {exportType !== 'usage_logs' && (
             <label className='space-y-1.5'>
-              <span className='text-muted-foreground text-xs font-medium'>
-                {t('Aggregation dimension')}
-              </span>
+              <span className='text-sm font-medium'>{t('Export content')}</span>
               <Select
                 items={[
-                  { value: 'api_key', label: t('API Key') },
-                  { value: 'channel', label: t('Channel') },
+                  { value: 'statement_summary', label: t('Statement summary') },
+                  { value: 'statement_details', label: t('Statement details') },
                 ]}
-                value={props.dimension}
-                disabled={statementQuery.isPending}
-                onValueChange={(value) =>
-                  value != null &&
-                  props.onDimensionChange(value as BillingDimension)
+                value={exportType}
+                disabled={
+                  statementExport.isPending || versionDownload.isPending
                 }
+                onValueChange={(value) => {
+                  if (
+                    value === 'statement_summary' ||
+                    value === 'statement_details'
+                  ) {
+                    setExportType(value)
+                  }
+                }}
               >
-                <SelectTrigger className='w-full'>
-                  <SelectValue>
-                    {props.dimension === 'api_key'
-                      ? t('API Key')
-                      : t('Channel')}
-                  </SelectValue>
+                <SelectTrigger
+                  className='w-full'
+                  aria-label={t('Export content')}
+                >
+                  <SelectValue />
                 </SelectTrigger>
-                <SelectContent align='start'>
+                <SelectContent>
                   <SelectGroup>
-                    <SelectItem value='api_key'>{t('API Key')}</SelectItem>
-                    <SelectItem value='channel'>{t('Channel')}</SelectItem>
+                    <SelectItem value='statement_summary'>
+                      {t('Statement summary')}
+                    </SelectItem>
+                    <SelectItem value='statement_details'>
+                      {t('Statement details')}
+                    </SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>
+              <p className='text-muted-foreground text-sm' aria-live='polite'>
+                {exportType === 'statement_summary'
+                  ? t(
+                      'One row per API Key and model: requests, net amount, estimated list price and savings.'
+                    )
+                  : t(
+                      'Per-call billing records: time, request ID, usage, amounts and discount factors. Charges and refunds are separate rows; refunds have negative net amounts.'
+                    )}
+              </p>
             </label>
           )}
-          <div className='space-y-1.5 md:self-end'>
-            <div className='text-muted-foreground text-xs font-medium'>
-              {t('Authoritative source')}
+        </ConfirmDialog>
+        <Card size='sm'>
+          <CardContent className='grid gap-3 md:grid-cols-3'>
+            {props.isAdmin && statement && (
+              <div className='space-y-1.5'>
+                <div className='text-muted-foreground text-xs font-medium'>
+                  {t('Customer')}
+                </div>
+                <div className='font-medium'>
+                  {customerStatementLabel(statement)}
+                </div>
+                <div className='text-muted-foreground text-xs'>
+                  {t('Customer ID')}: {statement.user_id}
+                </div>
+              </div>
+            )}
+            {props.isAdmin && (
+              <label className='space-y-1.5'>
+                <span className='text-muted-foreground text-xs font-medium'>
+                  {t('Aggregation dimension')}
+                </span>
+                <Select
+                  items={[
+                    { value: 'api_key', label: t('API Key') },
+                    { value: 'channel', label: t('Channel') },
+                  ]}
+                  value={props.dimension}
+                  disabled={statementQuery.isPending}
+                  onValueChange={(value) =>
+                    value != null &&
+                    props.onDimensionChange(value as BillingDimension)
+                  }
+                >
+                  <SelectTrigger className='w-full'>
+                    <SelectValue>
+                      {props.dimension === 'api_key'
+                        ? t('API Key')
+                        : t('Channel')}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent align='start'>
+                    <SelectGroup>
+                      <SelectItem value='api_key'>{t('API Key')}</SelectItem>
+                      <SelectItem value='channel'>{t('Channel')}</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </label>
+            )}
+            <div className='space-y-1.5 md:self-end'>
+              <div className='text-muted-foreground text-xs font-medium'>
+                {t('Authoritative source')}
+              </div>
+              <div className='flex h-8 items-center gap-2'>
+                <Badge variant='outline'>{t('Database')}</Badge>
+                <span className='text-muted-foreground text-xs'>
+                  {t('Asia/Shanghai settlement period')}
+                </span>
+              </div>
             </div>
-            <div className='flex h-8 items-center gap-2'>
-              <Badge variant='outline'>{t('Database')}</Badge>
-              <span className='text-muted-foreground text-xs'>
-                {t('Asia/Shanghai settlement period')}
-              </span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      <StatementVersionPanel
-        isAdmin={props.isAdmin}
-        userId={selectedUserId}
-        period={props.period}
-        previewVersionId={previewVersionId}
-        onPreviewChange={setPreviewVersionId}
-        onChanged={() => void statementQuery.refetch()}
-      />
-
-      {statementQuery.isError && (
-        <ErrorState
-          title={t('Unable to load customer billing')}
-          description={
-            statementQuery.error instanceof Error
-              ? statementQuery.error.message
-              : t('Please try again later.')
-          }
-          onRetry={() => statementQuery.refetch()}
+        <StatementVersionPanel
+          isAdmin={props.isAdmin}
+          userId={selectedUserId}
+          period={props.period}
+          previewVersionId={previewVersionId}
+          onPreviewChange={setPreviewVersionId}
+          onChanged={() => void statementQuery.refetch()}
         />
-      )}
-      {!statementQuery.isError && (statementQuery.isPending || !statement) && (
-        <StatementSkeleton />
-      )}
-      {!statementQuery.isError && !statementQuery.isPending && statement && (
-        <>
-          {versionBound && boundVersion && (
-            <div
-              role='note'
-              className='border-primary/40 bg-primary/5 rounded-lg border px-3 py-2 text-sm'
-            >
-              {boundVersion.status === 'confirmed'
-                ? t(
-                    'You are viewing confirmed version v{{version}}. Amounts are frozen at confirmation time.',
-                    { version: boundVersion.version_number ?? '?' }
-                  )
-                : t(
-                    'You are previewing a pending statement version. It is not published to the customer yet.'
-                  )}
-            </div>
-          )}
-          <BillingQualityNotice
-            quality={statement.data_quality}
-            estimateAvailable={
-              statement.original_quota != null &&
-              statement.discount_quota != null
+
+        {statementQuery.isError && (
+          <ErrorState
+            title={t('Unable to load customer billing')}
+            description={
+              statementQuery.error instanceof Error
+                ? statementQuery.error.message
+                : t('Please try again later.')
             }
+            onRetry={() => statementQuery.refetch()}
           />
-          {props.dimension === 'api_key' &&
-            statement.discount_combinations &&
-            statement.discount_combinations.length > 0 && (
-              <DiscountCombinationSection
-                version={boundVersion}
-                combinations={statement.discount_combinations}
-                originalQuota={statement.original_quota}
-                discountQuota={statement.discount_quota}
-                estimateReasons={statement.estimate_reasons}
-                netQuota={statement.summary.net_quota}
-                groupNames={
-                  new Map(
-                    groups.map((group) => [
-                      group.id,
-                      { name: group.name, deleted: group.deleted },
-                    ])
-                  )
+        )}
+        {!statementQuery.isError &&
+          (statementQuery.isPending || !statement) && <StatementSkeleton />}
+        {!statementQuery.isError && !statementQuery.isPending && statement && (
+          <>
+            {versionBound && boundVersion && (
+              <div
+                role='note'
+                className='border-primary/40 bg-primary/5 rounded-lg border px-3 py-2 text-sm'
+              >
+                {boundVersion.status === 'confirmed'
+                  ? t(
+                      'You are viewing confirmed version v{{version}}. Amounts are frozen at confirmation time.',
+                      { version: boundVersion.version_number ?? '?' }
+                    )
+                  : t(
+                      'You are previewing a pending statement version. It is not published to the customer yet.'
+                    )}
+              </div>
+            )}
+            <BillingQualityNotice
+              quality={statement.data_quality}
+              estimateAvailable={
+                statement.original_quota != null &&
+                statement.discount_quota != null
+              }
+            />
+            {props.dimension === 'api_key' &&
+              statement.discount_combinations &&
+              statement.discount_combinations.length > 0 && (
+                <DiscountCombinationSection
+                  version={boundVersion}
+                  combinations={statement.discount_combinations}
+                  originalQuota={statement.original_quota}
+                  discountQuota={statement.discount_quota}
+                  estimateReasons={statement.estimate_reasons}
+                  netQuota={statement.summary.net_quota}
+                  groupNames={
+                    new Map(
+                      groups.map((group) => [
+                        group.id,
+                        { name: group.name, deleted: group.deleted },
+                      ])
+                    )
+                  }
+                />
+              )}
+            <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+              <SummaryCard
+                title={t('Current balance')}
+                value={formatCurrentBalance(statement.current_balance)}
+                description={
+                  statement.current_balance === null
+                    ? t(
+                        'Customer record unavailable; current balance cannot be read.'
+                      )
+                    : t('Read directly from the main database')
                 }
               />
-            )}
-          <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
-            <SummaryCard
-              title={t('Current balance')}
-              value={formatCurrentBalance(statement.current_balance)}
-              description={
-                statement.current_balance === null
-                  ? t(
-                      'Customer record unavailable; current balance cannot be read.'
-                    )
-                  : t('Read directly from the main database')
-              }
-            />
-            <SummaryCard
-              title={t('Estimated list price')}
-              value={
-                statement.original_quota != null
-                  ? formatCustomerStatementQuota(statement.original_quota)
-                  : estimateFailureLabel(statement.estimate_reasons, t)
-              }
-              description={
-                statement.original_quota != null
-                  ? t(
-                      'Estimated from recorded charges and historical discounts'
-                    )
-                  : estimateReasonText(statement.estimate_reasons, t)
-              }
-            />
-            <SummaryCard
-              title={t('Estimated savings')}
-              value={
-                statement.discount_quota != null
-                  ? formatCustomerStatementQuota(statement.discount_quota)
-                  : estimateFailureLabel(statement.estimate_reasons, t)
-              }
-              description={
-                statement.discount_quota != null
-                  ? t('Estimated list price minus net settled amount')
-                  : estimateReasonText(statement.estimate_reasons, t)
-              }
-            />
-            <SummaryCard
-              title={t('Net settled amount')}
-              value={formatCustomerStatementQuota(statement.summary.net_quota)}
-              description={t('{{count}} aggregated requests', {
-                count: statement.summary.requests,
-              })}
-            />
-          </div>
-          <p className='text-muted-foreground text-xs'>
-            {t(
-              'List price and savings are estimates reconstructed from rounded charges and historical discounts. Net amounts include task holds and adjustments.'
-            )}
-          </p>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('Customer billing summary')}</CardTitle>
-              <CardDescription>
-                {t(
-                  'Expand a group to inspect model totals. Request rows remain in usage logs.'
+              <SummaryCard
+                title={t('Estimated list price')}
+                value={
+                  statement.original_quota != null
+                    ? formatCustomerStatementQuota(statement.original_quota)
+                    : estimateFailureLabel(statement.estimate_reasons, t)
+                }
+                description={
+                  statement.original_quota != null
+                    ? t(
+                        'Estimated from recorded charges and historical discounts'
+                      )
+                    : estimateReasonText(statement.estimate_reasons, t)
+                }
+              />
+              <SummaryCard
+                title={t('Estimated savings')}
+                value={
+                  statement.discount_quota != null
+                    ? formatCustomerStatementQuota(statement.discount_quota)
+                    : estimateFailureLabel(statement.estimate_reasons, t)
+                }
+                description={
+                  statement.discount_quota != null
+                    ? t('Estimated list price minus net settled amount')
+                    : estimateReasonText(statement.estimate_reasons, t)
+                }
+              />
+              <SummaryCard
+                title={t('Net settled amount')}
+                value={formatCustomerStatementQuota(
+                  statement.summary.net_quota
                 )}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className='px-0'>
-              {groups.length === 0 ? (
-                <div className='text-muted-foreground px-4 py-12 text-center'>
-                  {t('No settled usage in this billing period.')}
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className='w-10' />
-                      <TableHead>
-                        {props.dimension === 'api_key'
-                          ? t('API Key')
-                          : t('Channel')}
-                      </TableHead>
-                      <TableHead className='text-right'>
-                        {t('Requests')}
-                      </TableHead>
-                      <TableHead className='text-right'>
-                        {t('Estimated list price')}
-                      </TableHead>
-                      <TableHead className='text-right'>
-                        {t('Estimated savings')}
-                      </TableHead>
-                      <TableHead className='text-right'>
-                        {t('Net amount')}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {groups.map((group) => {
-                      const isExpanded = expanded.has(group.id)
-                      const fallbackName =
-                        props.dimension === 'channel'
-                          ? t('Channel #{{id}}', { id: group.id })
-                          : t('API Key #{{id}}', { id: group.id })
-                      return [
-                        <TableRow key={`group-${group.id}`}>
-                          <TableCell>
-                            <Button
-                              variant='ghost'
-                              size='icon-sm'
-                              aria-label={
-                                isExpanded
-                                  ? t('Collapse models')
-                                  : t('Expand models')
-                              }
-                              aria-expanded={isExpanded}
-                              onClick={() =>
-                                setExpanded((current) =>
-                                  toggleSet(current, group.id)
-                                )
-                              }
-                            >
-                              <HugeiconsIcon
-                                icon={
-                                  isExpanded
-                                    ? ArrowDown01Icon
-                                    : ArrowRight01Icon
-                                }
-                                strokeWidth={2}
-                              />
-                            </Button>
-                          </TableCell>
-                          <TableCell>
-                            <div className='font-medium'>
-                              {group.deleted ? fallbackName : group.name}
-                            </div>
-                            <div
-                              data-table-text='secondary'
-                              className='text-muted-foreground max-w-sm text-xs whitespace-normal'
-                            >
-                              {group.deleted
-                                ? t(
-                                    'Record unavailable; historical charges are retained.'
-                                  )
-                                : `#${group.id}`}
-                            </div>
-                          </TableCell>
-                          <TableCell className='text-right'>
-                            {formatInteger(group.usage.requests)}
-                          </TableCell>
-                          <TableCell className='text-right'>
-                            {combinationAmountCell(
-                              group.original_quota,
-                              t,
-                              boundVersion,
-                              group.estimate_reasons
-                            )}
-                          </TableCell>
-                          <TableCell className='text-right'>
-                            {combinationAmountCell(
-                              group.discount_quota,
-                              t,
-                              boundVersion,
-                              group.estimate_reasons
-                            )}
-                          </TableCell>
-                          <TableCell className='text-right font-medium'>
-                            {formatCustomerStatementQuota(
-                              group.usage.net_quota
-                            )}
-                          </TableCell>
-                        </TableRow>,
-                        ...(isExpanded
-                          ? group.models.map((model) => (
-                              <CustomerModelRow
-                                version={boundVersion}
-                                key={`model-${group.id}-${model.model_name}-${model.billing_mode}`}
-                                model={model}
-                                dimension={props.dimension}
-                                userId={statement.user_id}
-                                versionBound={versionBound}
-                                onViewDetails={
-                                  versionBound
-                                    ? (filter) => {
-                                        setLinesFilter(filter)
-                                        setLinesDrawerOpen(true)
-                                      }
-                                    : undefined
-                                }
-                              />
-                            ))
-                          : []),
-                      ]
-                    })}
-                  </TableBody>
-                </Table>
+                description={t('{{count}} aggregated requests', {
+                  count: statement.summary.requests,
+                })}
+              />
+            </div>
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'List price and savings are estimates reconstructed from rounded charges and historical discounts. Net amounts include task holds and adjustments.'
               )}
-            </CardContent>
-          </Card>
-        </>
-      )}
+            </p>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>{t('Customer billing summary')}</CardTitle>
+                <CardDescription>
+                  {t(
+                    'Expand a group to inspect model totals. Request rows remain in usage logs.'
+                  )}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className='flex min-h-0 flex-col px-0'>
+                {groups.length === 0 ? (
+                  <div className='text-muted-foreground px-4 py-12 text-center'>
+                    {t('No settled usage in this billing period.')}
+                  </div>
+                ) : (
+                  <div className='max-h-[45vh] min-h-0 overflow-auto'>
+                    <Table withContainer={false}>
+                      <TableHeader className='sticky top-0 z-10 bg-(--table-header)'>
+                        <TableRow>
+                          <TableHead className='w-10' />
+                          <TableHead>
+                            {props.dimension === 'api_key'
+                              ? t('API Key')
+                              : t('Channel')}
+                          </TableHead>
+                          <TableHead className='text-right'>
+                            {t('Requests')}
+                          </TableHead>
+                          <TableHead className='text-right'>
+                            {t('Estimated list price')}
+                          </TableHead>
+                          <TableHead className='text-right'>
+                            {t('Estimated savings')}
+                          </TableHead>
+                          <TableHead className='text-right'>
+                            {t('Net amount')}
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {groups.map((group) => {
+                          const isExpanded = expanded.has(group.id)
+                          const fallbackName =
+                            props.dimension === 'channel'
+                              ? t('Channel #{{id}}', { id: group.id })
+                              : t('API Key #{{id}}', { id: group.id })
+                          return [
+                            <TableRow key={`group-${group.id}`}>
+                              <TableCell>
+                                <Button
+                                  variant='ghost'
+                                  size='icon-sm'
+                                  aria-label={
+                                    isExpanded
+                                      ? t('Collapse models')
+                                      : t('Expand models')
+                                  }
+                                  aria-expanded={isExpanded}
+                                  onClick={() => {
+                                    if (!isExpanded) {
+                                      setExpandScrollTarget(group.id)
+                                    }
+                                    setExpanded((current) =>
+                                      toggleSet(current, group.id)
+                                    )
+                                  }}
+                                >
+                                  <HugeiconsIcon
+                                    icon={
+                                      isExpanded
+                                        ? ArrowDown01Icon
+                                        : ArrowRight01Icon
+                                    }
+                                    strokeWidth={2}
+                                  />
+                                </Button>
+                              </TableCell>
+                              <TableCell>
+                                <div className='font-medium'>
+                                  {group.deleted ? fallbackName : group.name}
+                                </div>
+                                <div
+                                  data-table-text='secondary'
+                                  className='text-muted-foreground max-w-sm text-xs whitespace-normal'
+                                >
+                                  {group.deleted
+                                    ? t(
+                                        'Record unavailable; historical charges are retained.'
+                                      )
+                                    : `#${group.id}`}
+                                </div>
+                              </TableCell>
+                              <TableCell className='text-right'>
+                                {formatInteger(group.usage.requests)}
+                              </TableCell>
+                              <TableCell className='text-right'>
+                                {combinationAmountCell(
+                                  group.original_quota,
+                                  t,
+                                  boundVersion,
+                                  group.estimate_reasons
+                                )}
+                              </TableCell>
+                              <TableCell className='text-right'>
+                                {combinationAmountCell(
+                                  group.discount_quota,
+                                  t,
+                                  boundVersion,
+                                  group.estimate_reasons
+                                )}
+                              </TableCell>
+                              <TableCell className='text-right font-medium'>
+                                {formatCustomerStatementQuota(
+                                  group.usage.net_quota
+                                )}
+                              </TableCell>
+                            </TableRow>,
+                            ...(isExpanded
+                              ? group.models.map((model, modelIndex) => (
+                                  <CustomerModelRow
+                                    version={boundVersion}
+                                    key={`model-${group.id}-${model.model_name}-${model.billing_mode}`}
+                                    model={model}
+                                    firstModelRef={
+                                      modelIndex === 0 &&
+                                      expandScrollTarget === group.id
+                                        ? firstModelRowRef
+                                        : undefined
+                                    }
+                                    dimension={props.dimension}
+                                    userId={statement.user_id}
+                                    versionBound={versionBound}
+                                    onViewDetails={
+                                      versionBound
+                                        ? (filter) => {
+                                            setLinesFilter(filter)
+                                            setLinesDrawerOpen(true)
+                                          }
+                                        : undefined
+                                    }
+                                  />
+                                ))
+                              : []),
+                          ]
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
       <ExportJobsDrawer
         open={exportDrawerOpen}
         onOpenChange={setExportDrawerOpen}
@@ -725,6 +751,7 @@ function CustomerStatementBody(props: CustomerStatementProps) {
 function CustomerModelRow(props: {
   version?: BillingStatementVersionInfo | null
   model: CustomerModelSummary
+  firstModelRef?: React.Ref<HTMLTableRowElement>
   dimension: BillingDimension
   userId: number
   versionBound?: boolean
@@ -764,7 +791,7 @@ function CustomerModelRow(props: {
     billing_mode: props.model.billing_mode,
   }
   return (
-    <TableRow className='bg-muted/20'>
+    <TableRow ref={props.firstModelRef} className='bg-muted/20'>
       <TableCell />
       <TableCell>
         <div className='pl-4'>
@@ -911,98 +938,100 @@ function DiscountCombinationSection(props: {
           )}
         </CardDescription>
       </CardHeader>
-      <CardContent className='px-0'>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('Combination scope')}</TableHead>
-              <TableHead>{t('Group discount/ratio')}</TableHead>
-              <TableHead>{t('Contract discount')}</TableHead>
-              <TableHead>{t('Final discount')}</TableHead>
-              <TableHead className='text-right'>
-                {t('Estimated list price')}
-              </TableHead>
-              <TableHead className='text-right'>
-                {t('Estimated savings')}
-              </TableHead>
-              <TableHead className='text-right'>{t('Net amount')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {visible.map((combo) => (
-              <TableRow
-                key={JSON.stringify([
-                  combo.other,
-                  combo.group_id,
-                  combo.model_name,
-                  combo.billing_mode,
-                  combo.group_ratio,
-                  combo.group_name,
-                  combo.group_ratio_source,
-                  combo.contract_applicable,
-                  combo.contract_ratio,
-                  combo.contract_id_known,
-                  combo.contract_id,
-                  combo.contract_version,
-                ])}
-              >
-                <TableCell>
-                  {combinationScopeCell(combo, props.groupNames, t)}
+      <CardContent className='flex min-h-0 flex-col px-0'>
+        <div className='max-h-[45vh] min-h-0 overflow-auto'>
+          <Table withContainer={false}>
+            <TableHeader className='sticky top-0 z-10 bg-(--table-header)'>
+              <TableRow>
+                <TableHead>{t('Combination scope')}</TableHead>
+                <TableHead>{t('Group discount/ratio')}</TableHead>
+                <TableHead>{t('Contract discount')}</TableHead>
+                <TableHead>{t('Final discount')}</TableHead>
+                <TableHead className='text-right'>
+                  {t('Estimated list price')}
+                </TableHead>
+                <TableHead className='text-right'>
+                  {t('Estimated savings')}
+                </TableHead>
+                <TableHead className='text-right'>{t('Net amount')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visible.map((combo) => (
+                <TableRow
+                  key={JSON.stringify([
+                    combo.other,
+                    combo.group_id,
+                    combo.model_name,
+                    combo.billing_mode,
+                    combo.group_ratio,
+                    combo.group_name,
+                    combo.group_ratio_source,
+                    combo.contract_applicable,
+                    combo.contract_ratio,
+                    combo.contract_id_known,
+                    combo.contract_id,
+                    combo.contract_version,
+                  ])}
+                >
+                  <TableCell>
+                    {combinationScopeCell(combo, props.groupNames, t)}
+                  </TableCell>
+                  <TableCell>{combinationGroupFactorCell(combo, t)}</TableCell>
+                  <TableCell>{combinationContractCell(combo, t)}</TableCell>
+                  <TableCell>
+                    <span className='inline-block max-w-56 whitespace-normal'>
+                      {combinationFinalFactorCell(combo, t)}
+                    </span>
+                  </TableCell>
+                  <TableCell className='text-right'>
+                    {combinationAmountCell(
+                      combo.original_quota,
+                      t,
+                      props.version,
+                      combo.estimate_reasons
+                    )}
+                  </TableCell>
+                  <TableCell className='text-right'>
+                    {combinationAmountCell(
+                      combo.discount_quota,
+                      t,
+                      props.version,
+                      combo.estimate_reasons
+                    )}
+                  </TableCell>
+                  <TableCell className='text-right font-medium'>
+                    {formatCustomerStatementQuota(combo.usage.net_quota)}
+                  </TableCell>
+                </TableRow>
+              ))}
+              <TableRow className='bg-muted/30'>
+                <TableCell colSpan={4} className='font-medium'>
+                  {t('Total')}
                 </TableCell>
-                <TableCell>{combinationGroupFactorCell(combo, t)}</TableCell>
-                <TableCell>{combinationContractCell(combo, t)}</TableCell>
-                <TableCell>
-                  <span className='inline-block max-w-56 whitespace-normal'>
-                    {combinationFinalFactorCell(combo, t)}
-                  </span>
-                </TableCell>
-                <TableCell className='text-right'>
+                <TableCell className='text-right font-medium'>
                   {combinationAmountCell(
-                    combo.original_quota,
+                    props.originalQuota,
                     t,
                     props.version,
-                    combo.estimate_reasons
-                  )}
-                </TableCell>
-                <TableCell className='text-right'>
-                  {combinationAmountCell(
-                    combo.discount_quota,
-                    t,
-                    props.version,
-                    combo.estimate_reasons
+                    props.estimateReasons
                   )}
                 </TableCell>
                 <TableCell className='text-right font-medium'>
-                  {formatCustomerStatementQuota(combo.usage.net_quota)}
+                  {combinationAmountCell(
+                    props.discountQuota,
+                    t,
+                    props.version,
+                    props.estimateReasons
+                  )}
+                </TableCell>
+                <TableCell className='text-right font-medium'>
+                  {formatCustomerStatementQuota(props.netQuota)}
                 </TableCell>
               </TableRow>
-            ))}
-            <TableRow className='bg-muted/30'>
-              <TableCell colSpan={4} className='font-medium'>
-                {t('Total')}
-              </TableCell>
-              <TableCell className='text-right font-medium'>
-                {combinationAmountCell(
-                  props.originalQuota,
-                  t,
-                  props.version,
-                  props.estimateReasons
-                )}
-              </TableCell>
-              <TableCell className='text-right font-medium'>
-                {combinationAmountCell(
-                  props.discountQuota,
-                  t,
-                  props.version,
-                  props.estimateReasons
-                )}
-              </TableCell>
-              <TableCell className='text-right font-medium'>
-                {formatCustomerStatementQuota(props.netQuota)}
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
+            </TableBody>
+          </Table>
+        </div>
         {collapsed > 0 && (
           <div className='px-4 pt-2'>
             <Button variant='ghost' size='sm' onClick={() => setExpanded(true)}>

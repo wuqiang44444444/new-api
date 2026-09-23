@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { ArrowDown01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -213,67 +213,75 @@ export function UpstreamReconciliationTable(
   }
 
   return (
-    <Table className='min-w-300'>
-      <TableHeader>
-        <TableRow>
-          <TableHead className='min-w-56'>
-            {t('Upstream channel / model')}
-          </TableHead>
-          <TableHead>{t('Billing mode')}</TableHead>
-          <TableHead className='text-right'>{t('Requests')}</TableHead>
-          <TableHead className='text-right'>{t('Input tokens')}</TableHead>
-          <TableHead className='text-right'>{t('Cache read tokens')}</TableHead>
-          <TableHead className='text-right'>
-            {t('Cache write tokens')}
-          </TableHead>
-          <TableHead className='text-right'>{t('Output tokens')}</TableHead>
-          <TableHead className='text-right'>{t('Billable calls')}</TableHead>
-          <TableHead className='text-right'>{t('Billable seconds')}</TableHead>
-          <TableHead className='text-right'>
-            {t('Original amount (local official price)')}
-          </TableHead>
-          <TableHead className='text-right'>
-            {t('Calculated amount (after channel discount)')}
-          </TableHead>
-          <TableHead>{t('Channel discount')}</TableHead>
-          <TableHead>{t('Data status')}</TableHead>
-          <TableHead className='text-right'>{t('Actions')}</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {props.group.channels.flatMap((channel) => {
-          const channelKey = channelRowKey(props.group.url_key, channel)
-          const isExpanded = props.expandedChannels.has(channelKey)
-          return [
-            <ChannelRow
-              key={`channel-${channelKey}`}
-              channel={channel}
-              draft={draft?.channelId === channel.channel_id ? draft : null}
-              editing={saveMutation.isPending}
-              expanded={isExpanded}
-              group={props.group}
-              onDraftChange={setDraft}
-              onExpandToggle={() => props.onToggleChannel(channelKey)}
-              onSubmitDraft={submitDraft}
-              onStartEdit={() => startEdit(channel)}
-              onViewDetails={props.onViewDetails}
-            />,
-            isExpanded ? (
-              <ChannelModelPage
-                key={`models-${channelKey}`}
+    // 约定滚动容器（对齐 DataTablePage fixedHeight）：双轴滚动 + sticky 表头，
+    // 让横向滚动条始终停在可视区域内，而不是整张表底部的屏幕外。
+    <div className='max-h-[45vh] min-h-0 overflow-auto'>
+      <Table withContainer={false} className='min-w-300'>
+        <TableHeader className='sticky top-0 z-10 bg-(--table-header)'>
+          <TableRow>
+            <TableHead className='min-w-56'>
+              {t('Upstream channel / model')}
+            </TableHead>
+            <TableHead>{t('Billing mode')}</TableHead>
+            <TableHead className='text-right'>{t('Requests')}</TableHead>
+            <TableHead className='text-right'>{t('Input tokens')}</TableHead>
+            <TableHead className='text-right'>
+              {t('Cache read tokens')}
+            </TableHead>
+            <TableHead className='text-right'>
+              {t('Cache write tokens')}
+            </TableHead>
+            <TableHead className='text-right'>{t('Output tokens')}</TableHead>
+            <TableHead className='text-right'>{t('Billable calls')}</TableHead>
+            <TableHead className='text-right'>
+              {t('Billable seconds')}
+            </TableHead>
+            <TableHead className='text-right'>
+              {t('Original amount (local official price)')}
+            </TableHead>
+            <TableHead className='text-right'>
+              {t('Calculated amount (after channel discount)')}
+            </TableHead>
+            <TableHead>{t('Channel discount')}</TableHead>
+            <TableHead>{t('Data status')}</TableHead>
+            <TableHead className='text-right'>{t('Actions')}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {props.group.channels.flatMap((channel) => {
+            const channelKey = channelRowKey(props.group.url_key, channel)
+            const isExpanded = props.expandedChannels.has(channelKey)
+            return [
+              <ChannelRow
+                key={`channel-${channelKey}`}
                 channel={channel}
-                urlKey={props.group.url_key}
-                period={{
-                  start_timestamp: props.periodStart,
-                  end_timestamp: props.periodEnd,
-                }}
+                draft={draft?.channelId === channel.channel_id ? draft : null}
+                editing={saveMutation.isPending}
+                expanded={isExpanded}
+                group={props.group}
+                onDraftChange={setDraft}
+                onExpandToggle={() => props.onToggleChannel(channelKey)}
+                onSubmitDraft={submitDraft}
+                onStartEdit={() => startEdit(channel)}
                 onViewDetails={props.onViewDetails}
-              />
-            ) : null,
-          ]
-        })}
-      </TableBody>
-    </Table>
+              />,
+              isExpanded ? (
+                <ChannelModelPage
+                  key={`models-${channelKey}`}
+                  channel={channel}
+                  urlKey={props.group.url_key}
+                  period={{
+                    start_timestamp: props.periodStart,
+                    end_timestamp: props.periodEnd,
+                  }}
+                  onViewDetails={props.onViewDetails}
+                />
+              ) : null,
+            ]
+          })}
+        </TableBody>
+      </Table>
+    </div>
   )
 }
 
@@ -453,6 +461,7 @@ function ChannelRow(props: {
 function ChannelModelRow(props: {
   urlKey: string
   model: ProviderUrlChannelModelSummary
+  firstModelRef?: React.Ref<HTMLTableRowElement>
   discount: ProviderUrlChannelGroupSummary['discount']
   onViewDetails: (props: UpstreamDetailViewSelection) => void
 }) {
@@ -460,7 +469,7 @@ function ChannelModelRow(props: {
   const tokenBilling = props.model.billing_mode === 'token'
   const perCallBilling = props.model.billing_mode === 'per_call'
   return (
-    <TableRow>
+    <TableRow ref={props.firstModelRef}>
       <TableCell className='relative pl-14'>
         <span
           aria-hidden='true'
@@ -575,6 +584,7 @@ function ChannelModelPage(props: {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const firstModelRowRef = useRef<HTMLTableRowElement | null>(null)
   const query = useUpstreamPage({
     ...props.period,
     level: 'models',
@@ -583,9 +593,16 @@ function ChannelModelPage(props: {
     page,
     page_size: pageSize,
   })
+  // 展开渠道后，模型行落在封顶滚动容器的折叠区内；加载态和加载完成时把
+  // 首行滚入视野，避免展开后看不到明细。
+  useEffect(() => {
+    if (query.isPending || query.isSuccess) {
+      firstModelRowRef.current?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [query.isPending, query.isSuccess])
   if (query.isPending) {
     return (
-      <TableRow>
+      <TableRow ref={firstModelRowRef}>
         <TableCell colSpan={14}>
           <LoadingState />
         </TableCell>
@@ -606,10 +623,11 @@ function ChannelModelPage(props: {
   }
   return (
     <>
-      {query.data.result.models.map((model) => (
+      {query.data.result.models.map((model, index) => (
         <ChannelModelRow
           key={`${model.provider_model}:${model.billing_mode}:${model.provider_model_fallback ?? false}`}
           model={model}
+          firstModelRef={index === 0 ? firstModelRowRef : undefined}
           discount={props.channel.discount}
           urlKey={props.urlKey}
           onViewDetails={(selection) =>

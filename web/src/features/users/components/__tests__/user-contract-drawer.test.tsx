@@ -71,7 +71,14 @@ const getContractTemplates =
 const getContractTemplate =
   vi.fn<(templateId: number) => Promise<ContractTemplateSnapshotResponse>>()
 
-const translate = (key: string) => key
+// Mirrors i18next's default interpolation so assertions can expect the
+// user-visible message instead of the raw key.
+const translate = (key: string, params?: Record<string, unknown>) =>
+  params
+    ? key.replaceAll(/\{\{\s*(\w+)\s*\}\}/g, (raw: string, name: string) =>
+        name in params ? String(params[name]) : raw
+      )
+    : key
 
 const pointerCaptureDescriptor = Object.getOwnPropertyDescriptor(
   HTMLElement.prototype,
@@ -293,7 +300,7 @@ describe('admin customer contract entity drawer', () => {
     expect(screen.getAllByText('Select channel').length).toBeGreaterThanOrEqual(
       1
     )
-    expect(screen.getByPlaceholderText('Select channels')).toBeTruthy()
+    expect(screen.getByPlaceholderText('Search and select models')).toBeTruthy()
   })
 
   it('keeps internal channel facts admin-only and recalculates draft pricing', async () => {
@@ -419,13 +426,14 @@ describe('admin customer contract entity drawer', () => {
       )
 
       const user = userEvent.setup()
-      await user.click(
-        await screen.findByPlaceholderText('Search and select a model')
-      )
+      await user.click(await screen.findByLabelText('Search and select models'))
       await user.click(
         await screen.findByRole('option', { name: 'gemini-3-pro' })
       )
-      await user.click(await screen.findByPlaceholderText('Select channels'))
+      const channelInput = await screen.findByLabelText(
+        'Channels for model gemini-3-pro'
+      )
+      await user.click(channelInput)
       await user.click(
         await screen.findByRole('button', { name: 'Select all' })
       )
@@ -480,23 +488,256 @@ describe('admin customer contract entity drawer', () => {
       const user = userEvent.setup()
       // claude-sonnet-5 has exactly one candidate channel, so it is
       // preselected, and that channel is already bound by the saved rule.
-      await user.click(
-        await screen.findByPlaceholderText('Search and select a model')
-      )
+      await user.click(await screen.findByLabelText('Search and select models'))
       await user.click(
         await screen.findByRole('option', { name: 'claude-sonnet-5' })
       )
-      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      // The open models popup keeps the drawer inert for role queries; text
+      // queries still reach the add button.
+      fireEvent.click(screen.getByText('Add'))
 
       await vi.waitFor(() =>
         // The test i18n mock returns keys verbatim, so the rejected channel
         // list surfaces inside the untranslated placeholder key.
         expect(toast.error).toHaveBeenCalledWith(
-          'This model already binds channels: {{channels}}'
+          'This model already binds channels: primary'
         )
       )
       expect(createUserContract).not.toHaveBeenCalled()
       expect(updateContractEntity).not.toHaveBeenCalled()
+    } finally {
+      restorePointerCapture()
+    }
+  })
+
+  it('adds several models at once, each with its own channels', async () => {
+    stubPointerCapture()
+    try {
+      renderDrawer()
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'New contract' })
+      )
+
+      const user = userEvent.setup()
+      await user.click(await screen.findByLabelText('Search and select models'))
+      await user.click(
+        await screen.findByRole('option', { name: 'claude-sonnet-5' })
+      )
+      await user.keyboard('{Escape}')
+      await user.click(await screen.findByLabelText('Search and select models'))
+      await user.click(
+        await screen.findByRole('option', { name: 'gemini-3-pro' })
+      )
+      await user.keyboard('{Escape}')
+      // claude has a single candidate and is auto-picked; gemini needs an
+      // explicit multi-pick even though claude already uses channel 11.
+      const geminiChannels = await screen.findByLabelText(
+        'Channels for model gemini-3-pro'
+      )
+      await user.click(geminiChannels)
+      await user.click(
+        await screen.findByRole('button', { name: 'Select all' })
+      )
+      // The i18n mock interpolates, so the counters are user-visible text.
+      expect(screen.getByText('Will add 2 models and 3 rules')).toBeTruthy()
+      fireEvent.click(screen.getByText('Add'))
+
+      fireEvent.change(screen.getByLabelText('Contract name'), {
+        target: { value: 'Expansion contract' },
+      })
+      fireEvent.change(screen.getByLabelText('Change reason'), {
+        target: { value: 'batch models' },
+      })
+      fireEvent.click(screen.getByText('Create contract'))
+
+      await vi.waitFor(() =>
+        expect(createUserContract).toHaveBeenCalledTimes(1)
+      )
+      expect(createUserContract).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({
+          rules: [
+            expect.objectContaining({
+              model: 'claude-sonnet-5',
+              channel_id: 11,
+              route_group: 'contract-route',
+              discount: '1',
+            }),
+            expect.objectContaining({
+              model: 'gemini-3-pro',
+              channel_id: 11,
+              route_group: 'contract-route',
+              discount: '1',
+            }),
+            expect.objectContaining({
+              model: 'gemini-3-pro',
+              channel_id: 12,
+              route_group: 'contract-route',
+              discount: '1',
+            }),
+          ],
+        })
+      )
+    } finally {
+      restorePointerCapture()
+    }
+  })
+
+  it('keeps the batch pending when a model has no channel, then lets it succeed', async () => {
+    stubPointerCapture()
+    try {
+      renderDrawer()
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'New contract' })
+      )
+
+      const user = userEvent.setup()
+      await user.click(await screen.findByLabelText('Search and select models'))
+      await user.click(
+        await screen.findByRole('option', { name: 'gemini-3-pro' })
+      )
+      await user.keyboard('{Escape}')
+      // gemini has two candidates, so none is assumed: adding without an
+      // explicit pick names the model and rejects the whole batch.
+      fireEvent.click(screen.getByText('Add'))
+      await vi.waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          'Select a channel for model gemini-3-pro'
+        )
+      )
+      expect(
+        screen.getByLabelText('Channels for model gemini-3-pro')
+      ).toBeTruthy()
+
+      const channelInput = screen.getByLabelText(
+        'Channels for model gemini-3-pro'
+      )
+      await user.click(channelInput)
+      await user.click(
+        await screen.findByRole('button', { name: 'Select all' })
+      )
+      fireEvent.click(screen.getByText('Add'))
+
+      fireEvent.change(screen.getByLabelText('Contract name'), {
+        target: { value: 'Expansion contract' },
+      })
+      fireEvent.change(screen.getByLabelText('Change reason'), {
+        target: { value: 'retry batch' },
+      })
+      fireEvent.click(screen.getByText('Create contract'))
+
+      await vi.waitFor(() =>
+        expect(createUserContract).toHaveBeenCalledTimes(1)
+      )
+      expect(createUserContract).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({
+          rules: [
+            expect.objectContaining({ model: 'gemini-3-pro', channel_id: 11 }),
+            expect.objectContaining({ model: 'gemini-3-pro', channel_id: 12 }),
+          ],
+        })
+      )
+    } finally {
+      restorePointerCapture()
+    }
+  })
+
+  it('rejects the whole batch when one model repeats a bound channel', async () => {
+    stubPointerCapture()
+    try {
+      renderDrawer({ contractId: 5 })
+
+      const user = userEvent.setup()
+      await user.click(await screen.findByLabelText('Search and select models'))
+      await user.click(
+        await screen.findByRole('option', { name: 'claude-sonnet-5' })
+      )
+      await user.keyboard('{Escape}')
+      await user.click(await screen.findByLabelText('Search and select models'))
+      await user.click(
+        await screen.findByRole('option', { name: 'gemini-3-pro' })
+      )
+      await user.keyboard('{Escape}')
+      const geminiChannels = await screen.findByLabelText(
+        'Channels for model gemini-3-pro'
+      )
+      await user.click(geminiChannels)
+      await user.click(
+        await screen.findByRole('button', { name: 'Select all' })
+      )
+      fireEvent.click(screen.getByText('Add'))
+      await vi.waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          'This model already binds channels: primary'
+        )
+      )
+
+      // The batch is atomic: gemini's valid picks are not appended either.
+      fireEvent.change(screen.getByLabelText('Contract name'), {
+        target: { value: 'Main contract revised' },
+      })
+      fireEvent.change(screen.getByLabelText('Change reason'), {
+        target: { value: 'check atomicity' },
+      })
+      fireEvent.click(screen.getByText('Save contract'))
+      await vi.waitFor(() =>
+        expect(updateContractEntity).toHaveBeenCalledTimes(1)
+      )
+      expect(updateContractEntity).toHaveBeenCalledWith(
+        5,
+        expect.objectContaining({
+          rules: [
+            expect.objectContaining({
+              model: 'claude-sonnet-5',
+              channel_id: 11,
+            }),
+          ],
+        })
+      )
+    } finally {
+      restorePointerCapture()
+    }
+  })
+
+  it('rejects model names that differ only by letter case inside one batch', async () => {
+    stubPointerCapture()
+    try {
+      getCustomerContractChannels.mockResolvedValue({
+        success: true,
+        data: [
+          {
+            group: 'contract-route',
+            native_group_ratio: '1',
+            special_group_ratio: false,
+            models: [
+              { model: 'GPT-5 Mini', channels: [{ id: 21, name: 'alpha' }] },
+              { model: 'gpt-5 mini', channels: [{ id: 22, name: 'beta' }] },
+            ],
+          },
+        ],
+      })
+      renderDrawer()
+
+      const user = userEvent.setup()
+      await user.click(await screen.findByLabelText('Search and select models'))
+      await user.click(
+        await screen.findByRole('option', { name: 'GPT-5 Mini' })
+      )
+      await user.keyboard('{Escape}')
+      await user.click(await screen.findByLabelText('Search and select models'))
+      await user.click(
+        await screen.findByRole('option', { name: 'gpt-5 mini' })
+      )
+      await user.keyboard('{Escape}')
+      fireEvent.click(screen.getByText('Add'))
+
+      await vi.waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          'Model names that differ only by letter case cannot coexist'
+        )
+      )
+      expect(createUserContract).not.toHaveBeenCalled()
     } finally {
       restorePointerCapture()
     }
@@ -780,7 +1021,7 @@ describe('admin customer contract entity drawer', () => {
       expect(screen.getByDisplayValue('Starter')).toBeTruthy()
       expect(
         screen.getByText(
-          'Applied template version {{version}}. Rules stay editable and failures must be fixed before saving.'
+          'Applied template version 4. Rules stay editable and failures must be fixed before saving.'
         )
       ).toBeTruthy()
 

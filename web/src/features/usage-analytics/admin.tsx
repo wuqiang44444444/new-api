@@ -56,7 +56,7 @@ export function AdminUsage(props: {
       section: section as AdminUsageSection,
     })
   return (
-    <div className='flex flex-col gap-4 p-4'>
+    <div className='flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4'>
       <div className='flex flex-wrap items-center justify-between gap-2'>
         <UsagePeriodPicker
           period={props.period}

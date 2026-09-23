@@ -61,6 +61,7 @@ type usageOverviewKey struct {
 // 日志（范围内的原生任务日志 + 按稳定 ID 直接加载的交付日志），任务行本身
 // 提供身份、终态与结束时间。
 type usageTaskPieces struct {
+	discounts      *billingDiscountCombinationAccumulator
 	tokenDetails   map[string]int64
 	gross          int64
 	refund         int64
@@ -329,7 +330,7 @@ func (agg *usageAggregation) scanLogs(ctx context.Context) error {
 			Fact billingReconciliationLog `gorm:"embedded"`
 		}
 		err := query.Session(&gorm.Session{}).WithContext(batchCtx).Select(
-			"id, COALESCE(request_id, '') AS request_id, user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other",
+			"id, COALESCE(request_id, '') AS request_id, user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other, "+billingStatementGroupSelect(),
 		).Where("id > ? AND id <= ?", cursor, upper).Order("id asc").Limit(batchSize).Scan(&batch).Error
 		cancel()
 		if err != nil {
@@ -353,7 +354,7 @@ func (agg *usageAggregation) scanLogsCursor(ctx context.Context, query *gorm.DB,
 	// Explicit column list matching the positional Scan below; a bare
 	// SELECT * would return table column order and silently scramble fields.
 	query = query.Session(&gorm.Session{}).Select(
-		"id, user_id, COALESCE(request_id, '') AS request_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other",
+		"id, user_id, COALESCE(request_id, '') AS request_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other, " + billingStatementGroupSelect(),
 	)
 	rows, err := query.Order("created_at asc, id asc").Rows()
 	if err != nil {
@@ -366,7 +367,7 @@ func (agg *usageAggregation) scanLogsCursor(ctx context.Context, query *gorm.DB,
 		}
 		var fact billingReconciliationLog
 		var id int64
-		if err := rows.Scan(&id, &fact.UserId, &fact.RequestId, &fact.TokenId, &fact.TokenName, &fact.ChannelId, &fact.ModelName, &fact.Type, &fact.CreatedAt, &fact.PromptTokens, &fact.CompletionTokens, &fact.Quota, &fact.Content, &fact.Other); err != nil {
+		if err := rows.Scan(&id, &fact.UserId, &fact.RequestId, &fact.TokenId, &fact.TokenName, &fact.ChannelId, &fact.ModelName, &fact.Type, &fact.CreatedAt, &fact.PromptTokens, &fact.CompletionTokens, &fact.Quota, &fact.Content, &fact.Other, &fact.GroupName); err != nil {
 			return err
 		}
 		if err := agg.consumeLogRow(ctx, usageLogRow{id: id, fact: fact}, bundle); err != nil {
@@ -524,6 +525,15 @@ func (agg *usageAggregation) stashTaskLogPieceForTask(task *usageTaskRecord, row
 // appendTaskLogPiece 把一条关联日志的已知事实合并到任务合并事实。
 func (agg *usageAggregation) appendTaskLogPiece(pieces *usageTaskPieces, row usageLogRow, bundle *usageDiscountBundle) {
 	pieces.rowsSeen++
+	if agg.opts.WantCustomer {
+		if pieces.discounts == nil {
+			pieces.discounts = newBillingDiscountCombinationAccumulator()
+		}
+		// 身份由 Task 的最终客户模型/API Key 定位，组合只保留冻结计价事实。
+		fact := row.fact
+		fact.ModelName = ""
+		pieces.discounts.observe(fact, 0, row.parsed)
+	}
 	if row.fact.Type == LogTypeConsume {
 		pieces.gross += max(int64(row.fact.Quota), 0)
 	} else if row.fact.Type == LogTypeRefund {
@@ -664,6 +674,9 @@ func (agg *usageAggregation) buildUpstreamStandalone(row usageLogRow, bundle *us
 // buildCustomerStandalone 构建客户/总览视图的独立行累加器。
 func (agg *usageAggregation) buildCustomerStandalone(row usageLogRow, calls int64, result string) *usageMetricsAcc {
 	acc := &usageMetricsAcc{}
+	if agg.opts.WantCustomer && row.fact.Type == LogTypeConsume {
+		acc.observeCustomerDiscount(row)
+	}
 	acc.addCalls(result, calls)
 	var tokens UsageAnalyticsMetrics
 	usageRowTokens(row, &tokens)
@@ -730,6 +743,12 @@ func (agg *usageAggregation) mergeCustomer(key usageCustomerKey, acc *usageMetri
 		return
 	}
 	existing.merge(acc)
+	if acc.discounts != nil {
+		if existing.discounts == nil {
+			existing.discounts = newBillingDiscountCombinationAccumulator()
+		}
+		existing.discounts.mergeUsageDiscounts(acc.discounts)
+	}
 }
 
 func (agg *usageAggregation) mergeUpstream(key usageUpstreamKey, acc *usageMetricsAcc) {
@@ -834,9 +853,12 @@ func (agg *usageAggregation) loadDeliveryLogs(ctx context.Context) error {
 			return err
 		}
 		end := min(start+chunk, len(requestIDs))
-		var logs []Log
-		err := LOG_DB.WithContext(ctx).
-			Select("id, request_id, user_id, token_id, token_name, channel_id, model_name, type, created_at, prompt_tokens, completion_tokens, quota, content, other").
+		var logs []struct {
+			Log       `gorm:"embedded"`
+			GroupName string
+		}
+		err := LOG_DB.WithContext(ctx).Model(&Log{}).
+			Select("id, request_id, user_id, token_id, token_name, channel_id, model_name, type, created_at, prompt_tokens, completion_tokens, quota, content, other, "+billingStatementGroupSelect()).
 			Where("request_id IN ?", requestIDs[start:end]).Find(&logs).Error
 		if err != nil {
 			return err
@@ -846,7 +868,7 @@ func (agg *usageAggregation) loadDeliveryLogs(ctx context.Context) error {
 			if task == nil || row.UserId != task.UserID {
 				continue
 			}
-			fact := upstreamBillingLogFact(row, "")
+			fact := upstreamBillingLogFact(row.Log, row.GroupName)
 			parsed := parseBillingReconciliationLog(fact)
 			var other map[string]json.RawMessage
 			if strings.TrimSpace(row.Other) != "" {
@@ -945,7 +967,7 @@ func (agg *usageAggregation) applyTasks(ctx context.Context) error {
 
 // applyTaskCustomer applies one task to the customer/overview projections.
 func (agg *usageAggregation) applyTaskCustomer(task *usageTaskRecord, pieces *usageTaskPieces, hasRows bool, settled bool, result string, day int) {
-	acc := &usageMetricsAcc{}
+	acc := &usageMetricsAcc{discounts: pieces.discounts}
 	acc.addCalls(result, 1)
 	if pieces != nil {
 		mergeUsageTokenDetails(&acc.m.TokenDetails, pieces.tokenDetails)
@@ -1157,6 +1179,7 @@ func finalizeUsageCustomerView(view *UsageCustomerView, agg *usageAggregation) {
 				entryTotal.merge(&dayAccs[i])
 			}
 			entry.row.Total = entryTotal.finalize()
+			agg.customerModelDiscounts(id, &entry.row)
 			build.group.Models = append(build.group.Models, entry.row)
 		}
 		sort.Slice(build.group.Models, func(i, j int) bool {

@@ -127,21 +127,27 @@ function UpstreamReconciliationContent(props: UpstreamReconciliationViewProps) {
 
   if (query.isError || initialization.isError) {
     return (
-      <ErrorState
-        title={t('Unable to load upstream reconciliation')}
-        description={
-          query.error instanceof Error
-            ? query.error.message
-            : t('Please try again later.')
-        }
-        onRetry={() =>
-          initialization.isError ? initialization.refetch() : query.refetch()
-        }
-      />
+      <div className='min-h-0 flex-1 overflow-y-auto'>
+        <ErrorState
+          title={t('Unable to load upstream reconciliation')}
+          description={
+            query.error instanceof Error
+              ? query.error.message
+              : t('Please try again later.')
+          }
+          onRetry={() =>
+            initialization.isError ? initialization.refetch() : query.refetch()
+          }
+        />
+      </div>
     )
   }
   if (initialization.isPending || query.isPending || !query.data) {
-    return <Skeleton className='h-96 rounded-xl' />
+    return (
+      <div className='min-h-0 flex-1 overflow-y-auto'>
+        <Skeleton className='h-96 rounded-xl' />
+      </div>
+    )
   }
 
   const modelCount = query.data.result.model_count
@@ -177,8 +183,8 @@ function UpstreamReconciliationContent(props: UpstreamReconciliationViewProps) {
     .join(' · ')
 
   return (
-    <div className='flex flex-col gap-4'>
-      <div className='flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between'>
+    <div className='flex h-full min-h-0 flex-col'>
+      <div className='flex shrink-0 flex-col gap-3 xl:flex-row xl:items-end xl:justify-between'>
         <div className='grid flex-1 gap-3 sm:grid-cols-2 xl:max-w-xl'>
           <Field>
             <FieldLabel htmlFor='upstream-billing-month'>
@@ -218,7 +224,7 @@ function UpstreamReconciliationContent(props: UpstreamReconciliationViewProps) {
         </Button>
       </div>
 
-      <div className='text-muted-foreground space-y-1 text-sm'>
+      <div className='text-muted-foreground shrink-0 space-y-1 text-sm'>
         <p>
           {t(
             '{{groups}} URL groups · {{models}} models · Generated at {{time}} (Asia/Shanghai, {{start}} – {{end}})',
@@ -243,108 +249,112 @@ function UpstreamReconciliationContent(props: UpstreamReconciliationViewProps) {
         </p>
       </div>
 
-      {evidenceGroups.length > 0 ||
-      accountingNotes.length > 0 ||
-      visibleQuality?.evidence_coverage ? (
-        <Alert>
-          <HugeiconsIcon icon={InformationCircleIcon} strokeWidth={2} />
-          <AlertTitle>{t('Reconciliation evidence')}</AlertTitle>
-          <AlertDescription>
-            <UpstreamEvidenceCoverage
-              quality={visibleQuality}
-              onViewEvidence={viewEvidence}
-            />
-            {evidenceGroups.length > 0 ? (
-              <p className='text-muted-foreground text-xs'>
-                {t(
-                  'Except for the mutually exclusive channel-test breakdown, categories may overlap on the same record; do not add these counts together.'
-                )}
-              </p>
-            ) : null}
-            {evidenceGroups.map((group) => (
-              <div key={group.key} className='space-y-1 text-xs'>
-                {group.title ? (
-                  <p className='font-medium'>{group.title}</p>
-                ) : null}
-                <ul className='list-disc space-y-1 pl-4'>
-                  {group.entries.map((entry) => (
-                    <li key={entry.filter || entry.text}>
-                      {entry.text}
-                      <UpstreamEvidenceLink
-                        entry={entry}
-                        onViewEvidence={viewEvidence}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-            {accountingNotes.length > 0 ? (
-              <div className='space-y-1 text-xs'>
-                <p className='font-medium'>
-                  {t('Confirmed accounting results')}
-                </p>
-                {accountingNotes.map((note) => (
-                  <p key={note.filter || note.text}>
-                    {note.text}
-                    <UpstreamEvidenceLink
-                      entry={note}
-                      onViewEvidence={viewEvidence}
-                    />
+      <div className='min-h-0 flex-1 overflow-y-auto'>
+        <div className='flex flex-col gap-4'>
+          {evidenceGroups.length > 0 ||
+          accountingNotes.length > 0 ||
+          visibleQuality?.evidence_coverage ? (
+            <Alert>
+              <HugeiconsIcon icon={InformationCircleIcon} strokeWidth={2} />
+              <AlertTitle>{t('Reconciliation evidence')}</AlertTitle>
+              <AlertDescription>
+                <UpstreamEvidenceCoverage
+                  quality={visibleQuality}
+                  onViewEvidence={viewEvidence}
+                />
+                {evidenceGroups.length > 0 ? (
+                  <p className='text-muted-foreground text-xs'>
+                    {t(
+                      'Except for the mutually exclusive channel-test breakdown, categories may overlap on the same record; do not add these counts together.'
+                    )}
                   </p>
+                ) : null}
+                {evidenceGroups.map((group) => (
+                  <div key={group.key} className='space-y-1 text-xs'>
+                    {group.title ? (
+                      <p className='font-medium'>{group.title}</p>
+                    ) : null}
+                    <ul className='list-disc space-y-1 pl-4'>
+                      {group.entries.map((entry) => (
+                        <li key={entry.filter || entry.text}>
+                          {entry.text}
+                          <UpstreamEvidenceLink
+                            entry={entry}
+                            onViewEvidence={viewEvidence}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ))}
-              </div>
-            ) : null}
-          </AlertDescription>
-        </Alert>
-      ) : null}
+                {accountingNotes.length > 0 ? (
+                  <div className='space-y-1 text-xs'>
+                    <p className='font-medium'>
+                      {t('Confirmed accounting results')}
+                    </p>
+                    {accountingNotes.map((note) => (
+                      <p key={note.filter || note.text}>
+                        {note.text}
+                        <UpstreamEvidenceLink
+                          entry={note}
+                          onViewEvidence={viewEvidence}
+                        />
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
-      {visibleGroups.length === 0 ? (
-        <Empty className='min-h-64 border-0'>
-          <EmptyHeader>
-            <EmptyTitle>{t('No upstream usage')}</EmptyTitle>
-            <EmptyDescription>
-              {t(
-                'No upstream usage matches the current billing period and filters.'
-              )}
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <>
-          {visibleGroups.map((group) => (
-            <UpstreamGroupCard
-              key={`${props.month}:${group.url_key}`}
-              expandedChannels={expandedChannels}
-              group={group}
-              onToggleChannel={(channelKey) =>
-                setExpandedChannels((current) => {
-                  const next = new Set(current)
-                  if (next.has(channelKey)) next.delete(channelKey)
-                  else next.add(channelKey)
-                  return next
-                })
-              }
-              onViewDetails={openDetails}
-              onShowExports={() => setExportOpen(true)}
-              period={props.period}
-            />
-          ))}
-        </>
-      )}
+          {visibleGroups.length === 0 ? (
+            <Empty className='min-h-64 border-0'>
+              <EmptyHeader>
+                <EmptyTitle>{t('No upstream usage')}</EmptyTitle>
+                <EmptyDescription>
+                  {t(
+                    'No upstream usage matches the current billing period and filters.'
+                  )}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <>
+              {visibleGroups.map((group) => (
+                <UpstreamGroupCard
+                  key={`${props.month}:${group.url_key}`}
+                  expandedChannels={expandedChannels}
+                  group={group}
+                  onToggleChannel={(channelKey) =>
+                    setExpandedChannels((current) => {
+                      const next = new Set(current)
+                      if (next.has(channelKey)) next.delete(channelKey)
+                      else next.add(channelKey)
+                      return next
+                    })
+                  }
+                  onViewDetails={openDetails}
+                  onShowExports={() => setExportOpen(true)}
+                  period={props.period}
+                />
+              ))}
+            </>
+          )}
 
-      <BillingPagination
-        label={t('Upstream pages')}
-        page={page}
-        pageSize={pageSize}
-        total={query.data.result.total}
-        disabled={query.isFetching}
-        onChange={(p, size) => {
-          setPage(p)
-          setPageSize(size)
-          setExpandedChannels(new Set())
-        }}
-      />
+          <BillingPagination
+            label={t('Upstream pages')}
+            page={page}
+            pageSize={pageSize}
+            total={query.data.result.total}
+            disabled={query.isFetching}
+            onChange={(p, size) => {
+              setPage(p)
+              setPageSize(size)
+              setExpandedChannels(new Set())
+            }}
+          />
+        </div>
+      </div>
       <Drawer
         open={detailSelection != null}
         onOpenChange={(open) => {
@@ -608,8 +618,8 @@ function UpstreamGroupCard(props: {
           </div>
         </div>
       </CardHeader>
-      <CardContent className='space-y-2'>
-        <dl className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+      <CardContent className='flex min-h-0 flex-col gap-2'>
+        <dl className='grid shrink-0 gap-3 sm:grid-cols-2 xl:grid-cols-4'>
           <div>
             <dt className='text-muted-foreground text-xs'>
               {t('Original amount (local official price)')}
@@ -677,7 +687,7 @@ function UpstreamGroupCard(props: {
             </dd>
           </div>
         </dl>
-        <p className='text-muted-foreground text-xs'>
+        <p className='text-muted-foreground shrink-0 text-xs'>
           {t(
             'One comprehensive coefficient per channel per month; it applies to every model and billing mode and never changes customer charges.'
           )}
