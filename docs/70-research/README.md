@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-05
+last-reviewed: 2026-09-23
 ---
 
 # 70-research — 目标说明
@@ -16,6 +16,7 @@ last-reviewed: 2026-08-05
 
 - [参考资料](参考资料.md)：当前架构采用的官方来源、查询日期、可采信结论与证据边界。
 - [备选方案](备选方案.md)：已经比较过但不承担当前规范的方案、取舍和后续观察点。
+- [图片模型官方价格与五折人民币成本](图片/图片模型官方价格与五折人民币成本.md)：GPT Image 2 / 2.5、Nano Banana 和 Seedream 5 的官方价格、尺寸边界及五折人民币成本测算。
 
 ## 不放什么
 - 已采纳的架构决策 -> 20-architecture/decisions/
