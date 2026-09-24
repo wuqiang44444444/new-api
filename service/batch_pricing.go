@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	azurebatch "github.com/QuantumNous/new-api/relay/channel/azurebatch"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/shopspring/decimal"
 )
@@ -75,7 +76,7 @@ func batchLineModelCost(frozen *model.BatchFrozenSnapshot, usage BatchLineUsage)
 		return decimal.Zero, fmt.Errorf("batch usage is invalid")
 	}
 	pricingTime := time.Unix(frozen.PricingTime, 0).UTC()
-	request := billingexpr.RequestInput{PricingTime: &pricingTime, Body: frozen.LineParams[usage.CustomId]}
+	request := billingexpr.RequestInput{PricingTime: &pricingTime, Body: frozen.LineParams[usage.CustomId], ExchangeRate: frozen.UsdExchangeRate}
 	output, _, err := billingexpr.RunExprByHashWithRequest(frozen.Expr, frozen.ExprHash, batchTokenParams(frozen.Expr, usage), request)
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("batch line pricing failed: %w", err)
@@ -194,7 +195,15 @@ func ValidateBatchBillingConfiguration(raw string) error {
 		if _, err := billingexpr.CompileFromCache(expression); err != nil {
 			return fmt.Errorf("invalid Batch expression for %s: %w", name, err)
 		}
-		if _, err := batchBudgetOutput(&model.BatchFrozenSnapshot{Expr: expression}, BatchLineEstimate{InputEst: 1000, OutputCap: 1000}); err != nil {
+		budgetSnapshot := &model.BatchFrozenSnapshot{Expr: expression}
+		if billingexpr.UsesExchangeRate(expression) {
+			rate, rateErr := operation_setting.CurrentUsdExchangeRateContext()
+			if rateErr != nil {
+				return fmt.Errorf("Batch expression for %s requires a valid USDExchangeRate setting: %w", name, rateErr)
+			}
+			budgetSnapshot.UsdExchangeRate = rate
+		}
+		if _, err := batchBudgetOutput(budgetSnapshot, BatchLineEstimate{InputEst: 1000, OutputCap: 1000}); err != nil {
 			return fmt.Errorf("Batch budget for %s: %w", name, err)
 		}
 	}

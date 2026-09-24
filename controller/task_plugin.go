@@ -61,7 +61,7 @@ func UploadTaskPlugin(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	if loaded.Meta.Key != taskseedance.SeedanceExtensionPluginKey {
+	if loaded.Meta.Key != taskseedance.SeedanceExtensionPluginKey && loaded.Meta.Key != jsplugin.MinimaxPluginKey {
 		if err = jsplugin.ValidateV1Meta(loaded.Meta); err != nil {
 			common.ApiErrorMsg(c, err.Error())
 			return
@@ -78,7 +78,7 @@ func UploadTaskPlugin(c *gin.Context) {
 	if request.Enabled != nil {
 		enabled = *request.Enabled
 	}
-	if enabled && !request.Force && loaded.Meta.Key != taskseedance.SeedanceExtensionPluginKey {
+	if enabled && !request.Force && loaded.Meta.Key != taskseedance.SeedanceExtensionPluginKey && loaded.Meta.Key != jsplugin.MinimaxPluginKey {
 		if err = jsplugin.PreflightRoutingConflict(jsplugin.DefaultRegistry.Generation(), loaded); err != nil {
 			common.ApiErrorMsg(c, err.Error())
 			return
@@ -227,7 +227,7 @@ func ListTaskPlugins(c *gin.Context) {
 			}
 		}
 		if !hasFactory {
-			if key == taskseedance.SeedanceExtensionPluginKey {
+			if key == taskseedance.SeedanceExtensionPluginKey || key == jsplugin.MinimaxPluginKey {
 				// 原生 registry 刻意不认识扩展：运行状态与执行引用从扩展
 				// 存储投影，避免健康扩展被显示为 not_registered。
 				if err := applySeedanceExtensionListItem(&item); err != nil {
@@ -816,6 +816,7 @@ func syncTaskPluginsOnceContext(ctx context.Context) error {
 	}
 	// seedance-link 行不进入原生 override 集；扩展存储在锁内单独发布。
 	syncSeedanceExtensionPlugins(ctx, extensionRows)
+	syncMinimaxExtensionPlugins(ctx, extensionRows)
 	pluginErrors := jsplugin.DefaultRegistry.RoutingErrors()
 	maps.Copy(pluginErrors, taskPluginSyncState.errors)
 	pluginErrorCount := len(pluginErrors)

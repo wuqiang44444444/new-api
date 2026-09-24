@@ -1,14 +1,14 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-12
+last-reviewed: 2026-09-24
 ---
 
 # Seedance参考音频传输架构
 
 ## 边界与职责
 
-Seedance 的统一 ModelArk V3 入口负责参考音频传输，调用方无需按 Provider 预先准备 OSS。
+Seedance 与 MiniMax 标准视频的统一 ModelArk V3 入口负责参考音频传输，调用方无需按 Provider 预先准备 OSS。
 本能力是请求级音频上传，不是 `/v1/assets` 素材操作，不建立音频资源表、素材组、列表、复用域或 resolver。
 只处理 `type=audio_url` 的 `audio_url.url`，保留角色、内容顺序与其它字段语义；音频不会变成图片。
 FunCloud 的固定真人模式字段保持启用。HTTP URL 与 opaque 引用继续遵守既有协议，不新增探测或回源。
@@ -64,3 +64,11 @@ FunCloud 的固定真人模式字段保持启用。HTTP URL 与 opaque 引用继
 额外覆盖真实入口解析到模拟 Provider 的创建链路，包括 URL 不回源、Base64/文件精确上传、图音字段
 不混淆、上传或签名失败不预扣、快照与 unknown 恢复。
 本地 mock 验证不能替代真实 Provider、生产 OSS、外部数据库和供应商账单验收。
+
+## MiniMax 标准视频复用边界
+
+MiniMax 类型化 adapter 在映射校验、计价与资金 hold 之前调用同一 `PrepareVideoReferenceAudio`，
+沿用入口解码、OSS 上传、签名及 Task/attempt 对象事实冻结，不复制一套上传实现。现有内部对象前缀
+保持不变，不作为渠道身份。插件只消费准备好的 URL，完整保留 `audio_url`、role 和内容顺序。
+`minimax-link@1.1.0` 最多接收三个参考音频，范围与公开元数据来自同一声明；不创建音频素材库。
+代码与桩测试不代表内联音频标准链路已完成真实 Provider 验收。

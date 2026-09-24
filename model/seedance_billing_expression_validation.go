@@ -29,7 +29,7 @@ func validateSeedanceBillingExpression(db *gorm.DB, modelName, expression string
 		return false, nil
 	}
 	for i := range channels {
-		schema := seedancebilling.UsageFieldsForProtocol(channels[i].GetOtherSettings().VideoUpstreamProtocol)
+		schema := StandardVideoBillingFields(channels[i].Type, channels[i].GetOtherSettings().VideoUpstreamProtocol)
 		if err := seedancebilling.ValidateTaskExpression(expression, schema); err != nil {
 			return true, fmt.Errorf("model %s: %w", modelName, err)
 		}
@@ -58,7 +58,7 @@ func validateSeedancePricingConfiguration(db *gorm.DB, name string, values Prici
 		return nil
 	}
 	for _, channel := range channels {
-		if seedancebilling.RequiresTokenBudget(channel.GetOtherSettings().VideoUpstreamProtocol, expression) {
+		if standardVideoRequiresTokenBudget(channel, expression) {
 			return fmt.Errorf("model %s task pre-consume token upper bound is required", name)
 		}
 	}

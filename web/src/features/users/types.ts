@@ -43,7 +43,7 @@ export const userSchema = z.object({
   telegram_id: z.string().optional(),
   email: z.string().optional(),
   quota: z.number(),
-  used_quota: z.number(),
+  used_quota: z.number().nullable(),
   request_count: z.number(),
   group: z.string(),
   aff_code: z.string().optional(),

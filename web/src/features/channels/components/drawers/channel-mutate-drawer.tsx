@@ -139,6 +139,7 @@ import {
   CHANNEL_STATUS_LABELS,
   CHANNEL_TYPE_ASYNC_IMAGE,
   CHANNEL_TYPE_OPTIONS,
+  CHANNEL_TYPE_MINIMAX_LINK,
   CHANNEL_TYPE_SEEDANCE_LINK,
   CHANNEL_TYPE_TASK_PLUGIN,
   channelTypeOptionsForTaskPluginBind,
@@ -206,6 +207,7 @@ import {
   ChannelEditorLoadingState,
   ChannelModelsSection,
 } from './sections'
+import { MinimaxProtocolFields } from './minimax-protocol-fields'
 import { SeedanceConfiguredProtocolFields } from './seedance-configured-protocol-fields'
 
 type ChannelMutateDrawerProps = {
@@ -2003,7 +2005,8 @@ export function ChannelMutateDrawer({
                 {t(
                   'Sensitive channel settings are read-only for your account.'
                 )}{' '}
-                {currentType === CHANNEL_TYPE_SEEDANCE_LINK
+                {(currentType === CHANNEL_TYPE_SEEDANCE_LINK ||
+                  currentType === CHANNEL_TYPE_MINIMAX_LINK)
                   ? t(
                       'Seedance uses one fixed channel for each model. Priority and Weight do not participate in routing.'
                     )
@@ -2544,6 +2547,10 @@ export function ChannelMutateDrawer({
                                   </FormItem>
                                 )}
                               />
+                            )}
+
+                            {currentType === CHANNEL_TYPE_MINIMAX_LINK && (
+                              <MinimaxProtocolFields />
                             )}
 
                             {currentType === CHANNEL_TYPE_SEEDANCE_LINK && (
@@ -3943,7 +3950,8 @@ export function ChannelMutateDrawer({
                               icon={<Route className='h-3.5 w-3.5' />}
                               iconTone='info'
                             />
-                            {currentType === CHANNEL_TYPE_SEEDANCE_LINK ? (
+                            {currentType === CHANNEL_TYPE_SEEDANCE_LINK ||
+                            currentType === CHANNEL_TYPE_MINIMAX_LINK ? (
                               <FormDescription>
                                 {t(
                                   'Seedance uses one fixed channel for each model. Priority and Weight do not participate in routing.'

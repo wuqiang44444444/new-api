@@ -25,7 +25,7 @@ type seedancePricingAttribution struct {
 // generic plugin model index.
 func loadSeedancePricingAttribution(db *gorm.DB) (*seedancePricingAttribution, error) {
 	var channels []Channel
-	if err := db.Where("type = ?", constant.ChannelTypeSeedanceLink).Order("id").Find(&channels).Error; err != nil {
+	if err := db.Where("type IN ?", typedStandardVideoChannelTypes).Order("id").Find(&channels).Error; err != nil {
 		return nil, err
 	}
 	attribution := &seedancePricingAttribution{
@@ -45,7 +45,7 @@ func loadSeedancePricingAttribution(db *gorm.DB) (*seedancePricingAttribution, e
 		attribution.linkModels[name] = true
 		schemas := make([]map[string]jsplugin.UsageFieldSchema, 0, len(selected))
 		for _, channel := range selected {
-			schemas = append(schemas, seedancebilling.UsageFieldsForProtocol(channel.GetOtherSettings().VideoUpstreamProtocol))
+			schemas = append(schemas, StandardVideoBillingFields(channel.Type, channel.GetOtherSettings().VideoUpstreamProtocol))
 		}
 		attribution.schemas[name] = seedancebilling.IntersectUsageFields(schemas...)
 	}

@@ -12,6 +12,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/samber/lo"
 )
@@ -145,8 +146,12 @@ func smokeTestExpr(exprStr string) error {
 		{P: 1000000, C: 1000000, Len: 1000000},
 	}
 
+	requests, err := exchangeRateSmokeRequests(exprStr, billingExprSmokeRequests())
+	if err != nil {
+		return err
+	}
 	for _, v := range vectors {
-		for _, request := range billingExprSmokeRequests() {
+		for _, request := range requests {
 			result, _, err := billingexpr.RunExprWithRequest(exprStr, v, request)
 			if err != nil {
 				return fmt.Errorf("vector {p=%g, c=%g}: run failed: %w", v.P, v.C, err)
@@ -172,8 +177,12 @@ func SmokeTestTaskExpr(exprStr string, schema map[string]jsplugin.UsageFieldSche
 		}
 	}
 
+	requests, err := exchangeRateSmokeRequests(exprStr, billingExprSmokeRequests())
+	if err != nil {
+		return err
+	}
 	for _, usage := range taskUsageSmokeVectors(schema) {
-		for _, request := range billingExprSmokeRequests() {
+		for _, request := range requests {
 			request.Usage = usage
 			result, _, err := billingexpr.RunExprWithRequest(exprStr, billingexpr.TokenParams{}, request)
 			if err != nil {
@@ -280,6 +289,25 @@ func usageSmokeCombinationCount(dimensions []usageSmokeDimension, stopAfter int)
 		count *= len(dimension.values)
 	}
 	return count
+}
+
+// exchangeRateSmokeRequests freezes the current configured CNY/USD rate into
+// the smoke context when the expression depends on usd_exchange_rate().
+// Rate-free expressions keep the original requests. An invalid setting fails
+// the save so a rate-dependent expression can never be stored without a
+// usable rate.
+func exchangeRateSmokeRequests(exprStr string, requests []billingexpr.RequestInput) ([]billingexpr.RequestInput, error) {
+	if !billingexpr.UsesExchangeRate(exprStr) {
+		return requests, nil
+	}
+	rate, err := operation_setting.CurrentUsdExchangeRateContext()
+	if err != nil {
+		return nil, fmt.Errorf("expression requires a valid USDExchangeRate setting: %w", err)
+	}
+	for i := range requests {
+		requests[i].ExchangeRate = rate
+	}
+	return requests, nil
 }
 
 func billingExprSmokeRequests() []billingexpr.RequestInput {

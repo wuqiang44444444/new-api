@@ -38,6 +38,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/sub2api"
 	"github.com/QuantumNous/new-api/relay/channel/submodel"
 	jspluginadaptor "github.com/QuantumNous/new-api/relay/channel/task/jsplugin"
+	minimaxlink "github.com/QuantumNous/new-api/relay/channel/task/minimax"
 	taskseedance "github.com/QuantumNous/new-api/relay/channel/task/seedance"
 	"github.com/QuantumNous/new-api/relay/channel/tencent"
 	"github.com/QuantumNous/new-api/relay/channel/vertex"
@@ -203,6 +204,9 @@ func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
 	if adaptor := seedanceTaskAdaptor(platform); adaptor != nil {
 		return adaptor
 	}
+	if adaptor := minimaxlink.TaskAdaptorForPlatform(platform); adaptor != nil {
+		return adaptor
+	}
 	plugin, ok := ResolveTaskPluginForPlatform(pluginruntime.DefaultRegistry.Generation(), platform)
 	if !ok {
 		return nil
@@ -215,6 +219,12 @@ func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
 // from one registry generation before the adaptor is returned.
 func getTaskAdaptorForRequest(c *gin.Context, platform constant.TaskPlatform) (constant.TaskPlatform, channel.TaskAdaptor) {
 	if adaptor := seedanceTaskAdaptor(platform); adaptor != nil {
+		return platform, adaptor
+	}
+	// The MiniMax typed pin carries the extension plugin for freezing and
+	// declaration reads, but the typed Go adaptor owns the ModelArk task
+	// contract; the generic js-plugin path must never claim this platform.
+	if adaptor := minimaxlink.TaskAdaptorForPlatform(platform); adaptor != nil {
 		return platform, adaptor
 	}
 	if c != nil {

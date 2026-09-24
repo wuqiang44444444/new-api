@@ -152,14 +152,18 @@ type TaskPrivateData struct {
 	// PollFailures counts consecutive unrecognized or transient poll outcomes.
 	PollFailures int `json:"poll_failures,omitempty"`
 	// 以下为 Link/Seedance 本地扩展字段：视频协议与履约快照
-	UpstreamRequestID              string                     `json:"upstream_request_id,omitempty"`    // 上游调用追踪 ID（如 moxing request_id），仅任务创建时从响应头捕获，用于事后对账；异步轮询阶段已不可得
-	VideoUpstreamProfile           dto.VideoUpstreamProfile   `json:"video_upstream_profile,omitempty"` // 创建时的视频协议快照
-	VideoUpstreamProtocol          dto.VideoUpstreamProtocol  `json:"video_upstream_protocol,omitempty"`
-	SouthboundAdapterVersion       string                     `json:"southbound_adapter_version,omitempty"`
-	VideoUpstreamQueryBaseURL      string                     `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用
-	VideoUpstreamQueryPathTemplate string                     `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
-	VideoUpstreamProxy             string                     `json:"video_upstream_proxy,omitempty"`               // 创建时的代理快照，避免在途任务随渠道配置漂移
-	ClientRequest                  *TaskClientRequestSnapshot `json:"client_request,omitempty"`
+	UpstreamRequestID              string                    `json:"upstream_request_id,omitempty"`    // 上游调用追踪 ID（如 moxing request_id），仅任务创建时从响应头捕获，用于事后对账；异步轮询阶段已不可得
+	VideoUpstreamProfile           dto.VideoUpstreamProfile  `json:"video_upstream_profile,omitempty"` // 创建时的视频协议快照
+	VideoUpstreamProtocol          dto.VideoUpstreamProtocol `json:"video_upstream_protocol,omitempty"`
+	SouthboundAdapterVersion       string                    `json:"southbound_adapter_version,omitempty"`
+	VideoUpstreamQueryBaseURL      string                    `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用
+	VideoUpstreamQueryPathTemplate string                    `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
+	VideoUpstreamProxy             string                    `json:"video_upstream_proxy,omitempty"`               // 创建时的代理快照，避免在途任务随渠道配置漂移
+	// VideoUpstreamNextQueryAt is the per-protocol background query schedule
+	// (unix seconds). Only protocols with an upstream cadence recommendation
+	// (currently the MiniMax JD task API) set it; zero means always due.
+	VideoUpstreamNextQueryAt int64                      `json:"video_upstream_next_query_at,omitempty"`
+	ClientRequest            *TaskClientRequestSnapshot `json:"client_request,omitempty"`
 	// HostedMedia 冻结创建时已接受的 FunCloud 托管素材事实（素材 ID、本站
 	// 对象 key、MIME、字节数）。只记录对象位置，不记录签名 URL 或来源 URL。
 	HostedMedia    []TaskHostedMediaFact    `json:"hosted_media,omitempty"`
@@ -545,6 +549,10 @@ type taskSnapshot struct {
 	Data         json.RawMessage
 	PluginState  json.RawMessage
 	PollFailures int
+
+	// UpstreamNextQueryAt mirrors the per-protocol query schedule so re-arming
+	// it counts as a persisted change (zero for tasks without a schedule).
+	UpstreamNextQueryAt int64
 }
 
 func (s taskSnapshot) Equal(other taskSnapshot) bool {
@@ -556,7 +564,11 @@ func (s taskSnapshot) Equal(other taskSnapshot) bool {
 		s.ResultURL == other.ResultURL &&
 		bytes.Equal(s.Data, other.Data) &&
 		bytes.Equal(s.PluginState, other.PluginState) &&
-		s.PollFailures == other.PollFailures
+		s.PollFailures == other.PollFailures &&
+		// Upstream query schedules (currently only the MiniMax JD task API)
+		// participate in change detection so a re-armed cadence persists even
+		// when the observation itself is unchanged. Zero for every other task.
+		s.UpstreamNextQueryAt == other.UpstreamNextQueryAt
 }
 
 func (t *Task) Snapshot() taskSnapshot {
@@ -570,6 +582,8 @@ func (t *Task) Snapshot() taskSnapshot {
 		Data:         t.Data,
 		PluginState:  t.PrivateData.PluginState,
 		PollFailures: t.PrivateData.PollFailures,
+
+		UpstreamNextQueryAt: t.PrivateData.VideoUpstreamNextQueryAt,
 	}
 }
 
@@ -597,7 +611,7 @@ func (t *Task) UpdateQuota() error {
 // falls back to INSERT ON CONFLICT when the WHERE-guarded UPDATE matches
 // zero rows, which silently bypasses the CAS guard.
 func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
-	if t.HasSeedanceBillingFacts() {
+	if t.HasTypedVideoBillingFacts() {
 		won, err := t.updateSeedanceObservation(fromStatus)
 		if won {
 			// 错误事件（仅观察）：失败终态真实迁移提交后登记，CAS 结果天然防重。

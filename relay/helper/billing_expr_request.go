@@ -67,6 +67,9 @@ func cloneRequestInput(src billingexpr.RequestInput) billingexpr.RequestInput {
 	if len(src.Body) > 0 {
 		input.Body = append([]byte(nil), src.Body...)
 	}
+	// The frozen rate is immutable per accepted request; re-estimates within
+	// the same request reuse it instead of re-reading the setting.
+	input.ExchangeRate = src.ExchangeRate
 	return input
 }
 

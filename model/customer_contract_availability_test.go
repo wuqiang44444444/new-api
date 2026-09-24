@@ -113,7 +113,6 @@ func TestContractAvailabilityCrossesBatchBoundaryWithoutPartialResults(t *testin
 	}
 }
 
-
 // 每个不可用规则必须携带与既有判断一致的受控类别，供合同拒绝诊断使用；
 // 类别只描述阻塞分支，不参与任何准入判定。
 func TestContractAvailabilityReportsControlledUnavailableCategories(t *testing.T) {

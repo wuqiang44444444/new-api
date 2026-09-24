@@ -86,7 +86,10 @@ func customerContractSeedanceCatalog(c *gin.Context, catalog []model.SeedancePub
 	allowed := make(map[string]bool)
 	for _, rule := range rules {
 		channel := channels[rule.ChannelId]
-		if channel.Type == constant.ChannelTypeSeedanceLink && service.ContractTokenModelAllowed(c, rule.PublicModel) {
+		// The shared standard entry spans the typed video channels, so the
+		// contract projection keeps rules from both.
+		isTypedVideo := channel.Type == constant.ChannelTypeSeedanceLink || channel.Type == constant.ChannelTypeMiniMaxLink
+		if isTypedVideo && service.ContractTokenModelAllowed(c, rule.PublicModel) {
 			allowed[rule.PublicModel] = true
 		}
 	}
@@ -100,7 +103,7 @@ func customerContractSeedanceCatalog(c *gin.Context, catalog []model.SeedancePub
 }
 
 func applyCustomerContractSeedanceModels(c *gin.Context, models []dto.OpenAIModels) ([]dto.OpenAIModels, error) {
-	catalog, err := model.GetConfiguredSeedancePublicModels()
+	catalog, err := standardVideoPublicCatalog()
 	if err != nil {
 		return nil, err
 	}

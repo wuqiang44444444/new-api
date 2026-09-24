@@ -114,6 +114,11 @@ type cachedEntry struct {
 	usedUsageKeys map[string]bool
 	requestRules  []RequestRuleTrace
 	version       int
+
+	// usesExchangeRate records a direct usd_exchange_rate() dependency of the
+	// whole expression, including untaken branches. It shares the save-time
+	// and runtime dependency detection contract with usedUsageKeys.
+	usesExchangeRate bool
 }
 
 var (
@@ -150,6 +155,11 @@ var compileEnvPrototypeV1 = map[string]any{
 	"abs":        math.Abs,
 	"ceil":       math.Ceil,
 	"floor":      math.Floor,
+
+	// usd_exchange_rate() resolves the frozen CNY/USD context of the current
+	// billing run. The compile prototype only fixes the return type; the
+	// runtime closure fails closed when the host did not freeze a rate.
+	UsdExchangeRateFunc: func() (float64, error) { return 0, nil },
 }
 
 func getCompileEnv(version int) map[string]any {
@@ -188,6 +198,10 @@ func compileEntryFromCacheByHash(exprStr, hash string) (*cachedEntry, error) {
 	cacheMu.RUnlock()
 
 	version, body := ParseExprVersion(exprStr)
+	usesExchangeRate, err := exchangeRateDependency(body)
+	if err != nil {
+		return nil, fmt.Errorf("expr compile error: %w", err)
+	}
 	patcher := &requestRulePatcher{}
 	prog, err := expr.Compile(body, expr.Env(getCompileEnv(version)), expr.Patch(patcher), expr.AsFloat64())
 	if patcher.restrictedIdentifier != "" {
@@ -198,11 +212,12 @@ func compileEntryFromCacheByHash(exprStr, hash string) (*cachedEntry, error) {
 	}
 
 	entry := &cachedEntry{
-		prog:          prog,
-		usedVars:      extractUsedVars(prog),
-		usedUsageKeys: extractUsedUsageKeys(prog),
-		requestRules:  patcher.requestRules,
-		version:       version,
+		prog:             prog,
+		usedVars:         extractUsedVars(prog),
+		usedUsageKeys:    extractUsedUsageKeys(prog),
+		requestRules:     patcher.requestRules,
+		version:          version,
+		usesExchangeRate: usesExchangeRate,
 	}
 	cacheMu.Lock()
 	if len(cache) >= maxCacheSize {

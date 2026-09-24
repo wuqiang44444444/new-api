@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	taskminimax "github.com/QuantumNous/new-api/relay/channel/task/minimax"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
@@ -170,6 +171,20 @@ func proxyLinkVideoTaskContent(c *gin.Context, task *model.Task) bool {
 		}
 		videoURL = fmt.Sprintf("%s/v1/videos/%s/content", baseURL, task.GetUpstreamTaskID())
 		req.Header.Set("Authorization", "Bearer "+key)
+	case constant.ChannelTypeMiniMaxLink:
+		// The frozen JD content source resolves a fresh CDN URL through one
+		// on-demand query on the frozen connection and the frozen artifact
+		// version. It is never blocked by the background polling cadence and
+		// no credential attaches to the media fetch (rejectRedirects keeps
+		// the cross-origin CDN redirect from being followed).
+		contentURL, sourceErr := taskminimax.ResolveContentURL(c.Request.Context(), task)
+		if sourceErr != nil {
+			logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to resolve MiniMax video URL for Link task %s: %s", taskID, sanitizeVideoProviderError(sourceErr, task.PrivateData.Key)))
+			modelArkVideoError(c, http.StatusBadGateway, "upstream_unavailable", "Failed to resolve video URL")
+			return true
+		}
+		videoURL = contentURL
+		rejectRedirects = true
 	case constant.ChannelTypeSeedanceLink:
 		contentURL, key, handled, sourceErr := videoFeicaiContentSource(task)
 		if sourceErr != nil {

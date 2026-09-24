@@ -1828,6 +1828,12 @@ function CostEstimator({
               </p>
             )
           })}
+          {preview.evaluation?.usd_exchange_rate && (
+            <p className='text-muted-foreground text-xs'>
+              {t('Applied exchange rate (CNY/USD)')}:{' '}
+              {preview.evaluation.usd_exchange_rate.rate}
+            </p>
+          )}
           {preview.evaluation?.saturated && (
             <p className='text-destructive text-xs'>
               {t('Quota limit reached; this estimate is capped.')}
@@ -1880,6 +1886,7 @@ Important: len is NOT affected by auto-exclusion. Tier conditions should use len
 - param(path) — reads a request body JSON path (gjson syntax)
 - has(source, substr) — substring check
 - hour(tz), minute(tz), weekday(tz), month(tz), day(tz) — time functions, tz is a timezone like "Asia/Shanghai"
+- usd_exchange_rate() — the frozen CNY/USD exchange rate of the billing run (from the global USDExchangeRate setting). Use it to convert official CNY list prices into USD; the rate is locked per request and stored for settlement
 
 ### Price Coefficients
 

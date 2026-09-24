@@ -22,6 +22,7 @@ import {
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
   CHANNEL_TYPE_ASYNC_IMAGE,
   CHANNEL_TYPE_NEW_API,
+  CHANNEL_TYPE_MINIMAX_LINK,
   CHANNEL_TYPE_SEEDANCE_LINK,
   CHANNEL_TYPE_TASK_PLUGIN,
   CHANNEL_STATUS,
@@ -281,6 +282,7 @@ export const channelFormSchema = z
     asset_secret_access_key: z.string().optional(),
     asset_credential_configured: z.boolean().optional(),
     seedance_plugin_version: z.string().optional(),
+    minimax_plugin_version: z.string().optional(),
     seedance_plugin_configuration: z
       .custom<SeedancePluginConfiguration>()
       .optional(),
@@ -340,6 +342,7 @@ export const channelFormSchema = z
         CHANNEL_TYPE_NEW_API,
         CHANNEL_TYPE_TASK_PLUGIN,
         CHANNEL_TYPE_SEEDANCE_LINK,
+        CHANNEL_TYPE_MINIMAX_LINK,
         CHANNEL_TYPE_ASYNC_IMAGE,
       ].includes(data.type) &&
       !data.base_url?.trim()
@@ -798,6 +801,17 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     delete settingsObj.aws_key_type
   }
 
+  // MiniMax Link keeps its code-registered upstream protocol in settings.
+  if (formData.type === CHANNEL_TYPE_MINIMAX_LINK) {
+    settingsObj.video_upstream_protocol = 'jdcloud_video_task_v1'
+    settingsObj.asset_upstream_protocol = 'none'
+    settingsObj.asset_min_url_ttl_seconds = 0
+    delete settingsObj.video_upstream_profile
+    delete settingsObj.video_upstream_create_path
+    delete settingsObj.video_upstream_query_path_template
+    delete settingsObj.asset_upstream_profile
+  }
+
   // Seedance Link keeps its code-registered upstream protocols in settings.
   if (formData.type === CHANNEL_TYPE_SEEDANCE_LINK) {
     settingsObj.video_upstream_protocol = formData.video_upstream_protocol
@@ -969,12 +983,18 @@ export function transformFormDataToCreatePayload(
       formData.type === CHANNEL_TYPE_SEEDANCE_LINK
         ? formData.seedance_plugin_version
         : undefined,
+    minimax_plugin_version:
+      formData.type === CHANNEL_TYPE_MINIMAX_LINK
+        ? formData.minimax_plugin_version
+        : undefined,
     priority:
-      formData.type === CHANNEL_TYPE_SEEDANCE_LINK
+      formData.type === CHANNEL_TYPE_SEEDANCE_LINK ||
+      formData.type === CHANNEL_TYPE_MINIMAX_LINK
         ? null
         : formData.priority || null,
     weight:
-      formData.type === CHANNEL_TYPE_SEEDANCE_LINK
+      formData.type === CHANNEL_TYPE_SEEDANCE_LINK ||
+      formData.type === CHANNEL_TYPE_MINIMAX_LINK
         ? null
         : formData.weight || null,
     test_model: formData.test_model || null,
@@ -1039,12 +1059,20 @@ export function transformFormDataToUpdatePayload(
       formData.type === CHANNEL_TYPE_SEEDANCE_LINK
         ? formData.seedance_plugin_version
         : undefined,
+    minimax_plugin_version:
+      formData.type === CHANNEL_TYPE_MINIMAX_LINK
+        ? formData.minimax_plugin_version
+        : undefined,
     priority:
-      formData.type === CHANNEL_TYPE_SEEDANCE_LINK
+      formData.type === CHANNEL_TYPE_SEEDANCE_LINK ||
+      formData.type === CHANNEL_TYPE_MINIMAX_LINK
         ? 0
         : (formData.priority ?? 0),
     weight:
-      formData.type === CHANNEL_TYPE_SEEDANCE_LINK ? 0 : (formData.weight ?? 0),
+      formData.type === CHANNEL_TYPE_SEEDANCE_LINK ||
+      formData.type === CHANNEL_TYPE_MINIMAX_LINK
+        ? 0
+        : (formData.weight ?? 0),
     test_model: formData.test_model || null,
     auto_ban: formData.auto_ban ?? 1,
     status_code_mapping: formData.status_code_mapping || null,

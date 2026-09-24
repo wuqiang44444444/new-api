@@ -1,7 +1,7 @@
 ---
 page-id: videos-modelark
 kind: api-reference
-last-verified: 2026-09-22
+last-verified: 2026-09-24
 operations:
   - listModelArkVideoModels
   - retrieveModel
@@ -13,13 +13,15 @@ operations:
   - listVideoFundProgress
 ---
 
-# ModelArk V3 Seedance 视频
+# ModelArk V3 标准视频
 
-所有 Seedance 客户模型统一使用 ModelArk V3 任务合同。`/v1/video/generations` 属于原生通用视频
+Seedance 与 MiniMax 标准视频客户模型统一使用 ModelArk V3 任务合同。`/v1/video/generations` 属于原生通用视频
 协议，不是本接口的别名；ModelArk、Kling、即梦和 OpenAI Videos 的字段不能混用。
 
 完整流程是：查询模型 → POST 创建 → 保存 `id` → GET 轮询 → 成功后鉴权下载。
 可复制的轮询脚本见[图片与视频调用实战](guides/media-workflow)。所有步骤使用创建时的同一 API Key。
+
+MiniMax 的具体输入范围与验证状态见 [MiniMax H3 视频](api-reference/videos/minimax)。
 
 ## 查询模型与参数合同
 

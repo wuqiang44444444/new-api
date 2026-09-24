@@ -64,7 +64,9 @@ func customerBillingLines(log *model.Log, other map[string]any, row model.Custom
 		if err != nil {
 			return lines
 		}
-		projection, err := billingexpr.DisplayProjectionFor(string(expression))
+		// 历史账单按日志冻结汇率展开；未记录汇率的旧日志明确不可展开。
+		frozenRate := frozenLogExchangeRate(other)
+		projection, err := billingexpr.DisplayProjectionForWithRate(string(expression), frozenRate)
 		units := make(map[string]billingexpr.TaskUsageFieldInfo)
 		if rawUnits, ok := other["usage_units"].(map[string]any); ok {
 			for name, value := range rawUnits {
@@ -72,7 +74,7 @@ func customerBillingLines(log *model.Log, other map[string]any, row model.Custom
 					units[name] = billingexpr.TaskUsageFieldInfo{Unit: unit}
 				}
 			}
-			projection, err = billingexpr.TaskDisplayProjectionFor(string(expression), units)
+			projection, err = billingexpr.TaskDisplayProjectionForWithRate(string(expression), units, frozenRate)
 		}
 		if err != nil || projection.Status != billingexpr.DisplayStatusExact {
 			return lines

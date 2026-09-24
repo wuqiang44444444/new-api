@@ -350,6 +350,9 @@ func InitResources() error {
 	if err != nil {
 		return err
 	}
+	if err = model.InitUserUsageRepair(); err != nil {
+		return err
+	}
 	if err = model.InitProviderChannelBillingDiscounts(); err != nil {
 		return err
 	}

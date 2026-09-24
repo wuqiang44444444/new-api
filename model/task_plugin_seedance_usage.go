@@ -52,13 +52,19 @@ func seedancePluginExecutionUsage(db *gorm.DB, key, version string) ([]SeedanceP
 			attemptRefs = append(attemptRefs, SeedancePluginAttemptRef{Id: attempts[i].ID, Status: string(attempts[i].Status), UpstreamTask: attempts[i].UpstreamTaskID, UpstreamProto: attempts[i].UpstreamProtocol})
 		}
 	}
-	var tasks []Task
-	if err := db.Model(&Task{}).
+	taskQuery := db.Model(&Task{}).
 		Select("id", "task_id", "status", "private_data").
-		Where("platform = ? AND (status NOT IN ? OR billing_state IN ? OR (status = ? AND client_deleted_at = 0))",
-			strconv.Itoa(constant.ChannelTypeSeedanceLink), TerminalTaskStatuses(),
-			[]TaskBillingState{TaskBillingStatePending, TaskBillingStateFailed, TaskBillingStateDebt, TaskBillingStateAwaitingUsage}, TaskStatusSuccess).
-		Find(&tasks).Error; err != nil {
+		Where("(status NOT IN ? OR billing_state IN ? OR (status = ? AND client_deleted_at = 0))",
+			TerminalTaskStatuses(),
+			[]TaskBillingState{TaskBillingStatePending, TaskBillingStateFailed, TaskBillingStateDebt, TaskBillingStateAwaitingUsage}, TaskStatusSuccess)
+	// The typed extension key owns its channel type's platform identity, so
+	// each key only scans its own task rows.
+	platforms := typedExtensionPlatformsForKey(key)
+	if len(platforms) > 0 {
+		taskQuery = taskQuery.Where("platform IN ?", platforms)
+	}
+	var tasks []Task
+	if err := taskQuery.Find(&tasks).Error; err != nil {
 		return nil, nil, err
 	}
 	// Non-success terminal tasks no longer poll. Successful visible tasks still
@@ -105,13 +111,26 @@ func seedanceAttemptMatchesPin(recoveryRaw, frozenRaw []byte, key, version strin
 	return false
 }
 
-// SeedancePluginExecutionUsageApplies reports whether the plugin key is the
-// reserved Seedance extension key whose versions carry execution
-// dependencies.
+// SeedancePluginExecutionUsageApplies reports whether the plugin key is a
+// reserved typed-extension key whose versions carry execution dependencies
+// (attempt locking and deletion protection).
 func SeedancePluginExecutionUsageApplies(key string) bool {
-	return key != "" && key == seedanceExtensionPluginKey
+	return key != "" && len(typedExtensionPlatformsForKey(key)) > 0
 }
 
 // seedanceExtensionPluginKey is mirrored from the relay layer to avoid a
 // reverse dependency; the value is a stable reserved contract constant.
 const seedanceExtensionPluginKey = "seedance-link"
+
+// typedExtensionPlatformsForKey maps a reserved extension key to the task
+// platform identities (numeric channel-type strings) it can be frozen on.
+func typedExtensionPlatformsForKey(key string) []string {
+	switch key {
+	case seedanceExtensionPluginKey:
+		return []string{strconv.Itoa(constant.ChannelTypeSeedanceLink)}
+	case "minimax-link":
+		return []string{strconv.Itoa(constant.ChannelTypeMiniMaxLink)}
+	default:
+		return nil
+	}
+}

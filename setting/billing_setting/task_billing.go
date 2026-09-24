@@ -62,10 +62,8 @@ func ValidateOneBillingExpression(modelName, expression, oldValue string) error 
 }
 
 // smokeTestGenericExpression validates finite, non-negative token prices with
-// generic request fields and requires tier() when requested. It duplicates the
-// shared smoke vectors loop locally so setting/billing_setting/tiered_billing.go
-// stays byte-identical to upstream (allowed narrow duplication per the
-// minimal-invasion rule).
+// generic request fields and requires tier() when requested. Rate resolution
+// is shared with the model pricing API's validator.
 func smokeTestGenericExpression(exprStr string, requireTier bool) error {
 	if _, err := billingexpr.CompileFromCache(exprStr); err != nil {
 		return err
@@ -82,7 +80,10 @@ func smokeTestGenericExpression(exprStr string, requireTier bool) error {
 		{P: 1000000, C: 1000000, Len: 1000000},
 	}
 
-	requests := billingExprSmokeRequests()
+	requests, err := exchangeRateSmokeRequests(exprStr, billingExprSmokeRequests())
+	if err != nil {
+		return err
+	}
 
 	for _, v := range vectors {
 		for _, request := range requests {

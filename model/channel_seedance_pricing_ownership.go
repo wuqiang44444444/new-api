@@ -15,10 +15,10 @@ func oppositeSeedancePricingModels(tx *gorm.DB, channelType, excludeID int) (map
 		tx = DB
 	}
 	query := tx.Model(&Channel{}).Select("models").Where("id <> ?", excludeID)
-	if channelType == constant.ChannelTypeSeedanceLink {
-		query = query.Where("type <> ?", constant.ChannelTypeSeedanceLink)
+	if channelType == constant.ChannelTypeSeedanceLink || channelType == constant.ChannelTypeMiniMaxLink {
+		query = query.Where("type NOT IN ?", typedStandardVideoChannelTypes)
 	} else {
-		query = query.Where("type = ?", constant.ChannelTypeSeedanceLink)
+		query = query.Where("type IN ?", typedStandardVideoChannelTypes)
 	}
 	var channels []Channel
 	if err := query.Find(&channels).Error; err != nil {

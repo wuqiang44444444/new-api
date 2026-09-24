@@ -16,7 +16,7 @@ func SeedancePricingChannels(channels []Channel) map[string][]Channel {
 	selected := make(map[string][]Channel)
 	enabled := make(map[string]bool)
 	for _, channel := range channels {
-		if channel.Type != constant.ChannelTypeSeedanceLink {
+		if channel.Type != constant.ChannelTypeSeedanceLink && channel.Type != constant.ChannelTypeMiniMaxLink {
 			continue
 		}
 		active := channel.Status == common.ChannelStatusEnabled

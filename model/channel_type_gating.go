@@ -9,5 +9,9 @@ import "github.com/QuantumNous/new-api/constant"
 // dispatch, so identical model names cannot accidentally pick a Batch channel
 // for sync traffic.
 func channelSkipsGenericAbilities(channelType int) bool {
-	return channelType == constant.ChannelTypeSeedanceLink || channelType == constant.ChannelTypeAzureBatch
+	if channelType == constant.ChannelTypeSeedanceLink || channelType == constant.ChannelTypeAzureBatch {
+		return true
+	}
+	// MiniMax Link channels share the typed no-generic-Ability contract.
+	return channelType == constant.ChannelTypeMiniMaxLink
 }

@@ -543,7 +543,18 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if privateData.Key != "" {
 		key = privateData.Key
 	}
+	if taskPollingDeferredByUpstreamSchedule(task, time.Now()) {
+		// Upstream cadence recommendation (currently the MiniMax JD task
+		// API): the background poller and the on-demand single GET refresh
+		// share this gate, so neither can hammer the provider between its
+		// scheduled query slots. The content download path is separate and
+		// never blocked here.
+		return nil
+	}
+	// The snapshot precedes the schedule write so re-arming the cadence
+	// registers as a persisted change on otherwise-unchanged observations.
 	snap := task.Snapshot()
+	scheduleTaskPollingAfterUpstreamQuery(task, time.Now())
 	adapterVersion, proceed, err := resolveLinkVideoPollVersion(ctx, ch, task)
 	if err != nil {
 		return fmt.Errorf("mark reconciliation required for task %s: %w", taskId, err)
@@ -623,13 +634,14 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassHookError, resp.StatusCode, err.Error())
 	}
 
-	if seedanceTaskSucceeded(task) && taskResult.Status != model.TaskStatusSuccess {
+	if typedVideoTaskSucceeded(task) && taskResult.Status != model.TaskStatusSuccess {
 		return fmt.Errorf("provider usage observation cannot change a successful task status")
 	}
 	logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
 
 	parsedStatus := model.TaskStatus(taskResult.Status)
-	if parsedStatus == model.TaskStatusUnknown || parsedStatus == "" || !knownPollStatus(parsedStatus) {
+	knownStatus := knownPollStatus(parsedStatus) || (task.HasMiniMaxBillingFacts() && parsedStatus == model.TaskStatusCancelled)
+	if parsedStatus == model.TaskStatusUnknown || parsedStatus == "" || !knownStatus {
 		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassUnrecognized, resp.StatusCode, taskResult.Reason)
 	}
 	if classifyPollHTTP(resp.StatusCode) == pollClassOtherClient && isNonTerminalPollStatus(parsedStatus) {
@@ -686,6 +698,12 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		taskResult.Progress = taskcommon.ProgressComplete
 		shouldFinalizeBilling = true
 	}
+	if task.HasMiniMaxBillingFacts() && parsedStatus.ShouldRefundOnTerminal() {
+		shouldFinalizeBilling = true
+		if task.FinishTime == 0 {
+			task.FinishTime = now
+		}
+	}
 	if taskResult.Progress != "" {
 		task.Progress = taskResult.Progress
 	}
@@ -699,7 +717,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		won, err := task.UpdateWithStatus(snap.Status)
 		if err != nil {
 			logger.LogError(ctx, fmt.Sprintf("UpdateWithStatus failed for task %s: %s", task.TaskID, err.Error()))
-			if task.HasSeedanceBillingFacts() {
+			if task.HasTypedVideoBillingFacts() {
 				return err
 			}
 			shouldFinalizeBilling = false
@@ -707,11 +725,11 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			logger.LogWarn(ctx, fmt.Sprintf("Task %s CAS lost or no-op update, skip billing", task.TaskID))
 			shouldFinalizeBilling = false
 		}
-	} else if !snap.Equal(task.Snapshot()) || seedanceTaskSucceeded(task) {
+	} else if !snap.Equal(task.Snapshot()) || typedVideoTaskSucceeded(task) {
 		won, err := task.UpdateWithStatus(snap.Status)
 		if err != nil {
 			logger.LogError(ctx, fmt.Sprintf("Failed to update task %s: %s", task.TaskID, err.Error()))
-			if task.HasSeedanceBillingFacts() {
+			if task.HasTypedVideoBillingFacts() {
 				return err
 			}
 			shouldFinalizeBilling = false
@@ -725,7 +743,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 	if shouldFinalizeBilling {
 		billingSettled := settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
-		if task.Status == model.TaskStatusFailure && !billingSettled && task.Quota != 0 {
+		if (task.Status == model.TaskStatusFailure || (task.HasMiniMaxBillingFacts() && task.Status.ShouldRefundOnTerminal())) && !billingSettled && task.Quota != 0 {
 			refundTaskWithReconcile(ctx, task, task.FailReason)
 		}
 	}
@@ -783,7 +801,7 @@ func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor
 	}
 	if bc := task.PrivateData.BillingContext; bc != nil && bc.TieredSnapshot != nil {
 		// 用量表达式结算只适用于成功任务；失败任务由调用方全额退款。
-		if task.Status == model.TaskStatusFailure {
+		if task.Status == model.TaskStatusFailure || (task.HasMiniMaxBillingFacts() && task.Status.ShouldRefundOnTerminal()) {
 			return false
 		}
 		usageFacts := make(map[string]any, len(bc.TieredSnapshot.UsageFacts)+len(taskResult.UsageFacts))
@@ -874,7 +892,7 @@ func recordPollFailure(ctx context.Context, adaptor TaskPollingAdaptor, task *mo
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if seedanceTaskSucceeded(task) {
+	if typedVideoTaskSucceeded(task) {
 		return fmt.Errorf("provider usage observation failed (%s, HTTP %d)", class, statusCode)
 	}
 	task.PrivateData.PollFailures++

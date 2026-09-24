@@ -62,7 +62,10 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
     },
     {
       label: t('Total Usage'),
-      value: formatQuota(props.user?.used_quota ?? 0),
+      value:
+        props.user?.used_quota == null
+          ? t('Usage needs review')
+          : formatQuota(props.user.used_quota),
       description: t('Total consumed quota'),
       icon: BarChart3,
       tone: 'info',

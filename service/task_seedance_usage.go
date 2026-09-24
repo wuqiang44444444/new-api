@@ -8,8 +8,8 @@ import (
 	"github.com/QuantumNous/new-api/pkg/seedancebilling"
 )
 
-func seedanceTaskSucceeded(task *model.Task) bool {
-	return task != nil && task.HasSeedanceBillingFacts() && task.Status == model.TaskStatusSuccess
+func typedVideoTaskSucceeded(task *model.Task) bool {
+	return task != nil && task.HasTypedVideoBillingFacts() && task.Status == model.TaskStatusSuccess
 }
 
 // Registered Seedance protocols share missing-usage recovery. Pricing dependencies

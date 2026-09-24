@@ -20,6 +20,12 @@ type RequestInput struct {
 	// a drifted clock. The value is per-run state and is never captured by
 	// the shared compile cache.
 	PricingTime *time.Time
+	// ExchangeRate freezes the CNY/USD rate fact used by usd_exchange_rate()
+	// for this run. Nil keeps fail-closed semantics: the function errors
+	// instead of guessing. Like PricingTime it is per-run state, never
+	// captured by the shared compile cache; settlement overrides it from the
+	// BillingSnapshot.
+	ExchangeRate *ExchangeRateContext
 }
 
 // TokenParams holds all token dimensions passed into an Expr evaluation.
@@ -74,6 +80,12 @@ type BillingSnapshot struct {
 	// UsageUnits freezes declared meter units for historical statement display.
 	// Enum/boolean fields retain their type; this never affects evaluation.
 	UsageUnits map[string]string `json:"usage_units,omitempty"`
+	// UsdExchangeRate freezes the CNY/USD rate fact for expressions that call
+	// usd_exchange_rate(). Nil when the expression does not depend on it.
+	// Settlement always re-injects this frozen fact; it never re-reads the
+	// current setting, so a later global rate change cannot reprice an
+	// already-accepted request.
+	UsdExchangeRate *ExchangeRateContext `json:"usd_exchange_rate,omitempty"`
 }
 
 // TieredResult holds everything needed after running tiered settlement.

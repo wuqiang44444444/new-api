@@ -14,7 +14,11 @@ type TaskBillingReconcileSummary struct {
 
 func prepareTerminalTaskBilling(task *model.Task, result *relaycommon.TaskInfo) {
 	async := task.PrivateData.AsyncBilling
-	if async == nil || (task.HasTaskUsageBilling() && !task.HasSeedanceBillingFacts()) || (async.State == model.TaskBillingStateSettled && !task.HasSeedanceBillingFacts()) {
+	// Both typed video families carry frozen usage-billing snapshots; the
+	// MiniMax typed identity must pass the same terminal preparation (usage
+	// evidence and refundable-terminal operation) as Seedance.
+	typedVideoFacts := task.HasTypedVideoBillingFacts()
+	if async == nil || (task.HasTaskUsageBilling() && !typedVideoFacts) || (async.State == model.TaskBillingStateSettled && !typedVideoFacts) {
 		return
 	}
 	async.ActualTokens = result.CompletionTokens
@@ -23,7 +27,7 @@ func prepareTerminalTaskBilling(task *model.Task, result *relaycommon.TaskInfo) 
 	}
 	async.ActualUsageReported = result.UsageReported || result.CompletionTokens > 0 || result.TotalTokens > 0
 	async.ActualUsageSource = result.UsageSource
-	if len(result.UsageEvidence) > 0 || task.HasSeedanceBillingFacts() {
+	if len(result.UsageEvidence) > 0 || typedVideoFacts {
 		async.ActualUsageEvidence = result.UsageEvidence
 	}
 	if result.ProviderBillingEvidence != nil {

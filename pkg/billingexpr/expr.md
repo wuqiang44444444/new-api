@@ -89,6 +89,7 @@ Powered by [expr-lang/expr](https://github.com/expr-lang/expr). Expressions are 
 | `abs` | `abs(x) → float64` | Absolute value |
 | `ceil` | `ceil(x) → float64` | Ceiling |
 | `floor` | `floor(x) → float64` | Floor |
+| `usd_exchange_rate` | `usd_exchange_rate() → float64` | Frozen CNY/USD rate of the billing run (see below) |
 
 ### Expression Examples
 
@@ -312,6 +313,46 @@ compile cache never captures it, and reusing a cached program across jobs or
 requests cannot leak one job's time into another. Timezone conversion follows
 each call site's `tz` argument exactly as before (`hour("Asia/Shanghai")`
 evaluates the frozen instant in Asia/Shanghai).
+
+---
+
+## Frozen Exchange Rate (request context)
+
+`usd_exchange_rate()` returns the `CNY/USD` rate (CNY per 1 USD) of the
+current billing context. It lets an administrator express an official CNY
+list price once — for example
+`tier("1K", (0.30 + (param("input_image_count") == nil ? 0 : max(param("input_image_count") - 1, 0) * 0.02)) / usd_exchange_rate() * 1000000)`
+— without maintaining a hardcoded divisor inside the expression.
+
+The function is deterministic under an immutable context:
+
+- The engine never reads the database, the global setting or an external
+  rate service. The host resolves `USDExchangeRate` once per request and
+  passes an immutable `ExchangeRateContext` (source key, value, frozen
+  instant) into the run; the shared compile cache never captures it.
+- Pre-consume freezes the rate into `BillingSnapshot.UsdExchangeRate`.
+  Settlement, re-estimates, polling and recovery always re-inject the frozen
+  fact and override any externally supplied value; a later change of the
+  global setting only reprices new requests.
+- Fail closed: a missing, non-finite, zero or negative rate is a billing
+  configuration error. There is no fallback to 1, the built-in default or
+  the last successful value. Expressions that do not call the function gain
+  no dependency.
+- The function only converts currency; it never changes the unit contract.
+  Token expressions keep the per-million scaling, task `u()` expressions keep
+  returning USD directly, and `TaskUsageBilling` is unaffected.
+- Dependency detection is AST-based (`UsesExchangeRate`), covers untaken
+  branches before optimization, and is shared by save-time validation and runtime.
+  Context validation runs before evaluation even when a rate branch is untaken.
+  Function aliases and indirect calls are rejected at compile time. Static `$env`
+  access to other fields remains supported; passing or dynamically indexing the
+  environment is rejected because it could hide a rate-function reference.
+- Display projections fold the function only under an explicit rate context
+  and key their amount cache by the rate value. Each response attaches its own
+  copied rate metadata; frozen timestamps are never reused from the cache.
+  History without a recorded frozen
+  rate fact is shown as explicitly unprovable (`exchange_rate_unresolved`),
+  never repriced with the current setting.
 
 ---
 

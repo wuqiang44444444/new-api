@@ -42,21 +42,31 @@ func GetAllEnableAbilityWithChannels() ([]AbilityWithChannel, error) {
 		return nil, err
 	}
 	seedanceAbilities, err := enabledSeedanceAbilityViews(DB)
-	return append(abilities, seedanceAbilities...), err
+	if err != nil {
+		return nil, err
+	}
+	abilities = append(abilities, seedanceAbilities...)
+	minimaxAbilities, err := enabledMiniMaxAbilityViews(DB)
+	if err != nil {
+		return nil, err
+	}
+	return append(abilities, minimaxAbilities...), err
 }
 
 func GetGroupEnabledModels(group string) []string {
 	var models []string
 	// Find distinct models
 	DB.Table("abilities").Where(commonGroupCol+" = ? and enabled = ?", group, true).Distinct("model").Pluck("model", &models)
-	return appendEnabledSeedanceModels(models, group)
+	models = appendEnabledSeedanceModels(models, group)
+	return appendEnabledMiniMaxModels(models, group)
 }
 
 func GetEnabledModels() []string {
 	var models []string
 	// Find distinct models
 	DB.Table("abilities").Where("enabled = ?", true).Distinct("model").Pluck("model", &models)
-	return appendEnabledSeedanceModels(models, "")
+	models = appendEnabledSeedanceModels(models, "")
+	return appendEnabledMiniMaxModels(models, "")
 }
 
 func GetAllEnableAbilities() []Ability {

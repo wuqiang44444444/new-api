@@ -3,6 +3,7 @@ package billingexpr
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -43,6 +44,10 @@ const (
 	DisplayReasonDisplayLimit        = "display_limit_exceeded"
 	DisplayReasonVersionUnsupported  = "version_unsupported"
 	DisplayReasonTaskUsageExpression = "task_usage_expression"
+	// DisplayReasonExchangeRateUnresolved marks rate-dependent expressions
+	// projected without a proven exchange-rate context. Amounts are hidden
+	// instead of repricing with the current setting.
+	DisplayReasonExchangeRateUnresolved = "exchange_rate_unresolved"
 )
 
 // token display vars accepted in tier bodies; anything outside this set
@@ -115,6 +120,9 @@ type DisplayProjection struct {
 	Rules             []DisplayRule     `json:"rules,omitempty"`
 	ConstantCharge    *float64          `json:"constant_charge,omitempty"`
 	Scenarios         []DisplayScenario `json:"scenarios,omitempty"`
+	// AppliedExchangeRate 记录本投影折叠 usd_exchange_rate() 时实际采用的
+	// 汇率上下文（当前设置或历史冻结值）；表达式不依赖汇率时缺省。
+	AppliedExchangeRate *ExchangeRateContext `json:"applied_exchange_rate,omitempty"`
 }
 
 var (
@@ -150,9 +158,83 @@ func DisplayProjectionFor(exprStr string) (*DisplayProjection, error) {
 	return projection, nil
 }
 
+// DisplayProjectionForWithRate 是带汇率上下文的投影入口。表达式依赖
+// usd_exchange_rate() 时，汇率数值参与缓存键；同一表达式在不同汇率下
+// 得到不同投影，互不串值。rate 为 nil 且表达式依赖汇率时，整体标记
+// exchange_rate_unresolved，不返回猜价。
+func DisplayProjectionForWithRate(exprStr string, rate *ExchangeRateContext) (*DisplayProjection, error) {
+	if strings.TrimSpace(exprStr) == "" {
+		return nil, fmt.Errorf("empty billing expression")
+	}
+	if !UsesExchangeRate(exprStr) {
+		return DisplayProjectionFor(exprStr)
+	}
+	if rate.Validate() != nil {
+		return buildUnresolvedRateProjection(exprStr, DisplayUnitUSDPerMillionTokens)
+	}
+	key := ExprHashString(exprStr + "\x00exchange_rate\x00" + strconv.FormatFloat(rate.Rate, 'g', -1, 64))
+	displayCacheMu.RLock()
+	if cached, ok := displayCache[key]; ok {
+		displayCacheMu.RUnlock()
+		return projectionWithExchangeRate(cached, rate), nil
+	}
+	displayCacheMu.RUnlock()
+	projection, err := BuildDisplayProjectionWithRate(exprStr, rate)
+	if err != nil {
+		return nil, err
+	}
+	projection.AppliedExchangeRate = nil
+	displayCacheMu.Lock()
+	if len(displayCache) >= maxDisplayCacheSize {
+		displayCache = make(map[string]*DisplayProjection, 64)
+	}
+	displayCache[key] = projection
+	displayCacheMu.Unlock()
+	return projectionWithExchangeRate(projection, rate), nil
+}
+
+// buildUnresolvedRateProjection 返回明确的不可展开投影并按专用键有界缓存。
+// 键与普通投影分开，保证无论普通路径是否先缓存了折叠失败的原因，无汇率
+// 上下文的查询始终得到规范的 exchange_rate_unresolved。
+func buildUnresolvedRateProjection(exprStr string, unit string) (*DisplayProjection, error) {
+	hash := ExprHashString(exprStr)
+	key := ExprHashString(exprStr + "\x00exchange_rate_unresolved\x00" + unit)
+	displayCacheMu.RLock()
+	if cached, ok := displayCache[key]; ok {
+		displayCacheMu.RUnlock()
+		return cached, nil
+	}
+	displayCacheMu.RUnlock()
+	if _, err := CompileFromCache(exprStr); err != nil {
+		return nil, err
+	}
+	version, _ := ParseExprVersion(exprStr)
+	projection := &DisplayProjection{
+		Status:            DisplayStatusOpaque,
+		Reason:            DisplayReasonExchangeRateUnresolved,
+		Unit:              unit,
+		DisplayVersion:    DisplayProjectionVersion,
+		ExpressionVersion: version,
+		ExpressionHash:    hash,
+	}
+	displayCacheMu.Lock()
+	if len(displayCache) >= maxDisplayCacheSize {
+		displayCache = make(map[string]*DisplayProjection, 64)
+	}
+	displayCache[key] = projection
+	displayCacheMu.Unlock()
+	return projection, nil
+}
+
 // BuildDisplayProjection 解析原始表达式并产出严格投影。表达式无法编译
 // 时返回错误（语法无效是请求错误，不是合法的不可展开）。
 func BuildDisplayProjection(exprStr string) (*DisplayProjection, error) {
+	return BuildDisplayProjectionWithRate(exprStr, nil)
+}
+
+// BuildDisplayProjectionWithRate 以给定汇率上下文折叠 usd_exchange_rate()
+// 常数子表达式。rate 为 nil 时汇率调用不可折叠，整体保持不可展开。
+func BuildDisplayProjectionWithRate(exprStr string, rate *ExchangeRateContext) (*DisplayProjection, error) {
 	if strings.TrimSpace(exprStr) == "" {
 		return nil, fmt.Errorf("empty billing expression")
 	}
@@ -178,7 +260,10 @@ func BuildDisplayProjection(exprStr string) (*DisplayProjection, error) {
 		projection.Reason = DisplayReasonUnsupportedShape
 		return projection, nil
 	}
-	builder := &displayBuilder{projection: projection}
+	builder := &displayBuilder{projection: projection, rate: rate}
+	if rate != nil && UsesExchangeRate(exprStr) {
+		projection.AppliedExchangeRate = rate
+	}
 	if builder.walkExpression(tree.Node) && builder.finish() {
 		projection.Status = DisplayStatusExact
 	} else {
@@ -194,12 +279,27 @@ func BuildDisplayProjection(exprStr string) (*DisplayProjection, error) {
 	return projection, nil
 }
 
-// displayBuilder 单次投影构建状态；fail 短路并记录稳定原因。
+// displayBuilder 单次投影构建状态；fail 短路并记录稳定原因。rate 是本次
+// 投影绑定的汇率上下文，仅用于常数折叠，不影响实际计费。
 type displayBuilder struct {
 	projection  *DisplayProjection
 	reason      string
 	constant    float64
 	hasConstant bool
+	rate        *ExchangeRateContext
+}
+
+// evalConstant 在常数折叠中把带上下文的 usd_exchange_rate() 视为常数；
+// 无上下文时该调用不可折叠，整体走不可展开路径。
+func (b *displayBuilder) evalConstant(node ast.Node) (float64, bool) {
+	if b.rate != nil {
+		if call, ok := node.(*ast.CallNode); ok {
+			if id, ok := call.Callee.(*ast.IdentifierNode); ok && id.Value == UsdExchangeRateFunc && len(call.Arguments) == 0 {
+				return b.rate.Rate, true
+			}
+		}
+	}
+	return evalConstant(node)
 }
 
 func (b *displayBuilder) fail(reason string) bool {
@@ -392,7 +492,7 @@ func (b *displayBuilder) walkTerm(term displayTerm) bool {
 	rulesBefore := len(b.projection.Rules)
 	var priceNode ast.Node
 	for _, factor := range factors {
-		if value, ok := evalConstant(factor.node); ok {
+		if value, ok := b.evalConstant(factor.node); ok {
 			if factor.div {
 				if value == 0 {
 					return b.fail(DisplayReasonUnrecognizedFactor)
@@ -577,7 +677,7 @@ func evalConstant(node ast.Node) (float64, bool) {
 // 同一变量出现多次正确合并；乘除括号和式、常数折叠都得到处理；任何
 // 非线性结构（变量平方、变量分母、未知调用）整体失败。
 func (b *displayBuilder) collectLinear(node ast.Node, scale float64) (*linearSum, bool) {
-	if value, ok := evalConstant(node); ok {
+	if value, ok := b.evalConstant(node); ok {
 		return &linearSum{coefficients: map[string]float64{}, constant: value * scale}, true
 	}
 	switch n := node.(type) {
@@ -598,15 +698,15 @@ func (b *displayBuilder) collectLinear(node ast.Node, scale float64) (*linearSum
 			}
 			return mergeLinearSum(left, right), true
 		case "*":
-			if leftValue, ok := evalConstant(n.Left); ok {
+			if leftValue, ok := b.evalConstant(n.Left); ok {
 				return b.collectLinear(n.Right, scale*leftValue)
 			}
-			if rightValue, ok := evalConstant(n.Right); ok {
+			if rightValue, ok := b.evalConstant(n.Right); ok {
 				return b.collectLinear(n.Left, scale*rightValue)
 			}
 			return nil, false
 		case "/":
-			if rightValue, ok := evalConstant(n.Right); ok {
+			if rightValue, ok := b.evalConstant(n.Right); ok {
 				if rightValue == 0 {
 					return nil, false
 				}

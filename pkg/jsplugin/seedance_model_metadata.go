@@ -8,6 +8,8 @@ import (
 // SeedanceVideoModelMetadata describes the existing published ModelArk fields.
 // It cannot create routes, customer models, prices or Provider-private fields.
 type SeedanceVideoModelMetadata struct {
+	AllowFrameImages            bool     `json:"allowFrameImages,omitempty"`
+	MaxPromptLength             int      `json:"maxPromptLength,omitempty"`
 	OmitDurationMaximum         bool     `json:"omitDurationMaximum,omitempty"`
 	PublishGenerateAudioDefault bool     `json:"publishGenerateAudioDefault,omitempty"`
 	AllowReturnLastFrame        bool     `json:"allowReturnLastFrame,omitempty"`
@@ -46,6 +48,9 @@ type SeedanceVideoModelMetadata struct {
 func (spec *SeedanceVideoModelMetadata) validate() error {
 	if spec == nil {
 		return nil
+	}
+	if spec.MaxPromptLength < 0 || spec.MaxPromptLength > 1000000 {
+		return fmt.Errorf("invalid prompt length bound")
 	}
 	if spec.DefaultDuration < 0 || spec.DefaultDuration > 60 || spec.IntelligentDurationSeconds < 0 || spec.IntelligentDurationSeconds > 60 || spec.MaxTotalMedia < 0 || spec.MaxTotalMedia > 64 || spec.MinDuration < 0 || spec.MaxDuration < spec.MinDuration || spec.MaxDuration > 60 ||
 		spec.MinImages < 0 || spec.MaxImages < 0 || spec.MaxVideos < 0 || spec.MaxAudios < 0 ||

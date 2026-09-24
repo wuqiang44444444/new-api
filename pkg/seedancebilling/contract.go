@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty/feicai"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/expr-lang/expr/ast"
 )
 
@@ -330,8 +331,15 @@ func smokeTestTaskExpression(expression string, schema map[string]jsplugin.Usage
 	if err != nil {
 		return err
 	}
+	var rate *billingexpr.ExchangeRateContext
+	if billingexpr.UsesExchangeRate(expression) {
+		rate, err = operation_setting.CurrentUsdExchangeRateContext()
+		if err != nil {
+			return fmt.Errorf("expression requires a valid USDExchangeRate setting: %w", err)
+		}
+	}
 	for _, usage := range vectors {
-		result, trace, err := billingexpr.RunExprWithRequest(expression, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: usage})
+		result, trace, err := billingexpr.RunExprWithRequest(expression, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: usage, ExchangeRate: rate})
 		if err != nil {
 			return fmt.Errorf("usage vector %v: run failed: %w", usage, err)
 		}

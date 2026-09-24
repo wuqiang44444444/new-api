@@ -591,6 +591,13 @@ function TaskPricingBreakdown({
           </ul>
         </div>
       )}
+      {billingDisplay?.applied_exchange_rate && (
+        <p className='text-muted-foreground mt-2 text-xs'>
+          {t('Amounts use the CNY/USD exchange rate {{rate}}; each request locks its rate at acceptance', {
+            rate: billingDisplay.applied_exchange_rate.rate,
+          })}
+        </p>
+      )}
     </section>
   )
 }

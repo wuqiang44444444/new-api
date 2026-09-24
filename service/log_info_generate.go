@@ -323,6 +323,11 @@ func InjectTieredBillingInfo(other *model.LogOther, relayInfo *relaycommon.Relay
 	}
 	other.SetPublic("billing_mode", "tiered_expr")
 	other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(snap.ExprString)))
+	if snap.UsdExchangeRate != nil {
+		// 最小汇率事实：解释费用、按冻结值展开历史展示；旧日志自然缺失
+		// 该字段并保持明确不可展开。
+		other.SetPublic("usd_exchange_rate", snap.UsdExchangeRate)
+	}
 	if result != nil {
 		other.SetPublic("matched_tier", result.MatchedTier)
 		if len(result.RequestRules) > 0 {

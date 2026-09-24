@@ -19,6 +19,7 @@ func GetContractModelMetadata(rules []ContractEntityRule) (map[string]dto.OpenAI
 	routes := make(map[string]map[int]string)
 	names := []string{}
 	seedance := make(map[string]bool)
+	minimax := make(map[string]bool)
 	for _, rule := range rules {
 		channel := channels[rule.ChannelId]
 		if channel.Type == constant.ChannelTypeAzureBatch {
@@ -39,6 +40,9 @@ func GetContractModelMetadata(rules []ContractEntityRule) (map[string]dto.OpenAI
 		if channel.Type == constant.ChannelTypeSeedanceLink {
 			seedance[rule.PublicModel] = true
 		}
+		if channel.Type == constant.ChannelTypeMiniMaxLink {
+			minimax[rule.PublicModel] = true
+		}
 		result[rule.PublicModel] = item
 	}
 	apis, err := GetPublicMediaModelAPIs(names, nil, routes)
@@ -57,6 +61,21 @@ func GetContractModelMetadata(rules []ContractEntityRule) (map[string]dto.OpenAI
 		}
 		for _, entry := range catalog {
 			if !seedance[entry.ModelName] {
+				continue
+			}
+			item := result[entry.ModelName]
+			api := entry.API
+			item.API = &api
+			result[entry.ModelName] = item
+		}
+	}
+	if len(minimax) > 0 {
+		catalog, err := GetConfiguredMiniMaxPublicModels()
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range catalog {
+			if !minimax[entry.ModelName] {
 				continue
 			}
 			item := result[entry.ModelName]

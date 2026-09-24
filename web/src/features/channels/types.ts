@@ -55,6 +55,7 @@ export const channelSchema = z.object({
   used_quota: z.number().default(0),
   model_mapping: z.string().nullish(),
   seedance_plugin_version: z.string().optional(),
+  minimax_plugin_version: z.string().optional(),
   status_code_mapping: z.string().nullish(),
   priority: z.number().nullish(),
   auto_ban: z.number().nullish(),

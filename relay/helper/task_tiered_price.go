@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/seedancebilling"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -41,15 +42,20 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 	estimatedTokens, ok := billing_setting.GetTaskPreConsumeTokens(info.OriginModelName)
 	// 已登记的 FunCloud/Synlink 纯冻结参数表达式例外：无实测用量依赖时不强制预扣预算；
 	// 依赖 u("tokens") 的新 Seedance 表达式仍然要求有效预算（不随迁移放宽既有协议规则）。
-	taskUsageBilling := info.ChannelMeta != nil && info.ChannelType == constant.ChannelTypeSeedanceLink
+	// MiniMax Link 的 jdcloud 协议同样是宿主探针参数计费：schema 只含宿主事实，
+	// 不含 tokens，credit 证据永远不是客户计价乘数。
+	isMinimaxLinkChannel := info.ChannelMeta != nil && info.ChannelType == constant.ChannelTypeMiniMaxLink
+	taskUsageBilling := info.ChannelMeta != nil &&
+		(info.ChannelType == constant.ChannelTypeSeedanceLink || isMinimaxLinkChannel)
 	if taskUsageBilling {
-		if err := seedancebilling.ValidateTaskExpressionInputs(exprString, seedancebilling.UsageFieldsForProtocol(info.ChannelOtherSettings.VideoUpstreamProtocol)); err != nil {
+		exprSchema := model.StandardVideoBillingFields(info.ChannelType, info.ChannelOtherSettings.VideoUpstreamProtocol)
+		if err := seedancebilling.ValidateTaskExpressionInputs(exprString, exprSchema); err != nil {
 			return types.PriceData{}, err
 		}
 	} else if vars := billingexpr.UsedVars(exprString); vars["u"] {
 		return types.PriceData{}, fmt.Errorf("model %s task usage expression requires the Seedance Link channel contract", info.OriginModelName)
 	}
-	if !ok && (!taskUsageBilling || seedancebilling.RequiresTokenBudget(info.ChannelOtherSettings.VideoUpstreamProtocol, exprString)) {
+	if !ok && (!taskUsageBilling || (!isMinimaxLinkChannel && seedancebilling.RequiresTokenBudget(info.ChannelOtherSettings.VideoUpstreamProtocol, exprString))) {
 		return types.PriceData{}, fmt.Errorf("model %s task pre-consume token upper bound is not configured", info.OriginModelName)
 	}
 
@@ -80,6 +86,10 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 		requestInput.Usage = usageFacts
 	} else {
 		params = billingexpr.TokenParams{C: float64(estimatedTokens)}
+	}
+
+	if err := AttachFrozenExchangeRate(exprString, &requestInput, info.TieredBillingSnapshot); err != nil {
+		return types.PriceData{}, fmt.Errorf("model %s: %w", info.OriginModelName, err)
 	}
 
 	groupRatioInfo := HandleGroupRatio(c, info)
@@ -125,10 +135,11 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 		ExprVersion:               billingexpr.ExprVersion(exprString),
 		TaskUsageBilling:          taskUsageBilling,
 		UsageFacts:                usageFacts,
+		UsdExchangeRate:           requestInput.ExchangeRate,
 	}
 	if taskUsageBilling {
-		snapshot.UsageUnits = seedancebilling.UsageUnitsForSchema(
-			seedancebilling.UsageFieldsForProtocol(info.ChannelOtherSettings.VideoUpstreamProtocol))
+		schema := model.StandardVideoBillingFields(info.ChannelType, info.ChannelOtherSettings.VideoUpstreamProtocol)
+		snapshot.UsageUnits = seedancebilling.UsageUnitsForSchema(schema)
 	}
 	info.TieredBillingSnapshot = snapshot
 	info.BillingRequestInput = &requestInput

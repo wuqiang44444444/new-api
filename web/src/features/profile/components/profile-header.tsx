@@ -100,7 +100,10 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
     },
     {
       label: t('Total Usage'),
-      value: formatQuota(profile.used_quota),
+      value:
+        profile.used_quota == null
+          ? t('Usage needs review')
+          : formatQuota(profile.used_quota),
       description: t('Total consumed quota'),
       icon: BarChart3,
       tone: 'info',

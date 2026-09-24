@@ -26,7 +26,7 @@ import { useSystemConfigStore } from '@/stores/system-config-store'
 
 type UserQuotaCellProps = {
   remaining: number
-  used: number
+  used: number | null
 }
 
 export function UserQuotaCell(props: UserQuotaCellProps) {
@@ -39,9 +39,10 @@ export function UserQuotaCell(props: UserQuotaCellProps) {
   const formattedRemaining = formatQuotaWithCurrency(props.remaining, {
     showSymbol: false,
   })
-  const formattedUsed = formatQuotaWithCurrency(props.used, {
-    showSymbol: false,
-  })
+  const formattedUsed =
+    props.used == null
+      ? t('Usage needs review')
+      : formatQuotaWithCurrency(props.used, { showSymbol: false })
 
   return (
     <QuotaDetailsPopover

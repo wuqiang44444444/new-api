@@ -304,7 +304,7 @@ func ListModels(c *gin.Context, modelType int) {
 			return
 		}
 	} else {
-		userOpenAiModels = appendConfiguredSeedanceModels(userOpenAiModels)
+		userOpenAiModels = appendConfiguredStandardVideoModels(userOpenAiModels)
 	}
 
 	switch modelType {
@@ -394,7 +394,7 @@ func RetrieveModel(c *gin.Context, modelType int) {
 	if !customerContractModelVisible(c, modelId) {
 		return
 	}
-	if respondConfiguredSeedanceModel(c, modelType, modelId) {
+	if respondConfiguredStandardVideoModel(c, modelType, modelId) {
 		return
 	}
 	if aiModel, ok := modelMetadataForRetrieve(c, modelId); c.IsAborted() {

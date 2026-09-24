@@ -553,7 +553,7 @@ export interface UserInfo {
   username: string
   display_name?: string
   quota: number
-  used_quota: number
+  used_quota: number | null
   request_count: number
   group?: string
   aff_code?: string

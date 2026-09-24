@@ -94,6 +94,7 @@ export function useSummaryCardsConfig(totals: {
   todayUsageDisplay: string
   usedDisplay: string
   requestCountDisplay: string
+  usageDescription: string
   currencyLabel: string
   currencyEnabled: boolean
 }) {
@@ -114,8 +115,8 @@ export function useSummaryCardsConfig(totals: {
       title: t('Historical Usage'),
       value: totals.usedDisplay,
       description: totals.currencyEnabled
-        ? `${t('Total consumed')} (${totals.currencyLabel})`
-        : t('Total consumed quota'),
+        ? `${totals.usageDescription} (${totals.currencyLabel})`
+        : totals.usageDescription,
       icon: TrendingUp,
     },
     {

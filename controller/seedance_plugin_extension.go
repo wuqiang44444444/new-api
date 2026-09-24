@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
+	"github.com/QuantumNous/new-api/pkg/minimaxplugin"
 	taskseedance "github.com/QuantumNous/new-api/relay/channel/task/seedance"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -24,21 +25,30 @@ func compileTaskPluginSource(source string, options pluginruntime.Options) (*plu
 			plugin, _, err := taskseedance.CompileSeedanceExtensionSource(source)
 			return plugin, err
 		}
+		if generic.Meta.Key == pluginruntime.MinimaxPluginKey {
+			plugin, _, err := CompileMinimaxExtensionSource(source)
+			return plugin, err
+		}
 		return generic, nil
 	}
 	key, keyErr := pluginruntime.MetaKeyFromSource(source, pluginruntime.Options{})
-	if keyErr != nil || key != taskseedance.SeedanceExtensionPluginKey {
+	if keyErr != nil || (key != taskseedance.SeedanceExtensionPluginKey && key != pluginruntime.MinimaxPluginKey) {
 		return nil, genericErr
+	}
+	if key == pluginruntime.MinimaxPluginKey {
+		plugin, _, err := CompileMinimaxExtensionSource(source)
+		return plugin, err
 	}
 	plugin, _, err := taskseedance.CompileSeedanceExtensionSource(source)
 	return plugin, err
 }
 
-// splitSeedanceExtensionRows separates seedance-link rows from the native
-// override set so the native registry never receives them (index isolation).
+// splitSeedanceExtensionRows separates typed extension rows (seedance-link
+// and minimax-link) from the native override set so the native registry
+// never receives them (index isolation).
 func splitSeedanceExtensionRows(rows []model.TaskPlugin) (native []model.TaskPlugin, extensions []model.TaskPlugin) {
 	for _, row := range rows {
-		if row.Key == taskseedance.SeedanceExtensionPluginKey {
+		if row.Key == taskseedance.SeedanceExtensionPluginKey || row.Key == pluginruntime.MinimaxPluginKey {
 			extensions = append(extensions, row)
 			continue
 		}
@@ -120,7 +130,7 @@ func applySeedanceExtensionListItem(item *taskPluginListItem) error {
 		item.RuntimeStatus = "disabled_fallback"
 		return nil
 	}
-	activeVersion, syncErrors := taskseedance.DescribeExtension()
+	activeVersion, syncErrors := describeTypedExtensionByKey(item.Meta.Key)
 	if len(syncErrors) > 0 {
 		item.RuntimeStatus = "compile_failed"
 		item.RuntimeError = syncErrors[0]
@@ -132,4 +142,13 @@ func applySeedanceExtensionListItem(item *taskPluginListItem) error {
 	}
 	item.RuntimeStatus = "registered"
 	return nil
+}
+
+// describeTypedExtensionByKey projects the runtime diagnostics of the
+// reserved typed extension that owns the plugin key.
+func describeTypedExtensionByKey(key string) (string, []string) {
+	if key == pluginruntime.MinimaxPluginKey {
+		return minimaxplugin.Default.Describe()
+	}
+	return taskseedance.DescribeExtension()
 }

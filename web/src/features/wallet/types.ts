@@ -231,7 +231,7 @@ export interface UserWalletData {
   /** Current quota balance */
   quota: number
   /** Total used quota */
-  used_quota: number
+  used_quota: number | null
   /** Total request count */
   request_count: number
   /** Affiliate quota (pending rewards) */

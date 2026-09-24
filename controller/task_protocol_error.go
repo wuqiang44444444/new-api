@@ -61,6 +61,9 @@ func taskProtocolErrorFields(taskErr *dto.TaskError, info *relaycommon.RelayInfo
 	status = taskErr.StatusCode
 	code = strings.TrimSpace(taskErr.Code)
 	message = taskErr.Message
+	if taskErr.LocalError && status == http.StatusServiceUnavailable && code == "reference_audio_unavailable" {
+		return status, code, "server_error", "Reference audio storage is temporarily unavailable"
+	}
 	// 已登记安全投影的证据错误：由唯一分类映射输出证据故障类别；未知
 	// 本地 5xx 仍走下方通用文案。
 	if rejection, ok := service.ClassifyTaskRequestEvidenceRejection(taskErr.Error); ok {

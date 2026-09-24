@@ -200,4 +200,10 @@ export type BillingDisplayProjection = {
   rules?: BillingDisplayRule[]
   constant_charge?: number
   scenarios?: Array<{ matched: boolean; tiers: BillingDisplayTier[] }>
+  /** 折叠 usd_exchange_rate() 时实际采用的汇率（当前设置或历史冻结值）。 */
+  applied_exchange_rate?: {
+    source_key: string
+    rate: number
+    frozen_at: string
+  }
 }

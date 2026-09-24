@@ -123,6 +123,7 @@ func clearChannelReadOnlyFields(channel *PatchChannel, requestData map[string]an
 // TestChannelFieldsAreClassified guard test enforces this.
 var channelNonSensitiveFields = map[string]struct{}{
 	"seedance_plugin_version":          {}, // non-persistent form consistency token
+	"minimax_plugin_version":           {}, // non-persistent form consistency token
 	"id":                               {},
 	"test_model":                       {},
 	"name":                             {},

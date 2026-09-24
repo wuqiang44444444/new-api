@@ -30,7 +30,7 @@ func batchBudgetOutput(frozen *model.BatchFrozenSnapshot, line BatchLineEstimate
 	bounds := map[string]batchPriceRange{
 		"p": {0, float64(line.InputEst)}, "len": {0, float64(line.InputEst)}, "cr": {0, float64(line.InputEst)}, "c": {0, float64(line.OutputCap)},
 	}
-	value, err := batchBudgetRange(tree.Node, bounds)
+	value, err := batchBudgetRange(tree.Node, bounds, frozen.UsdExchangeRate)
 	if err != nil {
 		return 0, err
 	}
@@ -40,7 +40,7 @@ func batchBudgetOutput(frozen *model.BatchFrozenSnapshot, line BatchLineEstimate
 	return value.high, nil
 }
 
-func batchBudgetRange(node ast.Node, bounds map[string]batchPriceRange) (batchPriceRange, error) {
+func batchBudgetRange(node ast.Node, bounds map[string]batchPriceRange, rate *billingexpr.ExchangeRateContext) (batchPriceRange, error) {
 	invalid := fmt.Errorf("batch expression cannot be safely budgeted; use token arithmetic and tier branches")
 	switch n := node.(type) {
 	case *ast.IntegerNode:
@@ -54,17 +54,17 @@ func batchBudgetRange(node ast.Node, bounds map[string]batchPriceRange) (batchPr
 		}
 		return batchPriceRange{}, invalid
 	case *ast.ConditionalNode:
-		a, err := batchBudgetRange(n.Exp1, bounds)
+		a, err := batchBudgetRange(n.Exp1, bounds, rate)
 		if err != nil {
 			return a, err
 		}
-		b, err := batchBudgetRange(n.Exp2, bounds)
+		b, err := batchBudgetRange(n.Exp2, bounds, rate)
 		if err != nil {
 			return b, err
 		}
 		return batchPriceRange{math.Min(a.low, b.low), math.Max(a.high, b.high)}, nil
 	case *ast.UnaryNode:
-		v, err := batchBudgetRange(n.Node, bounds)
+		v, err := batchBudgetRange(n.Node, bounds, rate)
 		if err != nil {
 			return v, err
 		}
@@ -78,15 +78,22 @@ func batchBudgetRange(node ast.Node, bounds map[string]batchPriceRange) (batchPr
 	case *ast.CallNode:
 		name, ok := n.Callee.(*ast.IdentifierNode)
 		if ok && name.Value == "tier" && len(n.Arguments) == 2 {
-			return batchBudgetRange(n.Arguments[1], bounds)
+			return batchBudgetRange(n.Arguments[1], bounds, rate)
+		}
+		// The frozen per-job rate acts as a constant in the interval
+		// arithmetic; without a frozen fact the call cannot be budgeted and
+		// the expression is rejected before funds are held.
+		if ok && name.Value == billingexpr.UsdExchangeRateFunc && len(n.Arguments) == 0 && rate != nil {
+			v := rate.Rate
+			return batchPriceRange{v, v}, nil
 		}
 		return batchPriceRange{}, invalid
 	case *ast.BinaryNode:
-		a, err := batchBudgetRange(n.Left, bounds)
+		a, err := batchBudgetRange(n.Left, bounds, rate)
 		if err != nil {
 			return a, err
 		}
-		b, err := batchBudgetRange(n.Right, bounds)
+		b, err := batchBudgetRange(n.Right, bounds, rate)
 		if err != nil {
 			return b, err
 		}

@@ -65,7 +65,7 @@ await i18n.init({
   initAsync: false,
 })
 
-function QuotaTable(props: { remaining: number; used: number }) {
+function QuotaTable(props: { remaining: number; used: number | null }) {
   const columns = useUsersColumns().filter((column) =>
     ['quota', 'used_quota'].includes(
       column.id ?? ('accessorKey' in column ? String(column.accessorKey) : '')
@@ -434,4 +434,15 @@ it('labels raw quota mode as tokens without introducing a currency symbol', () =
   expect(
     within(screen.getAllByRole('cell')[0]).getByText('200')
   ).toBeInTheDocument()
+})
+
+it('keeps the balance visible while unresolved usage is withheld', () => {
+  render(
+    <I18nextProvider i18n={i18n}>
+      <QuotaTable remaining={1900} used={null} />
+    </I18nextProvider>
+  )
+  expect(screen.getByText('Usage needs review')).toBeInTheDocument()
+  expect(screen.getByText('0.0038')).toBeInTheDocument()
+  expect(screen.queryByText('No Quota')).not.toBeInTheDocument()
 })

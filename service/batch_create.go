@@ -16,6 +16,7 @@ import (
 	azurebatch "github.com/QuantumNous/new-api/relay/channel/azurebatch"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -108,6 +109,13 @@ func CreateBatchJob(c *gin.Context, request *dto.BatchCreateRequest) (*BatchCrea
 	if err != nil {
 		return nil, err
 	}
+	var frozenRate *billingexpr.ExchangeRateContext
+	if billingexpr.UsesExchangeRate(expr) {
+		frozenRate, err = operation_setting.CurrentUsdExchangeRateContext()
+		if err != nil {
+			return nil, fmt.Errorf("batch model %s requires a valid USDExchangeRate setting: %w", publicModel, err)
+		}
+	}
 	lineParams, err := freezeBatchPricingParameters(expr, data)
 	if err != nil {
 		return nil, err
@@ -127,6 +135,7 @@ func CreateBatchJob(c *gin.Context, request *dto.BatchCreateRequest) (*BatchCrea
 		Endpoint:         request.Endpoint,
 		CompletionWindow: request.CompletionWindow,
 		ContractFact:     fact,
+		UsdExchangeRate:  frozenRate,
 		LineInputs:       converted.LineInputs,
 	}
 	estimate, err := estimateBatchJobQuota(&frozen, converted.LineEstimates)

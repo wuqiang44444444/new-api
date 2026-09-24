@@ -283,8 +283,8 @@ func InitLogDB() (err error) {
 var userQuotaColumns = []string{"quota", "used_quota", "aff_quota", "aff_history"}
 
 // ensureUserQuotaColumns rejects a legacy 32-bit wallet schema before any
-// migrations run. The 64-bit-only build intentionally does not auto-upgrade
-// an existing wallet; operators must migrate it explicitly before starting.
+// migrations run. The cumulative usage projection can be widened independently;
+// an existing 32-bit wallet still requires its separate migration.
 func ensureUserQuotaColumns(db *gorm.DB, dbType common.DatabaseType) error {
 	if common.GetEnvOrDefaultBool("SKIP_64BIT_QUOTA_SCHEMA_CHECK", false) {
 		common.SysLog("SKIP_64BIT_QUOTA_SCHEMA_CHECK=true; skipping user quota schema check")
@@ -300,6 +300,7 @@ func ensureUserQuotaColumns(db *gorm.DB, dbType common.DatabaseType) error {
 	if err != nil {
 		return fmt.Errorf("failed to inspect users schema: %w", err)
 	}
+	usageNeedsMigration := false
 	for _, expected := range userQuotaColumns {
 		for _, actual := range columnTypes {
 			if !strings.EqualFold(actual.Name(), expected) {
@@ -307,9 +308,16 @@ func ensureUserQuotaColumns(db *gorm.DB, dbType common.DatabaseType) error {
 			}
 			dataType := actual.DatabaseTypeName()
 			if !is64BitIntegerType(dbType, dataType) {
+				if expected == "used_quota" {
+					usageNeedsMigration = true
+					continue
+				}
 				return fmt.Errorf("users.%s uses %s; 32-bit is not supported", expected, dataType)
 			}
 		}
+	}
+	if usageNeedsMigration {
+		return migrateUserUsedQuotaColumn(db, dbType)
 	}
 	return nil
 }

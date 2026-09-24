@@ -336,6 +336,7 @@ func Register(c *gin.Context) {
 }
 
 func GetAllUsers(c *gin.Context) {
+	setAuthNoStore(c)
 	pageInfo := common.GetPageQuery(c)
 	sortOptions := model.NewUserSortOptions(c.Query("sort_by"), c.Query("sort_order"))
 	users, total, err := model.GetAllUsers(pageInfo, sortOptions)
@@ -345,13 +346,14 @@ func GetAllUsers(c *gin.Context) {
 	}
 
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(users)
+	pageInfo.SetItems(projectUsersUsage(users))
 
 	common.ApiSuccess(c, pageInfo)
 	return
 }
 
 func SearchUsers(c *gin.Context) {
+	setAuthNoStore(c)
 	keyword := c.Query("keyword")
 	group := c.Query("group")
 	var role *int
@@ -375,7 +377,7 @@ func SearchUsers(c *gin.Context) {
 	}
 
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(users)
+	pageInfo.SetItems(projectUsersUsage(users))
 	common.ApiSuccess(c, pageInfo)
 	return
 }
@@ -385,6 +387,7 @@ func canManageTargetRole(myRole int, targetRole int) bool {
 }
 
 func GetUser(c *gin.Context) {
+	setAuthNoStore(c)
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		common.ApiError(c, err)
@@ -404,7 +407,7 @@ func GetUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    user,
+		"data":    projectUserUsage(user),
 	})
 	return
 }
@@ -463,6 +466,7 @@ func GetAffCode(c *gin.Context) {
 }
 
 func GetSelf(c *gin.Context) {
+	setAuthNoStore(c)
 	id := c.GetInt("id")
 	userRole := c.GetInt("role")
 	user, err := model.GetSelfUserById(id)
@@ -508,7 +512,7 @@ func buildSelfUserData(user *model.User) map[string]any {
 		"telegram_id":       user.TelegramId,
 		"group":             user.Group,
 		"quota":             user.Quota,
-		"used_quota":        user.UsedQuota,
+		"used_quota":        model.UserUsedQuotaForDisplay(user),
 		"request_count":     user.RequestCount,
 		"aff_code":          user.AffCode,
 		"aff_count":         user.AffCount,

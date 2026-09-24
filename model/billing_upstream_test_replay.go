@@ -119,7 +119,19 @@ func replayHistoricalTestAmount(log billingReconciliationLog, parsed parsedBilli
 			pending.reason = "missing_group_ratio"
 			return pending
 		}
-		tr, err := billingexpr.ComputeTieredQuota(&billingexpr.BillingSnapshot{ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), ExprVersion: billingexpr.ExprVersion(expression), GroupRatio: *parsed.discountRatio, QuotaPerUnit: common.QuotaPerUnit}, billingexpr.TokenParams{P: max(p, 0), C: c, Len: inputLen, CR: float64(cr), CC: cc5, CC1h: cc1})
+		var frozenRate *billingexpr.ExchangeRateContext
+		if billingexpr.UsesExchangeRate(expression) {
+			var fact map[string]any
+			if raw := other["usd_exchange_rate"]; len(raw) > 0 {
+				_ = common.Unmarshal(raw, &fact)
+			}
+			frozenRate = billingexpr.ParseExchangeRateFact(fact)
+			if frozenRate == nil {
+				pending.reason = "missing_exchange_rate"
+				return pending
+			}
+		}
+		tr, err := billingexpr.ComputeTieredQuota(&billingexpr.BillingSnapshot{ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), ExprVersion: billingexpr.ExprVersion(expression), GroupRatio: *parsed.discountRatio, QuotaPerUnit: common.QuotaPerUnit, UsdExchangeRate: frozenRate}, billingexpr.TokenParams{P: max(p, 0), C: c, Len: inputLen, CR: float64(cr), CC: cc5, CC1h: cc1})
 		if err != nil || tr.Clamp != nil || math.IsNaN(tr.ActualQuotaBeforeGroup) || math.IsInf(tr.ActualQuotaBeforeGroup, 0) || tr.ActualQuotaBeforeGroup < 0 {
 			return pending
 		}

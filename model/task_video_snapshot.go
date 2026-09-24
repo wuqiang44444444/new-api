@@ -13,6 +13,17 @@ import (
 // freezeTaskVideoUpstream keeps in-flight Seedance tasks bound to the
 // protocol, endpoint, and selected key used when they were created.
 func freezeTaskVideoUpstream(privateData *TaskPrivateData, channel *relaycommon.ChannelMeta) {
+	// MiniMax Link freezes the same snapshot shape with its own registered
+	// protocol; the shared fields stay provider-agnostic.
+	if channel.ChannelType == constant.ChannelTypeMiniMaxLink {
+		privateData.VideoUpstreamProtocol = channel.ChannelOtherSettings.VideoUpstreamProtocol
+		privateData.VideoUpstreamProfile = ""
+		privateData.VideoUpstreamQueryBaseURL = channel.ChannelBaseUrl
+		privateData.VideoUpstreamQueryPathTemplate = channel.ChannelOtherSettings.VideoUpstreamQueryPathTemplate
+		privateData.VideoUpstreamProxy = channel.ChannelSetting.Proxy
+		privateData.Key = channel.ApiKey
+		return
+	}
 	if channel.ChannelType != constant.ChannelTypeSeedanceLink {
 		return
 	}

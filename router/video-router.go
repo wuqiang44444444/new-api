@@ -37,7 +37,7 @@ func SetVideoRouter(router *gin.Engine) {
 		middleware.TaskClientProtocol("modelark_v3"),
 		middleware.TaskCreateResponseContract(),
 		middleware.ModelArkVideoCreateConvert(),
-		middleware.ResolveSeedanceChannel(),
+		middleware.ResolveStandardVideoChannel(),
 	)
 	{
 		modelArkVideoCreateRouter.POST("/contents/generations/tasks", controller.RelayTask)
@@ -47,7 +47,7 @@ func SetVideoRouter(router *gin.Engine) {
 	modelArkVideoReadRouter.Use(middleware.RouteTag("relay"))
 	modelArkVideoReadRouter.Use(middleware.TokenAuth(), middleware.TaskClientProtocol("modelark_v3"))
 	{
-		modelArkVideoReadRouter.GET("/contents/generations/models", controller.ListSeedanceModels)
+		modelArkVideoReadRouter.GET("/contents/generations/models", controller.ListStandardVideoModels)
 		modelArkVideoReadRouter.GET("/contents/generations/tasks", controller.ModelArkVideoList)
 		modelArkVideoReadRouter.GET("/contents/generations/tasks/:task_id", controller.ModelArkVideoGet)
 		modelArkVideoReadRouter.DELETE("/contents/generations/tasks/:task_id", controller.ModelArkVideoDelete)

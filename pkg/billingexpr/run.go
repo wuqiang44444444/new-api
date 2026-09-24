@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/expr-lang/expr"
-	"github.com/expr-lang/expr/vm"
 	"github.com/tidwall/gjson"
 )
 
@@ -30,7 +29,7 @@ func RunExprWithRequest(exprStr string, params TokenParams, request RequestInput
 	if err != nil {
 		return 0, TraceResult{}, err
 	}
-	return runProgram(entry.prog, entry.requestRules, params, request)
+	return runProgram(entry, params, request)
 }
 
 // RunExprByHash is like RunExpr but accepts a pre-computed hash for the cache
@@ -45,12 +44,17 @@ func RunExprByHashWithRequest(exprStr, hash string, params TokenParams, request 
 	if err != nil {
 		return 0, TraceResult{}, err
 	}
-	return runProgram(entry.prog, entry.requestRules, params, request)
+	return runProgram(entry, params, request)
 }
 
-func runProgram(prog *vm.Program, requestRules []RequestRuleTrace, params TokenParams, request RequestInput) (float64, TraceResult, error) {
+func runProgram(entry *cachedEntry, params TokenParams, request RequestInput) (float64, TraceResult, error) {
+	if entry.usesExchangeRate {
+		if err := request.ExchangeRate.Validate(); err != nil {
+			return 0, TraceResult{}, err
+		}
+	}
 	trace := TraceResult{
-		RequestRules: append([]RequestRuleTrace(nil), requestRules...),
+		RequestRules: append([]RequestRuleTrace(nil), entry.requestRules...),
 	}
 	headers := normalizeHeaders(request.Headers)
 
@@ -124,9 +128,22 @@ func runProgram(prog *vm.Program, requestRules []RequestRuleTrace, params TokenP
 		"abs":     math.Abs,
 		"ceil":    math.Ceil,
 		"floor":   math.Floor,
+
+		// The frozen CNY/USD context comes from the caller. Without one the
+		// call errors instead of falling back to any other value, so a rate
+		// misconfiguration surfaces before funds move.
+		UsdExchangeRateFunc: func() (float64, error) {
+			if request.ExchangeRate == nil {
+				return 0, fmt.Errorf("%s() has no frozen exchange-rate context for this billing run", UsdExchangeRateFunc)
+			}
+			if err := request.ExchangeRate.Validate(); err != nil {
+				return 0, err
+			}
+			return request.ExchangeRate.Rate, nil
+		},
 	}
 
-	out, err := expr.Run(prog, env)
+	out, err := expr.Run(entry.prog, env)
 	if err != nil {
 		return 0, trace, fmt.Errorf("expr run error: %w", err)
 	}

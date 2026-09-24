@@ -14,3 +14,14 @@ func GetSeedanceChannelConfiguration(c *gin.Context) {
 	}
 	common.ApiSuccess(c, configuration)
 }
+
+// GetMinimaxChannelConfiguration serves the active minimax-link declaration
+// snapshot for the MiniMax Link channel form.
+func GetMinimaxChannelConfiguration(c *gin.Context) {
+	configuration, err := model.GetMinimaxPluginConfiguration()
+	if err != nil {
+		common.ApiErrorMsg(c, "MiniMax plugin configuration is unavailable")
+		return
+	}
+	common.ApiSuccess(c, configuration)
+}

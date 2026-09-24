@@ -200,6 +200,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeNewAPI:         "New API",
 	ChannelTypeTaskPlugin:     "Task Plugin",
 	ChannelTypeSeedanceLink:   "Seedance Link",
+	ChannelTypeMiniMaxLink:    "MiniMax Link",
 	ChannelTypeAsyncImage:     "Image Relay",
 	ChannelTypeAzureBatch:     "Azure Batch",
 }

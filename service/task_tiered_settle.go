@@ -17,7 +17,7 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 	if async == nil || async.TieredSnapshot == nil {
 		return false
 	}
-	if task.HasSeedanceBillingFacts() {
+	if task.HasTypedVideoBillingFacts() {
 		// Re-read accepted facts under the row lock before deriving any funding instruction.
 		if err := task.UpdateBilling(); err != nil {
 			logger.LogWarn(ctx, "failed to load frozen task billing facts: "+err.Error())
@@ -38,13 +38,13 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 	// actualTokens 只来自持久化的已接受实测（ActualUsageReported 决定可信性），
 	// 预算不写入 ActualTokens、不推导出已报告标记、也不落入通用 facts 合并路径。
 	async.ActualTokens = actualTokens
-	if actualTokens > 0 && !task.HasSeedanceBillingFacts() {
+	if actualTokens > 0 && !task.HasTypedVideoBillingFacts() {
 		async.ActualUsageReported = true
 	}
 	// §5.5 实测依赖规则（与补查、资金目标保护同一实现）：u() 表达式只在读取实测
 	// token 时等待；纯冻结条件表达式按冻结事实直接结算；旧 c/_task 表达式保持
 	// 通用用量依赖。
-	if !async.ActualUsageReported && (!task.HasSeedanceBillingFacts() || seedancebilling.RequiresMeasuredTaskUsage(async.TieredSnapshot)) {
+	if !async.ActualUsageReported && (!task.HasTypedVideoBillingFacts() || seedancebilling.RequiresMeasuredTaskUsage(async.TieredSnapshot)) {
 		if awaitSeedanceUsage(ctx, task) {
 			return true
 		}

@@ -190,7 +190,7 @@ func buildCustomerContractPricePreview(pricing model.Pricing, effectiveMultiplie
 		preview.PriceType = "tiered_multiplier"
 		preview.BillingMode = billingMode
 		preview.BillingExpr = pricing.BillingExpr
-		preview.BillingDisplay, _ = billingexpr.DisplayProjectionFor(pricing.BillingExpr)
+		preview.BillingDisplay, _ = billingexpr.DisplayProjectionForWithRate(pricing.BillingExpr, currentDisplayExchangeRate())
 		if len(pricing.BillingUsageSchema) > 0 {
 			preview.UsageSchema = make(map[string]jsplugin.UsageFieldSchema, len(pricing.BillingUsageSchema))
 			for key, field := range pricing.BillingUsageSchema {

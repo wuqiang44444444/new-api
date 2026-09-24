@@ -22,6 +22,9 @@ func ComputeTieredQuota(snap *BillingSnapshot, params TokenParams) (TieredResult
 }
 
 func ComputeTieredQuotaWithRequest(snap *BillingSnapshot, params TokenParams, request RequestInput) (TieredResult, error) {
+	// Only the snapshot can supply settlement's rate, including when its
+	// fact is missing. A caller cannot fill that gap with today's setting.
+	request.ExchangeRate = snap.UsdExchangeRate
 	cost, trace, err := RunExprByHashWithRequest(snap.ExprString, snap.ExprHash, params, request)
 	if err != nil {
 		return TieredResult{}, err

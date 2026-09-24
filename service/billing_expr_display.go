@@ -9,11 +9,30 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
 // 只读投影的响应装配：为已经过权限过滤与脱敏的响应附加冻结表达式的展示
 // 投影。同一装配逻辑服务公开定价、合同定价与日志响应；投影缺失时前端按
 // 「暂无法展开」处理，不回退本地猜价。
+
+// currentDisplayExchangeRate 解析当前系统汇率用于「本次响应绑定」的展示
+// 投影。设置缺失或非法时返回 nil：展示按 exchange_rate_unresolved 明确
+// 不可展开处理，不猜价；资金路径的失败关闭行为不受影响。
+func currentDisplayExchangeRate() *billingexpr.ExchangeRateContext {
+	rate, err := operation_setting.CurrentUsdExchangeRateContext()
+	if err != nil {
+		return nil
+	}
+	return rate
+}
+
+// frozenLogExchangeRate 提取历史日志记录的冻结汇率事实。旧日志从未记录
+// 汇率时返回 nil，投影明确不可展开，禁止用当前设置反算历史价格。
+func frozenLogExchangeRate(other map[string]any) *billingexpr.ExchangeRateContext {
+	raw, _ := other["usd_exchange_rate"].(map[string]any)
+	return billingexpr.ParseExchangeRateFact(raw)
+}
 
 // AttachPricingBillingDisplayOne 为一个已通过可见性过滤的表达式定价模型
 // 附加只读投影。携带用量字段合同的任务表达式按任务 USD 单位投影；其余
@@ -29,15 +48,16 @@ func AttachPricingBillingDisplayOne(item *model.Pricing) {
 		for name, field := range item.BillingUsageSchema {
 			fields[name] = billingexpr.TaskUsageFieldInfo{Unit: field.Unit}
 		}
-		projection, err := billingexpr.TaskDisplayProjectionFor(expression, fields)
+		rate := currentDisplayExchangeRate()
+		projection, err := billingexpr.TaskDisplayProjectionForWithRate(expression, fields, rate)
 		if err != nil {
 			return
 		}
 		item.BillingDisplay = projection
-		item.BillingUsageExamples = pricedUsageExamples(expression, item.BillingUsageExamples)
+		item.BillingUsageExamples = pricedUsageExamples(expression, rate, item.BillingUsageExamples)
 		return
 	}
-	projection, err := billingexpr.DisplayProjectionFor(expression)
+	projection, err := billingexpr.DisplayProjectionForWithRate(expression, currentDisplayExchangeRate())
 	if err != nil {
 		return
 	}
@@ -45,15 +65,16 @@ func AttachPricingBillingDisplayOne(item *model.Pricing) {
 }
 
 // pricedUsageExamples 返回带 USD 金额的新示例切片。调用方传入的切片可能
-// 与定价缓存共享底层数组，必须写时复制，不得就地修改共享缓存。
-func pricedUsageExamples(expression string, examples []jsplugin.UsageExample) []jsplugin.UsageExample {
+// 与定价缓存共享底层数组，必须写时复制，不得就地修改共享缓存。示例金额
+// 以本次响应绑定的汇率上下文求值。
+func pricedUsageExamples(expression string, rate *billingexpr.ExchangeRateContext, examples []jsplugin.UsageExample) []jsplugin.UsageExample {
 	if len(examples) == 0 {
 		return examples
 	}
 	result := make([]jsplugin.UsageExample, len(examples))
 	copy(result, examples)
 	for i := range result {
-		total, _, err := billingexpr.RunExprWithRequest(expression, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: result[i].Facts})
+		total, _, err := billingexpr.RunExprWithRequest(expression, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: result[i].Facts, ExchangeRate: rate})
 		if err != nil || total < 0 || math.IsNaN(total) || math.IsInf(total, 0) {
 			continue
 		}
@@ -75,7 +96,6 @@ func AttachPricingBillingDisplay(items []model.Pricing) {
 // 历史合同解释，不按新任务单位投影重写。
 func AttachLogsBillingDisplay(logs []*model.Log) {
 	attachCustomerBillingExplanations(logs)
-	projections := make(map[string]*billingexpr.DisplayProjection)
 	for i := range logs {
 		other := logs[i].Other
 		if !strings.Contains(other, "expr_b64") {
@@ -96,13 +116,10 @@ func AttachLogsBillingDisplay(logs []*model.Log) {
 		if err != nil {
 			continue
 		}
-		projection, seen := projections[string(expression)]
-		if !seen {
-			projection, err = billingexpr.DisplayProjectionFor(string(expression))
-			if err != nil {
-				continue
-			}
-			projections[string(expression)] = projection
+		frozenRate := frozenLogExchangeRate(payload)
+		projection, err := billingexpr.DisplayProjectionForWithRate(string(expression), frozenRate)
+		if err != nil {
+			continue
 		}
 		payload["billing_display"] = projection
 		if encoded, err := common.Marshal(payload); err == nil {
@@ -118,7 +135,7 @@ func AttachModelPricingBillingDisplay(snapshot *model.ModelPricingSnapshot) {
 		if expression == "" {
 			continue
 		}
-		projection, err := billingexpr.DisplayProjectionFor(expression)
+		projection, err := billingexpr.DisplayProjectionForWithRate(expression, currentDisplayExchangeRate())
 		if err == nil {
 			snapshot.Entries[i].BillingDisplay = projection
 		}

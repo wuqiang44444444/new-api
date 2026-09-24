@@ -192,7 +192,7 @@ func GetModelPricingSnapshot(names []string) (*ModelPricingSnapshot, error) {
 		// 不得使 UI 进入原生任务编辑器（本次故障根因）。
 		if schema, ok := attribution.schemas[name]; ok {
 			entry.UsageSchema = schema
-			entry.PreconsumeTokenBudget = true
+			_, entry.PreconsumeTokenBudget = schema["tokens"]
 			entry.BillingContractConflict = attribution.pricingContractConflict(name)
 		} else if plugin, ok := generation.GetByModel(name); ok {
 			entry.UsageSchema = plugin.Meta.UsageSchema

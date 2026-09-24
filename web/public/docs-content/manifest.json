@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-09-19.1",
+  "contentVersion": "2026-09-24.3",
   "defaultLocale": "zh",
   "locales": {
     "zh": {
@@ -196,11 +196,20 @@
             },
             {
               "id": "videos-modelark",
-              "title": "ModelArk V3 Seedance 视频",
+              "title": "ModelArk V3 标准视频",
               "slug": "api-reference/videos/modelark",
               "file": "zh/api-reference/videos/modelark.md",
               "description": "文生、图生与多模态视频的创建、轮询、下载、素材引用和费用说明",
               "keywords": ["ModelArk", "参数", "响应"],
+              "assets": []
+            },
+            {
+              "id": "videos-minimax",
+              "title": "MiniMax H3 视频",
+              "slug": "api-reference/videos/minimax",
+              "file": "zh/api-reference/videos/minimax.md",
+              "description": "H3 参考图与音频、分辨率、时长、素材边界及下载窗口",
+              "keywords": ["MiniMax", "H3", "参考图", "音频", "2K"],
               "assets": []
             },
             {

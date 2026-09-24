@@ -309,6 +309,20 @@ func assetAdapterForModel(ctx context.Context, group, modelName string, userID i
 	if err != nil {
 		return nil, nil, ErrAssetUpstreamUnavailable
 	}
+	// An accessible MiniMax Link model publishes no asset operations and has
+	// no asset channel: answer with the existing unsupported-operation
+	// contract instead of resolving a Seedance channel or calling any asset
+	// upstream. The probe stays group-aware so models outside the caller's
+	// groups keep the existing not-found semantics and stay invisible.
+	if channel == nil {
+		minimaxChannel, minimaxErr := model.GetEnabledMiniMaxChannel(group, modelName, 0)
+		if minimaxErr != nil {
+			return nil, nil, ErrAssetUpstreamUnavailable
+		}
+		if minimaxChannel != nil {
+			return nil, nil, ErrUnsupportedAssetOperation
+		}
+	}
 	if channel == nil {
 		catalog, catalogErr := model.GetConfiguredSeedancePublicModels()
 		if catalogErr != nil {

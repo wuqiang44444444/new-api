@@ -252,6 +252,9 @@ export function PricingSection({ defaultValues }: PricingSectionProps) {
                     <FormDescription>
                       {t(
                         'Real exchange rate between USD and your payment gateway currency'
+                      )}{' '}
+                      {t(
+                        'Saving a new rate immediately reprices new requests of models whose expression uses usd_exchange_rate(); already accepted requests and history keep the rate frozen at acceptance'
                       )}
                     </FormDescription>
                     <FormMessage />

@@ -81,6 +81,11 @@ func ValidateSeedanceChannelModelUniqueness(tx *gorm.DB, channel *Channel) error
 	if channel == nil {
 		return nil
 	}
+	// The ModelArk V3 standard entry is shared by the typed video channels,
+	// so the shared uniqueness contract dispatches by type from this gate.
+	if channel.Type == constant.ChannelTypeMiniMaxLink {
+		return ValidateMiniMaxChannelModelUniqueness(tx, channel)
+	}
 	if err := validateSeedancePublishedChannelConfiguration(tx, channel); err != nil {
 		return err
 	}
@@ -90,39 +95,5 @@ func ValidateSeedanceChannelModelUniqueness(tx *gorm.DB, channel *Channel) error
 	if channel.Type != constant.ChannelTypeSeedanceLink || channel.Status != common.ChannelStatusEnabled {
 		return nil
 	}
-	if tx == nil {
-		tx = DB
-	}
-	models := make([]string, 0)
-	seen := make(map[string]struct{})
-	for _, value := range channel.GetModels() {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, exists := seen[value]; exists {
-			continue
-		}
-		seen[value] = struct{}{}
-		models = append(models, value)
-	}
-	if len(models) == 0 {
-		return fmt.Errorf("Seedance Link channel requires at least one customer model")
-	}
-	var channels []Channel
-	query := tx.Where("type = ? AND status = ?", constant.ChannelTypeSeedanceLink, common.ChannelStatusEnabled)
-	if channel.Id > 0 {
-		query = query.Where("id <> ?", channel.Id)
-	}
-	if err := query.Find(&channels).Error; err != nil {
-		return err
-	}
-	for i := range channels {
-		for _, modelName := range models {
-			if channelContainsModel(&channels[i], modelName) {
-				return fmt.Errorf("Seedance model %q is already enabled on channel %q (#%d). Disable it there before enabling this channel", modelName, channels[i].Name, channels[i].Id)
-			}
-		}
-	}
-	return nil
+	return validateTypedStandardVideoModelConflict(tx, channel, "Seedance Link")
 }

@@ -26,6 +26,7 @@ import { StaggerContainer, StaggerItem } from '@/components/page-transition'
 import { Button } from '@/components/ui/button'
 import { getUserQuotaDates } from '@/features/dashboard/api'
 import { useSummaryCardsConfig } from '@/features/dashboard/hooks/use-dashboard-config'
+import { useUserProfileRefresh } from '@/features/dashboard/hooks/use-user-profile-refresh'
 import type { QuotaDataItem } from '@/features/dashboard/types'
 import { useStatus } from '@/hooks/use-status'
 import { getCurrencyLabel, isCurrencyDisplayEnabled } from '@/lib/currency'
@@ -140,9 +141,13 @@ export function SummaryCards() {
   const { t } = useTranslation()
   const user = useAuthStore((state) => state.auth.user)
   const { status, loading } = useStatus()
+  const { refreshFailed } = useUserProfileRefresh()
 
   const summaryTimeRange = useMemo(() => computeTimeRange(1), [])
   const remainQuota = Number(user?.quota ?? 0)
+  // A missing cumulative value is rendered as unknown; it must never be
+  // displayed as zero just because a refresh failed or a field is absent.
+  const hasUsedQuota = user?.used_quota != null
   const usedQuota = Number(user?.used_quota ?? 0)
   const requestCount = Number(user?.request_count ?? 0)
 
@@ -165,10 +170,20 @@ export function SummaryCards() {
 
   const summaryValues = useMemo(() => {
     return {
-      usedDisplay: formatQuota(usedQuota),
+      usedDisplay:
+        user && !hasUsedQuota
+          ? t('Usage needs review')
+          : formatQuota(usedQuota),
       requestCountDisplay: formatNumber(requestCount),
     }
-  }, [requestCount, usedQuota])
+  }, [hasUsedQuota, requestCount, t, usedQuota, user])
+
+  // The card shows the cumulative net consumption: recorded charges minus
+  // recorded refunds. While a refresh fails, the last synced value stays
+  // visible and the description explains the staleness instead.
+  const usageDescription = refreshFailed
+    ? t('Refresh failed, showing last synced value')
+    : t('Refunds deducted; in-progress task charges update after settlement')
 
   const currencyEnabledFromStore = isCurrencyDisplayEnabled()
   const statusCurrencyFlag =
@@ -229,6 +244,7 @@ export function SummaryCards() {
   const items = useSummaryCardsConfig({
     ...summaryValues,
     todayUsageDisplay,
+    usageDescription,
     currencyEnabled,
     currencyLabel,
   }).map((config, index) => {

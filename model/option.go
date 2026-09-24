@@ -213,6 +213,9 @@ func SyncOptions(frequency int) {
 }
 
 func validateOptionValue(key string, value string) error {
+	if key == "USDExchangeRate" {
+		return operation_setting.ValidateUSDExchangeRate(value)
+	}
 	if key == operation_setting.ToolPriceOptionKey {
 		return operation_setting.ValidateToolPricesJSON(value)
 	}
@@ -459,7 +462,10 @@ func updateOptionMap(key string, value string) (err error) {
 	case "Price":
 		operation_setting.Price, _ = strconv.ParseFloat(value, 64)
 	case "USDExchangeRate":
-		operation_setting.USDExchangeRate, _ = strconv.ParseFloat(value, 64)
+		// Validated read/write boundary for billing evaluation; an invalid
+		// persisted value is kept out of billing (fail closed) instead of
+		// being ignored into a zero rate.
+		return operation_setting.SetUSDExchangeRate(value)
 	case "MinTopUp":
 		operation_setting.MinTopUp, _ = strconv.Atoi(value)
 	case "StripeApiSecret":

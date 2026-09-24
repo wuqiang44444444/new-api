@@ -44,12 +44,12 @@ func AttachAsyncTaskBilling(privateData *TaskPrivateData, info *relaycommon.Rela
 		return
 	}
 	// Native usage expressions own their UsageFacts and USD settlement path.
-	// They must not acquire the local c/_task billing state machine. Seedance
-	// Link tasks are the registered exception: their funding lifecycle comes
+	// They must not acquire the local c/_task billing state machine. Typed video
+	// Link tasks (Seedance and MiniMax) are the registered exceptions: their funding lifecycle comes
 	// from the frozen typed channel identity (VideoUpstreamProtocol), so a
-	// USD-denominated Seedance expression still establishes the one async
+	// USD-denominated typed-video expression still establishes the one async
 	// billing state machine used for holds, awaits, refunds and debt.
-	if info.TieredBillingSnapshot != nil && info.TieredBillingSnapshot.TaskUsageBilling && !isSeedanceChannelRelayInfo(info) {
+	if info.TieredBillingSnapshot != nil && info.TieredBillingSnapshot.TaskUsageBilling && !isSeedanceChannelRelayInfo(info) && !isMiniMaxBillingChannel(info) {
 		return
 	}
 	clientProtocol := ""
@@ -112,7 +112,7 @@ func deriveBillingState(pd TaskPrivateData) TaskBillingState {
 }
 
 func (t *Task) UpdateBilling() error {
-	if t.HasSeedanceBillingFacts() {
+	if t.HasTypedVideoBillingFacts() {
 		return t.updateSeedanceBillingFacts()
 	}
 	return DB.Model(t).Where("COALESCE(video_refund_state, '') = ''").Updates(map[string]any{
@@ -152,9 +152,9 @@ func GetTerminalTasksPendingBilling(now int64, limit int) []*Task {
 			state := task.PrivateData.AsyncBilling
 			// 资金不足形成的 debt 不能因为达到普通故障重试上限而永久退出扫描。
 			// 用户后续充值后，正常轮询必须仍能按冻结 TargetQuota 原子补扣并结清。
-			// 原生任务用量计价不进入本地补偿扫描；Seedance 用量计价任务按其冻结的
+			// 原生任务用量计价不进入本地补偿扫描；类型化视频用量计价任务按其冻结的
 			// 类型化身份（VideoUpstreamProtocol）保持 pending/debt/failed 补偿资格。
-			if task.VideoRefundState != "" || state == nil || (task.HasTaskUsageBilling() && !task.HasSeedanceBillingFacts()) || (state.State != TaskBillingStateDebt && state.Attempts >= 10) || state.NextRetryAt > now {
+			if task.VideoRefundState != "" || state == nil || (task.HasTaskUsageBilling() && !task.HasTypedVideoBillingFacts()) || (state.State != TaskBillingStateDebt && state.Attempts >= 10) || state.NextRetryAt > now {
 				continue
 			}
 			tasks = append(tasks, task)

@@ -24,9 +24,6 @@ func loadSeedancePricingCatalog() (seedancePricingCatalog, error) {
 		return nil, err
 	}
 	catalog := make(seedancePricingCatalog, len(models))
-	if len(models) == 0 {
-		return catalog, nil
-	}
 	nativeModels, err := oppositeSeedancePricingModels(DB, constant.ChannelTypeSeedanceLink, 0)
 	if err != nil {
 		return nil, err
@@ -40,6 +37,29 @@ func loadSeedancePricingCatalog() (seedancePricingCatalog, error) {
 			SeedancePublicModel:     item,
 			billingContractConflict: nativeModels[item.ModelName],
 			usageSchema:             usageSchemas[item.ModelName],
+		}
+	}
+	// The MiniMax Link typed models join the same pricing catalog shape with
+	// their own usage schema; native ownership conflicts are checked against
+	// the same typed/native pricing boundary.
+	minimaxModels, err := GetConfiguredMiniMaxPublicModels()
+	if err != nil {
+		return nil, err
+	}
+	if len(minimaxModels) > 0 {
+		nativeOfMinimax, err := oppositeSeedancePricingModels(DB, constant.ChannelTypeMiniMaxLink, 0)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range minimaxModels {
+			if _, exists := catalog[item.ModelName]; exists {
+				continue
+			}
+			catalog[item.ModelName] = seedancePricingModel{
+				SeedancePublicModel:     item,
+				billingContractConflict: nativeOfMinimax[item.ModelName],
+				usageSchema:             StandardVideoBillingFields(constant.ChannelTypeMiniMaxLink, dto.VideoUpstreamProtocol(constant.VideoUpstreamProtocolJdCloudTaskV1)),
+			}
 		}
 	}
 	return catalog, nil
@@ -72,7 +92,7 @@ func loadSeedanceCatalogUsageSchemas() (map[string]map[string]jsplugin.UsageFiel
 	for name, selected := range SeedancePricingChannels(current) {
 		list := make([]map[string]jsplugin.UsageFieldSchema, 0, len(selected))
 		for _, channel := range selected {
-			list = append(list, seedancebilling.UsageFieldsForProtocol(channel.GetOtherSettings().VideoUpstreamProtocol))
+			list = append(list, StandardVideoBillingFields(channel.Type, channel.GetOtherSettings().VideoUpstreamProtocol))
 		}
 		schemas[name] = seedancebilling.IntersectUsageFields(list...)
 	}

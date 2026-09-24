@@ -60,6 +60,9 @@ type Channel struct {
 
 	// Administrative input revision; never persisted as Channel configuration.
 	SeedancePluginVersion string `json:"seedance_plugin_version,omitempty" gorm:"-"`
+	// MinimaxPluginVersion mirrors SeedancePluginVersion for MiniMax Link
+	// channels: the declaration version the admin form was rendered from.
+	MinimaxPluginVersion string `json:"minimax_plugin_version,omitempty" gorm:"-"`
 }
 
 type ChannelInfo struct {
@@ -905,6 +908,9 @@ func (channel *Channel) ValidateSettings() error {
 		return err
 	}
 	if err := validateSeedanceChannelSettings(channel, channelOtherSettings); err != nil {
+		return err
+	}
+	if err := validateMinimaxChannelSettings(channel, channelOtherSettings); err != nil {
 		return err
 	}
 	return nil

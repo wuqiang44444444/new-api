@@ -204,11 +204,17 @@ func ActivateTaskPlugin(key, version string) error {
 		if err := lockSeedancePluginConfiguration(tx, key); err != nil {
 			return err
 		}
+		if err := lockMinimaxPluginConfiguration(tx, key); err != nil {
+			return err
+		}
 		var target TaskPlugin
 		if err := tx.Where(&TaskPlugin{Key: key, Version: version}).First(&target).Error; err != nil {
 			return err
 		}
 		if err := validateSeedancePluginConfigurationActivation(tx, &target); err != nil {
+			return err
+		}
+		if err := validateMinimaxPluginConfigurationActivation(tx, &target); err != nil {
 			return err
 		}
 		if err := tx.Model(&TaskPlugin{}).Where(&TaskPlugin{Key: key}).Update("active", false).Error; err != nil {
@@ -221,6 +227,9 @@ func ActivateTaskPlugin(key, version string) error {
 func SetTaskPluginEnabled(key string, enabled bool) error {
 	if key == jsplugin.SeedancePluginKey {
 		return setSeedancePluginConfigurationEnabled(key, enabled)
+	}
+	if key == jsplugin.MinimaxPluginKey {
+		return setMinimaxPluginConfigurationEnabled(key, enabled)
 	}
 	result := DB.Model(&TaskPlugin{}).Where(&TaskPlugin{Key: key, Active: true}).Update("enabled", enabled)
 	if result.Error != nil {
@@ -243,6 +252,9 @@ func DeleteTaskPluginVersion(key, version string) (TaskPluginDeleteResult, error
 		if err := lockSeedancePluginConfiguration(tx, key); err != nil {
 			return err
 		}
+		if err := lockMinimaxPluginConfiguration(tx, key); err != nil {
+			return err
+		}
 		if err := guardSeedancePluginDeletion(tx, key, version); err != nil {
 			return err
 		}
@@ -252,6 +264,9 @@ func DeleteTaskPluginVersion(key, version string) (TaskPluginDeleteResult, error
 		}
 		result.DeletedActive = plugin.Active
 		if err := validateSeedancePluginConfigurationDeletion(tx, &plugin); err != nil {
+			return err
+		}
+		if err := validateMinimaxPluginConfigurationDeletion(tx, &plugin); err != nil {
 			return err
 		}
 		if err := tx.Delete(&plugin).Error; err != nil {

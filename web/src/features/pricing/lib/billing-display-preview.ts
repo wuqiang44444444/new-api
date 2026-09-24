@@ -64,6 +64,12 @@ export type BillingExprPreviewEvaluation = {
     matched: boolean
   }>
   saturated?: boolean
+  /** 服务端本次试算实际采用的系统汇率（CNY/USD）；表达式未引用时缺省。 */
+  usd_exchange_rate?: {
+    source_key: string
+    rate: number
+    frozen_at: string
+  }
 }
 
 export type BillingExprPreviewItemResult = {

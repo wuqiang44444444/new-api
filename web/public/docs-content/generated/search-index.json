@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-09-19.1",
+  "contentVersion": "2026-09-24.3",
   "locales": {
     "zh": [
       {
@@ -590,7 +590,7 @@
       {
         "pageId": "videos-modelark",
         "slug": "api-reference/videos/modelark",
-        "title": "ModelArk V3 Seedance 视频",
+        "title": "ModelArk V3 标准视频",
         "description": "文生、图生与多模态视频的创建、轮询、下载、素材引用和费用说明",
         "keywords": ["ModelArk", "参数", "响应"],
         "headings": [
@@ -683,6 +683,40 @@
             "depth": 2,
             "id": "错误响应",
             "text": "错误响应"
+          }
+        ]
+      },
+      {
+        "pageId": "videos-minimax",
+        "slug": "api-reference/videos/minimax",
+        "title": "MiniMax H3 视频",
+        "description": "H3 参考图与音频、分辨率、时长、素材边界及下载窗口",
+        "keywords": ["MiniMax", "H3", "参考图", "音频", "2K"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "创建参数",
+            "text": "创建参数"
+          },
+          {
+            "depth": 2,
+            "id": "图片-视频与音频输入",
+            "text": "图片、视频与音频输入"
+          },
+          {
+            "depth": 2,
+            "id": "参考请求",
+            "text": "参考请求"
+          },
+          {
+            "depth": 2,
+            "id": "下载窗口与验证范围",
+            "text": "下载窗口与验证范围"
+          },
+          {
+            "depth": 2,
+            "id": "english-contract-notes",
+            "text": "English contract notes"
           }
         ]
       },

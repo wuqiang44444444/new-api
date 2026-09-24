@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
 // Task previews have an explicit USD contract. This is synthetic input to the
@@ -63,13 +64,23 @@ func previewTaskUsageExpression(item BillingExprPreviewItem) BillingExprPreviewI
 			return result
 		}
 	}
+	// 服务端读取当前系统设置；样本不能注入汇率。
+	var rate *billingexpr.ExchangeRateContext
+	if billingexpr.UsesExchangeRate(item.Expression) {
+		resolved, rateErr := operation_setting.CurrentUsdExchangeRateContext()
+		if rateErr != nil {
+			result.Error = rateErr.Error()
+			return result
+		}
+		rate = resolved
+	}
 	snapshot := &billingexpr.BillingSnapshot{
 		ExprString: item.Expression, ExprHash: billingexpr.ExprHashString(item.Expression),
 		ExprVersion: billingexpr.ExprVersion(item.Expression), TaskUsageBilling: true,
-		QuotaPerUnit: common.QuotaPerUnit, GroupRatio: 1,
+		QuotaPerUnit: common.QuotaPerUnit, GroupRatio: 1, UsdExchangeRate: rate,
 	}
 	outcome, err := billingexpr.ComputeTieredQuotaWithRequest(snapshot, billingexpr.TokenParams{}, billingexpr.RequestInput{
-		Usage: item.Sample.Usage, Body: body, Headers: item.Sample.Headers, PricingTime: &pricingTime,
+		Usage: item.Sample.Usage, Body: body, Headers: item.Sample.Headers, PricingTime: &pricingTime, ExchangeRate: rate,
 	})
 	if err != nil {
 		result.Error = err.Error()

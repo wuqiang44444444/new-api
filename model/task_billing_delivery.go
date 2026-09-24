@@ -31,7 +31,7 @@ type TaskBillingDelivery struct {
 
 func UsesTaskBillingDelivery(task *Task) bool {
 	// Batch owns its durable log acknowledgement in CompleteBatchSettlement.
-	return task != nil && task.Platform != constant.TaskPlatformAzureBatch && task.PrivateData.AsyncBilling != nil && (!task.HasTaskUsageBilling() || task.HasSeedanceBillingFacts())
+	return task != nil && task.Platform != constant.TaskPlatformAzureBatch && task.PrivateData.AsyncBilling != nil && (!task.HasTaskUsageBilling() || task.HasTypedVideoBillingFacts())
 }
 
 func InsertTaskWithBillingLogContext(ctx context.Context, task *Task) error {

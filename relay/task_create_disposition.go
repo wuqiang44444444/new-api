@@ -21,7 +21,15 @@ func taskCreateHTTPDisposition(
 	status int,
 	body []byte,
 ) relaycommon.TaskCreateDisposition {
-	if info == nil || info.ChannelMeta == nil || info.ChannelType != constant.ChannelTypeSeedanceLink {
+	if info == nil || info.ChannelMeta == nil {
+		return relaycommon.TaskCreateOutcomeUnknown
+	}
+	// The MiniMax Link typed channel classifies the documented JD error
+	// envelope in its own narrow branch.
+	if info.ChannelType == constant.ChannelTypeMiniMaxLink {
+		return minimaxCreateDisposition(status, body)
+	}
+	if info.ChannelType != constant.ChannelTypeSeedanceLink {
 		return relaycommon.TaskCreateOutcomeUnknown
 	}
 	// A task ID or non-empty data envelope contradicts a terminal rejection.

@@ -14,7 +14,7 @@ func GetSeedanceChannelsForBillingValidation(modelName string) ([]Channel, error
 
 func getSeedanceChannelsForBillingValidation(db *gorm.DB, modelName string) ([]Channel, error) {
 	var channels []Channel
-	if err := db.Where("type = ?", constant.ChannelTypeSeedanceLink).Order("id").Find(&channels).Error; err != nil {
+	if err := db.Where("type IN ?", typedStandardVideoChannelTypes).Order("id").Find(&channels).Error; err != nil {
 		return nil, err
 	}
 	selected := SeedancePricingChannels(channels)[modelName]

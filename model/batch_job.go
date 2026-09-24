@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"gorm.io/gorm"
 )
@@ -116,8 +117,13 @@ type BatchFrozenSnapshot struct {
 	Endpoint         string                         `json:"endpoint"`
 	CompletionWindow string                         `json:"completion_window"`
 	ContractFact     *hosttypes.ContractBillingFact `json:"contract_fact,omitempty"`
-	EstimateQuota    int                            `json:"estimate_quota"`
-	LineInputs       map[string]int                 `json:"line_inputs"` // custom_id -> estimated input tokens
+	// UsdExchangeRate freezes the CNY/USD rate for expressions calling
+	// usd_exchange_rate(). One rate per accepted job runs through every line
+	// estimate, settlement and recovery; nil when the expression is
+	// rate-free.
+	UsdExchangeRate *billingexpr.ExchangeRateContext `json:"usd_exchange_rate,omitempty"`
+	EstimateQuota   int                              `json:"estimate_quota"`
+	LineInputs      map[string]int                   `json:"line_inputs"` // custom_id -> estimated input tokens
 }
 
 // NewBatchJobPublicId generates the north-facing batch job id.

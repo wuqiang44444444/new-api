@@ -3,6 +3,7 @@ package billingexpr
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -71,9 +72,58 @@ func TaskDisplayProjectionFor(exprStr string, fields map[string]TaskUsageFieldIn
 	return projection, nil
 }
 
+// TaskDisplayProjectionForWithRate 是带汇率上下文的任务投影入口。汇率数值
+// 参与缓存键；rate 为 nil 且表达式依赖 usd_exchange_rate() 时，整体标记
+// exchange_rate_unresolved。
+func TaskDisplayProjectionForWithRate(exprStr string, fields map[string]TaskUsageFieldInfo, rate *ExchangeRateContext) (*DisplayProjection, error) {
+	if strings.TrimSpace(exprStr) == "" {
+		return nil, fmt.Errorf("empty billing expression")
+	}
+	if !UsesExchangeRate(exprStr) {
+		return TaskDisplayProjectionFor(exprStr, fields)
+	}
+	if rate.Validate() != nil {
+		return buildUnresolvedRateProjection(exprStr, DisplayUnitTaskUsage)
+	}
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, name+":"+fields[name].Unit)
+	}
+	key := ExprHashString(exprStr + "\x00" + DisplayUnitTaskUsage + "\x00" + strings.Join(parts, ",") + "\x00exchange_rate\x00" + strconv.FormatFloat(rate.Rate, 'g', -1, 64))
+	taskDisplayCacheMu.RLock()
+	if cached, ok := taskDisplayCache[key]; ok {
+		taskDisplayCacheMu.RUnlock()
+		return projectionWithExchangeRate(cached, rate), nil
+	}
+	taskDisplayCacheMu.RUnlock()
+	projection, err := BuildTaskDisplayProjectionWithRate(exprStr, fields, rate)
+	if err != nil {
+		return nil, err
+	}
+	projection.AppliedExchangeRate = nil
+	taskDisplayCacheMu.Lock()
+	if len(taskDisplayCache) >= maxDisplayCacheSize {
+		taskDisplayCache = make(map[string]*DisplayProjection, 64)
+	}
+	taskDisplayCache[key] = projection
+	taskDisplayCacheMu.Unlock()
+	return projectionWithExchangeRate(projection, rate), nil
+}
+
 // BuildTaskDisplayProjection 解析原始任务表达式并产出严格投影。表达式无法
 // 编译时返回错误；合法但不可证明的结构整体标记 opaque。
 func BuildTaskDisplayProjection(exprStr string, fields map[string]TaskUsageFieldInfo) (*DisplayProjection, error) {
+	return BuildTaskDisplayProjectionWithRate(exprStr, fields, nil)
+}
+
+// BuildTaskDisplayProjectionWithRate 以给定汇率上下文折叠 usd_exchange_rate()
+// 常数子表达式。
+func BuildTaskDisplayProjectionWithRate(exprStr string, fields map[string]TaskUsageFieldInfo, rate *ExchangeRateContext) (*DisplayProjection, error) {
 	if strings.TrimSpace(exprStr) == "" {
 		return nil, fmt.Errorf("empty billing expression")
 	}
@@ -99,7 +149,10 @@ func BuildTaskDisplayProjection(exprStr string, fields map[string]TaskUsageField
 		projection.Reason = DisplayReasonUnsupportedShape
 		return projection, nil
 	}
-	builder := &taskDisplayBuilder{projection: projection, fields: fields}
+	if rate != nil && UsesExchangeRate(exprStr) {
+		projection.AppliedExchangeRate = rate
+	}
+	builder := &taskDisplayBuilder{projection: projection, fields: fields, rate: rate}
 	if builder.walkExpression(tree.Node) && builder.finish() {
 		projection.Status = DisplayStatusExact
 	} else {
@@ -123,6 +176,19 @@ type taskDisplayBuilder struct {
 	constant    float64
 	hasConstant bool
 	fields      map[string]TaskUsageFieldInfo
+	rate        *ExchangeRateContext
+}
+
+// evalConstant 把带上下文的 usd_exchange_rate() 折叠为常数。
+func (b *taskDisplayBuilder) evalConstant(node ast.Node) (float64, bool) {
+	if b.rate != nil {
+		if call, ok := node.(*ast.CallNode); ok {
+			if id, ok := call.Callee.(*ast.IdentifierNode); ok && id.Value == UsdExchangeRateFunc && len(call.Arguments) == 0 {
+				return b.rate.Rate, true
+			}
+		}
+	}
+	return evalConstant(node)
 }
 
 func (b *taskDisplayBuilder) fail(reason string) bool {
@@ -287,7 +353,7 @@ func (b *taskDisplayBuilder) walkTerm(term displayTerm) bool {
 	rulesBefore := len(b.projection.Rules)
 	var priceNode ast.Node
 	for _, factor := range factors {
-		if value, ok := evalConstant(factor.node); ok {
+		if value, ok := b.evalConstant(factor.node); ok {
 			if factor.div {
 				if value == 0 {
 					return b.fail(DisplayReasonUnrecognizedFactor)
@@ -442,7 +508,7 @@ func mergeTaskLinearSum(left, right taskLinearSum) taskLinearSum {
 // 组合；任何非线性结构（字段平方、字段分母、未声明字段、未知调用）整体
 // 失败。显式零常数保留 hadConstant 标记。
 func (b *taskDisplayBuilder) collectLinear(node ast.Node, scale float64) (taskLinearSum, bool) {
-	if value, ok := evalConstant(node); ok {
+	if value, ok := b.evalConstant(node); ok {
 		return taskLinearSum{
 			sum:         &linearSum{coefficients: map[string]float64{}, constant: value * scale},
 			hadConstant: true,
@@ -466,15 +532,15 @@ func (b *taskDisplayBuilder) collectLinear(node ast.Node, scale float64) (taskLi
 			}
 			return mergeTaskLinearSum(left, right), true
 		case "*":
-			if leftValue, ok := evalConstant(n.Left); ok {
+			if leftValue, ok := b.evalConstant(n.Left); ok {
 				return b.collectLinear(n.Right, scale*leftValue)
 			}
-			if rightValue, ok := evalConstant(n.Right); ok {
+			if rightValue, ok := b.evalConstant(n.Right); ok {
 				return b.collectLinear(n.Left, scale*rightValue)
 			}
 			return taskLinearSum{}, false
 		case "/":
-			if rightValue, ok := evalConstant(n.Right); ok {
+			if rightValue, ok := b.evalConstant(n.Right); ok {
 				if rightValue == 0 {
 					return taskLinearSum{}, false
 				}

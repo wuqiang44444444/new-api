@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
 // 管理员只读试算：复用真实引擎与统一 quota 换算路径，显式 GroupRatio=1，
@@ -69,6 +70,9 @@ type BillingExprPreviewEvaluation struct {
 	MatchedTier  string                         `json:"matched_tier"`
 	RequestRules []billingexpr.RequestRuleTrace `json:"request_rules,omitempty"`
 	Saturated    bool                           `json:"saturated,omitempty"`
+	// UsdExchangeRate 是本次试算实际采用的系统汇率及其冻结时刻；表达式
+	// 不依赖 usd_exchange_rate() 时为空。方向固定为 CNY/USD。
+	UsdExchangeRate *billingexpr.ExchangeRateContext `json:"usd_exchange_rate,omitempty"`
 }
 
 // BillingExprPreviewItemResult 是单项试算结果；Error 非空表示该表达式
@@ -104,7 +108,7 @@ func previewBillingExpressionItem(item BillingExprPreviewItem) BillingExprPrevie
 		result.Error = "task usage expressions use a different unit contract and are not supported by this preview"
 		return result
 	}
-	projection, err := billingexpr.DisplayProjectionFor(item.Expression)
+	projection, err := billingexpr.DisplayProjectionForWithRate(item.Expression, currentDisplayExchangeRate())
 	if err != nil {
 		result.Error = fmt.Sprintf("invalid expression: %v", err)
 		return result
@@ -177,18 +181,29 @@ func evaluateBillingExpressionPreview(expression string, sample *BillingExprPrev
 	}
 
 	params := BuildTieredTokenParams(usage, usageSemantic == "anthropic", billingexpr.UsedVars(expression))
+	// 服务端读取当前系统设置；客户样本 body/header 不能注入汇率。
+	var rate *billingexpr.ExchangeRateContext
+	if billingexpr.UsesExchangeRate(expression) {
+		resolved, err := operation_setting.CurrentUsdExchangeRateContext()
+		if err != nil {
+			return nil, err
+		}
+		rate = resolved
+	}
 	snapshot := &billingexpr.BillingSnapshot{
-		BillingMode:  "tiered_expr",
-		ExprString:   expression,
-		ExprHash:     billingexpr.ExprHashString(expression),
-		GroupRatio:   1,
-		QuotaPerUnit: common.QuotaPerUnit,
-		ExprVersion:  billingexpr.ExprVersion(expression),
+		BillingMode:     "tiered_expr",
+		ExprString:      expression,
+		ExprHash:        billingexpr.ExprHashString(expression),
+		GroupRatio:      1,
+		QuotaPerUnit:    common.QuotaPerUnit,
+		ExprVersion:     billingexpr.ExprVersion(expression),
+		UsdExchangeRate: rate,
 	}
 	outcome, err := billingexpr.ComputeTieredQuotaWithRequest(snapshot, params, billingexpr.RequestInput{
-		PricingTime: &pricingTime,
-		Body:        body,
-		Headers:     sample.Headers,
+		PricingTime:  &pricingTime,
+		Body:         body,
+		Headers:      sample.Headers,
+		ExchangeRate: rate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("expression evaluation failed: %v", err)
@@ -202,10 +217,11 @@ func evaluateBillingExpressionPreview(expression string, sample *BillingExprPrev
 		UsageSemantic: usageSemantic,
 		Normalized:    params,
 		// Monetary amount before integer quota rounding, in actual USD.
-		RawCostUSD:   amountUSD,
-		Quota:        outcome.ActualQuotaAfterGroup,
-		MatchedTier:  outcome.MatchedTier,
-		RequestRules: outcome.RequestRules,
-		Saturated:    outcome.Clamp != nil,
+		RawCostUSD:      amountUSD,
+		Quota:           outcome.ActualQuotaAfterGroup,
+		MatchedTier:     outcome.MatchedTier,
+		RequestRules:    outcome.RequestRules,
+		Saturated:       outcome.Clamp != nil,
+		UsdExchangeRate: rate,
 	}, nil
 }

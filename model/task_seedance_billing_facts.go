@@ -24,6 +24,7 @@ func (t *Task) HasSeedanceBillingFacts() bool {
 	return t != nil && t.PrivateData.AsyncBilling != nil && t.PrivateData.VideoUpstreamProtocol.IsValid()
 }
 
+// Shared typed-video funding uses these existing row-lock merges.
 // mergeSeedanceBillingFacts runs under the task row lock. Observation writes
 // can contribute first usage; only billing writes can establish a target.
 func mergeSeedanceBillingFacts(stored, proposed *TaskAsyncBillingContext, observation bool) (*TaskAsyncBillingContext, error) {
@@ -46,6 +47,12 @@ func mergeSeedanceBillingFacts(stored, proposed *TaskAsyncBillingContext, observ
 		}
 	} else if len(next.ActualUsageEvidence) == 0 {
 		next.ActualUsageEvidence = proposed.ActualUsageEvidence
+		next.ActualUsageSource = proposed.ActualUsageSource
+	} else if observation && next.UsageDiscrepancy == nil &&
+		(proposed.ActualUsageSource != stored.ActualUsageSource || !maps.Equal(proposed.ActualUsageEvidence, stored.ActualUsageEvidence)) {
+		// Non-token evidence (including JD credits) is durable without claiming
+		// a measured token meter. Later observations cannot overwrite it.
+		next.UsageDiscrepancy = &TaskUsageDiscrepancy{Source: proposed.ActualUsageSource, Evidence: proposed.ActualUsageEvidence}
 	}
 	if observation || stored.State == TaskBillingStateSettled {
 		return &next, nil
@@ -79,7 +86,7 @@ func (t *Task) updateSeedanceBillingFacts() error {
 		if err := lockForUpdate(tx).First(&saved, t.ID).Error; err != nil {
 			return err
 		}
-		if !saved.HasSeedanceBillingFacts() {
+		if !saved.HasTypedVideoBillingFacts() {
 			return fmt.Errorf("missing frozen video billing facts")
 		}
 		next, err := mergeSeedanceBillingFacts(saved.PrivateData.AsyncBilling, t.PrivateData.AsyncBilling, false)
@@ -111,7 +118,7 @@ func (t *Task) updateSeedanceObservation(fromStatus TaskStatus) (bool, error) {
 		if stored.Status.IsTerminal() && stored.Status != t.Status {
 			return nil
 		}
-		if !stored.HasSeedanceBillingFacts() {
+		if !stored.HasTypedVideoBillingFacts() {
 			return fmt.Errorf("missing frozen video billing facts")
 		}
 		next, err := mergeSeedanceBillingFacts(stored.PrivateData.AsyncBilling, t.PrivateData.AsyncBilling, true)
@@ -150,6 +157,7 @@ func (t *Task) updateSeedanceObservation(fromStatus TaskStatus) (bool, error) {
 		}
 		saved.PrivateData.ResultURL = t.PrivateData.ResultURL
 		saved.PrivateData.PollFailures = t.PrivateData.PollFailures
+		saved.PrivateData.VideoUpstreamNextQueryAt = t.PrivateData.VideoUpstreamNextQueryAt
 		saved.PrivateData.AsyncBilling = next
 		saved.BillingState = next.State
 		if err := tx.Model(&saved).Select("status", "progress", "start_time", "finish_time", "fail_reason", "data", "private_data", "billing_state").Updates(&saved).Error; err != nil {
@@ -166,7 +174,7 @@ func (t *Task) updateSeedanceObservation(fromStatus TaskStatus) (bool, error) {
 
 // enforceSeedanceBillingTarget is called while holding the funding task lock.
 func enforceSeedanceBillingTarget(task *Task, target int) error {
-	if !task.HasSeedanceBillingFacts() {
+	if !task.HasTypedVideoBillingFacts() {
 		return nil
 	}
 	async := task.PrivateData.AsyncBilling
