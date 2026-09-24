@@ -58,6 +58,8 @@ import { truncateText } from '@/lib/utils'
 import { getCodexUsage, updateChannelBalance } from '../api'
 import {
   CHANNEL_STATUS_CONFIG,
+  CHANNEL_TYPE_MINIMAX_LINK,
+  CHANNEL_TYPE_SEEDANCE_LINK,
   CHANNEL_TYPE_TASK_PLUGIN,
   MODEL_FETCHABLE_TYPES,
 } from '../constants'
@@ -79,6 +81,7 @@ import {
   isTagAggregateRow,
   type TagRow,
 } from '../lib'
+import { isMinimaxChannel } from '../lib/minimax-management'
 import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
@@ -91,6 +94,7 @@ import {
   CodexUsageDialog,
   type CodexUsageDialogData,
 } from './dialogs/codex-usage-dialog'
+import { MinimaxChannelBadge } from './minimax-channel-badge'
 import { NumericSpinnerInput } from './numeric-spinner-input'
 
 function parseIonetMeta(otherInfo: string | null | undefined): null | {
@@ -179,6 +183,21 @@ function UpstreamUpdateTags({ channel }: { channel: Channel }) {
  * Priority cell component with inline editing
  */
 function PriorityCell({ channel }: { channel: Channel }) {
+  const { t } = useTranslation()
+  const channels = isTagAggregateRow(channel) ? channel.children : [channel]
+  if (
+    channels.some(
+      (item) =>
+        item.type === CHANNEL_TYPE_MINIMAX_LINK ||
+        item.type === CHANNEL_TYPE_SEEDANCE_LINK
+    )
+  ) {
+    return (
+      <span className='text-muted-foreground text-xs'>
+        {t('Not applicable')}
+      </span>
+    )
+  }
   if (isTagAggregateRow(channel)) {
     return <TagPriorityCell channel={channel} />
   }
@@ -268,6 +287,21 @@ function ChannelFieldCell({
  * Weight cell component with inline editing
  */
 function WeightCell({ channel }: { channel: Channel }) {
+  const { t } = useTranslation()
+  const channels = isTagAggregateRow(channel) ? channel.children : [channel]
+  if (
+    channels.some(
+      (item) =>
+        item.type === CHANNEL_TYPE_MINIMAX_LINK ||
+        item.type === CHANNEL_TYPE_SEEDANCE_LINK
+    )
+  ) {
+    return (
+      <span className='text-muted-foreground text-xs'>
+        {t('Not applicable')}
+      </span>
+    )
+  }
   if (isTagAggregateRow(channel)) {
     return <TagWeightCell channel={channel} />
   }
@@ -824,34 +858,38 @@ export function useChannelsColumns(
                   </Tooltip>
                 </TooltipProvider>
               )}
-              {type === CHANNEL_TYPE_TASK_PLUGIN ? (
-                <TaskPluginChannelBadge
-                  pluginKey={
-                    parseChannelSettings(channel.setting)?.task_plugin_key
-                  }
-                />
-              ) : (
-                <TooltipProvider delay={300}>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <div className='max-w-full min-w-0 overflow-hidden' />
-                      }
-                    >
-                      <ProviderBadge
-                        iconKey={`${iconName}.Color`}
-                        iconSize={18}
-                        label={typeName}
-                        colorText={false}
-                        copyable={false}
-                        showDot={false}
-                        className='max-w-full min-w-0 overflow-hidden'
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent side='top'>{typeName}</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+              {isMinimaxChannel(type) && (
+                <MinimaxChannelBadge channel={channel} />
               )}
+              {!isMinimaxChannel(type) &&
+                (type === CHANNEL_TYPE_TASK_PLUGIN ? (
+                  <TaskPluginChannelBadge
+                    pluginKey={
+                      parseChannelSettings(channel.setting)?.task_plugin_key
+                    }
+                  />
+                ) : (
+                  <TooltipProvider delay={300}>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <div className='max-w-full min-w-0 overflow-hidden' />
+                        }
+                      >
+                        <ProviderBadge
+                          iconKey={`${iconName}.Color`}
+                          iconSize={18}
+                          label={typeName}
+                          colorText={false}
+                          copyable={false}
+                          showDot={false}
+                          className='max-w-full min-w-0 overflow-hidden'
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent side='top'>{typeName}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ))}
               {isIonet && (
                 <TooltipProvider delay={100}>
                   <Tooltip>

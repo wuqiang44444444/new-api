@@ -58,6 +58,11 @@ import {
   isTagAggregateRow,
   getChannelTypeLabel,
 } from '../lib'
+import {
+  channelManagementFilter,
+  channelManagementFilterLabel,
+  MINIMAX_FILTER,
+} from '../lib/minimax-management'
 import type { Channel, ChannelSortBy } from '../types'
 import { ChannelCard } from './channel-card'
 import { ChannelTypeLogo } from './channel-type-badge'
@@ -231,10 +236,7 @@ export function ChannelsTable() {
         statusFilter.length > 0 && !statusFilter.includes('all')
           ? statusFilter[0]
           : undefined,
-      type:
-        typeFilter.length > 0 && !typeFilter.includes('all')
-          ? Number(typeFilter[0])
-          : undefined,
+      ...channelManagementFilter(typeFilter[0]),
       tag_mode: enableTagMode,
       id_sort: idSort,
       ...sortParams,
@@ -254,10 +256,7 @@ export function ChannelsTable() {
             statusFilter.length > 0 && !statusFilter.includes('all')
               ? statusFilter[0]
               : undefined,
-          type:
-            typeFilter.length > 0 && !typeFilter.includes('all')
-              ? Number(typeFilter[0])
-              : undefined,
+          ...channelManagementFilter(typeFilter[0]),
           tag_mode: enableTagMode,
           id_sort: idSort,
           ...sortParams,
@@ -274,10 +273,7 @@ export function ChannelsTable() {
             statusFilter.length > 0 && !statusFilter.includes('all')
               ? statusFilter[0]
               : undefined,
-          type:
-            typeFilter.length > 0 && !typeFilter.includes('all')
-              ? Number(typeFilter[0])
-              : undefined,
+          ...channelManagementFilter(typeFilter[0]),
           tag_mode: enableTagMode,
           id_sort: idSort,
           ...sortParams,
@@ -386,9 +382,23 @@ export function ChannelsTable() {
         value: 'all',
         count: totalTypes,
       },
+      ...((Number(counts['35']) || 0) + (Number(counts['64']) || 0) > 0 ||
+      selectedType === MINIMAX_FILTER
+        ? [
+            {
+              label: 'MiniMax (all access methods)',
+              value: MINIMAX_FILTER,
+              count: (Number(counts['35']) || 0) + (Number(counts['64']) || 0),
+              iconNode: <ChannelTypeLogo type={35} size={16} />,
+            },
+          ]
+        : []),
       ...typeIds.map((item) => {
         return {
-          label: getChannelTypeLabel(item.type),
+          label: channelManagementFilterLabel(
+            item.type,
+            getChannelTypeLabel(item.type)
+          ),
           value: String(item.type),
           count: item.count,
           iconNode: <ChannelTypeLogo type={item.type} size={16} />,

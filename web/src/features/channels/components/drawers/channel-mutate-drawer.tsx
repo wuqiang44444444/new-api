@@ -177,6 +177,12 @@ import {
   type AssetTenantBoundaryChange,
 } from '../../lib'
 import {
+  channelManagementTypeOptions,
+  isMinimaxChannel,
+  MINIMAX_NATIVE_TYPE,
+  selectChannelManagementType,
+} from '../../lib/minimax-management'
+import {
   collectInvalidStatusCodeEntries,
   collectNewDisallowedStatusCodeRedirects,
 } from '../../lib/status-code-risk-guard'
@@ -198,6 +204,8 @@ import { ParamOverrideEditorDialog } from '../dialogs/param-override-editor-dial
 import { StatusCodeRiskDialog } from '../dialogs/status-code-risk-dialog'
 import { ModelMappingEditor } from '../model-mapping-editor'
 import { ImageRelayProtocolFields } from './image-relay-protocol-fields'
+import { MinimaxAccessFields } from './minimax-access-fields'
+import { MinimaxProtocolFields } from './minimax-protocol-fields'
 import { OfficialChannelConnectivityPanel } from './official-channel-connectivity-panel'
 import {
   ChannelAdvancedSection,
@@ -207,7 +215,6 @@ import {
   ChannelEditorLoadingState,
   ChannelModelsSection,
 } from './sections'
-import { MinimaxProtocolFields } from './minimax-protocol-fields'
 import { SeedanceConfiguredProtocolFields } from './seedance-configured-protocol-fields'
 
 type ChannelMutateDrawerProps = {
@@ -962,8 +969,10 @@ export function ChannelMutateDrawer({
 
   const currentTypeLabel = useMemo(
     () =>
-      CHANNEL_TYPE_OPTIONS.find((option) => option.value === currentType)
-        ?.label || `#${currentType}`,
+      isMinimaxChannel(currentType)
+        ? 'MiniMax'
+        : CHANNEL_TYPE_OPTIONS.find((option) => option.value === currentType)
+            ?.label || `#${currentType}`,
     [currentType]
   )
   const taskPluginOptionsQuery = useQuery({
@@ -986,14 +995,19 @@ export function ChannelMutateDrawer({
       : null
 
   const channelTypeOptions = useMemo(() => {
-    const options = channelTypeOptionsForTaskPluginBind(canBindTaskPlugin).map(
-      (option) => ({
-        value: String(option.value),
-        label: t(option.label),
-        icon: <ChannelTypeLogo type={option.value} size={16} />,
-      })
-    )
-    if (!options.some((option) => Number(option.value) === currentType)) {
+    const options = channelManagementTypeOptions(
+      channelTypeOptionsForTaskPluginBind(canBindTaskPlugin),
+      isEditing,
+      currentType
+    ).map((option) => ({
+      value: String(option.value),
+      label: t(option.label),
+      icon: <ChannelTypeLogo type={option.value} size={16} />,
+    }))
+    if (
+      !isMinimaxChannel(currentType) &&
+      !options.some((option) => Number(option.value) === currentType)
+    ) {
       options.push({
         value: String(currentType),
         label: `#${currentType}`,
@@ -1001,16 +1015,18 @@ export function ChannelMutateDrawer({
       })
     }
     return options
-  }, [canBindTaskPlugin, currentType, t])
+  }, [canBindTaskPlugin, currentType, isEditing, t])
 
   const formErrors = form.formState.errors
   const identityHasErrors = Boolean(
+    formErrors.minimax_access_selected ||
     formErrors.name ||
     formErrors.type ||
     formErrors.status ||
     formErrors.openai_organization
   )
   const credentialsHaveErrors = Boolean(
+    formErrors.minimax_plugin_version ||
     formErrors.key ||
     formErrors.base_url ||
     formErrors.other ||
@@ -2005,8 +2021,8 @@ export function ChannelMutateDrawer({
                 {t(
                   'Sensitive channel settings are read-only for your account.'
                 )}{' '}
-                {(currentType === CHANNEL_TYPE_SEEDANCE_LINK ||
-                  currentType === CHANNEL_TYPE_MINIMAX_LINK)
+                {currentType === CHANNEL_TYPE_SEEDANCE_LINK ||
+                currentType === CHANNEL_TYPE_MINIMAX_LINK
                   ? t(
                       'Seedance uses one fixed channel for each model. Priority and Weight do not participate in routing.'
                     )
@@ -2079,7 +2095,10 @@ export function ChannelMutateDrawer({
                       <ChannelBasicSection>
                         <div className='grid gap-4 sm:grid-cols-2'>
                           <fieldset
-                            disabled={sensitiveLocked}
+                            disabled={
+                              sensitiveLocked ||
+                              (isEditing && isMinimaxChannel(currentType))
+                            }
                             className='min-w-0 disabled:opacity-60'
                           >
                             <FormField
@@ -2098,14 +2117,22 @@ export function ChannelMutateDrawer({
                                       </span>
                                       <Combobox
                                         options={channelTypeOptions}
-                                        value={String(field.value)}
+                                        value={String(
+                                          isMinimaxChannel(field.value)
+                                            ? MINIMAX_NATIVE_TYPE
+                                            : field.value
+                                        )}
                                         onValueChange={(value) => {
                                           const nextType = Number(value)
                                           if (
                                             Number.isInteger(nextType) &&
                                             nextType > 0
                                           ) {
-                                            field.onChange(nextType)
+                                            selectChannelManagementType(
+                                              form,
+                                              nextType,
+                                              isEditing
+                                            )
                                           }
                                         }}
                                         placeholder={t('Select channel type')}
@@ -2131,6 +2158,23 @@ export function ChannelMutateDrawer({
                               )}
                             />
                           </fieldset>
+
+                          <FormField
+                            control={form.control}
+                            name='name'
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>{t('Name *')}</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    placeholder={t(FIELD_PLACEHOLDERS.NAME)}
+                                    {...field}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
 
                           {currentType === CHANNEL_TYPE_TASK_PLUGIN && (
                             <FormField
@@ -2218,24 +2262,14 @@ export function ChannelMutateDrawer({
                               )}
                             />
                           )}
-
-                          <FormField
-                            control={form.control}
-                            name='name'
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('Name *')}</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    placeholder={t(FIELD_PLACEHOLDERS.NAME)}
-                                    {...field}
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
                         </div>
+
+                        {isMinimaxChannel(currentType) && (
+                          <MinimaxAccessFields
+                            editing={isEditing}
+                            disabled={sensitiveLocked}
+                          />
+                        )}
 
                         {!isEditing && (
                           <FormField
@@ -2550,7 +2584,9 @@ export function ChannelMutateDrawer({
                             )}
 
                             {currentType === CHANNEL_TYPE_MINIMAX_LINK && (
-                              <MinimaxProtocolFields />
+                              <MinimaxProtocolFields
+                                key={channelId ?? 'new-minimax'}
+                              />
                             )}
 
                             {currentType === CHANNEL_TYPE_SEEDANCE_LINK && (

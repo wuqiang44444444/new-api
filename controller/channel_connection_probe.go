@@ -128,7 +128,7 @@ func channelConnectionObservation(result testResult) string {
 // or change production routing. Resolve aliases through the existing mapper.
 func channelAutoCheckMediaKind(channel *model.Channel) string {
 	switch channel.Type {
-	case constant.ChannelTypeSeedanceLink, constant.ChannelTypeKling, constant.ChannelTypeVidu, constant.ChannelTypeSora, constant.ChannelTypeDoubaoVideo, constant.ChannelTypeJimeng:
+	case constant.ChannelTypeSeedanceLink, constant.ChannelTypeMiniMaxLink, constant.ChannelTypeKling, constant.ChannelTypeVidu, constant.ChannelTypeSora, constant.ChannelTypeDoubaoVideo, constant.ChannelTypeJimeng:
 		return "video"
 	case constant.ChannelTypeAsyncImage, constant.ChannelTypeMidjourney, constant.ChannelTypeMidjourneyPlus:
 		return "image"

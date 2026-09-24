@@ -123,6 +123,7 @@ export interface ChannelOtherSettings {
   asset_provider_project?: string
   asset_region?: string
   video_upstream_protocol?:
+    | 'jdcloud_video_task_v1'
     | 'modelark_v3_volcengine'
     | 'modelark_v3_byteplus'
     | 'modelark_v3_cmcc'
@@ -318,6 +319,7 @@ export interface GetChannelsParams {
   page_size?: number
   status?: string // 'enabled', 'disabled', or empty for all
   type?: number
+  types?: string
   group?: string
   id_sort?: boolean
   tag_mode?: boolean
@@ -331,6 +333,7 @@ export interface SearchChannelsParams {
   model?: string
   status?: string
   type?: number
+  types?: string
   id_sort?: boolean
   tag_mode?: boolean
   sort_by?: ChannelSortBy

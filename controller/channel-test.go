@@ -123,11 +123,13 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		// Seedance Link 渠道没有无副作用的 Chat 探针；探针边界见
 		// channel_seedance_link_health.go 的协议感知自动健康检查。
 		constant.ChannelTypeSeedanceLink,
+		constant.ChannelTypeMiniMaxLink,
 	}
 	if lo.Contains(unsupportedTestChannelTypes, channel.Type) {
 		channelTypeName := constant.GetChannelTypeName(channel.Type)
 		return testResult{
-			localErr: fmt.Errorf("%s channel test is not supported", channelTypeName),
+			localErr:         fmt.Errorf("%s channel test is not supported", channelTypeName),
+			checkUnsupported: channel.Type == constant.ChannelTypeMiniMaxLink,
 		}
 	}
 	if channel.Type == constant.ChannelTypeAzureBatch {
@@ -1007,7 +1009,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	// 只有实际尝试生成探测的自动检查才参与上游故障禁用；
 	// 本地校验终止的失败没有上游观测，配置失败也不是上游故障，不得据此
 	// 禁用渠道或覆盖渠道延迟。
-	upstreamObserved := !isSeedanceLink && (!automatic || (scope == "generation_probe" && result.upstreamAttempted))
+	upstreamObserved := !isSeedanceLink && !result.checkUnsupported && (!automatic || (scope == "generation_probe" && result.upstreamAttempted))
 	if newAPIError != nil && upstreamObserved {
 		shouldBanChannel = service.ShouldDisableChannel(result.newAPIError)
 	}
@@ -1026,7 +1028,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		finalResult.newAPIError = newAPIError
 		summary.Checks = []service.ChannelAutoCheckResult{channelAutoCheckResult(channel, finalResult, scope)}
 	}
-	if automatic && result.checkUnsupported {
+	if result.checkUnsupported {
 		summary.Unsupported++
 	} else if newAPIError == nil && result.localErr == nil {
 		summary.Succeeded++
@@ -1052,7 +1054,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	// 上游响应时间只在真实上游往返时写入；素材列表探针与本地配置检查的耗时
 	// 不是履约时延，不写入通用 Channel response_time/test_time，避免管理端
 	// 把非履约数据误解为上游健康。
-	if !isSeedanceLink && (!automatic || (scope == "generation_probe" && result.upstreamResponded)) {
+	if !isSeedanceLink && !result.checkUnsupported && (!automatic || (scope == "generation_probe" && result.upstreamResponded)) {
 		channel.UpdateResponseTime(milliseconds)
 	}
 	return summary

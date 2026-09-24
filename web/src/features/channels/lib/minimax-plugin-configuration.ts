@@ -15,6 +15,12 @@ export type MinimaxConfigurationSnapshot = {
           maxDuration?: number
           resolutions?: string[]
           ratios?: string[]
+          maxImages?: number
+          allowVideos?: boolean
+          maxVideos?: number
+          allowAudios?: boolean
+          maxAudios?: number
+          allowFrameImages?: boolean
           deleteVideo?: boolean
         }
       >
@@ -33,5 +39,17 @@ export async function getMinimaxPluginConfiguration(): Promise<MinimaxConfigurat
   if (!response.data.success) {
     throw new Error('MiniMax plugin configuration is unavailable')
   }
-  return response.data.data
+  const snapshot = response.data.data
+  const video = snapshot?.configuration?.videos?.find(
+    (item) => item.protocol === 'jdcloud_video_task_v1'
+  )
+  if (
+    !snapshot?.version?.trim() ||
+    !video ||
+    !Array.isArray(video.models) ||
+    video.models.length === 0
+  ) {
+    throw new Error('MiniMax plugin configuration is unavailable')
+  }
+  return snapshot
 }

@@ -34,8 +34,13 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { getTaskPluginOptions } from '../api'
-import { CHANNEL_TYPE_OPTIONS, CHANNEL_TYPE_TASK_PLUGIN } from '../constants'
+import {
+  CHANNEL_TYPE_MINIMAX_LINK,
+  CHANNEL_TYPE_OPTIONS,
+  CHANNEL_TYPE_TASK_PLUGIN,
+} from '../constants'
 import { getChannelTypeIcon } from '../lib/channel-utils'
+import { MINIMAX_NATIVE_TYPE } from '../lib/minimax-management'
 
 export function ChannelTypeLogo(props: {
   type: number
@@ -62,7 +67,10 @@ export function ChannelTypeLogo(props: {
   }
   return (
     <span className={cn('inline-flex shrink-0', props.className)}>
-      {getLobeIcon(`${getChannelTypeIcon(props.type)}.Color`, size)}
+      {getLobeIcon(
+        `${getChannelTypeIcon(props.type === CHANNEL_TYPE_MINIMAX_LINK ? MINIMAX_NATIVE_TYPE : props.type)}.Color`,
+        size
+      )}
     </span>
   )
 }

@@ -59,7 +59,7 @@ import {
 } from '@/lib/admin-permissions'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { MODEL_FETCHABLE_TYPES } from '../constants'
+import { CHANNEL_TYPE_MINIMAX_LINK, MODEL_FETCHABLE_TYPES } from '../constants'
 import {
   channelsQueryKeys,
   handleDeleteChannel,
@@ -88,6 +88,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const [isTesting, setIsTesting] = useState(false)
   const [isTogglingStatus, setIsTogglingStatus] = useState(false)
 
+  const unsupportedProbe = channel.type === CHANNEL_TYPE_MINIMAX_LINK
   const isEnabled = isChannelEnabled(channel)
   const isMultiKey = isMultiKeyChannel(channel)
   const canEditSensitive = hasPermission(
@@ -102,12 +103,14 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   }
 
   const handleTest = () => {
+    if (unsupportedProbe) return
     setCurrentRow(channel)
     setOpen('test-channel')
   }
 
   const handleDirectTest = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
+    if (unsupportedProbe) return
     setIsTesting(true)
     try {
       await handleTestChannel(channel.id, { channelName: channel.name }, () => {
@@ -192,7 +195,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               variant='ghost'
               size='icon-sm'
               onClick={handleDirectTest}
-              disabled={isTesting}
+              disabled={isTesting || unsupportedProbe}
               aria-label={t('Test Connection')}
             />
           }
@@ -203,7 +206,13 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
             <Gauge className='size-4' />
           )}
         </TooltipTrigger>
-        <TooltipContent>{t('Test Connection')}</TooltipContent>
+        <TooltipContent>
+          {t(
+            unsupportedProbe
+              ? 'Standard video channels do not support this connection probe.'
+              : 'Test Connection'
+          )}
+        </TooltipContent>
       </Tooltip>
 
       {layout === 'card' && (
@@ -217,13 +226,20 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
                   e.stopPropagation()
                   handleTest()
                 }}
+                disabled={unsupportedProbe}
                 aria-label={t('Test Channel Connection')}
               />
             }
           >
             <PlugZap className='size-4' />
           </TooltipTrigger>
-          <TooltipContent>{t('Test Channel Connection')}</TooltipContent>
+          <TooltipContent>
+            {t(
+              unsupportedProbe
+                ? 'Standard video channels do not support this connection probe.'
+                : 'Test Channel Connection'
+            )}
+          </TooltipContent>
         </Tooltip>
       )}
 
@@ -274,7 +290,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           )}
 
           {/* Test Connection */}
-          <DropdownMenuItem onClick={handleTest}>
+          <DropdownMenuItem onClick={handleTest} disabled={unsupportedProbe}>
             {t('Test Connection')}
             <DropdownMenuShortcut>
               <PlugZap size={16} />
@@ -290,7 +306,10 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           </DropdownMenuItem>
 
           {/* Fetch Models */}
-          <DropdownMenuItem onClick={handleFetchModels}>
+          <DropdownMenuItem
+            onClick={handleFetchModels}
+            disabled={unsupportedProbe}
+          >
             {t('Fetch Models')}
             <DropdownMenuShortcut>
               <Download size={16} />

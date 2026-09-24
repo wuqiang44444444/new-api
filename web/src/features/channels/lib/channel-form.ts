@@ -283,6 +283,8 @@ export const channelFormSchema = z
     asset_credential_configured: z.boolean().optional(),
     seedance_plugin_version: z.string().optional(),
     minimax_plugin_version: z.string().optional(),
+    // Transient UI confirmation; never serialized into channel configuration.
+    minimax_access_selected: z.boolean().optional(),
     seedance_plugin_configuration: z
       .custom<SeedancePluginConfiguration>()
       .optional(),
@@ -293,6 +295,7 @@ export const channelFormSchema = z
       .optional(),
     video_upstream_protocol: z
       .enum([
+        'jdcloud_video_task_v1',
         'modelark_v3_volcengine',
         'modelark_v3_byteplus',
         'modelark_v3_cmcc',
@@ -333,6 +336,22 @@ export const channelFormSchema = z
     upstream_model_update_ignored_models: z.string().optional(),
   })
   .superRefine((data, ctx) => {
+    if (
+      (data.type === 35 || data.type === CHANNEL_TYPE_MINIMAX_LINK) &&
+      data.minimax_access_selected === false
+    ) {
+      addRequiredIssue(ctx, 'minimax_access_selected', 'Select access method')
+    }
+    if (
+      data.type === CHANNEL_TYPE_MINIMAX_LINK &&
+      !data.minimax_plugin_version?.trim()
+    ) {
+      addRequiredIssue(
+        ctx,
+        'minimax_plugin_version',
+        'Load the plugin declaration before saving'
+      )
+    }
     if (
       [
         3,
@@ -813,7 +832,7 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
   }
 
   // Seedance Link keeps its code-registered upstream protocols in settings.
-  if (formData.type === CHANNEL_TYPE_SEEDANCE_LINK) {
+  else if (formData.type === CHANNEL_TYPE_SEEDANCE_LINK) {
     settingsObj.video_upstream_protocol = formData.video_upstream_protocol
     settingsObj.asset_upstream_protocol =
       formData.asset_upstream_protocol || 'none'
