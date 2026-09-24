@@ -36,6 +36,7 @@ func TestNativeUsageCompletionAfterBillingAttachment(t *testing.T) {
 			task = reloadTask(t, task.ID)
 			result := &relaycommon.TaskInfo{Status: model.TaskStatusSuccess, CompletionTokens: tc.tokens, CompletionTokensReported: tc.tokens > 0, UsageFacts: map[string]any{tc.field: tc.actual}}
 			prepareTerminalTaskBilling(task, result)
+			persistTaskCalculationFixture(t, task)
 			require.True(t, settleTaskBillingOnComplete(context.Background(), &mockAdaptor{}, task, result))
 			assert.Equal(t, tc.target, task.Quota)
 			assert.Equal(t, 11000-tc.target, getUserQuota(t, 8991))
@@ -57,6 +58,7 @@ func TestNativeUsageFailureRefundAfterBillingAttachment(t *testing.T) {
 	task = reloadTask(t, task.ID)
 	result := &relaycommon.TaskInfo{Status: model.TaskStatusFailure}
 	prepareTerminalTaskBilling(task, result)
+	persistTaskCalculationFixture(t, task)
 	require.False(t, settleTaskBillingOnComplete(context.Background(), &mockAdaptor{}, task, result))
 	refundTaskWithReconcile(context.Background(), task, "provider failed")
 	refundTaskWithReconcile(context.Background(), reloadTask(t, task.ID), "duplicate observation")
@@ -80,6 +82,7 @@ func TestNativeUsageWithHistoricalAsyncStateRequiresReconciliation(t *testing.T)
 			before := *task.PrivateData.AsyncBilling
 			result := &relaycommon.TaskInfo{Status: model.TaskStatusSuccess, CompletionTokens: 100000, UsageFacts: map[string]any{"tokens": 100000}}
 			prepareTerminalTaskBilling(task, result)
+			persistTaskCalculationFixture(t, task)
 			require.True(t, settleTaskBillingOnComplete(context.Background(), &mockAdaptor{}, task, result))
 			require.True(t, settleTaskTieredSnapshot(context.Background(), task, 100000))
 			recalculateTaskQuotaWithReconcile(context.Background(), task, target, "must not supplement")

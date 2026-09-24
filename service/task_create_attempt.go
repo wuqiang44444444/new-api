@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	hosttypes "github.com/QuantumNous/new-api/types"
@@ -36,6 +37,7 @@ type taskCreateFrozenConnection struct {
 }
 
 type taskCreateBillingSnapshot struct {
+	Calculation  *billingexpr.Calculation       `json:"calculation,omitempty"`
 	PublicModel  string                         `json:"public_model"`
 	Quota        int                            `json:"quota"`
 	FreeModel    bool                           `json:"free_model"`
@@ -56,6 +58,9 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 	}
 	if info.PriceData.Quota < 0 {
 		return types.NewErrorWithStatusCode(errors.New("task quota cannot be negative"), types.ErrorCodeModelPriceError, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+	}
+	if info.BillingCalculation == nil || info.BillingCalculation.Version != 1 || info.BillingCalculation.Quota != info.PriceData.Quota {
+		return types.NewErrorWithStatusCode(errors.New("initial billing calculation missing or inconsistent"), types.ErrorCodeModelPriceError, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
 	requestHash, err := taskAttemptRequestHash(c, info.ClientProtocol)
 	if err != nil {
@@ -91,6 +96,7 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
 	billing, err := common.Marshal(taskCreateBillingSnapshot{
+		Calculation:  info.BillingCalculation,
 		PublicModel:  info.OriginModelName,
 		Quota:        info.PriceData.Quota,
 		FreeModel:    info.PriceData.FreeModel,

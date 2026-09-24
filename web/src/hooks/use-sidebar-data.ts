@@ -159,6 +159,11 @@ export function useSidebarData(): SidebarData {
             icon: Radio,
           },
           {
+            title: t('Upstream balances'),
+            url: '/admin/upstream-balances',
+            icon: Wallet,
+          },
+          {
             title: t('Models'),
             url: '/models/metadata',
             icon: Box,

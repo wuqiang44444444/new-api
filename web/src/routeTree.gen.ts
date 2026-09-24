@@ -65,6 +65,7 @@ import { Route as PricingModelIdIndexRouteImport } from './routes/pricing/$model
 import { Route as AuthenticatedAdminBillingIndexRouteImport } from './routes/_authenticated/admin/billing/index'
 import { Route as AuthenticatedAdminContractTemplatesIndexRouteImport } from './routes/_authenticated/admin/contract-templates/index'
 import { Route as AuthenticatedAdminCustomerContractsIndexRouteImport } from './routes/_authenticated/admin/customer-contracts/index'
+import { Route as AuthenticatedAdminUpstreamBalancesIndexRouteImport } from './routes/_authenticated/admin/upstream-balances/index'
 import { Route as AuthenticatedAdminUsageIndexRouteImport } from './routes/_authenticated/admin/usage/index'
 import { Route as AuthenticatedSystemSettingsAuthIndexRouteImport } from './routes/_authenticated/system-settings/auth/index'
 import { Route as AuthenticatedSystemSettingsAuthSectionRouteImport } from './routes/_authenticated/system-settings/auth/$section'
@@ -383,6 +384,12 @@ const AuthenticatedAdminCustomerContractsIndexRoute =
     path: '/admin/customer-contracts/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAdminUpstreamBalancesIndexRoute =
+  AuthenticatedAdminUpstreamBalancesIndexRouteImport.update({
+    id: '/admin/upstream-balances/',
+    path: '/admin/upstream-balances/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAdminUsageIndexRoute =
   AuthenticatedAdminUsageIndexRouteImport.update({
     id: '/admin/usage/',
@@ -536,6 +543,7 @@ export interface FileRoutesByFullPath {
   '/admin/billing/': typeof AuthenticatedAdminBillingIndexRoute
   '/admin/contract-templates/': typeof AuthenticatedAdminContractTemplatesIndexRoute
   '/admin/customer-contracts/': typeof AuthenticatedAdminCustomerContractsIndexRoute
+  '/admin/upstream-balances/': typeof AuthenticatedAdminUpstreamBalancesIndexRoute
   '/admin/usage/': typeof AuthenticatedAdminUsageIndexRoute
   '/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
@@ -605,6 +613,7 @@ export interface FileRoutesByTo {
   '/admin/billing': typeof AuthenticatedAdminBillingIndexRoute
   '/admin/contract-templates': typeof AuthenticatedAdminContractTemplatesIndexRoute
   '/admin/customer-contracts': typeof AuthenticatedAdminCustomerContractsIndexRoute
+  '/admin/upstream-balances': typeof AuthenticatedAdminUpstreamBalancesIndexRoute
   '/admin/usage': typeof AuthenticatedAdminUsageIndexRoute
   '/system-settings/auth': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing': typeof AuthenticatedSystemSettingsBillingIndexRoute
@@ -679,6 +688,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/billing/': typeof AuthenticatedAdminBillingIndexRoute
   '/_authenticated/admin/contract-templates/': typeof AuthenticatedAdminContractTemplatesIndexRoute
   '/_authenticated/admin/customer-contracts/': typeof AuthenticatedAdminCustomerContractsIndexRoute
+  '/_authenticated/admin/upstream-balances/': typeof AuthenticatedAdminUpstreamBalancesIndexRoute
   '/_authenticated/admin/usage/': typeof AuthenticatedAdminUsageIndexRoute
   '/_authenticated/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/_authenticated/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
@@ -752,6 +762,7 @@ export interface FileRouteTypes {
     | '/admin/billing/'
     | '/admin/contract-templates/'
     | '/admin/customer-contracts/'
+    | '/admin/upstream-balances/'
     | '/admin/usage/'
     | '/system-settings/auth/'
     | '/system-settings/billing/'
@@ -821,6 +832,7 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/contract-templates'
     | '/admin/customer-contracts'
+    | '/admin/upstream-balances'
     | '/admin/usage'
     | '/system-settings/auth'
     | '/system-settings/billing'
@@ -894,6 +906,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/billing/'
     | '/_authenticated/admin/contract-templates/'
     | '/_authenticated/admin/customer-contracts/'
+    | '/_authenticated/admin/upstream-balances/'
     | '/_authenticated/admin/usage/'
     | '/_authenticated/system-settings/auth/'
     | '/_authenticated/system-settings/billing/'
@@ -1318,6 +1331,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminCustomerContractsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/admin/upstream-balances/': {
+      id: '/_authenticated/admin/upstream-balances/'
+      path: '/admin/upstream-balances'
+      fullPath: '/admin/upstream-balances/'
+      preLoaderRoute: typeof AuthenticatedAdminUpstreamBalancesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/admin/usage/': {
       id: '/_authenticated/admin/usage/'
       path: '/admin/usage'
@@ -1538,6 +1558,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminBillingIndexRoute: typeof AuthenticatedAdminBillingIndexRoute
   AuthenticatedAdminContractTemplatesIndexRoute: typeof AuthenticatedAdminContractTemplatesIndexRoute
   AuthenticatedAdminCustomerContractsIndexRoute: typeof AuthenticatedAdminCustomerContractsIndexRoute
+  AuthenticatedAdminUpstreamBalancesIndexRoute: typeof AuthenticatedAdminUpstreamBalancesIndexRoute
   AuthenticatedAdminUsageIndexRoute: typeof AuthenticatedAdminUsageIndexRoute
 }
 
@@ -1574,6 +1595,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedAdminContractTemplatesIndexRoute,
   AuthenticatedAdminCustomerContractsIndexRoute:
     AuthenticatedAdminCustomerContractsIndexRoute,
+  AuthenticatedAdminUpstreamBalancesIndexRoute:
+    AuthenticatedAdminUpstreamBalancesIndexRoute,
   AuthenticatedAdminUsageIndexRoute: AuthenticatedAdminUsageIndexRoute,
 }
 

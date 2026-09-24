@@ -65,6 +65,9 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 	async.Operation = "settle"
 	async.Reason = reason
 	async.TargetQuota = &actualQuota
+	async.CalculationVersion = 1
+	async.Calculation = result.Calculation
+	async.CalculationSource = "settlement"
 	if err := task.UpdateBilling(); err != nil {
 		persistTaskBillingFailure(ctx, task, model.TaskBillingStateFailed, err)
 		return true

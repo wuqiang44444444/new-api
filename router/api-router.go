@@ -343,6 +343,7 @@ func SetApiRouter(router *gin.Engine) {
 		billingRoute.GET("/self/breakdown", middleware.UserAuth(), controller.GetUserBillingStatementBreakdown)
 		registerBillingReconciliationRoutes(apiRouter)
 		registerUsageAnalyticsRoutes(apiRouter)
+		registerUpstreamBalanceRoutes(apiRouter)
 
 		systemTaskRoute := apiRouter.Group("/system-task")
 		systemTaskRoute.Use(middleware.RootAuth())
@@ -393,6 +394,7 @@ func SetApiRouter(router *gin.Engine) {
 
 		taskRoute := apiRouter.Group("/task")
 		{
+			taskRoute.GET("/:task_id/billing", middleware.UserAuth(), controller.TaskBillingCalculation)
 			taskRoute.GET("/self", middleware.UserAuth(), controller.GetUserTask)
 			taskRoute.GET("", middleware.AdminAuth(), controller.GetAllTask)
 			taskRoute.GET("/:task_id/artifacts", middleware.UserAuth(), controller.GetDashboardTaskArtifacts)

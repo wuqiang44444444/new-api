@@ -93,6 +93,7 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 	}
 
 	groupRatioInfo := HandleGroupRatio(c, info)
+	requestInput.RecordCalculation = true
 	rawCost, trace, err := billingexpr.RunExprWithRequest(exprString, params, requestInput)
 	if err != nil {
 		return types.PriceData{}, fmt.Errorf("model %s task tiered expr run failed: %w", info.OriginModelName, err)
@@ -107,6 +108,8 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 	if taskUsageBilling {
 		quotaBeforeGroup = rawCost * common.QuotaPerUnit
 	}
+	info.BillingCalculation = trace.Calculation
+	billingexpr.RecordExpressionQuota(trace.Calculation, rawCost, quotaBeforeGroup, groupRatioInfo.GroupRatio, common.QuotaPerUnit, taskUsageBilling)
 	estimatedQuota, err := applyCustomerContractToFloat(quotaBeforeGroup*groupRatioInfo.GroupRatio, info)
 	if err != nil {
 		return types.PriceData{}, err
@@ -121,7 +124,10 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 		freeModel = true
 	}
 
+	trace.Calculation.Add("round", "quota", preConsumedQuota, estimatedQuota)
+	trace.Calculation.Finish(preConsumedQuota)
 	snapshot := &billingexpr.BillingSnapshot{
+		Calculation:               trace.Calculation,
 		BillingMode:               billing_setting.BillingModeTieredExpr,
 		ModelName:                 info.OriginModelName,
 		ExprString:                exprString,

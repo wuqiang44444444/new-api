@@ -78,8 +78,8 @@ type BatchJob struct {
 	TargetQuota   *int `json:"-"`
 	CurrencyQuota int  `json:"-"`
 
-	FrozenSnapshot string `json:"-" gorm:"type:text"`
-	SanitizeError  string `json:"-" gorm:"type:text"`
+	FrozenSnapshot BillingText `json:"-"`
+	SanitizeError  string      `json:"-" gorm:"type:text"`
 
 	PollAfter         int64 `json:"-" gorm:"bigint;index"`
 	PollVersion       int64 `json:"-"`
@@ -103,6 +103,8 @@ type BatchConnection struct {
 }
 
 type BatchFrozenSnapshot struct {
+	InitialCalculations billingexpr.CalculationArchive `json:"initial_calculations,omitempty"`
+
 	AdapterVersion   string                         `json:"adapter_version"`
 	LineParams       map[string]json.RawMessage     `json:"line_params,omitempty"`
 	Connection       BatchConnection                `json:"connection"`
@@ -178,7 +180,7 @@ func CreatePendingBatchJobTx(tx *gorm.DB, params CreateBatchJobParams) (*BatchJo
 		CompletionWindow: params.CompletionWindow, Metadata: params.Metadata,
 		PublicStatus: "validating", DeliveryState: BatchDeliveryPending,
 		SettleState:    BatchSettlePending,
-		FrozenSnapshot: string(frozenJSON),
+		FrozenSnapshot: BillingText(frozenJSON),
 		EstimateQuota:  params.EstimateQuota, LineCount: params.LineCount,
 		CreatedAt: common.GetTimestamp(), UpdatedAt: common.GetTimestamp(),
 	}
@@ -369,6 +371,9 @@ func SaveBatchJobObservation(job *BatchJob, claimedVersion int64) error {
 // content are no-ops, conflicting content keeps the first row and marks the
 // discrepancy for audit.
 type BatchJobLine struct {
+	CalculationVersion int         `json:"-"`
+	Calculation        BillingText `json:"-"`
+
 	Id           int64  `json:"-" gorm:"primaryKey"`
 	JobId        string `json:"-" gorm:"type:varchar(64);uniqueIndex:idx_batch_lines_job_custom,priority:1"`
 	CustomId     string `json:"-" gorm:"type:varchar(255);uniqueIndex:idx_batch_lines_job_custom"`

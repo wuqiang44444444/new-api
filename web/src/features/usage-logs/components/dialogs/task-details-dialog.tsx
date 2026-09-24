@@ -43,6 +43,7 @@ import {
   SuccessWithoutVideoNote,
   TaskArtifacts,
 } from '../task-artifacts'
+import { TaskBillingCalculation } from '../task-billing-calculation'
 import { TaskEvidence } from '../task-evidence'
 import { TaskRequestDetails } from '../task-request-details'
 import { TaskVideoParameters } from '../task-video-parameters'
@@ -242,6 +243,12 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
         ) : null}
 
         <TaskVideoParameters details={props.log.video_details} />
+        {props.open && props.log.platform !== 'azure_batch' && (
+          <TaskBillingCalculation
+            key={props.log.task_id}
+            taskId={props.log.task_id}
+          />
+        )}
 
         {props.isAdmin ? (
           <DetailSection

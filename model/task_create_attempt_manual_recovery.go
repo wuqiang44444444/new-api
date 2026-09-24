@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"gorm.io/gorm"
 )
 
@@ -25,6 +26,26 @@ func RecordTaskCreateAttemptRecoveryTemplate(id int64, task *Task) error {
 	}
 	taskCopy := *task
 	privateData := task.PrivateData
+	if bc := privateData.BillingContext; bc != nil && bc.InitialCalculation != nil && bc.InitialCalculation.Quota != task.Quota {
+		// A subscription minimum is accepted by the hold transaction, not by
+		// the price evaluator. Recovery reads that saved process without replay.
+		var attempt TaskCreateAttempt
+		if err := DB.Select("billing_snapshot").First(&attempt, id).Error; err != nil {
+			return err
+		}
+		var billing struct {
+			Calculation *billingexpr.Calculation `json:"calculation"`
+		}
+		if err := common.Unmarshal(attempt.BillingSnapshot, &billing); err != nil {
+			return err
+		}
+		if billing.Calculation == nil || billing.Calculation.Quota != task.Quota {
+			return errors.New("recovery billing calculation does not match hold")
+		}
+		copy := *bc
+		copy.InitialCalculation = billing.Calculation
+		privateData.BillingContext = &copy
+	}
 	privateData.UpstreamTaskID = ""
 	privateData.UpstreamRequestID = ""
 	if privateData.ClientRequest != nil {

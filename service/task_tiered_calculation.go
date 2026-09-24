@@ -11,8 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ComputeTaskTieredBilling evaluates only frozen task facts. Settlement, log
-// projection and offline repair share the same input, unit and discount rules.
+// ComputeTaskTieredBilling evaluates only frozen task facts. Only settlement uses this evaluator; display reads recorded evidence.
 // It never persists facts or performs a funding operation.
 func ComputeTaskTieredBilling(task *model.Task) (billingexpr.TieredResult, billingexpr.RequestInput, error) {
 	var result billingexpr.TieredResult
@@ -38,6 +37,7 @@ func ComputeTaskTieredBilling(task *model.Task) (billingexpr.TieredResult, billi
 		}
 		input.Usage = facts
 	}
+	input.RecordCalculation = true
 	var err error
 	result, err = billingexpr.ComputeTieredQuotaWithRequest(snap, billingexpr.TokenParams{C: float64(async.ActualTokens)}, input)
 	if err != nil {
@@ -52,7 +52,13 @@ func ComputeTaskTieredBilling(task *model.Task) (billingexpr.TieredResult, billi
 		if err != nil {
 			return result, input, err
 		}
+		// ComputeTieredQuotaWithRequest ends with round. Replace that step so
+		// the recorded charge rounds once, after the frozen contract discount.
+		result.Calculation.Steps = result.Calculation.Steps[:len(result.Calculation.Steps)-1]
+		result.Calculation.Add("contract_ratio", "quota", amount.String(), decimal.NewFromFloat(result.ActualQuotaBeforeGroup).Mul(decimal.NewFromFloat(snap.GroupRatio)).String(), bc.ContractFact.RatioString())
 		result.ActualQuotaAfterGroup, result.Clamp = common.QuotaRoundChecked(amount.InexactFloat64())
+		result.Calculation.Add("round", "quota", result.ActualQuotaAfterGroup, amount.InexactFloat64())
+		result.Calculation.Finish(result.ActualQuotaAfterGroup)
 	}
 	return result, input, nil
 }
@@ -64,17 +70,12 @@ func appendTaskSettlementExpressionFacts(task *model.Task, other *model.LogOther
 	if async == nil || async.TieredSnapshot == nil || async.Operation != "settle" || async.State != model.TaskBillingStateSettled {
 		return
 	}
-	result, input, err := ComputeTaskTieredBilling(task)
-	if err != nil {
-		other.SetAdmin("task_expression_projection_unavailable", true)
+	if async.Calculation == nil {
 		return
 	}
-	other.SetPublic("matched_tier", result.MatchedTier)
-	other.SetPublic("request_rules", result.RequestRules)
-	if len(input.Usage) > 0 {
-		if !async.ActualUsageReported {
-			delete(input.Usage, seedancebilling.TokenUsageKey)
-		}
-		other.SetPublic("usage_facts", input.Usage)
+	other.SetPublic("matched_tier", async.Calculation.MatchedTier)
+	other.SetPublic("request_rules", async.Calculation.RequestRules)
+	if len(async.Calculation.UsageFacts) > 0 {
+		other.SetPublic("usage_facts", async.Calculation.UsageFacts)
 	}
 }

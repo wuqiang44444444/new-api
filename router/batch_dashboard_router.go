@@ -7,5 +7,6 @@ import (
 )
 
 func setBatchDashboardRouter(group *gin.RouterGroup) {
+	group.GET("/batch/:id/billing/calculation", middleware.UserAuth(), controller.BatchLineCalculation)
 	group.GET("/batch/:id/billing", middleware.UserAuth(), controller.BatchBillingDetails)
 }

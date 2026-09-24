@@ -71,6 +71,7 @@ func mergeSeedanceBillingFacts(stored, proposed *TaskAsyncBillingContext, observ
 	next.QuotaClamp = proposed.QuotaClamp
 	if next.TargetQuota == nil {
 		next.TargetQuota = proposed.TargetQuota
+		next.CalculationVersion, next.Calculation, next.CalculationSource = proposed.CalculationVersion, proposed.Calculation, proposed.CalculationSource
 	}
 	if next.TargetQuota != nil && next.State == TaskBillingStateAwaitingUsage {
 		next.State, next.Error, next.NextRetryAt, next.Attempts = TaskBillingStatePending, "", 0, 0
@@ -92,6 +93,11 @@ func (t *Task) updateSeedanceBillingFacts() error {
 		next, err := mergeSeedanceBillingFacts(saved.PrivateData.AsyncBilling, t.PrivateData.AsyncBilling, false)
 		if err != nil {
 			return err
+		}
+		if next.TargetQuota != nil {
+			if err := validateTaskCalculation(&saved, next, *next.TargetQuota); err != nil {
+				return err
+			}
 		}
 		saved.PrivateData.AsyncBilling = next
 		saved.BillingState = next.State

@@ -72,6 +72,7 @@ func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usag
 		return 0, nil, errors.New("image billing snapshot is missing")
 	}
 	if data.FreeModel {
+		zeroTaskCalculation(task, "free")
 		return 0, nil, nil
 	}
 	if data.NativeRequest == nil && (data.ChannelType == constant.ChannelTypeGemini || data.ChannelType == constant.ChannelTypeVertexAi) {
@@ -79,6 +80,7 @@ func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usag
 			return 0, nil, err
 		}
 	}
+	billingDefaults := billingexpr.NewCalculation()
 	if data.NativeRequest != nil {
 		// Persist actual evidence (including absent vs zero usage). Apply the
 		// native ImageHelper's billing defaults only to a calculation copy.
@@ -87,14 +89,17 @@ func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usag
 			nativeUsage = *usage
 		}
 		if nativeUsage.TotalTokens == 0 {
+			billingDefaults.Add("default_if_zero", "token", 1, nativeUsage.TotalTokens)
 			nativeUsage.TotalTokens = 1
 		}
 		if nativeUsage.PromptTokens == 0 {
+			billingDefaults.Add("default_if_zero", "token", 1, nativeUsage.PromptTokens)
 			nativeUsage.PromptTokens = 1
 		}
 		usage = &nativeUsage
 	}
 	if (bc.PerCallBilling && data.NativeRequest == nil) || usage == nil {
+		retainTaskInitialCalculation(task)
 		return data.HeldQuota, nil, nil
 	}
 	if bc.TieredSnapshot != nil {
@@ -118,7 +123,9 @@ func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usag
 			}
 		}
 		snap := bc.TieredSnapshot
-		params := BuildTieredTokenParams(usage, false, billingexpr.UsedVars(snap.ExprString))
+		normalization := billingDefaults
+		params := BuildTieredTokenParams(usage, false, billingexpr.UsedVars(snap.ExprString), normalization)
+		input.RecordCalculation = true
 		result, err := billingexpr.ComputeTieredQuotaWithRequest(snap, params, input)
 		if err != nil {
 			return 0, nil, err
@@ -129,6 +136,15 @@ func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usag
 			return 0, nil, err
 		}
 		quota, clamp := common.QuotaRoundChecked(amount.InexactFloat64())
+		// ComputeTieredQuotaWithRequest ends with round. Replace that step so
+		// normalization and the frozen contract discount precede final rounding.
+		result.Calculation.Steps = result.Calculation.Steps[:len(result.Calculation.Steps)-1]
+		result.Calculation.Steps = append(normalization.Steps, result.Calculation.Steps...)
+		if bc.ContractFact != nil {
+			result.Calculation.Add("contract_ratio", "quota", amount.String(), decimal.NewFromFloat(result.ActualQuotaBeforeGroup).Mul(decimal.NewFromFloat(snap.GroupRatio)).String(), bc.ContractFact.RatioString())
+		}
+		result.Calculation.Add("round", "quota", quota, amount.InexactFloat64())
+		setTaskCalculation(task, result.Calculation.Finish(quota), "settlement")
 		return quota, clamp, nil
 	}
 	if data.Price == nil {
@@ -140,14 +156,16 @@ func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usag
 		price.AddOtherRatio("n", float64(data.ImageCount))
 	}
 	info := &relaycommon.RelayInfo{
-		ChannelMeta:     data.BuildImageTaskChannelMeta(task.ChannelId),
-		OriginModelName: taskModelName(task), PriceData: price,
+		BillingCalculation: billingDefaults,
+		ChannelMeta:        data.BuildImageTaskChannelMeta(task.ChannelId),
+		OriginModelName:    taskModelName(task), PriceData: price,
 		ContractBillingFact: bc.ContractFact, StartTime: time.Unix(task.SubmitTime, 0),
 		FinalPreConsumedQuota: data.HeldQuota,
 	}
 	// This native calculator is side-effect-free for image usage (no tool calls).
 	c := &gin.Context{Request: &http.Request{Header: http.Header{}}}
 	summary := calculateTextQuotaSummary(c, info, usage)
+	setTaskCalculation(task, info.BillingCalculation.Finish(summary.Quota), "settlement")
 	return summary.Quota, info.QuotaClamp, nil
 }
 
@@ -159,9 +177,15 @@ func settleImageTaskBilling(ctx context.Context, task *model.Task) {
 	if async == nil || async.State == model.TaskBillingStateSettled {
 		return
 	}
-	target, clamp, err := imageTaskTargetQuota(ctx, task, task.PrivateData.ImageTask.Usage)
-	if task.Status.ShouldRefundOnTerminal() {
+	var target int
+	var clamp *common.QuotaClamp
+	var err error
+	if async.TargetQuota != nil {
+		target, clamp = *async.TargetQuota, async.QuotaClamp
+	} else if task.Status.ShouldRefundOnTerminal() {
 		target, clamp, err = frozenImageTaskViolationFee(task)
+	} else {
+		target, clamp, err = imageTaskTargetQuota(ctx, task, task.PrivateData.ImageTask.Usage)
 	}
 	if err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("image task %s billing evidence could not be evaluated", task.TaskID))

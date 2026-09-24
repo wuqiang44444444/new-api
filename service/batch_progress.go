@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	azurebatch "github.com/QuantumNous/new-api/relay/channel/azurebatch"
 	"github.com/shopspring/decimal"
 	"io"
@@ -69,7 +70,7 @@ func init() {
 }
 
 func batchClientForJob(job *model.BatchJob) (*azurebatch.Client, error) {
-	frozen, err := decodeBatchFrozenSnapshot(job.FrozenSnapshot)
+	frozen, err := decodeBatchFrozenSnapshot(string(job.FrozenSnapshot))
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +154,7 @@ func applyBatchObservation(ctx context.Context, job *model.BatchJob, status *azu
 // computes the per-line settlement target and applies it atomically. Delivery
 // and settlement recover independently; neither re-runs inference.
 func collectAndSettleBatchJob(ctx context.Context, job *model.BatchJob, status *azurebatch.BatchStatus) error {
-	frozen, err := decodeBatchFrozenSnapshot(job.FrozenSnapshot)
+	frozen, err := decodeBatchFrozenSnapshot(string(job.FrozenSnapshot))
 	if err != nil {
 		return err
 	}
@@ -182,21 +183,21 @@ func collectAndSettleBatchJob(ctx context.Context, job *model.BatchJob, status *
 	for _, line := range lineUsage {
 		quota, finalQuota := 0, 0
 		var clamp *common.QuotaClamp
+		calculation := billingexpr.NewCalculation()
 		if line.Status == "completed" {
 			var err error
-			quota, clamp, err = computeBatchLineModelQuota(frozen, BatchLineUsage{CustomId: line.CustomId, InputTokens: line.InputTokens, OutputTokens: line.OutputTokens, CachedTokens: line.CachedTokens})
+			quota, finalQuota, clamp, calculation, err = computeBatchLineCalculation(frozen, BatchLineUsage{CustomId: line.CustomId, InputTokens: line.InputTokens, OutputTokens: line.OutputTokens, CachedTokens: line.CachedTokens})
 			if err != nil {
 				return err
 			}
-			modelClamp := clamp
-			finalQuota, clamp, err = computeBatchLineFinalQuota(frozen, BatchLineUsage{CustomId: line.CustomId, InputTokens: line.InputTokens, OutputTokens: line.OutputTokens, CachedTokens: line.CachedTokens})
-			if err != nil {
-				return err
-			}
-			if clamp == nil {
-				clamp = modelClamp
-			}
+		} else {
+			calculation.Add("not_charged", "quota", 0)
 		}
+		calculationJSON, err := common.Marshal(calculation)
+		if err != nil {
+			return err
+		}
+
 		clampJSON := ""
 		if clamp != nil {
 			data, err := common.Marshal(clamp)
@@ -207,7 +208,7 @@ func collectAndSettleBatchJob(ctx context.Context, job *model.BatchJob, status *
 		}
 		facts = append(facts, model.BatchJobLine{JobId: job.Id, CustomId: line.CustomId, Status: line.Status,
 			InputTokens: line.InputTokens, OutputTokens: line.OutputTokens, CachedTokens: line.CachedTokens,
-			TotalTokens: line.TotalTokens, ModelQuota: quota, FinalQuota: finalQuota, ErrorCode: line.ErrorCode, QuotaClamp: clampJSON})
+			TotalTokens: line.TotalTokens, ModelQuota: quota, FinalQuota: finalQuota, ErrorCode: line.ErrorCode, QuotaClamp: clampJSON, Calculation: model.BillingText(calculationJSON), CalculationVersion: 1})
 	}
 	if err := model.CommitBatchResultLines(job, facts); err != nil {
 		return err

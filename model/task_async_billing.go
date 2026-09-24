@@ -20,6 +20,9 @@ const (
 )
 
 type TaskAsyncBillingContext struct {
+	CalculationVersion      int                                  `json:"calculation_version,omitempty"`
+	Calculation             *billingexpr.Calculation             `json:"calculation,omitempty"`
+	CalculationSource       string                               `json:"calculation_source,omitempty"`
 	UsageDiscrepancy        *TaskUsageDiscrepancy                `json:"usage_discrepancy,omitempty"`
 	TieredSnapshot          *billingexpr.BillingSnapshot         `json:"tiered_snapshot,omitempty"`
 	BillingProbe            *billingexpr.RequestInput            `json:"billing_probe,omitempty"`

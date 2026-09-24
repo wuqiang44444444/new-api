@@ -144,6 +144,11 @@ func InsertImageTask(params ImageTaskInsertParams) error {
 	if !IsImageTask(task) || task.PrivateData.ImageTask == nil || task.Quota < 0 || task.Status != TaskStatusQueued {
 		return errors.New("invalid image acceptance")
 	}
+	if bc := task.PrivateData.BillingContext; bc != nil && bc.CalculationVersion > 0 {
+		if bc.InitialCalculation == nil || bc.InitialCalculation.Version != 1 || bc.InitialCalculation.Quota != task.Quota {
+			return errors.New("initial billing calculation missing or inconsistent")
+		}
+	}
 	var tokenKey string
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := lockImageTaskSlotsTx(tx); err != nil {

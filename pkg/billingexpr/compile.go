@@ -109,11 +109,17 @@ func usesRequestProbe(node ast.Node) bool {
 }
 
 type cachedEntry struct {
-	prog          *vm.Program
-	usedVars      map[string]bool
-	usedUsageKeys map[string]bool
-	requestRules  []RequestRuleTrace
-	version       int
+	staticTiers        map[string]bool
+	calculationOnce    sync.Once
+	calculationProgram *vm.Program
+	calculationNodes   []CalculationNode
+	calculationError   error
+	body               string
+	prog               *vm.Program
+	usedVars           map[string]bool
+	usedUsageKeys      map[string]bool
+	requestRules       []RequestRuleTrace
+	version            int
 
 	// usesExchangeRate records a direct usd_exchange_rate() dependency of the
 	// whole expression, including untaken branches. It shares the save-time
@@ -211,8 +217,21 @@ func compileEntryFromCacheByHash(exprStr, hash string) (*cachedEntry, error) {
 		return nil, fmt.Errorf("expr compile error: %w", err)
 	}
 
+	staticTiers := make(map[string]bool)
+	ast.Find(prog.Node(), func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallNode); ok && len(call.Arguments) == 2 {
+			if id, ok := call.Callee.(*ast.IdentifierNode); ok && id.Value == "tier" {
+				if name, ok := call.Arguments[0].(*ast.StringNode); ok {
+					staticTiers[name.Value] = true
+				}
+			}
+		}
+		return false
+	})
 	entry := &cachedEntry{
+		staticTiers:      staticTiers,
 		prog:             prog,
+		body:             body,
 		usedVars:         extractUsedVars(prog),
 		usedUsageKeys:    extractUsedUsageKeys(prog),
 		requestRules:     patcher.requestRules,

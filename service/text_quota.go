@@ -233,6 +233,7 @@ func composeTieredTextQuota(relayInfo *relaycommon.RelayInfo, summary textQuotaS
 // effectiveBillingUsage; PostTextConsumeQuota performs that remap once and shares
 // the result with tiered billing, affinity observation and logging.
 func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) textQuotaSummary {
+	calculation := relayInfo.BillingCalculation
 	summary := textQuotaSummary{
 		ModelName:            relayInfo.GetBillingModelName(),
 		TokenName:            ctx.GetString("token_name"),
@@ -284,6 +285,8 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		summary.PromptTokens -= summary.CacheCreationTokens
 	}
 
+	calculation.Add("input_tokens", "token", summary.PromptTokens)
+	calculation.Add("output_tokens", "token", summary.CompletionTokens)
 	dPromptTokens := decimal.NewFromInt(int64(summary.PromptTokens))
 	dCacheTokens := decimal.NewFromInt(int64(summary.CacheTokens))
 	dImageTokens := decimal.NewFromInt(int64(summary.ImageTokens))
@@ -353,43 +356,70 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			baseTokens = decimal.Zero
 		}
 
+		calculation.Add("normalized_prompt", "token", baseTokens, summary.PromptTokens, summary.CacheTokens, summary.CacheCreationTokens, summary.ImageTokens, summary.AudioTokens, summary.IsClaudeUsageSemantic, legacyClaudeDerived, summary.AudioInputPrice > 0)
+		calculation.Add("multiply", "weighted_token", cachedTokensWithRatio, dCacheTokens, dCacheRatio)
+		calculation.Add("cache_creation", "weighted_token", cachedCreationTokensWithRatio, summary.CacheCreationTokens, summary.CacheCreationTokens5m, summary.CacheCreationTokens1h, summary.CacheCreationRatio, summary.CacheCreationRatio5m, summary.CacheCreationRatio1h, summary.IsClaudeUsageSemantic || legacyClaudeDerived)
+		calculation.Add("multiply", "weighted_token", imageTokensWithRatio, dImageTokens, dImageRatio)
 		promptQuota := baseTokens.Add(cachedTokensWithRatio).Add(imageTokensWithRatio).Add(cachedCreationTokensWithRatio)
 		completionQuota := dCompletionTokens.Mul(dCompletionRatio)
+		calculation.Add("sum", "weighted_token", promptQuota, baseTokens, cachedTokensWithRatio, imageTokensWithRatio, cachedCreationTokensWithRatio)
+		calculation.Add("multiply", "weighted_token", completionQuota, dCompletionTokens, dCompletionRatio)
 		quotaCalculateDecimal := promptQuota.Add(completionQuota).Mul(ratio)
+		calculation.Add("token_components", "quota", quotaCalculateDecimal, promptQuota, completionQuota, dModelRatio, dGroupRatio)
+		calculation.Add("audio_input", "quota", audioInputQuota, summary.AudioInputPrice, summary.AudioTokens, 1000000, summary.GroupRatio, common.QuotaPerUnit)
+		beforeAudio := quotaCalculateDecimal
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
-		quotaCalculateDecimal = relayInfo.PriceData.ApplyOtherRatiosToDecimal(quotaCalculateDecimal)
+		calculation.Add("sum", "quota", quotaCalculateDecimal, beforeAudio, audioInputQuota)
+		quotaCalculateDecimal = relayInfo.PriceData.ApplyOtherRatiosToDecimal(quotaCalculateDecimal, calculation)
 		contractQuota, err := ApplyCustomerContractRatio(quotaCalculateDecimal, relayInfo.ContractBillingFact)
 		if err != nil {
 			summary.Quota = relayInfo.FinalPreConsumedQuota
 			return summary
 		}
+		if relayInfo.ContractBillingFact != nil {
+			calculation.Add("contract_ratio", "quota", contractQuota, quotaCalculateDecimal, relayInfo.ContractBillingFact.RatioString())
+		}
 		quotaCalculateDecimal = contractQuota.Add(summary.ToolCallSurchargeQuota)
+		calculation.Add("sum", "quota", quotaCalculateDecimal, contractQuota, summary.ToolCallSurchargeQuota)
 
 		if !ratio.IsZero() && quotaCalculateDecimal.LessThanOrEqual(decimal.Zero) {
+			calculation.Add("minimum_charge", "quota", 1, quotaCalculateDecimal)
 			quotaCalculateDecimal = decimal.NewFromInt(1)
 		}
 		quota, clamp := common.QuotaFromDecimalChecked(quotaCalculateDecimal)
 		summary.Quota = quota
+		calculation.Add("truncate", "quota", quota, quotaCalculateDecimal)
 		noteQuotaClamp(relayInfo, clamp)
 	} else {
 		quotaCalculateDecimal := dModelPrice.Mul(dQuotaPerUnit).Mul(dGroupRatio)
+		calculation.Add("per_call", "quota", quotaCalculateDecimal, dModelPrice, dQuotaPerUnit, dGroupRatio)
+		calculation.Add("audio_input", "quota", audioInputQuota, summary.AudioInputPrice, summary.AudioTokens, 1000000, summary.GroupRatio, common.QuotaPerUnit)
+		beforeAudio := quotaCalculateDecimal
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
-		quotaCalculateDecimal = relayInfo.PriceData.ApplyOtherRatiosToDecimal(quotaCalculateDecimal)
+		calculation.Add("sum", "quota", quotaCalculateDecimal, beforeAudio, audioInputQuota)
+		quotaCalculateDecimal = relayInfo.PriceData.ApplyOtherRatiosToDecimal(quotaCalculateDecimal, calculation)
 		contractQuota, err := ApplyCustomerContractRatio(quotaCalculateDecimal, relayInfo.ContractBillingFact)
 		if err != nil {
 			summary.Quota = relayInfo.FinalPreConsumedQuota
 			return summary
 		}
+		if relayInfo.ContractBillingFact != nil {
+			calculation.Add("contract_ratio", "quota", contractQuota, quotaCalculateDecimal, relayInfo.ContractBillingFact.RatioString())
+		}
 		quotaCalculateDecimal = contractQuota.Add(summary.ToolCallSurchargeQuota)
+		calculation.Add("sum", "quota", quotaCalculateDecimal, contractQuota, summary.ToolCallSurchargeQuota)
 		quota, clamp := common.QuotaFromDecimalChecked(quotaCalculateDecimal)
 		summary.Quota = quota
+		calculation.Add("truncate", "quota", quota, quotaCalculateDecimal)
 		noteQuotaClamp(relayInfo, clamp)
 	}
 
 	if !summary.hasBillableUsage() {
 		summary.Quota = 0
+		calculation.Add("no_billable_usage", "quota", 0)
 	} else if !ratio.IsZero() && summary.Quota == 0 {
 		summary.Quota = 1
+		calculation.Add("minimum_charge", "quota", 1, 0)
 	}
 
 	return summary

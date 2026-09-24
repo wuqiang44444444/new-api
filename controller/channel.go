@@ -386,8 +386,12 @@ func SearchChannels(c *gin.Context) {
 	}
 
 	total := len(channelData)
-	startIdx := min((page-1)*pageSize, total)
-	endIdx := min(startIdx+pageSize, total)
+	// Bound the page before multiplying and the remaining length before adding.
+	startIdx := total
+	if page-1 <= total/pageSize {
+		startIdx = (page - 1) * pageSize
+	}
+	endIdx := startIdx + min(pageSize, total-startIdx)
 
 	pagedData := channelData[startIdx:endIdx]
 

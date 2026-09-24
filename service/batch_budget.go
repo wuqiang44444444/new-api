@@ -16,7 +16,7 @@ import (
 // is rejected before funds are held; settlement still uses the Go engine.
 type batchPriceRange struct{ low, high float64 }
 
-func batchBudgetOutput(frozen *model.BatchFrozenSnapshot, line BatchLineEstimate) (float64, error) {
+func batchBudgetOutput(frozen *model.BatchFrozenSnapshot, line BatchLineEstimate, calculation ...*billingexpr.Calculation) (float64, error) {
 	_, body := billingexpr.ParseExprVersion(frozen.Expr)
 	tree, err := parser.Parse(body)
 	if err != nil {
@@ -30,7 +30,7 @@ func batchBudgetOutput(frozen *model.BatchFrozenSnapshot, line BatchLineEstimate
 	bounds := map[string]batchPriceRange{
 		"p": {0, float64(line.InputEst)}, "len": {0, float64(line.InputEst)}, "cr": {0, float64(line.InputEst)}, "c": {0, float64(line.OutputCap)},
 	}
-	value, err := batchBudgetRange(tree.Node, bounds, frozen.UsdExchangeRate)
+	value, err := batchBudgetRange(tree.Node, bounds, frozen.UsdExchangeRate, calculation...)
 	if err != nil {
 		return 0, err
 	}
@@ -40,34 +40,53 @@ func batchBudgetOutput(frozen *model.BatchFrozenSnapshot, line BatchLineEstimate
 	return value.high, nil
 }
 
-func batchBudgetRange(node ast.Node, bounds map[string]batchPriceRange, rate *billingexpr.ExchangeRateContext) (batchPriceRange, error) {
+func batchBudgetRange(node ast.Node, bounds map[string]batchPriceRange, rate *billingexpr.ExchangeRateContext, calculation ...*billingexpr.Calculation) (result batchPriceRange, err error) {
+	var inputs []any
+	op := "budget"
+	if len(calculation) > 0 {
+		defer func() {
+			if err == nil {
+				calculation[0].Add(op, "expression", result.high, inputs...)
+			}
+		}()
+	}
 	invalid := fmt.Errorf("batch expression cannot be safely budgeted; use token arithmetic and tier branches")
 	switch n := node.(type) {
 	case *ast.IntegerNode:
 		v := float64(n.Value)
+		inputs = []any{v}
+		op = "budget_constant"
 		return batchPriceRange{v, v}, nil
 	case *ast.FloatNode:
+		inputs = []any{n.Value}
+		op = "budget_constant"
 		return batchPriceRange{n.Value, n.Value}, nil
 	case *ast.IdentifierNode:
 		if v, ok := bounds[n.Value]; ok {
+			inputs = []any{v.low, v.high}
+			op = "budget_range"
 			return v, nil
 		}
 		return batchPriceRange{}, invalid
 	case *ast.ConditionalNode:
-		a, err := batchBudgetRange(n.Exp1, bounds, rate)
+		a, err := batchBudgetRange(n.Exp1, bounds, rate, calculation...)
 		if err != nil {
 			return a, err
 		}
-		b, err := batchBudgetRange(n.Exp2, bounds, rate)
+		b, err := batchBudgetRange(n.Exp2, bounds, rate, calculation...)
 		if err != nil {
 			return b, err
 		}
+		inputs = []any{a.high, b.high}
+		op = "max"
 		return batchPriceRange{math.Min(a.low, b.low), math.Max(a.high, b.high)}, nil
 	case *ast.UnaryNode:
-		v, err := batchBudgetRange(n.Node, bounds, rate)
+		v, err := batchBudgetRange(n.Node, bounds, rate, calculation...)
 		if err != nil {
 			return v, err
 		}
+		inputs = []any{v.low, v.high}
+		op = "budget_" + n.Operator + "unary"
 		if n.Operator == "-" {
 			return batchPriceRange{-v.high, -v.low}, nil
 		}
@@ -78,25 +97,31 @@ func batchBudgetRange(node ast.Node, bounds map[string]batchPriceRange, rate *bi
 	case *ast.CallNode:
 		name, ok := n.Callee.(*ast.IdentifierNode)
 		if ok && name.Value == "tier" && len(n.Arguments) == 2 {
-			return batchBudgetRange(n.Arguments[1], bounds, rate)
+			value, err := batchBudgetRange(n.Arguments[1], bounds, rate, calculation...)
+			inputs, op = []any{value.high}, "budget_constant"
+			return value, err
 		}
 		// The frozen per-job rate acts as a constant in the interval
 		// arithmetic; without a frozen fact the call cannot be budgeted and
 		// the expression is rejected before funds are held.
 		if ok && name.Value == billingexpr.UsdExchangeRateFunc && len(n.Arguments) == 0 && rate != nil {
 			v := rate.Rate
+			inputs = []any{v}
+			op = "budget_constant"
 			return batchPriceRange{v, v}, nil
 		}
 		return batchPriceRange{}, invalid
 	case *ast.BinaryNode:
-		a, err := batchBudgetRange(n.Left, bounds, rate)
+		a, err := batchBudgetRange(n.Left, bounds, rate, calculation...)
 		if err != nil {
 			return a, err
 		}
-		b, err := batchBudgetRange(n.Right, bounds, rate)
+		b, err := batchBudgetRange(n.Right, bounds, rate, calculation...)
 		if err != nil {
 			return b, err
 		}
+		inputs = []any{a.low, a.high, b.low, b.high}
+		op = "budget_" + n.Operator
 		switch n.Operator {
 		case "+":
 			return batchPriceRange{a.low + b.low, a.high + b.high}, nil

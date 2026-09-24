@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/model_setting"
@@ -41,6 +42,7 @@ func freezeImageTaskViolationFeePolicy(task *model.Task) {
 func frozenImageTaskViolationFee(task *model.Task) (int, *common.QuotaClamp, error) {
 	data := task.PrivateData.ImageTask
 	if data == nil || !data.ViolationMarker {
+		zeroTaskCalculation(task, "refund")
 		return 0, nil, nil
 	}
 	policy, billing := data.ViolationFeePolicy, task.PrivateData.BillingContext
@@ -48,9 +50,13 @@ func frozenImageTaskViolationFee(task *model.Task) (int, *common.QuotaClamp, err
 		return 0, nil, errors.New("image violation fee policy snapshot is missing")
 	}
 	if !policy.Enabled {
+		zeroTaskCalculation(task, "refund")
 		return 0, nil, nil
 	}
 	quota, clamp := calcViolationFeeQuotaChecked(policy.BaseAmount, billing.GroupRatio)
+	c := billingexpr.NewCalculation()
+	c.Add("violation_fee", "quota", quota, policy.BaseAmount, common.QuotaPerUnit, billing.GroupRatio)
+	setTaskCalculation(task, c.Finish(quota), "violation_fee")
 	return quota, clamp, nil
 }
 
@@ -60,8 +66,8 @@ func appendImageTaskViolationFeeLog(other *model.LogOther, task *model.Task, cha
 	if !model.IsImageTask(task) || !task.Status.ShouldRefundOnTerminal() || chargedQuota <= 0 {
 		return
 	}
-	fee, _, err := frozenImageTaskViolationFee(task)
-	if err != nil || fee != chargedQuota {
+	fee := chargedQuota
+	if task.PrivateData.ImageTask.ViolationFeePolicy == nil || !task.PrivateData.ImageTask.ViolationMarker {
 		return
 	}
 	other.MergePublic(map[string]any{

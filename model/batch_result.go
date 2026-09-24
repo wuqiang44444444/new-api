@@ -6,6 +6,7 @@ import (
 	"reflect"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"gorm.io/gorm"
 )
 
@@ -56,6 +57,12 @@ func AttachBatchResultFile(job *BatchJob, purpose, key string, size, count int64
 func CommitBatchResultLines(job *BatchJob, lines []BatchJobLine) error {
 	var usage [4]int64
 	for _, line := range lines {
+		if line.CalculationVersion > 0 {
+			var calculation billingexpr.Calculation
+			if err := common.UnmarshalJsonStr(string(line.Calculation), &calculation); err != nil || calculation.Version != 1 || calculation.Quota != line.FinalQuota {
+				return errors.New("batch line calculation missing or inconsistent")
+			}
+		}
 		for i, value := range []int64{line.InputTokens, line.CachedTokens, line.OutputTokens, line.TotalTokens} {
 			if value < 0 || usage[i] > math.MaxInt64-value {
 				return errors.New("batch aggregate usage exceeds supported range")
@@ -184,12 +191,15 @@ func CompleteBatchSettlement(job *BatchJob, task *Task, target int, other *LogOt
 }
 
 type BatchBillingLineView struct {
-	CustomId     string `json:"custom_id"`
-	Status       string `json:"status"`
-	InputTokens  int64  `json:"input_tokens"`
-	OutputTokens int64  `json:"output_tokens"`
-	CachedTokens int64  `json:"cached_tokens"`
-	FinalQuota   int    `json:"quota"`
+	UsageUnavailable bool   `json:"usage_unavailable,omitempty"`
+	ChargeUnknown    bool   `json:"charge_unknown,omitempty"`
+	Estimated        bool   `json:"estimated,omitempty"`
+	CustomId         string `json:"custom_id"`
+	Status           string `json:"status"`
+	InputTokens      int64  `json:"input_tokens"`
+	OutputTokens     int64  `json:"output_tokens"`
+	CachedTokens     int64  `json:"cached_tokens"`
+	FinalQuota       int    `json:"quota"`
 }
 
 func GetBatchBillingLines(jobID string, offset, limit int) ([]BatchBillingLineView, error) {

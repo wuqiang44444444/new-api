@@ -62,6 +62,23 @@ function setup(values = defaults) {
   return { refresh: (next: typeof defaults) => result.rerender(view(next)) }
 }
 
+test('keeps shared report recipients editable when hourly reports are disabled', async () => {
+  setup({ ...defaults, 'error_report_setting.enabled': false })
+  fireEvent.change(screen.getByLabelText('Report recipients'), {
+    target: { value: 'balance-alerts@example.com' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Save SMTP settings' }))
+  await waitFor(() =>
+    expect(put).toHaveBeenCalledWith('/api/option/', {
+      key: 'error_report_setting.recipients',
+      value: 'balance-alerts@example.com',
+    })
+  )
+  expect(put.mock.calls.map((call) => call[1].key)).toEqual([
+    'error_report_setting.recipients',
+  ])
+})
+
 describe('SMTP report configuration', () => {
   test('loaded and refreshed report settings remain valid when only SMTP changes', async () => {
     const { refresh } = setup()

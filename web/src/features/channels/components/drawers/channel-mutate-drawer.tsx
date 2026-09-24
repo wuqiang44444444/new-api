@@ -996,9 +996,7 @@ export function ChannelMutateDrawer({
 
   const channelTypeOptions = useMemo(() => {
     const options = channelManagementTypeOptions(
-      channelTypeOptionsForTaskPluginBind(canBindTaskPlugin),
-      isEditing,
-      currentType
+      channelTypeOptionsForTaskPluginBind(canBindTaskPlugin)
     ).map((option) => ({
       value: String(option.value),
       label: t(option.label),
@@ -1015,7 +1013,7 @@ export function ChannelMutateDrawer({
       })
     }
     return options
-  }, [canBindTaskPlugin, currentType, isEditing, t])
+  }, [canBindTaskPlugin, currentType, t])
 
   const formErrors = form.formState.errors
   const identityHasErrors = Boolean(
@@ -2097,7 +2095,8 @@ export function ChannelMutateDrawer({
                           <fieldset
                             disabled={
                               sensitiveLocked ||
-                              (isEditing && isMinimaxChannel(currentType))
+                              (currentRow != null &&
+                                isMinimaxChannel(currentRow.type))
                             }
                             className='min-w-0 disabled:opacity-60'
                           >
@@ -2131,7 +2130,7 @@ export function ChannelMutateDrawer({
                                             selectChannelManagementType(
                                               form,
                                               nextType,
-                                              isEditing
+                                              currentRow?.type
                                             )
                                           }
                                         }}

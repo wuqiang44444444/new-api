@@ -1075,6 +1075,8 @@ func TestRecalculate_PositiveDelta(t *testing.T) {
 
 	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
 
+	persistTaskCalculationFixture(t, task)
+
 	RecalculateTaskQuota(ctx, task, actualQuota, "adaptor adjustment")
 
 	// User quota should decrease by the delta (1000 additional charge)
@@ -1114,6 +1116,8 @@ func TestRecalculate_NegativeDelta(t *testing.T) {
 
 	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
 
+	persistTaskCalculationFixture(t, task)
+
 	RecalculateTaskQuota(ctx, task, actualQuota, "adaptor adjustment")
 
 	// User quota should increase by abs(delta) = 2000 (refund overpayment)
@@ -1148,6 +1152,8 @@ func TestRecalculate_ZeroDelta(t *testing.T) {
 
 	task := makeTask(userID, 0, preConsumed, 0, BillingSourceWallet, 0)
 
+	persistTaskCalculationFixture(t, task)
+
 	RecalculateTaskQuota(ctx, task, preConsumed, "exact match")
 
 	// No change to user quota
@@ -1169,6 +1175,8 @@ func TestRecalculate_ActualQuotaZero(t *testing.T) {
 	task := makeTask(userID, 0, preConsumed, 0, BillingSourceWallet, 0)
 	require.NoError(t, model.DB.Create(task).Error)
 
+	persistTaskCalculationFixture(t, task)
+
 	RecalculateTaskQuota(ctx, task, 0, "zero actual")
 
 	assert.Equal(t, initQuota+preConsumed, getUserQuota(t, userID))
@@ -1187,6 +1195,8 @@ func TestRecalculate_RejectsNegativeActualQuota(t *testing.T) {
 	const initQuota = 10000
 	seedUser(t, userID, initQuota)
 	task := makeTask(userID, 0, preConsumed, 0, BillingSourceWallet, 0)
+
+	persistTaskCalculationFixture(t, task)
 
 	RecalculateTaskQuota(ctx, task, -1, "invalid negative actual")
 
@@ -1212,6 +1222,8 @@ func TestRecalculate_Subscription_NegativeDelta(t *testing.T) {
 	seedChargedAccounting(t, userID, channelID, tokenID, preConsumed, 1)
 
 	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceSubscription, subID)
+
+	persistTaskCalculationFixture(t, task)
 
 	RecalculateTaskQuota(ctx, task, actualQuota, "subscription over-charge")
 
@@ -1470,6 +1482,8 @@ func TestSettle_PerCallBilling_SkipsAdaptorAdjust(t *testing.T) {
 	adaptor := &mockAdaptor{adjustReturn: 2000}
 	taskResult := &relaycommon.TaskInfo{Status: model.TaskStatusSuccess}
 
+	persistTaskCalculationFixture(t, task)
+
 	settled := settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
 
 	// Per-call: no adjustment despite adaptor returning 2000
@@ -1497,6 +1511,8 @@ func TestSettle_PerCallBilling_SkipsTotalTokens(t *testing.T) {
 
 	adaptor := &mockAdaptor{adjustReturn: 0}
 	taskResult := &relaycommon.TaskInfo{Status: model.TaskStatusSuccess, TotalTokens: 9999}
+
+	persistTaskCalculationFixture(t, task)
 
 	settled := settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
 
@@ -1526,6 +1542,8 @@ func TestSettle_NonPerCallBilling_AppliesAdaptorAdjustment(t *testing.T) {
 
 	adaptor := &mockAdaptor{adjustReturn: adaptorQuota}
 	taskResult := &relaycommon.TaskInfo{Status: model.TaskStatusSuccess}
+
+	persistTaskCalculationFixture(t, task)
 
 	settled := settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
 
@@ -1558,6 +1576,8 @@ func TestSettle_TieredEvaluationFailureKeepsPreConsumedCharge(t *testing.T) {
 		TaskUsageBilling: true,
 	}
 
+	persistTaskCalculationFixture(t, task)
+
 	settled := settleTaskBillingOnComplete(ctx, &mockAdaptor{}, task, &relaycommon.TaskInfo{Status: model.TaskStatusFailure})
 
 	assert.True(t, settled)
@@ -1587,6 +1607,8 @@ func TestSettle_TieredFailureReturnsFalseForCallerRefund(t *testing.T) {
 		UsageFacts:       map[string]any{"seconds": float64(5), "clips": float64(2)},
 		EstimatedTier:    "base",
 	}
+
+	persistTaskCalculationFixture(t, task)
 
 	settled := settleTaskBillingOnComplete(
 		ctx,
@@ -1624,6 +1646,8 @@ func TestSettle_TieredSuccessStillRecomputes(t *testing.T) {
 		UsageFacts:       map[string]any{"seconds": float64(5), "clips": float64(2)},
 		EstimatedTier:    "base",
 	}
+
+	persistTaskCalculationFixture(t, task)
 
 	settled := settleTaskBillingOnComplete(
 		ctx,
@@ -1698,6 +1722,8 @@ func TestSettle_TieredUsageFactsMergeCompletionOverSubmission(t *testing.T) {
 				EstimatedTier:    "base",
 			}
 
+			persistTaskCalculationFixture(t, task)
+
 			settled := settleTaskBillingOnComplete(
 				context.Background(),
 				&mockAdaptor{},
@@ -1746,6 +1772,8 @@ func TestSettle_TieredSnapshotWriteBackUsesSettledFactsAndMatchedTier(t *testing
 		UsageFacts:       map[string]any{"resolution": "720P", "seconds": float64(5)},
 		EstimatedTier:    "720P",
 	}
+
+	persistTaskCalculationFixture(t, task)
 
 	settled := settleTaskBillingOnComplete(
 		context.Background(),
@@ -1823,6 +1851,7 @@ func TestSettle_TokenRecalcFallsBackToCompletionTokens(t *testing.T) {
 			seedChannel(t, channelID)
 
 			task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
+			persistTaskCalculationFixture(t, task)
 			settled := settleTaskBillingOnComplete(
 				context.Background(),
 				&mockAdaptor{},

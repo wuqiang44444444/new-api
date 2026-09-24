@@ -27,6 +27,9 @@ func RunExpr(exprStr string, params TokenParams) (float64, TraceResult, error) {
 func RunExprWithRequest(exprStr string, params TokenParams, request RequestInput) (float64, TraceResult, error) {
 	entry, err := compileEntryFromCacheByHash(exprStr, ExprHashString(exprStr))
 	if err != nil {
+		if request.RecordCalculation {
+			return 0, TraceResult{}, calculationError{cause: err, phase: "compile"}
+		}
 		return 0, TraceResult{}, err
 	}
 	return runProgram(entry, params, request)
@@ -42,6 +45,9 @@ func RunExprByHash(exprStr, hash string, params TokenParams) (float64, TraceResu
 func RunExprByHashWithRequest(exprStr, hash string, params TokenParams, request RequestInput) (float64, TraceResult, error) {
 	entry, err := compileEntryFromCacheByHash(exprStr, hash)
 	if err != nil {
+		if request.RecordCalculation {
+			return 0, TraceResult{}, calculationError{cause: err, phase: "compile"}
+		}
 		return 0, TraceResult{}, err
 	}
 	return runProgram(entry, params, request)
@@ -143,13 +149,47 @@ func runProgram(entry *cachedEntry, params TokenParams, request RequestInput) (f
 		},
 	}
 
-	out, err := expr.Run(entry.prog, env)
+	program := entry.prog
+	if request.RecordCalculation {
+		entry.calculationOnce.Do(func() {
+			entry.calculationProgram, entry.calculationNodes, entry.calculationError = compileCalculation(entry.body, entry.version)
+		})
+		if entry.calculationError != nil {
+			return 0, trace, calculationError{cause: entry.calculationError, phase: "compile"}
+		}
+		trace.Calculation = NewCalculation()
+		trace.Calculation.ExpressionVersion = entry.version
+		trace.Calculation.Nodes = entry.calculationNodes
+		env["$billing_calculation"] = trace.Calculation
+		program = entry.calculationProgram
+	}
+	out, err := expr.Run(program, env)
+	trace.Calculation.protectValues()
 	if err != nil {
+		if request.RecordCalculation {
+			return 0, trace, calculationError{cause: err, phase: "run"}
+		}
 		return 0, trace, fmt.Errorf("expr run error: %w", err)
 	}
 	f, ok := out.(float64)
 	if !ok {
 		return 0, trace, fmt.Errorf("expr result is %T, want float64", out)
+	}
+	if trace.Calculation != nil {
+		// Tier names are taken only from static literals, never a request value.
+		if entry.staticTiers[trace.MatchedTier] {
+			trace.Calculation.MatchedTier = trace.MatchedTier
+		}
+		trace.Calculation.UsageFacts = make(map[string]any)
+		for key, value := range request.Usage {
+			if calculationValue(value) != "protected" {
+				trace.Calculation.UsageFacts[key] = value
+			}
+		}
+		for _, rule := range trace.RequestRules {
+			rule.Cond = "protected condition"
+			trace.Calculation.RequestRules = append(trace.Calculation.RequestRules, rule)
+		}
 	}
 	return f, trace, nil
 }

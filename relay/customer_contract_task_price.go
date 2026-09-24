@@ -18,8 +18,9 @@ import (
 const contractTaskPriceKey = "customer_contract_task_price"
 
 type contractTaskPrice struct {
-	price    hosttypes.PriceData
-	snapshot *billingexpr.BillingSnapshot
+	price       hosttypes.PriceData
+	snapshot    *billingexpr.BillingSnapshot
+	calculation *billingexpr.Calculation
 }
 
 func mergeCustomerContractOriginRatios(info *relaycommon.RelayInfo, price *hosttypes.PriceData) {
@@ -45,6 +46,7 @@ func restoreCustomerContractTaskPrice(c *gin.Context, info *relaycommon.RelayInf
 	}
 	frozen := value.(contractTaskPrice)
 	info.TieredBillingSnapshot = frozen.snapshot
+	info.BillingCalculation = frozen.calculation
 	return frozen.price, true
 }
 
@@ -55,7 +57,7 @@ func refreshCustomerContractTaskPrice(c *gin.Context, info *relaycommon.RelayInf
 	if !customerContractTaskPriceFrozen(c) {
 		price := info.PriceData
 		price.ReplaceOtherRatios(info.PriceData.OtherRatios())
-		c.Set(contractTaskPriceKey, contractTaskPrice{price: price, snapshot: info.TieredBillingSnapshot})
+		c.Set(contractTaskPriceKey, contractTaskPrice{price: price, snapshot: info.TieredBillingSnapshot, calculation: info.BillingCalculation})
 	}
 	price := &info.PriceData
 	price.GroupRatioInfo = helper.HandleGroupRatio(c, info)
@@ -69,24 +71,33 @@ func refreshCustomerContractTaskPrice(c *gin.Context, info *relaycommon.RelayInf
 	if math.IsNaN(base) || math.IsInf(base, 0) || base < 0 || math.IsNaN(price.GroupRatioInfo.GroupRatio) || math.IsInf(price.GroupRatioInfo.GroupRatio, 0) || price.GroupRatioInfo.GroupRatio < 0 {
 		return errors.New("invalid contract billing multiplier")
 	}
+	info.BillingCalculation.Add("group_ratio", "quota", decimal.NewFromFloat(base).Mul(decimal.NewFromFloat(price.GroupRatioInfo.GroupRatio)).String(), base, price.GroupRatioInfo.GroupRatio)
 	amount, err := service.ApplyCustomerContractRatio(decimal.NewFromFloat(base).Mul(decimal.NewFromFloat(price.GroupRatioInfo.GroupRatio)), info.ContractBillingFact)
 	if err != nil {
 		return err
 	}
+	info.BillingCalculation.Add("contract_ratio", "quota", amount.String(), decimal.NewFromFloat(base).Mul(decimal.NewFromFloat(price.GroupRatioInfo.GroupRatio)).String(), info.ContractBillingFact.RatioString())
 	var quota int
 	if info.TieredBillingSnapshot != nil {
 		quota, err = billingexpr.QuotaRoundStrict(amount.InexactFloat64())
+		info.BillingCalculation.Add("round", "quota", quota, amount.InexactFloat64())
 		info.TieredBillingSnapshot.GroupRatio = price.GroupRatioInfo.GroupRatio
 		info.TieredBillingSnapshot.EstimatedQuotaAfterGroup = quota
 	} else {
 		quota, err = common.QuotaFromFloatStrict(amount.InexactFloat64())
+		info.BillingCalculation.Add("truncate", "quota", quota, amount.InexactFloat64())
 		if err == nil && !common.StringsContains(constant.TaskPricePatches, modelName) {
-			quota, err = common.QuotaFromFloatStrict(price.ApplyOtherRatiosToFloat(float64(quota)))
+			multiplier := price.OtherRatioMultiplier(info.BillingCalculation)
+			value := float64(quota) * multiplier
+			info.BillingCalculation.Add("other_ratios", "quota", value, quota, multiplier)
+			quota, err = common.QuotaFromFloatStrict(value)
+			info.BillingCalculation.Add("truncate", "quota", quota, value)
 		}
 	}
 	if err != nil {
 		return err
 	}
+	info.BillingCalculation.Finish(quota)
 	price.Quota, price.QuotaToPreConsume = quota, quota
 	price.FreeModel = base*price.GroupRatioInfo.GroupRatio == 0 && info.Billing == nil && !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume
 	return nil

@@ -82,6 +82,8 @@ type TokenCountMeta struct {
 }
 
 type RelayInfo struct {
+	BillingCalculation *billingexpr.Calculation
+
 	TokenId           int
 	TokenKey          string
 	TokenGroup        string

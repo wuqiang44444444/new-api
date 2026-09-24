@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/shopspring/decimal"
@@ -71,6 +72,7 @@ func refundTaskWithReconcile(ctx context.Context, task *model.Task, reason strin
 	if async.State == model.TaskBillingStateSettled {
 		return
 	}
+	zeroTaskCalculation(task, "refund")
 	async.Operation = "refund"
 	async.Reason = reason
 	targetQuota := 0
@@ -103,6 +105,9 @@ func recalculateTaskQuotaWithReconcile(ctx context.Context, task *model.Task, ac
 	}
 	if actualQuota < 0 || async.State == model.TaskBillingStateSettled {
 		return
+	}
+	if async.Calculation == nil && async.CalculationSource == "" && actualQuota == task.Quota {
+		retainTaskInitialCalculation(task)
 	}
 	async.Operation = "settle"
 	async.Reason = reason
@@ -170,14 +175,20 @@ func calculateTaskQuotaByTokens(task *model.Task, totalTokens int) (int, *common
 		Mul(decimal.NewFromFloat(modelRatio)).
 		Mul(decimal.NewFromFloat(groupRatio)).
 		Mul(decimal.NewFromFloat(otherMultiplier))
+	calculation := billingexpr.NewCalculation()
+	calculation.Add("token_ratio", "quota", quotaDecimal.String(), totalTokens, modelRatio, groupRatio, otherMultiplier)
 	var err error
 	if billingContext != nil && billingContext.ContractFact != nil {
+		beforeContract := quotaDecimal
 		quotaDecimal, err = ApplyCustomerContractRatio(quotaDecimal, billingContext.ContractFact)
+		calculation.Add("contract_ratio", "quota", quotaDecimal.String(), beforeContract.String(), billingContext.ContractFact.RatioString())
 		if err != nil {
 			return 0, nil, "invalid frozen customer contract ratio", false
 		}
 	}
 	quota, clamp := common.QuotaFromDecimalChecked(quotaDecimal)
+	calculation.Add("truncate", "quota", quota, quotaDecimal.String())
+	setTaskCalculation(task, calculation.Finish(quota), "measured_tokens")
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f, otherMultiplier=%.4f", totalTokens, modelRatio, groupRatio, otherMultiplier)
 	return quota, clamp, reason, true
 }

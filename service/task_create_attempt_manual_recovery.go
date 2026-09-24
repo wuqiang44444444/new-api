@@ -47,13 +47,15 @@ func StageVideoTaskCreateAttemptRecovery(
 	task.PrivateData.TokenId = info.TokenId
 	task.PrivateData.NodeName = common.NodeName
 	task.PrivateData.BillingContext = &model.TaskBillingContext{
-		ModelPrice:      info.PriceData.ModelPrice,
-		GroupRatio:      info.PriceData.GroupRatioInfo.GroupRatio,
-		ModelRatio:      info.PriceData.ModelRatio,
-		OtherRatios:     info.PriceData.OtherRatios(),
-		OriginModelName: info.OriginModelName,
-		PerCallBilling:  common.StringsContains(constant.TaskPricePatches, info.OriginModelName) || info.PriceData.UsePrice,
-		ContractFact:    info.ContractBillingFact,
+		CalculationVersion: 1,
+		InitialCalculation: info.BillingCalculation,
+		ModelPrice:         info.PriceData.ModelPrice,
+		GroupRatio:         info.PriceData.GroupRatioInfo.GroupRatio,
+		ModelRatio:         info.PriceData.ModelRatio,
+		OtherRatios:        info.PriceData.OtherRatios(),
+		OriginModelName:    info.OriginModelName,
+		PerCallBilling:     common.StringsContains(constant.TaskPricePatches, info.OriginModelName) || info.PriceData.UsePrice,
+		ContractFact:       info.ContractBillingFact,
 	}
 	model.AttachAsyncTaskBilling(&task.PrivateData, info, task.Quota)
 	stageTaskProtocolSnapshot(c, task, info)

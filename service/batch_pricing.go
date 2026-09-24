@@ -11,7 +11,6 @@ import (
 	azurebatch "github.com/QuantumNous/new-api/relay/channel/azurebatch"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -57,60 +56,32 @@ func batchTokenParams(expr string, usage BatchLineUsage) billingexpr.TokenParams
 	return params
 }
 
-// computeBatchLineModelQuota evaluates one line's model cost under the frozen
-// pricing time and converts it to quota with checked saturation.
-func computeBatchLineModelQuota(frozen *model.BatchFrozenSnapshot, usage BatchLineUsage) (int, *common.QuotaClamp, error) {
-	value, err := batchLineModelCost(frozen, usage)
-	if err != nil {
-		return 0, nil, err
-	}
-	quota, clamp := common.QuotaFromDecimalChecked(value)
-	return quota, clamp, nil
-}
-
-func batchLineModelCost(frozen *model.BatchFrozenSnapshot, usage BatchLineUsage) (decimal.Decimal, error) {
+func batchLineModelCost(frozen *model.BatchFrozenSnapshot, usage BatchLineUsage) (decimal.Decimal, *billingexpr.Calculation, error) {
 	if frozen == nil || frozen.QuotaPerUnit <= 0 || frozen.GroupRatio <= 0 || math.IsNaN(frozen.GroupRatio) || math.IsInf(frozen.GroupRatio, 0) {
-		return decimal.Zero, fmt.Errorf("batch pricing snapshot is invalid")
+		return decimal.Zero, nil, fmt.Errorf("batch pricing snapshot is invalid")
 	}
 	if usage.InputTokens < 0 || usage.OutputTokens < 0 || usage.CachedTokens < 0 || usage.CachedTokens > usage.InputTokens {
-		return decimal.Zero, fmt.Errorf("batch usage is invalid")
+		return decimal.Zero, nil, fmt.Errorf("batch usage is invalid")
 	}
 	pricingTime := time.Unix(frozen.PricingTime, 0).UTC()
 	request := billingexpr.RequestInput{PricingTime: &pricingTime, Body: frozen.LineParams[usage.CustomId], ExchangeRate: frozen.UsdExchangeRate}
-	output, _, err := billingexpr.RunExprByHashWithRequest(frozen.Expr, frozen.ExprHash, batchTokenParams(frozen.Expr, usage), request)
+	request.RecordCalculation = true
+	output, trace, err := billingexpr.RunExprByHashWithRequest(frozen.Expr, frozen.ExprHash, batchTokenParams(frozen.Expr, usage), request)
 	if err != nil {
-		return decimal.Zero, fmt.Errorf("batch line pricing failed: %w", err)
+		return decimal.Zero, nil, fmt.Errorf("batch line pricing failed: %w", err)
 	}
 	if output < 0 || math.IsNaN(output) || math.IsInf(output, 0) {
-		return decimal.Zero, fmt.Errorf("batch line pricing produced an invalid amount")
+		return decimal.Zero, nil, fmt.Errorf("batch line pricing produced an invalid amount")
 	}
-	return decimal.NewFromFloat(output).Div(decimal.NewFromInt(1_000_000)).Mul(decimal.NewFromFloat(frozen.QuotaPerUnit)).Mul(decimal.NewFromFloat(frozen.GroupRatio)), nil
-}
-
-// Apply all ratios before the single per-line integer conversion.
-func computeBatchLineFinalQuota(frozen *model.BatchFrozenSnapshot, usage BatchLineUsage) (int, *common.QuotaClamp, error) {
-	value, err := batchLineModelCost(frozen, usage)
-	if err != nil {
-		return 0, nil, err
+	value := decimal.NewFromFloat(output).Div(decimal.NewFromInt(1_000_000)).Mul(decimal.NewFromFloat(frozen.QuotaPerUnit)).Mul(decimal.NewFromFloat(frozen.GroupRatio))
+	trace.Calculation.Add("input_tokens", "token", usage.InputTokens)
+	trace.Calculation.Add("output_tokens", "token", usage.OutputTokens)
+	trace.Calculation.Add("cache_tokens", "token", usage.CachedTokens)
+	if billingexpr.UsedVars(frozen.Expr)["cr"] {
+		trace.Calculation.Add("subtract", "token", batchTokenParams(frozen.Expr, usage).P, usage.InputTokens, usage.CachedTokens)
 	}
-	if frozen.ContractFact != nil {
-		value, err = ApplyCustomerContractRatio(value, frozen.ContractFact)
-		if err != nil {
-			return 0, nil, err
-		}
-	}
-	quota, clamp := common.QuotaFromDecimalChecked(value)
-	return quota, clamp, nil
-}
-
-// ApplyBatchContractRatio multiplies one line's model quota by the frozen
-// contract discount.
-func ApplyBatchContractRatio(modelQuota int, fact *hosttypes.ContractBillingFact) (decimal.Decimal, error) {
-	value := decimal.NewFromInt(int64(modelQuota))
-	if fact == nil {
-		return value, nil
-	}
-	return ApplyCustomerContractRatio(value, fact)
+	trace.Calculation.Add("batch_conversion", "quota", value.String(), output, 1000000, frozen.QuotaPerUnit, frozen.GroupRatio)
+	return value, trace.Calculation, nil
 }
 
 // EstimateBatchLineInputTokens makes a pessimistic first-order input estimate
@@ -133,22 +104,29 @@ func estimateBatchJobQuota(frozen *model.BatchFrozenSnapshot, lines []BatchLineE
 		return 0, fmt.Errorf("batch estimate requires lines")
 	}
 	total := decimal.Zero
+	frozen.InitialCalculations = make(map[string]*billingexpr.Calculation, len(lines))
 	for _, line := range lines {
-		output, err := batchBudgetOutput(frozen, line)
+		calculation := billingexpr.NewCalculation()
+		output, err := batchBudgetOutput(frozen, line, calculation)
 		if err != nil {
 			return 0, err
 		}
 		value := decimal.NewFromFloat(output).Div(decimal.NewFromInt(1_000_000)).Mul(decimal.NewFromFloat(frozen.QuotaPerUnit)).Mul(decimal.NewFromFloat(frozen.GroupRatio))
+		calculation.Add("batch_conversion", "quota", value.String(), output, 1000000, frozen.QuotaPerUnit, frozen.GroupRatio)
 		if frozen.ContractFact != nil {
+			before := value
 			value, err = ApplyCustomerContractRatio(value, frozen.ContractFact)
 			if err != nil {
 				return 0, err
 			}
+			calculation.Add("contract_ratio", "quota", value.String(), before.String(), frozen.ContractFact.RatioString())
 		}
 		quota, clamp := common.QuotaFromDecimalChecked(value.Ceil())
 		if clamp != nil {
 			return 0, fmt.Errorf("batch line estimate exceeds the supported quota range")
 		}
+		calculation.Add("ceil", "quota", quota, value.String())
+		frozen.InitialCalculations[line.CustomId] = calculation.Finish(quota)
 		total = total.Add(decimal.NewFromInt(int64(quota)))
 	}
 	estimate, clamp := common.QuotaFromDecimalChecked(total)

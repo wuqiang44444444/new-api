@@ -96,7 +96,7 @@ func GetDashboardTaskArtifacts(c *gin.Context) {
 
 func writeTaskArtifacts(c *gin.Context, task *model.Task, dashboard bool) {
 	c.Header("Cache-Control", "private, no-store")
-	if !authorizeSeedanceTaskArtifact(c, task) {
+	if !authorizeSeedanceTaskArtifact(c, task) || !authorizeMiniMaxTaskArtifact(c, task) {
 		return
 	}
 	artifacts, err := projectTaskArtifacts(task)
@@ -139,6 +139,10 @@ func writeTaskArtifacts(c *gin.Context, task *model.Task, dashboard bool) {
 }
 
 func projectTaskArtifacts(task *model.Task) ([]relaychannel.TaskArtifact, error) {
+	// MiniMax resolves temporary media through its frozen typed adapter.
+	if artifacts, handled := projectMiniMaxTaskArtifacts(task); handled {
+		return artifacts, nil
+	}
 	if artifacts, handled := projectSeedanceTaskArtifacts(task); handled {
 		return artifacts, nil
 	}
@@ -301,7 +305,7 @@ func TaskArtifactContent(c *gin.Context) {
 		writeTaskArtifactError(c, http.StatusNotFound, "artifact_not_found", "Task or artifact not found")
 		return
 	}
-	if !authorizeSeedanceTaskArtifact(c, task) {
+	if !authorizeSeedanceTaskArtifact(c, task) || !authorizeMiniMaxTaskArtifact(c, task) {
 		return
 	}
 	artifactKey := strings.TrimSpace(c.Param("artifact_key"))
@@ -314,6 +318,9 @@ func TaskArtifactContent(c *gin.Context) {
 		return
 	}
 	if serveSeedanceTaskArtifact(c, task, artifactKey) {
+		return
+	}
+	if serveMiniMaxTaskArtifact(c, task, artifactKey) {
 		return
 	}
 	if !taskHasPluginExecution(task) {

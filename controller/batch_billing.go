@@ -21,7 +21,7 @@ func BatchBillingDetails(c *gin.Context) {
 	if offset < 0 {
 		offset = 0
 	}
-	lines, err := model.GetBatchBillingLines(job.Id, offset, 101)
+	lines, err := model.GetBatchBillingPage(job, offset, 101)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "Batch billing is unavailable"})
 		return

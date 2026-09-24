@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/shopspring/decimal"
 )
 
@@ -71,11 +72,15 @@ func (p *PriceData) OtherRatios() map[string]float64 {
 	return ratios
 }
 
-func (p *PriceData) OtherRatioMultiplier() float64 {
+func (p *PriceData) OtherRatioMultiplier(recording ...*billingexpr.Calculation) float64 {
 	multiplier := 1.0
 	for _, ratio := range p.otherRatios {
 		if isValidOtherRatio(ratio) && ratio != 1.0 {
+			before := multiplier
 			multiplier *= ratio
+			if len(recording) > 0 {
+				recording[0].Add("multiply", "ratio", multiplier, before, ratio)
+			}
 		}
 	}
 	return multiplier
@@ -85,19 +90,27 @@ func (p *PriceData) ApplyOtherRatiosToFloat(value float64) float64 {
 	return value * p.OtherRatioMultiplier()
 }
 
-func (p *PriceData) ApplyOtherRatiosToDecimal(value decimal.Decimal) decimal.Decimal {
+func (p *PriceData) ApplyOtherRatiosToDecimal(value decimal.Decimal, recording ...*billingexpr.Calculation) decimal.Decimal {
 	for _, ratio := range p.otherRatios {
 		if isValidOtherRatio(ratio) && ratio != 1.0 {
+			before := value
 			value = value.Mul(decimal.NewFromFloat(ratio))
+			if len(recording) > 0 {
+				recording[0].Add("other_ratios", "quota", value.String(), before.String(), ratio)
+			}
 		}
 	}
 	return value
 }
 
-func (p *PriceData) RemoveOtherRatiosFromFloat(value float64) float64 {
+func (p *PriceData) RemoveOtherRatiosFromFloat(value float64, recording ...*billingexpr.Calculation) float64 {
 	for _, ratio := range p.otherRatios {
 		if isValidOtherRatio(ratio) && ratio != 1.0 {
+			before := value
 			value /= ratio
+			if len(recording) > 0 {
+				recording[0].Add("/", "quota", value, before, ratio)
+			}
 		}
 	}
 	return value

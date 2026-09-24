@@ -488,31 +488,33 @@ export function EmailSettingsSection({
             )}
           />
 
-          {form.watch('error_report_setting.enabled') && (
-            <FormField
-              control={form.control}
-              name='error_report_setting.recipients'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Report recipients')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      autoComplete='off'
-                      placeholder='ops@example.com; backup@example.com'
-                      {...field}
-                      onChange={(event) => field.onChange(event.target.value)}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'Separate multiple addresses with semicolons or commas. Reports are sent to these addresses only; removing an address stops its pending deliveries. Overlong reports are split into numbered parts without omitting any logged error.'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          )}
+          <FormField
+            control={form.control}
+            name='error_report_setting.recipients'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Report recipients')}</FormLabel>
+                <FormControl>
+                  <Input
+                    autoComplete='off'
+                    placeholder='ops@example.com; backup@example.com'
+                    {...field}
+                    onChange={(event) => field.onChange(event.target.value)}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Separate multiple addresses with semicolons or commas. Reports are sent to these addresses only; removing an address stops its pending deliveries. Overlong reports are split into numbered parts without omitting any logged error.'
+                  )}
+                  {' '}
+                  {t(
+                    'These recipients also receive upstream balance alerts below USD 100, independently of the hourly report switch. Clear the recipient list to stop balance alerts.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </SettingsForm>
       </Form>
     </SettingsSection>

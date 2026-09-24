@@ -59,18 +59,49 @@ function Harness(props: {
         <Button
           type='button'
           onClick={() =>
-            selectChannelManagementType(form, 1, props.editing ?? false)
+            selectChannelManagementType(
+              form,
+              1,
+              props.editing ? (props.type ?? 35) : undefined
+            )
           }
         >
           Other provider
         </Button>
         <Button type='submit'>Save</Button>
+        <Button
+          type='button'
+          onClick={() =>
+            selectChannelManagementType(
+              form,
+              35,
+              props.editing ? (props.type ?? 35) : undefined
+            )
+          }
+        >
+          Native MiniMax
+        </Button>
       </form>
     </Form>
   )
 }
 
 describe('MiniMax access choice', () => {
+  test('another native provider can switch to MiniMax and back without losing its connection draft', async () => {
+    const user = userEvent.setup()
+    const save = vi.fn()
+    render(<Harness save={save} editing type={1} />)
+    await user.click(screen.getByRole('button', { name: 'Native MiniMax' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    expect(save.mock.calls[0][0].channel.type).toBe(35)
+    expect(save.mock.calls[0][0].channel.key).toBe('fixture-key')
+    await user.click(screen.getByRole('button', { name: 'Other provider' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2))
+    expect(save.mock.calls[1][0].channel.type).toBe(1)
+    expect(save.mock.calls[1][0].channel.key).toBe('fixture-key')
+  })
   test('access choices are available through the keyboard', async () => {
     const user = userEvent.setup()
     render(<Harness save={vi.fn()} />)

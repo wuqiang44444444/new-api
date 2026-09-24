@@ -45,7 +45,7 @@ describe('MiniMax management projection', () => {
     )
   })
   test('the create selector has one MiniMax entry without deleting original type definitions', () => {
-    const options = channelManagementTypeOptions(CHANNEL_TYPE_OPTIONS, false, 1)
+    const options = channelManagementTypeOptions(CHANNEL_TYPE_OPTIONS)
     expect(
       options
         .filter((item) => item.value === 35 || item.value === 64)

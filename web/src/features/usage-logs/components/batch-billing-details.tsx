@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
+
+import { TaskBillingCalculation } from './task-billing-calculation'
 
 interface BatchBilling {
   status: string
@@ -14,6 +16,9 @@ interface BatchBilling {
   target_quota: number | null
   has_more: boolean
   lines: {
+    estimated?: boolean
+    usage_unavailable?: boolean
+    charge_unknown?: boolean
     custom_id: string
     status: string
     input_tokens: number
@@ -26,6 +31,8 @@ interface BatchBilling {
 export function BatchBillingDetails({ id }: { id: string }) {
   const { t } = useTranslation()
   const statuses: Record<string, string> = {
+    estimated: t('Estimated usage'),
+    not_charged: t('No charge'),
     validating: t('Validating'),
     in_progress: t('Processing...'),
     finalizing: t('Finalizing'),
@@ -41,6 +48,7 @@ export function BatchBillingDetails({ id }: { id: string }) {
     debt: t('Insufficient balance'),
   }
   const [offset, setOffset] = useState(0)
+  const [expandedLine, setExpandedLine] = useState<string | null>(null)
   const query = useQuery({
     queryKey: ['batch-billing', id, offset],
     queryFn: async () => {
@@ -71,8 +79,14 @@ export function BatchBillingDetails({ id }: { id: string }) {
         {t('Delivery')}: {statuses[data.delivery_state] ?? t('Unknown')}
       </p>
       <p>
-        {t('Requests')}: {data.request_count} · {t('Quota')}:{' '}
+        {t('Requests')}: {data.request_count} · {t('Precharged quota')}:{' '}
+        {data.estimated_quota} · {t('Quota')}:{' '}
         {data.target_quota ?? t('Pending')}
+      </p>
+      <p className='text-muted-foreground text-xs'>
+        {t(
+          'The batch total is the sum of individually rounded request charges.'
+        )}
       </p>
       <div className='overflow-x-auto'>
         <table className='w-full text-sm'>
@@ -85,6 +99,7 @@ export function BatchBillingDetails({ id }: { id: string }) {
                 'Output Tokens',
                 'Cached Tokens',
                 'Quota',
+                'Charge calculation',
               ].map((label) => (
                 <th key={label} className='p-2 text-left'>
                   {t(label)}
@@ -94,14 +109,55 @@ export function BatchBillingDetails({ id }: { id: string }) {
           </thead>
           <tbody>
             {data.lines.map((line) => (
-              <tr key={line.custom_id}>
-                <td className='max-w-48 truncate p-2'>{line.custom_id}</td>
-                <td className='p-2'>{statuses[line.status] ?? t('Unknown')}</td>
-                <td className='p-2'>{line.input_tokens}</td>
-                <td className='p-2'>{line.output_tokens}</td>
-                <td className='p-2'>{line.cached_tokens}</td>
-                <td className='p-2'>{line.quota}</td>
-              </tr>
+              <Fragment key={line.custom_id}>
+                <tr>
+                  <td className='max-w-48 truncate p-2'>{line.custom_id}</td>
+                  <td className='p-2'>
+                    {statuses[line.status] ?? t('Unknown')}
+                  </td>
+                  <td className='p-2'>
+                    {line.usage_unavailable ? '—' : line.input_tokens}
+                  </td>
+                  <td className='p-2'>
+                    {line.usage_unavailable ? '—' : line.output_tokens}
+                  </td>
+                  <td className='p-2'>
+                    {line.usage_unavailable ? '—' : line.cached_tokens}
+                  </td>
+                  <td className='p-2'>
+                    {line.charge_unknown ? t('Unknown') : line.quota}
+                  </td>
+                  <td className='p-2'>
+                    <Button
+                      variant='ghost'
+                      size='sm'
+                      aria-expanded={expandedLine === line.custom_id}
+                      aria-label={t('Charge calculation for {{id}}', {
+                        id: line.custom_id,
+                      })}
+                      onClick={() =>
+                        setExpandedLine(
+                          expandedLine === line.custom_id
+                            ? null
+                            : line.custom_id
+                        )
+                      }
+                    >
+                      {t('Details')}
+                    </Button>
+                  </td>
+                </tr>
+                {expandedLine === line.custom_id && (
+                  <tr>
+                    <td colSpan={7} className='p-2'>
+                      <TaskBillingCalculation
+                        taskId={id}
+                        batchLine={line.custom_id}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>

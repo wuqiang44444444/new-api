@@ -307,7 +307,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 			} else {
 				facts = provider.ExtractUsageFacts(c, info)
 			}
-			requestInput := billingexpr.RequestInput{Usage: facts}
+			requestInput := billingexpr.RequestInput{Usage: facts, RecordCalculation: true}
 			if err := helper.AttachFrozenExchangeRate(exprStr, &requestInput, info.TieredBillingSnapshot); err != nil {
 				return nil, service.TaskErrorWrapperLocal(err, "model_price_error", http.StatusBadRequest)
 			}
@@ -321,8 +321,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 			groupRatioInfo := helper.HandleGroupRatio(c, info)
 			quota, clamp := common.QuotaRoundChecked(cost * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
 			noteTaskQuotaClamp(info, clamp)
+			billingexpr.RecordExpressionQuota(trace.Calculation, cost, cost*common.QuotaPerUnit, groupRatioInfo.GroupRatio, common.QuotaPerUnit, true)
+			trace.Calculation.Add("round", "quota", quota, cost*common.QuotaPerUnit*groupRatioInfo.GroupRatio)
+			info.BillingCalculation = trace.Calculation.Finish(quota)
 			priceData = types.PriceData{Quota: quota, QuotaToPreConsume: quota, GroupRatioInfo: groupRatioInfo}
-			info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: billing_setting.BillingModeTieredExpr, ModelName: modelName, ExprString: exprStr, ExprHash: billingexpr.ExprHashString(exprStr), GroupRatio: groupRatioInfo.GroupRatio, EstimatedQuotaBeforeGroup: cost * common.QuotaPerUnit, EstimatedQuotaAfterGroup: quota, EstimatedTier: trace.MatchedTier, QuotaPerUnit: common.QuotaPerUnit, ExprVersion: billingexpr.ExprVersion(exprStr), TaskUsageBilling: true, UsageFacts: facts, UsdExchangeRate: requestInput.ExchangeRate}
+			info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{Calculation: info.BillingCalculation, BillingMode: billing_setting.BillingModeTieredExpr, ModelName: modelName, ExprString: exprStr, ExprHash: billingexpr.ExprHashString(exprStr), GroupRatio: groupRatioInfo.GroupRatio, EstimatedQuotaBeforeGroup: cost * common.QuotaPerUnit, EstimatedQuotaAfterGroup: quota, EstimatedTier: trace.MatchedTier, QuotaPerUnit: common.QuotaPerUnit, ExprVersion: billingexpr.ExprVersion(exprStr), TaskUsageBilling: true, UsageFacts: facts, UsdExchangeRate: requestInput.ExchangeRate}
 			freezeTaskBillingUsageUnits(info.TieredBillingSnapshot, adaptor)
 		}
 	} else {
@@ -356,9 +359,13 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 	// 6. 将 OtherRatios 应用到基础额度（饱和转换，防止溢出成负数）
 	if info.TieredBillingSnapshot == nil && !common.StringsContains(constant.TaskPricePatches, modelName) && !customerContractTaskPriceFrozen(c) {
-		quotaWithRatios := info.PriceData.ApplyOtherRatiosToFloat(float64(info.PriceData.Quota))
+		otherMultiplier := info.PriceData.OtherRatioMultiplier(info.BillingCalculation)
+		quotaWithRatios := float64(info.PriceData.Quota) * otherMultiplier
+		info.BillingCalculation.Add("other_ratios", "quota", quotaWithRatios, info.PriceData.Quota, otherMultiplier)
 		quota, clamp := common.QuotaFromFloatChecked(quotaWithRatios)
 		info.PriceData.Quota = quota
+		info.BillingCalculation.Add("truncate", "quota", quota, quotaWithRatios)
+		info.BillingCalculation.Finish(quota)
 		noteTaskQuotaClamp(info, clamp)
 	}
 
@@ -483,15 +490,19 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 // 公式: baseQuota × ∏(ratio) — 其中 baseQuota 是不含 OtherRatios 的基础额度。
 func recalcQuotaFromRatios(info *relaycommon.RelayInfo, ratios map[string]float64) (int, bool) {
 	// 从 PriceData 获取不含 OtherRatios 的基础价格
-	baseQuota := info.PriceData.RemoveOtherRatiosFromFloat(float64(info.PriceData.Quota))
+	baseQuota := info.PriceData.RemoveOtherRatiosFromFloat(float64(info.PriceData.Quota), info.BillingCalculation)
 	priceData := info.PriceData
 	if !priceData.ReplaceOtherRatios(ratios) {
 		return 0, false
 	}
 	// 应用新的 ratios
-	result := priceData.ApplyOtherRatiosToFloat(baseQuota)
+	multiplier := priceData.OtherRatioMultiplier(info.BillingCalculation)
+	result := baseQuota * multiplier
+	info.BillingCalculation.Add("other_ratios", "quota", result, baseQuota, multiplier)
 	quota, clamp := common.QuotaFromFloatChecked(result)
 	noteTaskQuotaClamp(info, clamp)
+	info.BillingCalculation.Add("truncate", "quota", quota, result)
+	info.BillingCalculation.Finish(quota)
 	return quota, true
 }
 

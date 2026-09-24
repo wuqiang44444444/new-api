@@ -26,5 +26,7 @@ func applyCustomerContractToFloat(value float64, info *relaycommon.RelayInfo) (f
 	if err != nil {
 		return 0, err
 	}
-	return decimal.NewFromFloat(value).Mul(ratio).InexactFloat64(), nil
+	amount := decimal.NewFromFloat(value).Mul(ratio)
+	info.BillingCalculation.Add("contract_ratio", "quota", amount.String(), value, ratio.String())
+	return amount.InexactFloat64(), nil
 }

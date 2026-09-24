@@ -391,6 +391,7 @@ func migrateDB() error {
 		&ErrorReport{},
 		&ErrorReportPart{},
 		&ErrorReportDelivery{},
+		&UpstreamBalanceAlertDelivery{},
 		&ChannelAssetCredential{},
 		&ChannelAssetScopeIdentity{},
 		&ChannelDefaultAssetGroup{},

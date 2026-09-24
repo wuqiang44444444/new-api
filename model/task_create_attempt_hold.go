@@ -1,11 +1,13 @@
 package model
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
 )
@@ -61,6 +63,31 @@ func HoldTaskCreateAttempt(params TaskAttemptHoldParams) (*TaskAttemptHoldResult
 		heldQuota := params.Quota
 		if source == "subscription" && heldQuota == 0 {
 			heldQuota = 1
+			// Record the funding owner's actual minimum in the same commit.
+			if len(attempt.BillingSnapshot) > 0 {
+				var snapshot map[string]json.RawMessage
+				if err := common.Unmarshal(attempt.BillingSnapshot, &snapshot); err != nil {
+					return err
+				}
+				if raw := snapshot["calculation"]; len(raw) > 0 {
+					var calculation *billingexpr.Calculation
+					if err := common.Unmarshal(raw, &calculation); err != nil {
+						return err
+					}
+					if calculation != nil {
+						calculation.Add("minimum_charge", "quota", heldQuota, params.Quota)
+						encoded, err := common.Marshal(calculation.Finish(heldQuota))
+						if err != nil {
+							return err
+						}
+						snapshot["calculation"] = encoded
+						attempt.BillingSnapshot, err = common.Marshal(snapshot)
+						if err != nil {
+							return err
+						}
+					}
+				}
+			}
 		}
 		result.HeldQuota = heldQuota
 		result.TokenTracked = !params.IsPlayground
@@ -124,6 +151,7 @@ func HoldTaskCreateAttempt(params TaskAttemptHoldParams) (*TaskAttemptHoldResult
 				"billing_source":      source,
 				"subscription_id":     result.SubscriptionID,
 				"held_quota":          heldQuota,
+				"billing_snapshot":    attempt.BillingSnapshot,
 				"token_quota_tracked": result.TokenTracked,
 				"token_quota_held":    result.TokenDebited,
 				"funds_deadline_at":   fundsDeadline,

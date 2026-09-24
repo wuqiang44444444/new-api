@@ -1,5 +1,8 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
+
+import { api } from '@/lib/api'
 
 import type { TaskLog } from '../../types'
 import { TaskDetailsDialog } from '../dialogs/task-details-dialog'
@@ -11,7 +14,22 @@ test.each([
   { isAdmin: false, isRoot: false },
   { isAdmin: true, isRoot: false },
   { isAdmin: true, isRoot: true },
-])('image diagnostics respect role $isAdmin/$isRoot', (role) => {
+])('image diagnostics respect role $isAdmin/$isRoot', async (role) => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        quota: 0,
+        state: 'unknown',
+        source: 'initial',
+        evidence: 'historical',
+        initial_evidence: 'historical',
+      },
+    },
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   const task: TaskLog = {
     id: 1,
     user_id: 1,
@@ -29,13 +47,20 @@ test.each([
     root_info: { upstream_request_id: 'provider-correlation' },
   }
   render(
-    <TaskDetailsDialog
-      log={task}
-      {...role}
-      open
-      onOpenChange={() => undefined}
-    />
+    <QueryClientProvider client={client}>
+      <TaskDetailsDialog
+        log={task}
+        {...role}
+        open
+        onOpenChange={() => undefined}
+      />
+    </QueryClientProvider>
   )
+  expect(
+    await screen.findByText(
+      'Billing details were not fully recorded. The calculation cannot be reconstructed.'
+    )
+  ).toBeVisible()
   if (role.isAdmin) {
     expect(screen.getByText('Upstream HTTP status')).toBeVisible()
     expect(screen.getByText('422')).toBeVisible()

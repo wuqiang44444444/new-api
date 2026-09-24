@@ -9,9 +9,10 @@ import (
 )
 
 type RequestInput struct {
-	Headers map[string]string
-	Body    []byte
-	Usage   map[string]any
+	RecordCalculation bool `json:"-"`
+	Headers           map[string]string
+	Body              []byte
+	Usage             map[string]any
 	// PricingTime freezes the wall-clock instant used by the hour/minute/
 	// weekday/month/day time functions. When nil the functions keep reading
 	// the current time (native call semantics). Durable async products (for
@@ -53,6 +54,7 @@ type RequestRuleTrace struct {
 
 // TraceResult holds side-channel info captured while an expression runs.
 type TraceResult struct {
+	Calculation  *Calculation       `json:"calculation,omitempty"`
 	MatchedTier  string             `json:"matched_tier"`
 	RequestRules []RequestRuleTrace `json:"request_rules,omitempty"`
 	Cost         float64            `json:"cost"`
@@ -63,6 +65,7 @@ type TraceResult struct {
 // auto-group retry and settlement. It is fully serializable and contains no
 // compiled program pointers.
 type BillingSnapshot struct {
+	Calculation               *Calculation   `json:"calculation,omitempty"`
 	BillingMode               string         `json:"billing_mode"`
 	ModelName                 string         `json:"model_name"`
 	ExprString                string         `json:"expr_string"`
@@ -90,6 +93,7 @@ type BillingSnapshot struct {
 
 // TieredResult holds everything needed after running tiered settlement.
 type TieredResult struct {
+	Calculation            *Calculation       `json:"calculation,omitempty"`
 	ActualQuotaBeforeGroup float64            `json:"actual_quota_before_group"`
 	ActualQuotaAfterGroup  int                `json:"actual_quota_after_group"`
 	MatchedTier            string             `json:"matched_tier"`

@@ -249,13 +249,15 @@ func buildImageTask(taskID string, c *gin.Context, info *relaycommon.RelayInfo, 
 	task.PrivateData.ImageTask = execution
 	task.PrivateData.AppID = appID
 	task.PrivateData.BillingContext = &model.TaskBillingContext{
-		ModelPrice:      info.PriceData.ModelPrice,
-		GroupRatio:      info.PriceData.GroupRatioInfo.GroupRatio,
-		OriginModelName: info.OriginModelName,
-		PerCallBilling:  info.PriceData.UsePrice,
-		OtherRatios:     info.PriceData.OtherRatios(),
-		TieredSnapshot:  info.TieredBillingSnapshot,
-		ContractFact:    info.ContractBillingFact,
+		CalculationVersion: 1,
+		InitialCalculation: info.BillingCalculation,
+		ModelPrice:         info.PriceData.ModelPrice,
+		GroupRatio:         info.PriceData.GroupRatioInfo.GroupRatio,
+		OriginModelName:    info.OriginModelName,
+		PerCallBilling:     info.PriceData.UsePrice,
+		OtherRatios:        info.PriceData.OtherRatios(),
+		TieredSnapshot:     info.TieredBillingSnapshot,
+		ContractFact:       info.ContractBillingFact,
 	}
 	// 评审 S2：冻结令牌与资金来源事实，终态结算/退款走统一原子计费机。
 	task.PrivateData.TokenId = info.TokenId

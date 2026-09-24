@@ -31,6 +31,8 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 	requestedReason := ""
 	requestedTargetQuota := (*int)(nil)
 	requestedClamp := (*common.QuotaClamp)(nil)
+	requestedCalculation := task.PrivateData.AsyncBilling
+	requestedContext := task.PrivateData.BillingContext
 	if task.PrivateData.AsyncBilling != nil {
 		requestedClamp = task.PrivateData.AsyncBilling.QuotaClamp
 		requestedOperation = task.PrivateData.AsyncBilling.Operation
@@ -54,17 +56,43 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 			return nil
 		}
 		async := locked.PrivateData.AsyncBilling
-		legacyVideo := async == nil && IsVideoFundTask(&locked)
-		if legacyVideo {
+		nativeTask := async == nil
+		// Native usage settlement has always allowed wallet/token overdrafts.
+		// Keep the existing funding guard for durable async and legacy video tasks.
+		requireAvailableQuota := !nativeTask || IsVideoFundTask(&locked)
+		if nativeTask {
 			async = &TaskAsyncBillingContext{}
-		}
-		if async == nil {
-			return fmt.Errorf("task %s has no async billing state", locked.TaskID)
 		}
 		if async.State == TaskBillingStateSettled {
 			return nil
 		}
 		if err := enforceSeedanceBillingTarget(&locked, targetQuota); err != nil {
+			return err
+		}
+		if async.TargetQuota != nil && *async.TargetQuota != targetQuota {
+			return fmt.Errorf("task billing target already accepted")
+		}
+		if requestedCalculation != nil && async.TargetQuota == nil {
+			async.CalculationVersion, async.Calculation, async.CalculationSource = requestedCalculation.CalculationVersion, requestedCalculation.Calculation, requestedCalculation.CalculationSource
+		}
+		if nativeTask && requestedContext != nil {
+			if locked.PrivateData.BillingContext == nil {
+				locked.PrivateData.BillingContext = &TaskBillingContext{}
+			}
+			if requestedContext.SettlementCalculationVersion > 0 && (requestedContext.SettlementCalculation == nil || requestedContext.SettlementCalculation.Quota != targetQuota) {
+				return fmt.Errorf("billing calculation missing or inconsistent")
+			}
+			if locked.PrivateData.BillingContext.SettlementCalculation != nil {
+				return nil
+			}
+			locked.PrivateData.BillingContext.SettlementCalculation = requestedContext.SettlementCalculation
+			if locked.PrivateData.BillingContext.TieredSnapshot != nil && requestedContext.TieredSnapshot != nil {
+				locked.PrivateData.BillingContext.TieredSnapshot.UsageFacts = requestedContext.TieredSnapshot.UsageFacts
+				locked.PrivateData.BillingContext.TieredSnapshot.EstimatedTier = requestedContext.TieredSnapshot.EstimatedTier
+			}
+			locked.PrivateData.BillingContext.SettlementCalculationVersion = requestedContext.SettlementCalculationVersion
+		}
+		if err := validateTaskCalculation(&locked, async, targetQuota); err != nil {
 			return err
 		}
 		if requestedOperation != "" {
@@ -99,9 +127,11 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 					return err
 				}
 			} else if delta > 0 {
-				result := tx.Model(&User{}).
-					Where("id = ? AND quota >= ?", locked.UserId, delta).
-					Update("quota", gorm.Expr("quota - ?", delta))
+				query := tx.Model(&User{}).Where("id = ?", locked.UserId)
+				if requireAvailableQuota {
+					query = query.Where("quota >= ?", delta)
+				}
+				result := query.Update("quota", gorm.Expr("quota - ?", delta))
 				if result.Error != nil {
 					return result.Error
 				}
@@ -136,7 +166,9 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 					}
 					query := tx.Model(&token).Where("id = ?", token.Id)
 					if delta > 0 {
-						query = query.Where("unlimited_quota = ? OR remain_quota >= ?", true, delta)
+						if requireAvailableQuota {
+							query = query.Where("unlimited_quota = ? OR remain_quota >= ?", true, delta)
+						}
 						updates["remain_quota"] = gorm.Expr("remain_quota - ?", delta)
 						updates["used_quota"] = gorm.Expr("used_quota + ?", delta)
 					} else {
@@ -177,8 +209,8 @@ func applyTaskBillingTarget(task *Task, targetQuota int, exposure *ProviderCostE
 		async.State = TaskBillingStateSettled
 		async.Error = ""
 		async.NextRetryAt = 0
-		if legacyVideo {
-			if err := tx.Model(&locked).Update("quota", targetQuota).Error; err != nil {
+		if nativeTask {
+			if err := tx.Model(&locked).Updates(map[string]any{"quota": targetQuota, "private_data": locked.PrivateData}).Error; err != nil {
 				return err
 			}
 			applied = true

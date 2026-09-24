@@ -12,6 +12,7 @@ import (
 )
 
 func TestSeedanceSettlementStatementFacts(t *testing.T) {
+	require.NoError(t, model.DB.AutoMigrate(&model.ProviderURLGroupDisplayName{}))
 	for _, tc := range []struct {
 		name          string
 		tokens, quota int

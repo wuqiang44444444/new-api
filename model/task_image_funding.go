@@ -85,6 +85,11 @@ func holdImageSubscriptionTx(tx *gorm.DB, task *Task) error {
 	if err != nil {
 		return err
 	}
+	if task.PrivateData.BillingContext != nil && task.Quota != amount {
+		c := task.PrivateData.BillingContext.InitialCalculation
+		c.Add("minimum_charge", "quota", amount, task.Quota)
+		c.Finish(amount)
+	}
 	task.Quota = amount
 	task.PrivateData.BillingSource = "subscription"
 	task.PrivateData.SubscriptionId = result.UserSubscriptionId

@@ -61,6 +61,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
   admin: {
     enabled: true,
     channel: true,
+    upstream_balances: true,
     billing: true,
     models: true,
     redemption: true,
@@ -115,6 +116,7 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/profile': { section: 'personal', module: 'personal' },
   '/security': { section: 'personal', module: 'security' },
   '/channels': { section: 'admin', module: 'channel' },
+  '/admin/upstream-balances': { section: 'admin', module: 'upstream_balances' },
   '/admin/billing': { section: 'admin', module: 'billing' },
   '/admin/customer-contracts': { section: 'admin', module: 'user' },
   '/models': { section: 'admin', module: 'models' },

@@ -33,6 +33,19 @@ func BuildTaskBillingDeliveryLog(task *model.Task, event model.TaskBillingDelive
 		async.Reason = "customer_refund"
 	}
 	other := taskBillingOther(&copy)
+	// A delayed create event must describe the reservation, even when the
+	// current Task already has a terminal calculation.
+	if event.Event == "create" {
+		var initial any
+		if bc := task.PrivateData.BillingContext; bc != nil {
+			initial = bc.InitialCalculation
+		}
+		other.SetPublic("billing_calculation", initial)
+	}
+	if event.Event == "customer_refund" {
+		other.SetPublic("refunded_quota", event.BeforeQuota-event.AfterQuota)
+		other.SetPublic("net_quota", event.AfterQuota)
+	}
 	other.SetPublic("task_billing_event", event.Event)
 	quota, logType, completion, prompt := event.AfterQuota-event.BeforeQuota, model.LogTypeConsume, event.CompletionTokens, 0
 	if event.Event == "create" {

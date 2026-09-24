@@ -92,11 +92,33 @@ func TestChannelTypesFilter(t *testing.T) {
 				assert.Equal(t, 1, response.Data.TypeCounts["1"], "type counts must ignore the selected type set")
 			})
 		}
-		for _, query := range []string{"types=", "types=0", "types=-1", "types=35,", "types=35,no", "types=2147483648", "type=35&types=64", "type=&types=64"} {
+		for _, query := range []string{"types=", "types=0", "types=-1", "types=35,", "types=35,no", "types=2147483648", "type=35&types=64", "type=&types=64", "types=35&types=64"} {
 			t.Run(route+"/invalid/"+query, func(t *testing.T) {
 				w := httptest.NewRecorder()
 				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, route+"?"+query, nil))
 				assert.Equal(t, http.StatusBadRequest, w.Code)
+			})
+		}
+	}
+	for _, filter := range []string{"", "type=35&", "types=35,64&"} {
+		for _, page := range []string{"p=-1&page_size=20", "p=9223372036854775807&page_size=20", "p=2&page_size=9223372036854775807"} {
+			t.Run("ordinary search pagination/"+filter+page, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				require.NotPanics(t, func() {
+					router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/search?group=default&"+filter+page, nil))
+				})
+				require.Equal(t, http.StatusOK, w.Code)
+				var response struct {
+					Data struct {
+						Items []model.Channel `json:"items"`
+					} `json:"data"`
+				}
+				require.NoError(t, common.Unmarshal(w.Body.Bytes(), &response))
+				if strings.HasPrefix(page, "p=-1") {
+					assert.NotEmpty(t, response.Data.Items)
+				} else {
+					assert.Empty(t, response.Data.Items)
+				}
 			})
 		}
 	}

@@ -403,6 +403,40 @@ This enables future evolution without breaking existing expressions.
 
 ---
 
+## Recorded task calculations
+
+Task callers opt in with `RequestInput.RecordCalculation`. A typed AST patch wraps
+actual evaluated nodes with stateless callbacks; the original Expr VM still evaluates
+once, retaining numeric types, errors and short circuits. Each run supplies its own
+recorder through the environment. The compile cache contains no request trace.
+
+`TraceResult.Calculation` records a redacted expression graph, executed node values
+and expression version. Request strings/objects are protected at capture time; numeric
+operands and condition results remain available. Sensitive request values remain
+protected through numeric conversions, arithmetic and local aliases. Protection
+also covers aliased parameter calls and GJSON wildcard/query/modifier paths that do
+not identify an exact public numeric field. Ordinary exact numeric paths stay visible.
+Predicate privacy distinguishes elements, indices and reduce accumulators, including the initial value
+and prior iterations. These private dependency cycles are not persisted in the display
+graph. Before returning a trace (also on errors), protection from runtime strings and
+objects propagates to their numeric derivatives using a per-run metadata copy; cached
+programs remain immutable. Safe boolean decisions do not hide the selected price
+operands. This changes only trace disclosure, not evaluation or charging. Recorded
+errors retain their cause internally and expose only the compile/run phase and source
+location, without request text or expression snippets. Host billing owners append their
+actual normalization, group/contract ratios, conversion and rounding steps at the
+original arithmetic sites, then persist the process alongside the accepted quota.
+Host steps include their arithmetic notation captured at that time. UI code displays
+this saved notation instead of reconstructing old formulas from business operation names.
+Reservation and settlement are separate events. A retained reservation references its
+original process instead of evaluating again.
+
+Historical detail and log projections read persisted evidence. They never run today's
+formula to reproduce old charges. Missing historical evidence is reported honestly;
+new recorded events with missing or inconsistent evidence are distinguished from it.
+Batch uses per-line records and a losslessly compressed reservation archive. This is
+calculation evidence, not a second pricing engine or a new funding state machine.
+
 ## File Map
 
 | Layer | Files |

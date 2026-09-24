@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
 )
@@ -74,7 +75,14 @@ func RefundLegacyTaskQuota(task *Task) (bool, int, error) {
 			}
 		}
 
-		if err := tx.Model(&locked).Update("quota", 0).Error; err != nil {
+		if locked.PrivateData.BillingContext == nil {
+			locked.PrivateData.BillingContext = &TaskBillingContext{}
+		}
+		calculation := billingexpr.NewCalculation()
+		calculation.Add("refund", "quota", 0, locked.Quota)
+		locked.PrivateData.BillingContext.SettlementCalculation = calculation.Finish(0)
+		locked.PrivateData.BillingContext.SettlementCalculationVersion = 1
+		if err := tx.Model(&locked).Updates(map[string]any{"quota": 0, "private_data": locked.PrivateData}).Error; err != nil {
 			return err
 		}
 		locked.Quota = 0
@@ -84,6 +92,7 @@ func RefundLegacyTaskQuota(task *Task) (bool, int, error) {
 		return false, 0, err
 	}
 	task.Quota = locked.Quota
+	task.PrivateData = locked.PrivateData
 	if refundedQuota == 0 {
 		return false, 0, nil
 	}

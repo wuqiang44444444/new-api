@@ -397,6 +397,15 @@ ModelArk 视频入口共用 Link 内容代理，按冻结连接处理 Provider �
 位于独立 Seedance 文件，内容代理仍由 `controller/video_proxy_link.go` 唯一负责。未来同步上游时
 只需保留这些制品入口接线，不修改原生适配器或插件合同。
 
+MiniMax 标准视频沿相同的通用制品入口使用独立类型化接线：以类型 64 的成功 Task、未删除状态和
+已冻结的真实 Provider task ID 投影一个 `video` 制品。JD 临时视频地址不持久化，因此列表不以
+`ResultURL` 的本站占位地址作为媒体来源，也不因缺少持久 CDN 地址而返回空制品。列表不访问 Provider；
+内容请求由冻结的 MiniMax adapter 按需解析临时地址，再交由同一 Link 内容代理执行安全回源。
+连接或精确插件版本不可用时明确失败，不查询当前渠道补齐、不切换适配器。用户及应用隔离、签名
+制品范围、Range/HEAD、禁止媒体凭据泄露及重定向规则保持一致；上游文件不可用不重写成功状态或资金。
+MiniMax 的授权、投影和内容分派位于 `controller/task_minimax_artifacts.go`，共享入口仅保留窄调用，
+不改变 Seedance 的结果事实判定或 NEWAPI 原生插件制品接口。
+
 ## 9. 无状态素材代理与 Channel 默认素材组
 
 素材控制面只代理带客户 `model` 的单资源操作，不提供列表，也不建立客户 Asset/AssetGroup、所有权、

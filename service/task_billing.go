@@ -103,43 +103,6 @@ func resolveTokenKey(ctx context.Context, tokenId int, taskID string) string {
 	return token.Key
 }
 
-// taskIsSubscription 判断任务是否通过订阅计费。
-func taskIsSubscription(task *model.Task) bool {
-	return task.PrivateData.BillingSource == BillingSourceSubscription && task.PrivateData.SubscriptionId > 0
-}
-
-// taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
-func taskAdjustFunding(task *model.Task, delta int) error {
-	if taskIsSubscription(task) {
-		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
-	}
-	if delta > 0 {
-		return model.DecreaseUserQuota(task.UserId, delta, false)
-	}
-	return model.IncreaseUserQuota(task.UserId, -delta, false)
-}
-
-// taskAdjustTokenQuota 调整任务的令牌额度，delta > 0 表示扣费，delta < 0 表示退还。
-// 需要通过 resolveTokenKey 运行时获取 key（不从 PrivateData 中读取）。
-func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
-	if task.PrivateData.TokenId <= 0 || task.PrivateData.SkipTokenQuota || delta == 0 {
-		return
-	}
-	tokenKey := resolveTokenKey(ctx, task.PrivateData.TokenId, task.TaskID)
-	if tokenKey == "" {
-		return
-	}
-	var err error
-	if delta > 0 {
-		err = model.DecreaseTokenQuota(task.PrivateData.TokenId, tokenKey, delta)
-	} else {
-		err = model.IncreaseTokenQuota(task.PrivateData.TokenId, tokenKey, -delta)
-	}
-	if err != nil {
-		logger.LogWarn(ctx, fmt.Sprintf("调整令牌额度失败 (delta=%d, task=%s): %s", delta, task.TaskID, err.Error()))
-	}
-}
-
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
 func taskBillingOther(task *model.Task) *model.LogOther {
 	other := model.NewLogOther()
@@ -175,6 +138,9 @@ func taskBillingOther(task *model.Task) *model.LogOther {
 		other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(async.TieredSnapshot.ExprString)))
 	}
 	appendTaskSettlementExpressionFacts(task, other)
+	if calculation := taskAcceptedCalculation(task); calculation != nil {
+		other.SetPublic("billing_calculation", calculation)
+	}
 	props := task.Properties
 	if props.UpstreamModelName != "" && props.UpstreamModelName != props.OriginModelName {
 		other.SetPublic("is_model_mapped", true)
@@ -285,6 +251,9 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	quotaDelta := actualQuota - preConsumedQuota
 
 	if quotaDelta == 0 {
+		if _, _, err := model.ApplyTaskBillingTarget(task, actualQuota); err != nil {
+			logger.LogError(ctx, "task calculation persistence failed")
+		}
 		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 预扣费准确（%s，%s）",
 			task.TaskID, logger.LogQuota(actualQuota), reason))
 		return
@@ -298,32 +267,15 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		reason,
 	))
 
-	if model.IsVideoFundTask(task) {
-		applied, delta, err := model.ApplyTaskBillingTarget(task, actualQuota)
-		if err != nil {
-			logger.LogError(ctx, "video funding adjustment failed")
-			return
-		}
-		if !applied {
-			return
-		}
-		quotaDelta = delta
-	} else {
-		// 调整资金来源
-		if err := taskAdjustFunding(task, quotaDelta); err != nil {
-			logger.LogError(ctx, fmt.Sprintf("差额结算资金调整失败 task %s: %s", task.TaskID, err.Error()))
-			return
-		}
-
-		// 调整令牌额度
-		taskAdjustTokenQuota(ctx, task, quotaDelta)
-
-		task.Quota = actualQuota
-		if err := task.UpdateQuota(); err != nil {
-			logger.LogError(ctx, fmt.Sprintf("差额结算回写 quota 失败 task %s: %s", task.TaskID, err.Error()))
-		}
-
+	applied, delta, err := model.ApplyTaskBillingTarget(task, actualQuota)
+	if err != nil {
+		logger.LogError(ctx, "task funding adjustment failed")
+		return
 	}
+	if !applied {
+		return
+	}
+	quotaDelta = delta
 
 	// 提交阶段已经累计过一次请求；结算阶段只调整最终用量。
 	model.UpdateUserUsedQuota(task.UserId, quotaDelta)

@@ -24,7 +24,7 @@ type TieredResultWrapper = billingexpr.TieredResult
 // include all sub-categories (cache, image, audio). Claude-format APIs
 // report them as text-only. This function normalizes to text-only when
 // sub-categories are separately priced.
-func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVars map[string]bool) billingexpr.TokenParams {
+func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVars map[string]bool, recording ...*billingexpr.Calculation) billingexpr.TokenParams {
 	p := float64(usage.PromptTokens)
 	c := float64(usage.CompletionTokens)
 	cr := float64(usage.PromptTokensDetails.CachedTokens)
@@ -82,6 +82,33 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 		c = 0
 	}
 
+	if len(recording) > 0 {
+		r := recording[0]
+		r.Add("input_tokens", "token", usage.PromptTokens)
+		r.Add("output_tokens", "token", usage.CompletionTokens)
+		excludedP, excludedC := []any{usage.PromptTokens}, []any{usage.CompletionTokens}
+		if !isClaudeUsageSemantic {
+			for _, dim := range []struct {
+				key   string
+				value float64
+			}{{"cr", cr}, {"cc", cc5m}, {"cc1h", cc1h}, {"img", img}, {"ai", ai}} {
+				if usedVars[dim.key] {
+					excludedP = append(excludedP, dim.value)
+				}
+			}
+			if usedVars["img_o"] {
+				excludedC = append(excludedC, imgO)
+			}
+			if usedVars["ao"] {
+				excludedC = append(excludedC, ao)
+			}
+		}
+		r.Add("subtract_floor_zero", "token", p, excludedP...)
+		r.Add("subtract_floor_zero", "token", c, excludedC...)
+		if isClaudeUsageSemantic {
+			r.Add("sum", "token", inputLen, usage.PromptTokens, cr, cc5m, cc1h)
+		}
+	}
 	return billingexpr.TokenParams{
 		P:    p,
 		C:    c,

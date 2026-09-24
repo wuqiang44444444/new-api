@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -103,6 +104,10 @@ func TestTaskCreateAttemptSubscriptionZeroQuotaTransferIsAtomicAndExposed(t *tes
 	}
 	require.NoError(t, DB.Create(&subscription).Error)
 	attempt := createBillingInvariantAttempt(t, user.Id, token.Id, "subscription-zero")
+	initial := billingexpr.NewCalculation().Finish(0)
+	billing, err := common.Marshal(map[string]any{"quota": 0, "calculation": initial})
+	require.NoError(t, err)
+	require.NoError(t, DB.Model(attempt).Update("billing_snapshot", billing).Error)
 
 	hold, err := HoldTaskCreateAttempt(TaskAttemptHoldParams{
 		AttemptID: attempt.ID, FundingSource: "subscription", Quota: 0,
@@ -112,6 +117,16 @@ func TestTaskCreateAttemptSubscriptionZeroQuotaTransferIsAtomicAndExposed(t *tes
 	assert.True(t, hold.TokenDebited)
 
 	task := billingInvariantTask(attempt, user.Id, 0)
+	task.PrivateData.BillingContext = &TaskBillingContext{CalculationVersion: 1, InitialCalculation: initial}
+	recovery := *task
+	recovery.Quota = hold.HeldQuota
+	require.NoError(t, RecordTaskCreateAttemptRecoveryTemplate(attempt.ID, &recovery))
+	require.NoError(t, DB.First(attempt, attempt.ID).Error)
+	var staged taskAttemptRecoverySnapshot
+	require.NoError(t, common.Unmarshal(attempt.RecoverySnapshot, &staged))
+	require.NotNil(t, staged.PrivateData.BillingContext.InitialCalculation)
+	assert.Equal(t, 1, staged.PrivateData.BillingContext.InitialCalculation.Quota)
+	assert.Equal(t, 0, task.PrivateData.BillingContext.InitialCalculation.Quota)
 	require.NoError(t, RecordTaskCreateAttemptUpstreamSuccess(attempt.ID, task))
 	require.NoError(t, InsertTaskWithCreateAttempt(task, 0, attempt.ID))
 

@@ -16,17 +16,9 @@ export function isMinimaxChannel(type: number): boolean {
 }
 
 export function channelManagementTypeOptions<T extends { value: number }>(
-  options: readonly T[],
-  editing: boolean,
-  currentType: number
+  options: readonly T[]
 ): T[] {
-  return options.filter(
-    (option) =>
-      option.value !== CHANNEL_TYPE_MINIMAX_LINK &&
-      (!editing ||
-        isMinimaxChannel(currentType) ||
-        option.value !== MINIMAX_NATIVE_TYPE)
-  )
+  return options.filter((option) => option.value !== CHANNEL_TYPE_MINIMAX_LINK)
 }
 
 export function minimaxAccessLabel(
@@ -95,11 +87,22 @@ export function resetMinimaxConnectionDraft(
 export function selectChannelManagementType(
   form: UseFormReturn<ChannelFormValues>,
   type: number,
-  editing: boolean
+  originalType?: number
 ) {
-  if (!Number.isInteger(type) || type <= 0) return
+  if (
+    !Number.isInteger(type) ||
+    type <= 0 ||
+    type === CHANNEL_TYPE_MINIMAX_LINK
+  ) {
+    return
+  }
+  // Lock persisted MiniMax identities, not another channel's unsaved draft.
+  if (originalType !== undefined) {
+    if (isMinimaxChannel(originalType)) return
+    form.setValue('type', type, { shouldDirty: true, shouldValidate: true })
+    return
+  }
   const previous = form.getValues('type')
-  if (editing && (isMinimaxChannel(previous) || isMinimaxChannel(type))) return
   if (isMinimaxChannel(type)) {
     resetMinimaxConnectionDraft(form, MINIMAX_NATIVE_TYPE, false)
   } else if (isMinimaxChannel(previous)) {

@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/relay"
@@ -173,6 +174,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	relayInfo.SetEstimatePromptTokens(tokens)
 
+	if relayFormat == types.RelayFormatOpenAIImage && relay.ImageAsyncPreferRequested(c) {
+		relayInfo.BillingCalculation = billingexpr.NewCalculation()
+	}
 	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
@@ -811,14 +815,16 @@ func executeTaskSubmissionWith(
 	task.PrivateData.TokenId = relayInfo.TokenId
 	task.PrivateData.NodeName = common.NodeName
 	task.PrivateData.BillingContext = &model.TaskBillingContext{
-		ModelPrice:      relayInfo.PriceData.ModelPrice,
-		GroupRatio:      relayInfo.PriceData.GroupRatioInfo.GroupRatio,
-		ModelRatio:      relayInfo.PriceData.ModelRatio,
-		OtherRatios:     relayInfo.PriceData.OtherRatios(),
-		OriginModelName: relayInfo.OriginModelName,
-		PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
-		TieredSnapshot:  relayInfo.TieredBillingSnapshot,
-		ContractFact:    relayInfo.ContractBillingFact,
+		CalculationVersion: 1,
+		InitialCalculation: relayInfo.BillingCalculation,
+		ModelPrice:         relayInfo.PriceData.ModelPrice,
+		GroupRatio:         relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+		ModelRatio:         relayInfo.PriceData.ModelRatio,
+		OtherRatios:        relayInfo.PriceData.OtherRatios(),
+		OriginModelName:    relayInfo.OriginModelName,
+		PerCallBilling:     common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+		TieredSnapshot:     relayInfo.TieredBillingSnapshot,
+		ContractFact:       relayInfo.ContractBillingFact,
 	}
 	model.AttachAsyncTaskBilling(&task.PrivateData, relayInfo, result.Quota)
 	task.Quota = result.Quota
