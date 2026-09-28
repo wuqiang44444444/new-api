@@ -55,9 +55,12 @@ func VideoAPIFromPlugin(customerModel string, protocol dto.VideoUpstreamProtocol
 		}
 	}
 	if protocol == dto.VideoUpstreamProtocolViduModelArkV3 {
+		api.DocumentationPath = "/docs/api-reference/videos/seedance-v"
 		for i := range api.Creation.Parameters {
 			parameter := &api.Creation.Parameters[i]
 			switch parameter.Name {
+			case "content", "tools":
+				parameter.ItemType = "object"
 			case "ratio":
 				parameter.DefaultValue = "adaptive"
 			case "execution_expires_after":
@@ -68,6 +71,9 @@ func VideoAPIFromPlugin(customerModel string, protocol dto.VideoUpstreamProtocol
 				parameter.MaxLength = intPointer(64)
 			}
 		}
+		api.Creation.Parameters = append(api.Creation.Parameters,
+			stringEnumParameter("tools[].type", true, []string{"web_search"}),
+		)
 	}
 	if metadata.AllowReturnLastFrame {
 		api.Creation.Parameters = append(api.Creation.Parameters, dto.PublicAPIParameter{Name: "return_last_frame", Type: "boolean"})

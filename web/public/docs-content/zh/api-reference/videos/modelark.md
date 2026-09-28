@@ -1,7 +1,7 @@
 ---
 page-id: videos-modelark
 kind: api-reference
-last-verified: 2026-09-24
+last-verified: 2026-09-28
 operations:
   - listModelArkVideoModels
   - retrieveModel
@@ -15,13 +15,20 @@ operations:
 
 # ModelArk V3 标准视频
 
-Seedance 与 MiniMax 标准视频客户模型统一使用 ModelArk V3 任务合同。`/v1/video/generations` 属于原生通用视频
+Seedance 与 H3 标准视频客户模型统一使用 ModelArk V3 任务合同。`/v1/video/generations` 属于原生通用视频
 协议，不是本接口的别名；ModelArk、Kling、即梦和 OpenAI Videos 的字段不能混用。
 
 完整流程是：查询模型 → POST 创建 → 保存 `id` → GET 轮询 → 成功后鉴权下载。
 可复制的轮询脚本见[图片与视频调用实战](guides/media-workflow)。所有步骤使用创建时的同一 API Key。
 
-MiniMax 的具体输入范围与验证状态见 [MiniMax H3 视频](api-reference/videos/minimax)。
+按模型元数据中的 `api.video.documentation_path` 阅读对应说明：
+
+- [H3 视频](api-reference/videos/h3)：参考图、视频、音频及首尾帧。
+- [Seedance V 视频](api-reference/videos/seedance-v)：本站也可能使用 `seedance-2-0-v` 等客户名，
+  具体名称以目录为准。该系列的音频与首尾帧组合规则见专页。
+
+`seedance-v` 等命名不用于推断参数范围；创建时原样使用目录返回的客户模型 ID。
+H3 不发布 `api.assets`；Seedance V 返回 `api.assets.supported=false`。两者均未开放素材库。
 
 ## 查询模型与参数合同
 
@@ -157,7 +164,9 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models" \
 整个字段，不能默认给所有视频请求添加 `output_format=mp4`；显式传入未发布字段会失败。
 
 平面的参数枚举、媒体类型和数量上限不能完整表达场景间的组合限制。使用部署方确认对应
-Seedance 2.5 能力的客户模型时，还需遵守以下上游规则：
+官方 Seedance 2.5 能力的客户模型时，还需遵守以下上游规则。
+本段不适用于 [Seedance V](api-reference/videos/seedance-v) 或 [H3](api-reference/videos/h3)，
+即使客户模型名称相似也应读取其专属合同：
 
 - 首帧、首尾帧、视频延长仅支持 `ratio=adaptive`；这些场景不要照抄文生视频的 `16:9`。
 - 首帧/首尾帧与多模态参考素材不能混用。

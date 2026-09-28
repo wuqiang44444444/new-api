@@ -16,6 +16,7 @@ func TestMiniMaxPublishedMetadataMatchesArtifact(t *testing.T) {
 	api, err := minimaxPublicVideoAPI(info.Configuration, "custom-model", "MiniMax-H3", false)
 	require.NoError(t, err)
 	assert.Equal(t, "modelark_v3", api.Protocol)
+	assert.Equal(t, "/docs/api-reference/videos/h3", api.DocumentationPath)
 	assert.Equal(t, "/api/v3/contents/generations/tasks", api.Creation.Path)
 	assert.Equal(t, "custom-model", api.Creation.Model)
 	require.Len(t, api.Creation.ContentTypes, 4)

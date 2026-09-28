@@ -121,6 +121,7 @@ func taskBillingOther(task *model.Task) *model.LogOther {
 		}
 		if snap := bc.TieredSnapshot; snap != nil {
 			other.SetPublic("billing_mode", "tiered_expr")
+			other.SetPublic("usd_exchange_rate", snap.UsdExchangeRate)
 			other.SetPublic("usage_units", snap.UsageUnits)
 			other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(snap.ExprString)))
 			if task.PrivateData.AsyncBilling == nil {
@@ -133,6 +134,7 @@ func taskBillingOther(task *model.Task) *model.LogOther {
 	}
 	if async := task.PrivateData.AsyncBilling; async != nil && async.TieredSnapshot != nil {
 		other.SetPublic("group_ratio", async.TieredSnapshot.GroupRatio)
+		other.SetPublic("usd_exchange_rate", async.TieredSnapshot.UsdExchangeRate)
 		other.SetPublic("billing_mode", "tiered_expr")
 		other.SetPublic("usage_units", async.TieredSnapshot.UsageUnits)
 		other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(async.TieredSnapshot.ExprString)))

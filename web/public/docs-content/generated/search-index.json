@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-09-24.3",
+  "contentVersion": "2026-09-28.2",
   "locales": {
     "zh": [
       {
@@ -687,12 +687,17 @@
         ]
       },
       {
-        "pageId": "videos-minimax",
-        "slug": "api-reference/videos/minimax",
-        "title": "MiniMax H3 视频",
-        "description": "H3 参考图与音频、分辨率、时长、素材边界及下载窗口",
-        "keywords": ["MiniMax", "H3", "参考图", "音频", "2K"],
+        "pageId": "videos-h3",
+        "slug": "api-reference/videos/h3",
+        "title": "H3 视频",
+        "description": "H3 参考图、视频、音频与首尾帧、参数限制和下载窗口",
+        "keywords": ["H3", "参考视频", "首尾帧", "音频", "2K"],
         "headings": [
+          {
+            "depth": 2,
+            "id": "元数据与模型名",
+            "text": "元数据与模型名"
+          },
           {
             "depth": 2,
             "id": "创建参数",
@@ -712,6 +717,40 @@
             "depth": 2,
             "id": "下载窗口与验证范围",
             "text": "下载窗口与验证范围"
+          },
+          {
+            "depth": 2,
+            "id": "english-contract-notes",
+            "text": "English contract notes"
+          }
+        ]
+      },
+      {
+        "pageId": "videos-seedance-v",
+        "slug": "api-reference/videos/seedance-v",
+        "title": "Seedance V 视频",
+        "description": "Seedance V 的模型元数据、时长、分辨率、多模态参考与首尾帧限制",
+        "keywords": ["Seedance V", "seedance-v", "参考音频", "首尾帧"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "先读取模型元数据",
+            "text": "先读取模型元数据"
+          },
+          {
+            "depth": 2,
+            "id": "创建参数",
+            "text": "创建参数"
+          },
+          {
+            "depth": 2,
+            "id": "媒体与组合限制",
+            "text": "媒体与组合限制"
+          },
+          {
+            "depth": 2,
+            "id": "创建与查询示例",
+            "text": "创建与查询示例"
           },
           {
             "depth": 2,

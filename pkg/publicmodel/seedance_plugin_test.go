@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/plugins"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -67,8 +68,9 @@ func TestViduPublishedContractMatchesBothRegions(t *testing.T) {
 		}
 		for name, metadata := range video.ModelMetadata {
 			count++
-			api, ok := VideoAPIFromPlugin("customer-model", dto.VideoUpstreamProtocolViduModelArkV3, metadata, true)
+			api, ok := VideoAPIFromPlugin("seedance-2-0-vidu-cn", dto.VideoUpstreamProtocolViduModelArkV3, metadata, true)
 			require.True(t, ok)
+			assert.Equal(t, "/docs/api-reference/videos/seedance-v", api.DocumentationPath)
 			parameters := map[string]dto.PublicAPIParameter{}
 			for _, parameter := range api.Creation.Parameters {
 				parameters[parameter.Name] = parameter
@@ -77,24 +79,44 @@ func TestViduPublishedContractMatchesBothRegions(t *testing.T) {
 			for name := range parameters {
 				fields = append(fields, name)
 			}
-			assert.ElementsMatch(t, []string{"model", "content", "resolution", "ratio", "duration", "generate_audio", "watermark", "callback_url", "return_last_frame", "execution_expires_after", "tools", "safety_identifier"}, fields, name)
+			assert.ElementsMatch(t, []string{"model", "content", "resolution", "ratio", "duration", "generate_audio", "watermark", "callback_url", "return_last_frame", "execution_expires_after", "tools", "tools[].type", "safety_identifier"}, fields, name)
+			assert.Equal(t, "object", parameters["content"].ItemType)
+			assert.Equal(t, "object", parameters["tools"].ItemType)
+			assert.Equal(t, []string{"web_search"}, parameters["tools[].type"].Enum)
+			assert.Equal(t, 5, parameters["duration"].DefaultValue)
+			assert.Equal(t, []int{-1}, parameters["duration"].SpecialValues)
+			assert.Equal(t, "720p", parameters["resolution"].DefaultValue)
 			assert.Equal(t, "adaptive", parameters["ratio"].DefaultValue)
 			assert.Equal(t, false, parameters["generate_audio"].DefaultValue)
 			assert.Equal(t, 172800, parameters["execution_expires_after"].DefaultValue)
 			require.NotNil(t, parameters["safety_identifier"].MaxLength)
 			assert.Equal(t, 64, *parameters["safety_identifier"].MaxLength)
-			assert.Equal(t, "customer-model", api.Creation.Model)
+			assert.Equal(t, "seedance-2-0-vidu-cn", api.Creation.Model)
+			raw, err := common.Marshal(api)
+			require.NoError(t, err)
+			assert.NotContains(t, string(raw), name)
+			assert.NotContains(t, string(raw), string(dto.VideoUpstreamProtocolViduModelArkV3))
 			for _, operation := range api.Operations {
 				if operation.Operation == "delete_video" {
 					assert.False(t, operation.Supported)
 				}
 			}
 			if strings.HasPrefix(name, "viduq3.1-") {
-				assert.Equal(t, 30, metadata.MaxDuration)
-				assert.Equal(t, 30, metadata.MaxImages)
-				assert.Equal(t, 10, metadata.MaxAudios)
+				assert.Equal(t, intPointer(30), parameters["duration"].Maximum)
+				assert.Equal(t, []string{"480p", "720p", "1080p"}, parameters["resolution"].Enum)
+				assert.Equal(t, 30, api.Creation.ContentTypes[1].MaxItems)
+				assert.Equal(t, 10, api.Creation.ContentTypes[2].MaxItems)
+				assert.Equal(t, 10, api.Creation.ContentTypes[3].MaxItems)
 			} else {
-				assert.Equal(t, 15, metadata.MaxDuration)
+				assert.Equal(t, intPointer(15), parameters["duration"].Maximum)
+				assert.Equal(t, 9, api.Creation.ContentTypes[1].MaxItems)
+				assert.Equal(t, 3, api.Creation.ContentTypes[2].MaxItems)
+				assert.Equal(t, 3, api.Creation.ContentTypes[3].MaxItems)
+				resolutions := []string{"480p", "720p"}
+				if strings.HasSuffix(name, "-std") {
+					resolutions = append(resolutions, "1080p", "4k")
+				}
+				assert.Equal(t, resolutions, parameters["resolution"].Enum)
 			}
 		}
 	}

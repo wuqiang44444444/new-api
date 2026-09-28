@@ -153,7 +153,7 @@ func TestMiniMaxStandardEntryFundingAndContent(t *testing.T) {
 	assert.Equal(t, "768p", request["resolution"])
 	assert.Equal(t, "16:9", request["ratio"])
 	require.Len(t, api.Creation.ContentTypes, 4)
-	assert.Equal(t, "/docs/api-reference/videos/minimax", api.DocumentationPath)
+	assert.Equal(t, "/docs/api-reference/videos/h3", api.DocumentationPath)
 	assert.Equal(t, []string{"type", "text"}, api.Creation.ContentTypes[0].RequiredFields)
 	assert.Equal(t, "text", api.Creation.ContentTypes[0].Type)
 	body, err := common.Marshal(request)

@@ -84,7 +84,7 @@ func minimaxPublicVideoAPI(configuration *jsplugin.SeedanceChannelConfiguration,
 	if !ok {
 		return nil, fmt.Errorf("provider model %q cannot be projected", providerModel)
 	}
-	api.DocumentationPath = "/docs/api-reference/videos/minimax"
+	api.DocumentationPath = "/docs/api-reference/videos/h3"
 	// The shared projector has historical Seedance defaults. MiniMax's
 	// optional parameters must describe the same declaration used by its adapter.
 	for i := range api.Creation.Parameters {
