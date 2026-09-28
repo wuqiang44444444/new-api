@@ -153,7 +153,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if taskErr := service.ValidateFunCloudHostedVideoMedia(c, info); taskErr != nil {
 		return taskErr
 	}
-	if (a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 ||
+	if (a.protocol == dto.VideoUpstreamProtocolViduModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 ||
 		a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC) &&
 		billing_setting.GetBillingMode(info.OriginModelName) != billing_setting.BillingModeTieredExpr {
 		return service.TaskErrorWrapperLocal(
@@ -187,7 +187,7 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	if a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC {
 		return nil
 	}
-	if a.profile == dto.VideoUpstreamProfileThirdPartySynlinkVideoV1 || a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3 {
+	if a.profile == dto.VideoUpstreamProfileThirdPartyViduModelArkV3 || a.profile == dto.VideoUpstreamProfileThirdPartySynlinkVideoV1 || a.profile == dto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3 {
 		return nil
 	}
 	if a.profile == dto.VideoUpstreamProfileThirdPartyRelay &&
@@ -295,15 +295,15 @@ func (a *TaskAdaptor) FetchTaskWithContext(ctx context.Context, baseURL, key str
 	}
 	resp, err := client.Do(req)
 	service.AttachRawTaskPollingEvidence(task, req, resp, err)
-	// Synlink has no verified terminal contract for non-2xx queries. Do not let a proxy's
+	// Synlink and Vidu have no verified terminal contract for non-2xx queries. Do not let a proxy's
 	// 404/410 become a definitive missing-task result in the shared poller.
-	if err == nil && resp != nil && profile == dto.VideoUpstreamProfileThirdPartySynlinkVideoV1 && (resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices) {
+	if err == nil && resp != nil && (profile == dto.VideoUpstreamProfileThirdPartySynlinkVideoV1 || profile == dto.VideoUpstreamProfileThirdPartyViduModelArkV3) && (resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices) {
 		_, _ = io.Copy(io.Discard, resp.Body) // Preserve the existing protected response evidence tee.
 		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusNotFound {
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "Upstream task query returned HTTP 404; the result is unconfirmed"}
 		}
-		return nil, &relaycommon.UpstreamContractViolation{Reason: fmt.Sprintf("unverified Synlink query HTTP status %d", resp.StatusCode)}
+		return nil, &relaycommon.UpstreamContractViolation{Reason: fmt.Sprintf("unverified video query HTTP status %d", resp.StatusCode)}
 	}
 	if err != nil || resp == nil || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return resp, err
@@ -388,6 +388,7 @@ func (*TaskAdaptor) ParseTaskResult(_ *model.Task, _ *http.Response, respBody []
 	case "expired":
 		result.Status = model.TaskStatusExpired
 		result.Progress = "100%"
+		result.Reason = providerTask.Error.Message
 	default:
 		return nil, fmt.Errorf("unknown video task status %q", providerTask.Status)
 	}

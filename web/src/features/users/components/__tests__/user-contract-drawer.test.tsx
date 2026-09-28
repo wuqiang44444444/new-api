@@ -32,8 +32,7 @@ import type {
   ContractEntityUpdatePayload,
   ContractEntityWritePayload,
   CustomerContractAuditPage,
-  CustomerContractChannelGroupOption,
-  CustomerContractGroupOption,
+  CustomerContractCatalog,
   User,
   UserContractEntities,
 } from '../../types'
@@ -41,10 +40,8 @@ import { UserContractDrawer } from '../user-contract-drawer'
 
 const getUserContracts =
   vi.fn<() => Promise<ApiResponse<UserContractEntities>>>()
-const getCustomerContractChannels =
-  vi.fn<() => Promise<ApiResponse<CustomerContractChannelGroupOption[]>>>()
-const getCustomerContractOptions =
-  vi.fn<() => Promise<ApiResponse<CustomerContractGroupOption[]>>>()
+const getCustomerContractCatalog =
+  vi.fn<() => Promise<ApiResponse<CustomerContractCatalog>>>()
 const getContractEntityAudits =
   vi.fn<
     (
@@ -106,8 +103,7 @@ function restorePointerCapture() {
 
 vi.mock('../../api', () => ({
   getUserContracts: () => getUserContracts(),
-  getCustomerContractChannels: () => getCustomerContractChannels(),
-  getCustomerContractOptions: () => getCustomerContractOptions(),
+  getCustomerContractCatalog: () => getCustomerContractCatalog(),
   getContractEntityAudits: (contractId: number, page: number) =>
     getContractEntityAudits(contractId, page),
   createUserContract: (userId: number, payload: ContractEntityWritePayload) =>
@@ -145,38 +141,43 @@ const user = {
   role: 1,
 } as User
 
-const channels: CustomerContractChannelGroupOption[] = [
-  {
-    group: 'contract-route',
-    native_group_ratio: '0.87',
-    special_group_ratio: true,
-    models: [
-      { model: 'claude-sonnet-5', channels: [{ id: 11, name: 'primary' }] },
-      {
-        model: 'gemini-3-pro',
-        channels: [
-          { id: 11, name: 'primary' },
-          { id: 12, name: 'backup' },
-        ],
-      },
-    ],
-  },
-]
+const availableSource = (channelId: number, name: string) => ({
+  channel_id: channelId,
+  channel_name: name,
+  available: true,
+  from_channel_config: true,
+  from_ability: true,
+})
 
-const options: CustomerContractGroupOption[] = [
-  {
-    group: 'contract-route',
-    models: ['claude-sonnet-5', 'gemini-3-pro'],
-    prices: {
-      'claude-sonnet-5': {
-        price_type: 'model_ratio',
-        current_discounted_price: '0.87',
-      },
+const catalog: CustomerContractCatalog = {
+  groups: [
+    {
+      group: 'contract-route',
+      ratio_configured: true,
+      native_group_ratio: '0.87',
+      special_group_ratio: true,
+      models: [
+        {
+          model: 'claude-sonnet-5',
+          price: {
+            price_type: 'model_ratio',
+            current_discounted_price: '0.87',
+          },
+          sources: [availableSource(11, 'primary')],
+        },
+        {
+          model: 'gemini-3-pro',
+          sources: [
+            availableSource(11, 'primary'),
+            availableSource(12, 'backup'),
+          ],
+        },
+      ],
     },
-    native_group_ratio: '0.87',
-    special_group_ratio: true,
-  },
-]
+  ],
+  no_group_channels: [],
+  customer_context: true,
+}
 
 const contracts: ContractEntityAdminView[] = [
   {
@@ -258,12 +259,9 @@ describe('admin customer contract entity drawer', () => {
     getUserContracts
       .mockReset()
       .mockResolvedValue({ success: true, data: contractsData(contracts) })
-    getCustomerContractChannels
+    getCustomerContractCatalog
       .mockReset()
-      .mockResolvedValue({ success: true, data: channels })
-    getCustomerContractOptions
-      .mockReset()
-      .mockResolvedValue({ success: true, data: options })
+      .mockResolvedValue({ success: true, data: catalog })
     getContractTemplates.mockReset().mockResolvedValue({
       success: true,
       data: { items: [], total: 0, page: 1, page_size: 20 },
@@ -703,19 +701,30 @@ describe('admin customer contract entity drawer', () => {
   it('rejects model names that differ only by letter case inside one batch', async () => {
     stubPointerCapture()
     try {
-      getCustomerContractChannels.mockResolvedValue({
+      getCustomerContractCatalog.mockResolvedValue({
         success: true,
-        data: [
-          {
-            group: 'contract-route',
-            native_group_ratio: '1',
-            special_group_ratio: false,
-            models: [
-              { model: 'GPT-5 Mini', channels: [{ id: 21, name: 'alpha' }] },
-              { model: 'gpt-5 mini', channels: [{ id: 22, name: 'beta' }] },
-            ],
-          },
-        ],
+        data: {
+          groups: [
+            {
+              group: 'contract-route',
+              ratio_configured: true,
+              native_group_ratio: '1',
+              special_group_ratio: false,
+              models: [
+                {
+                  model: 'GPT-5 Mini',
+                  sources: [availableSource(21, 'alpha')],
+                },
+                {
+                  model: 'gpt-5 mini',
+                  sources: [availableSource(22, 'beta')],
+                },
+              ],
+            },
+          ],
+          no_group_channels: [],
+          customer_context: true,
+        },
       })
       renderDrawer()
 

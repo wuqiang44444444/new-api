@@ -16,12 +16,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-import type {
-  ContractRuleDraft,
-  CustomerContractChannelGroupOption,
-} from '../types'
+import type { ContractRuleDraft, CustomerContractCatalog } from '../types'
 import {
-  channelOptionsForRule,
+  channelSourcesForRule,
+  contractUnavailableReasonLabel,
   draftEffectiveMultiplier,
   draftPricePreview,
   normalizeContractDiscount,
@@ -30,7 +28,7 @@ import {
 
 type CustomerContractRuleListProps = {
   rules: ContractRuleDraft[]
-  channelGroups: CustomerContractChannelGroupOption[]
+  catalog: CustomerContractCatalog
   search: string
   onSearchChange: (value: string) => void
   onUpdate: (index: number, patch: Partial<ContractRuleDraft>) => void
@@ -55,32 +53,17 @@ export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
         ) {
           return null
         }
-        const channelOptions = channelOptionsForRule(props.channelGroups, rule)
+        const channelOptions = channelSourcesForRule(
+          props.catalog,
+          rule
+        ).filter((source) => source.available)
+        const pricePreview = draftPricePreview(rule)
         const groupRatio = rule.native_group_ratio
         const specialRatio = rule.special_group_ratio
-        let unavailableReason = ''
-        if (!rule.available) {
-          switch (rule.unavailable_reason) {
-            case 'channel_disabled':
-              unavailableReason = t('This channel is disabled')
-              break
-            case 'channel_missing':
-              unavailableReason = t('This channel no longer exists')
-              break
-            case 'capability_missing':
-              unavailableReason = t(
-                'This channel no longer serves this model in the route group'
-              )
-              break
-            case 'route_group_invalid':
-              unavailableReason = t('This route group is no longer configured')
-              break
-            default:
-              unavailableReason = t(
-                'This source is unavailable. Review its channel, model, and route group.'
-              )
-          }
-        }
+        const unavailableReason =
+          !rule.available && rule.unavailable_reason
+            ? contractUnavailableReasonLabel(t, rule.unavailable_reason)
+            : ''
         return (
           <div
             key={`${rule.route_group}-${rule.model}-${rule.channel_id}`}
@@ -111,9 +94,9 @@ export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
                 {t('Channel')}
               </FieldLabel>
               <Select
-                items={channelOptions.map((channel) => ({
-                  value: String(channel.id),
-                  label: channel.name,
+                items={channelOptions.map((source) => ({
+                  value: String(source.channel_id),
+                  label: source.channel_name,
                 }))}
                 value={String(rule.channel_id || '')}
                 onValueChange={(value) => {
@@ -135,16 +118,19 @@ export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
                   <SelectValue>
                     {rule.channel_id
                       ? channelOptions.find(
-                          (channel) => channel.id === rule.channel_id
-                        )?.name
+                          (source) => source.channel_id === rule.channel_id
+                        )?.channel_name
                       : t('Select channel')}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
                   <SelectGroup>
-                    {channelOptions.map((channel) => (
-                      <SelectItem key={channel.id} value={String(channel.id)}>
-                        {channel.name}
+                    {channelOptions.map((source) => (
+                      <SelectItem
+                        key={source.channel_id}
+                        value={String(source.channel_id)}
+                      >
+                        {source.channel_name}
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -190,12 +176,16 @@ export function CustomerContractRuleList(props: CustomerContractRuleListProps) {
             </Field>
             <Field>
               <FieldLabel>{t('Pricing details')}</FieldLabel>
-              <ContractPriceDetails
-                price={draftPricePreview(rule)}
-                channelMultiplier={groupRatio}
-                contractDiscount={rule.discount}
-                effectiveMultiplier={draftEffectiveMultiplier(rule)}
-              />
+              {pricePreview ? (
+                <ContractPriceDetails
+                  price={pricePreview}
+                  channelMultiplier={groupRatio}
+                  contractDiscount={rule.discount}
+                  effectiveMultiplier={draftEffectiveMultiplier(rule)}
+                />
+              ) : (
+                <FieldDescription>{t('Price not configured')}</FieldDescription>
+              )}
               {specialRatio && (
                 <FieldDescription>
                   {t('A special native group ratio also applies')}

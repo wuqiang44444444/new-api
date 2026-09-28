@@ -109,7 +109,48 @@ export interface CustomerContractRule {
   native_group_ratio: string
   effective_multiplier: string
   special_group_ratio: boolean
-  price: CustomerContractPricePreview
+  /** Missing when the model has no pricing entry: show unconfigured, never a fake price. */
+  price?: CustomerContractPricePreview | null
+}
+
+/** One deduplicated (model, group, channel) management catalog source. */
+export interface CustomerContractCatalogSource {
+  channel_id: number
+  channel_name: string
+  available: boolean
+  unavailable_reason?: string
+  from_channel_config: boolean
+  from_ability: boolean
+  /** Channel-config vs Ability drift diagnosis; independent of `available`. */
+  config_diff?: string
+}
+
+export interface CustomerContractCatalogModel {
+  model: string
+  price?: CustomerContractPricePreview | null
+  sources: CustomerContractCatalogSource[]
+}
+
+export interface CustomerContractCatalogGroup {
+  group: string
+  ratio_configured: boolean
+  native_group_ratio: string
+  special_group_ratio: boolean
+  models: CustomerContractCatalogModel[]
+}
+
+/** A channel without any configured route group; diagnostics only. */
+export interface CustomerContractNoGroupChannel {
+  channel_id: number
+  channel_name: string
+  channel_status: number
+  models: string[]
+}
+
+export interface CustomerContractCatalog {
+  groups: CustomerContractCatalogGroup[]
+  no_group_channels: CustomerContractNoGroupChannel[]
+  customer_context: boolean
 }
 
 /** Editable rule state in the admin drawer; channel_id stays 0 until a channel is picked. */
@@ -130,31 +171,6 @@ export interface UserContractEntities {
   user_id: number
   username: string
   contracts: ContractEntityAdminView[]
-}
-
-export interface CustomerContractGroupOption {
-  group: string
-  models: string[]
-  prices: Record<string, CustomerContractPricePreview>
-  native_group_ratio: string
-  special_group_ratio: boolean
-}
-
-export interface CustomerContractChannelOption {
-  id: number
-  name: string
-}
-
-export interface CustomerContractGroupModelChannels {
-  model: string
-  channels: CustomerContractChannelOption[]
-}
-
-export interface CustomerContractChannelGroupOption {
-  group: string
-  native_group_ratio: string
-  special_group_ratio: boolean
-  models: CustomerContractGroupModelChannels[]
 }
 
 export interface CustomerContractAudit {

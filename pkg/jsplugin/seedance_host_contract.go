@@ -15,6 +15,7 @@ func SeedanceHostContract() SeedanceExtensionContract {
 	return SeedanceExtensionContract{
 		Key: SeedancePluginKey,
 		Protocols: []SeedanceExtensionProtocol{
+			{Name: "vidu_modelark_v3", Hooks: []string{"buildCreate", "parseCreateResponse", "parseTaskObservation"}},
 			{Name: "funcloud_modelark_v3", Hooks: []string{"buildCreate", "parseCreateResponse", "parseTaskObservation"}},
 			{Name: "synlink_video_v1", Hooks: []string{"buildCreate", "parseCreateResponse", "parseTaskObservation"}},
 			{Name: "modelark_v3_cmcc", Hooks: []string{"buildCreate", "parseCreateResponse", "parseTaskObservation"}},

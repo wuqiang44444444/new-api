@@ -13,11 +13,11 @@ import {
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 
-import type { CustomerContractChannelGroupOption } from '../types'
+import type { CustomerContractCatalog } from '../types'
 import { parseContractDiscount } from './user-contract-utils'
 
 type CustomerContractAddRuleProps = {
-  channelGroups: CustomerContractChannelGroupOption[]
+  catalog: CustomerContractCatalog
   group: string
   models: string[]
   channelIdsByModel: Record<string, string[]>
@@ -33,7 +33,7 @@ export function CustomerContractAddRule(props: CustomerContractAddRuleProps) {
   const { t } = useTranslation()
   const id = useId()
   const selectedGroupModels =
-    props.channelGroups.find((group) => group.group === props.group)?.models ||
+    props.catalog.groups.find((group) => group.group === props.group)?.models ||
     []
   // Every model of the group stays selectable: the same public model may be
   // listed on several channels as long as the discount matches.
@@ -66,7 +66,7 @@ export function CustomerContractAddRule(props: CustomerContractAddRuleProps) {
             <FieldLabel htmlFor={`${id}-group`}>{t('Route group')}</FieldLabel>
             <Combobox
               id={`${id}-group`}
-              options={props.channelGroups.map((group) => ({
+              options={props.catalog.groups.map((group) => ({
                 value: group.group,
                 label: group.group,
               }))}
@@ -128,11 +128,15 @@ export function CustomerContractAddRule(props: CustomerContractAddRuleProps) {
                 const modelEntry = selectedGroupModels.find(
                   (entry) => entry.model === model
                 )
-                const candidates = modelEntry?.channels || []
+                const candidates = (modelEntry?.sources || []).filter(
+                  (source) => source.available
+                )
                 const selected = props.channelIdsByModel[model] || []
                 const staleChannelIds = selected.filter(
                   (id) =>
-                    !candidates.some((channel) => String(channel.id) === id)
+                    !candidates.some(
+                      (channel) => String(channel.channel_id) === id
+                    )
                 )
                 let rowProblem = null
                 if (!modelEntry) {
@@ -178,8 +182,8 @@ export function CustomerContractAddRule(props: CustomerContractAddRuleProps) {
                         id={`${id}-channels-${model}`}
                         className='bg-background min-w-0 [&_[data-slot=combobox-chip]]:max-w-[calc(100%-5rem)]'
                         options={candidates.map((channel) => ({
-                          value: String(channel.id),
-                          label: channel.name,
+                          value: String(channel.channel_id),
+                          label: channel.channel_name,
                         }))}
                         selected={selected}
                         onChange={(values) =>

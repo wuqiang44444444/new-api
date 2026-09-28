@@ -67,11 +67,14 @@ func decodeOfficialPluginObservation(result any, expectedID string, apiVersion i
 	if !ok {
 		return nil, &relaycommon.UpstreamContractViolation{Reason: "invalid ModelArk plugin observation"}
 	}
-	if apiVersion >= pluginruntime.SeedanceUsageScanAPIVersion && !seedanceOfficialUsageProtocol(protocol) {
+	if apiVersion >= pluginruntime.SeedanceUsageScanAPIVersion && !seedanceOfficialUsageProtocol(protocol) && protocol != dto.VideoUpstreamProtocolViduModelArkV3 {
 		return decodeUsageScanPluginObservation(body, expectedID)
 	}
 	var response responseTask
-	if err := common.Unmarshal([]byte(body), &response); err != nil || response.ID == "" || response.ID != expectedID {
+	if err := common.Unmarshal([]byte(body), &response); err != nil {
+		return nil, &relaycommon.UpstreamContractViolation{Reason: "invalid ModelArk task fields"}
+	}
+	if response.ID == "" || response.ID != expectedID {
 		return nil, &relaycommon.UpstreamContractViolation{Reason: "ModelArk task id mismatch"}
 	}
 	// Final charging is host-owned. Even a modified artifact cannot supply

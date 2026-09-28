@@ -21,7 +21,7 @@ func videoCreatePath(profile dto.VideoUpstreamProfile, configuredCreatePath stri
 	switch profile {
 	case "", dto.VideoUpstreamProfileOfficial:
 		return officialVideoCreatePath, nil
-	case dto.VideoUpstreamProfileThirdPartySynlinkVideoV1, dto.VideoUpstreamProfileThirdPartyRelay,
+	case dto.VideoUpstreamProfileThirdPartyViduModelArkV3, dto.VideoUpstreamProfileThirdPartySynlinkVideoV1, dto.VideoUpstreamProfileThirdPartyRelay,
 		dto.VideoUpstreamProfileThirdPartyMoxingModelArk,
 		dto.VideoUpstreamProfileThirdPartyReverseProxy,
 		dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
@@ -43,7 +43,7 @@ func videoTaskPath(profile dto.VideoUpstreamProfile, configuredQueryTemplate, ta
 	switch profile {
 	case "", dto.VideoUpstreamProfileOfficial:
 		return officialVideoCreatePath + "/" + escapedTaskID, nil
-	case dto.VideoUpstreamProfileThirdPartySynlinkVideoV1, dto.VideoUpstreamProfileThirdPartyRelay,
+	case dto.VideoUpstreamProfileThirdPartyViduModelArkV3, dto.VideoUpstreamProfileThirdPartySynlinkVideoV1, dto.VideoUpstreamProfileThirdPartyRelay,
 		dto.VideoUpstreamProfileThirdPartyMoxingModelArk,
 		dto.VideoUpstreamProfileThirdPartyReverseProxy,
 		dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
@@ -65,6 +65,8 @@ func joinVideoUpstreamURL(baseURL, path string) string {
 // normalizeVideoCreateResponse 按协议归一化创建响应到内部 {"id": ...} 合同。
 func normalizeVideoCreateResponse(profile dto.VideoUpstreamProfile, body []byte) ([]byte, error) {
 	switch profile {
+	case dto.VideoUpstreamProfileThirdPartyViduModelArkV3:
+		return nil, fmt.Errorf("Vidu requires the frozen Seedance extension")
 	case dto.VideoUpstreamProfileThirdPartySynlinkVideoV1:
 		return thirdparty.SynlinkCreateResponse(body)
 	case "", dto.VideoUpstreamProfileOfficial:
@@ -98,6 +100,8 @@ func normalizeVideoTaskResponse(
 	billingContext *relaycommon.VideoTaskBillingContext,
 ) ([]byte, error) {
 	switch profile {
+	case dto.VideoUpstreamProfileThirdPartyViduModelArkV3:
+		return nil, fmt.Errorf("Vidu requires the frozen Seedance extension")
 	case dto.VideoUpstreamProfileThirdPartySynlinkVideoV1:
 		return thirdparty.SynlinkTaskResponse(body, expectedTaskID)
 	case "", dto.VideoUpstreamProfileOfficial:

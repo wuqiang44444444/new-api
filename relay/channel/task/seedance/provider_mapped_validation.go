@@ -29,7 +29,7 @@ func (a *TaskAdaptor) ValidateMappedRequest(c *gin.Context, info *relaycommon.Re
 				return service.TaskErrorWrapperLocal(err, "invalid_video_parameter", http.StatusBadRequest)
 			}
 		}
-		if a.protocol == dto.VideoUpstreamProtocolMoxingModelArkV1 || a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 || a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+		if a.protocol == dto.VideoUpstreamProtocolViduModelArkV3 || a.protocol == dto.VideoUpstreamProtocolMoxingModelArkV1 || a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 || a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
 			if _, err := a.ensureSeedanceCreateConversion(c, info); err != nil {
 				return service.TaskErrorWrapperLocal(err, "invalid_video_parameter", http.StatusBadRequest)
 			}

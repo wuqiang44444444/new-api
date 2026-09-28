@@ -1,20 +1,58 @@
 import type {
   ContractRuleDraft,
-  CustomerContractChannelGroupOption,
-  CustomerContractChannelOption,
-  CustomerContractGroupOption,
+  CustomerContractCatalog,
+  CustomerContractCatalogGroup,
+  CustomerContractCatalogModel,
+  CustomerContractCatalogSource,
   CustomerContractRule,
 } from '../types'
 
-export function channelOptionsForRule(
-  channelGroups: CustomerContractChannelGroupOption[],
-  rule: Pick<CustomerContractRule, 'route_group' | 'model'>
-): CustomerContractChannelOption[] {
-  return (
-    channelGroups
-      .find((group) => group.group === rule.route_group)
-      ?.models.find((entry) => entry.model === rule.model)?.channels ?? []
+export function catalogGroupFor(
+  catalog: CustomerContractCatalog,
+  group: string
+): CustomerContractCatalogGroup | undefined {
+  return catalog.groups.find((entry) => entry.group === group)
+}
+
+export function catalogModelFor(
+  catalog: CustomerContractCatalog,
+  group: string,
+  model: string
+): CustomerContractCatalogModel | undefined {
+  return catalogGroupFor(catalog, group)?.models.find(
+    (entry) => entry.model === model
   )
+}
+
+/** Every catalog source of one rule's (group, model); unavailable included. */
+export function channelSourcesForRule(
+  catalog: CustomerContractCatalog,
+  rule: Pick<CustomerContractRule, 'route_group' | 'model'>
+): CustomerContractCatalogSource[] {
+  return catalogModelFor(catalog, rule.route_group, rule.model)?.sources ?? []
+}
+
+type Translate = (key: string, params?: Record<string, unknown>) => string
+
+/** Controlled unavailable-reason label shared by the admin contract UI. */
+export function contractUnavailableReasonLabel(t: Translate, reason?: string) {
+  switch (reason) {
+    case 'channel_disabled':
+      return t('This channel is disabled')
+    case 'channel_missing':
+      return t('This channel no longer exists')
+    case 'capability_missing':
+      return t('This channel no longer serves this model in the route group')
+    case 'route_group_invalid':
+      return t('This route group is no longer configured')
+    case '':
+    case undefined:
+      return ''
+    default:
+      return t(
+        'This source is unavailable. Review its channel, model, and route group.'
+      )
+  }
 }
 
 export function parseContractDiscount(raw: string): number | null {
@@ -52,8 +90,7 @@ export type ContractBatchAddResult =
   | { ok: false; error: { key: string; params?: Record<string, string> } }
 
 export interface ContractBatchAddInput {
-  channelGroups: CustomerContractChannelGroupOption[]
-  groupOptions: CustomerContractGroupOption[]
+  catalog: CustomerContractCatalog
   draftRules: ContractRuleDraft[]
   routeGroup: string
   models: string[]
@@ -63,7 +100,8 @@ export interface ContractBatchAddInput {
 
 /**
  * Validates a whole pending batch (models of one add) against itself and the
- * current draft, then expands it into one rule per selected channel. Every
+ * current draft, then expands it into one rule per selected channel. Only
+ * sources the backend currently reports as available may enter a draft; every
  * rule keeps its own model price and the route group's native ratio facts;
  * any failure rejects the entire batch so callers never append partially.
  */
@@ -94,18 +132,16 @@ export function buildContractBatchRules(
     }
     batchCaseKeys.set(caseKey, model)
   }
-  const channelGroup = input.channelGroups.find(
-    (group) => group.group === input.routeGroup
-  )
-  const groupOption = input.groupOptions.find(
-    (option) => option.group === input.routeGroup
-  )
+  const groupEntry = catalogGroupFor(input.catalog, input.routeGroup)
+  if (!groupEntry || !groupEntry.ratio_configured) {
+    return {
+      ok: false,
+      error: { key: 'This route group is no longer configured' },
+    }
+  }
   const rules: ContractRuleDraft[] = []
   for (const model of models) {
-    const modelEntry = channelGroup?.models.find(
-      (entry) => entry.model === model
-    )
-    const candidates = modelEntry?.channels ?? []
+    const modelEntry = catalogModelFor(input.catalog, input.routeGroup, model)
     if (!modelEntry) {
       return {
         ok: false,
@@ -115,6 +151,9 @@ export function buildContractBatchRules(
         },
       }
     }
+    const availableSources = modelEntry.sources.filter(
+      (source) => source.available
+    )
     const selectedIds = (input.channelIdsByModel[model] ?? []).map(Number)
     if (selectedIds.length === 0) {
       return {
@@ -125,8 +164,10 @@ export function buildContractBatchRules(
         },
       }
     }
-    const candidateIds = new Set(candidates.map((channel) => channel.id))
-    if (selectedIds.some((id) => !candidateIds.has(id))) {
+    const availableIds = new Set(
+      availableSources.map((source) => source.channel_id)
+    )
+    if (selectedIds.some((id) => !availableIds.has(id))) {
       return {
         ok: false,
         error: {
@@ -148,10 +189,10 @@ export function buildContractBatchRules(
     }
     // The contract-level unique key is model + channel regardless of route
     // group, so a duplicate in another group is still a conflict.
-    const boundChannels = candidates.filter(
-      (channel) =>
-        selectedIds.includes(channel.id) &&
-        sameModelRules.some((rule) => rule.channel_id === channel.id)
+    const boundChannels = availableSources.filter(
+      (source) =>
+        selectedIds.includes(source.channel_id) &&
+        sameModelRules.some((rule) => rule.channel_id === source.channel_id)
     )
     if (boundChannels.length > 0) {
       return {
@@ -159,7 +200,9 @@ export function buildContractBatchRules(
         error: {
           key: 'This model already binds channels: {{channels}}',
           params: {
-            channels: boundChannels.map((channel) => channel.name).join(', '),
+            channels: boundChannels
+              .map((source) => source.channel_name)
+              .join(', '),
           },
         },
       }
@@ -179,12 +222,10 @@ export function buildContractBatchRules(
         route_group: input.routeGroup,
         discount: normalizedDiscount,
         available: true,
-        native_group_ratio: channelGroup?.native_group_ratio || '1',
-        effective_multiplier: channelGroup?.native_group_ratio || '1',
-        special_group_ratio: channelGroup?.special_group_ratio || false,
-        price: groupOption?.prices?.[model] || {
-          price_type: 'model_ratio' as const,
-        },
+        native_group_ratio: groupEntry.native_group_ratio,
+        effective_multiplier: groupEntry.native_group_ratio,
+        special_group_ratio: groupEntry.special_group_ratio,
+        price: modelEntry.price ?? null,
       })
     }
   }
@@ -194,7 +235,13 @@ export function buildContractBatchRules(
 export function draftEffectiveMultiplier(rule: CustomerContractRule): string {
   const nativeRatio = Number(rule.native_group_ratio)
   const discount = parseContractDiscount(rule.discount)
-  if (!Number.isFinite(nativeRatio) || discount === null) return '—'
+  if (
+    !rule.native_group_ratio ||
+    !Number.isFinite(nativeRatio) ||
+    discount === null
+  ) {
+    return '—'
+  }
   const formatted = (nativeRatio * discount).toFixed(8).replace(/\.?0+$/, '')
   return formatted || '0'
 }
@@ -202,6 +249,7 @@ export function draftEffectiveMultiplier(rule: CustomerContractRule): string {
 export function draftPricePreview(
   rule: CustomerContractRule
 ): CustomerContractRule['price'] {
+  if (!rule.price) return rule.price
   const discount = parseContractDiscount(rule.discount)
   const channel = Number(rule.native_group_ratio)
   if (discount === null || !Number.isFinite(channel)) return rule.price

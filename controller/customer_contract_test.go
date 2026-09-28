@@ -296,16 +296,15 @@ func TestCustomerContractAdminPreviewUsesNativeSpecialGroupRatioBeforeDiscount(t
 func TestCustomerContractAdminOptionsChannelsAndAuditAreOperationalAndSafe(t *testing.T) {
 	admin, user, contract := setupCustomerContractControllerDB(t)
 
-	optionsContext, optionsRecorder := customerContractAdminContext(http.MethodGet, "/api/user/1/contract/options", "", admin, user)
-	GetCustomerContractOptions(optionsContext)
-	assert.Contains(t, optionsRecorder.Body.String(), `"group":"contract-api"`)
-	assert.Contains(t, optionsRecorder.Body.String(), `"contract-model"`)
-	assert.Contains(t, optionsRecorder.Body.String(), `"current_discounted_price":"0.87"`)
-	assert.NotContains(t, optionsRecorder.Body.String(), `"group":"auto"`)
-
-	channelsContext, channelsRecorder := customerContractAdminContext(http.MethodGet, "/api/user/1/contract/channels", "", admin, user)
-	GetCustomerContractChannelOptions(channelsContext)
-	assert.Contains(t, channelsRecorder.Body.String(), `"group":"contract-api"`)
+	catalogContext, catalogRecorder := customerContractAdminContext(http.MethodGet, fmt.Sprintf("/api/user/%d/contract/catalog", user.Id), "", admin, user)
+	GetCustomerContractCatalog(catalogContext)
+	catalogBody := catalogRecorder.Body.String()
+	assert.Contains(t, catalogBody, `"group":"contract-api"`)
+	assert.Contains(t, catalogBody, `"contract-model"`)
+	assert.Contains(t, catalogBody, `"current_discounted_price":"0.87"`)
+	assert.Contains(t, catalogBody, `"customer_context":true`)
+	assert.Contains(t, catalogBody, `"channel_name":"contract-api-channel"`)
+	assert.NotContains(t, catalogBody, `"group":"auto"`)
 
 	auditContext, auditRecorder := customerContractAdminContext(http.MethodGet, fmt.Sprintf("/api/contract/%d/audits", contract.Id), "", admin, user)
 	auditContext.Params = append(auditContext.Params, gin.Param{Key: "contract_id", Value: fmt.Sprintf("%d", contract.Id)})

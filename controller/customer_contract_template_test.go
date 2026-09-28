@@ -81,27 +81,25 @@ func TestCustomerContractTemplateAdminAPILifecycle(t *testing.T) {
 	var options struct {
 		Success bool `json:"success"`
 		Data    struct {
-			Options []struct {
+			Groups []struct {
 				Group             string `json:"group"`
+				RatioConfigured   bool   `json:"ratio_configured"`
 				NativeGroupRatio  string `json:"native_group_ratio"`
 				SpecialGroupRatio bool   `json:"special_group_ratio"`
-			} `json:"options"`
-			Channels []struct {
-				Group             string `json:"group"`
-				SpecialGroupRatio bool   `json:"special_group_ratio"`
-			} `json:"channels"`
+			} `json:"groups"`
 			CustomerContext bool `json:"customer_context"`
 		} `json:"data"`
 	}
 	require.NoError(t, common.UnmarshalJsonStr(recorder.Body.String(), &options))
 	require.True(t, options.Success)
 	assert.False(t, options.Data.CustomerContext)
-	require.NotEmpty(t, options.Data.Channels, "concrete groups are listed")
-	for _, group := range options.Data.Options {
+	require.NotEmpty(t, options.Data.Groups, "concrete groups are listed")
+	for _, group := range options.Data.Groups {
 		assert.False(t, group.SpecialGroupRatio, "template options never apply a customer special ratio")
+		assert.True(t, group.RatioConfigured, "fixture groups all have configured ratios")
 	}
 	contractAPIRatio := ""
-	for _, group := range options.Data.Options {
+	for _, group := range options.Data.Groups {
 		if group.Group == "contract-api" {
 			contractAPIRatio = group.NativeGroupRatio
 		}

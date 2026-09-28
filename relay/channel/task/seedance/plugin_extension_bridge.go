@@ -96,7 +96,7 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 		info.UpstreamModelName = upstreamModel
 	}
 	var sourceRequest any = contract.ModelArk
-	if a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || a.protocol == dto.VideoUpstreamProtocolModelArkV3Volcengine || a.protocol == dto.VideoUpstreamProtocolModelArkV3BytePlus || a.protocol == dto.VideoUpstreamProtocolArkMediaV1 {
+	if a.protocol == dto.VideoUpstreamProtocolViduModelArkV3 || a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || a.protocol == dto.VideoUpstreamProtocolModelArkV3Volcengine || a.protocol == dto.VideoUpstreamProtocolModelArkV3BytePlus || a.protocol == dto.VideoUpstreamProtocolArkMediaV1 {
 		payload, _, err := a.modelArkContractPayload(c)
 		if err != nil {
 			return nil, err
@@ -117,7 +117,7 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 		"request":       requestMap,
 		"limits":        map[string]any{"maxDurationSeconds": relaycommon.MaxTaskDurationSeconds},
 	}
-	if a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+	if a.protocol == dto.VideoUpstreamProtocolViduModelArkV3 || a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
 		northBytes, err := common.Marshal(contract.ModelArk)
 		if err != nil {
 			return nil, err
@@ -146,7 +146,7 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 	}
 	var conversion *seedancePluginCreateConversion
 	var decodeErr error
-	if a.protocol == dto.VideoUpstreamProtocolMoxingModelArkV1 || a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+	if a.protocol == dto.VideoUpstreamProtocolViduModelArkV3 || a.protocol == dto.VideoUpstreamProtocolMoxingModelArkV1 || a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
 		spec, _, err := a.pinnedProviderSpec(c, upstreamModel)
 		if err != nil {
 			return nil, err
@@ -459,6 +459,12 @@ func normalizeSeedanceVideoTaskResponse(
 		}
 	}
 	protocol := task.PrivateData.VideoUpstreamProtocol
+	if protocol == dto.VideoUpstreamProtocolViduModelArkV3 {
+		body, err = normalizeViduTaskResponse(body, expectedTaskID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// Official ModelArk usage is derived by the host from the raw upstream
 	// bytes before the artifact sees the body: the strict integer lexeme
 	// semantics cannot survive the JavaScript number boundary, and charging
@@ -483,7 +489,7 @@ func normalizeSeedanceVideoTaskResponse(
 		if err != nil {
 			return nil, err
 		}
-		if plugin.Meta.APIVersion >= pluginruntime.SeedanceUsageScanAPIVersion && seedanceOfficialUsageProtocol(protocol) {
+		if protocol == dto.VideoUpstreamProtocolViduModelArkV3 || (plugin.Meta.APIVersion >= pluginruntime.SeedanceUsageScanAPIVersion && seedanceOfficialUsageProtocol(protocol)) {
 			// The v3 official hook validates the observation without converting
 			// its wire shape. Return the host-normalized body so a hook cannot
 			// replace, remove or invent the usage facts derived above.

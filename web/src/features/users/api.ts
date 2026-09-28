@@ -30,8 +30,7 @@ import type {
   ManageUserQuotaPayload,
   ApiResponse,
   CustomerContractAuditPage,
-  CustomerContractChannelGroupOption,
-  CustomerContractGroupOption,
+  CustomerContractCatalog,
   ContractEntityUpdatePayload,
   ContractEntityWritePayload,
   UserContractEntities,
@@ -189,17 +188,12 @@ export async function getUserContracts(
   return res.data
 }
 
-export async function getCustomerContractOptions(
+/** Unified management catalog: all connected model sources with shared
+ * availability facts and this user's price reference. */
+export async function getCustomerContractCatalog(
   userId: number
-): Promise<ApiResponse<CustomerContractGroupOption[]>> {
-  const res = await api.get(`/api/user/${userId}/contract/options`)
-  return res.data
-}
-
-export async function getCustomerContractChannels(
-  userId: number
-): Promise<ApiResponse<CustomerContractChannelGroupOption[]>> {
-  const res = await api.get(`/api/user/${userId}/contract/channels`)
+): Promise<ApiResponse<CustomerContractCatalog>> {
+  const res = await api.get(`/api/user/${userId}/contract/catalog`)
   return res.data
 }
 

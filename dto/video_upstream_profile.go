@@ -5,6 +5,7 @@ import kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 type VideoUpstreamProfile = kitdto.VideoUpstreamProfile
 
 const (
+	VideoUpstreamProfileThirdPartyViduModelArkV3     = kitdto.VideoUpstreamProfileThirdPartyViduModelArkV3
 	VideoUpstreamProfileThirdPartySynlinkVideoV1     = kitdto.VideoUpstreamProfileThirdPartySynlinkVideoV1
 	VideoUpstreamProfileThirdPartyFunCloudModelArkV3 = kitdto.VideoUpstreamProfileThirdPartyFunCloudModelArkV3
 	VideoUpstreamProfileOfficial                     = kitdto.VideoUpstreamProfileOfficial

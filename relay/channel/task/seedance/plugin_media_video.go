@@ -49,7 +49,7 @@ func decodeMediaPluginCreate(result any, request map[string]any, model string, p
 		if expected["duration"] == nil && expected["frames"] == nil {
 			expected["duration"] = spec.defaultDuration
 		}
-		if protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+		if protocol == dto.VideoUpstreamProtocolViduModelArkV3 || protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
 			if expected["resolution"] == nil || expected["resolution"] == "" {
 				expected["resolution"] = "720p"
 			}
@@ -62,6 +62,14 @@ func decodeMediaPluginCreate(result any, request map[string]any, model string, p
 						}
 					}
 				}
+			}
+		}
+		if protocol == dto.VideoUpstreamProtocolViduModelArkV3 {
+			if value, ok := expected["resolution"].(string); ok {
+				expected["resolution"] = strings.ToLower(value)
+			}
+			if expected["ratio"] == nil || expected["ratio"] == "" {
+				expected["ratio"] = "adaptive"
 			}
 		}
 		if err = validateOfficialPluginBillingRequest(wire, expected, model); err != nil {

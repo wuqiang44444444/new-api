@@ -91,7 +91,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   api.options.mockResolvedValue({
     success: true,
-    data: { channels: [], options: [] },
+    data: { groups: [], no_group_channels: [], customer_context: false },
   })
   api.get.mockResolvedValue({ success: true, data: snapshot })
   api.create.mockResolvedValue({ success: true, data: snapshot })
@@ -169,7 +169,7 @@ it('surfaces a failed options load with an inline retry that recovers', async ()
 
   api.options.mockResolvedValue({
     success: true,
-    data: { channels: [], options: [] },
+    data: { groups: [], no_group_channels: [], customer_context: false },
   })
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
   expect(await screen.findByLabelText('Template name')).toBeInTheDocument()
@@ -180,24 +180,23 @@ it('rebuilds save-as pricing with ordinary template group ratios', async () => {
   api.options.mockResolvedValue({
     success: true,
     data: {
-      channels: [
+      groups: [
         {
           group: 'default',
+          ratio_configured: true,
           native_group_ratio: '1',
           special_group_ratio: false,
-          models: [],
+          models: [
+            {
+              model: 'chat',
+              price: { price_type: 'model_ratio', base_model_ratio: '1' },
+              sources: [],
+            },
+          ],
         },
       ],
-      options: [
-        {
-          group: 'default',
-          native_group_ratio: '1',
-          models: ['chat'],
-          prices: {
-            chat: { price_type: 'model_ratio', base_model_ratio: '1' },
-          },
-        },
-      ],
+      no_group_channels: [],
+      customer_context: false,
     },
   })
   render(
@@ -236,32 +235,31 @@ it('adds several models with their own channels through the shared batch add', a
   api.options.mockResolvedValue({
     success: true,
     data: {
-      channels: [
+      groups: [
         {
           group: 'default',
+          ratio_configured: true,
           native_group_ratio: '1',
           special_group_ratio: false,
           models: [
-            { model: 'chat', channels: [{ id: 11, name: 'main' }] },
+            {
+              model: 'chat',
+              sources: [
+                { channel_id: 11, channel_name: 'main', available: true, from_channel_config: true, from_ability: true },
+              ],
+            },
             {
               model: 'vision',
-              channels: [
-                { id: 11, name: 'main' },
-                { id: 12, name: 'spare' },
+              sources: [
+                { channel_id: 11, channel_name: 'main', available: true, from_channel_config: true, from_ability: true },
+                { channel_id: 12, channel_name: 'spare', available: true, from_channel_config: true, from_ability: true },
               ],
             },
           ],
         },
       ],
-      options: [
-        {
-          group: 'default',
-          models: ['chat', 'vision'],
-          prices: {},
-          native_group_ratio: '1',
-          special_group_ratio: false,
-        },
-      ],
+      no_group_channels: [],
+      customer_context: false,
     },
   })
   stubPointerCapture()

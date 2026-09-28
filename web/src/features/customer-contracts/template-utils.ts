@@ -18,27 +18,30 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type {
   ContractRuleDraft,
-  CustomerContractChannelGroupOption,
-  CustomerContractGroupOption,
+  CustomerContractCatalog,
 } from '@/features/users/types'
 
 import type { ContractTemplateSnapshot } from './template-types'
 
-/** Converts a stored template rule into an editable draft rule. */
+/**
+ * Converts a stored template rule into an editable draft rule. Ratio and
+ * price facts come from the management catalog; a group or model missing
+ * from the catalog keeps its identity with an unconfigured price reference
+ * instead of a fake ratio or price.
+ */
 export function templateRuleToDraft(
   rule: ContractTemplateSnapshot['rules'][number],
-  channels: CustomerContractChannelGroupOption[],
-  options: CustomerContractGroupOption[]
+  catalog: CustomerContractCatalog
 ): ContractRuleDraft {
   const discount = Number(rule.ratio_units / 100_000_000)
     .toFixed(8)
     .replace(/\.?0+$/, '')
-  const channelGroup = channels.find(
-    (group) => group.group === rule.route_group
+  const groupEntry = catalog.groups.find(
+    (entry) => entry.group === rule.route_group
   )
-  const nativeRatio = channelGroup?.native_group_ratio || '1'
-  const groupOption = options.find(
-    (option) => option.group === rule.route_group
+  const nativeRatio = groupEntry?.native_group_ratio ?? ''
+  const modelEntry = groupEntry?.models.find(
+    (model) => model.model === rule.public_model
   )
   return {
     model: rule.public_model,
@@ -49,9 +52,7 @@ export function templateRuleToDraft(
     unavailable_reason: rule.unavailable_reason,
     native_group_ratio: nativeRatio,
     effective_multiplier: nativeRatio,
-    special_group_ratio: channelGroup?.special_group_ratio ?? false,
-    price: groupOption?.prices?.[rule.public_model] || {
-      price_type: 'model_ratio' as const,
-    },
+    special_group_ratio: groupEntry?.special_group_ratio ?? false,
+    price: modelEntry?.price ?? null,
   }
 }

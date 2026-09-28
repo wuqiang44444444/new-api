@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"gorm.io/gorm"
@@ -551,20 +550,6 @@ func RefreshContractEntityAvailability(snapshot *ContractEntitySnapshot) error {
 	return nil
 }
 
-// CustomerContractEntityChannelOption is one qualifying channel for a public
-// model inside a route group, for admin contract-rule drawers.
-type CustomerContractEntityChannelOption struct {
-	Id   int    `json:"id"`
-	Name string `json:"name"`
-}
-
-// CustomerContractEntityGroupModelChannels lists, for one route group, every
-// model with the channels qualified to serve it.
-type CustomerContractEntityGroupModelChannels struct {
-	Model    string                                `json:"model"`
-	Channels []CustomerContractEntityChannelOption `json:"channels"`
-}
-
 // GetContractEntityAudits returns one contract entity's audit page. Counts are
 // derived from the redacted JSON snapshots.
 func GetContractEntityAudits(contractId int, offset int, limit int) ([]CustomerContractEntityAudit, int64, error) {
@@ -613,82 +598,4 @@ func GetContractEntityAudits(contractId int, offset int, limit int) ([]CustomerC
 		audits[i].AfterRuleCount = len(after.Rules)
 	}
 	return audits, total, nil
-}
-
-// GetCustomerContractEntityChannelOptions lists, for one route group, every
-// model with the enabled channels qualified to serve it: native ability
-// channels plus Seedance Link channels of the group.
-func GetCustomerContractEntityChannelOptions(group string) ([]CustomerContractEntityGroupModelChannels, error) {
-	group = strings.TrimSpace(group)
-	if group == "" || strings.EqualFold(group, "auto") {
-		return nil, fmt.Errorf("route group must be a concrete group")
-	}
-	type channelRow struct {
-		Model     string
-		ChannelId int
-		Name      string
-	}
-	var rows []channelRow
-	err := DB.Model(&Ability{}).
-		Select("abilities.model AS model, abilities.channel_id AS channel_id, channels.name AS name").
-		Joins("JOIN channels ON channels.id = abilities.channel_id AND channels.status = ?", common.ChannelStatusEnabled).
-		Where(&Ability{Group: group, Enabled: true}).
-		Order("model ASC, channel_id ASC").
-		Find(&rows).Error
-	if err != nil {
-		return nil, err
-	}
-	orderedModels := make([]string, 0, len(rows))
-	channelIdsByModel := make(map[string][]int)
-	seenPair := make(map[string]struct{})
-	for _, row := range rows {
-		key := row.Model + "\x00" + strconv.Itoa(row.ChannelId)
-		if _, dup := seenPair[key]; dup {
-			continue
-		}
-		seenPair[key] = struct{}{}
-		if _, known := channelIdsByModel[row.Model]; !known {
-			orderedModels = append(orderedModels, row.Model)
-		}
-		channelIdsByModel[row.Model] = append(channelIdsByModel[row.Model], row.ChannelId)
-	}
-	var seedanceChannels []Channel
-	if err := ApplyChannelGroupFilter(DB.Model(&Channel{}), group).
-		Where("type IN ? AND status = ?", []int{constant.ChannelTypeSeedanceLink, constant.ChannelTypeAzureBatch}, common.ChannelStatusEnabled).
-		Find(&seedanceChannels).Error; err != nil {
-		return nil, err
-	}
-	channelName := make(map[int]string, len(rows))
-	for _, row := range rows {
-		channelName[row.ChannelId] = row.Name
-	}
-	for i := range seedanceChannels {
-		channelName[seedanceChannels[i].Id] = seedanceChannels[i].Name
-		for _, modelName := range strings.Split(seedanceChannels[i].Models, ",") {
-			modelName = strings.TrimSpace(modelName)
-			if modelName == "" {
-				continue
-			}
-			key := modelName + "\x00" + strconv.Itoa(seedanceChannels[i].Id)
-			if _, dup := seenPair[key]; dup {
-				continue
-			}
-			seenPair[key] = struct{}{}
-			if _, known := channelIdsByModel[modelName]; !known {
-				orderedModels = append(orderedModels, modelName)
-			}
-			channelIdsByModel[modelName] = append(channelIdsByModel[modelName], seedanceChannels[i].Id)
-		}
-	}
-	result := make([]CustomerContractEntityGroupModelChannels, 0, len(orderedModels))
-	for _, modelName := range orderedModels {
-		options := make([]CustomerContractEntityChannelOption, 0, len(channelIdsByModel[modelName]))
-		for _, channelId := range channelIdsByModel[modelName] {
-			options = append(options, CustomerContractEntityChannelOption{Id: channelId, Name: channelName[channelId]})
-		}
-		result = append(result, CustomerContractEntityGroupModelChannels{
-			Model: modelName, Channels: options,
-		})
-	}
-	return result, nil
 }

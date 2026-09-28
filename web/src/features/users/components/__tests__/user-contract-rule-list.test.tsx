@@ -9,7 +9,14 @@ import { templateRuleToDraft } from '@/features/customer-contracts/template-util
 import en from '@/i18n/locales/en.json'
 import zh from '@/i18n/locales/zh.json'
 
+import type { CustomerContractCatalog } from '../../types'
 import { CustomerContractRuleList } from '../user-contract-rule-list'
+
+const emptyCatalog: CustomerContractCatalog = {
+  groups: [],
+  no_group_channels: [],
+  customer_context: true,
+}
 
 function unavailableRuleProps(
   reason: string
@@ -25,11 +32,10 @@ function unavailableRuleProps(
           available: false,
           unavailable_reason: reason,
         },
-        [],
-        []
+        emptyCatalog
       ),
     ],
-    channelGroups: [],
+    catalog: emptyCatalog,
     search: '',
     onSearchChange: vi.fn(),
     onUpdate: vi.fn(),
@@ -72,7 +78,6 @@ describe('unavailable contract sources', () => {
       render(<CustomerContractRuleList {...unavailableRuleProps(reason)} />)
       expect(screen.getByText('model-a')).toBeVisible()
       expect(screen.getByText('default')).toBeVisible()
-      expect(screen.getByRole('combobox')).toHaveTextContent('42')
       expect(screen.getByRole('combobox')).toHaveAccessibleDescription(message)
       expect(screen.getByText(message)).toBeVisible()
       expect(
@@ -83,16 +88,32 @@ describe('unavailable contract sources', () => {
 
   it('clears the old reason when the administrator selects a qualifying replacement', async () => {
     const props = unavailableRuleProps('channel_disabled')
-    props.channelGroups = [
-      {
-        group: 'default',
-        native_group_ratio: '1',
-        special_group_ratio: false,
-        models: [
-          { model: 'model-a', channels: [{ id: 43, name: 'Replacement' }] },
-        ],
-      },
-    ]
+    props.catalog = {
+      groups: [
+        {
+          group: 'default',
+          ratio_configured: true,
+          native_group_ratio: '1',
+          special_group_ratio: false,
+          models: [
+            {
+              model: 'model-a',
+              sources: [
+                {
+                  channel_id: 43,
+                  channel_name: 'Replacement',
+                  available: true,
+                  from_channel_config: true,
+                  from_ability: true,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      no_group_channels: [],
+      customer_context: true,
+    }
     const { rerender } = render(<CustomerContractRuleList {...props} />)
     const user = userEvent.setup()
     await user.click(screen.getByRole('combobox'))

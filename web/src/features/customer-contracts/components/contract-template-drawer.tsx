@@ -29,13 +29,12 @@ import { CustomerContractAddRule } from '@/features/users/components/user-contra
 import { CustomerContractRuleList } from '@/features/users/components/user-contract-rule-list'
 import {
   buildContractBatchRules,
-  channelOptionsForRule,
+  channelSourcesForRule,
   parseContractDiscount,
 } from '@/features/users/components/user-contract-utils'
 import type {
   ContractRuleDraft,
-  CustomerContractChannelGroupOption,
-  CustomerContractGroupOption,
+  CustomerContractCatalog,
 } from '@/features/users/types'
 import { formatTimestamp } from '@/lib/format'
 
@@ -74,10 +73,11 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
     props.templateId ?? null
   )
   const editing = savedTemplateId !== null
-  const [channels, setChannels] = useState<
-    CustomerContractChannelGroupOption[]
-  >([])
-  const [options, setOptions] = useState<CustomerContractGroupOption[]>([])
+  const [catalog, setCatalog] = useState<CustomerContractCatalog>({
+    groups: [],
+    no_group_channels: [],
+    customer_context: false,
+  })
   const [draft, setDraft] = useState<TemplateDraft>({
     name: props.initial?.name ?? '',
     enabled: Boolean(props.initial) || !editing,
@@ -129,17 +129,15 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
           }
           source = snapshotResponse.data
         }
-        const channelGroups = optionsResponse.data.channels || []
-        const groupOptions = optionsResponse.data.options || []
-        setChannels(channelGroups)
-        setOptions(groupOptions)
-        setAddGroup(channelGroups[0]?.group || '')
+        const sharedCatalog = optionsResponse.data
+        setCatalog(sharedCatalog)
+        setAddGroup(sharedCatalog.groups[0]?.group || '')
         if (source) {
           setDraft({
             name: source.name,
             enabled: source.enabled,
             rules: source.rules.map((rule) =>
-              templateRuleToDraft(rule, channelGroups, groupOptions)
+              templateRuleToDraft(rule, sharedCatalog)
             ),
           })
           setVersion(source.version)
@@ -156,8 +154,7 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
                   available: rule.available,
                   unavailable_reason: rule.unavailable_reason,
                 },
-                channelGroups,
-                groupOptions
+                sharedCatalog
               )
             ),
           }))
@@ -192,9 +189,9 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
 
   const handleAddModelsChange = (values: string[]) => {
     setAddModels(values)
-    // A fresh pick initializes from the current candidates (single candidate
-    // auto-picked); removing a model drops its channels, so re-adding it
-    // re-initializes. Still-selected models keep their explicit picks.
+    // A fresh pick initializes from the currently available sources (a single
+    // candidate auto-picked); removing a model drops its channels, so
+    // re-adding it re-initializes. Still-selected models keep explicit picks.
     setAddChannelIdsByModel((current) => {
       const next: Record<string, string[]> = {}
       for (const model of values) {
@@ -202,11 +199,13 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
           model in current
             ? current[model]
             : (() => {
-                const candidates = channelOptionsForRule(channels, {
+                const available = channelSourcesForRule(catalog, {
                   route_group: addGroup,
                   model,
-                })
-                return candidates.length === 1 ? [String(candidates[0].id)] : []
+                }).filter((source) => source.available)
+                return available.length === 1
+                  ? [String(available[0].channel_id)]
+                  : []
               })()
       }
       return next
@@ -224,8 +223,7 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
   const addRules = () => {
     if (!addGroup || addModels.length === 0) return
     const result = buildContractBatchRules({
-      channelGroups: channels,
-      groupOptions: options,
+      catalog,
       draftRules: draft.rules,
       routeGroup: addGroup,
       models: addModels,
@@ -305,9 +303,7 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
       setDraft({
         name: saved.name,
         enabled: saved.enabled,
-        rules: saved.rules.map((rule) =>
-          templateRuleToDraft(rule, channels, options)
-        ),
+        rules: saved.rules.map((rule) => templateRuleToDraft(rule, catalog)),
       })
       setSavedTemplateId(saved.id)
       setVersion(saved.version)
@@ -417,7 +413,7 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
         </Field>
 
         <CustomerContractAddRule
-          channelGroups={channels}
+          catalog={catalog}
           group={addGroup}
           models={addModels}
           channelIdsByModel={addChannelIdsByModel}
@@ -443,7 +439,7 @@ export function ContractTemplateDrawer(props: ContractTemplateDrawerProps) {
         ) : (
           <CustomerContractRuleList
             rules={draft.rules}
-            channelGroups={channels}
+            catalog={catalog}
             search={ruleSearch}
             onSearchChange={setRuleSearch}
             onUpdate={updateRule}

@@ -15,6 +15,10 @@ func TestSeedancePluginMetadataPreservesPublishedModelArkContract(t *testing.T) 
 	_, info, err := jsplugin.CompileSeedanceExtension(plugins.SeedanceSource(), jsplugin.Options{}, jsplugin.SeedanceHostContract())
 	require.NoError(t, err)
 	for _, video := range info.Configuration.Videos {
+		if video.Protocol == string(dto.VideoUpstreamProtocolViduModelArkV3) {
+			// Vidu has no legacy projection; its published contract is tested below.
+			continue
+		}
 		models := append([]string(nil), video.Models...)
 		if video.ModelPolicy == "configured" {
 			models = append(models, "ep-explicit-customer-deployment")
@@ -51,4 +55,48 @@ func TestSeedancePluginMetadataPreservesPublishedModelArkContract(t *testing.T) 
 			})
 		}
 	}
+}
+
+func TestViduPublishedContractMatchesBothRegions(t *testing.T) {
+	_, info, err := jsplugin.CompileSeedanceExtension(plugins.SeedanceSource(), jsplugin.Options{}, jsplugin.SeedanceHostContract())
+	require.NoError(t, err)
+	count := 0
+	for _, video := range info.Configuration.Videos {
+		if video.Protocol != string(dto.VideoUpstreamProtocolViduModelArkV3) {
+			continue
+		}
+		for name, metadata := range video.ModelMetadata {
+			count++
+			api, ok := VideoAPIFromPlugin("customer-model", dto.VideoUpstreamProtocolViduModelArkV3, metadata, true)
+			require.True(t, ok)
+			parameters := map[string]dto.PublicAPIParameter{}
+			for _, parameter := range api.Creation.Parameters {
+				parameters[parameter.Name] = parameter
+			}
+			var fields []string
+			for name := range parameters {
+				fields = append(fields, name)
+			}
+			assert.ElementsMatch(t, []string{"model", "content", "resolution", "ratio", "duration", "generate_audio", "watermark", "callback_url", "return_last_frame", "execution_expires_after", "tools", "safety_identifier"}, fields, name)
+			assert.Equal(t, "adaptive", parameters["ratio"].DefaultValue)
+			assert.Equal(t, false, parameters["generate_audio"].DefaultValue)
+			assert.Equal(t, 172800, parameters["execution_expires_after"].DefaultValue)
+			require.NotNil(t, parameters["safety_identifier"].MaxLength)
+			assert.Equal(t, 64, *parameters["safety_identifier"].MaxLength)
+			assert.Equal(t, "customer-model", api.Creation.Model)
+			for _, operation := range api.Operations {
+				if operation.Operation == "delete_video" {
+					assert.False(t, operation.Supported)
+				}
+			}
+			if strings.HasPrefix(name, "viduq3.1-") {
+				assert.Equal(t, 30, metadata.MaxDuration)
+				assert.Equal(t, 30, metadata.MaxImages)
+				assert.Equal(t, 10, metadata.MaxAudios)
+			} else {
+				assert.Equal(t, 15, metadata.MaxDuration)
+			}
+		}
+	}
+	assert.Equal(t, 8, count)
 }

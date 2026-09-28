@@ -1,6 +1,8 @@
 package publicmodel
 
 import (
+	"slices"
+
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 )
@@ -45,6 +47,26 @@ func VideoAPIFromPlugin(customerModel string, protocol dto.VideoUpstreamProtocol
 		}
 		if parameter.Name == "generate_audio" && metadata.PublishGenerateAudioDefault {
 			parameter.DefaultValue = metadata.DefaultGenerateAudio
+		}
+	}
+	for _, parameter := range fullModelArkParameters(false) {
+		if slices.Contains(metadata.ModelArkFields, parameter.Name) {
+			api.Creation.Parameters = append(api.Creation.Parameters, parameter)
+		}
+	}
+	if protocol == dto.VideoUpstreamProtocolViduModelArkV3 {
+		for i := range api.Creation.Parameters {
+			parameter := &api.Creation.Parameters[i]
+			switch parameter.Name {
+			case "ratio":
+				parameter.DefaultValue = "adaptive"
+			case "execution_expires_after":
+				parameter.DefaultValue = 172800
+			case "watermark", "return_last_frame":
+				parameter.DefaultValue = false
+			case "safety_identifier":
+				parameter.MaxLength = intPointer(64)
+			}
 		}
 	}
 	if metadata.AllowReturnLastFrame {

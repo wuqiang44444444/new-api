@@ -18,8 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type {
   ApiResponse,
-  CustomerContractChannelGroupOption,
-  CustomerContractGroupOption,
+  CustomerContractCatalog,
   CustomerContractRulePayload,
 } from '@/features/users/types'
 
@@ -85,11 +84,9 @@ export interface ContractTemplateWritePayload {
   rules: CustomerContractRulePayload[]
 }
 
-export interface ContractTemplateOptionSources {
-  options: CustomerContractGroupOption[]
-  channels: CustomerContractChannelGroupOption[]
-  customer_context: boolean
-}
+/** Template editing uses the shared management catalog with plain native
+ * group ratios; no customer price context is ever applied. */
+export type ContractTemplateOptionSources = CustomerContractCatalog
 
 export interface ContractTemplateAudit {
   id: number

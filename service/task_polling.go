@@ -640,7 +640,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
 
 	parsedStatus := model.TaskStatus(taskResult.Status)
-	knownStatus := knownPollStatus(parsedStatus) || (task.HasMiniMaxBillingFacts() && parsedStatus == model.TaskStatusCancelled)
+	knownStatus := knownPollStatus(parsedStatus) || (task.HasMiniMaxBillingFacts() && parsedStatus == model.TaskStatusCancelled) || isViduProviderExpiry(task, parsedStatus)
 	if parsedStatus == model.TaskStatusUnknown || parsedStatus == "" || !knownStatus {
 		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassUnrecognized, resp.StatusCode, taskResult.Reason)
 	}
@@ -704,6 +704,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			task.FinishTime = now
 		}
 	}
+	shouldFinalizeBilling = finishViduProviderExpiry(task, taskResult, now) || shouldFinalizeBilling
 	if taskResult.Progress != "" {
 		task.Progress = taskResult.Progress
 	}
@@ -743,7 +744,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 	if shouldFinalizeBilling {
 		billingSettled := settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
-		if (task.Status == model.TaskStatusFailure || (task.HasMiniMaxBillingFacts() && task.Status.ShouldRefundOnTerminal())) && !billingSettled && task.Quota != 0 {
+		if (task.Status == model.TaskStatusFailure || (task.HasMiniMaxBillingFacts() && task.Status.ShouldRefundOnTerminal()) || isViduProviderExpiry(task, task.Status)) && !billingSettled && task.Quota != 0 {
 			refundTaskWithReconcile(ctx, task, task.FailReason)
 		}
 	}
@@ -801,7 +802,7 @@ func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor
 	}
 	if bc := task.PrivateData.BillingContext; bc != nil && bc.TieredSnapshot != nil {
 		// 用量表达式结算只适用于成功任务；失败任务由调用方全额退款。
-		if task.Status == model.TaskStatusFailure || (task.HasMiniMaxBillingFacts() && task.Status.ShouldRefundOnTerminal()) {
+		if task.Status == model.TaskStatusFailure || (task.HasMiniMaxBillingFacts() && task.Status.ShouldRefundOnTerminal()) || isViduProviderExpiry(task, task.Status) {
 			return false
 		}
 		usageFacts := make(map[string]any, len(bc.TieredSnapshot.UsageFacts)+len(taskResult.UsageFacts))

@@ -3,8 +3,10 @@ package controller
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -16,19 +18,45 @@ import (
 	"gorm.io/gorm"
 )
 
-type customerContractGroupOption struct {
-	Group             string                                          `json:"group"`
-	Models            []string                                        `json:"models"`
-	Prices            map[string]service.CustomerContractPricePreview `json:"prices"`
-	NativeGroupRatio  string                                          `json:"native_group_ratio"`
-	SpecialGroupRatio bool                                            `json:"special_group_ratio"`
+type customerContractCatalogSource struct {
+	ChannelId         int    `json:"channel_id"`
+	ChannelName       string `json:"channel_name"`
+	Available         bool   `json:"available"`
+	UnavailableReason string `json:"unavailable_reason,omitempty"`
+	FromChannelConfig bool   `json:"from_channel_config"`
+	FromAbility       bool   `json:"from_ability"`
+	// ConfigDiff carries the management-only channel-config vs Ability drift
+	// diagnosis. It is independent of Available and never gates anything.
+	ConfigDiff string `json:"config_diff,omitempty"`
 }
 
-type customerContractChannelGroupOption struct {
-	Group             string                                           `json:"group"`
-	Models            []model.CustomerContractEntityGroupModelChannels `json:"models"`
-	NativeGroupRatio  string                                           `json:"native_group_ratio"`
-	SpecialGroupRatio bool                                             `json:"special_group_ratio"`
+type customerContractCatalogModel struct {
+	Model string                                `json:"model"`
+	Price *service.CustomerContractPricePreview `json:"price,omitempty"`
+	// Sources lists every deduplicated channel source of this model in the
+	// group, including unavailable ones with their controlled reason.
+	Sources []customerContractCatalogSource `json:"sources"`
+}
+
+type customerContractCatalogGroup struct {
+	Group             string                         `json:"group"`
+	RatioConfigured   bool                           `json:"ratio_configured"`
+	NativeGroupRatio  string                         `json:"native_group_ratio"`
+	SpecialGroupRatio bool                           `json:"special_group_ratio"`
+	Models            []customerContractCatalogModel `json:"models"`
+}
+
+type customerContractNoGroupChannel struct {
+	ChannelId     int      `json:"channel_id"`
+	ChannelName   string   `json:"channel_name"`
+	ChannelStatus int      `json:"channel_status"`
+	Models        []string `json:"models"`
+}
+
+type customerContractCatalogResponse struct {
+	Groups          []customerContractCatalogGroup   `json:"groups"`
+	NoGroupChannels []customerContractNoGroupChannel `json:"no_group_channels"`
+	CustomerContext bool                             `json:"customer_context"`
 }
 
 type customerContractWriteRequest struct {
@@ -261,67 +289,134 @@ func GetCustomerContractEntityAudits(c *gin.Context) {
 	common.ApiSuccess(c, page)
 }
 
-func GetCustomerContractOptions(c *gin.Context) {
+// GetCustomerContractCatalog serves the unified management catalog for
+// one customer's contract editor: every connected model source with shared
+// availability facts, config-diff diagnostics and this user's price
+// reference. It replaces the two per-group option endpoints.
+func GetCustomerContractCatalog(c *gin.Context) {
 	target, ok := authorizedCustomerContractTarget(c)
 	if !ok {
 		return
 	}
-	groupRatios := ratio_setting.GetGroupRatioCopy()
-	groupNames := make([]string, 0, len(groupRatios))
-	for group := range groupRatios {
-		if group != "auto" {
-			groupNames = append(groupNames, group)
-		}
+	catalog, err := model.GetCustomerContractCatalog()
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
-	sort.Strings(groupNames)
-	options := make([]customerContractGroupOption, 0, len(groupNames))
-	for _, group := range groupNames {
-		models, err := model.GetCustomerContractAvailableModelsForGroup(group)
-		if err != nil {
-			common.ApiError(c, err)
-			return
-		}
-		sort.Strings(models)
-		nativeRatio, special := service.ResolveCustomerContractNativeGroupRatio(target.Group, group)
-		prices := make(map[string]service.CustomerContractPricePreview, len(models))
-		for _, modelName := range models {
-			prices[modelName] = service.BuildCustomerContractPricePreview(modelName, decimal.NewFromFloat(nativeRatio))
-		}
-		options = append(options, customerContractGroupOption{
-			Group: group, Models: models, Prices: prices,
-			NativeGroupRatio: decimal.NewFromFloat(nativeRatio).String(), SpecialGroupRatio: special,
-		})
-	}
-	common.ApiSuccess(c, options)
+	response := buildCustomerContractCatalogResponse(catalog, true, func(group string) (float64, bool) {
+		return service.ResolveCustomerContractNativeGroupRatio(target.Group, group)
+	})
+	common.ApiSuccess(c, response)
 }
 
-func GetCustomerContractChannelOptions(c *gin.Context) {
-	target, ok := authorizedCustomerContractTarget(c)
-	if !ok {
-		return
+// buildCustomerContractCatalogResponse merges the catalog projection with the
+// caller's group-ratio context. Groups without a configured ratio stay
+// visible through their sources' invalid diagnostics; they never become
+// addable. Price references are per group context: the customer editor
+// applies the target user's special group ratio, templates never do.
+func buildCustomerContractCatalogResponse(catalog *model.CustomerContractCatalog, customerContext bool, groupRatio func(group string) (float64, bool)) customerContractCatalogResponse {
+	type groupEntry struct {
+		ratio           float64
+		ratioConfigured bool
+		dto             *customerContractCatalogGroup
+		models          map[string]*customerContractCatalogModel
 	}
-	groupRatios := ratio_setting.GetGroupRatioCopy()
-	groupNames := make([]string, 0, len(groupRatios))
-	for group := range groupRatios {
-		if group != "auto" {
-			groupNames = append(groupNames, group)
+	entries := make(map[string]*groupEntry)
+	ordered := make([]*groupEntry, 0)
+	entry := func(group string) *groupEntry {
+		if existing := entries[group]; existing != nil {
+			return existing
 		}
+		ratioConfigured := ratio_setting.ContainsGroupRatio(group)
+		var ratio float64
+		special := false
+		ratioText := ""
+		if ratioConfigured {
+			// Only configured groups resolve a ratio: an unconfigured group
+			// keeps an empty ratio and no price reference instead of a fake
+			// "1", and never triggers the missing-ratio log path.
+			ratio, special = groupRatio(group)
+			ratioText = decimal.NewFromFloat(ratio).String()
+		}
+		e := &groupEntry{
+			ratio:           ratio,
+			ratioConfigured: ratioConfigured,
+			dto: &customerContractCatalogGroup{
+				Group:             group,
+				RatioConfigured:   ratioConfigured,
+				NativeGroupRatio:  ratioText,
+				SpecialGroupRatio: special,
+				Models:            []customerContractCatalogModel{},
+			},
+			models: make(map[string]*customerContractCatalogModel),
+		}
+		entries[group] = e
+		ordered = append(ordered, e)
+		return e
+	}
+	// Concrete ratio-configured groups stay listed even without sources so
+	// the route group selector keeps offering every configured group.
+	groupNames := make([]string, 0)
+	for name := range ratio_setting.GetGroupRatioCopy() {
+		if strings.EqualFold(name, "auto") {
+			continue
+		}
+		groupNames = append(groupNames, name)
 	}
 	sort.Strings(groupNames)
-	options := make([]customerContractChannelGroupOption, 0, len(groupNames))
-	for _, group := range groupNames {
-		models, err := model.GetCustomerContractEntityChannelOptions(group)
-		if err != nil {
-			common.ApiError(c, err)
-			return
+	for _, name := range groupNames {
+		entry(name)
+	}
+	for _, source := range catalog.Sources {
+		e := entry(source.RouteGroup)
+		modelDto := e.models[source.PublicModel]
+		if modelDto == nil {
+			modelDto = &customerContractCatalogModel{Model: source.PublicModel, Sources: []customerContractCatalogSource{}}
+			e.models[source.PublicModel] = modelDto
 		}
-		nativeRatio, special := service.ResolveCustomerContractNativeGroupRatio(target.Group, group)
-		options = append(options, customerContractChannelGroupOption{
-			Group: group, Models: models,
-			NativeGroupRatio: decimal.NewFromFloat(nativeRatio).String(), SpecialGroupRatio: special,
+		modelDto.Sources = append(modelDto.Sources, customerContractCatalogSource{
+			ChannelId:         source.ChannelId,
+			ChannelName:       source.ChannelName,
+			Available:         source.Available,
+			UnavailableReason: source.UnavailableCategory,
+			FromChannelConfig: source.FromChannelConfig,
+			FromAbility:       source.FromAbility,
+			ConfigDiff:        source.ConfigDiff,
 		})
 	}
-	common.ApiSuccess(c, options)
+	slices.SortFunc(ordered, func(a, b *groupEntry) int { return strings.Compare(a.dto.Group, b.dto.Group) })
+	groups := make([]customerContractCatalogGroup, 0, len(ordered))
+	for _, e := range ordered {
+		modelNames := make([]string, 0, len(e.models))
+		for name := range e.models {
+			modelNames = append(modelNames, name)
+		}
+		sort.Strings(modelNames)
+		var prices map[string]*service.CustomerContractPricePreview
+		if e.ratioConfigured {
+			// Unconfigured groups keep every model price reference unset:
+			// their sources are invalid anyway and a ratio cannot be faked.
+			prices = service.BuildCustomerContractCatalogPrices(modelNames, decimal.NewFromFloat(e.ratio))
+		} else {
+			prices = map[string]*service.CustomerContractPricePreview{}
+		}
+		for _, name := range modelNames {
+			modelDto := e.models[name]
+			modelDto.Price = prices[name]
+			e.dto.Models = append(e.dto.Models, *modelDto)
+		}
+		groups = append(groups, *e.dto)
+	}
+	noGroupChannels := make([]customerContractNoGroupChannel, 0, len(catalog.NoGroupRecords))
+	for _, record := range catalog.NoGroupRecords {
+		noGroupChannels = append(noGroupChannels, customerContractNoGroupChannel{
+			ChannelId: record.ChannelId, ChannelName: record.ChannelName,
+			ChannelStatus: record.ChannelStatus, Models: record.Models,
+		})
+	}
+	return customerContractCatalogResponse{
+		Groups: groups, NoGroupChannels: noGroupChannels, CustomerContext: customerContext,
+	}
 }
 
 func GetSelfCustomerContract(c *gin.Context) {

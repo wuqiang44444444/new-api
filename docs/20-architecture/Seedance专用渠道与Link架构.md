@@ -69,7 +69,7 @@ execution binding、内容 hash、Link Access Plan 或候选等价证明。
 
 ### 3.1.1 插件声明与渠道实例值
 
-`seedance-link` API v2 制品统一声明 9 种在用视频协议和 7 种远端素材协议的配置：Provider 模型、
+`seedance-link` API v3 制品统一声明 10 种在用视频协议和 7 种远端素材协议的配置：Provider 模型、
 公开参数、素材配对、Project/Region、凭据槽位、素材操作/媒体、组策略与管理默认值。账号、连接、
 模型映射和素材配置实际值仍在 Channel 及受保护凭据表；声明不成为原生 `meta.models`、候选或 Ability。
 
@@ -178,6 +178,7 @@ ark_media_v1
 feicai_videos_v1
 funcloud_modelark_v3
 synlink_video_v1
+vidu_modelark_v3
 ```
 
 当前素材协议为：
@@ -196,6 +197,18 @@ cmcc_aicc_assets_v2
 
 精确枚举、路径和 transport profile 以 `relaykit/dto/upstream_protocol.go` 为代码权威。内部 transport
 profile 只服务 adapter 复用和任务快照，不是第二套管理员配置协议。
+
+`vidu_modelark_v3` 使用同一套 V3 路径适配 Vidu Drama 国内与海外站，区域由 Channel 的连接和精确
+模型映射表达，不从 URL 或模型名称推断协议。插件声明八个上游模型的时长、分辨率、媒体数量和
+已发布字段；运行时在预扣前验证这些限制，补齐 5 秒、720p、adaptive、关闭生成音频的默认值，
+并将 4K 转为上游小写值。图片、视频与音频使用既有统一内容结构，素材控制面配对 `none`。
+
+Vidu 查询由宿主在执行冻结插件前归一化：任务数字字段兼容整数及有界十进制字符串，
+`frames_per_second` 映射为北向 `framespersecond`，保留视频与尾帧结果。只有可信且有界的
+`usage.completion_tokens` 形成实际计费用量；仅 total、非法数字或冲突用量不会推导为零消费。
+用量缺失时沿用 `awaiting_usage`，HTTP 404 等查询错误不直接判定任务失败。既有官方协议继续
+使用严格数值语义，历史任务不随新渠道配置改写冻结协议。Vidu 删除语义尚未验收，不发布删除能力；
+北向列表继续读取本地 Task。该适配已完成本地回归，真实供应商与账单验收另记。
 
 代码协议注册的是“如何履约统一北向合同”，不是另一套客户协议。某个已发布北向字段在具体 Provider
 不生效时，adapter 必须按北向合同忽略或转换；不得把 Provider 是否存在同名字段变成客户请求资格。

@@ -9,6 +9,7 @@ import (
 type VideoUpstreamProtocol string
 
 const (
+	VideoUpstreamProtocolViduModelArkV3       VideoUpstreamProtocol = "vidu_modelark_v3"
 	VideoUpstreamProtocolSynlinkVideoV1       VideoUpstreamProtocol = "synlink_video_v1"
 	VideoUpstreamProtocolModelArkV3Volcengine VideoUpstreamProtocol = "modelark_v3_volcengine"
 	VideoUpstreamProtocolModelArkV3BytePlus   VideoUpstreamProtocol = "modelark_v3_byteplus"
@@ -25,7 +26,7 @@ const (
 
 func (p VideoUpstreamProtocol) IsValid() bool {
 	switch p {
-	case VideoUpstreamProtocolSynlinkVideoV1, VideoUpstreamProtocolModelArkV3Volcengine,
+	case VideoUpstreamProtocolViduModelArkV3, VideoUpstreamProtocolSynlinkVideoV1, VideoUpstreamProtocolModelArkV3Volcengine,
 		VideoUpstreamProtocolModelArkV3BytePlus,
 		VideoUpstreamProtocolModelArkV3CMCC,
 		VideoUpstreamProtocolTokenSaveMediaTaskV1,
@@ -56,6 +57,8 @@ func ValidateVideoUpstreamProtocol(p VideoUpstreamProtocol) error {
 // code-backed Seedance adapter. It is not persisted as Seedance configuration.
 func (p VideoUpstreamProtocol) TransportProfile() VideoUpstreamProfile {
 	switch p {
+	case VideoUpstreamProtocolViduModelArkV3:
+		return VideoUpstreamProfileThirdPartyViduModelArkV3
 	case VideoUpstreamProtocolSynlinkVideoV1:
 		return VideoUpstreamProfileThirdPartySynlinkVideoV1
 	case VideoUpstreamProtocolModelArkV3Volcengine,
@@ -92,7 +95,7 @@ func (p VideoUpstreamProtocol) TransportPaths(providerModel string) (string, str
 		return "/v1/ark/media/generations", "/v1/ark/media/tasks/{task_id}"
 	case VideoUpstreamProtocolFeicaiVideosV1:
 		return "/v1/videos", "/v1/videos/{task_id}"
-	case VideoUpstreamProtocolFunCloudModelArkV3:
+	case VideoUpstreamProtocolViduModelArkV3, VideoUpstreamProtocolFunCloudModelArkV3:
 		return "/api/v3/contents/generations/tasks", "/api/v3/contents/generations/tasks/{task_id}"
 	case VideoUpstreamProtocolFunCloudSeedance:
 		// Query only: an already-created V2 task must retain its original path.

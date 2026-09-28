@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-23
+last-reviewed: 2026-09-28
 ---
 
 # 70-research — 目标说明
@@ -20,6 +20,10 @@ last-reviewed: 2026-09-23
 - [京东云海螺文生视频 API 原文](京东云/海螺文生视频API原文.md)：官方正文快照、来源与校验摘要；文档示例模型为 Hailuo 2.3。
 - [京东云海螺图生视频 API 原文](京东云/海螺图生视频API原文.md)：官方正文快照；与 H3 的适用边界和实测结论分开记录。
 - [MiniMax H3 京东云价格核查](京东云/MiniMaxH3价格核查.md)：京东报价缺口、MiniMax 中国官网刊例价及按系统汇率配置的文生视频输出定价验收。
+- [Vidu 国内站视频接口原始信息](Vidu国内站视频接口原始信息.md)：更正后的飞书 Drama 国内 ModelArk V3 合同、完整地址、参数、响应、价格与原文冲突。
+- [Vidu 国外站视频接口原始信息](Vidu国外站视频接口原始信息.md)：飞书 Drama-ab 海外合同，独立保留国外域名、模型和美元价格。
+- [Vidu 两站差异与现有渠道适配结论](Vidu两站差异与现有渠道适配结论.md)：真实测试更正：创建可用，字符串数字及用量导致现有官方协议查询/结算失败，新增渠道暂时停用。
+- [Vidu 初次调研来源更正](Vidu国内站调用与Seedance协议适配调研.md)：旧普通 Vidu `/ent/v2` 调研不再作为本次 Drama/Seedance 接入依据。
 
 ## 不放什么
 - 已采纳的架构决策 -> 20-architecture/decisions/

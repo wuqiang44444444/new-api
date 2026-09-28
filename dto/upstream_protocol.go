@@ -13,6 +13,7 @@ var (
 )
 
 const (
+	VideoUpstreamProtocolViduModelArkV3       = kitdto.VideoUpstreamProtocolViduModelArkV3
 	VideoUpstreamProtocolSynlinkVideoV1       = kitdto.VideoUpstreamProtocolSynlinkVideoV1
 	VideoUpstreamProtocolFunCloudModelArkV3   = kitdto.VideoUpstreamProtocolFunCloudModelArkV3
 	VideoUpstreamProtocolModelArkV3Volcengine = kitdto.VideoUpstreamProtocolModelArkV3Volcengine

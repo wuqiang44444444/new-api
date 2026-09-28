@@ -49,8 +49,7 @@ import { cn } from '@/lib/utils'
 import {
   createUserContract,
   getContractEntityAudits,
-  getCustomerContractChannels,
-  getCustomerContractOptions,
+  getCustomerContractCatalog,
   getUserContracts,
   updateContractEntity,
 } from '../api'
@@ -58,8 +57,7 @@ import type {
   ContractEntityAdminView,
   ContractRuleDraft,
   CustomerContractAudit,
-  CustomerContractChannelGroupOption,
-  CustomerContractGroupOption,
+  CustomerContractCatalog,
   User,
 } from '../types'
 import { CustomerContractAddRule } from './user-contract-add-rule'
@@ -67,7 +65,7 @@ import { CustomerContractAuditHistory } from './user-contract-audit'
 import { CustomerContractRuleList } from './user-contract-rule-list'
 import {
   buildContractBatchRules,
-  channelOptionsForRule,
+  channelSourcesForRule,
   parseContractDiscount,
 } from './user-contract-utils'
 
@@ -102,10 +100,11 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
   const [contracts, setContracts] = useState<ContractEntityAdminView[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [creating, setCreating] = useState(false)
-  const [channels, setChannels] = useState<
-    CustomerContractChannelGroupOption[]
-  >([])
-  const [options, setOptions] = useState<CustomerContractGroupOption[]>([])
+  const [catalog, setCatalog] = useState<CustomerContractCatalog>({
+    groups: [],
+    no_group_channels: [],
+    customer_context: true,
+  })
   const [draft, setDraft] = useState<ContractDraft>({
     name: '',
     enabled: false,
@@ -170,58 +169,45 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
     setLoading(true)
     void Promise.all([
       getUserContracts(props.user.id),
-      getCustomerContractChannels(props.user.id),
-      getCustomerContractOptions(props.user.id),
+      getCustomerContractCatalog(props.user.id),
       loadTemplates(),
     ])
-      .then(
-        ([
-          contractResponse,
-          channelResponse,
-          optionsResponse,
-          templatesResponse,
-        ]) => {
-          if (cancelled) return
-          if (!contractResponse.success || !contractResponse.data) {
-            throw new Error(contractResponse.message || t('Loading failed'))
-          }
-          if (!channelResponse.success || !channelResponse.data) {
-            throw new Error(channelResponse.message || t('Loading failed'))
-          }
-          if (!optionsResponse.success || !optionsResponse.data) {
-            throw new Error(optionsResponse.message || t('Loading failed'))
-          }
-          const enabledTemplates =
-            templatesResponse.success && templatesResponse.data
-              ? templatesResponse.data.items || []
-              : []
-          if (!templatesResponse.success) {
-            toast.error(t('Failed to load contract templates'))
-          }
-          setTemplates(enabledTemplates)
-          const contractList = contractResponse.data.contracts || []
-          const channelGroups = channelResponse.data || []
-          const initial =
-            contractList.find((contract) => contract.id === props.contractId) ??
-            contractList[0] ??
-            null
-          setContracts(contractList)
-          setChannels(channelGroups)
-          setOptions(optionsResponse.data || [])
-          setSelectedId(initial?.id ?? null)
-          setCreating(!initial)
-          setDraft(buildDraft(initial))
-          setReason('')
-          setRuleSearch('')
-          setAddGroup(channelGroups[0]?.group || '')
-          setAddModels([])
-          setAddChannelIdsByModel({})
-          setAddDiscount('1')
-          setDirty(false)
-          setSelectedTemplate(null)
-          setTemplateConflict(null)
+      .then(([contractResponse, catalogResponse, templatesResponse]) => {
+        if (cancelled) return
+        if (!contractResponse.success || !contractResponse.data) {
+          throw new Error(contractResponse.message || t('Loading failed'))
         }
-      )
+        if (!catalogResponse.success || !catalogResponse.data) {
+          throw new Error(catalogResponse.message || t('Loading failed'))
+        }
+        const enabledTemplates =
+          templatesResponse.success && templatesResponse.data
+            ? templatesResponse.data.items || []
+            : []
+        if (!templatesResponse.success) {
+          toast.error(t('Failed to load contract templates'))
+        }
+        setTemplates(enabledTemplates)
+        const contractList = contractResponse.data.contracts || []
+        const initial =
+          contractList.find((contract) => contract.id === props.contractId) ??
+          contractList[0] ??
+          null
+        setContracts(contractList)
+        setCatalog(catalogResponse.data)
+        setSelectedId(initial?.id ?? null)
+        setCreating(!initial)
+        setDraft(buildDraft(initial))
+        setReason('')
+        setRuleSearch('')
+        setAddGroup(catalogResponse.data.groups[0]?.group || '')
+        setAddModels([])
+        setAddChannelIdsByModel({})
+        setAddDiscount('1')
+        setDirty(false)
+        setSelectedTemplate(null)
+        setTemplateConflict(null)
+      })
       .catch((error: unknown) => {
         if (!cancelled) {
           toast.error(
@@ -326,7 +312,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
             name: source.name,
             enabled: true,
             rules: source.rules.map((rule) =>
-              templateRuleToDraft(rule, channels, options)
+              templateRuleToDraft(rule, catalog)
             ),
           })
           setSelectedTemplate({
@@ -356,9 +342,9 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
 
   const handleAddModelsChange = (values: string[]) => {
     setAddModels(values)
-    // A fresh pick initializes from the current candidates (single candidate
-    // auto-picked); removing a model drops its channels, so re-adding it
-    // re-initializes. Still-selected models keep their explicit picks.
+    // A fresh pick initializes from the currently available sources (a single
+    // candidate auto-picked); removing a model drops its channels, so
+    // re-adding it re-initializes. Still-selected models keep explicit picks.
     setAddChannelIdsByModel((current) => {
       const next: Record<string, string[]> = {}
       for (const model of values) {
@@ -366,11 +352,13 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
           model in current
             ? current[model]
             : (() => {
-                const candidates = channelOptionsForRule(channels, {
+                const available = channelSourcesForRule(catalog, {
                   route_group: addGroup,
                   model,
-                })
-                return candidates.length === 1 ? [String(candidates[0].id)] : []
+                }).filter((source) => source.available)
+                return available.length === 1
+                  ? [String(available[0].channel_id)]
+                  : []
               })()
       }
       return next
@@ -388,8 +376,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
   const addRules = () => {
     if (!addGroup || addModels.length === 0) return
     const result = buildContractBatchRules({
-      channelGroups: channels,
-      groupOptions: options,
+      catalog,
       draftRules: draft.rules,
       routeGroup: addGroup,
       models: addModels,
@@ -432,9 +419,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
     setDraft((current) => ({
       name: current.name,
       enabled: current.enabled,
-      rules: source.rules.map((rule) =>
-        templateRuleToDraft(rule, channels, options)
-      ),
+      rules: source.rules.map((rule) => templateRuleToDraft(rule, catalog)),
     }))
     setSelectedTemplate({
       id: source.id,
@@ -879,7 +864,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                   </Field>
 
                   <CustomerContractAddRule
-                    channelGroups={channels}
+                    catalog={catalog}
                     group={addGroup}
                     models={addModels}
                     channelIdsByModel={addChannelIdsByModel}
@@ -909,7 +894,7 @@ export function UserContractDrawer(props: UserContractDrawerProps) {
                   ) : (
                     <CustomerContractRuleList
                       rules={draft.rules}
-                      channelGroups={channels}
+                      catalog={catalog}
                       search={ruleSearch}
                       onSearchChange={setRuleSearch}
                       onUpdate={updateRule}

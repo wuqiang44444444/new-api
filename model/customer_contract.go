@@ -3,10 +3,8 @@ package model
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/shopspring/decimal"
@@ -154,77 +152,4 @@ func GetCustomerContractAudits(userId int, offset int, limit int) ([]CustomerCon
 
 func DeleteCurrentCustomerContractRulesWithTx(tx *gorm.DB, userId int) error {
 	return tx.Unscoped().Where("user_id = ?", userId).Delete(&CustomerModelContract{}).Error
-}
-
-func customerContractAvailableModelsForGroup(tx *gorm.DB, group string) (map[string]struct{}, error) {
-	models := make(map[string]struct{})
-	var abilities []Ability
-	if err := tx.Where(&Ability{Group: group, Enabled: true}).Find(&abilities).Error; err != nil {
-		return nil, err
-	}
-	channelIDs := make([]int, 0, len(abilities))
-	for _, ability := range abilities {
-		channelIDs = append(channelIDs, ability.ChannelId)
-	}
-	enabledChannels := make(map[int]struct{})
-	if len(channelIDs) > 0 {
-		var ids []int
-		if err := tx.Model(&Channel{}).
-			Where("id IN ? AND status = ?", channelIDs, common.ChannelStatusEnabled).
-			Pluck("id", &ids).Error; err != nil {
-			return nil, err
-		}
-		for _, id := range ids {
-			enabledChannels[id] = struct{}{}
-		}
-	}
-	for _, ability := range abilities {
-		if _, enabled := enabledChannels[ability.ChannelId]; enabled {
-			models[ability.Model] = struct{}{}
-		}
-	}
-	var channels []Channel
-	query := ApplyChannelGroupFilter(tx.Model(&Channel{}), group).
-		Where("type = ? AND status = ?", constant.ChannelTypeSeedanceLink, common.ChannelStatusEnabled)
-	if err := query.Find(&channels).Error; err != nil {
-		return nil, err
-	}
-	for i := range channels {
-		for _, modelName := range strings.Split(channels[i].Models, ",") {
-			modelName = strings.TrimSpace(modelName)
-			if modelName != "" {
-				models[modelName] = struct{}{}
-			}
-		}
-	}
-	return models, nil
-}
-
-func GetCustomerContractAvailableModelsForGroup(group string) ([]string, error) {
-	available, err := customerContractAvailableModelsForGroup(DB, group)
-	if err != nil {
-		return nil, err
-	}
-	models := make([]string, 0, len(available))
-	for modelName := range available {
-		models = append(models, modelName)
-	}
-	return models, nil
-}
-
-func IsChannelEnabledForExactCustomerContractModel(group string, publicModel string, channelID int) bool {
-	if group == "" || publicModel == "" || channelID <= 0 {
-		return false
-	}
-	var abilities []Ability
-	if err := DB.Where(&Ability{Group: group, ChannelId: channelID, Enabled: true}).
-		Find(&abilities).Error; err != nil {
-		return false
-	}
-	for _, ability := range abilities {
-		if ability.Model == publicModel {
-			return true
-		}
-	}
-	return false
 }

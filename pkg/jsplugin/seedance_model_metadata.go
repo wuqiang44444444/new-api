@@ -8,6 +8,8 @@ import (
 // SeedanceVideoModelMetadata describes the existing published ModelArk fields.
 // It cannot create routes, customer models, prices or Provider-private fields.
 type SeedanceVideoModelMetadata struct {
+	ModelArkFields []string `json:"modelArkFields,omitempty"`
+
 	AllowFrameImages            bool     `json:"allowFrameImages,omitempty"`
 	MaxPromptLength             int      `json:"maxPromptLength,omitempty"`
 	OmitDurationMaximum         bool     `json:"omitDurationMaximum,omitempty"`
@@ -48,6 +50,18 @@ type SeedanceVideoModelMetadata struct {
 func (spec *SeedanceVideoModelMetadata) validate() error {
 	if spec == nil {
 		return nil
+	}
+	seenFields := map[string]bool{}
+	for _, field := range spec.ModelArkFields {
+		switch field {
+		case "callback_url", "return_last_frame", "execution_expires_after", "tools", "safety_identifier":
+		default:
+			return fmt.Errorf("unsupported optional ModelArk field")
+		}
+		if spec.FullModelArk || seenFields[field] || (field == "return_last_frame" && spec.AllowReturnLastFrame) {
+			return fmt.Errorf("duplicate optional ModelArk field")
+		}
+		seenFields[field] = true
 	}
 	if spec.MaxPromptLength < 0 || spec.MaxPromptLength > 1000000 {
 		return fmt.Errorf("invalid prompt length bound")

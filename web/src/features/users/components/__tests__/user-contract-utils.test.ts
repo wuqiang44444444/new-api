@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type {
   ContractRuleDraft,
-  CustomerContractChannelGroupOption,
-  CustomerContractGroupOption,
+  CustomerContractCatalog,
   CustomerContractRule,
 } from '../../types'
 import {
@@ -14,7 +13,44 @@ import {
   type ContractBatchAddInput,
 } from '../user-contract-utils'
 
+const source = (
+  channelId: number,
+  name: string,
+  available = true,
+  unavailableReason?: string
+) => ({
+  channel_id: channelId,
+  channel_name: name,
+  available,
+  unavailable_reason: unavailableReason,
+  from_channel_config: true,
+  from_ability: true,
+})
+
 describe('customer contract pricing form utilities', () => {
+  it.each(['model_ratio', 'model_price'] as const)(
+    'preserves an explicitly configured zero %s when editing the discount',
+    (priceType) => {
+      const rule: CustomerContractRule = {
+        model: 'free-model',
+        route_group: 'default',
+        discount: '0.8',
+        available: true,
+        native_group_ratio: '1',
+        effective_multiplier: '1',
+        special_group_ratio: false,
+        price: {
+          price_type: priceType,
+          ...(priceType === 'model_ratio'
+            ? { base_model_ratio: '0' }
+            : { base_model_price: '0' }),
+          current_discounted_price: '0',
+        },
+      }
+      expect(draftPricePreview(rule)?.current_discounted_price).toBe('0')
+    }
+  )
+
   it('normalizes all supported discount notations to the canonical decimal', () => {
     expect(normalizeContractDiscount('0.8')).toBe('0.8')
     expect(normalizeContractDiscount('80%')).toBe('0.8')
@@ -27,6 +63,14 @@ describe('customer contract pricing form utilities', () => {
       discount: '0.8',
     } as CustomerContractRule
     expect(draftEffectiveMultiplier(rule)).toBe('0.696')
+  })
+
+  it('shows an unknown ratio as unknown instead of a fake multiplier', () => {
+    const rule = {
+      native_group_ratio: '',
+      discount: '0.8',
+    } as CustomerContractRule
+    expect(draftEffectiveMultiplier(rule)).toBe('—')
   })
 
   it('recalculates final ratios for a draft discount before saving', () => {
@@ -48,9 +92,9 @@ describe('customer contract pricing form utilities', () => {
     } satisfies CustomerContractRule
 
     const preview = draftPricePreview(rule)
-    expect(preview.final_model_ratio).toBe('0.5')
-    expect(preview.final_image_ratio).toBe('0.625')
-    expect(preview.current_discounted_price).toBe('0.5')
+    expect(preview?.final_model_ratio).toBe('0.5')
+    expect(preview?.final_image_ratio).toBe('0.625')
+    expect(preview?.current_discounted_price).toBe('0.5')
   })
 
   it('recalculates a per-call price from its base price', () => {
@@ -70,8 +114,8 @@ describe('customer contract pricing form utilities', () => {
     } satisfies CustomerContractRule
 
     const preview = draftPricePreview(rule)
-    expect(preview.final_model_price).toBe('1')
-    expect(preview.current_discounted_price).toBe('1')
+    expect(preview?.final_model_price).toBe('1')
+    expect(preview?.current_discounted_price).toBe('1')
   })
 
   it('rescales a legacy discounted price when no base ratio is available', () => {
@@ -89,7 +133,7 @@ describe('customer contract pricing form utilities', () => {
       },
     } satisfies CustomerContractRule
 
-    expect(draftPricePreview(rule).current_discounted_price).toBe('0.696')
+    expect(draftPricePreview(rule)?.current_discounted_price).toBe('0.696')
   })
 
   it('keeps the saved preview when the draft discount is invalid', () => {
@@ -110,58 +154,76 @@ describe('customer contract pricing form utilities', () => {
 
     expect(draftPricePreview(rule)).toBe(rule.price)
   })
+
+  it('keeps a missing price missing instead of faking a zero price', () => {
+    const rule = {
+      model: 'unpriced-model',
+      route_group: 'contract-route',
+      discount: '0.8',
+      available: true,
+      native_group_ratio: '1',
+      effective_multiplier: '0.8',
+      special_group_ratio: false,
+      price: null,
+    } satisfies CustomerContractRule
+
+    expect(draftPricePreview(rule)).toBeNull()
+  })
 })
 
 describe('buildContractBatchRules', () => {
-  const channelGroups: CustomerContractChannelGroupOption[] = [
-    {
-      group: 'route-a',
-      native_group_ratio: '0.87',
-      special_group_ratio: true,
-      models: [
-        { model: 'model-a', channels: [{ id: 11, name: 'primary' }] },
-        {
-          model: 'model-b',
-          channels: [
-            { id: 11, name: 'primary' },
-            { id: 12, name: 'backup' },
-          ],
-        },
-      ],
-    },
-    {
-      group: 'route-b',
-      native_group_ratio: '1',
-      special_group_ratio: false,
-      models: [{ model: 'model-a', channels: [{ id: 11, name: 'primary' }] }],
-    },
-  ]
-  const groupOptions: CustomerContractGroupOption[] = [
-    {
-      group: 'route-a',
-      models: ['model-a', 'model-b'],
-      prices: {
-        'model-a': { price_type: 'model_ratio', base_model_ratio: '2' },
-        'model-b': { price_type: 'model_price', base_model_price: '3' },
+  const catalog: CustomerContractCatalog = {
+    groups: [
+      {
+        group: 'route-a',
+        ratio_configured: true,
+        native_group_ratio: '0.87',
+        special_group_ratio: true,
+        models: [
+          {
+            model: 'model-a',
+            price: { price_type: 'model_ratio', base_model_ratio: '2' },
+            sources: [source(11, 'primary')],
+          },
+          {
+            model: 'model-b',
+            price: { price_type: 'model_price', base_model_price: '3' },
+            sources: [
+              source(11, 'primary'),
+              source(12, 'backup'),
+              source(13, 'disabled', false, 'channel_disabled'),
+            ],
+          },
+          {
+            model: 'model-unpriced',
+            sources: [source(14, 'cheap')],
+          },
+        ],
       },
-      native_group_ratio: '0.87',
-      special_group_ratio: true,
-    },
-    {
-      group: 'route-b',
-      models: ['model-a'],
-      prices: {},
-      native_group_ratio: '1',
-      special_group_ratio: false,
-    },
-  ]
+      {
+        group: 'route-b',
+        ratio_configured: true,
+        native_group_ratio: '1',
+        special_group_ratio: false,
+        models: [{ model: 'model-a', sources: [source(11, 'primary')] }],
+      },
+      {
+        group: 'ghost-group',
+        ratio_configured: false,
+        native_group_ratio: '1',
+        special_group_ratio: false,
+        models: [],
+      },
+    ],
+    no_group_channels: [],
+    customer_context: true,
+  }
 
   const batch = (
     overrides: Partial<Parameters<typeof buildContractBatchRules>[0]>
   ) =>
     buildContractBatchRules({
-      channelGroups,
-      groupOptions,
+      catalog,
       draftRules: [],
       routeGroup: 'route-a',
       models: [],
@@ -201,6 +263,15 @@ describe('buildContractBatchRules', () => {
     })
   })
 
+  it('keeps a model without a pricing entry unconfigured instead of faking a price', () => {
+    const result = batch({
+      models: ['model-unpriced'],
+      channelIdsByModel: { 'model-unpriced': ['14'] },
+    })
+    if (!result.ok) throw new Error(result.error.key)
+    expect(result.rules[0]?.price ?? null).toBeNull()
+  })
+
   it('drops duplicated model entries instead of creating duplicate rules', () => {
     const result = batch({
       models: ['model-b', 'model-b'],
@@ -234,6 +305,14 @@ describe('buildContractBatchRules', () => {
       },
     ],
     [
+      'rejects selected channels the backend currently reports as unavailable',
+      { models: ['model-b'], channelIdsByModel: { 'model-b': ['13'] } },
+      {
+        key: 'Selected channels of {{model}} are no longer available. Reselect its channels.',
+        params: { model: 'model-b' },
+      },
+    ],
+    [
       'rejects a model that is no longer a candidate in the group',
       {
         models: ['model-ghost'],
@@ -243,6 +322,15 @@ describe('buildContractBatchRules', () => {
         key: 'Model {{model}} is no longer a candidate in this group. Reselect models.',
         params: { model: 'model-ghost' },
       },
+    ],
+    [
+      'rejects a batch when the route group ratio is no longer configured',
+      {
+        routeGroup: 'ghost-group',
+        models: ['model-a'],
+        channelIdsByModel: { 'model-a': ['11'] },
+      },
+      { key: 'This route group is no longer configured' },
     ],
     [
       'rejects batch model names that differ only by letter case',

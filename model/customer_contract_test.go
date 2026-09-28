@@ -79,12 +79,25 @@ func createCustomerContractAbility(t *testing.T, db *gorm.DB, group string, mode
 func TestCustomerContractAvailabilityUsesExactCaseAndEnabledChannels(t *testing.T) {
 	db := setupCustomerContractTestDB(t)
 	createCustomerContractFixture(t, db)
-	createCustomerContractAbility(t, db, "contract-a", "Model-A", common.ChannelStatusEnabled)
+	enabled := createCustomerContractAbility(t, db, "contract-a", "Model-A", common.ChannelStatusEnabled)
 	createCustomerContractAbility(t, db, "contract-a", "disabled-model", common.ChannelStatusManuallyDisabled)
 
-	models, err := GetCustomerContractAvailableModelsForGroup("contract-a")
+	catalog, err := GetCustomerContractCatalog()
 	require.NoError(t, err)
-	assert.Contains(t, models, "Model-A")
-	assert.NotContains(t, models, "model-a")
-	assert.NotContains(t, models, "disabled-model")
+	var found int
+	for _, source := range catalog.Sources {
+		if source.PublicModel != "Model-A" {
+			continue
+		}
+		found++
+		assert.Equal(t, enabled.Id, source.ChannelId)
+		assert.True(t, source.Available)
+	}
+	assert.Equal(t, 1, found, "case-exact sources are discoverable without case-merged duplicates")
+	for _, source := range catalog.Sources {
+		if source.PublicModel == "disabled-model" {
+			assert.False(t, source.Available)
+			assert.Equal(t, ContractRouteUnavailableChannelDisabled, source.UnavailableCategory)
+		}
+	}
 }

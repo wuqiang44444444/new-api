@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -29,16 +30,16 @@ type CustomerContractPricePreview struct {
 }
 
 type CustomerContractAdminRuleView struct {
-	ChannelId           int                          `json:"channel_id"`
-	Model               string                       `json:"model"`
-	RouteGroup          string                       `json:"route_group"`
-	Discount            string                       `json:"discount"`
-	Available           bool                         `json:"available"`
-	UnavailableReason   string                       `json:"unavailable_reason,omitempty"`
-	NativeGroupRatio    string                       `json:"native_group_ratio"`
-	EffectiveMultiplier string                       `json:"effective_multiplier"`
-	SpecialGroupRatio   bool                         `json:"special_group_ratio"`
-	Price               CustomerContractPricePreview `json:"price"`
+	ChannelId           int                           `json:"channel_id"`
+	Model               string                        `json:"model"`
+	RouteGroup          string                        `json:"route_group"`
+	Discount            string                        `json:"discount"`
+	Available           bool                          `json:"available"`
+	UnavailableReason   string                        `json:"unavailable_reason,omitempty"`
+	NativeGroupRatio    string                        `json:"native_group_ratio"`
+	EffectiveMultiplier string                        `json:"effective_multiplier"`
+	SpecialGroupRatio   bool                          `json:"special_group_ratio"`
+	Price               *CustomerContractPricePreview `json:"price"`
 }
 
 // CustomerContractUserRuleView is one deduplicated model/discount row of the
@@ -96,17 +97,26 @@ func buildContractEntityRuleViews(snapshot *model.ContractEntitySnapshot, userGr
 		if err != nil {
 			return nil, err
 		}
-		groupRatio, hasSpecialRatio := ResolveCustomerContractNativeGroupRatio(userGroup, rule.RouteGroup)
-		effective := decimal.NewFromFloat(groupRatio).Mul(decimal.RequireFromString(discount))
-		price := buildCustomerContractPricePreview(pricing[rule.PublicModel], effective)
-		if batchSources[rule.ChannelId] {
-			expr, _ := billing_setting.GetBatchBillingExpr(rule.PublicModel)
-			price = CustomerContractPricePreview{PriceType: "tiered_multiplier", BillingMode: "batch_expr", BillingExpr: expr}
+		var price *CustomerContractPricePreview
+		nativeRatio, effectiveRatio := "", ""
+		hasSpecialRatio := false
+		if ratio_setting.ContainsGroupRatio(rule.RouteGroup) {
+			var groupRatio float64
+			groupRatio, hasSpecialRatio = ResolveCustomerContractNativeGroupRatio(userGroup, rule.RouteGroup)
+			effective := decimal.NewFromFloat(groupRatio).Mul(decimal.RequireFromString(discount))
+			nativeRatio, effectiveRatio = decimal.NewFromFloat(groupRatio).String(), effective.String()
+			price = buildCustomerContractPricePreview(pricing[rule.PublicModel], effective)
+			if batchSources[rule.ChannelId] {
+				price = nil
+				if expr, ok := billing_setting.GetBatchBillingExpr(rule.PublicModel); ok && strings.TrimSpace(expr) != "" {
+					price = &CustomerContractPricePreview{PriceType: "tiered_multiplier", BillingMode: "batch_expr", BillingExpr: expr}
+				}
+			}
 		}
 		result = append(result, CustomerContractAdminRuleView{
 			ChannelId: rule.ChannelId, Model: rule.PublicModel, RouteGroup: rule.RouteGroup, Discount: discount, Available: rule.Available,
 			UnavailableReason: rule.UnavailableCategory,
-			NativeGroupRatio:  decimal.NewFromFloat(groupRatio).String(), EffectiveMultiplier: effective.String(),
+			NativeGroupRatio:  nativeRatio, EffectiveMultiplier: effectiveRatio,
 			SpecialGroupRatio: hasSpecialRatio,
 			Price:             price,
 		})
@@ -180,13 +190,16 @@ func customerContractPricingIndex() map[string]model.Pricing {
 	return result
 }
 
-func buildCustomerContractPricePreview(pricing model.Pricing, effectiveMultiplier decimal.Decimal) CustomerContractPricePreview {
-	preview := CustomerContractPricePreview{}
+func buildCustomerContractPricePreview(pricing model.Pricing, effectiveMultiplier decimal.Decimal) *CustomerContractPricePreview {
+	preview := &CustomerContractPricePreview{}
 	billingMode := pricing.BillingMode
 	if billingMode == "" {
 		billingMode = billing_setting.GetBillingMode(pricing.ModelName)
 	}
 	if billingMode == billing_setting.BillingModeTieredExpr {
+		if strings.TrimSpace(pricing.BillingExpr) == "" {
+			return nil
+		}
 		preview.PriceType = "tiered_multiplier"
 		preview.BillingMode = billingMode
 		preview.BillingExpr = pricing.BillingExpr
@@ -208,6 +221,9 @@ func buildCustomerContractPricePreview(pricing model.Pricing, effectiveMultiplie
 		preview.CurrentDiscountedPrice = preview.FinalModelPrice
 		return preview
 	}
+	if !pricing.BasisPriceConfigured {
+		return nil
+	}
 	preview.PriceType = "model_ratio"
 	preview.BillingMode = "per_token"
 	baseModelRatio := decimal.NewFromFloat(pricing.ModelRatio)
@@ -225,6 +241,22 @@ func buildCustomerContractPricePreview(pricing model.Pricing, effectiveMultiplie
 	return preview
 }
 
-func BuildCustomerContractPricePreview(modelName string, effectiveMultiplier decimal.Decimal) CustomerContractPricePreview {
-	return buildCustomerContractPricePreview(customerContractPricingIndex()[modelName], effectiveMultiplier)
+// BuildCustomerContractCatalogPrices builds the admin price reference for a
+// set of models under one group's effective multiplier, reading the pricing
+// index once. Models without a configured pricing basis stay absent instead
+// of showing a fallback ratio or a fake zero price.
+func BuildCustomerContractCatalogPrices(models []string, effectiveMultiplier decimal.Decimal) map[string]*CustomerContractPricePreview {
+	pricing := customerContractPricingIndex()
+	result := make(map[string]*CustomerContractPricePreview, len(models))
+	for _, modelName := range models {
+		item, ok := pricing[modelName]
+		if !ok {
+			continue
+		}
+		preview := buildCustomerContractPricePreview(item, effectiveMultiplier)
+		if preview != nil {
+			result[modelName] = preview
+		}
+	}
+	return result
 }

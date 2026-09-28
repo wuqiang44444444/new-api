@@ -52,7 +52,7 @@ beforeEach(() => {
   })
   api.options.mockResolvedValue({
     success: true,
-    data: { channels: [], options: [], customer_context: false },
+    data: { groups: [], no_group_channels: [], customer_context: false },
   })
   api.get.mockResolvedValue({
     success: true,

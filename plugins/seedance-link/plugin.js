@@ -509,6 +509,26 @@ const SYNLINK_MODEL_METADATA = Object.fromEntries(
     },
   ])
 );
+// Domestic and overseas Drama share the same wire contract. Region is a
+// Channel connection and an exact model mapping, never inferred from a URL.
+const VIDU_MODEL_METADATA = {};
+for (const region of ["", "ab-"]) {
+  for (const [family, variant] of [["3", "std"], ["3", "fast"], ["3", "mini"], ["3.1", "std"]]) {
+    const extended = family === "3.1";
+    VIDU_MODEL_METADATA[`viduq${family}-drama-${region}${variant}`] = {
+      minDuration: 4, maxDuration: extended ? 30 : 15,
+      intelligentDuration: true, intelligentDurationSeconds: extended ? 30 : 15,
+      defaultDuration: 5, defaultGenerateAudio: false, publishGenerateAudioDefault: true,
+      resolutions: extended ? ["480p", "720p", "1080p"] : variant === "std" ? ["480p", "720p", "1080p", "4k"] : ["480p", "720p"],
+      ratios: MODELARK_RATIOS,
+      maxImages: extended ? 30 : 9, maxVideos: extended ? 10 : 3, maxAudios: extended ? 10 : 3,
+      allowVideos: true, allowAudios: true, allowGenerateAudio: true, allowWatermark: true,
+      modelArkFields: ["callback_url", "return_last_frame", "execution_expires_after", "tools", "safety_identifier"],
+      deleteVideo: false,
+    };
+  }
+}
+
 export const meta = {
   apiVersion: 3,
   key: "seedance-link",
@@ -517,9 +537,10 @@ export const meta = {
     en: "Seedance Link southbound protocol adapters",
     zh: "Seedance Link 南向协议适配",
   },
-  version: "1.3.5",
+  version: "1.4.2",
   author: { name: "yuan-gateway" },
   seedanceProtocols: [
+    "vidu_modelark_v3",
     "funcloud_modelark_v3",
     "synlink_video_v1",
     "feicai_videos_v1",
@@ -532,6 +553,11 @@ export const meta = {
   ],
   channelConfiguration: {
     videos: [
+      {
+        protocol: "vidu_modelark_v3", label: "Vidu Drama ModelArk V3",
+        models: Object.keys(VIDU_MODEL_METADATA), modelMetadata: VIDU_MODEL_METADATA,
+        assetProtocols: ["none"], defaultAssetProtocol: "none",
+      },
       {
         protocol: "funcloud_modelark_v3",
         label: "FunCloud ModelArk V3",
@@ -778,6 +804,7 @@ function rejectUnsupportedFields(request) {
 // ---------------------------------------------------------------------------
 
 export const seedance = {
+  vidu_modelark_v3: { buildCreate: buildViduVideoCreate, parseCreateResponse: parseOfficialVideoCreateResponse, parseTaskObservation: parseOfficialVideoTask },
   funcloud_modelark_v3: { buildCreate: buildFunCloudVideoCreate, parseCreateResponse: parseFunCloudVideoCreate, parseTaskObservation: parseFunCloudVideoTask },
   synlink_video_v1: { buildCreate: buildSynlinkVideoCreate, parseCreateResponse: parseSynlinkVideoCreate, parseTaskObservation: parseSynlinkVideoTask },
   modelark_v3_cmcc: { buildCreate: buildCMCCVideoCreate, parseCreateResponse: parseOfficialVideoCreateResponse, parseTaskObservation: parseOfficialVideoTask },
@@ -1981,4 +2008,32 @@ function parseFunCloudAssetResponse(input) {
     matches.push(input.operation === "get_group" ? { ResourceID: id, BusinessID: id, Status: "active" } : funCloudMaterialResult(item));
   }
   return { result: { Items: matches, Count: items.length } };
+}
+
+// The shared northbound parser owns types; this adapter owns the documented
+// model limits and the subset of ModelArk fields published for Vidu.
+function buildViduVideoCreate(input) {
+  const spec = VIDU_MODEL_METADATA[input.providerModel];
+  if (!spec) throw new Error("unsupported video model for the selected adapter");
+  const body = { ...input.request, model: input.providerModel };
+  const request = { ...(input.northRequest || input.request) };
+  const fields = ["model", "content", "duration", "resolution", "ratio", "generate_audio", "watermark", ...spec.modelArkFields];
+  for (const key of Object.keys(request))
+    if (!fields.includes(key)) throw new Error("request contains a parameter not published for this video protocol");
+  if (request.resolution != null) request.resolution = request.resolution.toLowerCase();
+  validateMediaModelRequest(request, spec, true);
+  if (body.duration == null) body.duration = spec.defaultDuration;
+  if (body.generate_audio == null) body.generate_audio = spec.defaultGenerateAudio;
+  body.resolution = (body.resolution == null ? "720p" : body.resolution).toLowerCase();
+  if (body.ratio == null) body.ratio = "adaptive";
+  const roles = { first_frame: 0, last_frame: 0, reference_image: 0, reference_video: 0, reference_audio: 0 };
+  for (const item of body.content || []) if (item.role in roles) roles[item.role]++;
+  if (roles.first_frame > 1 || roles.last_frame > 1 || (roles.last_frame && !roles.first_frame))
+    throw new Error("keyframe input requires one first frame and at most one last frame");
+  if ((roles.first_frame || roles.last_frame) && (roles.reference_image || roles.reference_video || roles.reference_audio))
+    throw new Error("keyframes cannot be combined with reference media");
+  for (const tool of body.tools || [])
+    if (tool.type !== "web_search") throw new Error("unsupported tool for the selected customer model");
+  if (body.safety_identifier != null && Array.from(body.safety_identifier).length > 64) throw new Error("safety_identifier exceeds 64 characters");
+  return { body, probe: {}, createPath: "/api/v3/contents/generations/tasks", queryPath: "/api/v3/contents/generations/tasks/{task_id}" };
 }

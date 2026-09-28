@@ -3,15 +3,12 @@ package controller
 import (
 	"errors"
 	"net/http"
-	"sort"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
-	"github.com/shopspring/decimal"
 )
 
 type customerContractTemplateWriteRequest struct {
@@ -46,54 +43,19 @@ func GetCustomerContractTemplates(c *gin.Context) {
 	common.ApiSuccess(c, page)
 }
 
-// GetCustomerContractTemplateOptions serves the no-customer-context admin
-// source options for template editing: every concrete group with its models,
-// qualified channels and a plain group-ratio price reference. It never
-// applies a customer's or the administrator's special group ratio.
+// GetCustomerContractTemplateOptions serves the shared catalog for template
+// editing: every connected model source with plain native group ratios. It
+// never applies any customer's or administrator's special group ratio.
 func GetCustomerContractTemplateOptions(c *gin.Context) {
-	groupRatios := ratio_setting.GetGroupRatioCopy()
-	groupNames := make([]string, 0, len(groupRatios))
-	for group := range groupRatios {
-		if group != "auto" {
-			groupNames = append(groupNames, group)
-		}
+	catalog, err := model.GetCustomerContractCatalog()
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
-	sort.Strings(groupNames)
-	options := make([]customerContractGroupOption, 0, len(groupNames))
-	channelGroups := make([]customerContractChannelGroupOption, 0, len(groupNames))
-	for _, group := range groupNames {
-		// Plain native group ratio only: templates have no customer context,
-		// so the reference price is never a target user's deal price.
-		nativeRatio := ratio_setting.GetGroupRatio(group)
-		models, err := model.GetCustomerContractAvailableModelsForGroup(group)
-		if err != nil {
-			common.ApiError(c, err)
-			return
-		}
-		sort.Strings(models)
-		prices := make(map[string]service.CustomerContractPricePreview, len(models))
-		for _, modelName := range models {
-			prices[modelName] = service.BuildCustomerContractPricePreview(modelName, decimal.NewFromFloat(nativeRatio))
-		}
-		options = append(options, customerContractGroupOption{
-			Group: group, Models: models, Prices: prices,
-			NativeGroupRatio: decimal.NewFromFloat(nativeRatio).String(), SpecialGroupRatio: false,
-		})
-		channelModels, err := model.GetCustomerContractEntityChannelOptions(group)
-		if err != nil {
-			common.ApiError(c, err)
-			return
-		}
-		channelGroups = append(channelGroups, customerContractChannelGroupOption{
-			Group: group, Models: channelModels,
-			NativeGroupRatio: decimal.NewFromFloat(nativeRatio).String(), SpecialGroupRatio: false,
-		})
-	}
-	common.ApiSuccess(c, gin.H{
-		"options":          options,
-		"channels":         channelGroups,
-		"customer_context": false,
+	response := buildCustomerContractCatalogResponse(catalog, false, func(group string) (float64, bool) {
+		return ratio_setting.GetGroupRatio(group), false
 	})
+	common.ApiSuccess(c, response)
 }
 
 func GetCustomerContractTemplate(c *gin.Context) {
