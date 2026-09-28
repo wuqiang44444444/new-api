@@ -384,7 +384,7 @@ func (a *TaskAdaptor) buildSeedancePluginCreateRequestBody(c *gin.Context, info 
 	if err != nil {
 		return nil, true, err
 	}
-	if a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+	if a.protocol.SupportsPlatformHostedImages() {
 		body, err := resolvePluginHostedContent(c, conversion.body, a.protocol)
 		return body, true, err
 	}

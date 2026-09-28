@@ -58,7 +58,7 @@ func ValidateFunCloudHostedVideoMedia(c *gin.Context, info *relaycommon.RelayInf
 			}
 			ref := strings.TrimSpace(media.URL)
 			if !strings.HasPrefix(ref, "asset://"+model.FunCloudHostedAssetIDPrefix) {
-				if info.ChannelOtherSettings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolSynlinkVideoV1 && strings.HasPrefix(ref, "asset://") {
+				if (info.ChannelOtherSettings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || info.ChannelOtherSettings.VideoUpstreamProtocol == dto.VideoUpstreamProtocolViduModelArkV3) && strings.HasPrefix(ref, "asset://") {
 					return TaskErrorWrapperLocal(errors.New("this video protocol requires a platform-hosted image or a media URL"), "invalid_video_parameter", http.StatusBadRequest)
 				}
 				continue

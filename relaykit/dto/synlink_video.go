@@ -15,5 +15,5 @@ func SynlinkVideoModels() []string {
 // SupportsPlatformHostedImages is the code-backed pairing boundary. The stored
 // asset protocol and resource IDs remain unchanged so existing assets are shared.
 func (p VideoUpstreamProtocol) SupportsPlatformHostedImages() bool {
-	return p == VideoUpstreamProtocolFunCloudModelArkV3 || p == VideoUpstreamProtocolSynlinkVideoV1
+	return p == VideoUpstreamProtocolFunCloudModelArkV3 || p == VideoUpstreamProtocolSynlinkVideoV1 || p == VideoUpstreamProtocolViduModelArkV3
 }

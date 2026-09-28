@@ -15,7 +15,7 @@ func TestSeedanceLinkArtifactCompiles(t *testing.T) {
 	plugin, info, err := pluginruntime.CompileSeedanceExtension(source, pluginruntime.Options{Key: "seedance-link"}, pluginruntime.SeedanceHostContract())
 	require.NoError(t, err)
 	assert.Equal(t, "seedance-link", plugin.Meta.Key)
-	assert.Equal(t, []string{"funcloud_modelark_v3", "synlink_video_v1", "feicai_videos_v1", "modelark_v3_volcengine", "modelark_v3_byteplus", "ark_media_v1", "tokensave_media_task_v1", "moxing_modelark_media_v1", "modelark_v3_cmcc"}, info.Protocols)
+	assert.Equal(t, []string{"vidu_modelark_v3", "funcloud_modelark_v3", "synlink_video_v1", "feicai_videos_v1", "modelark_v3_volcengine", "modelark_v3_byteplus", "ark_media_v1", "tokensave_media_task_v1", "moxing_modelark_media_v1", "modelark_v3_cmcc"}, info.Protocols)
 
 	// The artifact must never be picked up by the generic task-plugin
 	// compilation path; if it starts passing, the isolation contract broke.

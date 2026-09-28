@@ -537,7 +537,7 @@ export const meta = {
     en: "Seedance Link southbound protocol adapters",
     zh: "Seedance Link 南向协议适配",
   },
-  version: "1.4.2",
+  version: "1.5.0",
   author: { name: "yuan-gateway" },
   seedanceProtocols: [
     "vidu_modelark_v3",
@@ -556,7 +556,7 @@ export const meta = {
       {
         protocol: "vidu_modelark_v3", label: "Vidu Drama ModelArk V3",
         models: Object.keys(VIDU_MODEL_METADATA), modelMetadata: VIDU_MODEL_METADATA,
-        assetProtocols: ["none"], defaultAssetProtocol: "none",
+        assetProtocols: ["funcloud_material_hosted", "none"], defaultAssetProtocol: "funcloud_material_hosted",
       },
       {
         protocol: "funcloud_modelark_v3",

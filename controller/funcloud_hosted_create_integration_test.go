@@ -27,18 +27,21 @@ import (
 
 func TestHostedVideoCreationPersistsFactsAndRejectsBeforeHold(t *testing.T) {
 	for _, outcome := range []string{"accepted", "delete_after_accept", "ambiguous", "other_user", "deleted", "missing", "video_slot", "audio_slot", "non_hosted", "object_missing", "store_unavailable", "location_changed", "direct_url"} {
-		t.Run(outcome, func(t *testing.T) { testHostedVideoCreation(t, dto.VideoUpstreamProtocolFunCloudModelArkV3, outcome) })
+		t.Run(outcome, func(t *testing.T) {
+			testHostedVideoCreation(t, dto.VideoUpstreamProtocolFunCloudModelArkV3, outcome, "")
+		})
 	}
 }
 
 func TestSynlinkHostedVideoDurableLifecycle(t *testing.T) {
 	for _, outcome := range []string{"accepted", "delete_after_accept", "ambiguous", "direct_url", "other_user", "object_missing", "non_hosted", "polling_lifecycle"} {
-		t.Run(outcome, func(t *testing.T) { testHostedVideoCreation(t, dto.VideoUpstreamProtocolSynlinkVideoV1, outcome) })
+		t.Run(outcome, func(t *testing.T) { testHostedVideoCreation(t, dto.VideoUpstreamProtocolSynlinkVideoV1, outcome, "") })
 	}
 }
 
-func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, outcome string) {
+func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, outcome, providerModel string) {
 	t.Helper()
+	directURL := outcome == "direct_url" || outcome == "direct_url_without_library"
 	service.InitHttpClient()
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	events := []string{}
@@ -67,8 +70,9 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 	require.NoError(t, config.GlobalConfig.SaveToDB(func(k, v string) error { saved[k] = v; return nil }))
 	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(saved)) })
 	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
-		"billing_setting.billing_mode": `{"customer-funcloud":"tiered_expr"}`,
-		"billing_setting.billing_expr": `{"customer-funcloud":"tier(\"fixed\", 0.0014)"}`,
+		"task_billing_setting.preconsume_tokens": `{"customer-funcloud":700}`,
+		"billing_setting.billing_mode":           `{"customer-funcloud":"tiered_expr"}`,
+		"billing_setting.billing_expr":           `{"customer-funcloud":"tier(\"fixed\", 0.0014)"}`,
 	}))
 	if outcome == "polling_lifecycle" {
 		require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
@@ -144,6 +148,9 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 		if protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
 			assert.Equal(t, "/v1/video/generate", r.URL.Path)
 		}
+		if protocol == dto.VideoUpstreamProtocolViduModelArkV3 {
+			assert.Equal(t, "/api/v3/contents/generations/tasks", r.URL.Path)
+		}
 		var attempt model.TaskCreateAttempt
 		if !assert.NoError(t, db.First(&attempt).Error) {
 			w.WriteHeader(500)
@@ -163,6 +170,7 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 		body, err := io.ReadAll(r.Body)
 		assert.NoError(t, err)
 		var payload struct {
+			Model   string `json:"model"`
 			Content []struct {
 				Type     string `json:"type"`
 				Role     string `json:"role"`
@@ -176,20 +184,32 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 			w.WriteHeader(500)
 			return
 		}
-		if protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+		if protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || protocol == dto.VideoUpstreamProtocolViduModelArkV3 {
 			assert.NotContains(t, string(body), "real_person_mode")
 			assert.NotContains(t, string(body), "omni_reference_task_type")
 			assert.NotContains(t, string(body), "asset://")
 			assert.Equal(t, "https://source.example/direct.png?one=1&two=2", payload.Content[2].ImageURL.URL)
 			assert.Equal(t, "image_url", payload.Content[2].Type)
-			assert.Equal(t, "reference_image", payload.Content[2].Role)
+			expectedRole := "reference_image"
+			if outcome == "keyframes" {
+				expectedRole = "last_frame"
+			}
+			assert.Equal(t, expectedRole, payload.Content[2].Role)
+			firstRole := "reference_image"
+			if outcome == "keyframes" {
+				firstRole = "first_frame"
+			}
+			assert.Equal(t, firstRole, payload.Content[1].Role)
+			if providerModel != "" {
+				assert.Equal(t, providerModel, payload.Model)
+			}
 			require.NotNil(t, snapshot.PrivateData.ClientRequest)
 			assert.Equal(t, common.GetPointer(true), snapshot.PrivateData.ClientRequest.ReturnLastFrame)
 		} else {
 			assert.True(t, payload.RealPersonMode)
 		}
 		assert.NotContains(t, string(body), "asset://fhas_")
-		if outcome == "direct_url" {
+		if directURL {
 			assert.Empty(t, sendingFacts)
 			assert.Contains(t, string(body), "https://source.example/image.png")
 		} else {
@@ -222,8 +242,13 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 	if protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
 		channel.ModelMapping = common.GetPointer(`{"customer-funcloud":"doubao-seedance-2-0-260128"}`)
 	}
+	if providerModel != "" {
+		mapping, err := common.Marshal(map[string]string{"customer-funcloud": providerModel})
+		require.NoError(t, err)
+		channel.ModelMapping = common.GetPointer(string(mapping))
+	}
 	settings := dto.ChannelOtherSettings{VideoUpstreamProtocol: protocol, AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudHosted}
-	if outcome == "non_hosted" {
+	if outcome == "non_hosted" || outcome == "direct_url_without_library" {
 		settings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolNone
 	}
 	channel.SetOtherSettings(settings)
@@ -237,13 +262,23 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 	if outcome == "audio_slot" {
 		mediaType, role = "audio_url", "reference_audio"
 	}
-	if outcome == "direct_url" {
+	if directURL {
 		reference = "https://source.example/image.png"
 	}
+	if outcome == "opaque" {
+		reference = "asset://provider-opaque"
+	}
+	if outcome == "keyframes" {
+		role = "first_frame"
+	}
 	payload := map[string]any{"model": "customer-funcloud", "duration": 4, "content": []any{map[string]any{"type": "text", "text": "Landscape"}, map[string]any{"type": mediaType, "role": role, mediaType: map[string]any{"url": reference}}}}
-	if protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+	if protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || protocol == dto.VideoUpstreamProtocolViduModelArkV3 {
 		payload["return_last_frame"] = true
-		payload["content"] = append(payload["content"].([]any), map[string]any{"type": "image_url", "role": "reference_image", "image_url": map[string]any{"url": "https://source.example/direct.png?one=1&two=2"}})
+		directRole := "reference_image"
+		if outcome == "keyframes" {
+			directRole = "last_frame"
+		}
+		payload["content"] = append(payload["content"].([]any), map[string]any{"type": "image_url", "role": directRole, "image_url": map[string]any{"url": "https://source.example/direct.png?one=1&two=2"}})
 	}
 	body, err := common.Marshal(payload)
 	require.NoError(t, err)
@@ -258,7 +293,7 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 	require.NoError(t, db.Find(&attempts).Error)
 	var finalUser model.User
 	require.NoError(t, db.First(&finalUser, user.Id).Error)
-	if outcome == "accepted" || outcome == "delete_after_accept" || outcome == "direct_url" || outcome == "polling_lifecycle" {
+	if outcome == "accepted" || outcome == "delete_after_accept" || directURL || outcome == "polling_lifecycle" || outcome == "keyframes" {
 		require.Equal(t, 200, response.Code, response.Body.String())
 		require.Equal(t, int32(1), providerCalls.Load())
 		require.Len(t, tasks, 1)
@@ -307,7 +342,7 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 		require.NoError(t, db.First(&finalToken, token.Id).Error)
 		assert.Equal(t, 10000, finalToken.RemainQuota)
 	}
-	if outcome == "direct_url" {
+	if directURL {
 		assert.Zero(t, storageCalls.Load())
 	}
 	assert.NotContains(t, response.Body.String(), "X-Amz-")

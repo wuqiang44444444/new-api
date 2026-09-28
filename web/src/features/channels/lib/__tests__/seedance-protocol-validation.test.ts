@@ -45,7 +45,7 @@ describe('Seedance protocol validation', () => {
     }
   })
 
-  test('Vidu requires the published declaration and only supports no asset library', () => {
+  test('Vidu requires the published declaration and supports hosted images or no asset library', () => {
     const values = {
       ...seedanceForm,
       video_upstream_protocol: 'vidu_modelark_v3',
@@ -55,7 +55,11 @@ describe('Seedance protocol validation', () => {
         ...values,
         asset_upstream_protocol: asset.protocol,
       })
-      assert.equal(result.success, asset.protocol === 'none', asset.protocol)
+      assert.equal(
+        result.success,
+        asset.protocol === 'none' || asset.protocol === 'funcloud_material_hosted',
+        asset.protocol
+      )
     }
     assert.equal(
       channelFormSchema.safeParse({
@@ -108,6 +112,7 @@ describe('Seedance protocol validation', () => {
   })
   test('links every video protocol to its default asset library', () => {
     const cases: Array<[SeedanceVideoProtocol, string]> = [
+      ['vidu_modelark_v3', 'funcloud_material_hosted'],
       ['modelark_v3_volcengine', 'volcengine_assets_action_v2024_01_01'],
       ['modelark_v3_byteplus', 'byteplus_assets_action_v2024_01_01'],
       ['modelark_v3_cmcc', 'cmcc_aicc_assets_v2'],

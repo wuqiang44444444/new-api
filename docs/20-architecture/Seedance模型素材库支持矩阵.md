@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-08
+last-reviewed: 2026-09-28
 ---
 
 # Seedance 模型素材库支持矩阵
@@ -51,8 +51,8 @@ adapter 后，矩阵才可以改变。
 同一 Channel 投影相同非空复用域；视频协议变更确认后会产生新复用域并清除本地默认组关联。
 代码接线与实际跨模型素材可用性分别验收，不能以相同 scope 代替真实生成验证。
 
-本站托管图片协议可配对 FunCloud V3 与 Synlink Video V1；保留 `funcloud_material_hosted` 配置标识。
-两者按同一 `user_id` 共享平台素材，素材 ID 与对象无需迁移。Synlink 不接收其它 Provider opaque ID，
+本站托管图片协议可配对 FunCloud V3、Synlink Video V1 与 Vidu ModelArk V3；保留 `funcloud_material_hosted` 配置标识。
+三者按同一 `user_id` 共享平台素材，素材 ID 与对象无需迁移。Synlink 与 Vidu 不接收其它 Provider opaque ID，
 这类引用在预扣前返回错误；HTTP(S) URL 原值传递。跨供应商真实生成仍需单独验收。
 
 ## 3. `api.assets` 公开字段

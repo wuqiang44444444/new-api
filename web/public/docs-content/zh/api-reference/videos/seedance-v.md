@@ -39,7 +39,7 @@ curl "{{SITE_BASE_URL}}/v1/models/{{MODEL_ID_PLACEHOLDER}}" \
 | `api.video.creation.parameters` | 字段、默认值、枚举、上下限与特殊值 |
 | `api.video.creation.content_types` | 文本、图片、视频、音频角色及各自数量上限 |
 | `api.video.operations` | 支持创建、列表、查询、内容下载；删除/取消不支持 |
-| `api.assets.supported` | `false`，没有素材库或素材复用域 |
+| `api.assets.supported` | 是否启用本站托管图片；为 `true` 时读取素材操作、创建限制与复用域 |
 
 模型列表、详情和价格目录复用同一参数投影。目录可见不等于当前 Key 可调用；
 `available=false` 时按 `availability` 处理，不尝试创建。
@@ -96,9 +96,17 @@ curl "{{SITE_BASE_URL}}/v1/models/{{MODEL_ID_PLACEHOLDER}}" \
 每段内联或文件音频不超过 15 MiB，网关在占款前上传；存储不可用时返回
 `503 reference_audio_unavailable`。网关不检查实际媒体时长或转码，上游仍可能拒绝不可访问或不合规媒体。
 
-本系列不开放素材创建、素材组或真人认证，素材操作返回 `422 unsupported_asset_operation`。
-不要把其它模型的素材复用域套用到本系列。已有 `asset://` 不透明引用按统一协议交由生成服务判断，
-本站不验证其存在性、归属或跨模型兼容性，也不提供转换、迁移或失败后的自动切换。
+本系列可配置本站托管图片。当 `api.assets.supported=true` 且
+`management_mode=platform_hosted` 时，通过[素材接口](api-reference/assets)创建图片，
+保存返回的 `id` 与 `reference`，随后把 `reference` 填入 `image_url.url`。
+首帧、尾帧与参考图片均支持这种引用，也可以与直接图片 URL 混用，角色和组合限制保持不变。
+网关在预扣前检查当前账号归属、素材状态和对象可用性，发送时转换为内部临时 URL。
+同账号可在发布相同托管复用域的模型间使用素材；删除只停止新引用，已受理任务继续。
+
+托管库支持图片创建、单项查询/删除，以及素材组创建/单项查询；不支持列表、更新或真人认证，
+也不支持将音频、视频存入该图片库。非本站 `asset://` 引用在预扣前拒绝。
+`api.assets.supported=false` 时素材操作仍返回 `422 unsupported_asset_operation`，直接图片 URL
+继续可用，且不会自动导入素材库。是否开放托管能力以当前模型元数据为准。
 
 ## 创建与查询示例
 
@@ -166,6 +174,13 @@ Only `web_search` is allowed in tools; safety identifiers are limited to 64 char
 Seed, camera controls, frames, draft, output format, priority and service tier are not published.
 
 Use the same API key for creation, polling and protected downloads. Creation returns a public task ID;
-save content promptly after success. Asset operations, asset reuse scopes and task deletion/cancellation are
-unsupported. Opaque asset references are evaluated by the generation service without local ownership or
-compatibility checks. Do not repeat a POST after `create_outcome_unknown`; consult task and funds progress.
+save content promptly after success. When `api.assets.supported=true` and management mode is
+`platform_hosted`, create images through the asset API and use the returned `asset://fhas_*` reference in
+`image_url.url`. References support first frames, last frames and reference images, including mixtures with
+direct image URLs. Ownership, state and storage availability are checked before the funds hold; outbound
+requests use temporary URLs. The same account can reuse images across models with the same hosted reuse scope.
+Deletion prevents new references but does not interrupt accepted tasks. Direct URLs do not create stored assets.
+The library supports image create/get/delete and group create/get, but not list/update, audio/video assets or
+real-person verification. Other opaque references are rejected before the hold. Channels without hosted
+assets still support direct URLs. Task deletion/cancellation remains unsupported.
+Do not repeat a POST after `create_outcome_unknown`; consult task and funds progress.

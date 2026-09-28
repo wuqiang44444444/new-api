@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-12
+last-reviewed: 2026-09-28
 ---
 
 # Seedance 无状态素材代理架构
@@ -150,7 +150,7 @@ ModelArk V3 接受 HTTP/HTTPS URL、Data URL 和 `asset://<opaque-id>`。素材�
 ## 7. 本站托管图片例外
 
 `funcloud_material_hosted` 保留既有配置标识，作为本站托管图片协议配对
-`funcloud_modelark_v3` 与 `synlink_video_v1`，管理端显示为本站托管图片库。
+`funcloud_modelark_v3`、`synlink_video_v1` 与 `vidu_modelark_v3`，管理端显示为本站托管图片库。
 它不访问供应商素材接口，不新增表、不迁移既有 ID 或对象路径：素材组与素材是平台持久化事实，源图片在创建
 调用内经既有 SSRF、重定向、媒体类型与大小校验后复制进本站私有对象存储。
 
@@ -162,14 +162,14 @@ ModelArk V3 接受 HTTP/HTTPS URL、Data URL 和 `asset://<opaque-id>`。素材�
 - 视频引用：`asset://fhas_*` 在资金 hold 与 Provider POST 之前按 `user_id` 与可引用状态校验，并把
   素材对象事实冻结进 create attempt；发送时按冻结事实签发内部临时 URL 替换引用，接受后不再读取
   当前素材状态。签名 URL 只存在于当次南向请求字节与既有证据通道。FunCloud 的非本站 opaque 引用继续透传；
-  Synlink 无法消费素材 ID，使用非本站 opaque 引用的操作无法履约，预扣前明确拒绝。
-  两者解析缺口均失败关闭，不回退、不双读、不迁移旧 opaque ID；其它协议语义不变。
+  Synlink 与 Vidu 无法消费上游素材 ID，使用非本站 opaque 引用的操作无法履约，预扣前明确拒绝。
+  这些协议的托管解析缺口均失败关闭，不回退、不双读、不迁移旧 opaque ID；其它协议语义不变。
 - 删除：只停止该 ID 的新引用，已受理任务继续；不调用任何 OSS 删除，系统不做定时清理、孤儿扫描
   或过期删除。对象长期保存依赖部署方对象存储运维策略。
 - 公开元数据：`management_mode` 发布为 `platform_hosted`，操作矩阵发布素材创建/查询/删除与组
   创建/查询，`reuse_scope` 发布为固定托管复用域，创建约束不要求上游取图 TTL。
-- 仅 FunCloud V3 南向固定启用真人模式字段（写死，不开放配置）；Synlink 不发送 FunCloud 私有字段。
-  两条线路均允许托管图片与直接 URL 混合，并保持内容顺序和 role。
+- 仅 FunCloud V3 南向固定启用真人模式字段（写死，不开放配置）；Synlink 与 Vidu 不发送 FunCloud 私有字段。
+  三种协议均允许托管图片与直接 URL 混合，并保持内容顺序和 role。
 
 托管素材保存非敏感的存储 backend、endpoint、bucket/container、prefix 与对象 key；
 引用时必须与当前存储位置一致，否则明确返回不可用，不在当前桶中重新解释旧 key。凭据轮换不改变
@@ -180,7 +180,7 @@ ModelArk V3 接受 HTTP/HTTPS URL、Data URL 和 `asset://<opaque-id>`。素材�
 `api.assets.creation.source.max_pixels`（13,107,200 像素）的图片，解码像素预算由 100 MiB / 8 字节推导。
 创建的编码字节上限仍为 100 MiB。格式继续包括 JPEG、PNG、WebP、BMP、TIFF 与 GIF。
 
-FunCloud V3 与 Synlink 的托管引用仅允许出现在图片槽位。非托管渠道收到本站托管前缀引用时返回 400；
+FunCloud V3、Synlink 与 Vidu 的托管引用仅允许出现在图片槽位。非托管渠道收到本站托管前缀引用时返回 400；
 其他视频协议继续其原有 opaque 引用合同。引用归属、删除状态、存储位置和对象 HEAD 检查在 hold 前
 完成；已知对象缺失或不可访问返回 503。HEAD 是当次观察，不承诺稍后 Provider 必然取图成功。
 对每个引用，读取到可用素材事实是删除与新引用的接受交界；重复引用在请求内只检查一次。
@@ -190,6 +190,10 @@ FunCloud V3 与 Synlink 的托管引用仅允许出现在图片槽位。非托�
 原生 `TaskPrivateData` 仅增加托管快照字段；具体类型置于托管模型文件。正常成功通过现有
 `controller/task_protocol_snapshot.go` 本地接线点附加事实，避免进一步扩写原生 `controller/relay.go`。
 迁移只在既有 AutoMigrate 列表登记托管表；未来接取上游的冲突面限于这些必要字段与登记点。
+
+Vidu 国内与海外共用同一托管协议，八个已登记型号均可配置。新建渠道的协议默认值为本站托管，
+存量 `none` 不自动改写，管理员启用后公开 `api.assets` 才显示支持。直接图片 URL 不访问本站存储，
+也不自动创建长期素材；素材创建必须由客户调用 `/v1/assets`。托管能力仍只覆盖图片。
 
 托管路径的代码与自动测试已完成；真实 Provider、对象存储与账单验收未完成前，不得写成生产已发布。
 

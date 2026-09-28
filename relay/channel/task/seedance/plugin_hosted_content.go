@@ -30,7 +30,7 @@ func resolvePluginHostedContent(c *gin.Context, data []byte, protocol dto.VideoU
 	if err = rejectUnresolvedHostedMedia(content); err != nil {
 		return nil, err
 	}
-	if protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
+	if protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || protocol == dto.VideoUpstreamProtocolViduModelArkV3 {
 		for _, item := range content {
 			for _, media := range []*MediaURL{item.ImageURL, item.VideoURL, item.AudioURL} {
 				if media != nil && strings.HasPrefix(strings.TrimSpace(media.URL), "asset://") {
