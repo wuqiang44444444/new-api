@@ -305,6 +305,7 @@ export const channelFormSchema = z
         'feicai_videos_v1',
         'funcloud_modelark_v3',
         'synlink_video_v1',
+        'vidu_modelark_v3',
       ])
       .optional(),
     asset_upstream_protocol: z

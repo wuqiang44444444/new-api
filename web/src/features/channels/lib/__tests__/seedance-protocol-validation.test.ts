@@ -34,6 +34,57 @@ const seedanceForm = {
 }
 
 describe('Seedance protocol validation', () => {
+  test('accepts every published video protocol when assets are disabled', () => {
+    for (const video of publishedSeedanceConfiguration.videos) {
+      const result = channelFormSchema.safeParse({
+        ...seedanceForm,
+        video_upstream_protocol: video.protocol,
+        asset_upstream_protocol: 'none',
+      })
+      assert.equal(result.success, true, video.protocol)
+    }
+  })
+
+  test('Vidu requires the published declaration and only supports no asset library', () => {
+    const values = {
+      ...seedanceForm,
+      video_upstream_protocol: 'vidu_modelark_v3',
+    }
+    for (const asset of publishedSeedanceConfiguration.assets) {
+      const result = channelFormSchema.safeParse({
+        ...values,
+        asset_upstream_protocol: asset.protocol,
+      })
+      assert.equal(result.success, asset.protocol === 'none', asset.protocol)
+    }
+    assert.equal(
+      channelFormSchema.safeParse({
+        ...values,
+        seedance_plugin_configuration: undefined,
+      }).success,
+      false
+    )
+    assert.equal(
+      channelFormSchema.safeParse({
+        ...values,
+        seedance_plugin_configuration: {
+          ...publishedSeedanceConfiguration,
+          videos: publishedSeedanceConfiguration.videos.filter(
+            (video) => video.protocol !== 'vidu_modelark_v3'
+          ),
+        },
+      }).success,
+      false
+    )
+    assert.equal(
+      channelFormSchema.safeParse({
+        ...values,
+        video_upstream_protocol: 'unknown_protocol',
+      }).success,
+      false
+    )
+  })
+
   test('allows Synlink with shared hosted images and rejects Provider material libraries', () => {
     for (const assetProtocol of [
       'funcloud_material_hosted',

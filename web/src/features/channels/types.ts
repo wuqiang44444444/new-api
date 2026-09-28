@@ -133,6 +133,7 @@ export interface ChannelOtherSettings {
     | 'feicai_videos_v1'
     | 'funcloud_modelark_v3'
     | 'synlink_video_v1'
+    | 'vidu_modelark_v3'
   asset_upstream_protocol?:
     | 'none'
     | 'volcengine_assets_action_v2024_01_01'
