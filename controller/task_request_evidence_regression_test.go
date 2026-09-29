@@ -150,7 +150,8 @@ func TestEvidenceDetailDecryptFailureKeepsStatusAndAudit(t *testing.T) {
 			assert.NotContains(t, writer.Body.String(), "sig=secret")
 		})
 	}
-	rows, total := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{UpstreamRequestID: "upstream-1"})
+	rows, total, queryErr := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{UpstreamRequestID: "upstream-1"})
+	require.NoError(t, queryErr)
 	require.EqualValues(t, 1, total)
 	require.Len(t, rows, 1)
 }

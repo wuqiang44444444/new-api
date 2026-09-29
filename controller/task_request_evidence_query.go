@@ -25,7 +25,7 @@ func GetTaskRequestEvidenceList(c *gin.Context) {
 		return
 	}
 	pageInfo := common.GetPageQuery(c)
-	items, total := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{
+	items, total, err := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{
 		RequestID:         requestID,
 		UpstreamRequestID: upstreamRequestID,
 		TaskID:            taskID,
@@ -33,6 +33,10 @@ func GetTaskRequestEvidenceList(c *gin.Context) {
 		StartIdx:          pageInfo.GetStartIdx(),
 		Num:               pageInfo.GetPageSize(),
 	})
+	if err != nil {
+		common.ApiErrorMsg(c, "Failed to load request evidence")
+		return
+	}
 	results := make([]gin.H, 0, len(items))
 	for _, evidence := range items {
 		results = append(results, evidenceIndexView(evidence, isRootViewer(c)))

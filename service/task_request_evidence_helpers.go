@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/model"
 )
@@ -92,7 +93,12 @@ func GetEvidenceEventPreviews(events []*model.TaskRequestEvidenceEvent, expired 
 			if strings.HasPrefix(contentType, "audio/") || strings.HasPrefix(contentType, "video/") || strings.HasPrefix(contentType, "image/") || contentType == "application/octet-stream" {
 				preview.BodyStatus = "binary"
 			} else {
-				preview.Text = evidencePreviewText(payload)
+				masked, err := evidenceMaskBodyURLs(payload, event.ContentType)
+				if err != nil {
+					preview.BodyStatus = "read_failed"
+				} else {
+					preview.Text = evidencePreviewText(masked)
+				}
 			}
 		}
 		previews[event.Id] = preview
@@ -105,12 +111,16 @@ const evidencePreviewLimit = 16 << 10
 func evidencePreviewText(payload []byte) string {
 	text := serviceMaskSignedURLs(string(payload))
 	if len(text) > evidencePreviewLimit {
-		text = text[:evidencePreviewLimit] + "…(truncated)"
+		text = text[:evidencePreviewLimit]
+		for !utf8.ValidString(text) {
+			text = text[:len(text)-1]
+		}
+		text += "…(truncated)"
 	}
 	return text
 }
 
-var evidenceURLPattern = regexp.MustCompile(`https?://[^\s"<>\x00-\x1f]+`)
+var evidenceURLPattern = regexp.MustCompile(`(?i)https?://[^\s"<>\x00-\x1f]+`)
 
 func serviceMaskSignedURLs(text string) string {
 	return evidenceURLPattern.ReplaceAllStringFunc(text, EvidenceMaskSignedURLs)

@@ -54,7 +54,8 @@ func TestNativeImageErrorEvidenceAcrossSyncAndTask(t *testing.T) {
 				assert.Contains(t, response.Body.String(), "synthetic provider detail")
 			}
 			require.Eventually(t, func() bool { return service.ImageErrorEvidenceHealth()["active"] == 0 }, 3*time.Second, time.Millisecond)
-			indices, count := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{Kind: "image_error", Num: 10})
+			indices, count, queryErr := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{Kind: "image_error", Num: 10})
+			require.NoError(t, queryErr)
 			require.GreaterOrEqual(t, count, int64(1))
 			found := false
 			for _, index := range indices {

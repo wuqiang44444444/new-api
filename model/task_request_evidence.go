@@ -131,7 +131,7 @@ type TaskRequestEvidenceQueryParams struct {
 	Num               int
 }
 
-func QueryTaskRequestEvidence(params TaskRequestEvidenceQueryParams) ([]*TaskRequestEvidence, int64) {
+func QueryTaskRequestEvidence(params TaskRequestEvidenceQueryParams) ([]*TaskRequestEvidence, int64, error) {
 	query := DB.Model(&TaskRequestEvidence{})
 	if params.RequestID != "" {
 		query = query.Where("request_id = ?", params.RequestID)
@@ -147,16 +147,16 @@ func QueryTaskRequestEvidence(params TaskRequestEvidenceQueryParams) ([]*TaskReq
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		return nil, 0
+		return nil, 0, err
 	}
 	if params.Num <= 0 || params.Num > 100 {
 		params.Num = 20
 	}
 	var items []*TaskRequestEvidence
 	if err := query.Order("id desc").Limit(params.Num).Offset(params.StartIdx).Find(&items).Error; err != nil {
-		return nil, 0
+		return nil, 0, err
 	}
-	return items, total
+	return items, total, nil
 }
 
 func ListTaskRequestEvidenceEvents(evidenceId int64) ([]*TaskRequestEvidenceEvent, error) {

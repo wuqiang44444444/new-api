@@ -192,7 +192,8 @@ func TestViduFailureCommitsPublicErrorEventAndRefundOnce(t *testing.T) {
 			assert.Equal(t, 700, deliveries[0].BeforeQuota)
 			assert.Zero(t, deliveries[0].AfterQuota)
 			// Creation and failure share the same evidence session and immutable IDs.
-			indexes, total := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{TaskID: task.TaskID, Num: 20})
+			indexes, total, queryErr := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{TaskID: task.TaskID, Num: 20})
+			require.NoError(t, queryErr)
 			require.EqualValues(t, 1, total)
 			require.Len(t, indexes, 1)
 			assert.Equal(t, "create-fixture", indexes[0].RequestID)

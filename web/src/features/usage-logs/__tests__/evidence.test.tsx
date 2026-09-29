@@ -48,6 +48,26 @@ describe('Task evidence', () => {
     expect(await screen.findByRole('alert')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy()
   })
+  it('shows a database query failure instead of no records and allows retry', async () => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({
+        data: { success: false, message: 'Failed to load request evidence' },
+      })
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [], total: 0 } },
+      })
+    show()
+    fireEvent.click(screen.getByRole('button', { name: 'Request evidence' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Failed to load request evidence'
+    )
+    expect(screen.queryByText('No request evidence recorded')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(
+      await screen.findByText('No request evidence recorded')
+    ).toBeVisible()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
   it('distinguishes expired bodies from missing records and prevents original downloads', async () => {
     vi.mocked(api.get)
       .mockResolvedValueOnce({

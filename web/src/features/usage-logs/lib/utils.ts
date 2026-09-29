@@ -101,15 +101,16 @@ function buildTimeRangeParams(
   searchParams: Record<string, unknown>,
   useMilliseconds: boolean
 ): { start_timestamp?: number; end_timestamp?: number } {
-  const hasTimeParams = searchParams.startTime ?? searchParams.endTime
+  const hasTimeParams =
+    searchParams.startTime != null || searchParams.endTime != null
   const defaultTimeRange = !hasTimeParams ? getDefaultTimeRange() : null
 
   const convertTimestamp = (timestamp: number) =>
     useMilliseconds ? timestamp : timestampToSeconds(timestamp)
 
   const getTimestamp = (paramTime?: unknown, defaultTime?: Date) => {
-    const time = (paramTime as number) || defaultTime?.getTime()
-    return time ? convertTimestamp(time) : undefined
+    const time = (paramTime as number | undefined) ?? defaultTime?.getTime()
+    return time === undefined ? undefined : convertTimestamp(time)
   }
 
   return {

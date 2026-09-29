@@ -138,12 +138,12 @@ func evidenceRedactValue(value any) any {
 // EvidenceMaskSignedURLs 是展示层遮盖：把常见签名参数值替换为省略号。
 // 存储正文仍是完整业务内容（受权限保护），遮盖只发生在查询视图。
 func EvidenceMaskSignedURLs(text string) string {
-	if text == "" || !strings.HasPrefix(text, "http") {
+	if text == "" || !strings.HasPrefix(strings.ToLower(text), "http") {
 		return text
 	}
 	parsed, err := url.Parse(strings.TrimSpace(text))
 	if err != nil {
-		return text
+		return evidenceRedactedPlaceholder
 	}
 	if parsed.RawQuery != "" {
 		parsed.RawQuery = "redacted"
