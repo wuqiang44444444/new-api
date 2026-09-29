@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	taskdto "github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/plugins"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -111,6 +112,63 @@ func TestViduUntrustedObservationsCannotFinishTask(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, string(body), fmt.Sprintf(`"status":%q`, status))
 	}
+}
+
+func TestViduCodeOnlyFailureGetsStableDescription(t *testing.T) {
+	const generic = "视频生成失败，上游未提供详细原因 (video generation failed; the upstream did not provide a detailed reason)"
+	for _, tc := range []struct {
+		name, rawError, wantCode, wantMessage string
+	}{
+		{"registered", `,"error":{"code":"AuditSubmitIllegal"}`, "AuditSubmitIllegal", "输入内容未通过安全审核 (input content failed the upstream safety review)"},
+		{"unregistered-safe", `,"error":{"code":"ProviderBusy"}`, "ProviderBusy", generic},
+		{"unsafe", `,"error":{"code":"access_token: secret-value"}`, "generation_failed", generic},
+		{"credential-without-space", `,"error":{"code":"access_token:fixture-secret"}`, "generation_failed", generic},
+		{"whitespace-message", `,"error":{"code":"AuditSubmitIllegal","message":"  \t "}`, "AuditSubmitIllegal", "输入内容未通过安全审核 (input content failed the upstream safety review)"},
+		{"no-error-field", ``, "generation_failed", generic},
+		{"provider-message-kept", `,"error":{"code":"AuditSubmitIllegal","message":"upstream moderation note"}`, "AuditSubmitIllegal", "upstream moderation note"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"id":"task","status":"failed"` + tc.rawError + `}`
+			normalized, err := normalizeViduTaskResponse([]byte(body), "task")
+			require.NoError(t, err)
+			result, err := (&TaskAdaptor{}).ParseTaskResult(nil, nil, normalized)
+			require.NoError(t, err)
+			assert.Equal(t, model.TaskStatusFailure, result.Status)
+			var response responseTask
+			require.NoError(t, common.Unmarshal(normalized, &response))
+			assert.Equal(t, tc.wantCode, response.Error.Code)
+			assert.Equal(t, tc.wantMessage, response.Error.Message)
+		})
+	}
+}
+
+func TestViduAuditSubmitIllegalFailureKeepsPublicProjectionConsistent(t *testing.T) {
+	body := []byte(`{"id":"task","status":"failed","error":{"code":"AuditSubmitIllegal"}}`)
+	normalized, err := normalizeViduTaskResponse(body, "task")
+	require.NoError(t, err)
+	result, err := (&TaskAdaptor{}).ParseTaskResult(nil, nil, normalized)
+	require.NoError(t, err)
+	task := &model.Task{Status: model.TaskStatusFailure, Data: normalized, FailReason: result.Reason, Properties: model.Properties{OriginModelName: "customer-vidu", UpstreamModelName: "viduq3-drama-std"}}
+	failure := task.PublicVideoFailure()
+	assert.Equal(t, "AuditSubmitIllegal", failure.Code)
+	assert.Equal(t, "输入内容未通过安全审核 (input content failed the upstream safety review)", failure.Message)
+	video, err := (&TaskAdaptor{}).ConvertToOpenAIVideo(task)
+	require.NoError(t, err)
+	var decoded struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	require.NoError(t, common.Unmarshal(video, &decoded))
+	assert.Equal(t, "AuditSubmitIllegal", decoded.Error.Code)
+	assert.Equal(t, "输入内容未通过安全审核 (input content failed the upstream safety review)", decoded.Error.Message)
+	expired, err := normalizeViduTaskResponse([]byte(`{"id":"task","status":"expired","error":{"code":"AuditSubmitIllegal"}}`), "task")
+	require.NoError(t, err)
+	var response responseTask
+	require.NoError(t, common.Unmarshal(expired, &response))
+	assert.Equal(t, "AuditSubmitIllegal", response.Error.Code)
+	assert.Empty(t, response.Error.Message)
 }
 
 func TestViduCreatePreservesPublishedFieldsAndDefaults(t *testing.T) {

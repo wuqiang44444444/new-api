@@ -274,7 +274,6 @@ func TestEvidenceTaskAssociationAndViews(t *testing.T) {
 	require.True(t, exists)
 	assert.Equal(t, "task_evidence_e2e", evidenceRow.TaskID)
 
-	// 视图：事件预览对非 Root 遮盖签名 URL，Root 看到原文。
 	require.NoError(t, model.CreateTaskRequestEvidenceEvent(&model.TaskRequestEvidenceEvent{
 		EvidenceId: session.evidenceID,
 		Seq:        9,
@@ -283,8 +282,4 @@ func TestEvidenceTaskAssociationAndViews(t *testing.T) {
 	}))
 	events := evidenceEventRows(t, session.evidenceID)
 	require.NotEmpty(t, events)
-	previews := GetEvidenceEventPreviews(events, false, false)
-	rootPreviews := GetEvidenceEventPreviews(events, true, false)
-	_ = previews
-	_ = rootPreviews
 }

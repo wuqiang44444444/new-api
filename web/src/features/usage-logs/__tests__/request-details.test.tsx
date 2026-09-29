@@ -1,9 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AxiosError, AxiosHeaders } from 'axios'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { TaskRequestDetails } from '../components/task-request-details'
 import { getTaskRequestBodies } from '../evidence-api'
@@ -12,6 +14,12 @@ vi.mock('@/lib/api', () => ({ api: { get: vi.fn() } }))
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
+beforeEach(() =>
+  useAuthStore
+    .getState()
+    .auth.setUser({ id: 7, username: 'root', role: ROLE.SUPER_ADMIN })
+)
+afterEach(() => useAuthStore.getState().auth.reset())
 function show() {
   render(
     <QueryClientProvider
@@ -68,7 +76,7 @@ describe('Request detail shortcuts', () => {
       fireEvent.click(screen.getByRole('button', { name: label }))
       expect(await screen.findByText(original)).toBeTruthy()
       expect(api.get).toHaveBeenLastCalledWith(
-        `/api/task_request_evidence/1/events/${eventId}/object`,
+        `/api/task_request_evidence/1/events/${eventId}/content`,
         expect.objectContaining({ responseType: 'text' })
       )
       expect(screen.queryByText('truncated')).toBeNull()
@@ -238,3 +246,45 @@ it.each([401, 403])(
     expect(api.get).toHaveBeenCalledTimes(3)
   }
 )
+
+it('stops the request-body chain when closed during the evidence detail request', async () => {
+  let finish!: (value: unknown) => void
+  const pending = new Promise((resolve) => {
+    finish = resolve
+  })
+  vi.mocked(api.get)
+    .mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: { items: [{ id: 1, request_id: 'req-late' }], total: 1 },
+      },
+    })
+    .mockReturnValueOnce(pending)
+  show()
+  fireEvent.click(screen.getByRole('button', { name: 'User request details' }))
+  await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2))
+  const signal = vi.mocked(api.get).mock.calls[1][1]?.signal
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  await act(async () => {
+    finish({
+      data: {
+        success: true,
+        data: {
+          evidence: { body_expired: false },
+          events: [
+            {
+              id: 11,
+              stage: 'north_receive',
+              has_body: true,
+              body_status: 'available',
+            },
+          ],
+        },
+      },
+    })
+    await pending
+  })
+  expect(signal?.aborted).toBe(true)
+  expect(api.get).toHaveBeenCalledTimes(2)
+  expect(screen.queryByRole('dialog')).toBeNull()
+})

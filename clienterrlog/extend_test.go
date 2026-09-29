@@ -142,7 +142,7 @@ func TestSubmitBackendEventContract(t *testing.T) {
 	assert.Equal(t, "task_abc", event.TaskID)
 	assert.Equal(t, 0, event.Status, "任务事件无客户 HTTP 状态")
 	assert.Equal(t, "video", event.Detail["platform"])
-	assert.Equal(t, "upstream_gone", event.Detail["fail_reason"], "净化把空白折叠为下划线")
+	assert.Equal(t, "upstream gone", event.Detail["fail_reason"], "失败说明保留可读空格")
 
 	before := logtest.New(t).Health().DiagnosticFailures
 	lengthBefore := len(capture.snapshot())

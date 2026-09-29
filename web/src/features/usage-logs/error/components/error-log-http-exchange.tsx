@@ -42,7 +42,10 @@ function parseExchange(detail: string): Exchange {
   }
 }
 
-export function ErrorLogHTTPExchange(props: { detail: string }) {
+export function ErrorLogHTTPExchange(props: {
+  detail: string
+  hideWhenEmpty?: boolean
+}) {
   const { t } = useTranslation()
   const exchange = useMemo(() => parseExchange(props.detail), [props.detail])
   const sections = [
@@ -51,6 +54,17 @@ export function ErrorLogHTTPExchange(props: { detail: string }) {
     { key: 'upstream_response', label: t('Upstream response (redacted)') },
     { key: 'response', label: t('Gateway response (redacted)') },
   ]
+  if (
+    props.hideWhenEmpty &&
+    !sections.some(({ key }) => {
+      const snapshot = exchange[key]
+      return (
+        snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+      )
+    })
+  ) {
+    return null
+  }
   return (
     <div className='min-w-0 space-y-3'>
       <p className='text-muted-foreground text-xs'>

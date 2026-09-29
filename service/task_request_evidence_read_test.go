@@ -31,7 +31,7 @@ func TestEvidenceReadabilityAcrossStoreRestart(t *testing.T) {
 	read, status := ReadEvidenceEventBody(event, false)
 	assert.Equal(t, "available", status)
 	assert.Equal(t, payload, read)
-	previews := GetEvidenceEventPreviews([]*model.TaskRequestEvidenceEvent{event}, false, false)
+	previews := GetEvidenceEventPreviews([]*model.TaskRequestEvidenceEvent{event}, false)
 	assert.NotContains(t, previews[1].Text, "private")
 	assert.Equal(t, "available", previews[1].BodyStatus)
 
@@ -60,7 +60,7 @@ func TestEvidenceReadabilityAcrossStoreRestart(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			item := &model.TaskRequestEvidenceEvent{Id: 2, ObjectKey: tc.key, ContentType: tc.contentType, Sha256: tc.digest}
-			preview := GetEvidenceEventPreviews([]*model.TaskRequestEvidenceEvent{item}, false, tc.expired)[2]
+			preview := GetEvidenceEventPreviews([]*model.TaskRequestEvidenceEvent{item}, tc.expired)[2]
 			assert.Equal(t, tc.want, preview.BodyStatus)
 			assert.Empty(t, preview.Text)
 		})

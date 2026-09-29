@@ -125,8 +125,9 @@ func TestEvidenceMultipartCredentialsAndJSONPreview(t *testing.T) {
 	assert.Contains(t, string(payload), "media")
 	assert.Contains(t, string(payload), "whisper-1")
 	for _, body := range []string{`{"content":{"video_url":"https://cdn.example/a?sig=secret"}}`, `{"url":"https://cdn.example/a?x=1\u0026sig=secret"}`} {
-		assert.NotContains(t, evidencePreviewText([]byte(body), false), "secret")
-		assert.Contains(t, evidencePreviewText([]byte(body), true), "secret")
+		// Previews mask signed URLs for every role; originals are delivered only
+		// by the Root view/download endpoints after an explicit click.
+		assert.NotContains(t, evidencePreviewText([]byte(body)), "secret")
 	}
 	_, err = evidenceRedactBody([]byte(`{"token":"secret`), "application/json")
 	require.Error(t, err)

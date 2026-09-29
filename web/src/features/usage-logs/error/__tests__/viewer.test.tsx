@@ -17,7 +17,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import {
+  createRootRoute,
+  createRouter,
+  createMemoryHistory,
+  RouterProvider,
+} from '@tanstack/react-router'
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createInstance } from 'i18next'
 import { I18nextProvider } from 'react-i18next'
@@ -26,6 +38,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import en from '@/i18n/locales/en.json'
 import zh from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { ErrorLogViewer } from '../components/error-log-viewer'
 
@@ -63,6 +77,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  useAuthStore.getState().auth.reset()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -77,10 +92,15 @@ async function renderViewer(lng = 'en') {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+  const router = createRouter({
+    routeTree: createRootRoute({ component: ErrorLogViewer }),
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+  })
+  await router.load()
   render(
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={client}>
-        <ErrorLogViewer />
+        <RouterProvider router={router} />
       </QueryClientProvider>
     </I18nextProvider>
   )
@@ -225,6 +245,351 @@ it('keeps historical error details readable when no bodies were recorded', async
   expect(await screen.findByText('Original request (redacted)')).toBeVisible()
   expect(screen.getAllByText('Not recorded for this event')).toHaveLength(4)
   expect(screen.getByText('source_status')).toBeVisible()
+})
+
+const TASK_FAILURE_ITEM = {
+  ...ERROR_ITEM,
+  event_type: 'task_failure',
+  status: 0,
+  stage: 'task_lifecycle',
+  reason: 'task_failed',
+  public_code: 'AuditSubmitIllegal',
+  task_id: 'vid-task-1',
+  request_id: 'req-task-1',
+  detail: JSON.stringify({
+    platform: 'vidu_modelark_v3',
+    fail_reason:
+      '输入内容未通过安全审核 (input content failed the upstream safety review)',
+  }),
+}
+
+it.each(['provider-create-request', ''])(
+  'links the failed task and identifies its creation trace (%s)',
+  async (requestId) => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          total: 1,
+          items: [
+            {
+              ...TASK_FAILURE_ITEM,
+              detail: JSON.stringify({
+                create_upstream_request_id: requestId,
+                fail_reason: 'Input text may contain sensitive information.',
+              }),
+            },
+          ],
+        },
+      },
+    })
+    await renderViewer()
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('button', { name: 'Details' }))
+    const link = screen.getByRole('link', { name: 'View task' })
+    const destination = new URL(
+      link.getAttribute('href') || '',
+      'http://localhost'
+    )
+    expect(destination.pathname).toBe('/usage-logs/task')
+    expect(destination.searchParams.get('filter')).toBe('vid-task-1')
+    expect(destination.searchParams.get('startTime')).toBe('0')
+    expect(screen.getByText('Upstream creation request ID')).toBeVisible()
+    expect(screen.getByText(requestId || 'Not recorded')).toBeVisible()
+    expect(
+      screen.queryByText('create_upstream_request_id')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText('Input text may contain sensitive information.')
+    ).toBeVisible()
+  }
+)
+
+it('offers request evidence instead of four empty body blocks for task failures', async () => {
+  const get = vi.spyOn(api, 'get').mockImplementation(async (url: string) => {
+    if (url === '/api/task_request_evidence') {
+      return { data: { success: true, data: { items: [], total: 0 } } }
+    }
+    return {
+      data: { success: true, data: { total: 1, items: [TASK_FAILURE_ITEM] } },
+    }
+  })
+  await renderViewer()
+  await userEvent
+    .setup()
+    .click(await screen.findByRole('button', { name: 'Details' }))
+  expect(
+    await screen.findByRole('button', { name: 'Request evidence' })
+  ).toBeVisible()
+  expect(screen.queryByText('Original request (redacted)')).toBeNull()
+  expect(screen.queryByText('Not recorded for this event')).toBeNull()
+  expect(get).not.toHaveBeenCalledWith(
+    '/api/task_request_evidence',
+    expect.anything()
+  )
+  await userEvent
+    .setup()
+    .click(screen.getByRole('button', { name: 'Request evidence' }))
+  await waitFor(() =>
+    expect(get).toHaveBeenCalledWith('/api/task_request_evidence', {
+      params: expect.objectContaining({
+        task_id: 'vid-task-1',
+      }),
+    })
+  )
+  expect(await screen.findByText('No request evidence recorded')).toBeVisible()
+})
+
+it.each(['{ }', 'null', '[]', 'invalid JSON', '{"response":null}'])(
+  'omits empty HTTP blocks when the task failure snapshot is %s',
+  async (httpExchange) => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          total: 1,
+          items: [
+            {
+              ...TASK_FAILURE_ITEM,
+              detail: JSON.stringify({ http_exchange: httpExchange }),
+            },
+          ],
+        },
+      },
+    })
+    await renderViewer()
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('button', { name: 'Details' }))
+    expect(
+      screen.getByRole('button', { name: 'Request evidence' })
+    ).toBeVisible()
+    expect(
+      screen.queryByText('Original request (redacted)')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Not recorded for this event')
+    ).not.toBeInTheDocument()
+  }
+)
+
+it('finds polling evidence without a request ID on a historical task index', async () => {
+  vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
+    if (url === '/api/task_request_evidence') {
+      const matches =
+        config?.params?.task_id === 'vid-task-1' && !config?.params?.request_id
+      return {
+        data: {
+          success: true,
+          data: {
+            items: matches ? [{ id: 9, request_id: '' }] : [],
+            total: matches ? 1 : 0,
+          },
+        },
+      }
+    }
+    if (url === '/api/task_request_evidence/9') {
+      return {
+        data: {
+          success: true,
+          data: {
+            evidence: { body_expired: false },
+            events: [
+              {
+                id: 10,
+                stage: 'polling',
+                phase: 'responded',
+                complete: true,
+                has_body: true,
+                body_status: 'available',
+                preview:
+                  '{"status":"failed","error":{"code":"AuditSubmitIllegal"}}',
+                byte_count: 67,
+                status_code: 200,
+              },
+            ],
+          },
+        },
+      }
+    }
+    return {
+      data: { success: true, data: { items: [TASK_FAILURE_ITEM], total: 1 } },
+    }
+  })
+  await renderViewer()
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Details' }))
+  await user.click(screen.getByRole('button', { name: 'Request evidence' }))
+  await user.click(await screen.findByRole('button', { name: '9' }))
+  expect(await screen.findByText(/Task polling/)).toBeVisible()
+  expect(screen.getByText(/"status":"failed"/)).toBeVisible()
+  expect(screen.queryByText('No request evidence recorded')).toBeNull()
+})
+
+it('uses the request ID when the failure has no task ID', async () => {
+  const get = vi.spyOn(api, 'get').mockImplementation(async (url) => ({
+    data: {
+      success: true,
+      data:
+        url === '/api/task_request_evidence'
+          ? { items: [], total: 0 }
+          : { items: [{ ...TASK_FAILURE_ITEM, task_id: '' }], total: 1 },
+    },
+  }))
+  await renderViewer()
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Details' }))
+  await user.click(screen.getByRole('button', { name: 'Request evidence' }))
+  await waitFor(() =>
+    expect(get).toHaveBeenCalledWith('/api/task_request_evidence', {
+      params: {
+        task_id: undefined,
+        request_id: 'req-task-1',
+        p: 1,
+        page_size: 20,
+      },
+    })
+  )
+})
+
+it.each(['en', 'zh'])(
+  'shows dedicated translated task failure fields in %s',
+  async (language) => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: { success: true, data: { items: [TASK_FAILURE_ITEM], total: 1 } },
+    })
+    await renderViewer(language)
+    await userEvent.setup().click(
+      await screen.findByRole('button', {
+        name: language === 'zh' ? '详情' : 'Details',
+      })
+    )
+    const dialog = screen.getByRole('dialog')
+    expect(
+      within(dialog).getByText(language === 'zh' ? '错误码' : 'Error code')
+    ).toBeVisible()
+    expect(
+      within(dialog).getByText(
+        language === 'zh' ? '失败原因' : 'Failure reason'
+      )
+    ).toBeVisible()
+    expect(
+      within(dialog).getByText('AuditSubmitIllegal', { exact: true })
+    ).toBeVisible()
+    expect(within(dialog).queryByText('fail_reason')).toBeNull()
+    expect(
+      within(dialog).getByText(
+        language === 'zh' ? '上游创建请求 ID' : 'Upstream creation request ID'
+      )
+    ).toBeVisible()
+    expect(
+      within(dialog).getByRole('link', {
+        name: language === 'zh' ? '查看任务' : 'View task',
+      })
+    ).toBeVisible()
+  }
+)
+
+it('offers an evidence lookup for linked Midjourney failures without empty HTTP blocks', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        items: [
+          {
+            ...TASK_FAILURE_ITEM,
+            stage: 'midjourney',
+            detail: JSON.stringify({
+              platform: 'midjourney',
+              fail_reason: 'Generation failed',
+            }),
+          },
+        ],
+        total: 1,
+      },
+    },
+  })
+  await renderViewer()
+  await userEvent
+    .setup()
+    .click(await screen.findByRole('button', { name: 'Details' }))
+  expect(screen.getByRole('button', { name: 'Request evidence' })).toBeVisible()
+  expect(screen.queryByText('Not recorded for this event')).toBeNull()
+  expect(screen.getByText('Generation failed')).toBeVisible()
+})
+
+it('keeps the body snapshot view and adds the evidence entry for task failures that recorded one', async () => {
+  vi.spyOn(api, 'get').mockImplementation(async (url: string) => {
+    if (url === '/api/task_request_evidence') {
+      return { data: { success: true, data: { items: [], total: 0 } } }
+    }
+    return {
+      data: {
+        success: true,
+        data: {
+          total: 1,
+          items: [
+            {
+              ...TASK_FAILURE_ITEM,
+              detail: JSON.stringify({
+                platform: 'vidu_modelark_v3',
+                http_exchange: JSON.stringify({
+                  response: {
+                    state: 'captured',
+                    status: 200,
+                    body: '{"error":{"code":"generation_failed"}}',
+                  },
+                }),
+              }),
+            },
+          ],
+        },
+      },
+    }
+  })
+  await renderViewer()
+  await userEvent
+    .setup()
+    .click(await screen.findByRole('button', { name: 'Details' }))
+  expect(await screen.findByText('Gateway response (redacted)')).toBeVisible()
+  // The sanitized HTTP snapshot no longer blocks the associated evidence view.
+  expect(screen.getByRole('button', { name: 'Request evidence' })).toBeVisible()
+  await userEvent
+    .setup()
+    .click(screen.getByRole('button', { name: 'Request evidence' }))
+  await waitFor(() =>
+    expect(api.get).toHaveBeenCalledWith('/api/task_request_evidence', {
+      params: expect.objectContaining({ task_id: 'vid-task-1' }),
+    })
+  )
+})
+
+it('keeps the capture failure state when a task snapshot has no body', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        total: 1,
+        items: [
+          {
+            ...TASK_FAILURE_ITEM,
+            detail: JSON.stringify({
+              http_exchange: JSON.stringify({
+                response: { state: 'read_failed' },
+              }),
+            }),
+          },
+        ],
+      },
+    },
+  })
+  await renderViewer()
+  await userEvent
+    .setup()
+    .click(await screen.findByRole('button', { name: 'Details' }))
+  expect(screen.getByText('Gateway response (redacted)')).toBeVisible()
+  expect(screen.getByText('Body could not be read completely')).toBeVisible()
 })
 
 it.each([
@@ -538,5 +903,86 @@ it.each([
       screen.queryByText('Automatic probe (historical)')
     ).not.toBeInTheDocument()
     expect(screen.queryByText('Not a customer request')).not.toBeInTheDocument()
+  }
+)
+
+it.each(['en', 'zh'])(
+  'lets Root explicitly view associated original text from an ordinary error in %s',
+  async (language) => {
+    useAuthStore
+      .getState()
+      .auth.setUser({ id: 7, username: 'root', role: ROLE.SUPER_ADMIN })
+    const original = '{"url":"https://example.test/file?sig=fixture"}'
+    const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
+      if (url === '/api/error_log/') {
+        return {
+          data: { success: true, data: { items: [ERROR_ITEM], total: 1 } },
+        }
+      }
+      if (url === '/api/task_request_evidence') {
+        return {
+          data: {
+            success: true,
+            data: { items: [{ id: 9, request_id: 'req-e1' }], total: 1 },
+          },
+        }
+      }
+      if (url === '/api/task_request_evidence/9') {
+        return {
+          data: {
+            success: true,
+            data: {
+              evidence: { body_expired: false },
+              events: [
+                {
+                  id: 10,
+                  stage: 'upstream_response',
+                  complete: true,
+                  has_body: true,
+                  body_status: 'available',
+                  preview: 'masked preview',
+                  status_code: 400,
+                  byte_count: 32,
+                },
+              ],
+            },
+          },
+        }
+      }
+      if (url === '/api/task_request_evidence/9/events/10/content') {
+        return { data: original }
+      }
+      throw new Error('Unexpected URL')
+    })
+    await renderViewer(language)
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', {
+        name: language === 'zh' ? '详情' : 'Details',
+      })
+    )
+    await user.click(
+      screen.getByRole('button', {
+        name: language === 'zh' ? '请求证据' : 'Request evidence',
+      })
+    )
+    await user.click(await screen.findByRole('button', { name: 'req-e1' }))
+    expect(await screen.findByText('masked preview')).toBeVisible()
+    expect(get.mock.calls.some(([url]) => url.endsWith('/content'))).toBe(false)
+    await user.click(
+      screen.getByRole('button', {
+        name: language === 'zh' ? '查看原文' : 'View original text',
+      })
+    )
+    expect(await screen.findByText(original)).toBeVisible()
+    expect(
+      screen.getByRole('dialog', {
+        name: language === 'zh' ? '查看原文' : 'View original text',
+      })
+    ).toHaveAccessibleDescription(
+      language === 'zh'
+        ? '认证凭据已移除'
+        : 'Authentication credentials removed'
+    )
   }
 )

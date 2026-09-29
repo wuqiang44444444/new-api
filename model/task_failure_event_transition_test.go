@@ -69,7 +69,7 @@ func TestBatchFailureEventUsesCommittedReasonAndDoesNotRepeat(t *testing.T) {
 	var saved Task
 	require.NoError(t, db.First(&saved, task.ID).Error)
 	assert.Equal(t, "Batch processing failed", saved.FailReason)
-	assert.Equal(t, "Batch_processing_failed", event.Detail["fail_reason"])
+	assert.Equal(t, "Batch processing failed", event.Detail["fail_reason"])
 	assert.Empty(t, task.FailReason, "do not mutate the caller's snapshot")
 	require.NoError(t, CompleteBatchSettlement(&job, &task, 0, &LogOther{}, 0, 0))
 	assert.Equal(t, before+1, clienterrlog.CurrentHealth().Accepted)

@@ -115,6 +115,12 @@ func sanitizedBackendDetail(detail map[string]string) map[string]string {
 		}
 		if key == "fail_reason" {
 			value = common.PublicTaskErrorMessage(value)
+			if value != "" {
+				sanitized[key] = value
+			}
+			// Human-readable text already has the public redaction/length boundary.
+			// Identifier sanitization below would replace its spaces with underscores.
+			continue
 		}
 		cleanKey := SanitizeLogValue(key, 32)
 		if cleanKey == "" {

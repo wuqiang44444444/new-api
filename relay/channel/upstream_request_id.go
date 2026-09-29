@@ -18,6 +18,12 @@ func upstreamResponseRequestID(header http.Header, channelType int) string {
 	if value == "" {
 		value = header.Get("x-request-id")
 	}
+	if value == "" {
+		value = header.Get("Request-Id")
+	}
+	if value == "" {
+		value = header.Get("X-Tt-Logid")
+	}
 	value = strings.TrimSpace(value)
 	// The log column is varchar(128). Reject unusable evidence instead of
 	// truncating it into a different request identity or failing settlement.

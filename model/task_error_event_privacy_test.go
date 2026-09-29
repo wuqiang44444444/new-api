@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/clienterrlog"
+	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -37,6 +38,8 @@ func TestTaskFailureEventsPersistOnlyPublicFailure(t *testing.T) {
 		assert.NotContains(t, row.Detail, "fixture-key")
 		assert.NotContains(t, row.Detail, "fixture-secret")
 		assert.NotContains(t, row.Detail, "upstream.example")
-		assert.NotContains(t, row.Detail, "provider raw body")
+		var detail map[string]string
+		require.NoError(t, common.Unmarshal([]byte(row.Detail), &detail))
+		assert.Equal(t, "provider raw body: [redacted] [URL]", detail["fail_reason"])
 	}
 }

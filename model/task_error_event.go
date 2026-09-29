@@ -25,8 +25,15 @@ func submitTaskFailureEvent(task *Task, fromStatus TaskStatus, stage string) {
 	if task.Status == TaskStatusExpired {
 		reason = "task_expired"
 	}
+	publicCode := ""
 	detail := map[string]string{"platform": string(task.Platform)}
-	if task.FailReason != "" {
+	if task.Status == TaskStatusFailure && IsVideoFundTask(task) {
+		// 视频失败复用统一公开失败投影：同一安全业务码与可读说明进入事件，
+		// 不创建另一套上游响应解析器。
+		failure := task.PublicVideoFailure()
+		publicCode = failure.Code
+		detail["fail_reason"] = failure.Message
+	} else if task.FailReason != "" {
 		detail["fail_reason"] = task.PublicFailReason()
 	}
 	if task.PrivateData.UpstreamRequestID != "" {
@@ -39,17 +46,18 @@ func submitTaskFailureEvent(task *Task, fromStatus TaskStatus, stage string) {
 		requestID = task.PrivateData.Execution.RequestID
 	}
 	clienterrlog.SubmitBackendEvent(clienterrlog.BackendEvent{
-		EventType: clienterrlog.EventTaskFailure,
-		Module:    ErrorEventModuleRelay,
-		Stage:     stage,
-		Reason:    reason,
-		Model:     task.Properties.OriginModelName,
-		ChannelID: task.ChannelId,
-		UserID:    task.UserId,
-		TaskID:    task.TaskID,
-		RequestID: requestID,
-		Status:    0,
-		Detail:    detail,
+		EventType:  clienterrlog.EventTaskFailure,
+		Module:     ErrorEventModuleRelay,
+		Stage:      stage,
+		Reason:     reason,
+		PublicCode: publicCode,
+		Model:      task.Properties.OriginModelName,
+		ChannelID:  task.ChannelId,
+		UserID:     task.UserId,
+		TaskID:     task.TaskID,
+		RequestID:  requestID,
+		Status:     0,
+		Detail:     detail,
 	})
 }
 

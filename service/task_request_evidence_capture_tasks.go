@@ -20,7 +20,7 @@ func AttachTaskRequestEvidenceTask(c *gin.Context, task *model.Task) {
 	}
 	attemptID := int64(common.GetContextKeyInt(c, constant.ContextKeyTaskCreateAttemptID))
 	model.AttachTaskRequestEvidenceTask(session.evidenceID, task.TaskID, attemptID)
-	model.UpsertTaskRequestEvidenceUpstreamRequestID(session.evidenceID, task.PrivateData.UpstreamRequestID)
+	model.SetTaskRequestEvidenceUpstreamRequestID(session.evidenceID, task.PrivateData.UpstreamRequestID)
 }
 
 // CaptureTaskPollingEvidence 记录一次轮询出站与响应（adapter 解析前正文）。

@@ -10,6 +10,7 @@ import {
   getEvidenceList,
 } from '../evidence-api'
 import { EvidenceBodyStatus } from './evidence-body-status'
+import { EvidenceOriginalDialog } from './evidence-original-dialog'
 
 export function TaskEvidence(props: {
   taskId?: string
@@ -29,7 +30,9 @@ export function TaskEvidence(props: {
     ],
     queryFn: () =>
       getEvidenceList(
-        { task_id: props.taskId, request_id: props.requestId },
+        props.taskId
+          ? { task_id: props.taskId }
+          : { request_id: props.requestId },
         page
       ),
     enabled: opened && Boolean(props.taskId || props.requestId),
@@ -93,6 +96,7 @@ function EvidenceDetails(props: {
 }) {
   const { t } = useTranslation()
   const [opened, setOpened] = useState(false)
+  const [viewEventId, setViewEventId] = useState<number | null>(null)
   const query = useQuery({
     queryKey: ['task-evidence-detail', props.id, props.isRoot],
     queryFn: () => getEvidenceDetail(props.id),
@@ -117,7 +121,10 @@ function EvidenceDetails(props: {
         variant='ghost'
         className='max-w-full break-all whitespace-normal'
         aria-expanded={opened}
-        onClick={() => setOpened(!opened)}
+        onClick={() => {
+          setViewEventId(null)
+          setOpened(!opened)
+        }}
       >
         {props.label}
       </Button>
@@ -158,18 +165,38 @@ function EvidenceDetails(props: {
               {props.isRoot &&
                 event.has_body &&
                 !query.data?.evidence.body_expired && (
-                  <Button
-                    variant='outline'
-                    disabled={download.isPending}
-                    onClick={() => download.mutate(event.id)}
-                  >
-                    {t('Download original evidence')}
-                  </Button>
+                  <div className='flex flex-wrap gap-2'>
+                    {event.body_status === 'available' && (
+                      <Button
+                        variant='outline'
+                        onClick={() => setViewEventId(event.id)}
+                      >
+                        {t('View original text')}
+                      </Button>
+                    )}
+                    <Button
+                      variant='outline'
+                      disabled={download.isPending}
+                      onClick={() => download.mutate(event.id)}
+                    >
+                      {t('Download original evidence')}
+                    </Button>
+                  </div>
                 )}
             </article>
           ))}
           {download.isError && (
             <p role='alert'>{t('Failed to download evidence')}</p>
+          )}
+          {props.isRoot && viewEventId !== null && (
+            <EvidenceOriginalDialog
+              id={props.id}
+              eventId={viewEventId}
+              open
+              onOpenChange={(open) => {
+                if (!open) setViewEventId(null)
+              }}
+            />
           )}
         </div>
       )}

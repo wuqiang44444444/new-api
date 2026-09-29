@@ -12,7 +12,9 @@ import (
 )
 
 // 音视频证据查询（一期）。管理员查看脱敏业务证据（列表/详情/预览），
-// Root 可下载完整对象。每次查看/下载记录访问审计；列表与详情不返回正文。
+// Root 通过专用查看接口读取原文、下载完整对象。审计在实际操作入口分别记录：
+// 脱敏预览 view/redacted、原文查看 view/original、下载 download/original；
+// 列表与详情不返回原文。响应由路由组中间件禁止缓存。
 
 func GetTaskRequestEvidenceList(c *gin.Context) {
 	requestID := strings.TrimSpace(c.Query("request_id"))
@@ -45,13 +47,14 @@ func GetTaskRequestEvidenceDetail(c *gin.Context) {
 	if !ok {
 		return
 	}
+	model.RecordTaskRequestEvidenceAccess(evidence.Id, int64(c.GetInt("id")), "view", "redacted")
 	events, err := model.ListTaskRequestEvidenceEvents(evidence.Id)
 	if err != nil {
 		common.ApiErrorMsg(c, "Failed to query evidence events")
 		return
 	}
 	isRoot := isRootViewer(c)
-	previews := service.GetEvidenceEventPreviews(events, isRoot, evidence.BodyExpired)
+	previews := service.GetEvidenceEventPreviews(events, evidence.BodyExpired)
 	eventViews := make([]gin.H, 0, len(events))
 	for _, event := range events {
 		eventViews = append(eventViews, evidenceEventView(event, previews[event.Id]))
@@ -74,21 +77,52 @@ func GetTaskRequestEvidenceObject(c *gin.Context) {
 		return
 	}
 	payload, bodyStatus := service.ReadEvidenceEventBody(event, evidence.BodyExpired)
-	if bodyStatus != "available" {
-		status, message := http.StatusGone, "Evidence body is no longer available"
-		if bodyStatus == "expired" || bodyStatus == "not_recorded" {
-			message = "Evidence body expired"
-		}
-		if bodyStatus == "storage_unavailable" {
-			status, message = http.StatusServiceUnavailable, "Evidence storage is not enabled"
-		}
-		c.JSON(status, gin.H{"success": false, "message": message, "body_status": bodyStatus})
+	if !respondEvidenceBodyStatus(c, bodyStatus) {
 		return
 	}
 	model.RecordTaskRequestEvidenceAccess(evidence.Id, int64(c.GetInt("id")), "download", "original")
 	filename := strconv.FormatInt(event.Id, 10) + ".bin"
 	c.Header("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	c.Data(http.StatusOK, "application/octet-stream", payload)
+}
+
+// GetTaskRequestEvidenceContent 按 Root 显式查看返回事件正文原文（内联文本）。
+// 与下载共用读取服务；仅在实际交付原文时记录 view/original 审计。
+func GetTaskRequestEvidenceContent(c *gin.Context) {
+	evidence, ok := loadEvidenceForViewer(c)
+	if !ok {
+		return
+	}
+	eventId, _ := strconv.ParseInt(c.Param("event_id"), 10, 64)
+	event, exists, err := model.GetTaskRequestEvidenceEvent(evidence.Id, eventId)
+	if err != nil || !exists || event == nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Evidence event not found"})
+		return
+	}
+	payload, bodyStatus := service.ReadEvidenceEventBody(event, evidence.BodyExpired)
+	if !respondEvidenceBodyStatus(c, bodyStatus) {
+		return
+	}
+	model.RecordTaskRequestEvidenceAccess(evidence.Id, int64(c.GetInt("id")), "view", "original")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", payload)
+}
+
+// respondEvidenceBodyStatus 在正文不可读时按既有语义返回明确错误；
+// 返回 true 表示正文可用、调用方继续交付。
+func respondEvidenceBodyStatus(c *gin.Context, bodyStatus string) bool {
+	if bodyStatus == "available" {
+		return true
+	}
+	status, message := http.StatusGone, "Evidence body is no longer available"
+	if bodyStatus == "expired" || bodyStatus == "not_recorded" {
+		message = "Evidence body expired"
+	}
+	if bodyStatus == "storage_unavailable" {
+		status, message = http.StatusServiceUnavailable, "Evidence storage is not enabled"
+	}
+	c.JSON(status, gin.H{"success": false, "message": message, "body_status": bodyStatus})
+	return false
 }
 
 func loadEvidenceForViewer(c *gin.Context) (*model.TaskRequestEvidence, bool) {
@@ -98,7 +132,6 @@ func loadEvidenceForViewer(c *gin.Context) (*model.TaskRequestEvidence, bool) {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Evidence not found"})
 		return nil, false
 	}
-	model.RecordTaskRequestEvidenceAccess(evidence.Id, int64(c.GetInt("id")), "view", "redacted")
 	return evidence, true
 }
 

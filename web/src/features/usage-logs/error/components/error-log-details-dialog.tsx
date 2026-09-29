@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Link } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -24,11 +25,14 @@ import { Button } from '@/components/ui/button'
 import { AUTO_CHECK_DETAIL_KEYS } from '@/features/channels/components/channel-check-detail-keys'
 import { ChannelCheckDetails } from '@/features/channels/components/channel-check-details'
 import dayjs from '@/lib/dayjs'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   DetailRow,
   DetailSection,
 } from '../../components/dialogs/log-detail-layout'
+import { TaskEvidence } from '../../components/task-evidence'
 import type { ErrorLogItem } from '../api'
 import { mediaAutoProbeDetail } from './auto-probe-detail'
 import { AutomaticProbeLabel } from './automatic-probe-label'
@@ -43,52 +47,47 @@ function formatChannelLabel(entry: ErrorLogItem): string {
 
 export function ErrorLogDetailsDialog(props: { entry: ErrorLogItem }) {
   const { t } = useTranslation()
-  // 分项键只在自动渠道测试事件上隐藏于通用列表并进入"自动检查"区块；
-  // 其他事件即使携带同名键也保持原有逐项展示。
-  const isAutoChannelTest = useMemo(() => {
-    if (props.entry.event_type !== 'channel_test') return false
+  const isRoot = useAuthStore(
+    (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
+  )
+  const detail = useMemo((): Record<string, string> => {
     try {
       const parsed: unknown = JSON.parse(props.entry.detail || '{}')
-      return (
-        !!parsed &&
-        typeof parsed === 'object' &&
-        (parsed as Record<string, string>)['test_mode'] === 'auto'
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return {}
+      }
+      return Object.fromEntries(
+        Object.entries(parsed).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string'
+        )
       )
     } catch {
-      return false
+      return {}
     }
-  }, [props.entry.event_type, props.entry.detail])
-  const detailEntries = useMemo(() => {
-    if (!props.entry.detail) return []
-    try {
-      const parsed: unknown = JSON.parse(props.entry.detail)
-      if (!parsed || typeof parsed !== 'object') return []
-      return Object.entries(parsed as Record<string, string>).filter(
-        ([key, value]) =>
-          key !== 'http_exchange' &&
-          typeof value === 'string' &&
-          !(
-            isAutoChannelTest &&
-            (AUTO_CHECK_DETAIL_KEYS as readonly string[]).includes(key)
-          )
+  }, [props.entry.detail])
+  const isTaskFailure = props.entry.event_type === 'task_failure'
+  const isAutoChannelTest =
+    props.entry.event_type === 'channel_test' && detail.test_mode === 'auto'
+  // A linked identity permits a lookup; only recorded evidence determines
+  // whether the original is available, including events with HTTP snapshots.
+  const showTaskEvidence = Boolean(
+    props.entry.task_id || props.entry.request_id
+  )
+  const detailEntries = Object.entries(detail).filter(
+    ([key]) =>
+      key !== 'http_exchange' &&
+      !(isTaskFailure && key === 'fail_reason') &&
+      !(isTaskFailure && key === 'create_upstream_request_id') &&
+      !(
+        isAutoChannelTest &&
+        (AUTO_CHECK_DETAIL_KEYS as readonly string[]).includes(key)
       )
-    } catch {
-      return []
-    }
-  }, [props.entry.detail, isAutoChannelTest])
-  const autoCheckEntries = useMemo(() => {
-    if (!isAutoChannelTest) return []
-    try {
-      const parsed: unknown = JSON.parse(props.entry.detail || '{}')
-      if (!parsed || typeof parsed !== 'object') return []
-      const record = parsed as Record<string, string>
-      return AUTO_CHECK_DETAIL_KEYS.filter(
-        (key) => typeof record[key] === 'string' && record[key] !== ''
-      ).map((key) => [key, record[key]] as const)
-    } catch {
-      return []
-    }
-  }, [isAutoChannelTest, props.entry.detail])
+  )
+  const autoCheckEntries = isAutoChannelTest
+    ? AUTO_CHECK_DETAIL_KEYS.filter((key) => detail[key]).map(
+        (key) => [key, detail[key]] as const
+      )
+    : []
   const channelValue = formatChannelLabel(props.entry)
   return (
     <Dialog
@@ -141,12 +140,22 @@ export function ErrorLogDetailsDialog(props: { entry: ErrorLogItem }) {
         <DetailRow
           label={t('Reason')}
           value={
-            [props.entry.reason, props.entry.public_code]
+            [props.entry.reason, isTaskFailure ? '' : props.entry.public_code]
               .filter(Boolean)
               .join(' · ') || '—'
           }
           mono
         />
+        {isTaskFailure && props.entry.public_code && (
+          <DetailRow
+            label={t('Error code')}
+            value={props.entry.public_code}
+            mono
+          />
+        )}
+        {isTaskFailure && detail.fail_reason && (
+          <DetailRow label={t('Failure reason')} value={detail.fail_reason} />
+        )}
         {!!props.entry.stage && (
           <DetailRow label={t('Stage')} value={props.entry.stage} mono />
         )}
@@ -196,12 +205,61 @@ export function ErrorLogDetailsDialog(props: { entry: ErrorLogItem }) {
           <DetailRow label={t('Task ID')} value={props.entry.task_id} mono />
         )}
         <DetailRow
-          label={t('Upstream Request ID')}
-          value={props.entry.upstream_request_id || '—'}
+          label={
+            isTaskFailure
+              ? t('Upstream creation request ID')
+              : t('Upstream Request ID')
+          }
+          value={
+            (isTaskFailure
+              ? detail.create_upstream_request_id
+              : props.entry.upstream_request_id) || t('Not recorded')
+          }
           mono
         />
       </DetailSection>
-      <ErrorLogHTTPExchange detail={props.entry.detail} />
+      {isTaskFailure && props.entry.task_id && (
+        <Button
+          variant='outline'
+          role='link'
+          render={
+            <Link
+              to='/usage-logs/$section'
+              params={{
+                section:
+                  props.entry.stage === 'midjourney' ||
+                  detail.platform === 'midjourney'
+                    ? 'drawing'
+                    : 'task',
+              }}
+              search={{
+                filter: props.entry.task_id,
+                page: 1,
+                startTime: 0,
+                endTime: (props.entry.created_at + 1) * 1000,
+              }}
+            />
+          }
+        >
+          {t('View task')}
+        </Button>
+      )}
+      {showTaskEvidence && (
+        <TaskEvidence
+          key={props.entry.id}
+          taskId={isTaskFailure ? props.entry.task_id || undefined : undefined}
+          requestId={
+            isTaskFailure && props.entry.task_id
+              ? undefined
+              : props.entry.request_id || undefined
+          }
+          isRoot={isRoot}
+        />
+      )}
+      <ErrorLogHTTPExchange
+        detail={props.entry.detail}
+        hideWhenEmpty={isTaskFailure}
+      />
       {detailEntries.length > 0 && (
         <DetailSection label={t('Additional information')}>
           {detailEntries.map(([key, value]) => (

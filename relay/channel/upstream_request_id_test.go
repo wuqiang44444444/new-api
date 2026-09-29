@@ -26,6 +26,8 @@ func TestDoRequestCapturesProviderRequestIdentityAndClearsPreviousAttempt(t *tes
 	}{
 		{"Azure", constant.ChannelTypeAzure, map[string]string{"apim-request-id": "azure-request"}, "azure-request"},
 		{"OpenAI", constant.ChannelTypeOpenAI, map[string]string{"x-request-id": "openai-request"}, "openai-request"},
+		{"Request-Id", constant.ChannelTypeSeedanceLink, map[string]string{"Request-Id": "provider-request"}, "provider-request"},
+		{"X-Tt-Logid", constant.ChannelTypeSeedanceLink, map[string]string{"X-Tt-Logid": "provider-log"}, "provider-log"},
 		{"gateway identity", constant.ChannelTypeAzure, map[string]string{common.RequestIdKey: "gateway-request", "apim-request-id": "azure-request"}, "gateway-request"},
 		{"Azure header priority", constant.ChannelTypeAzure, map[string]string{"apim-request-id": "azure-request", "x-request-id": "other-request"}, "azure-request"},
 		{"missing", constant.ChannelTypeAzure, nil, ""},

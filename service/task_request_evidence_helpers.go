@@ -80,8 +80,9 @@ func ReadEvidenceEventBody(event *model.TaskRequestEvidenceEvent, expired bool) 
 	}
 }
 
-// GetEvidenceEventPreviews reads each object once and preserves URL masking.
-func GetEvidenceEventPreviews(events []*model.TaskRequestEvidenceEvent, isRoot, expired bool) map[int64]EvidenceEventPreview {
+// GetEvidenceEventPreviews reads each object once and masks URLs for every
+// role; unmasked originals are served only by the Root view/download endpoints.
+func GetEvidenceEventPreviews(events []*model.TaskRequestEvidenceEvent, expired bool) map[int64]EvidenceEventPreview {
 	previews := make(map[int64]EvidenceEventPreview, len(events))
 	for _, event := range events {
 		payload, status := ReadEvidenceEventBody(event, expired)
@@ -91,7 +92,7 @@ func GetEvidenceEventPreviews(events []*model.TaskRequestEvidenceEvent, isRoot, 
 			if strings.HasPrefix(contentType, "audio/") || strings.HasPrefix(contentType, "video/") || strings.HasPrefix(contentType, "image/") || contentType == "application/octet-stream" {
 				preview.BodyStatus = "binary"
 			} else {
-				preview.Text = evidencePreviewText(payload, isRoot)
+				preview.Text = evidencePreviewText(payload)
 			}
 		}
 		previews[event.Id] = preview
@@ -101,11 +102,8 @@ func GetEvidenceEventPreviews(events []*model.TaskRequestEvidenceEvent, isRoot, 
 
 const evidencePreviewLimit = 16 << 10
 
-func evidencePreviewText(payload []byte, isRoot bool) string {
-	text := string(payload)
-	if !isRoot {
-		text = serviceMaskSignedURLs(text)
-	}
+func evidencePreviewText(payload []byte) string {
+	text := serviceMaskSignedURLs(string(payload))
 	if len(text) > evidencePreviewLimit {
 		text = text[:evidencePreviewLimit] + "…(truncated)"
 	}
@@ -119,4 +117,4 @@ func serviceMaskSignedURLs(text string) string {
 }
 
 // EvidenceAdminPreview masks protected URLs before limiting display size.
-func EvidenceAdminPreview(text string) string { return evidencePreviewText([]byte(text), false) }
+func EvidenceAdminPreview(text string) string { return evidencePreviewText([]byte(text)) }

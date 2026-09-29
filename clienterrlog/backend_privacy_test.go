@@ -3,8 +3,19 @@ package clienterrlog
 import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
+
+func TestTaskFailureMessageKeepsReadableTextAndPublicBoundary(t *testing.T) {
+	message := "The request failed because input_text may contain sensitive information."
+	event := buildBackendEvent(BackendEvent{EventType: EventTaskFailure, Detail: map[string]string{"fail_reason": message}})
+	assert.Equal(t, message, event.Detail["fail_reason"])
+	longMessage := buildBackendEvent(BackendEvent{EventType: EventTaskFailure, Detail: map[string]string{"fail_reason": strings.Repeat("可读说明 ", 200)}})
+	assert.LessOrEqual(t, len(longMessage.Detail["fail_reason"]), 515)
+	assert.True(t, utf8.ValidString(longMessage.Detail["fail_reason"]))
+}
 
 func TestBackendEventDropsUnapprovedDetailsAndSanitizesFailure(t *testing.T) {
 	event := buildBackendEvent(BackendEvent{EventType: EventTaskFailure, Detail: map[string]string{

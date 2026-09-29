@@ -113,6 +113,11 @@ func PublicTaskErrorCode(code string) string {
 	if !taskErrorCode.MatchString(code) || taskErrorProvider.MatchString(code) {
 		return ""
 	}
+	// Code-shaped diagnostics can still contain credentials (e.g. token:value).
+	// Reuse the message boundary's credential patterns; never publish a redacted code.
+	if taskErrorAuthHeader.MatchString(code) || taskErrorCredential.MatchString(code) {
+		return ""
+	}
 	// These are host operation failures, not provider business codes.
 	switch code {
 	case "fail_to_fetch_task", "task_request_failed", "do_request_failed", "build_request_failed",

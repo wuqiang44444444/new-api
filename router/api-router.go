@@ -399,13 +399,8 @@ func SetApiRouter(router *gin.Engine) {
 			taskRoute.GET("/:task_id/artifacts", middleware.UserAuth(), controller.GetDashboardTaskArtifacts)
 		}
 
-		// 音视频证据（一期）：管理员查看脱敏证据，Root 下载原始对象。
-		evidenceRoute := apiRouter.Group("/task_request_evidence")
-		{
-			evidenceRoute.GET("", middleware.AdminAuth(), controller.GetTaskRequestEvidenceList)
-			evidenceRoute.GET("/:id", middleware.AdminAuth(), controller.GetTaskRequestEvidenceDetail)
-			evidenceRoute.GET("/:id/events/:event_id/object", middleware.RootAuth(), controller.GetTaskRequestEvidenceObject)
-		}
+		// 音视频证据（一期）：接线见 task_request_evidence_router.go。
+		registerTaskRequestEvidenceRoutes(apiRouter)
 
 		vendorRoute := apiRouter.Group("/vendors")
 		vendorRoute.Use(middleware.AdminAuth())

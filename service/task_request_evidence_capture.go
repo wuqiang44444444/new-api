@@ -353,12 +353,9 @@ func AttachTaskRequestEvidenceUpstreamResponse(c *gin.Context, resp *http.Respon
 	if !evidenceEnabled() || session == nil || resp == nil || resp.Body == nil {
 		return
 	}
-	for _, key := range []string{common.RequestIdKey, "X-Request-Id", "Request-Id", "X-Tt-Logid"} {
-		if id := resp.Header.Get(key); id != "" {
-			model.UpsertTaskRequestEvidenceUpstreamRequestID(session.evidenceID, id)
-			break
-		}
-	}
+	// The response boundary already chose and validated this identity. Match the
+	// Task snapshot, including an empty final response after a previous attempt.
+	model.SetTaskRequestEvidenceUpstreamRequestID(session.evidenceID, c.GetString(common.UpstreamRequestIdKey))
 	maxBytes := system_setting.GetTaskRequestEvidenceConfig().MaxResponseBytes
 	method := "GET"
 	if resp.Request != nil && resp.Request.Method != "" {

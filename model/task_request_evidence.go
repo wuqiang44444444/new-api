@@ -220,12 +220,12 @@ func UpdateTaskRequestEvidenceFacts(evidenceId int64, updates map[string]any) {
 	}
 }
 
-func UpsertTaskRequestEvidenceUpstreamRequestID(evidenceId int64, upstreamRequestID string) {
-	if evidenceId <= 0 || upstreamRequestID == "" {
+func SetTaskRequestEvidenceUpstreamRequestID(evidenceId int64, upstreamRequestID string) {
+	if evidenceId <= 0 {
 		return
 	}
 	err := DB.Model(&TaskRequestEvidence{}).
-		Where("id = ? AND (upstream_request_id = '' OR upstream_request_id IS NULL)", evidenceId).
+		Where("id = ?", evidenceId).
 		Updates(map[string]any{"upstream_request_id": upstreamRequestID, "updated_at": common.GetTimestamp()}).Error
 	if err != nil {
 		common.SysError("attach evidence upstream request id failed: " + err.Error())

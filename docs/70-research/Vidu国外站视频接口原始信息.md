@@ -184,4 +184,4 @@ curl 'https://api.vidu.com/ent/api/v3/contents/generations/tasks/<TASK_ID>' \
 
 本次两站 `Seedance 2.0 std` 图片＋参考音频请求均创建成功。真实查询中的 `duration`、`seed`、
 `created_at`、`updated_at`、`frames_per_second` 为字符串，和上文文档示例的数值类型不同。
-原始文档摘录保持不变；实测事实及渠道状态见[双站实测记录](../80-dev/2026-09-28-Vidu双站渠道接入与实测.md)。
+原始文档摘录保持不变；实测事实及渠道状态见[双站实测记录](../99-archive/2026/09/2026-09-28-Vidu双站渠道接入与实测.md)。

@@ -36,6 +36,44 @@ func viduInteger(raw json.RawMessage, minimum, maximum int64) (int64, bool) {
 	return number, err == nil && number >= minimum && number <= maximum
 }
 
+// viduTaskError is the failure identity of a terminal observation.
+type viduTaskError struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// viduFailureDescriptions maps confirmed Vidu business codes from the provider
+// error-code documentation to fixed descriptions. Unregistered codes never get
+// a guessed reason; the code identity itself stays visible when safe to keep.
+var viduFailureDescriptions = map[string]string{
+	"AuditSubmitIllegal": "输入内容未通过安全审核 (input content failed the upstream safety review)",
+}
+
+const viduUnexplainedFailureDescription = "视频生成失败，上游未提供详细原因 (video generation failed; the upstream did not provide a detailed reason)"
+
+// viduFailureDescription fills code-only failures once the failed status is
+// trusted. Provider messages already carry the business reason and pass
+// through untouched; public readback filtering stays downstream. A safe but
+// unregistered code keeps its identity with a generic description; unsafe or
+// missing codes collapse to the generic failure code so raw diagnostics never
+// reach clients. The filled message must be the same string that later becomes
+// the persisted FailReason, so PublicVideoFailure keeps code and message
+// consistent.
+func viduFailureDescription(failure viduTaskError) viduTaskError {
+	if strings.TrimSpace(failure.Message) != "" {
+		return failure
+	}
+	failure.Message = viduUnexplainedFailureDescription
+	if description, confirmed := viduFailureDescriptions[failure.Code]; confirmed {
+		failure.Message = description
+		return failure
+	}
+	if common.PublicTaskErrorCode(failure.Code) == "" {
+		failure.Code = "generation_failed"
+	}
+	return failure
+}
+
 // normalizeViduTaskResponse owns identity, field and usage evidence before the
 // frozen plugin sees the response. The plugin cannot replace these money facts.
 func normalizeViduTaskResponse(body []byte, expectedID string) ([]byte, error) {
@@ -100,16 +138,17 @@ func normalizeViduTaskResponse(body []byte, expectedID string) ([]byte, error) {
 	if value := raw["content"]; len(value) > 0 && common.Unmarshal(value, &content) != nil {
 		return nil, &relaycommon.UpstreamContractViolation{Reason: "invalid Vidu task content"}
 	}
-	var failure struct {
-		Code    string `json:"code,omitempty"`
-		Message string `json:"message,omitempty"`
-	}
+	var failure viduTaskError
 	if value := raw["error"]; len(value) > 0 && common.Unmarshal(value, &failure) != nil {
 		return nil, &relaycommon.UpstreamContractViolation{Reason: "invalid Vidu task error"}
 	}
 	if status == "failed" || status == "expired" {
 		if content.VideoURL != "" || content.LastFrameURL != "" {
 			return nil, &relaycommon.UpstreamContractViolation{Reason: "conflicting Vidu failure content"}
+		}
+		// 过期状态继续遵守既有过期合同；只有可信失败才补齐 code-only 说明。
+		if status == "failed" {
+			failure = viduFailureDescription(failure)
 		}
 		result["error"] = failure
 	} else if failure.Code != "" || failure.Message != "" {
