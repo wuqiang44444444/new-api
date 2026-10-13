@@ -74,6 +74,8 @@ func BuildTaskBillingDeliveryLog(task *model.Task, event model.TaskBillingDelive
 	} else if event.Event == "refund" || event.Event == "customer_refund" {
 		logType, quota, completion = model.LogTypeRefund, event.BeforeQuota-event.AfterQuota, 0
 		other.SetPublic("reason", async.Reason)
+		other.SetPublic("adjustment_before_quota", event.BeforeQuota)
+		other.SetPublic("actual_quota", event.AfterQuota)
 	} else {
 		other.SetPublic("pre_consumed_quota", event.BeforeQuota)
 		other.SetPublic("actual_quota", event.AfterQuota)

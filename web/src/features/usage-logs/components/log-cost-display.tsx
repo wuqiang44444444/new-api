@@ -35,9 +35,12 @@ import {
 import { formatLogQuota } from '@/lib/format'
 
 import { hasToolSurcharge } from '../lib/format'
+import { buildTaskCostSummary } from '../lib/task-cost'
 import type { LogOtherData } from '../types'
+import { TaskCostDisplay } from './task-cost-display'
 
 interface LogCostDisplayProps {
+  logType?: number
   quota: number
   other: LogOtherData | null
   showBillingSource?: boolean
@@ -82,6 +85,8 @@ export function LogCostDisplay(props: LogCostDisplayProps) {
   const { t } = useTranslation()
   const isSubscription = props.other?.billing_source === 'subscription'
   const showToolSurcharge = hasToolSurcharge(props.other)
+  const taskCost = buildTaskCostSummary(props.logType, props.quota, props.other)
+  if (taskCost) return <TaskCostDisplay summary={taskCost} subscription={isSubscription} />
   const quota = isSubscription
     ? (props.other?.subscription_consumed ?? props.quota)
     : props.quota

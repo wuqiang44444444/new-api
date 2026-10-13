@@ -305,6 +305,11 @@ export interface LogOtherData {
   result_discarded?: boolean
   task_id?: string
   reason?: string
+  task_billing_event?: string
+  pre_consumed_quota?: number
+  adjustment_before_quota?: number
+  actual_quota?: number
+  net_quota?: number
   // Subscription billing fields
   subscription_plan_id?: string
   subscription_plan_title?: string

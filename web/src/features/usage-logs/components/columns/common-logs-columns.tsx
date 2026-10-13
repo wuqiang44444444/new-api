@@ -66,6 +66,7 @@ import {
   renderAuditContent,
   renderLogContent,
 } from '../../lib/format'
+import { taskRefundLabelKey } from '../../lib/task-cost'
 import {
   isDisplayableLogType,
   isTimingLogType,
@@ -144,7 +145,7 @@ function buildTypeDetailSegments(
   }
 
   if (log.type === 6) {
-    return [{ text: t('Async task refund') }]
+    return [{ text: t(taskRefundLabelKey(other)) }]
   }
 
   if (log.type !== 2) return []
@@ -774,6 +775,7 @@ export function useCommonLogsColumns(
           const other = parseLogOther(log.other)
           return (
             <LogCostDisplay
+              logType={log.type}
               quota={quota}
               other={other}
               showBillingSource={showBillingSource}

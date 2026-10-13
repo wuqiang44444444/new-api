@@ -87,6 +87,7 @@ import {
   renderLogContent,
 } from '../../lib/format'
 import { buildQuotaAuditOperation } from '../../lib/quota-audit-operation'
+import { buildTaskCostSummary } from '../../lib/task-cost'
 import {
   getLogTypeConfig,
   isPerCallBilling,
@@ -96,6 +97,7 @@ import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
 import { LogDiscountCell } from '../log-discount-cell'
 import { ResponseModelDetails } from '../model-badge'
 import { PluginAuthorLink } from '../plugin-author-link'
+import { TaskCostDisplay } from '../task-cost-display'
 import { DetailRow, DetailSection } from './log-detail-layout'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
@@ -175,6 +177,7 @@ function BillingBreakdown(props: {
 }) {
   const { t } = useTranslation()
   const { log, other, isAdmin } = props
+  const taskCost = buildTaskCostSummary(log.type, log.quota, other)
   const isPerCall = isPerCallBilling(other.model_price)
   const isClaude = other.claude === true
   const isTieredExpr = other.billing_mode === 'tiered_expr'
@@ -479,11 +482,18 @@ function BillingBreakdown(props: {
           ))}
         </>
       )}
-      <DetailRow
-        label={t('Total Cost')}
-        value={formatLogQuota(log.quota)}
-        mono
-      />
+      {taskCost ? (
+        <TaskCostDisplay
+          summary={taskCost}
+          subscription={other.billing_source === 'subscription'}
+        />
+      ) : (
+        <DetailRow
+          label={t('Total Cost')}
+          value={formatLogQuota(log.quota)}
+          mono
+        />
+      )}
     </DetailSection>
   )
 }
@@ -605,6 +615,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const isTopup = props.log.type === 1
   const isManage = props.log.type === 3
   const isSubscription = other?.billing_source === 'subscription'
+  const taskCost = buildTaskCostSummary(props.log.type, props.log.quota, other)
   const isTieredBilling =
     isConsume &&
     !isViolation &&
@@ -1009,6 +1020,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
           other &&
           (other.task_id || other.reason || other.billing_facts) && (
             <DetailSection label={t('Refund Details')}>
+              {taskCost ? (
+                <TaskCostDisplay
+                  summary={taskCost}
+                  subscription={isSubscription}
+                />
+              ) : null}
               {other.billing_facts && (
                 <>
                   <DetailRow
