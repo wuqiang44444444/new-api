@@ -3,12 +3,14 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import dayjs from '@/lib/dayjs'
 
 import {
   downloadEvidence,
   getEvidenceDetail,
   getEvidenceList,
 } from '../evidence-api'
+import { DetailRow } from './dialogs/log-detail-layout'
 import { EvidenceBodyStatus } from './evidence-body-status'
 import { EvidenceOriginalDialog } from './evidence-original-dialog'
 
@@ -16,6 +18,7 @@ export function TaskEvidence(props: {
   taskId?: string
   requestId?: string
   isRoot: boolean
+  browse?: boolean
 }) {
   const { t } = useTranslation()
   const [opened, setOpened] = useState(false)
@@ -35,7 +38,7 @@ export function TaskEvidence(props: {
           : { request_id: props.requestId },
         page
       ),
-    enabled: opened && Boolean(props.taskId || props.requestId),
+    enabled: opened && Boolean(props.browse || props.taskId || props.requestId),
     gcTime: 0,
     retry: false,
   })
@@ -109,6 +112,10 @@ function EvidenceDetails(props: {
   })
   const stages: Record<string, string> = {
     north_receive: t('Client request'),
+    realtime_north_receive: t('Client request'),
+    realtime_southbound_send: t('Upstream request'),
+    realtime_upstream_response: t('Upstream response'),
+    realtime_client_delivery: t('Result delivery'),
     southbound_send: t('Upstream request'),
     upstream_response: t('Upstream response'),
     polling: t('Task polling'),
@@ -153,6 +160,31 @@ function EvidenceDetails(props: {
                 {t('Status')}: {event.phase} · HTTP {event.status_code || '-'} ·{' '}
                 {event.byte_count} B
               </p>
+              {event.method && (
+                <DetailRow label={t('Method')} value={event.method} mono />
+              )}
+              {event.target && (
+                <DetailRow label={t('Target')} value={event.target} mono />
+              )}
+              {event.content_type && (
+                <DetailRow label={t('Type')} value={event.content_type} mono />
+              )}
+              {!!event.created_at && (
+                <DetailRow
+                  label={t('Created At')}
+                  value={dayjs
+                    .unix(event.created_at)
+                    .format('YYYY-MM-DD HH:mm:ss')}
+                  mono
+                />
+              )}
+              {event.detail && (
+                <DetailRow
+                  label={t('Additional information')}
+                  value={event.detail}
+                  mono
+                />
+              )}
               {event.preview && (
                 <pre className='max-h-64 overflow-auto break-all whitespace-pre-wrap'>
                   {event.preview}

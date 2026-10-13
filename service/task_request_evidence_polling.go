@@ -17,10 +17,10 @@ func CaptureFallbackTaskPollingEvidence(adaptor any, task *model.Task, method, t
 
 // Called at the adapter's HTTP boundary, before parsing or normalizing the reply.
 func AttachRawTaskPollingEvidence(task *model.Task, req *http.Request, resp *http.Response, transportErr error) {
-	if !evidenceEnabled() || task == nil {
+	if !evidenceEnabled() || task == nil || task.TaskID == "" {
 		return
 	}
-	if transportErr != nil || resp == nil {
+	if resp == nil {
 		CaptureTaskPollingEvidence(task, req.Method, evidenceTargetURL(req), 0, req.Header, nil, transportErr)
 		return
 	}
@@ -37,10 +37,18 @@ func AttachRawTaskPollingEvidence(task *model.Task, req *http.Request, resp *htt
 			return
 		}
 	}
+	tee := &evidenceResponseBodyTee{session: &taskRequestEvidenceSession{evidenceID: evidence.Id}, origin: resp.Body, buffer: bytes.NewBuffer(nil), maxBytes: system_setting.GetTaskRequestEvidenceConfig().MaxResponseBytes, stage: model.TaskRequestEvidenceStagePolling, statusCode: resp.StatusCode, method: req.Method, target: evidenceTargetURL(req), contentType: resp.Header.Get("Content-Type"), headers: resp.Header.Clone(), transportErr: transportErr}
+	tee.requestHeaders = req.Header.Clone()
+	if req.URL != nil {
+		tee.requestQuery = req.URL.Query()
+	}
 	if resp.Body == nil {
+		tee.origin = http.NoBody
+		tee.eof = true
+		_ = tee.Close()
 		return
 	}
-	resp.Body = &evidenceResponseBodyTee{session: &taskRequestEvidenceSession{evidenceID: evidence.Id}, origin: resp.Body, buffer: bytes.NewBuffer(nil), maxBytes: system_setting.GetTaskRequestEvidenceConfig().MaxResponseBytes, stage: model.TaskRequestEvidenceStagePolling, statusCode: resp.StatusCode, method: req.Method, target: evidenceTargetURL(req), contentType: resp.Header.Get("Content-Type"), headers: resp.Header.Clone()}
+	resp.Body = tee
 }
 
 // Some batch adapters synthesize responses without an HTTP request descriptor.
@@ -56,4 +64,11 @@ func CaptureTaskPollingHTTPResponse(task *model.Task, baseURL string, resp *http
 		}
 	}
 	CaptureTaskPollingEvidence(task, method, target, status, headers, body, readErr)
+}
+
+func CaptureFallbackTaskPollingHTTPResponse(adaptor any, task *model.Task, target string, resp *http.Response, body []byte, err error) {
+	if _, captures := adaptor.(interface{ CapturesRawPollingEvidence() }); captures {
+		return
+	}
+	CaptureTaskPollingHTTPResponse(task, target, resp, body, err)
 }

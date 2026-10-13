@@ -20,10 +20,6 @@ func GetTaskRequestEvidenceList(c *gin.Context) {
 	requestID := strings.TrimSpace(c.Query("request_id"))
 	taskID := strings.TrimSpace(c.Query("task_id"))
 	upstreamRequestID := strings.TrimSpace(c.Query("upstream_request_id"))
-	if requestID == "" && taskID == "" && upstreamRequestID == "" {
-		common.ApiErrorMsg(c, "request_id or task_id is required")
-		return
-	}
 	pageInfo := common.GetPageQuery(c)
 	items, total, err := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{
 		RequestID:         requestID,

@@ -97,7 +97,7 @@ func (s *localEncryptedEvidenceStore) Put(key string, plaintext []byte) error {
 	defer timer.Stop()
 	select {
 	case evidenceWriteSlots <- struct{}{}:
-	default:
+	case <-timer.C:
 		return ErrTaskRequestEvidenceStoreBusy
 	}
 	result := make(chan error, 1)

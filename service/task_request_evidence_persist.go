@@ -26,9 +26,15 @@ func persistTaskEvidenceBody(
 	body []byte,
 	source TaskRequestEvidenceBodySource,
 ) error {
+	return persistTaskEvidenceBodyUsing(event, body, source, evidenceRedactBody)
+}
+
+func persistTaskEvidenceBodyUsing(event *model.TaskRequestEvidenceEvent, body []byte, source TaskRequestEvidenceBodySource, redact func([]byte, string) ([]byte, error)) error {
 	phase, complete := event.Phase, event.Complete
 	event.Phase, event.Complete = model.TaskRequestEvidencePhaseUnavailable, false
-	event.CreatedAt = common.GetTimestamp()
+	if event.CreatedAt == 0 {
+		event.CreatedAt = common.GetTimestamp()
+	}
 	if err := model.CreateTaskRequestEvidenceEvent(event); err != nil {
 		return evidenceUnavailableFailure(
 			TaskRequestEvidenceCategoryEventDatabase,
@@ -37,7 +43,7 @@ func persistTaskEvidenceBody(
 		).WithCause(err)
 	}
 	event.Seq = event.Id
-	payload, redactErr := evidenceRedactBody(body, event.ContentType)
+	payload, redactErr := redact(body, event.ContentType)
 	var failure *TaskRequestEvidenceError
 	if redactErr != nil {
 		failure = evidenceRedactionFailure(redactErr, source, evidenceContentTypeRequiresJSON(event.ContentType))
@@ -56,6 +62,21 @@ func persistTaskEvidenceBody(
 		event.Sha256 = EvidenceSha256Hex(payload)
 		event.Redacted = true
 		event.Phase, event.Complete = phase, complete
+	}
+	if failure != nil {
+		detail := map[string]any{}
+		if event.Detail != "" {
+			_ = common.UnmarshalJsonStr(event.Detail, &detail)
+		}
+		if detail == nil {
+			detail = map[string]any{}
+		}
+		detail["capture_failure"] = map[string]any{
+			"category": failure.Category,
+			"stage":    failure.Stage,
+			"source":   failure.Source,
+		}
+		event.Detail = evidenceMarshalDetail(detail)
 	}
 	if updateErr := model.FinishTaskRequestEvidenceEvent(event); updateErr != nil {
 		if failure != nil {

@@ -81,11 +81,15 @@ func batchClientForJob(job *model.BatchJob) (*azurebatch.Client, error) {
 	if connection.BaseURL == "" || connection.Key == "" || connection.APIVersion == "" {
 		return nil, errors.New("batch frozen connection is incomplete")
 	}
-	return azurebatch.NewClient(connection.BaseURL, connection.Key, connection.APIVersion), nil
+	client := azurebatch.NewClient(connection.BaseURL, connection.Key, connection.APIVersion)
+	client.HTTPClient.Transport = WithAPIRequestEvidenceTransport(client.HTTPClient.Transport)
+	return client, nil
 }
 
 // progressBatchJob runs one claimed observation cycle for a single job.
 func progressBatchJob(ctx context.Context, job *model.BatchJob) error {
+	ctx, finishEvidence := BeginBatchRequestEvidence(ctx, job)
+	defer finishEvidence()
 	now := common.GetTimestamp()
 	nextPoll := now + int64(batchPollInterval.Seconds())*int64(1<<min(job.PollFailures, 5))
 	claimed, err := model.ClaimBatchJobPoll(job.Id, job.PollAfter, job.PollFailures, job.PollVersion, nextPoll)

@@ -11,6 +11,10 @@ import (
 // to status, body, flush behavior or request validation are made by this hook.
 func ImageErrorEvidence() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if service.HasAPIRequestEvidence(c.Request.Context()) {
+			c.Next()
+			return
+		}
 		switch c.Request.URL.Path {
 		case "/v1/images/generations", "/v1/images/edits", "/v1/edits", "/v1/images/variations":
 		default:

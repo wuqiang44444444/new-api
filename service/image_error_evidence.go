@@ -16,8 +16,9 @@ import (
 )
 
 // Image error evidence is observation only. A bounded memory reservation covers
-// both in-flight captures and queued writes. No DB/file work runs in Read/Write
-// or Finish, and failed evidence never changes the business outcome.
+// both in-flight captures and queued writes. Read/Write only observe bytes.
+// Legacy image errors queue their writes; all-request captures persist at
+// handler completion. Evidence failures never change the business outcome.
 var imageEvidenceSlots = make(chan struct{}, 8)
 var imageEvidenceQueue = make(chan *ImageErrorEvidence, 8)
 var imageEvidenceAccepted, imageEvidenceWritten, imageEvidenceFailed, imageEvidenceDropped, imageEvidenceTruncated atomic.Uint64
@@ -26,16 +27,20 @@ var imageEvidenceSkipped atomic.Uint64
 type imageEvidenceContextKey struct{}
 
 type ImageErrorEvidence struct {
-	Index     model.TaskRequestEvidence
-	mu        sync.Mutex
-	remaining int64
-	records   []*imageEvidenceExchange
-	secrets   []string
-	failed    bool
-	finished  bool
+	Index              model.TaskRequestEvidence
+	mu                 sync.Mutex
+	remaining          int64
+	records            []*imageEvidenceExchange
+	secrets            []string
+	allRequests        bool
+	suppressSourceURLs bool
+	failed             bool
+	finished           bool
 }
 
 type imageEvidenceExchange struct {
+	CreatedAt   int64
+	Query       map[string]string
 	Stage       string
 	Method      string
 	Target      string
@@ -153,6 +158,9 @@ func RecordImageDeliveryError(ctx context.Context, stage string, err error) {
 	}
 	capture := ImageErrorEvidenceFrom(ctx)
 	if capture == nil {
+		capture = apiEvidenceFrom(ctx)
+	}
+	if capture == nil {
 		return
 	}
 	capture.recordError(stage, err)
@@ -167,7 +175,14 @@ func (capture *ImageErrorEvidence) recordError(stage string, err error) {
 	if capture.finished {
 		return
 	}
-	capture.records = append(capture.records, &imageEvidenceExchange{Stage: stage, Error: err.Error(), EOF: true})
+	if capture.allRequests && stage == "client_write" {
+		for _, record := range capture.records {
+			if record.Stage == "client_delivery" {
+				record.Error = "write_error"
+			}
+		}
+	}
+	capture.records = append(capture.records, &imageEvidenceExchange{Stage: stage, CreatedAt: common.GetTimestamp(), Error: err.Error(), EOF: true})
 	capture.failed = true
 }
 
@@ -211,6 +226,12 @@ func (b *imageEvidenceBody) Close() error {
 func (c *ImageErrorEvidence) appendBody(record *imageEvidenceExchange, p []byte) {
 	record.Observed += int64(len(p))
 	keep := int64(len(p))
+	if c.allRequests {
+		keep = min(keep, max(int64(0), evidenceMaxBodyBytes()-int64(record.Body.Len())))
+		if keep < int64(len(p)) {
+			record.Truncated = true
+		}
+	}
 	if keep > c.remaining {
 		keep = c.remaining
 		record.Truncated = true
@@ -240,7 +261,7 @@ func (c *ImageErrorEvidence) CaptureClientBody(p []byte) {
 		}
 	}
 	if record == nil {
-		record = &imageEvidenceExchange{Stage: "client_delivery"}
+		record = &imageEvidenceExchange{Stage: "client_delivery", CreatedAt: common.GetTimestamp()}
 		c.records = append(c.records, record)
 	}
 	c.appendBody(record, p)
@@ -260,8 +281,8 @@ func (c *ImageErrorEvidence) FinishClient(status int, headers http.Header) {
 			r.EOF = true
 		}
 	}
-	if !found && status >= 400 {
-		c.records = append(c.records, &imageEvidenceExchange{Stage: "client_delivery", Status: status, Headers: headers.Clone(), ContentType: headers.Get("Content-Type"), EOF: true})
+	if !found && (status >= 400 || c.allRequests) {
+		c.records = append(c.records, &imageEvidenceExchange{Stage: "client_delivery", CreatedAt: common.GetTimestamp(), Status: status, Headers: headers.Clone(), ContentType: headers.Get("Content-Type"), EOF: true})
 	}
 	c.mu.Unlock()
 	c.Finish(status >= 400)
@@ -277,6 +298,22 @@ func (c *ImageErrorEvidence) Finish(failed bool) {
 	}
 	c.finished = true
 	c.failed = c.failed || failed
+	if c.allRequests {
+		defer func() {
+			if recover() != nil {
+				imageEvidenceFailed.Add(1)
+				common.SysError("API request evidence persistence panicked")
+			}
+		}()
+		imageEvidenceAccepted.Add(1)
+		if err := persistAPIRequestEvidence(c); err != nil {
+			imageEvidenceFailed.Add(1)
+			common.SysError("API request evidence persistence failed")
+		} else {
+			imageEvidenceWritten.Add(1)
+		}
+		return
+	}
 	// There is one queue slot for every memory reservation; never wait on I/O.
 	select {
 	case imageEvidenceQueue <- c:

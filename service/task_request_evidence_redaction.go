@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -81,7 +82,7 @@ func EvidenceRedactHeaders(headers map[string][]string) map[string]string {
 			result[name] = evidenceRedactedPlaceholder
 			continue
 		}
-		result[name] = strings.Join(values, ", ")
+		result[name] = serviceMaskSignedURLs(strings.Join(values, ", "))
 	}
 	return result
 }
@@ -90,13 +91,23 @@ func EvidenceRedactHeaders(headers map[string][]string) map[string]string {
 func EvidenceRedactQueryParams(query url.Values) map[string]string {
 	result := make(map[string]string, len(query))
 	for key, values := range query {
-		if isEvidenceCredentialKey(key) {
+		if isEvidenceCredentialKey(key) || isEvidenceSignedQueryKey(key) {
 			result[key] = evidenceRedactedPlaceholder
 			continue
 		}
-		result[key] = strings.Join(values, ", ")
+		result[key] = serviceMaskSignedURLs(strings.Join(values, ", "))
 	}
 	return result
+}
+
+// Signed URL and provider query authentication values must not enter metadata.
+func isEvidenceSignedQueryKey(key string) bool {
+	switch strings.ToLower(key) {
+	case "key", "sig", "x-amz-signature", "x-amz-credential", "x-amz-security-token", "x-goog-signature", "x-goog-credential", "awsaccesskeyid":
+		return true
+	default:
+		return false
+	}
 }
 
 func isEvidenceCredentialKey(key string) bool {
@@ -112,26 +123,42 @@ func isEvidenceCredentialKey(key string) bool {
 	return false
 }
 
-func evidenceRedactValue(value any) any {
-	switch typed := value.(type) {
-	case map[string]any:
-		result := make(map[string]any, len(typed))
-		for key, child := range typed {
+// Keep JSON scalars as wire values so large IDs and decimal spellings survive
+// credential redaction without a float64 round trip.
+func evidenceRedactJSON(body json.RawMessage) (json.RawMessage, error) {
+	switch common.GetJsonType(body) {
+	case "object":
+		var fields map[string]json.RawMessage
+		if err := common.Unmarshal(body, &fields); err != nil {
+			return nil, err
+		}
+		for key, value := range fields {
 			if isEvidenceCredentialKey(key) {
-				result[key] = evidenceRedactedPlaceholder
+				fields[key] = json.RawMessage(`"[REDACTED]"`)
 				continue
 			}
-			result[key] = evidenceRedactValue(child)
+			redacted, err := evidenceRedactJSON(value)
+			if err != nil {
+				return nil, err
+			}
+			fields[key] = redacted
 		}
-		return result
-	case []any:
-		result := make([]any, len(typed))
-		for i, child := range typed {
-			result[i] = evidenceRedactValue(child)
+		return common.Marshal(fields)
+	case "array":
+		var values []json.RawMessage
+		if err := common.Unmarshal(body, &values); err != nil {
+			return nil, err
 		}
-		return result
+		for i, value := range values {
+			redacted, err := evidenceRedactJSON(value)
+			if err != nil {
+				return nil, err
+			}
+			values[i] = redacted
+		}
+		return common.Marshal(values)
 	default:
-		return value
+		return body, nil
 	}
 }
 
@@ -242,13 +269,13 @@ func evidenceRedactBody(body []byte, contentType string) ([]byte, error) {
 	}
 	trimmed := bytes.TrimSpace(body)
 	if strings.Contains(mediaType, "json") || (len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[')) {
-		var decoded any
+		var decoded json.RawMessage
 		if err := common.Unmarshal(trimmed, &decoded); err != nil {
 			// 解析现场保留带类型的原始 cause；是否归属客户由分类映射结合
 			// 正文来源与 JSON 合同标记判定，不在此处先行丢失类型。
 			return nil, &evidenceJSONParseError{cause: err}
 		}
-		return common.Marshal(evidenceRedactValue(decoded))
+		return evidenceRedactJSON(decoded)
 	}
 	return body, nil
 }

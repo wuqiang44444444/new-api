@@ -36,7 +36,12 @@ const maxImageResultBytes = 50 * 1024 * 1024
 
 // ExecuteImageTask runs the frozen image task against its provider.
 func ExecuteImageTask(ctx context.Context, task *model.Task) (outcome service.ImageTaskExecution) {
-	capture := service.NewImageTaskErrorEvidence(task)
+	ctx, finishEvidence := service.BeginBackgroundRequestEvidence(ctx, task)
+	defer finishEvidence()
+	var capture *service.ImageErrorEvidence
+	if !service.HasAPIRequestEvidence(ctx) {
+		capture = service.NewImageTaskErrorEvidence(task)
+	}
 	ctx = service.WithImageErrorEvidence(ctx, capture)
 	defer func() { capture.Finish(outcome.Outcome != service.ImageTaskOutcomeSuccess) }()
 	ctx, err := service.WithImageObjectStore(ctx)
@@ -431,7 +436,12 @@ func executorFailureFromError(err error) service.ImageTaskExecution {
 // ResumeImageTaskPoll first recovers persisted objects, including native tasks
 // with no Provider ID. Only a real Provider task can be polled; never recreate.
 func ResumeImageTaskPoll(ctx context.Context, task *model.Task) (outcome service.ImageTaskExecution) {
-	capture := service.NewImageTaskErrorEvidence(task)
+	ctx, finishEvidence := service.BeginBackgroundRequestEvidence(ctx, task)
+	defer finishEvidence()
+	var capture *service.ImageErrorEvidence
+	if !service.HasAPIRequestEvidence(ctx) {
+		capture = service.NewImageTaskErrorEvidence(task)
+	}
 	ctx = service.WithImageErrorEvidence(ctx, capture)
 	defer func() { capture.Finish(outcome.Outcome != service.ImageTaskOutcomeSuccess) }()
 	ctx, err := service.WithImageObjectStore(ctx)

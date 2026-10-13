@@ -94,7 +94,9 @@ func GetEvidenceEventPreviews(events []*model.TaskRequestEvidenceEvent, expired 
 				preview.BodyStatus = "binary"
 			} else {
 				masked, err := evidenceMaskBodyURLs(payload, event.ContentType)
-				if err != nil {
+				if err != nil && event.Redacted && strings.Contains(event.Detail, `"body_format_invalid":true`) {
+					preview.Text = evidencePreviewText(payload)
+				} else if err != nil {
 					preview.BodyStatus = "read_failed"
 				} else {
 					preview.Text = evidencePreviewText(masked)

@@ -47,6 +47,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 				return
 			default:
 				_, message, err := clientConn.ReadMessage()
+				service.ObserveRealtimeFrame(c.Request.Context(), "realtime_north_receive", message, err)
 				if err != nil {
 					if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 						errChan <- fmt.Errorf("error reading from client: %v", err)
@@ -82,6 +83,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 				localUsage.InputTokenDetails.AudioTokens += audioToken
 
 				err = helper.WssString(c, targetConn, string(message))
+				service.ObserveRealtimeFrame(c.Request.Context(), "realtime_southbound_send", message, err)
 				if err != nil {
 					errChan <- fmt.Errorf("error writing to target: %v", err)
 					return
@@ -107,6 +109,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 				return
 			default:
 				_, message, err := targetConn.ReadMessage()
+				service.ObserveRealtimeFrame(c.Request.Context(), "realtime_upstream_response", message, err)
 				if err != nil {
 					if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 						errChan <- fmt.Errorf("error reading from target: %v", err)
@@ -188,6 +191,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 				}
 
 				err = helper.WssString(c, clientConn, string(message))
+				service.ObserveRealtimeFrame(c.Request.Context(), "realtime_client_delivery", message, err)
 				if err != nil {
 					errChan <- fmt.Errorf("error writing to client: %v", err)
 					return

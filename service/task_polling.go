@@ -317,7 +317,7 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 	if err != nil {
 		common.SysLog(fmt.Sprintf("Get Task Do req error: %v", err))
 		for _, task := range tasks {
-			CaptureTaskPollingEvidence(task, http.MethodGet, baseURL, 0, nil, nil, err)
+			CaptureFallbackTaskPollingEvidence(adaptor, task, http.MethodGet, baseURL, 0, nil, nil, err)
 		}
 		return recordPollFailureForTasks(ctx, adaptor, tasks, pollClassTransport, 0, err.Error())
 	}
@@ -326,12 +326,12 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 	if err != nil {
 		common.SysLog(fmt.Sprintf("Get Suno Task parse body error: %v", err))
 		for _, task := range tasks {
-			CaptureTaskPollingHTTPResponse(task, baseURL, resp, responseBody, err)
+			CaptureFallbackTaskPollingHTTPResponse(adaptor, task, baseURL, resp, responseBody, err)
 		}
 		return recordPollFailureForTasks(ctx, adaptor, tasks, pollClassTransport, resp.StatusCode, err.Error())
 	}
 	for _, task := range tasks {
-		CaptureTaskPollingHTTPResponse(task, baseURL, resp, responseBody, nil)
+		CaptureFallbackTaskPollingHTTPResponse(adaptor, task, baseURL, resp, responseBody, nil)
 	}
 	switch classifyPollHTTP(resp.StatusCode) {
 	case pollClassNotFound:

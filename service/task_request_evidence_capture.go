@@ -210,6 +210,7 @@ func CaptureSouthboundTaskRequestEvidence(
 	req *http.Request,
 	info *relaycommon.RelayInfo,
 ) (captureErr error) {
+	BindAPIRequestEvidence(c, req, info)
 	session := evidenceSessionFrom(c)
 	if !evidenceEnabled() || session == nil || req == nil {
 		return nil
@@ -282,6 +283,7 @@ func CaptureSouthboundTaskRequestEvidence(
 		Detail: evidenceMarshalDetail(map[string]any{
 			"headers": EvidenceRedactHeaders(req.Header),
 			"host":    req.URL.Host,
+			"query":   EvidenceRedactQueryParams(req.URL.Query()),
 		}),
 	}
 	if err := persistTaskEvidenceBody(event, body, TaskRequestEvidenceSourceSouth); err != nil {
@@ -350,14 +352,14 @@ func evidenceReadBounded(reader io.Reader, maxBytes int64) ([]byte, error) {
 // 发送已发生，证据写入故障只告警并标记不完整，绝不影响业务响应。
 func AttachTaskRequestEvidenceUpstreamResponse(c *gin.Context, resp *http.Response) {
 	session := evidenceSessionFrom(c)
-	if !evidenceEnabled() || session == nil || resp == nil || resp.Body == nil {
+	if !evidenceEnabled() || session == nil || resp == nil {
 		return
 	}
 	// The response boundary already chose and validated this identity. Match the
 	// Task snapshot, including an empty final response after a previous attempt.
 	model.SetTaskRequestEvidenceUpstreamRequestID(session.evidenceID, c.GetString(common.UpstreamRequestIdKey))
 	maxBytes := system_setting.GetTaskRequestEvidenceConfig().MaxResponseBytes
-	method := "GET"
+	method := ""
 	if resp.Request != nil && resp.Request.Method != "" {
 		method = resp.Request.Method
 	}
@@ -374,30 +376,45 @@ func AttachTaskRequestEvidenceUpstreamResponse(c *gin.Context, resp *http.Respon
 		contentType: resp.Header.Get("Content-Type"),
 		headers:     resp.Header.Clone(),
 	}
+	if resp.Request != nil {
+		tee.requestHeaders = resp.Request.Header.Clone()
+		if resp.Request.URL != nil {
+			tee.requestQuery = resp.Request.URL.Query()
+		}
+	}
+	if resp.Body == nil {
+		tee.origin = http.NoBody
+		tee.eof = true
+		_ = tee.Close()
+		return
+	}
 	resp.Body = tee
 }
 
 // evidenceResponseBodyTee 有界捕获上游响应正文。
 type evidenceResponseBodyTee struct {
-	stage       string
-	attemptSeq  int
-	eof         bool
-	readErr     error
-	closed      bool
-	closeErr    error
-	headers     http.Header
-	session     *taskRequestEvidenceSession
-	origin      io.ReadCloser
-	buffer      *bytes.Buffer
-	maxBytes    int64
-	started     int64
-	observed    int64
-	mu          sync.Mutex
-	phase       string
-	statusCode  int
-	method      string
-	target      string
-	contentType string
+	requestHeaders http.Header
+	requestQuery   url.Values
+	stage          string
+	attemptSeq     int
+	eof            bool
+	readErr        error
+	transportErr   error
+	closed         bool
+	closeErr       error
+	headers        http.Header
+	session        *taskRequestEvidenceSession
+	origin         io.ReadCloser
+	buffer         *bytes.Buffer
+	maxBytes       int64
+	started        int64
+	observed       int64
+	mu             sync.Mutex
+	phase          string
+	statusCode     int
+	method         string
+	target         string
+	contentType    string
 }
 
 func (t *evidenceResponseBodyTee) Read(p []byte) (int, error) {
@@ -431,7 +448,7 @@ func (t *evidenceResponseBodyTee) Close() error {
 		return t.closeErr
 	}
 	phase := model.TaskRequestEvidencePhaseCompleted
-	complete := t.eof && t.readErr == nil && t.phase == "" && t.closeErr == nil
+	complete := t.eof && t.readErr == nil && t.phase == "" && t.closeErr == nil && t.transportErr == nil
 	if !complete {
 		phase = model.TaskRequestEvidencePhaseFailed
 	}
@@ -446,7 +463,7 @@ func (t *evidenceResponseBodyTee) Close() error {
 		EvidenceId: t.session.evidenceID, Stage: stage,
 		AttemptSeq: t.attemptSeq, Phase: phase, StatusCode: t.statusCode, Method: t.method,
 		Target: t.target, ContentType: t.contentType, ByteCount: t.observed, Complete: complete,
-		Detail: evidenceMarshalDetail(map[string]any{"eof": t.eof, "truncated": t.phase != "", "read_failed": t.readErr != nil, "close_failed": t.closeErr != nil, "headers": EvidenceRedactHeaders(t.headers)}),
+		Detail: evidenceMarshalDetail(map[string]any{"eof": t.eof, "truncated": t.phase != "", "read_failed": t.readErr != nil, "close_failed": t.closeErr != nil, "transport_failed": t.transportErr != nil, "headers": EvidenceRedactHeaders(t.headers), "request_headers": EvidenceRedactHeaders(t.requestHeaders), "request_query": EvidenceRedactQueryParams(t.requestQuery)}),
 	}
 	if err := persistTaskEvidenceBody(event, t.buffer.Bytes(), TaskRequestEvidenceSourceResponse); err != nil {
 		// 发送已发生：证据写入故障只记录净化诊断，不改变业务响应。

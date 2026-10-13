@@ -98,7 +98,7 @@ func (s *s3ArtifactStore) BatchGetObject(ctx context.Context, objectKey string, 
 	if err != nil {
 		return 0, err
 	}
-	client := &http.Client{Timeout: 120 * time.Second, CheckRedirect: rejectObjectStorageRedirect}
+	client := &http.Client{Transport: WithAPIRequestEvidenceTransport(nil), Timeout: 120 * time.Second, CheckRedirect: rejectObjectStorageRedirect}
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, errors.New("object storage GET request failed")

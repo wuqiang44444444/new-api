@@ -94,6 +94,7 @@ func newProtectedFetchHTTPClientWithProxy(resolver ssrfResolver, dialContext fun
 	if common.RelayTimeout != 0 {
 		client.Timeout = time.Duration(common.RelayTimeout) * time.Second
 	}
+	client.Transport = WithAPIRequestEvidenceTransport(client.Transport)
 	return client
 }
 

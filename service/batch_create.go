@@ -224,6 +224,7 @@ func CreateBatchJob(c *gin.Context, request *dto.BatchCreateRequest) (*BatchCrea
 		return nil, err
 	}
 	client := azurebatch.NewClient(channel.GetBaseURL(), channel.Key, channel.Other)
+	client.HTTPClient.Transport = WithAPIRequestEvidenceTransport(client.HTTPClient.Transport)
 	uploadId, err := client.UploadBatchFile(c.Request.Context(), file.Id+".jsonl", converted.Bytes)
 	if err != nil {
 		_, _ = model.ReleaseTaskCreateAttemptHold(attempt.ID, model.TaskCreateAttemptRejected)

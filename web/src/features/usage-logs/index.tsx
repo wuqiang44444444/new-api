@@ -28,6 +28,7 @@ import { CacheStatsDialog } from '@/features/system-settings/general/channel-aff
 import { useSidebarConfig } from '@/hooks/use-sidebar-config'
 
 import { UserInfoDialog } from './components/dialogs/user-info-dialog'
+import { RequestEvidenceBrowser } from './components/request-evidence-browser'
 import {
   type LogsViewScope,
   UsageLogsProvider,
@@ -74,7 +75,8 @@ function UsageLogsContent() {
     affinityDialogOpen,
     setAffinityDialogOpen,
   } = useUsageLogsContext()
-  const { canManageScope, viewScope, setViewScope } = useLogsViewScope()
+  const { canManageScope, isAdminView, isRootView, viewScope, setViewScope } =
+    useLogsViewScope()
   const tabNavGroups = useMemo<NavGroup[]>(
     () => [
       {
@@ -132,6 +134,7 @@ function UsageLogsContent() {
           {t(pageMeta.titleKey)}
         </SectionPageLayout.Title>
         <SectionPageLayout.Actions>
+          {isAdminView && <RequestEvidenceBrowser isRoot={isRootView} />}
           <Button
             variant={showFunds ? 'default' : 'outline'}
             onClick={() => setShowFunds(!showFunds)}

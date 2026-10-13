@@ -14,6 +14,14 @@ import (
 // AttachTaskRequestEvidenceTask 在任务行原子落库后关联证据与任务/attempt。
 // Best-effort：失败只告警，不影响任务与资金事实。
 func AttachTaskRequestEvidenceTask(c *gin.Context, task *model.Task) {
+	if task != nil {
+		if capture := apiEvidenceFrom(c.Request.Context()); capture != nil {
+			capture.mu.Lock()
+			capture.Index.TaskID = task.TaskID
+			capture.Index.UpstreamRequestID = task.PrivateData.UpstreamRequestID
+			capture.mu.Unlock()
+		}
+	}
 	session := evidenceSessionFrom(c)
 	if session == nil || session.evidenceID <= 0 || task == nil {
 		return
@@ -78,7 +86,8 @@ func CaptureTaskPollingEvidence(
 		ContentType: "application/json",
 		Redacted:    true,
 		Detail: evidenceMarshalDetail(map[string]any{
-			"error": errorString(pollErr),
+			"error":           errorString(pollErr),
+			"request_headers": EvidenceRedactHeaders(requestHeaders),
 		}),
 		CreatedAt: common.GetTimestamp(),
 	}

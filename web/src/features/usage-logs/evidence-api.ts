@@ -17,6 +17,12 @@ export interface EvidenceEvent {
   preview: string
   byte_count: number
   status_code: number
+  method?: string
+  target?: string
+  content_type?: string
+  detail?: string
+  created_at?: number
+  stored_bytes?: number
 }
 interface Envelope<T> {
   success: boolean
