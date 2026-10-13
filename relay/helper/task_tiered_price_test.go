@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/gin-gonic/gin"
@@ -61,6 +62,7 @@ func loadTaskPricingConfig(t *testing.T, expressions map[string]string, estimate
 }
 
 func taskPriceContext() *gin.Context {
+	i18n.Init()
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
 	context.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", nil)
 	context.Set("group", "default")

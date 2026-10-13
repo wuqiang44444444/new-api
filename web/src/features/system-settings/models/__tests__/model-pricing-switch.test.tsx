@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -69,7 +70,9 @@ describe('model pricing editor switching', () => {
       billingExpr: expression4k,
     }
     const { ModelPricingSheet } = await import('../model-pricing-sheet')
-    const renderSheet = (editData: ModelRatioData) => (
+    const queryClient = new QueryClient({defaultOptions:{queries:{retry:false}}})
+const renderSheet = (editData: ModelRatioData) => (
+<QueryClientProvider client={queryClient}>
       <I18nextProvider i18n={i18n}>
         <ModelPricingSheet
           open
@@ -77,6 +80,7 @@ describe('model pricing editor switching', () => {
           editData={editData}
         />
       </I18nextProvider>
+</QueryClientProvider>
     )
     const rendered = render(renderSheet(model1080p))
 

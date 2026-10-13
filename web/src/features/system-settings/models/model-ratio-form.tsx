@@ -21,7 +21,6 @@ import { Code2, Eye, RotateCcw, Save } from 'lucide-react'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import { JsonCodeEditor } from '@/components/json-code-editor'
 import { LearnMore } from '@/components/learn-more'
@@ -37,6 +36,8 @@ import {
 } from '@/components/ui/form'
 import { Switch } from '@/components/ui/switch'
 import { getEnabledModels } from '@/features/channels/api'
+import { handleServerError } from '@/lib/handle-server-error'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
 import {
   SettingsForm,
@@ -50,6 +51,7 @@ import {
 } from './model-ratio-visual-editor'
 
 type ModelFormValues = {
+ TaskPreConsumeTokens: string
   ModelPrice: string
   ModelRatio: string
   CacheRatio: string
@@ -61,7 +63,7 @@ type ModelFormValues = {
   ExposeRatioEnabled: boolean
   BillingMode: string
   BillingExpr: string
-  TaskPreConsumeTokens: string
+  PluginBillingExpr: string
 }
 
 type ModelRatioFormProps = {
@@ -83,7 +85,6 @@ type ModelJsonFieldName =
   | 'ImageRatio'
   | 'AudioRatio'
   | 'AudioCompletionRatio'
-  | 'TaskPreConsumeTokens'
 
 const modelJsonFields: Array<{
   name: ModelJsonFieldName
@@ -133,12 +134,6 @@ const modelJsonFields: Array<{
     name: 'AudioCompletionRatio',
     labelKey: 'Audio completion ratio',
     descriptionKey: 'Ratio applied to audio completions for streaming models.',
-  },
-  {
-    name: 'TaskPreConsumeTokens',
-    labelKey: 'Async task pre-consume token upper bounds',
-    descriptionKey:
-      'JSON map of model to the maximum billable token estimate used for asynchronous task pre-consume.',
   },
 ]
 
@@ -190,7 +185,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
 
   const enabledModelsQuery = useQuery({
     queryKey: ['enabled-models'],
-    queryFn: getEnabledModels,
+    queryFn: async () => requireServerSuccess(await getEnabledModels()),
     enabled: isUnsetVariant,
   })
 
@@ -203,8 +198,17 @@ export const ModelRatioForm = memo(function ModelRatioForm({
 
   useEffect(() => {
     if (!enabledModelsError) return
-    toast.error(enabledModelsErrorMessage || t('Failed to load enabled models'))
-  }, [enabledModelsError, enabledModelsErrorMessage, t])
+    handleServerError(
+      enabledModelsQuery.error ?? enabledModelsQuery.data,
+      t('Failed to load enabled models')
+    )
+  }, [
+    enabledModelsError,
+    enabledModelsErrorMessage,
+    enabledModelsQuery.error,
+    enabledModelsQuery.data,
+    t,
+  ])
 
   const handleFieldChange = useCallback(
     (field: keyof ModelFormValues, value: string) => {
@@ -314,6 +318,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               savedAudioCompletionRatio={savedValues.AudioCompletionRatio}
               savedBillingMode={savedValues.BillingMode}
               savedBillingExpr={savedValues.BillingExpr}
+              savedPluginBillingExpr={savedValues.PluginBillingExpr}
               modelPrice={form.watch('ModelPrice')}
               modelRatio={form.watch('ModelRatio')}
               cacheRatio={form.watch('CacheRatio')}
@@ -324,8 +329,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               audioCompletionRatio={form.watch('AudioCompletionRatio')}
               billingMode={form.watch('BillingMode')}
               billingExpr={form.watch('BillingExpr')}
-              savedTaskPreConsumeTokens={savedValues.TaskPreConsumeTokens}
-              taskPreConsumeTokens={form.watch('TaskPreConsumeTokens')}
+              pluginBillingExpr={form.watch('PluginBillingExpr')}
               candidateModelNames={
                 isUnsetVariant ? enabledModelsQuery.data?.data : undefined
               }
@@ -339,6 +343,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
                 const fieldMap: Record<string, keyof ModelFormValues> = {
                   'billing_setting.billing_mode': 'BillingMode',
                   'billing_setting.billing_expr': 'BillingExpr',
+                  'billing_setting.plugin_billing_expr': 'PluginBillingExpr',
                 }
                 const formField =
                   fieldMap[field] || (field as keyof ModelFormValues)

@@ -115,7 +115,7 @@ func TestSeedancePluginTerminalDependencies(t *testing.T) {
 	setupSeedancePluginUsageTest(t)
 	for _, status := range TerminalTaskStatuses() {
 		for _, billing := range []string{"", "settled", "pending", "failed", "debt", "awaiting_usage"} {
-			task := seedancePinnedTask(string(status)+billing, string(status), billing, "v1", "62")
+			task := seedancePinnedTask(string(status)+billing, string(status), billing, "v1", "67")
 			require.NoError(t, DB.Create(task).Error)
 			tasks, _, err := GetSeedancePluginExecutionUsage("seedance-link", "v1")
 			require.NoError(t, err)
@@ -128,8 +128,8 @@ func TestSeedancePluginTerminalDependencies(t *testing.T) {
 			require.NoError(t, DB.Delete(task).Error)
 		}
 	}
-	unknown := seedancePinnedTask("unknown", "UNKNOWN", "settled", "v1", "62")
-	deleted := seedancePinnedTask("deleted", "SUCCESS", "settled", "v1", "62")
+	unknown := seedancePinnedTask("unknown", "UNKNOWN", "settled", "v1", "67")
+	deleted := seedancePinnedTask("deleted", "SUCCESS", "settled", "v1", "67")
 	deleted.ClientDeletedAt = 1
 	for _, task := range []*Task{unknown, deleted} {
 		require.NoError(t, DB.Create(task).Error)

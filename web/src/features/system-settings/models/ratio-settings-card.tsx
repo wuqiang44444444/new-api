@@ -38,11 +38,9 @@ import {
 import { pricingOptions } from '@/features/model-pricing/pricing'
 import { handleServerError } from '@/lib/handle-server-error'
 
-import { previewCustomerContractRatioImpact } from '../api'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
-import type { CustomerContractRatioImpact } from '../types'
 import { positiveIntegerSchema } from '../utils/numeric-field'
 import { GroupRatioForm } from './group-ratio-form'
 import { ModelRatioForm } from './model-ratio-form'
@@ -129,6 +127,7 @@ const createModelSchema = (t: Translate) =>
     ExposeRatioEnabled: z.boolean(),
     BillingMode: createJsonStringField(t),
     BillingExpr: createJsonStringField(t),
+    PluginBillingExpr: createJsonStringField(t),
     TaskPreConsumeTokens: createJsonStringField(t),
   })
 
@@ -136,8 +135,8 @@ const createGroupSchema = (t: Translate) =>
   z.object({
     GroupRatio: createJsonStringField(t),
     TopupGroupRatio: createJsonStringField(t),
-    UserUsableGroups: createJsonStringField(t),
     GroupDescriptions: createJsonStringField(t),
+    UserUsableGroups: createJsonStringField(t),
     GroupGroupRatio: createJsonStringField(t),
     AutoGroups: createJsonStringField(t, {
       predicate: (parsed) =>
@@ -177,11 +176,6 @@ export function RatioSettingsCard({
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [groupImpact, setGroupImpact] =
-    useState<CustomerContractRatioImpact | null>(null)
-  const [pendingGroupValues, setPendingGroupValues] =
-    useState<GroupFormValues | null>(null)
-  const [checkingGroupImpact, setCheckingGroupImpact] = useState(false)
 
   const pricingQuery = useModelPricing()
   const savePricing = useSaveModelPricing()
@@ -202,8 +196,8 @@ export function RatioSettingsCard({
               pricingBaseline.options['billing_setting.billing_mode'],
             BillingExpr:
               pricingBaseline.options['billing_setting.billing_expr'],
-            TaskPreConsumeTokens:
-              pricingBaseline.options['task_billing_setting.preconsume_tokens'],
+            PluginBillingExpr:
+              pricingBaseline.options['billing_setting.plugin_billing_expr'],
           }
         : initialModelDefaults,
     [initialModelDefaults, pricingBaseline]
@@ -226,7 +220,7 @@ export function RatioSettingsCard({
       toast.success(t('Model prices reset successfully'))
       setConfirmOpen(false)
     },
-    onError: handleServerError,
+    onError: (error) => handleServerError(error),
   })
 
   const modelNormalizedDefaults = useRef({
@@ -243,9 +237,8 @@ export function RatioSettingsCard({
     ExposeRatioEnabled: modelDefaults.ExposeRatioEnabled,
     BillingMode: normalizeJsonString(modelDefaults.BillingMode),
     BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
-    TaskPreConsumeTokens: normalizeJsonString(
-      modelDefaults.TaskPreConsumeTokens
-    ),
+    PluginBillingExpr: normalizeJsonString(modelDefaults.PluginBillingExpr),
+ TaskPreConsumeTokens: normalizeJsonString(modelDefaults.TaskPreConsumeTokens || "{}"),
   })
   const [savedModelValues, setSavedModelValues] = useState(
     modelNormalizedDefaults.current
@@ -255,7 +248,7 @@ export function RatioSettingsCard({
     GroupRatio: normalizeJsonString(groupDefaults.GroupRatio),
     TopupGroupRatio: normalizeJsonString(groupDefaults.TopupGroupRatio),
     GroupDescriptions: normalizeJsonString(groupDefaults.GroupDescriptions),
-    UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
+UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
     GroupGroupRatio: normalizeJsonString(groupDefaults.GroupGroupRatio),
     AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
     MaxTokenAutoGroups: groupDefaults.MaxTokenAutoGroups,
@@ -284,9 +277,7 @@ export function RatioSettingsCard({
       ),
       BillingMode: formatJsonForTextarea(modelDefaults.BillingMode),
       BillingExpr: formatJsonForTextarea(modelDefaults.BillingExpr),
-      TaskPreConsumeTokens: formatJsonForTextarea(
-        modelDefaults.TaskPreConsumeTokens
-      ),
+      PluginBillingExpr: formatJsonForTextarea(modelDefaults.PluginBillingExpr),
     },
   })
 
@@ -297,8 +288,8 @@ export function RatioSettingsCard({
       ...groupDefaults,
       GroupRatio: formatJsonForTextarea(groupDefaults.GroupRatio),
       TopupGroupRatio: formatJsonForTextarea(groupDefaults.TopupGroupRatio),
-      UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
       GroupDescriptions: formatJsonForTextarea(groupDefaults.GroupDescriptions),
+UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
       GroupGroupRatio: formatJsonForTextarea(groupDefaults.GroupGroupRatio),
       AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
       GroupSpecialUsableGroup: formatJsonForTextarea(
@@ -322,9 +313,8 @@ export function RatioSettingsCard({
       ExposeRatioEnabled: modelDefaults.ExposeRatioEnabled,
       BillingMode: normalizeJsonString(modelDefaults.BillingMode),
       BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
-      TaskPreConsumeTokens: normalizeJsonString(
-        modelDefaults.TaskPreConsumeTokens
-      ),
+      PluginBillingExpr: normalizeJsonString(modelDefaults.PluginBillingExpr),
+ TaskPreConsumeTokens: normalizeJsonString(modelDefaults.TaskPreConsumeTokens || "{}"),
     }
     setSavedModelValues(modelNormalizedDefaults.current)
 
@@ -342,9 +332,7 @@ export function RatioSettingsCard({
       ),
       BillingMode: formatJsonForTextarea(modelDefaults.BillingMode),
       BillingExpr: formatJsonForTextarea(modelDefaults.BillingExpr),
-      TaskPreConsumeTokens: formatJsonForTextarea(
-        modelDefaults.TaskPreConsumeTokens
-      ),
+      PluginBillingExpr: formatJsonForTextarea(modelDefaults.PluginBillingExpr),
     })
   }, [modelDefaults, modelForm])
 
@@ -353,7 +341,7 @@ export function RatioSettingsCard({
       GroupRatio: normalizeJsonString(groupDefaults.GroupRatio),
       TopupGroupRatio: normalizeJsonString(groupDefaults.TopupGroupRatio),
       GroupDescriptions: normalizeJsonString(groupDefaults.GroupDescriptions),
-      UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
+UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
       GroupGroupRatio: normalizeJsonString(groupDefaults.GroupGroupRatio),
       AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
       MaxTokenAutoGroups: groupDefaults.MaxTokenAutoGroups,
@@ -367,8 +355,8 @@ export function RatioSettingsCard({
       ...groupDefaults,
       GroupRatio: formatJsonForTextarea(groupDefaults.GroupRatio),
       TopupGroupRatio: formatJsonForTextarea(groupDefaults.TopupGroupRatio),
-      UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
       GroupDescriptions: formatJsonForTextarea(groupDefaults.GroupDescriptions),
+UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
       GroupGroupRatio: formatJsonForTextarea(groupDefaults.GroupGroupRatio),
       AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
       GroupSpecialUsableGroup: formatJsonForTextarea(
@@ -391,7 +379,8 @@ export function RatioSettingsCard({
         ExposeRatioEnabled: values.ExposeRatioEnabled,
         BillingMode: normalizeJsonString(values.BillingMode),
         BillingExpr: normalizeJsonString(values.BillingExpr),
-        TaskPreConsumeTokens: normalizeJsonString(values.TaskPreConsumeTokens),
+        PluginBillingExpr: normalizeJsonString(values.PluginBillingExpr),
+TaskPreConsumeTokens: normalizeJsonString(values.TaskPreConsumeTokens),
       }
 
       if (!pricingBaseline) return
@@ -427,13 +416,13 @@ export function RatioSettingsCard({
     [t, updateOption, pricingBaseline, savePricing, pricingQuery]
   )
 
-  const persistGroupRatios = useCallback(
+  const saveGroupRatios = useCallback(
     async (values: GroupFormValues) => {
       const normalized = {
         GroupRatio: normalizeJsonString(values.GroupRatio),
         TopupGroupRatio: normalizeJsonString(values.TopupGroupRatio),
         GroupDescriptions: normalizeJsonString(values.GroupDescriptions),
-        UserUsableGroups: normalizeJsonString(values.UserUsableGroups),
+UserUsableGroups: normalizeJsonString(values.UserUsableGroups),
         GroupGroupRatio: normalizeJsonString(values.GroupGroupRatio),
         AutoGroups: normalizeJsonString(values.AutoGroups),
         MaxTokenAutoGroups: values.MaxTokenAutoGroups,
@@ -464,54 +453,6 @@ export function RatioSettingsCard({
     },
     [updateOption]
   )
-
-  const saveGroupRatios = useCallback(
-    async (values: GroupFormValues) => {
-      const groupRatio = normalizeJsonString(values.GroupRatio)
-      const groupGroupRatio = normalizeJsonString(values.GroupGroupRatio)
-      const changesContractPricing =
-        groupRatio !== groupNormalizedDefaults.current.GroupRatio ||
-        groupGroupRatio !== groupNormalizedDefaults.current.GroupGroupRatio
-      if (!changesContractPricing) {
-        await persistGroupRatios(values)
-        return
-      }
-
-      setCheckingGroupImpact(true)
-      try {
-        const response = await previewCustomerContractRatioImpact({
-          group_ratio: groupRatio,
-          group_group_ratio: groupGroupRatio,
-        })
-        if (!response.success || !response.data) {
-          throw new Error(response.message || t('Failed to preview changes'))
-        }
-        if (response.data.affected_contracts === 0) {
-          await persistGroupRatios(values)
-          return
-        }
-        setGroupImpact(response.data)
-        setPendingGroupValues(values)
-      } catch (error: unknown) {
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : t('Failed to preview changes')
-        )
-      } finally {
-        setCheckingGroupImpact(false)
-      }
-    },
-    [persistGroupRatios, t]
-  )
-
-  const confirmGroupRatioSave = useCallback(() => {
-    if (!pendingGroupValues) return
-    const values = pendingGroupValues
-    setGroupImpact(null)
-    setPendingGroupValues(null)
-    void persistGroupRatios(values)
-  }, [pendingGroupValues, persistGroupRatios])
 
   const handleResetRatios = useCallback(() => {
     setConfirmOpen(true)
@@ -582,7 +523,7 @@ export function RatioSettingsCard({
         <GroupRatioForm
           form={groupForm}
           onSave={saveGroupRatios}
-          isSaving={updateOption.isPending || checkingGroupImpact}
+          isSaving={updateOption.isPending}
         />
       )
     }
@@ -650,28 +591,6 @@ export function RatioSettingsCard({
         isLoading={resetMutation.isPending}
         handleConfirm={handleConfirmReset}
         confirmText={t('Reset')}
-      />
-
-      <ConfirmDialog
-        open={groupImpact !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setGroupImpact(null)
-            setPendingGroupValues(null)
-          }
-        }}
-        title={t('Contract customer prices will change')}
-        desc={t(
-          'This change affects {{contracts}} active contracts and {{rules}} model rules in groups: {{groups}}.',
-          {
-            contracts: groupImpact?.affected_contracts || 0,
-            rules: groupImpact?.affected_rules || 0,
-            groups: groupImpact?.affected_groups.join(', ') || '—',
-          }
-        )}
-        confirmText={t('Save group ratios')}
-        isLoading={updateOption.isPending}
-        handleConfirm={confirmGroupRatioSave}
       />
     </>
   )

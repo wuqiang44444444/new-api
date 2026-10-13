@@ -28,7 +28,7 @@ func TestTaskAttemptRecoveryTemplateUsesSameFeicaiAdapter(t *testing.T) {
 	stageTaskProtocolSnapshot(context, task, info)
 
 	assert.Equal(t,
-		"62:third_party_feicai_videos:v2",
+		"67:third_party_feicai_videos:v2",
 		task.PrivateData.SouthboundAdapterVersion,
 	)
 }

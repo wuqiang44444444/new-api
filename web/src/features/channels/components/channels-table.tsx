@@ -24,10 +24,11 @@ import type {
   SortingState,
   Row,
 } from '@tanstack/react-table'
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, RefreshCw } from 'lucide-react'
 import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { CHANNEL_TYPE_MINIMAX_LINK, DEFAULT_PAGE_SIZE, CHANNEL_STATUS, CHANNEL_STATUS_OPTIONS } from '../constants'
 import {
   DISABLED_ROW_DESKTOP,
   DISABLED_ROW_MOBILE,
@@ -44,13 +45,11 @@ import {
 } from '@/components/ui/tooltip'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
+import { requireServerSuccess } from '@/lib/server-error-message'
+import { cn } from '@/lib/utils'
 
 import { getChannels, searchChannels, getGroups } from '../api'
-import {
-  DEFAULT_PAGE_SIZE,
-  CHANNEL_STATUS,
-  CHANNEL_STATUS_OPTIONS,
-} from '../constants'
+
 import {
   channelsQueryKeys,
   aggregateChannelsByTag,
@@ -210,7 +209,7 @@ export function ChannelsTable() {
   // Fetch groups for filter
   const { data: groupsData } = useQuery({
     queryKey: ['groups'],
-    queryFn: getGroups,
+    queryFn: async () => requireServerSuccess(await getGroups()),
   })
 
   const groupOptions = useMemo(
@@ -224,7 +223,7 @@ export function ChannelsTable() {
 
   // Fetch channels data
   // eslint-disable-next-line @tanstack/query/exhaustive-deps
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: channelsQueryKeys.list({
       keyword: globalFilter,
       model: modelFilter,
@@ -382,13 +381,13 @@ export function ChannelsTable() {
         value: 'all',
         count: totalTypes,
       },
-      ...((Number(counts['35']) || 0) + (Number(counts['64']) || 0) > 0 ||
+      ...((Number(counts['35']) || 0) + (Number(counts[String(CHANNEL_TYPE_MINIMAX_LINK)]) || 0) > 0 ||
       selectedType === MINIMAX_FILTER
         ? [
             {
               label: 'MiniMax (all access methods)',
               value: MINIMAX_FILTER,
-              count: (Number(counts['35']) || 0) + (Number(counts['64']) || 0),
+              count: (Number(counts['35']) || 0) + (Number(counts[String(CHANNEL_TYPE_MINIMAX_LINK)]) || 0),
               iconNode: <ChannelTypeLogo type={35} size={16} />,
             },
           ]
@@ -434,6 +433,7 @@ export function ChannelsTable() {
       cardGridClassName='grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3'
       applyHeaderSize
       toolbarProps={{
+        collapsibleOnMobile: true,
         searchPlaceholder: t('Filter by name, ID, or key...'),
         searchDebounceMs: 500,
         onReset: () => {
@@ -470,24 +470,43 @@ export function ChannelsTable() {
           },
         ],
         preActions: (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant='ghost'
-                  size='icon'
-                  onClick={() => setSensitiveVisible(!sensitiveVisible)}
-                  aria-label={sensitiveVisible ? t('Hide') : t('Show')}
-                  className='text-muted-foreground hover:text-foreground size-8'
-                />
-              }
-            >
-              {sensitiveVisible ? <Eye /> : <EyeOff />}
-            </TooltipTrigger>
-            <TooltipContent>
-              {sensitiveVisible ? t('Hide') : t('Show')}
-            </TooltipContent>
-          </Tooltip>
+          <>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant='ghost'
+                    size='icon'
+                    onClick={() => setSensitiveVisible(!sensitiveVisible)}
+                    aria-label={sensitiveVisible ? t('Hide') : t('Show')}
+                    className='text-muted-foreground hover:text-foreground size-8'
+                  />
+                }
+              >
+                {sensitiveVisible ? <Eye /> : <EyeOff />}
+              </TooltipTrigger>
+              <TooltipContent>
+                {sensitiveVisible ? t('Hide') : t('Show')}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant='ghost'
+                    size='icon'
+                    onClick={() => void refetch()}
+                    aria-label={t('Refresh')}
+                    aria-busy={isFetching}
+                    className='text-muted-foreground hover:text-foreground size-8'
+                  />
+                }
+              >
+                <RefreshCw className={cn(isFetching && 'animate-spin')} />
+              </TooltipTrigger>
+              <TooltipContent>{t('Refresh')}</TooltipContent>
+            </Tooltip>
+          </>
         ),
       }}
       getRowClassName={(row, { isMobile }) => {

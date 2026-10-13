@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { toast } from 'sonner'
 import { createRef } from 'react'
 import { describe, expect, test, vi } from 'vitest'
 
@@ -141,6 +142,7 @@ describe('separate Seedance and native task pricing editors', () => {
         },
       ],
     })
+    const conversionError = vi.spyOn(toast, 'error')
     const ref = createRef<ModelPricingEditorPanelHandle>()
     const rendered = render(
       <QueryClientProvider client={client}>
@@ -161,11 +163,7 @@ describe('separate Seedance and native task pricing editors', () => {
       await screen.findByRole('option', { name: 'Visual editor' })
     )
     expect(screen.getByDisplayValue(expression)).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        'This expression cannot be converted to the visual editor without changing its pricing. Continue editing the expression.'
-      )
-    ).toBeInTheDocument()
+    expect(conversionError).toHaveBeenCalledWith('This expression cannot be edited visually without losing information.')
     const budget = screen.getByPlaceholderText('250000')
     expect(budget).toHaveValue('325000')
     await user.clear(budget)

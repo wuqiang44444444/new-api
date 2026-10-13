@@ -25,6 +25,7 @@ import {
   ADMIN_PERMISSION_RESOURCES,
   hasPermission,
 } from '@/lib/admin-permissions'
+import { createServerError } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { createChannel, updateChannel } from '../api'
@@ -138,12 +139,14 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
               }
             : payload
 
-        const response = await updateChannel(
-          props.currentRow.id,
-          payloadWithKeyMode
-        )
+        const response = await updateChannel(props.currentRow.id, {
+          ...payloadWithKeyMode,
+          ...(canEditSensitive && props.isMultiKeyChannel
+            ? { multi_key_mode: data.multi_key_type }
+            : {}),
+        })
         if (!response.success) {
-          throw new Error(response.message || t(ERROR_MESSAGES.UPDATE_FAILED))
+          throw createServerError(response, t(ERROR_MESSAGES.UPDATE_FAILED))
         }
         return data.confirm_asset_tenant_replacement
           ? 'Channel updated and asset tenant replaced successfully'
@@ -153,7 +156,7 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
       const payload = transformFormDataToCreatePayload(data)
       const response = await createChannel(payload)
       if (!response.success) {
-        throw new Error(response.message || t(ERROR_MESSAGES.CREATE_FAILED))
+        throw createServerError(response, t(ERROR_MESSAGES.CREATE_FAILED))
       }
       return SUCCESS_MESSAGES.CREATED
     },

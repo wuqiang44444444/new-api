@@ -1,6 +1,10 @@
 package billingexpr
 
-import "github.com/QuantumNous/new-api/common"
+import (
+	"fmt"
+
+	"github.com/QuantumNous/new-api/common"
+)
 
 // quotaConversion converts raw expression output to quota based on the
 // expression version. This is the central dispatch point for future versions
@@ -22,8 +26,9 @@ func ComputeTieredQuota(snap *BillingSnapshot, params TokenParams) (TieredResult
 }
 
 func ComputeTieredQuotaWithRequest(snap *BillingSnapshot, params TokenParams, request RequestInput) (TieredResult, error) {
-	// Only the snapshot can supply settlement's rate, including when its
-	// fact is missing. A caller cannot fill that gap with today's setting.
+	if snap.TaskUsageBilling && UsesFixedPricingByHash(snap.ExprString, snap.ExprHash) {
+		return TieredResult{}, fmt.Errorf("fixed pricing is not supported for task usage expressions")
+	}
 	request.ExchangeRate = snap.UsdExchangeRate
 	cost, trace, err := RunExprByHashWithRequest(snap.ExprString, snap.ExprHash, params, request)
 	if err != nil {
@@ -40,13 +45,20 @@ func ComputeTieredQuotaWithRequest(snap *BillingSnapshot, params TokenParams, re
 	}
 	crossed := trace.MatchedTier != snap.EstimatedTier
 
-	return TieredResult{
+	result := TieredResult{
 		Calculation:            trace.Calculation,
+		ImageCount:             trace.ImageCount,
+		BillingUnit:            trace.BillingUnit,
+		FixedPrice:             trace.FixedPrice,
 		ActualQuotaBeforeGroup: quotaBeforeGroup,
 		ActualQuotaAfterGroup:  afterGroup,
 		MatchedTier:            trace.MatchedTier,
 		RequestRules:           trace.RequestRules,
 		CrossedTier:            crossed,
 		Clamp:                  clamp,
-	}, nil
+	}
+	if trace.BillingUnit == BillingUnitToken && UsedVarsByHash(snap.ExprString, snap.ExprHash)["img_cr"] {
+		result.BillingTokens = &params
+	}
+	return result, nil
 }

@@ -81,7 +81,7 @@ func TestGPTImage2SynchronousBillingSnapshotDoesNotCreateTask(t *testing.T) {
 		CacheReadTokensReported: &reported,
 		PromptTokens:            1,
 		TotalTokens:             1,
-	}, []string{"大小 1024x1024", "生成数量 2"})
+	}, []*common.Message{common.NewMessage("大小 1024x1024"), common.NewMessage("生成数量 2")})
 
 	assert.Equal(t, starting-expectedCost, getUserQuota(t, userID))
 	assert.Equal(t, starting-expectedCost, getTokenRemainQuota(t, tokenID))

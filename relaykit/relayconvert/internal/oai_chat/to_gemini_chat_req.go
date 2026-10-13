@@ -1,16 +1,15 @@
 package oaichat
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
+
+	"context"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
-	"github.com/QuantumNous/new-api/relaykit/relayconvert/internal/convdiag"
 	relaymedia "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/media"
 	sharedgemini "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/shared/gemini"
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
@@ -138,7 +137,7 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 		}
 	}
 
-	if err := sharedgemini.ApplyThinkingConfig(&geminiRequest, info, textRequest); err != nil {
+	if err := sharedgemini.ApplyThinkingConfig(c, &geminiRequest, info, textRequest); err != nil {
 		return nil, reasoning.AsClientError(err)
 	}
 
@@ -159,7 +158,7 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 
 	if textRequest.Tools != nil {
 		functions := make([]dto.FunctionRequest, 0, len(textRequest.Tools))
-		for toolIndex, tool := range textRequest.Tools {
+		for _, tool := range textRequest.Tools {
 			if tool.Function.Parameters != nil {
 				if params, ok := tool.Function.Parameters.(map[string]any); ok {
 					if props, hasProps := params["properties"].(map[string]any); hasProps && len(props) == 0 {
@@ -167,12 +166,7 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 					}
 				}
 			}
-			cleaned, schemaDiagnostics := sharedgemini.CleanFunctionParametersWithDiagnostics(tool.Function.Parameters)
-			tool.Function.Parameters = cleaned
-			for d := range schemaDiagnostics {
-				schemaDiagnostics[d].Path = "tools[" + strconv.Itoa(toolIndex) + "].parameters" + schemaDiagnostics[d].Path
-			}
-			convdiag.Add(c, schemaDiagnostics...)
+			tool.Function.Parameters = sharedgemini.CleanFunctionParameters(tool.Function.Parameters)
 			functions = append(functions, tool.Function)
 		}
 		geminiTools := geminiRequest.GetTools()
@@ -192,11 +186,8 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 		geminiRequest.GenerationConfig.ResponseMimeType = "application/json"
 
 		if len(textRequest.ResponseFormat.JsonSchema) > 0 {
-			var jsonSchema dto.FormatJsonSchema
-			if err := kitutil.Unmarshal(textRequest.ResponseFormat.JsonSchema, &jsonSchema); err == nil {
-				cleanedSchema := sharedgemini.RemoveAdditionalProperties(jsonSchema.Schema, 0)
-				geminiRequest.GenerationConfig.ResponseSchema = cleanedSchema
-			}
+			sharedgemini.ApplyResponseSchema(c, &geminiRequest.GenerationConfig, textRequest.ResponseFormat.JsonSchema,
+				"response_format.json_schema.schema", opts.Gemini.SupportsJSONSchemaModel(upstreamModelName))
 		}
 	}
 
@@ -345,7 +336,7 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 					return nil, fmt.Errorf("get file data from '%s' failed: %w", source.GetIdentifier(), err)
 				}
 
-				if _, ok := sharedgemini.SupportedMimeTypes[strings.ToLower(mimeType)]; !ok {
+				if !sharedgemini.IsSupportedMimeType(mimeType) {
 					return nil, fmt.Errorf("mime type is not supported by Gemini: '%s', url: '%s', supported types are: %v", mimeType, source.GetIdentifier(), sharedgemini.SupportedMimeTypesList())
 				}
 

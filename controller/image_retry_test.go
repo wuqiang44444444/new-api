@@ -1,6 +1,7 @@
 package controller
 
 import (
+"github.com/QuantumNous/new-api/service"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -37,6 +38,6 @@ func TestGoogleImageDisconnectDoesNotRetryGeneration(t *testing.T) {
 	info := &relaycommon.RelayInfo{RelayMode: relayconstant.RelayModeImagesGenerations, OriginModelName: "gemini-3.1-flash-image", Request: &dto.ImageRequest{Model: "gemini-3.1-flash-image", Prompt: "cat"}}
 	apiErr := relay.ImageHelper(c, info)
 	require.NotNil(t, apiErr)
-	assert.False(t, shouldRetry(c, apiErr, 3), "receiving the POST then dropping the response must not allow another generation")
+	assert.Equal(t, "stop", service.DecideRelayRetry(c, apiErr, 3).Action, "receiving the POST then dropping the response must not allow another generation")
 	assert.Equal(t, 1, posts)
 }

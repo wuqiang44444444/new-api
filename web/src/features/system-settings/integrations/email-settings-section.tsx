@@ -231,9 +231,14 @@ export function EmailSettingsSection({
     if (reportEnabled && !initialReportEnabled) {
       updates.push({ key: 'error_report_setting.enabled', value: true })
     }
-    for (const update of updates) {
-      const response = await updateOption.mutateAsync(update)
-      if (!response.success) return
+    try {
+      for (const update of updates) {
+        await updateOption.mutateAsync(update)
+      }
+    } catch {
+      // The mutation reports the error. Stop before enabling a report whose
+      // SMTP prerequisites were not saved; do not leak a rejected form event.
+      return
     }
   }
 

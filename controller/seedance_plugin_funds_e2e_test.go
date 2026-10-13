@@ -153,7 +153,7 @@ func newSeedanceFundsFixture(t *testing.T) *seedanceFundsFixture {
 
 	previousAdaptorFunc := service.GetTaskAdaptorFunc
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
-		if string(platform) == "62" {
+		if string(platform) == "67" {
 			return &taskseedance.TaskAdaptor{}
 		}
 		return nil
@@ -168,7 +168,7 @@ func seedanceGoodExtensionRows() []model.TaskPlugin {
 		Key:        taskseedance.SeedanceExtensionPluginKey,
 		Version:    plugins.SeedanceVersion(),
 		APIVersion: 3,
-		Source:     source,
+		Source:     model.LongText(source),
 		SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))),
 		Enabled:    true,
 		Active:     true,
@@ -316,7 +316,7 @@ func (fx *seedanceFundsFixture) pollOnce(publicID string) {
 	task := fx.loadTask(publicID)
 	tasks := map[string]*model.Task{task.TaskID: &task}
 	require.NoError(fx.t, service.UpdateVideoTasks(
-		context.Background(), constant.TaskPlatform("62"),
+		context.Background(), constant.TaskPlatform("67"),
 		map[int][]string{fx.channelID: {task.TaskID}}, tasks,
 	))
 }
@@ -372,7 +372,7 @@ func TestSeedancePluginFundsChainCreateToSettle(t *testing.T) {
 	assert.Equal(t, "wallet", attempt.BillingSource)
 
 	task := fx.loadTask(publicID)
-	assert.Equal(t, constant.TaskPlatform("62"), constant.TaskPlatform(task.Platform))
+	assert.Equal(t, constant.TaskPlatform("67"), constant.TaskPlatform(task.Platform))
 	assert.Equal(t, "prov-task-1", task.PrivateData.UpstreamTaskID)
 	assert.Equal(t, seedanceFundsHold, task.Quota)
 	require.NotNil(t, task.PrivateData.Execution)
@@ -533,7 +533,7 @@ func TestSeedancePluginFundsChainHostileConversionRejectedBeforeHold(t *testing.
 		`
 			rows := seedanceGoodExtensionRows()
 			rows[0].Version = "9.9.9"
-			rows[0].Source = hostile
+			rows[0].Source = model.LongText(hostile)
 			rows[0].SourceHash = fmt.Sprintf("%x", common.Sha256Raw([]byte(hostile)))
 			fx.seedExtension(rows)
 

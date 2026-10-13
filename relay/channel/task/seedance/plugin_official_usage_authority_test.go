@@ -61,7 +61,7 @@ seedance[%q].parseTaskObservation = function(input) {
 				// substitute the active version for the task's exact version.
 				require.NoError(t, db.Create(&model.TaskPlugin{
 					Key: SeedanceExtensionPluginKey, Version: "9.0.2",
-					APIVersion: tc.apiVersion, Source: source,
+					APIVersion: tc.apiVersion, Source: model.LongText(source),
 				}).Error)
 				task := &model.Task{PrivateData: model.TaskPrivateData{
 					VideoUpstreamProtocol: protocol,

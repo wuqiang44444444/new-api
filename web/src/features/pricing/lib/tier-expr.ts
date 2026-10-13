@@ -17,6 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { BILLING_CACHE_VAR_MAP } from './billing-expr'
+import { compileBillingExpression } from './billing-expression/parser'
+import { evaluateBillingExpression } from './billing-expression/runtime'
+import type {
+  BillingSimulationContext,
+  TokenVariable,
+} from './billing-expression/types'
 
 export const CACHE_MODE_TIMED = 'timed'
 export const CACHE_MODE_GENERIC = 'generic'
@@ -29,6 +35,8 @@ export type TierConditionInput = {
 }
 
 export type VisualTier = {
+  billing_unit?: 'token' | 'request'
+  fixed_price?: string
   label: string
   conditions: TierConditionInput[]
   input_unit_cost: number
@@ -48,7 +56,7 @@ export type VisualConfig = {
   tiers: VisualTier[]
 }
 
-export function getTierCacheMode(
+function getTierCacheMode(
   tier: Partial<VisualTier> | null | undefined
 ): CacheMode {
   if (tier?.cache_mode === CACHE_MODE_TIMED) return CACHE_MODE_TIMED
@@ -58,9 +66,7 @@ export function getTierCacheMode(
     : CACHE_MODE_GENERIC
 }
 
-export function normalizeVisualTier(
-  tier: Partial<VisualTier> = {}
-): VisualTier {
+function normalizeVisualTier(tier: Partial<VisualTier> = {}): VisualTier {
   return {
     label: tier.label ?? '',
     input_unit_cost: Number(tier.input_unit_cost) || 0,
@@ -92,7 +98,7 @@ export function createDefaultVisualConfig(): VisualConfig {
   }
 }
 
-export function normalizeVisualConfig(
+function normalizeVisualConfig(
   config: VisualConfig | null | undefined
 ): VisualConfig {
   if (!config || !Array.isArray(config.tiers) || config.tiers.length === 0) {
@@ -113,6 +119,7 @@ function buildConditionStr(conditions: TierConditionInput[]): string {
 }
 
 function buildTierBodyExpr(tier: VisualTier): string {
+  if (tier.billing_unit === 'request') return `fixed(${tier.fixed_price ?? ''})`
   const parts: string[] = []
   const ic = Number(tier.input_unit_cost) || 0
   const oc = Number(tier.output_unit_cost) || 0
@@ -234,7 +241,7 @@ export function tryParseVisualConfig(
 
     const cfg = normalizeVisualConfig({ tiers })
     const regenerated = generateExprFromVisualConfig(cfg)
-    if (regenerated.replace(/\s+/g, '') !== body.replace(/\s+/g, '')) {
+    if (regenerated.replaceAll(/\s+/g, '') !== body.replaceAll(/\s+/g, '')) {
       return null
     }
     return cfg
@@ -252,6 +259,7 @@ const ESTIMATOR_VARS = [
   { var: 'cc', stateKey: 'cacheCreateTokens' },
   { var: 'cc1h', stateKey: 'cacheCreate1hTokens' },
   { var: 'img', stateKey: 'imageTokens' },
+  { var: 'img_cr', stateKey: 'imageCacheTokens' },
   { var: 'img_o', stateKey: 'imageOutputTokens' },
   { var: 'ai', stateKey: 'audioInputTokens' },
   { var: 'ao', stateKey: 'audioOutputTokens' },
@@ -263,16 +271,68 @@ export type ExtraTokenValues = Record<
 >
 
 export type EvalResult = {
-  // 表达式原始结果（token × USD/百万 token 单价），即后端 rawCost；USD/配额换算由调用方做
   cost: number
   matchedTier: string
   error: string | null
+  billingUnit?: 'token' | 'request'
+}
+
+export function evalExprLocally(
+  exprStr: string,
+  promptTokens: number,
+  completionTokens: number,
+  extraTokenValues: ExtraTokenValues,
+  context?: BillingSimulationContext
+): EvalResult {
+  if (!exprStr.trim()) return { cost: 0, matchedTier: '', error: null }
+  const result = evaluateBillingExpression(exprStr, {
+    ...context,
+    tokens: {
+      ...buildEstimatorTokens(promptTokens, completionTokens, extraTokenValues),
+      ...context?.tokens,
+    },
+  })
+  if (result.status !== 'success') {
+    return { cost: 0, matchedTier: '', error: result.diagnostic.detail }
+  }
+  return {
+    cost: result.cost,
+    matchedTier: result.matchedTier,
+    error: null,
+    ...(result.billingUnit === 'request'
+      ? { billingUnit: result.billingUnit }
+      : {}),
+  }
+}
+
+export function buildEstimatorTokens(
+  promptTokens: number,
+  completionTokens: number,
+  extraTokenValues: ExtraTokenValues
+): Partial<Record<TokenVariable, number>> {
+  return {
+    p: promptTokens,
+    c: completionTokens,
+    len:
+      promptTokens +
+      extraTokenValues.cacheReadTokens +
+      extraTokenValues.imageCacheTokens +
+      extraTokenValues.imageTokens +
+      extraTokenValues.audioInputTokens +
+      extraTokenValues.cacheCreateTokens +
+      extraTokenValues.cacheCreate1hTokens,
+    ...Object.fromEntries(
+      ESTIMATOR_VARS.map((field) => [
+        field.var,
+        extraTokenValues[field.stateKey],
+      ])
+    ),
+  }
 }
 
 export function exprUsesExtraVars(exprStr: string): boolean {
   if (!exprStr) return false
-  const varNames = ESTIMATOR_VARS.map((f) => f.var).join('|')
-  return new RegExp(`\\b(${varNames})\\b`).test(exprStr)
+  const compiled = compileBillingExpression(exprStr)
+  if (compiled.status !== 'ready') return false
+  return ESTIMATOR_VARS.some((field) => compiled.variables.has(field.var))
 }
-
-export const ESTIMATOR_EXTRA_FIELDS = ESTIMATOR_VARS

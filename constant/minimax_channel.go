@@ -6,7 +6,7 @@ package constant
 // out of the native channel-type enum block so upstream merges cannot collide
 // with it. MiniMax Link channels never enter the native Ability distribution
 // pool.
-const ChannelTypeMiniMaxLink = 64
+const ChannelTypeMiniMaxLink = 69
 
 // VideoUpstreamProtocolJdCloudTaskV1 is the first code-registered southbound
 // protocol of the MiniMax Link channel type. It is deliberately not added to

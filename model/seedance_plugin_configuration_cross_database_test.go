@@ -150,7 +150,7 @@ func TestSeedanceCredentialDeletionAcrossServerDatabases(t *testing.T) {
 
 			published := func(version, credential string) *TaskPlugin {
 				source := fmt.Sprintf(`export const meta = {apiVersion:2,key:"seedance-link",name:"Test",version:%q,author:{name:"test"},seedanceProtocols:["feicai_videos_v1"],channelConfiguration:{videos:[{protocol:"feicai_videos_v1",label:"Video",models:["provider-one"],modelMetadata:{"provider-one":{minDuration:4,maxDuration:15}},assetProtocols:["tokensave_assets_v1","none"],defaultAssetProtocol:"none"}],assets:[{protocol:"tokensave_assets_v1",label:"TokenSave",groupPolicy:"default_fallback",credential:%q,defaultURLTTLSeconds:3600},{protocol:"none",label:"None",groupPolicy:"none",credential:"none"}]}}; export const seedance={feicai_videos_v1:{buildCreate(){},parseCreateResponse(){},parseTaskObservation(){}}}; export const seedanceAssets={tokensave_assets_v1:{buildRequest(){},parseResponse(){}}};`, version, credential)
-				return &TaskPlugin{Key: "seedance-link", Version: version, APIVersion: 2, Source: source, SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true}
+				return &TaskPlugin{Key: "seedance-link", Version: version, APIVersion: 2, Source: LongText(source), SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true}
 			}
 			require.NoError(t, SaveTaskPlugin(published("2.0.0", "asset_key_pair")))
 

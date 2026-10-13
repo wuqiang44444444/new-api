@@ -25,9 +25,12 @@ import type {
   LogCleanupTask,
   SystemOptionsResponse,
   SystemTaskListResponse,
+  SystemTaskFilters,
   SystemTaskResponse,
   UpdateOptionRequest,
   UpdateOptionResponse,
+  UpdatePasskeyDomainsRequest,
+  UpdatePasskeyDomainsResponse,
   UpstreamChannelsResponse,
   UpstreamRatiosResponse,
 } from './types'
@@ -42,13 +45,16 @@ export async function updateSystemOption(request: UpdateOptionRequest) {
   return res.data
 }
 
-export async function previewCustomerContractRatioImpact(request: {
-  group_ratio: string
-  group_group_ratio: string
-}) {
-  const res = await api.post<CustomerContractRatioImpactResponse>(
-    '/api/option/customer_contract_ratio_impact',
-    request
+export async function updatePasskeyDomains(
+  request: UpdatePasskeyDomainsRequest
+) {
+  const res = await api.put<UpdatePasskeyDomainsResponse>(
+    '/api/option/passkey/domains',
+    request,
+    {
+      validateStatus: (status) =>
+        (status >= 200 && status < 300) || status === 409,
+    }
   )
   return res.data
 }
@@ -89,9 +95,12 @@ export async function getSystemTask(taskId: string) {
   return res.data
 }
 
-export async function listSystemTasks(limit = 20) {
+export async function listSystemTasks(
+  limit = 20,
+  filters: SystemTaskFilters = {}
+) {
   const res = await api.get<SystemTaskListResponse>('/api/system-task/list', {
-    params: { limit },
+    params: { limit, ...filters },
   })
   return res.data
 }
@@ -113,6 +122,17 @@ export async function getUpstreamChannels() {
 export async function fetchUpstreamRatios(request: FetchUpstreamRatiosRequest) {
   const res = await api.post<UpstreamRatiosResponse>(
     '/api/ratio_sync/fetch',
+    request
+  )
+  return res.data
+}
+
+export async function previewCustomerContractRatioImpact(request: {
+  group_ratio: string
+  group_group_ratio: string
+}) {
+  const res = await api.post<CustomerContractRatioImpactResponse>(
+    '/api/option/customer_contract_ratio_impact',
     request
   )
   return res.data

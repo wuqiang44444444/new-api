@@ -2,9 +2,7 @@ package model
 
 import (
 	"fmt"
-	"maps"
 	"strings"
-
 	"sync"
 	"time"
 
@@ -19,39 +17,47 @@ import (
 	"github.com/QuantumNous/new-api/types"
 )
 
-type Pricing struct {
-	BillingContractConflict bool `json:"billing_contract_conflict,omitempty"`
-
-	ModelName   string  `json:"model_name"`
-	Description string  `json:"description,omitempty"`
-	Icon        string  `json:"icon,omitempty"`
-	Tags        string  `json:"tags,omitempty"`
-	VendorID    int     `json:"vendor_id,omitempty"`
-	QuotaType   int     `json:"quota_type"`
-	ModelRatio  float64 `json:"model_ratio"`
-	// BasisPriceConfigured 表示倍率基础价来自显式配置而非缺价默认值；
-	// 自用模式下兜底开关使配置存在性不可判定，此时恒为 true。
-	BasisPriceConfigured   bool                    `json:"basis_price_configured"`
-	ModelPrice             float64                 `json:"model_price"`
-	OwnerBy                string                  `json:"owner_by"`
-	CompletionRatio        float64                 `json:"completion_ratio"`
-	CacheRatio             *float64                `json:"cache_ratio,omitempty"`
-	CreateCacheRatio       *float64                `json:"create_cache_ratio,omitempty"`
-	ImageRatio             *float64                `json:"image_ratio,omitempty"`
-	AudioRatio             *float64                `json:"audio_ratio,omitempty"`
-	AudioCompletionRatio   *float64                `json:"audio_completion_ratio,omitempty"`
-	EnableGroup            []string                `json:"enable_groups"`
-	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
-	BillingMode            string                  `json:"billing_mode,omitempty"`
-	BillingExpr            string                  `json:"billing_expr,omitempty"`
-	// BillingDisplay 是保存表达式的只读展示投影（响应级装配，可重建）。
+type PricingPluginVariant struct {
 	BillingDisplay       *billingexpr.DisplayProjection       `json:"billing_display,omitempty"`
-	BillingUsageSchema   map[string]jsplugin.UsageFieldSchema `json:"billing_usage_schema,omitempty"`
+	PluginKey            string                               `json:"plugin_key"`
+	PluginName           string                               `json:"plugin_name"`
+	Icon                 string                               `json:"icon,omitempty"`
+	BillingExpr          string                               `json:"billing_expr"`
+	BillingMode          string                               `json:"billing_mode"`
+	BillingUsageSchema   map[string]jsplugin.UsageFieldSchema `json:"billing_usage_schema"`
 	BillingUsageExamples []jsplugin.UsageExample              `json:"billing_usage_examples,omitempty"`
-	PricingVersion       string                               `json:"pricing_version,omitempty"`
-	Available            bool                                 `json:"available"`
-	Availability         string                               `json:"availability"`
-	API                  *dto.PublicModelAPI                  `json:"api,omitempty"`
+}
+
+type Pricing struct {
+	BillingContractConflict bool                                 `json:"billing_contract_conflict,omitempty"`
+	BasisPriceConfigured    bool                                 `json:"basis_price_configured"`
+	BillingDisplay          *billingexpr.DisplayProjection       `json:"billing_display,omitempty"`
+	Available               bool                                 `json:"available"`
+	Availability            string                               `json:"availability"`
+	API                     *dto.PublicModelAPI                  `json:"api,omitempty"`
+	BillingPluginVariants   []PricingPluginVariant               `json:"billing_plugin_variants,omitempty"`
+	ModelName               string                               `json:"model_name"`
+	Description             string                               `json:"description,omitempty"`
+	Icon                    string                               `json:"icon,omitempty"`
+	Tags                    string                               `json:"tags,omitempty"`
+	VendorID                int                                  `json:"vendor_id,omitempty"`
+	QuotaType               int                                  `json:"quota_type"`
+	ModelRatio              float64                              `json:"model_ratio"`
+	ModelPrice              float64                              `json:"model_price"`
+	OwnerBy                 string                               `json:"owner_by"`
+	CompletionRatio         float64                              `json:"completion_ratio"`
+	CacheRatio              *float64                             `json:"cache_ratio,omitempty"`
+	CreateCacheRatio        *float64                             `json:"create_cache_ratio,omitempty"`
+	ImageRatio              *float64                             `json:"image_ratio,omitempty"`
+	AudioRatio              *float64                             `json:"audio_ratio,omitempty"`
+	AudioCompletionRatio    *float64                             `json:"audio_completion_ratio,omitempty"`
+	EnableGroup             []string                             `json:"enable_groups"`
+	SupportedEndpointTypes  []constant.EndpointType              `json:"supported_endpoint_types"`
+	BillingMode             string                               `json:"billing_mode,omitempty"`
+	BillingExpr             string                               `json:"billing_expr,omitempty"`
+	BillingUsageSchema      map[string]jsplugin.UsageFieldSchema `json:"billing_usage_schema,omitempty"`
+	BillingUsageExamples    []jsplugin.UsageExample              `json:"billing_usage_examples,omitempty"`
+	PricingVersion          string                               `json:"pricing_version,omitempty"`
 }
 
 type PricingVendor struct {
@@ -173,7 +179,7 @@ func loadPricingAdvancedCustomConfigs(enableAbilities []AbilityWithChannel) map[
 	for _, channelID := range channelIDs {
 		channel, err := CacheGetChannel(channelID)
 		if err != nil {
-			common.SysLog(fmt.Sprintf("load advanced custom channel settings error: channel_id=%d, error=%v", channelID, err))
+			common.SysLog(common.LogText("load advanced custom channel settings error: channel_id=%d, error=%v", channelID, err))
 			continue
 		}
 		if channel.Type != constant.ChannelTypeAdvancedCustom {
@@ -197,7 +203,7 @@ func updatePricing() {
 	//modelRatios := common.GetModelRatios()
 	enableAbilities, err := GetAllEnableAbilityWithChannels()
 	if err != nil {
-		common.SysLog(fmt.Sprintf("GetAllEnableAbilityWithChannels error: %v", err))
+		common.SysLog(common.LogText("GetAllEnableAbilityWithChannels error: %v", err))
 		return
 	}
 	seedanceCatalog, err := loadSeedancePricingCatalog()
@@ -419,36 +425,46 @@ func updatePricing() {
 				}
 			}
 		}
+		usageModel := model
 		plugin, ok := pluginGeneration.GetByModel(model)
 		if !ok {
 			if target, resolved := ResolveTaskModelAlias(pluginGeneration, model); resolved {
 				plugin, ok = pluginGeneration.Get(target.PluginKey)
+				usageModel = target.Declared
 			}
 		}
-		if !isSeedance && ok && plugin != nil && len(plugin.Meta.UsageSchema) > 0 {
-			pricing.BillingUsageSchema = make(map[string]jsplugin.UsageFieldSchema, len(plugin.Meta.UsageSchema))
-			for key, field := range plugin.Meta.UsageSchema {
-				field.Enum = append([]string(nil), field.Enum...)
-				field.Description = maps.Clone(field.Description)
-				if field.EnumLabels != nil {
-					labels := make(map[string]jsplugin.LocalizedText, len(field.EnumLabels))
-					for value, label := range field.EnumLabels {
-						labels[value] = maps.Clone(label)
-					}
-					field.EnumLabels = labels
-				}
-				pricing.BillingUsageSchema[key] = field
+		if !isSeedance && ok && plugin != nil {
+			usageSchema, usageExamples := plugin.Meta.UsageForModel(usageModel)
+			pricing.BillingUsageSchema = jsplugin.CloneUsageSchema(usageSchema)
+			pricing.BillingUsageExamples = jsplugin.CloneUsageExamples(usageExamples)
+		}
+		providers := pluginGeneration.PluginsByModel(model)
+		hasProviderOverride := false
+		for _, provider := range providers {
+			if _, configured := billing_setting.GetPluginBillingExpr(provider.Meta.Key, model); configured {
+				hasProviderOverride = true
+				break
 			}
-			if len(plugin.Meta.UsageExamples) > 0 {
-				pricing.BillingUsageExamples = make([]jsplugin.UsageExample, len(plugin.Meta.UsageExamples))
-				for index, example := range plugin.Meta.UsageExamples {
-					facts := make(map[string]any, len(example.Facts))
-					maps.Copy(facts, example.Facts)
-					pricing.BillingUsageExamples[index] = jsplugin.UsageExample{
-						Label: example.Label,
-						Facts: facts,
-					}
+		}
+		if hasProviderOverride || (len(providers) >= 2 && pricing.BillingMode == billing_setting.BillingModeTieredExpr) {
+			for _, provider := range providers {
+				schema, examples := provider.Meta.UsageForModel(model)
+				if schema == nil {
+					schema = map[string]jsplugin.UsageFieldSchema{}
 				}
+				expression, hasExpression := billing_setting.ResolveTaskBillingExpr(provider.Meta.Key, model, "")
+				mode := billing_setting.BillingModeRatio
+				if hasExpression || billing_setting.GetBillingMode(model) == billing_setting.BillingModeTieredExpr {
+					mode = billing_setting.BillingModeTieredExpr
+				}
+				if mode == billing_setting.BillingModeTieredExpr && !billing_setting.TaskExprCompatible(expression, schema) {
+					expression = ""
+				}
+				pricing.BillingPluginVariants = append(pricing.BillingPluginVariants, PricingPluginVariant{
+					PluginKey: provider.Meta.Key, PluginName: provider.Meta.Name, Icon: provider.Meta.Icon,
+					BillingExpr: expression, BillingMode: mode,
+					BillingUsageSchema: jsplugin.CloneUsageSchema(schema), BillingUsageExamples: jsplugin.CloneUsageExamples(examples),
+				})
 			}
 		}
 		pricingMap = append(pricingMap, pricing)

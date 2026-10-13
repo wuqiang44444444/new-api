@@ -60,7 +60,7 @@ func TestTaskCreateDispositionPrecedesLegacyRetryPolicy(t *testing.T) {
 			info := &relaycommon.RelayInfo{
 				TaskRelayInfo: &relaycommon.TaskRelayInfo{ClientProtocol: model.TaskClientProtocolModelArkV3},
 			}
-			assert.Equal(t, test.want, shouldRetryTaskRelay(context, info, test.taskErr, 1))
+			assert.Equal(t, test.want, (decideDurableTaskRetry(context, info, test.taskErr, 1).Action == "retry"))
 		})
 	}
 }
@@ -73,5 +73,5 @@ func TestTaskCreateDispositionDoesNotChangeLegacyNonVideoRetry(t *testing.T) {
 	}
 	info := &relaycommon.RelayInfo{TaskRelayInfo: &relaycommon.TaskRelayInfo{}}
 
-	assert.True(t, shouldRetryTaskRelay(context, info, taskErr, 1))
+	assert.True(t, (decideDurableTaskRetry(context, info, taskErr, 1).Action == "retry"))
 }

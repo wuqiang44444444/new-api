@@ -25,7 +25,7 @@ func TestMinimaxPluginDeployOnlyLifecycle(t *testing.T) {
 		Key:        jsplugin.MinimaxPluginKey,
 		APIVersion: 3,
 		Version:    plugins.MinimaxVersion(),
-		Source:     plugins.MinimaxSource(),
+		Source:     LongText(plugins.MinimaxSource()),
 		SourceHash: "hash-1", Enabled: false, Remark: "embedded MiniMax Link extension artifact",
 	}
 	require.NoError(t, SaveTaskPlugin(&seed))
@@ -117,7 +117,7 @@ func TestMinimaxCrossTypeModelUniqueness(t *testing.T) {
 	// a deployed, explicitly enabled embedded artifact precedes the channels.
 	seed := TaskPlugin{
 		Key: jsplugin.MinimaxPluginKey, APIVersion: 3,
-		Version: plugins.MinimaxVersion(), Source: plugins.MinimaxSource(),
+		Version: plugins.MinimaxVersion(), Source: LongText(plugins.MinimaxSource()),
 		SourceHash: "hash-1", Enabled: false,
 	}
 	require.NoError(t, SaveTaskPlugin(&seed))

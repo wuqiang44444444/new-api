@@ -34,7 +34,7 @@ vi.mock('../../../api', async (importOriginal) => {
 
 const channel = channelSchema.parse({
   id: 93,
-  type: 63,
+  type: 68,
   key: '',
   status: 1,
   name: 'Image test channel',

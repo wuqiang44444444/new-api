@@ -22,15 +22,15 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { createInstance } from 'i18next'
 import { I18nextProvider } from 'react-i18next'
 import { afterAll, afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import { billingDisplayFixture } from '@/features/pricing/__tests__/billing-display-fixtures'
-import fixtures from '@/features/pricing/__tests__/billing-display-fixtures.json'
 import { getPricingQueryKey } from '@/features/pricing/hooks/use-pricing-data'
+import { billingDisplayFixture } from '@/features/pricing/__tests__/billing-display-fixtures'
 import en from '@/i18n/locales/en.json'
+import zh from '@/i18n/locales/zh.json'
 import {
   DEFAULT_CURRENCY_CONFIG,
   useSystemConfigStore,
@@ -50,12 +50,12 @@ vi.hoisted(() => {
 })
 afterAll(() => vi.unstubAllGlobals())
 
-function makeLog(other: LogOtherData): UsageLog {
+function makeLog(other: LogOtherData, type = 2): UsageLog {
   return {
     id: 1,
     user_id: 1,
     created_at: 1,
-    type: 2,
+    type,
     content: '',
     username: 'user',
     token_name: 'token',
@@ -70,15 +70,19 @@ function makeLog(other: LogOtherData): UsageLog {
     token_id: 1,
     group: 'default',
     ip: '',
-    other: JSON.stringify(other),
+    other: JSON.stringify({ ...other, billing_display: other.billing_display ?? billingDisplayFixture(other.expr_b64 ? Buffer.from(other.expr_b64, 'base64').toString('utf8') : undefined) }),
     request_id: 'req-1',
     upstream_request_id: '',
   }
 }
 
-function DetailPreview(props: { other: LogOtherData; isAdmin: boolean }) {
+function DetailPreview(props: {
+  other: LogOtherData
+  isAdmin: boolean
+  type?: number
+}) {
   const table = useReactTable({
-    data: [makeLog(props.other)],
+    data: [makeLog(props.other, props.type)],
     columns: useCommonLogsColumns(props.isAdmin, false),
     getCoreRowModel: getCoreRowModel(),
   })
@@ -110,7 +114,7 @@ beforeEach(async () => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(['status'], {}, { updatedAt: Date.now() + 60_000 })
   client.setQueryData(
-    getPricingQueryKey(undefined),
+    ['pricing'],
     { data: [], vendors: [] },
     { updatedAt: Date.now() + 60_000 }
   )
@@ -119,18 +123,67 @@ afterEach(() => {
   client.clear()
   useSystemConfigStore.getState().setConfig(previousConfig)
 })
-function renderPreview(other: LogOtherData, isAdmin = true) {
+function renderPreview(other: LogOtherData, isAdmin = true, type?: number) {
   render(
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={client}>
-        <DetailPreview other={other} isAdmin={isAdmin} />
+        <DetailPreview other={other} isAdmin={isAdmin} type={type} />
       </QueryClientProvider>
     </I18nextProvider>
   )
   return screen.getByRole('button', { name: /./ })
 }
 
+test('keeps log details open when the parent refreshes with unchanged data', async () => {
+  const other = { model_price: 0.25 }
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    </I18nextProvider>
+  )
+  const { rerender } = render(<DetailPreview other={other} isAdmin />, {
+    wrapper,
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Per-call · $0.25' }))
+  expect(await screen.findByRole('dialog')).toBeVisible()
+  rerender(<DetailPreview other={other} isAdmin />)
+  expect(screen.getByRole('dialog')).toBeVisible()
+})
+
 test.each([
+  {
+    name: 'fixed expression zero price',
+    other: {
+      billing_mode: 'tiered_expr',
+      billing_unit: 'request' as const,
+      fixed_price: 0,
+      matched_tier: 'free',
+      expr_b64: btoa('tier("free", fixed(0))'),
+    },
+    expected: 'free · Per-call $0/request',
+  },
+  {
+    name: 'fixed expression trace outside the display grammar',
+    other: {
+      billing_mode: 'tiered_expr',
+      billing_unit: 'request' as const,
+      fixed_price: 0.01,
+      matched_tier: 'priority',
+      expr_b64: btoa(
+        'param("fast") == true ? tier("priority", fixed(0.01)) : tier("tokens", p * 2)'
+      ),
+    },
+    expected: 'priority · Per-call $0.01/request',
+  },
+  {
+    name: 'parsed token expression',
+    other: {
+      billing_mode: 'tiered_expr',
+      matched_tier: 'standard',
+      expr_b64: btoa('tier("standard", p * 2 + c * 10)'),
+    },
+    expected: 'standard · $2 / $10/M',
+  },
   {
     name: 'per-call',
     other: { model_price: 0.25 },
@@ -155,24 +208,126 @@ test.each([
   expect(preview.textContent).toBe(expected)
 })
 
-test.each([3e9, '+Inf', '-Inf', 'NaN'] as const)(
-  'quota saturation %s remains visible and only billing adds to the counter',
-  (original) => {
+test.each([
+  {
+    tier: 'standard',
+    billingUnit: 'token' as const,
+    fixedPrice: undefined,
+    expected: 'Dynamic Pricing · standard',
+  },
+  {
+    tier: 'long_context',
+    billingUnit: 'token' as const,
+    fixedPrice: undefined,
+    expected: 'Dynamic Pricing · long_context',
+  },
+  {
+    tier: 'free_small_output',
+    billingUnit: 'request' as const,
+    fixedPrice: 0,
+    expected: 'free_small_output · Per-call $0/request',
+  },
+])(
+  'nested expression preserves the recorded $tier settlement in the list',
+  ({ tier, billingUnit, fixedPrice, expected }) => {
+    const expression = `len <= 272000
+      ? (c > 5
+        ? tier("standard", p * 2 + c * 10 + cr * 0.1 + cc * 2.5)
+        : tier("free_small_output", fixed(0)))
+      : (c > 5
+        ? tier("long_context", p * 5 + c * 22.5 + cr * 0.5)
+        : tier("free_small_output", fixed(0)))`
     const preview = renderPreview({
-      model_price: 0.25,
-      admin_info: {
-        task_plugin: plugin,
-        quota_saturation: {
-          op: 'round',
-          kind: 'overflow',
-          original,
-          clamped: 2147483647,
-        },
-      },
+      billing_mode: 'tiered_expr',
+      billing_unit: billingUnit,
+      fixed_price: fixedPrice,
+      matched_tier: tier,
+      expr_b64: btoa(expression),
     })
-    expect(preview.textContent).toBe('Quota clamped+1')
+    expect(preview.textContent).toBe(expected)
   }
 )
+
+test.each([
+  { name: 'missing expression', expr: undefined },
+  { name: 'invalid encoded expression', expr: '%' },
+  {
+    name: 'tier absent from the parsed expression',
+    expr: btoa('tier("different", p * 99 + c * 99)'),
+  },
+])(
+  'token pricing with $name preserves the saved tier without guessing prices',
+  ({ expr }) => {
+    const preview = renderPreview({
+      billing_mode: 'tiered_expr',
+      matched_tier: 'recorded',
+      expr_b64: expr,
+    })
+    expect(preview.textContent).toBe('Dynamic Pricing · recorded')
+  }
+)
+
+test.each([false, true])(
+  'dynamic pricing without a saved tier uses a localized neutral fallback for task=%s',
+  async (isTask) => {
+    i18n.addResourceBundle('zh', 'translation', zh.translation)
+    const preview = renderPreview({
+      is_task: isTask,
+      billing_mode: 'tiered_expr',
+      expr_b64: btoa(
+        isTask
+          ? 'tier("base", u("clips") * 0.25)'
+          : 'tier("base", p * 2 + c * 10)'
+      ),
+    })
+    expect(preview.textContent).toBe(
+      'Dynamic Pricing · Special billing expression'
+    )
+    await act(() => i18n.changeLanguage('zh'))
+    expect(
+      screen.getByRole('button', { name: '动态计费 · 特殊计费表达式' })
+    ).toBeVisible()
+  }
+)
+
+test('top-up content_parts render in the viewer language', async () => {
+  i18n.addResourceBundle('zh', 'translation', {
+    'Online top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}':
+      '在线充值成功，充值额度：{{quota}}，支付金额：{{amount}}',
+  })
+  await i18n.changeLanguage('zh')
+  const preview = renderPreview(
+    {
+      content_parts: [
+        {
+          key: 'Online top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}',
+          params: { quota: '$10.000000', amount: '10.00' },
+        },
+      ],
+    },
+    false,
+    1
+  )
+  expect(preview.textContent).toBe(
+    '在线充值成功，充值额度：$10.000000，支付金额：10.00'
+  )
+})
+
+test('quota saturation remains first and only billing adds to the counter', () => {
+  const preview = renderPreview({
+    model_price: 0.25,
+    admin_info: {
+      task_plugin: plugin,
+      quota_saturation: {
+        op: 'round',
+        kind: 'overflow',
+        original: 3e9,
+        clamped: 2147483647,
+      },
+    },
+  })
+  expect(preview.textContent).toBe('Quota clamped+1')
+})
 
 test.each([true, false])(
   'plugin information in the opened dialog respects admin=%s',
@@ -254,8 +409,73 @@ test.each([
   }
 )
 
+test('task log prices use localized unit labels from pricing metadata', async () => {
+  client.setQueryData(getPricingQueryKey(undefined), {
+    data: [
+      {
+        model_name: 'wan2.5-i2v-preview',
+        billing_usage_schema: {
+          images: {
+            type: 'number',
+            unit: 'count',
+            unitLabel: { en: 'image', zh: '张' },
+          },
+        },
+      },
+    ],
+    vendors: [],
+  })
+  const preview = renderPreview({
+    is_task: true,
+    billing_mode: 'tiered_expr',
+    expr_b64: btoa('tier("images", u("images") * 0.25)'),
+    matched_tier: 'images',
+  })
+  expect(preview).toHaveTextContent('images · images $0.25/image')
+  await act(() => i18n.changeLanguage('zh-CN'))
+  expect(
+    screen.getByRole('button', { name: /images · images/ })
+  ).toHaveTextContent('images · images $0.25/张')
+})
+
+test('task log prices select the executing provider’s schema', () => {
+  client.setQueryData(getPricingQueryKey(undefined), {
+    data: [
+      {
+        model_name: 'wan2.5-i2v-preview',
+        billing_usage_schema: { seconds: { type: 'number', unit: 'second' } },
+        billing_plugin_variants: [
+          {
+            plugin_key: 'beta',
+            plugin_name: 'Beta',
+            billing_expr: 'tier("images", u("images") * 0.25)',
+            billing_usage_schema: {
+              images: {
+                type: 'number',
+                unit: 'count',
+                unitLabel: { en: 'image' },
+              },
+            },
+          },
+        ],
+      },
+    ],
+    vendors: [],
+  })
+  const preview = renderPreview({
+    is_task: true,
+    billing_mode: 'tiered_expr',
+    expr_b64: btoa('tier("images", u("images") * 0.25)'),
+    matched_tier: 'images',
+    admin_info: {
+      task_plugin: { key: 'beta', name: 'Beta', version: '1.0.0' },
+    },
+  })
+  expect(preview).toHaveTextContent('images · images $0.25/image')
+})
+
 test.each(['missing schema', 'unsupported expression', 'unknown tier'])(
-  'task pricing with %s shows an explicit unavailable summary',
+  'task pricing with %s preserves the saved tier without guessing prices',
   (scenario) => {
     if (scenario !== 'missing schema') {
       client.setQueryData(getPricingQueryKey(undefined), {
@@ -278,60 +498,8 @@ test.each(['missing schema', 'unsupported expression', 'unknown tier'])(
       expr_b64: Buffer.from(expression).toString('base64'),
       matched_tier: scenario === 'unknown tier' ? 'old' : 'music',
     })
-    expect(preview.textContent).toBe('Dynamic Pricing · No matching results')
-  }
-)
-
-test.each([false, true])(
-  'historical summary shows the recorded time price, match=%s',
-  async (matched) => {
-    const expression = Object.keys(fixtures).find(
-      (key) => key.includes('weekday(') && key.endsWith('/ 6.9')
+    expect(preview.textContent).toBe(
+      `Dynamic Pricing · ${scenario === 'unknown tier' ? 'old' : 'music'}`
     )
-    const projection = billingDisplayFixture(expression)
-    if (!projection?.rules?.[0]) throw new Error('Missing time-price fixture')
-    const preview = renderPreview({
-      billing_mode: 'tiered_expr',
-      billing_display: projection,
-      matched_tier: 'base',
-      request_rules: [
-        { cond: projection.rules[0].text, multiplier: 2, matched },
-      ],
-    })
-    expect(preview).toHaveTextContent(matched ? '$0.434783' : '$0.217391')
-    expect(preview).toHaveTextContent(matched ? '$1.3043' : '$0.652174')
-    fireEvent.click(preview)
-    const dialog = within(await screen.findByRole('dialog'))
-    expect(
-      dialog.getByText(matched ? '$0.434783/M' : '$0.217391/M')
-    ).toBeVisible()
   }
 )
-
-test('historical summary explains missing time facts instead of displaying a guessed price', () => {
-  const expression = Object.keys(fixtures).find(
-    (key) => key.includes('weekday(') && key.endsWith('/ 6.9')
-  )
-  const preview = renderPreview({
-    billing_mode: 'tiered_expr',
-    billing_display: billingDisplayFixture(expression),
-    matched_tier: 'base',
-  })
-  expect(preview).toHaveTextContent(
-    'Historical condition results are unavailable.'
-  )
-  expect(preview).not.toHaveTextContent('$0.217391')
-})
-
-test('fixed request fees keep their unit in the historical details', async () => {
-  const expression = 'tier("base", p * 2 + 10000) + 20000'
-  const preview = renderPreview({
-    billing_mode: 'tiered_expr',
-    billing_display: billingDisplayFixture(expression),
-    matched_tier: 'base',
-  })
-  fireEvent.click(preview)
-  const dialog = within(await screen.findByRole('dialog'))
-  expect(dialog.getByText('$0.03/request')).toBeVisible()
-  expect(dialog.queryByText('$0.03/M')).not.toBeInTheDocument()
-})

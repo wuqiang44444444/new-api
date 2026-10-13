@@ -12,7 +12,7 @@ func updateChannelStatusTx(tx *gorm.DB, channelID int, usingKey string, status i
 	}
 
 	beforeStatus := channel.Status
-	if channel.Status == status && (automatic || usingKey == "") {
+	if channel.Status == status && (automatic || usingKey == "") && !(channel.ChannelInfo.IsMultiKey && usingKey == "" && channel.GetOtherInfo()["status_reason"] == ChannelStatusReasonAllKeysDisabled && reason != ChannelStatusReasonAllKeysDisabled) {
 		return channel, beforeStatus, false, nil
 	}
 	statusChanged := channel.Status != status

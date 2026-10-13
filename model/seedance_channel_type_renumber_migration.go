@@ -72,6 +72,9 @@ func verifySeedanceChannelTypeRenumberState() error {
 // verifyLinkChannelMigrationState aggregates the local channel migration
 // startup gates so request wiring stays a single narrow call.
 func verifyLinkChannelMigrationState() error {
+	if err := verifyLocalChannelRC44Types(); err != nil {
+		return err
+	}
 	if err := verifySeedanceChannelTypeRenumberState(); err != nil {
 		return err
 	}

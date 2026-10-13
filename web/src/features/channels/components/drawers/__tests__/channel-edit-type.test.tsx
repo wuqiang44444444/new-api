@@ -1,3 +1,4 @@
+import {createRouter, createRootRoute, createMemoryHistory, RouterContextProvider} from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -45,27 +46,30 @@ test('an existing non-MiniMax channel can select native MiniMax and change back 
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+  const router = createRouter({routeTree:createRootRoute(),history:createMemoryHistory({initialEntries:['/']})})
   render(
     <QueryClientProvider client={client}>
-      <ChannelsProvider>
+      <RouterContextProvider router={router}><ChannelsProvider>
         <ChannelMutateDrawer open onOpenChange={vi.fn()} currentRow={channel} />
-      </ChannelsProvider>
+      </ChannelsProvider></RouterContextProvider>
     </QueryClientProvider>
   )
   await screen.findByDisplayValue('Fixture')
   const user = userEvent.setup()
-  const type = screen.getByPlaceholderText('Search channel type...')
+  await user.click(screen.getByRole('button', { name: /Change provider/ }))
+  const type = screen.getByPlaceholderText('Search providers, plugins, or type numbers')
   await user.click(type)
   await user.clear(type)
   await user.type(type, 'MiniMax')
-  await user.click(await screen.findByRole('option', { name: 'MiniMax' }))
+  await user.click(await screen.findByRole('option', { name: 'MiniMax Built-in #35' }))
   expect(screen.getByDisplayValue('Native API')).toBeTruthy()
-  expect(type).toBeEnabled()
-  await user.click(type)
-  await user.clear(type)
-  await user.type(type, 'OpenAI')
+  await user.click(screen.getByRole('button', { name: /Change provider/ }))
+  const newType = screen.getByPlaceholderText('Search providers, plugins, or type numbers')
+  await user.click(newType)
+  await user.clear(newType)
+  await user.type(newType, 'OpenAI')
   await user.click(
-    await screen.findByRole('option', { name: /^OpenAI$/ })
+    await screen.findByRole('option', { name: 'OpenAI Built-in #1' })
   )
   await waitFor(() =>
     expect(screen.queryByDisplayValue('Native API')).toBeNull()

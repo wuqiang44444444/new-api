@@ -54,12 +54,12 @@ func TestVideoPollingPassesFrozenFunCloudBillingContext(t *testing.T) {
 	channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance})
 	probeBody := []byte(`{"_task":{"resolution":"720p","has_video_input":false}}`)
 	task := &model.Task{
-		TaskID: "task-funcloud-v3", Platform: constant.TaskPlatform("62"), UserId: 973,
+		TaskID: "task-funcloud-v3", Platform: constant.TaskPlatform("67"), UserId: 973,
 		ChannelId: channel.Id, Status: model.TaskStatusInProgress, Progress: "30%", CreatedAt: now, UpdatedAt: now,
 		Properties: model.Properties{UpstreamModelName: "seedance-2-fast"},
 		PrivateData: model.TaskPrivateData{
 			UpstreamTaskID: "provider-task-v2", VideoUpstreamProfile: dto.VideoUpstreamProfileThirdPartyFunCloudSeedance,
-			SouthboundAdapterVersion:  "62:third_party_funcloud_seedance:v3",
+			SouthboundAdapterVersion:  "67:third_party_funcloud_seedance:v3",
 			VideoUpstreamQueryBaseURL: "https://funcloud.example.com", Key: "provider-key",
 			AsyncBilling: &model.TaskAsyncBillingContext{
 				BillingProbe: &billingexpr.RequestInput{Body: probeBody}, EstimatedTokens: 324000,
@@ -74,7 +74,7 @@ func TestVideoPollingPassesFrozenFunCloudBillingContext(t *testing.T) {
 	))
 	require.NotNil(t, capture.receivedTask)
 	assert.Equal(t, "provider-task-v2", capture.receivedTask.PrivateData.UpstreamTaskID)
-	assert.Equal(t, "62:third_party_funcloud_seedance:v3", capture.receivedTask.PrivateData.SouthboundAdapterVersion)
+	assert.Equal(t, "67:third_party_funcloud_seedance:v3", capture.receivedTask.PrivateData.SouthboundAdapterVersion)
 	assert.Equal(t, "provider-key", capture.receivedTask.PrivateData.Key)
 }
 
@@ -101,7 +101,7 @@ func TestVideoPollingUsesFrozenFeicaiAdapterAndRedactsResultURLFromTaskData(t *t
 	})
 	task := &model.Task{
 		TaskID:         "task-poll-v2",
-		Platform:       constant.TaskPlatform("62"),
+		Platform:       constant.TaskPlatform("67"),
 		UserId:         971,
 		ChannelId:      channel.Id,
 		Status:         model.TaskStatusInProgress,
@@ -112,7 +112,7 @@ func TestVideoPollingUsesFrozenFeicaiAdapterAndRedactsResultURLFromTaskData(t *t
 		PrivateData: model.TaskPrivateData{
 			UpstreamTaskID:            "provider-task-v2",
 			VideoUpstreamProfile:      dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
-			SouthboundAdapterVersion:  "62:third_party_feicai_videos:v1",
+			SouthboundAdapterVersion:  "67:third_party_feicai_videos:v1",
 			VideoUpstreamQueryBaseURL: "https://video.example.com",
 			Key:                       "provider-key",
 		},
@@ -128,7 +128,7 @@ func TestVideoPollingUsesFrozenFeicaiAdapterAndRedactsResultURLFromTaskData(t *t
 		map[string]*model.Task{task.PrivateData.UpstreamTaskID: task},
 	))
 	require.NoError(t, model.DB.First(task, task.ID).Error)
-	assert.Equal(t, "62:third_party_feicai_videos:v1", capture.receivedTask.PrivateData.SouthboundAdapterVersion)
+	assert.Equal(t, "67:third_party_feicai_videos:v1", capture.receivedTask.PrivateData.SouthboundAdapterVersion)
 	assert.NotContains(t, string(task.Data), "video.example.com")
 	assert.NotContains(t, string(task.Data), "secret")
 	assert.Contains(t, string(task.Data), "[redacted]")
@@ -150,7 +150,7 @@ func TestVideoPollingRejectsUnknownFrozenAdapterBeforeFetch(t *testing.T) {
 		PrivateData: model.TaskPrivateData{
 			UpstreamTaskID:           "provider-invalid-version",
 			VideoUpstreamProfile:     dto.VideoUpstreamProfileThirdPartyFeicaiVideos,
-			SouthboundAdapterVersion: "62:third_party_feicai_videos:v3",
+			SouthboundAdapterVersion: "67:third_party_feicai_videos:v3",
 		},
 	}
 	require.NoError(t, model.DB.Create(task).Error)
@@ -230,13 +230,13 @@ func TestVideoPollingRetiresMissingUpstreamTaskAfterBoundedGrace(t *testing.T) {
 	}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolFunCloudSeedance})
 	task := &model.Task{
-		TaskID: "task-funcloud-missing", Platform: constant.TaskPlatform("62"), UserId: userID,
+		TaskID: "task-funcloud-missing", Platform: constant.TaskPlatform("67"), UserId: userID,
 		ChannelId: channel.Id, Status: model.TaskStatusInProgress, Progress: "30%", CreatedAt: now, UpdatedAt: now,
 		Quota: preConsumedQuota, BillingState: model.TaskBillingStatePending,
 		PrivateData: model.TaskPrivateData{
 			UpstreamTaskID:            "provider-task-missing",
 			VideoUpstreamProfile:      dto.VideoUpstreamProfileThirdPartyFunCloudSeedance,
-			SouthboundAdapterVersion:  "62:third_party_funcloud_seedance:v3",
+			SouthboundAdapterVersion:  "67:third_party_funcloud_seedance:v3",
 			VideoUpstreamQueryBaseURL: "https://funcloud.example.com",
 			Key:                       "provider-key",
 			AsyncBilling:              &model.TaskAsyncBillingContext{State: model.TaskBillingStatePending},

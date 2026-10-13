@@ -68,7 +68,7 @@ func lockMinimaxPluginConfiguration(tx *gorm.DB, key string) error {
 }
 
 func minimaxConfigurationForArtifact(plugin *TaskPlugin) (*jsplugin.SeedanceChannelConfiguration, error) {
-	loaded, info, err := jsplugin.CompileSeedanceExtension(plugin.Source, jsplugin.Options{}, jsplugin.MinimaxHostContract())
+	loaded, info, err := jsplugin.CompileSeedanceExtension(string(plugin.Source), jsplugin.Options{}, jsplugin.MinimaxHostContract())
 	if err != nil {
 		return nil, fmt.Errorf("MiniMax plugin configuration cannot be compiled: %s", jsplugin.SeedanceCompilationDiagnostic(err))
 	}

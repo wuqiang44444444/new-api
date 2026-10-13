@@ -129,9 +129,10 @@ func (m Properties) Value() (driver.Value, error) {
 }
 
 type TaskPrivateData struct {
-	Key            string `json:"key,omitempty"`
-	UpstreamTaskID string `json:"upstream_task_id,omitempty"` // 上游真实 task ID
-	ResultURL      string `json:"result_url,omitempty"`       // 任务成功后的结果 URL（视频地址等）
+	ResultDiscarded bool   `json:"result_discarded,omitempty"`
+	Key             string `json:"key,omitempty"`
+	UpstreamTaskID  string `json:"upstream_task_id,omitempty"` // 上游真实 task ID
+	ResultURL       string `json:"result_url,omitempty"`       // 任务成功后的结果 URL（视频地址等）
 	// Execution records safe, immutable request provenance. It lives next to
 	// other private task state so public task DTOs cannot expose it by accident.
 	Execution *TaskExecutionSnapshot `json:"execution,omitempty"`
@@ -214,6 +215,12 @@ type TaskBillingContext struct {
 	ContractFact    *hosttypes.ContractBillingFact `json:"contract_fact,omitempty"`
 }
 
+// ResultRetrievable reports whether retrieval surfaces (native query routes,
+// protocol retrieve endpoints, artifact projection) may serve this task.
+func (t *Task) ResultRetrievable() bool {
+	return !t.PrivateData.ResultDiscarded
+}
+
 // GetUpstreamTaskID 获取上游真实 task ID（用于与 provider 通信）
 // 旧数据没有 UpstreamTaskID 时，TaskID 本身就是上游 ID
 func (t *Task) GetUpstreamTaskID() string {
@@ -275,8 +282,11 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 	properties := Properties{}
 	privateData := TaskPrivateData{}
 	if relayInfo != nil && relayInfo.ChannelMeta != nil {
+		// A New API channel may rotate between several gateway tokens, so the
+		// task keeps the key that submitted it and polls with the same identity.
 		if relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeGemini ||
-			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeVertexAi {
+			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeVertexAi ||
+			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeNewAPI {
 			privateData.Key = relayInfo.ChannelMeta.ApiKey
 		}
 		linkVideoTask := relayInfo.TaskRelayInfo != nil && IsLinkVideoTaskClientProtocol(relayInfo.TaskRelayInfo.ClientProtocol)
@@ -353,7 +363,9 @@ func TaskGetAllUserTask(userId int, startIdx int, num int, queryParams SyncTaskQ
 	}
 
 	// 获取数据
-	err = query.Omit("channel_id").Order("id desc").Limit(num).Offset(startIdx).Find(&tasks).Error
+	// Task lists never render the persisted upstream snapshot; the dashboard
+	// loads media through the artifacts endpoint instead.
+	err = query.Omit("channel_id", "data").Order("id desc").Limit(num).Offset(startIdx).Find(&tasks).Error
 	if err != nil {
 		return nil
 	}
@@ -398,7 +410,7 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 	}
 
 	// 获取数据
-	err = query.Order("id desc").Limit(num).Offset(startIdx).Find(&tasks).Error
+	err = query.Omit("data").Order("id desc").Limit(num).Offset(startIdx).Find(&tasks).Error
 	if err != nil {
 		return nil
 	}
@@ -540,8 +552,13 @@ func (Task *Task) Insert() error {
 	return Task.InsertWithContext(context.Background())
 }
 
-func (Task *Task) InsertWithContext(ctx context.Context) error {
-	return InsertTaskWithBillingLogContext(ctx, Task)
+// InsertWithContext creates the row. omitColumns are left out of the INSERT
+// (for example "data" when the submit route discards the upstream snapshot)
+// while the in-memory task keeps its values for presentation.
+func (Task *Task) InsertWithContext(ctx context.Context, omitColumns ...string) error {
+	Task.BillingState = deriveBillingState(Task.PrivateData)
+	return InsertTaskWithBillingLogContext(ctx, Task, omitColumns...)
+
 }
 
 type taskSnapshot struct {

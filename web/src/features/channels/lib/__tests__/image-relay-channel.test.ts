@@ -13,9 +13,9 @@ import {
 import { getChannelTypeConfig } from '../channel-type-config'
 
 describe('image relay channel registration', () => {
-  it('exposes the Image Relay type on 63 next to the Seedance type on 62', () => {
-    expect(CHANNEL_TYPE_ASYNC_IMAGE).toBe(63)
-    expect(CHANNEL_TYPE_SEEDANCE_LINK).toBe(62)
+  it('exposes the Image Relay type on 68 next to the Seedance type on 67', () => {
+    expect(CHANNEL_TYPE_ASYNC_IMAGE).toBe(68)
+    expect(CHANNEL_TYPE_SEEDANCE_LINK).toBe(67)
     expect(CHANNEL_TYPES[CHANNEL_TYPE_ASYNC_IMAGE]).toBe('Image Relay')
     expect(CHANNEL_TYPES[CHANNEL_TYPE_SEEDANCE_LINK]).toBe(
       'Seedance Dedicated Channel'

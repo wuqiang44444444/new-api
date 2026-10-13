@@ -19,7 +19,7 @@ func TestSeedanceConfigurationDiagnosticDoesNotExposeArtifactValues(t *testing.T
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			artifact := configurationTestPlugin("2.0.0", "provider-one")
-			artifact.Source += tc.suffix
+			artifact.Source += LongText(tc.suffix)
 			_, err := seedanceConfigurationForArtifact(&artifact)
 			require.ErrorContains(t, err, tc.want)
 			assert.NotContains(t, err.Error(), "private-artifact-marker")

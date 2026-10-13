@@ -51,7 +51,7 @@ func persistTaskBillingFailure(ctx context.Context, task *model.Task, state mode
 			attachQuotaSaturationToOther(other, task.PrivateData.AsyncBilling.QuotaClamp)
 		}
 		model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
-			UserId: task.UserId, LogType: model.LogTypeConsume, Content: "异步任务计费异常",
+			UserId: task.UserId, LogType: model.LogTypeConsume, Content: []*common.Message{common.NewMessage("异步任务计费异常")},
 			ChannelId: task.ChannelId, ModelName: taskModelName(task), Quota: 0,
 			TokenId: task.PrivateData.TokenId, Group: task.Group, Other: other,
 			NodeName: task.PrivateData.NodeName,
@@ -100,7 +100,7 @@ func recalculateTaskQuotaWithReconcile(ctx context.Context, task *model.Task, ac
 	}
 	async := task.PrivateData.AsyncBilling
 	if async == nil {
-		RecalculateTaskQuota(ctx, task, actualQuota, reason, clamps...)
+		RecalculateTaskQuota(ctx, task, actualQuota, common.NewMessage(reason), clamps...)
 		return
 	}
 	if actualQuota < 0 || async.State == model.TaskBillingStateSettled {

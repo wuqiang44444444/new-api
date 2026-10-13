@@ -21,15 +21,13 @@ import {
   Download01Icon,
   File01Icon,
   Image01Icon,
-  Link01Icon,
-  Link04Icon,
   MusicNote01Icon,
   RefreshIcon,
   Video01Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
@@ -57,8 +55,15 @@ import {
 } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
-import { copyToClipboard } from '@/lib/copy-to-clipboard'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
+import { CopyButton } from '@/components/copy-button'
 
 import { getTaskArtifacts } from '../api'
 import {
@@ -66,10 +71,7 @@ import {
   shouldLoadTaskArtifacts,
 } from '../lib/task-artifacts'
 import type { TaskArtifact, TaskArtifactType, TaskLog } from '../types'
-import {
-  AudioPreviewDialog,
-  type AudioClip,
-} from './dialogs/audio-preview-dialog'
+import { AudioPreviewDialog } from './dialogs/audio-preview-dialog'
 
 function artifactIcon(type: TaskArtifactType) {
   switch (type) {
@@ -97,33 +99,19 @@ function artifactTypeLabel(type: TaskArtifactType): string {
   }
 }
 
-function parseLegacyAudioClips(data: unknown): AudioClip[] {
-  let values: unknown[] = []
-  if (Array.isArray(data)) {
-    values = data
-  } else if (typeof data === 'string') {
-    try {
-      const parsed = JSON.parse(data)
-      values = Array.isArray(parsed) ? parsed : []
-    } catch {
-      return []
-    }
-  }
-
-  return values.filter(
-    (value): value is AudioClip =>
-      value != null &&
-      typeof value === 'object' &&
-      typeof (value as Record<string, unknown>).audio_url === 'string'
-  )
-}
-
-export function LegacyAudioPreview(props: { data: unknown }) {
+// Task lists no longer carry the persisted snapshot, so the legacy Suno clip
+// list is fetched through the artifacts endpoint when the preview opens.
+export function LegacyAudioPreview(props: { taskId: string }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const clips = useMemo(() => parseLegacyAudioClips(props.data), [props.data])
-
-  if (clips.length === 0) return null
+  const artifactsQuery = useQuery({
+    queryKey: ['usage-logs', 'task-artifacts', props.taskId],
+    queryFn: async () =>
+      requireServerSuccess(await getTaskArtifacts(props.taskId)),
+    enabled: open,
+    retry: false,
+    staleTime: 30_000,
+  })
 
   return (
     <>
@@ -142,7 +130,12 @@ export function LegacyAudioPreview(props: { data: unknown }) {
           {t('Click to preview audio')}
         </span>
       </button>
-      <AudioPreviewDialog open={open} onOpenChange={setOpen} clips={clips} />
+      <AudioPreviewDialog
+        open={open}
+        onOpenChange={setOpen}
+        clips={artifactsQuery.data?.legacyAudioClips ?? []}
+        loading={open && artifactsQuery.isPending}
+      />
     </>
   )
 }
@@ -278,8 +271,7 @@ function TaskArtifactCard(props: { artifact: TaskArtifact }) {
         </CardDescription>
       </CardHeader>
       <CardContent>{cardContent}</CardContent>
-      <CardFooter className='gap-2'>
-        <ResultLinkActions url={props.artifact.content_url} />
+      <CardFooter>
         <Button
           variant='outline'
           size='sm'
@@ -305,52 +297,6 @@ function TaskArtifactCard(props: { artifact: TaskArtifact }) {
   )
 }
 
-// ResultLinkActions 提供经授权的结果操作：在新标签打开平台内容链接并复制。
-// 链接仅在产物/详情展示处出现，不写入通用日志或遥测。
-function ResultLinkActions(props: { url: string }) {
-  const { t } = useTranslation()
-  return (
-    <div className='flex min-w-0 flex-1 flex-wrap gap-2'>
-      <span className='text-muted-foreground w-full font-mono text-xs break-all'>
-        {props.url}
-      </span>
-      <Button
-        variant='outline'
-        size='sm'
-        nativeButton={false}
-        role='link'
-        render={
-          <a
-            href={props.url}
-            target='_blank'
-            rel='noopener noreferrer'
-            aria-label={t('Open')}
-          />
-        }
-      >
-        <HugeiconsIcon
-          icon={Link04Icon}
-          strokeWidth={2}
-          data-icon='inline-start'
-        />
-        {t('Open')}
-      </Button>
-      <Button
-        variant='outline'
-        size='sm'
-        onClick={() => void copyToClipboard(props.url)}
-      >
-        <HugeiconsIcon
-          icon={Link01Icon}
-          strokeWidth={2}
-          data-icon='inline-start'
-        />
-        {t('Copy link')}
-      </Button>
-    </div>
-  )
-}
-
 interface TaskArtifactsProps {
   taskId: string
   enabled: boolean
@@ -361,7 +307,8 @@ export function TaskArtifacts(props: TaskArtifactsProps) {
   const { t } = useTranslation()
   const artifactsQuery = useQuery({
     queryKey: ['usage-logs', 'task-artifacts', props.taskId],
-    queryFn: () => getTaskArtifacts(props.taskId),
+    queryFn: async () =>
+      requireServerSuccess(await getTaskArtifacts(props.taskId)),
     enabled: props.enabled,
     retry: false,
     staleTime: 30_000,
@@ -410,7 +357,7 @@ export function TaskArtifacts(props: TaskArtifactsProps) {
   if (artifactsQuery.data.artifacts.length === 0) {
     return (
       props.emptyContent?.(artifactsQuery.data.legacyContentUrl) ?? (
-        <EmptyTaskArtifacts />
+        <SuccessWithoutVideoNote />
       )
     )
   }
@@ -429,7 +376,7 @@ export function TaskArtifacts(props: TaskArtifactsProps) {
   )
 }
 
-function EmptyTaskArtifacts() {
+export function SuccessWithoutVideoNote() {
   const { t } = useTranslation()
   return (
     <Empty>
@@ -446,9 +393,9 @@ function EmptyTaskArtifacts() {
 
 function LegacyTaskArtifacts(props: { legacyContentUrl?: string }) {
   if (props.legacyContentUrl) {
-    return <LegacyVideoMedia contentUrl={props.legacyContentUrl} />
+    return <LegacyVideoResult contentUrl={props.legacyContentUrl} />
   }
-  return <EmptyTaskArtifacts />
+  return <SuccessWithoutVideoNote />
 }
 
 export function TaskArtifactsCell(props: { log: TaskLog }) {
@@ -456,11 +403,31 @@ export function TaskArtifactsCell(props: { log: TaskLog }) {
   const [open, setOpen] = useState(false)
   const previewMode = resolveTaskPreviewMode(props.log)
 
+  if (previewMode === 'discarded') {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className='text-muted-foreground cursor-help text-xs' />
+            }
+          >
+            {t('Result not retained')}
+          </TooltipTrigger>
+          <TooltipContent>
+            {t(
+              'The result was returned in the API response and was not saved as an artifact'
+            )}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
   if (!shouldLoadTaskArtifacts(props.log, true)) {
     return <span className='text-muted-foreground/60 text-xs'>-</span>
   }
   if (previewMode === 'legacy-suno') {
-    return <LegacyAudioPreview data={props.log.data} />
+    return <LegacyAudioPreview taskId={props.log.task_id} />
   }
 
   return (
@@ -524,62 +491,30 @@ export function TaskArtifactsCell(props: { log: TaskLog }) {
   )
 }
 
-interface LegacyVideoMediaProps {
+interface LegacyVideoResultProps {
   contentUrl: string
 }
 
-function LegacyVideoMedia(props: LegacyVideoMediaProps) {
+export function LegacyVideoResult(props: LegacyVideoResultProps) {
+  const { t } = useTranslation()
   const [mediaFailed, setMediaFailed] = useState(false)
   const [mediaRevision, setMediaRevision] = useState(0)
 
-  return (
-    <div className='space-y-2'>
-      {mediaFailed ? (
-        <MediaFailure
-          onRetry={() => {
-            setMediaFailed(false)
-            setMediaRevision((revision) => revision + 1)
-          }}
-        />
-      ) : (
-        <video
-          key={mediaRevision}
-          src={props.contentUrl}
-          controls
-          preload='metadata'
-          className='max-h-[60vh] w-full rounded-md bg-black'
-          onError={() => setMediaFailed(true)}
-        />
-      )}
-      <ResultLinkActions url={props.contentUrl} />
-    </div>
-  )
-}
-
-// SuccessWithoutVideoNote 用于任务成功但平台未记录到结果地址的场景，
-// 不静默显示“-”，也不改变任务成功状态。
-export function SuccessWithoutVideoNote() {
-  const { t } = useTranslation()
-  return (
-    <Empty>
-      <EmptyHeader>
-        <EmptyMedia variant='icon'>
-          <HugeiconsIcon
-            icon={Video01Icon}
-            strokeWidth={2}
-            aria-hidden='true'
-          />
-        </EmptyMedia>
-        <EmptyTitle>{t('Task succeeded')}</EmptyTitle>
-        <EmptyDescription>
-          {t('No video result was recorded for this task')}
-        </EmptyDescription>
-      </EmptyHeader>
-    </Empty>
-  )
-}
-
-// LegacyVideoResult 在详情弹窗中展示 legacy 平台视频并附带打开/复制操作。
-export function LegacyVideoResult(props: { contentUrl: string }) {
-  return <LegacyVideoMedia contentUrl={props.contentUrl} />
+  return <div className="space-y-2"><div className="flex items-center gap-2"><a href={props.contentUrl} target="_blank" rel="noopener noreferrer">{t('Open')}</a><CopyButton value={props.contentUrl} aria-label={t('Copy link')} /><span className="break-all text-xs">{props.contentUrl}</span></div>{mediaFailed ? (
+    <MediaFailure
+      onRetry={() => {
+        setMediaFailed(false)
+        setMediaRevision((revision) => revision + 1)
+      }}
+    />
+  ) : (
+    <video
+      key={mediaRevision}
+      src={props.contentUrl}
+      controls
+      preload='metadata'
+      className='max-h-[60vh] w-full rounded-md bg-black'
+      onError={() => setMediaFailed(true)}
+    />
+  )}</div>
 }

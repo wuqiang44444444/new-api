@@ -58,13 +58,13 @@ func TestModelArkGetKeepsDurableProjectionWhenWriteAndReloadFail(t *testing.T) {
 			t.Cleanup(func() { service.GetTaskAdaptorFunc = oldFactory })
 			writeFailed := false
 			require.NoError(t, db.Callback().Update().Before("gorm:update").Register("test:write-outage", func(tx *gorm.DB) {
-				if tx.Statement.Table == "tasks" {
+				if tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Task" {
 					writeFailed = true
 					tx.AddError(assert.AnError)
 				}
 			}))
 			require.NoError(t, db.Callback().Query().Before("gorm:query").Register("test:read-outage", func(tx *gorm.DB) {
-				if writeFailed && tx.Statement.Table == "tasks" {
+				if writeFailed && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Task" {
 					if scenario.missing {
 						tx.AddError(gorm.ErrRecordNotFound)
 						return

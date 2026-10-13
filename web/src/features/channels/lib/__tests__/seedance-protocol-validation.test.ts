@@ -24,7 +24,7 @@ const seedanceForm = {
   seedance_plugin_configuration: publishedSeedanceConfiguration,
   seedance_plugin_version: '1.2.0',
   name: 'seedance',
-  type: 62,
+  type: 67,
   key: 'one-key',
   models: 'seedance-customer-model',
   group: ['default'],

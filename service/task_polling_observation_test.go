@@ -36,12 +36,12 @@ func (observationUnavailableAdaptor) AdjustBillingOnComplete(*model.Task, *relay
 // must never manufacture a task failure or refund.
 func TestUpdateVideoSingleTaskSkipsRoundOnObservationUnavailable(t *testing.T) {
 	task := &model.Task{TaskID: "task-obs-1"}
-	task.Platform = "62"
+	task.Platform = "67"
 	task.Status = model.TaskStatusInProgress
 	task.PrivateData.VideoUpstreamProfile = "third_party_feicai_videos"
-	task.PrivateData.SouthboundAdapterVersion = "62:third_party_feicai_videos:v2"
+	task.PrivateData.SouthboundAdapterVersion = "67:third_party_feicai_videos:v2"
 
-	channel := &model.Channel{Type: 62}
+	channel := &model.Channel{Type: 67}
 	channel.Status = 1
 
 	adaptor := observationUnavailableAdaptor{}

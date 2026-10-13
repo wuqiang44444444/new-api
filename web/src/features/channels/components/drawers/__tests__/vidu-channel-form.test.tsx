@@ -69,7 +69,7 @@ function viduChannel(region: 'cn' | 'global'): Channel {
         ]
   return channelSchema.parse({
     id: 1,
-    type: 62,
+    type: 67,
     key: '',
     status: 1,
     name: `Vidu ${region}`,
@@ -172,7 +172,7 @@ describe('Vidu channel administration', () => {
     const settings = JSON.parse(payload.settings ?? '{}')
     expect(settings).toMatchObject({
       video_upstream_protocol: 'vidu_modelark_v3',
-      asset_upstream_protocol: 'none',
+      asset_upstream_protocol: 'funcloud_material_hosted',
       asset_min_url_ttl_seconds: 0,
     })
     expect(settings).not.toHaveProperty('asset_region')

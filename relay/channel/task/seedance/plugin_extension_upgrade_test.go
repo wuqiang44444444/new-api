@@ -34,7 +34,7 @@ func TestSeedanceEmbeddedUpgradeActivatesLatestAndPreservesHistory(t *testing.T)
 	oldSource := seedanceV1HistoricalSource
 	require.NotEqual(t, plugins.SeedanceSource(), oldSource)
 	old := model.TaskPlugin{Key: SeedanceExtensionPluginKey, Version: "1.0.2", APIVersion: 1,
-		Source: oldSource, SourceHash: sourceHashOf(oldSource), Enabled: true}
+		Source: model.LongText(oldSource), SourceHash: sourceHashOf(oldSource), Enabled: true}
 	require.NoError(t, model.SaveTaskPlugin(&old))
 	store := seedanceplugin.NewStore()
 	require.NoError(t, store.EnsureSeeded(context.Background()))
@@ -45,12 +45,12 @@ func TestSeedanceEmbeddedUpgradeActivatesLatestAndPreservesHistory(t *testing.T)
 	installed, err := model.GetTaskPluginVersion(SeedanceExtensionPluginKey, "1.0.2")
 	require.NoError(t, err)
 	assert.False(t, installed.Active)
-	assert.Equal(t, oldSource, installed.Source)
+	assert.Equal(t, oldSource, string(installed.Source))
 	assert.Equal(t, old.SourceHash, installed.SourceHash)
 	upgrade, err := model.GetTaskPluginVersion(SeedanceExtensionPluginKey, plugins.SeedanceVersion())
 	require.NoError(t, err)
 	assert.True(t, upgrade.Active)
-	assert.Equal(t, plugins.SeedanceSource(), upgrade.Source)
+	assert.Equal(t, plugins.SeedanceSource(), string(upgrade.Source))
 
 	active, err := model.ListActiveTaskPlugins()
 	require.NoError(t, err)

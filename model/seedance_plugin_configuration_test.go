@@ -19,7 +19,7 @@ export const meta = {apiVersion: 2, key: "seedance-link", name: "Test", version:
  assets: [{protocol: "none", label: "None", groupPolicy: "none", credential: "none"}]
  }};
 export const seedance = {feicai_videos_v1: {buildCreate() {}, parseCreateResponse() {}, parseTaskObservation() {}}};`, version, providerModel, providerModel)
-	return TaskPlugin{Key: "seedance-link", APIVersion: 2, Version: version, Source: source,
+	return TaskPlugin{Key: "seedance-link", APIVersion: 2, Version: version, Source: LongText(source),
 		SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true}
 }
 
@@ -92,7 +92,7 @@ export const meta = {apiVersion: 2, key: "seedance-link", name: "Test", version:
  assets: [{protocol: "none", label: "None", groupPolicy: "none", credential: "none"}]
  }};
 export const seedance = {feicai_videos_v1: {buildCreate() {}, parseCreateResponse() {}, parseTaskObservation() {}}};`, "2.1.0")
-	incomplete := TaskPlugin{Key: "seedance-link", APIVersion: 2, Version: "2.1.0", Source: incompleteSource,
+	incomplete := TaskPlugin{Key: "seedance-link", APIVersion: 2, Version: "2.1.0", Source: LongText(incompleteSource),
 		SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(incompleteSource))), Enabled: true}
 	require.NoError(t, SaveTaskPlugin(&incomplete), "an incomplete candidate can be stored for review")
 	require.ErrorContains(t, ActivateTaskPlugin("seedance-link", incomplete.Version), "listed Provider model requires declared model metadata",

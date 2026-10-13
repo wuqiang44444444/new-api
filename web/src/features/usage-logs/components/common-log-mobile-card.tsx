@@ -32,14 +32,13 @@ import dayjs from '@/lib/dayjs'
 import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 
 import type { UsageLog } from '../data/schema'
-import { buildDiscountDisplay } from '../lib/discount-display'
-import { formatModelName, parseLogOther } from '../lib/format'
+import { formatModelName, logTokenName, parseLogOther } from '../lib/format'
 import {
   getLogTypeConfig,
   isDisplayableLogType,
   isTimingLogType,
 } from '../lib/utils'
-import { ModelBadge } from './model-badge'
+import { ModelBadge, ResponseModelDetails } from './model-badge'
 import { StreamTpsCell, TimingMetricsCell } from './timing-metrics-cell'
 import { useUsageLogsContext } from './usage-logs-provider'
 
@@ -107,7 +106,7 @@ export function CommonLogMobileCard<TData>(props: {
     },
     token: {
       label: t('Token'),
-      value: log.token_name,
+      value: logTokenName(log, t),
       visible: displayable && props.cells.has('token_name') && !!log.token_name,
       sensitive: true,
     },
@@ -134,15 +133,13 @@ export function CommonLogMobileCard<TData>(props: {
       (other?.cache_creation_tokens_1h || 0) ||
     other?.cache_creation_tokens ||
     0
-  const discount = buildDiscountDisplay(other, (key, opts) => t(key, opts))
   const showTokens =
     displayable &&
     props.cells.has('prompt_tokens') &&
     (log.prompt_tokens > 0 ||
       log.completion_tokens > 0 ||
       cacheRead > 0 ||
-      cacheWrite > 0 ||
-      other?.cache_write_unavailable)
+      cacheWrite > 0)
 
   return (
     <div className='min-w-0 space-y-2.5 text-sm leading-5'>
@@ -152,6 +149,7 @@ export function CommonLogMobileCard<TData>(props: {
             <ModelBadge
               modelName={model.name}
               actualModel={model.actualModel}
+              responseModel={model.responseModel}
               wrapText
               onInspect={() => setSelectedField('model')}
             />
@@ -196,6 +194,7 @@ export function CommonLogMobileCard<TData>(props: {
                   className='min-h-5 max-w-full min-w-0 justify-end'
                   isStream={log.is_stream}
                   isTask={other?.is_task === true}
+                  isSyncTask={other?.task_sync === true}
                   tokensPerSecond={
                     log.use_time > 0 && log.completion_tokens > 0
                       ? log.completion_tokens / log.use_time
@@ -308,35 +307,11 @@ export function CommonLogMobileCard<TData>(props: {
               {t('Cache')} ↓ {cacheRead.toLocaleString()}
             </span>
           )}
-          {other?.cache_write_unavailable && (
-            <span>
-              {t('Cache Write')}: {t('Not recorded')}
-            </span>
-          )}
           {cacheWrite > 0 && (
             <span>
               {t('Cache')} ↑ {cacheWrite.toLocaleString()}
             </span>
           )}
-        </div>
-      )}
-      {discount.visible && (
-        <div className='text-muted-foreground text-xs [overflow-wrap:anywhere]'>
-          <span className='tabular-nums'>
-            {[
-              discount.groupTier
-                ? `${discount.groupTier} ${discount.groupFactor}`
-                : '',
-              discount.contractState === 'applied' && discount.contractTier
-                ? `${discount.contractLabel} ${discount.contractTier} ${discount.contractFactor}`
-                : discount.contractLabel,
-              discount.finalTier
-                ? `${t('Final discount')} ${discount.finalTier} ${discount.finalFactor}`
-                : '',
-            ]
-              .filter(Boolean)
-              .join(' × ')}
-          </span>
         </div>
       )}
       {contentCell && (
@@ -376,15 +351,20 @@ export function CommonLogMobileCard<TData>(props: {
             <p className='bg-muted rounded-lg p-4 text-base [overflow-wrap:anywhere] whitespace-pre-wrap'>
               {activeField.value}
             </p>
-            {selectedField === 'model' && model.actualModel && (
-              <div className='space-y-2'>
-                <p className='text-muted-foreground'>{t('Actual Model')}</p>
-                <p className='text-base [overflow-wrap:anywhere]'>
-                  {model.actualModel}
-                </p>
-                <CopyButton value={model.actualModel} />
-              </div>
+            {selectedField === 'model' && model.responseModel && (
+              <ResponseModelDetails observation={model.responseModel} />
             )}
+            {selectedField === 'model' &&
+              !model.responseModel &&
+              model.actualModel && (
+                <div className='space-y-2'>
+                  <p className='text-muted-foreground'>{t('Actual Model')}</p>
+                  <p className='text-base [overflow-wrap:anywhere]'>
+                    {model.actualModel}
+                  </p>
+                  <CopyButton value={model.actualModel} />
+                </div>
+              )}
             {selectedField === 'channel' && channelCell && (
               <div>
                 {flexRender(

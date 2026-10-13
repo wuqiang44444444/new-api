@@ -35,7 +35,7 @@ func inspectManagedIndex(db *gorm.DB, value any, name string) (*managedIndex, er
  FROM pragma_index_list(?) l JOIN pragma_index_xinfo(l.name) x ON x.key = 1
  WHERE l.name = ? ORDER BY x.seqno`, stmt.Table, name).Scan(&rows).Error
 	case "mysql":
-		err = db.Raw(`SELECT column_name, non_unique = 0 AS is_unique,
+		err = db.Raw(`SELECT column_name AS column_name, non_unique = 0 AS is_unique,
  index_type = 'BTREE' AND sub_part IS NULL AND collation = 'A' AS is_plain
  FROM information_schema.statistics
  WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?

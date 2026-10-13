@@ -225,7 +225,7 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
               </p>
             ) : null}
             {previewMode === 'legacy-suno' ? (
-              <LegacyAudioPreview data={props.log.data} />
+              <LegacyAudioPreview taskId={props.log.task_id} />
             ) : (
               <TaskArtifacts
                 taskId={props.log.task_id}

@@ -42,7 +42,7 @@ test('successful Seedance results explain temporary availability without promisi
   )
   expect(screen.getByText(notice)).toBeVisible()
   expect(screen.queryByText(/24 hours/)).not.toBeInTheDocument()
-  await screen.findByText('No video result was recorded for this task')
+  await screen.findByText('None')
   rerender(
     <QueryClientProvider client={client}>
       <TaskDetailsDialog

@@ -39,10 +39,10 @@ func TestSeedanceCreateRejectionReleasesHoldWithoutRetry(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			service.InitHttpClient()
 			previousDBType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
-			common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 			t.Cleanup(func() { common.SetDatabaseTypes(previousDBType, previousLogType) })
 			events := []string{}
 			db := setupTaskSubmissionDatabase(t, true, &events)
+
 			seedPublishedSeedanceControllerArtifact(t)
 			sqlDB, err := db.DB()
 			require.NoError(t, err)

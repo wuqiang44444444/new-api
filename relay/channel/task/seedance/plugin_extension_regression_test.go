@@ -56,14 +56,14 @@ func TestSeedancePluginBase64MatchesGo(t *testing.T) {
 
 func TestSeedancePluginCompileFailureStopsAdmissionAndIsVisible(t *testing.T) {
 	store := seedanceplugin.NewStore()
-	row := model.TaskPlugin{Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), Source: plugins.SeedanceSource(), Enabled: true, Active: true}
-	row.SourceHash = sourceHashOf(row.Source)
+	row := model.TaskPlugin{Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), Source: model.LongText(plugins.SeedanceSource()), Enabled: true, Active: true}
+	row.SourceHash = sourceHashOf(string(row.Source))
 	require.NoError(t, store.SyncSnapshot(context.Background(), []model.TaskPlugin{row}))
 	pinned, err := store.ActiveFor(dto.VideoUpstreamProtocolFeicaiVideosV1)
 	require.NoError(t, err)
 	broken := row
 	broken.Source = "invalid javascript ("
-	broken.SourceHash = sourceHashOf(broken.Source)
+	broken.SourceHash = sourceHashOf(string(broken.Source))
 	require.NoError(t, store.SyncSnapshot(context.Background(), []model.TaskPlugin{broken}))
 	version, diagnostics := store.Describe()
 	assert.Empty(t, version)

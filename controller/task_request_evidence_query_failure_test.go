@@ -19,7 +19,7 @@ func TestEvidenceListQueryFailureIsNotAnEmptySuccess(t *testing.T) {
 			injected := false
 			require.NoError(t, db.Callback().Query().Before("gorm:query").Register("test:evidence-query-failure", func(tx *gorm.DB) {
 				_, count := tx.Statement.Dest.(*int64)
-				if tx.Statement.Table == "task_request_evidences" && count == (stage == "count") {
+				if tx.Statement.Schema != nil && tx.Statement.Schema.Name == "TaskRequestEvidence" && count == (stage == "count") {
 					injected = true
 					tx.AddError(errors.New("fixture database unavailable"))
 				}

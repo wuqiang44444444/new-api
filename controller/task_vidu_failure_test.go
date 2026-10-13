@@ -80,7 +80,7 @@ func TestViduFailureCommitsPublicErrorEventAndRefundOnce(t *testing.T) {
 				_ = service.InitTaskRequestEvidenceStore(oldConfig)
 			})
 			allowPrivateTaskMediaTest(t)
-			plugin := model.TaskPlugin{Key: "seedance-link", Version: plugins.SeedanceVersion(), Source: plugins.SeedanceSource(), SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(plugins.SeedanceSource()))), Enabled: true, Active: true}
+			plugin := model.TaskPlugin{Key: "seedance-link", Version: plugins.SeedanceVersion(), Source: model.LongText(plugins.SeedanceSource()), SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(plugins.SeedanceSource()))), Enabled: true, Active: true}
 			require.NoError(t, db.Create(&plugin).Error)
 			require.NoError(t, taskseedance.SyncExtensionSnapshot(context.Background(), []model.TaskPlugin{plugin}))
 			t.Cleanup(func() { require.NoError(t, taskseedance.SyncExtensionSnapshot(context.Background(), nil)) })

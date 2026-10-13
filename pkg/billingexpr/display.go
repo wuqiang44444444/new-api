@@ -55,7 +55,7 @@ const (
 var displayTokenVars = map[string]bool{
 	"p": true, "c": true, "len": true,
 	"cr": true, "cc": true, "cc1h": true,
-	"img": true, "img_o": true, "ai": true, "ao": true,
+	"img": true, "img_cr": true, "img_o": true, "ai": true, "ao": true,
 }
 
 var displayTimeFuncs = map[string]bool{

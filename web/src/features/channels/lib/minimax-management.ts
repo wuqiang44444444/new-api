@@ -37,7 +37,7 @@ export function channelManagementFilter(value?: string): {
   type?: number
   types?: string
 } {
-  if (value === MINIMAX_FILTER) return { types: '35,64' }
+  if (value === MINIMAX_FILTER) return { types: `35,${CHANNEL_TYPE_MINIMAX_LINK}` }
   if (!value || value === 'all') return {}
   return { type: Number(value) }
 }

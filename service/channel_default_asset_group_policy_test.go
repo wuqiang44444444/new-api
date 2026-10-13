@@ -37,7 +37,7 @@ meta.channelConfiguration.assets.find(a => a.protocol === "moxing_volc_assets_v1
 				require.NoError(t, err)
 				require.NoError(t, seedanceplugin.Default.SyncSnapshot(context.Background(), []model.TaskPlugin{{
 					Key: loaded.Meta.Key, Version: loaded.Meta.Version, APIVersion: loaded.Meta.APIVersion,
-					Source: source, Enabled: true, Active: true,
+					Source: model.LongText(source), Enabled: true, Active: true,
 				}}))
 			}
 			calls := 0

@@ -15,5 +15,5 @@ func TestSeedanceTaskNeverRetriesOrSwitchesChannel(t *testing.T) {
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeSeedanceLink}}
 	taskErr := &taskdto.TaskError{Error: errors.New("provider unavailable"), StatusCode: http.StatusServiceUnavailable}
 
-	assert.False(t, shouldRetryTaskRelay(nil, info, taskErr, 3))
+	assert.False(t, (decideDurableTaskRetry(nil, info, taskErr, 3).Action == "retry"))
 }

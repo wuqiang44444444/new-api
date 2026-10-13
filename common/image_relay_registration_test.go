@@ -20,7 +20,7 @@ func TestImageRelayUsesOneChannelAndImageAPIRegistration(t *testing.T) {
 	assert.False(t, legacyRegistered)
 	// 65 stays reserved for the retired Moxing slot; Azure Batch takes 66 and
 	// the count sentinel moves past every allocated type.
-	assert.Equal(t, 67, constant.ChannelTypeDummy)
+	assert.Equal(t, 71, constant.ChannelTypeDummy)
 	require.Greater(t, len(constant.ChannelBaseURLs), constant.ChannelTypeAsyncImage)
 	assert.Equal(t, "https://mm-internal-cn.leonecloud.com", constant.ChannelBaseURLs[constant.ChannelTypeAsyncImage])
 }

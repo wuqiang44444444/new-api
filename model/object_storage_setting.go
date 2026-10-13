@@ -31,7 +31,7 @@ func NotifyObjectStorageSettingUpdate(value string) {
 // GetObjectStorageSetting 读取持久化的原始配置 JSON；未配置时返回空串。
 func GetObjectStorageSetting() (string, error) {
 	var option Option
-	err := DB.Where("key = ?", system_setting.ObjectStorageSettingOptionKey).First(&option).Error
+	err := DB.Where(&Option{Key: system_setting.ObjectStorageSettingOptionKey}).First(&option).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil
@@ -55,7 +55,7 @@ func SaveObjectStorageSetting(value string) error {
 		if err := tx.FirstOrCreate(&option, Option{Key: option.Key}).Error; err != nil {
 			return err
 		}
-		if err := lockForUpdate(tx).Where("key = ?", option.Key).First(&option).Error; err != nil {
+		if err := lockForUpdate(tx).Where(&Option{Key: option.Key}).First(&option).Error; err != nil {
 			return err
 		}
 		var previous system_setting.ObjectStorageConfig

@@ -286,7 +286,7 @@ describe.each(billingKinds)(
         expect(section).toHaveTextContent('Additional charge')
         expect(
           within(section).getAllByText(
-            `$${fixedCharge * expectedRatio}${model.billing_usage_schema ? '' : '/request'}`
+            `$${fixedCharge * expectedRatio}`
           ).length
         ).toBeGreaterThan(0)
       }

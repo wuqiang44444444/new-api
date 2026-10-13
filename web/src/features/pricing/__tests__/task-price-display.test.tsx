@@ -17,72 +17,63 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, cleanup } from '@testing-library/react'
+import { act, render, screen, cleanup, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import i18next from 'i18next'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import {
+  DEFAULT_CURRENCY_CONFIG,
+  useSystemConfigStore,
+} from '@/stores/system-config-store'
 
 import { DynamicPricingBreakdown } from '../components/dynamic-pricing-breakdown'
 import { ModelCard } from '../components/model-card'
 import { ModelDetailsContent } from '../components/model-details'
-import { taskTiersFromBillingDisplay } from '../lib/billing-display'
+import { ModelPriceCell } from '../components/model-price-cell'
 import { getTaskPricingDisplayTiers } from '../lib/task-matrix-display'
 import {
   hasSimpleTaskPricing,
   taskPriceLabel,
   taskEnumLabel,
   taskPricingConditions,
-  taskPricingConditionSummary,
+  taskUsageUnitLabel,
 } from '../lib/task-price-display'
 import type { PricingModel, BillingUsageSchema } from '../types'
-import { taskBillingDisplayFixture } from './billing-display-fixtures'
 
 vi.mock('@visactor/react-vchart', () => ({ VChart: () => null }))
 
-const matrixExpression =
-  'u("has_video_input") ? tier("base", u("resolution") == "1080p" ? u("tokens") * 6.762 / 1000000 : u("tokens") * 6.174 / 1000000) : tier("base", u("resolution") == "1080p" ? u("tokens") * 11.319 / 1000000 : u("tokens") * 10.29 / 1000000)'
-
-it('renders the projected resolution matrix with localized negated conditions', () => {
-  const schema: BillingUsageSchema = {
-    tokens: {
-      type: 'number',
-      unit: 'token',
-      description: { en: 'Token price' },
-    },
-    resolution: { enum: ['1080p'], description: { en: 'Resolution' } },
-    has_video_input: {
-      type: 'boolean',
-      description: { en: 'Reference video' },
-    },
-  }
+it('shows an explicit free request price alongside token prices with distinct units', () => {
   render(
     <DynamicPricingBreakdown
-      billingExpr={matrixExpression}
-      billingDisplay={taskBillingDisplayFixture(matrixExpression)}
-      usageSchema={schema}
-      tiers={taskTiersFromBillingDisplay(
-        taskBillingDisplayFixture(matrixExpression)
-      )}
+      billingExpr='len < 1000 ? tier("free", fixed(0)) : tier("tokens", p * 2 + c * 8)'
+      matchedTierLabel='free'
     />
   )
-  // 四个分支各自带本地化条件,否定分支不再是“其他情况”。
+  expect(screen.getAllByText('$0/request').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('Input / 1M token').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('Price per request').length).toBeGreaterThan(0)
+})
+
+it('renders weekday and hour conditions as time windows instead of expression source', () => {
+  const condition =
+    'weekday("Asia/Shanghai") >= 1 && weekday("Asia/Shanghai") <= 5 && ((hour("Asia/Shanghai") >= 9 && hour("Asia/Shanghai") < 12) || (hour("Asia/Shanghai") >= 14 && hour("Asia/Shanghai") < 18))'
+  render(
+    <DynamicPricingBreakdown
+      billingExpr={`${condition} ? tier("peak", p * 3 + c * 9 + cr * 0.1) : tier("off_peak", p * 1.5 + c * 4.5 + cr * 0.05)`}
+    />
+  )
   expect(
-    screen.getAllByText('Reference video: Yes · Resolution: 1080p').length
+    screen.getAllByText('Mon–Fri 09:00–12:00 or 14:00–18:00 (Asia/Shanghai)')
+      .length
   ).toBeGreaterThan(0)
   expect(
-    screen.getAllByText('Reference video: Yes · Resolution ≠ 1080p').length
+    screen.getAllByText(
+      'Outside these times: Mon–Fri 09:00–12:00 or 14:00–18:00 (Asia/Shanghai)'
+    ).length
   ).toBeGreaterThan(0)
-  expect(
-    screen.getAllByText('Reference video: No · Resolution: 1080p').length
-  ).toBeGreaterThan(0)
-  expect(
-    screen.getAllByText('Reference video: No · Resolution ≠ 1080p').length
-  ).toBeGreaterThan(0)
-  expect(screen.getAllByText(/6\.762/).length).toBeGreaterThan(0)
-  expect(screen.getAllByText(/11\.319/).length).toBeGreaterThan(0)
-  expect(screen.queryByText('Other cases')).not.toBeInTheDocument()
-  expect(screen.queryByText(/u\("has_video_input"\)/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/weekday\(/)).not.toBeInTheDocument()
 })
 
 const model: PricingModel = {
@@ -94,9 +85,6 @@ const model: PricingModel = {
   enable_groups: ['default'],
   billing_mode: 'tiered_expr',
   billing_expr: 'tier("music", u("clips") * 0.22)',
-  billing_display: taskBillingDisplayFixture(
-    'tier("music", u("clips") * 0.22)'
-  ),
   billing_usage_schema: {
     clips: {
       type: 'number',
@@ -111,35 +99,161 @@ const model: PricingModel = {
   },
 }
 const clients: QueryClient[] = []
-it('does not invent ordinary token prices in standard or group details when pricing is missing', () => {
+
+it('shows nested task conditions and prices in detail and group tables without ambiguous log matches', () => {
+  vi.spyOn(api, 'get').mockResolvedValue({ data: { data: { groups: [] } } })
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   clients.push(client)
+  const nestedModel: PricingModel = {
+    ...model,
+    billing_expr:
+      'tier("standard", u("seconds") * (hour("Asia/Shanghai") >= 18 && hour("Asia/Shanghai") < 22 ? (u("resolution") == "4K" ? 0.12 : 0.072) : (u("resolution") == "4K" ? 0.15 : 0.09)))',
+    billing_usage_schema: {
+      seconds: { type: 'number', unit: 'second' },
+      resolution: { enum: ['768P', '4K'] },
+    },
+  }
   render(
     <QueryClientProvider client={client}>
+      <ModelCard model={nestedModel} onClick={vi.fn()} />
+      <ModelPriceCell model={nestedModel} />
       <ModelDetailsContent
-        model={{
-          id: 99,
-          model_name: 'missing-price',
-          quota_type: 0,
-          model_ratio: 37.5,
-          completion_ratio: 1,
-          basis_price_configured: false,
-          enable_groups: ['default'],
-        }}
-        groupRatio={{ default: 1 }}
-        usableGroup={{ default: { desc: '', ratio: 1 } }}
+        model={nestedModel}
+        groupRatio={{ default: 2 }}
+        usableGroup={{ default: { desc: '', ratio: 2 } }}
         endpointMap={{}}
         autoGroups={[]}
         priceRate={1}
-        usdExchangeRate={7}
+        usdExchangeRate={1}
         tokenUnit='M'
+      />
+      <DynamicPricingBreakdown
+        billingExpr={nestedModel.billing_expr}
+        usageSchema={nestedModel.billing_usage_schema}
+        matchedTierLabel='standard'
+        usageFacts={{ seconds: 10, resolution: '4K' }}
       />
     </QueryClientProvider>
   )
-  expect(screen.getAllByText('Not configured')).toHaveLength(2)
-  expect(screen.queryByText('$75')).not.toBeInTheDocument()
+  expect(
+    screen.queryByText('Special billing expression')
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getAllByText(/resolution: 4K · 18:00–22:00 \(Asia\/Shanghai\)/)
+      .length
+  ).toBeGreaterThan(0)
+  expect(
+    screen.getAllByText(/resolution: 768P · Outside these times:/).length
+  ).toBeGreaterThan(0)
+  expect(screen.getByText('$0.072 – $0.15')).toBeVisible()
+  expect(screen.getAllByText('$0.24').length).toBeGreaterThan(0)
+  expect(screen.queryByText('Matched')).not.toBeInTheDocument()
+})
+
+it('explains missing task metadata while retaining the original expression', () => {
+  const expression = 'tier("base", u("seconds") * 0.09)'
+  render(<DynamicPricingBreakdown billingExpr={expression} />)
+  expect(
+    screen.getByText(
+      'Task usage metadata is unavailable. Pricing details cannot be displayed.'
+    )
+  ).toBeVisible()
+  expect(screen.getByText(expression)).toBeVisible()
+})
+
+it('falls back for omitted count labels and preserves canonical units for other quantities', () => {
+  expect(taskUsageUnitLabel({ unit: 'count' }, 'zhCN', '次')).toBe('次')
+  expect(
+    taskUsageUnitLabel(
+      { unit: 'token', unitLabel: { en: 'image' } },
+      'en',
+      '1M token'
+    )
+  ).toBe('1M token')
+})
+
+const imageModel: PricingModel = {
+  ...model,
+  model_name: 'image-model',
+  billing_expr: 'tier("images", u("image_count") * 0.2)',
+  billing_usage_schema: {
+    image_count: {
+      type: 'number',
+      unit: 'count',
+      unitLabel: { en: 'image', zh: '张', 'zh-TW': '張' },
+      description: { en: 'Image generation unit price', zh: '图片生成单价' },
+    },
+  },
+}
+
+it.each([false, true])(
+  'shows localized image labels and units in base and group pricing when configured=%s',
+  async (configured) => {
+    vi.spyOn(api, 'get').mockResolvedValue({ data: { data: { groups: [] } } })
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    clients.push(client)
+    render(
+      <QueryClientProvider client={client}>
+        <ModelDetailsContent
+          model={{
+            ...imageModel,
+            billing_expr: configured ? imageModel.billing_expr : undefined,
+          }}
+          groupRatio={{ default: 2 }}
+          usableGroup={{ default: { desc: '', ratio: 2 } }}
+          endpointMap={{}}
+          autoGroups={[]}
+          priceRate={1}
+          usdExchangeRate={1}
+          tokenUnit='M'
+        />
+      </QueryClientProvider>
+    )
+    await act(() => i18next.changeLanguage('zhCN'))
+    expect(screen.getAllByText('图片生成单价')).toHaveLength(2)
+    expect(screen.getAllByText(configured ? '/ 张' : '张')).toHaveLength(2)
+    expect(screen.queryByText('image_count')).not.toBeInTheDocument()
+    if (configured) {
+      expect(screen.getByText('$0.2')).toBeVisible()
+      expect(screen.getByText('$0.4')).toBeVisible()
+    }
+  }
+)
+
+it('updates count unit labels across cards, table cells and breakdowns with locale fallback', async () => {
+  render(
+    <>
+      <div data-testid='card'>
+        <ModelCard model={imageModel} onClick={() => {}} />
+      </div>
+      <div data-testid='cell'>
+        <ModelPriceCell model={imageModel} />
+      </div>
+      <div data-testid='breakdown'>
+        <DynamicPricingBreakdown
+          billingExpr={imageModel.billing_expr}
+          usageSchema={imageModel.billing_usage_schema}
+        />
+      </div>
+    </>
+  )
+  for (const [language, unit] of [
+    ['en', 'image'],
+    ['zhTW', '張'],
+    ['zhCN', '张'],
+    ['fr', 'image'],
+  ]) {
+    await act(() => i18next.changeLanguage(language))
+    for (const surface of ['card', 'cell', 'breakdown']) {
+      expect(screen.getByTestId(surface)).toHaveTextContent(
+        new RegExp(`/\\s*${unit}`)
+      )
+    }
+  }
 })
 
 afterEach(async () => {
@@ -148,6 +262,48 @@ afterEach(async () => {
   clients.length = 0
   vi.restoreAllMocks()
   await i18next.changeLanguage('en')
+})
+
+it('refreshes memoized provider prices when the group or display currency changes', () => {
+  const previous = useSystemConfigStore.getState().config.currency
+  useSystemConfigStore
+    .getState()
+    .setConfig({ currency: DEFAULT_CURRENCY_CONFIG })
+  try {
+    const shared = {
+      ...model,
+      enable_groups: ['default', 'premium'],
+      group_ratio: { default: 1, premium: 3 },
+      billing_plugin_variants: [
+        {
+          plugin_key: 'alpha',
+          plugin_name: 'Alpha',
+          billing_expr: model.billing_expr ?? '',
+          billing_usage_schema: model.billing_usage_schema ?? {},
+        },
+      ],
+    }
+    const view = render(
+      <ModelPriceCell model={shared} options={{ selectedGroup: 'default' }} />
+    )
+    expect(view.container).toHaveTextContent('0.22/unit')
+    view.rerender(
+      <ModelPriceCell model={shared} options={{ selectedGroup: 'premium' }} />
+    )
+    expect(view.container).toHaveTextContent('0.66/unit')
+    act(() =>
+      useSystemConfigStore.getState().setConfig({
+        currency: {
+          ...DEFAULT_CURRENCY_CONFIG,
+          quotaDisplayType: 'CNY',
+          usdExchangeRate: 2,
+        },
+      })
+    )
+    expect(view.container).toHaveTextContent('1.32/unit')
+  } finally {
+    act(() => useSystemConfigStore.getState().setConfig({ currency: previous }))
+  }
 })
 
 it('shows one standard task price and a localized group price without duplicate tiers', async () => {
@@ -228,37 +384,17 @@ it('preserves condition tables, boolean states and additional charges', () => {
 })
 
 it('keeps rules and custom expressions out of the simple price layout', () => {
-  if (!model.billing_display) throw new Error('Missing billing fixture')
   expect(hasSimpleTaskPricing(model)).toBe(true)
-  // 条件倍率来自投影规则，而不是表达式文本。
   expect(
     hasSimpleTaskPricing({
       ...model,
-      billing_display: {
-        ...model.billing_display,
-        rules: [
-          {
-            text: 'header("x-fast") == "true"',
-            multiplier: 2,
-            fallback: 1,
-            source: 'header',
-            path: 'x-fast',
-            compare_op: '==',
-            value: 'true',
-          },
-        ],
-      },
+      billing_expr: `${model.billing_expr}|||when(header("x-fast") == "true") * 2`,
     })
   ).toBe(false)
-  // 投影整体 opaque 时不进入简单价格布局。
   expect(
     hasSimpleTaskPricing({
       ...model,
-      billing_display: {
-        ...model.billing_display,
-        status: 'opaque',
-        tiers: [],
-      },
+      billing_expr: 'max(u("clips"), 2) * 0.22',
     })
   ).toBe(false)
   expect(taskPriceLabel(undefined, 'clips', 'fr')).toBe('clips')
@@ -371,104 +507,160 @@ it('uses the same recharge conversion and token unit in task condition prices', 
   expect(screen.getAllByText('$3/1M token')).toHaveLength(2)
 })
 
-describe('taskPricingConditionSummary', () => {
-  const schema: BillingUsageSchema = {
-    resolution: {
-      enum: ['1080p'],
-      description: { en: 'Resolution' },
-    },
-    seconds: {
-      type: 'number',
-      unit: 'second',
-      description: { en: 'Seconds' },
-    },
+it('switches provider group prices, localized conditions and examples, and shows unconfigured providers', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({ data: { data: { groups: [] } } })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  clients.push(client)
+  const shared: PricingModel = {
+    ...model,
+    quota_type: 1,
+    model_price: 0.25,
+    billing_plugin_variants: [
+      {
+        plugin_key: 'alpha',
+        plugin_name: 'Alpha',
+        billing_expr: 'tier("alpha", u("seconds") * 0.4)',
+        billing_usage_schema: {
+          seconds: {
+            type: 'number',
+            unit: 'second',
+            description: 'Video unit price',
+          },
+        },
+        billing_usage_examples: [
+          { label: 'Alpha sample', facts: { seconds: 5 } },
+        ],
+      },
+      {
+        plugin_key: 'beta',
+        plugin_name: 'Beta',
+        billing_expr:
+          'u("mode") == "pro" ? tier("pro", u("credits") * 3) : tier("base", u("credits") * 1.5)',
+        billing_usage_schema: {
+          credits: {
+            type: 'number',
+            unit: 'credit',
+            description: 'Credit unit price',
+          },
+          mode: {
+            enum: ['base', 'pro'],
+            enumLabels: {
+              base: { en: 'Standard mode', zh: '标准模式' },
+              pro: { en: 'Professional mode', zh: '专业模式' },
+            },
+          },
+        },
+        billing_usage_examples: [
+          { label: 'Beta sample', facts: { credits: 2, mode: 'base' } },
+        ],
+      },
+      {
+        plugin_key: 'gamma',
+        plugin_name: 'Gamma',
+        billing_expr: '',
+        billing_usage_schema: { images: { type: 'number', unit: 'count' } },
+      },
+      {
+        plugin_key: 'delta',
+        plugin_name: 'Delta',
+        billing_mode: 'ratio',
+        billing_expr: '',
+        billing_usage_schema: { images: { type: 'number', unit: 'count' } },
+      },
+    ],
   }
-  const t = (key: string) => key
-
-  it('renders negated boolean leaves as localized no-states', () => {
-    const text = taskPricingConditionSummary(
-      {
-        conditions: [],
-        conditionTree: {
-          text: 'x',
-          multiplier: 1,
-          op: 'not',
-          children: [
-            {
-              text: 'u("has_video_input")',
-              multiplier: 1,
-              source: 'usage',
-              path: 'has_video_input',
-              compare_op: '==',
-              value: 'true',
-            },
-          ],
-        },
-      },
-      {
-        has_video_input: {
-          type: 'boolean',
-          description: { en: 'Reference video' },
-        },
-      },
-      'en',
-      t,
-      2
+  render(
+    <QueryClientProvider client={client}>
+      <ModelDetailsContent
+        model={shared}
+        groupRatio={{ default: 2 }}
+        usableGroup={{ default: { desc: '', ratio: 2 } }}
+        endpointMap={{}}
+        autoGroups={[]}
+        priceRate={1}
+        usdExchangeRate={1}
+        tokenUnit='M'
+      />
+    </QueryClientProvider>
+  )
+  const user = userEvent.setup()
+  const alpha = screen.getByRole('tab', { name: 'Alpha' })
+  expect(alpha).toHaveAttribute('aria-selected', 'true')
+  let panel = screen.getByRole('tabpanel', { name: 'Alpha' })
+  expect(within(panel).getByText('Alpha sample')).toBeVisible()
+  expect(within(panel).getByText('$0.8')).toBeVisible()
+  await user.click(alpha)
+  await user.keyboard('{ArrowRight}')
+  expect(screen.getByRole('tab', { name: 'Beta' })).toHaveFocus()
+  await user.keyboard('{Enter}')
+  expect(screen.getByRole('tab', { name: 'Beta' })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  )
+  panel = screen.getByRole('tabpanel', { name: 'Beta' })
+  expect(within(panel).getByText('Beta sample')).toBeVisible()
+  expect(within(panel).queryByText('Alpha sample')).not.toBeInTheDocument()
+  expect(within(panel).getByText('Professional mode')).toBeVisible()
+  expect(within(panel).getByText('$3')).toBeVisible()
+  expect(within(panel).getByText('$6')).toBeVisible()
+  await act(() => i18next.changeLanguage('zhCN'))
+  expect(within(panel).getByText('专业模式')).toBeVisible()
+  await act(() => i18next.changeLanguage('en'))
+  await user.click(screen.getByRole('tab', { name: 'Gamma' }))
+  panel = screen.getByRole('tabpanel', { name: 'Gamma' })
+  expect(
+    within(panel).getByText(
+      'This model is billed by usage, but the administrator has not configured its pricing yet.'
     )
-    expect(text).toBe('Reference video: No')
-  })
+  ).toBeVisible()
+  expect(within(panel).queryByRole('table')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('tab', { name: 'Delta' }))
+  panel = screen.getByRole('tabpanel', { name: 'Delta' })
+  expect(within(panel).getByText('$0.5')).toBeVisible()
+})
 
-  it('renders or branches and numeric comparisons from the condition tree', () => {
-    const text = taskPricingConditionSummary(
+it('shows provider count, price range and missing-price status in both list and card views', () => {
+  const shared: PricingModel = {
+    ...model,
+    billing_mode: undefined,
+    billing_expr: undefined,
+    billing_plugin_variants: [
       {
-        conditions: [],
-        conditionTree: {
-          text: 'x',
-          multiplier: 1,
-          op: 'or',
-          children: [
-            {
-              text: 'a',
-              multiplier: 1,
-              source: 'usage',
-              path: 'resolution',
-              compare_op: '==',
-              value: '1080p',
-            },
-            {
-              text: 'b',
-              multiplier: 1,
-              source: 'usage',
-              path: 'seconds',
-              compare_op: '>',
-              value: '30',
-            },
-          ],
-        },
+        plugin_key: 'alpha',
+        plugin_name: 'Alpha',
+        billing_expr: 'tier("alpha", u("seconds") * 0.4)',
+        billing_usage_schema: { seconds: { type: 'number', unit: 'second' } },
       },
-      schema,
-      'en',
-      t,
-      2
-    )
-    expect(text).toBe('Resolution: 1080p or Seconds > 30')
-  })
-
-  it('falls back to the other-cases copy only when nothing is renderable', () => {
-    const text = taskPricingConditionSummary(
       {
-        conditions: [],
-        conditionTree: {
-          text: 'complex',
-          multiplier: 1,
-          text_only: true,
-        },
+        plugin_key: 'beta',
+        plugin_name: 'Beta',
+        billing_expr: 'tier("beta", u("seconds") * 0.8)',
+        billing_usage_schema: { seconds: { type: 'number', unit: 'second' } },
       },
-      schema,
-      'en',
-      t,
-      2
-    )
-    expect(text).toBe('Other cases')
+      {
+        plugin_key: 'gamma',
+        plugin_name: 'Gamma',
+        billing_expr: '',
+        billing_usage_schema: { credits: { type: 'number', unit: 'credit' } },
+      },
+    ],
+  }
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
   })
+  clients.push(client)
+  render(
+    <QueryClientProvider client={client}>
+      <ModelPriceCell model={shared} />
+      <ModelCard model={shared} onClick={vi.fn()} />
+    </QueryClientProvider>
+  )
+  expect(screen.getAllByText(/3 providers/)).toHaveLength(2)
+  expect(screen.getAllByText(/Not configured for some providers/)).toHaveLength(
+    2
+  )
+  expect(screen.getByText('0.4 – 0.8/s')).toBeVisible()
+  expect(screen.getByText('$0.4 – $0.8')).toBeVisible()
 })

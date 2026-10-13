@@ -34,12 +34,12 @@ func UsesTaskBillingDelivery(task *Task) bool {
 	return task != nil && task.Platform != constant.TaskPlatformAzureBatch && task.PrivateData.AsyncBilling != nil && (!task.HasTaskUsageBilling() || task.HasTypedVideoBillingFacts())
 }
 
-func InsertTaskWithBillingLogContext(ctx context.Context, task *Task) error {
-	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return createTaskAndBillingLogTx(tx, task) })
+func InsertTaskWithBillingLogContext(ctx context.Context, task *Task, omitColumns ...string) error {
+	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return createTaskAndBillingLogTx(tx, task, omitColumns...) })
 }
 
-func createTaskAndBillingLogTx(tx *gorm.DB, task *Task) error {
-	if err := tx.Create(task).Error; err != nil {
+func createTaskAndBillingLogTx(tx *gorm.DB, task *Task, omitColumns ...string) error {
+	if err := tx.Omit(omitColumns...).Create(task).Error; err != nil {
 		return err
 	}
 	if !UsesTaskBillingDelivery(task) || IsImageTask(task) {

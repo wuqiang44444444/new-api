@@ -18,7 +18,7 @@ describe('MiniMax management projection', () => {
   test('a persisted JD channel can be edited and saved without changing its protocol or type', () => {
     const channel = channelSchema.parse({
       id: 138,
-      type: 64,
+      type: 69,
       name: 'fixture',
       key: '',
       models: 'customer',
@@ -39,7 +39,7 @@ describe('MiniMax management projection', () => {
     expect(parsed.success).toBe(true)
     if (!parsed.success) return
     const payload = transformFormDataToUpdatePayload(parsed.data, channel.id)
-    expect(payload.type).toBe(64)
+    expect(payload.type).toBe(69)
     expect(JSON.parse(payload.settings ?? '{}').video_upstream_protocol).toBe(
       'jdcloud_video_task_v1'
     )
@@ -48,20 +48,20 @@ describe('MiniMax management projection', () => {
     const options = channelManagementTypeOptions(CHANNEL_TYPE_OPTIONS)
     expect(
       options
-        .filter((item) => item.value === 35 || item.value === 64)
+        .filter((item) => item.value === 35 || item.value === 69)
         .map((item) => item.value)
     ).toEqual([35])
-    expect(CHANNEL_TYPE_OPTIONS.some((item) => item.value === 64)).toBe(true)
+    expect(CHANNEL_TYPE_OPTIONS.some((item) => item.value === 69)).toBe(true)
     expect(options.filter((item) => item.value !== 35)).toEqual(
       CHANNEL_TYPE_OPTIONS.filter(
-        (item) => item.value !== 35 && item.value !== 64
+        (item) => item.value !== 35 && item.value !== 69
       )
     )
   })
   test('the group filter requests both types while individual filters retain single-type semantics', () => {
-    expect(channelManagementFilter('minimax')).toEqual({ types: '35,64' })
+    expect(channelManagementFilter('minimax')).toEqual({ types: '35,69' })
     expect(channelManagementFilter('35')).toEqual({ type: 35 })
-    expect(channelManagementFilter('64')).toEqual({ type: 64 })
+    expect(channelManagementFilter('69')).toEqual({ type: 69 })
     expect(channelManagementFilter('all')).toEqual({})
   })
   test('access labels depend on stored identity and do not call unknown protocols JD', () => {
@@ -73,13 +73,13 @@ describe('MiniMax management projection', () => {
     ).toBe('Native API')
     expect(
       minimaxAccessLabel({
-        type: 64,
+        type: 69,
         settings: '{"video_upstream_protocol":"jdcloud_video_task_v1"}',
       })
     ).toBe('JD Cloud · Standard video')
     expect(
       minimaxAccessLabel({
-        type: 64,
+        type: 69,
         settings: '{"video_upstream_protocol":"unknown"}',
       })
     ).toBe('Unrecognized video protocol')
@@ -87,7 +87,7 @@ describe('MiniMax management projection', () => {
   test('a standard video form cannot save without a declaration version', () => {
     const result = channelFormSchema.safeParse({
       ...CHANNEL_FORM_DEFAULT_VALUES,
-      type: 64,
+      type: 69,
       name: 'test',
       key: 'fixture',
       models: 'customer',

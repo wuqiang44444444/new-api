@@ -40,18 +40,18 @@ func TestGetSeedancePluginExecutionUsageCountsExecutionDependencies(t *testing.T
 	setupSeedancePluginUsageTest(t)
 
 	fixtures := []*Task{
-		seedancePinnedTask("task-in-progress", "IN_PROGRESS", "", "1.0.0", "62"),
-		seedancePinnedTask("task-reconciliation", "RECONCILIATION_REQUIRED", "", "1.0.0", "62"),
-		seedancePinnedTask("task-awaiting-usage", "SUCCESS", "awaiting_usage", "1.0.0", "62"),
-		seedancePinnedTask("task-unsettled-pending", "SUCCESS", "pending", "1.0.0", "62"),
-		seedancePinnedTask("task-failed-refund-pending", "FAILURE", "failed", "1.0.0", "62"),
-		seedancePinnedTask("task-debt", "SUCCESS", "debt", "1.0.0", "62"),
+		seedancePinnedTask("task-in-progress", "IN_PROGRESS", "", "1.0.0", "67"),
+		seedancePinnedTask("task-reconciliation", "RECONCILIATION_REQUIRED", "", "1.0.0", "67"),
+		seedancePinnedTask("task-awaiting-usage", "SUCCESS", "awaiting_usage", "1.0.0", "67"),
+		seedancePinnedTask("task-unsettled-pending", "SUCCESS", "pending", "1.0.0", "67"),
+		seedancePinnedTask("task-failed-refund-pending", "FAILURE", "failed", "1.0.0", "67"),
+		seedancePinnedTask("task-debt", "SUCCESS", "debt", "1.0.0", "67"),
 		// Still counted: visible SUCCESS tasks refresh on ModelArk GET.
-		seedancePinnedTask("task-settled", "SUCCESS", "settled", "1.0.0", "62"),
+		seedancePinnedTask("task-settled", "SUCCESS", "settled", "1.0.0", "67"),
 		// Not counted: pinned to another version.
-		seedancePinnedTask("task-other-version", "IN_PROGRESS", "", "2.0.0", "62"),
+		seedancePinnedTask("task-other-version", "IN_PROGRESS", "", "2.0.0", "67"),
 		// Not counted: historical task without a plugin snapshot.
-		{TaskID: "task-legacy", Platform: constant.TaskPlatform("62"), Status: TaskStatusInProgress},
+		{TaskID: "task-legacy", Platform: constant.TaskPlatform("67"), Status: TaskStatusInProgress},
 		// Not counted: other platform with the same pin shape.
 		seedancePinnedTask("task-other-platform", "IN_PROGRESS", "", "1.0.0", "54"),
 	}
@@ -60,7 +60,7 @@ func TestGetSeedancePluginExecutionUsageCountsExecutionDependencies(t *testing.T
 	}
 
 	attemptSnapshot := func(pluginVersion string) []byte {
-		task := seedancePinnedTask("attempt-template", "IN_PROGRESS", "", pluginVersion, "62")
+		task := seedancePinnedTask("attempt-template", "IN_PROGRESS", "", pluginVersion, "67")
 		snapshot, err := common.Marshal(taskAttemptRecoverySnapshot{Task: *task, PrivateData: task.PrivateData})
 		require.NoError(t, err)
 		return snapshot

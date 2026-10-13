@@ -38,6 +38,14 @@ func TestMain(m *testing.M) {
 
 	if err := db.AutoMigrate(
 		&TaskBillingDelivery{}, &QuotaData{},
+		&ChannelAssetCredential{},
+		&CustomerContract{},
+		&CustomerContractAudit{},
+		&CustomerContractEntityAudit{},
+		&CustomerContractEntityRule{},
+		&CustomerModelContract{},
+		&ImageTaskSlot{},
+
 		&Task{},
 		&TaskCreateIdempotency{},
 		&TaskCreateAttempt{},
@@ -64,13 +72,7 @@ func TestMain(m *testing.M) {
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
-		&ChannelAssetCredential{},
-		&CustomerModelContract{},
-		&CustomerContractAudit{},
-		&CustomerContract{},
-		&CustomerContractEntityRule{},
-		&CustomerContractEntityAudit{},
-		&ImageTaskSlot{},
+		&UserAccessToken{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -90,6 +92,7 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM two_fa_backup_codes")
 		DB.Exec("DELETE FROM two_fas")
 		DB.Exec("DELETE FROM tokens")
+		DB.Exec("DELETE FROM user_access_tokens")
 		DB.Exec("DELETE FROM user_oauth_bindings")
 		DB.Exec("DELETE FROM users")
 		DB.Exec("DELETE FROM logs")
@@ -111,8 +114,6 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM provider_cost_exposures")
 		DB.Exec("DELETE FROM customer_model_contracts")
 		DB.Exec("DELETE FROM customer_contract_audits")
-		DB.Exec("DELETE FROM asset_groups")
-		DB.Exec("DELETE FROM assets")
 	})
 }
 

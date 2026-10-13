@@ -400,7 +400,7 @@ func TestSeedanceExtensionSyncLeavesNativeRegistryUntouched(t *testing.T) {
 	source := plugins.SeedanceSource()
 	hash := func() string { return string(common.Sha256Raw([]byte(source))) }
 	rows := []model.TaskPlugin{{
-		Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), Source: source,
+		Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), Source: model.LongText(source),
 		SourceHash: hash(), Enabled: true, Active: true,
 	}}
 	require.NoError(t, seedanceplugin.Default.SyncSnapshot(context.Background(), rows))
@@ -414,7 +414,7 @@ func TestSeedanceExtensionSyncLeavesNativeRegistryUntouched(t *testing.T) {
 func TestSeedanceExtensionPinBehavior(t *testing.T) {
 	source := plugins.SeedanceSource()
 	rows := []model.TaskPlugin{{
-		Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), Source: source,
+		Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), Source: model.LongText(source),
 		SourceHash: string(common.Sha256Raw([]byte(source))), Enabled: true, Active: true,
 	}}
 	require.NoError(t, seedanceplugin.Default.SyncSnapshot(context.Background(), rows))
@@ -660,7 +660,7 @@ func TestSeedanceExtensionActiveForRequiresProtocolCoverage(t *testing.T) {
 	source := plugins.SeedanceSource()
 	entrySource := source
 	rows := []model.TaskPlugin{{
-		Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), Source: entrySource,
+		Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), Source: model.LongText(entrySource),
 		SourceHash: string(common.Sha256Raw([]byte(entrySource))), Enabled: true, Active: true,
 	}}
 	require.NoError(t, seedanceplugin.Default.SyncSnapshot(context.Background(), rows))
@@ -679,7 +679,7 @@ func TestSeedanceConfigurationRemainsBoundToPinnedCodeAcrossActivation(t *testin
 	t.Cleanup(func() { seedanceplugin.Default = previous })
 	oldSource := plugins.SeedanceSource()
 	old := model.TaskPlugin{Key: SeedanceExtensionPluginKey, Version: plugins.SeedanceVersion(), APIVersion: 3,
-		Source: oldSource, SourceHash: sourceHashOf(oldSource), Enabled: true, Active: true}
+		Source: model.LongText(oldSource), SourceHash: sourceHashOf(oldSource), Enabled: true, Active: true}
 	require.NoError(t, SyncExtensionSnapshot(t.Context(), []model.TaskPlugin{old}))
 	request := seedancePluginTestContext(t)
 	require.NoError(t, PinSeedanceExtensionForChannel(request, dto.VideoUpstreamProtocolFeicaiVideosV1))
@@ -691,7 +691,7 @@ func TestSeedanceConfigurationRemainsBoundToPinnedCodeAcrossActivation(t *testin
 meta.version = "99.0.0";`
 	newSource = strings.Replace(newSource, originalLabel, "Changed label", 1)
 	newVersion := model.TaskPlugin{Key: old.Key, Version: "99.0.0", APIVersion: 3,
-		Source: newSource, SourceHash: sourceHashOf(newSource), Enabled: true, Active: true}
+		Source: model.LongText(newSource), SourceHash: sourceHashOf(newSource), Enabled: true, Active: true}
 	require.NoError(t, SyncExtensionSnapshot(t.Context(), []model.TaskPlugin{newVersion}))
 	stillPinned, err := PinnedSeedanceConfiguration(request)
 	require.NoError(t, err)

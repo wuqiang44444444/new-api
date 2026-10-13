@@ -69,7 +69,7 @@ func TestReadWriteIndexUpgradePreservesLogsAndPolicies(t *testing.T) {
 		{CreatedAt: 300, UserId: 7, Status: 500, EventType: "api_error", Detail: "{}"},
 	}
 	require.NoError(t, db.Create(&events).Error)
-	before, totalBefore, err := GetAllLogs(LogTypeUnknown, 100, 300, "model-a", "", "", 0, 1, 2, 0, "", "", "")
+	before, totalBefore, err := GetAllLogs(LogFilter{Type:LogTypeUnknown,StartTimestamp:100,EndTimestamp:300,ModelName:"model-a"},1,2)
 	require.NoError(t, err)
 	assert.EqualValues(t, 3, totalBefore)
 	require.Len(t, before, 2)
@@ -80,7 +80,7 @@ func TestReadWriteIndexUpgradePreservesLogsAndPolicies(t *testing.T) {
 	require.NoError(t, migrateBillingStatementLogIndex(db))
 	require.NoError(t, migrateCasbinRuleIndex(db))
 	require.NoError(t, MigrateErrorEvents())
-	after, totalAfter, err := GetAllLogs(LogTypeUnknown, 100, 300, "model-a", "", "", 0, 1, 2, 0, "", "", "")
+	after, totalAfter, err := GetAllLogs(LogFilter{Type:LogTypeUnknown,StartTimestamp:100,EndTimestamp:300,ModelName:"model-a"},1,2)
 	require.NoError(t, err)
 	assert.Equal(t, before, after)
 	assert.Equal(t, totalBefore, totalAfter)

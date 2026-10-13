@@ -79,13 +79,11 @@ test('shows reconciliation as a warning and removes active diagnostics after rec
   expect(screen.getByText(explanation)).toBeVisible()
 
   rerender(view({ ...log, status: 'SUCCESS', fail_reason: '' }))
-  fireEvent.click(screen.getByRole('button', { name: 'View details' }))
   expect(screen.queryByText('Verification reason')).not.toBeInTheDocument()
   expect(screen.queryByText(explanation)).not.toBeInTheDocument()
   expect(screen.queryByText(reason)).not.toBeInTheDocument()
 
-  rerender(view({ ...log, status: 'FAILURE' }))
-  fireEvent.click(screen.getByRole('button', { name: 'View details' }))
+  rerender(view({ ...log, status: 'FAILURE', fail_reason: 'Verified failure' }))
   expect(screen.getByText('Fail Reason')).toBeVisible()
   expect(screen.queryByText(explanation)).not.toBeInTheDocument()
   unmount()

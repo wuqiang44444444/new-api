@@ -72,7 +72,7 @@ func (s *Store) EnsureSeeded(ctx context.Context) error {
 
 	existing, err := model.GetTaskPluginVersion(pluginruntime.SeedancePluginKey, version)
 	if err == nil && existing != nil {
-		if existing.Source != source || existing.APIVersion != plugin.Meta.APIVersion {
+		if string(existing.Source) != source || existing.APIVersion != plugin.Meta.APIVersion {
 			return errors.New("embedded Seedance version conflicts with its stored artifact; publish a new version")
 		}
 		if err := model.PromoteEmbeddedSeedancePlugin(version, sourceHashOf(source)); err != nil {
@@ -88,7 +88,7 @@ func (s *Store) EnsureSeeded(ctx context.Context) error {
 		Key:        pluginruntime.SeedancePluginKey,
 		APIVersion: plugin.Meta.APIVersion,
 		Version:    version,
-		Source:     source,
+		Source:     model.LongText(source),
 		SourceHash: sourceHashOf(source),
 		Enabled:    true,
 		Remark:     "embedded Seedance Link extension artifact",
@@ -120,6 +120,13 @@ func (s *Store) SyncSnapshot(ctx context.Context, rows []model.TaskPlugin) error
 	var syncErrors []string
 	for i := range rows {
 		row := rows[i]
+		if row.Source == "" {
+			source, err := model.GetTaskPluginSource(row.Id)
+			if err != nil {
+				return err
+			}
+			row.Source = model.LongText(source)
+		}
 		if row.Key != pluginruntime.SeedancePluginKey {
 			continue
 		}
@@ -150,7 +157,7 @@ func (s *Store) compileRow(row *model.TaskPlugin) (*CompiledVersion, error) {
 	if entry != nil && entry.sourceHash == row.SourceHash {
 		return entry, nil
 	}
-	plugin, info, err := pluginruntime.CompileSeedanceExtension(row.Source, pluginruntime.Options{}, pluginruntime.SeedanceHostContract())
+	plugin, info, err := pluginruntime.CompileSeedanceExtension(string(row.Source), pluginruntime.Options{}, pluginruntime.SeedanceHostContract())
 	if err != nil {
 		return nil, err
 	}

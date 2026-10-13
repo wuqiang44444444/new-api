@@ -107,8 +107,9 @@ describe('MiniMax access choice', () => {
     render(<Harness save={vi.fn()} />)
     const choice = screen.getByRole('combobox', { name: 'Access method' })
     await user.tab()
+    await user.keyboard('{ArrowDown}')
     await screen.findByRole('option', { name: 'Native API' })
-    await user.keyboard('{ArrowDown}{Enter}')
+    await user.keyboard('{Enter}')
     await waitFor(() =>
       expect((choice as HTMLInputElement).value).toBe('Native API')
     )
@@ -129,7 +130,7 @@ describe('MiniMax access choice', () => {
 
   test.each([
     ['Native API', 35],
-    ['JD Cloud · Standard video', 64],
+    ['JD Cloud · Standard video', 69],
   ] as const)(
     'selecting %s clears private fields and submits its real type',
     async (label, type) => {
@@ -159,7 +160,7 @@ describe('MiniMax access choice', () => {
         screen.getByRole('textbox', { name: 'Models' }),
         'customer'
       )
-      if (type === 64) {
+      if (type === 69) {
         await user.type(
           screen.getByRole('textbox', { name: 'Declaration' }),
           '1.2.0'
@@ -175,7 +176,7 @@ describe('MiniMax access choice', () => {
       expect(payload.channel.type).toBe(type)
       expect(payload.channel.name).toBe('MiniMax channel')
       expect(payload.channel.minimax_access_selected).toBeUndefined()
-      if (type === 64) {
+      if (type === 69) {
         expect(
           JSON.parse(payload.channel.settings).video_upstream_protocol
         ).toBe('jdcloud_video_task_v1')
@@ -184,7 +185,7 @@ describe('MiniMax access choice', () => {
       await user.click(choice)
       await user.click(
         await screen.findByRole('option', {
-          name: type === 64 ? 'Native API' : 'JD Cloud · Standard video',
+          name: type === 69 ? 'Native API' : 'JD Cloud · Standard video',
         })
       )
       expect(
@@ -205,7 +206,7 @@ describe('MiniMax access choice', () => {
   )
 
   test('saved MiniMax channels show their access method without allowing a type change', async () => {
-    render(<Harness save={vi.fn()} editing type={64} />)
+    render(<Harness save={vi.fn()} editing type={69} />)
     expect(screen.queryByRole('combobox')).toBeNull()
     expect(screen.getByDisplayValue('JD Cloud · Standard video')).toBeTruthy()
     await userEvent.click(

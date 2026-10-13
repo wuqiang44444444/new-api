@@ -80,7 +80,7 @@ func lockSeedancePluginConfiguration(tx *gorm.DB, key string) error {
 }
 
 func seedanceConfigurationForArtifact(plugin *TaskPlugin) (*jsplugin.SeedanceChannelConfiguration, error) {
-	loaded, info, err := jsplugin.CompileSeedanceExtension(plugin.Source, jsplugin.Options{}, jsplugin.SeedanceHostContract())
+	loaded, info, err := jsplugin.CompileSeedanceExtension(string(plugin.Source), jsplugin.Options{}, jsplugin.SeedanceHostContract())
 	if err != nil {
 		return nil, fmt.Errorf("Seedance plugin configuration cannot be compiled: %s", jsplugin.SeedanceCompilationDiagnostic(err))
 	}

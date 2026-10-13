@@ -278,7 +278,7 @@ Provider 解析或计费规则。文件区间索引只处理已由 adapter 验�
 正文格式处理；具体实现隔离在新增文件。未来上游同步须复核这些窄接线与响应适配器契约。
 实现与本地验证不代表所有真实 Provider、真实账单或生产灰度已验收。
 
-## 6. 图片中转渠道（ChannelTypeAsyncImage=63）
+## 6. 图片中转渠道（ChannelTypeAsyncImage=68）
 
 管理面仍只有 `ChannelTypeAsyncImage` 一个图片中转类型，协议、模型映射与保存校验
 （`model/channel_image_relay.go`）不变：

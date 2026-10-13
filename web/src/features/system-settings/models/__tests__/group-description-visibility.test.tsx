@@ -16,33 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Window } from 'happy-dom'
-import { afterAll, describe, expect, test } from 'vitest'
-
-const domWindow = new Window()
-const domGlobals = [
-  'window',
-  'document',
-  'navigator',
-  'HTMLElement',
-  'HTMLInputElement',
-  'SVGElement',
-  'Node',
-  'Element',
-  'Event',
-  'CustomEvent',
-  'MutationObserver',
-  'requestAnimationFrame',
-  'cancelAnimationFrame',
-  'getComputedStyle',
-] as const
-
-for (const key of domGlobals) {
-  Object.defineProperty(globalThis, key, {
-    configurable: true,
-    value: domWindow[key],
-  })
-}
+import { describe, expect, test } from 'vitest'
 
 const { act, useState } = await import('react')
 const { createRoot } = await import('react-dom/client')
@@ -93,6 +67,9 @@ function PricingEditorHarness(props: {
   return (
     <I18nextProvider i18n={i18n}>
       <GroupRatioVisualEditor
+ section="pricing"
+ onSectionChange={() => undefined}
+ defaultUseAutoGroupField={<div />}
         groupRatio={fields.GroupRatio}
         userUsableGroups={fields.UserUsableGroups}
         groupDescriptions={fields.GroupDescriptions}
@@ -114,9 +91,6 @@ function PricingEditorHarness(props: {
 }
 
 describe('pricing group descriptions', () => {
-  afterAll(() => {
-    domWindow.close()
-  })
 
   test('shows a persisted description when the group is not user selectable', async () => {
     const container = document.createElement('div')

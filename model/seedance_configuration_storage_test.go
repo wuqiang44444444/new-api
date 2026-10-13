@@ -26,7 +26,7 @@ func TestSeedanceConfigurationNativeStorageContract(t *testing.T) {
 	assert.False(t, db.Migrator().HasColumn(&Channel{}, "seedance_plugin_version"))
 	candidate := func(version, providerModel string) TaskPlugin {
 		source := fmt.Sprintf(`export const meta = {apiVersion:2,key:"seedance-link",name:"Test",version:%q,author:{name:"test"},seedanceProtocols:["feicai_videos_v1"],channelConfiguration:{videos:[{protocol:"feicai_videos_v1",label:"Video",models:[%q],modelMetadata:{%q:{minDuration:4,maxDuration:15}},assetProtocols:["none"],defaultAssetProtocol:"none"}],assets:[{protocol:"none",label:"None",groupPolicy:"none",credential:"none"}]}}; export const seedance={feicai_videos_v1:{buildCreate(){},parseCreateResponse(){},parseTaskObservation(){}}};`, version, providerModel, providerModel)
-		return TaskPlugin{Key: "seedance-link", Version: version, APIVersion: 2, Source: source, SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true}
+		return TaskPlugin{Key: "seedance-link", Version: version, APIVersion: 2, Source: LongText(source), SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true}
 	}
 	first := candidate("2.0.0", "provider-one")
 	require.NoError(t, SaveTaskPlugin(&first))

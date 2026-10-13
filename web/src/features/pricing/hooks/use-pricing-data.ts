@@ -1,3 +1,4 @@
+import { useAuthStore } from '@/stores/auth-store'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -20,32 +21,19 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 
 import { useStatus } from '@/hooks/use-status'
-import { useAuthStore } from '@/stores/auth-store'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { getPricing } from '../api'
-import { buildAssetShareGroups } from '../lib/asset-share-groups'
 
-/**
- * Pricing query 的唯一 key 构造器：缓存播种（测试）与失效必须使用同一
- * 形状，避免 key 演进时静默分叉。
- */
-export function getPricingQueryKey(
-  userId: number | undefined,
-  contractId: number | 'batch' | null = null
-): ['pricing', number | undefined, number | 'batch' | null] {
-  return ['pricing', userId, contractId]
-}
+export function getPricingQueryKey(userId: number | undefined, contractId: number | 'batch' | null = null): ['pricing', number | undefined, number | 'batch' | null] { return ['pricing', userId, contractId] }
 
-export function usePricingData(
-  enabled = true,
-  contractId: number | 'batch' | null = null
-) {
+export function usePricingData(enabled = true, contractId: number | 'batch' | null = null) {
+ const userId = useAuthStore((state) => state.auth.user?.id)
   const { status } = useStatus()
-  const userId = useAuthStore((state) => state.auth.user?.id)
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: getPricingQueryKey(userId, contractId),
-    queryFn: () => getPricing(contractId),
+    queryFn: async () => requireServerSuccess(await getPricing(contractId)),
     staleTime: 5 * 60 * 1000,
     enabled,
   })
@@ -65,7 +53,7 @@ export function usePricingData(
 
     const vendorMap = new Map(data.vendors.map((v) => [v.id, v]))
 
-    const hydratedModels = data.data.map((model) => {
+    return data.data.map((model) => {
       const vendor = model.vendor_id
         ? vendorMap.get(model.vendor_id)
         : undefined
@@ -75,16 +63,8 @@ export function usePricingData(
         vendor_name: vendor?.name,
         vendor_icon: vendor?.icon,
         vendor_description: vendor?.description,
-        group_ratio: model.group_ratio ?? data.group_ratio,
+        group_ratio: {...data.group_ratio,...model.group_ratio},
       }
-    })
-    const assetShareGroups = buildAssetShareGroups(hydratedModels)
-    return hydratedModels.map((model) => {
-      const scope = model.api?.assets?.reuse_scope?.trim()
-      const assetShareGroup = scope ? assetShareGroups.get(scope) : undefined
-      return assetShareGroup
-        ? { ...model, asset_share_group: assetShareGroup }
-        : model
     })
   }, [data])
 

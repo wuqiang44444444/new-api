@@ -36,8 +36,7 @@ var (
 	taskArtifactStoreRegionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 )
 
-// TaskArtifactStoreConfig reserves the configuration contract for a future S3
-// implementation. The current release always falls back to upstream proxying.
+// TaskArtifactStoreConfig supplies the S3-compatible implementation in service.
 type TaskArtifactStoreConfig struct {
 	Mode                string
 	S3Endpoint          string
@@ -63,8 +62,9 @@ func LoadTaskArtifactStoreConfig() TaskArtifactStoreConfig {
 		S3PresignTTLSeconds: common.GetEnvOrDefault(TaskArtifactStoreS3PresignTTLEnv, DefaultTaskArtifactStorePresignTTLSeconds),
 	}
 	if err := ValidateTaskArtifactStoreConfig(config); err != nil {
-		common.SysError("invalid task artifact store configuration: " + err.Error() + "; using upstream mode")
+		common.SysError(common.LogText("invalid task artifact store configuration: %s; using upstream mode", err.Error()))
 		config.Mode = TaskArtifactStoreModeUpstream
+		return config
 	}
 	return config
 }

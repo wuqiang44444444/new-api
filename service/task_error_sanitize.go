@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -30,6 +31,19 @@ func taskErrorDetails(err error, fallbackCode string, status int, originModel, u
 			}
 		}
 		return code, common.PublicTaskErrorMessageForModel(message, originModel, upstreamModel)
+	}
+	if status < http.StatusInternalServerError && err != nil {
+		var business struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}
+		if common.UnmarshalJsonStr(err.Error(), &business) == nil && strings.TrimSpace(business.Message) != "" {
+			code := common.PublicTaskErrorCode(business.Code)
+			if code == "" {
+				code = fallbackCode
+			}
+			return code, common.PublicTaskErrorMessageForModel(business.Message, originModel, upstreamModel)
+		}
 	}
 	if status >= http.StatusInternalServerError {
 		return "upstream_unavailable", "Video service is temporarily unavailable"

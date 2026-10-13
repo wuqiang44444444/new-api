@@ -150,7 +150,7 @@ func TestMiniMaxArtifactsRejectUnavailableAndForeignResources(t *testing.T) {
 	for _, scenario := range []string{"pending", "failed", "deleted", "foreign_user", "foreign_app", "missing_upstream_id", "wrong_artifact", "different_part", "missing_frozen_key", "missing_plugin"} {
 		t.Run(scenario, func(t *testing.T) {
 			task := setupSeedanceArtifactTest(t, "https://example.invalid")
-			task.Platform = "64"
+			task.Platform = "69"
 			task.PrivateData.VideoUpstreamProtocol = "jdcloud_video_task_v1"
 			task.PrivateData.ResultURL = "/v1/videos/" + task.TaskID + "/content"
 			task.PrivateData.Execution.TaskPlugin.Key = "minimax-link"

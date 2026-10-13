@@ -66,7 +66,7 @@ func TestObjectStorageSaveWithoutEnvironmentSecret(t *testing.T) {
 	require.NoError(t, model.DB.AutoMigrate(&model.AuditLog{}))
 	t.Cleanup(func() { model.NotifyObjectStorageSettingUpdate("") })
 	require.NoError(t, model.DB.AutoMigrate(&model.Option{}))
-	require.NoError(t, model.DB.Where("key = ?", system_setting.ObjectStorageSettingOptionKey).Delete(&model.Option{}).Error)
+	require.NoError(t, model.DB.Where(&model.Option{Key: system_setting.ObjectStorageSettingOptionKey}).Delete(&model.Option{}).Error)
 	var mu sync.Mutex
 	var data []byte
 	exists := false
@@ -107,7 +107,7 @@ func TestObjectStorageSaveWithoutEnvironmentSecret(t *testing.T) {
 	require.True(t, response.Success)
 	assert.NotContains(t, w.Body.String(), "test-save-secret")
 	var option model.Option
-	require.NoError(t, model.DB.Where("key = ?", system_setting.ObjectStorageSettingOptionKey).First(&option).Error)
+	require.NoError(t, model.DB.Where(&model.Option{Key: system_setting.ObjectStorageSettingOptionKey}).First(&option).Error)
 	var stored system_setting.ObjectStorageConfig
 	require.NoError(t, common.UnmarshalJsonStr(option.Value, &stored))
 	assert.Equal(t, "test-save-secret", stored.Credential)

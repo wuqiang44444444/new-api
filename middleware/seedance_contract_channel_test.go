@@ -40,7 +40,7 @@ func TestSeedanceContractScopeUsesTypedEligibilityAndFailsClosed(t *testing.T) {
 			previousStore := seedanceplugin.Default
 			seedanceplugin.Default = seedanceplugin.NewStore()
 			t.Cleanup(func() { seedanceplugin.Default = previousStore })
-			require.NoError(t, seedanceplugin.Default.SyncSnapshot(context.Background(), []model.TaskPlugin{{Key: loaded.Meta.Key, Version: loaded.Meta.Version, APIVersion: loaded.Meta.APIVersion, Source: source, SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true, Active: true}}))
+			require.NoError(t, seedanceplugin.Default.SyncSnapshot(context.Background(), []model.TaskPlugin{{Key: loaded.Meta.Key, Version: loaded.Meta.Version, APIVersion: loaded.Meta.APIVersion, Source: model.LongText(source), SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true, Active: true}}))
 
 			var bound model.Channel
 			require.NoError(t, db.First(&bound, contract.Rules[0].ChannelId).Error)

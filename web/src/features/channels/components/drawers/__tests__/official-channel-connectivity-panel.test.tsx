@@ -77,7 +77,7 @@ function ConnectivityPanelHarness(props: {
   const form = useForm<ChannelFormValues>({
     defaultValues: {
       ...CHANNEL_FORM_DEFAULT_VALUES,
-      type: 62,
+      type: 67,
       video_upstream_protocol: videoProtocol,
       asset_upstream_protocol: assetProtocol,
     },

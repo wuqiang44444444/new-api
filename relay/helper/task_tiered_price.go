@@ -31,7 +31,7 @@ type TaskBillingProbeProvider interface {
 func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, adaptor any) (types.PriceData, error) {
 	exprString, ok := billing_setting.GetBillingExpr(info.OriginModelName)
 	if !ok {
-		return types.PriceData{}, modelPriceNotConfiguredError(info.OriginModelName, info.UserId)
+		return types.PriceData{}, modelPriceNotConfiguredError(c, info.OriginModelName, info.UserId)
 	}
 	// 异步任务 tiered 表达式禁止非确定性函数（P1-B）：预扣与终态结算分别求值同一表达式，
 	// 而快照只冻结 _task body 与 token，不冻结请求头与求值时间，header()/hour() 等会导致两次

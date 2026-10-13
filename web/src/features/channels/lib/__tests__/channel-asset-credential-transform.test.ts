@@ -30,7 +30,7 @@ import { publishedSeedanceConfiguration } from './seedance-plugin-fixture'
 const officialForm = {
   ...CHANNEL_FORM_DEFAULT_VALUES,
   name: 'official',
-  type: 62,
+  type: 67,
   key: 'video-api-key',
   models: 'video-model',
   video_upstream_protocol: 'modelark_v3_byteplus' as const,
@@ -48,7 +48,7 @@ describe('channel asset credential transforms', () => {
     const payload = transformFormDataToCreatePayload({
       ...CHANNEL_FORM_DEFAULT_VALUES,
       name: 'funcloud',
-      type: 62,
+      type: 67,
       key: 'video-api-key',
       models: 'seedance-2.0-standard',
       video_upstream_protocol: 'funcloud_modelark_v3',

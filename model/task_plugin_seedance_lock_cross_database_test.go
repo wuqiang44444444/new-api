@@ -131,7 +131,7 @@ func TestSeedancePluginVersionLockAcrossServerDatabases(t *testing.T) {
 					return raw
 				}
 				insertCrossDBTask := func(id int64, taskID, status, billing string, clientDeleted int64, version string) {
-					task := &Task{TaskID: taskID, Platform: "62", UserId: 1, Status: TaskStatus(status)}
+					task := &Task{TaskID: taskID, Platform: "67", UserId: 1, Status: TaskStatus(status)}
 					task.PrivateData.Execution = &TaskExecutionSnapshot{
 						TaskPlugin: &TaskPluginSnapshot{Key: "seedance-link", Version: version},
 					}
@@ -146,7 +146,7 @@ func TestSeedancePluginVersionLockAcrossServerDatabases(t *testing.T) {
 				insertCrossDBTask(4, "task_pending_failure", string(TaskStatusFailure), "pending", 0, "1.2.0")
 				insertCrossDBTask(5, "task_settled_cancelled", string(TaskStatusCancelled), "settled", 0, "1.2.0")
 				insertCrossDBTask(6, "task_running", string(TaskStatusInProgress), "", 0, "1.2.0")
-				other := &Task{TaskID: "task_other_key", Platform: "62", UserId: 1, Status: TaskStatusInProgress}
+				other := &Task{TaskID: "task_other_key", Platform: "67", UserId: 1, Status: TaskStatusInProgress}
 				other.PrivateData.Execution = &TaskExecutionSnapshot{
 					TaskPlugin: &TaskPluginSnapshot{Key: "doubao", Version: "9.0.0"},
 				}

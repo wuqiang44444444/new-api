@@ -124,3 +124,30 @@ func TestAttachPricingBillingDisplayDoesNotMutateSharedExampleSlice(t *testing.T
 	// 与定价缓存共享底层数组的原始切片必须保持未写入。
 	assert.Zero(t, shared[0].Total)
 }
+
+func TestAttachPricingBillingDisplayKeepsEachProviderPriceAndCacheImmutable(t *testing.T) {
+	cached := []model.PricingPluginVariant{
+		{PluginKey: "first", BillingExpr: `tier("base", u("clips") * 0.1)`, BillingUsageSchema: map[string]jsplugin.UsageFieldSchema{"clips": {Type: "number", Unit: "count"}}},
+		{PluginKey: "second", BillingExpr: `tier("base", u("clips") * 0.4)`, BillingUsageSchema: map[string]jsplugin.UsageFieldSchema{"clips": {Type: "number", Unit: "count"}}},
+	}
+	item := model.Pricing{BillingPluginVariants: cached}
+	AttachPricingBillingDisplayOne(&item)
+	require.Len(t, item.BillingPluginVariants, 2)
+	for i, expected := range []float64{0.1, 0.4} {
+		require.NotNil(t, item.BillingPluginVariants[i].BillingDisplay)
+		assert.Equal(t, billingexpr.DisplayStatusExact, item.BillingPluginVariants[i].BillingDisplay.Status)
+		assert.InDelta(t, expected, item.BillingPluginVariants[i].BillingDisplay.Tiers[0].UnitPrices["clips"], 1e-12)
+		assert.Nil(t, cached[i].BillingDisplay, "response projection must not change shared pricing cache")
+	}
+}
+
+func TestNativeFixedPricingRetainsUpstreamRequestUnit(t *testing.T) {
+	for _, expression := range []string{`tier("free", fixed(0))`, `tier("image", fixed(0.04)) * image_count`, `len <= 100 ? tier("request", fixed(0.01)) : tier("token", p * 2)`} {
+		t.Run(expression, func(t *testing.T) {
+			item := model.Pricing{BillingMode: "tiered_expr", BillingExpr: expression}
+			AttachPricingBillingDisplayOne(&item)
+			assert.Nil(t, item.BillingDisplay, "token-only projections must not override rc44's native request/image display")
+			assert.Equal(t, expression, item.BillingExpr)
+		})
+	}
+}

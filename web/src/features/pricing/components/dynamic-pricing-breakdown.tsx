@@ -18,14 +18,16 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Tag as TagIcon } from 'lucide-react'
 import { useMemo, type ReactNode } from 'react'
+import { TokenBillingBreakdown } from './token-billing-breakdown'
 import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
-import { ruleGroupsFromBillingDisplay } from '../lib/billing-display'
 import {
+  BILLING_PRICING_VARS,
   MATCH_CONTAINS,
   MATCH_EQ,
   MATCH_EXISTS,
@@ -33,14 +35,19 @@ import {
   MATCH_LT,
   MATCH_RANGE,
   SOURCE_TIME,
+  parseTiersFromExpr,
   requestRuleGroupsFromTrace,
   splitBillingExprAndRequestRules,
   tryParseRequestRuleExpr,
   type ParsedTaskTier,
+  type ParsedTier,
   type RequestCondition,
   type RequestRuleGroup,
   type RequestRuleTrace,
+  type TierCondition,
 } from '../lib/billing-expr'
+import { formatBillingCondition } from '../lib/billing-expression/condition-display'
+import { compileBillingExpression } from '../lib/billing-expression/parser'
 import { isBreakdownTierMatched } from '../lib/breakdown-tier-match'
 import {
   formatTaskUsageUnitPrice,
@@ -50,33 +57,29 @@ import {
 import { getTaskPricingDisplayTiers } from '../lib/task-matrix-display'
 import {
   taskPriceLabel,
-  taskPricingConditionSummary,
+  taskUsageUnitLabel,
+  taskTierConditions,
+  pricingDisplayFallbackKey,
 } from '../lib/task-price-display'
-import type {
-  BillingDisplayProjection,
-  BillingUsageSchema,
-  BillingUsageUnit,
-} from '../types'
-import { TokenBillingBreakdown } from './token-billing-breakdown'
+import type { BillingUsageSchema, BillingUsageUnit, BillingDisplayProjection } from '../types'
+import { tiersFromBillingDisplay, taskTiersFromBillingDisplay, ruleGroupsFromBillingDisplay } from '../lib/billing-display'
 
 type DynamicPricingBreakdownProps = {
+ billingDisplay?: BillingDisplayProjection
+ priceMultiplier?: number
   billingExpr: string | null | undefined
-  /**
-   * Backend-generated strict projection of `billingExpr` for generic token
-   * expressions. When absent or opaque, token prices are not rendered at all
-   * (raw-expression fallback) instead of guessing them locally.
-   */
-  billingDisplay?: BillingDisplayProjection | null
   /**
    * Label of the tier that fired for the current request. When provided,
    * the corresponding row is highlighted and tagged as "Matched". Used by
    * the usage-log details dialog to show which tier the engine selected.
    */
   matchedTierLabel?: string | null
+  matchedBillingUnit?: 'token' | 'request'
+  matchedFixedPrice?: number
   /** Request-rule traces emitted by the settlement run. */
   requestRules?: RequestRuleTrace[] | null
   /**
-   * Hide cache-pricing columns regardless of the tier values. The log
+   * Hide cache-pricing columns regardless of the per-tier values. The log
    * details dialog passes this when the actual request did not consume any
    * cache tokens, so users only see pricing rows that were relevant to the
    * call they are inspecting. Defaults to false (show all configured prices).
@@ -88,23 +91,10 @@ type DynamicPricingBreakdownProps = {
    */
   compact?: boolean
   usageSchema?: BillingUsageSchema
-  /**
-   * 投影驱动的任务档位。定价页面从后端任务 USD 投影取得；未提供时（日志
-   * 详情等历史合同场景）沿用既有表达式解析展示，两者不互为回退。
-   */
-  tiers?: ParsedTaskTier[]
   taskPriceOptions?: Pick<
     DynamicPriceOptions,
     'showRechargePrice' | 'priceRate' | 'usdExchangeRate'
   >
-  /**
-   * Optional multiplier applied to displayed unit prices, e.g. a contract's
-   * effective multiplier. When set, parsed tier unit prices are shown as the
-   * effective contract price (base × multiplier); tier conditions and
-   * thresholds stay untouched. Unparseable expressions fall back to the raw
-   * expression display, which never applies the multiplier. Defaults to 1.
-   */
-  priceMultiplier?: number
   /**
    * Settlement usage facts from the consume log. Used to highlight the
    * expanded matrix display row when the engine label no longer matches
@@ -113,12 +103,16 @@ type DynamicPricingBreakdownProps = {
   usageFacts?: Record<string, string | number>
 }
 
+type BreakdownTier = ParsedTier | ParsedTaskTier
+
 type BreakdownPriceField = {
   id: string
   label: string
   labelKind: DynamicPriceLabelKind
-  unit: BillingUsageUnit | 'request' | 'token'
-  value: (tier: ParsedTaskTier) => number
+  unit: BillingUsageUnit | 'request' | 'token' | 'image'
+  unitLabel?: string | Record<string, string>
+  showTokenUnit?: boolean
+  value: (tier: BreakdownTier) => number
 }
 
 function breakdownPriceFieldLabel(
@@ -128,9 +122,22 @@ function breakdownPriceFieldLabel(
   if (field.labelKind === 'schema') {
     return <span className='break-words whitespace-normal'>{field.label}</span>
   }
-  return t(field.label)
+  return field.showTokenUnit
+    ? `${t(field.label)} / ${t('1M token')}`
+    : t(field.label)
 }
 
+const VAR_LABELS: Record<string, string> = {
+  p: 'Input',
+  c: 'Output',
+  len: 'Full input length',
+}
+const OP_LABELS: Record<string, string> = {
+  '<': '<',
+  '<=': '≤',
+  '>': '>',
+  '>=': '≥',
+}
 const TIME_FUNC_LABELS: Record<string, string> = {
   hour: 'Hour',
   minute: 'Minute',
@@ -139,33 +146,83 @@ const TIME_FUNC_LABELS: Record<string, string> = {
   day: 'Day',
 }
 
+function formatTokenHint(value: string | number): string {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n === 0) return ''
+  if (n >= 1_000_000) {
+    return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
+  }
+  if (n >= 1000) {
+    return `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}K`
+  }
+  return String(n)
+}
+
+function formatConditionSummary(
+  conditions: TierCondition[],
+  t: (key: string) => string
+): string {
+  return conditions
+    .map((c) => {
+      const varLabel = t(VAR_LABELS[c.var] || c.var)
+      const hint = formatTokenHint(c.value)
+      return `${varLabel} ${OP_LABELS[c.op] || c.op} ${hint || c.value}`
+    })
+    .filter(Boolean)
+    .join(' && ')
+}
+
+function isTaskBreakdownTier(tier: BreakdownTier): tier is ParsedTaskTier {
+  return 'unitPrices' in tier
+}
+
 function formatBreakdownConditionSummary(
-  tier: ParsedTaskTier,
+  tier: BreakdownTier,
   t: (key: string) => string,
-  schema: BillingUsageSchema,
+  schema: BillingUsageSchema | undefined,
   language: string,
   tierCount: number
 ): string {
-  return taskPricingConditionSummary(tier, schema, language, t, tierCount)
+  if (!isTaskBreakdownTier(tier)) {
+    if (tier.conditionText) {
+      return (
+        formatBillingCondition(tier.conditionText, t, language) ??
+        t(tier.conditionText)
+      )
+    }
+    return formatConditionSummary(tier.conditions, t)
+  }
+  return (
+    taskTierConditions(tier, schema, language, t) ||
+    t(tierCount > 1 ? 'Other cases' : 'All requests')
+  )
 }
 
 function formatBreakdownPrice(
   value: number,
   field: BreakdownPriceField,
+  symbol: string,
+  rate: number,
   t: (key: string) => string,
-  taskPriceOptions: DynamicPricingBreakdownProps['taskPriceOptions']
+  taskPriceOptions: DynamicPricingBreakdownProps['taskPriceOptions'],
+  language: string
 ): string {
-  const amount = formatTaskUsageUnitPrice(value, {
-    tokenUnit: 'M',
-    ...taskPriceOptions,
-  })
+  const amount =
+    field.labelKind === 'schema' ||
+    field.unit === 'request' ||
+    field.unit === 'image'
+      ? formatTaskUsageUnitPrice(value, { tokenUnit: 'M', ...taskPriceOptions })
+      : `${symbol}${(value * rate).toFixed(4)}`
   if (field.unit === 'second') return `${amount}/${t('s')}`
-  if (field.unit === 'count') return `${amount}/${t('unit')}`
+  if (field.unit === 'count') {
+    return `${amount}/${taskUsageUnitLabel(field, language, t('unit'))}`
+  }
   if (field.unit === 'credit') return `${amount}/${t('credit')}`
   if (field.unit === 'token' && field.labelKind === 'schema') {
     return `${amount}/${t('1M token')}`
   }
   if (field.unit === 'request') return `${amount}/${t('request')}`
+  if (field.unit === 'image') return `${amount}/${t('image')}`
   return amount
 }
 
@@ -204,8 +261,13 @@ function describeCondition(
 
 function describeGroup(
   group: RequestRuleGroup,
-  t: (key: string) => string
+  t: (key: string) => string,
+  locale: string
 ): string {
+  if (group.conditionText) {
+    const formatted = formatBillingCondition(group.conditionText, t, locale)
+    if (formatted) return formatted
+  }
   const description = (group.conditions || [])
     .map((condition) => describeCondition(condition, t))
     .join(' && ')
@@ -221,67 +283,64 @@ function nextOccurrenceKey(
   return `${baseKey}:${occurrence}`
 }
 
-export function DynamicPricingBreakdown(props: DynamicPricingBreakdownProps) {
-  if (!props.billingExpr) return null
-  if (props.usageSchema) {
-    return <TaskPricingBreakdown {...props} usageSchema={props.usageSchema} />
-  }
-  const multiplier = props.priceMultiplier ?? 1
-  return (
-    <TokenBillingBreakdown
-      expression={props.billingExpr}
-      projection={props.billingDisplay}
-      multiplier={
-        Number.isFinite(multiplier) && multiplier >= 0 ? multiplier : 1
-      }
-      compact={props.compact ?? false}
-      hideCacheColumns={props.hideCacheColumns ?? false}
-      matchedTier={props.matchedTierLabel}
-      traces={props.requestRules}
-      priceOptions={props.taskPriceOptions}
-    />
-  )
-}
-
-function TaskPricingBreakdown({
+function NativePricingBreakdown({
   billingExpr,
   billingDisplay,
+  priceMultiplier = 1,
   matchedTierLabel,
+  matchedBillingUnit,
+  matchedFixedPrice,
   requestRules,
+  hideCacheColumns = false,
   compact = false,
   usageSchema,
   taskPriceOptions,
-  priceMultiplier = 1,
   usageFacts,
-  tiers: projectionTiers,
-}: DynamicPricingBreakdownProps & { usageSchema: BillingUsageSchema }) {
+}: DynamicPricingBreakdownProps) {
   const { t, i18n } = useTranslation()
   const expr = billingExpr || ''
-  const { tiers, ruleGroups } = useMemo(() => {
-    if (projectionTiers) {
-      // 定价页面：金额、条件与可证明倍率只来自后端投影，绝不回退本地解析。
+  const currency = useSystemConfigStore((s) => s.config.currency)
+
+  const { symbol, rate } = useMemo(() => {
+    if (currency.quotaDisplayType === 'CNY') {
+      return { symbol: '¥', rate: (currency.usdExchangeRate || 7) * priceMultiplier }
+    }
+    if (currency.quotaDisplayType === 'CUSTOM') {
       return {
-        tiers: projectionTiers,
-        ruleGroups:
-          requestRules != null
-            ? requestRuleGroupsFromTrace(requestRules)
-            : ruleGroupsFromBillingDisplay(billingDisplay),
+        symbol: currency.customCurrencySymbol || '¤',
+        rate: (currency.customCurrencyExchangeRate || 1) * priceMultiplier,
       }
     }
+    return { symbol: '$', rate: priceMultiplier }
+  }, [currency, priceMultiplier])
+
+  const { tiers, ruleGroups } = useMemo(() => {
     const split = splitBillingExprAndRequestRules(expr)
-    const parsedTiers = getTaskPricingDisplayTiers(
-      split.billingExpr,
-      usageSchema
-    )
-    const parsedRules =
-      requestRules != null
-        ? requestRuleGroupsFromTrace(requestRules)
-        : tryParseRequestRuleExpr(split.requestRuleExpr || '')
+    let parsedTiers
+    if (billingDisplay) {
+      parsedTiers = usageSchema ? taskTiersFromBillingDisplay(billingDisplay) : tiersFromBillingDisplay(billingDisplay)
+    } else {
+      parsedTiers = usageSchema ? getTaskPricingDisplayTiers(split.billingExpr, usageSchema) : parseTiersFromExpr(split.billingExpr)
+    }
+    let parsedRules = billingDisplay ? ruleGroupsFromBillingDisplay(billingDisplay) : tryParseRequestRuleExpr(split.requestRuleExpr || '')
+    if (requestRules != null) parsedRules = requestRuleGroupsFromTrace(requestRules)
+    if (!billingDisplay && !parsedRules && requestRules == null) {
+      const compiled = compileBillingExpression(expr)
+      if (compiled.status === 'ready') {
+        parsedRules = requestRuleGroupsFromTrace(
+          compiled.requestRules.map((rule) => ({
+            cond: expr.slice(rule.condition.start, rule.condition.end),
+            multiplier: rule.multiplier,
+            matched: false,
+          }))
+        )
+      }
+    }
     return {
       tiers: parsedTiers,
       ruleGroups: parsedRules || [],
     }
-  }, [expr, usageSchema, requestRules, projectionTiers, billingDisplay])
+  }, [expr, usageSchema, requestRules, billingDisplay])
 
   const hasTiers = tiers.length > 0
   const hasRules = ruleGroups.length > 0
@@ -301,245 +360,350 @@ function TaskPricingBreakdown({
                 {t('Special billing expression')}
               </div>
               <div className='text-muted-foreground text-xs'>
-                {t('Unable to parse structured pricing')}
+                {t(pricingDisplayFallbackKey(expr, usageSchema))}
               </div>
             </div>
           </div>
         )}
-        {projectionTiers ? (
-          <div className='text-muted-foreground text-xs'>
-            {t('Pricing details temporarily unavailable')}
-          </div>
-        ) : (
-          <>
-            <div className='text-muted-foreground mb-1 text-[10px] font-medium tracking-wider uppercase'>
-              {t('Raw expression')}
-            </div>
-            <code className='text-muted-foreground block text-xs break-all'>
-              {expr}
-            </code>
-          </>
-        )}
+        <div className='text-muted-foreground mb-1 text-[10px] font-medium tracking-wider uppercase'>
+          {t('Raw expression')}
+        </div>
+        <code className='text-muted-foreground block text-xs break-all'>
+          {expr}
+        </code>
       </section>
     )
   }
 
-  const visiblePriceFields: BreakdownPriceField[] = Object.entries(usageSchema)
-    .filter(
-      ([field, definition]) =>
-        definition.type === 'number' &&
-        Boolean(definition.unit) &&
-        // 显式零价也是有效报价：按字段存在性展示，缺失才省略。
-        tiers.some(
-          (tier) =>
-            tier.unitPrices[field] != null &&
-            Number.isFinite(Number(tier.unitPrices[field]))
+  const visiblePriceFields: BreakdownPriceField[] = (() => {
+    if (!hasTiers) return []
+    if (usageSchema) {
+      const fields: BreakdownPriceField[] = Object.entries(usageSchema)
+        .filter(
+          ([field, definition]) =>
+            definition.type === 'number' &&
+            Boolean(definition.unit) &&
+            tiers.some(
+              (tier) =>
+                isTaskBreakdownTier(tier) &&
+                Number(tier.unitPrices[field] || 0) > 0
+            )
         )
-    )
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([field, definition]) => ({
-      id: field,
-      label: taskPriceLabel(definition.description, field, i18n.language),
-      labelKind: 'schema',
-      unit: definition.unit as BillingUsageUnit,
-      value: (tier) => Number(tier.unitPrices[field] || 0),
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([field, definition]) => ({
+          id: field,
+          label: taskPriceLabel(definition.description, field, i18n.language),
+          labelKind: 'schema' as const,
+          unit: definition.unit as BillingUsageUnit,
+          unitLabel: definition.unitLabel,
+          value: (tier: BreakdownTier) =>
+            isTaskBreakdownTier(tier) ? Number(tier.unitPrices[field] || 0) : 0,
+        }))
+      if (
+        tiers.some((tier) => isTaskBreakdownTier(tier) && tier.constant > 0)
+      ) {
+        fields.push({
+          id: 'constant',
+          label: 'Additional charge',
+          labelKind: 'i18n',
+          unit: 'request',
+          value: (tier: BreakdownTier) =>
+            isTaskBreakdownTier(tier) ? tier.constant : 0,
+        })
+      }
+      return fields
+    }
+    const fields: BreakdownPriceField[] = BILLING_PRICING_VARS.filter(
+      (variable) => {
+        if (hideCacheColumns && variable.group === 'cache') return false
+        return tiers.some(
+          (tier) =>
+            !isTaskBreakdownTier(tier) &&
+            Number(tier[variable.field as string as keyof ParsedTier] || 0) > 0
+        )
+      }
+    ).map((variable, index) => ({
+      id: variable.field ?? `price-${index}`,
+      label: variable.shortLabel,
+      labelKind: 'i18n' as const,
+      unit: 'token',
+      value: (tier: BreakdownTier) =>
+        isTaskBreakdownTier(tier)
+          ? 0
+          : Number(tier[variable.field as string as keyof ParsedTier] || 0),
     }))
-  if (tiers.some((tier) => tier.hasConstant || tier.constant > 0)) {
-    visiblePriceFields.push({
-      id: 'constant',
-      label: 'Additional charge',
-      labelKind: 'i18n',
-      unit: 'request',
-      value: (tier) => tier.constant,
-    })
-  }
+    if (
+      tiers.some(
+        (tier) => !isTaskBreakdownTier(tier) && tier.billingUnit === 'request'
+      )
+    ) {
+      for (const field of fields) field.showTokenUnit = true
+      fields.push({
+        id: 'fixedPrice',
+        label: tiers.some(
+          (tier) => !isTaskBreakdownTier(tier) && tier.imageCount
+        )
+          ? 'Price per image'
+          : 'Price per request',
+        labelKind: 'i18n',
+        unit: tiers.some(
+          (tier) => !isTaskBreakdownTier(tier) && tier.imageCount
+        )
+          ? 'image'
+          : 'request',
+        value: (tier) =>
+          !isTaskBreakdownTier(tier) && tier.billingUnit === 'request'
+            ? Number(tier.fixedPrice)
+            : Number.NaN,
+      })
+    }
+    return fields
+  })()
   const mobileTierKeyOccurrences = new Map<string, number>()
   const requestRuleKeyOccurrences = new Map<string, number>()
 
-  const effectiveMultiplier =
-    Number.isFinite(priceMultiplier) && priceMultiplier >= 0
-      ? priceMultiplier
-      : 1
-  // 显式零价是有效报价：字段存在即渲染金额，只有缺失才显示“-”。
-  const isFieldPresent = (tier: ParsedTaskTier, field: BreakdownPriceField) => {
-    if (field.id === 'constant') {
-      return tier.hasConstant || tier.constant !== 0
-    }
-    const raw = tier.unitPrices[field.id]
-    return raw != null && Number.isFinite(Number(raw))
-  }
-
   return (
     <section className={cn('min-w-0', !compact && 'py-3 sm:py-4')}>
-      <div className={cn(compact ? cn(hasRules && 'mb-2') : 'mb-3 sm:mb-4')}>
-        <div className='space-y-1.5 sm:hidden'>
-          {tiers.map((tier) => {
-            const condSummary = formatBreakdownConditionSummary(
-              tier,
-              t,
-              usageSchema,
-              i18n.language,
-              tiers.length
-            )
-            const isMatched = isBreakdownTierMatched(
-              tier,
-              tiers,
-              matchedTierLabel,
-              usageFacts
-            )
-            const rowKey = nextOccurrenceKey(
-              JSON.stringify(tier),
-              mobileTierKeyOccurrences
-            )
-            return (
-              <div
-                key={`tier-mobile-${rowKey}`}
-                className={cn(
-                  'rounded-md border p-2',
-                  isMatched && 'border-emerald-500/40 bg-emerald-500/10'
-                )}
-              >
-                <div className='mb-1.5 flex flex-wrap items-center gap-1.5'>
-                  {isMatched && (
-                    <Badge
-                      variant='secondary'
-                      className='bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
-                    >
-                      {t('Matched')}
-                    </Badge>
-                  )}
-                </div>
-                {condSummary && (
-                  <div className='text-muted-foreground mb-1.5 text-xs'>
-                    {condSummary}
-                  </div>
-                )}
+      {!compact && !usageSchema && (
+        <div className='mb-3 flex items-start gap-2 sm:mb-4'>
+          <span className='mt-0.5 inline-flex size-6 items-center justify-center rounded-lg bg-amber-100 text-amber-700 shadow-sm dark:bg-amber-500/20 dark:text-amber-300'>
+            <TagIcon className='size-3.5' />
+          </span>
+          <div>
+            <div className='text-foreground text-base font-medium'>
+              {t('Dynamic Pricing')}
+            </div>
+            <div className='text-muted-foreground text-xs'>
+              {t('Prices vary by usage tier and request conditions')}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hasTiers && (
+        <div className={cn(compact ? cn(hasRules && 'mb-2') : 'mb-3 sm:mb-4')}>
+          {!usageSchema && (
+            <div
+              className={
+                compact
+                  ? 'text-muted-foreground mb-1.5 text-xs font-medium'
+                  : 'text-foreground mb-2 text-sm font-semibold'
+              }
+            >
+              {t('Tiered price table')}
+            </div>
+          )}
+          <div className='space-y-1.5 sm:hidden'>
+            {tiers.map((tier) => {
+              const condSummary = formatBreakdownConditionSummary(
+                tier,
+                t,
+                usageSchema,
+                i18n.language,
+                tiers.length
+              )
+              const isMatched = isBreakdownTierMatched(
+                tier,
+                tiers,
+                matchedTierLabel,
+                usageFacts,
+                matchedBillingUnit,
+                matchedFixedPrice
+              )
+              const rowKey = nextOccurrenceKey(
+                JSON.stringify(tier),
+                mobileTierKeyOccurrences
+              )
+              return (
                 <div
+                  key={`tier-mobile-${rowKey}`}
                   className={cn(
-                    'grid gap-x-3 gap-y-1.5',
-                    visiblePriceFields.length > 1 && 'grid-cols-2'
+                    'rounded-md border p-2',
+                    isMatched && 'border-emerald-500/40 bg-emerald-500/10'
                   )}
                 >
-                  {visiblePriceFields.map((field) => (
-                    <div key={field.id} className='min-w-0'>
-                      <div className='text-muted-foreground text-xs font-medium break-words whitespace-normal'>
-                        {breakdownPriceFieldLabel(field, t)}
-                      </div>
-                      <div
-                        className={cn(
-                          'break-words font-mono',
-                          compact ? 'text-xs' : 'text-sm font-semibold'
-                        )}
+                  <div className='mb-1.5 flex flex-wrap items-center gap-1.5'>
+                    {!usageSchema && (
+                      <Badge
+                        variant='secondary'
+                        className='bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
                       >
-                        {isFieldPresent(tier, field)
-                          ? formatBreakdownPrice(
-                              field.value(tier) * effectiveMultiplier,
-                              field,
-                              t,
-                              taskPriceOptions
-                            )
-                          : '-'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        <StaticDataTable
-          className='hidden rounded-none border-0 sm:block'
-          tableClassName={
-            compact
-              ? '[&_td]:text-xs [&_td_*]:text-xs [&_th]:text-xs [&_th_*]:text-xs'
-              : 'text-sm'
-          }
-          headerRowClassName='hover:bg-transparent'
-          data={tiers}
-          getRowKey={(_tier, index) => `tier-${index}`}
-          getRowClassName={(tier) => {
-            const isMatched = isBreakdownTierMatched(
-              tier,
-              tiers,
-              matchedTierLabel,
-              usageFacts
-            )
-            return cn(
-              isMatched &&
-                'bg-emerald-50/70 hover:bg-emerald-50/70 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/10'
-            )
-          }}
-          columns={[
-            {
-              id: 'tier',
-              header: t('Applicable conditions'),
-              className: cn(
-                'text-muted-foreground py-2 font-medium',
-                compact && 'h-8'
-              ),
-              cellClassName: cn(
-                'align-top whitespace-normal break-words',
-                compact ? 'py-2' : 'py-2.5'
-              ),
-              cell: (tier) => {
-                const condSummary = formatBreakdownConditionSummary(
-                  tier,
-                  t,
-                  usageSchema,
-                  i18n.language,
-                  tiers.length
-                )
-                const isMatched = isBreakdownTierMatched(
-                  tier,
-                  tiers,
-                  matchedTierLabel,
-                  usageFacts
-                )
-                return (
-                  <>
-                    <div className='flex flex-wrap items-center gap-1.5'>
-                      {isMatched && (
-                        <Badge
-                          variant='secondary'
-                          className='bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
-                        >
-                          {t('Matched')}
-                        </Badge>
-                      )}
-                    </div>
-                    {condSummary && (
-                      <div className='text-muted-foreground mt-1 text-xs'>
-                        {condSummary}
-                      </div>
+                        {tier.label || t('Default')}
+                      </Badge>
                     )}
-                  </>
-                )
+                    {isMatched && (
+                      <Badge
+                        variant='secondary'
+                        className='bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
+                      >
+                        {t('Matched')}
+                      </Badge>
+                    )}
+                  </div>
+                  {condSummary && (
+                    <div className='text-muted-foreground mb-1.5 text-xs'>
+                      {condSummary}
+                    </div>
+                  )}
+                  <div
+                    className={cn(
+                      'grid gap-x-3 gap-y-1.5',
+                      visiblePriceFields.length > 1 && 'grid-cols-2'
+                    )}
+                  >
+                    {visiblePriceFields.map((field) => {
+                      const value = field.value(tier)
+                      return (
+                        <div key={field.id} className='min-w-0'>
+                          <div className='text-muted-foreground text-xs font-medium break-words whitespace-normal'>
+                            {breakdownPriceFieldLabel(field, t)}
+                          </div>
+                          <div
+                            className={cn(
+                              'break-words font-mono',
+                              compact ? 'text-xs' : 'text-sm font-semibold'
+                            )}
+                          >
+                            {value > 0 ||
+                            ((field.unit === 'request' ||
+                              field.unit === 'image') &&
+                              Number.isFinite(value))
+                              ? formatBreakdownPrice(
+                                  value,
+                                  field,
+                                  symbol,
+                                  rate,
+                                  t,
+                                  taskPriceOptions,
+                                  i18n.language
+                                )
+                              : '-'}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <StaticDataTable
+            className='hidden rounded-none border-0 sm:block'
+            tableClassName={
+              compact
+                ? '[&_td]:text-xs [&_td_*]:text-xs [&_th]:text-xs [&_th_*]:text-xs'
+                : 'text-sm'
+            }
+            headerRowClassName='hover:bg-transparent'
+            data={tiers}
+            getRowKey={(_tier, index) => `tier-${index}`}
+            getRowClassName={(tier) => {
+              const isMatched = isBreakdownTierMatched(
+                tier,
+                tiers,
+                matchedTierLabel,
+                usageFacts,
+                matchedBillingUnit,
+                matchedFixedPrice
+              )
+              return cn(
+                isMatched &&
+                  'bg-emerald-50/70 hover:bg-emerald-50/70 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/10'
+              )
+            }}
+            columns={[
+              {
+                id: 'tier',
+                header: usageSchema ? t('Applicable conditions') : t('Tier'),
+                className: cn(
+                  'text-muted-foreground py-2 font-medium',
+                  compact && 'h-8'
+                ),
+                cellClassName: cn(
+                  'align-top whitespace-normal break-words',
+                  compact ? 'py-2' : 'py-2.5'
+                ),
+                cell: (tier) => {
+                  const condSummary = formatBreakdownConditionSummary(
+                    tier,
+                    t,
+                    usageSchema,
+                    i18n.language,
+                    tiers.length
+                  )
+                  const isMatched = isBreakdownTierMatched(
+                    tier,
+                    tiers,
+                    matchedTierLabel,
+                    usageFacts,
+                    matchedBillingUnit,
+                    matchedFixedPrice
+                  )
+                  return (
+                    <>
+                      <div className='flex flex-wrap items-center gap-1.5'>
+                        {!usageSchema && (
+                          <Badge
+                            variant='secondary'
+                            className='bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
+                          >
+                            {tier.label || t('Default')}
+                          </Badge>
+                        )}
+                        {isMatched && (
+                          <Badge
+                            variant='secondary'
+                            className='bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
+                          >
+                            {t('Matched')}
+                          </Badge>
+                        )}
+                      </div>
+                      {condSummary && (
+                        <div className='text-muted-foreground mt-1 text-xs'>
+                          {condSummary}
+                        </div>
+                      )}
+                    </>
+                  )
+                },
               },
-            },
-            ...visiblePriceFields.map((field) => ({
-              id: field.id,
-              header: breakdownPriceFieldLabel(field, t),
-              className: cn(
-                'text-muted-foreground py-2 text-right font-medium',
-                compact && 'h-8'
-              ),
-              cellClassName: cn(
-                'text-right align-top font-mono',
-                compact ? 'py-2' : 'py-2.5'
-              ),
-              cell: (tier: ParsedTaskTier) => {
-                if (!isFieldPresent(tier, field)) return '-'
-                const value = field.value(tier) * effectiveMultiplier
-                return (
-                  <span className={cn(!compact && 'font-semibold')}>
-                    {formatBreakdownPrice(value, field, t, taskPriceOptions)}
-                  </span>
-                )
-              },
-            })),
-          ]}
-        />
-      </div>
+              ...visiblePriceFields.map((field) => ({
+                id: field.id,
+                header: breakdownPriceFieldLabel(field, t),
+                className: cn(
+                  'text-muted-foreground py-2 text-right font-medium',
+                  compact && 'h-8'
+                ),
+                cellClassName: cn(
+                  'text-right align-top font-mono',
+                  compact ? 'py-2' : 'py-2.5'
+                ),
+                cell: (tier: BreakdownTier) => {
+                  const value = field.value(tier)
+                  return value > 0 ||
+                    ((field.unit === 'request' || field.unit === 'image') &&
+                      Number.isFinite(value)) ? (
+                    <span className={cn(!compact && 'font-semibold')}>
+                      {formatBreakdownPrice(
+                        value,
+                        field,
+                        symbol,
+                        rate,
+                        t,
+                        taskPriceOptions,
+                        i18n.language
+                      )}
+                    </span>
+                  ) : (
+                    '-'
+                  )
+                },
+              })),
+            ]}
+          />
+        </div>
+      )}
 
       {hasRules && (
         <div>
@@ -573,7 +737,7 @@ function TaskPricingBreakdown({
                       compact ? 'text-xs' : 'text-sm'
                     )}
                   >
-                    {describeGroup(group, t)}
+                    {describeGroup(group, t, i18n.language)}
                   </span>
                   <Badge
                     variant='secondary'
@@ -591,13 +755,11 @@ function TaskPricingBreakdown({
           </ul>
         </div>
       )}
-      {billingDisplay?.applied_exchange_rate && (
-        <p className='text-muted-foreground mt-2 text-xs'>
-          {t('Amounts use the CNY/USD exchange rate {{rate}}; each request locks its rate at acceptance', {
-            rate: billingDisplay.applied_exchange_rate.rate,
-          })}
-        </p>
-      )}
     </section>
   )
+}
+
+export function DynamicPricingBreakdown(props: DynamicPricingBreakdownProps) {
+if(props.billingDisplay !== undefined && !props.usageSchema) return <TokenBillingBreakdown expression={props.billingExpr || ''} projection={props.billingDisplay} multiplier={props.priceMultiplier ?? 1} compact={props.compact ?? false} hideCacheColumns={props.hideCacheColumns ?? false} matchedTier={props.matchedTierLabel} traces={props.requestRules} priceOptions={props.taskPriceOptions} />
+return <NativePricingBreakdown {...props} />
 }

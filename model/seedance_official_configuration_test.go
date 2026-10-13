@@ -29,7 +29,7 @@ func TestOfficialPluginConfigurationCommitsSeparateCredentialAndPreservesTenant(
 	originalSettings := channel.OtherSettings
 	require.NoError(t, db.AutoMigrate(&Task{}, &TaskCreateAttempt{}))
 	source := strings.Replace(plugins.SeedanceSource(), `version: "`+published.Version+`"`, `version: "8.0.0"`, 1)
-	next := TaskPlugin{Key: "seedance-link", Version: "8.0.0", APIVersion: 3, Source: source, SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true}
+	next := TaskPlugin{Key: "seedance-link", Version: "8.0.0", APIVersion: 3, Source: LongText(source), SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true}
 	require.NoError(t, SaveTaskPlugin(&next))
 	require.NoError(t, ActivateTaskPlugin(next.Key, next.Version))
 	var stored Channel
@@ -44,7 +44,7 @@ func TestOfficialPluginConfigurationCommitsSeparateCredentialAndPreservesTenant(
 	require.ErrorContains(t, PinSeedanceChannelConfigurationInput(channel), "reload the channel form")
 	source = strings.Replace(source, `version: "8.0.0"`, `version: "8.1.0"`, 1)
 	source = strings.Replace(source, `fixed: "cn-beijing"`, `fixed: "other-region"`, 1)
-	incompatible := TaskPlugin{Key: next.Key, Version: "8.1.0", APIVersion: 3, Source: source, SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true}
+	incompatible := TaskPlugin{Key: next.Key, Version: "8.1.0", APIVersion: 3, Source: LongText(source), SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true}
 	require.NoError(t, SaveTaskPlugin(&incompatible))
 	require.ErrorContains(t, ActivateTaskPlugin(next.Key, incompatible.Version), "incompatible with channels")
 	active, err := GetTaskPluginVersion(next.Key, "")

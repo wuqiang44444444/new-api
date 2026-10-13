@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"math"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -91,6 +92,7 @@ func TestCustomerContractImageRetryReservesFullCount(t *testing.T) {
 			token := model.Token{UserId: user.Id, Key: "contract-image-retry-test", RemainQuota: tc.tokenQuota, Status: common.TokenStatusEnabled, ExpiredTime: -1}
 			require.NoError(t, model.DB.Create(&token).Error)
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
 			c.Set("token_quota", 0) // Exercise actual holds, without the native trust bypass.
 			info := &relaycommon.RelayInfo{
 				UserId: user.Id, TokenId: token.Id, TokenKey: token.Key,
@@ -120,7 +122,7 @@ func TestCustomerContractImageRetryReservesFullCount(t *testing.T) {
 			if tc.wantError {
 				require.NotNil(t, apiErr, "insufficient Key quota must stop the attempt before sending")
 				assert.True(t, kittypes.IsSkipRetryError(apiErr))
-				assert.False(t, shouldRetry(c, apiErr, 3))
+				assert.False(t, (service.DecideRelayRetry(c, apiErr, 3).Action == "retry"))
 				wantHeld = firstHold
 			} else {
 				require.Nil(t, apiErr)

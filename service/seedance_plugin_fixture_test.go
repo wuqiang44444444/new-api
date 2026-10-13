@@ -19,5 +19,5 @@ func pinPublishedSeedanceServiceArtifact(t *testing.T) {
 	previous := seedanceplugin.Default
 	seedanceplugin.Default = seedanceplugin.NewStore()
 	t.Cleanup(func() { seedanceplugin.Default = previous })
-	require.NoError(t, seedanceplugin.Default.SyncSnapshot(context.Background(), []model.TaskPlugin{{Key: loaded.Meta.Key, Version: loaded.Meta.Version, APIVersion: loaded.Meta.APIVersion, Source: source, Enabled: true, Active: true}}))
+	require.NoError(t, seedanceplugin.Default.SyncSnapshot(context.Background(), []model.TaskPlugin{{Key: loaded.Meta.Key, Version: loaded.Meta.Version, APIVersion: loaded.Meta.APIVersion, Source: model.LongText(source), Enabled: true, Active: true}}))
 }

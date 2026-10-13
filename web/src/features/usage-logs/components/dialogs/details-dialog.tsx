@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { billingModeLabel } from '@/features/billing-reconciliation/lib'
 import type { TFunction } from 'i18next'
 /*
 Copyright (C) 2023-2026 QuantumNous
@@ -56,20 +57,20 @@ import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { billingModeLabel } from '@/features/billing-reconciliation/lib'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
+import { BILLING_PRICING_VARS } from '@/features/pricing/lib/billing-expr'
+import { pluginUsageSchema } from '@/features/pricing/lib/plugin-pricing'
+import { PolicyDecisionRecord } from '@/features/system-settings/request-policies/decision-record'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import {
-  formatBillingCurrencyFromUSD,
-  getCurrencyDisplay,
-} from '@/lib/currency'
+import { TaskEvidence } from '../task-evidence'
+import { getContractDiscountFact } from '../../lib/discount-display'
+import { getCurrencyDisplay, formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { AuditDetailFields } from '../../audit/components/audit-detail-fields'
 import type { UsageLog } from '../../data/schema'
-import { getContractDiscountFact } from '../../lib/discount-display'
 import {
   parseLogOther,
   getParamOverrideActionLabel,
@@ -81,7 +82,9 @@ import {
   getFirstResponseTimeColor,
   getResponseTimeColor,
   getReasoningEffortVariant,
+  logTokenName,
   renderAuditContent,
+  renderLogContent,
 } from '../../lib/format'
 import { buildQuotaAuditOperation } from '../../lib/quota-audit-operation'
 import {
@@ -91,8 +94,8 @@ import {
 } from '../../lib/utils'
 import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
 import { LogDiscountCell } from '../log-discount-cell'
+import { ResponseModelDetails } from '../model-badge'
 import { PluginAuthorLink } from '../plugin-author-link'
-import { TaskEvidence } from '../task-evidence'
 import { DetailRow, DetailSection } from './log-detail-layout'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
@@ -489,47 +492,36 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
   const { t } = useTranslation()
   const { log, other } = props
 
-  const promptTokens =
-    other.billing_facts?.input_tokens ?? (log.prompt_tokens || 0)
-  const completionTokens =
-    other.billing_facts?.output_tokens ?? (log.completion_tokens || 0)
-  const cacheRead =
-    other.billing_facts?.cache_read_tokens ?? (other.cache_tokens || 0)
-  const cacheWrite =
-    other.billing_facts?.cache_write_tokens ??
-    (other.cache_creation_tokens || 0)
+  const promptTokens = other.billing_facts?.input_tokens ?? (log.prompt_tokens || 0)
+  const completionTokens = other.billing_facts?.output_tokens ?? (log.completion_tokens || 0)
+  const cacheRead = other.billing_facts?.cache_read_tokens ?? (other.cache_tokens || 0)
+  const cacheWrite = other.billing_facts?.cache_write_tokens ?? (other.cache_creation_tokens || 0)
   const cacheWrite5m = other.cache_creation_tokens_5m || 0
   const cacheWrite1h = other.cache_creation_tokens_1h || 0
   const hasTokens = promptTokens > 0 || completionTokens > 0
 
-  if (
-    !hasTokens &&
-    !other.cache_write_unavailable &&
-    !other.billing_facts?.input_tokens_unavailable
-  ) {
-    return null
-  }
+  if (!hasTokens && !other.cache_write_unavailable && !other.billing_facts?.input_tokens_unavailable) return null
 
   const rows: Array<{ label: string; value: string }> = []
 
-  rows.push({
-    label: t('Input Tokens'),
-    value: other.billing_facts?.input_tokens_unavailable
-      ? t('Not recorded')
-      : promptTokens.toLocaleString(),
-  })
+  rows.push({ label: t('Input Tokens'), value: other.billing_facts?.input_tokens_unavailable ? t('Not recorded') : promptTokens.toLocaleString() })
+ if(other.cache_write_unavailable) rows.push({label:t('Cache Write'),value:t('Not recorded')})
   rows.push({
     label: t('Output Tokens'),
     value: completionTokens.toLocaleString(),
   })
 
-  if (other.cache_write_unavailable) {
-    rows.push({ label: t('Cache Write'), value: t('Not recorded') })
-  }
   if (cacheRead > 0) {
     rows.push({
       label: t('Cache Read'),
       value: cacheRead.toLocaleString(),
+    })
+  }
+
+  if (other.image_cache_tokens !== undefined) {
+    rows.push({
+      label: t('Image Cache'),
+      value: other.image_cache_tokens.toLocaleString(),
     })
   }
 
@@ -566,6 +558,29 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
       {rows.map((row) => (
         <DetailRow key={row.label} label={row.label} value={row.value} mono />
       ))}
+      {other.billing_tokens && (
+        <div
+          role='group'
+          aria-label={t('Billable token breakdown')}
+          className='space-y-2'
+        >
+          <Label className='text-xs font-semibold'>
+            {t('Billable token breakdown')}
+          </Label>
+          {BILLING_PRICING_VARS.map((variable) => {
+            const count = other.billing_tokens?.[variable.key]
+            if (count === undefined || !Number.isFinite(count)) return null
+            return (
+              <DetailRow
+                key={variable.key}
+                label={t(variable.shortLabel)}
+                value={count.toLocaleString()}
+                mono
+              />
+            )
+          })}
+        </div>
+      )}
     </DetailSection>
   )
 }
@@ -596,9 +611,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
     other?.billing_mode === 'tiered_expr' &&
     !!other?.expr_b64
   const pricingData = usePricingData(props.open && isTieredBilling)
-  const billingUsageSchema = pricingData.models.find(
-    (model) => model.model_name === props.log.model_name
-  )?.billing_usage_schema
+  const billingUsageSchema = pluginUsageSchema(
+    pricingData.models.find(
+      (model) => model.model_name === props.log.model_name
+    ),
+    other?.admin_info?.task_plugin?.key
+  )
   const hasAudioTokens = other?.ws || other?.audio
   const showTiming = isTimingLogType(props.log.type)
   const showAdminIp =
@@ -666,7 +684,11 @@ export function DetailsDialog(props: DetailsDialogProps) {
       )
     : null
   const operationText = renderAuditContent(other, t)
-  const details = (isTopup ? operationText : null) ?? props.log.content ?? ''
+  const details =
+    (isTopup ? operationText : null) ??
+    renderLogContent(other, t) ??
+    props.log.content ??
+    ''
   const auditRoute = isManage && props.isAdmin ? other?.audit_info : undefined
   // Channel update records which fields changed (stable field tokens); render
   // them with their localized labels for admins.
@@ -739,7 +761,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
       description={t('View the complete details for this log entry')}
       contentClassName={cn(
         'min-w-0 overflow-hidden',
-        'max-sm:max-h-[calc(100dvh-1.5rem)] max-sm:w-[calc(100vw-1.5rem)] max-sm:max-w-[calc(100vw-1.5rem)] max-sm:p-4',
+        'max-sm:max-h-(--dialog-available-height) max-sm:w-[calc(100vw-1.5rem)] max-sm:max-w-[calc(100vw-1.5rem)] max-sm:p-4',
         isTieredBilling ? 'sm:max-w-4xl lg:max-w-5xl' : 'sm:max-w-lg'
       )}
       headerClassName='max-sm:gap-1'
@@ -748,14 +770,13 @@ export function DetailsDialog(props: DetailsDialogProps) {
       contentHeight='min(72dvh, 720px)'
       bodyClassName='pr-2 sm:pr-4'
     >
-      {props.open && props.isAdmin && props.log.request_id ? (
-        <TaskEvidence
+      <div className='w-full max-w-full min-w-0 space-y-2.5 overflow-x-hidden py-1 sm:space-y-3'>
+{props.isAdmin && (        <TaskEvidence
           key={props.log.request_id}
           requestId={props.log.request_id}
           isRoot={props.isRoot}
-        />
-      ) : null}
-      <div className='w-full max-w-full min-w-0 space-y-2.5 overflow-x-hidden py-1 sm:space-y-3'>
+        />)}
+
         {/* Overview section - key identifiers */}
         <div className='min-w-0 space-y-1'>
           {props.log.request_id && (
@@ -796,7 +817,11 @@ export function DetailsDialog(props: DetailsDialogProps) {
           )}
 
           {props.log.token_name && (
-            <DetailRow label={t('Token')} value={props.log.token_name} mono />
+            <DetailRow
+              label={t('Token')}
+              value={logTokenName(props.log, t)}
+              mono
+            />
           )}
 
           {(props.log.group || other?.group) && (
@@ -898,6 +923,14 @@ export function DetailsDialog(props: DetailsDialogProps) {
         )}
 
         {/* Quota saturation marker (admin only) */}
+        {props.isAdmin && adminInfo?.request_policy?.length ? (
+          <DetailSection
+            label={t('Request policy decisions')}
+            icon={<Route className='size-4' />}
+          >
+            <PolicyDecisionRecord events={adminInfo.request_policy} />
+          </DetailSection>
+        ) : null}
         {props.isAdmin && other?.admin_info?.quota_saturation && (
           <DetailSection
             icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
@@ -1241,21 +1274,28 @@ export function DetailsDialog(props: DetailsDialogProps) {
           />
         )}
 
-        {/* Model mapping */}
-        {other?.is_model_mapped && other?.upstream_model_name && (
-          <DetailSection label={t('Model Mapping')}>
-            <DetailRow
-              label={t('Request Model')}
-              value={props.log.model_name}
-              mono
-            />
-            <DetailRow
-              label={t('Actual Model')}
-              value={other.upstream_model_name}
-              mono
-            />
+        {other?.response_model && (
+          <DetailSection label={t('Response Model')}>
+            <ResponseModelDetails observation={other.response_model} />
           </DetailSection>
         )}
+        {/* Model mapping for logs without response observations */}
+        {!other?.response_model &&
+          other?.is_model_mapped &&
+          other?.upstream_model_name && (
+            <DetailSection label={t('Model Mapping')}>
+              <DetailRow
+                label={t('Request Model')}
+                value={props.log.model_name}
+                mono
+              />
+              <DetailRow
+                label={t('Actual Model')}
+                value={other.upstream_model_name}
+                mono
+              />
+            </DetailSection>
+          )}
 
         {/* Token breakdown (for consume/error types with token data) */}
         {isDisplayableType(props.log.type) && other && (
@@ -1274,11 +1314,20 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {/* Tiered pricing breakdown (when billing_mode is tiered_expr) */}
         {isTieredBilling && other?.expr_b64 && (
           <DetailSection label={t('Dynamic Pricing')}>
+            {other.image_count !== undefined && (
+              <DetailRow
+                label={t('Billable image count')}
+                value={other.image_count}
+              />
+            )}
             <DynamicPricingBreakdown
+billingDisplay={other.billing_display}
+priceMultiplier={getContractDiscountFact(other)?.ratio ?? 1}
               compact
               billingExpr={decodeBillingExprB64(other.expr_b64)}
-              billingDisplay={other.billing_display}
               matchedTierLabel={other.matched_tier}
+              matchedBillingUnit={other.billing_unit}
+              matchedFixedPrice={other.fixed_price}
               requestRules={other.request_rules}
               hideCacheColumns={!hasAnyCacheTokens(other)}
               usageSchema={billingUsageSchema}
@@ -1431,6 +1480,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {/* Content */}
         {details && (
           <div className='space-y-1.5'>
+
             <Label className='text-xs font-semibold'>{t('Content')}</Label>
             <div className='bg-muted/30 relative min-w-0 overflow-hidden rounded-md border p-2.5'>
               <Button

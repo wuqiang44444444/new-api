@@ -58,7 +58,7 @@ function Harness() {
   const form = useForm<ChannelFormValues>({
     defaultValues: {
       ...CHANNEL_FORM_DEFAULT_VALUES,
-      type: 62,
+      type: 67,
       video_upstream_protocol: 'feicai_videos_v1',
     },
   })
@@ -82,7 +82,7 @@ function Harness() {
       </output>
       <button
         type='button'
-        onClick={() => form.reset({ ...CHANNEL_FORM_DEFAULT_VALUES, type: 62 })}
+        onClick={() => form.reset({ ...CHANNEL_FORM_DEFAULT_VALUES, type: 67 })}
       >
         Reset form
       </button>

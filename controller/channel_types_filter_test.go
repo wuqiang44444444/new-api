@@ -43,8 +43,8 @@ func TestChannelTypesFilter(t *testing.T) {
 	}
 	for _, row := range []model.Channel{
 		{Id: 1, Name: "sample-native", Type: 35, Status: 1, Group: "default", Models: "customer", Tag: common.GetPointer("a")},
-		{Id: 2, Name: "sample-jd", Type: 64, Status: 1, Group: "default", Models: "customer", Tag: common.GetPointer("a")},
-		{Id: 3, Name: "sample-jd-disabled", Type: 64, Status: 2, Group: "default", Models: "customer", Tag: common.GetPointer("b")},
+		{Id: 2, Name: "sample-jd", Type: 69, Status: 1, Group: "default", Models: "customer", Tag: common.GetPointer("a")},
+		{Id: 3, Name: "sample-jd-disabled", Type: 69, Status: 2, Group: "default", Models: "customer", Tag: common.GetPointer("b")},
 		{Id: 4, Name: "sample-other", Type: 1, Status: 1, Group: "default", Models: "customer", Tag: common.GetPointer("c")},
 		{Id: 5, Name: "sample-private", Type: 35, Status: 1, Group: "private", Models: "customer", Tag: common.GetPointer("d")},
 	} {
@@ -59,15 +59,15 @@ func TestChannelTypesFilter(t *testing.T) {
 			ids         []int
 			total       int
 		}{
-			{"first page", "types=35,64&p=1&page_size=1", []int{1}, 3},
-			{"second page", "types=35,64&p=2&page_size=1", []int{2}, 3},
-			{"deduplicate", "types=35,%2064,35", []int{1, 2, 3}, 3},
-			{"status", "types=35,64&status=enabled", []int{1, 2}, 2},
+			{"first page", "types=35,69&p=1&page_size=1", []int{1}, 3},
+			{"second page", "types=35,69&p=2&page_size=1", []int{2}, 3},
+			{"deduplicate", "types=35,%2069,35", []int{1, 2, 3}, 3},
+			{"status", "types=35,69&status=enabled", []int{1, 2}, 2},
 			{"unknown", "types=12345", []int{}, 0},
 			{"legacy single", "type=35", []int{1}, 1},
 			{"legacy all", "", []int{1, 2, 3, 4}, 4},
-			{"tags first", "types=35,64&tag_mode=true&p=1&page_size=1", []int{1, 2}, 2},
-			{"tags second", "types=35,64&tag_mode=true&p=2&page_size=1", []int{3}, 2},
+			{"tags first", "types=35,69&tag_mode=true&p=1&page_size=1", []int{1, 2}, 2},
+			{"tags second", "types=35,69&tag_mode=true&p=2&page_size=1", []int{3}, 2},
 		} {
 			t.Run(route+"/"+tc.name, func(t *testing.T) {
 				w := httptest.NewRecorder()
@@ -92,7 +92,7 @@ func TestChannelTypesFilter(t *testing.T) {
 				assert.Equal(t, 1, response.Data.TypeCounts["1"], "type counts must ignore the selected type set")
 			})
 		}
-		for _, query := range []string{"types=", "types=0", "types=-1", "types=35,", "types=35,no", "types=2147483648", "type=35&types=64", "type=&types=64", "types=35&types=64"} {
+		for _, query := range []string{"types=", "types=0", "types=-1", "types=35,", "types=35,no", "types=2147483648", "type=35&types=69", "type=&types=69", "types=35&types=69"} {
 			t.Run(route+"/invalid/"+query, func(t *testing.T) {
 				w := httptest.NewRecorder()
 				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, route+"?"+query, nil))
@@ -100,7 +100,7 @@ func TestChannelTypesFilter(t *testing.T) {
 			})
 		}
 	}
-	for _, filter := range []string{"", "type=35&", "types=35,64&"} {
+	for _, filter := range []string{"", "type=35&", "types=35,69&"} {
 		for _, page := range []string{"p=-1&page_size=20", "p=9223372036854775807&page_size=20", "p=2&page_size=9223372036854775807"} {
 			t.Run("ordinary search pagination/"+filter+page, func(t *testing.T) {
 				w := httptest.NewRecorder()
@@ -133,7 +133,7 @@ func TestChannelTypesFilter(t *testing.T) {
 		t.Run("tag pagination/"+tc.query, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			require.NotPanics(t, func() {
-				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/search?types=35,64&tag_mode=true&"+tc.query, nil))
+				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/search?types=35,69&tag_mode=true&"+tc.query, nil))
 			})
 			assert.Equal(t, tc.status, w.Code)
 			if tc.status == http.StatusOK {
@@ -152,7 +152,7 @@ func TestChannelTypesFilter(t *testing.T) {
 }
 
 func TestMiniMaxStandardVideoRejectsChatProbe(t *testing.T) {
-	result := testChannel(context.Background(), &model.Channel{Type: 64}, 1, "customer", "", false)
+	result := testChannel(context.Background(), &model.Channel{Type: 69}, 1, "customer", "", false)
 	require.Error(t, result.localErr)
 	assert.False(t, result.upstreamAttempted)
 }

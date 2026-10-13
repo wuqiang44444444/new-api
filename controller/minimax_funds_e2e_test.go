@@ -84,7 +84,7 @@ func newMiniMaxFundsFixture(t *testing.T, expectedHold ...int) *seedanceFundsFix
 	require.NoError(t, fx.db.Save(&channel).Error)
 	source := plugins.MinimaxSource()
 	row := model.TaskPlugin{Key: jsplugin.MinimaxPluginKey, Version: plugins.MinimaxVersion(), APIVersion: 3,
-		Source: source, SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Active: true, Enabled: true}
+		Source: model.LongText(source), SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Active: true, Enabled: true}
 	require.NoError(t, fx.db.Create(&row).Error)
 	previousStore := minimaxplugin.Default
 	minimaxplugin.Default = minimaxplugin.NewStore()

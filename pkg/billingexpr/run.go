@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/relaykit/dto"
+
 	"github.com/expr-lang/expr"
 	"github.com/tidwall/gjson"
 )
@@ -54,31 +56,50 @@ func RunExprByHashWithRequest(exprStr, hash string, params TokenParams, request 
 }
 
 func runProgram(entry *cachedEntry, params TokenParams, request RequestInput) (float64, TraceResult, error) {
+	requestRules, usedVars := entry.requestRules, entry.usedVars
 	if entry.usesExchangeRate {
 		if err := request.ExchangeRate.Validate(); err != nil {
 			return 0, TraceResult{}, err
 		}
 	}
 	trace := TraceResult{
-		RequestRules: append([]RequestRuleTrace(nil), entry.requestRules...),
+		BillingUnit:  BillingUnitToken,
+		RequestRules: append([]RequestRuleTrace(nil), requestRules...),
 	}
 	headers := normalizeHeaders(request.Headers)
+	imageCount := 1
+	if usedVars["image_count"] {
+		if request.ImageCount != nil {
+			imageCount = *request.ImageCount
+		}
+		if imageCount < 1 || imageCount > dto.MaxImageN {
+			return 0, trace, fmt.Errorf("image_count must be between 1 and %d", dto.MaxImageN)
+		}
+		trace.ImageCount = &imageCount
+	}
 
 	env := map[string]any{
-		"p":     params.P,
-		"c":     params.C,
-		"len":   params.Len,
-		"cr":    params.CR,
-		"cc":    params.CC,
-		"cc1h":  params.CC1h,
-		"img":   params.Img,
-		"img_o": params.ImgO,
-		"ai":    params.AI,
-		"ao":    params.AO,
+		"image_count": float64(imageCount),
+		"p":           params.P,
+		"c":           params.C,
+		"len":         params.Len,
+		"cr":          params.CR,
+		"cc":          params.CC,
+		"cc1h":        params.CC1h,
+		"img":         params.Img,
+		"img_cr":      params.ImgCR,
+		"img_o":       params.ImgO,
+		"ai":          params.AI,
+		"ao":          params.AO,
 		"tier": func(name string, value float64) float64 {
 			trace.MatchedTier = name
 			trace.Cost = value
 			return value
+		},
+		"fixed": func(amount float64) float64 {
+			trace.BillingUnit = BillingUnitRequest
+			trace.FixedPrice = &amount
+			return amount * 1_000_000
 		},
 		requestRuleTraceFunction: func(ruleIndex int, matched bool, multiplier float64) float64 {
 			if matched && ruleIndex >= 0 && ruleIndex < len(trace.RequestRules) {

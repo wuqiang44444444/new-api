@@ -39,7 +39,22 @@ func frozenLogExchangeRate(other map[string]any) *billingexpr.ExchangeRateContex
 // 按通用 token 单位投影。单位由调用方传入的类型化字段事实决定，不以表达
 // 式文本中是否出现 u() 判断。
 func AttachPricingBillingDisplayOne(item *model.Pricing) {
+	if len(item.BillingPluginVariants) > 0 {
+		variants := append([]model.PricingPluginVariant(nil), item.BillingPluginVariants...)
+		for i := range variants {
+			projected := model.Pricing{BillingExpr: variants[i].BillingExpr, BillingUsageSchema: variants[i].BillingUsageSchema, BillingUsageExamples: variants[i].BillingUsageExamples}
+			AttachPricingBillingDisplayOne(&projected)
+			variants[i].BillingDisplay = projected.BillingDisplay
+			variants[i].BillingUsageExamples = projected.BillingUsageExamples
+		}
+		item.BillingPluginVariants = variants
+	}
 	expression := item.BillingExpr
+	// rc44 fixed() carries upstream per-request/image units. Keep its native
+	// display path; the local token/task projection does not describe that unit.
+	if billingexpr.UsesFixedPricing(expression) {
+		return
+	}
 	if strings.TrimSpace(expression) == "" {
 		return
 	}
@@ -116,6 +131,9 @@ func AttachLogsBillingDisplay(logs []*model.Log) {
 		if err != nil {
 			continue
 		}
+		if billingexpr.UsesFixedPricing(string(expression)) {
+			continue
+		}
 		frozenRate := frozenLogExchangeRate(payload)
 		projection, err := billingexpr.DisplayProjectionForWithRate(string(expression), frozenRate)
 		if err != nil {
@@ -132,7 +150,7 @@ func AttachLogsBillingDisplay(logs []*model.Log) {
 func AttachModelPricingBillingDisplay(snapshot *model.ModelPricingSnapshot) {
 	for i := range snapshot.Entries {
 		expression, _ := snapshot.Entries[i].Effective["billing_setting.billing_expr"].(string)
-		if expression == "" {
+		if expression == "" || billingexpr.UsesFixedPricing(expression) {
 			continue
 		}
 		projection, err := billingexpr.DisplayProjectionForWithRate(expression, currentDisplayExchangeRate())

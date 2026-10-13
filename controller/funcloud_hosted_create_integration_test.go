@@ -43,9 +43,9 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 	t.Helper()
 	directURL := outcome == "direct_url" || outcome == "direct_url_without_library"
 	service.InitHttpClient()
-	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	events := []string{}
 	db := setupTaskSubmissionDatabase(t, true, &events)
+
 	seedPublishedSeedanceControllerArtifact(t)
 	sqlDB, err := db.DB()
 	require.NoError(t, err)

@@ -92,7 +92,7 @@ func TestNativeTaskCalculationIsSavedWithFunding(t *testing.T) {
 	c := billingexpr.NewCalculation()
 	c.Add("multiply", "quota", 80, 20, 4)
 	setTaskCalculation(task, c.Finish(80), "settlement")
-	RecalculateTaskQuota(context.Background(), task, 80, "calculation")
+	RecalculateTaskQuota(context.Background(), task, 80, common.NewMessage("calculation"))
 	var saved model.Task
 	require.NoError(t, model.DB.First(&saved, task.ID).Error)
 	require.NotNil(t, saved.PrivateData.BillingContext.SettlementCalculation)
@@ -100,7 +100,7 @@ func TestNativeTaskCalculationIsSavedWithFunding(t *testing.T) {
 	assert.Equal(t, 80, saved.PrivateData.BillingContext.SettlementCalculation.Quota)
 	assert.Nil(t, saved.PrivateData.AsyncBilling)
 	assert.Equal(t, 10020, getUserQuota(t, 620))
-	RecalculateTaskQuota(context.Background(), task, 80, "retry")
+	RecalculateTaskQuota(context.Background(), task, 80, common.NewMessage("retry"))
 	assert.Equal(t, 10020, getUserQuota(t, 620))
 }
 
@@ -113,7 +113,7 @@ func TestNativeUsageSettlementPreservesWalletAndTokenOverdraft(t *testing.T) {
 	task.Status = model.TaskStatusSuccess
 	persistTaskCalculationFixture(t, task)
 	setTaskCalculation(task, billingexpr.NewCalculation().Finish(150), "settlement")
-	RecalculateTaskQuota(context.Background(), task, 150, "actual usage")
+	RecalculateTaskQuota(context.Background(), task, 150, common.NewMessage("actual usage"))
 	var saved model.Task
 	require.NoError(t, model.DB.First(&saved, task.ID).Error)
 	require.NotNil(t, saved.PrivateData.BillingContext.SettlementCalculation)
@@ -125,7 +125,7 @@ func TestNativeUsageSettlementPreservesWalletAndTokenOverdraft(t *testing.T) {
 	require.NoError(t, model.DB.First(&token, 621).Error)
 	assert.Equal(t, -50, token.RemainQuota)
 	assert.Equal(t, 50, token.UsedQuota)
-	RecalculateTaskQuota(context.Background(), &saved, 150, "retry")
+	RecalculateTaskQuota(context.Background(), &saved, 150, common.NewMessage("retry"))
 	assert.Equal(t, -50, getUserQuota(t, 621))
 	require.NoError(t, model.DB.First(&token, 621).Error)
 	assert.Equal(t, 50, token.UsedQuota)

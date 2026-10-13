@@ -19,7 +19,7 @@ func seedPublishedSeedanceControllerArtifact(t *testing.T) string {
 	source := plugins.SeedanceSource()
 	plugin, _, err := jsplugin.CompileSeedanceExtension(source, jsplugin.Options{}, jsplugin.SeedanceHostContract())
 	require.NoError(t, err)
-	row := model.TaskPlugin{Key: plugin.Meta.Key, Version: plugin.Meta.Version, APIVersion: plugin.Meta.APIVersion, Source: source, SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true, Active: true}
+	row := model.TaskPlugin{Key: plugin.Meta.Key, Version: plugin.Meta.Version, APIVersion: plugin.Meta.APIVersion, Source: model.LongText(source), SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true, Active: true}
 	require.NoError(t, model.DB.Create(&row).Error)
 	previous := seedanceplugin.Default
 	seedanceplugin.Default = seedanceplugin.NewStore()

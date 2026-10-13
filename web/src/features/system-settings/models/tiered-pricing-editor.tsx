@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ChevronDown, Copy, Plus, Trash2 } from 'lucide-react'
+import { Copy, Plus, Trash2 } from 'lucide-react'
 import {
   memo,
   useCallback,
@@ -25,10 +25,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
-  type FocusEvent,
-  type InputHTMLAttributes,
-  type MouseEvent as ReactMouseEvent,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -41,7 +37,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { Combobox } from '@/components/ui/combobox'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -53,22 +48,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import {
   formatPricingAmount,
   USD_PRICING_CURRENCY,
   type PricingCurrency,
 } from '@/features/model-pricing/currency'
-import { PricingAmountInput } from '@/features/model-pricing/pricing-amount-input'
-import { billingConditionText } from '@/features/pricing/lib/billing-condition-text'
-import {
-  previewBillingExpressions,
-  type BillingExprPreviewEvaluation,
-} from '@/features/pricing/lib/billing-display-preview'
+import { useBillingTime } from '@/features/pricing/hooks/use-billing-time'
 import {
   BILLING_EXTRA_VARS,
-  COMMON_TIMEZONES,
   MATCH_CONTAINS,
   MATCH_EQ,
   MATCH_EXISTS,
@@ -80,7 +68,6 @@ import {
   SOURCE_HEADER,
   SOURCE_PARAM,
   SOURCE_TIME,
-  TIME_FUNCS,
   buildRequestRuleExpr,
   combineBillingExpr,
   createEmptyCondition,
@@ -96,52 +83,27 @@ import {
   type TimeFunc,
 } from '@/features/pricing/lib/billing-expr'
 import {
-  CACHE_MODE_GENERIC,
-  CACHE_MODE_TIMED,
-  type CacheMode,
+  parseVisualBillingDocument,
+  serializeVisualBillingDocument,
+  type VisualBillingDocument,
+} from '@/features/pricing/lib/billing-expression/visual'
+import {
   type ExtraTokenValues,
-  type TierConditionInput,
-  type VisualConfig,
-  type VisualTier,
   createDefaultVisualConfig,
+  evalExprLocally,
+  buildEstimatorTokens,
   exprUsesExtraVars,
   generateExprFromVisualConfig,
-  getTierCacheMode,
-  normalizeVisualConfig,
-  normalizeVisualTier,
-  tryParseVisualConfig,
 } from '@/features/pricing/lib/tier-expr'
-import type { BillingDisplayProjection } from '@/features/pricing/types'
 import { cn } from '@/lib/utils'
 
-import { AsyncPreConsumeTokenField } from './async-pre-consume-token-field'
-import { BillingPreviewContext } from './billing-preview-context'
-import { parseBillingPreviewContext } from './billing-preview-input'
 import {
-  type EstimatorDraft,
-  type EstimatorResolution,
-  createDefaultDraft,
-  loadDraft,
-  probeToRequestBody,
-  saveDraft,
-} from './tiered-pricing-estimator-state'
-
-const CACHE_PRICE_VARS = BILLING_EXTRA_VARS.filter(
-  (variable) => variable.group === 'cache'
-)
-const MEDIA_PRICE_VARS = BILLING_EXTRA_VARS.filter(
-  (variable) => variable.group === 'media'
-)
-
-const CONDITION_INPUT_OPTIONS: {
-  value: TierConditionInput['var']
-  labelKey: string
-}[] = [
-  { value: 'len', labelKey: 'Full input length' },
-  { value: 'p', labelKey: 'Billable input tokens' },
-  { value: 'c', labelKey: 'Billable output tokens' },
-]
-const OPS: TierConditionInput['op'][] = ['<', '<=', '>', '>=']
+  BillingTimeProbeFields,
+  BillingTimeRangeFields,
+} from './billing-time-fields'
+import { DraftNumberInput } from './draft-number-input'
+import { RequestSimulation } from './request-simulation'
+import { VisualBillingDocumentEditor } from './visual-billing-document-editor'
 
 type Preset = {
   key: string
@@ -337,584 +299,6 @@ const PRESET_GROUPS: PresetGroup[] = [
   },
 ]
 
-function unitCostToPrice(uc: number | string): number {
-  return Number(uc) || 0
-}
-
-function priceToUnitCost(price: number | string): number {
-  return Number(price) || 0
-}
-
-function formatTokenHint(n: number | string | null | undefined): string {
-  if (n == null || n === '' || Number.isNaN(Number(n))) return ''
-  const v = Number(n)
-  if (v === 0) return '= 0'
-  if (v >= 1_000_000) return `= ${(v / 1_000_000).toLocaleString()}M tokens`
-  if (v >= 1_000) return `= ${(v / 1_000).toLocaleString()}K tokens`
-  return `= ${v.toLocaleString()} tokens`
-}
-
-function formatNumberDraft(value: number | string): string {
-  if (value === '') return ''
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? String(value) : '0'
-  }
-  return value
-}
-
-function parseNumberDraft(value: string): number {
-  if (value.trim() === '') return 0
-  const next = Number(value)
-  return Number.isFinite(next) ? next : 0
-}
-
-function isZeroDraft(value: string): boolean {
-  return value.trim() !== '' && parseNumberDraft(value) === 0
-}
-
-type DraftNumberInputProps = Omit<
-  InputHTMLAttributes<HTMLInputElement>,
-  'type' | 'value' | 'onChange'
-> & {
-  value: number | string
-  onValueChange: (next: number) => void
-  selectZeroOnFocus?: boolean
-}
-
-function DraftNumberInput({
-  value,
-  onValueChange,
-  selectZeroOnFocus = true,
-  onBlur,
-  onFocus,
-  onMouseUp,
-  ...props
-}: DraftNumberInputProps) {
-  const [draft, setDraft] = useState(() => formatNumberDraft(value))
-  const [focused, setFocused] = useState(false)
-
-  useEffect(() => {
-    if (!focused) {
-      setDraft(formatNumberDraft(value))
-    }
-  }, [focused, value])
-
-  const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const nextDraft = event.target.value
-    setDraft(nextDraft)
-    onValueChange(parseNumberDraft(nextDraft))
-  }
-
-  const handleFocus = (event: FocusEvent<HTMLInputElement>) => {
-    setFocused(true)
-    onFocus?.(event)
-    if (selectZeroOnFocus && isZeroDraft(event.currentTarget.value)) {
-      event.currentTarget.select()
-    }
-  }
-
-  const handleMouseUp = (event: ReactMouseEvent<HTMLInputElement>) => {
-    onMouseUp?.(event)
-    if (selectZeroOnFocus && isZeroDraft(event.currentTarget.value)) {
-      event.preventDefault()
-      event.currentTarget.select()
-    }
-  }
-
-  const handleBlur = (event: FocusEvent<HTMLInputElement>) => {
-    const normalized = parseNumberDraft(event.currentTarget.value)
-    setFocused(false)
-    setDraft(String(normalized))
-    onValueChange(normalized)
-    onBlur?.(event)
-  }
-
-  return (
-    <Input
-      {...props}
-      type='number'
-      value={draft}
-      onChange={handleChange}
-      onFocus={handleFocus}
-      onMouseUp={handleMouseUp}
-      onBlur={handleBlur}
-    />
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Tier condition row
-// ---------------------------------------------------------------------------
-
-type ConditionRowProps = {
-  condition: TierConditionInput
-  onChange: (next: TierConditionInput) => void
-  onRemove: () => void
-}
-
-function ConditionRow({ condition, onChange, onRemove }: ConditionRowProps) {
-  const { t } = useTranslation()
-  const currentInputOption = CONDITION_INPUT_OPTIONS.find(
-    (option) => option.value === condition.var
-  )
-
-  return (
-    <div className='flex items-center gap-2'>
-      <Select
-        items={CONDITION_INPUT_OPTIONS.map((option) => ({
-          value: option.value,
-          label: t(option.labelKey),
-        }))}
-        value={condition.var}
-        onValueChange={(value) =>
-          onChange({ ...condition, var: value as TierConditionInput['var'] })
-        }
-      >
-        <SelectTrigger className='w-32' size='sm'>
-          <SelectValue>
-            {currentInputOption
-              ? t(currentInputOption.labelKey)
-              : condition.var}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false}>
-          <SelectGroup>
-            {CONDITION_INPUT_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {t(option.labelKey)}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-      <Select
-        items={OPS.map((op) => ({ value: op, label: op }))}
-        value={condition.op}
-        onValueChange={(value) =>
-          onChange({ ...condition, op: value as TierConditionInput['op'] })
-        }
-      >
-        <SelectTrigger className='w-20' size='sm'>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false}>
-          <SelectGroup>
-            {OPS.map((op) => (
-              <SelectItem key={op} value={op}>
-                {op}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-      <DraftNumberInput
-        min={0}
-        value={condition.value}
-        onValueChange={(value) => onChange({ ...condition, value })}
-        placeholder='tokens'
-        className='w-32'
-      />
-      <span className='text-muted-foreground text-xs'>
-        {formatTokenHint(condition.value)}
-      </span>
-      <Button
-        variant='ghost'
-        size='icon'
-        onClick={onRemove}
-        aria-label='remove'
-        className='ml-auto'
-      >
-        <Trash2 className='text-destructive h-4 w-4' />
-      </Button>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Price input field
-// ---------------------------------------------------------------------------
-
-type PriceFieldProps = {
-  currency: PricingCurrency
-  label: string
-  hint?: string
-  value: number
-  onChange: (next: number) => void
-}
-
-function PriceField({
-  label,
-  hint,
-  value,
-  onChange,
-  currency,
-}: PriceFieldProps) {
-  const id = useId()
-  return (
-    <div className='w-36 space-y-0.5'>
-      <Label htmlFor={id} className='text-muted-foreground text-xs'>
-        {label}
-      </Label>
-      <PricingAmountInput
-        id={id}
-        currency={currency}
-        aria-label={label}
-        value={value}
-        onChange={(next) => onChange(Number(next))}
-        className='h-8 w-full'
-      />
-      {hint && <p className='text-muted-foreground text-xs'>{hint}</p>}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Single tier card (visual editor)
-// ---------------------------------------------------------------------------
-
-type VisualTierCardProps = {
-  currency: PricingCurrency
-  tier: VisualTier
-  index: number
-  total: number
-  onChange: (next: VisualTier) => void
-  onRemove: () => void
-  onAddCondition: () => void
-}
-
-function VisualTierCard({
-  currency,
-  tier,
-  index,
-  total,
-  onChange,
-  onRemove,
-  onAddCondition,
-}: VisualTierCardProps) {
-  const { t } = useTranslation()
-  const cacheMode = getTierCacheMode(tier)
-
-  const handleConditionChange = (
-    conditionIndex: number,
-    next: TierConditionInput
-  ) => {
-    const conditions = [...tier.conditions]
-    conditions[conditionIndex] = next
-    onChange({ ...tier, conditions })
-  }
-
-  const handleConditionRemove = (conditionIndex: number) => {
-    onChange({
-      ...tier,
-      conditions: tier.conditions.filter((_, i) => i !== conditionIndex),
-    })
-  }
-
-  const handlePriceChange = (field: keyof VisualTier, value: number) => {
-    onChange({ ...tier, [field]: value })
-  }
-
-  const handleCacheModeChange = (mode: CacheMode) => {
-    onChange({
-      ...tier,
-      cache_mode: mode,
-      cache_create_1h_unit_cost:
-        mode === CACHE_MODE_TIMED ? (tier.cache_create_1h_unit_cost ?? 0) : 0,
-    })
-  }
-
-  const inputUnitPrice = unitCostToPrice(tier.input_unit_cost)
-  const outputUnitPrice = unitCostToPrice(tier.output_unit_cost)
-  const hasMediaPricing = MEDIA_PRICE_VARS.some((variable) => {
-    const fieldKey = variable.tierField as keyof VisualTier
-    return unitCostToPrice((tier[fieldKey] as number | undefined) ?? 0) > 0
-  })
-  const [mediaOpen, setMediaOpen] = useState(hasMediaPricing)
-
-  useEffect(() => {
-    if (hasMediaPricing) setMediaOpen(true)
-  }, [hasMediaPricing])
-
-  const renderPriceVariable = (
-    variable: (typeof BILLING_EXTRA_VARS)[number]
-  ) => {
-    const fieldKey = variable.tierField as keyof VisualTier
-    const value = unitCostToPrice((tier[fieldKey] as number | undefined) ?? 0)
-
-    return (
-      <PriceField
-        currency={currency}
-        key={variable.key}
-        label={t(variable.label)}
-        value={value}
-        onChange={(next) => handlePriceChange(fieldKey, priceToUnitCost(next))}
-      />
-    )
-  }
-
-  return (
-    <div className='space-y-3 rounded-lg border p-3'>
-      <div className='flex flex-wrap items-center justify-between gap-2'>
-        <div className='flex items-center gap-2'>
-          <Badge variant='outline'>
-            {t('Tier')} {index + 1} / {total}
-          </Badge>
-          {tier.conditions.length === 0 && (
-            <Badge variant='secondary'>{t('Fallback tier')}</Badge>
-          )}
-          <Input
-            value={tier.label}
-            onChange={(event) =>
-              onChange({ ...tier, label: event.target.value })
-            }
-            placeholder={t('Tier name')}
-            className='h-7 w-36'
-          />
-        </div>
-        <Button
-          variant='ghost'
-          size='icon'
-          onClick={onRemove}
-          disabled={total <= 1}
-          aria-label={t('Remove tier')}
-        >
-          <Trash2 className='text-destructive h-4 w-4' />
-        </Button>
-      </div>
-
-      {/* Conditions */}
-      <div className='space-y-1.5'>
-        <div className='flex h-7 items-center justify-between'>
-          <Label className='text-xs font-medium'>{t('Tier conditions')}</Label>
-          <Button
-            variant='ghost'
-            size='sm'
-            onClick={onAddCondition}
-            disabled={tier.conditions.length >= 2}
-            className='h-7 px-2 text-xs'
-          >
-            <Plus className='mr-1 h-3 w-3' />
-            {t('Add condition')}
-          </Button>
-        </div>
-        {tier.conditions.length === 0 ? (
-          <p className='text-muted-foreground text-xs'>
-            {t('Always matches (default tier).')}
-          </p>
-        ) : (
-          tier.conditions.map((condition, conditionIndex) => (
-            <ConditionRow
-              // eslint-disable-next-line react/no-array-index-key -- Parsed editor rows have no IDs; preserve input identity while their editable labels and values change.
-              key={conditionIndex}
-              condition={condition}
-              onChange={(next) => handleConditionChange(conditionIndex, next)}
-              onRemove={() => handleConditionRemove(conditionIndex)}
-            />
-          ))
-        )}
-      </div>
-
-      <div className='space-y-2'>
-        <div className='flex items-center justify-between gap-3'>
-          <Label className='text-sm font-semibold'>{t('Token prices')}</Label>
-          <span className='bg-muted text-muted-foreground rounded-md px-2 py-1 text-xs'>
-            {currency.symbol}/{t('1M token')}
-          </span>
-        </div>
-
-        <div className='space-y-3'>
-          <div className='flex flex-wrap gap-x-4 gap-y-2'>
-            <PriceField
-              currency={currency}
-              label={t('Input price')}
-              value={inputUnitPrice}
-              onChange={(value) =>
-                handlePriceChange('input_unit_cost', priceToUnitCost(value))
-              }
-            />
-            <PriceField
-              currency={currency}
-              label={t('Output price')}
-              value={outputUnitPrice}
-              onChange={(value) =>
-                handlePriceChange('output_unit_cost', priceToUnitCost(value))
-              }
-            />
-          </div>
-
-          <div className='space-y-2'>
-            <div className='flex h-7 items-center'>
-              <Tabs
-                value={cacheMode}
-                onValueChange={(value) =>
-                  value !== null && handleCacheModeChange(value as CacheMode)
-                }
-              >
-                <TabsList className='h-8'>
-                  <TabsTrigger
-                    value={CACHE_MODE_GENERIC}
-                    className='px-2 text-xs'
-                  >
-                    {t('Generic cache')}
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value={CACHE_MODE_TIMED}
-                    className='px-2 text-xs'
-                  >
-                    {t('Time-sliced cache (Claude)')}
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
-            <div className='flex flex-wrap gap-x-4 gap-y-2'>
-              {CACHE_PRICE_VARS.map((variable) => {
-                if (variable.key === 'cc1h' && cacheMode !== CACHE_MODE_TIMED) {
-                  return null
-                }
-                return renderPriceVariable(variable)
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Media prices */}
-      <div className='space-y-1.5'>
-        <Button
-          type='button'
-          variant='ghost'
-          size='sm'
-          className='h-7 px-2 text-xs'
-          onClick={() => setMediaOpen((prev) => !prev)}
-        >
-          <ChevronDown
-            className={cn(
-              'mr-1 h-3 w-3 transition-transform',
-              mediaOpen && 'rotate-180'
-            )}
-          />
-          {t('Media pricing')}
-        </Button>
-        {mediaOpen && (
-          <div className='flex flex-wrap gap-x-4 gap-y-2'>
-            {MEDIA_PRICE_VARS.map(renderPriceVariable)}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Visual editor (list of tiers)
-// ---------------------------------------------------------------------------
-
-type VisualEditorProps = {
-  currency: PricingCurrency
-  visualConfig: VisualConfig | null
-  onChange: (next: VisualConfig) => void
-}
-
-function VisualEditor({ visualConfig, onChange, currency }: VisualEditorProps) {
-  const { t } = useTranslation()
-  const config = useMemo(
-    () => normalizeVisualConfig(visualConfig),
-    [visualConfig]
-  )
-
-  const handleTierChange = (index: number, next: VisualTier) => {
-    const tiers = [...config.tiers]
-    tiers[index] = normalizeVisualTier(next)
-    onChange({ ...config, tiers })
-  }
-
-  const handleAddTier = () => {
-    const tiers = [...config.tiers]
-    const lastIndex = tiers.length - 1
-    // When adding a new fallback, give the previous catch-all tier a default
-    // upper-bound condition so the expression compiles into a sane two-tier
-    // shape with an immediately useful fallback.
-    if (lastIndex >= 0 && tiers[lastIndex].conditions.length === 0) {
-      tiers[lastIndex] = normalizeVisualTier({
-        ...tiers[lastIndex],
-        conditions: [{ var: 'len', op: '<', value: 200000 }],
-      })
-    }
-    tiers.push(
-      normalizeVisualTier({
-        label: `tier_${tiers.length + 1}`,
-        conditions: [],
-        input_unit_cost: 0,
-        output_unit_cost: 0,
-      })
-    )
-    onChange({ ...config, tiers })
-  }
-
-  const handleRemoveTier = (index: number) => {
-    const tiers = config.tiers.filter((_, i) => i !== index)
-    onChange({ ...config, tiers: tiers.length > 0 ? tiers : config.tiers })
-  }
-
-  const handleAddCondition = (index: number) => {
-    const tier = config.tiers[index]
-    if (tier.conditions.length >= 2) return
-    // Prefer `len` (input length) over `p`/`c` for tier conditions because
-    // `p` is subject to auto-exclusion when sub-categories like `cr` are
-    // priced separately, which can misroute long-input requests into shorter
-    // tiers when cache-hits reduce the effective `p`.
-    const usedVars = new Set(tier.conditions.map((c) => c.var))
-    const nextVar: TierConditionInput['var'] = usedVars.has('len') ? 'c' : 'len'
-    onChange({
-      ...config,
-      tiers: config.tiers.map((current, i) =>
-        i === index
-          ? {
-              ...current,
-              conditions: [
-                ...tier.conditions,
-                { var: nextVar, op: '<', value: 200000 },
-              ],
-            }
-          : current
-      ),
-    })
-  }
-
-  return (
-    <div className='space-y-2'>
-      <p className='text-muted-foreground text-xs'>
-        {t(
-          'Each tier supports up to 2 conditions. The last tier without conditions is the fallback.'
-        )}
-      </p>
-      {config.tiers.map((tier, index) => (
-        <VisualTierCard
-          currency={currency}
-          // eslint-disable-next-line react/no-array-index-key -- Parsed editor rows have no IDs; preserve input identity while their editable labels and values change.
-          key={index}
-          tier={tier}
-          index={index}
-          total={config.tiers.length}
-          onChange={(next) => handleTierChange(index, next)}
-          onRemove={() => handleRemoveTier(index)}
-          onAddCondition={() => handleAddCondition(index)}
-        />
-      ))}
-      <Button
-        variant='outline'
-        size='sm'
-        className='h-9 w-36 justify-center'
-        onClick={handleAddTier}
-      >
-        <Plus className='mr-2 h-4 w-4' />
-        {t('Add tier')}
-      </Button>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Raw expression editor
 // ---------------------------------------------------------------------------
 
@@ -932,18 +316,25 @@ function RawExprEditor({ exprString, onChange }: RawExprEditorProps) {
           <div>
             {t('Variables')}: <code>len</code>, <code>p</code>, <code>c</code>,{' '}
             <code>cr</code>, <code>cc</code>, <code>cc1h</code>,{' '}
-            <code>img</code>, <code>img_o</code>, <code>ai</code>,{' '}
-            <code>ao</code>
+            <code>img</code>, <code>img_cr</code>, <code>img_o</code>,{' '}
+            <code>ai</code>, <code>ao</code>
           </div>
           <div>
-            {t('Functions')}: <code>tier(name, value)</code>, <code>max</code>,{' '}
-            <code>min</code>, <code>ceil</code>, <code>floor</code>,{' '}
-            <code>abs</code>, <code>header(name)</code>,{' '}
-            <code>param(path)</code>, <code>has(source, text)</code>
+            {t('Functions')}: <code>tier(name, value)</code>,{' '}
+            <code>fixed(amount)</code>, <code>max</code>, <code>min</code>,{' '}
+            <code>ceil</code>, <code>floor</code>, <code>abs</code>,{' '}
+            <code>header(name)</code>, <code>param(path)</code>,{' '}
+            <code>has(source, text)</code>
+          </div>
+          <div>
+            {t(
+              'Use tier(name, fixed(amount)) for a USD price per request. Group and request multipliers still apply.'
+            )}
           </div>
         </AlertDescription>
       </Alert>
       <Textarea
+        aria-label={t('Billing expression')}
         value={exprString}
         onChange={(event) => onChange(event.target.value)}
         placeholder='tier("base", p * 3 + c * 15)'
@@ -994,22 +385,6 @@ function RuleConditionRow({
         return mode
     }
   }
-  const getTimeFuncLabel = (timeFunc: TimeFunc) => {
-    switch (timeFunc) {
-      case 'hour':
-        return t('Hour of day')
-      case 'minute':
-        return t('Minute')
-      case 'weekday':
-        return t('Weekday')
-      case 'month':
-        return t('Month number')
-      case 'day':
-        return t('Day of month')
-      default:
-        return timeFunc
-    }
-  }
   let sourceLabel = t('Time')
   if (condition.source === SOURCE_PARAM) sourceLabel = t('Body param')
   else if (condition.source === SOURCE_HEADER) sourceLabel = t('Header')
@@ -1031,39 +406,12 @@ function RuleConditionRow({
 
   const renderTimeCondition = (timeCond: TimeCondition) => (
     <>
-      <Select
-        items={TIME_FUNCS.map((fn) => ({
-          value: fn,
-          label: getTimeFuncLabel(fn),
-        }))}
-        value={timeCond.timeFunc}
-        onValueChange={(value) =>
-          onChange({ ...timeCond, timeFunc: value as TimeFunc })
+      <BillingTimeProbeFields
+        probe={timeCond.timeFunc}
+        timezone={timeCond.timezone}
+        onChange={(timeFunc, timezone) =>
+          onChange({ ...timeCond, timeFunc: timeFunc as TimeFunc, timezone })
         }
-      >
-        <SelectTrigger className='w-32' size='sm'>
-          <SelectValue>{getTimeFuncLabel(timeCond.timeFunc)}</SelectValue>
-        </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false}>
-          <SelectGroup>
-            {TIME_FUNCS.map((fn) => (
-              <SelectItem key={fn} value={fn}>
-                {getTimeFuncLabel(fn)}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-      <Combobox
-        options={COMMON_TIMEZONES.map((tz) => ({
-          value: tz.value,
-          label: tz.label,
-        }))}
-        value={timeCond.timezone}
-        onValueChange={(value) =>
-          value !== null && onChange({ ...timeCond, timezone: value })
-        }
-        className='w-56'
       />
       <Select
         items={matchOptions.map((option) => ({
@@ -1087,25 +435,14 @@ function RuleConditionRow({
         </SelectContent>
       </Select>
       {timeCond.mode === MATCH_RANGE ? (
-        <>
-          <DraftNumberInput
-            value={timeCond.rangeStart}
-            onValueChange={(value) =>
-              onChange({ ...timeCond, rangeStart: String(value) })
-            }
-            placeholder={t('Start')}
-            className='w-20'
-          />
-          <span className='text-muted-foreground text-xs'>~</span>
-          <DraftNumberInput
-            value={timeCond.rangeEnd}
-            onValueChange={(value) =>
-              onChange({ ...timeCond, rangeEnd: String(value) })
-            }
-            placeholder={t('End')}
-            className='w-20'
-          />
-        </>
+        <BillingTimeRangeFields
+          normalizeNumberDrafts
+          start={timeCond.rangeStart}
+          end={timeCond.rangeEnd}
+          onChange={(rangeStart, rangeEnd) =>
+            onChange({ ...timeCond, rangeStart, rangeEnd })
+          }
+        />
       ) : (
         <DraftNumberInput
           value={timeCond.value}
@@ -1373,9 +710,6 @@ function PresetSection({ applyPreset }: PresetSectionProps) {
   )
 }
 
-// AsyncPreConsumeTokenField（真实预扣配置字段，与下方费用试算器严格分离）已抽出到
-// ./async-pre-consume-token-field，见顶部 import。
-
 // ---------------------------------------------------------------------------
 // Cost estimator
 // ---------------------------------------------------------------------------
@@ -1383,219 +717,71 @@ function PresetSection({ applyPreset }: PresetSectionProps) {
 type EstimatorProps = {
   currency: PricingCurrency
   effectiveExpr: string
-  /** 完整待保存表达式（含请求倍率与换算），试算必须提交它而非基础片段。 */
   fullExpr: string
-  modelName?: string
 }
 
-const RESOLUTION_OPTIONS: EstimatorResolution[] = [
-  '480p',
-  '720p',
-  '1080p',
-  '4k',
-]
-
-function CostEstimator({
-  effectiveExpr,
-  fullExpr,
-  modelName,
-  currency,
-}: EstimatorProps) {
-  const [simulationTime, setSimulationTime] = useState('')
-  const [probeJSON, setProbeJSON] = useState('')
-  const [allowMissing, setAllowMissing] = useState(false)
+function CostEstimator({ effectiveExpr, fullExpr, currency }: EstimatorProps) {
+  const { t } = useTranslation()
   const inputId = useId()
   const outputId = useId()
-  const { t, i18n } = useTranslation()
-  const [draft, setDraft] = useState<EstimatorDraft>(() => createDefaultDraft())
-
-  // 按模型身份加载本地草稿；新建模型（无名称）只用组件内默认状态，不落盘
-  useEffect(() => {
-    if (!modelName) {
-      setDraft(createDefaultDraft())
-      return
-    }
-    setDraft(loadDraft(modelName))
-  }, [modelName])
-
-  // 草稿变更即写回（仅本地预览便利，非计费配置）
-  useEffect(() => {
-    if (modelName) saveDraft(modelName, draft)
-  }, [modelName, draft])
+  const lengthId = useId()
+  const [lengthOverride, setLengthOverride] = useState('')
+  const billingTime = useBillingTime(effectiveExpr)
+  const [promptTokens, setPromptTokens] = useState(0)
+  const [completionTokens, setCompletionTokens] = useState(0)
+  const [extras, setExtras] = useState<ExtraTokenValues>({
+    cacheReadTokens: 0,
+    cacheCreateTokens: 0,
+    cacheCreate1hTokens: 0,
+    imageTokens: 0,
+    imageCacheTokens: 0,
+    imageOutputTokens: 0,
+    audioInputTokens: 0,
+    audioOutputTokens: 0,
+  })
 
   const usesExtras = useMemo(
     () => exprUsesExtraVars(effectiveExpr),
     [effectiveExpr]
   )
-  // 仅 _task 探针有页面输入；非 _task 的 param() 与 header() 缺试算上下文，单独提示
-  const usesTaskProbe = useMemo(() => fullExpr.includes('_task'), [fullExpr])
-  const usesAsyncForbiddenContext = useMemo(
+
+  const tokens = useMemo(() => {
+    const values = buildEstimatorTokens(promptTokens, completionTokens, extras)
+    if (lengthOverride.trim()) values.len = Number(lengthOverride)
+    return values
+  }, [promptTokens, completionTokens, extras, lengthOverride])
+
+  const result = useMemo(
     () =>
-      usesTaskProbe &&
-      /\b(?:header|hour|minute|weekday|month|day)\s*\(/.test(fullExpr),
-    [fullExpr, usesTaskProbe]
-  )
-  const usesUnguardedContext = useMemo(() => {
-    // 剥离 param("_task...") 调用起点后，若仍残留 param(，说明存在无探针的 param 路径
-    const nonTaskParam = fullExpr.replaceAll(/\bparam\s*\(\s*["']_task/g, '')
-    const usesParam = /\bparam\s*\(/.test(nonTaskParam)
-    return usesParam || /\bheader\s*\(/.test(fullExpr)
-  }, [fullExpr])
-
-  // 试算语义：OpenAI 总输入（含缓存）或 Anthropic 文本输入（缓存另计）。
-  const [usageSemantic, setUsageSemantic] = useState<'openai' | 'anthropic'>(
-    'openai'
+      evalExprLocally(effectiveExpr, promptTokens, completionTokens, extras, {
+        tokens,
+        now: billingTime === undefined ? undefined : new Date(billingTime),
+      }),
+    [effectiveExpr, promptTokens, completionTokens, extras, tokens, billingTime]
   )
 
-  // 试算状态：未试算 / 进行中 / 成功 / 失败。金额与 quota 全部来自后端
-  // 引擎（GroupRatio=1），浏览器不再本地求值或重复换算。
-  const [preview, setPreview] = useState<{
-    status: 'idle' | 'loading' | 'success' | 'error' | 'context'
-    rawCostUSD?: number
-    quota?: number
-    matchedTier?: string
-    pricingTime?: string
-    error?: string
-    evaluation?: BillingExprPreviewEvaluation
-    projection?: BillingDisplayProjection
-  }>({ status: 'idle' })
-
-  useEffect(() => {
-    if (!fullExpr?.trim()) {
-      setPreview({ status: 'idle' })
-      return
-    }
-    const context = parseBillingPreviewContext(simulationTime, probeJSON)
-    if (context.error) {
-      setPreview({ status: 'context', error: context.error })
-      return
-    }
-    if (usesUnguardedContext && !probeJSON.trim() && !allowMissing) {
-      setPreview({
-        status: 'context',
-        error: 'Provide trial context or explicitly simulate missing values.',
-      })
-      return
-    }
-    let cancelled = false
-    setPreview({ status: 'loading' })
-    const timer = setTimeout(() => {
-      previewBillingExpressions([
-        {
-          key: 'estimator',
-          expression: fullExpr,
-          sample: {
-            usage_semantic: usageSemantic,
-            prompt_tokens: draft.promptTokens,
-            completion_tokens: draft.completionTokens,
-            cache_read_tokens: draft.extras.cacheReadTokens,
-            cache_creation_tokens: draft.extras.cacheCreateTokens,
-            cache_creation_tokens_1h: draft.extras.cacheCreate1hTokens,
-            image_tokens: draft.extras.imageTokens,
-            image_output_tokens: draft.extras.imageOutputTokens,
-            audio_input_tokens: draft.extras.audioInputTokens,
-            audio_output_tokens: draft.extras.audioOutputTokens,
-            body: { ...probeToRequestBody(draft.taskProbe), ...context.body },
-            headers: context.headers,
-            pricing_time: context.pricingTime,
-          },
-        },
-      ])
-        .then((results) => {
-          if (cancelled) return
-          const item = results[0]
-          if (!item || item.error || !item.evaluation) {
-            setPreview({
-              status: 'error',
-              error: item?.error ?? 'preview failed',
-            })
-            return
-          }
-          setPreview({
-            status: 'success',
-            rawCostUSD: item.evaluation.raw_cost_usd,
-            quota: item.evaluation.quota,
-            matchedTier: item.evaluation.matched_tier,
-            pricingTime: item.evaluation.pricing_time,
-            evaluation: item.evaluation,
-            projection: item.projection,
-          })
-        })
-        .catch((cause: unknown) => {
-          if (cancelled) return
-          setPreview({
-            status: 'error',
-            error: cause instanceof Error ? cause.message : String(cause),
-          })
-        })
-    }, 400)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [
-    fullExpr,
-    draft,
-    usageSemantic,
-    simulationTime,
-    probeJSON,
-    allowMissing,
-    usesUnguardedContext,
-  ])
-
-  const ruleOccurrences = new Map<string, number>()
-  const setExtra = (stateKey: keyof ExtraTokenValues, value: number) =>
-    setDraft((prev) => ({
-      ...prev,
-      extras: { ...prev.extras, [stateKey]: value },
-    }))
+  if (result.error === 'task usage') {
+    return (
+      <Alert>
+        <AlertDescription>
+          {t(
+            "Task usage data is required to estimate this expression. Check the model's task plugin configuration."
+          )}
+        </AlertDescription>
+      </Alert>
+    )
+  }
 
   return (
     <div className='bg-muted/30 space-y-3 rounded-md border p-3'>
       <div className='space-y-1'>
-        <div className='flex items-center justify-between gap-2'>
-          <h4 className='text-sm font-medium'>
-            {t('Cost estimator (server expression engine)')}
-          </h4>
-          <Button
-            type='button'
-            variant='ghost'
-            size='sm'
-            className='h-7 px-2 text-xs'
-            onClick={() => setDraft(createDefaultDraft())}
-          >
-            {t('Restore defaults')}
-          </Button>
-        </div>
+        <h4 className='text-sm font-medium'>{t('Token estimator')}</h4>
         <p className='text-muted-foreground text-xs'>
           {t(
-            'Preview only. The full draft expression is evaluated by the backend engine; nothing is saved as model price or pre-consume config.'
+            'Enter token counts to preview the estimated cost (excluding group multipliers).'
           )}
         </p>
-        {usesUnguardedContext && (
-          <p className='text-xs text-amber-600 dark:text-amber-500'>
-            {t(
-              'This expression uses request context (param/header) without a trial probe; the result may fall into the fallback tier.'
-            )}
-          </p>
-        )}
-        {usesAsyncForbiddenContext && (
-          <p className='text-destructive text-xs'>
-            {t(
-              'Async task expressions cannot use header or time functions because those values are not frozen between pre-consume and settlement.'
-            )}
-          </p>
-        )}
       </div>
-      <BillingPreviewContext
-        time={simulationTime}
-        onTimeChange={setSimulationTime}
-        needsContext={usesUnguardedContext}
-        json={probeJSON}
-        onJSONChange={setProbeJSON}
-        allowMissing={allowMissing}
-        onAllowMissingChange={setAllowMissing}
-      />
       <div className='grid grid-cols-2 gap-3'>
         <div className='space-y-1'>
           <Label htmlFor={inputId} className='text-xs'>
@@ -1604,10 +790,8 @@ function CostEstimator({
           <DraftNumberInput
             id={inputId}
             min={0}
-            value={draft.promptTokens}
-            onValueChange={(v) =>
-              setDraft((prev) => ({ ...prev, promptTokens: v }))
-            }
+            value={promptTokens}
+            onValueChange={setPromptTokens}
           />
         </div>
         <div className='space-y-1'>
@@ -1617,46 +801,24 @@ function CostEstimator({
           <DraftNumberInput
             id={outputId}
             min={0}
-            value={draft.completionTokens}
-            onValueChange={(v) =>
-              setDraft((prev) => ({ ...prev, completionTokens: v }))
-            }
+            value={completionTokens}
+            onValueChange={setCompletionTokens}
           />
         </div>
-        <div className='space-y-1'>
-          <Label className='text-xs'>{t('Usage input semantics')}</Label>
-          <Select
-            items={[
-              {
-                value: 'openai',
-                label: t('OpenAI: prompt tokens include cache'),
-              },
-              {
-                value: 'anthropic',
-                label: t('Anthropic: prompt tokens are text-only'),
-              },
-            ]}
-            value={usageSemantic}
-            onValueChange={(value) =>
-              setUsageSemantic(value === 'anthropic' ? 'anthropic' : 'openai')
-            }
-          >
-            <SelectTrigger className='w-full' size='sm'>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent alignItemWithTrigger={false}>
-              <SelectGroup>
-                <SelectItem value='openai'>
-                  {t('OpenAI: prompt tokens include cache')}
-                </SelectItem>
-                <SelectItem value='anthropic'>
-                  {t('Anthropic: prompt tokens are text-only')}
-                </SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
+      <Field>
+        <FieldLabel htmlFor={lengthId}>
+          {t('Full input length override')}
+        </FieldLabel>
+        <Input
+          id={lengthId}
+          type='number'
+          min={0}
+          value={lengthOverride}
+          onChange={(event) => setLengthOverride(event.target.value)}
+          placeholder={t('Use the existing token total')}
+        />
+      </Field>
       {usesExtras && (
         <div className='grid grid-cols-2 gap-3'>
           {BILLING_EXTRA_VARS.map((variable) => {
@@ -1673,174 +835,52 @@ function CostEstimator({
                 <Label className='text-xs'>{t(variable.shortLabel)}</Label>
                 <DraftNumberInput
                   min={0}
-                  value={draft.extras[stateKey]}
-                  onValueChange={(value) => setExtra(stateKey, value)}
+                  value={extras[stateKey]}
+                  onValueChange={(value) =>
+                    setExtras((prev) => ({
+                      ...prev,
+                      [stateKey]: value,
+                    }))
+                  }
                 />
               </div>
             )
           })}
         </div>
       )}
-      {usesTaskProbe && (
-        <div className='space-y-2 border-t pt-3'>
-          <div className='space-y-1'>
-            <h4 className='text-sm font-medium'>
-              {t('Task trial conditions')}
-            </h4>
-            <p className='text-muted-foreground text-xs'>
-              {t(
-                'Drives param("_task.*") so the preview hits the correct tier.'
-              )}
-            </p>
-          </div>
-          <div className='grid grid-cols-2 gap-3'>
-            <div className='space-y-1'>
-              <Label className='text-xs'>{t('Has video input')}</Label>
-              <Select
-                items={[
-                  { value: 'false', label: t('No') },
-                  { value: 'true', label: t('Yes') },
-                ]}
-                value={String(draft.taskProbe.hasVideoInput)}
-                onValueChange={(value) =>
-                  setDraft((prev) => ({
-                    ...prev,
-                    taskProbe: {
-                      ...prev.taskProbe,
-                      hasVideoInput: value === 'true',
-                    },
-                  }))
-                }
-              >
-                <SelectTrigger className='w-full' size='sm'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  <SelectGroup>
-                    <SelectItem value='false'>{t('No')}</SelectItem>
-                    <SelectItem value='true'>{t('Yes')}</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className='space-y-1'>
-              <Label className='text-xs'>{t('Resolution')}</Label>
-              <Select
-                items={RESOLUTION_OPTIONS.map((r) => ({ value: r, label: r }))}
-                value={draft.taskProbe.resolution}
-                onValueChange={(value) =>
-                  setDraft((prev) => ({
-                    ...prev,
-                    taskProbe: {
-                      ...prev.taskProbe,
-                      resolution: value as EstimatorResolution,
-                    },
-                  }))
-                }
-              >
-                <SelectTrigger className='w-full' size='sm'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  <SelectGroup>
-                    {RESOLUTION_OPTIONS.map((r) => (
-                      <SelectItem key={r} value={r}>
-                        {r}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-      )}
-      {preview.status === 'idle' && (
-        <div className='bg-muted/50 text-muted-foreground rounded-md border p-3 text-sm'>
-          {t(
-            'Enter usage above and the backend engine will evaluate the full expression.'
-          )}
-        </div>
-      )}
-      {preview.status === 'loading' && (
-        <div className='bg-muted/50 text-muted-foreground rounded-md border p-3 text-sm'>
-          {t('Evaluating on the server…')}
-        </div>
-      )}
-      {preview.status === 'context' && (
-        <p role='status' className='text-muted-foreground text-sm'>
-          {t(preview.error ?? '')}
-        </p>
-      )}
-      {preview.status === 'error' && (
-        <div className='border-destructive/50 bg-destructive/10 text-destructive rounded-md border p-3 text-sm'>
-          {t('Preview failed')}: {preview.error}
-        </div>
-      )}
-      {preview.status === 'success' && (
-        <div
-          role='status'
-          className='border-primary/50 bg-primary/10 space-y-2 rounded-md border p-3 text-sm'
-        >
-          <div className='flex flex-wrap items-center gap-x-4 gap-y-1'>
-            {preview.matchedTier && (
-              <Badge variant='outline' className='text-xs'>
-                {t('Hit tier')}: {preview.matchedTier}
-              </Badge>
-            )}
+      <div
+        className={cn(
+          'rounded-md border p-3 text-sm',
+          result.error
+            ? 'border-destructive/50 bg-destructive/10 text-destructive'
+            : 'border-primary/50 bg-primary/10'
+        )}
+      >
+        {result.error ? (
+          <span>
+            {t('Expression error')}: {result.error}
+          </span>
+        ) : (
+          <div className='flex items-center gap-2'>
             <span className='font-medium'>
               {t('Estimated cost')}:{' '}
-              {formatPricingAmount(Number(preview.rawCostUSD ?? 0), currency)}
+              {formatPricingAmount(result.cost / 1_000_000, currency)}
+              {result.billingUnit === 'request' && `/${t('request')}`}
             </span>
-            <span className='text-muted-foreground text-xs'>
-              {t('Estimated quota')}: {(preview.quota ?? 0).toLocaleString()} (
-              {t('excluding group ratio')})
-            </span>
-            {preview.pricingTime && (
-              <span className='text-muted-foreground text-xs'>
-                {t('Simulated time')}: {preview.pricingTime}
-              </span>
+            {result.matchedTier && (
+              <Badge variant='outline' className='text-xs'>
+                {t('Hit tier')}: {result.matchedTier}
+              </Badge>
             )}
           </div>
-          {preview.evaluation && (
-            <p className='text-muted-foreground text-xs'>
-              {t('Normalized usage')}:{' '}
-              {Object.entries(preview.evaluation.normalized_usage)
-                .filter(([, value]) => value !== 0)
-                .map(([key, value]) => `${key}: ${value.toLocaleString()}`)
-                .join(' · ')}
-            </p>
-          )}
-          {preview.evaluation?.request_rules?.map((rule) => {
-            const identity = JSON.stringify(rule)
-            const occurrence = ruleOccurrences.get(identity) ?? 0
-            ruleOccurrences.set(identity, occurrence + 1)
-            const condition = preview.projection?.rules?.find(
-              (item) => item.text === rule.cond
-            )
-            return (
-              <p key={`${identity}:${occurrence}`} className='text-xs'>
-                {condition
-                  ? billingConditionText(condition, t, i18n.language)
-                  : rule.cond}
-                {' · '}
-                {rule.matched ? t('Matched') : t('Not matched')}
-              </p>
-            )
-          })}
-          {preview.evaluation?.usd_exchange_rate && (
-            <p className='text-muted-foreground text-xs'>
-              {t('Applied exchange rate (CNY/USD)')}:{' '}
-              {preview.evaluation.usd_exchange_rate.rate}
-            </p>
-          )}
-          {preview.evaluation?.saturated && (
-            <p className='text-destructive text-xs'>
-              {t('Quota limit reached; this estimate is capped.')}
-            </p>
-          )}
-        </div>
-      )}
+        )}
+      </div>
+      <RequestSimulation
+        expression={fullExpr}
+        tokens={tokens}
+        currency={currency}
+        mode='token'
+      />
     </div>
   )
 }
@@ -1869,6 +909,7 @@ Input side:
 Output side:
 - c — output token count. Also auto-excludes sub-categories priced separately
 - img_o — image output token count
+- img_cr — image cache input tokens; deducted from img and cr only when the upstream reports a valid image cache breakdown
 - ao — audio output token count
 
 ### p/c Auto-exclusion
@@ -1880,13 +921,13 @@ Important: len is NOT affected by auto-exclusion. Tier conditions should use len
 ### Built-in Functions
 
 - tier(name, value) — labels the billing tier; must wrap the cost expression
+- fixed(amount) — a finite non-negative USD price per request, used only as tier("name", fixed(0.01)); replaces token charges in that leaf. Other leaves may still use token prices. Group/request multipliers and existing tool surcharges still apply. Unsupported for task usage expressions and Realtime.
 - max(a, b), min(a, b) — maximum/minimum
 - ceil(x), floor(x), abs(x) — ceiling, floor, absolute value
 - header(name) — reads a request header
 - param(path) — reads a request body JSON path (gjson syntax)
 - has(source, substr) — substring check
 - hour(tz), minute(tz), weekday(tz), month(tz), day(tz) — time functions, tz is a timezone like "Asia/Shanghai"
-- usd_exchange_rate() — the frozen CNY/USD exchange rate of the billing run (from the global USDExchangeRate setting). Use it to convert official CNY list prices into USD; the rate is locked per request and stored for settlement
 
 ### Price Coefficients
 
@@ -2005,12 +1046,15 @@ export type TieredPricingEditorProps = {
   requestRuleExpr: string
   onBillingExprChange: (next: string) => void
   onRequestRuleExprChange: (next: string) => void
-  // 异步任务预扣 token 上界（受控），与下方浏览器本地试算值严格分离。
-  taskPreConsumeTokens?: number
-  onTaskPreConsumeTokensChange?: (next: number) => void
 }
 
 type EditorMode = 'visual' | 'raw'
+
+function parseTierEditorDocument(source: string): VisualBillingDocument | null {
+  return parseVisualBillingDocument(
+    source || generateExprFromVisualConfig(createDefaultVisualConfig())
+  )
+}
 
 export const TieredPricingEditor = memo(function TieredPricingEditor({
   currency = USD_PRICING_CURRENCY,
@@ -2019,168 +1063,123 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
   requestRuleExpr: currentRequestRuleExpr,
   onBillingExprChange,
   onRequestRuleExprChange,
-  taskPreConsumeTokens,
-  onTaskPreConsumeTokensChange,
 }: TieredPricingEditorProps) {
   const { t } = useTranslation()
-  const [modeError, setModeError] = useState(false)
-  // 首帧即按表达式能否被可视化解析决定模式：含 param() 条件或单变量 tier（如视频任务
-  // 按 _task 分档）的表达式无法可视化解析，直接进入 raw 模式，避免首帧 visual+null 配置
-  // 生成 'p * 0 + c * 0' 并被回写 effect 写回父表单，污染已保存的表达式。
+  const [visualDocument, setVisualDocument] =
+    useState<VisualBillingDocument | null>(() =>
+      parseTierEditorDocument(currentExpr)
+    )
   const [editorMode, setEditorMode] = useState<EditorMode>(() =>
-    (currentExpr && !tryParseVisualConfig(currentExpr)) ||
-    (currentRequestRuleExpr && !tryParseRequestRuleExpr(currentRequestRuleExpr))
-      ? 'raw'
-      : 'visual'
+    visualDocument ? 'visual' : 'raw'
   )
-  const [visualConfig, setVisualConfig] = useState<VisualConfig | null>(() =>
-    tryParseVisualConfig(currentExpr)
-  )
+  const [baseExpr, setBaseExpr] = useState(currentExpr)
+  const [ruleExpr, setRuleExpr] = useState(currentRequestRuleExpr)
   const [rawExpr, setRawExpr] = useState(() =>
-    combineBillingExpr(currentExpr || '', currentRequestRuleExpr || '')
+    combineBillingExpr(currentExpr, currentRequestRuleExpr)
   )
   const [requestRuleGroups, setRequestRuleGroups] = useState<
     RequestRuleGroup[]
   >(() => tryParseRequestRuleExpr(currentRequestRuleExpr) || [])
-  const initRef = useRef(false)
-
+  const loadedModel = useRef(modelName)
   useEffect(() => {
-    if (initRef.current) return
-    initRef.current = true
-    const parsedConfig = tryParseVisualConfig(currentExpr)
-    if (
-      parsedConfig &&
-      (!currentRequestRuleExpr ||
-        tryParseRequestRuleExpr(currentRequestRuleExpr))
-    ) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setVisualConfig(parsedConfig)
-      setEditorMode('visual')
-    } else if (currentExpr || currentRequestRuleExpr) {
-      setVisualConfig(null)
-      setEditorMode('raw')
-    } else {
-      setVisualConfig(createDefaultVisualConfig())
-    }
-    setRawExpr(
-      combineBillingExpr(currentExpr || '', currentRequestRuleExpr || '')
-    )
+    if (loadedModel.current === modelName) return
+    loadedModel.current = modelName
+    const document = parseTierEditorDocument(currentExpr)
+    setVisualDocument(document)
+    setEditorMode(document ? 'visual' : 'raw')
+    setBaseExpr(currentExpr)
+    setRuleExpr(currentRequestRuleExpr)
+    setRawExpr(combineBillingExpr(currentExpr, currentRequestRuleExpr))
     setRequestRuleGroups(tryParseRequestRuleExpr(currentRequestRuleExpr) || [])
-  }, [currentExpr, currentRequestRuleExpr])
+  }, [modelName, currentExpr, currentRequestRuleExpr])
 
-  useEffect(() => {
-    initRef.current = false
-  }, [modelName])
+  const serialized = useMemo(
+    () =>
+      visualDocument ? serializeVisualBillingDocument(visualDocument) : null,
+    [visualDocument]
+  )
+  const invalidDraft = editorMode === 'visual' && serialized?.ok === false
+  const canUseVisualRules =
+    !ruleExpr || tryParseRequestRuleExpr(ruleExpr) !== null
+  const effectiveExpr = baseExpr
 
-  const canUseVisualRules = useMemo(() => {
-    if (!currentRequestRuleExpr) return true
-    return tryParseRequestRuleExpr(currentRequestRuleExpr) !== null
-  }, [currentRequestRuleExpr])
-
-  const effectiveExpr = useMemo(() => {
-    if (editorMode === 'visual') {
-      return generateExprFromVisualConfig(visualConfig)
-    }
-    if (rawExpr === combineBillingExpr(currentExpr, currentRequestRuleExpr)) {
-      return currentExpr
-    }
-    const { billingExpr } = splitBillingExprAndRequestRules(rawExpr)
-    return billingExpr
-  }, [editorMode, visualConfig, rawExpr, currentExpr, currentRequestRuleExpr])
-
-  useEffect(() => {
-    if (effectiveExpr !== currentExpr) {
-      onBillingExprChange(effectiveExpr)
-    }
-  }, [effectiveExpr, currentExpr, onBillingExprChange])
-
-  useEffect(() => {
-    if (editorMode !== 'visual') return
-    const ruleExpr = buildRequestRuleExpr(requestRuleGroups)
-    if (ruleExpr !== currentRequestRuleExpr) {
-      onRequestRuleExprChange(ruleExpr)
-    }
-  }, [
-    editorMode,
-    requestRuleGroups,
-    currentRequestRuleExpr,
-    onRequestRuleExprChange,
-  ])
-
-  const handleVisualChange = useCallback((next: VisualConfig) => {
-    setVisualConfig(next)
-  }, [])
+  const handleDocumentChange = useCallback(
+    (next: VisualBillingDocument) => {
+      setVisualDocument(next)
+      const result = serializeVisualBillingDocument(next)
+      if (result.ok) {
+        setBaseExpr(result.source)
+        onBillingExprChange(result.source)
+      }
+    },
+    [onBillingExprChange]
+  )
 
   const handleRawChange = useCallback(
     (value: string) => {
-      setModeError(false)
       setRawExpr(value)
-      const { requestRuleExpr: ruleStr } =
-        splitBillingExprAndRequestRules(value)
-      onRequestRuleExprChange(ruleStr)
+      const split = splitBillingExprAndRequestRules(value)
+      setBaseExpr(split.billingExpr)
+      setRuleExpr(split.requestRuleExpr)
+      onBillingExprChange(split.billingExpr)
+      onRequestRuleExprChange(split.requestRuleExpr)
     },
-    [onRequestRuleExprChange]
+    [onBillingExprChange, onRequestRuleExprChange]
   )
 
   const handleModeChange = useCallback(
     (next: EditorMode) => {
+      if (next === editorMode) return
+      if (invalidDraft) return
       if (next === 'visual') {
-        const { billingExpr, requestRuleExpr: ruleStr } =
-          splitBillingExprAndRequestRules(rawExpr)
-        const parsed = tryParseVisualConfig(billingExpr)
-        const parsedGroups = tryParseRequestRuleExpr(ruleStr)
-        if (
-          (billingExpr.trim() && !parsed) ||
-          (ruleStr.trim() && !parsedGroups)
-        ) {
-          setModeError(true)
+        const document = parseTierEditorDocument(baseExpr)
+        if (!document) {
+          toast.error(
+            t(
+              'This expression cannot be edited visually without losing information.'
+            )
+          )
           return
         }
-        if (parsed) {
-          setVisualConfig(parsed)
-        } else {
-          setVisualConfig(createDefaultVisualConfig())
-        }
-        setRequestRuleGroups(parsedGroups || [])
-        onRequestRuleExprChange(ruleStr)
+        setVisualDocument(document)
+        setRequestRuleGroups(tryParseRequestRuleExpr(ruleExpr) || [])
       } else {
-        const expr = generateExprFromVisualConfig(visualConfig)
-        const ruleExpr = buildRequestRuleExpr(requestRuleGroups)
-        setRawExpr(combineBillingExpr(expr, ruleExpr) || expr)
+        setRawExpr(combineBillingExpr(baseExpr, ruleExpr))
       }
       setEditorMode(next)
-      setModeError(false)
     },
-    [rawExpr, visualConfig, requestRuleGroups, onRequestRuleExprChange]
+    [editorMode, invalidDraft, baseExpr, ruleExpr, t]
   )
 
   const applyPreset = useCallback(
     (preset: Preset) => {
-      setModeError(false)
-      const presetGroups = preset.requestRules || []
-      const ruleExpr = buildRequestRuleExpr(presetGroups)
-      const combined = combineBillingExpr(preset.expr, ruleExpr) || preset.expr
-      setRawExpr(combined)
-      const parsed = tryParseVisualConfig(preset.expr)
-      if (parsed) {
-        setVisualConfig(parsed)
-        setEditorMode('visual')
-      } else {
-        setEditorMode('raw')
-        setVisualConfig(null)
-      }
-      setRequestRuleGroups(presetGroups)
-      onRequestRuleExprChange(ruleExpr)
+      const groups = preset.requestRules || []
+      const rules = buildRequestRuleExpr(groups)
+      const document = parseTierEditorDocument(preset.expr)
+      setRawExpr(combineBillingExpr(preset.expr, rules))
+      setBaseExpr(preset.expr)
+      setRuleExpr(rules)
+      setVisualDocument(document)
+      setEditorMode(document ? 'visual' : 'raw')
+      setRequestRuleGroups(groups)
+      onBillingExprChange(preset.expr)
+      onRequestRuleExprChange(rules)
+    },
+    [onBillingExprChange, onRequestRuleExprChange]
+  )
+
+  const handleRuleGroupsChange = useCallback(
+    (next: RequestRuleGroup[]) => {
+      setRequestRuleGroups(next)
+      const rules = buildRequestRuleExpr(next)
+      setRuleExpr(rules)
+      onRequestRuleExprChange(rules)
     },
     [onRequestRuleExprChange]
   )
 
-  const handleRuleGroupsChange = useCallback((next: RequestRuleGroup[]) => {
-    setRequestRuleGroups(next)
-  }, [])
-
   return (
-    <div className='space-y-5'>
+    <div className='space-y-5' data-billing-invalid={invalidDraft || undefined}>
       <div className='grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end'>
         <Field className='gap-2'>
           <FieldLabel>{t('Editor mode')}</FieldLabel>
@@ -2192,13 +1191,19 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
             value={editorMode}
             onValueChange={(value) => handleModeChange(value as EditorMode)}
           >
-            <SelectTrigger className='w-full sm:w-56' size='sm'>
+            <SelectTrigger
+              aria-label={t('Editor mode')}
+              className='w-full sm:w-56'
+              size='sm'
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent alignItemWithTrigger={false}>
               <SelectGroup>
                 <SelectItem value='visual'>{t('Visual editor')}</SelectItem>
-                <SelectItem value='raw'>{t('Expression editor')}</SelectItem>
+                <SelectItem value='raw' disabled={invalidDraft}>
+                  {t('Expression editor')}
+                </SelectItem>
               </SelectGroup>
             </SelectContent>
           </Select>
@@ -2217,25 +1222,24 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
       </p>
       <PresetSection applyPreset={applyPreset} />
 
-      {modeError && (
-        <Alert variant='destructive'>
-          <AlertDescription>
-            {t(
-              'This expression cannot be converted to the visual editor without changing its pricing. Continue editing the expression.'
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
-
       <div className='bg-muted/30 space-y-3 rounded-md border p-3'>
-        {editorMode === 'visual' ? (
-          <VisualEditor
+        {editorMode === 'visual' && visualDocument && (
+          <VisualBillingDocumentEditor
+            document={visualDocument}
             currency={currency}
-            visualConfig={visualConfig}
-            onChange={handleVisualChange}
+            issues={serialized && !serialized.ok ? serialized.issues : []}
+            onChange={handleDocumentChange}
           />
-        ) : (
+        )}
+        {editorMode === 'raw' && (
           <RawExprEditor exprString={rawExpr} onChange={handleRawChange} />
+        )}
+        {invalidDraft && (
+          <p role='alert' className='text-destructive text-sm'>
+            {t(
+              'Complete the invalid fields before saving or switching modes. The last valid expression is preserved.'
+            )}
+          </p>
         )}
 
         {editorMode === 'visual' && (
@@ -2251,7 +1255,7 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
               </p>
             </div>
 
-            {currentRequestRuleExpr && !canUseVisualRules ? (
+            {ruleExpr && !canUseVisualRules ? (
               <Alert>
                 <AlertDescription className='text-xs'>
                   {t(
@@ -2299,25 +1303,13 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
         )}
       </div>
 
-      <AsyncPreConsumeTokenField
-        value={taskPreConsumeTokens}
-        onChange={onTaskPreConsumeTokensChange}
-      />
-      {/* 表达式按异步任务（_task）计费但未配置预扣上界：运行时后端 fail-closed，
-          任务创建会被拒。前端给出明确警告（方案 4.1）。 */}
-      {effectiveExpr.includes('_task') &&
-        (!taskPreConsumeTokens || taskPreConsumeTokens <= 0) && (
-          <p className='text-xs text-amber-600 dark:text-amber-500'>
-            {t(
-              'This expression bills async tasks but no pre-consume token upper bound is set; async tasks will be rejected (fail-closed) at runtime.'
-            )}
-          </p>
-        )}
-
       <CostEstimator
         effectiveExpr={effectiveExpr}
-        fullExpr={combineBillingExpr(effectiveExpr, currentRequestRuleExpr)}
-        modelName={modelName}
+        fullExpr={
+          editorMode === 'raw'
+            ? rawExpr
+            : combineBillingExpr(effectiveExpr, ruleExpr)
+        }
         currency={currency}
       />
     </div>

@@ -59,11 +59,14 @@ const (
 	ChannelTypeSub2API        = 59
 	ChannelTypeNewAPI         = 60
 	ChannelTypeTaskPlugin     = 61
-	ChannelTypeAsyncImage     = 63
-	ChannelTypeAzureBatch     = 66
-	ChannelTypeDummy          = 67 // count sentinel; explicit because a bare identifier repeats the previous literal, it does not increment
+	ChannelTypeVLLM           = 62
+	ChannelTypeSGLang         = 63
+	ChannelTypeDummy          = localChannelTypeCount // includes registered local typed channels
+
 )
 
+// ChannelBaseURLs 保存各渠道类型的内置默认 Base URL。
+// 非空值会通过 /api/channel/default_base_urls 下发到前端，作为渠道表单的 API 地址占位提示。
 var ChannelBaseURLs = []string{
 	"",                                    // 0
 	"https://api.openai.com",              // 1
@@ -127,10 +130,8 @@ var ChannelBaseURLs = []string{
 	"",                                          //59
 	"",                                          //60
 	"",                                          //61
-	"https://ark.cn-beijing.volces.com",         //62
-	"https://mm-internal-cn.leonecloud.com",     //63
-	"",                                          //65 retired Moxing slot (reserved)
-	"",                                          //66 Azure Batch (configured per channel)
+	"",                                          //62
+	"",                                          //63
 }
 
 func GetChannelBaseURL(channelType int) string {
@@ -191,7 +192,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeJimeng:         "Jimeng",
 	ChannelTypeVidu:           "Vidu",
 	ChannelTypeSubmodel:       "Submodel",
-	ChannelTypeDoubaoVideo:    "DoubaoVideo",
+	ChannelTypeDoubaoVideo:    "Doubao",
 	ChannelTypeSora:           "Sora",
 	ChannelTypeReplicate:      "Replicate",
 	ChannelTypeCodex:          "ChatGPT Subscription (Codex)",
@@ -199,10 +200,8 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeSub2API:        "Sub2API",
 	ChannelTypeNewAPI:         "New API",
 	ChannelTypeTaskPlugin:     "Task Plugin",
-	ChannelTypeSeedanceLink:   "Seedance Link",
-	ChannelTypeMiniMaxLink:    "MiniMax Link",
-	ChannelTypeAsyncImage:     "Image Relay",
-	ChannelTypeAzureBatch:     "Azure Batch",
+	ChannelTypeVLLM:           "vLLM",
+	ChannelTypeSGLang:         "SGLang",
 }
 
 func GetChannelTypeName(channelType int) string {
@@ -234,4 +233,14 @@ var ChannelSpecialBases = map[string]ChannelSpecialBase{
 		ClaudeBaseURL: "https://ark.cn-beijing.volces.com/api/coding",
 		OpenAIBaseURL: "https://ark.cn-beijing.volces.com/api/coding/v3",
 	},
+}
+
+// IsAdvancedCustomChannel includes named channels backed by route presets.
+func IsAdvancedCustomChannel(channelType int) bool {
+	switch channelType {
+	case ChannelTypeAdvancedCustom, ChannelTypeVLLM, ChannelTypeSGLang:
+		return true
+	default:
+		return false
+	}
 }

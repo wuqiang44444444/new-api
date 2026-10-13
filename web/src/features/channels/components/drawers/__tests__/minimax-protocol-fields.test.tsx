@@ -19,7 +19,7 @@ vi.mock('@/lib/api', () => ({ api: { get: vi.fn() } }))
 
 function Harness() {
   const form = useForm<ChannelFormValues>({
-    defaultValues: { ...CHANNEL_FORM_DEFAULT_VALUES, type: 64 },
+    defaultValues: { ...CHANNEL_FORM_DEFAULT_VALUES, type: 69 },
   })
   const version = useWatch({
     control: form.control,
@@ -28,10 +28,10 @@ function Harness() {
   const type = useWatch({ control: form.control, name: 'type' })
   return (
     <Form {...form}>
-      {type === 64 && <MinimaxProtocolFields />}
+      {type === 69 && <MinimaxProtocolFields />}
       <output aria-label='Submitted declaration'>{version}</output>
       <Button
-        onClick={() => form.reset({ ...CHANNEL_FORM_DEFAULT_VALUES, type: 64 })}
+        onClick={() => form.reset({ ...CHANNEL_FORM_DEFAULT_VALUES, type: 69 })}
       >
         Reload channel
       </Button>

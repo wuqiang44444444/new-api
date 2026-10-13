@@ -16,5 +16,5 @@ func seedPublishedSeedanceTestArtifact(t *testing.T) {
 	source := plugins.SeedanceSource()
 	plugin, _, err := jsplugin.CompileSeedanceExtension(source, jsplugin.Options{}, jsplugin.SeedanceHostContract())
 	require.NoError(t, err)
-	require.NoError(t, DB.Create(&TaskPlugin{Key: plugin.Meta.Key, Version: plugin.Meta.Version, APIVersion: plugin.Meta.APIVersion, Source: source, SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true, Active: true}).Error)
+	require.NoError(t, DB.Create(&TaskPlugin{Key: plugin.Meta.Key, Version: plugin.Meta.Version, APIVersion: plugin.Meta.APIVersion, Source: LongText(source), SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(source))), Enabled: true, Active: true}).Error)
 }

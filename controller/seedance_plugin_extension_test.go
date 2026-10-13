@@ -69,7 +69,7 @@ func TestSeedanceExtensionDeletionBlocksExecutionDependencies(t *testing.T) {
 	require.NoError(t, model.DB.AutoMigrate(&model.TaskCreateAttempt{}))
 	row := model.TaskPlugin{Key: "seedance-link", Version: "1.0.1"}
 	require.NoError(t, model.DB.Create(&row).Error)
-	pinned := &model.Task{TaskID: "task-pinned", Platform: "62", Status: model.TaskStatusInProgress}
+	pinned := &model.Task{TaskID: "task-pinned", Platform: "67", Status: model.TaskStatusInProgress}
 	pinned.PrivateData.Execution = &model.TaskExecutionSnapshot{TaskPlugin: &model.TaskPluginSnapshot{Key: row.Key, Version: row.Version}}
 	require.NoError(t, model.DB.Create(pinned).Error)
 	for _, force := range []string{"", "true"} {
@@ -114,7 +114,7 @@ func TestApplySeedanceExtensionListItemProjectsRealStatus(t *testing.T) {
 
 	// Healthy active extension with the seeded row synced.
 	rows := []model.TaskPlugin{{
-		Key: "seedance-link", Version: plugins.SeedanceVersion(), Source: plugins.SeedanceSource(),
+		Key: "seedance-link", Version: plugins.SeedanceVersion(), Source: model.LongText(plugins.SeedanceSource()),
 		SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(plugins.SeedanceSource()))),
 		Enabled:    true, Active: true,
 	}}
@@ -136,7 +136,7 @@ func TestSeedanceListCountsAttemptsAndDisabledHistory(t *testing.T) {
 	setupTaskPluginControllerTest(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.TaskCreateAttempt{}))
 	require.NoError(t, taskseedance.SyncExtensionSnapshot(nil, nil))
-	pinned := &model.Task{TaskID: "existing", Platform: "62", Status: model.TaskStatusInProgress}
+	pinned := &model.Task{TaskID: "existing", Platform: "67", Status: model.TaskStatusInProgress}
 	pinned.PrivateData.Execution = &model.TaskExecutionSnapshot{TaskPlugin: &model.TaskPluginSnapshot{Key: "seedance-link", Version: "older"}}
 	require.NoError(t, model.DB.Create(pinned).Error)
 	frozen, err := common.Marshal(map[string]string{"plugin_key": "seedance-link", "plugin_version": "newer"})

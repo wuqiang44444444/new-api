@@ -412,7 +412,7 @@ ModelArk 视频入口共用 Link 内容代理，按冻结连接处理 Provider �
 位于独立 Seedance 文件，内容代理仍由 `controller/video_proxy_link.go` 唯一负责。未来同步上游时
 只需保留这些制品入口接线，不修改原生适配器或插件合同。
 
-MiniMax 标准视频沿相同的通用制品入口使用独立类型化接线：以类型 64 的成功 Task、未删除状态和
+MiniMax 标准视频沿相同的通用制品入口使用独立类型化接线：以 `ChannelTypeMiniMaxLink`（69）的成功 Task、未删除状态和
 已冻结的真实 Provider task ID 投影一个 `video` 制品。JD 临时视频地址不持久化，因此列表不以
 `ResultURL` 的本站占位地址作为媒体来源，也不因缺少持久 CDN 地址而返回空制品。列表不访问 Provider；
 内容请求由冻结的 MiniMax adapter 按需解析临时地址，再交由同一 Link 内容代理执行安全回源。

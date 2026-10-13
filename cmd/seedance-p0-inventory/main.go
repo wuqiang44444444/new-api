@@ -15,6 +15,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/QuantumNous/new-api/constant"
 	"os"
 	"sort"
 	"strings"
@@ -140,7 +141,7 @@ func main() {
 	var statusCounts []taskStatusCount
 	if err = db.Table("tasks").
 		Select("status", "COALESCE(billing_state,'') AS billing_state", "COUNT(*) AS count").
-		Where("platform = ?", "62").
+		Where("platform = ?", "67").
 		Group("status").Group("billing_state").
 		Find(&statusCounts).Error; err != nil {
 		fail("read tasks", err)
@@ -176,7 +177,7 @@ func main() {
 	for _, ch := range channels {
 		for _, model := range splitModels(ch.Models) {
 			onChannel[model] = true
-			if ch.Type == 62 {
+			if ch.Type == constant.ChannelTypeSeedanceLink {
 				linkModels[model] = true
 			} else {
 				nativeModels[model] = true
@@ -203,7 +204,7 @@ func main() {
 	customerKeyMissingButMappedConfigured := []string{}
 	mappedKeyDiffersFromCustomerKey := []string{}
 	for _, ch := range channels {
-		if ch.Type != 62 {
+		if ch.Type != constant.ChannelTypeSeedanceLink {
 			continue
 		}
 		mapping := map[string]string{}
@@ -319,7 +320,7 @@ func main() {
 	fmt.Println("== 渠道矩阵（62 专用渠道，启用+停用）==")
 	fmt.Println("channel | status | group | protocol | policy | default_group_present")
 	for _, ch := range channels {
-		if ch.Type != 62 {
+		if ch.Type != constant.ChannelTypeSeedanceLink {
 			continue
 		}
 		settings := dto.ChannelOtherSettings{}

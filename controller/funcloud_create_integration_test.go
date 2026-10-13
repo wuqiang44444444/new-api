@@ -39,9 +39,9 @@ func TestFunCloudCreateRouteCommitsHoldBeforeProviderBytes(t *testing.T) {
 			if outcome == "quoted_credential" {
 				policyMessage = `request rejected: "api_key": "fixture-secret"`
 			}
-			common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 			events := []string{}
 			db := setupTaskSubmissionDatabase(t, true, &events)
+
 			seedPublishedSeedanceControllerArtifact(t)
 			sqlDB, err := db.DB()
 			require.NoError(t, err)

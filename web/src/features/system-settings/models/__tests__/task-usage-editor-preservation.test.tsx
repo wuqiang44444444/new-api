@@ -28,7 +28,7 @@ describe('task usage editor expression preservation', () => {
     const expression = 'tier("custom", u("tokens") * u("tokens") / 1000000)'
     const onChange = vi.fn()
     render(
-      <TaskUsagePricingEditor
+      <TaskUsagePricingEditor showPreconsumeBudget
         billingExpr={expression}
         requestRuleExpr=''
         usageSchema={{ tokens: { type: 'number', unit: 'token' } }}
@@ -42,7 +42,7 @@ describe('task usage editor expression preservation', () => {
       await screen.findByRole('option', { name: 'Visual editor' })
     )
 
-    const expressionInput = screen.getByRole('textbox', { name: 'Expression' })
+    const expressionInput = screen.getByRole('textbox', { name: 'Billing expression' })
     expect(expressionInput).toHaveValue(expression)
     expect(onChange).not.toHaveBeenCalled()
     expect(

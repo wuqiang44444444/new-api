@@ -18,7 +18,7 @@ func TestMiniMaxPricingSaveAndCatalogWithoutSeedance(t *testing.T) {
 	require.NoError(t, DB.Where("key = ?", jsplugin.MinimaxPluginKey).Delete(&TaskPlugin{}).Error)
 	t.Cleanup(func() { DB.Where("key = ?", jsplugin.MinimaxPluginKey).Delete(&TaskPlugin{}) })
 	plugin := TaskPlugin{Key: jsplugin.MinimaxPluginKey, Version: plugins.MinimaxVersion(), APIVersion: 3,
-		Source: plugins.MinimaxSource(), Enabled: true, Active: true}
+		Source: LongText(plugins.MinimaxSource()), Enabled: true, Active: true}
 	require.NoError(t, DB.Create(&plugin).Error)
 	channel := Channel{Name: "minimax-pricing", Type: constant.ChannelTypeMiniMaxLink, Models: "customer-h3",
 		Group: "default", Status: common.ChannelStatusEnabled, ModelMapping: common.GetPointer(`{"customer-h3":"MiniMax-H3"}`)}
