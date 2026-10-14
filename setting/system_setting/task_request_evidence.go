@@ -12,10 +12,10 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
-// 音视频请求证据的部署配置。证据默认开启；显式环境变量优先，
-// 加密密钥未配置时从 CRYPTO_SECRET/SESSION_SECRET 派生（见
-// ResolveTaskRequestEvidenceConfig 的告警语义）。保留期默认 0 表示
-// 不自动清理。
+// 请求证据的部署配置。采集默认关闭，仅显式配置开启；显式开启后统一采集
+// 已登记媒体操作。正文及事件明细保留期为 1～7 天（默认 7），非法配置在
+// 加载期明确报错，不静默改成永久保存或无证据模式。加密密钥未配置时从
+// CRYPTO_SECRET/SESSION_SECRET 派生（见 ResolveTaskRequestEvidenceConfig）。
 const (
 	TaskRequestEvidenceEnabledEnv             = "TASK_REQUEST_EVIDENCE_ENABLED"
 	TaskRequestEvidenceStorageDirEnv          = "TASK_REQUEST_EVIDENCE_STORAGE_DIR"
@@ -32,6 +32,8 @@ const (
 	maxTaskRequestEvidenceMaxResponse     = int64(1 << 30)
 	defaultTaskRequestEvidenceTimeout     = 5
 	maxTaskRequestEvidenceTimeout         = 60
+	defaultTaskRequestEvidenceRetention   = 7
+	maxTaskRequestEvidenceRetention       = 7
 )
 
 // TaskRequestEvidenceConfig 是证据子系统的运行配置合同。
@@ -51,24 +53,32 @@ type TaskRequestEvidenceConfig struct {
 // LoadTaskRequestEvidenceConfig 读取环境变量并做语法校验；不访问文件系统、
 // 不做密钥派生。密钥派生在 InitEnv 之后的惰性解析中进行。
 func LoadTaskRequestEvidenceConfig() TaskRequestEvidenceConfig {
+	// 只有显式 "true" 才开启采集；未配置、空白或任何其它值都不开启。
+	enabledRaw := strings.ToLower(strings.TrimSpace(os.Getenv(TaskRequestEvidenceEnabledEnv)))
+	invalid := &configInvalidReason{}
 	config := TaskRequestEvidenceConfig{
-		Enabled:             strings.ToLower(strings.TrimSpace(common.GetEnvOrDefaultString(TaskRequestEvidenceEnabledEnv, "true"))) != "false",
+		Enabled:             enabledRaw == "true",
 		StorageDir:          common.GetEnvOrDefaultString(TaskRequestEvidenceStorageDirEnv, defaultTaskRequestEvidenceStorageDir),
 		EncryptionKeyHex:    strings.TrimSpace(os.Getenv(TaskRequestEvidenceEncryptionKeyEnv)),
 		MaxBodyBytes:        int64(common.GetEnvOrDefault(TaskRequestEvidenceMaxBodyBytesEnv, int(defaultTaskRequestEvidenceMaxBody))),
 		MaxResponseBytes:    int64(common.GetEnvOrDefault(TaskRequestEvidenceMaxResponseBytesEnv, int(defaultTaskRequestEvidenceMaxResponse))),
 		WriteTimeoutSeconds: common.GetEnvOrDefault(TaskRequestEvidenceWriteTimeoutSecondsEnv, defaultTaskRequestEvidenceTimeout),
-		RetentionDays:       common.GetEnvOrDefault(TaskRequestEvidenceRetentionDaysEnv, 0),
+		RetentionDays:       common.GetEnvOrDefault(TaskRequestEvidenceRetentionDaysEnv, defaultTaskRequestEvidenceRetention),
 	}
-	if raw, ok := os.LookupEnv(TaskRequestEvidenceEnabledEnv); ok && raw != "" && !strings.EqualFold(strings.TrimSpace(raw), "true") && !strings.EqualFold(strings.TrimSpace(raw), "false") {
-		config.InvalidReason = "enabled must be true or false"
+	if raw, ok := os.LookupEnv(TaskRequestEvidenceEnabledEnv); ok && raw != "" && enabledRaw != "true" && enabledRaw != "false" {
+		invalid.set("enabled must be true or false")
+		// 非法启用值不被当成开启，但必须响亮报告，避免部署方误以为已开启。
+		common.SysError("invalid " + TaskRequestEvidenceEnabledEnv + " value; collection stays disabled")
 	}
 	for _, key := range []string{TaskRequestEvidenceMaxBodyBytesEnv, TaskRequestEvidenceMaxResponseBytesEnv, TaskRequestEvidenceWriteTimeoutSecondsEnv, TaskRequestEvidenceRetentionDaysEnv} {
 		if raw, ok := os.LookupEnv(key); ok && raw != "" {
 			if _, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64); err != nil {
-				config.InvalidReason = "invalid integer evidence configuration"
+				invalid.set("invalid integer evidence configuration")
 			}
 		}
+	}
+	if invalid.reason != "" {
+		config.InvalidReason = invalid.reason
 	}
 	if err := ValidateTaskRequestEvidenceConfig(config); err != nil {
 		common.SysError("invalid task request evidence configuration: " + err.Error() + "; evidence requests will be rejected")
@@ -76,18 +86,24 @@ func LoadTaskRequestEvidenceConfig() TaskRequestEvidenceConfig {
 	return config
 }
 
-// ResolveTaskRequestEvidenceConfig 在运行时解析生效配置：启用但未配置显式
-// 密钥时，从 CRYPTO_SECRET（或其回退 SESSION_SECRET）派生密钥。派生密钥
-// 随宿主密钥轮换而失效，读取会得到明确的解密失败而非静默错误，且会输出
-// 告警提示部署方显式配置。必须在 main 的 InitEnv 之后调用。
-func ResolveTaskRequestEvidenceConfig(loaded TaskRequestEvidenceConfig) TaskRequestEvidenceConfig {
-	if !loaded.Enabled {
-		return loaded
+// configInvalidReason 保存首个配置错误，保持加载期错误信息稳定。
+type configInvalidReason struct{ reason string }
+
+func (r *configInvalidReason) set(reason string) {
+	if r.reason == "" {
+		r.reason = reason
 	}
+}
+
+// ResolveTaskRequestEvidenceConfig 在运行时解析生效配置：未配置显式密钥时，
+// 从 CRYPTO_SECRET（或其回退 SESSION_SECRET）派生密钥。派生在采集关闭时同样
+// 进行，历史正文的读取与过期清理不依赖采集开关；派生密钥随宿主密钥轮换而
+// 失效，读取会得到明确的解密失败而非静默错误。必须在 main 的 InitEnv 之后调用。
+func ResolveTaskRequestEvidenceConfig(loaded TaskRequestEvidenceConfig) TaskRequestEvidenceConfig {
 	if strings.TrimSpace(loaded.EncryptionKeyHex) != "" {
 		return loaded
 	}
-	if os.Getenv("CRYPTO_SECRET") == "" && os.Getenv("SESSION_SECRET") == "" {
+	if loaded.Enabled && os.Getenv("CRYPTO_SECRET") == "" && os.Getenv("SESSION_SECRET") == "" {
 		common.SysError("task request evidence key derived from ephemeral secret; " +
 			"evidence bodies will be unreadable after restart. Set CRYPTO_SECRET or " +
 			"TASK_REQUEST_EVIDENCE_ENCRYPTION_KEY for production use")
@@ -118,7 +134,8 @@ func GetTaskRequestEvidenceConfig() TaskRequestEvidenceConfig {
 	return taskRequestEvidenceRuntime
 }
 
-// ValidateTaskRequestEvidenceConfig 只做语法校验，不访问文件系统或密钥派生。
+// ValidateTaskRequestEvidenceConfig 校验显式开启时的完整配置合同；不访问
+// 文件系统或密钥派生。关闭时忽略采集合同。
 func ValidateTaskRequestEvidenceConfig(config TaskRequestEvidenceConfig) error {
 	if !config.Enabled {
 		return nil
@@ -144,8 +161,8 @@ func ValidateTaskRequestEvidenceConfig(config TaskRequestEvidenceConfig) error {
 	if config.WriteTimeoutSeconds <= 0 || config.WriteTimeoutSeconds > maxTaskRequestEvidenceTimeout {
 		return fmt.Errorf("write timeout must be between 1 and %d seconds", maxTaskRequestEvidenceTimeout)
 	}
-	if config.RetentionDays < 0 || config.RetentionDays > 3650 {
-		return fmt.Errorf("retention days must be between 0 (no cleanup) and 3650")
+	if config.RetentionDays < 1 || config.RetentionDays > maxTaskRequestEvidenceRetention {
+		return fmt.Errorf("retention days must be an integer between 1 and %d; permanent retention is no longer supported", maxTaskRequestEvidenceRetention)
 	}
 	return nil
 }

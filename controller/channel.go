@@ -565,6 +565,9 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if channel == nil {
 		return fmt.Errorf("channel cannot be empty")
 	}
+	if err := model.ValidateChannelGroupLength(channel.Group); err != nil {
+		return err
+	}
 	if err := model.PinSeedanceChannelConfigurationInput(channel); err != nil {
 		return err
 	}

@@ -29,6 +29,7 @@ import { useState } from 'react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { SettingsPageProvider } from '../../components/settings-page-context'
 import { LogSettingsSection } from '../log-settings-section'
@@ -66,6 +67,7 @@ async function renderSettings() {
 }
 
 beforeEach(() => {
+  useAuthStore.getState().auth.setUser({ id: 21, username: 'root', role: 100 })
   vi.spyOn(api, 'get').mockImplementation(async (url) => ({
     data: {
       success: true,
@@ -87,6 +89,7 @@ test('the page shows the four log modules in order, each with its own controls',
     'Log recording',
     'Log search and export',
     'Clean history logs',
+    'Clean request evidence',
     'Server Log Management',
   ])
   const recording = screen.getByRole('group', { name: 'Log recording' })
@@ -108,6 +111,11 @@ test('the page shows the four log modules in order, each with its own controls',
     within(cleanup).getByRole('button', { name: 'Clean logs' })
   ).toBeVisible()
   const server = screen.getByRole('group', { name: 'Server Log Management' })
+  expect(
+    within(
+      screen.getByRole('group', { name: 'Clean request evidence' })
+    ).getByRole('button', { name: 'Clean evidence' })
+  ).toBeVisible()
   expect(
     await within(server).findByRole('button', { name: 'Clean Up Log Files' })
   ).toBeVisible()

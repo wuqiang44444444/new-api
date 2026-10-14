@@ -26,6 +26,10 @@ type ModelArkVideoTask struct {
 type ModelArkVideoTaskContent struct {
 	VideoURL     string `json:"video_url,omitempty"`
 	LastFrameURL string `json:"last_frame_url,omitempty"`
+	// DeliveryStatus 是 Link 视频结果托管的公共交付合同（唯一表达）：ready
+	// 时 video_url/last_frame_url 为本站 OSS 预签名地址；preparing 表示转存
+	// 进行中（URL 暂缺）；unavailable 表示交付不可用（URL 暂缺，如实失败）。
+	DeliveryStatus string `json:"delivery_status,omitempty"`
 }
 
 type ModelArkVideoTaskUsage struct {

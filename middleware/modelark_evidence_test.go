@@ -24,7 +24,7 @@ func TestEvidenceModelArkCapturesBeforeConversion(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}))
 	model.DB = db
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", MaxBodyBytes: 1 << 20, MaxResponseBytes: 1 << 20, WriteTimeoutSeconds: 5}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", RetentionDays: 7, MaxBodyBytes: 1 << 20, MaxResponseBytes: 1 << 20, WriteTimeoutSeconds: 5}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	t.Cleanup(func() {

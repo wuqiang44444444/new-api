@@ -81,7 +81,7 @@ it('allows administrators to browse recorded requests without an error log or re
     </QueryClientProvider>
   )
   fireEvent.click(screen.getByRole('button', { name: 'Request evidence' }))
-  expect(await screen.findByText('No request evidence recorded')).toBeVisible()
+  expect(await screen.findByText('No request evidence available. It may not have been recorded or may have expired.')).toBeVisible()
   expect(api.get).toHaveBeenCalledWith('/api/task_request_evidence', {
     params: { request_id: undefined, p: 1, page_size: 20 },
   })

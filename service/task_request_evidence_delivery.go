@@ -70,7 +70,7 @@ func FinishTaskRequestEvidenceClientDelivery(c *gin.Context) {
 			event.Phase = model.TaskRequestEvidencePhaseCompleted
 		}
 		event.Detail = evidenceMarshalDetail(map[string]any{"media_body_archived": false})
-		if err := model.CreateTaskRequestEvidenceEvent(event); err != nil {
+		if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil {
 			common.SysError("evidence client delivery unavailable")
 		}
 	}

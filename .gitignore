@@ -26,13 +26,14 @@ tiktoken_cache
 .gomodcache/
 .cache
 .plans
+__pycache__/
+*.py[cod]
 .claude
 .cursor
 
 electron/node_modules
 electron/dist
 /data/
-.gomodcache/
 .gocache-temp
 .gopath
 .test

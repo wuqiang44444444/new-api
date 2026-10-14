@@ -36,8 +36,9 @@ import { toIntlLocale } from '@/i18n/languages'
 import { formatTimestampRelative, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import { ChannelCheckResultsDialog } from './channel-check-results-dialog'
 import { SYSTEM_TASK_TYPE_LABEL } from '../constants'
+import { ChannelCheckResultsDialog } from './channel-check-results-dialog'
+import { EvidenceCleanupResultsDialog } from './evidence-cleanup-results-dialog'
 
 const STATUS_VARIANT: Record<SystemTaskStatus, 'secondary' | 'destructive'> = {
   pending: 'secondary',
@@ -82,6 +83,20 @@ function getProgress(task: SystemTask): number | null {
 
 type SystemTasksTableProps = {
   tasks: SystemTask[]
+}
+
+function SystemTaskResult(props: { task: SystemTask }) {
+  if (
+    props.task.type === 'task_request_evidence_retention' ||
+    props.task.type === 'task_request_evidence_monitor'
+  ) {
+    return <EvidenceCleanupResultsDialog task={props.task} />
+  }
+  if (props.task.error) return props.task.error
+  if (props.task.type === 'channel_test' && props.task.result?.checks) {
+    return <ChannelCheckResultsDialog checks={props.task.result.checks} />
+  }
+  return '-'
 }
 
 export function SystemTasksTable(props: SystemTasksTableProps) {
@@ -167,7 +182,7 @@ export function SystemTasksTable(props: SystemTasksTableProps) {
                 className='text-destructive max-w-[220px] truncate py-3 pr-4 align-middle text-xs'
                 title={task.error || undefined}
               >
-                {task.error || (task.type === 'channel_test' && task.result?.checks ? <ChannelCheckResultsDialog checks={task.result.checks} /> : '-')}
+                <SystemTaskResult task={task} />
               </TableCell>
             </TableRow>
           )

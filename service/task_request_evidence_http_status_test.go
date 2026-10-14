@@ -36,7 +36,8 @@ func TestEvidencePollingPreservesObservedResponseOnTransportError(t *testing.T) 
 	for _, withBody := range []bool{false, true} {
 		t.Run(map[bool]string{false: "empty", true: "body"}[withBody], func(t *testing.T) {
 			setupEvidenceTestEnv(t)
-			task := &model.Task{TaskID: "task-poll", UserId: 7}
+			task := &model.Task{TaskID: "task-poll", UserId: 7, ClientProtocol: "openai_video"}
+			require.NoError(t, model.DB.Create(task).Error)
 			req, err := http.NewRequest(http.MethodGet, "https://provider.example/tasks/1", nil)
 			require.NoError(t, err)
 			response := &http.Response{StatusCode: 502, Header: http.Header{"Content-Type": {"text/plain"}}}

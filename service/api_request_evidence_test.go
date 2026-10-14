@@ -27,12 +27,12 @@ func TestAPIRequestEvidenceRecordsSuccessRejectionAndRetries(t *testing.T) {
 		status     int
 		reject     bool
 	}{
-		{"chat success", "/v1/chat/completions", 200, false},
-		{"responses success", "/v1/responses", 200, false},
-		{"embedding success", "/v1/embeddings", 200, false},
-		{"rerank rejection", "/v1/rerank", 400, true},
-		{"auth rejection", "/v1/moderations", 401, true},
-		{"gemini success", "/v1beta/models/customer:generateContent", 200, false},
+		{"chat success", "/v1/images/edits", 200, false},
+		{"audio success", "/v1/audio/translations", 200, false},
+		{"embedding success", "/v1/images/generations", 200, false},
+		{"rerank rejection", "/v1/audio/transcriptions", 400, true},
+		{"auth rejection", "/v1/audio/speech", 401, true},
+		{"gemini success", "/api/v3/contents/generations/tasks", 200, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setupEvidenceTestEnv(t)
@@ -110,18 +110,18 @@ func TestAPIRequestEvidencePreservesStreamAndExcludesAdministrativeReads(t *test
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) { c.Set(common.RequestIdKey, c.Request.URL.Path); c.Next() }, APIRequestEvidence())
 	stream := "data: {\"text\":\"hello\"}\n\ndata: {\"error\":\"failure\"}\n\n"
-	engine.GET("/v1/responses", func(c *gin.Context) {
+	engine.GET("/v1/realtime", func(c *gin.Context) {
 		c.Header("Content-Type", "text/event-stream")
 		_, _ = c.Writer.WriteString(stream)
 		c.Writer.Flush()
 	})
 	engine.GET("/api/task_request_evidence", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
 	recorder := httptest.NewRecorder()
-	engine.ServeHTTP(recorder, httptest.NewRequest("GET", "/v1/responses", nil))
+	engine.ServeHTTP(recorder, httptest.NewRequest("GET", "/v1/realtime", nil))
 	assert.Equal(t, 200, recorder.Code)
 	assert.Equal(t, stream, recorder.Body.String())
 	assert.True(t, recorder.Flushed)
-	indices, count, err := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{RequestID: "/v1/responses", Num: 20})
+	indices, count, err := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{RequestID: "/v1/realtime", Num: 20})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, count)
 	events := evidenceEventRows(t, indices[0].Id)
@@ -138,7 +138,8 @@ func TestAPIRequestEvidencePreservesStreamAndExcludesAdministrativeReads(t *test
 
 func TestBackgroundRequestEvidenceKeepsTaskIdentity(t *testing.T) {
 	setupEvidenceTestEnv(t)
-	task := &model.Task{TaskID: "task-background", UserId: 7, ChannelId: 9, Properties: model.Properties{OriginModelName: "customer"}}
+	task := &model.Task{TaskID: "task-background", UserId: 7, ChannelId: 9, ClientProtocol: model.TaskClientProtocolImageOpenAIV1, Properties: model.Properties{OriginModelName: "customer"}}
+	require.NoError(t, model.DB.Create(task).Error)
 	ctx, finish := BeginBackgroundRequestEvidence(context.Background(), task)
 	capture := apiEvidenceFrom(ctx)
 	require.NotNil(t, capture)
@@ -169,13 +170,13 @@ func TestAPIRequestEvidencePreservesMalformedAndTruncatedRequests(t *testing.T) 
 			system_setting.SetTaskRequestEvidenceConfig(config)
 			engine := gin.New()
 			engine.Use(APIRequestEvidence())
-			engine.POST("/v1/chat/completions", func(c *gin.Context) {
+			engine.POST("/v1/images/edits", func(c *gin.Context) {
 				body, err := io.ReadAll(c.Request.Body)
 				require.NoError(t, err)
 				assert.Equal(t, tc.body, string(body))
 				c.String(400, "invalid request")
 			})
-			req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(tc.body))
+			req := httptest.NewRequest("POST", "/v1/images/edits", strings.NewReader(tc.body))
 			req.Header.Set("Content-Type", "application/json")
 			recorder := httptest.NewRecorder()
 			engine.ServeHTTP(recorder, req)
@@ -208,9 +209,9 @@ func TestAPIRequestEvidenceStorageFailureDoesNotChangeClientResponse(t *testing.
 	t.Cleanup(func() { evidenceObjectStore = original })
 	engine := gin.New()
 	engine.Use(APIRequestEvidence())
-	engine.POST("/v1/embeddings", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
+	engine.POST("/v1/images/generations", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
 	recorder := httptest.NewRecorder()
-	engine.ServeHTTP(recorder, httptest.NewRequest("POST", "/v1/embeddings", strings.NewReader(`{"model":"customer"}`)))
+	engine.ServeHTTP(recorder, httptest.NewRequest("POST", "/v1/images/generations", strings.NewReader(`{"model":"customer"}`)))
 	assert.Equal(t, 200, recorder.Code)
 	assert.JSONEq(t, `{"ok":true}`, recorder.Body.String())
 	indices, _, err := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{Num: 20})
@@ -237,14 +238,14 @@ func TestAPIRequestEvidencePreservesRequestReadError(t *testing.T) {
 	setupEvidenceTestEnv(t)
 	engine := gin.New()
 	engine.Use(APIRequestEvidence())
-	engine.POST("/v1/chat/completions", func(c *gin.Context) {
+	engine.POST("/v1/images/edits", func(c *gin.Context) {
 		body, err := io.ReadAll(c.Request.Body)
 		assert.Equal(t, "prefix", string(body))
 		assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
 		c.String(400, "read failed")
 	})
 	reader := io.MultiReader(strings.NewReader("prefix"), &apiEvidenceReadError{err: io.ErrUnexpectedEOF})
-	req := httptest.NewRequest("POST", "/v1/chat/completions", reader)
+	req := httptest.NewRequest("POST", "/v1/images/edits", reader)
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, req)
 	assert.Equal(t, 400, recorder.Code)
@@ -356,14 +357,14 @@ func TestAPIRequestEvidenceIndependentOfLegacyCapacity(t *testing.T) {
 	}()
 	engine := gin.New()
 	engine.Use(APIRequestEvidence())
-	engine.POST("/v1/embeddings", func(c *gin.Context) {
+	engine.POST("/v1/images/generations", func(c *gin.Context) {
 		body, err := io.ReadAll(c.Request.Body)
 		require.NoError(t, err)
 		assert.Equal(t, `{"input":"sample"}`, string(body))
 		c.JSON(200, gin.H{"ok": true})
 	})
 	response := httptest.NewRecorder()
-	engine.ServeHTTP(response, httptest.NewRequest("POST", "/v1/embeddings", strings.NewReader(`{"input":"sample"}`)))
+	engine.ServeHTTP(response, httptest.NewRequest("POST", "/v1/images/generations", strings.NewReader(`{"input":"sample"}`)))
 	assert.Equal(t, 200, response.Code)
 	indices, _, err := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{Num: 20})
 	require.NoError(t, err)
@@ -384,7 +385,7 @@ func TestAPIRequestEvidencePanicRecordsFinalDelivery(t *testing.T) {
 			setupEvidenceTestEnv(t)
 			engine := gin.New()
 			engine.Use(APIRequestEvidence(), gin.CustomRecovery(func(c *gin.Context, _ any) { c.JSON(500, gin.H{"error": "panic"}) }))
-			engine.GET("/v1/chat/completions", func(c *gin.Context) {
+			engine.GET("/v1/realtime", func(c *gin.Context) {
 				if streaming {
 					c.Writer.Header().Set("Content-Type", "text/event-stream")
 					_, _ = c.Writer.WriteString("data: {\"ok\":true}\n\n")
@@ -393,7 +394,7 @@ func TestAPIRequestEvidencePanicRecordsFinalDelivery(t *testing.T) {
 				panic("synthetic")
 			})
 			response := httptest.NewRecorder()
-			engine.ServeHTTP(response, httptest.NewRequest("GET", "/v1/chat/completions", nil))
+			engine.ServeHTTP(response, httptest.NewRequest("GET", "/v1/realtime", nil))
 			expected := 500
 			if streaming {
 				expected = 200
@@ -416,8 +417,8 @@ func TestAPIRequestEvidenceRejectsBeforeReadingBody(t *testing.T) {
 	setupEvidenceTestEnv(t)
 	engine := gin.New()
 	engine.Use(APIRequestEvidence())
-	engine.POST("/v1/embeddings", func(c *gin.Context) { c.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"}) })
-	req := httptest.NewRequest("POST", "/v1/embeddings", nil)
+	engine.POST("/v1/images/generations", func(c *gin.Context) { c.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"}) })
+	req := httptest.NewRequest("POST", "/v1/images/generations", nil)
 	req.Body = io.NopCloser(&apiNeverReadBody{t: t})
 	req.ContentLength = 100
 	response := httptest.NewRecorder()
@@ -437,10 +438,10 @@ func TestAPIRequestEvidenceRejectedBodyOnRealHTTP(t *testing.T) {
 	done := make(chan struct{})
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) { c.Next(); close(done) }, APIRequestEvidence())
-	engine.POST("/v1/embeddings", func(c *gin.Context) { c.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"}) })
+	engine.POST("/v1/images/generations", func(c *gin.Context) { c.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"}) })
 	server := httptest.NewServer(APIRequestEvidenceHTTPHandler(engine))
 	defer server.Close()
-	resp, err := http.Post(server.URL+"/v1/embeddings", "application/json", strings.NewReader(`{"input":"sample","api_key":"private"}`))
+	resp, err := http.Post(server.URL+"/v1/images/generations", "application/json", strings.NewReader(`{"input":"sample","api_key":"private"}`))
 	require.NoError(t, err)
 	assert.Equal(t, 401, resp.StatusCode)
 	_, err = io.ReadAll(resp.Body)
@@ -483,7 +484,10 @@ func TestTaskPollingEvidenceRetainsPOSTAndOneResponsePerTask(t *testing.T) {
 		_, _ = w.Write([]byte("provider unavailable"))
 	}))
 	defer provider.Close()
-	tasks := []*model.Task{{TaskID: "task-a", UserId: 7}, {TaskID: "task-b", UserId: 7}}
+	tasks := []*model.Task{{TaskID: "task-a", UserId: 7, ClientProtocol: "openai_video"}, {TaskID: "task-b", UserId: 7, ClientProtocol: "openai_video"}}
+	for _, task := range tasks {
+		require.NoError(t, model.DB.Create(task).Error)
+	}
 	req, err := http.NewRequest("POST", provider.URL, strings.NewReader(`{"ids":["a","b"]}`))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
@@ -530,7 +534,7 @@ func TestAPIRequestEvidenceNineConcurrentRequestsKeepBodies(t *testing.T) {
 	finished := make(chan struct{}, 9)
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) { c.Set(common.RequestIdKey, c.Param("id")); c.Next(); finished <- struct{}{} }, APIRequestEvidence())
-	engine.POST("/v1/embeddings/:id", func(c *gin.Context) {
+	engine.POST("/v1/videos/:id/remix", func(c *gin.Context) {
 		body, err := io.ReadAll(c.Request.Body)
 		require.NoError(t, err)
 		assert.Equal(t, `{"input":"sample"}`, string(body))
@@ -545,7 +549,7 @@ func TestAPIRequestEvidenceNineConcurrentRequestsKeepBodies(t *testing.T) {
 	results := make(chan error, 8)
 	for i := 1; i <= 8; i++ {
 		go func(id int) {
-			resp, err := http.Post(fmt.Sprintf("%s/v1/embeddings/%d", server.URL, id), "application/json", strings.NewReader(`{"input":"sample"}`))
+			resp, err := http.Post(fmt.Sprintf("%s/v1/videos/%d/remix", server.URL, id), "application/json", strings.NewReader(`{"input":"sample"}`))
 			if err == nil {
 				_, err = io.ReadAll(resp.Body)
 				_ = resp.Body.Close()
@@ -556,7 +560,7 @@ func TestAPIRequestEvidenceNineConcurrentRequestsKeepBodies(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		<-started
 	}
-	resp, err := http.Post(server.URL+"/v1/embeddings/9", "application/json", strings.NewReader(`{"input":"sample"}`))
+	resp, err := http.Post(server.URL+"/v1/videos/9/remix", "application/json", strings.NewReader(`{"input":"sample"}`))
 	require.NoError(t, err)
 	_, err = io.ReadAll(resp.Body)
 	require.NoError(t, err)
@@ -590,13 +594,13 @@ func TestAPIRequestEvidenceSlowRejectedBodyEndsAtReadDeadline(t *testing.T) {
 	done := make(chan struct{})
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) { c.Next(); close(done) }, APIRequestEvidence())
-	engine.POST("/v1/embeddings", func(c *gin.Context) { c.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"}) })
+	engine.POST("/v1/images/generations", func(c *gin.Context) { c.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"}) })
 	server := httptest.NewServer(APIRequestEvidenceHTTPHandler(engine))
 	defer server.Close()
 	conn, err := net.Dial("tcp", strings.TrimPrefix(server.URL, "http://"))
 	require.NoError(t, err)
 	defer conn.Close()
-	_, err = io.WriteString(conn, "POST /v1/embeddings HTTP/1.1\r\nHost: fixture\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{")
+	_, err = io.WriteString(conn, "POST /v1/images/generations HTTP/1.1\r\nHost: fixture\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{")
 	require.NoError(t, err)
 	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
 	require.NoError(t, err)
@@ -621,4 +625,49 @@ func TestAPIRequestEvidenceCredentialEchoKeepsNumericValues(t *testing.T) {
 	payload, err = capture.redactObservedBody([]byte("echo synthetic-long-secret"), "text/plain")
 	require.NoError(t, err)
 	assert.Equal(t, "echo [REDACTED]", string(payload))
+}
+
+// 全站观察器与音视频证据会话的同阶段去重：会话持有交换证据时，通用观察器
+// 丢弃记录，不向同一业务请求落第二份证据；无会话时照常持久化。
+func TestAPIRequestEvidenceDefersToTaskEvidenceSession(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		sessionKind string
+	}{
+		{"task session owns the exchange", model.TaskRequestEvidenceKindVideoTask},
+		{"no session persists once", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setupEvidenceTestEnv(t)
+			engine := gin.New()
+			engine.Use(func(c *gin.Context) { c.Set(common.RequestIdKey, "dedup-fixture"); c.Next() }, APIRequestEvidence())
+			engine.POST("/v1/video/generations", func(c *gin.Context) {
+				c.Set("id", 7)
+				c.Set("token_id", 42)
+				if tc.sessionKind != "" {
+					require.NoError(t, BeginTaskRequestEvidence(c, tc.sessionKind))
+				}
+				_, _ = io.ReadAll(c.Request.Body)
+				c.JSON(http.StatusOK, gin.H{"task_id": "task-dedup"})
+			})
+			request := httptest.NewRequest(http.MethodPost, "/v1/video/generations", strings.NewReader(`{"model":"seedance-1"}`))
+			recorder := httptest.NewRecorder()
+			engine.ServeHTTP(recorder, request)
+			require.Equal(t, http.StatusOK, recorder.Code)
+
+			_, total, err := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{RequestID: "dedup-fixture", Num: 10})
+			require.NoError(t, err)
+			require.EqualValues(t, 1, total)
+			indexes, _, err := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{RequestID: "dedup-fixture"})
+			require.NoError(t, err)
+			events, err := model.ListTaskRequestEvidenceEvents(indexes[0].Id)
+			require.NoError(t, err)
+			stages := map[string]int{}
+			for _, event := range events {
+				stages[event.Stage]++
+			}
+			assert.Equal(t, 1, stages[model.TaskRequestEvidenceStageNorthReceive])
+			assert.Equal(t, 1, stages[model.TaskRequestEvidenceStageClientDelivery])
+		})
+	}
 }

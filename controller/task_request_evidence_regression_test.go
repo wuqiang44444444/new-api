@@ -29,7 +29,7 @@ func setupEvidenceViewFixture(t *testing.T) *model.TaskRequestEvidence {
 	setupGenericTaskTest(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.TaskRequestEvidenceAccessLog{}))
 	old := system_setting.GetTaskRequestEvidenceConfig()
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), MaxBodyBytes: 1024, MaxResponseBytes: 1024, WriteTimeoutSeconds: 5}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 7, MaxBodyBytes: 1024, MaxResponseBytes: 1024, WriteTimeoutSeconds: 5}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	t.Cleanup(func() {
@@ -165,7 +165,8 @@ func TestEvidenceOriginalUnavailableNeverReturnsBody(t *testing.T) {
 			case "expired":
 				require.NoError(t, model.DB.Model(evidence).Update("body_expired", true).Error)
 			case "missing":
-				require.NoError(t, service.GetTaskRequestEvidenceStore().Delete("test/body.bin"))
+				_, deleteErr := service.GetTaskRequestEvidenceStore().Delete("test/body.bin")
+				require.NoError(t, deleteErr)
 			case "cross_evidence_event":
 				other := &model.TaskRequestEvidence{RequestID: "other-request"}
 				require.NoError(t, model.CreateTaskRequestEvidence(other))

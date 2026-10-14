@@ -28,6 +28,7 @@ import (
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/pkg/wsmanager"
 	"github.com/QuantumNous/new-api/relay"
+	taskminimax "github.com/QuantumNous/new-api/relay/channel/task/minimax"
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
@@ -155,6 +156,11 @@ func main() {
 	service.ImageTaskExecuteFunc = relay.ExecuteImageTask
 	service.ImageTaskResumePollFunc = relay.ResumeImageTaskPoll
 	service.CancelQueuedVideoTaskFunc = relay.CancelQueuedVideoTaskForReconciliation
+	// Link 视频结果托管：MiniMax 冻结连接的内容解析由 relay 层承担（打破
+	// service -> relay/channel/task/minimax 循环依赖）。
+	service.ResolveMiniMaxVideoContentFunc = func(ctx context.Context, task *model.Task) (string, error) {
+		return taskminimax.ResolveContentURL(ctx, task)
+	}
 
 	// Register the periodic channel test, upstream model update, and async task
 	// polling (Midjourney / Suno / video) jobs as scheduled system tasks

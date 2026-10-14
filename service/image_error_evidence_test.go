@@ -99,6 +99,10 @@ type blockedImageEvidenceStore struct {
 	release chan struct{}
 }
 
+func (s *blockedImageEvidenceStore) PutEventBody(evidenceID, eventID int64, payload []byte) error {
+	return s.Put(EvidenceObjectKey(evidenceID, eventID), payload)
+}
+
 func (s *blockedImageEvidenceStore) Put(key string, payload []byte) error {
 	select {
 	case s.started <- struct{}{}:

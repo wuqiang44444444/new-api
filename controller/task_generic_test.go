@@ -30,7 +30,7 @@ func setupGenericTaskTest(t *testing.T) *model.Task {
 	common.RedisEnabled = false
 	// The dialect harness lets the same fixture run against MySQL and
 	// PostgreSQL when TEST_TASK_DB_DIALECT selects them; SQLite stays the default.
-	database, _ := openTaskDialectDatabase(t, &model.Task{}, &model.Channel{}, &model.User{})
+	database, _ := openTaskDialectDatabase(t, &model.Task{}, &model.Channel{}, &model.User{}, &model.Option{}, &model.TaskVideoResultObject{})
 	model.DB = database
 	t.Cleanup(func() {
 		model.DB = originalDB

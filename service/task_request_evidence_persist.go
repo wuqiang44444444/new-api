@@ -35,7 +35,7 @@ func persistTaskEvidenceBodyUsing(event *model.TaskRequestEvidenceEvent, body []
 	if event.CreatedAt == 0 {
 		event.CreatedAt = common.GetTimestamp()
 	}
-	if err := model.CreateTaskRequestEvidenceEvent(event); err != nil {
+	if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil {
 		return evidenceUnavailableFailure(
 			TaskRequestEvidenceCategoryEventDatabase,
 			TaskRequestEvidenceStageEventReserve,
@@ -43,21 +43,44 @@ func persistTaskEvidenceBodyUsing(event *model.TaskRequestEvidenceEvent, body []
 		).WithCause(err)
 	}
 	event.Seq = event.Id
-	payload, redactErr := redact(body, event.ContentType)
+	// 写入前核对到期状态：新增事件不得向已到期索引继续写正文，也不得续期。
+	// 晚到对象仍可被周期清理按事件 ID 对象命名规则回收；读取侧按有效到期
+	// 时间立即拒绝，不恢复原文访问。
+	closed, closedErr := model.TaskRequestEvidenceBodyClosedForAppend(
+		event.EvidenceId, common.GetTimestamp(), EvidenceRetentionSeconds())
+	if closedErr != nil {
+		return evidenceUnavailableFailure(
+			TaskRequestEvidenceCategoryEventDatabase,
+			TaskRequestEvidenceStageEventReserve,
+			source,
+		).WithCause(closedErr)
+	}
 	var failure *TaskRequestEvidenceError
-	if redactErr != nil {
-		failure = evidenceRedactionFailure(redactErr, source, evidenceContentTypeRequiresJSON(event.ContentType))
-	} else if store := GetTaskRequestEvidenceStore(); store == nil {
+	var payload []byte
+	if closed {
+		// 已到期索引不追加正文；事件保持 unavailable，读取侧按到期时间拒绝。
 		failure = evidenceUnavailableFailure(
-			TaskRequestEvidenceCategoryObjectStorage,
+			TaskRequestEvidenceCategoryUnavailable,
 			TaskRequestEvidenceStageObjectWrite,
 			source,
-		).WithCause(errors.New("evidence store not initialized"))
-	} else if putErr := store.Put(evidenceObjectKey(event.EvidenceId, event.Id), payload); putErr != nil {
-		failure = evidenceStoreWriteFailure(putErr, source)
+		).WithCause(errors.New("evidence body expired"))
+	} else if p, redactErr := redact(body, event.ContentType); redactErr != nil {
+		failure = evidenceRedactionFailure(redactErr, source, evidenceContentTypeRequiresJSON(event.ContentType))
+	} else {
+		payload = p
+		store := GetTaskRequestEvidenceStore()
+		if store == nil {
+			failure = evidenceUnavailableFailure(
+				TaskRequestEvidenceCategoryObjectStorage,
+				TaskRequestEvidenceStageObjectWrite,
+				source,
+			).WithCause(errors.New("evidence store not initialized"))
+		} else if putErr := store.PutEventBody(event.EvidenceId, event.Id, payload); putErr != nil {
+			failure = evidenceStoreWriteFailure(putErr, source)
+		}
 	}
 	if failure == nil {
-		event.ObjectKey = evidenceObjectKey(event.EvidenceId, event.Id)
+		event.ObjectKey = EvidenceObjectKey(event.EvidenceId, event.Id)
 		event.StoredBytes = int64(len(payload))
 		event.Sha256 = EvidenceSha256Hex(payload)
 		event.Redacted = true

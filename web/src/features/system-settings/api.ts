@@ -21,6 +21,7 @@ import { api } from '@/lib/api'
 import type {
   ConfirmPaymentComplianceResponse,
   CustomerContractRatioImpactResponse,
+  EvidenceCleanupTask,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
   SystemOptionsResponse,
@@ -88,8 +89,28 @@ export async function getCurrentLogCleanupTask() {
   return res.data
 }
 
-export async function getSystemTask(taskId: string) {
-  const res = await api.get<SystemTaskResponse<LogCleanupTask>>(
+export async function startEvidenceCleanupTask(targetTimestamp: number) {
+  const res = await api.post<SystemTaskResponse<EvidenceCleanupTask>>(
+    '/api/system-task/evidence-cleanup',
+    { target_timestamp: targetTimestamp }
+  )
+  return res.data
+}
+
+export async function getCurrentEvidenceCleanupTask() {
+  const res = await api.get<SystemTaskResponse<EvidenceCleanupTask | null>>(
+    '/api/system-task/current',
+    {
+      params: { type: 'task_request_evidence_retention' },
+    }
+  )
+  return res.data
+}
+
+export async function getSystemTask<
+  TTask = LogCleanupTask,
+>(taskId: string) {
+  const res = await api.get<SystemTaskResponse<TTask>>(
     `/api/system-task/${taskId}`
   )
   return res.data

@@ -72,6 +72,7 @@ func modelArkEvidenceErrorConfig(t *testing.T, maxBodyBytes int64, storageDir st
 	t.Helper()
 	return system_setting.TaskRequestEvidenceConfig{
 		Enabled:             true,
+		RetentionDays:       7,
 		StorageDir:          storageDir,
 		EncryptionKeyHex:    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
 		MaxBodyBytes:        maxBodyBytes,

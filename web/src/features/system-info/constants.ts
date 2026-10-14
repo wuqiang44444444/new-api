@@ -20,6 +20,8 @@ For commercial licensing, please contact support@quantumnous.com
 // types fall back to their raw identifier so the panel never shows blank.
 export const SYSTEM_TASK_TYPE_LABEL: Record<string, string> = {
   log_cleanup: 'Log cleanup',
+  task_request_evidence_retention: 'Request evidence cleanup',
+  task_request_evidence_monitor: 'Evidence cleanup monitoring',
   channel_test: 'Batch channel test',
   model_update: 'Batch upstream model update',
   midjourney_poll: 'Drawing task polling',

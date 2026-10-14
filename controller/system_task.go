@@ -34,6 +34,43 @@ func CreateLogCleanupSystemTask(c *gin.Context) {
 	})
 }
 
+// CreateEvidenceCleanupSystemTask 是 Root 手动“清理请求证据”入口：
+// POST JSON {target_timestamp}。截止时间必须为有效正整数且不晚于当前时间，
+// 等于截止点的记录保留；操作者从已鉴权身份取得，不接受客户端伪造。
+// 已有清理任务运行时返回明确忙碌及当前任务信息，不修改正在运行的范围。
+func CreateEvidenceCleanupSystemTask(c *gin.Context) {
+	var request struct {
+		TargetTimestamp int64 `json:"target_timestamp"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid request body"})
+		return
+	}
+	now := common.GetTimestamp()
+	if request.TargetTimestamp <= 0 || request.TargetTimestamp > now {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "target timestamp must be a positive value not later than now"})
+		return
+	}
+	task, created, err := service.StartEvidenceCleanupTask(request.TargetTimestamp, c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !created {
+		c.JSON(http.StatusConflict, gin.H{
+			"success": false,
+			"message": "an evidence cleanup task is already active",
+			"data":    task.ToResponse(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    task.ToResponse(),
+	})
+}
+
 func GetCurrentSystemTask(c *gin.Context) {
 	taskType := c.Query("type")
 	if taskType == "" {

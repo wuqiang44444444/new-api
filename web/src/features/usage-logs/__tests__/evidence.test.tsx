@@ -39,7 +39,7 @@ describe('Task evidence', () => {
     show()
     expect(api.get).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Request evidence' }))
-    expect(await screen.findByText('No request evidence recorded')).toBeTruthy()
+    expect(await screen.findByText('No request evidence available. It may not have been recorded or may have expired.')).toBeTruthy()
   })
   it('shows an error and a retry action when the query fails', async () => {
     vi.mocked(api.get).mockRejectedValue(new Error('offline'))
@@ -61,10 +61,10 @@ describe('Task evidence', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Failed to load request evidence'
     )
-    expect(screen.queryByText('No request evidence recorded')).toBeNull()
+    expect(screen.queryByText('No request evidence available. It may not have been recorded or may have expired.')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(
-      await screen.findByText('No request evidence recorded')
+      await screen.findByText('No request evidence available. It may not have been recorded or may have expired.')
     ).toBeVisible()
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -105,7 +105,7 @@ describe('Task evidence', () => {
     expect(
       (await screen.findAllByText('Evidence body expired')).length
     ).toBeGreaterThan(0)
-    expect(screen.queryByText('No request evidence recorded')).toBeNull()
+    expect(screen.queryByText('No request evidence available. It may not have been recorded or may have expired.')).toBeNull()
     expect(
       screen.queryByRole('button', { name: 'Download original evidence' })
     ).toBeNull()

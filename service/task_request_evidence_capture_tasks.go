@@ -7,7 +7,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -27,12 +26,13 @@ func AttachTaskRequestEvidenceTask(c *gin.Context, task *model.Task) {
 		return
 	}
 	attemptID := int64(common.GetContextKeyInt(c, constant.ContextKeyTaskCreateAttemptID))
-	model.AttachTaskRequestEvidenceTask(session.evidenceID, task.TaskID, attemptID)
+	model.AttachTaskRequestEvidenceTask(session.evidenceID, task.TaskID, attemptID, task.UserId, task.AppID)
 	model.SetTaskRequestEvidenceUpstreamRequestID(session.evidenceID, task.PrivateData.UpstreamRequestID)
 }
 
 // CaptureTaskPollingEvidence 记录一次轮询出站与响应（adapter 解析前正文）。
 // 传输错误也记录。找不到证据索引时惰性创建最小索引，不伪造北向正文。
+// 采集由冻结 Task 的媒体类型驱动；已到期索引不追加正文也不续期。
 func CaptureTaskPollingEvidence(
 	task *model.Task,
 	method, target string,
@@ -44,27 +44,15 @@ func CaptureTaskPollingEvidence(
 	if !evidenceEnabled() || task == nil {
 		return
 	}
-	evidence, exists, err := model.FindTaskRequestEvidenceByTaskID(task.TaskID)
+	evidence, err := taskMediaEvidenceIndex(task)
 	if err != nil {
-		common.SysError("evidence polling lookup failed: " + err.Error())
+		common.SysError("evidence polling index unavailable")
 		return
 	}
-	if !exists {
-		now := common.GetTimestamp()
-		evidence = &model.TaskRequestEvidence{
-			TaskID:      task.TaskID,
-			UserID:      task.UserId,
-			AppID:       task.PrivateData.AppID,
-			Kind:        model.TaskRequestEvidenceKindVideoTask,
-			ChannelID:   task.ChannelId,
-			CreatedAt:   now,
-			RetainUntil: evidenceRetentionUntil(system_setting.GetTaskRequestEvidenceConfig(), now),
-		}
-		if err := model.CreateTaskRequestEvidence(evidence); err != nil {
-			common.SysError("evidence polling create failed: " + err.Error())
-			return
-		}
+	if evidence == nil {
+		return
 	}
+
 	if parsed, err := url.Parse(target); err == nil {
 		target = evidenceTargetURL(&http.Request{URL: parsed})
 	} else {
@@ -111,26 +99,11 @@ func CaptureTaskContentDeliveryEvidence(taskID string, statusCode int, bytesWrit
 	if err != nil || !exists || task == nil {
 		return
 	}
-	evidence, evidenceExists, lookupErr := model.FindTaskRequestEvidenceByTaskID(taskID)
-	if lookupErr != nil {
+	evidence, lookupErr := taskMediaEvidenceIndex(task)
+	if lookupErr != nil || evidence == nil {
 		return
 	}
-	if !evidenceExists {
-		now := common.GetTimestamp()
-		evidence = &model.TaskRequestEvidence{
-			TaskID:      taskID,
-			UserID:      task.UserId,
-			AppID:       task.PrivateData.AppID,
-			Kind:        model.TaskRequestEvidenceKindVideoTask,
-			ChannelID:   task.ChannelId,
-			CreatedAt:   now,
-			RetainUntil: evidenceRetentionUntil(system_setting.GetTaskRequestEvidenceConfig(), now),
-		}
-		if err := model.CreateTaskRequestEvidence(evidence); err != nil {
-			common.SysError("evidence delivery create failed: " + err.Error())
-			return
-		}
-	}
+
 	phase := model.TaskRequestEvidencePhaseCompleted
 	if deliverErr != nil {
 		phase = model.TaskRequestEvidencePhaseFailed
@@ -149,16 +122,12 @@ func CaptureTaskContentDeliveryEvidence(taskID string, statusCode int, bytesWrit
 		}),
 		CreatedAt: common.GetTimestamp(),
 	}
-	if err := model.CreateTaskRequestEvidenceEvent(event); err != nil {
+	if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil {
 		common.SysError("evidence delivery event failed: " + err.Error())
 	}
 }
 
 // TaskRequestEvidenceKindForTaskRelay 按北向入口判定证据类别。
 func TaskRequestEvidenceKindForTaskRelay(c *gin.Context) string {
-	platform := constant.TaskPlatform(c.GetString("platform"))
-	if platform == constant.TaskPlatformSuno {
-		return model.TaskRequestEvidenceKindAudioTask
-	}
-	return model.TaskRequestEvidenceKindVideoTask
+	return mediaEvidenceContextKind(c)
 }

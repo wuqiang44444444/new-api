@@ -126,7 +126,7 @@ describe('Request detail shortcuts', () => {
     )
     expect(await screen.findByRole('alert')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    expect(await screen.findByText('No request evidence recorded')).toBeTruthy()
+    expect(await screen.findByText('No request evidence available. It may not have been recorded or may have expired.')).toBeTruthy()
   })
 })
 

@@ -29,6 +29,8 @@ const (
 	SystemTaskTypeErrorReport = "error_report"
 	// 视频创建占款资金保障：独立于 Provider 轮询开关的到期退款与退款补偿。
 	SystemTaskTypeTaskFundGuarantee = "task_fund_guarantee"
+	// Link 视频结果托管转存：成功任务结果到本站私有 OSS 的持久领取与恢复。
+	SystemTaskTypeVideoResultTransfer = "video_result_transfer"
 )
 
 var ErrSystemTaskLockLost = errors.New("system task lock lost")

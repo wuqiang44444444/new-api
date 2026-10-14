@@ -24,6 +24,7 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(imageTaskExecuteHandler{})
 	// 音视频证据保留期清理（一期）。
 	service.RegisterSystemTaskHandler(evidenceRetentionHandler{})
+	service.RegisterSystemTaskHandler(evidenceCleanupMonitorHandler{})
 	// Video creation funds guarantee: independent of the provider polling switch.
 	service.RegisterSystemTaskHandler(taskFundGuaranteeHandler{})
 }

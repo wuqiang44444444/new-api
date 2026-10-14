@@ -129,6 +129,8 @@ func minimaxGet(t *testing.T, fx *seedanceFundsFixture, path string) *httptest.R
 
 func TestMiniMaxStandardEntryFundingAndContent(t *testing.T) {
 	fx := newMiniMaxFundsFixture(t)
+	// Hosted-delivery registration facts join the fixture schema.
+	require.NoError(t, fx.db.AutoMigrate(&model.Option{}, &model.TaskVideoResultObject{}))
 	// Explicitly authorize and configure Auto; authentication must stay real.
 	oldUsable, oldAuto := setting.UserUsableGroups2JSONString(), setting.AutoGroups2JsonString()
 	t.Cleanup(func() {
@@ -201,21 +203,13 @@ func TestMiniMaxStandardEntryFundingAndContent(t *testing.T) {
 	require.NoError(t, staleBilling.UpdateBilling())
 	assert.Equal(t, model.TaskBillingStateSettled, fx.loadTask(id).BillingState)
 
-	// Cold content lookup ignores the next scheduled background query. The
-	// protected media client is stubbed: no external network or credential leak.
-	mediaClient := service.GetSSRFProtectedHTTPClient()
-	oldTransport := mediaClient.Transport
-	t.Cleanup(func() { mediaClient.Transport = oldTransport })
-	mediaClient.Transport = fetchModelsRoundTripper(func(r *http.Request) (*http.Response, error) {
-		assert.Equal(t, "https://8.8.8.8/video.mp4", r.URL.String())
-		assert.Empty(t, r.Header.Get("Authorization"))
-		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"video/mp4"}}, Body: io.NopCloser(strings.NewReader("video-bytes"))}, nil
-	})
+	// Hosted delivery: the client path never queries the provider or fetches
+	// media. Until the transfer worker stores the object, delivery is preparing.
 	before := fx.queryCalls.Load()
 	w := minimaxGet(t, fx, "/v1/videos/"+id+"/content")
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.Equal(t, "video-bytes", w.Body.String())
-	assert.Equal(t, before+1, fx.queryCalls.Load())
+	require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "video_delivery_preparing")
+	assert.Equal(t, before, fx.queryCalls.Load(), "hosted delivery must not query the provider on the client path")
 	assert.EqualValues(t, 1, fx.createCalls.Load())
 
 	fx.queryBodyRes.Store(strings.Replace(minimaxSuccess, `"video_output":7`, `"video_output":99`, 1))
@@ -241,7 +235,8 @@ func TestMiniMaxStandardEntryFundingAndContent(t *testing.T) {
 		require.NoError(t, common.Unmarshal(w.Body.Bytes(), &public))
 		assert.Equal(t, "succeeded", public.Status)
 		require.NotNil(t, public.Content)
-		assert.Contains(t, public.Content.VideoURL, id+"/content")
+		assert.Equal(t, "preparing", public.Content.DeliveryStatus)
+		assert.Empty(t, public.Content.VideoURL, "upstream links and unsigned placeholders must not surface")
 		assert.EqualValues(t, model.TaskStatusSuccess, fx.loadTask(id).Status)
 		assert.Equal(t, seedanceFundsInitialQuota-minimaxFundsHold, fx.userQuota())
 	}

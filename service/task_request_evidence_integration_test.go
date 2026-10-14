@@ -51,6 +51,7 @@ func setupEvidenceTestEnv(t *testing.T) *evidenceTestEnv {
 	env.storeDir = t.TempDir()
 	evidenceConfig := system_setting.TaskRequestEvidenceConfig{
 		Enabled:             true,
+		RetentionDays:       7,
 		StorageDir:          env.storeDir,
 		EncryptionKeyHex:    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
 		MaxBodyBytes:        1 << 20,

@@ -40,6 +40,10 @@ import {
   getGroups,
 } from '../../api'
 import { channelsQueryKeys } from '../../lib'
+import {
+  CHANNEL_GROUP_LENGTH_ERROR,
+  isChannelGroupLengthValid,
+} from '../../lib/channel-group-validation'
 import type { TagOperationParams } from '../../types'
 import { useChannels } from '../channels-provider'
 import { ModelMappingEditor } from '../model-mapping-editor'
@@ -64,6 +68,7 @@ export function TagBatchEditDialog({
   const [models, setModels] = useState('')
   const [modelMapping, setModelMapping] = useState('')
   const [groups, setGroups] = useState<string[]>([])
+  const groupLengthInvalid = !isChannelGroupLengthValid(groups)
 
   // Fetch available groups
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
@@ -117,6 +122,10 @@ export function TagBatchEditDialog({
 
   const handleSave = async () => {
     if (!currentTag) return
+    if (groupLengthInvalid) {
+      toast.error(t(CHANNEL_GROUP_LENGTH_ERROR))
+      return
+    }
 
     // Validate model mapping JSON if provided
     if (modelMapping.trim()) {
@@ -203,7 +212,10 @@ export function TagBatchEditDialog({
             <Button variant='outline' onClick={handleClose} disabled={isSaving}>
               {t('Cancel')}
             </Button>
-            <Button onClick={handleSave} disabled={isSaving}>
+            <Button
+              onClick={handleSave}
+              disabled={isSaving || groupLengthInvalid}
+            >
               {isSaving ? (
                 <Loader2 className='mr-2 h-4 w-4 animate-spin' />
               ) : null}
@@ -289,6 +301,15 @@ export function TagBatchEditDialog({
             <p className='text-muted-foreground text-xs'>
               {t('User groups that can access channels with this tag')}
             </p>
+            {groupLengthInvalid && (
+              <p
+                role='alert'
+                aria-label={t('Groups')}
+                className='text-destructive text-sm'
+              >
+                {t(CHANNEL_GROUP_LENGTH_ERROR)}
+              </p>
+            )}
           </div>
         </div>
       )}

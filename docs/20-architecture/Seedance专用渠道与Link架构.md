@@ -276,15 +276,12 @@ OpenAI `/v1/videos` 的返回合同；不自动尝试 `root/task/data` 多种包
 存量 Task 保留精确冻结版本，不自动迁移或回退 active；人工核实处置见
 [Synlink 失败任务处置手册](../40-operations/Synlink失败任务处置手册.md)。
 
-视频只提供临时下载，不承诺长期保存或固定的完成后 24 小时有效期。内容代理在既有鉴权之后，
-仅对 Synlink 当前选中的 HTTPS 内容 URL 识别 TOS4 签名：`X-Tos-Date` 为 UTC 签名时间，
-`X-Tos-Expires` 为 1—604800 秒的有效时长；算法、日期、有效时长和非空签名必须各出现一次。
-日期／参数缺失、重复、畸形或算法未知时不推断过期，继续原有受保护回源。
-明确到期返回 `410 video_content_expired`；已有 `expires_at` 到期检查保持有效。
-仅凭 HTTP 403、404 或网络错误不宣称链接过期。下载检查不改变成功 Task、计费或冻结 URL，
-不重新查询签名、不后台重试、不重新生成或退款；本地回归通过仍须生产发布验收。
-签名时间语义依据 [TOS 预签名 URL 文档](https://www.volcengine.com/docs/6349/1844841?lang=en)与
-[TOS URL 签名参数](https://console.cloud.vnet.com/docs/6615/139389)，签名有效期不保证对象在该时间内始终可用。
+视频结果交付采用本站私有 OSS 托管与固定 24 小时预签名下载（含 Synlink、FunCloud、墨行、Vidu、
+官方及其他已登记线路，以及 MiniMax 标准视频扩展），完整数据流、对象登记事实与公共交付合同见
+[Link 视频结果 OSS 托管交付架构](Link视频结果OSS托管交付架构.md)。托管范围内的内容入口在授权后
+重定向本站预签名地址，不再向上游回源传输字节；范围外原生线路（Gemini、Vertex、OpenAI/Sora 等）
+继续沿用冻结连接回源，`expires_at` 到期检查与 `410 video_content_expired` 仅适用于范围外线路。
+交付过程不改变成功 Task、计费或冻结连接事实，不重新生成、不换渠道、不自动退款。
 
 Provider 四模型由 `relaykit/dto/synlink_video.go` 登记，保存／启用时校验最终映射；不根据模型名
 推断协议。允许配对 `funcloud_material_hosted` 或 `none`，共享图片合同见素材架构第 7 节。
@@ -296,9 +293,10 @@ Provider 四模型由 `relaykit/dto/synlink_video.go` 登记，保存／启用�
 未确认的交付／南向字段也未发布，显式请求明确拒绝，不静默删除。默认发送 5 秒、720p、
 `generate_audio=false`，与冻结计费探针一致；显式布尔值保持原值。
 
-`return_last_frame` 按请求事实冻结，成功查询投影本站 `content?part=last_frame`。内容入口按冻结
-连接与 task ID 构造 `/v1/video/files/{task_id}/last-frame`，仅向该地址附供应商凭据，保留
-SSRF 检查并禁止重定向；供应商地址和凭据不进入客户响应。南向尾帧真实交付仍待验证。
+`return_last_frame` 按请求事实冻结；上游响应实际携带 `content.last_frame_url` 时登记独立尾帧对象，
+转存后成功查询在 `content.last_frame_url` 返回本站尾帧预签名地址。尾帧读取由转存 worker 按冻结连接
+与 task ID 构造 `/v1/video/files/{task_id}/last-frame` 并附加冻结凭据，保留 SSRF 检查并禁止重定向；
+供应商地址和凭据不进入客户响应。南向尾帧真实交付仍待验证。
 列表继续查询本站 Task；未登记取消与终态删除能力，沿用既有 HTTP 409 状态语义。
 
 终态 `task.usage` 进入通用可信用量归一。客户必须配置冻结的表达式计费；纯参数表达式
@@ -404,9 +402,9 @@ Seedance 成功 Task 中已保存的视频结果可投影为 `video` 制品；�
 仅保存了指回本站内容入口的占位地址时，不虚构制品。
 
 控制台与通用任务制品接口只发布本站内容地址，复用既有按任务和制品绑定的签名访问能力。普通 API
-Key 读取仍按 `user_id + app_id` 隔离；控制台会话和签名访问保持各自既有授权边界。内容交付与
-ModelArk 视频入口共用 Link 内容代理，按冻结连接处理 Provider 凭据、过期、Range 与 HEAD，不读取
-当前渠道重新选择来源，也不新增媒体存储或资金操作。`video` 的签名不授权其它内容分部。
+Key 读取仍按 `user_id + app_id` 隔离；控制台会话和签名访问保持各自既有授权边界。托管范围内的内容
+交付在授权后 302 重定向本站 OSS 预签名地址（与 ModelArk 视频入口共用同一对象登记与签名规则），
+网关不逐次回源传输字节，也不读取当前渠道重新选择来源；`video` 的签名不授权其它内容分部。
 
 该接线在共享 `controller/task.go` 中仅保留 Seedance 授权、列表与内容分派的窄调用；实现与回归测试
 位于独立 Seedance 文件，内容代理仍由 `controller/video_proxy_link.go` 唯一负责。未来同步上游时

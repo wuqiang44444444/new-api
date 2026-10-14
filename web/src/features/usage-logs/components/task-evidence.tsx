@@ -63,7 +63,7 @@ export function TaskEvidence(props: {
             </div>
           )}
           {query.data?.items.length === 0 && (
-            <p>{t('No request evidence recorded')}</p>
+            <p>{t('No request evidence available. It may not have been recorded or may have expired.')}</p>
           )}
           {query.data?.items.map((item) => (
             <EvidenceDetails

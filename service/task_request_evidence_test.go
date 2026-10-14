@@ -72,6 +72,7 @@ func TestEvidenceStoreRoundtripEncrypted(t *testing.T) {
 	require.NoError(t, err)
 	config := system_setting.TaskRequestEvidenceConfig{
 		Enabled:          true,
+		RetentionDays:    7,
 		StorageDir:       dir,
 		EncryptionKeyHex: hex.EncodeToString(key),
 		MaxBodyBytes:     1 << 20,
@@ -92,7 +93,8 @@ func TestEvidenceStoreRoundtripEncrypted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, payload, roundtrip)
 
-	require.NoError(t, store.Delete("1/1.bin"))
+	_, deleteErr := store.Delete("1/1.bin")
+	require.NoError(t, deleteErr)
 	_, err = store.Get("1/1.bin")
 	assert.Error(t, err)
 }

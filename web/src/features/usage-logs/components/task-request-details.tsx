@@ -99,7 +99,7 @@ function TaskRequestBodyDialog(props: {
           </Button>
         </div>
       )}
-      {query.data?.length === 0 && <p>{t('No request evidence recorded')}</p>}
+      {query.data?.length === 0 && <p>{t('No request evidence available. It may not have been recorded or may have expired.')}</p>}
       <div className='space-y-3'>
         {query.data?.map((body) => (
           <section key={body.eventId} className='space-y-2'>

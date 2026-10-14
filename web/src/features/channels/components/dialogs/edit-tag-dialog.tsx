@@ -42,6 +42,10 @@ import {
   getGroups,
 } from '../../api'
 import { channelsQueryKeys } from '../../lib'
+import {
+  CHANNEL_GROUP_LENGTH_ERROR,
+  isChannelGroupLengthValid,
+} from '../../lib/channel-group-validation'
 import type { TagOperationParams } from '../../types'
 import { useChannels } from '../channels-provider'
 
@@ -62,6 +66,7 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
   const [modelMapping, setModelMapping] = useState('')
   const [selectedGroups, setSelectedGroups] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const groupLengthInvalid = !isChannelGroupLengthValid(selectedGroups)
 
   // Fetch tag models
   const { data: tagModelsData, isLoading: isLoadingTagModels } = useQuery({
@@ -140,6 +145,10 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
   }
 
   const validateForm = () => {
+    if (groupLengthInvalid) {
+      toast.error(t(CHANNEL_GROUP_LENGTH_ERROR))
+      return false
+    }
     // Validate model mapping if provided
     if (modelMapping.trim()) {
       try {
@@ -233,7 +242,10 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
           <Button variant='outline' onClick={handleClose}>
             {t('Cancel')}
           </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting || groupLengthInvalid}
+          >
             {isSubmitting && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             {t('Save Changes')}
           </Button>
@@ -414,6 +426,15 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
                 />
               ))}
             </div>
+            {groupLengthInvalid && (
+              <p
+                role='alert'
+                aria-label={t('Groups')}
+                className='text-destructive text-sm'
+              >
+                {t(CHANNEL_GROUP_LENGTH_ERROR)}
+              </p>
+            )}
           </div>
         </div>
       </ScrollArea>

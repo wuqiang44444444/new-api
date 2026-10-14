@@ -70,7 +70,7 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	service.InitHttpClient()
 
 	oldEvidenceConfig := system_setting.GetTaskRequestEvidenceConfig()
-	evidenceConfig := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), MaxBodyBytes: 1 << 20, MaxResponseBytes: 1 << 20, WriteTimeoutSeconds: 5}
+	evidenceConfig := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 7, MaxBodyBytes: 1 << 20, MaxResponseBytes: 1 << 20, WriteTimeoutSeconds: 5}
 	system_setting.SetTaskRequestEvidenceConfig(evidenceConfig)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(evidenceConfig))
 	t.Cleanup(func() {

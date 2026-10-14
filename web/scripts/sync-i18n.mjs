@@ -220,8 +220,9 @@ function isLikelyUntranslated({ locale, baseValue, value }) {
   if (locale === 'ru') return true
 
   // For fr/vi: still useful but noisier; keep it conservative.
-  if (locale === 'fr' || locale === 'vi')
+  if (locale === 'fr' || locale === 'vi') {
     return /\b(the|and|or|to|with|please)\b/i.test(s)
+  }
 
   return false
 }
@@ -230,6 +231,15 @@ async function main() {
   const entries = await fs.readdir(LOCALES_DIR, { withFileTypes: true })
   const localeFiles = entries
     .filter((e) => e.isFile() && e.name.endsWith('.json'))
+    .filter((e) => {
+      const index = process.argv.indexOf('--locales')
+      return (
+        index < 0 ||
+        (process.argv[index + 1] ?? '')
+          .split(',')
+          .includes(e.name.replace(/\.json$/i, ''))
+      )
+    })
     .map((e) => e.name)
     .sort((a, b) => a.localeCompare(b))
 

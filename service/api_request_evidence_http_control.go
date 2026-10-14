@@ -15,7 +15,7 @@ type apiEvidenceHTTPControlKey struct{}
 // Gin's writer does not expose net/http's read deadline controller.
 func APIRequestEvidenceHTTPHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if evidenceEnabled() && isBusinessRequest(r.URL.Path) {
+		if evidenceEnabled() && mediaEvidenceRequestKind(r.Method, r.URL.Path) != "" {
 			r = r.WithContext(context.WithValue(r.Context(), apiEvidenceHTTPControlKey{}, http.NewResponseController(w)))
 		}
 		next.ServeHTTP(w, r)

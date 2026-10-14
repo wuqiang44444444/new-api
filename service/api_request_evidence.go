@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -14,20 +15,31 @@ import (
 
 type apiRequestEvidenceKey struct{}
 
-// APIRequestEvidence observes existing I/O without changing authentication,
-// request validation, cancellation, retries or provider semantics.
+type taskEvidenceHTTPRequestKey struct{}
+
+// A declaration owns only the first actual HTTP exchange. Redirects keep the
+// context but must still be observed as separate, previously unowned exchanges.
+type taskEvidenceHTTPRequest struct{ claimed atomic.Bool }
+
+// APIRequestEvidence observes registered media operations without changing
+// authentication, routing or provider semantics. Task-owned exchanges share
+// their durable index; unowned exchanges remain on that same timeline.
 func APIRequestEvidence() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !evidenceEnabled() || !isBusinessRequest(c.Request.URL.Path) {
+		if !evidenceEnabled() || mediaEvidenceRequestKind(c.Request.Method, c.Request.URL.Path) == "" {
 			c.Next()
 			return
 		}
-		capture := newAPIRequestEvidence(model.TaskRequestEvidence{RequestID: c.GetString(common.RequestIdKey), CreatedAt: common.GetTimestamp(), Kind: "api_request"})
+		capture := newAPIRequestEvidence(model.TaskRequestEvidence{RequestID: c.GetString(common.RequestIdKey), CreatedAt: common.GetTimestamp(), Kind: mediaEvidenceRequestKind(c.Request.Method, c.Request.URL.Path)})
 		if capture == nil {
 			c.Next()
 			return
 		}
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), apiRequestEvidenceKey{}, capture))
+		capture.deliveryStatsOnly = strings.HasSuffix(c.Request.URL.Path, "/content") || strings.Contains(c.Request.URL.Path, "/mj/image/")
+		if capture.deliveryStatsOnly {
+			capture.remaining = 0
+		}
 		capture.suppressSourceURLs = strings.HasPrefix(c.Request.URL.Path, "/v1/assets") || strings.HasPrefix(c.Request.URL.Path, "/v1/asset-groups")
 		capture.protectCredentials(c.Request.Header)
 		request := capture.requestRecord(c.Request, model.TaskRequestEvidenceStageNorthReceive)
@@ -39,11 +51,75 @@ func APIRequestEvidence() gin.HandlerFunc {
 		writer := &apiEvidenceWriter{imageEvidenceWriter: imageEvidenceWriter{ResponseWriter: original, capture: capture}, control: control}
 		c.Writer = writer
 		defer func() {
+			if capture.Index.Kind == "task_submit" {
+				kind := mediaEvidenceContextKind(c)
+				if kind == "" {
+					capture.Abandon()
+					return
+				}
+				capture.Index.Kind = kind
+			}
+			if session := evidenceSessionFrom(c); session != nil && session.evidenceID > 0 {
+				// 北向及交付由有效任务索引持有；南向响应按实际对象归属去重，
+				// 未接管的 HTTP、握手和帧继续保留，不创建第二个索引。
+				FinishTaskRequestEvidenceClientDelivery(c)
+				capture.mu.Lock()
+				unowned := capture.records[:0]
+				for _, record := range capture.records {
+					if record.Stage != model.TaskRequestEvidenceStageNorthReceive && record.Stage != model.TaskRequestEvidenceStageClientDelivery && !record.taskOwned {
+						unowned = append(unowned, record)
+					}
+				}
+				capture.records = unowned
+				capture.Index.Id = session.evidenceID
+				capture.mu.Unlock()
+				if len(unowned) == 0 {
+					capture.Abandon()
+				} else {
+					capture.Finish(false)
+				}
+				return
+			}
+			if c.GetInt("id") > 0 {
+				taskID := c.Param("task_id")
+				if taskID == "" {
+					taskID = c.Param("video_id")
+				}
+				if taskID == "" && capture.Index.Kind == "task_query" {
+					taskID = c.Param("key")
+				}
+				if taskID != "" {
+					appID := c.GetInt("app_id")
+					if appID <= 0 {
+						appID = c.GetInt("token_id")
+					}
+					task, exists, err := model.GetByTaskIDForApp(c.GetInt("id"), appID, taskID)
+					if err != nil {
+						capture.Abandon()
+						return
+					}
+					if exists {
+						index, err := taskMediaEvidenceIndex(task)
+						if err != nil || index == nil {
+							capture.Abandon()
+							return
+						}
+						capture.Index = *index
+					}
+				}
+			}
+			if capture.Index.Kind == "task_query" && !strings.HasPrefix(c.Request.URL.Path, "/suno/") {
+				capture.Abandon()
+				return
+			}
 			captureRejectedRequestRemainder(c, capture, request, writer)
 			capture.mu.Lock()
 			capture.Index.UserID = c.GetInt("id")
 			capture.Index.TokenID = c.GetInt("token_id")
 			capture.Index.AppID = c.GetInt("token_id")
+			if c.GetInt("app_id") > 0 {
+				capture.Index.AppID = c.GetInt("app_id")
+			}
 			if capture.Index.ChannelID == 0 {
 				capture.Index.ChannelID = c.GetInt("channel_id")
 			}
@@ -55,19 +131,13 @@ func APIRequestEvidence() gin.HandlerFunc {
 			if writer.hijacked {
 				status, headers = writer.handshakeStatus, writer.handshakeHeaders
 			}
+			if finishMidjourneyRequestEvidence(c, capture, request, status, headers) || finishSunoBatchRequestEvidence(c, capture, request, status, headers) {
+				return
+			}
 			capture.FinishClient(status, headers)
 		}()
 		c.Next()
 	}
-}
-
-func isBusinessRequest(path string) bool {
-	for _, prefix := range []string{"/v1", "/v1beta", "/api/v3", "/pg", "/mj", "/kling", "/jimeng"} {
-		if path == prefix || strings.HasPrefix(path, prefix+"/") {
-			return true
-		}
-	}
-	return strings.Contains(path, "/mj/")
 }
 
 func newAPIRequestEvidence(index model.TaskRequestEvidence) *ImageErrorEvidence {
@@ -144,6 +214,12 @@ func (t *apiEvidenceTransport) RoundTrip(req *http.Request) (*http.Response, err
 		return t.RoundTripper.RoundTrip(req)
 	}
 	request := capture.requestRecord(req, model.TaskRequestEvidenceStageSouthboundSend)
+	declaration, _ := req.Context().Value(taskEvidenceHTTPRequestKey{}).(*taskEvidenceHTTPRequest)
+	if declaration != nil && declaration.claimed.CompareAndSwap(false, true) {
+		capture.mu.Lock()
+		request.taskOwned = true
+		capture.mu.Unlock()
+	}
 	if req.Body != nil {
 		req.Body = &imageEvidenceBody{ReadCloser: req.Body, capture: capture, record: request}
 	}
@@ -159,6 +235,10 @@ func (t *apiEvidenceTransport) RoundTrip(req *http.Request) (*http.Response, err
 		response.Error = "transport_error"
 	}
 	if resp != nil {
+		if capture.responseRecords == nil {
+			capture.responseRecords = make(map[*http.Response]*imageEvidenceExchange)
+		}
+		capture.responseRecords[resp] = response
 		response.Status = resp.StatusCode
 		response.Headers = resp.Header.Clone()
 		response.ContentType = resp.Header.Get("Content-Type")
@@ -183,11 +263,25 @@ func BeginBackgroundRequestEvidence(ctx context.Context, task *model.Task) (cont
 	if task == nil || apiEvidenceFrom(ctx) != nil {
 		return ctx, func() {}
 	}
-	capture := newAPIRequestEvidence(model.TaskRequestEvidence{Kind: "task_execution", TaskID: task.TaskID, UserID: task.UserId, AppID: task.AppID, TokenID: task.PrivateData.TokenId, ChannelID: task.ChannelId, ClientModel: task.Properties.OriginModelName, CreatedAt: common.GetTimestamp()})
+	index, err := taskMediaEvidenceIndex(task)
+	if err != nil {
+		common.SysError("evidence background index unavailable")
+		return ctx, func() {}
+	}
+	if index == nil {
+		return ctx, func() {}
+	}
+	capture := newAPIRequestEvidence(*index)
 	if capture == nil {
 		return ctx, func() {}
 	}
 	return context.WithValue(ctx, apiRequestEvidenceKey{}, capture), func() { capture.Finish(false) }
+}
+
+// BeginBatchRequestEvidence preserves the existing execution hook without
+// observing Batch/file operations, which are outside media evidence scope.
+func BeginBatchRequestEvidence(ctx context.Context, job *model.BatchJob) (context.Context, func()) {
+	return ctx, func() {}
 }
 
 func persistAPIRequestEvidence(c *ImageErrorEvidence) error {
@@ -195,9 +289,11 @@ func persistAPIRequestEvidence(c *ImageErrorEvidence) error {
 	if c.Index.CreatedAt == 0 {
 		c.Index.CreatedAt = common.GetTimestamp()
 	}
-	c.Index.RetainUntil = evidenceRetentionUntil(config, c.Index.CreatedAt)
-	if err := model.CreateTaskRequestEvidence(&c.Index); err != nil {
-		return err
+	if c.Index.Id == 0 {
+		c.Index.RetainUntil = evidenceRetentionUntil(config, c.Index.CreatedAt)
+		if err := model.CreateTaskRequestEvidence(&c.Index); err != nil {
+			return err
+		}
 	}
 	var result error
 	for seq, r := range c.records {
@@ -227,22 +323,23 @@ func persistAPIRequestEvidence(c *ImageErrorEvidence) error {
 			formatInvalid = true
 		}
 		event := &model.TaskRequestEvidenceEvent{EvidenceId: c.Index.Id, AttemptSeq: seq + 1, Stage: r.Stage, Phase: phase, StatusCode: r.Status, Method: r.Method, Target: r.Target, ContentType: r.ContentType, ByteCount: r.Observed, Complete: complete, CreatedAt: r.CreatedAt, Detail: evidenceMarshalDetail(map[string]any{"headers": headers, "query": r.Query, "body_format_invalid": formatInvalid, "body_not_read": !r.EOF && r.Observed == 0, "eof": r.EOF, "truncated": r.Truncated, "read_failed": r.Error != "", "io_failed": r.Error != ""})}
+		if c.deliveryStatsOnly && (r.Stage == model.TaskRequestEvidenceStageClientDelivery || r.Stage == model.TaskRequestEvidenceStageUpstreamResponse) {
+			event.Complete = r.EOF && r.Error == ""
+			event.Phase = model.TaskRequestEvidencePhaseCompleted
+			if !event.Complete {
+				event.Phase = model.TaskRequestEvidencePhaseFailed
+			}
+			event.Detail = evidenceMarshalDetail(map[string]any{"media_body_archived": false, "io_failed": r.Error != ""})
+			if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil {
+				result = err
+			}
+			continue
+		}
 		if err := persistTaskEvidenceBodyUsing(event, body, TaskRequestEvidenceSourceResponse, c.redactObservedBody); err != nil {
 			result = err
 		}
 	}
 	return result
-}
-
-func BeginBatchRequestEvidence(ctx context.Context, job *model.BatchJob) (context.Context, func()) {
-	if job == nil || apiEvidenceFrom(ctx) != nil {
-		return ctx, func() {}
-	}
-	capture := newAPIRequestEvidence(model.TaskRequestEvidence{Kind: "batch_execution", TaskID: job.Id, UserID: job.UserId, AppID: job.AppID, TokenID: job.TokenId, ChannelID: job.ChannelId, ClientModel: job.PublicModel, CreatedAt: common.GetTimestamp()})
-	if capture == nil {
-		return ctx, func() {}
-	}
-	return context.WithValue(ctx, apiRequestEvidenceKey{}, capture), func() { capture.Finish(false) }
 }
 
 func HasAPIRequestEvidence(ctx context.Context) bool { return apiEvidenceFrom(ctx) != nil }

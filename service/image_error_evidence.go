@@ -31,9 +31,11 @@ type ImageErrorEvidence struct {
 	mu                 sync.Mutex
 	remaining          int64
 	records            []*imageEvidenceExchange
+	responseRecords    map[*http.Response]*imageEvidenceExchange
 	secrets            []string
 	allRequests        bool
 	suppressSourceURLs bool
+	deliveryStatsOnly  bool
 	failed             bool
 	finished           bool
 }
@@ -52,6 +54,7 @@ type imageEvidenceExchange struct {
 	Observed    int64
 	EOF         bool
 	Truncated   bool
+	taskOwned   bool
 }
 
 func init() {
@@ -82,7 +85,11 @@ func NewImageErrorEvidence(index model.TaskRequestEvidence) *ImageErrorEvidence 
 }
 
 func NewImageTaskErrorEvidence(task *model.Task) *ImageErrorEvidence {
-	return NewImageErrorEvidence(model.TaskRequestEvidence{TaskID: task.TaskID, RequestID: task.TaskID, UserID: task.UserId, AppID: task.AppID, TokenID: task.PrivateData.TokenId, ChannelID: task.ChannelId, ClientProtocol: task.ClientProtocol})
+	index, err := taskMediaEvidenceIndex(task)
+	if err != nil || index == nil {
+		return nil
+	}
+	return NewImageErrorEvidence(*index)
 }
 
 func WithImageErrorEvidence(ctx context.Context, capture *ImageErrorEvidence) context.Context {
@@ -287,6 +294,19 @@ func (c *ImageErrorEvidence) FinishClient(status int, headers http.Header) {
 	c.mu.Unlock()
 	c.Finish(status >= 400)
 }
+
+// Abandon 丢弃本次观察记录而不落盘：任务证据会话已持有同一交换的
+// 阶段证据时使用，保证每次实际 HTTP 交换只保留一份证据。
+func (c *ImageErrorEvidence) Abandon() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.finished = true
+	c.records = nil
+}
+
 func (c *ImageErrorEvidence) Finish(failed bool) {
 	if c == nil {
 		return
@@ -382,10 +402,12 @@ func writeImageErrorEvidence(c *ImageErrorEvidence) {
 // are authoritative; this adds no public response body or second evidence DB.
 func persistImageErrorEvidence(c *ImageErrorEvidence) error {
 	now := common.GetTimestamp()
-	c.Index.CreatedAt = now
-	c.Index.RetainUntil = evidenceRetentionUntil(system_setting.GetTaskRequestEvidenceConfig(), now)
-	if err := model.CreateTaskRequestEvidence(&c.Index); err != nil {
-		return err
+	if c.Index.Id == 0 {
+		c.Index.CreatedAt = now
+		c.Index.RetainUntil = evidenceRetentionUntil(system_setting.GetTaskRequestEvidenceConfig(), now)
+		if err := model.CreateTaskRequestEvidence(&c.Index); err != nil {
+			return err
+		}
 	}
 	var failures []error
 	for _, r := range c.records {

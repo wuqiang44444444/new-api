@@ -24,19 +24,15 @@ func AttachRawTaskPollingEvidence(task *model.Task, req *http.Request, resp *htt
 		CaptureTaskPollingEvidence(task, req.Method, evidenceTargetURL(req), 0, req.Header, nil, transportErr)
 		return
 	}
-	evidence, exists, err := model.FindTaskRequestEvidenceByTaskID(task.TaskID)
+	evidence, err := taskMediaEvidenceIndex(task)
 	if err != nil {
 		common.SysError("evidence polling index unavailable")
 		return
 	}
-	if !exists {
-		now := common.GetTimestamp()
-		evidence = &model.TaskRequestEvidence{TaskID: task.TaskID, UserID: task.UserId, AppID: task.PrivateData.AppID, Kind: model.TaskRequestEvidenceKindVideoTask, CreatedAt: now, RetainUntil: evidenceRetentionUntil(system_setting.GetTaskRequestEvidenceConfig(), now)}
-		if err := model.CreateTaskRequestEvidence(evidence); err != nil {
-			common.SysError("evidence polling index unavailable")
-			return
-		}
+	if evidence == nil {
+		return
 	}
+
 	tee := &evidenceResponseBodyTee{session: &taskRequestEvidenceSession{evidenceID: evidence.Id}, origin: resp.Body, buffer: bytes.NewBuffer(nil), maxBytes: system_setting.GetTaskRequestEvidenceConfig().MaxResponseBytes, stage: model.TaskRequestEvidenceStagePolling, statusCode: resp.StatusCode, method: req.Method, target: evidenceTargetURL(req), contentType: resp.Header.Get("Content-Type"), headers: resp.Header.Clone(), transportErr: transportErr}
 	tee.requestHeaders = req.Header.Clone()
 	if req.URL != nil {

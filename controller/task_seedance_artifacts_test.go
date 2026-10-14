@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -51,26 +52,52 @@ func setupSeedanceArtifactTest(t *testing.T, baseURL string) *model.Task {
 	return task
 }
 
-func TestSeedanceDashboardArtifactsDeliverFrozenVideo(t *testing.T) {
-	var calls atomic.Int32
-	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		assert.Equal(t, "/video.mp4", r.URL.Path)
-		assert.Empty(t, r.Header.Get("Authorization"), "media URLs must not receive channel credentials")
-		w.Header().Set("Content-Type", "video/mp4")
-		w.Header().Set("Accept-Ranges", "bytes")
-		if r.Method == http.MethodHead {
-			w.Header().Set("Content-Length", "10")
-			return
-		}
-		assert.Equal(t, "bytes=0-3", r.Header.Get("Range"))
-		w.Header().Set("Content-Range", "bytes 0-3/10")
-		w.WriteHeader(http.StatusPartialContent)
-		_, _ = w.Write([]byte("vide"))
-	}))
-	t.Cleanup(provider.Close)
-	task := setupSeedanceArtifactTest(t, provider.URL)
-	allowPrivateTaskMediaTest(t)
+func setupSeedanceArtifactStorage(t *testing.T) model.VideoResultStorageLocation {
+	t.Helper()
+	previousMain := common.MainDatabaseType()
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	t.Cleanup(func() { common.SetDatabaseTypes(previousMain, previousMain) })
+	config := system_setting.ObjectStorageConfig{
+		Backend:     system_setting.ObjectStorageBackendS3,
+		Endpoint:    "http://oss.example.test",
+		Bucket:      "video-bucket",
+		Region:      "us-east-1",
+		AccountName: "test-key",
+		Credential:  "test-secret",
+		Revision:    common.GetUUID(),
+	}
+	raw, err := common.Marshal(config)
+	require.NoError(t, err)
+	require.NoError(t, model.SaveObjectStorageSetting(string(raw)))
+	t.Cleanup(func() { model.NotifyObjectStorageSettingUpdate("") })
+	require.True(t, service.VideoResultDeliveryAvailable(context.Background()))
+	return model.VideoResultStorageLocation{Backend: "s3", Endpoint: config.Endpoint, Bucket: config.Bucket}
+}
+
+func insertSeedanceHostedRow(t *testing.T, task *model.Task, part, objectKey, mimeType string) {
+	t.Helper()
+	now := common.GetTimestamp()
+	row := model.TaskVideoResultObject{
+		TaskID: task.TaskID, Part: part, UserID: task.UserId, AppID: task.AppID,
+		Status:    model.TaskVideoResultStatusReady,
+		Location:  model.VideoResultStorageLocation{Backend: "s3", Endpoint: "http://oss.example.test", Bucket: "video-bucket"},
+		ObjectKey: objectKey, MimeType: mimeType, SizeBytes: 10,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, model.DB.Create(&row).Error)
+	t.Cleanup(func() {
+		_ = model.DB.Where("task_id = ?", task.TaskID).Delete(&model.TaskVideoResultObject{}).Error
+	})
+}
+
+// 托管交付：控制台制品授权后重定向本站预签名地址；渠道删除不影响交付，
+// 网关不再向上游回源传输字节（方案 §3.4）。
+func TestSeedanceDashboardArtifactsDeliverHostedVideo(t *testing.T) {
+	task := setupSeedanceArtifactTest(t, "https://media.example.invalid")
+	setupSeedanceArtifactStorage(t)
+	task.FinishTime = common.GetTimestamp()
+	require.NoError(t, model.DB.Save(task).Error)
+	insertSeedanceHostedRow(t, task, model.TaskVideoResultPartVideo, "videos/tasks/"+task.TaskID+"/video", "video/mp4")
 	// Delivery must still work after the current channel is removed.
 	require.NoError(t, model.DB.Delete(&model.Channel{}, task.ChannelId).Error)
 
@@ -93,8 +120,7 @@ func TestSeedanceDashboardArtifactsDeliverFrozenVideo(t *testing.T) {
 	artifact := response.Data.Artifacts[0]
 	assert.Equal(t, "video", artifact.Key)
 	assert.Equal(t, "video", artifact.Type)
-	assert.NotContains(t, recorder.Body.String(), provider.URL)
-	assert.NotContains(t, recorder.Body.String(), "frozen-key")
+	assert.NotContains(t, recorder.Body.String(), "media.example.invalid")
 	contentURL, err := url.Parse(artifact.ContentURL)
 	require.NoError(t, err)
 	assert.True(t, service.VerifyTaskArtifactAccess(contentURL.Query().Get("access"), task.TaskID, "video"))
@@ -102,29 +128,13 @@ func TestSeedanceDashboardArtifactsDeliverFrozenVideo(t *testing.T) {
 	router := gin.New()
 	router.Use(middleware.TokenOrTaskArtifactAccessAuth("key", "artifact_key"))
 	router.GET("/v1/tasks/:key/artifacts/:artifact_key/content", TaskArtifactContent)
-	router.HEAD("/v1/tasks/:key/artifacts/:artifact_key/content", TaskArtifactContent)
-	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		t.Run(method, func(t *testing.T) {
-			recorder := httptest.NewRecorder()
-			request := httptest.NewRequest(method, artifact.ContentURL, nil)
-			if method == http.MethodGet {
-				request.Header.Set("Range", "bytes=0-3")
-			}
-			router.ServeHTTP(recorder, request)
-			assert.Equal(t, "video/mp4", recorder.Header().Get("Content-Type"))
-			assert.Equal(t, "private, no-store", recorder.Header().Get("Cache-Control"))
-			if method == http.MethodHead {
-				assert.Equal(t, http.StatusOK, recorder.Code)
-				assert.Empty(t, recorder.Body.String())
-				assert.Equal(t, "10", recorder.Header().Get("Content-Length"))
-			} else {
-				assert.Equal(t, http.StatusPartialContent, recorder.Code)
-				assert.Equal(t, "bytes 0-3/10", recorder.Header().Get("Content-Range"))
-				assert.Equal(t, "vide", recorder.Body.String())
-			}
-		})
-	}
-	assert.Equal(t, int32(2), calls.Load())
+	recorder = httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, artifact.ContentURL, nil))
+	assert.Equal(t, http.StatusFound, recorder.Code)
+	location := recorder.Header().Get("Location")
+	assert.Contains(t, location, "video-bucket")
+	assert.Contains(t, location, "videos/tasks/"+task.TaskID+"/video")
+	assert.Contains(t, location, "X-Amz-Signature")
 }
 
 func TestSeedanceArtifactProjectionUsesTaskFacts(t *testing.T) {
@@ -169,10 +179,11 @@ func TestSeedanceArtifactAccessRejectsInvalidScopeAndUnavailableContent(t *testi
 	var calls atomic.Int32
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); w.WriteHeader(200) }))
 	t.Cleanup(provider.Close)
-	for _, scenario := range []string{"foreign_user", "foreign_app", "deleted", "wrong_artifact", "different_part", "expired", "missing_frozen_key", "missing_frozen_protocol"} {
+	now := common.GetTimestamp()
+	for _, scenario := range []string{"foreign_user", "foreign_app", "deleted", "wrong_artifact", "delivery_preparing", "delivery_unavailable", "stock_outside_window", "missing_frozen_protocol"} {
 		t.Run(scenario, func(t *testing.T) {
 			task := setupSeedanceArtifactTest(t, provider.URL)
-			allowPrivateTaskMediaTest(t)
+			setupSeedanceArtifactStorage(t)
 			userID, appID, key, query := task.UserId, task.AppID, "video", ""
 			expectedStatus := http.StatusNotFound
 			switch scenario {
@@ -184,16 +195,21 @@ func TestSeedanceArtifactAccessRejectsInvalidScopeAndUnavailableContent(t *testi
 				task.ClientDeletedAt = common.GetTimestamp()
 			case "wrong_artifact":
 				key = "other"
-			case "different_part":
-				query = "?part=last_frame"
-			case "expired":
-				data, err := common.Marshal(map[string]int64{"expires_at": common.GetTimestamp() - 1})
-				require.NoError(t, err)
-				task.Data = data
+			case "delivery_preparing":
+				task.FinishTime = now
+				expectedStatus = http.StatusConflict
+			case "delivery_unavailable":
+				task.FinishTime = now
+				row := model.TaskVideoResultObject{
+					TaskID: task.TaskID, Part: model.TaskVideoResultPartVideo,
+					UserID: task.UserId, AppID: task.AppID,
+					Status: model.TaskVideoResultStatusUnavailable, LastError: "upstream result expired",
+					CreatedAt: now, UpdatedAt: now,
+				}
+				require.NoError(t, model.DB.Create(&row).Error)
 				expectedStatus = http.StatusGone
-			case "missing_frozen_key":
-				task.PrivateData.Key = ""
-				expectedStatus = http.StatusBadGateway
+			case "stock_outside_window":
+				expectedStatus = http.StatusGone
 			case "missing_frozen_protocol":
 				task.ClientProtocol = ""
 				expectedStatus = http.StatusBadGateway
@@ -208,6 +224,13 @@ func TestSeedanceArtifactAccessRejectsInvalidScopeAndUnavailableContent(t *testi
 			TaskArtifactContent(c)
 			assert.Equal(t, expectedStatus, recorder.Code)
 			assert.NotContains(t, recorder.Body.String(), "frozen-key")
+			assert.NotContains(t, recorder.Body.String(), "media.example", "upstream direct links must never surface")
+			if scenario == "delivery_preparing" {
+				assert.Contains(t, recorder.Body.String(), "video_delivery_preparing")
+			}
+			if scenario == "delivery_unavailable" || scenario == "stock_outside_window" {
+				assert.Contains(t, recorder.Body.String(), "video_delivery_unavailable")
+			}
 			if scenario == "foreign_user" || scenario == "foreign_app" || scenario == "deleted" {
 				listRecorder := httptest.NewRecorder()
 				listContext, _ := gin.CreateTestContext(listRecorder)
@@ -221,44 +244,4 @@ func TestSeedanceArtifactAccessRejectsInvalidScopeAndUnavailableContent(t *testi
 		})
 	}
 	assert.Zero(t, calls.Load(), "rejected requests must never fetch media")
-}
-
-func TestSeedanceArtifactFeicaiKeepsFrozenCredentialsAndRejectsRedirects(t *testing.T) {
-	var redirect atomic.Bool
-	var foreignCalls atomic.Int32
-	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { foreignCalls.Add(1) }))
-	t.Cleanup(foreign.Close)
-	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "Bearer frozen-key", r.Header.Get("Authorization"))
-		if redirect.Load() {
-			http.Redirect(w, r, foreign.URL, http.StatusFound)
-			return
-		}
-		w.Header().Set("Content-Type", "video/mp4")
-		_, _ = w.Write([]byte("video"))
-	}))
-	t.Cleanup(provider.Close)
-	task := setupSeedanceArtifactTest(t, provider.URL)
-	allowPrivateTaskMediaTest(t)
-	task.PrivateData.VideoUpstreamProfile = dto.VideoUpstreamProfileThirdPartyFeicaiVideos
-	task.PrivateData.SouthboundAdapterVersion = relaycommon.CurrentVideoSouthboundAdapterVersion(constant.ChannelTypeSeedanceLink, dto.VideoUpstreamProfileThirdPartyFeicaiVideos)
-	require.NoError(t, model.DB.Save(task).Error)
-	for _, redirected := range []bool{false, true} {
-		redirect.Store(redirected)
-		recorder := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(recorder)
-		c.Set("id", task.UserId)
-		c.Set("token_id", task.AppID)
-		c.Params = gin.Params{{Key: "key", Value: task.TaskID}, {Key: "artifact_key", Value: "video"}}
-		c.Request = httptest.NewRequest(http.MethodGet, "/v1/tasks/"+task.TaskID+"/artifacts/video/content", nil)
-		TaskArtifactContent(c)
-		if redirected {
-			assert.Equal(t, http.StatusBadGateway, recorder.Code)
-		} else {
-			assert.Equal(t, http.StatusOK, recorder.Code)
-			assert.Equal(t, "video", recorder.Body.String())
-		}
-		assert.Empty(t, recorder.Header().Get("Location"))
-	}
-	assert.Zero(t, foreignCalls.Load())
 }

@@ -14,6 +14,8 @@ func projectModelArkVideoTask(c *gin.Context, task *model.Task) *dto.ModelArkVid
 	if projected.Content == nil {
 		return projected
 	}
+	// Link 视频结果托管：范围内成功任务返回本站预签名地址与交付状态。
+	applyVideoResultDelivery(c, task, projected)
 	baseURL := incomingVideoBaseURL(c)
 	if baseURL == "" {
 		return projected

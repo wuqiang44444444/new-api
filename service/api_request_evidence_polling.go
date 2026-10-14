@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 )
 
@@ -17,7 +16,11 @@ func DoTaskPollingRequestWithEvidence(client *http.Client, req *http.Request, ta
 		if task == nil || task.TaskID == "" {
 			continue
 		}
-		capture := newAPIRequestEvidence(model.TaskRequestEvidence{Kind: "task_execution", TaskID: task.TaskID, UserID: task.UserId, AppID: task.AppID, TokenID: task.PrivateData.TokenId, ChannelID: task.ChannelId, ClientProtocol: task.ClientProtocol, ClientModel: task.Properties.OriginModelName, CreatedAt: common.GetTimestamp()})
+		index, err := taskMediaEvidenceIndex(task)
+		if err != nil || index == nil {
+			continue
+		}
+		capture := newAPIRequestEvidence(*index)
 		if capture != nil {
 			captures = append(captures, capture)
 		}

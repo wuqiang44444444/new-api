@@ -17,8 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
-import { readTaskExtendPluginKeys } from './channel-plugin-extensions'
-import { supportsResponsesWebSocket } from './responses-websocket'
 
 import {
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
@@ -45,6 +43,12 @@ import {
   stringifyAdvancedCustomConfig,
   validateAdvancedCustomConfig,
 } from './advanced-custom'
+import {
+  CHANNEL_GROUP_LENGTH_ERROR,
+  isChannelGroupLengthValid,
+} from './channel-group-validation'
+import { readTaskExtendPluginKeys } from './channel-plugin-extensions'
+import { supportsResponsesWebSocket } from './responses-websocket'
 import type { SeedancePluginConfiguration } from './seedance-plugin-configuration'
 import { refineSeedanceProtocols } from './seedance-protocol-validation'
 
@@ -217,7 +221,10 @@ export const channelFormSchema = z
     key: z.string(),
     openai_organization: z.string().optional(),
     models: z.string().min(1, ERROR_MESSAGES.REQUIRED_MODELS),
-    group: z.array(z.string()).min(1, ERROR_MESSAGES.REQUIRED_GROUP),
+    group: z
+      .array(z.string())
+      .min(1, ERROR_MESSAGES.REQUIRED_GROUP)
+      .refine(isChannelGroupLengthValid, CHANNEL_GROUP_LENGTH_ERROR),
     model_mapping: z
       .string()
       .optional()
@@ -372,7 +379,7 @@ export const channelFormSchema = z
         CHANNEL_TYPE_VLLM,
         CHANNEL_TYPE_SGLANG,
         CHANNEL_TYPE_TASK_PLUGIN,
-  CHANNEL_TYPE_OLLAMA,
+        CHANNEL_TYPE_OLLAMA,
         CHANNEL_TYPE_SEEDANCE_LINK,
         CHANNEL_TYPE_MINIMAX_LINK,
         CHANNEL_TYPE_ASYNC_IMAGE,

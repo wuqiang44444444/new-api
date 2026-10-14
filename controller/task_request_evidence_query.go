@@ -54,7 +54,7 @@ func GetTaskRequestEvidenceDetail(c *gin.Context) {
 		return
 	}
 	isRoot := isRootViewer(c)
-	previews := service.GetEvidenceEventPreviews(events, evidence.BodyExpired)
+	previews := service.GetEvidenceEventPreviews(events, service.IsEvidenceBodyExpired(evidence, common.GetTimestamp()))
 	eventViews := make([]gin.H, 0, len(events))
 	for _, event := range events {
 		eventViews = append(eventViews, evidenceEventView(event, previews[event.Id]))
@@ -76,7 +76,7 @@ func GetTaskRequestEvidenceObject(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Evidence event not found"})
 		return
 	}
-	payload, bodyStatus := service.ReadEvidenceEventBody(event, evidence.BodyExpired)
+	payload, bodyStatus := service.ReadEvidenceEventBody(event, service.IsEvidenceBodyExpired(evidence, common.GetTimestamp()))
 	if !respondEvidenceBodyStatus(c, bodyStatus) {
 		return
 	}
@@ -99,7 +99,7 @@ func GetTaskRequestEvidenceContent(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Evidence event not found"})
 		return
 	}
-	payload, bodyStatus := service.ReadEvidenceEventBody(event, evidence.BodyExpired)
+	payload, bodyStatus := service.ReadEvidenceEventBody(event, service.IsEvidenceBodyExpired(evidence, common.GetTimestamp()))
 	if !respondEvidenceBodyStatus(c, bodyStatus) {
 		return
 	}
@@ -152,7 +152,7 @@ func evidenceIndexView(evidence *model.TaskRequestEvidence, includeDiagnostics b
 		"channel_id":      evidence.ChannelID,
 		"client_protocol": evidence.ClientProtocol,
 		"created_at":      evidence.CreatedAt,
-		"body_expired":    evidence.BodyExpired,
+		"body_expired":    service.IsEvidenceBodyExpired(evidence, common.GetTimestamp()),
 	}
 	if includeDiagnostics {
 		view["upstream_request_id"] = evidence.UpstreamRequestID

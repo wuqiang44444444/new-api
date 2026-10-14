@@ -1210,6 +1210,48 @@
               }
             },
             "headers": {}
+          },
+          "302": {
+            "description": "本站托管结果授权后重定向至签发起 86400 秒有效的 GET 地址。 Hosted result redirect to a signed GET URL.",
+            "headers": {
+              "Location": {
+                "description": "本站对象存储预签名地址。 Signed object storage URL.",
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "结果正在准备。 video_delivery_preparing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "结果无法交付。 video_delivery_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "本站交付存储不可用。 video_delivery_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -8028,11 +8070,18 @@
           "content": {
             "type": "object",
             "properties": {
+              "delivery_status": {
+                "type": "string",
+                "enum": ["ready", "preparing", "unavailable"],
+                "description": "本站托管结果的交付状态，独立于生成状态；准备中或不可用时省略主视频地址。 Hosted delivery state, independent of generation success."
+              },
               "video_url": {
-                "type": "string"
+                "type": "string",
+                "description": "本站托管范围内返回签发起 86400 秒有效的预签名 GET 地址；其它线路保持既有内容路径。 Hosted results use a GET URL valid for 86400 seconds from issuance."
               },
               "last_frame_url": {
-                "type": "string"
+                "type": "string",
+                "description": "实际尾帧完成托管后返回独立的 24 小时预签名 GET 地址。 A separately signed GET URL for the ready last frame."
               }
             }
           },

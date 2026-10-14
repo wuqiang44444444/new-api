@@ -120,6 +120,43 @@ export type LogCleanupTask = SystemTask<
   LogCleanupTaskResult
 >
 
+export type EvidenceCleanupTaskPayload = {
+  target_timestamp?: number
+  operator_user_id?: number
+  trigger?: string
+}
+
+export type EvidenceCleanupTaskState = {
+  started_at: number
+  cutoff: number
+  retention_days: number
+  trigger: string
+  target_timestamp?: number
+  scanned: number
+  cleaned_indexes: number
+  deleted_files: number
+  freed_bytes: number
+  missing_files: number
+  failed_items: number
+  unattributed_files: number
+  deleted_events?: number
+  deleted_indexes?: number
+  deleted_access_logs?: number
+  deleted_history?: number
+  database_failures?: number
+}
+
+export type EvidenceCleanupTaskResult = EvidenceCleanupTaskState & {
+  finished_at: number
+  error_category?: string
+}
+
+export type EvidenceCleanupTask = SystemTask<
+  EvidenceCleanupTaskPayload,
+  EvidenceCleanupTaskState,
+  EvidenceCleanupTaskResult
+>
+
 export type SystemTaskResponse<TTask = SystemTask | null> = {
   success: boolean
   message: string

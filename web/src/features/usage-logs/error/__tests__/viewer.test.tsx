@@ -338,7 +338,7 @@ it('offers request evidence instead of four empty body blocks for task failures'
       }),
     })
   )
-  expect(await screen.findByText('No request evidence recorded')).toBeVisible()
+  expect(await screen.findByText('No request evidence available. It may not have been recorded or may have expired.')).toBeVisible()
 })
 
 it.each(['{ }', 'null', '[]', 'invalid JSON', '{"response":null}'])(
@@ -424,7 +424,7 @@ it('finds polling evidence without a request ID on a historical task index', asy
   await user.click(await screen.findByRole('button', { name: '9' }))
   expect(await screen.findByText(/Task polling/)).toBeVisible()
   expect(screen.getByText(/"status":"failed"/)).toBeVisible()
-  expect(screen.queryByText('No request evidence recorded')).toBeNull()
+  expect(screen.queryByText('No request evidence available. It may not have been recorded or may have expired.')).toBeNull()
 })
 
 it('uses the request ID when the failure has no task ID', async () => {

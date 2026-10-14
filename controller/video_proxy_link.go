@@ -15,7 +15,6 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
-	taskminimax "github.com/QuantumNous/new-api/relay/channel/task/minimax"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
@@ -74,11 +73,14 @@ func proxyLinkVideoTaskContent(c *gin.Context, task *model.Task) bool {
 		return true
 	}
 
+	// Link 视频结果托管：范围内任务授权后重定向本站预签名地址，不再逐次
+	// 回源传输字节（方案 §3.4）；范围外线路保持原上游回源语义。
+	if serveVideoResultDelivery(c, task) {
+		return true
+	}
+
 	var upstream struct {
 		ExpiresAt int64 `json:"expires_at"`
-		Content   struct {
-			LastFrameURL string `json:"last_frame_url"`
-		} `json:"content"`
 	}
 	if len(task.Data) > 0 {
 		_ = common.Unmarshal(task.Data, &upstream)
@@ -87,18 +89,16 @@ func proxyLinkVideoTaskContent(c *gin.Context, task *model.Task) bool {
 		modelArkVideoError(c, http.StatusGone, "video_content_expired", "Video content has expired")
 		return true
 	}
+	// 尾帧是 Seedance 托管范围内的事实，由 serveVideoResultDelivery 统一履约；
+	// 范围外线路没有尾帧事实，统一按内容不存在返回。
 	contentPart := strings.TrimSpace(c.Query("part"))
-	lastFrameURL := ""
 	if contentPart != "" {
 		if contentPart != "last_frame" {
 			modelArkVideoError(c, http.StatusBadRequest, "invalid_content_part", "Content part is not supported")
 			return true
 		}
-		lastFrameURL = strings.TrimSpace(upstream.Content.LastFrameURL)
-		if lastFrameURL == "" {
-			modelArkVideoError(c, http.StatusNotFound, "content_not_found", "Requested content is not available")
-			return true
-		}
+		modelArkVideoError(c, http.StatusNotFound, "content_not_found", "Requested content is not available")
+		return true
 	}
 
 	channel, err := videoTaskProviderChannel(task)
@@ -171,52 +171,10 @@ func proxyLinkVideoTaskContent(c *gin.Context, task *model.Task) bool {
 		}
 		videoURL = fmt.Sprintf("%s/v1/videos/%s/content", baseURL, task.GetUpstreamTaskID())
 		req.Header.Set("Authorization", "Bearer "+key)
-	case constant.ChannelTypeMiniMaxLink:
-		// The frozen JD content source resolves a fresh CDN URL through one
-		// on-demand query on the frozen connection and the frozen artifact
-		// version. It is never blocked by the background polling cadence and
-		// no credential attaches to the media fetch (rejectRedirects keeps
-		// the cross-origin CDN redirect from being followed).
-		contentURL, sourceErr := taskminimax.ResolveContentURL(c.Request.Context(), task)
-		if sourceErr != nil {
-			logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to resolve MiniMax video URL for Link task %s: %s", taskID, sanitizeVideoProviderError(sourceErr, task.PrivateData.Key)))
-			modelArkVideoError(c, http.StatusBadGateway, "upstream_unavailable", "Failed to resolve video URL")
-			return true
-		}
-		videoURL = contentURL
-		rejectRedirects = true
-	case constant.ChannelTypeSeedanceLink:
-		contentURL, key, handled, sourceErr := videoFeicaiContentSource(task)
-		if sourceErr != nil {
-			modelArkVideoError(c, http.StatusBadGateway, "frozen_upstream_unavailable", "Frozen video connection details are unavailable")
-			return true
-		}
-		if handled {
-			videoURL = contentURL
-			rejectRedirects = true
-			req.Header.Set("Authorization", "Bearer "+key)
-		} else {
-			videoURL = task.GetResultURL()
-		}
 	default:
 		videoURL = task.GetResultURL()
 	}
-	if lastFrameURL != "" {
-		videoURL = lastFrameURL
-		req.Header.Del("Authorization")
-		if handled, sourceErr := applySynlinkLastFrameSource(task, req, &videoURL); handled {
-			if sourceErr != nil {
-				modelArkVideoError(c, http.StatusBadGateway, "frozen_upstream_unavailable", "Frozen video connection details are unavailable")
-				return true
-			}
-			rejectRedirects = true
-		}
-	}
 	videoURL = strings.TrimSpace(videoURL)
-	if synlinkVideoSignatureExpired(task, videoURL, time.Now()) {
-		modelArkVideoError(c, http.StatusGone, "video_content_expired", "Video download link has expired")
-		return true
-	}
 	if videoURL == "" {
 		modelArkVideoError(c, http.StatusBadGateway, "upstream_unavailable", "Failed to fetch video content")
 		return true

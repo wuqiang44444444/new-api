@@ -31,6 +31,7 @@ last-reviewed: 2026-08-20
 - [10 用户模型合同运维手册](10-用户模型合同运维手册.md)
 - [环境配置（反代转发头与 ServerAddress）](环境配置.md)
 - [SQLite 历史日志用户名补齐手册](SQLite历史日志用户名补齐手册.md)：独立脚本预览、备份、补齐与重跑
+- [SQLite 全量迁移 PostgreSQL 手册](SQLite全量迁移PostgreSQL手册.md)：独立手工脚本、全表校验、切换阻断与回滚
 - [Synlink 失败任务处置手册](Synlink失败任务处置手册.md)：失败取证、插件发布、冻结旧任务与退款核对
 
 历史专题资料已移至 [99-archive](../99-archive/README.md)，Seedance 配置与验收统一按 `02`、`04`、`07`

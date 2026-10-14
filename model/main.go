@@ -380,6 +380,7 @@ func migrateDB() error {
 		&QuotaData{},
 		&Task{},
 		&TaskBillingDelivery{}, &TaskPlugin{}, &TaskCreateIdempotency{}, &TaskCreateAttempt{}, &ProviderCostExposure{}, &Model{}, &ImageTaskSlot{},
+		&TaskVideoResultObject{},
 		&TaskRequestEvidence{}, &TaskRequestEvidenceEvent{}, &TaskRequestEvidenceAccessLog{},
 		&Vendor{},
 		&PrefillGroup{},

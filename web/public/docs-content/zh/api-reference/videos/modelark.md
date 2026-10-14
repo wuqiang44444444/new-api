@@ -1,7 +1,7 @@
 ---
 page-id: videos-modelark
 kind: api-reference
-last-verified: 2026-09-28
+last-verified: 2026-10-14
 operations:
   - listModelArkVideoModels
   - retrieveModel
@@ -18,7 +18,7 @@ operations:
 Seedance 与 H3 标准视频客户模型统一使用 ModelArk V3 任务合同。`/v1/video/generations` 属于原生通用视频
 协议，不是本接口的别名；ModelArk、Kling、即梦和 OpenAI Videos 的字段不能混用。
 
-完整流程是：查询模型 → POST 创建 → 保存 `id` → GET 轮询 → 成功后鉴权下载。
+完整流程是：查询模型 → POST 创建 → 保存 `id` → GET 轮询 → 成功后等待交付就绪，再通过结果签名地址下载。
 可复制的轮询脚本见[图片与视频调用实战](guides/media-workflow)。所有步骤使用创建时的同一 API Key。
 
 按模型元数据中的 `api.video.documentation_path` 阅读对应说明：
@@ -407,8 +407,9 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
   "model": "customer-seedance-model",
   "status": "succeeded",
   "content": {
-    "video_url": "{{SITE_BASE_URL}}/v1/videos/task-public-id/content",
-    "last_frame_url": "{{SITE_BASE_URL}}/v1/videos/task-public-id/content?part=last_frame"
+    "delivery_status": "ready",
+    "video_url": "https://storage.example/video-object",
+    "last_frame_url": "https://storage.example/last-frame-object"
   },
   "seed": 12345,
   "resolution": "1080p",
@@ -433,8 +434,9 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
 | `id`                          | string  | 平台任务 ID                                                          |
 | `model`                       | string  | 创建时冻结的客户模型名                                               |
 | `status`                      | string  | `queued`、`running`、`succeeded`、`failed`、`cancelled` 或 `expired` |
-| `content.video_url`           | string  | 成功后的视频内容代理路径                                             |
-| `content.last_frame_url`      | string  | 成功且存在末帧时返回的末帧代理路径                                   |
+| `content.delivery_status`     | string  | `ready`、`preparing` 或 `unavailable`，独立于生成状态                  |
+| `content.video_url`           | string  | 交付就绪后的本站 OSS 预签名 GET 地址；每次签发有效 24 小时                                             |
+| `content.last_frame_url`      | string  | 实际存在且转存就绪的末帧预签名 GET 地址                                   |
 | `seed`                        | integer | 实际或上游返回的随机种子；不存在时省略                               |
 | `resolution`                  | string  | 实际输出分辨率；不存在时省略                                         |
 | `duration`                    | integer | 实际时长；不存在时省略                                               |
@@ -528,38 +530,56 @@ curl -X DELETE "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-
 
 ## 下载视频或末帧
 
-任务为 `succeeded` 后，使用任务响应中返回的内容路径：
+Seedance 专用线路与 MiniMax 标准视频扩展在生成成功后，先将主视频及实际提供的末帧转存本站
+私有对象存储。生成状态 `succeeded` 与交付状态 `content.delivery_status` 分别表达：
+
+| 交付状态 | 客户行为 |
+| --- | --- |
+| `preparing` | 结果正在准备，不返回下载地址；继续查询同一任务 |
+| `ready` | 主视频就绪，按 `video_url` 下载；实际末帧就绪时另返回 `last_frame_url` |
+| `unavailable` | 结果无法交付，不返回主视频地址；保留任务 ID 联系技术人员核查 |
+
+上例中的 `storage.example` 为示意地址；实际响应包含本站对象存储签名查询参数。签名 URL 不需要
+平台 API Key 或 Provider Key，每次签发从当前时刻起有效 24 小时（86400 秒）。复制完整 URL 下载：
 
 ```bash
-curl --fail "{{OPENAI_BASE_URL}}/videos/task-public-id/content" \
+curl --fail "$VIDEO_URL" --output result.mp4
+```
+
+`VIDEO_URL` 为授权任务查询返回的完整 `content.video_url`。末帧同理使用 `content.last_frame_url`，
+文件扩展名按实际 MIME 选择。Range 断点续传和浏览器播放由对象存储履约，真实环境仍需验收。
+
+链接到期后，在对象仍保留且调用方仍获授权时重新查询任务，可签发新的 24 小时 GET 地址；不会
+重新生成或复制视频。链接有效期与对象保留期不同，文件保留策略由部署方明确，不能按任务创建
+或完成时间推算下载链接到期时间。链接应妥善保存，避免记录到普通日志或公开分享。
+
+既有内容入口仍需平台鉴权，交付就绪后返回 `302` 跳转至本站签名地址：
+
+```bash
+curl --fail --location "{{OPENAI_BASE_URL}}/videos/task-public-id/content" \
   -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}" \
   --output result.mp4
 ```
 
-如响应包含 `last_frame_url`，按该路径下载末帧。例如：
+不要使用 `--location-trusted` 将平台鉴权转发给对象存储。末帧使用相同入口并添加 `?part=last_frame`。
+HEAD 内容请求返回针对 HEAD 方法的签名地址；响应中的 GET 下载地址用于 GET，不能替代 HEAD 签名。
 
-```bash
-curl --fail "{{OPENAI_BASE_URL}}/videos/task-public-id/content?part=last_frame" \
-  -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}" \
-  --output last-frame.jpg
-```
+| HTTP 状态 | 常见错误码 | 说明 |
+| --- | --- | --- |
+| `400` | `video_not_ready`、`invalid_content_part` | 任务尚未成功，或部件不合法 |
+| `404` | `video_not_found`、`content_not_found` | 任务或所请求的末帧不存在 |
+| `409` | `video_delivery_preparing` | 结果待转存或正在转存 |
+| `410` | `video_delivery_unavailable` | 结果交付不可用 |
+| `503` | `video_delivery_unavailable` | 当前本站交付存储不可用 |
 
-末帧是否提供取决于模型和任务结果，扩展名应按实际媒体类型选择。
-内容代理要求任务已成功，并按创建任务的鉴权主体隔离。
-下载前先检查 HTTP 状态和 `Content-Type`；失败响应是 JSON，不是视频或图片字节。
+转存或下载失败不改变已确认的生成成功和计费事实，不自动退款，不自动重新生成。ModelArk 北向
+下挂的范围外原生视频线路仍沿用本站鉴权内容代理及既有过期语义，不受上述 OSS 托管合同影响。
 
-视频仅临时可下载，生成成功后请及时下载保存；平台不提供长期视频存储。
-可用时间由实际内容和下载地址决定，不保证完成后固定 24 小时可用。没有明确到期时间时，
-不能按任务创建或完成时间推算。内容过期后不保证可以恢复，重新查询不会自动延长下载期限。
-下载不可用不会把已成功的生成任务改为失败，也不会自动触发退款；有效期内读取失败请保留
-本站任务 ID 与请求 ID 联系技术人员核查。
-
-| HTTP 状态     | 常见错误码                                        | 说明                                      |
-| ------------- | ------------------------------------------------- | ----------------------------------------- |
-| `400`         | `video_not_ready`、`invalid_content_part`         | 任务尚未成功，或 `part` 不是 `last_frame` |
-| `404`         | `video_not_found`、`content_not_found`            | 任务、视频或末帧不存在                    |
-| `410`         | `video_content_expired`                           | 内容或下载签名已明确到期                  |
-| `403` / `502` | `content_url_not_allowed`、`upstream_unavailable` | 内容来源被安全策略阻止或上游读取失败      |
+English contract: generation success and delivery readiness are separate. Hosted results expose
+`ready`, `preparing`, or `unavailable`; ready URLs authorize GET for 86400 seconds from issuance.
+Downloads require no gateway API key. An authorized query can renew a URL while the object is retained.
+The authenticated content endpoint redirects HEAD requests to a URL signed for HEAD. Delivery failures
+never regenerate the video or change the confirmed generation and billing facts.
 
 ## 素材引用
 

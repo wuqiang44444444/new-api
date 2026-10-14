@@ -32,7 +32,8 @@ func TestEvidenceCreateResponseSurvivesPolling(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	session := evidenceSessionFrom(c)
-	task := &model.Task{TaskID: "task-regression", UserId: 7}
+	task := &model.Task{TaskID: "task-regression", UserId: 7, ClientProtocol: "openai_video"}
+	require.NoError(t, model.DB.Create(task).Error)
 	AttachTaskRequestEvidenceTask(c, task)
 	for _, body := range []string{`{"status":"running"}`, `{"status":"success"}`} {
 		CaptureTaskPollingEvidence(task, "GET", "https://provider.example/task", 200, nil, []byte(body), nil)
@@ -135,9 +136,14 @@ func TestEvidenceMultipartCredentialsAndJSONPreview(t *testing.T) {
 
 type unavailableEvidenceStore struct{}
 
-func (unavailableEvidenceStore) Put(string, []byte) error   { return errors.New("unavailable") }
-func (unavailableEvidenceStore) Get(string) ([]byte, error) { return nil, errors.New("unavailable") }
-func (unavailableEvidenceStore) Delete(string) error        { return errors.New("unavailable") }
+func (unavailableEvidenceStore) PutEventBody(int64, int64, []byte) error {
+	return errors.New("unavailable")
+}
+
+func (unavailableEvidenceStore) Put(string, []byte) error           { return errors.New("unavailable") }
+func (unavailableEvidenceStore) Get(string) ([]byte, error)         { return nil, errors.New("unavailable") }
+func (unavailableEvidenceStore) Delete(string) (int64, error)       { return 0, errors.New("unavailable") }
+func (unavailableEvidenceStore) RemoveEmptyEvidenceDir(int64) error { return nil }
 
 func TestEvidenceResponseStorageFailureLeavesUnavailableEvent(t *testing.T) {
 	setupEvidenceTestEnv(t)
@@ -185,7 +191,8 @@ func TestEvidenceRecoveredAttemptCannotSendOrRefund(t *testing.T) {
 
 func TestEvidenceRawPollingPreservesProviderFields(t *testing.T) {
 	setupEvidenceTestEnv(t)
-	task := &model.Task{TaskID: "task-raw", UserId: 7}
+	task := &model.Task{TaskID: "task-raw", UserId: 7, ClientProtocol: "openai_video"}
+	require.NoError(t, model.DB.Create(task).Error)
 	req, err := http.NewRequest("GET", "https://provider.example/tasks/raw", nil)
 	require.NoError(t, err)
 	raw := `{"provider_field":"keep","status":"running","request_id":"upstream-1"}`
@@ -260,7 +267,7 @@ func TestEvidenceLateTaskIndexExpires(t *testing.T) {
 			config := system_setting.GetTaskRequestEvidenceConfig()
 			config.RetentionDays = 7
 			system_setting.SetTaskRequestEvidenceConfig(config)
-			task := &model.Task{TaskID: "late-evidence", UserId: 7, Status: model.TaskStatusSuccess, Quota: 123}
+			task := &model.Task{TaskID: "late-evidence", UserId: 7, ClientProtocol: "openai_video", Status: model.TaskStatusSuccess, Quota: 123}
 			require.NoError(t, env.db.Create(task).Error)
 			if delivery {
 				CaptureTaskContentDeliveryEvidence(task.TaskID, 200, 12, nil)
@@ -271,7 +278,7 @@ func TestEvidenceLateTaskIndexExpires(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, exists)
 			assert.Equal(t, evidence.CreatedAt+7*24*60*60, evidence.RetainUntil)
-			expired, err := model.TaskRequestEvidenceExpiredBodies(evidence.RetainUntil+1, 10)
+			expired, err := model.TaskRequestEvidenceExpiredBodies(evidence.RetainUntil+1, 7*86400, 0, 0, 10)
 			require.NoError(t, err)
 			require.Len(t, expired, 1)
 			assert.Equal(t, evidence.Id, expired[0].Id)

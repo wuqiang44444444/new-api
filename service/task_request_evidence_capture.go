@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -75,6 +76,13 @@ func BeginTaskRequestEvidence(c *gin.Context, kind string) error {
 	if !evidenceEnabled() || c == nil || c.Request == nil || c.GetInt("id") <= 0 {
 		return nil
 	}
+	eligibleKind := mediaEvidenceContextKind(c)
+	if eligibleKind == "" || eligibleKind == "task_query" {
+		return nil
+	}
+	if mediaEvidenceRequestKind(c.Request.Method, c.Request.URL.Path) == "task_submit" {
+		kind = eligibleKind
+	}
 	if evidenceSessionFrom(c) != nil {
 		return nil
 	}
@@ -110,10 +118,10 @@ func BeginTaskRequestEvidence(c *gin.Context, kind string) error {
 
 	session := &taskRequestEvidenceSession{kind: kind}
 	c.Set(taskRequestEvidenceContextKey, session)
+	c.Writer = &evidenceClientWriter{ResponseWriter: c.Writer}
 	if err := evidencePersistNorth(c, session, body); err != nil {
 		return err
 	}
-	c.Writer = &evidenceClientWriter{ResponseWriter: c.Writer}
 	return nil
 }
 
@@ -190,7 +198,10 @@ func evidenceRetentionUntil(config system_setting.TaskRequestEvidenceConfig, now
 	return now + int64(config.RetentionDays)*86400
 }
 
-func evidenceObjectKey(evidenceId int64, seq int64) string {
+// EvidenceObjectKey 是事件对象命名规则（<evidenceId>/<seq>.bin）。清理依据
+// 该规则定位对象，不依赖 object_key 是否非空，以覆盖“事件已预留但对象完成
+// 回写失败”的窗口。
+func EvidenceObjectKey(evidenceId int64, seq int64) string {
 	return fmt.Sprintf("%d/%d.bin", evidenceId, seq)
 }
 
@@ -289,7 +300,11 @@ func CaptureSouthboundTaskRequestEvidence(
 	if err := persistTaskEvidenceBody(event, body, TaskRequestEvidenceSourceSouth); err != nil {
 		return err
 	}
-	return verifyEvidenceAttemptBeforeSend(c, info)
+	if err := verifyEvidenceAttemptBeforeSend(c, info); err != nil {
+		return err
+	}
+	*req = *req.WithContext(context.WithValue(req.Context(), taskEvidenceHTTPRequestKey{}, &taskEvidenceHTTPRequest{}))
+	return nil
 }
 
 // evidenceTargetURL 记录脱敏后的目标地址：去掉查询串与用户信息，
@@ -352,8 +367,15 @@ func evidenceReadBounded(reader io.Reader, maxBytes int64) ([]byte, error) {
 // 发送已发生，证据写入故障只告警并标记不完整，绝不影响业务响应。
 func AttachTaskRequestEvidenceUpstreamResponse(c *gin.Context, resp *http.Response) {
 	session := evidenceSessionFrom(c)
-	if !evidenceEnabled() || session == nil || resp == nil {
+	if !evidenceEnabled() || session == nil || session.evidenceID <= 0 || resp == nil {
 		return
+	}
+	if capture := apiEvidenceFrom(c.Request.Context()); capture != nil {
+		capture.mu.Lock()
+		if record := capture.responseRecords[resp]; record != nil {
+			record.taskOwned = true
+		}
+		capture.mu.Unlock()
 	}
 	// The response boundary already chose and validated this identity. Match the
 	// Task snapshot, including an empty final response after a previous attempt.
@@ -485,7 +507,7 @@ func CaptureTaskEvidenceTransportFailure(c *gin.Context) {
 		return
 	}
 	event := &model.TaskRequestEvidenceEvent{EvidenceId: session.evidenceID, Stage: model.TaskRequestEvidenceStageTransport, AttemptSeq: int(session.attemptSeq.Load()), Phase: model.TaskRequestEvidencePhaseFailed, CreatedAt: common.GetTimestamp(), Detail: evidenceMarshalDetail(map[string]any{"response_received": false})}
-	if err := model.CreateTaskRequestEvidenceEvent(event); err != nil {
+	if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil {
 		common.SysError("evidence transport event unavailable")
 	}
 }

@@ -231,6 +231,7 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 **Security and authoritative facts:**
 
 - 不得提交、记录或输出密钥、Token、Cookie、支付凭据、生产配置、完整签名 URL、Task 私有数据或原始 Provider 响应。
+  唯一例外：Link 视频结果托管交付在授权响应中返回本站对象存储预签名下载地址；日志、证据与工单脱敏边界不变。
 - Task、资金及平台持久化客户资源必须按 `user_id + app_id` 隔离；无状态素材代理不建立平台资源所有权，
   由受信应用自行管理其 Provider opaque ID。Channel 默认素材组 ID 是渠道基础设施配置，不是客户资源。
 - 主数据库是合同、Task、资金、资源和授权的持久化事实源；Redis、进程缓存和前端状态必须可重建，不得成为唯一权威。

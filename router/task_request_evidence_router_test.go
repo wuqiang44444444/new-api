@@ -19,7 +19,7 @@ import (
 func TestTaskRequestEvidenceRoutesPermissionsAndCache(t *testing.T) {
 	setupRelayRouterTestDB(t)
 	old := system_setting.GetTaskRequestEvidenceConfig()
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), MaxBodyBytes: 1024, MaxResponseBytes: 1024, WriteTimeoutSeconds: 5}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 7, MaxBodyBytes: 1024, MaxResponseBytes: 1024, WriteTimeoutSeconds: 5}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	t.Cleanup(func() {

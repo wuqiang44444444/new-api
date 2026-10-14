@@ -47,6 +47,7 @@ func TestMain(m *testing.M) {
 		&ImageTaskSlot{},
 
 		&Task{},
+		&TaskVideoResultObject{},
 		&TaskCreateIdempotency{},
 		&TaskCreateAttempt{},
 		&ProviderCostExposure{},

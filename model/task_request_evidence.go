@@ -2,6 +2,7 @@ package model
 
 import (
 	"github.com/QuantumNous/new-api/common"
+	"gorm.io/gorm"
 )
 
 // 音视频请求证据（一期）：主库索引 + 私有加密对象。
@@ -52,6 +53,10 @@ type TaskRequestEvidence struct {
 	UpdatedAt         int64  `json:"updated_at"`
 	RetainUntil       int64  `json:"retain_until" gorm:"index"`
 	BodyExpired       bool   `json:"body_expired" gorm:"index"`
+	// CleanupRequestedAt 是持久清理申请标记：手动提前清理受理后立即关闭该
+	// 索引的读取与追加，对象全部删除成功后才写 BodyExpired 完成事实。
+	// 它只是证据清理状态，不是任务或资金状态机。
+	CleanupRequestedAt int64 `json:"cleanup_requested_at" gorm:"index;default:0"`
 }
 
 type TaskRequestEvidenceEvent struct {
@@ -84,15 +89,24 @@ type TaskRequestEvidenceAccessLog struct {
 	OperatorUserID int    `json:"operator_user_id"`
 	Action         string `json:"action" gorm:"type:varchar(16)"`
 	Scope          string `json:"scope" gorm:"type:varchar(16)"`
-	CreatedAt      int64  `json:"created_at"`
+	CreatedAt      int64  `json:"created_at" gorm:"index"`
 }
 
 func CreateTaskRequestEvidence(evidence *TaskRequestEvidence) error {
 	return DB.Create(evidence).Error
 }
 
-func CreateTaskRequestEvidenceEvent(event *TaskRequestEvidenceEvent) error {
-	return DB.Create(event).Error
+func CreateTaskRequestEvidenceEvent(event *TaskRequestEvidenceEvent, retention ...int64) error {
+	seconds := EvidenceIndexRetentionSeconds
+	if len(retention) > 0 {
+		seconds = retention[0]
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := writableEvidenceIndex(tx, event.EvidenceId, common.GetTimestamp(), seconds); err != nil {
+			return err
+		}
+		return tx.Create(event).Error
+	})
 }
 
 func GetTaskRequestEvidenceById(id int64) (*TaskRequestEvidence, bool, error) {
@@ -183,11 +197,11 @@ func RecordTaskRequestEvidenceAccess(evidenceId, operatorUserID int64, action, s
 
 // AttachTaskRequestEvidenceTask 在任务行原子落库后回填关联。
 // 失败只记录告警，不回滚任务或资金事实。
-func AttachTaskRequestEvidenceTask(evidenceId int64, taskID string, attemptID int64) {
+func AttachTaskRequestEvidenceTask(evidenceId int64, taskID string, attemptID int64, userID, appID int) {
 	if evidenceId <= 0 || taskID == "" {
 		return
 	}
-	updates := map[string]any{"task_id": taskID, "updated_at": common.GetTimestamp()}
+	updates := map[string]any{"task_id": taskID, "user_id": userID, "app_id": appID, "updated_at": common.GetTimestamp()}
 	if attemptID != 0 {
 		updates["attempt_id"] = attemptID
 	}
@@ -233,14 +247,85 @@ func SetTaskRequestEvidenceUpstreamRequestID(evidenceId int64, upstreamRequestID
 }
 
 // TaskRequestEvidenceExpiredBodies 返回需要清理正文（保留索引）的行。
-func TaskRequestEvidenceExpiredBodies(now int64, limit int) ([]*TaskRequestEvidence, error) {
+// 有效到期时间取“创建时间 + 当前保留秒数”与原有非零更早期限中的较早值；
+// 历史 retain_until=0（永久保留）同样受当前上限约束，不要求一次性回填。
+// targetTimestamp>0 为手动截止：严格要求 created_at < target，等于截止点
+// 保留。自动运行另选到期或已申请的行，提前清理不会被七天筛选漏掉。
+// afterID 是稳定游标：删除失败未标记的行不会在同一轮内重复出现，也不会
+// 饿死后面的记录。条件仅用整数比较，兼容 SQLite/MySQL/PostgreSQL。
+func TaskRequestEvidenceExpiredBodies(now, retentionSeconds, targetTimestamp, afterID int64, limit int) ([]*TaskRequestEvidence, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+	if retentionSeconds < 86400 {
+		retentionSeconds = 7 * 86400
+	}
 	var items []*TaskRequestEvidence
-	err := DB.Where("body_expired = ? AND retain_until > 0 AND retain_until < ?", false, now).
-		Order("id").Limit(limit).Find(&items).Error
+	query := taskRequestEvidenceCleanupCandidates(now, retentionSeconds, targetTimestamp).Where("id > ?", afterID)
+	err := query.Order("id").Limit(limit).Find(&items).Error
 	return items, err
+}
+
+func taskRequestEvidenceCleanupCandidates(now, retentionSeconds, targetTimestamp int64) *gorm.DB {
+	query := DB.Model(&TaskRequestEvidence{}).Where("body_expired = ?", false)
+	if targetTimestamp > 0 {
+		query = query.Where("created_at < ?", targetTimestamp)
+	} else {
+		query = query.Where("cleanup_requested_at > 0 OR created_at < ? OR (retain_until > 0 AND retain_until < ?)", now-retentionSeconds, now)
+	}
+	return query
+}
+
+// RequestTaskRequestEvidenceCleanup 登记持久清理申请：申请后立即关闭读取与
+// 追加，重复申请不改变既有申请时间。失败由调用方按可重试处理。
+func RequestTaskRequestEvidenceCleanup(evidenceId, requestedAt int64) error {
+	result := DB.Model(&TaskRequestEvidence{}).
+		Where("id = ? AND (cleanup_requested_at = 0 OR cleanup_requested_at IS NULL)", evidenceId).
+		Updates(map[string]any{"cleanup_requested_at": requestedAt, "updated_at": common.GetTimestamp()})
+	if result.Error != nil {
+		return result.Error
+	}
+	index, exists, err := GetTaskRequestEvidenceById(evidenceId)
+	if err != nil {
+		return err
+	}
+	if !exists || index.CleanupRequestedAt <= 0 {
+		return ErrTaskRequestEvidenceBodyClosed
+	}
+	return nil
+}
+
+// TaskRequestEvidenceBodyClosedForAppend 核对一条证据索引是否已拒绝新增正文：
+// 清理已标记，或按当前保留政策已到期。此处是预检；实际文件提交必须经过
+// CommitTaskRequestEvidenceObject 的互斥复核，不能依靠预检排除竞争。
+func TaskRequestEvidenceBodyClosedForAppend(evidenceId, now, retentionSeconds int64) (bool, error) {
+	if evidenceId <= 0 {
+		return false, nil
+	}
+	if retentionSeconds < 86400 {
+		retentionSeconds = 7 * 86400
+	}
+	var evidence TaskRequestEvidence
+	err := DB.Select("body_expired", "cleanup_requested_at", "created_at", "retain_until").
+		Where("id = ?", evidenceId).First(&evidence).Error
+	if err != nil {
+		exist, existErr := RecordExist(err)
+		if existErr != nil {
+			return false, existErr
+		}
+		if !exist {
+			// 预检不授予提交资格；实际提交仍须验证索引存在并取得锁。
+			return false, nil
+		}
+	}
+	if evidence.BodyExpired || evidence.CleanupRequestedAt > 0 {
+		return true, nil
+	}
+	deadline := evidence.CreatedAt + retentionSeconds
+	if evidence.RetainUntil > 0 && evidence.RetainUntil < deadline {
+		deadline = evidence.RetainUntil
+	}
+	return deadline < now, nil
 }
 
 func MarkTaskRequestEvidenceBodyExpired(evidenceId int64) error {
@@ -250,5 +335,12 @@ func MarkTaskRequestEvidenceBodyExpired(evidenceId int64) error {
 
 // FinishTaskRequestEvidenceEvent updates the reserved event, including zero values.
 func FinishTaskRequestEvidenceEvent(event *TaskRequestEvidenceEvent) error {
-	return DB.Model(&TaskRequestEvidenceEvent{}).Where("id = ? AND evidence_id = ?", event.Id, event.EvidenceId).Select("*").Updates(event).Error
+	result := DB.Model(&TaskRequestEvidenceEvent{}).Where("id = ? AND evidence_id = ?", event.Id, event.EvidenceId).Select("*").Updates(event)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrTaskRequestEvidenceBodyClosed
+	}
+	return nil
 }

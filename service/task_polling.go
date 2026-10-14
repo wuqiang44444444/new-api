@@ -752,6 +752,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 
 	if shouldFinalizeBilling {
+		RegisterVideoResultTransfer(ctx, task) // 仅在终态 CAS 提交成功后登记；失败任务是 no-op。
 		billingSettled := settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
 		if (task.Status == model.TaskStatusFailure || (task.HasMiniMaxBillingFacts() && task.Status.ShouldRefundOnTerminal()) || isViduProviderExpiry(task, task.Status)) && !billingSettled && task.Quota != 0 {
 			refundTaskWithReconcile(ctx, task, task.FailReason)

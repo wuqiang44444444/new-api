@@ -45,6 +45,7 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 
 1. [架构概览](架构概览.md)：系统边界、运行平面和事实所有权。
 2. [Seedance专用渠道与Link架构](Seedance专用渠道与Link架构.md)：ModelArk V3、确定性渠道、代码协议、视频任务和素材代理。
+3. [Link视频结果OSS托管交付架构](Link视频结果OSS托管交付架构.md)：视频结果本站 OSS 托管、24 小时预签名交付与公共交付状态合同。
 3. 涉及素材：先看[Seedance模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)，再看[Seedance无状态素材代理架构](Seedance无状态素材代理架构.md)。
 4. 涉及模型目录 `api` 元数据：看[公开模型元数据投影架构](公开模型元数据投影架构.md)。
 5. 涉及异步或计费：看[账单计费-异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md)；动态计费再看[账单计费-计费表达式与协议探针架构](账单计费-计费表达式与协议探针架构.md)。
@@ -61,6 +62,7 @@ Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水
 | 错误日志 | [运维-API错误日志架构](运维-API错误日志架构.md) | 已鉴权 4xx 统一诊断、error_events 持久化与扩展采集、查询边界 | `clienterrlog/`、`model/error_event*`、`controller/error_log*` |
 | 全局 | [架构概览](架构概览.md) | 系统组成、边界和事实源 | `router/`、`controller/`、`service/`、`model/`、`relay/` |
 | Seedance Link | [Seedance专用渠道与Link架构](Seedance专用渠道与Link架构.md) | 专用渠道、ModelArk V3、代码协议、视频任务和素材代理 | `ChannelTypeSeedanceLink`、ModelArk V3 Router、协议注册表、Task |
+| Link 视频结果交付 | [Link视频结果OSS托管交付架构](Link视频结果OSS托管交付架构.md) | 结果对象登记、转存 worker、24 小时预签名交付 | `task_video_result_objects`、`video_result_transfer`、内容入口重定向 |
 | Seedance 素材 | [Seedance模型素材库支持矩阵](Seedance模型素材库支持矩阵.md) | 客户模型的素材操作、素材组要求、引用和错误合同 | `PublicAssetAPI`、`seedancePublicAssetAPI`、素材 Controller |
 | Seedance 代理 | [Seedance无状态素材代理架构](Seedance无状态素材代理架构.md) | opaque ID、无状态路由、Provider 边界和安全不变量 | 素材 Service、`asset_upstream_protocol` adapter |
 | 公开元数据 | [公开模型元数据投影架构](公开模型元数据投影架构.md) | 模型目录 `api` 投影的入口、一致性与脱敏规则 | `channel_seedance_public_catalog.go`、`public_image_model_api.go`、`pkg/publicmodel/` |

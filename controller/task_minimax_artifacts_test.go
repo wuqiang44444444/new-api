@@ -2,8 +2,6 @@ package controller
 
 import (
 	"context"
-	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,8 +18,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMiniMaxDashboardArtifactsDeliverFrozenVideo(t *testing.T) {
+// 托管交付：控制台制品授权后重定向本站预签名地址；渠道删除、查询与计费
+// 状态不受影响，客户端路径不再回源 Provider，也不泄露上游地址与凭据。
+func TestMiniMaxDashboardArtifactsDeliverHostedVideo(t *testing.T) {
 	fx := newMiniMaxFundsFixture(t)
+	require.NoError(t, fx.db.AutoMigrate(&model.Option{}, &model.TaskVideoResultObject{}))
+	setupSeedanceArtifactStorage(t)
 	previousSecret := common.CryptoSecret
 	common.CryptoSecret = "minimax-artifact-fixture"
 	t.Cleanup(func() { common.CryptoSecret = previousSecret })
@@ -31,7 +33,19 @@ func TestMiniMaxDashboardArtifactsDeliverFrozenVideo(t *testing.T) {
 	require.NoError(t, service.RefreshVideoTask(context.Background(), &task))
 	require.EqualValues(t, model.TaskStatusSuccess, fx.loadTask(id).Status)
 	quota := fx.userQuota()
-	// The stored result is a gateway placeholder, not a persisted CDN URL.
+	// 成功即登记待转存；worker 语义由 service 测试覆盖，这里把行推进到 ready。
+	rows, err := model.ListVideoResultObjects(id)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	claimed, err := model.ClaimVideoResultObjects(5, "artifact-runner", common.GetTimestamp(), 1800)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	won, err := model.FinishVideoResultObjectReady(claimed[0].ID, "artifact-runner",
+		model.VideoResultStorageLocation{Backend: "s3", Endpoint: "http://oss.example.test", Bucket: "video-bucket"},
+		"videos/tasks/"+id+"/video", "video/mp4", 10, common.GetTimestamp())
+	require.NoError(t, err)
+	require.True(t, won)
+	// The stored object is the only delivery fact; the channel row is gone.
 	require.NoError(t, fx.db.Delete(&model.Channel{}, fx.channelID).Error)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -55,22 +69,6 @@ func TestMiniMaxDashboardArtifactsDeliverFrozenVideo(t *testing.T) {
 	contentURL, err := url.Parse(artifact.ContentURL)
 	require.NoError(t, err)
 	require.True(t, service.VerifyTaskArtifactAccess(contentURL.Query().Get("access"), id, "video"))
-	mediaClient := service.GetSSRFProtectedHTTPClient()
-	oldTransport := mediaClient.Transport
-	t.Cleanup(func() { mediaClient.Transport = oldTransport })
-	mediaCalls := 0
-	mediaClient.Transport = fetchModelsRoundTripper(func(r *http.Request) (*http.Response, error) {
-		mediaCalls++
-		assert.Equal(t, "https://8.8.8.8/video.mp4", r.URL.String())
-		assert.Empty(t, r.Header.Get("Authorization"))
-		header := http.Header{"Content-Type": {"video/mp4"}, "Content-Length": {"10"}}
-		if r.Method == http.MethodHead {
-			return &http.Response{StatusCode: 200, Header: header, Body: io.NopCloser(strings.NewReader(""))}, nil
-		}
-		assert.Equal(t, "bytes=0-3", r.Header.Get("Range"))
-		header.Set("Content-Range", "bytes 0-3/10")
-		return &http.Response{StatusCode: 206, Header: header, Body: io.NopCloser(strings.NewReader("vide"))}, nil
-	})
 	router := gin.New()
 	router.Use(middleware.TokenOrTaskArtifactAccessAuth("key", "artifact_key"))
 	router.GET("/v1/tasks/:key/artifacts/:artifact_key/content", TaskArtifactContent)
@@ -79,47 +77,24 @@ func TestMiniMaxDashboardArtifactsDeliverFrozenVideo(t *testing.T) {
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(method, artifact.ContentURL, nil)
-		if method == http.MethodGet {
-			r.Header.Set("Range", "bytes=0-3")
-		}
 		router.ServeHTTP(w, r)
-		assert.Equal(t, "video/mp4", w.Header().Get("Content-Type"))
-		assert.Equal(t, "private, no-store", w.Header().Get("Cache-Control"))
-		if method == http.MethodGet {
-			assert.Equal(t, http.StatusPartialContent, w.Code)
-			assert.Equal(t, "vide", w.Body.String())
-			assert.Equal(t, "bytes 0-3/10", w.Header().Get("Content-Range"))
-		} else {
-			assert.Equal(t, http.StatusOK, w.Code)
-			assert.Empty(t, w.Body.String())
-			assert.Equal(t, "10", w.Header().Get("Content-Length"))
-		}
+		assert.Equal(t, http.StatusFound, w.Code, "hosted delivery must redirect, not stream")
+		assert.Contains(t, w.Header().Get("Location"), "videos/tasks/"+id+"/video")
+		assert.NotContains(t, w.Header().Get("Location"), "8.8.8.8")
 	}
-	assert.Equal(t, 2, mediaCalls)
-	assert.Equal(t, before+1, fx.queryCalls.Load(), "cold lookup queries once; HEAD reuses the temporary URL")
-	for _, upstreamStatus := range []int{http.StatusFound, http.StatusNotFound} {
-		t.Run(http.StatusText(upstreamStatus), func(t *testing.T) {
-			calls := 0
-			mediaClient.Transport = fetchModelsRoundTripper(func(r *http.Request) (*http.Response, error) {
-				calls++
-				assert.Equal(t, "https://8.8.8.8/video.mp4", r.URL.String())
-				return &http.Response{StatusCode: upstreamStatus, Header: http.Header{"Location": {"https://8.8.4.4/other.mp4"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
-			})
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, artifact.ContentURL, nil))
-			assert.Equal(t, http.StatusBadGateway, w.Code)
-			assert.Empty(t, w.Header().Get("Location"))
-			assert.Equal(t, 1, calls, "media redirects must not be followed")
-			assert.EqualValues(t, model.TaskStatusSuccess, fx.loadTask(id).Status)
-			assert.Equal(t, model.TaskBillingStateSettled, fx.loadTask(id).BillingState)
-		})
-	}
+	assert.Equal(t, before, fx.queryCalls.Load(), "client delivery must not query the provider")
 	assert.EqualValues(t, 1, fx.createCalls.Load())
 	assert.Equal(t, quota, fx.userQuota(), "artifact delivery never charges again")
+	assert.EqualValues(t, model.TaskStatusSuccess, fx.loadTask(id).Status)
+	assert.Equal(t, model.TaskBillingStateSettled, fx.loadTask(id).BillingState)
 }
 
-func TestMiniMaxArtifactContentKeepsSSRFProtection(t *testing.T) {
+// 客户端内容路径零回源：即使登记的上游地址是私网地址，交付也只重定向本站
+// 签名地址；SSRF 边界由转存 worker 在读取上游时执行（见 service 测试）。
+func TestMiniMaxArtifactContentDeliveryDoesNotFetchUpstream(t *testing.T) {
 	fx := newMiniMaxFundsFixture(t)
+	require.NoError(t, fx.db.AutoMigrate(&model.Option{}, &model.TaskVideoResultObject{}))
+	setupSeedanceArtifactStorage(t)
 	id := decodeSeedanceFundsCreateID(t, fx.submitCreateBody(`{"model":"customer-video","content":[{"type":"text","text":"A landscape"}],"duration":6,"resolution":"768p","ratio":"16:9"}`))
 	task := fx.loadTask(id)
 	fx.queryBodyRes.Store(strings.Replace(minimaxSuccess, "8.8.8.8", "127.0.0.1", 1))
@@ -128,13 +103,14 @@ func TestMiniMaxArtifactContentKeepsSSRFProtection(t *testing.T) {
 	system_setting.GetFetchSetting().EnableSSRFProtection = true
 	system_setting.GetFetchSetting().AllowPrivateIp = false
 	t.Cleanup(func() { *system_setting.GetFetchSetting() = previous })
-	client := service.GetSSRFProtectedHTTPClient()
-	transport := client.Transport
-	t.Cleanup(func() { client.Transport = transport })
-	client.Transport = fetchModelsRoundTripper(func(r *http.Request) (*http.Response, error) {
-		t.Error("blocked media must not reach the transport")
-		return nil, errors.New("unexpected media fetch")
-	})
+	claimed, err := model.ClaimVideoResultObjects(5, "artifact-runner", common.GetTimestamp(), 1800)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	won, err := model.FinishVideoResultObjectReady(claimed[0].ID, "artifact-runner",
+		model.VideoResultStorageLocation{Backend: "s3", Endpoint: "http://oss.example.test", Bucket: "video-bucket"},
+		"videos/tasks/"+id+"/video", "video/mp4", 10, common.GetTimestamp())
+	require.NoError(t, err)
+	require.True(t, won)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Set("id", task.UserId)
@@ -142,12 +118,13 @@ func TestMiniMaxArtifactContentKeepsSSRFProtection(t *testing.T) {
 	c.Params = gin.Params{{Key: "key", Value: id}, {Key: "artifact_key", Value: "video"}}
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/tasks/"+id+"/artifacts/video/content", nil)
 	TaskArtifactContent(c)
-	assert.Equal(t, http.StatusForbidden, w.Code)
-	assert.Contains(t, w.Body.String(), "content_url_not_allowed")
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Contains(t, w.Header().Get("Location"), "video-bucket")
+	assert.NotContains(t, w.Header().Get("Location"), "127.0.0.1")
 }
 
 func TestMiniMaxArtifactsRejectUnavailableAndForeignResources(t *testing.T) {
-	for _, scenario := range []string{"pending", "failed", "deleted", "foreign_user", "foreign_app", "missing_upstream_id", "wrong_artifact", "different_part", "missing_frozen_key", "missing_plugin"} {
+	for _, scenario := range []string{"pending", "failed", "deleted", "foreign_user", "foreign_app", "missing_upstream_id", "wrong_artifact", "different_part", "missing_frozen_key", "missing_plugin", "delivery_unavailable"} {
 		t.Run(scenario, func(t *testing.T) {
 			task := setupSeedanceArtifactTest(t, "https://example.invalid")
 			task.Platform = "69"
@@ -176,11 +153,20 @@ func TestMiniMaxArtifactsRejectUnavailableAndForeignResources(t *testing.T) {
 			case "different_part":
 				query = "?part=last_frame"
 			case "missing_frozen_key":
-				task.PrivateData.Key = ""
-				status = http.StatusBadGateway
+				// 冻结凭据只影响后台转存；客户端交付按登记事实表达。
+				status = http.StatusGone
 			case "missing_plugin":
 				task.PrivateData.Execution = nil
-				status = http.StatusBadGateway
+				status = http.StatusGone
+			case "delivery_unavailable":
+				row := model.TaskVideoResultObject{
+					TaskID: task.TaskID, Part: model.TaskVideoResultPartVideo,
+					UserID: task.UserId, AppID: task.AppID,
+					Status: model.TaskVideoResultStatusUnavailable, LastError: "upstream result expired",
+					CreatedAt: common.GetTimestamp(), UpdatedAt: common.GetTimestamp(),
+				}
+				require.NoError(t, model.DB.Create(&row).Error)
+				status = http.StatusGone
 			}
 			require.NoError(t, model.DB.Save(task).Error)
 			w := httptest.NewRecorder()
@@ -191,7 +177,7 @@ func TestMiniMaxArtifactsRejectUnavailableAndForeignResources(t *testing.T) {
 			c.Request = httptest.NewRequest(http.MethodGet, "/v1/tasks/"+task.TaskID+"/artifacts/"+artifact+"/content"+query, nil)
 			TaskArtifactContent(c)
 			assert.Equal(t, status, w.Code, w.Body.String())
-			if scenario == "wrong_artifact" || scenario == "different_part" || scenario == "missing_frozen_key" || scenario == "missing_plugin" {
+			if scenario == "wrong_artifact" || scenario == "different_part" || scenario == "missing_frozen_key" || scenario == "missing_plugin" || scenario == "delivery_unavailable" {
 				return
 			}
 			w = httptest.NewRecorder()

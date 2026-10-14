@@ -15,7 +15,7 @@ import (
 func TestEvidenceReadabilityAcrossStoreRestart(t *testing.T) {
 	oldConfig, oldStore := system_setting.GetTaskRequestEvidenceConfig(), evidenceObjectStore
 	t.Cleanup(func() { system_setting.SetTaskRequestEvidenceConfig(oldConfig); evidenceObjectStore = oldStore })
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), MaxBodyBytes: 1024, MaxResponseBytes: 1024, WriteTimeoutSeconds: 5}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 7, MaxBodyBytes: 1024, MaxResponseBytes: 1024, WriteTimeoutSeconds: 5}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, InitTaskRequestEvidenceStore(config))
 	store := GetTaskRequestEvidenceStore()
@@ -75,7 +75,8 @@ func TestEvidenceReadabilityAcrossStoreRestart(t *testing.T) {
 	assert.Equal(t, "integrity_failed", status)
 	_, status = ReadEvidenceEventBody(&model.TaskRequestEvidenceEvent{ObjectKey: "test"}, false)
 	assert.Equal(t, "read_failed", status)
+	// 关闭采集只停止新增正文：期限内历史读取继续，不被采集开关阻断。
 	system_setting.SetTaskRequestEvidenceConfig(system_setting.TaskRequestEvidenceConfig{Enabled: false})
 	_, status = ReadEvidenceEventBody(event, false)
-	assert.Equal(t, "storage_unavailable", status)
+	assert.Equal(t, "integrity_failed", status)
 }
