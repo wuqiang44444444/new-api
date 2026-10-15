@@ -250,6 +250,27 @@ func deleteEvidenceObjects(ctx context.Context, store service.TaskRequestEvidenc
 	if !ok {
 		return false
 	}
+	// The accepted namespace is closed. Reclaim every remaining body/staging
+	// file even when its event row is missing or came from a different backup.
+	if err := store.WalkEvidenceFiles(ctx, evidenceID, func(file service.EvidenceStoredFile) error {
+		size, err := store.Delete(file.Key)
+		if err != nil {
+			return err
+		}
+		if size > 0 {
+			stats.DeletedFiles++
+			stats.FreedBytes += size
+		} else {
+			stats.MissingFiles++
+		}
+		return nil
+	}); err != nil {
+		stats.ErrorCategory = "delete_failed"
+		if ctx.Err() != nil {
+			stats.ErrorCategory = "cancelled"
+		}
+		return false
+	}
 	if err := store.RemoveEmptyEvidenceDir(evidenceID); err != nil {
 		stats.ErrorCategory = "directory_cleanup_failed"
 		var nonEmpty *service.EvidenceDirectoryNotEmptyError

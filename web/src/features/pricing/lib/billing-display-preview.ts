@@ -23,10 +23,14 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type { BillingDisplayProjection } from '../types'
+import type { TokenVariable } from './billing-expression/types'
 
 export type BillingExprPreviewSample = {
   /** openai: prompt 已含缓存等子类；anthropic: prompt 为纯文本输入。 */
-  usage_semantic?: 'openai' | 'anthropic'
+  usage_semantic?: 'openai' | 'anthropic' | 'normalized'
+  /** Already billable dimensions; never normalize cache counts twice. */
+  normalized_usage?: Partial<Record<TokenVariable, number>>
+  image_count?: number
   prompt_tokens?: number
   completion_tokens?: number
   cache_read_tokens?: number
@@ -52,6 +56,7 @@ export type BillingExprPreviewItem = {
 }
 
 export type BillingExprPreviewEvaluation = {
+  billing_unit?: 'token' | 'request'
   pricing_time: string
   usage_semantic: string
   normalized_usage: Record<string, number>

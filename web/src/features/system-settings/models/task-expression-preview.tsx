@@ -234,6 +234,12 @@ export function TaskExpressionPreview(props: {
           <p className='text-muted-foreground text-xs'>
             {t('Matched tier')}: {result.evaluation.matched_tier || '—'}
           </p>
+          {result.evaluation.usd_exchange_rate && (
+            <p className='text-muted-foreground text-xs'>
+              {t('Applied exchange rate (CNY/USD)')}:{' '}
+              {result.evaluation.usd_exchange_rate.rate}
+            </p>
+          )}
           {result.evaluation.saturated && (
             <p>{t('The sample exceeds the quota limit.')}</p>
           )}

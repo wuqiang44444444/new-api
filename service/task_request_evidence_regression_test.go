@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"mime/multipart"
@@ -140,10 +141,14 @@ func (unavailableEvidenceStore) PutEventBody(int64, int64, []byte) error {
 	return errors.New("unavailable")
 }
 
-func (unavailableEvidenceStore) Put(string, []byte) error           { return errors.New("unavailable") }
-func (unavailableEvidenceStore) Get(string) ([]byte, error)         { return nil, errors.New("unavailable") }
-func (unavailableEvidenceStore) Delete(string) (int64, error)       { return 0, errors.New("unavailable") }
-func (unavailableEvidenceStore) RemoveEmptyEvidenceDir(int64) error { return nil }
+func (unavailableEvidenceStore) Put(string, []byte) error             { return errors.New("unavailable") }
+func (unavailableEvidenceStore) Get(string) ([]byte, error)           { return nil, errors.New("unavailable") }
+func (unavailableEvidenceStore) Delete(string) (int64, error)         { return 0, errors.New("unavailable") }
+func (unavailableEvidenceStore) RemoveEmptyEvidenceDir(int64) error   { return nil }
+func (unavailableEvidenceStore) EvidenceNamespaces() ([]int64, error) { return nil, nil }
+func (unavailableEvidenceStore) WalkEvidenceFiles(context.Context, int64, func(EvidenceStoredFile) error) error {
+	return errors.New("unavailable")
+}
 
 func TestEvidenceResponseStorageFailureLeavesUnavailableEvent(t *testing.T) {
 	setupEvidenceTestEnv(t)

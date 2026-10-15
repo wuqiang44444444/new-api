@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -43,7 +44,7 @@ func cleanupEvidenceDatabase(ctx context.Context, store service.TaskRequestEvide
 		}
 	}
 	orphanCutoff := stats.Cutoff - service.EvidenceRetentionSeconds()
-	if stats.TargetTimestamp > 0 && stats.TargetTimestamp < orphanCutoff {
+	if stats.TargetTimestamp > 0 {
 		orphanCutoff = stats.TargetTimestamp
 	}
 	var orphanCursor int64 = -1
@@ -83,6 +84,58 @@ func cleanupEvidenceDatabase(ctx context.Context, store service.TaskRequestEvide
 		}
 		if len(ids) < 100 {
 			break
+		}
+	}
+	// File-only namespaces have no index or event from which to discover them.
+	// Their file timestamps supply the finite retention anchor.
+	namespaces, err := store.EvidenceNamespaces()
+	if err != nil {
+		return err
+	}
+	for _, id := range namespaces {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if id > 0 {
+			_, exists, err := model.GetTaskRequestEvidenceById(id)
+			if err != nil {
+				return err
+			}
+			if exists {
+				continue // Live indexes keep their own creation/accepted-cleanup scope.
+			}
+		}
+		if err := store.WalkEvidenceFiles(ctx, id, func(file service.EvidenceStoredFile) error {
+			if file.ModifiedAt >= orphanCutoff {
+				return nil
+			}
+			size, err := store.Delete(file.Key)
+			if err != nil {
+				return err
+			}
+			if size > 0 {
+				stats.DeletedFiles++
+				stats.FreedBytes += size
+			} else {
+				stats.MissingFiles++
+			}
+			return nil
+		}); err != nil {
+			stats.FailedItems++
+			stats.ErrorCategory = "delete_failed"
+			continue
+		}
+		if id > 0 {
+			if err := store.RemoveEmptyEvidenceDir(id); err != nil {
+				var nonEmpty *service.EvidenceDirectoryNotEmptyError
+				if !errors.As(err, &nonEmpty) {
+					stats.FailedItems++
+					stats.ErrorCategory = "directory_cleanup_failed"
+				}
+			}
+		}
+		if err := persistProgress(); err != nil {
+			return err
 		}
 	}
 	return nil

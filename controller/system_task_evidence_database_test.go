@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -187,4 +188,48 @@ func TestEvidenceDatabaseCleanupPublishesProgressBeforeCompletion(t *testing.T) 
 	require.NoError(t, common.UnmarshalJsonStr(finished.Result, &result))
 	assert.EqualValues(t, 501, result.DeletedEvents)
 	assert.EqualValues(t, 1, result.DeletedIndexes)
+}
+
+func TestEvidenceFilesystemRetentionCoversFileOnlyOrphans(t *testing.T) {
+	store, dir := setupEvidenceCleanupEnv(t)
+	const now int64 = 1700000000
+	cutoff := now - 7*86400
+	live := &model.TaskRequestEvidence{CreatedAt: common.GetTimestamp()}
+	require.NoError(t, model.CreateTaskRequestEvidence(live))
+	for _, item := range []struct {
+		key      string
+		modified int64
+	}{
+		{"987654/old.bin", cutoff - 1},
+		{"987654/boundary.bin", cutoff},
+		{"987655/new.bin", now},
+		{"loose-old.bin", cutoff - 1},
+		{service.EvidenceObjectKey(live.Id, 123456), cutoff - 1},
+	} {
+		require.NoError(t, store.Put(item.key, []byte("orphan fixture")))
+		modified := time.Unix(item.modified, 0)
+		require.NoError(t, os.Chtimes(filepath.Join(dir, item.key), modified, modified))
+	}
+	stats := evidenceRetentionStats{Cutoff: now}
+	require.NoError(t, cleanupEvidenceDatabase(context.Background(), store, &stats, func() error { return nil }))
+	assert.EqualValues(t, 2, stats.DeletedFiles)
+	assert.Positive(t, stats.FreedBytes)
+	for _, key := range []string{"987654/old.bin", "loose-old.bin"} {
+		_, err := os.Stat(filepath.Join(dir, key))
+		assert.True(t, os.IsNotExist(err))
+	}
+	for _, key := range []string{"987654/boundary.bin", "987655/new.bin", service.EvidenceObjectKey(live.Id, 123456)} {
+		_, err := os.Stat(filepath.Join(dir, key))
+		assert.NoError(t, err)
+	}
+	// Root's explicit cutoff applies to orphan file time as well as index time.
+	stats = evidenceRetentionStats{Cutoff: now, TargetTimestamp: now + 1}
+	require.NoError(t, cleanupEvidenceDatabase(context.Background(), store, &stats, func() error { return nil }))
+	assert.EqualValues(t, 2, stats.DeletedFiles)
+	_, err := os.Stat(filepath.Join(dir, "987654"))
+	assert.True(t, os.IsNotExist(err))
+	_, err = os.Stat(filepath.Join(dir, "987655"))
+	assert.True(t, os.IsNotExist(err))
+	_, err = os.Stat(filepath.Join(dir, service.EvidenceObjectKey(live.Id, 123456)))
+	assert.NoError(t, err)
 }

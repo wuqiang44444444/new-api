@@ -36,6 +36,9 @@ func persistTaskEvidenceBodyUsing(event *model.TaskRequestEvidenceEvent, body []
 		event.CreatedAt = common.GetTimestamp()
 	}
 	if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil {
+		if errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
+			return nil // Retention ends observation, never the business operation.
+		}
 		return evidenceUnavailableFailure(
 			TaskRequestEvidenceCategoryEventDatabase,
 			TaskRequestEvidenceStageEventReserve,
@@ -55,16 +58,12 @@ func persistTaskEvidenceBodyUsing(event *model.TaskRequestEvidenceEvent, body []
 			source,
 		).WithCause(closedErr)
 	}
+	if closed {
+		return nil
+	}
 	var failure *TaskRequestEvidenceError
 	var payload []byte
-	if closed {
-		// 已到期索引不追加正文；事件保持 unavailable，读取侧按到期时间拒绝。
-		failure = evidenceUnavailableFailure(
-			TaskRequestEvidenceCategoryUnavailable,
-			TaskRequestEvidenceStageObjectWrite,
-			source,
-		).WithCause(errors.New("evidence body expired"))
-	} else if p, redactErr := redact(body, event.ContentType); redactErr != nil {
+	if p, redactErr := redact(body, event.ContentType); redactErr != nil {
 		failure = evidenceRedactionFailure(redactErr, source, evidenceContentTypeRequiresJSON(event.ContentType))
 	} else {
 		payload = p
@@ -76,6 +75,9 @@ func persistTaskEvidenceBodyUsing(event *model.TaskRequestEvidenceEvent, body []
 				source,
 			).WithCause(errors.New("evidence store not initialized"))
 		} else if putErr := store.PutEventBody(event.EvidenceId, event.Id, payload); putErr != nil {
+			if errors.Is(putErr, model.ErrTaskRequestEvidenceBodyClosed) {
+				return nil // The publication lock rejected a late object.
+			}
 			failure = evidenceStoreWriteFailure(putErr, source)
 		}
 	}
@@ -102,6 +104,9 @@ func persistTaskEvidenceBodyUsing(event *model.TaskRequestEvidenceEvent, body []
 		event.Detail = evidenceMarshalDetail(detail)
 	}
 	if updateErr := model.FinishTaskRequestEvidenceEvent(event); updateErr != nil {
+		if failure == nil && errors.Is(updateErr, model.ErrTaskRequestEvidenceBodyClosed) {
+			return nil
+		}
 		if failure != nil {
 			// 双重故障：主因保持最初处理故障，完成更新失败作为次因保留。
 			failure.Secondary = updateErr

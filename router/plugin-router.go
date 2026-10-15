@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -273,6 +274,7 @@ func (b *pluginGenerationBuilder) buildInnerEngine(generation *jsplugin.RoutingG
 		return nil, "", err
 	}
 	engine.Use(importPluginDispatchState())
+	engine.Use(service.APIRequestEvidence())
 	engine.Use(pluginRouteRecovery())
 	engine.Use(middleware.BodyStorageCleanup())
 	engine.NoMethod(func(c *gin.Context) {

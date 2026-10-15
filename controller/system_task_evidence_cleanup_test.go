@@ -390,7 +390,7 @@ func TestEvidenceCleanupAcceptsLegacyNullRequestMarker(t *testing.T) {
 	assert.NotZero(t, index.CleanupRequestedAt)
 }
 
-func TestEvidenceCleanupUnaccountedFilesRemainVisibleAndRetryable(t *testing.T) {
+func TestEvidenceCleanupReclaimsFilesWithoutMatchingEvents(t *testing.T) {
 	store, storeDir := setupEvidenceCleanupEnv(t)
 	index := seedExpiredEvidence(t, store, storeDir, 8*86400)
 	unknownPath := filepath.Join(storeDir, strconv.FormatInt(index.Id, 10), ".evidence-crash")
@@ -399,16 +399,18 @@ func TestEvidenceCleanupUnaccountedFilesRemainVisibleAndRetryable(t *testing.T) 
 	evidenceRetentionHandler{}.Run(context.Background(), task, runner)
 	finished, err := model.GetSystemTaskByTaskID(task.TaskID)
 	require.NoError(t, err)
-	assert.Equal(t, model.SystemTaskStatusFailed, finished.Status)
+	assert.Equal(t, model.SystemTaskStatusSucceeded, finished.Status)
 	var stats evidenceRetentionStats
 	require.NoError(t, common.UnmarshalJsonStr(finished.Result, &stats))
-	assert.EqualValues(t, 1, stats.UnattributedFiles)
-	assert.Equal(t, "directory_cleanup_failed", stats.ErrorCategory)
-	index, _, err = model.GetTaskRequestEvidenceById(index.Id)
+	assert.Zero(t, stats.UnattributedFiles)
+	assert.EqualValues(t, 3, stats.DeletedFiles)
+	assert.EqualValues(t, 2, stats.DeletedEvents)
+	assert.Empty(t, stats.ErrorCategory)
+	_, exists, err := model.GetTaskRequestEvidenceById(index.Id)
 	require.NoError(t, err)
-	assert.False(t, index.BodyExpired)
+	assert.False(t, exists)
 	_, err = os.Stat(unknownPath)
-	assert.NoError(t, err)
+	assert.True(t, os.IsNotExist(err))
 }
 
 func TestEvidenceCleanupHealthPersistsBacklogAndFailureAlertFacts(t *testing.T) {

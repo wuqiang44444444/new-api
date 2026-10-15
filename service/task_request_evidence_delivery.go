@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"errors"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/system_setting"
@@ -70,7 +71,7 @@ func FinishTaskRequestEvidenceClientDelivery(c *gin.Context) {
 			event.Phase = model.TaskRequestEvidencePhaseCompleted
 		}
 		event.Detail = evidenceMarshalDetail(map[string]any{"media_body_archived": false})
-		if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil {
+		if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil && !errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
 			common.SysError("evidence client delivery unavailable")
 		}
 	}

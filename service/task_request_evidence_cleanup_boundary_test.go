@@ -30,7 +30,7 @@ func TestEvidenceCleanupBetweenPreparationAndObjectCommitPreventsLateFile(t *tes
 		require.NoError(t, model.MarkTaskRequestEvidenceBodyExpired(index.Id))
 		return body, nil
 	})
-	require.Error(t, err)
+	require.NoError(t, err, "cleanup must stop observation without rejecting the business request")
 	store, ok := GetTaskRequestEvidenceStore().(*localEncryptedEvidenceStore)
 	require.True(t, ok)
 	path, err := store.resolvePath(EvidenceObjectKey(index.Id, event.Id))

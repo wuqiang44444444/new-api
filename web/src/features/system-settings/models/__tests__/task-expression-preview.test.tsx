@@ -43,6 +43,11 @@ const response = {
     pricing_time: '',
     usage_semantic: 'task',
     normalized_usage: {},
+    usd_exchange_rate: {
+      source_key: 'USDExchangeRate',
+      rate: 7,
+      frozen_at: '2026-10-15T00:00:00Z',
+    },
   },
 }
 
@@ -70,6 +75,9 @@ describe('custom task expression preview', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Calculate' }))
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent('$5')
+    )
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Applied exchange rate (CNY/USD): 7'
     )
     expect(previewBillingExpressions).toHaveBeenCalledWith([
       expect.objectContaining({

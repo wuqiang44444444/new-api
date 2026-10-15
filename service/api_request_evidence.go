@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -15,6 +16,8 @@ import (
 
 type apiRequestEvidenceKey struct{}
 
+type apiRequestEvidenceFinishKey struct{}
+
 type taskEvidenceHTTPRequestKey struct{}
 
 // A declaration owns only the first actual HTTP exchange. Redirects keep the
@@ -26,6 +29,16 @@ type taskEvidenceHTTPRequest struct{ claimed atomic.Bool }
 // their durable index; unowned exchanges remain on that same timeline.
 func APIRequestEvidence() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Dynamic plugin routes run in an inner Gin engine. Finish the existing
+		// exchange with its authenticated context instead of starting a second
+		// observer or losing its task session and query parameters.
+		if finish, ok := c.Request.Context().Value(apiRequestEvidenceFinishKey{}).(func(*gin.Context)); ok {
+			if c.FullPath() != "" {
+				defer finish(c)
+			}
+			c.Next()
+			return
+		}
 		if !evidenceEnabled() || mediaEvidenceRequestKind(c.Request.Method, c.Request.URL.Path) == "" {
 			c.Next()
 			return
@@ -50,7 +63,13 @@ func APIRequestEvidence() gin.HandlerFunc {
 		control, _ := c.Request.Context().Value(apiEvidenceHTTPControlKey{}).(*http.ResponseController)
 		writer := &apiEvidenceWriter{imageEvidenceWriter: imageEvidenceWriter{ResponseWriter: original, capture: capture}, control: control}
 		c.Writer = writer
-		defer func() {
+		finish := func(c *gin.Context) {
+			capture.mu.Lock()
+			finished := capture.finished
+			capture.mu.Unlock()
+			if finished {
+				return
+			}
 			if capture.Index.Kind == "task_submit" {
 				kind := mediaEvidenceContextKind(c)
 				if kind == "" {
@@ -135,7 +154,9 @@ func APIRequestEvidence() gin.HandlerFunc {
 				return
 			}
 			capture.FinishClient(status, headers)
-		}()
+		}
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), apiRequestEvidenceFinishKey{}, finish))
+		defer finish(c)
 		c.Next()
 	}
 }
@@ -330,7 +351,7 @@ func persistAPIRequestEvidence(c *ImageErrorEvidence) error {
 				event.Phase = model.TaskRequestEvidencePhaseFailed
 			}
 			event.Detail = evidenceMarshalDetail(map[string]any{"media_body_archived": false, "io_failed": r.Error != ""})
-			if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil {
+			if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil && !errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
 				result = err
 			}
 			continue

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 
@@ -122,7 +123,7 @@ func CaptureTaskContentDeliveryEvidence(taskID string, statusCode int, bytesWrit
 		}),
 		CreatedAt: common.GetTimestamp(),
 	}
-	if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil {
+	if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil && !errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
 		common.SysError("evidence delivery event failed: " + err.Error())
 	}
 }

@@ -46,6 +46,9 @@ type BillingExprPreviewSample struct {
 	Body    map[string]any    `json:"body,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Usage   map[string]any    `json:"usage,omitempty"`
+	// Explicitly normalized browser simulation; never used by relay.
+	NormalizedUsage map[string]*float64 `json:"normalized_usage,omitempty"`
+	ImageCount      *int                `json:"image_count,omitempty"`
 }
 
 // BillingExprPreviewItem 是一次批量试算中的单项。
@@ -73,6 +76,7 @@ type BillingExprPreviewEvaluation struct {
 	// UsdExchangeRate 是本次试算实际采用的系统汇率及其冻结时刻；表达式
 	// 不依赖 usd_exchange_rate() 时为空。方向固定为 CNY/USD。
 	UsdExchangeRate *billingexpr.ExchangeRateContext `json:"usd_exchange_rate,omitempty"`
+	BillingUnit     billingexpr.BillingUnit          `json:"billing_unit,omitempty"`
 }
 
 // BillingExprPreviewItemResult 是单项试算结果；Error 非空表示该表达式
@@ -134,8 +138,14 @@ func evaluateBillingExpressionPreview(expression string, sample *BillingExprPrev
 	if usageSemantic == "" {
 		usageSemantic = "openai"
 	}
-	if usageSemantic != "openai" && usageSemantic != "anthropic" {
-		return nil, fmt.Errorf("usage_semantic must be openai or anthropic")
+	if usageSemantic != "openai" && usageSemantic != "anthropic" && usageSemantic != "normalized" {
+		return nil, fmt.Errorf("Select OpenAI, Anthropic or normalized usage semantics.")
+	}
+	if sample.NormalizedUsage != nil && usageSemantic != "normalized" {
+		return nil, fmt.Errorf("Normalized token counts require normalized usage semantics.")
+	}
+	if sample.ImageCount != nil && (*sample.ImageCount < 1 || *sample.ImageCount > dto.MaxImageN) {
+		return nil, fmt.Errorf("image_count must be between 1 and %d", dto.MaxImageN)
 	}
 	pricingTime := time.Now()
 	if raw := sample.PricingTime; raw != "" {
@@ -181,6 +191,12 @@ func evaluateBillingExpressionPreview(expression string, sample *BillingExprPrev
 	}
 
 	params := BuildTieredTokenParams(usage, usageSemantic == "anthropic", billingexpr.UsedVars(expression))
+	if usageSemantic == "normalized" {
+		params, err = normalizedPreviewTokens(sample)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// 服务端读取当前系统设置；客户样本 body/header 不能注入汇率。
 	var rate *billingexpr.ExchangeRateContext
 	if billingexpr.UsesExchangeRate(expression) {
@@ -204,6 +220,7 @@ func evaluateBillingExpressionPreview(expression string, sample *BillingExprPrev
 		Body:         body,
 		Headers:      sample.Headers,
 		ExchangeRate: rate,
+		ImageCount:   sample.ImageCount,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("expression evaluation failed: %v", err)
@@ -223,5 +240,6 @@ func evaluateBillingExpressionPreview(expression string, sample *BillingExprPrev
 		RequestRules:    outcome.RequestRules,
 		Saturated:       outcome.Clamp != nil,
 		UsdExchangeRate: rate,
+		BillingUnit:     outcome.BillingUnit,
 	}, nil
 }

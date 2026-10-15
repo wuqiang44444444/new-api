@@ -41,25 +41,14 @@ import {
   formatPricingAmount,
   type PricingCurrency,
 } from '@/features/model-pricing/currency'
-import { useBillingTime } from '@/features/pricing/hooks/use-billing-time'
+import type { BillingExprPreviewSample } from '@/features/pricing/lib/billing-display-preview'
 import { formatBillingCondition } from '@/features/pricing/lib/billing-expression/condition-display'
 import { compileBillingExpression } from '@/features/pricing/lib/billing-expression/parser'
-import { evaluateBillingExpression } from '@/features/pricing/lib/billing-expression/runtime'
-import type {
-  BillingSimulationContext,
-  DiagnosticCode,
-} from '@/features/pricing/lib/billing-expression/types'
+import type { BillingSimulationContext } from '@/features/pricing/lib/billing-expression/types'
 import { taskPriceLabel } from '@/features/pricing/lib/task-price-display'
 import type { BillingUsageSchema } from '@/features/pricing/types'
 
-const DIAGNOSTIC_LABELS: Record<DiagnosticCode, string> = {
-  syntax: 'Invalid expression syntax',
-  unsupported: 'This expression cannot be simulated in the browser.',
-  missing_context: 'Simulation context is missing.',
-  type: 'Expression argument types do not match.',
-  number: 'Billing values must be finite and non-negative.',
-  limit: 'This expression exceeds the browser simulation limits.',
-}
+import { useBillingExpressionPreview } from './use-billing-expression-preview'
 
 type RequestSimulationProps = {
   expression: string
@@ -82,8 +71,6 @@ export function RequestSimulation(props: RequestSimulationProps) {
     () => compileBillingExpression(props.expression),
     [props.expression]
   )
-  const usesImageCount =
-    compiled.status === 'ready' && compiled.variables.has('image_count')
   const booleanFields = Object.entries(props.usageSchema ?? {}).filter(
     ([, field]) => field.type === 'boolean'
   )
@@ -103,12 +90,7 @@ export function RequestSimulation(props: RequestSimulationProps) {
   const [headers, setHeaders] = useState('{}')
   const [timeMode, setTimeMode] = useState('current')
   const [fixedTime, setFixedTime] = useState(() => new Date().toISOString())
-  const liveTime = useBillingTime(
-    props.expression,
-    open && timeMode === 'current'
-  )
-
-  const result = useMemo(() => {
+  const input = useMemo(() => {
     if (!open) return null
     let requestBody: unknown
     let requestHeaders: unknown
@@ -141,7 +123,7 @@ export function RequestSimulation(props: RequestSimulationProps) {
         inputError: 'Request headers must be a JSON object with string values.',
       }
     }
-    let now = liveTime === undefined ? new Date() : new Date(liveTime)
+    let now: Date | undefined
     if (timeMode === 'fixed') {
       if (
         !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.test(
@@ -169,16 +151,32 @@ export function RequestSimulation(props: RequestSimulationProps) {
         return { inputError: 'Simulation context is missing.' }
       }
     }
-    return evaluateBillingExpression(props.expression, {
-      imageCount: Number(imageCount),
-      tokens: props.tokens,
-      usage,
-      now,
-      request: {
-        body: requestBody,
-        headers: requestHeaders as Record<string, string>,
-      },
-    })
+    const sample: BillingExprPreviewSample = {
+      pricing_time: now?.toISOString(),
+      body: requestBody as Record<string, unknown>,
+      headers: requestHeaders as Record<string, string>,
+    }
+    if (props.mode === 'token') {
+      sample.usage_semantic = 'normalized'
+      sample.normalized_usage = props.tokens ?? {}
+      sample.image_count = Number(imageCount)
+    } else {
+      sample.usage = {}
+      for (const [field, value] of Object.entries(usage ?? {})) {
+        if (
+          typeof value !== 'number' &&
+          typeof value !== 'string' &&
+          typeof value !== 'boolean'
+        ) {
+          return {
+            inputError:
+              'Task usage samples must contain numbers, strings or booleans.',
+          }
+        }
+        sample.usage[field] = value
+      }
+    }
+    return { sample }
   }, [
     open,
     imageCount,
@@ -186,23 +184,35 @@ export function RequestSimulation(props: RequestSimulationProps) {
     headers,
     timeMode,
     fixedTime,
-    liveTime,
-    props.expression,
     props.tokens,
     usage,
     props.usageSchema,
+    props.mode,
   ])
 
-  let error = ''
-  if (result && 'inputError' in result) error = t(result.inputError)
-  else if (result && result.status !== 'success') {
-    error = `${t(DIAGNOSTIC_LABELS[result.diagnostic.code])} ${result.diagnostic.detail}`
-  }
-  const success =
-    result && 'status' in result && result.status === 'success' ? result : null
+  const preview = useBillingExpressionPreview(
+    input && 'sample' in input
+      ? {
+          key: 'preview',
+          expression: props.expression,
+          task_usage: props.mode === 'task',
+          sample: input.sample,
+        }
+      : null
+  )
+  const error =
+    input && 'inputError' in input
+      ? t(input.inputError ?? '')
+      : t(preview.result?.error ?? '')
+  const success = !error ? preview.result?.evaluation : undefined
+  // The browser parser is only a UI hint. Unknown server functions must not
+  // hide the quantity control or gate server evaluation.
+  const usesImageCount =
+    props.mode === 'token' &&
+    (compiled.status !== 'ready' || compiled.variables.has('image_count'))
 
   const occurrences = new Map<string, number>()
-  const ruleRows = (success?.requestRules ?? []).map((rule) => {
+  const ruleRows = (success?.request_rules ?? []).map((rule) => {
     const base = `${rule.cond}:${rule.multiplier}`
     const occurrence = occurrences.get(base) ?? 0
     occurrences.set(base, occurrence + 1)
@@ -341,6 +351,11 @@ export function RequestSimulation(props: RequestSimulationProps) {
             {t('Time functions use the timezone written in the expression.')}
           </FieldDescription>
         </Field>
+        {preview.pending && (
+          <p role='status' aria-busy='true'>
+            {t('Calculating...')}
+          </p>
+        )}
         {error && (
           <p role='alert' className='text-destructive text-sm'>
             {error}
@@ -353,18 +368,24 @@ export function RequestSimulation(props: RequestSimulationProps) {
           >
             <p className='font-medium'>
               {t('Simulated request cost')}:{' '}
-              {formatPricingAmount(
-                success.cost / (props.mode === 'token' ? 1_000_000 : 1),
-                props.currency
-              )}
-              {success.billingUnit === 'request' && `/${t('request')}`}
+              {formatPricingAmount(success.raw_cost_usd, props.currency)}
+              {success.billing_unit === 'request' && `/${t('request')}`}
             </p>
-            {success.matchedTier && (
+            {success.usd_exchange_rate && (
+              <p className='text-muted-foreground text-xs'>
+                {t('Applied exchange rate (CNY/USD)')}:{' '}
+                {success.usd_exchange_rate.rate}
+              </p>
+            )}
+            {success.saturated && (
+              <p>{t('The sample exceeds the quota limit.')}</p>
+            )}
+            {success.matched_tier && (
               <Badge variant='outline'>
-                {t('Hit tier')}: {success.matchedTier}
+                {t('Hit tier')}: {success.matched_tier}
               </Badge>
             )}
-            {success.requestRules.length > 0 && (
+            {(success.request_rules?.length ?? 0) > 0 && (
               <ul className='space-y-1'>
                 {ruleRows.map((rule) => (
                   <li key={rule.key} className='text-xs break-words'>

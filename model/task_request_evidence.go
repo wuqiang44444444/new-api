@@ -314,8 +314,8 @@ func TaskRequestEvidenceBodyClosedForAppend(evidenceId, now, retentionSeconds in
 			return false, existErr
 		}
 		if !exist {
-			// 预检不授予提交资格；实际提交仍须验证索引存在并取得锁。
-			return false, nil
+			// A deleted index is closed; skip observation without recreating it.
+			return true, nil
 		}
 	}
 	if evidence.BodyExpired || evidence.CleanupRequestedAt > 0 {

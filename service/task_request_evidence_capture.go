@@ -235,6 +235,30 @@ func CaptureSouthboundTaskRequestEvidence(
 			}
 		}
 	}()
+	session.mu.Lock()
+	evidenceID := session.evidenceID
+	attemptSeq := session.bumpAttemptSeq()
+	session.mu.Unlock()
+	if evidenceID <= 0 {
+		return evidenceUnavailableFailure(
+			TaskRequestEvidenceCategoryUnavailable,
+			TaskRequestEvidenceStageIndexCreate,
+			TaskRequestEvidenceSourceSouth,
+		)
+	}
+	closed, err := model.TaskRequestEvidenceBodyClosedForAppend(evidenceID, common.GetTimestamp(), EvidenceRetentionSeconds())
+	if err != nil {
+		return evidenceUnavailableFailure(TaskRequestEvidenceCategoryEventDatabase, TaskRequestEvidenceStageEventReserve, TaskRequestEvidenceSourceSouth).WithCause(err)
+	}
+	if closed {
+		// Cleanup stops capture, including snapshots and storage checks. The
+		// durable sending/held permit remains mandatory for the actual request.
+		if err := verifyEvidenceAttemptBeforeSend(c, info); err != nil {
+			return err
+		}
+		*req = *req.WithContext(context.WithValue(req.Context(), taskEvidenceHTTPRequestKey{}, &taskEvidenceHTTPRequest{}))
+		return nil
+	}
 	body, err := evidenceSnapshotRequestBody(req, evidenceMaxBodyBytes())
 	if err != nil {
 		return err
@@ -247,18 +271,6 @@ func CaptureSouthboundTaskRequestEvidence(
 			TaskRequestEvidenceSourceSouth,
 		).WithCause(errors.New("evidence store not initialized"))
 	}
-	session.mu.Lock()
-	evidenceID := session.evidenceID
-	attemptSeq := session.bumpAttemptSeq()
-	session.mu.Unlock()
-	if evidenceID <= 0 {
-		return evidenceUnavailableFailure(
-			TaskRequestEvidenceCategoryUnavailable,
-			TaskRequestEvidenceStageIndexCreate,
-			TaskRequestEvidenceSourceSouth,
-		)
-	}
-
 	profile := info.ChannelOtherSettings.VideoUpstreamProfile
 	if info.ChannelType == constant.ChannelTypeSeedanceLink {
 		profile = info.ChannelOtherSettings.VideoUpstreamProtocol.TransportProfile()
@@ -507,7 +519,7 @@ func CaptureTaskEvidenceTransportFailure(c *gin.Context) {
 		return
 	}
 	event := &model.TaskRequestEvidenceEvent{EvidenceId: session.evidenceID, Stage: model.TaskRequestEvidenceStageTransport, AttemptSeq: int(session.attemptSeq.Load()), Phase: model.TaskRequestEvidencePhaseFailed, CreatedAt: common.GetTimestamp(), Detail: evidenceMarshalDetail(map[string]any{"response_received": false})}
-	if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil {
+	if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil && !errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
 		common.SysError("evidence transport event unavailable")
 	}
 }

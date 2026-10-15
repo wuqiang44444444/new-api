@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -32,6 +33,10 @@ type TaskRequestEvidenceObjectStore interface {
 	// RemoveEmptyEvidenceDir 在对象全部回收后清理该证据的安全空目录；
 	// 目录不存在视为成功；非空目录报告未归属对象，不猜测删除。
 	RemoveEmptyEvidenceDir(evidenceId int64) error
+	// Inventory is confined to the private evidence root. Namespace zero means
+	// loose root files; positive IDs identify one non-recursive namespace.
+	EvidenceNamespaces() ([]int64, error)
+	WalkEvidenceFiles(context.Context, int64, func(EvidenceStoredFile) error) error
 }
 
 type localEncryptedEvidenceStore struct {
@@ -216,7 +221,7 @@ func (s *localEncryptedEvidenceStore) Delete(key string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			// 对象已不存在视为幂等成功，不重复计入释放空间。

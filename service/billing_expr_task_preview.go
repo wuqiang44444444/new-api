@@ -95,6 +95,7 @@ func previewTaskUsageExpression(item BillingExprPreviewItem) BillingExprPreviewI
 		PricingTime: pricingTime.Format(time.RFC3339), UsageSemantic: "task",
 		RawCostUSD: amount, Quota: outcome.ActualQuotaAfterGroup, MatchedTier: outcome.MatchedTier,
 		RequestRules: outcome.RequestRules, Saturated: outcome.Clamp != nil,
+		UsdExchangeRate: rate, BillingUnit: outcome.BillingUnit,
 	}
 	return result
 }
