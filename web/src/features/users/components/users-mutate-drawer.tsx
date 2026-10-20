@@ -179,13 +179,13 @@ export function UsersMutateDrawer({
         })
         return
       }
-      if (!data.email) {
-        form.setError('email', {
-          type: 'manual',
-          message: t('Email is required'),
-        })
-        return
-      }
+    }
+    if (!isUpdate && !data.email) {
+      form.setError('email', {
+        type: 'manual',
+        message: t('Email is required'),
+      })
+      return
     }
 
     setIsSubmitting(true)
@@ -428,6 +428,7 @@ export function UsersMutateDrawer({
                         <Input
                           {...field}
                           type='password'
+                          autoComplete='new-password'
                           placeholder={
                             isUpdate
                               ? t('Leave empty to keep unchanged')

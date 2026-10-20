@@ -1,7 +1,11 @@
 ---
-status: implemented-pending-acceptance
+status: historical
 owner: Dev Team
 last-reviewed: 2026-10-15
+archived-at: 2026-10-16
+source-path: docs/80-dev/2026-10-15-SQLite到PostgreSQL导入脚本与全量数据复验.md
+superseded-by:
+  - docs/40-operations/SQLite全量迁移PostgreSQL手册.md
 ---
 
 # SQLite 到 PostgreSQL 导入脚本与全量数据复验

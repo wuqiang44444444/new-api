@@ -1,7 +1,11 @@
 ---
-status: implemented-pending-acceptance
+status: historical
 owner: Dev Team
 last-reviewed: 2026-10-14
+archived-at: 2026-10-16
+source-path: docs/80-dev/2026-10-14-SQLite全量迁移PostgreSQL导入与工程验收.md
+superseded-by:
+  - docs/40-operations/SQLite全量迁移PostgreSQL手册.md
 ---
 
 # SQLite 全量迁移 PostgreSQL 导入与工程验收

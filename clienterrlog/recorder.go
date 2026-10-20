@@ -97,6 +97,14 @@ func buildClientErrorEvent(c *gin.Context, startedAt time.Time, status int, mark
 	stream := report.stream
 	detail := copiesDetail(report.detail)
 	report.mu.Unlock()
+	if marker.Module == "relay" {
+		if model == "" {
+			model = SanitizeLogValue(c.GetString("original_model"), 128)
+		}
+		if channelID <= 0 && stage != "channel_selection" {
+			channelID = c.GetInt("channel_id")
+		}
+	}
 	if stream.set {
 		// 最终已是 4xx/5xx 的请求把流式诊断合并进同一条事件，不重复记录。
 		if detail == nil {

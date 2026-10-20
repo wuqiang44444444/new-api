@@ -53,8 +53,6 @@ func APIRequestEvidence() gin.HandlerFunc {
 		if capture.deliveryStatsOnly {
 			capture.remaining = 0
 		}
-		capture.suppressSourceURLs = strings.HasPrefix(c.Request.URL.Path, "/v1/assets") || strings.HasPrefix(c.Request.URL.Path, "/v1/asset-groups")
-		capture.protectCredentials(c.Request.Header)
 		request := capture.requestRecord(c.Request, model.TaskRequestEvidenceStageNorthReceive)
 		if c.Request.Body != nil {
 			c.Request.Body = &imageEvidenceBody{ReadCloser: c.Request.Body, capture: capture, record: request}
@@ -197,21 +195,11 @@ func BindAPIRequestEvidence(c *gin.Context, req *http.Request, info *relaycommon
 }
 
 func (c *ImageErrorEvidence) requestRecord(req *http.Request, stage string) *imageEvidenceExchange {
-	c.protectCredentials(req.Header)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	record := &imageEvidenceExchange{Stage: stage, Method: req.Method, Target: evidenceTargetURL(req), Headers: req.Header.Clone(), ContentType: req.Header.Get("Content-Type"), EOF: req.Body == nil || req.Body == http.NoBody, CreatedAt: common.GetTimestamp()}
 	if req.URL != nil {
-		record.Query = EvidenceRedactQueryParams(req.URL.Query())
-		for key, values := range req.URL.Query() {
-			if isEvidenceCredentialKey(key) || isEvidenceSignedQueryKey(key) {
-				for _, value := range values {
-					if value != "" {
-						c.secrets = append(c.secrets, value)
-					}
-				}
-			}
-		}
+		record.Query = req.URL.Query()
 	}
 	c.records = append(c.records, record)
 	return record
@@ -316,51 +304,18 @@ func persistAPIRequestEvidence(c *ImageErrorEvidence) error {
 			return err
 		}
 	}
-	var result error
 	for seq, r := range c.records {
-		phase := model.TaskRequestEvidencePhaseCompleted
-		complete := r.EOF && !r.Truncated && r.Error == ""
-		if r.Truncated {
-			phase = model.TaskRequestEvidencePhaseTruncated
-		} else if !complete {
-			phase = model.TaskRequestEvidencePhaseFailed
-		}
-		body := append([]byte(nil), r.Body.Bytes()...)
-		headers := EvidenceRedactHeaders(r.Headers)
-		for key, value := range headers {
-			for _, secret := range c.secrets {
-				if value == secret {
-					headers[key] = evidenceRedactedPlaceholder
-					break
-				}
-				if len(secret) >= 8 {
-					headers[key] = strings.ReplaceAll(headers[key], secret, evidenceRedactedPlaceholder)
-				}
-			}
-		}
-
-		formatInvalid := false
-		if _, err := evidenceRedactBody(body, r.ContentType); err != nil {
-			formatInvalid = true
-		}
-		event := &model.TaskRequestEvidenceEvent{EvidenceId: c.Index.Id, AttemptSeq: seq + 1, Stage: r.Stage, Phase: phase, StatusCode: r.Status, Method: r.Method, Target: r.Target, ContentType: r.ContentType, ByteCount: r.Observed, Complete: complete, CreatedAt: r.CreatedAt, Detail: evidenceMarshalDetail(map[string]any{"headers": headers, "query": r.Query, "body_format_invalid": formatInvalid, "body_not_read": !r.EOF && r.Observed == 0, "eof": r.EOF, "truncated": r.Truncated, "read_failed": r.Error != "", "io_failed": r.Error != ""})}
 		if c.deliveryStatsOnly && (r.Stage == model.TaskRequestEvidenceStageClientDelivery || r.Stage == model.TaskRequestEvidenceStageUpstreamResponse) {
-			event.Complete = r.EOF && r.Error == ""
-			event.Phase = model.TaskRequestEvidencePhaseCompleted
-			if !event.Complete {
-				event.Phase = model.TaskRequestEvidencePhaseFailed
-			}
-			event.Detail = evidenceMarshalDetail(map[string]any{"media_body_archived": false, "io_failed": r.Error != ""})
+			event := &model.TaskRequestEvidenceEvent{EvidenceId: c.Index.Id, AttemptSeq: seq + 1, Stage: r.Stage, StatusCode: r.Status, Method: r.Method, Target: r.Target, ContentType: r.ContentType, CreatedAt: r.CreatedAt}
 			if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil && !errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
-				result = err
+				common.SysError("evidence save unavailable: step=event reserve stage=" + r.Stage + " cause=" + common.SanitizeTaskDiagnostic(err.Error()))
 			}
 			continue
 		}
-		if err := persistTaskEvidenceBodyUsing(event, body, TaskRequestEvidenceSourceResponse, c.redactObservedBody); err != nil {
-			result = err
-		}
+		event := &model.TaskRequestEvidenceEvent{EvidenceId: c.Index.Id, AttemptSeq: seq + 1, Stage: r.Stage, StatusCode: r.Status, Method: r.Method, Target: r.Target, ContentType: r.ContentType, CreatedAt: r.CreatedAt}
+		persistRawEvidenceEvent(event, r.Headers, r.Query, r.Body.Bytes(), r.Error)
 	}
-	return result
+	return nil
 }
 
 func HasAPIRequestEvidence(ctx context.Context) bool { return apiEvidenceFrom(ctx) != nil }

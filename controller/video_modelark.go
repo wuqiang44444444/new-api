@@ -202,6 +202,7 @@ func modelArkPageValue(c *gin.Context, name string, fallback int) (int, bool) {
 }
 
 func modelArkVideoError(c *gin.Context, status int, code, message string) {
+	attachModelArkVideoErrorDiagnostics(c, code)
 	c.JSON(status, gin.H{"error": gin.H{
 		"code":       code,
 		"message":    common.MessageWithRequestId(message, c.GetString(common.RequestIdKey)),

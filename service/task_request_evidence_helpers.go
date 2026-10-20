@@ -3,19 +3,11 @@ package service
 import (
 	"errors"
 	"net/http"
-	"regexp"
-	"strings"
 	"unicode/utf8"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 )
-
-func errorString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return "transport_error"
-}
 
 // EvidenceCountingWriter 包装 http.ResponseWriter，统计实际写出的字节数。
 type EvidenceCountingWriter struct {
@@ -44,27 +36,26 @@ func (w *EvidenceCountingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// EvidenceEventPreview separates present readability from historical capture facts.
-type EvidenceEventPreview struct {
-	Text       string
-	BodyStatus string
-}
-
-// ReadEvidenceEventBody is shared by preview and download so both report the
-// same safe error category. Authentication failure cannot distinguish a wrong
-// key from modified ciphertext; never claim that the key alone is the cause.
+// ReadEvidenceEventBody is shared by content view and download so both report
+// the same safe error category. Authentication failure cannot distinguish a
+// wrong key from modified ciphertext; never claim that the key alone is the
+// cause. 新对象不再写正文摘要，仅在历史事件携带 Sha256 时保留既有校验。
 func ReadEvidenceEventBody(event *model.TaskRequestEvidenceEvent, expired bool) ([]byte, string) {
 	if expired {
 		return nil, "expired"
 	}
-	if event.ObjectKey == "" {
+	if event.ObjectKey == "" && event.Id == 0 {
 		return nil, "not_recorded"
 	}
 	store := GetTaskRequestEvidenceStore()
 	if store == nil {
 		return nil, "storage_unavailable"
 	}
-	payload, err := store.Get(event.ObjectKey)
+	key := event.ObjectKey
+	if key == "" {
+		key = EvidenceObjectKey(event.EvidenceId, event.Id)
+	}
+	payload, err := store.Get(key)
 	switch {
 	case errors.Is(err, ErrTaskRequestEvidenceUnavailable):
 		return nil, "missing"
@@ -74,59 +65,41 @@ func ReadEvidenceEventBody(event *model.TaskRequestEvidenceEvent, expired bool) 
 		return nil, "integrity_failed"
 	case err != nil:
 		return nil, "read_failed"
-	case EvidenceSha256Hex(payload) != event.Sha256:
+	case event.Sha256 != "" && EvidenceSha256Hex(payload) != event.Sha256:
 		return nil, "integrity_failed"
 	default:
 		return payload, "available"
 	}
 }
 
-// GetEvidenceEventPreviews reads each object once and masks URLs for every
-// role; unmasked originals are served only by the Root view/download endpoints.
-func GetEvidenceEventPreviews(events []*model.TaskRequestEvidenceEvent, expired bool) map[int64]EvidenceEventPreview {
-	previews := make(map[int64]EvidenceEventPreview, len(events))
-	for _, event := range events {
-		payload, status := ReadEvidenceEventBody(event, expired)
-		preview := EvidenceEventPreview{BodyStatus: status}
-		if status == "available" {
-			contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(event.ContentType, ";", 2)[0]))
-			if strings.HasPrefix(contentType, "audio/") || strings.HasPrefix(contentType, "video/") || strings.HasPrefix(contentType, "image/") || contentType == "application/octet-stream" {
-				preview.BodyStatus = "binary"
-			} else {
-				masked, err := evidenceMaskBodyURLs(payload, event.ContentType)
-				if err != nil && event.Redacted && strings.Contains(event.Detail, `"body_format_invalid":true`) {
-					preview.Text = evidencePreviewText(payload)
-				} else if err != nil {
-					preview.BodyStatus = "read_failed"
-				} else {
-					preview.Text = evidencePreviewText(masked)
-				}
-			}
-		}
-		previews[event.Id] = preview
+// EvidenceEventContent 是管理员选中一条证据后的按需读取结果：
+// 元数据来自对象内嵌信息（历史对象回退事件行 Detail），正文是解密后的
+// 原始字节。解析、美化和预览由展示层触发，这里不做任何内容转换。
+type EvidenceEventContent struct {
+	Meta       *EvidenceObjectMeta
+	Body       []byte
+	BodyStatus string
+}
+
+// ReadEvidenceEventContent 读取并拆分一条事件对象；历史对象按原始正文返回，
+// 元数据尽力从事件行 Detail 解析，解析失败不改变正文的可用性。
+func ReadEvidenceEventContent(event *model.TaskRequestEvidenceEvent, expired bool) (*EvidenceEventContent, string) {
+	payload, status := ReadEvidenceEventBody(event, expired)
+	if status != "available" {
+		return nil, status
 	}
-	return previews
-}
-
-const evidencePreviewLimit = 16 << 10
-
-func evidencePreviewText(payload []byte) string {
-	text := serviceMaskSignedURLs(string(payload))
-	if len(text) > evidencePreviewLimit {
-		text = text[:evidencePreviewLimit]
-		for !utf8.ValidString(text) {
-			text = text[:len(text)-1]
+	meta, body := parseEvidenceObject(payload)
+	if meta == nil && event.Detail != "" {
+		var detail EvidenceObjectMeta
+		if common.UnmarshalJsonStr(event.Detail, &detail) == nil {
+			meta = &detail
 		}
-		text += "…(truncated)"
 	}
-	return text
+	return &EvidenceEventContent{Meta: meta, Body: body, BodyStatus: "available"}, "available"
 }
 
-var evidenceURLPattern = regexp.MustCompile(`(?i)https?://[^\s"<>\x00-\x1f]+`)
-
-func serviceMaskSignedURLs(text string) string {
-	return evidenceURLPattern.ReplaceAllStringFunc(text, EvidenceMaskSignedURLs)
+// EvidenceContentIsText 报告正文是否按 UTF-8 文本返回；二进制内容交给
+// 展示层按 base64 处理，不在读取侧猜测格式。
+func EvidenceContentIsText(body []byte) bool {
+	return utf8.Valid(body)
 }
-
-// EvidenceAdminPreview masks protected URLs before limiting display size.
-func EvidenceAdminPreview(text string) string { return evidencePreviewText([]byte(text)) }
