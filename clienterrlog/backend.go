@@ -25,7 +25,8 @@ func ValidEventType(eventType string) bool {
 }
 
 // BackendEvent 是后台来源（渠道测试、任务失败）的受控事件快照。它不携带 gin
-// Context、请求对象或凭据；全部字符串字段在 buildBackendEvent 中净化限长。
+// Context 或请求对象；元数据字符串在 buildBackendEvent 中净化限长。
+// HTTPExchange 可携带私有冻结字节，序列化落库时才脱敏，不进入元数据或日志行。
 // Status 为 0 表示该事件没有客户 HTTP 状态；渠道测试的上游状态独立保存在 Detail。
 type BackendEvent struct {
 	EventType         string

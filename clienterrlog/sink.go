@@ -190,6 +190,9 @@ func (s *Sink) writeWARN(e Event) {
 			s.failed.Add(1)
 		}
 	}()
+	// WARN uses only safe event metadata. Do not pass private pending HTTP bytes
+	// (or stored snapshot bodies) to the log-line outlet.
+	e.HTTPExchange = nil
 	if err := s.write(e); err != nil {
 		s.failed.Add(1)
 		return

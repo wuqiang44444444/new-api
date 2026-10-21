@@ -1,6 +1,7 @@
 package clienterrlog
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -29,6 +30,9 @@ type HTTPExchange struct {
 	UpstreamRequest  HTTPBody `json:"upstream_request"`
 	UpstreamResponse HTTPBody `json:"upstream_response"`
 	Response         HTTPBody `json:"response"`
+	// Frozen bytes are private and never serialized directly. MarshalJSON applies
+	// redaction at the persistence boundary, on the existing sink worker.
+	pending *frozenHTTPExchange
 }
 
 type exchangeContextKey struct{}
@@ -158,6 +162,8 @@ func (w *diagnosticResponseWriter) WriteString(s string) (int, error) {
 	return w.Write([]byte(s))
 }
 
+// SnapshotHTTPExchange only freezes bounded observations. JSON interpretation is
+// deferred until persistence; no Context or mutable capture buffer escapes.
 func SnapshotHTTPExchange(ctx context.Context) *HTTPExchange {
 	if ctx == nil {
 		return nil
@@ -168,12 +174,33 @@ func SnapshotHTTPExchange(ctx context.Context) *HTTPExchange {
 	}
 	capture.mu.Lock()
 	defer capture.mu.Unlock()
-	return &HTTPExchange{
-		Request:          sanitizeHTTPBody(capture.bodies["request"]),
-		UpstreamRequest:  sanitizeHTTPBody(capture.bodies["upstream_request"]),
-		UpstreamResponse: sanitizeHTTPBody(capture.bodies["upstream_response"]),
-		Response:         sanitizeHTTPBody(capture.bodies["response"]),
+	frozen := &frozenHTTPExchange{}
+	snapshot := &HTTPExchange{pending: frozen}
+	sections := []*HTTPBody{&snapshot.Request, &snapshot.UpstreamRequest, &snapshot.UpstreamResponse, &snapshot.Response}
+	for i, kind := range [...]string{"request", "upstream_request", "upstream_response", "response"} {
+		section := sections[i]
+		section.State = "not_recorded"
+		body := capture.bodies[kind]
+		if body == nil || !body.seen {
+			continue
+		}
+		frozen.bodies[i] = *body
+		frozen.bodies[i].data = bytes.Clone(body.data)
+		section.Status = body.status
+		// Observed availability and status remain immediately usable; only
+		// content-dependent classification waits for serialization.
+		switch {
+		case body.failed:
+			section.State = "read_failed"
+		case body.oversized:
+			section.State = "too_large"
+		case len(body.data) == 0:
+			section.State = "empty"
+		default:
+			section.State = ""
+		}
 	}
+	return snapshot
 }
 
 func sanitizeHTTPBody(body *bodyObservation) HTTPBody {
@@ -191,11 +218,6 @@ func sanitizeHTTPBody(body *bodyObservation) HTTPBody {
 		result.State = "empty"
 	default:
 		sanitized, err := redactDiagnosticJSON(body.data, 0)
-		if err != nil {
-			result.State = "unsupported"
-			return result
-		}
-		sanitized, err = common.IndentJson(sanitized)
 		if err != nil {
 			result.State = "unsupported"
 			return result

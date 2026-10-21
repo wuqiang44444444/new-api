@@ -5,9 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
-	"mime/multipart"
 	"net/http"
-	"net/textproto"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -27,6 +25,9 @@ func TestEvidenceCreateResponseSurvivesPolling(t *testing.T) {
 	require.NoError(t, err)
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
 	require.NoError(t, CaptureSouthboundTaskRequestEvidence(c, req, info))
+	_, err = io.ReadAll(req.Body)
+	require.NoError(t, err)
+	require.NoError(t, req.Body.Close())
 	resp := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(bytes.NewBufferString(`{"status":"created"}`)), Request: req}
 	AttachTaskRequestEvidenceUpstreamResponse(c, resp)
 	_, err = io.ReadAll(resp.Body)
@@ -43,17 +44,15 @@ func TestEvidenceCreateResponseSurvivesPolling(t *testing.T) {
 	require.Len(t, events, 5)
 	keys := map[string]bool{}
 	for _, event := range events {
-		assert.False(t, keys[event.ObjectKey])
-		keys[event.ObjectKey] = true
-		body, err := GetTaskRequestEvidenceStore().Get(event.ObjectKey)
-		require.NoError(t, err)
-		assert.Equal(t, event.Sha256, EvidenceSha256Hex(body))
+		assert.False(t, keys[EvidenceObjectKey(event.EvidenceId, event.Id)])
+		keys[EvidenceObjectKey(event.EvidenceId, event.Id)] = true
+		body := evidenceCapturedBody(t, event)
+		assert.NotEmpty(t, body)
 	}
-	created, err := GetTaskRequestEvidenceStore().Get(events[2].ObjectKey)
-	require.NoError(t, err)
+	created := evidenceCapturedBody(t, events[2])
 	assert.JSONEq(t, `{"status":"created"}`, string(created))
 	assert.Equal(t, events[1].AttemptSeq, events[2].AttemptSeq)
-	require.Error(t, GetTaskRequestEvidenceStore().Put(events[2].ObjectKey, []byte("replacement")))
+	require.Error(t, GetTaskRequestEvidenceStore().Put(EvidenceObjectKey(events[2].EvidenceId, events[2].Id), []byte("replacement")))
 }
 
 type evidenceBrokenReader struct{ done bool }
@@ -67,22 +66,21 @@ func (r *evidenceBrokenReader) Read(p []byte) (int, error) {
 }
 func (*evidenceBrokenReader) Close() error { return nil }
 
-func TestEvidenceResponseCompleteness(t *testing.T) {
+func TestEvidenceResponsePreservesCapturedPrefix(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, contentType string
 		limit                   int64
-		early, broken, complete bool
-		phase                   string
+		early, broken           bool
 	}{
-		{name: "formatted json", body: "{\n \"ok\": true\n}", contentType: "application/json", limit: 1024, complete: true, phase: "completed"},
-		{name: "empty body", limit: 1024, complete: true, phase: "completed"},
-		{name: "whitespace without content type", body: " \r\n", limit: 1024, complete: true, phase: "completed"},
-		{name: "whitespace text", body: " \r\n", contentType: "text/plain", limit: 1024, complete: true, phase: "completed"},
-		{name: "whitespace json", body: " \r\n", contentType: "application/json", limit: 1024, phase: "unavailable"},
-		{name: "whitespace event stream", body: " \r\n", contentType: "text/event-stream", limit: 1024, complete: true, phase: "completed"},
-		{name: "early close", body: "partial", limit: 1024, early: true, phase: "failed"},
-		{name: "read error", limit: 1024, broken: true, phase: "failed"},
-		{name: "single chunk over limit", body: "0123456789", limit: 3, phase: "truncated"},
+		{name: "formatted json", body: "{\n \"ok\": true\n}", contentType: "application/json", limit: 1024},
+		{name: "empty body", limit: 1024},
+		{name: "whitespace without content type", body: " \r\n", limit: 1024},
+		{name: "whitespace text", body: " \r\n", contentType: "text/plain", limit: 1024},
+		{name: "whitespace json", body: " \r\n", contentType: "application/json", limit: 1024},
+		{name: "whitespace event stream", body: " \r\n", contentType: "text/event-stream", limit: 1024},
+		{name: "early close", body: "partial", limit: 1024, early: true},
+		{name: "read error", limit: 1024, broken: true},
+		{name: "single chunk over limit", body: "0123456789", limit: 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setupEvidenceTestEnv(t)
@@ -102,37 +100,20 @@ func TestEvidenceResponseCompleteness(t *testing.T) {
 			require.NoError(t, tee.Close())
 			events := evidenceEventRows(t, evidenceSessionFrom(c).evidenceID)
 			require.Len(t, events, 2)
-			assert.Equal(t, tc.complete, events[1].Complete)
-			assert.Equal(t, tc.phase, events[1].Phase)
-			assert.LessOrEqual(t, events[1].StoredBytes, tc.limit)
+			captured := evidenceCapturedBody(t, events[1])
+			expected := tc.body
+			if tc.early {
+				expected = expected[:2]
+			}
+			if tc.broken {
+				expected = "partial"
+			}
+			expected = expected[:min(int64(len(expected)), tc.limit)]
+			assert.Equal(t, expected, string(captured))
+			assert.Empty(t, events[1].Phase)
+
 		})
 	}
-}
-
-func TestEvidenceMultipartCredentialsAndJSONPreview(t *testing.T) {
-	var buffer bytes.Buffer
-	writer := multipart.NewWriter(&buffer)
-	require.NoError(t, writer.WriteField("token", "credential-secret"))
-	require.NoError(t, writer.WriteField("model", "whisper-1"))
-	h := textproto.MIMEHeader{"Content-Disposition": []string{`form-data; name="file"; filename="audio.wav"`}, "Authorization": []string{"Bearer part-secret"}}
-	part, err := writer.CreatePart(h)
-	require.NoError(t, err)
-	_, err = part.Write([]byte("media"))
-	require.NoError(t, err)
-	require.NoError(t, writer.Close())
-	payload, err := evidenceRedactBody(buffer.Bytes(), writer.FormDataContentType())
-	require.NoError(t, err)
-	assert.NotContains(t, string(payload), "credential-secret")
-	assert.NotContains(t, string(payload), "part-secret")
-	assert.Contains(t, string(payload), "media")
-	assert.Contains(t, string(payload), "whisper-1")
-	for _, body := range []string{`{"content":{"video_url":"https://cdn.example/a?sig=secret"}}`, `{"url":"https://cdn.example/a?x=1\u0026sig=secret"}`} {
-		// Previews mask signed URLs for every role; originals are delivered only
-		// by the Root view/download endpoints after an explicit click.
-		assert.NotContains(t, evidencePreviewText([]byte(body)), "secret")
-	}
-	_, err = evidenceRedactBody([]byte(`{"token":"secret`), "application/json")
-	require.Error(t, err)
 }
 
 type unavailableEvidenceStore struct{}
@@ -163,18 +144,18 @@ func TestEvidenceResponseStorageFailureLeavesUnavailableEvent(t *testing.T) {
 	assert.Equal(t, "audio", string(body))
 	events := evidenceEventRows(t, evidenceSessionFrom(c).evidenceID)
 	require.Len(t, events, 2)
-	assert.Equal(t, "unavailable", events[1].Phase)
-	assert.False(t, events[1].Complete)
-	assert.Empty(t, events[1].ObjectKey)
+
+	_, status := ReadEvidenceEventContent(events[1], false)
+	assert.Equal(t, "read_failed", status)
 }
 
-func TestEvidenceInvalidConfigurationRejectsBeforeSend(t *testing.T) {
+func TestEvidenceInvalidWriteConfigurationDoesNotRejectBusiness(t *testing.T) {
 	setupEvidenceTestEnv(t)
 	config := system_setting.GetTaskRequestEvidenceConfig()
 	config.WriteTimeoutSeconds = 0
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	c := newEvidenceTestContext(t, []byte(`{}`))
-	assert.ErrorIs(t, BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindAudioSpeech), ErrTaskRequestEvidenceUnavailable)
+	assert.NoError(t, BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindAudioSpeech))
 }
 
 func TestEvidenceRecoveredAttemptCannotSendOrRefund(t *testing.T) {
@@ -212,11 +193,10 @@ func TestEvidenceRawPollingPreservesProviderFields(t *testing.T) {
 	require.True(t, exists)
 	events := evidenceEventRows(t, evidence.Id)
 	require.Len(t, events, 1)
-	payload, err := GetTaskRequestEvidenceStore().Get(events[0].ObjectKey)
-	require.NoError(t, err)
+	payload := evidenceCapturedBody(t, events[0])
 	assert.JSONEq(t, raw, string(payload))
 	assert.Equal(t, "polling", events[0].Stage)
-	assert.True(t, events[0].Complete)
+
 }
 
 func TestEvidenceClientResponseCapturesFinalPresentation(t *testing.T) {
@@ -230,9 +210,8 @@ func TestEvidenceClientResponseCapturesFinalPresentation(t *testing.T) {
 	require.Len(t, events, 2)
 	assert.Equal(t, "client_delivery", events[1].Stage)
 	assert.Equal(t, 202, events[1].StatusCode)
-	assert.True(t, events[1].Complete)
-	payload, err := GetTaskRequestEvidenceStore().Get(events[1].ObjectKey)
-	require.NoError(t, err)
+
+	payload := evidenceCapturedBody(t, events[1])
 	assert.JSONEq(t, `{"id":"public-task","status":"queued"}`, string(payload))
 }
 
@@ -246,19 +225,19 @@ func TestEvidenceConcurrentEventsKeepIndependentBodies(t *testing.T) {
 	results := make(chan error, 2)
 	for _, body := range []string{`{"stage":"poll"}`, `{"stage":"delivery"}`} {
 		go func(payload string) {
-			results <- persistTaskEvidenceBody(&model.TaskRequestEvidenceEvent{EvidenceId: index.Id, Stage: model.TaskRequestEvidenceStagePolling, Phase: model.TaskRequestEvidencePhaseCompleted, ContentType: "application/json", Complete: true}, []byte(payload), TaskRequestEvidenceSourceResponse)
+			persistRawEvidenceEvent(&model.TaskRequestEvidenceEvent{EvidenceId: index.Id, Stage: model.TaskRequestEvidenceStagePolling, ContentType: "application/json"}, nil, nil, []byte(payload), "")
+			results <- nil
 		}(body)
 	}
 	require.NoError(t, <-results)
 	require.NoError(t, <-results)
 	events := evidenceEventRows(t, index.Id)
 	require.Len(t, events, 2)
-	assert.NotEqual(t, events[0].ObjectKey, events[1].ObjectKey)
+	assert.NotEqual(t, events[0].Id, events[1].Id)
 	bodies := map[string]bool{}
 	for _, event := range events {
-		body, err := GetTaskRequestEvidenceStore().Get(event.ObjectKey)
-		require.NoError(t, err)
-		assert.Equal(t, event.Sha256, EvidenceSha256Hex(body))
+		body := evidenceCapturedBody(t, event)
+		assert.NotEmpty(t, body)
 		bodies[string(body)] = true
 	}
 	assert.True(t, bodies[`{"stage":"poll"}`])

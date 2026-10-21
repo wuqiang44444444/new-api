@@ -36,7 +36,6 @@ func DoTaskPollingRequestWithEvidence(client *http.Client, req *http.Request, ta
 		for _, capture := range captures {
 			if capture != primary {
 				capture.records = primary.records
-				capture.secrets = primary.secrets
 			}
 			capture.Finish(false)
 		}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -74,51 +73,25 @@ func TestClosedEvidenceSkipsSnapshotsButStillChecksDurableSendPermit(t *testing.
 	}
 }
 
-func TestEvidenceCleanupDoesNotHideRealCaptureFailure(t *testing.T) {
+func TestDurableSendingPermissionIsCheckedAfterEvidenceFactsUpdate(t *testing.T) {
 	setupEvidenceTestEnv(t)
-	index := &model.TaskRequestEvidence{CreatedAt: common.GetTimestamp()}
-	require.NoError(t, model.CreateTaskRequestEvidence(index))
-	event := &model.TaskRequestEvidenceEvent{EvidenceId: index.Id, ContentType: "application/json"}
-	processingErr := errors.New("test redaction processing failure")
-	err := persistTaskEvidenceBodyUsing(event, []byte(`{}`), TaskRequestEvidenceSourceSouth, func([]byte, string) ([]byte, error) {
-		require.NoError(t, model.RequestTaskRequestEvidenceCleanup(index.Id, common.GetTimestamp()))
-		require.NoError(t, model.MarkTaskRequestEvidenceBodyExpired(index.Id))
-		_, err := model.DeleteClosedEvidenceEventBatch(index.Id, 500)
-		require.NoError(t, err)
-		return nil, processingErr
-	})
-	require.ErrorIs(t, err, ErrTaskRequestEvidenceUnavailable)
-	assert.ErrorIs(t, err, processingErr)
-	assert.ErrorIs(t, err, model.ErrTaskRequestEvidenceBodyClosed)
-	var failure *TaskRequestEvidenceError
-	require.ErrorAs(t, err, &failure)
-	assert.Equal(t, TaskRequestEvidenceCategoryProcessing, failure.Category)
-}
-
-func TestEvidenceCleanupAfterPublicationDoesNotRejectCompletion(t *testing.T) {
-	env := setupEvidenceTestEnv(t)
-	index := &model.TaskRequestEvidence{CreatedAt: common.GetTimestamp()}
-	require.NoError(t, model.CreateTaskRequestEvidence(index))
-	event := &model.TaskRequestEvidenceEvent{EvidenceId: index.Id, ContentType: "application/json", Phase: model.TaskRequestEvidencePhaseCompleted, Complete: true}
-	store := GetTaskRequestEvidenceStore()
-	// Execute cleanup at the completion boundary after the body was published.
-	require.NoError(t, model.DB.Callback().Update().Before("gorm:update").Register("cleanup-before-evidence-completion", func(tx *gorm.DB) {
-		if tx.Statement.Schema == nil || tx.Statement.Schema.Table != "task_request_evidence_events" {
+	require.NoError(t, model.DB.AutoMigrate(&model.TaskCreateAttempt{}))
+	attempt := &model.TaskCreateAttempt{AttemptID: "recovered-during-evidence-update", Status: model.TaskCreateAttemptSending, BillingHoldState: model.TaskCreateAttemptBillingHeld}
+	require.NoError(t, model.DB.Create(attempt).Error)
+	c := newEvidenceTestContext(t, []byte(`{}`))
+	require.NoError(t, BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindAudioSpeech))
+	common.SetContextKey(c, constant.ContextKeyTaskCreateAttemptID, int(attempt.ID))
+	require.NoError(t, model.DB.Callback().Update().Before("gorm:update").Register("recover-during-evidence-update", func(tx *gorm.DB) {
+		if tx.Statement.Schema == nil || tx.Statement.Schema.Table != "task_request_evidences" {
 			return
 		}
-		cleanup := tx.Session(&gorm.Session{NewDB: true, SkipDefaultTransaction: true})
-		require.NoError(t, cleanup.Model(&model.TaskRequestEvidence{}).Where("id = ?", index.Id).Updates(map[string]any{"cleanup_requested_at": common.GetTimestamp(), "body_expired": true}).Error)
-		require.NoError(t, cleanup.Where("evidence_id = ?", index.Id).Delete(&model.TaskRequestEvidenceEvent{}).Error)
-		_, err := store.Delete(EvidenceObjectKey(index.Id, event.Id))
-		require.NoError(t, err)
-		require.NoError(t, store.RemoveEmptyEvidenceDir(index.Id))
+		require.NoError(t, tx.Session(&gorm.Session{NewDB: true}).Model(&model.TaskCreateAttempt{}).Where("id = ?", attempt.ID).Update("status", model.TaskCreateAttemptUnknown).Error)
 	}))
-	t.Cleanup(func() { require.NoError(t, model.DB.Callback().Update().Remove("cleanup-before-evidence-completion")) })
-	require.NoError(t, persistTaskEvidenceBody(event, []byte(`{"prompt":"media"}`), TaskRequestEvidenceSourceSouth))
-	var count int64
-	require.NoError(t, model.DB.Model(&model.TaskRequestEvidenceEvent{}).Count(&count).Error)
-	assert.Zero(t, count)
-	entries, err := os.ReadDir(env.storeDir)
+	t.Cleanup(func() { require.NoError(t, model.DB.Callback().Update().Remove("recover-during-evidence-update")) })
+	req, err := http.NewRequest("POST", "https://provider.test/create", bytes.NewReader([]byte(`{}`)))
 	require.NoError(t, err)
-	assert.Empty(t, entries)
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+	require.ErrorIs(t, CaptureSouthboundTaskRequestEvidence(c, req, info), ErrTaskRequestEvidenceUnavailable)
+	assert.True(t, info.SkipRequestRefund)
+	assert.True(t, common.GetContextKeyBool(c, constant.ContextKeyTaskCreateOutcomeUnknown))
 }

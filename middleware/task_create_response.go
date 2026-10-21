@@ -67,6 +67,7 @@ func (w *taskCreateCaptureWriter) Flush() {}
 
 func TaskCreateResponseContract() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		defer service.BeginTaskCreateEvidenceDelivery(c)()
 		defer service.BeginVideoClientDelivery(c)()
 		original := c.Writer
 		capture := &taskCreateCaptureWriter{ResponseWriter: original}

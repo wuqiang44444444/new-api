@@ -25,12 +25,8 @@ func TestEvidenceCleanupBetweenPreparationAndObjectCommitPreventsLateFile(t *tes
 	index := &model.TaskRequestEvidence{CreatedAt: common.GetTimestamp()}
 	require.NoError(t, model.CreateTaskRequestEvidence(index))
 	event := &model.TaskRequestEvidenceEvent{EvidenceId: index.Id, ContentType: "application/json", Phase: model.TaskRequestEvidencePhaseCompleted, Complete: true}
-	err := persistTaskEvidenceBodyUsing(event, []byte(`{"prompt":"example"}`), TaskRequestEvidenceSourceNorth, func(body []byte, _ string) ([]byte, error) {
-		require.NoError(t, model.RequestTaskRequestEvidenceCleanup(index.Id, common.GetTimestamp()))
-		require.NoError(t, model.MarkTaskRequestEvidenceBodyExpired(index.Id))
-		return body, nil
-	})
-	require.NoError(t, err, "cleanup must stop observation without rejecting the business request")
+	require.NoError(t, model.RequestTaskRequestEvidenceCleanup(index.Id, common.GetTimestamp()))
+	persistRawEvidenceEvent(event, nil, nil, []byte(`{"prompt":"example"}`), "")
 	store, ok := GetTaskRequestEvidenceStore().(*localEncryptedEvidenceStore)
 	require.True(t, ok)
 	path, err := store.resolvePath(EvidenceObjectKey(index.Id, event.Id))
@@ -169,7 +165,7 @@ func TestTaskEvidenceNorthFailureRetainsOneClientRejection(t *testing.T) {
 		c.Set("id", 7)
 		c.Set(common.RequestIdKey, "north-rejection")
 		err := BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindVideoTask)
-		require.Error(t, err)
+		require.NoError(t, err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 	})
 	request := httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":`))
@@ -190,7 +186,6 @@ func TestTaskEvidenceNorthFailureRetainsOneClientRejection(t *testing.T) {
 	}
 	require.Len(t, deliveries, 1)
 	assert.Equal(t, http.StatusBadRequest, deliveries[0].StatusCode)
-	body, status := ReadEvidenceEventBody(deliveries[0], false)
-	assert.Equal(t, "available", status)
+	body := evidenceCapturedBody(t, deliveries[0])
 	assert.JSONEq(t, recorder.Body.String(), string(body))
 }

@@ -11,6 +11,9 @@ import (
 // Storage may have waited while recovery changed the attempt. Never send or
 // release funds based on the stale request-local sending state in that case.
 func verifyEvidenceAttemptBeforeSend(c *gin.Context, info *relaycommon.RelayInfo) error {
+	if c == nil {
+		return nil
+	}
 	id := int64(common.GetContextKeyInt(c, constant.ContextKeyTaskCreateAttemptID))
 	if id == 0 {
 		return nil
@@ -20,14 +23,9 @@ func verifyEvidenceAttemptBeforeSend(c *gin.Context, info *relaycommon.RelayInfo
 		return nil
 	}
 	common.SetContextKey(c, constant.ContextKeyTaskCreateOutcomeUnknown, true)
-	info.SkipRequestRefund = true
-	failure := evidenceUnavailableFailure(
-		TaskRequestEvidenceCategorySendUnverifiable,
-		TaskRequestEvidenceStageSendVerify,
-		TaskRequestEvidenceSourceNone,
-	)
-	if err != nil {
-		failure.WithCause(err)
+	if info != nil {
+		info.SkipRequestRefund = true
 	}
+	failure := &TaskRequestEvidenceError{Cause: err}
 	return failure
 }

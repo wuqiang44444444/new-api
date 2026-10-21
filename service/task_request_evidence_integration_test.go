@@ -2,11 +2,13 @@ package service
 
 import (
 	"bytes"
-	"encoding/json"
+	"github.com/QuantumNous/new-api/constant"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -88,96 +90,51 @@ func evidenceEventRows(t *testing.T, evidenceId int64) []*model.TaskRequestEvide
 	return events
 }
 
+// evidenceCapturedBody reads the same selected content contract as the controller.
+func evidenceCapturedBody(t *testing.T, event *model.TaskRequestEvidenceEvent) []byte {
+	t.Helper()
+	content, status := ReadEvidenceEventContent(event, false)
+	require.Equal(t, "available", status)
+	return content.Body
+}
+
 func TestEvidenceEndToEndCaptureFlow(t *testing.T) {
-	env := setupEvidenceTestEnv(t)
-	_ = env
-
-	body := []byte(`{"model":"tts-1","input":"你好","api_key":"sk-must-not-be-stored","max_tokens":256}`)
-	c := newEvidenceTestContext(t, body)
-
-	// 1) 北向采集：同步持久化，凭据脱敏，业务字段保留。
+	setupEvidenceTestEnv(t)
+	raw := []byte(`{ "input":"你好", "api_key":"synthetic", "id":9007199254740993, "input":"duplicate" }`)
+	c := newEvidenceTestContext(t, raw)
 	require.NoError(t, BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindAudioSpeech))
-	session := evidenceSessionFrom(c)
-	require.NotNil(t, session)
-	require.Greater(t, session.evidenceID, int64(0))
-
-	northEvents := evidenceEventRows(t, session.evidenceID)
-	require.Len(t, northEvents, 1)
-	assert.Equal(t, model.TaskRequestEvidenceStageNorthReceive, northEvents[0].Stage)
-	assert.Equal(t, int64(len(body)), northEvents[0].ByteCount)
-	assert.True(t, northEvents[0].Redacted)
-	assert.NotEmpty(t, northEvents[0].ObjectKey)
-	assert.True(t, northEvents[0].Complete)
-
-	northObject, err := GetTaskRequestEvidenceStore().Get(northEvents[0].ObjectKey)
+	id := evidenceSessionFrom(c).evidenceID
+	rows := evidenceEventRows(t, id)
+	require.Len(t, rows, 1)
+	assert.Equal(t, raw, evidenceCapturedBody(t, rows[0]))
+	req, err := http.NewRequest("POST", "https://provider.test/create", bytes.NewReader(raw))
 	require.NoError(t, err)
-	var northBody map[string]any
-	require.NoError(t, json.Unmarshal(northObject, &northBody))
-	// 凭据被占位符替换；max_tokens 等业务字段完整保留。
-	assert.Equal(t, "[REDACTED]", northBody["api_key"])
-	assert.Equal(t, float64(256), northBody["max_tokens"])
-	assert.Equal(t, "你好", northBody["input"])
-	// 完整性校验值与存储正文一致。
-	assert.Equal(t, EvidenceSha256Hex(northObject), northEvents[0].Sha256)
-
-	// 2) 南向采集：最终正文（映射/override 之后）在发送前持久化。
-	fakeProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "audio/mpeg")
-		w.Header().Set("X-Upstream-Request-Id", "up-req-777")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("FAKE-AUDIO-OK"))
-	}))
-	defer fakeProvider.Close()
-
+	req.Header.Set("Authorization", "Bearer synthetic-upstream")
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 5}}
-	info.OriginModelName = "tts-1"
-	info.UpstreamModelName = "tts-1-hd"
-
-	outbound, err := http.NewRequest(http.MethodPost, fakeProvider.URL+"/v1/audio/speech",
-		bytes.NewReader([]byte(`{"model":"tts-1-hd","input":"你好","with_defaults":true,"api_key":"sk-upstream"}`)))
+	info.OriginModelName = "client-model"
+	info.UpstreamModelName = "provider-model"
+	require.NoError(t, CaptureSouthboundTaskRequestEvidence(c, req, info))
+	sent, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
-	outbound.Header.Set("Authorization", "Bearer sk-upstream-credential")
-	outbound.Header.Set("Content-Type", "application/json")
-
-	require.NoError(t, CaptureSouthboundTaskRequestEvidence(c, outbound, info))
-
-	southEvents := evidenceEventRows(t, session.evidenceID)
-	require.Len(t, southEvents, 2)
-	assert.Equal(t, model.TaskRequestEvidenceStageSouthboundSend, southEvents[1].Stage)
-	southObject, err := GetTaskRequestEvidenceStore().Get(southEvents[1].ObjectKey)
+	require.NoError(t, req.Body.Close())
+	assert.Equal(t, raw, sent)
+	resp := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(bytes.NewReader(raw)), Request: req}
+	AttachTaskRequestEvidenceUpstreamResponse(c, resp)
+	received, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	assert.Contains(t, string(southObject), "tts-1-hd")
-	assert.Contains(t, string(southObject), "with_defaults")
-	assert.NotContains(t, string(southObject), "sk-upstream")
-
-	// 索引事实已回填：客户模型、上游模型、渠道。
-	evidenceRow, exists, err := model.GetTaskRequestEvidenceById(session.evidenceID)
-	require.NoError(t, err)
-	require.True(t, exists)
-	assert.Equal(t, "tts-1", evidenceRow.ClientModel)
-	assert.Equal(t, "tts-1-hd", evidenceRow.UpstreamModel)
-	assert.Equal(t, 5, evidenceRow.ChannelID)
-
-	// 3) 实际发送：响应被边转发边捕获，转发内容不被破坏。
-	transportResp, err := http.DefaultClient.Do(outbound)
-	require.NoError(t, err)
-	AttachTaskRequestEvidenceUpstreamResponse(c, transportResp)
-	forwarded, err := io.ReadAll(transportResp.Body)
-	require.NoError(t, err)
-	require.NoError(t, transportResp.Body.Close())
-	assert.Equal(t, "FAKE-AUDIO-OK", string(forwarded))
-
-	// 4) 上游响应事件：转发内容与捕获内容一致，完整性校验匹配。
-	upstreamEvents := evidenceEventRows(t, session.evidenceID)
-	require.Len(t, upstreamEvents, 3)
-	assert.Equal(t, model.TaskRequestEvidenceStageUpstreamResponse, upstreamEvents[2].Stage)
-	assert.Equal(t, http.StatusOK, upstreamEvents[2].StatusCode)
-	assert.Equal(t, int64(len("FAKE-AUDIO-OK")), upstreamEvents[2].ByteCount)
-	require.NotEmpty(t, upstreamEvents[2].ObjectKey)
-	capturedObject, err := GetTaskRequestEvidenceStore().Get(upstreamEvents[2].ObjectKey)
-	require.NoError(t, err)
-	assert.Equal(t, "FAKE-AUDIO-OK", string(capturedObject))
-	assert.Equal(t, EvidenceSha256Hex(capturedObject), upstreamEvents[2].Sha256)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, raw, received)
+	rows = evidenceEventRows(t, id)
+	require.Len(t, rows, 3)
+	for _, event := range rows {
+		assert.Equal(t, raw, evidenceCapturedBody(t, event))
+		assert.Empty(t, event.Phase)
+		assert.Empty(t, event.Sha256)
+		assert.Empty(t, event.Detail)
+	}
+	content, status := ReadEvidenceEventContent(rows[1], false)
+	require.Equal(t, "available", status)
+	assert.Equal(t, []string{"Bearer synthetic-upstream"}, content.Meta.Headers["Authorization"])
 }
 
 // TestEvidenceCaptureSouthboundNilTaskRelayInfo 回归音频等无任务路径：
@@ -213,43 +170,51 @@ func TestEvidenceCaptureSouthboundNilTaskRelayInfo(t *testing.T) {
 	assert.Empty(t, row.ClientProtocol)
 }
 
-func TestEvidenceFailClosedBeforeSend(t *testing.T) {
-	env := setupEvidenceTestEnv(t)
-	_ = env
-
-	body := []byte(`{"model":"tts-1","input":"hi"}`)
-	c := newEvidenceTestContext(t, body)
-	require.NoError(t, BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindAudioSpeech))
-
-	// 存储不可用：南向采集必须返回拒绝边界错误（尚未发送任何字节）。
-	savedStore := evidenceObjectStore
-	evidenceObjectStore = nil
-	defer func() { evidenceObjectStore = savedStore }()
-
-	outbound, err := http.NewRequest(http.MethodPost, "http://127.0.0.1:1/v1", bytes.NewReader([]byte(`{"x":1}`)))
-	require.NoError(t, err)
-	err = CaptureSouthboundTaskRequestEvidence(c, outbound, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}})
-	require.Error(t, err)
-	assert.True(t, IsTaskRequestEvidenceUnavailable(err))
-}
-
-func TestEvidenceBodyTooLargeRejected(t *testing.T) {
-	_ = setupEvidenceTestEnv(t)
-
-	system_setting.SetTaskRequestEvidenceConfig(system_setting.TaskRequestEvidenceConfig{
-		Enabled:          true,
-		StorageDir:       t.TempDir(),
-		EncryptionKeyHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-		MaxBodyBytes:     16,
-	})
-	t.Cleanup(func() {
-		system_setting.SetTaskRequestEvidenceConfig(system_setting.TaskRequestEvidenceConfig{Enabled: false})
-	})
-
-	c := newEvidenceTestContext(t, []byte(`{"model":"tts-1","input":"this body is definitely longer than sixteen bytes"}`))
-	err := BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindAudioSpeech)
-	require.Error(t, err)
-	assert.True(t, IsTaskRequestEvidenceUnavailable(err))
+func TestEvidenceFailureAndLimitsDoNotChangeBusinessBody(t *testing.T) {
+	for _, tc := range []string{"missing store", "failed store", "capture limit", "malformed"} {
+		t.Run(tc, func(t *testing.T) {
+			setupEvidenceTestEnv(t)
+			raw := []byte(`{"api_key":"synthetic`)
+			if tc == "capture limit" {
+				config := system_setting.GetTaskRequestEvidenceConfig()
+				config.MaxBodyBytes = 8
+				system_setting.SetTaskRequestEvidenceConfig(config)
+			}
+			if tc == "missing store" {
+				evidenceObjectStore = nil
+			}
+			if tc == "failed store" {
+				evidenceObjectStore = unavailableEvidenceStore{}
+			}
+			c := newEvidenceTestContext(t, raw)
+			require.NoError(t, BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindAudioSpeech))
+			req, err := http.NewRequest("POST", "https://provider.test/create", bytes.NewReader(raw))
+			require.NoError(t, err)
+			require.NoError(t, CaptureSouthboundTaskRequestEvidence(c, req, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}))
+			sent, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			require.NoError(t, req.Body.Close())
+			assert.Equal(t, raw, sent)
+			rows := evidenceEventRows(t, evidenceSessionFrom(c).evidenceID)
+			require.Len(t, rows, 2)
+			for _, event := range rows {
+				content, status := ReadEvidenceEventContent(event, false)
+				switch tc {
+				case "missing store":
+					assert.Equal(t, "storage_unavailable", status)
+				case "failed store":
+					assert.Equal(t, "read_failed", status)
+				default:
+					require.Equal(t, "available", status)
+					expected := raw
+					if tc == "capture limit" {
+						expected = raw[:8]
+					}
+					assert.Equal(t, expected, content.Body)
+				}
+			}
+		})
+	}
 }
 
 func TestEvidenceTaskAssociationAndViews(t *testing.T) {
@@ -283,4 +248,99 @@ func TestEvidenceTaskAssociationAndViews(t *testing.T) {
 	}))
 	events := evidenceEventRows(t, session.evidenceID)
 	require.NotEmpty(t, events)
+}
+
+func TestEvidenceFailuresDoNotChangeProviderCallOrHeldFunds(t *testing.T) {
+	for _, scenario := range []string{"missing store", "failed store", "index database", "event database", "capture limit"} {
+		t.Run(scenario, func(t *testing.T) {
+			setupEvidenceTestEnv(t)
+			require.NoError(t, model.DB.AutoMigrate(&model.TaskCreateAttempt{}))
+			attempt := &model.TaskCreateAttempt{AttemptID: "evidence-independent-send", Status: model.TaskCreateAttemptSending, BillingHoldState: model.TaskCreateAttemptBillingHeld}
+			require.NoError(t, model.DB.Create(attempt).Error)
+			switch scenario {
+			case "missing store":
+				evidenceObjectStore = nil
+			case "failed store":
+				evidenceObjectStore = unavailableEvidenceStore{}
+			case "index database":
+				require.NoError(t, model.DB.Migrator().DropTable(&model.TaskRequestEvidence{}))
+			case "event database":
+				require.NoError(t, model.DB.Migrator().DropTable(&model.TaskRequestEvidenceEvent{}))
+			case "capture limit":
+				config := system_setting.GetTaskRequestEvidenceConfig()
+				config.MaxBodyBytes = 4
+				config.MaxResponseBytes = 4
+				system_setting.SetTaskRequestEvidenceConfig(config)
+			}
+			raw := []byte(`{"input":"complete business payload"}`)
+			c := newEvidenceTestContext(t, raw)
+			common.SetContextKey(c, constant.ContextKeyTaskCreateAttemptID, int(attempt.ID))
+			require.NoError(t, BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindVideoTask))
+			var calls atomic.Int32
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				body, err := io.ReadAll(r.Body)
+				assert.NoError(t, err)
+				assert.Equal(t, raw, body)
+				w.WriteHeader(202)
+				_, _ = w.Write([]byte(`{"id":"provider-task"}`))
+			}))
+			defer provider.Close()
+			req, err := http.NewRequest("POST", provider.URL, bytes.NewReader(raw))
+			require.NoError(t, err)
+			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+			require.NoError(t, CaptureSouthboundTaskRequestEvidence(c, req, info))
+			response, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			AttachTaskRequestEvidenceUpstreamResponse(c, response)
+			body, err := io.ReadAll(response.Body)
+			require.NoError(t, err)
+			require.NoError(t, response.Body.Close())
+			assert.Equal(t, 202, response.StatusCode)
+			assert.Equal(t, `{"id":"provider-task"}`, string(body))
+			assert.EqualValues(t, 1, calls.Load())
+			var unchanged model.TaskCreateAttempt
+			require.NoError(t, model.DB.First(&unchanged, attempt.ID).Error)
+			assert.Equal(t, attempt.Status, unchanged.Status)
+			assert.Equal(t, attempt.BillingHoldState, unchanged.BillingHoldState)
+			assert.False(t, info.SkipRequestRefund)
+		})
+	}
+}
+
+func TestEvidencePreservesMultipartBase64SSEAndRepeatedQueryValues(t *testing.T) {
+	var multipartBody bytes.Buffer
+	form := multipart.NewWriter(&multipartBody)
+	require.NoError(t, form.SetBoundary("evidence-fixture"))
+	require.NoError(t, form.WriteField("request", `{"token":"synthetic","audio_url":"file://audio"}`))
+	part, err := form.CreateFormFile("audio", "sample.wav")
+	require.NoError(t, err)
+	_, err = part.Write([]byte{0xff, 0x00, 0x01})
+	require.NoError(t, err)
+	require.NoError(t, form.Close())
+	for _, tc := range []struct {
+		name, kind string
+		body       []byte
+	}{
+		{"multipart", form.FormDataContentType(), multipartBody.Bytes()},
+		{"base64", "application/json", []byte(`{"image":"data:image/png;base64,AQIDBA==","api_key":"synthetic"}`)},
+		{"sse", "text/event-stream", []byte("data: {\"url\":\"https:\\/\\/fixture.test/?sig=synthetic\"}\n\ndata: [DONE]\n\n")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setupEvidenceTestEnv(t)
+			c := newEvidenceTestContext(t, tc.body)
+			c.Request.Header.Set("Content-Type", tc.kind)
+			c.Request.Header["X-Fixture"] = []string{"first", "second"}
+			c.Request.URL.RawQuery = "tag=one&tag=two&key=synthetic"
+			require.NoError(t, BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindAudioSpeech))
+			rows := evidenceEventRows(t, evidenceSessionFrom(c).evidenceID)
+			require.Len(t, rows, 1)
+			content, status := ReadEvidenceEventContent(rows[0], false)
+			require.Equal(t, "available", status)
+			assert.Equal(t, tc.body, content.Body)
+			assert.Equal(t, []string{"first", "second"}, content.Meta.Headers["X-Fixture"])
+			assert.Equal(t, []string{"one", "two"}, content.Meta.Query["tag"])
+			assert.Equal(t, []string{"synthetic"}, content.Meta.Query["key"])
+		})
+	}
 }

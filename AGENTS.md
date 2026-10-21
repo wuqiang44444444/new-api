@@ -223,15 +223,15 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 - `aigctokenaigeneral` 是普通北向素材组创建的系统保留名称。Channel 停用保留默认 ID，复制不继承，
   素材租户替换与删除 Channel 只删除本地默认组配置而不删除 Provider 组；真人素材继续使用 Provider
   认证产生的专用组。
-- source URL 只允许出现在创建请求和当次 Provider 调用中，不得持久化、记录或返回；平台不保存媒体
+- source URL 只允许出现在创建请求和当次 Provider 调用中；受保护请求证据按 `docs/00-context/硬约束.md` 第 6 节例外执行，其他持久化字段、普通日志和公开响应不得保留；平台不保存媒体
   二进制。真人认证仅代理 Provider 素材组流程和认证 URL，不自建人脸表单、授权域或撤回状态机。
 - 不支持的模型或操作必须根据代码 adapter 与已验证 Provider 文档明确返回
   `unsupported_asset_operation`，不得伪装为上游故障或尝试其它 Provider。
 
 **Security and authoritative facts:**
 
-- 不得提交、记录或输出密钥、Token、Cookie、支付凭据、生产配置、完整签名 URL、Task 私有数据或原始 Provider 响应。
-  唯一例外：Link 视频结果托管交付在授权响应中返回本站对象存储预签名下载地址；日志、证据与工单脱敏边界不变。
+- 不得提交、记录或输出密钥、Token、Cookie、支付凭据、生产配置、完整签名 URL、Task 私有数据或原始 Provider 响应。显式启用的私有加密请求证据与 Admin/Root 单条授权读取按 `docs/00-context/硬约束.md` 第 6 节执行；例外不扩展到普通日志、业务字段或公开接口。
+  另一个已登记例外：Link 视频结果托管交付在授权响应中返回本站对象存储预签名下载地址；普通日志与工单脱敏边界不变；请求证据以第 6 节为准。
 - Task、资金及平台持久化客户资源必须按 `user_id + app_id` 隔离；无状态素材代理不建立平台资源所有权，
   由受信应用自行管理其 Provider opaque ID。Channel 默认素材组 ID 是渠道基础设施配置，不是客户资源。
 - 主数据库是合同、Task、资金、资源和授权的持久化事实源；Redis、进程缓存和前端状态必须可重建，不得成为唯一权威。

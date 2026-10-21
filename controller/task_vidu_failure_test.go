@@ -203,12 +203,12 @@ func TestViduFailureCommitsPublicErrorEventAndRefundOnce(t *testing.T) {
 			require.GreaterOrEqual(t, len(evidenceEvents), 5)
 			for i, stage := range []string{model.TaskRequestEvidenceStageNorthReceive, model.TaskRequestEvidenceStageSouthboundSend, model.TaskRequestEvidenceStageUpstreamResponse, model.TaskRequestEvidenceStageClientDelivery, model.TaskRequestEvidenceStagePolling} {
 				assert.Equal(t, stage, evidenceEvents[i].Stage)
-				assert.True(t, evidenceEvents[i].Complete)
 				if i >= 2 {
 					assert.Equal(t, http.StatusOK, evidenceEvents[i].StatusCode)
 				}
-				payload, err := service.GetTaskRequestEvidenceStore().Get(evidenceEvents[i].ObjectKey)
-				require.NoError(t, err)
+				content, status := service.ReadEvidenceEventContent(evidenceEvents[i], false)
+				require.Equal(t, "available", status)
+				payload := content.Body
 				assert.NotEmpty(t, payload)
 			}
 		})

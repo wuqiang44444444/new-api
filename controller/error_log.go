@@ -59,6 +59,9 @@ func GetErrorLogs(c *gin.Context) {
 		return
 	}
 	pageInfo.SetTotal(int(total))
+	for _, event := range events {
+		event.Detail = clienterrlog.FormatHTTPExchangeDetail(event.Detail)
+	}
 	pageInfo.SetItems(events)
 	common.ApiSuccess(c, pageInfo)
 }

@@ -1,7 +1,7 @@
 ---
 page-id: videos-seedance-v
 kind: api-reference
-last-verified: 2026-09-28
+last-verified: 2026-10-21
 operations:
   - listModelArkVideoModels
   - retrieveModel
@@ -13,9 +13,10 @@ operations:
 
 # Seedance V 视频
 
-Seedance V使用统一 ModelArk V3：创建、列表与查询位于
-`/api/v3/contents/generations/tasks`，成功后通过 `/v1/videos/{task_id}/content` 鉴权下载。
-所有请求携带 `Authorization: Bearer {{API_KEY_PLACEHOLDER}}`；JSON 创建使用
+Seedance V 使用统一 ModelArk V3：创建、列表与查询位于
+`/api/v3/contents/generations/tasks`，生成成功且交付就绪后，通过查询返回的 `content.video_url`
+下载本站托管结果，无需附带 API Key。创建、查询和访问内容入口携带
+`Authorization: Bearer {{API_KEY_PLACEHOLDER}}`；JSON 创建使用
 `Content-Type: application/json`。公共响应、资金进度和错误处理见
 [ModelArk V3 标准视频](api-reference/videos/modelark)。
 
@@ -140,15 +141,27 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 ```
 
 成功受理返回 HTTP `200` 与平台 ID：`{"id":"task-public-id"}`。
-使用创建时同一 API Key 查询并下载：
+使用创建时同一 API Key 查询：
 
 ```bash
 curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
   -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
 ```
 
-`status=succeeded` 后读取返回的 `content.video_url`，携带相同鉴权保存文件。
-请求了末帧且结果可用时读取 `content.last_frame_url`。不要把 API Key 拼入 URL。
+`status=succeeded` 后还需检查 `content.delivery_status`：`preparing` 时继续查询原任务，
+`ready` 时读取返回的 `content.video_url`；`unavailable` 时保留 ID 核查，不重新生成。
+请求了末帧且结果可用时读取 `content.last_frame_url`。下载完整签名 URL 时不附带平台或 Provider Key：
+
+```bash
+curl --fail "$VIDEO_URL" --output result.mp4
+```
+
+`VIDEO_URL` 为本次查询返回的完整地址。签名从每次签发起有效 24 小时（86400 秒），不是从任务
+创建或成功时起算；对象仍保留且授权有效时重新查询可续签，不重新生成或复制视频。
+对象保留期由部署方明确，本站不承诺永久保存。不要把 Key 拼入 URL，或将完整签名 URL 写入普通日志。
+既有 `/v1/videos/{task_id}/content` 入口仍需平台鉴权，就绪后返回 `302`；curl 使用
+`--location` 跟随跳转，不用 `--location-trusted`。完整错误处理见
+[标准下载合同](api-reference/videos/modelark#下载视频或末帧)。
 `queued` / `running` 继续退避轮询；失败或过期依据本站状态与资金进度处理。
 本系列不支持取消/删除，不要调用 DELETE 作为退款手段。
 
@@ -173,8 +186,13 @@ Only `web_search` is allowed in tools; safety identifiers are limited to 64 char
 3600–259200 seconds, default 172800. Watermark and last-frame return default to false.
 Seed, camera controls, frames, draft, output format, priority and service tier are not published.
 
-Use the same API key for creation, polling and protected downloads. Creation returns a public task ID;
-save content promptly after success. When `api.assets.supported=true` and management mode is
+Use the same API key for creation, polling and access to the content endpoint. Creation returns a public task ID,
+not a download URL. After success, poll while `content.delivery_status=preparing`; when `ready`, download the
+returned `content.video_url` without a gateway or provider key. Investigate `unavailable` without regenerating.
+Signed GET URLs are valid for 86400 seconds from issuance; an authorized query can renew them while objects
+are retained. Retention differs from URL validity. The authenticated content endpoint returns 302 when ready;
+follow it without forwarding the gateway key to storage. Delivery failures do not change generation or billing facts
+or trigger automatic refunds. When `api.assets.supported=true` and management mode is
 `platform_hosted`, create images through the asset API and use the returned `asset://fhas_*` reference in
 `image_url.url`. References support first frames, last frames and reference images, including mixtures with
 direct image URLs. Ownership, state and storage availability are checked before the funds hold; outbound

@@ -9,20 +9,20 @@ export interface EvidenceIndex {
 }
 export interface EvidenceEvent {
   id: number
-  stage: string
-  phase: string
-  complete: boolean
-  has_body: boolean
-  body_status?: string
-  preview: string
-  byte_count: number
+  seq: number
+  name: string
   status_code: number
   method?: string
   target?: string
   content_type?: string
-  detail?: string
   created_at?: number
-  stored_bytes?: number
+}
+export interface EvidenceContent {
+  text: string | null
+  bodyStatus: string
+  meta?: Record<string, unknown> | null
+  base64?: string
+  content_type?: string
 }
 interface Envelope<T> {
   success: boolean
@@ -72,27 +72,31 @@ export async function downloadEvidence(id: number, eventId: number) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-// Read the recorded original through the Root-only view endpoint. The server
-// owns readability classification; auth failures propagate as real errors.
+// The directory contains locations only. A selected object is read separately.
 export async function readEvidenceOriginalText(
   id: number,
   eventId: number,
   signal?: AbortSignal
-): Promise<{ text: string | null; bodyStatus: string }> {
+): Promise<EvidenceContent> {
   signal?.throwIfAborted()
   try {
-    const response = await api.get<string>(
-      `/api/task_request_evidence/${id}/events/${eventId}/content`,
-      {
-        responseType: 'text',
-        transformResponse: [(value: string) => value],
-        skipErrorHandler: true,
-        signal,
-        disableDuplicate: true,
-      }
-    )
+    const response = await api.get<
+      Envelope<{
+        text: string | null
+        body_status: string
+        meta?: Record<string, unknown> | null
+        base64?: string
+        content_type?: string
+      }>
+    >(`/api/task_request_evidence/${id}/events/${eventId}/content`, {
+      skipErrorHandler: true,
+      signal,
+      disableDuplicate: true,
+    })
     signal?.throwIfAborted()
-    return { text: response.data, bodyStatus: 'available' }
+    if (!response.data.success) throw new Error('Evidence query failed')
+    const content = response.data.data
+    return { ...content, bodyStatus: content.body_status }
   } catch (error) {
     signal?.throwIfAborted()
     if (
@@ -102,65 +106,52 @@ export async function readEvidenceOriginalText(
     ) {
       throw error
     }
-    let bodyStatus = 'read_failed'
-    // The object may disappear after the detail request. Preserve the
-    // server's safe category, never display its raw response as a body.
-    if (error.response?.status === 410 || error.response?.status === 503) {
-      try {
-        const failure: { body_status?: unknown } | null = JSON.parse(
-          error.response.data
-        )
-        if (typeof failure?.body_status === 'string') {
-          bodyStatus = failure.body_status
-        }
-      } catch {
-        // A proxy may return HTML; it is still a per-object read failure.
-      }
+    const failure = error.response?.data as
+      | { body_status?: unknown }
+      | undefined
+    return {
+      text: null,
+      bodyStatus:
+        typeof failure?.body_status === 'string'
+          ? failure.body_status
+          : 'read_failed',
     }
-    return { text: null, bodyStatus }
   }
 }
 
-// Read recorded bodies rather than reconstructing requests from current settings.
-export async function getTaskRequestBodies(
+// Request shortcuts fetch directories, never all the captured bodies.
+export async function getTaskRequestEntries(
   taskId: string,
-  stage: 'north_receive' | 'southbound_send',
+  name: string,
   signal?: AbortSignal
 ) {
-  const bodies: {
-    requestId: string
+  const entries: {
+    evidenceId: number
     eventId: number
-    complete: boolean
-    bodyStatus: string
-    text: string | null
+    requestId: string
+    expired: boolean
   }[] = []
   let page = 1
   let total = 0
   do {
     const list = await getEvidenceList({ task_id: taskId }, page, signal)
     total = list.total
-    for (const item of list.items) {
-      const detail = await getEvidenceDetail(item.id, signal)
-      for (const event of detail.events.filter(
-        (event) => event.stage === stage
-      )) {
-        let bodyStatus = event.body_status ?? 'available'
-        if (detail.evidence.body_expired) bodyStatus = 'expired'
-        else if (!event.has_body) bodyStatus = 'not_recorded'
-        const { text, bodyStatus: readStatus } =
-          bodyStatus === 'available'
-            ? await readEvidenceOriginalText(item.id, event.id, signal)
-            : { text: null, bodyStatus }
-        bodies.push({
-          requestId: item.request_id,
-          eventId: event.id,
-          complete: event.complete,
-          bodyStatus: readStatus,
-          text,
-        })
+    const details = await Promise.all(
+      list.items.map((item) => getEvidenceDetail(item.id, signal))
+    )
+    for (const [index, detail] of details.entries()) {
+      for (const event of detail.events) {
+        if (event.name === name) {
+          entries.push({
+            evidenceId: list.items[index].id,
+            eventId: event.id,
+            requestId: list.items[index].request_id,
+            expired: detail.evidence.body_expired,
+          })
+        }
       }
     }
     page++
   } while ((page - 1) * 20 < total)
-  return bodies
+  return entries
 }

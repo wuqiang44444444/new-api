@@ -1170,7 +1170,7 @@
       "get": {
         "summary": "获取视频内容",
         "deprecated": false,
-        "description": "获取已完成 OpenAI Videos 或 ModelArk 视频任务的视频文件内容。\n",
+        "description": "读取已成功视频任务的内容。Seedance Link 与 H3 标准视频托管就绪后，鉴权返回 302，Location 为自签发起有效 86400 秒的本站 OSS 预签名 GET 地址；跟随跳转不得向对象存储转发平台或 Provider Key。范围外原生视频仍按既有合同返回媒体字节。相同路径支持 HEAD，托管线路按 HEAD 方法签名；不能用查询响应中的 GET 签名地址替代 HEAD 签名。 / Hosted standard video results redirect after authentication; signed URLs authorize downloads without an API key. Native routes retain their existing behavior.",
         "operationId": "getVideoContent",
         "tags": [
           "视频生成/ModelArk格式"
@@ -1184,6 +1184,16 @@
             "example": "video-abc123",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "part",
+            "in": "query",
+            "description": "省略时下载主视频；last_frame 请求末帧。主视频 ready 不保证末帧 ready。 / Omit for the main video; last_frame requests the independently delivered last frame.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["last_frame"]
             }
           }
         ],
@@ -1200,8 +1210,18 @@
             },
             "headers": {}
           },
+          "400": {
+            "description": "任务尚未成功，或 part 不合法。 video_not_ready / invalid_content_part",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
-            "description": "视频不存在或未完成",
+            "description": "视频或所请求部件不存在。 video_not_found / content_not_found",
             "content": {
               "application/json": {
                 "schema": {
@@ -8073,7 +8093,7 @@
               "delivery_status": {
                 "type": "string",
                 "enum": ["ready", "preparing", "unavailable"],
-                "description": "本站托管结果的交付状态，独立于生成状态；准备中或不可用时省略主视频地址。 Hosted delivery state, independent of generation success."
+                "description": "本站托管结果的主视频交付状态，独立于生成状态；ready 不保证末帧就绪，准备中或不可用时省略主视频地址。范围外原生线路可省略该字段。 Hosted main-video delivery state, independent of generation success and last-frame readiness."
               },
               "video_url": {
                 "type": "string",

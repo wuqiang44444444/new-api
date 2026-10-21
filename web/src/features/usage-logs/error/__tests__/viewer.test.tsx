@@ -338,7 +338,11 @@ it('offers request evidence instead of four empty body blocks for task failures'
       }),
     })
   )
-  expect(await screen.findByText('No request evidence available. It may not have been recorded or may have expired.')).toBeVisible()
+  expect(
+    await screen.findByText(
+      'No request evidence available. It may not have been recorded or may have expired.'
+    )
+  ).toBeVisible()
 })
 
 it.each(['{ }', 'null', '[]', 'invalid JSON', '{"response":null}'])(
@@ -375,6 +379,9 @@ it.each(['{ }', 'null', '[]', 'invalid JSON', '{"response":null}'])(
 )
 
 it('finds polling evidence without a request ID on a historical task index', async () => {
+  useAuthStore
+    .getState()
+    .auth.setUser({ id: 7, username: 'admin', role: ROLE.ADMIN })
   vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
     if (url === '/api/task_request_evidence') {
       const matches =
@@ -398,7 +405,7 @@ it('finds polling evidence without a request ID on a historical task index', asy
             events: [
               {
                 id: 10,
-                stage: 'polling',
+                name: 'polling',
                 phase: 'responded',
                 complete: true,
                 has_body: true,
@@ -413,6 +420,17 @@ it('finds polling evidence without a request ID on a historical task index', asy
         },
       }
     }
+    if (url === '/api/task_request_evidence/9/events/10/content') {
+      return {
+        data: {
+          success: true,
+          data: {
+            text: '{"status":"failed","error":{"code":"AuditSubmitIllegal"}}',
+            body_status: 'available',
+          },
+        },
+      }
+    }
     return {
       data: { success: true, data: { items: [TASK_FAILURE_ITEM], total: 1 } },
     }
@@ -423,8 +441,14 @@ it('finds polling evidence without a request ID on a historical task index', asy
   await user.click(screen.getByRole('button', { name: 'Request evidence' }))
   await user.click(await screen.findByRole('button', { name: '9' }))
   expect(await screen.findByText(/Task polling/)).toBeVisible()
-  expect(screen.getByText(/"status":"failed"/)).toBeVisible()
-  expect(screen.queryByText('No request evidence available. It may not have been recorded or may have expired.')).toBeNull()
+  expect(screen.queryByText(/"status":"failed"/)).toBeNull()
+  await user.click(screen.getByRole('button', { name: 'View original text' }))
+  expect(await screen.findByText(/"status":"failed"/)).toBeVisible()
+  expect(
+    screen.queryByText(
+      'No request evidence available. It may not have been recorded or may have expired.'
+    )
+  ).toBeNull()
 })
 
 it('uses the request ID when the failure has no task ID', async () => {
@@ -936,7 +960,7 @@ it.each(['en', 'zh'])(
               events: [
                 {
                   id: 10,
-                  stage: 'upstream_response',
+                  name: 'upstream_response',
                   complete: true,
                   has_body: true,
                   body_status: 'available',
@@ -950,7 +974,12 @@ it.each(['en', 'zh'])(
         }
       }
       if (url === '/api/task_request_evidence/9/events/10/content') {
-        return { data: original }
+        return {
+          data: {
+            success: true,
+            data: { text: original, body_status: 'available' },
+          },
+        }
       }
       throw new Error('Unexpected URL')
     })
@@ -967,7 +996,10 @@ it.each(['en', 'zh'])(
       })
     )
     await user.click(await screen.findByRole('button', { name: 'req-e1' }))
-    expect(await screen.findByText('masked preview')).toBeVisible()
+    await screen.findByRole('button', {
+      name: language === 'zh' ? '查看原文' : 'View original text',
+    })
+    expect(screen.queryByText('masked preview')).toBeNull()
     expect(get.mock.calls.some(([url]) => url.endsWith('/content'))).toBe(false)
     await user.click(
       screen.getByRole('button', {
@@ -981,8 +1013,8 @@ it.each(['en', 'zh'])(
       })
     ).toHaveAccessibleDescription(
       language === 'zh'
-        ? '认证凭据已移除'
-        : 'Authentication credentials removed'
+        ? '捕获内容可能不完整，并可能包含认证凭据。'
+        : 'Captured content may be incomplete and may contain credentials.'
     )
   }
 )

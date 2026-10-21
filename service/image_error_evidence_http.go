@@ -1,9 +1,6 @@
 package service
 
 import (
-	"net/http"
-	"strings"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -13,7 +10,6 @@ func CaptureImageClientResponse(c *gin.Context, capture *ImageErrorEvidence) fun
 	if capture == nil {
 		return func() {}
 	}
-	capture.protectCredentials(c.Request.Header)
 	c.Request = c.Request.WithContext(WithImageErrorEvidence(c.Request.Context(), capture))
 	original := c.Writer
 	c.Writer = &imageEvidenceWriter{ResponseWriter: original, capture: capture}
@@ -36,25 +32,4 @@ func (w *imageEvidenceWriter) WriteString(s string) (int, error) {
 	w.capture.CaptureClientBody([]byte(s[:n]))
 	w.capture.recordError("client_write", err)
 	return n, err
-}
-
-func (c *ImageErrorEvidence) protectCredentials(headers http.Header) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.finished {
-		return
-	}
-	for name, values := range headers {
-		if _, ok := evidenceCredentialHeaderNames[strings.ToLower(name)]; !ok {
-			continue
-		}
-		for _, value := range values {
-			if value != "" {
-				c.secrets = append(c.secrets, value)
-				if strings.HasPrefix(value, "Bearer ") {
-					c.secrets = append(c.secrets, strings.TrimPrefix(value, "Bearer "))
-				}
-			}
-		}
-	}
 }

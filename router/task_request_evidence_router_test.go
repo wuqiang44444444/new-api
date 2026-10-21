@@ -58,14 +58,24 @@ func TestTaskRequestEvidenceRoutesPermissionsAndCache(t *testing.T) {
 				expected := http.StatusOK
 				if role == 0 {
 					expected = http.StatusUnauthorized
-				} else if role < common.RoleAdminUser || (route.original && role < common.RoleRootUser) {
+				} else if role < common.RoleAdminUser {
 					expected = http.StatusForbidden
 				}
 				require.Equal(t, expected, response.Code)
 				assert.Contains(t, response.Header().Get("Cache-Control"), "no-store")
 				if expected == http.StatusOK && route.original {
-					assert.Equal(t, string(payload), response.Body.String())
-					assert.Contains(t, response.Header().Get("Content-Type"), map[bool]string{true: "text/plain", false: "application/octet-stream"}[strings.HasSuffix(route.path, "/content")])
+					if strings.HasSuffix(route.path, "/content") {
+						var result struct {
+							Data struct {
+								Text string `json:"text"`
+							}
+						}
+						require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+						assert.Equal(t, string(payload), result.Data.Text)
+					} else {
+						assert.Equal(t, string(payload), response.Body.String())
+					}
+					assert.Contains(t, response.Header().Get("Content-Type"), map[bool]string{true: "application/json", false: "application/octet-stream"}[strings.HasSuffix(route.path, "/content")])
 				} else {
 					assert.NotContains(t, response.Body.String(), "sig=fixture")
 				}
@@ -74,8 +84,11 @@ func TestTaskRequestEvidenceRoutesPermissionsAndCache(t *testing.T) {
 	}
 	var rows []model.TaskRequestEvidenceAccessLog
 	require.NoError(t, model.DB.Where("evidence_id = ?", evidence.Id).Order("id").Find(&rows).Error)
-	require.Len(t, rows, 4)
-	assert.Equal(t, []string{"redacted", "redacted", "original", "original"}, []string{rows[0].Scope, rows[1].Scope, rows[2].Scope, rows[3].Scope})
-	assert.Equal(t, "view", rows[2].Action)
-	assert.Equal(t, "download", rows[3].Action)
+	require.Len(t, rows, 6)
+	for _, i := range []int{0, 3} {
+		assert.Equal(t, "directory", rows[i].Scope)
+		assert.Equal(t, "view", rows[i+1].Action)
+		assert.Equal(t, "original", rows[i+1].Scope)
+		assert.Equal(t, "download", rows[i+2].Action)
+	}
 }

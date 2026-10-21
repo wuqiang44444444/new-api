@@ -30,7 +30,12 @@ it.each(['close', 'switch', 'logout'] as const)(
     })
     vi.mocked(api.get)
       .mockReturnValueOnce(pending)
-      .mockResolvedValue({ data: 'new event body' })
+      .mockResolvedValue({
+        data: {
+          success: true,
+          data: { text: 'new event body', body_status: 'available' },
+        },
+      })
     const view = (eventId: number, open = true) => (
       <QueryClientProvider client={client}>
         <EvidenceOriginalDialog
@@ -73,3 +78,102 @@ it.each(['close', 'switch', 'logout'] as const)(
     }
   }
 )
+
+it('formats only whitespace and preserves exact numeric tokens and duplicate JSON keys', async () => {
+  const raw = '{"id":9007199254740993,"id":18446744073709551615,"amount":1.00}'
+  vi.mocked(api.get).mockResolvedValue({
+    data: { success: true, data: { text: raw, body_status: 'available' } },
+  })
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <EvidenceOriginalDialog id={1} eventId={2} open onOpenChange={() => {}} />
+    </QueryClientProvider>
+  )
+  expect(await screen.findByText(raw)).toBeVisible()
+  const { fireEvent } = await import('@testing-library/react')
+  fireEvent.click(screen.getByRole('button', { name: 'Format JSON' }))
+  expect(screen.getByText(/9007199254740993/)).toHaveTextContent(
+    '18446744073709551615'
+  )
+  expect(screen.getByText(/9007199254740993/)).toHaveTextContent('1.00')
+  fireEvent.click(screen.getByRole('button', { name: 'Raw' }))
+  expect(screen.getByText(raw)).toBeVisible()
+})
+
+it('keeps malformed JSON readable when formatting fails', async () => {
+  const raw = '{"api_key":"synthetic'
+  vi.mocked(api.get).mockResolvedValue({
+    data: { success: true, data: { text: raw, body_status: 'available' } },
+  })
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <EvidenceOriginalDialog id={1} eventId={2} open onOpenChange={() => {}} />
+    </QueryClientProvider>
+  )
+  expect(await screen.findByText(raw)).toBeVisible()
+  const { fireEvent } = await import('@testing-library/react')
+  fireEvent.click(screen.getByRole('button', { name: 'Format JSON' }))
+  expect(screen.getByText(raw)).toBeVisible()
+  expect(screen.getByRole('status')).toHaveTextContent(
+    'Unable to format JSON. Showing raw content.'
+  )
+})
+
+it('previews captured raster bytes without fetching remote URLs', async () => {
+  vi.mocked(api.get).mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        text: null,
+        base64: 'iVBORw0KGgo=',
+        content_type: 'image/png',
+        body_status: 'available',
+      },
+    },
+  })
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <EvidenceOriginalDialog id={1} eventId={2} open onOpenChange={() => {}} />
+    </QueryClientProvider>
+  )
+  const preview = await screen.findByRole('img', {
+    name: 'Evidence image preview',
+  })
+  expect(preview).toHaveAttribute('src', 'data:image/png;base64,iVBORw0KGgo=')
+  expect(api.get).toHaveBeenCalledTimes(1)
+})
+
+it('displays SVG evidence as literal data and never mounts its markup', async () => {
+  const text = '<svg onload="throw new Error()"><script>unsafe()</script></svg>'
+  vi.mocked(api.get).mockResolvedValue({
+    data: {
+      success: true,
+      data: { text, content_type: 'image/svg+xml', body_status: 'available' },
+    },
+  })
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <EvidenceOriginalDialog id={1} eventId={2} open onOpenChange={() => {}} />
+    </QueryClientProvider>
+  )
+  expect(await screen.findByText(text)).toBeVisible()
+  expect(
+    screen.queryByRole('img', { name: 'Evidence image preview' })
+  ).toBeNull()
+  expect(document.querySelector('script')).toBeNull()
+  expect(document.querySelector('[onload]')).toBeNull()
+})
+
+it('does not request or mount original evidence for an ordinary user', () => {
+  useAuthStore
+    .getState()
+    .auth.setUser({ id: 8, username: 'user', role: ROLE.USER })
+  vi.mocked(api.get).mockClear()
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <EvidenceOriginalDialog id={1} eventId={2} open onOpenChange={() => {}} />
+    </QueryClientProvider>
+  )
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(api.get).not.toHaveBeenCalled()
+})

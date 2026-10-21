@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
@@ -26,7 +25,7 @@ func drainImageEvidence(t *testing.T) {
 }
 
 // Only synthetic responses and temporary encrypted storage are used here.
-func TestImageErrorEvidencePreservesResponsesAndProtectsSecrets(t *testing.T) {
+func TestImageErrorEvidencePreservesRawResponsesInEncryptedStorage(t *testing.T) {
 	env := setupEvidenceTestEnv(t)
 	t.Cleanup(func() { drainImageEvidence(t) })
 	for _, tc := range []struct {
@@ -63,29 +62,20 @@ func TestImageErrorEvidencePreservesResponsesAndProtectsSecrets(t *testing.T) {
 			require.EqualValues(t, 1, count)
 			events := evidenceEventRows(t, indices[0].Id)
 			require.Len(t, events, 1)
-			assert.True(t, events[0].Complete)
+
 			assert.Equal(t, tc.status, events[0].StatusCode)
 			assert.NotContains(t, events[0].Target, "fake-index-secret")
-			payload, err := GetTaskRequestEvidenceStore().Get(events[0].ObjectKey)
-			require.NoError(t, err)
-			assert.NotContains(t, string(payload), "fake-hidden")
-			assert.NotContains(t, string(payload), "fixture-provider-secret")
-			assert.NotContains(t, string(payload), "session=fake-secret")
-			var evidence struct {
-				Body  string `json:"body"`
-				Error string `json:"error"`
+			payload := evidenceCapturedBody(t, events[0])
+			assert.Equal(t, tc.body, string(payload))
+			content, status := ReadEvidenceEventContent(events[0], false)
+			require.Equal(t, "available", status)
+			if tc.transportErr != nil {
+				assert.Equal(t, tc.transportErr.Error(), content.Meta.Error)
 			}
-			require.NoError(t, common.Unmarshal(payload, &evidence))
-			switch tc.name {
-			case "full_error":
-				assert.Contains(t, evidence.Body, strings.Repeat("upstream detail ", 4000))
-				assert.Contains(t, evidence.Body, `"max_tokens":4`)
-			case "sse_error":
-				assert.Contains(t, evidence.Body, "raw stream failure")
-			case "transport":
-				assert.Contains(t, evidence.Error, "connection refused")
+			if tc.status != 0 {
+				assert.Equal(t, []string{"session=fake-secret"}, content.Meta.Headers["Set-Cookie"])
 			}
-			disk, err := os.ReadFile(filepath.Join(env.storeDir, events[0].ObjectKey))
+			disk, err := os.ReadFile(filepath.Join(env.storeDir, EvidenceObjectKey(events[0].EvidenceId, events[0].Id)))
 			require.NoError(t, err)
 			assert.NotContains(t, string(disk), "upstream detail")
 			assert.NotContains(t, string(disk), "connection refused")
@@ -154,7 +144,6 @@ func TestImageErrorEvidenceTruncationDoesNotTruncateResponse(t *testing.T) {
 	config := system_setting.GetTaskRequestEvidenceConfig()
 	config.MaxResponseBytes = 16
 	system_setting.SetTaskRequestEvidenceConfig(config)
-	before := imageEvidenceTruncated.Load()
 	c := NewImageErrorEvidence(model.TaskRequestEvidence{RequestID: "truncated"})
 	require.NotNil(t, c)
 	ctx := WithImageErrorEvidence(context.Background(), c)
@@ -172,10 +161,8 @@ func TestImageErrorEvidenceTruncationDoesNotTruncateResponse(t *testing.T) {
 	require.Len(t, indices, 1)
 	events := evidenceEventRows(t, indices[0].Id)
 	require.Len(t, events, 1)
-	assert.False(t, events[0].Complete)
-	assert.Equal(t, model.TaskRequestEvidencePhaseTruncated, events[0].Phase)
-	assert.EqualValues(t, len(original), events[0].ByteCount)
-	assert.Equal(t, before+1, imageEvidenceTruncated.Load())
+
+	assert.Equal(t, original[:16], string(evidenceCapturedBody(t, events[0])))
 }
 
 func TestImageClientEvidencePreservesSSEAndValidationResponse(t *testing.T) {
@@ -218,13 +205,13 @@ func TestImageClientEvidencePreservesSSEAndValidationResponse(t *testing.T) {
 			require.Len(t, indices, 1)
 			events := evidenceEventRows(t, indices[0].Id)
 			require.Len(t, events, 1)
-			assert.True(t, events[0].Complete)
+
 			assert.Equal(t, status, events[0].StatusCode)
 		})
 	}
 }
 
-func TestImageErrorEvidenceDoesNotStoreUnredactableCredentials(t *testing.T) {
+func TestImageErrorEvidencePreservesMalformedCapturedBytes(t *testing.T) {
 	setupEvidenceTestEnv(t)
 	t.Cleanup(func() { drainImageEvidence(t) })
 	capture := NewImageErrorEvidence(model.TaskRequestEvidence{RequestID: "malformed"})
@@ -237,9 +224,7 @@ func TestImageErrorEvidenceDoesNotStoreUnredactableCredentials(t *testing.T) {
 	require.Len(t, indices, 1)
 	events := evidenceEventRows(t, indices[0].Id)
 	require.Len(t, events, 1)
-	assert.False(t, events[0].Complete)
-	assert.Equal(t, model.TaskRequestEvidencePhaseUnavailable, events[0].Phase)
-	payload, err := GetTaskRequestEvidenceStore().Get(events[0].ObjectKey)
-	require.NoError(t, err)
-	assert.NotContains(t, string(payload), "synthetic-secret")
+
+	payload := evidenceCapturedBody(t, events[0])
+	assert.Equal(t, `{"api_key":"synthetic-secret`, string(payload))
 }

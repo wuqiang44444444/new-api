@@ -34,13 +34,11 @@ func AttachRawTaskPollingEvidence(task *model.Task, req *http.Request, resp *htt
 	}
 
 	tee := &evidenceResponseBodyTee{session: &taskRequestEvidenceSession{evidenceID: evidence.Id}, origin: resp.Body, buffer: bytes.NewBuffer(nil), maxBytes: system_setting.GetTaskRequestEvidenceConfig().MaxResponseBytes, stage: model.TaskRequestEvidenceStagePolling, statusCode: resp.StatusCode, method: req.Method, target: evidenceTargetURL(req), contentType: resp.Header.Get("Content-Type"), headers: resp.Header.Clone(), transportErr: transportErr}
-	tee.requestHeaders = req.Header.Clone()
 	if req.URL != nil {
 		tee.requestQuery = req.URL.Query()
 	}
 	if resp.Body == nil {
 		tee.origin = http.NoBody
-		tee.eof = true
 		_ = tee.Close()
 		return
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/clienterrlog"
+	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -54,8 +55,14 @@ func TestDoRequestCapturesDiagnosticExchangeWithoutChangingTraffic(t *testing.T)
 	assert.Equal(t, requestBody, string(replayBody))
 	snapshot := clienterrlog.SnapshotHTTPExchange(c.Request.Context())
 	require.NotNil(t, snapshot)
-	assert.Contains(t, snapshot.UpstreamRequest.Body, "draw a cat")
-	assert.NotContains(t, snapshot.UpstreamRequest.Body, "fixture-secret")
-	assert.Equal(t, http.StatusBadRequest, snapshot.UpstreamResponse.Status)
-	assert.JSONEq(t, responseBody, snapshot.UpstreamResponse.Body)
+	// Assert the persisted diagnostic contract. Snapshot capture may defer content
+	// processing, but the serialized record must preserve redaction and traffic.
+	encoded, err := common.Marshal(snapshot)
+	require.NoError(t, err)
+	var persisted clienterrlog.HTTPExchange
+	require.NoError(t, common.Unmarshal(encoded, &persisted))
+	assert.Contains(t, persisted.UpstreamRequest.Body, "draw a cat")
+	assert.NotContains(t, persisted.UpstreamRequest.Body, "fixture-secret")
+	assert.Equal(t, http.StatusBadRequest, persisted.UpstreamResponse.Status)
+	assert.JSONEq(t, responseBody, persisted.UpstreamResponse.Body)
 }

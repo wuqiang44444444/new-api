@@ -103,3 +103,10 @@ func ReadEvidenceEventContent(event *model.TaskRequestEvidenceEvent, expired boo
 func EvidenceContentIsText(body []byte) bool {
 	return utf8.Valid(body)
 }
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}

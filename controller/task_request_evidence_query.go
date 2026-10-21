@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/base64"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,10 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 音视频证据查询（一期）。管理员查看脱敏业务证据（列表/详情/预览），
-// Root 通过专用查看接口读取原文、下载完整对象。审计在实际操作入口分别记录：
-// 脱敏预览 view/redacted、原文查看 view/original、下载 download/original；
-// 列表与详情不返回原文。响应由路由组中间件禁止缓存。
+// Admin/Root list content locations, then explicitly read one protected object.
+// Directory reads never decrypt bodies; original access is audited separately.
 
 func GetTaskRequestEvidenceList(c *gin.Context) {
 	requestID := strings.TrimSpace(c.Query("request_id"))
@@ -47,17 +46,16 @@ func GetTaskRequestEvidenceDetail(c *gin.Context) {
 	if !ok {
 		return
 	}
-	model.RecordTaskRequestEvidenceAccess(evidence.Id, int64(c.GetInt("id")), "view", "redacted")
+	model.RecordTaskRequestEvidenceAccess(evidence.Id, int64(c.GetInt("id")), "view", "directory")
 	events, err := model.ListTaskRequestEvidenceEvents(evidence.Id)
 	if err != nil {
 		common.ApiErrorMsg(c, "Failed to query evidence events")
 		return
 	}
 	isRoot := isRootViewer(c)
-	previews := service.GetEvidenceEventPreviews(events, service.IsEvidenceBodyExpired(evidence, common.GetTimestamp()))
 	eventViews := make([]gin.H, 0, len(events))
 	for _, event := range events {
-		eventViews = append(eventViews, evidenceEventView(event, previews[event.Id]))
+		eventViews = append(eventViews, evidenceEventView(event))
 	}
 	common.ApiSuccess(c, gin.H{
 		"evidence": evidenceIndexView(evidence, isRoot),
@@ -86,7 +84,7 @@ func GetTaskRequestEvidenceObject(c *gin.Context) {
 	c.Data(http.StatusOK, "application/octet-stream", payload)
 }
 
-// GetTaskRequestEvidenceContent 按 Root 显式查看返回事件正文原文（内联文本）。
+// GetTaskRequestEvidenceContent returns one selected raw body and captured metadata.
 // 与下载共用读取服务；仅在实际交付原文时记录 view/original 审计。
 func GetTaskRequestEvidenceContent(c *gin.Context) {
 	evidence, ok := loadEvidenceForViewer(c)
@@ -99,13 +97,19 @@ func GetTaskRequestEvidenceContent(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Evidence event not found"})
 		return
 	}
-	payload, bodyStatus := service.ReadEvidenceEventBody(event, service.IsEvidenceBodyExpired(evidence, common.GetTimestamp()))
+	content, bodyStatus := service.ReadEvidenceEventContent(event, service.IsEvidenceBodyExpired(evidence, common.GetTimestamp()))
 	if !respondEvidenceBodyStatus(c, bodyStatus) {
 		return
 	}
 	model.RecordTaskRequestEvidenceAccess(evidence.Id, int64(c.GetInt("id")), "view", "original")
-	c.Header("X-Content-Type-Options", "nosniff")
-	c.Data(http.StatusOK, "text/plain; charset=utf-8", payload)
+	result := gin.H{"meta": content.Meta, "content_type": event.ContentType, "body_status": "available"}
+	if service.EvidenceContentIsText(content.Body) {
+		result["text"] = string(content.Body)
+	} else {
+		result["text"] = nil
+		result["base64"] = base64.StdEncoding.EncodeToString(content.Body)
+	}
+	common.ApiSuccess(c, result)
 }
 
 // respondEvidenceBodyStatus 在正文不可读时按既有语义返回明确错误；
@@ -161,24 +165,8 @@ func evidenceIndexView(evidence *model.TaskRequestEvidence, includeDiagnostics b
 	return view
 }
 
-func evidenceEventView(event *model.TaskRequestEvidenceEvent, preview service.EvidenceEventPreview) gin.H {
-	return gin.H{
-		"id":           event.Id,
-		"seq":          event.Seq,
-		"stage":        event.Stage,
-		"phase":        event.Phase,
-		"status_code":  event.StatusCode,
-		"method":       event.Method,
-		"target":       service.EvidenceAdminPreview(event.Target),
-		"content_type": event.ContentType,
-		"byte_count":   event.ByteCount,
-		"stored_bytes": event.StoredBytes,
-		"complete":     event.Complete,
-		"redacted":     event.Redacted,
-		"preview":      preview.Text,
-		"body_status":  preview.BodyStatus,
-		"detail":       service.EvidenceAdminPreview(event.Detail),
-		"created_at":   event.CreatedAt,
-		"has_body":     event.ObjectKey != "",
-	}
+// Directory projection never reads an object or exposes captured metadata.
+// The event ID is sufficient to attempt a read, even after a failed object write.
+func evidenceEventView(event *model.TaskRequestEvidenceEvent) gin.H {
+	return gin.H{"id": event.Id, "seq": event.Id, "name": event.Stage, "status_code": event.StatusCode, "method": event.Method, "target": service.EvidenceMaskSignedURLs(event.Target), "content_type": event.ContentType, "created_at": event.CreatedAt}
 }

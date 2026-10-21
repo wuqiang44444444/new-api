@@ -197,7 +197,7 @@ func BindAPIRequestEvidence(c *gin.Context, req *http.Request, info *relaycommon
 func (c *ImageErrorEvidence) requestRecord(req *http.Request, stage string) *imageEvidenceExchange {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	record := &imageEvidenceExchange{Stage: stage, Method: req.Method, Target: evidenceTargetURL(req), Headers: req.Header.Clone(), ContentType: req.Header.Get("Content-Type"), EOF: req.Body == nil || req.Body == http.NoBody, CreatedAt: common.GetTimestamp()}
+	record := &imageEvidenceExchange{Stage: stage, Method: req.Method, Target: evidenceTargetURL(req), Headers: req.Header.Clone(), ContentType: req.Header.Get("Content-Type"), CreatedAt: common.GetTimestamp()}
 	if req.URL != nil {
 		record.Query = req.URL.Query()
 	}
@@ -234,12 +234,7 @@ func (t *apiEvidenceTransport) RoundTrip(req *http.Request) (*http.Response, err
 	}
 	resp, err := t.RoundTripper.RoundTrip(req)
 	capture.mu.Lock()
-	if req.ContentLength >= 0 && request.Observed == req.ContentLength {
-		request.EOF = true
-	}
-	capture.mu.Unlock()
-	capture.mu.Lock()
-	response := &imageEvidenceExchange{Stage: model.TaskRequestEvidenceStageUpstreamResponse, Method: req.Method, Target: evidenceTargetURL(req), CreatedAt: common.GetTimestamp(), EOF: resp == nil}
+	response := &imageEvidenceExchange{Stage: model.TaskRequestEvidenceStageUpstreamResponse, Method: req.Method, Target: evidenceTargetURL(req), CreatedAt: common.GetTimestamp()}
 	if err != nil {
 		response.Error = "transport_error"
 	}
@@ -251,7 +246,6 @@ func (t *apiEvidenceTransport) RoundTrip(req *http.Request) (*http.Response, err
 		response.Status = resp.StatusCode
 		response.Headers = resp.Header.Clone()
 		response.ContentType = resp.Header.Get("Content-Type")
-		response.EOF = resp.Body == nil || resp.Body == http.NoBody || req.Method == http.MethodHead
 		if resp.Body != nil {
 			resp.Body = &imageEvidenceBody{ReadCloser: resp.Body, capture: capture, record: response}
 		}
@@ -304,18 +298,20 @@ func persistAPIRequestEvidence(c *ImageErrorEvidence) error {
 			return err
 		}
 	}
+	var failure error
 	for seq, r := range c.records {
 		if c.deliveryStatsOnly && (r.Stage == model.TaskRequestEvidenceStageClientDelivery || r.Stage == model.TaskRequestEvidenceStageUpstreamResponse) {
 			event := &model.TaskRequestEvidenceEvent{EvidenceId: c.Index.Id, AttemptSeq: seq + 1, Stage: r.Stage, StatusCode: r.Status, Method: r.Method, Target: r.Target, ContentType: r.ContentType, CreatedAt: r.CreatedAt}
 			if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil && !errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
+				failure = errors.Join(failure, err)
 				common.SysError("evidence save unavailable: step=event reserve stage=" + r.Stage + " cause=" + common.SanitizeTaskDiagnostic(err.Error()))
 			}
 			continue
 		}
 		event := &model.TaskRequestEvidenceEvent{EvidenceId: c.Index.Id, AttemptSeq: seq + 1, Stage: r.Stage, StatusCode: r.Status, Method: r.Method, Target: r.Target, ContentType: r.ContentType, CreatedAt: r.CreatedAt}
-		persistRawEvidenceEvent(event, r.Headers, r.Query, r.Body.Bytes(), r.Error)
+		failure = errors.Join(failure, persistRawEvidenceEvent(event, r.Headers, r.Query, r.Body.Bytes(), r.Error))
 	}
-	return nil
+	return failure
 }
 
 func HasAPIRequestEvidence(ctx context.Context) bool { return apiEvidenceFrom(ctx) != nil }

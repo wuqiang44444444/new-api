@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-15
+last-reviewed: 2026-10-21
 ---
 
 # Seedance 专用渠道与 Link 架构
@@ -407,15 +407,18 @@ Key 读取仍按 `user_id + app_id` 隔离；控制台会话和签名访问保�
 网关不逐次回源传输字节，也不读取当前渠道重新选择来源；`video` 的签名不授权其它内容分部。
 
 该接线在共享 `controller/task.go` 中仅保留 Seedance 授权、列表与内容分派的窄调用；实现与回归测试
-位于独立 Seedance 文件，内容代理仍由 `controller/video_proxy_link.go` 唯一负责。未来同步上游时
+位于独立 Seedance 文件；内容授权与分派由 `controller/video_proxy_link.go` 负责，托管交付由
+`controller/video_result_delivery.go` 履约，范围外线路保留原回源代理。未来同步上游时
 只需保留这些制品入口接线，不修改原生适配器或插件合同。
 
 MiniMax 标准视频沿相同的通用制品入口使用独立类型化接线：以 `ChannelTypeMiniMaxLink`（69）的成功 Task、未删除状态和
 已冻结的真实 Provider task ID 投影一个 `video` 制品。JD 临时视频地址不持久化，因此列表不以
 `ResultURL` 的本站占位地址作为媒体来源，也不因缺少持久 CDN 地址而返回空制品。列表不访问 Provider；
-内容请求由冻结的 MiniMax adapter 按需解析临时地址，再交由同一 Link 内容代理执行安全回源。
-连接或精确插件版本不可用时明确失败，不查询当前渠道补齐、不切换适配器。用户及应用隔离、签名
-制品范围、Range/HEAD、禁止媒体凭据泄露及重定向规则保持一致；上游文件不可用不重写成功状态或资金。
+结果转存 worker 使用冻结的 MiniMax adapter 解析临时地址并安全回源，托管就绪后内容请求授权并
+302 重定向本站 OSS 预签名地址；客户端内容请求不再直接向上游回源。
+转存所需连接或精确插件版本不可用时按交付合同处理，不查询当前渠道补齐、不切换适配器。
+用户及应用隔离、签名制品范围和禁止媒体凭据泄露边界保持一致；HEAD 使用独立 HEAD 签名，
+Range 与媒体下载由对象存储履约；上游文件不可用不重写成功状态或资金。
 MiniMax 的授权、投影和内容分派位于 `controller/task_minimax_artifacts.go`，共享入口仅保留窄调用，
 不改变 Seedance 的结果事实判定或 NEWAPI 原生插件制品接口。
 

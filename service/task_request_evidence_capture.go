@@ -25,19 +25,11 @@ import (
 
 const taskRequestEvidenceContextKey = "task_request_evidence_session"
 
-// ErrTaskRequestEvidenceUnavailable 表示证据不可用且请求尚未发送。
-// 这是拒绝边界：调用方必须停止履约，返回本地不可重试错误并进入既有
-// 释放/退款出口；不得换渠、不得标记上游结果未知。
-var ErrTaskRequestEvidenceUnavailable = errors.New("task request evidence storage unavailable")
+// ErrTaskRequestEvidenceUnavailable identifies a failed durable sending check.
+var ErrTaskRequestEvidenceUnavailable = errors.New("task sending permission unavailable")
 
-// ErrTaskRequestEvidenceBodyTooLarge 表示正文超过配置容量上限，
-// 在可拒绝的边界给出明确结果，不静默截断合法业务请求。
-var ErrTaskRequestEvidenceBodyTooLarge = errors.New("task request evidence body exceeds configured limit")
-
-// IsTaskRequestEvidenceUnavailable 判断错误是否为证据拒绝边界错误。
 func IsTaskRequestEvidenceUnavailable(err error) bool {
-	return errors.Is(err, ErrTaskRequestEvidenceUnavailable) ||
-		errors.Is(err, ErrTaskRequestEvidenceBodyTooLarge)
+	return errors.Is(err, ErrTaskRequestEvidenceUnavailable)
 }
 
 func evidenceEnabled() bool {
@@ -50,9 +42,7 @@ func evidenceMaxBodyBytes() int64 {
 
 // taskRequestEvidenceSession 保存单个客户请求的证据状态。
 type taskRequestEvidenceSession struct {
-	mu         sync.Mutex
 	evidenceID int64
-	kind       string
 	attemptSeq atomic.Int32
 }
 
@@ -68,12 +58,11 @@ func evidenceSessionFrom(c *gin.Context) *taskRequestEvidenceSession {
 	return typed
 }
 
-// BeginTaskRequestEvidence 在认证与请求体缓存后建立证据会话：
-// 同步持久化北向接收证据（方法、路径、脱敏头、脱敏查询与完整正文）。
-// 写入不可用或正文超限时返回拒绝边界错误——此时尚未建立资金 hold，
-// 请求以本地错误结束，不产生任何 Provider 调用。
+// BeginTaskRequestEvidence associates bounded raw captures with the request.
+// Evidence is optional observation; configuration, storage and capture failures
+// never reject the business request.
 func BeginTaskRequestEvidence(c *gin.Context, kind string) error {
-	if !evidenceEnabled() || c == nil || c.Request == nil || c.GetInt("id") <= 0 {
+	if !evidenceEnabled() || c == nil || c.Request == nil || c.GetInt("id") <= 0 || evidenceSessionFrom(c) != nil {
 		return nil
 	}
 	eligibleKind := mediaEvidenceContextKind(c)
@@ -83,107 +72,34 @@ func BeginTaskRequestEvidence(c *gin.Context, kind string) error {
 	if mediaEvidenceRequestKind(c.Request.Method, c.Request.URL.Path) == "task_submit" {
 		kind = eligibleKind
 	}
-	if evidenceSessionFrom(c) != nil {
+	now := common.GetTimestamp()
+	index := &model.TaskRequestEvidence{RequestID: c.GetString(common.RequestIdKey), UserID: c.GetInt("id"), TokenID: c.GetInt("token_id"), AppID: c.GetInt("app_id"), Kind: kind, CreatedAt: now, UpdatedAt: now, RetainUntil: evidenceRetentionUntil(system_setting.GetTaskRequestEvidenceConfig(), now)}
+	if index.AppID == 0 {
+		index.AppID = index.TokenID
+	}
+	if err := model.CreateTaskRequestEvidence(index); err != nil {
+		evidencePersistWarning("index create", "north_receive", err)
 		return nil
 	}
-	if err := system_setting.ValidateTaskRequestEvidenceConfig(system_setting.GetTaskRequestEvidenceConfig()); err != nil {
-		return evidenceUnavailableFailure(
-			TaskRequestEvidenceCategoryConfiguration,
-			TaskRequestEvidenceStageConfiguration,
-			TaskRequestEvidenceSourceNone,
-		).WithCause(err)
+	session := &taskRequestEvidenceSession{evidenceID: index.Id}
+	c.Set(taskRequestEvidenceContextKey, session)
+	if !c.GetBool(taskCreateEvidenceDeliveryKey) {
+		c.Writer = &evidenceClientWriter{ResponseWriter: c.Writer}
 	}
 	storage, err := common.GetBodyStorage(c)
 	if err != nil {
-		return evidenceUnavailableFailure(
-			TaskRequestEvidenceCategoryBodyRead,
-			TaskRequestEvidenceStageBodyCache,
-			TaskRequestEvidenceSourceNorth,
-		).WithCause(err)
+		evidencePersistWarning("body cache", "north_receive", err)
+		return nil
 	}
-	if storage.Size() > evidenceMaxBodyBytes() {
-		return evidenceTooLargeFailure(
-			TaskRequestEvidenceStageNorthCapacity,
-			TaskRequestEvidenceSourceNorth,
-			storage.Size(),
-			evidenceMaxBodyBytes(),
-		)
-	}
-	body, err := storage.Bytes()
+	reader, err := storage.NewReader()
 	if err != nil {
-		return evidenceUnavailableFailure(
-			TaskRequestEvidenceCategoryBodyRead, TaskRequestEvidenceStageBodyCache, TaskRequestEvidenceSourceNorth,
-		).WithCause(err)
+		evidencePersistWarning("body reader", "north_receive", err)
+		return nil
 	}
-
-	session := &taskRequestEvidenceSession{kind: kind}
-	c.Set(taskRequestEvidenceContextKey, session)
-	c.Writer = &evidenceClientWriter{ResponseWriter: c.Writer}
-	if err := evidencePersistNorth(c, session, body); err != nil {
-		return err
-	}
-	return nil
-}
-
-// evidencePersistNorth 先建立索引及不可用事件，再提交加密正文及完成标记。
-func evidencePersistNorth(c *gin.Context, session *taskRequestEvidenceSession, body []byte) error {
-	now := common.GetTimestamp()
-	config := system_setting.GetTaskRequestEvidenceConfig()
-	evidence := &model.TaskRequestEvidence{
-		RequestID:   c.GetString(common.RequestIdKey),
-		UserID:      c.GetInt("id"),
-		TokenID:     c.GetInt("token_id"),
-		AppID:       c.GetInt("app_id"),
-		Kind:        session.kind,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		RetainUntil: evidenceRetentionUntil(config, now),
-	}
-	if c.Request.URL != nil {
-		evidence.UpstreamProtocol = c.Request.URL.Path
-	}
-	if err := model.CreateTaskRequestEvidence(evidence); err != nil {
-		return evidenceUnavailableFailure(
-			TaskRequestEvidenceCategoryEventDatabase,
-			TaskRequestEvidenceStageIndexCreate,
-			TaskRequestEvidenceSourceNorth,
-		).WithCause(err)
-	}
-	session.evidenceID = evidence.Id
-
-	headers := EvidenceRedactHeaders(c.Request.Header)
-	query := url.Values{}
-	if c.Request.URL != nil {
-		query = c.Request.URL.Query()
-	}
-	store := GetTaskRequestEvidenceStore()
-	if store == nil {
-		return evidenceUnavailableFailure(
-			TaskRequestEvidenceCategoryObjectStorage,
-			TaskRequestEvidenceStageObjectWrite,
-			TaskRequestEvidenceSourceNorth,
-		).WithCause(errors.New("evidence store not initialized"))
-	}
-	event := &model.TaskRequestEvidenceEvent{
-		EvidenceId:  evidence.Id,
-		Seq:         1,
-		Stage:       model.TaskRequestEvidenceStageNorthReceive,
-		Phase:       model.TaskRequestEvidencePhaseCompleted,
-		Method:      c.Request.Method,
-		Target:      c.Request.URL.Path,
-		ContentType: c.Request.Header.Get("Content-Type"),
-		ByteCount:   int64(len(body)),
-		Complete:    true,
-		Redacted:    true,
-		Detail: evidenceMarshalDetail(map[string]any{
-			"headers": headers,
-			"query":   EvidenceRedactQueryParams(query),
-		}),
-		CreatedAt: now,
-	}
-	if err := persistTaskEvidenceBody(event, body, TaskRequestEvidenceSourceNorth); err != nil {
-		return err
-	}
+	defer reader.Close()
+	body, readErr := io.ReadAll(io.LimitReader(reader, max(int64(0), evidenceMaxBodyBytes())))
+	event := &model.TaskRequestEvidenceEvent{EvidenceId: index.Id, Stage: model.TaskRequestEvidenceStageNorthReceive, Method: c.Request.Method, Target: evidenceTargetURL(c.Request), ContentType: c.Request.Header.Get("Content-Type"), CreatedAt: now}
+	persistRawEvidenceEvent(event, c.Request.Header, c.Request.URL.Query(), body, errorString(readErr))
 	return nil
 }
 
@@ -205,118 +121,52 @@ func EvidenceObjectKey(evidenceId int64, seq int64) string {
 	return fmt.Sprintf("%d/%d.bin", evidenceId, seq)
 }
 
-func evidenceMarshalDetail(payload map[string]any) string {
-	encoded, err := common.Marshal(payload)
-	if err != nil {
-		return ""
-	}
-	return string(encoded)
-}
-
-// CaptureSouthboundTaskRequestEvidence 在请求字节发送前持久化最终南向证据。
-// 位于 doRequest 内 MarkTaskCreateAttemptUpstreamStarted 之前：
-// 证据写入失败时返回拒绝边界错误，调用方停止履约且不标记 unknown。
-func CaptureSouthboundTaskRequestEvidence(
-	c *gin.Context,
-	req *http.Request,
-	info *relaycommon.RelayInfo,
-) (captureErr error) {
+// CaptureSouthboundTaskRequestEvidence keeps the durable sending check separate
+// from optional evidence. The body is captured as the transport consumes it;
+// no snapshot, object write or evidence limit can prevent sending.
+func CaptureSouthboundTaskRequestEvidence(c *gin.Context, req *http.Request, info *relaycommon.RelayInfo) error {
 	BindAPIRequestEvidence(c, req, info)
 	session := evidenceSessionFrom(c)
-	if !evidenceEnabled() || session == nil || req == nil {
-		return nil
+	if !evidenceEnabled() || session == nil || session.evidenceID <= 0 || req == nil {
+		return verifyEvidenceAttemptBeforeSend(c, info)
 	}
-	// A failed write may also have outlived the recovery window. Preserve a
-	// recovered/unknown hold rather than releasing it using stale local state.
-	defer func() {
-		if captureErr != nil {
-			if err := verifyEvidenceAttemptBeforeSend(c, info); err != nil {
-				captureErr = err
-			}
-		}
-	}()
-	session.mu.Lock()
-	evidenceID := session.evidenceID
-	attemptSeq := session.bumpAttemptSeq()
-	session.mu.Unlock()
-	if evidenceID <= 0 {
-		return evidenceUnavailableFailure(
-			TaskRequestEvidenceCategoryUnavailable,
-			TaskRequestEvidenceStageIndexCreate,
-			TaskRequestEvidenceSourceSouth,
-		)
-	}
-	closed, err := model.TaskRequestEvidenceBodyClosedForAppend(evidenceID, common.GetTimestamp(), EvidenceRetentionSeconds())
+	closed, err := model.TaskRequestEvidenceBodyClosedForAppend(session.evidenceID, common.GetTimestamp(), EvidenceRetentionSeconds())
 	if err != nil {
-		return evidenceUnavailableFailure(TaskRequestEvidenceCategoryEventDatabase, TaskRequestEvidenceStageEventReserve, TaskRequestEvidenceSourceSouth).WithCause(err)
+		evidencePersistWarning("append check", "southbound_send", err)
 	}
-	if closed {
-		// Cleanup stops capture, including snapshots and storage checks. The
-		// durable sending/held permit remains mandatory for the actual request.
-		if err := verifyEvidenceAttemptBeforeSend(c, info); err != nil {
-			return err
+	if closed || err != nil {
+		return verifyEvidenceAttemptBeforeSend(c, info)
+	}
+	facts := map[string]any{}
+	if info != nil && info.ChannelMeta != nil {
+		profile := info.ChannelOtherSettings.VideoUpstreamProfile
+		if info.ChannelType == constant.ChannelTypeSeedanceLink {
+			profile = info.ChannelOtherSettings.VideoUpstreamProtocol.TransportProfile()
 		}
-		*req = *req.WithContext(context.WithValue(req.Context(), taskEvidenceHTTPRequestKey{}, &taskEvidenceHTTPRequest{}))
-		return nil
+		facts["attempt_id"] = int64(common.GetContextKeyInt(c, constant.ContextKeyTaskCreateAttemptID))
+		facts["client_model"] = info.OriginModelName
+		facts["upstream_model"] = info.UpstreamModelName
+		facts["channel_id"] = info.ChannelId
+		facts["upstream_protocol"] = string(info.ChannelOtherSettings.VideoUpstreamProtocol)
+		facts["adapter_version"] = relaycommon.CurrentVideoSouthboundAdapterVersion(info.ChannelType, profile)
+		if info.TaskRelayInfo != nil {
+			facts["client_protocol"] = info.TaskRelayInfo.ClientProtocol
+		}
 	}
-	body, err := evidenceSnapshotRequestBody(req, evidenceMaxBodyBytes())
-	if err != nil {
-		return err
+	model.UpdateTaskRequestEvidenceFacts(session.evidenceID, facts)
+	tee := &evidenceResponseBodyTee{session: session, attemptSeq: session.bumpAttemptSeq(), origin: req.Body, buffer: bytes.NewBuffer(nil), maxBytes: evidenceMaxBodyBytes(), stage: model.TaskRequestEvidenceStageSouthboundSend, started: common.GetTimestamp(), method: req.Method, target: evidenceTargetURL(req), contentType: req.Header.Get("Content-Type"), headers: req.Header.Clone()}
+	if req.URL != nil {
+		tee.requestQuery = req.URL.Query()
 	}
-	store := GetTaskRequestEvidenceStore()
-	if store == nil {
-		return evidenceUnavailableFailure(
-			TaskRequestEvidenceCategoryObjectStorage,
-			TaskRequestEvidenceStageObjectWrite,
-			TaskRequestEvidenceSourceSouth,
-		).WithCause(errors.New("evidence store not initialized"))
-	}
-	profile := info.ChannelOtherSettings.VideoUpstreamProfile
-	if info.ChannelType == constant.ChannelTypeSeedanceLink {
-		profile = info.ChannelOtherSettings.VideoUpstreamProtocol.TransportProfile()
-	}
-	adapterVersion := relaycommon.CurrentVideoSouthboundAdapterVersion(info.ChannelType, profile)
-	facts := map[string]any{
-		"attempt_id":        int64(common.GetContextKeyInt(c, constant.ContextKeyTaskCreateAttemptID)),
-		"client_model":      info.OriginModelName,
-		"upstream_model":    info.UpstreamModelName,
-		"channel_id":        info.ChannelId,
-		"upstream_protocol": string(info.ChannelOtherSettings.VideoUpstreamProtocol),
-		"adapter_version":   adapterVersion,
-	}
-	// ClientProtocol 位于嵌入的 *TaskRelayInfo；音频等无任务路径为 nil，
-	// 必须守卫，否则运行时空指针崩溃。
-	if info.TaskRelayInfo != nil {
-		facts["client_protocol"] = info.TaskRelayInfo.ClientProtocol
-	}
-	model.UpdateTaskRequestEvidenceFacts(evidenceID, facts)
-
-	event := &model.TaskRequestEvidenceEvent{
-		EvidenceId:  evidenceID,
-		Seq:         0,
-		Stage:       model.TaskRequestEvidenceStageSouthboundSend,
-		AttemptSeq:  attemptSeq,
-		Phase:       model.TaskRequestEvidencePhasePrepared,
-		Method:      req.Method,
-		Target:      evidenceTargetURL(req),
-		ContentType: req.Header.Get("Content-Type"),
-		ByteCount:   int64(len(body)),
-		Complete:    true,
-		Redacted:    true,
-		Detail: evidenceMarshalDetail(map[string]any{
-			"headers": EvidenceRedactHeaders(req.Header),
-			"host":    req.URL.Host,
-			"query":   EvidenceRedactQueryParams(req.URL.Query()),
-		}),
-	}
-	if err := persistTaskEvidenceBody(event, body, TaskRequestEvidenceSourceSouth); err != nil {
-		return err
-	}
-	if err := verifyEvidenceAttemptBeforeSend(c, info); err != nil {
-		return err
+	if req.Body == nil || req.Body == http.NoBody {
+		tee.origin = http.NoBody
+		_ = tee.Close()
+	} else {
+		req.Body = tee
 	}
 	*req = *req.WithContext(context.WithValue(req.Context(), taskEvidenceHTTPRequestKey{}, &taskEvidenceHTTPRequest{}))
-	return nil
+	// Optional metadata/database work may have waited while recovery took over.
+	return verifyEvidenceAttemptBeforeSend(c, info)
 }
 
 // evidenceTargetURL 记录脱敏后的目标地址：去掉查询串与用户信息，
@@ -331,52 +181,8 @@ func evidenceTargetURL(req *http.Request) string {
 	return target.String()
 }
 
-// evidenceSnapshotRequestBody 在不动重放契约的前提下快照南向请求正文：
-// 优先 req.GetBody（多数任务/音频正文是字节缓冲），否则读出并原位恢复。
-// 超限返回拒绝边界错误。
-func evidenceSnapshotRequestBody(req *http.Request, maxBytes int64) ([]byte, error) {
-	if req.Body == nil || req.Body == http.NoBody {
-		return nil, nil
-	}
-	if req.GetBody != nil {
-		snapshot, err := req.GetBody()
-		if err == nil {
-			defer snapshot.Close()
-			return evidenceReadBounded(snapshot, maxBytes)
-		}
-	}
-	limited := io.LimitReader(req.Body, maxBytes+1)
-	snapshot, readErr := io.ReadAll(limited)
-	if readErr != nil {
-		return nil, evidenceUnavailableFailure(
-			TaskRequestEvidenceCategoryBodyRead, TaskRequestEvidenceStageBodySnapshot, TaskRequestEvidenceSourceSouth,
-		).WithCause(readErr)
-	}
-	if int64(len(snapshot)) > maxBytes {
-		return nil, evidenceTooLargeFailure(TaskRequestEvidenceStageBodySnapshot, TaskRequestEvidenceSourceSouth, int64(len(snapshot)), maxBytes)
-	}
-	req.Body = io.NopCloser(bytes.NewReader(snapshot))
-	if req.ContentLength == -1 {
-		req.ContentLength = int64(len(snapshot))
-	}
-	return snapshot, nil
-}
-
-func evidenceReadBounded(reader io.Reader, maxBytes int64) ([]byte, error) {
-	payload, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
-	if err != nil {
-		return nil, evidenceUnavailableFailure(
-			TaskRequestEvidenceCategoryBodyRead, TaskRequestEvidenceStageBodySnapshot, TaskRequestEvidenceSourceSouth,
-		).WithCause(err)
-	}
-	if int64(len(payload)) > maxBytes {
-		return nil, evidenceTooLargeFailure(TaskRequestEvidenceStageBodySnapshot, TaskRequestEvidenceSourceSouth, int64(len(payload)), maxBytes)
-	}
-	return payload, nil
-}
-
 // AttachTaskRequestEvidenceUpstreamResponse 包装上游响应体，边转发边捕获。
-// 发送已发生，证据写入故障只告警并标记不完整，绝不影响业务响应。
+// 发送已发生，证据写入故障只输出净化诊断，不影响业务响应。
 func AttachTaskRequestEvidenceUpstreamResponse(c *gin.Context, resp *http.Response) {
 	session := evidenceSessionFrom(c)
 	if !evidenceEnabled() || session == nil || session.evidenceID <= 0 || resp == nil {
@@ -411,14 +217,12 @@ func AttachTaskRequestEvidenceUpstreamResponse(c *gin.Context, resp *http.Respon
 		headers:     resp.Header.Clone(),
 	}
 	if resp.Request != nil {
-		tee.requestHeaders = resp.Request.Header.Clone()
 		if resp.Request.URL != nil {
 			tee.requestQuery = resp.Request.URL.Query()
 		}
 	}
 	if resp.Body == nil {
 		tee.origin = http.NoBody
-		tee.eof = true
 		_ = tee.Close()
 		return
 	}
@@ -427,44 +231,35 @@ func AttachTaskRequestEvidenceUpstreamResponse(c *gin.Context, resp *http.Respon
 
 // evidenceResponseBodyTee 有界捕获上游响应正文。
 type evidenceResponseBodyTee struct {
-	requestHeaders http.Header
-	requestQuery   url.Values
-	stage          string
-	attemptSeq     int
-	eof            bool
-	readErr        error
-	transportErr   error
-	closed         bool
-	closeErr       error
-	headers        http.Header
-	session        *taskRequestEvidenceSession
-	origin         io.ReadCloser
-	buffer         *bytes.Buffer
-	maxBytes       int64
-	started        int64
-	observed       int64
-	mu             sync.Mutex
-	phase          string
-	statusCode     int
-	method         string
-	target         string
-	contentType    string
+	requestQuery url.Values
+	stage        string
+	attemptSeq   int
+	readErr      error
+	transportErr error
+	closed       bool
+	closeErr     error
+	headers      http.Header
+	session      *taskRequestEvidenceSession
+	origin       io.ReadCloser
+	buffer       *bytes.Buffer
+	maxBytes     int64
+	started      int64
+	mu           sync.Mutex
+	statusCode   int
+	method       string
+	target       string
+	contentType  string
 }
 
 func (t *evidenceResponseBodyTee) Read(p []byte) (int, error) {
 	n, err := t.origin.Read(p)
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.observed += int64(n)
-	remaining := max(int64(0), t.maxBytes-int64(t.buffer.Len()))
-	captured := min(int64(n), remaining)
-	t.buffer.Write(p[:int(captured)])
-	if captured < int64(n) {
-		t.phase = model.TaskRequestEvidencePhaseTruncated
+	captured := min(int64(n), max(int64(0), t.maxBytes-int64(t.buffer.Len())))
+	if !t.closed {
+		t.buffer.Write(p[:captured])
 	}
-	if err == io.EOF {
-		t.eof = true
-	} else if err != nil {
+	if err != nil && err != io.EOF {
 		t.readErr = err
 	}
 	return n, err
@@ -481,32 +276,12 @@ func (t *evidenceResponseBodyTee) Close() error {
 	if t.session.evidenceID <= 0 {
 		return t.closeErr
 	}
-	phase := model.TaskRequestEvidencePhaseCompleted
-	complete := t.eof && t.readErr == nil && t.phase == "" && t.closeErr == nil && t.transportErr == nil
-	if !complete {
-		phase = model.TaskRequestEvidencePhaseFailed
-	}
-	if t.phase != "" {
-		phase = t.phase
-	}
 	stage := t.stage
 	if stage == "" {
 		stage = model.TaskRequestEvidenceStageUpstreamResponse
 	}
-	event := &model.TaskRequestEvidenceEvent{
-		EvidenceId: t.session.evidenceID, Stage: stage,
-		AttemptSeq: t.attemptSeq, Phase: phase, StatusCode: t.statusCode, Method: t.method,
-		Target: t.target, ContentType: t.contentType, ByteCount: t.observed, Complete: complete,
-		Detail: evidenceMarshalDetail(map[string]any{"eof": t.eof, "truncated": t.phase != "", "read_failed": t.readErr != nil, "close_failed": t.closeErr != nil, "transport_failed": t.transportErr != nil, "headers": EvidenceRedactHeaders(t.headers), "request_headers": EvidenceRedactHeaders(t.requestHeaders), "request_query": EvidenceRedactQueryParams(t.requestQuery)}),
-	}
-	if err := persistTaskEvidenceBody(event, t.buffer.Bytes(), TaskRequestEvidenceSourceResponse); err != nil {
-		// 发送已发生：证据写入故障只记录净化诊断，不改变业务响应。
-		if rejection, ok := ClassifyTaskRequestEvidenceRejection(err); ok {
-			common.SysError("evidence response unavailable: " + rejection.Diagnostic)
-		} else {
-			common.SysError("evidence response unavailable")
-		}
-	}
+	event := &model.TaskRequestEvidenceEvent{EvidenceId: t.session.evidenceID, Stage: stage, AttemptSeq: t.attemptSeq, StatusCode: t.statusCode, Method: t.method, Target: t.target, ContentType: t.contentType, CreatedAt: t.started}
+	persistRawEvidenceEvent(event, t.headers, t.requestQuery, t.buffer.Bytes(), errorString(errors.Join(t.readErr, t.closeErr, t.transportErr)))
 	t.buffer.Reset()
 	return t.closeErr
 }
@@ -518,7 +293,7 @@ func CaptureTaskEvidenceTransportFailure(c *gin.Context) {
 	if session == nil || session.evidenceID <= 0 {
 		return
 	}
-	event := &model.TaskRequestEvidenceEvent{EvidenceId: session.evidenceID, Stage: model.TaskRequestEvidenceStageTransport, AttemptSeq: int(session.attemptSeq.Load()), Phase: model.TaskRequestEvidencePhaseFailed, CreatedAt: common.GetTimestamp(), Detail: evidenceMarshalDetail(map[string]any{"response_received": false})}
+	event := &model.TaskRequestEvidenceEvent{EvidenceId: session.evidenceID, Stage: model.TaskRequestEvidenceStageTransport, AttemptSeq: int(session.attemptSeq.Load()), CreatedAt: common.GetTimestamp()}
 	if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil && !errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
 		common.SysError("evidence transport event unavailable")
 	}

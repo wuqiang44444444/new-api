@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -94,11 +93,18 @@ func TestAPIRequestEvidenceRecordsSuccessRejectionAndRetries(t *testing.T) {
 				assert.Equal(t, 429, events[2].StatusCode)
 				assert.Equal(t, 200, events[4].StatusCode)
 			}
+			var captured strings.Builder
 			for _, event := range events {
 				payload, status := ReadEvidenceEventBody(event, false)
 				require.Equal(t, "available", status)
-				assert.NotContains(t, string(payload), "private-client")
-				assert.NotContains(t, string(payload), "private-provider")
+				assert.Empty(t, event.Phase, "raw evidence keeps no phase state")
+				assert.Empty(t, event.Detail)
+				captured.Write(payload)
+			}
+			// Raw evidence keeps captured bytes as-is, credentials included; masking happens on admin view.
+			assert.Contains(t, captured.String(), "private-client")
+			if !tc.reject {
+				assert.Contains(t, captured.String(), "private-provider")
 			}
 			assert.Equal(t, tc.status, events[len(events)-1].StatusCode)
 		})
@@ -129,7 +135,8 @@ func TestAPIRequestEvidencePreservesStreamAndExcludesAdministrativeReads(t *test
 	assert.Equal(t, 200, events[1].StatusCode)
 	body, status := ReadEvidenceEventBody(events[1], false)
 	require.Equal(t, "available", status)
-	assert.Equal(t, stream, string(body))
+	_, raw := parseEvidenceObject(body)
+	assert.Equal(t, stream, string(raw))
 	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/task_request_evidence", nil))
 	_, count, err = model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{RequestID: "/api/task_request_evidence", Num: 20})
 	require.NoError(t, err)
@@ -188,16 +195,10 @@ func TestAPIRequestEvidencePreservesMalformedAndTruncatedRequests(t *testing.T) 
 			require.Len(t, events, 2)
 			payload, status := ReadEvidenceEventBody(events[0], false)
 			assert.Equal(t, "available", status)
-			assert.NotContains(t, string(payload), "private-client")
-			assert.EqualValues(t, len(tc.body), events[0].ByteCount)
-			if tc.name == "truncated" {
-				assert.False(t, events[0].Complete)
-				assert.Equal(t, model.TaskRequestEvidencePhaseTruncated, events[0].Phase)
-			} else {
-				assert.Contains(t, string(payload), "9007199254740993")
-			}
-			previews := GetEvidenceEventPreviews(events, false)
-			assert.NotEmpty(t, previews[events[0].Id].Text)
+			_, raw := parseEvidenceObject(payload)
+			// Malformed and capture-limited bytes stay exactly as observed, credentials included.
+			assert.NotEmpty(t, string(raw))
+			assert.Equal(t, tc.body[:min(int64(len(tc.body)), system_setting.GetTaskRequestEvidenceConfig().MaxBodyBytes, system_setting.GetTaskRequestEvidenceConfig().MaxResponseBytes)], string(raw))
 		})
 	}
 }
@@ -220,17 +221,8 @@ func TestAPIRequestEvidenceStorageFailureDoesNotChangeClientResponse(t *testing.
 	events := evidenceEventRows(t, indices[0].Id)
 	require.Len(t, events, 2)
 	for _, event := range events {
-		assert.Equal(t, model.TaskRequestEvidencePhaseUnavailable, event.Phase)
-		assert.Contains(t, event.Detail, "capture_failure")
-	}
-}
-
-func TestAPIObservedBodyRedactsDamagedCredentials(t *testing.T) {
-	for _, body := range []string{`{"api_key":"private`, `{"password":{"secret":"private"},"keep":1`, "data: {\"api_key\":\"private\",\"keep\":1\ndata: {\"broken\":", `{"api_key":false,"keep":1`} {
-		payload, err := redactAPIObservedBody([]byte(body), "application/json")
-		require.NoError(t, err)
-		assert.NotContains(t, string(payload), "private")
-		assert.Contains(t, string(payload), "[REDACTED]")
+		_, status := ReadEvidenceEventBody(event, false)
+		assert.Equal(t, "storage_unavailable", status)
 	}
 }
 
@@ -253,8 +245,12 @@ func TestAPIRequestEvidencePreservesRequestReadError(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, indices, 1)
 	events := evidenceEventRows(t, indices[0].Id)
-	assert.False(t, events[0].Complete)
-	assert.Contains(t, events[0].Detail, `"read_failed":true`)
+	payload, status := ReadEvidenceEventBody(events[0], false)
+	assert.Equal(t, "available", status)
+	meta, raw := parseEvidenceObject(payload)
+	require.NotNil(t, meta, "v2 object header expected")
+	assert.Equal(t, io.ErrUnexpectedEOF.Error(), meta.Error)
+	assert.Equal(t, "prefix", string(raw))
 }
 
 func TestAPIRequestEvidenceRecordsActualRealtimeHandshakeAndFrames(t *testing.T) {
@@ -319,24 +315,12 @@ func TestAPIRequestEvidenceRecordsActualRealtimeHandshakeAndFrames(t *testing.T)
 		if strings.HasPrefix(event.Stage, "realtime_") {
 			payload, status := ReadEvidenceEventBody(event, false)
 			assert.Equal(t, "available", status)
-			assert.NotContains(t, string(payload), "private-key")
+			assert.Contains(t, string(payload), "private-key")
 			assert.Contains(t, string(payload), "9007199254740993")
 		}
 	}
 	assert.True(t, handshake)
 	assert.True(t, delivery)
-}
-
-func TestAPIObservedBodyProtectsEscapedSourceAndSignedURLs(t *testing.T) {
-	capture := &ImageErrorEvidence{}
-	payload, err := capture.redactObservedBody([]byte(`{"url":"https:\/\/cdn.example\/image?X-Amz-Signature=private"}`), "application/json")
-	require.NoError(t, err)
-	assert.NotContains(t, string(payload), "private")
-	capture.suppressSourceURLs = true
-	payload, err = capture.redactObservedBody([]byte(`{"url":"https:\/\/cdn.example\/image","model":"customer"}`), "application/json")
-	require.NoError(t, err)
-	assert.NotContains(t, string(payload), "cdn.example")
-	assert.Contains(t, string(payload), "customer")
 }
 
 func TestAPIRequestEvidenceIndependentOfLegacyCapacity(t *testing.T) {
@@ -371,12 +355,11 @@ func TestAPIRequestEvidenceIndependentOfLegacyCapacity(t *testing.T) {
 	require.Len(t, indices, 1)
 	events := evidenceEventRows(t, indices[0].Id)
 	require.Len(t, events, 2)
-	assert.EqualValues(t, len(`{"input":"sample"}`), events[0].ByteCount)
+	payload, status := ReadEvidenceEventBody(events[0], false)
+	require.Equal(t, "available", status)
+	_, raw := parseEvidenceObject(payload)
+	assert.Equal(t, `{"input":"sample"}`, string(raw))
 	assert.Equal(t, 200, events[1].StatusCode)
-	for _, event := range events {
-		assert.True(t, event.Complete)
-		assert.NotContains(t, event.Detail, "capture_capacity_unavailable")
-	}
 }
 
 func TestAPIRequestEvidencePanicRecordsFinalDelivery(t *testing.T) {
@@ -455,21 +438,8 @@ func TestAPIRequestEvidenceRejectedBodyOnRealHTTP(t *testing.T) {
 	require.Len(t, events, 2)
 	payload, status := ReadEvidenceEventBody(events[0], false)
 	assert.Equal(t, "available", status)
-	assert.Contains(t, string(payload), "sample")
-	assert.NotContains(t, string(payload), "private")
-	assert.True(t, events[0].Complete)
-}
-
-func TestEvidenceMetadataRemovesSignedURLsBeforeStorage(t *testing.T) {
-	headers := EvidenceRedactHeaders(http.Header{"Location": {"https://cdn.example/file?X-Amz-Signature=private"}})
-	assert.NotContains(t, headers["Location"], "private")
-	query := EvidenceRedactQueryParams(url.Values{"url": {"https://cdn.example/file?sig=private"}, "model": {"customer"}})
-	assert.NotContains(t, query["url"], "private")
-	assert.Equal(t, "customer", query["model"])
-	capture := &ImageErrorEvidence{secrets: []string{"1"}}
-	payload, err := capture.redactObservedBody([]byte(`{"n":1,"max_tokens":100,"echo":"1","api_key":"1"}`), "application/json")
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"n":1,"max_tokens":100,"echo":"[REDACTED]","api_key":"[REDACTED]"}`, string(payload))
+	_, raw := parseEvidenceObject(payload)
+	assert.Equal(t, `{"input":"sample","api_key":"private"}`, string(raw))
 }
 
 func TestTaskPollingEvidenceRetainsPOSTAndOneResponsePerTask(t *testing.T) {
@@ -506,7 +476,8 @@ func TestTaskPollingEvidenceRetainsPOSTAndOneResponsePerTask(t *testing.T) {
 		assert.Equal(t, http.MethodPost, events[0].Method)
 		payload, status := ReadEvidenceEventBody(events[0], false)
 		assert.Equal(t, "available", status)
-		assert.JSONEq(t, `{"ids":["a","b"]}`, string(payload))
+		_, raw := parseEvidenceObject(payload)
+		assert.JSONEq(t, `{"ids":["a","b"]}`, string(raw))
 		assert.Equal(t, 503, events[1].StatusCode)
 		assert.Equal(t, "text/plain", events[1].ContentType)
 	}
@@ -580,12 +551,12 @@ func TestAPIRequestEvidenceNineConcurrentRequestsKeepBodies(t *testing.T) {
 		require.Len(t, events, 2)
 		payload, status := ReadEvidenceEventBody(events[0], false)
 		assert.Equal(t, "available", status)
-		assert.JSONEq(t, `{"input":"sample"}`, string(payload))
-		assert.True(t, events[0].Complete)
+		_, requestBody := parseEvidenceObject(payload)
+		assert.JSONEq(t, `{"input":"sample"}`, string(requestBody))
 		payload, status = ReadEvidenceEventBody(events[1], false)
 		assert.Equal(t, "available", status)
-		assert.JSONEq(t, `{"ok":true}`, string(payload))
-		assert.True(t, events[1].Complete)
+		_, responseBody := parseEvidenceObject(payload)
+		assert.JSONEq(t, `{"ok":true}`, string(responseBody))
 	}
 }
 
@@ -611,20 +582,13 @@ func TestAPIRequestEvidenceSlowRejectedBodyEndsAtReadDeadline(t *testing.T) {
 	require.Len(t, indices, 1)
 	events := evidenceEventRows(t, indices[0].Id)
 	require.Len(t, events, 2)
-	assert.EqualValues(t, 1, events[0].ByteCount)
-	assert.False(t, events[0].Complete)
-	assert.Contains(t, events[0].Detail, `"read_failed":true`)
+	payload, status := ReadEvidenceEventBody(events[0], false)
+	require.Equal(t, "available", status)
+	meta, raw := parseEvidenceObject(payload)
+	require.NotNil(t, meta, "v2 object header expected")
+	assert.NotEmpty(t, meta.Error, "the read deadline must surface as the error note")
+	assert.Equal(t, "{", string(raw))
 	assert.Equal(t, 401, events[1].StatusCode)
-}
-
-func TestAPIRequestEvidenceCredentialEchoKeepsNumericValues(t *testing.T) {
-	capture := &ImageErrorEvidence{secrets: []string{"1", "synthetic-long-secret"}}
-	payload, err := capture.redactObservedBody([]byte(`{"n":1,"message":"echo synthetic-long-secret"}`), "application/json")
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"n":1,"message":"echo [REDACTED]"}`, string(payload))
-	payload, err = capture.redactObservedBody([]byte("echo synthetic-long-secret"), "text/plain")
-	require.NoError(t, err)
-	assert.Equal(t, "echo [REDACTED]", string(payload))
 }
 
 // 全站观察器与音视频证据会话的同阶段去重：会话持有交换证据时，通用观察器

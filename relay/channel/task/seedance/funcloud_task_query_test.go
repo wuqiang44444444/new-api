@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -26,7 +27,7 @@ func TestFunCloudFetchTaskUsesAIGCQueryAndReportedCompletionTokens(t *testing.T)
 	oldConfig := system_setting.GetTaskRequestEvidenceConfig()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "evidence.db")), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}))
+	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}))
 	model.DB = db
 	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 7, MaxBodyBytes: 1 << 20, MaxResponseBytes: 1 << 20, WriteTimeoutSeconds: 5}
 	system_setting.SetTaskRequestEvidenceConfig(config)
@@ -47,7 +48,9 @@ func TestFunCloudFetchTaskUsesAIGCQueryAndReportedCompletionTokens(t *testing.T)
 
 	adaptor := &TaskAdaptor{ChannelType: constant.ChannelTypeSeedanceLink}
 	task := &model.Task{
-		TaskID: "task_public_1",
+		TaskID:    "task_public_1",
+		CreatedAt: common.GetTimestamp(),
+		UserId:    7, AppID: 3,
 		Properties: model.Properties{
 			UpstreamModelName: "seedance-2",
 		},
@@ -64,12 +67,14 @@ func TestFunCloudFetchTaskUsesAIGCQueryAndReportedCompletionTokens(t *testing.T)
 			},
 		},
 	}
+	require.NoError(t, db.Create(task).Error)
 	response, err := adaptor.FetchTask(server.URL, "funcloud-key", task, "")
 	require.NoError(t, err)
 	defer response.Body.Close()
 
 	body, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
 	result, err := adaptor.ParseTaskResult(task, response, body)
 	require.NoError(t, err)
 	assert.Equal(t, 40594, result.CompletionTokens)
@@ -83,9 +88,10 @@ func TestFunCloudFetchTaskUsesAIGCQueryAndReportedCompletionTokens(t *testing.T)
 	events, err := model.ListTaskRequestEvidenceEvents(evidence.Id)
 	require.NoError(t, err)
 	require.Len(t, events, 1)
-	original, err := service.GetTaskRequestEvidenceStore().Get(events[0].ObjectKey)
-	require.NoError(t, err)
+	content, status := service.ReadEvidenceEventContent(events[0], false)
+	require.Equal(t, "available", status)
+	original := content.Body
 	assert.Contains(t, string(original), `"pointConsume":"0.232731"`)
 	assert.Contains(t, string(original), `"taskId":"task-1"`)
-	assert.True(t, events[0].Complete)
+	assert.Empty(t, events[0].Phase)
 }

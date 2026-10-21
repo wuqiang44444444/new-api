@@ -15,25 +15,21 @@ import (
 // their native behavior. Capture only bytes accepted by the downstream writer.
 type evidenceClientWriter struct {
 	gin.ResponseWriter
-	body      bytes.Buffer
-	written   int64
-	failed    bool
-	truncated bool
-	finished  bool
+	body     bytes.Buffer
+	writeErr error
+	finished bool
 }
 
 func (w *evidenceClientWriter) Write(p []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(p)
-	w.written += int64(n)
-	if err != nil || n != len(p) {
-		w.failed = true
+	if err != nil {
+		w.writeErr = err
+	} else if n != len(p) {
+		w.writeErr = io.ErrShortWrite
 	}
 	limit := system_setting.GetTaskRequestEvidenceConfig().MaxResponseBytes
 	take := min(int64(n), max(int64(0), limit-int64(w.body.Len())))
 	w.body.Write(p[:int(take)])
-	if take < int64(n) {
-		w.truncated = true
-	}
 	return n, err
 }
 func (w *evidenceClientWriter) WriteString(s string) (int, error) { return w.Write([]byte(s)) }
@@ -44,36 +40,20 @@ func FinishTaskRequestEvidenceClientDelivery(c *gin.Context) {
 	if session == nil {
 		return
 	}
+	if c.GetBool(taskCreateEvidenceDeliveryKey) {
+		return
+	}
 	writer, ok := c.Writer.(*evidenceClientWriter)
 	if !ok || writer.finished {
 		return
 	}
 	writer.finished = true
-	complete := !writer.failed && !writer.truncated && c.Request.Context().Err() == nil
-	phase := model.TaskRequestEvidencePhaseCompleted
-	if !complete {
-		phase = model.TaskRequestEvidencePhaseFailed
-	}
-	if writer.truncated {
-		phase = model.TaskRequestEvidencePhaseTruncated
-	}
 	contentType := writer.Header().Get("Content-Type")
-	event := &model.TaskRequestEvidenceEvent{EvidenceId: session.evidenceID, Stage: model.TaskRequestEvidenceStageClientDelivery, Phase: phase, StatusCode: writer.Status(), ContentType: contentType, ByteCount: writer.written, Complete: complete, CreatedAt: common.GetTimestamp()}
+	event := &model.TaskRequestEvidenceEvent{EvidenceId: session.evidenceID, Stage: model.TaskRequestEvidenceStageClientDelivery, StatusCode: writer.Status(), ContentType: contentType, CreatedAt: common.GetTimestamp()}
 	if strings.Contains(contentType, "json") || strings.HasPrefix(contentType, "text/") {
-		if err := persistTaskEvidenceBody(event, writer.body.Bytes(), TaskRequestEvidenceSourceResponse); err != nil {
-			common.SysError("evidence client response unavailable")
-		}
-	} else {
-		// Binary delivery statistics supplement the upstream body; avoid storing a
-		// duplicate media object or claiming that bytes reached the user's device.
-		event.Complete = !writer.failed && c.Request.Context().Err() == nil
-		if event.Complete {
-			event.Phase = model.TaskRequestEvidencePhaseCompleted
-		}
-		event.Detail = evidenceMarshalDetail(map[string]any{"media_body_archived": false})
-		if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil && !errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
-			common.SysError("evidence client delivery unavailable")
-		}
+		persistRawEvidenceEvent(event, writer.Header(), nil, writer.body.Bytes(), errorString(writer.writeErr))
+	} else if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil && !errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
+		evidencePersistWarning("delivery event", event.Stage, err)
 	}
 	writer.body.Reset()
 }

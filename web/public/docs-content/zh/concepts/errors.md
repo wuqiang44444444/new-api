@@ -1,7 +1,7 @@
 ---
 page-id: errors
 kind: guide
-last-verified: 2026-09-19
+last-verified: 2026-10-21
 operations: []
 ---
 
@@ -19,6 +19,7 @@ operations: []
 | `404` | 资源或任务不存在           | 检查 ID、接口及原应用 Key          |
 | `402` | 额度不足（部分接口）       | 补充额度后再发起新请求，不持续重试 |
 | `409` | 幂等冲突或资源状态冲突     | 读取错误码后决定                   |
+| `410` | 内容交付不可用或已过期     | 按接口合同核查，不重新生成         |
 | `413` | 请求正文超过服务上限       | 减少正文或内联媒体大小后重新发起   |
 | `429` | 频率、并发或额度限制       | 按指数退避并加入抖动               |
 | `5xx` | 服务暂时不可用             | 对可安全重放的请求有限重试         |
@@ -50,19 +51,15 @@ operations: []
 
 ## 请求记录相关错误
 
-音视频请求记录失败时，公开错误码区分以下情况；具体信封仍以所调用的协议为准。
+请求证据是尽力保存的观察数据。采集上限、正文格式、索引或存储故障不会拒绝业务，
+不会改变重试、结算、退款或任务结果；证据缺失也不能证明请求没有发送。业务本身的正文校验
+和正式输入、结果存储仍按对应接口规则执行。
 
-| HTTP 状态 | 错误码                                                          | 处理方式                                                         |
-| --------- | --------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `400`     | `invalid_request`                                               | 客户正文未完整接收或要求 JSON 的原始请求存在语法错误；修正请求   |
-| `413`     | `request_body_too_large`                                        | 请求未被接受；减少正文或内联媒体大小                             |
-| `503`     | `evidence_configuration_error`                                  | 联系管理员检查请求记录配置                                       |
-| `503`     | `evidence_database_unavailable`、`evidence_storage_unavailable` | 请求记录存储暂不可用；保留请求 ID 供管理员核查                   |
-| `503`     | `evidence_store_busy`、`evidence_write_timeout`                 | 请求记录繁忙或写入超时；结合响应说明确认是否未受理               |
-| `503`     | `evidence_processing_failed`                                    | 服务无法处理请求记录；不能据此认定客户 JSON 错误                 |
-| `503`     | `evidence_unavailable`                                          | 记录不可用或发送结果无法核实；先查询任务或联系管理员，不自动重发 |
+| HTTP 状态 | 错误码 | 处理方式 |
+| --- | --- | --- |
+| `503` | `evidence_unavailable` | durable attempt 的发送资格或结果无法核实；先查询任务或联系管理员，不自动重发 |
 
-以上 `503` 不等于已退款，也不统一表示可安全重放。响应已明确结果无法核实时，应按未知创建结果处理。
+此 `503` 不表示已退款，也不能作为可安全重放的依据。
 
 ## 安全重试
 
@@ -74,6 +71,30 @@ operations: []
 - 客户端超时不代表服务端一定没有接收请求；有 ID 时先查询原任务，只有明确支持幂等的模式才能用原键确认。
 - `create_outcome_unknown` 和图片任务 `unknown` 不能按普通 `5xx` 处理：不自动重发、不假定退款，保留请求或任务 ID 并核查。
 - 图片 `429` / `503` 只有明确为受理容量或受理前存储检查失败时才表示未受理；不能把所有同状态响应都视为可安全重复创建。
+
+## 视频已生成但交付未就绪或不可用
+
+Seedance 与 H3 标准视频的生成状态与交付状态独立：查询可返回 HTTP `200`、`status=succeeded`，
+同时 `content.delivery_status=preparing` 或 `unavailable`，此时没有主视频下载 URL。
+`preparing` 时继续有界查询原任务；`unavailable` 时保留任务 ID 核查。
+
+鉴权内容入口的错误按 `error.code` 区分：
+
+| HTTP 状态 | 错误码 | 调用方处理 |
+| --- | --- | --- |
+| `409` | `video_delivery_preparing` | 等待转存后重试查询或内容 GET，不重新创建 |
+| `410` | `video_delivery_unavailable` | 交付不可用，保留 ID 核查，不假定退款 |
+| `503` | `video_delivery_unavailable` | 当前签名存储不可用，有限重试 GET 或联系管理员 |
+
+这些交付故障不改变已确认的生成成功和计费事实，不自动退款或重新生成。本站 OSS 签名 URL 从每次
+签发起有效 24 小时，下载不附平台 Key；对象仍保留且授权有效时查询原任务可续签。范围外原生视频
+保留原有过期规则，`video_content_expired` 不能作为本站托管结果的通用错误口径。
+完整下载与跳转规则见[ModelArk V3 视频](api-reference/videos/modelark#下载视频或末帧)。
+
+English: hosted standard video delivery errors do not change generation or billing facts. Retry the original
+GET for `409 video_delivery_preparing`; investigate `410 video_delivery_unavailable`; use bounded GET retries
+for `503 video_delivery_unavailable`. Do not regenerate or assume a refund. An authorized task query can renew
+an expired 86400-second signed URL while the object is retained; download the URL without an API key.
 
 ## 限流与计费
 

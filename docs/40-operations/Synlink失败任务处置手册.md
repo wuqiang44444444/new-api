@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-15
+last-reviewed: 2026-10-21
 ---
 
 # Synlink 失败任务处置手册
@@ -114,11 +114,15 @@ API 3、`synlink_video_v1`，处于此身份违例导致的待核对，资金 pe
 ## 验收边界
 
 查询 HTTP 404 表示本次结果未确认，不等同于失败，也不按次数自动归因为应退款。
-视频下载只提供临时访问；控制台提示及时下载，不按任务完成时间承诺固定 24 小时。
-下载返回 `410 video_content_expired` 时核对明确的内容到期时间或签名时间加有效时长；
+Synlink Link 视频结果使用本站 OSS 托管，`content.delivery_status` 区分 `preparing`、`ready` 与
+`unavailable`。就绪地址从每次签发起有效 24 小时，不从任务完成时间计时；对象仍保留且授权有效时，
+重新查询原任务可续签。下载签名 URL 不附平台 Key；鉴权内容入口就绪后返回 302。
+内容入口返回 `409 video_delivery_preparing` 时等待转存，`410 video_delivery_unavailable` 时调查
+对象登记与转存故障，`503 video_delivery_unavailable` 时检查本站签名存储。范围外原生线路的
+`video_content_expired` 不能作为本站托管交付的通用错误口径。
 缺少签名日期、参数畸形、HTTP 403/404 或 `transport_error` 均不能单独证明签名过期。
-下载故障不改变生成成功与结算事实；在有效期内无法交付时单独调查交付故障，不自动刷新、
-重新生成或退款。产品不提供长期视频存储，旧任务不自动修复。
+下载故障不改变生成成功与结算事实，不重新生成或自动退款。签名有效期不代表对象永久保存，
+存量任务的补扫边界与保留策略遵循[视频结果交付架构](../20-architecture/Link视频结果OSS托管交付架构.md)。
 
 本地代码与模拟测试通过不等于生产部署、真实 Provider 验收或历史退款完成。发布后逐项记录版本、
 任务状态、资金与日志结果，未完成事项由[路线图](../50-planning/路线图.md)跟踪。

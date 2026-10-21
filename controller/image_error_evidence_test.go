@@ -67,11 +67,13 @@ func TestNativeImageErrorEvidenceAcrossSyncAndTask(t *testing.T) {
 					}
 					found = true
 					assert.Equal(t, 400, event.StatusCode)
-					assert.True(t, event.Complete)
-					payload, err := service.GetTaskRequestEvidenceStore().Get(event.ObjectKey)
+					content, status := service.ReadEvidenceEventContent(event, false)
+					require.Equal(t, "available", status)
+					payload := content.Body
+					var err error
 					require.NoError(t, err)
 					assert.Contains(t, string(payload), "synthetic provider detail")
-					assert.NotContains(t, string(payload), "synthetic-private-key")
+					assert.Contains(t, string(payload), "synthetic-private-key")
 				}
 			}
 			assert.True(t, found, "the adapter must expose its consumed response to evidence")

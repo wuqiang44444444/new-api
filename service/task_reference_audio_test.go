@@ -1,11 +1,8 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"io"
-	"mime/multipart"
 	"net/http/httptest"
 	"testing"
 
@@ -77,28 +74,6 @@ func TestReferenceAudioUploadFailureHasNoSnapshot(t *testing.T) {
 	task := &model.Task{}
 	StageVideoReferenceAudioSnapshot(c, task)
 	assert.Empty(t, task.PrivateData.ReferenceAudio)
-}
-
-func TestMultipartAudioRequestEvidenceRedactsUntypedJSON(t *testing.T) {
-	var body bytes.Buffer
-	w := multipart.NewWriter(&body)
-	require.NoError(t, w.WriteField("request", `{"token":"fixture-sensitive","content":[{"type":"audio_url","audio_url":{"url":"file://audio"}}]}`))
-	part, err := w.CreateFormFile("audio", "sample.wav")
-	require.NoError(t, err)
-	_, err = part.Write([]byte("file bytes"))
-	require.NoError(t, err)
-	require.NoError(t, w.Close())
-	redacted, err := evidenceRedactBody(body.Bytes(), w.FormDataContentType())
-	require.NoError(t, err)
-	assert.NotContains(t, string(redacted), "fixture-sensitive")
-	reader := multipart.NewReader(bytes.NewReader(redacted), w.Boundary())
-	_, err = reader.NextPart()
-	require.NoError(t, err)
-	audio, err := reader.NextPart()
-	require.NoError(t, err)
-	data, err := io.ReadAll(audio)
-	require.NoError(t, err)
-	assert.Equal(t, []byte("file bytes"), data)
 }
 
 func TestRepeatedReferenceAudioKeepsEachContentObject(t *testing.T) {

@@ -83,7 +83,7 @@ func TestEvidenceDetailMasksNestedSignedURLForEveryRole(t *testing.T) {
 	require.Len(t, rows, 2)
 	for _, row := range rows {
 		assert.Equal(t, "view", row.Action)
-		assert.Equal(t, "redacted", row.Scope)
+		assert.Equal(t, "directory", row.Scope)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestEvidenceOriginalViewAndDownloadAuditSeparately(t *testing.T) {
 	writer = callEvidenceHandler(t, GetTaskRequestEvidenceContent, root, "/api/task_request_evidence/1/events/1/content",
 		gin.Param{Key: "id", Value: "1"}, gin.Param{Key: "event_id", Value: "1"})
 	require.Equal(t, 200, writer.Code)
-	assert.Equal(t, "text/plain; charset=utf-8", writer.Header().Get("Content-Type"))
+	assert.Equal(t, "application/json; charset=utf-8", writer.Header().Get("Content-Type"))
 	assert.Contains(t, writer.Body.String(), "sig=secret")
 
 	// The download delivers the same stored bytes as an attachment.
@@ -117,7 +117,7 @@ func TestEvidenceOriginalViewAndDownloadAuditSeparately(t *testing.T) {
 	rows := evidenceAccessRows(t, evidence.Id)
 	require.Len(t, rows, 3)
 	assert.Equal(t, "view", rows[0].Action)
-	assert.Equal(t, "redacted", rows[0].Scope)
+	assert.Equal(t, "directory", rows[0].Scope)
 	assert.Equal(t, "view", rows[1].Action)
 	assert.Equal(t, "original", rows[1].Scope)
 	assert.Equal(t, "download", rows[2].Action)
@@ -145,7 +145,11 @@ func TestEvidenceDetailDecryptFailureKeepsStatusAndAudit(t *testing.T) {
 			} else {
 				assert.Equal(t, 410, writer.Code)
 			}
-			assert.Contains(t, writer.Body.String(), `"body_status":"decrypt_failed"`)
+			if handler.name != "detail" {
+				assert.Contains(t, writer.Body.String(), `"body_status":"decrypt_failed"`)
+			} else {
+				assert.NotContains(t, writer.Body.String(), "body_status")
+			}
 			assert.NotContains(t, writer.Body.String(), "test/body.bin")
 			assert.NotContains(t, writer.Body.String(), "sig=secret")
 		})

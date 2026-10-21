@@ -39,7 +39,11 @@ describe('Task evidence', () => {
     show()
     expect(api.get).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Request evidence' }))
-    expect(await screen.findByText('No request evidence available. It may not have been recorded or may have expired.')).toBeTruthy()
+    expect(
+      await screen.findByText(
+        'No request evidence available. It may not have been recorded or may have expired.'
+      )
+    ).toBeTruthy()
   })
   it('shows an error and a retry action when the query fails', async () => {
     vi.mocked(api.get).mockRejectedValue(new Error('offline'))
@@ -61,10 +65,16 @@ describe('Task evidence', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Failed to load request evidence'
     )
-    expect(screen.queryByText('No request evidence available. It may not have been recorded or may have expired.')).toBeNull()
+    expect(
+      screen.queryByText(
+        'No request evidence available. It may not have been recorded or may have expired.'
+      )
+    ).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(
-      await screen.findByText('No request evidence available. It may not have been recorded or may have expired.')
+      await screen.findByText(
+        'No request evidence available. It may not have been recorded or may have expired.'
+      )
     ).toBeVisible()
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -84,7 +94,7 @@ describe('Task evidence', () => {
             events: [
               {
                 id: 2,
-                stage: 'polling',
+                name: 'polling',
                 phase: 'completed',
                 complete: true,
                 has_body: true,
@@ -105,42 +115,11 @@ describe('Task evidence', () => {
     expect(
       (await screen.findAllByText('Evidence body expired')).length
     ).toBeGreaterThan(0)
-    expect(screen.queryByText('No request evidence available. It may not have been recorded or may have expired.')).toBeNull()
     expect(
-      screen.queryByRole('button', { name: 'Download original evidence' })
+      screen.queryByText(
+        'No request evidence available. It may not have been recorded or may have expired.'
+      )
     ).toBeNull()
-  })
-  it('shows incomplete evidence and hides original downloads from administrators', async () => {
-    vi.mocked(api.get)
-      .mockResolvedValueOnce({
-        data: {
-          success: true,
-          data: { items: [{ id: 1, request_id: 'req-1' }], total: 1 },
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          success: true,
-          data: {
-            evidence: { body_expired: false },
-            events: [
-              {
-                id: 2,
-                stage: 'upstream_response',
-                phase: 'failed',
-                complete: false,
-                has_body: true,
-                preview: 'partial',
-                byte_count: 7,
-              },
-            ],
-          },
-        },
-      })
-    show()
-    fireEvent.click(screen.getByRole('button', { name: 'Request evidence' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'req-1' }))
-    await waitFor(() => expect(screen.getByText(/Incomplete/)).toBeTruthy())
     expect(
       screen.queryByRole('button', { name: 'Download original evidence' })
     ).toBeNull()
@@ -165,7 +144,7 @@ describe('Task evidence', () => {
             events: [
               {
                 id: 2,
-                stage: 'north_receive',
+                name: 'north_receive',
                 phase: 'completed',
                 complete: true,
                 has_body: true,
@@ -178,7 +157,12 @@ describe('Task evidence', () => {
           },
         },
       })
-      .mockResolvedValue({ data: original })
+      .mockResolvedValue({
+        data: {
+          success: true,
+          data: { text: original, body_status: 'available' },
+        },
+      })
     render(
       <QueryClientProvider client={client}>
         <TaskEvidence taskId='task-1' isRoot />
@@ -187,20 +171,19 @@ describe('Task evidence', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Request evidence' }))
     fireEvent.click(await screen.findByRole('button', { name: 'req-view' }))
     // The default preview stays masked; the original is not in the document.
-    expect(
-      await screen.findByText('{"prompt":"signed-url-masked"}')
-    ).toBeTruthy()
+    await screen.findByRole('button', { name: 'View original text' })
+    expect(screen.queryByText('{"prompt":"signed-url-masked"}')).toBeNull()
     expect(screen.queryByText(original)).toBeNull()
     fireEvent.click(
       await screen.findByRole('button', { name: 'View original text' })
     )
     expect(await screen.findByText(original)).toBeTruthy()
     expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
-      'Authentication credentials removed'
+      'Captured content may be incomplete and may contain credentials.'
     )
     expect(api.get).toHaveBeenLastCalledWith(
       '/api/task_request_evidence/1/events/2/content',
-      expect.objectContaining({ responseType: 'text' })
+      expect.objectContaining({ skipErrorHandler: true })
     )
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Close' }))
@@ -236,7 +219,7 @@ describe('Task evidence', () => {
             events: [
               {
                 id: 3,
-                stage: 'southbound_send',
+                name: 'southbound_send',
                 phase: 'completed',
                 complete: true,
                 has_body: true,
@@ -284,56 +267,3 @@ it('queries synchronous audio evidence by platform request ID without a task ID'
     params: { request_id: 'audio-request', p: 1, page_size: 20 },
   })
 })
-
-it.each([
-  ['decrypt_failed', 'Evidence body cannot be decrypted or authenticated'],
-  ['missing', 'Evidence body file is missing'],
-  ['integrity_failed', 'Evidence body integrity check failed'],
-  ['binary', 'Binary evidence has no text preview'],
-])(
-  'explains %s without rewriting capture completeness',
-  async (status, message) => {
-    vi.mocked(api.get)
-      .mockResolvedValueOnce({
-        data: {
-          success: true,
-          data: { items: [{ id: 1, request_id: 'req-readability' }], total: 1 },
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          success: true,
-          data: {
-            evidence: { body_expired: false },
-            events: [
-              {
-                id: 2,
-                stage: 'upstream_response',
-                phase: 'completed',
-                complete: true,
-                has_body: true,
-                preview: '',
-                body_status: status,
-                byte_count: 8,
-              },
-            ],
-          },
-        },
-      })
-    show(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Request evidence' }))
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'req-readability' })
-    )
-    expect(await screen.findByText(message)).toBeTruthy()
-    expect(screen.getByText(/Complete/)).toBeTruthy()
-    // Root can retry a download after temporary storage failure; permissions stay unchanged.
-    expect(
-      screen.getByRole('button', { name: 'Download original evidence' })
-    ).toBeTruthy()
-    // Only readable text bodies offer the original view.
-    expect(
-      screen.queryByRole('button', { name: 'View original text' })
-    ).toBeNull()
-  }
-)

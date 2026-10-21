@@ -31,9 +31,6 @@ func TestEvidenceReadabilityAcrossStoreRestart(t *testing.T) {
 	read, status := ReadEvidenceEventBody(event, false)
 	assert.Equal(t, "available", status)
 	assert.Equal(t, payload, read)
-	previews := GetEvidenceEventPreviews([]*model.TaskRequestEvidenceEvent{event}, false)
-	assert.NotContains(t, previews[1].Text, "private")
-	assert.Equal(t, "available", previews[1].BodyStatus)
 
 	wrongConfig := config
 	wrongConfig.EncryptionKeyHex = strings.Repeat("02", 32)
@@ -49,20 +46,22 @@ func TestEvidenceReadabilityAcrossStoreRestart(t *testing.T) {
 
 	for _, tc := range []struct {
 		name, contentType, digest, key string
+		id                             int64
 		expired                        bool
 		want                           string
 	}{
-		{"binary", "video/mp4; codecs=h264", event.Sha256, key, false, "binary"},
-		{"missing", "application/json", event.Sha256, "test/missing", false, "missing"},
-		{"digest mismatch", "application/json", "wrong", key, false, "integrity_failed"},
-		{"not captured", "application/json", "", "", false, "not_recorded"},
-		{"expired", "application/json", event.Sha256, key, true, "expired"},
+		{"binary", "video/mp4; codecs=h264", event.Sha256, key, 2, false, "available"},
+		{"missing", "application/json", event.Sha256, "test/missing", 2, false, "missing"},
+		{"digest mismatch", "application/json", "wrong", key, 2, false, "integrity_failed"},
+		// An event row without an object is "missing"; "not_recorded" requires no row at all.
+		{"row without object", "application/json", "", "", 2, false, "missing"},
+		{"not captured", "application/json", "", "", 0, false, "not_recorded"},
+		{"expired", "application/json", event.Sha256, key, 2, true, "expired"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			item := &model.TaskRequestEvidenceEvent{Id: 2, ObjectKey: tc.key, ContentType: tc.contentType, Sha256: tc.digest}
-			preview := GetEvidenceEventPreviews([]*model.TaskRequestEvidenceEvent{item}, tc.expired)[2]
-			assert.Equal(t, tc.want, preview.BodyStatus)
-			assert.Empty(t, preview.Text)
+			item := &model.TaskRequestEvidenceEvent{Id: tc.id, ObjectKey: tc.key, ContentType: tc.contentType, Sha256: tc.digest}
+			_, status := ReadEvidenceEventContent(item, tc.expired)
+			assert.Equal(t, tc.want, status)
 		})
 	}
 	// Empty but valid text must not be mistaken for unreadable evidence.

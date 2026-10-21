@@ -48,7 +48,8 @@ func TestEvidenceModelArkCapturesBeforeConversion(t *testing.T) {
 	require.NoError(t, db.Find(&events).Error)
 	require.Len(t, events, 2)
 	assert.Equal(t, "/api/v3/contents/generations/tasks", events[0].Target)
-	payload, err := service.GetTaskRequestEvidenceStore().Get(events[0].ObjectKey)
-	require.NoError(t, err)
+	content, status := service.ReadEvidenceEventContent(&events[0], false)
+	require.Equal(t, "available", status)
+	payload := content.Body
 	assert.JSONEq(t, original, string(payload))
 }

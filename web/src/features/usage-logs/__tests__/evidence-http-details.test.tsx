@@ -31,7 +31,7 @@ it('shows observed HTTP status and request metadata even when the response has n
           events: [
             {
               id: 2,
-              stage: 'polling',
+              name: 'polling',
               phase: 'completed',
               complete: true,
               has_body: false,
@@ -63,7 +63,7 @@ it('shows observed HTTP status and request metadata even when the response has n
   expect(screen.getByText('GET')).toBeVisible()
   expect(screen.getByText('https://provider.example/tasks/1')).toBeVisible()
   expect(screen.getByText('text/plain')).toBeVisible()
-  expect(screen.getByText(/response_received/)).toBeVisible()
+  expect(screen.queryByText(/response_received/)).toBeNull()
   expect(screen.getByText('Created At')).toBeVisible()
 })
 
@@ -81,7 +81,11 @@ it('allows administrators to browse recorded requests without an error log or re
     </QueryClientProvider>
   )
   fireEvent.click(screen.getByRole('button', { name: 'Request evidence' }))
-  expect(await screen.findByText('No request evidence available. It may not have been recorded or may have expired.')).toBeVisible()
+  expect(
+    await screen.findByText(
+      'No request evidence available. It may not have been recorded or may have expired.'
+    )
+  ).toBeVisible()
   expect(api.get).toHaveBeenCalledWith('/api/task_request_evidence', {
     params: { request_id: undefined, p: 1, page_size: 20 },
   })

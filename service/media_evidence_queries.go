@@ -19,7 +19,6 @@ func finishMediaEvidenceQueries(capture *ImageErrorEvidence, indexes []*model.Ta
 			continue
 		}
 		bound.records = append(bound.records, capture.records...)
-		bound.secrets = append(bound.secrets, capture.secrets...)
 		bound.deliveryStatsOnly = capture.deliveryStatsOnly
 		bound.FinishClient(status, headers)
 	}

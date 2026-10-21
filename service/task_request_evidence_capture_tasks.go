@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -59,30 +60,8 @@ func CaptureTaskPollingEvidence(
 	} else {
 		target = ""
 	}
-	phase := model.TaskRequestEvidencePhaseResponded
-	if pollErr != nil {
-		phase = model.TaskRequestEvidencePhaseFailed
-	}
-	event := &model.TaskRequestEvidenceEvent{
-		EvidenceId:  evidence.Id,
-		Stage:       model.TaskRequestEvidenceStagePolling,
-		Phase:       phase,
-		StatusCode:  statusCode,
-		Method:      method,
-		Target:      target,
-		ByteCount:   int64(len(responseBody)),
-		Complete:    pollErr == nil,
-		ContentType: "application/json",
-		Redacted:    true,
-		Detail: evidenceMarshalDetail(map[string]any{
-			"error":           errorString(pollErr),
-			"request_headers": EvidenceRedactHeaders(requestHeaders),
-		}),
-		CreatedAt: common.GetTimestamp(),
-	}
-	if err := persistTaskEvidenceBody(event, responseBody, TaskRequestEvidenceSourceResponse); err != nil {
-		common.SysError("evidence polling event unavailable")
-	}
+	event := &model.TaskRequestEvidenceEvent{EvidenceId: evidence.Id, Stage: model.TaskRequestEvidenceStagePolling, StatusCode: statusCode, Method: method, Target: target, ContentType: "application/json", CreatedAt: common.GetTimestamp()}
+	persistRawEvidenceEvent(event, requestHeaders, nil, responseBody[:min(int64(len(responseBody)), max(int64(0), system_setting.GetTaskRequestEvidenceConfig().MaxResponseBytes))], errorString(pollErr))
 }
 
 // IsTaskRequestEvidenceEnabled 报告证据采集是否启用。
@@ -105,26 +84,9 @@ func CaptureTaskContentDeliveryEvidence(taskID string, statusCode int, bytesWrit
 		return
 	}
 
-	phase := model.TaskRequestEvidencePhaseCompleted
-	if deliverErr != nil {
-		phase = model.TaskRequestEvidencePhaseFailed
-	}
-	event := &model.TaskRequestEvidenceEvent{
-		EvidenceId: evidence.Id,
-		Stage:      model.TaskRequestEvidenceStageClientDelivery,
-		Phase:      phase,
-		StatusCode: statusCode,
-		ByteCount:  bytesWritten,
-		Complete:   deliverErr == nil,
-		Redacted:   false,
-		Detail: evidenceMarshalDetail(map[string]any{
-			"bytes_written": bytesWritten,
-			"error":         errorString(deliverErr),
-		}),
-		CreatedAt: common.GetTimestamp(),
-	}
+	event := &model.TaskRequestEvidenceEvent{EvidenceId: evidence.Id, Stage: model.TaskRequestEvidenceStageClientDelivery, StatusCode: statusCode, CreatedAt: common.GetTimestamp()}
 	if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil && !errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
-		common.SysError("evidence delivery event failed: " + err.Error())
+		evidencePersistWarning("delivery event", event.Stage, err)
 	}
 }
 

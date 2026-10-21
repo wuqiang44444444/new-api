@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-14
+last-reviewed: 2026-10-21
 ---
 
 # 视频模型 API 调用指南
@@ -14,6 +14,7 @@ NEWAPI 原生视频入口与 Seedance Link 入口彼此独立：
 | --- | --- | --- |
 | NEWAPI 原生视频 | `/v1/videos`、`/v1/video/generations` | 原生 Provider 渠道 |
 | Seedance | `/api/v3/contents/generations/tasks` | `ChannelTypeSeedanceLink` |
+| MiniMax 标准视频 | `/api/v3/contents/generations/tasks` | `ChannelTypeMiniMaxLink` |
 
 `/v1/video/generations` 的 DoubaoVideo 会在南向调用火山 ModelArk V3，但它仍是 NEWAPI 原生北向合同。
 Seedance Link 不接管、不包装也不收紧该入口。
@@ -113,10 +114,44 @@ DELETE /api/v3/contents/generations/tasks/{task_id}
 
 公开状态为 `queued`、`running`、`succeeded`、`failed`、`cancelled`、`expired`。`running` 也可能表示
 结果待核实；客户端应有界轮询并保留原 ID，不能据此重新创建或认定退款。视频任务不随同账号 API Key
-共享，查询和下载应使用创建时的 Key。
+共享，查询任务和访问内容入口应使用创建时的 Key；下载本站结果预签名地址无需附带 Key。
 
 成功交付与最终结算可以分开完成。当前用量响应省略零值，缺失 `usage.completion_tokens` 或空 `usage`
 不能区分已确认零用量与未报告；不得补零计算费用，最终费用以账单为准。
+
+### 4.1 视频结果交付与下载
+
+Seedance Link 与 MiniMax 标准视频创建成功仅返回任务 ID，不直接返回下载地址。查询原任务时，
+`status=succeeded` 只说明生成成功，还须检查 `content.delivery_status`：
+
+| 交付状态 | 调用方处理 |
+| --- | --- |
+| `preparing` | 结果正在转存，URL 暂缺；在客户端等待时限内继续查询原任务 |
+| `ready` | 主视频已托管，读取 `content.video_url`；末帧实际就绪时另返回 `content.last_frame_url` |
+| `unavailable` | 交付不可用，保留 ID 核查；不重新生成或假定退款 |
+
+`ready` 只表示主视频就绪，不保证末帧已就绪。需要已请求的末帧时可继续有界查询，或用
+`?part=last_frame` 内容入口区分准备中、交付不可用与部件不存在。
+
+结果 URL 是本站私有对象存储的预签名 GET 地址，直接下载时不附带平台或 Provider Key：
+
+```bash
+curl --fail "$VIDEO_URL" --output result.mp4
+```
+
+`VIDEO_URL` 使用授权任务查询返回的完整地址。每次签发起有效 24 小时（86400 秒），与任务创建、
+生成完成时间无关。对象仍保留且调用方仍有权限时，重新查询原任务可续签，不重新生成或复制。
+签名有效期与对象保留期不同，部署方须明确保留策略；完整签名 URL 不进入普通日志或工单。
+
+既有 `GET /v1/videos/{task_id}/content` 仍需平台鉴权，交付就绪后返回 `302`，curl 需要
+`--location` 跟随跳转，不使用 `--location-trusted` 向对象存储转发平台 Key。准备中返回
+`409 video_delivery_preparing`，交付不可用返回 `410 video_delivery_unavailable`，当前签名存储
+不可用返回 `503 video_delivery_unavailable`。这些交付故障不覆盖已确认的生成成功与计费事实，
+不自动退款或重发生成请求。
+
+范围外原生视频线路保留原内容代理与过期语义，不套用上述托管合同。完整公共示例见
+[ModelArk 视频下载文档](../../web/public/docs-content/zh/api-reference/videos/modelark.md#下载视频或末帧)，
+内部机制见[Link 视频结果 OSS 托管交付架构](../20-architecture/Link视频结果OSS托管交付架构.md)。
 
 ## 5. 素材
 

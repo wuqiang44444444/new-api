@@ -28,7 +28,7 @@ func DialRealtimeWithEvidenceUsing(c *gin.Context, dialer *websocket.Dialer, ctx
 	}
 	conn, resp, err := dialer.DialContext(ctx, target, headers)
 	if capture != nil {
-		record := &imageEvidenceExchange{Stage: model.TaskRequestEvidenceStageUpstreamResponse, Method: http.MethodGet, Target: evidenceTargetURL(req), CreatedAt: common.GetTimestamp(), EOF: true}
+		record := &imageEvidenceExchange{Stage: model.TaskRequestEvidenceStageUpstreamResponse, Method: http.MethodGet, Target: evidenceTargetURL(req), CreatedAt: common.GetTimestamp()}
 		if err != nil {
 			record.Error = "handshake_error"
 		}
@@ -42,7 +42,9 @@ func DialRealtimeWithEvidenceUsing(c *gin.Context, dialer *websocket.Dialer, ctx
 				capture.mu.Lock()
 				capture.appendBody(record, body)
 				capture.mu.Unlock()
-				record.EOF = readErr == nil && int64(len(body)) <= evidenceMaxBodyBytes()
+				if readErr != nil {
+					record.Error = readErr.Error()
+				}
 			}
 		}
 		capture.mu.Lock()
@@ -77,13 +79,11 @@ func ObserveRealtimeFrame(ctx context.Context, stage string, message []byte, err
 	}
 	if len(message) > 0 {
 		capture.appendBody(record, append(append([]byte("data: "), message...), '\n'))
-		record.Observed -= 7 // SSE framing belongs to storage, not observed websocket payload.
 	}
 	if err != nil {
 		if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 			record.Error = "realtime_io_error"
 		}
-		record.EOF = true
 		return
 	}
 }

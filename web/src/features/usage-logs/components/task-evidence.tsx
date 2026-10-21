@@ -11,7 +11,6 @@ import {
   getEvidenceList,
 } from '../evidence-api'
 import { DetailRow } from './dialogs/log-detail-layout'
-import { EvidenceBodyStatus } from './evidence-body-status'
 import { EvidenceOriginalDialog } from './evidence-original-dialog'
 
 export function TaskEvidence(props: {
@@ -63,7 +62,11 @@ export function TaskEvidence(props: {
             </div>
           )}
           {query.data?.items.length === 0 && (
-            <p>{t('No request evidence available. It may not have been recorded or may have expired.')}</p>
+            <p>
+              {t(
+                'No request evidence available. It may not have been recorded or may have expired.'
+              )}
+            </p>
           )}
           {query.data?.items.map((item) => (
             <EvidenceDetails
@@ -153,13 +156,9 @@ function EvidenceDetails(props: {
               className='min-w-0 space-y-1 rounded-md border p-2 text-xs'
             >
               <p>
-                {stages[event.stage] || event.stage} ·{' '}
-                {event.complete ? t('Complete') : t('Incomplete')}
+                {stages[event.name] || event.name} · {event.seq}
               </p>
-              <p>
-                {t('Status')}: {event.phase} · HTTP {event.status_code || '-'} ·{' '}
-                {event.byte_count} B
-              </p>
+              <p>HTTP {event.status_code || '-'}</p>
               {event.method && (
                 <DetailRow label={t('Method')} value={event.method} mono />
               )}
@@ -178,49 +177,29 @@ function EvidenceDetails(props: {
                   mono
                 />
               )}
-              {event.detail && (
-                <DetailRow
-                  label={t('Additional information')}
-                  value={event.detail}
-                  mono
-                />
+              {!query.data?.evidence.body_expired && (
+                <div className='flex flex-wrap gap-2'>
+                  <Button
+                    variant='outline'
+                    onClick={() => setViewEventId(event.id)}
+                  >
+                    {t('View original text')}
+                  </Button>
+                  <Button
+                    variant='outline'
+                    disabled={download.isPending}
+                    onClick={() => download.mutate(event.id)}
+                  >
+                    {t('Download original evidence')}
+                  </Button>
+                </div>
               )}
-              {event.preview && (
-                <pre className='max-h-64 overflow-auto break-all whitespace-pre-wrap'>
-                  {event.preview}
-                </pre>
-              )}
-              {!event.has_body && <EvidenceBodyStatus status='not_recorded' />}
-              {event.has_body && event.body_status && (
-                <EvidenceBodyStatus status={event.body_status} />
-              )}
-              {props.isRoot &&
-                event.has_body &&
-                !query.data?.evidence.body_expired && (
-                  <div className='flex flex-wrap gap-2'>
-                    {event.body_status === 'available' && (
-                      <Button
-                        variant='outline'
-                        onClick={() => setViewEventId(event.id)}
-                      >
-                        {t('View original text')}
-                      </Button>
-                    )}
-                    <Button
-                      variant='outline'
-                      disabled={download.isPending}
-                      onClick={() => download.mutate(event.id)}
-                    >
-                      {t('Download original evidence')}
-                    </Button>
-                  </div>
-                )}
             </article>
           ))}
           {download.isError && (
             <p role='alert'>{t('Failed to download evidence')}</p>
           )}
-          {props.isRoot && viewEventId !== null && (
+          {viewEventId !== null && (
             <EvidenceOriginalDialog
               id={props.id}
               eventId={viewEventId}

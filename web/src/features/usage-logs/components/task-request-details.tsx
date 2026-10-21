@@ -7,13 +7,14 @@ import { Button } from '@/components/ui/button'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { getTaskRequestBodies } from '../evidence-api'
+import { getTaskRequestEntries } from '../evidence-api'
 import { EvidenceBodyStatus } from './evidence-body-status'
+import { EvidenceOriginalDialog } from './evidence-original-dialog'
 
 export function TaskRequestDetails(props: { taskId: string }) {
   const user = useAuthStore((state) => state.auth.user)
   const sessionId = useAuthStore((state) => state.auth.session?.sid)
-  if (user?.role !== ROLE.SUPER_ADMIN) return null
+  if (!user || user.role < ROLE.ADMIN) return null
   return (
     <TaskRequestShortcuts
       key={`${user.id}:${sessionId}:${props.taskId}`}
@@ -25,26 +26,32 @@ export function TaskRequestDetails(props: { taskId: string }) {
 
 function TaskRequestShortcuts(props: { taskId: string; viewerKey: string }) {
   const { t } = useTranslation()
-  const [stage, setStage] = useState<
+  const [contentName, setContentName] = useState<
     'north_receive' | 'southbound_send' | null
   >(null)
   return (
     <>
       <div className='flex flex-wrap gap-2'>
-        <Button variant='outline' onClick={() => setStage('north_receive')}>
+        <Button
+          variant='outline'
+          onClick={() => setContentName('north_receive')}
+        >
           {t('User request details')}
         </Button>
-        <Button variant='outline' onClick={() => setStage('southbound_send')}>
+        <Button
+          variant='outline'
+          onClick={() => setContentName('southbound_send')}
+        >
           {t('Transformed upstream request')}
         </Button>
       </div>
-      {stage !== null && (
+      {contentName !== null && (
         <TaskRequestBodyDialog
           viewerKey={props.viewerKey}
-          key={stage}
+          key={contentName}
           taskId={props.taskId}
-          stage={stage}
-          onClose={() => setStage(null)}
+          contentName={contentName}
+          onClose={() => setContentName(null)}
         />
       )}
     </>
@@ -54,23 +61,27 @@ function TaskRequestShortcuts(props: { taskId: string; viewerKey: string }) {
 function TaskRequestBodyDialog(props: {
   viewerKey: string
   taskId: string
-  stage: 'north_receive' | 'southbound_send'
+  contentName: 'north_receive' | 'southbound_send'
   onClose: () => void
 }) {
   const { t } = useTranslation()
+  const [selected, setSelected] = useState<{
+    evidenceId: number
+    eventId: number
+  } | null>(null)
   const queryClient = useQueryClient()
-  const { taskId, stage, viewerKey } = props
+  const { taskId, contentName, viewerKey } = props
   useEffect(
     () => () => {
-      const queryKey = ['task-request-bodies', viewerKey, taskId, stage]
+      const queryKey = ['task-request-entries', viewerKey, taskId, contentName]
       void queryClient.cancelQueries({ queryKey, exact: true })
       queryClient.removeQueries({ queryKey, exact: true })
     },
-    [queryClient, viewerKey, taskId, stage]
+    [queryClient, viewerKey, taskId, contentName]
   )
   const query = useQuery({
-    queryKey: ['task-request-bodies', viewerKey, taskId, stage],
-    queryFn: ({ signal }) => getTaskRequestBodies(taskId, stage, signal),
+    queryKey: ['task-request-entries', viewerKey, taskId, contentName],
+    queryFn: ({ signal }) => getTaskRequestEntries(taskId, contentName, signal),
     gcTime: 0,
     retry: false,
     refetchOnWindowFocus: false,
@@ -83,11 +94,13 @@ function TaskRequestBodyDialog(props: {
         if (!open) props.onClose()
       }}
       title={
-        stage === 'southbound_send'
+        contentName === 'southbound_send'
           ? t('Transformed upstream request')
           : t('User request details')
       }
-      description={t('Authentication credentials removed')}
+      description={t(
+        'Captured content may be incomplete and may contain credentials.'
+      )}
       contentClassName='sm:max-w-4xl'
     >
       {query.isPending && <p role='status'>{t('Loading...')}</p>}
@@ -99,36 +112,38 @@ function TaskRequestBodyDialog(props: {
           </Button>
         </div>
       )}
-      {query.data?.length === 0 && <p>{t('No request evidence available. It may not have been recorded or may have expired.')}</p>}
+      {query.data?.length === 0 && (
+        <p>
+          {t(
+            'No request evidence available. It may not have been recorded or may have expired.'
+          )}
+        </p>
+      )}
       <div className='space-y-3'>
         {query.data?.map((body) => (
           <section key={body.eventId} className='space-y-2'>
             {query.data.length > 1 && (
               <p className='text-xs break-all'>{body.requestId}</p>
             )}
-            {!body.complete && <p>{t('Incomplete')}</p>}
-            {body.text !== null ? (
-              <pre className='max-h-[65vh] overflow-auto rounded-md border p-3 font-mono text-xs break-all whitespace-pre-wrap'>
-                {body.text}
-              </pre>
+            {body.expired ? (
+              <EvidenceBodyStatus status='expired' />
             ) : (
-              <EvidenceBodyStatus status={body.bodyStatus} />
+              <Button variant='outline' onClick={() => setSelected(body)}>
+                {t('View original text')} · {body.eventId}
+              </Button>
             )}
           </section>
         ))}
       </div>
-      {query.data?.some(
-        (body) =>
-          body.bodyStatus === 'read_failed' ||
-          body.bodyStatus === 'storage_unavailable'
-      ) && (
-        <Button
-          variant='outline'
-          disabled={query.isFetching}
-          onClick={() => void query.refetch()}
-        >
-          {t('Retry')}
-        </Button>
+      {selected && (
+        <EvidenceOriginalDialog
+          id={selected.evidenceId}
+          eventId={selected.eventId}
+          open
+          onOpenChange={(open) => {
+            if (!open) setSelected(null)
+          }}
+        />
       )}
     </Dialog>
   )

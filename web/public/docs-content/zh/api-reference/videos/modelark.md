@@ -1,7 +1,7 @@
 ---
 page-id: videos-modelark
 kind: api-reference
-last-verified: 2026-10-14
+last-verified: 2026-10-21
 operations:
   - listModelArkVideoModels
   - retrieveModel
@@ -19,7 +19,8 @@ Seedance 与 H3 标准视频客户模型统一使用 ModelArk V3 任务合同。
 协议，不是本接口的别名；ModelArk、Kling、即梦和 OpenAI Videos 的字段不能混用。
 
 完整流程是：查询模型 → POST 创建 → 保存 `id` → GET 轮询 → 成功后等待交付就绪，再通过结果签名地址下载。
-可复制的轮询脚本见[图片与视频调用实战](guides/media-workflow)。所有步骤使用创建时的同一 API Key。
+可复制的轮询脚本见[图片与视频调用实战](guides/media-workflow)。创建、查询和访问内容入口使用创建时
+的同一 API Key；下载本站 OSS 签名地址无需附带平台或 Provider Key。
 
 按模型元数据中的 `api.video.documentation_path` 阅读对应说明：
 
@@ -28,7 +29,8 @@ Seedance 与 H3 标准视频客户模型统一使用 ModelArk V3 任务合同。
   具体名称以目录为准。该系列的音频与首尾帧组合规则见专页。
 
 `seedance-v` 等命名不用于推断参数范围；创建时原样使用目录返回的客户模型 ID。
-H3 不发布 `api.assets`；Seedance V 返回 `api.assets.supported=false`。两者均未开放素材库。
+H3 不发布 `api.assets`；Seedance V 是否支持本站托管图片，以当前模型的 `api.assets.supported`
+和 `management_mode` 为准，不从客户名推断素材能力。
 
 ## 查询模型与参数合同
 
@@ -434,8 +436,8 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
 | `id`                          | string  | 平台任务 ID                                                          |
 | `model`                       | string  | 创建时冻结的客户模型名                                               |
 | `status`                      | string  | `queued`、`running`、`succeeded`、`failed`、`cancelled` 或 `expired` |
-| `content.delivery_status`     | string  | `ready`、`preparing` 或 `unavailable`，独立于生成状态                  |
-| `content.video_url`           | string  | 交付就绪后的本站 OSS 预签名 GET 地址；每次签发有效 24 小时                                             |
+| `content.delivery_status`     | string  | 本站托管线路的主视频交付状态：`ready`、`preparing` 或 `unavailable`；范围外线路可省略 |
+| `content.video_url`           | string  | 本站托管线路就绪后返回 24 小时预签名 GET 地址；范围外线路沿用鉴权内容代理路径 |
 | `content.last_frame_url`      | string  | 实际存在且转存就绪的末帧预签名 GET 地址                                   |
 | `seed`                        | integer | 实际或上游返回的随机种子；不存在时省略                               |
 | `resolution`                  | string  | 实际输出分辨率；不存在时省略                                         |
@@ -549,6 +551,10 @@ curl --fail "$VIDEO_URL" --output result.mp4
 `VIDEO_URL` 为授权任务查询返回的完整 `content.video_url`。末帧同理使用 `content.last_frame_url`，
 文件扩展名按实际 MIME 选择。Range 断点续传和浏览器播放由对象存储履约，真实环境仍需验收。
 
+`delivery_status=ready` 表示主视频就绪，不保证末帧已就绪；`last_frame_url` 缺失不能单独判定
+未生成末帧。需要已请求的末帧时可继续有界查询，或使用下述 `?part=last_frame` 内容入口区分
+准备中、交付不可用和部件不存在。
+
 链接到期后，在对象仍保留且调用方仍获授权时重新查询任务，可签发新的 24 小时 GET 地址；不会
 重新生成或复制视频。链接有效期与对象保留期不同，文件保留策略由部署方明确，不能按任务创建
 或完成时间推算下载链接到期时间。链接应妥善保存，避免记录到普通日志或公开分享。
@@ -580,6 +586,8 @@ English contract: generation success and delivery readiness are separate. Hosted
 Downloads require no gateway API key. An authorized query can renew a URL while the object is retained.
 The authenticated content endpoint redirects HEAD requests to a URL signed for HEAD. Delivery failures
 never regenerate the video or change the confirmed generation and billing facts.
+The `ready` state describes the main video; the last frame may still be preparing. If its URL is absent,
+query again or use `?part=last_frame` to distinguish preparation, unavailable delivery and an absent part.
 
 ## 素材引用
 
@@ -630,7 +638,9 @@ contract. The response is scoped to the authenticated user and application; amou
 - 成功后的费用核实不要求重新生成视频，查询也不会重新触发生成。
 
 轮询 GET 可以有界重试；创建 POST 不能因为客户端超时而盲目重放。下载应在内容有效期内完成，
-`410 video_content_expired` 不能通过重新查询保证恢复。
+范围外原生线路的 `410 video_content_expired` 不能通过重新查询保证恢复。本站托管线路按
+`content.delivery_status` 处理；签名 URL 到期后，在对象仍保留且授权有效时重新查询原任务续签，
+不要通过重新创建视频恢复下载。
 
 ## 错误响应
 

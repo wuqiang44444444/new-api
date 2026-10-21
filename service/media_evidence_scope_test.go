@@ -139,9 +139,9 @@ func TestMediaArtifactDeliveryStoresStatisticsWithoutBinaryCopy(t *testing.T) {
 	events := evidenceEventRows(t, indexes[0].Id)
 	require.Len(t, events, 2)
 	assert.Equal(t, model.TaskRequestEvidenceStageClientDelivery, events[1].Stage)
+	// Delivery records only an event row: no binary copy and no stored object bytes.
 	assert.Empty(t, events[1].ObjectKey)
-	assert.Zero(t, events[1].StoredBytes)
-	assert.EqualValues(t, len("binary-media"), events[1].ByteCount)
-	assert.True(t, events[1].Complete)
-	assert.Contains(t, events[1].Detail, `"media_body_archived":false`)
+	assert.Equal(t, 200, events[1].StatusCode)
+	_, bodyStatus := ReadEvidenceEventBody(events[1], false)
+	assert.Equal(t, "missing", bodyStatus)
 }

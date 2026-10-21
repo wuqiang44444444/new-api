@@ -1,7 +1,7 @@
 ---
 page-id: media-workflow
 kind: guide
-last-verified: 2026-09-19
+last-verified: 2026-10-21
 operations: []
 ---
 
@@ -224,7 +224,21 @@ while time.monotonic() < deadline:
         if status not in active and status not in terminal:
             raise SystemExit("收到未识别状态；保留 ID 并核查，不重新创建")
         print("任务状态:", status)
-        if status in terminal:
+        delivery = None
+        if kind == "video" and status == "succeeded":
+            content = result.get("content")
+            if not isinstance(content, dict):
+                raise SystemExit("成功响应缺少内容对象；保留 ID 核查，不重新创建")
+            delivery = content.get("delivery_status")
+            if delivery not in (None, "preparing", "ready", "unavailable"):
+                raise SystemExit("收到未识别交付状态；保留 ID 核查，不重新创建")
+            if delivery == "preparing":
+                print("生成成功，结果仍在转存；继续查询原任务")
+            elif delivery != "unavailable":
+                video_url = content.get("video_url")
+                if not isinstance(video_url, str) or not video_url.strip():
+                    raise SystemExit("成功响应缺少下载地址；保留 ID 核查，不重新创建")
+        if status in terminal and delivery != "preparing":
             # 结果可能含临时下载地址，只保存在应用受保护的本地文件中。
             fd = os.open("media-result.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8") as output:
@@ -233,6 +247,8 @@ while time.monotonic() < deadline:
                 print("结果待核实；可检查已保存的部分图片，请联系管理员")
             elif status != "succeeded":
                 print("任务未成功；查看结果中的公开 error")
+            elif delivery == "unavailable":
+                print("生成成功但交付不可用；保留 ID 核查，不重新生成或假定退款")
             else:
                 print("生成成功；检查结果字段并及时下载")
             break
@@ -246,6 +262,9 @@ else:
 
 单次 GET 最长等待 60 秒；客户端等待结束不取消任务。脚本在图片 `unknown` 时退出，保存可能存在的
 部分结果；后续可以重新查询，但不要自动重新生成。真实应用应为不同任务分别保存结果文件。
+视频生成成功但 `content.delivery_status=preparing` 时，脚本继续在原等待时限内查询；
+`unavailable` 时保存响应并退出，交付故障不代表生成失败或自动退款。
+范围外原生线路可能不返回 `delivery_status`，其内容 URL 沿用对应协议的鉴权与过期规则。
 
 ## 6. 保存图片或视频
 
@@ -254,16 +273,38 @@ URL 每次签发有效 300 秒；过期重新 GET 任务获取新地址。Base64
 签名 URL 下载不要附带平台 API Key。逐张下载、Base64 解码和续签重试的完整脚本见
 [图片结果保存](guides/image-results)，详细字段见[图片任务查询](images/tasks)。
 
-视频：确认 `status=succeeded`，使用返回的 `content.video_url`，或以下鉴权内容入口：
+Seedance 与 H3 标准视频：确认 `status=succeeded` 且 `content.delivery_status=ready`，
+使用本次查询返回的完整 `content.video_url` 下载，不附带平台或 Provider Key：
 
 ```bash
-curl --fail "$MEDIA_API_BASE/v1/videos/task-public-id/content" \
+curl --fail "$VIDEO_URL" --output result.mp4
+```
+
+`VIDEO_URL` 为已保存响应中的 `content.video_url`。签名从每次签发起有效 24 小时（86400 秒）；
+到期后，对象仍保留且调用方仍获授权时重新查询原任务即可续签，不重新生成或复制视频。
+签名有效期与对象保留期不同，不能从任务创建或完成时间推算，本站不承诺永久保存。
+
+也可使用以下鉴权内容入口，就绪后以 `302` 跳转至本站签名地址：
+
+```bash
+curl --fail --location "$MEDIA_API_BASE/v1/videos/task-public-id/content" \
   -H "Authorization: Bearer $MEDIA_API_KEY" \
   --output result.mp4
 ```
 
-只有响应提供 `content.last_frame_url` 时才下载末帧。视频代理使用平台 Key；外部签名图片地址不附 Key。
+只有响应提供 `content.last_frame_url` 时才下载末帧，使用相同的签名下载规则。
+不要使用 `--location-trusted` 把平台 Key 转发给对象存储。内容入口在准备中返回
+`409 video_delivery_preparing`，交付不可用返回 `410 video_delivery_unavailable`，
+签名存储不可用返回 `503 video_delivery_unavailable`。下载故障不改变已确认的生成与计费事实，
+不自动退款或重新生成。范围外原生视频线路沿用原鉴权内容代理，详见各自视频文档。
 两类下载均检查 HTTP 状态和 `Content-Type`，失败 JSON 不能当作图片或视频保存。
+
+English: for hosted standard videos, keep polling the original task after generation succeeds while
+`content.delivery_status=preparing`. Download `content.video_url` when `ready` without an API key;
+investigate `unavailable` without regenerating or assuming a refund. Signed GET URLs last 86400 seconds
+from issuance and can be renewed by an authorized query while objects are retained. The authenticated content
+endpoint returns 302 when ready; follow it without forwarding the gateway key to storage. Native video
+routes outside this scope retain their existing authentication and expiry rules.
 
 ## 7. 常见问题
 
@@ -276,6 +317,9 @@ curl --fail "$MEDIA_API_BASE/v1/videos/task-public-id/content" \
 | 创建超时或视频 `create_outcome_unknown`    | 保留业务订单和公开请求 ID，停止盲目重发并核查    |
 | 图片 `unknown`                             | 不等于失败或退款，保留部分结果并核查             |
 | 图片 URL 过期                              | 查询原任务续签，不重新生成                       |
+| 视频成功但 `delivery_status=preparing`      | 继续查询原任务，等待交付就绪                     |
+| 视频 `delivery_status=unavailable`          | 保留 ID 核查交付故障，不重新生成或假定退款        |
+| 本站托管视频签名 URL 到期                   | 对象仍保留且授权有效时查询原任务续签             |
 | 视频成功但没有 `usage`                     | 不代表免费，等待费用核实；不重新生成             |
 | 多图、分辨率或字段返回 `400`               | 读取当前模型参数，按明确支持范围修正请求         |
 

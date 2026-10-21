@@ -27,7 +27,7 @@ func TestEvidenceResponseStatusWithoutBody(t *testing.T) {
 			assert.Equal(t, status, events[1].StatusCode)
 			assert.Equal(t, http.MethodPost, events[1].Method)
 			assert.Equal(t, "https://provider.example/create", events[1].Target)
-			assert.True(t, events[1].Complete)
+			assert.Empty(t, events[1].Phase)
 		})
 	}
 }
@@ -56,26 +56,15 @@ func TestEvidencePollingPreservesObservedResponseOnTransportError(t *testing.T) 
 			events := evidenceEventRows(t, evidence.Id)
 			require.Len(t, events, 1)
 			assert.Equal(t, 502, events[0].StatusCode)
-			assert.False(t, events[0].Complete)
-			assert.Contains(t, events[0].Detail, `"transport_failed":true`)
+			content, status := ReadEvidenceEventContent(events[0], false)
+			require.Equal(t, "available", status)
+			assert.Equal(t, "transport failed", content.Meta.Error)
 			if withBody {
-				body, err := GetTaskRequestEvidenceStore().Get(events[0].ObjectKey)
-				require.NoError(t, err)
+				body := evidenceCapturedBody(t, events[0])
 				assert.Equal(t, "gateway failed", string(body))
 			}
 		})
 	}
-}
-
-func TestEvidenceJSONPreservesExactNumbers(t *testing.T) {
-	body := []byte(`{"id":9007199254740993,"duration":1.00,"nested":{"api_key":"private","n":18446744073709551615},"values":[0,false,null]}`)
-	redacted, err := evidenceRedactBody(body, "application/json")
-	require.NoError(t, err)
-	assert.Contains(t, string(redacted), `9007199254740993`)
-	assert.Contains(t, string(redacted), `18446744073709551615`)
-	assert.Contains(t, string(redacted), `1.00`)
-	assert.NotContains(t, string(redacted), "private")
-	assert.Contains(t, string(redacted), `[0,false,null]`)
 }
 
 func TestEvidenceMalformedResponseKeepsStatusAndCaptureFailure(t *testing.T) {
@@ -90,23 +79,6 @@ func TestEvidenceMalformedResponseKeepsStatusAndCaptureFailure(t *testing.T) {
 	events := evidenceEventRows(t, evidenceSessionFrom(c).evidenceID)
 	require.Len(t, events, 2)
 	assert.Equal(t, 400, events[1].StatusCode)
-	assert.Equal(t, int64(len(`{"token":"private`)), events[1].ByteCount)
-	assert.Equal(t, model.TaskRequestEvidencePhaseUnavailable, events[1].Phase)
-	assert.Empty(t, events[1].ObjectKey)
-	assert.Contains(t, events[1].Detail, `"capture_failure"`)
-	assert.Contains(t, events[1].Detail, `"category":"structured_parse"`)
-	assert.NotContains(t, events[1].Detail, "private")
-}
-
-func TestEvidenceQueryKeepsBusinessValuesWithoutSigningCredentials(t *testing.T) {
-	query := map[string][]string{
-		"model": {"customer-model"}, "sig": {"private-signature"},
-		"X-Amz-Credential": {"private-account"}, "X-Amz-Signature": {"private-signature"},
-		"key": {"private-key"},
-	}
-	redacted := EvidenceRedactQueryParams(query)
-	assert.Equal(t, "customer-model", redacted["model"])
-	for _, key := range []string{"sig", "X-Amz-Credential", "X-Amz-Signature", "key"} {
-		assert.Equal(t, "[REDACTED]", redacted[key])
-	}
+	assert.Equal(t, `{"token":"private`, string(evidenceCapturedBody(t, events[1])))
+	assert.Empty(t, events[1].Phase)
 }

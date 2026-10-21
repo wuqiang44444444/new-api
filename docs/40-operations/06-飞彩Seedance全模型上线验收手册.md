@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-08-11
+last-reviewed: 2026-10-21
 ---
 
 # 06 飞彩 Seedance 全模型上线验收手册
@@ -89,8 +89,11 @@ Provider 模型。当前渠道只使用代码协议 `feicai_videos_v1` 和无 `-
 - 验证直接媒体可用；`asset://<opaque-id>` 原样进入飞彩 Provider，由上游明确接受或拒绝，平台不查询
   素材、识别来源或 fallback。素材 CRUD 元数据仍为不支持。
 - Pro PI 验证 1/3 个参考视频的顺序和抓取时间；其它九个模型验证任意视频输入拒绝。
-- 内容代理验证冻结 Key、同源 HTTPS、拒绝重定向、结果 URL 过期和 Range。
-- 普通响应、日志、CSV、指标和验收截图不得出现 Key、Provider 模型、上游任务 ID或完整媒体/结果 URL。
+- 后台结果转存验证冻结 Key、同源 HTTPS 和带凭据回源时拒绝重定向；客户端交付验证
+  `preparing / ready / unavailable`、固定 24 小时 GET 签名、授权查询续签与内容入口 302。
+  HEAD 验证独立 HEAD 签名，Range 与实际 MIME 验证由真实对象存储履约，不把转存故障改判生成失败。
+- 普通响应、日志、CSV、指标和验收截图不得出现 Key、Provider 模型、上游任务 ID 或上游完整媒体/结果 URL。
+  授权交付响应可返回本站结果预签名 URL；完整签名 URL 不进入普通日志、CSV、指标或截图。
 
 ## 8. 计费与 Provider 对账专项
 

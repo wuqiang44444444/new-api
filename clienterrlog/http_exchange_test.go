@@ -49,18 +49,19 @@ func TestHTTPExchangePreservesTrafficAndRedactsSnapshots(t *testing.T) {
 	assert.Equal(t, 400, response.Code)
 	assert.Equal(t, responseBody, response.Body.String())
 	require.NotNil(t, snapshot)
+	assert.Equal(t, snapshot, event.HTTPExchange)
+	snapshot = storedHTTPExchangeForTest(t, snapshot)
 	assert.Equal(t, "captured", snapshot.Request.State)
 	for _, secret := range []string{"fixture-key", "fixture-token", "fixture-signature", "fixture-inline", "https://"} {
 		assert.NotContains(t, snapshot.Request.Body, secret)
 	}
-	assert.Contains(t, snapshot.Request.Body, `"max_tokens": 0`)
-	assert.Contains(t, snapshot.Request.Body, `"stream": false`)
+	assert.Contains(t, snapshot.Request.Body, `"max_tokens":0`)
+	assert.Contains(t, snapshot.Request.Body, `"stream":false`)
 	assert.Contains(t, snapshot.Request.Body, `9007199254740993`)
 	assert.Contains(t, snapshot.Request.Body, `draw a cat`)
 	assert.JSONEq(t, responseBody, snapshot.UpstreamResponse.Body)
 	assert.Equal(t, 400, snapshot.UpstreamResponse.Status)
 	assert.Equal(t, 400, snapshot.Response.Status)
-	assert.Equal(t, snapshot, event.HTTPExchange)
 	assert.NotContains(t, event.Message, "draw a cat")
 }
 
@@ -78,7 +79,7 @@ func TestHTTPExchangeUnavailableBodiesFailClosed(t *testing.T) {
 			data, err := io.ReadAll(c.Request.Body)
 			require.NoError(t, err)
 			assert.Equal(t, tt.input, string(data))
-			snapshot := SnapshotHTTPExchange(c.Request.Context())
+			snapshot := storedHTTPExchangeForTest(t, SnapshotHTTPExchange(c.Request.Context()))
 			assert.Equal(t, tt.state, snapshot.Request.State)
 			assert.Empty(t, snapshot.Request.Body)
 		})
@@ -97,7 +98,7 @@ func TestHTTPExchangeLatestUpstreamResponseAndNoHeaders(t *testing.T) {
 		_, err := io.Copy(io.Discard, response.Body)
 		require.NoError(t, err)
 	}
-	snapshot := SnapshotHTTPExchange(c.Request.Context())
+	snapshot := storedHTTPExchangeForTest(t, SnapshotHTTPExchange(c.Request.Context()))
 	assert.Equal(t, 503, snapshot.UpstreamResponse.Status)
 	assert.JSONEq(t, `{"error":"try later"}`, snapshot.UpstreamResponse.Body)
 	encoded, err := common.Marshal(snapshot)
@@ -112,7 +113,17 @@ func TestHTTPExchangeDiscardsReadFailure(t *testing.T) {
 	InstallHTTPExchange(c)
 	_, err := io.ReadAll(c.Request.Body)
 	require.EqualError(t, err, "fixture read failure")
-	snapshot := SnapshotHTTPExchange(c.Request.Context())
+	snapshot := storedHTTPExchangeForTest(t, SnapshotHTTPExchange(c.Request.Context()))
 	assert.Equal(t, "read_failed", snapshot.Request.State)
 	assert.Empty(t, snapshot.Request.Body)
+}
+
+// Read the actual persistence representation, including its redaction boundary.
+func storedHTTPExchangeForTest(t *testing.T, snapshot *HTTPExchange) *HTTPExchange {
+	t.Helper()
+	encoded, err := common.Marshal(snapshot)
+	require.NoError(t, err)
+	var stored HTTPExchange
+	require.NoError(t, common.Unmarshal(encoded, &stored))
+	return &stored
 }

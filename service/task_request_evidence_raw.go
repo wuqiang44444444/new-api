@@ -70,29 +70,30 @@ func parseEvidenceObject(payload []byte) (*EvidenceObjectMeta, []byte) {
 // 输出净化诊断，绝不改变业务发送、响应、重试、资金或 Task 状态；证据允许
 // 缺失。事件行只承载定位信息（阶段、序号、方法、目标、类型、时间），不再
 // 维护阶段状态、完整性、字节数或摘要。
-func persistRawEvidenceEvent(event *model.TaskRequestEvidenceEvent, headers http.Header, query url.Values, body []byte, errorNote string) {
+func persistRawEvidenceEvent(event *model.TaskRequestEvidenceEvent, headers http.Header, query url.Values, body []byte, errorNote string) error {
 	if event.CreatedAt == 0 {
 		event.CreatedAt = common.GetTimestamp()
 	}
 	if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil {
 		if errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
-			return // Retention ends observation, never the business operation.
+			return nil // Retention ends observation, never the business operation.
 		}
 		evidencePersistWarning("event reserve", event.Stage, err)
-		return
+		return err
 	}
 	closed, err := model.TaskRequestEvidenceBodyClosedForAppend(event.EvidenceId, common.GetTimestamp(), EvidenceRetentionSeconds())
 	if err != nil {
 		evidencePersistWarning("append check", event.Stage, err)
-		return
+		return err
 	}
 	if closed {
-		return
+		return nil
 	}
 	store := GetTaskRequestEvidenceStore()
 	if store == nil {
-		evidencePersistWarning("object store", event.Stage, errors.New("evidence store not initialized"))
-		return
+		err := errors.New("evidence store not initialized")
+		evidencePersistWarning("object store", event.Stage, err)
+		return err
 	}
 	meta := EvidenceObjectMeta{
 		Method:      event.Method,
@@ -110,10 +111,12 @@ func persistRawEvidenceEvent(event *model.TaskRequestEvidenceEvent, headers http
 	}
 	if err := store.PutEventBody(event.EvidenceId, event.Id, buildEvidenceObject(meta, body)); err != nil {
 		if errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
-			return // The publication lock rejected a late object.
+			return nil // The publication lock rejected a late object.
 		}
 		evidencePersistWarning("object write", event.Stage, err)
+		return err
 	}
+	return nil
 }
 
 func evidencePersistWarning(step, stage string, err error) {

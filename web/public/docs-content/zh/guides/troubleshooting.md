@@ -1,7 +1,7 @@
 ---
 page-id: troubleshooting
 kind: guide
-last-verified: 2026-09-09
+last-verified: 2026-10-21
 operations: []
 ---
 
@@ -55,7 +55,15 @@ operations: []
 - 图片 `unknown` 时保存已有结果并联系管理员，不自动重发或认定已退款。
 - 图片签名结果过期时重新 GET 任务取新 URL；`unavailable` 可稍后重查，`deleted` 不能靠重查恢复。
 - 视频 `succeeded` 但缺少 `usage` 不代表零费用，不要重新生成来补齐用量。
+- Seedance 与 H3 视频 `succeeded` 后仍需检查 `content.delivery_status`：`preparing` 时继续有界查询，
+  `ready` 时下载，`unavailable` 时保留 ID 核查交付；不要因转存失败重新生成或假定退款。
+- 本站托管视频签名 URL 每次签发有效 24 小时，下载不附平台 Key；对象仍保留且授权有效时查询原任务
+  可续签。访问鉴权内容入口需跟随 302，不向对象存储转发 Key。范围外原生视频沿用原合同。
 - 逐步示例见[图片与视频调用实战](guides/media-workflow)。
+
+English: for hosted standard videos, generation success may precede delivery. Poll `preparing`, download
+`ready` signed URLs without an API key, and investigate `unavailable` without regenerating or assuming a refund.
+URLs last 86400 seconds from issuance and can be renewed by an authorized query while objects are retained.
 
 ## 提交支持信息
 

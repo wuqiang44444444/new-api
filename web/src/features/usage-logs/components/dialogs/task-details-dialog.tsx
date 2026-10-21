@@ -139,7 +139,7 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
         {props.open && props.log.platform === 'azure_batch' && (
           <BatchBillingDetails id={props.log.task_id} />
         )}
-        {props.open && props.isRoot ? (
+        {props.open && props.isAdmin ? (
           <TaskRequestDetails
             key={props.log.task_id}
             taskId={props.log.task_id}

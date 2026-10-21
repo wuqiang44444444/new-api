@@ -33,6 +33,7 @@ func TestErrorEventPersistsSanitizedHTTPExchange(t *testing.T) {
 	require.NoError(t, common.UnmarshalJsonStr(detail[clienterrlog.HTTPExchangeDetailKey], &exchange))
 	assert.Equal(t, "captured", exchange.Request.State)
 	assert.Contains(t, exchange.Request.Body, "draw a cat")
+	assert.NotContains(t, exchange.Request.Body, "\n", "stored diagnostics stay compact")
 }
 
 func TestErrorEventHTTPExchangeFitsTextColumnAfterJSONEscaping(t *testing.T) {
@@ -56,5 +57,9 @@ func TestErrorEventHTTPExchangeFitsTextColumnAfterJSONEscaping(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, events, 1)
 	assert.Less(t, len(events[0].Detail), 65536)
-	assert.Equal(t, "too_large", event.HTTPExchange.Request.State)
+	var detail map[string]string
+	require.NoError(t, common.UnmarshalJsonStr(events[0].Detail, &detail))
+	var exchange clienterrlog.HTTPExchange
+	require.NoError(t, common.UnmarshalJsonStr(detail[clienterrlog.HTTPExchangeDetailKey], &exchange))
+	assert.Equal(t, "too_large", exchange.Request.State)
 }

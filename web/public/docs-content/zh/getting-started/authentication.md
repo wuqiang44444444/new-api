@@ -1,7 +1,7 @@
 ---
 page-id: authentication
 kind: guide
-last-verified: 2026-09-19
+last-verified: 2026-10-21
 operations: []
 ---
 
@@ -37,6 +37,17 @@ Authorization: Bearer {{API_KEY_PLACEHOLDER}}
 
 图片异步任务与 ModelArk 视频任务绑定创建时的用户和应用。请保存 Key 的内部标识，并用原 Key 查询；
 同账号换另一把 Key 不等于同一个应用。重试创建还必须遵守对应接口的幂等规则。
+
+Seedance 与 H3 标准视频交付就绪后，授权查询返回本站 OSS 预签名下载 URL；下载该完整地址无需
+附带平台或 Provider Key。既有 `/v1/videos/{task_id}/content` 入口仍需原 Key，就绪后返回 302；
+跟随跳转时不要将平台鉴权转发给对象存储。签名地址本身带下载授权，勿公开分享或写入普通日志。
+每次签发有效 24 小时；续签仍须用有效原 Key 查询原任务，且对象仍在保留期内。
+详见[视频交付合同](api-reference/videos/modelark#下载视频或末帧)。
+
+English: hosted standard video result URLs authorize downloads without a gateway or provider key for
+86400 seconds from issuance. Task queries and the content endpoint still require the original valid API key.
+Follow content redirects without forwarding that key to storage; an authorized query can renew a URL while
+the object is retained. Treat the complete signed URL as a download credential.
 
 已有任务查询等历史资源操作继续按原归属与任务事实校验，不因当前合同模型下架而自动失去访问权；
 Key 本身仍须有效。重新生成或派生新任务属于新调用，仍须满足当前授权。素材代理按模型发起新操作，

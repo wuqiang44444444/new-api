@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-10-14
+last-reviewed: 2026-10-21
 ---
 
 # Link 视频结果 OSS 托管交付架构
@@ -75,7 +75,7 @@ CAS 提交 ready 对象登记事实（存储实例、桶、对象位置、MIME�
 - 到期后在对象仍存在且调用方仍获授权时重新查询即续签新的 24 小时 URL；不重新生成视频、
   不再次复制对象、不读取上游。
 - 本合同是「禁止完整签名 URL 进入公共响应」的已登记例外：仅限托管范围内的结果交付地址。
-  上游凭据、上游私有结果链接、日志与请求证据脱敏边界继续有效；签名 URL 不进入日志。
+  上游凭据与私有结果链接不进入普通日志；请求证据的原文例外与授权边界以[硬约束](../00-context/硬约束.md)第 6 节为准。
 
 ## 5. 公共交付状态合同
 
@@ -84,9 +84,14 @@ CAS 提交 ready 对象登记事实（存储实例、桶、对象位置、MIME�
 
 | `content.delivery_status` | 含义 | `video_url` / `last_frame_url` | 内容入口行为 |
 | --- | --- | --- | --- |
-| `ready` | 对象已托管 | 本站预签名地址 | 302 重定向签名地址 |
+| `ready` | 主视频已托管 | 主视频预签名地址；末帧独立就绪时返回其地址 | 就绪部件 302 重定向签名地址 |
 | `preparing` | 已登记待转存/转存中 | 省略 | `409 video_delivery_preparing` |
 | `unavailable` | 上游失效或转存不可用 | 省略 | `410 video_delivery_unavailable` |
+
+- `content.delivery_status` 描述主视频的公共交付状态，`ready` 不保证末帧已经就绪。
+  `last_frame_url` 缺失不能单独证明 Provider 未提供末帧；`?part=last_frame` 按该部件的持久事实
+  返回 302、409 或 410，确无末帧事实时返回 `404 content_not_found`。ready 对象签名失败时内容
+  入口返回 `503 video_delivery_unavailable`；任务投影在主视频签名失败时表达 `preparing` 并省略 URL。
 
 - 范围内任务无登记行时：补扫窗口内的成功任务表达 `preparing`（将被领取）；窗口外存量任务
   如实表达 `unavailable`，缺少完成时间也不承诺可自动恢复，不把未托管历史写成已托管。

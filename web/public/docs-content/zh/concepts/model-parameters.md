@@ -1,7 +1,7 @@
 ---
 page-id: model-parameters
 kind: guide
-last-verified: 2026-09-19
+last-verified: 2026-10-21
 operations: []
 ---
 
@@ -102,3 +102,20 @@ operations: []
 URL 结果字段为 `data[].url`；`images[].image_url` 是部分编辑协议的输入，不能作为返回字段或
 `response_format` 的取值。GPT Image 的 URL 交付由本站适配；已有 Provider URL 不强制转存。
 流式事件沿用模型原协议，不能由这个字段推定 SSE 事件也会返回 URL。
+
+## 视频结果交付
+
+当前 `api.video` 描述协议、创建参数与操作入口，尚无 `delivery` 描述字段。下载方式应按
+`api.video.documentation_path` 对应文档与任务响应判断，不能从模型名或 `get_video_content`
+操作存在推断需要 Key 或直接返回视频字节。
+
+Seedance 与 H3 标准视频创建返回任务 ID；生成成功后检查 `content.delivery_status`，
+就绪时从 `content.video_url` / `content.last_frame_url` 读取本站 OSS 预签名 GET 地址。
+下载签名地址无需 API Key，每次签发有效 24 小时；对象仍保留且授权有效时查询原任务可续签。
+无需新增视频 `response_format=url`，`output_format` 仍表示文件格式。完整交付状态与原生线路
+边界见[视频交付合同](api-reference/videos/modelark#下载视频或末帧)。
+
+English: `api.video` currently has no `delivery` descriptor. Follow `documentation_path` and task responses.
+Hosted standard videos use signed result URLs without an API key, valid for 86400 seconds from issuance;
+authorized queries can renew them while objects are retained. No video `response_format=url` is required;
+`output_format` still describes the file format.
