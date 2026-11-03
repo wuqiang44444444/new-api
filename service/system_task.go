@@ -121,6 +121,7 @@ func notifySystemTaskRunner() {
 }
 
 func StartSystemTaskRunner() {
+	startEvidenceDiskMonitor()
 	systemTaskRunnerOnce.Do(func() {
 		if !common.IsMasterNode {
 			return

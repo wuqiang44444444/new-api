@@ -1,332 +1,312 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"net/http"
-	"net/url"
 	"sync"
-	"sync/atomic"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/system_setting"
 )
 
-// Image error evidence is observation only. A bounded memory reservation covers
-// both in-flight captures and queued writes. Read/Write only observe bytes.
-// Existing bounded image captures queue their writes; all-request captures persist at
-// handler completion. Evidence failures never change the business outcome.
-var imageEvidenceSlots = make(chan struct{}, 8)
-var imageEvidenceQueue = make(chan *ImageErrorEvidence, 8)
-var imageEvidenceAccepted, imageEvidenceWritten, imageEvidenceFailed, imageEvidenceDropped atomic.Uint64
-var imageEvidenceSkipped atomic.Uint64
-
-type imageEvidenceContextKey struct{}
-
+// The carrier holds only bounded active records and identity facts, never a body.
 type ImageErrorEvidence struct {
-	Index             model.TaskRequestEvidence
-	mu                sync.Mutex
-	remaining         int64
-	records           []*imageEvidenceExchange
-	responseRecords   map[*http.Response]*imageEvidenceExchange
-	allRequests       bool
-	deliveryStatsOnly bool
-	finished          bool
+	Index            model.TaskRequestEvidence
+	mu               sync.Mutex
+	records          map[*imageEvidenceExchange]struct{}
+	delivery         *imageEvidenceExchange
+	deliveryPrepared bool
+	window           *evidenceWindow
+	worker           int
+	tasks            []model.EvidenceTaskLink
+	finished         bool
+	realtimeMu       sync.Mutex
+	realtime         map[string]*imageEvidenceExchange
 }
 
 type imageEvidenceExchange struct {
-	CreatedAt   int64
-	Query       url.Values
-	Stage       string
-	Method      string
-	Target      string
-	Status      int
-	Headers     http.Header
-	ContentType string
-	Error       string
-	Body        bytes.Buffer
-	EOF         bool // Stops bounded post-rejection draining; never persisted as completeness.
-	taskOwned   bool
-}
-
-func init() {
-	go func() {
-		for capture := range imageEvidenceQueue {
-			writeImageErrorEvidence(capture)
-		}
-	}()
+	mu             sync.Mutex
+	capture        *ImageErrorEvidence
+	meta           EvidenceObjectMeta
+	stage          string
+	piece          *evidencePiece
+	block          *[evidenceBlockSize]byte
+	used           int
+	skip           bool
+	stopped        bool
+	finished       bool
+	pieceBudgetMu  sync.Mutex
+	realtimePieces int
 }
 
 func NewImageErrorEvidence(index model.TaskRequestEvidence) *ImageErrorEvidence {
-	config := system_setting.GetTaskRequestEvidenceConfig()
-	if !config.Enabled {
-		return nil
-	}
-	if config.MaxResponseBytes <= 0 {
-		imageEvidenceFailed.Add(1)
-		return nil
-	}
-	select {
-	case imageEvidenceSlots <- struct{}{}:
-	default:
-		imageEvidenceDropped.Add(1)
-		return nil
-	}
-	if index.Kind == "" {
-		index.Kind = "image_request"
-	}
-	return &ImageErrorEvidence{Index: index, remaining: config.MaxResponseBytes}
+	return newAPIRequestEvidence(index)
 }
-
-func NewImageTaskErrorEvidence(task *model.Task) *ImageErrorEvidence {
-	index, err := taskMediaEvidenceIndex(task)
-	if err != nil || index == nil {
-		return nil
-	}
-	return NewImageErrorEvidence(*index)
-}
-
 func WithImageErrorEvidence(ctx context.Context, capture *ImageErrorEvidence) context.Context {
 	if capture == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, imageEvidenceContextKey{}, capture)
+	return context.WithValue(ctx, apiRequestEvidenceKey{}, capture)
 }
 
-func ImageErrorEvidenceFrom(ctx context.Context) *ImageErrorEvidence {
-	capture, _ := ctx.Value(imageEvidenceContextKey{}).(*ImageErrorEvidence)
-	return capture
+func (c *ImageErrorEvidence) newRecord(stage string, meta EvidenceObjectMeta, skip bool) *imageEvidenceExchange {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.finished || evidenceDiskPressure.Load() || len(c.records) >= cap(imageEvidenceSlots) {
+		imageEvidenceDropped.Add(1)
+		return nil
+	}
+	select {
+	case evidenceRecordSlots <- struct{}{}:
+	default:
+		imageEvidenceDropped.Add(1)
+		return nil
+	}
+	if meta.CreatedAt == 0 {
+		meta.CreatedAt = common.GetTimestamp()
+	}
+	if skip {
+		meta.Headers = nil
+		meta.RawQuery = ""
+	} else {
+		meta.Headers = cloneEvidenceHeaders(meta.Headers)
+	}
+	r := &imageEvidenceExchange{capture: c, meta: meta, stage: stage, skip: skip}
+	c.records[r] = struct{}{}
+	return r
 }
 
-// ObserveImageHTTPExchange keeps the exact consumed response before adapters
-// parse or normalize it. Capture does not interpret success or failure bodies.
-func ObserveImageHTTPExchange(ctx context.Context, req *http.Request, resp *http.Response, err error, stage string) {
-	capture := ImageErrorEvidenceFrom(ctx)
-	if capture == nil {
+func (r *imageEvidenceExchange) openPiece() bool {
+	if r == nil || r.stopped {
+		return false
+	}
+	c := r.capture
+	now := common.GetTimestamp()
+	c.mu.Lock()
+	if c.window == nil || now >= c.window.started+evidenceWindowSeconds {
+		c.window = &evidenceWindow{started: now}
+	}
+	window := c.window
+	c.mu.Unlock()
+	if r.piece != nil && r.piece.window == window && now < r.piece.sealAt {
+		if r.piece.aborted.Load() {
+			r.stop()
+			return false
+		}
+		return true
+	}
+	r.flush()
+	if r.stopped {
+		return false
+	}
+	if r.piece != nil {
+		r.piece.closed.Store(true)
+	}
+	if !r.reservePieceBudget() {
+		r.stop()
+		return false
+	}
+	meta := r.meta
+	meta.CreatedAt = now
+	sealAt := window.started + evidenceWindowSeconds
+	if meta.BodyFormat == evidenceRealtimeFormat && now+evidenceRealtimeSeconds < sealAt {
+		sealAt = now + evidenceRealtimeSeconds
+	}
+	r.piece = &evidencePiece{capture: c, window: window, meta: meta, stage: r.stage, metadataOnly: r.skip, record: r, sealAt: sealAt}
+	r.piece.pending.Add(1)
+	select {
+	case evidenceWorkers[c.worker] <- evidencePacket{piece: r.piece}:
+		imageEvidenceAccepted.Add(1)
+		return true
+	default:
+		r.piece.pending.Add(-1)
+		r.piece.release()
+		r.stop()
+		return false
+	}
+}
+
+func (r *imageEvidenceExchange) stop() {
+	r.stopped = true
+	if r.piece != nil {
+		r.piece.aborted.Store(true)
+	}
+	if r.block != nil {
+		releaseEvidenceBlock(r.block)
+		r.block = nil
+		r.used = 0
+	}
+}
+func (r *imageEvidenceExchange) flush() {
+	if r.block == nil {
 		return
 	}
-	capture.mu.Lock()
-	defer capture.mu.Unlock()
-	if capture.finished {
+	r.piece.pending.Add(1)
+	select {
+	case evidenceWorkers[r.capture.worker] <- evidencePacket{piece: r.piece, block: r.block, n: r.used}:
+		r.block = nil
+		r.used = 0
+	default:
+		r.piece.pending.Add(-1)
+		r.stop()
+	}
+}
+func (r *imageEvidenceExchange) append(p []byte) {
+	if r == nil || r.skip {
 		return
 	}
-	record := &imageEvidenceExchange{Stage: stage, CreatedAt: common.GetTimestamp()}
-	if req != nil {
-		record.Method = req.Method
-		record.Target = evidenceTargetURL(req)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.finished || r.stopped {
+		return
 	}
-	if err != nil {
-		record.Error = err.Error()
+	if !r.openPiece() {
+		return
 	}
-	if resp != nil {
-		record.Status = resp.StatusCode
-		record.Headers = resp.Header.Clone()
-		record.ContentType = resp.Header.Get("Content-Type")
-		if resp.Body != nil {
-			resp.Body = &imageEvidenceBody{ReadCloser: resp.Body, capture: capture, record: record}
+	r.appendBytes(p)
+}
+
+// Caller holds r.mu and has selected the piece; a message cannot rotate midway.
+func (r *imageEvidenceExchange) appendBytes(p []byte) {
+	for len(p) > 0 && !r.stopped {
+		if r.block == nil {
+			select {
+			case evidenceBlockSlots <- struct{}{}:
+				r.block = evidenceBlocks.Get().(*[evidenceBlockSize]byte)
+			default:
+				r.stop()
+				return
+			}
+		}
+		n := copy(r.block[r.used:], p)
+		r.used += n
+		p = p[n:]
+		if r.used == evidenceBlockSize {
+			r.flush()
 		}
 	}
-	capture.records = append(capture.records, record)
+}
+func (r *imageEvidenceExchange) close() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	if r.finished {
+		r.mu.Unlock()
+		return
+	}
+	if !r.stopped {
+		if r.meta.BodyFormat != evidenceRealtimeFormat {
+			r.openPiece()
+		}
+		r.flush()
+	}
+	r.finished = true
+	<-evidenceRecordSlots
+	if r.piece != nil {
+		r.piece.closed.Store(true)
+	}
+	r.mu.Unlock()
+	r.capture.mu.Lock()
+	delete(r.capture.records, r)
+	r.capture.mu.Unlock()
 }
 
-// RecordImageDeliveryError preserves a storage/DB cause privately; ordinary
-// diagnostics continue to use only platform-defined stages and numeric facts.
+func (c *ImageErrorEvidence) recordError(stage string, err error) {
+	if c == nil || err == nil {
+		return
+	}
+	r := c.newRecord(stage, EvidenceObjectMeta{Error: err.Error()}, false)
+	r.close()
+}
 func RecordImageDeliveryError(ctx context.Context, stage string, err error) {
-	if err == nil {
-		return
-	}
-	capture := ImageErrorEvidenceFrom(ctx)
-	if capture == nil {
-		capture = apiEvidenceFrom(ctx)
-	}
-	if capture == nil {
-		return
-	}
+	capture := apiEvidenceFrom(ctx)
 	capture.recordError(stage, err)
 }
 
-func (capture *ImageErrorEvidence) recordError(stage string, err error) {
-	if err == nil {
+func ObserveImageHTTPExchange(ctx context.Context, req *http.Request, resp *http.Response, err error, stage string) {
+	if req != nil && evidenceInfrastructureRequest(req) {
 		return
 	}
-	capture.mu.Lock()
-	defer capture.mu.Unlock()
-	if capture.finished {
+	capture := apiEvidenceFrom(ctx)
+	if capture == nil || resp == nil {
 		return
 	}
-	if capture.allRequests && stage == "client_write" {
-		for _, record := range capture.records {
-			if record.Stage == "client_delivery" {
-				record.Error = "write_error"
-			}
-		}
+	if _, ok := resp.Body.(*imageEvidenceBody); ok {
+		return
 	}
-	capture.records = append(capture.records, &imageEvidenceExchange{Stage: stage, CreatedAt: common.GetTimestamp(), Error: err.Error()})
+	capture.observeResponse(req, resp, err, stage)
 }
 
 type imageEvidenceBody struct {
 	io.ReadCloser
-	capture *ImageErrorEvidence
-	record  *imageEvidenceExchange
+	capture         *ImageErrorEvidence
+	record          *imageEvidenceExchange
+	observeIdentity func()
+	finish          func()
 }
 
 func (b *imageEvidenceBody) Read(p []byte) (int, error) {
+	if b.observeIdentity != nil {
+		b.observeIdentity()
+		b.observeIdentity = nil
+	}
 	n, err := b.ReadCloser.Read(p)
-	b.capture.mu.Lock()
-	if b.capture.finished {
-		b.capture.mu.Unlock()
-		return n, err
-	}
-	b.capture.appendBody(b.record, p[:n])
-	if err == io.EOF {
-		b.record.EOF = true
-	}
+	b.record.append(p[:n])
 	if err != nil && err != io.EOF {
-		b.record.Error = err.Error()
+		b.capture.recordError("read_error", err)
 	}
-	b.capture.mu.Unlock()
 	return n, err
 }
-
 func (b *imageEvidenceBody) Close() error {
 	err := b.ReadCloser.Close()
-	if err != nil {
-		b.capture.mu.Lock()
-		if !b.capture.finished {
-			b.record.Error = err.Error()
-		}
-		b.capture.mu.Unlock()
+	b.record.close()
+	if b.finish != nil {
+		b.finish()
 	}
 	return err
 }
-
-func (c *ImageErrorEvidence) appendBody(record *imageEvidenceExchange, p []byte) {
-	keep := int64(len(p))
-	if c.allRequests {
-		keep = min(keep, max(int64(0), evidenceMaxBodyBytes()-int64(record.Body.Len())))
-	}
-	if keep > c.remaining {
-		keep = c.remaining
-	}
-	if keep > 0 {
-		_, _ = record.Body.Write(p[:keep])
-		c.remaining -= keep
-	}
-}
-
-// CaptureClientBody is called after the real writer, and records exactly the
-// bytes it accepted. Flush/Hijack/etc remain delegated by the Gin wrapper.
 func (c *ImageErrorEvidence) CaptureClientBody(p []byte) {
-	if c == nil {
-		return
-	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.finished {
-		return
-	}
-	var record *imageEvidenceExchange
-	for _, candidate := range c.records {
-		if candidate.Stage == "client_delivery" {
-			record = candidate
-			break
-		}
-	}
-	if record == nil {
-		record = &imageEvidenceExchange{Stage: "client_delivery", CreatedAt: common.GetTimestamp()}
-		c.records = append(c.records, record)
-	}
-	c.appendBody(record, p)
-}
-func (c *ImageErrorEvidence) FinishClient(status int, headers http.Header) {
-	if c == nil {
-		return
-	}
-	c.mu.Lock()
-	found := false
-	for _, r := range c.records {
-		if r.Stage == "client_delivery" {
-			found = true
-			r.Status = status
-			r.Headers = headers.Clone()
-			r.ContentType = headers.Get("Content-Type")
-		}
-	}
-	if !found && (status >= 400 || c.allRequests) {
-		c.records = append(c.records, &imageEvidenceExchange{Stage: "client_delivery", CreatedAt: common.GetTimestamp(), Status: status, Headers: headers.Clone(), ContentType: headers.Get("Content-Type")})
-	}
+	r := c.delivery
 	c.mu.Unlock()
-	c.Finish(status >= 400)
+	r.append(p)
 }
-
-// Abandon 丢弃本次观察记录而不落盘：任务证据会话已持有同一交换的
-// 阶段证据时使用，保证每次实际 HTTP 交换只保留一份证据。
-func (c *ImageErrorEvidence) Abandon() {
-	if c == nil {
-		return
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.finished = true
-	c.records = nil
-}
-
 func (c *ImageErrorEvidence) Finish(_ bool) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.finished {
+		c.mu.Unlock()
 		return
 	}
 	c.finished = true
-	if c.allRequests {
-		defer func() {
-			if recover() != nil {
-				imageEvidenceFailed.Add(1)
-				common.SysError("API request evidence persistence panicked")
-			}
-		}()
-		imageEvidenceAccepted.Add(1)
-		if err := persistAPIRequestEvidence(c); err != nil {
-			imageEvidenceFailed.Add(1)
-			common.SysError("API request evidence persistence failed")
-		} else {
-			imageEvidenceWritten.Add(1)
-		}
-		return
+	records := make([]*imageEvidenceExchange, 0, len(c.records))
+	for r := range c.records {
+		records = append(records, r)
 	}
-	// There is one queue slot for every memory reservation; never wait on I/O.
-	select {
-	case imageEvidenceQueue <- c:
-		imageEvidenceAccepted.Add(1)
-	default:
-		imageEvidenceDropped.Add(1)
-		<-imageEvidenceSlots
+	c.mu.Unlock()
+	for _, r := range records {
+		r.close()
 	}
 }
-
-func writeImageErrorEvidence(c *ImageErrorEvidence) {
-	defer func() {
-		if recover() != nil {
-			imageEvidenceFailed.Add(1)
-		}
-		<-imageEvidenceSlots
-	}()
-	if len(c.records) == 0 {
-		imageEvidenceSkipped.Add(1)
-		return
-	}
-	if err := persistAPIRequestEvidence(c); err != nil {
-		imageEvidenceFailed.Add(1)
-		return
-	}
-	imageEvidenceWritten.Add(1)
-}
-
 func ImageErrorEvidenceHealth() map[string]any {
-	return map[string]any{"enabled": evidenceEnabled(), "capacity": cap(imageEvidenceSlots), "active": len(imageEvidenceSlots), "queued": len(imageEvidenceQueue), "accepted": imageEvidenceAccepted.Load(), "written": imageEvidenceWritten.Load(), "skipped": imageEvidenceSkipped.Load(), "failed": imageEvidenceFailed.Load(), "dropped": imageEvidenceDropped.Load()}
+	return map[string]any{"enabled": evidenceEnabled(), "capacity": cap(imageEvidenceSlots), "active": len(imageEvidenceSlots), "buffer_blocks": len(evidenceBlockSlots), "active_records": len(evidenceRecordSlots), "disk_pressure": evidenceDiskPressure.Load(), "accepted": imageEvidenceAccepted.Load(), "written": imageEvidenceWritten.Load(), "failed": imageEvidenceFailed.Load(), "dropped": imageEvidenceDropped.Load()}
+}
+
+// One shared worker tick rotates idle as well as busy long connections.
+func (r *imageEvidenceExchange) rotate(piece *evidencePiece, now int64) {
+	if now < piece.sealAt {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.piece != piece || r.finished {
+		return
+	}
+	r.flush()
+	piece.closed.Store(true)
+	r.piece = nil
 }

@@ -29,7 +29,7 @@ func (s *s3ArtifactStore) putObjectFile(ctx context.Context, objectKey string, m
 	}
 	defer func() { _ = file.Close() }()
 	url := s.objectURL(objectKey)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, nil)
+	req, err := http.NewRequestWithContext(WithoutRequestEvidence(ctx), http.MethodPut, url, nil)
 	if err != nil {
 		return err
 	}

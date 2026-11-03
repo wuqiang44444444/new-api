@@ -12,20 +12,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEvidenceUsesAcceptedResponseRequestIDIncludingEmptyRetry(t *testing.T) {
+func TestEvidenceAcceptedResponseIdentityClearsOnFinalEmptyResponse(t *testing.T) {
 	setupEvidenceTestEnv(t)
-	c := newEvidenceTestContext(t, []byte(`{}`))
-	require.NoError(t, BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindVideoTask))
-	for _, requestID := range []string{"accepted-request", "final-request", ""} {
-		c.Set(common.UpstreamRequestIdKey, requestID)
-		resp := &http.Response{StatusCode: 200, Header: http.Header{"X-Request-Id": []string{"not-the-accepted-id"}, "Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{}`))}
-		AttachTaskRequestEvidenceUpstreamResponse(c, resp)
-		_, err := io.ReadAll(resp.Body)
+	c := newEvidenceTestContext(t, nil)
+	require.NoError(t, BeginTaskRequestEvidence(c, "video_task"))
+	for _, id := range []string{"accepted", "final", ""} {
+		c.Set(common.UpstreamRequestIdKey, id)
+		response := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader("{}"))}
+		AttachTaskRequestEvidenceUpstreamResponse(c, response)
+		_, err := io.ReadAll(response.Body)
 		require.NoError(t, err)
-		require.NoError(t, resp.Body.Close())
-		index, exists, err := model.GetTaskRequestEvidenceById(evidenceSessionFrom(c).evidenceID)
-		require.NoError(t, err)
-		require.True(t, exists)
-		assert.Equal(t, requestID, index.UpstreamRequestID)
+		require.NoError(t, response.Body.Close())
+		drainImageEvidence(t)
+		indexes := evidenceIndexes(t, model.TaskRequestEvidenceQueryParams{})
+		require.Len(t, indexes, 1)
+		assert.Equal(t, id, indexes[0].UpstreamRequestID)
 	}
+	FinishTaskRequestEvidenceClientDelivery(c)
 }

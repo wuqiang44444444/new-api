@@ -15,7 +15,7 @@ func setupEvidenceLifecycleDatabase(t *testing.T) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "lifecycle.db")), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&Task{}, &TaskRequestEvidence{}, &TaskRequestEvidenceEvent{}, &TaskRequestEvidenceAccessLog{}, &SystemTask{}, &SystemTaskLock{}))
+	require.NoError(t, db.AutoMigrate(&Task{}, &TaskRequestEvidence{}, &TaskRequestEvidenceEvent{}, &TaskRequestEvidenceAccessLog{}, &SystemTask{}, &SystemTaskLock{}, &EvidenceTaskLink{}))
 	previousDB, previousType := DB, common.MainDatabaseType()
 	DB = db
 	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
@@ -51,17 +51,6 @@ func TestEvidenceDatabaseDeletionContract(t *testing.T) {
 func runEvidenceDatabaseDeletionContract(t *testing.T) {
 	t.Helper()
 	now := common.GetTimestamp()
-	task := &Task{TaskID: "contract-media-task", UserId: 7, AppID: 3, CreatedAt: now - 3600, ClientProtocol: "openai_video"}
-	require.NoError(t, DB.Create(task).Error)
-	lateIndex := &TaskRequestEvidence{TaskID: task.TaskID, UserID: task.UserId, AppID: task.AppID, CreatedAt: now, RetainUntil: now + 7*86400}
-	require.NoError(t, CreateTaskRequestEvidence(lateIndex))
-	fixed, err := GetOrCreateTaskMediaEvidence(task, "video_task", now, 7*86400)
-	require.NoError(t, err)
-	assert.Equal(t, lateIndex.Id, fixed.Id)
-	assert.Equal(t, task.CreatedAt+7*86400, fixed.RetainUntil)
-	require.NoError(t, RequestTaskRequestEvidenceCleanup(fixed.Id, now))
-	_, err = GetOrCreateTaskMediaEvidence(task, "video_task", now, 7*86400)
-	assert.ErrorIs(t, err, ErrTaskRequestEvidenceBodyClosed)
 	index := &TaskRequestEvidence{CreatedAt: now - 8*86400, BodyExpired: true, CleanupRequestedAt: now}
 	require.NoError(t, CreateTaskRequestEvidence(index))
 	events := []*TaskRequestEvidenceEvent{{EvidenceId: index.Id}, {EvidenceId: index.Id}, {EvidenceId: index.Id}}
@@ -83,13 +72,13 @@ func runEvidenceDatabaseDeletionContract(t *testing.T) {
 	assert.EqualValues(t, 1, deleted)
 	assert.ErrorIs(t, CreateTaskRequestEvidenceEvent(&TaskRequestEvidenceEvent{EvidenceId: index.Id}), ErrTaskRequestEvidenceBodyClosed)
 	assert.ErrorIs(t, FinishTaskRequestEvidenceEvent(events[0]), ErrTaskRequestEvidenceBodyClosed)
-	// A manual early cleanup leaves a finite closure index; exact day seven stays.
+	// A closed empty window can be reclaimed independently of Task age.
 	for _, age := range []int64{86400, 7 * 86400} {
 		closed := &TaskRequestEvidence{CreatedAt: now - age, BodyExpired: true, CleanupRequestedAt: now}
 		require.NoError(t, CreateTaskRequestEvidence(closed))
 		deleted, err = DeleteExpiredEvidenceIndex(closed.Id, now)
 		require.NoError(t, err)
-		assert.Zero(t, deleted)
+		assert.EqualValues(t, 1, deleted)
 	}
 	// Audit retention starts at access time and is independent of index deletion.
 	audits := []*TaskRequestEvidenceAccessLog{{EvidenceId: index.Id, CreatedAt: now - 8*86400}, {EvidenceId: index.Id, CreatedAt: now - 7*86400}, {EvidenceId: index.Id, CreatedAt: now}}

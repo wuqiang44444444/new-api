@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHTTPExchangePersistenceRunsAfterRequestAndNeverReachesWARN(t *testing.T) {
+func TestExplicitHTTPExchangePersistenceRunsAfterRequestAndNeverReachesWARN(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	previous := loadEventPersister()
@@ -43,7 +43,7 @@ func TestHTTPExchangePersistenceRunsAfterRequestAndNeverReachesWARN(t *testing.T
 	raw := `{"id":9007199254740993,"max_tokens":0,"stream":false,"nested":{"\u0061pi_key":"fixture-secret"}}`
 	var requestContext context.Context
 	engine := gin.New()
-	engine.Use(sink.Middleware())
+	engine.Use(sink.Middleware(), func(c *gin.Context) { InstallHTTPExchange(c); c.Next() })
 	engine.POST("/v1/images/generations", func(c *gin.Context) {
 		c.Set("route_tag", "relay")
 		MarkAuthPassed(c, AuthSourceAPIToken)

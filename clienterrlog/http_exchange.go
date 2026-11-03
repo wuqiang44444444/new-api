@@ -105,6 +105,7 @@ func WrapUpstreamRequest(ctx context.Context, req *http.Request) {
 			*req = *req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 		}
 	}
+	observeUpstreamResponseStatus(ctx, 0)
 	capture, ok := ctx.Value(exchangeContextKey{}).(*exchangeCapture)
 	if !ok || req == nil || req.Body == nil {
 		return
@@ -117,7 +118,11 @@ func WrapUpstreamRequest(ctx context.Context, req *http.Request) {
 }
 
 func WrapUpstreamResponse(ctx context.Context, resp *http.Response) {
-	if resp == nil || resp.Body == nil {
+	if resp == nil {
+		return
+	}
+	observeUpstreamResponseStatus(ctx, resp.StatusCode)
+	if resp.Body == nil {
 		return
 	}
 	if _, ok := ctx.Value(exchangeContextKey{}).(*exchangeCapture); !ok {

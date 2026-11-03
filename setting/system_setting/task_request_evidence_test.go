@@ -12,13 +12,13 @@ func TestEvidenceConfigDefaultOff(t *testing.T) {
 	t.Setenv(TaskRequestEvidenceRetentionDaysEnv, "")
 	config := LoadTaskRequestEvidenceConfig()
 	assert.False(t, config.Enabled)
-	assert.Equal(t, 7, config.RetentionDays)
+	assert.Equal(t, 2, config.RetentionDays)
 	require.NoError(t, ValidateTaskRequestEvidenceConfig(config))
 }
 
 func TestEvidenceConfigExplicitEnable(t *testing.T) {
 	t.Setenv(TaskRequestEvidenceEnabledEnv, "true")
-	t.Setenv(TaskRequestEvidenceRetentionDaysEnv, "7")
+	t.Setenv(TaskRequestEvidenceRetentionDaysEnv, "2")
 	config := LoadTaskRequestEvidenceConfig()
 	assert.True(t, config.Enabled)
 	require.NoError(t, ValidateTaskRequestEvidenceConfig(config))
@@ -33,7 +33,7 @@ func TestEvidenceConfigInvalidEnabledValue(t *testing.T) {
 }
 
 func TestEvidenceConfigRetentionRange(t *testing.T) {
-	for _, raw := range []string{"0", "8", "-1", "invalid"} {
+	for _, raw := range []string{"0", "3", "7", "-1", "invalid"} {
 		t.Run(raw, func(t *testing.T) {
 			t.Setenv(TaskRequestEvidenceEnabledEnv, "true")
 			t.Setenv(TaskRequestEvidenceRetentionDaysEnv, raw)

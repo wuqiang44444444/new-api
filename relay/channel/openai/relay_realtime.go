@@ -46,8 +46,8 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 			case <-c.Done():
 				return
 			default:
-				_, message, err := clientConn.ReadMessage()
-				service.ObserveRealtimeFrame(c.Request.Context(), "realtime_north_receive", message, err)
+				messageType, message, err := clientConn.ReadMessage()
+				service.ObserveRealtimeFrame(c.Request.Context(), "realtime_north_receive", messageType, message, err)
 				if err != nil {
 					if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 						errChan <- fmt.Errorf("error reading from client: %v", err)
@@ -76,14 +76,14 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 					errChan <- fmt.Errorf("error counting text token: %v", err)
 					return
 				}
-				logger.LogInfo(c, common.LogText("type: %s, textToken: %d, audioToken: %d", realtimeEvent.Type, textToken, audioToken))
+				logger.LogDebug(c, "type: %s, textToken: %d, audioToken: %d", realtimeEvent.Type, textToken, audioToken)
 				localUsage.TotalTokens += textToken + audioToken
 				localUsage.InputTokens += textToken + audioToken
 				localUsage.InputTokenDetails.TextTokens += textToken
 				localUsage.InputTokenDetails.AudioTokens += audioToken
 
 				err = helper.WssString(c, targetConn, string(message))
-				service.ObserveRealtimeFrame(c.Request.Context(), "realtime_southbound_send", message, err)
+				service.ObserveRealtimeFrame(c.Request.Context(), "realtime_southbound_send", websocket.TextMessage, message, err)
 				if err != nil {
 					errChan <- fmt.Errorf("error writing to target: %v", err)
 					return
@@ -108,8 +108,8 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 			case <-c.Done():
 				return
 			default:
-				_, message, err := targetConn.ReadMessage()
-				service.ObserveRealtimeFrame(c.Request.Context(), "realtime_upstream_response", message, err)
+				messageType, message, err := targetConn.ReadMessage()
+				service.ObserveRealtimeFrame(c.Request.Context(), "realtime_upstream_response", messageType, message, err)
 				if err != nil {
 					if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 						errChan <- fmt.Errorf("error reading from target: %v", err)
@@ -183,7 +183,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 						errChan <- fmt.Errorf("error counting text token: %v", err)
 						return
 					}
-					logger.LogInfo(c, common.LogText("type: %s, textToken: %d, audioToken: %d", realtimeEvent.Type, textToken, audioToken))
+					logger.LogDebug(c, "type: %s, textToken: %d, audioToken: %d", realtimeEvent.Type, textToken, audioToken)
 					localUsage.TotalTokens += textToken + audioToken
 					localUsage.OutputTokens += textToken + audioToken
 					localUsage.OutputTokenDetails.TextTokens += textToken
@@ -191,7 +191,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 				}
 
 				err = helper.WssString(c, clientConn, string(message))
-				service.ObserveRealtimeFrame(c.Request.Context(), "realtime_client_delivery", message, err)
+				service.ObserveRealtimeFrame(c.Request.Context(), "realtime_client_delivery", websocket.TextMessage, message, err)
 				if err != nil {
 					errChan <- fmt.Errorf("error writing to client: %v", err)
 					return

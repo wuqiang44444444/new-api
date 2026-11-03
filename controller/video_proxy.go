@@ -241,7 +241,7 @@ func proxyTaskMedia(c *gin.Context, task *model.Task, descriptor *relaychannel.T
 		client = http.DefaultClient
 	}
 
-	req, err := http.NewRequestWithContext(c.Request.Context(), method, parsedURL.String(), bytes.NewReader(descriptor.Body))
+	req, err := http.NewRequestWithContext(service.WithoutRequestEvidence(c.Request.Context()), method, parsedURL.String(), bytes.NewReader(descriptor.Body))
 	if err != nil {
 		return &taskMediaProxyError{
 			status: http.StatusInternalServerError, code: "artifact_internal_error",
@@ -293,14 +293,13 @@ func proxyTaskMedia(c *gin.Context, task *model.Task, descriptor *relaychannel.T
 		if c.Request.Method == http.MethodHead || resp.StatusCode == http.StatusNotModified {
 			return nil
 		}
-		// 音视频证据（一期）：统计本次结果交付的实际写出字节。
-		recorder := beginTaskContentDeliveryEvidence(c, task)
-		copyWriter := recorder.WriterFor(c.Writer)
-		_, err := io.Copy(copyWriter, resp.Body)
+		// Reuse the request observer; downloaded file bytes are excluded.
+		service.AttachTaskRequestEvidenceTask(c, task)
+		_, err := io.Copy(c.Writer, resp.Body)
 		if err != nil {
+			service.RecordImageDeliveryError(c.Request.Context(), "content_delivery", err)
 			logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to stream task media: %v", err))
 		}
-		recorder.Done(resp.StatusCode, err)
 		return nil
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return &taskMediaProxyError{

@@ -19,7 +19,9 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
@@ -34,6 +36,12 @@ import (
 func newNativeRelayErrorFixture(t *testing.T) *nativeDiagFixture {
 	t.Helper()
 	require.NoError(t, i18n.Init())
+	// This fixture changes process-wide Redis state; unrelated async metrics
+	// must not outlive it and race with restoration.
+	metrics := config.GlobalConfig.Get("perf_metrics_setting").(*perf_metrics_setting.PerfMetricsSetting)
+	previousMetrics := metrics.Enabled
+	metrics.Enabled = false
+	t.Cleanup(func() { metrics.Enabled = previousMetrics })
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
@@ -210,7 +218,10 @@ func TestAzureImageRetryFinalErrorEvent(t *testing.T) {
 				assert.NotContains(t, event.Detail, "synthetic limit")
 			} else {
 				assert.Equal(t, "attempt-two", event.UpstreamRequestId)
-				assert.Contains(t, event.Detail, "synthetic second limit")
+				assert.NotContains(t, event.Detail, "synthetic second limit", "ordinary errors no longer retain provider bodies")
+				var detail map[string]string
+				require.NoError(t, common.UnmarshalJsonStr(event.Detail, &detail))
+				assert.Equal(t, "429", detail["upstream_status"], "preserve actual upstream status before mapping")
 				assert.NotContains(t, event.Detail, "synthetic limit")
 			}
 		})

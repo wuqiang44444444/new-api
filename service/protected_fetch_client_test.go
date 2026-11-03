@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/system_setting"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -210,7 +213,17 @@ func TestGetSSRFProtectedHTTPClientFallsBackToDefaultClientWhenProtectionDisable
 	httpClient = expected
 	ssrfProtectedHTTPClient = &http.Client{}
 
-	require.Same(t, expected, GetSSRFProtectedHTTPClient())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("file bytes"))
+	}))
+	defer server.Close()
+	response, err := GetSSRFProtectedHTTPClient().Get(server.URL)
+	require.NoError(t, err)
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	assert.Equal(t, "file bytes", string(body))
+	assert.Nil(t, expected.Transport, "shared client remains unchanged")
 }
 
 func TestProtectedFetchRoundTripperUsesConfiguredProxy(t *testing.T) {
@@ -303,7 +316,7 @@ func TestProtectedFetchRoundTripperNoProxyUsesProtectedDialer(t *testing.T) {
 
 func TestProtectedFetchRoundTripperReusesTransportPerProxy(t *testing.T) {
 	client := newProtectedFetchHTTPClientWithDialer(nil, nil, nil)
-	roundTripper, ok := client.Transport.(*apiEvidenceTransport).RoundTripper.(*ssrfProtectedRoundTripper)
+	roundTripper, ok := client.Transport.(*ssrfProtectedRoundTripper)
 	require.True(t, ok)
 
 	direct := roundTripper.transportFor(nil)

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,25 +14,48 @@ type EvidenceStoredFile struct {
 	ModifiedAt int64
 }
 
-func (s *localEncryptedEvidenceStore) EvidenceNamespaces() ([]int64, error) {
-	entries, err := os.ReadDir(s.baseDir)
+func (s *localEncryptedEvidenceStore) WalkEvidenceNamespaces(ctx context.Context, visit func([]int64) error) error {
+	dir, err := os.Open(s.baseDir)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
-	ids := []int64{0}
-	for _, entry := range entries {
-		id, err := strconv.ParseInt(entry.Name(), 10, 64)
-		if err == nil && id > 0 && strconv.FormatInt(id, 10) == entry.Name() && entry.IsDir() {
-			ids = append(ids, id)
+	defer dir.Close()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := visit([]int64{0}); err != nil {
+		return err
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		entries, readErr := dir.ReadDir(256)
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return readErr
+		}
+		ids := make([]int64, 0, len(entries))
+		for _, entry := range entries {
+			id, err := strconv.ParseInt(entry.Name(), 10, 64)
+			if err == nil && id > 0 && strconv.FormatInt(id, 10) == entry.Name() && entry.IsDir() {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) > 0 {
+			if err := visit(ids); err != nil {
+				return err
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			return nil
 		}
 	}
-	return ids, nil
 }
 
-// Snapshot one directory before deleting entries. Never follow a namespace
+// Snapshot one bounded batch before deleting entries. Never follow a namespace
 // symlink or recurse into resource, input, or delivery storage.
 func (s *localEncryptedEvidenceStore) WalkEvidenceFiles(ctx context.Context, evidenceID int64, visit func(EvidenceStoredFile) error) error {
 	path := s.baseDir
@@ -48,34 +72,49 @@ func (s *localEncryptedEvidenceStore) WalkEvidenceFiles(ctx context.Context, evi
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return errors.New("evidence namespace is not a directory")
 	}
-	entries, err := os.ReadDir(path)
+	dir, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	for _, entry := range entries {
+	defer dir.Close()
+	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if entry.IsDir() {
-			continue
+		entries, readErr := dir.ReadDir(256)
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return readErr
 		}
-		info, err := entry.Info()
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
+		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if entry.IsDir() {
 				continue
 			}
-			return err
+			info, err := entry.Info()
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					continue
+				}
+				return err
+			}
+			if !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+				continue
+			}
+			key := entry.Name()
+			if evidenceID > 0 {
+				key = strconv.FormatInt(evidenceID, 10) + "/" + key
+			}
+			if err := visit(EvidenceStoredFile{Key: key, ModifiedAt: info.ModTime().Unix()}); err != nil {
+				return err
+			}
 		}
-		if !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
-			continue
-		}
-		key := entry.Name()
-		if evidenceID > 0 {
-			key = strconv.FormatInt(evidenceID, 10) + "/" + key
-		}
-		if err := visit(EvidenceStoredFile{Key: key, ModifiedAt: info.ModTime().Unix()}); err != nil {
-			return err
+		if errors.Is(readErr, io.EOF) {
+			return nil
 		}
 	}
-	return nil
 }

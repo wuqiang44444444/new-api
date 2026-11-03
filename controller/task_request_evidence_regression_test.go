@@ -18,21 +18,24 @@ import (
 func TestEvidenceDisabledVideoContentStillDelivers(t *testing.T) {
 	old := system_setting.GetTaskRequestEvidenceConfig()
 	system_setting.SetTaskRequestEvidenceConfig(system_setting.TaskRequestEvidenceConfig{Enabled: false})
-	t.Cleanup(func() { system_setting.SetTaskRequestEvidenceConfig(old) })
+	t.Cleanup(func() {
+		flushControllerEvidence(t)
+		system_setting.SetTaskRequestEvidenceConfig(old)
+	})
 	TestLegacyVideoArtifactContentUsesGetResultURL(t)
-	var recorder *taskContentDeliveryRecorder
-	require.NotPanics(t, func() { recorder.Done(200, nil) })
 }
 
 func setupEvidenceViewFixture(t *testing.T) *model.TaskRequestEvidence {
 	t.Helper()
 	setupGenericTaskTest(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.TaskRequestEvidenceAccessLog{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.TaskRequestEvidenceAccessLog{}, &model.EvidenceTaskLink{}))
 	old := system_setting.GetTaskRequestEvidenceConfig()
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 7, MaxBodyBytes: 1024, MaxResponseBytes: 1024, WriteTimeoutSeconds: 5}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 2}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	t.Cleanup(func() {
+		flushControllerEvidence(t)
+
 		system_setting.SetTaskRequestEvidenceConfig(old)
 		_ = service.InitTaskRequestEvidenceStore(old)
 	})

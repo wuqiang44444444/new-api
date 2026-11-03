@@ -1,6 +1,6 @@
 import { isAxiosError } from 'axios'
 
-import { api } from '@/lib/api'
+import { api, getFreshAuthHeaders } from '@/lib/api'
 
 export interface EvidenceIndex {
   id: number
@@ -17,12 +17,28 @@ export interface EvidenceEvent {
   content_type?: string
   created_at?: number
 }
+export interface EvidenceMessage {
+  offset: number
+  message_type: number
+  created_at_ms: number
+  original_bytes: number
+  error?: string
+  text: string | null
+  base64?: string
+  display_limited?: boolean
+  formatted_text?: string | null
+  json_status?: string
+}
 export interface EvidenceContent {
   text: string | null
   bodyStatus: string
   meta?: Record<string, unknown> | null
   base64?: string
   content_type?: string
+  display_limited?: boolean
+  formatted_text?: string | null
+  json_status?: string
+  messages?: EvidenceMessage[]
 }
 interface Envelope<T> {
   success: boolean
@@ -59,15 +75,45 @@ export async function getEvidenceDetail(id: number, signal?: AbortSignal) {
   if (!result.data.success) throw new Error('Evidence query failed')
   return result.data.data
 }
+interface EvidenceSaveHandle {
+  createWritable(): Promise<WritableStream<Uint8Array>>
+}
+
 export async function downloadEvidence(id: number, eventId: number) {
-  const response = await api.get<Blob>(
-    `/api/task_request_evidence/${id}/events/${eventId}/object`,
-    { responseType: 'blob' }
-  )
+  const picker = (
+    window as Window & {
+      showSaveFilePicker?: (options: {
+        suggestedName: string
+      }) => Promise<EvidenceSaveHandle>
+    }
+  ).showSaveFilePicker
+  const filename = `evidence-${eventId}.bin`
+  const path = `/api/task_request_evidence/${id}/events/${eventId}/object`
+  if (picker) {
+    let handle: EvidenceSaveHandle
+    try {
+      // Invoke while the user's download gesture is still active.
+      handle = await picker.call(window, { suggestedName: filename })
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      throw error
+    }
+    const headers = await getFreshAuthHeaders()
+    const url = new URL(api.getUri({ url: path }), window.location.href)
+    const response = await fetch(url, { headers, cache: 'no-store' })
+    if (!response.ok || !response.body) {
+      throw new Error('Evidence download failed')
+    }
+    await response.body.pipeTo(await handle.createWritable())
+    return
+  }
+  // Browsers without a streaming file API retain the existing Blob download.
+  // Server decryption stays streaming; only an explicitly selected download is loaded.
+  const response = await api.get<Blob>(path, { responseType: 'blob' })
   const url = URL.createObjectURL(response.data)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `evidence-${eventId}.bin`
+  anchor.download = filename
   anchor.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
@@ -76,7 +122,8 @@ export async function downloadEvidence(id: number, eventId: number) {
 export async function readEvidenceOriginalText(
   id: number,
   eventId: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  formatJSON = false
 ): Promise<EvidenceContent> {
   signal?.throwIfAborted()
   try {
@@ -87,8 +134,13 @@ export async function readEvidenceOriginalText(
         meta?: Record<string, unknown> | null
         base64?: string
         content_type?: string
+        display_limited?: boolean
+        formatted_text?: string | null
+        json_status?: string
+        messages?: EvidenceMessage[]
       }>
     >(`/api/task_request_evidence/${id}/events/${eventId}/content`, {
+      ...(formatJSON ? { params: { format: 'json' } } : {}),
       skipErrorHandler: true,
       signal,
       disableDuplicate: true,

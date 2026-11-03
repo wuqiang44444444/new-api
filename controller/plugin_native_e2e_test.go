@@ -70,10 +70,12 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	service.InitHttpClient()
 
 	oldEvidenceConfig := system_setting.GetTaskRequestEvidenceConfig()
-	evidenceConfig := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 7, MaxBodyBytes: 1 << 20, MaxResponseBytes: 1 << 20, WriteTimeoutSeconds: 5}
+	evidenceConfig := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 2}
 	system_setting.SetTaskRequestEvidenceConfig(evidenceConfig)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(evidenceConfig))
 	t.Cleanup(func() {
+		flushControllerEvidence(t)
+
 		system_setting.SetTaskRequestEvidenceConfig(oldEvidenceConfig)
 		_ = service.InitTaskRequestEvidenceStore(oldEvidenceConfig)
 	})
@@ -90,7 +92,7 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	sqlDB, err := database.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Channel{}, &model.Task{}, &model.TaskBillingDelivery{}, &model.QuotaData{}, &model.Log{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}))
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Channel{}, &model.Task{}, &model.TaskBillingDelivery{}, &model.QuotaData{}, &model.Log{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.EvidenceTaskLink{}))
 	model.DB = database
 	model.LOG_DB = database
 	common.MemoryCacheEnabled = false
@@ -100,6 +102,8 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	previousModelRatios := ratio_setting.ModelRatio2JSONString()
 	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"kling-v1":1}`))
 	t.Cleanup(func() {
+		flushControllerEvidence(t)
+
 		model.DB = previousDB
 		model.LOG_DB = previousLogDB
 		common.MemoryCacheEnabled = previousMemoryCache
@@ -218,7 +222,10 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
 		return relay.GetTaskAdaptor(platform)
 	}
-	t.Cleanup(func() { service.GetTaskAdaptorFunc = previousAdaptorFactory })
+	t.Cleanup(func() {
+		flushControllerEvidence(t)
+		service.GetTaskAdaptorFunc = previousAdaptorFactory
+	})
 	service.DispatchPlatformUpdate(
 		context.Background(),
 		persisted.Platform,

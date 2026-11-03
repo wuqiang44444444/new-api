@@ -212,9 +212,12 @@ func xunfeiMakeRequest(c *gin.Context, textRequest dto.GeneralOpenAIRequest, dom
 	}
 
 	data := requestOpenAI2Xunfei(textRequest, appId, domain)
-	err = conn.WriteJSON(data)
-	encoded, _ := common.Marshal(data)
-	service.ObserveRealtimeFrame(c.Request.Context(), "realtime_southbound_send", encoded, err)
+	encoded, err := common.Marshal(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Preserve WriteJSON's terminating newline while encoding only once.
+	err = service.WriteRealtimeFrameWithEvidence(c.Request.Context(), "realtime_southbound_send", conn, websocket.TextMessage, append(encoded, '\n'))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -226,8 +229,8 @@ func xunfeiMakeRequest(c *gin.Context, textRequest dto.GeneralOpenAIRequest, dom
 			conn.Close()
 		}()
 		for {
-			_, msg, err := conn.ReadMessage()
-			service.ObserveRealtimeFrame(c.Request.Context(), "realtime_upstream_response", msg, err)
+			messageType, msg, err := conn.ReadMessage()
+			service.ObserveRealtimeFrame(c.Request.Context(), "realtime_upstream_response", messageType, msg, err)
 			if err != nil {
 				common.SysLog(common.LogText("error reading stream response: %s", err.Error()))
 				break

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/base64"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -74,14 +75,24 @@ func GetTaskRequestEvidenceObject(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Evidence event not found"})
 		return
 	}
-	payload, bodyStatus := service.ReadEvidenceEventBody(event, service.IsEvidenceBodyExpired(evidence, common.GetTimestamp()))
+	payload, bodyStatus := service.OpenEvidenceEventBody(event, service.IsEvidenceBodyExpired(evidence, common.GetTimestamp()))
 	if !respondEvidenceBodyStatus(c, bodyStatus) {
 		return
 	}
 	model.RecordTaskRequestEvidenceAccess(evidence.Id, int64(c.GetInt("id")), "download", "original")
+	defer payload.Close()
 	filename := strconv.FormatInt(event.Id, 10) + ".bin"
 	c.Header("Content-Disposition", "attachment; filename=\""+filename+"\"")
-	c.Data(http.StatusOK, "application/octet-stream", payload)
+	c.Header("Content-Type", "application/octet-stream")
+	// A later authentication/read failure must be visible as a short HTTP body,
+	// rather than a successful download of an incomplete plaintext prefix.
+	if sized, ok := payload.(interface{ Size() int64 }); ok && sized.Size() >= 0 {
+		c.Header("Content-Length", strconv.FormatInt(sized.Size(), 10))
+	}
+	c.Status(http.StatusOK)
+	if _, err := io.CopyBuffer(c.Writer, payload, make([]byte, 64<<10)); err != nil {
+		common.SysError("evidence download interrupted")
+	}
 }
 
 // GetTaskRequestEvidenceContent returns one selected raw body and captured metadata.
@@ -102,7 +113,15 @@ func GetTaskRequestEvidenceContent(c *gin.Context) {
 		return
 	}
 	model.RecordTaskRequestEvidenceAccess(evidence.Id, int64(c.GetInt("id")), "view", "original")
-	result := gin.H{"meta": content.Meta, "content_type": event.ContentType, "body_status": "available"}
+	if c.Query("format") == "json" {
+		service.FormatEvidenceContentJSON(content)
+	}
+	result := gin.H{"text": nil, "meta": content.Meta, "content_type": event.ContentType, "body_status": "available", "display_limited": content.DisplayLimited, "formatted_text": content.FormattedText, "json_status": content.JSONStatus}
+	if content.Messages != nil {
+		result["messages"] = content.Messages
+		common.ApiSuccess(c, result)
+		return
+	}
 	if service.EvidenceContentIsText(content.Body) {
 		result["text"] = string(content.Body)
 	} else {

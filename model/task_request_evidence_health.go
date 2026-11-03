@@ -49,7 +49,7 @@ func GetEvidenceCleanupHealth(now, retentionSeconds int64) (*EvidenceCleanupHeal
 		return nil, err
 	}
 	health.OldestPendingAt = oldest.CreatedAt
-	databaseQuery := DB.Model(&TaskRequestEvidence{}).Where("body_expired = ? AND (created_at < ? OR EXISTS (SELECT 1 FROM task_request_evidence_events WHERE evidence_id = task_request_evidences.id))", true, now-EvidenceIndexRetentionSeconds)
+	databaseQuery := DB.Model(&TaskRequestEvidence{}).Where("body_expired = ?", true)
 	if err := databaseQuery.Count(&health.PendingDatabaseIndexes).Error; err != nil {
 		return nil, err
 	}

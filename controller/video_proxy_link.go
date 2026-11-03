@@ -130,7 +130,7 @@ func proxyLinkVideoTaskContent(c *gin.Context, task *model.Task) bool {
 	if c.Request.Method == http.MethodHead {
 		method = http.MethodHead
 	}
-	req, err := http.NewRequestWithContext(ctx, method, "", nil)
+	req, err := http.NewRequestWithContext(service.WithoutRequestEvidence(ctx), method, "", nil)
 	if err != nil {
 		modelArkVideoError(c, http.StatusInternalServerError, "internal_error", "Failed to create proxy request")
 		return true
@@ -235,12 +235,12 @@ func proxyLinkVideoTaskContent(c *gin.Context, task *model.Task) bool {
 	if method == http.MethodHead {
 		return true
 	}
-	// 音视频证据（一期）：统计本次结果交付的实际写出字节。
-	recorder := beginTaskContentDeliveryEvidence(c, task)
-	if _, err = io.Copy(recorder.WriterFor(c.Writer), resp.Body); err != nil {
+	// Reuse the request observer; downloaded file bytes are excluded.
+	service.AttachTaskRequestEvidenceTask(c, task)
+	if _, err = io.Copy(c.Writer, resp.Body); err != nil {
+		service.RecordImageDeliveryError(c.Request.Context(), "content_delivery", err)
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to stream Link video content: %s", err.Error()))
 	}
-	recorder.Done(resp.StatusCode, err)
 	return true
 }
 

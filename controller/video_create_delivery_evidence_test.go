@@ -8,36 +8,26 @@ import (
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
 
 func TestSeedanceCreateDeliveryEvidencePreservesFundsAndPublicResponse(t *testing.T) {
 	previousConfig := system_setting.GetTaskRequestEvidenceConfig()
 	fx := newSeedanceFundsFixture(t)
 	fx.assertAttemptAtPost.Store(true)
-	require.NoError(t, fx.db.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}))
+	require.NoError(t, fx.db.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.EvidenceTaskLink{}))
 	config := system_setting.TaskRequestEvidenceConfig{
-		Enabled: true, RetentionDays: 7, StorageDir: t.TempDir(),
-		EncryptionKeyHex:    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-		MaxBodyBytes:        1 << 20,
-		MaxResponseBytes:    1 << 20,
-		WriteTimeoutSeconds: 5,
+		Enabled: true, RetentionDays: 2, StorageDir: t.TempDir(),
+		EncryptionKeyHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
 	}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
-	t.Cleanup(func() { require.NoError(t, service.InitTaskRequestEvidenceStore(previousConfig)) })
-	var deliveryStateAtEvidenceSave string
-	require.NoError(t, fx.db.Callback().Create().Before("gorm:begin_transaction").Register("test:final-delivery-before-evidence", func(tx *gorm.DB) {
-		event, ok := tx.Statement.Dest.(*model.TaskRequestEvidenceEvent)
-		if !ok || event.Stage != model.TaskRequestEvidenceStageClientDelivery {
-			return
-		}
-		var saved model.Task
-		require.NoError(t, tx.Session(&gorm.Session{NewDB: true}).First(&saved).Error)
-		deliveryStateAtEvidenceSave = saved.VideoDeliveryState
-	}))
+	t.Cleanup(func() {
+		flushControllerEvidence(t)
+		require.NoError(t, service.InitTaskRequestEvidenceStore(previousConfig))
+	})
 
 	response := fx.submitCreate()
+	flushControllerEvidence(t)
 	publicID := decodeSeedanceFundsCreateID(t, response)
 	task := fx.loadTask(publicID)
 	assert.EqualValues(t, 1, fx.createCalls.Load())
@@ -46,7 +36,6 @@ func TestSeedanceCreateDeliveryEvidencePreservesFundsAndPublicResponse(t *testin
 	assert.Equal(t, seedanceFundsHold, task.Quota)
 	assert.Equal(t, model.TaskBillingStatePending, task.BillingState)
 	assert.Equal(t, "server_written", task.VideoDeliveryState)
-	assert.Equal(t, "server_written", deliveryStateAtEvidenceSave, "optional evidence I/O must follow the business delivery observation")
 	logs := fx.logsByType()
 	require.Len(t, logs[model.LogTypeConsume], 1)
 	assert.Equal(t, seedanceFundsHold, logs[model.LogTypeConsume][0].Quota)

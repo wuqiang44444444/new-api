@@ -227,7 +227,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    ":" + port,
-		Handler: service.APIRequestEvidenceHTTPHandler(server),
+		Handler: server,
 	}
 
 	go func() {

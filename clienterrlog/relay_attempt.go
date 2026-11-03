@@ -12,6 +12,7 @@ import (
 // response. Explicit business reports and the client exchange remain intact.
 func BeginNativeRelayAttempt(c *gin.Context) {
 	c.Set(common.UpstreamRequestIdKey, "")
+	observeUpstreamResponseStatus(c.Request.Context(), 0)
 	capture, ok := c.Request.Context().Value(exchangeContextKey{}).(*exchangeCapture)
 	if !ok {
 		return
@@ -25,14 +26,22 @@ func BeginNativeRelayAttempt(c *gin.Context) {
 // UpstreamResponseStatus reads the observed HTTP status before any client
 // status mapping. It does not parse or copy provider response bodies.
 func UpstreamResponseStatus(ctx context.Context) int {
-	capture, ok := ctx.Value(exchangeContextKey{}).(*exchangeCapture)
+	report, ok := ctx.Value(contextKey{}).(*requestReport)
 	if !ok {
 		return 0
 	}
-	capture.mu.Lock()
-	defer capture.mu.Unlock()
-	if response := capture.bodies["upstream_response"]; response != nil {
-		return response.status
+	report.mu.Lock()
+	defer report.mu.Unlock()
+	return report.upstreamStatus
+}
+
+// Status is transport metadata, independent of optional HTTP body diagnostics.
+func observeUpstreamResponseStatus(ctx context.Context, status int) {
+	report, ok := ctx.Value(contextKey{}).(*requestReport)
+	if !ok {
+		return
 	}
-	return 0
+	report.mu.Lock()
+	report.upstreamStatus = status
+	report.mu.Unlock()
 }

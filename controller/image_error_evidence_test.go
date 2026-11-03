@@ -23,7 +23,7 @@ func TestNativeImageErrorEvidenceAcrossSyncAndTask(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			fixture := newNativeDiagFixture(t, 400, `{"error":{"code":"invalid_argument","message":"synthetic provider detail","api_key":"synthetic-private-key"}}`, nil)
-			require.NoError(t, fixture.db.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}))
+			require.NoError(t, fixture.db.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.EvidenceTaskLink{}))
 			old := system_setting.GetTaskRequestEvidenceConfig()
 			config := old
 			config.Enabled = true
@@ -32,6 +32,8 @@ func TestNativeImageErrorEvidenceAcrossSyncAndTask(t *testing.T) {
 			system_setting.SetTaskRequestEvidenceConfig(config)
 			require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 			t.Cleanup(func() {
+				flushControllerEvidence(t)
+
 				require.Eventually(t, func() bool { return service.ImageErrorEvidenceHealth()["active"] == 0 }, 3*time.Second, time.Millisecond)
 				system_setting.SetTaskRequestEvidenceConfig(old)
 				require.NoError(t, service.InitTaskRequestEvidenceStore(old))

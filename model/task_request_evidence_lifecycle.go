@@ -9,8 +9,6 @@ import (
 
 const EvidenceIndexRetentionSeconds int64 = 7 * 86400
 
-var ErrTaskRequestEvidenceCreationTime = errors.New("evidence task creation time unavailable")
-
 // The lock is shared by event reservation, object publication and cleanup.
 func writableEvidenceIndex(tx *gorm.DB, id, now, retentionSeconds int64) (*TaskRequestEvidence, error) {
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
@@ -35,54 +33,6 @@ func writableEvidenceIndex(tx *gorm.DB, id, now, retentionSeconds int64) (*TaskR
 	return &index, nil
 }
 
-func GetOrCreateTaskMediaEvidence(task *Task, kind string, now, retentionSeconds int64) (*TaskRequestEvidence, error) {
-	var index TaskRequestEvidence
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		// Lock the authoritative Task even when it has no evidence index yet,
-		// so simultaneous pollers cannot create parallel indexes.
-		query := tx.Model(&Task{}).Where("task_id = ? AND user_id = ? AND app_id = ?", task.TaskID, task.UserId, task.AppID)
-		if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
-			if err := query.UpdateColumn("updated_at", gorm.Expr("updated_at")).Error; err != nil {
-				return err
-			}
-		}
-		var durable Task
-		if err := lockForUpdate(query).First(&durable).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrTaskRequestEvidenceBodyClosed
-			}
-			return err
-		}
-		if durable.CreatedAt <= 0 || durable.CreatedAt > now {
-			return ErrTaskRequestEvidenceCreationTime
-		}
-		if durable.CreatedAt+retentionSeconds < now {
-			return ErrTaskRequestEvidenceBodyClosed
-		}
-		err := tx.Where("task_id = ? AND user_id = ? AND app_id = ?", task.TaskID, task.UserId, task.AppID).Order("id").First(&index).Error
-		if err == nil {
-			_, err = writableEvidenceIndex(tx, index.Id, now, retentionSeconds)
-			if err != nil {
-				return err
-			}
-			deadline := durable.CreatedAt + retentionSeconds
-			if index.RetainUntil <= 0 || index.RetainUntil > deadline {
-				if err := tx.Model(&TaskRequestEvidence{}).Where("id = ?", index.Id).UpdateColumn("retain_until", deadline).Error; err != nil {
-					return err
-				}
-				index.RetainUntil = deadline
-			}
-			return nil
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-		index = TaskRequestEvidence{TaskID: durable.TaskID, UserID: durable.UserId, AppID: durable.AppID, TokenID: durable.PrivateData.TokenId, ChannelID: durable.ChannelId, Kind: kind, ClientProtocol: durable.ClientProtocol, ClientModel: durable.Properties.OriginModelName, CreatedAt: durable.CreatedAt, UpdatedAt: now, RetainUntil: durable.CreatedAt + retentionSeconds}
-		return tx.Create(&index).Error
-	})
-	return &index, err
-}
-
 func TaskRequestEvidenceEventBatch(evidenceID, afterID int64, limit int) ([]*TaskRequestEvidenceEvent, error) {
 	var events []*TaskRequestEvidenceEvent
 	err := DB.Select("id", "evidence_id").Where("evidence_id = ? AND id > ?", evidenceID, afterID).Order("id").Limit(limit).Find(&events).Error
@@ -96,8 +46,6 @@ func TaskRequestEvidenceDatabaseCandidates(now, target, afterID int64, limit int
 	query := DB.Where("body_expired = ? AND id > ?", true, afterID)
 	if target > 0 {
 		query = query.Where("created_at < ?", target)
-	} else {
-		query = query.Where("created_at < ? OR EXISTS (SELECT 1 FROM task_request_evidence_events WHERE evidence_id = task_request_evidences.id)", now-EvidenceIndexRetentionSeconds)
 	}
 	err := query.Order("id").Limit(limit).Find(&indexes).Error
 	return indexes, err
@@ -134,8 +82,20 @@ func DeleteClosedEvidenceEventBatch(evidenceID int64, limit int) (int64, error) 
 
 func DeleteExpiredEvidenceIndex(evidenceID, now int64) (int64, error) {
 	// A closed index cannot acquire events; reservation shares its row lock.
-	result := DB.Where("id = ? AND body_expired = ? AND cleanup_requested_at > 0 AND created_at < ? AND NOT EXISTS (SELECT 1 FROM task_request_evidence_events WHERE evidence_id = task_request_evidences.id) AND NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.task_id = task_request_evidences.task_id AND tasks.user_id = task_request_evidences.user_id AND tasks.app_id = task_request_evidences.app_id AND tasks.created_at >= ?)", evidenceID, true, now-EvidenceIndexRetentionSeconds, now-EvidenceIndexRetentionSeconds).Delete(&TaskRequestEvidence{})
-	return result.RowsAffected, result.Error
+	var deleted int64
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		// Closed, empty windows are independently reclaimable even for active Tasks.
+		result := tx.Where("id = ? AND body_expired = ? AND cleanup_requested_at > 0 AND NOT EXISTS (SELECT 1 FROM task_request_evidence_events WHERE evidence_id = task_request_evidences.id)", evidenceID, true).Delete(&TaskRequestEvidence{})
+		if result.Error != nil {
+			return result.Error
+		}
+		deleted = result.RowsAffected
+		if deleted > 0 {
+			return tx.Where("evidence_id = ?", evidenceID).Delete(&EvidenceTaskLink{}).Error
+		}
+		return nil
+	})
+	return deleted, err
 }
 
 func DeleteExpiredEvidenceAccessBatch(now int64, limit int) (int64, error) {

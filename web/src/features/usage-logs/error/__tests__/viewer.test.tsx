@@ -234,7 +234,7 @@ it('shows sanitized request and upstream response in channel test details', asyn
   expect(await navigator.clipboard.readText()).toContain('[REDACTED]')
 })
 
-it('keeps historical error details readable when no bodies were recorded', async () => {
+it('shows ordinary error facts and evidence access without empty body snapshot sections', async () => {
   vi.spyOn(api, 'get').mockResolvedValue({
     data: { success: true, data: { total: 1, items: [ERROR_ITEM] } },
   })
@@ -242,9 +242,40 @@ it('keeps historical error details readable when no bodies were recorded', async
   await userEvent
     .setup()
     .click(await screen.findByRole('button', { name: 'Details' }))
+  expect(await screen.findByText('source_status')).toBeVisible()
+  expect(screen.queryByText('Original request (redacted)')).toBeNull()
+  expect(screen.queryByText('Not recorded for this event')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Request evidence' })).toBeVisible()
+})
+
+it('still displays a historical ordinary error body when its redacted snapshot exists', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        total: 1,
+        items: [
+          {
+            ...ERROR_ITEM,
+            detail: JSON.stringify({
+              http_exchange: JSON.stringify({
+                response: {
+                  state: 'captured',
+                  body: '{"error":"historical diagnostic"}',
+                },
+              }),
+            }),
+          },
+        ],
+      },
+    },
+  })
+  await renderViewer()
+  await userEvent
+    .setup()
+    .click(await screen.findByRole('button', { name: 'Details' }))
   expect(await screen.findByText('Original request (redacted)')).toBeVisible()
-  expect(screen.getAllByText('Not recorded for this event')).toHaveLength(4)
-  expect(screen.getByText('source_status')).toBeVisible()
+  expect(screen.getByText(/historical diagnostic/)).toBeVisible()
 })
 
 const TASK_FAILURE_ITEM = {

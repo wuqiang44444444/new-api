@@ -1,13 +1,10 @@
 package service
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,8 +24,6 @@ func TestEvidenceStoreRoundtripEncrypted(t *testing.T) {
 		RetentionDays:    7,
 		StorageDir:       dir,
 		EncryptionKeyHex: hex.EncodeToString(key),
-		MaxBodyBytes:     1 << 20,
-		MaxResponseBytes: 1 << 20,
 	}
 	store, err := newLocalEncryptedEvidenceStoreForTest(config)
 	require.NoError(t, err)
@@ -49,20 +44,6 @@ func TestEvidenceStoreRoundtripEncrypted(t *testing.T) {
 	require.NoError(t, deleteErr)
 	_, err = store.Get("1/1.bin")
 	assert.Error(t, err)
-}
-
-func TestEvidenceResponseBodyTeeCapturesWhileForwarding(t *testing.T) {
-	response := &http.Response{
-		StatusCode: 200,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(bytes.NewBufferString(`{"status":"ok"}`)),
-	}
-	tee := newEvidenceResponseBodyTeeForTest(t, response, 1<<20)
-	response.Body = tee
-	body, err := io.ReadAll(response.Body)
-	require.NoError(t, err)
-	assert.Equal(t, `{"status":"ok"}`, string(body))
-	require.NoError(t, response.Body.Close())
 }
 
 func TestEvidenceMaskSignedURLs(t *testing.T) {
@@ -88,16 +69,5 @@ func newLocalEncryptedEvidenceStoreForTest(config system_setting.TaskRequestEvid
 	if err != nil {
 		return nil, err
 	}
-	return &localEncryptedEvidenceStore{baseDir: config.StorageDir, aead: gcm}, nil
-}
-
-func newEvidenceResponseBodyTeeForTest(t *testing.T, response *http.Response, maxBytes int64) *evidenceResponseBodyTee {
-	t.Helper()
-	return &evidenceResponseBodyTee{
-		session:  &taskRequestEvidenceSession{},
-		origin:   response.Body,
-		buffer:   bytes.NewBuffer(nil),
-		maxBytes: maxBytes,
-		started:  0,
-	}
+	return &localEncryptedEvidenceStore{baseDir: config.StorageDir, aead: gcm, key: rawKey}, nil
 }

@@ -62,7 +62,7 @@ function RootEvidenceCleanup(props: { userID: number }) {
   const queryClient = useQueryClient()
   const queryKey = ['system-settings', 'evidence-cleanup', props.userID]
   const [purgeDate, setPurgeDate] = useState<Date | undefined>(
-    () => new Date(Date.now() - 7 * 86400000)
+    () => new Date(Date.now() - 2 * 86400000)
   )
   const [confirmOpen, setConfirmOpen] = useState(false)
   const query = useQuery({
@@ -172,7 +172,7 @@ function RootEvidenceCleanup(props: { userID: number }) {
         </h4>
         <p className='text-muted-foreground mt-1 text-sm'>
           {t(
-            'Remove evidence bodies and event details created before the selected timestamp. Closed indexes may remain for up to seven days.'
+            'Evidence is normally kept for two days. Above 90% disk usage, cleanup keeps only one day and new evidence writes pause until usage recovers.'
           )}
         </p>
       </div>
@@ -198,9 +198,9 @@ function RootEvidenceCleanup(props: { userID: number }) {
           variant='outline'
           type='button'
           disabled={busy}
-          onClick={() => setPurgeDate(new Date(Date.now() - 7 * 86400000))}
+          onClick={() => setPurgeDate(new Date(Date.now() - 2 * 86400000))}
         >
-          {t('7 days ago')}
+          {t('2 days ago')}
         </Button>
         <Button
           type='button'
@@ -272,7 +272,7 @@ function RootEvidenceCleanup(props: { userID: number }) {
             )}
             {t(' (time zone: {{zone}}).', { zone })}{' '}
             {t(
-              'This includes historical evidence of all types and cannot be undone. Closed indexes expire within seven days. Tasks and billing records are kept.'
+              'This permanently removes matching evidence windows and their contents. Tasks, billing records, and business files are kept.'
             )}
           </>
         }

@@ -258,7 +258,7 @@ export function ErrorLogDetailsDialog(props: { entry: ErrorLogItem }) {
       )}
       <ErrorLogHTTPExchange
         detail={props.entry.detail}
-        hideWhenEmpty={isTaskFailure}
+        hideWhenEmpty={props.entry.event_type !== 'channel_test'}
       />
       {detailEntries.length > 0 && (
         <DetailSection label={t('Additional information')}>

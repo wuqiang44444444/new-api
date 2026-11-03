@@ -5,15 +5,17 @@ import (
 	"github.com/QuantumNous/new-api/setting/system_setting"
 )
 
-// 证据正文保留与到期判定工具。仅采集已登记媒体操作；本文件承载
-// 七天保留期限计算、读取侧到期判定与写入侧追加保护共用的部分。
+// 证据正文保留、读取侧到期判定与写入侧追加保护共用的部分。
 
-// EvidenceRetentionSeconds 返回当前配置的保留秒数；配置越界时按七天兜底，
+// EvidenceRetentionSeconds 返回当前配置的保留秒数；配置越界时按两天兜底，
 // 越界配置已在加载期报错，此处只防运行期异常输入。
 func EvidenceRetentionSeconds() int64 {
+	if evidenceDiskPressure.Load() {
+		return 86400
+	}
 	days := system_setting.GetTaskRequestEvidenceConfig().RetentionDays
-	if days < 1 || days > 7 {
-		return 7 * 86400
+	if days < 1 || days > 2 {
+		return 2 * 86400
 	}
 	return int64(days) * 86400
 }
@@ -22,8 +24,8 @@ func EvidenceRetentionSeconds() int64 {
 // "索引创建时间 + 当前配置保留天数"与原有非零更早期限中的较早值；
 // 历史 retain_until=0（永久保留）同样受当前上限约束。
 func evidenceRetentionDeadline(createdAt, retainUntil int64, retentionDays int) int64 {
-	if retentionDays < 1 || retentionDays > 7 {
-		retentionDays = 7
+	if retentionDays < 1 || retentionDays > 2 {
+		retentionDays = 2
 	}
 	deadline := createdAt + int64(retentionDays)*86400
 	if retainUntil > 0 && retainUntil < deadline {

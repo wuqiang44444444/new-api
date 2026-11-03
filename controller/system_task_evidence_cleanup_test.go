@@ -30,25 +30,26 @@ func setupEvidenceCleanupEnv(t *testing.T) (service.TaskRequestEvidenceObjectSto
 		&model.SystemTaskLock{},
 		&model.TaskRequestEvidence{},
 		&model.TaskRequestEvidenceEvent{},
-		&model.TaskRequestEvidenceAccessLog{}, &model.Task{},
-	))
+		&model.TaskRequestEvidenceAccessLog{}, &model.Task{}, &model.EvidenceTaskLink{}))
 	previousDB := model.DB
 	model.DB = db
-	t.Cleanup(func() { model.DB = previousDB })
+	t.Cleanup(func() {
+		flushControllerEvidence(t)
+		model.DB = previousDB
+	})
 
 	storeDir := t.TempDir()
 	config := system_setting.TaskRequestEvidenceConfig{
-		Enabled:             true,
-		StorageDir:          storeDir,
-		EncryptionKeyHex:    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-		MaxBodyBytes:        1 << 20,
-		MaxResponseBytes:    1 << 20,
-		WriteTimeoutSeconds: 5,
-		RetentionDays:       7,
+		Enabled:          true,
+		StorageDir:       storeDir,
+		EncryptionKeyHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+		RetentionDays:    2,
 	}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	t.Cleanup(func() {
+		flushControllerEvidence(t)
+
 		require.NoError(t, service.InitTaskRequestEvidenceStore(system_setting.TaskRequestEvidenceConfig{Enabled: false}))
 		system_setting.SetTaskRequestEvidenceConfig(system_setting.TaskRequestEvidenceConfig{Enabled: false})
 	})
@@ -185,10 +186,10 @@ func TestEvidenceRetentionManualTargetCutoffAndMarker(t *testing.T) {
 	assert.EqualValues(t, 1, result.OperatorUserID)
 
 	// Only the row created before the cutoff is cleaned; equal-or-after kept.
-	var cleaned model.TaskRequestEvidence
-	require.NoError(t, model.DB.Where("id = ?", older.Id).First(&cleaned).Error)
-	assert.True(t, cleaned.BodyExpired)
-	assert.NotZero(t, cleaned.CleanupRequestedAt)
+	_, exists, err := model.GetTaskRequestEvidenceById(older.Id)
+	require.NoError(t, err)
+	assert.False(t, exists)
+
 	_, olderStat := os.Stat(filepath.Join(storeDir, strconv.FormatInt(older.Id, 10), "1.bin"))
 	assert.True(t, os.IsNotExist(olderStat))
 
@@ -357,9 +358,9 @@ func TestManualEvidenceCleanupPersistsWholeScopeBeforeExecutionAndRetriesAfterCa
 	// the user's cutoff, even though no manual candidate was processed.
 	retry, runner := createCleanupTask(t)
 	evidenceRetentionHandler{}.Run(context.Background(), retry, runner)
-	index, _, err = model.GetTaskRequestEvidenceById(selected.Id)
+	index, exists, err = model.GetTaskRequestEvidenceById(selected.Id)
 	require.NoError(t, err)
-	assert.True(t, index.BodyExpired)
+	assert.False(t, exists)
 	_, err = os.Stat(filepath.Join(storeDir, strconv.FormatInt(selected.Id, 10), "1.bin"))
 	assert.True(t, os.IsNotExist(err))
 	index, _, err = model.GetTaskRequestEvidenceById(kept.Id)

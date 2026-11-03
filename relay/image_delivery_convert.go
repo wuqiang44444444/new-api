@@ -224,7 +224,7 @@ func downloadImageResultFile(ctx context.Context, sourceURL string, file *os.Fil
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	req, err := http.NewRequestWithContext(service.WithoutRequestEvidence(ctx), http.MethodGet, sourceURL, nil)
 	if err != nil {
 		return &imageResultError{Code: "result_download_request_failed"}
 	}

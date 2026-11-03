@@ -8,8 +8,8 @@ import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { downloadEvidence, readEvidenceOriginalText } from '../evidence-api'
-import { formatEvidenceJSON } from '../lib/format-evidence-json'
 import { EvidenceBodyStatus } from './evidence-body-status'
+import { EvidenceContentPreview } from './evidence-content-preview'
 
 // Shared original-text dialog for the error log and task detail pages.
 // The original body lives only in this dialog query: closing the dialog or
@@ -39,32 +39,28 @@ function OriginalTextContent(props: {
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
-  const [formatted, setFormatted] = useState<string | null>(null)
-  const [formatError, setFormatError] = useState(false)
   const [downloadError, setDownloadError] = useState(false)
+  const [formatJSON, setFormatJSON] = useState(false)
   const queryClient = useQueryClient()
   const { id, eventId, viewerKey } = props
   useEffect(
     () => () => {
       const queryKey = ['evidence-original', viewerKey, id, eventId]
-      void queryClient.cancelQueries({ queryKey, exact: true })
-      queryClient.removeQueries({ queryKey, exact: true })
+      void queryClient.cancelQueries({ queryKey })
+      queryClient.removeQueries({ queryKey })
     },
     [queryClient, viewerKey, id, eventId]
   )
   const query = useQuery({
-    queryKey: ['evidence-original', viewerKey, id, eventId],
-    queryFn: ({ signal }) => readEvidenceOriginalText(id, eventId, signal),
+    queryKey: ['evidence-original', viewerKey, id, eventId, formatJSON],
+    queryFn: ({ signal }) =>
+      readEvidenceOriginalText(id, eventId, signal, formatJSON),
+    placeholderData: (previous) => previous,
     gcTime: 0,
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
-  const rawText = query.data?.text
-  const imageType = query.data?.content_type
-    ?.split(';', 1)[0]
-    ?.trim()
-    .toLowerCase()
   return (
     <Dialog
       open
@@ -86,6 +82,11 @@ function OriginalTextContent(props: {
           <Button variant='outline' onClick={() => void query.refetch()}>
             {t('Retry')}
           </Button>
+          {formatJSON && (
+            <Button variant='outline' onClick={() => setFormatJSON(false)}>
+              {t('Show original text')}
+            </Button>
+          )}
         </div>
       )}
       {query.data?.bodyStatus === 'available' && (
@@ -93,29 +94,19 @@ function OriginalTextContent(props: {
           <div className='flex flex-wrap gap-2'>
             <Button
               variant='outline'
-              onClick={() => {
-                setFormatted(null)
-                setFormatError(false)
-              }}
+              aria-pressed={formatJSON}
+              aria-busy={query.isFetching}
+              disabled={
+                query.isFetching ||
+                (!formatJSON &&
+                  !query.data.messages &&
+                  (query.data.display_limited ||
+                    typeof query.data.text !== 'string'))
+              }
+              onClick={() => setFormatJSON(!formatJSON)}
             >
-              {t('Raw')}
+              {formatJSON ? t('Show original text') : t('Format JSON')}
             </Button>
-            {typeof rawText === 'string' && (
-              <Button
-                variant='outline'
-                onClick={() => {
-                  try {
-                    setFormatted(formatEvidenceJSON(rawText))
-                    setFormatError(false)
-                  } catch {
-                    setFormatted(null)
-                    setFormatError(true)
-                  }
-                }}
-              >
-                {t('Format JSON')}
-              </Button>
-            )}
             <Button
               variant='outline'
               onClick={() => {
@@ -128,9 +119,11 @@ function OriginalTextContent(props: {
               {t('Download original evidence')}
             </Button>
           </div>
-          {formatError && (
-            <p role='status'>
-              {t('Unable to format JSON. Showing raw content.')}
+          {query.data.display_limited && (
+            <p role='status' className='text-muted-foreground text-sm'>
+              {t(
+                'Only the first 64 KiB is shown. Download the full evidence for the complete captured content.'
+              )}
             </p>
           )}
           {downloadError && (
@@ -140,31 +133,12 @@ function OriginalTextContent(props: {
             <details>
               <summary>{t('Additional information')}</summary>
               <pre className='max-h-48 overflow-auto break-all whitespace-pre-wrap'>
-                {JSON.stringify(query.data.meta, null, 2)}
+                {JSON.stringify(query.data.meta)}
               </pre>
             </details>
           )}
-          {typeof rawText === 'string' && (
-            <pre className='max-h-[65vh] overflow-auto rounded-md border p-3 font-mono text-xs break-all whitespace-pre-wrap'>
-              {formatted ?? rawText}
-            </pre>
-          )}
-          {query.data.base64 && (
-            <pre
-              aria-label='Base64'
-              className='max-h-48 overflow-auto break-all whitespace-pre-wrap'
-            >
-              {query.data.base64}
-            </pre>
-          )}
-          {query.data.base64 &&
-            /^(image\/(png|jpeg|gif|webp|avif))$/i.test(imageType ?? '') && (
-              <img
-                className='max-h-[65vh] max-w-full object-contain'
-                src={`data:${imageType};base64,${query.data.base64}`}
-                alt={t('Evidence image preview')}
-              />
-            )}
+          {query.isFetching && <p role='status'>{t('Loading...')}</p>}
+          <EvidenceContentPreview content={query.data} formatted={formatJSON} />
         </>
       )}
       {query.data && query.data.bodyStatus !== 'available' && (

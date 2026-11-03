@@ -19,7 +19,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupModelArkEvidenceErrorFixture(t *testing.T, migrateEvents bool, storageDir string, config system_setting.TaskRequestEvidenceConfig) {
+func setupModelArkEvidenceErrorFixture(t *testing.T, migrateEvents bool, config system_setting.TaskRequestEvidenceConfig) {
 	t.Helper()
 	oldDB, oldConfig := model.DB, system_setting.GetTaskRequestEvidenceConfig()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "evidence.db")), &gorm.Config{})
@@ -31,10 +31,10 @@ func setupModelArkEvidenceErrorFixture(t *testing.T, migrateEvents bool, storage
 	require.NoError(t, db.AutoMigrate(migrations...))
 	model.DB = db
 	system_setting.SetTaskRequestEvidenceConfig(config)
-	if storageDir != "" {
-		require.NoError(t, service.InitTaskRequestEvidenceStore(config))
-	}
+	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	t.Cleanup(func() {
+		flushMiddlewareEvidence(t)
+
 		model.DB = oldDB
 		system_setting.SetTaskRequestEvidenceConfig(oldConfig)
 		_ = service.InitTaskRequestEvidenceStore(oldConfig)
@@ -66,32 +66,28 @@ func doModelArkEvidenceErrorRequest(t *testing.T, engine *gin.Engine, contentTyp
 	request.Header.Set("Content-Type", contentType)
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, request)
+	flushMiddlewareEvidence(t)
 	return recorder.Code, recorder.Body.String()
 }
 
-func modelArkEvidenceErrorConfig(t *testing.T, maxBodyBytes int64, storageDir string) system_setting.TaskRequestEvidenceConfig {
+func modelArkEvidenceErrorConfig(t *testing.T, storageDir string) system_setting.TaskRequestEvidenceConfig {
 	t.Helper()
 	return system_setting.TaskRequestEvidenceConfig{
-		Enabled:             true,
-		RetentionDays:       7,
-		StorageDir:          storageDir,
-		EncryptionKeyHex:    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-		MaxBodyBytes:        maxBodyBytes,
-		MaxResponseBytes:    1 << 20,
-		WriteTimeoutSeconds: 5,
+		Enabled:          true,
+		RetentionDays:    2,
+		StorageDir:       storageDir,
+		EncryptionKeyHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
 	}
 }
 
 func TestModelArkEvidenceFailuresPreserveValidationAndDispatch(t *testing.T) {
-	for _, scenario := range []string{"capture limit", "content type", "event database", "object storage", "configuration", "disabled"} {
+	for _, scenario := range []string{"content type", "event database", "object storage", "configuration", "disabled"} {
 		t.Run(scenario, func(t *testing.T) {
-			config := modelArkEvidenceErrorConfig(t, 1<<20, t.TempDir())
+			config := modelArkEvidenceErrorConfig(t, t.TempDir())
 			contentType := "application/json"
 			migrateEvents := true
 			storageDir := config.StorageDir
 			switch scenario {
-			case "capture limit":
-				config.MaxBodyBytes = 16
 			case "content type":
 				contentType = "json;;="
 			case "event database":
@@ -101,13 +97,12 @@ func TestModelArkEvidenceFailuresPreserveValidationAndDispatch(t *testing.T) {
 				require.NoError(t, os.WriteFile(storageDir, []byte("occupied"), 0600))
 				config.StorageDir = storageDir
 			case "configuration":
-				config.MaxBodyBytes = 0
-				storageDir = ""
+				config.StorageDir = ""
 			case "disabled":
 				config.Enabled = false
 				storageDir = ""
 			}
-			setupModelArkEvidenceErrorFixture(t, migrateEvents, storageDir, config)
+			setupModelArkEvidenceErrorFixture(t, migrateEvents, config)
 			calls := 0
 			status, body := doModelArkEvidenceErrorRequest(t, newModelArkEvidenceErrorEngine(&calls), contentType, `{"model":"seedance-2-0-m","content":[{"type":"text","text":"cat"}]}`)
 			if scenario == "content type" {
@@ -124,8 +119,8 @@ func TestModelArkEvidenceFailuresPreserveValidationAndDispatch(t *testing.T) {
 }
 
 func TestModelArkInvalidJSONStillFailsBusinessConversion(t *testing.T) {
-	config := modelArkEvidenceErrorConfig(t, 1<<20, t.TempDir())
-	setupModelArkEvidenceErrorFixture(t, true, config.StorageDir, config)
+	config := modelArkEvidenceErrorConfig(t, t.TempDir())
+	setupModelArkEvidenceErrorFixture(t, true, config)
 	calls := 0
 	status, body := doModelArkEvidenceErrorRequest(t, newModelArkEvidenceErrorEngine(&calls), "application/json", `{"model":`)
 	assert.Equal(t, http.StatusBadRequest, status)

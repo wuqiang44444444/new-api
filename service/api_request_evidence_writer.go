@@ -11,10 +11,6 @@ import (
 // upgrade header while leaving websocket wire frames to the frame observer.
 type apiEvidenceWriter struct {
 	imageEvidenceWriter
-	hijacked         bool
-	handshakeStatus  int
-	handshakeHeaders http.Header
-	control          *http.ResponseController
 }
 
 func (w *apiEvidenceWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
@@ -22,7 +18,6 @@ func (w *apiEvidenceWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if err != nil {
 		return conn, rw, err
 	}
-	w.hijacked = true
 	return &apiEvidenceConnection{Conn: conn, writer: w}, rw, nil
 }
 
@@ -43,8 +38,16 @@ func (c *apiEvidenceConnection) Write(p []byte) (int, error) {
 		if bytes.Contains(c.header.Bytes(), []byte("\r\n\r\n")) {
 			resp, parseErr := http.ReadResponse(bufio.NewReader(bytes.NewReader(c.header.Bytes())), nil)
 			if parseErr == nil {
-				c.writer.handshakeStatus = resp.StatusCode
-				c.writer.handshakeHeaders = resp.Header.Clone()
+				c.writer.capture.mu.Lock()
+				exists := c.writer.capture.deliveryPrepared
+				c.writer.capture.deliveryPrepared = true
+				c.writer.capture.mu.Unlock()
+				if !exists {
+					record := c.writer.capture.newRecord("client_delivery", EvidenceObjectMeta{StatusCode: resp.StatusCode, Headers: resp.Header}, true)
+					c.writer.capture.mu.Lock()
+					c.writer.capture.delivery = record
+					c.writer.capture.mu.Unlock()
+				}
 			}
 			c.done = true
 			c.header.Reset()
@@ -54,11 +57,4 @@ func (c *apiEvidenceConnection) Write(p []byte) (int, error) {
 		}
 	}
 	return n, err
-}
-
-func (w *apiEvidenceWriter) WriteHeader(status int) {
-	if status >= 400 && w.control != nil {
-		_ = w.control.EnableFullDuplex()
-	}
-	w.ResponseWriter.WriteHeader(status)
 }

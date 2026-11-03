@@ -30,7 +30,7 @@ func TestEvidenceCleanupMigrationPreservesOldRowsWithUsableMarker(t *testing.T) 
 	require.NoError(t, db.AutoMigrate(&evidenceBeforeCleanup{}))
 	old := &evidenceBeforeCleanup{CreatedAt: common.GetTimestamp()}
 	require.NoError(t, db.Create(old).Error)
-	require.NoError(t, db.AutoMigrate(&TaskRequestEvidence{}))
+	require.NoError(t, db.AutoMigrate(&TaskRequestEvidence{}, &EvidenceTaskLink{}))
 	index, exists, err := GetTaskRequestEvidenceById(old.Id)
 	require.NoError(t, err)
 	require.True(t, exists)
@@ -49,7 +49,7 @@ func TestEvidenceObjectCommitNeverPublishesClosedOrMissingIndex(t *testing.T) {
 			previous := DB
 			DB = db
 			t.Cleanup(func() { DB = previous })
-			require.NoError(t, db.AutoMigrate(&TaskRequestEvidence{}))
+			require.NoError(t, db.AutoMigrate(&TaskRequestEvidence{}, &EvidenceTaskLink{}))
 			index := &TaskRequestEvidence{CreatedAt: common.GetTimestamp()}
 			if state == "requested" {
 				index.CleanupRequestedAt = common.GetTimestamp()

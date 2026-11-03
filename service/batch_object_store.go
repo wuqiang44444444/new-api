@@ -94,7 +94,7 @@ func (s *s3ArtifactStore) BatchGetObject(ctx context.Context, objectKey string, 
 	if err != nil {
 		return 0, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	req, err := http.NewRequestWithContext(WithoutRequestEvidence(ctx), http.MethodGet, requestURL, nil)
 	if err != nil {
 		return 0, err
 	}

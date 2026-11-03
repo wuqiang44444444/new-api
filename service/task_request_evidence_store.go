@@ -4,20 +4,18 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 )
 
@@ -35,14 +33,14 @@ type TaskRequestEvidenceObjectStore interface {
 	RemoveEmptyEvidenceDir(evidenceId int64) error
 	// Inventory is confined to the private evidence root. Namespace zero means
 	// loose root files; positive IDs identify one non-recursive namespace.
-	EvidenceNamespaces() ([]int64, error)
+	WalkEvidenceNamespaces(context.Context, func([]int64) error) error
 	WalkEvidenceFiles(context.Context, int64, func(EvidenceStoredFile) error) error
 }
 
 type localEncryptedEvidenceStore struct {
 	baseDir string
 	aead    cipher.AEAD
-	timeout time.Duration
+	key     []byte
 }
 
 var (
@@ -93,7 +91,7 @@ func InitTaskRequestEvidenceStore(config system_setting.TaskRequestEvidenceConfi
 	evidenceObjectStore = &localEncryptedEvidenceStore{
 		baseDir: config.StorageDir,
 		aead:    aead,
-		timeout: time.Duration(config.WriteTimeoutSeconds) * time.Second,
+		key:     rawKey,
 	}
 	return nil
 }
@@ -107,113 +105,28 @@ func (s *localEncryptedEvidenceStore) PutEventBody(evidenceID, eventID int64, pl
 }
 
 func (s *localEncryptedEvidenceStore) put(key string, plaintext []byte, evidenceID int64) error {
-	nonce := make([]byte, s.aead.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return fmt.Errorf("evidence nonce failed: %w", err)
-	}
-	sealed := s.aead.Seal(nonce, nonce, plaintext, nil)
-	timeout := s.timeout
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case evidenceWriteSlots <- struct{}{}:
-	case <-timer.C:
-		return ErrTaskRequestEvidenceStoreBusy
-	}
-	result := make(chan error, 1)
-	go func() { defer func() { <-evidenceWriteSlots }(); result <- s.writeAtomically(key, sealed, evidenceID) }()
-	select {
-	case err := <-result:
-		return err
-	case <-timer.C:
-		return ErrTaskRequestEvidenceWriteTimeout
-	}
-}
-
-func (s *localEncryptedEvidenceStore) writeAtomically(key string, payload []byte, evidenceID int64) (writeErr error) {
-	path, err := s.resolvePath(key)
+	writer, err := s.beginStream(key, evidenceID)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("evidence object dir failed: %w", err)
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".evidence-*")
-	if err != nil {
+	if _, err = writer.Write(plaintext); err != nil {
+		writer.Abort()
 		return err
 	}
-	defer func() {
-		_ = temp.Close()
-		_ = os.Remove(temp.Name())
-		if writeErr != nil && evidenceID > 0 {
-			_ = s.RemoveEmptyEvidenceDir(evidenceID)
-		}
-	}()
-	if _, err := temp.Write(payload); err != nil {
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	// Link commits without replacing an existing event object.
-	publish := func() error { return os.Link(temp.Name(), path) }
-	if evidenceID > 0 {
-		err = model.CommitTaskRequestEvidenceObject(evidenceID, EvidenceRetentionSeconds(), publish)
-	} else {
-		err = publish()
-	}
-	if err != nil {
-		return err
-	}
-	// Sync each parent so newly created directories survive a crash too.
-	for parent := filepath.Dir(path); ; parent = filepath.Dir(parent) {
-		dir, err := os.Open(parent)
-		if err != nil {
-			return err
-		}
-		syncErr := dir.Sync()
-		closeErr := dir.Close()
-		if syncErr != nil {
-			return syncErr
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		if parent == filepath.Dir(parent) || parent == "." {
-			break
-		}
-	}
-
-	return nil
+	return writer.Close()
 }
 
 func (s *localEncryptedEvidenceStore) Get(key string) ([]byte, error) {
-	path, err := s.resolvePath(key)
+	reader, err := s.openStream(key)
 	if err != nil {
 		return nil, err
 	}
-	sealed, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, ErrTaskRequestEvidenceUnavailable
-		}
-		return nil, fmt.Errorf("evidence object read failed: %w", err)
-	}
-	nonceSize := s.aead.NonceSize()
-	if len(sealed) < nonceSize {
-		return nil, ErrEvidenceIntegrityFailed
-	}
-	plaintext, err := s.aead.Open(nil, sealed[:nonceSize], sealed[nonceSize:], nil)
+	defer reader.Close()
+	payload, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, ErrEvidenceDecryptFailed
 	}
-	return plaintext, nil
+	return payload, nil
 }
 
 func (s *localEncryptedEvidenceStore) Delete(key string) (int64, error) {
@@ -249,9 +162,20 @@ func (s *localEncryptedEvidenceStore) RemoveEmptyEvidenceDir(evidenceId int64) e
 		return nil
 	}
 	if err != nil {
-		entries, readErr := os.ReadDir(path)
-		if readErr == nil && len(entries) > 0 {
-			return &EvidenceDirectoryNotEmptyError{Files: len(entries)}
+		dir, readErr := os.Open(path)
+		if readErr == nil {
+			defer dir.Close()
+			var count int
+			for {
+				entries, readErr := dir.ReadDir(256)
+				count += len(entries)
+				if readErr != nil {
+					if errors.Is(readErr, io.EOF) && count > 0 {
+						return &EvidenceDirectoryNotEmptyError{Files: count}
+					}
+					break
+				}
+			}
 		}
 	}
 	return err
@@ -272,6 +196,3 @@ func EvidenceSha256Hex(payload []byte) string {
 	digest := sha256.Sum256(payload)
 	return hex.EncodeToString(digest[:])
 }
-
-// Bound workers even when the filesystem stalls beyond the request deadline.
-var evidenceWriteSlots = make(chan struct{}, 8)

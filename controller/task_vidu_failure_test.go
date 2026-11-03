@@ -33,7 +33,10 @@ func TestTaskSubmissionKeepsProviderTaskAndCreationRequestIDsSeparate(t *testing
 			db := setupTaskSubmissionDatabase(t, true, &events)
 			oldLogConsumeEnabled := common.LogConsumeEnabled
 			common.LogConsumeEnabled = false
-			t.Cleanup(func() { common.LogConsumeEnabled = oldLogConsumeEnabled })
+			t.Cleanup(func() {
+				flushControllerEvidence(t)
+				common.LogConsumeEnabled = oldLogConsumeEnabled
+			})
 			c := taskSubmissionTestContext()
 			c.Set(common.RequestIdKey, "platform-create-request")
 			c.Set(common.UpstreamRequestIdKey, traceID)
@@ -66,15 +69,17 @@ func TestViduFailureCommitsPublicErrorEventAndRefundOnce(t *testing.T) {
 			sqlDB, err := db.DB()
 			require.NoError(t, err)
 			sqlDB.SetMaxOpenConns(1)
-			require.NoError(t, db.AutoMigrate(&model.TaskPlugin{}, &model.Token{}, &model.ErrorEvent{}, &model.Log{}, &model.TaskBillingDelivery{}, &model.QuotaData{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.TaskRequestEvidenceAccessLog{}))
+			require.NoError(t, db.AutoMigrate(&model.TaskPlugin{}, &model.Token{}, &model.ErrorEvent{}, &model.Log{}, &model.TaskBillingDelivery{}, &model.QuotaData{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.TaskRequestEvidenceAccessLog{}, &model.EvidenceTaskLink{}))
 			oldLogDB, oldFactory := model.LOG_DB, service.GetTaskAdaptorFunc
 			oldConfig := system_setting.GetTaskRequestEvidenceConfig()
 			model.LOG_DB = db
 			service.GetTaskAdaptorFunc = func(constant.TaskPlatform) service.TaskPollingAdaptor { return &taskseedance.TaskAdaptor{} }
-			config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 7, MaxBodyBytes: 4096, MaxResponseBytes: 4096, WriteTimeoutSeconds: 5}
+			config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 2}
 			system_setting.SetTaskRequestEvidenceConfig(config)
 			require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 			t.Cleanup(func() {
+				flushControllerEvidence(t)
+
 				model.LOG_DB, service.GetTaskAdaptorFunc = oldLogDB, oldFactory
 				system_setting.SetTaskRequestEvidenceConfig(oldConfig)
 				_ = service.InitTaskRequestEvidenceStore(oldConfig)
@@ -83,7 +88,10 @@ func TestViduFailureCommitsPublicErrorEventAndRefundOnce(t *testing.T) {
 			plugin := model.TaskPlugin{Key: "seedance-link", Version: plugins.SeedanceVersion(), Source: model.LongText(plugins.SeedanceSource()), SourceHash: fmt.Sprintf("%x", common.Sha256Raw([]byte(plugins.SeedanceSource()))), Enabled: true, Active: true}
 			require.NoError(t, db.Create(&plugin).Error)
 			require.NoError(t, taskseedance.SyncExtensionSnapshot(context.Background(), []model.TaskPlugin{plugin}))
-			t.Cleanup(func() { require.NoError(t, taskseedance.SyncExtensionSnapshot(context.Background(), nil)) })
+			t.Cleanup(func() {
+				flushControllerEvidence(t)
+				require.NoError(t, taskseedance.SyncExtensionSnapshot(context.Background(), nil))
+			})
 			body, err := common.Marshal(map[string]any{"id": "upstream-fixture", "status": "failed", "error": map[string]string{"code": tc.code}})
 			require.NoError(t, err)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -191,25 +199,31 @@ func TestViduFailureCommitsPublicErrorEventAndRefundOnce(t *testing.T) {
 			require.Len(t, deliveries, 1)
 			assert.Equal(t, 700, deliveries[0].BeforeQuota)
 			assert.Zero(t, deliveries[0].AfterQuota)
-			// Creation and failure share the same evidence session and immutable IDs.
+			// Each actual polling exchange has a fresh window; creation retains its IDs.
+			flushControllerEvidence(t)
 			indexes, total, queryErr := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{TaskID: task.TaskID, Num: 20})
 			require.NoError(t, queryErr)
-			require.EqualValues(t, 1, total)
-			require.Len(t, indexes, 1)
-			assert.Equal(t, "create-fixture", indexes[0].RequestID)
-			assert.Equal(t, tc.createRequestID, indexes[0].UpstreamRequestID)
-			evidenceEvents, err := model.ListTaskRequestEvidenceEvents(indexes[0].Id)
-			require.NoError(t, err)
-			require.GreaterOrEqual(t, len(evidenceEvents), 5)
-			for i, stage := range []string{model.TaskRequestEvidenceStageNorthReceive, model.TaskRequestEvidenceStageSouthboundSend, model.TaskRequestEvidenceStageUpstreamResponse, model.TaskRequestEvidenceStageClientDelivery, model.TaskRequestEvidenceStagePolling} {
-				assert.Equal(t, stage, evidenceEvents[i].Stage)
-				if i >= 2 {
-					assert.Equal(t, http.StatusOK, evidenceEvents[i].StatusCode)
+			require.GreaterOrEqual(t, total, int64(2))
+			stages := make(map[string]int)
+			for _, index := range indexes {
+				if index.RequestID == "create-fixture" {
+					assert.Equal(t, tc.createRequestID, index.UpstreamRequestID)
+				} else {
+					assert.Empty(t, index.UpstreamRequestID, "polling cannot claim the creation trace")
 				}
-				content, status := service.ReadEvidenceEventContent(evidenceEvents[i], false)
-				require.Equal(t, "available", status)
-				payload := content.Body
-				assert.NotEmpty(t, payload)
+				evidenceEvents, err := model.ListTaskRequestEvidenceEvents(index.Id)
+				require.NoError(t, err)
+				for _, event := range evidenceEvents {
+					stages[event.Stage]++
+					content, status := service.ReadEvidenceEventContent(event, false)
+					require.Equal(t, "available", status)
+					if event.Stage != model.TaskRequestEvidenceStageNorthReceive {
+						assert.NotEmpty(t, content.Body)
+					}
+				}
+			}
+			for _, stage := range []string{model.TaskRequestEvidenceStageNorthReceive, model.TaskRequestEvidenceStageSouthboundSend, model.TaskRequestEvidenceStageUpstreamResponse, model.TaskRequestEvidenceStageClientDelivery, model.TaskRequestEvidenceStagePolling} {
+				assert.Positive(t, stages[stage], stage)
 			}
 		})
 	}

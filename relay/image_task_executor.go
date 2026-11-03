@@ -38,12 +38,6 @@ const maxImageResultBytes = 50 * 1024 * 1024
 func ExecuteImageTask(ctx context.Context, task *model.Task) (outcome service.ImageTaskExecution) {
 	ctx, finishEvidence := service.BeginBackgroundRequestEvidence(ctx, task)
 	defer finishEvidence()
-	var capture *service.ImageErrorEvidence
-	if !service.HasAPIRequestEvidence(ctx) {
-		capture = service.NewImageTaskErrorEvidence(task)
-	}
-	ctx = service.WithImageErrorEvidence(ctx, capture)
-	defer func() { capture.Finish(outcome.Outcome != service.ImageTaskOutcomeSuccess) }()
 	ctx, err := service.WithImageObjectStore(ctx)
 	if err != nil {
 		service.RecordImageDeliveryError(ctx, "result_store_config", err)
@@ -387,7 +381,7 @@ func storeImageResults(ctx context.Context, task *model.Task, count int, usage *
 // 评审 S11：Provider 返回的任意媒体 URL 必须走 SSRF 防护客户端（拨号时
 // 校验内网/回环目标）；该边界不得复用管理员上游连接客户端。
 func downloadImageURL(ctx context.Context, imageURL string) ([]byte, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	req, err := http.NewRequestWithContext(service.WithoutRequestEvidence(ctx), http.MethodGet, imageURL, nil)
 	if err != nil {
 		return nil, "", &imageResultError{Code: "result_download_request_failed"}
 	}
@@ -438,12 +432,6 @@ func executorFailureFromError(err error) service.ImageTaskExecution {
 func ResumeImageTaskPoll(ctx context.Context, task *model.Task) (outcome service.ImageTaskExecution) {
 	ctx, finishEvidence := service.BeginBackgroundRequestEvidence(ctx, task)
 	defer finishEvidence()
-	var capture *service.ImageErrorEvidence
-	if !service.HasAPIRequestEvidence(ctx) {
-		capture = service.NewImageTaskErrorEvidence(task)
-	}
-	ctx = service.WithImageErrorEvidence(ctx, capture)
-	defer func() { capture.Finish(outcome.Outcome != service.ImageTaskOutcomeSuccess) }()
 	ctx, err := service.WithImageObjectStore(ctx)
 	if err != nil {
 		service.RecordImageDeliveryError(ctx, "result_store_config", err)

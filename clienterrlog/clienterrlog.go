@@ -10,7 +10,7 @@
 //     错误事件表（仅本模块；dashboard/web 等页面流量不持久化）。
 //   - 业务失败处通过 `Attach` 提供白名单诊断（阶段/原因码/受控上下文）；未分类的
 //     事件以 reason=unclassified 记录，不因分类缺失而漏记。
-//   - 普通文本日志不包含请求/响应正文；管理员错误详情另存有界脱敏 JSON 快照。
+//   - 普通错误日志不采集请求/响应正文；仅显式管理测试保留有界脱敏 JSON 快照。
 //     查询参数、Cookie、凭据、源 URL、签名参数和媒体二进制不进入快照。
 package clienterrlog
 
@@ -101,6 +101,8 @@ type requestReport struct {
 	protocol   string
 	detail     map[string]string
 	stream     streamDiag
+
+	upstreamStatus int
 }
 
 // Attach 把诊断合并进当前请求的统一事件；ctx 未携带记录载体时为安全 no-op。

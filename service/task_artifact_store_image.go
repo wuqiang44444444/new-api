@@ -133,7 +133,7 @@ func PutEphemeralImageResult(ctx context.Context, mimeType string, data []byte) 
 // fetchImageObjectViaPresignedURL 以短期签名 URL 下载对象内容；签名 URL
 // 只在本次调用内使用，不落日志。供各实现复用。
 func fetchImageObjectViaPresignedURL(ctx context.Context, url string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(WithoutRequestEvidence(ctx), http.MethodGet, url, nil)
 	if err != nil {
 		return nil, errors.New("object storage download failed")
 	}

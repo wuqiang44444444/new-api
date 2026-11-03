@@ -22,12 +22,14 @@ func TestEvidenceModelArkCapturesBeforeConversion(t *testing.T) {
 	oldConfig := system_setting.GetTaskRequestEvidenceConfig()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "evidence.db")), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}))
+	require.NoError(t, db.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.EvidenceTaskLink{}))
 	model.DB = db
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", RetentionDays: 7, MaxBodyBytes: 1 << 20, MaxResponseBytes: 1 << 20, WriteTimeoutSeconds: 5}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", RetentionDays: 2}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	t.Cleanup(func() {
+		flushMiddlewareEvidence(t)
+
 		model.DB = oldDB
 		system_setting.SetTaskRequestEvidenceConfig(oldConfig)
 		_ = service.InitTaskRequestEvidenceStore(oldConfig)
@@ -43,6 +45,7 @@ func TestEvidenceModelArkCapturesBeforeConversion(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, request)
+	flushMiddlewareEvidence(t)
 	require.Equal(t, http.StatusNoContent, recorder.Code)
 	var events []model.TaskRequestEvidenceEvent
 	require.NoError(t, db.Find(&events).Error)

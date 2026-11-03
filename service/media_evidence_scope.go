@@ -4,23 +4,19 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
-	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/gin-gonic/gin"
 )
 
-// Media scope describes evidence eligibility only; it never selects a channel
-// or infers Link identity. Generic multimodal chat is outside this contract.
+// Business route scope only; this never selects a channel or infers Link identity.
 func mediaEvidenceRequestKind(method, path string) string {
 	switch {
 	case method == http.MethodGet && strings.HasPrefix(path, "/v1/videos/") && strings.HasSuffix(path, "/content"):
-		return "" // Dedicated delivery recorder stores statistics, never a video copy.
+		return "video_delivery" // Body is excluded independently of request eligibility.
 	case method == http.MethodGet && strings.HasPrefix(path, "/v1/tasks/"):
-		return "task_query" // Persist only after authenticated frozen Task classification.
+		return "task_query"
 	case method == http.MethodPost && strings.HasPrefix(path, "/v1/tasks/") && !strings.Contains(strings.TrimPrefix(path, "/v1/tasks/"), "/"):
-		return "task_submit" // Candidate only; the pinned plugin must declare media.
+		return "task_submit"
 	case method == http.MethodPost && (path == "/v1/images/generations" || path == "/v1/images/edits" || path == "/v1/images/variations" || path == "/v1/edits"):
 		return "image_request"
 	case method == http.MethodPost && path == "/v1/audio/speech":
@@ -58,6 +54,11 @@ func mediaEvidenceRequestKind(method, path string) string {
 	case (method == http.MethodGet && strings.HasPrefix(path, "/suno/fetch/")) || (method == http.MethodPost && path == "/suno/fetch"):
 		return "task_query"
 	}
+	for _, prefix := range []string{"/v1/", "/v1beta/", "/v1alpha/", "/v1beta1/", "/pg/", "/suno/", "/api/v3/contents/generations/"} {
+		if strings.HasPrefix(path, prefix) {
+			return "api_request"
+		}
+	}
 	return ""
 }
 
@@ -89,94 +90,7 @@ func midjourneyEvidenceOperation(method, path string) string {
 	return ""
 }
 
-// Generic task paths alone say nothing about media. Use the already pinned
-// code protocol declarations, without changing native routing or billing.
+// Eligibility comes from the business route, never a model name or parsed body.
 func mediaEvidenceContextKind(c *gin.Context) string {
-	kind := mediaEvidenceRequestKind(c.Request.Method, c.Request.URL.Path)
-	if kind != "task_submit" {
-		return kind
-	}
-	value, _ := c.Get(pluginruntime.ContextKeyPinnedPlugin)
-	pinned, ok := value.(pluginruntime.PinnedPlugin)
-	if !ok || pinned.Plugin == nil || pinned.Plugin.Meta.Key != c.Param("key") {
-		return ""
-	}
-	var image, video bool
-	for _, protocol := range pinned.Plugin.Meta.Protocols {
-		image = image || protocol.Name == pluginruntime.ProtocolOpenAIImage
-		video = video || protocol.Name == "openai_video"
-	}
-	if image && video {
-		return "media_task"
-	}
-	if image {
-		return "image_request"
-	}
-	if video {
-		return model.TaskRequestEvidenceKindVideoTask
-	}
-	if pinned.Plugin.Meta.Key == "sunoapi" && strings.EqualFold(c.GetString("task_action"), "music") {
-		return model.TaskRequestEvidenceKindAudioTask
-	}
-	return ""
-}
-
-func mediaEvidenceTaskKind(task *model.Task) string {
-	if task == nil || task.Platform == constant.TaskPlatformAzureBatch || task.ClientProtocol == "openai_responses" {
-		return ""
-	}
-	if task.ClientProtocol == model.TaskClientProtocolImageOpenAIV1 || task.ClientProtocol == "openai_image" || task.PrivateData.ImageTask != nil {
-		return "image_request"
-	}
-	if task.Platform == constant.TaskPlatformSuno || task.Platform == "sunoapi" {
-		if strings.EqualFold(task.Action, "lyrics") {
-			return ""
-		}
-		return model.TaskRequestEvidenceKindAudioTask
-	}
-	if task.Platform == constant.TaskPlatformMidjourney {
-		return "image_request"
-	}
-	switch task.ClientProtocol {
-	case model.TaskClientProtocolModelArkV3, model.TaskClientProtocolKlingV1, model.TaskClientProtocolJimeng, "openai_video":
-		return model.TaskRequestEvidenceKindVideoTask
-	}
-	if task.PrivateData.VideoUpstreamProtocol != "" || task.PrivateData.VideoUpstreamProfile != "" {
-		return model.TaskRequestEvidenceKindVideoTask
-	}
-	if task.PrivateData.Execution != nil {
-		return mediaEvidenceRequestKind(http.MethodPost, task.PrivateData.Execution.RequestPath)
-	}
-
-	return ""
-}
-
-// Reuse the earliest durable index and Task creation time. Deleting an index
-// never gives an old task a fresh seven-day window. Missing dates are not now.
-func taskMediaEvidenceIndex(task *model.Task) (*model.TaskRequestEvidence, error) {
-	if !evidenceEnabled() || task == nil {
-		return nil, nil
-	}
-	kind := mediaEvidenceTaskKind(task)
-	if kind == "task_submit" {
-		// The creation recorder froze media eligibility on its durable index.
-		// Never consult today's plugin registry to reinterpret an old Task.
-		index, err := model.FindTaskMediaEvidence(task.TaskID, task.UserId, task.AppID)
-		if err != nil || index == nil {
-			return nil, err
-		}
-		kind = index.Kind
-	}
-	if kind == "" {
-		return nil, nil
-	}
-	index, err := model.GetOrCreateTaskMediaEvidence(task, kind, common.GetTimestamp(), EvidenceRetentionSeconds())
-	if err == model.ErrTaskRequestEvidenceCreationTime {
-		common.SysError("evidence task creation time unavailable; capture skipped")
-		return nil, nil
-	}
-	if err == model.ErrTaskRequestEvidenceBodyClosed {
-		return nil, nil
-	}
-	return index, err
+	return mediaEvidenceRequestKind(c.Request.Method, c.Request.URL.Path)
 }

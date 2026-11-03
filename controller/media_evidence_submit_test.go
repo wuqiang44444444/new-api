@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGenericMediaSubmitRecordsCreateAndRejectionButExcludesText(t *testing.T) {
+func TestGenericBusinessSubmitRecordsCreateAndRejectionIncludingText(t *testing.T) {
 	setupEvidenceCleanupEnv(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.Channel{}))
 	engine := gin.New()
@@ -47,13 +47,14 @@ func TestGenericMediaSubmitRecordsCreateAndRejectionButExcludesText(t *testing.T
 		}
 		response := httptest.NewRecorder()
 		engine.ServeHTTP(response, request)
+		flushControllerEvidence(t)
 		require.Equal(t, tc.status, response.Code, response.Body.String())
 	}
 	var indexes []model.TaskRequestEvidence
 	require.NoError(t, model.DB.Order("id").Find(&indexes).Error)
-	require.Len(t, indexes, 2)
+	require.Len(t, indexes, 3)
 	for _, index := range indexes {
-		assert.Equal(t, model.TaskRequestEvidenceKindVideoTask, index.Kind)
+		assert.Equal(t, "task_submit", index.Kind)
 		var events []model.TaskRequestEvidenceEvent
 		require.NoError(t, model.DB.Where("evidence_id = ?", index.Id).Order("id").Find(&events).Error)
 		require.Len(t, events, 2)
@@ -63,10 +64,11 @@ func TestGenericMediaSubmitRecordsCreateAndRejectionButExcludesText(t *testing.T
 	var task model.Task
 	require.NoError(t, model.DB.Where("task_id = ?", "generic-media").First(&task).Error)
 	service.CaptureTaskPollingEvidence(&task, "GET", "https://provider.example/tasks/media", 200, nil, []byte(`{"status":"running"}`), nil)
+	flushControllerEvidence(t)
 	var events int64
 	require.NoError(t, model.DB.Model(&model.TaskRequestEvidenceEvent{}).Where("evidence_id = ?", indexes[0].Id).Count(&events).Error)
-	assert.EqualValues(t, 3, events)
+	assert.EqualValues(t, 2, events, "new polling has an independent window")
 	var count int64
 	require.NoError(t, model.DB.Model(&model.TaskRequestEvidence{}).Count(&count).Error)
-	assert.EqualValues(t, 2, count)
+	assert.EqualValues(t, 4, count)
 }

@@ -27,13 +27,7 @@ func ImageErrorEvidence() gin.HandlerFunc {
 			return
 		}
 		finish := service.CaptureImageClientResponse(c, capture)
-		defer func() {
-			capture.Index.UserID = c.GetInt("id")
-			capture.Index.AppID = c.GetInt("token_id")
-			capture.Index.TokenID = c.GetInt("token_id")
-			capture.Index.ChannelID = c.GetInt("channel_id")
-			finish()
-		}()
+		defer finish()
 		c.Next()
 	}
 }

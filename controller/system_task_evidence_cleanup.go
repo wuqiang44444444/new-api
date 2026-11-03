@@ -60,7 +60,7 @@ func (evidenceRetentionHandler) Run(ctx context.Context, task *model.SystemTask,
 	retentionSeconds := service.EvidenceRetentionSeconds()
 	stats.RetentionDays = int(retentionSeconds / 86400)
 	// 手动运行携带固定截止与操作者；执行与重试始终使用原有边界，不按
-	// “多少天前”重新计算。调度运行的 payload 为空，按七天滚动处理。
+	// “多少天前”重新计算。调度运行的 payload 为空，按当前保留期滚动处理。
 	payload := service.EvidenceCleanupPayload{}
 	if err := task.DecodePayload(&payload); err != nil {
 		stats.ErrorCategory = "invalid_payload"
@@ -78,6 +78,9 @@ func (evidenceRetentionHandler) Run(ctx context.Context, task *model.SystemTask,
 	}
 	stats.TargetTimestamp = payload.TargetTimestamp
 	stats.OperatorUserID = payload.OperatorUserID
+	if payload.Trigger == "disk_pressure" {
+		stats.RetentionDays = 1
+	}
 	if stats.TargetTimestamp == 0 {
 		if err := cleanupEvidenceAuditAndHistory(ctx, &stats, persistProgress); err != nil {
 			if errors.Is(err, model.ErrSystemTaskLockLost) {

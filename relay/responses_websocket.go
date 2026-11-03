@@ -139,7 +139,8 @@ func ResponsesWebSocketHelper(c *gin.Context, client *websocket.Conn, runner Res
 	}()
 
 	for {
-		_, message, err := client.ReadMessage()
+		messageType, message, err := client.ReadMessage()
+		service.ObserveRealtimeFrame(s.ctx, "realtime_north_receive", messageType, message, err)
 		if err != nil {
 			return nil
 		}
@@ -202,7 +203,7 @@ func (s *responsesWSSession) runRequest(state *responsesWSCallState, message []b
 		if outgoing != nil {
 			if err := s.client.SetWriteDeadline(time.Now().Add(responsesWSWriteTimeout)); err != nil {
 				state.closeCode = websocket.CloseInternalServerErr
-			} else if err := s.client.WriteMessage(outgoing.kind, outgoing.body); err != nil {
+			} else if err := service.WriteRealtimeFrameWithEvidence(s.ctx, "realtime_client_delivery", s.client, outgoing.kind, outgoing.body); err != nil {
 				state.closeCode = websocket.CloseInternalServerErr
 			}
 		}
@@ -632,6 +633,7 @@ func (s *responsesWSSession) startTargetReader(target *websocket.Conn) {
 	s.workers.Go(func() {
 		for {
 			kind, body, err := target.ReadMessage()
+			service.ObserveRealtimeFrame(s.ctx, "realtime_upstream_response", kind, body, err)
 			incoming := responsesWSMessage{kind: kind, body: body, err: err}
 			if state := s.getCurrent(); state != nil {
 				select {
@@ -707,7 +709,7 @@ func (s *responsesWSSession) writeTarget(kind int, message []byte) error {
 	if err := target.SetWriteDeadline(time.Now().Add(responsesWSWriteTimeout)); err != nil {
 		return err
 	}
-	return target.WriteMessage(kind, message)
+	return service.WriteRealtimeFrameWithEvidence(s.ctx, "realtime_southbound_send", target, kind, message)
 }
 
 func (s *responsesWSSession) writeClient(kind int, message []byte) error {
@@ -716,7 +718,7 @@ func (s *responsesWSSession) writeClient(kind int, message []byte) error {
 	if err := s.client.SetWriteDeadline(time.Now().Add(responsesWSWriteTimeout)); err != nil {
 		return err
 	}
-	return s.client.WriteMessage(kind, message)
+	return service.WriteRealtimeFrameWithEvidence(s.ctx, "realtime_client_delivery", s.client, kind, message)
 }
 
 func (s *responsesWSSession) sendError(eventID, streamID string, apiErr *types.NewAPIError) {

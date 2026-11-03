@@ -13,38 +13,26 @@ import (
 )
 
 // 请求证据的部署配置。采集默认关闭，仅显式配置开启；显式开启后统一采集
-// 已登记媒体操作。正文及事件明细保留期为 1～7 天（默认 7），非法配置在
+// 全部登记业务操作。正文及事件明细保留期为 1～2 天（默认 2），非法配置在
 // 加载期明确报错，不静默改成永久保存或无证据模式。加密密钥未配置时从
 // CRYPTO_SECRET/SESSION_SECRET 派生（见 ResolveTaskRequestEvidenceConfig）。
 const (
-	TaskRequestEvidenceEnabledEnv             = "TASK_REQUEST_EVIDENCE_ENABLED"
-	TaskRequestEvidenceStorageDirEnv          = "TASK_REQUEST_EVIDENCE_STORAGE_DIR"
-	TaskRequestEvidenceEncryptionKeyEnv       = "TASK_REQUEST_EVIDENCE_ENCRYPTION_KEY"
-	TaskRequestEvidenceMaxBodyBytesEnv        = "TASK_REQUEST_EVIDENCE_MAX_BODY_BYTES"
-	TaskRequestEvidenceMaxResponseBytesEnv    = "TASK_REQUEST_EVIDENCE_MAX_RESPONSE_BYTES"
-	TaskRequestEvidenceWriteTimeoutSecondsEnv = "TASK_REQUEST_EVIDENCE_WRITE_TIMEOUT_SECONDS"
-	TaskRequestEvidenceRetentionDaysEnv       = "TASK_REQUEST_EVIDENCE_RETENTION_DAYS"
+	TaskRequestEvidenceEnabledEnv       = "TASK_REQUEST_EVIDENCE_ENABLED"
+	TaskRequestEvidenceStorageDirEnv    = "TASK_REQUEST_EVIDENCE_STORAGE_DIR"
+	TaskRequestEvidenceEncryptionKeyEnv = "TASK_REQUEST_EVIDENCE_ENCRYPTION_KEY"
+	TaskRequestEvidenceRetentionDaysEnv = "TASK_REQUEST_EVIDENCE_RETENTION_DAYS"
 
-	defaultTaskRequestEvidenceStorageDir  = "data/task-request-evidence"
-	defaultTaskRequestEvidenceMaxBody     = int64(8 << 20)
-	maxTaskRequestEvidenceMaxBody         = int64(256 << 20)
-	defaultTaskRequestEvidenceMaxResponse = int64(32 << 20)
-	maxTaskRequestEvidenceMaxResponse     = int64(1 << 30)
-	defaultTaskRequestEvidenceTimeout     = 5
-	maxTaskRequestEvidenceTimeout         = 60
-	defaultTaskRequestEvidenceRetention   = 7
-	maxTaskRequestEvidenceRetention       = 7
+	defaultTaskRequestEvidenceStorageDir = "data/task-request-evidence"
+	defaultTaskRequestEvidenceRetention  = 2
+	maxTaskRequestEvidenceRetention      = 2
 )
 
 // TaskRequestEvidenceConfig 是证据子系统的运行配置合同。
 type TaskRequestEvidenceConfig struct {
-	Enabled             bool
-	StorageDir          string
-	EncryptionKeyHex    string
-	MaxBodyBytes        int64
-	MaxResponseBytes    int64
-	WriteTimeoutSeconds int
-	RetentionDays       int
+	Enabled          bool
+	StorageDir       string
+	EncryptionKeyHex string
+	RetentionDays    int
 	// KeyDerived 表示密钥由 CRYPTO_SECRET/SESSION_SECRET 派生而非显式配置。
 	KeyDerived    bool
 	InvalidReason string
@@ -57,31 +45,26 @@ func LoadTaskRequestEvidenceConfig() TaskRequestEvidenceConfig {
 	enabledRaw := strings.ToLower(strings.TrimSpace(os.Getenv(TaskRequestEvidenceEnabledEnv)))
 	invalid := &configInvalidReason{}
 	config := TaskRequestEvidenceConfig{
-		Enabled:             enabledRaw == "true",
-		StorageDir:          common.GetEnvOrDefaultString(TaskRequestEvidenceStorageDirEnv, defaultTaskRequestEvidenceStorageDir),
-		EncryptionKeyHex:    strings.TrimSpace(os.Getenv(TaskRequestEvidenceEncryptionKeyEnv)),
-		MaxBodyBytes:        int64(common.GetEnvOrDefault(TaskRequestEvidenceMaxBodyBytesEnv, int(defaultTaskRequestEvidenceMaxBody))),
-		MaxResponseBytes:    int64(common.GetEnvOrDefault(TaskRequestEvidenceMaxResponseBytesEnv, int(defaultTaskRequestEvidenceMaxResponse))),
-		WriteTimeoutSeconds: common.GetEnvOrDefault(TaskRequestEvidenceWriteTimeoutSecondsEnv, defaultTaskRequestEvidenceTimeout),
-		RetentionDays:       common.GetEnvOrDefault(TaskRequestEvidenceRetentionDaysEnv, defaultTaskRequestEvidenceRetention),
+		Enabled:          enabledRaw == "true",
+		StorageDir:       common.GetEnvOrDefaultString(TaskRequestEvidenceStorageDirEnv, defaultTaskRequestEvidenceStorageDir),
+		EncryptionKeyHex: strings.TrimSpace(os.Getenv(TaskRequestEvidenceEncryptionKeyEnv)),
+		RetentionDays:    common.GetEnvOrDefault(TaskRequestEvidenceRetentionDaysEnv, defaultTaskRequestEvidenceRetention),
 	}
 	if raw, ok := os.LookupEnv(TaskRequestEvidenceEnabledEnv); ok && raw != "" && enabledRaw != "true" && enabledRaw != "false" {
 		invalid.set("enabled must be true or false")
 		// 非法启用值不被当成开启，但必须响亮报告，避免部署方误以为已开启。
 		common.SysError("invalid " + TaskRequestEvidenceEnabledEnv + " value; collection stays disabled")
 	}
-	for _, key := range []string{TaskRequestEvidenceMaxBodyBytesEnv, TaskRequestEvidenceMaxResponseBytesEnv, TaskRequestEvidenceWriteTimeoutSecondsEnv, TaskRequestEvidenceRetentionDaysEnv} {
-		if raw, ok := os.LookupEnv(key); ok && raw != "" {
-			if _, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64); err != nil {
-				invalid.set("invalid integer evidence configuration")
-			}
+	if raw, ok := os.LookupEnv(TaskRequestEvidenceRetentionDaysEnv); ok && raw != "" {
+		if _, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64); err != nil {
+			invalid.set("invalid integer evidence configuration")
 		}
 	}
 	if invalid.reason != "" {
 		config.InvalidReason = invalid.reason
 	}
 	if err := ValidateTaskRequestEvidenceConfig(config); err != nil {
-		common.SysError("invalid task request evidence configuration: " + err.Error() + "; evidence requests will be rejected")
+		common.SysError("invalid task request evidence configuration: " + err.Error() + "; evidence collection may be unavailable")
 	}
 	return config
 }
@@ -151,15 +134,6 @@ func ValidateTaskRequestEvidenceConfig(config TaskRequestEvidenceConfig) error {
 		if err != nil || len(key) != 32 {
 			return fmt.Errorf("encryption key must be 64 hex chars (32 bytes)")
 		}
-	}
-	if config.MaxBodyBytes <= 0 || config.MaxBodyBytes > maxTaskRequestEvidenceMaxBody {
-		return fmt.Errorf("max body bytes must be between 1 and %d", maxTaskRequestEvidenceMaxBody)
-	}
-	if config.MaxResponseBytes <= 0 || config.MaxResponseBytes > maxTaskRequestEvidenceMaxResponse {
-		return fmt.Errorf("max response bytes must be between 1 and %d", maxTaskRequestEvidenceMaxResponse)
-	}
-	if config.WriteTimeoutSeconds <= 0 || config.WriteTimeoutSeconds > maxTaskRequestEvidenceTimeout {
-		return fmt.Errorf("write timeout must be between 1 and %d seconds", maxTaskRequestEvidenceTimeout)
 	}
 	if config.RetentionDays < 1 || config.RetentionDays > maxTaskRequestEvidenceRetention {
 		return fmt.Errorf("retention days must be an integer between 1 and %d; permanent retention is no longer supported", maxTaskRequestEvidenceRetention)

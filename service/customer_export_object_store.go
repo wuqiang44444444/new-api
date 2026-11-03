@@ -93,7 +93,7 @@ func (s *s3ArtifactStore) ExportPresignURL(objectKey string, ttl time.Duration, 
 }
 
 func (s *s3ArtifactStore) ExportDeleteObject(ctx context.Context, objectKey string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, s.objectURL(objectKey), nil)
+	req, err := http.NewRequestWithContext(WithoutRequestEvidence(ctx), http.MethodDelete, s.objectURL(objectKey), nil)
 	if err != nil {
 		return err
 	}

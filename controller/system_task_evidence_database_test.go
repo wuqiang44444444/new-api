@@ -72,7 +72,7 @@ func TestEvidenceCleanupReclaimsLegacyCompletedRowsAndOrphanObjects(t *testing.T
 	assert.Empty(t, entries)
 }
 
-func TestManualEvidenceCleanupRemovesDetailsButKeepsFiniteClosureIndex(t *testing.T) {
+func TestManualEvidenceCleanupReclaimsEmptyWindowAndDoesNotReopen(t *testing.T) {
 	store, dir := setupEvidenceCleanupEnv(t)
 	now := common.GetTimestamp()
 	index := seedExpiredEvidence(t, store, dir, 86400)
@@ -83,20 +83,13 @@ func TestManualEvidenceCleanupRemovesDetailsButKeepsFiniteClosureIndex(t *testin
 	require.NoError(t, err)
 	require.True(t, claimed)
 	evidenceRetentionHandler{}.Run(context.Background(), task, "manual-database")
-	saved, exists, err := model.GetTaskRequestEvidenceById(index.Id)
+	_, exists, err := model.GetTaskRequestEvidenceById(index.Id)
 	require.NoError(t, err)
-	require.True(t, exists)
-	assert.True(t, saved.BodyExpired)
+	assert.False(t, exists)
 	events, err := model.ListTaskRequestEvidenceEvents(index.Id)
 	require.NoError(t, err)
 	assert.Empty(t, events)
 	assert.ErrorIs(t, model.CreateTaskRequestEvidenceEvent(&model.TaskRequestEvidenceEvent{EvidenceId: index.Id}), model.ErrTaskRequestEvidenceBodyClosed)
-	require.NoError(t, model.DB.Model(saved).UpdateColumn("created_at", now-8*86400).Error)
-	task, runner := createCleanupTask(t)
-	evidenceRetentionHandler{}.Run(context.Background(), task, runner)
-	_, exists, err = model.GetTaskRequestEvidenceById(index.Id)
-	require.NoError(t, err)
-	assert.False(t, exists)
 }
 
 func TestUnavailableEvidenceStoreStillReclaimsIndependentAuditHistory(t *testing.T) {
@@ -178,7 +171,10 @@ func TestEvidenceDatabaseCleanupPublishesProgressBeforeCompletion(t *testing.T) 
 		}
 		observed = append(observed, state.DeletedEvents)
 	}))
-	t.Cleanup(func() { require.NoError(t, model.DB.Callback().Delete().Remove("evidence-progress-observer")) })
+	t.Cleanup(func() {
+		flushControllerEvidence(t)
+		require.NoError(t, model.DB.Callback().Delete().Remove("evidence-progress-observer"))
+	})
 	evidenceRetentionHandler{}.Run(context.Background(), task, runner)
 	assert.Equal(t, []int64{0, 500}, observed)
 	finished, err := model.GetSystemTaskByTaskID(task.TaskID)
@@ -193,7 +189,7 @@ func TestEvidenceDatabaseCleanupPublishesProgressBeforeCompletion(t *testing.T) 
 func TestEvidenceFilesystemRetentionCoversFileOnlyOrphans(t *testing.T) {
 	store, dir := setupEvidenceCleanupEnv(t)
 	const now int64 = 1700000000
-	cutoff := now - 7*86400
+	cutoff := now - 2*86400
 	live := &model.TaskRequestEvidence{CreatedAt: common.GetTimestamp()}
 	require.NoError(t, model.CreateTaskRequestEvidence(live))
 	for _, item := range []struct {

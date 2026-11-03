@@ -51,7 +51,7 @@ func TestNativeRelayFinalErrorDiagnostics(t *testing.T) {
 					}
 					assert.Empty(t, c.GetString(common.UpstreamRequestIdKey))
 					assert.Zero(t, clienterrlog.UpstreamResponseStatus(c.Request.Context()))
-					assert.Equal(t, "not_recorded", clienterrlog.SnapshotHTTPExchange(c.Request.Context()).UpstreamResponse.State)
+					assert.Nil(t, clienterrlog.SnapshotHTTPExchange(c.Request.Context()), "ordinary relay has no body snapshot")
 				}
 				if tc.explicit {
 					clienterrlog.Attach(c.Request.Context(), clienterrlog.Report{Stage: "model_access", Reason: "token_model_forbidden", ChannelID: 7, Model: "explicit-model"})

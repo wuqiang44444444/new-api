@@ -153,7 +153,7 @@ func (s *s3ArtifactStore) videoResultRequest(ctx context.Context, method, rawURL
 	if query != "" {
 		requestURL += "?" + query
 	}
-	req, err := http.NewRequestWithContext(requestCtx, method, requestURL, nil)
+	req, err := http.NewRequestWithContext(WithoutRequestEvidence(requestCtx), method, requestURL, nil)
 	if err != nil {
 		cancel()
 		return nil, err

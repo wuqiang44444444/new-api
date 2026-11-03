@@ -51,6 +51,7 @@ func GetTask(c *gin.Context) {
 		projectImageTaskQuery(c, task.TaskID)
 		return
 	}
+	service.AttachTaskRequestEvidenceTask(c, task)
 	createdAt := task.CreatedAt
 	if createdAt == 0 {
 		createdAt = task.SubmitTime
@@ -80,6 +81,7 @@ func GetTaskArtifacts(c *gin.Context) {
 		writeTaskArtifactError(c, http.StatusNotFound, "artifact_not_found", "Task or artifact not found")
 		return
 	}
+	service.AttachTaskRequestEvidenceTask(c, task)
 	writeTaskArtifacts(c, task, false)
 }
 

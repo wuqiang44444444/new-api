@@ -25,6 +25,8 @@ import (
 func TestEvidenceCleanupDoesNotInterruptBusinessOrChangeAccounting(t *testing.T) {
 	previousConfig := system_setting.GetTaskRequestEvidenceConfig()
 	t.Cleanup(func() {
+		flushControllerEvidence(t)
+
 		system_setting.SetTaskRequestEvidenceConfig(previousConfig)
 		_ = service.InitTaskRequestEvidenceStore(previousConfig)
 	})
@@ -93,6 +95,10 @@ func TestEvidenceCleanupDoesNotInterruptBusinessOrChangeAccounting(t *testing.T)
 				c.Set("token_id", 3)
 				common.SetContextKey(c, constant.ContextKeyTaskCreateAttemptID, int(attempt.ID))
 				require.NoError(t, service.BeginTaskRequestEvidence(c, model.TaskRequestEvidenceKindVideoTask))
+				// The business handler consumes input before submission.
+				_, readErr := io.Copy(io.Discard, c.Request.Body)
+				require.NoError(t, readErr)
+				flushControllerEvidence(t)
 				indexes, count, err := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{})
 				require.NoError(t, err)
 				require.EqualValues(t, 1, count)
@@ -124,6 +130,7 @@ func TestEvidenceCleanupDoesNotInterruptBusinessOrChangeAccounting(t *testing.T)
 				request := httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"prompt":"media"}`))
 				request.Header.Set("Content-Type", "application/json")
 				engine.ServeHTTP(client, request)
+				flushControllerEvidence(t)
 			}()
 			id := <-prepared
 			if tc.afterSend {
@@ -156,6 +163,7 @@ func TestEvidenceCleanupDoesNotInterruptBusinessOrChangeAccounting(t *testing.T)
 			}
 			close(release)
 			<-done
+			flushControllerEvidence(t)
 			assert.Equal(t, http.StatusOK, client.Code, client.Body.String())
 			assert.JSONEq(t, reply, client.Body.String())
 			assert.EqualValues(t, 1, exchanges.Load())

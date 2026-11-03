@@ -46,7 +46,7 @@ func TestEvidenceCleanupExternalDatabaseContracts(t *testing.T) {
 			now := common.GetTimestamp()
 			old := &evidenceBeforeCleanup{CreatedAt: now - 3600}
 			require.NoError(t, db.Create(old).Error)
-			require.NoError(t, db.AutoMigrate(&TaskRequestEvidence{}, &TaskRequestEvidenceEvent{}, &TaskRequestEvidenceAccessLog{}, &Task{}, &SystemTask{}, &SystemTaskLock{}))
+			require.NoError(t, db.AutoMigrate(&TaskRequestEvidence{}, &TaskRequestEvidenceEvent{}, &TaskRequestEvidenceAccessLog{}, &Task{}, &SystemTask{}, &SystemTaskLock{}, &EvidenceTaskLink{}))
 			require.NoError(t, db.Model(&TaskRequestEvidence{}).Where("id = ?", old.Id).UpdateColumn("cleanup_requested_at", nil).Error)
 			require.NoError(t, RequestTaskRequestEvidenceCleanup(old.Id, now))
 			index, exists, err := GetTaskRequestEvidenceById(old.Id)
@@ -83,7 +83,9 @@ func TestEvidenceCleanupExternalDatabaseContracts(t *testing.T) {
 			assert.EqualValues(t, 2, health.PendingIndexes)
 			assert.Equal(t, 1, health.ConsecutiveFailures)
 			runEvidenceDatabaseDeletionContract(t)
-			runMidjourneyEvidenceAnchorContract(t)
+			runIndependentEvidenceWindowContract(t)
+			runEvidenceTaskLinksContract(t)
+			runEvidenceConcurrentPublicationCleanupContract(t)
 		})
 	}
 }

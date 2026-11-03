@@ -2,8 +2,11 @@ package controller
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -31,6 +34,7 @@ func TestEvidenceRawObjectsAreSelectableWithoutObjectKeyAndDirectoryNeverReadsBo
 	request := httptest.NewRequest("POST", "/v1/images/generations", bytes.NewReader(raw))
 	request.Header.Set("Content-Type", "application/json")
 	engine.ServeHTTP(httptest.NewRecorder(), request)
+	flushControllerEvidence(t)
 	indexes, _, err := model.QueryTaskRequestEvidence(model.TaskRequestEvidenceQueryParams{RequestID: "raw-directory"})
 	require.NoError(t, err)
 	require.Len(t, indexes, 1)
@@ -104,4 +108,32 @@ func TestEvidenceSelectedHistoricalMalformedAndBinaryObjectsRemainReadable(t *te
 			}
 		})
 	}
+}
+
+func TestEvidenceDownloadReportsLateAuthenticationFailureAsIncomplete(t *testing.T) {
+	index := setupEvidenceViewFixture(t)
+	index.CreatedAt = common.GetTimestamp()
+	require.NoError(t, model.DB.Save(index).Error)
+	event := &model.TaskRequestEvidenceEvent{EvidenceId: index.Id}
+	require.NoError(t, model.CreateTaskRequestEvidenceEvent(event))
+	payload := bytes.Repeat([]byte("private fixture"), 20000)
+	store := service.GetTaskRequestEvidenceStore()
+	require.NoError(t, store.PutEventBody(index.Id, event.Id, payload))
+	path := filepath.Join(system_setting.GetTaskRequestEvidenceConfig().StorageDir, service.EvidenceObjectKey(index.Id, event.Id))
+	ciphertext, err := os.ReadFile(path)
+	require.NoError(t, err)
+	ciphertext[len(ciphertext)/2] ^= 1
+	require.NoError(t, os.WriteFile(path, ciphertext, 0600))
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) { c.Set("id", 7); c.Set("role", common.RoleRootUser); c.Next() })
+	engine.GET("/api/task_request_evidence/:id/events/:event_id/object", GetTaskRequestEvidenceObject)
+	server := httptest.NewServer(engine)
+	defer server.Close()
+	response, err := http.Get(server.URL + "/api/task_request_evidence/" + strconv.FormatInt(index.Id, 10) + "/events/" + strconv.FormatInt(event.Id, 10) + "/object")
+	require.NoError(t, err)
+	defer response.Body.Close()
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	body, err := io.ReadAll(response.Body)
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	assert.Less(t, len(body), len(payload))
 }

@@ -154,7 +154,9 @@ func QueryTaskRequestEvidence(params TaskRequestEvidenceQueryParams) ([]*TaskReq
 		query = query.Where("upstream_request_id = ?", params.UpstreamRequestID)
 	}
 	if params.TaskID != "" {
-		query = query.Where("task_id = ?", params.TaskID)
+		direct := DB.Model(&TaskRequestEvidence{}).Select("id").Where("task_id = ?", params.TaskID)
+		linked := DB.Model(&EvidenceTaskLink{}).Select("evidence_id").Where("task_id = ?", params.TaskID)
+		query = query.Where("id IN (?)", DB.Raw("? UNION ?", direct, linked))
 	}
 	if params.Kind != "" {
 		query = query.Where("kind = ?", params.Kind)

@@ -24,7 +24,6 @@ func (s *Sink) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		startedAt := time.Now()
 		report := installReport(c)
-		InstallHTTPExchange(c)
 		c.Next() // Business panics belong exclusively to the existing Recovery.
 		s.record(c, startedAt, report)
 	}

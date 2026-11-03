@@ -160,7 +160,7 @@ func (s *s3ArtifactStore) putObject(ctx context.Context, objectKey, mimeType str
 	if err != nil {
 		return 0, fmt.Errorf("read artifact content failed: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, requestURL, nil)
+	req, err := http.NewRequestWithContext(WithoutRequestEvidence(ctx), http.MethodPut, requestURL, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -174,7 +174,7 @@ func (s *s3ArtifactStore) putObject(ctx context.Context, objectKey, mimeType str
 	req.GetBody = func() (io.ReadCloser, error) { return newBytesReader(data), nil }
 	SigV4SignRequest(req, s.credentials, s.region(), hexSHA256(data), time.Now())
 
-	putCtx, cancel := context.WithTimeout(ctx, s3PutTimeout)
+	putCtx, cancel := context.WithTimeout(req.Context(), s3PutTimeout)
 	defer cancel()
 	req = req.WithContext(putCtx)
 	resp, err := s.httpClient.Do(req)
@@ -196,7 +196,7 @@ func (s *s3ArtifactStore) HeadObject(ctx context.Context, objectKey string) (boo
 	if err != nil {
 		return false, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
+	req, err := http.NewRequestWithContext(WithoutRequestEvidence(ctx), http.MethodHead, url, nil)
 	if err != nil {
 		return false, err
 	}

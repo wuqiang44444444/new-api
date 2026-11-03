@@ -40,22 +40,20 @@ func TestTaskCreateEvidenceRecordsFinalClientWrites(t *testing.T) {
 	const internalBody = `{"id":"internal-id","task_id":"internal-task","model":"test-video","status":"queued","created_at":1}`
 	const rawError = `{ "error": {"code":"fixture_error"}, "id":9007199254740993, "n":0, "n":1 }`
 	for _, scenario := range []struct {
-		name          string
-		request       string
-		wantBody      string
-		wantStatus    int
-		writeLimit    int
-		writeErr      error
-		wantWriteErr  string
-		responseLimit int64
-		disabled      bool
-		storeFails    bool
+		name         string
+		request      string
+		wantBody     string
+		wantStatus   int
+		writeLimit   int
+		writeErr     error
+		wantWriteErr string
+		disabled     bool
+		storeFails   bool
 	}{
 		{name: "success", wantBody: finalBody, wantStatus: http.StatusOK},
 		{name: "contract error", wantBody: `{"error":{"code":"create_outcome_unknown"}}`, wantStatus: http.StatusServiceUnavailable},
 		{name: "unprojected error", wantBody: rawError, wantStatus: http.StatusBadGateway},
 		{name: "invalid JSON", request: `{"model":`, wantStatus: http.StatusBadRequest},
-		{name: "bounded capture", wantBody: finalBody, wantStatus: http.StatusOK, responseLimit: 8},
 		{name: "disconnected", wantStatus: http.StatusOK, writeLimit: 0, writeErr: errors.New("fixture client disconnected"), wantWriteErr: "fixture client disconnected"},
 		{name: "partial write error", wantBody: finalBody[:8], wantStatus: http.StatusOK, writeLimit: 8, writeErr: errors.New("fixture client disconnected"), wantWriteErr: "fixture client disconnected"},
 		{name: "short write", wantBody: finalBody[:8], wantStatus: http.StatusOK, writeLimit: 8, wantWriteErr: io.ErrShortWrite.Error()},
@@ -70,11 +68,8 @@ func TestTaskCreateEvidenceRecordsFinalClientWrites(t *testing.T) {
 			sqlDB, err := db.DB()
 			require.NoError(t, err)
 			sqlDB.SetMaxOpenConns(1)
-			config := modelArkEvidenceErrorConfig(t, 1<<20, t.TempDir())
+			config := modelArkEvidenceErrorConfig(t, t.TempDir())
 			config.Enabled = !scenario.disabled
-			if scenario.responseLimit > 0 {
-				config.MaxResponseBytes = scenario.responseLimit
-			}
 			if scenario.storeFails {
 				config.StorageDir = filepath.Join(t.TempDir(), "occupied")
 				require.NoError(t, os.WriteFile(config.StorageDir, []byte("occupied"), 0600))
@@ -84,13 +79,15 @@ func TestTaskCreateEvidenceRecordsFinalClientWrites(t *testing.T) {
 			system_setting.SetTaskRequestEvidenceConfig(config)
 			require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 			t.Cleanup(func() {
+				flushMiddlewareEvidence(t)
+
 				model.DB = previousDB
 				common.SetDatabaseTypes(previousMain, previousLog)
 				system_setting.SetTaskRequestEvidenceConfig(previousConfig)
 				require.NoError(t, service.InitTaskRequestEvidenceStore(previousConfig))
 				require.NoError(t, sqlDB.Close())
 			})
-			require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}))
+			require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.EvidenceTaskLink{}))
 			task := model.Task{TaskID: publicTaskID, UserId: 7, AppID: 3, ClientProtocol: model.TaskClientProtocolModelArkV3, Quota: 25, Status: model.TaskStatusSubmitted}
 			require.NoError(t, db.Create(&task).Error)
 			calls := 0
@@ -129,6 +126,7 @@ func TestTaskCreateEvidenceRecordsFinalClientWrites(t *testing.T) {
 				client = limitedTaskClient{ResponseRecorder: response, limit: scenario.writeLimit, err: scenario.writeErr}
 			}
 			engine.ServeHTTP(client, request)
+			flushMiddlewareEvidence(t)
 			require.Equal(t, scenario.wantStatus, response.Code)
 			if scenario.name == "invalid JSON" {
 				assert.Zero(t, calls)
@@ -178,9 +176,6 @@ func TestTaskCreateEvidenceRecordsFinalClientWrites(t *testing.T) {
 			require.Equal(t, "available", originalStatus)
 			assert.Equal(t, body, string(original.Body), "keep the request before ModelArk conversion")
 			wantCaptured := response.Body.Bytes()
-			if int64(len(wantCaptured)) > config.MaxResponseBytes {
-				wantCaptured = wantCaptured[:config.MaxResponseBytes]
-			}
 			assert.Equal(t, string(wantCaptured), string(content.Body), "preserve the exact bytes accepted by the client writer")
 			require.NotNil(t, content.Meta)
 			assert.Equal(t, response.Code, content.Meta.StatusCode)

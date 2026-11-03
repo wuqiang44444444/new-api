@@ -43,8 +43,7 @@ func projectImageTaskQuery(c *gin.Context, taskID string) bool {
 		return true
 	}
 
-	capture := service.NewImageTaskErrorEvidence(task)
-	defer service.CaptureImageClientResponse(c, capture)()
+	service.AttachTaskRequestEvidenceTask(c, task)
 	data := task.PrivateData.ImageTask
 	response := gin.H{
 		"id":         task.TaskID,

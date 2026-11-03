@@ -104,7 +104,7 @@ test('Root confirms all-business irreversible scope and submits the selected Uni
   const dialog = await screen.findByRole('alertdialog')
   expect(
     within(dialog).getByText(
-      /This includes historical evidence of all types and cannot be undone/
+      /This permanently removes matching evidence windows and their contents/
     )
   ).toBeVisible()
   expect(dialog.textContent).toContain('time zone:')
@@ -288,7 +288,7 @@ test('a future calendar date is rejected before confirmation', async () => {
   vi.setSystemTime(new Date('2026-10-14T04:00:00Z'))
   const user = userEvent.setup()
   renderCleanup()
-  await user.click(screen.getByRole('button', { name: '2026-10-07' }))
+  await user.click(screen.getByRole('button', { name: '2026-10-12' }))
   await user.click(screen.getByRole('button', { name: /October 15th, 2026/ }))
   expect(
     screen.getByText('Select a valid timestamp not later than now.')

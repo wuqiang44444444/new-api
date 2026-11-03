@@ -1,6 +1,7 @@
 package seedance
 
 import (
+	"context"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/glebarez/sqlite"
@@ -27,12 +28,14 @@ func TestFunCloudFetchTaskUsesAIGCQueryAndReportedCompletionTokens(t *testing.T)
 	oldConfig := system_setting.GetTaskRequestEvidenceConfig()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "evidence.db")), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}))
+	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.EvidenceTaskLink{}))
 	model.DB = db
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 7, MaxBodyBytes: 1 << 20, MaxResponseBytes: 1 << 20, WriteTimeoutSeconds: 5}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 2}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	t.Cleanup(func() {
+		require.NoError(t, service.FlushRequestEvidence(context.Background()))
+
 		model.DB = oldDB
 		system_setting.SetTaskRequestEvidenceConfig(oldConfig)
 		_ = service.InitTaskRequestEvidenceStore(oldConfig)
@@ -82,6 +85,7 @@ func TestFunCloudFetchTaskUsesAIGCQueryAndReportedCompletionTokens(t *testing.T)
 	require.NotNil(t, result.ProviderBillingEvidence)
 	assert.Equal(t, "completionTokens", result.ProviderBillingEvidence.TokenSource)
 	assert.Equal(t, 40594, result.ProviderBillingEvidence.ReportedTokens)
+	require.NoError(t, service.FlushRequestEvidence(context.Background()))
 	evidence, exists, err := model.FindTaskRequestEvidenceByTaskID(task.TaskID)
 	require.NoError(t, err)
 	require.True(t, exists)

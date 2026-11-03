@@ -2,16 +2,13 @@ package service
 
 import (
 	"bytes"
-	"errors"
-	"net/http"
 	"net/url"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/model"
 )
 
-// 原始证据对象格式（v2）：实际捕获的字节原样保存，解析与美化推迟到管理员
-// 逐条查看时进行。对象首行是固定标记，第二行是单行元数据 JSON（含原始请求
+// 原始证据对象格式（v2）：实际捕获的字节原样保存，仅在管理员
+// 逐条查看时解析存储元数据。对象首行是固定标记，第二行是单行元数据 JSON（含原始请求
 // 头与查询串），其余字节是未改写的正文。历史对象没有该标记，按原始正文
 // 读取；取证不重写正文，也不在保存前解析、脱敏或拒绝任何格式。
 const evidenceObjectMagic = "new-api/evidence-v2"
@@ -19,6 +16,9 @@ const evidenceObjectMagic = "new-api/evidence-v2"
 // EvidenceObjectMeta 是对象内嵌的交换元数据。请求头、查询串按捕获原文保存；
 // 受保护存储之外不得输出这些内容。
 type EvidenceObjectMeta struct {
+	BodyFormat  string              `json:"body_format,omitempty"`
+	MessageType int                 `json:"message_type,omitempty"`
+	RawQuery    string              `json:"raw_query,omitempty"`
 	Method      string              `json:"method,omitempty"`
 	Target      string              `json:"target,omitempty"`
 	StatusCode  int                 `json:"status_code,omitempty"`
@@ -27,21 +27,6 @@ type EvidenceObjectMeta struct {
 	Headers     map[string][]string `json:"headers,omitempty"`
 	Query       url.Values          `json:"query,omitempty"`
 	Error       string              `json:"error,omitempty"`
-}
-
-// buildEvidenceObject 组装 v2 对象：标记行 + 单行元数据 + 原始正文。
-// 元数据只含小型定位事实；正文保持捕获时的字节，不做任何转换。
-func buildEvidenceObject(meta EvidenceObjectMeta, body []byte) []byte {
-	encoded, err := common.Marshal(meta)
-	if err != nil {
-		encoded = []byte("{}")
-	}
-	out := make([]byte, 0, len(evidenceObjectMagic)+1+len(encoded)+1+len(body))
-	out = append(out, evidenceObjectMagic...)
-	out = append(out, '\n')
-	out = append(out, encoded...)
-	out = append(out, '\n')
-	return append(out, body...)
 }
 
 // parseEvidenceObject 拆分 v2 对象。返回 nil 元数据表示历史对象：
@@ -64,61 +49,4 @@ func parseEvidenceObject(payload []byte) (*EvidenceObjectMeta, []byte) {
 		return nil, payload
 	}
 	return &meta, rest
-}
-
-// persistRawEvidenceEvent 尽力保存一次交换的事件行与原始对象。任何失败只
-// 输出净化诊断，绝不改变业务发送、响应、重试、资金或 Task 状态；证据允许
-// 缺失。事件行只承载定位信息（阶段、序号、方法、目标、类型、时间），不再
-// 维护阶段状态、完整性、字节数或摘要。
-func persistRawEvidenceEvent(event *model.TaskRequestEvidenceEvent, headers http.Header, query url.Values, body []byte, errorNote string) error {
-	if event.CreatedAt == 0 {
-		event.CreatedAt = common.GetTimestamp()
-	}
-	if err := model.CreateTaskRequestEvidenceEvent(event, EvidenceRetentionSeconds()); err != nil {
-		if errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
-			return nil // Retention ends observation, never the business operation.
-		}
-		evidencePersistWarning("event reserve", event.Stage, err)
-		return err
-	}
-	closed, err := model.TaskRequestEvidenceBodyClosedForAppend(event.EvidenceId, common.GetTimestamp(), EvidenceRetentionSeconds())
-	if err != nil {
-		evidencePersistWarning("append check", event.Stage, err)
-		return err
-	}
-	if closed {
-		return nil
-	}
-	store := GetTaskRequestEvidenceStore()
-	if store == nil {
-		err := errors.New("evidence store not initialized")
-		evidencePersistWarning("object store", event.Stage, err)
-		return err
-	}
-	meta := EvidenceObjectMeta{
-		Method:      event.Method,
-		Target:      event.Target,
-		StatusCode:  event.StatusCode,
-		ContentType: event.ContentType,
-		CreatedAt:   event.CreatedAt,
-		Error:       errorNote,
-	}
-	if len(headers) > 0 {
-		meta.Headers = headers
-	}
-	if len(query) > 0 {
-		meta.Query = query
-	}
-	if err := store.PutEventBody(event.EvidenceId, event.Id, buildEvidenceObject(meta, body)); err != nil {
-		if errors.Is(err, model.ErrTaskRequestEvidenceBodyClosed) {
-			return nil // The publication lock rejected a late object.
-		}
-		evidencePersistWarning("object write", event.Stage, err)
-		return err
-	}
-	return nil
-}
-
-func evidencePersistWarning(step, stage string, err error) {
-	common.SysError("evidence save unavailable: step=" + step + " stage=" + stage + " cause=" + common.SanitizeTaskDiagnostic(err.Error()))
 }

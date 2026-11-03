@@ -88,57 +88,54 @@ func cleanupEvidenceDatabase(ctx context.Context, store service.TaskRequestEvide
 	}
 	// File-only namespaces have no index or event from which to discover them.
 	// Their file timestamps supply the finite retention anchor.
-	namespaces, err := store.EvidenceNamespaces()
-	if err != nil {
-		return err
-	}
-	for _, id := range namespaces {
-		if err := ctx.Err(); err != nil {
+	return store.WalkEvidenceNamespaces(ctx, func(ids []int64) error {
+		existing, err := model.ExistingTaskRequestEvidenceIDs(ids)
+		if err != nil {
 			return err
 		}
-		if id > 0 {
-			_, exists, err := model.GetTaskRequestEvidenceById(id)
-			if err != nil {
+		live := make(map[int64]bool, len(existing))
+		for _, id := range existing {
+			live[id] = true
+		}
+		for _, id := range ids {
+			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if exists {
-				continue // Live indexes keep their own creation/accepted-cleanup scope.
+			if live[id] {
+				continue // Live indexes keep their creation/accepted-cleanup scope.
 			}
-		}
-		if err := store.WalkEvidenceFiles(ctx, id, func(file service.EvidenceStoredFile) error {
-			if file.ModifiedAt >= orphanCutoff {
+			if err := store.WalkEvidenceFiles(ctx, id, func(file service.EvidenceStoredFile) error {
+				if file.ModifiedAt >= orphanCutoff {
+					return nil
+				}
+				size, err := store.Delete(file.Key)
+				if err != nil {
+					return err
+				}
+				if size > 0 {
+					stats.DeletedFiles++
+					stats.FreedBytes += size
+				} else {
+					stats.MissingFiles++
+				}
 				return nil
+			}); err != nil {
+				stats.FailedItems++
+				stats.ErrorCategory = "delete_failed"
+				continue
 			}
-			size, err := store.Delete(file.Key)
-			if err != nil {
-				return err
-			}
-			if size > 0 {
-				stats.DeletedFiles++
-				stats.FreedBytes += size
-			} else {
-				stats.MissingFiles++
-			}
-			return nil
-		}); err != nil {
-			stats.FailedItems++
-			stats.ErrorCategory = "delete_failed"
-			continue
-		}
-		if id > 0 {
-			if err := store.RemoveEmptyEvidenceDir(id); err != nil {
-				var nonEmpty *service.EvidenceDirectoryNotEmptyError
-				if !errors.As(err, &nonEmpty) {
-					stats.FailedItems++
-					stats.ErrorCategory = "directory_cleanup_failed"
+			if id > 0 {
+				if err := store.RemoveEmptyEvidenceDir(id); err != nil {
+					var nonEmpty *service.EvidenceDirectoryNotEmptyError
+					if !errors.As(err, &nonEmpty) {
+						stats.FailedItems++
+						stats.ErrorCategory = "directory_cleanup_failed"
+					}
 				}
 			}
 		}
-		if err := persistProgress(); err != nil {
-			return err
-		}
-	}
-	return nil
+		return persistProgress()
+	})
 }
 
 // These lifetimes are independent of object availability and manual scope.
