@@ -216,6 +216,10 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 			Role: message.Role,
 		}
 		if message.Role == "tool" {
+			toolContent, err := chatToolResultContentToClaude(c, message.Content)
+			if err != nil {
+				return nil, err
+			}
 			if len(claudeMessages) > 0 && claudeMessages[len(claudeMessages)-1].Role == "user" {
 				lastClaudeMessage := claudeMessages[len(claudeMessages)-1]
 				if content, ok := lastClaudeMessage.Content.(string); ok {
@@ -229,7 +233,7 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 				lastClaudeMessage.Content = append(lastClaudeMessage.Content.([]dto.ClaudeMediaMessage), dto.ClaudeMediaMessage{
 					Type:      "tool_result",
 					ToolUseId: message.ToolCallId,
-					Content:   message.Content,
+					Content:   toolContent,
 				})
 				claudeMessages[len(claudeMessages)-1] = lastClaudeMessage
 				continue
@@ -240,7 +244,7 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 				{
 					Type:      "tool_result",
 					ToolUseId: message.ToolCallId,
-					Content:   message.Content,
+					Content:   toolContent,
 				},
 			}
 		} else if message.IsStringContent() && message.ToolCalls == nil {
