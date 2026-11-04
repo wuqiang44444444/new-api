@@ -1,13 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
-import { Button } from '@/components/ui/button'
 
-import { createUsageSelfExport, getUsageSelfSummary } from './api'
+import { getUsageSelfSummary } from './api'
 import { CustomerUsageTable } from './customer-usage-table'
+import { UsageExportButton } from './export-button'
 import { UsagePeriodPicker } from './period-picker'
 import { shanghaiToday } from './utils'
 
@@ -18,14 +17,13 @@ export function MyUsage(props: {
   date?: string
   onSearchChange: (search: { period: 'day' | 'week'; date: string }) => void
 }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const today = shanghaiToday()
   const date = props.date ?? today
   const query = useQuery({
     queryKey: ['usage-self-summary', props.period, date],
     queryFn: () => getUsageSelfSummary({ period: props.period, date }),
   })
-  const exportMutation = useSelfExportMutation()
 
   return (
     <div className='flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4'>
@@ -39,19 +37,12 @@ export function MyUsage(props: {
             props.onSearchChange({ period: props.period, date: nextDate })
           }
         />
-        <Button
-          size='sm'
-          disabled={exportMutation.isPending || !query.data}
-          onClick={() =>
-            exportMutation.mutate({
-              period: props.period,
-              date,
-              language: i18n.language.startsWith('zh') ? 'zh' : 'en',
-            })
-          }
-        >
-          {t('Export CSV')}
-        </Button>
+        <UsageExportButton
+          body={{ period: props.period, date, view: 'self' }}
+          period={query.data?.data.period}
+          customerView={query.data?.data.result}
+          ready={query.isSuccess && !query.isFetching}
+        />
       </div>
       <p className='text-muted-foreground text-sm'>
         {t('Usage coverage notice')}
@@ -66,31 +57,4 @@ export function MyUsage(props: {
       )}
     </div>
   )
-}
-
-function useSelfExportMutation() {
-  const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: async (body: {
-      period: 'day' | 'week'
-      date: string
-      language: string
-    }) => {
-      const response = await createUsageSelfExport(body)
-      if (!response.success) {
-        throw new Error(response.message)
-      }
-      return response.data
-    },
-    onSuccess: () => {
-      toast.success(
-        t('Export job queued; check billing export tasks for the file')
-      )
-      queryClient.invalidateQueries({ queryKey: ['self-export-jobs'] })
-    },
-    onError: (error: Error) => {
-      toast.error(error.message)
-    },
-  })
 }

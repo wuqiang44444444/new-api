@@ -29,20 +29,24 @@ func TestUpstreamWholePeriodInitializationIncludesUnvisitedChannels(t *testing.T
 	counts, err := InitializeUpstreamPeriodDiscounts(context.Background(), start, start+100, 1)
 	require.NoError(t, err)
 	assert.Equal(t, 101, counts["created"])
-	result, err := GetUpstreamSummaryPage(context.Background(), start, start+100, start, UpstreamSummaryPageFilter{Level: "groups", Page: 1, PageSize: 10})
+	result, err := GetUpstreamSummaryPage(context.Background(), start, start+100, start, UpstreamSummaryPageFilter{Level: "channels", Page: 1, PageSize: 10})
 	require.NoError(t, err)
-	require.Len(t, result.Groups, 1)
-	require.NotNil(t, result.Groups[0].ReferenceAmount)
-	assert.EqualValues(t, 8080, *result.Groups[0].ReferenceAmount)
+	require.Len(t, result.Channels, 10)
+	assert.Equal(t, 101, result.Total)
+	require.NotNil(t, result.Channels[0].ReferenceAmount)
+	assert.EqualValues(t, 80, *result.Channels[0].ReferenceAmount)
 	// Manual changes remain authoritative across repeated whole-period calls.
 	record := ProviderChannelBillingDiscount{PeriodStart: start, ChannelId: 101, Discount: decimal.RequireFromString("0.5"), Reason: "manual"}
 	require.NoError(t, SaveProviderChannelBillingDiscount(&record, 1, 1))
 	counts, err = InitializeUpstreamPeriodDiscounts(context.Background(), start, start+100, 1)
 	require.NoError(t, err)
 	assert.Equal(t, 101, counts["exists"])
-	result, err = GetUpstreamSummaryPage(context.Background(), start, start+100, start, UpstreamSummaryPageFilter{Level: "groups", Page: 1, PageSize: 10})
+	result, err = GetUpstreamSummaryPage(context.Background(), start, start+100, start, UpstreamSummaryPageFilter{Level: "channels", Page: 1, PageSize: 10})
 	require.NoError(t, err)
-	assert.EqualValues(t, 8050, *result.Groups[0].ReferenceAmount)
+	last, err := GetUpstreamSummaryPage(context.Background(), start, start+100, start, UpstreamSummaryPageFilter{Level: "channels", ChannelID: 101, Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.Len(t, last.Channels, 1)
+	assert.EqualValues(t, 50, *last.Channels[0].ReferenceAmount)
 }
 
 func TestUpstreamOptionsAndChildPagesAvoidRepeatedBillingReads(t *testing.T) {
@@ -57,17 +61,17 @@ func TestUpstreamOptionsAndChildPagesAvoidRepeatedBillingReads(t *testing.T) {
 		}
 	}))
 	t.Cleanup(func() { db.Callback().Query().Remove("count_billing_reads") })
-	filter := UpstreamSummaryPageFilter{Level: "options", Search: "cached", Page: 1, PageSize: 10}
+	filter := UpstreamSummaryPageFilter{Level: "options", Search: "original", Page: 1, PageSize: 10}
 	options, err := GetUpstreamSummaryPage(context.Background(), 1000, 1500, 1000, filter)
 	require.NoError(t, err)
-	require.Len(t, options.Groups, 1)
+	require.Len(t, options.Channels, 1)
 	assert.Zero(t, reads, "option lookup must never load metering facts")
-	filter.Level = "groups"
+	filter.Level = "channels"
 	_, err = GetUpstreamSummaryPage(context.Background(), 1000, 1500, 1000, filter)
 	require.NoError(t, err)
 	initial := reads
 	assert.Positive(t, initial)
-	filter.Level, filter.URLKey = "channels", url
+	filter.Level = "channels"
 	_, err = GetUpstreamSummaryPage(context.Background(), 1000, 1500, 1000, filter)
 	require.NoError(t, err)
 	filter.Level, filter.ChannelID = "models", 1
@@ -76,7 +80,7 @@ func TestUpstreamOptionsAndChildPagesAvoidRepeatedBillingReads(t *testing.T) {
 	require.Len(t, result.Models, 1)
 	assert.Equal(t, initial, reads, "child pages reuse the same metering projection")
 	require.NoError(t, db.Model(&Channel{}).Where("id = ?", 1).Update("name", "renamed").Error)
-	filter.Level, filter.ChannelID = "channels", 0
+	filter.Level, filter.ChannelID, filter.Search = "channels", 0, ""
 	changed, err := GetUpstreamSummaryPage(context.Background(), 1000, 1500, 1000, filter)
 	require.NoError(t, err)
 	require.Len(t, changed.Channels, 1)

@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  skipToken,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,7 +22,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -43,6 +48,7 @@ import { formatTimestampToDate } from '@/lib/format'
 import { BillingPagination } from './components/billing-pagination'
 import {
   cancelExport,
+  getExport,
   isExportJobActive,
   listSelfExports,
   requestExportDownload,
@@ -54,6 +60,8 @@ import { billingModeLabel, formatInteger } from './lib'
 type ExportJobsDrawerProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  children?: ReactNode
+  focusedJobId?: string
 }
 
 /**
@@ -66,6 +74,22 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
 
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  const [activeJobId, setActiveJobId] = useState<string>()
+  const [busyJobId, setBusyJobId] = useState<string>()
+  useEffect(() => {
+    if (!props.focusedJobId) return
+    setActiveJobId(props.focusedJobId)
+    setPage(1)
+  }, [props.focusedJobId])
+  const focusedQuery = useQuery({
+    queryKey: ['customer-export-job', activeJobId],
+    queryFn: activeJobId ? () => getExport(activeJobId) : skipToken,
+    enabled: props.open && !!activeJobId,
+    refetchInterval: (query) =>
+      props.open && query.state.data && isExportJobActive(query.state.data)
+        ? 5_000
+        : false,
+  })
   const jobsQuery = useQuery({
     queryKey: ['customer-export-jobs', page, pageSize],
     queryFn: async () => {
@@ -83,22 +107,35 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
   const jobs = jobsQuery.data?.items ?? []
 
   const handleCancel = async (job: CustomerExportJobView) => {
+    setBusyJobId(job.job_id)
     try {
       await cancelExport(job.job_id)
       toast.success(t('Export cancellation requested.'))
       await queryClient.invalidateQueries({
         queryKey: ['customer-export-jobs'],
       })
+      await queryClient.invalidateQueries({
+        queryKey: ['customer-export-job', job.job_id],
+      })
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : t('Unable to cancel export.')
       )
+    } finally {
+      setBusyJobId(undefined)
     }
   }
 
   const handleResubmit = async (job: CustomerExportJobView) => {
+    setBusyJobId(job.job_id)
     try {
-      await resubmitExport(job)
+      const submitted = await resubmitExport(job)
+      queryClient.setQueryData(
+        ['customer-export-job', submitted.job_id],
+        submitted
+      )
+      setActiveJobId(submitted.job_id)
+      setPage(1)
       toast.success(t('Export submitted. Track it in export jobs.'))
       await queryClient.invalidateQueries({
         queryKey: ['customer-export-jobs'],
@@ -107,6 +144,8 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
       toast.error(
         error instanceof Error ? error.message : t('Unable to submit export.')
       )
+    } finally {
+      setBusyJobId(undefined)
     }
   }
 
@@ -125,6 +164,24 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
           </SheetDescription>
         </SheetHeader>
         <div className='flex-1 space-y-3 overflow-y-auto px-4 pb-6'>
+          {props.children}
+          {activeJobId && focusedQuery.isError && (
+            <ErrorState
+              title={t('Unable to load export jobs.')}
+              onRetry={() => void focusedQuery.refetch()}
+            />
+          )}
+          {activeJobId && focusedQuery.data && (
+            <section className='space-y-2' aria-live='polite'>
+              <h2 className='text-sm font-medium'>{t('Current export')}</h2>
+              <ExportJobCard
+                job={focusedQuery.data}
+                busy={!!busyJobId}
+                onCancel={() => handleCancel(focusedQuery.data)}
+                onResubmit={() => handleResubmit(focusedQuery.data)}
+              />
+            </section>
+          )}
           {jobsQuery.isPending && <LoadingState />}
           {jobsQuery.isError && (
             <ErrorState
@@ -138,14 +195,17 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
             </p>
           )}
           {props.open &&
-            jobs.map((job) => (
-              <ExportJobCard
-                key={job.job_id}
-                job={job}
-                onCancel={() => handleCancel(job)}
-                onResubmit={() => handleResubmit(job)}
-              />
-            ))}
+            jobs
+              .filter((job) => job.job_id !== focusedQuery.data?.job_id)
+              .map((job) => (
+                <ExportJobCard
+                  key={job.job_id}
+                  job={job}
+                  busy={!!busyJobId}
+                  onCancel={() => handleCancel(job)}
+                  onResubmit={() => handleResubmit(job)}
+                />
+              ))}
         </div>
         <div className='p-4'>
           <BillingPagination
@@ -220,10 +280,31 @@ function exportTypeLabel(
   }
 }
 
+function exportAudienceLabel(
+  job: CustomerExportJobView,
+  translate: (key: string, params?: { id: number }) => string
+): string {
+  if (job.job_type === 'usage_summary' && job.target_user_id === 0) {
+    return translate(
+      job.filters.usage_view === 'customers'
+        ? 'Customer usage'
+        : 'Upstream usage'
+    )
+  }
+  if (
+    job.job_type === 'upstream_summary' ||
+    job.job_type === 'upstream_details'
+  ) {
+    return translate('Upstream usage')
+  }
+  return translate('Customer #{{id}}', { id: job.target_user_id })
+}
+
 function ExportJobCard(props: {
   job: CustomerExportJobView
   onCancel: () => void
   onResubmit: () => void
+  busy: boolean
 }) {
   const { t } = useTranslation()
   const { job } = props
@@ -239,13 +320,7 @@ function ExportJobCard(props: {
   return (
     <article
       className='rounded-lg border p-3'
-      aria-label={
-        job.job_type === 'upstream_details' ||
-        job.job_type === 'upstream_summary' ||
-        (job.job_type === 'usage_summary' && job.target_user_id === 0)
-          ? exportTypeLabel(job, t)
-          : t('Customer #{{id}}', { id: job.target_user_id })
-      }
+      aria-label={exportAudienceLabel(job, t)}
     >
       <div className='flex items-center justify-between gap-2'>
         <span className='text-sm font-medium'>{exportTypeLabel(job, t)}</span>
@@ -254,15 +329,14 @@ function ExportJobCard(props: {
         </Badge>
       </div>
       <div className='text-muted-foreground mt-1 space-y-0.5 text-xs'>
-        <p className='font-medium'>
-          {job.job_type === 'upstream_details' ||
-          job.job_type === 'upstream_summary' ||
-          (job.job_type === 'usage_summary' && job.target_user_id === 0)
-            ? exportTypeLabel(job, t)
-            : t('Customer #{{id}}', { id: job.target_user_id })}
-        </p>
+        <p className='font-medium'>{exportAudienceLabel(job, t)}</p>
         <p>
           {period} · {job.filters.timezone}
+        </p>
+        <p>
+          {t('Created {{time}}', {
+            time: formatTimestampToDate(job.created_at),
+          })}
         </p>
         {job.filters.upstream && (
           <p className='break-all'>
@@ -270,9 +344,9 @@ function ExportJobCard(props: {
           </p>
         )}
         <ExportScope job={job} />
-        {job.filters.model_name && (
+        {(job.filters.model_name || job.job_type === 'usage_summary') && (
           <p>
-            {t('Model')}: {job.filters.model_name}
+            {t('Model')}: {job.filters.model_name || t('All models')}
           </p>
         )}
         {(job.status === 'running' || job.status === 'cancelling') && (
@@ -303,12 +377,9 @@ function ExportJobCard(props: {
               })}
             </p>
           )}
-        {job.status === 'failed' && job.error_code === 'queue_timeout' && (
-          <p className='text-destructive'>{t('Queue wait budget exceeded.')}</p>
-        )}
         {job.status === 'failed' && (
           <p className='text-destructive'>
-            {t('Export failed. You can submit it again later.')}
+            {t(exportFailureMessage(job.error_code))}
           </p>
         )}
       </div>
@@ -319,15 +390,20 @@ function ExportJobCard(props: {
           <Button
             variant='outline'
             size='sm'
-            disabled={cancelling}
+            disabled={cancelling || props.busy}
             onClick={props.onCancel}
           >
             {cancelling ? t('Cancelling') : t('Cancel')}
           </Button>
         )}
         {(job.status === 'failed' || job.status === 'expired') && (
-          <Button size='sm' variant='outline' onClick={props.onResubmit}>
-            {t('Regenerate')}
+          <Button
+            size='sm'
+            variant='outline'
+            disabled={props.busy}
+            onClick={props.onResubmit}
+          >
+            {t('Regenerate with original filters')}
           </Button>
         )}
       </div>
@@ -336,6 +412,23 @@ function ExportJobCard(props: {
         job.artifact.files.length > 0 && <ExportFiles jobId={job.job_id} />}
     </article>
   )
+}
+
+function exportFailureMessage(code?: string): string {
+  switch (code) {
+    case 'format_changed':
+      return 'Export format changed. Generate a new file using the current format.'
+    case 'budget_exceeded':
+      return 'Export exceeded the processing limit. Try a smaller scope.'
+    case 'queue_timeout':
+      return 'Queue wait budget exceeded.'
+    case 'storage_unavailable':
+      return 'Export storage is unavailable. Contact an administrator before retrying.'
+    case 'authorization_or_lease':
+      return 'Export access or execution expired. Check your permissions before retrying.'
+    default:
+      return 'Export failed. You can submit it again later.'
+  }
 }
 
 function ExportScope({ job }: { job: CustomerExportJobView }) {

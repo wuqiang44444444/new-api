@@ -238,6 +238,9 @@ export type ProviderUrlChannelGroupSummary = {
   known_reference_amount?: number
   channel_id: number
   channel_name: string
+  upstream_name?: string
+  deleted?: boolean
+  model_count?: number
   discount: ProviderDiscount | null
   updated_at?: number
   updated_by?: number
@@ -267,29 +270,6 @@ export type ProviderUrlChannelModelSummary = {
   estimate_reasons?: string[]
 }
 
-export type ProviderUrlGroupSummary = {
-  usage_only?: boolean
-  known_original_amount?: number
-  known_reference_amount?: number
-  url_key: string
-  display_name: string
-  custom_name?: string
-  base_url?: string
-  unidentified?: boolean
-  deleted?: boolean
-  channel_ids: number[]
-  channel_count: number
-  model_count: number
-  usage: ProviderUsage
-  channels: ProviderUrlChannelGroupSummary[]
-  data_quality?: BillingDataQuality
-  original_amount?: number
-  reference_amount?: number
-  reference_known: boolean
-  discount_pending_channels: number
-  estimate_reasons?: string[]
-}
-
 export type ProviderUrlSummary = {
   page: number
   page_size: number
@@ -297,7 +277,6 @@ export type ProviderUrlSummary = {
   model_count: number
   channels: ProviderUrlChannelGroupSummary[]
   models: ProviderUrlChannelModelSummary[]
-  url_groups: ProviderUrlGroupSummary[]
   data_quality?: BillingDataQuality
 }
 

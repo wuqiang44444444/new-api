@@ -1,7 +1,6 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
@@ -16,12 +15,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatCustomerStatementQuota } from '@/features/billing-reconciliation/lib'
 
 import {
-  createUsageAdminExport,
   getAdminUsageCustomerSummary,
   getAdminUsageCustomers,
   getAdminUsageUpstreamSummary,
 } from './api'
 import { CustomerUsageTable, DayTotalsTable } from './customer-usage-table'
+import { UsageExportButton } from './export-button'
 import {
   UsageCallsCell,
   UsageTokensCell,
@@ -73,11 +72,6 @@ export function AdminUsage(props: {
             })
           }
         />
-        {props.section === 'upstream' && (
-          <AdminExportButton
-            body={{ period: props.period, date, view: 'upstream' }}
-          />
-        )}
       </div>
       <p className='text-muted-foreground text-sm'>
         {t('Usage coverage notice')}
@@ -95,49 +89,6 @@ export function AdminUsage(props: {
         </TabsContent>
       </Tabs>
     </div>
-  )
-}
-
-// Admin export submission; files are delivered through the shared billing
-// export task drawer after the queue finishes generation.
-function AdminExportButton(props: {
-  body: {
-    period: 'day' | 'week'
-    date: string
-    view: 'customer' | 'customers' | 'upstream'
-    user_id?: number
-    search?: string
-  }
-}) {
-  const { t, i18n } = useTranslation()
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const response = await createUsageAdminExport({
-        ...props.body,
-        language: i18n.language.startsWith('zh') ? 'zh' : 'en',
-      })
-      if (!response.success) {
-        throw new Error(response.message)
-      }
-      return response.data
-    },
-    onSuccess: () => {
-      toast.success(
-        t('Export job queued; check billing export tasks for the file')
-      )
-    },
-    onError: (error: Error) => {
-      toast.error(error.message)
-    },
-  })
-  return (
-    <Button
-      size='sm'
-      disabled={mutation.isPending}
-      onClick={() => mutation.mutate()}
-    >
-      {t('Export CSV')}
-    </Button>
   )
 }
 
@@ -179,7 +130,9 @@ function CustomersTab(props: { period: 'day' | 'week'; date: string }) {
           className='w-56'
           onChange={(event) => setSearch(event.target.value)}
         />
-        <AdminExportButton
+        <UsageExportButton
+          ready={list.isSuccess && !list.isFetching}
+          period={list.data?.data.period}
           body={{
             period: props.period,
             date: props.date,
@@ -277,7 +230,10 @@ function CustomersTab(props: { period: 'day' | 'week'; date: string }) {
               {t('Customer #{{id}} usage', { id: selectedUser })}
             </span>
             <div className='flex items-center gap-2'>
-              <AdminExportButton
+              <UsageExportButton
+                ready={detail.isSuccess && !detail.isFetching}
+                period={detail.data?.data.period}
+                customerView={detail.data?.data.result}
                 body={{
                   period: props.period,
                   date: props.date,
@@ -314,17 +270,22 @@ function UpstreamTab(props: { period: 'day' | 'week'; date: string }) {
     queryFn: () =>
       getAdminUsageUpstreamSummary({ period: props.period, date: props.date }),
   })
-  if (query.isLoading) {
-    return <LoadingState />
-  }
-  if (query.isError || !query.data) {
-    return <ErrorState />
-  }
   return (
-    <UpstreamViewGroups
-      view={query.data.data.result}
-      period={query.data.data.period}
-    />
+    <div className='space-y-4'>
+      <UsageExportButton
+        body={{ period: props.period, date: props.date, view: 'upstream' }}
+        ready={query.isSuccess && !query.isFetching}
+        period={query.data?.data.period}
+      />
+      {query.isLoading && <LoadingState />}
+      {query.isError && <ErrorState />}
+      {query.data && (
+        <UpstreamViewGroups
+          view={query.data.data.result}
+          period={query.data.data.period}
+        />
+      )}
+    </div>
   )
 }
 

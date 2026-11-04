@@ -62,6 +62,7 @@ func migrateBillingReconciliationDB() error {
 		&ProviderBillingDiscount{},
 		&ProviderBillingAudit{},
 		&ProviderChannelBillingDiscount{},
+		&ProviderChannelBillingConfig{},
 		&ProviderURLGroupDisplayName{},
 	); err != nil {
 		return err

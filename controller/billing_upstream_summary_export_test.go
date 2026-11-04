@@ -31,7 +31,11 @@ func TestUpstreamSummaryExportRejectsUnscopedAndMixedScopes(t *testing.T) {
 			}
 			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
 			assert.False(t, result.Success)
-			assert.Equal(t, "upstream summary requires one URL group", result.Message)
+			if strings.Contains(body, "https://") {
+				assert.Equal(t, "use channel_id instead of url_key", result.Message)
+			} else {
+				assert.Equal(t, "upstream summary requires one complete channel", result.Message)
+			}
 		})
 	}
 }

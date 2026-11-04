@@ -17,7 +17,7 @@ import (
 func TestUpstreamSubmissionFreezesInheritedDiscountWithoutWriting(t *testing.T) {
 	truncate(t)
 	setupCustomerExportServiceTest(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}, &model.ProviderChannelBillingConfig{}))
 	actor := model.User{Id: 9691, Username: "submission-admin", AffCode: "submit9691", Role: common.RoleAdminUser, Status: common.UserStatusEnabled}
 	require.NoError(t, model.DB.Create(&actor).Error)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, billingExportTimezone())
@@ -50,7 +50,7 @@ func TestUpstreamSubmissionFreezesInheritedDiscountWithoutWriting(t *testing.T) 
 func TestUpstreamSubmissionDoesNotReuseAnotherChannelInSameURL(t *testing.T) {
 	truncate(t)
 	setupCustomerExportServiceTest(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}, &model.ProviderChannelBillingConfig{}))
 	actor := model.User{Id: 9695, Username: "channel-scope-admin", AffCode: "scope9695", Role: common.RoleAdminUser, Status: common.UserStatusEnabled}
 	require.NoError(t, model.DB.Create(&actor).Error)
 	url := "https://scope.example"
@@ -71,7 +71,7 @@ func TestUpstreamSubmissionDoesNotReuseAnotherChannelInSameURL(t *testing.T) {
 func TestUpstreamGlobalSubmissionDoesNotScanLogsBeforeQueue(t *testing.T) {
 	truncate(t)
 	setupCustomerExportServiceTest(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}, &model.ProviderChannelBillingConfig{}))
 	actor := model.User{Id: 9697, Username: "global-scope-admin", AffCode: "global9697", Role: common.RoleAdminUser, Status: common.UserStatusEnabled}
 	require.NoError(t, model.DB.Create(&actor).Error)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, billingExportTimezone())
@@ -105,7 +105,7 @@ func TestUpstreamGlobalSubmissionDoesNotScanLogsBeforeQueue(t *testing.T) {
 func TestUpstreamSubmissionRetryKeepsOriginalLogBoundary(t *testing.T) {
 	truncate(t)
 	setupCustomerExportServiceTest(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}, &model.ProviderChannelBillingConfig{}))
 	actor := model.User{Id: 9693, Username: "retry-admin", AffCode: "retry9693", Role: common.RoleAdminUser, Status: common.UserStatusEnabled}
 	require.NoError(t, model.DB.Create(&actor).Error)
 	require.NoError(t, model.DB.Create(&model.Channel{Id: 9693, Name: "retry"}).Error)

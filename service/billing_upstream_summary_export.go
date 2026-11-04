@@ -152,12 +152,25 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 				grouping = "无法识别 URL，按渠道单独保留"
 			}
 		}
+		identity, name := filters.Upstream.URLKey, filters.Upstream.GroupName
+		if identity == "" {
+			identity, name, grouping = strconv.Itoa(channelID), channel.UpstreamName, "Channel ID"
+			if filters.Language == "zh" {
+				grouping = "按渠道 ID"
+			}
+			writer.header[3] = "Channel scope"
+			writer.header[len(writer.header)-1] = "Grouping basis"
+			if filters.Language == "zh" {
+				writer.header[3] = "渠道范围"
+				writer.header[len(writer.header)-1] = "归组依据"
+			}
+		}
 		record := []string{
 			job.JobID,
 			formatExportTimestamp(filters.StartTimestamp),
 			formatExportTimestamp(filters.EndTimestamp),
-			exportCsvCellGuard(filters.Upstream.URLKey),
-			exportCsvCellGuard(filters.Upstream.GroupName),
+			exportCsvCellGuard(identity),
+			exportCsvCellGuard(name),
 			strconv.Itoa(channelID),
 			exportCsvCellGuard(channel.Name),
 			exportCsvCellGuard(row.ProviderModel),

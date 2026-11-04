@@ -117,7 +117,8 @@ func billingStatementTaskFacts(log billingReconciliationLog, other, snapshot map
 				units = nil
 			}
 		}
-		parsed.billingMode = BillingStatementExpressionMode(string(expression), units)
+		unit := billingBreakdownString(billingReconciliationSnapshotRaw(snapshot, other, "billing_unit"))
+		parsed.billingMode = BillingStatementSettledExpressionMode(string(expression), units, unit)
 		return
 	}
 	// Version 1 task snapshots forced per_call even when model_price was zero.

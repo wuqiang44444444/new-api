@@ -71,11 +71,10 @@ export async function getAdminCustomerStatements(
   return response.data
 }
 
-// 统一上游对账：URL 分组汇总 + 原价/折后参考金额 + 渠道月度折扣编辑区。
+// 上游对账按渠道读取；配置编辑独立放在渠道管理。
 export async function getAdminUpstreamReconciliation(
   params: PeriodParams & {
-    url_key?: string
-    level?: 'groups' | 'channels' | 'models' | 'options'
+    level?: 'channels' | 'models' | 'options'
     channel_id?: number
     search?: string
     page?: number
@@ -100,49 +99,9 @@ export async function getAdminUpstreamReconciliation(
   return response.data
 }
 
-export async function putAdminUpstreamDiscount(payload: {
-  period_start: number
-  channel_id: number
-  discount: string
-  expected_version: number
-}) {
-  const response = await api.put<ApiResponse<unknown>>(
-    '/api/billing/admin/upstream-discounts',
-    payload
-  )
-  return response.data
-}
-
-// 上游名称：按 URL 分组键保存或清空（空名称恢复默认安全 URL 展示）。
-export async function putAdminUpstreamURLName(payload: {
-  url_key: string
-  name: string
-}) {
-  const response = await api.put<ApiResponse<unknown>>(
-    '/api/billing/admin/upstream-url-names',
-    payload
-  )
-  return response.data
-}
-
-export async function postAdminUpstreamDiscountInit(payload: {
-  period_start: number
-  channel_ids?: number[]
-  end_timestamp?: number
-}) {
-  const response = await api.post<
-    ApiResponse<{
-      outcomes?: Array<{ channel_id: number; outcome: string }>
-      counts?: Record<string, number>
-    }>
-  >('/api/billing/admin/upstream-discounts/initialize', payload)
-  return response.data
-}
-
 export async function getAdminUpstreamDetails(
   params: PeriodParams & {
     channel_id?: number
-    url_key?: string
     evidence_filter?: string
     model_name?: string
     provider_model_fallback?: boolean

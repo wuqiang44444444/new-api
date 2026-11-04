@@ -202,6 +202,9 @@ export const TASK_STATUS = {
   QUEUED: 'QUEUED', // 排队中
   UNKNOWN: 'UNKNOWN', // 未知
   RECONCILIATION_REQUIRED: 'RECONCILIATION_REQUIRED', // 状态待核对
+  CANCELLED: 'CANCELLED',
+  EXPIRED: 'EXPIRED',
+  PROVIDER_CONTRACT_FAILURE: 'PROVIDER_CONTRACT_FAILURE',
 } as const
 
 /**
@@ -318,6 +321,12 @@ export const TASK_STATUS_MAPPINGS: Record<string, StatusMapping> = {
   [TASK_STATUS.FAILURE]: { label: 'Failed', variant: 'red' },
   [TASK_STATUS.QUEUED]: { label: 'Queued', variant: 'orange' },
   [TASK_STATUS.UNKNOWN]: { label: 'Unknown', variant: 'neutral' },
+  [TASK_STATUS.CANCELLED]: { label: 'Cancelled', variant: 'neutral' },
+  [TASK_STATUS.EXPIRED]: { label: 'Expired', variant: 'amber' },
+  [TASK_STATUS.PROVIDER_CONTRACT_FAILURE]: {
+    label: 'Upstream response invalid',
+    variant: 'red',
+  },
   [TASK_STATUS.RECONCILIATION_REQUIRED]: {
     label: 'Status pending verification',
     variant: 'amber',

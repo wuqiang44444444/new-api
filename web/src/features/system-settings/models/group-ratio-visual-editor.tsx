@@ -31,6 +31,7 @@ import {
   useMemo,
   useEffect,
   useCallback,
+  useRef,
   memo,
   type ReactNode,
 } from 'react'
@@ -104,6 +105,7 @@ type GroupRatioVisualEditorProps = {
   maxTokenAutoGroupsField: ReactNode
   groupSpecialUsableGroup: string
   onChange: (field: string, value: string) => void
+  onPricingValidationChange?: (error: string | null) => void
 }
 
 type GroupPricingRow = {
@@ -166,7 +168,7 @@ function buildGroupPricingRows(
   const ratioMap = parseRatioMap(groupRatio)
   const usableMap = parseUsableMap(userUsableGroups)
   const topupMap = parseRatioMap(topupGroupRatio)
- const descriptionMap = parseUsableMap(groupDescriptions)
+  const descriptionMap = parseUsableMap(groupDescriptions)
   const names = new Set([
     ...Object.keys(ratioMap),
     ...Object.keys(usableMap),
@@ -186,14 +188,14 @@ function buildGroupPricingRows(
 function serializeGroupPricingRows(rows: GroupPricingRow[]) {
   const groupRatio: Record<string, number> = {}
   const userUsableGroups: Record<string, string> = {}
- const groupDescriptions: Record<string, string> = {}
+  const groupDescriptions: Record<string, string> = {}
   const topupGroupRatio: Record<string, number> = {}
 
   for (const row of rows) {
     const name = row.name.trim()
     if (!name) continue
     groupRatio[name] = normalizeRatio(row.ratio)
- if(row.description.trim()) groupDescriptions[name] = row.description
+    if (row.description.trim()) groupDescriptions[name] = row.description
     if (row.selectable) {
       userUsableGroups[name] = row.description
     }
@@ -204,31 +206,21 @@ function serializeGroupPricingRows(rows: GroupPricingRow[]) {
   }
 
   return {
-    GroupDescriptions: JSON.stringify(groupDescriptions,null,2),
+    GroupDescriptions: JSON.stringify(groupDescriptions, null, 2),
     GroupRatio: JSON.stringify(groupRatio, null, 2),
     UserUsableGroups: JSON.stringify(userUsableGroups, null, 2),
     TopupGroupRatio: JSON.stringify(topupGroupRatio, null, 2),
   }
 }
 
-function groupPricingSignature(rows: GroupPricingRow[]): string {
-  const serialized = serializeGroupPricingRows(rows)
-  return JSON.stringify({
-    groupDescriptions: parseUsableMap(serialized.GroupDescriptions),
-    groupRatio: parseRatioMap(serialized.GroupRatio),
-    userUsableGroups: parseUsableMap(serialized.UserUsableGroups),
-    topupGroupRatio: parseRatioMap(serialized.TopupGroupRatio),
-  })
-}
-
 function sourceGroupPricingSignature(
   groupRatio: string,
   userUsableGroups: string,
   topupGroupRatio: string,
- groupDescriptions = '{}'
+  groupDescriptions = '{}'
 ): string {
   return JSON.stringify({
-    groupDescriptions: {...parseUsableMap(userUsableGroups),...parseUsableMap(groupDescriptions)},
+    groupDescriptions: parseUsableMap(groupDescriptions),
     groupRatio: parseRatioMap(groupRatio),
     userUsableGroups: parseUsableMap(userUsableGroups),
     topupGroupRatio: parseRatioMap(topupGroupRatio),
@@ -288,6 +280,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   maxTokenAutoGroupsField,
   groupSpecialUsableGroup,
   onChange,
+  onPricingValidationChange,
 }: GroupRatioVisualEditorProps) {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
@@ -377,9 +370,10 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
       </div>
       <TabsContent value='pricing' keepMounted>
         <GroupPricingTable
+          onValidationChange={onPricingValidationChange}
           groupRatio={groupRatio}
           userUsableGroups={userUsableGroups}
- groupDescriptions={groupDescriptions}
+          groupDescriptions={groupDescriptions}
           topupGroupRatio={topupGroupRatio}
           onChange={onChange}
           onShowDetail={setDetailGroup}
@@ -474,7 +468,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
         registry={registry}
         topupGroupRatio={topupGroupRatio}
         userUsableGroups={userUsableGroups}
- groupDescriptions={groupDescriptions}
+        groupDescriptions={groupDescriptions}
         groupGroupRatio={groupGroupRatio}
         autoGroups={autoGroupsList}
         groupSpecialUsableGroup={groupSpecialUsableGroup}
@@ -490,6 +484,28 @@ type GroupPricingTableProps = {
   topupGroupRatio: string
   onChange: (field: string, value: string) => void
   onShowDetail: (name: string) => void
+  onValidationChange?: (error: string | null) => void
+}
+
+function validateGroupPricingRows(rows: GroupPricingRow[]): string | null {
+  const names = new Set<string>()
+  for (const row of rows) {
+    const name = row.name.trim()
+    if (!name) return 'Enter a name for every pricing group.'
+    if (names.has(name)) return 'Pricing group names must be unique.'
+    names.add(name)
+    if (
+      !row.ratio.trim() ||
+      !Number.isFinite(Number(row.ratio)) ||
+      Number(row.ratio) < 0 ||
+      (row.topupRatio.trim() !== '' &&
+        (!Number.isFinite(Number(row.topupRatio)) ||
+          Number(row.topupRatio) < 0))
+    ) {
+      return 'Enter a non-negative ratio for every pricing group.'
+    }
+  }
+  return null
 }
 
 function GroupPricingTable({
@@ -499,41 +515,65 @@ function GroupPricingTable({
   topupGroupRatio,
   onChange,
   onShowDetail,
+  onValidationChange,
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState<GroupPricingRow[]>(() =>
-    buildGroupPricingRows(groupRatio, userUsableGroups, topupGroupRatio,groupDescriptions)
-  )
-
-  useEffect(() => {
-    const incomingSignature = sourceGroupPricingSignature(
+    buildGroupPricingRows(
       groupRatio,
       userUsableGroups,
-      topupGroupRatio,groupDescriptions
+      topupGroupRatio,
+      groupDescriptions
     )
-    setRows((currentRows) => {
-      if (groupPricingSignature(currentRows) === incomingSignature) {
-        return currentRows
-      }
-      return buildGroupPricingRows(
-        groupRatio,
-        userUsableGroups,
-        topupGroupRatio,groupDescriptions
-      )
-    })
-  }, [groupRatio, userUsableGroups, topupGroupRatio,groupDescriptions])
+  )
+  const sourceSignature = sourceGroupPricingSignature(
+    groupRatio,
+    userUsableGroups,
+    topupGroupRatio,
+    groupDescriptions
+  )
+  const lastSourceSignature = useRef(sourceSignature)
+
+  useEffect(() => {
+    if (lastSourceSignature.current === sourceSignature) return
+    lastSourceSignature.current = sourceSignature
+    const nextRows = buildGroupPricingRows(
+      groupRatio,
+      userUsableGroups,
+      topupGroupRatio,
+      groupDescriptions
+    )
+    setRows(nextRows)
+    onValidationChange?.(validateGroupPricingRows(nextRows))
+  }, [
+    sourceSignature,
+    groupRatio,
+    userUsableGroups,
+    topupGroupRatio,
+    groupDescriptions,
+    onValidationChange,
+  ])
 
   const emitRows = useCallback(
     (nextRows: GroupPricingRow[]) => {
       setRows(nextRows)
+      onValidationChange?.(validateGroupPricingRows(nextRows))
       const serialized = serializeGroupPricingRows(nextRows)
+      // Acknowledging our own form update must not rebuild editable rows: empty
+      // names, partial numbers, composition and stable row IDs belong to the draft.
+      lastSourceSignature.current = sourceGroupPricingSignature(
+        serialized.GroupRatio,
+        serialized.UserUsableGroups,
+        serialized.TopupGroupRatio,
+        serialized.GroupDescriptions
+      )
       onChange('GroupDescriptions', serialized.GroupDescriptions)
       onChange('GroupRatio', serialized.GroupRatio)
       onChange('UserUsableGroups', serialized.UserUsableGroups)
       onChange('TopupGroupRatio', serialized.TopupGroupRatio)
     },
-    [onChange]
+    [onChange, onValidationChange]
   )
 
   const updateRow = useCallback(
@@ -739,15 +779,15 @@ function GroupPricingTable({
                 header: t('Description'),
                 className: 'min-w-56',
                 cell: (row) => (
-                    <Input
-                      value={row.description}
-                      aria-label={t('Group description')}
-                      placeholder={t('Group description')}
-                      onChange={(event) =>
-                        updateRow(row._id, 'description', event.target.value)
-                      }
-                    />
-                  ),
+                  <Input
+                    value={row.description}
+                    aria-label={t('Group description')}
+                    placeholder={t('Group description')}
+                    onChange={(event) =>
+                      updateRow(row._id, 'description', event.target.value)
+                    }
+                  />
+                ),
               },
               {
                 id: 'actions',

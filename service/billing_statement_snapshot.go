@@ -52,7 +52,7 @@ func appendBillingStatementIdentitySnapshotWithMode(other *model.LogOther, origi
 		billingMode = model.BillingReconciliationModeUnknown
 		if expression, err := base64.StdEncoding.DecodeString(encoded); err == nil {
 			units, _ := values["usage_units"].(map[string]string)
-			billingMode = model.BillingStatementExpressionMode(string(expression), units)
+			billingMode = model.BillingStatementSettledExpressionMode(string(expression), units, values["billing_unit"])
 		}
 	}
 	snapshot := map[string]interface{}{
@@ -65,6 +65,7 @@ func appendBillingStatementIdentitySnapshotWithMode(other *model.LogOther, origi
 		"model_price", "model_ratio", "completion_ratio", "cache_ratio",
 		"group_ratio", "user_group_ratio", "expr_b64", "usage_units",
 		"contract_discount", "contract_id", "contract_version", "contract_name", "contract_applicable",
+		"billing_unit", "fixed_price", "image_count", "usd_exchange_rate",
 	} {
 		if value, exists := values[key]; exists {
 			snapshot[key] = value

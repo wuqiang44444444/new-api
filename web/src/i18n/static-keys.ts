@@ -19,6 +19,17 @@ For commercial licensing, please contact support@quantumnous.com
 // Static translation keys that don't get picked up by the t('...') regex.
 // These cover dynamic labels (e.g. constants, configs) that are passed into t at runtime.
 export const STATIC_I18N_KEYS = [
+  'Upstream response invalid',
+  'Error log cleanup',
+  // Pricing draft validation and safe export failure categories.
+  'Enter a name for every pricing group.',
+  'Pricing group names must be unique.',
+  'Enter a non-negative ratio for every pricing group.',
+  'Export format changed. Generate a new file using the current format.',
+  'Export exceeded the processing limit. Try a smaller scope.',
+  'Export storage is unavailable. Contact an administrator before retrying.',
+  'Export access or execution expired. Check your permissions before retrying.',
+  'Model filters require a customer usage view and a model name of at most 255 bytes.',
   // Request evidence cleanup results and health alerts.
   'Request evidence cleanup',
   'Evidence cleanup monitoring',

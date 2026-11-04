@@ -34,7 +34,7 @@ func setupBillingURLNameControllerTest(t *testing.T) *gorm.DB {
 	})
 	model.DB, model.LOG_DB = db, db
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
-	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}))
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}, &model.ProviderChannelBillingConfig{}, &model.Log{}))
 	gin.SetMode(gin.TestMode)
 	return db
 }
@@ -43,7 +43,7 @@ func newBillingAdminTestRouter() *gin.Engine {
 	router := gin.New()
 	router.Use(func(c *gin.Context) { c.Set("id", 9); c.Set("role", common.RoleRootUser) })
 	router.PUT("/discounts", PutAdminProviderBillingDiscount)
-	router.PUT("/names", PutAdminUpstreamURLGroupName)
+	router.PUT("/names", PutAdminChannelBillingName)
 	return router
 }
 
@@ -87,66 +87,43 @@ func TestPutAdminProviderBillingDiscountSavesWithoutReason(t *testing.T) {
 	assert.Equal(t, model.ReasonChannelDiscountManualUpdate, discount.Reason)
 }
 
-func TestPutAdminUpstreamURLGroupNameValidatesAndPersists(t *testing.T) {
+func TestPutAdminChannelBillingNameValidatesAndAudits(t *testing.T) {
 	db := setupBillingURLNameControllerTest(t)
+	require.NoError(t, db.Create(&model.Channel{Id: 24, Name: "channel"}).Error)
 	router := newBillingAdminTestRouter()
-
-	recorder := putBillingAdminJSON(router, "/names", `{"url_key":"https://api.example.com","name":"Primary upstream"}`)
-	require.Equal(t, 200, recorder.Code, recorder.Body.String())
-	require.Equal(t, "Primary upstream", loadURLGroupName(t, db, "https://api.example.com"))
-
-	// Invalid grouping keys are rejected before any write.
-	recorder = putBillingAdminJSON(router, "/names", `{"url_key":"not a url","name":"x"}`)
-	assert.Contains(t, recorder.Body.String(), `"success":false`)
-	var rows int64
-	require.NoError(t, db.Model(&model.ProviderURLGroupDisplayName{}).Count(&rows).Error)
-	assert.EqualValues(t, 1, rows, "the rejected key must not persist anything")
-
-	// An empty name clears the alias.
-	recorder = putBillingAdminJSON(router, "/names", `{"url_key":"https://api.example.com","name":"  "}`)
-	require.Equal(t, 200, recorder.Code, recorder.Body.String())
-	assert.Empty(t, loadURLGroupName(t, db, "https://api.example.com"))
-
-	var audits []model.ProviderBillingAudit
-	require.NoError(t, db.Where("entity_type = ?", "url_group_name").Order("id").Find(&audits).Error)
-	require.Len(t, audits, 2)
-	assert.Equal(t, "create", audits[0].Action)
-	assert.Equal(t, "delete", audits[1].Action)
-}
-
-func loadURLGroupName(t *testing.T, db *gorm.DB, urlKey string) string {
-	t.Helper()
-	var row model.ProviderURLGroupDisplayName
-	err := db.Where("url_hash = ?", fmt.Sprintf("%x", common.Sha256Raw([]byte(urlKey)))).First(&row).Error
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return ""
-		}
-		t.Fatal(err)
+	for _, name := range []string{"  Supplier  ", ""} {
+		body, err := common.Marshal(map[string]any{"channel_id": 24, "name": name})
+		require.NoError(t, err)
+		response := putBillingAdminJSON(router, "/names", string(body))
+		assert.Contains(t, response.Body.String(), `"success":true`)
+		var row model.ProviderChannelBillingConfig
+		require.NoError(t, db.First(&row, "channel_id = ?", 24).Error)
+		assert.Equal(t, strings.TrimSpace(name), row.Name)
 	}
-	return row.Name
+	response := putBillingAdminJSON(router, "/names", `{"channel_id":99999,"name":"invalid"}`)
+	assert.Contains(t, response.Body.String(), `"success":false`)
+	var count int64
+	require.NoError(t, db.Model(&model.ProviderBillingAudit{}).Where("entity_type = ?", "channel_name").Count(&count).Error)
+	assert.EqualValues(t, 2, count)
 }
 
-func TestPutAdminUpstreamURLGroupNameUnicodeLengthBoundary(t *testing.T) {
+func TestPutAdminChannelBillingNameUnicodeBoundary(t *testing.T) {
 	for _, character := range []string{"A", "中", "😀"} {
 		t.Run(character, func(t *testing.T) {
 			db := setupBillingURLNameControllerTest(t)
+			require.NoError(t, db.Create(&model.Channel{Id: 24, Name: "channel"}).Error)
 			router := newBillingAdminTestRouter()
-			name := strings.Repeat(character, 255)
 			for _, size := range []int{255, 256} {
-				body, err := common.Marshal(upstreamURLGroupNameRequest{URLKey: "channel:24", Name: "  " + strings.Repeat(character, size) + "  "})
+				body, err := common.Marshal(map[string]any{"channel_id": 24, "name": "  " + strings.Repeat(character, size) + "  "})
 				require.NoError(t, err)
 				response := putBillingAdminJSON(router, "/names", string(body))
-				var result struct {
-					Success bool `json:"success"`
-				}
+				var result struct{ Success bool }
 				require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
-				require.Equal(t, size == 255, result.Success, response.Body.String())
-				assert.Equal(t, name, loadURLGroupName(t, db, "channel:24"))
+				assert.Equal(t, size == 255, result.Success)
 			}
-			var count int64
-			require.NoError(t, db.Model(&model.ProviderBillingAudit{}).Count(&count).Error)
-			assert.EqualValues(t, 1, count)
+			var row model.ProviderChannelBillingConfig
+			require.NoError(t, db.First(&row, "channel_id = ?", 24).Error)
+			assert.Equal(t, strings.Repeat(character, 255), row.Name)
 		})
 	}
 }

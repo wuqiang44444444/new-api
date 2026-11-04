@@ -90,7 +90,11 @@ Anthropic 的独立缓存计数语义不采用这一 OpenAI 图片拆分。
 
 图片缓存表达式的消费日志保存 `image_cache_tokens` 与 `billing_tokens`，后者由结算结果携带，
 通过公共日志注入记录实际参与结算的计价用量，覆盖文本、audio 和 realtime 入口。
-求值失败回退预扣时不伪造实际用量；固定价格和未引用 `img_cr` 的表达式不新增这些字段。
+表达式引用 `img`、`img_o` 或 `img_cr` 时，消费日志均保存实际结算采用的 `billing_tokens` 分项，
+不因没有图片缓存变量而漏掉图片输入/输出用量。求值失败回退预扣时不伪造实际用量；固定价格和未引用
+图片计量变量的表达式不新增这些分项。日志的账单快照在表达式及客户合同事实齐备后刷新，计费模式
+固定价/Token 条件树以实际命中的 `billing_unit` 为准，不以整条表达式推断该笔分支；任务仍按冻结
+计量单位区分 Token/秒，不能将引擎的通用 token 单位直接解释为任务 Token。写入和账单读取共用分类。
 文本/图片日志的 `cache_tokens` 继续保留上游缓存总量。Images 的 `output_tokens` 是图片输出，
 内置图片价格使用 `c`，无需上游额外报告 `output_tokens_details.image_tokens`。
 

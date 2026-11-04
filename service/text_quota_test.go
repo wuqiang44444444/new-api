@@ -100,6 +100,7 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 	const flat = `tier("request", fixed(0.01))`
 	const startingQuota = 2_000_000
 	const imageExpression = `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`
+	const imageOutputExpression = `tier("image", p * 2 + img_o * 8 + c * 30)`
 	imageUsage := &dto.Usage{PromptTokens: 1000, CompletionTokens: 100, TotalTokens: 1100,
 		PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 300, ImageTokens: 600, CachedTokensDetails: &dto.CachedTokenDetails{ImageTokens: common.GetPointer(200)}}}
 	operation_setting.SetToolPriceForTest("fixed_billing_tool", 4)
@@ -130,6 +131,7 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 		{name: "failed request refunds exactly once", expression: flat, refund: true},
 		{name: "insufficient wallet never reserves tokens", expression: flat, insufficient: true},
 		{name: "image cache stream settles usage and refunds unused reservation", expression: imageExpression, estimate: 10000, usage: imageUsage, stream: true, want: 4113, unit: billingexpr.BillingUnitToken},
+		{name: "image output meters remain independently reproducible", expression: imageOutputExpression, estimate: 10000, usage: &dto.Usage{PromptTokens: 100, CompletionTokens: 300, TotalTokens: 400, CompletionTokenDetails: dto.OutputTokenDetails{ImageTokens: 200}}, want: 2400, unit: billingexpr.BillingUnitToken},
 		{name: "audio settlement records image cache billing inputs", expression: imageExpression, estimate: 10000, usage: imageUsage, audio: true, want: 4113, unit: billingexpr.BillingUnitToken},
 		{name: "realtime records actual expression inputs", expression: imageExpression, estimate: 10000, usage: imageUsage, realtime: true, want: 4000, unit: billingexpr.BillingUnitToken},
 		{name: "image cache insufficient wallet never reserves tokens", expression: imageExpression, estimate: 10000, insufficient: true},
@@ -245,6 +247,17 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 					var other map[string]any
 					require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
 					assert.Equal(t, string(tc.unit), other["billing_unit"])
+					admin, ok := other["admin_info"].(map[string]any)
+					require.True(t, ok)
+					snapshot, ok := admin["statement_snapshot"].(map[string]any)
+					require.True(t, ok)
+					assert.Equal(t, other["expr_b64"], snapshot["expr_b64"], "snapshot must use the settled expression on text, audio and realtime paths")
+					assert.Equal(t, other["contract_applicable"], snapshot["contract_applicable"])
+					if tc.unit == billingexpr.BillingUnitRequest {
+						assert.Equal(t, "per_call", snapshot["billing_mode"])
+					} else {
+						assert.Equal(t, "token", snapshot["billing_mode"])
+					}
 					if tc.requestedImages > 0 {
 						count := tc.actualImages
 						if count == 0 {
@@ -273,6 +286,11 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 							assert.Equal(t, float64(100), billable["cr"])
 							assert.Equal(t, float64(400), billable["img"])
 						}
+					} else if tc.expression == imageOutputExpression {
+						billable, ok := other["billing_tokens"].(map[string]any)
+						require.True(t, ok)
+						assert.Equal(t, float64(200), billable["img_o"])
+						assert.Equal(t, float64(100), billable["c"])
 					} else {
 						assert.NotContains(t, other, "billing_tokens")
 						assert.NotContains(t, other, "image_cache_tokens")

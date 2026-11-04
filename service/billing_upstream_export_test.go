@@ -17,7 +17,7 @@ import (
 func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 	truncate(t)
 	store := setupCustomerExportServiceTest(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}, &model.ProviderChannelBillingConfig{}))
 	actor := model.User{Id: 9601, Username: "upstream-export-admin", AffCode: "up-export", Role: common.RoleRootUser, Status: common.UserStatusEnabled}
 	require.NoError(t, model.DB.Create(&actor).Error)
 	require.NoError(t, model.DB.Create(&model.Channel{Id: 9601, Name: "=channel"}).Error)
@@ -162,7 +162,7 @@ func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 func TestUpstreamEvidenceExportFreezesGlobalCategoryAndResubmission(t *testing.T) {
 	truncate(t)
 	store := setupCustomerExportServiceTest(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}, &model.ProviderChannelBillingConfig{}))
 	actor := model.User{Id: 9612, Username: "evidence-admin", AffCode: "ev-exp", Role: common.RoleAdminUser, Status: common.UserStatusEnabled}
 	require.NoError(t, model.DB.Create(&actor).Error)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, billingExportTimezone()).Unix()

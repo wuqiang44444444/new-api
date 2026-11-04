@@ -5,7 +5,8 @@ import { UpstreamViewGroups } from '../admin'
 import { CustomerUsageTable } from '../customer-usage-table'
 import type { UsageAnalyticsMetrics, UsageAnalyticsPeriod } from '../types'
 
-vi.mock('react-i18next', () => ({
+vi.mock('react-i18next', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-i18next')>()),
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 const zero: UsageAnalyticsMetrics = {

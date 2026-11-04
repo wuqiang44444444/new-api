@@ -320,3 +320,47 @@ it('distinguishes loading and errors from an empty export history', async () => 
   expect(screen.queryByText('No export jobs yet.')).toBeNull()
   expect(screen.queryByText('private network error')).toBeNull()
 })
+
+it.each([
+  [
+    'format_changed',
+    'Export format changed. Generate a new file using the current format.',
+  ],
+  [
+    'budget_exceeded',
+    'Export exceeded the processing limit. Try a smaller scope.',
+  ],
+  [
+    'storage_unavailable',
+    'Export storage is unavailable. Contact an administrator before retrying.',
+  ],
+  [
+    'authorization_or_lease',
+    'Export access or execution expired. Check your permissions before retrying.',
+  ],
+])(
+  'explains %s failures without rendering private diagnostics',
+  async (error_code, message) => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          items: [
+            jobView({
+              status: 'failed',
+              error_code,
+              error: 'private-diagnostic',
+              artifact: undefined,
+            }),
+          ],
+        },
+      },
+    })
+    await mountDrawer()
+    expect(await screen.findByText(message)).toBeVisible()
+    expect(screen.queryByText('private-diagnostic')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Regenerate with original filters' })
+    ).toBeEnabled()
+  }
+)

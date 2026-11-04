@@ -18,7 +18,7 @@ import (
 func TestUpstreamSummaryExportQueuedFrozenAndIsolated(t *testing.T) {
 	truncate(t)
 	store := setupCustomerExportServiceTest(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}, &model.ProviderChannelBillingConfig{}))
 	t.Cleanup(func() {
 		model.DB.Where("channel_id IN ?", []int{9671, 9672}).Delete(&model.ProviderChannelBillingDiscount{})
 	})
@@ -148,4 +148,55 @@ func TestUpstreamSummaryExportHonorsBatchGateAndGroupLimit(t *testing.T) {
 	cancel()
 	err = model.ScanUpstreamExportSummary(ctx, filters, model.BillingStatementReadPolicy{}, consume)
 	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestChannelSummaryExportKeepsSubmittedNamesDiscountAndScope(t *testing.T) {
+	truncate(t)
+	store := setupCustomerExportServiceTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingConfig{}, &model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}))
+	actor := model.User{Id: 9681, Username: "channel-summary-admin", AffCode: "channel-summary-admin", Role: common.RoleAdminUser, Status: common.UserStatusEnabled}
+	require.NoError(t, model.DB.Create(&actor).Error)
+	url := "https://shared.example"
+	require.NoError(t, model.DB.Create(&[]model.Channel{{Id: 9681, Name: "Original channel", BaseURL: &url}, {Id: 9682, Name: "Other channel", BaseURL: &url}}).Error)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, billingExportTimezone()).Unix()
+	end := time.Unix(start, 0).In(billingExportTimezone()).AddDate(0, 1, 0).Unix()
+	require.NoError(t, model.SaveProviderChannelBillingName(context.Background(), 9681, "Manual supplier", actor.Id))
+	discount := model.ProviderChannelBillingDiscount{PeriodStart: start, ChannelId: 9681, Discount: decimal.RequireFromString("0.8"), Reason: "manual"}
+	require.NoError(t, model.SaveProviderChannelBillingDiscount(&discount, 0, actor.Id))
+	facts := `{"test_pricing":{"version":1,"mode":"ratio","status":"settled","original_quota":100}}`
+	require.NoError(t, model.DB.Create(&[]model.Log{
+		{UserId: 42, ChannelId: 9681, Type: model.LogTypeConsume, CreatedAt: start + 1, Quota: 100, ModelName: "selected", Other: facts},
+		{UserId: 42, ChannelId: 9682, Type: model.LogTypeConsume, CreatedAt: start + 1, Quota: 100, ModelName: "outside", Other: facts},
+	}).Error)
+	job, err := SubmitUpstreamExportJob(context.Background(), actor.Id, CustomerExportRequest{JobType: model.CustomerExportJobTypeUpstreamSummary, StartTimestamp: start, EndTimestamp: end, Language: "en"}, []int{9681}, "")
+	require.NoError(t, err)
+	filters, err := job.DecodeFilters()
+	require.NoError(t, err)
+	assert.Empty(t, filters.Upstream.URLKey)
+	assert.Equal(t, "Manual supplier", filters.Upstream.Channels[9681].UpstreamName)
+	require.NoError(t, model.SaveProviderChannelBillingName(context.Background(), 9681, "Changed supplier", actor.Id))
+	discount.Discount = decimal.RequireFromString("0.5")
+	require.NoError(t, model.SaveProviderChannelBillingDiscount(&discount, 1, actor.Id))
+	require.NoError(t, model.DB.Delete(&model.Channel{}, 9681).Error)
+	claimed, err := model.ClaimNextQueuedCustomerExportJob("channel-summary-test", time.Now().Add(time.Minute).Unix(), 1800)
+	require.NoError(t, err)
+	require.NotNil(t, claimed)
+	runCustomerExportJob(context.Background(), claimed, "channel-summary-test", nil)
+	completed, err := model.GetCustomerExportJobForOwner(job.JobID, actor.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.CustomerExportJobStatusSucceeded, completed.Status, completed.Error)
+	artifact := completed.DecodeArtifact()
+	require.NotNil(t, artifact)
+	require.Len(t, artifact.Files, 1)
+	records, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(string(store.uploaded[artifact.Files[0].ObjectKey]), customerExportCsvBOM))).ReadAll()
+	require.NoError(t, err)
+	require.Len(t, records, 2, "same URL never broadens the selected channel scope")
+	assert.Equal(t, "Channel scope", records[0][3])
+	assert.Equal(t, "Grouping basis", records[0][34])
+	assert.Equal(t, "9681", records[1][3])
+	assert.Equal(t, "Manual supplier", records[1][4])
+	assert.Equal(t, "Original channel", records[1][6])
+	assert.Equal(t, "0.8", records[1][18])
+	assert.Equal(t, "1", records[1][19])
+	assert.Equal(t, "Channel ID", records[1][34])
 }

@@ -1,8 +1,6 @@
 package controller
 
 import (
-	"errors"
-
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/service"
 
@@ -17,6 +15,7 @@ type usageAnalyticsExportBody struct {
 	UserId      *int   `json:"user_id"`
 	Language    string `json:"language"`
 	Search      string `json:"search"`
+	ModelName   string `json:"model_name"`
 }
 
 // CreateUsageSelfExport accepts a usage summary export of the caller themself.
@@ -29,22 +28,23 @@ func CreateUsageSelfExport(c *gin.Context) {
 	if body.SourceJobID != "" {
 		job, err := service.ResubmitUsageAnalyticsExport(c.GetInt("id"), body.SourceJobID, true)
 		if err != nil {
-			respondUsageAnalyticsExportError(c, err)
+			common.ApiError(c, err)
 			return
 		}
 		common.ApiSuccess(c, job.ToView())
 		return
 	}
 	job, err := service.SubmitUsageAnalyticsExport(c.GetInt("id"), service.UsageAnalyticsExportRequest{
-		Period:   body.Period,
-		Date:     body.Date,
-		View:     "self",
-		UserId:   body.UserId,
-		Language: body.Language,
-		Search:   body.Search,
+		Period:    body.Period,
+		Date:      body.Date,
+		View:      "self",
+		UserId:    body.UserId,
+		Language:  body.Language,
+		Search:    body.Search,
+		ModelName: body.ModelName,
 	})
 	if err != nil {
-		respondUsageAnalyticsExportError(c, err)
+		common.ApiError(c, err)
 		return
 	}
 	common.ApiSuccess(c, job.ToView())
@@ -62,31 +62,24 @@ func CreateUsageAdminExport(c *gin.Context) {
 	if body.SourceJobID != "" {
 		job, err := service.ResubmitUsageAnalyticsExport(c.GetInt("id"), body.SourceJobID, false)
 		if err != nil {
-			respondUsageAnalyticsExportError(c, err)
+			common.ApiError(c, err)
 			return
 		}
 		common.ApiSuccess(c, job.ToView())
 		return
 	}
 	job, err := service.SubmitUsageAnalyticsExport(c.GetInt("id"), service.UsageAnalyticsExportRequest{
-		Period:   body.Period,
-		Date:     body.Date,
-		View:     body.View,
-		UserId:   body.UserId,
-		Language: body.Language,
-		Search:   body.Search,
+		Period:    body.Period,
+		Date:      body.Date,
+		View:      body.View,
+		UserId:    body.UserId,
+		Language:  body.Language,
+		Search:    body.Search,
+		ModelName: body.ModelName,
 	})
 	if err != nil {
-		respondUsageAnalyticsExportError(c, err)
+		common.ApiError(c, err)
 		return
 	}
 	common.ApiSuccess(c, job.ToView())
-}
-
-func respondUsageAnalyticsExportError(c *gin.Context, err error) {
-	if errors.Is(err, service.ErrCustomerExportInvalidRequest) {
-		common.ApiErrorMsg(c, err.Error())
-		return
-	}
-	common.ApiError(c, err)
 }

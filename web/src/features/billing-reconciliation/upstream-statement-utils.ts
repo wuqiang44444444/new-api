@@ -20,7 +20,6 @@ import type { TFunction } from 'i18next'
 
 import type {
   BillingDataQuality,
-  ProviderUrlChannelGroupSummary,
   ProviderUrlChannelModelSummary,
 } from './types'
 
@@ -508,13 +507,6 @@ export function formatStatementUsage(value: number | null, language: string) {
     maximumFractionDigits: 2,
     notation: Math.abs(value) >= 10_000 ? 'compact' : 'standard',
   }).format(value)
-}
-
-export function channelRowKey(
-  urlKey: string,
-  channel: ProviderUrlChannelGroupSummary
-) {
-  return `${urlKey}|${channel.channel_id}`
 }
 
 // Shared by summary cells, detail cells and summary CSV. A missing optional

@@ -11,7 +11,8 @@ import {
 
 const get = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/api', () => ({ api: { get } }))
-vi.mock('react-i18next', () => ({
+vi.mock('react-i18next', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-i18next')>()),
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
 }))
 

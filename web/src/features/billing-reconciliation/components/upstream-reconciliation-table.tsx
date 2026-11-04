@@ -18,16 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { ArrowDown01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
@@ -37,12 +34,10 @@ import {
   TableRow,
 } from '@/components/ui/table'
 
-import { putAdminUpstreamDiscount } from '../api'
 import { billingModeLabel, formatCustomerStatementQuota } from '../lib'
 import type {
   ProviderUrlChannelGroupSummary,
   ProviderUrlChannelModelSummary,
-  ProviderUrlGroupSummary,
 } from '../types'
 import { useUpstreamPage } from '../upstream-page-query'
 import {
@@ -51,7 +46,6 @@ import {
 } from '../upstream-reconciliation-utils'
 import {
   cacheMeterUnavailableLabel,
-  channelRowKey,
   formatStatementUsage,
   upstreamModelLabel,
 } from '../upstream-statement-utils'
@@ -120,7 +114,6 @@ export function UsageCell(props: {
 export type UpstreamDetailViewSelection = {
   evidenceFilter?: string
   evidenceLabel?: string
-  urlKey: string
   channelId?: number
   channelName?: string
   providerModel?: string
@@ -129,89 +122,21 @@ export type UpstreamDetailViewSelection = {
 }
 
 type UpstreamReconciliationTableProps = {
-  group: ProviderUrlGroupSummary
+  channels: ProviderUrlChannelGroupSummary[]
   periodStart: number
   periodEnd: number
   expandedChannels: Set<string>
   onToggleChannel: (channelKey: string) => void
+  onExportChannel: (id: number) => void
+  exporting: boolean
   onViewDetails: (props: UpstreamDetailViewSelection) => void
 }
 
-type DraftState = {
-  channelId: number
-  periodStart: number
-  expectedVersion: number
-  percent: string
-}
-
-// 信息层级：上游（卡片）→ 渠道父行 → 该渠道的上游模型 × 计费方式叶子。
-// 折扣系数、来源、版本和编辑动作都在渠道父行上，页面不再有第二张折扣表；
-// 金额、用量和数据质量均来自后端，前端不重算。
+// Read-only channel rows; manual configuration belongs in channel management.
 export function UpstreamReconciliationTable(
   props: UpstreamReconciliationTableProps
 ) {
   const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  const [draft, setDraft] = useState<DraftState | null>(null)
-
-  const saveMutation = useMutation({
-    mutationFn: async (payload: {
-      period_start: number
-      channel_id: number
-      discount: string
-      expected_version: number
-    }) => putAdminUpstreamDiscount(payload),
-    onSuccess: (response) => {
-      if (!response.success) {
-        toast.error(response.message || t('Unable to save the discount.'))
-        return
-      }
-      toast.success(t('Channel discount saved.'))
-      setDraft(null)
-      queryClient.invalidateQueries({
-        queryKey: ['billing-upstream-reconciliation'],
-      })
-    },
-    onError: (error: unknown) => {
-      const message = error instanceof Error ? error.message : ''
-      if (message.includes('409') || message.includes('conflict')) {
-        toast.error(
-          t('The discount was changed by someone else. Refresh and try again.')
-        )
-      } else {
-        toast.error(message || t('Unable to save the discount.'))
-      }
-    },
-  })
-
-  const startEdit = (channel: ProviderUrlChannelGroupSummary) => {
-    setDraft({
-      channelId: channel.channel_id,
-      periodStart: props.periodStart,
-      expectedVersion: channel.discount?.version ?? 0,
-      percent: channel.discount
-        ? String(Number(channel.discount.value) * 100)
-        : '',
-    })
-  }
-
-  const submitDraft = () => {
-    // 切换月份（含命中缓存）后旧草稿立即失效，提交前再校验账期归属。
-    if (!draft || draft.periodStart !== props.periodStart) return
-    const percent = Number(draft.percent)
-    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) {
-      toast.error(t('Enter a discount between 0% and 100% (exclusive of 0).'))
-      return
-    }
-    const coefficient = String(Number((percent / 100).toFixed(8)))
-    saveMutation.mutate({
-      period_start: draft.periodStart,
-      channel_id: draft.channelId,
-      discount: coefficient,
-      expected_version: draft.expectedVersion,
-    })
-  }
-
   return (
     // 约定滚动容器（对齐 DataTablePage fixedHeight）：双轴滚动 + sticky 表头，
     // 让横向滚动条始终停在可视区域内，而不是整张表底部的屏幕外。
@@ -248,28 +173,23 @@ export function UpstreamReconciliationTable(
           </TableRow>
         </TableHeader>
         <TableBody>
-          {props.group.channels.flatMap((channel) => {
-            const channelKey = channelRowKey(props.group.url_key, channel)
+          {props.channels.flatMap((channel) => {
+            const channelKey = String(channel.channel_id)
             const isExpanded = props.expandedChannels.has(channelKey)
             return [
               <ChannelRow
                 key={`channel-${channelKey}`}
                 channel={channel}
-                draft={draft?.channelId === channel.channel_id ? draft : null}
-                editing={saveMutation.isPending}
+                onExport={() => props.onExportChannel(channel.channel_id)}
+                exporting={props.exporting}
                 expanded={isExpanded}
-                group={props.group}
-                onDraftChange={setDraft}
                 onExpandToggle={() => props.onToggleChannel(channelKey)}
-                onSubmitDraft={submitDraft}
-                onStartEdit={() => startEdit(channel)}
                 onViewDetails={props.onViewDetails}
               />,
               isExpanded ? (
                 <ChannelModelPage
                   key={`models-${channelKey}`}
                   channel={channel}
-                  urlKey={props.group.url_key}
                   period={{
                     start_timestamp: props.periodStart,
                     end_timestamp: props.periodEnd,
@@ -286,15 +206,11 @@ export function UpstreamReconciliationTable(
 }
 
 function ChannelRow(props: {
-  group: ProviderUrlGroupSummary
+  onExport: () => void
+  exporting: boolean
   channel: ProviderUrlChannelGroupSummary
-  draft: DraftState | null
-  editing: boolean
   expanded: boolean
-  onDraftChange: (draft: DraftState | null) => void
   onExpandToggle: () => void
-  onSubmitDraft: () => void
-  onStartEdit: () => void
   onViewDetails: (props: UpstreamDetailViewSelection) => void
 }) {
   const { t } = useTranslation()
@@ -320,10 +236,14 @@ function ChannelRow(props: {
           </Button>
           <div>
             <div className='font-semibold wrap-break-word'>
-              {channel.channel_name}
+              {channel.upstream_name ||
+                channel.channel_name ||
+                t('Deleted channel')}
             </div>
             <div className='text-muted-foreground text-xs'>
-              #{channel.channel_id}
+              {channel.upstream_name ? `${channel.channel_name} · ` : ''}#
+              {channel.channel_id}
+              {channel.deleted ? ` · ${t('Deleted channel')}` : ''}
             </div>
           </div>
         </div>
@@ -389,7 +309,6 @@ function ChannelRow(props: {
         <UpstreamDataStatus
           onViewEvidence={(entry) =>
             props.onViewDetails({
-              urlKey: props.group.url_key,
               channelId: channel.channel_id,
               channelName: `${channel.channel_name} #${channel.channel_id}`,
               evidenceFilter: entry.filter,
@@ -402,64 +321,32 @@ function ChannelRow(props: {
         />
       </TableCell>
       <TableCell className='text-right'>
-        {props.draft ? (
-          <div className='flex flex-col items-stretch gap-1 sm:flex-row sm:items-center sm:justify-end'>
-            <Input
-              aria-label={t('Discount percent')}
-              className='w-24'
-              inputMode='decimal'
-              placeholder={t('Percent, e.g. 80')}
-              value={props.draft.percent}
-              onChange={(event) => {
-                if (!props.draft) return
-                props.onDraftChange({
-                  ...props.draft,
-                  percent: event.target.value,
-                })
-              }}
-            />
-            <Button
-              size='xs'
-              disabled={props.editing}
-              onClick={props.onSubmitDraft}
-            >
-              {t('Save')}
-            </Button>
-            <Button
-              variant='ghost'
-              size='xs'
-              onClick={() => props.onDraftChange(null)}
-            >
-              {t('Cancel')}
-            </Button>
-          </div>
-        ) : (
-          <div className='flex justify-end gap-1'>
-            <Button variant='link' size='xs' onClick={props.onStartEdit}>
-              {channel.discount ? t('Edit') : t('Fill in')}
-            </Button>
-            <Button
-              variant='link'
-              size='xs'
-              onClick={() =>
-                props.onViewDetails({
-                  urlKey: props.group.url_key,
-                  channelId: channel.channel_id,
-                  channelName: `${channel.channel_name} #${channel.channel_id}`,
-                })
-              }
-            >
-              {t('View details')}
-            </Button>
-          </div>
-        )}
+        <Button
+          variant='link'
+          size='xs'
+          disabled={props.exporting}
+          onClick={props.onExport}
+        >
+          {t('Export summary')}
+        </Button>
+        <Button
+          variant='link'
+          size='xs'
+          onClick={() =>
+            props.onViewDetails({
+              channelId: channel.channel_id,
+              channelName: `${channel.channel_name} #${channel.channel_id}`,
+            })
+          }
+        >
+          {t('View details')}
+        </Button>
       </TableCell>
     </TableRow>
   )
 }
 
 function ChannelModelRow(props: {
-  urlKey: string
   model: ProviderUrlChannelModelSummary
   firstModelRef?: React.Ref<HTMLTableRowElement>
   discount: ProviderUrlChannelGroupSummary['discount']
@@ -538,7 +425,6 @@ function ChannelModelRow(props: {
         <UpstreamDataStatus
           onViewEvidence={(entry) =>
             props.onViewDetails({
-              urlKey: props.urlKey,
               channelId: props.model.detail_filter.channel_id,
               providerModel: props.model.provider_model,
               providerModelFallback:
@@ -559,7 +445,6 @@ function ChannelModelRow(props: {
           size='xs'
           onClick={() =>
             props.onViewDetails({
-              urlKey: props.urlKey,
               channelId: props.model.detail_filter.channel_id,
               providerModel: props.model.provider_model,
               providerModelFallback:
@@ -577,7 +462,6 @@ function ChannelModelRow(props: {
 
 function ChannelModelPage(props: {
   channel: ProviderUrlChannelGroupSummary
-  urlKey: string
   period: { start_timestamp: number; end_timestamp: number }
   onViewDetails: (props: UpstreamDetailViewSelection) => void
 }) {
@@ -588,7 +472,6 @@ function ChannelModelPage(props: {
   const query = useUpstreamPage({
     ...props.period,
     level: 'models',
-    url_key: props.urlKey,
     channel_id: props.channel.channel_id,
     page,
     page_size: pageSize,
@@ -629,7 +512,6 @@ function ChannelModelPage(props: {
           model={model}
           firstModelRef={index === 0 ? firstModelRowRef : undefined}
           discount={props.channel.discount}
-          urlKey={props.urlKey}
           onViewDetails={(selection) =>
             props.onViewDetails({
               ...selection,

@@ -112,7 +112,6 @@ export type CustomerExportJobView = {
 
 export type CustomerExportSubmitPayload = {
   evidence_filter?: string
-  url_key?: string
   job_type: ExportJobType
   start_timestamp: number
   end_timestamp: number

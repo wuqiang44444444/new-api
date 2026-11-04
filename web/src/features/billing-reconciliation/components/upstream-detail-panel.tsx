@@ -53,7 +53,6 @@ import { UsageCell } from './upstream-reconciliation-table'
 export type UpstreamDetailSelection = {
   evidenceFilter?: string
   evidenceLabel?: string
-  urlKey?: string
   channelId?: number
   channelName?: string
   providerModel?: string
@@ -85,7 +84,6 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
         job_type: 'upstream_details',
         start_timestamp: props.period.start_timestamp,
         end_timestamp: props.period.end_timestamp + 1,
-        url_key: props.selection.urlKey,
         channel_id: props.selection.channelId,
         model_name: props.selection.providerModel,
         provider_model_fallback: props.selection.providerModelFallback,
@@ -113,7 +111,6 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
       'billing-upstream-details',
       props.period.start_timestamp,
       props.period.end_timestamp,
-      props.selection.urlKey ?? '',
       props.selection.channelId ?? 0,
       props.selection.providerModel ?? '',
       props.selection.providerModelFallback,
@@ -127,7 +124,6 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
       const response = await getAdminUpstreamDetails({
         start_timestamp: props.period.start_timestamp,
         end_timestamp: props.period.end_timestamp,
-        ...(props.selection.urlKey ? { url_key: props.selection.urlKey } : {}),
         ...(props.selection.channelId
           ? { channel_id: props.selection.channelId }
           : {}),

@@ -18,42 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 
-import type {
-  ProviderDiscount,
-  ProviderUrlGroupSummary,
-  UpstreamDetailEvent,
-} from './types'
-
-export function upstreamUrlGroupLabel(
-  group: ProviderUrlGroupSummary,
-  t: TFunction
-): string {
-  if (group.custom_name) return group.custom_name
-  if (!group.unidentified) {
-    return group.base_url || group.url_key
-  }
-  if (group.deleted) {
-    return `${t('Deleted channel')} · #${group.channel_ids.join(', #')}`
-  }
-  return group.display_name
-}
-
-// 卡片标题下的辅助行：已识别组显示安全基础 URL（设置名称后仍保留便于辨认），
-// 无法安全识别的组继续显示删除/保留提示，名称不能掩盖删除或地址不明状态。
-export function upstreamUrlGroupSubtitle(
-  group: ProviderUrlGroupSummary,
-  t: TFunction
-): string {
-  if (group.unidentified) {
-    const hints =
-      group.deleted && group.custom_name
-        ? [`${t('Deleted channel')} · #${group.channel_ids.join(', #')}`]
-        : []
-    hints.push(t('Unidentified URL — kept per channel'))
-    return hints.join(' · ')
-  }
-  return group.base_url || group.url_key
-}
+import type { ProviderDiscount, UpstreamDetailEvent } from './types'
 
 // 折扣展示：0.8 → "0.8（八折）"；null → 待填写；1 → 明确无折扣。
 // 统一综合系数不区分协议折扣和充值折扣。

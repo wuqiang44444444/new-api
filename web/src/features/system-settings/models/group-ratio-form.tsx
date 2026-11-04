@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Code2, Eye, HelpCircle } from 'lucide-react'
 import { memo, useCallback, useState, type ReactNode } from 'react'
-import { useWatch, type UseFormReturn } from 'react-hook-form'
+import { useFormState, useWatch, type UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -90,9 +90,11 @@ export const GroupRatioForm = memo(function GroupRatioForm({
 }: GroupRatioFormProps) {
   const { t } = useTranslation()
   const values = useWatch({ control: form.control })
+  const { errors: formErrors } = useFormState({ control: form.control })
   const [editMode, setEditMode] = useState<'visual' | 'json'>('visual')
   const [guideOpen, setGuideOpen] = useState(false)
   const [section, setSection] = useState<GroupSettingsSection>('pricing')
+  const [pricingError, setPricingError] = useState<string | null>(null)
 
   const handleFieldChange = useCallback(
     (field: keyof GroupFormValues, value: string) => {
@@ -105,8 +107,38 @@ export const GroupRatioForm = memo(function GroupRatioForm({
   )
 
   const toggleEditMode = useCallback(() => {
+    if (editMode === 'visual' && pricingError) {
+      setSection('pricing')
+      return
+    }
     setEditMode((prev) => (prev === 'visual' ? 'json' : 'visual'))
-  }, [])
+  }, [editMode, pricingError])
+
+  const handleSave = form.handleSubmit(
+    async (nextValues) => {
+      if (pricingError) {
+        setSection('pricing')
+        setEditMode('visual')
+        return
+      }
+      try {
+        await onSave(nextValues)
+      } catch {
+        form.setError('root', {
+          message: t(
+            'Unable to save group settings. Your changes have been kept.'
+          ),
+        })
+      }
+    },
+    (errors) => {
+      if (errors.MaxTokenAutoGroups) {
+        setEditMode('visual')
+        setSection('auto')
+        requestAnimationFrame(() => form.setFocus('MaxTokenAutoGroups'))
+      }
+    }
+  )
 
   return (
     <div className='space-y-6'>
@@ -148,24 +180,29 @@ export const GroupRatioForm = memo(function GroupRatioForm({
       <GroupPricingGuide open={guideOpen} onOpenChange={setGuideOpen} />
 
       <Form {...form}>
+        {formErrors.root?.message && (
+          <p role='alert' className='text-destructive text-sm'>
+            {formErrors.root.message}
+          </p>
+        )}
+        {pricingError && (
+          <p role='alert' className='text-destructive text-sm'>
+            {t(pricingError)}
+          </p>
+        )}
         <SettingsPageActionsPortal>
           <Button
             type='button'
             size='sm'
-            onClick={form.handleSubmit(onSave, (errors) => {
-              if (errors.MaxTokenAutoGroups) {
-                setEditMode('visual')
-                setSection('auto')
-                requestAnimationFrame(() => form.setFocus('MaxTokenAutoGroups'))
-              }
-            })}
+            onClick={handleSave}
             disabled={isSaving}
           >
             {isSaving ? t('Saving...') : t('Save group settings')}
           </Button>
         </SettingsPageActionsPortal>
-        {editMode === 'visual' ? (
+        <div hidden={editMode !== 'visual'}>
           <GroupRatioVisualEditor
+            onPricingValidationChange={setPricingError}
             section={section}
             onSectionChange={setSection}
             groupRatio={values.GroupRatio ?? ''}
@@ -231,8 +268,9 @@ export const GroupRatioForm = memo(function GroupRatioForm({
               handleFieldChange(field as keyof GroupFormValues, value)
             }
           />
-        ) : (
-          <SettingsForm onSubmit={form.handleSubmit(onSave)}>
+        </div>
+        {editMode === 'json' && (
+          <SettingsForm onSubmit={handleSave}>
             <FormField
               control={form.control}
               name='GroupRatio'

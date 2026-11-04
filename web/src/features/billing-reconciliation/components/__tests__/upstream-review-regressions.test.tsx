@@ -4,24 +4,19 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it, vi } from 'vitest'
 
 import { resolveShanghaiMonth } from '../../lib'
-import type { ProviderUrlGroupSummary } from '../../types'
-import { channelRowKey } from '../../upstream-statement-utils'
 import { UpstreamDataStatus } from '../upstream-data-status'
-import { UpstreamReconciliationView } from '../upstream-reconciliation'
 import { UpstreamReconciliationTable } from '../upstream-reconciliation-table'
-import { seedUpstreamPages, projectUpstreamPage } from './upstream-page-fixture'
+import {
+  type ProviderUrlGroupSummary,
+  seedUpstreamPages,
+  projectUpstreamPage,
+} from './upstream-page-fixture'
 
 const api = vi.hoisted(() => ({
-  save: vi.fn(),
-  init: vi.fn(),
   summary: vi.fn(),
-  saveName: vi.fn(),
 }))
 vi.mock('../../api', () => ({
-  putAdminUpstreamDiscount: api.save,
-  postAdminUpstreamDiscountInit: api.init,
   getAdminUpstreamReconciliation: api.summary,
-  putAdminUpstreamURLName: api.saveName,
 }))
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-i18next')>()),
@@ -136,10 +131,12 @@ it('shows test-only coverage and distinguishes absent cache readings from explic
   render(
     <QueryClientProvider client={client}>
       <UpstreamReconciliationTable
-        group={source}
+        channels={source.channels}
         periodEnd={resolveShanghaiMonth('2026-09').end_timestamp}
         periodStart={1}
-        expandedChannels={new Set([channelRowKey(source.url_key, channel)])}
+        expandedChannels={new Set([String(channel.channel_id)])}
+        onExportChannel={vi.fn()}
+        exporting={false}
         onToggleChannel={vi.fn()}
         onViewDetails={vi.fn()}
       />
@@ -197,10 +194,12 @@ it('shows priced channel tests as reference amount coverage', async () => {
   render(
     <QueryClientProvider client={client}>
       <UpstreamReconciliationTable
-        group={source}
+        channels={source.channels}
         periodEnd={resolveShanghaiMonth('2026-09').end_timestamp}
         periodStart={1}
-        expandedChannels={new Set([channelRowKey(source.url_key, channel)])}
+        expandedChannels={new Set([String(channel.channel_id)])}
+        onExportChannel={vi.fn()}
+        exporting={false}
         onToggleChannel={vi.fn()}
         onViewDetails={vi.fn()}
       />
@@ -220,38 +219,6 @@ it('shows priced channel tests as reference amount coverage', async () => {
     await userEvent.click(button)
   }
 })
-it('clears the discount editor when switching to a cached month', () => {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  for (const month of ['2026-08', '2026-09']) {
-    const period = resolveShanghaiMonth(month)
-    seedUpstreamPages(client, period, {
-      result: { url_groups: [group] },
-      generated_at: period.start_timestamp,
-    })
-  }
-  const view = (month: string) => (
-    <QueryClientProvider client={client}>
-      <UpstreamReconciliationView
-        month={month}
-        period={resolveShanghaiMonth(month)}
-        onMonthChange={vi.fn()}
-      />
-    </QueryClientProvider>
-  )
-  const rendered = render(view('2026-08'))
-  fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
-  fireEvent.change(screen.getByLabelText('Discount percent'), {
-    target: { value: '70' },
-  })
-  rendered.rerender(view('2026-09'))
-  expect(screen.queryByLabelText('Discount percent')).not.toBeInTheDocument()
-  expect(api.save).not.toHaveBeenCalled()
-  expect(
-    screen.getByText(/Asia\/Shanghai, 2026-09-01 00:00:00 \+08:00/)
-  ).toBeInTheDocument()
-})
 it('keeps channel totals on the parent row and fallback identity on leaf detail links', () => {
   const onViewDetails = vi.fn()
   const client = new QueryClient()
@@ -262,10 +229,10 @@ it('keeps channel totals on the parent row and fallback identity on leaf detail 
   render(
     <QueryClientProvider client={client}>
       <UpstreamReconciliationTable
-        expandedChannels={
-          new Set([channelRowKey(group.url_key, group.channels[0])])
-        }
-        group={group}
+        expandedChannels={new Set([String(group.channels[0].channel_id)])}
+        channels={group.channels}
+        onExportChannel={vi.fn()}
+        exporting={false}
         onToggleChannel={vi.fn()}
         onViewDetails={onViewDetails}
         periodEnd={resolveShanghaiMonth('2026-09').end_timestamp}
@@ -274,17 +241,15 @@ it('keeps channel totals on the parent row and fallback identity on leaf detail 
     </QueryClientProvider>
   )
   const links = screen.getAllByRole('button', { name: 'View details' })
-  // 渠道父行只带账期、URL 分组与渠道 ID。
+  // 渠道父行只带渠道 ID，模型叶子再增加模型和计费方式。
   fireEvent.click(links[0])
   expect(onViewDetails).toHaveBeenLastCalledWith({
-    urlKey: group.url_key,
     channelId: 11,
     channelName: 'Channel #11',
   })
   // 模型叶子行在其上增加 Provider 模型、fallback 身份和计费方式。
   fireEvent.click(links[1])
   expect(onViewDetails).toHaveBeenLastCalledWith({
-    urlKey: group.url_key,
     channelId: 11,
     channelName: 'Channel #11',
     providerModel: 'unmapped',
@@ -314,10 +279,10 @@ it.each([
     render(
       <QueryClientProvider client={client}>
         <UpstreamReconciliationTable
-          expandedChannels={
-            new Set([channelRowKey(timed.url_key, timed.channels[0])])
-          }
-          group={timed}
+          expandedChannels={new Set([String(timed.channels[0].channel_id)])}
+          channels={timed.channels}
+          onExportChannel={vi.fn()}
+          exporting={false}
           onToggleChannel={vi.fn()}
           onViewDetails={vi.fn()}
           periodEnd={resolveShanghaiMonth('2026-09').end_timestamp}
@@ -363,10 +328,12 @@ it('keeps a known subtotal separate from an incomplete channel total', () => {
   render(
     <QueryClientProvider client={client}>
       <UpstreamReconciliationTable
-        group={source}
+        channels={source.channels}
         periodEnd={resolveShanghaiMonth('2026-09').end_timestamp}
         periodStart={1}
         expandedChannels={new Set()}
+        onExportChannel={vi.fn()}
+        exporting={false}
         onToggleChannel={vi.fn()}
         onViewDetails={vi.fn()}
       />

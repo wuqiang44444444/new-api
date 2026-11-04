@@ -64,11 +64,16 @@ func SaveProviderChannelBillingDiscount(discount *ProviderChannelBillingDiscount
 		return errors.New("manual channel discount cannot claim a copied period")
 	}
 	discount.PendingReason = ""
+	known, err := providerBillingChannelKnown(context.Background(), discount.ChannelId)
+	if err != nil {
+		return err
+	}
+	if !known {
+		return errors.New("channel not found")
+	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		// Serialize initialization and first manual saves on an existing channel,
-		// including when this month's discount row does not exist yet.
-		var channel Channel
-		if err := lockForUpdate(tx).Select("id").Where("id = ?", discount.ChannelId).Find(&channel).Error; err != nil {
+		// The independent configuration row also survives channel deletion.
+		if err := lockProviderBillingChannel(tx, discount.ChannelId); err != nil {
 			return err
 		}
 		var existing ProviderChannelBillingDiscount
@@ -166,14 +171,43 @@ func InitializeProviderChannelBillingDiscounts(periodStart int64, channelIds []i
 	if len(uniqueIds) == 0 {
 		return outcomes, nil
 	}
+	// Resolve historical identities before the main transaction: the log database
+	// can be separate, and must not need the connection held by this transaction.
+	historical := map[int]bool{}
+	for _, table := range []any{&ProviderChannelBillingConfig{}, &ProviderChannelBillingDiscount{}} {
+		var ids []int
+		if err := DB.Model(table).Where("channel_id IN ?", uniqueIds).Distinct("channel_id").Pluck("channel_id", &ids).Error; err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			historical[id] = true
+		}
+	}
+	var logged []int
+	if err := LOG_DB.Model(&Log{}).Where("channel_id IN ? AND type IN ?", uniqueIds, []int{LogTypeConsume, LogTypeRefund}).Distinct("channel_id").Pluck("channel_id", &logged).Error; err != nil {
+		return nil, err
+	}
+	for _, id := range logged {
+		historical[id] = true
+	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var channels []Channel
-		if err := lockForUpdate(tx).Select("id").Where("id IN ?", uniqueIds).Find(&channels).Error; err != nil {
+		if err := tx.Select("id").Where("id IN ?", uniqueIds).Find(&channels).Error; err != nil {
 			return err
 		}
 		existingChannels := make(map[int]struct{}, len(channels))
+		for id := range historical {
+			existingChannels[id] = struct{}{}
+		}
 		for _, channel := range channels {
 			existingChannels[channel.Id] = struct{}{}
+		}
+		for _, id := range uniqueIds {
+			if _, known := existingChannels[id]; known {
+				if err := lockProviderBillingChannel(tx, id); err != nil {
+					return err
+				}
+			}
 		}
 
 		var current []ProviderChannelBillingDiscount

@@ -1,7 +1,33 @@
 import type { QueryClient } from '@tanstack/react-query'
 
 import type { getAdminUpstreamReconciliation } from '../../api'
-import type { BillingDataQuality, ProviderUrlGroupSummary } from '../../types'
+import type {
+  BillingDataQuality,
+  ProviderUrlChannelGroupSummary,
+} from '../../types'
+
+export type ProviderUrlGroupSummary = {
+  usage_only?: boolean
+  known_original_amount?: number
+  known_reference_amount?: number
+  url_key: string
+  display_name: string
+  custom_name?: string
+  base_url?: string
+  unidentified?: boolean
+  deleted?: boolean
+  channel_ids: number[]
+  channel_count: number
+  model_count: number
+  usage: ProviderUrlChannelGroupSummary['usage']
+  channels: ProviderUrlChannelGroupSummary[]
+  data_quality?: BillingDataQuality
+  original_amount?: number
+  reference_amount?: number
+  reference_known: boolean
+  discount_pending_channels: number
+  estimate_reasons?: string[]
+}
 
 type Period = { start_timestamp: number; end_timestamp: number }
 export type SummaryFixture = {
@@ -15,53 +41,39 @@ export function projectUpstreamPage(
   data: SummaryFixture,
   params: Parameters<typeof getAdminUpstreamReconciliation>[0]
 ) {
-  const groups = data.result.url_groups.filter(
-    (group) =>
-      (!params.url_key || group.url_key === params.url_key) &&
-      (!params.search ||
-        `${group.custom_name} ${group.url_key}`
-          .toLowerCase()
-          .includes(params.search.toLowerCase()))
-  )
-  const channels = groups.flatMap((group) => group.channels)
+  const channels = data.result.url_groups
+    .flatMap((group) => group.channels)
+    .filter(
+      (channel) =>
+        (!params.channel_id || channel.channel_id === params.channel_id) &&
+        (!params.search ||
+          `${channel.channel_name} ${channel.channel_id} ${channel.upstream_name || ''}`
+            .toLowerCase()
+            .includes(params.search.toLowerCase()))
+    )
   const models = channels
     .filter((channel) => channel.channel_id === params.channel_id)
     .flatMap((channel) => channel.models)
-  const page = params.page ?? 1
-  const page_size = params.page_size ?? 20
-  const level = params.level ?? 'groups'
+  const page = params.page ?? 1,
+    page_size = params.page_size ?? 20
   const offset = (page - 1) * page_size
-  let total = groups.length
-  if (level === 'channels') total = channels.length
-  if (level === 'models') total = models.length
+  const modelLevel = params.level === 'models'
   return {
     success: true,
     data: {
       generated_at: data.generated_at,
       result: {
-        url_groups:
-          level === 'groups' || level === 'options'
-            ? groups.slice(offset, offset + page_size).map((group) => ({
-                ...group,
-                channels: [],
-                channel_ids: group.unidentified ? group.channel_ids : [],
-              }))
-            : [],
-        channels:
-          level === 'channels'
-            ? channels
-                .slice(offset, offset + page_size)
-                .map((channel) => ({ ...channel, models: [] }))
-            : [],
-        models:
-          level === 'models' ? models.slice(offset, offset + page_size) : [],
-        total,
+        channels: modelLevel
+          ? []
+          : channels
+              .slice(offset, offset + page_size)
+              .map((channel) => ({ ...channel, models: [] })),
+        models: modelLevel ? models.slice(offset, offset + page_size) : [],
+        total: modelLevel ? models.length : channels.length,
         page,
         page_size,
-        model_count: groups.reduce((n, g) => n + g.model_count, 0),
-        data_quality: params.url_key
-          ? groups[0]?.data_quality
-          : data.result.data_quality,
+        model_count: channels.reduce((n, c) => n + c.models.length, 0),
+        data_quality: data.result.data_quality,
       },
     },
   }
@@ -71,39 +83,16 @@ export function seedUpstreamPages(
   period: Period,
   data: SummaryFixture
 ) {
-  client.setQueryData(
-    [
-      'billing-upstream-initialize',
-      period.start_timestamp,
-      period.end_timestamp,
-    ],
-    {}
-  )
   client.setQueryData(['upstream-test-source', period.start_timestamp], data)
   const queries: Parameters<typeof getAdminUpstreamReconciliation>[0][] = [
-    { ...period, level: 'groups', page: 1, page_size: 10 },
-    { ...period, level: 'options', search: '', page: 1, page_size: 20 },
+    { ...period, level: 'channels', search: '', page: 1, page_size: 10 },
+    { ...period, level: 'channels', page: 1, page_size: 10 },
   ]
   for (const group of data.result.url_groups) {
-    queries.push({
-      ...period,
-      level: 'groups',
-      url_key: group.url_key,
-      page: 1,
-      page_size: 10,
-    })
-    queries.push({
-      ...period,
-      level: 'channels',
-      url_key: group.url_key,
-      page: 1,
-      page_size: 10,
-    })
     for (const channel of group.channels) {
       queries.push({
         ...period,
         level: 'models',
-        url_key: group.url_key,
         channel_id: channel.channel_id,
         page: 1,
         page_size: 10,

@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	usageAnalyticsExportFieldVersion = 4
 	usageAnalyticsExportTypeSelf     = "self"
 	usageAnalyticsExportTypeCustomer = "customer"
 	usageAnalyticsExportTypeUpstream = "upstream"
@@ -23,12 +24,13 @@ const (
 )
 
 type UsageAnalyticsExportRequest struct {
-	Period   string
-	Date     string
-	View     string
-	UserId   *int
-	Language string
-	Search   string
+	Period    string
+	Date      string
+	View      string
+	UserId    *int
+	Language  string
+	Search    string
+	ModelName string
 }
 
 // usageAnalyticsViewForJob derives the frozen view from job identity columns.
@@ -73,6 +75,9 @@ func SubmitUsageAnalyticsExport(actorId int, request UsageAnalyticsExportRequest
 	if view != usageAnalyticsExportTypeSelf && view != usageAnalyticsExportTypeCustomer && view != usageAnalyticsExportTypeUpstream && view != "customers" {
 		return nil, fmt.Errorf("%w: invalid view", ErrCustomerExportInvalidRequest)
 	}
+	if len(request.ModelName) > 255 || (request.ModelName != "" && view != usageAnalyticsExportTypeSelf && view != usageAnalyticsExportTypeCustomer) {
+		return nil, fmt.Errorf("%w: %w", ErrCustomerExportInvalidRequest, common.NewMessage("Model filters require a customer usage view and a model name of at most 255 bytes."))
+	}
 	period, err := model.ResolveUsageAnalyticsPeriod(request.Period, request.Date, common.GetTimestamp())
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrCustomerExportInvalidRequest, err.Error())
@@ -92,7 +97,8 @@ func SubmitUsageAnalyticsExport(actorId int, request UsageAnalyticsExportRequest
 	}
 	filters := model.CustomerExportFilters{
 		UsageView: view, UsageSearch: strings.TrimSpace(request.Search),
-		FieldVersion:   4,
+		FieldVersion:   usageAnalyticsExportFieldVersion,
+		ModelName:      request.ModelName,
 		QuotaPerUnit:   common.QuotaPerUnit,
 		Currency:       operation_setting.GetQuotaDisplayType(),
 		CurrencyRate:   operation_setting.GetUsdToCurrencyRate(operation_setting.USDExchangeRate),
@@ -379,9 +385,12 @@ func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob,
 		return records, nil
 	}
 	target := job.TargetUserId
-	customerView, err := model.GetUsageCustomerView(ctx, period, target)
+	customerView, err := model.GetUsageCustomerModelView(ctx, period, target, filters.ModelName)
 	if err != nil {
 		return nil, err
+	}
+	if len(customerView.Keys) == 0 && filters.ModelName != "" {
+		return records, nil
 	}
 	for _, key := range customerView.Keys {
 		if key.TokenId == 0 {
@@ -446,7 +455,7 @@ func ResubmitUsageAnalyticsExport(actorID int, sourceJobID string, selfOnly bool
 	if _, err = currentExportObjectStore(); err != nil {
 		return nil, err
 	}
-	filters.FieldVersion = 4
+	filters.FieldVersion = usageAnalyticsExportFieldVersion
 	job, created, err := model.CreateCustomerExportJob(actorID, source.TargetUserId, source.JobType, filters)
 	if err != nil {
 		return nil, err

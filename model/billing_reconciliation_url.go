@@ -67,6 +67,9 @@ type ProviderURLGroupSummary struct {
 // coefficient 1. Usage totals server-side over the same leaves shown below;
 // the frontend never recomputes amounts.
 type ProviderURLChannelGroupSummary struct {
+	UpstreamName string `json:"upstream_name"`
+	Deleted      bool   `json:"deleted"`
+	ModelCount   int64  `json:"model_count"`
 	// Known subtotals remain separate from complete amounts when evidence is missing.
 	KnownOriginalAmount  *int64 `json:"known_original_amount,omitempty"`
 	KnownReferenceAmount *int64 `json:"known_reference_amount,omitempty"`

@@ -351,6 +351,14 @@ UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
       ),
     }
 
+    // Option saves refresh this query one field at a time. Preserve the whole
+    // draft until an explicit save succeeds, including partial-save failures.
+    const groupFields = Object.keys(groupNormalizedDefaults.current) as Array<
+      keyof GroupFormValues
+    >
+    if (groupFields.some((field) => groupForm.getFieldState(field).isDirty)) {
+      return
+    }
     groupForm.reset({
       ...groupDefaults,
       GroupRatio: formatJsonForTextarea(groupDefaults.GroupRatio),
@@ -418,6 +426,7 @@ TaskPreConsumeTokens: normalizeJsonString(values.TaskPreConsumeTokens),
 
   const saveGroupRatios = useCallback(
     async (values: GroupFormValues) => {
+      const submittedDraft = { ...groupForm.getValues() }
       const normalized = {
         GroupRatio: normalizeJsonString(values.GroupRatio),
         TopupGroupRatio: normalizeJsonString(values.TopupGroupRatio),
@@ -450,8 +459,14 @@ UserUsableGroups: normalizeJsonString(values.UserUsableGroups),
       }
 
       groupNormalizedDefaults.current = normalized
+      const fields = Object.keys(submittedDraft) as Array<keyof GroupFormValues>
+      if (
+        fields.every((field) => groupForm.getValues(field) === submittedDraft[field])
+      ) {
+        groupForm.reset(submittedDraft)
+      }
     },
-    [updateOption]
+    [updateOption, groupForm]
   )
 
   const handleResetRatios = useCallback(() => {

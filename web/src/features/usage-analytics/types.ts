@@ -140,10 +140,3 @@ export interface UsageAnalyticsEnvelope<T> {
   data_source: string
   coverage_note: string
 }
-
-export interface UsageExportJobView {
-  job_id: string
-  status: string
-  error_code?: string
-  error?: string
-}

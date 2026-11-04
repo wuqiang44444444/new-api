@@ -54,8 +54,16 @@ func freezeUpstreamExportChannels(ctx context.Context, period int64, ids []int, 
 	if err != nil {
 		return nil, err
 	}
+	names, err := providerBillingChannelNames(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for _, id := range ids {
 		channel := result[id]
+		channel.UpstreamName = names[id]
+		if channel.UpstreamName == "" {
+			channel.UpstreamName = channel.Name
+		}
 		if record, exists := discounts[id]; exists && record.PendingReason == "" {
 			projection := providerChannelDiscountProjection(record)
 			channel.Discount = &projection

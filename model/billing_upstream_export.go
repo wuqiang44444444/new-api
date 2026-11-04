@@ -27,8 +27,9 @@ type UpstreamExportScope struct {
 	IncludeRootFields bool                          `json:"include_root_fields"`
 }
 type UpstreamExportChannel struct {
-	Name     string                             `json:"name"`
-	Discount *ProviderBillingDiscountProjection `json:"discount,omitempty"`
+	UpstreamName string                             `json:"upstream_name,omitempty"`
+	Name         string                             `json:"name"`
+	Discount     *ProviderBillingDiscountProjection `json:"discount,omitempty"`
 }
 
 func AuthorizeCustomerExportJob(ctx context.Context, job *CustomerExportJob) error {
@@ -91,6 +92,15 @@ func FreezeUpstreamExportScope(ctx context.Context, actorID int, periodStart int
 	if err != nil {
 		return nil, err
 	}
+	for _, id := range channelIDs {
+		known, err := providerBillingChannelKnown(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if !known {
+			return nil, ErrCustomerExportNotFound
+		}
+	}
 	var name ProviderURLGroupDisplayName
 	if urlKey != "" {
 		if err := DB.WithContext(ctx).Where("url_hash = ?", providerURLGroupHash(urlKey)).Limit(1).Find(&name).Error; err != nil {
@@ -98,13 +108,16 @@ func FreezeUpstreamExportScope(ctx context.Context, actorID int, periodStart int
 		}
 	}
 	scope := &UpstreamExportScope{AllChannels: allChannels, UpperLogID: &upper, URLKey: urlKey, GroupName: name.Name, ChannelIds: channelIDs, Channels: channels, IncludeRootFields: actor.Role >= common.RoleRootUser}
+	if len(channelIDs) == 1 && urlKey == "" {
+		scope.GroupName = channels[channelIDs[0]].UpstreamName
+	}
 	return scope, nil
 }
 
 // ScanUpstreamExportSummary shares the page's accounting projection but reads
 // one frozen channel at a time, under the shared export queue's batch policy.
 func ScanUpstreamExportSummary(ctx context.Context, filters CustomerExportFilters, policy BillingStatementReadPolicy, consume func(int, ProviderURLChannelModelSummary) error) error {
-	if filters.Upstream == nil || filters.Upstream.URLKey == "" || len(filters.Upstream.ChannelIds) == 0 {
+	if filters.Upstream == nil || len(filters.Upstream.ChannelIds) == 0 {
 		return errors.New("missing upstream summary scope")
 	}
 	policy.UpperLogID = filters.Upstream.UpperLogID

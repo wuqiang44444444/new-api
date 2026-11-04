@@ -21,8 +21,8 @@ func SubmitUpstreamExportJob(ctx context.Context, actorID int, request CustomerE
 	if jobType != model.CustomerExportJobTypeUpstreamDetails && jobType != model.CustomerExportJobTypeUpstreamSummary {
 		return nil, fmt.Errorf("%w: invalid upstream export type", ErrCustomerExportInvalidRequest)
 	}
-	if jobType == model.CustomerExportJobTypeUpstreamSummary && (urlKey == "" || len(channelIDs) == 0 || request.UpstreamEvidenceFilter != "" || request.ModelName != "" || request.BillingMode != "" || request.RequestId != "" || request.UpstreamRequestId != "" || request.ProviderModelFallback != nil) {
-		return nil, fmt.Errorf("%w: upstream summary requires one complete URL group", ErrCustomerExportInvalidRequest)
+	if jobType == model.CustomerExportJobTypeUpstreamSummary && (len(channelIDs) == 0 || request.UpstreamEvidenceFilter != "" || request.ModelName != "" || request.BillingMode != "" || request.RequestId != "" || request.UpstreamRequestId != "" || request.ProviderModelFallback != nil) {
+		return nil, fmt.Errorf("%w: upstream summary requires one complete channel", ErrCustomerExportInvalidRequest)
 	}
 	if err := model.ValidateUpstreamEvidenceFilter(request.UpstreamEvidenceFilter); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrCustomerExportInvalidRequest, err)
@@ -239,10 +239,18 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 				recomputedFee = exportCurrencyAmount(strconv.FormatInt(*row.TestPricing.RecomputedQuota, 10), scope)
 			}
 		}
+		identity, upstreamName := filters.Upstream.URLKey, filters.Upstream.GroupName
+		if identity == "" {
+			identity, upstreamName = strconv.Itoa(row.ChannelId), channel.UpstreamName
+			writer.header[4] = "Channel scope"
+			if filters.Language == "zh" {
+				writer.header[4] = "渠道范围"
+			}
+		}
 		record := []string{
 			job.JobID, formatExportTimestamp(scope.GeneratedAt),
 			formatExportTimestamp(filters.StartTimestamp), formatExportTimestamp(filters.EndTimestamp),
-			exportCsvCellGuard(filters.Upstream.URLKey), exportCsvCellGuard(filters.Upstream.GroupName),
+			exportCsvCellGuard(identity), exportCsvCellGuard(upstreamName),
 			strconv.FormatInt(row.RowId, 10),
 			formatExportTimestamp(row.Time), strconv.Itoa(row.ChannelId), exportCsvCellGuard(channel.Name),
 			exportCsvCellGuard(row.CustomerModel), exportCsvCellGuard(row.ProviderModel),

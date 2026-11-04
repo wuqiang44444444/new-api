@@ -363,12 +363,17 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 			status = model.CustomerExportJobStatusCancelled
 		}
 		_ = model.FinishCustomerExportJob(job.JobID, executor, status, "authorization_or_lease", "export no longer authorized or active", nil)
+		logger.LogWarn(context.Background(), fmt.Sprintf("customer export stopped: job=%s type=%s code=authorization_or_lease", job.JobID, job.JobType))
 		return
 	}
 	ctx, stop := monitorCustomerExport(ctx, job, executor)
 	filters, err := job.DecodeFilters()
-	if err == nil && filters.FieldVersion != customerExportFieldVersion {
-		err = errors.New("export format changed; submit a new export")
+	expectedVersion := customerExportFieldVersion
+	if job.JobType == model.CustomerExportJobTypeUsageSummary {
+		expectedVersion = usageAnalyticsExportFieldVersion
+	}
+	if err == nil && filters.FieldVersion != expectedVersion {
+		err = errCustomerExportFormatChanged
 	}
 	var sourceVersion string
 	if err == nil {
@@ -425,7 +430,14 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 			status, code = model.CustomerExportJobStatusCancelled, "cancelled"
 		} else if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errCustomerExportBudgetExceeded) {
 			code = "budget_exceeded"
+		} else if errors.Is(err, errCustomerExportFormatChanged) {
+			code = "format_changed"
+		} else if errors.Is(err, ErrCustomerExportStorageUnavailable) {
+			code = "storage_unavailable"
+		} else if errors.Is(err, model.ErrCustomerExportNotFound) || errors.Is(err, model.ErrCustomerExportStateConflict) {
+			code = "authorization_or_lease"
 		}
+		logger.LogWarn(context.Background(), fmt.Sprintf("customer export failed: job=%s type=%s code=%s", job.JobID, job.JobType, code))
 	}
 	if finishErr := model.FinishCustomerExportJob(job.JobID, executor, status, code, "", artifact); finishErr != nil {
 		// A cancellation may race the final gate. Never publish after it.
@@ -440,6 +452,7 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 }
 
 var (
+	errCustomerExportFormatChanged  = errors.New("export format changed; submit a new export")
 	errCustomerExportCancelled      = errors.New("customer export cancelled")
 	errCustomerExportBudgetExceeded = errors.New("customer export budget exceeded")
 	errCustomerExportInterrupted    = errors.New("customer export executor interrupted")
@@ -891,7 +904,7 @@ func uploadCustomerExportArtifact(ctx context.Context, jobID string, files []mod
 			return nil, err
 		}
 		if err := store.ExportPutFile(ctx, file.ObjectKey, "text/csv; charset=utf-8", paths[i], file.SizeBytes); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrCustomerExportStorageUnavailable, err)
 		}
 		if err := os.Remove(paths[i]); err != nil {
 			return nil, err

@@ -108,18 +108,16 @@ func GetAdminCustomerBillingReconciliation(c *gin.Context) {
 	respondBillingReconciliation(c, period, gin.H{"user_id": userId, "dimension": dimension, "group_id": groupId}, statement, "main_database+log_database")
 }
 
-// GetAdminUpstreamReconciliation serves the unified admin upstream view: URL
-// groups with usage, official-price amounts, reference amounts and the
-// channel-month discount editing area. Provider model and billing mode stay
-// separately paginated levels of the selected scope.
+// GetAdminUpstreamReconciliation returns read-only channels and model leaves.
+// Reporting identities never depend on the current base URL.
 func GetAdminUpstreamReconciliation(c *gin.Context) {
 	period, ok := parseBillingReconciliationPeriod(c)
 	if !ok {
 		return
 	}
 	urlKey := strings.TrimSpace(c.Query("url_key"))
-	if len(urlKey) > maxBillingURLKeyFilterLength {
-		common.ApiErrorMsg(c, "invalid url_key")
+	if urlKey != "" {
+		common.ApiErrorMsg(c, "use channel_id instead of url_key")
 		return
 	}
 	page, pageSize, valid := parseBillingPage(c)
@@ -130,18 +128,18 @@ func GetAdminUpstreamReconciliation(c *gin.Context) {
 	if channelID < 0 {
 		return
 	}
-	level := c.DefaultQuery("level", "groups")
+	level := c.DefaultQuery("level", "channels")
 	search := strings.TrimSpace(c.Query("search"))
 	if utf8.RuneCountInString(search) > 255 {
 		common.ApiErrorMsg(c, "invalid search")
 		return
 	}
-	summary, err := model.GetUpstreamSummaryPage(c.Request.Context(), period.StartTimestamp, period.EndTimestamp, period.PeriodStart, model.UpstreamSummaryPageFilter{Level: level, URLKey: urlKey, ChannelID: channelID, Search: search, Page: page, PageSize: pageSize})
+	summary, err := model.GetUpstreamSummaryPage(c.Request.Context(), period.StartTimestamp, period.EndTimestamp, period.PeriodStart, model.UpstreamSummaryPageFilter{Level: level, ChannelID: channelID, Search: search, Page: page, PageSize: pageSize})
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	respondBillingReconciliation(c, period, gin.H{"url_key": urlKey}, summary, "main_database+log_database")
+	respondBillingReconciliation(c, period, gin.H{"channel_id": channelID}, summary, "main_database+log_database")
 }
 
 // PostAdminProviderChannelDiscountInit runs the explicit, idempotent month
@@ -196,9 +194,6 @@ func PutAdminProviderBillingDiscount(c *gin.Context) {
 	var request providerBillingDiscountRequest
 	if err := c.ShouldBindJSON(&request); err != nil || !validProviderBillingPeriod(request.PeriodStart) || request.Discount.LessThanOrEqual(decimal.Zero) || request.Discount.GreaterThan(decimal.NewFromInt(1)) || request.ExpectedVersion < 0 {
 		common.ApiErrorMsg(c, "invalid provider discount")
-		return
-	}
-	if !providerBillingChannelExists(c, request.ChannelId) {
 		return
 	}
 	discount := model.ProviderChannelBillingDiscount{
@@ -278,18 +273,4 @@ func respondBillingReconciliationWriteError(c *gin.Context, err error) {
 		return
 	}
 	common.ApiError(c, err)
-}
-
-func providerBillingChannelExists(c *gin.Context, channelIds ...int) bool {
-	for _, channelId := range channelIds {
-		if _, err := model.GetChannelById(channelId, false); err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "channel not found"})
-				return false
-			}
-			common.ApiError(c, err)
-			return false
-		}
-	}
-	return true
 }
