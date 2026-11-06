@@ -100,6 +100,8 @@ import type {
   PricingModel,
   TokenUnit,
 } from '../types'
+import { TokenPricingNote } from './token-pricing-note'
+import { imageTokenPriceTitle } from '../lib/image-token-price-display'
 import { DynamicPricingBreakdown } from './dynamic-pricing-breakdown'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
 import { ModelDetailsApi } from './model-details-api'
@@ -675,8 +677,8 @@ function PriceSection(props: {
   )
 
   const primaryPriceTypes: { label: string; type: PriceType }[] = [
-    { label: t('Input'), type: 'input' },
-    { label: t('Output'), type: 'output' },
+    { label: t(props.model.supported_endpoint_types?.includes('image-generation') && props.model.image_ratio != null ? 'Text Input' : 'Input'), type: 'input' },
+    { label: t(props.model.supported_endpoint_types?.includes('image-generation') && props.model.image_ratio != null ? 'Image Output' : 'Output'), type: 'output' },
   ]
   const secondaryPriceTypes: {
     label: string
@@ -745,6 +747,10 @@ function PriceSection(props: {
     return (
       <section>
         <SectionTitle>{t('Base Price')}</SectionTitle>
+        {!dynamicSummary.isTaskUsage &&
+          dynamicSummary.entries.some((entry) => entry.unit === 'token') && (
+            <TokenPricingNote imageGeneration={props.model.supported_endpoint_types?.includes('image-generation')} />
+          )}
         {dynamicSummary.providerCount && (
           <p className='text-muted-foreground mb-2 text-xs'>
             {t('{{count}} providers', { count: dynamicSummary.providerCount })}
@@ -779,7 +785,7 @@ function PriceSection(props: {
                   <div className='text-muted-foreground text-xs'>
                     <DynamicPriceEntryLabel entry={entry} />
                   </div>
-                  <div className='text-foreground mt-1 font-mono text-base font-semibold tabular-nums'>
+                  <div title={imageTokenPriceTitle(entry, t)} className='text-foreground mt-1 font-mono text-base font-semibold tabular-nums'>
                     {entry.formattedRange ?? entry.formatted}
                     <span className='text-muted-foreground/40 ml-1 text-xs font-normal'>
                       / {unitLabel}
@@ -814,7 +820,7 @@ function PriceSection(props: {
                     <span className='text-muted-foreground/70 text-sm'>
                       <DynamicPriceEntryLabel entry={entry} />
                     </span>
-                    <span className='text-muted-foreground font-mono text-sm tabular-nums'>
+                    <span title={imageTokenPriceTitle(entry, t)} className='text-muted-foreground font-mono text-sm tabular-nums'>
                       {entry.formattedRange ?? entry.formatted}
                       <span className='text-muted-foreground/40 ml-1 text-xs font-normal'>
                         / {unitLabel}
@@ -1158,6 +1164,7 @@ function ProviderGroupPricingSection(
       props.model.billing_usage_examples
     )
     const priceFields = getDynamicPriceFields(dynamicTiers, {
+      imageGeneration: props.model.supported_endpoint_types?.includes('image-generation'),
       tokenUnit: props.tokenUnit,
       showRechargePrice,
       priceRate: props.priceRate,
@@ -1171,6 +1178,7 @@ function ProviderGroupPricingSection(
         return [
           group,
           getDynamicFormattedPricesByTier(dynamicTiers, {
+            imageGeneration: props.model.supported_endpoint_types?.includes('image-generation'),
             tokenUnit: props.tokenUnit,
             showRechargePrice,
             priceRate: props.priceRate,
@@ -1523,6 +1531,7 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
             )}
             {isDynamic && !simpleTaskPricing && (
               <DynamicPricingBreakdown
+                imageGeneration={props.model.supported_endpoint_types?.includes('image-generation')}
                 billingExpr={props.model.billing_expr}
                 usageSchema={props.model.billing_usage_schema}
                 taskPriceOptions={{

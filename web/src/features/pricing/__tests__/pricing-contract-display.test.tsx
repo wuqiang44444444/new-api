@@ -75,6 +75,45 @@ afterEach(() => {
   clients.length = 0
 })
 
+describe('explicit text input prices for image generation', () => {
+  const expression = 'tier("base", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)'
+  const display: PricingModel['billing_display'] = {
+    display_version: 2, expression_version: 1, expression_hash: 'image-price-fixture', status: 'exact', unit: 'usd_per_million_tokens',
+    tiers: [{ label: 'base', unit_prices: { p: 5, c: 30, cr: 1.25, img: 8, img_cr: 2 } }],
+  }
+  it.each(['card', 'cell', 'details'])('labels the text price separately in the %s', (surface) => {
+    const model = pricingModel({ supported_endpoint_types: ['image-generation'], billing_mode: 'tiered_expr', billing_expr: expression, billing_display: display })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+    clients.push(client)
+    render(<QueryClientProvider client={client}>
+      {surface === 'card' && <ModelCard model={model} tokenUnit='M' onClick={() => {}} />}
+      {surface === 'cell' && <ModelPriceCell model={model} />}
+      {surface === 'details' && <ModelDetailsContent model={model} groupRatio={{ default: 1 }} usableGroup={{ default: { desc: '', ratio: 1 } }} endpointMap={{}} autoGroups={[]} priceRate={1} usdExchangeRate={7} tokenUnit='M' />}
+    </QueryClientProvider>)
+    expect(screen.getAllByText('Text Input').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(surface === 'cell' ? '5.00' : /\$5\.00/).length).toBeGreaterThan(0)
+    if (surface === 'details') {
+      for (const table of screen.getAllByRole('table')) {
+        expect(table).toHaveTextContent('$5.00')
+        expect(table).toHaveTextContent('$30.00')
+        expect(table).toHaveTextContent('$2.00')
+      }
+    }
+  })
+
+  it('keeps an unknown endpoint generic even with the same expression', () => {
+    render(<ModelPriceCell model={pricingModel({ billing_mode: 'tiered_expr', billing_expr: expression, billing_display: display })} />)
+    expect(screen.queryByText('Text Input')).not.toBeInTheDocument()
+    expect(screen.getByText('Input')).toBeVisible()
+  })
+
+  it('labels the existing legacy image input rate without changing its price', () => {
+    render(<ModelCard model={pricingModel({ supported_endpoint_types: ['image-generation'], image_ratio: 1.6, model_ratio: 2.5 })} tokenUnit='M' onClick={() => {}} />)
+    expect(screen.getByText('Text Input')).toBeVisible()
+    expect(screen.getAllByText(/\$5/).length).toBeGreaterThan(0)
+  })
+})
+
 describe('conditional price components', () => {
   it.each([
     {

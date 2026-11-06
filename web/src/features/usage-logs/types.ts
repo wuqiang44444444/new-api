@@ -187,6 +187,7 @@ export interface LogOtherData {
   text_input?: number
   text_output?: number
   cache_tokens?: number
+  cache_read_tokens_reported?: boolean
   image_cache_tokens?: number
   billing_tokens?: Record<string, number>
   cache_write_unavailable?: boolean
@@ -252,6 +253,7 @@ export interface LogOtherData {
   billing_explanation?: {
     current_quota_conversion?: boolean
     lines: Array<{
+      /** Stable server i18n key; localized copy changes belong in locale values. */
       label: string
       quantity: number
       unit: string

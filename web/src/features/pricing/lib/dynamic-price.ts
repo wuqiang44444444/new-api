@@ -46,8 +46,11 @@ import {
   tryParseTaskVisualConfig,
 } from './task-expr'
 import { getTaskPricingDisplayTiers } from './task-matrix-display'
+import { imageTokenPriceLabel, IMAGE_TOKEN_PRICE_FORMAT } from './image-token-price-display'
 
 export type DynamicPriceOptions = {
+  /** Explicit Images API context; never inferred from model names or prices. */
+  imageGeneration?: boolean
   tokenUnit: TokenUnit
   showCurrencySymbol?: boolean
   showRechargePrice?: boolean
@@ -220,6 +223,7 @@ export function formatDynamicUnitPrice(
     showSymbol: options.showCurrencySymbol ?? true,
     digitsLarge: 4,
     digitsSmall: 6,
+    ...(options.imageGeneration ? IMAGE_TOKEN_PRICE_FORMAT : {}),
     abbreviate: false,
   })
 }
@@ -243,6 +247,7 @@ export function formatTaskUsageUnitPrice(
     showSymbol: options.showCurrencySymbol ?? true,
     digitsLarge: 4,
     digitsSmall: 6,
+    ...(options.imageGeneration ? IMAGE_TOKEN_PRICE_FORMAT : {}),
     abbreviate: false,
   })
 }
@@ -361,16 +366,24 @@ export function getDynamicPriceEntries(
       {
         key: variable.key,
         field: variable.field,
-        label:
+        label: imageTokenPriceLabel(
+          variable.key,
           variable.key === 'cc' &&
           typeof (tier as ParsedTier).cacheCreate1hPrice === 'number'
             ? 'Cache Creation (5m)'
             : variable.label,
-        shortLabel:
+          options.imageGeneration,
+          tier as ParsedTier
+        ),
+        shortLabel: imageTokenPriceLabel(
+          variable.key,
           variable.key === 'cc' &&
           typeof (tier as ParsedTier).cacheCreate1hPrice === 'number'
             ? 'Cache Write (5m)'
             : variable.shortLabel,
+          options.imageGeneration,
+          tier as ParsedTier
+        ),
         labelKind: 'i18n' as const,
         value,
         formatted: formatDynamicUnitPrice(value, options),
@@ -408,6 +421,11 @@ export function getDynamicPricingSummary(
   model: PricingModel,
   options: DynamicPriceOptions
 ): DynamicPricingSummary | null {
+  // The model's declared endpoints are authoritative for this model summary.
+  options = {
+    ...options,
+    imageGeneration: model.supported_endpoint_types?.includes('image-generation') === true,
+  }
   const variants = model.billing_plugin_variants
   if (variants?.length) {
     const summaries = variants.flatMap((variant) => {

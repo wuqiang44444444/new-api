@@ -57,7 +57,40 @@ it('shows the frozen usage times price equation supplied by the server', () => {
       has_auxiliary_charge: false,
     },
   })
-  expect(screen.getByText(/700 token × .*\/M token = /)).toBeTruthy()
+  expect(screen.getByText('Input').nextElementSibling).toHaveTextContent(/700 token × .*\/M token = /)
+})
+
+it('shows text and image component amounts without adding informational image tokens again', () => {
+  const currency = useSystemConfigStore.getState().config.currency
+  try {
+    useSystemConfigStore.getState().setConfig({
+      currency: { ...currency, quotaDisplayType: 'USD' },
+    })
+    show({
+      billing_mode: 'tiered_expr',
+      group_ratio: 1,
+      contract_applicable: false,
+      billing_explanation: {
+        lines: [
+          { label: 'Text Input', quantity: 76, unit: 'token', unit_price_usd: 5, subtotal_usd: 0.00038 },
+          { label: 'Image Out', quantity: 1372, unit: 'token', unit_price_usd: 30, subtotal_usd: 0.04116 },
+        ],
+      },
+    })
+    expect(screen.getByText('= $0.00038')).toHaveClass('whitespace-nowrap')
+    expect(screen.getByText('× $5/M token')).toHaveClass('whitespace-nowrap')
+    expect(screen.getByText('Text Input').nextElementSibling).toHaveTextContent('76 token × $5/M token = $0.00038')
+    expect(screen.getByText('Text input price').nextElementSibling).toHaveTextContent('$5/M')
+    expect(screen.getByText('Image Out').nextElementSibling).toHaveTextContent('1,372 token × $30/M token = $0.04116')
+  } finally {
+    useSystemConfigStore.getState().setConfig({ currency })
+  }
+})
+
+it('explains unavailable historical components while retaining the recorded total', () => {
+  show({ billing_mode: 'tiered_expr', billing_explanation: { lines: [] } })
+  expect(screen.getByText('Itemized costs cannot be verified from the recorded billing evidence. The recorded charge is unchanged.')).toBeVisible()
+  expect(screen.getByText('Total Cost')).toBeVisible()
 })
 
 it('does not reverse auxiliary charges by the model discount', () => {

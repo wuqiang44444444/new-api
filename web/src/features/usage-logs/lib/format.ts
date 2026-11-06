@@ -27,6 +27,7 @@ import {
   type ParsedTier,
 } from '@/features/pricing/lib/billing-expr'
 import { translateServerText } from '@/lib/server-error-message'
+import { imageTokenPriceLabel } from '@/features/pricing/lib/image-token-price-display'
 
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
@@ -328,9 +329,8 @@ export interface TieredBillingSummary {
 }
 
 /**
- * Whether the request payload reports any cache-related token usage. Used to
- * suppress cache pricing rows from the tiered breakdown when the request did
- * not exercise the cache path.
+ * Whether the request records nonzero cache usage. This does not establish
+ * upstream cache support or whether an omitted meter was reported.
  */
 export function hasAnyCacheTokens(
   other: LogOtherData | null | undefined
@@ -413,18 +413,16 @@ export function getTieredBillingSummary(
   if (conditionResultsUnavailable) {
     return { tiers, tier, conditionResultsUnavailable, priceEntries: [] }
   }
-  const cacheTokensPresent = hasAnyCacheTokens(other)
-
   const priceEntries: TieredBillingSummary['priceEntries'] = []
   for (const v of BILLING_PRICING_VARS) {
     if (!v.field) continue
-    if (v.group === 'cache' && !cacheTokensPresent) continue
     const raw = tier[v.field as keyof ParsedTier]
     const price = Number(raw)
     if (Number.isFinite(price) && price >= 0) {
       priceEntries.push({
         field: v.field,
-        shortLabel: v.shortLabel,
+        shortLabel: imageTokenPriceLabel(v.key, v.shortLabel,
+          other.request_path === '/v1/images/generations' || other.request_path === '/v1/images/edits', tier),
         price,
         unit: 'token',
       })

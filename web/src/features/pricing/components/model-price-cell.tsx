@@ -32,6 +32,7 @@ import {
 } from '../lib/dynamic-price'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '../lib/price'
+import { imageTokenPriceTitle } from '../lib/image-token-price-display'
 import { taskUsageUnitLabel } from '../lib/task-price-display'
 import type { PricingModel, TokenUnit } from '../types'
 
@@ -83,7 +84,7 @@ export function ModelPriceCell(props: {
       currency,
     ]
   )
-  let metrics: Array<{ label: string; value: string }>
+  let metrics: Array<{ label: string; value: string; title?: string }>
   const providerCaption = dynamic?.providerCount
     ? t('{{count}} providers', { count: dynamic.providerCount })
     : ''
@@ -140,6 +141,7 @@ export function ModelPriceCell(props: {
               ? entry.shortLabel
               : t(entry.shortLabel),
           value: `${entry.formattedRange ?? entry.formatted}${suffix}`,
+          title: imageTokenPriceTitle(entry, t),
         }
       })
     if (metrics.length === 0) {
@@ -191,7 +193,7 @@ export function ModelPriceCell(props: {
     if (tokenBased) {
       metrics = [
         {
-          label: t('Input'),
+          label: t(props.model.supported_endpoint_types?.includes('image-generation') && props.model.image_ratio != null ? 'Text Input' : 'Input'),
           value: formatPrice(
             props.model,
             'input',
@@ -204,7 +206,7 @@ export function ModelPriceCell(props: {
           ),
         },
         {
-          label: t('Output'),
+          label: t(props.model.supported_endpoint_types?.includes('image-generation') && props.model.image_ratio != null ? 'Image Output' : 'Output'),
           value: formatPrice(
             props.model,
             'output',
@@ -252,7 +254,7 @@ export function ModelPriceCell(props: {
             </span>
             <span
               className='min-w-0 font-mono text-sm break-words whitespace-normal tabular-nums'
-              title={metric.value}
+              title={metric.title ?? metric.value}
             >
               {metric.value}
             </span>

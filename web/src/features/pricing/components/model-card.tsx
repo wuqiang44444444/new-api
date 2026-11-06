@@ -39,6 +39,7 @@ import {
 import { parseTags } from '../lib/filters'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '../lib/price'
+import { imageTokenPriceTitle } from '../lib/image-token-price-display'
 import { taskPriceLabel, taskUsageUnitLabel } from '../lib/task-price-display'
 import type { PricingModel, PriceType, TokenUnit } from '../types'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
@@ -167,7 +168,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
                     </span>
                   )}
                   <span className='flex flex-wrap items-baseline gap-x-1 font-mono text-sm font-semibold tabular-nums'>
-                    <span>{entry.formattedRange ?? entry.formatted}</span>
+                    <span title={imageTokenPriceTitle(entry, t)}>{entry.formattedRange ?? entry.formatted}</span>
                     <span className='text-muted-foreground text-xs font-normal whitespace-nowrap'>
                       {' '}
                       / {unitLabel}
@@ -219,10 +220,10 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     )
   } else if (isTokenBased) {
     const prices: { type: PriceType; label: string }[] = [
-      { type: 'input', label: t('Input') },
-      { type: 'output', label: t('Output') },
+      { type: 'input', label: t(props.model.supported_endpoint_types?.includes('image-generation') && props.model.image_ratio != null ? 'Text Input' : 'Input') },
+      { type: 'output', label: t(props.model.supported_endpoint_types?.includes('image-generation') && props.model.image_ratio != null ? 'Image Output' : 'Output') },
       ...(props.model.cache_ratio != null
-        ? [{ type: 'cache' as const, label: t('Cached') }]
+        ? [{ type: 'cache' as const, label: t(props.model.supported_endpoint_types?.includes('image-generation') ? 'Cached input' : 'Cached') }]
         : []),
     ]
     priceSummary = prices.map((price) => (

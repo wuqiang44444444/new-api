@@ -32,13 +32,14 @@ import {
   type DynamicPriceOptions,
 } from '../lib/dynamic-price'
 import type { BillingDisplayProjection, BillingDisplayTier } from '../types'
+import { imageTokenPriceLabel } from '../lib/image-token-price-display'
 
 type Props = {
+  imageGeneration?: boolean
   expression: string
   projection?: BillingDisplayProjection | null
   multiplier: number
   compact: boolean
-  hideCacheColumns: boolean
   matchedTier?: string | null
   traces?: RequestRuleTrace[] | null
   priceOptions?: Pick<
@@ -67,6 +68,7 @@ export function TokenBillingBreakdown(props: Props) {
   const amount = (value: number) =>
     formatTaskUsageUnitPrice(value, {
       tokenUnit: 'M',
+      imageGeneration: props.imageGeneration,
       ...props.priceOptions,
       groupRatioMultiplier: props.multiplier,
     })
@@ -81,14 +83,16 @@ export function TokenBillingBreakdown(props: Props) {
   const variables = [
     ...new Set(rows.flatMap(({ tier }) => Object.keys(tier.unit_prices))),
   ]
-    .filter(
-      (key) => !props.hideCacheColumns || !['cr', 'cc', 'cc1h'].includes(key)
-    )
     .sort(
       (a, b) =>
         BILLING_VARS.findIndex((item) => item.key === a) -
         BILLING_VARS.findIndex((item) => item.key === b)
     )
+  const labelPrices = {
+    imagePrice: rows.every(({ tier }) => typeof tier.unit_prices.img === 'number') ? rows[0]?.tier.unit_prices.img : undefined,
+    imageCachePrice: rows.every(({ tier }) => typeof tier.unit_prices.img_cr === 'number') ? rows[0]?.tier.unit_prices.img_cr : undefined,
+    imageOutputPrice: rows.find(({ tier }) => typeof tier.unit_prices.img_o === 'number')?.tier.unit_prices.img_o,
+  }
   const hasFixed =
     rows.some(({ tier }) => tier.has_constant) ||
     projection.constant_charge !== undefined
@@ -149,12 +153,14 @@ export function TokenBillingBreakdown(props: Props) {
           ...variables.map((variable) => ({
             id: variable,
             header: t(
-              BILLING_VARS.find((item) => item.key === variable)?.shortLabel ??
-                variable
+              imageTokenPriceLabel(variable, BILLING_VARS.find((item) => item.key === variable)?.shortLabel ?? variable, props.imageGeneration, labelPrices)
             ),
             cellClassName: 'text-right font-mono tabular-nums',
-            cell: ({ tier }: PriceRow) =>
-              amount(tier.unit_prices[variable] ?? 0),
+            cell: ({ tier }: PriceRow) => (
+              <span title={props.imageGeneration ? t('Unit price before discounts: {{price}} USD per 1M tokens.', { price: tier.unit_prices[variable] ?? 0 }) : undefined}>
+                {amount(tier.unit_prices[variable] ?? 0)}
+              </span>
+            ),
           })),
           ...(hasFixed
             ? [

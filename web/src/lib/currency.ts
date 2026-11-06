@@ -86,6 +86,8 @@ import {
 } from '@/stores/system-config-store'
 
 export interface CurrencyFormatOptions {
+  /** Preserve trailing decimals for unit-price tables; defaults to zero. */
+  minimumFractionDigits?: number
   /** Fraction digits to use when |value| >= 1 */
   digitsLarge?: number
   /** Fraction digits to use when |value| < 1 */
@@ -131,6 +133,7 @@ type DisplayMeta =
     }
 
 const DEFAULT_FORMAT_OPTIONS: ResolvedCurrencyFormatOptions = {
+  minimumFractionDigits: 0,
   digitsLarge: 2,
   digitsSmall: 4,
   abbreviate: true,
@@ -233,6 +236,8 @@ function mergeOptions(
 ): ResolvedCurrencyFormatOptions {
   if (!options) return DEFAULT_FORMAT_OPTIONS
   return {
+    minimumFractionDigits:
+      options.minimumFractionDigits ?? DEFAULT_FORMAT_OPTIONS.minimumFractionDigits,
     digitsLarge: options.digitsLarge ?? DEFAULT_FORMAT_OPTIONS.digitsLarge,
     digitsSmall: options.digitsSmall ?? DEFAULT_FORMAT_OPTIONS.digitsSmall,
     abbreviate: options.abbreviate ?? DEFAULT_FORMAT_OPTIONS.abbreviate,
@@ -309,6 +314,17 @@ function formatCurrencyValue(
         maximumFractionDigits: 1,
       }).format(value)
     }
+    if (options.minimumFractionDigits > 0 && !options.abbreviate) {
+      const digits = getFractionDigits(
+        value,
+        options.digitsLarge,
+        options.digitsSmall
+      )
+      return new Intl.NumberFormat(options.locale, {
+        minimumFractionDigits: Math.min(options.minimumFractionDigits, digits),
+        maximumFractionDigits: digits,
+      }).format(value)
+    }
     return formatNumberWithSuffix(
       value,
       options.digitsLarge,
@@ -323,12 +339,21 @@ function formatCurrencyValue(
     options.digitsSmall
   )
   const adjustedValue = adjustForMinimum(value, digits, options.minimumNonZero)
+  // Fixed-decimal unit prices must disclose the display bound, not quote it
+  // as the actual price. Existing variable-precision callers keep their policy.
+  let bound = ''
+  if (
+    options.minimumFractionDigits > 0 &&
+    Math.abs(value) < Math.abs(adjustedValue)
+  ) {
+    bound = value > 0 ? '<' : '>'
+  }
 
   if (meta.kind === 'currency') {
     if (!options.showSymbol) {
-      return new Intl.NumberFormat(options.locale, {
+      return bound + new Intl.NumberFormat(options.locale, {
         notation: options.compact ? 'compact' : 'standard',
-        minimumFractionDigits: 0,
+        minimumFractionDigits: options.compact ? 0 : Math.min(options.minimumFractionDigits, digits),
         maximumFractionDigits: options.compact ? 1 : digits,
       }).format(adjustedValue)
     }
@@ -338,19 +363,19 @@ function formatCurrencyValue(
       currency: meta.currencyCode,
       currencyDisplay: 'narrowSymbol',
       notation: options.compact ? 'compact' : 'standard',
-      minimumFractionDigits: 0,
+      minimumFractionDigits: options.compact ? 0 : Math.min(options.minimumFractionDigits, digits),
       maximumFractionDigits: options.compact ? 1 : digits,
     }).format(adjustedValue)
-    return formatted
+    return bound + formatted
   }
 
   const decimal = new Intl.NumberFormat(options.locale, {
     notation: options.compact ? 'compact' : 'standard',
-    minimumFractionDigits: 0,
+    minimumFractionDigits: options.compact ? 0 : Math.min(options.minimumFractionDigits, digits),
     maximumFractionDigits: options.compact ? 1 : digits,
   }).format(adjustedValue)
 
-  return options.showSymbol ? `${meta.symbol} ${decimal}` : decimal
+  return bound + (options.showSymbol ? `${meta.symbol} ${decimal}` : decimal)
 }
 
 /**

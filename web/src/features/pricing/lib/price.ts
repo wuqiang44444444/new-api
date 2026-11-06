@@ -21,6 +21,7 @@ import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { QUOTA_TYPE_VALUES, TOKEN_UNIT_DIVISORS } from '../constants'
 import type { PricingModel, TokenUnit, PriceType } from '../types'
 import { getConfiguredGroupRatio, getDisplayGroupRatio } from './model-helpers'
+import { IMAGE_TOKEN_PRICE_FORMAT } from './image-token-price-display'
 
 // ----------------------------------------------------------------------------
 // Price Calculation Utilities
@@ -170,6 +171,7 @@ export function formatPrice(
     showSymbol: showCurrencySymbol,
     digitsLarge: 4,
     digitsSmall: 6,
+    ...(model.supported_endpoint_types?.includes('image-generation') ? IMAGE_TOKEN_PRICE_FORMAT : {}),
     abbreviate: false,
   })
 }
@@ -205,6 +207,7 @@ export function formatGroupPrice(
   return formatBillingCurrencyFromUSD(price, {
     digitsLarge: 4,
     digitsSmall: 6,
+    ...(model.supported_endpoint_types?.includes('image-generation') ? IMAGE_TOKEN_PRICE_FORMAT : {}),
     abbreviate: false,
   })
 }

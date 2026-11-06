@@ -48,6 +48,7 @@ import {
 } from '../lib/billing-expr'
 import { formatBillingCondition } from '../lib/billing-expression/condition-display'
 import { compileBillingExpression } from '../lib/billing-expression/parser'
+import { imageTokenPriceLabel } from '../lib/image-token-price-display'
 import { isBreakdownTierMatched } from '../lib/breakdown-tier-match'
 import {
   formatTaskUsageUnitPrice,
@@ -65,6 +66,7 @@ import type { BillingUsageSchema, BillingUsageUnit, BillingDisplayProjection } f
 import { tiersFromBillingDisplay, taskTiersFromBillingDisplay, ruleGroupsFromBillingDisplay } from '../lib/billing-display'
 
 type DynamicPricingBreakdownProps = {
+  imageGeneration?: boolean
  billingDisplay?: BillingDisplayProjection
  priceMultiplier?: number
   billingExpr: string | null | undefined
@@ -78,13 +80,6 @@ type DynamicPricingBreakdownProps = {
   matchedFixedPrice?: number
   /** Request-rule traces emitted by the settlement run. */
   requestRules?: RequestRuleTrace[] | null
-  /**
-   * Hide cache-pricing columns regardless of the per-tier values. The log
-   * details dialog passes this when the actual request did not consume any
-   * cache tokens, so users only see pricing rows that were relevant to the
-   * call they are inspecting. Defaults to false (show all configured prices).
-   */
-  hideCacheColumns?: boolean
   /**
    * Dense rendering for the usage-log details dialog: drops the colored
    * icon header and uses the dialog's small text sizes. Defaults to false.
@@ -205,14 +200,27 @@ function formatBreakdownPrice(
   rate: number,
   t: (key: string) => string,
   taskPriceOptions: DynamicPricingBreakdownProps['taskPriceOptions'],
-  language: string
+  language: string,
+  imageGeneration: boolean,
+  priceMultiplier: number
 ): string {
-  const amount =
+  let amount: string
+  if (imageGeneration && field.unit === 'token' && field.labelKind !== 'schema') {
+    amount = formatTaskUsageUnitPrice(value, {
+      tokenUnit: 'M',
+      ...taskPriceOptions,
+      imageGeneration: true,
+      groupRatioMultiplier: priceMultiplier,
+    })
+  } else if (
     field.labelKind === 'schema' ||
     field.unit === 'request' ||
     field.unit === 'image'
-      ? formatTaskUsageUnitPrice(value, { tokenUnit: 'M', ...taskPriceOptions })
-      : `${symbol}${(value * rate).toFixed(4)}`
+  ) {
+    amount = formatTaskUsageUnitPrice(value, { tokenUnit: 'M', ...taskPriceOptions })
+  } else {
+    amount = `${symbol}${(value * rate).toFixed(4)}`
+  }
   if (field.unit === 'second') return `${amount}/${t('s')}`
   if (field.unit === 'count') {
     return `${amount}/${taskUsageUnitLabel(field, language, t('unit'))}`
@@ -284,6 +292,7 @@ function nextOccurrenceKey(
 }
 
 function NativePricingBreakdown({
+  imageGeneration = false,
   billingExpr,
   billingDisplay,
   priceMultiplier = 1,
@@ -291,7 +300,6 @@ function NativePricingBreakdown({
   matchedBillingUnit,
   matchedFixedPrice,
   requestRules,
-  hideCacheColumns = false,
   compact = false,
   usageSchema,
   taskPriceOptions,
@@ -415,7 +423,6 @@ function NativePricingBreakdown({
     }
     const fields: BreakdownPriceField[] = BILLING_PRICING_VARS.filter(
       (variable) => {
-        if (hideCacheColumns && variable.group === 'cache') return false
         return tiers.some(
           (tier) =>
             !isTaskBreakdownTier(tier) &&
@@ -424,7 +431,11 @@ function NativePricingBreakdown({
       }
     ).map((variable, index) => ({
       id: variable.field ?? `price-${index}`,
-      label: variable.shortLabel,
+      label: imageTokenPriceLabel(variable.key, variable.shortLabel, imageGeneration, {
+        imagePrice: tiers.every((tier) => !isTaskBreakdownTier(tier) && typeof tier.imagePrice === 'number') ? (tiers[0] as ParsedTier)?.imagePrice : undefined,
+        imageCachePrice: tiers.every((tier) => !isTaskBreakdownTier(tier) && typeof tier.imageCachePrice === 'number') ? (tiers[0] as ParsedTier)?.imageCachePrice : undefined,
+        imageOutputPrice: (tiers.find((tier) => !isTaskBreakdownTier(tier) && typeof tier.imageOutputPrice === 'number') as ParsedTier | undefined)?.imageOutputPrice,
+      }),
       labelKind: 'i18n' as const,
       unit: 'token',
       value: (tier: BreakdownTier) =>
@@ -575,7 +586,9 @@ function NativePricingBreakdown({
                                   rate,
                                   t,
                                   taskPriceOptions,
-                                  i18n.language
+                                  i18n.language,
+                                  imageGeneration,
+                                  priceMultiplier
                                 )
                               : '-'}
                           </div>
@@ -692,7 +705,9 @@ function NativePricingBreakdown({
                         rate,
                         t,
                         taskPriceOptions,
-                        i18n.language
+                        i18n.language,
+                        imageGeneration,
+                        priceMultiplier
                       )}
                     </span>
                   ) : (
@@ -760,6 +775,6 @@ function NativePricingBreakdown({
 }
 
 export function DynamicPricingBreakdown(props: DynamicPricingBreakdownProps) {
-if(props.billingDisplay !== undefined && !props.usageSchema) return <TokenBillingBreakdown expression={props.billingExpr || ''} projection={props.billingDisplay} multiplier={props.priceMultiplier ?? 1} compact={props.compact ?? false} hideCacheColumns={props.hideCacheColumns ?? false} matchedTier={props.matchedTierLabel} traces={props.requestRules} priceOptions={props.taskPriceOptions} />
+if(props.billingDisplay !== undefined && !props.usageSchema) return <TokenBillingBreakdown imageGeneration={props.imageGeneration} expression={props.billingExpr || ''} projection={props.billingDisplay} multiplier={props.priceMultiplier ?? 1} compact={props.compact ?? false} matchedTier={props.matchedTierLabel} traces={props.requestRules} priceOptions={props.taskPriceOptions} />
 return <NativePricingBreakdown {...props} />
 }

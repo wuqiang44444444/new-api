@@ -52,11 +52,13 @@ import {
   LogIn,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import type { ReactNode } from 'react'
 
 import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { TokenPricingNote } from '@/features/pricing/components/token-pricing-note'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import { BILLING_PRICING_VARS } from '@/features/pricing/lib/billing-expr'
@@ -99,6 +101,7 @@ import { ResponseModelDetails } from '../model-badge'
 import { PluginAuthorLink } from '../plugin-author-link'
 import { TaskCostDisplay } from '../task-cost-display'
 import { DetailRow, DetailSection } from './log-detail-layout'
+import { BillingEquation } from '../billing-equation'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
 // to its i18n label key for display in the audit details.
@@ -183,7 +186,7 @@ function BillingBreakdown(props: {
   const isTieredExpr = other.billing_mode === 'tiered_expr'
   const tieredSummary = getTieredBillingSummary(other)
 
-  const rows: Array<{ label: string; value: string }> = []
+  const rows: Array<{ label: string; value: ReactNode }> = []
   const priceOpts = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
   const fmtPrice = (usd: number) => formatBillingCurrencyFromUSD(usd, priceOpts)
   const baseInputUSD =
@@ -207,10 +210,22 @@ function BillingBreakdown(props: {
         : t(isPerCall ? 'Per-call' : 'Per-token'),
     })
     for (const line of explanation.lines) {
+      if (line.label === 'Text Input' && line.unit === 'token') {
+        rows.push({
+          label: t('Text input price'),
+          value: `${fmtPrice(line.unit_price_usd)}/M`,
+        })
+      }
       const unit = line.unit === 'token' ? 'M token' : t(line.unit)
       rows.push({
         label: t(line.label),
-        value: `${line.quantity.toLocaleString()} ${t(line.unit)} × ${fmtPrice(line.unit_price_usd)}/${unit} = ${fmtPrice(line.subtotal_usd)}`,
+        value: (
+          <BillingEquation
+            quantity={`${line.quantity.toLocaleString()} ${t(line.unit)}`}
+            price={`${fmtPrice(line.unit_price_usd)}/${unit}`}
+            subtotal={fmtPrice(line.subtotal_usd)}
+          />
+        ),
       })
     }
     if (explanation.current_quota_conversion) {
@@ -464,6 +479,19 @@ function BillingBreakdown(props: {
 
   return (
     <DetailSection label={t('Billing Details')}>
+      {isTieredExpr && !other.usage_facts && !taskCost && other.billing_unit !== 'request' && (
+        <TokenPricingNote imageGeneration={other.request_path === '/v1/images/generations' || other.request_path === '/v1/images/edits'} />
+      )}
+      {isTieredExpr && explanation && explanation.lines.length === 0 && (
+        <p className='text-muted-foreground text-xs'>
+          {t('Itemized costs cannot be verified from the recorded billing evidence. The recorded charge is unchanged.')}
+        </p>
+      )}
+      {!!explanation?.lines.length && (
+        <p className='text-muted-foreground text-xs'>
+          {t('Final charges are rounded to the smallest billing unit.')}
+        </p>
+      )}
       {rows.map((row) => (
         <DetailRow key={row.label} label={row.label} value={row.value} mono />
       ))}
@@ -526,6 +554,13 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
       label: t('Cache Read'),
       value: cacheRead.toLocaleString(),
     })
+  }
+
+  if (other.cache_read_tokens_reported !== undefined || other.billing_tokens) {
+    let cacheEvidence = t('Not recorded')
+    if (other.cache_read_tokens_reported === true) cacheEvidence = t('Reported by upstream')
+    if (other.cache_read_tokens_reported === false) cacheEvidence = t('Upstream did not report cache usage')
+    rows.push({ label: t('Cache usage evidence'), value: cacheEvidence })
   }
 
   if (other.image_cache_tokens !== undefined) {
@@ -1338,6 +1373,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
               />
             )}
             <DynamicPricingBreakdown
+              imageGeneration={other.request_path === '/v1/images/generations' || other.request_path === '/v1/images/edits'}
 billingDisplay={other.billing_display}
 priceMultiplier={getContractDiscountFact(other)?.ratio ?? 1}
               compact
@@ -1346,7 +1382,6 @@ priceMultiplier={getContractDiscountFact(other)?.ratio ?? 1}
               matchedBillingUnit={other.billing_unit}
               matchedFixedPrice={other.fixed_price}
               requestRules={other.request_rules}
-              hideCacheColumns={!hasAnyCacheTokens(other)}
               usageSchema={billingUsageSchema}
               usageFacts={other.usage_facts}
             />

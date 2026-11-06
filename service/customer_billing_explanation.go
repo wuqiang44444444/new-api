@@ -120,7 +120,7 @@ func customerBillingLines(log *model.Log, other map[string]any, row model.Custom
 			return lines
 		}
 		quantities := make(map[string]float64)
-		labels := map[string]string{"p": "Input", "c": "Output", "cr": "Cache Read", "cc": "Cache Write", "cc1h": "Cache Write (1h)", "img": "Image In", "img_o": "Image Out", "ai": "Audio In", "ao": "Audio Out"}
+		labels := map[string]string{"p": "Input", "c": "Output", "cr": "Cache Read", "cc": "Cache Write", "cc1h": "Cache Write (1h)", "img": "Image In", "img_cr": "Image Cache", "img_o": "Image Out", "ai": "Audio In", "ao": "Audio Out"}
 		if len(units) > 0 {
 			if facts, ok := other["usage_facts"].(map[string]any); ok {
 				for key := range tier.UnitPrices {
@@ -128,6 +128,11 @@ func customerBillingLines(log *model.Log, other map[string]any, row model.Custom
 						quantities[key] = value
 					}
 				}
+			}
+		} else if other["billing_tokens"] != nil {
+			quantities = frozenCustomerTokenQuantities(log, other, string(expression), labels)
+			if quantities == nil {
+				return lines
 			}
 		} else {
 			usage := dto.Usage{PromptTokens: log.PromptTokens, CompletionTokens: log.CompletionTokens}
@@ -140,7 +145,7 @@ func customerBillingLines(log *model.Log, other map[string]any, row model.Custom
 			usage.PromptTokensDetails.CachedTokens = int(row.CacheReadTokens)
 			// Missing multimodal dimensions cannot be reconstructed from totals.
 			used := billingexpr.UsedVars(string(expression))
-			for _, key := range []string{"img", "img_o", "ai", "ao"} {
+			for _, key := range []string{"img", "img_cr", "img_o", "ai", "ao"} {
 				if used[key] {
 					return lines
 				}
