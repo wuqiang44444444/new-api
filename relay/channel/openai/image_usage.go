@@ -10,4 +10,5 @@ func normalizeImageUsageWithEvidence(usage *dto.Usage, body []byte) {
 	}
 	recordImageCacheReadEvidence(usage, body)
 	normalizeOpenAIUsage(usage)
+	recordImageTokenUsage(usage, body)
 }

@@ -108,3 +108,41 @@ it.each([
     expect(screen.getByText('$1.25/M')).toBeVisible()
   }
 )
+
+it('shows reported legacy image usage and preserves explicit zero counts', () => {
+  const log = usageLogSchema.parse({
+    id: 1,
+    user_id: 1,
+    created_at: 1000,
+    type: 2,
+    content: '',
+    model_name: 'public-image',
+    quota: 2993,
+    prompt_tokens: 21,
+    completion_tokens: 196,
+    other: JSON.stringify({
+      request_path: '/v1/images/generations',
+      image_token_usage: {
+        text_input: 21,
+        image_input: 0,
+        image_output: 196,
+      },
+      billing_explanation: { lines: [] },
+    }),
+  })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <DetailsDialog
+        log={log}
+        open
+        isAdmin={false}
+        isRoot={false}
+        onOpenChange={() => {}}
+      />
+    </QueryClientProvider>
+  )
+  expect(screen.getByText('Text Input').nextElementSibling).toHaveTextContent('21')
+  expect(screen.getByText('Image In').nextElementSibling).toHaveTextContent('0')
+  expect(screen.getByText('Image Out').nextElementSibling).toHaveTextContent('196')
+  expect(screen.queryByText('Text Output')).toBeNull()
+})

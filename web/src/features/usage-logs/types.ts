@@ -189,6 +189,12 @@ export interface LogOtherData {
   cache_tokens?: number
   cache_read_tokens_reported?: boolean
   image_cache_tokens?: number
+  image_token_usage?: {
+    text_input?: number
+    image_input?: number
+    text_output?: number
+    image_output?: number
+  }
   billing_tokens?: Record<string, number>
   cache_write_unavailable?: boolean
   cache_creation_tokens?: number

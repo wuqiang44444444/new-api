@@ -549,6 +549,20 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
     value: completionTokens.toLocaleString(),
   })
 
+  const imageUsage = other.image_token_usage
+  if (imageUsage) {
+    for (const [label, count] of [
+      [t('Text Input'), imageUsage.text_input],
+      [t('Image In'), imageUsage.image_input],
+      [t('Text Output'), imageUsage.text_output],
+      [t('Image Out'), imageUsage.image_output],
+    ] as const) {
+      if (count !== undefined && Number.isFinite(count)) {
+        rows.push({ label, value: count.toLocaleString() })
+      }
+    }
+  }
+
   if (cacheRead > 0) {
     rows.push({
       label: t('Cache Read'),
@@ -591,7 +605,7 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
     })
   }
 
-  if (other.image && other.image_output) {
+  if (other.image && other.image_output && imageUsage?.image_input === undefined) {
     rows.push({
       label: t('Image Tokens'),
       value: other.image_output.toLocaleString(),

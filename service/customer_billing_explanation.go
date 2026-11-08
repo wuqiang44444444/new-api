@@ -266,13 +266,20 @@ func customerBillingLines(log *model.Log, other map[string]any, row model.Custom
 		input -= quantity
 		dimensions = append(dimensions, customerBillingLine{"Audio In", quantity, "token", audioPrice, quantity * audioPrice / 1000000})
 	}
-	lines = append(lines, customerBillingLine{"Input", input, "token", price, input * price / 1000000})
+	imageUsage, _ := other["image_token_usage"].(map[string]any)
+	inputLabel := "Input"
+	if textInput, ok := customerBillingNumber(imageUsage, "text_input"); ok && textInput == input {
+		inputLabel = "Text Input"
+	}
+	lines = append(lines, customerBillingLine{inputLabel, input, "token", price, input * price / 1000000})
 	if row.OutputTokens > 0 {
 		ratio, ok := customerBillingNumber(other, "completion_ratio")
 		if !ok {
 			return nil
 		}
-		lines = append(lines, customerBillingLine{"Output", float64(row.OutputTokens), "token", price * ratio, float64(row.OutputTokens) * price * ratio / 1000000})
+		output := float64(row.OutputTokens)
+		line := customerBillingLine{"Output", output, "token", price * ratio, output * price * ratio / 1000000}
+		lines = appendLegacyImageOutputLines(lines, line, imageUsage)
 	}
 	lines = append(lines, dimensions...)
 	return reconciledCustomerBillingLines(lines, row, quotaPerUnit)
