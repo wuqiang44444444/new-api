@@ -14,20 +14,21 @@
 # Reset data:
 #   docker compose -f docker-compose.dev.yml down -v
 
+name: yuan-gateway
+
 services:
   new-api:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    image: new-api-dev:local
-    container_name: new-api-dev
+    image: yuan-gateway-dev:local
     restart: unless-stopped
     ports:
       - "3000:3000"
     volumes:
       - dev_data:/data
     environment:
-      - SQL_DSN=postgresql://root:123456@postgres:5432/new-api
+      - SQL_DSN=postgresql://yuan_gateway:${YUAN_DEV_POSTGRES_PASSWORD:?Set YUAN_DEV_POSTGRES_PASSWORD in .env}@postgres:5432/yuan_gateway_dev?sslmode=disable
       - REDIS_CONN_STRING=redis://redis
       - TZ=Asia/Shanghai
       - BATCH_UPDATE_ENABLED=true
@@ -46,25 +47,25 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: new-api-dev-redis
     restart: unless-stopped
     networks:
       - dev-network
 
   postgres:
     image: postgres:15-alpine
-    container_name: new-api-dev-pg
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:54330:5432"
     environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: 123456
-      POSTGRES_DB: new-api
+      POSTGRES_USER: yuan_gateway
+      POSTGRES_PASSWORD: ${YUAN_DEV_POSTGRES_PASSWORD:?Set YUAN_DEV_POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: yuan_gateway_dev
     volumes:
       - dev_pg_data:/var/lib/postgresql/data
     networks:
       - dev-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U root -d new-api"]
+      test: ["CMD-SHELL", "pg_isready -U yuan_gateway -d yuan_gateway_dev"]
       interval: 5s
       timeout: 3s
       retries: 5

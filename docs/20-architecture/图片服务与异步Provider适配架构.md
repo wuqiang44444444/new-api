@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-19
+last-reviewed: 2026-11-09
 ---
 
 # 图片服务与中转 Provider 适配架构
@@ -119,6 +119,10 @@ POST /v1/images/{generations|edits} + Prefer: respond-async
   -> 终态 CAS -> 按冻结价格与实际 usage 计算目标 -> 共享原子结算（失败退款；未知待核实）
 GET /v1/tasks/{task_id} -> 图片投影（user_id + app_id 双重归属）
 ```
+
+受理事务同时写入初始计费计算事实：表达式与旧 Token 定价都在预扣前把已计算额度的取整与完成值
+记录为任务计费依据，旧定价与表达式共用同一受理一致性校验；初始计算缺失或不一致时受理失败关闭，
+不通过修改数据库补造记录受理。
 
 关键不变量：
 
