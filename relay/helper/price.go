@@ -203,6 +203,8 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 				return hosttypes.PriceData{}, err
 			}
 			priceData.QuotaToPreConsume = quota
+			info.BillingCalculation.Add("truncate", "quota", quota, value)
+			info.BillingCalculation.Finish(quota)
 		}
 	}
 	if usePrice {
