@@ -25,9 +25,11 @@ func CaptureImageClientResponse(c *gin.Context, capture *ImageErrorEvidence) fun
 
 type imageEvidenceWriter struct {
 	gin.ResponseWriter
-	capture         *ImageErrorEvidence
-	observeIdentity func()
-	requestPath     string
+	capture           *ImageErrorEvidence
+	observeIdentity   func()
+	requestPath       string
+	originalImageBody *evidencePiece
+	sharedDelivery    bool
 }
 
 func (w *imageEvidenceWriter) prepareDelivery() {
@@ -48,7 +50,17 @@ func (w *imageEvidenceWriter) prepareDelivery() {
 	w.capture.mu.Unlock()
 }
 func (w *imageEvidenceWriter) Write(p []byte) (int, error) {
+	source := w.originalImageBody
+	w.originalImageBody = nil
 	n, err := w.ResponseWriter.Write(p)
+	if w.sharedDelivery {
+		// A later write belongs to its own delivery event. The original event
+		// already describes the full image write and has been sealed.
+		w.capture.mu.Lock()
+		w.capture.deliveryPrepared = false
+		w.capture.mu.Unlock()
+		w.sharedDelivery = false
+	}
 	w.prepareDelivery()
 	observedErr := err
 	if observedErr == nil && n != len(p) {
@@ -57,6 +69,10 @@ func (w *imageEvidenceWriter) Write(p []byte) (int, error) {
 	w.capture.mu.Lock()
 	record := w.capture.delivery
 	w.capture.mu.Unlock()
+	if source != nil && observedErr == nil && record.seal(source) {
+		w.sharedDelivery = true
+		return n, err
+	}
 	if record != nil && observedErr != nil {
 		record.mu.Lock()
 		record.meta.Error = observedErr.Error()

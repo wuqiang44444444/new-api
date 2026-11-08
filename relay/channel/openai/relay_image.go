@@ -43,8 +43,7 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 
 	info.UpdateImageCount(openaiImageResponseCount(responseBody))
 
-	// 写入新的 response body
-	service.IOCopyBytesGracefully(c, resp, responseBody)
+	service.WriteOriginalImageResponse(c, resp, responseBody)
 
 	normalizeImageUsageWithEvidence(&usageResp.Usage, responseBody)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)

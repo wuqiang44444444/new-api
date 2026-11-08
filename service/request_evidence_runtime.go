@@ -57,6 +57,8 @@ type evidencePiece struct {
 	released     atomic.Bool
 	object       *evidenceStreamObject
 	event        *model.TaskRequestEvidenceEvent
+	bodySource   *evidencePiece
+	published    bool
 }
 
 func init() {
@@ -120,7 +122,14 @@ func (p *evidencePiece) start() error {
 	if !ok {
 		return errors.New("evidence stream store unavailable")
 	}
-	object, err := store.beginStream(EvidenceObjectKey(w.index.Id, p.event.Id), w.index.Id)
+	var sourceEventID int64
+	if p.bodySource != nil {
+		if !p.bodySource.published {
+			return errors.New("shared evidence body unavailable")
+		}
+		sourceEventID = p.bodySource.event.Id
+	}
+	object, err := store.beginStreamObject(EvidenceObjectKey(w.index.Id, p.event.Id), w.index.Id, sourceEventID)
 	if err != nil {
 		return err
 	}
@@ -185,6 +194,7 @@ func (p *evidencePiece) finish() {
 		imageEvidenceFailed.Add(1)
 		common.SysError("request evidence stream publication failed")
 	} else {
+		p.published = true
 		imageEvidenceWritten.Add(1)
 	}
 }

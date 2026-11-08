@@ -242,7 +242,7 @@ func formatLogOtherJSON(value string, visibility logOtherVisibility) string {
 		return "{}"
 	}
 
-	changed := false
+	changed := projectTaskLogModelMapping(values, visibility)
 	// Full task evidence is retained in storage and served by task detail APIs.
 	// Ordinary log pages only need their existing amount and pricing summary.
 	if _, exists := values["billing_calculation"]; exists {

@@ -65,7 +65,8 @@ class StartScriptTest(unittest.TestCase):
             second.bind(("127.0.0.1", 0))
             self.ports = [first.getsockname()[1], second.getsockname()[1]]
         self.env = dict(os.environ, PATH=str(self.root / "bin") + os.pathsep + os.environ["PATH"],
-                        BACKEND_PORT=str(self.ports[0]), FRONTEND_PORT=str(self.ports[1]), STARTUP_TIMEOUT="3")
+                        BACKEND_PORT=str(self.ports[0]), FRONTEND_PORT=str(self.ports[1]), STARTUP_TIMEOUT="3",
+                        SQL_DSN="postgresql://localhost/yuan_start_test")
 
     def launch(self, **modes):
         log = open(self.root / "output", "w+")
@@ -157,7 +158,9 @@ class StartScriptTest(unittest.TestCase):
         for config in [{"FRONTEND_PORT": "invalid"},
                        {"FRONTEND_PORT": self.env["BACKEND_PORT"]},
                        {"STARTUP_TIMEOUT": "invalid"},
-                       {"STARTUP_TIMEOUT": "999999999999999999999"}]:
+                       {"STARTUP_TIMEOUT": "999999999999999999999"},
+                       {"SQL_DSN": ""},
+                       {"SQL_DSN": "local"}]:
             with self.subTest(config=config):
                 child = self.occupy_backend_port()
                 proc = self.launch(**config)

@@ -142,6 +142,24 @@ if [[ "$BACKEND_PORT" == "$FRONTEND_PORT" ]]; then
   exit 1
 fi
 
+# Use the same .env parser and environment precedence as the Go backend.
+if [[ ! ${SQL_DSN+x} && -f "$ROOT_DIR/.env" ]]; then
+  if ! SQL_DSN=$(
+    cd "$ROOT_DIR" &&
+      go run github.com/joho/godotenv/cmd/godotenv /usr/bin/printenv SQL_DSN 2>/dev/null
+  ); then
+    echo "无法从 .env 读取 SQL_DSN。请在 .env 或环境变量中设置开发 PostgreSQL 的连接 URL。" >&2
+    exit 1
+  fi
+fi
+case "${SQL_DSN:-}" in
+  postgres://?*|postgresql://?*) ;;
+  *)
+    echo "开发环境需要 PostgreSQL。请在仓库 .env 或环境变量中设置 PostgreSQL URL 格式的 SQL_DSN。" >&2
+    exit 1
+    ;;
+esac
+
 # Validate the complete configuration before stopping either running service.
 for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
   stop_port_occupiers "$port"
@@ -161,6 +179,7 @@ mkdir -p "$LOG_DIR"
 echo "正在启动后端，端口：$BACKEND_PORT"
 (
   cd "$ROOT_DIR"
+  export SQL_DSN
   exec env PORT="$BACKEND_PORT" go run .
 ) >>"$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!

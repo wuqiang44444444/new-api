@@ -65,8 +65,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 		other.SetPublic("user_group_ratio", info.PriceData.GroupRatioInfo.GroupSpecialRatio)
 	}
 	if info.IsModelMapped {
-		other.SetPublic("is_model_mapped", true)
-		other.SetPublic("upstream_model_name", info.UpstreamModelName)
+		appendTaskLogModelMapping(other, task, info.UpstreamModelName)
 	}
 	if snap := info.TieredBillingSnapshot; snap != nil {
 		other.SetPublic("billing_mode", "tiered_expr")
@@ -164,15 +163,14 @@ func taskBillingOther(task *model.Task) *model.LogOther {
 	}
 	props := task.Properties
 	if props.UpstreamModelName != "" && props.UpstreamModelName != props.OriginModelName {
-		other.SetPublic("is_model_mapped", true)
-		other.SetPublic("upstream_model_name", props.UpstreamModelName)
+		appendTaskLogModelMapping(other, task, props.UpstreamModelName)
 	}
 	appendTaskLogInfo(task, other)
 	if task.PrivateData.BillingContext != nil {
 		appendCustomerContractBillingInfo(other, task.PrivateData.BillingContext.ContractFact)
 	}
 	other.SetPublic("task_billing_event", "adjustment")
-	appendBillingStatementIdentitySnapshotWithMode(other, props.OriginModelName, props.UpstreamModelName, "per_call")
+	appendBillingStatementIdentitySnapshotWithMode(other, props.OriginModelName, props.UpstreamModelName, taskStatementBillingMode(task))
 	appendProviderBillingEvidence(other, task)
 	return other
 }

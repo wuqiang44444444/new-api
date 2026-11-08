@@ -71,7 +71,7 @@ func (r *imageEvidenceExchange) appendRealtimeMessage(messageType int, message [
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.finished || r.stopped || !r.openPiece() {
+	if r.finished || r.stopped || !r.openPiece(nil) {
 		return
 	}
 	frameError := errorString(frameErr)

@@ -149,6 +149,8 @@ net_quota    = gross_quota - refund_quota   （有符号）
   Token 计量加 enum/boolean 条件时归为 `token`；声明为 `second` 的单一计量归为 `per_second`（按时长计费）。
   历史表达式中的宿主保留探针 `param("_task.duration_seconds")` 同样具有明确的秒单位；
   不以任意客户字段名猜测单位。credit、混合单位、动态计量引用或缺失单位保持 `unknown`。
+- 成功的旧定价异步图片按任务冻结的计价分支写入账单单位。历史完成记录中的固定单价 `-1` 表示
+  未配置固定价，存在已记录的 Token 用量时按 `token` 分类。
 - 固定单价为零但发生了非零资金流水的旧 per-call 标记不能证明按次收费：有可确认 Token 用量时保持
   `token`。退款行未保存表达式且分类未知时，只读批量查询主库原 Task 的冻结表达式与单位，
   必须同时匹配 user、app（提交 API Key）、token、channel、客户模型和 task ID；唯一匹配才补充分类。

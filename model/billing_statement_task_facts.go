@@ -121,15 +121,15 @@ func billingStatementTaskFacts(log billingReconciliationLog, other, snapshot map
 		parsed.billingMode = BillingStatementSettledExpressionMode(string(expression), units, unit)
 		return
 	}
-	// Version 1 task snapshots forced per_call even when model_price was zero.
-	// A zero fixed price cannot explain a nonzero charge or refund. Without an
-	// expression or measured tokens, keep its meter unknown instead of inventing
-	// a separate per-call refund group. Explicit free per-call records remain valid.
+	// Version 1 task snapshots forced per_call even with a zero fixed price.
+	// A completed async image can also carry -1 for an unconfigured fixed price.
 	price, ok := billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "model_price"))
-	if (isTask || taskID != "") && ok && price == 0 {
-		if log.CompletionTokens > 0 && parsed.billingMode != BillingReconciliationModePerSecond {
+	legacyImageTokenPrice := price == -1 && parsed.hasImageCount && event == "create" && !parsed.hasAuxiliaryCharge
+	if (isTask || taskID != "") && ok && (legacyImageTokenPrice || (price == 0 && log.Quota > 0)) {
+		measuredTokens := log.CompletionTokens > 0 || (legacyImageTokenPrice && log.PromptTokens > 0)
+		if measuredTokens && parsed.billingMode != BillingReconciliationModePerSecond {
 			parsed.billingMode = BillingReconciliationModeToken
-		} else if log.Quota > 0 && parsed.billingMode == BillingReconciliationModePerCall {
+		} else if parsed.billingMode == BillingReconciliationModePerCall {
 			parsed.billingMode = BillingReconciliationModeUnknown
 		}
 		if log.Type == LogTypeRefund && parsed.billingMode == BillingReconciliationModeUnknown {

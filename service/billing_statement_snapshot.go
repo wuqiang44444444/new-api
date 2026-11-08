@@ -42,7 +42,7 @@ func appendBillingStatementIdentitySnapshotWithMode(other *model.LogOther, origi
 		return
 	}
 	billingMode := "token"
-	if explicitMode == "per_call" {
+	if explicitMode == model.BillingReconciliationModePerCall || explicitMode == model.BillingReconciliationModeToken {
 		billingMode = explicitMode
 	} else if modelPrice, ok := other.Snapshot()["model_price"].(float64); ok && modelPrice > 0 {
 		billingMode = "per_call"

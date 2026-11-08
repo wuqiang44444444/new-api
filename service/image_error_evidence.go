@@ -36,6 +36,7 @@ type imageEvidenceExchange struct {
 	skip           bool
 	stopped        bool
 	finished       bool
+	split          bool
 	pieceBudgetMu  sync.Mutex
 	realtimePieces int
 }
@@ -77,7 +78,7 @@ func (c *ImageErrorEvidence) newRecord(stage string, meta EvidenceObjectMeta, sk
 	return r
 }
 
-func (r *imageEvidenceExchange) openPiece() bool {
+func (r *imageEvidenceExchange) openPiece(bodySource *evidencePiece) bool {
 	if r == nil || r.stopped {
 		return false
 	}
@@ -89,6 +90,9 @@ func (r *imageEvidenceExchange) openPiece() bool {
 	}
 	window := c.window
 	c.mu.Unlock()
+	if bodySource != nil && bodySource.window != window {
+		return false
+	}
 	if r.piece != nil && r.piece.window == window && now < r.piece.sealAt {
 		if r.piece.aborted.Load() {
 			r.stop()
@@ -101,6 +105,7 @@ func (r *imageEvidenceExchange) openPiece() bool {
 		return false
 	}
 	if r.piece != nil {
+		r.split = true
 		r.piece.closed.Store(true)
 	}
 	if !r.reservePieceBudget() {
@@ -113,7 +118,7 @@ func (r *imageEvidenceExchange) openPiece() bool {
 	if meta.BodyFormat == evidenceRealtimeFormat && now+evidenceRealtimeSeconds < sealAt {
 		sealAt = now + evidenceRealtimeSeconds
 	}
-	r.piece = &evidencePiece{capture: c, window: window, meta: meta, stage: r.stage, metadataOnly: r.skip, record: r, sealAt: sealAt}
+	r.piece = &evidencePiece{capture: c, window: window, meta: meta, stage: r.stage, metadataOnly: r.skip, record: r, sealAt: sealAt, bodySource: bodySource}
 	r.piece.pending.Add(1)
 	select {
 	case evidenceWorkers[c.worker] <- evidencePacket{piece: r.piece}:
@@ -161,7 +166,7 @@ func (r *imageEvidenceExchange) append(p []byte) {
 	if r.finished || r.stopped {
 		return
 	}
-	if !r.openPiece() {
+	if !r.openPiece(nil) {
 		return
 	}
 	r.appendBytes(p)
@@ -188,17 +193,25 @@ func (r *imageEvidenceExchange) appendBytes(p []byte) {
 	}
 }
 func (r *imageEvidenceExchange) close() {
+	r.seal(nil)
+}
+
+func (r *imageEvidenceExchange) seal(bodySource *evidencePiece) bool {
 	if r == nil {
-		return
+		return false
 	}
 	r.mu.Lock()
 	if r.finished {
 		r.mu.Unlock()
-		return
+		return false
+	}
+	if bodySource != nil && (r.skip || r.piece != nil || !r.openPiece(bodySource)) {
+		r.mu.Unlock()
+		return false
 	}
 	if !r.stopped {
-		if r.meta.BodyFormat != evidenceRealtimeFormat {
-			r.openPiece()
+		if bodySource == nil && r.meta.BodyFormat != evidenceRealtimeFormat {
+			r.openPiece(nil)
 		}
 		r.flush()
 	}
@@ -211,6 +224,7 @@ func (r *imageEvidenceExchange) close() {
 	r.capture.mu.Lock()
 	delete(r.capture.records, r)
 	r.capture.mu.Unlock()
+	return true
 }
 
 func (c *ImageErrorEvidence) recordError(stage string, err error) {
@@ -307,6 +321,7 @@ func (r *imageEvidenceExchange) rotate(piece *evidencePiece, now int64) {
 		return
 	}
 	r.flush()
+	r.split = true
 	piece.closed.Store(true)
 	r.piece = nil
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"io"
 	"os"
@@ -35,6 +36,10 @@ type evidenceStreamObject struct {
 }
 
 func (s *localEncryptedEvidenceStore) beginStream(key string, evidenceID int64) (*evidenceStreamObject, error) {
+	return s.beginStreamObject(key, evidenceID, 0)
+}
+
+func (s *localEncryptedEvidenceStore) beginStreamObject(key string, evidenceID, sourceEventID int64) (*evidenceStreamObject, error) {
 	if len(s.key) != 32 {
 		return nil, errors.New("evidence stream key unavailable")
 	}
@@ -66,7 +71,14 @@ func (s *localEncryptedEvidenceStore) beginStream(key string, evidenceID int64) 
 	if _, err = io.WriteString(file, evidenceStreamMagic); err == nil {
 		object.writer, err = sio.EncryptWriter(struct{ io.Writer }{file}, s.streamConfig(key))
 		if err == nil {
-			_, err = object.writer.Write([]byte{0})
+			var header [9]byte
+			prefix := header[:1]
+			if sourceEventID > 0 {
+				header[0] = evidenceStreamBodyReference
+				binary.BigEndian.PutUint64(header[1:], uint64(sourceEventID))
+				prefix = header[:]
+			}
+			_, err = object.writer.Write(prefix)
 		}
 	}
 	if err != nil {
@@ -134,6 +146,10 @@ func (r *evidenceStreamReader) Close() error { return r.file.Close() }
 func (r *evidenceStreamReader) Size() int64  { return r.size }
 
 func (s *localEncryptedEvidenceStore) openStream(key string) (io.ReadCloser, error) {
+	return s.openStreamObject(key, true)
+}
+
+func (s *localEncryptedEvidenceStore) openStreamObject(key string, allowBodyReference bool) (io.ReadCloser, error) {
 	path, err := s.resolvePath(key)
 	if err != nil {
 		return nil, err
@@ -148,6 +164,10 @@ func (s *localEncryptedEvidenceStore) openStream(key string) (io.ReadCloser, err
 	reader := bufio.NewReader(file)
 	magic, _ := reader.Peek(len(evidenceStreamMagic))
 	if string(magic) != evidenceStreamMagic {
+		if !allowBodyReference {
+			_ = file.Close()
+			return nil, ErrEvidenceDecryptFailed
+		}
 		return s.openLegacy(file)
 	}
 	_, _ = reader.Discard(len(evidenceStreamMagic))
@@ -167,9 +187,17 @@ func (s *localEncryptedEvidenceStore) openStream(key string) (io.ReadCloser, err
 		return nil, ErrEvidenceDecryptFailed
 	}
 	var marker [1]byte
-	if _, err = io.ReadFull(decrypted, marker[:]); err != nil || marker[0] != 0 {
+	if _, err = io.ReadFull(decrypted, marker[:]); err != nil {
 		_ = file.Close()
 		return nil, ErrEvidenceDecryptFailed
 	}
-	return &evidenceStreamReader{Reader: decrypted, file: file, size: int64(size) - 1}, nil
+	stream := &evidenceStreamReader{Reader: decrypted, file: file, size: int64(size) - 1}
+	if marker[0] == 0 {
+		return stream, nil
+	}
+	defer stream.Close()
+	if marker[0] != evidenceStreamBodyReference || !allowBodyReference {
+		return nil, ErrEvidenceDecryptFailed
+	}
+	return s.openSharedEvidenceBody(key, stream)
 }

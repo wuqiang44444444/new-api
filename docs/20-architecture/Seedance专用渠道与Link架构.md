@@ -332,6 +332,8 @@ Seedance 专用渠道提供四组客户行为：
 
 客户端只看到平台 Task ID、客户模型和 ModelArk V3 投影；Provider task ID、Provider 模型、渠道
 凭据、连接快照和原始 Provider 响应不得进入普通响应。
+ModelArk V3 的消费和退款日志将南向模型放在管理员可见字段。客户用量日志及账单明细按历史记录中的
+北向入口或冻结插件标识隐藏南向模型映射。
 
 `/v1/video/generations` 始终属于 NEWAPI 原生 `DoubaoVideo` 等渠道。Seedance adapter 对缺少 ModelArk
 V3 合同的调用 fail closed，不能把类型 61 当成原生 Doubao 渠道使用。

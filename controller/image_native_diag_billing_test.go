@@ -49,7 +49,7 @@ type nativeDiagFixture struct {
 	calls  *atomic.Int32
 }
 
-func newNativeDiagFixture(t *testing.T, status int, body string, headers map[string]string) *nativeDiagFixture {
+func newNativeDiagFixture(t *testing.T, status int, body string, headers map[string]string, beforeRelay ...gin.HandlerFunc) *nativeDiagFixture {
 	t.Helper()
 	db := nativeImageTestDB(t)
 	user := model.User{Id: 8961, Username: "native-diag", Quota: 100000, Group: "default", Status: common.UserStatusEnabled}
@@ -71,6 +71,7 @@ func newNativeDiagFixture(t *testing.T, status int, body string, headers map[str
 	channel := model.Channel{Id: 8961, Type: constant.ChannelTypeOpenAI, Key: "fixture", BaseURL: &provider.URL, Status: common.ChannelStatusEnabled}
 	require.NoError(t, db.Create(&channel).Error)
 	engine := gin.New()
+	engine.Use(beforeRelay...)
 	engine.Use(middleware.ImageErrorEvidence())
 	handlers := []gin.HandlerFunc{func(c *gin.Context) {
 		common.SetContextKey(c, constant.ContextKeyUserId, user.Id)
