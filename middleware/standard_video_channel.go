@@ -121,7 +121,7 @@ func resolveMiniMaxLinkChannel() gin.HandlerFunc {
 		}
 		// 在进入计价/预扣前固定 minimax-link 插件版本；插件不可用时失败关闭，
 		// 不产生任何资金动作。
-		if pinErr := taskminimax.PinMinimaxExtensionForChannel(c); pinErr != nil {
+		if pinErr := taskminimax.PinMinimaxExtensionForChannel(c, string(channel.GetOtherSettings().VideoUpstreamProtocol)); pinErr != nil {
 			abortModelArkVideo(c, http.StatusServiceUnavailable, "minimax_plugin_unavailable", "MiniMax plugin extension is unavailable")
 			return
 		}

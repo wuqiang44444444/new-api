@@ -13,7 +13,7 @@ import (
 func TestMiniMaxPublishedMetadataMatchesArtifact(t *testing.T) {
 	_, info, err := jsplugin.CompileSeedanceExtension(plugins.MinimaxSource(), jsplugin.Options{}, jsplugin.MinimaxHostContract())
 	require.NoError(t, err)
-	api, err := minimaxPublicVideoAPI(info.Configuration, "custom-model", "MiniMax-H3", false)
+	api, err := minimaxPublicVideoAPI(info.Configuration, "jdcloud_video_task_v1", "custom-model", "MiniMax-H3", false)
 	require.NoError(t, err)
 	assert.Equal(t, "modelark_v3", api.Protocol)
 	assert.Equal(t, "/docs/api-reference/videos/h3", api.DocumentationPath)
@@ -57,7 +57,7 @@ func TestMiniMaxOriginalDeclarationKeepsTextOnlyScope(t *testing.T) {
 		Protocol:      constant.VideoUpstreamProtocolJdCloudTaskV1,
 		ModelMetadata: map[string]jsplugin.SeedanceVideoModelMetadata{"MiniMax-H3": {DefaultDuration: 6, MinDuration: 6, MaxDuration: 6, Resolutions: []string{"768p"}, Ratios: []string{"16:9"}, DeleteVideo: common.GetPointer(false)}},
 	}}}
-	api, err := minimaxPublicVideoAPI(configuration, "custom-model", "MiniMax-H3", false)
+	api, err := minimaxPublicVideoAPI(configuration, "jdcloud_video_task_v1", "custom-model", "MiniMax-H3", false)
 	require.NoError(t, err)
 	require.Len(t, api.Creation.ContentTypes, 1)
 	assert.Equal(t, "text", api.Creation.ContentTypes[0].Type)
@@ -75,7 +75,7 @@ func TestMiniMaxImageAudioDeclarationDoesNotGainFramesOrVideos(t *testing.T) {
 	metadata.AllowFrameImages = false
 	metadata.AllowVideos, metadata.MaxVideos = false, 0
 	info.Configuration.Videos[0].ModelMetadata["MiniMax-H3"] = metadata
-	api, err := minimaxPublicVideoAPI(info.Configuration, "custom-model", "MiniMax-H3", false)
+	api, err := minimaxPublicVideoAPI(info.Configuration, "jdcloud_video_task_v1", "custom-model", "MiniMax-H3", false)
 	require.NoError(t, err)
 	require.Len(t, api.Creation.ContentTypes, 3)
 	assert.Equal(t, []string{"reference_image"}, api.Creation.ContentTypes[1].Roles)

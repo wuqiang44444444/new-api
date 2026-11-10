@@ -101,7 +101,7 @@ func TestDecodeTaskObservationStoredShape(t *testing.T) {
 func TestNormalizeObservationRejectsForeignSnapshot(t *testing.T) {
 	task := observationTask(t, "1.0.0")
 	task.PrivateData.Execution.TaskPlugin.Key = "seedance-link"
-	_, _, err := normalizeTaskObservation(context.Background(), task, []byte(`{}`), "task-1")
+	_, err := frozenObservationPlugin(context.Background(), task)
 	require.Error(t, err)
 	var violation *relaycommon.UpstreamContractViolation
 	assert.ErrorAs(t, err, &violation)

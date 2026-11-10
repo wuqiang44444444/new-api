@@ -27,6 +27,10 @@ type TaskUsageRecovery struct {
 	UsageReviewReference  string `json:"-" gorm:"type:varchar(256)"`
 }
 
+func (t *Task) usesVideoUsageRecovery() bool {
+	return t.HasSeedanceBillingFacts() || (t.IsMiniMaxV2Task() && t.PrivateData.AsyncBilling != nil)
+}
+
 func dueTaskUsageChecks(db *gorm.DB, now int64) *gorm.DB {
 	return db.Model(&Task{}).Where("billing_state = ? AND status = ?", TaskBillingStateAwaitingUsage, TaskStatusSuccess).
 		Where("(usage_review_at IS NULL OR usage_review_at = 0) AND (usage_check_next_at IS NULL OR usage_check_next_at <= ?)", now)
@@ -50,7 +54,7 @@ func ClaimTaskUsageCheck(id, now int64) (*Task, bool, error) {
 		if err := lockForUpdate(tx).First(&task, id).Error; err != nil {
 			return err
 		}
-		if !task.HasSeedanceBillingFacts() || task.Status != TaskStatusSuccess || task.BillingState != TaskBillingStateAwaitingUsage || task.UsageReviewAt > 0 || task.UsageCheckNextAt > now {
+		if !task.usesVideoUsageRecovery() || task.Status != TaskStatusSuccess || task.BillingState != TaskBillingStateAwaitingUsage || task.UsageReviewAt > 0 || task.UsageCheckNextAt > now {
 			return nil
 		}
 		if task.UsageCheckStartedAt == 0 {
@@ -128,7 +132,7 @@ func ListTaskUsageRecovery(reviewOnly bool, offset, limit int) ([]TaskUsageRecov
 	}
 	out := make([]TaskUsageRecoveryItem, 0, len(tasks))
 	for _, t := range tasks {
-		if !t.HasSeedanceBillingFacts() {
+		if !t.usesVideoUsageRecovery() {
 			continue
 		}
 		out = append(out, TaskUsageRecoveryItem{t.TaskID, t.UserId, t.AppID, t.Properties.OriginModelName, t.Quota, t.UsageCheckStartedAt, t.UsageCheckNextAt, t.UsageCheckAttempts, t.UsageReviewAt, t.UsageCheckLastError})
@@ -138,10 +142,13 @@ func ListTaskUsageRecovery(reviewOnly bool, offset, limit int) ([]TaskUsageRecov
 
 // ReviewTaskUsage never changes quota. Verified usage becomes the same immutable
 // first observation used by polling; settlement remains ApplyTaskBillingTarget.
-func ReviewTaskUsage(taskID string, operatorID int, reference string, tokens *int) (*Task, error) {
+func ReviewTaskUsage(taskID string, operatorID int, reference string, tokens *int, mediaUsage map[string]*float64) (*Task, error) {
 	reference = strings.TrimSpace(reference)
 	if operatorID <= 0 || reference == "" || len(reference) > 256 || len(taskID) > 64 || (tokens != nil && (*tokens < 0 || int64(*tokens) > int64(common.MaxQuota))) {
 		return nil, errors.New("operator, bounded usage, and statement or incident reference are required")
+	}
+	if tokens != nil && mediaUsage != nil {
+		return nil, errors.New("completion tokens and media usage are mutually exclusive")
 	}
 	reviewTime := GetDBTimestamp()
 	var task Task
@@ -149,14 +156,30 @@ func ReviewTaskUsage(taskID string, operatorID int, reference string, tokens *in
 		if err := lockForUpdate(tx).Where("task_id = ?", taskID).First(&task).Error; err != nil {
 			return err
 		}
-		if !task.HasSeedanceBillingFacts() || task.Status != TaskStatusSuccess {
+		if !task.usesVideoUsageRecovery() || task.Status != TaskStatusSuccess {
 			return errors.New("task is not eligible for usage review")
 		}
 		async := task.PrivateData.AsyncBilling
 		if tokens != nil && *tokens == 0 && task.PrivateData.VideoUpstreamProtocol == dto.VideoUpstreamProtocolFunCloudSeedance {
 			return errors.New("FunCloud V2 requires positive completionTokens")
 		}
-		if async.ActualUsageReported {
+		if task.IsMiniMaxV2Task() && tokens != nil {
+			return errors.New("completion tokens cannot resolve MiniMax official media usage")
+		}
+		if mediaUsage != nil {
+			changed, err := task.acceptMiniMaxUsageStatement(mediaUsage, reference)
+			if err != nil || !changed {
+				return err
+			}
+			task.UsageReviewOperatorID = operatorID
+			task.UsageReviewReference = reference
+			return tx.Model(&task).Updates(map[string]any{
+				"private_data": task.PrivateData, "billing_state": task.BillingState,
+				"usage_review_operator_id": task.UsageReviewOperatorID, "usage_review_reference": task.UsageReviewReference,
+				"usage_check_next_at": task.UsageCheckNextAt, "usage_check_manual_at": task.UsageCheckManualAt,
+			}).Error
+		}
+		if async.ActualUsageReported && !task.IsMiniMaxV2Task() {
 			if tokens != nil && *tokens == async.ActualTokens {
 				return nil
 			}

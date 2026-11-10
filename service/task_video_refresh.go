@@ -7,8 +7,8 @@ import (
 	"github.com/QuantumNous/new-api/model"
 )
 
-// RefreshVideoTask performs the ModelArk single-task GET observation with the
-// adapter and connection frozen when the task was created.
+// RefreshVideoTask observes a task with its frozen adapter and connection for
+// internal use, including background usage recovery.
 func RefreshVideoTask(ctx context.Context, task *model.Task) error {
 	if task == nil {
 		return errors.New("video task is required")

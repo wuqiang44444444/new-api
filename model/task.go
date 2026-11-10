@@ -160,9 +160,8 @@ type TaskPrivateData struct {
 	VideoUpstreamQueryBaseURL      string                    `json:"video_upstream_query_base_url,omitempty"`      // 创建时的第三方查询根地址快照，轮询优先使用
 	VideoUpstreamQueryPathTemplate string                    `json:"video_upstream_query_path_template,omitempty"` // 创建时的第三方查询路径模板快照，轮询优先使用
 	VideoUpstreamProxy             string                    `json:"video_upstream_proxy,omitempty"`               // 创建时的代理快照，避免在途任务随渠道配置漂移
-	// VideoUpstreamNextQueryAt is the per-protocol background query schedule
-	// (unix seconds). Only protocols with an upstream cadence recommendation
-	// (currently the MiniMax JD task API) set it; zero means always due.
+	// VideoUpstreamNextQueryAt defers JD background status queries until this
+	// Unix second. New deadlines come from an upstream 429 Retry-After.
 	VideoUpstreamNextQueryAt int64                      `json:"video_upstream_next_query_at,omitempty"`
 	ClientRequest            *TaskClientRequestSnapshot `json:"client_request,omitempty"`
 	// HostedMedia 冻结创建时已接受的 FunCloud 托管素材事实（素材 ID、本站
@@ -439,13 +438,7 @@ func GetTimedOutUnfinishedTasks(cutoffUnix int64, limit int) []*Task {
 }
 
 func GetAllUnFinishSyncTasks(limit int) []*Task {
-	var tasks []*Task
-	var err error
-	// get all tasks progress is not 100%
-	err = DB.Where("progress != ?", "100%").Where("status NOT IN ?", TerminalTaskStatuses()).
-		Where("client_protocol IS NULL OR client_protocol <> ?", TaskClientProtocolImageOpenAIV1).
-		Where("platform <> ?", constant.TaskPlatformAzureBatch).
-		Limit(limit).Order("id").Find(&tasks).Error
+	tasks, err := ListUnfinishedSyncTaskPage(context.Background(), 0, limit)
 	if err != nil {
 		return nil
 	}
@@ -571,10 +564,6 @@ type taskSnapshot struct {
 	Data         json.RawMessage
 	PluginState  json.RawMessage
 	PollFailures int
-
-	// UpstreamNextQueryAt mirrors the per-protocol query schedule so re-arming
-	// it counts as a persisted change (zero for tasks without a schedule).
-	UpstreamNextQueryAt int64
 }
 
 func (s taskSnapshot) Equal(other taskSnapshot) bool {
@@ -586,11 +575,7 @@ func (s taskSnapshot) Equal(other taskSnapshot) bool {
 		s.ResultURL == other.ResultURL &&
 		bytes.Equal(s.Data, other.Data) &&
 		bytes.Equal(s.PluginState, other.PluginState) &&
-		s.PollFailures == other.PollFailures &&
-		// Upstream query schedules (currently only the MiniMax JD task API)
-		// participate in change detection so a re-armed cadence persists even
-		// when the observation itself is unchanged. Zero for every other task.
-		s.UpstreamNextQueryAt == other.UpstreamNextQueryAt
+		s.PollFailures == other.PollFailures
 }
 
 func (t *Task) Snapshot() taskSnapshot {
@@ -604,8 +589,6 @@ func (t *Task) Snapshot() taskSnapshot {
 		Data:         t.Data,
 		PluginState:  t.PrivateData.PluginState,
 		PollFailures: t.PrivateData.PollFailures,
-
-		UpstreamNextQueryAt: t.PrivateData.VideoUpstreamNextQueryAt,
 	}
 }
 

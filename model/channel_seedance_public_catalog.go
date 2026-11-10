@@ -14,10 +14,11 @@ import (
 )
 
 type SeedancePublicModel struct {
-	ModelName string
-	Enabled   bool
-	Groups    []string
-	API       dto.PublicModelAPI
+	videoProtocol dto.VideoUpstreamProtocol
+	ModelName     string
+	Enabled       bool
+	Groups        []string
+	API           dto.PublicModelAPI
 }
 
 func GetConfiguredSeedancePublicModels() ([]SeedancePublicModel, error) {

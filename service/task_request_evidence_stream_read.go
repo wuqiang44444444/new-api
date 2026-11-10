@@ -112,7 +112,8 @@ func readEvidenceContentWindow(event *model.TaskRequestEvidenceEvent, expired bo
 	defer reader.Close()
 	var source io.Reader = reader
 	var checksum hash.Hash
-	if event.Sha256 != "" {
+	digest := evidenceLegacySHA256(event)
+	if digest != "" {
 		checksum = sha256.New()
 		source = io.TeeReader(reader, checksum)
 	}
@@ -139,7 +140,7 @@ func readEvidenceContentWindow(event *model.TaskRequestEvidenceEvent, expired bo
 		if _, err := io.CopyBuffer(io.Discard, buffered, make([]byte, 64<<10)); err != nil {
 			return nil, evidenceReadStatus(err)
 		}
-		if hex.EncodeToString(checksum.Sum(nil)) != event.Sha256 {
+		if hex.EncodeToString(checksum.Sum(nil)) != digest {
 			return nil, "integrity_failed"
 		}
 	}

@@ -274,8 +274,8 @@ func TestDispatchPlatformUpdateUsesFetchMode(t *testing.T) {
 	const channelID = 109
 	seedTaskPollingChannel(t, channelID, true)
 	task := seedPollingTask(t, channelID, "task_batch", "upstream_batch")
-	taskChannels := map[int][]string{channelID: {task.GetUpstreamTaskID()}}
-	tasks := map[string]*model.Task{task.GetUpstreamTaskID(): task}
+	taskChannels := map[int][]string{channelID: {task.TaskID}}
+	tasks := map[string]*model.Task{task.TaskID: task}
 
 	batch := &batchPollingAdaptor{}
 	previousFactory := GetTaskAdaptorFunc

@@ -12,8 +12,8 @@ import (
 // non-covering active version is an error: creation must fail closed. No
 // engine calls happen on this path - hook presence was verified at compile
 // time and protocol coverage by ActiveEntryFor.
-func PinMinimaxExtensionForChannel(requestContext *gin.Context) error {
-	entry, err := minimaxplugin.Default.ActiveEntryFor(protocolName())
+func PinMinimaxExtensionForChannel(requestContext *gin.Context, protocol string) error {
+	entry, err := minimaxplugin.Default.ActiveEntryFor(protocol)
 	if err != nil {
 		return err
 	}

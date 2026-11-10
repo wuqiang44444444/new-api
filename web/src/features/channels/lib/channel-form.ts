@@ -25,6 +25,9 @@ import {
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
   CHANNEL_TYPE_MINIMAX_LINK,
+  MINIMAX_JD_VIDEO_PROTOCOL,
+  MINIMAX_NEXHINA_VIDEO_PROTOCOL,
+  MINIMAX_OFFICIAL_VIDEO_PROTOCOL,
   CHANNEL_TYPE_SEEDANCE_LINK,
   CHANNEL_TYPE_TASK_PLUGIN,
   CHANNEL_TYPE_OLLAMA,
@@ -310,7 +313,9 @@ export const channelFormSchema = z
       .optional(),
     video_upstream_protocol: z
       .enum([
-        'jdcloud_video_task_v1',
+        MINIMAX_JD_VIDEO_PROTOCOL,
+        MINIMAX_OFFICIAL_VIDEO_PROTOCOL,
+        MINIMAX_NEXHINA_VIDEO_PROTOCOL,
         'modelark_v3_volcengine',
         'modelark_v3_byteplus',
         'modelark_v3_cmcc',
@@ -361,7 +366,10 @@ export const channelFormSchema = z
     }
     if (
       data.type === CHANNEL_TYPE_MINIMAX_LINK &&
-      !data.minimax_plugin_version?.trim()
+      (!data.minimax_plugin_version?.trim() ||
+        (data.video_upstream_protocol !== MINIMAX_JD_VIDEO_PROTOCOL &&
+          data.video_upstream_protocol !== MINIMAX_OFFICIAL_VIDEO_PROTOCOL &&
+          data.video_upstream_protocol !== MINIMAX_NEXHINA_VIDEO_PROTOCOL))
     ) {
       addRequiredIssue(
         ctx,
@@ -869,7 +877,7 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
 
   // MiniMax Link keeps its code-registered upstream protocol in settings.
   if (formData.type === CHANNEL_TYPE_MINIMAX_LINK) {
-    settingsObj.video_upstream_protocol = 'jdcloud_video_task_v1'
+    settingsObj.video_upstream_protocol = formData.video_upstream_protocol
     settingsObj.asset_upstream_protocol = 'none'
     settingsObj.asset_min_url_ttl_seconds = 0
     delete settingsObj.video_upstream_profile

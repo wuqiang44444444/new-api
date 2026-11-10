@@ -36,6 +36,9 @@ export const CHANNEL_TYPE_SGLANG = 63
 export const CHANNEL_TYPE_SEEDANCE_LINK = 67
 export const CHANNEL_TYPE_ASYNC_IMAGE = 68
 export const CHANNEL_TYPE_MINIMAX_LINK = 69
+export const MINIMAX_JD_VIDEO_PROTOCOL = 'jdcloud_video_task_v1'
+export const MINIMAX_OFFICIAL_VIDEO_PROTOCOL = 'minimax_official_video_v2'
+export const MINIMAX_NEXHINA_VIDEO_PROTOCOL = 'nexhina_hailuo_v2'
 export const CHANNEL_TYPE_AZURE_BATCH = 70
 
 export const CHANNEL_TYPES = {

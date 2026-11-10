@@ -58,7 +58,7 @@ func loadSeedancePricingCatalog() (seedancePricingCatalog, error) {
 			catalog[item.ModelName] = seedancePricingModel{
 				SeedancePublicModel:     item,
 				billingContractConflict: nativeOfMinimax[item.ModelName],
-				usageSchema:             StandardVideoBillingFields(constant.ChannelTypeMiniMaxLink, dto.VideoUpstreamProtocol(constant.VideoUpstreamProtocolJdCloudTaskV1)),
+				usageSchema:             StandardVideoBillingFields(constant.ChannelTypeMiniMaxLink, item.videoProtocol),
 			}
 		}
 	}

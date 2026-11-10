@@ -12,7 +12,12 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 
-import { CHANNEL_TYPE_MINIMAX_LINK } from '../../constants'
+import {
+  CHANNEL_TYPE_MINIMAX_LINK,
+  MINIMAX_JD_VIDEO_PROTOCOL,
+  MINIMAX_NEXHINA_VIDEO_PROTOCOL,
+  MINIMAX_OFFICIAL_VIDEO_PROTOCOL,
+} from '../../constants'
 import type { ChannelFormValues } from '../../lib/channel-form'
 import {
   MINIMAX_NATIVE_TYPE,
@@ -26,10 +31,21 @@ export function MinimaxAccessFields(props: {
 }) {
   const { t } = useTranslation()
   const form = useFormContext<ChannelFormValues>()
-  const [type, selected, settings] = useWatch({
+  const [type, selected, settings, protocol] = useWatch({
     control: form.control,
-    name: ['type', 'minimax_access_selected', 'settings'],
+    name: [
+      'type',
+      'minimax_access_selected',
+      'settings',
+      'video_upstream_protocol',
+    ],
   })
+  const selectedOption =
+    type === CHANNEL_TYPE_MINIMAX_LINK &&
+    (protocol === MINIMAX_OFFICIAL_VIDEO_PROTOCOL ||
+      protocol === MINIMAX_NEXHINA_VIDEO_PROTOCOL)
+      ? protocol
+      : String(type)
   let description = t(
     'Choose an access method before configuring the connection.'
   )
@@ -69,21 +85,41 @@ export function MinimaxAccessFields(props: {
                     value: String(CHANNEL_TYPE_MINIMAX_LINK),
                     label: t('JD Cloud · Standard video'),
                   },
+                  {
+                    value: MINIMAX_OFFICIAL_VIDEO_PROTOCOL,
+                    label: t('Official · Standard video'),
+                  },
+                  {
+                    value: MINIMAX_NEXHINA_VIDEO_PROTOCOL,
+                    label: t('Nexhina · Standard video'),
+                  },
                 ]}
-                value={selected === false ? '' : String(type)}
+                value={selected === false ? '' : selectedOption}
                 placeholder={t('Select access method')}
                 disabled={props.disabled}
                 onValueChange={(value) => {
-                  const next = Number(value)
                   if (
                     props.disabled ||
-                    (next !== MINIMAX_NATIVE_TYPE &&
-                      next !== CHANNEL_TYPE_MINIMAX_LINK)
-                  ) {
+                    (selected !== false && value === selectedOption)
+                  )
                     return
+                  if (value === String(MINIMAX_NATIVE_TYPE)) {
+                    resetMinimaxConnectionDraft(form, MINIMAX_NATIVE_TYPE, true)
+                  } else if (
+                    value === String(CHANNEL_TYPE_MINIMAX_LINK) ||
+                    value === MINIMAX_OFFICIAL_VIDEO_PROTOCOL ||
+                    value === MINIMAX_NEXHINA_VIDEO_PROTOCOL
+                  ) {
+                    resetMinimaxConnectionDraft(
+                      form,
+                      CHANNEL_TYPE_MINIMAX_LINK,
+                      true,
+                      value === MINIMAX_OFFICIAL_VIDEO_PROTOCOL ||
+                        value === MINIMAX_NEXHINA_VIDEO_PROTOCOL
+                        ? value
+                        : MINIMAX_JD_VIDEO_PROTOCOL
+                    )
                   }
-                  if (selected !== false && next === type) return
-                  resetMinimaxConnectionDraft(form, next, true)
                 }}
               />
             )}

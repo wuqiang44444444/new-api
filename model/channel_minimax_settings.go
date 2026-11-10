@@ -13,8 +13,7 @@ import (
 
 // validateMinimaxChannelSettings validates MiniMax Link channel settings on
 // management writes: one credential, the code-registered protocol, no asset
-// library, and an absolute HTTP(S) base URL that can serve the fixed JD
-// Cloud task paths.
+// library, and an absolute HTTP(S) base URL for the selected protocol.
 func validateMinimaxChannelSettings(channel *Channel, settings *dto.ChannelOtherSettings) error {
 	return validateMinimaxChannelSettingsTx(DB, channel, settings)
 }
@@ -42,14 +41,15 @@ func validateMinimaxChannelSettingsTx(tx *gorm.DB, channel *Channel, settings *d
 	if isMultiKey || len(credentialChannel.GetKeys()) != 1 {
 		return fmt.Errorf("MiniMax Link channels require one channel credential")
 	}
-	if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocol(constant.VideoUpstreamProtocolJdCloudTaskV1) {
+	createPath, queryPath, registered := constant.MiniMaxVideoPaths(string(settings.VideoUpstreamProtocol))
+	if !registered {
 		return fmt.Errorf("unsupported MiniMax Link video upstream protocol %q", settings.VideoUpstreamProtocol)
 	}
 	settings.AssetUpstreamProtocol = dto.AssetUpstreamProtocolNone
 	settings.VideoUpstreamProfile = ""
 	settings.VideoUpstreamCreatePath = ""
 	settings.VideoUpstreamQueryPathTemplate = ""
-	if err := dto.ValidateVideoUpstreamURL(channel.GetBaseURL(), constant.JdCloudCreatePath, constant.JdCloudQueryPathTemplate); err != nil {
+	if err := dto.ValidateVideoUpstreamURL(channel.GetBaseURL(), createPath, queryPath); err != nil {
 		return err
 	}
 	normalized, err := common.Marshal(settings)

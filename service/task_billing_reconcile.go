@@ -21,6 +21,7 @@ func prepareTerminalTaskBilling(task *model.Task, result *relaycommon.TaskInfo) 
 	if async == nil || (task.HasTaskUsageBilling() && !typedVideoFacts) || (async.State == model.TaskBillingStateSettled && !typedVideoFacts) {
 		return
 	}
+	task.ObserveMiniMaxOfficialUsage(result.UsageFacts)
 	async.ActualTokens = result.CompletionTokens
 	if !result.CompletionTokensReported && async.ActualTokens <= 0 {
 		async.ActualTokens = result.TotalTokens

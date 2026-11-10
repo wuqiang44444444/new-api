@@ -125,7 +125,7 @@ func TestSeedanceProtocolsDebtAndOperatorRecovery(t *testing.T) {
 			require.Len(t, items, 1)
 			usage := 1000
 			stale := reloadTask(t, task.ID)
-			_, err = model.ReviewTaskUsage(task.TaskID, 9, "verified-statement", &usage)
+			_, err = model.ReviewTaskUsage(task.TaskID, 9, "verified-statement", &usage, nil)
 			require.NoError(t, err)
 			require.Equal(t, 1, ReconcileTaskBilling(context.Background(), 10).Scanned)
 			debt := reloadTask(t, task.ID)
@@ -168,7 +168,7 @@ func TestSeedanceOperatorZeroRespectsProtocolContract(t *testing.T) {
 			require.NoError(t, model.DB.Save(task).Error)
 			require.True(t, settleTaskTieredSnapshot(context.Background(), task, 0))
 			zero := 0
-			_, err := model.ReviewTaskUsage(task.TaskID, 9, "statement-zero", &zero)
+			_, err := model.ReviewTaskUsage(task.TaskID, 9, "statement-zero", &zero, nil)
 			if protocol == dto.VideoUpstreamProtocolFunCloudSeedance {
 				require.Error(t, err)
 				assert.Equal(t, model.TaskBillingStateAwaitingUsage, reloadTask(t, task.ID).BillingState)

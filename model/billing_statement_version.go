@@ -21,7 +21,7 @@ import (
 const (
 	// Increment whenever statement interpretation changes. New drafts freeze
 	// this value; old confirmed versions retain their original facts.
-	BillingStatementParserVersion = 4
+	BillingStatementParserVersion = 5
 
 	// BillingStatementNamespace 是正式账单对象的独立私有命名空间（方案 12.1）。
 	BillingStatementNamespace = "billing/statements"

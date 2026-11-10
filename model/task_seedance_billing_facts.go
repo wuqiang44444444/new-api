@@ -27,7 +27,9 @@ func (t *Task) HasSeedanceBillingFacts() bool {
 // Shared typed-video funding uses these existing row-lock merges.
 // mergeSeedanceBillingFacts runs under the task row lock. Observation writes
 // can contribute first usage; only billing writes can establish a target.
-func mergeSeedanceBillingFacts(stored, proposed *TaskAsyncBillingContext, observation bool) (*TaskAsyncBillingContext, error) {
+func mergeSeedanceBillingFacts(task *Task, proposed *TaskAsyncBillingContext, observation bool) (*TaskAsyncBillingContext, error) {
+	stored := task.PrivateData.AsyncBilling
+	official := task.IsMiniMaxV2Task()
 	if proposed.TargetQuota != nil && *proposed.TargetQuota < 0 {
 		return nil, fmt.Errorf("negative task billing target")
 	}
@@ -42,7 +44,7 @@ func mergeSeedanceBillingFacts(stored, proposed *TaskAsyncBillingContext, observ
 		next.ActualUsageSource = proposed.ActualUsageSource
 		next.ActualUsageEvidence = proposed.ActualUsageEvidence
 		next.ProviderBillingEvidence = proposed.ProviderBillingEvidence
-		if next.State == TaskBillingStateAwaitingUsage {
+		if !official && next.State == TaskBillingStateAwaitingUsage {
 			next.State, next.Error, next.NextRetryAt, next.Attempts = TaskBillingStatePending, "", 0, 0
 		}
 	} else if len(next.ActualUsageEvidence) == 0 {
@@ -54,6 +56,9 @@ func mergeSeedanceBillingFacts(stored, proposed *TaskAsyncBillingContext, observ
 		// a measured token meter. Later observations cannot overwrite it.
 		next.UsageDiscrepancy = &TaskUsageDiscrepancy{Source: proposed.ActualUsageSource, Evidence: proposed.ActualUsageEvidence}
 	}
+	if observation && official {
+		mergeMiniMaxOfficialUsage(&next, proposed)
+	}
 	if observation || stored.State == TaskBillingStateSettled {
 		return &next, nil
 	}
@@ -62,8 +67,14 @@ func mergeSeedanceBillingFacts(stored, proposed *TaskAsyncBillingContext, observ
 	if stored.TargetQuota != nil && (proposed.TargetQuota == nil || *proposed.TargetQuota != *stored.TargetQuota) {
 		return &next, nil
 	}
-	if proposed.State == TaskBillingStateAwaitingUsage && next.ActualUsageReported && proposed.TargetQuota == nil {
-		return &next, nil
+	if proposed.State == TaskBillingStateAwaitingUsage && proposed.TargetQuota == nil {
+		if official {
+			if _, err := task.MiniMaxOfficialSettlementUsage(); err == nil {
+				return &next, nil
+			}
+		} else if next.ActualUsageReported {
+			return &next, nil
+		}
 	}
 	next.State, next.Error = proposed.State, proposed.Error
 	next.Attempts, next.NextRetryAt = proposed.Attempts, proposed.NextRetryAt
@@ -90,7 +101,7 @@ func (t *Task) updateSeedanceBillingFacts() error {
 		if !saved.HasTypedVideoBillingFacts() {
 			return fmt.Errorf("missing frozen video billing facts")
 		}
-		next, err := mergeSeedanceBillingFacts(saved.PrivateData.AsyncBilling, t.PrivateData.AsyncBilling, false)
+		next, err := mergeSeedanceBillingFacts(&saved, t.PrivateData.AsyncBilling, false)
 		if err != nil {
 			return err
 		}
@@ -127,7 +138,7 @@ func (t *Task) updateSeedanceObservation(fromStatus TaskStatus) (bool, error) {
 		if !stored.HasTypedVideoBillingFacts() {
 			return fmt.Errorf("missing frozen video billing facts")
 		}
-		next, err := mergeSeedanceBillingFacts(stored.PrivateData.AsyncBilling, t.PrivateData.AsyncBilling, true)
+		next, err := mergeSeedanceBillingFacts(&stored, t.PrivateData.AsyncBilling, true)
 		if err != nil {
 			return err
 		}
@@ -163,7 +174,6 @@ func (t *Task) updateSeedanceObservation(fromStatus TaskStatus) (bool, error) {
 		}
 		saved.PrivateData.ResultURL = t.PrivateData.ResultURL
 		saved.PrivateData.PollFailures = t.PrivateData.PollFailures
-		saved.PrivateData.VideoUpstreamNextQueryAt = t.PrivateData.VideoUpstreamNextQueryAt
 		saved.PrivateData.AsyncBilling = next
 		saved.BillingState = next.State
 		if err := tx.Model(&saved).Select("status", "progress", "start_time", "finish_time", "fail_reason", "data", "private_data", "billing_state").Updates(&saved).Error; err != nil {
@@ -189,6 +199,10 @@ func enforceSeedanceBillingTarget(task *Task, target int) error {
 	}
 	if !task.Status.IsTerminal() {
 		return fmt.Errorf("cannot settle a nonterminal task")
+	}
+	if task.Status == TaskStatusSuccess && task.IsMiniMaxV2Task() {
+		_, err := task.MiniMaxOfficialSettlementUsage()
+		return err
 	}
 	// 与提交、结算、补查共用 §5.5 的实测依赖规则：u() 表达式只等 tokens 实测，
 	// 纯冻结条件表达式不误等待；旧 c/_task 表达式保持通用用量依赖。

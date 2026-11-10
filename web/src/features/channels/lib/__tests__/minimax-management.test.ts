@@ -15,35 +15,44 @@ import {
 } from '../minimax-management'
 
 describe('MiniMax management projection', () => {
-  test('a persisted JD channel can be edited and saved without changing its protocol or type', () => {
-    const channel = channelSchema.parse({
-      id: 138,
-      type: 69,
-      name: 'fixture',
-      key: '',
-      models: 'customer',
-      status: 1,
-      created_time: 0,
-      test_time: 0,
-      response_time: 0,
-      balance_updated_time: 0,
-      base_url: 'http://fixture.invalid',
-      settings:
-        '{"video_upstream_protocol":"jdcloud_video_task_v1","asset_upstream_protocol":"none"}',
-    })
-    const form = transformChannelToFormDefaults(channel)
-    const parsed = channelFormSchema.safeParse({
-      ...form,
-      minimax_plugin_version: '1.2.0',
-    })
-    expect(parsed.success).toBe(true)
-    if (!parsed.success) return
-    const payload = transformFormDataToUpdatePayload(parsed.data, channel.id)
-    expect(payload.type).toBe(69)
-    expect(JSON.parse(payload.settings ?? '{}').video_upstream_protocol).toBe(
-      'jdcloud_video_task_v1'
-    )
-  })
+  test.each([
+    'jdcloud_video_task_v1',
+    'minimax_official_video_v2',
+    'nexhina_hailuo_v2',
+  ])(
+    'a persisted %s channel can be edited and saved without changing its protocol or type',
+    (protocol) => {
+      const channel = channelSchema.parse({
+        id: 138,
+        type: 69,
+        name: 'fixture',
+        key: '',
+        models: 'customer',
+        status: 1,
+        created_time: 0,
+        test_time: 0,
+        response_time: 0,
+        balance_updated_time: 0,
+        base_url: 'http://fixture.invalid',
+        settings: JSON.stringify({
+          video_upstream_protocol: protocol,
+          asset_upstream_protocol: 'none',
+        }),
+      })
+      const form = transformChannelToFormDefaults(channel)
+      const parsed = channelFormSchema.safeParse({
+        ...form,
+        minimax_plugin_version: '1.2.0',
+      })
+      expect(parsed.success).toBe(true)
+      if (!parsed.success) return
+      const payload = transformFormDataToUpdatePayload(parsed.data, channel.id)
+      expect(payload.type).toBe(69)
+      expect(JSON.parse(payload.settings ?? '{}').video_upstream_protocol).toBe(
+        protocol
+      )
+    }
+  )
   test('the create selector has one MiniMax entry without deleting original type definitions', () => {
     const options = channelManagementTypeOptions(CHANNEL_TYPE_OPTIONS)
     expect(

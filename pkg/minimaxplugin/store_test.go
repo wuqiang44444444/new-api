@@ -43,11 +43,11 @@ func TestStoreDeployOnlyLifecycle(t *testing.T) {
 
 	// Disabled-but-present versions keep resolving history; deleted versions
 	// stop resolving.
-	plugin, err := store.ResolveVersion(ctx, version)
+	plugin, err := store.ResolveVersion(ctx, version, "jdcloud_video_task_v1")
 	require.NoError(t, err)
 	require.NotNil(t, plugin)
 	require.NoError(t, db.Where(&model.TaskPlugin{Key: "minimax-link"}).Delete(&model.TaskPlugin{}).Error)
-	_, err = store.ResolveVersion(ctx, version)
+	_, err = store.ResolveVersion(ctx, version, "jdcloud_video_task_v1")
 	assert.ErrorIs(t, err, ErrVersionUnavailable)
 }
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,6 +35,11 @@ const minimaxSuccess = `{"task_id":"jd-task-1","task_status":"success","content"
 // Reuse the established SQLite/auth/funding fixture, replacing only the typed
 // channel, artifact and provider. Requests still traverse the production chain.
 func newMiniMaxFundsFixture(t *testing.T, expectedHold ...int) *seedanceFundsFixture {
+	t.Helper()
+	return newMiniMaxFundsFixtureWithQuery(t, nil, expectedHold...)
+}
+
+func newMiniMaxFundsFixtureWithQuery(t *testing.T, query func(http.ResponseWriter), expectedHold ...int) *seedanceFundsFixture {
 	t.Helper()
 	heldQuota := minimaxFundsHold
 	if len(expectedHold) > 0 {
@@ -71,6 +77,10 @@ func newMiniMaxFundsFixture(t *testing.T, expectedHold ...int) *seedanceFundsFix
 		}
 		assert.Equal(t, "/v1/task/jd-task-1", r.URL.Path)
 		fx.queryCalls.Add(1)
+		if query != nil {
+			query(w)
+			return
+		}
 		w.WriteHeader(int(fx.queryStatus.Load()))
 		_, _ = io.WriteString(w, fx.queryBodyRes.Load().(string))
 	}))
@@ -107,15 +117,6 @@ func newMiniMaxFundsFixture(t *testing.T, expectedHold ...int) *seedanceFundsFix
 		}
 	})
 	return fx
-}
-
-func minimaxDueTask(t *testing.T, fx *seedanceFundsFixture, id string) *model.Task {
-	t.Helper()
-	task := fx.loadTask(id)
-	task.PrivateData.VideoUpstreamNextQueryAt = 0
-	_, err := task.UpdateWithStatus(task.Status)
-	require.NoError(t, err)
-	return &task
 }
 
 func minimaxGet(t *testing.T, fx *seedanceFundsFixture, path string) *httptest.ResponseRecorder {
@@ -181,7 +182,7 @@ func TestMiniMaxStandardEntryFundingAndContent(t *testing.T) {
 	staleBilling := fx.loadTask(id)
 	stalePoll := fx.loadTask(id)
 	fx.queryBodyRes.Store(minimaxSuccess)
-	require.NoError(t, service.RefreshVideoTask(context.Background(), &task))
+	fx.pollOnce(id)
 	settled := fx.loadTask(id)
 	require.EqualValues(t, model.TaskStatusSuccess, settled.Status)
 	require.Equal(t, model.TaskBillingStateSettled, settled.BillingState)
@@ -213,7 +214,8 @@ func TestMiniMaxStandardEntryFundingAndContent(t *testing.T) {
 	assert.EqualValues(t, 1, fx.createCalls.Load())
 
 	fx.queryBodyRes.Store(strings.Replace(minimaxSuccess, `"video_output":7`, `"video_output":99`, 1))
-	require.NoError(t, service.RefreshVideoTask(context.Background(), minimaxDueTask(t, fx, id)))
+	task = fx.loadTask(id)
+	require.NoError(t, service.RefreshVideoTask(context.Background(), &task))
 	conflicting := fx.loadTask(id)
 	assert.Equal(t, map[string]int{"video_output": 7}, conflicting.PrivateData.AsyncBilling.ActualUsageEvidence)
 	require.NotNil(t, conflicting.PrivateData.AsyncBilling.UsageDiscrepancy)
@@ -226,11 +228,14 @@ func TestMiniMaxStandardEntryFundingAndContent(t *testing.T) {
 		{404, `{}`}, {200, `{"task_id":"foreign","task_status":"success"}`},
 		{200, `{"task_id":"jd-task-1","task_status":"running"}`},
 	} {
-		minimaxDueTask(t, fx, id)
 		fx.queryStatus.Store(int32(observation.status))
 		fx.queryBodyRes.Store(observation.body)
+		task = fx.loadTask(id)
+		require.Error(t, service.RefreshVideoTask(context.Background(), &task))
+		before = fx.queryCalls.Load()
 		w = minimaxGet(t, fx, "/api/v3/contents/generations/tasks/"+id)
 		require.Equal(t, 200, w.Code)
+		assert.Equal(t, before, fx.queryCalls.Load())
 		var public dto.ModelArkVideoTask
 		require.NoError(t, common.Unmarshal(w.Body.Bytes(), &public))
 		assert.Equal(t, "succeeded", public.Status)
@@ -283,19 +288,125 @@ func TestMiniMaxCancelledAndFailedFundingRecovery(t *testing.T) {
 	}
 }
 
-func TestMiniMaxPollingSchedulePersistsUnchangedObservation(t *testing.T) {
+func TestMiniMaxStatusComesFromBackgroundPolling(t *testing.T) {
 	fx := newMiniMaxFundsFixture(t)
 	id := decodeSeedanceFundsCreateID(t, fx.submitCreateBody(`{"model":"customer-video","content":[{"type":"text","text":"A landscape"}]}`))
 	fx.queryBodyRes.Store(`{"task_id":"jd-task-1","task_status":"running"}`)
-	task := fx.loadTask(id)
-	require.NoError(t, service.RefreshVideoTask(context.Background(), &task))
-	task = *minimaxDueTask(t, fx, id)
-	require.NoError(t, service.RefreshVideoTask(context.Background(), &task))
-	stored := fx.loadTask(id)
-	assert.Greater(t, stored.PrivateData.VideoUpstreamNextQueryAt, time.Now().Unix())
-	count := fx.queryCalls.Load()
-	require.NoError(t, service.RefreshVideoTask(context.Background(), &stored))
-	assert.Equal(t, count, fx.queryCalls.Load())
+	path := "/api/v3/contents/generations/tasks/" + id
+	w := minimaxGet(t, fx, path)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"status":"queued"`)
+	assert.Zero(t, fx.queryCalls.Load())
+
+	fx.pollOnce(id)
+	w = minimaxGet(t, fx, path)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"status":"running"`)
+	assert.EqualValues(t, 1, fx.queryCalls.Load())
+	assert.Zero(t, fx.loadTask(id).PrivateData.VideoUpstreamNextQueryAt)
+}
+
+func TestMiniMaxTemporaryQueryFailurePreservesTaskAndHold(t *testing.T) {
+	oldCutoff := constant.TaskPollMaxFailures
+	constant.TaskPollMaxFailures = 1
+	t.Cleanup(func() { constant.TaskPollMaxFailures = oldCutoff })
+
+	for _, tc := range []struct {
+		name       string
+		status     int
+		retryAfter string
+		delay      int64
+		httpDate   bool
+	}{
+		{name: "transport error"},
+		{name: "upstream unavailable", status: http.StatusServiceUnavailable},
+		{name: "invalid retry after", status: http.StatusTooManyRequests, retryAfter: "-90"},
+		{name: "retry after seconds", status: http.StatusTooManyRequests, retryAfter: "90", delay: 90},
+		{name: "retry after date", status: http.StatusTooManyRequests, httpDate: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var queryFailure atomic.Bool
+			retryDate := time.Now().UTC().Add(2 * time.Minute).Truncate(time.Second)
+			fx := newMiniMaxFundsFixtureWithQuery(t, func(w http.ResponseWriter) {
+				if !queryFailure.Load() {
+					_, _ = io.WriteString(w, `{"task_id":"jd-task-1","task_status":"pending"}`)
+					return
+				}
+				if tc.status == 0 {
+					conn, _, err := w.(http.Hijacker).Hijack()
+					if assert.NoError(t, err) {
+						_ = conn.Close()
+					}
+					return
+				}
+				retryAfter := tc.retryAfter
+				if tc.httpDate {
+					retryAfter = retryDate.Format(http.TimeFormat)
+				}
+				w.Header().Set("Retry-After", retryAfter)
+				w.WriteHeader(tc.status)
+			})
+			id := decodeSeedanceFundsCreateID(t, fx.submitCreateBody(`{"model":"customer-video","content":[{"type":"text","text":"A landscape"}]}`))
+			path := "/api/v3/contents/generations/tasks/" + id
+			fx.pollOnce(id)
+			last := fx.loadTask(id)
+			require.EqualValues(t, model.TaskStatusQueued, last.Status)
+			queryFailure.Store(true)
+
+			before := time.Now().Unix()
+			fx.pollOnce(id)
+			calls := fx.queryCalls.Load()
+			w := minimaxGet(t, fx, path)
+			require.Equal(t, http.StatusOK, w.Code)
+			assert.Equal(t, calls, fx.queryCalls.Load(), "client GET uses only the saved observation")
+			var public dto.ModelArkVideoTask
+			require.NoError(t, common.Unmarshal(w.Body.Bytes(), &public))
+			assert.Equal(t, "queued", public.Status)
+			stored := fx.loadTask(id)
+			assert.Equal(t, last.Status, stored.Status)
+			assert.Equal(t, last.Progress, stored.Progress)
+			assert.Equal(t, last.Data, stored.Data)
+			assert.Equal(t, last.FailReason, stored.FailReason)
+			assert.Equal(t, last.UpdatedAt, stored.UpdatedAt)
+			assert.Zero(t, stored.PrivateData.PollFailures)
+			assert.Equal(t, model.TaskBillingStatePending, stored.BillingState)
+			assert.Equal(t, last.Quota, stored.Quota)
+			assert.Equal(t, seedanceFundsInitialQuota-minimaxFundsHold, fx.userQuota())
+			remaining, used := fx.tokenQuota()
+			assert.Equal(t, seedanceFundsInitialQuota-minimaxFundsHold, remaining)
+			assert.Equal(t, minimaxFundsHold, used)
+
+			nextAt := stored.PrivateData.VideoUpstreamNextQueryAt
+			if tc.httpDate {
+				assert.Equal(t, retryDate.Unix(), nextAt)
+			} else if tc.delay > 0 {
+				assert.GreaterOrEqual(t, nextAt, before+tc.delay)
+				assert.LessOrEqual(t, nextAt, time.Now().Unix()+tc.delay+1)
+			} else {
+				assert.Zero(t, nextAt)
+			}
+			queryFailure.Store(false)
+			fx.pollOnce(id)
+			if nextAt > 0 {
+				assert.Equal(t, calls, fx.queryCalls.Load(), "background polling respects Retry-After")
+			} else {
+				assert.Equal(t, calls+1, fx.queryCalls.Load(), "the next background pass can query without a Retry-After deadline")
+			}
+
+			if tc.retryAfter == "90" {
+				// An observation from a query started on the old snapshot must
+				// not replace the later deadline recorded by the 429.
+				require.NoError(t, service.RefreshVideoTask(context.Background(), &last))
+				assert.Equal(t, nextAt, fx.loadTask(id).PrivateData.VideoUpstreamNextQueryAt)
+				calls = fx.queryCalls.Load()
+				stored = fx.loadTask(id)
+				stored.PrivateData.VideoUpstreamNextQueryAt = before - 1
+				require.NoError(t, fx.db.Model(&stored).UpdateColumn("private_data", stored.PrivateData).Error)
+				fx.pollOnce(id)
+				assert.Equal(t, calls+1, fx.queryCalls.Load(), "background polling resumes after the deadline")
+			}
+		})
+	}
 }
 
 func TestMiniMaxCatalogFailuresAreExplicit(t *testing.T) {

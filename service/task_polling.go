@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -178,7 +179,7 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 	if GetTaskAdaptorFunc == nil {
 		return summary
 	}
-	allTasks := model.GetAllUnFinishSyncTasks(constant.TaskQueryLimit)
+	allTasks := nextTaskPollingBatch(ctx)
 	summary.UnfinishedTasks = len(allTasks)
 	platformTask := make(map[constant.TaskPlatform][]*model.Task)
 	for _, t := range allTasks {
@@ -203,14 +204,14 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 		taskM := make(map[string]*model.Task)
 		nullTasks := make([]*model.Task, 0)
 		for _, task := range tasks {
-			upstreamID := task.GetUpstreamTaskID()
-			if upstreamID == "" {
+			if task.GetUpstreamTaskID() == "" {
 				// 统计失败的未完成任务
 				nullTasks = append(nullTasks, task)
 				continue
 			}
-			taskM[upstreamID] = task
-			taskChannelM[task.ChannelId] = append(taskChannelM[task.ChannelId], upstreamID)
+			taskKey := strconv.FormatInt(task.ID, 10)
+			taskM[taskKey] = task
+			taskChannelM[task.ChannelId] = append(taskChannelM[task.ChannelId], taskKey)
 		}
 		if len(nullTasks) > 0 {
 			for _, task := range nullTasks {
@@ -282,10 +283,9 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 	ch, err := model.CacheGetChannel(channelId)
 	if err != nil {
 		common.SysLog(common.LogText("CacheGetChannel: %v", err))
-		// Collect DB primary key IDs for bulk update (taskIds are upstream IDs, not task_id column values)
 		var failedIDs []int64
-		for _, upstreamID := range taskIds {
-			if t, ok := taskM[upstreamID]; ok {
+		for _, taskKey := range taskIds {
+			if t, ok := taskM[taskKey]; ok {
 				failedIDs = append(failedIDs, t.ID)
 			}
 		}
@@ -305,9 +305,11 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 		baseURL = constant.GetChannelBaseURL(ch.Type)
 	}
 	tasks := make([]*model.Task, 0, len(taskIds))
-	for _, upstreamID := range taskIds {
-		if task := taskM[upstreamID]; task != nil {
+	channelTasksByUpstreamID := make(map[string]*model.Task, len(taskIds))
+	for _, taskKey := range taskIds {
+		if task := taskM[taskKey]; task != nil {
 			tasks = append(tasks, task)
+			channelTasksByUpstreamID[task.GetUpstreamTaskID()] = task
 		}
 	}
 	// The channel type tells plugin adaptors whether the upstream is another
@@ -358,7 +360,7 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		task := taskM[upstreamID]
+		task := channelTasksByUpstreamID[upstreamID]
 		if task == nil {
 			logger.LogWarn(ctx, common.LogText("Batch task response ignored: unknown task_id=%s", upstreamID))
 			continue
@@ -551,18 +553,10 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if privateData.Key != "" {
 		key = privateData.Key
 	}
-	if taskPollingDeferredByUpstreamSchedule(task, time.Now()) {
-		// Upstream cadence recommendation (currently the MiniMax JD task
-		// API): the background poller and the on-demand single GET refresh
-		// share this gate, so neither can hammer the provider between its
-		// scheduled query slots. The content download path is separate and
-		// never blocked here.
+	if taskPollingDeferredByUpstreamSchedule(ctx, task, time.Now()) {
 		return nil
 	}
-	// The snapshot precedes the schedule write so re-arming the cadence
-	// registers as a persisted change on otherwise-unchanged observations.
 	snap := task.Snapshot()
-	scheduleTaskPollingAfterUpstreamQuery(task, time.Now())
 	adapterVersion, proceed, err := resolveLinkVideoPollVersion(ctx, ch, task)
 	if err != nil {
 		return fmt.Errorf("mark reconciliation required for task %s: %w", taskId, err)
@@ -572,6 +566,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 	resp, err := fetchVideoTaskWithContext(ctx, adaptor, taskVideoUpstreamQueryBaseURL(task, ch, baseURL), key, task, proxy)
 	if err != nil {
+		if handled, deferErr := handleMiniMaxTemporaryQueryError(ctx, task, err, time.Now()); handled {
+			return deferErr
+		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -646,7 +643,11 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if typedVideoTaskSucceeded(task) && taskResult.Status != model.TaskStatusSuccess {
 		return fmt.Errorf("provider usage observation cannot change a successful task status")
 	}
-	logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
+	if task.IsMiniMaxV2Task() {
+		logger.LogDebug(ctx, "MiniMax official task observation task_id=%s status=%s", task.TaskID, taskResult.Status)
+	} else {
+		logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
+	}
 
 	parsedStatus := model.TaskStatus(taskResult.Status)
 	knownStatus := knownPollStatus(parsedStatus) || (task.HasMiniMaxBillingFacts() && parsedStatus == model.TaskStatusCancelled) || isViduProviderExpiry(task, parsedStatus)
@@ -781,6 +782,7 @@ func redactVideoResponseBody(body []byte) []byte {
 	// 不得随 task.Data 进入客户可见的任务响应。
 	delete(m, "usage_source")
 	delete(m, "usage_evidence")
+	delete(m, "official_usage")
 	resp, _ := m["response"].(map[string]any)
 	if resp != nil {
 		delete(resp, "bytesBase64Encoded")
@@ -917,10 +919,6 @@ func recordPollFailure(ctx context.Context, adaptor TaskPollingAdaptor, task *mo
 		return fmt.Errorf("provider usage observation failed (%s, HTTP %d)", class, statusCode)
 	}
 	task.PrivateData.PollFailures++
-	if class == pollClassUnrecognized || class == pollClassHookError {
-		// Raw bodies belong to protected evidence, never FailReason or ordinary logs.
-		logger.LogWarn(ctx, fmt.Sprintf("task %s poll %s (failures=%d, http=%d): %s", task.TaskID, class, task.PrivateData.PollFailures, statusCode, detail))
-	}
 	// TASK_POLL_MAX_FAILURES <= 0 disables the consecutive-failure cutoff, matching
 	// TASK_TIMEOUT_MINUTES semantics; the 24h sweep remains the only backstop.
 	giveUp := constant.TaskPollMaxFailures > 0 && task.PrivateData.PollFailures >= constant.TaskPollMaxFailures

@@ -8,7 +8,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/relay/channel"
@@ -72,24 +71,7 @@ func ModelArkVideoGet(c *gin.Context) {
 		modelArkVideoError(c, http.StatusNotFound, "task_not_found", "task not found")
 		return
 	}
-	durable := projectModelArkVideoTask(c, task)
-	if err := service.RefreshVideoTask(c.Request.Context(), task); err != nil {
-		// One untrusted Provider observation does not turn an existing task into a
-		// business failure. Return the last durable projection and let later GETs
-		// or background polling observe it again.
-		logger.LogWarn(c.Request.Context(), "ModelArk task refresh failed: "+err.Error())
-	}
-	refreshed, refreshedExists, refreshErr := model.GetVideoTaskForProtocol(
-		c.GetInt("id"), c.GetInt("token_id"), c.Param("task_id"), model.TaskClientProtocolModelArkV3, false,
-	)
-	if refreshErr == nil {
-		if !refreshedExists {
-			modelArkVideoError(c, http.StatusNotFound, "task_not_found", "task not found")
-			return
-		}
-		durable = projectModelArkVideoTask(c, refreshed)
-	}
-	c.JSON(http.StatusOK, durable)
+	c.JSON(http.StatusOK, projectModelArkVideoTask(c, task))
 }
 
 func ModelArkVideoDelete(c *gin.Context) {

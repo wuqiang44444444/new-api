@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -11,16 +12,17 @@ import (
 func TestCustomerStatementsExcludeChannelTestsButKeepWalletAndProviderUsage(t *testing.T) {
 	db := setupBillingReconciliationTestDB(t)
 	require.NoError(t, db.Create(&[]User{
-		{Id: 1, Username: "customer", AffCode: "customer", Quota: 1000},
-		{Id: 2, Username: "tests-only", AffCode: "tests-only", Quota: 2000},
+		{Id: 1, Username: "admin", AffCode: "admin", Role: common.RoleAdminUser, Quota: 1000},
+		{Id: 2, Username: "tests-only", AffCode: "tests-only", Role: common.RoleRootUser, Quota: 2000},
 	}).Error)
 	require.NoError(t, db.Create(&Channel{Id: 21, Name: "provider"}).Error)
 	logs := []Log{
 		{UserId: 1, Type: LogTypeConsume, TokenName: "playground-default", Quota: 100, PromptTokens: 10},
-		{UserId: 1, Type: LogTypeConsume, TokenId: 9, TokenName: "模型测试", Content: "模型测试", Quota: 200, PromptTokens: 20},
+		{UserId: 1, Type: LogTypeConsume, TokenId: 9, TokenName: "Model test", Content: "Model test", Quota: 200, PromptTokens: 20},
 		{UserId: 1, Type: LogTypeConsume, TokenName: "模型测试", Content: "模型测试", Quota: 9000, PromptTokens: 900},
-		{UserId: 1, Type: LogTypeRefund, TokenId: 9, TokenName: "模型测试", Content: "模型测试", Quota: 50},
-		{UserId: 2, Type: LogTypeConsume, TokenName: "模型测试", Content: "模型测试", Quota: 8000, PromptTokens: 800},
+		{UserId: 1, Type: LogTypeConsume, TokenName: "Model test", Content: "Model test", Quota: 7000, PromptTokens: 700},
+		{UserId: 1, Type: LogTypeRefund, TokenId: 9, TokenName: "Model test", Content: "Model test", Quota: 50},
+		{UserId: 2, Type: LogTypeConsume, TokenName: "Model test", Content: "Model test", Quota: 8000, PromptTokens: 800},
 	}
 	for i := range logs {
 		logs[i].CreatedAt = int64(1100 + i)
@@ -72,14 +74,14 @@ func TestCustomerStatementsExcludeChannelTestsButKeepWalletAndProviderUsage(t *t
 	provider, err := GetProviderBillingURLSummary(1000, 1500, 1000, "")
 	require.NoError(t, err)
 	require.Len(t, provider.Groups, 1)
-	assert.EqualValues(t, 4, provider.Groups[0].Usage.Requests)
-	assert.EqualValues(t, 1730, provider.Groups[0].Usage.InputTokens)
-	assert.EqualValues(t, 12, provider.Groups[0].Usage.CacheWriteTokens)
+	assert.EqualValues(t, 5, provider.Groups[0].Usage.Requests)
+	assert.EqualValues(t, 2430, provider.Groups[0].Usage.InputTokens)
+	assert.EqualValues(t, 15, provider.Groups[0].Usage.CacheWriteTokens)
 	// Channel tests keep their usage but never become customer official price.
 	// Rows with a real token (token_id 9) remain customer settlements even
 	// when their names look like tests; only the native test shape is excluded.
 	require.NotNil(t, provider.Groups[0].DataQuality)
-	assert.EqualValues(t, 2, provider.Groups[0].DataQuality.UsageWithoutAmountRows)
+	assert.EqualValues(t, 3, provider.Groups[0].DataQuality.UsageWithoutAmountRows)
 	assert.EqualValues(t, 0, provider.Groups[0].DataQuality.TestPricedRows)
 	// 测试行记录的 quota 与冻结倍率证据不一致时保持待核算；渠道不再作为
 	// “有测试所以金额例外完整”的特例，总额必须标记不完整。
@@ -99,6 +101,9 @@ func TestCustomerSettlementScopeKeepsUnmarkedFreeAndRefundRecords(t *testing.T) 
 		{Type: LogTypeConsume, TokenName: "playground-default", Content: "模型测试"},
 		{Type: LogTypeConsume},
 		{Type: LogTypeRefund, TokenName: "模型测试", Content: "模型测试", Quota: 5},
+		{Type: LogTypeConsume, TokenName: "Model test", Content: "模型测试"},
+		{Type: LogTypeConsume, TokenName: "Model test", Content: "ordinary request"},
+		{Type: LogTypeRefund, TokenName: "Model test", Content: "Model test", Quota: 5},
 	}
 	require.NoError(t, db.Create(&logs).Error)
 	// Nullable historical fields must not disappear through SQL's NOT(NULL).

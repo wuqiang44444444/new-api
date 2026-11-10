@@ -30,7 +30,13 @@ func ComputeTaskTieredBilling(task *model.Task) (billingexpr.TieredResult, billi
 	if async.BillingProbe != nil {
 		input = *async.BillingProbe
 	}
-	if snap.TaskUsageBilling {
+	if task.IsMiniMaxV2Task() {
+		facts, err := task.MiniMaxOfficialSettlementUsage()
+		if err != nil {
+			return result, input, err
+		}
+		input.Usage = facts
+	} else if snap.TaskUsageBilling {
 		facts, err := seedancebilling.ControlledFacts(input.Body, async.ActualTokens)
 		if err != nil {
 			return result, input, err

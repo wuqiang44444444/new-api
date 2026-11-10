@@ -191,13 +191,13 @@ func (s *Store) ActiveEntryFor(protocol string) (*CompiledVersion, error) {
 // task. The database row is always read first so deleted versions stop
 // resolving; disabled-but-present versions keep resolving, which separates
 // "stop accepting new requests" from "stop executing history".
-func (s *Store) ResolveVersion(ctx context.Context, version string) (*pluginruntime.LoadedPlugin, error) {
+func (s *Store) ResolveVersion(ctx context.Context, version, protocol string) (*pluginruntime.LoadedPlugin, error) {
 	row, err := model.GetTaskPluginVersion(pluginruntime.MinimaxPluginKey, version)
 	if err != nil || row == nil {
 		return nil, ErrVersionUnavailable
 	}
 	entry, entryErr := s.compileRow(row)
-	if entryErr != nil {
+	if entryErr != nil || !infoDeclaresProtocol(entry.Info, protocol) {
 		return nil, ErrVersionUnavailable
 	}
 	return entry.Plugin, nil

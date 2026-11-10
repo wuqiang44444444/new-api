@@ -93,13 +93,13 @@ Seedance 内置制品随部署自动晋升：启动同步将缺失制品入库�
 
 #### 插件版本与执行依赖
 
-新受理在 prepared 前固定插件 key/API version/版本并写入 attempt 恢复模板与 Task；后续查询、用量
+新受理在 prepared 前固定插件 key/API version/版本并写入 attempt 恢复模板与 Task；后台状态轮询、用量
 补查、删除、内容回源与恢复一律通过冻结版本解析器取得执行对象，不使用当前 active 版本替代。
 prepared 引用与版本删除在同一数据库事务中经同一精确版本锁串行化；删除保护覆盖所有版本（含非
 active、停用、编译失败），引用数为 Task 引用与 attempt 引用之和，查询失败显形不为零。
-`UNKNOWN`、pending/failed/debt/awaiting_usage 持续保护；**可查询的 SUCCESS 即使已结算也保留依赖**
-（成功任务的单项 GET 仍执行冻结插件查询），因此飞彩（`SupportsDeleteTerminal=false`，无本地删除
-标记）含 SUCCESS 历史的插件版本实际不可删除——这是已接受的保守语义，不作为缺陷绕过。
+`UNKNOWN`、pending/failed/debt/awaiting_usage 持续保护；按现有保守引用规则，**可查询的 SUCCESS 即使
+已结算也保留依赖**。飞彩（`SupportsDeleteTerminal=false`，无本地删除标记）含 SUCCESS 历史的插件
+版本因此仍受删除保护。
 编译失败的 active 制品停止新受理并显形，不静默沿用旧缓存。
 
 #### 用量归一唯一权威
@@ -308,14 +308,20 @@ Mini 四图 URL 与纯托管引用已实测通过，其余模型、状态/尾帧
 
 ## 6. ModelArk V3 北向合同
 
-Seedance 专用渠道提供四组客户行为：
+Seedance Link、MiniMax Link 及后续接入此北向合同的视频渠道共用四组客户行为：
 
 | 行为 | 接口 | 权威来源 |
 | --- | --- | --- |
-| 创建 | `POST /api/v3/contents/generations/tasks` | 客户模型对应的唯一 Seedance Channel |
-| 查询单项 | `GET /api/v3/contents/generations/tasks/{task_id}` | Task 冻结 adapter 与连接 |
+| 创建 | `POST /api/v3/contents/generations/tasks` | 客户模型对应的唯一 Link 视频 Channel |
+| 查询单项 | `GET /api/v3/contents/generations/tasks/{task_id}` | 当前 `user_id + app_id` 的本地 Task 和交付记录 |
 | 查询列表 | `GET /api/v3/contents/generations/tasks` | 主数据库内的 `user_id + app_id` Task |
 | 删除 | `DELETE /api/v3/contents/generations/tasks/{task_id}` | Task 冻结 adapter；不支持时明确返回 |
+
+未完成任务统一由现有 `async_task_poll` 后台调度查询状态，调度间隔为 15 秒，单任务的实际查询时间受
+批次耗时和上游退避影响。后台按本地 Task ID 区分任务，满批次按 ID 有界轮转，跳过仍在等待
+`Retry-After` 的任务。客户单项 GET 和列表只读本地已持久化状态及交付事实，不触发 Provider 查询，
+也不改变后台节奏。正常查询使用共享周期；MiniMax JD 收到带有效 `Retry-After` 的 429 时延后该任务的
+后台状态查询，临时查询故障保留最后可信状态和预扣。后台用量补查和 OSS 转存仍按各自的既有流程执行。
 
 北向入口校验 ModelArk V3 的 JSON 结构、必填字段、标准媒体节点以及 duration、分辨率、数量等计费
 安全边界。adapter 再校验该南向协议的精确字段组合。合同外 Provider 私有字段必须明确失败，不得静默
@@ -393,7 +399,7 @@ Task 和 create attempt 保存已经发生的事实，包括：
 - 请求中的 opaque 素材引用（不附加平台所有权或 Provider 作用域结论）；
 - 预扣、价格、计费表达式和结算上下文。
 
-GET、DELETE、内容回源、轮询和结算均使用冻结事实。当前 Channel 停用、模型映射变化、凭据轮换、
+DELETE、内容回源、后台轮询和结算均使用冻结事实，客户 GET 读取本地 Task 投影。当前 Channel 停用、模型映射变化、凭据轮换、
 协议升级或管理员改价不能重新路由或重新解释历史任务。Provider 不支持删除时返回诚实的不支持
 错误，不伪造取消或删除成功。
 
@@ -413,8 +419,8 @@ Key 读取仍按 `user_id + app_id` 隔离；控制台会话和签名访问保�
 `controller/video_result_delivery.go` 履约，范围外线路保留原回源代理。未来同步上游时
 只需保留这些制品入口接线，不修改原生适配器或插件合同。
 
-MiniMax 标准视频沿相同的通用制品入口使用独立类型化接线：以 `ChannelTypeMiniMaxLink`（69）的成功 Task、未删除状态和
-已冻结的真实 Provider task ID 投影一个 `video` 制品。JD 临时视频地址不持久化，因此列表不以
+MiniMax 标准视频沿相同的通用制品入口使用独立类型化接线。以 `ChannelTypeMiniMaxLink`（69）的成功 Task、未删除状态和
+已冻结的真实 Provider task ID 投影一个 `video` 制品。京东云和官方 V2 临时视频地址不持久化，因此列表不以
 `ResultURL` 的本站占位地址作为媒体来源，也不因缺少持久 CDN 地址而返回空制品。列表不访问 Provider；
 结果转存 worker 使用冻结的 MiniMax adapter 解析临时地址并安全回源，托管就绪后内容请求授权并
 302 重定向本站 OSS 预签名地址；客户端内容请求不再直接向上游回源。
@@ -423,6 +429,17 @@ MiniMax 标准视频沿相同的通用制品入口使用独立类型化接线：
 Range 与媒体下载由对象存储履约；上游文件不可用不重写成功状态或资金。
 MiniMax 的授权、投影和内容分派位于 `controller/task_minimax_artifacts.go`，共享入口仅保留窄调用，
 不改变 Seedance 的结果事实判定或 NEWAPI 原生插件制品接口。
+
+MiniMax 官方 V2 由 `minimax-link` 自 1.3.0 登记，当前声明基础 H3。发送固定
+`POST /v2/video_generation`，后台用冻结协议和凭据查询 `GET /v2/query/video_generation/{task_id}`。
+转存 worker 使用同一冻结 adapter 从 `task.content.url` 读取结果，CDN 回源不带 Provider 凭据。
+取消和删除能力关闭。制品部署入库和渠道启用各自由管理流程控制，真实 Provider、账单与灰度验收
+是独立发布门槛。
+
+Nexhina Hailuo V2 由 `minimax-link` 自 1.4.0 登记，声明基础 H3 的 16:9 文生视频。独立协议固定
+`/hailuo/v2/video_generation` 及 `/hailuo/v2/query/video_generation/{task_id}`，并将文档中的
+`processing` 归一为运行中。选择来自已保存渠道协议。该线路沿用 MiniMax V2 冻结媒体计量和 OSS
+交付。供应商对账读取 Nexhina 本身的结算记录。
 
 ## 9. 无状态素材代理与 Channel 默认素材组
 

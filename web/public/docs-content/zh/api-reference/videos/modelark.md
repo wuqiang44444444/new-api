@@ -459,8 +459,8 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
 | `created_at` / `updated_at`   | integer | Unix 秒时间戳                                                        |
 
 终态任务的公开错误码包括 `generation_failed`、`provider_contract_failure`、`cancelled` 和 `expired`。
-一次上游查询异常不会立刻把已有任务判为业务失败；接口可能返回最后一次持久化状态，客户端应继续有界
-轮询。
+单项查询返回平台已保存的状态和当前交付结果，由平台后台更新。客户 GET 不会触发上游状态查询，
+频繁重复查询不会加快状态更新。一次后台查询异常不会立刻把已有任务判为业务失败；客户端应继续有界轮询。
 `running` 也可能表示执行结果仍在核实，不保证上游正在生成。等待超过客户端时限后保留原任务 ID，
 稍后继续查询或联系管理员，不重新创建任务，也不据此认定失败或退款。
 

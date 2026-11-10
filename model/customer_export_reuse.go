@@ -35,13 +35,15 @@ func CustomerStatementExportSourceVersion(ctx context.Context, userID int, jobTy
 		}
 	}
 	var source struct {
-		Revisions   []BillingStatementRevision
-		Maintenance BillingStatementMaintenance
-		Users       []struct {
+		ParserVersion int
+		Revisions     []BillingStatementRevision
+		Maintenance   BillingStatementMaintenance
+		Users         []struct {
 			Id       int
 			Username string
 		}
 	}
+	source.ParserVersion = BillingStatementParserVersion
 	query := DB.WithContext(ctx)
 	if err := query.Select("scope, revision, generation").Where("scope = ?", fmt.Sprintf("ev:%d:0", userID)).Find(&source.Revisions).Error; err != nil {
 		return "", err

@@ -20,6 +20,7 @@ func TestTaskUsageReviewRequiresVerifiedStatementAndMatchingProof(t *testing.T) 
 		status            int
 	}{
 		{"unverified", securityProofScopeTaskUsageReview, `{"completion_tokens":0,"reference":"statement"}`, 400},
+		{"unverified media", securityProofScopeTaskUsageReview, `{"media_usage":{"output_seconds":4},"reference":"statement"}`, 400},
 		{"wrong scope", securityProofScopeTaskContractAttemptRecover, `{"completion_tokens":100,"provider_verified":true,"reference":"statement"}`, 403},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

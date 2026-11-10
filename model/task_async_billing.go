@@ -30,6 +30,9 @@ type TaskAsyncBillingContext struct {
 	ActualTokens            int                                  `json:"actual_tokens,omitempty"`
 	ActualUsageReported     bool                                 `json:"actual_usage_reported,omitempty"`
 	ActualUsageSource       string                               `json:"actual_usage_source,omitempty"`
+	OfficialUsage           map[string]float64                   `json:"official_usage,omitempty"`
+	OfficialUsageStatements map[string]string                    `json:"official_usage_statements,omitempty"`
+	OfficialUsageConflict   map[string]float64                   `json:"official_usage_conflict,omitempty"`
 	ActualUsageEvidence     map[string]int                       `json:"actual_usage_evidence,omitempty"`
 	ProviderBillingEvidence *relaycommon.ProviderBillingEvidence `json:"provider_billing_evidence,omitempty"`
 	State                   TaskBillingState                     `json:"state,omitempty"`

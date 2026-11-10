@@ -3352,6 +3352,7 @@
     "/api/v3/contents/generations/tasks/{task_id}": {
       "get": {
         "summary": "查询 ModelArk 视频任务",
+        "description": "返回平台已保存的任务状态及当前交付结果。状态由后台更新，查询接口不触发上游状态刷新。",
         "deprecated": false,
         "operationId": "getModelArkVideoTask",
         "tags": [

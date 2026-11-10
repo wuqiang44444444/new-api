@@ -33,7 +33,7 @@ func GetConfiguredMiniMaxPublicModels() ([]SeedancePublicModel, error) {
 	modelIndex := make(map[string]int)
 	for i := range channels {
 		settings := channels[i].GetOtherSettings()
-		if settings.VideoUpstreamProtocol != dto.VideoUpstreamProtocol(constant.VideoUpstreamProtocolJdCloudTaskV1) {
+		if _, _, registered := constant.MiniMaxVideoPaths(string(settings.VideoUpstreamProtocol)); !registered {
 			return nil, fmt.Errorf("MiniMax channel has an unregistered video protocol")
 		}
 		for _, modelName := range channels[i].GetModels() {
@@ -45,14 +45,15 @@ func GetConfiguredMiniMaxPublicModels() ([]SeedancePublicModel, error) {
 			if err != nil {
 				return nil, fmt.Errorf("resolve MiniMax customer model contract: %w", err)
 			}
-			video, err := minimaxPublicVideoAPI(published.Configuration, modelName, providerModel, settings.AllowServiceTier)
+			video, err := minimaxPublicVideoAPI(published.Configuration, settings.VideoUpstreamProtocol, modelName, providerModel, settings.AllowServiceTier)
 			if err != nil {
 				return nil, fmt.Errorf("MiniMax model has no published parameter declaration: %w", err)
 			}
 			candidate := SeedancePublicModel{
-				ModelName: modelName,
-				Enabled:   channels[i].Status == common.ChannelStatusEnabled,
-				Groups:    normalizedPublicModelGroups(channels[i].GetGroups()),
+				videoProtocol: settings.VideoUpstreamProtocol,
+				ModelName:     modelName,
+				Enabled:       channels[i].Status == common.ChannelStatusEnabled,
+				Groups:        normalizedPublicModelGroups(channels[i].GetGroups()),
 				API: dto.PublicModelAPI{
 					Video: video,
 				},
@@ -62,6 +63,7 @@ func GetConfiguredMiniMaxPublicModels() ([]SeedancePublicModel, error) {
 				if candidate.Enabled && !models[index].Enabled {
 					models[index].Enabled = true
 					models[index].API = candidate.API
+					models[index].videoProtocol = candidate.videoProtocol
 				}
 				continue
 			}
@@ -75,12 +77,13 @@ func GetConfiguredMiniMaxPublicModels() ([]SeedancePublicModel, error) {
 // minimaxPublicVideoAPI builds the public creation contract from the pinned
 // declaration and registered host request shape. Provider names and channel identity
 // cannot escape through this projection.
-func minimaxPublicVideoAPI(configuration *jsplugin.SeedanceChannelConfiguration, customerModel, providerModel string, allowServiceTier bool) (*dto.PublicVideoAPI, error) {
-	metadata, err := minimaxDeclaredMetadata(configuration, providerModel)
+func minimaxPublicVideoAPI(configuration *jsplugin.SeedanceChannelConfiguration, protocol dto.VideoUpstreamProtocol, customerModel, providerModel string, allowServiceTier bool) (*dto.PublicVideoAPI, error) {
+	metadata, err := minimaxDeclaredMetadata(configuration, protocol, providerModel)
 	if err != nil {
 		return nil, err
 	}
-	api, ok := publicmodel.VideoAPIFromPlugin(customerModel, constantVideoProtocol(), *metadata, allowServiceTier)
+	official := constant.IsMiniMaxVideoV2(string(protocol))
+	api, ok := publicmodel.VideoAPIFromPlugin(customerModel, protocol, *metadata, allowServiceTier && !official)
 	if !ok {
 		return nil, fmt.Errorf("provider model %q cannot be projected", providerModel)
 	}
@@ -124,22 +127,20 @@ func minimaxPublicVideoAPI(configuration *jsplugin.SeedanceChannelConfiguration,
 	if metadata.MaxPromptLength > 0 {
 		api.Creation.Parameters = append(api.Creation.Parameters, dto.PublicAPIParameter{Name: "content[].text", Type: "string", MinLength: common.GetPointer(1), MaxLength: common.GetPointer(metadata.MaxPromptLength)})
 	}
-	api.Creation.Parameters = append(api.Creation.Parameters, dto.PublicAPIParameter{Name: "watermark", Type: "boolean", FixedValue: false, DefaultValue: false})
+	if !official {
+		api.Creation.Parameters = append(api.Creation.Parameters, dto.PublicAPIParameter{Name: "watermark", Type: "boolean", FixedValue: false, DefaultValue: false})
+	}
 	return api, nil
-}
-
-func constantVideoProtocol() dto.VideoUpstreamProtocol {
-	return dto.VideoUpstreamProtocol(constant.VideoUpstreamProtocolJdCloudTaskV1)
 }
 
 // minimaxDeclaredMetadata resolves the provider model's declared metadata
 // from the active minimax-link declaration.
-func minimaxDeclaredMetadata(configuration *jsplugin.SeedanceChannelConfiguration, providerModel string) (*jsplugin.SeedanceVideoModelMetadata, error) {
+func minimaxDeclaredMetadata(configuration *jsplugin.SeedanceChannelConfiguration, protocol dto.VideoUpstreamProtocol, providerModel string) (*jsplugin.SeedanceVideoModelMetadata, error) {
 	if configuration == nil {
 		return nil, fmt.Errorf("MiniMax plugin declaration is unavailable")
 	}
 	for i := range configuration.Videos {
-		if configuration.Videos[i].Protocol != constant.VideoUpstreamProtocolJdCloudTaskV1 {
+		if configuration.Videos[i].Protocol != string(protocol) {
 			continue
 		}
 		if metadata, ok := configuration.Videos[i].ModelMetadata[providerModel]; ok {

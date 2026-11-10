@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	taskdto "github.com/QuantumNous/new-api/dto"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -64,19 +65,19 @@ func (a *TaskAdaptor) ensureCreateConversion(requestContext *gin.Context, info *
 		return nil, err
 	}
 	input := map[string]any{
-		"protocol":      protocolName(),
+		"protocol":      string(a.protocol),
 		"providerModel": upstreamModel,
 		"request":       requestMap,
 		"limits":        map[string]any{"maxDurationSeconds": relaycommon.MaxTaskDurationSeconds},
 	}
 	result, callErr := plugin.Engine.CallPathWithAdmissionTimeout(
 		requestContextFrom(requestContext), createAdmissionTimeout,
-		hookRoot, []string{protocolName(), "buildCreate"}, input,
+		hookRoot, []string{string(a.protocol), "buildCreate"}, input,
 	)
 	if callErr != nil {
 		return nil, relaycommon.NewVideoContractError("invalid_request", hookErrorMessage(callErr))
 	}
-	conversion, decodeErr := decodeCreateConversion(result, configuration, upstreamModel, contract.ModelArk)
+	conversion, decodeErr := decodeCreateConversion(result, configuration, string(a.protocol), upstreamModel, contract.ModelArk)
 	if decodeErr != nil {
 		return nil, decodeErr
 	}
@@ -94,7 +95,7 @@ func (a *TaskAdaptor) ensureCreateConversion(requestContext *gin.Context, info *
 func decodeCreateConversion(
 	result any,
 	configuration *pluginruntime.SeedanceChannelConfiguration,
-	providerModel string,
+	protocol, providerModel string,
 	contract *taskdto.ModelArkVideoCreateRequest,
 ) (*minimaxCreateConversion, error) {
 	object, ok := result.(map[string]any)
@@ -110,9 +111,7 @@ func decodeCreateConversion(
 	if !ok {
 		return nil, fmt.Errorf("minimax plugin buildCreate returned an invalid body")
 	}
-	if len(body) != 3 {
-		return nil, fmt.Errorf("minimax plugin body must contain exactly model, content and parameters")
-	}
+
 	wireModel, err := pluginStringField(body, "model", 191)
 	if err != nil {
 		return nil, err
@@ -120,17 +119,24 @@ func decodeCreateConversion(
 	if wireModel != providerModel {
 		return nil, fmt.Errorf("minimax plugin body model does not match the resolved provider model")
 	}
-	if err := validateWireContent(body["content"], contract); err != nil {
+	if err := validateWireContent(body["content"], contract, protocol); err != nil {
 		return nil, err
 	}
-	parameters, ok := body["parameters"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("minimax plugin body must carry a parameters object")
+	parameters := body
+	if constant.IsMiniMaxVideoV2(protocol) {
+		if len(body) != 5 || contract.Watermark != nil {
+			return nil, fmt.Errorf("invalid MiniMax official create shape")
+		}
+	} else {
+		parameters, ok = body["parameters"].(map[string]any)
+		if !ok || len(body) != 3 || len(parameters) != 5 {
+			return nil, fmt.Errorf("invalid MiniMax JD create shape")
+		}
+		if parameters["prompt_optimizer"] != true || parameters["watermark"] != false {
+			return nil, fmt.Errorf("minimax plugin must preserve the JD prompt optimization and watermark policy")
+		}
 	}
-	if len(parameters) != 5 {
-		return nil, fmt.Errorf("minimax plugin parameters must contain exactly duration, resolution, ratio, prompt_optimizer and watermark")
-	}
-	metadata, err := declaredMetadata(configuration, providerModel)
+	metadata, err := declaredMetadata(configuration, protocol, providerModel)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +148,7 @@ func decodeCreateConversion(
 	if err != nil {
 		return nil, err
 	}
-	if duration != effective {
+	if duration != effective || duration < metadata.MinDuration || duration > metadata.MaxDuration {
 		return nil, failInvalidParameter("minimax plugin body duration does not match the request duration")
 	}
 	resolution, err := pluginStringField(parameters, "resolution", 64)
@@ -162,12 +168,6 @@ func decodeCreateConversion(
 		return m.Ratios
 	}) {
 		return nil, fmt.Errorf("minimax plugin body ratio does not match the request or the declared open set")
-	}
-	if optimizer, exists := parameters["prompt_optimizer"]; !exists || optimizer != true {
-		return nil, fmt.Errorf("minimax plugin must keep prompt optimization as the fixed southbound policy")
-	}
-	if watermark, exists := parameters["watermark"]; !exists || watermark != false {
-		return nil, fmt.Errorf("minimax plugin must keep watermark off as the fixed southbound policy")
 	}
 	wireBytes, err := common.Marshal(body)
 	if err != nil {

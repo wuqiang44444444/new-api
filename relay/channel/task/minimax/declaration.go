@@ -25,12 +25,12 @@ func pinnedConfiguration(requestContext *gin.Context) (*pluginruntime.SeedanceCh
 }
 
 // videoConfiguration returns the declaration entry of this package's protocol.
-func videoConfiguration(configuration *pluginruntime.SeedanceChannelConfiguration) (*pluginruntime.SeedanceVideoConfiguration, error) {
+func videoConfiguration(configuration *pluginruntime.SeedanceChannelConfiguration, protocol string) (*pluginruntime.SeedanceVideoConfiguration, error) {
 	if configuration == nil {
 		return nil, minimaxplugin.ErrUnavailable
 	}
 	for i := range configuration.Videos {
-		if configuration.Videos[i].Protocol == protocolName() {
+		if configuration.Videos[i].Protocol == protocol {
 			return &configuration.Videos[i], nil
 		}
 	}
@@ -40,8 +40,8 @@ func videoConfiguration(configuration *pluginruntime.SeedanceChannelConfiguratio
 // declaredMetadata resolves the per-provider-model metadata declared by the
 // pinned artifact. Listed models always carry declared metadata (compile
 // validation enforces this), so absence is a host contract violation.
-func declaredMetadata(configuration *pluginruntime.SeedanceChannelConfiguration, providerModel string) (*pluginruntime.SeedanceVideoModelMetadata, error) {
-	video, err := videoConfiguration(configuration)
+func declaredMetadata(configuration *pluginruntime.SeedanceChannelConfiguration, protocol, providerModel string) (*pluginruntime.SeedanceVideoModelMetadata, error) {
+	video, err := videoConfiguration(configuration, protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -49,32 +49,6 @@ func declaredMetadata(configuration *pluginruntime.SeedanceChannelConfiguration,
 		return &metadata, nil
 	}
 	return nil, fmt.Errorf("provider model %q has no declared metadata in the active minimax-link version", providerModel)
-}
-
-// declaredModelList reports whether the provider model is declared by the
-// pinned artifact version.
-func declaredModelList(configuration *pluginruntime.SeedanceChannelConfiguration) ([]string, error) {
-	video, err := videoConfiguration(configuration)
-	if err != nil {
-		return nil, err
-	}
-	return video.Models, nil
-}
-
-// declaredProviderModelAuthorized reports whether the provider model belongs
-// to the pinned declaration. This is validation, not a second declaration
-// source: the pinned artifact version is the only model registry.
-func declaredProviderModelAuthorized(configuration *pluginruntime.SeedanceChannelConfiguration, providerModel string) bool {
-	video, err := videoConfiguration(configuration)
-	if err != nil {
-		return false
-	}
-	for _, model := range video.Models {
-		if model == providerModel {
-			return true
-		}
-	}
-	return false
 }
 
 // metadataResolutionEnums and metadataRatioEnums project the declared open

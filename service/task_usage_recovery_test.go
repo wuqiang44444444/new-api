@@ -71,7 +71,7 @@ func TestUsageRecoveryReviewAndVerifiedStatementUseFrozenBilling(t *testing.T) {
 	_, review, err := model.ClaimTaskUsageCheck(task.ID, now)
 	require.NoError(t, err)
 	require.True(t, review)
-	retry, err := model.ReviewTaskUsage(task.TaskID, 9, "incident-123", nil)
+	retry, err := model.ReviewTaskUsage(task.TaskID, 9, "incident-123", nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, model.TaskBillingStateAwaitingUsage, retry.BillingState)
 	first, review, err := model.ClaimTaskUsageCheck(task.ID, retry.UsageCheckNextAt)
@@ -83,15 +83,15 @@ func TestUsageRecoveryReviewAndVerifiedStatementUseFrozenBilling(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, review)
 	zero := 0
-	resolved, err := model.ReviewTaskUsage(task.TaskID, 9, "statement-123", &zero)
+	resolved, err := model.ReviewTaskUsage(task.TaskID, 9, "statement-123", &zero, nil)
 	require.NoError(t, err)
 	assert.Equal(t, model.TaskBillingStatePending, resolved.BillingState)
 	require.Equal(t, 1, ReconcileTaskBilling(context.Background(), 10).Scanned)
 	assert.Equal(t, 1700, getUserQuota(t, task.UserId))
-	_, err = model.ReviewTaskUsage(task.TaskID, 9, "statement-123", &zero)
+	_, err = model.ReviewTaskUsage(task.TaskID, 9, "statement-123", &zero, nil)
 	require.NoError(t, err)
 	changed := 10
-	_, err = model.ReviewTaskUsage(task.TaskID, 9, "statement-changed", &changed)
+	_, err = model.ReviewTaskUsage(task.TaskID, 9, "statement-changed", &changed, nil)
 	require.Error(t, err)
 	assert.Zero(t, ReconcileTaskBilling(context.Background(), 10).Scanned)
 	saved := reloadTask(t, task.ID)
@@ -104,7 +104,7 @@ func TestUsageRecoveryLateProviderUsageCannotReopenOperatorSettlement(t *testing
 	task := persistedFunCloudUsageTask(t, 8143, 1000)
 	stale := reloadTask(t, task.ID)
 	value := 100
-	_, err := model.ReviewTaskUsage(task.TaskID, 9, "statement-456", &value)
+	_, err := model.ReviewTaskUsage(task.TaskID, 9, "statement-456", &value, nil)
 	require.NoError(t, err)
 	require.Equal(t, 1, ReconcileTaskBilling(context.Background(), 10).Scanned)
 	different := 200
@@ -119,12 +119,12 @@ func TestUsageRecoveryLateProviderUsageCannotReopenOperatorSettlement(t *testing
 func TestUsageRecoveryRejectsInvalidOperatorEvidence(t *testing.T) {
 	task := persistedFunCloudUsageTask(t, 8144, 1000)
 	negative := -1
-	_, err := model.ReviewTaskUsage(task.TaskID, 9, "statement", &negative)
+	_, err := model.ReviewTaskUsage(task.TaskID, 9, "statement", &negative, nil)
 	require.Error(t, err)
 	zero := 0
-	_, err = model.ReviewTaskUsage(task.TaskID, 0, "statement", &zero)
+	_, err = model.ReviewTaskUsage(task.TaskID, 0, "statement", &zero, nil)
 	require.Error(t, err)
-	_, err = model.ReviewTaskUsage(task.TaskID, 9, "", &zero)
+	_, err = model.ReviewTaskUsage(task.TaskID, 9, "", &zero, nil)
 	require.Error(t, err)
 	assert.Equal(t, 700, reloadTask(t, task.ID).Quota)
 }

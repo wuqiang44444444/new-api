@@ -24,8 +24,8 @@ func TestMinimaxEmbeddedArtifactCompilesUnderTypedContract(t *testing.T) {
 	if plugin.Meta.Key != pluginruntime.MinimaxPluginKey {
 		t.Fatalf("artifact key = %q, want %q", plugin.Meta.Key, pluginruntime.MinimaxPluginKey)
 	}
-	if len(info.Protocols) != 1 || info.Protocols[0] != "jdcloud_video_task_v1" {
-		t.Fatalf("declared protocols = %v, want [jdcloud_video_task_v1]", info.Protocols)
+	if len(info.Protocols) != 3 || info.Protocols[0] != "jdcloud_video_task_v1" || info.Protocols[1] != "minimax_official_video_v2" || info.Protocols[2] != "nexhina_hailuo_v2" {
+		t.Fatalf("declared protocols = %v, want [jdcloud_video_task_v1 minimax_official_video_v2 nexhina_hailuo_v2]", info.Protocols)
 	}
 	if info.Configuration == nil {
 		t.Fatal("artifact must declare a channel configuration")

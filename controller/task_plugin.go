@@ -498,7 +498,7 @@ func ActivateTaskPlugin(c *gin.Context) {
 		common.ApiErrorMsg(c, "plugin version not found")
 		return
 	}
-	if _, err = jsplugin.NewRegistry().Register(string(target.Source), jsplugin.Options{Key: target.Key, Version: target.Version}); err != nil {
+	if _, err = compileTaskPluginSource(string(target.Source), jsplugin.Options{Key: target.Key, Version: target.Version}); err != nil {
 		taskPluginCompileError(c, err)
 		return
 	}

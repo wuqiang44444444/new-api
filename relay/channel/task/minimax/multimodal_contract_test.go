@@ -25,11 +25,11 @@ func TestMiniMaxMultimodalPreservationAndHostGuards(t *testing.T) {
 			require.NoError(t, err)
 			var contract taskdto.ModelArkVideoCreateRequest
 			require.NoError(t, common.Unmarshal(raw, &contract))
-			_, err = decodeCreateConversion(result, info.Configuration, "MiniMax-H3", &contract)
+			_, err = decodeCreateConversion(result, info.Configuration, protocolName(), "MiniMax-H3", &contract)
 			require.NoError(t, err)
 			body := result.(map[string]any)["body"].(map[string]any)
 			body["content"].([]any)[1].(map[string]any)["role"] = "first_frame"
-			_, err = decodeCreateConversion(result, info.Configuration, "MiniMax-H3", &contract)
+			_, err = decodeCreateConversion(result, info.Configuration, protocolName(), "MiniMax-H3", &contract)
 			require.Error(t, err, "host must reject role reinterpretation")
 			body["content"].([]any)[1].(map[string]any)["role"] = "reference_image"
 		}
@@ -39,6 +39,6 @@ func TestMiniMaxMultimodalPreservationAndHostGuards(t *testing.T) {
 	require.NoError(t, err)
 	result.(map[string]any)["body"].(map[string]any)["parameters"].(map[string]any)["resolution"] = "2K"
 	contract := &taskdto.ModelArkVideoCreateRequest{Content: []taskdto.ModelArkVideoContent{{Type: "text", Text: common.GetPointer("prompt")}}}
-	_, err = decodeCreateConversion(result, info.Configuration, "MiniMax-H3", contract)
+	_, err = decodeCreateConversion(result, info.Configuration, protocolName(), "MiniMax-H3", contract)
 	assert.Error(t, err, "default wire resolution must agree with the billing probe")
 }

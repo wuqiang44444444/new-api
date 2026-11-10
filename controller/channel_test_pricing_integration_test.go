@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -17,6 +18,7 @@ import (
 )
 
 func TestChannelTestPersistsNativePricingWithoutCustomerCharge(t *testing.T) {
+	require.NoError(t, i18n.Init())
 	previousDB, previousLogDB := model.DB, model.LOG_DB
 	previousRedis, previousMemory := common.RedisEnabled, common.MemoryCacheEnabled
 	previousLog, previousExport := common.LogConsumeEnabled, common.DataExportEnabled
@@ -46,7 +48,7 @@ func TestChannelTestPersistsNativePricingWithoutCustomerCharge(t *testing.T) {
 	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"billing-test-evidence":1}`))
 	require.NoError(t, ratio_setting.UpdateCompletionRatioByJSONString(`{"billing-test-evidence":2}`))
 	require.NoError(t, ratio_setting.UpdateCacheRatioByJSONString(`{"billing-test-evidence":0.1}`))
-	user := &model.User{Username: "billing-operator", Group: "default", Status: common.UserStatusEnabled, Quota: 1000000}
+	user := &model.User{Username: "billing-operator", Group: "default", Role: common.RoleAdminUser, Status: common.UserStatusEnabled, Quota: 1000000}
 	require.NoError(t, db.Create(user).Error)
 	for _, tc := range []struct {
 		name, usage string
@@ -108,6 +110,10 @@ func TestChannelTestPersistsNativePricingWithoutCustomerCharge(t *testing.T) {
 			assert.Equal(t, user.Quota, saved.Quota)
 			assert.Zero(t, saved.UsedQuota)
 			assert.Zero(t, saved.RequestCount)
+			statement, err := model.GetBillingCustomerStatement(context.Background(), user.Id, log.CreatedAt, log.CreatedAt, "api_key", 0, "", "")
+			require.NoError(t, err)
+			assert.Zero(t, statement.Summary.NetQuota)
+			assert.Empty(t, statement.DiscountCombinations)
 			var savedChannel model.Channel
 			require.NoError(t, db.First(&savedChannel, channel.Id).Error)
 			assert.Zero(t, savedChannel.UsedQuota)

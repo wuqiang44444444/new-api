@@ -58,27 +58,30 @@ type normalizedObservation struct {
 	CreditSource   string
 }
 
-// normalizeTaskObservation resolves the exact frozen artifact version, runs
-// its parseTaskObservation hook on the raw upstream observation, and
-// validates the result. The plugin performs the JD shape conversion; the
-// host verifies task identity, the status domain, the result URL shape and
-// the usage locator before anything is persisted or delivered.
-func normalizeTaskObservation(ctx context.Context, task *model.Task, rawBody []byte, expectedTaskID string) (*normalizedObservation, []byte, error) {
+// frozenObservationPlugin validates the artifact before issuing a query.
+func frozenObservationPlugin(ctx context.Context, task *model.Task) (*pluginruntime.LoadedPlugin, error) {
 	snapshot := taskPluginSnapshot(task)
 	if snapshot == nil || snapshot.Key != pluginruntime.MinimaxPluginKey || snapshot.Version == "" {
-		return nil, nil, &relaycommon.UpstreamContractViolation{Reason: "task has no frozen minimax-link plugin snapshot"}
+		return nil, &relaycommon.UpstreamContractViolation{Reason: "task has no frozen minimax-link plugin snapshot"}
 	}
-	plugin, err := minimaxplugin.Default.ResolveVersion(ctx, snapshot.Version)
+	plugin, err := minimaxplugin.Default.ResolveVersion(ctx, snapshot.Version, string(task.PrivateData.VideoUpstreamProtocol))
 	if err != nil {
-		return nil, nil, &relaycommon.UpstreamContractViolation{Reason: fmt.Sprintf("minimax-link plugin version %q is unavailable", snapshot.Version)}
+		return nil, &relaycommon.UpstreamContractViolation{Reason: fmt.Sprintf("minimax-link plugin version %q is unavailable for the frozen protocol", snapshot.Version)}
 	}
+	return plugin, nil
+}
+
+func normalizeTaskObservation(ctx context.Context, plugin *pluginruntime.LoadedPlugin, task *model.Task, rawBody []byte, expectedTaskID string) (*normalizedObservation, []byte, error) {
 	result, callErr := plugin.Engine.CallPathWithAdmissionTimeout(
 		ctx, pollAdmissionTimeout,
-		hookRoot, []string{protocolName(), "parseTaskObservation"},
-		map[string]any{"taskId": expectedTaskID, "body": string(rawBody)},
+		hookRoot, []string{string(task.PrivateData.VideoUpstreamProtocol), "parseTaskObservation"},
+		map[string]any{"taskId": expectedTaskID, "providerModel": task.Properties.UpstreamModelName, "body": string(rawBody)},
 	)
 	if callErr != nil {
 		return nil, nil, pollObservationError(callErr)
+	}
+	if task.IsMiniMaxV2Task() {
+		return decodeOfficialTaskObservation(task, result, rawBody, expectedTaskID)
 	}
 	return decodeTaskObservation(result, rawBody, expectedTaskID)
 }

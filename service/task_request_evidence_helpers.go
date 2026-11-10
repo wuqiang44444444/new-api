@@ -2,10 +2,16 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/model"
 )
+
+func evidenceLegacySHA256(event *model.TaskRequestEvidenceEvent) string {
+	// PostgreSQL pads an empty CHAR(64) digest with ASCII spaces.
+	return strings.TrimRight(event.Sha256, " ")
+}
 
 // ReadEvidenceEventBody loads an entire object for explicit internal inspection.
 // HTTP previews and downloads instead use the bounded/streaming read entry.
@@ -28,6 +34,7 @@ func ReadEvidenceEventBody(event *model.TaskRequestEvidenceEvent, expired bool) 
 		key = EvidenceObjectKey(event.EvidenceId, event.Id)
 	}
 	payload, err := store.Get(key)
+	digest := evidenceLegacySHA256(event)
 	switch {
 	case errors.Is(err, ErrTaskRequestEvidenceUnavailable):
 		return nil, "missing"
@@ -37,7 +44,7 @@ func ReadEvidenceEventBody(event *model.TaskRequestEvidenceEvent, expired bool) 
 		return nil, "integrity_failed"
 	case err != nil:
 		return nil, "read_failed"
-	case event.Sha256 != "" && EvidenceSha256Hex(payload) != event.Sha256:
+	case digest != "" && EvidenceSha256Hex(payload) != digest:
 		return nil, "integrity_failed"
 	default:
 		return payload, "available"

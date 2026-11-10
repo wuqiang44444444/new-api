@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"gorm.io/gorm"
 )
 
@@ -45,6 +46,10 @@ func updateChannelWithCredentialActor(
 		}
 		if err := tx.First(channel, "id = ?", channel.Id).Error; err != nil {
 			return err
+		}
+		if original.Type == constant.ChannelTypeMiniMaxLink && channel.Type == original.Type &&
+			original.GetOtherSettings().VideoUpstreamProtocol != channel.GetOtherSettings().VideoUpstreamProtocol {
+			return errors.New("MiniMax Link video upstream protocol cannot be changed")
 		}
 		if err := validateChannelAssetTenantMutation(
 			tx,

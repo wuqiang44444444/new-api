@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/QuantumNous/new-api/common"
 	"math"
 	"reflect"
+	"slices"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	taskdto "github.com/QuantumNous/new-api/dto"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -126,10 +128,19 @@ func enumValuePreserved(metadata *pluginruntime.SeedanceVideoModelMetadata, expl
 	return len(values) > 0 && strings.EqualFold(values[0], wire)
 }
 
-// validateWireContent enforces lossless conversion of the entire prepared
-// standard content array, including order, roles and media URLs.
-func validateWireContent(value any, contract *taskdto.ModelArkVideoCreateRequest) error {
-	encoded, err := common.Marshal(contract.Content)
+// validateWireContent verifies that the wire preserves the prepared content.
+// Nexhina infers its single reference image from the item type on the wire.
+func validateWireContent(value any, contract *taskdto.ModelArkVideoCreateRequest, protocol string) error {
+	content := contract.Content
+	if protocol == constant.VideoUpstreamProtocolNexhinaHailuoV2 {
+		content = slices.Clone(content)
+		for i, item := range content {
+			if item.Type == "image_url" && item.Role != nil && *item.Role == "reference_image" {
+				content[i].Role = nil
+			}
+		}
+	}
+	encoded, err := common.Marshal(content)
 	if err != nil {
 		return err
 	}

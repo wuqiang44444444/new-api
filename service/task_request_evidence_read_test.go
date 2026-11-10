@@ -51,6 +51,7 @@ func TestEvidenceReadabilityAcrossStoreRestart(t *testing.T) {
 		want                           string
 	}{
 		{"binary", "video/mp4; codecs=h264", event.Sha256, key, 2, false, "available"},
+		{"PostgreSQL blank digest", "application/json", strings.Repeat(" ", 64), key, 2, false, "available"},
 		{"missing", "application/json", event.Sha256, "test/missing", 2, false, "missing"},
 		{"digest mismatch", "application/json", "wrong", key, 2, false, "integrity_failed"},
 		// An event row without an object is "missing"; "not_recorded" requires no row at all.
@@ -60,8 +61,14 @@ func TestEvidenceReadabilityAcrossStoreRestart(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			item := &model.TaskRequestEvidenceEvent{Id: tc.id, ObjectKey: tc.key, ContentType: tc.contentType, Sha256: tc.digest}
-			_, status := ReadEvidenceEventContent(item, tc.expired)
-			assert.Equal(t, tc.want, status)
+			preview, previewStatus := ReadEvidenceEventContent(item, tc.expired)
+			assert.Equal(t, tc.want, previewStatus)
+			raw, bodyStatus := ReadEvidenceEventBody(item, tc.expired)
+			assert.Equal(t, tc.want, bodyStatus)
+			if tc.want == "available" && assert.NotNil(t, preview) {
+				assert.Equal(t, payload, preview.Body)
+				assert.Equal(t, payload, raw)
+			}
 		})
 	}
 	// Empty but valid text must not be mistaken for unreadable evidence.

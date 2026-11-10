@@ -1,4 +1,4 @@
-// MiniMax Link standard-video southbound extension (JD Cloud task API).
+// MiniMax Link standard-video southbound extension.
 //
 // This artifact owns the jdcloud_video_task_v1 conversion: the ModelArk V3
 // northbound contract is transformed into the JD Cloud task submit/query
@@ -65,7 +65,7 @@ function isMissing(value) {
 // buildCreate
 // ---------------------------------------------------------------------------
 
-function buildCreate(input) {
+function buildH3Request(input) {
   const request = input.request;
   const providerModel = String(input.providerModel === undefined || input.providerModel === null ? "" : input.providerModel);
   if (providerModel !== MODEL) {
@@ -163,22 +163,23 @@ function buildCreate(input) {
     throw new Error("ratio adaptive requires reference media");
   }
 
-  let watermark = request.watermark;
-  if (isMissing(watermark)) {
-    watermark = WATERMARK;
-  }
-  if (watermark !== false) {
+  return { model: providerModel, content: content, duration: duration, resolution: resolution.toUpperCase(), ratio: ratio };
+}
+
+function buildCreate(input) {
+  const body = buildH3Request(input);
+  if (!isMissing(input.request.watermark) && input.request.watermark !== WATERMARK) {
     throw new Error("watermark must be false for the selected customer model");
   }
 
   return {
     body: {
-      model: providerModel,
-      content: content,
+      model: body.model,
+      content: body.content,
       parameters: {
-        duration: duration,
-        resolution: resolution.toUpperCase(),
-        ratio: ratio,
+        duration: body.duration,
+        resolution: body.resolution,
+        ratio: body.ratio,
         prompt_optimizer: PROMPT_OPTIMIZER,
         watermark: WATERMARK,
       },
@@ -359,11 +360,119 @@ function parseTaskObservation(input) {
   throw new Error("unsupported upstream task status");
 }
 
+function buildOfficialCreate(input) {
+  if (!isMissing(input.request.watermark)) {
+    throw new Error("watermark is not available for the selected model");
+  }
+  return { body: buildH3Request(input) };
+}
+
+function parseOfficialCreateResponse(input) {
+  let parsed;
+  try {
+    parsed = JSON.parse(input.body);
+  } catch (error) {
+    throw new Error("upstream create response is not valid JSON");
+  }
+  const body = parseJsonObject(parsed, "invalid create response");
+  if (body.type === "error" || !isMissing(body.error) || !isMissing(body.result) ||
+      !isMissing(body.task) || !isMissing(body.data) || !isMissing(body.base_resp) ||
+      typeof body.task_id !== "string" || body.task_id.trim() === "") {
+    throw new Error("upstream create response does not confirm acceptance");
+  }
+  // The V2 API confirms acceptance by returning an ID, without a status.
+  return { id: body.task_id, status: ACCEPTED_CREATE_STATUS };
+}
+
+function parseV2TaskObservation(input, runningStatus) {
+  let parsed;
+  try {
+    parsed = JSON.parse(input.body);
+  } catch (error) {
+    throw new Error("upstream task observation is not valid JSON");
+  }
+  const body = parseJsonObject(parsed, "invalid task observation");
+  if (body.type === "error" || !isMissing(body.error) || !isMissing(body.base_resp)) {
+    throw new Error("upstream query returned an error");
+  }
+  const task = parseJsonObject(body.task, "upstream task observation has no task object");
+  if (task.id !== input.taskId || (!isMissing(task.model) && task.model !== input.providerModel) ||
+      (!isMissing(task.task_type) && task.task_type !== "generation") ||
+      (!isMissing(task.modality) && task.modality !== "video")) {
+    throw new Error("upstream task identity mismatch");
+  }
+  // Nexhina documents processing and also returns running for the same phase.
+  const running = task.status === "running" || task.status === runningStatus;
+  const observation = { id: task.id, status: running ? "running" : task.status };
+  if (task.status === "failed") {
+    // Confirm the status from the identified task. Do not expose provider text.
+    observation.error = { code: "generation_failed", message: "Video generation failed" };
+    return observation;
+  }
+  if (!isMissing(task.error)) {
+    throw new Error("upstream task status conflicts with an error");
+  }
+  if (task.status === "succeeded") {
+    observation.videoUrl = parseJsonObject(task.content, "success observation has no content").url;
+  } else if (!running && !["queued", "cancelled"].includes(task.status)) {
+    throw new Error("unsupported upstream task status");
+  }
+  return observation;
+}
+
+function videoConfiguration(protocol, label) {
+  return {
+    protocol: protocol,
+    label: label,
+    models: [MODEL],
+    modelMetadata: {
+      [MODEL]: {
+        defaultDuration: DEFAULT_DURATION,
+        minDuration: MIN_DURATION,
+        maxDuration: MAX_DURATION,
+        resolutions: RESOLUTIONS,
+        ratios: RATIOS,
+        maxPromptLength: MAX_PROMPT_LENGTH,
+        maxImages: MAX_IMAGES,
+        allowFrameImages: ALLOW_FRAME_IMAGES,
+        allowVideos: true,
+        maxVideos: MAX_VIDEOS,
+        allowAudios: true,
+        maxAudios: MAX_AUDIOS,
+        deleteVideo: false,
+      },
+    },
+    assetProtocols: ["none"],
+    defaultAssetProtocol: "none",
+  };
+}
+
 export const seedance = {
   jdcloud_video_task_v1: {
     buildCreate: buildCreate,
     parseCreateResponse: parseCreateResponse,
     parseTaskObservation: parseTaskObservation,
+  },
+  minimax_official_video_v2: {
+    buildCreate: buildOfficialCreate,
+    parseCreateResponse: parseOfficialCreateResponse,
+    parseTaskObservation: function (input) { return parseV2TaskObservation(input, "running"); },
+  },
+  nexhina_hailuo_v2: {
+    buildCreate: function (input) {
+      const converted = buildOfficialCreate(input);
+      const { content, ratio } = converted.body;
+      if (ratio !== "16:9" || content.length > 2 || content.some(node =>
+          node.type !== "text" && (node.type !== "image_url" || node.role !== "reference_image"))) {
+        throw new Error("the selected model supports text and at most one reference image in 16:9");
+      }
+      converted.body.content = content.map(node => node.type === "text" ? node : {
+        type: "image_url", image_url: node.image_url,
+      });
+      return converted;
+    },
+    parseCreateResponse: parseOfficialCreateResponse,
+    parseTaskObservation: function (input) { return parseV2TaskObservation(input, "processing"); },
   },
 };
 
@@ -375,36 +484,27 @@ export const meta = {
     en: "MiniMax Link southbound protocol adapters",
     zh: "MiniMax 标准视频南向协议适配",
   },
-  version: "1.2.0",
+  version: "1.5.0",
   author: { name: "yuan-gateway" },
-  seedanceProtocols: ["jdcloud_video_task_v1"],
+  seedanceProtocols: ["jdcloud_video_task_v1", "minimax_official_video_v2", "nexhina_hailuo_v2"],
   channelConfiguration: {
     videos: [
+      videoConfiguration("jdcloud_video_task_v1", "JD Cloud Video Task V1"),
+      videoConfiguration("minimax_official_video_v2", "MiniMax Official Video V2"),
       {
-        protocol: "jdcloud_video_task_v1",
-        label: "JD Cloud Video Task V1",
-        models: [MODEL],
-        modelMetadata: (function () {
-          const metadata = {};
-          metadata[MODEL] = {
+        ...videoConfiguration("nexhina_hailuo_v2", "Nexhina Hailuo V2"),
+        modelMetadata: {
+          [MODEL]: {
             defaultDuration: DEFAULT_DURATION,
             minDuration: MIN_DURATION,
             maxDuration: MAX_DURATION,
             resolutions: RESOLUTIONS,
-            ratios: RATIOS,
+            ratios: ["16:9"],
             maxPromptLength: MAX_PROMPT_LENGTH,
-            maxImages: MAX_IMAGES,
-            allowFrameImages: ALLOW_FRAME_IMAGES,
-            allowVideos: true,
-            maxVideos: MAX_VIDEOS,
-            allowAudios: true,
-            maxAudios: MAX_AUDIOS,
+            maxImages: 1,
             deleteVideo: false,
-          };
-          return metadata;
-        })(),
-        assetProtocols: ["none"],
-        defaultAssetProtocol: "none",
+          },
+        },
       },
     ],
     assets: [

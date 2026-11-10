@@ -59,7 +59,7 @@ func TestAcceptedTargetKeepsItsOriginalCalculation(t *testing.T) {
 	stored := &TaskAsyncBillingContext{TargetQuota: &quota, CalculationVersion: 1, Calculation: c.Finish(quota)}
 	proposed := *stored
 	proposed.Calculation = billingexpr.NewCalculation().Finish(quota)
-	merged, err := mergeSeedanceBillingFacts(stored, &proposed, false)
+	merged, err := mergeSeedanceBillingFacts(&Task{PrivateData: TaskPrivateData{AsyncBilling: stored}}, &proposed, false)
 	require.NoError(t, err)
 	assert.Same(t, stored.Calculation, merged.Calculation)
 }

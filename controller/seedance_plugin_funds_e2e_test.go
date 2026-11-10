@@ -314,10 +314,11 @@ func (fx *seedanceFundsFixture) loadTask(publicID string) model.Task {
 func (fx *seedanceFundsFixture) pollOnce(publicID string) {
 	fx.t.Helper()
 	task := fx.loadTask(publicID)
-	tasks := map[string]*model.Task{task.TaskID: &task}
+	upstreamID := task.GetUpstreamTaskID()
+	tasks := map[string]*model.Task{upstreamID: &task}
 	require.NoError(fx.t, service.UpdateVideoTasks(
-		context.Background(), constant.TaskPlatform("67"),
-		map[int][]string{fx.channelID: {task.TaskID}}, tasks,
+		context.Background(), task.Platform,
+		map[int][]string{fx.channelID: {upstreamID}}, tasks,
 	))
 }
 

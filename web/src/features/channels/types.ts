@@ -128,6 +128,8 @@ export interface ChannelOtherSettings {
   asset_region?: string
   video_upstream_protocol?:
     | 'jdcloud_video_task_v1'
+    | 'minimax_official_video_v2'
+    | 'nexhina_hailuo_v2'
     | 'modelark_v3_volcengine'
     | 'modelark_v3_byteplus'
     | 'modelark_v3_cmcc'

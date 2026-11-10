@@ -1,6 +1,11 @@
 import type { UseFormReturn } from 'react-hook-form'
 
-import { CHANNEL_TYPE_MINIMAX_LINK } from '../constants'
+import {
+  CHANNEL_TYPE_MINIMAX_LINK,
+  MINIMAX_JD_VIDEO_PROTOCOL,
+  MINIMAX_NEXHINA_VIDEO_PROTOCOL,
+  MINIMAX_OFFICIAL_VIDEO_PROTOCOL,
+} from '../constants'
 import type { Channel } from '../types'
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
@@ -25,10 +30,15 @@ export function minimaxAccessLabel(
   channel: Pick<Channel, 'type' | 'settings'>
 ): string {
   if (channel.type === MINIMAX_NATIVE_TYPE) return 'Native API'
-  return parseChannelOtherSettings(channel.settings)
-    ?.video_upstream_protocol === 'jdcloud_video_task_v1'
-    ? 'JD Cloud · Standard video'
-    : 'Unrecognized video protocol'
+  const protocol = parseChannelOtherSettings(
+    channel.settings
+  )?.video_upstream_protocol
+  if (protocol === MINIMAX_JD_VIDEO_PROTOCOL) return 'JD Cloud · Standard video'
+  if (protocol === MINIMAX_OFFICIAL_VIDEO_PROTOCOL)
+    return 'Official · Standard video'
+  if (protocol === MINIMAX_NEXHINA_VIDEO_PROTOCOL)
+    return 'Nexhina · Standard video'
+  return 'Unrecognized video protocol'
 }
 
 // Only UI grouping lives here. Channel configuration and runtime identities
@@ -37,7 +47,8 @@ export function channelManagementFilter(value?: string): {
   type?: number
   types?: string
 } {
-  if (value === MINIMAX_FILTER) return { types: `35,${CHANNEL_TYPE_MINIMAX_LINK}` }
+  if (value === MINIMAX_FILTER)
+    return { types: `35,${CHANNEL_TYPE_MINIMAX_LINK}` }
   if (!value || value === 'all') return {}
   return { type: Number(value) }
 }
@@ -56,7 +67,11 @@ export function channelManagementFilterLabel(
 export function resetMinimaxConnectionDraft(
   form: UseFormReturn<ChannelFormValues>,
   type: number,
-  accessSelected: boolean
+  accessSelected: boolean,
+  protocol:
+    | typeof MINIMAX_JD_VIDEO_PROTOCOL
+    | typeof MINIMAX_NEXHINA_VIDEO_PROTOCOL
+    | typeof MINIMAX_OFFICIAL_VIDEO_PROTOCOL = MINIMAX_JD_VIDEO_PROTOCOL
 ) {
   const current = form.getValues()
   form.reset(
@@ -70,7 +85,7 @@ export function resetMinimaxConnectionDraft(
       type,
       video_upstream_protocol:
         type === CHANNEL_TYPE_MINIMAX_LINK
-          ? 'jdcloud_video_task_v1'
+          ? protocol
           : CHANNEL_FORM_DEFAULT_VALUES.video_upstream_protocol,
       asset_upstream_protocol:
         type === CHANNEL_TYPE_MINIMAX_LINK

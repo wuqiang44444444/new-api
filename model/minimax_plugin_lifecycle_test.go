@@ -7,6 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/plugins"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -48,21 +49,32 @@ func TestMinimaxPluginDeployOnlyLifecycle(t *testing.T) {
 	assert.Equal(t, plugins.MinimaxVersion(), current.Version)
 }
 
-// The upstream query schedule participates in snapshot change detection:
-// re-arming the cadence on an otherwise-unchanged observation must register
-// as a change so the shared CAS persists it (the JD 15-minute background
-// cadence depends on this), and zero-schedule tasks are unaffected.
-func TestTaskSnapshotDetectsQueryScheduleChange(t *testing.T) {
-	task := &Task{Status: TaskStatusQueued, Progress: "10%"}
-	before := task.Snapshot()
-	assert.True(t, before.Equal(task.Snapshot()), "no change is a no-op")
+func TestMiniMaxRetryAfterPersistsWithoutChangingObservationOrQuota(t *testing.T) {
+	task := &Task{
+		TaskID:   "task_minimax_retry_after",
+		Platform: constant.TaskPlatform(MiniMaxLinkTaskPlatform()),
+		Status:   TaskStatusInProgress,
+		Progress: "40%",
+		Quota:    25,
+		PrivateData: TaskPrivateData{
+			UpstreamTaskID:        "upstream-task",
+			VideoUpstreamProtocol: dto.VideoUpstreamProtocol(constant.VideoUpstreamProtocolJdCloudTaskV1),
+		},
+	}
+	require.NoError(t, DB.Create(task).Error)
+	t.Cleanup(func() { require.NoError(t, DB.Delete(task).Error) })
 
-	task.PrivateData.VideoUpstreamNextQueryAt = 1727000000
-	assert.False(t, before.Equal(task.Snapshot()), "re-armed schedule is a change")
+	const retryAt int64 = 1794222439
+	require.NoError(t, DeferMiniMaxTaskQuery(task.ID, retryAt))
+	require.NoError(t, DeferMiniMaxTaskQuery(task.ID, retryAt-30))
 
-	other := &Task{Status: TaskStatusQueued, Progress: "10%"}
-	otherSnap := other.Snapshot()
-	assert.True(t, otherSnap.Equal(other.Snapshot()), "zero-schedule tasks keep the old equality behavior")
+	var stored Task
+	require.NoError(t, DB.First(&stored, task.ID).Error)
+	assert.Equal(t, task.Status, stored.Status)
+	assert.Equal(t, task.Progress, stored.Progress)
+	assert.Equal(t, task.Quota, stored.Quota)
+	task.PrivateData.VideoUpstreamNextQueryAt = retryAt
+	assert.Equal(t, task.PrivateData, stored.PrivateData)
 }
 
 // MiniMax Link settings validation: one credential, the registered protocol,

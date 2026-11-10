@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/QuantumNous/new-api/logger"
@@ -44,7 +45,12 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 	// §5.5 实测依赖规则（与补查、资金目标保护同一实现）：u() 表达式只在读取实测
 	// token 时等待；纯冻结条件表达式按冻结事实直接结算；旧 c/_task 表达式保持
 	// 通用用量依赖。
-	if !async.ActualUsageReported && (!task.HasTypedVideoBillingFacts() || seedancebilling.RequiresMeasuredTaskUsage(async.TieredSnapshot)) {
+	if task.IsMiniMaxV2Task() {
+		if _, err := task.MiniMaxOfficialSettlementUsage(); errors.Is(err, model.ErrMiniMaxOfficialUsageMissing) {
+			markAwaitingVideoUsage(ctx, task, "awaiting provider media usage; precharge retained")
+			return true
+		}
+	} else if !async.ActualUsageReported && (!task.HasTypedVideoBillingFacts() || seedancebilling.RequiresMeasuredTaskUsage(async.TieredSnapshot)) {
 		if awaitSeedanceUsage(ctx, task) {
 			return true
 		}
@@ -62,6 +68,9 @@ func settleTaskTieredSnapshot(ctx context.Context, task *model.Task, actualToken
 	}
 	actualQuota := result.ActualQuotaAfterGroup
 	reason := fmt.Sprintf("表达式结算：tokens=%d, tier=%s", actualTokens, result.MatchedTier)
+	if task.IsMiniMaxV2Task() {
+		reason = fmt.Sprintf("表达式结算：tier=%s", result.MatchedTier)
+	}
 	async.Operation = "settle"
 	async.Reason = reason
 	async.TargetQuota = &actualQuota

@@ -33,20 +33,25 @@ func ReviewTaskUsage(c *gin.Context) {
 		return
 	}
 	var request struct {
-		CompletionTokens *int   `json:"completion_tokens"`
-		ProviderVerified bool   `json:"provider_verified"`
-		Reference        string `json:"reference"`
+		CompletionTokens *int                `json:"completion_tokens"`
+		MediaUsage       map[string]*float64 `json:"media_usage"`
+		ProviderVerified bool                `json:"provider_verified"`
+		Reference        string              `json:"reference"`
 	}
-	if c.ShouldBindJSON(&request) != nil || (request.CompletionTokens != nil && !request.ProviderVerified) {
+	if c.ShouldBindJSON(&request) != nil || ((request.CompletionTokens != nil || request.MediaUsage != nil) && !request.ProviderVerified) {
 		c.JSON(400, gin.H{"success": false, "message": "verified provider usage is required"})
 		return
 	}
-	task, err := model.ReviewTaskUsage(c.Param("task_id"), c.GetInt("id"), request.Reference, request.CompletionTokens)
+	task, err := model.ReviewTaskUsage(c.Param("task_id"), c.GetInt("id"), request.Reference, request.CompletionTokens, request.MediaUsage)
 	if err != nil {
 		c.JSON(409, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	recordManageAudit(c, "task_contract.usage_review", map[string]interface{}{"task_id": task.TaskID, "operator_id": c.GetInt("id"), "reference": strings.TrimSpace(request.Reference), "completion_tokens": request.CompletionTokens})
+	audit := map[string]any{"task_id": task.TaskID, "operator_id": c.GetInt("id"), "reference": strings.TrimSpace(request.Reference), "completion_tokens": request.CompletionTokens}
+	if request.MediaUsage != nil {
+		audit["media_usage"] = request.MediaUsage
+	}
+	recordManageAudit(c, "task_contract.usage_review", audit)
 	// Known usage is durable pending work; the existing funding worker settles it.
 	c.JSON(200, gin.H{"success": true, "data": gin.H{"task_id": task.TaskID, "billing_state": task.BillingState}})
 }

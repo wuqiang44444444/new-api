@@ -32,9 +32,9 @@ export function MinimaxProtocolFields() {
   const { t } = useTranslation()
   const formId = useId()
   const form = useFormContext<ChannelFormValues>()
-  const version = useWatch({
+  const [version, protocol] = useWatch({
     control: form.control,
-    name: 'minimax_plugin_version',
+    name: ['minimax_plugin_version', 'video_upstream_protocol'],
   })
   const [snapshot, setSnapshot] = useState<MinimaxConfigurationSnapshot>()
   const configuration = useQuery({
@@ -50,13 +50,18 @@ export function MinimaxProtocolFields() {
   useEffect(() => {
     if (configuration.data && !snapshot) setSnapshot(configuration.data)
   }, [configuration.data, snapshot])
+  const video = snapshot?.configuration?.videos.find(
+    (item) => item.protocol === protocol && item.models.length > 0
+  )
+  const declaredVersion = video ? snapshot?.version : ''
+  const { setValue } = form
   useEffect(() => {
-    if (snapshot && version !== snapshot.version) {
-      form.setValue('minimax_plugin_version', snapshot.version, {
+    if (snapshot && version !== declaredVersion) {
+      setValue('minimax_plugin_version', declaredVersion, {
         shouldValidate: true,
       })
     }
-  }, [snapshot, version, form])
+  }, [snapshot, version, declaredVersion, setValue])
   if (!snapshot && configuration.isError) {
     return (
       <ErrorState
@@ -69,15 +74,19 @@ export function MinimaxProtocolFields() {
   }
   if (!snapshot) return <LoadingState />
 
-  const video = snapshot.configuration?.videos.find(
-    (item) => item.protocol === 'jdcloud_video_task_v1'
-  )
+  if (!video) {
+    return (
+      <ErrorState
+        description={t('Load the plugin declaration before saving')}
+      />
+    )
+  }
   return (
     <div className='min-w-0 space-y-3'>
       <div className='text-sm font-medium'>
         {t('Declared video capabilities')}
       </div>
-      {video?.models.map((model) => {
+      {video.models.map((model) => {
         const metadata = video.modelMetadata?.[model]
         return (
           <div key={model} className='space-y-1 text-sm'>

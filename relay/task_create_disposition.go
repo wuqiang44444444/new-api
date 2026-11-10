@@ -24,10 +24,17 @@ func taskCreateHTTPDisposition(
 	if info == nil || info.ChannelMeta == nil {
 		return relaycommon.TaskCreateOutcomeUnknown
 	}
-	// The MiniMax Link typed channel classifies the documented JD error
-	// envelope in its own narrow branch.
 	if info.ChannelType == constant.ChannelTypeMiniMaxLink {
-		return minimaxCreateDisposition(status, body)
+		switch info.ChannelOtherSettings.VideoUpstreamProtocol {
+		case constant.VideoUpstreamProtocolJdCloudTaskV1:
+			return minimaxCreateDisposition(status, body)
+		case constant.VideoUpstreamProtocolMiniMaxOfficialV2:
+			return minimaxOfficialCreateDisposition(status, body)
+		case constant.VideoUpstreamProtocolNexhinaHailuoV2:
+			return nexhinaCreateDisposition(status, body)
+		default:
+			return relaycommon.TaskCreateOutcomeUnknown
+		}
 	}
 	if info.ChannelType != constant.ChannelTypeSeedanceLink {
 		return relaycommon.TaskCreateOutcomeUnknown

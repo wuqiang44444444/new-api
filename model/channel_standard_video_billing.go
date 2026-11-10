@@ -12,6 +12,9 @@ import (
 // validation, pre-consume and display. JD credit evidence is not a customer meter.
 func StandardVideoBillingFields(channelType int, protocol dto.VideoUpstreamProtocol) map[string]jsplugin.UsageFieldSchema {
 	if channelType == constant.ChannelTypeMiniMaxLink {
+		if constant.IsMiniMaxVideoV2(string(protocol)) {
+			return minimaxlink.OfficialUsageFields()
+		}
 		return minimaxlink.UsageFields()
 	}
 	return seedancebilling.UsageFieldsForProtocol(protocol)

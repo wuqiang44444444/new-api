@@ -179,7 +179,7 @@ Seedance 客户使用四组 ModelArk V3 行为：
 | 行为 | 客户接口 | 产品结果 |
 | --- | --- | --- |
 | 创建 | `POST /api/v3/contents/generations/tasks` | 校验请求并向客户模型固定的 Provider 创建一次任务 |
-| 查询 | `GET /api/v3/contents/generations/tasks/{task_id}` | 按创建时冻结线路返回最新可信状态 |
+| 查询 | `GET /api/v3/contents/generations/tasks/{task_id}` | 返回后台最后保存的可信状态和当前交付结果 |
 | 列表 | `GET /api/v3/contents/generations/tasks` | 返回当前用户和应用作用域的平台 Task |
 | 删除 | `DELETE /api/v3/contents/generations/tasks/{task_id}` | 调用创建时 Provider；不支持时明确告知 |
 

@@ -3,15 +3,12 @@ package model
 import (
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/relaykit/dto"
 )
 
 // HasMiniMaxBillingFacts identifies durable MiniMax funding from frozen facts.
 // It does not grant Seedance token semantics to provider credit evidence.
 func (t *Task) HasMiniMaxBillingFacts() bool {
-	return t != nil && t.PrivateData.AsyncBilling != nil &&
-		t.Platform == constant.TaskPlatform(MiniMaxLinkTaskPlatform()) &&
-		t.PrivateData.VideoUpstreamProtocol == dto.VideoUpstreamProtocol(constant.VideoUpstreamProtocolJdCloudTaskV1)
+	return (t.IsMiniMaxJDTask() || t.IsMiniMaxV2Task()) && t.PrivateData.AsyncBilling != nil
 }
 
 // HasTypedVideoBillingFacts selects the existing atomic video funding lifecycle.

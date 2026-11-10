@@ -24,7 +24,7 @@ func redactTaskResponseValue(value any) {
 	case map[string]any:
 		for key, child := range typed {
 			normalized := strings.ToLower(key)
-			if normalized == "_provider_billing_evidence" || normalized == "usage_source" || normalized == "usage_evidence" {
+			if normalized == "_provider_billing_evidence" || normalized == "usage_source" || normalized == "usage_evidence" || normalized == "official_usage" {
 				delete(typed, key)
 				continue
 			}

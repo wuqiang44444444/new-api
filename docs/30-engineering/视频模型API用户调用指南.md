@@ -106,11 +106,11 @@ DELETE /api/v3/contents/generations/tasks/{task_id}
 ```
 
 创建前系统建立 durable create attempt 和资金 hold；取得可信 Provider task ID 后才创建 Task。Task 冻结
-客户模型、Channel、上游协议、Provider 模型、查询连接、素材和计费事实。查询和删除使用冻结事实，
+客户模型、Channel、上游协议、Provider 模型、查询连接、素材和计费事实。后台轮询和删除使用冻结事实，
 不会按当前配置重新选渠。
 
-列表只查询本地主数据库中当前 `user_id + app_id` 的 Task。删除能力以对应上游官方行为为准；不支持时
-返回明确错误。
+单项查询和列表只读取主数据库中当前 `user_id + app_id` 的 Task，客户 GET 不触发上游状态查询。
+删除能力以对应上游官方行为为准；不支持时返回明确错误。
 
 公开状态为 `queued`、`running`、`succeeded`、`failed`、`cancelled`、`expired`。`running` 也可能表示
 结果待核实；客户端应有界轮询并保留原 ID，不能据此重新创建或认定退款。视频任务不随同账号 API Key

@@ -13,10 +13,10 @@ func IsChannelType(channelType int) bool {
 	return channelType == constant.ChannelTypeMiniMaxLink
 }
 
-// IsProtocol reports whether the protocol is the registered JD Cloud task
-// protocol.
+// IsProtocol reports whether the protocol is registered for MiniMax Link.
 func IsProtocol(protocol string) bool {
-	return protocol == constant.VideoUpstreamProtocolJdCloudTaskV1
+	_, _, ok := constant.MiniMaxVideoPaths(protocol)
+	return ok
 }
 
 // UsageFields is the MiniMax usage field contract for expressions. The

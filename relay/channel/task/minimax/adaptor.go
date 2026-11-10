@@ -7,14 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
+	"github.com/QuantumNous/new-api/pkg/minimaxlink"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -56,10 +55,11 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.apiKey = info.ApiKey
 	a.baseURL = info.ChannelBaseUrl
 	a.protocol = info.ChannelOtherSettings.VideoUpstreamProtocol
-	a.createPath = jdCloudCreatePath
+	createPath, queryPath, _ := constant.MiniMaxVideoPaths(string(a.protocol))
+	a.createPath = createPath
 	info.ChannelOtherSettings.VideoUpstreamProfile = ""
 	info.ChannelOtherSettings.VideoUpstreamCreatePath = a.createPath
-	info.ChannelOtherSettings.VideoUpstreamQueryPathTemplate = jdCloudQueryPathTemplate
+	info.ChannelOtherSettings.VideoUpstreamQueryPathTemplate = queryPath
 }
 
 func (*TaskAdaptor) GetModelList() []string {
@@ -83,7 +83,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(requestContext *gin.Context, i
 			http.StatusBadRequest,
 		)
 	}
-	if a.protocol != VideoUpstreamProtocolJdCloudTaskV1 {
+	if a.createPath == "" {
 		return service.TaskErrorWrapperLocal(
 			fmt.Errorf("unsupported MiniMax Link video upstream protocol %q", a.protocol),
 			"invalid_video_protocol",
@@ -137,7 +137,7 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(requestContext *gin.Context, info *r
 		return nil, fmt.Errorf("the minimax-link extension requires a ModelArk V3 request contract")
 	}
 	upstreamModel := providerModelFromRelayInfo(info, contract.ModelArk.Model)
-	metadata, err := declaredMetadata(configuration, upstreamModel)
+	metadata, err := declaredMetadata(configuration, string(a.protocol), upstreamModel)
 	if err != nil {
 		return nil, err
 	}
@@ -146,11 +146,30 @@ func (a *TaskAdaptor) BuildTaskBillingProbe(requestContext *gin.Context, info *r
 		return nil, err
 	}
 	hasVideoInput := false
+	imageCount := 0
 	for _, item := range contract.ModelArk.Content {
 		if item.Type == "video_url" {
 			hasVideoInput = true
-			break
 		}
+		if item.Type == "image_url" {
+			imageCount++
+		}
+	}
+	if constant.IsMiniMaxVideoV2(string(a.protocol)) {
+		if imageCount > minimaxlink.OfficialMaxImages ||
+			!minimaxlink.ValidOfficialMeasurement(minimaxlink.OfficialOutputSeconds, float64(duration)) {
+			return nil, fmt.Errorf("MiniMax official request exceeds billing bounds")
+		}
+		inputVideoBudget := 0
+		if hasVideoInput {
+			inputVideoBudget = minimaxlink.OfficialMaxInputSeconds
+		}
+		return map[string]any{
+			minimaxlink.OfficialOutputSeconds:     minimaxlink.OfficialMaxOutputSeconds,
+			minimaxlink.OfficialInputVideoSeconds: inputVideoBudget,
+			minimaxlink.OfficialInputImageCount:   imageCount,
+			"resolution":                          declaredProbeEnum(metadata, contract.ModelArk.Resolution, metadataResolutionEnums),
+		}, nil
 	}
 	return map[string]any{
 		"duration_seconds": duration,
@@ -189,18 +208,21 @@ func (a *TaskAdaptor) DoRequest(requestContext *gin.Context, info *relaycommon.R
 // Task; anything else is a plain error that the submit flow routes to the
 // unknown/ambiguous disposition.
 func (a *TaskAdaptor) ParseResponse(requestContext *gin.Context, resp *http.Response, _ *relaycommon.RelayInfo) (*channel.TaskSubmitResponse, *taskdto.TaskError) {
-	responseBody, err := io.ReadAll(resp.Body)
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, maxTaskObservationBytes+1))
 	if err != nil {
 		return nil, service.TaskErrorWrapper(err, "read_response_body_failed", http.StatusInternalServerError)
 	}
 	_ = resp.Body.Close()
+	if len(responseBody) > maxTaskObservationBytes {
+		return nil, service.TaskErrorWrapper(errors.New("MiniMax create response exceeds the response limit"), "invalid_response", http.StatusBadGateway)
+	}
 	plugin := a.pinnedCreatePlugin()
 	if plugin == nil {
 		return nil, service.TaskErrorWrapperLocal(errors.New("the minimax-link extension plugin is unavailable"), "minimax_plugin_unavailable", http.StatusServiceUnavailable)
 	}
 	result, callErr := plugin.Engine.CallPathWithAdmissionTimeout(
 		requestContextFrom(requestContext), createAdmissionTimeout,
-		hookRoot, []string{protocolName(), "parseCreateResponse"},
+		hookRoot, []string{string(a.protocol), "parseCreateResponse"},
 		map[string]any{"body": string(responseBody)},
 	)
 	if callErr != nil {
@@ -209,6 +231,15 @@ func (a *TaskAdaptor) ParseResponse(requestContext *gin.Context, resp *http.Resp
 	providerID, err := decodeCreateResponse(result)
 	if err != nil {
 		return nil, service.TaskErrorWrapper(err, "invalid_response", http.StatusBadGateway)
+	}
+	if constant.IsMiniMaxVideoV2(string(a.protocol)) {
+		var accepted struct {
+			TaskID string `json:"task_id"`
+		}
+		if common.Unmarshal(responseBody, &accepted) != nil || accepted.TaskID != providerID {
+			return nil, service.TaskErrorWrapper(errors.New("MiniMax official create response has an inconsistent task id"), "invalid_response", http.StatusBadGateway)
+		}
+		return &channel.TaskSubmitResponse{UpstreamTaskID: providerID, TaskData: []byte("{}")}, nil
 	}
 	normalized, err := common.Marshal(map[string]any{"id": providerID})
 	if err != nil {
@@ -230,66 +261,17 @@ func (a *TaskAdaptor) pinnedCreatePlugin() *pluginruntime.LoadedPlugin {
 
 // FetchTask queries the provider with the frozen connection only: the
 // upstream task id, query path, base URL, key and proxy all come from the
-// creation-time snapshot. Non-2xx responses become untrusted observations
-// (reconciliation), never a missing task or a refund: a 404 cannot prove a
-// generation failed.
+// creation-time snapshot. Temporary query errors preserve the last observation.
+// Other non-2xx responses remain untrusted: a 404 cannot prove generation failed.
 func (a *TaskAdaptor) FetchTask(baseURL, key string, task *model.Task, proxy string) (*http.Response, error) {
 	return a.FetchTaskWithContext(context.Background(), baseURL, key, task, proxy)
 }
 
 func (a *TaskAdaptor) FetchTaskWithContext(ctx context.Context, baseURL, key string, task *model.Task, proxy string) (*http.Response, error) {
-	if task == nil {
-		return nil, fmt.Errorf("task is required")
-	}
-	taskID := task.GetUpstreamTaskID()
-	if strings.TrimSpace(taskID) == "" {
-		return nil, fmt.Errorf("invalid task_id")
-	}
-	if strings.TrimSpace(task.PrivateData.Key) != "" {
-		key = task.PrivateData.Key
-	}
-	baseURL = task.PrivateData.VideoUpstreamQueryBaseURL
-	if strings.TrimSpace(baseURL) == "" {
-		return nil, fmt.Errorf("frozen upstream query base URL is unavailable")
-	}
-	pathTemplate := task.PrivateData.VideoUpstreamQueryPathTemplate
-	if strings.TrimSpace(pathTemplate) == "" {
-		pathTemplate = jdCloudQueryPathTemplate
-	}
-	path := strings.Replace(pathTemplate, "{task_id}", url.PathEscape(taskID), 1)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, joinProviderURL(baseURL, path), nil)
+	_, normalized, resp, err := queryTaskObservation(ctx, task, key, true)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+key)
-	client, err := service.GetHttpClientWithProxy(task.PrivateData.VideoUpstreamProxy)
-	if err != nil {
-		return nil, fmt.Errorf("new proxy http client failed: %w", err)
-	}
-	resp, err := client.Do(req)
-	service.AttachRawTaskPollingEvidence(task, req, resp, err)
-	if err != nil || resp == nil || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		if err == nil {
-			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-			_ = resp.Body.Close()
-			return nil, &relaycommon.UpstreamContractViolation{
-				Reason: fmt.Sprintf("unverified MiniMax query HTTP status %d", resp.StatusCode),
-			}
-		}
-		return nil, err
-	}
-	responseBody, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil {
-		return nil, fmt.Errorf("read upstream task response: %w", err)
-	}
-	observation, normalized, err := normalizeTaskObservation(ctx, task, responseBody, taskID)
-	if err != nil {
-		return nil, err
-	}
-	_ = observation
 	resp.Body = io.NopCloser(bytes.NewReader(normalized))
 	resp.ContentLength = int64(len(normalized))
 	return resp, nil
@@ -308,8 +290,10 @@ type observationBody struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
-	UsageSource   string         `json:"usage_source,omitempty"`
-	UsageEvidence map[string]int `json:"usage_evidence,omitempty"`
+	OfficialUsage map[string]any                  `json:"official_usage,omitempty"`
+	Usage         *taskdto.ModelArkVideoTaskUsage `json:"usage,omitempty"`
+	UsageSource   string                          `json:"usage_source,omitempty"`
+	UsageEvidence map[string]int                  `json:"usage_evidence,omitempty"`
 }
 
 // ParseTaskResult maps the validated observation onto the shared polling
@@ -339,6 +323,15 @@ func (a *TaskAdaptor) ParseTaskResult(task *model.Task, _ *http.Response, respBo
 		result.Progress = "100%"
 		result.UsageSource = observation.UsageSource
 		result.UsageEvidence = observation.UsageEvidence
+		if task.IsMiniMaxV2Task() {
+			result.UsageFacts = observation.OfficialUsage
+			if observation.Usage != nil && observation.UsageSource != "" {
+				result.UsageReported = true
+				result.CompletionTokensReported = true
+				result.CompletionTokens = observation.Usage.CompletionTokens
+				result.TotalTokens = observation.Usage.TotalTokens
+			}
+		}
 	case observationStatusFailed:
 		result.Status = model.TaskStatusFailure
 		result.Progress = "100%"

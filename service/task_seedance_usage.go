@@ -23,12 +23,17 @@ func awaitSeedanceUsage(ctx context.Context, task *model.Task) bool {
 		!seedancebilling.RequiresMeasuredTaskUsage(async.TieredSnapshot) {
 		return false
 	}
+	markAwaitingVideoUsage(ctx, task, "awaiting provider token usage; precharge retained")
+	return true
+}
+
+func markAwaitingVideoUsage(ctx context.Context, task *model.Task, reason string) {
+	async := task.PrivateData.AsyncBilling
 	async.Operation = "settle"
-	async.Reason = "awaiting provider token usage; precharge retained"
+	async.Reason = reason
 	async.TargetQuota = nil
 	setTaskBillingState(task, model.TaskBillingStateAwaitingUsage, "provider_usage_missing")
 	if err := task.UpdateBilling(); err != nil {
 		logger.LogWarn(ctx, "failed to persist task awaiting usage: "+err.Error())
 	}
-	return true
 }
