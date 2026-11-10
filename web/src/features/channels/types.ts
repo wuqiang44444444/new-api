@@ -453,4 +453,5 @@ export type UpdateChannelRequest = Partial<Channel> & {
   asset_credential?: ChannelAssetCredentialInput
   confirm_asset_tenant_unchanged?: boolean
   confirm_asset_tenant_replacement?: boolean
+  save_minimax_as_disabled?: boolean
 }

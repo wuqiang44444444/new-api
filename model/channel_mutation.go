@@ -22,12 +22,19 @@ func lockChannelForMutation(tx *gorm.DB, id int) (*Channel, error) {
 	return &channel, nil
 }
 
+// UpdateMiniMaxProtocolAsDisabled applies the channel edit and manual stop
+// together, so neither the old nor the new protocol is exposed mid-update.
+func (channel *Channel) UpdateMiniMaxProtocolAsDisabled(actorID int, audit ChannelStatusAudit) error {
+	return updateChannelWithCredentialActor(channel, nil, actorID, false, false, true, audit)
+}
+
 func updateChannelWithCredentialActor(
 	channel *Channel,
 	credential *ChannelAssetCredential,
 	actorID int,
 	assetTenantUnchanged bool,
 	assetTenantReplacementConfirmed bool,
+	saveMiniMaxAsDisabled bool,
 	audit ...ChannelStatusAudit,
 ) error {
 	if channel.Id == 0 {
@@ -47,9 +54,47 @@ func updateChannelWithCredentialActor(
 		if err := tx.First(channel, "id = ?", channel.Id).Error; err != nil {
 			return err
 		}
-		if original.Type == constant.ChannelTypeMiniMaxLink && channel.Type == original.Type &&
-			original.GetOtherSettings().VideoUpstreamProtocol != channel.GetOtherSettings().VideoUpstreamProtocol {
-			return errors.New("MiniMax Link video upstream protocol cannot be changed")
+		originalSettings, err := parsedChannelOtherSettings(&original)
+		if err != nil {
+			return err
+		}
+		miniMaxProtocolChanged := false
+		if original.Type == constant.ChannelTypeMiniMaxLink && channel.Type == original.Type {
+			settings, err := parsedChannelOtherSettings(channel)
+			if err != nil {
+				return err
+			}
+			miniMaxProtocolChanged = originalSettings.VideoUpstreamProtocol != settings.VideoUpstreamProtocol
+			if miniMaxProtocolChanged {
+				savedSettings := channel.OtherSettings
+				if err := validateMinimaxChannelSettingsTx(tx, channel, &settings); err != nil {
+					return err
+				}
+				if channel.OtherSettings != savedSettings {
+					if err := tx.Model(channel).UpdateColumn("settings", channel.OtherSettings).Error; err != nil {
+						return err
+					}
+				}
+			}
+		}
+		if saveMiniMaxAsDisabled {
+			if !miniMaxProtocolChanged {
+				return common.NewMessage("Change the MiniMax Link access method to save as disabled.")
+			}
+			if channel.Status != common.ChannelStatusManuallyDisabled {
+				info := channel.GetOtherInfo()
+				info["status_reason"] = "manual operation"
+				info["status_time"] = common.GetTimestamp()
+				channel.SetOtherInfo(info)
+				channel.Status = common.ChannelStatusManuallyDisabled
+				if err := tx.Model(channel).Select("status", "other_info").Updates(channel).Error; err != nil {
+					return err
+				}
+			}
+		} else if miniMaxProtocolChanged && channel.Status == common.ChannelStatusEnabled {
+			if err := validateMiniMaxChannelPricing(channel); err != nil {
+				return err
+			}
 		}
 		if err := validateChannelAssetTenantMutation(
 			tx,
@@ -62,10 +107,6 @@ func updateChannelWithCredentialActor(
 			return err
 		}
 		boundaryChanges, err := ChannelAssetTenantBoundaryChanges(&original, channel)
-		if err != nil {
-			return err
-		}
-		originalSettings, err := parsedChannelOtherSettings(&original)
 		if err != nil {
 			return err
 		}

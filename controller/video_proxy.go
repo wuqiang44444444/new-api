@@ -17,6 +17,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaychannel "github.com/QuantumNous/new-api/relay/channel"
@@ -62,6 +63,9 @@ func videoProxyError(c *gin.Context, status int, errType, message string) {
 
 func VideoProxy(c *gin.Context) {
 	if proxyLinkVideoContent(c) {
+		return
+	}
+	if !middleware.RequireNativeVideoContentQuota(c) {
 		return
 	}
 	taskID := c.Param("task_id")

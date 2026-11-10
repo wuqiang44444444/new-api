@@ -142,6 +142,7 @@ func (s *Store) SyncSnapshot(ctx context.Context, rows []model.TaskPlugin) error
 		}
 	}
 	s.mu.Lock()
+	activeChanged := s.active != active
 	s.active = active
 	if len(syncErrors) > 0 {
 		s.syncErrors = syncErrors
@@ -149,6 +150,9 @@ func (s *Store) SyncSnapshot(ctx context.Context, rows []model.TaskPlugin) error
 		s.syncErrors = nil
 	}
 	s.mu.Unlock()
+	if activeChanged {
+		model.InvalidatePricingCache()
+	}
 	return nil
 }
 
@@ -182,6 +186,10 @@ func (s *Store) ActiveEntryFor(protocol string) (*CompiledVersion, error) {
 	active := s.active
 	s.mu.RUnlock()
 	if active == nil || !infoDeclaresProtocol(active.Info, protocol) {
+		return nil, ErrUnavailable
+	}
+	version, err := model.MinimaxPluginAdmissionVersion(model.DB)
+	if err != nil || version != active.version {
 		return nil, ErrUnavailable
 	}
 	return active, nil

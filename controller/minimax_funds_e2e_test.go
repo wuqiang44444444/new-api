@@ -110,7 +110,8 @@ func newMiniMaxFundsFixtureWithQuery(t *testing.T, query func(http.ResponseWrite
 	fx.engine.POST("/api/v3/contents/generations/tasks", middleware.TokenAuth(),
 		middleware.TaskClientProtocol("modelark_v3"), middleware.TaskCreateResponseContract(),
 		middleware.ModelArkVideoCreateConvert(), middleware.ResolveStandardVideoChannel(), RelayTask)
-	fx.engine.GET("/api/v3/contents/generations/tasks/:task_id", middleware.TokenAuth(), ModelArkVideoGet)
+	fx.engine.GET("/api/v3/contents/generations/tasks", middleware.VideoTaskReadTokenAuth(), middleware.TaskClientProtocol("modelark_v3"), ModelArkVideoList)
+	fx.engine.GET("/api/v3/contents/generations/tasks/:task_id", middleware.VideoTaskReadTokenAuth(), middleware.TaskClientProtocol("modelark_v3"), ModelArkVideoGet)
 	fx.engine.GET("/v1/videos/:task_id/content", middleware.TokenAuth(), func(c *gin.Context) {
 		if !proxyLinkVideoContent(c) {
 			c.Status(http.StatusNotFound)
@@ -410,7 +411,7 @@ func TestMiniMaxTemporaryQueryFailurePreservesTaskAndHold(t *testing.T) {
 }
 
 func TestMiniMaxCatalogFailuresAreExplicit(t *testing.T) {
-	for _, defect := range []string{"missing_artifact", "unknown_protocol", "missing_model", "database_error"} {
+	for _, defect := range []string{"missing_artifact", "unknown_protocol", "empty_mapping_target", "database_error"} {
 		t.Run(defect, func(t *testing.T) {
 			fx := newMiniMaxFundsFixture(t)
 			switch defect {
@@ -418,8 +419,8 @@ func TestMiniMaxCatalogFailuresAreExplicit(t *testing.T) {
 				require.NoError(t, fx.db.Where("key = ?", jsplugin.MinimaxPluginKey).Delete(&model.TaskPlugin{}).Error)
 			case "unknown_protocol":
 				require.NoError(t, fx.db.Model(&model.Channel{}).Where("id = ?", fx.channelID).Update("settings", `{"video_upstream_protocol":"unknown"}`).Error)
-			case "missing_model":
-				require.NoError(t, fx.db.Model(&model.Channel{}).Where("id = ?", fx.channelID).Update("model_mapping", `{"customer-video":"undeclared"}`).Error)
+			case "empty_mapping_target":
+				require.NoError(t, fx.db.Model(&model.Channel{}).Where("id = ?", fx.channelID).Update("model_mapping", `{"customer-video":""}`).Error)
 			case "database_error":
 				require.NoError(t, fx.db.Migrator().DropTable(&model.TaskPlugin{}))
 			}

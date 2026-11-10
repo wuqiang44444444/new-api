@@ -66,6 +66,7 @@ type ModelMappingBatchDialogProps = {
   upstreamModels?: string[]
   channelModels: string[]
   initialSource?: ModelMappingBatchSource
+  allowModelSync?: boolean
   onApply: (result: ModelMappingBatchResult) => void
 }
 
@@ -142,7 +143,10 @@ export function ModelMappingBatchDialog(props: ModelMappingBatchDialogProps) {
             onClick={() => {
               props.onApply({
                 pairs: derivation.pairs,
-                syncModels: direction === 'upstream' && syncModels,
+                syncModels:
+                  props.allowModelSync !== false &&
+                  direction === 'upstream' &&
+                  syncModels,
               })
               props.onOpenChange(false)
             }}
@@ -406,7 +410,7 @@ export function ModelMappingBatchDialog(props: ModelMappingBatchDialogProps) {
               </p>
             )}
           </section>
-          {direction === 'upstream' && (
+          {direction === 'upstream' && props.allowModelSync !== false && (
             <Field orientation='horizontal'>
               <Checkbox
                 id={`${id}-sync`}

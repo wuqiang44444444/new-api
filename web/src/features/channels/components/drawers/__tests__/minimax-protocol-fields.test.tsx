@@ -13,16 +13,21 @@ import {
   type ChannelFormValues,
 } from '../../../lib/channel-form'
 import { resetMinimaxConnectionDraft } from '../../../lib/minimax-management'
-import { MinimaxProtocolFields } from '../minimax-protocol-fields'
+import { MinimaxAccessFields } from '../minimax-access-fields'
 
 vi.mock('@/lib/api', () => ({ api: { get: vi.fn() } }))
 
-function Harness() {
+function Harness(props: {
+  protocol?: ChannelFormValues['video_upstream_protocol']
+}) {
   const form = useForm<ChannelFormValues>({
     defaultValues: {
       ...CHANNEL_FORM_DEFAULT_VALUES,
       type: 69,
-      video_upstream_protocol: 'jdcloud_video_task_v1',
+      video_upstream_protocol: props.protocol ?? 'jdcloud_video_task_v1',
+      settings: JSON.stringify({
+        video_upstream_protocol: props.protocol ?? 'jdcloud_video_task_v1',
+      }),
     },
   })
   const version = useWatch({
@@ -32,7 +37,7 @@ function Harness() {
   const type = useWatch({ control: form.control, name: 'type' })
   return (
     <Form {...form}>
-      {type === 69 && <MinimaxProtocolFields />}
+      {type === 69 && <MinimaxAccessFields editing disabled={false} />}
       <output aria-label='Submitted declaration'>{version}</output>
       <Button
         onClick={() =>
@@ -138,6 +143,36 @@ describe('MiniMax declaration display', () => {
     client.clear()
   })
 
+  test.each([
+    [
+      'nexhina_hailuo_v2',
+      'The active MiniMax plugin version does not support this access method.',
+    ],
+    [
+      'modelark_v3_volcengine',
+      'This channel has no recognized MiniMax video protocol.',
+    ],
+  ] as const)(
+    'explains why %s cannot be saved despite a loaded declaration',
+    async (protocol, message) => {
+      vi.mocked(api.get).mockResolvedValue({
+        data: { success: true, data: declaration },
+      })
+      const client = new QueryClient()
+      render(
+        <QueryClientProvider client={client}>
+          <Harness protocol={protocol} />
+        </QueryClientProvider>
+      )
+      expect(await screen.findByText(message)).toBeVisible()
+      expect(screen.queryByRole('button', { name: /retry/i })).toBeNull()
+      expect(screen.getByLabelText('Submitted declaration')).toHaveTextContent(
+        /^$/
+      )
+      client.clear()
+    }
+  )
+
   test('does not pin a version when the declaration is missing', async () => {
     vi.mocked(api.get).mockResolvedValue({
       data: { success: true, data: { version: '1.2.0', configuration: null } },
@@ -150,8 +185,51 @@ describe('MiniMax declaration display', () => {
         <Harness />
       </QueryClientProvider>
     )
-    await screen.findByRole('button', { name: /retry/i })
+    expect(
+      await screen.findByText('Could not load the MiniMax plugin declaration.')
+    ).toBeVisible()
+    expect(screen.getByRole('button', { name: /retry/i })).toBeEnabled()
     expect(screen.getByLabelText('Submitted declaration').textContent).toBe('')
+    client.clear()
+  })
+
+  test('a configured protocol with no listed models displays its limits and pins the version', async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          version: '1.6.0',
+          configuration: {
+            videos: [
+              {
+                protocol: 'nexhina_hailuo_v2',
+                label: 'Nexhina Hailuo V2',
+                modelPolicy: 'configured',
+                models: [],
+                defaultModelMetadata: {
+                  minDuration: 4,
+                  maxDuration: 15,
+                  ratios: ['16:9'],
+                  maxImages: 1,
+                },
+              },
+            ],
+            assets: [],
+          },
+        },
+      },
+    })
+    const client = new QueryClient()
+    render(
+      <QueryClientProvider client={client}>
+        <Harness protocol='nexhina_hailuo_v2' />
+      </QueryClientProvider>
+    )
+    expect(await screen.findByText('Nexhina Hailuo V2')).toBeVisible()
+    expect(screen.getByText('16:9')).toBeVisible()
+    expect(screen.getByLabelText('Submitted declaration')).toHaveTextContent(
+      '1.6.0'
+    )
     client.clear()
   })
 })

@@ -14,12 +14,12 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel/task/minimax"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/system_setting"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +32,7 @@ const officialH3Request = `{"model":"customer-video","content":[{"type":"text","
 func newOfficialH3Fixture(t *testing.T) *seedanceFundsFixture {
 	t.Helper()
 	fx := newMiniMaxFundsFixture(t)
-	require.NoError(t, fx.db.AutoMigrate(&model.Option{}, &model.TaskVideoResultObject{}))
+	require.NoError(t, fx.db.AutoMigrate(&model.Option{}, &model.TaskVideoResultObject{}, &model.Ability{}, &model.AuditLog{}))
 	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
 		"billing_setting.billing_expr": `{"customer-video":"tier(\"official\", u(\"output_seconds\") * 0.2 + u(\"input_video_seconds\") * 0.1 + u(\"input_image_count\") * 0.05)"}`,
 	}))
@@ -73,7 +73,6 @@ func newOfficialH3Fixture(t *testing.T) *seedanceFundsFixture {
 		"base_url": provider.URL,
 		"settings": `{"video_upstream_protocol":"minimax_official_video_v2","asset_upstream_protocol":"none"}`,
 	}).Error)
-	fx.engine.GET("/api/v3/contents/generations/tasks", middleware.TokenAuth(), ModelArkVideoList)
 	return fx
 }
 
@@ -83,10 +82,6 @@ func TestMiniMaxOfficialV2FundingPollingAndOSS(t *testing.T) {
 	require.NoError(t, fx.db.First(&savedChannel, fx.channelID).Error)
 	require.NoError(t, savedChannel.ValidateSettings())
 	require.NoError(t, model.ValidateMiniMaxChannelModelUniqueness(fx.db, &savedChannel))
-	jdChannel := savedChannel
-	jdChannel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: constant.VideoUpstreamProtocolJdCloudTaskV1})
-	require.ErrorContains(t, jdChannel.Update(), "video upstream protocol cannot be changed")
-
 	previousFetch := *system_setting.GetFetchSetting()
 	previousTLS := common.TLSInsecureSkipVerify
 	system_setting.GetFetchSetting().EnableSSRFProtection = true
@@ -146,11 +141,81 @@ func TestMiniMaxOfficialV2FundingPollingAndOSS(t *testing.T) {
 	assert.Equal(t, seedanceFundsInitialQuota-officialH3Hold, fx.userQuota())
 	assert.JSONEq(t, `{"model":"MiniMax-H3","content":[{"type":"text","text":"A landscape"},{"type":"image_url","role":"reference_image","image_url":{"url":"https://media.example.test/reference.png"}},{"type":"video_url","role":"reference_video","video_url":{"url":"https://media.example.test/reference.mp4"}}],"duration":6,"resolution":"768P","ratio":"16:9"}`, string(fx.createRequestBody()))
 
-	// Neither customer read path can query the provider. Polling retains the
-	// original host and key even after the live channel is rotated and disabled.
-	require.NoError(t, fx.db.Model(&model.Channel{}).Where("id = ?", fx.channelID).Updates(map[string]any{
-		"base_url": "http://127.0.0.1:1", "key": "rotated", "status": common.ChannelStatusManuallyDisabled,
-	}).Error)
+	var jdCreates atomic.Int32
+	jdProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/v1/task/submit", r.URL.Path)
+		assert.Equal(t, "Bearer jd-fixture-key", r.Header.Get("Authorization"))
+		jdCreates.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"result":{"task_id":"jd-after-switch","status":"pending"}}`)
+	}))
+	t.Cleanup(jdProvider.Close)
+	admin := gin.New()
+	admin.Use(func(c *gin.Context) {
+		c.Set("id", fx.userID)
+		c.Set("role", common.RoleRootUser)
+	})
+	admin.PUT("/api/channel/", UpdateChannel)
+	admin.POST("/api/channel/:id/status", UpdateChannelStatus)
+	request := func(method, path, body string) (bool, string) {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		admin.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+		var result struct {
+			Success bool   `json:"success"`
+			Message string `json:"message"`
+		}
+		require.NoError(t, common.Unmarshal(w.Body.Bytes(), &result))
+		return result.Success, result.Message
+	}
+	compatibleSwitch := fmt.Sprintf(`{"id":%d,"type":%d,"base_url":%q,"settings":"{\"video_upstream_protocol\":\"nexhina_hailuo_v2\"}"}`, fx.channelID, constant.ChannelTypeMiniMaxLink, savedChannel.GetBaseURL())
+	successful, message := request(http.MethodPut, "/api/channel/", compatibleSwitch)
+	require.True(t, successful, message)
+	var stored model.Channel
+	require.NoError(t, fx.db.First(&stored, fx.channelID).Error)
+	assert.EqualValues(t, constant.VideoUpstreamProtocolNexhinaHailuoV2, stored.GetOtherSettings().VideoUpstreamProtocol)
+	assert.Equal(t, common.ChannelStatusEnabled, stored.Status)
+
+	switchBody := fmt.Sprintf(`{"id":%d,"type":%d,"base_url":%q,"key":"jd-fixture-key","settings":"{\"video_upstream_protocol\":\"jdcloud_video_task_v1\"}"`, fx.channelID, constant.ChannelTypeMiniMaxLink, jdProvider.URL)
+	successful, message = request(http.MethodPut, "/api/channel/", switchBody+"}")
+	require.False(t, successful, message)
+	require.Contains(t, message, "incompatible with this access method")
+	require.NoError(t, fx.db.First(&stored, fx.channelID).Error)
+	assert.EqualValues(t, constant.VideoUpstreamProtocolNexhinaHailuoV2, stored.GetOtherSettings().VideoUpstreamProtocol)
+	assert.Equal(t, savedChannel.GetBaseURL(), stored.GetBaseURL())
+	assert.Equal(t, common.ChannelStatusEnabled, stored.Status)
+
+	successful, message = request(http.MethodPut, "/api/channel/", switchBody+`,"save_minimax_as_disabled":true}`)
+	require.True(t, successful, message)
+	require.NoError(t, fx.db.First(&stored, fx.channelID).Error)
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, stored.Status)
+	assert.EqualValues(t, constant.VideoUpstreamProtocolJdCloudTaskV1, stored.GetOtherSettings().VideoUpstreamProtocol)
+	assert.Equal(t, savedChannel.Models, stored.Models)
+	assert.Equal(t, savedChannel.GetModelMapping(), stored.GetModelMapping())
+	assert.Equal(t, savedChannel.Group, stored.Group)
+	enablePath := fmt.Sprintf("/api/channel/%d/status", fx.channelID)
+	successful, message = request(http.MethodPost, enablePath, `{"status":1}`)
+	require.False(t, successful, message)
+	require.Contains(t, message, "incompatible with this access method")
+	require.NoError(t, fx.db.First(&stored, fx.channelID).Error)
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, stored.Status)
+
+	jdPrice := `tier("jd", u("duration_seconds") * 0.25)`
+	require.NoError(t, model.ValidateModelPricing("customer-video", model.PricingValues{
+		"billing_setting.billing_mode": "tiered_expr",
+		"billing_setting.billing_expr": jdPrice,
+	}))
+	billingJSON, err := common.Marshal(map[string]string{"customer-video": jdPrice})
+	require.NoError(t, err)
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_expr": string(billingJSON),
+	}))
+
+	// Customer reads do not poll. The background poll uses the frozen
+	// official protocol, connection and pricing while the channel is on JD.
 	require.Equal(t, http.StatusOK, minimaxGet(t, fx, "/api/v3/contents/generations/tasks/"+id).Code)
 	require.Equal(t, http.StatusOK, minimaxGet(t, fx, "/api/v3/contents/generations/tasks").Code)
 	assert.Zero(t, fx.queryCalls.Load())
@@ -227,6 +292,15 @@ func TestMiniMaxOfficialV2FundingPollingAndOSS(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "official-task-1")
 	assert.NotContains(t, w.Body.String(), cdn.URL)
 	assert.Equal(t, before, fx.queryCalls.Load())
+
+	successful, message = request(http.MethodPost, enablePath, `{"status":1}`)
+	require.True(t, successful, message)
+	newID := decodeSeedanceFundsCreateID(t, fx.submitCreateBody(`{"model":"customer-video","content":[{"type":"text","text":"A landscape"}]}`))
+	newTask := fx.loadTask(newID)
+	assert.EqualValues(t, constant.VideoUpstreamProtocolJdCloudTaskV1, newTask.PrivateData.VideoUpstreamProtocol)
+	assert.Equal(t, minimaxFundsHold, newTask.Quota)
+	assert.EqualValues(t, 1, jdCreates.Load())
+	assert.EqualValues(t, 1, fx.createCalls.Load())
 }
 
 func TestMiniMaxVerifiedMediaReviewSettlesFrozenUsageOnce(t *testing.T) {

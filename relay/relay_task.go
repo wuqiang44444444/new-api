@@ -234,7 +234,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	mappedBeforeValidate := info.OriginModelName != ""
 	if mappedBeforeValidate {
 		info.UpstreamModelName = info.OriginModelName
-		if err := helper.ModelMappedHelper(c, info, nil); err != nil {
+		if err := resolveTaskModelMapping(c, info, platform); err != nil {
 			return nil, service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
 		}
 	}
@@ -251,7 +251,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if !mappedBeforeValidate {
 		info.OriginModelName = modelName
 		info.UpstreamModelName = modelName
-		if err := helper.ModelMappedHelper(c, info, nil); err != nil {
+		if err := resolveTaskModelMapping(c, info, platform); err != nil {
 			return nil, service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
 		}
 	}

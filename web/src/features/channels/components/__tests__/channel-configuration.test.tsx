@@ -43,6 +43,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import type { TaskPluginOption } from '../../api'
 import {
+  CHANNEL_TYPE_MINIMAX_LINK,
   CHANNEL_TYPE_OLLAMA,
   CHANNEL_TYPE_SGLANG,
   CHANNEL_TYPE_VLLM,
@@ -167,6 +168,26 @@ beforeEach(() => {
     }
     if (url === '/api/channel/models') {
       return { data: { success: true, data: [{ id: 'custom-model' }] } }
+    }
+    if (url === '/api/channel/minimax/configuration') {
+      return {
+        data: {
+          success: true,
+          data: {
+            version: '1.6.1',
+            enabled: true,
+            configuration: {
+              videos: ['jdcloud_video_task_v1', 'nexhina_hailuo_v2'].map(
+                (protocol) => ({
+                  protocol,
+                  modelPolicy: 'configured',
+                  defaultModelMetadata: { minDuration: 4, maxDuration: 15 },
+                })
+              ),
+            },
+          },
+        },
+      }
     }
     if (url === '/api/channel/default_base_urls') {
       return {
@@ -2322,6 +2343,61 @@ test('mapping guardrail alerts link to the tab that holds the fix', async () => 
   expect(routingTab).toHaveAttribute('aria-selected', 'true')
   await user.click(screen.getByRole('button', { name: 'View models' }))
   expect(connectionTab).toHaveAttribute('aria-selected', 'true')
+})
+
+test('MiniMax changes access and mappings without publishing or removing model names', async () => {
+  editingChannel = {
+    ...editingChannel,
+    type: CHANNEL_TYPE_MINIMAX_LINK,
+    models: 'custom-model,MiniMax-H3-idc',
+    model_mapping: '{"unpublished":"MiniMax-H3-idc"}',
+    settings: '{"video_upstream_protocol":"jdcloud_video_task_v1"}',
+    group: 'premium',
+  }
+  const save = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  expect(
+    screen.queryByRole('button', { name: 'Remove mapped targets' })
+  ).toBeNull()
+  expect(
+    screen.queryByRole('button', { name: 'Fill Related Models' })
+  ).toBeNull()
+  const access = screen.getByRole('combobox', { name: 'Access method' })
+  expect(access).toHaveValue('JD Cloud · Standard video')
+  await user.click(access)
+  expect(screen.queryByRole('option', { name: 'Native API' })).toBeNull()
+  const nexhina = await screen.findByRole('option', { name: /Nexhina/ })
+  await waitFor(() =>
+    expect(nexhina).not.toHaveAttribute('aria-disabled', 'true')
+  )
+  await user.click(nexhina)
+  await user.click(screen.getByRole('checkbox', { name: 'Save as disabled' }))
+  await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
+  expect(screen.queryByRole('button', { name: 'View models' })).toBeNull()
+  expect(
+    screen.getByRole('combobox', { name: 'Upstream Model Name' })
+  ).toHaveValue('MiniMax-H3-idc')
+  await user.click(screen.getByRole('button', { name: 'Delete mapping' }))
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+  expect(save).toHaveBeenCalledWith(
+    '/api/channel/',
+    expect.objectContaining({
+      models: 'custom-model,MiniMax-H3-idc',
+      group: 'premium',
+      model_mapping: '',
+      save_minimax_as_disabled: true,
+      base_url: 'https://saved.example',
+      settings: expect.stringContaining(
+        '"video_upstream_protocol":"nexhina_hailuo_v2"'
+      ),
+    }),
+    expect.anything()
+  )
 })
 
 test('redirecting a model from the model picker publishes it, adds a mapping row, and focuses its upstream field', async () => {

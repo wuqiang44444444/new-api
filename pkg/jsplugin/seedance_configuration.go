@@ -38,6 +38,16 @@ type SeedanceVideoConfiguration struct {
 	DefaultAssetProtocol string                                `json:"defaultAssetProtocol"`
 }
 
+// MetadataForModel resolves explicit metadata or the protocol defaults for a
+// channel-configured Provider model.
+func (video SeedanceVideoConfiguration) MetadataForModel(model string) (SeedanceVideoModelMetadata, bool) {
+	metadata, ok := video.ModelMetadata[model]
+	if !ok && video.ModelPolicy == "configured" && video.DefaultModelMetadata != nil {
+		return *video.DefaultModelMetadata, true
+	}
+	return metadata, ok
+}
+
 type SeedanceAssetMedia struct {
 	Kind      string `json:"kind"`
 	MediaType string `json:"mediaType"`

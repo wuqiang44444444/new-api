@@ -56,6 +56,7 @@ export type ModelMappingDraftRequest = {
 type ModelMappingEditorProps = {
   value: string
   onChange: (value: string) => void
+  literalModelIds?: boolean
   disabled?: boolean
   sourceModelOptions?: string[]
   targetModelOptions?: string[]
@@ -81,13 +82,16 @@ const DUPLICATE_MAPPING_SENTINEL = '{ "duplicate_source_models": '
 /** Show the row filter once the table is long enough to need scanning. */
 const MAPPING_FILTER_THRESHOLD = 6
 
-function getDuplicateSources(rows: MappingRow[]): string[] {
+function getDuplicateSources(
+  rows: MappingRow[],
+  literalModelIds?: boolean
+): string[] {
   const seen = new Set<string>()
   const duplicates = new Set<string>()
 
   for (const row of rows) {
-    const source = row.from.trim()
-    if (!source) continue
+    if (!row.from.trim()) continue
+    const source = literalModelIds ? row.from : row.from.trim()
     if (seen.has(source)) {
       duplicates.add(source)
     } else {
@@ -112,7 +116,10 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
     rowId: string
     field: MappingField
   } | null>(null)
-  const duplicateSources = useMemo(() => getDuplicateSources(rows), [rows])
+  const duplicateSources = useMemo(
+    () => getDuplicateSources(rows, props.literalModelIds),
+    [rows, props.literalModelIds]
+  )
   const sourceOptions = useMemo(
     () =>
       (props.sourceModelOptions ?? []).map((model) => ({
@@ -268,18 +275,21 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
     if (updatedRows.length === 0) {
       return ''
     }
-    const obj: Record<string, string> = {}
-    updatedRows.forEach((row) => {
-      if (row.from.trim()) {
-        obj[row.from.trim()] = row.to.trim()
-      }
-    })
+    const obj = Object.fromEntries(
+      updatedRows
+        .filter((row) => row.from.trim())
+        .map((row) =>
+          props.literalModelIds
+            ? [row.from, row.to]
+            : [row.from.trim(), row.to.trim()]
+        )
+    )
     return JSON.stringify(obj, null, 2)
   }
 
   const syncRows = (updatedRows: MappingRow[]) => {
     setRows(updatedRows)
-    const duplicates = getDuplicateSources(updatedRows)
+    const duplicates = getDuplicateSources(updatedRows, props.literalModelIds)
     if (duplicates.length > 0) {
       setJsonError(t('Duplicate source model mappings are not allowed'))
       setJsonValue(DUPLICATE_MAPPING_SENTINEL)
@@ -344,7 +354,7 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
   const handleModeChange = (nextMode: string) => {
     if (nextMode !== 'visual' && nextMode !== 'json') return
     if (nextMode === 'json') {
-      const duplicates = getDuplicateSources(rows)
+      const duplicates = getDuplicateSources(rows, props.literalModelIds)
       if (duplicates.length === 0) {
         const json = convertRowsToJson(rows)
         setJsonValue(json)

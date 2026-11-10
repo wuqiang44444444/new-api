@@ -76,4 +76,10 @@ func TestStoreActiveEntryFailClosed(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, entry.Plugin)
 	assert.Equal(t, plugins.MinimaxVersion(), entry.Plugin.Meta.Version)
+
+	require.NoError(t, model.SetTaskPluginEnabled("minimax-link", false))
+	_, err = store.ActiveEntryFor("jdcloud_video_task_v1")
+	assert.ErrorIs(t, err, ErrUnavailable, "a stale node cannot admit a new request after disable")
+	_, err = store.ResolveVersion(context.Background(), active.Version, "jdcloud_video_task_v1")
+	require.NoError(t, err, "the frozen version still serves previously accepted tasks")
 }

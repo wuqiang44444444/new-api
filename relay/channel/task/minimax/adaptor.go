@@ -63,7 +63,7 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (*TaskAdaptor) GetModelList() []string {
-	return []string{"MiniMax-H3"}
+	return nil
 }
 
 func (*TaskAdaptor) GetChannelName() string {

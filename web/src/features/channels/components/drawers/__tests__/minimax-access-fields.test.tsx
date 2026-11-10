@@ -1,12 +1,14 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useForm } from 'react-hook-form'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { Button } from '@/components/ui/button'
 import { Form } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { api } from '@/lib/api'
 
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
@@ -16,6 +18,44 @@ import {
 } from '../../../lib/channel-form'
 import { selectChannelManagementType } from '../../../lib/minimax-management'
 import { MinimaxAccessFields } from '../minimax-access-fields'
+
+vi.mock('@/lib/api', () => ({ api: { get: vi.fn() } }))
+
+const queryClient = new QueryClient()
+afterEach(() => {
+  queryClient.clear()
+  vi.resetAllMocks()
+})
+
+function renderAccess(
+  props: Parameters<typeof Harness>[0],
+  supportsNexhina = false,
+  pluginEnabled = true
+) {
+  const protocols = ['jdcloud_video_task_v1']
+  if (supportsNexhina) protocols.push('nexhina_hailuo_v2')
+  vi.mocked(api.get).mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        version: supportsNexhina ? '1.5.0' : '1.2.0',
+        enabled: pluginEnabled,
+        configuration: {
+          videos: protocols.map((protocol) => ({
+            protocol,
+            models: ['MiniMax-H3'],
+            modelMetadata: {},
+          })),
+        },
+      },
+    },
+  })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <Harness {...props} />
+    </QueryClientProvider>
+  )
+}
 
 function Harness(props: {
   save: (payload: ReturnType<typeof transformFormDataToCreatePayload>) => void
@@ -35,6 +75,7 @@ function Harness(props: {
       base_url: 'https://fixture.invalid',
       model_mapping: '{"customer":"MiniMax-H3"}',
       settings: '{"video_upstream_protocol":"jdcloud_video_task_v1"}',
+      video_upstream_protocol: 'jdcloud_video_task_v1',
     },
   })
   return (
@@ -87,10 +128,25 @@ function Harness(props: {
 }
 
 describe('MiniMax access choice', () => {
+  test('shows the activation and pricing requirements while retaining the disabled plugin declaration', async () => {
+    renderAccess({ save: vi.fn(), editing: true, type: 69 }, false, false)
+    expect(
+      await screen.findByText(
+        'The MiniMax plugin is disabled. Enable it before enabling this channel.'
+      )
+    ).toBeVisible()
+    expect(
+      screen.getByText(
+        'Set a tiered billing expression for each customer model before sending requests.'
+      )
+    ).toBeVisible()
+    expect(screen.getByText('Declared video capabilities')).toBeVisible()
+  })
+
   test('another native provider can switch to MiniMax and back without losing its connection draft', async () => {
     const user = userEvent.setup()
     const save = vi.fn()
-    render(<Harness save={save} editing type={1} />)
+    renderAccess({ save, editing: true, type: 1 })
     await user.click(screen.getByRole('button', { name: 'Native MiniMax' }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
@@ -104,7 +160,7 @@ describe('MiniMax access choice', () => {
   })
   test('access choices are available through the keyboard', async () => {
     const user = userEvent.setup()
-    render(<Harness save={vi.fn()} />)
+    renderAccess({ save: vi.fn() })
     const choice = screen.getByRole('combobox', { name: 'Access method' })
     await user.tab()
     await user.keyboard('{ArrowDown}')
@@ -116,7 +172,7 @@ describe('MiniMax access choice', () => {
   })
   test('requires an explicit access method before saving a new connection', async () => {
     const save = vi.fn()
-    render(<Harness save={save} />)
+    renderAccess({ save })
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(
@@ -136,17 +192,15 @@ describe('MiniMax access choice', () => {
     async (label, type) => {
       const user = userEvent.setup()
       const save = vi.fn()
-      render(<Harness save={save} />)
+      renderAccess({ save })
       const choice = screen.getByRole('combobox', { name: 'Access method' })
       await user.click(choice)
-      await user.click(await screen.findByRole('option', { name: label }))
-      for (const field of [
-        'Credential',
-        'Endpoint',
-        'Models',
-        'Mapping',
-        'Declaration',
-      ]) {
+      const option = await screen.findByRole('option', { name: label })
+      await waitFor(() =>
+        expect(option).not.toHaveAttribute('aria-disabled', 'true')
+      )
+      await user.click(option)
+      for (const field of ['Credential', 'Endpoint', 'Models', 'Mapping']) {
         expect(
           (screen.getByRole('textbox', { name: field }) as HTMLInputElement)
             .value
@@ -161,10 +215,6 @@ describe('MiniMax access choice', () => {
         'customer'
       )
       if (type === 69) {
-        await user.type(
-          screen.getByRole('textbox', { name: 'Declaration' }),
-          '1.2.0'
-        )
         await user.type(
           screen.getByRole('textbox', { name: 'Endpoint' }),
           'http://fixture.invalid'
@@ -201,22 +251,59 @@ describe('MiniMax access choice', () => {
             name: 'Declaration',
           }) as HTMLInputElement
         ).value
-      ).toBe('')
+      ).toBe(type === 69 ? '' : '1.2.0')
     }
   )
 
-  test('saved MiniMax channels show their access method without allowing a type change', async () => {
-    render(<Harness save={vi.fn()} editing type={69} />)
-    expect(screen.queryByRole('combobox')).toBeNull()
-    expect(screen.getByDisplayValue('JD Cloud · Standard video')).toBeTruthy()
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Other provider' })
+  test('saved native MiniMax keeps its read-only access method', () => {
+    renderAccess({ save: vi.fn(), editing: true, type: 35 })
+    expect(screen.queryByRole('combobox', { name: 'Access method' })).toBeNull()
+    expect(screen.getByText('Native API')).toBeVisible()
+  })
+
+  test('an older declaration marks Nexhina unavailable and keeps it unselected', async () => {
+    const user = userEvent.setup()
+    renderAccess({ save: vi.fn() })
+    await user.click(screen.getByRole('combobox', { name: 'Access method' }))
+    const option = await screen.findByRole('option', { name: /Nexhina/ })
+    expect(option).toHaveAttribute('aria-disabled', 'true')
+    expect(option).toHaveTextContent('Unavailable in plugin version 1.2.0')
+    expect(screen.getByRole('combobox', { name: 'Access method' })).toHaveValue(
+      ''
     )
-    expect(screen.getByDisplayValue('JD Cloud · Standard video')).toBeTruthy()
+  })
+
+  test('selecting Nexhina prefills an editable endpoint and saves the declared protocol', async () => {
+    const user = userEvent.setup()
+    const save = vi.fn()
+    renderAccess({ save }, true)
+    await user.click(screen.getByRole('combobox', { name: 'Access method' }))
+    const option = await screen.findByRole('option', { name: /Nexhina/ })
+    await waitFor(() =>
+      expect(option).not.toHaveAttribute('aria-disabled', 'true')
+    )
+    await user.click(option)
+    const endpoint = screen.getByRole('textbox', { name: 'Endpoint' })
+    expect(endpoint).toHaveValue('https://token.nexhina.cn')
+    await user.clear(endpoint)
+    await user.type(endpoint, 'https://proxy.invalid/prefix')
+    await user.type(
+      screen.getByRole('textbox', { name: 'Credential' }),
+      'new-fixture-key'
+    )
+    await user.type(screen.getByRole('textbox', { name: 'Models' }), 'customer')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    const channel = save.mock.calls[0][0].channel
+    expect(channel.base_url).toBe('https://proxy.invalid/prefix')
+    expect(channel.minimax_plugin_version).toBe('1.5.0')
+    expect(JSON.parse(channel.settings).video_upstream_protocol).toBe(
+      'nexhina_hailuo_v2'
+    )
   })
 
   test('a locked form cannot select an access method', () => {
-    render(<Harness save={vi.fn()} disabled />)
+    renderAccess({ save: vi.fn(), disabled: true })
     expect(
       (
         screen.getByRole('combobox', {

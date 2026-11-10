@@ -25,14 +25,18 @@ func TestModelArkListEnforcesProtocolSevenDayWindowAndOfficialFilters(t *testing
 		if i == 0 {
 			serviceTier = ""
 		}
+		createdAt := now - int64(i)
+		if i == len(statuses)-1 {
+			createdAt = now - ModelArkTaskListWindowSeconds
+		}
 		task := Task{
 			TaskID:         "modelark-" + string(rune('a'+i)),
 			UserId:         userID,
 			AppID:          appID,
 			ClientProtocol: TaskClientProtocolModelArkV3,
 			Status:         status,
-			CreatedAt:      now - int64(i+1),
-			UpdatedAt:      now - int64(i+1),
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
 			Properties:     Properties{OriginModelName: "seedance-model"},
 			PrivateData: TaskPrivateData{ClientRequest: &TaskClientRequestSnapshot{
 				ServiceTier: serviceTier,
@@ -42,7 +46,7 @@ func TestModelArkListEnforcesProtocolSevenDayWindowAndOfficialFilters(t *testing
 	}
 	excluded := []Task{
 		{TaskID: "too-old", UserId: userID, AppID: appID, ClientProtocol: TaskClientProtocolModelArkV3, Status: TaskStatusSuccess, CreatedAt: now - ModelArkTaskListWindowSeconds - 1},
-		{TaskID: "future", UserId: userID, AppID: appID, ClientProtocol: TaskClientProtocolModelArkV3, Status: TaskStatusSuccess, CreatedAt: now},
+		{TaskID: "future", UserId: userID, AppID: appID, ClientProtocol: TaskClientProtocolModelArkV3, Status: TaskStatusSuccess, CreatedAt: now + 1},
 		{TaskID: "kling", UserId: userID, AppID: appID, ClientProtocol: TaskClientProtocolKlingV1, Status: TaskStatusSuccess, CreatedAt: now - 1},
 		{TaskID: "deleted", UserId: userID, AppID: appID, ClientProtocol: TaskClientProtocolModelArkV3, ClientDeletedAt: now - 1, Status: TaskStatusSuccess, CreatedAt: now - 1},
 	}
@@ -56,6 +60,8 @@ func TestModelArkListEnforcesProtocolSevenDayWindowAndOfficialFilters(t *testing
 	require.NoError(t, err)
 	assert.Equal(t, int64(len(statuses)), total)
 	require.Len(t, tasks, len(statuses))
+	assert.Equal(t, now, tasks[0].CreatedAt)
+	assert.Equal(t, now-ModelArkTaskListWindowSeconds, tasks[len(tasks)-1].CreatedAt)
 
 	for _, status := range []string{"queued", "running", "succeeded", "failed", "cancelled", "expired"} {
 		internal, valid := ModelArkTaskStatuses(status)

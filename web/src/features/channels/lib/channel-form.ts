@@ -308,6 +308,7 @@ export const channelFormSchema = z
       .optional(),
     confirm_asset_tenant_unchanged: z.boolean().optional(),
     confirm_asset_tenant_replacement: z.boolean().optional(),
+    save_minimax_as_disabled: z.boolean().optional(),
     image_upstream_protocol: z
       .enum(['funcloud_aigc_v2', 'moxing_images_v1'])
       .optional(),
@@ -1186,6 +1187,12 @@ export function transformFormDataToUpdatePayload(
   }
   if (formData.confirm_asset_tenant_replacement) {
     payload.confirm_asset_tenant_replacement = true
+  }
+  if (
+    formData.type === CHANNEL_TYPE_MINIMAX_LINK &&
+    formData.save_minimax_as_disabled
+  ) {
+    payload.save_minimax_as_disabled = true
   }
 
   // Clean up empty strings to null for optional fields

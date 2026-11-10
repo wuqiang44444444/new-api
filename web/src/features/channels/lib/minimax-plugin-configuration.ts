@@ -1,34 +1,54 @@
 import { api } from '@/lib/api'
 
+type MinimaxVideoMetadata = {
+  defaultDuration?: number
+  minDuration?: number
+  maxDuration?: number
+  resolutions?: string[]
+  ratios?: string[]
+  maxImages?: number
+  allowVideos?: boolean
+  maxVideos?: number
+  allowAudios?: boolean
+  maxAudios?: number
+  allowFrameImages?: boolean
+  deleteVideo?: boolean
+}
+
+type MinimaxVideoConfiguration = {
+  protocol: string
+  label: string
+  models?: string[] | null
+  modelPolicy?: 'listed' | 'configured'
+  modelMetadata?: Record<string, MinimaxVideoMetadata>
+  defaultModelMetadata?: MinimaxVideoMetadata
+  assetProtocols: string[]
+  defaultAssetProtocol: string
+}
+
 export type MinimaxConfigurationSnapshot = {
   version: string
+  enabled: boolean
   configuration: {
-    videos: {
-      protocol: string
-      label: string
-      models: string[]
-      modelMetadata: Record<
-        string,
-        {
-          defaultDuration?: number
-          minDuration?: number
-          maxDuration?: number
-          resolutions?: string[]
-          ratios?: string[]
-          maxImages?: number
-          allowVideos?: boolean
-          maxVideos?: number
-          allowAudios?: boolean
-          maxAudios?: number
-          allowFrameImages?: boolean
-          deleteVideo?: boolean
-        }
-      >
-      assetProtocols: string[]
-      defaultAssetProtocol: string
-    }[]
+    videos: MinimaxVideoConfiguration[]
     assets: unknown[]
   } | null
+}
+
+function hasMinimaxVideoCapabilities(video: MinimaxVideoConfiguration) {
+  if (video.modelPolicy === 'configured') {
+    return Boolean(video.defaultModelMetadata)
+  }
+  return Array.isArray(video.models) && video.models.length > 0
+}
+
+export function findMinimaxVideoDeclaration(
+  snapshot: MinimaxConfigurationSnapshot | undefined,
+  protocol: string | undefined
+) {
+  return snapshot?.configuration?.videos.find(
+    (video) => video.protocol === protocol && hasMinimaxVideoCapabilities(video)
+  )
 }
 
 export async function getMinimaxPluginConfiguration(): Promise<MinimaxConfigurationSnapshot> {
@@ -44,9 +64,7 @@ export async function getMinimaxPluginConfiguration(): Promise<MinimaxConfigurat
   if (
     !snapshot?.version?.trim() ||
     !Array.isArray(videos) ||
-    !videos.some(
-      (video) => Array.isArray(video.models) && video.models.length > 0
-    )
+    !videos.some(hasMinimaxVideoCapabilities)
   ) {
     throw new Error('MiniMax plugin configuration is unavailable')
   }

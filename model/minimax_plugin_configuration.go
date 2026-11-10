@@ -17,6 +17,7 @@ import (
 type MinimaxPluginConfiguration struct {
 	Version       string                                 `json:"version"`
 	Configuration *jsplugin.SeedanceChannelConfiguration `json:"configuration"`
+	Enabled       bool                                   `json:"enabled"`
 }
 
 // GetMinimaxPluginConfiguration reads the active version declaration.
@@ -29,7 +30,18 @@ func GetMinimaxPluginConfiguration() (*MinimaxPluginConfiguration, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &MinimaxPluginConfiguration{Version: active.Version, Configuration: configuration}, nil
+	return &MinimaxPluginConfiguration{Version: active.Version, Configuration: configuration, Enabled: active.Enabled}, nil
+}
+
+// MinimaxPluginAdmissionVersion reads the version eligible for new requests
+// without loading artifact source. Frozen tasks resolve their own versions.
+func MinimaxPluginAdmissionVersion(tx *gorm.DB) (string, error) {
+	var active TaskPlugin
+	err := tx.Select("version").Where(&TaskPlugin{Key: jsplugin.MinimaxPluginKey, Active: true, Enabled: true}).Take(&active).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", nil
+	}
+	return active.Version, err
 }
 
 // PinMinimaxChannelConfigurationInput checks the form's declared version and
@@ -145,6 +157,9 @@ func validateMinimaxPublishedChannelConfiguration(tx *gorm.DB, channel *Channel)
 	}
 	if channel.MinimaxPluginVersion != "" && channel.MinimaxPluginVersion != active.Version {
 		return errors.New("MiniMax plugin configuration changed; reload the channel form")
+	}
+	if channel.Status == common.ChannelStatusEnabled && !active.Enabled {
+		return errors.New("Enable the MiniMax plugin before enabling this channel")
 	}
 	configuration, err := minimaxConfigurationForArtifact(&active)
 	if err != nil {

@@ -52,7 +52,7 @@ func GetConfiguredMiniMaxPublicModels() ([]SeedancePublicModel, error) {
 			candidate := SeedancePublicModel{
 				videoProtocol: settings.VideoUpstreamProtocol,
 				ModelName:     modelName,
-				Enabled:       channels[i].Status == common.ChannelStatusEnabled,
+				Enabled:       published.Enabled && channels[i].Status == common.ChannelStatusEnabled,
 				Groups:        normalizedPublicModelGroups(channels[i].GetGroups()),
 				API: dto.PublicModelAPI{
 					Video: video,
@@ -143,7 +143,7 @@ func minimaxDeclaredMetadata(configuration *jsplugin.SeedanceChannelConfiguratio
 		if configuration.Videos[i].Protocol != string(protocol) {
 			continue
 		}
-		if metadata, ok := configuration.Videos[i].ModelMetadata[providerModel]; ok {
+		if metadata, ok := configuration.Videos[i].MetadataForModel(providerModel); ok {
 			return &metadata, nil
 		}
 		break

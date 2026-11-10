@@ -45,12 +45,12 @@ func SetVideoRouter(router *gin.Engine) {
 
 	modelArkVideoReadRouter := router.Group("/api/v3")
 	modelArkVideoReadRouter.Use(middleware.RouteTag("relay"))
-	modelArkVideoReadRouter.Use(middleware.TokenAuth(), middleware.TaskClientProtocol("modelark_v3"))
+	modelArkVideoReadRouter.Use(middleware.TaskClientProtocol("modelark_v3"))
 	{
-		modelArkVideoReadRouter.GET("/contents/generations/models", controller.ListStandardVideoModels)
-		modelArkVideoReadRouter.GET("/contents/generations/tasks", controller.ModelArkVideoList)
-		modelArkVideoReadRouter.GET("/contents/generations/tasks/:task_id", controller.ModelArkVideoGet)
-		modelArkVideoReadRouter.DELETE("/contents/generations/tasks/:task_id", controller.ModelArkVideoDelete)
+		modelArkVideoReadRouter.GET("/contents/generations/models", middleware.TokenAuth(), controller.ListStandardVideoModels)
+		modelArkVideoReadRouter.GET("/contents/generations/tasks", middleware.VideoTaskReadTokenAuth(), controller.ModelArkVideoList)
+		modelArkVideoReadRouter.GET("/contents/generations/tasks/:task_id", middleware.VideoTaskReadTokenAuth(), controller.ModelArkVideoGet)
+		modelArkVideoReadRouter.DELETE("/contents/generations/tasks/:task_id", middleware.TokenAuth(), controller.ModelArkVideoDelete)
 	}
 
 	klingV1CreateRouter := router.Group("/kling/v1")

@@ -67,8 +67,10 @@ web/           — Frontend (React 19, Rsbuild, Base UI, Tailwind)
   `asset://fhas_*` 在资金 hold 前校验并冻结事实，发送时替换为内部签发的临时 URL；删除只停止新引用，
   不删除对象、不清理、不去重。FunCloud V3 adapter 南向写死启用真人模式字段。真实 Provider 验收
   完成前不得视为生产可用。
-- 客户模型可使用部署方自定义名称，`model_mapping` 精确映射到代码协议登记的上游模型。公开元数据
-  不返回上游身份；素材支持以 `api.assets` 为准，相同非空 `reuse_scope` 仅表示可尝试复用同一素材域。
+- 客户模型可使用部署方自定义名称。`model_mapping` 解析客户模型到上游模型，允许的上游 ID 以所选
+  插件声明为准。MiniMax Link 的 `configured` 协议由管理员独立维护渠道模型与映射，按客户模型查一次映射，
+  上游 ID 原样发送。
+  公开元数据不返回上游身份；素材支持以 `api.assets` 为准，相同非空 `reuse_scope` 仅表示可尝试复用同一素材域。
 
 ## Internationalization (i18n)
 

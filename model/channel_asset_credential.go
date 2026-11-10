@@ -109,6 +109,7 @@ func UpdateChannelWithAssetCredentialActor(
 		actorID,
 		assetTenantUnchanged,
 		assetTenantReplacementConfirmed,
+		false,
 		audit...,
 	)
 }

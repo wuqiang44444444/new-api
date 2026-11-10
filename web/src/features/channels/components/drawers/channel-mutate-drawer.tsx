@@ -5,12 +5,16 @@
 
 import { CHANNEL_TYPE_ASYNC_IMAGE, CHANNEL_TYPE_MINIMAX_LINK, CHANNEL_TYPE_SEEDANCE_LINK, ADD_MODE_OPTIONS, CLAUDE_FIELD_PASSTHROUGH_TYPES, CHANNEL_STATUS_LABELS, CHANNEL_TYPE_NEW_API, CHANNEL_TYPE_OLLAMA, CHANNEL_TYPE_OPTIONS, CHANNEL_TYPE_TASK_PLUGIN, CHANNEL_TYPE_VLLM, CHANNEL_TYPE_SGLANG, CHANNEL_TYPE_WARNINGS, ERROR_MESSAGES, FIELD_PASSTHROUGH_TYPES, FIELD_DESCRIPTIONS, FIELD_PLACEHOLDERS, MODEL_FETCHABLE_TYPES, OPENAI_FIELD_PASSTHROUGH_TYPES } from '../../constants'
 import { assetTenantBoundarySnapshotFromChannel, assetTenantBoundarySnapshotFromForm, collectAssetTenantBoundaryChanges, type AssetTenantBoundaryChange, CHANNEL_FORM_DEFAULT_VALUES, CHANNEL_TYPE_ADVANCED_CUSTOM, channelFormSchema, channelsQueryKeys, getAdvancedCustomStats, transformChannelToFormDefaults, type ChannelFormValues, deduplicateKeys, getKeyPromptForType, parseModelsString, formatModelsArray, mergeModelMappingPairs, type ModelMappingPair, extractRedirectModels, extractMappingSourceModels, hasModelConfigChanged, findMissingModelsInMapping, validateModelMappingJson } from '../../lib'
-import {isMinimaxChannel} from '../../lib/minimax-management'
+import {
+  isMinimaxChannel,
+  MINIMAX_NATIVE_TYPE,
+  resetMinimaxConnectionDraft,
+  selectChannelManagementType,
+} from '../../lib/minimax-management'
 import {AssetTenantRotationDialog} from '../dialogs/asset-tenant-rotation-dialog'
 
 import {ImageRelayProtocolFields} from './image-relay-protocol-fields'
 import {MinimaxAccessFields} from './minimax-access-fields'
-import {MinimaxProtocolFields} from './minimax-protocol-fields'
 
 
 import {SeedanceConfiguredProtocolFields} from './seedance-configured-protocol-fields'
@@ -77,6 +81,7 @@ import {
   sideDrawerHeaderClassName,
   sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
 import { JsonCodeEditor } from '@/components/json-code-editor'
@@ -231,6 +236,13 @@ type ChannelMutateDrawerProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentRow?: Channel | null
+  startWithMinimax?: boolean
+}
+
+const MINIMAX_CREATE_DEFAULTS = {
+  ...CHANNEL_FORM_DEFAULT_VALUES,
+  type: MINIMAX_NATIVE_TYPE,
+  minimax_access_selected: false,
 }
 
 type ModelMappingGuardrail = {
@@ -384,6 +396,7 @@ export function ChannelMutateDrawer({
   open,
   onOpenChange,
   currentRow,
+  startWithMinimax = false,
 }: ChannelMutateDrawerProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -446,10 +459,16 @@ export function ChannelMutateDrawer({
     setDrawerSide(requestedSide)
   }
   const channelId = currentRow?.id ?? null
+  const savedChannelType = currentRow?.type
+  const isSavedMinimax =
+    savedChannelType !== undefined && isMinimaxChannel(savedChannelType)
+  const [confirmNewMinimax, setConfirmNewMinimax] = useState(false)
   const sensitiveLocked = isEditing && !canEditSensitive
   const [providerTarget, setProviderTarget] =
-    useState<ChannelProviderTarget | null>(null)
-  const [choosingProvider, setChoosingProvider] = useState(true)
+    useState<ChannelProviderTarget | null>(
+      startWithMinimax ? { kind: 'builtin', type: MINIMAX_NATIVE_TYPE } : null
+    )
+  const [choosingProvider, setChoosingProvider] = useState(!startWithMinimax)
   const [configurationSection, setConfigurationSection] =
     useState<ChannelConfigurationSection>('connection')
   const [pendingErrorFocus, setPendingErrorFocus] = useState<string | null>(
@@ -549,9 +568,12 @@ export function ChannelMutateDrawer({
     isEditing && channelData?.data?.channel_info?.is_multi_key === true
 
   // Form setup
+  const createDefaults = startWithMinimax
+    ? MINIMAX_CREATE_DEFAULTS
+    : CHANNEL_FORM_DEFAULT_VALUES
   const form = useForm<ChannelFormValues>({
     resolver: zodResolver(channelFormSchema),
-    defaultValues: CHANNEL_FORM_DEFAULT_VALUES,
+    defaultValues: createDefaults,
   })
 
   // Watch values once for conditional fields and configuration indicators.
@@ -561,6 +583,7 @@ export function ChannelMutateDrawer({
   const keyMode = formValues.key_mode
   const currentGroups = formValues.group
   const currentType = formValues.type
+  const independentModelMapping = currentType === CHANNEL_TYPE_MINIMAX_LINK
   const baseUrlPlaceholder = [CHANNEL_TYPE_VLLM, CHANNEL_TYPE_SGLANG].includes(
     currentType
   )
@@ -773,9 +796,27 @@ export function ChannelMutateDrawer({
     (currentType === CHANNEL_TYPE_TASK_PLUGIN && currentTaskPluginKey) ||
     t(currentTypeLabel)
 
+  const openNewMinimax = useCallback(() => {
+    const saved = loadedForm.current
+    const values = { ...form.getValues(), minimax_plugin_version: undefined }
+    // The declaration version is supplied by the server, not edited by the user.
+    if (saved && saved.snapshot !== JSON.stringify(values)) {
+      setConfirmNewMinimax(true)
+      return
+    }
+    setOpen('create-minimax-channel')
+  }, [form, setOpen])
+
   const selectProvider = useCallback(
     (target: ChannelProviderTarget) => {
-      if (!canEditSensitive) return
+      if (!canEditSensitive || isSavedMinimax) return
+      if (
+        target.kind === 'builtin' &&
+        target.type === CHANNEL_TYPE_MINIMAX_LINK
+      ) {
+        if (isEditing) openNewMinimax()
+        return
+      }
       if (
         (target.kind === 'builtin' &&
           providerTarget?.kind === 'builtin' &&
@@ -796,6 +837,9 @@ export function ChannelMutateDrawer({
         const previousPlugin = taskPluginOptionsQuery.data?.find(
           (item) => item.key === form.getValues('task_plugin_key')
         )
+        if (!isEditing && isMinimaxChannel(form.getValues('type'))) {
+          resetMinimaxConnectionDraft(form, CHANNEL_TYPE_TASK_PLUGIN, true)
+        }
         form.setValue('type', CHANNEL_TYPE_TASK_PLUGIN, { shouldDirty: true })
         form.setValue('task_plugin_key', plugin.key, { shouldDirty: true })
         if (!isEditing && !providerTarget && !form.getValues('name').trim()) {
@@ -825,7 +869,14 @@ export function ChannelMutateDrawer({
         ) {
           return
         }
-        form.setValue('type', target.type, { shouldDirty: true })
+        if (
+          !isEditing &&
+          (isMinimaxChannel(target.type) || isMinimaxChannel(form.getValues('type')))
+        ) {
+          selectChannelManagementType(form, target.type)
+        } else {
+          form.setValue('type', target.type, { shouldDirty: true })
+        }
         if (!isEditing && !providerTarget && !form.getValues('name').trim()) {
           const label = CHANNEL_TYPE_OPTIONS.find(
             (option) => option.value === target.type
@@ -841,6 +892,8 @@ export function ChannelMutateDrawer({
       canEditSensitive,
       providerTarget,
       isEditing,
+      isSavedMinimax,
+      openNewMinimax,
       form,
       t,
       taskPluginOptionsQuery.data,
@@ -898,6 +951,10 @@ export function ChannelMutateDrawer({
         return acc
       }, [])
 
+      if (independentModelMapping) {
+        return { ...createEmptyModelMappingGuardrail(), entries }
+      }
+
       const missingSourceModels = [
         ...new Set(
           entries
@@ -931,7 +988,7 @@ export function ChannelMutateDrawer({
     } catch {
       return { ...createEmptyModelMappingGuardrail(), invalidJson: true }
     }
-  }, [currentModelMapping, currentModelsArray])
+  }, [currentModelMapping, currentModelsArray, independentModelMapping])
 
   const mappingPreviewPairs =
     modelMappingGuardrail.entries.length > 0
@@ -1050,12 +1107,12 @@ export function ChannelMutateDrawer({
       initialStatusCodeMappingRef.current =
         channelData.data.status_code_mapping || ''
     } else if (!isEditing) {
-      form.reset(CHANNEL_FORM_DEFAULT_VALUES)
+      form.reset(createDefaults)
       initialModelsRef.current = []
       initialModelMappingRef.current = ''
       initialStatusCodeMappingRef.current = ''
     }
-  }, [isEditing, channelId, channelData, form, open])
+  }, [isEditing, channelId, channelData, form, open, createDefaults])
 
   // Handle type change - set default values for specific types
   useEffect(() => {
@@ -1378,6 +1435,7 @@ export function ChannelMutateDrawer({
   // only its own additions and removals are undone.
   const syncModelsWithMapping = useCallback(
     (mapping: string) => {
+      if (form.getValues('type') === CHANNEL_TYPE_MINIMAX_LINK) return
       const aliasSet = new Set<string>()
       const targetSet = new Set<string>()
       let parsed: unknown
@@ -1743,7 +1801,7 @@ const handleAssetTenantConfirmationAction = useCallback(
       const normalizedModels = parseModelsString(data.models || '')
 
       // Check for missing models in model_mapping
-      if (hasModelMapping) {
+      if (hasModelMapping && data.type !== CHANNEL_TYPE_MINIMAX_LINK) {
         const missingModels = findMissingModelsInMapping(
           modelMappingValue,
           normalizedModels
@@ -2587,6 +2645,7 @@ const handleAssetTenantConfirmationAction = useCallback(
               <ModelMappingEditor
                 value={field.value || ''}
                 onChange={field.onChange}
+                literalModelIds={independentModelMapping}
                 disabled={isSubmitting}
                 sourceModelOptions={currentModelsArray}
                 targetModelOptions={modelOptions.map((option) => option.value)}
@@ -3525,23 +3584,27 @@ const handleAssetTenantConfirmationAction = useCallback(
             <div className='space-y-3'>
               <div>
                 <p className='text-sm font-medium'>{t('Quick actions')}</p>
-                <p className='text-muted-foreground text-xs'>
-                  {t(
-                    'Use presets or upstream discovery to populate the model list faster.'
-                  )}
-                </p>
+                {!independentModelMapping && (
+                  <p className='text-muted-foreground text-xs'>
+                    {t(
+                      'Use presets or upstream discovery to populate the model list faster.'
+                    )}
+                  </p>
+                )}
               </div>
               <div className='flex flex-wrap gap-2'>
-                <Button
-                  type='button'
-                  variant='outline'
-                  size='sm'
-                  onClick={handleFillRelatedModels}
-                  disabled={!basicModels.length}
-                >
-                  <FileText className='mr-2 h-4 w-4' aria-hidden='true' />
-                  {t('Fill Related Models')}
-                </Button>
+                {!independentModelMapping && (
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    onClick={handleFillRelatedModels}
+                    disabled={!basicModels.length}
+                  >
+                    <FileText className='mr-2 h-4 w-4' aria-hidden='true' />
+                    {t('Fill Related Models')}
+                  </Button>
+                )}
                 {MODEL_FETCHABLE_TYPES.has(currentType) && (
                   <>
                     <Button
@@ -3663,12 +3726,14 @@ const handleAssetTenantConfirmationAction = useCallback(
             disabled={sensitiveLocked}
             className='space-y-4 disabled:opacity-60'
           >
-{isMinimaxChannel(currentType) && <MinimaxAccessFields editing={isEditing} disabled={sensitiveLocked} />}
-                            {currentType === CHANNEL_TYPE_MINIMAX_LINK && (
-                              <MinimaxProtocolFields
-                                key={channelId ?? 'new-minimax'}
-                              />
-                            )}
+            {isMinimaxChannel(currentType) && (
+              <MinimaxAccessFields
+                key={channelId ?? 'new-minimax'}
+                editing={isEditing}
+                disabled={sensitiveLocked}
+                canSaveDisabled={canOperateChannel}
+              />
+            )}
 
                             {currentType === CHANNEL_TYPE_SEEDANCE_LINK && (
                               <SeedanceConfiguredProtocolFields
@@ -4247,6 +4312,7 @@ const handleAssetTenantConfirmationAction = useCallback(
                     <FormLabel
                       required={
                         currentType === CHANNEL_TYPE_TASK_PLUGIN ||
+                        currentType === CHANNEL_TYPE_MINIMAX_LINK ||
                         currentType === CHANNEL_TYPE_VLLM ||
                         currentType === CHANNEL_TYPE_SGLANG
                       }
@@ -4256,13 +4322,21 @@ const handleAssetTenantConfirmationAction = useCallback(
                     <FormControl>
                       <Input placeholder={baseUrlPlaceholder} {...field} />
                     </FormControl>
-                    {currentType !== CHANNEL_TYPE_TASK_PLUGIN && (
+                    {currentType === CHANNEL_TYPE_MINIMAX_LINK && (
                       <FormDescription>
                         {t(
-                          'Custom API base URL. For official channels, New API has built-in addresses. Only fill this for third-party proxy sites or special endpoints. Do not add /v1 or trailing slash.'
+                          'Enter the upstream base URL. The access method adds the API path.'
                         )}
                       </FormDescription>
                     )}
+                    {currentType !== CHANNEL_TYPE_TASK_PLUGIN &&
+                      currentType !== CHANNEL_TYPE_MINIMAX_LINK && (
+                        <FormDescription>
+                          {t(
+                            'Custom API base URL. For official channels, New API has built-in addresses. Only fill this for third-party proxy sites or special endpoints. Do not add /v1 or trailing slash.'
+                          )}
+                        </FormDescription>
+                      )}
                     {currentType === CHANNEL_TYPE_TASK_PLUGIN &&
                       !boundTaskPlugin?.baseUrl && (
                         <FormDescription>
@@ -4901,7 +4975,19 @@ return (
                       {isEditing ? t('Edit Channel') : t('Create Channel')}
                     </span>
                   </SheetTitle>
-                  {(!showProviderPicker || providerTarget) && (
+                  {savedChannelType === MINIMAX_NATIVE_TYPE &&
+                    channelData?.data &&
+                    canEditSensitive && (
+                      <Button
+                        type='button'
+                        variant='outline'
+                        disabled={isSubmitting}
+                        onClick={openNewMinimax}
+                      >
+                        {t('Create MiniMax standard video channel')}
+                      </Button>
+                    )}
+                  {!isSavedMinimax && (!showProviderPicker || providerTarget) && (
                     <Button
                       ref={providerControlRef}
                       type='button'
@@ -5132,6 +5218,7 @@ return (
                 })
               }
               syncModels={redirectSyncModels}
+              allowModelSync={!independentModelMapping}
               onSyncModelsChange={setRedirectSyncModels}
               sourceModelOptions={modelOptions.map((option) => option.value)}
               targetModelOptions={[
@@ -5148,6 +5235,17 @@ return (
         </SheetContent>
       </Sheet>
 
+      {confirmNewMinimax && (
+        <ConfirmDialog
+          open
+          onOpenChange={setConfirmNewMinimax}
+          title={t('Discard unsaved changes?')}
+          desc={t('Opening a new channel form will discard your unsaved changes.')}
+          confirmText={t('Create MiniMax standard video channel')}
+          handleConfirm={() => setOpen('create-minimax-channel')}
+        />
+      )}
+
       {open && modelConfiguration && (
         <ConfigureModelsDialog
           open
@@ -5158,7 +5256,11 @@ return (
             if (!nextOpen) setModelConfiguration(null)
           }}
           onApply={handleModelsChange}
-          onRedirect={(model) => requestMappingDraft(model, '')}
+          onRedirect={
+            independentModelMapping
+              ? undefined
+              : (model) => requestMappingDraft(model, '')
+          }
         />
       )}
 
@@ -5167,6 +5269,7 @@ return (
           open
           upstreamModels={upstreamModelList}
           channelModels={currentModelsArray}
+          allowModelSync={!independentModelMapping}
           initialSource={batchMapping.source}
           onOpenChange={(nextOpen) => {
             if (!nextOpen) setBatchMapping(null)

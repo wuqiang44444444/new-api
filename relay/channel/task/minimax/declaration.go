@@ -37,15 +37,13 @@ func videoConfiguration(configuration *pluginruntime.SeedanceChannelConfiguratio
 	return nil, minimaxplugin.ErrUnavailable
 }
 
-// declaredMetadata resolves the per-provider-model metadata declared by the
-// pinned artifact. Listed models always carry declared metadata (compile
-// validation enforces this), so absence is a host contract violation.
+// declaredMetadata resolves the model's capabilities from the pinned artifact.
 func declaredMetadata(configuration *pluginruntime.SeedanceChannelConfiguration, protocol, providerModel string) (*pluginruntime.SeedanceVideoModelMetadata, error) {
 	video, err := videoConfiguration(configuration, protocol)
 	if err != nil {
 		return nil, err
 	}
-	if metadata, ok := video.ModelMetadata[providerModel]; ok {
+	if metadata, ok := video.MetadataForModel(providerModel); ok {
 		return &metadata, nil
 	}
 	return nil, fmt.Errorf("provider model %q has no declared metadata in the active minimax-link version", providerModel)

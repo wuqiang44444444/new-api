@@ -43,6 +43,7 @@ type ModelRedirectPanelProps = {
   onMappingCommit: (value: string) => void
   onBatchAdd: () => void
   syncModels: boolean
+  allowModelSync?: boolean
   onSyncModelsChange: (value: boolean) => void
   sourceModelOptions: string[]
   targetModelOptions: string[]
@@ -75,30 +76,35 @@ export function ModelRedirectPanel(props: ModelRedirectPanelProps) {
       expandRequest={props.draftRequest?.token}
       onClose={props.onClose}
       footer={
-        <div className='flex items-start gap-3'>
-          <Checkbox
-            id={`${id}-sync`}
-            className='mt-0.5'
-            checked={props.syncModels}
-            onCheckedChange={(checked) =>
-              props.onSyncModelsChange(checked === true)
-            }
-          />
-          <Label
-            htmlFor={`${id}-sync`}
-            className='text-xs leading-5 font-normal'
-          >
-            {t(
-              'Publish the request names and remove the raw upstream names from the model list'
-            )}
-          </Label>
-        </div>
+        props.allowModelSync !== false && (
+          <div className='flex items-start gap-3'>
+            <Checkbox
+              id={`${id}-sync`}
+              className='mt-0.5'
+              checked={props.syncModels}
+              onCheckedChange={(checked) =>
+                props.onSyncModelsChange(checked === true)
+              }
+            />
+            <Label
+              htmlFor={`${id}-sync`}
+              className='text-xs leading-5 font-normal'
+            >
+              {t(
+                'Publish the request names and remove the raw upstream names from the model list'
+              )}
+            </Label>
+          </div>
+        )
       }
     >
       <ModelMappingEditor
         value={props.mappingValue}
+        literalModelIds={props.allowModelSync === false}
         onChange={props.onMappingChange}
-        onCommit={props.onMappingCommit}
+        onCommit={
+          props.allowModelSync === false ? undefined : props.onMappingCommit
+        }
         onBatchAdd={props.onBatchAdd}
         disabled={props.disabled}
         sourceModelOptions={props.sourceModelOptions}

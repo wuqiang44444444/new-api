@@ -517,6 +517,16 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 }
 
 func TokenAuth() func(c *gin.Context) {
+	return tokenAuthWithValidator(model.ValidateUserToken)
+}
+
+// VideoTaskReadTokenAuth keeps the relay authorization checks for persisted
+// task reads and exempts only the quota gate.
+func VideoTaskReadTokenAuth() gin.HandlerFunc {
+	return tokenAuthWithValidator(model.ValidateUserTokenForTaskRead)
+}
+
+func tokenAuthWithValidator(validateToken func(string) (*model.Token, error)) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 先检测是否为ws
 		applyWebSocketSubprotocolAuthorization(c.Request.Header)
@@ -560,7 +570,7 @@ func TokenAuth() func(c *gin.Context) {
 			parts = strings.Split(key, "-")
 			key = parts[0]
 		}
-		token, err := model.ValidateUserToken(key)
+		token, err := validateToken(key)
 		if token != nil {
 			id := c.GetInt("id")
 			if id == 0 {

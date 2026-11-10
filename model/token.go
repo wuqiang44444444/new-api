@@ -219,14 +219,23 @@ func SearchUserTokens(userId int, keyword string, token string, offset int, limi
 }
 
 func ValidateUserToken(key string) (token *Token, err error) {
+	return validateUserToken(key, true)
+}
+
+// ValidateUserTokenForTaskRead keeps the credential valid for reads when
+// an accepted task has consumed its available quota.
+func ValidateUserTokenForTaskRead(key string) (*Token, error) {
+	return validateUserToken(key, false)
+}
+
+func validateUserToken(key string, requireQuota bool) (token *Token, err error) {
 	if key == "" {
 		return nil, ErrTokenNotProvided
 	}
 	token, err = GetTokenByKey(key, false)
 	if err == nil {
-		if token.Status == common.TokenStatusExhausted ||
-			token.Status == common.TokenStatusExpired ||
-			token.Status != common.TokenStatusEnabled {
+		if token.Status != common.TokenStatusEnabled &&
+			(requireQuota || token.Status != common.TokenStatusExhausted) {
 			return token, ErrTokenInvalid
 		}
 		if token.ExpiredTime != -1 && token.ExpiredTime < common.GetTimestamp() {
@@ -239,15 +248,8 @@ func ValidateUserToken(key string) (token *Token, err error) {
 			}
 			return token, ErrTokenInvalid
 		}
-		if !token.UnlimitedQuota && token.RemainQuota <= 0 {
-			if !common.RedisEnabled {
-				token.Status = common.TokenStatusExhausted
-				err := token.SelectUpdate()
-				if err != nil {
-					common.SysLog(common.LogText("failed to update token status%s", err.Error()))
-				}
-			}
-			return token, ErrTokenInvalid
+		if requireQuota {
+			return token, token.ValidateRelayQuota()
 		}
 		return token, nil
 	}

@@ -42,6 +42,7 @@ import { resolveLocalizedText } from '@/lib/localized-text'
 import type { TaskPluginOption } from '../../api'
 import {
   CHANNEL_PROVIDER_PRESENTATION,
+  CHANNEL_TYPE_MINIMAX_LINK,
   CHANNEL_TYPE_NEW_API,
   CHANNEL_TYPE_OPTIONS,
   CHANNEL_TYPE_SUB2API,
@@ -54,6 +55,10 @@ import {
   getChannelPluginExtensions,
   LEGACY_TASK_PLUGIN_KEYS,
 } from '../../lib/channel-plugin-extensions'
+import {
+  channelManagementTypeOptions,
+  MINIMAX_NATIVE_TYPE,
+} from '../../lib/minimax-management'
 import { ChannelTypeLogo } from '../channel-type-badge'
 
 type ChannelProviderPickerProps = {
@@ -107,6 +112,7 @@ export function ChannelProviderPicker(props: ChannelProviderPickerProps) {
       label: string
       target: ChannelProviderTarget
       plugin?: TaskPluginOption
+      createsMiniMax?: boolean
       description?: string
       detail?: string
       extensionNames?: string
@@ -114,7 +120,10 @@ export function ChannelProviderPicker(props: ChannelProviderPickerProps) {
       badge?: ChannelProviderPresentation['badge']
       searchText: string
     }> = []
-    for (const option of CHANNEL_TYPE_OPTIONS) {
+    const providerTypes = props.isCreating
+      ? channelManagementTypeOptions(CHANNEL_TYPE_OPTIONS)
+      : CHANNEL_TYPE_OPTIONS
+    for (const option of providerTypes) {
       if (option.value === CHANNEL_TYPE_TASK_PLUGIN) {
         if (!props.canBindPlugin || (filter !== 'all' && filter !== 'plugin')) {
           continue
@@ -146,6 +155,14 @@ export function ChannelProviderPicker(props: ChannelProviderPickerProps) {
         if (filter === 'custom' && !isCustom) continue
         if (filter === 'builtin' && isCustom) continue
         const presentation = CHANNEL_PROVIDER_PRESENTATION[option.value]
+        const createsMiniMax =
+          props.isCreating === false &&
+          option.value === CHANNEL_TYPE_MINIMAX_LINK
+        const miniMaxSearchAliases =
+          (props.isCreating && option.value === MINIMAX_NATIVE_TYPE) ||
+          createsMiniMax
+            ? `${t('JD Cloud · Standard video')} ${t('Nexhina · Standard video')} ${t('Official · Standard video')}`
+            : ''
         const extensions = getChannelPluginExtensions(
           option.value,
           availablePlugins
@@ -162,8 +179,11 @@ export function ChannelProviderPicker(props: ChannelProviderPickerProps) {
           .join(' / ')
         entries.push({
           id: `builtin:${option.value}`,
-          label: t(option.label),
+          label: createsMiniMax
+            ? t('Create MiniMax standard video channel')
+            : t(option.label),
           target: { kind: 'builtin', type: option.value },
+          createsMiniMax,
           description: presentation
             ? t(presentation.descriptionKey)
             : undefined,
@@ -173,7 +193,7 @@ export function ChannelProviderPicker(props: ChannelProviderPickerProps) {
           badge: presentation?.badge,
           extensionNames: extensions.map((plugin) => plugin.name).join(' · '),
           extensionSummary,
-          searchText: `${option.value} ${option.label} ${t(option.label)} ${extensions.map((plugin) => `${plugin.name} ${plugin.key}`).join(' ')}`,
+          searchText: `${option.value} ${option.label} ${t(option.label)} ${miniMaxSearchAliases} ${extensions.map((plugin) => `${plugin.name} ${plugin.key}`).join(' ')}`,
         })
       }
     }
@@ -268,11 +288,15 @@ export function ChannelProviderPicker(props: ChannelProviderPickerProps) {
                     option.id === currentProviderId ? true : undefined
                   }
                   data-checked={option.id === currentProviderId}
-                  aria-label={
-                    option.target.kind === 'builtin'
-                      ? `${option.label} ${t('Built-in')} #${option.target.type}`
-                      : `${option.label} ${t('Plugin')} ${option.target.key}`
-                  }
+                  aria-label={[
+                    option.label,
+                    !option.createsMiniMax &&
+                      (option.target.kind === 'builtin'
+                        ? `${t('Built-in')} #${option.target.type}`
+                        : `${t('Plugin')} ${option.target.key}`),
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
                   aria-description={
                     [
                       option.badge && t(option.badge.labelKey),
@@ -348,18 +372,20 @@ export function ChannelProviderPicker(props: ChannelProviderPickerProps) {
                     </span>
                   </span>
                   <span className='flex min-w-0 items-center gap-2'>
-                    <Badge
-                      variant={
-                        option.id === currentProviderId
-                          ? 'default'
-                          : 'secondary'
-                      }
-                      className='shrink-0 rounded-md px-1.5 py-0 text-[10px] font-normal'
-                    >
-                      {option.id === currentProviderId && t('Current')}
-                      {option.id !== currentProviderId &&
-                        (option.plugin ? t('Plugin') : t('Built-in'))}
-                    </Badge>
+                    {!option.createsMiniMax && (
+                      <Badge
+                        variant={
+                          option.id === currentProviderId
+                            ? 'default'
+                            : 'secondary'
+                        }
+                        className='shrink-0 rounded-md px-1.5 py-0 text-[10px] font-normal'
+                      >
+                        {option.id === currentProviderId && t('Current')}
+                        {option.id !== currentProviderId &&
+                          (option.plugin ? t('Plugin') : t('Built-in'))}
+                      </Badge>
+                    )}
                     {option.extensionNames && (
                       <span
                         aria-label={t('Plugin extensions')}

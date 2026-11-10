@@ -376,6 +376,9 @@ func updateAbilityStatusTx(tx *gorm.DB, channel *Channel, status bool, actorID i
 		if err := ValidateSeedanceChannelModelUniqueness(tx, channel); err != nil {
 			return err
 		}
+		if err := validateMiniMaxChannelPricing(channel); err != nil {
+			return err
+		}
 	}
 	if channel.Type == constant.ChannelTypeSeedanceLink {
 		return tx.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error

@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/plugins"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -47,6 +48,57 @@ func TestMinimaxPluginDeployOnlyLifecycle(t *testing.T) {
 	current, err := GetTaskPluginVersion(jsplugin.MinimaxPluginKey, "")
 	require.NoError(t, err)
 	assert.Equal(t, plugins.MinimaxVersion(), current.Version)
+}
+
+func TestMinimaxDisabledPluginPreservesDraftButBlocksPublication(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&TaskPlugin{}, &Channel{}))
+	t.Cleanup(func() {
+		DB.Exec("DELETE FROM channels")
+		DB.Exec("DELETE FROM task_plugins")
+	})
+	require.NoError(t, SaveTaskPlugin(&TaskPlugin{
+		Key: jsplugin.MinimaxPluginKey, APIVersion: 3, Version: plugins.MinimaxVersion(),
+		Source: LongText(plugins.MinimaxSource()), SourceHash: "fixture-hash",
+	}))
+	declaration, err := GetMinimaxPluginConfiguration()
+	require.NoError(t, err)
+	assert.False(t, declaration.Enabled)
+	require.NotEmpty(t, declaration.Configuration.Videos)
+
+	channel := &Channel{
+		Type: constant.ChannelTypeMiniMaxLink, Status: common.ChannelStatusEnabled,
+		Name: "MiniMax draft", Models: "minimax-plugin-disabled-qa", Group: "default",
+		Key: "fixture-key", BaseURL: common.GetPointer("https://example.invalid"),
+		OtherSettings: `{"video_upstream_protocol":"nexhina_hailuo_v2","asset_upstream_protocol":"none"}`,
+	}
+	require.ErrorContains(t, channel.Insert(), "Enable the MiniMax plugin")
+	channel.Id = 0
+	channel.Status = common.ChannelStatusManuallyDisabled
+	require.NoError(t, channel.Insert())
+	require.NoError(t, channel.Update())
+	_, err = UpdateChannelStatusWithActor(channel.Id, "", common.ChannelStatusEnabled, "", 0)
+	require.ErrorContains(t, err, "Enable the MiniMax plugin")
+
+	require.NoError(t, SetTaskPluginEnabled(jsplugin.MinimaxPluginKey, true))
+	savedBilling := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(k, v string) error { savedBilling[k] = v; return nil }))
+	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(savedBilling)) })
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"minimax-plugin-disabled-qa":"tiered_expr"}`,
+		"billing_setting.billing_expr": `{"minimax-plugin-disabled-qa":"tier(\"seconds\", u(\"output_seconds\") * 0.25)"}`,
+	}))
+	changed, err := UpdateChannelStatusWithActor(channel.Id, "", common.ChannelStatusEnabled, "", 0)
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Contains(t, GetGroupEnabledModels("default"), channel.Models)
+
+	require.NoError(t, SetTaskPluginEnabled(jsplugin.MinimaxPluginKey, false))
+	catalog, err := GetConfiguredMiniMaxPublicModels()
+	require.NoError(t, err)
+	require.Len(t, catalog, 1)
+	assert.Equal(t, channel.Models, catalog[0].ModelName)
+	assert.False(t, catalog[0].Enabled)
+	assert.NotContains(t, GetGroupEnabledModels("default"), channel.Models)
 }
 
 func TestMiniMaxRetryAfterPersistsWithoutChangingObservationOrQuota(t *testing.T) {

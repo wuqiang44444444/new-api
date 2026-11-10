@@ -25,10 +25,10 @@ func TestNexhinaHailuoV2Observation(t *testing.T) {
 		Platform:    Platform,
 		PrivateData: model.TaskPrivateData{VideoUpstreamProtocol: protocol},
 	}
-	task.Properties.UpstreamModelName = "MiniMax-H3"
+	task.Properties.UpstreamModelName = "configured-provider-route"
 	for _, status := range []string{"processing", "running"} {
 		t.Run(status, func(t *testing.T) {
-			body := []byte(`{"task":{"id":"task-fixture","model":"MiniMax-H3","status":"` + status + `"}}`)
+			body := []byte(`{"task":{"id":"task-fixture","model":"provider-display-model","status":"` + status + `"}}`)
 			observation, safe, err := normalizeTaskObservation(context.Background(), plugin, task, body, "task-fixture")
 			require.NoError(t, err)
 			assert.Equal(t, observationStatusRunning, observation.Status)
@@ -36,10 +36,23 @@ func TestNexhinaHailuoV2Observation(t *testing.T) {
 		})
 	}
 
+	for _, body := range []string{
+		`{"task":{"id":"different-task","model":"configured-provider-route","status":"running"}}`,
+		`{"task":{"id":"task-fixture","task_type":"other","status":"running"}}`,
+		`{"task":{"id":"task-fixture","modality":"image","status":"running"}}`,
+	} {
+		_, _, err := normalizeTaskObservation(context.Background(), plugin, task, []byte(body), "task-fixture")
+		require.Error(t, err)
+	}
+
 	task.PrivateData.VideoUpstreamProtocol = constant.VideoUpstreamProtocolMiniMaxOfficialV2
-	body := []byte(`{"task":{"id":"task-fixture","model":"MiniMax-H3","status":"processing"}}`)
-	_, _, err := normalizeTaskObservation(context.Background(), plugin, task, body, "task-fixture")
-	require.Error(t, err)
+	for _, body := range []string{
+		`{"task":{"id":"task-fixture","model":"configured-provider-route","status":"processing"}}`,
+		`{"task":{"id":"task-fixture","model":"provider-display-model","status":"running"}}`,
+	} {
+		_, _, err := normalizeTaskObservation(context.Background(), plugin, task, []byte(body), "task-fixture")
+		require.Error(t, err)
+	}
 }
 
 func TestNexhinaHailuoV2ReferenceImageWireContract(t *testing.T) {

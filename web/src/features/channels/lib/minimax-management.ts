@@ -34,10 +34,12 @@ export function minimaxAccessLabel(
     channel.settings
   )?.video_upstream_protocol
   if (protocol === MINIMAX_JD_VIDEO_PROTOCOL) return 'JD Cloud · Standard video'
-  if (protocol === MINIMAX_OFFICIAL_VIDEO_PROTOCOL)
+  if (protocol === MINIMAX_OFFICIAL_VIDEO_PROTOCOL) {
     return 'Official · Standard video'
-  if (protocol === MINIMAX_NEXHINA_VIDEO_PROTOCOL)
+  }
+  if (protocol === MINIMAX_NEXHINA_VIDEO_PROTOCOL) {
     return 'Nexhina · Standard video'
+  }
   return 'Unrecognized video protocol'
 }
 
@@ -47,8 +49,9 @@ export function channelManagementFilter(value?: string): {
   type?: number
   types?: string
 } {
-  if (value === MINIMAX_FILTER)
+  if (value === MINIMAX_FILTER) {
     return { types: `35,${CHANNEL_TYPE_MINIMAX_LINK}` }
+  }
   if (!value || value === 'all') return {}
   return { type: Number(value) }
 }
@@ -83,6 +86,11 @@ export function resetMinimaxConnectionDraft(
       group: current.group,
       status: current.status,
       type,
+      base_url:
+        type === CHANNEL_TYPE_MINIMAX_LINK &&
+        protocol === MINIMAX_NEXHINA_VIDEO_PROTOCOL
+          ? 'https://token.nexhina.cn'
+          : CHANNEL_FORM_DEFAULT_VALUES.base_url,
       video_upstream_protocol:
         type === CHANNEL_TYPE_MINIMAX_LINK
           ? protocol

@@ -34,7 +34,7 @@ func ListModelArkVideoTasks(userID, appID int, filter ModelArkTaskListFilter) ([
 		filter.Now = common.GetTimestamp()
 	}
 	query := DB.Where(
-		"user_id = ? AND app_id = ? AND client_protocol = ? AND client_deleted_at = ? AND created_at >= ? AND created_at < ?",
+		"user_id = ? AND app_id = ? AND client_protocol = ? AND client_deleted_at = ? AND created_at >= ? AND created_at <= ?",
 		userID,
 		appID,
 		TaskClientProtocolModelArkV3,

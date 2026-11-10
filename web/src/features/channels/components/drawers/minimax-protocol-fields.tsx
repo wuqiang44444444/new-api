@@ -1,10 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
-import { useEffect, useId, useState } from 'react'
+import { useEffect } from 'react'
 import { useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
-import { ErrorState } from '@/components/error-state'
-import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,
@@ -22,75 +19,51 @@ import { Input } from '@/components/ui/input'
 
 import type { ChannelFormValues } from '../../lib/channel-form'
 import {
-  getMinimaxPluginConfiguration,
+  findMinimaxVideoDeclaration,
   type MinimaxConfigurationSnapshot,
 } from '../../lib/minimax-plugin-configuration'
 
-// Configuration is pinned for this mounted editor. Modes unmount this component,
-// so a late response cannot copy its declaration into another connection draft.
-export function MinimaxProtocolFields() {
+export function MinimaxProtocolFields(props: {
+  snapshot: MinimaxConfigurationSnapshot | undefined
+}) {
   const { t } = useTranslation()
-  const formId = useId()
-  const form = useFormContext<ChannelFormValues>()
+  const { control, setValue } = useFormContext<ChannelFormValues>()
   const [version, protocol] = useWatch({
-    control: form.control,
+    control,
     name: ['minimax_plugin_version', 'video_upstream_protocol'],
   })
-  const [snapshot, setSnapshot] = useState<MinimaxConfigurationSnapshot>()
-  const configuration = useQuery({
-    queryKey: ['minimax-channel-configuration', formId],
-    queryFn: getMinimaxPluginConfiguration,
-    enabled: snapshot === undefined,
-    staleTime: Infinity,
-    gcTime: 0,
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  })
+  const video = findMinimaxVideoDeclaration(props.snapshot, protocol)
+  const declaredVersion = video ? props.snapshot?.version : ''
   useEffect(() => {
-    if (configuration.data && !snapshot) setSnapshot(configuration.data)
-  }, [configuration.data, snapshot])
-  const video = snapshot?.configuration?.videos.find(
-    (item) => item.protocol === protocol && item.models.length > 0
-  )
-  const declaredVersion = video ? snapshot?.version : ''
-  const { setValue } = form
-  useEffect(() => {
-    if (snapshot && version !== declaredVersion) {
+    if ((version ?? '') !== declaredVersion) {
       setValue('minimax_plugin_version', declaredVersion, {
         shouldValidate: true,
       })
     }
-  }, [snapshot, version, declaredVersion, setValue])
-  if (!snapshot && configuration.isError) {
-    return (
-      <ErrorState
-        description={t('Load the plugin declaration before saving')}
-        onRetry={() => {
-          void configuration.refetch()
-        }}
-      />
-    )
-  }
-  if (!snapshot) return <LoadingState />
+  }, [version, declaredVersion, setValue])
 
-  if (!video) {
-    return (
-      <ErrorState
-        description={t('Load the plugin declaration before saving')}
-      />
-    )
+  if (!video) return null
+  const capabilities = (video.models ?? []).map((model) => ({
+    key: `model:${model}`,
+    label: model,
+    metadata: video.modelMetadata?.[model],
+  }))
+  if (video.defaultModelMetadata) {
+    capabilities.unshift({
+      key: 'protocol-default',
+      label: video.label,
+      metadata: video.defaultModelMetadata,
+    })
   }
   return (
     <div className='min-w-0 space-y-3'>
       <div className='text-sm font-medium'>
         {t('Declared video capabilities')}
       </div>
-      {video.models.map((model) => {
-        const metadata = video.modelMetadata?.[model]
+      {capabilities.map(({ key, label, metadata }) => {
         return (
-          <div key={model} className='space-y-1 text-sm'>
-            <div className='font-medium break-all'>{model}</div>
+          <div key={key} className='space-y-1 text-sm'>
+            <div className='font-medium break-all'>{label}</div>
             <dl className='text-muted-foreground space-y-1'>
               {metadata?.minDuration != null &&
                 metadata.maxDuration != null && (
@@ -154,7 +127,7 @@ export function MinimaxProtocolFields() {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <FormField
-            control={form.control}
+            control={control}
             name='minimax_plugin_version'
             render={({ field }) => (
               <FormItem>

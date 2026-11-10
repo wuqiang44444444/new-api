@@ -36,6 +36,7 @@ import type { Channel } from '../types'
 
 type DialogType =
   | 'create-channel'
+  | 'create-minimax-channel'
   | 'update-channel'
   | 'test-channel'
   | 'balance-query'

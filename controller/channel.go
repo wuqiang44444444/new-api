@@ -1123,6 +1123,7 @@ type PatchChannel struct {
 	AssetCredential               *dto.ChannelAssetCredentialInput `json:"asset_credential,omitempty"`
 	ConfirmAssetTenantUnchanged   bool                             `json:"confirm_asset_tenant_unchanged,omitempty"`
 	ConfirmAssetTenantReplacement bool                             `json:"confirm_asset_tenant_replacement,omitempty"`
+	SaveMiniMaxAsDisabled         bool                             `json:"save_minimax_as_disabled,omitempty"`
 }
 
 type ChannelStatusRequest struct {
@@ -1305,7 +1306,13 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 	assetCredentialAudit := "unchanged"
-	if channel.AssetCredential != nil {
+	if channel.SaveMiniMaxAsDisabled {
+		if !authz.Can(c.GetInt("id"), c.GetInt("role"), authz.ChannelOperate) {
+			common.ApiErrorT(c, "Unauthorized, insufficient privileges")
+			return
+		}
+		err = channel.UpdateMiniMaxProtocolAsDisabled(c.GetInt("id"), service.ChannelStatusAuditForRequest(c, nil))
+	} else if channel.AssetCredential != nil {
 		existingCredential, lookupErr := model.GetChannelAssetCredential(channel.Id)
 		if lookupErr != nil {
 			common.ApiError(c, lookupErr)
@@ -1408,6 +1415,7 @@ func UpdateChannel(c *gin.Context) {
 	channel.AssetCredential = nil
 	channel.ConfirmAssetTenantUnchanged = false
 	channel.ConfirmAssetTenantReplacement = false
+	channel.SaveMiniMaxAsDisabled = false
 	clearChannelInfo(&channel.Channel)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

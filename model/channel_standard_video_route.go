@@ -82,6 +82,12 @@ func enabledMiniMaxAbilityViews(tx *gorm.DB) ([]AbilityWithChannel, error) {
 		return nil, err
 	}
 	abilities := make([]AbilityWithChannel, 0)
+	if len(channels) > 0 {
+		version, err := MinimaxPluginAdmissionVersion(tx)
+		if err != nil || version == "" {
+			return abilities, err
+		}
+	}
 	for i := range channels {
 		for _, group := range channels[i].GetGroups() {
 			for _, modelName := range channels[i].GetModels() {
@@ -107,6 +113,12 @@ func appendEnabledMiniMaxModels(models []string, group string) []string {
 	query := DB.Where("type = ? AND status = ?", constant.ChannelTypeMiniMaxLink, common.ChannelStatusEnabled).Order("id")
 	if err := query.Find(&channels).Error; err != nil {
 		return models
+	}
+	if len(channels) > 0 {
+		version, err := MinimaxPluginAdmissionVersion(DB)
+		if err != nil || version == "" {
+			return models
+		}
 	}
 	seen := make(map[string]struct{}, len(models))
 	for _, modelName := range models {

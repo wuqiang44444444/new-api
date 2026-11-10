@@ -71,10 +71,10 @@ func TestMiniMaxOriginalDeclarationKeepsTextOnlyScope(t *testing.T) {
 func TestMiniMaxImageAudioDeclarationDoesNotGainFramesOrVideos(t *testing.T) {
 	_, info, err := jsplugin.CompileSeedanceExtension(plugins.MinimaxSource(), jsplugin.Options{}, jsplugin.MinimaxHostContract())
 	require.NoError(t, err)
-	metadata := info.Configuration.Videos[0].ModelMetadata["MiniMax-H3"]
+	metadata := info.Configuration.Videos[0].DefaultModelMetadata
+	require.NotNil(t, metadata)
 	metadata.AllowFrameImages = false
 	metadata.AllowVideos, metadata.MaxVideos = false, 0
-	info.Configuration.Videos[0].ModelMetadata["MiniMax-H3"] = metadata
 	api, err := minimaxPublicVideoAPI(info.Configuration, "jdcloud_video_task_v1", "custom-model", "MiniMax-H3", false)
 	require.NoError(t, err)
 	require.Len(t, api.Creation.ContentTypes, 3)

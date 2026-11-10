@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/pkg/minimaxplugin"
@@ -34,6 +37,15 @@ func TestActivateMiniMaxLinkPublishesChannelConfiguration(t *testing.T) {
 	_, err := model.GetTaskPluginVersion(jsplugin.MinimaxPluginKey, version)
 	require.NoError(t, err)
 
+	existingChannel := model.Channel{
+		Type: constant.ChannelTypeMiniMaxLink, Status: common.ChannelStatusEnabled,
+		Name: "Existing JD channel", Models: "existing-video", Group: "default",
+		Key: "provider-fixture-key", BaseURL: common.GetPointer("https://provider.invalid"),
+		ModelMapping: common.GetPointer(`{"existing-video":"MiniMax-H3"}`),
+	}
+	existingChannel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: constant.VideoUpstreamProtocolJdCloudTaskV1})
+	require.NoError(t, model.DB.Create(&existingChannel).Error)
+
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Params = gin.Params{{Key: "key", Value: jsplugin.MinimaxPluginKey}}
@@ -44,6 +56,14 @@ func TestActivateMiniMaxLinkPublishesChannelConfiguration(t *testing.T) {
 	configuration, err := model.GetMinimaxPluginConfiguration()
 	require.NoError(t, err)
 	assert.Equal(t, version, configuration.Version)
+	var reloaded model.Channel
+	require.NoError(t, model.DB.First(&reloaded, existingChannel.Id).Error)
+	assert.Equal(t, existingChannel.GetModelMapping(), reloaded.GetModelMapping())
+	assert.Equal(t, existingChannel.Status, reloaded.Status)
+	catalog, err := model.GetConfiguredMiniMaxPublicModels()
+	require.NoError(t, err)
+	require.Len(t, catalog, 1)
+	assert.Equal(t, "existing-video", catalog[0].API.Video.Creation.Model)
 	_, registeredNatively := jsplugin.DefaultRegistry.Get(jsplugin.MinimaxPluginKey)
 	assert.False(t, registeredNatively)
 }

@@ -13,8 +13,6 @@
 // in docs/80-dev/2026-09-24-MiniMaxH3多模态真实调用验证.md. Documented ranges
 // do not imply that every combination has passed live gateway acceptance.
 
-const MODEL = "MiniMax-H3";
-
 const DEFAULT_DURATION = 6;
 const MIN_DURATION = 4;
 const MAX_DURATION = 15;
@@ -65,11 +63,11 @@ function isMissing(value) {
 // buildCreate
 // ---------------------------------------------------------------------------
 
-function buildH3Request(input) {
+function buildVideoRequest(input) {
   const request = input.request;
   const providerModel = String(input.providerModel === undefined || input.providerModel === null ? "" : input.providerModel);
-  if (providerModel !== MODEL) {
-    throw new Error("the selected customer model is not supported by its configured video adapter");
+  if (providerModel.trim() === "") {
+    throw new Error("a configured Provider model is required");
   }
 
   for (const field of UNSUPPORTED_FIELDS) {
@@ -167,7 +165,7 @@ function buildH3Request(input) {
 }
 
 function buildCreate(input) {
-  const body = buildH3Request(input);
+  const body = buildVideoRequest(input);
   if (!isMissing(input.request.watermark) && input.request.watermark !== WATERMARK) {
     throw new Error("watermark must be false for the selected customer model");
   }
@@ -202,7 +200,7 @@ function parseCreateResponse(input) {
   let parsed;
   try {
     parsed = JSON.parse(input.body);
-  } catch (error) {
+  } catch {
     throw new Error("upstream create response is not valid JSON");
   }
   parsed = parseJsonObject(parsed, "upstream create response is not a JSON object");
@@ -296,7 +294,7 @@ function parseTaskObservation(input) {
   let parsed;
   try {
     parsed = JSON.parse(input.body);
-  } catch (error) {
+  } catch {
     throw new Error("upstream task observation is not valid JSON");
   }
   parsed = parseJsonObject(parsed, "upstream task observation is not a JSON object");
@@ -364,14 +362,14 @@ function buildOfficialCreate(input) {
   if (!isMissing(input.request.watermark)) {
     throw new Error("watermark is not available for the selected model");
   }
-  return { body: buildH3Request(input) };
+  return { body: buildVideoRequest(input) };
 }
 
 function parseOfficialCreateResponse(input) {
   let parsed;
   try {
     parsed = JSON.parse(input.body);
-  } catch (error) {
+  } catch {
     throw new Error("upstream create response is not valid JSON");
   }
   const body = parseJsonObject(parsed, "invalid create response");
@@ -384,11 +382,11 @@ function parseOfficialCreateResponse(input) {
   return { id: body.task_id, status: ACCEPTED_CREATE_STATUS };
 }
 
-function parseV2TaskObservation(input, runningStatus) {
+function parseV2TaskObservation(input, { runningStatus, requireModelEchoMatch }) {
   let parsed;
   try {
     parsed = JSON.parse(input.body);
-  } catch (error) {
+  } catch {
     throw new Error("upstream task observation is not valid JSON");
   }
   const body = parseJsonObject(parsed, "invalid task observation");
@@ -396,7 +394,8 @@ function parseV2TaskObservation(input, runningStatus) {
     throw new Error("upstream query returned an error");
   }
   const task = parseJsonObject(body.task, "upstream task observation has no task object");
-  if (task.id !== input.taskId || (!isMissing(task.model) && task.model !== input.providerModel) ||
+  if (task.id !== input.taskId ||
+      (requireModelEchoMatch && !isMissing(task.model) && task.model !== input.providerModel) ||
       (!isMissing(task.task_type) && task.task_type !== "generation") ||
       (!isMissing(task.modality) && task.modality !== "video")) {
     throw new Error("upstream task identity mismatch");
@@ -424,23 +423,22 @@ function videoConfiguration(protocol, label) {
   return {
     protocol: protocol,
     label: label,
-    models: [MODEL],
-    modelMetadata: {
-      [MODEL]: {
-        defaultDuration: DEFAULT_DURATION,
-        minDuration: MIN_DURATION,
-        maxDuration: MAX_DURATION,
-        resolutions: RESOLUTIONS,
-        ratios: RATIOS,
-        maxPromptLength: MAX_PROMPT_LENGTH,
-        maxImages: MAX_IMAGES,
-        allowFrameImages: ALLOW_FRAME_IMAGES,
-        allowVideos: true,
-        maxVideos: MAX_VIDEOS,
-        allowAudios: true,
-        maxAudios: MAX_AUDIOS,
-        deleteVideo: false,
-      },
+    models: [],
+    modelPolicy: "configured",
+    defaultModelMetadata: {
+      defaultDuration: DEFAULT_DURATION,
+      minDuration: MIN_DURATION,
+      maxDuration: MAX_DURATION,
+      resolutions: RESOLUTIONS,
+      ratios: RATIOS,
+      maxPromptLength: MAX_PROMPT_LENGTH,
+      maxImages: MAX_IMAGES,
+      allowFrameImages: ALLOW_FRAME_IMAGES,
+      allowVideos: true,
+      maxVideos: MAX_VIDEOS,
+      allowAudios: true,
+      maxAudios: MAX_AUDIOS,
+      deleteVideo: false,
     },
     assetProtocols: ["none"],
     defaultAssetProtocol: "none",
@@ -456,7 +454,9 @@ export const seedance = {
   minimax_official_video_v2: {
     buildCreate: buildOfficialCreate,
     parseCreateResponse: parseOfficialCreateResponse,
-    parseTaskObservation: function (input) { return parseV2TaskObservation(input, "running"); },
+    parseTaskObservation: function (input) {
+      return parseV2TaskObservation(input, { runningStatus: "running", requireModelEchoMatch: true });
+    },
   },
   nexhina_hailuo_v2: {
     buildCreate: function (input) {
@@ -472,7 +472,10 @@ export const seedance = {
       return converted;
     },
     parseCreateResponse: parseOfficialCreateResponse,
-    parseTaskObservation: function (input) { return parseV2TaskObservation(input, "processing"); },
+    parseTaskObservation: function (input) {
+      // Nexhina may report a display model instead of the submitted routing ID.
+      return parseV2TaskObservation(input, { runningStatus: "processing", requireModelEchoMatch: false });
+    },
   },
 };
 
@@ -484,7 +487,7 @@ export const meta = {
     en: "MiniMax Link southbound protocol adapters",
     zh: "MiniMax 标准视频南向协议适配",
   },
-  version: "1.5.0",
+  version: "1.6.1",
   author: { name: "yuan-gateway" },
   seedanceProtocols: ["jdcloud_video_task_v1", "minimax_official_video_v2", "nexhina_hailuo_v2"],
   channelConfiguration: {
@@ -493,17 +496,15 @@ export const meta = {
       videoConfiguration("minimax_official_video_v2", "MiniMax Official Video V2"),
       {
         ...videoConfiguration("nexhina_hailuo_v2", "Nexhina Hailuo V2"),
-        modelMetadata: {
-          [MODEL]: {
-            defaultDuration: DEFAULT_DURATION,
-            minDuration: MIN_DURATION,
-            maxDuration: MAX_DURATION,
-            resolutions: RESOLUTIONS,
-            ratios: ["16:9"],
-            maxPromptLength: MAX_PROMPT_LENGTH,
-            maxImages: 1,
-            deleteVideo: false,
-          },
+        defaultModelMetadata: {
+          defaultDuration: DEFAULT_DURATION,
+          minDuration: MIN_DURATION,
+          maxDuration: MAX_DURATION,
+          resolutions: RESOLUTIONS,
+          ratios: ["16:9"],
+          maxPromptLength: MAX_PROMPT_LENGTH,
+          maxImages: 1,
+          deleteVideo: false,
         },
       },
     ],

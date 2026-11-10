@@ -12,12 +12,9 @@ func seedancePublicModelAPIFromPlugin(configuration *jsplugin.SeedanceChannelCon
 			if video.Protocol != string(protocol) {
 				continue
 			}
-			metadata, exists := video.ModelMetadata[providerModel]
+			metadata, exists := video.MetadataForModel(providerModel)
 			if !exists {
-				if video.DefaultModelMetadata == nil {
-					return dto.PublicModelAPI{}, false
-				}
-				metadata = *video.DefaultModelMetadata
+				return dto.PublicModelAPI{}, false
 			}
 			api, ok := publicmodel.VideoAPIFromPlugin(modelName, protocol, metadata, allowServiceTier)
 			if !ok {

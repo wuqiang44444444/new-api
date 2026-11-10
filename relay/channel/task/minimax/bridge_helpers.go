@@ -45,8 +45,8 @@ func requestContextFrom(requestContext *gin.Context) context.Context {
 // providerModelFromRelayInfo mirrors the typed-channel provider model
 // resolution: the mapped upstream model wins; otherwise the request model.
 func providerModelFromRelayInfo(info *relaycommon.RelayInfo, requestModel string) string {
-	if info != nil && strings.TrimSpace(info.UpstreamModelName) != "" {
-		return strings.TrimSpace(info.UpstreamModelName)
+	if info != nil && info.UpstreamModelName != "" {
+		return info.UpstreamModelName
 	}
 	return strings.TrimSpace(requestModel)
 }

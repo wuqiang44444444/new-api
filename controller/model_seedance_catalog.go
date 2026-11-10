@@ -182,6 +182,7 @@ func seedanceModelAvailableToCaller(c *gin.Context, modelName string) bool {
 }
 
 func applySeedanceModelCatalog(target *dto.OpenAIModels, catalog *model.SeedancePublicModel, available bool) {
+	available = available && catalog.Enabled
 	target.OwnedBy = "new-api"
 	target.SupportedEndpointTypes = []constant.EndpointType{constant.EndpointTypeModelArkVideo}
 	target.Available = common.GetPointer(available)

@@ -24,11 +24,7 @@ func (a *TaskAdaptor) pinnedProviderSpec(c *gin.Context, model string) (provider
 		if video.Protocol != string(a.protocol) {
 			continue
 		}
-		metadata, ok := video.ModelMetadata[model]
-		if !ok && video.DefaultModelMetadata != nil {
-			metadata = *video.DefaultModelMetadata
-			ok = true
-		}
+		metadata, ok := video.MetadataForModel(model)
 		if !ok {
 			return providerModelSpec{}, false, nil
 		}

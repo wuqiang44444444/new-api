@@ -596,6 +596,7 @@ func (channel *Channel) UpdateWithActorAndAssetTenantConfirmation(
 		actorID,
 		assetTenantUnchanged,
 		assetTenantReplacementConfirmed,
+		false,
 		audit...,
 	)
 }
