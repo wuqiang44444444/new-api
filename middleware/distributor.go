@@ -621,8 +621,10 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 
 	key, index, newAPIError := channel.GetNextEnabledKey()
 	if newAPIError != nil {
+		service.ObserveChannelSelectionFailure(c, channel, modelName, newAPIError)
 		return newAPIError
 	}
+	service.SetChannelAlertSelection(c, channel, index)
 	if channel.ChannelInfo.IsMultiKey {
 		common.SetContextKey(c, constant.ContextKeyChannelIsMultiKey, true)
 		common.SetContextKey(c, constant.ContextKeyChannelMultiKeyIndex, index)

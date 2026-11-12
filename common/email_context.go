@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net"
 	"net/smtp"
+	"net/textproto"
 	"strings"
 	"time"
 )
@@ -30,7 +32,7 @@ func (c *smtpContextConn) Close() error {
 	return c.Conn.Close()
 }
 
-func newSMTPClient(ctx context.Context, addr string) (net.Conn, *smtp.Client, error) {
+func newSMTPClient(ctx context.Context, addr string, config SMTPMailConfig) (net.Conn, *smtp.Client, error) {
 	ctx, cancel := context.WithTimeout(ctx, SMTPTotalTimeout)
 	raw, err := (&net.Dialer{Timeout: SMTPDialTimeout}).DialContext(ctx, "tcp", addr)
 	if err != nil {
@@ -46,26 +48,26 @@ func newSMTPClient(ctx context.Context, addr string) (net.Conn, *smtp.Client, er
 	conn := &smtpContextConn{Conn: raw, cancel: cancel}
 	conn.stop = context.AfterFunc(ctx, func() { _ = raw.Close() })
 	var transport net.Conn = conn
-	if SMTPSSLEnabled || (SMTPPort == 465 && !SMTPStartTLSEnabled) {
-		secure := tls.Client(conn, smtpTLSConfig())
+	if config.SSL || (config.Port == 465 && !config.StartTLS) {
+		secure := tls.Client(conn, smtpTLSConfig(config))
 		if err := secure.HandshakeContext(ctx); err != nil {
 			conn.Close()
 			return nil, nil, err
 		}
 		transport = secure
 	}
-	client, err := smtp.NewClient(transport, SMTPServer)
+	client, err := smtp.NewClient(transport, config.Server)
 	if err != nil {
 		conn.Close()
 		return nil, nil, err
 	}
-	if SMTPStartTLSEnabled && !SMTPSSLEnabled {
+	if config.StartTLS && !config.SSL {
 		supported, _ := client.Extension("STARTTLS")
 		if !supported {
 			client.Close()
 			return nil, nil, fmt.Errorf("SMTP server does not support STARTTLS")
 		}
-		if err := client.StartTLS(smtpTLSConfig()); err != nil {
+		if err := client.StartTLS(smtpTLSConfig(config)); err != nil {
 			client.Close()
 			return nil, nil, err
 		}
@@ -73,35 +75,30 @@ func newSMTPClient(ctx context.Context, addr string) (net.Conn, *smtp.Client, er
 	return transport, client, nil
 }
 
-// SendEmailContext 发送单封 HTML 邮件：DNS/连接/TLS/认证/DATA 全过程受
-// SMTPTotalTimeout 与 ctx 约束，连接上设置绝对 deadline，取消真实生效。
-func SendEmailContext(ctx context.Context, subject string, receiver string, content string) (sendErr error) {
-	ctx, cancel := context.WithTimeout(ctx, SMTPTotalTimeout)
-	defer cancel()
+func sendSMTPMail(ctx context.Context, config SMTPMailConfig, subject string, receivers []string, content string) (sendErr error) {
 	accepted := false
+	awaitingReply := false
 	defer func() {
+		var rejection *textproto.Error
+		if errors.As(sendErr, &rejection) {
+			return
+		}
 		if accepted {
 			sendErr = nil
 		} else if ctx.Err() != nil {
 			sendErr = ctx.Err()
 		} else if deadline, ok := ctx.Deadline(); sendErr != nil && ok && !time.Now().Before(deadline) {
-			// The socket deadline can fire just before the context timer callback.
 			sendErr = context.DeadlineExceeded
 		}
+		if awaitingReply && sendErr != nil {
+			sendErr = fmt.Errorf("%w: %w", ErrMailSubmissionUnknown, sendErr)
+		}
 	}()
-	if SMTPFrom == "" { // for compatibility
-		SMTPFrom = SMTPAccount
-	}
-	id, err2 := generateMessageID()
-	if err2 != nil {
-		return err2
-	}
-	if SMTPServer == "" && SMTPAccount == "" {
-		return fmt.Errorf("SMTP 服务器未配置")
-	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	sender := config.sender()
+	id := generateMessageID(sender)
 	encodedSubject := fmt.Sprintf("=?UTF-8?B?%s?=", base64.StdEncoding.EncodeToString([]byte(subject)))
 	mail := []byte(fmt.Sprintf("To: %s\r\n"+
 		"From: %s <%s>\r\n"+
@@ -109,24 +106,23 @@ func SendEmailContext(ctx context.Context, subject string, receiver string, cont
 		"Date: %s\r\n"+
 		"Message-ID: %s\r\n"+ // 添加 Message-ID 头
 		"Content-Type: text/html; charset=UTF-8\r\n\r\n%s\r\n",
-		receiver, SystemName, SMTPFrom, encodedSubject, time.Now().Format(time.RFC1123Z), id, content))
-	auth := getSMTPAuth()
-	addr := fmt.Sprintf("%s:%d", SMTPServer, SMTPPort)
-	to := strings.Split(receiver, ";")
-	_, client, err := newSMTPClient(ctx, addr)
+		strings.Join(receivers, ", "), strings.NewReplacer("\r", "", "\n", "").Replace(SystemName), sender, encodedSubject, time.Now().Format(time.RFC1123Z), id, content))
+	addr := net.JoinHostPort(config.Server, fmt.Sprint(config.Port))
+	_, client, err := newSMTPClient(ctx, addr, config)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
-	if shouldAuthenticateSMTP() {
-		if err = client.Auth(auth); err != nil {
+	if config.Account != "" && config.Token != "" {
+		if err = client.Auth(newSMTPAuth(config)); err != nil {
 			return err
 		}
 	}
-	if err = client.Mail(SMTPFrom); err != nil {
+	observeMailSubmission(ctx)
+	if err = client.Mail(sender); err != nil {
 		return err
 	}
-	for _, receiver := range to {
+	for _, receiver := range receivers {
 		if err = client.Rcpt(receiver); err != nil {
 			return err
 		}
@@ -138,6 +134,7 @@ func SendEmailContext(ctx context.Context, subject string, receiver string, cont
 	if _, err = w.Write(mail); err != nil {
 		return err
 	}
+	awaitingReply = true
 	if err = w.Close(); err != nil {
 		return err
 	}

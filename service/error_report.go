@@ -14,65 +14,38 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
-// 每小时系统运行与错误邮件报告的系统任务处理器
-// （docs/80-dev/2026-09-17-每小时系统运行与错误邮件报告开发方案.md）。
-// 处理器注册为 ScheduledSystemTaskHandler：短周期（一分钟）检查到期窗口、
-// 生成冻结报告并投递积压；窗口、正文与投递进度全部持久化在主库，重启可恢复。
+// Shared scheduling, publication result and delivery for the daily report.
 
 const (
 	// errorReportCheckInterval 是调度间隔；内部按绝对时间计算窗口，
 	// 不以「上次发送结束加一小时」定义统计范围。
 	errorReportCheckInterval = time.Minute
 
-	errorReportLocationName  = "Asia/Shanghai"
-	errorReportWindowSeconds = int64(3600)
+	errorReportLocationName = "Asia/Shanghai"
 
 	// 每轮有限工作量：大量积压或故障邮箱不会长期占用租约，未完成进度可续跑。
-	errorReportMaxGeneratePerRun = 2
-	errorReportMaxDeliverPerRun  = 30
-	errorReportMaxRequeuePerRun  = 200
+	errorReportMaxDeliverPerRun = 30
+	errorReportMaxRequeuePerRun = 200
 
-	// 投递领取租约：发送在事务外执行，结果不明（含 SMTP 已接受但写回失败）
-	// 由租约过期恢复为 retry_wait，允许偶尔重复。
+	// A lost lease has an unknown submission outcome.
 	errorReportDeliveryLease = 90 * time.Second
-
-	// errorReportResendGrace 之后发送的窗口按「补发」标注标题。
-	errorReportResendGrace = 30 * time.Minute
 )
 
-// errorReportBackoffSteps 是失败/结果不明的重试退避（秒）：
-// 1、5、15、60 分钟，之后按小时重试；达到上限也不丢弃，保留积压与下次尝试时间。
-var errorReportBackoffSteps = []int64{60, 300, 900, 3600}
-
-func errorReportBackoff(attempts int) int64 {
-	if attempts <= 0 {
-		return errorReportBackoffSteps[0]
-	}
-	if attempts > len(errorReportBackoffSteps) {
-		return errorReportBackoffSteps[len(errorReportBackoffSteps)-1]
-	}
-	return errorReportBackoffSteps[attempts-1]
-}
-
-type errorReportSendFunc func(ctx context.Context, subject, receiver, body string) error
-
 type errorReportHandler struct {
-	send errorReportSendFunc
+	send mailSendFunc
 	now  func() time.Time
 }
 
-func newErrorReportHandler(send errorReportSendFunc) *errorReportHandler {
+func newErrorReportHandler(send mailSendFunc) *errorReportHandler {
 	return &errorReportHandler{send: send, now: time.Now}
-}
-
-func init() {
-	RegisterSystemTaskHandler(newErrorReportHandler(common.SendEmailContext))
 }
 
 func (errorReportHandler) Type() string { return model.SystemTaskTypeErrorReport }
 
-// Enabled 直接跟随配置；调度器在关闭时不创建任务。
-func (errorReportHandler) Enabled() bool { return operation_setting.GetErrorReportSetting().Enabled }
+// The scheduler needs a destination, without a separate report switch.
+func (errorReportHandler) Enabled() bool {
+	return len(operation_setting.ParseErrorReportRecipients(operation_setting.ErrorReportSettingSnapshot().Recipients)) > 0
+}
 
 func (errorReportHandler) Interval() time.Duration { return errorReportCheckInterval }
 
@@ -87,53 +60,30 @@ func errorReportLocation() *time.Location {
 	return loc
 }
 
-// errorReportHourFloor 取时刻所在自然小时的起点（绝对时间戳）。
-func errorReportHourFloor(t time.Time) int64 {
-	inLoc := t.In(errorReportLocation())
-	floored := time.Date(inLoc.Year(), inLoc.Month(), inLoc.Day(), inLoc.Hour(), 0, 0, 0, inLoc.Location())
-	return floored.Unix()
-}
-
-// errorReportID 由窗口起点生成稳定报告标识，用于补发识别与去重关联。
-func errorReportID(windowStart int64) string {
-	return fmt.Sprintf("errrep-%d", windowStart)
-}
-
-// Run 从持久配置读取许可，生成到期窗口，再恢复过期投递、清理收件人并发送。
-// 单地址失败不影响其它地址；实际失败及积压写入现有系统任务的可见错误摘要。
 func (h *errorReportHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
-	enabled, recipients, err := model.GetErrorReportConfiguration(ctx)
+	recipients, err := model.GetOperationsMailRecipients(ctx)
 	if err != nil {
 		failSystemTask(task, runnerID, err)
 		return
 	}
-	if !enabled {
-		finishErrorReportTask(task, runnerID, errorReportTaskResult{Note: "disabled"}, nil)
-		return
-	}
 	if len(recipients) == 0 {
-		failSystemTask(task, runnerID, errors.New("每小时报告已启用但未配置合法收件人"))
+		finishErrorReportTask(task, runnerID, errorReportTaskResult{Note: "no recipients"}, nil)
 		return
 	}
-	if common.SMTPServer == "" || common.SMTPAccount == "" {
-		failSystemTask(task, runnerID, errors.New("SMTP 服务器未配置，无法发送每小时报告"))
-		return
-	}
-
 	result := errorReportTaskResult{}
-	generated, failedWindows, genErr := h.generateDueWindows(ctx, recipients)
+	generated, failedWindows, genErr := h.generateDailyReport(ctx)
 	result.GeneratedWindows = generated
 	result.FailedWindows = failedWindows
 	if genErr != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("error report generation pass failed: %v", genErr))
 	}
 
-	requeued, err := model.RequeueStaleErrorReportDeliveries(h.now().Unix(), errorReportMaxRequeuePerRun)
+	expired, err := model.MarkExpiredErrorReportDeliveriesUnknown(h.now().Unix(), errorReportMaxRequeuePerRun)
 	if err != nil {
 		finishErrorReportTask(task, runnerID, result, err)
 		return
 	}
-	result.RequeuedStale = requeued
+	result.ExpiredUnknown = expired
 	keep := make(map[string]bool, len(recipients))
 	for _, recipient := range recipients {
 		keep[recipient] = true
@@ -172,7 +122,7 @@ type errorReportTaskResult struct {
 	DeliverAttempted      int      `json:"deliver_attempted"`
 	DeliverAccepted       int      `json:"deliver_accepted"`
 	StoppedRemoved        int64    `json:"stopped_removed_recipients"`
-	RequeuedStale         int64    `json:"requeued_stale"`
+	ExpiredUnknown        int64    `json:"expired_unknown"`
 	BacklogReports        int64    `json:"backlog_reports"`
 	BacklogDeliveries     int64    `json:"backlog_deliveries"`
 	EarliestBacklogWindow int64    `json:"earliest_backlog_window"`
@@ -185,8 +135,8 @@ func finishErrorReportTask(task *model.SystemTask, runnerID string, result error
 		status = model.SystemTaskStatusFailed
 		message = sanitizeErrorReportError(runErr)
 	}
-	if runErr != nil || result.BacklogDeliveries > 0 || len(result.FailedWindows) > 0 {
-		message = fmt.Sprintf("生成失败 %d 个窗口；投递 %d/%d 成功；积压 %d 封。%s", len(result.FailedWindows), result.DeliverAccepted, result.DeliverAttempted, result.BacklogDeliveries, message)
+	if runErr != nil || result.BacklogDeliveries > 0 || len(result.FailedWindows) > 0 || result.ExpiredUnknown > 0 {
+		message = fmt.Sprintf("生成失败 %d 个窗口；投递 %d/%d 受理；积压 %d 封；租约过期结果待核对 %d 封。%s", len(result.FailedWindows), result.DeliverAccepted, result.DeliverAttempted, result.BacklogDeliveries, result.ExpiredUnknown, message)
 	}
 	if err := model.FinishSystemTask(task.TaskID, runnerID, status, result, message); err != nil {
 		logSystemTaskLockError(context.Background(), task, err)
@@ -206,140 +156,17 @@ func sanitizeErrorReportError(err error) string {
 	return text
 }
 
-// generateDueWindows 按持久化调度进度生成到期窗口。窗口进度只能在报告
-// 持久化可恢复后推进；源数据故障时记录生成失败并停止本轮，不跳过窗口。
-func (h *errorReportHandler) generateDueWindows(ctx context.Context, recipients []string) (int, []string, error) {
-	loc := errorReportLocation()
-	generated := 0
-	var failed []string
-	for i := 0; i < errorReportMaxGeneratePerRun; i++ {
-		if ctx.Err() != nil {
-			return generated, failed, ctx.Err()
-		}
-		windowStart, err := model.NextErrorReportWindow(ctx)
-		if err != nil {
-			return generated, failed, err
-		}
-		if windowStart == 0 {
-			break
-		}
-		if windowStart+errorReportWindowSeconds > h.now().Unix() {
-			break // 窗口未到期
-		}
-		if err := h.processWindow(ctx, windowStart, recipients); err != nil {
-			failed = append(failed, fmt.Sprintf("%s: %s",
-				time.Unix(windowStart, 0).In(loc).Format("2006-01-02 15:04"), sanitizeErrorReportError(err)))
-			return generated, failed, err
-		}
-		generated++
-	}
-	return generated, failed, nil
-}
-
-// processWindow 生成单个小时报告：已有 ready 报告只推进窗口；building/
-// failed 报告或新窗口先做单次一致快照读取，再在单个事务内发布分卷与
-// 投递行；发布成功后 CAS 推进窗口。崩溃后 ready 报告只推进进度，不重建正文。
-func (h *errorReportHandler) processWindow(ctx context.Context, windowStart int64, recipients []string) error {
-	windowEnd := windowStart + errorReportWindowSeconds
-	report, err := model.GetErrorReportByWindowStart(windowStart)
-	if err != nil {
-		return err
-	}
-	if report != nil && report.Status == model.ErrorReportStatusReady {
-		_, advErr := model.AdvanceErrorReportWindow(windowStart)
-		return advErr
-	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	view, parts, err := h.buildErrorReport(ctx, windowStart, windowEnd, func(visit func(*model.ErrorEvent) error) (map[int]string, error) {
-		return model.WalkErrorEventsForReport(ctx, windowStart, windowEnd, visit)
-	})
-	if err != nil {
-		h.markWindowFailed(windowStart, windowEnd, err)
-		return err
-	}
-	defer parts.file.Close()
-	if report == nil {
-		report = &model.ErrorReport{
-			ReportID:    errorReportID(windowStart),
-			WindowStart: windowStart,
-			WindowEnd:   windowEnd,
-			Timezone:    errorReportLocationName,
-			Status:      model.ErrorReportStatusBuilding,
-		}
-		inserted, err := model.InsertErrorReportBuilding(report)
-		if err != nil {
-			return err
-		}
-		if !inserted {
-			// 并发节点已创建本窗口报告：按既有报告处理，下一轮换会重新评估。
-			existing, lookupErr := model.GetErrorReportByWindowStart(windowStart)
-			if lookupErr != nil {
-				return lookupErr
-			}
-			if existing != nil && existing.Status == model.ErrorReportStatusReady {
-				_, advErr := model.AdvanceErrorReportWindow(windowStart)
-				return advErr
-			}
-			return fmt.Errorf("concurrent report creation for window %d", windowStart)
-		}
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	enabled, currentRecipients, err := model.GetErrorReportConfiguration(ctx)
-	if err != nil {
-		return err
-	}
-	if !enabled {
-		return context.Canceled
-	}
-	recipients = currentRecipients
-	partNo := 0
-	if err := model.PublishErrorReportParts(ctx, view.ReportID, func() (*model.ErrorReportPart, error) {
-		partNo++
-		return parts.nextPart(view, partNo)
-	}, recipients, view.TotalEvents, view.SummaryJSON, view.DataNote); err != nil {
-		h.markWindowFailed(windowStart, windowEnd, err)
-		return err
-	}
-	_, err = model.AdvanceErrorReportWindow(windowStart)
-	return err
-}
-
-// markWindowFailed 把窗口生成失败记录为 failed 报告行（不回退窗口进度），
-// 保证故障在系统任务与报告状态中可见，恢复后可重建。
-func (h *errorReportHandler) markWindowFailed(windowStart, windowEnd int64, cause error) {
-	report := &model.ErrorReport{
-		ReportID:    errorReportID(windowStart),
-		WindowStart: windowStart,
-		WindowEnd:   windowEnd,
-		Timezone:    errorReportLocationName,
-		Status:      model.ErrorReportStatusBuilding,
-	}
-	_, err := model.InsertErrorReportBuilding(report)
-	if err != nil {
-		logger.LogWarn(context.Background(), fmt.Sprintf("error report failed-window record failed: %v", err))
-		return
-	}
-	if err := model.MarkErrorReportFailed(report.ReportID, sanitizeErrorReportError(cause)); err != nil {
-		logger.LogWarn(context.Background(), fmt.Sprintf("error report failed-window mark failed: %v", err))
-	}
-}
-
-// deliverClaims 领取到期投递并逐条发送。一个地址失败不影响其他地址；
-// ctx 取消（租约丢失）立即停止后续发送，未写实结果的行按结果不明由
-// 过期恢复重试。
+// Claim immediately before each submission so later messages never wait with a running lease.
 func (h *errorReportHandler) deliverClaims(ctx context.Context, runnerID string) (int, int, error) {
 	owner := fmt.Sprintf("%s-%s", runnerID, common.GetRandomString(8))
 	attempted, accepted := 0, 0
 	var failures error
 	for i := 0; i < errorReportMaxDeliverPerRun; i++ {
-		enabled, recipients, err := model.GetErrorReportConfiguration(ctx)
+		recipients, err := model.GetOperationsMailRecipients(ctx)
 		if err != nil {
 			return attempted, accepted, errors.Join(failures, err)
 		}
-		if !enabled {
+		if len(recipients) == 0 {
 			break
 		}
 		keep := make(map[string]bool, len(recipients))
@@ -364,49 +191,39 @@ func (h *errorReportHandler) deliverClaims(ctx context.Context, runnerID string)
 		if sendErr == nil && part == nil {
 			sendErr = errors.New("report part unavailable")
 		}
-		var report *model.ErrorReport
-		if sendErr == nil {
-			report, sendErr = model.GetErrorReportByReportID(claim.ReportID)
-			if report == nil && sendErr == nil {
-				sendErr = errors.New("report unavailable")
-			}
-		}
-		enabled, recipients, err = model.GetErrorReportConfiguration(ctx)
+		recipients, err = model.GetOperationsMailRecipients(ctx)
 		if err != nil {
-			return attempted, accepted, errors.Join(failures, err)
+			_, finishErr := model.FinishErrorReportDelivery(claim.ID, owner, model.MailDeliveryRetryWait, "", "", now+60, 0)
+			return attempted, accepted, errors.Join(failures, err, finishErr)
 		}
-		if !enabled || !slices.Contains(recipients, claim.Recipient) {
-			state, reason := model.ErrorReportDeliveryRetryWait, ""
-			if enabled {
-				state, reason = model.ErrorReportDeliveryStopped, model.ErrorReportStopRecipientRemoved
-			}
-			_, err = model.FinishErrorReportDelivery(claim.ID, owner, state, "", reason, now, 0)
-			if err != nil {
+		if !slices.Contains(recipients, claim.Recipient) {
+			if len(recipients) == 0 {
+				_, err = model.FinishErrorReportDelivery(claim.ID, owner, model.MailDeliveryRetryWait, "", "", now, 0)
 				return attempted, accepted, errors.Join(failures, err)
 			}
-			if !enabled {
-				break
+			_, err = model.FinishErrorReportDelivery(claim.ID, owner, model.MailDeliveryStopped, "", model.ErrorReportStopRecipientRemoved, now, 0)
+			if err != nil {
+				return attempted, accepted, errors.Join(failures, err)
 			}
 			continue
 		}
 		if sendErr == nil {
-			subject := part.Subject
-			if now > report.WindowEnd+int64(errorReportResendGrace.Seconds()) {
-				subject = "[补发] [Resent] " + subject
-			}
 			attempted++
-			sendErr = h.send(ctx, subject, claim.Recipient, part.BodyHTML)
+			sendErr = h.send(ctx, part.Subject, claim.Recipient, part.BodyHTML)
 		}
-		if ctx.Err() != nil {
-			return attempted, accepted, errors.Join(failures, ctx.Err())
-		}
-		state, next, acceptedAt := model.ErrorReportDeliveryAccepted, int64(0), h.now().Unix()
+		state, next, acceptedAt := model.MailDeliveryAccepted, int64(0), h.now().Unix()
 		message := ""
 		if sendErr != nil {
-			state, next, acceptedAt = model.ErrorReportDeliveryRetryWait, h.now().Unix()+errorReportBackoff(claim.Attempts), 0
+			state, acceptedAt = model.MailDeliveryRetryWait, 0
+			if errors.Is(sendErr, common.ErrMailSubmissionUnknown) {
+				state = model.MailDeliveryUnknown
+			} else {
+				next = h.now().Unix() + mailDeliveryBackoff(claim.Attempts)
+			}
 			message = sanitizeErrorReportError(sendErr)
 			failures = errors.Join(failures, sendErr)
 		}
+		// A canceled task must still record the known outcome of its last submission.
 		ok, err := model.FinishErrorReportDelivery(claim.ID, owner, state, message, "", next, acceptedAt)
 		if err != nil {
 			failures = errors.Join(failures, err)
@@ -414,6 +231,9 @@ func (h *errorReportHandler) deliverClaims(ctx context.Context, runnerID string)
 			failures = errors.Join(failures, errors.New("投递结果写回失败：租约已变化"))
 		} else if sendErr == nil {
 			accepted++
+		}
+		if ctx.Err() != nil {
+			return attempted, accepted, errors.Join(failures, ctx.Err())
 		}
 	}
 	return attempted, accepted, failures

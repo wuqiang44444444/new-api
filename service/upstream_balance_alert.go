@@ -29,7 +29,7 @@ func init() {
 
 func (*upstreamBalanceAlertHandler) Type() string { return model.SystemTaskTypeUpstreamBalanceAlert }
 func (*upstreamBalanceAlertHandler) Enabled() bool {
-	return common.SMTPServer != "" && len(operation_setting.ParseErrorReportRecipients(operation_setting.GetErrorReportSetting().Recipients)) > 0
+	return common.MailTransportReady() && len(operation_setting.ParseErrorReportRecipients(operation_setting.ErrorReportSettingSnapshot().Recipients)) > 0
 }
 func (*upstreamBalanceAlertHandler) Interval() time.Duration { return 10 * time.Minute }
 func (*upstreamBalanceAlertHandler) NewPayload() any         { return nil }
@@ -40,6 +40,7 @@ type upstreamBalanceAlertSummary struct {
 	Sent    int `json:"sent"`
 	Skipped int `json:"skipped"`
 	Failed  int `json:"failed"`
+	Unknown int `json:"unknown"`
 }
 
 func (h *upstreamBalanceAlertHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
@@ -47,6 +48,9 @@ func (h *upstreamBalanceAlertHandler) Run(ctx context.Context, task *model.Syste
 	status, message := model.SystemTaskStatusSucceeded, ""
 	if err != nil || result.Failed > 0 {
 		status, message = model.SystemTaskStatusFailed, "上游余额检查或邮件投递失败，将在下次检查重试 / Balance check or email delivery failed; retry on next check"
+	}
+	if result.Unknown > 0 {
+		status, message = model.SystemTaskStatusFailed, "部分邮件提交结果待核对 / Some mail submissions need reconciliation"
 	}
 	if err := model.FinishSystemTask(task.TaskID, runnerID, status, result, message); err != nil {
 		logSystemTaskLockError(ctx, task, err)
@@ -80,15 +84,15 @@ func classifyUpstreamBalanceAlert(result UpstreamBalanceResult, cnyPerUSD decima
 
 func (h *upstreamBalanceAlertHandler) checkAndNotify(ctx context.Context, owner string) (upstreamBalanceAlertSummary, error) {
 	result := upstreamBalanceAlertSummary{}
-	recipients, err := model.GetUpstreamBalanceAlertRecipients(ctx)
+	recipients, err := model.GetOperationsMailRecipients(ctx)
 	if err != nil {
 		return result, errors.New("unable to read report recipients")
 	}
 	if len(recipients) == 0 {
 		return result, nil
 	}
-	if common.SMTPServer == "" {
-		return result, errors.New("SMTP not configured")
+	if !common.MailTransportReady() {
+		return result, errors.New("Mail delivery is not configured")
 	}
 	channels, err := model.GetUpstreamBalanceChannels(ctx)
 	if err != nil {
@@ -135,7 +139,7 @@ func (h *upstreamBalanceAlertHandler) checkAndNotify(ctx context.Context, owner 
 			}
 			// Removing a recipient while upstream requests are in flight must stop
 			// that recipient's upcoming sends, independently of option-cache sync.
-			current, err := model.GetUpstreamBalanceAlertRecipients(ctx)
+			current, err := model.GetOperationsMailRecipients(ctx)
 			if err != nil {
 				return result, errors.New("unable to recheck report recipients")
 			}
@@ -154,16 +158,21 @@ func (h *upstreamBalanceAlertHandler) checkAndNotify(ctx context.Context, owner 
 			}
 			sendErr := h.send(ctx, "上游余额低于 100 美元 / Upstream balance below USD 100", recipient, body)
 			sentAt := int64(0)
+			var unknownAt *int64
 			if sendErr == nil {
 				sentAt = h.now().Unix()
 				result.Sent++
+			} else if errors.Is(sendErr, common.ErrMailSubmissionUnknown) {
+				at := h.now().Unix()
+				unknownAt = &at
+				result.Unknown++
 			} else {
 				result.Failed++
 			}
-			// A successful SMTP DATA acknowledgement must be recorded even if the
+			// A successful transport acceptance must be recorded even if the
 			// scheduler context was just cancelled. CAS still fences a new owner.
 			finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			err = model.FinishUpstreamBalanceAlert(finishCtx, id, owner, sentAt)
+			err = model.FinishUpstreamBalanceAlert(finishCtx, id, owner, sentAt, unknownAt)
 			cancel()
 			if err != nil {
 				return result, errors.New("unable to record balance alert delivery")
@@ -175,22 +184,26 @@ func (h *upstreamBalanceAlertHandler) checkAndNotify(ctx context.Context, owner 
 
 func renderUpstreamBalanceAlert(connection UpstreamBalanceConnection, result UpstreamBalanceResult, rate decimal.Decimal) string {
 	amount := result.Amounts[0]
-	var channels strings.Builder
-	for _, channel := range connection.Channels {
-		fmt.Fprintf(&channels, "<li>#%d %s</li>", channel.ID, html.EscapeString(channel.Name))
+	var body strings.Builder
+	body.WriteString("<p>检测到余额低于 100 USD。 / The reported balance is below USD 100.</p>")
+	rows := [][2]string{
+		{"上游 / Upstream", connection.Origin},
+		{"Key", connection.KeyLabel},
+		{"上游返回余额 / Reported balance", amount.Amount + " " + amount.Unit},
+		{"查询时间 / Checked at (UTC)", time.Unix(result.CheckedAt, 0).UTC().Format(time.RFC3339)},
 	}
-	rateNote := ""
 	if amount.Unit == "CNY" {
-		rateNote = fmt.Sprintf("<p>系统美元汇率 / System exchange rate: 1 USD = %s CNY</p>", rate.String())
+		rows = append(rows, [2]string{"系统美元汇率 / System exchange rate", "1 USD = " + rate.String() + " CNY"})
 	}
-	scopeNote := ""
+	writeOperationsMailRows(&body, rows)
 	if result.Scope == "unconfirmed" {
-		scopeNote = "<p>账户 / Key 口径待确认；请核对上游后台。 / Account or key scope is unconfirmed; verify in the upstream console.</p>"
+		body.WriteString("<p>账户 / Key 口径待确认，请核对上游后台。 / Account or key scope is unconfirmed. Verify in the upstream console.</p>")
 	}
-	return fmt.Sprintf(`<h2>上游低余额提醒 / Low upstream balance</h2>
-<p>检测到余额低于 100 USD。 / The reported balance is below USD 100.</p>
-<p>上游 / Upstream: %s<br>Key: %s<br>上游返回余额 / Reported balance: <strong>%s %s</strong><br>查询时间 / Checked at (UTC): %s</p>
-%s%s<ul>%s</ul>
-<p>多个 Key 可能共用同一账户，请勿合计。 / Keys may share an account; do not add these balances together.</p>
-<p>系统每 10 分钟检查；持续低余额每 24 小时再次提醒，恢复后再次跌破会重新提醒。 / Checked every 10 minutes; persistent low balances are reminded every 24 hours, or upon a new drop after recovery.</p>`, html.EscapeString(connection.Origin), html.EscapeString(connection.KeyLabel), html.EscapeString(amount.Amount), html.EscapeString(amount.Unit), time.Unix(result.CheckedAt, 0).UTC().Format(time.RFC3339), rateNote, scopeNote, channels.String())
+	body.WriteString(`<h3 style="margin:18px 0 6px;font-size:15px;color:#14283f">关联渠道 / Affected channels</h3><ul>`)
+	for _, channel := range connection.Channels {
+		fmt.Fprintf(&body, "<li>#%d %s</li>", channel.ID, html.EscapeString(channel.Name))
+	}
+	body.WriteString(`</ul><p>多个 Key 可能共用同一账户，请勿合计。 / Keys may share an account. Do not add these balances together.</p>
+<p>每 10 分钟检查一次。持续低余额每 24 小时再次提醒，恢复后再次跌破会重新提醒。 / Checked every 10 minutes. Reminders repeat every 24 hours while low or after a new drop following recovery.</p>`)
+	return renderOperationsMail("上游低余额提醒 / Low upstream balance", body.String())
 }

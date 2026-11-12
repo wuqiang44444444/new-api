@@ -3,20 +3,12 @@ package model
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
-
-// 每小时系统运行与错误邮件报告的持久化投递模型
-// （docs/80-dev/2026-09-17-每小时系统运行与错误邮件报告开发方案.md 第 6 节）。
-// 报告是既有错误/统计事实的投递快照，不是新的错误事实源；主库为权威，
-// 投递状态不写入 ClickHouse。状态枚举是内部实现，不作为已发布协议。
 
 const (
 	// ErrorReportScheduleScopeGlobal 是调度状态的单实例作用域。
@@ -24,40 +16,28 @@ const (
 
 	ErrorReportStatusBuilding = "building"
 	ErrorReportStatusReady    = "ready"
-	ErrorReportStatusFailed   = "failed"
-
-	ErrorReportDeliveryPending   = "pending"
-	ErrorReportDeliverySending   = "sending"
-	ErrorReportDeliveryAccepted  = "smtp_accepted"
-	ErrorReportDeliveryRetryWait = "retry_wait"
-	ErrorReportDeliveryStopped   = "stopped"
 
 	ErrorReportStopRecipientRemoved = "recipient_removed"
 )
 
-// ErrorReportSchedule 是报告调度的单实例持久状态：启用基准、下一待生成窗口。
-// 首次启用的窗口基准持久化在本行，进程重启后从已持久化进度继续。
+// ErrorReportSchedule tracks the next Beijing day and delivery round-robin position.
 type ErrorReportSchedule struct {
-	ID      int64  `json:"id" gorm:"primaryKey"`
-	Scope   string `json:"scope" gorm:"type:varchar(32);uniqueIndex"`
-	Enabled bool   `json:"enabled"`
-	// BaseWindowStart 是首次启用时所在自然小时的起点（绝对时间戳），0 表示从未启用。
-	BaseWindowStart int64 `json:"base_window_start"`
-	// NextWindowStart 是下一个待生成窗口的起点（绝对时间戳），0 表示无待生成窗口。
-	NextWindowStart int64  `json:"next_window_start"`
-	UpdatedAt       int64  `json:"updated_at" gorm:"bigint"`
-	Periods         string `json:"-" gorm:"type:text"`
-	DeliveryCursor  string `json:"-" gorm:"type:varchar(255)"`
+	ID               int64  `gorm:"primaryKey"`
+	Scope            string `gorm:"type:varchar(32);uniqueIndex"`
+	DailyWindowStart int64  `gorm:"bigint"`
+	UpdatedAt        int64  `gorm:"bigint"`
+	DeliveryCursor   string `gorm:"type:varchar(255)"`
 }
 
-// ErrorReport 是一小时报告的根记录；WindowStart 唯一约束保证同一窗口只有一份报告。
+// ErrorReport is a frozen daily report or a historical hourly report.
 type ErrorReport struct {
-	ID          int64  `json:"id" gorm:"primaryKey"`
-	ReportID    string `json:"report_id" gorm:"type:varchar(64);uniqueIndex"`
-	WindowStart int64  `json:"window_start" gorm:"bigint;uniqueIndex"`
-	WindowEnd   int64  `json:"window_end" gorm:"bigint"`
-	Timezone    string `json:"timezone" gorm:"type:varchar(64)"`
-	Status      string `json:"status" gorm:"type:varchar(32);index"`
+	ID                int64  `json:"id" gorm:"primaryKey"`
+	ReportID          string `json:"report_id" gorm:"type:varchar(64);uniqueIndex"`
+	WindowStart       int64  `json:"window_start" gorm:"bigint;uniqueIndex:idx_error_report_window,priority:1"`
+	WindowEnd         int64  `json:"window_end" gorm:"bigint;uniqueIndex:idx_error_report_window,priority:2"`
+	AggregatedThrough int64  `json:"-" gorm:"bigint"`
+	Timezone          string `json:"timezone" gorm:"type:varchar(64)"`
+	Status            string `json:"status" gorm:"type:varchar(32);index"`
 	// GeneratedAt 是快照生成时刻；DataNote 是「截至生成时已入库」等数据说明。
 	GeneratedAt int64  `json:"generated_at" gorm:"bigint"`
 	DataNote    string `json:"data_note" gorm:"type:varchar(255)"`
@@ -135,163 +115,63 @@ func (d *ErrorReportDelivery) BeforeSave(_ *gorm.DB) error {
 	return nil
 }
 
-// GetErrorReportSchedule 读取单实例调度状态；不存在时返回 (nil, nil)。
-func GetErrorReportSchedule() (*ErrorReportSchedule, error) {
+// lockErrorReportSchedule serializes publishing and claims.
+// SQLite reserves the writer before reading, as it has no row lock.
+func lockErrorReportSchedule(tx *gorm.DB) (ErrorReportSchedule, error) {
 	var schedule ErrorReportSchedule
-	err := DB.Where("scope = ?", ErrorReportScheduleScopeGlobal).First(&schedule).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
+	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+		if err := tx.Model(&ErrorReportSchedule{}).Where("scope = ?", ErrorReportScheduleScopeGlobal).
+			UpdateColumn("delivery_cursor", gorm.Expr("delivery_cursor")).Error; err != nil {
+			return schedule, err
 		}
-		return nil, err
 	}
-	return &schedule, nil
+	err := lockForUpdate(tx).Where("scope = ?", ErrorReportScheduleScopeGlobal).First(&schedule).Error
+	return schedule, err
 }
 
-// AdvanceErrorReportWindow 用条件更新把待生成窗口从 fromStart 推进到
-// fromStart+3600；仅当当前值仍为 fromStart 时生效（CAS），并发节点重复
-// 推进时返回 false。窗口进度只能在报告持久化可恢复后推进。
-func AdvanceErrorReportWindow(fromStart int64) (bool, error) {
-	result := DB.Model(&ErrorReportSchedule{}).
-		Where("scope = ? AND next_window_start = ?", ErrorReportScheduleScopeGlobal, fromStart).
-		Updates(map[string]any{
-			"next_window_start": fromStart + 3600,
-			"updated_at":        time.Now().Unix(),
-		})
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected > 0, nil
-}
-
-// GetErrorReportByWindowStart 按窗口起点取报告；不存在返回 (nil, nil)。
-func GetErrorReportByWindowStart(windowStart int64) (*ErrorReport, error) {
-	var report ErrorReport
-	err := DB.Where("window_start = ?", windowStart).First(&report).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &report, nil
-}
-
-// InsertErrorReportBuilding 为窗口创建 building 状态的报告行；
-// 返回报告是否存在；唯一约束冲突不授予重建权，发布事务会锁定并核对状态。
-func InsertErrorReportBuilding(report *ErrorReport) (bool, error) {
-	err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(report).Error
-	if err != nil {
-		return false, err
-	}
-	var count int64
-	if err := DB.Model(&ErrorReport{}).Where("report_id = ?", report.ReportID).Count(&count).Error; err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
-
-// MarkErrorReportFailed 记录窗口生成失败；不回退窗口进度。
-func MarkErrorReportFailed(reportID string, reason string) error {
-	return DB.Model(&ErrorReport{}).
-		Where("report_id = ? AND status IN ?", reportID, []string{ErrorReportStatusBuilding, ErrorReportStatusFailed}).
-		Updates(map[string]any{
-			"status":         ErrorReportStatusFailed,
-			"failure_reason": reason,
-			"updated_at":     time.Now().Unix(),
-		}).Error
-}
-
-// PublishErrorReportParts 在单个事务内完成报告的发布：清空旧分卷与投递行
-// （仅 building/failed 报告允许重建）、写入冻结分卷与初始投递行、把报告
-// 标记为 ready 并记录总数。全部成功才提交，避免发送半份报告。
-func PublishErrorReportParts(ctx context.Context, reportID string, next func() (*ErrorReportPart, error), recipients []string, totalEvents int, summary string, dataNote string) error {
+// PublishDailyReport commits a complete frozen message and its per-address deliveries.
+func PublishDailyReport(ctx context.Context, part *ErrorReportPart, recipients []string, totalEvents int, summary, dataNote string) error {
 	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var report ErrorReport
-		if err := lockForUpdate(tx).Where("report_id = ?", reportID).First(&report).Error; err != nil {
+		schedule, err := lockErrorReportSchedule(tx)
+		if err != nil {
 			return err
+		}
+		var report ErrorReport
+		if err := lockForUpdate(tx).Where("report_id = ?", part.ReportID).First(&report).Error; err != nil {
+			return err
+		}
+		if report.WindowEnd-report.WindowStart != DailyReportWindowSeconds {
+			return errors.New("invalid daily report window")
 		}
 		if report.Status == ErrorReportStatusReady {
 			return nil
 		}
-		if report.Status != ErrorReportStatusBuilding && report.Status != ErrorReportStatusFailed {
-			return fmt.Errorf("report %s is not rebuildable: %s", reportID, report.Status)
+		if schedule.DailyWindowStart != report.WindowStart ||
+			report.Status != ErrorReportStatusBuilding || report.AggregatedThrough != report.WindowEnd {
+			return errors.New("daily report window is not ready for publication")
 		}
-		// Serialize publication with an administrator changing enabled periods.
-		var schedule ErrorReportSchedule
-		if err := lockForUpdate(tx).Where("scope = ?", ErrorReportScheduleScopeGlobal).First(&schedule).Error; err != nil {
+		if part.PartNo != 1 {
+			return errors.New("invalid daily report part number")
+		}
+		if err := tx.Create(part).Error; err != nil {
 			return err
 		}
-		if !schedule.Enabled {
-			return errors.New("报告已停用，保留待处理窗口")
-		}
-		var periods []errorReportPeriod
-		if err := common.UnmarshalJsonStr(schedule.Periods, &periods); err != nil {
-			return err
-		}
-		allowed := false
-		for _, period := range periods {
-			if report.WindowStart >= period.Start && (period.End == 0 || report.WindowEnd <= period.End) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return errors.New("报告窗口不属于启用时段")
-		}
-		if err := tx.Where("report_id = ?", reportID).Delete(&ErrorReportPart{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("report_id = ?", reportID).Delete(&ErrorReportDelivery{}).Error; err != nil {
-			return err
-		}
-		totalParts := 0
-		for {
-			if err := ctx.Err(); err != nil {
+		for _, recipient := range recipients {
+			row := ErrorReportDelivery{ReportID: report.ReportID, PartID: part.ID, PartNo: part.PartNo, Recipient: recipient, Status: MailDeliveryPending}
+			if err := tx.Create(&row).Error; err != nil {
 				return err
 			}
-			part, err := next()
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				return err
-			}
-			if part == nil || part.ReportID != reportID || part.PartNo != totalParts+1 {
-				return errors.New("invalid error report part sequence")
-			}
-			if err := tx.Create(part).Error; err != nil {
-				return err
-			}
-			for _, recipient := range recipients {
-				row := &ErrorReportDelivery{ReportID: reportID, PartID: part.ID, PartNo: part.PartNo, Recipient: recipient, Status: ErrorReportDeliveryPending}
-				if err := tx.Create(row).Error; err != nil {
-					return err
-				}
-			}
-			totalParts++
 		}
-		if totalParts == 0 {
-			return errors.New("empty error report publication")
-		}
-		now := time.Now().Unix()
 		recipientsJSON, err := common.Marshal(recipients)
 		if err != nil {
 			return err
 		}
-		return tx.Model(&ErrorReport{}).
-			Where("report_id = ? AND status IN ?", reportID, []string{ErrorReportStatusBuilding, ErrorReportStatusFailed}).
-			Updates(map[string]any{
-				"status":         ErrorReportStatusReady,
-				"generated_at":   now,
-				"data_note":      dataNote,
-				"total_events":   totalEvents,
-				"total_parts":    totalParts,
-				"recipients":     string(recipientsJSON),
-				"summary":        summary,
-				"failure_reason": "",
-				"updated_at":     now,
-			}).Error
+		now := time.Now().Unix()
+		return tx.Model(&report).Updates(map[string]any{
+			"status": ErrorReportStatusReady, "generated_at": now, "data_note": dataNote,
+			"total_events": totalEvents, "total_parts": 1, "recipients": string(recipientsJSON),
+			"summary": summary, "updated_at": now,
+		}).Error
 	})
 }
 
@@ -304,35 +184,37 @@ func ClaimErrorReportDeliveries(now int64, owner string, leaseUntil int64, limit
 	}
 	var deliveries []*ErrorReportDelivery
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		var schedule ErrorReportSchedule
-		if err := lockForUpdate(tx).Where("scope = ?", ErrorReportScheduleScopeGlobal).First(&schedule).Error; err != nil {
+		schedule, err := lockErrorReportSchedule(tx)
+		if err != nil {
 			return err
 		}
 		// The persisted cursor prevents a large first recipient from monopolizing
-		// successive runs. Only the earliest unfinished part per recipient is eligible.
+		// successive runs. Only the earliest pending day per recipient is eligible.
 		for i := 0; i < limit; i++ {
 			query := tx.Table("error_report_deliveries AS d").Select("d.*").
 				Joins("JOIN error_reports r ON r.report_id = d.report_id").
-				Where("d.status IN ? AND d.next_attempt_at <= ?", []string{ErrorReportDeliveryPending, ErrorReportDeliveryRetryWait}, now).
+				Where("r.window_end - r.window_start = ?", DailyReportWindowSeconds).
+				Where("d.status IN ? AND d.next_attempt_at <= ?", []string{MailDeliveryPending, MailDeliveryRetryWait}, now).
 				Where("d.lease_until IS NULL OR d.lease_until < ?", now).
 				Where(`NOT EXISTS (SELECT 1 FROM error_report_deliveries earlier
      JOIN error_reports er ON er.report_id = earlier.report_id
      WHERE earlier.recipient = d.recipient AND earlier.status IN ?
-     AND (er.window_start < r.window_start OR (er.window_start = r.window_start AND earlier.part_no < d.part_no)))`,
-					[]string{ErrorReportDeliveryPending, ErrorReportDeliveryRetryWait, ErrorReportDeliverySending})
+    AND er.window_end - er.window_start = ? AND er.window_start < r.window_start)`,
+					[]string{MailDeliveryPending, MailDeliveryRetryWait, MailDeliverySending}, DailyReportWindowSeconds)
 			var delivery ErrorReportDelivery
-			err := query.Session(&gorm.Session{}).Where("d.recipient > ?", schedule.DeliveryCursor).Order("d.recipient asc").Take(&delivery).Error
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				err = query.Order("d.recipient asc").Take(&delivery).Error
+			candidate := query.Session(&gorm.Session{}).Where("d.recipient > ?", schedule.DeliveryCursor).
+				Order("d.recipient asc").Limit(1).Find(&delivery)
+			if candidate.Error == nil && candidate.RowsAffected == 0 && schedule.DeliveryCursor != "" {
+				candidate = query.Order("d.recipient asc").Limit(1).Find(&delivery)
 			}
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if candidate.Error != nil {
+				return candidate.Error
+			}
+			if candidate.RowsAffected == 0 {
 				break
 			}
-			if err != nil {
-				return err
-			}
-			result := tx.Model(&ErrorReportDelivery{}).Where("id = ? AND status IN ?", delivery.ID, []string{ErrorReportDeliveryPending, ErrorReportDeliveryRetryWait}).
-				Updates(map[string]any{"status": ErrorReportDeliverySending, "lease_owner": owner, "lease_until": leaseUntil, "attempts": gorm.Expr("attempts + 1"), "updated_at": now})
+			result := tx.Model(&ErrorReportDelivery{}).Where("id = ? AND status IN ?", delivery.ID, []string{MailDeliveryPending, MailDeliveryRetryWait}).
+				Updates(map[string]any{"status": MailDeliverySending, "lease_owner": owner, "lease_until": leaseUntil, "attempts": gorm.Expr("attempts + 1"), "updated_at": now})
 			if result.Error != nil {
 				return result.Error
 			}
@@ -356,17 +238,15 @@ func ClaimErrorReportDeliveries(now int64, owner string, leaseUntil int64, limit
 	return deliveries, nil
 }
 
-// RequeueStaleErrorReportDeliveries 把租约过期的 sending 行按「结果不明」
-// 恢复为 retry_wait 并立即重试；SMTP 已接受但本地写回失败的行由此允许
-// 偶尔重复，进度不会永久卡死。
-func RequeueStaleErrorReportDeliveries(now int64, limit int) (int64, error) {
+// An expired sending lease cannot establish whether the provider received the mail.
+func MarkExpiredErrorReportDeliveriesUnknown(now int64, limit int) (int64, error) {
 	if limit <= 0 {
 		return 0, nil
 	}
 	var ids []int64
 	if err := DB.Model(&ErrorReportDelivery{}).
 		Select("id").
-		Where("status = ? AND lease_until < ?", ErrorReportDeliverySending, now).
+		Where("status = ? AND lease_until < ?", MailDeliverySending, now).
 		Order("id asc").
 		Limit(limit).
 		Pluck("id", &ids).Error; err != nil {
@@ -377,10 +257,13 @@ func RequeueStaleErrorReportDeliveries(now int64, limit int) (int64, error) {
 	}
 	result := DB.Model(&ErrorReportDelivery{}).
 		Where("id IN ?", ids).
-		Where("status = ? AND lease_until < ?", ErrorReportDeliverySending, now).
+		Where("status = ? AND lease_until < ?", MailDeliverySending, now).
 		Updates(map[string]any{
-			"status":          ErrorReportDeliveryRetryWait,
-			"next_attempt_at": now,
+			"status":          MailDeliveryUnknown,
+			"next_attempt_at": 0,
+			"lease_owner":     "",
+			"lease_until":     nil,
+			"last_error":      "mail submission lease expired",
 			"updated_at":      now,
 		})
 	return result.RowsAffected, result.Error
@@ -394,18 +277,16 @@ func FinishErrorReportDelivery(id int64, owner string, status string, lastError 
 		"stop_reason": stopReason,
 		"updated_at":  time.Now().Unix(),
 	}
-	if nextAttemptAt > 0 {
-		updates["next_attempt_at"] = nextAttemptAt
-	}
+	updates["next_attempt_at"] = nextAttemptAt
 	if acceptedAt > 0 {
 		updates["accepted_at"] = acceptedAt
 	}
-	if status != ErrorReportDeliverySending {
+	if status != MailDeliverySending {
 		updates["lease_until"] = nil
 		updates["lease_owner"] = ""
 	}
 	result := DB.Model(&ErrorReportDelivery{}).
-		Where("id = ? AND lease_owner = ? AND status = ?", id, owner, ErrorReportDeliverySending).
+		Where("id = ? AND lease_owner = ? AND status = ?", id, owner, MailDeliverySending).
 		Updates(updates)
 	if result.Error != nil {
 		return false, result.Error
@@ -421,12 +302,12 @@ func StopErrorReportDeliveriesForRecipients(keep map[string]bool) (int64, error)
 		keepList = append(keepList, recipient)
 	}
 	query := DB.Model(&ErrorReportDelivery{}).
-		Where("status IN ?", []string{ErrorReportDeliveryPending, ErrorReportDeliveryRetryWait})
+		Where("status IN ?", []string{MailDeliveryPending, MailDeliveryRetryWait})
 	if len(keepList) > 0 {
 		query = query.Where("recipient NOT IN ?", keepList)
 	}
 	result := query.Updates(map[string]any{
-		"status":      ErrorReportDeliveryStopped,
+		"status":      MailDeliveryStopped,
 		"stop_reason": ErrorReportStopRecipientRemoved,
 		"updated_at":  time.Now().Unix(),
 	})
@@ -446,21 +327,7 @@ func GetErrorReportPartByID(id int64) (*ErrorReportPart, error) {
 	return &part, nil
 }
 
-// GetErrorReportByReportID 取报告根记录。
-func GetErrorReportByReportID(reportID string) (*ErrorReport, error) {
-	var report ErrorReport
-	err := DB.Where("report_id = ?", reportID).First(&report).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &report, nil
-}
-
-// ErrorReportBacklogStats 是系统任务状态用的安全汇总：待发小时数（仍有
-// 非终态投递的 ready 报告数）、待发分卷数与最早积压窗口。
+// ErrorReportBacklogStats summarizes pending daily deliveries for operators.
 type ErrorReportBacklogStats struct {
 	ReportsWithPending int64 `json:"reports_with_pending"`
 	PendingDeliveries  int64 `json:"pending_deliveries"`
@@ -472,13 +339,13 @@ func GetErrorReportBacklogStats() (*ErrorReportBacklogStats, error) {
 	stats := &ErrorReportBacklogStats{}
 	subQuery := DB.Model(&ErrorReportDelivery{}).
 		Select("report_id").
-		Where("status IN ?", []string{ErrorReportDeliveryPending, ErrorReportDeliveryRetryWait, ErrorReportDeliverySending}).
+		Where("status IN ?", []string{MailDeliveryPending, MailDeliveryRetryWait, MailDeliverySending}).
 		Group("report_id")
 	if err := DB.Model(&ErrorReport{}).Where("report_id IN (?)", subQuery).Count(&stats.ReportsWithPending).Error; err != nil {
 		return nil, err
 	}
 	if err := DB.Model(&ErrorReportDelivery{}).
-		Where("status IN ?", []string{ErrorReportDeliveryPending, ErrorReportDeliveryRetryWait, ErrorReportDeliverySending}).
+		Where("status IN ?", []string{MailDeliveryPending, MailDeliveryRetryWait, MailDeliverySending}).
 		Count(&stats.PendingDeliveries).Error; err != nil {
 		return nil, err
 	}

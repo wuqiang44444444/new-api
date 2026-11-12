@@ -18,190 +18,133 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { SettingsPageProvider } from '../../components/settings-page-context'
 import { EmailSettingsSection } from '../email-settings-section'
 
-const { put } = vi.hoisted(() => ({ put: vi.fn() }))
-vi.mock('@/lib/api', () => ({ api: { put } }))
+const { get, put, post } = vi.hoisted(() => ({
+  get: vi.fn(),
+  put: vi.fn(),
+  post: vi.fn(),
+}))
+vi.mock('@/lib/api', () => ({ api: { get, put, post } }))
 
 const defaults = {
-  SMTPServer: 'smtp.example.com',
-  SMTPPort: '587',
-  SMTPAccount: 'sender@example.com',
-  SMTPFrom: '',
-  SMTPToken: '',
-  SMTPSSLEnabled: false,
-  SMTPStartTLSEnabled: true,
-  SMTPInsecureSkipVerify: false,
-  SMTPForceAuthLogin: false,
-  'error_report_setting.enabled': true,
-  'error_report_setting.recipients': 'ops@example.com',
+  'error_report_setting.recipients': '',
+  'resource_alert_setting.cpu': 85,
+  'resource_alert_setting.memory': 85,
+  'resource_alert_setting.disk': 85,
+}
+const smtp = {
+  server: 'smtp.example.com',
+  port: 587,
+  account: 'sender@example.com',
+  from: '',
+  ssl: false,
+  start_tls: true,
+  skip_verify: false,
+  force_login: false,
 }
 let actions: HTMLDivElement
 beforeEach(() => {
-  put.mockReset().mockResolvedValue({ data: { success: true, message: '' } })
+  get
+    .mockReset()
+    .mockResolvedValue({
+      data: {
+        success: true,
+        data: { config: { mode: 'smtp', smtp }, has_credential: true },
+      },
+    })
+  put.mockReset().mockImplementation(async (url: string, body: unknown) => ({
+    data: {
+      success: true,
+      data:
+        url === '/api/option/mail'
+          ? { config: body, has_credential: true }
+          : null,
+    },
+  }))
+  post.mockReset().mockResolvedValue({ data: { success: true } })
   actions = document.createElement('div')
   document.body.append(actions)
 })
 afterEach(() => actions.remove())
 
-function setup(values = defaults) {
+async function setup(values = defaults) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  const view = (next: typeof defaults) => (
+  render(
     <QueryClientProvider client={client}>
       <SettingsPageProvider actionsContainer={actions}>
-        <EmailSettingsSection defaultValues={next} />
+        <EmailSettingsSection defaultValues={values} />
       </SettingsPageProvider>
     </QueryClientProvider>
   )
-  const result = render(view(values))
-  return { refresh: (next: typeof defaults) => result.rerender(view(next)) }
+  return screen.findByRole('button', { name: 'Save email settings' })
 }
 
-test('keeps shared report recipients editable when hourly reports are disabled', async () => {
-  setup({ ...defaults, 'error_report_setting.enabled': false })
+test('saves the shared report recipients without an enable setting', async () => {
+  const save = await setup()
   fireEvent.change(screen.getByLabelText('Report recipients'), {
-    target: { value: 'balance-alerts@example.com' },
+    target: { value: 'ops@example.com' },
   })
-  fireEvent.click(screen.getByRole('button', { name: 'Save SMTP settings' }))
+  fireEvent.click(save)
   await waitFor(() =>
     expect(put).toHaveBeenCalledWith('/api/option/', {
       key: 'error_report_setting.recipients',
-      value: 'balance-alerts@example.com',
+      value: 'ops@example.com',
     })
   )
-  expect(put.mock.calls.map((call) => call[1].key)).toEqual([
-    'error_report_setting.recipients',
-  ])
+  expect(put).toHaveBeenCalledTimes(1)
 })
 
-describe('SMTP report configuration', () => {
-  test('loaded and refreshed report settings remain valid when only SMTP changes', async () => {
-    const { refresh } = setup()
-    fireEvent.change(screen.getByLabelText('SMTP Host'), {
-      target: { value: 'smtp2.example.com' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Save SMTP settings' }))
-    await waitFor(() =>
-      expect(put).toHaveBeenCalledWith('/api/option/', {
-        key: 'SMTPServer',
-        value: 'smtp2.example.com',
-      })
-    )
-    refresh({
-      ...defaults,
-      SMTPServer: 'smtp2.example.com',
-      'error_report_setting.recipients': 'new@example.com',
-    })
-    await waitFor(() =>
-      expect(screen.getByLabelText('Report recipients')).toHaveValue(
-        'new@example.com'
-      )
-    )
-    fireEvent.change(screen.getByLabelText('SMTP Host'), {
-      target: { value: 'smtp3.example.com' },
-    })
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Save SMTP settings' })
-      ).toBeEnabled()
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Save SMTP settings' }))
-    await waitFor(() =>
-      expect(put).toHaveBeenLastCalledWith('/api/option/', {
-        key: 'SMTPServer',
-        value: 'smtp3.example.com',
-      })
-    )
+test('saves the selected Graph configuration and shared recipients', async () => {
+  const save = await setup()
+  fireEvent.click(screen.getByRole('radio', { name: 'Microsoft Graph' }))
+  fireEvent.change(screen.getByLabelText('Tenant ID'), {
+    target: { value: 'tenant-fixture' },
   })
-
-  test('a settings refresh during save keeps the form busy until every update completes', async () => {
-    const { refresh } = setup()
-    let release!: (value: {
-      data: { success: boolean; message: string }
-    }) => void
-    put.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          release = resolve
-        })
-    )
-    fireEvent.change(screen.getByLabelText('SMTP Host'), {
-      target: { value: 'smtp2.example.com' },
-    })
-    fireEvent.change(screen.getByLabelText('Report recipients'), {
-      target: { value: 'new@example.com' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Save SMTP settings' }))
-    await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
-    refresh({ ...defaults, SMTPServer: 'smtp2.example.com' })
-    expect(screen.getByLabelText('Report recipients')).toHaveValue(
-      'new@example.com'
-    )
-    expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled()
-    release({ data: { success: true, message: '' } })
-    await waitFor(() =>
-      expect(put).toHaveBeenLastCalledWith('/api/option/', {
-        key: 'error_report_setting.recipients',
-        value: 'new@example.com',
-      })
-    )
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Save SMTP settings' })
-      ).toBeEnabled()
-    )
+  fireEvent.change(screen.getByLabelText('Client ID'), {
+    target: { value: 'client-fixture' },
   })
+  fireEvent.change(screen.getByLabelText('Dedicated sender mailbox'), {
+    target: { value: 'sender@example.com' },
+  })
+  fireEvent.change(screen.getByLabelText('Client Secret'), {
+    target: { value: 'synthetic-credential' },
+  })
+  fireEvent.change(screen.getByLabelText('Report recipients'), {
+    target: { value: 'ops@example.com' },
+  })
+  fireEvent.click(save)
+  await waitFor(() => expect(put).toHaveBeenCalledTimes(2))
+  expect(put).toHaveBeenNthCalledWith(1, '/api/option/mail', {
+    mode: 'graph',
+    graph: {
+      tenant_id: 'tenant-fixture',
+      client_id: 'client-fixture',
+      sender: 'sender@example.com',
+      client_secret: 'synthetic-credential',
+    },
+  })
+  expect(put).toHaveBeenNthCalledWith(2, '/api/option/', {
+    key: 'error_report_setting.recipients',
+    value: 'ops@example.com',
+  })
+})
 
-  test.each([true, false])(
-    'first setup saves prerequisites before enabling; SMTP save success=%s',
-    async (success) => {
-      setup({
-        ...defaults,
-        SMTPServer: '',
-        SMTPAccount: '',
-        'error_report_setting.enabled': false,
-        'error_report_setting.recipients': '',
-      })
-      put.mockResolvedValue({
-        data: { success, message: success ? '' : 'save failed' },
-      })
-      fireEvent.change(screen.getByLabelText('SMTP Host'), {
-        target: { value: 'smtp.example.com' },
-      })
-      fireEvent.change(screen.getByLabelText('Username'), {
-        target: { value: 'sender@example.com' },
-      })
-      fireEvent.click(
-        screen.getByRole('switch', { name: 'Hourly system & error report' })
-      )
-      fireEvent.change(await screen.findByLabelText('Report recipients'), {
-        target: { value: 'ops@example.com' },
-      })
-      fireEvent.click(
-        screen.getByRole('button', { name: 'Save SMTP settings' })
-      )
-      await waitFor(() => expect(put).toHaveBeenCalled())
-      await waitFor(() =>
-        expect(
-          screen.getByRole('button', { name: 'Save SMTP settings' })
-        ).toBeEnabled()
-      )
-      const keys = put.mock.calls.map((call) => call[1].key)
-      expect(keys).toEqual(
-        success
-          ? [
-              'SMTPServer',
-              'SMTPAccount',
-              'error_report_setting.recipients',
-              'error_report_setting.enabled',
-            ]
-          : ['SMTPServer']
-      )
-    }
+test('test mail submits only a recipient and uses the saved configuration', async () => {
+  await setup()
+  fireEvent.change(screen.getByLabelText('Test email recipient'), {
+    target: { value: 'inbox@example.com' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Send test email' }))
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith('/api/option/mail/test', {
+      recipient: 'inbox@example.com',
+    })
   )
+  expect(put).not.toHaveBeenCalled()
 })

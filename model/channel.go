@@ -57,6 +57,7 @@ type Channel struct {
 
 	// cache info
 	Keys []string `json:"-" gorm:"-"`
+	AlertAssetRevision string `json:"-" gorm:"-"`
 
 	// Administrative input revision; never persisted as Channel configuration.
 	SeedancePluginVersion string `json:"seedance_plugin_version,omitempty" gorm:"-"`

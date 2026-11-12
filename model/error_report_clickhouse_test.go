@@ -49,15 +49,12 @@ func TestErrorReportClickHouseDuplicateKeys(t *testing.T) {
 	DB, LOG_DB = mainDB, logDB
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeClickHouse)
 	t.Cleanup(func() { DB, LOG_DB = previousDB, previousLog; common.SetDatabaseTypes(previousMain, previousLogType) })
-	require.NoError(t, mainDB.AutoMigrate(&Channel{}))
-	require.NoError(t, mainDB.Create(&Channel{Id: 9, Name: "fixture"}).Error)
 	require.NoError(t, MigrateErrorEvents())
 	require.NoError(t, MigrateErrorEvents())
 	rows := []ErrorEvent{{CreatedAt: 3600, ChannelId: 9, RequestId: "duplicate", TaskId: "first"}, {CreatedAt: 3600, ChannelId: 9, RequestId: "duplicate", TaskId: "second"}, {CreatedAt: 7200, RequestId: "outside", TaskId: "outside"}}
 	require.NoError(t, logDB.Create(&rows).Error)
-	var tasks []string
-	names, err := WalkErrorEventsForReport(context.Background(), 3600, 7200, func(e *ErrorEvent) error { tasks = append(tasks, e.TaskId); return nil })
+	slice, err := ReadDailyReportSlice(context.Background(), 3600, 7200)
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"first", "second"}, tasks)
-	assert.Equal(t, "fixture", names[9])
+	assert.EqualValues(t, 2, slice.Total)
+	assert.Equal(t, []DailyReportChannelCount{{ChannelID: 9, Count: 2}}, slice.Channels)
 }

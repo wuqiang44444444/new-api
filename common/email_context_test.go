@@ -3,6 +3,7 @@ package common
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net"
 	"strconv"
 	"strings"
@@ -12,6 +13,35 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSendAccountEmailWaitsForSharedCapacity(t *testing.T) {
+	loader := LoadMailTransport
+	transportCalled := make(chan struct{}, 1)
+	loadErr := errors.New("fixture transport")
+	LoadMailTransport = func(context.Context) (MailTransportConfig, error) {
+		transportCalled <- struct{}{}
+		return MailTransportConfig{}, loadErr
+	}
+	t.Cleanup(func() { LoadMailTransport = loader })
+	for range cap(mailSendSlots) {
+		mailSendSlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for len(mailSendSlots) > 0 {
+			<-mailSendSlots
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.ErrorIs(t, SendEmailContext(ctx, "fixture", "user@example.com", "body"), ErrMailBusy)
+	waitCtx, stopWait := context.WithTimeout(ctx, 30*time.Millisecond)
+	defer stopWait()
+	require.ErrorIs(t, SendAccountEmail(waitCtx, "fixture", "user@example.com", "body"), context.DeadlineExceeded)
+	require.Empty(t, transportCalled)
+	<-mailSendSlots
+	require.ErrorIs(t, SendAccountEmail(ctx, "fixture", "user@example.com", "body"), loadErr)
+	require.Len(t, transportCalled, 1)
+}
 
 func TestSendEmailContextCancelsBlockedSMTPStages(t *testing.T) {
 	for _, stage := range []string{"greeting", "implicit_tls", "starttls", "data"} {
@@ -80,6 +110,11 @@ func TestSendEmailContextCancelsBlockedSMTPStages(t *testing.T) {
 			select {
 			case err := <-done:
 				assert.ErrorIs(t, err, context.Canceled)
+				if stage == "data" {
+					assert.ErrorIs(t, err, ErrMailSubmissionUnknown)
+				} else {
+					assert.NotErrorIs(t, err, ErrMailSubmissionUnknown)
+				}
 			case <-time.After(2 * time.Second):
 				t.Fatal("cancel did not interrupt SMTP")
 			}

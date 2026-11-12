@@ -13,5 +13,6 @@ func GetClientErrorLogHealth(c *gin.Context) {
 		clienterrlog.Health
 		ImageTask     clienterrlog.Health `json:"image_task"`
 		ImageEvidence map[string]any      `json:"image_evidence"`
-	}{clienterrlog.CurrentHealth(), service.ImageTaskDiagHealth(), service.ImageErrorEvidenceHealth()}})
+		ChannelAlerts map[string]any      `json:"channel_alerts"`
+	}{clienterrlog.CurrentHealth(), service.ImageTaskDiagHealth(), service.ImageErrorEvidenceHealth(), service.ChannelAlertHealth()}})
 }

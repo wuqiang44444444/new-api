@@ -1001,6 +1001,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	}
 
 	service.PrepareChannelTestAudit(result.context)
+	observeAutomaticChannelAlert(ctx, channel, result, scope, automatic)
 	summary.Tested++
 
 	isConfigOnly := automatic && scope != "generation_probe" && scope != "readonly_probe"

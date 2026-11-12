@@ -25,11 +25,11 @@ func setupUpstreamBalanceAlertTest(t *testing.T) *model.Channel {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Option{}, &model.UpstreamBalanceAlertDelivery{}))
-	oldDB, oldSMTP, oldRate := model.DB, common.SMTPServer, operation_setting.USDExchangeRate
-	model.DB, common.SMTPServer = db, "fixture.invalid"
+	oldDB, oldSMTP, oldFrom, oldRate := model.DB, common.SMTPServer, common.SMTPFrom, operation_setting.USDExchangeRate
+	model.DB, common.SMTPServer, common.SMTPFrom = db, "fixture.invalid", "alerts@example.com"
 	require.NoError(t, operation_setting.SetUSDExchangeRate("7"))
 	t.Cleanup(func() {
-		model.DB, common.SMTPServer = oldDB, oldSMTP
+		model.DB, common.SMTPServer, common.SMTPFrom = oldDB, oldSMTP, oldFrom
 		require.NoError(t, operation_setting.SetUSDExchangeRate(fmt.Sprint(oldRate)))
 		require.NoError(t, sqlDB.Close())
 	})
@@ -191,10 +191,14 @@ func TestUpstreamBalanceAlertLeaseFencesStaleSenders(t *testing.T) {
 	assert.False(t, claimed)
 	claimed, err = model.ClaimUpstreamBalanceAlert(ctx, "connection", "delivery", "second", 1121, 86400)
 	require.NoError(t, err)
-	require.True(t, claimed)
-	assert.ErrorIs(t, model.FinishUpstreamBalanceAlert(ctx, "delivery", "first", 1122), model.ErrSystemTaskLockLost)
-	require.NoError(t, model.FinishUpstreamBalanceAlert(ctx, "delivery", "second", 1122))
-	claimed, err = model.ClaimUpstreamBalanceAlert(ctx, "connection", "delivery", "third", 1123, 86400)
+	assert.False(t, claimed, "expired submissions must be reconciled, not retried")
+	assert.ErrorIs(t, model.FinishUpstreamBalanceAlert(ctx, "delivery", "first", 1122, nil), model.ErrSystemTaskLockLost)
+	claimed, err = model.ClaimUpstreamBalanceAlert(ctx, "connection", "delivery", "next-day", 1121+86400, 86400)
 	require.NoError(t, err)
-	assert.False(t, claimed)
+	require.True(t, claimed, "the next daily low-balance reminder can still be sent")
+	require.NoError(t, model.FinishUpstreamBalanceAlert(ctx, "delivery", "next-day", 1121+86400, nil))
+	require.NoError(t, model.ResetRecoveredUpstreamBalanceAlert(ctx, "connection", 1122+86400))
+	claimed, err = model.ClaimUpstreamBalanceAlert(ctx, "connection", "delivery", "third", 1123+86400, 86400)
+	require.NoError(t, err)
+	assert.True(t, claimed)
 }

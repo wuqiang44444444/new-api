@@ -15,13 +15,13 @@ type UpstreamBalanceAlertDelivery struct {
 	ID           string `gorm:"type:varchar(64);primaryKey"`
 	ConnectionID string `gorm:"type:varchar(64);index"`
 	LastSentAt   int64  `gorm:"bigint"`
+	UnknownAt    *int64 `gorm:"bigint"`
 	LeaseUntil   int64  `gorm:"bigint"`
 	LeaseOwner   string `gorm:"type:varchar(128)"`
 }
 
-// Report recipients are shared with hourly reports; the hourly report enable
-// switch does not disable balance alerts. Read the database again before send.
-func GetUpstreamBalanceAlertRecipients(ctx context.Context) ([]string, error) {
+// GetOperationsMailRecipients reads the shared list at delivery boundaries.
+func GetOperationsMailRecipients(ctx context.Context) ([]string, error) {
 	var option Option
 	if err := DB.WithContext(ctx).Where(&Option{Key: "error_report_setting.recipients"}).Find(&option).Error; err != nil {
 		return nil, err
@@ -34,16 +34,25 @@ func ClaimUpstreamBalanceAlert(ctx context.Context, connectionID, id, owner stri
 	if err := DB.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
 		return false, err
 	}
+	if err := DB.WithContext(ctx).Model(&UpstreamBalanceAlertDelivery{}).
+		Where("id = ? AND lease_until > 0 AND lease_until <= ?", id, now).
+		Updates(map[string]any{"unknown_at": now, "lease_until": 0, "lease_owner": ""}).Error; err != nil {
+		return false, err
+	}
 	result := DB.WithContext(ctx).Model(&UpstreamBalanceAlertDelivery{}).
-		Where("id = ? AND lease_until <= ? AND (last_sent_at = 0 OR last_sent_at <= ?)", id, now, now-repeatAfter).
+		Where("id = ? AND lease_until = 0 AND (unknown_at IS NULL OR unknown_at <= ?) AND (last_sent_at = 0 OR last_sent_at <= ?)",
+			id, now-repeatAfter, now-repeatAfter).
 		Updates(map[string]any{"lease_until": now + 120, "lease_owner": owner})
 	return result.RowsAffected == 1, result.Error
 }
 
-func FinishUpstreamBalanceAlert(ctx context.Context, id, owner string, sentAt int64) error {
+func FinishUpstreamBalanceAlert(ctx context.Context, id, owner string, sentAt int64, unknownAt *int64) error {
 	updates := map[string]any{"lease_until": 0, "lease_owner": ""}
 	if sentAt > 0 {
 		updates["last_sent_at"] = sentAt
+	}
+	if unknownAt != nil {
+		updates["unknown_at"] = *unknownAt
 	}
 	result := DB.WithContext(ctx).Model(&UpstreamBalanceAlertDelivery{}).Where("id = ? AND lease_owner = ?", id, owner).Updates(updates)
 	if result.Error != nil {
@@ -58,5 +67,5 @@ func FinishUpstreamBalanceAlert(ctx context.Context, id, owner string, sentAt in
 func ResetRecoveredUpstreamBalanceAlert(ctx context.Context, connectionID string, now int64) error {
 	return DB.WithContext(ctx).Model(&UpstreamBalanceAlertDelivery{}).
 		Where("connection_id = ? AND lease_until <= ?", connectionID, now).
-		Updates(map[string]any{"last_sent_at": 0}).Error
+		Updates(map[string]any{"last_sent_at": 0, "unknown_at": nil, "lease_until": 0, "lease_owner": ""}).Error
 }

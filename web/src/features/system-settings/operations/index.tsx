@@ -27,21 +27,14 @@ import {
 } from './section-registry.tsx'
 
 const defaultOperationsSettings: OperationsSettings = {
-  'error_report_setting.enabled': false,
   'error_report_setting.recipients': '',
   DefaultCollapseSidebar: false,
   DemoSiteEnabled: false,
   SelfUseModeEnabled: false,
   QuotaRemindThreshold: '',
-  SMTPServer: '',
-  SMTPPort: '',
-  SMTPAccount: '',
-  SMTPFrom: '',
-  SMTPToken: '',
-  SMTPSSLEnabled: false,
-  SMTPStartTLSEnabled: false,
-  SMTPInsecureSkipVerify: false,
-  SMTPForceAuthLogin: false,
+  'resource_alert_setting.cpu': 85,
+  'resource_alert_setting.memory': 85,
+  'resource_alert_setting.disk': 85,
   WorkerUrl: '',
   WorkerValidKey: '',
   WorkerAllowHttpImageRequestEnabled: false,
@@ -61,7 +54,6 @@ const defaultOperationsSettings: OperationsSettings = {
   'perf_metrics_setting.bucket_time': 'hour',
   'perf_metrics_setting.retention_days': 0,
   'notification_setting.send_email_on_account_created': false,
-  'notification_setting.send_email_on_password_changed': false,
   'notification_setting.send_email_on_token_created': false,
 }
 

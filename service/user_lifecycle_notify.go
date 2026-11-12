@@ -2,13 +2,13 @@ package service
 
 import (
 	"fmt"
+	"html"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/bytedance/gopkg/util/gopool"
 )
 
 // NotifyAccountCreated fires a welcome email when a user account is created.
@@ -17,21 +17,12 @@ func NotifyAccountCreated(userId int) {
 	if !operation_setting.GetNotificationSetting().SendEmailOnAccountCreated {
 		return
 	}
-	gopool.Go(func() {
+	if !EnqueueMailWork(func() {
 		sendLifecycleEmail(userId, dto.NotifyTypeAccountCreated,
-			"notify.account_created.subject", "notify.account_created.body")
-	})
-}
-
-// NotifyPasswordChanged fires a security email when a user's password is changed.
-func NotifyPasswordChanged(userId int) {
-	if !operation_setting.GetNotificationSetting().SendEmailOnPasswordChanged {
-		return
+			i18n.MsgMailAccountCreatedSubject, i18n.MsgMailAccountCreatedBody)
+	}) {
+		common.SysError("lifecycle notification queue is full")
 	}
-	gopool.Go(func() {
-		sendLifecycleEmail(userId, dto.NotifyTypePasswordChanged,
-			"notify.password_changed.subject", "notify.password_changed.body")
-	})
 }
 
 // NotifyTokenCreated fires an email when a new API token is created by the user.
@@ -39,10 +30,12 @@ func NotifyTokenCreated(userId int) {
 	if !operation_setting.GetNotificationSetting().SendEmailOnTokenCreated {
 		return
 	}
-	gopool.Go(func() {
+	if !EnqueueMailWork(func() {
 		sendLifecycleEmail(userId, dto.NotifyTypeTokenCreated,
-			"notify.token_created.subject", "notify.token_created.body")
-	})
+			i18n.MsgMailTokenCreatedSubject, i18n.MsgMailTokenCreatedBody)
+	}) {
+		common.SysError("lifecycle notification queue is full")
+	}
 }
 
 // sendLifecycleEmail resolves the user + language, renders the bilingual subject/body
@@ -60,6 +53,8 @@ func sendLifecycleEmail(userId int, notifyType, subjectKey, bodyKey string) {
 	}
 	lang := user.GetSetting().Language
 	subject := i18n.Translate(lang, subjectKey, data)
+	data["Username"] = html.EscapeString(user.DisplayName)
+	data["SiteName"] = html.EscapeString(common.SystemName)
 	body := i18n.Translate(lang, bodyKey, data)
 	notify := dto.NewNotify(notifyType, subject, body, nil)
 	if err := NotifyUser(userId, user.Email, user.GetSetting(), notify); err != nil {

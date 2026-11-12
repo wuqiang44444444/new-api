@@ -1007,8 +1007,13 @@ func CreateUser(c *gin.Context) {
 	var user model.User
 	err := common.DecodeJson(c.Request.Body, &user)
 	user.Username = strings.TrimSpace(user.Username)
+	user.Email = model.NormalizeEmail(user.Email)
 	if err != nil || user.Username == "" || user.Password == "" {
 		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if user.Email == "" {
+		common.ApiErrorI18n(c, i18n.MsgUserEmailEmpty)
 		return
 	}
 	if err := common.Validate.Struct(&user); err != nil {

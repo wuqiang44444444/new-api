@@ -3,24 +3,32 @@ package common
 import (
 	"errors"
 	"net/smtp"
+	"slices"
 	"strings"
 
 	ntlmssp "github.com/Azure/go-ntlmssp"
 )
 
 type smtpAutoAuth struct {
-	username string
-	password string
-	mech     string
+	username    string
+	password    string
+	mech        string
+	server      string
+	forceLogin  bool
+	preferLogin bool
 }
 
-func AutoSMTPAuth(username, password string) smtp.Auth {
-	return &smtpAutoAuth{username: username, password: password}
+func newSMTPAuth(config SMTPMailConfig) smtp.Auth {
+	return &smtpAutoAuth{
+		username: config.Account, password: config.Token, server: config.Server,
+		forceLogin:  config.ForceLogin,
+		preferLogin: isOutlookServer(config.Account) || slices.Contains(EmailLoginAuthServerList, config.Server),
+	}
 }
 
 func (a *smtpAutoAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
-	useLoginAuth := SMTPForceAuthLogin
-	if !useLoginAuth && shouldUseSMTPLoginAuth() {
+	useLoginAuth := a.forceLogin
+	if !useLoginAuth && a.preferLogin {
 		useLoginAuth = !(server != nil && len(server.Auth) == 1 && smtpServerSupportsAuth(server, "NTLM"))
 	}
 	if useLoginAuth {
@@ -31,7 +39,7 @@ func (a *smtpAutoAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
 	switch {
 	case smtpServerSupportsAuth(server, "PLAIN"):
 		a.mech = "PLAIN"
-		return smtp.PlainAuth("", a.username, a.password, SMTPServer).Start(server)
+		return smtp.PlainAuth("", a.username, a.password, a.server).Start(server)
 	case smtpServerSupportsAuth(server, "LOGIN"):
 		a.mech = "LOGIN"
 		return "LOGIN", []byte{}, nil
@@ -44,7 +52,7 @@ func (a *smtpAutoAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
 		return "NTLM", negotiateMessage, nil
 	default:
 		a.mech = "PLAIN"
-		return smtp.PlainAuth("", a.username, a.password, SMTPServer).Start(server)
+		return smtp.PlainAuth("", a.username, a.password, a.server).Start(server)
 	}
 }
 

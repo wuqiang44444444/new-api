@@ -122,6 +122,8 @@ func notifySystemTaskRunner() {
 
 func StartSystemTaskRunner() {
 	startEvidenceDiskMonitor()
+	startResourceAlertMonitor()
+	startChannelAlertMonitor()
 	systemTaskRunnerOnce.Do(func() {
 		if !common.IsMasterNode {
 			return

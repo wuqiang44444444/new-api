@@ -1,8 +1,7 @@
 package service
 
 import (
-	"fmt"
-	"html"
+	"context"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -35,7 +34,8 @@ func NotifyAccountSecurityChange(email, event string) error {
 	if email == "" {
 		return nil
 	}
-	subject := common.SystemName + " — Account security notification"
-	content := fmt.Sprintf("<p>Your account security settings have changed: %s.</p><p>If you did not make this change, open your account security settings, revoke other login sessions, and contact your administrator.</p>", html.EscapeString(event))
-	return common.SendEmail(subject, email, content)
+	subject, content := renderAccountSecurityMail(event)
+	ctx, cancel := context.WithTimeout(context.Background(), common.ShortMailSubmissionTimeout)
+	defer cancel()
+	return common.SendEmailContext(ctx, subject, email, content)
 }

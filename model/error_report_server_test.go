@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"io"
 	"os"
 	"sync"
 	"testing"
@@ -32,24 +31,19 @@ func TestErrorReportServerContract(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&ErrorReport{}, &ErrorReportPart{}, &ErrorReportSchedule{}, &ErrorReportDelivery{}, &ErrorEvent{}, &Channel{}))
 	require.NoError(t, db.Create(&Channel{Id: 7, Name: "fixture"}).Error)
 	require.NoError(t, db.Create(&[]ErrorEvent{{CreatedAt: 3600, RequestId: "duplicate", ChannelId: 7}, {CreatedAt: 3600, RequestId: "duplicate", ChannelId: 7}, {CreatedAt: 7200, RequestId: "outside"}}).Error)
-	var rows []ErrorEvent
-	names, err := WalkErrorEventsForReport(context.Background(), 3600, 7200, func(e *ErrorEvent) error { rows = append(rows, *e); return nil })
+	ctx := context.Background()
+	slice, err := ReadDailyReportSlice(ctx, 3600, 7200)
 	require.NoError(t, err)
-	assert.Len(t, rows, 2)
-	assert.Equal(t, "fixture", names[7])
-	require.NoError(t, db.Create(&ErrorReportSchedule{Scope: ErrorReportScheduleScopeGlobal, Enabled: true, Periods: `[{"start":3600,"end":0}]`}).Error)
-	report := ErrorReport{ReportID: "report", WindowStart: 3600, WindowEnd: 7200, Status: ErrorReportStatusBuilding}
-	_, err = InsertErrorReportBuilding(&report)
+	assert.EqualValues(t, 2, slice.Total)
+	assert.Equal(t, []DailyReportChannelCount{{ChannelID: 7, Count: 2}}, slice.Channels)
+	require.NoError(t, db.Create(&ErrorReportSchedule{Scope: ErrorReportScheduleScopeGlobal, DailyWindowStart: 3600}).Error)
+	report, err := LoadDailyReport(ctx, 3600, "report")
 	require.NoError(t, err)
-	partNo := 0
-	require.NoError(t, PublishErrorReportParts(context.Background(), report.ReportID, func() (*ErrorReportPart, error) {
-		partNo++
-		if partNo > 2 {
-			return nil, io.EOF
-		}
-		return &ErrorReportPart{ReportID: report.ReportID, PartNo: partNo, BodyHTML: "fixture"}, nil
+	require.NoError(t, SaveDailyReportProgress(ctx, report, report.WindowEnd, "{}", 2))
+	require.NoError(t, PublishDailyReport(ctx, &ErrorReportPart{
+		ReportID: report.ReportID, PartNo: 1, BodyHTML: "fixture",
 	}, []string{"a@example.com", "b@example.com"}, 2, "{}", ""))
-	// Concurrent workers must not claim the same recipient/part or skip ahead.
+	// Concurrent workers must not claim the same recipient/part or send twice.
 	type result struct {
 		rows []*ErrorReportDelivery
 		err  error

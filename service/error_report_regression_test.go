@@ -3,214 +3,170 @@ package service
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/clienterrlog"
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
-func TestErrorReportEnableAtBoundaryAndPausePreservesOutage(t *testing.T) {
+func TestErrorReportOptionRejectsInvalidRecipientsWithoutChangingState(t *testing.T) {
 	withErrorReportTestDB(t)
-	withErrorReportSetting(t, false, "ops@example.com")
-	// Use the actual option persistence entry, not a pre-seeded cursor.
-	require.NoError(t, model.UpdateErrorReportOption("error_report_setting.enabled", "true", beijingTime(10, 59)))
-	next, err := model.NextErrorReportWindow(context.Background())
+	withErrorReportSetting(t, "ops@example.com")
+	require.Error(t, model.UpdateOption("error_report_setting.recipients", "invalid-address"))
+	recipients, err := model.GetOperationsMailRecipients(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, beijingTime(10, 0).Unix(), next)
-	// No runner processes 10-11 before disable; preserve that outage backlog.
-	require.NoError(t, model.UpdateErrorReportOption("error_report_setting.enabled", "false", beijingTime(11, 20)))
-	next, err = model.NextErrorReportWindow(context.Background())
-	require.NoError(t, err)
-	assert.Zero(t, next)
-	require.NoError(t, model.UpdateErrorReportOption("error_report_setting.enabled", "true", beijingTime(14, 20)))
-	next, err = model.NextErrorReportWindow(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, beijingTime(10, 0).Unix(), next)
-	_, err = model.AdvanceErrorReportWindow(next)
-	require.NoError(t, err)
-	next, err = model.NextErrorReportWindow(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, beijingTime(14, 0).Unix(), next, "explicitly disabled hours must be skipped")
-}
-
-func TestErrorReportOptionRejectsEmptyRecipientsWithoutChangingState(t *testing.T) {
-	withErrorReportTestDB(t)
-	withErrorReportSetting(t, true, "ops@example.com")
-	require.Error(t, model.UpdateOption("error_report_setting.recipients", ""))
-	enabled, recipients, err := model.GetErrorReportConfiguration(context.Background())
-	require.NoError(t, err)
-	assert.True(t, enabled)
 	assert.Equal(t, []string{"ops@example.com"}, recipients)
 }
 
-func TestErrorReportRemovedExpiredDeliveryIsNeverSent(t *testing.T) {
+func TestDailyReportResumesWindowAfterRecipientsReturn(t *testing.T) {
 	db := withErrorReportTestDB(t)
-	withErrorReportSetting(t, true, "ops@example.com;removed@example.com")
-	withErrorReportSMTP(t)
-	h := newErrorReportHandler(func(context.Context, string, string, string) error { return nil })
-	h.now = func() time.Time { return beijingTime(11, 5) }
-	require.NoError(t, h.processWindow(context.Background(), beijingTime(10, 0).Unix(), nil))
-	require.NoError(t, db.Model(&model.ErrorReportDelivery{}).Where("recipient = ?", "removed@example.com").Updates(map[string]any{
-		"status": model.ErrorReportDeliverySending, "lease_owner": "crashed", "lease_until": beijingTime(11, 0).Unix(),
-	}).Error)
+	withErrorReportSetting(t, "ops@example.com")
+	ctx := context.Background()
+	day := time.Date(2026, 11, 7, 0, 0, 0, 0, errorReportLocation())
+	start, err := model.DailyReportCursor(ctx, day.Unix())
+	require.NoError(t, err)
+	id := seedCompletedDailyWindow(t, ctx, start)
+	require.NoError(t, model.UpdateOption("error_report_setting.recipients", ""))
+	h := newErrorReportHandler(nil)
+	h.now = func() time.Time { return day.AddDate(0, 0, 3) }
+	generated, _, err := h.generateDailyReport(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, generated)
 	require.NoError(t, model.UpdateOption("error_report_setting.recipients", "ops@example.com"))
-	r := &errorReportMailRecorder{}
-	h.send = r.send
-	task := claimErrorReportTask(t, "runner")
-	h.Run(context.Background(), task, "runner")
-	require.NotEmpty(t, r.mails)
-	for _, m := range r.mails {
-		assert.Equal(t, "ops@example.com", m.rcpt)
-	}
-	var removed model.ErrorReportDelivery
-	require.NoError(t, db.Where("recipient = ?", "removed@example.com").First(&removed).Error)
-	assert.Equal(t, model.ErrorReportDeliveryStopped, removed.Status)
+	generated, _, err = h.generateDailyReport(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, generated)
+	var report model.ErrorReport
+	require.NoError(t, db.Where("report_id = ?", id).First(&report).Error)
+	assert.Equal(t, model.ErrorReportStatusReady, report.Status)
 }
 
-func TestErrorReportConfigChangeStopsFollowingSends(t *testing.T) {
-	for _, change := range []string{"disable", "remove"} {
+func TestDailyReportDeliveryKnownFailureAndUnknown(t *testing.T) {
+	db := withErrorReportTestDB(t)
+	withErrorReportSetting(t, "retry@example.com;unknown@example.com;accepted@example.com;expired@example.com")
+	ctx := context.Background()
+	day := time.Date(2026, 11, 9, 0, 0, 0, 0, errorReportLocation())
+	now := day.AddDate(0, 0, 1).Add(6 * time.Hour)
+	attempts := map[string]int{}
+	h := newErrorReportHandler(func(_ context.Context, _, address, _ string) error {
+		attempts[address]++
+		if attempts[address] == 1 {
+			switch address {
+			case "retry@example.com":
+				return errors.New("SMTP rejected the submission with status 421")
+			case "unknown@example.com":
+				return common.ErrMailSubmissionUnknown
+			}
+		}
+		return nil
+	})
+	h.now = func() time.Time { return now }
+	id := publishTestDailyWindow(t, h, day.Unix())
+	require.NoError(t, db.Model(&model.ErrorReportDelivery{}).Where("recipient = ?", "expired@example.com").
+		Updates(map[string]any{"status": model.MailDeliverySending, "lease_owner": "crashed", "lease_until": now.Unix() - 1}).Error)
+	h.Run(ctx, claimErrorReportTask(t, "daily-runner"), "daily-runner")
+	now = now.Add(time.Hour)
+	attempted, accepted, err := h.deliverClaims(ctx, "later")
+	require.NoError(t, err)
+	assert.Equal(t, 1, attempted)
+	assert.Equal(t, 1, accepted)
+	assert.Equal(t, map[string]int{"accepted@example.com": 1, "retry@example.com": 2, "unknown@example.com": 1}, attempts)
+	var deliveries []model.ErrorReportDelivery
+	require.NoError(t, db.Where("report_id = ?", id).Order("recipient").Find(&deliveries).Error)
+	require.Len(t, deliveries, 4)
+	assert.Equal(t, model.MailDeliveryAccepted, deliveries[0].Status)
+	assert.Equal(t, model.MailDeliveryUnknown, deliveries[1].Status)
+	assert.Equal(t, model.MailDeliveryAccepted, deliveries[2].Status)
+	assert.Equal(t, model.MailDeliveryUnknown, deliveries[3].Status)
+}
+
+func TestDailyReportChecksConfigurationBetweenRecipients(t *testing.T) {
+	for _, change := range []string{"clear", "remove"} {
 		t.Run(change, func(t *testing.T) {
 			withErrorReportTestDB(t)
-			withErrorReportSetting(t, true, "a@example.com;b@example.com")
-			withErrorReportSMTP(t)
+			withErrorReportSetting(t, "a@example.com;b@example.com")
+			day := time.Date(2026, 11, 9, 0, 0, 0, 0, errorReportLocation())
 			calls := 0
-			h := newErrorReportHandler(func(ctx context.Context, subject, recipient, body string) error {
+			h := newErrorReportHandler(func(_ context.Context, _, address, _ string) error {
 				calls++
-				if change == "disable" {
-					return model.UpdateOption("error_report_setting.enabled", "false")
+				if change == "clear" {
+					return model.UpdateOption("error_report_setting.recipients", "")
 				}
-				return model.UpdateOption("error_report_setting.recipients", recipient)
+				return model.UpdateOption("error_report_setting.recipients", address)
 			})
-			h.now = func() time.Time { return beijingTime(11, 5) }
-			task := claimErrorReportTask(t, "runner")
-			h.Run(context.Background(), task, "runner")
+			h.now = func() time.Time { return day.AddDate(0, 0, 1).Add(6 * time.Hour) }
+			publishTestDailyWindow(t, h, day.Unix())
+			_, _, err := h.deliverClaims(context.Background(), "daily-runner")
+			require.NoError(t, err)
 			assert.Equal(t, 1, calls)
 		})
 	}
 }
 
-func TestErrorReportDeliveryFailureRemainsVisibleAndDoesNotBlockOtherRecipients(t *testing.T) {
-	withErrorReportTestDB(t)
-	withErrorReportSetting(t, true, "a@example.com;b@example.com")
-	withErrorReportSMTP(t)
-	sent := []string{}
-	h := newErrorReportHandler(func(ctx context.Context, subject, recipient, body string) error {
-		if recipient == "a@example.com" {
-			return errors.New("SMTP unavailable")
-		}
-		sent = append(sent, recipient)
-		return nil
-	})
-	h.now = func() time.Time { return beijingTime(11, 5) }
-	task := claimErrorReportTask(t, "runner")
-	h.Run(context.Background(), task, "runner")
-	finished, err := model.GetSystemTaskByTaskID(task.TaskID)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"b@example.com"}, sent)
-	assert.Equal(t, model.SystemTaskStatusFailed, finished.Status)
-	assert.Contains(t, finished.Error, "投递 1/2 成功")
-	assert.Contains(t, finished.Error, "积压 1 封")
-}
-
-func TestErrorReportStreamAndProbeHeadlinesDoNotBlameCustomer(t *testing.T) {
-	for _, tc := range []struct{ kind, reason, headline string }{
-		{clienterrlog.EventStreamError, "upstream_response_failed", "发现平台／上游相关异常 / Platform / upstream errors detected"},
-		{clienterrlog.EventStreamError, "stream_handler_panic", "发现平台／上游相关异常 / Platform / upstream errors detected"},
-		{clienterrlog.EventStreamError, "stream_timeout", "发现流式或渠道测试异常 / Stream or channel test errors detected"},
-		{clienterrlog.EventChannelTest, "unclassified", "发现流式或渠道测试异常 / Stream or channel test errors detected"},
-	} {
-		t.Run(tc.reason+tc.kind, func(t *testing.T) {
-			event := &model.ErrorEvent{EventType: tc.kind, Reason: tc.reason, Status: 200}
-			text := resolveErrorReportStatus(1, map[string]int{classifyErrorEvent(event): 1}, false, "")
-			assert.Equal(t, tc.headline, text.Headline)
-			assert.NotContains(t, text.Body, "未在本次数据中发现明确的平台／上游故障")
-		})
-	}
-}
-
-func TestErrorReportPublishedPartsCannotBeReplaced(t *testing.T) {
+func TestDailyReportPublicationIsAtomicAndFrozen(t *testing.T) {
 	db := withErrorReportTestDB(t)
-	withErrorReportSetting(t, true, "ops@example.com")
+	withErrorReportSetting(t, "ops@example.com")
+	ctx := context.Background()
+	day := time.Date(2026, 11, 9, 0, 0, 0, 0, errorReportLocation())
 	h := newErrorReportHandler(nil)
-	h.now = func() time.Time { return beijingTime(11, 5) }
-	start := beijingTime(10, 0).Unix()
-	require.NoError(t, h.processWindow(context.Background(), start, nil))
-	var parts []model.ErrorReportPart
-	require.NoError(t, db.Find(&parts).Error)
-	require.NotEmpty(t, parts)
-	claims, err := model.ClaimErrorReportDeliveries(h.now().Unix(), "owner", h.now().Unix()+90, 1)
+	h.now = func() time.Time { return day.AddDate(0, 0, 1).Add(6 * time.Hour) }
+	start, err := model.DailyReportCursor(ctx, day.Unix())
 	require.NoError(t, err)
-	require.Len(t, claims, 1)
-	_, err = model.FinishErrorReportDelivery(claims[0].ID, "owner", model.ErrorReportDeliveryAccepted, "", "", 0, h.now().Unix())
-	require.NoError(t, err)
-	require.NoError(t, publishErrorReportTestParts(errorReportID(start), []*model.ErrorReportPart{{ReportID: errorReportID(start), PartNo: 1, BodyHTML: "replacement"}}, []string{"ops@example.com"}, 0, "{}", ""))
-	var after []model.ErrorReportPart
-	require.NoError(t, db.Find(&after).Error)
-	assert.Equal(t, parts, after)
-	var delivery model.ErrorReportDelivery
-	require.NoError(t, db.First(&delivery, claims[0].ID).Error)
-	assert.Equal(t, model.ErrorReportDeliveryAccepted, delivery.Status)
-}
-
-func TestErrorReportPerfWindowAndPublicCode(t *testing.T) {
-	db := withErrorReportTestDB(t)
-	start := beijingTime(10, 0).Unix()
-	require.NoError(t, db.Create(&model.PerfMetric{ModelName: "test", BucketTs: start, RequestCount: 3, SuccessCount: 2}).Error)
-	require.NoError(t, db.Create(&model.PerfMetric{ModelName: "test", BucketTs: start + 3600, RequestCount: 9, SuccessCount: 9}).Error)
-	summaries, err := model.GetErrorReportPerfSummaries(context.Background(), start, start+3600)
-	require.NoError(t, err)
-	require.Len(t, summaries, 1)
-	assert.Equal(t, int64(3), summaries[0].RequestCount)
-	h := newErrorReportHandler(nil)
-	rows := h.renderDetailRow(1, &model.ErrorEvent{PublicCode: "insufficient_quota"}, errorReportLocation())
-	assert.Contains(t, strings.Join(rows, ""), "insufficient_quota")
-}
-
-func TestErrorReportPublicationRejectsDisabledOrExcludedWindow(t *testing.T) {
-	db := withErrorReportTestDB(t)
-	withErrorReportSetting(t, true, "ops@example.com")
-	require.NoError(t, model.UpdateErrorReportOption("error_report_setting.enabled", "false", beijingTime(11, 20)))
-	for _, tc := range []struct {
-		start  int64
-		reopen bool
-	}{
-		{beijingTime(10, 0).Unix(), false},
-		{beijingTime(12, 0).Unix(), true},
-	} {
-		if tc.reopen {
-			require.NoError(t, model.UpdateErrorReportOption("error_report_setting.enabled", "true", beijingTime(14, 20)))
-		}
-		id := errorReportID(tc.start)
-		_, err := model.InsertErrorReportBuilding(&model.ErrorReport{ReportID: id, WindowStart: tc.start, WindowEnd: tc.start + 3600, Status: model.ErrorReportStatusBuilding})
-		require.NoError(t, err)
-		require.Error(t, publishErrorReportTestParts(id, []*model.ErrorReportPart{{ReportID: id, PartNo: 1, BodyHTML: "must not publish"}}, []string{"ops@example.com"}, 0, "{}", ""))
-	}
-	var count int64
-	require.NoError(t, db.Model(&model.ErrorReportDelivery{}).Count(&count).Error)
-	assert.Zero(t, count)
-}
-
-func TestErrorReportOptionWriteFailureRollsBackSchedule(t *testing.T) {
-	db := withErrorReportTestDB(t)
-	withErrorReportSetting(t, false, "ops@example.com")
-	before, err := model.GetErrorReportSchedule()
-	require.NoError(t, err)
-	require.NoError(t, db.Callback().Create().Before("gorm:create").Register("report_option_failure", func(tx *gorm.DB) {
-		if tx.Statement.Table == "options" {
-			tx.AddError(errors.New("option write unavailable"))
+	id := seedCompletedDailyWindow(t, ctx, start)
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register("test_daily_delivery_failure", func(tx *gorm.DB) {
+		if tx.Statement.Table == "error_report_deliveries" {
+			tx.AddError(errors.New("delivery write unavailable"))
 		}
 	}))
-	defer db.Callback().Create().Remove("report_option_failure")
-	require.Error(t, model.UpdateOption("error_report_setting.enabled", "true"))
-	after, err := model.GetErrorReportSchedule()
+	_, _, err = h.generateDailyReport(ctx)
+	require.Error(t, err)
+	require.NoError(t, db.Callback().Create().Remove("test_daily_delivery_failure"))
+	var parts []model.ErrorReportPart
+	require.NoError(t, db.Where("report_id = ?", id).Find(&parts).Error)
+	assert.Empty(t, parts)
+	generated, _, err := h.generateDailyReport(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, before, after)
-	enabled, _, err := model.GetErrorReportConfiguration(context.Background())
+	require.Equal(t, 1, generated)
+	require.NoError(t, db.Where("report_id = ?", id).Find(&parts).Error)
+	require.Len(t, parts, 1)
+	require.NoError(t, model.PublishDailyReport(ctx, &model.ErrorReportPart{ReportID: id, PartNo: 1, BodyHTML: "replacement"}, []string{"ops@example.com"}, 0, "{}", ""))
+	var frozen model.ErrorReportPart
+	require.NoError(t, db.First(&frozen, parts[0].ID).Error)
+	assert.Equal(t, parts[0], frozen)
+}
+
+func TestDailyReportRecipientFairnessAcrossDays(t *testing.T) {
+	withErrorReportTestDB(t)
+	withErrorReportSetting(t, "a@example.com;b@example.com")
+	day := time.Date(2026, 11, 8, 0, 0, 0, 0, errorReportLocation())
+	now := day.AddDate(0, 0, 2).Add(6 * time.Hour)
+	h := newErrorReportHandler(nil)
+	h.now = func() time.Time { return now }
+	first := publishTestDailyWindow(t, h, day.Unix())
+	second := publishTestDailyWindow(t, h, day.AddDate(0, 0, 1).Unix())
+	claims, err := model.ClaimErrorReportDeliveries(now.Unix(), "first", now.Unix()+90, 1)
 	require.NoError(t, err)
-	assert.False(t, enabled)
+	require.Len(t, claims, 1)
+	assert.Equal(t, "a@example.com", claims[0].Recipient)
+	assert.Equal(t, first, claims[0].ReportID)
+	ok, err := model.FinishErrorReportDelivery(claims[0].ID, "first", model.MailDeliveryRetryWait, "", "", now.Unix()+60, 0)
+	require.NoError(t, err)
+	require.True(t, ok)
+	for _, id := range []string{first, second} {
+		claims, err := model.ClaimErrorReportDeliveries(now.Unix(), "next", now.Unix()+90, 1)
+		require.NoError(t, err)
+		require.Len(t, claims, 1)
+		assert.Equal(t, "b@example.com", claims[0].Recipient)
+		assert.Equal(t, id, claims[0].ReportID)
+		ok, err := model.FinishErrorReportDelivery(claims[0].ID, "next", model.MailDeliveryAccepted, "", "", 0, now.Unix())
+		require.NoError(t, err)
+		require.True(t, ok)
+	}
+	claims, err = model.ClaimErrorReportDeliveries(now.Unix(), "blocked", now.Unix()+90, 1)
+	require.NoError(t, err)
+	assert.Empty(t, claims)
 }

@@ -59,9 +59,6 @@ const OPERATIONS_SECTIONS = [
           'notification_setting.send_email_on_account_created':
             settings['notification_setting.send_email_on_account_created'] ??
             false,
-          'notification_setting.send_email_on_password_changed':
-            settings['notification_setting.send_email_on_password_changed'] ??
-            false,
           'notification_setting.send_email_on_token_created':
             settings['notification_setting.send_email_on_token_created'] ??
             false,
@@ -71,23 +68,17 @@ const OPERATIONS_SECTIONS = [
   },
   {
     id: 'email',
-    titleKey: 'SMTP Email',
+    titleKey: 'Email delivery',
     build: (settings: OperationsSettings) => (
       <EmailSettingsSection
         defaultValues={{
-          SMTPServer: settings.SMTPServer,
-          SMTPPort: settings.SMTPPort,
-          SMTPAccount: settings.SMTPAccount,
-          SMTPFrom: settings.SMTPFrom,
-          SMTPToken: settings.SMTPToken,
-          SMTPSSLEnabled: settings.SMTPSSLEnabled,
-          SMTPStartTLSEnabled: settings.SMTPStartTLSEnabled,
-          SMTPInsecureSkipVerify: settings.SMTPInsecureSkipVerify,
-          SMTPForceAuthLogin: settings.SMTPForceAuthLogin,
-          'error_report_setting.enabled':
-            settings['error_report_setting.enabled'] ?? false,
           'error_report_setting.recipients':
-            settings['error_report_setting.recipients'] ?? '',
+            settings['error_report_setting.recipients'],
+          'resource_alert_setting.cpu': settings['resource_alert_setting.cpu'],
+          'resource_alert_setting.memory':
+            settings['resource_alert_setting.memory'],
+          'resource_alert_setting.disk':
+            settings['resource_alert_setting.disk'],
         }}
       />
     ),

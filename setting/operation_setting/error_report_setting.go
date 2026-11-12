@@ -5,26 +5,18 @@ import (
 	"net/mail"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
 )
 
-// ErrorReportSetting 控制「每小时系统运行与错误邮件报告」
-// （docs/80-dev/2026-09-17-每小时系统运行与错误邮件报告开发方案.md）。
-// 复用现有 SMTP 配置；频率固定为每小时，时区固定 Asia/Shanghai，
-// 不扩展成通用计划任务编辑器。通过 config.GlobalConfig 注册后自动
-// 接入 GET/PUT /api/option，键名为 error_report_setting.<field>。
+// ErrorReportSetting stores the shared operations mail recipients.
 type ErrorReportSetting struct {
-	Enabled bool `json:"enabled"`
 	// Recipients 为分号/逗号/空白分隔的邮箱列表；保存前须经
 	// ValidateErrorReportRecipients 校验，运行时经 ParseErrorReportRecipients 规范化。
 	Recipients string `json:"recipients"`
 }
 
-// 默认配置：关闭且无收件人，管理员按需开启。
-var errorReportSetting = ErrorReportSetting{
-	Enabled:    false,
-	Recipients: "",
-}
+var errorReportSetting ErrorReportSetting
 
 func init() {
 	config.GlobalConfig.Register("error_report_setting", &errorReportSetting)
@@ -32,6 +24,13 @@ func init() {
 
 func GetErrorReportSetting() *ErrorReportSetting {
 	return &errorReportSetting
+}
+
+// ErrorReportSettingSnapshot is safe for long-lived scheduler goroutines.
+func ErrorReportSettingSnapshot() ErrorReportSetting {
+	common.OptionMapRWMutex.RLock()
+	defer common.OptionMapRWMutex.RUnlock()
+	return errorReportSetting
 }
 
 // ParseErrorReportRecipients 把原始字符串按分隔符拆分、去空白并去重；

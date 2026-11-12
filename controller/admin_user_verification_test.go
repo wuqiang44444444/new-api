@@ -117,7 +117,9 @@ func TestAdminUserRiskOperationsRequireProofBeforeMutation(t *testing.T) {
 		},
 		{
 			name: "create administrator", method: http.MethodPost, path: "/api/user/", handler: CreateUser,
-			body: func(*model.User) string { return `{"username":"new-admin","password":"admin-password-1","role":10}` },
+			body: func(*model.User) string {
+				return `{"username":"new-admin","email":"new-admin@example.com","password":"admin-password-1","role":10}`
+			},
 			unchanged: func(t *testing.T, _ *model.User) {
 				var count int64
 				require.NoError(t, model.DB.Model(&model.User{}).Where("username = ?", "new-admin").Count(&count).Error)
@@ -203,7 +205,7 @@ func TestAdminUserRoutineEditsDoNotRequireProof(t *testing.T) {
 	assert.Equal(t, "Renamed", stored.DisplayName)
 	assert.True(t, common.ValidatePasswordAndHash("managed-password", stored.Password))
 
-	response = adminUserRequest(http.MethodPost, "/api/user/", `{"username":"new-member","password":"member-password-1","role":1}`, "", identity, common.RoleAdminUser, nil, CreateUser)
+	response = adminUserRequest(http.MethodPost, "/api/user/", `{"username":"new-member","email":"new-member@example.com","password":"member-password-1","role":1}`, "", identity, common.RoleAdminUser, nil, CreateUser)
 	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
 	require.True(t, result.Success, response.Body.String())
 	var count int64
@@ -224,7 +226,7 @@ func TestCreateUserRejectsNonStandardRole(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			username := fmt.Sprintf("odd-role-%d", i)
-			body := fmt.Sprintf(`{"username":%q,"password":"member-password-1","role":%d}`, username, test.role)
+			body := fmt.Sprintf(`{"username":%q,"email":"member@example.com","password":"member-password-1","role":%d}`, username, test.role)
 			response := adminUserRequest(http.MethodPost, "/api/user/", body, "", identity, test.operatorRole, nil, CreateUser)
 			var result securityEnrollmentResponse
 			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
