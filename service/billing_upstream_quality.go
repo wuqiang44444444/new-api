@@ -7,15 +7,29 @@ import (
 	"github.com/QuantumNous/new-api/model"
 )
 
-func upstreamExportQualityReasons(quality *model.BillingReconciliationDataQuality, language string) string {
+func upstreamExportOriginalStatus(original *int64, language string) string {
+	if original != nil {
+		if language == "zh" {
+			return "已核算"
+		}
+		return "Available"
+	}
+	if language == "zh" {
+		return "待核算"
+	}
+	return "Pending"
+}
+
+func upstreamExportQualityReasons(quality *model.BillingReconciliationDataQuality, language string, includeDiagnostics bool) string {
 	if quality == nil {
 		return ""
 	}
 	var reasons []string
-	for _, reason := range []struct {
+	type reasonCount struct {
 		count  int64
 		en, zh string
-	}{
+	}
+	counts := []reasonCount{
 		{quality.UsageWithoutAmountRows, "%d channel tests are excluded from the amount total; the reasons below partition these tests. Usage is retained.", "%d 条渠道测试未计入金额合计，用量保留；下列原因互不重叠，合计为这些测试的总数。"},
 		{quality.TestAmountPendingReasons["estimated_usage"], "%d tests used estimated usage or fees. Their cost is pending and excluded from confirmed totals; this does not mean zero cost.", "其中 %d 条测试的用量或金额为估算值，费用待确认，暂不计入已核算金额；不代表费用为零。"},
 		{quality.TestAmountPendingReasons["fixed_price_mismatch"], "%d fixed-price tests have a recorded amount that differs from the saved unit price.", "其中 %d 条按次测试的记录金额与当时保存的单价不符。"},
@@ -32,22 +46,27 @@ func upstreamExportQualityReasons(quality *model.BillingReconciliationDataQualit
 		{quality.TestAmountPendingReasons["missing_group_ratio"], "%d expression tests lack the group multiplier needed to verify their recorded amount.", "其中 %d 条表达式测试缺少核验记录金额所需的分组倍率。"},
 		{quality.TestAmountPendingReasons["recorded_amount_mismatch"], "%d tests have a recorded amount that disagrees with the frozen rule and usage.", "其中 %d 条测试的记录金额与保存的规则、用量复算结果不一致。"},
 		{quality.TestAmountPendingReasons["missing_tool_price"], "%d tests include tool fees without a complete historical fee breakdown.", "其中 %d 条测试含工具附加费，但未保存完整费用明细。"},
-		{quality.CacheReadUnavailableRequests - quality.CacheReadUnreportedRequests - quality.LegacyTestCacheReadRows, "%d billing records lack cache read details.", "%d 条账单记录缺少缓存读取明细。"},
-		{quality.LegacyTestCacheReadRows, "%d of the unpriced tests above also lack cache read details; these are the same records.", "其中 %d 条未计价测试还缺少缓存读取明细，已包含在上述测试记录中。"},
-		{quality.CacheReadUnreportedRequests, "%d responses did not provide a usable cache read meter; this does not imply a failed request.", "%d 条响应未提供可用的缓存读取计量，不代表请求失败。"},
-		{quality.SecondsUnavailableRows - quality.SecondsValueMissingRows - quality.SecondsTaskLinkMissingRows, "%d per-second records lack the recorded billing unit.", "%d 条按秒账单未保存计量单位。"},
-		{quality.SecondsTaskLinkMissingRows, "%d historical video records have no task link or recorded billing seconds.", "%d 条历史视频记录缺少任务关联，日志中也未保存计费秒数。"},
-		{quality.SecondsValueMissingRows - quality.SecondsTaskLinkMissingRows, "%d per-second records lack the billable duration used at the time; their amounts cannot be recalculated from usage.", "%d 条按秒账单未保存当时的计费秒数，无法根据用量复算已记录的金额。"},
 		{quality.AuxiliaryChargeRows, "%d records include tool surcharges; their official price cannot be fully restored yet.", "%d 条记录包含工具附加费，原价暂无法完整还原。"},
-		{quality.InputTokensUnavailableRequests, "%d records have no confirmed total input usage.", "%d 条记录缺少可确认的总输入用量。"},
-		{quality.CacheWriteUnavailableRequests - quality.CacheWriteUnreportedRequests - quality.LegacyTestCacheWriteRows, "%d billing records lack cache write details.", "%d 条账单记录缺少缓存写入明细。"},
-		{quality.LegacyTestCacheWriteRows, "%d of the unpriced tests above also lack cache write details; these are the same records.", "其中 %d 条未计价测试还缺少缓存写入明细，已包含在上述测试记录中。"},
-		{quality.CacheWriteUnreportedRequests, "%d responses did not provide a usable cache write meter; this does not imply a failed request.", "%d 条响应未提供可用的缓存写入计量，不代表请求失败。"},
-		{quality.UnavailableRequests, "%d records are missing readable billing metadata.", "%d 条记录缺少可读取的计费信息。"},
-		{quality.UnknownBillingModeRequests, "%d records do not contain a frozen billing mode.", "%d 条记录缺少发生时的计费方式。"},
-		{quality.ProviderModelFallbackRows, "%d records do not contain the Provider model identity; the customer model is shown instead.", "%d 条记录缺少上游模型身份，暂显示客户模型。"},
-		{quality.MissingHistoricalPriceRows, "%d records are missing historical price or discount snapshots.", "%d 条记录缺少历史价格或折扣快照。"},
-	} {
+		{quality.MissingHistoricalPriceRows, "%d records lack evidence needed to verify the original amount.", "%d 条记录缺少核验原价所需的依据。"},
+	}
+	if includeDiagnostics {
+		counts = append(counts, []reasonCount{
+			{quality.CacheReadUnavailableRequests - quality.CacheReadUnreportedRequests - quality.LegacyTestCacheReadRows, "%d billing records lack cache read details.", "%d 条账单记录缺少缓存读取明细。"},
+			{quality.LegacyTestCacheReadRows, "%d of the unpriced tests above also lack cache read details; these are the same records.", "其中 %d 条未计价测试还缺少缓存读取明细，已包含在上述测试记录中。"},
+			{quality.CacheReadUnreportedRequests, "%d responses did not provide a usable cache read meter; this does not imply a failed request.", "%d 条响应未提供可用的缓存读取计量，不代表请求失败。"},
+			{quality.SecondsUnavailableRows - quality.SecondsValueMissingRows - quality.SecondsTaskLinkMissingRows, "%d per-second records lack the recorded billing unit.", "%d 条按秒账单未保存计量单位。"},
+			{quality.SecondsTaskLinkMissingRows, "%d historical video records have no task link or recorded billing seconds.", "%d 条历史视频记录缺少任务关联，日志中也未保存计费秒数。"},
+			{quality.SecondsValueMissingRows - quality.SecondsTaskLinkMissingRows, "%d per-second records lack the billable duration used at the time; their amounts cannot be recalculated from usage.", "%d 条按秒账单未保存当时的计费秒数，无法根据用量复算已记录的金额。"},
+			{quality.InputTokensUnavailableRequests, "%d records have no confirmed total input usage.", "%d 条记录缺少可确认的总输入用量。"},
+			{quality.CacheWriteUnavailableRequests - quality.CacheWriteUnreportedRequests - quality.LegacyTestCacheWriteRows, "%d billing records lack cache write details.", "%d 条账单记录缺少缓存写入明细。"},
+			{quality.LegacyTestCacheWriteRows, "%d of the unpriced tests above also lack cache write details; these are the same records.", "其中 %d 条未计价测试还缺少缓存写入明细，已包含在上述测试记录中。"},
+			{quality.CacheWriteUnreportedRequests, "%d responses did not provide a usable cache write meter; this does not imply a failed request.", "%d 条响应未提供可用的缓存写入计量，不代表请求失败。"},
+			{quality.UnavailableRequests, "%d records are missing readable billing metadata.", "%d 条记录缺少可读取的计费信息。"},
+			{quality.UnknownBillingModeRequests, "%d records do not contain a frozen billing mode.", "%d 条记录缺少发生时的计费方式。"},
+			{quality.ProviderModelFallbackRows, "%d records do not contain the Provider model identity; the customer model is shown instead.", "%d 条记录缺少上游模型身份，暂显示客户模型。"},
+		}...)
+	}
+	for _, reason := range counts {
 		if reason.count <= 0 {
 			continue
 		}

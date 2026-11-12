@@ -127,8 +127,7 @@ type UsageAnalyticsMetrics struct {
 	// 净额，只作为该日的资金事实单列。
 	UnlinkedRefundQuota int64 `json:"unlinked_refund_quota,omitempty"`
 
-	// OriginalQuotaEstimate 是由已记录扣款及冻结折扣还原的估算原价（消费正计、
-	// 可关联退款负计）；任一有金额的行无法还原时为空并携带 EstimateReasons。
+	// OriginalQuotaEstimate retains the response field name for the verified original amount.
 	OriginalQuotaEstimate *int64   `json:"original_quota_estimate,omitempty"`
 	EstimateReasons       []string `json:"estimate_reasons,omitempty"`
 	// MultipleDiscounts 表示该范围命中的渠道月度系数不止一个值（仅上游视图）。
@@ -249,7 +248,7 @@ func (a *usageMetricsAcc) addCoefficientString(marker string) {
 	a.coefficients[marker] = struct{}{}
 }
 
-// finalize 还原净额、秒数与估算原价。金额聚合使用有符号十进制，输出层才取整。
+// finalize 汇总净额、秒数与已核实原价。金额聚合使用有符号十进制，输出层才取整。
 func (a *usageMetricsAcc) finalize() UsageAnalyticsMetrics {
 	result := a.m
 	result.NetQuota = result.GrossQuota - result.RefundQuota
@@ -257,7 +256,7 @@ func (a *usageMetricsAcc) finalize() UsageAnalyticsMetrics {
 		seconds := a.seconds
 		result.Seconds = &seconds
 	}
-	// 无金额用量行（渠道测试）不构成“金额已知为零”，也不产生估算原价。
+	// 无金额用量行（渠道测试）不构成“金额已知为零”。
 	if !a.originalIncomplete && (a.originalKnown || (result.GrossQuota == 0 && result.RefundQuota == 0 && result.UsageOnlyRows == 0)) {
 		result.OriginalQuotaEstimate = billingStatementOriginalQuota(a.original)
 		if result.OriginalQuotaEstimate == nil {
@@ -321,9 +320,10 @@ type UsageCustomerKeyGroup struct {
 
 // UsageCustomerView 是客户视角的用量汇总：API Key → 客户模型，逐日 + 范围合计。
 type UsageCustomerView struct {
-	DayTotals []UsageAnalyticsMetrics `json:"day_totals"`
-	Total     UsageAnalyticsMetrics   `json:"total"`
-	Keys      []UsageCustomerKeyGroup `json:"keys"`
+	DayTotals  []UsageAnalyticsMetrics `json:"day_totals"`
+	Total      UsageAnalyticsMetrics   `json:"total"`
+	Keys       []UsageCustomerKeyGroup `json:"keys"`
+	ModelRanks []UsageReportRankItem   `json:"model_ranks,omitempty"`
 }
 
 // UsageChannelMonthDiscount 是渠道某月系数投影（只读，不物化配置）。

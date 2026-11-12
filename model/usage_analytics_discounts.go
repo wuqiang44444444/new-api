@@ -57,18 +57,22 @@ func (a *billingDiscountCombinationAccumulator) mergeUsageDiscounts(source *bill
 	}
 }
 
-func (agg *usageAggregation) customerModelDiscounts(token int, row *UsageCustomerModelRow) {
-	// 结算未完成或日志交付不完整时，不能把部分预扣解释成最终折扣构成。
-	if row.Total.RowsMissingMoney > 0 || row.Total.RowsMoneyPending > 0 {
+func (a *usageMetricsAcc) mergeCustomerUsageDiscounts(source *usageMetricsAcc) {
+	if source.discounts == nil {
 		return
 	}
-	combined := newBillingDiscountCombinationAccumulator()
-	for day := range agg.period.Days {
-		if acc := agg.customer[usageCustomerKey{day: day, token: token, model: row.ModelName}]; acc != nil {
-			combined.mergeUsageDiscounts(acc.discounts)
-		}
+	if a.discounts == nil {
+		a.discounts = newBillingDiscountCombinationAccumulator()
 	}
-	row.DiscountCombinations = combined.finalize()
+	a.discounts.mergeUsageDiscounts(source.discounts)
+}
+
+func (a *usageMetricsAcc) customerModelDiscounts(token int, row *UsageCustomerModelRow) {
+	// 结算未完成或日志交付不完整时，不能把部分预扣解释成最终折扣构成。
+	if a.discounts == nil || row.Total.RowsMissingMoney > 0 || row.Total.RowsMoneyPending > 0 {
+		return
+	}
+	row.DiscountCombinations = a.discounts.finalize()
 	for i := range row.DiscountCombinations {
 		row.DiscountCombinations[i].GroupId = int64(token)
 		row.DiscountCombinations[i].ModelName = row.ModelName

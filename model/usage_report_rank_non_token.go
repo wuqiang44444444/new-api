@@ -86,7 +86,7 @@ func attachUsageRankNonToken(ctx context.Context, scope *gorm.DB, period UsageAn
 		return err
 	}
 	for _, row := range rows {
-		if meters := bySubject[usageRankSubject(row.Name, row.ChannelID)]; meters != nil {
+		if meters := bySubject[usageRankSubject(row.Name, row.ChannelID, row.BillingMode)]; meters != nil {
 			meters.merge(row.NonToken)
 		}
 	}

@@ -31,18 +31,15 @@ import type { BillingDataQuality } from '../types'
 import {
   type BillingEvidenceEntry,
   billingAccountingEntries,
-  billingDataQualityLabel,
+  billingAmountGapEntries,
   billingEvidenceGroups,
   upstreamEvidenceCoverageLabel,
 } from '../upstream-statement-utils'
 import { UpstreamEvidenceCoverage } from './upstream-evidence-coverage'
 import { UpstreamEvidenceLink } from './upstream-evidence-link'
 
-// Amount availability and usage evidence are independent. Test coverage is a
-// scope note. Missing test amounts invalidate complete totals; usage-only gaps
-// do not invalidate independently known money.
 export function UpstreamDataStatus(props: {
-  scope?: 'report'
+  scope?: 'report' | 'detail'
   quality?: BillingDataQuality
   originalAmount?: number | null
   usageOnly?: boolean
@@ -52,27 +49,34 @@ export function UpstreamDataStatus(props: {
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const openingEvidence = useRef(false)
-  const evidenceGroups = billingEvidenceGroups(props.quality, t)
-  const accountingNotes = billingAccountingEntries(props.quality, t)
-  const allEntries = [
-    ...evidenceGroups.flatMap((group) => group.entries),
-    ...accountingNotes,
-  ]
   const isReport = props.scope === 'report'
   const coverage = props.quality?.evidence_coverage
-  const status = billingDataQualityLabel(props.quality, t)
-  let label = status
-  if (isReport) {
-    label = coverage
-      ? upstreamEvidenceCoverageLabel(coverage, t)
-      : t('Data status')
-  }
   let amountLabel = t('Original amount complete')
   if (props.usageOnly) {
     amountLabel = t('Channel tests only; amounts pending')
   } else if (props.originalAmount == null) {
     amountLabel = t('Original amount incomplete')
   }
+  let label = amountLabel
+  if (isReport) {
+    label = coverage
+      ? upstreamEvidenceCoverageLabel(coverage, t)
+      : t('Original amount status')
+  }
+  const amountPending = coverage
+    ? (coverage.amount_gap_rows ?? 0) > 0
+    : !isReport && props.originalAmount == null
+  const amountReasons =
+    amountPending && props.quality
+      ? billingAmountGapEntries(props.quality, t)
+      : []
+  const diagnostics =
+    props.scope === 'detail'
+      ? billingEvidenceGroups(props.quality, t).filter(
+          (group) => group.key !== 'amount_gap'
+        )
+      : []
+  const accountingNotes = billingAccountingEntries(props.quality, t)
   const viewEvidence = props.onViewEvidence
     ? (entry: BillingEvidenceEntry) => {
         openingEvidence.current = true
@@ -83,9 +87,6 @@ export function UpstreamDataStatus(props: {
     : undefined
   return (
     <div className='flex flex-col items-start gap-1'>
-      {!isReport && (
-        <span className='text-xs whitespace-nowrap'>{amountLabel}</span>
-      )}
       <Popover
         open={open}
         onOpenChange={(next) => {
@@ -104,11 +105,6 @@ export function UpstreamDataStatus(props: {
                   ? 'h-auto min-h-7 text-start whitespace-normal'
                   : undefined
               }
-              aria-label={
-                isReport
-                  ? undefined
-                  : `${label}: ${allEntries.map((entry) => entry.text).join(' ')}`
-              }
             />
           }
         >
@@ -119,54 +115,55 @@ export function UpstreamDataStatus(props: {
           align='end'
           className='max-h-96 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto whitespace-normal'
         >
-          <PopoverTitle>{t('Data status')}</PopoverTitle>
-          {isReport ? (
+          <PopoverTitle>{t('Original amount status')}</PopoverTitle>
+          {isReport && (
             <p className='text-muted-foreground text-xs'>
               {t(
                 'Upstream names and monthly discounts are entered manually in channel management. Calculated amounts are references, not supplier bills. Missing amounts remain unknown.'
               )}
             </p>
-          ) : (
-            <p className='text-xs'>{amountLabel}</p>
           )}
           <UpstreamEvidenceCoverage
             quality={props.quality}
             onViewEvidence={viewEvidence}
           />
-          {isReport && !props.onViewEvidence && (
+          {isReport && amountPending && !props.onViewEvidence && (
             <p className='text-muted-foreground text-xs'>
               {t('Open a matching channel to view records for this search.')}
             </p>
           )}
-          {evidenceGroups.length > 0 && (
+          {amountReasons.length > 0 && (
             <>
               <p className='text-xs font-medium'>
-                {t('Evidence gap categories')}
+                {t('Amount unavailable reasons')}
               </p>
               <p className='text-muted-foreground text-xs'>
                 {t(
                   'Except for the mutually exclusive channel-test breakdown, categories may overlap on the same record; do not add these counts together.'
                 )}
               </p>
-              {evidenceGroups.map((group) => (
-                <div key={group.key} className='space-y-1 text-xs'>
-                  {group.title ? (
-                    <p className='font-medium'>{group.title}</p>
-                  ) : null}
-                  <ul className='list-disc space-y-1 pl-4'>
-                    {group.entries.map((entry) => (
-                      <li key={entry.filter || entry.text}>
-                        {entry.text}
-                        <UpstreamEvidenceLink
-                          entry={entry}
-                          onViewEvidence={viewEvidence}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+              <ul className='list-disc space-y-1 pl-4 text-xs'>
+                {amountReasons.map((entry) => (
+                  <li key={entry.filter}>
+                    {entry.text}
+                    <UpstreamEvidenceLink
+                      entry={entry}
+                      onViewEvidence={viewEvidence}
+                    />
+                  </li>
+                ))}
+              </ul>
             </>
+          )}
+          {diagnostics.length > 0 && (
+            <div className='text-muted-foreground space-y-1 text-xs'>
+              <p className='font-medium'>{t('Usage and record details')}</p>
+              {diagnostics.flatMap((group) =>
+                group.entries.map((entry) => (
+                  <p key={entry.filter}>{entry.text}</p>
+                ))
+              )}
+            </div>
           )}
           {accountingNotes.length > 0 && (
             <div className='text-muted-foreground space-y-1 text-xs'>

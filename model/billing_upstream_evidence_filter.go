@@ -8,12 +8,12 @@ import (
 // A filter selects evidence, never changes the price or repairs stored logs.
 // The same classifier drives coverage, interactive pages and full exports.
 func upstreamEvidenceCoverageCategory(row UpstreamBillingDetailItem) string {
+	if row.OriginalAmount == nil {
+		return "amount_gap"
+	}
 	q := row.DataQuality
 	if q == nil || q.Status == "complete" {
 		return "complete"
-	}
-	if row.OriginalAmount == nil {
-		return "amount_gap"
 	}
 	if q.CacheReadUnavailableRequests > 0 || q.CacheWriteUnavailableRequests > 0 || q.SecondsUnavailableRows > 0 || q.InputTokensUnavailableRequests > 0 {
 		return "usage_gap"

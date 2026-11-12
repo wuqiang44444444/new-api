@@ -29,12 +29,13 @@ func (usageReportHandler) Run(parent context.Context, task *model.SystemTask, ru
 	ctx, cancel := context.WithTimeout(parent, 16*time.Minute)
 	defer cancel()
 	const cpuLimit, memoryLimit = 70, 80
+	localFast := localFastBillingReports()
 	var sampledAt time.Time
 	gate := func(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if time.Since(sampledAt) < 3*time.Second {
+		if localFast || time.Since(sampledAt) < 3*time.Second {
 			return nil
 		}
 		for {
@@ -72,7 +73,7 @@ func (usageReportHandler) Run(parent context.Context, task *model.SystemTask, ru
 		return
 	}
 	defer closeSource()
-	reportErr := runDailyReport(sourceCtx, task, runnerID, gate)
+	reportErr := runDailyReport(sourceCtx, task, runnerID, gate, localFast)
 	now := common.GetTimestamp()
 	for range 10 {
 		if err := gate(ctx); err != nil {

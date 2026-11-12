@@ -80,6 +80,9 @@ func (agg *usageAggregation) applyBatchJobs(ctx context.Context) error {
 				row := usageLogRow{fact: upstreamBillingLogFact(log, log.Group)}
 				row.fact.CreatedAt = finish
 				row.parsed = parseBillingReconciliationLog(row.fact)
+				if err := resolveCustomerOriginalReplay(ctx, row.fact, &row.parsed); err != nil {
+					return err
+				}
 				_ = common.UnmarshalJsonStr(log.Other, &row.other)
 				if agg.opts.WantCustomer {
 					customer.observeCustomerDiscount(row)
@@ -119,7 +122,7 @@ func (agg *usageAggregation) applyBatchJobs(ctx context.Context) error {
 				}
 			}
 			upstream.m.GrossQuota, upstream.m.RefundQuota = customer.m.GrossQuota, customer.m.RefundQuota
-			agg.mergeCustomer(job.UserId, usageCustomerKey{day: day, token: job.TokenId, model: job.PublicModel}, &customer)
+			agg.mergeCustomer(job.UserId, usageCustomerKey{day: day, token: job.TokenId, model: job.PublicModel, billingMode: BillingReconciliationModeToken}, &customer)
 			if agg.opts.WantOverview {
 				agg.mergeOverview(usageOverviewKey{user: job.UserId, day: day}, &customer)
 			}

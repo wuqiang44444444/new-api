@@ -1,9 +1,8 @@
 import { useTranslation } from 'react-i18next'
 
-import { DayTotalsTable } from './customer-usage-table'
+import { DayTotalsTable } from './day-totals-table'
 import { PersonalUsageOverview } from './personal-usage-overview'
 import type { UsageAnalyticsEnvelope, UsageUpstreamView } from './types'
-import { UsageDailyBreakdown } from './usage-daily-breakdown'
 import { UsageUpstreamModelCharts } from './usage-rankings'
 
 export function UpstreamUsageReport(props: {
@@ -28,15 +27,6 @@ export function UpstreamUsageReport(props: {
           incompleteDays={props.report.incomplete_days}
           days={result.day_totals}
           total={result.total}
-          onDaySelect={props.onDaySelect}
-        />
-      )}
-      {period.period === 'month' && (
-        <UsageDailyBreakdown
-          upstream
-          period={period}
-          days={result.day_totals}
-          incompleteDays={props.report.incomplete_days}
           onDaySelect={props.onDaySelect}
         />
       )}

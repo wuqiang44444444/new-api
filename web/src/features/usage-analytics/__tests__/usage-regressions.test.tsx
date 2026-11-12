@@ -2,7 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 
-import { CustomerUsageTable, DayTotalsTable } from '../customer-usage-table'
+import { DayTotalsTable } from '../day-totals-table'
 import { UsageNonTokenCell } from '../metrics-cells'
 import { UsagePeriodPicker } from '../period-picker'
 import type { UsageAnalyticsMetrics } from '../types'
@@ -70,7 +70,7 @@ it('shows an explicitly recorded zero image count and marks partial seconds sepa
   )
   expect(screen.getByText('0 images')).toBeInTheDocument()
   expect(screen.getByText('29.25 billing seconds')).toBeInTheDocument()
-  expect(screen.getByText('Known subtotal')).toBeInTheDocument()
+  expect(screen.queryByText('Known subtotal')).not.toBeInTheDocument()
 })
 it('daily breakdown includes result classes, output usage and refund, and marks future dates', () => {
   render(
@@ -178,37 +178,4 @@ it('moves between calendar months without overflowing a month-end date', async (
   expect(onDateChange).toHaveBeenLastCalledWith('2024-02-01')
   await userEvent.click(screen.getByRole('button', { name: 'Previous period' }))
   expect(onDateChange).toHaveBeenLastCalledWith('2023-12-01')
-})
-
-it('customer rows show period metrics directly without a daily-breakdown toggle', () => {
-  const view = {
-    day_totals: [metrics],
-    total: metrics,
-    keys: [
-      {
-        token_id: 0,
-        token_name: 'unknown',
-        days: [metrics],
-        total: metrics,
-        models: [{ model_name: 'unknown', days: [metrics], total: metrics }],
-      },
-    ],
-  }
-  render(
-    <CustomerUsageTable
-      view={view}
-      period={{
-        period: 'day',
-        date: '2026-09-21',
-        start_timestamp: 0,
-        end_timestamp: 86400,
-        timezone: 'Asia/Shanghai',
-        days: [{ date: '2026-09-21', start: 0, end: 86400 }],
-      }}
-    />
-  )
-  expect(screen.queryByText('Daily breakdown')).not.toBeInTheDocument()
-  expect(screen.getAllByRole('table')).toHaveLength(1)
-  expect(screen.getAllByText('View fee details').length).toBeGreaterThan(0)
-  expect(screen.getByText('Total', { exact: true })).toBeInTheDocument()
 })

@@ -201,7 +201,7 @@ function DiscountChannelPicker({
               ))}
             </ul>
           )}
-          {query.data.total > pageSize && (
+          {query.data.total > 0 && (
             <BillingPagination
               page={page}
               pageSize={pageSize}

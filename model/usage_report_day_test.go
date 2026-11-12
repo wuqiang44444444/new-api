@@ -80,12 +80,14 @@ func TestPublishedUsageModelTotalsCombineCustomersAcrossNaturalMonth(t *testing.
 	require.NoError(t, err)
 	require.Len(t, first.Items, 1)
 	assert.True(t, first.HasMore)
+	assert.EqualValues(t, 2, first.Total)
 	assert.Equal(t, "shared", first.Items[0].Name)
 	require.NotNil(t, first.Items[0].Amount)
 	assert.EqualValues(t, 180, *first.Items[0].Amount)
 	require.NotNil(t, first.Items[0].NonToken)
-	assert.EqualValues(t, 3, first.Items[0].NonToken.ImageCount)
-	assert.True(t, first.Items[0].NonToken.ImageCountKnown)
+	assert.Equal(t, BillingReconciliationModePerSecond, first.Items[0].BillingMode)
+	assert.Zero(t, first.Items[0].NonToken.ImageCount)
+	assert.False(t, first.Items[0].NonToken.ImageCountKnown)
 	require.NotNil(t, first.Items[0].NonToken.Seconds)
 	assert.Equal(t, "0.3", first.Items[0].NonToken.Seconds.String())
 	assert.Equal(t, overview.Total.Seconds, first.Items[0].NonToken.Seconds)
@@ -93,6 +95,7 @@ func TestPublishedUsageModelTotalsCombineCustomersAcrossNaturalMonth(t *testing.
 	require.NoError(t, err)
 	require.Len(t, second.Items, 1)
 	assert.False(t, second.HasMore)
+	assert.EqualValues(t, 2, second.Total)
 	assert.Equal(t, "second", second.Items[0].Name)
 
 	// A generation published before the model projection gives the same totals.
@@ -192,11 +195,11 @@ func TestUsageReportHonorsShanghaiPublicationWindow(t *testing.T) {
 	today := time.Date(2026, 11, 11, 0, 0, 0, 0, UsageAnalyticsZone()).Unix()
 	require.NoError(t, db.Create(&usageReportDay{Start: today - 86400, AsOf: today - 1, Generation: "provisional"}).Error)
 
-	before, _, due, err := NextDailyReportDay(ctx, today, today+3*3600-1)
+	before, _, due, _, err := NextDailyReportDay(ctx, today, today+3*3600-1)
 	require.NoError(t, err)
 	assert.True(t, due)
 	assert.Equal(t, today, before)
-	after, _, due, err := NextDailyReportDay(ctx, today, today+3*3600)
+	after, _, due, _, err := NextDailyReportDay(ctx, today, today+3*3600)
 	require.NoError(t, err)
 	assert.True(t, due)
 	assert.Equal(t, today-86400, after)
@@ -208,21 +211,21 @@ func TestUsageReportDoesNotStarveHistoryWhenTodayBuildRunsLong(t *testing.T) {
 	ctx := context.Background()
 	today := time.Date(2026, 11, 11, 0, 0, 0, 0, UsageAnalyticsZone()).Unix()
 	require.NoError(t, db.Create(&[]usageReportDay{
-		{Start: today - 86400, AsOf: today + 3*3600},
-		{Start: today, AsOf: today + 4*3600},
+		{Start: today - 86400, AsOf: today + 3*3600, MeterVersion: usageReportMeterVersion},
+		{Start: today, AsOf: today + 4*3600, MeterVersion: usageReportMeterVersion},
 	}).Error)
 	require.NoError(t, db.Create(&[]billingReportHead{
 		{Start: today - 86400, AsOf: today + 3*3600},
 		{Start: today, AsOf: today + 4*3600},
 	}).Error)
 	now := today + 4*3600 + dailyReportRefreshSeconds + 1
-	next, _, due, err := NextDailyReportDay(ctx, today, now)
+	next, _, due, _, err := NextDailyReportDay(ctx, today, now)
 	require.NoError(t, err)
 	assert.True(t, due)
 	assert.Equal(t, today-2*86400, next)
-	require.NoError(t, db.Create(&usageReportDay{Start: next, AsOf: now}).Error)
+	require.NoError(t, db.Create(&usageReportDay{Start: next, AsOf: now, MeterVersion: usageReportMeterVersion}).Error)
 	require.NoError(t, db.Create(&billingReportHead{Start: next, AsOf: now}).Error)
-	next, _, due, err = NextDailyReportDay(ctx, today, now+1)
+	next, _, due, _, err = NextDailyReportDay(ctx, today, now+1)
 	require.NoError(t, err)
 	assert.True(t, due)
 	assert.Equal(t, today, next)

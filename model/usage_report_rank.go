@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"sort"
@@ -23,19 +24,31 @@ type usageReportRank struct {
 }
 
 type UsageReportRankItem struct {
-	Name          string               `json:"name" gorm:"size:255"`
-	ChannelID     int                  `json:"channel_id,omitempty"`
-	Calls         int64                `json:"calls"`
-	Tokens        int64                `json:"tokens"`
-	MissingTokens int64                `json:"missing_tokens"`
-	Amount        *int64               `json:"amount"`
-	PendingAmount int64                `json:"pending_amount"`
-	NonToken      *UsageReportNonToken `json:"non_token" gorm:"-"`
+	Name          string                     `json:"name" gorm:"size:255"`
+	BillingMode   string                     `json:"billing_mode,omitempty" gorm:"size:24"`
+	ChannelID     int                        `json:"channel_id,omitempty"`
+	Calls         int64                      `json:"calls"`
+	FailureCalls  *int64                     `json:"failure_calls,omitempty"`
+	Tokens        int64                      `json:"tokens"`
+	MissingTokens int64                      `json:"missing_tokens"`
+	Amount        *int64                     `json:"amount"`
+	PendingAmount int64                      `json:"pending_amount"`
+	NonToken      *UsageReportNonToken       `json:"non_token" gorm:"-"`
+	TokenUsage    *UsageReportRankTokenUsage `json:"token_usage,omitempty" gorm:"-"`
+}
+
+type UsageReportRankTokenUsage struct {
+	InputTokens      int64            `json:"input_tokens"`
+	OutputTokens     int64            `json:"output_tokens"`
+	CacheReadTokens  int64            `json:"cache_read_tokens"`
+	CacheWriteTokens int64            `json:"cache_write_tokens"`
+	TokenDetails     map[string]int64 `json:"token_details,omitempty"`
 }
 
 type UsageReportRankPage struct {
 	Items   []UsageReportRankItem `json:"items"`
 	HasMore bool                  `json:"has_more"`
+	Total   int64                 `json:"total"`
 }
 
 type UsageReportRankQuery struct {
@@ -43,9 +56,12 @@ type UsageReportRankQuery struct {
 	Page, Size           int
 }
 
-func usageRankSubject(name string, channelID int) string {
+func usageRankSubject(name string, channelID int, mode string) string {
 	if channelID != 0 {
 		return fmt.Sprint(channelID)
+	}
+	if mode != "" && mode != BillingReconciliationModeUnknown {
+		return base64.RawURLEncoding.EncodeToString(common.Sha256Raw([]byte(mode + "\x00" + name)))
 	}
 	return hex.EncodeToString(common.Sha256Raw([]byte(name)))
 }
@@ -69,12 +85,33 @@ func usageReportRankItem(name string, channel int, metrics UsageAnalyticsMetrics
 	return item
 }
 
-func writeUsageReportRanks(ctx context.Context, db *gorm.DB, generation string, models map[string]*usageMetricsAcc, upstream []usageReportUpstreamLeaf) error {
+func usageReportCustomerRankItem(key usageReportModelKey, metrics UsageAnalyticsMetrics) UsageReportRankItem {
+	item := usageReportRankItem(key.name, 0, metrics, false)
+	item.BillingMode = key.mode
+	item.FailureCalls = &metrics.FailureCalls
+	if key.mode != BillingReconciliationModeToken {
+		item.Tokens, item.MissingTokens = 0, 0
+	}
+	switch key.mode {
+	case customerUsagePerImage:
+		item.NonToken.Seconds = nil
+		item.NonToken.SecondsMissingRows, item.NonToken.SecondsValueMissingRows = 0, 0
+	case BillingReconciliationModePerSecond, BillingReconciliationModeDurationAndCount:
+		item.NonToken.ImageCount = 0
+		item.NonToken.ImageCountKnown = false
+		item.NonToken.ImageCountMissingRows = 0
+	default:
+		item.NonToken = &UsageReportNonToken{}
+	}
+	return item
+}
+
+func writeUsageReportRanks(ctx context.Context, db *gorm.DB, generation string, models map[usageReportModelKey]*usageMetricsAcc, upstream []usageReportUpstreamLeaf) error {
 	rows := make([]usageReportRank, 0, len(models))
-	for name, acc := range models {
+	for key, acc := range models {
 		rows = append(rows, usageReportRank{Generation: generation, Kind: "model",
-			Subject:             usageRankSubject(name, 0),
-			UsageReportRankItem: usageReportRankItem(name, 0, acc.finalize(), false)})
+			Subject:             usageRankSubject(key.name, 0, key.mode),
+			UsageReportRankItem: usageReportCustomerRankItem(key, acc.finalize())})
 	}
 	type channelScope struct {
 		id  int
@@ -95,7 +132,7 @@ func writeUsageReportRanks(ctx context.Context, db *gorm.DB, generation string, 
 	}
 	for key, acc := range channels {
 		rows = append(rows, usageReportRank{Generation: generation, Kind: "channel",
-			URLHash: providerURLGroupHash(key.url), Subject: usageRankSubject("", key.id),
+			URLHash: providerURLGroupHash(key.url), Subject: usageRankSubject("", key.id, ""),
 			UsageReportRankItem: usageReportRankItem(names[key], key.id, acc.finalizeUpstream(), true)})
 	}
 	for start := 0; start < len(rows); start += 100 {
@@ -154,6 +191,7 @@ func GetPublishedUsageRanks(ctx context.Context, period UsageAnalyticsPeriod, fi
 		if err != nil {
 			return page, err
 		}
+		page.Total = int64(len(page.Items))
 		page.Items = page.Items[min(offset, len(page.Items)):min(offset+filter.Size+1, len(page.Items))]
 	} else {
 		db := DB.WithContext(ctx)
@@ -161,8 +199,17 @@ func GetPublishedUsageRanks(ctx context.Context, period UsageAnalyticsPeriod, fi
 		if filter.URLKey != "" {
 			scope = scope.Where("url_hash = ?", providerURLGroupHash(filter.URLKey))
 		}
+		if err := scope.Session(&gorm.Session{}).Distinct("subject").Count(&page.Total).Error; err != nil {
+			return page, err
+		}
 		groups := scope.Session(&gorm.Session{})
-		groups = groups.Select("MIN(name) AS name, MAX(channel_id) AS channel_id, SUM(calls) AS calls, SUM(tokens) AS tokens, SUM(missing_tokens) AS missing_tokens, SUM(amount) AS amount, SUM(pending_amount) AS pending_amount, subject").Group("subject")
+		tokens := "SUM(tokens)"
+		if filter.Kind == "model" {
+			tokens = "SUM(CASE WHEN billing_mode = 'token' THEN tokens ELSE 0 END)"
+		}
+		groups = groups.Select("MIN(name) AS name, COALESCE(MIN(billing_mode), '') AS billing_mode, MAX(channel_id) AS channel_id, " +
+			"SUM(calls) AS calls, CASE WHEN COUNT(failure_calls) = COUNT(*) THEN SUM(failure_calls) END AS failure_calls, " +
+			tokens + " AS tokens, SUM(missing_tokens) AS missing_tokens, SUM(amount) AS amount, SUM(pending_amount) AS pending_amount, subject").Group("subject")
 		query := db.Table("(?) AS ranks", groups)
 		if filter.Metric == "amount" {
 			query = query.Order("CASE WHEN amount IS NULL THEN 1 ELSE 0 END")
@@ -178,7 +225,17 @@ func GetPublishedUsageRanks(ctx context.Context, period UsageAnalyticsPeriod, fi
 			return page, err
 		}
 		for _, row := range ranked {
+			if filter.Kind == "model" && (row.BillingMode == "" || row.BillingMode == BillingReconciliationModeUnknown) {
+				row.BillingMode = BillingReconciliationModeUnknown
+				row.MissingTokens = 0
+				row.NonToken = &UsageReportNonToken{}
+			}
 			page.Items = append(page.Items, row.UsageReportRankItem)
+		}
+		if filter.Kind == "model" {
+			if err := fillPublishedUsageRankFailureCounts(WithUsageReportReferences(ctx, refs), period, page.Items); err != nil {
+				return page, err
+			}
 		}
 	}
 	if _, err := reportDayHeads(ctx, period, refs); err != nil {
@@ -189,16 +246,41 @@ func GetPublishedUsageRanks(ctx context.Context, period UsageAnalyticsPeriod, fi
 	return page, nil
 }
 
+func fillPublishedUsageRankFailureCounts(ctx context.Context, period UsageAnalyticsPeriod, rows []UsageReportRankItem) error {
+	missing := make(map[usageReportModelKey]*UsageReportRankItem)
+	for i := range rows {
+		row := &rows[i]
+		if row.FailureCalls == nil {
+			missing[usageReportModelKey{row.Name, row.BillingMode}] = row
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	// Older rank rows lack this column's values. Recover the full count for
+	// each affected group from the same frozen days, including any newer rows.
+	models, err := getPublishedUsageModelTotals(ctx, period, true)
+	if err != nil {
+		return err
+	}
+	for _, model := range models {
+		if row := missing[usageReportModelKey{model.ModelName, model.BillingMode}]; row != nil {
+			row.FailureCalls = &model.Total.FailureCalls
+		}
+	}
+	return nil
+}
+
 // Legacy generations carry the same facts in frozen payloads.
 func readLegacyUsageRanks(ctx context.Context, period UsageAnalyticsPeriod, filter UsageReportRankQuery) ([]UsageReportRankItem, error) {
 	rows := []UsageReportRankItem{}
 	if filter.Kind == "model" {
-		models, err := GetPublishedUsageModelTotals(ctx, period)
+		models, err := getPublishedUsageModelTotals(ctx, period, true)
 		if err != nil {
 			return nil, err
 		}
 		for _, model := range models {
-			rows = append(rows, usageReportRankItem(model.ModelName, 0, model.Total, false))
+			rows = append(rows, usageReportCustomerRankItem(usageReportModelKey{model.ModelName, model.BillingMode}, model.Total))
 		}
 	} else {
 		view, _, err := GetPublishedUsageUpstream(ctx, period, UsageUpstreamScope{URLKey: filter.URLKey})
@@ -231,7 +313,7 @@ func readLegacyUsageRanks(ctx context.Context, period UsageAnalyticsPeriod, filt
 		if filter.Kind == "channel" {
 			return fmt.Sprint(rows[i].ChannelID) < fmt.Sprint(rows[j].ChannelID)
 		}
-		return strings.Compare(string(common.Sha256Raw([]byte(rows[i].Name))), string(common.Sha256Raw([]byte(rows[j].Name)))) < 0
+		return usageRankSubject(rows[i].Name, 0, rows[i].BillingMode) < usageRankSubject(rows[j].Name, 0, rows[j].BillingMode)
 	})
 	return rows, nil
 }

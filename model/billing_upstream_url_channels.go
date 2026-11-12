@@ -32,6 +32,7 @@ func getUpstreamURLChannelPage(ctx context.Context, start, end, period int64, fi
 	}
 	search := strings.ToLower(filter.Search)
 	totals := UpstreamURLTotals{}
+	discountPending := make(map[int]struct{})
 	var original, reference upstreamURLAmountTotal
 	var rows []UpstreamURLChannelRow
 	for _, group := range summary.Groups {
@@ -56,6 +57,9 @@ func getUpstreamURLChannelPage(ctx context.Context, start, end, period int64, fi
 			accumulateProviderBillingUsage(&totals.Usage, channel.Usage)
 			original.add(channel.OriginalAmount, channel.KnownOriginalAmount)
 			reference.add(channel.ReferenceAmount, channel.KnownReferenceAmount)
+			if channel.Discount == nil && !channel.UsageOnly {
+				discountPending[channel.ChannelId] = struct{}{}
+			}
 			result.ModelCount += channel.ModelCount
 			accumulateBillingReconciliationQuality(&result.DataQuality, channel.DataQuality)
 		}
@@ -87,6 +91,7 @@ func getUpstreamURLChannelPage(ctx context.Context, start, end, period int64, fi
 	}
 	totals.OriginalAmount, totals.KnownOriginalAmount = original.amounts()
 	totals.ReferenceAmount, totals.KnownReferenceAmount = reference.amounts()
+	totals.DiscountPendingChannels = len(discountPending)
 	result.Totals = &totals
 	finalizeBillingReconciliationQuality(&result.DataQuality)
 	return result, nil

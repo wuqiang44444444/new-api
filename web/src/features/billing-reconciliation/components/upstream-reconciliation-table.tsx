@@ -58,33 +58,29 @@ export function AmountCell(props: {
   value?: number | null
   knownSubtotal?: number | null
   parent?: boolean
-  estimated?: boolean
+  unverified?: boolean
 }) {
   const { t } = useTranslation()
+  const value = props.unverified ? null : props.value
+  const subtotal = props.unverified ? null : props.knownSubtotal
   const amount =
-    props.value == null ? (
-      <span className='text-muted-foreground'>{t('Unknown')}</span>
+    value == null ? (
+      <span className='text-muted-foreground'>{t('Cannot calculate')}</span>
     ) : (
-      formatCustomerStatementQuota(props.value)
+      formatCustomerStatementQuota(value)
     )
   return (
     <TableCell
       className={`text-right tabular-nums ${props.parent ? 'font-semibold' : ''}`}
     >
       {amount}
-      {props.value == null && props.knownSubtotal != null && (
+      {value == null && subtotal != null && (
         <span className='text-muted-foreground block text-xs font-normal'>
           {t('Known subtotal: {{amount}}', {
-            amount: formatCustomerStatementQuota(props.knownSubtotal),
+            amount: formatCustomerStatementQuota(subtotal),
           })}
         </span>
       )}
-      {props.estimated &&
-        (props.value != null || props.knownSubtotal != null) && (
-          <span className='text-muted-foreground block text-xs font-normal'>
-            {t('Estimated from recorded charges and historical discounts')}
-          </span>
-        )}
     </TableCell>
   )
 }
@@ -161,7 +157,7 @@ export function UpstreamReconciliationTable(
             <TableHead className='text-right'>
               {t('Original amount (local official price)')}
             </TableHead>
-            <TableHead>{t('Data status')}</TableHead>
+            <TableHead>{t('Original amount status')}</TableHead>
             <TableHead className='text-right'>{t('Actions')}</TableHead>
             <TableHead>{t('Billing mode')}</TableHead>
             <TableHead className='text-right'>{t('Requests')}</TableHead>
@@ -258,6 +254,7 @@ function ChannelRow(props: {
       </TableCell>
       <AmountCell
         parent
+        unverified={channel.data_quality?.has_estimated_original}
         value={channel.reference_amount}
         knownSubtotal={channel.known_reference_amount}
       />
@@ -265,7 +262,7 @@ function ChannelRow(props: {
         parent
         value={channel.original_amount}
         knownSubtotal={channel.known_original_amount}
-        estimated={channel.data_quality?.has_estimated_original}
+        unverified={channel.data_quality?.has_estimated_original}
       />
       <TableCell>
         <UpstreamDataStatus
@@ -368,13 +365,14 @@ function ChannelModelRow(props: {
         </span>
       </TableCell>
       <AmountCell
+        unverified={props.model.data_quality?.has_estimated_original}
         value={props.model.reference_amount}
         knownSubtotal={props.model.known_reference_amount}
       />
       <AmountCell
         value={props.model.original_amount}
         knownSubtotal={props.model.known_original_amount}
-        estimated={props.model.data_quality?.has_estimated_original}
+        unverified={props.model.data_quality?.has_estimated_original}
       />
       <TableCell>
         <UpstreamDataStatus

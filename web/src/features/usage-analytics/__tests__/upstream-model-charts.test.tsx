@@ -1,5 +1,4 @@
 import { render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { expect, it } from 'vitest'
 
 import type { UsageAnalyticsMetrics, UsageUpstreamModelRow } from '../types'
@@ -34,8 +33,7 @@ function model(
   }
 }
 
-it('shows model-share charts and expands independently metered usage across upstream groups', async () => {
-  const user = userEvent.setup()
+it('shows model-share charts and model usage details immediately across upstream groups', () => {
   const total = {
     ...zero,
     total_calls: 12,
@@ -68,6 +66,7 @@ it('shows model-share charts and expands independently metered usage across upst
               models: [
                 model('Model A', {
                   total_calls: 4,
+                  failure_calls: 1,
                   input_tokens: 30,
                   output_tokens: 10,
                   reference_amount: 500000,
@@ -90,6 +89,7 @@ it('shows model-share charts and expands independently metered usage across upst
               models: [
                 model('Model A', {
                   total_calls: 5,
+                  failure_calls: 2,
                   rows_missing_tokens: 1,
                   known_reference_amount: 500000,
                   seconds: '0.2',
@@ -125,12 +125,11 @@ it('shows model-share charts and expands independently metered usage across upst
   expect(amount.getByText('Known subtotal')).toBeVisible()
   expect(amount.queryByText('Model C')).not.toBeInTheDocument()
   expect(screen.queryByText('Reference amount details')).not.toBeInTheDocument()
-  expect(screen.queryByRole('table')).not.toBeInTheDocument()
-  const details = screen.getByRole('button', { name: 'Model usage details' })
-  expect(details).toHaveAttribute('aria-expanded', 'false')
-  await user.click(details)
-  expect(details).toHaveAttribute('aria-expanded', 'true')
   const table = screen.getByRole('table', { name: 'Model usage details' })
+  expect(table).toBeVisible()
+  expect(
+    screen.queryByRole('button', { name: 'Model usage details' })
+  ).not.toBeInTheDocument()
   expect(
     within(table)
       .getAllByRole('columnheader')
@@ -138,13 +137,17 @@ it('shows model-share charts and expands independently metered usage across upst
   ).toEqual([
     'Model',
     'Calls',
+    'Failed calls',
     'Total tokens',
     'Non-Token usage',
     'Reference amount',
   ])
   const row = within(table).getByRole('row', { name: /Model A/ })
+  expect(within(row).getAllByRole('cell')[2]).toHaveTextContent(/^3$/)
+  const successful = within(table).getByRole('row', { name: /Model B/ })
+  expect(within(successful).getAllByRole('cell')[2]).toHaveTextContent(/^0$/)
   expect(within(row).getByText('2 images')).toBeVisible()
   const seconds = within(row).getByText('0.3 billing seconds')
   expect(seconds).toBeVisible()
-  expect(seconds.parentElement).toHaveTextContent('Known subtotal')
+  expect(within(table).queryByText('Known subtotal')).not.toBeInTheDocument()
 })

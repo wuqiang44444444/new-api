@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
+import { ReportCard } from '@/components/report-card'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -48,10 +49,17 @@ export function UpstreamUrlTotals(props: {
 }) {
   const { t, i18n } = useTranslation()
   const totals = props.totals
-  const formatAmount = (amount?: number, subtotal?: number) => {
-    const value = amount ?? subtotal
-    return value == null ? t('Unknown') : formatCustomerStatementQuota(value)
-  }
+  const unverified = props.quality?.has_estimated_original
+  const original = totals.original_amount ?? totals.known_original_amount
+  const reference = totals.reference_amount ?? totals.known_reference_amount
+  const hasPartialAmount =
+    !unverified &&
+    ((totals.original_amount == null && original != null) ||
+      (totals.reference_amount == null && reference != null))
+  const formatAmount = (amount?: number) =>
+    unverified || amount == null
+      ? t('Cannot calculate')
+      : formatCustomerStatementQuota(amount)
   const metrics = [
     {
       label: t('Requests'),
@@ -61,36 +69,45 @@ export function UpstreamUrlTotals(props: {
     },
     {
       label: t('List price'),
-      value: formatAmount(totals.original_amount, totals.known_original_amount),
+      value: formatAmount(original),
     },
     {
       label: t('Discounted reference amount'),
-      value: formatAmount(
-        totals.reference_amount,
-        totals.known_reference_amount
-      ),
+      value: formatAmount(reference),
     },
   ]
   return (
-    <section className='bg-muted/30 shrink-0 rounded-lg border px-3 py-2'>
-      <h2 className='mb-1 text-sm font-semibold'>
-        {props.filtered ? t('Filtered total') : t('Total')}
-      </h2>
-      <dl className='grid grid-cols-[repeat(auto-fit,minmax(min(100%,8rem),1fr))] gap-x-4 gap-y-2'>
-        {metrics.map((metric) => (
-          <UpstreamTotalMetric key={metric.label} {...metric} />
-        ))}
-        <UpstreamUsageTotalMetrics
-          usage={totals.usage}
-          quality={props.quality}
-        />
-      </dl>
-      {props.quality?.has_estimated_original && (
-        <p className='text-muted-foreground text-xs'>
-          {t('Estimated from recorded charges and historical discounts')}
-        </p>
-      )}
-    </section>
+    <ReportCard className='py-1.5'>
+      <section className='flex flex-wrap items-baseline gap-x-3 gap-y-1'>
+        <h2 className='text-sm font-medium'>
+          {props.filtered ? t('Filtered total') : t('Total')}
+        </h2>
+        <dl className='flex min-w-[min(100%,16rem)] flex-1 flex-wrap items-baseline gap-x-4 gap-y-1 border-s ps-3'>
+          {metrics.map((metric) => (
+            <UpstreamTotalMetric key={metric.label} {...metric} />
+          ))}
+          <UpstreamUsageTotalMetrics
+            usage={totals.usage}
+            quality={props.quality}
+          />
+        </dl>
+        {hasPartialAmount && (
+          <p className='text-muted-foreground basis-full text-xs'>
+            {t('Amounts reflect records priced to date.')}
+          </p>
+        )}
+        {Boolean(totals.discount_pending_channels) && (
+          <p className='text-muted-foreground basis-full text-xs'>
+            {t(
+              'Reference amount pending discount confirmation for {{count}} channels',
+              {
+                count: totals.discount_pending_channels,
+              }
+            )}
+          </p>
+        )}
+      </section>
+    </ReportCard>
   )
 }
 
@@ -185,12 +202,13 @@ export function UpstreamUrlSummaryTable(props: {
             <AmountCell
               value={row.original_amount}
               knownSubtotal={row.known_original_amount}
-              estimated={row.data_quality?.has_estimated_original}
+              unverified={row.data_quality?.has_estimated_original}
             />
             <TableCell>
               <UpstreamDiscountValue discount={row.discount} />
             </TableCell>
             <AmountCell
+              unverified={row.data_quality?.has_estimated_original}
               value={row.reference_amount}
               knownSubtotal={row.known_reference_amount}
             />

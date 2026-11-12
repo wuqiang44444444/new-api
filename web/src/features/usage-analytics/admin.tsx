@@ -26,7 +26,6 @@ export function AdminUsage(props: {
   const date = props.date ?? shiftDate(shanghaiToday(), -1)
   const [drill, setDrill] = useState<{
     date: string
-    section: AdminUsageSection
     period: UsagePeriodKind
     reportDays?: string
     sourcePeriod?: {
@@ -38,11 +37,11 @@ export function AdminUsage(props: {
   const section = props.section ?? 'customers'
   const period = props.period
   const reportDays =
-    drill?.date === date && drill.section === section && drill.period === period
+    section === 'upstream' && drill?.date === date && drill.period === period
       ? drill.reportDays
       : undefined
   const sourcePeriod =
-    period === 'day' && drill?.date === date && drill.section === 'upstream'
+    section === 'upstream' && period === 'day' && drill?.date === date
       ? drill.sourcePeriod
       : undefined
   const setSection = (section: string) => {
@@ -97,20 +96,6 @@ export function AdminUsage(props: {
             scrollContainer={scrollContainer}
             period={period}
             date={date}
-            reportDays={reportDays}
-            onDaySelect={(day, reportDays) => {
-              setDrill({
-                period: 'day',
-                date: day,
-                section: 'customers',
-                reportDays,
-              })
-              props.onSearchChange({
-                period: 'day',
-                date: day,
-                section: 'customers',
-              })
-            }}
           />
         </TabsContent>
         <TabsContent value='upstream'>
@@ -124,7 +109,6 @@ export function AdminUsage(props: {
               setDrill({
                 period: 'day',
                 date: day,
-                section: 'upstream',
                 reportDays,
                 sourcePeriod: { period, date, reportDays: periodReportDays },
               })
@@ -139,7 +123,7 @@ export function AdminUsage(props: {
                 ? {
                     period: sourcePeriod.period,
                     onClick: () => {
-                      setDrill({ ...sourcePeriod, section: 'upstream' })
+                      setDrill(sourcePeriod)
                       props.onSearchChange({
                         period: sourcePeriod.period,
                         date: sourcePeriod.date,

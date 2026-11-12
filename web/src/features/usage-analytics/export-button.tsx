@@ -3,6 +3,7 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ReportCard } from '@/components/report-card'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { Field, FieldLabel } from '@/components/ui/field'
@@ -152,10 +153,7 @@ function UsageExportScope(props: UsageExportButtonProps) {
         personalUsage={personalUsage}
         adminCustomerUsage={adminCustomerUsage}
       >
-        <section
-          className='space-y-3 rounded-lg border p-3'
-          aria-labelledby={formTitleId}
-        >
+        <ReportCard role='region' aria-labelledby={formTitleId}>
           <h2 id={formTitleId} className='text-sm font-medium'>
             {reuseExports
               ? t('Export usage statistics')
@@ -238,6 +236,7 @@ function UsageExportScope(props: UsageExportButtonProps) {
           </p>
           <Button
             size='sm'
+            className='self-start'
             disabled={
               !props.ready ||
               mutation.isPending ||
@@ -252,7 +251,7 @@ function UsageExportScope(props: UsageExportButtonProps) {
               {t(mutation.error.message)}
             </p>
           )}
-        </section>
+        </ReportCard>
       </ExportJobsDrawer>
     </>
   )

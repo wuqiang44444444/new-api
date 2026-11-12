@@ -40,18 +40,18 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 		"Calculated amount (after channel discount)",
 		"Channel discount",
 		"Discount version",
-		"Data status",
+		"Original amount status",
 		"Generated at",
 		"Currency",
 		"Quota per unit",
 		"Currency rate",
 		"Billable seconds",
-		"Data quality reasons",
+		"Original amount unavailable reasons",
 		"Known original subtotal",
 		"Known reference subtotal",
 		"Billing evidence records",
-		"Records needing review (deduplicated)",
-		"Records without these evidence gaps",
+		"Records with original amount pending",
+		"Records with original amount available",
 		"Seconds unavailable rows",
 		"Customer models",
 		"URL grouping basis",
@@ -79,18 +79,18 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 			"核算金额（按渠道折扣）",
 			"渠道折扣",
 			"折扣版本",
-			"数据状态",
+			"原价核算状态",
 			"生成时间",
 			"币种",
 			"单位 quota",
 			"汇率",
 			"计费秒数",
-			"数据质量说明",
+			"原价待核算原因",
 			"已知原价小计",
 			"已知核算小计",
 			"账单证据记录数",
-			"待核查记录数（去重）",
-			"无上述证据缺项的记录数",
+			"原价待核算记录数",
+			"原价已核算记录数",
 			"缺少计费秒数的记录数",
 			"客户模型",
 			"归组依据",
@@ -137,10 +137,11 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 			}
 		}
 		read, write := strconv.FormatInt(row.Usage.CacheReadTokens, 10), strconv.FormatInt(row.Usage.CacheWriteTokens, 10)
-		quality, reasons, rows, gaps, complete := "complete", "", "", "", ""
+		reasons, rows, gaps, complete := "", "", "", ""
 		if row.DataQuality != nil {
-			quality = row.DataQuality.Status
-			reasons = upstreamExportQualityReasons(row.DataQuality, filters.Language)
+			if row.OriginalAmount == nil {
+				reasons = upstreamExportQualityReasons(row.DataQuality, filters.Language, false)
+			}
 			if row.DataQuality.CacheReadUnavailableRequests > 0 {
 				read = ""
 			}
@@ -148,15 +149,17 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 				write = ""
 			}
 			if coverage := row.DataQuality.EvidenceCoverage; coverage != nil {
-				rows, gaps, complete = strconv.FormatInt(coverage.Rows, 10), strconv.FormatInt(coverage.GapRows, 10), strconv.FormatInt(coverage.Rows-coverage.GapRows, 10)
+				rows = strconv.FormatInt(coverage.Rows, 10)
+				gaps = strconv.FormatInt(coverage.AmountGapRows, 10)
+				complete = strconv.FormatInt(coverage.Rows-coverage.AmountGapRows, 10)
 			}
 		}
 		seconds := ""
 		if row.Usage.Seconds != nil {
 			seconds = row.Usage.Seconds.String()
 		}
-		if len(row.EstimateReasons) > 0 {
-			reasons = strings.TrimSpace(reasons + " " + strings.Join(row.EstimateReasons, ";"))
+		if row.OriginalAmount == nil && len(row.EstimateReasons) > 0 {
+			reasons = strings.TrimSpace(reasons + " " + customerExportEstimateReasons(filters.Language, row.EstimateReasons))
 		}
 		grouping := "Base URL in the published report"
 		if filters.Language == "zh" {
@@ -202,7 +205,7 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 			amounts[1],
 			coefficient,
 			version,
-			customerStatementExportValue(filters.Language, "quality_status", quality),
+			upstreamExportOriginalStatus(row.OriginalAmount, filters.Language),
 			formatExportTimestamp(scope.GeneratedAt),
 			filters.Currency,
 			strconv.FormatFloat(filters.QuotaPerUnit, 'f', -1, 64),

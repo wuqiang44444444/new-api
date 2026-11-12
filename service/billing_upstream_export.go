@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -118,14 +117,14 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 		"Upstream request ID",
 		"Platform task ID",
 		"Upstream task ID",
-		"Estimate reasons",
-		"Data status",
+		"Amount unavailable reasons",
+		"Original amount status",
 		"Billable seconds",
 		"Reference quota",
 		"Test pricing",
 		"Data quality reasons",
 		"Seconds basis",
-		"Test amount basis", "Recorded test fee", "Recalculated test original", "Original amount estimated",
+		"Test amount basis", "Recorded test fee", "Recalculated test original",
 	}
 	if filters.Language == "zh" {
 		writer.header = []string{
@@ -162,14 +161,14 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 			"上游请求 ID",
 			"平台任务 ID",
 			"上游任务 ID",
-			"估算原因",
-			"数据状态",
+			"金额无法计算原因",
+			"原价核算状态",
 			"计费秒数",
 			"折后参考 quota",
 			"测试计价",
 			"数据质量说明",
 			"秒数依据",
-			"测试金额依据", "原测试记录金额", "复算测试原价", "原价是否为估算",
+			"测试金额依据", "原测试记录金额", "复算测试原价",
 		}
 	}
 	if filters.Upstream.URLKey == "" {
@@ -259,10 +258,6 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 		if identity == "" {
 			identity, upstreamName = strconv.Itoa(row.ChannelId), channel.UpstreamName
 		}
-		estimatedOriginal := ""
-		if row.OriginalAmountEstimated != nil {
-			estimatedOriginal = exportYesNo(*row.OriginalAmountEstimated)
-		}
 		record := []string{
 			job.JobID, formatExportTimestamp(scope.GeneratedAt),
 			formatExportTimestamp(filters.StartTimestamp), formatExportTimestamp(filters.EndTimestamp),
@@ -279,8 +274,8 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 			discount, version, source, sourceMonth,
 			exportCsvCellGuard(row.RequestId), exportCsvCellGuard(row.UpstreamRequestId),
 			exportCsvCellGuard(row.PlatformTaskId), exportCsvCellGuard(row.UpstreamTaskId),
-			strings.Join(row.EstimateReasons, ";"), row.DataQuality.Status, seconds, referenceQuota, testPricing,
-			upstreamExportQualityReasons(row.DataQuality, filters.Language), secondsBasis, testBasis, recordedFee, recomputedFee, estimatedOriginal,
+			customerExportEstimateReasons(filters.Language, row.EstimateReasons), upstreamExportOriginalStatus(row.OriginalAmount, filters.Language), seconds, referenceQuota, testPricing,
+			upstreamExportQualityReasons(row.DataQuality, filters.Language, true), secondsBasis, testBasis, recordedFee, recomputedFee,
 		}
 		if err := writer.AppendRecord(record); err != nil {
 			return err

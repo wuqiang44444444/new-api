@@ -14,8 +14,8 @@ func TestUsageDiscountsUseFrozenCombinationsAndCustomerScope(t *testing.T) {
 	db := setupUsageAnalyticsTestDB(t)
 	period, err := ResolveUsageAnalyticsPeriod("week", "2026-09-16", usageTestWeekStart+8*86400)
 	require.NoError(t, err)
-	first := `{"group_ratio":0.9,"user_group_ratio":0.8,"contract_discount":"0.5","contract_id":3,"contract_version":1,"contract_name":"Historical contract","model_ratio":1,"admin_info":{"statement_snapshot":{"customer_model":"public-model","provider_model":"private-provider-model"}}}`
-	second := `{"group_ratio":0.8,"contract_discount":"0.9","contract_id":3,"contract_version":2,"contract_name":"Changed contract","model_ratio":1,"admin_info":{"statement_snapshot":{"customer_model":"public-model"}}}`
+	first := `{"group_ratio":0.9,"user_group_ratio":0.8,"contract_discount":"0.5","contract_id":3,"contract_version":1,"contract_name":"Historical contract","model_ratio":1,"admin_info":{"statement_original_quota":100,"statement_snapshot":{"customer_model":"public-model","provider_model":"private-provider-model"}}}`
+	second := `{"group_ratio":0.8,"contract_discount":"0.9","contract_id":3,"contract_version":2,"contract_name":"Changed contract","model_ratio":1,"admin_info":{"statement_original_quota":100,"statement_snapshot":{"customer_model":"public-model"}}}`
 	require.NoError(t, db.Create(&[]Log{
 		{UserId: 7, TokenId: 11, ChannelId: 21, Group: "historic-group", ModelName: "price-model", CreatedAt: period.StartTimestamp + 1, Type: LogTypeConsume, Quota: 40, Other: first},
 		{UserId: 7, TokenId: 11, ChannelId: 22, Group: "historic-group", ModelName: "price-model", CreatedAt: period.StartTimestamp + 86401, Type: LogTypeConsume, Quota: 40, Other: first},
@@ -55,8 +55,8 @@ func TestUsageDiscountContractStatesAndAuxiliaryFees(t *testing.T) {
 		name, other, state string
 		original           bool
 	}{
-		{"no", `{"group_ratio":0.8,"contract_applicable":false,"model_ratio":1}`, "no", true},
-		{"legacy", `{"group_ratio":0.8,"model_ratio":1}`, "unrecorded", true},
+		{"no", `{"group_ratio":0.8,"contract_applicable":false,"model_ratio":1,"admin_info":{"statement_original_quota":50}}`, "no", true},
+		{"legacy", `{"group_ratio":0.8,"model_ratio":1}`, "unrecorded", false},
 		{"incomplete", `{"group_ratio":0.8,"contract_applicable":true,"model_ratio":1}`, "unknown", false},
 		{"conflicting", `{"group_ratio":0.8,"contract_applicable":false,"contract_discount":0.5,"model_ratio":1}`, "unknown", false},
 		{"fees", `{"group_ratio":0.8,"contract_discount":0.5,"fee_quota":10,"model_ratio":1}`, "yes", false},
@@ -92,9 +92,9 @@ func TestUsageDiscountTaskRefundFollowsFinishDayAndRequiresCompleteMoney(t *test
 			task := Task{ID: 100, TaskID: "discount-task", UserId: 7, ChannelId: 21, Platform: "video", Status: TaskStatusSuccess, FinishTime: period.StartTimestamp + 10, BillingState: TaskBillingStateSettled, Quota: 20, Properties: Properties{OriginModelName: "video"}, PrivateData: TaskPrivateData{TokenId: 11}}
 			require.NoError(t, db.Create(&task).Error)
 			other := `{"group_ratio":0.8,"contract_discount":0.5,"contract_id":3,"contract_version":1,"contract_name":"Historical contract","model_ratio":1}`
-			require.NoError(t, db.Create(&Log{UserId: 7, TokenId: 11, Group: "historical", RequestId: "task-billing:100:create", CreatedAt: period.StartTimestamp - 100, Type: LogTypeConsume, Quota: 40, Other: other}).Error)
+			require.NoError(t, db.Create(&Log{UserId: 7, TokenId: 11, Group: "historical", RequestId: "task-billing:100:create", CreatedAt: period.StartTimestamp - 100, Type: LogTypeConsume, Quota: 40, Other: other[:len(other)-1] + `,"admin_info":{"statement_original_quota":100}}`}).Error)
 			if complete {
-				require.NoError(t, db.Create(&Log{UserId: 7, TokenId: 11, Group: "historical", RequestId: "task-billing:100:adjustment", CreatedAt: period.EndTimestamp + 100, Type: LogTypeRefund, Quota: 20, Other: other}).Error)
+				require.NoError(t, db.Create(&Log{UserId: 7, TokenId: 11, Group: "historical", RequestId: "task-billing:100:adjustment", CreatedAt: period.EndTimestamp + 100, Type: LogTypeRefund, Quota: 20, Other: other[:len(other)-1] + `,"admin_info":{"statement_original_quota":50}}`}).Error)
 			}
 			view, err := GetUsageCustomerView(context.Background(), period, 7)
 			require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestUsageDiscountBatchUsesTerminalScopeWithoutCountingLogsAsCalls(t *testin
 	period, err := ResolveUsageAnalyticsPeriod("day", "2026-09-16", 0)
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&BatchJob{Id: "batch-discount", UserId: 7, TokenId: 11, ChannelId: 21, PublicModel: "public-batch", UpstreamStatus: "completed", CompletedAt: period.StartTimestamp + 20, CountTotal: 3, CountCompleted: 3, SettleState: BatchSettleSettled, DeliveryState: BatchDeliveryReady}).Error)
-	require.NoError(t, db.Create(&Log{UserId: 7, TokenId: 11, ChannelId: 21, Group: "batch-group", RequestId: "batch-discount", CreatedAt: period.EndTimestamp + 100, Type: LogTypeConsume, Quota: 40, Other: `{"billing_mode":"azure_batch","batch_line_count":3,"group_ratio":0.8,"contract_discount":0.5,"model_ratio":1}`}).Error)
+	require.NoError(t, db.Create(&Log{UserId: 7, TokenId: 11, ChannelId: 21, Group: "batch-group", RequestId: "batch-discount", CreatedAt: period.EndTimestamp + 100, Type: LogTypeConsume, Quota: 40, Other: `{"billing_mode":"azure_batch","batch_line_count":3,"group_ratio":0.8,"contract_discount":0.5,"model_ratio":1,"admin_info":{"statement_original_quota":100}}`}).Error)
 	view, err := GetUsageCustomerView(context.Background(), period, 7)
 	require.NoError(t, err)
 	require.Len(t, view.Keys, 1)

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/assert"
@@ -56,6 +57,12 @@ func TestHistoricalBillableSecondsRequireVerifiedSettlement(t *testing.T) {
 			}
 			require.NoError(t, db.Create(&Channel{Id: 21, BaseURL: urlPtr("https://video.test")}).Error)
 			require.NoError(t, db.Create(&task).Error)
+			var facts map[string]any
+			require.NoError(t, common.UnmarshalJsonStr(log.Other, &facts))
+			facts["admin_info"] = map[string]any{"statement_original_quota": log.Quota}
+			data, err := common.Marshal(facts)
+			require.NoError(t, err)
+			log.Other = string(data)
 			require.NoError(t, db.Create(&log).Error)
 			summary, err := GetProviderBillingURLSummary(1000, 1200, 1000, "")
 			require.NoError(t, err)

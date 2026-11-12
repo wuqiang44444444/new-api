@@ -154,10 +154,21 @@ func mergeBillingReportUpstream(rows []billingReportUpstreamProjection, discount
 				items[key] = item
 			}
 			accumulateProviderBillingUsage(&item.Usage, leaf.Usage)
-			accumulateBillingReconciliationQuality(&item.DataQuality, leaf.Quality)
-			if !leaf.RecordedOriginalBasis && leaf.MoneyRows > 0 && leaf.Known {
-				ensureBillingReconciliationQuality(&item.DataQuality).HasEstimatedOriginal = true
+			quality := leaf.Quality
+			legacyAmount := (quality != nil && quality.HasEstimatedOriginal) ||
+				(!leaf.RecordedOriginalBasis && leaf.SettlementRows > 0 && leaf.Known)
+			if legacyAmount {
+				leaf.Original, leaf.Reference, leaf.Basis = decimal.Zero, decimal.Zero, nil
+				leaf.Known, leaf.Complete = false, false
+				leaf.Reasons = mergeBillingEstimateReasons(leaf.Reasons, billingOriginalQuotaNotRecorded)
+				if quality != nil {
+					copy := *quality
+					quality = &copy
+				}
+				ensureBillingReconciliationQuality(&quality).HasEstimatedOriginal = false
+				quality.MissingHistoricalPriceRows += int64(leaf.SettlementRows)
 			}
+			accumulateBillingReconciliationQuality(&item.DataQuality, quality)
 			item.EstimateReasons = mergeBillingEstimateReasons(item.EstimateReasons, leaf.Reasons...)
 			item.originalQuota = item.originalQuota.Add(leaf.Original)
 			item.originalQuotaKnown = item.originalQuotaKnown || leaf.Known

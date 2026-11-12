@@ -36,53 +36,16 @@ export function upstreamModelLabel(
   return `${customerModels} - ${providerModel}`
 }
 
-export function billingDataQualityLabel(
-  quality: BillingDataQuality | undefined,
-  t: TFunction
-) {
-  if (!quality || quality.status === 'unavailable') return t('Unavailable')
-  if (quality.usage_without_amount_rows) return t('Pricing evidence incomplete')
-  if (
-    quality.unavailable_requests ||
-    quality.unknown_billing_mode_requests ||
-    quality.provider_model_fallback_rows
-  ) {
-    return t('Record details incomplete')
-  }
-  if (
-    quality.input_tokens_unavailable_requests ||
-    quality.seconds_unavailable_rows
-  ) {
-    return t('Usage incomplete')
-  }
-  if (quality.auxiliary_charge_rows) return t('Price restore blocked')
-  if (quality.missing_historical_price_rows) return t('Price evidence missing')
-  if (
-    quality.cache_read_unavailable_requests ||
-    quality.cache_write_unavailable_requests
-  ) {
-    return t('Cache metering notes')
-  }
-  return t('Usage recorded')
-}
-
 export function upstreamEvidenceCoverageLabel(
   coverage: NonNullable<BillingDataQuality['evidence_coverage']>,
   t: TFunction
 ) {
-  const counts = {
-    affected: coverage.gap_rows.toLocaleString(),
-    total: coverage.rows.toLocaleString(),
-  }
-  if (coverage.gap_rows > 0 && coverage.usage_gap_rows === coverage.gap_rows) {
-    return t(
-      '{{affected}} of {{total}} records lack usage details · amounts available',
-      counts
-    )
-  }
   return t(
-    '{{affected}} of {{total}} billing records have incomplete information',
-    counts
+    '{{affected}} of {{total}} records have an original amount pending',
+    {
+      affected: (coverage.amount_gap_rows ?? 0).toLocaleString(),
+      total: coverage.rows.toLocaleString(),
+    }
   )
 }
 
@@ -101,7 +64,7 @@ export type BillingEvidenceGroup = {
 // Unpriced channel tests dominate the amount gaps. The exclusive test reasons
 // come first and partition their total; the remaining lines are separate
 // row-level facts that may overlap the tests.
-function billingAmountGapEntries(
+export function billingAmountGapEntries(
   quality: BillingDataQuality,
   t: TFunction
 ): BillingEvidenceEntry[] {
@@ -254,6 +217,33 @@ function billingAmountGapEntries(
       ),
     })
   }
+  if (quality.auxiliary_charge_rows) {
+    reasons.push({
+      filter: 'auxiliary_charge_rows',
+      text: t(
+        '{{count}} records include tool surcharges; their official price cannot be fully restored yet.',
+        { count: quality.auxiliary_charge_rows }
+      ),
+    })
+  }
+  if (quality.missing_historical_price_rows) {
+    reasons.push({
+      filter: 'missing_historical_price_rows',
+      text: t(
+        '{{count}} records lack evidence needed to verify the original amount.',
+        { count: quality.missing_historical_price_rows }
+      ),
+    })
+  }
+  return reasons
+}
+
+// Amounts stay settled in this block; only a usage dimension is unverifiable.
+function billingUsageGapEntries(
+  quality: BillingDataQuality,
+  t: TFunction
+): BillingEvidenceEntry[] {
+  const reasons: BillingEvidenceEntry[] = []
   if (quality.legacy_test_cache_read_rows) {
     reasons.push({
       filter: 'legacy_test_cache_read_rows',
@@ -272,33 +262,6 @@ function billingAmountGapEntries(
       ),
     })
   }
-  if (quality.auxiliary_charge_rows) {
-    reasons.push({
-      filter: 'auxiliary_charge_rows',
-      text: t(
-        '{{count}} records include tool surcharges; their official price cannot be fully restored yet.',
-        { count: quality.auxiliary_charge_rows }
-      ),
-    })
-  }
-  if (quality.missing_historical_price_rows) {
-    reasons.push({
-      filter: 'missing_historical_price_rows',
-      text: t(
-        '{{count}} records are missing historical price or discount snapshots.',
-        { count: quality.missing_historical_price_rows }
-      ),
-    })
-  }
-  return reasons
-}
-
-// Amounts stay settled in this block; only a usage dimension is unverifiable.
-function billingUsageGapEntries(
-  quality: BillingDataQuality,
-  t: TFunction
-): BillingEvidenceEntry[] {
-  const reasons: BillingEvidenceEntry[] = []
   const writeUnreported = quality.cache_write_unreported_requests ?? 0
   const writeHistorical =
     (quality.cache_write_unavailable_requests ?? 0) -

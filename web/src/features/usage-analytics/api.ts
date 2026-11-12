@@ -4,11 +4,11 @@ import { api } from '@/lib/api'
 import type {
   UsageAnalyticsEnvelope,
   UsagePeriodKind,
-  UsageNonTokenMetrics,
   UsageCustomerView,
   UsageCustomersOverview,
   UsageUpstreamView,
   UsageReportDayReference,
+  UsageReportRankItem,
 } from './types'
 
 interface ApiResponse<T> {
@@ -82,23 +82,15 @@ export async function getAdminUsageRanking(
     url_key?: string
     rank_metric: UsageRankMetric
     rank_page: number
+    rank_page_size: number
   },
   signal: AbortSignal
 ) {
   const model = kind === 'model'
   const response = await api.get<
     ApiResponse<{
-      items: {
-        name: string
-        channel_id?: number
-        calls: number
-        tokens: number
-        missing_tokens: number
-        amount: number | null
-        pending_amount: number
-        non_token?: UsageNonTokenMetrics
-      }[]
-      has_more: boolean
+      items: UsageReportRankItem[]
+      total: number
     }>
   >(
     model ? '/api/usage/admin/customers' : '/api/usage/admin/upstream-summary',

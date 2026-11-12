@@ -278,7 +278,7 @@ func upstreamBillingDetailRowFacts(item *UpstreamBillingDetailItem, fact billing
 	}
 
 	if !parsed.isChannelTest {
-		original, estimated, reasons := upstreamOriginalQuota(fact, parsed)
+		original, reasons := upstreamOriginalQuota(fact, parsed)
 		item.EstimateReasons = reasons
 		if len(reasons) == 0 {
 			item.OriginalAmount = billingStatementOriginalQuota(original)
@@ -286,7 +286,8 @@ func upstreamBillingDetailRowFacts(item *UpstreamBillingDetailItem, fact billing
 				item.EstimateReasons = []string{BillingEstimateAmountOutOfRange}
 			} else {
 				item.OriginalExactQuota = original.String()
-				item.OriginalAmountEstimated = &estimated
+				verified := false
+				item.OriginalAmountEstimated = &verified
 			}
 		}
 	}

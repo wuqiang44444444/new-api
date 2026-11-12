@@ -1,4 +1,4 @@
-import type { BillingDiscountCombination } from '@/features/billing-reconciliation/types'
+import type { BillingMode } from '@/features/billing-reconciliation/types'
 
 export interface UsageAnalyticsDay {
   date: string
@@ -28,22 +28,27 @@ export interface UsageNonTokenMetrics {
   seconds_value_missing_rows?: number
 }
 
-export interface UsageAnalyticsMetrics extends UsageNonTokenMetrics {
+export interface UsageTokenMetrics {
   token_details?: Partial<
     Record<
       'image_input' | 'image_output' | 'audio_input' | 'audio_output',
       number
     >
   >
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  rows_missing_tokens?: number
+}
+
+export interface UsageAnalyticsMetrics
+  extends UsageNonTokenMetrics, UsageTokenMetrics {
   total_calls: number
   success_calls: number
   failure_calls: number
   cancelled_calls: number
   other_result_calls: number
-  input_tokens: number
-  output_tokens: number
-  cache_read_tokens: number
-  cache_write_tokens: number
   image_count: number
   gross_quota: number
   refund_quota: number
@@ -57,7 +62,6 @@ export interface UsageAnalyticsMetrics extends UsageNonTokenMetrics {
   known_reference_amount?: number | null
   reference_pending?: boolean
   reference_coefficients?: string[]
-  rows_missing_tokens?: number
   rows_missing_money?: number
   rows_money_pending?: number
   usage_only_rows?: number
@@ -65,7 +69,6 @@ export interface UsageAnalyticsMetrics extends UsageNonTokenMetrics {
 }
 
 export interface UsageCustomerModelRow {
-  discount_combinations?: BillingDiscountCombination[]
   model_name: string
   days: UsageAnalyticsMetrics[]
   total: UsageAnalyticsMetrics
@@ -84,6 +87,23 @@ export interface UsageCustomerView {
   day_totals: UsageAnalyticsMetrics[]
   total: UsageAnalyticsMetrics
   keys: UsageCustomerKeyGroup[]
+  model_ranks?: UsageReportRankItem[]
+}
+
+export type UsageBillingMode = BillingMode | 'per_image'
+
+export interface UsageReportRankItem {
+  name: string
+  billing_mode?: UsageBillingMode
+  channel_id?: number
+  calls: number
+  failure_calls?: number
+  tokens: number
+  missing_tokens: number
+  token_usage?: UsageTokenMetrics
+  amount: number | null
+  pending_amount: number
+  non_token?: UsageNonTokenMetrics
 }
 
 export interface UsageChannelMonthDiscount {

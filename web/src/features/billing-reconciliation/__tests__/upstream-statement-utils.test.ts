@@ -209,12 +209,12 @@ describe('Grouped reconciliation evidence', () => {
       '245 tests used estimated usage or fees. Their cost is pending and excluded from confirmed totals; this does not mean zero cost.',
       '7939 tests did not save cache-write usage required to recalculate their amount.',
       '9 tests lack the image or audio usage needed by their pricing rule.',
-      'Of the unpriced tests above, 7947 also lack cache write details; these are the same records.',
     ])
     expect(groups[1].title).toBe(
       'Amount available, usage details missing: 6,452 records'
     )
     expect(groups[1].entries.map((entry) => entry.text)).toEqual([
+      'Of the unpriced tests above, 7947 also lack cache write details; these are the same records.',
       '6385 billing records lack cache write details.',
       '67 historical video records have no task link or recorded billing seconds.',
     ])

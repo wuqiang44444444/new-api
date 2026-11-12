@@ -91,7 +91,7 @@ function useUpstreamUsageMetrics(
 export function UpstreamTotalMetric(props: UsageMetric) {
   const { t } = useTranslation()
   return (
-    <div className='min-w-0'>
+    <div className='flex min-w-0 flex-wrap items-baseline gap-x-1.5'>
       <dt className='text-muted-foreground text-xs'>{props.label}</dt>
       <dd className='text-sm font-medium wrap-anywhere tabular-nums'>
         {props.value}

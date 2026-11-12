@@ -103,7 +103,7 @@ func TestUpstreamURLDetailsResolveTypeDefault(t *testing.T) {
 
 func TestUpstreamRefundUsesCustomerPreauthEvidence(t *testing.T) {
 	db := setupBillingReconciliationTestDB(t)
-	original := Log{UserId: 7, TokenId: 4, ChannelId: 3, ModelName: "video", Type: LogTypeConsume, CreatedAt: 1100, Quota: 87, Other: `{"contract_applicable":false,"statement_snapshot":{"snapshot_version":1,"billing_mode":"per_second","customer_model":"video","group_ratio":0.87},"group_ratio":0.87}`}
+	original := Log{UserId: 7, TokenId: 4, ChannelId: 3, ModelName: "video", Type: LogTypeConsume, CreatedAt: 1100, Quota: 87, Other: `{"contract_applicable":false,"statement_snapshot":{"snapshot_version":1,"billing_mode":"per_second","customer_model":"video","group_ratio":0.87},"group_ratio":0.87,"admin_info":{"statement_original_quota":100}}`}
 	require.NoError(t, db.Create(&original).Error)
 	refund := Log{UserId: 7, TokenId: 4, ChannelId: 3, ModelName: "video", Type: LogTypeRefund, CreatedAt: 1200, Quota: 87, Other: fmt.Sprintf(`{"admin_info":{"original_preauth_log_id":%d}}`, original.Id)}
 	require.NoError(t, db.Create(&refund).Error)

@@ -57,8 +57,7 @@ func getUpstreamURLModelPage(ctx context.Context, start, end, period int64, filt
 				if search != "" && !strings.Contains(strings.ToLower(leaf.ProviderModel), search) {
 					continue
 				}
-				complete := leaf.ReferenceAmount != nil && leaf.OriginalAmount != nil &&
-					(leaf.DataQuality == nil || leaf.DataQuality.Status == "complete")
+				complete := leaf.OriginalAmount != nil
 				if (filter.DataStatus == "complete" && !complete) || (filter.DataStatus == "partial" && complete) {
 					continue
 				}

@@ -8,8 +8,8 @@ import (
 
 func TestUpstreamExportExplainsHistoricalTestExclusions(t *testing.T) {
 	quality := &model.BillingReconciliationDataQuality{UsageWithoutAmountRows: 3, TestAmountPendingReasons: map[string]int64{"missing_cache_write": 1, "missing_usage_semantic": 1, "estimated_usage": 1}}
-	en := upstreamExportQualityReasons(quality, "en")
-	zh := upstreamExportQualityReasons(quality, "zh")
+	en := upstreamExportQualityReasons(quality, "en", false)
+	zh := upstreamExportQualityReasons(quality, "zh", false)
 	assert.Contains(t, en, "cache-write usage")
 	assert.Contains(t, en, "usage breakdown")
 	assert.Contains(t, en, "estimated usage")

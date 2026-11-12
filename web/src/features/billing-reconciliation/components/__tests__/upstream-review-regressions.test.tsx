@@ -77,19 +77,21 @@ beforeEach(() => {
     )
   )
 })
-it('separates known money from missing usage and makes evidence notes clickable', async () => {
+it('keeps the original amount complete when detail usage is unavailable', async () => {
   const { rerender } = render(
     <UpstreamDataStatus
+      scope='detail'
       originalAmount={100}
       quality={{ status: 'partial', cache_read_unavailable_requests: 1 }}
     />
   )
   expect(screen.getByText('Original amount complete')).toBeInTheDocument()
-  const status = screen.getByRole('button', { name: /^Cache metering notes:/ })
+  const status = screen.getByRole('button', { name: 'Original amount complete' })
   expect(status).toHaveAttribute('aria-expanded', 'false')
   await userEvent.click(status)
   expect(status).toHaveAttribute('aria-expanded', 'true')
-  expect(screen.getByText('Evidence gap categories')).toBeVisible()
+  expect(screen.getByText('Usage and record details')).toBeVisible()
+  expect(screen.queryByText('Amount unavailable reasons')).not.toBeInTheDocument()
   await userEvent.click(status)
   rerender(
     <UpstreamDataStatus
@@ -101,7 +103,7 @@ it('separates known money from missing usage and makes evidence notes clickable'
     screen.getByText('Channel tests only; amounts pending')
   ).toBeInTheDocument()
   expect(
-    screen.getByRole('button', { name: /^Pricing evidence incomplete:/ })
+    screen.getByRole('button', { name: 'Channel tests only; amounts pending' })
   ).toBeInTheDocument()
   expect(
     screen.queryByText('Original amount incomplete')
@@ -144,7 +146,7 @@ it('shows test-only coverage and distinguishes absent cache readings from explic
     </QueryClientProvider>
   )
   for (const button of screen.getAllByRole('button', {
-    name: /^Pricing evidence incomplete:/,
+    name: 'Original amount incomplete',
   })) {
     await userEvent.click(button)
     expect(
@@ -173,7 +175,7 @@ it('shows test-only coverage and distinguishes absent cache readings from explic
   )
   expect(
     screen.getAllByRole('button', {
-      name: /Pricing evidence incomplete:.*did not save the pricing evidence/,
+      name: 'Original amount incomplete',
     })
   ).toHaveLength(2)
 })
@@ -214,11 +216,12 @@ it('shows priced channel tests as reference amount coverage', async () => {
     </QueryClientProvider>
   )
   const statuses = screen.getAllByRole('button', {
-    name: /Price restore blocked:.*tool surcharges/,
+    name: 'Original amount incomplete',
   })
   expect(statuses).toHaveLength(2)
   for (const button of statuses) {
     await userEvent.click(button)
+    expect(screen.getByText(/1 records include tool surcharges/)).toBeVisible()
     expect(
       screen.getByText(
         '3 channel tests are priced and included in the amount total.'
@@ -356,7 +359,7 @@ it('reports a deduplicated denominator and does not present priced tests as issu
     <UpstreamDataStatus
       quality={{
         status: 'partial',
-        evidence_coverage: { rows: 3920, gap_rows: 750 },
+        evidence_coverage: { rows: 3920, gap_rows: 750, amount_gap_rows: 750 },
         usage_without_amount_rows: 750,
         cache_write_unavailable_requests: 538,
         legacy_test_cache_write_rows: 538,
@@ -366,17 +369,17 @@ it('reports a deduplicated denominator and does not present priced tests as issu
   )
   expect(
     screen.queryByText(
-      '750 of 3,920 billing records have incomplete information'
+      'Original amount pending: 750 records'
     )
   ).not.toBeInTheDocument()
   await userEvent.click(
-    screen.getByRole('button', { name: /^Pricing evidence incomplete:/ })
+    screen.getByRole('button', { name: 'Original amount incomplete' })
   )
   expect(
-    screen.getByText('750 of 3,920 billing records have incomplete information')
+    screen.getByText('Original amount pending: 750 records')
   ).toBeVisible()
   expect(
-    screen.getByText('Amount and usage information complete: 3,170 records')
+    screen.getByText('Original amount available: 3,170 records')
   ).toBeVisible()
   expect(
     screen.getByText(
@@ -394,10 +397,10 @@ it('reports a deduplicated denominator and does not present priced tests as issu
     )
   ).toHaveLength(1)
   expect(
-    screen.getByText(
+    screen.queryByText(
       'Of the unpriced tests above, 538 also lack cache write details; these are the same records.'
     )
-  ).toBeVisible()
+  ).not.toBeInTheDocument()
   expect(
     screen.queryByText('538 billing records lack cache write details.')
   ).not.toBeInTheDocument()
@@ -410,9 +413,10 @@ it('reports a deduplicated denominator and does not present priced tests as issu
   ).toBe(false)
 })
 
-it('explains the incomplete record total with mutually exclusive billing reasons', async () => {
+it('counts only missing originals even when the frozen report has usage gaps', async () => {
   render(
     <UpstreamDataStatus
+      scope='report'
       quality={{
         status: 'partial',
         evidence_coverage: {
@@ -425,19 +429,18 @@ it('explains the incomplete record total with mutually exclusive billing reasons
       }}
     />
   )
-  await userEvent.click(screen.getByRole('button'))
+  await userEvent.click(screen.getByRole('button', {
+    name: '619 of 5,381 records have an original amount pending',
+  }))
   expect(
-    screen.getByText('628 of 5,381 billing records have incomplete information')
+    screen.getByText('Original amount available: 4,762 records')
   ).toBeVisible()
   expect(
-    screen.getByText('Amount and usage information complete: 4,753 records')
+    screen.getByText('Original amount pending: 619 records')
   ).toBeVisible()
   expect(
-    screen.getByText('Amounts that cannot be calculated yet: 619 records')
-  ).toBeVisible()
-  expect(
-    screen.getByText('Amount available, usage details missing: 9 records')
-  ).toBeVisible()
+    screen.queryByText('Amount available, usage details missing: 9 records')
+  ).not.toBeInTheDocument()
   expect(
     screen.queryByText(/other billing details missing/)
   ).not.toBeInTheDocument()
@@ -470,22 +473,18 @@ it('shows verified billing seconds and refunded holds as accounting notes, not m
   ).not.toBeInTheDocument()
 })
 
-it('labels historical original amounts as estimates while preserving their amounts', () => {
+it('hides unverifiable historical amounts while preserving verified ones', () => {
   render(
     <table>
       <tbody>
         <tr>
-          <AmountCell value={5} estimated />
+          <AmountCell value={5} unverified />
           <AmountCell value={10} />
         </tr>
       </tbody>
     </table>
   )
-  const [estimated, recorded] = screen.getAllByRole('cell')
-  expect(estimated).toHaveTextContent(
-    'Estimated from recorded charges and historical discounts'
-  )
-  expect(recorded).not.toHaveTextContent(
-    'Estimated from recorded charges and historical discounts'
-  )
+  const [unverified, recorded] = screen.getAllByRole('cell')
+  expect(unverified).toHaveTextContent('Cannot calculate')
+  expect(recorded).toHaveTextContent('$0.00002')
 })

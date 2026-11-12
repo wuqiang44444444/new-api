@@ -99,7 +99,7 @@ func TestUpstreamReferenceAmountStaysIncompleteOnMissingEvidence(t *testing.T) {
 	july := channelDiscountPeriod(time.July, 2026)
 	require.NoError(t, db.Create(&Channel{Id: 74, Name: "partial", BaseURL: urlPtr("https://partial.example.com")}).Error)
 	require.NoError(t, db.Create(&[]Log{
-		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, ChannelId: 74, ModelName: "model", Quota: 800, Other: `{"group_ratio":0.8,"model_ratio":1}`},
+		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, ChannelId: 74, ModelName: "model", Quota: 800, Other: `{"group_ratio":0.8,"model_ratio":1,"admin_info":{"statement_original_quota":1000}}`},
 		{UserId: 7, CreatedAt: 1101, Type: LogTypeConsume, ChannelId: 74, ModelName: "model", Quota: 500, Other: `{"model_ratio":1}`},
 	}).Error)
 	require.NoError(t, SaveProviderChannelBillingDiscount(&ProviderChannelBillingDiscount{PeriodStart: july, ChannelId: 74, Discount: decimal.RequireFromString("0.5"), Reason: "half"}, 0, 9))
@@ -165,10 +165,10 @@ func TestUpstreamAmountsSumRoundedEvidenceRows(t *testing.T) {
 		require.NoError(t, SaveProviderChannelBillingDiscount(&ProviderChannelBillingDiscount{PeriodStart: period, ChannelId: id, Discount: decimal.RequireFromString("0.6"), Reason: "rounding"}, 0, 9))
 	}
 	require.NoError(t, db.Create(&[]Log{
-		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, ChannelId: 71, ModelName: "a", Quota: 1, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1}`},
-		{UserId: 7, CreatedAt: 1101, Type: LogTypeConsume, ChannelId: 72, ModelName: "a", Quota: 1, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1}`},
-		{UserId: 7, CreatedAt: 1102, Type: LogTypeConsume, ChannelId: 71, ModelName: "b", Quota: 1, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1}`},
-		{UserId: 7, CreatedAt: 1103, Type: LogTypeRefund, ChannelId: 71, ModelName: "b", Quota: 1, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1}`},
+		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, ChannelId: 71, ModelName: "a", Quota: 1, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1,"admin_info":{"statement_original_quota":1}}`},
+		{UserId: 7, CreatedAt: 1101, Type: LogTypeConsume, ChannelId: 72, ModelName: "a", Quota: 1, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1,"admin_info":{"statement_original_quota":1}}`},
+		{UserId: 7, CreatedAt: 1102, Type: LogTypeConsume, ChannelId: 71, ModelName: "b", Quota: 1, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1,"admin_info":{"statement_original_quota":1}}`},
+		{UserId: 7, CreatedAt: 1103, Type: LogTypeRefund, ChannelId: 71, ModelName: "b", Quota: 1, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1,"admin_info":{"statement_original_quota":1}}`},
 	}).Error)
 	summary, err := GetProviderBillingURLSummary(1000, 1500, period, "")
 	require.NoError(t, err)

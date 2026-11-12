@@ -32,6 +32,7 @@ export function UsageReportEmpty(props: {
   return (
     <EmptyState
       bordered
+      className='bg-card min-h-0 gap-2 rounded-lg border-solid px-3 py-4'
       title={t('No recorded usage for {{period}}', {
         period: formatPeriodRange(period),
       })}

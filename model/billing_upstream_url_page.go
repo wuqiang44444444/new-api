@@ -37,6 +37,7 @@ func getUpstreamURLGroupPage(ctx context.Context, start, end, period int64, filt
 		return result, errors.New("invalid upstream sort")
 	}
 	totals := UpstreamURLTotals{}
+	discountPending := make(map[int]struct{})
 	var original, reference upstreamURLAmountTotal
 	search := strings.ToLower(filter.Search)
 	offset := (filter.Page - 1) * filter.PageSize
@@ -71,23 +72,30 @@ func getUpstreamURLGroupPage(ctx context.Context, start, end, period int64, filt
 		accumulateProviderBillingUsage(&totals.Usage, group.Usage)
 		original.add(group.OriginalAmount, group.KnownOriginalAmount)
 		reference.add(group.ReferenceAmount, group.KnownReferenceAmount)
+		for _, channel := range group.Channels {
+			if channel.Discount == nil && !channel.UsageOnly {
+				discountPending[channel.ChannelId] = struct{}{}
+			}
+		}
 		result.Total++
 		result.ModelCount += group.ModelCount
 		accumulateBillingReconciliationQuality(&result.DataQuality, group.DataQuality)
 	}
 	totals.OriginalAmount, totals.KnownOriginalAmount = original.amounts()
 	totals.ReferenceAmount, totals.KnownReferenceAmount = reference.amounts()
+	totals.DiscountPendingChannels = len(discountPending)
 	result.Totals = &totals
 	finalizeBillingReconciliationQuality(&result.DataQuality)
 	return result, nil
 }
 
 type UpstreamURLTotals struct {
-	Usage                ProviderBillingUsage `json:"usage"`
-	OriginalAmount       *int64               `json:"original_amount,omitempty"`
-	KnownOriginalAmount  *int64               `json:"known_original_amount,omitempty"`
-	ReferenceAmount      *int64               `json:"reference_amount,omitempty"`
-	KnownReferenceAmount *int64               `json:"known_reference_amount,omitempty"`
+	Usage                   ProviderBillingUsage `json:"usage"`
+	OriginalAmount          *int64               `json:"original_amount,omitempty"`
+	KnownOriginalAmount     *int64               `json:"known_original_amount,omitempty"`
+	ReferenceAmount         *int64               `json:"reference_amount,omitempty"`
+	KnownReferenceAmount    *int64               `json:"known_reference_amount,omitempty"`
+	DiscountPendingChannels int                  `json:"discount_pending_channels,omitempty"`
 }
 
 type upstreamURLAmountTotal struct {

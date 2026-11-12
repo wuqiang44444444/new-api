@@ -134,10 +134,11 @@ beforeEach(() => {
         page: params.page ?? 1,
         page_size: params.page_size ?? 10,
         total: params.level === 'url_models' ? 1 : 2,
+        totals: { usage, original_amount: 200, reference_amount: 160 },
         model_count: 2,
         data_quality: {
           status: 'partial',
-          evidence_coverage: { rows: 12, gap_rows: 3, usage_gap_rows: 3 },
+          evidence_coverage: { rows: 12, gap_rows: 3, amount_gap_rows: 2, usage_gap_rows: 1 },
         },
       },
     },
@@ -199,6 +200,50 @@ it('left-aligns the report status when it wraps below the upstream controls', as
 
   expect(status?.parentElement).toHaveClass('flex-wrap', 'justify-between')
   expect(status).not.toHaveClass('lg:ms-auto')
+})
+it('keeps filters, totals and pagination outside the channel table scroll area', async () => {
+  view()
+
+  const table = await screen.findByRole('table')
+  const scrollArea = table.parentElement
+
+  expect(scrollArea).toHaveClass('overflow-auto', 'overscroll-contain')
+  expect(
+    within(table)
+      .getByRole('columnheader', { name: 'Upstream URL' })
+      .closest('thead')
+  ).toHaveClass('sticky', 'top-0')
+  expect(scrollArea).not.toContainElement(
+    screen.getByLabelText('Billing month')
+  )
+  expect(scrollArea).not.toContainElement(
+    screen.getByRole('heading', { name: 'Total' })
+  )
+  expect(scrollArea).not.toContainElement(
+    screen.getByRole('group', { name: 'Upstream pages' })
+  )
+})
+it('keeps the channel heading, filters and pagination outside the model table scroll area', async () => {
+  view()
+  await openChannel(11)
+  const modelHeader = await screen.findByRole('columnheader', {
+    name: 'Provider model',
+  })
+
+  const table = screen.getByRole('table')
+  const scrollArea = table.parentElement
+
+  expect(scrollArea).toHaveClass('overflow-auto', 'overscroll-contain')
+  expect(modelHeader.closest('thead')).toHaveClass('sticky', 'top-0')
+  expect(scrollArea).not.toContainElement(
+    screen.getByRole('button', { name: 'Back' })
+  )
+  expect(scrollArea).not.toContainElement(
+    screen.getByRole('textbox', { name: 'Provider model' })
+  )
+  expect(scrollArea).not.toContainElement(
+    screen.getByRole('group', { name: 'Model pages' })
+  )
 })
 it('lets a report label longer than the toolbar wrap within its available width', async () => {
   view()
@@ -405,7 +450,7 @@ it('allows opening discount settings for a channel absent from the report', asyn
   )
 })
 
-it('opens report evidence categories on demand and queries the selected records', async () => {
+it('opens the original-amount gap and queries only the selected records', async () => {
   const detail = {
     row_id: 1,
     time: period.start_timestamp + 1,
@@ -434,23 +479,23 @@ it('opens report evidence categories on demand and queries the selected records'
   })
   view()
   const evidence = await screen.findByRole('button', {
-    name: '3 of 12 records lack usage details · amounts available',
+    name: '2 of 12 records have an original amount pending',
   })
   expect(screen.getByText(/Channel 11/)).toBeVisible()
   expect(
-    screen.queryByText('Amount available, usage details missing: 3 records')
+    screen.queryByText('Original amount pending: 2 records')
   ).not.toBeInTheDocument()
   expect(mocks.details).not.toHaveBeenCalled()
 
   await userEvent.click(evidence)
   await userEvent.click(
     screen.getByRole('button', {
-      name: 'View records: Amount available, usage details missing: 3 records',
+      name: 'View records: Original amount pending: 2 records',
     })
   )
   await waitFor(() =>
     expect(mocks.details).toHaveBeenCalledWith(
-      expect.objectContaining({ ...period, evidence_filter: 'usage_gap' })
+      expect.objectContaining({ ...period, evidence_filter: 'amount_gap' })
     )
   )
   const details = within(screen.getByRole('dialog', { name: 'View details' }))
@@ -470,7 +515,7 @@ it('opens report evidence categories on demand and queries the selected records'
     expect(mocks.exports).toHaveBeenCalledWith(
       expect.objectContaining({
         job_type: 'upstream_details',
-        evidence_filter: 'usage_gap',
+        evidence_filter: 'amount_gap',
       })
     )
   )
@@ -617,7 +662,7 @@ it('searches beyond the current page on the server', async () => {
   )
   await userEvent.click(
     await screen.findByRole('button', {
-      name: /3 of 12 records lack usage details/,
+      name: '2 of 12 records have an original amount pending',
     })
   )
   expect(
@@ -685,6 +730,7 @@ it('opens the selected URL from the summary table and keeps its scope in drilldo
             },
             known_original_amount: 400,
             known_reference_amount: 160,
+            discount_pending_channels: 1,
           },
           url_channels: [
             {
@@ -728,6 +774,10 @@ it('opens the selected URL from the summary table and keeps its scope in drilldo
     screen.getByText('Discounted reference amount', { selector: 'dt' })
       .nextElementSibling
   ).toHaveTextContent(formatCustomerStatementQuota(160))
+  expect(total).toHaveTextContent('Amounts reflect records priced to date.')
+  expect(total).toHaveTextContent(
+    'Reference amount pending discount confirmation for 1 channels'
+  )
   expect(
     screen.getByText('Images', { selector: 'dt' }).nextElementSibling
   ).toHaveTextContent(/^2$/)
@@ -753,7 +803,7 @@ it('opens the selected URL from the summary table and keeps its scope in drilldo
     .getAllByRole('row', { name: /Channel 11/ })
     .find((candidate) => within(candidate).queryByRole('cell', { name: url }))
   if (!row) throw new Error('Expected selected URL and channel row')
-  expect(row).toHaveTextContent('Unknown')
+  expect(row).toHaveTextContent('Cannot calculate')
   expect(row).toHaveTextContent('Known subtotal:')
   const action = within(row).getByRole('button', { name: 'View details' })
   action.focus()
@@ -773,7 +823,7 @@ it('opens the selected URL from the summary table and keeps its scope in drilldo
     screen.queryByRole('combobox', { name: 'Channel' })
   ).not.toBeInTheDocument()
   await userEvent.selectOptions(
-    screen.getByRole('combobox', { name: 'Data status' }),
+    screen.getByRole('combobox', { name: 'Original amount status' }),
     'partial'
   )
   await userEvent.type(

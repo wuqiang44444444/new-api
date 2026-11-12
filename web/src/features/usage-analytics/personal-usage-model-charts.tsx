@@ -1,18 +1,27 @@
 import { useTranslation } from 'react-i18next'
 import { Pie, PieChart } from 'recharts'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ReportCard } from '@/components/report-card'
 import { formatCustomerStatementQuota } from '@/features/billing-reconciliation/lib'
 import { formatNumber, formatPercent } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
-import type { UsageNonTokenMetrics } from './types'
+import type {
+  UsageBillingMode,
+  UsageNonTokenMetrics,
+  UsageTokenMetrics,
+} from './types'
 
 export type UsageModelRank = {
   id: string
   label: string
+  billingMode?: UsageBillingMode
   calls: number
+  failureCalls?: number
   tokens: number
   missingTokens: boolean
+  missingTokenRows?: number
+  tokenUsage?: UsageTokenMetrics
   amount?: number
   partialAmount: boolean
   nonToken?: UsageNonTokenMetrics
@@ -52,19 +61,8 @@ export function PersonalUsageModelCharts(props: {
   return (
     <section aria-label={label} className='min-w-0'>
       {!props.upstream && <h2 className='mb-2 font-medium'>{label}</h2>}
-      <div
-        role='group'
-        aria-label={label}
-        tabIndex={0}
-        className='min-w-0 overflow-x-auto p-px pb-1'
-      >
-        <div
-          className={
-            props.upstream
-              ? 'grid gap-3 lg:grid-cols-3'
-              : 'grid grid-cols-[repeat(3,minmax(15rem,1fr))] gap-3'
-          }
-        >
+      <div role='group' aria-label={label} className='@container'>
+        <div className='grid items-start gap-3 @min-[48rem]:grid-cols-3'>
           <ModelMetricChart
             rows={props.rows}
             colors={colors}
@@ -149,100 +147,102 @@ function ModelMetricChart(props: {
       : undefined
   const pieData = otherSlice ? [...slices, otherSlice] : slices
   const pending = partial && rows.length === 0 && props.pendingLabel
+  const totalLabel = rows.length
+    ? formatValue(total)
+    : pending || t('unrecorded')
 
   return (
-    <Card size='sm' role='group' aria-label={props.title}>
-      <CardHeader>
-        <CardTitle>
-          <h3>{props.title}</h3>
-        </CardTitle>
+    <ReportCard
+      role='group'
+      aria-label={props.title}
+      className='gap-1.5 py-1.5'
+    >
+      <div className='flex flex-wrap items-baseline gap-x-2 gap-y-0.5'>
+        <h3 className='text-muted-foreground text-xs font-medium'>
+          {props.title}
+        </h3>
+        <p
+          className={cn(
+            'text-base/5 font-semibold tracking-tight wrap-anywhere tabular-nums',
+            rows.length === 0 && 'text-muted-foreground'
+          )}
+        >
+          {totalLabel}
+        </p>
         {partial && rows.length > 0 && (
           <p className='text-muted-foreground text-xs'>{t('Known subtotal')}</p>
         )}
-      </CardHeader>
-      <CardContent>
-        {signed ? (
-          <SignedModelBars rows={rows} />
-        ) : (
-          <>
-            <div className='relative mx-auto grid size-32 place-items-center'>
-              <div className='absolute inset-0' aria-hidden='true'>
-                <PieChart width={128} height={128} accessibilityLayer={false}>
-                  <Pie
-                    data={
-                      pieData.length
-                        ? pieData
-                        : [{ value: 1, fill: 'var(--muted)' }]
-                    }
-                    dataKey='value'
-                    nameKey='label'
-                    innerRadius={48}
-                    outerRadius={62}
-                    stroke='none'
-                    isAnimationActive={false}
-                  />
-                </PieChart>
-              </div>
-              <p className='relative max-w-24 text-center text-sm leading-tight font-semibold break-all tabular-nums'>
-                {rows.length ? formatValue(total) : pending || t('unrecorded')}
-              </p>
+      </div>
+      {signed && <SignedModelBars rows={rows} />}
+      {!signed && rows.length > 0 && (
+        <div className='flex items-start gap-3'>
+          {pieData.length > 0 && (
+            <div className='shrink-0' aria-hidden='true'>
+              <PieChart width={72} height={72} accessibilityLayer={false}>
+                <Pie
+                  data={pieData}
+                  dataKey='value'
+                  nameKey='label'
+                  innerRadius={24}
+                  outerRadius={35}
+                  stroke='none'
+                  isAnimationActive={false}
+                />
+              </PieChart>
             </div>
-            {rows.length > 0 ? (
-              <ul className='mt-3 space-y-1.5 text-xs'>
-                {slices.map((row) => (
-                  <li key={row.id}>
-                    <ModelLegendRow
-                      row={row}
-                      value={formatValue(row.value)}
-                      share={row.value / total}
-                    />
-                  </li>
-                ))}
-                {otherSlice && (
-                  <li>
-                    <details>
-                      <summary className='cursor-pointer'>
-                        <span className='ml-1 inline-block w-[calc(100%-1.5rem)] align-middle'>
-                          <ModelLegendRow
-                            row={otherSlice}
-                            value={formatValue(otherTotal)}
-                            share={otherTotal / total}
-                          />
-                        </span>
-                      </summary>
-                      <ul className='mt-1 space-y-1 pl-4'>
-                        {other.map((row) => (
-                          <li key={row.id}>
-                            <ModelLegendRow
-                              row={row}
-                              value={formatValue(row.value)}
-                              share={row.value / total}
-                            />
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  </li>
-                )}
-                {rows
-                  .filter((row) => row.value === 0)
-                  .map((row) => (
-                    <li key={row.id}>
-                      <ModelLegendRow row={row} value={formatValue(0)} />
-                    </li>
-                  ))}
-              </ul>
-            ) : (
-              !pending && (
-                <p className='text-muted-foreground mt-3 text-center text-xs'>
-                  {t('No data available')}
-                </p>
-              )
+          )}
+          <ul className='min-w-0 flex-1 space-y-1 text-xs'>
+            {slices.map((row) => (
+              <li key={row.id}>
+                <ModelLegendRow
+                  row={row}
+                  value={formatValue(row.value)}
+                  share={row.value / total}
+                />
+              </li>
+            ))}
+            {otherSlice && (
+              <li>
+                <details>
+                  <summary className='cursor-pointer'>
+                    <span className='ml-1 inline-block w-[calc(100%-1.5rem)] align-middle'>
+                      <ModelLegendRow
+                        row={otherSlice}
+                        value={formatValue(otherTotal)}
+                        share={otherTotal / total}
+                      />
+                    </span>
+                  </summary>
+                  <ul className='mt-1 space-y-1 pl-4'>
+                    {other.map((row) => (
+                      <li key={row.id}>
+                        <ModelLegendRow
+                          row={row}
+                          value={formatValue(row.value)}
+                          share={row.value / total}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </li>
             )}
-          </>
-        )}
-      </CardContent>
-    </Card>
+            {rows
+              .filter((row) => row.value === 0)
+              .map((row) => (
+                <li key={row.id}>
+                  <ModelLegendRow row={row} value={formatValue(0)} />
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+      {rows.length === 0 && !pending && (
+        <p className='text-muted-foreground text-xs'>
+          {t('No data available')}
+        </p>
+      )}
+    </ReportCard>
   )
 }
 
@@ -258,8 +258,8 @@ function ModelLegendRow(props: {
         className='mt-1 size-2 shrink-0 rounded-full'
         style={{ backgroundColor: props.row.fill ?? 'var(--muted-foreground)' }}
       />
-      <span className='min-w-0 flex-1 break-all'>{props.row.label}</span>
-      <span className='shrink-0 text-right font-medium tabular-nums'>
+      <span className='min-w-0 flex-1 wrap-anywhere'>{props.row.label}</span>
+      <span className='max-w-[60%] text-right font-medium wrap-anywhere tabular-nums'>
         {props.value}
         {props.share !== undefined && (
           <span className='text-muted-foreground ml-1 font-normal'>
@@ -277,7 +277,7 @@ function SignedModelBars(props: { rows: ChartRow[] }) {
     0
   )
   return (
-    <ul className='space-y-3 py-2 text-xs'>
+    <ul className='space-y-2 text-xs'>
       {props.rows.map((row) => {
         const negative = row.value < 0
         const color = negative ? 'var(--destructive)' : sliceColors[0]

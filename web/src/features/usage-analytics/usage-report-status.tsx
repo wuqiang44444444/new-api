@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { toIntlLocale } from '@/i18n/languages'
 
 import type { UsageAnalyticsEnvelope } from './types'
-import { formatPeriodRange, shanghaiToday } from './utils'
+import { formatPeriodRange } from './utils'
 
 export function UsageReportStatus(props: {
   report?: Pick<
@@ -70,11 +70,6 @@ export function UsageReportStatus(props: {
       {!!props.report?.incomplete_days?.length && (
         <span className='me-3 inline-block'>
           {t('Partial data', { lng: reportLanguage })}
-        </span>
-      )}
-      {publishedDays?.includes(shanghaiToday()) && (
-        <span className='inline-block'>
-          {t('Today is an estimate', { lng: reportLanguage })}
         </span>
       )}
     </p>

@@ -51,6 +51,7 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 			fact := upstreamBillingLogFact(log, log.Group)
 			parsed := parseBillingReconciliationLog(fact)
 			evidence.apply(fact, &parsed)
+			applyCustomerOriginalReplay(fact, &parsed)
 			if err := consume(log, fact, parsed); err != nil {
 				return err
 			}
@@ -126,6 +127,9 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 				policy.ObserveLogRevision(log.TupleRevision)
 			}
 			evidence.apply(facts[i], &parsed[i])
+			if err := resolveCustomerOriginalReplay(ctx, facts[i], &parsed[i]); err != nil {
+				return err
+			}
 			log.Log.Group = log.GroupName
 			if err := consume(log.Log, facts[i], parsed[i]); err != nil {
 				return err
@@ -143,29 +147,11 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 
 // Customer settlement refunds reduce the local original-price base, without
 // asserting anything about whether the provider refunded its usage or money.
-func upstreamOriginalQuota(log billingReconciliationLog, parsed parsedBillingReconciliationLog) (decimal.Decimal, bool, []string) {
-	if parsed.fundingAdjustmentFailed || log.Quota < 0 {
-		return decimal.Zero, false, []string{BillingEstimateInvalidFacts}
+func upstreamOriginalQuota(log billingReconciliationLog, parsed parsedBillingReconciliationLog) (decimal.Decimal, []string) {
+	if original, ok := customerStatementOriginalQuota(log, parsed); ok {
+		return original, nil
 	}
-	if original, ok := recordedStatementOriginalQuota(log, parsed); ok {
-		return original, false, nil
-	}
-	quota := int64(log.Quota)
-	if quota == 0 {
-		return decimal.Zero, false, nil
-	}
-	if reasons := billingStatementEstimateReasons(parsed); len(reasons) > 0 {
-		return decimal.Zero, false, reasons
-	}
-	contractRatio := 1.0
-	if parsed.contractDiscountRatio != nil && *parsed.contractDiscountRatio > 0 {
-		contractRatio = *parsed.contractDiscountRatio
-	}
-	original := decimal.NewFromInt(quota).Div(decimal.NewFromFloat(*parsed.discountRatio)).Div(decimal.NewFromFloat(contractRatio))
-	if log.Type == LogTypeRefund {
-		original = original.Neg()
-	}
-	return original.Round(0), true, nil
+	return decimal.Zero, statementOriginalUnavailableReasons(parsed)
 }
 
 func upstreamBillingLogFact(log Log, groupName string) billingReconciliationLog {

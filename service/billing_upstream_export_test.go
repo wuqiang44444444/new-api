@@ -38,7 +38,7 @@ func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 	facts := `{"contract_applicable":false,"group_ratio":0.5,"model_ratio":1,"upstream_model_name":"same","statement_snapshot":{"billing_mode":"per_second"},"usage_units":{"duration":"second"},"usage_facts":{"duration":6.5},"task_id":"task-public","upstream_task_id":"task-root"}`
 	require.NoError(t, model.DB.Create(&[]model.Log{
 		{UserId: 42, ChannelId: 9601, Type: model.LogTypeConsume, CreatedAt: start + 1, Quota: 500000, RequestId: "export-match", UpstreamRequestId: "up-1", Other: strings.TrimSuffix(facts, "}") + `,"admin_info":{"statement_original_quota":1000001}}`},
-		{UserId: 43, ChannelId: 9601, Type: model.LogTypeRefund, CreatedAt: start + 2, Quota: 100000, RequestId: "export-match", UpstreamRequestId: "up-2", Other: facts},
+		{UserId: 43, ChannelId: 9601, Type: model.LogTypeRefund, CreatedAt: start + 2, Quota: 100000, RequestId: "export-match", UpstreamRequestId: "up-2", Other: strings.TrimSuffix(facts, "}") + `,"admin_info":{"statement_original_quota":200000}}`},
 		{UserId: 43, ChannelId: 9601, Type: model.LogTypeConsume, CreatedAt: start + 3, Quota: 999, RequestId: "excluded", Other: facts},
 	}).Error)
 	// Same-name fallback and a different known model must not leak into this file.
@@ -83,9 +83,9 @@ func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 	second := records[2]
 	assert.Equal(t, "'=channel", first[9])
 	assert.Equal(t, "1000001", first[19])
-	assert.Equal(t, "Original amount estimated", records[0][len(records[0])-5])
-	assert.Equal(t, []string{exportYesNo(false), "1", "30", "0", ""}, first[len(first)-5:])
-	assert.Equal(t, exportYesNo(true), second[len(second)-5])
+	assert.Equal(t, "Recalculated test original", records[0][len(records[0])-5])
+	assert.Equal(t, []string{"", "1", "30", "0", ""}, first[len(first)-5:])
+	assert.Empty(t, second[len(second)-5])
 	assert.Equal(t, "-200000", second[19])
 	assert.Equal(t, "0.12345678", first[25])
 	assert.Equal(t, "1", first[26])
@@ -101,12 +101,14 @@ func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 	assert.Equal(t, "Seconds basis", records[0][39])
 	assert.Equal(t, "Recorded usage", first[39])
 	assert.Empty(t, records[3][35], "missing seconds must remain empty")
-	assert.Equal(t, "partial", records[3][34])
+	assert.Equal(t, "Original amount status", records[0][34])
+	assert.Equal(t, "Available", records[3][34], "an independently known original is available even without seconds")
 	assert.Contains(t, records[3][38], "lack the billable duration used at the time")
 	assert.Equal(t, "0", records[4][17], "recorded billing zero remains usable when the response omitted an optional meter")
 	assert.NotContains(t, records[4][38], "cache read")
+	assert.Equal(t, "Available", records[4][34])
 	assert.Equal(t, "0", records[5][17], "explicit cache zero remains zero")
-	assert.Equal(t, "complete", records[5][34], "test-only settlement scope does not mean evidence is missing")
+	assert.Equal(t, "Available", records[5][34], "test-only settlement scope does not mean evidence is missing")
 	assert.Equal(t, "1", records[5][19], "priced channel tests carry their recorded original")
 	assert.Equal(t, "ratio:priced", records[5][37])
 	assert.Empty(t, records[5][38], "priced tests are not a quality gap")

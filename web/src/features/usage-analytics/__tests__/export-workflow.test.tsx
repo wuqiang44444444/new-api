@@ -14,7 +14,6 @@ import {
   cleanup,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useState } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import type { CustomerExportJobView } from '@/features/billing-reconciliation/export-api'
@@ -22,7 +21,6 @@ import { api } from '@/lib/api'
 
 import { AdminUsage } from '../admin'
 import { MyUsage } from '../index'
-import type { UsagePeriodKind } from '../types'
 
 vi.mock('@/lib/api', () => ({ api: { get: vi.fn(), post: vi.fn() } }))
 const total = {
@@ -146,7 +144,7 @@ beforeEach(() => {
       url === '/api/usage/admin/customers' &&
       config?.params?.group_by === 'model'
     ) {
-      return { data: { success: true, data: { items: [], has_more: false } } }
+      return { data: { success: true, data: { items: [], total: 0 } } }
     }
     if (url === '/api/usage/admin/upstream-summary') {
       if (config?.params?.rank_metric) {
@@ -155,7 +153,7 @@ beforeEach(() => {
           data: {
             success: true,
             data: {
-              has_more: !secondPage,
+              total: 11,
               items: [
                 {
                   channel_id: secondPage ? 18 : channelUsage.channel_id,
@@ -371,7 +369,13 @@ it('generates the explicitly selected customer model and displays the submitted 
 
 it('uses the selected API key for the overview, model ranking and export', async () => {
   const user = userEvent.setup()
-  const first = { ...total, total_calls: 3, input_tokens: 24, net_quota: 100 }
+  const first = {
+    ...total,
+    total_calls: 3,
+    failure_calls: 1,
+    input_tokens: 24,
+    net_quota: 100,
+  }
   const second = {
     ...total,
     total_calls: 1,
@@ -379,13 +383,20 @@ it('uses the selected API key for the overview, model ranking and export', async
     net_quota: 50,
     seconds: '29',
   }
+  const weeklyTotal = {
+    ...first,
+    total_calls: 4,
+    output_tokens: 6,
+    net_quota: 150,
+  }
   vi.mocked(api.get).mockResolvedValueOnce({
     data: {
       success: true,
       data: {
         period: { ...period, period: 'week' },
         result: {
-          total: { ...first, total_calls: 4, output_tokens: 6, net_quota: 150 },
+          day_totals: [weeklyTotal],
+          total: weeklyTotal,
           keys: [
             {
               token_id: 1,
@@ -410,6 +421,9 @@ it('uses the selected API key for the overview, model ranking and export', async
   )
   const overview = await screen.findByRole('region', { name: 'Usage' })
   expect(
+    screen.queryByRole('button', { name: 'Daily breakdown' })
+  ).not.toBeInTheDocument()
+  expect(
     screen.queryByRole('button', { name: period.date })
   ).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Monthly' }))
@@ -426,7 +440,20 @@ it('uses the selected API key for the overview, model ranking and export', async
   expect(within(modelRanking).getByText('75%')).toBeVisible()
   expect(within(modelRanking).getByText('80%')).toBeVisible()
   expect(within(modelRanking).getByText('66.67%')).toBeVisible()
-  expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  const modelDetails = screen.getByRole('table', {
+    name: 'Model usage details',
+  })
+  expect(modelDetails).toBeVisible()
+  const failedColumn = within(modelDetails).getByRole('columnheader', {
+    name: 'Failed calls',
+  })
+  expect(failedColumn.previousElementSibling).toHaveTextContent(/^Calls$/)
+  const firstModel = within(modelDetails).getByRole('row', { name: /model-a/ })
+  expect(within(firstModel).getAllByRole('cell')[2]).toHaveTextContent(/^1$/)
+  expect(within(modelDetails).getByText('model-b')).toBeVisible()
+  expect(
+    screen.queryByRole('button', { name: 'Model usage details' })
+  ).not.toBeInTheDocument()
   const filter = screen.getByRole('combobox', { name: 'API key' })
   await user.click(filter)
   await user.type(filter, 'No API Key')
@@ -436,12 +463,10 @@ it('uses the selected API key for the overview, model ranking and export', async
   expect(within(modelRanking).getAllByText('model-b')).toHaveLength(3)
   expect(within(modelRanking).queryByText('model-a')).not.toBeInTheDocument()
   expect(within(modelRanking).getAllByText('100%')).toHaveLength(3)
-  await user.click(screen.getByRole('button', { name: 'Model usage details' }))
-  const modelDetails = screen.getByRole('table', {
-    name: 'Model usage details',
-  })
   expect(within(modelDetails).getByText('29 billing seconds')).toBeVisible()
   expect(within(modelDetails).queryByText('model-a')).not.toBeInTheDocument()
+  const secondModel = within(modelDetails).getByRole('row', { name: /model-b/ })
+  expect(within(secondModel).getAllByRole('cell')[2]).toHaveTextContent(/^0$/)
 
   await user.click(screen.getByRole('button', { name: 'Export and download' }))
   expect(screen.getByText('API key: No API Key')).toBeVisible()
@@ -493,8 +518,12 @@ it.each(['customers', 'upstream'] as const)(
 it('keeps admin customer identity and model scope when generating from customer details', async () => {
   const user = userEvent.setup()
   mount(<AdminUsage period='day' date='2026-10-12' onSearchChange={vi.fn()} />)
-  await user.click(await screen.findByRole('button', { name: 'Customer list' }))
-  await user.click(await screen.findByRole('button', { name: 'Customer 43' }))
+  const filter = await screen.findByRole('combobox', { name: 'Customer' })
+  await user.click(filter)
+  await user.type(filter, '#43')
+  await user.click(
+    await screen.findByRole('option', { name: 'Customer 43 · #43' })
+  )
   expect(
     screen.getByRole('heading', { name: 'Customer 43 · #43' })
   ).toHaveFocus()
@@ -524,219 +553,199 @@ it('keeps admin customer identity and model scope when generating from customer 
   await user.click(
     screen.getByRole('button', { name: 'Back to customer usage' })
   )
-  expect(
-    await screen.findByRole('button', { name: 'Customer 43' })
-  ).toHaveFocus()
+  expect(screen.getByRole('combobox', { name: 'Customer' })).toHaveFocus()
 })
 
-it('keeps the all-customer total while search and export use the matching customers', async () => {
-  const user = userEvent.setup()
-  const customer = {
-    user_id: 43,
-    username: 'customer',
-    display_name: 'Customer 43',
-    total: { ...total, total_calls: 7 },
-  }
-  const second = {
-    user_id: 44,
-    username: 'another',
-    display_name: 'Another customer',
-    total: { ...total, total_calls: 36 },
-  }
-  vi.mocked(api.get).mockImplementation(async (url, config) => {
-    if (url === '/api/usage/admin/customers') {
-      if (config?.params?.group_by === 'model') {
-        return { data: { success: true, data: { items: [], has_more: false } } }
-      }
-      const search = config?.params?.search
-      return {
-        data: {
-          success: true,
+it.each(['week', 'month'] as const)(
+  'shows %s customer totals without duplicate daily tables and exports the selected customer',
+  async (kind) => {
+    const user = userEvent.setup()
+    const globalMetrics = {
+      ...total,
+      total_calls: 12,
+      image_count: 8,
+      input_tokens: 28,
+    }
+    const customerMetrics = {
+      ...total,
+      total_calls: 3,
+      image_count: 2,
+      output_tokens: 9,
+    }
+    const refs = [{ start: period.start_timestamp, generation: 'a'.repeat(32) }]
+    const selectedPeriod =
+      kind === 'month'
+        ? { ...upstreamMonth, date: period.date }
+        : {
+            ...period,
+            period: kind,
+            end_timestamp: period.start_timestamp + 7 * 86400,
+            days: Array.from({ length: 7 }, (_, i) => ({
+              date: `2026-10-${12 + i}`,
+              start: period.start_timestamp + i * 86400,
+              end: period.start_timestamp + (i + 1) * 86400,
+            })),
+          }
+    const customerDays = selectedPeriod.days.map(() => customerMetrics)
+    const customer = {
+      user_id: 43,
+      username: 'customer',
+      display_name: 'Customer 43',
+      total: customerMetrics,
+    }
+    vi.mocked(api.get).mockImplementation(async (url, config) => {
+      if (
+        url === '/api/usage/admin/customers' &&
+        config?.params?.group_by === 'model'
+      ) {
+        return {
           data: {
-            period,
-            result: {
-              total: { ...total, total_calls: search ? 7 : 43 },
-              customers: search ? [customer] : [customer, second],
+            success: true,
+            data: {
+              total: 1,
+              items: [
+                {
+                  name: 'global-model',
+                  billing_mode: 'per_image',
+                  calls: globalMetrics.total_calls,
+                  tokens: 0,
+                  missing_tokens: 0,
+                  amount: globalMetrics.net_quota,
+                  pending_amount: 0,
+                  non_token: { image_count: 8 },
+                },
+              ],
             },
           },
-        },
+        }
       }
-    }
-    return { data: { success: true, data: { items: [] } } }
-  })
-  mount(<AdminUsage period='day' date={period.date} onSearchChange={vi.fn()} />)
-  const overview = await screen.findByRole('region', {
-    name: 'All-customer usage',
-  })
-  expect(await within(overview).findByText('43')).toBeVisible()
-  expect(
-    screen.queryByRole('region', { name: 'Customers' })
-  ).not.toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: 'Customer list' }))
-  const customers = screen.getByRole('region', { name: 'Customers' })
-  await user.click(
-    within(customers).getByRole('combobox', { name: 'Sort customers by' })
-  )
-  await user.click(await screen.findByRole('option', { name: 'Calls' }))
-  expect(within(customers).getAllByRole('row')[1]).toHaveTextContent(
-    'Another customer'
-  )
-
-  await user.type(
-    screen.getByRole('textbox', { name: 'Search customer' }),
-    'Customer 43'
-  )
-  const matching = await screen.findByRole('region', {
-    name: 'Matching customers',
-  })
-  expect(
-    await within(matching).findByRole('button', { name: 'Customer 43' })
-  ).toBeVisible()
-  expect(within(overview).getByText('43')).toBeVisible()
-  expect(within(matching).getByText('Filtered total')).toBeVisible()
-  expect(
-    within(matching).queryByRole('button', { name: 'Another customer' })
-  ).not.toBeInTheDocument()
-
-  await user.click(
-    within(matching).getByRole('button', { name: 'Export search results' })
-  )
-  expect(screen.getByText('Customer search results')).toBeVisible()
-  await user.click(screen.getByRole('button', { name: 'Export CSV' }))
-  await waitFor(() =>
-    expect(api.post).toHaveBeenCalledWith(
-      '/api/usage/admin/exports',
-      expect.objectContaining({ view: 'customers', search: 'Customer 43' })
-    )
-  )
-})
-
-it('switches monthly admin cards, model charts and CSV to the selected customer', async () => {
-  const user = userEvent.setup()
-  const globalMetrics = {
-    ...total,
-    total_calls: 12,
-    image_count: 8,
-    input_tokens: 28,
-  }
-  const customerMetrics = {
-    ...total,
-    total_calls: 3,
-    image_count: 2,
-    output_tokens: 9,
-  }
-  const refs = [{ start: period.start_timestamp, generation: 'a'.repeat(32) }]
-  const month = { ...period, period: 'month' }
-  const customer = {
-    user_id: 43,
-    username: 'customer',
-    display_name: 'Customer 43',
-    total: customerMetrics,
-  }
-  vi.mocked(api.get).mockImplementation(async (url, config) => {
-    if (
-      url === '/api/usage/admin/customers' &&
-      config?.params?.group_by === 'model'
-    ) {
-      return {
-        data: {
-          success: true,
-          data: {
-            has_more: false,
-            items: [
+      let data: unknown = { items: [] }
+      if (url === '/api/usage/admin/customers') {
+        data = {
+          period: selectedPeriod,
+          report_days: refs,
+          result: {
+            total: globalMetrics,
+            day_totals: selectedPeriod.days.map(() => globalMetrics),
+            customers: [customer],
+          },
+        }
+      }
+      if (url === '/api/usage/admin/customer-summary') {
+        data = {
+          period: selectedPeriod,
+          report_days: refs,
+          result: {
+            total: customerMetrics,
+            day_totals: customerDays,
+            model_ranks: [
               {
-                name: 'global-model',
-                calls: globalMetrics.total_calls,
+                name: 'customer-model',
+                billing_mode: 'per_image',
+                calls: customerMetrics.total_calls,
                 tokens: 0,
                 missing_tokens: 0,
-                amount: globalMetrics.net_quota,
+                amount: customerMetrics.net_quota,
                 pending_amount: 0,
-                non_token: { image_count: 8, seconds: '29' },
+                non_token: { image_count: 2 },
+              },
+            ],
+            keys: [
+              {
+                token_id: 1,
+                token_name: 'key',
+                days: customerDays,
+                total: customerMetrics,
+                models: [
+                  {
+                    model_name: 'customer-model',
+                    total: customerMetrics,
+                    days: customerDays,
+                  },
+                ],
               },
             ],
           },
-        },
+        }
       }
-    }
-    let data: unknown = { items: [] }
-    if (url === '/api/usage/admin/customers') {
-      data = {
-        period: month,
-        report_days: refs,
-        result: { total: globalMetrics, customers: [customer] },
-      }
-    }
-    if (url === '/api/usage/admin/customer-summary') {
-      data = {
-        period: month,
-        report_days: refs,
-        result: {
-          total: customerMetrics,
-          keys: [
-            {
-              token_id: 1,
-              token_name: 'key',
-              total: customerMetrics,
-              models: [
-                { model_name: 'customer-model', total: customerMetrics },
-              ],
-            },
-          ],
-        },
-      }
-    }
-    return { data: { success: true, data } }
-  })
-  mount(
-    <AdminUsage period='month' date={period.date} onSearchChange={vi.fn()} />
-  )
-  expect(
-    await screen.findByRole('button', { name: 'Monthly', pressed: true })
-  ).toBeVisible()
-  const model = await screen.findByRole('row', { name: /global-model/ })
-  expect(within(model).getByText('8 images')).toBeVisible()
-  expect(within(model).getByText('29 billing seconds')).toBeVisible()
-  const allCards = screen.getByRole('region', { name: 'Usage' })
-  expect(within(allCards).getAllByRole('heading')).toHaveLength(8)
-  expect(within(allCards).getByText('8')).toBeVisible()
-  expect(
-    screen.queryByRole('table', { name: 'Daily customer usage' })
-  ).not.toBeInTheDocument()
-  const customerFilter = screen.getByRole('combobox', { name: 'Customer' })
-  await user.click(customerFilter)
-  await user.type(customerFilter, 'Customer 43')
-  await user.click(
-    await screen.findByRole('option', { name: 'Customer 43 · #43' })
-  )
-  expect(await screen.findAllByText('customer-model')).not.toHaveLength(0)
-  expect(screen.queryByText('global-model')).not.toBeInTheDocument()
-  expect(
-    within(screen.getByRole('region', { name: 'Usage' })).getByText('2')
-  ).toBeVisible()
-  expect(api.get).toHaveBeenCalledWith(
-    '/api/usage/admin/customer-summary',
-    expect.objectContaining({
-      params: expect.objectContaining({
-        period: 'month',
-        user_id: 43,
-        report_days: JSON.stringify(refs),
-      }),
+      return { data: { success: true, data } }
     })
-  )
-  await user.click(screen.getByRole('button', { name: 'Export and download' }))
-  await user.click(screen.getByRole('button', { name: 'Export CSV' }))
-  await waitFor(() =>
-    expect(api.post).toHaveBeenCalledWith(
-      '/api/usage/admin/exports',
+    const onSearchChange = vi.fn()
+    mount(
+      <AdminUsage
+        period={kind}
+        date={period.date}
+        onSearchChange={onSearchChange}
+      />
+    )
+    await user.click(await screen.findByRole('button', { name: 'Daily' }))
+    expect(onSearchChange).toHaveBeenCalledWith(
+      expect.objectContaining({ period: 'day', date: period.date })
+    )
+    const model = await screen.findByRole('row', { name: /global-model/ })
+    expect(within(model).getByText('8 images')).toBeVisible()
+    const allCards = screen.getByRole('region', { name: 'Usage' })
+    expect(within(allCards).getAllByRole('heading')).toHaveLength(8)
+    expect(within(allCards).getByText('8')).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Daily breakdown' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Customer list' })
+    ).not.toBeInTheDocument()
+    const customerFilter = screen.getByRole('combobox', { name: 'Customer' })
+    await user.click(customerFilter)
+    await user.type(customerFilter, 'Customer 43')
+    await user.click(
+      await screen.findByRole('option', { name: 'Customer 43 · #43' })
+    )
+    const customerModel = await screen.findByRole('row', {
+      name: /customer-model/,
+    })
+    expect(within(customerModel).getByText('2 images')).toBeVisible()
+    expect(screen.queryByText('global-model')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Daily breakdown' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'View details' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Pricing and discounts' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('columnheader', { name: period.date })
+    ).not.toBeInTheDocument()
+    expect(
+      within(screen.getByRole('region', { name: 'Usage' })).getByText('2')
+    ).toBeVisible()
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/usage/admin/customer-summary',
       expect.objectContaining({
-        period: 'month',
-        view: 'customer',
-        user_id: 43,
-        report_days: refs,
+        params: expect.objectContaining({
+          period: kind,
+          user_id: 43,
+          report_days: JSON.stringify(refs),
+        }),
       })
     )
-  )
-})
+    await user.click(
+      screen.getByRole('button', { name: 'Export and download' })
+    )
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/usage/admin/exports',
+        expect.objectContaining({
+          period: kind,
+          view: 'customer',
+          user_id: 43,
+          report_days: refs,
+        })
+      )
+    )
+  }
+)
 
 it('prevents another generation while submission is pending', async () => {
   const user = userEvent.setup()
@@ -803,10 +812,24 @@ it('uses the selected URL, channel and frozen day for details and export', async
       })
     )
   )
-  await user.click(await screen.findByRole('button', { name: 'Next page' }))
+  const pager = await screen.findByRole('group', { name: 'Channel ranking' })
+  expect(within(pager).getByText('Page 1 of 2')).toBeVisible()
+  await user.click(within(pager).getByRole('button', { name: 'Go to page 2' }))
   expect(
     await screen.findByRole('button', { name: 'Second upstream · #18' })
   ).toBeVisible()
+  expect(await screen.findByText('Page 2 of 2')).toBeVisible()
+  await user.click(screen.getByRole('combobox', { name: 'Rows per page' }))
+  await user.click(await screen.findByRole('option', { name: '20' }))
+  await waitFor(() =>
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/usage/admin/upstream-summary',
+      expect.objectContaining({
+        params: expect.objectContaining({ rank_page: 1, rank_page_size: 20 }),
+      })
+    )
+  )
+  expect(await screen.findByText('Page 1 of 1')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Total tokens' }))
   expect(api.get).toHaveBeenCalledWith(
     '/api/usage/admin/upstream-summary',
@@ -904,64 +927,27 @@ it('offers a natural month when viewing upstream usage and keeps it when switchi
   })
 })
 
-it('opens a scoped day from the upstream month and returns to the same monthly export scope', async () => {
-  function MonthlyUpstream() {
-    const [search, setSearch] = useState<{
-      period: UsagePeriodKind
-      date: string
-    }>({
-      period: 'month',
-      date: period.date,
-    })
-    return (
-      <AdminUsage {...search} section='upstream' onSearchChange={setSearch} />
-    )
-  }
-
+it('exports the selected upstream channel for the month without a daily breakdown', async () => {
   const user = userEvent.setup()
-  mount(<MonthlyUpstream />)
-  await user.click(
-    await screen.findByRole('button', { name: 'Primary upstream · #17' })
+  mount(
+    <AdminUsage
+      period='month'
+      date={period.date}
+      section='upstream'
+      onSearchChange={vi.fn()}
+    />
   )
-  const dailyBreakdown = await screen.findByRole('button', {
-    name: 'Daily breakdown',
+  const channel = await screen.findByRole('button', {
+    name: 'Primary upstream · #17',
   })
-  expect(dailyBreakdown).toHaveAttribute('aria-expanded', 'false')
-  await user.click(dailyBreakdown)
-  const days = screen.getByRole('table', { name: 'Daily breakdown' })
-  expect(within(days).getAllByRole('row')).toHaveLength(32)
   expect(
-    within(days).getByRole('rowheader', { name: /2026-10-12.*Partial data/ })
-  ).toBeVisible()
-  expect(
-    within(days).getByRole('row', { name: /2026-10-02.*Not published/ })
-  ).toBeVisible()
-  expect(
-    within(days).getByRole('row', { name: /2026-10-31.*Not started/ })
-  ).toBeVisible()
-  await user.click(within(days).getByRole('button', { name: period.date }))
-  expect(
-    screen.getByRole('button', { name: 'Daily', pressed: true })
-  ).toBeVisible()
-  await waitFor(() =>
-    expect(api.get).toHaveBeenCalledWith(
-      '/api/usage/admin/upstream-summary',
-      expect.objectContaining({
-        params: expect.objectContaining({
-          period: 'day',
-          channel_id: channelUsage.channel_id,
-          report_days: JSON.stringify(upstreamVersions),
-        }),
-      })
-    )
-  )
-  await user.click(
-    screen.getByRole('button', { name: 'Back to monthly summary' })
-  )
-  expect(
-    screen.getByRole('button', { name: 'Monthly', pressed: true })
-  ).toBeVisible()
+    screen.queryByRole('button', { name: 'Daily breakdown' })
+  ).not.toBeInTheDocument()
+  await user.click(channel)
   await screen.findByRole('region', { name: 'Upstream model breakdown' })
+  expect(
+    screen.queryByRole('button', { name: 'Daily breakdown' })
+  ).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Export and download' }))
   const drawer = screen.getByRole('dialog')
   expect(within(drawer).getByText(/2026-10-01.*2026-10-31/)).toBeVisible()

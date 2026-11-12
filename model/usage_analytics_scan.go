@@ -40,10 +40,11 @@ type usageViewOptions struct {
 }
 
 type usageCustomerKey struct {
-	user  int
-	day   int
-	token int
-	model string
+	user        int
+	day         int
+	token       int
+	model       string
+	billingMode string
 }
 
 type usageUpstreamKey struct {
@@ -367,6 +368,7 @@ func (agg *usageAggregation) consumeLogRow(ctx context.Context, row usageLogRow,
 		}
 	}
 	row.parsed = parseBillingReconciliationLog(row.fact)
+	applyCustomerOriginalReplay(row.fact, &row.parsed)
 	taskID := billingBreakdownString(row.other["task_id"])
 	isTaskFlag, _ := billingReconciliationBool(row.other["is_task"])
 	isBatch := billingBreakdownString(row.other["billing_mode"]) == "azure_batch"
@@ -438,33 +440,17 @@ func usageRowSeconds(row usageLogRow) (decimal.Decimal, bool, bool, bool) {
 	return decimal.Decimal{}, false, missing, unitKnown
 }
 
-// usageCustomerOriginalRow 按客户账单同一算法还原一条日志的估算原价。
+// usageCustomerOriginalRow uses the same verified amount as customer statements.
 func usageCustomerOriginalRow(row usageLogRow) (decimal.Decimal, []string, bool) {
-	quota := max(int64(row.fact.Quota), 0)
-	if quota == 0 {
-		return decimal.Zero, nil, false
+	if original, ok := customerStatementOriginalQuota(row.fact, row.parsed); ok {
+		return original, nil, true
 	}
-	if reasons := billingStatementEstimateReasons(row.parsed); len(reasons) > 0 {
-		return decimal.Zero, reasons, false
-	}
-	contractRatio := 1.0
-	if row.parsed.contractDiscountRatio != nil && *row.parsed.contractDiscountRatio > 0 {
-		contractRatio = *row.parsed.contractDiscountRatio
-	}
-	original := decimal.NewFromInt(quota).Div(decimal.NewFromFloat(*row.parsed.discountRatio)).Div(decimal.NewFromFloat(contractRatio))
-	if row.fact.Type == LogTypeRefund {
-		original = original.Neg()
-	}
-	return original, nil, true
+	return decimal.Zero, statementOriginalUnavailableReasons(row.parsed), false
 }
 
 // usageUpstreamRowAmount 还原一条日志的上游原价与折后参考金额（逐笔取整）。
 func usageUpstreamRowAmount(row usageLogRow, bundle *usageDiscountBundle) (decimal.Decimal, decimal.Decimal, []string, decimal.Decimal, bool) {
-	quota := max(int64(row.fact.Quota), 0)
-	if quota == 0 {
-		return decimal.Decimal{}, decimal.Decimal{}, nil, decimal.Decimal{}, false
-	}
-	original, _, reasons := upstreamOriginalQuota(row.fact, row.parsed)
+	original, reasons := upstreamOriginalQuota(row.fact, row.parsed)
 	if len(reasons) > 0 {
 		return decimal.Decimal{}, decimal.Decimal{}, reasons, decimal.Decimal{}, false
 	}
@@ -594,8 +580,9 @@ func (agg *usageAggregation) applyStandalone(row usageLogRow, bundle *usageDisco
 	if isTest {
 		return
 	}
-	acc := agg.buildCustomerStandalone(row, calls, result)
-	key := usageCustomerKey{day: day, token: row.fact.TokenId, model: row.parsed.customerModel}
+	mode, imageCount, imageKnown := customerUsageLogMeter(row)
+	acc := agg.buildCustomerStandalone(row, calls, result, mode, imageCount, imageKnown)
+	key := usageCustomerKey{day: day, token: row.fact.TokenId, model: row.parsed.customerModel, billingMode: mode}
 	agg.mergeCustomer(row.fact.UserId, key, acc)
 	if agg.opts.WantOverview {
 		agg.mergeOverview(usageOverviewKey{user: row.fact.UserId, day: day}, acc)
@@ -657,7 +644,7 @@ func (agg *usageAggregation) buildUpstreamStandalone(row usageLogRow, bundle *us
 }
 
 // buildCustomerStandalone 构建客户/总览视图的独立行累加器。
-func (agg *usageAggregation) buildCustomerStandalone(row usageLogRow, calls int64, result string) *usageMetricsAcc {
+func (agg *usageAggregation) buildCustomerStandalone(row usageLogRow, calls int64, result, mode string, imageCount int64, imageKnown bool) *usageMetricsAcc {
 	acc := &usageMetricsAcc{}
 	if agg.opts.WantCustomer && row.fact.Type == LogTypeConsume {
 		acc.observeCustomerDiscount(row)
@@ -677,6 +664,7 @@ func (agg *usageAggregation) buildCustomerStandalone(row usageLogRow, calls int6
 			acc.m.SecondsValueMissingRows += max(calls, 1)
 		}
 	}
+	setCustomerUsageMeter(&acc.m, mode, imageCount, imageKnown)
 	if row.fact.Type == LogTypeConsume {
 		acc.m.GrossQuota += max(int64(row.fact.Quota), 0)
 		if original, reasons, known := usageCustomerOriginalRow(row); known {
@@ -707,7 +695,7 @@ func (agg *usageAggregation) applyUnlinkedRefund(row usageLogRow) {
 	}
 	acc := &usageMetricsAcc{}
 	acc.m.UnlinkedRefundQuota += quota
-	key := usageCustomerKey{day: day, token: row.fact.TokenId, model: row.parsed.customerModel}
+	key := usageCustomerKey{day: day, token: row.fact.TokenId, model: row.parsed.customerModel, billingMode: BillingReconciliationModeUnknown}
 	agg.mergeCustomer(row.fact.UserId, key, acc)
 	if agg.opts.WantOverview {
 		agg.mergeOverview(usageOverviewKey{user: row.fact.UserId, day: day}, acc)
@@ -867,6 +855,9 @@ func (agg *usageAggregation) loadDeliveryLogs(ctx context.Context) error {
 			}
 			fact := upstreamBillingLogFact(row.Log, row.GroupName)
 			parsed := parseBillingReconciliationLog(fact)
+			if err := resolveCustomerOriginalReplay(ctx, fact, &parsed); err != nil {
+				return err
+			}
 			var other map[string]json.RawMessage
 			if strings.TrimSpace(row.Other) != "" {
 				_ = common.UnmarshalJsonStr(row.Other, &other)
@@ -1023,7 +1014,9 @@ func (agg *usageAggregation) applyTaskCustomer(task *usageTaskRecord, pieces *us
 	if pieces != nil {
 		tokenId = pieces.tokenId
 	}
-	key := usageCustomerKey{day: day, token: tokenId, model: model}
+	mode, imageCount, imageKnown := customerUsageTaskMeter(task, pieces, settled)
+	setCustomerUsageMeter(&acc.m, mode, imageCount, imageKnown)
+	key := usageCustomerKey{day: day, token: tokenId, model: model, billingMode: mode}
 	agg.mergeCustomer(task.UserID, key, acc)
 	if agg.opts.WantOverview {
 		agg.mergeOverview(usageOverviewKey{user: task.UserID, day: day}, acc)
@@ -1148,6 +1141,7 @@ func finalizeUsageCustomerView(view *UsageCustomerView, agg *usageAggregation) {
 			build.models[key.model] = modelEntry
 		}
 		modelEntry.days[key.day].merge(acc)
+		modelEntry.days[key.day].mergeCustomerUsageDiscounts(acc)
 		build.days[key.day].merge(acc)
 		build.total.merge(acc)
 	}
@@ -1176,9 +1170,10 @@ func finalizeUsageCustomerView(view *UsageCustomerView, agg *usageAggregation) {
 			entryTotal := usageMetricsAcc{}
 			for i := range dayAccs {
 				entryTotal.merge(&dayAccs[i])
+				entryTotal.mergeCustomerUsageDiscounts(&dayAccs[i])
 			}
 			entry.row.Total = entryTotal.finalize()
-			agg.customerModelDiscounts(id, &entry.row)
+			entryTotal.customerModelDiscounts(id, &entry.row)
 			build.group.Models = append(build.group.Models, entry.row)
 		}
 		sort.Slice(build.group.Models, func(i, j int) bool {

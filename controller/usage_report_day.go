@@ -95,8 +95,10 @@ func respondPublishedUsage(c *gin.Context, period model.UsageAnalyticsPeriod, sc
 		}
 		if scope == "customer" {
 			filters["user_id"] = userID
+			result, meta, err = model.GetPublishedAdminUsageCustomer(ctx, period, userID)
+		} else {
+			result, meta, err = model.GetPublishedUsageCustomer(ctx, period, userID, "")
 		}
-		result, meta, err = model.GetPublishedUsageCustomer(ctx, period, userID, "")
 	}
 	if err != nil {
 		common.ApiError(c, err)
@@ -115,8 +117,13 @@ func respondPublishedUsageRanking(c *gin.Context, ctx context.Context, period mo
 		common.ApiErrorMsg(c, "Invalid pagination")
 		return
 	}
+	size, err := strconv.Atoi(c.DefaultQuery("rank_page_size", "10"))
+	if err != nil {
+		common.ApiErrorMsg(c, "Invalid pagination")
+		return
+	}
 	result, err := model.GetPublishedUsageRanks(ctx, period, model.UsageReportRankQuery{
-		Kind: kind, Metric: c.Query("rank_metric"), URLKey: url, Page: page, Size: 10,
+		Kind: kind, Metric: c.Query("rank_metric"), URLKey: url, Page: page, Size: size,
 	})
 	if err != nil {
 		common.ApiError(c, err)

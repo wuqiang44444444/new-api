@@ -16,11 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
+import { ReportCard } from '@/components/report-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
@@ -50,6 +51,7 @@ import { UpstreamUsageValues } from './upstream-usage-values'
 type Status = '' | 'complete' | 'partial'
 
 export function UpstreamUrlModels(props: {
+  toolbar: ReactNode
   urlKey: string
   channelId: number
   reportVersion?: string
@@ -77,56 +79,64 @@ export function UpstreamUrlModels(props: {
   const total = query.data?.result.total ?? 0
   return (
     <>
-      <div className='flex shrink-0 flex-wrap items-center gap-2'>
-        <NativeSelect
-          aria-label={t('Data status')}
-          value={status}
-          onChange={(event) => {
-            setStatus(event.target.value as Status)
-            setPage(1)
-          }}
-        >
-          <NativeSelectOption value=''>{t('All statuses')}</NativeSelectOption>
-          <NativeSelectOption value='complete'>
-            {t('Complete')}
-          </NativeSelectOption>
-          <NativeSelectOption value='partial'>
-            {t('Partial')}
-          </NativeSelectOption>
-        </NativeSelect>
-        <form
-          className='flex min-w-0 flex-wrap items-center gap-2'
-          onSubmit={(event) => {
-            event.preventDefault()
-            setSearch(modelDraft.trim())
-            setPage(1)
-          }}
-        >
-          <Input
-            aria-label={t('Provider model')}
-            placeholder={t('Provider model')}
-            value={modelDraft}
-            maxLength={255}
-            onChange={(event) => setModelDraft(event.target.value)}
-            className='w-44'
-          />
-          <Button variant='outline' size='sm' type='submit'>
-            {t('Search')}
-          </Button>
-        </form>
+      <div className='flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain'>
+        {props.toolbar}
+        <div className='flex shrink-0 flex-wrap items-center gap-2'>
+          <NativeSelect
+            aria-label={t('Original amount status')}
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value as Status)
+              setPage(1)
+            }}
+          >
+            <NativeSelectOption value=''>
+              {t('All statuses')}
+            </NativeSelectOption>
+            <NativeSelectOption value='complete'>
+              {t('Original amount complete')}
+            </NativeSelectOption>
+            <NativeSelectOption value='partial'>
+              {t('Original amount incomplete')}
+            </NativeSelectOption>
+          </NativeSelect>
+          <form
+            className='flex min-w-0 flex-wrap items-center gap-2'
+            onSubmit={(event) => {
+              event.preventDefault()
+              setSearch(modelDraft.trim())
+              setPage(1)
+            }}
+          >
+            <Input
+              aria-label={t('Provider model')}
+              placeholder={t('Provider model')}
+              value={modelDraft}
+              maxLength={255}
+              onChange={(event) => setModelDraft(event.target.value)}
+              className='w-44'
+            />
+            <Button variant='outline' size='sm' type='submit'>
+              {t('Search')}
+            </Button>
+          </form>
+        </div>
       </div>
-      {query.isPending && <LoadingState />}
-      {query.isError && (
-        <ErrorState
-          title={t('Unable to load upstream details.')}
-          onRetry={() => query.refetch()}
-        />
-      )}
-      {query.isSuccess && rows.length === 0 && (
-        <p className='text-muted-foreground p-6'>{t('No matching results')}</p>
-      )}
-      {query.isSuccess && rows.length > 0 && (
-        <div className='min-h-0 flex-1 overflow-auto'>
+      <ReportCard className='block max-h-full min-h-0 self-start overflow-auto overscroll-contain p-0'>
+        {query.isPending && <LoadingState className='min-h-0 py-4' />}
+        {query.isError && (
+          <ErrorState
+            className='min-h-0'
+            title={t('Unable to load upstream details.')}
+            onRetry={() => query.refetch()}
+          />
+        )}
+        {query.isSuccess && rows.length === 0 && (
+          <p className='text-muted-foreground px-3 py-4'>
+            {t('No matching results')}
+          </p>
+        )}
+        {query.isSuccess && rows.length > 0 && (
           <Table withContainer={false}>
             <TableHeader className='sticky top-0 z-10 bg-(--table-header)'>
               <TableRow>
@@ -148,7 +158,7 @@ export function UpstreamUrlModels(props: {
                 <TableHead scope='col' className='text-right'>
                   {t('Discounted reference amount')}
                 </TableHead>
-                <TableHead scope='col'>{t('Data status')}</TableHead>
+                <TableHead scope='col'>{t('Original amount status')}</TableHead>
                 <TableHead
                   scope='col'
                   className='sticky right-0 bg-(--table-header) text-right'
@@ -172,8 +182,8 @@ export function UpstreamUrlModels(props: {
               ))}
             </TableBody>
           </Table>
-        </div>
-      )}
+        )}
+      </ReportCard>
       {query.isSuccess && total > 0 && (
         <BillingPagination
           label={t('Model pages')}
@@ -235,12 +245,13 @@ function UpstreamUrlModelTableRow(props: {
       <AmountCell
         value={row.original_amount}
         knownSubtotal={row.known_original_amount}
-        estimated={row.data_quality?.has_estimated_original}
+        unverified={row.data_quality?.has_estimated_original}
       />
       <TableCell>
         <UpstreamDiscountValue discount={row.discount} />
       </TableCell>
       <AmountCell
+        unverified={row.data_quality?.has_estimated_original}
         value={row.reference_amount}
         knownSubtotal={row.known_reference_amount}
       />

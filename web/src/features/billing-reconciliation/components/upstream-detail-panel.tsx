@@ -1,21 +1,3 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -36,6 +18,25 @@ import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { getAdminUpstreamDetails } from '../api'
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { amountUnavailableReasonText } from '../estimate-display'
 import { billingModeLabel, formatCustomerStatementQuota } from '../lib'
 import type { BillingMode, UpstreamDetailItem } from '../types'
 import {
@@ -47,6 +48,7 @@ import {
   billingSecondsSourceLabel,
   formatStatementUsage,
 } from '../upstream-statement-utils'
+import { BillingPagination } from './billing-pagination'
 import { UpstreamDataStatus } from './upstream-data-status'
 import { UpstreamExportAction } from './upstream-export-action'
 import { UsageCell } from './upstream-reconciliation-table'
@@ -76,7 +78,7 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
   const [requestId, setRequestId] = useState('')
   const [upstreamRequestId, setUpstreamRequestId] = useState('')
   const [page, setPage] = useState(1)
-  const pageSize = 50
+  const [pageSize, setPageSize] = useState(50)
   const isRoot = useAuthStore(
     (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
   )
@@ -96,6 +98,7 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
       requestId,
       upstreamRequestId,
       page,
+      pageSize,
     ],
     queryFn: async () => {
       const response = await getAdminUpstreamDetails({
@@ -137,10 +140,6 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
   })
 
   const details = query.data?.result
-  const totalPages = details
-    ? Math.max(1, Math.ceil(details.total / pageSize))
-    : 1
-
   return (
     <div className='space-y-3'>
       <div className='flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between'>
@@ -252,7 +251,7 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
               <TableHead>{t('Platform task ID')}</TableHead>
               {isRoot && <TableHead>{t('Upstream task ID')}</TableHead>}
               <TableHead>{t('Row kind')}</TableHead>
-              <TableHead>{t('Data status')}</TableHead>
+              <TableHead>{t('Original amount status')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -273,36 +272,19 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
         </Table>
       ) : null}
 
-      <div className='flex items-center justify-between text-sm'>
-        <span className='text-muted-foreground'>
-          {details
-            ? t('{{total}} rows in the current filters', {
-                total: details.total,
-              })
-            : ''}
-        </span>
-        <div className='flex items-center gap-2'>
-          <Button
-            disabled={page <= 1 || query.isFetching}
-            size='xs'
-            variant='outline'
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-          >
-            {t('Previous')}
-          </Button>
-          <span className='text-muted-foreground text-xs'>
-            {page} / {totalPages}
-          </span>
-          <Button
-            disabled={page >= totalPages || query.isFetching}
-            size='xs'
-            variant='outline'
-            onClick={() => setPage((current) => current + 1)}
-          >
-            {t('Next')}
-          </Button>
-        </div>
-      </div>
+      {details && details.total > 0 && (
+        <BillingPagination
+          page={page}
+          pageSize={pageSize}
+          total={details.total}
+          label={t('Details')}
+          disabled={query.isFetching}
+          onChange={(nextPage, nextSize) => {
+            setPage(nextPage)
+            setPageSize(nextSize)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -400,20 +382,21 @@ function DetailRow(props: { item: UpstreamDetailItem; isRoot: boolean }) {
         ) : null}
       </TableCell>
       <TableCell className='text-right tabular-nums'>
-        {item.original_amount == null ? (
+        {item.original_amount == null || item.original_amount_estimated ? (
           <span className='text-muted-foreground'>
             {item.event === 'channel_test'
               ? t('Test amount pending')
-              : t('Unknown')}
+              : t('Cannot calculate')}
           </span>
         ) : (
           formatCustomerStatementQuota(item.original_amount)
         )}
-        {item.original_amount_estimated && (
-          <span className='text-muted-foreground block text-xs'>
-            {t('Estimated from recorded charges and historical discounts')}
-          </span>
-        )}
+        {item.event !== 'channel_test' &&
+          (item.original_amount == null || item.original_amount_estimated) && (
+            <span className='text-muted-foreground block text-xs'>
+              {amountUnavailableReasonText(item.estimate_reasons, t)}
+            </span>
+          )}
       </TableCell>
       <TableCell className='font-mono text-xs'>
         {item.request_id || t('Not recorded')}
@@ -453,8 +436,11 @@ function DetailRow(props: { item: UpstreamDetailItem; isRoot: boolean }) {
       </TableCell>
       <TableCell>
         <UpstreamDataStatus
+          scope='detail'
           quality={item.data_quality}
-          originalAmount={item.original_amount}
+          originalAmount={
+            item.original_amount_estimated ? null : item.original_amount
+          }
           usageOnly={
             item.event === 'channel_test' && item.original_amount == null
           }

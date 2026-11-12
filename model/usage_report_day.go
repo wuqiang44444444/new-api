@@ -12,14 +12,17 @@ import (
 
 const UsageReportTaskType = "usage_report_day"
 
+const usageReportMeterVersion = 1
+
 type usageReportDay struct {
-	Start      int64  `gorm:"primaryKey;autoIncrement:false"`
-	Generation string `gorm:"size:32;not null"`
-	AsOf       int64
-	SourceRows int64
-	UpperLogID int64
-	Incomplete bool
-	RankReady  bool
+	Start        int64  `gorm:"primaryKey;autoIncrement:false"`
+	Generation   string `gorm:"size:32;not null"`
+	AsOf         int64
+	SourceRows   int64
+	UpperLogID   int64
+	Incomplete   bool
+	RankReady    bool
+	MeterVersion int
 }
 
 type usageReportDayRow struct {
@@ -33,9 +36,10 @@ type usageReportDayRow struct {
 }
 
 type usageReportCustomerLeaf struct {
-	Token   int
-	Model   string
-	Metrics usageReportMetrics
+	Token       int
+	Model       string
+	BillingMode string
+	Metrics     usageReportMetrics
 }
 
 type usageReportUpstreamLeaf struct {
@@ -102,7 +106,7 @@ func BuildUsageReportDay(ctx context.Context, day string, taskID string, runnerI
 
 	data := make(map[int]*usageReportDayData)
 	overview := make(map[int]*usageMetricsAcc)
-	modelTotals := make(map[string]*usageMetricsAcc)
+	modelTotals := make(map[usageReportModelKey]*usageMetricsAcc)
 	for key, acc := range agg.customer {
 		if key.user <= 0 {
 			continue
@@ -112,10 +116,10 @@ func BuildUsageReportDay(ctx context.Context, day string, taskID string, runnerI
 			overview[key.user] = &usageMetricsAcc{}
 		}
 		data[key.user].Customers = append(data[key.user].Customers, usageReportCustomerLeaf{
-			Token: key.token, Model: key.model, Metrics: makeUsageReportMetrics(acc),
+			Token: key.token, Model: key.model, BillingMode: key.billingMode, Metrics: makeUsageReportMetrics(acc),
 		})
 		overview[key.user].merge(acc)
-		mergeUsageReportModel(modelTotals, key.model, acc)
+		mergeUsageReportModel(modelTotals, usageReportModelKey{key.model, key.billingMode}, acc)
 	}
 	for _, task := range agg.tasks {
 		if task.UserID <= 0 || task.TaskID == "" || task.VideoRefundState != "pending" ||
@@ -236,7 +240,7 @@ func BuildUsageReportDay(ctx context.Context, day string, taskID string, runnerI
 		return err
 	}
 	coverage := dailyReportLogScanCoverage(ctx, agg.scannedLogRows, agg.logRevision)
-	stage := dailyReportStage{Start: period.StartTimestamp, Kind: DailyReportUsage, Generation: generation,
+	stage := dailyReportStage{OriginalReplayVersion: CustomerOriginalReplayVersion, UsageMeterVersion: usageReportMeterVersion, Start: period.StartTimestamp, Kind: DailyReportUsage, Generation: generation,
 		Previous: prior.Generation, AsOf: now, UpperLogID: upper, SourceRows: coverage.Rows, SourceRevision: coverage.Revision, Dependencies: dependencies, Incomplete: incomplete, RankReady: true}
 	return saveDailyReportStage(ctx, db, stage, taskID, runnerID)
 }
@@ -387,7 +391,7 @@ func loadPublishedUsageReport(ctx context.Context, period UsageAnalyticsPeriod, 
 			}
 			for _, leaf := range data.Customers {
 				if agg.opts.WantCustomer {
-					agg.customer[usageCustomerKey{day: index, token: leaf.Token, model: leaf.Model}] = leaf.Metrics.accumulator()
+					agg.customer[usageCustomerKey{day: index, token: leaf.Token, model: leaf.Model, billingMode: leaf.BillingMode}] = leaf.Metrics.accumulator()
 				}
 			}
 			for _, leaf := range data.Upstream {
@@ -405,6 +409,14 @@ func loadPublishedUsageReport(ctx context.Context, period UsageAnalyticsPeriod, 
 }
 
 func GetPublishedUsageCustomer(ctx context.Context, period UsageAnalyticsPeriod, userID int, modelName string) (UsageCustomerView, PublishedUsageReport, error) {
+	return getPublishedUsageCustomer(ctx, period, userID, modelName, false)
+}
+
+func GetPublishedAdminUsageCustomer(ctx context.Context, period UsageAnalyticsPeriod, userID int) (UsageCustomerView, PublishedUsageReport, error) {
+	return getPublishedUsageCustomer(ctx, period, userID, "", true)
+}
+
+func getPublishedUsageCustomer(ctx context.Context, period UsageAnalyticsPeriod, userID int, modelName string, includeModelRanks bool) (UsageCustomerView, PublishedUsageReport, error) {
 	view := UsageCustomerView{Keys: []UsageCustomerKeyGroup{}}
 	agg, meta, err := loadPublishedUsageReport(ctx, period, userID, false, false)
 	if err == nil {
@@ -416,6 +428,28 @@ func GetPublishedUsageCustomer(ctx context.Context, period UsageAnalyticsPeriod,
 			}
 		}
 		finalizeUsageCustomerView(&view, agg)
+		if includeModelRanks {
+			modelTotals := make(map[usageReportModelKey]*usageMetricsAcc)
+			for key, acc := range agg.customer {
+				mergeUsageReportModel(modelTotals, usageReportModelKey{key.model, key.billingMode}, acc)
+			}
+			view.ModelRanks = make([]UsageReportRankItem, 0, len(modelTotals))
+			for key, acc := range modelTotals {
+				metrics := acc.finalize()
+				item := usageReportCustomerRankItem(key, metrics)
+				switch key.mode {
+				case BillingReconciliationModeToken:
+					item.TokenUsage = &UsageReportRankTokenUsage{
+						InputTokens: metrics.InputTokens, OutputTokens: metrics.OutputTokens,
+						CacheReadTokens: metrics.CacheReadTokens, CacheWriteTokens: metrics.CacheWriteTokens,
+						TokenDetails: metrics.TokenDetails,
+					}
+				case BillingReconciliationModeUnknown:
+					item.MissingTokens = metrics.RowsMissingTokens
+				}
+				view.ModelRanks = append(view.ModelRanks, item)
+			}
+		}
 	}
 	return view, meta, err
 }

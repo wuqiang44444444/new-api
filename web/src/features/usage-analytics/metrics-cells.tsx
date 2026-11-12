@@ -1,9 +1,14 @@
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
+import { amountUnavailableReasonText } from '@/features/billing-reconciliation/estimate-display'
 import { formatCustomerStatementQuota } from '@/features/billing-reconciliation/lib'
 
-import type { UsageAnalyticsMetrics, UsageNonTokenMetrics } from './types'
+import type {
+  UsageAnalyticsMetrics,
+  UsageNonTokenMetrics,
+  UsageTokenMetrics,
+} from './types'
 import { formatNumber, usageNonTokenValues } from './utils'
 
 // Renders call counts with result breakdown. Failures and cancellations are
@@ -15,9 +20,11 @@ export function UsageCallsCell(props: { metrics: UsageAnalyticsMetrics }) {
     <div className='flex flex-col gap-0.5 text-sm'>
       <span className='font-medium'>{formatNumber(m.total_calls)}</span>
       <span className='text-muted-foreground text-xs'>
-        {t('OK')} {formatNumber(m.success_calls)} · {t('Failed')}{' '}
-        {formatNumber(m.failure_calls)} · {t('Cancelled')}{' '}
-        {formatNumber(m.cancelled_calls)}
+        {t('OK')} {formatNumber(m.success_calls)} ·{' '}
+        <span className='text-destructive whitespace-nowrap'>
+          {t('Failed')} {formatNumber(m.failure_calls)}
+        </span>{' '}
+        · {t('Cancelled')} {formatNumber(m.cancelled_calls)}
         {m.other_result_calls > 0 && (
           <>
             {' '}
@@ -29,20 +36,24 @@ export function UsageCallsCell(props: { metrics: UsageAnalyticsMetrics }) {
   )
 }
 
-export function UsageTokensCell(props: { metrics: UsageAnalyticsMetrics }) {
+export function UsageTokensCell(props: { metrics: UsageTokenMetrics }) {
   const { t } = useTranslation()
   const m = props.metrics
   const missing = m.rows_missing_tokens ?? 0
   const total = m.input_tokens + m.output_tokens
+  const details = [
+    [t('Image input tokens'), m.token_details?.image_input],
+    [t('Image output tokens'), m.token_details?.image_output],
+    [t('Audio input tokens'), m.token_details?.audio_input],
+    [t('Audio output tokens'), m.token_details?.audio_output],
+  ] as const
+  const mediaTokens = details.flatMap(([label, value]) =>
+    value == null ? [] : [`${label} ${formatNumber(value)}`]
+  )
   return (
     <div className='flex flex-col gap-0.5 text-sm tabular-nums'>
       <span className='font-medium'>
         {missing > 0 && total === 0 ? t('unrecorded') : formatNumber(total)}
-        {missing > 0 && total > 0 && (
-          <span className='text-muted-foreground ml-1 text-xs'>
-            {t('Known subtotal')}
-          </span>
-        )}
       </span>
       <span className='text-muted-foreground text-xs'>
         {t('Input')}{' '}
@@ -61,32 +72,9 @@ export function UsageTokensCell(props: { metrics: UsageAnalyticsMetrics }) {
           <> · {t('{{count}} rows unrecorded', { count: missing })}</>
         )}
       </span>
-      {m.token_details && (
+      {mediaTokens.length > 0 && (
         <span className='text-muted-foreground text-xs'>
-          {m.token_details.image_input != null && (
-            <>
-              {t('Image input tokens')}{' '}
-              {formatNumber(m.token_details.image_input)} ·{' '}
-            </>
-          )}
-          {m.token_details.image_output != null && (
-            <>
-              {t('Image output tokens')}{' '}
-              {formatNumber(m.token_details.image_output)} ·{' '}
-            </>
-          )}
-          {m.token_details.audio_input != null && (
-            <>
-              {t('Audio input tokens')}{' '}
-              {formatNumber(m.token_details.audio_input)} ·{' '}
-            </>
-          )}
-          {m.token_details.audio_output != null && (
-            <>
-              {t('Audio output tokens')}{' '}
-              {formatNumber(m.token_details.audio_output)}
-            </>
-          )}
+          {mediaTokens.join(' · ')}
         </span>
       )}
     </div>
@@ -109,11 +97,6 @@ export function UsageNonTokenCell(props: { metrics?: UsageNonTokenMetrics }) {
       {values.map((unit) => (
         <div key={unit.label}>
           {unit.text && <span>{unit.text}</span>}
-          {unit.partial && (
-            <span className='text-muted-foreground block text-xs'>
-              {t('Known subtotal')}
-            </span>
-          )}
           {unit.notes?.map((note) => (
             <span key={note} className='text-muted-foreground block text-xs'>
               {note}
@@ -133,19 +116,11 @@ export function UsageReferenceAmount({
   const { t } = useTranslation()
   const amount = metrics.reference_amount ?? metrics.known_reference_amount
   return (
-    <>
-      <span className='tabular-nums'>
-        {amount == null && metrics.reference_pending
-          ? t('Pending reconciliation')
-          : formatCustomerStatementQuota(amount)}
-      </span>
-      {metrics.known_reference_amount != null &&
-        metrics.reference_amount == null && (
-          <span className='text-muted-foreground block text-xs'>
-            {t('Known subtotal')}
-          </span>
-        )}
-    </>
+    <span className='tabular-nums'>
+      {amount == null && metrics.reference_pending
+        ? t('Pending reconciliation')
+        : formatCustomerStatementQuota(amount)}
+    </span>
   )
 }
 
@@ -203,8 +178,8 @@ export function UsageQualityCell(props: { metrics: UsageAnalyticsMetrics }) {
       t('Unlinked refund {{amount}}', { amount: m.unlinked_refund_quota })
     )
   }
-  for (const reason of m.estimate_reasons ?? []) {
-    reasons.push(reason)
+  if (m.estimate_reasons?.length) {
+    reasons.push(amountUnavailableReasonText(m.estimate_reasons, t))
   }
   if (reasons.length === 0) {
     return <span className='text-muted-foreground text-xs'>—</span>
