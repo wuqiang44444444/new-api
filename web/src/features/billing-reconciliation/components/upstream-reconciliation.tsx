@@ -154,66 +154,68 @@ function UpstreamChannelContent(props: Props) {
         </>
       ) : (
         <>
-          <div className='flex shrink-0 flex-wrap items-center gap-2'>
-            <label className='flex flex-wrap items-center gap-x-2 gap-y-1'>
-              <span className='text-muted-foreground text-xs font-medium'>
-                {t('Billing month')}
-              </span>
-              <Input
-                className='w-36'
-                type='month'
-                value={props.month}
-                onChange={(event) => {
-                  if (event.target.value) {
-                    props.onMonthChange(event.target.value)
-                  }
+          <div className='flex shrink-0 flex-wrap items-center justify-between gap-2'>
+            <div className='flex min-w-0 flex-wrap items-center gap-2 max-sm:w-full'>
+              <label className='flex flex-wrap items-center gap-x-2 gap-y-1'>
+                <span className='text-muted-foreground text-xs font-medium'>
+                  {t('Billing month')}
+                </span>
+                <Input
+                  className='w-36'
+                  type='month'
+                  value={props.month}
+                  onChange={(event) => {
+                    if (event.target.value) {
+                      props.onMonthChange(event.target.value)
+                    }
+                  }}
+                />
+              </label>
+              <UpstreamExportAction
+                className='max-sm:ms-auto'
+                payload={{
+                  ...exportPeriod,
+                  report_version: report?.version,
+                  all_channels: true,
                 }}
+                scope={[t('All channels for the billing month')]}
+                available={
+                  query.isSuccess &&
+                  !query.isFetching &&
+                  !!report?.version &&
+                  !!report.published_days
+                }
               />
-            </label>
-            <UpstreamExportAction
-              className='max-sm:ms-auto'
-              payload={{
-                ...exportPeriod,
-                report_version: report?.version,
-                all_channels: true,
-              }}
-              scope={[t('All channels for the billing month')]}
-              available={
-                query.isSuccess &&
-                !query.isFetching &&
-                !!report?.version &&
-                !!report.published_days
-              }
-            />
-            <Button
-              variant='outline'
-              size='sm'
-              onClick={() => setDiscountTarget(0)}
-            >
-              {t('Set discount')}
-            </Button>
-            <form
-              className='flex w-full min-w-0 items-center gap-2 sm:w-auto'
-              onSubmit={(event) => {
-                event.preventDefault()
-                setSearch(searchDraft.trim())
-                setPage(1)
-              }}
-            >
-              <Input
-                className='min-w-0 flex-1 sm:w-56'
-                aria-label={t('Upstream URL or channel')}
-                placeholder={t('Upstream URL or channel')}
-                value={searchDraft}
-                maxLength={255}
-                onChange={(event) => setSearchDraft(event.target.value)}
-              />
-              <Button type='submit' variant='outline' size='sm'>
-                {t('Search')}
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => setDiscountTarget(0)}
+              >
+                {t('Set discount')}
               </Button>
-            </form>
+              <form
+                className='flex w-full min-w-0 items-center gap-2 sm:w-auto'
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  setSearch(searchDraft.trim())
+                  setPage(1)
+                }}
+              >
+                <Input
+                  className='min-w-0 flex-1 sm:w-56'
+                  aria-label={t('Upstream URL or channel')}
+                  placeholder={t('Upstream URL or channel')}
+                  value={searchDraft}
+                  maxLength={255}
+                  onChange={(event) => setSearchDraft(event.target.value)}
+                />
+                <Button type='submit' variant='outline' size='sm'>
+                  {t('Search')}
+                </Button>
+              </form>
+            </div>
             {!query.isPending && !query.isError && (
-              <div className='flex min-w-0 flex-wrap items-center gap-2 lg:ms-auto'>
+              <div className='flex min-w-0 flex-wrap items-center gap-2'>
                 <BillingReportStatus report={report} />
                 <UpstreamDataStatus
                   scope='report'

@@ -41,6 +41,10 @@ type AdminBillingReconciliationProps = {
   ) => void
 }
 
+// Let the whole tab scroll when the controls and totals may crowd out the table.
+const billingTabPanelClassName =
+  'flex min-h-0 flex-col overflow-y-auto max-sm:block [@media(max-height:42rem)]:block'
+
 export function AdminBillingReconciliation(
   props: AdminBillingReconciliationProps
 ) {
@@ -138,7 +142,7 @@ export function AdminBillingReconciliation(
                 {t('Upstream reconciliation')}
               </TabsTrigger>
             </TabsList>
-            <TabsContent className='min-h-0 flex-1' value='customer'>
+            <TabsContent className={billingTabPanelClassName} value='customer'>
               <CustomerStatementsListView
                 period={period}
                 search={props.search}
@@ -148,7 +152,7 @@ export function AdminBillingReconciliation(
                 }
               />
             </TabsContent>
-            <TabsContent className='min-h-0 flex-1' value='upstream'>
+            <TabsContent className={billingTabPanelClassName} value='upstream'>
               <UpstreamReconciliationView
                 month={month}
                 period={period}

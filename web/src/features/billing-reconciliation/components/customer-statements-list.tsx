@@ -188,74 +188,76 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
   }
 
   return (
-    <div className='flex h-full min-h-0 flex-col gap-3'>
-      <div className='flex shrink-0 flex-wrap items-center gap-2'>
-        <Input
-          className='w-full sm:w-64 lg:w-80'
-          aria-label={t('Customer search')}
-          value={search}
-          placeholder={t('Search by customer name, username, or ID')}
-          onChange={(event) =>
-            props.onSearchChange(
-              {
-                customerSearch: event.target.value || undefined,
+    <div className='flex min-h-0 flex-1 flex-col gap-3'>
+      <div className='flex shrink-0 flex-wrap items-center justify-between gap-2'>
+        <div className='flex min-w-0 flex-wrap items-center gap-2 max-sm:w-full'>
+          <Input
+            className='w-full sm:w-64 lg:w-80'
+            aria-label={t('Customer search')}
+            value={search}
+            placeholder={t('Search by customer name, username, or ID')}
+            onChange={(event) =>
+              props.onSearchChange(
+                {
+                  customerSearch: event.target.value || undefined,
+                  customerPage: 1,
+                },
+                true
+              )
+            }
+          />
+          <Select
+            items={[
+              { value: 'all', label: t('All data quality') },
+              { value: 'complete', label: t('Complete') },
+              { value: 'partial', label: t('Partial data') },
+            ]}
+            value={quality}
+            onValueChange={(value) =>
+              value != null &&
+              props.onSearchChange({
+                customerQuality: value as CustomerStatementListQuality,
                 customerPage: 1,
-              },
-              true
-            )
-          }
-        />
-        <Select
-          items={[
-            { value: 'all', label: t('All data quality') },
-            { value: 'complete', label: t('Complete') },
-            { value: 'partial', label: t('Partial data') },
-          ]}
-          value={quality}
-          onValueChange={(value) =>
-            value != null &&
-            props.onSearchChange({
-              customerQuality: value as CustomerStatementListQuality,
-              customerPage: 1,
-            })
-          }
-        >
-          <SelectTrigger aria-label={t('Data quality')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent align='start'>
-            <SelectGroup>
-              <SelectItem value='all'>{t('All data quality')}</SelectItem>
-              <SelectItem value='complete'>{t('Complete')}</SelectItem>
-              <SelectItem value='partial'>{t('Partial data')}</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        <Button
-          size='sm'
-          variant={showFunds ? 'secondary' : 'outline'}
-          aria-pressed={showFunds}
-          onClick={() => setShowFunds(!showFunds)}
-        >
-          {t('Fund movements')}
-        </Button>
-        <BillingExportAction
-          startTimestamp={props.period.start_timestamp}
-          statement={t('Customer statements')}
-          scope={[t('All customers')]}
-          description={t(
-            'The CSV includes one statement summary per customer for the selected month, regardless of list filters.'
-          )}
-          available={!!reportVersion && !query.isPlaceholderData}
-          submit={() =>
-            createCustomerStatementsExport({
-              start_timestamp: props.period.start_timestamp,
-              end_timestamp: props.period.end_timestamp + 1,
-              report_version: reportVersion ?? '',
-            })
-          }
-        />
-        <div className='flex flex-wrap items-center gap-2 lg:ms-auto'>
+              })
+            }
+          >
+            <SelectTrigger aria-label={t('Data quality')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align='start'>
+              <SelectGroup>
+                <SelectItem value='all'>{t('All data quality')}</SelectItem>
+                <SelectItem value='complete'>{t('Complete')}</SelectItem>
+                <SelectItem value='partial'>{t('Partial data')}</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Button
+            size='sm'
+            variant={showFunds ? 'secondary' : 'outline'}
+            aria-pressed={showFunds}
+            onClick={() => setShowFunds(!showFunds)}
+          >
+            {t('Fund movements')}
+          </Button>
+          <BillingExportAction
+            startTimestamp={props.period.start_timestamp}
+            statement={t('Customer statements')}
+            scope={[t('All customers')]}
+            description={t(
+              'The CSV includes one statement summary per customer for the selected month, regardless of list filters.'
+            )}
+            available={!!reportVersion && !query.isPlaceholderData}
+            submit={() =>
+              createCustomerStatementsExport({
+                start_timestamp: props.period.start_timestamp,
+                end_timestamp: props.period.end_timestamp + 1,
+                report_version: reportVersion ?? '',
+              })
+            }
+          />
+        </div>
+        <div className='flex min-w-0 flex-wrap items-center gap-2'>
           <BillingReportStatus report={query.data.billing_report} />
           <Popover>
             <PopoverTrigger render={<Button variant='ghost' size='sm' />}>

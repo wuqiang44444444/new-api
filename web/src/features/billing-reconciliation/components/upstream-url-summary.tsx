@@ -49,13 +49,8 @@ export function UpstreamUrlTotals(props: {
   const { t, i18n } = useTranslation()
   const totals = props.totals
   const formatAmount = (amount?: number, subtotal?: number) => {
-    if (amount != null) return formatCustomerStatementQuota(amount)
-    if (subtotal != null) {
-      return t('Known subtotal: {{amount}}', {
-        amount: formatCustomerStatementQuota(subtotal),
-      })
-    }
-    return t('Unknown')
+    const value = amount ?? subtotal
+    return value == null ? t('Unknown') : formatCustomerStatementQuota(value)
   }
   const metrics = [
     {

@@ -5,6 +5,9 @@ import { Badge } from '@/components/ui/badge'
 import type { BillingReportManifest } from '../types'
 import { formatShanghaiTimestamp } from '../upstream-reconciliation-utils'
 
+const reportBadgeClassName =
+  'h-auto min-h-5 max-w-full justify-start wrap-anywhere whitespace-normal'
+
 export function BillingReportStatus({
   report,
 }: {
@@ -24,7 +27,7 @@ export function BillingReportStatus({
 
   return (
     <div className='flex min-w-0 flex-wrap items-center gap-2'>
-      <Badge variant='outline'>
+      <Badge variant='outline' className={reportBadgeClassName}>
         {status} ·{' '}
         {t('{{published}} of {{expected}} days published', {
           published: report.published_days,
@@ -40,7 +43,7 @@ export function BillingReportStatus({
         )}
       </Badge>
       {report.estimated && (
-        <Badge variant='secondary'>
+        <Badge variant='secondary' className={reportBadgeClassName}>
           {t('Data as of {{time}}', {
             time: formatShanghaiTimestamp(report.estimated_at ?? report.as_of),
           })}

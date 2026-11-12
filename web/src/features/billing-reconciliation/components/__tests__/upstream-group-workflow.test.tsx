@@ -191,6 +191,24 @@ it('shows one row per channel even when both channels share a URL', async () => 
   )
   expect(mocks.summary.mock.calls[0][0]).not.toHaveProperty('url_key')
 })
+it('left-aligns the report status when it wraps below the upstream controls', async () => {
+  view()
+
+  const report = await screen.findByText(/1 of 30 days published/)
+  const status = report.closest('div')?.parentElement
+
+  expect(status?.parentElement).toHaveClass('flex-wrap', 'justify-between')
+  expect(status).not.toHaveClass('lg:ms-auto')
+})
+it('lets a report label longer than the toolbar wrap within its available width', async () => {
+  view()
+
+  expect(await screen.findByText(/1 of 30 days published/)).toHaveClass(
+    'max-w-full',
+    'whitespace-normal',
+    'h-auto'
+  )
+})
 it('refreshes the list, total and pinned model details after saving the discount', async () => {
   let saved = false
   mocks.saveDiscount.mockImplementationOnce(async () => {
@@ -665,7 +683,7 @@ it('opens the selected URL from the summary table and keeps its scope in drilldo
               seconds: '13',
               completed_images: 2,
             },
-            original_amount: 400,
+            known_original_amount: 400,
             known_reference_amount: 160,
           },
           url_channels: [
@@ -704,8 +722,16 @@ it('opens the selected URL from the summary table and keeps its scope in drilldo
     'Billable seconds',
   ])
   expect(
+    screen.getByText('List price', { selector: 'dt' }).nextElementSibling
+  ).toHaveTextContent(formatCustomerStatementQuota(400))
+  expect(
+    screen.getByText('Discounted reference amount', { selector: 'dt' })
+      .nextElementSibling
+  ).toHaveTextContent(formatCustomerStatementQuota(160))
+  expect(
     screen.getByText('Images', { selector: 'dt' }).nextElementSibling
-  ).toHaveTextContent('2Known subtotal')
+  ).toHaveTextContent(/^2$/)
+  expect(total).not.toHaveTextContent('Known subtotal')
   expect(
     screen.getByText('Billable seconds', { selector: 'dt' }).nextElementSibling
   ).toHaveTextContent('13')

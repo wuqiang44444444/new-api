@@ -117,6 +117,17 @@ async function renderStatement(
   }
 }
 
+it('left-aligns the report status when it wraps below the customer controls', async () => {
+  const view = await renderStatement()
+
+  const report = screen.getByText(/1 of 1 days published/)
+  const status = report.closest('div')?.parentElement
+
+  expect(status?.parentElement).toHaveClass('flex-wrap', 'justify-between')
+  expect(status).not.toHaveClass('lg:ms-auto')
+  view.cleanup()
+})
+
 it('separates settled prices from precharge flows for the randy statement', async () => {
   const view = await renderStatement()
   const user = userEvent.setup()

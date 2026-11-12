@@ -36,7 +36,10 @@ type UsageMetric = {
   knownSubtotal?: boolean
 }
 
-function useUpstreamUsageMetrics(props: UpstreamUsageProps) {
+function useUpstreamUsageMetrics(
+  props: UpstreamUsageProps,
+  showImageSubtotal: boolean
+) {
   const { t, i18n } = useTranslation()
   const usage = props.usage
   const format = (value: number) =>
@@ -58,7 +61,7 @@ function useUpstreamUsageMetrics(props: UpstreamUsageProps) {
     metrics.push({
       label: t('Images'),
       value: format(usage.completed_images),
-      knownSubtotal: true,
+      knownSubtotal: showImageSubtotal,
     })
   }
   if (usage.billable_calls > 0 || props.billingMode === 'per_call') {
@@ -103,7 +106,7 @@ export function UpstreamTotalMetric(props: UsageMetric) {
 }
 
 export function UpstreamUsageTotalMetrics(props: UpstreamUsageProps) {
-  const { metrics } = useUpstreamUsageMetrics(props)
+  const { metrics } = useUpstreamUsageMetrics(props, false)
   return metrics.map((metric) => (
     <UpstreamTotalMetric key={metric.label} {...metric} />
   ))
@@ -115,7 +118,7 @@ export function UpstreamUsageValues(
   }
 ) {
   const { t } = useTranslation()
-  const { metrics, tokenBilling, format } = useUpstreamUsageMetrics(props)
+  const { metrics, tokenBilling, format } = useUpstreamUsageMetrics(props, true)
   const usage = props.usage
   return (
     <div className='space-y-0.5 tabular-nums'>

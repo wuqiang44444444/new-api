@@ -107,6 +107,39 @@ describe('billing page split', () => {
     expect(screen.queryByLabelText('Billing month')).toBeNull()
   })
 
+  it.each(['customer', 'upstream'] as const)(
+    'bounds the %s view vertically so its table can scroll within the tab',
+    (section) => {
+      renderWithI18n(
+        <AdminBillingReconciliation
+          search={{ section }}
+          onSearchChange={vi.fn()}
+        />
+      )
+
+      expect(screen.getByRole('tabpanel')).toHaveClass(
+        'flex',
+        'min-h-0',
+        'flex-col'
+      )
+    }
+  )
+
+  it('lets the selected tab scroll on narrow or short screens', () => {
+    renderWithI18n(
+      <AdminBillingReconciliation
+        search={{ section: 'upstream' }}
+        onSearchChange={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('tabpanel')).toHaveClass(
+      'overflow-y-auto',
+      'max-sm:block',
+      '[@media(max-height:42rem)]:block'
+    )
+  })
+
   it('lands the legacy upstream_url section on the merged upstream view', () => {
     renderWithI18n(
       <AdminBillingReconciliation
