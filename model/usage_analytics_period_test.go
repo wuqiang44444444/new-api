@@ -2,6 +2,7 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,11 +46,23 @@ func TestResolveUsageAnalyticsPeriodFutureDay(t *testing.T) {
 	assert.False(t, period.Days[0].Future)
 }
 
+func TestResolveUsageAnalyticsPeriodMonth(t *testing.T) {
+	now := time.Date(2024, time.February, 28, 12, 0, 0, 0, UsageAnalyticsZone()).Unix()
+	period, err := ResolveUsageAnalyticsPeriod("month", "2024-02-18", now)
+	require.NoError(t, err)
+	require.Len(t, period.Days, 29)
+	assert.Equal(t, "2024-02-01", period.Days[0].Date)
+	assert.Equal(t, "2024-02-29", period.Days[28].Date)
+	assert.False(t, period.Days[27].Future)
+	assert.True(t, period.Days[28].Future)
+	assert.Equal(t, time.Date(2024, time.March, 1, 0, 0, 0, 0, UsageAnalyticsZone()).Unix(), period.EndTimestamp)
+}
+
 func TestResolveUsageAnalyticsPeriodRejectsInvalidInput(t *testing.T) {
 	for _, tc := range []struct {
 		period string
 		date   string
-	}{{"month", "2026-09-16"}, {"", "2026-09-16"}, {"day", "2026/09/16"}, {"day", ""}, {"day", "2026-13-40"}} {
+	}{{"year", "2026-09-16"}, {"", "2026-09-16"}, {"day", "2026/09/16"}, {"day", ""}, {"day", "2026-13-40"}} {
 		_, err := ResolveUsageAnalyticsPeriod(tc.period, tc.date, 0)
 		assert.Error(t, err, "period=%q date=%q must be rejected", tc.period, tc.date)
 	}

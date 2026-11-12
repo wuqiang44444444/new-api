@@ -11,7 +11,7 @@ import (
 // Batch execution ends at the provider's terminal timestamp. Settlement and
 // file collection may finish later and cannot move requests to a later day.
 func (agg *usageAggregation) applyBatchJobs(ctx context.Context) error {
-	query := DB.WithContext(ctx).Model(&BatchJob{}).Where(`
+	query := usageReportMainDB(ctx).WithContext(ctx).Model(&BatchJob{}).Where(`
  (upstream_status = 'completed' AND completed_at >= ? AND completed_at < ?) OR
  (upstream_status = 'failed' AND failed_at >= ? AND failed_at < ?) OR
  (upstream_status = 'cancelled' AND cancelled_at >= ? AND cancelled_at < ?) OR
@@ -23,6 +23,9 @@ func (agg *usageAggregation) applyBatchJobs(ctx context.Context) error {
 	}
 	cursor := ""
 	for {
+		if err := usageReportBeforeBatch(ctx); err != nil {
+			return err
+		}
 		var jobs []BatchJob
 		if err := query.Session(&gorm.Session{}).Where("id > ?", cursor).Order("id").Limit(100).Find(&jobs).Error; err != nil {
 			return err
@@ -63,7 +66,11 @@ func (agg *usageAggregation) applyBatchJobs(ctx context.Context) error {
 				base.originalIncomplete = true
 			}
 			var logs []Log
-			if err := LOG_DB.WithContext(ctx).Where("request_id = ? AND user_id = ? AND type IN ?", job.Id, job.UserId, []int{LogTypeConsume, LogTypeRefund}).Find(&logs).Error; err != nil {
+			logQuery := usageReportLogDB(ctx).WithContext(ctx).Where("request_id = ? AND user_id = ? AND type IN ?", job.Id, job.UserId, []int{LogTypeConsume, LogTypeRefund})
+			if agg.opts.LogUpper != nil {
+				logQuery = logQuery.Where("id <= ?", *agg.opts.LogUpper)
+			}
+			if err := logQuery.Find(&logs).Error; err != nil {
 				return err
 			}
 			customer, upstream := usageMetricsAcc{}, usageMetricsAcc{}
@@ -112,7 +119,7 @@ func (agg *usageAggregation) applyBatchJobs(ctx context.Context) error {
 				}
 			}
 			upstream.m.GrossQuota, upstream.m.RefundQuota = customer.m.GrossQuota, customer.m.RefundQuota
-			agg.mergeCustomer(usageCustomerKey{day: day, token: job.TokenId, model: job.PublicModel}, &customer)
+			agg.mergeCustomer(job.UserId, usageCustomerKey{day: day, token: job.TokenId, model: job.PublicModel}, &customer)
 			if agg.opts.WantOverview {
 				agg.mergeOverview(usageOverviewKey{user: job.UserId, day: day}, &customer)
 			}

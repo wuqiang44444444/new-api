@@ -8,13 +8,14 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// 客户与上游日/周用量统计（docs/80-dev/2026-09-20-客户与上游日周用量统计实施方案.md）。
+// 客户与上游的日、周、月用量统计。
 // 只读投影：按“已结束调用”的结束时间归属，聚合成功、失败、取消与缺失用量，
 // 不执行对账、关账或资金调整，不建立第二套 Task 状态或计费事实。
 
 const (
-	UsageAnalyticsPeriodDay  = "day"
-	UsageAnalyticsPeriodWeek = "week"
+	UsageAnalyticsPeriodDay   = "day"
+	UsageAnalyticsPeriodWeek  = "week"
+	UsageAnalyticsPeriodMonth = "month"
 
 	// UsageAnalyticsTimezone 是统计归属时区；自然周为周一至周日。
 	UsageAnalyticsTimezone = "Asia/Shanghai"
@@ -48,7 +49,7 @@ type UsageAnalyticsDay struct {
 	Future bool   `json:"future,omitempty"`
 }
 
-// UsageAnalyticsPeriod 是服务端推导的查询范围；客户端只提供 day|week 与一个
+// UsageAnalyticsPeriod 是服务端推导的查询范围；客户端只提供 day|week|month 与一个
 // 上海时区日历日期，不能提交任意起止时间。
 type UsageAnalyticsPeriod struct {
 	Period         string              `json:"period"`
@@ -59,23 +60,25 @@ type UsageAnalyticsPeriod struct {
 	Days           []UsageAnalyticsDay `json:"days"`
 }
 
-// ResolveUsageAnalyticsPeriod 把 day|week 与 YYYY-MM-DD 规范化为固定日界。
-// 周模式取该日期所在自然周（周一至下周周一），允许跨月、跨年。
+// ResolveUsageAnalyticsPeriod 按北京时间解析自然日、周一开始的自然周或自然月。
 func ResolveUsageAnalyticsPeriod(period string, date string, now int64) (UsageAnalyticsPeriod, error) {
-	if period != UsageAnalyticsPeriodDay && period != UsageAnalyticsPeriodWeek {
-		return UsageAnalyticsPeriod{}, errors.New("period must be day or week")
-	}
 	dayStart, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(date), usageAnalyticsLocation)
 	if err != nil {
 		return UsageAnalyticsPeriod{}, errors.New("date must be YYYY-MM-DD in Asia/Shanghai")
 	}
 	var start, end time.Time
-	if period == UsageAnalyticsPeriodDay {
+	switch period {
+	case UsageAnalyticsPeriodDay:
 		start, end = dayStart, dayStart.AddDate(0, 0, 1)
-	} else {
+	case UsageAnalyticsPeriodWeek:
 		offset := (int(dayStart.Weekday()) + 6) % 7 // 周一为 0
 		monday := dayStart.AddDate(0, 0, -offset)
 		start, end = monday, monday.AddDate(0, 0, 7)
+	case UsageAnalyticsPeriodMonth:
+		start = dayStart.AddDate(0, 0, 1-dayStart.Day())
+		end = start.AddDate(0, 1, 0)
+	default:
+		return UsageAnalyticsPeriod{}, errors.New("period must be day, week or month")
 	}
 	result := UsageAnalyticsPeriod{
 		Period:         period,
@@ -83,7 +86,7 @@ func ResolveUsageAnalyticsPeriod(period string, date string, now int64) (UsageAn
 		StartTimestamp: start.Unix(),
 		EndTimestamp:   end.Unix(),
 		Timezone:       UsageAnalyticsTimezone,
-		Days:           make([]UsageAnalyticsDay, 0, 7),
+		Days:           make([]UsageAnalyticsDay, 0, end.Sub(start)/(24*time.Hour)),
 	}
 	for cursor := start; cursor.Before(end); cursor = cursor.AddDate(0, 0, 1) {
 		dayEnd := cursor.AddDate(0, 0, 1)
@@ -107,13 +110,15 @@ type UsageAnalyticsMetrics struct {
 	CancelledCalls   int64            `json:"cancelled_calls"`
 	OtherResultCalls int64            `json:"other_result_calls"`
 
-	InputTokens        int64            `json:"input_tokens"`
-	OutputTokens       int64            `json:"output_tokens"`
-	CacheReadTokens    int64            `json:"cache_read_tokens"`
-	CacheWriteTokens   int64            `json:"cache_write_tokens"`
-	ImageCount         int64            `json:"image_count"`
-	Seconds            *decimal.Decimal `json:"seconds,omitempty"`
-	SecondsMissingRows int64            `json:"seconds_missing_rows,omitempty"`
+	InputTokens           int64            `json:"input_tokens"`
+	OutputTokens          int64            `json:"output_tokens"`
+	CacheReadTokens       int64            `json:"cache_read_tokens"`
+	CacheWriteTokens      int64            `json:"cache_write_tokens"`
+	ImageCount            int64            `json:"image_count"`
+	ImageCountKnown       bool             `json:"image_count_known,omitempty"`
+	ImageCountMissingRows int64            `json:"image_count_missing_rows,omitempty"`
+	Seconds               *decimal.Decimal `json:"seconds,omitempty"`
+	SecondsMissingRows    int64            `json:"seconds_missing_rows,omitempty"`
 
 	GrossQuota  int64 `json:"gross_quota"`
 	RefundQuota int64 `json:"refund_quota"`
@@ -129,8 +134,11 @@ type UsageAnalyticsMetrics struct {
 	// MultipleDiscounts 表示该范围命中的渠道月度系数不止一个值（仅上游视图）。
 	MultipleDiscounts bool `json:"multiple_discounts,omitempty"`
 	// ReferenceAmount 是折后参考金额（上游视图，逐笔取整后求和）。
-	ReferenceAmount *int64 `json:"reference_amount,omitempty"`
-	ReferenceKnown  bool   `json:"reference_known,omitempty"`
+	ReferenceAmount       *int64   `json:"reference_amount,omitempty"`
+	ReferenceKnown        bool     `json:"reference_known,omitempty"`
+	KnownReferenceAmount  *int64   `json:"known_reference_amount,omitempty"`
+	ReferencePending      bool     `json:"reference_pending,omitempty"`
+	ReferenceCoefficients []string `json:"reference_coefficients,omitempty"`
 
 	RowsMissingTokens int64 `json:"rows_missing_tokens,omitempty"`
 	RowsMissingMoney  int64 `json:"rows_missing_money,omitempty"`
@@ -199,6 +207,8 @@ func (a *usageMetricsAcc) mergeTokens(source UsageAnalyticsMetrics) {
 	a.m.CacheReadTokens += source.CacheReadTokens
 	a.m.CacheWriteTokens += source.CacheWriteTokens
 	a.m.ImageCount += source.ImageCount
+	a.m.ImageCountKnown = a.m.ImageCountKnown || source.ImageCountKnown
+	a.m.ImageCountMissingRows += source.ImageCountMissingRows
 	a.m.SecondsMissingRows += source.SecondsMissingRows
 	a.m.GrossQuota += source.GrossQuota
 	a.m.RefundQuota += source.RefundQuota
@@ -254,7 +264,7 @@ func (a *usageMetricsAcc) finalize() UsageAnalyticsMetrics {
 			result.EstimateReasons = mergeBillingEstimateReasons(result.EstimateReasons, BillingEstimateAmountOutOfRange)
 		}
 	}
-	if !a.originalIncomplete && a.originalKnown && a.coefficients != nil && len(a.coefficients) > 0 {
+	if !a.originalIncomplete && a.originalKnown && len(a.coefficients) > 0 {
 		result.ReferenceAmount = billingStatementOriginalQuota(a.reference)
 		result.ReferenceKnown = result.ReferenceAmount != nil
 	}
@@ -318,11 +328,12 @@ type UsageCustomerView struct {
 
 // UsageChannelMonthDiscount 是渠道某月系数投影（只读，不物化配置）。
 type UsageChannelMonthDiscount struct {
-	PeriodStart  int64           `json:"period_start"`
-	Value        decimal.Decimal `json:"value"`
-	Version      int64           `json:"version"`
-	Source       string          `json:"source"`
-	SourcePeriod int64           `json:"source_period,omitempty"`
+	PeriodStart  int64                   `json:"period_start"`
+	Value        decimal.Decimal         `json:"value"`
+	Changes      ProviderDiscountChanges `json:"changes,omitempty"`
+	Version      int64                   `json:"version"`
+	Source       string                  `json:"source"`
+	SourcePeriod int64                   `json:"source_period,omitempty"`
 }
 
 // UsageUpstreamModelRow 是 URL 下的上游模型 × 计费方式分组。
@@ -360,9 +371,16 @@ type UsageUpstreamUrlGroup struct {
 
 // UsageUpstreamView 是管理员上游视角：URL → 上游模型 × 计费方式 → 渠道。
 type UsageUpstreamView struct {
-	DayTotals []UsageAnalyticsMetrics `json:"day_totals"`
-	Total     UsageAnalyticsMetrics   `json:"total"`
-	UrlGroups []UsageUpstreamUrlGroup `json:"url_groups"`
+	DayTotals []UsageAnalyticsMetrics     `json:"day_totals"`
+	Total     UsageAnalyticsMetrics       `json:"total"`
+	UrlGroups []UsageUpstreamUrlGroup     `json:"url_groups"`
+	Channels  []UsageUpstreamChannelTotal `json:"channels"`
+}
+
+type UsageUpstreamChannelTotal struct {
+	ChannelId   int                   `json:"channel_id"`
+	ChannelName string                `json:"channel_name"`
+	Total       UsageAnalyticsMetrics `json:"total"`
 }
 
 // UsageCustomerOverviewRow 是客户列表中的一行：所选范围合计。

@@ -12,13 +12,14 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
 // 用量统计的只读聚合实现。来源选择 → 结束时间归属 → 关联去重 → 指标提取 →
-// 分组聚合全部集中在这里；页面与导出共用同一入口，保证同口径。
+// 分组聚合全部集中在这里；后台复用这些口径，页面和导出读取已发布的日汇总。
 //
 // 去重规则（方案 §2）：
 //   - 同步最终消费/错误日志 = 一次客户调用，按日志写入时刻（该路径的结束事实）归属；
@@ -32,13 +33,14 @@ type usageViewOptions struct {
 	// UserID 限定客户范围；0 表示全部客户（管理员视角）。
 	UserID int
 	// WantCustomer/WantUpstream/WantOverview 控制构建哪些投影。
-	WantCustomer     bool
-	WantUpstream     bool
-	WantOverview     bool
-	DiscountSnapshot *UsageAnalyticsDiscountSnapshot
+	WantCustomer bool
+	WantUpstream bool
+	WantOverview bool
+	LogUpper     *int64
 }
 
 type usageCustomerKey struct {
+	user  int
 	day   int
 	token int
 	model string
@@ -50,6 +52,9 @@ type usageUpstreamKey struct {
 	model    string
 	fallback bool
 	mode     string
+	urlKey   string
+	urlName  string
+	name     string
 }
 
 type usageOverviewKey struct {
@@ -61,23 +66,25 @@ type usageOverviewKey struct {
 // 日志（范围内的原生任务日志 + 按稳定 ID 直接加载的交付日志），任务行本身
 // 提供身份、终态与结束时间。
 type usageTaskPieces struct {
-	discounts      *billingDiscountCombinationAccumulator
-	tokenDetails   map[string]int64
-	gross          int64
-	refund         int64
-	input          int64
-	output         int64
-	cacheRead      int64
-	cacheWrite     int64
-	imageCount     int64
-	seconds        decimal.Decimal
-	secondsKnown   bool
-	missingTokens  int64
-	missingSeconds int64
-	rowsSeen       int64
-	billingMode    string
-	tokenId        int
-	tokenName      string
+	discounts         *billingDiscountCombinationAccumulator
+	tokenDetails      map[string]int64
+	gross             int64
+	refund            int64
+	input             int64
+	output            int64
+	cacheRead         int64
+	cacheWrite        int64
+	imageCount        int64
+	imageCountKnown   bool
+	imageCountMissing bool
+	seconds           decimal.Decimal
+	secondsKnown      bool
+	missingTokens     int64
+	missingSeconds    int64
+	rowsSeen          int64
+	billingMode       string
+	tokenId           int
+	tokenName         string
 	// customerOriginal 是客户侧估算原价中间值（消费正计、可关联退款负计）。
 	customerOriginal   decimal.Decimal
 	originalKnown      bool
@@ -116,11 +123,14 @@ type usageAggregation struct {
 	overflow       bool
 	errorRows      []usageLogRow
 	logUpper       int64
+	scannedLogRows int64
+	logRevision    int64
 	taskByIdentity map[string]*usageTaskRecord
 }
 
 type usageTaskRecord struct {
 	VideoRefundState       string
+	VideoRefundRequestedAt int64
 	VideoRefundCompletedAt int64
 	DeliveryIncomplete     bool             `gorm:"-"`
 	RowID                  int64            `gorm:"column:id"`
@@ -162,57 +172,11 @@ func usageMonthStart(timestamp int64) int64 {
 	return time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, usageAnalyticsLocation).Unix()
 }
 
-// GetUsageCustomerView 返回单个客户的 API Key → 客户模型用量汇总。
-func GetUsageCustomerView(ctx context.Context, period UsageAnalyticsPeriod, userId int) (UsageCustomerView, error) {
-	view := UsageCustomerView{Keys: []UsageCustomerKeyGroup{}, DayTotals: make([]UsageAnalyticsMetrics, len(period.Days))}
-	agg, err := runUsageAggregation(ctx, period, usageViewOptions{UserID: userId, WantCustomer: true})
-	if err != nil {
-		return view, err
-	}
-	finalizeUsageCustomerView(&view, agg)
-	return view, nil
-}
-
-// GetUsageUpstreamView 返回管理员上游视角的 URL → 模型 → 渠道用量汇总。
-func GetUsageUpstreamView(ctx context.Context, period UsageAnalyticsPeriod, snapshots ...*UsageAnalyticsDiscountSnapshot) (UsageUpstreamView, error) {
-	view := UsageUpstreamView{UrlGroups: []UsageUpstreamUrlGroup{}, DayTotals: make([]UsageAnalyticsMetrics, len(period.Days))}
-	opts := usageViewOptions{WantUpstream: true}
-	if len(snapshots) > 0 {
-		if snapshots[0] == nil {
-			return view, errors.New("usage export has no frozen discount snapshot; submit a new export")
-		}
-		opts.DiscountSnapshot = snapshots[0]
-	}
-	agg, err := runUsageAggregation(ctx, period, opts)
-	if err != nil {
-		return view, err
-	}
-	if err := finalizeUsageUpstreamView(ctx, &view, agg); err != nil {
-		return view, err
-	}
-	return view, nil
-}
-
-// GetUsageCustomersOverview 返回全客户用量列表与范围总览。
-func GetUsageCustomersOverview(ctx context.Context, period UsageAnalyticsPeriod, search string) (UsageCustomersOverview, error) {
-	overview := UsageCustomersOverview{Customers: []UsageCustomerOverviewRow{}, DayTotals: make([]UsageAnalyticsMetrics, len(period.Days))}
-	agg, err := runUsageAggregation(ctx, period, usageViewOptions{WantOverview: true})
-	if err != nil {
-		return overview, err
-	}
-	if err := finalizeUsageCustomersOverview(ctx, &overview, agg, search); err != nil {
-		return overview, err
-	}
-	return overview, nil
-}
-
 // runUsageAggregation 执行完整管道：折扣预载 → 日志扫描与分类 → Task 加载与
 // 交付日志按稳定 ID 合并 → 分组累加。三个投影按需构建。
 func runUsageAggregation(ctx context.Context, period UsageAnalyticsPeriod, opts usageViewOptions) (*usageAggregation, error) {
 	agg := newUsageAggregation(period, opts)
-	if opts.DiscountSnapshot != nil {
-		agg.bundle = &usageDiscountBundle{byMonth: opts.DiscountSnapshot.Months}
-	} else if opts.WantUpstream {
+	if opts.WantUpstream {
 		bundle, err := loadUsageDiscountBundle(ctx, period)
 		if err != nil {
 			return nil, err
@@ -274,13 +238,14 @@ func loadUsageDiscountBundle(ctx context.Context, period UsageAnalyticsPeriod) (
 
 // coefficientFor 返回某渠道在某条记录结束月的有效系数（缺少当月配置时继承上月有效值，否则为 1；
 // 迁移冲突保持待填写且不投影为 1）。
-func (b *usageDiscountBundle) coefficientFor(monthStart int64, channelId int) (decimal.Decimal, ProviderChannelBillingDiscount, bool) {
+func (b *usageDiscountBundle) coefficientFor(timestamp int64, channelId int) (decimal.Decimal, ProviderChannelBillingDiscount, bool) {
+	monthStart := usageMonthStart(timestamp)
 	records := b.byMonth[monthStart]
 	record, valid := providerChannelBillingDiscountFor(records, monthStart, channelId)
 	if !valid {
 		return decimal.Decimal{}, ProviderChannelBillingDiscount{}, false
 	}
-	return record.Discount, record, true
+	return record.Changes.valueAt(record.Discount, timestamp), record, true
 }
 
 // usageLogRow 是一条已解析的日志事实。
@@ -299,7 +264,7 @@ func usageScanLogTypes(view usageViewOptions) []int {
 // 交付日志（request_id 前缀 task-billing:）在这里跳过，改由 applyTasks 按
 // 稳定 ID 直接加载，避免同一事件重复计入。
 func (agg *usageAggregation) scanLogs(ctx context.Context) error {
-	query := LOG_DB.WithContext(ctx).Model(&Log{}).
+	query := usageReportLogDB(ctx).WithContext(ctx).Model(&Log{}).
 		Where("type IN ? AND created_at >= ? AND created_at < ?", usageScanLogTypes(agg.opts), agg.period.StartTimestamp, agg.period.EndTimestamp)
 	if agg.opts.UserID > 0 {
 		query = query.Where("user_id = ?", agg.opts.UserID)
@@ -311,27 +276,39 @@ func (agg *usageAggregation) scanLogs(ctx context.Context) error {
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return agg.scanLogsCursor(ctx, query, bundle)
 	}
-	boundCtx, stopBound := context.WithTimeout(ctx, 5*time.Second)
-	upper, err := CustomerExportLogUpperBound(boundCtx)
-	stopBound()
-	if err != nil {
-		return err
+	var upper int64
+	if agg.opts.LogUpper != nil {
+		upper = *agg.opts.LogUpper
+	} else {
+		boundCtx, stopBound := context.WithTimeout(ctx, 5*time.Second)
+		var err error
+		upper, err = CustomerExportLogUpperBound(boundCtx)
+		stopBound()
+		if err != nil {
+			return err
+		}
 	}
 	agg.logUpper = upper
 	var cursor int64
 	const batchSize = 500
+	columns := "id, COALESCE(request_id, '') AS request_id, user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other, " + billingStatementGroupSelect()
+	if agg.opts.LogUpper != nil && query.Dialector.Name() == "postgres" {
+		columns += ", " + dailyReportTupleRevision + " AS tuple_revision"
+	}
 	for cursor < upper {
+		if err := usageReportBeforeBatch(ctx); err != nil {
+			return err
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		batchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		var batch []struct {
-			ID   int64
-			Fact billingReconciliationLog `gorm:"embedded"`
+			ID            int64
+			Fact          billingReconciliationLog `gorm:"embedded"`
+			TupleRevision int64
 		}
-		err := query.Session(&gorm.Session{}).WithContext(batchCtx).Select(
-			"id, COALESCE(request_id, '') AS request_id, user_id, token_id, COALESCE(token_name, '') AS token_name, channel_id, COALESCE(model_name, '') AS model_name, type, created_at, prompt_tokens, completion_tokens, quota, COALESCE(content, '') AS content, COALESCE(other, '') AS other, "+billingStatementGroupSelect(),
-		).Where("id > ? AND id <= ?", cursor, upper).Order("id asc").Limit(batchSize).Scan(&batch).Error
+		err := query.Session(&gorm.Session{}).WithContext(batchCtx).Select(columns).Where("id > ? AND id <= ?", cursor, upper).Order("id asc").Limit(batchSize).Scan(&batch).Error
 		cancel()
 		if err != nil {
 			return err
@@ -339,7 +316,9 @@ func (agg *usageAggregation) scanLogs(ctx context.Context) error {
 		if len(batch) == 0 {
 			break
 		}
+		agg.scannedLogRows += int64(len(batch))
 		for _, item := range batch {
+			agg.logRevision += item.TupleRevision
 			if err := agg.consumeLogRow(ctx, usageLogRow{id: item.ID, fact: item.Fact}, bundle); err != nil {
 				return err
 			}
@@ -416,7 +395,7 @@ func (agg *usageAggregation) consumeLogRow(ctx context.Context, row usageLogRow,
 	return nil
 }
 
-// usageRowTokens 把一条日志的已归一用量写入累加器。
+// usageRowTokens 累计已归一的 Token 和已确认的图片产出。
 func usageRowTokens(row usageLogRow, m *UsageAnalyticsMetrics) {
 	for _, key := range []string{"image_input", "image_output", "audio_input", "audio_output"} {
 		if count, known := billingBreakdownNonNegativeInt(row.other[key]); known {
@@ -427,9 +406,13 @@ func usageRowTokens(row usageLogRow, m *UsageAnalyticsMetrics) {
 	m.OutputTokens += row.parsed.outputTokens
 	m.CacheReadTokens += row.parsed.cacheReadTokens
 	m.CacheWriteTokens += row.parsed.cacheWrite.total
-	if raw := row.other["image_count"]; len(raw) > 0 {
-		if count, ok := billingBreakdownNonNegativeInt(raw); ok {
+	if row.fact.Type == LogTypeConsume {
+		completed := row.other["completed_image_count"]
+		if count, known := billingBreakdownNonNegativeInt(completed); known && count <= int64(dto.MaxImageN) {
 			m.ImageCount += count
+			m.ImageCountKnown = true
+		} else if len(completed) > 0 || row.parsed.hasImageCount || strings.HasPrefix(billingBreakdownString(row.other["request_path"]), "/v1/images/") {
+			m.ImageCountMissingRows++
 		}
 	}
 }
@@ -481,11 +464,11 @@ func usageUpstreamRowAmount(row usageLogRow, bundle *usageDiscountBundle) (decim
 	if quota == 0 {
 		return decimal.Decimal{}, decimal.Decimal{}, nil, decimal.Decimal{}, false
 	}
-	original, reasons := upstreamOriginalQuota(row.fact, row.parsed)
+	original, _, reasons := upstreamOriginalQuota(row.fact, row.parsed)
 	if len(reasons) > 0 {
 		return decimal.Decimal{}, decimal.Decimal{}, reasons, decimal.Decimal{}, false
 	}
-	coefficient, _, valid := bundle.coefficientFor(usageMonthStart(row.fact.CreatedAt), row.fact.ChannelId)
+	coefficient, _, valid := bundle.coefficientFor(row.fact.CreatedAt, row.fact.ChannelId)
 	if !valid {
 		return decimal.Decimal{}, decimal.Decimal{}, []string{BillingEstimateMissingGroup}, decimal.Decimal{}, false
 	}
@@ -547,6 +530,8 @@ func (agg *usageAggregation) appendTaskLogPiece(pieces *usageTaskPieces, row usa
 	pieces.cacheRead += tokens.CacheReadTokens
 	pieces.cacheWrite += tokens.CacheWriteTokens
 	pieces.imageCount += tokens.ImageCount
+	pieces.imageCountKnown = pieces.imageCountKnown || tokens.ImageCountKnown
+	pieces.imageCountMissing = pieces.imageCountMissing || tokens.ImageCountMissingRows > 0
 	if value, known, missing, _ := usageRowSeconds(row); known {
 		pieces.seconds = pieces.seconds.Add(value)
 		pieces.secondsKnown = true
@@ -611,7 +596,7 @@ func (agg *usageAggregation) applyStandalone(row usageLogRow, bundle *usageDisco
 	}
 	acc := agg.buildCustomerStandalone(row, calls, result)
 	key := usageCustomerKey{day: day, token: row.fact.TokenId, model: row.parsed.customerModel}
-	agg.mergeCustomer(key, acc)
+	agg.mergeCustomer(row.fact.UserId, key, acc)
 	if agg.opts.WantOverview {
 		agg.mergeOverview(usageOverviewKey{user: row.fact.UserId, day: day}, acc)
 	}
@@ -642,7 +627,7 @@ func (agg *usageAggregation) buildUpstreamStandalone(row usageLogRow, bundle *us
 		amount := upstreamTestAmountFor(row.fact, row.parsed)
 		if amount.known {
 			acc.m.TestPricedRows += max(calls, 1)
-			if coefficient, _, valid := bundle.coefficientFor(usageMonthStart(row.fact.CreatedAt), row.fact.ChannelId); valid {
+			if coefficient, _, valid := bundle.coefficientFor(row.fact.CreatedAt, row.fact.ChannelId); valid {
 				acc.original = acc.original.Add(amount.original)
 				acc.originalKnown = true
 				acc.reference = acc.reference.Add(UpstreamReferenceQuota(amount.original, coefficient))
@@ -723,15 +708,18 @@ func (agg *usageAggregation) applyUnlinkedRefund(row usageLogRow) {
 	acc := &usageMetricsAcc{}
 	acc.m.UnlinkedRefundQuota += quota
 	key := usageCustomerKey{day: day, token: row.fact.TokenId, model: row.parsed.customerModel}
-	agg.mergeCustomer(key, acc)
+	agg.mergeCustomer(row.fact.UserId, key, acc)
 	if agg.opts.WantOverview {
 		agg.mergeOverview(usageOverviewKey{user: row.fact.UserId, day: day}, acc)
 	}
 }
 
-func (agg *usageAggregation) mergeCustomer(key usageCustomerKey, acc *usageMetricsAcc) {
+func (agg *usageAggregation) mergeCustomer(userID int, key usageCustomerKey, acc *usageMetricsAcc) {
 	if !agg.opts.WantCustomer {
 		return
+	}
+	if agg.opts.UserID == 0 {
+		key.user = userID
 	}
 	existing, ok := agg.customer[key]
 	if !ok {
@@ -776,7 +764,7 @@ func (agg *usageAggregation) mergeOverview(key usageOverviewKey, acc *usageMetri
 // loadTasks 读取范围内已结束 Task（按 finish_time 归属），有界 keyset 批次。
 // azure_batch 作业由 BatchJob 终态与行级计数代表，不作为独立 Task 调用。
 func (agg *usageAggregation) loadTasks(ctx context.Context) error {
-	query := DB.WithContext(ctx).Model(&Task{}).
+	query := usageReportMainDB(ctx).WithContext(ctx).Model(&Task{}).
 		Where("status IN ? AND finish_time >= ? AND finish_time < ?", TerminalTaskStatuses(), agg.period.StartTimestamp, agg.period.EndTimestamp).
 		Where("platform <> ?", constant.TaskPlatformAzureBatch)
 	if agg.opts.UserID > 0 {
@@ -785,12 +773,15 @@ func (agg *usageAggregation) loadTasks(ctx context.Context) error {
 	const batchSize = 500
 	var lastID int64
 	for {
+		if err := usageReportBeforeBatch(ctx); err != nil {
+			return err
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		var batch []usageTaskRecord
 		err := query.Session(&gorm.Session{}).
-			Select("id, task_id, user_id, channel_id, status, finish_time, billing_state, properties, quota, private_data, video_refund_state, video_refund_completed_at").
+			Select("id, task_id, user_id, channel_id, status, finish_time, billing_state, properties, quota, private_data, video_refund_state, video_refund_requested_at, video_refund_completed_at").
 			Where("id > ?", lastID).Order("id asc").Limit(batchSize).Scan(&batch).Error
 		if err != nil {
 			return err
@@ -840,8 +831,11 @@ func (agg *usageAggregation) loadDeliveryLogs(ctx context.Context) error {
 	}
 	const chunk = 200
 	for start := 0; start < len(rowIDs); start += chunk {
+		if err := usageReportBeforeBatch(ctx); err != nil {
+			return err
+		}
 		var pending []TaskBillingDelivery
-		if err := DB.WithContext(ctx).Select("task_row_id").Where("task_row_id IN ? AND (delivered_at = 0 OR suppress_log = ?)", rowIDs[start:min(start+chunk, len(rowIDs))], true).Find(&pending).Error; err != nil {
+		if err := usageReportMainDB(ctx).WithContext(ctx).Select("task_row_id").Where("task_row_id IN ? AND (delivered_at = 0 OR suppress_log = ?)", rowIDs[start:min(start+chunk, len(rowIDs))], true).Find(&pending).Error; err != nil {
 			return err
 		}
 		for _, event := range pending {
@@ -849,6 +843,9 @@ func (agg *usageAggregation) loadDeliveryLogs(ctx context.Context) error {
 		}
 	}
 	for start := 0; start < len(requestIDs); start += chunk {
+		if err := usageReportBeforeBatch(ctx); err != nil {
+			return err
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -857,7 +854,7 @@ func (agg *usageAggregation) loadDeliveryLogs(ctx context.Context) error {
 			Log       `gorm:"embedded"`
 			GroupName string
 		}
-		err := LOG_DB.WithContext(ctx).Model(&Log{}).
+		err := usageReportLogDB(ctx).WithContext(ctx).Model(&Log{}).
 			Select("id, request_id, user_id, token_id, token_name, channel_id, model_name, type, created_at, prompt_tokens, completion_tokens, quota, content, other, "+billingStatementGroupSelect()).
 			Where("request_id IN ?", requestIDs[start:end]).Find(&logs).Error
 		if err != nil {
@@ -925,11 +922,21 @@ func (agg *usageAggregation) applyTasks(ctx context.Context) error {
 				}
 				pieces.tokenDetails["image_output"] = int64(image.Usage.OutputTokensDetails.ImageTokens)
 			}
-			if image.GenerationComplete {
-				pieces.imageCount = int64(image.ImageCount)
-			}
 		} else if task.PrivateData.AsyncBilling == nil && pieces.input == 0 && pieces.output == 0 && pieces.imageCount == 0 && !pieces.secondsKnown {
 			pieces.missingTokens = 1
+		}
+		if image := task.PrivateData.ImageTask; image != nil {
+			if image.GenerationComplete {
+				count := image.ImageCount
+				if count == 0 {
+					count = len(image.ResultManifest)
+				}
+				if count > 0 && count <= dto.MaxImageN {
+					pieces.imageCount = int64(count)
+					pieces.imageCountKnown = true
+				}
+			}
+			pieces.imageCountMissing = !pieces.imageCountKnown && (pieces.imageCountMissing || task.Status == TaskStatusSuccess)
 		}
 		if pieces.missingTokens > 0 {
 			pieces.missingTokens = 1
@@ -976,6 +983,10 @@ func (agg *usageAggregation) applyTaskCustomer(task *usageTaskRecord, pieces *us
 		acc.m.CacheReadTokens += pieces.cacheRead
 		acc.m.CacheWriteTokens += pieces.cacheWrite
 		acc.m.ImageCount += pieces.imageCount
+		acc.m.ImageCountKnown = pieces.imageCountKnown
+		if pieces.imageCountMissing && !pieces.imageCountKnown {
+			acc.m.ImageCountMissingRows++
+		}
 		acc.m.RowsMissingTokens += pieces.missingTokens
 		acc.m.SecondsMissingRows += pieces.missingSeconds
 	}
@@ -1013,7 +1024,7 @@ func (agg *usageAggregation) applyTaskCustomer(task *usageTaskRecord, pieces *us
 		tokenId = pieces.tokenId
 	}
 	key := usageCustomerKey{day: day, token: tokenId, model: model}
-	agg.mergeCustomer(key, acc)
+	agg.mergeCustomer(task.UserID, key, acc)
 	if agg.opts.WantOverview {
 		agg.mergeOverview(usageOverviewKey{user: task.UserID, day: day}, acc)
 	}
@@ -1030,6 +1041,10 @@ func (agg *usageAggregation) applyTaskUpstream(task *usageTaskRecord, pieces *us
 		acc.m.CacheReadTokens += pieces.cacheRead
 		acc.m.CacheWriteTokens += pieces.cacheWrite
 		acc.m.ImageCount += pieces.imageCount
+		acc.m.ImageCountKnown = pieces.imageCountKnown
+		if pieces.imageCountMissing && !pieces.imageCountKnown {
+			acc.m.ImageCountMissingRows++
+		}
 		acc.m.RowsMissingTokens += pieces.missingTokens
 		acc.m.SecondsMissingRows += pieces.missingSeconds
 	}
@@ -1087,22 +1102,6 @@ func (agg *usageAggregation) foldCustomerDayTotals() ([]UsageAnalyticsMetrics, U
 	dayAccs := make([]usageMetricsAcc, len(agg.period.Days))
 	total := usageMetricsAcc{}
 	for key, acc := range agg.customer {
-		if key.day >= 0 && key.day < len(dayAccs) {
-			dayAccs[key.day].merge(acc)
-		}
-		total.merge(acc)
-	}
-	days := make([]UsageAnalyticsMetrics, len(agg.period.Days))
-	for i := range dayAccs {
-		days[i] = dayAccs[i].finalize()
-	}
-	return days, total.finalize()
-}
-
-func (agg *usageAggregation) foldUpstreamDayTotals() ([]UsageAnalyticsMetrics, UsageAnalyticsMetrics) {
-	dayAccs := make([]usageMetricsAcc, len(agg.period.Days))
-	total := usageMetricsAcc{}
-	for key, acc := range agg.upstream {
 		if key.day >= 0 && key.day < len(dayAccs) {
 			dayAccs[key.day].merge(acc)
 		}
@@ -1262,12 +1261,11 @@ const usageAnalyticsUnknownKeyLabel = "unknown"
 // finalizeUsageUpstreamView assembles URL groups: current base URL identity via
 // the shared grouping rule, channel rows with their month coefficients, and
 // model leaves. Channel tests stay flagged as usage-only.
-func finalizeUsageUpstreamView(ctx context.Context, view *UsageUpstreamView, agg *usageAggregation) error {
-	view.DayTotals, view.Total = agg.foldUpstreamDayTotals()
+func finalizeUsageUpstreamView(ctx context.Context, view *UsageUpstreamView, agg *usageAggregation, scope UsageUpstreamScope) error {
 	channelIDs := make([]int, 0)
 	seen := map[int]bool{}
 	for key := range agg.upstream {
-		if !seen[key.channel] {
+		if key.urlKey == "" && !seen[key.channel] && (scope.ChannelID == nil || key.channel == *scope.ChannelID) {
 			seen[key.channel] = true
 			channelIDs = append(channelIDs, key.channel)
 		}
@@ -1293,11 +1291,46 @@ func finalizeUsageUpstreamView(ctx context.Context, view *UsageUpstreamView, agg
 		models map[modelKey]*modelBuild
 	}
 	groups := map[string]*urlBuild{}
+	type channelTotal struct {
+		name    string
+		lastDay int
+		metrics usageMetricsAcc
+	}
+	channelTotals := make(map[int]*channelTotal)
+	dayTotals := make([]usageMetricsAcc, len(agg.period.Days))
+	periodTotal := usageMetricsAcc{}
 	for key, acc := range agg.upstream {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		url, name := billingURLGroupIdentity(channels[key.channel], channels[key.channel].Id != 0 || key.channel == 0, key.channel)
+		if scope.ChannelID != nil && key.channel != *scope.ChannelID {
+			continue
+		}
+		url, name := key.urlKey, key.urlName
+		if url == "" {
+			url, name = billingURLGroupIdentity(channels[key.channel], channels[key.channel].Id != 0 || key.channel == 0, key.channel)
+		}
+		if !scope.matches(url, key.channel) {
+			continue
+		}
+		channelName := key.name
+		if key.urlKey == "" {
+			channelName = strings.TrimSpace(channels[key.channel].Name)
+		}
+		if channelName == "" {
+			channelName = fmt.Sprintf("Channel #%d", key.channel)
+		}
+		ct := channelTotals[key.channel]
+		if ct == nil {
+			ct = &channelTotal{lastDay: -1}
+			channelTotals[key.channel] = ct
+		}
+		if key.day > ct.lastDay || (key.day == ct.lastDay && channelName < ct.name) {
+			ct.name, ct.lastDay = channelName, key.day
+		}
+		ct.metrics.merge(acc)
+		dayTotals[key.day].merge(acc)
+		periodTotal.merge(acc)
 		group := groups[url]
 		if group == nil {
 			group = &urlBuild{row: UsageUpstreamUrlGroup{UrlKey: url, DisplayName: name, Unidentified: strings.HasPrefix(url, billingURLGroupChannelFallbackPrefix)}, models: map[modelKey]*modelBuild{}}
@@ -1314,16 +1347,13 @@ func finalizeUsageUpstreamView(ctx context.Context, view *UsageUpstreamView, agg
 		}
 		cb := mb.channels[key.channel]
 		if cb == nil {
-			cb = &channelBuild{row: UsageUpstreamChannelRow{ChannelId: key.channel, ChannelName: strings.TrimSpace(channels[key.channel].Name), Discounts: []UsageChannelMonthDiscount{}}, days: make([]usageMetricsAcc, len(agg.period.Days))}
-			if cb.row.ChannelName == "" {
-				cb.row.ChannelName = fmt.Sprintf("Channel #%d", key.channel)
-			}
+			cb = &channelBuild{row: UsageUpstreamChannelRow{ChannelId: key.channel, Discounts: []UsageChannelMonthDiscount{}}, days: make([]usageMetricsAcc, len(agg.period.Days))}
 			for month := range agg.bundle.byMonth {
 				_, record, valid := agg.bundle.coefficientFor(month, key.channel)
 				if !valid {
 					continue
 				}
-				cb.row.Discounts = append(cb.row.Discounts, UsageChannelMonthDiscount{PeriodStart: month, Value: record.Discount, Version: record.Version, Source: usageDiscountSource(record), SourcePeriod: record.CopiedFromPeriod})
+				cb.row.Discounts = append(cb.row.Discounts, UsageChannelMonthDiscount{PeriodStart: month, Value: record.Discount, Changes: record.Changes, Version: record.Version, Source: usageDiscountSource(record), SourcePeriod: record.CopiedFromPeriod})
 			}
 			sort.Slice(cb.row.Discounts, func(i, j int) bool { return cb.row.Discounts[i].PeriodStart < cb.row.Discounts[j].PeriodStart })
 			mb.channels[key.channel] = cb
@@ -1363,31 +1393,44 @@ func finalizeUsageUpstreamView(ctx context.Context, view *UsageUpstreamView, agg
 			sort.Ints(ids)
 			for _, id := range ids {
 				cb := mb.channels[id]
+				cb.row.ChannelName = channelTotals[id].name
 				total := usageMetricsAcc{}
 				for i := range cb.days {
-					cb.row.Days = append(cb.row.Days, cb.days[i].finalize())
+					cb.row.Days = append(cb.row.Days, cb.days[i].finalizeUpstream())
 					total.merge(&cb.days[i])
 					modelDays[i].merge(&cb.days[i])
 				}
-				cb.row.Total = total.finalize()
+				cb.row.Total = total.finalizeUpstream()
 				cb.row.UsageOnly = cb.row.Total.TotalCalls > 0 && cb.row.Total.UsageOnlyRows >= cb.row.Total.TotalCalls
 				modelTotal.merge(&total)
 				mb.row.Channels = append(mb.row.Channels, cb.row)
 			}
 			for i := range modelDays {
-				mb.row.Days = append(mb.row.Days, modelDays[i].finalize())
+				mb.row.Days = append(mb.row.Days, modelDays[i].finalizeUpstream())
 				urlDays[i].merge(&modelDays[i])
 			}
-			mb.row.Total = modelTotal.finalize()
+			mb.row.Total = modelTotal.finalizeUpstream()
 			urlTotal.merge(&modelTotal)
 			group.row.Models = append(group.row.Models, mb.row)
 		}
 		for i := range urlDays {
-			group.row.Days = append(group.row.Days, urlDays[i].finalize())
+			group.row.Days = append(group.row.Days, urlDays[i].finalizeUpstream())
 		}
-		group.row.Total = urlTotal.finalize()
+		group.row.Total = urlTotal.finalizeUpstream()
 		view.UrlGroups = append(view.UrlGroups, group.row)
 	}
+	view.DayTotals = make([]UsageAnalyticsMetrics, len(dayTotals))
+	for i := range dayTotals {
+		view.DayTotals[i] = dayTotals[i].finalizeUpstream()
+	}
+	view.Total = periodTotal.finalizeUpstream()
+	view.Channels = make([]UsageUpstreamChannelTotal, 0, len(channelTotals))
+	for id, channel := range channelTotals {
+		view.Channels = append(view.Channels, UsageUpstreamChannelTotal{
+			ChannelId: id, ChannelName: channel.name, Total: channel.metrics.finalizeUpstream(),
+		})
+	}
+	sort.Slice(view.Channels, func(i, j int) bool { return view.Channels[i].ChannelId < view.Channels[j].ChannelId })
 	return nil
 }
 
@@ -1432,21 +1475,9 @@ func finalizeUsageCustomersOverview(ctx context.Context, overview *UsageCustomer
 		for i := range build.days {
 			row.Days[i] = build.days[i].finalize()
 		}
-		if identity, ok := identities[id]; ok {
-			row.Username = identity.Username
-			row.DisplayName = identity.DisplayName
-			row.Deleted = identity.Deleted
-		} else {
-			row.Username = fmt.Sprintf("User #%d", id)
-			row.Deleted = true
-		}
-		if search != "" {
-			needle := strings.ToLower(search)
-			if !strings.Contains(strings.ToLower(row.Username), needle) &&
-				!strings.Contains(strings.ToLower(row.DisplayName), needle) &&
-				!strings.Contains(fmt.Sprintf("%d", row.UserId), needle) {
-				continue
-			}
+		applyUsageCustomerIdentity(&row, identities)
+		if !matchesUsageCustomer(row, search) {
+			continue
 		}
 		if len(overview.Customers) >= maxUsageAnalyticsCustomers {
 			return errors.New("usage analytics customer limit exceeded; narrow the search")
@@ -1470,6 +1501,22 @@ func finalizeUsageCustomersOverview(ctx context.Context, overview *UsageCustomer
 		return overview.Customers[i].UserId < overview.Customers[j].UserId
 	})
 	return nil
+}
+
+func applyUsageCustomerIdentity(row *UsageCustomerOverviewRow, identities map[int]BillingReconciliationUserIdentity) {
+	if identity, ok := identities[row.UserId]; ok {
+		row.Username, row.DisplayName, row.Deleted = identity.Username, identity.DisplayName, identity.Deleted
+		return
+	}
+	row.Username = fmt.Sprintf("User #%d", row.UserId)
+	row.Deleted = true
+}
+
+func matchesUsageCustomer(row UsageCustomerOverviewRow, search string) bool {
+	needle := strings.ToLower(search)
+	return needle == "" || strings.Contains(strings.ToLower(row.Username), needle) ||
+		strings.Contains(strings.ToLower(row.DisplayName), needle) ||
+		strings.Contains(strconv.Itoa(row.UserId), needle)
 }
 
 // loadUsageUserIdentities batch-loads customer identities for the overview.

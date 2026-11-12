@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { getRouteApi, useNavigate } from '@tanstack/react-router'
+import { Link, getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -24,6 +24,7 @@ import { SectionPageLayout } from '@/components/layout'
 import type { NavGroup } from '@/components/layout/types'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { formatShanghaiMonth } from '@/features/billing-reconciliation/lib'
 import { CacheStatsDialog } from '@/features/system-settings/general/channel-affinity/cache-stats-dialog'
 import { useSidebarConfig } from '@/hooks/use-sidebar-config'
 
@@ -63,6 +64,15 @@ function UsageLogsContent() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const params = route.useParams()
+  const { billing, billingView, billingModelKeyId, startTime } =
+    route.useSearch()
+  const directBillingEvents =
+    billing && billingView === 'events' && params.section === 'common'
+  const billingStartDate = startTime == null ? undefined : new Date(startTime)
+  const billingMonth =
+    billingStartDate && Number.isFinite(billingStartDate.getTime())
+      ? formatShanghaiMonth(billingStartDate)
+      : undefined
   const activeCategory: UsageLogsSectionId =
     params.section && isUsageLogsSectionId(params.section)
       ? params.section
@@ -131,25 +141,45 @@ function UsageLogsContent() {
     <>
       <SectionPageLayout fixedContent>
         <SectionPageLayout.Title>
-          {t(pageMeta.titleKey)}
+          {directBillingEvents ? t('Statement details') : t(pageMeta.titleKey)}
         </SectionPageLayout.Title>
-        <SectionPageLayout.Actions>
-          {isAdminView && <RequestEvidenceBrowser isRoot={isRootView} />}
-          <Button
-            variant={showFunds ? 'default' : 'outline'}
-            onClick={() => setShowFunds(!showFunds)}
-          >
-            {t('Video refund progress')}
-          </Button>
-          {canManageScope && (
-            <Tabs value={viewScope} onValueChange={handleViewScopeChange}>
-              <TabsList>
-                <TabsTrigger value='all'>{t('All')}</TabsTrigger>
-                <TabsTrigger value='self'>{t('Only Mine')}</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          )}
-        </SectionPageLayout.Actions>
+        {directBillingEvents ? (
+          <SectionPageLayout.Actions>
+            <Button
+              variant='outline'
+              nativeButton={false}
+              render={
+                <Link
+                  to='/billing'
+                  search={{
+                    month: billingMonth,
+                    modelKeyId: billingModelKeyId,
+                  }}
+                />
+              }
+            >
+              {t('Back to billing')}
+            </Button>
+          </SectionPageLayout.Actions>
+        ) : (
+          <SectionPageLayout.Actions>
+            {isAdminView && <RequestEvidenceBrowser isRoot={isRootView} />}
+            <Button
+              variant={showFunds ? 'default' : 'outline'}
+              onClick={() => setShowFunds(!showFunds)}
+            >
+              {t('Video refund progress')}
+            </Button>
+            {canManageScope && (
+              <Tabs value={viewScope} onValueChange={handleViewScopeChange}>
+                <TabsList>
+                  <TabsTrigger value='all'>{t('All')}</TabsTrigger>
+                  <TabsTrigger value='self'>{t('Only Mine')}</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
+          </SectionPageLayout.Actions>
+        )}
         <SectionPageLayout.Content>
           <div className='flex h-full min-h-0 flex-col gap-4'>
             {showTaskSwitcher && (
@@ -164,7 +194,7 @@ function UsageLogsContent() {
               </Tabs>
             )}
             <div className='min-h-0 flex-1'>
-              {showFunds ? (
+              {showFunds && !directBillingEvents ? (
                 <VideoFundProgressPanel />
               ) : (
                 <UsageLogsTable logCategory={activeCategory} />
@@ -202,8 +232,19 @@ function UsageLogsContent() {
 }
 
 export function UsageLogs() {
+  const { scope } = route.useSearch()
+  const navigate = useNavigate()
   return (
-    <UsageLogsProvider>
+    <UsageLogsProvider
+      scope={scope ?? 'all'}
+      onScopeChange={(nextScope) => {
+        void navigate({
+          to: '.',
+          search: (current) => ({ ...current, scope: nextScope }),
+          replace: true,
+        })
+      }}
+    >
       <UsageLogsContent />
     </UsageLogsProvider>
   )

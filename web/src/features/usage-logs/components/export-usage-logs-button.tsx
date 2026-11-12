@@ -79,6 +79,9 @@ export function ExportUsageLogsButton() {
         job_type: params.billing_statement
           ? ('statement_details' as const)
           : ('usage_logs' as const),
+        ...(params.report_version
+          ? { report_version: params.report_version }
+          : {}),
         start_timestamp: start,
         end_timestamp: end,
         log_types: params.type ? [params.type] : undefined,

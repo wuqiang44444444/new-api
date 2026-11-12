@@ -5,10 +5,13 @@ export interface UsageAnalyticsDay {
   start: number
   end: number
   future?: boolean
+  unpublished?: boolean
 }
 
+export type UsagePeriodKind = 'day' | 'week' | 'month'
+
 export interface UsageAnalyticsPeriod {
-  period: 'day' | 'week'
+  period: UsagePeriodKind
   date: string
   start_timestamp: number
   end_timestamp: number
@@ -16,7 +19,16 @@ export interface UsageAnalyticsPeriod {
   days: UsageAnalyticsDay[]
 }
 
-export interface UsageAnalyticsMetrics {
+export interface UsageNonTokenMetrics {
+  image_count?: number
+  image_count_known?: boolean
+  image_count_missing_rows?: number
+  seconds?: string
+  seconds_missing_rows?: number
+  seconds_value_missing_rows?: number
+}
+
+export interface UsageAnalyticsMetrics extends UsageNonTokenMetrics {
   token_details?: Partial<
     Record<
       'image_input' | 'image_output' | 'audio_input' | 'audio_output',
@@ -33,8 +45,6 @@ export interface UsageAnalyticsMetrics {
   cache_read_tokens: number
   cache_write_tokens: number
   image_count: number
-  seconds?: string
-  seconds_missing_rows?: number
   gross_quota: number
   refund_quota: number
   net_quota: number
@@ -44,12 +54,14 @@ export interface UsageAnalyticsMetrics {
   multiple_discounts?: boolean
   reference_amount?: number | null
   reference_known?: boolean
+  known_reference_amount?: number | null
+  reference_pending?: boolean
+  reference_coefficients?: string[]
   rows_missing_tokens?: number
   rows_missing_money?: number
   rows_money_pending?: number
   usage_only_rows?: number
   test_priced_rows?: number
-  seconds_value_missing_rows?: number
 }
 
 export interface UsageCustomerModelRow {
@@ -77,6 +89,7 @@ export interface UsageCustomerView {
 export interface UsageChannelMonthDiscount {
   period_start: number
   value: string
+  changes?: { effective_from: number; value: string }[]
   version: number
   source: string
   source_period?: number
@@ -115,7 +128,13 @@ export interface UsageUpstreamView {
   day_totals: UsageAnalyticsMetrics[]
   total: UsageAnalyticsMetrics
   url_groups: UsageUpstreamUrlGroup[]
+  channels: UsageUpstreamChannelTotal[]
 }
+
+export type UsageUpstreamChannelTotal = Pick<
+  UsageUpstreamChannelRow,
+  'channel_id' | 'channel_name' | 'total'
+>
 
 export interface UsageCustomerOverviewRow {
   user_id: number
@@ -132,6 +151,8 @@ export interface UsageCustomersOverview {
   truncated?: boolean
 }
 
+export type UsageReportDayReference = { start: number; generation: string }
+
 export interface UsageAnalyticsEnvelope<T> {
   period: UsageAnalyticsPeriod
   filters: Record<string, unknown>
@@ -139,4 +160,8 @@ export interface UsageAnalyticsEnvelope<T> {
   generated_at: number
   data_source: string
   coverage_note: string
+  published_days?: string[]
+  incomplete_days?: string[] | null
+  report_days?: UsageReportDayReference[]
+  pending_refunds?: { task_id: string; requested_at: number }[] | null
 }

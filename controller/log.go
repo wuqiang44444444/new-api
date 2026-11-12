@@ -56,6 +56,9 @@ func limitLogTimeRange(startTimestamp int64, endTimestamp int64) (int64, error) 
 }
 
 func GetAllLogs(c *gin.Context) {
+	if respondLogCursorPage(c, true) {
+		return
+	}
 	pageInfo := common.GetPageQuery(c)
 	logs, total, err := model.GetAllLogs(logFilterFromQuery(c, true), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
@@ -76,6 +79,9 @@ func GetAllLogs(c *gin.Context) {
 }
 
 func GetUserLogs(c *gin.Context) {
+	if respondLogCursorPage(c, false) {
+		return
+	}
 	pageInfo := common.GetPageQuery(c)
 	filter := logFilterFromQuery(c, false)
 	if c.GetInt("role") < common.RoleAdminUser {
@@ -207,6 +213,9 @@ func GetLogByKey(c *gin.Context) {
 }
 
 func GetLogsStat(c *gin.Context) {
+	if respondLogRangeStatistics(c, true) {
+		return
+	}
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
@@ -235,6 +244,9 @@ func GetLogsStat(c *gin.Context) {
 }
 
 func GetLogsSelfStat(c *gin.Context) {
+	if respondLogRangeStatistics(c, false) {
+		return
+	}
 	username := c.GetString("username")
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)

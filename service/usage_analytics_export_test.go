@@ -2,12 +2,12 @@ package service
 
 import (
 	"context"
-	"github.com/stretchr/testify/require"
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
-
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // The CSV schema is positional: header width must stay in sync with the row
@@ -16,12 +16,38 @@ import (
 // guard exists because a previous version of the row builder emitted two
 // fewer cells than the header promised.
 func TestUsageAnalyticsExportSchemaAlignment(t *testing.T) {
-	metrics := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{}, "0.8", customerExportScopeColumns{})
+	metrics := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{}, "0.8", customerExportScopeColumns{}, usageAnalyticsExportFieldVersion)
 	assert.Len(t, metrics, 28)
 	for _, language := range []string{"en", "zh"} {
 		header := usageAnalyticsExportHeader(language)
 		assert.Len(t, header, 50, "header layout: 2 + 11 group + 28 metrics + 8 scope + customer discounts")
 	}
+}
+
+func TestUsageAnalyticsExportDistinguishesRecordedZeroAndMissingMeters(t *testing.T) {
+	seconds := decimal.RequireFromString("29.25")
+	recorded := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{
+		ImageCountKnown: true, ImageCountMissingRows: 1,
+		Seconds: &seconds, SecondsMissingRows: 2,
+	}, "", customerExportScopeColumns{}, usageAnalyticsExportFieldVersion)
+	assert.Equal(t, "0", recorded[9])
+	assert.Equal(t, "29.25", recorded[10])
+	assert.Equal(t, "images_unrecorded:1;seconds_unrecorded:2", recorded[23])
+
+	missing := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{
+		ImageCountMissingRows: 1, SecondsMissingRows: 2,
+	}, "", customerExportScopeColumns{}, usageAnalyticsExportFieldVersion)
+	assert.Empty(t, missing[9])
+	assert.Empty(t, missing[10])
+	assert.Equal(t, "images_unrecorded:1;seconds_unrecorded:2", missing[23])
+
+	notApplicable := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{}, "", customerExportScopeColumns{}, usageAnalyticsExportFieldVersion)
+	assert.Empty(t, notApplicable[9])
+	assert.Empty(t, notApplicable[10])
+	assert.Empty(t, notApplicable[23])
+
+	legacy := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{}, "", customerExportScopeColumns{}, legacyUsageAnalyticsExportFieldVersion)
+	assert.Equal(t, "0", legacy[9])
 }
 
 func TestUsageAnalyticsPeriodFromFiltersRejectsArbitraryRanges(t *testing.T) {
@@ -52,12 +78,10 @@ func TestUsageAnalyticsExportRowsPreserveDailySchemaAndScope(t *testing.T) {
 	require.NoError(t, model.LOG_DB.Create(&model.Log{UserId: 42, TokenId: 991, ChannelId: 991, CreatedAt: period.StartTimestamp + 1, Type: model.LogTypeConsume, Quota: 100, ModelName: "chat", Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1,"audio_input":0,"audio_output":9}`}).Error)
 	filters := model.CustomerExportFilters{StartTimestamp: period.StartTimestamp, EndTimestamp: period.EndTimestamp, Timezone: model.UsageAnalyticsTimezone, Language: "en", QuotaPerUnit: 100, CurrencyRate: 1}
 	scope := customerExportScopeColumns{QuotaPerUnit: 100, CurrencyRate: 1, Currency: "USD"}
-	snapshot, err := model.FreezeUsageAnalyticsDiscounts(context.Background(), period)
-	require.NoError(t, err)
-	filters.UsageDiscounts = snapshot
+	filters.UsageReportDays = freezeUsageExportTestDays(t, period, 1)
 	for _, view := range []string{"customer", "upstream", "customers"} {
 		t.Run(view, func(t *testing.T) {
-			rows, err := usageAnalyticsExportRows(context.Background(), &model.CustomerExportJob{JobID: "usage-file", TargetUserId: 42}, view, period, filters, scope)
+			rows, _, err := usageAnalyticsExportRows(context.Background(), &model.CustomerExportJob{JobID: "usage-file", TargetUserId: 42}, view, period, filters, scope)
 			require.NoError(t, err)
 			require.Len(t, rows, 9, "seven days, leaf total and grand total")
 			header := usageAnalyticsExportHeader("en")
@@ -97,11 +121,12 @@ func TestUsageAnalyticsRegenerationPreservesSnapshotAndAuthorization(t *testing.
 	setupCustomerExportServiceTest(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}))
 	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 42).Update("role", 100).Error)
+	publishUsageExportTestDays(t, "2026-09-16")
 	job, err := SubmitUsageAnalyticsExport(42, UsageAnalyticsExportRequest{Period: "day", Date: "2026-09-16", View: "upstream", Language: "en"})
 	require.NoError(t, err)
 	filters, err := job.DecodeFilters()
 	require.NoError(t, err)
-	require.NotNil(t, filters.UsageDiscounts)
+	require.Len(t, filters.UsageReportDays, 1)
 	require.NoError(t, model.DB.Model(&model.CustomerExportJob{}).Where("job_id = ?", job.JobID).Update("status", model.CustomerExportJobStatusFailed).Error)
 	regenerated, err := ResubmitUsageAnalyticsExport(42, job.JobID, false)
 	require.NoError(t, err)
@@ -139,12 +164,10 @@ func TestUsageExportIncludesDeliveredVideoCustomerRefund(t *testing.T) {
 		require.NoError(t, model.DB.Create(&event).Error)
 		require.NoError(t, model.DeliverTaskBillingLog(context.Background(), event.ID, BuildTaskBillingDeliveryLog))
 	}
-	snapshot, err := model.FreezeUsageAnalyticsDiscounts(context.Background(), period)
-	require.NoError(t, err)
-	filters := model.CustomerExportFilters{UsageDiscounts: snapshot}
+	filters := model.CustomerExportFilters{UsageReportDays: freezeUsageExportTestDays(t, period, 1)}
 	for _, view := range []string{"customer", "customers", "upstream"} {
 		t.Run(view, func(t *testing.T) {
-			rows, err := usageAnalyticsExportRows(context.Background(), &model.CustomerExportJob{TargetUserId: 42}, view, period, filters, customerExportScopeColumns{QuotaPerUnit: 100, CurrencyRate: 1, Currency: "USD"})
+			rows, _, err := usageAnalyticsExportRows(context.Background(), &model.CustomerExportJob{TargetUserId: 42}, view, period, filters, customerExportScopeColumns{QuotaPerUnit: 100, CurrencyRate: 1, Currency: "USD"})
 			require.NoError(t, err)
 			require.NotEmpty(t, rows)
 			cells := map[string]string{}

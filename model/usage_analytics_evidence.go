@@ -23,6 +23,9 @@ func usageDiscountSource(record ProviderChannelBillingDiscount) string {
 // once on each day. The log high-water mark also bounds these lookups.
 func (agg *usageAggregation) applyFinalErrors(ctx context.Context) error {
 	for start := 0; start < len(agg.errorRows); start += 200 {
+		if err := usageReportBeforeBatch(ctx); err != nil {
+			return err
+		}
 		batch := agg.errorRows[start:min(start+200, len(agg.errorRows))]
 		ids := make([]string, 0, len(batch))
 		for _, row := range batch {
@@ -38,8 +41,8 @@ func (agg *usageAggregation) applyFinalErrors(ctx context.Context) error {
 		}
 		outcomes := make(map[string]outcome)
 		if len(ids) > 0 {
-			query := LOG_DB.WithContext(ctx).Model(&Log{}).Where("request_id IN ? AND type IN ?", ids, []int{LogTypeConsume, LogTypeError})
-			if agg.logUpper > 0 {
+			query := usageReportLogDB(ctx).WithContext(ctx).Model(&Log{}).Where("request_id IN ? AND type IN ?", ids, []int{LogTypeConsume, LogTypeError})
+			if agg.opts.LogUpper != nil || agg.logUpper > 0 {
 				query = query.Where("id <= ?", agg.logUpper)
 			}
 			if agg.opts.UserID > 0 {
@@ -61,7 +64,7 @@ func (agg *usageAggregation) applyFinalErrors(ctx context.Context) error {
 				logIDs = append(logIDs, row.id)
 			}
 			var sent []Log
-			if err := LOG_DB.WithContext(ctx).Select("id").Where("id IN ? AND upstream_request_id <> ''", logIDs).Find(&sent).Error; err != nil {
+			if err := usageReportLogDB(ctx).WithContext(ctx).Select("id").Where("id IN ? AND upstream_request_id <> ''", logIDs).Find(&sent).Error; err != nil {
 				return err
 			}
 			sentIDs := make(map[int64]bool, len(sent))

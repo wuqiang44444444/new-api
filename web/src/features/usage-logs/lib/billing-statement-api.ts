@@ -15,12 +15,15 @@ function billingStatementPath(admin: boolean) {
 }
 export async function fetchBillingStatementLogs(
   params: GetLogsParams,
-  admin: boolean
+  admin: boolean,
+  signal?: AbortSignal
 ): Promise<GetLogsResponse> {
   const { billing_statement: _, ...query } = params
-  const res = await api.get(
-    `${billingStatementPath(admin)}?${buildQueryParams(query)}`
-  )
+  const url = `${billingStatementPath(admin)}?${buildQueryParams(query)}`
+  // A replacement query must not inherit the previous query's aborted signal.
+  const res = signal
+    ? await api.get(url, { signal, disableDuplicate: true })
+    : await api.get(url)
   return res.data
 }
 export async function fetchBillingStatementStats(

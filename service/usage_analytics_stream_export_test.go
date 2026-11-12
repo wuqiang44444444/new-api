@@ -20,11 +20,10 @@ func TestUsageAnalyticsStreamOutcomesInAllExports(t *testing.T) {
 		{UserId: 42, TokenId: 991, ChannelId: 991, CreatedAt: period.StartTimestamp + 86401, Type: model.LogTypeConsume, Quota: 200, ModelName: "chat", Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1,"stream_status":{"status":"error","end_reason":"eof","errors":["response_failed"]}}`},
 	}).Error)
 	filters := model.CustomerExportFilters{StartTimestamp: period.StartTimestamp, EndTimestamp: period.EndTimestamp, Timezone: model.UsageAnalyticsTimezone, Language: "en", QuotaPerUnit: 100, CurrencyRate: 1}
-	filters.UsageDiscounts, err = model.FreezeUsageAnalyticsDiscounts(context.Background(), period)
-	require.NoError(t, err)
+	filters.UsageReportDays = freezeUsageExportTestDays(t, period, 2)
 	for _, view := range []string{"customer", "upstream", "customers"} {
 		t.Run(view, func(t *testing.T) {
-			rows, err := usageAnalyticsExportRows(context.Background(), &model.CustomerExportJob{JobID: "stream-outcomes", TargetUserId: 42}, view, period, filters, customerExportScopeColumns{QuotaPerUnit: 100, CurrencyRate: 1, Currency: "USD"})
+			rows, _, err := usageAnalyticsExportRows(context.Background(), &model.CustomerExportJob{JobID: "stream-outcomes", TargetUserId: 42}, view, period, filters, customerExportScopeColumns{QuotaPerUnit: 100, CurrencyRate: 1, Currency: "USD"})
 			require.NoError(t, err)
 			require.NotEmpty(t, rows)
 			grand := rows[len(rows)-1]

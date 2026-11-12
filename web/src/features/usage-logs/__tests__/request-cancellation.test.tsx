@@ -9,6 +9,7 @@ import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { TaskRequestDetails } from '../components/task-request-details'
+import { fetchLogsByCategory } from '../lib/utils'
 
 const originalAdapter = api.defaults.adapter
 let client: QueryClient
@@ -40,6 +41,47 @@ function openRequestDetails() {
   )
   fireEvent.click(screen.getByRole('button', { name: 'User request details' }))
 }
+
+it.each([false, true])(
+  'loads billing details when an identical request was just canceled (admin=%s)',
+  async (isAdmin) => {
+    const response = { success: true, data: { items: [], total: 0 } }
+    api.defaults.adapter = async (config) => ({
+      config,
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      data: response,
+    })
+    const filters = {
+      logCategory: 'common' as const,
+      isAdmin,
+      page: 1,
+      pageSize: 20,
+      columnFilters: [],
+      groupFunds: true,
+      searchParams: {
+        billing: true,
+        billingUserId: 7,
+        billingMode: 'token',
+        tokenId: 187,
+        model: 'seedance-2-0-mini-vidu-cn',
+        startTime: 1793462400000,
+        endTime: 1796054399000,
+      },
+    }
+    const first = new AbortController()
+    const canceled = fetchLogsByCategory({ ...filters, signal: first.signal })
+    first.abort()
+
+    const second = new AbortController()
+    const replacement = fetchLogsByCategory({ ...filters, signal: second.signal })
+    await Promise.all([
+      expect(canceled).rejects.toBeInstanceOf(CanceledError),
+      expect(replacement).resolves.toEqual(response),
+    ])
+  }
+)
 
 describe.each(['list', 'detail'] as const)(
   'Request shortcut HTTP handling during %s fetch',

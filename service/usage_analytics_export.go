@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -15,22 +16,27 @@ import (
 )
 
 const (
-	usageAnalyticsExportFieldVersion = 4
-	usageAnalyticsExportTypeSelf     = "self"
-	usageAnalyticsExportTypeCustomer = "customer"
-	usageAnalyticsExportTypeUpstream = "upstream"
-	usageAnalyticsRowTypeDaily       = "daily"
-	usageAnalyticsRowTypePeriodTotal = "period_total"
+	legacyUsageAnalyticsExportFieldVersion = 4
+	upstreamUsageKnownSubtotalFieldVersion = 5
+	usageAnalyticsExportFieldVersion       = 6
+	usageAnalyticsExportTypeSelf           = "self"
+	usageAnalyticsExportTypeCustomer       = "customer"
+	usageAnalyticsExportTypeUpstream       = "upstream"
+	usageAnalyticsRowTypeDaily             = "daily"
+	usageAnalyticsRowTypePeriodTotal       = "period_total"
 )
 
 type UsageAnalyticsExportRequest struct {
-	Period    string
-	Date      string
-	View      string
-	UserId    *int
-	Language  string
-	Search    string
-	ModelName string
+	ReportDays []model.UsageReportDayReference
+	Period     string
+	Date       string
+	View       string
+	UserId     *int
+	TokenId    *int
+	Language   string
+	Search     string
+	ModelName  string
+	Upstream   model.UsageUpstreamScope
 }
 
 // usageAnalyticsViewForJob derives the frozen view from job identity columns.
@@ -41,21 +47,20 @@ func usageAnalyticsViewForJob(job *model.CustomerExportJob) string {
 	return usageAnalyticsExportTypeCustomer
 }
 
-// usageAnalyticsPeriodFromFilters rebuilds the frozen period: exactly one day
-// or seven days aligned to Monday (Asia/Shanghai).
+// usageAnalyticsPeriodFromFilters rebuilds the frozen Shanghai calendar period.
 func usageAnalyticsPeriodFromFilters(filters model.CustomerExportFilters) (model.UsageAnalyticsPeriod, error) {
-	span := filters.EndTimestamp - filters.StartTimestamp
-	if span != int64(86400) && span != int64(7*86400) {
-		return model.UsageAnalyticsPeriod{}, errors.New("usage export range must be one day or one week")
-	}
 	start := time.Unix(filters.StartTimestamp, 0).In(model.UsageAnalyticsZone())
 	date := start.Format("2006-01-02")
-	period := "day"
-	if span == int64(7*86400) {
-		period = "week"
-		if int(start.Weekday()) != 1 {
-			return model.UsageAnalyticsPeriod{}, errors.New("usage export week must start on Monday")
-		}
+	var period string
+	switch filters.EndTimestamp - filters.StartTimestamp {
+	case 86400:
+		period = model.UsageAnalyticsPeriodDay
+	case 7 * 86400:
+		period = model.UsageAnalyticsPeriodWeek
+	case 28 * 86400, 29 * 86400, 30 * 86400, 31 * 86400:
+		period = model.UsageAnalyticsPeriodMonth
+	default:
+		return model.UsageAnalyticsPeriod{}, errors.New("usage export range must be one day, week or month")
 	}
 	resolved, err := model.ResolveUsageAnalyticsPeriod(period, date, common.GetTimestamp())
 	if err == nil && (resolved.StartTimestamp != filters.StartTimestamp || resolved.EndTimestamp != filters.EndTimestamp) {
@@ -78,6 +83,12 @@ func SubmitUsageAnalyticsExport(actorId int, request UsageAnalyticsExportRequest
 	if len(request.ModelName) > 255 || (request.ModelName != "" && view != usageAnalyticsExportTypeSelf && view != usageAnalyticsExportTypeCustomer) {
 		return nil, fmt.Errorf("%w: %w", ErrCustomerExportInvalidRequest, common.NewMessage("Model filters require a customer usage view and a model name of at most 255 bytes."))
 	}
+	if request.TokenId != nil && (view != usageAnalyticsExportTypeSelf || *request.TokenId < 0) {
+		return nil, fmt.Errorf("%w: invalid API key filter", ErrCustomerExportInvalidRequest)
+	}
+	if !request.Upstream.Valid() || (view != usageAnalyticsExportTypeUpstream && (request.Upstream.URLKey != "" || request.Upstream.ChannelID != nil)) {
+		return nil, fmt.Errorf("%w: %w", ErrCustomerExportInvalidRequest, common.NewMessage("Invalid upstream usage scope"))
+	}
 	period, err := model.ResolveUsageAnalyticsPeriod(request.Period, request.Date, common.GetTimestamp())
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrCustomerExportInvalidRequest, err.Error())
@@ -86,19 +97,21 @@ func SubmitUsageAnalyticsExport(actorId int, request UsageAnalyticsExportRequest
 	if err != nil {
 		return nil, err
 	}
-	if err := model.AuthorizeCustomerExportJob(context.Background(), &model.CustomerExportJob{UserId: actorId, TargetUserId: targetUserId, JobType: model.CustomerExportJobTypeUsageSummary}); err != nil {
+	if err := model.AuthorizeUsageAnalyticsExport(context.Background(), actorId, targetUserId, view); err != nil {
 		return nil, err
 	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return nil, model.ErrCustomerExportBackendUnsupported
 	}
-	if _, err = currentExportObjectStore(); err != nil {
+	store, err := currentExportObjectStore()
+	if err != nil {
 		return nil, err
 	}
 	filters := model.CustomerExportFilters{
 		UsageView: view, UsageSearch: strings.TrimSpace(request.Search),
 		FieldVersion:   usageAnalyticsExportFieldVersion,
 		ModelName:      request.ModelName,
+		TokenId:        request.TokenId,
 		QuotaPerUnit:   common.QuotaPerUnit,
 		Currency:       operation_setting.GetQuotaDisplayType(),
 		CurrencyRate:   operation_setting.GetUsdToCurrencyRate(operation_setting.USDExchangeRate),
@@ -108,12 +121,19 @@ func SubmitUsageAnalyticsExport(actorId int, request UsageAnalyticsExportRequest
 		Language:       usageAnalyticsExportLanguage(request.Language),
 	}
 	if view == usageAnalyticsExportTypeUpstream {
-		filters.UsageDiscounts, err = model.FreezeUsageAnalyticsDiscounts(context.Background(), period)
-		if err != nil {
-			return nil, err
-		}
+		filters.UsageURLKey = request.Upstream.URLKey
+		filters.ChannelId = request.Upstream.ChannelID
 	}
-	job, created, err := model.CreateCustomerExportJob(actorId, targetUserId, model.CustomerExportJobTypeUsageSummary, filters)
+	filters.UsageReportDays, err = model.FreezeUsageReportReferences(context.Background(), period, request.ReportDays)
+	if err != nil {
+		return nil, err
+	}
+	sourceVersion, err := adminUsageExportSourceVersion(context.Background(), targetUserId, filters)
+	if err != nil {
+		return nil, err
+	}
+	job, created, err := model.CreateCustomerExportJob(actorId, targetUserId, model.CustomerExportJobTypeUsageSummary, filters,
+		model.CustomerExportReuse{StoreIdentity: store.ExportIdentity(), SourceVersion: sourceVersion})
 	if err != nil {
 		return nil, err
 	}
@@ -175,11 +195,12 @@ func executeUsageAnalyticsExport(ctx context.Context, job *model.CustomerExportJ
 		CustomerId:   job.TargetUserId,
 		GeneratedAt:  common.GetTimestamp(),
 	}
+	var sourceVersion string
 	if scope.CustomerId > 0 {
-		if username, err := model.GetUsernameById(job.TargetUserId, false); err == nil && strings.TrimSpace(username) != "" {
-			scope.CustomerName = username
-		} else {
-			scope.CustomerName = fmt.Sprintf("user-%d", job.TargetUserId)
+		name, nameErr := usageExportCustomerName(scope.CustomerId)
+		scope.CustomerName = name
+		if nameErr == nil && view == usageAnalyticsExportTypeCustomer {
+			sourceVersion = usageExportIdentityVersion([]model.UsageCustomerOverviewRow{{UserId: scope.CustomerId, Username: name}})
 		}
 	}
 	writer, err := newCustomerExportCsvWriter(workDir, "usage", customerExportCsvShardBytes)
@@ -188,9 +209,19 @@ func executeUsageAnalyticsExport(ctx context.Context, job *model.CustomerExportJ
 	}
 	defer writer.Cleanup()
 	writer.header = usageAnalyticsExportHeader(filters.Language)
-	rows, err := usageAnalyticsExportRows(ctx, job, view, period, filters, scope)
+	if view == usageAnalyticsExportTypeUpstream && filters.FieldVersion >= upstreamUsageKnownSubtotalFieldVersion {
+		if filters.Language == "zh" {
+			writer.header = append(writer.header, "折后参考金额已知小计")
+		} else {
+			writer.header = append(writer.header, "Known subtotal of reference amount")
+		}
+	}
+	rows, overviewVersion, err := usageAnalyticsExportRows(ctx, job, view, period, filters, scope)
 	if err != nil {
 		return nil, err
+	}
+	if overviewVersion != "" {
+		sourceVersion = overviewVersion
 	}
 	for _, row := range rows {
 		if err := ctx.Err(); err != nil {
@@ -202,7 +233,15 @@ func executeUsageAnalyticsExport(ctx context.Context, job *model.CustomerExportJ
 	}
 	files, paths, lines, _, err := writer.Finish()
 	if errors.Is(err, errCustomerExportNoFiles) {
-		return &model.CustomerExportArtifact{Files: []model.CustomerExportArtifactFile{}, GeneratedAt: common.GetTimestamp()}, nil
+		artifact := &model.CustomerExportArtifact{Files: []model.CustomerExportArtifactFile{}, GeneratedAt: common.GetTimestamp(), SourceVersion: sourceVersion}
+		if view == usageAnalyticsExportTypeSelf || sourceVersion != "" {
+			store, storeErr := currentExportObjectStore()
+			if storeErr != nil {
+				return nil, storeErr
+			}
+			artifact.StoreIdentity = store.ExportIdentity()
+		}
+		return artifact, nil
 	}
 	if err != nil {
 		return nil, err
@@ -210,6 +249,7 @@ func executeUsageAnalyticsExport(ctx context.Context, job *model.CustomerExportJ
 	artifact, err := uploadCustomerExportArtifact(ctx, job.JobID, files, paths, lines)
 	if err == nil {
 		artifact.GeneratedAt = scope.GeneratedAt
+		artifact.SourceVersion = sourceVersion
 	}
 	return artifact, err
 }
@@ -234,7 +274,7 @@ func usageAnalyticsScopeTail(scope customerExportScopeColumns) []string {
 // usageAnalyticsMetricsRow renders one metrics block as CSV cells; the
 // channel-discount summary sits between the usage-only counter and the
 // estimate reasons, matching the header order exactly.
-func usageAnalyticsMetricsRow(metrics model.UsageAnalyticsMetrics, discount string, scope customerExportScopeColumns) []string {
+func usageAnalyticsMetricsRow(metrics model.UsageAnalyticsMetrics, discount string, scope customerExportScopeColumns, fieldVersion int) []string {
 	cells := []string{
 		strconv.FormatInt(metrics.TotalCalls, 10),
 		strconv.FormatInt(metrics.SuccessCalls, 10),
@@ -273,6 +313,14 @@ func usageAnalyticsMetricsRow(metrics model.UsageAnalyticsMetrics, discount stri
 	}
 	if metrics.RowsMoneyPending > 0 && metrics.NetQuota == 0 {
 		cells[13] = ""
+	}
+	if fieldVersion >= usageAnalyticsExportFieldVersion {
+		if !metrics.ImageCountKnown && metrics.ImageCount == 0 {
+			cells[9] = ""
+		}
+		if metrics.ImageCountMissingRows > 0 {
+			cells[23] = strings.Trim(cells[23]+";images_unrecorded:"+strconv.FormatInt(metrics.ImageCountMissingRows, 10), ";")
+		}
 	}
 	if metrics.SecondsMissingRows > 0 {
 		cells[23] = strings.Trim(cells[23]+";seconds_unrecorded:"+strconv.FormatInt(metrics.SecondsMissingRows, 10), ";")
@@ -315,19 +363,30 @@ func usageAnalyticsGroupCells(values ...string) []string {
 
 // usageAnalyticsExportRows runs the frozen aggregation once and emits grand
 // total, per-group daily and per-group period-total rows.
-func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob, view string, period model.UsageAnalyticsPeriod, filters model.CustomerExportFilters, scope customerExportScopeColumns) ([][]string, error) {
+func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob, view string, period model.UsageAnalyticsPeriod, filters model.CustomerExportFilters, scope customerExportScopeColumns) ([][]string, string, error) {
 	records := make([][]string, 0, 64)
+	if len(filters.UsageReportDays) == 0 {
+		return nil, "", errCustomerExportFormatChanged
+	}
+	ctx = model.WithUsageReportReferences(ctx, filters.UsageReportDays)
+	publishedDates := make(map[string]bool)
+	for _, ref := range filters.UsageReportDays {
+		publishedDates[time.Unix(ref.Start, 0).In(model.UsageAnalyticsZone()).Format(time.DateOnly)] = true
+	}
 	var rowDiscount string
 	var customerDiscounts string
 	appendRow := func(rowType string, date string, groupCells []string, metrics model.UsageAnalyticsMetrics) {
 		record := make([]string, 0, 48)
 		record = append(record, rowType, date)
 		record = append(record, groupCells...)
-		cells := usageAnalyticsMetricsRow(metrics, rowDiscount, scope)
+		cells := usageAnalyticsMetricsRow(metrics, rowDiscount, scope, filters.FieldVersion)
 		if rowType == usageAnalyticsRowTypeDaily {
 			for _, day := range period.Days {
-				if day.Date == date && day.Future {
+				if day.Date == date && (day.Future || !publishedDates[date]) {
 					rowType = "not_started"
+					if !day.Future {
+						rowType = "not_published"
+					}
 					record[0] = rowType
 					for i := range cells {
 						cells[i] = ""
@@ -339,12 +398,19 @@ func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob,
 		record = append(record, usageAnalyticsScopeTail(scope)...)
 		record = append(record, job.JobID, formatExportTimestamp(scope.GeneratedAt),
 			formatExportTimestamp(filters.StartTimestamp), formatExportTimestamp(filters.EndTimestamp), filters.Timezone, customerDiscounts)
+		if view == usageAnalyticsExportTypeUpstream && filters.FieldVersion >= upstreamUsageKnownSubtotalFieldVersion {
+			amount := ""
+			if rowType != "not_started" && rowType != "not_published" {
+				amount = usageAnalyticsExportAmount(metrics.KnownReferenceAmount, scope)
+			}
+			record = append(record, amount)
+		}
 		records = append(records, record)
 	}
 	if view == "customers" {
-		overview, err := model.GetUsageCustomersOverview(ctx, period, filters.UsageSearch)
+		overview, _, err := model.GetPublishedUsageOverview(ctx, period, filters.UsageSearch)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		for _, customer := range overview.Customers {
 			cells := usageAnalyticsGroupCells(strconv.Itoa(customer.UserId), customer.Username, "", "", "", "", "", "", "", "", "")
@@ -354,43 +420,66 @@ func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob,
 			appendRow(usageAnalyticsRowTypePeriodTotal, "", cells, customer.Total)
 		}
 		appendRow("grand_total", "", make([]string, 11), overview.Total)
-		return records, nil
+		return records, usageExportIdentityVersion(overview.Customers), nil
 	}
 	if view == usageAnalyticsExportTypeUpstream {
-		upstreamView, err := model.GetUsageUpstreamView(ctx, period, filters.UsageDiscounts)
+		upstreamView, _, err := model.GetPublishedUsageUpstream(ctx, period, model.UsageUpstreamScope{URLKey: filters.UsageURLKey, ChannelID: filters.ChannelId})
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		for _, group := range upstreamView.UrlGroups {
 			for _, modelGroup := range group.Models {
 				for _, channel := range modelGroup.Channels {
-					discountCells := usageAnalyticsDiscountCells(channel)
+					discounts := strings.Join(usageAnalyticsDiscountCells(channel), ";")
 					modelRow := modelGroup
 					modelRow.Days, modelRow.Total = channel.Days, channel.Total
 					for dayIdx, dayMetrics := range modelRow.Days {
 
 						cells := usageAnalyticsGroupCells("", "", "", "", "", group.UrlKey, strconv.Itoa(channel.ChannelId), channel.ChannelName, modelRow.ProviderModel, exportYesNo(modelRow.ProviderModelFallback), modelRow.BillingMode)
-						rowDiscount = strings.Join(discountCells, ";")
+						rowDiscount = discounts
+						if filters.FieldVersion >= upstreamUsageKnownSubtotalFieldVersion {
+							rowDiscount = strings.Join(dayMetrics.ReferenceCoefficients, ";")
+						}
 						appendRow(usageAnalyticsRowTypeDaily, period.Days[dayIdx].Date, cells, dayMetrics)
 						rowDiscount = ""
 					}
 					cells := usageAnalyticsGroupCells("", "", "", "", "", group.UrlKey, strconv.Itoa(channel.ChannelId), channel.ChannelName, modelRow.ProviderModel, exportYesNo(modelRow.ProviderModelFallback), modelRow.BillingMode)
-					rowDiscount = strings.Join(discountCells, ";")
+					rowDiscount = discounts
+					if filters.FieldVersion >= upstreamUsageKnownSubtotalFieldVersion {
+						rowDiscount = strings.Join(modelRow.Total.ReferenceCoefficients, ";")
+					}
 					appendRow(usageAnalyticsRowTypePeriodTotal, "", cells, modelRow.Total)
 					rowDiscount = ""
 				}
 			}
 		}
-		appendRow("grand_total", "", make([]string, 11), upstreamView.Total)
-		return records, nil
+		var channelID, channelName string
+		if filters.ChannelId != nil {
+			channelID = strconv.Itoa(*filters.ChannelId)
+			if len(upstreamView.Channels) == 1 {
+				channelName = upstreamView.Channels[0].ChannelName
+			}
+		}
+		appendRow("grand_total", "", usageAnalyticsGroupCells("", "", "", "", "", filters.UsageURLKey, channelID, channelName, "", "", ""), upstreamView.Total)
+		return records, "", nil
 	}
 	target := job.TargetUserId
-	customerView, err := model.GetUsageCustomerModelView(ctx, period, target, filters.ModelName)
+	customerView, _, err := model.GetPublishedUsageCustomer(ctx, period, target, filters.ModelName)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	if filters.TokenId != nil {
+		index := slices.IndexFunc(customerView.Keys, func(key model.UsageCustomerKeyGroup) bool {
+			return key.TokenId == *filters.TokenId
+		})
+		if index < 0 {
+			return records, "", nil
+		}
+		customerView.Total = customerView.Keys[index].Total
+		customerView.Keys = customerView.Keys[index : index+1]
 	}
 	if len(customerView.Keys) == 0 && filters.ModelName != "" {
-		return records, nil
+		return records, "", nil
 	}
 	for _, key := range customerView.Keys {
 		if key.TokenId == 0 {
@@ -412,7 +501,7 @@ func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob,
 		}
 	}
 	appendRow("grand_total", "", make([]string, 11), customerView.Total)
-	return records, nil
+	return records, "", nil
 }
 
 // usageAnalyticsDiscountCells renders the channel coefficient summary cell.
@@ -422,7 +511,17 @@ func usageAnalyticsDiscountCells(channel model.UsageUpstreamChannelRow) []string
 	}
 	values := make([]string, 0, len(channel.Discounts))
 	for _, discount := range channel.Discounts {
-		values = append(values, time.Unix(discount.PeriodStart, 0).In(model.UsageAnalyticsZone()).Format("2006-01")+":"+discount.Value.String()+" ("+discount.Source+", v"+strconv.FormatInt(discount.Version, 10)+")")
+		zone := model.UsageAnalyticsZone()
+		start := time.Unix(discount.PeriodStart, 0).In(zone)
+		periodValue := start.Format("2006-01") + ":" + discount.Value.String()
+		if len(discount.Changes) > 0 {
+			segments := []string{start.Format(time.DateOnly) + ":" + discount.Value.String()}
+			for _, change := range discount.Changes {
+				segments = append(segments, time.Unix(change.EffectiveFrom, 0).In(zone).Format(time.DateOnly)+":"+change.Value.String())
+			}
+			periodValue = strings.Join(segments, " / ")
+		}
+		values = append(values, periodValue+" ("+discount.Source+", v"+strconv.FormatInt(discount.Version, 10)+")")
 	}
 	return values
 }
@@ -446,8 +545,8 @@ func ResubmitUsageAnalyticsExport(actorID int, sourceJobID string, selfOnly bool
 	if _, err = usageAnalyticsPeriodFromFilters(filters); err != nil {
 		return nil, err
 	}
-	if source.TargetUserId == 0 && filters.UsageView != "customers" && filters.UsageDiscounts == nil {
-		return nil, fmt.Errorf("%w: export predates discount snapshots; submit a new export", ErrCustomerExportInvalidRequest)
+	if len(filters.UsageReportDays) == 0 {
+		return nil, errCustomerExportFormatChanged
 	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return nil, model.ErrCustomerExportBackendUnsupported
@@ -456,6 +555,9 @@ func ResubmitUsageAnalyticsExport(actorID int, sourceJobID string, selfOnly bool
 		return nil, err
 	}
 	filters.FieldVersion = usageAnalyticsExportFieldVersion
+	if filters.UsageView == usageAnalyticsExportTypeUpstream || (filters.UsageView == "" && usageAnalyticsViewForJob(source) == usageAnalyticsExportTypeUpstream) {
+		filters.UsageView = usageAnalyticsExportTypeUpstream
+	}
 	job, created, err := model.CreateCustomerExportJob(actorID, source.TargetUserId, source.JobType, filters)
 	if err != nil {
 		return nil, err

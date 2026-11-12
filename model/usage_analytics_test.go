@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
@@ -265,25 +267,28 @@ func TestUsageUpstreamViewGroupsByUrlAndMonthlyDiscounts(t *testing.T) {
 
 func TestUsageAnalyticsTaskFinishMonthAndFrozenDiscount(t *testing.T) {
 	db := setupUsageAnalyticsTestDB(t)
-	period, err := ResolveUsageAnalyticsPeriod("day", "2026-11-01", 0)
+	period, err := ResolveUsageAnalyticsPeriod("day", "2026-11-01", common.GetTimestamp())
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&Channel{Id: 71, Name: "upstream", BaseURL: urlPtr("https://example.com")}).Error)
 	require.NoError(t, SaveProviderChannelBillingDiscount(&ProviderChannelBillingDiscount{PeriodStart: usageMonthStart(period.StartTimestamp), ChannelId: 71, Discount: decimal.RequireFromString("0.8")}, 0, 9))
-	snapshot, err := FreezeUsageAnalyticsDiscounts(context.Background(), period)
-	require.NoError(t, err)
+	require.NoError(t, MigrateDailyReports(db))
+	require.NoError(t, db.AutoMigrate(&SystemTask{}, &SystemTaskLock{}))
+	require.NoError(t, db.Create(&SystemTaskLock{Type: UsageReportTaskType, TaskID: "usage-test", LockedBy: "runner", LockedUntil: common.GetTimestamp() + 60}).Error)
 	task := Task{ID: 201, TaskID: "cross-month", UserId: 7, ChannelId: 71, Platform: "video", Status: TaskStatusSuccess, FinishTime: period.StartTimestamp + 20, BillingState: TaskBillingStateSettled, Quota: 100, Properties: Properties{OriginModelName: "video"}}
 	require.NoError(t, db.Create(&task).Error)
 	require.NoError(t, db.Create(&Log{UserId: 7, RequestId: "task-billing:201:create", CreatedAt: period.StartTimestamp - 86400, ChannelId: 71, Type: LogTypeConsume, Quota: 100, Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`}).Error)
-	view, err := GetUsageUpstreamView(context.Background(), period, snapshot)
+	require.NoError(t, BuildUsageReportDay(context.Background(), period.Date, "usage-test", "runner", nil))
+	view, meta, err := GetPublishedUsageUpstream(context.Background(), period, UsageUpstreamScope{})
 	require.NoError(t, err)
 	require.NotNil(t, view.Total.ReferenceAmount)
 	assert.EqualValues(t, 80, *view.Total.ReferenceAmount)
 	require.NoError(t, db.Model(&ProviderChannelBillingDiscount{}).Where("channel_id = ?", 71).Update("discount", decimal.RequireFromString("0.5")).Error)
-	frozen, err := GetUsageUpstreamView(context.Background(), period, snapshot)
+	frozen, _, err := GetPublishedUsageUpstream(WithUsageReportReferences(context.Background(), meta.References), period, UsageUpstreamScope{})
 	require.NoError(t, err)
 	require.NotNil(t, frozen.Total.ReferenceAmount)
 	assert.EqualValues(t, 80, *frozen.Total.ReferenceAmount)
-	current, err := GetUsageUpstreamView(context.Background(), period)
+	require.NoError(t, BuildUsageReportDay(context.Background(), period.Date, "usage-test", "runner", nil))
+	current, _, err := GetPublishedUsageUpstream(context.Background(), period, UsageUpstreamScope{})
 	require.NoError(t, err)
 	require.NotNil(t, current.Total.ReferenceAmount)
 	assert.EqualValues(t, 50, *current.Total.ReferenceAmount)

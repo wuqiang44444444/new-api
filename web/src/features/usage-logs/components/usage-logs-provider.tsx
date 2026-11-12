@@ -54,7 +54,15 @@ const UsageLogsContext = createContext<UsageLogsContextValue | undefined>(
   undefined
 )
 
-export function UsageLogsProvider({ children }: { children: ReactNode }) {
+export function UsageLogsProvider({
+  children,
+  scope,
+  onScopeChange,
+}: {
+  children: ReactNode
+  scope?: LogsViewScope
+  onScopeChange?: (scope: LogsViewScope) => void
+}) {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
   const [userInfoDialogOpen, setUserInfoDialogOpen] = useState(false)
   const [affinityTarget, setAffinityTarget] =
@@ -76,8 +84,8 @@ export function UsageLogsProvider({ children }: { children: ReactNode }) {
         setAffinityDialogOpen,
         sensitiveVisible,
         setSensitiveVisible,
-        viewScope,
-        setViewScope,
+        viewScope: scope ?? viewScope,
+        setViewScope: onScopeChange ?? setViewScope,
       }}
     >
       {children}

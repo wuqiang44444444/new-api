@@ -3,12 +3,17 @@ import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 
 import { CustomerUsageTable, DayTotalsTable } from '../customer-usage-table'
+import { UsageNonTokenCell } from '../metrics-cells'
 import { UsagePeriodPicker } from '../period-picker'
-import { UsageTokensCell } from '../metrics-cells'
 import type { UsageAnalyticsMetrics } from '../types'
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, string | number>) =>
+      key.replaceAll(/{{(\w+)}}/g, (match, name) =>
+        String(values?.[name] ?? match)
+      ),
+  }),
 }))
 const metrics: UsageAnalyticsMetrics = {
   total_calls: 2,
@@ -26,16 +31,18 @@ const metrics: UsageAnalyticsMetrics = {
   net_quota: 80,
 }
 it('shows measured zero seconds without requiring any image count', () => {
-  render(<UsageTokensCell metrics={{ ...metrics, seconds: '0' }} />)
-  expect(screen.getByText(/Seconds/)).toHaveTextContent('0')
+  render(<UsageNonTokenCell metrics={{ ...metrics, seconds: '0' }} />)
+  expect(screen.getByText(/billing seconds/i)).toHaveTextContent('0')
 })
 it('shows missing seconds independently from token usage', () => {
-  render(<UsageTokensCell metrics={{ ...metrics, seconds_missing_rows: 1 }} />)
+  render(
+    <UsageNonTokenCell metrics={{ ...metrics, seconds_missing_rows: 1 }} />
+  )
   expect(screen.getByText(/Seconds unrecorded/)).toBeInTheDocument()
 })
 it('splits unit-known seconds gaps from generic missing seconds', () => {
   render(
-    <UsageTokensCell
+    <UsageNonTokenCell
       metrics={{
         ...metrics,
         seconds_missing_rows: 3,
@@ -49,6 +56,21 @@ it('splits unit-known seconds gaps from generic missing seconds', () => {
   expect(
     screen.getByText(/Second unit known; measured duration unrecorded/)
   ).toBeInTheDocument()
+})
+it('shows an explicitly recorded zero image count and marks partial seconds separately', () => {
+  render(
+    <UsageNonTokenCell
+      metrics={{
+        ...metrics,
+        image_count_known: true,
+        seconds: '29.25',
+        seconds_missing_rows: 2,
+      }}
+    />
+  )
+  expect(screen.getByText('0 images')).toBeInTheDocument()
+  expect(screen.getByText('29.25 billing seconds')).toBeInTheDocument()
+  expect(screen.getByText('Known subtotal')).toBeInTheDocument()
 })
 it('daily breakdown includes result classes, output usage and refund, and marks future dates', () => {
   render(
@@ -87,6 +109,24 @@ it('day mode hides the duplicate period-total column, week mode keeps it', () =>
   expect(screen.getByText('Period total')).toBeInTheDocument()
 })
 
+it('upstream daily breakdown keeps reference amounts visible when unknown and hides customer charges', () => {
+  render(
+    <DayTotalsTable
+      upstream
+      dates={['2026-09-21']}
+      futureFlags={[false]}
+      days={[metrics]}
+      total={metrics}
+    />
+  )
+  expect(
+    screen.queryByRole('rowheader', { name: 'Amount' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('rowheader', { name: 'Reference amount' })
+  ).toBeInTheDocument()
+})
+
 it('period navigation uses dedicated period labels and moves by the period length', async () => {
   const onDateChange = vi.fn()
   render(
@@ -118,6 +158,28 @@ it('period navigation uses dedicated period labels and moves by the period lengt
   expect(onDateChange).toHaveBeenLastCalledWith('2026-09-23')
 })
 
+it('moves between calendar months without overflowing a month-end date', async () => {
+  const onDateChange = vi.fn()
+  render(
+    <UsagePeriodPicker
+      period='month'
+      date='2024-01-31'
+      resolved={undefined}
+      onPeriodChange={vi.fn()}
+      onMonthSelect={vi.fn()}
+      onDateChange={onDateChange}
+    />
+  )
+  expect(screen.getByRole('button', { name: 'Monthly' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  )
+  await userEvent.click(screen.getByRole('button', { name: 'Next period' }))
+  expect(onDateChange).toHaveBeenLastCalledWith('2024-02-01')
+  await userEvent.click(screen.getByRole('button', { name: 'Previous period' }))
+  expect(onDateChange).toHaveBeenLastCalledWith('2023-12-01')
+})
+
 it('customer rows show period metrics directly without a daily-breakdown toggle', () => {
   const view = {
     day_totals: [metrics],
@@ -128,9 +190,7 @@ it('customer rows show period metrics directly without a daily-breakdown toggle'
         token_name: 'unknown',
         days: [metrics],
         total: metrics,
-        models: [
-          { model_name: 'unknown', days: [metrics], total: metrics },
-        ],
+        models: [{ model_name: 'unknown', days: [metrics], total: metrics }],
       },
     ],
   }
@@ -148,5 +208,7 @@ it('customer rows show period metrics directly without a daily-breakdown toggle'
     />
   )
   expect(screen.queryByText('Daily breakdown')).not.toBeInTheDocument()
+  expect(screen.getAllByRole('table')).toHaveLength(1)
+  expect(screen.getAllByText('View fee details').length).toBeGreaterThan(0)
   expect(screen.getByText('Total', { exact: true })).toBeInTheDocument()
 })

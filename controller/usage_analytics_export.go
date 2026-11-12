@@ -2,20 +2,25 @@ package controller
 
 import (
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 )
 
 type usageAnalyticsExportBody struct {
-	SourceJobID string `json:"source_job_id"`
-	Period      string `json:"period"`
-	Date        string `json:"date"`
-	View        string `json:"view"`
-	UserId      *int   `json:"user_id"`
-	Language    string `json:"language"`
-	Search      string `json:"search"`
-	ModelName   string `json:"model_name"`
+	ReportDays  []model.UsageReportDayReference `json:"report_days"`
+	SourceJobID string                          `json:"source_job_id"`
+	Period      string                          `json:"period"`
+	Date        string                          `json:"date"`
+	View        string                          `json:"view"`
+	UserId      *int                            `json:"user_id"`
+	TokenId     *int                            `json:"token_id"`
+	Language    string                          `json:"language"`
+	Search      string                          `json:"search"`
+	ModelName   string                          `json:"model_name"`
+	URLKey      string                          `json:"url_key"`
+	ChannelID   *int                            `json:"channel_id"`
 }
 
 // CreateUsageSelfExport accepts a usage summary export of the caller themself.
@@ -39,9 +44,11 @@ func CreateUsageSelfExport(c *gin.Context) {
 		Date:      body.Date,
 		View:      "self",
 		UserId:    body.UserId,
+		TokenId:   body.TokenId,
 		Language:  body.Language,
 		Search:    body.Search,
-		ModelName: body.ModelName,
+		ModelName: body.ModelName, ReportDays: body.ReportDays,
+		Upstream: model.UsageUpstreamScope{URLKey: body.URLKey, ChannelID: body.ChannelID},
 	})
 	if err != nil {
 		common.ApiError(c, err)
@@ -75,7 +82,8 @@ func CreateUsageAdminExport(c *gin.Context) {
 		UserId:    body.UserId,
 		Language:  body.Language,
 		Search:    body.Search,
-		ModelName: body.ModelName,
+		ModelName: body.ModelName, ReportDays: body.ReportDays,
+		Upstream: model.UsageUpstreamScope{URLKey: body.URLKey, ChannelID: body.ChannelID},
 	})
 	if err != nil {
 		common.ApiError(c, err)

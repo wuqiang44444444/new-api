@@ -56,6 +56,8 @@ async function renderLogs(props: {
   role: number
   enabledPlans: boolean[]
   activeSubscription: boolean
+  cursorEnabled?: boolean
+  initialPage?: number
 }) {
   useAuthStore
     .getState()
@@ -73,7 +75,9 @@ async function renderLogs(props: {
   )
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     let data: unknown = { quota: 0, rpm: 0, tpm: 0 }
-    if (url === '/api/subscription/admin/plans') {
+    if (url === '/api/status') {
+      data = { log_cursor_enabled: props.cursorEnabled ?? true }
+    } else if (url === '/api/subscription/admin/plans') {
       data = props.enabledPlans.map((enabled) => ({ plan: { enabled } }))
     } else if (url === '/api/subscription/self') {
       data = {
@@ -86,7 +90,7 @@ async function renderLogs(props: {
       url.startsWith('/api/log?') ||
       url.startsWith('/api/log/self?')
     ) {
-      data = { items: records, total: records.length }
+      data = { items: records, total: props.initialPage ? 102 : records.length }
     } else if (url === '/api/group/') {
       data = []
     } else if (url === '/api/user/self/groups') {
@@ -104,7 +108,13 @@ async function renderLogs(props: {
   })
   const router = createRouter({
     routeTree: root.addChildren([auth.addChildren([logs])]),
-    history: createMemoryHistory({ initialEntries: ['/usage-logs/common'] }),
+    history: createMemoryHistory({
+      initialEntries: [
+        props.initialPage
+          ? `/usage-logs/common?page=${props.initialPage}`
+          : '/usage-logs/common',
+      ],
+    }),
   })
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -126,6 +136,26 @@ afterEach(() => {
   useAuthStore.setState(useAuthStore.getInitialState(), true)
   useSystemConfigStore.setState(useSystemConfigStore.getInitialState(), true)
   localStorage.clear()
+})
+
+test('requests ordinary logs by page number when cursor pagination is disabled', async () => {
+  await renderLogs({
+    role: ROLE.USER,
+    enabledPlans: [],
+    activeSubscription: false,
+    cursorEnabled: false,
+    initialPage: 2,
+  })
+  const requests = vi
+    .mocked(api.get)
+    .mock.calls.flatMap(([url]) =>
+      url.startsWith('/api/log/self?')
+        ? [new URL(url, 'http://localhost').searchParams]
+        : []
+    )
+  expect(requests).toHaveLength(1)
+  expect(requests[0].get('p')).toBe('2')
+  expect(requests[0].has('page_cursor')).toBe(false)
 })
 
 test.each([{ enabledPlans: [] }, { enabledPlans: [false] }])(

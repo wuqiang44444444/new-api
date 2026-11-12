@@ -19,13 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 import { api, getFreshAuthHeaders, type ApiRequestConfig } from '@/lib/api'
 import { createServerError } from '@/lib/server-error-message'
 
+import type { UsageLog } from './data/schema'
 import {
   fetchBillingStatementLogs,
   fetchBillingStatementStats,
 } from './lib/billing-statement-api'
 import { buildQueryParams } from './lib/query-params'
 import { parseTaskArtifactsResponse } from './lib/task-artifacts'
-import type { UsageLog } from './data/schema'
 import type {
   GetLogsParams,
   GetLogsResponse,
@@ -48,7 +48,8 @@ function buildApiPath(endpoint: string, isAdmin: boolean): string {
 async function fetchLogs<T>(
   endpoint: string,
   params: T,
-  isAdmin: boolean
+  isAdmin: boolean,
+  signal?: AbortSignal
 ): Promise<GetLogsResponse> {
   const paramRecord = params as unknown as Record<string, unknown>
   const queryParams = buildQueryParams({
@@ -57,20 +58,32 @@ async function fetchLogs<T>(
     ...params,
   })
   const path = buildApiPath(endpoint, isAdmin)
-  const res = await api.get(`${path}?${queryParams}`)
-  return res.data
+  const url = `${path}?${queryParams}`
+  const res = signal ? await api.get(url, { signal }) : await api.get(url)
+  const response = res.data as GetLogsResponse
+  const data = response.data
+  const { detail_refs: refs, items } = data ?? {}
+  if (data && refs && items && refs.length === items.length) {
+    data.items = (items as UsageLog[]).map((row, index) => ({
+      ...row,
+      detail_ref: refs[index],
+    }))
+  }
+  return response
 }
 
 async function fetchLogStats<T>(
   endpoint: string,
   params: T,
-  isAdmin: boolean
+  isAdmin: boolean,
+  signal?: AbortSignal
 ): Promise<GetLogStatsResponse> {
   const queryParams = buildQueryParams(
     params as unknown as Record<string, unknown>
   )
   const path = buildApiPath(endpoint, isAdmin)
-  const res = await api.get(`${path}/stat?${queryParams}`)
+  const url = `${path}/stat?${queryParams}`
+  const res = signal ? await api.get(url, { signal }) : await api.get(url)
   return res.data
 }
 
@@ -78,29 +91,52 @@ async function fetchLogStats<T>(
 // Common Log APIs
 // ============================================================================
 
-export const getAllLogs = (params: GetLogsParams = {}) =>
+export const getAllLogs = (params: GetLogsParams = {}, signal?: AbortSignal) =>
   params.billing_statement
-    ? fetchBillingStatementLogs(params, true)
-    : fetchLogs('/api/log', params, true)
+    ? fetchBillingStatementLogs(params, true, signal)
+    : fetchLogs('/api/log', params, true, signal)
 
 export const getUserLogs = (
-  params: Omit<GetLogsParams, 'username' | 'channel'> = {}
+  params: Omit<GetLogsParams, 'username' | 'channel'> = {},
+  signal?: AbortSignal
 ) =>
   params.billing_statement
-    ? fetchBillingStatementLogs(params, false)
-    : fetchLogs('/api/log', params, false)
+    ? fetchBillingStatementLogs(params, false, signal)
+    : fetchLogs('/api/log', params, false, signal)
 
-export const getLogStats = (params: GetLogStatsParams = {}) =>
+export async function getUsageLogDetail(
+  ref: string,
+  isAdmin: boolean,
+  signal: AbortSignal
+) {
+  const res = await api.get<{ success: boolean; data: UsageLog }>(
+    buildApiPath('/api/log', isAdmin),
+    {
+      params: { log_ref: ref },
+      signal,
+    }
+  )
+  if (!res.data.success || !res.data.data) {
+    throw createServerError(res.data, 'Failed to load logs')
+  }
+  return res.data.data
+}
+
+export const getLogStats = (
+  params: GetLogStatsParams = {},
+  signal?: AbortSignal
+) =>
   params.billing_statement
     ? fetchBillingStatementStats(params, true)
-    : fetchLogStats('/api/log', params, true)
+    : fetchLogStats('/api/log', params, true, signal)
 
 export const getUserLogStats = (
-  params: Omit<GetLogStatsParams, 'username' | 'channel'> = {}
+  params: Omit<GetLogStatsParams, 'username' | 'channel'> = {},
+  signal?: AbortSignal
 ) =>
   params.billing_statement
     ? fetchBillingStatementStats(params, false)
-    : fetchLogStats('/api/log', params, false)
+    : fetchLogStats('/api/log', params, false, signal)
 
 /**
  * Stream the logs matching params, newest first. The server sends one JSON

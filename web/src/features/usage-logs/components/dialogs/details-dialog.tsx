@@ -16,26 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { billingModeLabel } from '@/features/billing-reconciliation/lib'
+import { useQuery } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import {
   Copy,
   Check,
@@ -51,28 +33,34 @@ import {
   Info,
   LogIn,
 } from 'lucide-react'
-import { useTranslation } from 'react-i18next'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
+import { ErrorState } from '@/components/error-state'
+import { LoadingState } from '@/components/loading-state'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { TokenPricingNote } from '@/features/pricing/components/token-pricing-note'
+import { billingModeLabel } from '@/features/billing-reconciliation/lib'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
+import { TokenPricingNote } from '@/features/pricing/components/token-pricing-note'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import { BILLING_PRICING_VARS } from '@/features/pricing/lib/billing-expr'
 import { pluginUsageSchema } from '@/features/pricing/lib/plugin-pricing'
 import { PolicyDecisionRecord } from '@/features/system-settings/request-policies/decision-record'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { TaskEvidence } from '../task-evidence'
-import { getContractDiscountFact } from '../../lib/discount-display'
-import { getCurrencyDisplay, formatBillingCurrencyFromUSD } from '@/lib/currency'
+import {
+  getCurrencyDisplay,
+  formatBillingCurrencyFromUSD,
+} from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
+import { getUsageLogDetail } from '../../api'
 import { AuditDetailFields } from '../../audit/components/audit-detail-fields'
 import type { UsageLog } from '../../data/schema'
+import { getContractDiscountFact } from '../../lib/discount-display'
 import {
   parseLogOther,
   getParamOverrideActionLabel,
@@ -96,12 +84,13 @@ import {
   isTimingLogType,
 } from '../../lib/utils'
 import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
+import { BillingEquation } from '../billing-equation'
 import { LogDiscountCell } from '../log-discount-cell'
 import { ResponseModelDetails } from '../model-badge'
 import { PluginAuthorLink } from '../plugin-author-link'
 import { TaskCostDisplay } from '../task-cost-display'
+import { TaskEvidence } from '../task-evidence'
 import { DetailRow, DetailSection } from './log-detail-layout'
-import { BillingEquation } from '../billing-equation'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
 // to its i18n label key for display in the audit details.
@@ -479,12 +468,22 @@ function BillingBreakdown(props: {
 
   return (
     <DetailSection label={t('Billing Details')}>
-      {isTieredExpr && !other.usage_facts && !taskCost && other.billing_unit !== 'request' && (
-        <TokenPricingNote imageGeneration={other.request_path === '/v1/images/generations' || other.request_path === '/v1/images/edits'} />
-      )}
+      {isTieredExpr &&
+        !other.usage_facts &&
+        !taskCost &&
+        other.billing_unit !== 'request' && (
+          <TokenPricingNote
+            imageGeneration={
+              other.request_path === '/v1/images/generations' ||
+              other.request_path === '/v1/images/edits'
+            }
+          />
+        )}
       {isTieredExpr && explanation && explanation.lines.length === 0 && (
         <p className='text-muted-foreground text-xs'>
-          {t('Itemized costs cannot be verified from the recorded billing evidence. The recorded charge is unchanged.')}
+          {t(
+            'Itemized costs cannot be verified from the recorded billing evidence. The recorded charge is unchanged.'
+          )}
         </p>
       )}
       {!!explanation?.lines.length && (
@@ -530,20 +529,38 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
   const { t } = useTranslation()
   const { log, other } = props
 
-  const promptTokens = other.billing_facts?.input_tokens ?? (log.prompt_tokens || 0)
-  const completionTokens = other.billing_facts?.output_tokens ?? (log.completion_tokens || 0)
-  const cacheRead = other.billing_facts?.cache_read_tokens ?? (other.cache_tokens || 0)
-  const cacheWrite = other.billing_facts?.cache_write_tokens ?? (other.cache_creation_tokens || 0)
+  const promptTokens =
+    other.billing_facts?.input_tokens ?? (log.prompt_tokens || 0)
+  const completionTokens =
+    other.billing_facts?.output_tokens ?? (log.completion_tokens || 0)
+  const cacheRead =
+    other.billing_facts?.cache_read_tokens ?? (other.cache_tokens || 0)
+  const cacheWrite =
+    other.billing_facts?.cache_write_tokens ??
+    (other.cache_creation_tokens || 0)
   const cacheWrite5m = other.cache_creation_tokens_5m || 0
   const cacheWrite1h = other.cache_creation_tokens_1h || 0
   const hasTokens = promptTokens > 0 || completionTokens > 0
 
-  if (!hasTokens && !other.cache_write_unavailable && !other.billing_facts?.input_tokens_unavailable) return null
+  if (
+    !hasTokens &&
+    !other.cache_write_unavailable &&
+    !other.billing_facts?.input_tokens_unavailable
+  ) {
+    return null
+  }
 
   const rows: Array<{ label: string; value: string }> = []
 
-  rows.push({ label: t('Input Tokens'), value: other.billing_facts?.input_tokens_unavailable ? t('Not recorded') : promptTokens.toLocaleString() })
- if(other.cache_write_unavailable) rows.push({label:t('Cache Write'),value:t('Not recorded')})
+  rows.push({
+    label: t('Input Tokens'),
+    value: other.billing_facts?.input_tokens_unavailable
+      ? t('Not recorded')
+      : promptTokens.toLocaleString(),
+  })
+  if (other.cache_write_unavailable) {
+    rows.push({ label: t('Cache Write'), value: t('Not recorded') })
+  }
   rows.push({
     label: t('Output Tokens'),
     value: completionTokens.toLocaleString(),
@@ -572,8 +589,12 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
 
   if (other.cache_read_tokens_reported !== undefined || other.billing_tokens) {
     let cacheEvidence = t('Not recorded')
-    if (other.cache_read_tokens_reported === true) cacheEvidence = t('Reported by upstream')
-    if (other.cache_read_tokens_reported === false) cacheEvidence = t('Upstream did not report cache usage')
+    if (other.cache_read_tokens_reported === true) {
+      cacheEvidence = t('Reported by upstream')
+    }
+    if (other.cache_read_tokens_reported === false) {
+      cacheEvidence = t('Upstream did not report cache usage')
+    }
     rows.push({ label: t('Cache usage evidence'), value: cacheEvidence })
   }
 
@@ -605,7 +626,11 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
     })
   }
 
-  if (other.image && other.image_output && imageUsage?.image_input === undefined) {
+  if (
+    other.image &&
+    other.image_output &&
+    imageUsage?.image_input === undefined
+  ) {
     rows.push({
       label: t('Image Tokens'),
       value: other.image_output.toLocaleString(),
@@ -653,6 +678,49 @@ interface DetailsDialogProps {
 }
 
 export function DetailsDialog(props: DetailsDialogProps) {
+  if (props.open && props.log.detail_ref) {
+    return <LogDetailLoader {...props} detailRef={props.log.detail_ref} />
+  }
+  return <FullLogDetailsDialog {...props} />
+}
+
+function LogDetailLoader(props: DetailsDialogProps & { detailRef: string }) {
+  const { t } = useTranslation()
+  const query = useQuery({
+    queryKey: [
+      'usage-log-detail',
+      props.isAdmin,
+      props.isRoot,
+      props.detailRef,
+    ],
+    queryFn: ({ signal }) =>
+      getUsageLogDetail(props.detailRef, props.isAdmin, signal),
+    retry: false,
+  })
+  if (query.data) {
+    return (
+      <FullLogDetailsDialog
+        {...props}
+        log={{ ...query.data, channel_name: props.log.channel_name }}
+      />
+    )
+  }
+  return (
+    <Dialog
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+      title={t('View details')}
+    >
+      {query.isError ? (
+        <ErrorState onRetry={() => void query.refetch()} />
+      ) : (
+        <LoadingState />
+      )}
+    </Dialog>
+  )
+}
+
+function FullLogDetailsDialog(props: DetailsDialogProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const other = parseLogOther(props.log.other)
@@ -831,11 +899,13 @@ export function DetailsDialog(props: DetailsDialogProps) {
       bodyClassName='pr-2 sm:pr-4'
     >
       <div className='w-full max-w-full min-w-0 space-y-2.5 overflow-x-hidden py-1 sm:space-y-3'>
-{props.isAdmin && (        <TaskEvidence
-          key={props.log.request_id}
-          requestId={props.log.request_id}
-          isRoot={props.isRoot}
-        />)}
+        {props.isAdmin && (
+          <TaskEvidence
+            key={props.log.request_id}
+            requestId={props.log.request_id}
+            isRoot={props.isRoot}
+          />
+        )}
 
         {/* Overview section - key identifiers */}
         <div className='min-w-0 space-y-1'>
@@ -1387,9 +1457,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
               />
             )}
             <DynamicPricingBreakdown
-              imageGeneration={other.request_path === '/v1/images/generations' || other.request_path === '/v1/images/edits'}
-billingDisplay={other.billing_display}
-priceMultiplier={getContractDiscountFact(other)?.ratio ?? 1}
+              imageGeneration={
+                other.request_path === '/v1/images/generations' ||
+                other.request_path === '/v1/images/edits'
+              }
+              billingDisplay={other.billing_display}
+              priceMultiplier={getContractDiscountFact(other)?.ratio ?? 1}
               compact
               billingExpr={decodeBillingExprB64(other.expr_b64)}
               matchedTierLabel={other.matched_tier}
@@ -1546,7 +1619,6 @@ priceMultiplier={getContractDiscountFact(other)?.ratio ?? 1}
         {/* Content */}
         {details && (
           <div className='space-y-1.5'>
-
             <Label className='text-xs font-semibold'>{t('Content')}</Label>
             <div className='bg-muted/30 relative min-w-0 overflow-hidden rounded-md border p-2.5'>
               <Button

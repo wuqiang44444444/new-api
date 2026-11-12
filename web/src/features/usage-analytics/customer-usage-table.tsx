@@ -1,12 +1,15 @@
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Toggle } from '@/components/ui/toggle'
 import { formatCustomerStatementQuota } from '@/features/billing-reconciliation/lib'
 
 import { UsageDiscountCells } from './discount-details'
 import {
   UsageCallsCell,
   UsageMoneyCell,
+  UsageNonTokenCell,
+  UsageReferenceAmount,
   UsageQualityCell,
   UsageTokensCell,
 } from './metrics-cells'
@@ -20,157 +23,236 @@ import type {
 export function CustomerUsageTable(props: {
   view: UsageCustomerView
   period: UsageAnalyticsPeriod
+  modelName?: string
+  onDaySelect?: (day: string) => void
 }) {
   const { t } = useTranslation()
+  const [showDiscounts, setShowDiscounts] = useState(false)
   const dates = props.period.days.map((day) => day.date)
   const futureFlags = props.period.days.map((day) => Boolean(day.future))
+  const unpublishedFlags = props.period.days.map((day) =>
+    Boolean(day.unpublished)
+  )
   const weekly = props.period.period === 'week'
+  const columnCount = showDiscounts ? 12 : 7
   return (
     <div className='flex flex-col gap-4'>
-      {props.view.keys.length === 0 && (
-        <p className='text-muted-foreground'>{t('No usage records')}</p>
-      )}
+      {props.modelName && <h2 className='font-medium'>{props.modelName}</h2>}
+      <Toggle
+        variant='outline'
+        size='sm'
+        pressed={showDiscounts}
+        onPressedChange={setShowDiscounts}
+        className='self-start'
+      >
+        {t('Pricing and discounts')}
+      </Toggle>
       <div className='overflow-x-auto'>
-        <table className='w-full min-w-[1440px] text-sm'>
+        <table
+          className={
+            showDiscounts
+              ? 'w-full min-w-[1440px] text-sm'
+              : 'w-full min-w-[640px] text-sm'
+          }
+        >
           <thead>
             <tr className='text-muted-foreground border-b text-left'>
               <th className='py-2 pr-3'>{t('API Key')}</th>
               <th className='py-2 pr-3'>{t('Customer model')}</th>
               <th className='py-2 pr-3'>{t('Calls')}</th>
-              <th className='py-2 pr-3'>{t('Usage')}</th>
+              <th scope='col' className='py-2 pr-3'>
+                {t('Total tokens')}
+              </th>
+              <th scope='col' className='py-2 pr-3'>
+                {t('Non-Token usage')}
+              </th>
               <th className='py-2 pr-3'>{t('Amount')}</th>
-              <th className='py-2 pr-3'>{t('Original estimate')}</th>
-              <th className='py-2 pr-3'>{t('Group discount/ratio')}</th>
-              <th className='py-2 pr-3'>{t('Contract discount')}</th>
-              <th className='py-2 pr-3'>{t('Final discount')}</th>
-              <th className='py-2 pr-3'>{t('Estimated savings')}</th>
+              {showDiscounts && (
+                <>
+                  <th className='py-2 pr-3'>{t('Original estimate')}</th>
+                  <th className='py-2 pr-3'>{t('Group discount/ratio')}</th>
+                  <th className='py-2 pr-3'>{t('Contract discount')}</th>
+                  <th className='py-2 pr-3'>{t('Final discount')}</th>
+                  <th className='py-2 pr-3'>{t('Estimated savings')}</th>
+                </>
+              )}
               <th className='py-2'>{t('Notes')}</th>
             </tr>
           </thead>
           <tbody>
-            {props.view.keys.map((key) => (
-              <Fragment key={key.token_id}>
-                {weekly && (
-                  <tr>
-                    <td colSpan={11} className='py-3'>
-                      <DayTotalsTable
-                        caption={`${t('API Key')} · ${key.token_id === 0 ? t('No API Key') : key.token_name}`}
-                        dates={dates}
-                        futureFlags={futureFlags}
-                        days={key.days}
-                        total={key.total}
-                      />
-                    </td>
-                  </tr>
-                )}
-                {key.models.map((model, modelIndex) => (
-                  <Fragment key={model.model_name}>
-                    <tr className='border-b align-top'>
-                      <td className='py-2 pr-3'>
-                        {modelIndex === 0 && (
-                          <div className='flex flex-col'>
-                            <span>
-                              {key.token_id === 0
-                                ? t('No API Key')
-                                : key.token_name}
-                            </span>
-                            {key.token_deleted && (
-                              <span className='text-muted-foreground text-xs'>
-                                {t('Deleted key')}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className='py-2 pr-3'>
-                        {model.model_name === 'unknown'
-                          ? t('Unknown model')
-                          : model.model_name}
-                      </td>
-                      <td className='py-2 pr-3'>
-                        <UsageCallsCell metrics={model.total} />
-                      </td>
-                      <td className='py-2 pr-3'>
-                        <UsageTokensCell metrics={model.total} />
-                      </td>
-                      <td className='py-2 pr-3'>
-                        <UsageMoneyCell metrics={model.total} />
-                      </td>
-                      <td className='py-2 pr-3'>
-                        {formatCustomerStatementQuota(
-                          model.total.original_quota_estimate
-                        )}
-                      </td>
-                      <UsageDiscountCells
-                        combinations={model.discount_combinations}
-                        moneyIncomplete={
-                          (model.total.rows_missing_money ?? 0) > 0 ||
-                          (model.total.rows_money_pending ?? 0) > 0
-                        }
-                      />
-                      <td className='py-2'>
-                        <UsageQualityCell metrics={model.total} />
+            {props.view.keys
+              .filter(
+                (key) =>
+                  !props.modelName ||
+                  key.models.some(
+                    (model) => model.model_name === props.modelName
+                  )
+              )
+              .map((key) => (
+                <Fragment key={key.token_id}>
+                  {weekly && !props.modelName && (
+                    <tr>
+                      <td colSpan={columnCount} className='py-3'>
+                        <DayTotalsTable
+                          customer
+                          showOriginalEstimate={showDiscounts}
+                          caption={`${t('API Key')} · ${key.token_id === 0 ? t('No API Key') : key.token_name}`}
+                          dates={dates}
+                          futureFlags={futureFlags}
+                          unpublishedFlags={unpublishedFlags}
+                          days={key.days}
+                          total={key.total}
+                        />
                       </td>
                     </tr>
-                    {weekly && (
-                      <tr>
-                        <td colSpan={11} className='pb-4'>
-                          <DayTotalsTable
-                            caption={`${t('Customer model')} · ${model.model_name === 'unknown' ? t('Unknown model') : model.model_name}`}
-                            dates={dates}
-                            futureFlags={futureFlags}
-                            days={model.days}
-                            total={model.total}
-                          />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </Fragment>
-            ))}
-            <tr className='font-medium'>
-              <td className='py-2 pr-3'>{t('Total')}</td>
-              <td />
-              <td className='py-2 pr-3'>
-                <UsageCallsCell metrics={props.view.total} />
-              </td>
-              <td className='py-2 pr-3'>
-                <UsageTokensCell metrics={props.view.total} />
-              </td>
-              <td className='py-2 pr-3'>
-                <UsageMoneyCell metrics={props.view.total} />
-              </td>
-              <td className='py-2 pr-3'>
-                {formatCustomerStatementQuota(
-                  props.view.total.original_quota_estimate
+                  )}
+                  {key.models
+                    .filter(
+                      (model) =>
+                        !props.modelName || model.model_name === props.modelName
+                    )
+                    .map((model, modelIndex) => (
+                      <Fragment key={model.model_name}>
+                        <tr className='border-b align-top'>
+                          <td className='py-2 pr-3'>
+                            {modelIndex === 0 && (
+                              <div className='flex flex-col'>
+                                <span>
+                                  {key.token_id === 0
+                                    ? t('No API Key')
+                                    : key.token_name}
+                                </span>
+                                {key.token_deleted && (
+                                  <span className='text-muted-foreground text-xs'>
+                                    {t('Deleted key')}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className='py-2 pr-3'>
+                            {model.model_name === 'unknown'
+                              ? t('Unknown model')
+                              : model.model_name}
+                          </td>
+                          <td className='py-2 pr-3'>
+                            <UsageCallsCell metrics={model.total} />
+                          </td>
+                          <td className='py-2 pr-3'>
+                            <UsageTokensCell metrics={model.total} />
+                          </td>
+                          <td className='py-2 pr-3'>
+                            <UsageNonTokenCell metrics={model.total} />
+                          </td>
+                          <td className='py-2 pr-3'>
+                            <UsageMoneyCell
+                              metrics={model.total}
+                              describeFees
+                            />
+                          </td>
+                          {showDiscounts && (
+                            <>
+                              <td className='py-2 pr-3'>
+                                {formatCustomerStatementQuota(
+                                  model.total.original_quota_estimate
+                                )}
+                              </td>
+                              <UsageDiscountCells
+                                combinations={model.discount_combinations}
+                                moneyIncomplete={
+                                  (model.total.rows_missing_money ?? 0) > 0 ||
+                                  (model.total.rows_money_pending ?? 0) > 0
+                                }
+                              />
+                            </>
+                          )}
+                          <td className='py-2'>
+                            <UsageQualityCell metrics={model.total} />
+                          </td>
+                        </tr>
+                        {weekly && (
+                          <tr>
+                            <td colSpan={columnCount} className='pb-4'>
+                              <DayTotalsTable
+                                customer
+                                showOriginalEstimate={showDiscounts}
+                                caption={`${t('Customer model')} · ${model.model_name === 'unknown' ? t('Unknown model') : model.model_name}`}
+                                dates={dates}
+                                futureFlags={futureFlags}
+                                unpublishedFlags={unpublishedFlags}
+                                days={model.days}
+                                total={model.total}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
+                </Fragment>
+              ))}
+            {!props.modelName && (
+              <tr className='font-medium'>
+                <td className='py-2 pr-3'>{t('Total')}</td>
+                <td />
+                <td className='py-2 pr-3'>
+                  <UsageCallsCell metrics={props.view.total} />
+                </td>
+                <td className='py-2 pr-3'>
+                  <UsageTokensCell metrics={props.view.total} />
+                </td>
+                <td className='py-2 pr-3'>
+                  <UsageNonTokenCell metrics={props.view.total} />
+                </td>
+                <td className='py-2 pr-3'>
+                  <UsageMoneyCell metrics={props.view.total} describeFees />
+                </td>
+                {showDiscounts && (
+                  <>
+                    <td className='py-2 pr-3'>
+                      {formatCustomerStatementQuota(
+                        props.view.total.original_quota_estimate
+                      )}
+                    </td>
+                    <td className='py-2 pr-3'>—</td>
+                    <td className='py-2 pr-3'>—</td>
+                    <td className='py-2 pr-3'>—</td>
+                    <td className='py-2 pr-3'>—</td>
+                  </>
                 )}
-              </td>
-              <td className='py-2 pr-3'>—</td>
-              <td className='py-2 pr-3'>—</td>
-              <td className='py-2 pr-3'>—</td>
-              <td className='py-2 pr-3'>—</td>
-              <td className='py-2'>
-                <UsageQualityCell metrics={props.view.total} />
-              </td>
-            </tr>
+                <td className='py-2'>
+                  <UsageQualityCell metrics={props.view.total} />
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
-      <DayTotalsTable
-        dates={dates}
-        futureFlags={futureFlags}
-        days={props.view.day_totals}
-        total={props.view.total}
-      />
+      {weekly && !props.modelName && (
+        <DayTotalsTable
+          customer
+          showOriginalEstimate={showDiscounts}
+          onDaySelect={props.onDaySelect}
+          dates={dates}
+          futureFlags={futureFlags}
+          unpublishedFlags={unpublishedFlags}
+          days={props.view.day_totals}
+          total={props.view.total}
+        />
+      )}
     </div>
   )
 }
 
 export function DayTotalsTable(props: {
+  customer?: boolean
+  upstream?: boolean
+  showOriginalEstimate?: boolean
   caption?: string
   dates: string[]
   futureFlags: boolean[]
+  unpublishedFlags?: boolean[]
+  incompleteDays?: string[] | null
+  onDaySelect?: (day: string) => void
   days: UsageAnalyticsMetrics[]
   total: UsageAnalyticsMetrics
 }) {
@@ -194,13 +276,31 @@ export function DayTotalsTable(props: {
         <thead>
           <tr className='text-muted-foreground border-b text-left'>
             <th className='py-2 pr-3'>{t('Day')}</th>
-            {props.dates.map((date) => (
+            {props.dates.map((date, index) => (
               <th
                 key={date}
                 scope='col'
                 className='py-2 pr-3 whitespace-nowrap'
               >
-                {date}
+                {props.onDaySelect &&
+                !singleDay &&
+                !props.futureFlags[index] &&
+                !props.unpublishedFlags?.[index] ? (
+                  <button
+                    type='button'
+                    className='underline underline-offset-2'
+                    onClick={() => props.onDaySelect?.(date)}
+                  >
+                    {date}
+                  </button>
+                ) : (
+                  date
+                )}
+                {props.incompleteDays?.includes(date) && (
+                  <span className='text-muted-foreground block text-xs'>
+                    {t('Partial data')}
+                  </span>
+                )}
               </th>
             ))}
             {!singleDay && <th className='py-2'>{t('Period total')}</th>}
@@ -215,15 +315,21 @@ export function DayTotalsTable(props: {
               ),
             },
             {
-              label: t('Usage'),
+              label: t('Total tokens'),
               render: (m: UsageAnalyticsMetrics) => (
                 <UsageTokensCell metrics={m} />
               ),
             },
             {
+              label: t('Non-Token usage'),
+              render: (m: UsageAnalyticsMetrics) => (
+                <UsageNonTokenCell metrics={m} />
+              ),
+            },
+            {
               label: t('Amount'),
               render: (m: UsageAnalyticsMetrics) => (
-                <UsageMoneyCell metrics={m} />
+                <UsageMoneyCell metrics={m} describeFees={props.customer} />
               ),
             },
             {
@@ -234,7 +340,11 @@ export function DayTotalsTable(props: {
             {
               label: t('Reference amount'),
               render: (m: UsageAnalyticsMetrics) =>
-                formatCustomerStatementQuota(m.reference_amount),
+                props.upstream ? (
+                  <UsageReferenceAmount metrics={m} />
+                ) : (
+                  formatCustomerStatementQuota(m.reference_amount)
+                ),
             },
             {
               label: t('Notes'),
@@ -243,27 +353,43 @@ export function DayTotalsTable(props: {
               ),
             },
           ]
-            .filter(
-              (row) =>
+            .filter((row) => {
+              if (props.upstream) {
+                return (
+                  row.label !== t('Amount') &&
+                  row.label !== t('Original estimate')
+                )
+              }
+              if (row.label === t('Original estimate')) {
+                return props.showOriginalEstimate !== false
+              }
+              return (
                 row.label !== t('Reference amount') ||
                 props.total.reference_amount != null
-            )
+              )
+            })
             .map((row) => (
               <tr key={row.label} className='border-b align-top'>
                 <th scope='row' className='py-2 pr-3 text-left'>
                   {row.label}
                 </th>
-                {props.days.map((m, i) => (
-                  <td key={props.dates[i]} className='py-2 pr-3'>
-                    {props.futureFlags[i] ? (
-                      <span className='text-muted-foreground'>
-                        {t('Not started')}
-                      </span>
-                    ) : (
-                      row.render(m)
-                    )}
-                  </td>
-                ))}
+                {props.days.map((m, i) => {
+                  let status: string | undefined
+                  if (props.futureFlags[i]) {
+                    status = t('Not started')
+                  } else if (props.unpublishedFlags?.[i]) {
+                    status = t('Not published')
+                  }
+                  return (
+                    <td key={props.dates[i]} className='py-2 pr-3'>
+                      {status ? (
+                        <span className='text-muted-foreground'>{status}</span>
+                      ) : (
+                        row.render(m)
+                      )}
+                    </td>
+                  )
+                })}
                 {!singleDay && (
                   <td className='py-2'>{row.render(props.total)}</td>
                 )}

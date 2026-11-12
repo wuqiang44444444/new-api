@@ -22,7 +22,7 @@ import { z } from 'zod'
 import { MyUsage } from '@/features/usage-analytics/index'
 
 const usageSearchSchema = z.object({
-  period: z.enum(['day', 'week']).optional().catch('day'),
+  period: z.enum(['day', 'week', 'month']).optional().catch('day'),
   date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)

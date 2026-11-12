@@ -146,6 +146,28 @@ func TestLogExportDatabaseMatrix(t *testing.T) {
 			assert.Equal(t, "primary", all[2]["channel_name"])
 			assert.Contains(t, all[2]["other"], "admin_info")
 			assert.Equal(t, true, all[3]["success"])
+
+			if tc.kind == "clickhouse" {
+				for _, entry := range []model.Log{
+					{UserId: 1, CreatedAt: now, RequestId: "retry", Type: model.LogTypeError, Content: "first attempt failed"},
+					{UserId: 1, CreatedAt: now, RequestId: "retry", Type: model.LogTypeConsume, Content: "retry settled"},
+				} {
+					require.NoError(t, model.LOG_DB.Create(&entry).Error)
+				}
+				for page, content := range []string{"first attempt failed", "retry settled"} {
+					params := fmt.Sprintf("%s&request_id=retry&page_size=1&p=%d&page_cursor=start", query, page+1)
+					for _, handler := range []gin.HandlerFunc{GetUserLogs, GetAllLogs} {
+						response := callLogHandler(t, handler, 1, common.RoleAdminUser, params)[0]
+						require.Equal(t, true, response["success"], response)
+						data := response["data"].(map[string]any)
+						assert.EqualValues(t, 2, data["total"])
+						assert.NotContains(t, data, "detail_refs")
+						items := data["items"].([]any)
+						require.Len(t, items, 1)
+						assert.Equal(t, content, items[0].(map[string]any)["content"])
+					}
+				}
+			}
 		})
 	}
 }

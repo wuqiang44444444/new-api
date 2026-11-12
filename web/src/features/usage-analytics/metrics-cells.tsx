@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { formatCustomerStatementQuota } from '@/features/billing-reconciliation/lib'
 
-import type { UsageAnalyticsMetrics } from './types'
-import { formatNumber } from './utils'
+import type { UsageAnalyticsMetrics, UsageNonTokenMetrics } from './types'
+import { formatNumber, usageNonTokenValues } from './utils'
 
 // Renders call counts with result breakdown. Failures and cancellations are
 // never filtered out, and missing usage is shown as "unrecorded" instead of 0.
@@ -33,9 +33,18 @@ export function UsageTokensCell(props: { metrics: UsageAnalyticsMetrics }) {
   const { t } = useTranslation()
   const m = props.metrics
   const missing = m.rows_missing_tokens ?? 0
+  const total = m.input_tokens + m.output_tokens
   return (
-    <div className='flex flex-col gap-0.5 text-sm'>
-      <span>
+    <div className='flex flex-col gap-0.5 text-sm tabular-nums'>
+      <span className='font-medium'>
+        {missing > 0 && total === 0 ? t('unrecorded') : formatNumber(total)}
+        {missing > 0 && total > 0 && (
+          <span className='text-muted-foreground ml-1 text-xs'>
+            {t('Known subtotal')}
+          </span>
+        )}
+      </span>
+      <span className='text-muted-foreground text-xs'>
         {t('Input')}{' '}
         {missing > 0 && m.input_tokens === 0
           ? t('unrecorded')
@@ -80,36 +89,70 @@ export function UsageTokensCell(props: { metrics: UsageAnalyticsMetrics }) {
           )}
         </span>
       )}
-      {m.image_count > 0 && (
-        <span className='text-muted-foreground text-xs'>
-          {t('Images')} {formatNumber(m.image_count)}
-        </span>
-      )}
-      {m.seconds != null && (
-        <span className='text-muted-foreground text-xs'>
-          {t('Seconds')} {m.seconds}
-        </span>
-      )}
-      {(m.seconds_missing_rows ?? 0) > 0 && (
-        <span className='text-muted-foreground text-xs'>
-          {t('Seconds unrecorded ({{count}} rows)', {
-            count: (m.seconds_missing_rows ?? 0) - (m.seconds_value_missing_rows ?? 0),
-          })}
-        </span>
-      )}
-      {(m.seconds_value_missing_rows ?? 0) > 0 && (
-        <span className='text-muted-foreground text-xs'>
-          {t(
-            'Second unit known; measured duration unrecorded ({{count}} rows)',
-            { count: m.seconds_value_missing_rows }
-          )}
-        </span>
-      )}
     </div>
   )
 }
 
-export function UsageMoneyCell(props: { metrics: UsageAnalyticsMetrics }) {
+export function UsageNonTokenCell(props: { metrics?: UsageNonTokenMetrics }) {
+  const { t } = useTranslation()
+  const values = usageNonTokenValues(t, props.metrics)
+  if (!values.length) {
+    return (
+      <span className='text-muted-foreground'>
+        <span aria-hidden='true'>—</span>
+        <span className='sr-only'>{t('Not applicable')}</span>
+      </span>
+    )
+  }
+  return (
+    <div className='flex flex-col gap-1 whitespace-normal tabular-nums'>
+      {values.map((unit) => (
+        <div key={unit.label}>
+          {unit.text && <span>{unit.text}</span>}
+          {unit.partial && (
+            <span className='text-muted-foreground block text-xs'>
+              {t('Known subtotal')}
+            </span>
+          )}
+          {unit.notes?.map((note) => (
+            <span key={note} className='text-muted-foreground block text-xs'>
+              {note}
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function UsageReferenceAmount({
+  metrics,
+}: {
+  metrics: UsageAnalyticsMetrics
+}) {
+  const { t } = useTranslation()
+  const amount = metrics.reference_amount ?? metrics.known_reference_amount
+  return (
+    <>
+      <span className='tabular-nums'>
+        {amount == null && metrics.reference_pending
+          ? t('Pending reconciliation')
+          : formatCustomerStatementQuota(amount)}
+      </span>
+      {metrics.known_reference_amount != null &&
+        metrics.reference_amount == null && (
+          <span className='text-muted-foreground block text-xs'>
+            {t('Known subtotal')}
+          </span>
+        )}
+    </>
+  )
+}
+
+export function UsageMoneyCell(props: {
+  metrics: UsageAnalyticsMetrics
+  describeFees?: boolean
+}) {
   const { t } = useTranslation()
   const m = props.metrics
   return (
@@ -120,16 +163,21 @@ export function UsageMoneyCell(props: { metrics: UsageAnalyticsMetrics }) {
           ? t('Pending')
           : formatCustomerStatementQuota(m.net_quota)}
       </span>
-      <span className='text-muted-foreground text-xs'>
-        {t('Gross')}{' '}
-        {(m.rows_missing_money ?? 0) > 0
-          ? t('unrecorded')
-          : formatCustomerStatementQuota(m.gross_quota)}{' '}
-        · {t('Refund')}{' '}
-        {(m.rows_missing_money ?? 0) > 0
-          ? t('unrecorded')
-          : formatCustomerStatementQuota(m.refund_quota)}
-      </span>
+      <details className='text-muted-foreground text-xs'>
+        <summary className='cursor-pointer'>
+          {props.describeFees ? t('View fee details') : t('View details')}
+        </summary>
+        <span>
+          {t('Gross')}{' '}
+          {(m.rows_missing_money ?? 0) > 0
+            ? t('unrecorded')
+            : formatCustomerStatementQuota(m.gross_quota)}{' '}
+          · {t('Refund')}{' '}
+          {(m.rows_missing_money ?? 0) > 0
+            ? t('unrecorded')
+            : formatCustomerStatementQuota(m.refund_quota)}
+        </span>
+      </details>
       {(m.rows_money_pending ?? 0) > 0 && (
         <Badge variant='secondary' className='w-fit'>
           {t('Money pending ({{count}} rows)', { count: m.rows_money_pending })}

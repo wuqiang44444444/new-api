@@ -77,8 +77,12 @@ export function isPerCallBilling(modelPrice?: number): boolean {
 /**
  * Get default time range (today 00:00:00 to now + 1 hour)
  */
-export function getDefaultTimeRange(): { start: Date; end: Date } {
+export function getDefaultTimeRange(recent = false): {
+  start: Date
+  end: Date
+} {
   const now = new Date()
+  if (recent) return { start: new Date(now.getTime() - 3600 * 1000), end: now }
   const start = new Date(now)
   start.setHours(0, 0, 0, 0)
   const end = new Date(now.getTime() + 3600 * 1000) // +1 hour
@@ -99,11 +103,12 @@ function timestampToSeconds(ms: number): number {
  */
 function buildTimeRangeParams(
   searchParams: Record<string, unknown>,
-  useMilliseconds: boolean
+  useMilliseconds: boolean,
+  recent = false
 ): { start_timestamp?: number; end_timestamp?: number } {
   const hasTimeParams =
     searchParams.startTime != null || searchParams.endTime != null
-  const defaultTimeRange = !hasTimeParams ? getDefaultTimeRange() : null
+  const defaultTimeRange = !hasTimeParams ? getDefaultTimeRange(recent) : null
 
   const convertTimestamp = (timestamp: number) =>
     useMilliseconds ? timestamp : timestampToSeconds(timestamp)
@@ -161,6 +166,7 @@ export function buildApiParams(config: {
   searchParams: Record<string, unknown>
   columnFilters?: Array<{ id: string; value: unknown }>
   isAdmin: boolean
+  recent?: boolean
 }): GetLogsParams {
   const { page, pageSize, searchParams, columnFilters = [], isAdmin } = config
 
@@ -190,6 +196,9 @@ export function buildApiParams(config: {
     ...(searchParams.billing
       ? {
           billing_statement: true,
+          ...(searchParams.billingReportVersion
+            ? { report_version: String(searchParams.billingReportVersion) }
+            : {}),
           user_id: Number(searchParams.billingUserId),
           billing_mode: String(searchParams.billingMode ?? ''),
         }
@@ -211,7 +220,7 @@ export function buildApiParams(config: {
     ...(searchParams.upstreamRequestId
       ? { upstream_request_id: String(searchParams.upstreamRequestId) }
       : {}),
-    ...buildTimeRangeParams(searchParams, false),
+    ...buildTimeRangeParams(searchParams, false, config.recent),
   }
 
   // Override with column filters if present
@@ -265,8 +274,28 @@ export async function fetchLogsByCategory(
       searchParams,
       columnFilters,
       isAdmin,
+      recent: !searchParams.billing && !config.pageCursor,
     })
-    return isAdmin ? await getAllLogs(params) : await getUserLogs(params)
+    if (config.groupFunds || config.fundGroup) {
+      params.group_funds = config.groupFunds
+      params.fund_group = config.fundGroup
+      return isAdmin
+        ? getAllLogs(params, config.signal)
+        : getUserLogs(params, config.signal)
+    }
+    if (config.pageCursor) {
+      params.page_cursor = config.pageCursor
+      if (searchParams.startTime == null && searchParams.endTime == null) {
+        delete params.start_timestamp
+        delete params.end_timestamp
+      }
+      return isAdmin
+        ? getAllLogs(params, config.signal)
+        : getUserLogs(params, config.signal)
+    }
+    return isAdmin
+      ? getAllLogs(params, config.signal)
+      : getUserLogs(params, config.signal)
   }
 
   // For drawing and task logs

@@ -206,7 +206,7 @@ describe('customer usage discount details', () => {
     expect(definition('Estimated savings').getByText('-')).toBeVisible()
   })
 
-  it('shows discounts as columns in the same customer model row', () => {
+  it('shows discounts in the customer model row when pricing details are enabled', async () => {
     const metrics = {
       total_calls: 1,
       success_calls: 1,
@@ -254,9 +254,22 @@ describe('customer usage discount details', () => {
         }}
       />
     )
+    const toggle = screen.getByRole('button', { name: 'Pricing and discounts' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(
+      screen.queryByRole('columnheader', { name: 'Original estimate' })
+    ).not.toBeInTheDocument()
+    await userEvent.tab()
+    expect(toggle).toHaveFocus()
+    await userEvent.keyboard(' ')
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
     const row = screen.getByRole('row', { name: /public-model/ })
     expect(within(row).getByText('Historical contract · v2')).toBeVisible()
     expect(within(row).getByText(/×0.4/)).toBeVisible()
-    expect(within(row).getAllByRole('cell')).toHaveLength(11)
+    expect(
+      screen.getByRole('columnheader', { name: 'Non-Token usage' })
+    ).toBeVisible()
+    expect(within(row).getByText('Not applicable')).toBeInTheDocument()
+    expect(within(row).getAllByRole('cell')).toHaveLength(12)
   })
 })

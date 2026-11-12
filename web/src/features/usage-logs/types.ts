@@ -19,8 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 /**
  * Type definitions for usage logs
  */
-import type { BillingDisplayProjection } from '@/features/pricing/types'
+import type { BillingMode } from '@/features/billing-reconciliation/types'
 import type { RequestRuleTrace } from '@/features/pricing/lib/billing-expr'
+import type { BillingDisplayProjection } from '@/features/pricing/types'
 import type { PolicyEvent } from '@/features/system-settings/request-policies/api'
 
 import type { UsageLog } from './data/schema'
@@ -242,7 +243,7 @@ export interface LogOtherData {
   // for legacy logs; unit-price display must not guess without it.
   // Response-only statement facts; shared with the server export projection.
   billing_facts?: {
-    billing_mode: 'token' | 'per_call' | 'per_second' | 'unknown'
+    billing_mode: BillingMode
     group_name: string
     group_ratio: number | null
     group_ratio_source: '' | 'group' | 'user_exclusive'
@@ -508,6 +509,10 @@ export interface TaskArtifactsResponse {
 // ============================================================================
 
 export interface GetLogsParams {
+  page_cursor?: string
+  group_funds?: boolean
+  fund_group?: string
+  report_version?: string
   billing_statement?: boolean
   user_id?: number
   billing_mode?: string
@@ -526,10 +531,23 @@ export interface GetLogsParams {
   upstream_request_id?: string
 }
 
+export type BillingFundGroup = {
+  key: string
+  date: string
+  model_name: string
+  request_id?: string
+  event_count: number
+  net_quota: number
+}
+
 export interface GetLogsResponse {
   success: boolean
   message?: string
   data?: {
+    next_cursor?: string
+    detail_refs?: string[]
+    fund_groups?: BillingFundGroup[]
+    quota?: number
     items: UsageLog[] | MidjourneyLog[] | TaskLog[]
     total: number
     page: number
@@ -538,6 +556,7 @@ export interface GetLogsResponse {
 }
 
 export interface GetLogStatsParams {
+  range_count?: boolean
   billing_statement?: boolean
   user_id?: number
   billing_mode?: string
@@ -594,6 +613,10 @@ export interface GetTaskLogsParams {
  * Configuration for fetching logs by category
  */
 export interface FetchLogsConfig {
+  pageCursor?: string
+  groupFunds?: boolean
+  fundGroup?: string
+  signal?: AbortSignal
   logCategory: LogCategory
   isAdmin: boolean
   page: number

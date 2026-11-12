@@ -147,7 +147,7 @@ export function CommonLogsFilterBar<TData>(
   }, [isAdmin, adminGroups, userGroups])
 
   const searchState = useMemo<CommonLogDraft>(() => {
-    const { start, end } = getDefaultTimeRange()
+    const { start, end } = getDefaultTimeRange(true)
     const sourceValues = {
       startTime: searchParams.startTime,
       endTime: searchParams.endTime,
@@ -230,7 +230,7 @@ export function CommonLogsFilterBar<TData>(
   )
 
   const handleReset = useCallback(() => {
-    const { start, end } = getDefaultTimeRange()
+    const { start, end } = getDefaultTimeRange(true)
     const resetFilters: CommonLogFilters = { startTime: start, endTime: end }
     const resetSearch = {
       type: [LOG_TYPE_ALL_VALUE],

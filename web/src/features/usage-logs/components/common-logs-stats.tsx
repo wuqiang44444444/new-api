@@ -18,8 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatLogQuota } from '@/lib/format'
 import { requireServerSuccess } from '@/lib/server-error-message'
@@ -28,6 +30,7 @@ import { cn } from '@/lib/utils'
 import { getLogStats, getUserLogStats } from '../api'
 import { DEFAULT_LOG_STATS } from '../constants'
 import { buildApiParams } from '../lib/utils'
+import type { GetLogStatsParams } from '../types'
 import { useLogsViewScope, useUsageLogsContext } from './usage-logs-provider'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
@@ -54,10 +57,18 @@ export function CommonLogsStats() {
   const searchParams = route.useSearch()
   const { sensitiveVisible } = useUsageLogsContext()
 
-  const { data: stats, isLoading } = useQuery({
+  const [expanded, setExpanded] = useState(false)
+  const enabled = !!searchParams.billing || expanded
+  const {
+    data: stats,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
+    enabled,
     queryKey: ['usage-logs-stats', isAdmin, searchParams],
-    queryFn: async () => {
-      const params = buildApiParams({
+    queryFn: async ({ signal }) => {
+      const params: GetLogStatsParams = buildApiParams({
         page: 1,
         pageSize: 1,
         searchParams,
@@ -65,9 +76,16 @@ export function CommonLogsStats() {
         isAdmin,
       })
 
+      if (!searchParams.billing) {
+        params.range_count = true
+        if (searchParams.startTime == null && searchParams.endTime == null) {
+          delete params.start_timestamp
+          delete params.end_timestamp
+        }
+      }
       const result = isAdmin
-        ? requireServerSuccess(await getLogStats(params))
-        : requireServerSuccess(await getUserLogStats(params))
+        ? requireServerSuccess(await getLogStats(params, signal))
+        : requireServerSuccess(await getUserLogStats(params, signal))
 
       return result.success
         ? result.data || DEFAULT_LOG_STATS
@@ -75,6 +93,21 @@ export function CommonLogsStats() {
     },
     placeholderData: (previousData) => previousData,
   })
+
+  if (!enabled || isError) {
+    return (
+      <Button
+        variant='outline'
+        size='sm'
+        onClick={() => {
+          if (isError) void refetch()
+          else setExpanded(true)
+        }}
+      >
+        {isError ? t('Retry') : t('View range statistics')}
+      </Button>
+    )
+  }
 
   if (isLoading) {
     return (
@@ -93,6 +126,13 @@ export function CommonLogsStats() {
         value={sensitiveVisible ? formatLogQuota(stats?.quota || 0) : '••••'}
         accent='bg-sky-500/70'
       />
+      {stats && 'total' in stats && typeof stats.total === 'number' && (
+        <StatBadge
+          label={t('Total Count')}
+          value={stats.total}
+          accent='bg-slate-400/70'
+        />
+      )}
       <StatBadge
         label={t('RPM')}
         value={stats?.rpm || 0}

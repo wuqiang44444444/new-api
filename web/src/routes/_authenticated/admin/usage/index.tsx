@@ -24,7 +24,7 @@ import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 const adminUsageSearchSchema = z.object({
-  period: z.enum(['day', 'week']).optional().catch('day'),
+  period: z.enum(['day', 'week', 'month']).optional().catch('day'),
   date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -53,7 +53,9 @@ function AdminUsageRoute() {
       period={search.period ?? 'day'}
       date={search.date}
       section={search.section}
-      onSearchChange={(next) => navigate({ search: (current) => ({ ...current, ...next }) })}
+      onSearchChange={(next) =>
+        navigate({ search: (current) => ({ ...current, ...next }) })
+      }
     />
   )
 }

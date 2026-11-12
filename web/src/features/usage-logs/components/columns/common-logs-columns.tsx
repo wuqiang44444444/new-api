@@ -876,7 +876,7 @@ export function useCommonLogsColumns(
                 onClick={() => setDialogOpen(true)}
                 title={t('Click to view full details')}
               >
-                {detailPreview}
+                {log.detail_ref ? t('View details') : detailPreview}
               </button>
               <DetailsDialog
                 log={log}

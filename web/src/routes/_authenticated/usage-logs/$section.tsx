@@ -16,9 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  redirect,
+  retainSearchParams,
+} from '@tanstack/react-router'
 import z from 'zod'
 
+import { BILLING_MODES } from '@/features/billing-reconciliation/types'
 import { UsageLogs } from '@/features/usage-logs'
 import {
   isUsageLogsSectionId,
@@ -27,13 +32,17 @@ import {
 
 const logTypeValues = ['0', '1', '2', '3', '4', '5', '6', '7'] as const
 const logTypeSearchSchema = z
-  .preprocess((value) => {
-    if (value == null || value === '') return undefined
-    return Array.isArray(value) ? value : [value]
-  }, z.array(z.enum(logTypeValues)).optional())
+  .preprocess(
+    (value) => {
+      if (value == null || value === '') return undefined
+      return Array.isArray(value) ? value : [value]
+    },
+    z.array(z.enum(logTypeValues)).optional()
+  )
   .catch([])
 
 const usageLogsSearchSchema = z.object({
+  scope: z.enum(['self', 'all']).optional().catch(undefined),
   page: z.number().optional().catch(1),
   pageSize: z.number().optional().catch(undefined),
   type: logTypeSearchSchema.optional(),
@@ -42,10 +51,11 @@ const usageLogsSearchSchema = z.object({
   token: z.string().optional().catch(''),
   tokenId: z.number().int().nonnegative().optional(),
   billing: z.boolean().optional(),
+  billingView: z.literal('events').optional().catch(undefined),
+  billingModelKeyId: z.number().int().nonnegative().optional().catch(undefined),
+  billingReportVersion: z.string().max(1024).optional(),
   billingUserId: z.number().int().positive().optional(),
-  billingMode: z
-    .enum(['token', 'per_call', 'per_second', 'unknown'])
-    .optional(),
+  billingMode: z.enum(BILLING_MODES).optional(),
   channel: z.string().optional().catch(''),
   group: z.string().optional().catch(''),
   username: z.string().optional().catch(''),
@@ -77,5 +87,6 @@ export const Route = createFileRoute('/_authenticated/usage-logs/$section')({
     }
   },
   validateSearch: usageLogsSearchSchema,
+  search: { middlewares: [retainSearchParams(['scope'])] },
   component: UsageLogs,
 })
