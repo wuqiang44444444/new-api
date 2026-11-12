@@ -4,8 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { getAdminUpstreamReconciliation } from './api'
 
 export function useUpstreamPage(
-  params: Parameters<typeof getAdminUpstreamReconciliation>[0],
-  enabled = true
+  params: Parameters<typeof getAdminUpstreamReconciliation>[0]
 ) {
   const { t } = useTranslation()
   return useQuery({
@@ -24,7 +23,6 @@ export function useUpstreamPage(
       }
       return response.data
     },
-    enabled,
     staleTime: 30_000,
     retry: false,
   })

@@ -48,6 +48,11 @@ func GetAdminCustomerBillingStatements(c *gin.Context) {
 		return
 	}
 
+	cancelReport, ok := bindBillingReport(c, period)
+	if !ok {
+		return
+	}
+	defer cancelReport()
 	versions, err := model.CurrentBillingStatementListItems(c.Request.Context(), period.StartTimestamp, period.EndTimestamp)
 	if err != nil {
 		respondBillingStatementVersionError(c, err)

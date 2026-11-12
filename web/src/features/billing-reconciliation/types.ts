@@ -18,7 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 export type BillingSection = 'customer' | 'upstream'
 export type BillingDimension = 'api_key' | 'channel'
-export type BillingMode = 'token' | 'per_call' | 'per_second' | 'unknown'
+export const BILLING_MODES = [
+  'token',
+  'per_call',
+  'per_second',
+  'duration_and_count',
+  'unknown',
+] as const
+export type BillingMode = (typeof BILLING_MODES)[number]
 export type CustomerStatementListQuality = 'all' | 'complete' | 'partial'
 export type CustomerStatementListSortBy =
   | 'net_quota'
@@ -32,6 +39,7 @@ export type AdminBillingSearch = {
   section?: BillingSection | 'upstream_url'
   month?: string
   userId?: number
+  reportVersion?: string
   dimension?: BillingDimension
   customerSearch?: string
   customerQuality?: CustomerStatementListQuality
@@ -72,6 +80,7 @@ type BillingDetailFilter = {
 }
 
 export type BillingDataQuality = {
+  has_estimated_original?: boolean
   evidence_coverage?: {
     rows: number
     gap_rows: number
@@ -165,6 +174,7 @@ type CustomerGroupSummary = {
 }
 
 export type CustomerStatement = {
+  recorded_original_amounts?: boolean
   estimate_reasons?: string[]
   user_id: number
   username: string
@@ -204,6 +214,7 @@ type CustomerStatementListSummary = {
 }
 
 export type CustomerStatementList = {
+  recorded_original_amounts?: boolean
   summary: CustomerStatementListSummary
   items: CustomerStatementListItem[]
   page: number
@@ -214,13 +225,16 @@ export type CustomerStatementList = {
 }
 
 export type ProviderDiscount = {
+  period_start?: number
+  changes?: { effective_from: number; value: string }[]
   value: string
   version: number
   source: 'database' | 'previous_period' | 'migrated' | 'default'
   source_period?: number
 }
 
-type ProviderUsage = {
+export type ProviderUsage = {
+  completed_images?: number
   seconds?: string | null
   seconds_unavailable_rows?: number
   requests: number
@@ -270,7 +284,34 @@ export type ProviderUrlChannelModelSummary = {
   estimate_reasons?: string[]
 }
 
+export type UpstreamAmounts = {
+  original_amount?: number
+  known_original_amount?: number
+  reference_amount?: number
+  known_reference_amount?: number
+}
+
+export type UpstreamUrlChannelRow = Omit<
+  ProviderUrlChannelGroupSummary,
+  'models'
+> & {
+  url_key: string
+  base_url?: string
+  url_name: string
+}
+
+export type UpstreamUrlModelRow = ProviderUrlChannelModelSummary & {
+  channel_id: number
+  channel_name: string
+  upstream_name?: string
+  deleted?: boolean
+  discount: ProviderDiscount | null
+}
+
 export type ProviderUrlSummary = {
+  url_channels?: UpstreamUrlChannelRow[]
+  totals?: UpstreamAmounts & { usage: ProviderUsage }
+  model_rows?: UpstreamUrlModelRow[]
   page: number
   page_size: number
   total: number
@@ -305,6 +346,7 @@ export type UpstreamDetailItem = {
   cache_read_tokens: number
   cache_write_tokens: number
   original_amount?: number
+  original_amount_estimated?: boolean
   estimate_reasons?: string[]
   request_id: string
   upstream_request_id: string
@@ -330,7 +372,18 @@ export type UpstreamDetails = {
   page_size: number
 }
 
+export type BillingReportManifest = {
+  version: string
+  published_days: number
+  incomplete_days?: number
+  expected_days: number
+  as_of: number
+  estimated?: boolean
+  estimated_at?: number
+}
+
 export type BillingEnvelope<T> = {
+  billing_report?: BillingReportManifest
   period: BillingPeriod
   filters: Record<string, string | number>
   result: T

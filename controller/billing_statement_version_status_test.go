@@ -26,7 +26,7 @@ func setupBillingVersionStatusTest(t *testing.T) (*gorm.DB, int64, string) {
 	previous := model.DB
 	model.DB = db
 	t.Cleanup(func() { model.DB = previous; require.NoError(t, raw.Close()) })
-	require.NoError(t, db.AutoMigrate(&model.BillingStatementMonth{}, &model.BillingStatementVersion{}, &model.BillingStatementRetention{}))
+	require.NoError(t, db.AutoMigrate(&model.BillingStatementMonth{}, &model.BillingStatementVersion{}, &model.BillingStatementRetention{}, &model.BillingStatementMaintenance{}))
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, billingSettlementLocation)
 	query := fmt.Sprintf("/?user_id=11&start_timestamp=%d&end_timestamp=%d", start.Unix(), start.AddDate(0, 1, 0).Unix()-1)
 	return db, start.Unix(), query
@@ -61,10 +61,12 @@ func TestBillingVersionHistoryDistinguishesMissingMonthFromReadFailure(t *testin
 
 func TestBillingVersionMonthStatusRejectsUnreadableReferences(t *testing.T) {
 	for _, admin := range []bool{false, true} {
-		for _, state := range []string{"empty", "current", "draft", "current read error", "draft read error", "missing current", "missing draft"} {
+		for _, state := range []string{"empty", "maintenance", "current", "draft", "current read error", "draft read error", "missing current", "missing draft"} {
 			t.Run(fmt.Sprintf("admin=%t/%s", admin, state), func(t *testing.T) {
 				db, start, query := setupBillingVersionStatusTest(t)
-				if state != "empty" {
+				if state == "maintenance" {
+					require.NoError(t, db.Create(&model.BillingStatementMaintenance{ID: 1, Enabled: true, Generation: 2}).Error)
+				} else if state != "empty" {
 					version := model.BillingStatementVersion{UserId: 11, PeriodStart: start, DraftPublicId: "status-test", Status: model.BillingStatementVersionConfirmed}
 					if state == "draft" || state == "draft read error" || state == "missing draft" {
 						version.Status = model.BillingStatementVersionPending
@@ -100,13 +102,20 @@ func TestBillingVersionMonthStatusRejectsUnreadableReferences(t *testing.T) {
 				var response struct {
 					Success bool `json:"success"`
 					Data    *struct {
-						CurrentVersion any  `json:"current_version"`
-						ActiveDraft    any  `json:"active_draft"`
-						HasActiveDraft bool `json:"has_active_draft"`
+						MaintenanceActive bool `json:"maintenance_active"`
+						CurrentVersion    any  `json:"current_version"`
+						ActiveDraft       any  `json:"active_draft"`
+						HasActiveDraft    bool `json:"has_active_draft"`
 					} `json:"data"`
 				}
 				require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
-				if state != "empty" && state != "current" && state != "draft" {
+				if state == "maintenance" {
+					require.True(t, response.Success, recorder.Body.String())
+					require.NotNil(t, response.Data)
+					assert.Equal(t, admin, response.Data.MaintenanceActive)
+					return
+				}
+				if state != "empty" && state != "maintenance" && state != "current" && state != "draft" {
 					assert.False(t, response.Success, recorder.Body.String())
 					assert.Nil(t, response.Data, "failed reads must not publish an unconfirmed state")
 					return

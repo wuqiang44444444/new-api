@@ -20,7 +20,6 @@ func mustMarshalJSON(t *testing.T, v any) string {
 // 且同月只能有一个活动草稿。
 func TestAcquireCorrectionDraftRequiresCurrentBase(t *testing.T) {
 	setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	ctx := context.Background()
 
 	// 未确认任何版本时不能发起更正。
@@ -39,6 +38,13 @@ func TestAcquireCorrectionDraftRequiresCurrentBase(t *testing.T) {
 	_, _, err = AcquireBillingStatementCorrectionDraft(ctx, 1001, 1756608000, "Asia/Shanghai", v1.ID+100, "r", "n", 7)
 	assert.ErrorIs(t, err, ErrBillingStatementVersionConflict)
 
+	maintenance, err := BeginBillingStatementMaintenance(ctx, "verify source", 7)
+	require.NoError(t, err)
+	_, _, err = AcquireBillingStatementCorrectionDraft(ctx, 1001, 1756608000, "Asia/Shanghai", v1.ID, "r", "n", 7)
+	require.ErrorIs(t, err, ErrBillingStatementMaintenanceActive)
+	_, err = EndBillingStatementMaintenance(ctx, maintenance.Generation, "source verified", 7)
+	require.NoError(t, err)
+
 	// 正确基准：占用成功，原因与备注冻结在草稿上。
 	_, correction, err := AcquireBillingStatementCorrectionDraft(ctx, 1001, 1756608000, "Asia/Shanghai", v1.ID, "补入漏记记录", "内部说明", 7)
 	require.NoError(t, err)
@@ -56,7 +62,6 @@ func TestAcquireCorrectionDraftRequiresCurrentBase(t *testing.T) {
 // 清理中草稿事实被删除，可确认草稿不会被误标。
 func TestCleanupDraftGuardsAndDeletes(t *testing.T) {
 	db := setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	ctx := context.Background()
 
 	// 待确认草稿不可清理。
@@ -88,24 +93,6 @@ func TestCleanupDraftGuardsAndDeletes(t *testing.T) {
 	_, again, err := AcquireBillingStatementDraft(ctx, 1002, 1756608000, "Asia/Shanghai", 7)
 	require.NoError(t, err)
 	assert.NotEqual(t, invalid.ID, again.ID)
-}
-
-// TestSetBillingStatementVersionEnabledPersistsOption 验证开关切换经过维护控制点并持久化。
-func TestSetBillingStatementVersionEnabledPersistsOption(t *testing.T) {
-	setupBillingStatementVersionTestDB(t)
-	require.NoError(t, DB.AutoMigrate(&Option{}))
-	ctx := context.Background()
-
-	require.NoError(t, SetBillingStatementVersionEnabled(ctx, true, 7))
-	assert.True(t, BillingStatementVersionEnabled())
-	var option Option
-	require.NoError(t, DB.Where(&Option{Key: BillingStatementVersionEnabledKey}).First(&option).Error)
-	assert.Equal(t, "true", option.Value)
-
-	require.NoError(t, SetBillingStatementVersionEnabled(ctx, false, 7))
-	assert.False(t, BillingStatementVersionEnabled())
-	require.NoError(t, DB.Where(&Option{Key: BillingStatementVersionEnabledKey}).First(&option).Error)
-	assert.Equal(t, "false", option.Value)
 }
 
 // TestVersionStatementReconstruction 验证冻结投影可重建账单视图（读路径绑定基础）。

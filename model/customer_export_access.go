@@ -34,3 +34,17 @@ func ResolveCustomerExportUserId(ctx context.Context, username string) (int, err
 	err := DB.WithContext(ctx).Unscoped().Select("id").Where("username = ?", username).First(&user).Error
 	return user.Id, err
 }
+
+func AuthorizeCustomerStatementsExport(ctx context.Context, actorID int) error {
+	if actorID <= 0 {
+		return ErrCustomerExportNotFound
+	}
+	var actor User
+	if err := DB.WithContext(ctx).Select("id", "role", "status").First(&actor, actorID).Error; err != nil {
+		return err
+	}
+	if actor.Status != common.UserStatusEnabled || actor.Role < common.RoleAdminUser {
+		return ErrCustomerExportNotFound
+	}
+	return nil
+}

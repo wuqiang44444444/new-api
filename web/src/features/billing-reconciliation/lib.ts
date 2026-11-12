@@ -33,11 +33,23 @@ export function formatCustomerStatementQuota(quota: number | null | undefined) {
 }
 
 export function currentShanghaiMonth() {
+  return formatShanghaiMonth(new Date())
+}
+
+export function formatBillingMonth(timestamp: number, locale?: string) {
+  return new Intl.DateTimeFormat(locale, {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: 'long',
+  }).format(timestamp * 1000)
+}
+
+export function formatShanghaiMonth(date: Date) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai',
     year: 'numeric',
     month: '2-digit',
-  }).formatToParts(new Date())
+  }).formatToParts(date)
   const year = parts.find((part) => part.type === 'year')?.value ?? '1970'
   const month = parts.find((part) => part.type === 'month')?.value ?? '01'
   return `${year}-${month}`
@@ -74,6 +86,7 @@ export function billingModeLabel(mode: BillingMode) {
   if (mode === 'token') return 'Token billing'
   if (mode === 'per_call') return 'Per-call billing'
   if (mode === 'per_second') return 'Duration billing'
+  if (mode === 'duration_and_count') return 'Duration and quantity billing'
   return 'Unknown billing mode'
 }
 

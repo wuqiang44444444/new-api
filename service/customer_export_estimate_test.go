@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCustomerExportEstimateReasonsInSummaryAndDetails(t *testing.T) {
+func TestCustomerStatementExportOmitsUnknownAmountsWhileUsageExportRetainsReasons(t *testing.T) {
 	reasons := []string{model.BillingEstimateMissingContract}
 	usage := model.BillingReconciliationUsage{GrossQuota: 100, NetQuota: 100}
 	statement := model.BillingCustomerStatement{
@@ -31,18 +31,10 @@ func TestCustomerExportEstimateReasonsInSummaryAndDetails(t *testing.T) {
 			for i, name := range records[0] {
 				header[name] = i
 			}
-			reasonColumn := customerExportSummaryHeaderLabel(language, "estimate_reasons")
-			require.Contains(t, header, reasonColumn)
+			assert.NotContains(t, header, customerExportSummaryHeaderLabel(language, "estimate_reasons"))
 			require.Len(t, records, 2)
-			for _, row := range records[1:] {
-				expectedReason := "Cannot estimate: historical contract status not recorded"
-				if language == "zh" {
-					expectedReason = "无法估算：历史合同状态未记录"
-				}
-				assert.Equal(t, expectedReason, row[header[reasonColumn]])
-				assert.Empty(t, row[header[customerExportSummaryHeaderLabel(language, "original_amount")]])
-				assert.Equal(t, "0.00020000", row[header[customerExportSummaryHeaderLabel(language, "net_amount")]])
-			}
+			assert.Empty(t, records[1][header[customerExportSummaryHeaderLabel(language, "original_amount")]])
+			assert.Equal(t, "0.00020000", records[1][header[customerExportSummaryHeaderLabel(language, "net_amount")]])
 		})
 	}
 	writer, err := newCustomerExportCsvWriter(t.TempDir(), "detail", 1<<20)
@@ -74,10 +66,10 @@ func readEstimateCsv(t *testing.T, path string) [][]string {
 }
 
 func TestCustomerExportModelSavingsMatchOriginalMinusNet(t *testing.T) {
-	original := int64(200)
+	original, discount := int64(200), int64(100)
 	scope := customerExportScopeColumns{QuotaPerUnit: 500000, Currency: "USD", CurrencyRate: 1, Language: "en"}
 	statement := model.BillingCustomerStatement{Groups: []model.BillingReconciliationGroupSummary{{Id: 4, Models: []model.BillingReconciliationModelSummary{
-		{ModelName: "known", OriginalQuota: &original, Usage: model.BillingReconciliationUsage{NetQuota: 100}},
+		{ModelName: "known", OriginalQuota: &original, DiscountQuota: &discount, Usage: model.BillingReconciliationUsage{NetQuota: 100}},
 		{ModelName: "unknown", Usage: model.BillingReconciliationUsage{NetQuota: 100}},
 	}}}}
 	_, paths, _, err := writeCustomerExportSummaryCsv(t.TempDir(), scope, "en", statement)

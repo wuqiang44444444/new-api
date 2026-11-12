@@ -59,7 +59,7 @@ func currentExportObjectStore() (exportObjectStore, error) {
 }
 
 // PresignCustomerExportURL 为已通过鉴权的下载签发短时对象存储 GET 地址。
-func PresignCustomerExportURL(objectKey string, ttl time.Duration, identity string) (string, int64, error) {
+func PresignCustomerExportURL(objectKey string, ttl time.Duration, identity string, filename ...string) (string, int64, error) {
 	store, err := currentExportObjectStore()
 	if err != nil {
 		return "", 0, err
@@ -67,7 +67,7 @@ func PresignCustomerExportURL(objectKey string, ttl time.Duration, identity stri
 	if identity == "" || store.ExportIdentity() != identity {
 		return "", 0, ErrCustomerExportStorageUnavailable
 	}
-	return store.ExportPresignURL(objectKey, ttl)
+	return store.ExportPresignURL(objectKey, ttl, filename...)
 }
 
 // ─── S3 兼容后端 ────────────────────────────────────────────────────────────

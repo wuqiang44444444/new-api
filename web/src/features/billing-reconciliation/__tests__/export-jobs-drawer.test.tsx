@@ -25,6 +25,7 @@ afterEach(async () => {
     await client.cancelQueries()
     client.clear()
   }
+  vi.restoreAllMocks()
   vi.resetAllMocks()
 })
 
@@ -58,14 +59,14 @@ function jobView(
       line_count: 100,
       size_bytes: 1024,
       generated_at: 1789000000,
-      expires_at: 1789600000,
+      expires_at: Math.floor(Date.now() / 1000) + 600,
     },
     created_at: 1789000000,
     ...overrides,
   }
 }
 
-async function mountDrawer() {
+async function mountDrawer(mode: boolean | 'upstream' = false) {
   const i18n = createInstance().use(initReactI18next)
   await i18n.init({ lng: 'en', resources: { en: { translation: {} } } })
   const client = new QueryClient({
@@ -75,12 +76,104 @@ async function mountDrawer() {
   const view = render(
     <QueryClientProvider client={client}>
       <I18nextProvider i18n={i18n}>
-        <ExportJobsDrawer open onOpenChange={vi.fn()} />
+        <ExportJobsDrawer
+          open
+          onOpenChange={vi.fn()}
+          billingStatement={mode === true}
+          upstreamBilling={mode === 'upstream'}
+        />
       </I18nextProvider>
     </QueryClientProvider>
   )
   return { view, client, i18n }
 }
+
+it.each([
+  ['statement_summary', true],
+  ['upstream_details', 'upstream'],
+] as const)('downloads a %s CSV on the first click', async (jobType, mode) => {
+  const job = jobView({
+    job_type: jobType,
+    ...(mode === 'upstream' ? { target_user_id: 0 } : {}),
+  })
+  const url = 'https://downloads.example/export.csv'
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, 'click')
+    .mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.href).toBe(url)
+    })
+  vi.mocked(api.get)
+    .mockResolvedValueOnce({ data: { success: true, data: { items: [job] } } })
+    .mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: { files: [{ file_name: 'export.csv', url }] },
+      },
+    })
+
+  await mountDrawer(mode)
+  const download = await screen.findByRole('button', { name: 'Download CSV' })
+  expect(screen.queryByText('Customer #7')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Filters' })).toBeNull()
+  expect(screen.queryByText(/Historical export/)).toBeNull()
+  fireEvent.click(download)
+  await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+  expect(api.get).toHaveBeenLastCalledWith(
+    '/api/billing/exports/cex_a/download'
+  )
+  click.mockRestore()
+})
+
+it('expands multipart statements without signing until a file is selected', async () => {
+  const job = jobView({})
+  const artifact = job.artifact
+  if (!artifact) throw new Error('Missing export artifact fixture')
+  artifact.files.push({ ...artifact.files[0], file_name: 'export.part2.csv' })
+  const files = artifact.files.map((file) => ({
+    ...file,
+    url: `https://downloads.example/${file.file_name}`,
+  }))
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, 'click')
+    .mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.href).toBe(files[1].url)
+    })
+  vi.mocked(api.get)
+    .mockResolvedValueOnce({ data: { success: true, data: { items: [job] } } })
+    .mockResolvedValueOnce({ data: { success: true, data: { files } } })
+
+  await mountDrawer(true)
+  const showFiles = await screen.findByRole('button', {
+    name: 'View files (2)',
+  })
+  expect(
+    screen.queryByRole('button', { name: 'Download export.part2.csv' })
+  ).toBeNull()
+  showFiles.focus()
+  await userEvent.keyboard('{Enter}')
+  expect(showFiles.getAttribute('aria-expanded')).toBe('true')
+  expect(api.get).toHaveBeenCalledTimes(1)
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Download export.part2.csv' })
+  )
+  await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+  expect(api.get).toHaveBeenCalledTimes(2)
+  click.mockRestore()
+})
+
+it('offers regeneration when the personal statement file expires before its status refreshes', async () => {
+  const job = jobView({ expires_at: Math.floor(Date.now() / 1000) - 1 })
+  vi.mocked(api.get).mockResolvedValueOnce({
+    data: { success: true, data: { items: [job] } },
+  })
+
+  await mountDrawer(true)
+  expect(await screen.findByText('Expired')).toBeTruthy()
+  expect(
+    screen.getByRole('button', { name: 'Export again with the same filters' })
+  ).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Download CSV' })).toBeNull()
+})
 
 it('lists jobs with their status and keeps succeeded jobs downloadable', async () => {
   vi.mocked(api.get).mockResolvedValueOnce({

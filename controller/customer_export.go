@@ -20,6 +20,7 @@ import (
 // 不重新扫描日志；下载签发短时地址，签名 URL 不落日志。
 
 type customerExportHttpRequest struct {
+	ReportVersion     string `json:"report_version,omitempty"`
 	JobType           string `json:"job_type"`
 	StartTimestamp    int64  `json:"start_timestamp"`
 	EndTimestamp      int64  `json:"end_timestamp"`
@@ -43,6 +44,7 @@ func parseCustomerExportRequest(c *gin.Context) (service.CustomerExportRequest, 
 		return service.CustomerExportRequest{}, false
 	}
 	return service.CustomerExportRequest{
+		ReportVersion:     request.ReportVersion,
 		JobType:           request.JobType,
 		StartTimestamp:    request.StartTimestamp,
 		EndTimestamp:      request.EndTimestamp,
@@ -78,6 +80,20 @@ func CreateAdminCustomerExport(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if request.JobType == model.CustomerExportJobTypeCustomerStatements {
+		if c.Query("user_id") != "" || c.Query("username") != "" {
+			common.ApiErrorMsg(c, "invalid export request")
+			return
+		}
+		job, err := service.SubmitCustomerStatementsExport(c.Request.Context(), c.GetInt("id"), request)
+		if err != nil {
+			respondCustomerExportError(c, err)
+			return
+		}
+		c.JSON(http.StatusAccepted, gin.H{"success": true, "message": "", "data": job.ToView()})
+		return
+	}
+
 	var userId int
 	var err error
 	if raw := c.Query("user_id"); raw != "" {
@@ -89,7 +105,13 @@ func CreateAdminCustomerExport(c *gin.Context) {
 		common.ApiErrorMsg(c, "invalid user_id")
 		return
 	}
-	if _, err := model.GetBillingReconciliationUserById(userId); err != nil {
+	var identityErr error
+	if request.JobType == model.CustomerExportJobTypeUsageLogs {
+		_, identityErr = model.GetBillingReconciliationUser(c.Request.Context(), userId)
+	} else {
+		_, identityErr = model.GetDailyReportCustomer(c.Request.Context(), userId)
+	}
+	if err := identityErr; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "user not found"})
 			return
@@ -183,7 +205,7 @@ func respondCustomerExportDownload(c *gin.Context, job *model.CustomerExportJob)
 	}
 	files := make([]gin.H, 0, len(artifact.Files))
 	for _, file := range artifact.Files {
-		url, expiresAt, err := signCustomerExportDownloadURL(file.ObjectKey, ttl, artifact.StoreIdentity)
+		url, expiresAt, err := service.PresignCustomerExportURL(file.ObjectKey, ttl, artifact.StoreIdentity, file.FileName)
 		if err != nil {
 			common.ApiErrorMsg(c, "unable to issue download address")
 			return
@@ -204,11 +226,6 @@ func artifactGeneratedAt(artifact *model.CustomerExportArtifact) int64 {
 }
 
 var customerExportDownloadTTL = 5 * time.Minute
-
-// signCustomerExportDownloadURL 经由导出存储能力签发短时 GET 地址。
-func signCustomerExportDownloadURL(objectKey string, ttl time.Duration, identity string) (string, int64, error) {
-	return service.PresignCustomerExportURL(objectKey, ttl, identity)
-}
 
 func respondCustomerExportError(c *gin.Context, err error) {
 	switch {

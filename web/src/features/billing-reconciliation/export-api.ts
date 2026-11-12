@@ -32,6 +32,7 @@ export type ExportJobType =
   | 'usage_logs'
   | 'statement_details'
   | 'statement_summary'
+  | 'customer_statements'
 
 export type ExportJobStatus =
   | 'queued'
@@ -43,7 +44,9 @@ export type ExportJobStatus =
   | 'cancelling'
 
 export type CustomerExportFiltersDto = {
+  billing_report_version?: string
   usage_view?: string
+  usage_url_key?: string
   usage_search?: string
   upstream?: {
     all_channels?: boolean
@@ -111,6 +114,9 @@ export type CustomerExportJobView = {
 }
 
 export type CustomerExportSubmitPayload = {
+  all_channels?: boolean
+  report_version?: string
+  url_key?: string
   evidence_filter?: string
   job_type: ExportJobType
   start_timestamp: number
@@ -196,9 +202,32 @@ export async function createAdminExport(
   return assertOk(response.data) as unknown as CustomerExportJobView
 }
 
+export async function createCustomerStatementsExport(payload: {
+  start_timestamp: number
+  end_timestamp: number
+  report_version: string
+  language?: string
+}) {
+  return submitBillingExport('/api/billing/admin/customer-exports', {
+    ...payload,
+    job_type: 'customer_statements',
+    language: (payload.language ?? currentExportLanguage()).startsWith('zh')
+      ? 'zh'
+      : 'en',
+  })
+}
+
 // 重新生成（6.2）：按任务自身冻结的范围重新提交一次新尝试。发起人即当前
 // 用户；管理员对历史代客任务继续作用于同一目标客户。
 export async function resubmitExport(job: CustomerExportJobView) {
+  if (job.job_type === 'customer_statements') {
+    return createCustomerStatementsExport({
+      start_timestamp: job.filters.start_timestamp,
+      end_timestamp: job.filters.end_timestamp,
+      report_version: job.filters.billing_report_version ?? '',
+      language: job.filters.language,
+    })
+  }
   if (job.job_type === 'usage_summary') {
     const self = job.target_user_id === job.user_id
     const response = await api.post<ExportEnvelope>(
@@ -230,7 +259,9 @@ export async function resubmitExport(job: CustomerExportJobView) {
     job.job_type === 'upstream_details' ||
     job.job_type === 'upstream_summary'
   ) {
-    return submitUpstreamExport({ source_job_id: job.job_id })
+    return submitBillingExport('/api/billing/admin/upstream-exports', {
+      source_job_id: job.job_id,
+    })
   }
   if (job.target_user_id !== job.user_id) {
     return createAdminExport(job.target_user_id, payload)
@@ -277,6 +308,15 @@ export async function requestExportDownload(jobId: string) {
   }
 }
 
+export function downloadExportFile(url: string) {
+  // The signed GET serves an attachment. A same-tab link also works after
+  // awaiting the signing request, when a new window may be blocked.
+  const link = document.createElement('a')
+  link.href = url
+  link.rel = 'noreferrer'
+  link.click()
+}
+
 export const activeExportStatuses: ExportJobStatus[] = [
   'queued',
   'running',
@@ -290,7 +330,7 @@ export function isExportJobActive(job: CustomerExportJobView) {
 export async function createUpstreamExport(
   payload: CustomerExportSubmitPayload
 ) {
-  return submitUpstreamExport({
+  return submitBillingExport('/api/billing/admin/upstream-exports', {
     ...payload,
     language: (payload.language ?? currentExportLanguage()).startsWith('zh')
       ? 'zh'
@@ -300,15 +340,15 @@ export async function createUpstreamExport(
 
 // Callers own the single toast. Normalize both HTTP and business failures here
 // so new submissions and regeneration preserve the server's specific reason.
-async function submitUpstreamExport(
+async function submitBillingExport(
+  path: string,
   payload: CustomerExportSubmitPayload | { source_job_id: string }
 ) {
   try {
-    const response = await api.post<ExportEnvelope>(
-      '/api/billing/admin/upstream-exports',
-      payload,
-      { skipErrorHandler: true, skipBusinessError: true }
-    )
+    const response = await api.post<ExportEnvelope>(path, payload, {
+      skipErrorHandler: true,
+      skipBusinessError: true,
+    })
     if (!response.data.success) {
       const key = getServerErrorMessageKey(response.data)
       if (key) throw new Error(i18n.t(key))

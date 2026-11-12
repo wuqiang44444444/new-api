@@ -38,6 +38,7 @@ const adminBillingSearchSchema = z.object({
     .regex(/^\d{4}-\d{2}$/)
     .optional(),
   userId: z.number().positive().optional(),
+  reportVersion: z.string().max(1024).optional(),
   dimension: z.enum(['api_key', 'channel']).optional().catch('api_key'),
   customerSearch: z.string().max(100).optional(),
   customerQuality: z
@@ -82,6 +83,9 @@ function AdminBillingRoute() {
     })
 
   return (
-    <AdminBillingReconciliation search={search} onSearchChange={handleSearchChange} />
+    <AdminBillingReconciliation
+      search={search}
+      onSearchChange={handleSearchChange}
+    />
   )
 }

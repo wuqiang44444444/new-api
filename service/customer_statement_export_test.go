@@ -9,17 +9,18 @@ import (
 )
 
 func TestCustomerStatementSummaryContainsOnlyAdditiveModelRows(t *testing.T) {
-	original := int64(200)
+	original, discount := int64(200), int64(100)
 	usage := model.BillingReconciliationUsage{Requests: 2, GrossQuota: 150, RefundQuota: 50, NetQuota: 100}
 	statement := model.BillingCustomerStatement{
 		Summary: usage, OriginalQuota: &original,
 		Groups: []model.BillingReconciliationGroupSummary{{Id: 4, Name: "=key", Usage: usage,
-			Models: []model.BillingReconciliationModelSummary{{ModelName: "model", BillingMode: "token", Usage: usage, OriginalQuota: &original}}}},
+			Models: []model.BillingReconciliationModelSummary{{ModelName: "model", BillingMode: "token", Usage: usage, OriginalQuota: &original, DiscountQuota: &discount}}}},
 		DiscountCombinations: []model.BillingDiscountCombination{{GroupId: 4, Usage: usage}},
 	}
 	for _, language := range []string{"en", "zh"} {
 		t.Run(language, func(t *testing.T) {
-			scope := customerExportScopeColumns{QuotaPerUnit: 100, Currency: "USD", CurrencyRate: 1}
+			scope := customerExportScopeColumns{QuotaPerUnit: 100, Currency: "USD", CurrencyRate: 1,
+				ReportCoverage: &model.BillingExportCoverage{PublishedDays: 10, ExpectedDays: 30, IncompleteDays: 1}}
 			_, paths, count, err := writeCustomerExportSummaryCsv(t.TempDir(), scope, language, statement)
 			require.NoError(t, err)
 			assert.EqualValues(t, 1, count)
@@ -34,6 +35,7 @@ func TestCustomerStatementSummaryContainsOnlyAdditiveModelRows(t *testing.T) {
 			for key, value := range map[string]string{"net_amount": "1.00000000", "original_amount": "2.00000000", "discount_amount": "1.00000000", "gross_amount": "1.50000000", "refund_amount": "0.50000000"} {
 				assert.Equal(t, value, values[customerExportSummaryHeaderLabel(language, key)], key)
 			}
+			assert.Equal(t, []string{"10", "30", "1", ""}, rows[1][len(rows[1])-4:])
 			assert.NotContains(t, values, customerExportSummaryHeaderLabel(language, "row_type"))
 			assert.NotContains(t, values, customerExportSummaryHeaderLabel(language, "job_id"))
 		})
@@ -49,14 +51,12 @@ func TestCustomerStatementDetailsExposeCallsAndSignedAmounts(t *testing.T) {
 			scope := customerExportScopeColumns{Language: language, QuotaPerUnit: 100, Currency: "CNY", CurrencyRate: 7}
 			ratio := 0.5
 			rows := []model.CustomerExportRow{
-				{RequestId: "req-1", RecordTime: 1789488000, TokenId: 4, TokenName: "=key", CustomerModel: "model", EventType: "consume", RequestCount: 1, Quota: 100, OriginalEstimate: "200", ContractApplicable: "unrecorded", GroupRatio: &ratio, FinalRatio: &ratio, InputTokens: 1000,
+				{RequestId: "req-1", RecordTime: 1789488000, TokenId: 4, TokenName: "=key", CustomerModel: "model", EventType: "consume", RequestCount: 1, Quota: 100, RecordedOriginal: "200", ContractApplicable: "unrecorded", GroupRatio: &ratio, FinalRatio: &ratio, InputTokens: 1000,
 					BillingLineItems: `[{"label":"Input","quantity":1000,"unit":"token","unit_price_usd":2,"unit_price_quantity":1000000,"subtotal_usd":0.002}]`, ExplanationStatus: "available"},
-				{RequestId: "req-1", EventType: "refund", Quota: 50, OriginalEstimate: "100", ExplanationStatus: "not_applicable"},
-				{RequestId: "req-unknown", EventType: "consume", Quota: 10, InputTokensUnavailable: true, EstimateReasons: []string{model.BillingEstimateMissingGroup}},
-				{RequestId: "req-free", EventType: "consume", OriginalEstimate: "0"},
+				{RequestId: "req-1", EventType: "refund", Quota: 50, RecordedOriginal: "-100", ExplanationStatus: "not_applicable"},
+				{RequestId: "req-unknown", EventType: "consume", Quota: 10, OriginalEstimate: "20", InputTokensUnavailable: true, EstimateReasons: []string{model.BillingEstimateMissingGroup}},
+				{RequestId: "req-free", EventType: "consume", RecordedOriginal: "0"},
 			}
-			// Refund originals are signed facts from the shared projection.
-			rows[1].OriginalEstimate = "-100"
 			for _, row := range rows {
 				require.NoError(t, writer.AppendRow(row, scope))
 			}
@@ -92,7 +92,7 @@ func TestCustomerStatementDetailsExposeCallsAndSignedAmounts(t *testing.T) {
 			assert.Equal(t, "-3.50000000", records[1]["discount_amount_estimated"])
 			assert.Empty(t, records[2]["original_amount_estimated"])
 			assert.Empty(t, records[2]["input_tokens"])
-			assert.NotEmpty(t, records[2]["estimate_reasons"])
+			assert.Empty(t, records[2]["discount_amount_estimated"])
 			assert.Equal(t, "0.00000000", records[3]["discount_amount_estimated"])
 			if language == "zh" {
 				assert.Equal(t, "入账时间", writer.header[0])

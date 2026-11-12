@@ -23,26 +23,19 @@ import {
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '@/components/error-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from '@/components/ui/empty'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
   Pagination,
@@ -53,6 +46,12 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTitle,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -74,6 +73,7 @@ import { useDebounce } from '@/hooks/use-debounce'
 import { formatTimestampToDate } from '@/lib/format'
 
 import { getAdminCustomerStatements } from '../api'
+import { createCustomerStatementsExport } from '../export-api'
 import { formatInteger, formatCustomerStatementQuota } from '../lib'
 import type {
   AdminBillingSearch,
@@ -81,7 +81,9 @@ import type {
   CustomerStatementListQuality,
   CustomerStatementListSortBy,
 } from '../types'
+import { BillingExportAction } from './billing-export-action'
 import { BillingQualityNotice } from './billing-quality-notice'
+import { BillingReportStatus } from './billing-report-status'
 
 type CustomerStatementsListProps = {
   period: { start_timestamp: number; end_timestamp: number }
@@ -90,11 +92,12 @@ type CustomerStatementsListProps = {
     patch: Partial<AdminBillingSearch>,
     replace?: boolean
   ) => void
-  onSelectUser: (userId: number) => void
+  onSelectUser: (userId: number, version?: string) => void
 }
 
 export function CustomerStatementsListView(props: CustomerStatementsListProps) {
   const { t } = useTranslation()
+  const [showFunds, setShowFunds] = useState(false)
   const search = props.search.customerSearch ?? ''
   const quality = props.search.customerQuality ?? 'all'
   const sortBy = props.search.customerSortBy ?? 'net_quota'
@@ -160,6 +163,7 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
     )
   }
 
+  const reportVersion = query.data.billing_report?.version
   const result = query.data.result
   const items = result.items ?? []
   const totalPages = Math.max(1, Math.ceil(result.total / result.page_size))
@@ -185,149 +189,137 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
 
   return (
     <div className='flex h-full min-h-0 flex-col gap-3'>
-      <Card size='sm' className='shrink-0'>
-        <CardContent>
-          <FieldGroup className='grid gap-3 md:grid-cols-[minmax(16rem,1fr)_14rem_10rem]'>
-            <Field>
-              <FieldLabel htmlFor='customer-statement-search'>
-                {t('Customer search')}
-              </FieldLabel>
-              <Input
-                id='customer-statement-search'
-                value={search}
-                placeholder={t('Search by customer name, username, or ID')}
-                onChange={(event) =>
-                  props.onSearchChange(
-                    {
-                      customerSearch: event.target.value || undefined,
-                      customerPage: 1,
-                    },
-                    true
-                  )
-                }
-              />
-            </Field>
-            <Field>
-              <FieldLabel>{t('Data quality')}</FieldLabel>
-              <Select
-                items={[
-                  { value: 'all', label: t('All data quality') },
-                  { value: 'complete', label: t('Complete') },
-                  { value: 'partial', label: t('Partial data') },
-                ]}
-                value={quality}
-                onValueChange={(value) =>
-                  value != null &&
-                  props.onSearchChange({
-                    customerQuality: value as CustomerStatementListQuality,
-                    customerPage: 1,
-                  })
-                }
-              >
-                <SelectTrigger className='w-full'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align='start'>
-                  <SelectGroup>
-                    <SelectItem value='all'>{t('All data quality')}</SelectItem>
-                    <SelectItem value='complete'>{t('Complete')}</SelectItem>
-                    <SelectItem value='partial'>{t('Partial data')}</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel>{t('Per page')}</FieldLabel>
-              <Select
-                items={[10, 20, 50, 100].map((value) => ({
-                  value: String(value),
-                  label: String(value),
-                }))}
-                value={String(pageSize)}
-                onValueChange={(value) =>
-                  value != null &&
-                  props.onSearchChange({
-                    customerPageSize: Number(value) as 10 | 20 | 50 | 100,
-                    customerPage: 1,
-                  })
-                }
-              >
-                <SelectTrigger className='w-full'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align='start'>
-                  <SelectGroup>
-                    {[10, 20, 50, 100].map((value) => (
-                      <SelectItem key={value} value={String(value)}>
-                        {value}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-          </FieldGroup>
-        </CardContent>
-      </Card>
-
-      <Card size='sm' className='shrink-0'>
-        <CardContent className='grid gap-4 sm:grid-cols-2 xl:grid-cols-5 xl:divide-x xl:[&>div]:px-6 xl:[&>div:first-child]:pl-0 xl:[&>div:last-child]:pr-0'>
-          <ListMetric
-            label={t('Customers')}
-            value={formatInteger(result.summary.customer_count)}
-          />
-          <ListMetric
-            label={t('Requests')}
-            value={formatInteger(result.summary.usage.requests)}
-          />
-          <ListMetric
-            label={t('Estimated list price')}
-            value={
-              result.summary.money_usd
-                ? formatStatementUSD(result.summary.money_usd.original)
-                : formatCustomerStatementQuota(result.summary.original_quota)
-            }
-          />
-          <ListMetric
-            label={t('Estimated savings')}
-            value={
-              result.summary.money_usd
-                ? formatStatementUSD(result.summary.money_usd.discount)
-                : formatCustomerStatementQuota(result.summary.discount_quota)
-            }
-            valueClassName='text-success'
-          />
-          <ListMetric
-            label={t('Net settled amount')}
-            value={
-              result.summary.money_usd
-                ? formatStatementUSD(result.summary.money_usd.net)
-                : formatCustomerStatementQuota(result.summary.usage.net_quota)
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <Card className='flex min-h-0 flex-1 flex-col'>
-        <CardHeader className='shrink-0'>
-          <CardTitle>{t('Customer statements')}</CardTitle>
-          <CardDescription>
-            {t('Database generated at {{time}} · Asia/Shanghai', {
-              time: formatTimestampToDate(query.data.generated_at),
-            })}
-          </CardDescription>
-          <CardDescription>
-            {t(
-              'Estimated list price minus estimated savings equals net settled amount.'
-            )}{' '}
-            {t('Total charges − total returns = net settled amount.')}
-          </CardDescription>
-          <CardDescription>
-            {t(
-              'Total charges include precharges. Total returns include released precharges and refunds.'
-            )}
-          </CardDescription>
-        </CardHeader>
+      <div className='flex shrink-0 flex-wrap items-center gap-2'>
+        <Input
+          className='w-full sm:w-64 lg:w-80'
+          aria-label={t('Customer search')}
+          value={search}
+          placeholder={t('Search by customer name, username, or ID')}
+          onChange={(event) =>
+            props.onSearchChange(
+              {
+                customerSearch: event.target.value || undefined,
+                customerPage: 1,
+              },
+              true
+            )
+          }
+        />
+        <Select
+          items={[
+            { value: 'all', label: t('All data quality') },
+            { value: 'complete', label: t('Complete') },
+            { value: 'partial', label: t('Partial data') },
+          ]}
+          value={quality}
+          onValueChange={(value) =>
+            value != null &&
+            props.onSearchChange({
+              customerQuality: value as CustomerStatementListQuality,
+              customerPage: 1,
+            })
+          }
+        >
+          <SelectTrigger aria-label={t('Data quality')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align='start'>
+            <SelectGroup>
+              <SelectItem value='all'>{t('All data quality')}</SelectItem>
+              <SelectItem value='complete'>{t('Complete')}</SelectItem>
+              <SelectItem value='partial'>{t('Partial data')}</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <Button
+          size='sm'
+          variant={showFunds ? 'secondary' : 'outline'}
+          aria-pressed={showFunds}
+          onClick={() => setShowFunds(!showFunds)}
+        >
+          {t('Fund movements')}
+        </Button>
+        <BillingExportAction
+          startTimestamp={props.period.start_timestamp}
+          statement={t('Customer statements')}
+          scope={[t('All customers')]}
+          description={t(
+            'The CSV includes one statement summary per customer for the selected month, regardless of list filters.'
+          )}
+          available={!!reportVersion && !query.isPlaceholderData}
+          submit={() =>
+            createCustomerStatementsExport({
+              start_timestamp: props.period.start_timestamp,
+              end_timestamp: props.period.end_timestamp + 1,
+              report_version: reportVersion ?? '',
+            })
+          }
+        />
+        <div className='flex flex-wrap items-center gap-2 lg:ms-auto'>
+          <BillingReportStatus report={query.data.billing_report} />
+          <Popover>
+            <PopoverTrigger render={<Button variant='ghost' size='sm' />}>
+              {t('Billing notes')}
+            </PopoverTrigger>
+            <PopoverContent align='end' className='text-xs'>
+              <PopoverTitle>{t('Billing notes')}</PopoverTitle>
+              <p>
+                {t('Database generated at {{time}} · Asia/Shanghai', {
+                  time: formatTimestampToDate(query.data.generated_at),
+                })}
+              </p>
+              <p>{t('List price minus savings equals net settled amount.')}</p>
+              <p>{t('Total charges − total returns = net settled amount.')}</p>
+              <p>
+                {t(
+                  'Total charges include precharges. Total returns include released precharges and refunds.'
+                )}
+              </p>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
+      <div className='bg-muted/30 flex shrink-0 flex-wrap items-baseline gap-x-5 gap-y-1 rounded-lg border px-3 py-2'>
+        <ListMetric
+          label={t('Customers')}
+          value={formatInteger(result.summary.customer_count)}
+        />
+        <ListMetric
+          label={t('Requests')}
+          value={formatInteger(result.summary.usage.requests)}
+        />
+        <ListMetric
+          label={t('List price')}
+          value={formatRecordedStatementMoney(
+            result.recorded_original_amounts,
+            result.summary.original_quota,
+            result.summary.money_usd?.original,
+            t('Not recorded')
+          )}
+        />
+        <ListMetric
+          label={t('Savings')}
+          value={formatRecordedStatementMoney(
+            result.recorded_original_amounts,
+            result.summary.discount_quota,
+            result.summary.money_usd?.discount,
+            t('Not recorded')
+          )}
+          valueClassName='text-success'
+        />
+        <ListMetric
+          label={t('Net settled amount')}
+          value={
+            result.summary.money_usd
+              ? formatStatementUSD(result.summary.money_usd.net)
+              : formatCustomerStatementQuota(result.summary.usage.net_quota)
+          }
+        />
+      </div>
+      <Card
+        aria-label={t('Customer statements')}
+        className='flex min-h-0 flex-1 flex-col gap-0 py-0'
+      >
         <CardContent className='flex min-h-0 flex-1 flex-col px-0'>
           {items.length === 0 ? (
             <Empty className='min-h-64 border-0'>
@@ -359,7 +351,7 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
                       align='right'
                     />
                     <SortableHead
-                      label={t('Estimated list price')}
+                      label={t('List price')}
                       sortKey='original_quota'
                       activeSort={sortBy}
                       sortOrder={sortOrder}
@@ -377,14 +369,17 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
                       onSort={setSort}
                       align='right'
                     />
-                    <TableHead className='text-muted-foreground border-l text-right'>
-                      {t('Total charges')}
-                    </TableHead>
-                    <TableHead className='text-muted-foreground text-right'>
-                      {t('Total returns')}
-                    </TableHead>
+                    {showFunds && (
+                      <>
+                        <TableHead className='text-muted-foreground border-l text-right'>
+                          {t('Total charges')}
+                        </TableHead>
+                        <TableHead className='text-muted-foreground text-right'>
+                          {t('Total returns')}
+                        </TableHead>
+                      </>
+                    )}
                     <TableHead>{t('Data quality')}</TableHead>
-                    <TableHead>{t('Last activity')}</TableHead>
                     <TableHead className='text-right'>{t('Actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -393,7 +388,13 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
                     <CustomerStatementListRow
                       key={item.user_id}
                       item={item}
-                      onSelect={() => props.onSelectUser(item.user_id)}
+                      showFunds={showFunds}
+                      recordedOriginalAmounts={result.recorded_original_amounts}
+                      onSelect={() => {
+                        const version = query.data?.billing_report?.version
+                        if (version) props.onSelectUser(item.user_id, version)
+                        else props.onSelectUser(item.user_id)
+                      }}
                     />
                   ))}
                 </TableBody>
@@ -411,67 +412,99 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
                   total: result.total,
                 })}
               </div>
-              <Pagination className='mx-0 w-auto justify-end'>
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious
-                      href='#'
-                      text={t('Previous')}
-                      aria-label={t('Go to previous page')}
-                      aria-disabled={result.page <= 1}
-                      className={
-                        result.page <= 1
-                          ? 'pointer-events-none opacity-50'
-                          : undefined
-                      }
-                      onClick={(event) => {
-                        event.preventDefault()
-                        if (result.page > 1) setPage(result.page - 1)
-                      }}
-                    />
-                  </PaginationItem>
-                  {visiblePages.map((visiblePage) =>
-                    typeof visiblePage !== 'number' ? (
-                      <PaginationItem key={visiblePage}>
-                        <PaginationEllipsis />
-                      </PaginationItem>
-                    ) : (
-                      <PaginationItem key={visiblePage}>
-                        <PaginationLink
-                          href='#'
-                          isActive={visiblePage === result.page}
-                          aria-label={t('Go to page {{page}}', {
-                            page: visiblePage,
-                          })}
-                          onClick={(event) => {
-                            event.preventDefault()
-                            setPage(visiblePage)
-                          }}
-                        >
-                          {visiblePage}
-                        </PaginationLink>
-                      </PaginationItem>
-                    )
-                  )}
-                  <PaginationItem>
-                    <PaginationNext
-                      href='#'
-                      text={t('Next')}
-                      aria-label={t('Go to next page')}
-                      aria-disabled={result.page >= totalPages}
-                      className={
-                        result.page >= totalPages
-                          ? 'pointer-events-none opacity-50'
-                          : undefined
-                      }
-                      onClick={(event) => {
-                        event.preventDefault()
-                        if (result.page < totalPages) setPage(result.page + 1)
-                      }}
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
+              <div className='flex flex-wrap items-center gap-3'>
+                <label className='text-muted-foreground flex items-center gap-2 text-xs'>
+                  {t('Per page')}
+                  <Select
+                    items={[10, 20, 50, 100].map((value) => ({
+                      value: String(value),
+                      label: String(value),
+                    }))}
+                    value={String(pageSize)}
+                    onValueChange={(value) =>
+                      value != null &&
+                      props.onSearchChange({
+                        customerPageSize: Number(value) as 10 | 20 | 50 | 100,
+                        customerPage: 1,
+                      })
+                    }
+                  >
+                    <SelectTrigger aria-label={t('Per page')}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align='start'>
+                      <SelectGroup>
+                        {[10, 20, 50, 100].map((value) => (
+                          <SelectItem key={value} value={String(value)}>
+                            {value}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </label>
+                <Pagination className='mx-0 w-auto justify-end'>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        href='#'
+                        text={t('Previous')}
+                        aria-label={t('Go to previous page')}
+                        aria-disabled={result.page <= 1}
+                        className={
+                          result.page <= 1
+                            ? 'pointer-events-none opacity-50'
+                            : undefined
+                        }
+                        onClick={(event) => {
+                          event.preventDefault()
+                          if (result.page > 1) setPage(result.page - 1)
+                        }}
+                      />
+                    </PaginationItem>
+                    {visiblePages.map((visiblePage) =>
+                      typeof visiblePage !== 'number' ? (
+                        <PaginationItem key={visiblePage}>
+                          <PaginationEllipsis />
+                        </PaginationItem>
+                      ) : (
+                        <PaginationItem key={visiblePage}>
+                          <PaginationLink
+                            href='#'
+                            isActive={visiblePage === result.page}
+                            aria-label={t('Go to page {{page}}', {
+                              page: visiblePage,
+                            })}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              setPage(visiblePage)
+                            }}
+                          >
+                            {visiblePage}
+                          </PaginationLink>
+                        </PaginationItem>
+                      )
+                    )}
+                    <PaginationItem>
+                      <PaginationNext
+                        href='#'
+                        text={t('Next')}
+                        aria-label={t('Go to next page')}
+                        aria-disabled={result.page >= totalPages}
+                        className={
+                          result.page >= totalPages
+                            ? 'pointer-events-none opacity-50'
+                            : undefined
+                        }
+                        onClick={(event) => {
+                          event.preventDefault()
+                          if (result.page < totalPages) setPage(result.page + 1)
+                        }}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
             </div>
           </CardFooter>
         )}
@@ -482,6 +515,8 @@ export function CustomerStatementsListView(props: CustomerStatementsListProps) {
 
 function CustomerStatementListRow(props: {
   item: CustomerStatementListItem
+  recordedOriginalAmounts?: boolean
+  showFunds: boolean
   onSelect: () => void
 }) {
   const { t } = useTranslation()
@@ -506,40 +541,56 @@ function CustomerStatementListRow(props: {
         {formatInteger(item.usage.requests)}
       </TableCell>
       <TableCell className='text-right'>
-        {item.money_usd
-          ? formatStatementUSD(item.money_usd.original)
-          : formatCustomerStatementQuota(item.original_quota)}
+        {formatRecordedStatementMoney(
+          props.recordedOriginalAmounts,
+          item.original_quota,
+          item.money_usd?.original,
+          t('Not recorded')
+        )}
       </TableCell>
       <TableCell className='text-success text-right'>
-        {item.money_usd
-          ? formatStatementUSD(item.money_usd.discount)
-          : formatCustomerStatementQuota(item.discount_quota)}
+        {formatRecordedStatementMoney(
+          props.recordedOriginalAmounts,
+          item.discount_quota,
+          item.money_usd?.discount,
+          t('Not recorded')
+        )}
       </TableCell>
-      <TableCell className='text-right font-medium'>
+      <TableCell className='text-right font-semibold tabular-nums'>
         {item.money_usd
           ? formatStatementUSD(item.money_usd.net)
           : formatCustomerStatementQuota(item.usage.net_quota)}
       </TableCell>
-      <TableCell className='text-muted-foreground border-l text-right'>
-        {item.money_usd
-          ? formatStatementUSD(item.money_usd.gross)
-          : formatCustomerStatementQuota(item.usage.gross_quota)}
-      </TableCell>
-      <TableCell className='text-muted-foreground text-right'>
-        {item.money_usd
-          ? formatStatementUSD(item.money_usd.refund)
-          : formatCustomerStatementQuota(item.usage.refund_quota)}
-      </TableCell>
+      {props.showFunds && (
+        <>
+          <TableCell className='text-muted-foreground border-l text-right'>
+            {item.money_usd
+              ? formatStatementUSD(item.money_usd.gross)
+              : formatCustomerStatementQuota(item.usage.gross_quota)}
+          </TableCell>
+          <TableCell className='text-muted-foreground text-right'>
+            {item.money_usd
+              ? formatStatementUSD(item.money_usd.refund)
+              : formatCustomerStatementQuota(item.usage.refund_quota)}
+          </TableCell>
+        </>
+      )}
       <TableCell>
         <BillingQualityNotice
           quality={item.data_quality}
-          estimateAvailable={
-            item.original_quota != null && item.discount_quota != null
+          recordedAmounts
+          discloseReasons
+          rowDetails={
+            item.last_activity_at > 0 ? (
+              <p>
+                {t('Last activity')} ·{' '}
+                {formatTimestampToDate(item.last_activity_at)}
+              </p>
+            ) : null
           }
           compact
         />
       </TableCell>
-      <TableCell>{formatTimestampToDate(item.last_activity_at)}</TableCell>
       <TableCell className='text-right'>
         <Button variant='link' size='xs' onClick={props.onSelect}>
           {t('View statement')}
@@ -563,8 +614,12 @@ function SortableHead(props: {
   align?: 'left' | 'right'
 }) {
   const active = props.activeSort === props.sortKey
+  const ariaSort = props.sortOrder === 'asc' ? 'ascending' : 'descending'
   return (
-    <TableHead className={props.align === 'right' ? 'text-right' : undefined}>
+    <TableHead
+      aria-sort={active ? ariaSort : undefined}
+      className={props.align === 'right' ? 'text-right' : undefined}
+    >
       <Button
         variant='ghost'
         size='xs'
@@ -590,10 +645,10 @@ function ListMetric(props: {
   valueClassName?: string
 }) {
   return (
-    <div className='space-y-1 py-1'>
+    <div className='flex items-baseline gap-1.5'>
       <div className='text-muted-foreground text-xs'>{props.label}</div>
       <div
-        className={`text-xl font-medium tabular-nums ${props.valueClassName ?? ''}`}
+        className={`text-sm font-semibold tabular-nums ${props.valueClassName ?? ''}`}
       >
         {props.value}
       </div>
@@ -643,6 +698,18 @@ function customerStatementPageItems(
     'ellipsis-trailing',
     totalPages,
   ]
+}
+
+function formatRecordedStatementMoney(
+  recorded: boolean | undefined,
+  quota: number | undefined,
+  usd: string | null | undefined,
+  missing: string
+) {
+  if (!recorded) return missing
+  return usd === undefined
+    ? formatCustomerStatementQuota(quota)
+    : formatStatementUSD(usd)
 }
 
 function formatStatementUSD(value: string | null) {

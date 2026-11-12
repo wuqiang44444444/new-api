@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -29,7 +30,7 @@ func TestBillingStatementLogAPIUsesAuthenticatedCustomerAndExactZeroKey(t *testi
 	})
 	model.DB, model.LOG_DB = db, db
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
-	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.Channel{}))
+	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.Channel{}, &model.User{}, &model.SystemTask{}, &model.SystemTaskLock{}, &model.Task{}, &model.TaskBillingDelivery{}, &model.ProviderChannelBillingDiscount{}, &model.ProviderChannelBillingConfig{}, &model.ProviderURLGroupDisplayName{}))
 	logs := []model.Log{
 		{UserId: 1, Quota: 100, TokenName: "playground-default"},
 		{UserId: 1, Quota: 30, Type: model.LogTypeRefund},
@@ -46,6 +47,11 @@ func TestBillingStatementLogAPIUsesAuthenticatedCustomerAndExactZeroKey(t *testi
 		}
 	}
 	require.NoError(t, db.Create(&logs).Error)
+	require.NoError(t, model.MigrateDailyReports(db))
+	require.NoError(t, db.Create(&model.SystemTaskLock{Type: model.UsageReportTaskType, TaskID: "fixture", LockedBy: "runner", LockedUntil: common.GetTimestamp() + 60}).Error)
+	require.NoError(t, model.BuildBillingReportDay(context.Background(), 1788192000, "fixture", "runner", nil, nil))
+	// Once a generation is published the console remains usable without the raw source.
+	require.NoError(t, db.Where("id > 0").Delete(&model.Log{}).Error)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(func(c *gin.Context) { c.Set("id", 1); c.Set("role", common.RoleRootUser) })

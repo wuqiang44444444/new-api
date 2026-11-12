@@ -24,7 +24,7 @@ func scanBillingStatementRefundReferences(ctx context.Context, userID, tokenID i
 	for _, id := range ids {
 		counts[id] = 0
 	}
-	query := LOG_DB.WithContext(ctx).Model(&Log{}).
+	query := usageReportLogDB(ctx).WithContext(ctx).Model(&Log{}).
 		Where("user_id = ? AND type = ? AND token_id = ?", userID, LogTypeRefund, tokenID)
 	var upperIDs []int64
 	if err := query.Order("id desc").Limit(1).Pluck("id", &upperIDs).Error; err != nil {
@@ -41,7 +41,7 @@ func scanBillingStatementRefundReferences(ctx context.Context, userID, tokenID i
 		}
 		// Start a fresh query so the upper-bound ORDER/LIMIT cannot leak into
 		// forward pagination (GORM chain methods share their statement).
-		if err := LOG_DB.WithContext(ctx).Model(&Log{}).Select("id, other").
+		if err := usageReportLogDB(ctx).WithContext(ctx).Model(&Log{}).Select("id, other").
 			Where("user_id = ? AND type = ? AND token_id = ? AND id > ? AND id <= ?", userID, LogTypeRefund, tokenID, cursor, upperIDs[0]).
 			Order("id asc").Limit(500).Scan(&batch).Error; err != nil {
 			return nil, err

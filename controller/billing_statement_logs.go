@@ -62,6 +62,17 @@ func getBillingStatementLogs(c *gin.Context, admin bool) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid pagination"})
 		return
 	}
+	filter.GroupFunds = c.Query("group_funds") == "true"
+	filter.FundGroup = c.Query("fund_group")
+	if filter.FundGroup != "" && (len(filter.FundGroup) != 75 || filter.GroupFunds) {
+		common.ApiErrorMsg(c, "Billing detail grouping is unavailable for this query")
+		return
+	}
+	cancelReport, ok := bindBillingReport(c, period)
+	if !ok {
+		return
+	}
+	defer cancelReport()
 	result, err := model.GetBillingStatementLogs(c.Request.Context(), filter, page.GetPage(), page.GetPageSize(), role)
 	if err != nil {
 		common.ApiError(c, err)

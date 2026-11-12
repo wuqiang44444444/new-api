@@ -15,6 +15,7 @@ import (
 func CreateAdminUpstreamExport(c *gin.Context) {
 	var request struct {
 		customerExportHttpRequest
+		AllChannels           bool   `json:"all_channels"`
 		EvidenceFilter        string `json:"evidence_filter"`
 		URLKey                string `json:"url_key"`
 		ProviderModelFallback *bool  `json:"provider_model_fallback"`
@@ -39,7 +40,7 @@ func CreateAdminUpstreamExport(c *gin.Context) {
 		return
 	}
 	request.URLKey = strings.TrimSpace(request.URLKey)
-	if request.URLKey != "" {
+	if request.URLKey != "" && (request.ReportVersion == "" || len(request.URLKey) > 2048 || request.ChannelId == nil || *request.ChannelId <= 0) {
 		common.ApiErrorMsg(c, "use channel_id instead of url_key")
 		return
 	}
@@ -51,11 +52,11 @@ func CreateAdminUpstreamExport(c *gin.Context) {
 	if request.ChannelId != nil && *request.ChannelId > 0 {
 		ids = []int{*request.ChannelId}
 	}
-	if len(ids) == 0 && (request.ChannelId != nil || request.EvidenceFilter == "") {
+	if len(ids) == 0 && (request.ChannelId != nil || (request.EvidenceFilter == "" && !request.AllChannels)) {
 		common.ApiErrorMsg(c, "upstream details require a channel or evidence filter")
 		return
 	}
-	job, err := service.SubmitUpstreamExportJob(c.Request.Context(), c.GetInt("id"), service.CustomerExportRequest{JobType: request.JobType, ChannelId: request.ChannelId, UpstreamEvidenceFilter: request.EvidenceFilter, StartTimestamp: request.StartTimestamp, EndTimestamp: request.EndTimestamp, RequestId: strings.TrimSpace(request.RequestId), UpstreamRequestId: strings.TrimSpace(request.UpstreamRequestId), ModelName: request.ModelName, ProviderModelFallback: request.ProviderModelFallback, BillingMode: request.BillingMode, Language: request.Language}, ids, "")
+	job, err := service.SubmitUpstreamExportJob(c.Request.Context(), c.GetInt("id"), service.CustomerExportRequest{ReportVersion: request.ReportVersion, JobType: request.JobType, ChannelId: request.ChannelId, UpstreamEvidenceFilter: request.EvidenceFilter, UpstreamAllChannels: request.AllChannels, StartTimestamp: request.StartTimestamp, EndTimestamp: request.EndTimestamp, RequestId: strings.TrimSpace(request.RequestId), UpstreamRequestId: strings.TrimSpace(request.UpstreamRequestId), ModelName: request.ModelName, ProviderModelFallback: request.ProviderModelFallback, BillingMode: request.BillingMode, Language: request.Language}, ids, request.URLKey)
 	if err != nil {
 		respondCustomerExportError(c, err)
 		return

@@ -173,8 +173,8 @@ func respondBillingStatementVersionError(c *gin.Context, err error) {
 		c.JSON(http.StatusForbidden, gin.H{"message": service.ErrBillingStatementVersionForbidden.Error()})
 	case errors.Is(err, model.ErrCustomerExportQueueBusy), errors.Is(err, model.ErrCustomerExportUserBusy):
 		c.JSON(http.StatusTooManyRequests, gin.H{"message": "export queue is full; try again later"})
-	case errors.Is(err, model.ErrBillingStatementVersionDisabled):
-		c.JSON(http.StatusForbidden, gin.H{"message": "billing statement version confirmation is disabled"})
+	case errors.Is(err, model.ErrBillingStatementMaintenanceActive):
+		c.JSON(http.StatusForbidden, gin.H{"message": model.ErrBillingStatementMaintenanceActive.Error()})
 	case errors.Is(err, model.ErrBillingStatementVersionTopology):
 		c.JSON(http.StatusConflict, gin.H{"message": "billing statement version confirmation requires the same-database topology"})
 	case errors.Is(err, model.ErrBillingStatementVersionConflict):

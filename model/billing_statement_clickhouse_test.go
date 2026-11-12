@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"net/url"
 	"os"
 	"testing"
@@ -20,6 +21,8 @@ func TestGetUserBillingStatementWithClickHouse(t *testing.T) {
 	parsedDSN, err := url.Parse(dsn)
 	require.NoError(t, err)
 	require.Equal(t, "/billing_statement_test", parsedDSN.Path, "integration test must use an isolated billing_statement_test database")
+	main := setupBillingReconciliationTestDB(t)
+	require.NoError(t, main.Create(&Channel{Id: 31, Name: "test channel", BaseURL: common.GetPointer("https://billing.example")}).Error)
 
 	db, err := gorm.Open(clickhouse.Open(dsn), newGormConfig(false))
 	require.NoError(t, err)
@@ -40,9 +43,9 @@ func TestGetUserBillingStatementWithClickHouse(t *testing.T) {
 	require.NoError(t, migrateClickHouseLogDB())
 
 	logs := []Log{
-		{Id: 1, UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "task-key", ModelName: "model-a", Quota: 1000, UseTime: 2, Other: `{"is_task":true}`},
-		{Id: 2, UserId: 7, CreatedAt: 1200, Type: LogTypeRefund, TokenId: 11, TokenName: "task-key", ModelName: "model-a", CompletionTokens: 250, Quota: 300, Other: `{"task_id":"refund-task"}`},
-		{Id: 3, UserId: 7, CreatedAt: 1250, Type: LogTypeConsume, TokenId: 11, TokenName: "task-key", ModelName: "model-a", CompletionTokens: 50, Quota: 200, Other: `{"task_id":"supplement-task"}`},
+		{Id: 1, UserId: 7, ChannelId: 31, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "task-key", ModelName: "model-a", Quota: 1000, UseTime: 2, Other: `{"is_task":true}`},
+		{Id: 2, UserId: 7, ChannelId: 31, CreatedAt: 1200, Type: LogTypeRefund, TokenId: 11, TokenName: "task-key", ModelName: "model-a", CompletionTokens: 250, Quota: 300, Other: `{"task_id":"refund-task"}`},
+		{Id: 3, UserId: 7, ChannelId: 31, CreatedAt: 1250, Type: LogTypeConsume, TokenId: 11, TokenName: "task-key", ModelName: "model-a", CompletionTokens: 50, Quota: 200, Other: `{"task_id":"supplement-task"}`},
 	}
 	require.NoError(t, db.Create(&logs).Error)
 
@@ -66,4 +69,13 @@ func TestGetUserBillingStatementWithClickHouse(t *testing.T) {
 	assert.EqualValues(t, 1200, breakdownItems[0].GrossQuota)
 	assert.EqualValues(t, 200, breakdownItems[0].UnallocatedAdjustmentQuota)
 	assert.EqualValues(t, summary.GrossQuota, breakdownSummary.GrossQuota)
+
+	details, err := GetUpstreamBillingDetails(context.Background(), UpstreamBillingDetailFilter{Start: 1000, End: 1300, ChannelIds: []int{31}}, 1, 10, false)
+	require.NoError(t, err)
+	require.Len(t, details.Items, 3)
+	assert.Equal(t, "model-a", details.Items[0].ProviderModel)
+	upstream, err := GetUpstreamSummaryPage(context.Background(), 1000, 1300, 1000, UpstreamSummaryPageFilter{Level: "channels", Page: 1, PageSize: 10, GroupByURL: true})
+	require.NoError(t, err)
+	require.Len(t, upstream.URLGroups, 1)
+	assert.Equal(t, []int{31}, upstream.URLGroups[0].ChannelIds)
 }

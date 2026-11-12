@@ -136,6 +136,10 @@ func GetProviderBillingURLSummary(startTimestamp int64, endTimestamp int64, peri
 }
 
 func getProviderBillingURLSummary(ctx context.Context, startTimestamp, endTimestamp, periodStart int64, urlKey string, channelID int) (ProviderURLSummary, error) {
+	if report := BillingReportFromContext(ctx); report != nil {
+		return report.upstreamSummary(ctx, startTimestamp, endTimestamp, urlKey, channelID)
+	}
+
 	summary := ProviderURLSummary{Groups: make([]ProviderURLGroupSummary, 0), DataQuality: &BillingReconciliationDataQuality{Status: "complete"}}
 	records, err := loadProviderChannelBillingDiscounts(ctx, periodStart, nil)
 	if err != nil {
@@ -189,6 +193,11 @@ func getProviderBillingURLSummary(ctx context.Context, startTimestamp, endTimest
 		return summary, err
 	}
 
+	return assembleProviderBillingURLSummary(items, channels, discounts, names, urlKey, true)
+}
+
+func assembleProviderBillingURLSummary(items map[providerBillingSummaryKey]*ProviderBillingPlatformSummary, channels map[int]Channel, discounts map[int]ProviderChannelBillingDiscount, names map[string]string, urlKey string, includeModels bool) (ProviderURLSummary, error) {
+	summary := ProviderURLSummary{Groups: []ProviderURLGroupSummary{}, DataQuality: &BillingReconciliationDataQuality{Status: "complete"}}
 	type modelKey struct {
 		model    string
 		mode     string
@@ -201,6 +210,7 @@ func getProviderBillingURLSummary(ctx context.Context, startTimestamp, endTimest
 	type channelBuild struct {
 		group           ProviderURLChannelGroupSummary
 		models          map[modelKey]*ProviderURLChannelModelSummary
+		modelIdentities map[modelIdentity]struct{}
 		original        decimal.Decimal
 		reference       decimal.Decimal
 		allKnown        bool
@@ -219,11 +229,13 @@ func getProviderBillingURLSummary(ctx context.Context, startTimestamp, endTimest
 	for _, item := range items {
 		finalizeBillingReconciliationQuality(&item.DataQuality)
 		finalizeProviderBillingItemAmount(item)
-		item.CustomerModels = make([]string, 0, len(item.customerModels))
-		for customerModel := range item.customerModels {
-			item.CustomerModels = append(item.CustomerModels, customerModel)
+		if includeModels {
+			item.CustomerModels = make([]string, 0, len(item.customerModels))
+			for customerModel := range item.customerModels {
+				item.CustomerModels = append(item.CustomerModels, customerModel)
+			}
+			sort.Strings(item.CustomerModels)
 		}
-		sort.Strings(item.CustomerModels)
 		name := strings.TrimSpace(channels[item.ChannelId].Name)
 		if name == "" {
 			name = fmt.Sprintf("Channel #%d", item.ChannelId)
@@ -265,7 +277,7 @@ func getProviderBillingURLSummary(ctx context.Context, startTimestamp, endTimest
 				group: ProviderURLChannelGroupSummary{
 					ChannelId: itemKey.channelId, ChannelName: item.ChannelName,
 				},
-				models:   make(map[modelKey]*ProviderURLChannelModelSummary),
+				models: make(map[modelKey]*ProviderURLChannelModelSummary), modelIdentities: make(map[modelIdentity]struct{}),
 				allKnown: true, usageOnly: true,
 			}
 			build.channels[itemKey.channelId] = cb
@@ -273,7 +285,7 @@ func getProviderBillingURLSummary(ctx context.Context, startTimestamp, endTimest
 
 		mk := modelKey{model: itemKey.model, mode: itemKey.mode, fallback: itemKey.fallback}
 		leaf, ok := cb.models[mk]
-		if !ok {
+		if includeModels && !ok {
 			leaf = &ProviderURLChannelModelSummary{
 				UsageOnly:             item.UsageOnly,
 				ProviderModel:         item.ProviderModel,
@@ -302,7 +314,9 @@ func getProviderBillingURLSummary(ctx context.Context, startTimestamp, endTimest
 			}
 			cb.models[mk] = leaf
 		}
-		build.modelIdentities[modelIdentity{name: itemKey.model, fallback: itemKey.fallback}] = struct{}{}
+		identity := modelIdentity{name: itemKey.model, fallback: itemKey.fallback}
+		build.modelIdentities[identity] = struct{}{}
+		cb.modelIdentities[identity] = struct{}{}
 		accumulateProviderBillingUsage(&cb.group.Usage, item.Usage)
 		accumulateBillingReconciliationQuality(&cb.group.DataQuality, item.DataQuality)
 		accumulateProviderBillingUsage(&build.group.Usage, item.Usage)
@@ -333,6 +347,7 @@ func getProviderBillingURLSummary(ctx context.Context, startTimestamp, endTimest
 		groupReferenceKnown := true
 		for _, channelId := range build.group.ChannelIds {
 			cb := build.channels[channelId]
+			cb.group.ModelCount = int64(len(cb.modelIdentities))
 			for _, leaf := range cb.models {
 				finalizeBillingReconciliationQuality(&leaf.DataQuality)
 				cb.group.Models = append(cb.group.Models, *leaf)
@@ -490,6 +505,10 @@ func normalizeBillingURLGroupKey(rawURL string) string {
 }
 
 func getBillingURLChannelsById(channelIds []int) (map[int]Channel, error) {
+	return fetchBillingURLChannelsById(DB, channelIds)
+}
+
+func fetchBillingURLChannelsById(db *gorm.DB, channelIds []int) (map[int]Channel, error) {
 	channels := make(map[int]Channel, len(channelIds))
 	if len(channelIds) == 0 {
 		return channels, nil
@@ -502,7 +521,7 @@ func getBillingURLChannelsById(channelIds []int) (map[int]Channel, error) {
 	}
 	for offset := 0; offset < len(channelIds); offset += 500 {
 		ids := channelIds[offset:min(offset+500, len(channelIds))]
-		if err := DB.Model(&Channel{}).Select("id, name, base_url, type").Where("id IN ?", ids).Limit(500).Find(&rows).Error; err != nil {
+		if err := db.Model(&Channel{}).Select("id, name, base_url, type").Where("id IN ?", ids).Limit(500).Find(&rows).Error; err != nil {
 			return nil, err
 		}
 		for _, row := range rows {
@@ -516,97 +535,18 @@ func getBillingURLChannelsById(channelIds []int) (map[int]Channel, error) {
 // with details and exports, while provider usage includes only consume rows and
 // provable task settlement usage. Keys retain provider identity and billing mode.
 func scanProviderBillingURLPlatformItems(ctx context.Context, startTimestamp, endTimestamp int64, discounts map[int]ProviderChannelBillingDiscount, channelIDs []int, policy BillingStatementReadPolicy) (map[providerBillingSummaryKey]*ProviderBillingPlatformSummary, error) {
-	platform := make(map[providerBillingSummaryKey]*ProviderBillingPlatformSummary)
-	taskCache := newUpstreamTaskCacheTracker()
-	coverage := upstreamEvidenceCoverage{}
-	err := scanUpstreamBillingFacts(ctx, UpstreamBillingDetailFilter{Start: startTimestamp, End: endTimestamp, ChannelIds: channelIDs}, policy, func(_ Log, log billingReconciliationLog, parsed parsedBillingReconciliationLog) error {
-		providerModel := strings.TrimSpace(parsed.providerModel)
-		fallback := false
-		if providerModel == "" {
-			providerModel = log.ModelName
-			fallback = true
-		}
-		itemKey := providerBillingSummaryKey{channelId: log.ChannelId, model: providerModel, mode: parsed.billingMode, fallback: fallback}
-		item, ok := platform[itemKey]
-		if !ok {
-			if policy.MaxGroups > 0 && len(platform) >= policy.MaxGroups {
-				return fmt.Errorf("upstream summary group limit exceeded")
-			}
-			item = &ProviderBillingPlatformSummary{
-				ChannelId:             log.ChannelId,
-				ProviderModel:         providerModel,
-				ProviderModelFallback: fallback,
-				BillingMode:           parsed.billingMode,
-				DetailFilter: BillingReconciliationDetailFilter{
-					StartTimestamp: startTimestamp,
-					EndTimestamp:   endTimestamp,
-					ChannelId:      log.ChannelId,
-					ModelName:      log.ModelName,
-					BillingMode:    parsed.billingMode,
-				},
-				detailModelName:  log.ModelName,
-				customerModels:   make(map[string]struct{}),
-				originalComplete: true,
-			}
-			platform[itemKey] = item
-		} else if item.detailModelName != log.ModelName {
-			item.DetailFilter.ModelName = ""
-		}
-		if log.ModelName != "" {
-			item.customerModels[log.ModelName] = struct{}{}
-		}
-		if log.Type != LogTypeRefund || isProviderTaskUsageAdjustment(log) {
-			secondsMissing, secondsUnitKnown := accumulateProviderBillingLog(&item.Usage, log, parsed)
-			if secondsMissing {
-				quality := ensureBillingReconciliationQuality(&item.DataQuality)
-				quality.SecondsUnavailableRows++
-				if secondsUnitKnown {
-					quality.SecondsValueMissingRows++
-				}
-			}
-			// Cache quality measures final metering rows: creation pre-holds are
-			// estimates and one task's rows dedupe to a single missing count.
-			if !upstreamTaskCreatePreHold(parsed) {
-				if parsed.taskID != "" {
-					taskCache.observe(itemKey, log.UserId, parsed)
-				} else {
-					accumulateUpstreamCacheQuality(&item.DataQuality, parsed)
-				}
-			}
-
-		}
-		discount, _ := providerChannelBillingDiscountFor(discounts, 0, log.ChannelId)
-		accumulateProviderBillingItemAmount(item, log, parsed, discount.Discount)
-		if fallback {
-			ensureBillingReconciliationQuality(&item.DataQuality).ProviderModelFallbackRows++
-		}
-		if parsed.billingMode == BillingReconciliationModeUnknown {
-			ensureBillingReconciliationQuality(&item.DataQuality).UnknownBillingModeRequests++
-		}
-		if parsed.unavailable {
-			ensureBillingReconciliationQuality(&item.DataQuality).UnavailableRequests++
-		}
-		coverage.observe(itemKey, log, parsed)
-		if len(coverage.rows) >= upstreamDetailFlushSize {
-			return coverage.flush(ctx, platform)
-		}
-		return nil
+	build := newUpstreamBillingAccumulator(startTimestamp, endTimestamp, discounts, policy.MaxGroups)
+	err := scanUpstreamBillingFacts(ctx, UpstreamBillingDetailFilter{Start: startTimestamp, End: endTimestamp, ChannelIds: channelIDs}, policy, func(row Log, log billingReconciliationLog, parsed parsedBillingReconciliationLog) error {
+		return build.observe(ctx, row, log, parsed)
 	})
 	if err == nil {
-		err = coverage.flush(ctx, platform)
+		err = build.coverage.flush(ctx, build.items)
 	}
-	taskCache.flushInto(platform)
-
-	return platform, err
+	build.taskCache.flushInto(build.items)
+	return build.items, err
 }
 
-// accumulateProviderBillingItemAmount restores the official-price amount of
-// one upstream usage row using the customer statement algorithm: settled
-// quota divided by the frozen group ratio and contract discount, refunds
-// negative. Native channel test rows carry usage but no customer settlement,
-// so they stay in the usage view, never enter the amount, and are counted
-// separately. Rows whose frozen price evidence is incomplete leave the amount
-// unknown instead of being dropped or zero-filled.
+// Accumulate the same signed per-record basis used by upstream detail.
 func accumulateProviderBillingItemAmount(item *ProviderBillingPlatformSummary, log billingReconciliationLog, parsed parsedBillingReconciliationLog, coefficient decimal.Decimal) {
 	if parsed.isChannelTest && log.Type == LogTypeConsume {
 		accumulateUpstreamTestAmount(item, log, parsed, coefficient)
@@ -616,17 +556,19 @@ func accumulateProviderBillingItemAmount(item *ProviderBillingPlatformSummary, l
 		return
 	}
 	item.settlementRows++
-	quota := max(int64(log.Quota), int64(0))
-	if quota == 0 {
+	original, estimated, reasons := upstreamOriginalQuota(log, parsed)
+	if log.Quota == 0 && original.IsZero() && len(reasons) == 0 && parsed.recordedOriginalQuota == nil {
 		return
 	}
 	item.moneyRows++
-	original, reasons := upstreamOriginalQuota(log, parsed)
 	if len(reasons) > 0 {
 		item.EstimateReasons = mergeBillingEstimateReasons(item.EstimateReasons, reasons...)
 		item.originalComplete = false
 		accumulateBillingEstimateReasonQuality(ensureBillingReconciliationQuality(&item.DataQuality), reasons)
 		return
+	}
+	if estimated {
+		ensureBillingReconciliationQuality(&item.DataQuality).HasEstimatedOriginal = true
 	}
 	item.originalQuota = item.originalQuota.Add(original)
 	item.referenceQuota = item.referenceQuota.Add(UpstreamReferenceQuota(original, coefficient))
@@ -662,7 +604,12 @@ func providerChannelDiscountProjection(record ProviderChannelBillingDiscount) Pr
 		source = "previous_period"
 		sourcePeriod = record.CopiedFromPeriod
 	}
-	return ProviderBillingDiscountProjection{Value: record.Discount, Version: record.Version, Source: source, SourcePeriod: sourcePeriod}
+	projection := ProviderBillingDiscountProjection{Value: record.Discount, Version: record.Version, Source: source, SourcePeriod: sourcePeriod}
+	if len(record.Changes) > 0 {
+		projection.PeriodStart = record.PeriodStart
+		projection.Changes = record.Changes
+	}
+	return projection
 }
 
 // GetChannelIdsByNormalizedBaseURL resolves a URL grouping key back to the

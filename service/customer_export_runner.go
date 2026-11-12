@@ -94,6 +94,12 @@ func SubmitCustomerExportJob(initiatorId int, targetUserId int, request Customer
 	}
 	revisionCtx, cancel := context.WithTimeout(context.Background(), customerExportBatchTimeout)
 	defer cancel()
+	if request.JobType == model.CustomerExportJobTypeStatementSummary || request.JobType == model.CustomerExportJobTypeStatementDetails {
+		_, err = freezeBillingExportReport(revisionCtx, &filters, request.ReportVersion)
+		if err != nil {
+			return nil, err
+		}
+	}
 	sourceVersion, err := model.CustomerStatementExportSourceVersion(revisionCtx, targetUserId, request.JobType, filters)
 	if err != nil {
 		return nil, err
@@ -112,7 +118,9 @@ func SubmitCustomerExportJob(initiatorId int, targetUserId int, request Customer
 
 // CustomerExportRequest 是控制台提交的原始范围；规范化后冻结进任务行。
 type CustomerExportRequest struct {
+	ReportVersion          string
 	UpstreamEvidenceFilter string
+	UpstreamAllChannels    bool
 	ProviderModelFallback  *bool
 	JobType                string
 	StartTimestamp         int64
@@ -170,7 +178,7 @@ func normalizeCustomerExportLanguage(language string) string {
 
 func normalizeCustomerExportFilters(jobType string, request CustomerExportRequest) (model.CustomerExportFilters, error) {
 	filters := model.CustomerExportFilters{
-		FieldVersion: customerExportFieldVersion,
+		FieldVersion: customerExportFormatVersion(jobType),
 		QuotaPerUnit: common.QuotaPerUnit, Currency: operation_setting.GetQuotaDisplayType(),
 		CurrencyRate:      operation_setting.GetUsdToCurrencyRate(operation_setting.USDExchangeRate),
 		StartTimestamp:    request.StartTimestamp,
@@ -246,10 +254,7 @@ func normalizeCustomerExportFilters(jobType string, request CustomerExportReques
 	default:
 		return filters, errors.New("invalid export job type")
 	}
-	if filters.BillingMode != "" && filters.BillingMode != model.BillingReconciliationModeToken &&
-		filters.BillingMode != model.BillingReconciliationModePerCall &&
-		filters.BillingMode != model.BillingReconciliationModePerSecond &&
-		filters.BillingMode != model.BillingReconciliationModeUnknown {
+	if filters.BillingMode != "" && !model.ValidBillingReconciliationMode(filters.BillingMode) {
 		return filters, errors.New("invalid billing mode filter")
 	}
 	if filters.ModelName != "" && len(filters.ModelName) > 255 {
@@ -368,22 +373,28 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 	}
 	ctx, stop := monitorCustomerExport(ctx, job, executor)
 	filters, err := job.DecodeFilters()
-	expectedVersion := customerExportFieldVersion
+	formatMatches := filters.FieldVersion == customerExportFormatVersion(job.JobType)
 	if job.JobType == model.CustomerExportJobTypeUsageSummary {
-		expectedVersion = usageAnalyticsExportFieldVersion
+		formatMatches = formatMatches || filters.FieldVersion == legacyUsageAnalyticsExportFieldVersion ||
+			(filters.UsageView == usageAnalyticsExportTypeUpstream && filters.FieldVersion == upstreamUsageKnownSubtotalFieldVersion)
 	}
-	if err == nil && filters.FieldVersion != expectedVersion {
+	if err == nil && (!formatMatches || (isDailyBillingExport(job.JobType) && filters.BillingReportVersion == "")) {
 		err = errCustomerExportFormatChanged
 	}
 	var sourceVersion string
 	if err == nil {
 		sourceVersion, err = model.CustomerStatementExportSourceVersion(ctx, job.TargetUserId, job.JobType, filters)
 	}
+	if err == nil && filters.BillingReportVersion != "" {
+		ctx, _, err = model.ResolveBillingReport(ctx, filters.StartTimestamp, filters.EndTimestamp-1, filters.BillingReportVersion)
+	}
 	var artifact *model.CustomerExportArtifact
 	workDir := filepath.Join(customerExportTemporaryRoot(), job.JobID)
 	defer os.RemoveAll(workDir)
 	if err == nil {
 		switch job.JobType {
+		case model.CustomerExportJobTypeCustomerStatements:
+			artifact, err = executeCustomerStatementsExport(ctx, job, filters, workDir)
 		case model.CustomerExportJobTypeUpstreamSummary:
 			artifact, err = executeUpstreamSummaryExport(ctx, job, filters, workDir, pressure)
 		case model.CustomerExportJobTypeUpstreamDetails:
@@ -486,6 +497,7 @@ func executeCustomerExportLogScan(ctx context.Context, job *model.CustomerExport
 	statementScope := job.JobType == model.CustomerExportJobTypeStatementDetails
 	if statementScope {
 		writer.useStatementDetails(filters.Language)
+		writer.setBillingCoverage(filters)
 		scope.PeriodEnd = filters.EndTimestamp - 1
 	}
 	batchParams := model.CustomerExportBatchParams{
@@ -503,16 +515,19 @@ func executeCustomerExportLogScan(ctx context.Context, job *model.CustomerExport
 	if statementScope && len(batchParams.LogTypes) == 0 {
 		batchParams.LogTypes = []int{model.LogTypeConsume, model.LogTypeRefund}
 	}
-	upperCtx, stopUpper := context.WithTimeout(ctx, customerExportBatchTimeout)
-	upper, upperErr := model.CustomerExportLogUpperBound(upperCtx)
-	stopUpper()
-	if upperErr != nil {
-		return nil, upperErr
+	published := statementScope && model.BillingReportFromContext(ctx) != nil
+	if !published {
+		upperCtx, stopUpper := context.WithTimeout(ctx, customerExportBatchTimeout)
+		upper, upperErr := model.CustomerExportLogUpperBound(upperCtx)
+		stopUpper()
+		if upperErr != nil {
+			return nil, upperErr
+		}
+		if upper == 0 {
+			return &model.CustomerExportArtifact{Files: []model.CustomerExportArtifactFile{}, GeneratedAt: scope.GeneratedAt}, nil
+		}
+		batchParams.UpperId = upper
 	}
-	if upper == 0 {
-		return &model.CustomerExportArtifact{Files: []model.CustomerExportArtifactFile{}, GeneratedAt: scope.GeneratedAt}, nil
-	}
-	batchParams.UpperId = upper
 	progress := model.CustomerExportProgress{}
 	var lastProgressWrite time.Time
 	deadline := time.Now().Add(customerExportJobBudget)
@@ -541,19 +556,30 @@ func executeCustomerExportLogScan(ctx context.Context, job *model.CustomerExport
 		}
 		batchStart := time.Now()
 		batchCtx, cancelBatch := context.WithTimeout(ctx, customerExportBatchTimeout)
-		rows, scanErr := model.NextCustomerExportLogBatch(batchCtx, withCustomerExportCursor(batchParams, cursor))
 		var exportRows []model.CustomerExportRow
-		var buildErr error
-		if scanErr == nil && len(rows) > 0 {
-			// 7.3.13: the batch context also bounds the serial Task-fact
-			// classification so auxiliary queries stay inside the budget.
-			modelFilter := filters.ModelName
-			if !statementScope {
-				modelFilter = "" // Native model filtering has already run in SQL.
+		var scanErr, buildErr error
+		var scanned int
+		if published {
+			exportRows, cursor, scanErr = model.ReadBillingReportCustomerExportBatch(batchCtx, job.TargetUserId, filters, cursor, batchParams.Limit)
+			scanned = len(exportRows)
+		} else {
+			rows, readErr := model.NextCustomerExportLogBatch(batchCtx, withCustomerExportCursor(batchParams, cursor))
+			scanErr = readErr
+			if scanErr == nil && len(rows) > 0 {
+				// 7.3.13: the batch context also bounds the serial Task-fact
+				// classification so auxiliary queries stay inside the budget.
+				modelFilter := filters.ModelName
+				if !statementScope {
+					modelFilter = "" // Native model filtering has already run in SQL.
+				}
+				exportRows, buildErr = model.BuildCustomerExportRows(batchCtx, rows, modelFilter, filters.BillingMode, func(log *model.Log, row *model.CustomerExportRow) {
+					attachCustomerExportBillingExplanation(log, row, filters.QuotaPerUnit)
+				}, statementScope)
 			}
-			exportRows, buildErr = model.BuildCustomerExportRows(batchCtx, rows, modelFilter, filters.BillingMode, func(log *model.Log, row *model.CustomerExportRow) {
-				attachCustomerExportBillingExplanation(log, row, filters.QuotaPerUnit)
-			})
+			scanned = len(rows)
+			if scanned > 0 {
+				cursor = int64(rows[scanned-1].Id)
+			}
 		}
 		cancelBatch()
 		if scanErr != nil {
@@ -568,7 +594,7 @@ func executeCustomerExportLogScan(ctx context.Context, job *model.CustomerExport
 			}
 			return nil, buildErr
 		}
-		if len(rows) == 0 {
+		if scanned == 0 {
 			break
 		}
 		for _, exportRow := range exportRows {
@@ -576,15 +602,14 @@ func executeCustomerExportLogScan(ctx context.Context, job *model.CustomerExport
 				return nil, err
 			}
 		}
-		progress.Scanned += int64(len(rows))
+		progress.Scanned += int64(scanned)
 		progress.Matched += int64(len(exportRows))
 		progress.Written = progress.Matched
 		progress.Files = int64(writer.shardIndex) + 1
-		if len(rows) < batchParams.Limit {
+		if scanned < batchParams.Limit {
 			break
 		}
-		cursor = int64(rows[len(rows)-1].Id)
-		if sleep := customerExportRateThrottle(len(rows), time.Since(batchStart)); sleep > 0 {
+		if sleep := customerExportRateThrottle(scanned, time.Since(batchStart)); sleep > 0 {
 			select {
 			case <-time.After(sleep):
 			case <-ctx.Done():
@@ -716,7 +741,8 @@ func executeCustomerExportSummary(ctx context.Context, job *model.CustomerExport
 		summaryCtx, job.TargetUserId, filters.StartTimestamp, filters.EndTimestamp-1, "api_key",
 		0, "", "",
 		model.BillingStatementReadPolicy{
-			BatchTimeout: customerExportBatchTimeout, MaxGroups: 10000,
+			RecordedAmountsOnly: true,
+			BatchTimeout:        customerExportBatchTimeout, MaxGroups: 10000,
 			BeforeBatch: customerExportSummaryGate(&customerExportPressureTracker{}, job, nil),
 		},
 	)
@@ -731,8 +757,9 @@ func executeCustomerExportSummary(ctx context.Context, job *model.CustomerExport
 		username = fmt.Sprintf("user-%d", job.TargetUserId)
 	}
 	scope := customerExportScopeColumns{
-		Language: filters.Language,
-		JobID:    job.JobID, ExportType: job.JobType,
+		ReportCoverage: filters.BillingReportCoverage,
+		Language:       filters.Language,
+		JobID:          job.JobID, ExportType: job.JobType,
 		PeriodStart: filters.StartTimestamp, PeriodEnd: filters.EndTimestamp - 1,
 		QuotaPerUnit: filters.QuotaPerUnit, Currency: filters.Currency, CurrencyRate: filters.CurrencyRate,
 		Timezone: filters.Timezone, CustomerId: job.TargetUserId, GeneratedAt: common.GetTimestamp(), CustomerName: username,
@@ -779,7 +806,8 @@ func writeCustomerExportSummaryCsv(workDir string, scope customerExportScopeColu
 		return nil, nil, 0, err
 	}
 	writer := csv.NewWriter(buffered)
-	if err := writer.Write(customerExportSummaryHeader(language)); err != nil {
+	coverageHeader, coverageCells := billingCoverageCSV(scope.ReportCoverage, language)
+	if err := writer.Write(append(customerExportSummaryHeader(language), coverageHeader...)); err != nil {
 		return nil, nil, 0, err
 	}
 	lineCount := int64(0)
@@ -788,7 +816,7 @@ func writeCustomerExportSummaryCsv(workDir string, scope customerExportScopeColu
 		for _, key := range customerExportSummaryColumnOrder {
 			record = append(record, row[key])
 		}
-		if writer.Write(record) == nil {
+		if writer.Write(append(record, coverageCells...)) == nil {
 			lineCount++
 		}
 	}
@@ -833,8 +861,7 @@ func writeCustomerExportSummaryCsv(workDir string, scope customerExportScopeColu
 			modelRow["api_key_name"] = exportCsvCellGuard(group.Name)
 			modelRow["model"] = exportCsvCellGuard(modelSummary.ModelName)
 			modelRow["billing_mode"] = customerStatementExportValue(language, "billing_mode", modelSummary.BillingMode)
-			writeAmounts(modelRow, modelSummary.Usage, modelSummary.OriginalQuota, model.BillingStatementEstimatedSavings(modelSummary.OriginalQuota, modelSummary.Usage.NetQuota))
-			modelRow["estimate_reasons"] = customerExportEstimateReasons(language, modelSummary.EstimateReasons)
+			writeAmounts(modelRow, modelSummary.Usage, modelSummary.OriginalQuota, modelSummary.DiscountQuota)
 			modelRow["data_quality"] = customerStatementExportValue(language, "quality_status", qualityLabel(modelSummary.DataQuality))
 			if modelSummary.DataQuality != nil && modelSummary.DataQuality.InputTokensUnavailableRequests > 0 {
 				modelRow["input_tokens"] = ""

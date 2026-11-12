@@ -37,6 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { BillingFundGroupTable } from '@/features/usage-logs/components/billing-fund-groups'
 import { LogDiscountCell } from '@/features/usage-logs/components/log-discount-cell'
 import type { LogOtherData } from '@/features/usage-logs/types'
 
@@ -68,6 +69,7 @@ type VersionLinesDrawerProps = {
 export function VersionLinesDrawer(props: VersionLinesDrawerProps) {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
+  const [fundGroup, setFundGroup] = useState<string>()
   const [filter, setFilter] = useState(props.initialFilter ?? {})
 
   const version = props.version
@@ -78,29 +80,22 @@ export function VersionLinesDrawer(props: VersionLinesDrawerProps) {
       version?.draft_public_id,
       page,
       filter,
+      fundGroup,
     ],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!version) {
         throw new Error('no version')
       }
+      const params = {
+        ...filter,
+        page,
+        page_size: PAGE_SIZE,
+        group_funds: !fundGroup,
+        fund_group: fundGroup,
+      }
       const response = props.isAdmin
-        ? await getAdminVersionLines(version.draft_public_id, {
-            page,
-            page_size: PAGE_SIZE,
-            ...(filter.channel_id != null
-              ? { channel_id: filter.channel_id }
-              : {}),
-            ...(filter.token_id != null ? { token_id: filter.token_id } : {}),
-            ...(filter.model_name ? { model_name: filter.model_name } : {}),
-            ...(filter.billing_mode
-              ? { billing_mode: filter.billing_mode }
-              : {}),
-          })
-        : await getSelfVersionLines(version.draft_public_id, {
-            page,
-            page_size: PAGE_SIZE,
-            ...filter,
-          })
+        ? await getAdminVersionLines(version.draft_public_id, params, signal)
+        : await getSelfVersionLines(version.draft_public_id, params, signal)
       if (!response.success || !response.data) {
         throw new Error(response.message || t('Unable to load version lines.'))
       }
@@ -119,6 +114,7 @@ export function VersionLinesDrawer(props: VersionLinesDrawerProps) {
         if (!open) {
           setPage(1)
           setFilter({})
+          setFundGroup(undefined)
         }
         props.onOpenChange(open)
       }}
@@ -143,6 +139,7 @@ export function VersionLinesDrawer(props: VersionLinesDrawerProps) {
                 size='xs'
                 onClick={() => {
                   setFilter({})
+                  setFundGroup(undefined)
                   setPage(1)
                 }}
               >
@@ -153,76 +150,108 @@ export function VersionLinesDrawer(props: VersionLinesDrawerProps) {
         </DrawerHeader>
         <div className='overflow-y-auto px-4 pb-4'>
           {linesQuery.isError && <p role='alert'>{linesQuery.error.message}</p>}
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('Time')}</TableHead>
-                <TableHead>{t('Type')}</TableHead>
-                <TableHead>{t('API Key')}</TableHead>
-                <TableHead>{t('Model')}</TableHead>
-                <TableHead>{t('Discount')}</TableHead>
-                <TableHead className='text-right'>{t('Input')}</TableHead>
-                <TableHead className='text-right'>{t('Output')}</TableHead>
-                <TableHead className='text-right'>{t('Net amount')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(linesQuery.data?.lines ?? []).map((line) => (
-                <TableRow key={line.id}>
-                  <TableCell className='whitespace-nowrap'>
-                    {new Date(line.created_at * 1000).toLocaleString()}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={line.log_type === 6 ? 'secondary' : 'outline'}
-                    >
-                      {line.log_type === 6 ? t('Refund') : t('Consume')}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {line.token_name ||
-                      t('API Key #{{id}}', { id: line.token_id })}
-                  </TableCell>
-                  <TableCell>
-                    {line.customer_model || t('Unknown model')}
-                  </TableCell>
-                  <TableCell>
-                    <LogDiscountCell
-                      t={t}
-                      other={{
-                        group_ratio: line.facts.group_ratio,
-                        contract_name: line.facts.contract_name,
-                        contract_discount: line.facts.contract_ratio,
-                        contract_applicable:
-                          line.facts.contract_applicable === 'unknown'
-                            ? undefined
-                            : line.facts.contract_applicable === 'yes',
-                      }}
-                    />
-                  </TableCell>
-                  <TableCell className='text-right tabular-nums'>
-                    {line.facts.input_tokens_unavailable
-                      ? t('Unknown')
-                      : line.input_tokens}
-                  </TableCell>
-                  <TableCell className='text-right tabular-nums'>
-                    {line.output_tokens}
-                  </TableCell>
-                  <TableCell className='text-right tabular-nums'>
-                    {formatVersionQuota(line.quota, version)}
-                    <FrozenExplanation line={line} />
-                  </TableCell>
-                </TableRow>
-              ))}
-              {linesQuery.isSuccess && total === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className='text-center'>
-                    {t('No settled usage in this billing period.')}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+          {fundGroup ? (
+            <>
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => {
+                  setFundGroup(undefined)
+                  setPage(1)
+                }}
+              >
+                {t('Back')}
+              </Button>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('Time')}</TableHead>
+                    <TableHead>{t('Type')}</TableHead>
+                    <TableHead>{t('API Key')}</TableHead>
+                    <TableHead>{t('Model')}</TableHead>
+                    <TableHead>{t('Discount')}</TableHead>
+                    <TableHead className='text-right'>{t('Input')}</TableHead>
+                    <TableHead className='text-right'>{t('Output')}</TableHead>
+                    <TableHead className='text-right'>
+                      {t('Net amount')}
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(linesQuery.data?.lines ?? []).map((line) => (
+                    <TableRow key={line.id}>
+                      <TableCell className='whitespace-nowrap'>
+                        {new Date(line.created_at * 1000).toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            line.log_type === 6 ? 'secondary' : 'outline'
+                          }
+                        >
+                          {line.log_type === 6 ? t('Refund') : t('Consume')}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {line.token_name ||
+                          t('API Key #{{id}}', { id: line.token_id })}
+                      </TableCell>
+                      <TableCell>
+                        {line.customer_model || t('Unknown model')}
+                      </TableCell>
+                      <TableCell>
+                        <LogDiscountCell
+                          t={t}
+                          other={{
+                            group_ratio: line.facts.group_ratio,
+                            contract_name: line.facts.contract_name,
+                            contract_discount: line.facts.contract_ratio,
+                            contract_applicable:
+                              line.facts.contract_applicable === 'unknown'
+                                ? undefined
+                                : line.facts.contract_applicable === 'yes',
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell className='text-right tabular-nums'>
+                        {line.facts.input_tokens_unavailable
+                          ? t('Unknown')
+                          : line.input_tokens}
+                      </TableCell>
+                      <TableCell className='text-right tabular-nums'>
+                        {line.output_tokens}
+                      </TableCell>
+                      <TableCell className='text-right tabular-nums'>
+                        {formatVersionQuota(
+                          line.log_type === 6 ? -line.quota : line.quota,
+                          version
+                        )}
+                        <FrozenExplanation line={line} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {linesQuery.isSuccess && total === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className='text-center'>
+                        {t('No settled usage in this billing period.')}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </>
+          ) : (
+            <BillingFundGroupTable
+              rows={linesQuery.data?.fund_groups ?? []}
+              loading={linesQuery.isPending}
+              formatAmount={(quota) => formatVersionQuota(quota, version)}
+              onSelect={(group) => {
+                setFundGroup(group)
+                setPage(1)
+              }}
+            />
+          )}
+
           <div className='flex items-center justify-end gap-2 pt-2'>
             <Button
               variant='outline'

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 )
 
 // The statement uses the same safe facts, money conversion and streaming
@@ -19,9 +20,8 @@ var customerStatementDetailColumns = []struct{ key, en, zh string }{
 	{"event_type", "Billing event", "入账类型"},
 	{"currency", "Currency", "币种"},
 	{"net_amount", "Net amount (refunds negative)", "净额（退款为负）"},
-	{"original_amount_estimated", "Estimated list price", "估算原价"},
-	{"discount_amount_estimated", "Estimated savings", "估算优惠"},
-	{"estimate_reasons", "Estimate reasons", "估算未完成原因"},
+	{"original_amount_estimated", "List price", "原价"},
+	{"discount_amount_estimated", "Savings", "优惠"},
 	{"billing_mode", "Billing mode", "计费方式"},
 	{"request_count", "Counted requests", "计入请求数"},
 	{"input_tokens", "Input tokens", "输入 Token"},
@@ -76,7 +76,7 @@ func customerStatementDetailRecord(language string, source []string) []string {
 }
 
 var customerStatementExportValues = map[string]map[string][2]string{
-	"billing_mode":               {"token": {"Per token", "按 Token"}, "per_call": {"Per call", "按次"}, "per_second": {"Per second", "按秒"}, "unknown": {"Not recorded", "未记录"}},
+	"billing_mode":               {"token": {"Per token", "按 Token"}, "per_call": {"Per call", "按次"}, "per_second": {"Per second", "按秒"}, model.BillingReconciliationModeDurationAndCount: {"Duration and quantity", "按时长和数量"}, "unknown": {"Not recorded", "未记录"}},
 	"event_type":                 {"consume": {"Charge", "扣款"}, "refund": {"Refund", "退款"}},
 	"contract_applicable":        {"yes": {"Applied", "已应用"}, "no": {"No contract discount", "无合同优惠"}, "unrecorded": {"Not recorded", "未记录"}, "unknown": {"Incomplete contract records", "合同记录不完整"}},
 	"group_ratio_source":         {"group": {"Group", "分组倍率"}, "user_exclusive": {"Customer-specific group factor", "客户专属组倍率"}, "unknown": {"Not recorded", "未记录"}},

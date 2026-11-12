@@ -36,6 +36,7 @@ import {
 
 import { billingModeLabel, formatCustomerStatementQuota } from '../lib'
 import type {
+  BillingMode,
   ProviderUrlChannelGroupSummary,
   ProviderUrlChannelModelSummary,
 } from '../types'
@@ -57,11 +58,12 @@ export function AmountCell(props: {
   value?: number | null
   knownSubtotal?: number | null
   parent?: boolean
+  estimated?: boolean
 }) {
   const { t } = useTranslation()
   const amount =
     props.value == null ? (
-      <span className='text-muted-foreground'>—</span>
+      <span className='text-muted-foreground'>{t('Unknown')}</span>
     ) : (
       formatCustomerStatementQuota(props.value)
     )
@@ -77,6 +79,12 @@ export function AmountCell(props: {
           })}
         </span>
       )}
+      {props.estimated &&
+        (props.value != null || props.knownSubtotal != null) && (
+          <span className='text-muted-foreground block text-xs font-normal'>
+            {t('Estimated from recorded charges and historical discounts')}
+          </span>
+        )}
     </TableCell>
   )
 }
@@ -118,17 +126,17 @@ export type UpstreamDetailViewSelection = {
   channelName?: string
   providerModel?: string
   providerModelFallback?: boolean
-  billingMode?: string
+  billingMode?: BillingMode
 }
 
 type UpstreamReconciliationTableProps = {
+  reportVersion?: string
+  urlKey?: string
   channels: ProviderUrlChannelGroupSummary[]
   periodStart: number
   periodEnd: number
   expandedChannels: Set<string>
   onToggleChannel: (channelKey: string) => void
-  onExportChannel: (id: number) => void
-  exporting: boolean
   onViewDetails: (props: UpstreamDetailViewSelection) => void
 }
 
@@ -144,9 +152,17 @@ export function UpstreamReconciliationTable(
       <Table withContainer={false} className='min-w-300'>
         <TableHeader className='sticky top-0 z-10 bg-(--table-header)'>
           <TableRow>
-            <TableHead className='min-w-56'>
+            <TableHead className='min-w-40 sm:min-w-56'>
               {t('Upstream channel / model')}
             </TableHead>
+            <TableHead className='text-right'>
+              {t('Discounted reference amount')}
+            </TableHead>
+            <TableHead className='text-right'>
+              {t('Original amount (local official price)')}
+            </TableHead>
+            <TableHead>{t('Data status')}</TableHead>
+            <TableHead className='text-right'>{t('Actions')}</TableHead>
             <TableHead>{t('Billing mode')}</TableHead>
             <TableHead className='text-right'>{t('Requests')}</TableHead>
             <TableHead className='text-right'>{t('Input tokens')}</TableHead>
@@ -161,27 +177,19 @@ export function UpstreamReconciliationTable(
             <TableHead className='text-right'>
               {t('Billable seconds')}
             </TableHead>
-            <TableHead className='text-right'>
-              {t('Original amount (local official price)')}
-            </TableHead>
-            <TableHead className='text-right'>
-              {t('Calculated amount (after channel discount)')}
-            </TableHead>
             <TableHead>{t('Channel discount')}</TableHead>
-            <TableHead>{t('Data status')}</TableHead>
-            <TableHead className='text-right'>{t('Actions')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {props.channels.flatMap((channel) => {
-            const channelKey = String(channel.channel_id)
+            const channelKey = props.urlKey
+              ? `${props.urlKey}:${channel.channel_id}`
+              : String(channel.channel_id)
             const isExpanded = props.expandedChannels.has(channelKey)
             return [
               <ChannelRow
                 key={`channel-${channelKey}`}
                 channel={channel}
-                onExport={() => props.onExportChannel(channel.channel_id)}
-                exporting={props.exporting}
                 expanded={isExpanded}
                 onExpandToggle={() => props.onToggleChannel(channelKey)}
                 onViewDetails={props.onViewDetails}
@@ -190,6 +198,8 @@ export function UpstreamReconciliationTable(
                 <ChannelModelPage
                   key={`models-${channelKey}`}
                   channel={channel}
+                  reportVersion={props.reportVersion}
+                  urlKey={props.urlKey}
                   period={{
                     start_timestamp: props.periodStart,
                     end_timestamp: props.periodEnd,
@@ -206,8 +216,6 @@ export function UpstreamReconciliationTable(
 }
 
 function ChannelRow(props: {
-  onExport: () => void
-  exporting: boolean
   channel: ProviderUrlChannelGroupSummary
   expanded: boolean
   onExpandToggle: () => void
@@ -235,7 +243,7 @@ function ChannelRow(props: {
             />
           </Button>
           <div>
-            <div className='font-semibold wrap-break-word'>
+            <div className='font-semibold wrap-break-word max-sm:max-w-36 max-sm:whitespace-normal'>
               {channel.upstream_name ||
                 channel.channel_name ||
                 t('Deleted channel')}
@@ -247,6 +255,46 @@ function ChannelRow(props: {
             </div>
           </div>
         </div>
+      </TableCell>
+      <AmountCell
+        parent
+        value={channel.reference_amount}
+        knownSubtotal={channel.known_reference_amount}
+      />
+      <AmountCell
+        parent
+        value={channel.original_amount}
+        knownSubtotal={channel.known_original_amount}
+        estimated={channel.data_quality?.has_estimated_original}
+      />
+      <TableCell>
+        <UpstreamDataStatus
+          onViewEvidence={(entry) =>
+            props.onViewDetails({
+              channelId: channel.channel_id,
+              channelName: `${channel.channel_name} #${channel.channel_id}`,
+              evidenceFilter: entry.filter,
+              evidenceLabel: entry.text,
+            })
+          }
+          quality={channel.data_quality}
+          originalAmount={channel.original_amount}
+          usageOnly={channel.usage_only}
+        />
+      </TableCell>
+      <TableCell className='text-right'>
+        <Button
+          variant='link'
+          size='xs'
+          onClick={() =>
+            props.onViewDetails({
+              channelId: channel.channel_id,
+              channelName: `${channel.channel_name} #${channel.channel_id}`,
+            })
+          }
+        >
+          {t('View details')}
+        </Button>
       </TableCell>
       <TableCell>—</TableCell>
       <UsageCell parent value={usage.requests} />
@@ -277,16 +325,6 @@ function ChannelRow(props: {
         value={usage.seconds == null ? null : Number(usage.seconds)}
         unavailable={!!usage.seconds_unavailable_rows}
       />
-      <AmountCell
-        parent
-        value={channel.original_amount}
-        knownSubtotal={channel.known_original_amount}
-      />
-      <AmountCell
-        parent
-        value={channel.reference_amount}
-        knownSubtotal={channel.known_reference_amount}
-      />
       <TableCell>
         <div className='flex flex-col'>
           <span className='text-xs'>
@@ -304,43 +342,6 @@ function ChannelRow(props: {
               : ''}
           </span>
         </div>
-      </TableCell>
-      <TableCell>
-        <UpstreamDataStatus
-          onViewEvidence={(entry) =>
-            props.onViewDetails({
-              channelId: channel.channel_id,
-              channelName: `${channel.channel_name} #${channel.channel_id}`,
-              evidenceFilter: entry.filter,
-              evidenceLabel: entry.text,
-            })
-          }
-          quality={channel.data_quality}
-          originalAmount={channel.original_amount}
-          usageOnly={channel.usage_only}
-        />
-      </TableCell>
-      <TableCell className='text-right'>
-        <Button
-          variant='link'
-          size='xs'
-          disabled={props.exporting}
-          onClick={props.onExport}
-        >
-          {t('Export summary')}
-        </Button>
-        <Button
-          variant='link'
-          size='xs'
-          onClick={() =>
-            props.onViewDetails({
-              channelId: channel.channel_id,
-              channelName: `${channel.channel_name} #${channel.channel_id}`,
-            })
-          }
-        >
-          {t('View details')}
-        </Button>
       </TableCell>
     </TableRow>
   )
@@ -362,9 +363,53 @@ function ChannelModelRow(props: {
           aria-hidden='true'
           className='border-muted-foreground/25 absolute top-0 bottom-0 left-7 w-5 border-b border-l'
         />
-        <span className='inline-block max-w-lg font-medium wrap-break-word whitespace-normal'>
+        <span className='inline-block max-w-28 font-medium wrap-break-word whitespace-normal sm:max-w-lg'>
           {upstreamModelLabel(props.model)}
         </span>
+      </TableCell>
+      <AmountCell
+        value={props.model.reference_amount}
+        knownSubtotal={props.model.known_reference_amount}
+      />
+      <AmountCell
+        value={props.model.original_amount}
+        knownSubtotal={props.model.known_original_amount}
+        estimated={props.model.data_quality?.has_estimated_original}
+      />
+      <TableCell>
+        <UpstreamDataStatus
+          onViewEvidence={(entry) =>
+            props.onViewDetails({
+              channelId: props.model.detail_filter.channel_id,
+              providerModel: props.model.provider_model,
+              providerModelFallback:
+                props.model.provider_model_fallback ?? false,
+              billingMode: props.model.billing_mode,
+              evidenceFilter: entry.filter,
+              evidenceLabel: entry.text,
+            })
+          }
+          quality={props.model.data_quality}
+          originalAmount={props.model.original_amount}
+          usageOnly={props.model.usage_only}
+        />
+      </TableCell>
+      <TableCell className='text-right'>
+        <Button
+          variant='link'
+          size='xs'
+          onClick={() =>
+            props.onViewDetails({
+              channelId: props.model.detail_filter.channel_id,
+              providerModel: props.model.provider_model,
+              providerModelFallback:
+                props.model.provider_model_fallback ?? false,
+              billingMode: props.model.billing_mode,
+            })
+          }
+        >
+          {t('View details')}
+        </Button>
       </TableCell>
       <TableCell>
         <Badge variant='secondary'>
@@ -408,59 +453,18 @@ function ChannelModelRow(props: {
             !!props.model.usage.seconds_unavailable_rows)
         }
       />
-      <AmountCell
-        value={props.model.original_amount}
-        knownSubtotal={props.model.known_original_amount}
-      />
-      <AmountCell
-        value={props.model.reference_amount}
-        knownSubtotal={props.model.known_reference_amount}
-      />
       <TableCell className='text-muted-foreground text-xs'>
         {t('Inherited channel discount: {{discount}}', {
           discount: upstreamDiscountLabel(props.discount, t),
         })}
-      </TableCell>
-      <TableCell>
-        <UpstreamDataStatus
-          onViewEvidence={(entry) =>
-            props.onViewDetails({
-              channelId: props.model.detail_filter.channel_id,
-              providerModel: props.model.provider_model,
-              providerModelFallback:
-                props.model.provider_model_fallback ?? false,
-              billingMode: props.model.billing_mode,
-              evidenceFilter: entry.filter,
-              evidenceLabel: entry.text,
-            })
-          }
-          quality={props.model.data_quality}
-          originalAmount={props.model.original_amount}
-          usageOnly={props.model.usage_only}
-        />
-      </TableCell>
-      <TableCell className='text-right'>
-        <Button
-          variant='link'
-          size='xs'
-          onClick={() =>
-            props.onViewDetails({
-              channelId: props.model.detail_filter.channel_id,
-              providerModel: props.model.provider_model,
-              providerModelFallback:
-                props.model.provider_model_fallback ?? false,
-              billingMode: props.model.billing_mode,
-            })
-          }
-        >
-          {t('View details')}
-        </Button>
       </TableCell>
     </TableRow>
   )
 }
 
 function ChannelModelPage(props: {
+  reportVersion?: string
+  urlKey?: string
   channel: ProviderUrlChannelGroupSummary
   period: { start_timestamp: number; end_timestamp: number }
   onViewDetails: (props: UpstreamDetailViewSelection) => void
@@ -472,6 +476,9 @@ function ChannelModelPage(props: {
   const query = useUpstreamPage({
     ...props.period,
     level: 'models',
+    ...(props.reportVersion
+      ? { report_version: props.reportVersion, url_key: props.urlKey }
+      : {}),
     channel_id: props.channel.channel_id,
     page,
     page_size: pageSize,

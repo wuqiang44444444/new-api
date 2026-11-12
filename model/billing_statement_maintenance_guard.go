@@ -1,10 +1,14 @@
 package model
 
-import "gorm.io/gorm"
+import (
+	"context"
+
+	"gorm.io/gorm"
+)
 
 // RequireBillingStatementMaintenanceTx fences offline source repairs against
 // confirmation and maintenance exit in the same database transaction. Do not
-// silently admit an unmigrated database or infer maintenance from a closed switch.
+// silently admit an unmigrated database.
 func RequireBillingStatementMaintenanceTx(tx *gorm.DB, expectedGeneration int64) error {
 	maintenance, err := lockBillingStatementMaintenanceTx(tx.Statement.Context, tx)
 	if err != nil {
@@ -13,12 +17,16 @@ func RequireBillingStatementMaintenanceTx(tx *gorm.DB, expectedGeneration int64)
 	if expectedGeneration <= 0 || !maintenance.Enabled || maintenance.Generation != expectedGeneration {
 		return ErrBillingStatementVersionConflict
 	}
-	enabled, err := billingStatementVersionEnabledFromDBTx(tx.Statement.Context, tx)
+	return nil
+}
+
+func requireBillingStatementWritableTx(ctx context.Context, tx *gorm.DB) error {
+	maintenance, err := lockBillingStatementMaintenanceTx(ctx, tx)
 	if err != nil {
 		return err
 	}
-	if enabled {
-		return ErrBillingStatementVersionConflict
+	if maintenance.Enabled {
+		return ErrBillingStatementMaintenanceActive
 	}
 	return nil
 }

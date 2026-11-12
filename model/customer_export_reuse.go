@@ -26,6 +26,9 @@ func CustomerStatementExportSourceVersion(ctx context.Context, userID int, jobTy
 	if jobType != CustomerExportJobTypeStatementSummary && jobType != CustomerExportJobTypeStatementDetails {
 		return "", nil
 	}
+	if filters.BillingReportVersion != "" {
+		return fmt.Sprintf("daily:%x", sha256.Sum256([]byte(filters.BillingReportVersion))), nil
+	}
 	if !ShouldTrackBillingStatementRevision() {
 		return "", nil
 	}
@@ -74,18 +77,27 @@ func CustomerStatementExportSourceVersion(ctx context.Context, userID int, jobTy
 	return fmt.Sprintf("v1:%x", sha256.Sum256(raw)), nil
 }
 
-func findReusableCustomerExport(tx *gorm.DB, userID, targetID int, jobType, filters string, reuse CustomerExportReuse) (*CustomerExportJob, error) {
-	if reuse.SourceVersion == "" || reuse.StoreIdentity == "" {
+func findReusableCustomerExport(tx *gorm.DB, userID, targetID int, jobType string, filters CustomerExportFilters, filtersText string, reuse CustomerExportReuse) (*CustomerExportJob, error) {
+	// The normalized filters already contain the exact immutable daily report generations.
+	frozenSelfUsage := jobType == CustomerExportJobTypeUsageSummary && userID == targetID &&
+		filters.UsageView == "self" && len(filters.UsageReportDays) > 0
+	// Upstream exports require an immutable daily report manifest. Its version
+	// and all output-affecting scope fields are part of the exact filter match.
+	frozenUpstream := filters.BillingReportVersion != "" && filters.Upstream != nil &&
+		(jobType == CustomerExportJobTypeUpstreamDetails || jobType == CustomerExportJobTypeUpstreamSummary)
+	if reuse.StoreIdentity == "" || (!frozenSelfUsage && !frozenUpstream && reuse.SourceVersion == "") {
 		return nil, nil
 	}
 	var jobs []CustomerExportJob
 	if err := tx.Where("user_id = ? AND target_user_id = ? AND job_type = ? AND filters = ? AND status = ? AND expires_at > ?",
-		userID, targetID, jobType, filters, CustomerExportJobStatusSucceeded, common.GetTimestamp()).Order("id DESC").Limit(20).Find(&jobs).Error; err != nil {
+		userID, targetID, jobType, filtersText, CustomerExportJobStatusSucceeded, common.GetTimestamp()).Order("id DESC").Limit(20).Find(&jobs).Error; err != nil {
 		return nil, err
 	}
 	for i := range jobs {
 		artifact := jobs[i].DecodeArtifact()
-		if jobs[i].Filters == filters && artifact != nil && artifact.SourceVersion == reuse.SourceVersion && artifact.StoreIdentity == reuse.StoreIdentity && artifact.ExpiresAt > common.GetTimestamp() {
+		if jobs[i].Filters == filtersText && artifact != nil &&
+			(frozenSelfUsage || frozenUpstream || artifact.SourceVersion == reuse.SourceVersion) &&
+			artifact.StoreIdentity == reuse.StoreIdentity && artifact.ExpiresAt > common.GetTimestamp() {
 			return &jobs[i], nil
 		}
 	}

@@ -114,3 +114,26 @@ func TestCustomerStatementKeepsRefundOnlyModelSignedAndSeparate(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, -80, detail.Quota)
 }
+
+func TestBillingStatementCountsExplicitTaskRefundsSeparatelyFromAdjustments(t *testing.T) {
+	for _, tc := range []struct {
+		event        string
+		wantRefunded int64
+	}{
+		{event: "refund", wantRefunded: 1},
+		{event: "customer_refund", wantRefunded: 1},
+		{event: "adjustment", wantRefunded: 0},
+		{event: "", wantRefunded: 0},
+	} {
+		t.Run(tc.event, func(t *testing.T) {
+			log := billingReconciliationLog{Type: LogTypeRefund, Quota: 50, Other: `{"task_id":"task","model_price":1,"actual_quota":0,"pre_consumed_quota":50,"task_billing_event":"` + tc.event + `"}`}
+			parsed := parseBillingReconciliationLog(log)
+			var usage BillingReconciliationUsage
+			accumulateBillingReconciliationLog(&usage, log, parsed)
+			assert.Equal(t, tc.wantRefunded, usage.RefundedCalls)
+			assert.EqualValues(t, 50, usage.RefundQuota)
+			assert.Zero(t, usage.Requests)
+			assert.Equal(t, tc.wantRefunded == 0, isProviderTaskUsageAdjustment(log))
+		})
+	}
+}

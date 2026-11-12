@@ -15,7 +15,7 @@ func TestStatementRefundRecoveryAcrossCompleteKeyHistory(t *testing.T) {
 		t.Run(fmt.Sprint("duplicate=", duplicate), func(t *testing.T) {
 			db := setupBillingReconciliationTestDB(t)
 			require.NoError(t, db.Create(&User{Id: 7, Username: "customer"}).Error)
-			original := Log{UserId: 7, TokenId: 4, ChannelId: 3, ModelName: "video", Type: LogTypeConsume, CreatedAt: 800, Quota: 87, Other: `{"group_ratio":0.87,"statement_snapshot":{"billing_mode":"token"}}`}
+			original := Log{UserId: 7, TokenId: 4, ChannelId: 3, ModelName: "video", Type: LogTypeConsume, CreatedAt: 800, Quota: 87, Other: `{"group_ratio":0.87,"statement_snapshot":{"billing_mode":"token"},"admin_info":{"statement_original_quota":103}}`}
 			require.NoError(t, db.Create(&original).Error)
 			// A real regression boundary: unrelated older refunds must not suppress
 			// an explicit reference when the key passes the former 1,000-row limit.
@@ -36,7 +36,7 @@ func TestStatementRefundRecoveryAcrossCompleteKeyHistory(t *testing.T) {
 			sqlDB, err := db.DB()
 			require.NoError(t, err)
 			sqlDB.SetMaxOpenConns(1)
-			statement, err := GetBillingCustomerStatement(context.Background(), 7, 900, 1100, "api_key", 0, "", "")
+			statement, err := GetBillingCustomerStatement(context.Background(), 7, 900, 1100, "api_key", 0, "", "", BillingStatementReadPolicy{RecordedAmountsOnly: true})
 			require.NoError(t, err)
 			assert.EqualValues(t, -87, statement.Summary.NetQuota)
 			details, err := GetBillingStatementLogs(context.Background(), BillingStatementLogFilter{UserId: 7, Start: 900, End: 1100}, 1, 20, common.RoleCommonUser)
@@ -44,17 +44,17 @@ func TestStatementRefundRecoveryAcrossCompleteKeyHistory(t *testing.T) {
 			require.Len(t, details.Items, 1)
 			batch, err := NextCustomerExportLogBatch(context.Background(), CustomerExportBatchParams{UserId: 7, StartTimestamp: 900, EndTimestamp: 1101, Limit: 1, StatementScope: true})
 			require.NoError(t, err)
-			exported, err := BuildCustomerExportRows(context.Background(), batch, "", "", nil)
+			exported, err := BuildCustomerExportRows(context.Background(), batch, "", "", nil, true)
 			require.NoError(t, err)
 			require.Len(t, exported, 1)
 			row := CustomerBillingLogRow(details.Items[0])
 			for _, fact := range []CustomerExportRow{row, exported[0]} {
 				if duplicate {
 					assert.Equal(t, "unknown", fact.BillingMode)
-					assert.Empty(t, fact.OriginalEstimate)
+					assert.Empty(t, fact.RecordedOriginal)
 				} else {
 					assert.Equal(t, "token", fact.BillingMode)
-					assert.Equal(t, "-100.0000", fact.OriginalEstimate)
+					assert.Equal(t, "-103", fact.RecordedOriginal)
 				}
 				assert.EqualValues(t, 87, fact.Quota)
 				assert.Zero(t, fact.RequestCount)
@@ -63,7 +63,7 @@ func TestStatementRefundRecoveryAcrossCompleteKeyHistory(t *testing.T) {
 				assert.Nil(t, statement.OriginalQuota)
 			} else {
 				require.NotNil(t, statement.OriginalQuota)
-				assert.EqualValues(t, -100, *statement.OriginalQuota)
+				assert.EqualValues(t, -103, *statement.OriginalQuota)
 				assert.Zero(t, statement.DataQuality.UnknownBillingModeRequests)
 				assert.Zero(t, statement.DataQuality.MissingHistoricalPriceRows)
 			}

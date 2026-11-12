@@ -14,7 +14,7 @@ import (
 
 func TestUpstreamExportMetadataSnapshotAcrossBatches(t *testing.T) {
 	db := setupBillingReconciliationTestDB(t)
-	require.NoError(t, db.AutoMigrate(&ProviderURLGroupDisplayName{}))
+	require.NoError(t, db.AutoMigrate(&ProviderURLGroupDisplayName{}, &SystemTask{}, &SystemTaskLock{}))
 	require.NoError(t, db.Create(&User{Id: 1, Username: "snapshot-admin", Role: common.RoleAdminUser, Status: common.UserStatusEnabled}).Error)
 	period := time.Date(2026, 9, 1, 0, 0, 0, 0, time.FixedZone("Shanghai", 8*3600)).Unix()
 	ids := make([]int, 101)
@@ -27,13 +27,21 @@ func TestUpstreamExportMetadataSnapshotAcrossBatches(t *testing.T) {
 		{PeriodStart: period, ChannelId: 202, Discount: decimal.RequireFromString("0.5"), Version: 2},
 		{PeriodStart: period, ChannelId: 203, Discount: decimal.NewFromInt(1), PendingReason: "conflict", Version: 1},
 	}).Error)
+	require.NoError(t, MigrateDailyReports(db))
+	require.NoError(t, db.Create(&SystemTaskLock{Type: UsageReportTaskType, TaskID: "snapshot", LockedBy: "runner", LockedUntil: common.GetTimestamp() + 60}).Error)
+	for _, id := range append(append([]int{}, ids...), 202, 203) {
+		require.NoError(t, db.Create(&Log{ChannelId: id, Type: LogTypeConsume, CreatedAt: period + 1}).Error)
+	}
+	require.NoError(t, BuildBillingReportDay(context.Background(), period, "snapshot", "runner", nil, nil))
+	ctx, _, err := ResolveBillingReport(context.Background(), period, period+86400-1, "")
+	require.NoError(t, err)
 	for _, all := range []bool{false, true} {
 		t.Run(fmt.Sprint(all), func(t *testing.T) {
 			selected := ids
 			if all {
 				selected = nil
 			}
-			scope, err := FreezeUpstreamExportScope(context.Background(), 1, period, selected, "", all)
+			scope, err := FreezeUpstreamExportScope(ctx, 1, period, selected, "", all)
 			require.NoError(t, err)
 			channel := scope.Channel(101, period)
 			assert.Equal(t, "channel-101", channel.Name)

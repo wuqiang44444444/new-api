@@ -83,10 +83,9 @@ func TestBillingStatementCleanupKeepsLimitAndAllCustomers(t *testing.T) {
 }
 
 func TestBillingStatementSourceChangesBlockOldDraft(t *testing.T) {
-	for _, change := range []string{"off_create", "direct_batch", "log_update", "task_update", "task_delete"} {
+	for _, change := range []string{"log_create", "direct_batch", "log_update", "task_update", "task_delete"} {
 		t.Run(change, func(t *testing.T) {
 			db := setupBillingStatementVersionTestDB(t)
-			enableVersionSwitch(t)
 			require.NoError(t, db.AutoMigrate(&Log{}, &Task{}))
 			ctx := context.Background()
 			month := int64(1756656000)
@@ -99,10 +98,8 @@ func TestBillingStatementSourceChangesBlockOldDraft(t *testing.T) {
 			require.NoError(t, err)
 			markDraftPendingWithVector(t, ctx, 11, month, draft)
 			switch change {
-			case "off_create":
-				require.NoError(t, SetBillingStatementVersionEnabled(ctx, false, 7))
+			case "log_create":
 				require.NoError(t, db.Create(&Log{UserId: 11, Type: LogTypeConsume, Quota: 5, CreatedAt: month + 200}).Error)
-				require.NoError(t, SetBillingStatementVersionEnabled(ctx, true, 7))
 			case "direct_batch":
 				require.NoError(t, db.Create(&[]Log{{UserId: 11, Type: LogTypeRefund, Quota: 1, CreatedAt: month + 300}}).Error)
 			case "log_update":
@@ -120,7 +117,6 @@ func TestBillingStatementSourceChangesBlockOldDraft(t *testing.T) {
 
 func TestBillingStatementConfirmationRequiresDraftQualityAndArtifacts(t *testing.T) {
 	db := setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	ctx := context.Background()
 	month := int64(1756656000)
 	_, draft, err := AcquireBillingStatementDraft(ctx, 11, month, "Asia/Shanghai", 7)
@@ -150,7 +146,6 @@ func TestBillingStatementConfirmationRequiresDraftQualityAndArtifacts(t *testing
 
 func TestBillingStatementInvalidDraftCannotConfirm(t *testing.T) {
 	setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	ctx := context.Background()
 	month := int64(1756656000)
 	_, d, err := AcquireBillingStatementDraft(ctx, 11, month, "Asia/Shanghai", 7)
@@ -205,7 +200,6 @@ func TestBillingStatementFrozenListUsesVersionsBeforeSortAndTotals(t *testing.T)
 
 func TestBillingStatementTaskPollingDoesNotInvalidateDraft(t *testing.T) {
 	db := setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	require.NoError(t, db.AutoMigrate(&Task{}))
 	task := Task{UserId: 11, TaskID: "polling"}
 	require.NoError(t, db.Create(&task).Error)
@@ -230,7 +224,6 @@ func TestBillingStatementTaskPollingDoesNotInvalidateDraft(t *testing.T) {
 func TestBillingStatementRevisionFailurePreservesSourceAndBlocksConfirmation(t *testing.T) {
 	db := setupBillingStatementVersionTestDB(t)
 	require.NoError(t, db.AutoMigrate(&Log{}))
-	enableVersionSwitch(t)
 	ctx := context.Background()
 	month := naturalMonthStartAt(1756656100)
 	_, draft, err := AcquireBillingStatementDraft(ctx, 11, month, "Asia/Shanghai", 7)
@@ -252,7 +245,6 @@ func TestBillingStatementRevisionFailurePreservesSourceAndBlocksConfirmation(t *
 
 func TestBillingStatementCurrentMonthConsumptionDoesNotBlockConfirmation(t *testing.T) {
 	db := setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	require.NoError(t, db.AutoMigrate(&Log{}, &Task{}))
 	ctx := context.Background()
 	month := int64(1756656000)
@@ -291,7 +283,6 @@ func TestBillingStatementCleanupAfterExecutionRecordExpires(t *testing.T) {
 
 func TestBillingStatementKnownLogWriteFailureBlocksConfirmation(t *testing.T) {
 	db := setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	ctx := context.Background()
 	month := naturalMonthStartAt(1756656100)
 	_, draft, err := AcquireBillingStatementDraft(ctx, 11, month, "Asia/Shanghai", 7)

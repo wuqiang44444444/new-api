@@ -47,6 +47,7 @@ func setupCustomerExportServiceTest(t *testing.T) *stubExportStore {
 	t.Helper()
 	t.Setenv("TMPDIR", t.TempDir())
 	require.NoError(t, model.DB.AutoMigrate(&model.CustomerExportJob{}, &model.CustomerExportSlot{}))
+	require.NoError(t, model.MigrateDailyReports(model.DB))
 	for id := int64(1); id <= model.CustomerExportSlotCount; id++ {
 		model.DB.Where("id = ?", id).FirstOrCreate(&model.CustomerExportSlot{ID: id, JobID: ""})
 	}

@@ -10,9 +10,14 @@ import { api } from '@/lib/http-client'
 import { UpstreamDetailPanel } from '../upstream-detail-panel'
 
 vi.mock('../../api', () => ({
-  getAdminUpstreamDetails: vi
-    .fn()
-    .mockResolvedValue({ success: true, data: { items: [], total: 0 } }),
+  getAdminUpstreamDetails: vi.fn().mockResolvedValue({
+    success: true,
+    data: { result: { items: [], total: 1 } },
+  }),
+}))
+vi.mock('../../export-jobs-drawer', () => ({
+  ExportJobsDrawer: (props: { open: boolean; children: React.ReactNode }) =>
+    props.open ? props.children : null,
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -59,27 +64,25 @@ it.each([
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     })
-    const onShowExports = vi.fn()
     render(
       <QueryClientProvider client={queryClient}>
         <UpstreamDetailPanel
           period={{ start_timestamp: 1788192000, end_timestamp: 1790783999 }}
           selection={{ channelId: 7 }}
           onClose={vi.fn()}
-          onShowExports={onShowExports}
         />
       </QueryClientProvider>
     )
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Export all matching details' })
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
+    const exportButton = screen.getByRole('button', {
+      name: 'Export CSV',
+    })
+    await waitFor(() => expect(exportButton).toBeEnabled())
+    fireEvent.click(exportButton)
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledExactlyOnceWith(message)
     )
-    expect(onShowExports).not.toHaveBeenCalled()
-    expect(
-      screen.getByRole('button', { name: 'Export all matching details' })
-    ).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled()
     queryClient.clear()
   }
 )

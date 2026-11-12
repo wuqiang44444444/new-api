@@ -4,14 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
 
 	"gorm.io/gorm"
 )
 
-// 客户月账单版本的读取投影、更正草稿占用、草稿清理与开关维护边界
+// 客户月账单版本的读取投影、更正草稿占用、草稿清理
 // （docs/80-dev/2026-09-17 方案第 7、10.7、12、13 节）。
 // 主体逻辑集中在本文件；既有文件只保留必要接线。
 
@@ -28,6 +27,7 @@ type BillingStatementVersionLineFilter struct {
 	ModelName   string
 	BillingMode string
 	LogType     int // 0 表示全部
+	FundGroup   string
 }
 
 // ListBillingStatementVersionLines 按 version_id + sequence 稳定分页读取版本明细（方案 7/13）。
@@ -41,6 +41,20 @@ func ListBillingStatementVersionLines(ctx context.Context, versionId int64, filt
 	if pageSize > 500 {
 		pageSize = 500
 	}
+	query := billingStatementVersionLineQuery(ctx, versionId, filter)
+	if filter.FundGroup != "" {
+		query = query.Where(billingStatementVersionFundGroupSQL(query)+" = ?", filter.FundGroup)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var lines []BillingStatementVersionLine
+	err := query.Order("sequence asc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&lines).Error
+	return lines, total, err
+}
+
+func billingStatementVersionLineQuery(ctx context.Context, versionId int64, filter BillingStatementVersionLineFilter) *gorm.DB {
 	query := DB.WithContext(ctx).Model(&BillingStatementVersionLine{}).Where("version_id = ?", versionId)
 	if filter.TokenId != nil {
 		query = query.Where("token_id = ?", *filter.TokenId)
@@ -57,13 +71,7 @@ func ListBillingStatementVersionLines(ctx context.Context, versionId int64, filt
 	if filter.LogType != 0 {
 		query = query.Where("log_type = ?", filter.LogType)
 	}
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	var lines []BillingStatementVersionLine
-	err := query.Order("sequence asc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&lines).Error
-	return lines, total, err
+	return query
 }
 
 // ListBillingStatementArtifacts 列出版本的产物清单。
@@ -79,6 +87,9 @@ func AcquireBillingStatementCorrectionDraft(ctx context.Context, userId int, per
 	var month *BillingStatementMonth
 	var draft *BillingStatementVersion
 	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := requireBillingStatementWritableTx(ctx, tx); err != nil {
+			return err
+		}
 		m := BillingStatementMonth{}
 		findErr := lockForUpdate(tx.WithContext(ctx)).
 			Where("user_id = ? AND period_start = ?", userId, periodStart).First(&m).Error
@@ -217,56 +228,4 @@ func DeleteBillingStatementDraftFactsTx(ctx context.Context, tx *gorm.DB, draftP
 		return nil, err
 	}
 	return keys, nil
-}
-
-// SetBillingStatementVersionEnabled 通过维护控制点切换能力开关（方案 10.7）。
-// 与确认发布共用维护控制行锁，建立明确提交先后：本事务提交后，新确认读到新开关值；
-// 已通过的确认若先提交则属合法发布。OptionMap 在事务提交后更新。
-func SetBillingStatementVersionEnabled(ctx context.Context, enabled bool, operatorId int) error {
-	value := strconv.FormatBool(enabled)
-	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		m, err := lockBillingStatementMaintenanceTx(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if enabled && m.Enabled {
-			return ErrBillingStatementVersionDisabled
-		}
-		var option Option
-		findErr := tx.WithContext(ctx).Where(&Option{Key: BillingStatementVersionEnabledKey}).First(&option).Error
-		if errors.Is(findErr, gorm.ErrRecordNotFound) {
-			option = Option{Key: BillingStatementVersionEnabledKey}
-		} else if findErr != nil {
-			return findErr
-		}
-		option.Value = value
-		if err := tx.Save(&option).Error; err != nil {
-			return err
-		}
-		if err := tx.Create(&BillingStatementAudit{
-			Action: "switch", ActorId: operatorId, Reason: BillingStatementVersionEnabledKey,
-			Result: value, CreatedAt: nowSeconds(),
-		}).Error; err != nil {
-			return err
-		}
-		_ = m // 控制行已锁定，边界已建立
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	return updateOptionMap(BillingStatementVersionEnabledKey, value)
-}
-
-// billingStatementVersionEnabledFromDBTx 在事务内从主库读取开关值（确认发布的最终权威，方案 10.7）。
-func billingStatementVersionEnabledFromDBTx(ctx context.Context, tx *gorm.DB) (bool, error) {
-	var option Option
-	err := tx.WithContext(ctx).Select("value").Where(&Option{Key: BillingStatementVersionEnabledKey}).First(&option).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return option.Value == "true" || option.Value == "1", nil
 }

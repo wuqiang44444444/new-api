@@ -11,7 +11,7 @@ import (
 func inheritedProviderChannelDiscount(period int64, id int, source ProviderChannelBillingDiscount, found bool) ProviderChannelBillingDiscount {
 	result := ProviderChannelBillingDiscount{PeriodStart: period, ChannelId: id, Discount: decimal.NewFromInt(1), Reason: reasonChannelDiscountDefault}
 	if found && source.PendingReason == "" {
-		result.Discount = source.Discount
+		result.Discount = source.Changes.valueAt(source.Discount, period-1)
 		result.CopiedFromPeriod = source.PeriodStart
 		result.Reason = reasonChannelDiscountAutoCopy
 	}
@@ -24,7 +24,7 @@ func inheritedProviderChannelDiscount(period int64, id int, source ProviderChann
 func loadProviderChannelBillingDiscounts(ctx context.Context, period int64, ids []int) (map[int]ProviderChannelBillingDiscount, error) {
 	current, previous := map[int]ProviderChannelBillingDiscount{}, map[int]ProviderChannelBillingDiscount{}
 	for offset := 0; offset < len(ids) || offset == 0; offset += 100 {
-		query := DB.WithContext(ctx).Where("period_start IN ?", []int64{period, previousBillingPeriodStart(period)})
+		query := usageReportMainDB(ctx).WithContext(ctx).Where("period_start IN ?", []int64{period, previousBillingPeriodStart(period)})
 		if len(ids) > 0 {
 			query = query.Where("channel_id IN ?", ids[offset:min(offset+100, len(ids))])
 		}

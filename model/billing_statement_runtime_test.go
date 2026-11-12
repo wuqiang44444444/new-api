@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestBillingStatementNonMasterWriterInvalidatesDraftWhileDisabled(t *testing.T) {
+func TestBillingStatementNonMasterWriterInvalidatesDraft(t *testing.T) {
 	setupBillingStatementVersionTestDB(t)
 	previousDB, previousLog := DB, LOG_DB
 	previousMaster := common.IsMasterNode
@@ -24,9 +24,8 @@ func TestBillingStatementNonMasterWriterInvalidatesDraftWhileDisabled(t *testing
 	t.Cleanup(func() { _ = masterSQL.Close() })
 	DB, LOG_DB = master, master
 	require.NoError(t, migrateBillingStatementVersionDB())
-	require.NoError(t, master.AutoMigrate(&Log{}, &Option{}))
+	require.NoError(t, master.AutoMigrate(&Log{}))
 	require.NoError(t, InitBillingStatementSourceTracking())
-	enableVersionSwitch(t)
 	ctx := context.Background()
 	month := int64(1756656000)
 	_, draft, err := AcquireBillingStatementDraft(ctx, 11, month, "Asia/Shanghai", 7)
@@ -40,20 +39,15 @@ func TestBillingStatementNonMasterWriterInvalidatesDraftWhileDisabled(t *testing
 	DB, LOG_DB, common.IsMasterNode = slave, slave, false
 	require.NoError(t, InitBillingStatementSourceTracking())
 	require.NoError(t, InitBillingStatementSourceTracking())
-	common.OptionMap[BillingStatementVersionEnabledKey] = "false"
-	require.NoError(t, slave.Save(&Option{Key: BillingStatementVersionEnabledKey, Value: "false"}).Error)
 	require.NoError(t, slave.Create(&Log{UserId: 11, Type: LogTypeConsume, CreatedAt: month + 60, Quota: 10}).Error)
 	DB, LOG_DB = master, master
-	common.OptionMap[BillingStatementVersionEnabledKey] = "true"
-	require.NoError(t, master.Save(&Option{Key: BillingStatementVersionEnabledKey, Value: "true"}).Error)
 	_, committed, err := ConfirmBillingStatementVersion(ctx, draft.DraftPublicId, nil, "check", "", "", 7)
 	assert.ErrorIs(t, err, ErrBillingStatementVersionConflict)
 	assert.False(t, committed)
 }
 
-func TestConfirmedBillingStatementRetrySurvivesDisabledSwitch(t *testing.T) {
+func TestConfirmedBillingStatementRetrySurvivesMaintenance(t *testing.T) {
 	setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	ctx := context.Background()
 	_, draft, err := AcquireBillingStatementDraft(ctx, 11, 1756656000, "Asia/Shanghai", 7)
 	require.NoError(t, err)
@@ -61,7 +55,8 @@ func TestConfirmedBillingStatementRetrySurvivesDisabledSwitch(t *testing.T) {
 	first, committed, err := ConfirmBillingStatementVersion(ctx, draft.DraftPublicId, nil, "same", "", "", 7)
 	require.NoError(t, err)
 	require.True(t, committed)
-	require.NoError(t, DB.Save(&Option{Key: BillingStatementVersionEnabledKey, Value: "false"}).Error)
+	_, err = BeginBillingStatementMaintenance(ctx, "verified maintenance", 7)
+	require.NoError(t, err)
 	second, committed, err := ConfirmBillingStatementVersion(ctx, draft.DraftPublicId, nil, "same", "", "", 7)
 	require.NoError(t, err)
 	assert.False(t, committed)

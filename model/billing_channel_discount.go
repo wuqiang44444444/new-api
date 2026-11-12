@@ -11,25 +11,26 @@ import (
 )
 
 // ProviderChannelBillingDiscount is the channel-month comprehensive
-// coefficient used by upstream reconciliation reference amounts. The business
-// key is the billing period plus the channel: one coefficient covers every
-// provider model and billing mode of the channel for that month. Provider
+// coefficient and dated changes used by upstream reconciliation. The business
+// key is the billing period plus the channel. Each interval covers every
+// provider model and billing mode of that channel. Provider
 // model and billing mode deliberately do not participate in the discount
 // identity anymore; the legacy model-level ProviderBillingDiscount table is
 // historical evidence only and is never read at runtime.
 type ProviderChannelBillingDiscount struct {
-	Id               int64           `json:"id"`
-	PeriodStart      int64           `json:"period_start" gorm:"bigint;not null;uniqueIndex:idx_provider_channel_discount_key,priority:1"`
-	ChannelId        int             `json:"channel_id" gorm:"not null;uniqueIndex:idx_provider_channel_discount_key,priority:2;index"`
-	PendingReason    string          `json:"pending_reason,omitempty" gorm:"type:varchar(64);not null;default:''"`
-	Discount         decimal.Decimal `json:"discount" gorm:"type:decimal(12,8);not null"`
-	CopiedFromPeriod int64           `json:"copied_from_period,omitempty" gorm:"bigint;not null"`
-	Version          int64           `json:"version" gorm:"bigint;not null"`
-	Reason           string          `json:"reason" gorm:"type:varchar(255);not null"`
-	CreatedBy        int             `json:"created_by" gorm:"not null"`
-	UpdatedBy        int             `json:"updated_by" gorm:"not null"`
-	CreatedAt        int64           `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt        int64           `json:"updated_at" gorm:"autoUpdateTime"`
+	Id               int64                   `json:"id"`
+	PeriodStart      int64                   `json:"period_start" gorm:"bigint;not null;uniqueIndex:idx_provider_channel_discount_key,priority:1"`
+	ChannelId        int                     `json:"channel_id" gorm:"not null;uniqueIndex:idx_provider_channel_discount_key,priority:2;index"`
+	PendingReason    string                  `json:"pending_reason,omitempty" gorm:"type:varchar(64);not null;default:''"`
+	Discount         decimal.Decimal         `json:"discount" gorm:"type:decimal(12,8);not null"`
+	Changes          ProviderDiscountChanges `json:"changes,omitempty" gorm:"type:text"`
+	CopiedFromPeriod int64                   `json:"copied_from_period,omitempty" gorm:"bigint;not null"`
+	Version          int64                   `json:"version" gorm:"bigint;not null"`
+	Reason           string                  `json:"reason" gorm:"type:varchar(255);not null"`
+	CreatedBy        int                     `json:"created_by" gorm:"not null"`
+	UpdatedBy        int                     `json:"updated_by" gorm:"not null"`
+	CreatedAt        int64                   `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt        int64                   `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 const (
@@ -53,7 +54,7 @@ const (
 // same transaction as the configuration change. A manual save never carries a
 // copied-from period: inheritance is written only by initialization or
 // migration.
-func SaveProviderChannelBillingDiscount(discount *ProviderChannelBillingDiscount, expectedVersion int64, operatorId int) error {
+func SaveProviderChannelBillingDiscount(discount *ProviderChannelBillingDiscount, expectedVersion int64, operatorId int, effectiveFrom ...int64) error {
 	if discount == nil {
 		return errors.New("provider channel billing discount is required")
 	}
@@ -62,6 +63,13 @@ func SaveProviderChannelBillingDiscount(discount *ProviderChannelBillingDiscount
 	}
 	if discount.CopiedFromPeriod != 0 {
 		return errors.New("manual channel discount cannot claim a copied period")
+	}
+	var date int64
+	if len(effectiveFrom) > 0 {
+		date = effectiveFrom[0]
+	}
+	if err := validateProviderDiscountEffectiveDate(discount.PeriodStart, date); err != nil {
+		return err
 	}
 	discount.PendingReason = ""
 	known, err := providerBillingChannelKnown(context.Background(), discount.ChannelId)
@@ -82,13 +90,28 @@ func SaveProviderChannelBillingDiscount(discount *ProviderChannelBillingDiscount
 			if expectedVersion != 0 {
 				return ErrBillingReconciliationVersionConflict
 			}
+			var base ProviderChannelBillingDiscount
+			if date > discount.PeriodStart {
+				var previous ProviderChannelBillingDiscount
+				err := tx.Where("period_start = ? AND channel_id = ?", previousBillingPeriodStart(discount.PeriodStart), discount.ChannelId).Take(&previous).Error
+				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+				base = inheritedProviderChannelDiscount(discount.PeriodStart, discount.ChannelId, previous, err == nil)
+			}
+			if err := applyProviderDiscountChange(discount, base, date); err != nil {
+				return err
+			}
 			discount.Version = 1
 			discount.CreatedBy = operatorId
 			discount.UpdatedBy = operatorId
 			if err := tx.Create(discount).Error; err != nil {
 				return err
 			}
-			return createProviderBillingAudit(tx, providerChannelDiscountEntity, providerChannelDiscountEntityKey(discount.PeriodStart, discount.ChannelId), "create", nil, discount, discount.Reason, operatorId)
+			if err := createProviderBillingAudit(tx, providerChannelDiscountEntity, providerChannelDiscountEntityKey(discount.PeriodStart, discount.ChannelId), "create", nil, discount, discount.Reason, operatorId); err != nil {
+				return err
+			}
+			return nil
 		}
 		if err != nil {
 			return err
@@ -96,8 +119,11 @@ func SaveProviderChannelBillingDiscount(discount *ProviderChannelBillingDiscount
 		if existing.Version != expectedVersion {
 			return ErrBillingReconciliationVersionConflict
 		}
+		if err := applyProviderDiscountChange(discount, existing, date); err != nil {
+			return err
+		}
 		result := tx.Model(&ProviderChannelBillingDiscount{}).Where("id = ? AND version = ?", existing.Id, expectedVersion).Updates(map[string]interface{}{
-			"discount": discount.Discount, "reason": discount.Reason,
+			"discount": discount.Discount, "changes": discount.Changes, "reason": discount.Reason,
 			"version": existing.Version + 1, "updated_by": operatorId, "pending_reason": "",
 		})
 		if result.Error != nil {
@@ -111,7 +137,10 @@ func SaveProviderChannelBillingDiscount(discount *ProviderChannelBillingDiscount
 		discount.CopiedFromPeriod = existing.CopiedFromPeriod
 		discount.CreatedBy = existing.CreatedBy
 		discount.UpdatedBy = operatorId
-		return createProviderBillingAudit(tx, providerChannelDiscountEntity, providerChannelDiscountEntityKey(discount.PeriodStart, discount.ChannelId), "update", &existing, discount, discount.Reason, operatorId)
+		if err := createProviderBillingAudit(tx, providerChannelDiscountEntity, providerChannelDiscountEntityKey(discount.PeriodStart, discount.ChannelId), "update", &existing, discount, discount.Reason, operatorId); err != nil {
+			return err
+		}
+		return nil
 	})
 }
 

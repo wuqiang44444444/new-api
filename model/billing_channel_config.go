@@ -82,7 +82,7 @@ func SaveProviderChannelBillingName(ctx context.Context, id int, name string, ac
 func providerBillingChannelNames(ctx context.Context) (map[int]string, error) {
 	result := map[int]string{}
 	var rows []ProviderChannelBillingConfig
-	err := DB.WithContext(ctx).Order("channel_id").FindInBatches(&rows, 500, func(_ *gorm.DB, _ int) error {
+	err := usageReportMainDB(ctx).WithContext(ctx).Order("channel_id").FindInBatches(&rows, 500, func(_ *gorm.DB, _ int) error {
 		for _, row := range rows {
 			result[row.ChannelId] = row.Name
 		}

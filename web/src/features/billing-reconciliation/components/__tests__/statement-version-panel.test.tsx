@@ -58,7 +58,6 @@ it('requires acknowledgment of the pending draft and preserves its correction re
   api.status.mockResolvedValue({
     success: true,
     data: {
-      switch_enabled: true,
       topology_ok: true,
       retention_status: 'intact',
       current_version: null,
@@ -133,7 +132,6 @@ afterEach(() => {
 it('lets root register source evidence before enabling generation', async () => {
   useAuthStore.getState().auth.setUser({ id: 1, username: 'root', role: 100 })
   const status = {
-    switch_enabled: true,
     topology_ok: true,
     retention_status: 'unknown',
     current_version: null,
@@ -149,7 +147,7 @@ it('lets root register source evidence before enabling generation', async () => 
   })
   expect(generate).toBeDisabled()
   fireEvent.click(
-    screen.getByRole('button', { name: 'Review and differences' })
+    screen.getByRole('button', { name: 'Check statement records' })
   )
   const dialog = await screen.findByRole('dialog')
   fireEvent.click(
@@ -204,7 +202,6 @@ it('keeps source verification unavailable to non-root administrators', async () 
   api.status.mockResolvedValue({
     success: true,
     data: {
-      switch_enabled: true,
       topology_ok: true,
       retention_status: 'unknown',
       current_version: null,
@@ -218,7 +215,7 @@ it('keeps source verification unavailable to non-root administrators', async () 
     await screen.findByRole('button', { name: 'Generate pending version' })
   ).toBeDisabled()
   fireEvent.click(
-    screen.getByRole('button', { name: 'Review and differences' })
+    screen.getByRole('button', { name: 'Check statement records' })
   )
   await screen.findByText(
     'A super administrator must verify statement sources first.'
@@ -240,7 +237,6 @@ it('preserves evidence and keeps generation blocked when verification fails', as
   api.status.mockResolvedValue({
     success: true,
     data: {
-      switch_enabled: true,
       topology_ok: true,
       retention_status: 'unknown',
       current_version: null,
@@ -255,7 +251,7 @@ it('preserves evidence and keeps generation blocked when verification fails', as
   })
   const close = await renderVersionPanel()
   fireEvent.click(
-    await screen.findByRole('button', { name: 'Review and differences' })
+    await screen.findByRole('button', { name: 'Check statement records' })
   )
   const dialog = await screen.findByRole('dialog')
   fireEvent.click(
@@ -294,7 +290,6 @@ it('explains unsupported database topology and does not allow source verificatio
   api.status.mockResolvedValue({
     success: true,
     data: {
-      switch_enabled: true,
       topology_ok: false,
       retention_status: 'unknown',
       current_version: null,
@@ -308,7 +303,7 @@ it('explains unsupported database topology and does not allow source verificatio
     await screen.findByRole('button', { name: 'Generate pending version' })
   ).toBeDisabled()
   expect(
-    screen.getByRole('button', { name: 'Review and differences' })
+    screen.getByRole('button', { name: 'Check statement records' })
   ).toBeDisabled()
   expect(screen.getByRole('alert')).toHaveTextContent(
     'Statement generation requires billing records and account data in the same database.'
@@ -368,7 +363,6 @@ it('refreshes a queued draft through generation to confirmation and stops pollin
   const response = (status: string) => ({
     success: true,
     data: {
-      switch_enabled: true,
       topology_ok: true,
       retention_status: 'intact',
       current_version: null,
@@ -409,12 +403,12 @@ it('refreshes a queued draft through generation to confirmation and stops pollin
 })
 
 it.each(['failed', 'cancelled', 'invalid', 'cleaning'])(
-  'cleans a %s historical draft without an active pointer, even with generation disabled',
+  'cleans a %s historical draft without an active pointer, even during maintenance',
   async (status) => {
     api.status.mockReset().mockResolvedValue({
       success: true,
       data: {
-        switch_enabled: false,
+        maintenance_active: true,
         topology_ok: true,
         retention_status: 'intact',
         current_version: null,
@@ -453,7 +447,6 @@ it('downloads confirmation notes for the current and selected historical version
   api.status.mockReset().mockResolvedValue({
     success: true,
     data: {
-      switch_enabled: true,
       topology_ok: true,
       retention_status: 'intact',
       current_version: current,
@@ -470,7 +463,16 @@ it('downloads confirmation notes for the current and selected historical version
   const dispose = await renderVersionPanel()
   try {
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Download confirmation note' })
+      await screen.findByRole('button', { name: 'Version history (2)' })
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Version history',
+    })
+    const currentRow = within(dialog).getByRole('row', { name: /v2/ })
+    fireEvent.click(
+      within(currentRow).getByRole('button', {
+        name: 'Download confirmation note',
+      })
     )
     await waitFor(() =>
       expect(api.download).toHaveBeenCalledWith(
@@ -485,8 +487,7 @@ it('downloads confirmation notes for the current and selected historical version
         'noopener'
       )
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Version history (2)' }))
-    const row = await screen.findByRole('row', {
+    const row = await within(dialog).findByRole('row', {
       name: /Previous confirmation/,
     })
     fireEvent.click(
@@ -504,12 +505,12 @@ it('downloads confirmation notes for the current and selected historical version
   }
 })
 
-it('keeps administrative source review available while generation is disabled', async () => {
+it('keeps administrative source review available during maintenance', async () => {
   useAuthStore.getState().auth.setUser({ id: 1, username: 'root', role: 100 })
   api.status.mockResolvedValue({
     success: true,
     data: {
-      switch_enabled: false,
+      maintenance_active: true,
       topology_ok: true,
       retention_status: 'unknown',
       current_version: null,
@@ -520,7 +521,7 @@ it('keeps administrative source review available while generation is disabled', 
   })
   const close = await renderVersionPanel()
   expect(
-    await screen.findByRole('button', { name: 'Review and differences' })
+    await screen.findByRole('button', { name: 'Check statement records' })
   ).toBeEnabled()
   expect(
     screen.getByRole('button', { name: 'Generate pending version' })

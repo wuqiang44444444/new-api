@@ -24,6 +24,9 @@ func SubmitUpstreamExportJob(ctx context.Context, actorID int, request CustomerE
 	if jobType == model.CustomerExportJobTypeUpstreamSummary && (len(channelIDs) == 0 || request.UpstreamEvidenceFilter != "" || request.ModelName != "" || request.BillingMode != "" || request.RequestId != "" || request.UpstreamRequestId != "" || request.ProviderModelFallback != nil) {
 		return nil, fmt.Errorf("%w: upstream summary requires one complete channel", ErrCustomerExportInvalidRequest)
 	}
+	if request.UpstreamAllChannels && (jobType != model.CustomerExportJobTypeUpstreamDetails || len(channelIDs) != 0 || request.ChannelId != nil || urlKey != "" || request.ReportVersion == "") {
+		return nil, fmt.Errorf("%w: all-channel export requires a report version and no channel or URL filter", ErrCustomerExportInvalidRequest)
+	}
 	if err := model.ValidateUpstreamEvidenceFilter(request.UpstreamEvidenceFilter); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrCustomerExportInvalidRequest, err)
 	}
@@ -31,18 +34,24 @@ func SubmitUpstreamExportJob(ctx context.Context, actorID int, request CustomerE
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrCustomerExportInvalidRequest, err)
 	}
+	filters.FieldVersion = customerExportFormatVersion(jobType)
 	if request.ProviderModelFallback != nil && filters.ModelName == "" {
 		return nil, fmt.Errorf("%w: provider_model_fallback requires model_name", ErrCustomerExportInvalidRequest)
 	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return nil, model.ErrCustomerExportBackendUnsupported
 	}
-	if _, err = currentExportObjectStore(); err != nil {
+	store, err := currentExportObjectStore()
+	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	allChannels := len(channelIDs) == 0 && urlKey == "" && request.UpstreamEvidenceFilter != ""
+	ctx, err = freezeBillingExportReport(ctx, &filters, request.ReportVersion)
+	if err != nil {
+		return nil, err
+	}
+	allChannels := len(channelIDs) == 0 && urlKey == "" && (request.UpstreamEvidenceFilter != "" || request.UpstreamAllChannels)
 	filters.Upstream, err = model.FreezeUpstreamExportScope(ctx, actorID, filters.StartTimestamp, channelIDs, urlKey, allChannels)
 	if err != nil {
 		return nil, err
@@ -52,9 +61,8 @@ func SubmitUpstreamExportJob(ctx context.Context, actorID int, request CustomerE
 	}
 	filters.Upstream.EvidenceFilter = request.UpstreamEvidenceFilter
 	filters.Upstream.ProviderModelFallback = request.ProviderModelFallback
-	// This projection has no cross-customer source revision: never auto-reuse a
-	// completed file on the assumption that a log ID proves historical equality.
-	job, created, err := model.CreateCustomerExportJob(actorID, 0, jobType, filters)
+	job, created, err := model.CreateCustomerExportJob(actorID, 0, jobType, filters,
+		model.CustomerExportReuse{StoreIdentity: store.ExportIdentity()})
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +125,7 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 		"Test pricing",
 		"Data quality reasons",
 		"Seconds basis",
-		"Test amount basis", "Recorded test fee", "Recalculated test original",
+		"Test amount basis", "Recorded test fee", "Recalculated test original", "Original amount estimated",
 	}
 	if filters.Language == "zh" {
 		writer.header = []string{
@@ -161,14 +169,21 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 			"测试计价",
 			"数据质量说明",
 			"秒数依据",
-			"测试金额依据", "原测试记录金额", "复算测试原价",
+			"测试金额依据", "原测试记录金额", "复算测试原价", "原价是否为估算",
 		}
 	}
+	if filters.Upstream.URLKey == "" {
+		writer.header[4] = "Channel scope"
+		if filters.Language == "zh" {
+			writer.header[4] = "渠道范围"
+		}
+	}
+	writer.setBillingCoverage(filters)
 	scope := customerExportScopeColumns{QuotaPerUnit: filters.QuotaPerUnit, Currency: filters.Currency, CurrencyRate: filters.CurrencyRate, GeneratedAt: common.GetTimestamp()}
-	filter := model.UpstreamBillingDetailFilter{EvidenceFilter: filters.Upstream.EvidenceFilter, Start: filters.StartTimestamp, End: filters.EndTimestamp - 1, ChannelIds: filters.Upstream.ChannelIds, ProviderModel: filters.ModelName, ProviderModelFallback: filters.Upstream.ProviderModelFallback, BillingMode: filters.BillingMode, RequestId: filters.RequestId, UpstreamRequestId: filters.UpstreamRequestId}
+	filter := model.UpstreamBillingDetailFilter{URLKey: filters.Upstream.URLKey, EvidenceFilter: filters.Upstream.EvidenceFilter, Start: filters.StartTimestamp, End: filters.EndTimestamp - 1, ChannelIds: filters.Upstream.ChannelIds, ProviderModel: filters.ModelName, ProviderModelFallback: filters.Upstream.ProviderModelFallback, BillingMode: filters.BillingMode, RequestId: filters.RequestId, UpstreamRequestId: filters.UpstreamRequestId}
 	progress := model.CustomerExportProgress{}
 	gate := customerExportSummaryGate(pressure, job, &progress)
-	err = model.ScanUpstreamBillingDetails(ctx, filter, filters.Upstream.IncludeRootFields, model.BillingStatementReadPolicy{UpperLogID: filters.Upstream.UpperLogID, BatchTimeout: customerExportBatchTimeout, AfterBatch: func(count int) error { progress.Scanned += int64(count); return nil }, BeforeBatch: func(ctx context.Context) error {
+	err = model.ScanUpstreamBillingDetails(ctx, filter, filters.Upstream.IncludeRootFields, model.BillingStatementReadPolicy{BatchTimeout: customerExportBatchTimeout, AfterBatch: func(count int) error { progress.Scanned += int64(count); return nil }, BeforeBatch: func(ctx context.Context) error {
 		if err := model.UpdateCustomerExportProgress(ctx, job.JobID, job.Executor, progress); err != nil {
 			return err
 		}
@@ -177,10 +192,11 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 		channel := filters.Upstream.Channel(row.ChannelId, filters.StartTimestamp)
 		reference, referenceQuota, discount, version, source, sourceMonth := "", "", "", "", "", ""
 		if d := channel.Discount; d != nil {
-			discount, version, source = d.Value.String(), strconv.FormatInt(d.Version, 10), d.Source
+			coefficient := d.ValueAt(row.Time)
+			discount, version, source = coefficient.String(), strconv.FormatInt(d.Version, 10), d.Source
 			sourceMonth = formatExportTimestamp(d.SourcePeriod)
 			if original, e := decimal.NewFromString(row.OriginalExactQuota); e == nil {
-				referenceQuota = model.UpstreamReferenceQuota(original, d.Value).String()
+				referenceQuota = model.UpstreamReferenceQuota(original, coefficient).String()
 				reference = exportCurrencyAmount(referenceQuota, scope)
 			}
 		}
@@ -242,10 +258,10 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 		identity, upstreamName := filters.Upstream.URLKey, filters.Upstream.GroupName
 		if identity == "" {
 			identity, upstreamName = strconv.Itoa(row.ChannelId), channel.UpstreamName
-			writer.header[4] = "Channel scope"
-			if filters.Language == "zh" {
-				writer.header[4] = "渠道范围"
-			}
+		}
+		estimatedOriginal := ""
+		if row.OriginalAmountEstimated != nil {
+			estimatedOriginal = exportYesNo(*row.OriginalAmountEstimated)
 		}
 		record := []string{
 			job.JobID, formatExportTimestamp(scope.GeneratedAt),
@@ -264,7 +280,7 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 			exportCsvCellGuard(row.RequestId), exportCsvCellGuard(row.UpstreamRequestId),
 			exportCsvCellGuard(row.PlatformTaskId), exportCsvCellGuard(row.UpstreamTaskId),
 			strings.Join(row.EstimateReasons, ";"), row.DataQuality.Status, seconds, referenceQuota, testPricing,
-			upstreamExportQualityReasons(row.DataQuality, filters.Language), secondsBasis, testBasis, recordedFee, recomputedFee,
+			upstreamExportQualityReasons(row.DataQuality, filters.Language), secondsBasis, testBasis, recordedFee, recomputedFee, estimatedOriginal,
 		}
 		if err := writer.AppendRecord(record); err != nil {
 			return err
@@ -304,13 +320,23 @@ func ResubmitUpstreamExportJob(actorID int, sourceJobID string) (*model.Customer
 	if err != nil {
 		return nil, err
 	}
+	if filters.BillingReportVersion == "" {
+		return nil, errCustomerExportFormatChanged
+	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return nil, model.ErrCustomerExportBackendUnsupported
 	}
 	if _, err = currentExportObjectStore(); err != nil {
 		return nil, err
 	}
-	filters.FieldVersion = customerExportFieldVersion
+	if filters.BillingReportCoverage == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := freezeBillingExportReport(ctx, &filters, filters.BillingReportVersion); err != nil {
+			return nil, err
+		}
+	}
+	filters.FieldVersion = customerExportFormatVersion(source.JobType)
 	job, created, err := model.CreateCustomerExportJob(actorID, 0, source.JobType, filters, model.CustomerExportReuse{RequireExactActiveFilters: true})
 	if err != nil {
 		return nil, err

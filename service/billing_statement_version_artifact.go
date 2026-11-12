@@ -78,7 +78,7 @@ func GenerateBillingStatementVersionArtifacts(ctx context.Context, v *model.Bill
 			VersionId:      v.ID,
 			Role:           f.role,
 			Language:       v.Language,
-			FormatVersion:  customerExportFieldVersion,
+			FormatVersion:  customerStatementExportFieldVersion,
 			ObjectKey:      model.BillingStatementNamespace + "/" + v.DraftPublicId + "/" + f.fileName,
 			FileName:       f.fileName,
 			SizeBytes:      f.sizeBytes,
@@ -419,14 +419,15 @@ type BillingStatementDiscountDiff struct {
 }
 
 type BillingStatementVersionDiff struct {
-	Usage            map[string]BillingStatementCountDiff  `json:"usage"`
-	Discounts        BillingStatementDiscountDiff          `json:"discounts"`
-	BaseVersionId    int64                                 `json:"base_version_id"`
-	CompareVersionId int64                                 `json:"compare_version_id"`
-	Items            map[string]BillingStatementAmountDiff `json:"items"`
-	Groups           []BillingStatementGroupDiff           `json:"groups"`
-	Models           []BillingStatementModelDiff           `json:"models"`
-	Quality          map[string]BillingStatementAmountDiff `json:"quality"`
+	RecordedOriginalAmounts bool                                  `json:"recorded_original_amounts"`
+	Usage                   map[string]BillingStatementCountDiff  `json:"usage"`
+	Discounts               BillingStatementDiscountDiff          `json:"discounts"`
+	BaseVersionId           int64                                 `json:"base_version_id"`
+	CompareVersionId        int64                                 `json:"compare_version_id"`
+	Items                   map[string]BillingStatementAmountDiff `json:"items"`
+	Groups                  []BillingStatementGroupDiff           `json:"groups"`
+	Models                  []BillingStatementModelDiff           `json:"models"`
+	Quality                 map[string]BillingStatementAmountDiff `json:"quality"`
 }
 
 type BillingStatementGroupDiff struct {
@@ -452,11 +453,14 @@ func ComputeBillingStatementVersionDiff(base *model.BillingStatementVersion, com
 	if err != nil {
 		return nil, err
 	}
+	baseStatement.RecordedAmountsOnly()
+	compareStatement.RecordedAmountsOnly()
 	diff := &BillingStatementVersionDiff{
-		BaseVersionId:    base.ID,
-		CompareVersionId: compare.ID,
-		Items:            map[string]BillingStatementAmountDiff{},
-		Quality:          map[string]BillingStatementAmountDiff{},
+		RecordedOriginalAmounts: true,
+		BaseVersionId:           base.ID,
+		CompareVersionId:        compare.ID,
+		Items:                   map[string]BillingStatementAmountDiff{},
+		Quality:                 map[string]BillingStatementAmountDiff{},
 	}
 	int64Ptr := func(v int64) *int64 { return &v }
 	amountDiff := func(baseVal *int64, compareVal *int64) BillingStatementAmountDiff {
@@ -627,9 +631,6 @@ func ComputeBillingStatementVersionDiff(base *model.BillingStatementVersion, com
 // SubmitBillingStatementVersionCorrectionJob 受理更正：以当前确认版为基准生成更正草稿
 // （方案 6.1/7），客户可见原因与内部备注随草稿冻结，后台生成流程与普通草稿一致。
 func SubmitBillingStatementVersionCorrectionJob(ctx context.Context, adminId int, userId int, periodStart int64, periodEndExcl int64, baseVersionId int64, publicReason string, internalNote string, language ...string) (*model.BillingStatementVersion, error) {
-	if !model.BillingStatementVersionEnabled() {
-		return nil, model.ErrBillingStatementVersionDisabled
-	}
 	if !model.BillingStatementVersionTopologyOK() {
 		return nil, model.ErrBillingStatementVersionTopology
 	}
@@ -664,6 +665,7 @@ func billingStatementGenerationFilters(ctx context.Context, adminId, userId int,
 	if err != nil {
 		return filters, err
 	}
+	filters.FieldVersion = customerExportFormatVersion(model.CustomerExportJobTypeStatementVersion)
 	// 账单是货币金额；积分展示模式不把 USD 金额误标成 tokens。
 	if filters.Currency == operation_setting.QuotaDisplayTypeTokens {
 		filters.Currency = "USD"

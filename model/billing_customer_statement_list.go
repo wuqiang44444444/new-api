@@ -53,13 +53,14 @@ type BillingCustomerStatementListSummary struct {
 }
 
 type BillingCustomerStatementList struct {
-	Summary   BillingCustomerStatementListSummary `json:"summary"`
-	Items     []BillingCustomerStatementListItem  `json:"items"`
-	Page      int                                 `json:"page"`
-	PageSize  int                                 `json:"page_size"`
-	Total     int64                               `json:"total"`
-	SortBy    string                              `json:"sort_by"`
-	SortOrder string                              `json:"sort_order"`
+	RecordedOriginalAmounts bool                                `json:"recorded_original_amounts,omitempty"`
+	Summary                 BillingCustomerStatementListSummary `json:"summary"`
+	Items                   []BillingCustomerStatementListItem  `json:"items"`
+	Page                    int                                 `json:"page"`
+	PageSize                int                                 `json:"page_size"`
+	Total                   int64                               `json:"total"`
+	SortBy                  string                              `json:"sort_by"`
+	SortOrder               string                              `json:"sort_order"`
 }
 
 type billingCustomerStatementListAccumulator struct {
@@ -68,6 +69,19 @@ type billingCustomerStatementListAccumulator struct {
 }
 
 func GetBillingReconciliationUserById(userId int) (BillingReconciliationUserIdentity, error) {
+	return GetBillingReconciliationUser(context.Background(), userId)
+}
+
+func GetBillingReconciliationUser(ctx context.Context, userId int) (BillingReconciliationUserIdentity, error) {
+	return getBillingReconciliationUser(ctx, userId, BillingReportFromContext(ctx) != nil)
+}
+
+func GetDailyReportCustomer(ctx context.Context, userId int) (BillingReconciliationUserIdentity, error) {
+	return getBillingReconciliationUser(ctx, userId, true)
+}
+
+func getBillingReconciliationUser(ctx context.Context, userId int, publishedOnly bool) (BillingReconciliationUserIdentity, error) {
+
 	var user struct {
 		Id          int
 		Username    string
@@ -75,13 +89,25 @@ func GetBillingReconciliationUserById(userId int) (BillingReconciliationUserIden
 		Quota       int
 		DeletedAt   gorm.DeletedAt
 	}
-	err := DB.Unscoped().Model(&User{}).
+	err := DB.WithContext(ctx).Unscoped().Model(&User{}).
 		Select("id, username, display_name, quota, deleted_at").
 		Where("id = ?", userId).
 		Take(&user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		var history struct{ UserId int }
-		if err := LOG_DB.Model(&Log{}).Scopes(customerSettlementLogs).
+		if publishedOnly {
+			err := DB.WithContext(ctx).Table("billing_report_customer_days AS customer").Select("customer.user_id").
+				Joins("JOIN billing_report_heads AS head ON head.generation = customer.generation").
+				Where("customer.user_id = ?", userId).Take(&history).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				err = DB.WithContext(ctx).Table("usage_report_day_rows AS customer").Select("customer.user_id").
+					Joins("JOIN usage_report_days AS head ON head.generation = customer.generation").
+					Where("customer.user_id = ?", userId).Take(&history).Error
+			}
+			if err != nil {
+				return BillingReconciliationUserIdentity{}, err
+			}
+		} else if err := LOG_DB.WithContext(ctx).Model(&Log{}).Scopes(customerSettlementLogs).
 			Select("user_id").Where("user_id = ? AND type IN ?", userId, []int{LogTypeConsume, LogTypeRefund}).
 			Take(&history).Error; err != nil {
 			return BillingReconciliationUserIdentity{}, err
@@ -134,57 +160,59 @@ func GetBillingCustomerStatementList(ctx context.Context,
 	if len(frozenIDs) > 0 && len(frozenIDs) <= 500 {
 		query = query.Where("user_id NOT IN ?", frozenIDs)
 	}
-	refundEvidence, err := loadBillingStatementRefundEvidence(ctx, query)
-	if err != nil {
-		return result, err
-	}
-	rows, err := query.Rows()
-	if err != nil {
-		return result, err
-	}
-	defer rows.Close()
-
 	accumulators := make(map[int]*billingCustomerStatementListAccumulator)
-	for rows.Next() {
-		var log billingReconciliationLog
-		if err := rows.Scan(&log.UserId, &log.TokenId, &log.ChannelId, &log.ModelName, &log.Type, &log.CreatedAt, &log.PromptTokens, &log.CompletionTokens, &log.Quota, &log.Other); err != nil {
+	if report := BillingReportFromContext(ctx); report != nil {
+		result.RecordedOriginalAmounts = true
+		var err error
+		accumulators, err = report.loadCustomerOverview(ctx, frozenItems)
+		if err != nil {
 			return result, err
 		}
-		if _, frozen := frozenItems[log.UserId]; frozen {
-			continue
+	} else {
+		refundEvidence, err := loadBillingStatementRefundEvidence(ctx, query)
+		if err != nil {
+			return result, err
 		}
-		accumulator, ok := accumulators[log.UserId]
-		if !ok {
-			accumulator = &billingCustomerStatementListAccumulator{
-				item: BillingCustomerStatementListItem{UserId: log.UserId},
-				price: billingReconciliationModelAccumulator{
-					model:                 BillingReconciliationModelSummary{},
-					originalQuotaComplete: true,
-					priceSnapshotMarkers:  make(map[string]struct{}),
-				},
+		rows, err := query.Rows()
+		if err != nil {
+			return result, err
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var log billingReconciliationLog
+			if err := rows.Scan(&log.UserId, &log.TokenId, &log.ChannelId, &log.ModelName, &log.Type, &log.CreatedAt, &log.PromptTokens, &log.CompletionTokens, &log.Quota, &log.Other); err != nil {
+				return result, err
 			}
-			accumulators[log.UserId] = accumulator
+			if _, frozen := frozenItems[log.UserId]; frozen {
+				continue
+			}
+			accumulator, ok := accumulators[log.UserId]
+			if !ok {
+				accumulator = &billingCustomerStatementListAccumulator{
+					item: BillingCustomerStatementListItem{UserId: log.UserId},
+					price: billingReconciliationModelAccumulator{
+						model:                 BillingReconciliationModelSummary{},
+						originalQuotaComplete: true,
+						priceSnapshotMarkers:  make(map[string]struct{}),
+					},
+				}
+				accumulators[log.UserId] = accumulator
+			}
+
+			parsed := parseBillingReconciliationLog(log)
+			refundEvidence.apply(log, &parsed)
+			accumulateBillingReconciliationLog(&accumulator.item.Usage, log, parsed)
+			accumulateCustomerBillingQuality(&accumulator.price.model.DataQuality, parsed)
+			accumulateBillingReconciliationPrice(&accumulator.price, log, parsed)
+			if log.CreatedAt > accumulator.item.LastActivityAt {
+				accumulator.item.LastActivityAt = log.CreatedAt
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return result, err
 		}
 
-		parsed := parseBillingReconciliationLog(log)
-		refundEvidence.apply(log, &parsed)
-		accumulateBillingReconciliationLog(&accumulator.item.Usage, log, parsed)
-		if parsed.inputTokensUnavailable {
-			ensureBillingReconciliationQuality(&accumulator.price.model.DataQuality).InputTokensUnavailableRequests++
-		}
-		if parsed.unavailable {
-			ensureBillingReconciliationQuality(&accumulator.price.model.DataQuality).UnavailableRequests++
-		}
-		if parsed.billingMode == BillingReconciliationModeUnknown {
-			ensureBillingReconciliationQuality(&accumulator.price.model.DataQuality).UnknownBillingModeRequests++
-		}
-		accumulateBillingReconciliationPrice(&accumulator.price, log, parsed)
-		if log.CreatedAt > accumulator.item.LastActivityAt {
-			accumulator.item.LastActivityAt = log.CreatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return result, err
 	}
 
 	for userID, item := range frozenItems {
@@ -230,13 +258,15 @@ func GetBillingCustomerStatementList(ctx context.Context,
 			finalizeBillingReconciliationPrice(&accumulator.price)
 			accumulator.item.OriginalQuota = accumulator.price.model.OriginalQuota
 			accumulator.item.originalQuota = accumulator.price.model.originalQuota
-			if accumulator.item.Usage.GrossQuota == 0 && accumulator.item.Usage.RefundQuota == 0 && accumulator.item.OriginalQuota == nil {
+			if BillingReportFromContext(ctx) == nil && accumulator.item.Usage.GrossQuota == 0 && accumulator.item.Usage.RefundQuota == 0 && accumulator.item.OriginalQuota == nil {
 				zero := int64(0)
 				accumulator.item.OriginalQuota = &zero
 			}
 			if accumulator.item.OriginalQuota != nil {
-				discountQuota := *accumulator.item.OriginalQuota - accumulator.item.Usage.NetQuota
-				accumulator.item.DiscountQuota = &discountQuota
+				accumulator.item.DiscountQuota = BillingStatementEstimatedSavings(accumulator.item.OriginalQuota, accumulator.item.Usage.NetQuota)
+				if accumulator.item.DiscountQuota == nil {
+					accumulateBillingEstimateReasonQuality(ensureBillingReconciliationQuality(&accumulator.price.model.DataQuality), []string{BillingEstimateAmountOutOfRange})
+				}
 			}
 			accumulator.item.DataQuality = accumulator.price.model.DataQuality
 			finalizeBillingReconciliationQuality(&accumulator.item.DataQuality)
@@ -285,20 +315,18 @@ func summarizeBillingCustomerStatementList(items []BillingCustomerStatementListI
 	for _, item := range items {
 		accumulateBillingReconciliationUsage(&summary.Usage, item.Usage)
 		accumulateBillingReconciliationQuality(&summary.DataQuality, item.DataQuality)
-		if (item.Usage.GrossQuota > 0 || item.Usage.RefundQuota > 0) && item.OriginalQuota == nil {
+		if item.OriginalQuota == nil {
 			originalQuotaComplete = false
-		} else if item.OriginalQuota != nil {
+		} else {
 			originalQuota = originalQuota.Add(item.originalQuota)
 		}
 	}
 	finalizeBillingReconciliationUsage(&summary.Usage)
 	if originalQuotaComplete {
 		summary.OriginalQuota = billingStatementOriginalQuota(originalQuota)
-		if summary.OriginalQuota == nil {
+		summary.DiscountQuota = BillingStatementEstimatedSavings(summary.OriginalQuota, summary.Usage.NetQuota)
+		if summary.DiscountQuota == nil {
 			accumulateBillingEstimateReasonQuality(ensureBillingReconciliationQuality(&summary.DataQuality), []string{BillingEstimateAmountOutOfRange})
-		} else {
-			discountQuota := *summary.OriginalQuota - summary.Usage.NetQuota
-			summary.DiscountQuota = &discountQuota
 		}
 	}
 	finalizeBillingReconciliationQuality(&summary.DataQuality)

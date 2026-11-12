@@ -26,6 +26,7 @@ type billingReconciliationPeriod struct {
 }
 
 type providerBillingDiscountRequest struct {
+	EffectiveDate   string          `json:"effective_date"`
 	PeriodStart     int64           `json:"period_start"`
 	ChannelId       int             `json:"channel_id"`
 	Discount        decimal.Decimal `json:"discount"`
@@ -51,10 +52,15 @@ func GetSelfBillingReconciliation(c *gin.Context) {
 	if !ok {
 		return
 	}
-	// 版本绑定（方案 13）：明确版本或已有当前确认版时读取冻结视图，否则走实时查询。
+	// 版本绑定（方案 13）：明确版本或已有当前确认版时读取冻结视图，其余读取已发布日报表。
 	if tryRespondBillingStatementVersion(c, period, c.GetInt("id"), "api_key", false) {
 		return
 	}
+	cancelReport, ok := bindBillingReport(c, period)
+	if !ok {
+		return
+	}
+	defer cancelReport()
 	statement, err := model.GetBillingCustomerStatement(
 		c.Request.Context(), c.GetInt("id"), period.StartTimestamp, period.EndTimestamp, "api_key",
 		tokenId, modelName, billingMode,
@@ -89,7 +95,12 @@ func GetAdminCustomerBillingReconciliation(c *gin.Context) {
 	if tryRespondBillingStatementVersion(c, period, userId, dimension, true) {
 		return
 	}
-	if _, err := model.GetBillingReconciliationUserById(userId); err != nil {
+	cancelReport, ok := bindBillingReport(c, period)
+	if !ok {
+		return
+	}
+	defer cancelReport()
+	if _, err := model.GetBillingReconciliationUser(c.Request.Context(), userId); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "user not found"})
 			return
@@ -116,8 +127,7 @@ func GetAdminUpstreamReconciliation(c *gin.Context) {
 		return
 	}
 	urlKey := strings.TrimSpace(c.Query("url_key"))
-	if urlKey != "" {
-		common.ApiErrorMsg(c, "use channel_id instead of url_key")
+	if !validateUpstreamReportURL(c, urlKey) {
 		return
 	}
 	page, pageSize, valid := parseBillingPage(c)
@@ -134,7 +144,16 @@ func GetAdminUpstreamReconciliation(c *gin.Context) {
 		common.ApiErrorMsg(c, "invalid search")
 		return
 	}
-	summary, err := model.GetUpstreamSummaryPage(c.Request.Context(), period.StartTimestamp, period.EndTimestamp, period.PeriodStart, model.UpstreamSummaryPageFilter{Level: level, ChannelID: channelID, Search: search, Page: page, PageSize: pageSize})
+	cancelReport, ok := bindUpstreamBillingReport(c, period)
+	if !ok {
+		return
+	}
+	defer cancelReport()
+	summary, err := model.GetUpstreamSummaryPage(c.Request.Context(), period.StartTimestamp, period.EndTimestamp, period.PeriodStart, model.UpstreamSummaryPageFilter{
+		ReportURL: urlKey, GroupByURL: c.Query("group_by") == "url", Level: level,
+		ChannelID: channelID, Search: search, Page: page, PageSize: pageSize,
+		SortBy: c.Query("sort_by"), DataStatus: c.Query("data_status"),
+	})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -185,7 +204,7 @@ func PostAdminProviderChannelDiscountInit(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"outcomes": outcomes})
 }
 
-// PutAdminProviderBillingDiscount saves one channel-month coefficient. The
+// PutAdminProviderBillingDiscount updates a channel's monthly discount schedule. The
 // operator no longer types a reason: the server records the fixed system
 // operation description so the audit trail stays complete without frontend
 // input. Period, channel, coefficient range, expected-version and admin
@@ -196,11 +215,20 @@ func PutAdminProviderBillingDiscount(c *gin.Context) {
 		common.ApiErrorMsg(c, "invalid provider discount")
 		return
 	}
+	var effectiveFrom int64
+	if request.EffectiveDate != "" {
+		date, err := time.ParseInLocation(time.DateOnly, request.EffectiveDate, billingSettlementLocation)
+		if err != nil {
+			common.ApiErrorMsg(c, "invalid discount effective date")
+			return
+		}
+		effectiveFrom = date.Unix()
+	}
 	discount := model.ProviderChannelBillingDiscount{
 		PeriodStart: request.PeriodStart, ChannelId: request.ChannelId,
 		Discount: request.Discount, Reason: model.ReasonChannelDiscountManualUpdate,
 	}
-	if err := model.SaveProviderChannelBillingDiscount(&discount, request.ExpectedVersion, c.GetInt("id")); err != nil {
+	if err := model.SaveProviderChannelBillingDiscount(&discount, request.ExpectedVersion, c.GetInt("id"), effectiveFrom); err != nil {
 		respondBillingReconciliationWriteError(c, err)
 		return
 	}
@@ -253,7 +281,7 @@ func parseBillingReconciliationModelFilters(c *gin.Context) (string, string, boo
 		return "", "", false
 	}
 	billingMode := strings.TrimSpace(c.Query("billing_mode"))
-	if billingMode != "" && billingMode != model.BillingReconciliationModeToken && billingMode != model.BillingReconciliationModePerCall && billingMode != model.BillingReconciliationModePerSecond && billingMode != model.BillingReconciliationModeUnknown {
+	if billingMode != "" && !model.ValidBillingReconciliationMode(billingMode) {
 		common.ApiErrorMsg(c, "invalid billing_mode")
 		return "", "", false
 	}
@@ -261,10 +289,19 @@ func parseBillingReconciliationModelFilters(c *gin.Context) (string, string, boo
 }
 
 func respondBillingReconciliation(c *gin.Context, period billingReconciliationPeriod, filters gin.H, result any, source string) {
-	common.ApiSuccess(c, gin.H{
+	response := gin.H{
 		"period": period, "filters": filters, "result": result,
 		"generated_at": common.GetTimestamp(), "data_version": period.EndTimestamp, "data_source": source,
-	})
+	}
+	if report := model.BillingReportFromContext(c.Request.Context()); report != nil {
+		response["billing_report"] = report
+		response["data_source"] = "published_daily_billing"
+		response["generated_at"] = report.AsOf
+	}
+	if statement, ok := result.(model.BillingCustomerStatement); ok {
+		addCustomerBillingRefundStatus(c, response, statement.UserId, period)
+	}
+	common.ApiSuccess(c, response)
 }
 
 func respondBillingReconciliationWriteError(c *gin.Context, err error) {

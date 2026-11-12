@@ -68,10 +68,40 @@ async function open() {
     </I18nextProvider>
   )
   fireEvent.click(
-    screen.getByRole('button', { name: 'Review and differences' })
+    screen.getByRole('button', { name: 'Check statement records' })
   )
   return client
 }
+it('distinguishes a clean scan from verified historical coverage', async () => {
+  api.get.mockResolvedValue({
+    success: true,
+    data: {
+      decision_version: 3,
+      rows: 19,
+      issues: [],
+      blockers: 0,
+      pending: 0,
+      captured_at: 100,
+    },
+  })
+  await open()
+  const dialog = screen.getByRole('dialog', { name: 'Check statement records' })
+  expect(
+    await within(dialog).findByRole('heading', {
+      name: 'No issues found in the available records',
+    })
+  ).toBeVisible()
+  expect(
+    within(dialog).getByText(/19 charge and refund records checked/)
+  ).toBeVisible()
+  expect(
+    within(dialog).getByText(/requires checking backups and log retention/)
+  ).toBeVisible()
+  expect(
+    within(dialog).queryByRole('button', { name: 'Handling history (0)' })
+  ).toBeNull()
+})
+
 it('keeps records without invented evidence, while amount differences remain pending', async () => {
   api.get.mockResolvedValue({
     success: true,

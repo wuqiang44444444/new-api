@@ -29,9 +29,10 @@ func TestUpstreamSubmissionFreezesInheritedDiscountWithoutWriting(t *testing.T) 
 	t.Cleanup(func() {
 		model.DB.Where("channel_id IN ?", []int{9691, 9692}).Delete(&model.ProviderChannelBillingDiscount{})
 	})
+	publishBillingExportTestDay(t, start.Unix())
 	var auditsBefore int64
 	require.NoError(t, model.DB.Model(&model.ProviderBillingAudit{}).Count(&auditsBefore).Error)
-	job, err := SubmitUpstreamExportJob(context.Background(), actor.Id, CustomerExportRequest{JobType: model.CustomerExportJobTypeUpstreamSummary, StartTimestamp: start.Unix(), EndTimestamp: start.AddDate(0, 1, 0).Unix()}, []int{9691}, "channel:9691")
+	job, err := SubmitUpstreamExportJob(context.Background(), actor.Id, CustomerExportRequest{JobType: model.CustomerExportJobTypeUpstreamSummary, StartTimestamp: start.Unix(), EndTimestamp: start.AddDate(0, 1, 0).Unix()}, []int{9691}, "")
 	require.NoError(t, err)
 	filters, err := job.DecodeFilters()
 	require.NoError(t, err)
@@ -56,6 +57,8 @@ func TestUpstreamSubmissionDoesNotReuseAnotherChannelInSameURL(t *testing.T) {
 	url := "https://scope.example"
 	require.NoError(t, model.DB.Create(&[]model.Channel{{Id: 9695, BaseURL: &url}, {Id: 9696, BaseURL: &url}}).Error)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, billingExportTimezone())
+	require.NoError(t, model.DB.Create(&[]model.Log{{ChannelId: 9695, Type: model.LogTypeConsume, CreatedAt: start.Unix() + 1}, {ChannelId: 9696, Type: model.LogTypeConsume, CreatedAt: start.Unix() + 2}}).Error)
+	publishBillingExportTestDay(t, start.Unix())
 	request := CustomerExportRequest{Language: "zh", JobType: model.CustomerExportJobTypeUpstreamDetails, StartTimestamp: start.Unix(), EndTimestamp: start.AddDate(0, 1, 0).Unix()}
 	first, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9695}, url)
 	require.NoError(t, err)
@@ -110,11 +113,13 @@ func TestUpstreamSubmissionRetryKeepsOriginalLogBoundary(t *testing.T) {
 	require.NoError(t, model.DB.Create(&actor).Error)
 	require.NoError(t, model.DB.Create(&model.Channel{Id: 9693, Name: "retry"}).Error)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, billingExportTimezone())
+	require.NoError(t, model.DB.Create(&model.Log{ChannelId: 9693, Type: model.LogTypeConsume, CreatedAt: start.Unix() + 1}).Error)
+	publishBillingExportTestDay(t, start.Unix())
 	request := CustomerExportRequest{Language: "zh", JobType: model.CustomerExportJobTypeUpstreamSummary, StartTimestamp: start.Unix(), EndTimestamp: start.AddDate(0, 1, 0).Unix()}
-	first, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9693}, "channel:9693")
+	first, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9693}, "")
 	require.NoError(t, err)
 	require.NoError(t, model.DB.Create(&model.Log{ChannelId: 9694, Type: model.LogTypeConsume, CreatedAt: start.Unix() + 1}).Error)
-	retry, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9693}, "channel:9693")
+	retry, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9693}, "")
 	require.NoError(t, err)
 	assert.Equal(t, first.JobID, retry.JobID)
 	assert.Equal(t, first.Filters, retry.Filters, "retry must retain the accepted data boundary")
@@ -122,14 +127,15 @@ func TestUpstreamSubmissionRetryKeepsOriginalLogBoundary(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, total)
 	request.Language = "en"
-	_, err = SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9693}, "channel:9693")
+	_, err = SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9693}, "")
 	assert.ErrorIs(t, err, model.ErrCustomerExportUserBusy, "a different requested language must not reuse the file")
 	_, err = model.CancelCustomerExportJob(first.JobID, actor.Id)
 	require.NoError(t, err)
 	request.Language = "zh"
-	newer, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9693}, "channel:9693")
+	require.NoError(t, model.BuildBillingReportDay(context.Background(), start.Unix(), "export-fixture", "runner", nil, nil))
+	newer, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9693}, "")
 	require.NoError(t, err)
-	assert.NotEqual(t, first.Filters, newer.Filters, "a new request captures the newer log boundary")
+	assert.NotEqual(t, first.Filters, newer.Filters, "a new request captures the newly published version")
 	_, err = ResubmitUpstreamExportJob(actor.Id, first.JobID)
 	assert.ErrorIs(t, err, model.ErrCustomerExportUserBusy, "regeneration must not return a different frozen snapshot")
 }

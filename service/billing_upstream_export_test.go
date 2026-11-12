@@ -20,7 +20,8 @@ func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 	require.NoError(t, model.DB.AutoMigrate(&model.ProviderChannelBillingDiscount{}, &model.ProviderBillingAudit{}, &model.ProviderURLGroupDisplayName{}, &model.ProviderChannelBillingConfig{}))
 	actor := model.User{Id: 9601, Username: "upstream-export-admin", AffCode: "up-export", Role: common.RoleRootUser, Status: common.UserStatusEnabled}
 	require.NoError(t, model.DB.Create(&actor).Error)
-	require.NoError(t, model.DB.Create(&model.Channel{Id: 9601, Name: "=channel"}).Error)
+	url := "https://upstream.example"
+	require.NoError(t, model.DB.Create(&model.Channel{Id: 9601, Name: "=channel", BaseURL: &url}).Error)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, billingExportTimezone()).Unix()
 	end := time.Date(2026, 10, 1, 0, 0, 0, 0, billingExportTimezone()).Unix()
 	discount := model.ProviderChannelBillingDiscount{PeriodStart: start, ChannelId: 9601, Discount: decimal.RequireFromString("0.12345678"), Reason: "confirmed supplier coefficient"}
@@ -36,7 +37,7 @@ func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 	require.ErrorIs(t, err, ErrCustomerExportInvalidRequest, "single-customer endpoint must not admit the cross-customer type")
 	facts := `{"contract_applicable":false,"group_ratio":0.5,"model_ratio":1,"upstream_model_name":"same","statement_snapshot":{"billing_mode":"per_second"},"usage_units":{"duration":"second"},"usage_facts":{"duration":6.5},"task_id":"task-public","upstream_task_id":"task-root"}`
 	require.NoError(t, model.DB.Create(&[]model.Log{
-		{UserId: 42, ChannelId: 9601, Type: model.LogTypeConsume, CreatedAt: start + 1, Quota: 500000, RequestId: "export-match", UpstreamRequestId: "up-1", Other: facts},
+		{UserId: 42, ChannelId: 9601, Type: model.LogTypeConsume, CreatedAt: start + 1, Quota: 500000, RequestId: "export-match", UpstreamRequestId: "up-1", Other: strings.TrimSuffix(facts, "}") + `,"admin_info":{"statement_original_quota":1000001}}`},
 		{UserId: 43, ChannelId: 9601, Type: model.LogTypeRefund, CreatedAt: start + 2, Quota: 100000, RequestId: "export-match", UpstreamRequestId: "up-2", Other: facts},
 		{UserId: 43, ChannelId: 9601, Type: model.LogTypeConsume, CreatedAt: start + 3, Quota: 999, RequestId: "excluded", Other: facts},
 	}).Error)
@@ -55,11 +56,14 @@ func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 	more[2].Other = `{"contract_applicable":false,"group_ratio":1,"model_ratio":1,"completion_ratio":1,"upstream_model_name":"same","request_path":"/v1/images/edits","cache_tokens":0,"cache_write_tokens":0,"cache_write_tokens_reported":true,"cache_read_tokens_reported":true,"test_pricing":{"version":1,"mode":"ratio","status":"settled","original_quota":1}}`
 	more[2].TokenName, more[2].Content = "模型测试", "模型测试"
 	require.NoError(t, model.DB.Create(&more).Error)
+	publishBillingExportTestDay(t, start)
 	job, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9601}, urlKey)
 	require.NoError(t, err)
 	// Settings and coefficients changing after acceptance never alter the file.
 	discount.Discount = decimal.RequireFromString("0.9")
 	require.NoError(t, model.SaveProviderChannelBillingDiscount(&discount, 1, actor.Id))
+	_, err = SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9601}, urlKey)
+	require.ErrorIs(t, err, model.ErrCustomerExportUserBusy, "an active job with an older coefficient cannot satisfy a new export")
 	claimed, err := model.ClaimNextQueuedCustomerExportJob("upstream-test", time.Now().Add(time.Minute).Unix(), 1800)
 	require.NoError(t, err)
 	require.NotNil(t, claimed)
@@ -78,7 +82,10 @@ func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 	first := records[1]
 	second := records[2]
 	assert.Equal(t, "'=channel", first[9])
-	assert.Equal(t, "1000000", first[19])
+	assert.Equal(t, "1000001", first[19])
+	assert.Equal(t, "Original amount estimated", records[0][len(records[0])-5])
+	assert.Equal(t, []string{exportYesNo(false), "1", "30", "0", ""}, first[len(first)-5:])
+	assert.Equal(t, exportYesNo(true), second[len(second)-5])
 	assert.Equal(t, "-200000", second[19])
 	assert.Equal(t, "0.12345678", first[25])
 	assert.Equal(t, "1", first[26])
@@ -120,6 +127,16 @@ func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 	scope := customerExportScopeColumns{QuotaPerUnit: filters.QuotaPerUnit, Currency: filters.Currency, CurrencyRate: filters.CurrencyRate}
 	assert.Equal(t, exportCurrencyAmount("123457", scope), first[24])
 	assert.Equal(t, exportCurrencyAmount("-24691", scope), second[24])
+	fresh, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9601}, urlKey)
+	require.NoError(t, err)
+	assert.NotEqual(t, completed.JobID, fresh.JobID)
+	require.Equal(t, model.CustomerExportJobStatusQueued, fresh.Status)
+	retry, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9601}, urlKey)
+	require.NoError(t, err)
+	assert.Equal(t, fresh.JobID, retry.JobID)
+	_, err = model.CancelCustomerExportJob(fresh.JobID, actor.Id)
+	require.NoError(t, err)
+
 	// Regeneration keeps the frozen upstream name even after the alias changes.
 	require.NoError(t, model.SaveProviderURLGroupName(urlKey, "Renamed upstream", actor.Id))
 	resubmitted, err := ResubmitUpstreamExportJob(actor.Id, job.JobID)
@@ -143,8 +160,10 @@ func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 	assert.Empty(t, visible)
 	_, err = ResubmitUpstreamExportJob(actor.Id, job.JobID)
 	assert.ErrorIs(t, err, model.ErrCustomerExportNotFound)
-	adminJob, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9601}, "")
+	require.NoError(t, model.SaveProviderURLGroupName(urlKey, "Primary upstream", actor.Id))
+	adminJob, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, []int{9601}, urlKey)
 	require.NoError(t, err)
+	assert.NotEqual(t, completed.JobID, adminJob.JobID, "an admin must not reuse a file with root-only fields")
 	adminClaimed, err := model.ClaimNextQueuedCustomerExportJob("upstream-admin", time.Now().Add(time.Minute).Unix(), 1800)
 	require.NoError(t, err)
 	require.NotNil(t, adminClaimed)
@@ -172,6 +191,7 @@ func TestUpstreamEvidenceExportFreezesGlobalCategoryAndResubmission(t *testing.T
 		{Type: model.LogTypeConsume, ChannelId: 9612, CreatedAt: start + 1, Quota: 10, RequestId: "priced-test", TokenName: "模型测试", Content: "模型测试", Other: facts},
 		{Type: model.LogTypeConsume, ChannelId: 9613, CreatedAt: start + 2, Quota: 10, RequestId: "ordinary", Other: `{}`},
 	}).Error)
+	publishBillingExportTestDay(t, start)
 	request := CustomerExportRequest{StartTimestamp: start, EndTimestamp: end, UpstreamEvidenceFilter: "test_priced_rows", Language: "en"}
 	job, err := SubmitUpstreamExportJob(context.Background(), actor.Id, request, nil, "")
 	require.NoError(t, err)
@@ -206,6 +226,32 @@ func TestUpstreamEvidenceExportFreezesGlobalCategoryAndResubmission(t *testing.T
 	copyFilters, err := resubmitted.DecodeFilters()
 	require.NoError(t, err)
 	assert.Equal(t, filters.Upstream, copyFilters.Upstream)
+	_, err = model.CancelCustomerExportJob(resubmitted.JobID, actor.Id)
+	require.NoError(t, err)
+	all := CustomerExportRequest{StartTimestamp: start, EndTimestamp: end, ReportVersion: filters.BillingReportVersion, Language: "en"}
+	_, err = SubmitUpstreamExportJob(context.Background(), actor.Id, all, nil, "")
+	require.ErrorIs(t, err, model.ErrCustomerExportNotFound, "missing scope must not expand to all channels")
+	all.UpstreamAllChannels = true
+	_, err = SubmitUpstreamExportJob(context.Background(), actor.Id, all, []int{9612}, "")
+	require.ErrorIs(t, err, ErrCustomerExportInvalidRequest, "conflicting scopes must fail closed")
+	allJob, err := SubmitUpstreamExportJob(context.Background(), actor.Id, all, nil, "")
+	require.NoError(t, err)
+	claimed, err = model.ClaimNextQueuedCustomerExportJob("evidence-export", time.Now().Add(time.Minute).Unix(), 1800)
+	require.NoError(t, err)
+	require.NotNil(t, claimed)
+	require.Equal(t, allJob.JobID, claimed.JobID)
+	runCustomerExportJob(context.Background(), claimed, "evidence-export", nil)
+	allCompleted, err := model.GetCustomerExportJobForOwner(allJob.JobID, actor.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.CustomerExportJobStatusSucceeded, allCompleted.Status)
+	allArtifact := allCompleted.DecodeArtifact()
+	require.NotNil(t, allArtifact)
+	require.Len(t, allArtifact.Files, 1)
+	allRecords, err := csv.NewReader(strings.NewReader(string(store.uploaded[allArtifact.Files[0].ObjectKey]))).ReadAll()
+	require.NoError(t, err)
+	require.Len(t, allRecords, 3)
+	assert.Equal(t, "priced-test", allRecords[1][29])
+	assert.Equal(t, "ordinary", allRecords[2][29])
 	request.UpstreamEvidenceFilter = "typo"
 	_, err = SubmitUpstreamExportJob(context.Background(), actor.Id, request, nil, "")
 	require.ErrorIs(t, err, ErrCustomerExportInvalidRequest)

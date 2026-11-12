@@ -5,15 +5,17 @@ import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { AdminBillingReconciliation } from '../admin-billing-reconciliation'
-import type { BillingSection } from '../types'
 import { MyBilling } from '../my-billing'
+import type { BillingSection } from '../types'
 
 vi.mock('../components/customer-statement', () => ({
   CustomerStatementView: (props: {
     isAdmin: boolean
+    heading?: string
     toolbar?: React.ReactNode
   }) => (
     <div data-testid={props.isAdmin ? 'admin-statement' : 'self-statement'}>
+      {props.heading}
       {props.toolbar}
     </div>
   ),
@@ -54,7 +56,13 @@ function renderWithI18n(node: React.ReactNode) {
 describe('billing page split', () => {
   it('keeps the self-service page focused on the current user', () => {
     const onMonthChange = vi.fn()
-    renderWithI18n(<MyBilling month='2026-08' onMonthChange={onMonthChange} />)
+    renderWithI18n(
+      <MyBilling
+        month='2026-08'
+        onMonthChange={onMonthChange}
+        onModelKeyChange={vi.fn()}
+      />
+    )
 
     expect(screen.getByText('My billing')).toBeTruthy()
     expect(screen.getByTestId('self-statement')).toBeTruthy()
@@ -93,7 +101,9 @@ describe('billing page split', () => {
     expect(screen.getAllByText('Upstream reconciliation')).toHaveLength(2)
     expect(screen.getByTestId('upstream-reconciliation')).toBeTruthy()
     expect(screen.queryByTestId('upstream-url-statement')).toBeNull()
-    expect(screen.queryByRole('tab', { name: 'Upstream URL summary' })).toBeNull()
+    expect(
+      screen.queryByRole('tab', { name: 'Upstream URL summary' })
+    ).toBeNull()
     expect(screen.queryByLabelText('Billing month')).toBeNull()
   })
 

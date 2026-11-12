@@ -202,8 +202,8 @@ var customerExportSummaryLabels = map[string]map[string]string{
 		"vi":    "Lượt hoàn phí",
 	},
 	"original_quota": {
-		"en":    "Estimated list price",
-		"zh":    "估算原价",
+		"en":    "List price",
+		"zh":    "原价",
 		"zh-TW": "估算原價",
 		"fr":    "Prix initial estimé",
 		"ru":    "Расчётная сумма до скидок",
@@ -211,8 +211,8 @@ var customerExportSummaryLabels = map[string]map[string]string{
 		"vi":    "Giá gốc ước tính",
 	},
 	"discount_quota": {
-		"en":    "Estimated savings",
-		"zh":    "估算优惠",
+		"en":    "Savings",
+		"zh":    "优惠",
 		"zh-TW": "估算優惠",
 		"fr":    "Remise estimée",
 		"ru":    "Расчётная скидка",
@@ -316,7 +316,7 @@ var customerExportSummaryColumnOrder = []string{
 	"api_key_name", "api_key_id", "model", "billing_mode", "requests", "currency",
 	"net_amount", "original_amount", "discount_amount", "gross_amount", "refund_amount",
 	"input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens",
-	"billable_calls", "refunded_calls", "data_quality", "estimate_reasons",
+	"billable_calls", "refunded_calls", "data_quality",
 	"period_start", "period_end", "timezone", "customer_username", "generated_at",
 }
 

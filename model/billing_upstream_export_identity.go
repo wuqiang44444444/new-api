@@ -3,7 +3,7 @@ package model
 import "github.com/QuantumNous/new-api/common"
 
 // Active upstream jobs are identified by the requested conditions. Generated
-// snapshots stay on the accepted job and must not make a retry a new request.
+// identity labels stay on the accepted job. A new coefficient changes the output.
 func sameActiveCustomerExportFilters(jobType, existing, submitted string) bool {
 	if existing == submitted {
 		return true
@@ -16,10 +16,11 @@ func sameActiveCustomerExportFilters(jobType, existing, submitted string) bool {
 		return false
 	}
 	for _, scope := range []*UpstreamExportScope{left.Upstream, right.Upstream} {
-		scope.UpperLogID = nil
-		scope.Channels = nil
+		for id, channel := range scope.Channels {
+			scope.Channels[id] = UpstreamExportChannel{Discount: channel.Discount}
+		}
 		scope.GroupName = ""
-		if jobType == CustomerExportJobTypeUpstreamSummary && scope.URLKey != "" {
+		if jobType == CustomerExportJobTypeUpstreamSummary && scope.URLKey != "" && left.BillingReportVersion == "" && right.BillingReportVersion == "" {
 			scope.ChannelIds = nil
 		}
 	}

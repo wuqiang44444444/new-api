@@ -39,7 +39,7 @@ func maintenanceFailureMessage(err error) string {
 	case "billing statement maintenance not in progress":
 		return "maintenance refused: maintenance is inactive or its generation does not match"
 	case "billing statement version state conflict":
-		return "maintenance refused: verify nonempty evidence, operator and the disabled confirmation switch"
+		return "maintenance refused: verify nonempty evidence, operator and current maintenance generation"
 	case "record not found":
 		return "maintenance refused: required control or operator record is missing"
 	default:

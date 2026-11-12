@@ -17,9 +17,10 @@ import (
 // 租约，全站同一时刻只有一个源数据读取执行器。容量由固定槽位表约束。
 
 const (
-	CustomerExportJobTypeUsageLogs        = "usage_logs"
-	CustomerExportJobTypeStatementDetails = "statement_details"
-	CustomerExportJobTypeStatementSummary = "statement_summary"
+	CustomerExportJobTypeUsageLogs          = "usage_logs"
+	CustomerExportJobTypeStatementDetails   = "statement_details"
+	CustomerExportJobTypeStatementSummary   = "statement_summary"
+	CustomerExportJobTypeCustomerStatements = "customer_statements"
 
 	// SystemTaskTypeCustomerExport 是导出调度器的独立 SystemTask 类型；
 	// 同类型租约约束全站只有一个源数据读取执行器。
@@ -55,29 +56,40 @@ var (
 // CustomerExportFilters is the normalized, versioned submission scope. It is
 // frozen at acceptance and never re-resolved from current settings.
 type CustomerExportFilters struct {
-	UsageView         string                          `json:"usage_view,omitempty"`
-	UsageSearch       string                          `json:"usage_search,omitempty"`
-	UsageDiscounts    *UsageAnalyticsDiscountSnapshot `json:"usage_discounts,omitempty"`
-	Upstream          *UpstreamExportScope            `json:"upstream,omitempty"`
-	StatementDraftId  string                          `json:"statement_draft_id,omitempty"`
-	QuotaPerUnit      float64                         `json:"quota_per_unit"`
-	Currency          string                          `json:"currency"`
-	CurrencyRate      float64                         `json:"currency_rate"`
-	FieldVersion      int                             `json:"field_version"`
-	StartTimestamp    int64                           `json:"start_timestamp"` // 含起点
-	EndTimestamp      int64                           `json:"end_timestamp"`   // 不含终点（左闭右开）
-	LogTypes          []int                           `json:"log_types,omitempty"`
-	TokenId           *int                            `json:"token_id,omitempty"`
-	ChannelId         *int                            `json:"channel_id,omitempty"`
-	TokenName         string                          `json:"token_name,omitempty"`
-	Group             string                          `json:"group,omitempty"`
-	RequestId         string                          `json:"request_id,omitempty"`
-	UpstreamRequestId string                          `json:"upstream_request_id,omitempty"`
-	Username          string                          `json:"username,omitempty"`
-	ModelName         string                          `json:"model_name,omitempty"`
-	BillingMode       string                          `json:"billing_mode,omitempty"`
-	Timezone          string                          `json:"timezone"`
-	Language          string                          `json:"language,omitempty"`
+	BillingReportCoverage *BillingExportCoverage    `json:"billing_report_coverage,omitempty"`
+	BillingReportVersion  string                    `json:"billing_report_version,omitempty"`
+	UsageReportDays       []UsageReportDayReference `json:"usage_report_days,omitempty"`
+	UsageView             string                    `json:"usage_view,omitempty"`
+	UsageSearch           string                    `json:"usage_search,omitempty"`
+	UsageURLKey           string                    `json:"usage_url_key,omitempty"`
+	Upstream              *UpstreamExportScope      `json:"upstream,omitempty"`
+	StatementDraftId      string                    `json:"statement_draft_id,omitempty"`
+	QuotaPerUnit          float64                   `json:"quota_per_unit"`
+	Currency              string                    `json:"currency"`
+	CurrencyRate          float64                   `json:"currency_rate"`
+	FieldVersion          int                       `json:"field_version"`
+	StartTimestamp        int64                     `json:"start_timestamp"` // 含起点
+	EndTimestamp          int64                     `json:"end_timestamp"`   // 不含终点（左闭右开）
+	LogTypes              []int                     `json:"log_types,omitempty"`
+	TokenId               *int                      `json:"token_id,omitempty"`
+	ChannelId             *int                      `json:"channel_id,omitempty"`
+	TokenName             string                    `json:"token_name,omitempty"`
+	Group                 string                    `json:"group,omitempty"`
+	RequestId             string                    `json:"request_id,omitempty"`
+	UpstreamRequestId     string                    `json:"upstream_request_id,omitempty"`
+	Username              string                    `json:"username,omitempty"`
+	ModelName             string                    `json:"model_name,omitempty"`
+	BillingMode           string                    `json:"billing_mode,omitempty"`
+	Timezone              string                    `json:"timezone"`
+	Language              string                    `json:"language,omitempty"`
+}
+
+// BillingExportCoverage records the coverage known when a daily report export is accepted.
+type BillingExportCoverage struct {
+	PublishedDays  int   `json:"published_days"`
+	ExpectedDays   int   `json:"expected_days"`
+	IncompleteDays int   `json:"incomplete_days"`
+	EstimatedAt    int64 `json:"estimated_at,omitempty"`
 }
 
 // CustomerExportProgress is throttled persisted scan state. Counts are
@@ -288,7 +300,7 @@ func CreateCustomerExportJob(userId int, targetUserId int, jobType string, filte
 	}
 	activeKey := customerExportActiveKey(userId)
 	for attempt := 0; attempt < 2; attempt++ {
-		job, created, err := createCustomerExportJobOnce(userId, targetUserId, jobType, string(filtersText), activeKey, attempt > 0, reuse)
+		job, created, err := createCustomerExportJobOnce(userId, targetUserId, jobType, string(filtersText), activeKey, attempt > 0, reuse, filters)
 		if err == nil || !errors.Is(err, ErrCustomerExportStateConflict) {
 			return job, created, err
 		}
@@ -297,25 +309,27 @@ func CreateCustomerExportJob(userId int, targetUserId int, jobType string, filte
 	return nil, false, ErrCustomerExportUserBusy
 }
 
-func createCustomerExportJobOnce(userId int, targetUserId int, jobType string, filtersText string, activeKey string, lastAttempt bool, reuse CustomerExportReuse) (*CustomerExportJob, bool, error) {
+func createCustomerExportJobOnce(userId int, targetUserId int, jobType string, filtersText string, activeKey string, lastAttempt bool, reuse CustomerExportReuse, filters CustomerExportFilters) (*CustomerExportJob, bool, error) {
 	var created *CustomerExportJob
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if job, err := findReusableCustomerExport(tx, userId, targetUserId, jobType, filtersText, reuse); err != nil {
+		var existing CustomerExportJob
+		activeErr := tx.Where("active_key = ?", activeKey).First(&existing).Error
+		if activeErr != nil && !errors.Is(activeErr, gorm.ErrRecordNotFound) {
+			return activeErr
+		}
+		// Read completed files after the active slot so a job finishing between
+		// these reads is still visible as either active or complete.
+		if job, err := findReusableCustomerExport(tx, userId, targetUserId, jobType, filters, filtersText, reuse); err != nil {
 			return err
 		} else if job != nil {
 			return errCustomerExportDuplicate(job.JobID)
 		}
-		var existing CustomerExportJob
-		err := tx.Where("active_key = ?", activeKey).First(&existing).Error
-		if err == nil {
+		if activeErr == nil {
 			// 本人相同申请返回原记录；不同申请返回忙碌，不重复扫描。
 			if existing.JobType == jobType && existing.TargetUserId == targetUserId && (!reuse.RequireExactActiveFilters || existing.Filters == filtersText) && sameActiveCustomerExportFilters(jobType, existing.Filters, filtersText) {
 				return errCustomerExportDuplicate(existing.JobID)
 			}
 			return ErrCustomerExportUserBusy
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
 		}
 
 		jobID, err := GenerateCustomerExportJobID()
@@ -348,6 +362,9 @@ func createCustomerExportJobOnce(userId int, targetUserId int, jobType string, f
 			ActiveKey:    &activeKey,
 			SlotId:       claimedSlot,
 			Filters:      filtersText,
+		}
+		if err := pinDailyReportExport(tx, jobID, filters); err != nil {
+			return err
 		}
 		if err := tx.Create(job).Error; err != nil {
 			if lastAttempt {
@@ -439,7 +456,7 @@ func ListCustomerExportJobs(ctx context.Context, userId, page, pageSize int) ([]
 			return nil, 0, err
 		}
 		for _, job := range jobs {
-			jobAuthorizable := job.JobType == CustomerExportJobTypeUpstreamDetails || job.JobType == CustomerExportJobTypeUpstreamSummary || job.JobType == CustomerExportJobTypeUsageSummary
+			jobAuthorizable := job.JobType == CustomerExportJobTypeUpstreamDetails || job.JobType == CustomerExportJobTypeUpstreamSummary || job.JobType == CustomerExportJobTypeUsageSummary || job.JobType == CustomerExportJobTypeCustomerStatements
 			if jobAuthorizable && AuthorizeCustomerExportJob(ctx, job) != nil {
 				continue
 			}

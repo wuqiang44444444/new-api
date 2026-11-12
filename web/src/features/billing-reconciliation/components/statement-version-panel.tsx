@@ -17,10 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { Fragment, useState, type ReactElement, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { Dialog as ModalDialog } from '@/components/dialog'
+import { EmptyState } from '@/components/empty-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -33,13 +35,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-} from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -76,6 +71,7 @@ type StatementVersionPanelProps = {
   previewVersionId: string | null
   onPreviewChange: (draftPublicId: string | null) => void
   onChanged: () => void
+  renderHeader?: (status: ReactNode, actions: ReactNode) => ReactNode
 }
 
 // 版本状态条与操作面板（docs/80-dev/2026-09-17 方案 6.1/6.2）。
@@ -154,188 +150,147 @@ export function StatementVersionPanel(props: StatementVersionPanelProps) {
   })
 
   const status = statusQuery.data
-  if (
-    !status ||
-    (!isAdmin &&
-      !status.switch_enabled &&
-      !status.current_version &&
-      !status.active_draft)
-  ) {
-    // Customers retain the existing hidden state; administrators can review
-    // sources while confirmation is disabled for a controlled rollout.
-    return null
+  if (!status) {
+    return (
+      <Fragment key='statement-version-panel'>
+        {props.renderHeader?.(null, null)}
+      </Fragment>
+    )
   }
 
   const monthEnded = isEndedMonth(period.end_timestamp)
   const current = status.current_version
   const draft = isAdmin ? status.active_draft : null
 
-  return (
-    <Card size='sm' className='border-dashed'>
-      <CardContent className='flex flex-wrap items-center gap-2 py-3'>
-        <VersionStatusBadge
-          current={current}
-          draftStatus={draft?.status}
-          hasActiveDraft={status.has_active_draft}
-          monthEnded={monthEnded}
-          isAdmin={isAdmin}
+  const versionStatus = (
+    <>
+      <VersionStatusBadge
+        current={current}
+        draftStatus={draft?.status}
+        hasActiveDraft={status.has_active_draft}
+        monthEnded={monthEnded}
+        isAdmin={isAdmin}
+      />
+      {current?.version_number != null && (
+        <span className='text-muted-foreground text-xs'>
+          {t('Confirmed at {{time}}', {
+            time: formatVersionTime(current.confirmed_at),
+          })}
+        </span>
+      )}
+      {current?.public_reason && (
+        <span className='text-muted-foreground text-xs'>
+          {t('Correction note')}: {current.public_reason}
+        </span>
+      )}
+      {isAdmin && !status.topology_ok && (
+        <span role='alert' className='text-destructive text-sm'>
+          {t(
+            'Statement generation requires billing records and account data in the same database.'
+          )}
+        </span>
+      )}
+      {isAdmin && status.maintenance_active && (
+        <Badge variant='secondary'>{t('Maintenance')}</Badge>
+      )}
+      {status.retention_status === 'partial' && (
+        <Badge variant='destructive'>
+          {t('Source logs partially cleaned; correction is blocked.')}
+        </Badge>
+      )}
+      {props.previewVersionId && (
+        <Badge variant='secondary'>
+          {draft?.draft_public_id === props.previewVersionId
+            ? t('Previewing pending version')
+            : t('Viewing historical version')}
+        </Badge>
+      )}
+    </>
+  )
+  const versionActions = (
+    <>
+      {isAdmin && (
+        <StatementSourceVerification
+          key={`${userId}:${period.start_timestamp}:${period.end_timestamp}`}
+          userId={userId as number}
+          period={period}
+          disabled={!status.topology_ok}
+          onVerified={refresh}
         />
-        {current?.version_number != null && (
-          <span className='text-muted-foreground text-xs'>
-            {t('Confirmed at {{time}}', {
-              time: formatVersionTime(current.confirmed_at),
-            })}
-          </span>
-        )}
-        {current?.public_reason && (
-          <span className='text-muted-foreground text-xs'>
-            {t('Correction note')}: {current.public_reason}
-          </span>
-        )}
-        {isAdmin && (
-          <StatementSourceVerification
-            key={`${userId}:${period.start_timestamp}:${period.end_timestamp}`}
-            userId={userId as number}
-            period={period}
-            disabled={!status.topology_ok}
-            onVerified={refresh}
-          />
-        )}
-        {isAdmin && !status.topology_ok && (
-          <span role='alert' className='text-destructive text-sm'>
-            {t(
-              'Statement generation requires billing records and account data in the same database.'
-            )}
-          </span>
-        )}
-        {status.retention_status === 'partial' && (
-          <Badge variant='destructive'>
-            {t('Source logs partially cleaned; correction is blocked.')}
-          </Badge>
-        )}
-        {props.previewVersionId && (
-          <Badge variant='secondary'>
-            {draft?.draft_public_id === props.previewVersionId
-              ? t('Previewing pending version')
-              : t('Viewing historical version')}
-          </Badge>
-        )}
-        <div className='ms-auto flex flex-wrap items-center gap-2'>
-          {current && (
-            <Button
-              variant='outline'
-              size='sm'
-              disabled={downloadMutation.isPending}
-              onClick={() =>
-                downloadMutation.mutate({
-                  draftPublicId: current.draft_public_id,
-                  role: 'confirmation_note',
-                })
-              }
-            >
-              {t('Download confirmation note')}
-            </Button>
-          )}
-          {isAdmin && monthEnded && !draft && !current && (
-            <GenerateButton
-              userId={userId as number}
-              period={period}
-              disabled={
-                !status.switch_enabled ||
-                !status.topology_ok ||
-                !['intact', 'none'].includes(status.retention_status)
-              }
-              onDone={refresh}
-            />
-          )}
-          {isAdmin && draft && isCleanableDraft(draft.status) && (
-            <CleanupButton
-              draftPublicId={draft.draft_public_id}
-              onDone={() => handleDraftCleaned(draft.draft_public_id)}
-            />
-          )}
-          {isAdmin && draft && isActiveDraft(draft.status) && (
-            <>
-              <Button
-                variant='outline'
-                size='sm'
-                disabled={draft.status !== 'pending'}
-                onClick={() =>
-                  props.onPreviewChange(
-                    props.previewVersionId === draft.draft_public_id
-                      ? null
-                      : draft.draft_public_id
-                  )
-                }
-              >
-                {props.previewVersionId === draft.draft_public_id
-                  ? t('View customer current statement')
-                  : t('Preview pending version')}
-              </Button>
-              {draft.status === 'pending' && (
-                <Button
-                  size='sm'
-                  disabled={!status.switch_enabled}
-                  onClick={() => setConfirmOpen(true)}
-                >
-                  {t('Confirm statement')}
-                </Button>
-              )}
-              <AbandonButton
-                draftPublicId={draft.draft_public_id}
-                onDone={refresh}
-              />
-            </>
-          )}
-          {isAdmin && current && monthEnded && !draft && (
-            <Button
-              variant='outline'
-              size='sm'
-              disabled={
-                !status.switch_enabled ||
-                !status.topology_ok ||
-                !['intact', 'none'].includes(status.retention_status)
-              }
-              onClick={() => setCorrectionOpen(true)}
-            >
-              {t('Start correction')}
-            </Button>
-          )}
-          {current && (
-            <Button
-              variant='outline'
-              size='sm'
-              disabled={downloadMutation.isPending}
-              onClick={() =>
-                downloadMutation.mutate({
-                  draftPublicId: current.draft_public_id,
-                })
-              }
-            >
-              {t('Download confirmed version')}
-            </Button>
-          )}
+      )}
+      {isAdmin && monthEnded && !draft && !current && (
+        <GenerateButton
+          userId={userId as number}
+          period={period}
+          disabled={
+            status.maintenance_active ||
+            !status.topology_ok ||
+            !['intact', 'none'].includes(status.retention_status)
+          }
+          onDone={refresh}
+        />
+      )}
+      {isAdmin && draft && isCleanableDraft(draft.status) && (
+        <CleanupButton
+          draftPublicId={draft.draft_public_id}
+          onDone={() => handleDraftCleaned(draft.draft_public_id)}
+        />
+      )}
+      {isAdmin && draft && isActiveDraft(draft.status) && (
+        <>
           <Button
-            variant='ghost'
+            variant='outline'
             size='sm'
-            onClick={() => setHistoryOpen(true)}
+            disabled={draft.status !== 'pending'}
+            onClick={() =>
+              props.onPreviewChange(
+                props.previewVersionId === draft.draft_public_id
+                  ? null
+                  : draft.draft_public_id
+              )
+            }
           >
+            {props.previewVersionId === draft.draft_public_id
+              ? t('View customer current statement')
+              : t('Preview pending version')}
+          </Button>
+          {draft.status === 'pending' && (
+            <Button
+              size='sm'
+              disabled={status.maintenance_active || !status.topology_ok}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {t('Confirm statement')}
+            </Button>
+          )}
+          <AbandonButton
+            draftPublicId={draft.draft_public_id}
+            onDone={refresh}
+          />
+        </>
+      )}
+      {isAdmin && current && monthEnded && !draft && (
+        <Button
+          variant='outline'
+          size='sm'
+          disabled={
+            status.maintenance_active ||
+            !status.topology_ok ||
+            !['intact', 'none'].includes(status.retention_status)
+          }
+          onClick={() => setCorrectionOpen(true)}
+        >
+          {t('Start correction')}
+        </Button>
+      )}
+      <VersionHistoryDialog
+        trigger={
+          <Button variant='ghost' size='sm'>
             {t('Version history ({{count}})', {
               count: status.versions.length,
             })}
           </Button>
-        </div>
-      </CardContent>
-      {isAdmin && draft && props.previewVersionId === draft.draft_public_id && (
-        <CardContent className='pt-0'>
-          <VersionDiffSection
-            userId={userId as number}
-            period={period}
-            draft={draft}
-          />
-        </CardContent>
-      )}
-      <VersionHistoryDrawer
+        }
         open={historyOpen}
         onOpenChange={setHistoryOpen}
         versions={status.versions}
@@ -350,6 +305,34 @@ export function StatementVersionPanel(props: StatementVersionPanelProps) {
           downloadMutation.mutate({ draftPublicId, role })
         }
       />
+    </>
+  )
+
+  return (
+    <Fragment key='statement-version-panel'>
+      {props.renderHeader ? (
+        props.renderHeader(versionStatus, versionActions)
+      ) : (
+        <Card size='sm' className='border-dashed'>
+          <CardContent className='flex flex-wrap items-center gap-2 py-3'>
+            {versionStatus}
+            <div className='ms-auto flex flex-wrap items-center gap-2'>
+              {versionActions}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {isAdmin && draft && props.previewVersionId === draft.draft_public_id && (
+        <Card size='sm' className='border-dashed'>
+          <CardContent>
+            <VersionDiffSection
+              userId={userId as number}
+              period={period}
+              draft={draft}
+            />
+          </CardContent>
+        </Card>
+      )}
       <ConfirmDialog
         key={draft?.draft_public_id ?? 'none'}
         open={confirmOpen}
@@ -366,7 +349,7 @@ export function StatementVersionPanel(props: StatementVersionPanelProps) {
         period={period}
         onStarted={refresh}
       />
-    </Card>
+    </Fragment>
   )
 }
 
@@ -686,7 +669,8 @@ function CorrectionDialog(props: {
   )
 }
 
-function VersionHistoryDrawer(props: {
+function VersionHistoryDialog(props: {
+  trigger: ReactElement
   open: boolean
   onOpenChange: (open: boolean) => void
   versions: BillingStatementVersionInfo[]
@@ -698,111 +682,109 @@ function VersionHistoryDrawer(props: {
 }) {
   const { t } = useTranslation()
   return (
-    <Drawer open={props.open} onOpenChange={props.onOpenChange}>
-      <DrawerContent>
-        <DrawerHeader>
-          <DrawerTitle>{t('Version history')}</DrawerTitle>
-          <DrawerDescription>
-            {props.isAdmin
-              ? t(
-                  'All versions including drafts. Customers only see confirmed versions.'
-                )
-              : t('Confirmed versions of this billing period.')}
-          </DrawerDescription>
-        </DrawerHeader>
-        <div className='overflow-y-auto px-4 pb-4'>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('Version')}</TableHead>
-                <TableHead>{t('Status')}</TableHead>
-                <TableHead>{t('Confirmed at')}</TableHead>
-                <TableHead>{t('Note')}</TableHead>
-                <TableHead className='text-right'>{t('Actions')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {[...props.versions]
-                .sort(
-                  (a, b) => (b.version_number ?? 0) - (a.version_number ?? 0)
-                )
-                .map((version) => (
-                  <TableRow key={version.draft_public_id}>
-                    <TableCell>
-                      {version.version_number != null
-                        ? `v${version.version_number}`
-                        : t('Draft')}
-                      {version.draft_public_id ===
-                        props.currentDraftPublicId && (
-                        <Badge variant='secondary' className='ms-2'>
-                          {t('Current')}
-                        </Badge>
+    <ModalDialog
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+      trigger={props.trigger}
+      title={t('Version history')}
+      description={
+        props.isAdmin
+          ? t(
+              'All versions including drafts. Customers only see confirmed versions.'
+            )
+          : t('Confirmed versions of this billing period.')
+      }
+      contentClassName='sm:max-w-4xl'
+    >
+      {props.versions.length === 0 ? (
+        <EmptyState className='min-h-0' title={t('No version history')} />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('Version')}</TableHead>
+              <TableHead>{t('Status')}</TableHead>
+              <TableHead>{t('Confirmed at')}</TableHead>
+              <TableHead>{t('Note')}</TableHead>
+              <TableHead className='text-right'>{t('Actions')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {[...props.versions]
+              .sort((a, b) => (b.version_number ?? 0) - (a.version_number ?? 0))
+              .map((version) => (
+                <TableRow key={version.draft_public_id}>
+                  <TableCell>
+                    {version.version_number != null
+                      ? `v${version.version_number}`
+                      : t('Draft')}
+                    {version.draft_public_id === props.currentDraftPublicId && (
+                      <Badge variant='secondary' className='ms-2'>
+                        {t('Current')}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>{t(versionStatusLabel(version.status))}</TableCell>
+                  <TableCell>
+                    {version.confirmed_at
+                      ? formatVersionTime(version.confirmed_at)
+                      : '—'}
+                  </TableCell>
+                  <TableCell className='max-w-48 truncate'>
+                    {version.public_reason || '—'}
+                  </TableCell>
+                  <TableCell className='text-right'>
+                    <div className='flex justify-end gap-1'>
+                      {props.isAdmin && isCleanableDraft(version.status) && (
+                        <CleanupButton
+                          draftPublicId={version.draft_public_id}
+                          onDone={() =>
+                            props.onCleaned(version.draft_public_id)
+                          }
+                        />
                       )}
-                    </TableCell>
-                    <TableCell>
-                      {t(versionStatusLabel(version.status))}
-                    </TableCell>
-                    <TableCell>
-                      {version.confirmed_at
-                        ? formatVersionTime(version.confirmed_at)
-                        : '—'}
-                    </TableCell>
-                    <TableCell className='max-w-48 truncate'>
-                      {version.public_reason || '—'}
-                    </TableCell>
-                    <TableCell className='text-right'>
-                      <div className='flex justify-end gap-1'>
-                        {props.isAdmin && isCleanableDraft(version.status) && (
-                          <CleanupButton
-                            draftPublicId={version.draft_public_id}
-                            onDone={() =>
-                              props.onCleaned(version.draft_public_id)
+                      {version.status === 'confirmed' && (
+                        <>
+                          <Button
+                            variant='link'
+                            size='xs'
+                            onClick={() =>
+                              props.onPreview(version.draft_public_id)
                             }
-                          />
-                        )}
-                        {version.status === 'confirmed' && (
-                          <>
-                            <Button
-                              variant='link'
-                              size='xs'
-                              onClick={() =>
-                                props.onPreview(version.draft_public_id)
-                              }
-                            >
-                              {t('View')}
-                            </Button>
-                            <Button
-                              variant='link'
-                              size='xs'
-                              onClick={() =>
-                                props.onDownload(version.draft_public_id)
-                              }
-                            >
-                              {t('Download')}
-                            </Button>
-                            <Button
-                              variant='link'
-                              size='xs'
-                              onClick={() =>
-                                props.onDownload(
-                                  version.draft_public_id,
-                                  'confirmation_note'
-                                )
-                              }
-                            >
-                              {t('Download confirmation note')}
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
-        </div>
-      </DrawerContent>
-    </Drawer>
+                          >
+                            {t('View')}
+                          </Button>
+                          <Button
+                            variant='link'
+                            size='xs'
+                            onClick={() =>
+                              props.onDownload(version.draft_public_id)
+                            }
+                          >
+                            {t('Download')}
+                          </Button>
+                          <Button
+                            variant='link'
+                            size='xs'
+                            onClick={() =>
+                              props.onDownload(
+                                version.draft_public_id,
+                                'confirmation_note'
+                              )
+                            }
+                          >
+                            {t('Download confirmation note')}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+          </TableBody>
+        </Table>
+      )}
+    </ModalDialog>
   )
 }
 
@@ -920,12 +902,16 @@ function diffItemRows(
     gross_quota: t('Consumption amount'),
     refund_quota: t('Refund amount'),
     net_quota: t('Net amount'),
-    original_quota: t('Estimated list price'),
-    discount_quota: t('Estimated savings'),
+    original_quota: t('List price'),
+    discount_quota: t('Savings'),
     requests: t('Requests'),
   }
   return Object.entries(labels).map(([key, label]) => {
-    const item = diff.items[key]
+    const item =
+      !diff.recorded_original_amounts &&
+      (key === 'original_quota' || key === 'discount_quota')
+        ? undefined
+        : diff.items[key]
     return {
       key,
       label,

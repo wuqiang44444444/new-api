@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
-import { SectionPageLayout } from '@/components/layout'
+import { Main, SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -58,53 +58,67 @@ export function AdminBillingReconciliation(
   const pageTitle = isUpstream
     ? t('Upstream reconciliation')
     : t('Billing reconciliation')
-  const pageDescription = isUpstream
-    ? t(
-        'Check monthly upstream usage, channel discounts, evidence and exports in one place.'
-      )
-    : t(
-        'Customer charges and platform-recorded upstream usage use separate views.'
-      )
+  const monthPicker = (
+    <label className='flex flex-wrap items-center gap-x-2 gap-y-1'>
+      <span className='text-muted-foreground text-xs font-medium'>
+        {t('Billing month')}
+      </span>
+      <Input
+        className='w-36'
+        type='month'
+        value={month}
+        onChange={(event) =>
+          props.onSearchChange({
+            month: event.target.value || currentShanghaiMonth(),
+            customerPage: 1,
+            reportVersion: undefined,
+          })
+        }
+      />
+    </label>
+  )
+
+  if (!isUpstream && props.search.userId) {
+    return (
+      <Main className='px-1 sm:px-2'>
+        <CustomerStatementView
+          isAdmin
+          period={period}
+          userId={props.search.userId}
+          reportVersion={props.search.reportVersion}
+          dimension={dimension}
+          toolbar={monthPicker}
+          onBack={() =>
+            props.onSearchChange({
+              userId: undefined,
+              reportVersion: undefined,
+            })
+          }
+          onDimensionChange={(nextDimension) =>
+            props.onSearchChange({ dimension: nextDimension })
+          }
+        />
+      </Main>
+    )
+  }
 
   return (
     <SectionPageLayout fixedContent>
       <SectionPageLayout.Title>
-        <span className='inline-flex min-w-0 items-center gap-2'>
-          <span className='truncate'>{pageTitle}</span>
-          <Badge variant='outline'>{t('Database authoritative')}</Badge>
-        </span>
+        {isUpstream ? (
+          <span className='inline-flex min-w-0 items-center gap-2'>
+            <span className='truncate'>{pageTitle}</span>
+            <Badge variant='outline'>{t('Database authoritative')}</Badge>
+          </span>
+        ) : (
+          pageTitle
+        )}
       </SectionPageLayout.Title>
+      {!isUpstream && (
+        <SectionPageLayout.Actions>{monthPicker}</SectionPageLayout.Actions>
+      )}
       <SectionPageLayout.Content>
         <div className='flex h-full min-h-0 flex-col gap-3'>
-          <div className='flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
-            <div>
-              <p className='text-muted-foreground text-sm'>{pageDescription}</p>
-              {!isUpstream ? (
-                <p className='text-muted-foreground mt-1 text-xs'>
-                  {t(
-                    'Request-level records are available only through detail links.'
-                  )}
-                </p>
-              ) : null}
-            </div>
-            {!isUpstream ? (
-              <label className='w-full space-y-1.5 sm:w-44'>
-                <span className='text-muted-foreground text-xs font-medium'>
-                  {t('Billing month')}
-                </span>
-                <Input
-                  type='month'
-                  value={month}
-                  onChange={(event) =>
-                    props.onSearchChange({
-                      month: event.target.value || currentShanghaiMonth(),
-                    })
-                  }
-                />
-              </label>
-            ) : null}
-          </div>
-
           <Tabs
             className='min-h-0 flex-1'
             value={section}
@@ -125,25 +139,14 @@ export function AdminBillingReconciliation(
               </TabsTrigger>
             </TabsList>
             <TabsContent className='min-h-0 flex-1' value='customer'>
-              {props.search.userId ? (
-                <CustomerStatementView
-                  isAdmin
-                  period={period}
-                  userId={props.search.userId}
-                  dimension={dimension}
-                  onBack={() => props.onSearchChange({ userId: undefined })}
-                  onDimensionChange={(nextDimension) =>
-                    props.onSearchChange({ dimension: nextDimension })
-                  }
-                />
-              ) : (
-                <CustomerStatementsListView
-                  period={period}
-                  search={props.search}
-                  onSearchChange={props.onSearchChange}
-                  onSelectUser={(userId) => props.onSearchChange({ userId })}
-                />
-              )}
+              <CustomerStatementsListView
+                period={period}
+                search={props.search}
+                onSearchChange={props.onSearchChange}
+                onSelectUser={(userId, reportVersion) =>
+                  props.onSearchChange({ userId, reportVersion })
+                }
+              />
             </TabsContent>
             <TabsContent className='min-h-0 flex-1' value='upstream'>
               <UpstreamReconciliationView
@@ -152,6 +155,7 @@ export function AdminBillingReconciliation(
                 onMonthChange={(nextMonth) =>
                   props.onSearchChange({
                     month: nextMonth || currentShanghaiMonth(),
+                    reportVersion: undefined,
                   })
                 }
               />

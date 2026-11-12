@@ -53,7 +53,6 @@ const defaultBillingSettings: BillingSettings = {
   'billing_setting.billing_expr': '{}',
   'task_billing_setting.preconsume_tokens': '{}',
   'billing_statement_setting.context_thresholds': '{}',
-  BillingStatementVersionEnabled: false,
   'tool_price_setting.prices': '{}',
   TopupGroupRatio: '',
   GroupRatio: '',

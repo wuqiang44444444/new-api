@@ -60,20 +60,6 @@ func setupBillingStatementVersionTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func enableVersionSwitch(t *testing.T) {
-	t.Helper()
-	if common.OptionMap == nil {
-		common.OptionMap = map[string]string{}
-	}
-	common.OptionMap[BillingStatementVersionEnabledKey] = "true"
-	// 确认发布以主库 option 行为最终权威，测试库需同步写入。
-	require.NoError(t, DB.Save(&Option{Key: BillingStatementVersionEnabledKey, Value: "true"}).Error)
-	t.Cleanup(func() {
-		delete(common.OptionMap, BillingStatementVersionEnabledKey)
-		DB.Where(&Option{Key: BillingStatementVersionEnabledKey}).Delete(&Option{})
-	})
-}
-
 // markDraftPendingWithVector 将草稿置为待确认并冻结来源向量，模拟生成完成后的状态。
 func markDraftPendingWithVector(t *testing.T, ctx context.Context, userId int, periodStart int64, draft *BillingStatementVersion) {
 	t.Helper()
@@ -125,7 +111,6 @@ func TestAcquireDraftEnforcesSingleActiveDraft(t *testing.T) {
 
 func TestConfirmAssignsVersionAndSwitchesCurrentPointer(t *testing.T) {
 	setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	ctx := context.Background()
 
 	_, draft, err := AcquireBillingStatementDraft(ctx, 1001, 1756608000, "Asia/Shanghai", 7)
@@ -154,7 +139,6 @@ func TestConfirmAssignsVersionAndSwitchesCurrentPointer(t *testing.T) {
 
 func TestConfirmBlockedWhenSourceChanged(t *testing.T) {
 	setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	ctx := context.Background()
 
 	_, draft, err := AcquireBillingStatementDraft(ctx, 1001, 1756608000, "Asia/Shanghai", 7)
@@ -174,7 +158,6 @@ func TestConfirmBlockedWhenSourceChanged(t *testing.T) {
 
 func TestConfirmBlockedWhenMaintenanceGenerationChanged(t *testing.T) {
 	setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	ctx := context.Background()
 
 	_, draft, err := AcquireBillingStatementDraft(ctx, 1001, 1756608000, "Asia/Shanghai", 7)
@@ -186,22 +169,24 @@ func TestConfirmBlockedWhenMaintenanceGenerationChanged(t *testing.T) {
 	require.NoError(t, err)
 	_, err = EndBillingStatementMaintenance(ctx, maintenance.Generation, "verified fixture", 7)
 	require.NoError(t, err)
-	require.NoError(t, SetBillingStatementVersionEnabled(ctx, true, 7))
 
 	_, _, err = ConfirmBillingStatementVersion(ctx, draft.DraftPublicId, nil, "idem-1", "qa", "", 7)
 	assert.ErrorIs(t, err, ErrBillingStatementVersionConflict)
 }
 
-func TestConfirmBlockedWhenSwitchOff(t *testing.T) {
+func TestConfirmSucceedsWithLegacySettingOff(t *testing.T) {
 	setupBillingStatementVersionTestDB(t)
 	ctx := context.Background()
-	// 开关默认关（未设置 OptionMap）。
+	require.NoError(t, DB.Create(&Option{Key: "BillingStatementVersionEnabled", Value: "false"}).Error)
 	_, draft, err := AcquireBillingStatementDraft(ctx, 1001, 1756608000, "Asia/Shanghai", 7)
 	require.NoError(t, err)
 	markDraftPendingWithVector(t, ctx, 1001, 1756608000, draft)
 
-	_, _, err = ConfirmBillingStatementVersion(ctx, draft.DraftPublicId, nil, "idem-1", "qa", "", 7)
-	assert.ErrorIs(t, err, ErrBillingStatementVersionDisabled)
+	version, committed, err := ConfirmBillingStatementVersion(ctx, draft.DraftPublicId, nil, "idem-1", "qa", "", 7)
+	require.NoError(t, err)
+	assert.True(t, committed)
+	require.NotNil(t, version.VersionNumber)
+	assert.Equal(t, 1, *version.VersionNumber)
 }
 
 func TestAbandonDraftReleasesActivePointer(t *testing.T) {
@@ -229,7 +214,6 @@ func TestTopologyFlag(t *testing.T) {
 
 func TestCreateLogBumpsRevisionWhenEnabled(t *testing.T) {
 	setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	require.NoError(t, DB.AutoMigrate(&Log{}))
 
 	// 同库拓扑下写消费日志：客户月修订号应递增。
@@ -262,7 +246,6 @@ func TestCreateLogTracksRevisionWhenDisabled(t *testing.T) {
 
 func TestDeleteOldLogMarksRetentionAndBumpsRevision(t *testing.T) {
 	setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	ctx := context.Background()
 	require.NoError(t, DB.AutoMigrate(&Log{}))
 

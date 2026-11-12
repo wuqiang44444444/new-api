@@ -36,6 +36,7 @@ func TestCustomerStatementExportWorkerReuse(t *testing.T) {
 			const start = int64(1785513600)
 			log := model.Log{UserId: 42, TokenId: 7, TokenName: "key", ModelName: "test-model", Type: model.LogTypeConsume, CreatedAt: start + 100, Quota: 100, PromptTokens: 10, RequestId: "req-export", Other: `{"group_ratio":0.5}`}
 			require.NoError(t, db.Create(&log).Error)
+			publishBillingExportTestDay(t, start)
 			request := CustomerExportRequest{JobType: jobType, StartTimestamp: start, EndTimestamp: start + 31*86400, Language: "en"}
 			job, err := SubmitCustomerExportJob(42, 42, request)
 			require.NoError(t, err)
@@ -63,12 +64,15 @@ func TestCustomerStatementExportWorkerReuse(t *testing.T) {
 				assert.Equal(t, "statement-summary.csv", artifact.Files[0].FileName)
 				assert.Equal(t, "test-model", values["Model"])
 				assert.NotContains(t, values, "Request ID")
-				assert.NotEmpty(t, values["Estimated savings"])
+				assert.Contains(t, values, "Savings")
+				assert.Empty(t, values["Savings"])
 			} else {
 				assert.Equal(t, "statement-details.csv", artifact.Files[0].FileName)
 				assert.Equal(t, "req-export", values["Request ID"])
 				assert.Equal(t, "0.5", values["Final factor"])
 				assert.Equal(t, "Not recorded", values["Contract status"])
+				assert.Contains(t, values, "List price")
+				assert.Empty(t, values["List price"])
 			}
 
 			reused, err := SubmitCustomerExportJob(42, 42, request)
@@ -79,6 +83,10 @@ func TestCustomerStatementExportWorkerReuse(t *testing.T) {
 			assert.EqualValues(t, 1, count)
 
 			require.NoError(t, db.Model(&model.Log{}).Where("id = ?", log.Id).Update("quota", 200).Error)
+			stillPublished, err := SubmitCustomerExportJob(42, 42, request)
+			require.NoError(t, err)
+			assert.Equal(t, job.JobID, stillPublished.JobID)
+			require.NoError(t, model.BuildBillingReportDay(context.Background(), start, "export-fixture", "runner", nil, nil))
 			next, err := SubmitCustomerExportJob(42, 42, request)
 			require.NoError(t, err)
 			assert.NotEqual(t, job.JobID, next.JobID)
@@ -91,10 +99,10 @@ func TestCustomerStatementExportWorkerReuse(t *testing.T) {
 			changedDuringGeneration, err := model.GetCustomerExportJob(next.JobID)
 			require.NoError(t, err)
 			require.Equal(t, model.CustomerExportJobStatusSucceeded, changedDuringGeneration.Status)
-			assert.Empty(t, changedDuringGeneration.DecodeArtifact().SourceVersion)
+			assert.NotEmpty(t, changedDuringGeneration.DecodeArtifact().SourceVersion)
 			third, err := SubmitCustomerExportJob(42, 42, request)
 			require.NoError(t, err)
-			assert.NotEqual(t, next.JobID, third.JobID, "a mixed source revision cannot be auto-reused")
+			assert.Equal(t, next.JobID, third.JobID, "an unpublished source update cannot invalidate an export bound to a frozen version")
 		})
 	}
 }

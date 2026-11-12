@@ -12,7 +12,6 @@ import (
 func TestBillingStatementOfflineRepairInvalidatesPendingAndExportReuse(t *testing.T) {
 	db := setupBillingStatementVersionTestDB(t)
 	require.NoError(t, db.AutoMigrate(&User{}))
-	enableVersionSwitch(t)
 	ctx := context.Background()
 	const period = int64(1756656000)
 	_, draft, err := AcquireBillingStatementDraft(ctx, 11, period, "Asia/Shanghai", 7)
@@ -24,9 +23,10 @@ func TestBillingStatementOfflineRepairInvalidatesPendingAndExportReuse(t *testin
 	require.NotEmpty(t, before)
 	maintenance, err := BeginBillingStatementMaintenance(ctx, "approved offline correction", 7)
 	require.NoError(t, err)
-	require.ErrorIs(t, SetBillingStatementVersionEnabled(ctx, true, 7), ErrBillingStatementVersionDisabled)
+	_, _, err = AcquireBillingStatementDraft(ctx, 12, period, "Asia/Shanghai", 7)
+	require.ErrorIs(t, err, ErrBillingStatementMaintenanceActive)
 	_, _, err = ConfirmBillingStatementVersion(ctx, draft.DraftPublicId, nil, "during", "", "", 7)
-	require.ErrorIs(t, err, ErrBillingStatementVersionDisabled)
+	require.ErrorIs(t, err, ErrBillingStatementMaintenanceActive)
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
 		return RequireBillingStatementMaintenanceTx(tx, maintenance.Generation)
 	}))
@@ -38,7 +38,8 @@ func TestBillingStatementOfflineRepairInvalidatesPendingAndExportReuse(t *testin
 	require.Error(t, db.Transaction(func(tx *gorm.DB) error {
 		return RequireBillingStatementMaintenanceTx(tx, maintenance.Generation)
 	}))
-	require.NoError(t, SetBillingStatementVersionEnabled(ctx, true, 7))
+	_, _, err = AcquireBillingStatementDraft(ctx, 12, period, "Asia/Shanghai", 7)
+	require.NoError(t, err)
 	_, committed, err := ConfirmBillingStatementVersion(ctx, draft.DraftPublicId, nil, "after", "", "", 7)
 	require.ErrorIs(t, err, ErrBillingStatementVersionConflict)
 	assert.False(t, committed)

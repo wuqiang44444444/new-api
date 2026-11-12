@@ -5,7 +5,10 @@ import { beforeEach, expect, it, vi } from 'vitest'
 
 import { resolveShanghaiMonth } from '../../lib'
 import { UpstreamDataStatus } from '../upstream-data-status'
-import { UpstreamReconciliationTable } from '../upstream-reconciliation-table'
+import {
+  AmountCell,
+  UpstreamReconciliationTable,
+} from '../upstream-reconciliation-table'
 import {
   type ProviderUrlGroupSummary,
   seedUpstreamPages,
@@ -135,8 +138,6 @@ it('shows test-only coverage and distinguishes absent cache readings from explic
         periodEnd={resolveShanghaiMonth('2026-09').end_timestamp}
         periodStart={1}
         expandedChannels={new Set([String(channel.channel_id)])}
-        onExportChannel={vi.fn()}
-        exporting={false}
         onToggleChannel={vi.fn()}
         onViewDetails={vi.fn()}
       />
@@ -154,13 +155,22 @@ it('shows test-only coverage and distinguishes absent cache readings from explic
     await userEvent.click(button)
   }
   const rows = screen.getAllByRole('row')
-  expect(within(rows[1]).getAllByRole('cell')[4]).toHaveTextContent(
+  const headers = screen.getAllByRole('columnheader')
+  const readColumn = headers.indexOf(
+    screen.getByRole('columnheader', { name: 'Cache read tokens' })
+  )
+  const writeColumn = headers.indexOf(
+    screen.getByRole('columnheader', { name: 'Cache write tokens' })
+  )
+  expect(within(rows[1]).getAllByRole('cell')[readColumn]).toHaveTextContent(
     'Historical meter unconfirmed'
   )
-  expect(within(rows[2]).getAllByRole('cell')[4]).toHaveTextContent(
+  expect(within(rows[2]).getAllByRole('cell')[readColumn]).toHaveTextContent(
     'Historical meter unconfirmed'
   )
-  expect(within(rows[2]).getAllByRole('cell')[5]).toHaveTextContent('0')
+  expect(within(rows[2]).getAllByRole('cell')[writeColumn]).toHaveTextContent(
+    '0'
+  )
   expect(
     screen.getAllByRole('button', {
       name: /Pricing evidence incomplete:.*did not save the pricing evidence/,
@@ -198,8 +208,6 @@ it('shows priced channel tests as reference amount coverage', async () => {
         periodEnd={resolveShanghaiMonth('2026-09').end_timestamp}
         periodStart={1}
         expandedChannels={new Set([String(channel.channel_id)])}
-        onExportChannel={vi.fn()}
-        exporting={false}
         onToggleChannel={vi.fn()}
         onViewDetails={vi.fn()}
       />
@@ -231,8 +239,6 @@ it('keeps channel totals on the parent row and fallback identity on leaf detail 
       <UpstreamReconciliationTable
         expandedChannels={new Set([String(group.channels[0].channel_id)])}
         channels={group.channels}
-        onExportChannel={vi.fn()}
-        exporting={false}
         onToggleChannel={vi.fn()}
         onViewDetails={onViewDetails}
         periodEnd={resolveShanghaiMonth('2026-09').end_timestamp}
@@ -281,8 +287,6 @@ it.each([
         <UpstreamReconciliationTable
           expandedChannels={new Set([String(timed.channels[0].channel_id)])}
           channels={timed.channels}
-          onExportChannel={vi.fn()}
-          exporting={false}
           onToggleChannel={vi.fn()}
           onViewDetails={vi.fn()}
           periodEnd={resolveShanghaiMonth('2026-09').end_timestamp}
@@ -290,13 +294,18 @@ it.each([
         />
       </QueryClientProvider>
     )
+    const secondsColumn = screen
+      .getAllByRole('columnheader')
+      .indexOf(screen.getByRole('columnheader', { name: 'Billable seconds' }))
     expect(
       screen.getByRole('columnheader', { name: 'Billable seconds' })
     ).toBeInTheDocument()
     for (const row of screen
       .getAllByRole('row')
       .filter((row) => within(row).queryAllByRole('cell').length === 14)) {
-      expect(within(row).getAllByRole('cell')[8]).toHaveTextContent(display)
+      expect(within(row).getAllByRole('cell')[secondsColumn]).toHaveTextContent(
+        display
+      )
     }
   }
 )
@@ -332,8 +341,6 @@ it('keeps a known subtotal separate from an incomplete channel total', () => {
         periodEnd={resolveShanghaiMonth('2026-09').end_timestamp}
         periodStart={1}
         expandedChannels={new Set()}
-        onExportChannel={vi.fn()}
-        exporting={false}
         onToggleChannel={vi.fn()}
         onViewDetails={vi.fn()}
       />
@@ -461,4 +468,24 @@ it('shows verified billing seconds and refunded holds as accounting notes, not m
   expect(
     screen.queryByRole('button', { name: /incomplete/i })
   ).not.toBeInTheDocument()
+})
+
+it('labels historical original amounts as estimates while preserving their amounts', () => {
+  render(
+    <table>
+      <tbody>
+        <tr>
+          <AmountCell value={5} estimated />
+          <AmountCell value={10} />
+        </tr>
+      </tbody>
+    </table>
+  )
+  const [estimated, recorded] = screen.getAllByRole('cell')
+  expect(estimated).toHaveTextContent(
+    'Estimated from recorded charges and historical discounts'
+  )
+  expect(recorded).not.toHaveTextContent(
+    'Estimated from recorded charges and historical discounts'
+  )
 })

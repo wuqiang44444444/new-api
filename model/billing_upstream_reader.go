@@ -12,19 +12,22 @@ import (
 // Bounded keyset reads share customer refund evidence recovery. New arrivals
 // cannot extend the scan, and no log cursor is held during primary DB reads.
 func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailFilter, policy BillingStatementReadPolicy, consume func(Log, billingReconciliationLog, parsedBillingReconciliationLog) error) (resultErr error) {
-	ctx = WithBillingStatementRefundReferenceCache(ctx)
-	defer func() {
-		if resultErr == nil {
-			resultErr = ValidateBillingStatementRefundReferenceCache(ctx)
-		}
-	}()
-	query := LOG_DB.Model(&Log{}).Where("type IN ? AND created_at >= ? AND created_at <= ?", []int{LogTypeConsume, LogTypeRefund}, filter.Start, filter.End)
+	db := LOG_DB
+	if policy.ReadOnlySource {
+		db = usageReportLogDB(ctx)
+	} else {
+		ctx = WithBillingStatementRefundReferenceCache(ctx)
+		defer func() {
+			if resultErr == nil {
+				resultErr = ValidateBillingStatementRefundReferenceCache(ctx)
+			}
+		}()
+	}
+	query := db.Model(&Log{}).Where("type IN ? AND created_at >= ? AND created_at <= ?", []int{LogTypeConsume, LogTypeRefund}, filter.Start, filter.End)
 	if len(filter.ChannelIds) > 0 {
 		query = query.Where("channel_id IN ?", filter.ChannelIds)
 	}
-	if filter.RequestId != "" {
-		query = query.Where("request_id = ?", filter.RequestId)
-	}
+	query = upstreamRequestIDCandidates(query, filter.RequestId)
 	if filter.UpstreamRequestId != "" {
 		query = query.Where("upstream_request_id = ?", filter.UpstreamRequestId)
 	}
@@ -82,11 +85,18 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 		}
 		batchCtx, stop := context.WithTimeout(ctx, timeout)
 		var logs []struct {
-			Log       `gorm:"embedded"`
-			GroupName string
+			Log           `gorm:"embedded"`
+			GroupName     string
+			TupleRevision int64
 		}
-		err := query.Session(&gorm.Session{}).WithContext(batchCtx).
-			Select("id, user_id, token_id, token_name, channel_id, model_name, type, created_at, prompt_tokens, completion_tokens, quota, content, other, request_id, upstream_request_id, "+billingStatementGroupSelect()).
+		columns := "id, user_id, token_id, token_name, channel_id, model_name, type, created_at, prompt_tokens, completion_tokens, quota, content, other, request_id, upstream_request_id, " + billingStatementGroupSelect()
+		if policy.ReadOnlySource {
+			columns += ", username, use_time, is_stream"
+		}
+		if policy.ObserveLogRevision != nil && db.Dialector.Name() == "postgres" {
+			columns += ", " + dailyReportTupleRevision + " AS tuple_revision"
+		}
+		err := query.Session(&gorm.Session{}).WithContext(batchCtx).Select(columns).
 			Where("id > ? AND id <= ?", cursor, upper).Order("id ASC").Limit(500).Find(&logs).Error
 		facts := make([]billingReconciliationLog, len(logs))
 		parsed := make([]parsedBillingReconciliationLog, len(logs))
@@ -112,7 +122,11 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 			break
 		}
 		for i, log := range logs {
+			if policy.ObserveLogRevision != nil {
+				policy.ObserveLogRevision(log.TupleRevision)
+			}
 			evidence.apply(facts[i], &parsed[i])
+			log.Log.Group = log.GroupName
 			if err := consume(log.Log, facts[i], parsed[i]); err != nil {
 				return err
 			}
@@ -129,13 +143,19 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 
 // Customer settlement refunds reduce the local original-price base, without
 // asserting anything about whether the provider refunded its usage or money.
-func upstreamOriginalQuota(log billingReconciliationLog, parsed parsedBillingReconciliationLog) (decimal.Decimal, []string) {
-	quota := max(int64(log.Quota), int64(0))
+func upstreamOriginalQuota(log billingReconciliationLog, parsed parsedBillingReconciliationLog) (decimal.Decimal, bool, []string) {
+	if parsed.fundingAdjustmentFailed || log.Quota < 0 {
+		return decimal.Zero, false, []string{BillingEstimateInvalidFacts}
+	}
+	if original, ok := recordedStatementOriginalQuota(log, parsed); ok {
+		return original, false, nil
+	}
+	quota := int64(log.Quota)
 	if quota == 0 {
-		return decimal.Zero, nil
+		return decimal.Zero, false, nil
 	}
 	if reasons := billingStatementEstimateReasons(parsed); len(reasons) > 0 {
-		return decimal.Zero, reasons
+		return decimal.Zero, false, reasons
 	}
 	contractRatio := 1.0
 	if parsed.contractDiscountRatio != nil && *parsed.contractDiscountRatio > 0 {
@@ -145,7 +165,7 @@ func upstreamOriginalQuota(log billingReconciliationLog, parsed parsedBillingRec
 	if log.Type == LogTypeRefund {
 		original = original.Neg()
 	}
-	return original.Round(0), nil
+	return original.Round(0), true, nil
 }
 
 func upstreamBillingLogFact(log Log, groupName string) billingReconciliationLog {

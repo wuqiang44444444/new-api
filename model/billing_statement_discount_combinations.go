@@ -74,16 +74,19 @@ type billingDiscountCombinationEntry struct {
 	combo            BillingDiscountCombination
 	originalQuota    decimal.Decimal
 	originalComplete bool
+	firstSourceID    int64
 }
 
 type billingDiscountCombinationAccumulator struct {
 	combinations map[billingDiscountCombinationKey]*billingDiscountCombinationEntry
 	overflow     *billingDiscountCombinationEntry
+	limit        int
 }
 
 func newBillingDiscountCombinationAccumulator() *billingDiscountCombinationAccumulator {
 	return &billingDiscountCombinationAccumulator{
 		combinations: make(map[billingDiscountCombinationKey]*billingDiscountCombinationEntry),
+		limit:        billingDiscountCombinationCap,
 	}
 }
 
@@ -103,11 +106,38 @@ func billingContractApplicableState(parsed parsedBillingReconciliationLog) strin
 	return combinationContractUnrecorded
 }
 
+// Observe independently recorded factors even if the amount cannot be reconstructed.
+func observeBillingDiscountFactors(acc *billingReconciliationModelAccumulator, parsed parsedBillingReconciliationLog) {
+	if parsed.discountRatio != nil {
+		ratio := *parsed.discountRatio
+		if !acc.discountSeen {
+			acc.discountSeen, acc.discountRatio = true, ratio
+		} else if acc.discountRatio != ratio {
+			acc.model.MultipleDiscounts = true
+		}
+	}
+
+	state := billingContractApplicableState(parsed)
+	if state == combinationContractApplicableUnknown || (parsed.recordedAmountsOnly && state == combinationContractUnrecorded) {
+		return
+	}
+	contractRatio := 1.0
+	if state == combinationContractApplicableYes {
+		contractRatio = *parsed.contractDiscountRatio
+		acc.hasContractDiscountFact = true
+	}
+	if !acc.contractDiscountSeen {
+		acc.contractDiscountSeen, acc.contractDiscountRatio = true, contractRatio
+	} else if acc.contractDiscountRatio != contractRatio {
+		acc.multipleContractDiscounts = true
+	}
+}
+
 // observe accumulates one settled log row. Money follows exactly the same
 // pre-discount reconstruction as accumulateBillingReconciliationPrice:
 // quota / G / C, refunds negative, never rounded per row. A zero-quota row is
 // an exact zero money fact and does not invalidate the combination.
-func (a *billingDiscountCombinationAccumulator) observe(log billingReconciliationLog, selectedGroupId int64, parsed parsedBillingReconciliationLog) {
+func (a *billingDiscountCombinationAccumulator) observe(log billingReconciliationLog, selectedGroupId int64, parsed parsedBillingReconciliationLog, sourceIDs ...int64) {
 	if log.Type != LogTypeConsume && log.Type != LogTypeRefund {
 		return
 	}
@@ -136,7 +166,7 @@ func (a *billingDiscountCombinationAccumulator) observe(log billingReconciliatio
 	}
 	entry := a.combinations[key]
 	if entry == nil {
-		if len(a.combinations) >= billingDiscountCombinationCap {
+		if len(a.combinations) >= a.limit {
 			a.observeOverflow(log, parsed)
 			return
 		}
@@ -159,12 +189,24 @@ func (a *billingDiscountCombinationAccumulator) observe(log billingReconciliatio
 			},
 			originalComplete: true,
 		}
+		if len(sourceIDs) > 0 {
+			entry.firstSourceID = sourceIDs[0]
+		}
 		a.combinations[key] = entry
 	}
 	if parsed.inputTokensUnavailable {
 		entry.combo.InputTokensKnown = false
 	}
 	accumulateBillingReconciliationLog(&entry.combo.Usage, log, parsed)
+	if parsed.recordedAmountsOnly {
+		if original, ok := recordedStatementOriginalQuota(log, parsed); ok {
+			entry.originalQuota = entry.originalQuota.Add(original)
+		} else {
+			entry.originalComplete = false
+			entry.combo.EstimateReasons = mergeBillingEstimateReasons(entry.combo.EstimateReasons, billingOriginalQuotaNotRecorded)
+		}
+		return
+	}
 	quota := max(int64(log.Quota), int64(0))
 	if quota == 0 {
 		return
@@ -286,19 +328,17 @@ func (a *billingDiscountCombinationAccumulator) finalize() []BillingDiscountComb
 func finalizeDiscountCombinationEntry(entry *billingDiscountCombinationEntry) BillingDiscountCombination {
 	combo := entry.combo
 	finalizeBillingReconciliationUsage(&combo.Usage)
-	if entry.originalComplete {
-		combo.OriginalKnown = entry.originalComplete
-		combo.OriginalQuota = billingStatementOriginalQuota(entry.originalQuota)
-		combo.OriginalKnown = combo.OriginalQuota != nil
-		if !combo.OriginalKnown {
-			combo.EstimateReasons = mergeBillingEstimateReasons(combo.EstimateReasons, BillingEstimateAmountOutOfRange)
-		}
-		if combo.OriginalQuota != nil {
-			discount := *combo.OriginalQuota - combo.Usage.NetQuota
-			combo.DiscountQuota = &discount
-		}
-	} else {
-		combo.OriginalKnown = false
+	combo.OriginalQuota, combo.DiscountQuota = nil, nil
+	combo.OriginalKnown = false
+	if !entry.originalComplete {
+		return combo
 	}
+	combo.OriginalQuota = billingStatementOriginalQuota(entry.originalQuota)
+	combo.OriginalKnown = combo.OriginalQuota != nil
+	if !combo.OriginalKnown {
+		combo.EstimateReasons = mergeBillingEstimateReasons(combo.EstimateReasons, BillingEstimateAmountOutOfRange)
+		return combo
+	}
+	combo.DiscountQuota = BillingStatementEstimatedSavings(combo.OriginalQuota, combo.Usage.NetQuota)
 	return combo
 }

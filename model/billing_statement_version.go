@@ -21,13 +21,12 @@ import (
 const (
 	// Increment whenever statement interpretation changes. New drafts freeze
 	// this value; old confirmed versions retain their original facts.
-	BillingStatementParserVersion = 5
+	BillingStatementParserVersion = 8
 
 	// BillingStatementNamespace 是正式账单对象的独立私有命名空间（方案 12.1）。
 	BillingStatementNamespace = "billing/statements"
 
 	// 能力开关 Option 键（布尔字符串，默认 false）。
-	BillingStatementVersionEnabledKey = "BillingStatementVersionEnabled"
 )
 
 // 草稿/版本状态机（方案 7）。
@@ -55,9 +54,9 @@ const (
 )
 
 var (
-	ErrBillingStatementVersionDisabled = errors.New("billing statement version confirmation is disabled")
-	ErrBillingStatementVersionTopology = errors.New("billing statement version confirmation requires the same-database topology (LOG_DB == DB)")
-	ErrBillingStatementVersionConflict = errors.New("billing statement version state conflict")
+	ErrBillingStatementMaintenanceActive = errors.New("billing statement maintenance is in progress")
+	ErrBillingStatementVersionTopology   = errors.New("billing statement version confirmation requires the same-database topology (LOG_DB == DB)")
+	ErrBillingStatementVersionConflict   = errors.New("billing statement version state conflict")
 )
 
 // BillingStatementMonth 月账单主记录：客户＋账期唯一，管理当前确认版与活动草稿指针。
@@ -122,6 +121,7 @@ type BillingStatementVersionLine struct {
 	ID               int64  `json:"id" gorm:"primary_key"`
 	VersionId        int64  `json:"version_id" gorm:"uniqueIndex:uidx_bsvl_version_seq,priority:1"`
 	Sequence         int64  `json:"sequence" gorm:"bigint;uniqueIndex:uidx_bsvl_version_seq,priority:2"`
+	FundGroup        string `json:"-" gorm:"size:75"`
 	SourceLogId      int64  `json:"source_log_id" gorm:"bigint"` // 稳定源记录身份
 	RequestId        string `json:"request_id" gorm:"type:varchar(64);index"`
 	TokenId          int    `json:"token_id" gorm:"index"`
@@ -260,19 +260,6 @@ func ensureBillingStatementMaintenanceRow(ctx context.Context) error {
 	}).Error
 }
 
-// --- 能力开关与拓扑 ---
-
-// BillingStatementVersionEnabled 读取运行时能力开关（Option 布尔字符串，默认 false）。
-func BillingStatementVersionEnabled() bool {
-	common.OptionMapRWMutex.RLock()
-	defer common.OptionMapRWMutex.RUnlock()
-	raw, ok := common.OptionMap[BillingStatementVersionEnabledKey]
-	if !ok {
-		return false
-	}
-	return raw == "true" || raw == "1"
-}
-
 // BillingStatementVersionTopologyOK 报告当前是否为同库部署（LOG_DB == DB）。
 // 首期仅在该拓扑启用生成/确认；分库保留实时查询与已有版本读取。
 func BillingStatementVersionTopologyOK() bool { return LOG_DB == DB }
@@ -301,7 +288,7 @@ func GetBillingStatementMaintenance(ctx context.Context) (*BillingStatementMaint
 	return &m, err
 }
 
-// lockBillingStatementMaintenanceTx 在事务内锁定维护控制行（固定主键），供确认与开关切换共用。
+// lockBillingStatementMaintenanceTx 在事务内锁定维护控制行（固定主键），供账单版本写入与离线维护共用。
 func lockBillingStatementMaintenanceTx(ctx context.Context, tx *gorm.DB) (*BillingStatementMaintenance, error) {
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		if err := tx.WithContext(ctx).Model(&BillingStatementMaintenance{}).Where("id = ?", billingStatementMaintenanceRowID).Update("updated_at", nowSeconds()).Error; err != nil {
@@ -334,9 +321,6 @@ func BeginBillingStatementMaintenance(ctx context.Context, reason string, actorI
 		m.Generation++
 		m.Reason = reason
 		m.UpdatedAt = nowSeconds()
-		if err := tx.Where(Option{Key: BillingStatementVersionEnabledKey}).Assign(Option{Value: "false"}).FirstOrCreate(&Option{}).Error; err != nil {
-			return err
-		}
 		if err := tx.Save(m).Error; err != nil {
 			return err
 		}
@@ -363,11 +347,6 @@ func EndBillingStatementMaintenance(ctx context.Context, expectedGeneration int6
 		if !m.Enabled || expectedGeneration <= 0 || m.Generation != expectedGeneration {
 			return errors.New("billing statement maintenance not in progress")
 		}
-		if enabled, err := billingStatementVersionEnabledFromDBTx(ctx, tx); err != nil {
-			return err
-		} else if enabled {
-			return ErrBillingStatementVersionConflict
-		}
 		m.Enabled = false
 		m.Generation++
 		m.Reason = ""
@@ -392,6 +371,9 @@ func AcquireBillingStatementDraft(ctx context.Context, userId int, periodStart i
 	var month *BillingStatementMonth
 	var draft *BillingStatementVersion
 	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := requireBillingStatementWritableTx(ctx, tx); err != nil {
+			return err
+		}
 		// 锁月记录（唯一客户＋账期），无则创建。
 		m := BillingStatementMonth{}
 		findErr := lockForUpdate(tx.WithContext(ctx)).
@@ -536,21 +518,21 @@ func snapshotBillingStatementDependencyVector(ctx context.Context, userId int, p
 		return nil, err
 	}
 	if m.Enabled {
-		return nil, ErrBillingStatementVersionDisabled
+		return nil, ErrBillingStatementMaintenanceActive
 	}
 	vec.RevMaintenance = m.Generation
 	return vec, nil
 }
 
 // ConfirmBillingStatementVersion 原子确认发布（方案 10.3/10.7）。
-// 在同一事务内：锁维护控制行 → 校验开关/维护状态/代际 → 锁月记录 → 校验草稿状态/来源向量/完整性 →
+// 在同一事务内：锁维护控制行 → 校验维护状态/代际 → 锁月记录 → 校验草稿状态/来源向量/完整性 →
 // 分配正式版本号 → 切换当前版指针 → 追加审计。返回是否本次提交（幂等重试返回同一结果）。
 func ConfirmBillingStatementVersion(ctx context.Context, draftPublicId string, expectedBaseVersionId *int64, idempotencyKey string, acknowledgedQA string, publicReason string, confirmedBy int) (*BillingStatementVersion, bool, error) {
 	var result *BillingStatementVersion
 	var committed bool
 	var parserChanged bool
 	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1. 锁维护控制行，读取开关与维护状态（最终权威，不依赖进程缓存）。
+		// 1. 锁维护控制行，读取维护状态。
 		maint, err := lockBillingStatementMaintenanceTx(ctx, tx)
 		if err != nil {
 			return err
@@ -567,15 +549,7 @@ func ConfirmBillingStatementVersion(ctx context.Context, draftPublicId string, e
 			return nil
 		}
 		if maint.Enabled {
-			return ErrBillingStatementVersionDisabled
-		}
-		// 开关最终权威是主库 option 行（与维护控制行同事务读取），不依赖进程缓存。
-		enabled, err := billingStatementVersionEnabledFromDBTx(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if !enabled {
-			return ErrBillingStatementVersionDisabled
+			return ErrBillingStatementMaintenanceActive
 		}
 		// 4. 状态、完整性与来源校验。
 		if !BillingStatementVersionTopologyOK() {

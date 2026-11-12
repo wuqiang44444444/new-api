@@ -66,6 +66,26 @@ export function billingDataQualityLabel(
   return t('Usage recorded')
 }
 
+export function upstreamEvidenceCoverageLabel(
+  coverage: NonNullable<BillingDataQuality['evidence_coverage']>,
+  t: TFunction
+) {
+  const counts = {
+    affected: coverage.gap_rows.toLocaleString(),
+    total: coverage.rows.toLocaleString(),
+  }
+  if (coverage.gap_rows > 0 && coverage.usage_gap_rows === coverage.gap_rows) {
+    return t(
+      '{{affected}} of {{total}} records lack usage details · amounts available',
+      counts
+    )
+  }
+  return t(
+    '{{affected}} of {{total}} billing records have incomplete information',
+    counts
+  )
+}
+
 export type BillingEvidenceEntry = { filter: string; text: string }
 
 // Evidence lines are grouped the way operators read them: money that cannot be

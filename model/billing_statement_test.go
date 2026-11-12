@@ -139,13 +139,17 @@ func TestGetUserBillingStatementCountsAsyncTasksOnceAcrossSettlementAdjustments(
 	assert.EqualValues(t, 100, crossPeriodItem.CompletionTokens)
 	assert.Zero(t, crossPeriodItem.GrossQuota)
 	assert.EqualValues(t, 500, crossPeriodItem.RefundQuota)
-	assert.Zero(t, crossPeriodItem.NetQuota)
+	assert.EqualValues(t, -500, crossPeriodItem.NetQuota)
 
 	assert.EqualValues(t, 2, summary.Requests)
 	assert.EqualValues(t, 750, summary.CompletionTokens)
 	assert.EqualValues(t, 2200, summary.GrossQuota)
 	assert.EqualValues(t, 800, summary.RefundQuota)
-	assert.EqualValues(t, 1900, summary.NetQuota)
+	assert.EqualValues(t, 1400, summary.NetQuota)
 	assert.InDelta(t, 2.5, summary.AverageUseTimeSeconds, 0.0001)
 	assert.InDelta(t, 0.5, summary.StreamRatio, 0.0001)
+
+	_, refundOnly, err := GetUserBillingStatement(7, 1000, 1600, 0, "model-cross-period")
+	require.NoError(t, err)
+	assert.EqualValues(t, -500, refundOnly.NetQuota)
 }

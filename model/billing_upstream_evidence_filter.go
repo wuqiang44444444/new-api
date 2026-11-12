@@ -1,6 +1,9 @@
 package model
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 // A filter selects evidence, never changes the price or repairs stored logs.
 // The same classifier drives coverage, interactive pages and full exports.
@@ -86,4 +89,58 @@ func matchUpstreamEvidenceFilter(row UpstreamBillingDetailItem, filter string) (
 	default:
 		return false, false
 	}
+}
+
+func billingReportEvidenceTags(row UpstreamBillingDetailItem) string {
+	var tags strings.Builder
+	tags.WriteByte('|')
+	for _, filter := range []string{
+		"incomplete",
+		"complete",
+		"amount_gap",
+		"usage_gap",
+		"other_gap",
+		"usage_without_amount_rows",
+		"auxiliary_charge_rows",
+		"legacy_test_cache_read_rows",
+		"cache_read_unreported_requests",
+		"seconds_task_link_missing_rows",
+		"input_tokens_unavailable_requests",
+		"legacy_test_cache_write_rows",
+		"cache_write_unreported_requests",
+		"unavailable_requests",
+		"unknown_billing_mode_requests",
+		"provider_model_fallback_rows",
+		"missing_historical_price_rows",
+		"test_recomputed_rows",
+		"test_recorded_original_rows",
+		"test_priced_rows",
+		"recovered_billing_seconds_rows",
+		"refunded_task_hold_rows",
+		"cache_read_historical",
+		"cache_write_historical",
+		"seconds_unit_missing",
+		"seconds_value_missing",
+		"test:estimated_usage",
+		"test:fixed_price_mismatch",
+		"test:missing_price_fields",
+		"test:invalid_pricing_record",
+		"test:missing_cache_write",
+		"test:missing_cache_read",
+		"test:missing_cache_ttl",
+		"test:missing_cache_write_price",
+		"test:missing_cache_read_price",
+		"test:missing_usage_semantic",
+		"test:missing_multimodal_usage",
+		"test:missing_expression_context",
+		"test:missing_group_ratio",
+		"test:recorded_amount_mismatch",
+		"test:missing_tool_price",
+	} {
+		if match, _ := matchUpstreamEvidenceFilter(row, filter); match {
+			tags.WriteString(filter)
+			tags.WriteByte('|')
+		}
+	}
+	return tags.String()
 }

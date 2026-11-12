@@ -25,7 +25,6 @@ func TestBillingStatementExternalEvidenceChanges(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupBillingStatementVersionTestDB(t)
-			enableVersionSwitch(t)
 			require.NoError(t, db.AutoMigrate(&Task{}))
 			ctx := context.Background()
 			month := naturalMonthStartAt(1756656100)

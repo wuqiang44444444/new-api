@@ -5,16 +5,32 @@ import (
 	"encoding/base64"
 	"encoding/csv"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCustomerExportDownloadIsSignedAsAttachment(t *testing.T) {
+	store := newTestS3Store(t)
+	previousStore := customerExportStoreOverride
+	t.Cleanup(func() { customerExportStoreOverride = previousStore })
+	customerExportStoreOverride = store
+
+	signed, _, err := PresignCustomerExportURL("exports/jobs/job/statement-summary.csv", time.Minute, store.ExportIdentity(), "statement-summary.csv")
+	require.NoError(t, err)
+	parsed, err := url.Parse(signed)
+	require.NoError(t, err)
+	assert.Equal(t, "attachment; filename=statement-summary.csv", parsed.Query().Get("response-content-disposition"))
+	assert.NotEmpty(t, parsed.Query().Get("X-Amz-Signature"))
+}
 
 func TestCustomerExportSchedulerFinishesAndCanWakeAgain(t *testing.T) {
 	setupCustomerExportServiceTest(t)
@@ -42,7 +58,7 @@ func TestCustomerExportSummaryEmptyMonthAndFrozenCurrency(t *testing.T) {
 	scope := customerExportScopeColumns{GeneratedAt: 1000, QuotaPerUnit: 500000, Currency: "CNY", CurrencyRate: 7}
 	assert.Equal(t, "-1.40000000", exportCurrencyAmount("-100000", scope))
 	original, discount := int64(1000000), int64(500000)
-	statement := model.BillingCustomerStatement{Summary: model.BillingReconciliationUsage{InputTokens: 0, NetQuota: 500000}, OriginalQuota: &original, DiscountQuota: &discount, Groups: []model.BillingReconciliationGroupSummary{{Id: 1, Models: []model.BillingReconciliationModelSummary{{ModelName: "model", OriginalQuota: &original, Usage: model.BillingReconciliationUsage{NetQuota: 500000}, DataQuality: &model.BillingReconciliationDataQuality{Status: "partial", InputTokensUnavailableRequests: 1}}}}}, DataQuality: &model.BillingReconciliationDataQuality{Status: "partial", InputTokensUnavailableRequests: 1}}
+	statement := model.BillingCustomerStatement{Summary: model.BillingReconciliationUsage{InputTokens: 0, NetQuota: 500000}, OriginalQuota: &original, DiscountQuota: &discount, Groups: []model.BillingReconciliationGroupSummary{{Id: 1, Models: []model.BillingReconciliationModelSummary{{ModelName: "model", OriginalQuota: &original, DiscountQuota: &discount, Usage: model.BillingReconciliationUsage{NetQuota: 500000}, DataQuality: &model.BillingReconciliationDataQuality{Status: "partial", InputTokensUnavailableRequests: 1}}}}}, DataQuality: &model.BillingReconciliationDataQuality{Status: "partial", InputTokensUnavailableRequests: 1}}
 	_, paths, _, err := writeCustomerExportSummaryCsv(t.TempDir(), scope, "en", statement)
 	require.NoError(t, err)
 	raw, err := os.ReadFile(paths[0])

@@ -38,7 +38,7 @@ func GetAdminUpstreamBillingDetails(c *gin.Context) {
 		common.ApiErrorMsg(c, "invalid filter")
 		return
 	}
-	if filter.BillingMode != "" && !validBillingDetailMode(filter.BillingMode) {
+	if filter.BillingMode != "" && !model.ValidBillingReconciliationMode(filter.BillingMode) {
 		common.ApiErrorMsg(c, "invalid billing_mode")
 		return
 	}
@@ -55,10 +55,14 @@ func GetAdminUpstreamBillingDetails(c *gin.Context) {
 		return
 	}
 	urlKey := strings.TrimSpace(c.Query("url_key"))
-	if urlKey != "" {
-		common.ApiErrorMsg(c, "use channel_id instead of url_key")
+	if !validateUpstreamReportURL(c, urlKey) {
 		return
 	}
+	if urlKey != "" && channelId <= 0 {
+		common.ApiErrorT(c, "A channel ID is required for upstream records filtered by URL")
+		return
+	}
+	filter.URLKey = urlKey
 	if channelId > 0 {
 		filter.ChannelIds = []int{channelId}
 	}
@@ -66,6 +70,11 @@ func GetAdminUpstreamBillingDetails(c *gin.Context) {
 		common.ApiErrorMsg(c, "upstream details require a channel or evidence filter")
 		return
 	}
+	cancelReport, ok := bindUpstreamBillingReport(c, period)
+	if !ok {
+		return
+	}
+	defer cancelReport()
 	details, err := model.GetUpstreamBillingDetails(c.Request.Context(), filter, page, pageSize, c.GetInt("role") >= common.RoleRootUser)
 	if err != nil {
 		common.ApiError(c, err)
@@ -75,8 +84,4 @@ func GetAdminUpstreamBillingDetails(c *gin.Context) {
 		"channel_id":      channelId,
 		"evidence_filter": filter.EvidenceFilter, "model_name": filter.ProviderModel, "billing_mode": filter.BillingMode,
 	}, details, "log_database+main_database")
-}
-
-func validBillingDetailMode(mode string) bool {
-	return mode == model.BillingReconciliationModeToken || mode == model.BillingReconciliationModePerCall || mode == model.BillingReconciliationModePerSecond || mode == model.BillingReconciliationModeUnknown
 }

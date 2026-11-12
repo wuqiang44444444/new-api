@@ -15,6 +15,7 @@ import (
 // URL grouping follows the channel's currently configured base URL.
 type UpstreamBillingDetailFilter struct {
 	EvidenceFilter        string
+	URLKey                string
 	Start, End            int64
 	ChannelIds            []int
 	ProviderModel         string
@@ -29,29 +30,31 @@ type UpstreamBillingDetailFilter struct {
 // and is only included for root viewers. Missing IDs stay empty and display
 // as "not recorded" instead of being guessed by time or amount.
 type UpstreamBillingDetailItem struct {
-	secondsRecovered      bool
-	secondsLog            billingReconciliationLog
-	SecondsSource         string           `json:"seconds_source,omitempty"`
-	Seconds               *decimal.Decimal `json:"seconds"`
-	RowId                 int64            `json:"row_id"`
-	Time                  int64            `json:"time"`
-	ChannelId             int              `json:"channel_id"`
-	ChannelName           string           `json:"channel_name"`
-	CustomerModel         string           `json:"customer_model"`
-	ProviderModel         string           `json:"provider_model"`
-	ProviderModelFallback bool             `json:"provider_model_fallback,omitempty"`
-	BillingMode           string           `json:"billing_mode"`
-	RecordedInputTokens   int64            `json:"recorded_input_tokens"`
-	OutputTokens          int64            `json:"output_tokens"`
-	CacheReadTokens       int64            `json:"cache_read_tokens"`
-	CacheWriteTokens      int64            `json:"cache_write_tokens"`
-	OriginalExactQuota    string           `json:"-"`
-	OriginalAmount        *int64           `json:"original_amount,omitempty"`
-	EstimateReasons       []string         `json:"estimate_reasons,omitempty"`
-	RequestId             string           `json:"request_id"`
-	UpstreamRequestId     string           `json:"upstream_request_id"`
-	PlatformTaskId        string           `json:"platform_task_id,omitempty"`
-	UpstreamTaskId        string           `json:"upstream_task_id,omitempty"`
+	secondsRecovered        bool
+	secondsLog              billingReconciliationLog
+	SecondsSource           string           `json:"seconds_source,omitempty"`
+	Seconds                 *decimal.Decimal `json:"seconds"`
+	RowId                   int64            `json:"row_id"`
+	Time                    int64            `json:"time"`
+	ChannelId               int              `json:"channel_id"`
+	ChannelName             string           `json:"channel_name"`
+	CustomerModel           string           `json:"customer_model"`
+	ProviderModel           string           `json:"provider_model"`
+	ProviderModelFallback   bool             `json:"provider_model_fallback,omitempty"`
+	BillingMode             string           `json:"billing_mode"`
+	RecordedInputTokens     int64            `json:"recorded_input_tokens"`
+	OutputTokens            int64            `json:"output_tokens"`
+	CacheReadTokens         int64            `json:"cache_read_tokens"`
+	CacheWriteTokens        int64            `json:"cache_write_tokens"`
+	OriginalExactQuota      string           `json:"-"`
+	OriginalAmountEstimated *bool            `json:"original_amount_estimated,omitempty"`
+	OriginalAmount          *int64           `json:"original_amount,omitempty"`
+	EstimateReasons         []string         `json:"estimate_reasons,omitempty"`
+	RequestId               string           `json:"request_id"`
+	requestUserID           int
+	UpstreamRequestId       string `json:"upstream_request_id"`
+	PlatformTaskId          string `json:"platform_task_id,omitempty"`
+	UpstreamTaskId          string `json:"upstream_task_id,omitempty"`
 	// TestPricing keeps the recorded test pricing evidence visible in details
 	// and exports: the mode and settled/estimated status of the test fee. Nil
 	// for non-test rows.
@@ -78,6 +81,9 @@ type UpstreamBillingDetails struct {
 // channel_test events.
 func GetUpstreamBillingDetails(ctx context.Context, filter UpstreamBillingDetailFilter, page int, pageSize int, includeRootFields bool) (UpstreamBillingDetails, error) {
 	result := UpstreamBillingDetails{Items: make([]UpstreamBillingDetailItem, 0), Page: page, PageSize: pageSize}
+	if report := BillingReportFromContext(ctx); report != nil {
+		return report.upstreamDetails(ctx, filter, result, includeRootFields)
+	}
 	skip := int64(page-1) * int64(pageSize)
 	err := ScanUpstreamBillingDetails(ctx, filter, includeRootFields, BillingStatementReadPolicy{}, func(item UpstreamBillingDetailItem) error {
 		if result.Total >= skip && len(result.Items) < pageSize {
@@ -92,6 +98,10 @@ func GetUpstreamBillingDetails(ctx context.Context, filter UpstreamBillingDetail
 // ScanUpstreamBillingDetails shares the parsed evidence and signed money scope
 // with the summary. Exports supply a bounded read policy and never use UI pages.
 func ScanUpstreamBillingDetails(ctx context.Context, filter UpstreamBillingDetailFilter, includeRootFields bool, policy BillingStatementReadPolicy, consume func(UpstreamBillingDetailItem) error) error {
+	if report := BillingReportFromContext(ctx); report != nil {
+		return report.scanUpstreamDetails(ctx, filter, includeRootFields, policy, consume)
+	}
+
 	if err := ValidateUpstreamEvidenceFilter(filter.EvidenceFilter); err != nil {
 		return err
 	}
@@ -114,10 +124,16 @@ func ScanUpstreamBillingDetails(ctx context.Context, filter UpstreamBillingDetai
 	}
 	var buffer []UpstreamBillingDetailItem
 	flush := func() error {
+		if err := resolveUpstreamDetailRequestIDs(ctx, buffer); err != nil {
+			return err
+		}
 		if err := flushRecoveredDetailSeconds(ctx, buffer); err != nil {
 			return err
 		}
 		for _, item := range buffer {
+			if filter.RequestId != "" && item.RequestId != filter.RequestId {
+				continue
+			}
 			if matches, _ := matchUpstreamEvidenceFilter(item, filter.EvidenceFilter); !matches {
 				continue
 			}
@@ -129,34 +145,14 @@ func ScanUpstreamBillingDetails(ctx context.Context, filter UpstreamBillingDetai
 		return nil
 	}
 	err = scanUpstreamBillingFacts(ctx, filter, policy, func(log Log, fact billingReconciliationLog, parsed parsedBillingReconciliationLog) error {
-		providerModel := strings.TrimSpace(parsed.providerModel)
-		fallback := providerModel == ""
-		if fallback {
-			providerModel = log.ModelName
-		}
-		if (filter.ProviderModel != "" && providerModel != filter.ProviderModel) || (filter.ProviderModelFallback != nil && fallback != *filter.ProviderModelFallback) {
+		item := projectUpstreamBillingDetail(log, fact, parsed, includeRootFields)
+		if (filter.ProviderModel != "" && item.ProviderModel != filter.ProviderModel) || (filter.ProviderModelFallback != nil && item.ProviderModelFallback != *filter.ProviderModelFallback) {
 			return nil
 		}
 		if filter.BillingMode != "" && parsed.billingMode != filter.BillingMode {
 			return nil
 		}
-		item := UpstreamBillingDetailItem{
-			RowId: int64(log.Id), Time: log.CreatedAt, ChannelId: log.ChannelId, ChannelName: names[log.ChannelId].Name,
-			CustomerModel: parsed.customerModel, ProviderModel: providerModel, ProviderModelFallback: fallback,
-			BillingMode: parsed.billingMode, RecordedInputTokens: parsed.recordedInputTokens,
-			OutputTokens: parsed.outputTokens, CacheReadTokens: parsed.cacheReadTokens, CacheWriteTokens: parsed.cacheWrite.total,
-			RequestId: log.RequestId, UpstreamRequestId: log.UpstreamRequestId,
-		}
-		var secondsMissing, secondsUnitKnown bool
-		item.Seconds, secondsMissing, secondsUnitKnown = upstreamBillingSeconds(fact, parsed)
-		if secondsMissing {
-			quality := ensureBillingReconciliationQuality(&item.DataQuality)
-			quality.SecondsUnavailableRows = 1
-			if secondsUnitKnown {
-				quality.SecondsValueMissingRows = 1
-			}
-		}
-		upstreamBillingDetailRowFacts(&item, fact, parsed, includeRootFields)
+		item.ChannelName = names[log.ChannelId].Name
 		buffer = append(buffer, item)
 		if len(buffer) >= upstreamDetailFlushSize {
 			return flush()
@@ -167,6 +163,32 @@ func ScanUpstreamBillingDetails(ctx context.Context, filter UpstreamBillingDetai
 		return err
 	}
 	return flush()
+}
+
+func projectUpstreamBillingDetail(log Log, fact billingReconciliationLog, parsed parsedBillingReconciliationLog, includeRootFields bool) UpstreamBillingDetailItem {
+	providerModel := strings.TrimSpace(parsed.providerModel)
+	fallback := providerModel == ""
+	if fallback {
+		providerModel = log.ModelName
+	}
+	item := UpstreamBillingDetailItem{
+		RowId: int64(log.Id), Time: log.CreatedAt, ChannelId: log.ChannelId,
+		CustomerModel: parsed.customerModel, ProviderModel: providerModel, ProviderModelFallback: fallback,
+		BillingMode: parsed.billingMode, RecordedInputTokens: parsed.recordedInputTokens,
+		OutputTokens: parsed.outputTokens, CacheReadTokens: parsed.cacheReadTokens, CacheWriteTokens: parsed.cacheWrite.total,
+		RequestId: upstreamRequestIDFromLog(log), UpstreamRequestId: log.UpstreamRequestId, requestUserID: log.UserId,
+	}
+	var secondsMissing, secondsUnitKnown bool
+	item.Seconds, secondsMissing, secondsUnitKnown = upstreamBillingSeconds(fact, parsed)
+	if secondsMissing {
+		quality := ensureBillingReconciliationQuality(&item.DataQuality)
+		quality.SecondsUnavailableRows = 1
+		if secondsUnitKnown {
+			quality.SecondsValueMissingRows = 1
+		}
+	}
+	upstreamBillingDetailRowFacts(&item, fact, parsed, includeRootFields)
+	return item
 }
 
 // upstreamDetailFlushSize bounds one recovery batch of detail rows.
@@ -236,7 +258,7 @@ func upstreamBillingDetailRowFacts(item *UpstreamBillingDetailItem, fact billing
 	event := billingBreakdownString(other["task_billing_event"])
 	_, hasActual := other["actual_quota"]
 	_, hasPre := other["pre_consumed_quota"]
-	adjustment := hasActual || hasPre || event == "adjustment"
+	adjustment := isTaskBillingAdjustment(event, hasActual, hasPre)
 
 	switch {
 	case isNativeChannelTestLog(fact.Type, fact.TokenId, fact.TokenName, fact.Content):
@@ -256,7 +278,7 @@ func upstreamBillingDetailRowFacts(item *UpstreamBillingDetailItem, fact billing
 	}
 
 	if !parsed.isChannelTest {
-		original, reasons := upstreamOriginalQuota(fact, parsed)
+		original, estimated, reasons := upstreamOriginalQuota(fact, parsed)
 		item.EstimateReasons = reasons
 		if len(reasons) == 0 {
 			item.OriginalAmount = billingStatementOriginalQuota(original)
@@ -264,6 +286,7 @@ func upstreamBillingDetailRowFacts(item *UpstreamBillingDetailItem, fact billing
 				item.EstimateReasons = []string{BillingEstimateAmountOutOfRange}
 			} else {
 				item.OriginalExactQuota = original.String()
+				item.OriginalAmountEstimated = &estimated
 			}
 		}
 	}

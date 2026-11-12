@@ -1,5 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { expect, it, vi } from 'vitest'
@@ -8,9 +15,29 @@ import zh from '@/i18n/locales/zh.json'
 
 import { CustomerStatementsListView } from '../customer-statements-list'
 
-async function renderStatement(missingPrice = false, language = 'en') {
+const exportsApi = vi.hoisted(() => ({
+  createCustomerStatementsExport: vi.fn(),
+  listSelfExports: vi.fn(),
+  requestExportDownload: vi.fn(),
+  downloadExportFile: vi.fn(),
+}))
+vi.mock('../../export-api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../export-api')>()),
+  ...exportsApi,
+}))
+
+const reportVersion = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+
+async function renderStatement(
+  missingPrice = false,
+  language = 'en',
+  search = ''
+) {
   const i18n = createInstance().use(initReactI18next)
-  await i18n.init({ lng: language, resources: { en: { translation: {} }, zh } })
+  await i18n.init({
+    lng: language,
+    resources: { en: { translation: {} }, zh },
+  })
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -41,7 +68,7 @@ async function renderStatement(missingPrice = false, language = 'en') {
       'billing-customer-statements',
       1000,
       1200,
-      '',
+      search,
       'all',
       'net_quota',
       'desc',
@@ -50,7 +77,14 @@ async function renderStatement(missingPrice = false, language = 'en') {
     ],
     {
       generated_at: 1789061550,
+      billing_report: {
+        version: reportVersion,
+        published_days: 1,
+        expected_days: 1,
+        as_of: 1789061550,
+      },
       result: {
+        recorded_original_amounts: true,
         items: [item],
         summary: { ...item, customer_count: 1 },
         total: 1,
@@ -66,7 +100,7 @@ async function renderStatement(missingPrice = false, language = 'en') {
       <QueryClientProvider client={client}>
         <CustomerStatementsListView
           period={{ start_timestamp: 1000, end_timestamp: 1200 }}
-          search={{}}
+          search={{ customerSearch: search }}
           onSelectUser={onSelectUser}
           onSearchChange={onSearchChange}
         />
@@ -85,11 +119,18 @@ async function renderStatement(missingPrice = false, language = 'en') {
 
 it('separates settled prices from precharge flows for the randy statement', async () => {
   const view = await renderStatement()
+  const user = userEvent.setup()
+  const funds = screen.getByRole('button', { name: 'Fund movements' })
+  expect(
+    screen.queryByRole('columnheader', { name: 'Total charges' })
+  ).toBeNull()
+  await user.click(funds)
+  expect(funds).toHaveAttribute('aria-pressed', 'true')
   const headers = screen
     .getAllByRole('columnheader')
     .map((cell) => cell.textContent)
   expect(headers.slice(2, 7)).toEqual([
-    'Estimated list price',
+    'List price',
     'Discount',
     'Net settled amount',
     'Total charges',
@@ -104,20 +145,31 @@ it('separates settled prices from precharge flows for the randy statement', asyn
     '$3,655.811442',
     '$1,992.25957',
   ])
+  await user.click(screen.getByRole('button', { name: 'Billing notes' }))
   expect(
-    screen.getByText(
-      'Estimated list price minus estimated savings equals net settled amount.',
-      {
-        exact: false,
-      }
-    )
+    screen.getByText('List price minus savings equals net settled amount.', {
+      exact: false,
+    })
   ).toBeTruthy()
   expect(
     screen.getByText(
       'Total charges include precharges. Total returns include released precharges and refunds.'
     )
   ).toBeTruthy()
-  expect(screen.getByText('Unknown billing mode: 370 records')).toBeTruthy()
+  await user.keyboard('{Escape}')
+  expect(
+    screen.queryByText('Billing mode needs identification · 370 billing events')
+  ).toBeNull()
+  await user.click(
+    screen.getByRole('button', {
+      name: /Billing mode needs identification 370 billing events/,
+    })
+  )
+  expect(
+    screen.getByText('Billing mode needs identification · 370 billing events')
+  ).toBeTruthy()
+  expect(screen.getByText(/Last activity/)).toBeTruthy()
+  await user.keyboard('{Escape}')
   expect(
     screen.queryByRole('columnheader', { name: 'Settled amount' })
   ).toBeNull()
@@ -128,26 +180,33 @@ it('separates settled prices from precharge flows for the randy statement', asyn
     customerPage: 1,
   })
   fireEvent.click(screen.getByRole('button', { name: 'View statement' }))
-  expect(view.onSelectUser).toHaveBeenCalledWith(91)
+  expect(view.onSelectUser).toHaveBeenCalledWith(91, reportVersion)
   view.cleanup()
 })
 
 it('uses Chinese labels that identify precharge flows and the missing billing-mode records', async () => {
   const view = await renderStatement(false, 'zh')
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: '资金流水' }))
   const headers = screen
     .getAllByRole('columnheader')
     .map((cell) => cell.textContent)
   expect(headers.slice(2, 7)).toEqual([
-    '估算原价',
+    '原价',
     '优惠',
     '净结算金额',
     '累计扣减',
     '累计退回',
   ])
+  await user.click(screen.getByRole('button', { name: '账单说明' }))
   expect(
     screen.getByText('累计扣减包含预扣；累计退回包含预扣退差额及退款。')
   ).toBeTruthy()
-  expect(screen.getByText('计费方式暂未识别：370 条')).toBeTruthy()
+  await user.keyboard('{Escape}')
+  await user.click(
+    screen.getByRole('button', { name: /计费方式待识别 370 条账务事件/ })
+  )
+  expect(screen.getByText('计费方式待识别 · 370 条账务事件')).toBeTruthy()
   expect(screen.queryByRole('columnheader', { name: '实付消费' })).toBeNull()
   view.cleanup()
 })
@@ -160,4 +219,41 @@ it('keeps settled list price and savings unknown when the API lacks historical p
   expect(cells[3].textContent).toBe('-')
   expect(cells[4].textContent).toBe('$1,663.551872')
   view.cleanup()
+})
+
+it('exports every customer in the selected month even when the list is filtered', async () => {
+  exportsApi.createCustomerStatementsExport.mockResolvedValue({
+    job_id: 'all-statements',
+    status: 'succeeded',
+    artifact: { files: [{ file_name: 'customer-statements.csv' }] },
+  })
+  exportsApi.listSelfExports.mockResolvedValue({ items: [], total: 0 })
+  exportsApi.requestExportDownload.mockResolvedValue({
+    files: [{ url: 'https://example.test/statements.csv' }],
+  })
+  const view = await renderStatement(false, 'en', 'randy')
+  try {
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Export and download' })
+    )
+    const drawer = within(
+      screen.getByRole('dialog', { name: 'Export and download' })
+    )
+    expect(drawer.getByText('All customers')).toBeVisible()
+    await userEvent.click(drawer.getByRole('button', { name: 'Export CSV' }))
+    expect(
+      exportsApi.createCustomerStatementsExport
+    ).toHaveBeenCalledExactlyOnceWith({
+      start_timestamp: 1000,
+      end_timestamp: 1201,
+      report_version: reportVersion,
+    })
+    await waitFor(() =>
+      expect(exportsApi.downloadExportFile).toHaveBeenCalledExactlyOnceWith(
+        'https://example.test/statements.csv'
+      )
+    )
+  } finally {
+    view.cleanup()
+  }
 })

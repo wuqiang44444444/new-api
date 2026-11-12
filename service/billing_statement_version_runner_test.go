@@ -53,12 +53,6 @@ func TestRunGenerationPersistsDetailAndPending(t *testing.T) {
 	customerExportStoreOverride = store
 	t.Cleanup(func() { customerExportStoreOverride = nil })
 	ctx := context.Background()
-	if common.OptionMap == nil {
-		common.OptionMap = map[string]string{}
-	}
-	common.OptionMap[model.BillingStatementVersionEnabledKey] = "true"
-	t.Cleanup(func() { delete(common.OptionMap, model.BillingStatementVersionEnabledKey) })
-
 	// 造一个已结束自然月的两条结算日志。
 	periodStart := time.Date(2025, 9, 1, 0, 0, 0, 0, time.FixedZone("Asia/Shanghai", 8*3600)).Unix() // 2025-09-01 00:00:00 +0800
 	require.NoError(t, db.Create(&model.User{Id: 4001, Username: "version-fixture", Status: common.UserStatusEnabled, Role: common.RoleCommonUser}).Error)

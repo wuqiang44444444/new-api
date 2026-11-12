@@ -12,9 +12,11 @@ import {
 } from '@/components/ui/collapsible'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { toIntlLocale } from '@/i18n/languages'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { formatBillingMonth } from '../lib'
 import { getSourceReview, type SourceIssue } from '../source-review-api'
 import { verifyAdminStatementSource } from '../version-api'
 import type { SourceDecisionDraft } from './source-decision-form'
@@ -31,7 +33,7 @@ export function StatementSourceVerification(props: {
   disabled: boolean
   onVerified: () => void
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const isRoot = useAuthStore(
     (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
   )
@@ -76,6 +78,15 @@ export function StatementSourceVerification(props: {
     refetchOnWindowFocus: false,
   })
   const report = query.data
+  const locale = toIntlLocale(i18n.language)
+  const formatCount = new Intl.NumberFormat(locale).format
+  const hasFindings = Boolean(
+    report &&
+    (report.issues.length ||
+      report.blockers ||
+      report.pending ||
+      report.audit_issues?.length)
+  )
   const mutation = useMutation({
     mutationFn: async () => {
       if (!report) throw new Error('No source report')
@@ -137,24 +148,16 @@ export function StatementSourceVerification(props: {
           setOpen(true)
         }}
       >
-        {t('Review and differences')}
+        {t('Check statement records')}
       </Button>
       <Dialog
         open={open}
         onOpenChange={(next) => {
           if (!mutation.isPending && !hasDrafts) setOpen(next)
         }}
-        title={t('Review and differences')}
+        title={t('Check statement records')}
         contentClassName='sm:max-w-4xl'
-        description={t(
-          'Customer #{{user}} · {{month}}. Choose how to handle each item; saving a decision does not move money.',
-          {
-            user: props.userId,
-            month: new Date(
-              props.period.start_timestamp * 1000
-            ).toLocaleDateString(),
-          }
-        )}
+        description={`${t('Customer #{{id}}', { id: props.userId })} · ${formatBillingMonth(props.period.start_timestamp, locale)}`}
         footer={
           <Button
             variant='outline'
@@ -166,19 +169,21 @@ export function StatementSourceVerification(props: {
         }
       >
         <div className='space-y-4'>
-          <p className='text-muted-foreground text-sm'>
-            {t(
-              'Review recorded amounts, choose a handling decision, and track it in the history. Requests stay pending until the actual correction is completed; this page does not execute refunds or remove charges.'
-            )}
-          </p>
-          <Button
-            variant='outline'
-            size='sm'
-            disabled={query.isFetching || mutation.isPending}
-            onClick={() => void query.refetch()}
-          >
-            {t('Run checks again')}
-          </Button>
+          <div className='flex flex-wrap items-start justify-between gap-3'>
+            <p className='text-muted-foreground max-w-prose text-sm'>
+              {t(
+                'Check this month’s charge and refund records for missing billing details and compare linked amounts with task settlements. Use the results to review the statement before confirming it.'
+              )}
+            </p>
+            <Button
+              variant='outline'
+              size='sm'
+              disabled={query.isFetching || mutation.isPending}
+              onClick={() => void query.refetch()}
+            >
+              {t('Run checks again')}
+            </Button>
+          </div>
           {query.isFetching && (
             <p role='status'>{t('Checking the full scope. Please wait.')}</p>
           )}
@@ -191,22 +196,50 @@ export function StatementSourceVerification(props: {
           )}
           {report && (
             <>
-              <p>
-                {t(
-                  '{{rows}} records · {{issues}} review items · {{blockers}} blocking items · {{pending}} pending review',
-                  {
-                    rows: report.rows,
-                    issues: report.issues.length,
-                    blockers: report.blockers,
-                    pending: report.pending,
-                  }
+              <section
+                className='space-y-1 rounded-lg border p-3'
+                aria-live='polite'
+              >
+                {!query.isFetching && !query.isError && (
+                  <h3 className='text-sm font-semibold'>
+                    {hasFindings
+                      ? t('Some records need review')
+                      : t('No issues found in the available records')}
+                  </h3>
                 )}
-              </p>
-              <p className='text-muted-foreground text-xs'>
-                {t('Checked at {{time}}', {
-                  time: new Date(report.captured_at * 1000).toLocaleString(),
-                })}
-              </p>
+                <p className='text-sm'>
+                  {t(
+                    '{{rows}} charge and refund records checked · {{issues}} issues found · {{blockers}} blocking confirmation · {{pending}} awaiting action',
+                    {
+                      rows: formatCount(report.rows),
+                      issues: formatCount(report.issues.length),
+                      blockers: formatCount(report.blockers),
+                      pending: formatCount(report.pending),
+                    }
+                  )}
+                </p>
+                {!query.isFetching && !query.isError && !hasFindings && (
+                  <p className='text-muted-foreground text-sm'>
+                    {t(
+                      'This check can only see records that are still available. Verifying historical coverage requires checking backups and log retention separately.'
+                    )}
+                  </p>
+                )}
+                <p className='text-muted-foreground text-xs'>
+                  {t('Checked at {{time}}', {
+                    time: new Date(report.captured_at * 1000).toLocaleString(
+                      locale
+                    ),
+                  })}
+                </p>
+              </section>
+              {hasFindings && (
+                <p className='text-muted-foreground text-sm'>
+                  {t(
+                    'Review the items below. Saving a decision records it in the handling history. Any refund or correction must be completed separately.'
+                  )}
+                </p>
+              )}
               {(report.audit_issues || []).length > 0 && (
                 <div role='alert' className='text-destructive'>
                   <p>
@@ -276,13 +309,6 @@ export function StatementSourceVerification(props: {
                   )}
                 </p>
               )}
-              {report.issues.length === 0 && (
-                <p>
-                  {t(
-                    'No issues found within the checked scope. This alone does not prove historical completeness.'
-                  )}
-                </p>
-              )}
               {visibleIssues.map((issue) => (
                 <SourceReviewIssue
                   key={issue.id}
@@ -342,7 +368,9 @@ export function StatementSourceVerification(props: {
                   </Button>
                 </div>
               )}
-              <SourceDecisionHistory history={report.history || []} />
+              {!!report.history?.length && (
+                <SourceDecisionHistory history={report.history} />
+              )}
               {isRoot ? (
                 <Collapsible className='space-y-2 border-t pt-4'>
                   <CollapsibleTrigger render={<Button variant='outline' />}>

@@ -36,6 +36,9 @@ func TestUpstreamSummaryExportQueuedFrozenAndIsolated(t *testing.T) {
 	for i := range logs {
 		logs[i] = model.Log{UserId: 42, ChannelId: 9671, Type: model.LogTypeConsume, CreatedAt: start + 1, Quota: 1, Other: facts}
 	}
+	discounted := strings.Replace(facts, `"group_ratio":1`, `"group_ratio":0.25`, 1)
+	logs[0].Other = strings.TrimSuffix(discounted, "}") + `,"admin_info":{"statement_original_quota":5}}`
+
 	logs = append(logs,
 		model.Log{UserId: 43, ChannelId: 9672, Type: model.LogTypeRefund, CreatedAt: start + 2, Quota: 1000000, Other: facts},
 		model.Log{UserId: 42, ChannelId: 9672, Type: model.LogTypeConsume, CreatedAt: start + 3, Quota: 5, ModelName: "unknown-money", Other: `{"model_ratio":1}`},
@@ -44,6 +47,7 @@ func TestUpstreamSummaryExportQueuedFrozenAndIsolated(t *testing.T) {
 		model.Log{UserId: 42, ChannelId: 9671, Type: model.LogTypeConsume, CreatedAt: end, Quota: 999, ModelName: "outside-period", Other: facts},
 	)
 	require.NoError(t, model.DB.Create(&logs).Error)
+	publishBillingExportTestDay(t, start)
 	request := CustomerExportRequest{JobType: model.CustomerExportJobTypeUpstreamSummary, StartTimestamp: start, EndTimestamp: end, Language: "en"}
 	_, err := SubmitCustomerExportJob(actor.Id, 42, request)
 	require.ErrorIs(t, err, ErrCustomerExportInvalidRequest)
@@ -89,8 +93,8 @@ func TestUpstreamSummaryExportQueuedFrozenAndIsolated(t *testing.T) {
 	assert.Equal(t, "' +SUM(A1:A2)", records[1][6])
 	assert.Equal(t, "'-model", records[1][7])
 	assert.Equal(t, "501", records[1][14])
-	assert.Equal(t, exportCurrencyAmount("501", scope), records[1][16])
-	assert.Equal(t, exportCurrencyAmount("0", scope), records[1][17], "discount rounds once per evidence row")
+	assert.Equal(t, exportCurrencyAmount("505", scope), records[1][16])
+	assert.Equal(t, exportCurrencyAmount("1", scope), records[1][17], "discount rounds once per evidence row")
 	assert.Equal(t, "0.12345678", records[1][18])
 	assert.Equal(t, "1", records[1][19])
 	assert.Equal(t, "Frozen supplier", records[1][4])
@@ -127,24 +131,26 @@ func TestUpstreamSummaryExportQueuedFrozenAndIsolated(t *testing.T) {
 	assert.Zero(t, total)
 }
 
-func TestUpstreamSummaryExportHonorsBatchGateAndGroupLimit(t *testing.T) {
+func TestUpstreamSummaryExportRequiresPublishedScopeAndHonorsBatchGate(t *testing.T) {
 	truncate(t)
 	setupCustomerExportServiceTest(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, billingExportTimezone()).Unix()
 	require.NoError(t, model.DB.Create(&[]model.Log{
-		{UserId: 42, ChannelId: 9675, Type: model.LogTypeConsume, CreatedAt: 1, ModelName: "first"},
-		{UserId: 42, ChannelId: 9675, Type: model.LogTypeConsume, CreatedAt: 1, ModelName: "second"},
+		{UserId: 42, ChannelId: 9675, Type: model.LogTypeConsume, CreatedAt: start + 1, ModelName: "first"},
+		{UserId: 42, ChannelId: 9675, Type: model.LogTypeConsume, CreatedAt: start + 2, ModelName: "second"},
 	}).Error)
-	filters := model.CustomerExportFilters{StartTimestamp: 1, EndTimestamp: 2, Upstream: &model.UpstreamExportScope{URLKey: "channel:9675", ChannelIds: []int{9675}}}
+	publishBillingExportTestDay(t, start)
+	filters := model.CustomerExportFilters{StartTimestamp: start, EndTimestamp: start + 86400, Upstream: &model.UpstreamExportScope{ChannelIds: []int{9675}}}
 	emitted := 0
 	consume := func(int, model.ProviderURLChannelModelSummary) error { emitted++; return nil }
+	require.Error(t, model.ScanUpstreamExportSummary(context.Background(), filters, model.BillingStatementReadPolicy{}, consume))
+	ctx, _, err := model.ResolveBillingReport(context.Background(), start, start+86400-1, "")
+	require.NoError(t, err)
 	blocked := errors.New("queue cancelled")
-	err := model.ScanUpstreamExportSummary(context.Background(), filters, model.BillingStatementReadPolicy{BeforeBatch: func(context.Context) error { return blocked }}, consume)
+	err = model.ScanUpstreamExportSummary(ctx, filters, model.BillingStatementReadPolicy{BeforeBatch: func(context.Context) error { return blocked }}, consume)
 	assert.ErrorIs(t, err, blocked)
 	assert.Zero(t, emitted)
-	err = model.ScanUpstreamExportSummary(context.Background(), filters, model.BillingStatementReadPolicy{MaxGroups: 1}, consume)
-	assert.ErrorContains(t, err, "group limit exceeded")
-	assert.Zero(t, emitted, "never publish partial aggregation")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	cancel()
 	err = model.ScanUpstreamExportSummary(ctx, filters, model.BillingStatementReadPolicy{}, consume)
 	assert.ErrorIs(t, err, context.Canceled)
@@ -163,11 +169,13 @@ func TestChannelSummaryExportKeepsSubmittedNamesDiscountAndScope(t *testing.T) {
 	require.NoError(t, model.SaveProviderChannelBillingName(context.Background(), 9681, "Manual supplier", actor.Id))
 	discount := model.ProviderChannelBillingDiscount{PeriodStart: start, ChannelId: 9681, Discount: decimal.RequireFromString("0.8"), Reason: "manual"}
 	require.NoError(t, model.SaveProviderChannelBillingDiscount(&discount, 0, actor.Id))
-	facts := `{"test_pricing":{"version":1,"mode":"ratio","status":"settled","original_quota":100}}`
+	facts := `{"group_ratio":1,"contract_applicable":false,"model_ratio":1}`
 	require.NoError(t, model.DB.Create(&[]model.Log{
 		{UserId: 42, ChannelId: 9681, Type: model.LogTypeConsume, CreatedAt: start + 1, Quota: 100, ModelName: "selected", Other: facts},
+		{UserId: 42, ChannelId: 9681, Type: model.LogTypeConsume, CreatedAt: start + 86400, Quota: 100, ModelName: "selected", Other: facts},
 		{UserId: 42, ChannelId: 9682, Type: model.LogTypeConsume, CreatedAt: start + 1, Quota: 100, ModelName: "outside", Other: facts},
 	}).Error)
+	publishBillingExportTestDay(t, start, start+86400)
 	job, err := SubmitUpstreamExportJob(context.Background(), actor.Id, CustomerExportRequest{JobType: model.CustomerExportJobTypeUpstreamSummary, StartTimestamp: start, EndTimestamp: end, Language: "en"}, []int{9681}, "")
 	require.NoError(t, err)
 	filters, err := job.DecodeFilters()
@@ -176,7 +184,7 @@ func TestChannelSummaryExportKeepsSubmittedNamesDiscountAndScope(t *testing.T) {
 	assert.Equal(t, "Manual supplier", filters.Upstream.Channels[9681].UpstreamName)
 	require.NoError(t, model.SaveProviderChannelBillingName(context.Background(), 9681, "Changed supplier", actor.Id))
 	discount.Discount = decimal.RequireFromString("0.5")
-	require.NoError(t, model.SaveProviderChannelBillingDiscount(&discount, 1, actor.Id))
+	require.NoError(t, model.SaveProviderChannelBillingDiscount(&discount, 1, actor.Id, start+86400))
 	require.NoError(t, model.DB.Delete(&model.Channel{}, 9681).Error)
 	claimed, err := model.ClaimNextQueuedCustomerExportJob("channel-summary-test", time.Now().Add(time.Minute).Unix(), 1800)
 	require.NoError(t, err)
@@ -199,4 +207,52 @@ func TestChannelSummaryExportKeepsSubmittedNamesDiscountAndScope(t *testing.T) {
 	assert.Equal(t, "0.8", records[1][18])
 	assert.Equal(t, "1", records[1][19])
 	assert.Equal(t, "Channel ID", records[1][34])
+	fresh, err := SubmitUpstreamExportJob(context.Background(), actor.Id, CustomerExportRequest{
+		JobType: model.CustomerExportJobTypeUpstreamSummary, StartTimestamp: start, EndTimestamp: end,
+		Language: "en", ReportVersion: filters.BillingReportVersion,
+	}, []int{9681}, "")
+	require.NoError(t, err)
+	assert.NotEqual(t, job.JobID, fresh.JobID, "a changed coefficient must not reuse the older file")
+	claimed, err = model.ClaimNextQueuedCustomerExportJob("channel-summary-test", time.Now().Add(time.Minute).Unix(), 1800)
+	require.NoError(t, err)
+	require.NotNil(t, claimed)
+	runCustomerExportJob(context.Background(), claimed, "channel-summary-test", nil)
+	fresh, err = model.GetCustomerExportJobForOwner(fresh.JobID, actor.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.CustomerExportJobStatusSucceeded, fresh.Status, fresh.Error)
+	freshArtifact := fresh.DecodeArtifact()
+	require.NotNil(t, freshArtifact)
+	require.Len(t, freshArtifact.Files, 1)
+	freshRecords, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(string(store.uploaded[freshArtifact.Files[0].ObjectKey]), customerExportCsvBOM))).ReadAll()
+	require.NoError(t, err)
+	require.Len(t, freshRecords, 2)
+	assert.Contains(t, freshRecords[1][18], "×0.8")
+	assert.Contains(t, freshRecords[1][18], "×0.5")
+	assert.Equal(t, "2", freshRecords[1][19])
+	amountScope := customerExportScopeColumns{QuotaPerUnit: filters.QuotaPerUnit, Currency: filters.Currency, CurrencyRate: filters.CurrencyRate}
+	assert.Equal(t, exportCurrencyAmount("160", amountScope), records[1][17])
+	assert.Equal(t, exportCurrencyAmount("130", amountScope), freshRecords[1][17])
+
+	details, err := SubmitUpstreamExportJob(context.Background(), actor.Id, CustomerExportRequest{
+		JobType: model.CustomerExportJobTypeUpstreamDetails, StartTimestamp: start, EndTimestamp: end,
+		Language: "en", ReportVersion: filters.BillingReportVersion,
+	}, []int{9681}, "")
+	require.NoError(t, err)
+	claimed, err = model.ClaimNextQueuedCustomerExportJob("channel-details-test", time.Now().Add(time.Minute).Unix(), 1800)
+	require.NoError(t, err)
+	require.NotNil(t, claimed)
+	runCustomerExportJob(context.Background(), claimed, "channel-details-test", nil)
+	details, err = model.GetCustomerExportJobForOwner(details.JobID, actor.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.CustomerExportJobStatusSucceeded, details.Status, details.Error)
+	detailArtifact := details.DecodeArtifact()
+	require.NotNil(t, detailArtifact)
+	require.Len(t, detailArtifact.Files, 1)
+	detailRecords, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(string(store.uploaded[detailArtifact.Files[0].ObjectKey]), customerExportCsvBOM))).ReadAll()
+	require.NoError(t, err)
+	require.Len(t, detailRecords, 3)
+	assert.Equal(t, "0.8", detailRecords[1][25])
+	assert.Equal(t, "0.5", detailRecords[2][25])
+	assert.Equal(t, exportCurrencyAmount("80", amountScope), detailRecords[1][24])
+	assert.Equal(t, exportCurrencyAmount("50", amountScope), detailRecords[2][24])
 }

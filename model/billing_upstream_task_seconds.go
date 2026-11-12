@@ -44,7 +44,7 @@ func resolveUpstreamTaskSeconds(ctx context.Context, keys []upstreamTaskSecondsK
 	duplicates := make(map[upstreamTaskSecondsKey]bool)
 	for start := 0; start < len(ids); start += trustedTaskSecondsBatch {
 		var rows []Task
-		if err := DB.WithContext(ctx).Select("id, user_id, channel_id, task_id, status, billing_state, quota, properties, private_data").Where("task_id IN ?", ids[start:min(start+trustedTaskSecondsBatch, len(ids))]).Find(&rows).Error; err != nil {
+		if err := usageReportMainDB(ctx).WithContext(ctx).Select("id, user_id, channel_id, task_id, status, billing_state, quota, properties, private_data").Where("task_id IN ?", ids[start:min(start+trustedTaskSecondsBatch, len(ids))]).Find(&rows).Error; err != nil {
 			return nil, err
 		}
 		for _, row := range rows {

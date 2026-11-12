@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"net/http/httptest"
 	"testing"
@@ -14,10 +15,13 @@ import (
 
 func TestAdminEvidenceFilterGlobalScopeAndInvalidScope(t *testing.T) {
 	db := setupBillingURLNameControllerTest(t)
-	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.Task{}))
+	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.Task{}, &model.TaskBillingDelivery{}, &model.SystemTask{}, &model.SystemTaskLock{}, &model.ProviderChannelBillingDiscount{}))
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, billingSettlementLocation).Unix()
 	rows := []model.Log{{Type: model.LogTypeConsume, ChannelId: 31, CreatedAt: start + 1, Other: `{}`}, {Type: model.LogTypeConsume, ChannelId: 32, CreatedAt: start + 2, Other: `{}`}}
 	require.NoError(t, db.Create(&rows).Error)
+	require.NoError(t, model.MigrateDailyReports(db))
+	require.NoError(t, db.Create(&model.SystemTaskLock{Type: model.UsageReportTaskType, TaskID: "fixture", LockedBy: "runner", LockedUntil: common.GetTimestamp() + 60}).Error)
+	require.NoError(t, model.BuildBillingReportDay(context.Background(), start, "fixture", "runner", nil, nil))
 	router := newBillingAdminTestRouter()
 	router.GET("/details", GetAdminUpstreamBillingDetails)
 	for _, tc := range []struct {

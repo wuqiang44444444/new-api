@@ -10,7 +10,6 @@ import (
 
 func TestBillingStatementParserUpgradeRejectsPendingDraft(t *testing.T) {
 	setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	ctx := context.Background()
 	const period = int64(1756656000)
 	_, draft, err := AcquireBillingStatementDraft(ctx, 11, period, "Asia/Shanghai", 7)
@@ -38,7 +37,6 @@ func TestBillingStatementParserUpgradeRejectsPendingDraft(t *testing.T) {
 
 func TestBillingStatementParserUpgradePreservesConfirmedFacts(t *testing.T) {
 	setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	ctx := context.Background()
 	const period = int64(1756656000)
 	_, draft, err := AcquireBillingStatementDraft(ctx, 11, period, "Asia/Shanghai", 7)

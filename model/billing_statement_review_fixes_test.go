@@ -23,7 +23,6 @@ func TestBillingStatementTrackedTableMigrationPreservesRevision(t *testing.T) {
 
 func TestBillingStatementTaskIdentityChangeInvalidatesDependentMonth(t *testing.T) {
 	db := setupBillingStatementVersionTestDB(t)
-	enableVersionSwitch(t)
 	require.NoError(t, db.AutoMigrate(&Task{}))
 	ctx := context.Background()
 	month := int64(1756656000)

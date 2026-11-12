@@ -22,6 +22,7 @@ import { z } from 'zod'
 import { MyBilling } from '@/features/billing-reconciliation'
 
 const billingSearchSchema = z.object({
+  modelKeyId: z.number().int().nonnegative().optional().catch(undefined),
   month: z
     .string()
     .regex(/^\d{4}-\d{2}$/)
@@ -40,8 +41,14 @@ function BillingRoute() {
   return (
     <MyBilling
       month={search.month}
-      onMonthChange={(month) =>
-        navigate({ search: (current) => ({ ...current, month }) })
+      modelKeyId={search.modelKeyId}
+      onMonthChange={(month) => navigate({ search: { month } })}
+      onModelKeyChange={(modelKeyId) =>
+        navigate({
+          search: (current) => ({ ...current, modelKeyId }),
+          replace: true,
+          resetScroll: false,
+        })
       }
     />
   )

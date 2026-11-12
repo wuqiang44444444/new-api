@@ -45,6 +45,7 @@ func setupBillingReconciliationTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	DB, LOG_DB = db, db
 	require.NoError(t, db.AutoMigrate(&User{}, &Channel{}, &Log{}, &Task{}))
+	require.NoError(t, MigrateDailyReports(db))
 	require.NoError(t, migrateBillingReconciliationDB())
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
@@ -249,7 +250,7 @@ func TestUsageLogDetailFilterUsesStableTokenId(t *testing.T) {
 		{UserId: 27, CreatedAt: 1200, Type: LogTypeConsume, TokenId: 102, TokenName: "duplicate-name", ModelName: "model"},
 	}).Error)
 
-	logs, total, err := GetUserLogs(27, LogFilter{Type: LogTypeUnknown, StartTimestamp: 1000, EndTimestamp:1500, ModelName:"model",TokenID:101},0,10)
+	logs, total, err := GetUserLogs(27, LogFilter{Type: LogTypeUnknown, StartTimestamp: 1000, EndTimestamp: 1500, ModelName: "model", TokenID: 101}, 0, 10)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, total)
 	require.Len(t, logs, 1)

@@ -37,6 +37,9 @@ func (e billingStatementRefundEvidence) apply(log billingReconciliationLog, pars
 	}
 	if parsed.refundPreauthLogId > 0 {
 		e.preauth.apply(log, parsed)
+		key := billingStatementRefundKey{userID: log.UserId, tokenID: log.TokenId, channelID: log.ChannelId, model: parsed.customerModel, preauthID: parsed.refundPreauthLogId}
+		_, parsed.refundPreauthMatched = e.preauth[key]
+
 	}
 }
 
@@ -74,7 +77,7 @@ func buildBillingStatementRefundEvidence(ctx context.Context, refunds []billingR
 // customer export scan: it classifies refunds of one batch only, runs its
 // Task lookups under the given context, and holds no state across batches.
 func buildBillingStatementRefundModes(ctx context.Context, refunds []billingReconciliationLog, parseds []parsedBillingReconciliationLog) (billingStatementRefundModes, error) {
-	type scope struct{ userID, appID int }
+	type scope struct{ userID, tokenID int }
 	taskIDs := make(map[scope]map[string]struct{})
 	modes := make(billingStatementRefundModes)
 	for i, log := range refunds {
@@ -98,9 +101,9 @@ func buildBillingStatementRefundModes(ctx context.Context, refunds []billingReco
 		}
 		for start := 0; start < len(batch); start += 200 {
 			var tasks []Task
-			query := DB.WithContext(ctx).Model(&Task{}).
+			query := usageReportMainDB(ctx).WithContext(ctx).Model(&Task{}).
 				Select("user_id, app_id, task_id, channel_id, properties, private_data").
-				Where("user_id = ? AND app_id = ? AND task_id IN ?", s.userID, s.appID, batch[start:min(start+200, len(batch))])
+				Where("user_id = ? AND app_id = ? AND task_id IN ?", s.userID, s.tokenID, batch[start:min(start+200, len(batch))])
 			if err := query.Find(&tasks).Error; err != nil {
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return nil, ctxErr
@@ -182,6 +185,7 @@ type billingStatementRefundPreauthFact struct {
 	contractId, contractVersion     float64
 	contractName                    string
 	hasAuxiliaryCharge, unavailable bool
+	recordedOriginalQuota           *int64
 }
 
 type billingStatementRefundPreauthFacts map[billingStatementRefundKey]billingStatementRefundPreauthFact
@@ -212,6 +216,9 @@ func (facts billingStatementRefundPreauthFacts) apply(log billingReconciliationL
 	}
 	if parsed.groupName == "" {
 		parsed.groupName = fact.groupName
+	}
+	if parsed.recordedOriginalQuota == nil {
+		parsed.recordedOriginalQuota = fact.recordedOriginalQuota
 	}
 	parsed.hasAuxiliaryCharge = parsed.hasAuxiliaryCharge || fact.hasAuxiliaryCharge
 	parsed.unavailable = parsed.unavailable || fact.unavailable
@@ -316,7 +323,7 @@ func buildBillingStatementRefundPreauthFacts(ctx context.Context, refunds []bill
 		}
 		end := min(start+200, len(ids))
 		var originals []billingStatementPreauthOriginal
-		query := LOG_DB.WithContext(ctx).Model(&Log{}).
+		query := usageReportLogDB(ctx).WithContext(ctx).Model(&Log{}).
 			Select("id, user_id, token_id, channel_id, COALESCE(model_name, '') AS model_name, type, quota, COALESCE(other, '') AS other, "+billingStatementGroupSelect()).
 			Where("id IN ?", ids[start:end])
 		if err := query.Scan(&originals).Error; err != nil {
@@ -364,9 +371,10 @@ func billingStatementPreauthFactFromOriginal(original billingStatementPreauthOri
 		return billingStatementRefundPreauthFact{}, false
 	}
 	return billingStatementRefundPreauthFact{
-		billingMode:   parsed.billingMode,
-		discountRatio: parsed.discountRatio,
-		groupName:     parsed.groupName, groupRatioSource: parsed.groupRatioSource,
+		billingMode:           parsed.billingMode,
+		discountRatio:         parsed.discountRatio,
+		recordedOriginalQuota: parsed.recordedOriginalQuota,
+		groupName:             parsed.groupName, groupRatioSource: parsed.groupRatioSource,
 		contractDiscountRatio:   parsed.contractDiscountRatio,
 		contractEvidence:        parsed.contractEvidence,
 		contractApplicableKnown: parsed.contractApplicableKnown,

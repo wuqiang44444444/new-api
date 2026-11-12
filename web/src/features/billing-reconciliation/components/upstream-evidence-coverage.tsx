@@ -1,7 +1,10 @@
 import { useTranslation } from 'react-i18next'
 
 import type { BillingDataQuality } from '../types'
-import type { BillingEvidenceEntry } from '../upstream-statement-utils'
+import {
+  type BillingEvidenceEntry,
+  upstreamEvidenceCoverageLabel,
+} from '../upstream-statement-utils'
 import { UpstreamEvidenceLink } from './upstream-evidence-link'
 
 export function UpstreamEvidenceCoverage(props: {
@@ -15,13 +18,7 @@ export function UpstreamEvidenceCoverage(props: {
     {
       filter: 'incomplete',
       count: coverage.gap_rows,
-      text: t(
-        '{{affected}} of {{total}} billing records have incomplete information',
-        {
-          affected: coverage.gap_rows.toLocaleString(),
-          total: coverage.rows.toLocaleString(),
-        }
-      ),
+      text: upstreamEvidenceCoverageLabel(coverage, t),
     },
     {
       filter: 'complete',

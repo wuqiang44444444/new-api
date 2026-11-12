@@ -16,32 +16,35 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { ArrowLeft01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 
-import { createUpstreamExport } from '../export-api'
-import { ExportJobsDrawer } from '../export-jobs-drawer'
+import type { BillingReportManifest, UpstreamUrlChannelRow } from '../types'
 import { useUpstreamPage } from '../upstream-page-query'
-import {
-  billingEvidenceGroups,
-  billingAccountingEntries,
-} from '../upstream-statement-utils'
 import { BillingPagination } from './billing-pagination'
+import { BillingReportStatus } from './billing-report-status'
+import { UpstreamDataStatus } from './upstream-data-status'
 import {
   UpstreamDetailPanel,
   type UpstreamDetailSelection,
 } from './upstream-detail-panel'
-import { UpstreamEvidenceCoverage } from './upstream-evidence-coverage'
-import { UpstreamReconciliationTable } from './upstream-reconciliation-table'
+import { UpstreamDiscountDialog } from './upstream-discount-dialog'
+import { UpstreamExportAction } from './upstream-export-action'
+import { UpstreamUrlModels } from './upstream-url-models'
+import {
+  type UpstreamUrlSort,
+  UpstreamUrlSummaryTable,
+  UpstreamUrlTotals,
+} from './upstream-url-summary'
 
 type Props = {
   month: string
@@ -60,187 +63,222 @@ function UpstreamChannelContent(props: Props) {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [sort, setSort] = useState<UpstreamUrlSort>('reference_amount')
+  const [selectedRow, setSelectedRow] = useState<{
+    row: UpstreamUrlChannelRow
+    report?: BillingReportManifest
+  } | null>(null)
+  const [discountTarget, setDiscountTarget] = useState<number | null>(null)
   const [selection, setSelection] = useState<UpstreamDetailSelection | null>(
     null
   )
-  const [exportsOpen, setExportsOpen] = useState(false)
-  const [exporting, setExporting] = useState(false)
   const query = useUpstreamPage({
     ...props.period,
-    level: 'channels',
+    level: 'url_channels',
     search,
+    sort_by: sort,
     page,
     page_size: pageSize,
   })
-  const exportChannel = async (id: number) => {
-    if (exporting) return
-    setExporting(true)
-    try {
-      await createUpstreamExport({
-        job_type: 'upstream_summary',
-        channel_id: id,
-        start_timestamp: props.period.start_timestamp,
-        end_timestamp: props.period.end_timestamp + 1,
-      })
-      await queryClient.invalidateQueries({
-        queryKey: ['customer-export-jobs'],
-      })
-      setExportsOpen(true)
-      toast.success(t('Export submitted. Track it in export jobs.'))
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : t('Unable to submit export.')
-      )
-    } finally {
-      setExporting(false)
-    }
+  const report = query.data?.billing_report
+  const exportPeriod = {
+    job_type: 'upstream_details' as const,
+    start_timestamp: props.period.start_timestamp,
+    end_timestamp: props.period.end_timestamp + 1,
   }
-  const quality = query.data?.result.data_quality
+  const result = query.data?.result
+  const quality = result?.data_quality
+  const rows = result?.url_channels ?? []
   return (
-    <div className='flex min-h-0 flex-1 flex-col gap-4'>
-      <div className='flex flex-wrap items-end gap-3'>
-        <div className='space-y-1'>
-          <Label htmlFor='upstream-billing-month'>{t('Billing month')}</Label>
-          <Input
-            id='upstream-billing-month'
-            type='month'
-            value={props.month}
-            onChange={(event) => {
-              if (event.target.value) props.onMonthChange(event.target.value)
-            }}
-          />
-        </div>
-        <form
-          className='flex items-end gap-2'
-          onSubmit={(event) => {
-            event.preventDefault()
-            setSearch(searchDraft.trim())
-            setPage(1)
-            setExpanded(new Set())
-          }}
-        >
-          <div className='space-y-1'>
-            <Label htmlFor='upstream-channel-search'>
-              {t('Channel name or ID')}
-            </Label>
-            <Input
-              id='upstream-channel-search'
-              value={searchDraft}
-              maxLength={255}
-              onChange={(event) => setSearchDraft(event.target.value)}
+    <div className='flex min-h-0 flex-1 flex-col gap-3'>
+      {selectedRow ? (
+        <>
+          <div className='flex shrink-0 flex-wrap items-center gap-2'>
+            <Button
+              variant='ghost'
+              size='sm'
+              onClick={() => setSelectedRow(null)}
+            >
+              <HugeiconsIcon
+                icon={ArrowLeft01Icon}
+                strokeWidth={2}
+                data-icon='inline-start'
+              />
+              {t('Back')}
+            </Button>
+            <div className='min-w-0 wrap-anywhere'>
+              <h2 className='font-semibold'>
+                {selectedRow.row.channel_name || t('Channel')} · #
+                {selectedRow.row.channel_id}
+              </h2>
+              <p className='text-muted-foreground text-xs'>
+                {selectedRow.row.base_url || selectedRow.row.url_name}
+              </p>
+            </div>
+            <span className='text-muted-foreground text-sm'>{props.month}</span>
+            <BillingReportStatus report={selectedRow.report} />
+            <UpstreamExportAction
+              className='ms-auto'
+              payload={{
+                ...exportPeriod,
+                report_version: selectedRow.report?.version,
+                url_key: selectedRow.row.url_key,
+                channel_id: selectedRow.row.channel_id,
+              }}
+              scope={[
+                `${selectedRow.row.channel_name || t('Channel')} · #${selectedRow.row.channel_id}`,
+                selectedRow.row.base_url || selectedRow.row.url_name,
+                t('All models'),
+              ]}
+              available={
+                !!selectedRow.report?.version &&
+                !!selectedRow.report.published_days
+              }
             />
           </div>
-          <Button type='submit' variant='outline'>
-            {t('Search')}
-          </Button>
-        </form>
-        <Button variant='outline' onClick={() => setExportsOpen(true)}>
-          {t('Export jobs')}
-        </Button>
-      </div>
-      <p className='text-muted-foreground text-sm'>
-        {t(
-          'Upstream names and monthly discounts are entered manually in channel management. Calculated amounts are references, not supplier bills. Missing amounts remain unknown.'
-        )}
-      </p>
-      {query.isPending && <LoadingState />}
-      {query.isError && (
-        <ErrorState
-          title={t('Unable to load upstream reconciliation')}
-          onRetry={() => query.refetch()}
-        />
-      )}
-      {!query.isPending && !query.isError && (
-        <>
-          <UpstreamEvidenceCoverage
-            quality={quality}
-            onViewEvidence={(entry) =>
+          <UpstreamUrlModels
+            urlKey={selectedRow.row.url_key}
+            channelId={selectedRow.row.channel_id}
+            reportVersion={selectedRow.report?.version}
+            period={props.period}
+            onViewDetails={(selection) =>
               setSelection({
-                evidenceFilter: entry.filter,
-                evidenceLabel: entry.text,
+                ...selection,
+                reportVersion: selectedRow.report?.version,
+                urlKey: selectedRow.report
+                  ? selectedRow.row.url_key
+                  : undefined,
               })
             }
           />
-          {billingEvidenceGroups(quality, t).map((group) => (
-            <div key={group.key} className='flex flex-wrap gap-2'>
-              {group.title && <span>{group.title}</span>}
-              {group.entries.map((entry) => (
-                <Button
-                  key={entry.filter || entry.text}
-                  size='sm'
-                  variant='link'
-                  onClick={() =>
-                    setSelection({
-                      evidenceFilter: entry.filter,
-                      evidenceLabel: entry.text,
-                    })
+        </>
+      ) : (
+        <>
+          <div className='flex shrink-0 flex-wrap items-center gap-2'>
+            <label className='flex flex-wrap items-center gap-x-2 gap-y-1'>
+              <span className='text-muted-foreground text-xs font-medium'>
+                {t('Billing month')}
+              </span>
+              <Input
+                className='w-36'
+                type='month'
+                value={props.month}
+                onChange={(event) => {
+                  if (event.target.value) {
+                    props.onMonthChange(event.target.value)
                   }
-                >
-                  {entry.text}
-                </Button>
-              ))}
-            </div>
-          ))}
-          {billingAccountingEntries(quality, t).length > 0 && (
-            <div>
-              <p>{t('Confirmed accounting results')}</p>
-              {billingAccountingEntries(quality, t).map((entry) => (
-                <Button
-                  key={entry.filter || entry.text}
-                  size='sm'
-                  variant='link'
-                  onClick={() =>
-                    setSelection({
-                      evidenceFilter: entry.filter,
-                      evidenceLabel: entry.text,
-                    })
-                  }
-                >
-                  {entry.text}
-                </Button>
-              ))}
-            </div>
-          )}
-          <div className='min-h-0 overflow-auto'>
-            {query.data?.result.channels.length ? (
-              <UpstreamReconciliationTable
-                channels={query.data.result.channels}
-                periodStart={props.period.start_timestamp}
-                periodEnd={props.period.end_timestamp}
-                expandedChannels={expanded}
-                onToggleChannel={(id) =>
-                  setExpanded((current) => {
-                    const next = new Set(current)
-                    if (next.has(id)) next.delete(id)
-                    else next.add(id)
-                    return next
-                  })
-                }
-                onViewDetails={setSelection}
-                onExportChannel={(id) => {
-                  void exportChannel(id)
                 }}
-                exporting={exporting}
               />
-            ) : (
-              <p className='text-muted-foreground p-6'>
-                {t('No upstream usage')}
-              </p>
+            </label>
+            <UpstreamExportAction
+              className='max-sm:ms-auto'
+              payload={{
+                ...exportPeriod,
+                report_version: report?.version,
+                all_channels: true,
+              }}
+              scope={[t('All channels for the billing month')]}
+              available={
+                query.isSuccess &&
+                !query.isFetching &&
+                !!report?.version &&
+                !!report.published_days
+              }
+            />
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => setDiscountTarget(0)}
+            >
+              {t('Set discount')}
+            </Button>
+            <form
+              className='flex w-full min-w-0 items-center gap-2 sm:w-auto'
+              onSubmit={(event) => {
+                event.preventDefault()
+                setSearch(searchDraft.trim())
+                setPage(1)
+              }}
+            >
+              <Input
+                className='min-w-0 flex-1 sm:w-56'
+                aria-label={t('Upstream URL or channel')}
+                placeholder={t('Upstream URL or channel')}
+                value={searchDraft}
+                maxLength={255}
+                onChange={(event) => setSearchDraft(event.target.value)}
+              />
+              <Button type='submit' variant='outline' size='sm'>
+                {t('Search')}
+              </Button>
+            </form>
+            {!query.isPending && !query.isError && (
+              <div className='flex min-w-0 flex-wrap items-center gap-2 lg:ms-auto'>
+                <BillingReportStatus report={report} />
+                <UpstreamDataStatus
+                  scope='report'
+                  quality={quality}
+                  onViewEvidence={
+                    search
+                      ? undefined
+                      : (entry) =>
+                          setSelection({
+                            reportVersion: report?.version,
+                            evidenceFilter: entry.filter,
+                            evidenceLabel: entry.text,
+                          })
+                  }
+                />
+              </div>
             )}
           </div>
-          <BillingPagination
-            label={t('Upstream pages')}
-            page={page}
-            pageSize={pageSize}
-            total={query.data?.result.total ?? 0}
-            disabled={query.isFetching}
-            onChange={(next, size) => {
-              setPage(next)
-              setPageSize(size)
-              setExpanded(new Set())
-            }}
-          />
+          {query.isPending && <LoadingState />}
+          {query.isError && (
+            <ErrorState
+              title={t('Unable to load upstream reconciliation')}
+              onRetry={() => query.refetch()}
+            />
+          )}
+          {!query.isPending && !query.isError && (
+            <>
+              {result?.totals && result.total > 0 && (
+                <UpstreamUrlTotals
+                  totals={result.totals}
+                  quality={quality}
+                  filtered={!!search}
+                />
+              )}
+              <div className='min-h-0 flex-1 overflow-auto'>
+                {rows.length > 0 ? (
+                  <UpstreamUrlSummaryTable
+                    rows={rows}
+                    sort={sort}
+                    onSort={(nextSort) => {
+                      setSort(nextSort)
+                      setPage(1)
+                    }}
+                    onSelect={(row) => setSelectedRow({ row, report })}
+                    onEditDiscount={setDiscountTarget}
+                  />
+                ) : (
+                  <p className='text-muted-foreground p-6'>
+                    {t('No upstream usage')}
+                  </p>
+                )}
+              </div>
+              <BillingPagination
+                label={t('Upstream pages')}
+                page={page}
+                pageSize={pageSize}
+                total={query.data?.result.total ?? 0}
+                disabled={query.isFetching}
+                onChange={(next, size) => {
+                  setPage(next)
+                  setPageSize(size)
+                }}
+              />
+            </>
+          )}
         </>
       )}
       <Dialog
@@ -257,11 +295,26 @@ function UpstreamChannelContent(props: Props) {
             period={props.period}
             selection={selection}
             onClose={() => setSelection(null)}
-            onShowExports={() => setExportsOpen(true)}
           />
         )}
       </Dialog>
-      <ExportJobsDrawer open={exportsOpen} onOpenChange={setExportsOpen} />
+      {discountTarget != null && (
+        <UpstreamDiscountDialog
+          channelId={discountTarget}
+          month={props.month}
+          periodStart={props.period.start_timestamp}
+          onClose={() => setDiscountTarget(null)}
+          onSaved={() => {
+            const queryKey = [
+              'billing-upstream-reconciliation',
+              props.period.start_timestamp,
+              props.period.end_timestamp,
+            ]
+            queryClient.removeQueries({ queryKey, type: 'inactive' })
+            return queryClient.invalidateQueries({ queryKey })
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -24,6 +24,7 @@ func attachBillingStatementLogFacts(log *Log, fact billingReconciliationLog, par
 	if common.UnmarshalJsonStr(log.Other, &other) != nil || other == nil {
 		other = make(map[string]json.RawMessage)
 	}
+	parsed.recordedAmountsOnly = true
 	row := buildCustomerExportRow(customerBillingLogScanRow(log), fact, parsed)
 	raw, err := common.Marshal(row)
 	if err != nil {

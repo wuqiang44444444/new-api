@@ -13,13 +13,12 @@ import (
 
 func setupRepairMaintenance(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	require.NoError(t, db.AutoMigrate(&model.BillingStatementMaintenance{}, &model.BillingStatementAudit{}, &model.Option{}))
+	require.NoError(t, db.AutoMigrate(&model.BillingStatementMaintenance{}, &model.BillingStatementAudit{}))
 	require.NoError(t, db.Create(&model.BillingStatementMaintenance{ID: 1, Enabled: true, Generation: 2, Reason: "verified fixture"}).Error)
-	require.NoError(t, db.Create(&model.Option{Key: model.BillingStatementVersionEnabledKey, Value: "false"}).Error)
 }
 
 func TestRepairRequiresCurrentMaintenanceBeforeAnyLogWrites(t *testing.T) {
-	for _, scenario := range []string{"not maintaining", "wrong generation", "confirmation enabled", "missing control row"} {
+	for _, scenario := range []string{"not maintaining", "wrong generation", "missing control row"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, s := setupTaskLogRepair(t)
 			var before []model.Log
@@ -29,8 +28,6 @@ func TestRepairRequiresCurrentMaintenanceBeforeAnyLogWrites(t *testing.T) {
 				require.NoError(t, db.Model(&model.BillingStatementMaintenance{}).Where("id = 1").Update("enabled", false).Error)
 			case "wrong generation":
 				s.MaintenanceGeneration--
-			case "confirmation enabled":
-				require.NoError(t, db.Model(&model.Option{}).Where("key = ?", model.BillingStatementVersionEnabledKey).Update("value", "true").Error)
 			case "missing control row":
 				require.NoError(t, db.Where("id = 1").Delete(&model.BillingStatementMaintenance{}).Error)
 			}
@@ -52,7 +49,6 @@ func TestRepairMaintenanceFailureRemainsFencedAndEndRequiresEvidence(t *testing.
 	t.Cleanup(func() { model.DB, model.LOG_DB = oldDB, oldLog; common.SetDatabaseTypes(oldMainType, oldLogType) })
 	require.NoError(t, db.Create(&model.User{Id: 99, Username: "operator", AffCode: "operator", Role: common.RoleRootUser, Status: common.UserStatusEnabled}).Error)
 	require.NoError(t, db.Model(&model.BillingStatementMaintenance{}).Where("id = 1").Update("enabled", false).Error)
-	require.NoError(t, db.Model(&model.Option{}).Where("key = ?", model.BillingStatementVersionEnabledKey).Update("value", "true").Error)
 	state, err := repairMaintenance(db, "begin", "approved repair plan", 0, 99)
 	require.NoError(t, err)
 	s.MaintenanceGeneration = state.Generation
@@ -68,9 +64,6 @@ func TestRepairMaintenanceFailureRemainsFencedAndEndRequiresEvidence(t *testing.
 	ended, err := repairMaintenance(db, "end", "verified no source writes; failed repair rolled back", state.Generation, 99)
 	require.NoError(t, err)
 	assert.False(t, ended.Enabled)
-	var option model.Option
-	require.NoError(t, db.Where("key = ?", model.BillingStatementVersionEnabledKey).First(&option).Error)
-	assert.Equal(t, "false", option.Value)
 	var audits []model.BillingStatementAudit
 	require.NoError(t, db.Order("id").Find(&audits).Error)
 	require.Len(t, audits, 2)

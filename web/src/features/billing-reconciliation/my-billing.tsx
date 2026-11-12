@@ -18,8 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
-import { SectionPageLayout } from '@/components/layout'
-import { Badge } from '@/components/ui/badge'
+import { Main } from '@/components/layout'
 import { Input } from '@/components/ui/input'
 
 import { CustomerStatementView } from './components/customer-statement'
@@ -27,6 +26,8 @@ import { currentShanghaiMonth, resolveShanghaiMonth } from './lib'
 
 type MyBillingProps = {
   month?: string
+  modelKeyId?: number
+  onModelKeyChange: (id?: number) => void
   onMonthChange: (month: string) => void
 }
 
@@ -36,54 +37,33 @@ export function MyBilling(props: MyBillingProps) {
   const period = resolveShanghaiMonth(month)
 
   return (
-    <SectionPageLayout>
-      <SectionPageLayout.Title>
-        <span className='inline-flex min-w-0 items-center gap-2'>
-          <span className='truncate'>{t('My billing')}</span>
-          <Badge variant='outline'>{t('Database authoritative')}</Badge>
-        </span>
-      </SectionPageLayout.Title>
-      <SectionPageLayout.Content>
-        <div className='space-y-3'>
-          <div className='flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
-            <div>
-              <p className='text-muted-foreground text-sm'>
-                {t(
-                  'Review settled totals by API key and expand models when needed.'
-                )}
-              </p>
-              <p className='text-muted-foreground mt-1 text-xs'>
-                {t(
-                  'Request-level records are available only through detail links.'
-                )}
-              </p>
-            </div>
-          </div>
-
-          <CustomerStatementView
-            toolbar={
-              <label className='w-full space-y-1.5 sm:w-44'>
-                <span className='text-muted-foreground text-xs font-medium'>
-                  {t('Billing month')}
-                </span>
-                <Input
-                  type='month'
-                  value={month}
-                  onChange={(event) =>
-                    props.onMonthChange(
-                      event.target.value || currentShanghaiMonth()
-                    )
-                  }
-                />
-              </label>
-            }
-            isAdmin={false}
-            period={period}
-            dimension='api_key'
-            onDimensionChange={() => undefined}
-          />
-        </div>
-      </SectionPageLayout.Content>
-    </SectionPageLayout>
+    <Main className='px-1 sm:px-2'>
+      <CustomerStatementView
+        heading={t('My billing')}
+        modelKeyId={props.modelKeyId}
+        onModelKeyChange={props.onModelKeyChange}
+        toolbar={
+          <label className='flex max-w-full flex-wrap items-center gap-x-2 gap-y-1'>
+            <span className='text-muted-foreground text-xs font-medium'>
+              {t('Billing month')}
+            </span>
+            <Input
+              className='w-36'
+              type='month'
+              value={month}
+              onChange={(event) =>
+                props.onMonthChange(
+                  event.target.value || currentShanghaiMonth()
+                )
+              }
+            />
+          </label>
+        }
+        isAdmin={false}
+        period={period}
+        dimension='api_key'
+        onDimensionChange={() => undefined}
+      />
+    </Main>
   )
 }

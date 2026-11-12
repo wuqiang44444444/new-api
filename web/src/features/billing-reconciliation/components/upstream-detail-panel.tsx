@@ -16,10 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
@@ -33,11 +32,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { getAdminUpstreamDetails } from '../api'
-import { createUpstreamExport } from '../export-api'
-import { formatCustomerStatementQuota } from '../lib'
-import type { UpstreamDetailItem } from '../types'
+import { billingModeLabel, formatCustomerStatementQuota } from '../lib'
+import type { BillingMode, UpstreamDetailItem } from '../types'
 import {
   formatShanghaiTimestamp,
   upstreamDetailEventLabel,
@@ -48,26 +48,28 @@ import {
   formatStatementUsage,
 } from '../upstream-statement-utils'
 import { UpstreamDataStatus } from './upstream-data-status'
+import { UpstreamExportAction } from './upstream-export-action'
 import { UsageCell } from './upstream-reconciliation-table'
 
 export type UpstreamDetailSelection = {
+  reportVersion?: string
+  urlKey?: string
   evidenceFilter?: string
   evidenceLabel?: string
   channelId?: number
   channelName?: string
   providerModel?: string
   providerModelFallback?: boolean
-  billingMode?: string
+  billingMode?: BillingMode
 }
 
 type UpstreamDetailPanelProps = {
   period: { start_timestamp: number; end_timestamp: number }
   selection: UpstreamDetailSelection
   onClose: () => void
-  onShowExports: () => void
 }
 
-// 逐笔证据：双方请求 ID 并列展示；任务 ID 单列，缺失显示“未记录”，
+// 逐笔证据：双方请求 ID 并列展示；任务 ID 单列，区分普通调用与缺少任务证据，
 // 不按时间或金额猜测匹配；资金调整行有明确事件标记，不冒充新的上游调用。
 export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
   const { t } = useTranslation()
@@ -75,40 +77,15 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
   const [upstreamRequestId, setUpstreamRequestId] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 50
-  const queryClient = useQueryClient()
-  const [exporting, setExporting] = useState(false)
-  const submitExport = async () => {
-    setExporting(true)
-    try {
-      await createUpstreamExport({
-        job_type: 'upstream_details',
-        start_timestamp: props.period.start_timestamp,
-        end_timestamp: props.period.end_timestamp + 1,
-        channel_id: props.selection.channelId,
-        model_name: props.selection.providerModel,
-        provider_model_fallback: props.selection.providerModelFallback,
-        evidence_filter: props.selection.evidenceFilter,
-        billing_mode: props.selection.billingMode,
-        request_id: requestId,
-        upstream_request_id: upstreamRequestId,
-      })
-      await queryClient.invalidateQueries({
-        queryKey: ['customer-export-jobs'],
-      })
-      props.onShowExports()
-      toast.success(t('Export submitted. Track it in export jobs.'))
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : t('Unable to submit export.')
-      )
-    } finally {
-      setExporting(false)
-    }
-  }
-
+  const isRoot = useAuthStore(
+    (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
+  )
   const query = useQuery({
     queryKey: [
       'billing-upstream-details',
+      isRoot,
+      props.selection.reportVersion,
+      props.selection.urlKey,
       props.period.start_timestamp,
       props.period.end_timestamp,
       props.selection.channelId ?? 0,
@@ -124,6 +101,12 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
       const response = await getAdminUpstreamDetails({
         start_timestamp: props.period.start_timestamp,
         end_timestamp: props.period.end_timestamp,
+        ...(props.selection.reportVersion
+          ? {
+              report_version: props.selection.reportVersion,
+              url_key: props.selection.urlKey,
+            }
+          : {}),
         ...(props.selection.channelId
           ? { channel_id: props.selection.channelId }
           : {}),
@@ -181,21 +164,48 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
             }}
           />
         </div>
-        <Button
-          variant='outline'
-          size='sm'
-          disabled={exporting}
-          onClick={() => void submitExport()}
-        >
-          {t('Export all matching details')}
-        </Button>
-        <Button variant='outline' size='sm' onClick={props.onShowExports}>
-          {t('Export jobs')}
-        </Button>
+        <UpstreamExportAction
+          payload={{
+            job_type: 'upstream_details',
+            start_timestamp: props.period.start_timestamp,
+            end_timestamp: props.period.end_timestamp + 1,
+            report_version: props.selection.reportVersion,
+            url_key: props.selection.urlKey,
+            channel_id: props.selection.channelId,
+            model_name: props.selection.providerModel,
+            provider_model_fallback: props.selection.providerModelFallback,
+            billing_mode: props.selection.billingMode,
+            evidence_filter: props.selection.evidenceFilter,
+            request_id: requestId.trim() || undefined,
+            upstream_request_id: upstreamRequestId.trim() || undefined,
+          }}
+          scope={[
+            props.selection.channelId
+              ? `${props.selection.channelName || t('Channel')} · #${props.selection.channelId}`
+              : t('All channels'),
+            props.selection.urlKey,
+            props.selection.providerModel,
+            props.selection.billingMode &&
+              t(billingModeLabel(props.selection.billingMode)),
+            props.selection.evidenceLabel,
+            requestId.trim() && `${t('Our request ID')} · ${requestId.trim()}`,
+            upstreamRequestId.trim() &&
+              `${t('Upstream request ID')} · ${upstreamRequestId.trim()}`,
+          ].filter((value): value is string => !!value)}
+          available={!query.isFetching && !query.isError && !!details?.total}
+          unavailableNotice={
+            query.isSuccess && !details?.total
+              ? t('No evidence rows match the current filters.')
+              : undefined
+          }
+        />
         <Button variant='outline' size='sm' onClick={props.onClose}>
           {t('Close details')}
         </Button>
       </div>
+      {props.selection.evidenceLabel && (
+        <p className='text-sm'>{props.selection.evidenceLabel}</p>
+      )}
 
       {query.isPending ? (
         <div role='status'>
@@ -240,18 +250,21 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
               <TableHead>{t('Our request ID')}</TableHead>
               <TableHead>{t('Upstream request ID')}</TableHead>
               <TableHead>{t('Platform task ID')}</TableHead>
-              <TableHead>{t('Upstream task ID')}</TableHead>
+              {isRoot && <TableHead>{t('Upstream task ID')}</TableHead>}
               <TableHead>{t('Row kind')}</TableHead>
               <TableHead>{t('Data status')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {(details?.items ?? []).map((item) => (
-              <DetailRow key={item.row_id} item={item} />
+              <DetailRow key={item.row_id} item={item} isRoot={isRoot} />
             ))}
             {!query.isPending && (details?.items.length ?? 0) === 0 ? (
               <TableRow>
-                <TableCell className='text-muted-foreground' colSpan={17}>
+                <TableCell
+                  className='text-muted-foreground'
+                  colSpan={isRoot ? 17 : 16}
+                >
                   {t('No evidence rows match the current filters.')}
                 </TableCell>
               </TableRow>
@@ -294,9 +307,11 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
   )
 }
 
-function DetailRow(props: { item: UpstreamDetailItem }) {
+function DetailRow(props: { item: UpstreamDetailItem; isRoot: boolean }) {
   const { t } = useTranslation()
   const item = props.item
+  const missingTaskId =
+    item.event === 'call' ? t('Not applicable') : t('Not recorded')
   let pricingMode = t('Unknown')
   if (item.test_pricing?.mode === 'ratio') pricingMode = t('Ratio pricing')
   else if (item.test_pricing?.mode === 'fixed_price') {
@@ -394,6 +409,11 @@ function DetailRow(props: { item: UpstreamDetailItem }) {
         ) : (
           formatCustomerStatementQuota(item.original_amount)
         )}
+        {item.original_amount_estimated && (
+          <span className='text-muted-foreground block text-xs'>
+            {t('Estimated from recorded charges and historical discounts')}
+          </span>
+        )}
       </TableCell>
       <TableCell className='font-mono text-xs'>
         {item.request_id || t('Not recorded')}
@@ -402,11 +422,13 @@ function DetailRow(props: { item: UpstreamDetailItem }) {
         {item.upstream_request_id || t('Not recorded')}
       </TableCell>
       <TableCell className='font-mono text-xs'>
-        {item.platform_task_id || t('Not recorded')}
+        {item.platform_task_id || missingTaskId}
       </TableCell>
-      <TableCell className='font-mono text-xs'>
-        {item.upstream_task_id || t('Not recorded')}
-      </TableCell>
+      {props.isRoot && (
+        <TableCell className='font-mono text-xs'>
+          {item.upstream_task_id || missingTaskId}
+        </TableCell>
+      )}
       <TableCell className='text-xs'>
         {upstreamDetailEventLabel(item.event, t)}
         {item.test_pricing && (

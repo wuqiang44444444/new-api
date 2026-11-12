@@ -1,5 +1,3 @@
-import { api } from '@/lib/api'
-
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -18,6 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { BillingFundGroup } from '@/features/usage-logs/types'
+import { api } from '@/lib/api'
+
 import { currentExportLanguage } from './export-api'
 import type {
   ApiResponse,
@@ -59,7 +60,7 @@ export type BillingStatementVersionInfo = {
 }
 
 export type BillingStatementVersionMonthStatus = {
-  switch_enabled: boolean
+  maintenance_active?: boolean
   topology_ok: boolean
   retention_status: 'unknown' | 'none' | 'intact' | 'partial'
   current_version: BillingStatementVersionInfo | null
@@ -78,6 +79,7 @@ export type BillingStatementAmountDiff = {
 }
 
 export type BillingStatementVersionDiff = {
+  recorded_original_amounts?: boolean
   usage: Record<
     string,
     { base: string | null; compare: string | null; delta: string | null }
@@ -260,42 +262,47 @@ export async function getAdminVersionDiff(
   return response.data
 }
 
+type VersionLinesParams = {
+  page: number
+  page_size: number
+  token_id?: number
+  model_name?: string
+  billing_mode?: string
+  group_funds?: boolean
+  fund_group?: string
+}
+
+type VersionLinesResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    lines?: BillingStatementVersionLine[]
+    fund_groups?: BillingFundGroup[]
+    total: number
+  }
+}
+
 export async function getAdminVersionLines(
   draftPublicId: string,
-  params: {
-    page: number
-    page_size: number
-    channel_id?: number
-    token_id?: number
-    model_name?: string
-    billing_mode?: string
-  }
+  params: VersionLinesParams & { channel_id?: number },
+  signal?: AbortSignal
 ) {
-  const response = await api.get<{
-    success: boolean
-    message?: string
-    data?: { lines: BillingStatementVersionLine[]; total: number }
-  }>(`/api/billing/admin/customer-statement-versions/${draftPublicId}/lines`, {
-    params,
-  })
+  const response = await api.get<VersionLinesResponse>(
+    `/api/billing/admin/customer-statement-versions/${draftPublicId}/lines`,
+    { params, signal }
+  )
   return response.data
 }
 
 export async function getSelfVersionLines(
   draftPublicId: string,
-  params: {
-    page: number
-    page_size: number
-    token_id?: number
-    model_name?: string
-    billing_mode?: string
-  }
+  params: VersionLinesParams,
+  signal?: AbortSignal
 ) {
-  const response = await api.get<{
-    success: boolean
-    message?: string
-    data?: { lines: BillingStatementVersionLine[]; total: number }
-  }>(`/api/billing/statement/self/versions/${draftPublicId}/lines`, { params })
+  const response = await api.get<VersionLinesResponse>(
+    `/api/billing/statement/self/versions/${draftPublicId}/lines`,
+    { params, signal }
+  )
   return response.data
 }
 

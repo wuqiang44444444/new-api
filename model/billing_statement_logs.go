@@ -2,6 +2,9 @@ package model
 
 import (
 	"context"
+	"strings"
+	"time"
+
 	"github.com/QuantumNous/new-api/common"
 )
 
@@ -15,20 +18,41 @@ type BillingStatementLogFilter struct {
 	ModelName, BillingMode                                   string
 	TokenName, Username, Group, RequestId, UpstreamRequestId string
 	LogType                                                  int
+	GroupFunds                                               bool
+	FundGroup                                                string
 }
 
 type BillingStatementLogs struct {
-	Items    []*Log  `json:"items"`
-	Total    int64   `json:"total"`
-	Page     int     `json:"page"`
-	PageSize int     `json:"page_size"`
-	Quota    int64   `json:"quota"`
-	RPM      float64 `json:"rpm"`
-	TPM      float64 `json:"tpm"`
+	FundGroups *[]BillingStatementFundGroup `json:"fund_groups,omitempty"`
+	Items      []*Log                       `json:"items"`
+	Total      int64                        `json:"total"`
+	Page       int                          `json:"page"`
+	PageSize   int                          `json:"page_size"`
+	Quota      int64                        `json:"quota"`
+	RPM        float64                      `json:"rpm"`
+	TPM        float64                      `json:"tpm"`
 }
 
 func GetBillingStatementLogs(ctx context.Context, filter BillingStatementLogFilter, page, pageSize, role int) (BillingStatementLogs, error) {
 	result := BillingStatementLogs{Items: make([]*Log, 0), Page: page, PageSize: pageSize}
+	if filter.FundGroup != "" {
+		date, key, found := strings.Cut(filter.FundGroup, ".")
+		day, err := time.ParseInLocation(time.DateOnly, date, UsageAnalyticsZone())
+		if !found || err != nil || len(key) != 64 {
+			return result, common.NewMessage("Invalid billing detail group")
+		}
+		filter.Start = max(filter.Start, day.Unix())
+		filter.End = min(filter.End, day.AddDate(0, 0, 1).Unix()-1)
+		if filter.End < filter.Start {
+			return result, common.NewMessage("Invalid billing detail group")
+		}
+	}
+	if report := BillingReportFromContext(ctx); report != nil {
+		return report.customerDetails(ctx, filter, result, role)
+	}
+	if filter.GroupFunds || filter.FundGroup != "" {
+		return result, common.NewMessage("Billing detail grouping requires a published report")
+	}
 	query := LOG_DB.WithContext(ctx).Model(&Log{}).Scopes(customerSettlementLogs).
 		Where("user_id = ? AND type IN ? AND created_at >= ? AND created_at <= ?", filter.UserId, []int{LogTypeConsume, LogTypeRefund}, filter.Start, filter.End)
 	if filter.TokenId != nil {

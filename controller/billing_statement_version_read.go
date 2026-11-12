@@ -75,6 +75,7 @@ func tryRespondBillingStatementVersion(c *gin.Context, period billingReconciliat
 		common.ApiError(c, err)
 		return true
 	}
+	statement.RecordedAmountsOnly()
 	statement.CurrentBalance, err = model.GetBillingStatementCurrentBalance(ctx, userId)
 	if err != nil {
 		common.ApiError(c, err)
@@ -84,7 +85,7 @@ func tryRespondBillingStatementVersion(c *gin.Context, period billingReconciliat
 	if admin {
 		filters["dimension"] = dimension
 	}
-	common.ApiSuccess(c, gin.H{
+	response := gin.H{
 		"period":          period,
 		"filters":         filters,
 		"result":          statement,
@@ -92,7 +93,9 @@ func tryRespondBillingStatementVersion(c *gin.Context, period billingReconciliat
 		"data_version":    period.EndTimestamp,
 		"data_source":     "billing_statement_version",
 		"billing_version": billingStatementVersionView(version, admin),
-	})
+	}
+	addCustomerBillingRefundStatus(c, response, userId, period)
+	common.ApiSuccess(c, response)
 	return true
 }
 
@@ -131,12 +134,19 @@ func GetSelfBillingStatementVersionMonthStatus(c *gin.Context) {
 func respondBillingStatementVersionMonthStatus(c *gin.Context, userId int, period billingReconciliationPeriod, admin bool) {
 	ctx := c.Request.Context()
 	view := gin.H{
-		"switch_enabled":   model.BillingStatementVersionEnabled(),
 		"topology_ok":      model.BillingStatementVersionTopologyOK(),
 		"current_version":  nil,
 		"active_draft":     nil,
 		"versions":         []any{},
 		"has_active_draft": false,
+	}
+	if admin {
+		maintenance, err := model.GetBillingStatementMaintenance(ctx)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		view["maintenance_active"] = maintenance.Enabled
 	}
 	month, err := model.GetBillingStatementMonthByUserPeriod(ctx, userId, period.StartTimestamp)
 	if err != nil {
@@ -250,6 +260,22 @@ func respondBillingStatementVersionLines(c *gin.Context, admin bool) {
 			return
 		}
 		filter.LogType = logType
+	}
+	filter.FundGroup = c.Query("fund_group")
+	groupFunds := c.Query("group_funds") == "true"
+	if len(filter.FundGroup) > 75 || (groupFunds && filter.FundGroup != "") {
+		common.ApiErrorMsg(c, "Invalid billing report version")
+		return
+	}
+	if groupFunds {
+		groups, total, err := model.ListBillingStatementVersionFundGroups(ctx, v.ID, filter, page, pageSize)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ApiSuccess(c, gin.H{"fund_groups": groups, "total": total, "page": page, "page_size": pageSize,
+			"billing_version": billingStatementVersionView(v, admin)})
+		return
 	}
 	lines, total, err := model.ListBillingStatementVersionLines(ctx, v.ID, filter, page, pageSize)
 	if err != nil {

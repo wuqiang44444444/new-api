@@ -48,12 +48,16 @@ func frozenBillingStatementListItem(v BillingStatementVersion) (BillingCustomerS
 	}
 	item := BillingCustomerStatementListItem{UserId: v.UserId, Username: s.Username, DisplayName: s.DisplayName, Deleted: s.Deleted, Usage: s.Summary, OriginalQuota: s.OriginalQuota, DiscountQuota: s.DiscountQuota, DataQuality: s.DataQuality,
 		BillingVersion: &BillingCustomerStatementListVersion{VersionNumber: v.VersionNumber, ConfirmedAt: v.ConfirmedAt}}
-	for _, exact := range snapshot.Original {
-		value, err := decimal.NewFromString(exact)
-		if err != nil {
-			return item, err
+	if !s.RecordedOriginalAmounts {
+		item.OriginalQuota, item.DiscountQuota = nil, nil
+	} else {
+		for _, exact := range snapshot.Original {
+			value, err := decimal.NewFromString(exact)
+			if err != nil {
+				return item, err
+			}
+			item.originalQuota = item.originalQuota.Add(value)
 		}
-		item.originalQuota = item.originalQuota.Add(value)
 	}
 	if v.QuotaPerUnit <= 0 {
 		return item, errors.New("invalid frozen quota conversion")

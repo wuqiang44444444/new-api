@@ -14,7 +14,7 @@ func TestStatementRecoveredFactsMatchDetailsExportAndCombinations(t *testing.T) 
 	db := setupBillingReconciliationTestDB(t)
 	require.NoError(t, db.Create(&User{Id: 7, Username: "customer"}).Error)
 	original := Log{UserId: 7, TokenId: 4, ChannelId: 3, ModelName: "video", Group: "historic-group", Type: LogTypeConsume, CreatedAt: 900, Quota: 87,
-		Other: `{"admin_info":{"statement_snapshot":{"billing_mode":"per_second","customer_model":"video","provider_model":"private-upstream","user_group_ratio":0.87,"contract_applicable":false}}}`}
+		Other: `{"admin_info":{"statement_original_quota":103,"statement_snapshot":{"billing_mode":"per_second","customer_model":"video","provider_model":"private-upstream","user_group_ratio":0.87,"contract_applicable":false}}}`}
 	require.NoError(t, db.Create(&original).Error)
 	refund := Log{UserId: 7, TokenId: 4, ChannelId: 3, ModelName: "video", Type: LogTypeRefund, CreatedAt: 1100, Quota: 87,
 		Other: `{"admin_info":{"original_preauth_log_id":` + strconv.Itoa(original.Id) + `}}`}
@@ -22,7 +22,7 @@ func TestStatementRecoveredFactsMatchDetailsExportAndCombinations(t *testing.T) 
 	ctx := context.Background()
 	batch, err := NextCustomerExportLogBatch(ctx, CustomerExportBatchParams{UserId: 7, StartTimestamp: 1000, EndTimestamp: 1200, Limit: 100})
 	require.NoError(t, err)
-	exported, err := BuildCustomerExportRows(ctx, batch, "", "", nil)
+	exported, err := BuildCustomerExportRows(ctx, batch, "", "", nil, true)
 	require.NoError(t, err)
 	require.Len(t, exported, 1)
 	expected := exported[0]
@@ -30,7 +30,8 @@ func TestStatementRecoveredFactsMatchDetailsExportAndCombinations(t *testing.T) 
 	assert.Equal(t, "historic-group", expected.GroupName)
 	assert.Equal(t, "user_exclusive", expected.GroupRatioSource)
 	assert.Equal(t, "no", expected.ContractApplicable)
-	assert.Equal(t, "-100.0000", expected.OriginalEstimate)
+	assert.Empty(t, expected.OriginalEstimate)
+	assert.Equal(t, "-103", expected.RecordedOriginal)
 	for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser, common.RoleRootUser} {
 		result, err := GetBillingStatementLogs(ctx, BillingStatementLogFilter{UserId: 7, Start: 1000, End: 1200, BillingMode: "per_second"}, 1, 20, role)
 		require.NoError(t, err)
@@ -43,7 +44,7 @@ func TestStatementRecoveredFactsMatchDetailsExportAndCombinations(t *testing.T) 
 			assert.NotContains(t, result.Items[0].Other, "private-upstream")
 		}
 	}
-	statement, err := GetBillingCustomerStatement(ctx, 7, 1000, 1200, "api_key", 0, "", "")
+	statement, err := GetBillingCustomerStatement(ctx, 7, 1000, 1200, "api_key", 0, "", "", BillingStatementReadPolicy{RecordedAmountsOnly: true})
 	require.NoError(t, err)
 	require.Len(t, statement.DiscountCombinations, 1)
 	combo := statement.DiscountCombinations[0]
@@ -51,7 +52,7 @@ func TestStatementRecoveredFactsMatchDetailsExportAndCombinations(t *testing.T) 
 	assert.Equal(t, expected.GroupRatioSource, combo.GroupRatioSource)
 	assert.Equal(t, expected.GroupRatio, combo.GroupRatio)
 	require.NotNil(t, combo.OriginalQuota)
-	assert.EqualValues(t, -100, *combo.OriginalQuota)
+	assert.EqualValues(t, -103, *combo.OriginalQuota)
 	var stored Log
 	require.NoError(t, db.First(&stored, refund.Id).Error)
 	assert.Equal(t, refund.Other, stored.Other)

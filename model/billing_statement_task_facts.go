@@ -17,7 +17,7 @@ func BillingStatementExpressionMode(expression string, usageUnits map[string]str
 	if vars == nil {
 		return BillingReconciliationModeUnknown
 	}
-	token, seconds := false, false
+	token, seconds, count := false, false, false
 	for _, name := range []string{"p", "c", "cr", "cc", "cc1h", "img", "img_o", "ai", "ao", "len"} {
 		token = token || vars[name]
 	}
@@ -73,6 +73,8 @@ func BillingStatementExpressionMode(expression string, usageUnits map[string]str
 			token = true
 		case "second":
 			seconds = true
+		case "count":
+			count = true
 		case "enum", "boolean":
 		default:
 			valid = false
@@ -80,6 +82,12 @@ func BillingStatementExpressionMode(expression string, usageUnits map[string]str
 		return false
 	})
 	if !valid || calls != identifiers || (token && seconds) {
+		return BillingReconciliationModeUnknown
+	}
+	if count {
+		if seconds && !untypedParam {
+			return BillingReconciliationModeDurationAndCount
+		}
 		return BillingReconciliationModeUnknown
 	}
 	if seconds && !untypedParam {
@@ -97,7 +105,7 @@ func billingStatementTaskFacts(log billingReconciliationLog, other, snapshot map
 	event := billingBreakdownString(other["task_billing_event"])
 	_, hasActual := other["actual_quota"]
 	_, hasPreconsume := other["pre_consumed_quota"]
-	adjustment := hasActual || hasPreconsume || event == "adjustment"
+	adjustment := isTaskBillingAdjustment(event, hasActual, hasPreconsume)
 	parsed.isRequest = log.Type == LogTypeConsume && !adjustment && (event == "create" || isTask || taskID == "")
 	parsed.isRefund = log.Type == LogTypeRefund && !adjustment
 
@@ -127,7 +135,7 @@ func billingStatementTaskFacts(log billingReconciliationLog, other, snapshot map
 	legacyImageTokenPrice := price == -1 && parsed.hasImageCount && event == "create" && !parsed.hasAuxiliaryCharge
 	if (isTask || taskID != "") && ok && (legacyImageTokenPrice || (price == 0 && log.Quota > 0)) {
 		measuredTokens := log.CompletionTokens > 0 || (legacyImageTokenPrice && log.PromptTokens > 0)
-		if measuredTokens && parsed.billingMode != BillingReconciliationModePerSecond {
+		if measuredTokens && parsed.billingMode != BillingReconciliationModePerSecond && parsed.billingMode != BillingReconciliationModeDurationAndCount {
 			parsed.billingMode = BillingReconciliationModeToken
 		} else if parsed.billingMode == BillingReconciliationModePerCall {
 			parsed.billingMode = BillingReconciliationModeUnknown
@@ -146,10 +154,11 @@ func isProviderTaskUsageAdjustment(log billingReconciliationLog) bool {
 		return false
 	}
 	event := billingBreakdownString(other["task_billing_event"])
-	if event == "refund" || event == "create" {
-		return false
-	}
 	_, actual := other["actual_quota"]
 	_, pre := other["pre_consumed_quota"]
-	return event == "adjustment" || (actual && pre)
+	return isTaskBillingAdjustment(event, actual, pre)
+}
+
+func isTaskBillingAdjustment(event string, hasActual, hasPreconsume bool) bool {
+	return event == "adjustment" || (event == "" && hasActual && hasPreconsume)
 }

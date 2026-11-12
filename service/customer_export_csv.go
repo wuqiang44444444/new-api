@@ -25,8 +25,9 @@ import (
 // statement details use a localized projection over those same safe values.
 
 const (
-	customerExportFieldVersion = 21
-	customerExportCsvBOM       = "\xEF\xBB\xBF"
+	customerExportFieldVersion          = 21
+	customerStatementExportFieldVersion = 22
+	customerExportCsvBOM                = "\xEF\xBB\xBF"
 	// Plan-suggested starting cap for one CSV shard (100 MiB).
 	customerExportCsvShardBytes = 100 << 20
 )
@@ -44,24 +45,26 @@ var customerExportCsvHeader = []string{
 }
 
 type customerExportScopeColumns struct {
-	Language     string
-	QuotaPerUnit float64
-	Currency     string
-	CurrencyRate float64
-	JobID        string
-	ExportType   string
-	GeneratedAt  int64
-	PeriodStart  int64
-	PeriodEnd    int64
-	Timezone     string
-	CustomerId   int
-	CustomerName string
+	Language       string
+	QuotaPerUnit   float64
+	Currency       string
+	CurrencyRate   float64
+	JobID          string
+	ExportType     string
+	GeneratedAt    int64
+	PeriodStart    int64
+	PeriodEnd      int64
+	Timezone       string
+	CustomerId     int
+	CustomerName   string
+	ReportCoverage *model.BillingExportCoverage
 }
 
 // customerExportCsvWriter writes rows sequentially to bounded temp shards.
 type customerExportCsvWriter struct {
 	header            []string
 	statementLanguage *string
+	reportCoverage    []string
 	dir               string
 	prefix            string
 	maxShardBytes     int64
@@ -172,11 +175,24 @@ func (w *customerExportCsvWriter) closeShard() error {
 	return nil
 }
 
+func (w *customerExportCsvWriter) setBillingCoverage(filters model.CustomerExportFilters) {
+	header, cells := billingCoverageCSV(filters.BillingReportCoverage, filters.Language)
+	w.header = append(w.header, header...)
+	w.reportCoverage = cells
+}
+
 // AppendRow writes one row and rolls to a new shard at a row boundary when the
 // byte cap is reached.
 func (w *customerExportCsvWriter) AppendRow(row model.CustomerExportRow, scope customerExportScopeColumns) error {
 	if err := w.ensureShard(); err != nil {
 		return err
+	}
+	if w.statementLanguage != nil {
+		row.OriginalEstimate = row.RecordedOriginal
+		row.OriginalExact = row.RecordedOriginal != ""
+		if !row.OriginalExact {
+			row.QualityStatus = "unrecorded"
+		}
 	}
 	inputTokens, inputQuality := strconv.FormatInt(row.InputTokens, 10), "known"
 	if row.InputTokensUnavailable {
@@ -234,6 +250,7 @@ func (w *customerExportCsvWriter) AppendRow(row model.CustomerExportRow, scope c
 
 // AppendRecord applies the shared size, sharding and durability limits to a CSV schema.
 func (w *customerExportCsvWriter) AppendRecord(record []string) error {
+	record = append(record, w.reportCoverage...)
 	if err := w.ensureShard(); err != nil {
 		return err
 	}

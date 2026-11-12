@@ -1,6 +1,9 @@
 package model
 
-import "context"
+import (
+	"context"
+	"github.com/shopspring/decimal"
+)
 
 // BillingEvidenceCoverage counts distinct scanned log rows, not requests or
 // issue occurrences. One row with several evidence gaps contributes only once.
@@ -25,26 +28,26 @@ type upstreamRecoveredSecondsKey struct {
 type upstreamEvidenceCoverage struct {
 	rows      []UpstreamBillingDetailItem
 	keys      []providerBillingSummaryKey
-	recovered map[upstreamRecoveredSecondsKey]bool
+	recovered map[upstreamRecoveredSecondsKey]billingRecoveredSeconds
+	onRow     func(UpstreamBillingDetailItem, providerBillingSummaryKey) error
 }
 
-func (coverage *upstreamEvidenceCoverage) observe(key providerBillingSummaryKey, fact billingReconciliationLog, parsed parsedBillingReconciliationLog) {
-	row := UpstreamBillingDetailItem{ProviderModelFallback: key.fallback}
-	var missing, unitKnown bool
-	row.Seconds, missing, unitKnown = upstreamBillingSeconds(fact, parsed)
-	if missing {
-		q := ensureBillingReconciliationQuality(&row.DataQuality)
-		q.SecondsUnavailableRows = 1
-		if unitKnown {
-			q.SecondsValueMissingRows = 1
-		}
-	}
-	upstreamBillingDetailRowFacts(&row, fact, parsed, false)
-	coverage.rows = append(coverage.rows, row)
+type billingRecoveredSeconds struct {
+	Value    decimal.Decimal
+	SourceID int64
+}
+
+func (coverage *upstreamEvidenceCoverage) observe(key providerBillingSummaryKey, log Log, fact billingReconciliationLog, parsed parsedBillingReconciliationLog, includeRoot bool) {
+	coverage.rows = append(coverage.rows, projectUpstreamBillingDetail(log, fact, parsed, includeRoot))
 	coverage.keys = append(coverage.keys, key)
 }
 
 func (coverage *upstreamEvidenceCoverage) flush(ctx context.Context, items map[providerBillingSummaryKey]*ProviderBillingPlatformSummary) error {
+	if coverage.onRow != nil {
+		if err := resolveUpstreamDetailRequestIDs(ctx, coverage.rows); err != nil {
+			return err
+		}
+	}
 	if err := flushRecoveredDetailSeconds(ctx, coverage.rows); err != nil {
 		return err
 	}
@@ -60,16 +63,16 @@ func (coverage *upstreamEvidenceCoverage) flush(ctx context.Context, items map[p
 			q.SecondsValueMissingRows--
 			key := upstreamRecoveredSecondsKey{upstreamTaskSecondsKey{row.secondsLog.UserId, row.secondsLog.ChannelId, row.PlatformTaskId}, coverage.keys[i]}
 			if coverage.recovered == nil {
-				coverage.recovered = make(map[upstreamRecoveredSecondsKey]bool)
+				coverage.recovered = make(map[upstreamRecoveredSecondsKey]billingRecoveredSeconds)
 			}
-			if row.Seconds != nil && !coverage.recovered[key] {
+			if _, found := coverage.recovered[key]; row.Seconds != nil && !found {
 				value := *row.Seconds
 				if item.Usage.Seconds != nil {
 					value = value.Add(*item.Usage.Seconds)
 				}
 				item.Usage.Seconds = &value
+				coverage.recovered[key] = billingRecoveredSeconds{*row.Seconds, row.RowId}
 			}
-			coverage.recovered[key] = true
 		}
 
 		if q.EvidenceCoverage == nil {
@@ -85,6 +88,11 @@ func (coverage *upstreamEvidenceCoverage) flush(ctx context.Context, items map[p
 				q.EvidenceCoverage.UsageGapRows++
 			default:
 				q.EvidenceCoverage.OtherGapRows++
+			}
+		}
+		if coverage.onRow != nil {
+			if err := coverage.onRow(row, coverage.keys[i]); err != nil {
+				return err
 			}
 		}
 	}

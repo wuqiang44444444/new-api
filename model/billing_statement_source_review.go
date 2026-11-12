@@ -78,7 +78,7 @@ func billingSourceReviewStamp(ctx context.Context, db *gorm.DB, user int) (billi
 		return s, err
 	}
 	if m.Enabled {
-		return s, ErrBillingStatementVersionDisabled
+		return s, ErrBillingStatementMaintenanceActive
 	}
 	s.Generation = m.Generation
 	var r []BillingStatementRevision

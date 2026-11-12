@@ -52,6 +52,7 @@ func TestManualChannelBillingDatabaseMatrix(t *testing.T) {
 				require.NoError(t, sqlDB.Close())
 			})
 			require.NoError(t, db.AutoMigrate(&User{}, &Channel{}, &Log{}, &Task{}, &ErrorEvent{}))
+			require.NoError(t, MigrateDailyReports(db))
 			require.NoError(t, migrateBillingReconciliationDB())
 			require.NoError(t, migrateBillingReconciliationDB(), "a second startup must preserve the reporting configuration")
 			t.Cleanup(func() {

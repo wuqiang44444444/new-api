@@ -1,0 +1,227 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { useTranslation } from 'react-i18next'
+
+import { Button } from '@/components/ui/button'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { toIntlLocale } from '@/i18n/languages'
+
+import { formatCustomerStatementQuota } from '../lib'
+import type { ProviderUrlSummary, UpstreamUrlChannelRow } from '../types'
+import { UpstreamDiscountValue } from './upstream-discount-value'
+import { AmountCell, UsageCell } from './upstream-reconciliation-table'
+import {
+  UpstreamTotalMetric,
+  UpstreamUsageTotalMetrics,
+  UpstreamUsageValues,
+} from './upstream-usage-values'
+
+export type UpstreamUrlSort = 'reference_amount' | 'requests'
+
+export function UpstreamUrlTotals(props: {
+  totals: NonNullable<ProviderUrlSummary['totals']>
+  quality: ProviderUrlSummary['data_quality']
+  filtered: boolean
+}) {
+  const { t, i18n } = useTranslation()
+  const totals = props.totals
+  const formatAmount = (amount?: number, subtotal?: number) => {
+    if (amount != null) return formatCustomerStatementQuota(amount)
+    if (subtotal != null) {
+      return t('Known subtotal: {{amount}}', {
+        amount: formatCustomerStatementQuota(subtotal),
+      })
+    }
+    return t('Unknown')
+  }
+  const metrics = [
+    {
+      label: t('Requests'),
+      value: totals.usage.requests.toLocaleString(
+        toIntlLocale(i18n?.language || 'en')
+      ),
+    },
+    {
+      label: t('List price'),
+      value: formatAmount(totals.original_amount, totals.known_original_amount),
+    },
+    {
+      label: t('Discounted reference amount'),
+      value: formatAmount(
+        totals.reference_amount,
+        totals.known_reference_amount
+      ),
+    },
+  ]
+  return (
+    <section className='bg-muted/30 shrink-0 rounded-lg border px-3 py-2'>
+      <h2 className='mb-1 text-sm font-semibold'>
+        {props.filtered ? t('Filtered total') : t('Total')}
+      </h2>
+      <dl className='grid grid-cols-[repeat(auto-fit,minmax(min(100%,8rem),1fr))] gap-x-4 gap-y-2'>
+        {metrics.map((metric) => (
+          <UpstreamTotalMetric key={metric.label} {...metric} />
+        ))}
+        <UpstreamUsageTotalMetrics
+          usage={totals.usage}
+          quality={props.quality}
+        />
+      </dl>
+      {props.quality?.has_estimated_original && (
+        <p className='text-muted-foreground text-xs'>
+          {t('Estimated from recorded charges and historical discounts')}
+        </p>
+      )}
+    </section>
+  )
+}
+
+export function UpstreamUrlSummaryTable(props: {
+  rows: UpstreamUrlChannelRow[]
+  sort: UpstreamUrlSort
+  onSort: (sort: UpstreamUrlSort) => void
+  onSelect: (row: UpstreamUrlChannelRow) => void
+  onEditDiscount: (channelId: number) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Table withContainer={false}>
+      <TableHeader className='sticky top-0 z-10 bg-(--table-header)'>
+        <TableRow>
+          <TableHead scope='col'>{t('Upstream URL')}</TableHead>
+          <TableHead scope='col'>{t('Channel')}</TableHead>
+          <TableHead
+            scope='col'
+            aria-sort={props.sort === 'requests' ? 'descending' : undefined}
+            className='text-right'
+          >
+            <Button
+              variant='ghost'
+              size='xs'
+              onClick={() => props.onSort('requests')}
+            >
+              {t('Requests')}
+              {props.sort === 'requests' && <span aria-hidden>↓</span>}
+            </Button>
+          </TableHead>
+          <TableHead scope='col'>{t('Usage')}</TableHead>
+          <TableHead
+            scope='col'
+            className='text-right'
+            title={t('Original amount (local official price)')}
+          >
+            {t('List price')}
+          </TableHead>
+          <TableHead scope='col'>{t('Channel discount')}</TableHead>
+          <TableHead
+            scope='col'
+            aria-sort={
+              props.sort === 'reference_amount' ? 'descending' : undefined
+            }
+            className='text-right'
+          >
+            <Button
+              variant='ghost'
+              size='xs'
+              onClick={() => props.onSort('reference_amount')}
+            >
+              {t('Discounted reference amount')}
+              {props.sort === 'reference_amount' && <span aria-hidden>↓</span>}
+            </Button>
+          </TableHead>
+          <TableHead scope='col' className='text-right'>
+            {t('Actions')}
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {props.rows.map((row) => (
+          <TableRow key={JSON.stringify([row.url_key, row.channel_id])}>
+            <TableCell className='min-w-36 wrap-anywhere whitespace-normal'>
+              {row.base_url || row.url_name}
+            </TableCell>
+            <TableCell className='min-w-32 wrap-anywhere whitespace-normal'>
+              {row.channel_id > 0
+                ? row.channel_name || t('Channel')
+                : t('Not recorded')}
+              {row.channel_id > 0 && (
+                <span
+                  className='text-muted-foreground block'
+                  data-table-text='secondary'
+                >
+                  #{row.channel_id}
+                  {row.upstream_name &&
+                    row.upstream_name !== row.channel_name &&
+                    ` · ${row.upstream_name}`}
+                  {row.deleted && ` · ${t('Deleted channel')}`}
+                </span>
+              )}
+            </TableCell>
+            <UsageCell value={row.usage.requests} />
+            <TableCell>
+              <UpstreamUsageValues
+                usage={row.usage}
+                quality={row.data_quality}
+              />
+            </TableCell>
+            <AmountCell
+              value={row.original_amount}
+              knownSubtotal={row.known_original_amount}
+              estimated={row.data_quality?.has_estimated_original}
+            />
+            <TableCell>
+              <UpstreamDiscountValue discount={row.discount} />
+            </TableCell>
+            <AmountCell
+              value={row.reference_amount}
+              knownSubtotal={row.known_reference_amount}
+            />
+            <TableCell className='text-right'>
+              {row.channel_id > 0 && (
+                <>
+                  <Button
+                    variant='link'
+                    size='xs'
+                    onClick={() => props.onEditDiscount(row.channel_id)}
+                  >
+                    {t('Set discount')}
+                  </Button>
+                  <Button
+                    variant='link'
+                    size='xs'
+                    onClick={() => props.onSelect(row)}
+                  >
+                    {t('View details')}
+                  </Button>
+                </>
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}

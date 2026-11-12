@@ -8,6 +8,7 @@ import {
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createInstance } from 'i18next'
+import { useState } from 'react'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { toast } from 'sonner'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -15,6 +16,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import zh from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
 
+import type { CustomerExportJobView } from '../../export-api'
 import { MyBilling } from '../../my-billing'
 import type { BillingEnvelope, CustomerStatement } from '../../types'
 import { CustomerStatementView } from '../customer-statement'
@@ -49,6 +51,7 @@ function statementEnvelope(): BillingEnvelope<CustomerStatement> {
     data_source: 'main_database+log_database',
     filters: {},
     result: {
+      recorded_original_amounts: true,
       user_id: 7,
       username: 'customer',
       display_name: '',
@@ -88,7 +91,20 @@ afterEach(() => {
   clients.splice(0).forEach((client) => client.clear())
   vi.restoreAllMocks()
   vi.clearAllMocks()
+  vi.mocked(api.get).mockReset()
 })
+
+function MyBillingWithFilter() {
+  const [modelKeyId, setModelKeyId] = useState<number>()
+  return (
+    <MyBilling
+      month='2026-09'
+      onMonthChange={vi.fn()}
+      modelKeyId={modelKeyId}
+      onModelKeyChange={setModelKeyId}
+    />
+  )
+}
 
 async function mount(
   options: {
@@ -123,14 +139,25 @@ async function mount(
       options.envelope
     )
   }
+  const queuedExport: CustomerExportJobView = {
+    job_id: 'cex_test',
+    user_id: options.isAdmin ? 1 : 7,
+    target_user_id: options.userId ?? 7,
+    job_type: 'statement_summary',
+    status: 'queued',
+    filters: { ...period, timezone: 'Asia/Shanghai', field_version: 21 },
+    progress: { scanned: 0, matched: 0, written: 0, files: 0 },
+    cancel_requested: false,
+    created_at: period.start_timestamp,
+  }
   vi.mocked(api.post).mockResolvedValue({
-    data: { success: true, data: { job_id: 'cex_test' } },
+    data: { success: true, data: queuedExport },
   })
   const view = render(
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={client}>
         {options.selfPage ? (
-          <MyBilling month='2026-09' onMonthChange={vi.fn()} />
+          <MyBillingWithFilter />
         ) : (
           <CustomerStatementView
             isAdmin={options.isAdmin === true}
@@ -143,18 +170,22 @@ async function mount(
       </QueryClientProvider>
     </I18nextProvider>
   )
-  return { view, i18n, client }
+  return { view, i18n, client, queuedExport }
+}
+
+async function openExportDrawer() {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Export and download' }))
+  return screen.findByRole('dialog', { name: 'Export and download' })
 }
 
 it('submits a server-side statement export with the frozen month and language', async () => {
   await mount({ envelope: statementEnvelope() })
-  fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Export and download' }))
   expect(api.post).not.toHaveBeenCalled()
-  fireEvent.click(
-    within(screen.getByRole('alertdialog')).getByRole('button', {
-      name: 'Confirm export and download',
-    })
-  )
+  const exportCSV = await screen.findByRole('button', { name: 'Export CSV' })
+  await user.click(exportCSV)
   await vi.waitFor(() => expect(api.post).toHaveBeenCalled())
   expect(api.post).toHaveBeenCalledWith('/api/billing/exports', {
     job_type: 'statement_summary',
@@ -162,200 +193,540 @@ it('submits a server-side statement export with the frozen month and language', 
     end_timestamp: period.end_timestamp + 1,
     language: 'en',
   })
-  expect(toast.success).toHaveBeenCalled()
+  expect(
+    screen.getByRole('dialog', { name: 'Export and download' })
+  ).toBeVisible()
 })
 
-it('lets the admin download the selected customer statement and export usage records', async () => {
+it('uses the shared drawer and submits admin exports for the selected customer', async () => {
   await mount({ envelope: statementEnvelope(), isAdmin: true, userId: 7 })
-  expect(
-    screen.getByRole('button', { name: 'Export usage records' })
-  ).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
+  const drawer = await openExportDrawer()
+  expect(within(drawer).getByText('customer · #7')).toBeVisible()
   expect(api.post).not.toHaveBeenCalled()
-  fireEvent.click(
-    within(screen.getByRole('alertdialog')).getByRole('button', {
-      name: 'Confirm export and download',
-    })
+  fireEvent.click(within(drawer).getByRole('button', { name: 'Export CSV' }))
+  await vi.waitFor(() =>
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/billing/admin/customer-exports',
+      {
+        job_type: 'statement_summary',
+        start_timestamp: period.start_timestamp,
+        end_timestamp: period.end_timestamp + 1,
+        language: 'en',
+      },
+      { params: { user_id: 7 } }
+    )
   )
-  await vi.waitFor(() => expect(api.post).toHaveBeenCalled())
-  expect(api.post).toHaveBeenCalledWith(
-    '/api/billing/admin/customer-exports',
-    {
-      job_type: 'statement_summary',
-      start_timestamp: period.start_timestamp,
-      end_timestamp: period.end_timestamp + 1,
-      language: 'en',
-    },
-    { params: { user_id: 7 } }
+  expect(
+    await within(drawer).findByRole('heading', { name: 'This export' })
+  ).toBeVisible()
+  const user = userEvent.setup()
+  await user.click(
+    within(drawer).getByRole('combobox', { name: 'Export content' })
+  )
+  await user.click(await screen.findByRole('option', { name: 'Usage records' }))
+  await user.click(within(drawer).getByRole('button', { name: 'Export CSV' }))
+  await vi.waitFor(() =>
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/billing/admin/customer-exports',
+      expect.objectContaining({ job_type: 'usage_logs' }),
+      { params: { user_id: 7 } }
+    )
   )
 })
 
 it('does not offer usage-record export for the customer view', async () => {
   await mount({ envelope: statementEnvelope() })
-  expect(
-    screen.queryByRole('button', { name: 'Export usage records' })
-  ).toBeNull()
-})
-
-it('renders discount combinations with tier and factor and reconciling totals', async () => {
-  const envelope = statementEnvelope()
-  envelope.result.discount_combinations = [
-    {
-      group_id: 4,
-      model_name: 'public-a',
-      billing_mode: 'token',
-      group_ratio: 0.5,
-      contract_applicable: 'yes',
-      contract_name: 'annual',
-      contract_id_known: true,
-      contract_id: 5,
-      contract_version: 2,
-      contract_ratio: 0.3,
-      usage: { ...usage, net_quota: -80 },
-      original_known: true,
-      original_quota: -533,
-      discount_quota: -453,
-    },
-    {
-      group_id: 4,
-      model_name: 'public-a',
-      billing_mode: 'token',
-      group_ratio: 0.5,
-      contract_applicable: 'no',
-      usage: { ...usage, net_quota: 0 },
-      original_known: false,
-    },
-  ]
-  await mount({ envelope })
-  expect(screen.getByText('Discount breakdown')).toBeTruthy()
-  expect(screen.getByText('annual')).toBeTruthy()
-  // 组合原价未知时显示不可用，不冒充完整金额。
-  expect(
-    screen.getAllByText(
-      'Cannot estimate: reason not recorded in this historical statement'
-    ).length
-  ).toBeGreaterThanOrEqual(1)
-  expect(screen.getByText('85% off')).toBeTruthy()
-  expect(screen.getByText('×0.15')).toBeTruthy()
-  expect(screen.getAllByText('50% off').length).toBeGreaterThanOrEqual(2)
-})
-
-it('keeps equal-ratio billing groups and exclusive sources visible as separate rows', async () => {
-  const envelope = statementEnvelope()
-  envelope.result.discount_combinations = [
-    { group_name: 'historical-a', group_ratio_source: 'group' as const },
-    {
-      group_name: 'historical-b',
-      group_ratio_source: 'user_exclusive' as const,
-    },
-  ].map((group) => ({
-    ...group,
-    group_id: 4,
-    model_name: 'public-a',
-    billing_mode: 'token',
-    group_ratio: 0.5,
-    contract_applicable: 'no' as const,
-    usage,
-    original_known: false,
-  }))
-  await mount({ envelope })
-  expect(screen.getByText('historical-a')).toBeTruthy()
-  expect(screen.getByText('historical-b')).toBeTruthy()
-  expect(screen.getByText('Group Ratio')).toBeTruthy()
-  expect(screen.getByText('User Exclusive Ratio')).toBeTruthy()
-})
-
-it('offers only the version-aware statement download on My billing', async () => {
-  vi.spyOn(window, 'open').mockImplementation(() => null)
-  const envelope = {
-    ...statementEnvelope(),
-    billing_version: {
-      id: 3,
-      draft_public_id: 'frozen-version',
-      status: 'confirmed',
-      version_number: 1,
-      user_id: 7,
-      period_start: period.start_timestamp,
-      period_end_exclusive: period.end_timestamp + 1,
-      confirmed_at: 1791000000,
-      created_at: 1791000000,
-      updated_at: 1791000000,
-      public_reason: '',
-      corrects_version_id: null,
-      quota_per_unit: 500000,
-      currency: 'USD',
-      currency_rate: 1,
-    },
-  }
-  vi.mocked(api.get).mockResolvedValue({
-    data: { success: true, data: { url: 'https://example.test/file' } },
-  })
-  await mount({ envelope, selfPage: true })
-  const buttons = screen.getAllByRole('button', { name: 'Export and download' })
-  expect(buttons).toHaveLength(1)
-  fireEvent.click(buttons[0])
-  expect(api.post).not.toHaveBeenCalled()
-  fireEvent.click(
-    within(screen.getByRole('alertdialog')).getByRole('button', {
-      name: 'Confirm export and download',
-    })
+  const drawer = await openExportDrawer()
+  await userEvent.click(
+    within(drawer).getByRole('combobox', { name: 'Export content' })
   )
-  await vi.waitFor(() =>
-    expect(api.get).toHaveBeenCalledWith(
-      '/api/billing/statement/self/versions/frozen-version/download',
-      expect.anything()
-    )
-  )
-  expect(api.post).not.toHaveBeenCalled()
-})
-
-it('cancels the export confirmation without submitting a task', async () => {
-  await mount({ envelope: statementEnvelope(), selfPage: true })
-  fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
-  fireEvent.click(
-    within(screen.getByRole('alertdialog')).getByRole('button', {
-      name: 'Cancel',
-    })
-  )
-  expect(api.post).not.toHaveBeenCalled()
-  expect(screen.getAllByRole('button', { name: 'Export jobs' })).toHaveLength(1)
   expect(
-    screen.queryByRole('button', { name: 'Export statement details' })
-  ).toBeNull()
+    await screen.findByRole('option', { name: 'Statement summary' })
+  ).toBeVisible()
+  expect(screen.queryByRole('option', { name: 'Usage records' })).toBeNull()
 })
 
-it('downloads a completed reusable export without submitting another task', async () => {
-  vi.spyOn(window, 'open').mockImplementation(() => null)
-  await mount({ envelope: statementEnvelope() })
-  vi.mocked(api.post).mockResolvedValue({
-    data: { success: true, data: { job_id: 'cex_ready', status: 'succeeded' } },
-  })
+it('groups month and export controls with the My billing heading and status above the totals', async () => {
   vi.mocked(api.get).mockResolvedValue({
     data: {
       success: true,
-      data: { files: [{ url: 'https://example.test/bill.csv' }] },
+      data: { versions: [] },
     },
   })
+  const envelope = {
+    ...statementEnvelope(),
+    billing_report: {
+      version: 'report-september',
+      published_days: 29,
+      incomplete_days: 1,
+      expected_days: 30,
+      estimated: true,
+      as_of: period.end_timestamp,
+    },
+  }
+  await mount({ envelope, selfPage: true })
+
+  const heading = screen.getByRole('heading', {
+    name: /^My billing$/,
+  })
+  const header = heading.closest('header')
+  if (!header) throw new Error('Missing billing header')
+  const pageHeader = within(header)
+  expect(pageHeader.getByLabelText('Billing month')).toBeTruthy()
+  expect(
+    pageHeader.getByRole('button', { name: 'Export and download' })
+  ).toBeTruthy()
+  expect(pageHeader.queryByRole('button', { name: 'Export jobs' })).toBeNull()
+  expect(
+    await pageHeader.findByRole('button', { name: /Version history/ })
+  ).toBeTruthy()
+  expect(pageHeader.getByText('Database authoritative')).toBeTruthy()
+  expect(
+    pageHeader.getByText(
+      /Partial data.*29 of 30 days published.*Days with incomplete data · 1/
+    )
+  ).toBeTruthy()
+  expect(pageHeader.getByText('Incomplete usage details')).toBeTruthy()
+  expect(pageHeader.getByText(/^Data as of/)).toBeTruthy()
+  expect(pageHeader.queryByText(/Estimated usage or pricing/)).toBeNull()
+  expect(pageHeader.queryByText('Current balance')).toBeNull()
+
+  const historyButton = await pageHeader.findByRole('button', {
+    name: 'Version history (0)',
+  })
+  const user = userEvent.setup()
+  await user.click(historyButton)
+  const history = screen.getByRole('dialog', { name: 'Version history' })
+  expect(within(history).getByText('No version history')).toBeVisible()
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog', { name: 'Version history' })).toBeNull()
+  expect(historyButton).toHaveFocus()
+})
+
+it('keeps the net charge visible when an older server supplies reverse-calculated amounts', async () => {
+  const envelope = statementEnvelope()
+  Object.assign(envelope.result, { recorded_original_amounts: undefined })
+  await mount({ envelope, selfPage: true })
+
+  expect(screen.getAllByText('Not recorded').length).toBeGreaterThanOrEqual(2)
+  expect(screen.queryByText('-$0.0002')).toBeNull()
+  expect(screen.getAllByText('-$0.00016').length).toBeGreaterThan(0)
+  const modelBill = screen.getByRole('region', { name: 'Model billing' })
+  expect(
+    within(modelBill).queryByRole('columnheader', { name: 'List price' })
+  ).toBeNull()
+  expect(
+    within(modelBill).getByRole('columnheader', { name: 'Net settled amount' })
+  ).toBeVisible()
+  const summary = within(
+    screen.getByRole('table', { name: 'Billing by API Key' })
+  )
+  const total = within(summary.getByRole('row', { name: /^Total/ }))
+  expect(total.getAllByRole('cell', { name: 'Not recorded' })).toHaveLength(2)
+  expect(total.getByRole('cell', { name: '-$0.00016' })).toBeVisible()
+})
+
+it('shows historical contract and group discounts per model even without recorded prices', async () => {
+  const envelope = statementEnvelope()
+  envelope.result.recorded_original_amounts = undefined
+  const models = envelope.result.groups[0].models
+  models[0].discount_ratio = 0.5
+  models.push({
+    ...models[0],
+    model_name: 'public-b',
+    multiple_contract_discounts: true,
+    discount_ratio: undefined,
+  })
+  await mount({ envelope, selfPage: true, language: 'zh' })
+
+  const modelBill = within(screen.getByRole('region', { name: '模型账单' }))
+  expect(
+    modelBill.getByRole('columnheader', { name: '合同折扣' })
+  ).toBeVisible()
+  expect(
+    modelBill.getByRole('columnheader', { name: '分组折扣/倍率' })
+  ).toBeVisible()
+  const single = within(modelBill.getByRole('row', { name: /public-a/ }))
+  expect(single.getByRole('cell', { name: /8折.*×0.8/ })).toBeVisible()
+  expect(single.getByRole('cell', { name: /5折.*×0.5/ })).toBeVisible()
+  const mixed = within(modelBill.getByRole('row', { name: /public-b/ }))
+  expect(mixed.getByRole('cell', { name: '多种折扣' })).toBeVisible()
+  expect(mixed.getByRole('cell', { name: '未记录' })).toBeVisible()
+})
+
+it('switches model billing from the API key name or any cell in its row', async () => {
+  const envelope = statementEnvelope()
+  const group = envelope.result.groups[0]
+  envelope.result.groups.push({
+    ...group,
+    id: 5,
+    name: 'key-b',
+    models: [{ ...group.models[0], model_name: 'public-b' }],
+  })
+  await mount({ envelope, selfPage: true })
+  const user = userEvent.setup()
+  const modelBill = screen.getByRole('region', { name: 'Model billing' })
+  expect(within(modelBill).getByText('public-a')).toBeVisible()
+  expect(within(modelBill).getByText('public-b')).toBeVisible()
+
+  const summary = within(
+    screen.getByRole('table', { name: 'Billing by API Key' })
+  )
+  expect(summary.queryByRole('columnheader', { name: 'Actions' })).toBeNull()
+  const trigger = summary.getByRole('button', { name: 'key-a #4' })
+  expect(trigger).toHaveAttribute('aria-pressed', 'false')
+  trigger.focus()
+  await user.keyboard('{Enter}')
+
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(trigger).toHaveAttribute('aria-pressed', 'true')
+  const modelHeading = within(modelBill).getByRole('heading')
+  expect(modelHeading).toHaveFocus()
+  const headingRow = modelHeading.parentElement
+  if (!headingRow) throw new Error('Missing model billing heading row')
+  expect(headingRow).toHaveClass('flex', 'flex-wrap', 'items-center')
+  expect(within(headingRow).getByText(/key-a #4/)).toBeVisible()
+  expect(
+    within(headingRow).getByRole('button', { name: 'Clear filters' })
+  ).toBeVisible()
+  expect(within(modelBill).queryByText('public-b')).toBeNull()
+  const detailHref = within(modelBill)
+    .getByRole('button', { name: 'View details' })
+    .getAttribute('href')
+  const detailSearch = new URL(detailHref ?? '', 'http://localhost')
+    .searchParams
+  expect(detailSearch.get('billingModelKeyId')).toBe('4')
+
+  const otherSummaryRow = summary.getByRole('row', { name: /key-b/ })
+  await user.click(within(otherSummaryRow).getByRole('cell', { name: '2' }))
+  expect(within(modelBill).getByText(/key-b #5/)).toBeVisible()
+  expect(within(modelBill).getByText('public-b')).toBeVisible()
+  expect(within(modelBill).queryByText('public-a')).toBeNull()
+  expect(
+    within(otherSummaryRow).getByRole('button', { name: 'key-b #5' })
+  ).toHaveAttribute('aria-pressed', 'true')
+
+  await user.click(
+    within(modelBill).getByRole('button', { name: 'Clear filters' })
+  )
+  expect(within(modelBill).getByRole('heading')).toHaveFocus()
+  expect(within(modelBill).getByText('public-a')).toBeVisible()
+  expect(within(modelBill).getByText('public-b')).toBeVisible()
+})
+
+it('keeps the API key summary total for the full bill when model billing is filtered', async () => {
+  const envelope = statementEnvelope()
+  const group = envelope.result.groups[0]
+  envelope.result.groups.push({
+    ...group,
+    id: 5,
+    name: 'key-b',
+    models: [{ ...group.models[0], model_name: 'public-b' }],
+  })
+  envelope.result.summary = { ...usage, requests: 4, net_quota: -160 }
+  envelope.result.original_quota = -200
+  envelope.result.discount_quota = -40
+  await mount({ envelope, selfPage: true })
+
+  const summary = within(
+    screen.getByRole('table', { name: 'Billing by API Key' })
+  )
+  const row = summary.getByRole('row', { name: /key-b/ })
+  await userEvent.click(within(row).getByRole('cell', { name: '2' }))
+
+  const total = within(summary.getByRole('row', { name: /^Total/ }))
+  expect(total.getByRole('rowheader', { name: 'Total' })).toBeVisible()
+  expect(total.getAllByRole('cell').map((cell) => cell.textContent)).toEqual([
+    '4',
+    '-$0.0004',
+    '-$0.00008',
+    '-$0.00032',
+  ])
+})
+
+it('shows model totals and details directly on the bill for a single API key', async () => {
+  const envelope = statementEnvelope()
+  const model = envelope.result.groups[0].models[0]
+  model.original_quota = model.usage.net_quota
+  model.discount_quota = 0
+  envelope.billing_report = {
+    version: 'published-report',
+    as_of: period.end_timestamp,
+    published_days: 30,
+    expected_days: 30,
+  }
+  await mount({ envelope, selfPage: true })
+
+  const modelBill = screen.getByRole('region', { name: 'Model billing' })
+  const row = within(modelBill).getByRole('row', { name: /public-a/ })
+  expect(within(row).getByText('$0', { exact: true })).toBeVisible()
+  expect(within(row).getAllByText('-$0.00016')).toHaveLength(2)
+  const action = within(row).getByRole('button', { name: 'View details' })
+  const params = new URL(action.getAttribute('href') ?? '', 'http://localhost')
+    .searchParams
+  expect(params.get('model')).toBe('public-a')
+  expect(params.get('tokenId')).toBe('4')
+  expect(params.get('billingReportVersion')).toBe('published-report')
+  expect(params.get('billingView')).toBe('events')
+  expect(params.has('billingModelKeyId')).toBe(false)
+  expect(screen.queryByRole('button', { name: 'View models' })).toBeNull()
+  const summary = within(
+    screen.getByRole('table', { name: 'Billing by API Key' })
+  )
+  const keyRow = within(summary.getByRole('row', { name: /key-a/ }))
+  await userEvent.click(keyRow.getByRole('cell', { name: '2' }))
+  expect(within(modelBill).getByText(/key-a #4/)).toBeVisible()
+  expect(within(modelBill).getByRole('heading')).toHaveFocus()
+  expect(screen.queryByText('Discount breakdown')).toBeNull()
+})
+
+it.each([false, true])(
+  'downloads the displayed version without creating a new export (admin: %s)',
+  async (isAdmin) => {
+    const versionPath = isAdmin
+      ? '/api/billing/admin/customer-statement-versions'
+      : '/api/billing/statement/self/versions'
+    const envelope = {
+      ...statementEnvelope(),
+      billing_version: {
+        id: 3,
+        draft_public_id: 'frozen-version',
+        status: 'confirmed',
+        version_number: 1,
+        user_id: 7,
+        period_start: period.start_timestamp,
+        period_end_exclusive: period.end_timestamp + 1,
+        confirmed_at: 1791000000,
+        created_at: 1791000000,
+        updated_at: 1791000000,
+        public_reason: '',
+        corrects_version_id: null,
+        quota_per_unit: 500000,
+        currency: 'USD',
+        currency_rate: 1,
+      },
+    }
+    vi.mocked(api.get).mockImplementation(async (url) => {
+      let data: unknown = { url: 'https://example.test/file' }
+      if (url.endsWith('version-month-status')) {
+        data = {
+          current_version: envelope.billing_version,
+          versions: [envelope.billing_version],
+        }
+      }
+      if (url === '/api/billing/exports') data = { items: [], total: 0 }
+      return { data: { success: true, data } }
+    })
+    await mount({
+      envelope,
+      isAdmin,
+      userId: isAdmin ? 7 : undefined,
+      selfPage: !isAdmin,
+    })
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {})
+    const buttons = screen.getAllByRole('button', {
+      name: 'Export and download',
+    })
+    expect(buttons).toHaveLength(1)
+    expect(
+      screen.queryByRole('button', { name: 'Download confirmed version' })
+    ).toBeNull()
+    fireEvent.click(buttons[0])
+    expect(api.post).not.toHaveBeenCalled()
+    const drawer = screen.getByRole('dialog', { name: 'Export and download' })
+    expect(
+      within(drawer).getByRole('heading', {
+        name: 'September 2026 statement · v1',
+      })
+    ).toBeTruthy()
+    const user = userEvent.setup()
+    await user.click(
+      within(drawer).getByRole('combobox', { name: 'Export content' })
+    )
+    await user.click(
+      await screen.findByRole('option', { name: 'Statement details' })
+    )
+    fireEvent.click(
+      within(drawer).getByRole('button', {
+        name: 'Download CSV',
+      })
+    )
+    await vi.waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith(
+        `${versionPath}/frozen-version/download`,
+        { params: { role: 'detail_csv' } }
+      )
+    )
+    await vi.waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+    expect(api.post).not.toHaveBeenCalled()
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: /Version history/ }))
+    const versions = screen.getByRole('dialog', { name: 'Version history' })
+    expect(
+      within(versions).getByRole('button', {
+        name: 'Download confirmation note',
+      })
+    ).toBeTruthy()
+  }
+)
+
+it('opens and closes the export drawer without submitting a task', async () => {
+  await mount({ envelope: statementEnvelope(), selfPage: true })
   fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
+  expect(
+    screen.getByRole('dialog', { name: 'Export and download' })
+  ).toBeTruthy()
+  await userEvent.keyboard('{Escape}')
+  expect(api.post).not.toHaveBeenCalled()
+  expect(
+    screen.queryByRole('dialog', { name: 'Export and download' })
+  ).toBeNull()
+})
+
+it.each(['loading', 'failed'])(
+  'keeps export history downloadable while the statement is %s',
+  async (status) => {
+    const expiresAt = Math.floor(Date.now() / 1000) + 600
+    const file = {
+      file_name: 'statement-summary.csv',
+      url: 'https://example.test/statement-summary.csv',
+      object_key: '',
+      size_bytes: 100,
+      line_count: 1,
+      sha256: '',
+      expires_at: expiresAt,
+    }
+    const job: CustomerExportJobView = {
+      job_id: 'cex_existing',
+      user_id: 7,
+      target_user_id: 7,
+      job_type: 'statement_summary',
+      status: 'succeeded',
+      filters: { ...period, timezone: 'Asia/Shanghai', field_version: 21 },
+      progress: { scanned: 1, matched: 1, written: 1, files: 1 },
+      cancel_requested: false,
+      artifact: {
+        files: [file],
+        line_count: 1,
+        size_bytes: 100,
+        generated_at: period.start_timestamp,
+        expires_at: expiresAt,
+      },
+      created_at: period.start_timestamp,
+    }
+    vi.mocked(api.get).mockImplementation(async (url) => {
+      if (url === '/api/billing/statement/self') {
+        if (status === 'loading') return new Promise(() => {})
+        throw new Error('Statement request failed')
+      }
+      let data: unknown = { versions: [] }
+      if (url === '/api/billing/exports') data = { items: [job], total: 1 }
+      if (url === '/api/billing/exports/cex_existing/download') {
+        data = { files: [file] }
+      }
+      return { data: { success: true, data } }
+    })
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {})
+    await mount({ selfPage: true })
+    if (status === 'failed') await screen.findByText('Statement request failed')
+    fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
+    const drawer = screen.getByRole('dialog', { name: 'Export and download' })
+    expect(
+      within(drawer).getByRole('button', { name: 'Export CSV' })
+    ).toBeDisabled()
+    fireEvent.click(
+      await within(drawer).findByRole('button', { name: 'Download CSV' })
+    )
+    await vi.waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+    expect(api.post).not.toHaveBeenCalled()
+  }
+)
+
+it('pins the submitted export above history and clears the pin when history is reopened', async () => {
+  const job: CustomerExportJobView = {
+    job_id: 'cex_current',
+    user_id: 7,
+    target_user_id: 7,
+    job_type: 'statement_summary',
+    status: 'queued',
+    filters: {
+      ...period,
+      end_timestamp: period.end_timestamp + 1,
+      timezone: 'Asia/Shanghai',
+      field_version: 21,
+    },
+    progress: { scanned: 0, matched: 0, written: 0, files: 0 },
+    cancel_requested: false,
+    created_at: period.start_timestamp,
+  }
+  vi.mocked(api.get).mockImplementation(async (url) => {
+    let data: unknown = { versions: [] }
+    if (url === '/api/billing/exports') data = { items: [job], total: 1 }
+    if (url === '/api/billing/exports/cex_current') data = job
+    return { data: { success: true, data } }
+  })
+  await mount({ envelope: statementEnvelope(), selfPage: true })
+  vi.mocked(api.post).mockResolvedValueOnce({
+    data: { success: true, data: job },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
+  const drawer = screen.getByRole('dialog', { name: 'Export and download' })
+  expect(
+    within(drawer).getByRole('heading', { name: 'September 2026 statement' })
+  ).toBeTruthy()
   fireEvent.click(
-    within(screen.getByRole('alertdialog')).getByRole('button', {
-      name: 'Confirm export and download',
+    within(drawer).getByRole('button', {
+      name: 'Export CSV',
     })
   )
-  await vi.waitFor(() =>
-    expect(window.open).toHaveBeenCalledWith(
-      'https://example.test/bill.csv',
-      '_blank',
-      'noopener'
-    )
-  )
+
+  const current = await screen.findByRole('heading', { name: 'This export' })
+  const section = current.closest('section')
+  if (!section) throw new Error('Missing current export section')
+  expect(within(section).getByRole('article')).toBeTruthy()
+  expect(screen.getAllByRole('article')).toHaveLength(1)
+
+  await userEvent.keyboard('{Escape}')
+  fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
+  expect(await screen.findByRole('article')).toBeTruthy()
+  expect(screen.queryByRole('heading', { name: 'This export' })).toBeNull()
+})
+
+it('downloads a reusable single file from My billing and keeps the drawer open', async () => {
+  const url = 'https://example.test/bill.csv'
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, 'click')
+    .mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.href).toBe(url)
+    })
+  vi.mocked(api.get).mockImplementation(async (endpoint) => {
+    let data: unknown = { versions: [] }
+    if (endpoint === '/api/billing/exports') data = { items: [], total: 0 }
+    if (endpoint === '/api/billing/exports/cex_ready/download') {
+      data = { files: [{ url }] }
+    }
+    return { data: { success: true, data } }
+  })
+  await mount({ envelope: statementEnvelope(), selfPage: true })
+  vi.mocked(api.post).mockResolvedValue({
+    data: { success: true, data: { job_id: 'cex_ready', status: 'succeeded' } },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
+  const drawer = screen.getByRole('dialog', { name: 'Export and download' })
+  fireEvent.click(within(drawer).getByRole('button', { name: 'Export CSV' }))
+  await vi.waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+  expect(drawer).toBeVisible()
   expect(api.post).toHaveBeenCalledTimes(1)
   expect(api.get).toHaveBeenCalledWith(
     '/api/billing/exports/cex_ready/download'
   )
 })
 
-it('lets the customer choose statement details within the combined confirmation', async () => {
+it('lets the customer choose statement details in the export drawer', async () => {
   await mount({ envelope: statementEnvelope() })
   fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
   const user = userEvent.setup()
@@ -363,11 +734,7 @@ it('lets the customer choose statement details within the combined confirmation'
   await user.click(
     await screen.findByRole('option', { name: 'Statement details' })
   )
-  fireEvent.click(
-    within(screen.getByRole('alertdialog')).getByRole('button', {
-      name: 'Confirm export and download',
-    })
-  )
+  fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
   await vi.waitFor(() =>
     expect(api.post).toHaveBeenCalledWith(
       '/api/billing/exports',
@@ -376,29 +743,27 @@ it('lets the customer choose statement details within the combined confirmation'
   )
 })
 
-it('keeps the confirmation available for retry after a submission failure', async () => {
-  await mount({ envelope: statementEnvelope() })
+it('keeps the drawer available for retry after a submission failure', async () => {
+  await mount({ envelope: statementEnvelope(), isAdmin: true, userId: 7 })
   vi.mocked(api.post).mockRejectedValueOnce(
     new Error('Export service is busy.')
   )
-  fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
-  fireEvent.click(
-    within(screen.getByRole('alertdialog')).getByRole('button', {
-      name: 'Confirm export and download',
-    })
-  )
+  const drawer = await openExportDrawer()
+  fireEvent.click(within(drawer).getByRole('button', { name: 'Export CSV' }))
   await vi.waitFor(() =>
     expect(toast.error).toHaveBeenCalledWith('Export service is busy.')
   )
   expect(
-    within(screen.getByRole('alertdialog'))
-      .getByRole('button', { name: 'Confirm export and download' })
-      .hasAttribute('disabled')
-  ).toBe(false)
+    within(drawer).getByRole('button', { name: 'Export CSV' })
+  ).toBeEnabled()
 })
 
-it('disables confirmation while the export submission is pending', async () => {
-  await mount({ envelope: statementEnvelope() })
+it('disables export while the export submission is pending', async () => {
+  const { queuedExport } = await mount({
+    envelope: statementEnvelope(),
+    isAdmin: true,
+    userId: 7,
+  })
   let complete: (value: unknown) => void = () => undefined
   vi.mocked(api.post).mockImplementationOnce(
     () =>
@@ -406,165 +771,40 @@ it('disables confirmation while the export submission is pending', async () => {
         complete = resolve
       })
   )
-  fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
-  const confirm = within(screen.getByRole('alertdialog')).getByRole('button', {
-    name: 'Confirm export and download',
-  })
-  fireEvent.click(confirm)
-  await vi.waitFor(() => expect(confirm.hasAttribute('disabled')).toBe(true))
-  fireEvent.click(confirm)
+  const drawer = await openExportDrawer()
+  const submit = within(drawer).getByRole('button', { name: 'Export CSV' })
+  fireEvent.click(submit)
+  await vi.waitFor(() => expect(submit).toBeDisabled())
+  fireEvent.click(submit)
   expect(api.post).toHaveBeenCalledTimes(1)
   complete({
-    data: { success: true, data: { job_id: 'cex_pending', status: 'queued' } },
+    data: { success: true, data: queuedExport },
   })
-  await vi.waitFor(() => expect(toast.success).toHaveBeenCalled())
-})
-
-it('explains missing historical contract facts instead of showing unavailable amounts', async () => {
-  const envelope = statementEnvelope()
-  envelope.result.discount_combinations = [
-    {
-      group_id: 4,
-      model_name: 'public-a',
-      billing_mode: 'token',
-      group_ratio: 1,
-      contract_applicable: 'unknown',
-      usage,
-      original_known: false,
-    },
-  ]
-  Object.assign(envelope.result.discount_combinations[0], {
-    estimate_reasons: ['missing_contract'],
-  })
-  await mount({ envelope })
   expect(
-    screen.getAllByText(
-      'Cannot estimate: historical contract status not recorded'
-    ).length
-  ).toBe(2)
-  expect(
-    screen.getByText('Unknown: historical contract status not recorded')
-  ).toBeTruthy()
-  expect(screen.queryByText('Unavailable')).toBeNull()
+    await within(drawer).findByRole('heading', { name: 'This export' })
+  ).toBeVisible()
 })
 
-it.each([
-  ['missing_contract', '无法估算：历史合同状态未记录'],
-  ['missing_group', '无法估算：历史分组倍率未记录'],
-  ['invalid_facts', '估算失败：计费记录异常'],
-  ['auxiliary_charge', '无法估算：附加费历史换算依据未核实'],
-  ['amount_out_of_range', '估算失败：金额超出范围'],
-  ['combination_limit', '无法估算：合并行缺少折扣明细'],
-])(
-  'shows the specific Chinese estimate reason for %s',
-  async (reason, message) => {
-    const envelope = statementEnvelope()
-    envelope.result.discount_combinations = [
-      {
-        group_id: 4,
-        model_name: 'public-a',
-        billing_mode: 'token',
-        group_ratio: 1,
-        contract_applicable: 'unknown',
-        usage,
-        original_known: false,
-        estimate_reasons: [reason],
-      },
-    ]
-    await mount({ envelope, language: 'zh', isAdmin: true, userId: 7 })
-    expect(screen.getAllByText(message)).toHaveLength(2)
-    expect(screen.queryByText('无法展示')).toBeNull()
-  }
-)
-
-it('shows no discount and zero savings when the recorded final factor is one', async () => {
-  const envelope = statementEnvelope()
-  envelope.result.discount_combinations = [
-    {
-      group_id: 4,
-      model_name: 'public-a',
-      billing_mode: 'token',
-      group_ratio: 1,
-      contract_applicable: 'no',
-      usage,
-      original_known: true,
-      original_quota: -80,
-      discount_quota: 0,
-    },
-  ]
-  await mount({ envelope })
-  const row = screen.getByText('No discount (×1)').closest('tr')
-  expect(row).not.toBeNull()
-  if (!row) throw new Error('Discount row not found')
-  expect(within(row).getByText('No contract discount applied')).toBeTruthy()
-  expect(within(row).queryByText(/Cannot estimate|Estimate failed/)).toBeNull()
-  expect(within(row).getByText('$0')).toBeTruthy()
-})
-
-it('uses the group factor for historical rows without a contract and labels the contract briefly', async () => {
-  const envelope = statementEnvelope()
-  envelope.result.discount_combinations = [
-    {
-      group_id: 4,
-      model_name: 'public-a',
-      billing_mode: 'token',
-      group_ratio: 0.5,
-      contract_applicable: 'unrecorded',
-      usage,
-      original_known: true,
-      original_quota: -160,
-      discount_quota: -80,
-    },
-  ]
-  await mount({ envelope, language: 'zh' })
-  expect(screen.getAllByText('未记录').length).toBeGreaterThan(0)
-  expect(screen.queryByText('合同优惠：未记录')).toBeNull()
-  expect(screen.queryByText(/未知：历史合同状态/)).toBeNull()
-  expect(screen.getAllByText('×0.5')).toHaveLength(2)
-})
-
-it('shows estimated savings amounts for expanded models instead of discount factors', async () => {
+it('shows recorded savings amounts for model bill rows instead of discount factors', async () => {
   const envelope = statementEnvelope()
   const model = envelope.result.groups[0].models[0]
   Object.assign(model, { discount_quota: 0 })
   model.original_quota = model.usage.net_quota
   await mount({ envelope })
-  fireEvent.click(screen.getByRole('button', { name: 'Expand models' }))
   const row = screen.getByText('public-a').closest('tr')
   if (!row) throw new Error('Model row missing')
   const cells = within(row).getAllByRole('cell')
-  expect(cells[4]).toHaveTextContent('$0')
-  expect(cells[4]).not.toHaveTextContent('×')
+  expect(cells[7]).toHaveTextContent('$0')
+  expect(cells[7]).not.toHaveTextContent('×')
   expect(
-    screen.getByRole('columnheader', { name: 'Estimated savings' })
+    within(screen.getByRole('region', { name: 'Model billing' })).getByRole(
+      'columnheader',
+      { name: 'Savings' }
+    )
   ).toBeTruthy()
 })
 
-it('shows a factor of one once in each discount column', async () => {
-  const envelope = statementEnvelope()
-  envelope.result.discount_combinations = [
-    {
-      group_id: 4,
-      model_name: 'public-a',
-      billing_mode: 'token',
-      group_ratio: 1,
-      contract_applicable: 'yes',
-      contract_ratio: 1,
-      usage,
-      original_known: true,
-      original_quota: -80,
-      discount_quota: 0,
-    },
-  ]
-  await mount({ envelope })
-  const row = screen.getByText('No discount (×1)').closest('tr')
-  if (!row) throw new Error('Combination row missing')
-  const cells = within(row).getAllByRole('cell')
-  expect(within(cells[1]).getAllByText('×1')).toHaveLength(1)
-  expect(within(cells[2]).getAllByText('×1')).toHaveLength(1)
-})
-
-it('shows known zero savings across cards, totals, API Keys and models without a contract', async () => {
+it('keeps admin model discounts, net amounts and detail links without standalone breakdowns', async () => {
   const envelope = statementEnvelope()
   const knownUsage = {
     ...usage,
@@ -607,24 +847,43 @@ it('shows known zero savings across cards, totals, API Keys and models without a
       discount_quota: 0,
     },
   ]
-  await mount({ envelope })
-  fireEvent.click(screen.getByRole('button', { name: 'Expand models' }))
+  await mount({ envelope, isAdmin: true, userId: 7 })
+  expect(screen.queryByRole('button', { name: 'Fund movements' })).toBeNull()
   expect(
-    screen.queryByText(
-      /Cannot estimate|Estimate failed|historical contract status not recorded/
-    )
+    screen.queryByRole('button', { name: 'Discount breakdown' })
   ).toBeNull()
-  // Combination, combination total, card, Key, and expanded model.
-  expect(screen.getAllByText('$0', { exact: true })).toHaveLength(5)
-  expect(screen.getByText('No discount (×1)')).toBeTruthy()
+  expect(
+    within(
+      screen.getByRole('table', { name: 'Billing by API Key' })
+    ).getAllByText('$0', { exact: true })
+  ).toHaveLength(2)
+  const modelBill = within(
+    screen.getByRole('region', { name: 'Model billing' })
+  )
+  expect(modelBill.getAllByText('$0', { exact: true })).toHaveLength(2)
+  const row = within(modelBill.getByRole('row', { name: /public-a/ }))
+  expect(row.getByText('×1')).toBeVisible()
+  const netColumn = modelBill
+    .getAllByRole('columnheader')
+    .indexOf(
+      modelBill.getByRole('columnheader', { name: 'Net settled amount' })
+    )
+  expect(row.getAllByRole('cell')[netColumn]).toHaveTextContent('$1')
+  const href = row
+    .getByRole('button', { name: 'View details' })
+    .getAttribute('href')
+  const details = new URL(href ?? '', 'http://localhost').searchParams
+  expect(details.get('billingUserId')).toBe('7')
+  expect(details.get('model')).toBe('public-a')
+  expect(details.get('tokenId')).toBe('4')
 })
 
 it('explains summary aggregation and per-call billing events before export', async () => {
-  await mount({ envelope: statementEnvelope() })
-  fireEvent.click(screen.getByRole('button', { name: 'Export and download' }))
+  await mount({ envelope: statementEnvelope(), isAdmin: true, userId: 7 })
+  await openExportDrawer()
   expect(
     await screen.findByText(
-      'One row per API Key and model: requests, net amount, estimated list price and savings.'
+      'Totals grouped by API Key, model, and billing mode.'
     )
   ).toBeTruthy()
   const user = userEvent.setup()

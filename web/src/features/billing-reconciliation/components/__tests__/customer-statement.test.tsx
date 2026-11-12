@@ -9,7 +9,7 @@ import zh from '@/i18n/locales/zh.json'
 import type { BillingDataQuality } from '../../types'
 import { CustomerStatementView } from '../customer-statement'
 
-it('shows token usage and explains savings against the net settled amount', async () => {
+it('shows recorded list price, savings and token-billed models beside net settlement', async () => {
   const i18n = createInstance().use(initReactI18next)
   await i18n.init({ lng: 'en', resources: { en: { translation: {} } } })
   const client = new QueryClient({
@@ -39,6 +39,7 @@ it('shows token usage and explains savings against the net settled amount', asyn
     ],
     {
       result: {
+        recorded_original_amounts: true,
         user_id: 91,
         username: 'customer',
         current_balance: 0,
@@ -83,16 +84,14 @@ it('shows token usage and explains savings against the net settled amount', asyn
       </QueryClientProvider>
     </I18nextProvider>
   )
-  expect(
-    screen.getByText('Estimated list price minus net settled amount')
-  ).toBeTruthy()
+  expect(screen.getAllByText('List price').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('Savings').length).toBeGreaterThan(0)
+  expect(screen.queryByText(/Estimated list price/)).toBeNull()
   expect(
     screen.getByRole('button', { name: 'Export and download' })
   ).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Expand models' }))
   expect(screen.getByText('Token billing')).toBeTruthy()
   expect(screen.queryByText('Per-call billing')).toBeNull()
-  expect(screen.getByText(/Output 48,750,864/)).toBeTruthy()
   const detail = new URL(
     screen.getByRole('button', { name: 'View details' }).getAttribute('href') ??
       '',
@@ -114,7 +113,10 @@ async function renderQualityStatement(
   mode = 'unknown'
 ) {
   const i18n = createInstance().use(initReactI18next)
-  await i18n.init({ lng: language, resources: { en: { translation: {} }, zh } })
+  await i18n.init({
+    lng: language,
+    resources: { en: { translation: {} }, zh },
+  })
   const client = new QueryClient()
   const usage = {
     requests: 153,
@@ -132,6 +134,7 @@ async function renderQualityStatement(
     ['billing-customer-reconciliation', true, 91, 'channel', 1000, 1200, null],
     {
       result: {
+        recorded_original_amounts: true,
         user_id: 91,
         username: 'randy',
         current_balance: balance,
@@ -184,7 +187,9 @@ it('explains the actual quality reason and missing channel without inventing usa
     status: 'partial',
     unknown_billing_mode_requests: 370,
   })
-  expect(screen.getByText('Unknown billing mode: 370 records')).toBeTruthy()
+  expect(
+    screen.getByText('Billing mode needs identification · 370 billing events')
+  ).toBeTruthy()
   expect(screen.queryByText(/Refresh before exporting/)).toBeNull()
   expect(screen.queryByText(/Historical prices unavailable:/)).toBeNull()
   expect(
@@ -220,10 +225,10 @@ it('renders each reported quality cause and missing channel explanation in Chine
     'zh'
   )
   for (const message of [
-    '计费方式暂未识别：370 条',
+    '计费方式待识别 · 370 条账务事件',
     '用量信息不可读取：2 条',
     '缓存写入用量不可用：3 条',
-    '无法完成原价与优惠估算：4 条',
+    '4 条记录缺少原价或优惠',
     '上游模型身份未记录：5 条',
     '渠道 #97',
     '记录已不存在，历史费用仍保留。',
@@ -256,6 +261,7 @@ it('preserves the negative sign of a refund-only model and its group', async () 
     ['billing-customer-reconciliation', true, 91, 'channel', 1000, 1200, null],
     {
       result: {
+        recorded_original_amounts: true,
         user_id: 91,
         username: 'customer',
         current_balance: 0,

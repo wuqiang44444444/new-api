@@ -17,12 +17,15 @@ import (
 // 主体转换在 newBillingStatementVersionLine 中，保持 reader 只负责读取。
 type BillingStatementReadPolicy struct {
 	// UpperLogID binds upstream export batches/channels to one log boundary.
-	UpperLogID   *int64
-	BeforeBatch  func(context.Context) error
-	AfterBatch   func(int) error // upstream export candidate counts, before display filters
-	BatchTimeout time.Duration
-	MaxGroups    int
-	ObserveFact  func(BillingStatementVersionLine, *Log) error
+	UpperLogID          *int64
+	ReadOnlySource      bool
+	RecordedAmountsOnly bool
+	BeforeBatch         func(context.Context) error
+	AfterBatch          func(int) error // upstream export candidate counts, before display filters
+	BatchTimeout        time.Duration
+	MaxGroups           int
+	ObserveFact         func(BillingStatementVersionLine, *Log) error
+	ObserveLogRevision  func(int64)
 }
 
 func scanBillingStatementFacts(ctx context.Context, query *gorm.DB, policy BillingStatementReadPolicy, consume func(billingReconciliationLog, parsedBillingReconciliationLog) error) (resultErr error) {
@@ -139,11 +142,13 @@ func emitObservedFact(policy BillingStatementReadPolicy, fact billingReconciliat
 	if policy.ObserveFact == nil {
 		return nil
 	}
+	parsed.recordedAmountsOnly = policy.RecordedAmountsOnly
 	row := buildCustomerExportRow(customerExportScanRow{RequestId: fact.RequestId, UserId: fact.UserId, TokenId: fact.TokenId, TokenName: fact.TokenName, ChannelId: fact.ChannelId, ModelName: fact.ModelName, Type: fact.Type, CreatedAt: fact.CreatedAt, PromptTokens: fact.PromptTokens, CompletionTokens: fact.CompletionTokens, Quota: fact.Quota, Other: fact.Other, Content: fact.Content}, fact, parsed)
 	raw, err := common.Marshal(row)
 	if err != nil {
 		return err
 	}
-	line := BillingStatementVersionLine{SourceLogId: sourceID, RequestId: fact.RequestId, TokenId: fact.TokenId, TokenName: fact.TokenName, ChannelId: fact.ChannelId, CustomerModel: parsed.customerModel, Group: parsed.groupName, LogType: fact.Type, CreatedAt: fact.CreatedAt, BillingMode: parsed.billingMode, InputTokens: parsed.inputTokens, OutputTokens: parsed.outputTokens, CacheReadTokens: parsed.cacheReadTokens, CacheWriteTokens: parsed.cacheWrite.total, Quota: int64(fact.Quota), Facts: string(raw)}
+	fundGroup := billingStatementFundIdentity(Log{Id: int(sourceID), CreatedAt: fact.CreatedAt, UserId: fact.UserId, TokenId: fact.TokenId, ChannelId: fact.ChannelId}, parsed)
+	line := BillingStatementVersionLine{FundGroup: fundGroup, SourceLogId: sourceID, RequestId: fact.RequestId, TokenId: fact.TokenId, TokenName: fact.TokenName, ChannelId: fact.ChannelId, CustomerModel: parsed.customerModel, Group: parsed.groupName, LogType: fact.Type, CreatedAt: fact.CreatedAt, BillingMode: parsed.billingMode, InputTokens: parsed.inputTokens, OutputTokens: parsed.outputTokens, CacheReadTokens: parsed.cacheReadTokens, CacheWriteTokens: parsed.cacheWrite.total, Quota: int64(fact.Quota), Facts: string(raw)}
 	return policy.ObserveFact(line, &Log{Type: fact.Type, PromptTokens: fact.PromptTokens, CompletionTokens: fact.CompletionTokens, Other: fact.Other})
 }

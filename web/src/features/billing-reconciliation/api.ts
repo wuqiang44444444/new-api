@@ -32,6 +32,8 @@ import type {
 } from './types'
 
 type PeriodParams = {
+  report_version?: string
+  url_key?: string
   start_timestamp: number
   end_timestamp: number
 }
@@ -74,7 +76,10 @@ export async function getAdminCustomerStatements(
 // 上游对账按渠道读取；配置编辑独立放在渠道管理。
 export async function getAdminUpstreamReconciliation(
   params: PeriodParams & {
-    level?: 'channels' | 'models' | 'options'
+    level?: 'channels' | 'models' | 'options' | 'url_models' | 'url_channels'
+    group_by?: 'url'
+    sort_by?: 'reference_amount' | 'requests'
+    data_status?: 'complete' | 'partial'
     channel_id?: number
     search?: string
     page?: number

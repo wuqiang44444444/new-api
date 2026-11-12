@@ -40,7 +40,7 @@ func TestValidProviderBillingPeriodOnlyAcceptsNaturalMonthStarts(t *testing.T) {
 
 func TestBillingStatementFiltersAcceptDurationAndRejectUnsupportedModes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, mode := range []string{"per_second", "token", "per_call", "unknown", "invalid"} {
+	for _, mode := range []string{"per_second", "duration_and_count", "token", "per_call", "unknown", "invalid"} {
 		context, _ := gin.CreateTestContext(httptest.NewRecorder())
 		context.Request = httptest.NewRequest("GET", "/?billing_mode="+mode, nil)
 		_, got, ok := parseBillingReconciliationModelFilters(context)

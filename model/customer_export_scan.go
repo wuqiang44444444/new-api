@@ -93,6 +93,7 @@ type CustomerExportRow struct {
 	FinalRatio             *float64 `json:"final_ratio"`
 	Quota                  int64    `json:"quota"`             // 原始 quota（可核对精度）；退款行保存原值，符号由事件类型表达
 	OriginalEstimate       string   `json:"original_estimate"` // 折前金额估算（定点字符串）；不可用时为空
+	RecordedOriginal       string   `json:"recorded_original,omitempty"`
 	OriginalExact          bool     `json:"original_exact"`
 	HasAuxiliaryCharge     bool     `json:"has_auxiliary_charge"`
 	BillingLineItems       string   `json:"billing_line_items"` // Safe JSON: quantity, unit, USD price basis and component subtotal
@@ -174,7 +175,7 @@ func NextCustomerExportLogBatch(ctx context.Context, params CustomerExportBatchP
 
 // BuildCustomerExportRows 把一批候选行转换为已按客户模型/计费方式过滤的
 // 客户安全投影行。候选行与匹配行分开计数（7.3：计量候选行）。
-func BuildCustomerExportRows(ctx context.Context, rows []customerExportScanRow, modelName string, billingMode string, explain func(*Log, *CustomerExportRow)) ([]CustomerExportRow, error) {
+func BuildCustomerExportRows(ctx context.Context, rows []customerExportScanRow, modelName string, billingMode string, explain func(*Log, *CustomerExportRow), recordedAmountsOnly ...bool) ([]CustomerExportRow, error) {
 	if len(rows) == 0 {
 		return nil, nil
 	}
@@ -209,6 +210,7 @@ func BuildCustomerExportRows(ctx context.Context, rows []customerExportScanRow, 
 		if billingMode != "" && parseds[i].billingMode != billingMode {
 			continue
 		}
+		parseds[i].recordedAmountsOnly = len(recordedAmountsOnly) > 0 && recordedAmountsOnly[0]
 		row := buildCustomerExportRow(scanned, facts[i], parseds[i])
 		if explain != nil {
 			explain(&Log{Type: scanned.Type, PromptTokens: scanned.PromptTokens, CompletionTokens: scanned.CompletionTokens, Other: scanned.Other}, &row)
@@ -277,6 +279,16 @@ func buildCustomerExportRow(scanned customerExportScanRow, fact billingReconcili
 	row.PricingRule = facts.pricingRule(parsed)
 	if row.CountsTowardBill && row.Quota > 0 {
 		row.EstimateReasons = billingStatementEstimateReasons(parsed)
+	}
+	if parsed.recordedAmountsOnly {
+		if original, ok := recordedStatementOriginalQuota(fact, parsed); ok && row.CountsTowardBill {
+			row.RecordedOriginal = original.String()
+			row.QualityStatus = "exact"
+			row.EstimateReasons = nil
+		} else {
+			row.QualityStatus = "unrecorded"
+		}
+		return row
 	}
 	row.QualityStatus, row.OriginalEstimate, row.OriginalExact = customerExportMoneyQuality(fact, parsed, row.GroupRatio, row.ContractApplicable, row.ContractRatio)
 	if row.CountsTowardBill && row.Quota > 0 && row.OriginalEstimate == "" && len(row.EstimateReasons) == 0 {

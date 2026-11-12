@@ -1,3 +1,5 @@
+import { ArrowDown01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import {
   skipToken,
   useMutation,
@@ -43,9 +45,11 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { LOG_TYPES } from '@/features/usage-logs/constants'
+import { toIntlLocale } from '@/i18n/languages'
 import { formatTimestampToDate } from '@/lib/format'
 
 import { BillingPagination } from './components/billing-pagination'
+import { ExportArtifactFiles } from './components/export-artifact-files'
 import {
   cancelExport,
   getExport,
@@ -55,13 +59,18 @@ import {
   resubmitExport,
   type CustomerExportJobView,
 } from './export-api'
-import { billingModeLabel, formatInteger } from './lib'
+import { billingModeLabel, formatBillingMonth, formatInteger } from './lib'
 
 type ExportJobsDrawerProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   children?: ReactNode
   focusedJobId?: string
+  billingStatement?: boolean
+  upstreamBilling?: boolean
+  showCustomer?: boolean
+  personalUsage?: boolean
+  adminCustomerUsage?: boolean
 }
 
 /**
@@ -71,16 +80,21 @@ type ExportJobsDrawerProps = {
 export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const compactExports =
+    props.billingStatement ||
+    props.upstreamBilling ||
+    props.personalUsage ||
+    props.adminCustomerUsage
 
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [activeJobId, setActiveJobId] = useState<string>()
   const [busyJobId, setBusyJobId] = useState<string>()
   useEffect(() => {
-    if (!props.focusedJobId) return
+    if (!props.open || !props.focusedJobId) return
     setActiveJobId(props.focusedJobId)
     setPage(1)
-  }, [props.focusedJobId])
+  }, [props.focusedJobId, props.open])
   const focusedQuery = useQuery({
     queryKey: ['customer-export-job', activeJobId],
     queryFn: activeJobId ? () => getExport(activeJobId) : skipToken,
@@ -150,17 +164,32 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
   }
 
   return (
-    <Sheet open={props.open} onOpenChange={props.onOpenChange}>
+    <Sheet
+      open={props.open}
+      onOpenChange={(open) => {
+        if (!open && compactExports) {
+          setActiveJobId(undefined)
+          setPage(1)
+        }
+        props.onOpenChange(open)
+      }}
+    >
       <SheetContent
         side='right'
         className='flex w-full flex-col gap-0 sm:max-w-md'
       >
         <SheetHeader>
-          <SheetTitle>{t('Export jobs')}</SheetTitle>
+          <SheetTitle>
+            {props.billingStatement || props.upstreamBilling
+              ? t('Export and download')
+              : t('Export jobs')}
+          </SheetTitle>
           <SheetDescription>
-            {t(
-              'Jobs you submitted. Files stay downloadable until they expire.'
-            )}
+            {compactExports
+              ? t('Track exports and download files when they are ready.')
+              : t(
+                  'Jobs you submitted. Files stay downloadable until they expire.'
+                )}
           </SheetDescription>
         </SheetHeader>
         <div className='flex-1 space-y-3 overflow-y-auto px-4 pb-6'>
@@ -173,14 +202,24 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
           )}
           {activeJobId && focusedQuery.data && (
             <section className='space-y-2' aria-live='polite'>
-              <h2 className='text-sm font-medium'>{t('Current export')}</h2>
+              <h2 className='text-sm font-medium'>
+                {compactExports ? t('This export') : t('Current export')}
+              </h2>
               <ExportJobCard
                 job={focusedQuery.data}
+                billingStatement={props.billingStatement}
+                upstreamBilling={props.upstreamBilling}
+                showCustomer={props.showCustomer}
+                personalUsage={props.personalUsage}
+                adminCustomerUsage={props.adminCustomerUsage}
                 busy={!!busyJobId}
                 onCancel={() => handleCancel(focusedQuery.data)}
                 onResubmit={() => handleResubmit(focusedQuery.data)}
               />
             </section>
+          )}
+          {(props.billingStatement || props.upstreamBilling) && (
+            <h2 className='text-sm font-medium'>{t('Export jobs')}</h2>
           )}
           {jobsQuery.isPending && <LoadingState />}
           {jobsQuery.isError && (
@@ -189,11 +228,14 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
               onRetry={() => void jobsQuery.refetch()}
             />
           )}
-          {!jobsQuery.isPending && !jobsQuery.isError && jobs.length === 0 && (
-            <p className='text-muted-foreground py-10 text-center text-sm'>
-              {t('No export jobs yet.')}
-            </p>
-          )}
+          {!jobsQuery.isPending &&
+            !jobsQuery.isError &&
+            jobs.length === 0 &&
+            !focusedQuery.data && (
+              <p className='text-muted-foreground py-10 text-center text-sm'>
+                {t('No export jobs yet.')}
+              </p>
+            )}
           {props.open &&
             jobs
               .filter((job) => job.job_id !== focusedQuery.data?.job_id)
@@ -201,6 +243,11 @@ export function ExportJobsDrawer(props: ExportJobsDrawerProps) {
                 <ExportJobCard
                   key={job.job_id}
                   job={job}
+                  billingStatement={props.billingStatement}
+                  upstreamBilling={props.upstreamBilling}
+                  showCustomer={props.showCustomer}
+                  personalUsage={props.personalUsage}
+                  adminCustomerUsage={props.adminCustomerUsage}
                   busy={!!busyJobId}
                   onCancel={() => handleCancel(job)}
                   onResubmit={() => handleResubmit(job)}
@@ -266,11 +313,13 @@ function exportTypeLabel(
 ) {
   switch (job.job_type) {
     case 'usage_summary':
-      return translate('Daily / weekly usage')
+      return translate('Usage statistics')
     case 'upstream_summary':
       return translate('Upstream cost statement')
     case 'upstream_details':
       return translate('Upstream details')
+    case 'customer_statements':
+      return translate('Customer statements')
     case 'statement_summary':
       return translate('Statement summary')
     case 'statement_details':
@@ -284,6 +333,7 @@ function exportAudienceLabel(
   job: CustomerExportJobView,
   translate: (key: string, params?: { id: number }) => string
 ): string {
+  if (job.job_type === 'customer_statements') return translate('All customers')
   if (job.job_type === 'usage_summary' && job.target_user_id === 0) {
     return translate(
       job.filters.usage_view === 'customers'
@@ -302,53 +352,166 @@ function exportAudienceLabel(
 
 function ExportJobCard(props: {
   job: CustomerExportJobView
+  billingStatement?: boolean
+  upstreamBilling?: boolean
+  showCustomer?: boolean
+  personalUsage?: boolean
+  adminCustomerUsage?: boolean
   onCancel: () => void
   onResubmit: () => void
   busy: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { job } = props
-  const dateFormat = new Intl.DateTimeFormat(undefined, {
+  const usageRecords = job.job_type === 'usage_logs'
+  const allStatements = job.job_type === 'customer_statements'
+  const summary = job.job_type === 'statement_summary'
+  const upstreamExport =
+    job.job_type === 'upstream_details' || job.job_type === 'upstream_summary'
+  const personalUsage =
+    props.personalUsage &&
+    job.job_type === 'usage_summary' &&
+    job.user_id === job.target_user_id &&
+    job.filters.usage_view === 'self'
+  const adminCustomerUsage =
+    props.adminCustomerUsage &&
+    job.job_type === 'usage_summary' &&
+    (job.filters.usage_view === 'customers' ||
+      job.filters.usage_view === 'customer')
+  const compactUsage = personalUsage || adminCustomerUsage
+  const compact =
+    props.upstreamBilling ||
+    compactUsage ||
+    (props.billingStatement && allStatements) ||
+    (props.billingStatement &&
+      (props.showCustomer || job.user_id === job.target_user_id) &&
+      (summary ||
+        job.job_type === 'statement_details' ||
+        (props.showCustomer && usageRecords)))
+  const locale = compact ? toIntlLocale(i18n.language) : undefined
+  const dateFormat = new Intl.DateTimeFormat(locale, {
     timeZone: job.filters.timezone,
     dateStyle: 'short',
     timeStyle: 'short',
   })
-  const period = `${dateFormat.format(job.filters.start_timestamp * 1000)} ~ ${dateFormat.format((job.filters.end_timestamp - 1) * 1000)}`
+  const type = exportTypeLabel(job, t)
+  let title = type
+  if (compactUsage) title = t('Usage statistics')
+  if (adminCustomerUsage) {
+    title = exportAudienceLabel(job, t)
+    if (job.filters.usage_view === 'customers') {
+      title = job.filters.usage_search
+        ? t('Customer search results')
+        : t('All customers')
+    }
+  }
+  if (compact && !compactUsage) {
+    title = t('{{month}} {{statement}}', {
+      month: formatBillingMonth(job.filters.start_timestamp, locale),
+      statement: type,
+    })
+  }
+  const { start_timestamp, end_timestamp, token_id, model_name } = job.filters
+  const usageRange = compactUsage
+    ? new Intl.DateTimeFormat(locale, {
+        timeZone: job.filters.timezone,
+        dateStyle: 'medium',
+      }).formatRange(start_timestamp * 1000, (end_timestamp - 1) * 1000)
+    : undefined
+  const usageKey =
+    token_id === 0 ? t('No API Key') : t('API Key ID: {{id}}', { id: token_id })
+  const files = job.artifact?.files
+  const rowCount = { rows: formatInteger(job.artifact?.line_count) }
+  let csvRows = t('CSV · {{rows}} rows', rowCount)
+  if (summary || allStatements || job.job_type === 'upstream_summary') {
+    csvRows = t('CSV · {{rows}} summary rows', rowCount)
+  } else if (job.job_type === 'statement_details') {
+    csvRows = t('CSV · {{rows}} billing entries', rowCount)
+  }
+  const expiresAt = job.expires_at ?? job.artifact?.expires_at
+  const [expiredAt, setExpiredAt] = useState<number>()
+  useEffect(() => {
+    if (
+      !compact ||
+      job.status !== 'succeeded' ||
+      !expiresAt ||
+      !files?.length
+    ) {
+      return
+    }
+    const remaining = expiresAt * 1000 - Date.now()
+    if (remaining <= 0) {
+      setExpiredAt(expiresAt)
+      return
+    }
+    const timer = window.setTimeout(() => setExpiredAt(expiresAt), remaining)
+    return () => window.clearTimeout(timer)
+  }, [compact, expiresAt, files?.length, job.status])
+
+  const status =
+    expiredAt != null && expiredAt === expiresAt && job.status === 'succeeded'
+      ? 'expired'
+      : job.status
+  let statusLabel = exportStatusLabel(job, t)
+  if (status === 'expired') statusLabel = t('Expired')
+  if (compact && status === 'succeeded' && !files?.length) {
+    statusLabel = t('No data')
+  }
+  const showAudience =
+    !compact ||
+    (!compactUsage &&
+      (props.showCustomer || (props.upstreamBilling && !upstreamExport)))
+  const upstreamName =
+    job.filters.upstream?.group_name || job.filters.upstream?.url_key
   const cancelling = job.status === 'cancelling' || job.cancel_requested
-  const statusVariant = exportStatusVariant(job.status)
 
   return (
     <article
       className='rounded-lg border p-3'
-      aria-label={exportAudienceLabel(job, t)}
+      aria-label={compact ? title : exportAudienceLabel(job, t)}
     >
       <div className='flex items-center justify-between gap-2'>
-        <span className='text-sm font-medium'>{exportTypeLabel(job, t)}</span>
-        <Badge variant={statusVariant} className='shrink-0'>
-          {exportStatusLabel(job, t)}
+        <h3 className='text-sm font-medium'>{title}</h3>
+        <Badge variant={exportStatusVariant(status)} className='shrink-0'>
+          {statusLabel}
         </Badge>
       </div>
       <div className='text-muted-foreground mt-1 space-y-0.5 text-xs'>
-        <p className='font-medium'>{exportAudienceLabel(job, t)}</p>
-        <p>
-          {period} · {job.filters.timezone}
-        </p>
-        <p>
-          {t('Created {{time}}', {
-            time: formatTimestampToDate(job.created_at),
-          })}
-        </p>
-        {job.filters.upstream && (
-          <p className='break-all'>
-            {job.filters.upstream.group_name || job.filters.upstream.url_key}
-          </p>
+        {showAudience && (
+          <p className='font-medium'>{exportAudienceLabel(job, t)}</p>
         )}
-        <ExportScope job={job} />
-        {(job.filters.model_name || job.job_type === 'usage_summary') && (
-          <p>
-            {t('Model')}: {job.filters.model_name || t('All models')}
-          </p>
+        {!compact && (
+          <>
+            <p>
+              {dateFormat.format(job.filters.start_timestamp * 1000)} ~{' '}
+              {dateFormat.format((job.filters.end_timestamp - 1) * 1000)} ·{' '}
+              {job.filters.timezone}
+            </p>
+            <p>
+              {t('Created {{time}}', {
+                time: formatTimestampToDate(job.created_at),
+              })}
+            </p>
+          </>
         )}
+        {upstreamName && <p className='break-all'>{upstreamName}</p>}
+        {compactUsage ? (
+          <p className='wrap-anywhere'>
+            {usageRange}
+            {job.filters.usage_view !== 'customers' &&
+              ` · ${model_name || t('All models')}`}
+            {job.filters.usage_search && ` · ${job.filters.usage_search}`}
+            {token_id != null && ` · ${usageKey}`}
+          </p>
+        ) : (
+          <ExportScope job={job} compact={compact} />
+        )}
+        {!compact &&
+          (job.filters.model_name || job.job_type === 'usage_summary') && (
+            <p>
+              {t('Model')}: {job.filters.model_name || t('All models')}
+            </p>
+          )}
         {(job.status === 'running' || job.status === 'cancelling') && (
           <p>
             {t('Scanned {{scanned}} records · {{matched}} matched', {
@@ -357,18 +520,38 @@ function ExportJobCard(props: {
             })}
           </p>
         )}
-        {job.status === 'succeeded' &&
-          (job.artifact && job.artifact.files.length > 0 ? (
+        {compact &&
+          status === 'succeeded' &&
+          job.artifact &&
+          !!files?.length && (
+            <>
+              <p>{csvRows}</p>
+              <p>
+                {t('Generated {{time}}', {
+                  time: dateFormat.format(job.artifact.generated_at * 1000),
+                })}
+                {expiresAt
+                  ? ` · ${t('Downloadable until {{time}}', { time: dateFormat.format(expiresAt * 1000) })}`
+                  : ''}
+              </p>
+            </>
+          )}
+        {!compact &&
+          status === 'succeeded' &&
+          job.artifact &&
+          !!files?.length && (
             <p>
               {t('Historical export generated {{time}} · {{count}} records', {
                 time: formatTimestampToDate(job.artifact.generated_at),
                 count: formatInteger(job.artifact.line_count),
               })}
             </p>
-          ) : (
-            <p>{t('No records matched this export scope.')}</p>
-          ))}
-        {job.status === 'succeeded' &&
+          )}
+        {status === 'succeeded' && !files?.length && (
+          <p>{t('No records matched this export scope.')}</p>
+        )}
+        {!compact &&
+          status === 'succeeded' &&
           job.expires_at != null &&
           job.expires_at > 0 && (
             <p>
@@ -382,8 +565,11 @@ function ExportJobCard(props: {
             {t(exportFailureMessage(job.error_code))}
           </p>
         )}
+        {compact && !compactUsage && status === 'expired' && (
+          <p>{t('A new export may include updated billing data.')}</p>
+        )}
       </div>
-      <div className='mt-2 flex justify-end gap-2'>
+      <div className='mt-2 flex justify-end gap-2 empty:hidden'>
         {(job.status === 'queued' ||
           job.status === 'running' ||
           job.status === 'cancelling') && (
@@ -396,20 +582,30 @@ function ExportJobCard(props: {
             {cancelling ? t('Cancelling') : t('Cancel')}
           </Button>
         )}
-        {(job.status === 'failed' || job.status === 'expired') && (
+        {(status === 'failed' || status === 'expired') && (
           <Button
             size='sm'
             variant='outline'
             disabled={props.busy}
             onClick={props.onResubmit}
           >
-            {t('Regenerate with original filters')}
+            {compact
+              ? t('Export again with the same filters')
+              : t('Regenerate with original filters')}
           </Button>
         )}
       </div>
-      {job.status === 'succeeded' &&
-        job.artifact &&
-        job.artifact.files.length > 0 && <ExportFiles jobId={job.job_id} />}
+      {status === 'succeeded' &&
+        !!files?.length &&
+        (compact ? (
+          <ExportArtifactFiles
+            key={job.job_id}
+            jobId={job.job_id}
+            files={files}
+          />
+        ) : (
+          <ExportFiles jobId={job.job_id} />
+        ))}
     </article>
   )
 }
@@ -431,12 +627,23 @@ function exportFailureMessage(code?: string): string {
   }
 }
 
-function ExportScope({ job }: { job: CustomerExportJobView }) {
+function ExportScope({
+  job,
+  compact,
+}: {
+  job: CustomerExportJobView
+  compact?: boolean
+}) {
   const { t } = useTranslation()
   const f = job.filters
   const fields = [
     [t('Username'), f.username],
-    [t('Channel ID'), f.channel_id],
+    [
+      t('Channel ID'),
+      f.channel_id ?? (f.upstream?.channel_ids ?? []).join(', '),
+    ],
+    [t('Channel'), f.upstream?.all_channels ? t('All channels') : undefined],
+    [t('Upstream URL'), f.usage_url_key],
     [t('API Key'), f.token_name],
     [t('Model'), f.model_name],
     [
@@ -454,13 +661,23 @@ function ExportScope({ job }: { job: CustomerExportJobView }) {
         )
         .join(', '),
     ],
-    [t('Language'), f.language],
-    [t('Currency'), f.currency],
+    [t('Language'), compact ? undefined : f.language],
+    [t('Currency'), compact ? undefined : f.currency],
   ].filter(([, value]) => value != null && value !== '')
+  if (compact && f.token_id == null && fields.length === 0) return null
   return (
     <Collapsible>
-      <CollapsibleTrigger render={<Button variant='ghost' size='sm' />}>
-        {t('Export scope')}
+      <CollapsibleTrigger
+        render={<Button variant='ghost' size='sm' className='group' />}
+      >
+        {compact ? t('Filters') : t('Export scope')}
+        {compact && (
+          <HugeiconsIcon
+            icon={ArrowDown01Icon}
+            aria-hidden='true'
+            className='transition-transform group-aria-expanded:rotate-180'
+          />
+        )}
       </CollapsibleTrigger>
       <CollapsibleContent>
         {f.token_id != null && (

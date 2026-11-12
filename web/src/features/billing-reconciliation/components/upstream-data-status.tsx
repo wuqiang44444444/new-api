@@ -33,6 +33,7 @@ import {
   billingAccountingEntries,
   billingDataQualityLabel,
   billingEvidenceGroups,
+  upstreamEvidenceCoverageLabel,
 } from '../upstream-statement-utils'
 import { UpstreamEvidenceCoverage } from './upstream-evidence-coverage'
 import { UpstreamEvidenceLink } from './upstream-evidence-link'
@@ -41,6 +42,7 @@ import { UpstreamEvidenceLink } from './upstream-evidence-link'
 // scope note. Missing test amounts invalidate complete totals; usage-only gaps
 // do not invalidate independently known money.
 export function UpstreamDataStatus(props: {
+  scope?: 'report'
   quality?: BillingDataQuality
   originalAmount?: number | null
   usageOnly?: boolean
@@ -56,7 +58,15 @@ export function UpstreamDataStatus(props: {
     ...evidenceGroups.flatMap((group) => group.entries),
     ...accountingNotes,
   ]
-  const label = billingDataQualityLabel(props.quality, t)
+  const isReport = props.scope === 'report'
+  const coverage = props.quality?.evidence_coverage
+  const status = billingDataQualityLabel(props.quality, t)
+  let label = status
+  if (isReport) {
+    label = coverage
+      ? upstreamEvidenceCoverageLabel(coverage, t)
+      : t('Data status')
+  }
   let amountLabel = t('Original amount complete')
   if (props.usageOnly) {
     amountLabel = t('Channel tests only; amounts pending')
@@ -73,7 +83,9 @@ export function UpstreamDataStatus(props: {
     : undefined
   return (
     <div className='flex flex-col items-start gap-1'>
-      <span className='text-xs whitespace-nowrap'>{amountLabel}</span>
+      {!isReport && (
+        <span className='text-xs whitespace-nowrap'>{amountLabel}</span>
+      )}
       <Popover
         open={open}
         onOpenChange={(next) => {
@@ -86,8 +98,17 @@ export function UpstreamDataStatus(props: {
             <Button
               ref={trigger}
               variant='outline'
-              size='xs'
-              aria-label={`${label}: ${allEntries.map((entry) => entry.text).join(' ')}`}
+              size={isReport ? 'sm' : 'xs'}
+              className={
+                isReport
+                  ? 'h-auto min-h-7 text-start whitespace-normal'
+                  : undefined
+              }
+              aria-label={
+                isReport
+                  ? undefined
+                  : `${label}: ${allEntries.map((entry) => entry.text).join(' ')}`
+              }
             />
           }
         >
@@ -99,11 +120,24 @@ export function UpstreamDataStatus(props: {
           className='max-h-96 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto whitespace-normal'
         >
           <PopoverTitle>{t('Data status')}</PopoverTitle>
-          <p className='text-xs'>{amountLabel}</p>
+          {isReport ? (
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'Upstream names and monthly discounts are entered manually in channel management. Calculated amounts are references, not supplier bills. Missing amounts remain unknown.'
+              )}
+            </p>
+          ) : (
+            <p className='text-xs'>{amountLabel}</p>
+          )}
           <UpstreamEvidenceCoverage
             quality={props.quality}
             onViewEvidence={viewEvidence}
           />
+          {isReport && !props.onViewEvidence && (
+            <p className='text-muted-foreground text-xs'>
+              {t('Open a matching channel to view records for this search.')}
+            </p>
+          )}
           {evidenceGroups.length > 0 && (
             <>
               <p className='text-xs font-medium'>

@@ -55,6 +55,7 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 		"Seconds unavailable rows",
 		"Customer models",
 		"URL grouping basis",
+		"Includes estimated original amounts",
 	}
 	if filters.Language == "zh" {
 		writer.header = []string{
@@ -93,8 +94,16 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 			"缺少计费秒数的记录数",
 			"客户模型",
 			"归组依据",
+			"包含估算原价",
 		}
 	}
+	if filters.Upstream.URLKey == "" {
+		writer.header[3] = "Channel scope"
+		writer.header[len(writer.header)-2] = "Grouping basis"
+		if filters.Language == "zh" {
+		}
+	}
+	writer.setBillingCoverage(filters)
 	scope := customerExportScopeColumns{QuotaPerUnit: filters.QuotaPerUnit, Currency: filters.Currency, CurrencyRate: filters.CurrencyRate, GeneratedAt: common.GetTimestamp()}
 	progress := model.CustomerExportProgress{}
 	gate := customerExportSummaryGate(pressure, job, &progress)
@@ -112,6 +121,13 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 		coefficient, version := "", ""
 		if channel.Discount != nil {
 			coefficient = channel.Discount.Value.String()
+			if len(channel.Discount.Changes) > 0 {
+				parts := []string{formatExportTimestamp(filters.StartTimestamp) + " ×" + coefficient}
+				for _, change := range channel.Discount.Changes {
+					parts = append(parts, formatExportTimestamp(change.EffectiveFrom)+" ×"+change.Value.String())
+				}
+				coefficient = strings.Join(parts, " / ")
+			}
 			version = strconv.FormatInt(channel.Discount.Version, 10)
 		}
 		amounts := make([]string, 4)
@@ -142,9 +158,9 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 		if len(row.EstimateReasons) > 0 {
 			reasons = strings.TrimSpace(reasons + " " + strings.Join(row.EstimateReasons, ";"))
 		}
-		grouping := "Current channel base URL"
+		grouping := "Base URL in the published report"
 		if filters.Language == "zh" {
-			grouping = "按渠道当前基础 URL 归组"
+			grouping = "按已发布日报的基础 URL 归组"
 		}
 		if strings.HasPrefix(filters.Upstream.URLKey, "channel:") {
 			grouping = "Unidentified URL — kept per channel"
@@ -159,10 +175,10 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 				grouping = "按渠道 ID"
 			}
 			writer.header[3] = "Channel scope"
-			writer.header[len(writer.header)-1] = "Grouping basis"
+			writer.header[len(writer.header)-2] = "Grouping basis"
 			if filters.Language == "zh" {
 				writer.header[3] = "渠道范围"
-				writer.header[len(writer.header)-1] = "归组依据"
+				writer.header[len(writer.header)-2] = "归组依据"
 			}
 		}
 		record := []string{
@@ -201,6 +217,7 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 			strconv.FormatInt(row.Usage.SecondsUnavailableRows, 10),
 			exportCsvCellGuard(strings.Join(row.CustomerModels, "; ")),
 			grouping,
+			exportYesNo(row.DataQuality != nil && row.DataQuality.HasEstimatedOriginal),
 		}
 		if err := writer.AppendRecord(record); err != nil {
 			return err

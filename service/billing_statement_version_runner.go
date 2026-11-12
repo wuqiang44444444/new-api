@@ -23,12 +23,9 @@ const (
 // ErrBillingStatementVersionSourceInsufficient 表示来源保留状态阻止生成可确认版本。
 var ErrBillingStatementVersionSourceInsufficient = model.ErrBillingStatementSourceIncomplete
 
-// SubmitBillingStatementVersionJob 受理一次版本生成：校验开关/拓扑/已结束月份/来源保留，
+// SubmitBillingStatementVersionJob 受理一次版本生成：校验拓扑/已结束月份/来源保留，
 // 原子占用活动草稿，快照来源向量，进入后台执行体系。
 func SubmitBillingStatementVersionJob(ctx context.Context, adminId int, userId int, periodStart int64, periodEndExcl int64, language ...string) (*model.BillingStatementVersion, error) {
-	if !model.BillingStatementVersionEnabled() {
-		return nil, model.ErrBillingStatementVersionDisabled
-	}
 	if !model.BillingStatementVersionTopologyOK() {
 		return nil, model.ErrBillingStatementVersionTopology
 	}
@@ -135,7 +132,7 @@ func runBillingStatementVersionGeneration(ctx context.Context, job *model.Custom
 		}
 		return nil
 	}
-	policy := model.BillingStatementReadPolicy{BatchTimeout: billingStatementVersionBatchTimeout, MaxGroups: billingStatementVersionMaxGroups, BeforeBatch: beforeBatch, ObserveFact: observe}
+	policy := model.BillingStatementReadPolicy{RecordedAmountsOnly: true, BatchTimeout: billingStatementVersionBatchTimeout, MaxGroups: billingStatementVersionMaxGroups, BeforeBatch: beforeBatch, ObserveFact: observe}
 	statement, err := model.GetBillingCustomerStatement(ctx, v.UserId, v.PeriodStart, v.PeriodEndExclusive-1, "api_key", 0, "", "", policy)
 	if err != nil {
 		return err

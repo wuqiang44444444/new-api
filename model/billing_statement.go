@@ -139,11 +139,7 @@ func GetUserBillingStatement(
 		saturated = addBillingStatementValue(&item.TotalTokens, item.CompletionTokens) || saturated
 		saturated = addBillingStatementValue(&item.GrossQuota, grossQuota) || saturated
 		saturated = addBillingStatementValue(&item.RefundQuota, refundQuota) || saturated
-		if item.GrossQuota > item.RefundQuota {
-			item.NetQuota = item.GrossQuota - item.RefundQuota
-		} else {
-			item.NetQuota = 0
-		}
+		item.NetQuota = item.GrossQuota - item.RefundQuota
 		saturated = addBillingStatementValue(&item.StreamRequests, streamRequests) || saturated
 		if saturated {
 			markBillingStatementSaturated(&item.DataQuality)
@@ -164,7 +160,6 @@ func GetUserBillingStatement(
 		saturated = addBillingStatementValue(&summary.CompletionTokens, item.CompletionTokens) || saturated
 		saturated = addBillingStatementValue(&summary.GrossQuota, item.GrossQuota) || saturated
 		saturated = addBillingStatementValue(&summary.RefundQuota, item.RefundQuota) || saturated
-		saturated = addBillingStatementValue(&summary.NetQuota, item.NetQuota) || saturated
 		itemSaturated := item.DataQuality != nil && item.DataQuality.Saturated
 		if saturated || itemSaturated {
 			markBillingStatementSaturated(&summary.DataQuality)
@@ -174,6 +169,7 @@ func GetUserBillingStatement(
 			markBillingStatementSaturated(&summary.DataQuality)
 		}
 	}
+	summary.NetQuota = summary.GrossQuota - summary.RefundQuota
 	summary.TotalTokens = summary.PromptTokens
 	if addBillingStatementValue(&summary.TotalTokens, summary.CompletionTokens) {
 		markBillingStatementSaturated(&summary.DataQuality)

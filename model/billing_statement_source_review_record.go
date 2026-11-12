@@ -148,7 +148,7 @@ func BillingStatementEffectiveRetention(ctx context.Context, r *BillingStatement
 		return r.Status, nil
 	}
 	err := verifyBillingSourceAttestation(ctx, DB, *r)
-	if err == ErrBillingStatementSourceIncomplete || err == ErrBillingStatementVersionDisabled {
+	if err == ErrBillingStatementSourceIncomplete || err == ErrBillingStatementMaintenanceActive {
 		return BillingStatementRetentionUnknown, nil
 	}
 	if err != nil {
