@@ -7,8 +7,6 @@ import (
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
-
-	"github.com/shopspring/decimal"
 )
 
 // 客户导出的有界源数据读取与客户安全投影。游标是真实内部唯一键（关系库
@@ -68,40 +66,51 @@ type customerExportScanRow struct {
 // CustomerExportRow 是每个日志事件一行的客户安全投影（9.1 字段组）。它由
 // 既有结算事实构建，不重新定价；未知与估算显式标注。
 type CustomerExportRow struct {
-	EstimateReasons        []string `json:"estimate_reasons,omitempty"`
-	RequestId              string   `json:"request_id"`
-	EventType              string   `json:"event_type"`
-	RecordTime             int64    `json:"record_time"`
-	TokenId                int      `json:"token_id"`
-	TokenName              string   `json:"token_name"`
-	CustomerModel          string   `json:"customer_model"`
-	BillingMode            string   `json:"billing_mode"`
-	CountsTowardBill       bool     `json:"counts_toward_bill"`
-	InputTokensUnavailable bool     `json:"input_tokens_unavailable"`
-	InputTokens            int64    `json:"input_tokens"`
-	OutputTokens           int64    `json:"output_tokens"`
-	CacheReadTokens        int64    `json:"cache_read_tokens"`
-	CacheWriteTokens       int64    `json:"cache_write_tokens"`
-	RequestCount           int64    `json:"request_count"`
-	GroupName              string   `json:"group_name"`
-	GroupRatio             *float64 `json:"group_ratio"`
-	GroupRatioSource       string   `json:"group_ratio_source"`
-	ContractApplicable     string   `json:"contract_applicable"` // yes / no / unrecorded / unknown
-	ContractName           string   `json:"contract_name"`
-	ContractVersion        int64    `json:"contract_version"`
-	ContractRatio          *float64 `json:"contract_ratio"`
-	FinalRatio             *float64 `json:"final_ratio"`
-	Quota                  int64    `json:"quota"`             // 原始 quota（可核对精度）；退款行保存原值，符号由事件类型表达
-	OriginalEstimate       string   `json:"original_estimate"` // 折前金额估算（定点字符串）；不可用时为空
-	RecordedOriginal       string   `json:"recorded_original,omitempty"`
-	OriginalExact          bool     `json:"original_exact"`
-	HasAuxiliaryCharge     bool     `json:"has_auxiliary_charge"`
-	BillingLineItems       string   `json:"billing_line_items"` // Safe JSON: quantity, unit, USD price basis and component subtotal
-	MatchedTier            string   `json:"matched_tier"`
-	ExplanationStatus      string   `json:"explanation_status"`     // available / unavailable / not_applicable
-	PriceConversionBasis   string   `json:"price_conversion_basis"` // frozen_quota_conversion / recorded_usd_price
-	PricingRule            string   `json:"pricing_rule"`           // standard_tiered / per_call_price / expression / unknown
-	QualityStatus          string   `json:"quality_status"`         // exact / estimate / unrecorded / not_billing_event
+	EstimateReasons          []string                    `json:"estimate_reasons,omitempty"`
+	RequestId                string                      `json:"request_id"`
+	EventType                string                      `json:"event_type"`
+	RecordTime               int64                       `json:"record_time"`
+	TokenId                  int                         `json:"token_id"`
+	TokenName                string                      `json:"token_name"`
+	CustomerModel            string                      `json:"customer_model"`
+	BillingMode              string                      `json:"billing_mode"`
+	CountsTowardBill         bool                        `json:"counts_toward_bill"`
+	InputTokensUnavailable   bool                        `json:"input_tokens_unavailable"`
+	InputTokens              int64                       `json:"input_tokens"`
+	OutputTokens             int64                       `json:"output_tokens"`
+	CacheReadTokens          int64                       `json:"cache_read_tokens"`
+	CacheWriteTokens         int64                       `json:"cache_write_tokens"`
+	RequestCount             int64                       `json:"request_count"`
+	GroupName                string                      `json:"group_name"`
+	GroupRatio               *float64                    `json:"group_ratio"`
+	GroupRatioSource         string                      `json:"group_ratio_source"`
+	ContractApplicable       string                      `json:"contract_applicable"` // yes / no / unrecorded / unknown
+	ContractName             string                      `json:"contract_name"`
+	ContractVersion          int64                       `json:"contract_version"`
+	ContractRatio            *float64                    `json:"contract_ratio"`
+	FinalRatio               *float64                    `json:"final_ratio"`
+	Quota                    int64                       `json:"quota"`                       // 原始 quota（可核对精度）；退款行保存原值，符号由事件类型表达
+	OriginalEstimate         string                      `json:"original_estimate,omitempty"` // Legacy frozen rows only.
+	OriginalSource           string                      `json:"original_source,omitempty"`
+	DerivedOutputImageTokens *int                        `json:"derived_output_image_tokens,omitempty"`
+	ContractSettlement       *CustomerContractSettlement `json:"contract_settlement,omitempty"`
+	RecordedOriginal         string                      `json:"recorded_original,omitempty"`
+	OriginalExact            bool                        `json:"original_exact"`
+	HasAuxiliaryCharge       bool                        `json:"has_auxiliary_charge"`
+	BillingLineItems         string                      `json:"billing_line_items"` // Safe JSON: quantity, unit, USD price basis and component subtotal
+	MatchedTier              string                      `json:"matched_tier"`
+	ExplanationStatus        string                      `json:"explanation_status"`     // available / unavailable / not_applicable
+	PriceConversionBasis     string                      `json:"price_conversion_basis"` // frozen_quota_conversion / recorded_usd_price
+	PricingRule              string                      `json:"pricing_rule"`           // standard_tiered / per_call_price / expression / unknown
+	QualityStatus            string                      `json:"quality_status"`         // exact / estimate / unrecorded / not_billing_event
+}
+
+// CustomerContractSettlement describes one finalized task. Delta is actual
+// minus expected, so a positive value means more quota was charged.
+type CustomerContractSettlement struct {
+	ExpectedQuota int64 `json:"expected_quota"`
+	ActualQuota   int64 `json:"actual_quota"`
+	DeltaQuota    int64 `json:"delta_quota"`
 }
 
 type CustomerExportBatchParams struct {
@@ -175,7 +184,7 @@ func NextCustomerExportLogBatch(ctx context.Context, params CustomerExportBatchP
 
 // BuildCustomerExportRows 把一批候选行转换为已按客户模型/计费方式过滤的
 // 客户安全投影行。候选行与匹配行分开计数（7.3：计量候选行）。
-func BuildCustomerExportRows(ctx context.Context, rows []customerExportScanRow, modelName string, billingMode string, explain func(*Log, *CustomerExportRow), recordedAmountsOnly ...bool) ([]CustomerExportRow, error) {
+func BuildCustomerExportRows(ctx context.Context, rows []customerExportScanRow, modelName string, billingMode string, explain func(*Log, *CustomerExportRow)) ([]CustomerExportRow, error) {
 	if len(rows) == 0 {
 		return nil, nil
 	}
@@ -210,7 +219,9 @@ func BuildCustomerExportRows(ctx context.Context, rows []customerExportScanRow, 
 		if billingMode != "" && parseds[i].billingMode != billingMode {
 			continue
 		}
-		parseds[i].recordedAmountsOnly = len(recordedAmountsOnly) > 0 && recordedAmountsOnly[0]
+		if err := resolveCustomerOriginalReplay(ctx, facts[i], &parseds[i]); err != nil {
+			return nil, err
+		}
 		row := buildCustomerExportRow(scanned, facts[i], parseds[i])
 		if explain != nil {
 			explain(&Log{Type: scanned.Type, PromptTokens: scanned.PromptTokens, CompletionTokens: scanned.CompletionTokens, Other: scanned.Other}, &row)
@@ -224,6 +235,7 @@ func BuildCustomerExportRows(ctx context.Context, rows []customerExportScanRow, 
 // one scanned row so the export uses the same parsing semantics as the page.
 func customerExportScanFact(scanned customerExportScanRow) billingReconciliationLog {
 	return billingReconciliationLog{
+		RequestId: scanned.RequestId,
 		GroupName: scanned.GroupName, UserId: scanned.UserId, TokenId: scanned.TokenId, TokenName: scanned.TokenName,
 		ChannelId: scanned.ChannelId, ModelName: scanned.ModelName, Type: scanned.Type,
 		CreatedAt: scanned.CreatedAt, PromptTokens: scanned.PromptTokens,
@@ -264,11 +276,11 @@ func buildCustomerExportRow(scanned customerExportScanRow, fact billingReconcili
 		row.ContractName = parsed.contractName
 		row.ContractVersion = int64(parsed.contractVersion)
 	case "no", "unrecorded":
-		// 无合同或历史无合同记录，保持记录状态，计算因子为 1。
+		// 保留当次记录状态。
 	default:
 		row.ContractApplicable = "unknown"
 	}
-	if row.GroupRatio != nil && row.ContractApplicable != "unknown" {
+	if row.GroupRatio != nil && (row.ContractApplicable == "yes" || row.ContractApplicable == "no") {
 		final := *row.GroupRatio
 		if row.ContractRatio != nil {
 			final *= *row.ContractRatio
@@ -277,22 +289,25 @@ func buildCustomerExportRow(scanned customerExportScanRow, fact billingReconcili
 	}
 	row.GroupName = parsed.groupName
 	row.PricingRule = facts.pricingRule(parsed)
-	if row.CountsTowardBill && row.Quota > 0 {
-		row.EstimateReasons = billingStatementEstimateReasons(parsed)
+	if row.CountsTowardBill {
+		row.ContractSettlement = parsed.contractSettlement
 	}
-	if parsed.recordedAmountsOnly {
-		if original, ok := recordedStatementOriginalQuota(fact, parsed); ok && row.CountsTowardBill {
-			row.RecordedOriginal = original.String()
-			row.QualityStatus = "exact"
-			row.EstimateReasons = nil
-		} else {
-			row.QualityStatus = "unrecorded"
+	if !row.CountsTowardBill {
+		row.QualityStatus = "not_billing_event"
+	} else if original, ok := customerStatementOriginalQuota(fact, parsed); ok {
+		if parsed.replayedOriginalQuota != nil {
+			row.OriginalSource = customerOriginalReplayed
 		}
-		return row
-	}
-	row.QualityStatus, row.OriginalEstimate, row.OriginalExact = customerExportMoneyQuality(fact, parsed, row.GroupRatio, row.ContractApplicable, row.ContractRatio)
-	if row.CountsTowardBill && row.Quota > 0 && row.OriginalEstimate == "" && len(row.EstimateReasons) == 0 {
-		row.EstimateReasons = []string{BillingEstimateAmountOutOfRange}
+		if parsed.derivedOutputImageTokens != nil {
+			row.OriginalSource = customerOriginalUniqueSettlement
+			row.DerivedOutputImageTokens = parsed.derivedOutputImageTokens
+		}
+		row.RecordedOriginal = original.String()
+		row.OriginalExact = true
+		row.QualityStatus = "exact"
+	} else {
+		row.QualityStatus = "unrecorded"
+		row.EstimateReasons = statementOriginalUnavailableReasons(parsed)
 	}
 	return row
 }
@@ -357,36 +372,6 @@ func (f customerExportFacts) pricingRule(parsed parsedBillingReconciliationLog) 
 	return "unknown"
 }
 
-// customerExportMoneyQuality 区分精确、估算与未知。只有当次分组倍率与合同
-// 事实可解释、且无附加收费时才给出折前金额；历史完全无合同记录时 C=1，
-// 已记录但残缺/冲突的合同保持未知。该金额永远是估算（反推自
-// 已入账的舍入金额）。
-func customerExportMoneyQuality(fact billingReconciliationLog, parsed parsedBillingReconciliationLog, groupRatio *float64, contractApplicable string, contractRatio *float64) (string, string, bool) {
-	if fact.Type != LogTypeConsume && fact.Type != LogTypeRefund {
-		return "not_billing_event", "", false
-	}
-	quota := max(int64(fact.Quota), int64(0))
-	if quota == 0 {
-		// 零差额完成、免费调用：金额本身精确。
-		return "exact", "0", true
-	}
-	if len(billingStatementEstimateReasons(parsed)) > 0 {
-		return "unrecorded", "", false
-	}
-	original := decimal.NewFromInt(quota).Div(decimal.NewFromFloat(*groupRatio))
-	if contractApplicable == "yes" {
-		original = original.Div(decimal.NewFromFloat(*contractRatio))
-	}
-	if fact.Type == LogTypeRefund {
-		// 退款冲回保留符号：退款月的原价与优惠可以为负，不截为零。
-		original = original.Neg()
-	}
-	if billingStatementOriginalQuota(original) == nil {
-		return "unrecorded", "", false
-	}
-	return "estimate", original.StringFixed(4), false
-}
-
 func customerExportEventType(logType int) string {
 	switch logType {
 	case LogTypeConsume:
@@ -421,7 +406,9 @@ func CustomerBillingLogRow(log *Log) CustomerExportRow {
 	}
 	scanned := customerBillingLogScanRow(log)
 	fact := customerExportScanFact(scanned)
-	return buildCustomerExportRow(scanned, fact, parseBillingReconciliationLog(fact))
+	parsed := parseBillingReconciliationLog(fact)
+	applyCustomerOriginalReplay(fact, &parsed)
+	return buildCustomerExportRow(scanned, fact, parsed)
 }
 
 func customerBillingLogScanRow(log *Log) customerExportScanRow {

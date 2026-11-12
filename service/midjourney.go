@@ -38,6 +38,7 @@ func PrepareMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.
 	task.Quota = 0
 	task.TokenId = 0
 	task.BillingChannelId = 0
+	task.OriginalQuota = nil
 	if !shouldBill {
 		return false, nil
 	}
@@ -76,6 +77,7 @@ func SettleMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.M
 		task.Quota = 0
 		task.TokenId = 0
 		task.BillingChannelId = 0
+		task.OriginalQuota = nil
 		if updateErr := task.UpdateBillingState(); updateErr != nil {
 			return false, errors.Join(billingErr, fmt.Errorf("clear Midjourney billing state: %w", updateErr))
 		}
@@ -118,6 +120,7 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 	model.UpdateChannelUsedQuota(billingChannelId, -quota)
 	other := model.NewLogOther()
 	other.SetPublic("task_id", task.MjId)
+	AppendMidjourneyStatementOriginal(other, task)
 	other.SetPublic("reason", reason)
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId:    task.UserId,
@@ -130,6 +133,7 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 	})
 
 	task.Quota = 0
+	task.OriginalQuota = nil
 	if err := task.UpdateBillingState(); err != nil {
 		logger.LogError(ctx, common.LogText("Midjourney refund succeeded but clearing the quota failed, task %s: %s", task.MjId, err.Error()))
 	}

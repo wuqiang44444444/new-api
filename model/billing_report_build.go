@@ -30,7 +30,7 @@ func BuildBillingReportDay(ctx context.Context, start int64, taskID, runnerID st
 	if err != nil {
 		return err
 	}
-	generation := billingReportGeneration{ID: common.GetUUID(), Start: start, AsOf: now, UpperLogID: upper}
+	generation := billingReportGeneration{OriginalReplayVersion: CustomerOriginalReplayVersion, ID: common.GetUUID(), Start: start, AsOf: now, UpperLogID: upper}
 	generation.Incomplete, err = dailyReportKnownLogCleanup(ctx, db, start)
 	if err != nil {
 		return err
@@ -173,7 +173,6 @@ func BuildBillingReportDay(ctx context.Context, start int64, taskID, runnerID st
 				return err
 			}
 			line.FundGroup = billingStatementFundIdentity(log, parsed)
-			parsed.recordedAmountsOnly = true
 			export := buildCustomerExportRow(customerBillingLogScanRow(&log), fact, parsed)
 			if explain != nil {
 				explain(&log, &export)
@@ -258,7 +257,7 @@ func BuildBillingReportDay(ctx context.Context, start int64, taskID, runnerID st
 		return err
 	}
 	coverage := dailyReportLogScanCoverage(ctx, generation.Rows, sourceRevision)
-	stage := dailyReportStage{Start: start, Kind: DailyReportBilling, Generation: generation.ID,
+	stage := dailyReportStage{OriginalReplayVersion: generation.OriginalReplayVersion, Start: start, Kind: DailyReportBilling, Generation: generation.ID,
 		Previous: prior.Generation, AsOf: now, UpperLogID: upper, SourceRows: coverage.Rows, SourceRevision: coverage.Revision, Dependencies: dependencies, Incomplete: generation.Incomplete}
 	return saveDailyReportStage(ctx, db, stage, taskID, runnerID)
 }

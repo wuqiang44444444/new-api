@@ -31,7 +31,7 @@ func TestCustomerStatementExportOmitsUnknownAmountsWhileUsageExportRetainsReason
 			for i, name := range records[0] {
 				header[name] = i
 			}
-			assert.NotContains(t, header, customerExportSummaryHeaderLabel(language, "estimate_reasons"))
+			assert.NotContains(t, header, customerExportSummaryHeaderLabel(language, "amount_unavailable_reasons"))
 			require.Len(t, records, 2)
 			assert.Empty(t, records[1][header[customerExportSummaryHeaderLabel(language, "original_amount")]])
 			assert.Equal(t, "0.00020000", records[1][header[customerExportSummaryHeaderLabel(language, "net_amount")]])
@@ -40,7 +40,7 @@ func TestCustomerStatementExportOmitsUnknownAmountsWhileUsageExportRetainsReason
 	writer, err := newCustomerExportCsvWriter(t.TempDir(), "detail", 1<<20)
 	require.NoError(t, err)
 	require.NoError(t, writer.AppendRow(model.CustomerExportRow{EventType: "consume", Quota: 100, EstimateReasons: reasons}, scope))
-	require.NoError(t, writer.AppendRow(model.CustomerExportRow{EventType: "consume", Quota: 0, OriginalEstimate: "0", OriginalExact: true}, scope))
+	require.NoError(t, writer.AppendRow(model.CustomerExportRow{EventType: "consume", Quota: 0, RecordedOriginal: "0", OriginalExact: true}, scope))
 	_, paths, _, _, err := writer.Finish()
 	require.NoError(t, err)
 	records := readEstimateCsv(t, paths[0])
@@ -48,12 +48,12 @@ func TestCustomerStatementExportOmitsUnknownAmountsWhileUsageExportRetainsReason
 	for i, name := range records[0] {
 		header[name] = i
 	}
-	require.Contains(t, header, "estimate_reasons")
-	assert.Equal(t, "Cannot estimate: historical contract status not recorded", records[1][header["estimate_reasons"]])
-	assert.Empty(t, records[1][header["original_amount_estimated"]])
-	assert.Empty(t, records[2][header["estimate_reasons"]])
-	assert.Equal(t, "0", records[2][header["original_estimate_quota"]])
-	assert.NotEmpty(t, records[2][header["discount_amount_estimated"]])
+	require.Contains(t, header, "amount_unavailable_reasons")
+	assert.Equal(t, "Cannot calculate: historical contract status not recorded", records[1][header["amount_unavailable_reasons"]])
+	assert.Empty(t, records[1][header["original_amount"]])
+	assert.Empty(t, records[2][header["amount_unavailable_reasons"]])
+	assert.Equal(t, "0", records[2][header["original_quota"]])
+	assert.NotEmpty(t, records[2][header["discount_amount"]])
 }
 
 func readEstimateCsv(t *testing.T, path string) [][]string {

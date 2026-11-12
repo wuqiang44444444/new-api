@@ -243,6 +243,16 @@ export interface LogOtherData {
   // for legacy logs; unit-price display must not guess without it.
   // Response-only statement facts; shared with the server export projection.
   billing_facts?: {
+    counts_toward_bill?: boolean
+    recorded_original?: string
+    original_source?: string
+    derived_output_image_tokens?: number
+    contract_settlement?: {
+      expected_quota: number
+      actual_quota: number
+      delta_quota: number
+    }
+    estimate_reasons?: string[]
     billing_mode: BillingMode
     group_name: string
     group_ratio: number | null
@@ -267,8 +277,6 @@ export interface LogOtherData {
       unit_price_usd: number
       subtotal_usd: number
     }>
-    original_quota_estimated: string
-    has_auxiliary_charge: boolean
   }
   billing_display?: BillingDisplayProjection
   usage_facts?: Record<string, string | number>

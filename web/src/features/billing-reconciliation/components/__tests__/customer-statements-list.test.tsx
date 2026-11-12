@@ -31,7 +31,8 @@ const reportVersion = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 async function renderStatement(
   missingPrice = false,
   language = 'en',
-  search = ''
+  search = '',
+  total = 1
 ) {
   const i18n = createInstance().use(initReactI18next)
   await i18n.init({
@@ -87,7 +88,7 @@ async function renderStatement(
         recorded_original_amounts: true,
         items: [item],
         summary: { ...item, customer_count: 1 },
-        total: 1,
+        total,
         page: 1,
         page_size: 20,
       },
@@ -125,6 +126,57 @@ it('left-aligns the report status when it wraps below the customer controls', as
 
   expect(status?.parentElement).toHaveClass('flex-wrap', 'justify-between')
   expect(status).not.toHaveClass('lg:ms-auto')
+  view.cleanup()
+})
+
+it('keeps filters, totals and pagination outside the customer table scroll area', async () => {
+  const view = await renderStatement()
+  const table = screen.getByRole('table')
+  const scrollArea = table.parentElement
+
+  expect(scrollArea).toHaveClass('overflow-auto', 'overscroll-contain')
+  expect(
+    within(table)
+      .getByRole('columnheader', { name: 'Customer' })
+      .closest('thead')
+  ).toHaveClass('sticky', 'top-0')
+  expect(scrollArea).not.toContainElement(
+    screen.getByRole('textbox', { name: 'Customer search' })
+  )
+  expect(scrollArea).not.toContainElement(screen.getByText('Customers'))
+  expect(scrollArea).not.toContainElement(
+    screen.getByRole('group', { name: 'Customer billing' })
+  )
+  view.cleanup()
+})
+
+it('keeps the range and full paging controls together below the customer table', async () => {
+  const view = await renderStatement(false, 'en', '', 34)
+  const user = userEvent.setup()
+  const range = screen.getByText('Showing 1–20 of 34')
+  const footer = range.closest('[data-slot="card-footer"]')
+  const controls = screen.getByRole('group', { name: 'Customer billing' })
+  expect(footer).toContainElement(controls)
+  // The query container cannot size a flex sibling by its content width.
+  expect(controls.parentElement).toHaveClass(
+    'sm:grid-cols-[auto_minmax(0,1fr)]'
+  )
+  const pager = within(controls)
+  expect(pager.getByText('Page 1 of 2')).toBeVisible()
+  expect(
+    pager.getByRole('button', { name: 'Go to previous page' })
+  ).toBeDisabled()
+  await user.click(pager.getByRole('button', { name: 'Go to page 2' }))
+  expect(view.onSearchChange).toHaveBeenLastCalledWith(
+    { customerPage: 2 },
+    true
+  )
+  await user.click(pager.getByRole('combobox', { name: 'Rows per page' }))
+  await user.click(await screen.findByRole('option', { name: '50' }))
+  expect(view.onSearchChange).toHaveBeenLastCalledWith({
+    customerPageSize: 50,
+    customerPage: 1,
+  })
   view.cleanup()
 })
 

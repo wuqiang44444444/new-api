@@ -556,19 +556,13 @@ func accumulateProviderBillingItemAmount(item *ProviderBillingPlatformSummary, l
 		return
 	}
 	item.settlementRows++
-	original, estimated, reasons := upstreamOriginalQuota(log, parsed)
-	if log.Quota == 0 && original.IsZero() && len(reasons) == 0 && parsed.recordedOriginalQuota == nil {
-		return
-	}
+	original, reasons := upstreamOriginalQuota(log, parsed)
 	item.moneyRows++
 	if len(reasons) > 0 {
 		item.EstimateReasons = mergeBillingEstimateReasons(item.EstimateReasons, reasons...)
 		item.originalComplete = false
 		accumulateBillingEstimateReasonQuality(ensureBillingReconciliationQuality(&item.DataQuality), reasons)
 		return
-	}
-	if estimated {
-		ensureBillingReconciliationQuality(&item.DataQuality).HasEstimatedOriginal = true
 	}
 	item.originalQuota = item.originalQuota.Add(original)
 	item.referenceQuota = item.referenceQuota.Add(UpstreamReferenceQuota(original, coefficient))

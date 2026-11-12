@@ -56,24 +56,25 @@ func batchTokenParams(expr string, usage BatchLineUsage) billingexpr.TokenParams
 	return params
 }
 
-func batchLineModelCost(frozen *model.BatchFrozenSnapshot, usage BatchLineUsage) (decimal.Decimal, *billingexpr.Calculation, error) {
+func batchLineModelCost(frozen *model.BatchFrozenSnapshot, usage BatchLineUsage) (decimal.Decimal, decimal.Decimal, *billingexpr.Calculation, error) {
 	if frozen == nil || frozen.QuotaPerUnit <= 0 || frozen.GroupRatio <= 0 || math.IsNaN(frozen.GroupRatio) || math.IsInf(frozen.GroupRatio, 0) {
-		return decimal.Zero, nil, fmt.Errorf("batch pricing snapshot is invalid")
+		return decimal.Zero, decimal.Zero, nil, fmt.Errorf("batch pricing snapshot is invalid")
 	}
 	if usage.InputTokens < 0 || usage.OutputTokens < 0 || usage.CachedTokens < 0 || usage.CachedTokens > usage.InputTokens {
-		return decimal.Zero, nil, fmt.Errorf("batch usage is invalid")
+		return decimal.Zero, decimal.Zero, nil, fmt.Errorf("batch usage is invalid")
 	}
 	pricingTime := time.Unix(frozen.PricingTime, 0).UTC()
 	request := billingexpr.RequestInput{PricingTime: &pricingTime, Body: frozen.LineParams[usage.CustomId], ExchangeRate: frozen.UsdExchangeRate}
 	request.RecordCalculation = true
 	output, trace, err := billingexpr.RunExprByHashWithRequest(frozen.Expr, frozen.ExprHash, batchTokenParams(frozen.Expr, usage), request)
 	if err != nil {
-		return decimal.Zero, nil, fmt.Errorf("batch line pricing failed: %w", err)
+		return decimal.Zero, decimal.Zero, nil, fmt.Errorf("batch line pricing failed: %w", err)
 	}
 	if output < 0 || math.IsNaN(output) || math.IsInf(output, 0) {
-		return decimal.Zero, nil, fmt.Errorf("batch line pricing produced an invalid amount")
+		return decimal.Zero, decimal.Zero, nil, fmt.Errorf("batch line pricing produced an invalid amount")
 	}
-	value := decimal.NewFromFloat(output).Div(decimal.NewFromInt(1_000_000)).Mul(decimal.NewFromFloat(frozen.QuotaPerUnit)).Mul(decimal.NewFromFloat(frozen.GroupRatio))
+	original := decimal.NewFromFloat(output).Div(decimal.NewFromInt(1_000_000)).Mul(decimal.NewFromFloat(frozen.QuotaPerUnit))
+	value := original.Mul(decimal.NewFromFloat(frozen.GroupRatio))
 	trace.Calculation.Add("input_tokens", "token", usage.InputTokens)
 	trace.Calculation.Add("output_tokens", "token", usage.OutputTokens)
 	trace.Calculation.Add("cache_tokens", "token", usage.CachedTokens)
@@ -81,7 +82,7 @@ func batchLineModelCost(frozen *model.BatchFrozenSnapshot, usage BatchLineUsage)
 		trace.Calculation.Add("subtract", "token", batchTokenParams(frozen.Expr, usage).P, usage.InputTokens, usage.CachedTokens)
 	}
 	trace.Calculation.Add("batch_conversion", "quota", value.String(), output, 1000000, frozen.QuotaPerUnit, frozen.GroupRatio)
-	return value, trace.Calculation, nil
+	return original, value, trace.Calculation, nil
 }
 
 // EstimateBatchLineInputTokens makes a pessimistic first-order input estimate

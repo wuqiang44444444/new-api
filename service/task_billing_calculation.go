@@ -34,17 +34,3 @@ func zeroTaskCalculation(task *model.Task, operation string) {
 	c.Add(operation, "quota", 0, task.Quota)
 	setTaskCalculation(task, c.Finish(0), operation)
 }
-
-// Read-only selection of accepted evidence for logs and delayed delivery.
-func taskAcceptedCalculation(task *model.Task) *billingexpr.Calculation {
-	if async := task.PrivateData.AsyncBilling; async != nil && async.CalculationSource != "initial" && async.Calculation != nil {
-		return async.Calculation
-	}
-	if bc := task.PrivateData.BillingContext; bc != nil {
-		if bc.SettlementCalculation != nil {
-			return bc.SettlementCalculation
-		}
-		return bc.InitialCalculation
-	}
-	return nil
-}

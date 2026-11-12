@@ -12,8 +12,9 @@ import (
 )
 
 type billingReportRebuild struct {
-	Start       int64 `gorm:"primaryKey;autoIncrement:false"`
-	RequestedAt int64
+	Start                 int64 `gorm:"primaryKey;autoIncrement:false"`
+	RequestedAt           int64
+	OriginalReplayVersion int
 }
 
 // RequestBillingReportRebuild records the date, not a new worker. The normal
@@ -31,7 +32,7 @@ func upsertBillingReportRebuilds(tx *gorm.DB, rows []billingReportRebuild) error
 		return nil
 	}
 	return tx.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "start"}}, DoUpdates: clause.AssignmentColumns([]string{"requested_at"}),
+		Columns: []clause.Column{{Name: "start"}}, DoUpdates: clause.AssignmentColumns([]string{"requested_at", "original_replay_version"}),
 	}).CreateInBatches(rows, 100).Error
 }
 
@@ -104,8 +105,10 @@ func PruneBillingReportGenerations(ctx context.Context, now int64) (bool, error)
 // A bounded append cursor discovers historical rows even when their created_at
 // predates the periodic lookback. The small overlap covers out-of-order commits.
 type billingReportSourceCursor struct {
-	ID         int `gorm:"primaryKey;autoIncrement:false"`
-	UpperLogID int64
+	ID                    int `gorm:"primaryKey;autoIncrement:false"`
+	UpperLogID            int64
+	OriginalReplayVersion int
+	ReplayBefore          int64
 }
 
 func DiscoverLateBillingReportDays(ctx context.Context, today int64) error {

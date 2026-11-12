@@ -16,7 +16,7 @@ func TestBillingStatementEstimateReasonsPreserveMoneyAcrossProjections(t *testin
 		original    *int64
 	}{
 		{"no discount", `{"group_ratio":1,"contract_applicable":false}`, nil, &original},
-		{"no historical contract", `{"group_ratio":1}`, nil, &original},
+		{"no historical contract", `{"group_ratio":1}`, []string{BillingOriginalReplayMissingContext}, nil},
 		{"incomplete contract", `{"group_ratio":1,"contract_id":7}`, []string{BillingEstimateMissingContract}, nil},
 		{"invalid contract factor", `{"group_ratio":1,"contract_discount":"bad"}`, []string{BillingEstimateMissingContract}, nil},
 		{"missing group", `{"contract_applicable":false}`, []string{BillingEstimateMissingGroup}, nil},
@@ -24,7 +24,7 @@ func TestBillingStatementEstimateReasonsPreserveMoneyAcrossProjections(t *testin
 		{"conflict", `{"group_ratio":1,"contract_applicable":false,"contract_discount":0.8}`, []string{BillingEstimateInvalidFacts}, nil},
 		{"unreadable", `{`, []string{BillingEstimateInvalidFacts}, nil},
 		{"auxiliary", `{"group_ratio":1,"contract_applicable":false,"fee_quota":10}`, []string{BillingEstimateAuxiliaryCharge}, nil},
-		{"overflow", `{"group_ratio":0.000000000000000001,"contract_applicable":false}`, []string{BillingEstimateAmountOutOfRange}, nil},
+		{"unknown legacy rule", `{"group_ratio":0.000000000000000001,"contract_applicable":false}`, []string{BillingOriginalReplayUnverified}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupBillingReconciliationTestDB(t)
@@ -49,9 +49,9 @@ func TestBillingStatementEstimateReasonsPreserveMoneyAcrossProjections(t *testin
 			if tc.original != nil {
 				require.NotNil(t, statement.DiscountQuota)
 				assert.Zero(t, *statement.DiscountQuota)
-				assert.Equal(t, "100.0000", rows[0].OriginalEstimate)
+				assert.Equal(t, "100", rows[0].RecordedOriginal)
 			} else {
-				assert.Empty(t, rows[0].OriginalEstimate)
+				assert.Empty(t, rows[0].RecordedOriginal)
 			}
 		})
 	}
@@ -87,7 +87,7 @@ func TestBillingStatementEstimateReasonsUnionWithoutPartialTotals(t *testing.T) 
 
 }
 
-func TestBillingStatementZeroAmountAndRefundEstimates(t *testing.T) {
+func TestBillingStatementRecordedZeroAmountAndRefund(t *testing.T) {
 	db := setupBillingReconciliationTestDB(t)
 	require.NoError(t, db.Create(&User{Id: 7, Username: "customer"}).Error)
 	for _, tc := range []struct {
@@ -96,8 +96,8 @@ func TestBillingStatementZeroAmountAndRefundEstimates(t *testing.T) {
 		original    int64
 		export      string
 	}{
-		{"free", `{}`, LogTypeConsume, 0, 0, "0"},
-		{"refund", `{"group_ratio":0.5,"contract_applicable":false}`, LogTypeRefund, 100, -200, "-200.0000"},
+		{"free", `{"admin_info":{"statement_original_quota":0}}`, LogTypeConsume, 0, 0, "0"},
+		{"refund", `{"group_ratio":0.5,"contract_applicable":false,"admin_info":{"statement_original_quota":200}}`, LogTypeRefund, 100, -200, "-200"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			row := Log{UserId: 7, TokenId: 4, ModelName: tc.name, Type: tc.kind, CreatedAt: 1100, Quota: tc.quota, Other: tc.other}
@@ -113,22 +113,22 @@ func TestBillingStatementZeroAmountAndRefundEstimates(t *testing.T) {
 			exported, err := BuildCustomerExportRows(context.Background(), []customerExportScanRow{{UserId: 7, TokenId: 4, ModelName: tc.name, Type: tc.kind, CreatedAt: 1100, Quota: tc.quota, Other: tc.other}}, "", "", nil)
 			require.NoError(t, err)
 			require.Len(t, exported, 1)
-			assert.Equal(t, tc.export, exported[0].OriginalEstimate)
+			assert.Equal(t, tc.export, exported[0].RecordedOriginal)
 			assert.Empty(t, exported[0].EstimateReasons)
 		})
 	}
 }
 
-func TestBillingStatementSavingsAgreeAtEveryLevelWithoutContractRecords(t *testing.T) {
+func TestBillingStatementSavingsAgreeAtEveryLevelWithRecordedOriginals(t *testing.T) {
 	for _, tc := range []struct {
 		name, other            string
 		kind                   int
 		original, net, savings int64
 	}{
-		{"full price", `{"group_ratio":1}`, LogTypeConsume, 100, 100, 0},
-		{"group discount", `{"group_ratio":0.5}`, LogTypeConsume, 200, 100, 100},
-		{"contract and group", `{"group_ratio":0.5,"contract_discount":0.8}`, LogTypeConsume, 250, 100, 150},
-		{"group refund", `{"group_ratio":0.5}`, LogTypeRefund, -200, -100, -100},
+		{"full price", `{"group_ratio":1,"admin_info":{"statement_original_quota":100}}`, LogTypeConsume, 100, 100, 0},
+		{"group discount", `{"group_ratio":0.5,"admin_info":{"statement_original_quota":200}}`, LogTypeConsume, 200, 100, 100},
+		{"contract and group", `{"group_ratio":0.5,"contract_discount":0.8,"admin_info":{"statement_original_quota":250}}`, LogTypeConsume, 250, 100, 150},
+		{"group refund", `{"group_ratio":0.5,"admin_info":{"statement_original_quota":200}}`, LogTypeRefund, -200, -100, -100},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupBillingReconciliationTestDB(t)
@@ -180,6 +180,6 @@ func TestBillingStatementSavingsDoNotWrapOnSubtraction(t *testing.T) {
 func TestHistoricalToolSurchargeDoesNotInventConversion(t *testing.T) {
 	row := CustomerBillingLogRow(&Log{Type: LogTypeConsume, Quota: 123, Other: `{"group_ratio":0.5,"contract_applicable":false,"tool_surcharges":[{"name":"web_search","count":2,"price":10}]}`})
 	assert.EqualValues(t, 123, row.Quota)
-	assert.Empty(t, row.OriginalEstimate)
+	assert.Empty(t, row.RecordedOriginal)
 	assert.Contains(t, row.EstimateReasons, BillingEstimateAuxiliaryCharge)
 }

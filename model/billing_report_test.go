@@ -91,7 +91,7 @@ func TestPublishedBillingReportPinsSummaryDetailsAndExportAfterSourceChanges(t *
 		{UserId: 99, TokenId: 13, TokenName: "separate", ModelName: "video", ChannelId: 21, Type: LogTypeConsume, CreatedAt: start + 30, Quota: 9, RequestId: "different-user", Other: other},
 		{UserId: 7, TokenName: "Model test", Content: "Model test", ModelName: "video", ChannelId: 21, Type: LogTypeConsume, CreatedAt: start + 40, Quota: 999, RequestId: "test", Other: other},
 	}).Error)
-	expected, err := GetBillingCustomerStatement(ctx, 7, start, end, "api_key", 0, "", "", BillingStatementReadPolicy{RecordedAmountsOnly: true})
+	expected, err := GetBillingCustomerStatement(ctx, 7, start, end, "api_key", 0, "", "")
 	require.NoError(t, err)
 	expectedProvider, err := getProviderBillingURLSummary(ctx, start, end, start, "", 0)
 	require.NoError(t, err)
@@ -579,21 +579,25 @@ func TestPublishedBillingReportPrefersRecordedUpstreamAmounts(t *testing.T) {
 	row := result.URLChannels[0]
 	assert.EqualValues(t, 1, row.ModelCount, "two billing modes of one upstream model count once")
 	assert.EqualValues(t, 1, result.ModelCount)
-	require.NotNil(t, row.OriginalAmount)
-	assert.EqualValues(t, 98, *row.OriginalAmount)
-	require.NotNil(t, row.ReferenceAmount)
-	assert.EqualValues(t, 50, *row.ReferenceAmount, "64 - 20 + 3 + 3")
-	assert.True(t, row.DataQuality.HasEstimatedOriginal)
+	assert.Nil(t, row.OriginalAmount)
+	assert.Nil(t, row.ReferenceAmount)
+	require.NotNil(t, row.KnownOriginalAmount)
+	assert.EqualValues(t, 93, *row.KnownOriginalAmount)
+	require.NotNil(t, row.KnownReferenceAmount)
+	assert.EqualValues(t, 47, *row.KnownReferenceAmount)
+	assert.False(t, row.DataQuality.HasEstimatedOriginal)
 
 	details, err := GetUpstreamBillingDetails(pinned, UpstreamBillingDetailFilter{Start: start, End: end, ChannelIds: []int{channelID}, URLKey: url}, 1, 20, false)
 	require.NoError(t, err)
 	require.Len(t, details.Items, 4)
-	for i, want := range []int64{127, -39, 5, 5} {
+	for i, want := range []int64{127, -39, 5} {
 		require.NotNil(t, details.Items[i].OriginalAmount)
 		assert.Equal(t, want, *details.Items[i].OriginalAmount)
-		require.NotNil(t, details.Items[i].OriginalAmountEstimated)
-		assert.Equal(t, i == 3, *details.Items[i].OriginalAmountEstimated)
+		if details.Items[i].OriginalAmountEstimated != nil {
+			assert.False(t, *details.Items[i].OriginalAmountEstimated)
+		}
 	}
+	assert.Nil(t, details.Items[3].OriginalAmount)
 }
 
 func TestPublishedCustomerBillingShowsMultipleRecordedDiscountsWithUnknownOriginal(t *testing.T) {

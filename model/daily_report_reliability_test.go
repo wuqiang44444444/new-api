@@ -51,7 +51,7 @@ func TestDailyReportStagesBothRefundDatesBeforeChangingPublishedVersions(t *test
 
 	now := time.Now().In(UsageAnalyticsZone())
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
-	scopes, err := DailyReportScopes(ctx, refundDay, today, now.Unix())
+	scopes, err := DailyReportScopes(ctx, refundDay, today, now.Unix(), false)
 	require.NoError(t, err)
 	require.Contains(t, scopes, DailyReportScope{Start: start, Kind: DailyReportUsage})
 	require.Contains(t, scopes, DailyReportScope{Start: refundDay, Kind: DailyReportBilling})
@@ -99,7 +99,7 @@ func TestDailyReportPublishesRefundDayWhenOlderUsageCoverageWasLost(t *testing.T
 	}).Error)
 	now := time.Now().In(zone)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, zone).Unix()
-	scopes, err := DailyReportScopes(ctx, refundDay, today, now.Unix())
+	scopes, err := DailyReportScopes(ctx, refundDay, today, now.Unix(), false)
 	require.NoError(t, err)
 	require.Contains(t, scopes, DailyReportScope{Start: start, Kind: DailyReportUsage})
 	staged := StageDailyReport(ctx)
@@ -122,7 +122,7 @@ func TestDailyReportPublishesRefundDayWhenOlderUsageCoverageWasLost(t *testing.T
 		require.NoError(t, err)
 		assert.Equal(t, want, statement.Summary.NetQuota)
 	}
-	scopes, err = DailyReportScopes(ctx, refundDay, today, now.Unix())
+	scopes, err = DailyReportScopes(ctx, refundDay, today, now.Unix(), false)
 	require.NoError(t, err)
 	assert.NotContains(t, scopes, DailyReportScope{Start: start, Kind: DailyReportUsage})
 }
@@ -172,7 +172,7 @@ func TestDailyReportSchedulerSkipsFailedYesterday(t *testing.T) {
 	for _, kind := range []string{DailyReportUsage, DailyReportBilling} {
 		require.NoError(t, DeferDailyReportDate(ctx, today-86400, kind, errDailyReportCoverageDecreased))
 	}
-	day, _, due, err := NextDailyReportDay(ctx, today, now)
+	day, _, due, _, err := NextDailyReportDay(ctx, today, now)
 	require.NoError(t, err)
 	require.True(t, due)
 	assert.NotEqual(t, today-86400, day)

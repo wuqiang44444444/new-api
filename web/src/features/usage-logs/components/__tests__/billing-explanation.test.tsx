@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 
+import { formatLogQuota } from '@/lib/format'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { usageLogSchema } from '../../data/schema'
@@ -17,7 +18,7 @@ vi.mock('@/features/pricing/components/dynamic-pricing-breakdown', () => ({
 }))
 afterEach(cleanup)
 
-function show(other: object, type = 2) {
+function show(other: object, type = 2, quota = 100) {
   const log = usageLogSchema.parse({
     id: 1,
     user_id: 1,
@@ -25,7 +26,7 @@ function show(other: object, type = 2) {
     type,
     content: '',
     model_name: 'model',
-    quota: 100,
+    quota,
     other: JSON.stringify(other),
   })
   render(
@@ -57,7 +58,9 @@ it('shows the frozen usage times price equation supplied by the server', () => {
       has_auxiliary_charge: false,
     },
   })
-  expect(screen.getByText('Input').nextElementSibling).toHaveTextContent(/700 token × .*\/M token = /)
+  expect(screen.getByText('Input').nextElementSibling).toHaveTextContent(
+    /700 token × .*\/M token = /
+  )
 })
 
 it('shows text and image component amounts without adding informational image tokens again', () => {
@@ -72,16 +75,34 @@ it('shows text and image component amounts without adding informational image to
       contract_applicable: false,
       billing_explanation: {
         lines: [
-          { label: 'Text Input', quantity: 76, unit: 'token', unit_price_usd: 5, subtotal_usd: 0.00038 },
-          { label: 'Image Out', quantity: 1372, unit: 'token', unit_price_usd: 30, subtotal_usd: 0.04116 },
+          {
+            label: 'Text Input',
+            quantity: 76,
+            unit: 'token',
+            unit_price_usd: 5,
+            subtotal_usd: 0.00038,
+          },
+          {
+            label: 'Image Out',
+            quantity: 1372,
+            unit: 'token',
+            unit_price_usd: 30,
+            subtotal_usd: 0.04116,
+          },
         ],
       },
     })
     expect(screen.getByText('= $0.00038')).toHaveClass('whitespace-nowrap')
     expect(screen.getByText('× $5/M token')).toHaveClass('whitespace-nowrap')
-    expect(screen.getByText('Text Input').nextElementSibling).toHaveTextContent('76 token × $5/M token = $0.00038')
-    expect(screen.getByText('Text input price').nextElementSibling).toHaveTextContent('$5/M')
-    expect(screen.getByText('Image Out').nextElementSibling).toHaveTextContent('1,372 token × $30/M token = $0.04116')
+    expect(screen.getByText('Text Input').nextElementSibling).toHaveTextContent(
+      '76 token × $5/M token = $0.00038'
+    )
+    expect(
+      screen.getByText('Text input price').nextElementSibling
+    ).toHaveTextContent('$5/M')
+    expect(screen.getByText('Image Out').nextElementSibling).toHaveTextContent(
+      '1,372 token × $30/M token = $0.04116'
+    )
   } finally {
     useSystemConfigStore.getState().setConfig({ currency })
   }
@@ -89,7 +110,11 @@ it('shows text and image component amounts without adding informational image to
 
 it('explains unavailable historical components while retaining the recorded total', () => {
   show({ billing_mode: 'tiered_expr', billing_explanation: { lines: [] } })
-  expect(screen.getByText('Itemized costs cannot be verified from the recorded billing evidence. The recorded charge is unchanged.')).toBeVisible()
+  expect(
+    screen.getByText(
+      'Itemized costs cannot be verified from the recorded billing evidence. The recorded charge is unchanged.'
+    )
+  ).toBeVisible()
   expect(screen.getByText('Total Cost')).toBeVisible()
 })
 
@@ -167,14 +192,94 @@ it('does not render an unsafe original amount from a decimal string', () => {
   show({
     group_ratio: 0.5,
     contract_applicable: false,
-    billing_explanation: {
-      lines: [],
-      original_quota_estimated: '9007199254740993',
-    },
+    billing_facts: { recorded_original: '9007199254740993' },
   })
-  expect(screen.queryByText('Pre-discount subtotal (estimated)')).toBeNull()
-  expect(screen.queryByText('Estimated savings')).toBeNull()
+  expect(screen.getByText('List price').nextElementSibling).toHaveTextContent(
+    'Cannot calculate'
+  )
+  expect(screen.getByText('Savings').nextElementSibling).toHaveTextContent(
+    'Cannot calculate'
+  )
 })
+
+it('shows the source and inferred meter of a unique replay', () => {
+  show(
+    {
+      billing_facts: {
+        recorded_original: '15860',
+        original_source: 'unique_settlement_replay',
+        derived_output_image_tokens: 1056,
+      },
+    },
+    2,
+    11737
+  )
+  expect(
+    screen.getByText('Unique solution verified against the actual charge')
+  ).toBeVisible()
+  expect(
+    screen.getByText('Derived output image tokens').nextElementSibling
+  ).toHaveTextContent('1,056')
+})
+
+it('keeps task charges and the frozen contract difference separate', () => {
+  show(
+    {
+      billing_facts: {
+        recorded_original: '0',
+        contract_settlement: {
+          expected_quota: 146000,
+          actual_quota: 200000,
+          delta_quota: 54000,
+        },
+      },
+    },
+    2,
+    54000
+  )
+  expect(
+    screen.getByText('Expected task charge under frozen contract')
+      .nextElementSibling
+  ).toHaveTextContent(formatLogQuota(146000))
+  expect(
+    screen.getByText('Actual task charge').nextElementSibling
+  ).toHaveTextContent(formatLogQuota(200000))
+  expect(
+    screen.getByText('Task charge difference (actual minus expected)')
+      .nextElementSibling
+  ).toHaveTextContent(formatLogQuota(54000))
+})
+
+it('explains a missing list price while keeping the recorded charge visible', () => {
+  show({
+    billing_facts: { estimate_reasons: ['original_replay_missing_usage'] },
+  })
+  expect(screen.getByText('List price').nextElementSibling).toHaveTextContent(
+    'Historical metered usage is incomplete'
+  )
+  expect(screen.getByText('Savings').nextElementSibling).toHaveTextContent(
+    'Cannot calculate'
+  )
+  expect(screen.getByText('Total Cost').nextElementSibling).toHaveTextContent(
+    formatLogQuota(100)
+  )
+})
+
+it.each([
+  [119774, 89831, 29943],
+  [0, 0, 0],
+])(
+  'shows verified list price %i and savings from the recorded charge',
+  (original, charged, savings) => {
+    show({ billing_facts: { recorded_original: String(original) } }, 2, charged)
+    expect(screen.getByText('List price').nextElementSibling).toHaveTextContent(
+      formatLogQuota(original)
+    )
+    expect(screen.getByText('Savings').nextElementSibling).toHaveTextContent(
+      formatLogQuota(savings)
+    )
+  }
+)
 
 const recoveredFacts = {
   billing_mode: 'per_second',

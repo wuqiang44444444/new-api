@@ -18,15 +18,16 @@ type billingReportHead struct {
 }
 
 type billingReportGeneration struct {
-	ID         string `gorm:"size:32;primaryKey"`
-	Start      int64
-	AsOf       int64
-	UpperLogID int64
-	Rows       int64
-	Incomplete bool
-	Published  bool
-	RetiredAt  int64 `gorm:"index"`
-	CreatedAt  int64
+	OriginalReplayVersion int
+	ID                    string `gorm:"size:32;primaryKey"`
+	Start                 int64
+	AsOf                  int64
+	UpperLogID            int64
+	Rows                  int64
+	Incomplete            bool
+	Published             bool
+	RetiredAt             int64 `gorm:"index"`
+	CreatedAt             int64
 }
 
 type billingReportCustomerDay struct {

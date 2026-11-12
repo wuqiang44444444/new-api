@@ -42,7 +42,7 @@ func TestBillingStatementLogIndexPreservesStatementsAndWrites(t *testing.T) {
 	// A refund in this period must still recover facts from a prior-period
 	// consumption. It also tests the inclusive upper time boundary.
 	original := Log{UserId: 7, TokenId: 12, ModelName: "manual", Type: LogTypeConsume, CreatedAt: start - 1, Quota: 87,
-		Other: `{"contract_applicable":false,"group_ratio":0.87,"model_price":1}`}
+		Other: `{"contract_applicable":false,"group_ratio":0.87,"model_price":1,"admin_info":{"statement_original_quota":100}}`}
 	require.NoError(t, createLog(&original))
 	refund := Log{UserId: 7, TokenId: 12, ModelName: "manual", Type: LogTypeRefund, CreatedAt: end, Quota: 87,
 		Other: fmt.Sprintf(`{"admin_info":{"original_preauth_log_id":%d}}`, original.Id)}

@@ -398,6 +398,9 @@ func applyBatchSettlement(ctx context.Context, job *model.BatchJob, target int) 
 			break
 		}
 	}
+	if original, ok := model.BatchStatementOriginalQuota(job, lines, target); ok {
+		other.SetAdmin(model.StatementOriginalQuotaLogKey, original)
+	}
 	var input, output, cached decimal.Decimal
 	for _, line := range lines {
 		input = input.Add(decimal.NewFromInt(line.InputTokens))

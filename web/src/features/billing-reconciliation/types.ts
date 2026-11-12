@@ -104,6 +104,7 @@ export type BillingDataQuality = {
   unavailable_requests?: number
   unknown_billing_mode_requests?: number
   provider_model_fallback_rows?: number
+  original_replay_reasons?: Record<string, number>
   missing_historical_price_rows?: number
   auxiliary_charge_rows?: number
   test_priced_rows?: number
@@ -310,7 +311,10 @@ export type UpstreamUrlModelRow = ProviderUrlChannelModelSummary & {
 
 export type ProviderUrlSummary = {
   url_channels?: UpstreamUrlChannelRow[]
-  totals?: UpstreamAmounts & { usage: ProviderUsage }
+  totals?: UpstreamAmounts & {
+    usage: ProviderUsage
+    discount_pending_channels?: number
+  }
   model_rows?: UpstreamUrlModelRow[]
   page: number
   page_size: number

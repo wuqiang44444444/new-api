@@ -1,21 +1,3 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import { useQuery } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import {
@@ -42,6 +24,25 @@ import { LoadingState } from '@/components/loading-state'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { amountUnavailableReasonText } from '@/features/billing-reconciliation/estimate-display'
 import { billingModeLabel } from '@/features/billing-reconciliation/lib'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { TokenPricingNote } from '@/features/pricing/components/token-pricing-note'
@@ -183,14 +184,6 @@ function BillingBreakdown(props: {
       ? (other.model_ratio * 1000000) / getCurrencyDisplay().config.quotaPerUnit
       : 0
   const explanation = other.billing_explanation
-  const hasAuxiliaryCharge =
-    explanation?.has_auxiliary_charge ||
-    other.tool_surcharges != null ||
-    other.fee_quota != null ||
-    other.web_search_price != null ||
-    other.file_search_price != null ||
-    other.image_generation_call_price != null
-
   if (explanation?.lines.length) {
     rows.push({
       label: t('Billing Mode'),
@@ -305,8 +298,6 @@ function BillingBreakdown(props: {
     })
   }
 
-  // 统一费用解释：折前小计 × 分组倍率 × 合同折扣 = 实付（方案 1.1）。
-  // 折前小计由已入账金额反推，永远标注为估算；历史合同状态未知时不构造 C=1。
   const groupRatioKnown =
     effectiveGR != null && Number.isFinite(effectiveGR) && effectiveGR > 0
   let contractFactor: number | null = null
@@ -322,25 +313,6 @@ function BillingBreakdown(props: {
         ? `${formatRatio(effectiveGR)}x`
         : `${formatRatio(effectiveGR)} × ${formatRatio(contractFactor)} = ${formatRatio(finalFactor)}x`
     rows.push({ label: t('Final discount'), value: factorText })
-    const original = explanation?.original_quota_estimated
-    const preDiscountQuota = original ? Number(original) : null
-    if (
-      preDiscountQuota != null &&
-      Number.isFinite(preDiscountQuota) &&
-      Math.abs(preDiscountQuota) <= Number.MAX_SAFE_INTEGER &&
-      Math.abs(preDiscountQuota - log.quota) <= Number.MAX_SAFE_INTEGER &&
-      !hasAuxiliaryCharge &&
-      log.type === 2
-    ) {
-      rows.push({
-        label: t('Pre-discount subtotal (estimated)'),
-        value: formatLogQuota(preDiscountQuota),
-      })
-      rows.push({
-        label: t('Estimated savings'),
-        value: formatLogQuota(preDiscountQuota - log.quota),
-      })
-    }
   }
   if (
     other.tool_surcharges != null ||
@@ -494,6 +466,7 @@ function BillingBreakdown(props: {
       {rows.map((row) => (
         <DetailRow key={row.label} label={row.label} value={row.value} mono />
       ))}
+      <OriginalAmountRows log={log} facts={other.billing_facts} />
       {usageFacts.length > 0 && (
         <>
           <Label className='text-xs font-semibold'>
@@ -522,6 +495,93 @@ function BillingBreakdown(props: {
         />
       )}
     </DetailSection>
+  )
+}
+
+function OriginalAmountRows(props: {
+  log: UsageLog
+  facts?: LogOtherData['billing_facts']
+}) {
+  const { t } = useTranslation()
+  const { facts, log } = props
+  if (facts?.counts_toward_bill === false) return null
+
+  const original = facts?.recorded_original
+  const quota = original && /^\d+$/.test(original) ? Number(original) : null
+  const known =
+    quota != null &&
+    Number.isSafeInteger(quota) &&
+    Number.isSafeInteger(log.quota) &&
+    Number.isSafeInteger(quota - log.quota)
+  return (
+    <>
+      <DetailRow
+        label={t('List price')}
+        value={
+          known ? (
+            formatLogQuota(quota)
+          ) : (
+            <>
+              {t('Cannot calculate')}
+              <span className='text-muted-foreground block text-xs'>
+                {amountUnavailableReasonText(facts?.estimate_reasons, t)}
+              </span>
+            </>
+          )
+        }
+        mono
+      />
+      <DetailRow
+        label={t('Savings')}
+        value={
+          known ? formatLogQuota(quota - log.quota) : t('Cannot calculate')
+        }
+        mono
+      />
+      {facts?.original_source === 'unique_settlement_replay' && (
+        <>
+          <DetailRow
+            label={t('List price source')}
+            value={t('Unique solution verified against the actual charge')}
+          />
+          {facts.derived_output_image_tokens != null && (
+            <DetailRow
+              label={t('Derived output image tokens')}
+              value={facts.derived_output_image_tokens.toLocaleString()}
+              mono
+            />
+          )}
+        </>
+      )}
+      <ContractSettlementRows settlement={facts?.contract_settlement} />
+    </>
+  )
+}
+
+function ContractSettlementRows(props: {
+  settlement?: NonNullable<LogOtherData['billing_facts']>['contract_settlement']
+}) {
+  const { t } = useTranslation()
+  const { settlement } = props
+  if (!settlement) return null
+  return (
+    <>
+      <DetailRow
+        label={t('Expected task charge under frozen contract')}
+        value={formatLogQuota(settlement.expected_quota)}
+        mono
+      />
+      <DetailRow
+        label={t('Actual task charge')}
+        value={formatLogQuota(settlement.actual_quota)}
+        mono
+      />
+      <DetailRow
+        label={t('Task charge difference (actual minus expected)')}
+        value={formatLogQuota(settlement.delta_quota)}
+        mono
+      />
+    </>
   )
 }
 
@@ -1131,6 +1191,9 @@ function FullLogDetailsDialog(props: DetailsDialogProps) {
               value={formatLogQuota(other.fee_quota ?? props.log.quota)}
               mono
             />
+            {isConsume && (
+              <OriginalAmountRows log={props.log} facts={other.billing_facts} />
+            )}
           </DetailSection>
         )}
 
@@ -1154,6 +1217,9 @@ function FullLogDetailsDialog(props: DetailsDialogProps) {
                     )}
                   />
                   <LogDiscountCell other={other} t={t} />
+                  <ContractSettlementRows
+                    settlement={other.billing_facts.contract_settlement}
+                  />
                 </>
               )}
               {other.task_id && (
@@ -1439,10 +1505,10 @@ function FullLogDetailsDialog(props: DetailsDialogProps) {
         )}
 
         {/* Billing breakdown (consume type) */}
-        {isConsume && other && !isViolation && (
+        {isConsume && !isViolation && (
           <BillingBreakdown
             log={props.log}
-            other={other}
+            other={other ?? {}}
             isAdmin={props.isAdmin}
           />
         )}

@@ -69,7 +69,7 @@ func TestCustomerStatementExportWorkerReuse(t *testing.T) {
 			} else {
 				assert.Equal(t, "statement-details.csv", artifact.Files[0].FileName)
 				assert.Equal(t, "req-export", values["Request ID"])
-				assert.Equal(t, "0.5", values["Final factor"])
+				assert.Empty(t, values["Final factor"])
 				assert.Equal(t, "Not recorded", values["Contract status"])
 				assert.Contains(t, values, "List price")
 				assert.Empty(t, values["List price"])

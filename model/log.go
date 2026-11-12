@@ -524,6 +524,9 @@ func GetAllLogs(filter LogFilter, startIdx int, num int) (logs []*Log, total int
 	if err != nil {
 		return nil, 0, err
 	}
+	if err := attachUsageLogPageBillingFacts(logs); err != nil {
+		return nil, 0, err
+	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		assignDisplayLogIds(logs, startIdx)
 	}
@@ -593,6 +596,9 @@ func GetUserLogs(userId int, filter LogFilter, startIdx int, num int) (logs []*L
 		return nil, 0, common.NewMessage("Failed to query logs")
 	}
 
+	if err := attachUsageLogPageBillingFacts(logs); err != nil {
+		return nil, 0, err
+	}
 	formatUserLogs(logs, startIdx)
 	return logs, total, err
 }

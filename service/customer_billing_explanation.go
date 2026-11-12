@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/base64"
 	"math"
+	"slices"
 	"sort"
 
 	"github.com/shopspring/decimal"
@@ -37,7 +38,7 @@ func attachCustomerBillingExplanations(logs []*model.Log) {
 		if lines == nil {
 			lines = []customerBillingLine{}
 		}
-		explanation := map[string]any{"lines": lines, "original_quota_estimated": row.OriginalEstimate, "has_auxiliary_charge": row.HasAuxiliaryCharge}
+		explanation := map[string]any{"lines": lines, "has_auxiliary_charge": row.HasAuxiliaryCharge}
 		if len(lines) > 0 && row.BillingMode == model.BillingReconciliationModeToken && other["expr_b64"] == nil {
 			explanation["current_quota_conversion"] = true
 		}
@@ -220,6 +221,9 @@ func customerBillingLines(log *model.Log, other map[string]any, row model.Custom
 		// Known model-only settlements use the same reconciliation as native
 		// pricing. Unknown discounts or separate fees allow only independently
 		// proven components; they cannot establish the final charged amount.
+		if row.ContractApplicable == "unrecorded" {
+			return nil
+		}
 		if row.FinalRatio != nil && !row.HasAuxiliaryCharge {
 			return reconciledCustomerBillingLines(lines, row, quotaPerUnit)
 		}
@@ -290,7 +294,7 @@ func customerBillingLines(log *model.Log, other map[string]any, row model.Custom
 // within one quota unit (native truncation/minimum charge). Never backsolve a
 // missing multiplier or overwrite the settled amount to make an equation fit.
 func reconciledCustomerBillingLines(lines []customerBillingLine, row model.CustomerExportRow, quotaPerUnit float64) []customerBillingLine {
-	if row.FinalRatio == nil || row.HasAuxiliaryCharge || row.QualityStatus == "unrecorded" || quotaPerUnit <= 0 || math.IsNaN(quotaPerUnit) || math.IsInf(quotaPerUnit, 0) {
+	if row.FinalRatio == nil || row.HasAuxiliaryCharge || slices.Contains(row.EstimateReasons, model.BillingEstimateInvalidFacts) || quotaPerUnit <= 0 || math.IsNaN(quotaPerUnit) || math.IsInf(quotaPerUnit, 0) {
 		return nil
 	}
 	total := decimal.Zero

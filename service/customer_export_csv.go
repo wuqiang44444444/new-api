@@ -25,8 +25,8 @@ import (
 // statement details use a localized projection over those same safe values.
 
 const (
-	customerExportFieldVersion          = 21
-	customerStatementExportFieldVersion = 22
+	customerExportFieldVersion          = 24
+	customerStatementExportFieldVersion = 25
 	customerExportCsvBOM                = "\xEF\xBB\xBF"
 	// Plan-suggested starting cap for one CSV shard (100 MiB).
 	customerExportCsvShardBytes = 100 << 20
@@ -38,10 +38,11 @@ var customerExportCsvHeader = []string{
 	"customer_model", "billing_mode", "counts_toward_customer_bill", "input_tokens", "output_tokens",
 	"cache_read_tokens", "cache_write_tokens", "request_count", "pricing_rule",
 	"group_name", "group_ratio", "group_ratio_source", "contract_applicable", "contract_name",
-	"contract_version", "contract_ratio", "final_ratio", "quota", "original_estimate_quota",
+	"contract_version", "contract_ratio", "final_ratio", "quota", "original_quota",
 	"original_price_exact", "has_auxiliary_charge", "quality_status",
-	"currency", "quota_per_unit", "currency_rate", "net_amount", "original_amount_estimated", "discount_amount_estimated", "input_tokens_quality",
-	"matched_tier", "billing_line_items_usd", "billing_explanation_status", "price_conversion_basis", "estimate_reasons",
+	"currency", "quota_per_unit", "currency_rate", "net_amount", "original_amount", "discount_amount", "input_tokens_quality",
+	"matched_tier", "billing_line_items_usd", "billing_explanation_status", "price_conversion_basis", "amount_unavailable_reasons",
+	"original_source", "derived_output_image_tokens", "contract_expected_amount", "contract_actual_amount", "contract_settlement_delta",
 }
 
 type customerExportScopeColumns struct {
@@ -187,13 +188,6 @@ func (w *customerExportCsvWriter) AppendRow(row model.CustomerExportRow, scope c
 	if err := w.ensureShard(); err != nil {
 		return err
 	}
-	if w.statementLanguage != nil {
-		row.OriginalEstimate = row.RecordedOriginal
-		row.OriginalExact = row.RecordedOriginal != ""
-		if !row.OriginalExact {
-			row.QualityStatus = "unrecorded"
-		}
-	}
 	inputTokens, inputQuality := strconv.FormatInt(row.InputTokens, 10), "known"
 	if row.InputTokensUnavailable {
 		inputTokens, inputQuality = "", "unknown"
@@ -227,8 +221,8 @@ func (w *customerExportCsvWriter) AppendRow(row model.CustomerExportRow, scope c
 		exportRatio(row.ContractRatio),
 		exportRatio(row.FinalRatio),
 		strconv.FormatInt(row.Quota, 10),
-		row.OriginalEstimate,
-		exportYesNo(row.OriginalExact),
+		row.RecordedOriginal,
+		exportYesNo(row.RecordedOriginal != ""),
 		exportYesNo(row.HasAuxiliaryCharge),
 		row.QualityStatus,
 	)
@@ -237,11 +231,22 @@ func (w *customerExportCsvWriter) AppendRow(row model.CustomerExportRow, scope c
 		net = -net
 	}
 	discount := ""
-	if original, err := decimal.NewFromString(row.OriginalEstimate); err == nil {
+	if original, err := decimal.NewFromString(row.RecordedOriginal); err == nil {
 		discount = original.Sub(decimal.NewFromInt(net)).String()
 	}
 	record = append(record, scope.Currency, strconv.FormatFloat(scope.QuotaPerUnit, 'f', -1, 64), strconv.FormatFloat(scope.CurrencyRate, 'f', -1, 64),
-		exportCurrencyAmount(strconv.FormatInt(net, 10), scope), exportCurrencyAmount(row.OriginalEstimate, scope), exportCurrencyAmount(discount, scope), inputQuality, exportCsvCellGuard(row.MatchedTier), row.BillingLineItems, row.ExplanationStatus, row.PriceConversionBasis, customerExportEstimateReasons(scope.Language, row.EstimateReasons))
+		exportCurrencyAmount(strconv.FormatInt(net, 10), scope), exportCurrencyAmount(row.RecordedOriginal, scope), exportCurrencyAmount(discount, scope), inputQuality, exportCsvCellGuard(row.MatchedTier), row.BillingLineItems, row.ExplanationStatus, row.PriceConversionBasis, customerExportEstimateReasons(scope.Language, row.EstimateReasons))
+	derived := ""
+	if row.DerivedOutputImageTokens != nil {
+		derived = strconv.Itoa(*row.DerivedOutputImageTokens)
+	}
+	expected, actual, delta := "", "", ""
+	if settlement := row.ContractSettlement; settlement != nil {
+		expected = exportCurrencyAmount(strconv.FormatInt(settlement.ExpectedQuota, 10), scope)
+		actual = exportCurrencyAmount(strconv.FormatInt(settlement.ActualQuota, 10), scope)
+		delta = exportCurrencyAmount(strconv.FormatInt(settlement.DeltaQuota, 10), scope)
+	}
+	record = append(record, row.OriginalSource, derived, expected, actual, delta)
 	if w.statementLanguage != nil {
 		record = customerStatementDetailRecord(*w.statementLanguage, record)
 	}

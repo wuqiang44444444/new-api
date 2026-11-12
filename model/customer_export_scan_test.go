@@ -65,9 +65,9 @@ func TestBuildCustomerExportRowsDiscountFacts(t *testing.T) {
 	setupCustomerExportTestDB(t)
 
 	logs := []Log{
-		// 折扣齐备：组 0.5 × 合同 0.3，折前金额为估算。
+		// 折扣和原价均有记录。
 		{UserId: 31, CreatedAt: 7000, Type: LogTypeConsume, TokenId: 1, TokenName: "key", ModelName: "m-a", Quota: 150,
-			Other: `{"group_ratio":0.5,"contract_discount":"0.3","contract_version":3,"contract_name":"年度合同"}`},
+			Other: `{"group_ratio":0.5,"contract_discount":"0.3","contract_version":3,"contract_name":"年度合同","admin_info":{"statement_original_quota":1000}}`},
 		// 结算时明确未适用合同。
 		{UserId: 31, CreatedAt: 7001, Type: LogTypeConsume, TokenId: 1, TokenName: "key", ModelName: "m-a", Quota: 100,
 			Other: `{"group_ratio":0.5,"contract_applicable":false}`},
@@ -80,9 +80,9 @@ func TestBuildCustomerExportRowsDiscountFacts(t *testing.T) {
 		// 附加收费：折前金额不可反推。
 		{UserId: 31, CreatedAt: 7004, Type: LogTypeConsume, TokenId: 1, TokenName: "key", ModelName: "m-a", Quota: 90,
 			Other: `{"group_ratio":0.5,"tool_surcharges":{"search":10}}`},
-		// 退款行：估算原价保留负号。
+		// 退款行：记录的原价以负号展示。
 		{UserId: 31, CreatedAt: 7005, Type: LogTypeRefund, TokenId: 1, TokenName: "key", ModelName: "m-a", Quota: 30,
-			Other: `{"group_ratio":0.5,"contract_discount":"0.3","contract_name":"年度合同"}`},
+			Other: `{"group_ratio":0.5,"contract_discount":"0.3","contract_name":"年度合同","admin_info":{"statement_original_quota":200}}`},
 		// 渠道测试行：不计入客户账单。
 		{UserId: 31, CreatedAt: 7006, Type: LogTypeConsume, TokenId: 0, TokenName: "模型测试", ModelName: "m-a", Quota: 5, Content: "模型测试"},
 	}
@@ -105,16 +105,15 @@ func TestBuildCustomerExportRowsDiscountFacts(t *testing.T) {
 	assert.InDelta(t, 0.3, *first.ContractRatio, 1e-9)
 	require.NotNil(t, first.FinalRatio)
 	assert.InDelta(t, 0.15, *first.FinalRatio, 1e-6)
-	assert.Equal(t, "estimate", first.QualityStatus)
-	assert.Equal(t, "1000.0000", first.OriginalEstimate)
+	assert.Equal(t, "exact", first.QualityStatus)
+	assert.Equal(t, "1000", first.RecordedOriginal)
 
 	assert.Equal(t, "no", rows[1].ContractApplicable)
 	assert.Empty(t, rows[1].ContractName)
 	assert.Equal(t, "unrecorded", rows[2].ContractApplicable)
-	assert.Equal(t, "estimate", rows[2].QualityStatus)
-	assert.Equal(t, "200.0000", rows[2].OriginalEstimate)
-	require.NotNil(t, rows[2].FinalRatio)
-	assert.Equal(t, 0.5, *rows[2].FinalRatio)
+	assert.Equal(t, "unrecorded", rows[2].QualityStatus)
+	assert.Empty(t, rows[2].RecordedOriginal)
+	assert.Nil(t, rows[2].FinalRatio)
 
 	require.NotNil(t, rows[3].GroupRatio)
 	assert.InDelta(t, 0.8, *rows[3].GroupRatio, 1e-9)
@@ -124,11 +123,11 @@ func TestBuildCustomerExportRowsDiscountFacts(t *testing.T) {
 	assert.True(t, rows[4].HasAuxiliaryCharge)
 
 	require.NotNil(t, rows[5].FinalRatio)
-	assert.Equal(t, "-200.0000", rows[5].OriginalEstimate)
+	assert.Equal(t, "-200", rows[5].RecordedOriginal)
 	assert.Equal(t, "refund", rows[5].EventType)
 
 	assert.False(t, rows[6].CountsTowardBill)
-	assert.Equal(t, "unrecorded", rows[6].QualityStatus)
+	assert.Equal(t, "not_billing_event", rows[6].QualityStatus)
 
 	// 客户模型过滤：候选行 7，匹配行按解析后的客户模型计数。
 	filtered, err := BuildCustomerExportRows(testContext(), page, "m-a", "", nil)

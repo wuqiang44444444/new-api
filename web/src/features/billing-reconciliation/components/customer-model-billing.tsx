@@ -19,14 +19,10 @@ For commercial licensing, please contact support@quantumnous.com
 import type { ReactNode, Ref } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ReportCard } from '@/components/report-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from '@/components/ui/card'
+import { CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import {
   TableBody,
   TableCell,
@@ -48,6 +44,7 @@ export function CustomerModelBilling(props: {
   savings: string
   net: string
   requests: string
+  pagination: ReactNode
   children: ReactNode
 }) {
   const { t } = useTranslation()
@@ -55,14 +52,14 @@ export function CustomerModelBilling(props: {
 
   return (
     <section id={props.id} aria-labelledby={headingId}>
-      <Card className='gap-0 rounded-lg border py-0 ring-0'>
-        <CardHeader className='gap-2 py-3'>
+      <ReportCard className='gap-0 p-0'>
+        <CardHeader className='gap-2 px-3 py-2'>
           <div className='flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1'>
             <h2
               id={headingId}
               ref={props.headingRef}
               tabIndex={-1}
-              className='scroll-mt-4 rounded-sm text-base font-semibold'
+              className='scroll-mt-4 rounded-sm text-sm font-medium'
             >
               {t('Model billing')}
             </h2>
@@ -147,8 +144,9 @@ export function CustomerModelBilling(props: {
               </TableFooter>
             </CustomerBillingTable>
           </div>
+          <div className='px-3 py-2'>{props.pagination}</div>
         </CardContent>
-      </Card>
+      </ReportCard>
     </section>
   )
 }

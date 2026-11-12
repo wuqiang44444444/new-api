@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/seedancebilling"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -49,27 +50,44 @@ func ComputeTaskTieredBilling(task *model.Task) (billingexpr.TieredResult, billi
 	if err != nil {
 		return result, input, err
 	}
-	if math.IsNaN(result.ActualQuotaBeforeGroup) || math.IsInf(result.ActualQuotaBeforeGroup, 0) || result.ActualQuotaBeforeGroup < 0 || result.ActualQuotaAfterGroup < 0 {
-		return result, input, fmt.Errorf("frozen task price must be finite and non-negative")
+	var contract *types.ContractBillingFact
+	if bc := task.PrivateData.BillingContext; bc != nil {
+		contract = bc.ContractFact
 	}
-	if bc := task.PrivateData.BillingContext; bc != nil && bc.ContractFact != nil {
-		amount := decimal.NewFromFloat(result.ActualQuotaBeforeGroup).Mul(decimal.NewFromFloat(snap.GroupRatio))
-		amount, err = ApplyCustomerContractRatio(amount, bc.ContractFact)
+	err = FinalizeTaskTieredCustomerAmount(&result, snap, contract)
+	return result, input, err
+}
+
+// FinalizeTaskTieredCustomerAmount applies the frozen contract to the full
+// customer charge before the host computes any difference against the hold.
+func FinalizeTaskTieredCustomerAmount(result *billingexpr.TieredResult, snap *billingexpr.BillingSnapshot, contract *types.ContractBillingFact) error {
+	if math.IsNaN(result.ActualQuotaBeforeGroup) || math.IsInf(result.ActualQuotaBeforeGroup, 0) ||
+		result.ActualQuotaBeforeGroup < 0 || result.ActualQuotaAfterGroup < 0 ||
+		math.IsNaN(snap.GroupRatio) || math.IsInf(snap.GroupRatio, 0) || snap.GroupRatio < 0 {
+		return fmt.Errorf("frozen task price must be finite and non-negative")
+	}
+	if contract != nil {
+		grouped := decimal.NewFromFloat(result.ActualQuotaBeforeGroup).Mul(decimal.NewFromFloat(snap.GroupRatio))
+		amount, err := ApplyCustomerContractRatio(grouped, contract)
 		if err != nil {
-			return result, input, err
+			return err
 		}
 		// ComputeTieredQuotaWithRequest ends with round. Replace that step so
 		// the recorded charge rounds once, after the frozen contract discount.
-		result.Calculation.Steps = result.Calculation.Steps[:len(result.Calculation.Steps)-1]
-		result.Calculation.Add("contract_ratio", "quota", amount.String(), decimal.NewFromFloat(result.ActualQuotaBeforeGroup).Mul(decimal.NewFromFloat(snap.GroupRatio)).String(), bc.ContractFact.RatioString())
 		result.ActualQuotaAfterGroup, result.Clamp = common.QuotaRoundChecked(amount.InexactFloat64())
-		result.Calculation.Add("round", "quota", result.ActualQuotaAfterGroup, amount.InexactFloat64())
-		result.Calculation.Finish(result.ActualQuotaAfterGroup)
+		if calc := result.Calculation; calc != nil {
+			calc.Steps = calc.Steps[:len(calc.Steps)-1]
+			calc.Add("contract_ratio", "quota", amount.String(), grouped.String(), contract.RatioString())
+			calc.Add("round", "quota", result.ActualQuotaAfterGroup, amount.InexactFloat64())
+			calc.Finish(result.ActualQuotaAfterGroup)
+		}
 	}
-	if original, err := common.QuotaRoundStrict(result.ActualQuotaBeforeGroup); err == nil {
-		result.Calculation.OriginalQuota = &original
+	if result.Calculation != nil {
+		if original, err := common.QuotaRoundStrict(result.ActualQuotaBeforeGroup); err == nil {
+			result.Calculation.OriginalQuota = &original
+		}
 	}
-	return result, input, nil
+	return nil
 }
 
 // appendTaskSettlementExpressionFacts never presents a submission budget as

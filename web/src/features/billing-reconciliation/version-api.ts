@@ -150,7 +150,7 @@ export async function verifyAdminStatementSource(
   const response = await api.post<{ success: boolean; message?: string }>(
     '/api/billing/admin/customer-statement-source-verification',
     body,
-    { params }
+    { params, skipErrorHandler: true }
   )
   return response.data
 }

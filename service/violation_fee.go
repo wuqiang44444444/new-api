@@ -103,7 +103,7 @@ func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayIn
 	}
 
 	groupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
-	feeQuota := calcViolationFeeQuota(settings.ViolationDeductionAmount, groupRatio)
+	feeQuota, clamp := calcViolationFeeQuotaChecked(settings.ViolationDeductionAmount, groupRatio)
 	if feeQuota <= 0 {
 		return false
 	}
@@ -121,6 +121,10 @@ func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayIn
 	oai := apiErr.ToOpenAIError()
 
 	other := model.NewLogOther()
+	if original, originalClamp := calcViolationFeeQuotaChecked(settings.ViolationDeductionAmount, 1); clamp == nil && originalClamp == nil {
+		other.SetAdmin(model.StatementOriginalQuotaLogKey, original)
+	}
+	attachQuotaSaturationToOther(other, clamp)
 	other.MergePublic(map[string]any{
 		"violation_fee":        true,
 		"violation_fee_code":   string(types.ErrorCodeViolationFeeGrokCSAM),

@@ -158,7 +158,7 @@ func taskBillingOther(task *model.Task) *model.LogOther {
 		other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(async.TieredSnapshot.ExprString)))
 	}
 	appendTaskSettlementExpressionFacts(task, other)
-	if calculation := taskAcceptedCalculation(task); calculation != nil {
+	if calculation := task.AcceptedBillingCalculation(); calculation != nil {
 		other.SetPublic("billing_calculation", calculation)
 	}
 	props := task.Properties

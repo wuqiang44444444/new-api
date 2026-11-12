@@ -48,8 +48,7 @@ import {
   type BillingStatementVersionLine,
 } from '../version-api'
 import { formatVersionQuota } from '../version-money'
-
-const PAGE_SIZE = 50
+import { BillingPagination } from './billing-pagination'
 
 type VersionLinesDrawerProps = {
   open: boolean
@@ -69,6 +68,7 @@ type VersionLinesDrawerProps = {
 export function VersionLinesDrawer(props: VersionLinesDrawerProps) {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const [fundGroup, setFundGroup] = useState<string>()
   const [filter, setFilter] = useState(props.initialFilter ?? {})
 
@@ -79,6 +79,7 @@ export function VersionLinesDrawer(props: VersionLinesDrawerProps) {
       props.isAdmin,
       version?.draft_public_id,
       page,
+      pageSize,
       filter,
       fundGroup,
     ],
@@ -89,7 +90,7 @@ export function VersionLinesDrawer(props: VersionLinesDrawerProps) {
       const params = {
         ...filter,
         page,
-        page_size: PAGE_SIZE,
+        page_size: pageSize,
         group_funds: !fundGroup,
         fund_group: fundGroup,
       }
@@ -105,7 +106,6 @@ export function VersionLinesDrawer(props: VersionLinesDrawerProps) {
   })
 
   const total = linesQuery.data?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <Drawer
@@ -252,27 +252,19 @@ export function VersionLinesDrawer(props: VersionLinesDrawerProps) {
             />
           )}
 
-          <div className='flex items-center justify-end gap-2 pt-2'>
-            <Button
-              variant='outline'
-              size='sm'
-              disabled={page <= 1 || linesQuery.isPending}
-              onClick={() => setPage((current) => current - 1)}
-            >
-              {t('Previous')}
-            </Button>
-            <span className='text-muted-foreground text-xs'>
-              {t('Page {{page}} of {{total}}', { page, total: totalPages })}
-            </span>
-            <Button
-              variant='outline'
-              size='sm'
-              disabled={page >= totalPages || linesQuery.isPending}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              {t('Next')}
-            </Button>
-          </div>
+          {linesQuery.isSuccess && total > 0 && (
+            <BillingPagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              label={t('Details')}
+              disabled={linesQuery.isFetching}
+              onChange={(nextPage, nextSize) => {
+                setPage(nextPage)
+                setPageSize(nextSize)
+              }}
+            />
+          )}
         </div>
       </DrawerContent>
     </Drawer>

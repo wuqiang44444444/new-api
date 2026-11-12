@@ -329,6 +329,7 @@ func GenerateMjOtherInfo(relayInfo *relaycommon.RelayInfo, priceData hosttypes.P
 		other.SetPublic("user_group_ratio", priceData.GroupRatioInfo.GroupSpecialRatio)
 	}
 	appendRequestPath(nil, relayInfo, other)
+	appendCustomerContractBillingInfo(other, relayInfo.ContractBillingFact)
 	appendPerCallBillingStatementSnapshot(relayInfo, other)
 	return other
 }

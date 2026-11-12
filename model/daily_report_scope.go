@@ -11,7 +11,7 @@ var ErrDailyReportDeferred = errors.New("daily report is waiting for a related d
 
 // Durable task deliveries give both the occurrence day and the task's
 // completion day. Include affected published neighbors in the same switch.
-func DailyReportScopes(ctx context.Context, start, today, now int64) ([]DailyReportScope, error) {
+func DailyReportScopes(ctx context.Context, start, today, now int64, usageOnly bool) ([]DailyReportScope, error) {
 	db := usageReportMainDB(ctx).WithContext(ctx)
 	retryUsage, err := dailyReportRetryDates(ctx, DailyReportUsage, now)
 	if err != nil {
@@ -37,7 +37,12 @@ func DailyReportScopes(ctx context.Context, start, today, now int64) ([]DailyRep
 	if err != nil {
 		return nil, err
 	}
-	set := map[DailyReportScope]bool{{Start: start, Kind: DailyReportUsage}: true, {Start: start, Kind: DailyReportBilling}: true}
+	set := map[DailyReportScope]bool{{Start: start, Kind: DailyReportUsage}: true}
+	// A version-only rebuild can publish just the usage report unless it
+	// also contains a late delivery that requires a coordinated switch.
+	if !usageOnly || len(events) > 0 {
+		set[DailyReportScope{Start: start, Kind: DailyReportBilling}] = true
+	}
 	for _, event := range events {
 		local := func(ts int64) int64 {
 			value := time.Unix(ts, 0).In(UsageAnalyticsZone())

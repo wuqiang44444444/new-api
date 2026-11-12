@@ -80,6 +80,7 @@ func init() {
 		"POST /api/billing/admin/customer-statement-versions/:draft_public_id/confirm": accessTokenScopeRule("billing:write"),
 		"POST /api/billing/admin/customer-statement-versions/correction":               accessTokenScopeRule("billing:write"),
 		"POST /api/billing/admin/reports/rebuild":                                      accessTokenScopeRule("billing:write"),
+		"POST /api/billing/admin/reports/rollback":                                     accessTokenScopeRule("billing:write"),
 		"POST /api/billing/admin/upstream-discounts/initialize":                        accessTokenScopeRule("billing:write"),
 		"POST /api/billing/admin/upstream-exports":                                     accessTokenScopeRule("billing:write"),
 		"POST /api/billing/exports":                                                    accessTokenScopeRule("usage:read"),

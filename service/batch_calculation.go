@@ -9,7 +9,7 @@ import (
 // Both model and customer amounts share the same actual evaluation. Discount is
 // applied to the unrounded decimal, exactly as in the original per-line path.
 func computeBatchLineCalculation(frozen *model.BatchFrozenSnapshot, usage BatchLineUsage) (int, int, *common.QuotaClamp, *billingexpr.Calculation, error) {
-	value, c, err := batchLineModelCost(frozen, usage)
+	original, value, c, err := batchLineModelCost(frozen, usage)
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
@@ -26,6 +26,9 @@ func computeBatchLineCalculation(frozen *model.BatchFrozenSnapshot, usage BatchL
 	if finalClamp != nil {
 		clamp = finalClamp
 	}
-	c.Add("truncate", "quota", quota, value.String())
+	if originalQuota, err := common.QuotaFromDecimalStrict(original); err == nil && clamp == nil {
+		c.OriginalQuota = &originalQuota
+	}
+	c.Add("round", "quota", quota, value.String())
 	return modelQuota, quota, clamp, c.Finish(quota), nil
 }

@@ -30,6 +30,7 @@ import { toast } from 'sonner'
 
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
+import { ReportCard } from '@/components/report-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -466,8 +467,9 @@ function ExportJobCard(props: {
   const cancelling = job.status === 'cancelling' || job.cancel_requested
 
   return (
-    <article
-      className='rounded-lg border p-3'
+    <ReportCard
+      role='article'
+      className='block'
       aria-label={compact ? title : exportAudienceLabel(job, t)}
     >
       <div className='flex items-center justify-between gap-2'>
@@ -606,7 +608,7 @@ function ExportJobCard(props: {
         ) : (
           <ExportFiles jobId={job.job_id} />
         ))}
-    </article>
+    </ReportCard>
   )
 }
 

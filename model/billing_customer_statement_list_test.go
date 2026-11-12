@@ -16,8 +16,8 @@ func TestBillingCustomerStatementListAggregatesFiltersAndPaginates(t *testing.T)
 		{Id: 43, Username: "partial", DisplayName: "Partial Customer", AffCode: "partial-code"},
 	}).Error)
 	require.NoError(t, db.Create(&[]Log{
-		{UserId: 41, CreatedAt: 1100, Type: LogTypeConsume, Quota: 800, PromptTokens: 10, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1}`},
-		{UserId: 41, CreatedAt: 1200, Type: LogTypeRefund, Quota: 100, Other: `{"contract_applicable":false,"admin_info":{"statement_snapshot":{"billing_mode":"token","group_ratio":0.8,"model_ratio":1}}}`},
+		{UserId: 41, CreatedAt: 1100, Type: LogTypeConsume, Quota: 800, PromptTokens: 10, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1,"admin_info":{"statement_original_quota":1000}}`},
+		{UserId: 41, CreatedAt: 1200, Type: LogTypeRefund, Quota: 100, Other: `{"contract_applicable":false,"admin_info":{"statement_original_quota":125,"statement_snapshot":{"billing_mode":"token","group_ratio":0.8,"model_ratio":1}}}`},
 		{UserId: 42, CreatedAt: 1300, Type: LogTypeConsume, Quota: 500, PromptTokens: 5, Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`},
 		{UserId: 43, CreatedAt: 1400, Type: LogTypeConsume, Quota: 300, PromptTokens: 3, Other: `{"model_ratio":1}`},
 	}).Error)

@@ -49,11 +49,11 @@ func TestDurationStatementRecoversRefundModeFromFrozenTaskAcrossPeriods(t *testi
 	}
 	require.NoError(t, db.Create(&task).Error)
 	other, err := common.Marshal(map[string]any{"contract_applicable": false, "task_id": task.TaskID, "is_task": true, "model_price": 0, "group_ratio": 0.87,
-		"expr_b64": base64.StdEncoding.EncodeToString([]byte(expression))})
+		"expr_b64": base64.StdEncoding.EncodeToString([]byte(expression)), "admin_info": map[string]any{"statement_original_quota": 1000}})
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&[]Log{
 		{UserId: 7, TokenId: 4, ChannelId: 76, ModelName: "video", CreatedAt: 900, Type: LogTypeConsume, Quota: 870, Other: string(other)},
-		{UserId: 7, TokenId: 4, ChannelId: 76, ModelName: "video", CreatedAt: 1100, Type: LogTypeRefund, Quota: 870, Other: `{"contract_applicable":false,"task_id":"duration-task","model_price":0,"group_ratio":0.87,"admin_info":{"statement_snapshot":{"billing_mode":"per_call"}}}`},
+		{UserId: 7, TokenId: 4, ChannelId: 76, ModelName: "video", CreatedAt: 1100, Type: LogTypeRefund, Quota: 870, Other: `{"contract_applicable":false,"task_id":"duration-task","model_price":0,"group_ratio":0.87,"admin_info":{"statement_snapshot":{"billing_mode":"per_call"},"statement_original_quota":1000}}`},
 	}).Error)
 	for _, start := range []int64{800, 1000} {
 		s, err := GetBillingCustomerStatement(context.Background(), 7, start, 1200, "api_key", 4, "video", "per_second")

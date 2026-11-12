@@ -574,7 +574,7 @@ func executeCustomerExportLogScan(ctx context.Context, job *model.CustomerExport
 				}
 				exportRows, buildErr = model.BuildCustomerExportRows(batchCtx, rows, modelFilter, filters.BillingMode, func(log *model.Log, row *model.CustomerExportRow) {
 					attachCustomerExportBillingExplanation(log, row, filters.QuotaPerUnit)
-				}, statementScope)
+				})
 			}
 			scanned = len(rows)
 			if scanned > 0 {
@@ -741,8 +741,7 @@ func executeCustomerExportSummary(ctx context.Context, job *model.CustomerExport
 		summaryCtx, job.TargetUserId, filters.StartTimestamp, filters.EndTimestamp-1, "api_key",
 		0, "", "",
 		model.BillingStatementReadPolicy{
-			RecordedAmountsOnly: true,
-			BatchTimeout:        customerExportBatchTimeout, MaxGroups: 10000,
+			BatchTimeout: customerExportBatchTimeout, MaxGroups: 10000,
 			BeforeBatch: customerExportSummaryGate(&customerExportPressureTracker{}, job, nil),
 		},
 	)

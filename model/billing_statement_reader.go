@@ -17,32 +17,24 @@ import (
 // 主体转换在 newBillingStatementVersionLine 中，保持 reader 只负责读取。
 type BillingStatementReadPolicy struct {
 	// UpperLogID binds upstream export batches/channels to one log boundary.
-	UpperLogID          *int64
-	ReadOnlySource      bool
-	RecordedAmountsOnly bool
-	BeforeBatch         func(context.Context) error
-	AfterBatch          func(int) error // upstream export candidate counts, before display filters
-	BatchTimeout        time.Duration
-	MaxGroups           int
-	ObserveFact         func(BillingStatementVersionLine, *Log) error
-	ObserveLogRevision  func(int64)
+	UpperLogID         *int64
+	ReadOnlySource     bool
+	BeforeBatch        func(context.Context) error
+	AfterBatch         func(int) error // upstream export candidate counts, before display filters
+	BatchTimeout       time.Duration
+	MaxGroups          int
+	ObserveFact        func(BillingStatementVersionLine, *Log) error
+	ObserveLogRevision func(int64)
 }
 
 func scanBillingStatementFacts(ctx context.Context, query *gorm.DB, policy BillingStatementReadPolicy, consume func(billingReconciliationLog, parsedBillingReconciliationLog) error) (resultErr error) {
-	interactive := policy.BeforeBatch == nil && policy.BatchTimeout == 0 && policy.ObserveFact == nil
-	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) || interactive {
-		// Interactive reads retain their single cursor and load refund evidence
-		// once. Export/version policies retain bounded batches and source IDs.
-		// Exports reject ClickHouse before reaching this reader.
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		// ClickHouse has a separate log identity contract and retains its
+		// single cursor. Relational readers below release each batch before
+		// resolving Task and legacy log facts, including for interactive reads.
 		evidence, err := loadBillingStatementRefundEvidence(ctx, query)
 		if err != nil {
 			return err
-		}
-		// Names and the bounded discount-combination projection follow log ID
-		// order, as exports do. A new index must not choose their traversal order.
-		// ClickHouse has a separate log identity contract; retain its read path.
-		if !common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
-			query = query.Session(&gorm.Session{}).Order("id asc")
 		}
 		rows, err := query.Rows()
 		if err != nil {
@@ -56,6 +48,7 @@ func scanBillingStatementFacts(ctx context.Context, query *gorm.DB, policy Billi
 			}
 			parsed := parseBillingReconciliationLog(log)
 			evidence.apply(log, &parsed)
+			applyCustomerOriginalReplay(log, &parsed)
 			if err := emitObservedFact(policy, log, parsed, 0); err != nil {
 				return err
 			}
@@ -124,6 +117,9 @@ func scanBillingStatementFacts(ctx context.Context, query *gorm.DB, policy Billi
 		}
 		for i, row := range batch {
 			evidence.apply(row.Fact, &parsed[i])
+			if err := resolveCustomerOriginalReplay(ctx, row.Fact, &parsed[i]); err != nil {
+				return err
+			}
 			if err := emitObservedFact(policy, row.Fact, parsed[i], row.ID); err != nil {
 				return err
 			}
@@ -142,7 +138,6 @@ func emitObservedFact(policy BillingStatementReadPolicy, fact billingReconciliat
 	if policy.ObserveFact == nil {
 		return nil
 	}
-	parsed.recordedAmountsOnly = policy.RecordedAmountsOnly
 	row := buildCustomerExportRow(customerExportScanRow{RequestId: fact.RequestId, UserId: fact.UserId, TokenId: fact.TokenId, TokenName: fact.TokenName, ChannelId: fact.ChannelId, ModelName: fact.ModelName, Type: fact.Type, CreatedAt: fact.CreatedAt, PromptTokens: fact.PromptTokens, CompletionTokens: fact.CompletionTokens, Quota: fact.Quota, Other: fact.Other, Content: fact.Content}, fact, parsed)
 	raw, err := common.Marshal(row)
 	if err != nil {

@@ -35,7 +35,7 @@ func TestManualRefundRecoversFactsFromOriginalPreauth(t *testing.T) {
 	periodStart, periodEnd := preauthTestPeriod()
 	original := Log{UserId: 7, TokenId: 4, ChannelId: 3, ModelName: "seedance-2-0-m", Type: LogTypeConsume,
 		CreatedAt: periodStart + 10, Quota: 87,
-		Other: `{"contract_applicable":false,"statement_snapshot":{"snapshot_version":1,"billing_mode":"per_second","provider_model":"v","customer_model":"seedance-2-0-m","group_ratio":0.87},"group_ratio":0.87}`}
+		Other: `{"contract_applicable":false,"statement_snapshot":{"snapshot_version":1,"billing_mode":"per_second","provider_model":"v","customer_model":"seedance-2-0-m","group_ratio":0.87},"group_ratio":0.87,"admin_info":{"statement_original_quota":100}}`}
 	require.NoError(t, db.Create(&original).Error)
 	require.NotZero(t, original.Id)
 	refund := Log{UserId: 7, TokenId: 4, ChannelId: 3, ModelName: "seedance-2-0-m", Type: LogTypeRefund,
@@ -49,8 +49,7 @@ func TestManualRefundRecoversFactsFromOriginalPreauth(t *testing.T) {
 	require.Len(t, statement.Groups[0].Models, 1)
 	item := findStatementModelRow(t, statement, 4, BillingReconciliationModePerSecond)
 	assert.Equal(t, BillingReconciliationModePerSecond, item.BillingMode)
-	// 折前链条整体恢复：87 / 0.87 = 100（消费）+ 100（退款负计）= 0，
-	// 原价与优惠不再是“无法完整计算”的空值。
+	// 退款继承已核验的原扣款折前金额，并按负号计入。
 	require.NotNil(t, item.OriginalQuota)
 	assert.EqualValues(t, 0, *item.OriginalQuota)
 	assert.EqualValues(t, 0, item.Usage.NetQuota)

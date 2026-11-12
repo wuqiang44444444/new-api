@@ -14,8 +14,6 @@ import type { BillingDataQuality } from '../types'
 
 export function BillingQualityNotice(props: {
   quality?: BillingDataQuality
-  estimateAvailable?: boolean
-  recordedAmounts?: boolean
   compact?: boolean
   inline?: boolean
   discloseReasons?: boolean
@@ -32,7 +30,32 @@ export function BillingQualityNotice(props: {
     ].some((count) => (count ?? 0) > 0)
   const unknownMode = (details.unknown_billing_mode_requests ?? 0) > 0
   const { t } = useTranslation()
+  const replay = details.original_replay_reasons
   const reasons = [
+    [
+      replay?.original_replay_missing_context,
+      t('Historical pricing inputs incomplete: {{count}} records', {
+        count: replay?.original_replay_missing_context,
+      }),
+    ],
+    [
+      replay?.original_replay_missing_usage,
+      t('Historical metered usage incomplete: {{count}} records', {
+        count: replay?.original_replay_missing_usage,
+      }),
+    ],
+    [
+      replay?.original_replay_settlement_mismatch,
+      t('Recalculated charge differs from settlement: {{count}} records', {
+        count: replay?.original_replay_settlement_mismatch,
+      }),
+    ],
+    [
+      replay?.original_replay_unverified,
+      t('Original amount could not be verified: {{count}} records', {
+        count: replay?.original_replay_unverified,
+      }),
+    ],
     [
       details.input_tokens_unavailable_requests,
       t('Input token totals unavailable: {{count}} records', {
@@ -59,16 +82,9 @@ export function BillingQualityNotice(props: {
     ],
     [
       details.missing_historical_price_rows,
-      props.recordedAmounts
-        ? t('List price or savings unavailable for {{count}} records', {
-            count: details.missing_historical_price_rows,
-          })
-        : t(
-            'List price and savings could not be estimated: {{count}} records',
-            {
-              count: details.missing_historical_price_rows,
-            }
-          ),
+      t('List price or savings unavailable for {{count}} records', {
+        count: details.missing_historical_price_rows,
+      }),
     ],
     [
       details.provider_model_fallback_rows,
@@ -140,13 +156,6 @@ export function BillingQualityNotice(props: {
         }
       >
         <Badge variant={variant}>{status}</Badge>
-        {!props.recordedAmounts && (
-          <p>
-            {props.estimateAvailable
-              ? t('Original price and savings: estimated')
-              : t('Original price and savings: unavailable')}
-          </p>
-        )}
         {!props.compact && (
           <p className='text-muted-foreground'>
             {t(

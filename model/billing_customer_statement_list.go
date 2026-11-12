@@ -202,6 +202,7 @@ func GetBillingCustomerStatementList(ctx context.Context,
 
 			parsed := parseBillingReconciliationLog(log)
 			refundEvidence.apply(log, &parsed)
+			applyCustomerOriginalReplay(log, &parsed)
 			accumulateBillingReconciliationLog(&accumulator.item.Usage, log, parsed)
 			accumulateCustomerBillingQuality(&accumulator.price.model.DataQuality, parsed)
 			accumulateBillingReconciliationPrice(&accumulator.price, log, parsed)

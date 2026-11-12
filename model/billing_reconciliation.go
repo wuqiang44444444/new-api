@@ -104,6 +104,7 @@ type BillingReconciliationDataQuality struct {
 	UnavailableRequests            int64                    `json:"unavailable_requests,omitempty"`
 	UnknownBillingModeRequests     int64                    `json:"unknown_billing_mode_requests,omitempty"`
 	ProviderModelFallbackRows      int64                    `json:"provider_model_fallback_rows,omitempty"`
+	OriginalReplayReasons          map[string]int64         `json:"original_replay_reasons,omitempty"`
 	MissingHistoricalPriceRows     int64                    `json:"missing_historical_price_rows,omitempty"`
 	AuxiliaryChargeRows            int64                    `json:"auxiliary_charge_rows,omitempty"`
 	TestPricedRows                 int64                    `json:"test_priced_rows,omitempty"`
@@ -266,9 +267,8 @@ func GetBillingCustomerStatement(
 	if len(readPolicies) > 0 {
 		policy = readPolicies[0]
 	}
-	statement.RecordedOriginalAmounts = policy.RecordedAmountsOnly
+	statement.RecordedOriginalAmounts = true
 	err := scanBillingStatementFacts(ctx, query, policy, func(log billingReconciliationLog, parsed parsedBillingReconciliationLog) error {
-		parsed.recordedAmountsOnly = policy.RecordedAmountsOnly
 		if (modelName != "" && parsed.customerModel != modelName) || (billingMode != "" && parsed.billingMode != billingMode) {
 			return nil
 		}
@@ -357,52 +357,55 @@ const (
 )
 
 type parsedBillingReconciliationLog struct {
-	customerModel           string
-	refundTaskID            string
-	inputTokens             int64
-	recordedInputTokens     int64
-	outputTokens            int64
-	inputTokensUnavailable  bool
-	cacheWriteUnavailable   bool
-	billingMode             string
-	isRequest               bool
-	requestCount            int64
-	isRefund                bool
-	isChannelTest           bool
-	hasExpression           bool
-	taskID                  string
-	isTask                  bool
-	taskBillingEvent        string
-	hasImageCount           bool
-	completedImageCount     int64
-	modelRatio              *float64
-	completionRatio         *float64
-	modelPrice              *float64
-	testPricing             *upstreamTestPricingRecord
-	cacheReadTokens         int64
-	cacheReadUnavailable    bool
-	cacheReadEvidence       upstreamCacheEvidence
-	cacheWriteEvidence      upstreamCacheEvidence
-	cacheWrite              billingStatementCacheWriteTokens
-	discountRatio           *float64
-	groupName               string
-	groupRatioSource        string
-	contractDiscountRatio   *float64
-	contractEvidence        bool
-	contractApplicableKnown bool
-	contractApplicable      bool
-	contractId              float64
-	contractVersion         float64
-	contractName            string
-	refundPreauthLogId      int64
-	refundPreauthMatched    bool
-	hasAuxiliaryCharge      bool
-	fundingAdjustmentFailed bool
-	recordedOriginalQuota   *int64
-	recordedAmountsOnly     bool
-	priceMarker             string
-	providerModel           string
-	unavailable             bool
+	customerModel            string
+	refundTaskID             string
+	inputTokens              int64
+	recordedInputTokens      int64
+	outputTokens             int64
+	inputTokensUnavailable   bool
+	cacheWriteUnavailable    bool
+	billingMode              string
+	isRequest                bool
+	requestCount             int64
+	isRefund                 bool
+	isChannelTest            bool
+	hasExpression            bool
+	taskID                   string
+	isTask                   bool
+	taskBillingEvent         string
+	hasImageCount            bool
+	completedImageCount      int64
+	modelRatio               *float64
+	completionRatio          *float64
+	modelPrice               *float64
+	testPricing              *upstreamTestPricingRecord
+	cacheReadTokens          int64
+	cacheReadUnavailable     bool
+	cacheReadEvidence        upstreamCacheEvidence
+	cacheWriteEvidence       upstreamCacheEvidence
+	cacheWrite               billingStatementCacheWriteTokens
+	discountRatio            *float64
+	groupName                string
+	groupRatioSource         string
+	contractDiscountRatio    *float64
+	contractEvidence         bool
+	contractApplicableKnown  bool
+	contractApplicable       bool
+	contractId               float64
+	contractVersion          float64
+	contractName             string
+	refundPreauthLogId       int64
+	refundPreauthMatched     bool
+	hasAuxiliaryCharge       bool
+	fundingAdjustmentFailed  bool
+	recordedOriginalQuota    *int64
+	replayedOriginalQuota    *int64
+	derivedOutputImageTokens *int
+	contractSettlement       *CustomerContractSettlement
+	originalReplayReason     string
+	priceMarker              string
+	providerModel            string
+	unavailable              bool
 }
 
 func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingReconciliationLog {
@@ -588,6 +591,7 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 		parsed.inputTokensUnavailable = true
 	}
 	parsed.unavailable = parsed.unavailable || parsed.fundingAdjustmentFailed
+	recoverHistoricalFixedRequestMode(log, other, snapshot, &parsed)
 	parsed.cacheWriteUnavailable = parsed.cacheWriteUnavailable && parsed.billingMode != BillingReconciliationModePerCall
 	return parsed
 }
@@ -616,7 +620,7 @@ func billingReconciliationFloat(raw json.RawMessage) (float64, bool) {
 }
 
 func billingReconciliationBool(raw json.RawMessage) (bool, bool) {
-	if len(raw) == 0 {
+	if len(raw) == 0 || string(raw) == "null" {
 		return false, false
 	}
 	var value bool
@@ -662,44 +666,25 @@ func accumulateBillingReconciliationPrice(accumulator *billingReconciliationMode
 	if parsed.priceMarker != "" {
 		accumulator.priceSnapshotMarkers[parsed.priceMarker] = struct{}{}
 	}
-	if parsed.recordedAmountsOnly {
-		if original, ok := recordedStatementOriginalQuota(log, parsed); ok {
-			accumulator.originalQuota = accumulator.originalQuota.Add(original)
-			accumulator.originalQuotaKnown = true
-		} else {
-			accumulator.originalQuotaComplete = false
-			accumulator.model.EstimateReasons = mergeBillingEstimateReasons(accumulator.model.EstimateReasons, billingOriginalQuotaNotRecorded)
-			ensureBillingReconciliationQuality(&accumulator.model.DataQuality).MissingHistoricalPriceRows++
-		}
-	}
-	quota := max(int64(log.Quota), int64(0))
-	reasons := billingStatementEstimateReasons(parsed)
-	if parsed.recordedAmountsOnly {
-		if !parsed.unavailable {
-			observeBillingDiscountFactors(accumulator, parsed)
-		}
-		return
-	}
-	if quota == 0 {
-		return
-	}
-	if len(reasons) != 0 {
-		accumulator.model.EstimateReasons = mergeBillingEstimateReasons(accumulator.model.EstimateReasons, reasons...)
+	if original, ok := customerStatementOriginalQuota(log, parsed); ok {
+		accumulator.originalQuota = accumulator.originalQuota.Add(original)
+		accumulator.originalQuotaKnown = true
+	} else {
 		accumulator.originalQuotaComplete = false
-		accumulateBillingEstimateReasonQuality(ensureBillingReconciliationQuality(&accumulator.model.DataQuality), reasons)
-		return
+		reasons := statementOriginalUnavailableReasons(parsed)
+		accumulator.model.EstimateReasons = mergeBillingEstimateReasons(accumulator.model.EstimateReasons, reasons...)
+		quality := ensureBillingReconciliationQuality(&accumulator.model.DataQuality)
+		accumulateBillingEstimateReasonQuality(quality, reasons)
+		if parsed.originalReplayReason != "" {
+			if quality.OriginalReplayReasons == nil {
+				quality.OriginalReplayReasons = make(map[string]int64)
+			}
+			quality.OriginalReplayReasons[parsed.originalReplayReason]++
+		}
 	}
-	observeBillingDiscountFactors(accumulator, parsed)
-	contractRatio := 1.0
-	if parsed.contractDiscountRatio != nil {
-		contractRatio = *parsed.contractDiscountRatio
+	if !parsed.unavailable {
+		observeBillingDiscountFactors(accumulator, parsed)
 	}
-	original := decimal.NewFromInt(quota).Div(decimal.NewFromFloat(*parsed.discountRatio)).Div(decimal.NewFromFloat(contractRatio))
-	if log.Type == LogTypeRefund {
-		original = original.Neg()
-	}
-	accumulator.originalQuota = accumulator.originalQuota.Add(original)
-	accumulator.originalQuotaKnown = true
 }
 
 // Billing statements aggregate signed refunds before rounding. These int64
@@ -772,6 +757,14 @@ func accumulateBillingReconciliationQuality(target **BillingReconciliationDataQu
 	quality.UnknownBillingModeRequests += source.UnknownBillingModeRequests
 	quality.ProviderModelFallbackRows += source.ProviderModelFallbackRows
 	quality.MissingHistoricalPriceRows += source.MissingHistoricalPriceRows
+	if len(source.OriginalReplayReasons) > 0 {
+		if quality.OriginalReplayReasons == nil {
+			quality.OriginalReplayReasons = make(map[string]int64)
+		}
+		for reason, count := range source.OriginalReplayReasons {
+			quality.OriginalReplayReasons[reason] += count
+		}
+	}
 	quality.AuxiliaryChargeRows += source.AuxiliaryChargeRows
 	quality.TestPricedRows += source.TestPricedRows
 	quality.TestRecomputedRows += source.TestRecomputedRows

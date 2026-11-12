@@ -67,7 +67,7 @@ it.each([
       initialEntries: [
         direct
           ? '/usage-logs/common?billing=true&billingView=events&tokenId=187&billingMode=token&model=test-model&billingReportVersion=published-report'
-          : '/usage-logs/common?billing=true&page=2&model=test-model',
+          : '/usage-logs/common?billing=true&page=2&pageSize=100&model=test-model',
       ],
     }),
   })
@@ -94,9 +94,11 @@ it.each([
       return
     }
 
-    await user.click(
-      await screen.findByRole('button', { name: 'View details (1)' })
-    )
+    expect(await screen.findByText('Page 2 of 2')).toBeVisible()
+    expect(
+      screen.getByRole('combobox', { name: 'Rows per page' })
+    ).toHaveTextContent('100')
+    await user.click(screen.getByRole('button', { name: 'View details (1)' }))
 
     expect(await screen.findByText('No Logs Found')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Back' })).toBeVisible()

@@ -15,7 +15,7 @@ func TestCustomerStatementContractTransitionShowsMultipleDiscounts(t *testing.T)
 			require.NoError(t, db.Create(&User{Id: 7, Username: "customer"}).Error)
 			logs := []Log{
 				{UserId: 7, TokenId: 4, ModelName: "model", Type: LogTypeConsume, CreatedAt: 1100, Quota: 100, Other: `{"contract_applicable":false,"model_ratio":1,"group_ratio":1}`},
-				{UserId: 7, TokenId: 4, ModelName: "model", Type: LogTypeConsume, CreatedAt: 1101, Quota: 80, Other: `{"model_ratio":1,"group_ratio":1,"contract_discount":0.8}`},
+				{UserId: 7, TokenId: 4, ModelName: "model", Type: LogTypeConsume, CreatedAt: 1101, Quota: 80, Other: `{"model_ratio":1,"group_ratio":1,"contract_discount":0.8,"admin_info":{"statement_original_quota":100}}`},
 			}
 			if reverse {
 				logs[0], logs[1] = logs[1], logs[0]

@@ -1,5 +1,6 @@
 import { useId, type ReactNode } from 'react'
 
+import { ReportCard } from '@/components/report-card'
 import { Button } from '@/components/ui/button'
 
 export function BillingExportSection(props: {
@@ -12,10 +13,7 @@ export function BillingExportSection(props: {
 }) {
   const headingId = useId()
   return (
-    <section
-      aria-labelledby={headingId}
-      className='space-y-3 rounded-lg border p-3'
-    >
+    <ReportCard role='region' aria-labelledby={headingId}>
       <h2 id={headingId} className='text-sm font-medium'>
         {props.title}
       </h2>
@@ -25,9 +23,14 @@ export function BillingExportSection(props: {
           {props.notice}
         </p>
       )}
-      <Button size='sm' disabled={props.disabled} onClick={props.onSubmit}>
+      <Button
+        size='sm'
+        className='self-start'
+        disabled={props.disabled}
+        onClick={props.onSubmit}
+      >
         {props.actionLabel}
       </Button>
-    </section>
+    </ReportCard>
   )
 }

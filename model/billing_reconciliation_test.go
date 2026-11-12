@@ -62,10 +62,10 @@ func TestBillingCustomerStatementAggregatesByDimensionAndBillingMode(t *testing.
 	require.NoError(t, db.Create(&User{Id: 7, Username: "customer", Quota: 8800}).Error)
 	require.NoError(t, db.Create(&[]Channel{{Id: 21, Name: "primary"}, {Id: 22, Name: "secondary"}}).Error)
 	logs := []Log{
-		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "token-model", PromptTokens: 100, CompletionTokens: 20, Quota: 1200, Other: `{"contract_applicable":false,"usage_semantic":"openai","group_ratio":0.8,"model_ratio":1,"cache_tokens":5,"cache_creation_tokens":3}`},
+		{UserId: 7, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "token-model", PromptTokens: 100, CompletionTokens: 20, Quota: 1200, Other: `{"contract_applicable":false,"usage_semantic":"openai","group_ratio":0.8,"model_ratio":1,"cache_tokens":5,"cache_creation_tokens":3,"admin_info":{"statement_original_quota":1500}}`},
 		{UserId: 7, CreatedAt: 1200, Type: LogTypeConsume, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "call-model", Quota: 400, Other: `{"contract_applicable":false,"group_ratio":1,"model_price":0.002}`},
 		{UserId: 7, CreatedAt: 1250, Type: LogTypeRefund, TokenId: 11, TokenName: "key-a", ChannelId: 21, ModelName: "call-model", Quota: 400, Other: `{"contract_applicable":false,"group_ratio":1,"model_price":0.002}`},
-		{UserId: 7, CreatedAt: 1300, Type: LogTypeConsume, TokenId: 12, TokenName: "key-b", ChannelId: 22, ModelName: "token-model", PromptTokens: 50, CompletionTokens: 10, Quota: 600, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1}`},
+		{UserId: 7, CreatedAt: 1300, Type: LogTypeConsume, TokenId: 12, TokenName: "key-b", ChannelId: 22, ModelName: "token-model", PromptTokens: 50, CompletionTokens: 10, Quota: 600, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1,"admin_info":{"statement_original_quota":1000}}`},
 		{UserId: 8, CreatedAt: 1300, Type: LogTypeConsume, TokenId: 11, TokenName: "other", ChannelId: 21, ModelName: "token-model", PromptTokens: 999, Quota: 999, Other: `{"contract_applicable":false,"group_ratio":1,"model_ratio":1}`},
 	}
 	require.NoError(t, db.Create(&logs).Error)
@@ -111,7 +111,7 @@ func TestBillingCustomerStatementDoesNotExposePartialOriginalQuota(t *testing.T)
 	db := setupBillingReconciliationTestDB(t)
 	require.NoError(t, db.Create(&User{Id: 17, Username: "partial", Quota: 1000}).Error)
 	require.NoError(t, db.Create(&[]Log{
-		{UserId: 17, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "key", ChannelId: 21, ModelName: "model", PromptTokens: 10, Quota: 800, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1}`},
+		{UserId: 17, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 11, TokenName: "key", ChannelId: 21, ModelName: "model", PromptTokens: 10, Quota: 800, Other: `{"contract_applicable":false,"group_ratio":0.8,"model_ratio":1,"admin_info":{"statement_original_quota":1000}}`},
 		{UserId: 17, CreatedAt: 1200, Type: LogTypeConsume, TokenId: 11, TokenName: "key", ChannelId: 21, ModelName: "model", PromptTokens: 10, Quota: 500, Other: `{"model_ratio":1}`},
 	}).Error)
 
@@ -146,7 +146,7 @@ func TestBillingReconciliationSeparatesContractDiscountFromGroupRatio(t *testing
 	require.NoError(t, db.Create(&Log{
 		UserId: 18, CreatedAt: 1100, Type: LogTypeConsume, TokenId: 12, TokenName: "key", ChannelId: 21,
 		ModelName: "model", PromptTokens: 10, Quota: 400,
-		Other: `{"group_ratio":0.8,"contract_discount":"0.5","model_ratio":1}`,
+		Other: `{"group_ratio":0.8,"contract_discount":"0.5","model_ratio":1,"admin_info":{"statement_original_quota":1000}}`,
 	}).Error)
 
 	statement, err := GetBillingCustomerStatement(context.Background(), 18, 1000, 1500, "api_key", 0, "", "")

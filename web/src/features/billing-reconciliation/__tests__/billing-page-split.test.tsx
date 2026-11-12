@@ -108,7 +108,7 @@ describe('billing page split', () => {
   })
 
   it.each(['customer', 'upstream'] as const)(
-    'bounds the %s view vertically so its table can scroll within the tab',
+    'keeps the %s tab height bounded for table scrolling at every breakpoint',
     (section) => {
       renderWithI18n(
         <AdminBillingReconciliation
@@ -117,28 +117,18 @@ describe('billing page split', () => {
         />
       )
 
-      expect(screen.getByRole('tabpanel')).toHaveClass(
+      const panel = screen.getByRole('tabpanel')
+      expect(panel).toHaveClass(
         'flex',
         'min-h-0',
-        'flex-col'
+        'flex-col',
+        'overflow-hidden'
       )
+      expect(panel).not.toHaveClass('overflow-y-auto')
+      expect(panel).not.toHaveClass('max-sm:block')
+      expect(panel).not.toHaveClass('[@media(max-height:42rem)]:block')
     }
   )
-
-  it('lets the selected tab scroll on narrow or short screens', () => {
-    renderWithI18n(
-      <AdminBillingReconciliation
-        search={{ section: 'upstream' }}
-        onSearchChange={vi.fn()}
-      />
-    )
-
-    expect(screen.getByRole('tabpanel')).toHaveClass(
-      'overflow-y-auto',
-      'max-sm:block',
-      '[@media(max-height:42rem)]:block'
-    )
-  })
 
   it('lands the legacy upstream_url section on the merged upstream view', () => {
     renderWithI18n(

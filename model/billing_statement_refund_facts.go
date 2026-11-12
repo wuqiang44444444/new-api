@@ -159,15 +159,17 @@ type billingStatementPreauthCandidate struct {
 // billingStatementPreauthOriginal is the minimal original preauth row scanned
 // for association validation.
 type billingStatementPreauthOriginal struct {
-	GroupName string
-	Id        int64
-	UserId    int
-	TokenId   int
-	ChannelId int
-	ModelName string
-	Type      int
-	Quota     int
-	Other     string
+	GroupName        string
+	Id               int64
+	UserId           int
+	TokenId          int
+	ChannelId        int
+	ModelName        string
+	Type             int
+	Quota            int
+	Other            string
+	PromptTokens     int
+	CompletionTokens int
 }
 
 // billingStatementRefundPreauthFact carries the customer-safe frozen facts a
@@ -186,6 +188,8 @@ type billingStatementRefundPreauthFact struct {
 	contractName                    string
 	hasAuxiliaryCharge, unavailable bool
 	recordedOriginalQuota           *int64
+	replayedOriginalQuota           *int64
+	derivedOutputImageTokens        *int
 }
 
 type billingStatementRefundPreauthFacts map[billingStatementRefundKey]billingStatementRefundPreauthFact
@@ -219,6 +223,8 @@ func (facts billingStatementRefundPreauthFacts) apply(log billingReconciliationL
 	}
 	if parsed.recordedOriginalQuota == nil {
 		parsed.recordedOriginalQuota = fact.recordedOriginalQuota
+		parsed.replayedOriginalQuota = fact.replayedOriginalQuota
+		parsed.derivedOutputImageTokens = fact.derivedOutputImageTokens
 	}
 	parsed.hasAuxiliaryCharge = parsed.hasAuxiliaryCharge || fact.hasAuxiliaryCharge
 	parsed.unavailable = parsed.unavailable || fact.unavailable
@@ -324,7 +330,7 @@ func buildBillingStatementRefundPreauthFacts(ctx context.Context, refunds []bill
 		end := min(start+200, len(ids))
 		var originals []billingStatementPreauthOriginal
 		query := usageReportLogDB(ctx).WithContext(ctx).Model(&Log{}).
-			Select("id, user_id, token_id, channel_id, COALESCE(model_name, '') AS model_name, type, quota, COALESCE(other, '') AS other, "+billingStatementGroupSelect()).
+			Select("id, user_id, token_id, channel_id, COALESCE(model_name, '') AS model_name, type, quota, prompt_tokens, completion_tokens, COALESCE(other, '') AS other, "+billingStatementGroupSelect()).
 			Where("id IN ?", ids[start:end])
 		if err := query.Scan(&originals).Error; err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -362,19 +368,23 @@ func billingStatementPreauthFactFromOriginal(original billingStatementPreauthOri
 		candidate.key.channelID != original.ChannelId || candidate.refQuota != max(int64(original.Quota), int64(0)) {
 		return billingStatementRefundPreauthFact{}, false
 	}
-	parsed := parseBillingReconciliationLog(billingReconciliationLog{
+	source := billingReconciliationLog{
 		GroupName: original.GroupName, UserId: original.UserId, TokenId: original.TokenId, TokenName: "",
 		ChannelId: original.ChannelId, ModelName: original.ModelName, Type: original.Type,
-		PromptTokens: 0, CompletionTokens: 0, Quota: original.Quota, Other: original.Other,
-	})
+		PromptTokens: original.PromptTokens, CompletionTokens: original.CompletionTokens, Quota: original.Quota, Other: original.Other,
+	}
+	parsed := parseBillingReconciliationLog(source)
 	if parsed.customerModel != candidate.key.model {
 		return billingStatementRefundPreauthFact{}, false
 	}
+	applyCustomerOriginalReplay(source, &parsed)
 	return billingStatementRefundPreauthFact{
-		billingMode:           parsed.billingMode,
-		discountRatio:         parsed.discountRatio,
-		recordedOriginalQuota: parsed.recordedOriginalQuota,
-		groupName:             parsed.groupName, groupRatioSource: parsed.groupRatioSource,
+		billingMode:              parsed.billingMode,
+		discountRatio:            parsed.discountRatio,
+		recordedOriginalQuota:    parsed.recordedOriginalQuota,
+		replayedOriginalQuota:    parsed.replayedOriginalQuota,
+		derivedOutputImageTokens: parsed.derivedOutputImageTokens,
+		groupName:                parsed.groupName, groupRatioSource: parsed.groupRatioSource,
 		contractDiscountRatio:   parsed.contractDiscountRatio,
 		contractEvidence:        parsed.contractEvidence,
 		contractApplicableKnown: parsed.contractApplicableKnown,

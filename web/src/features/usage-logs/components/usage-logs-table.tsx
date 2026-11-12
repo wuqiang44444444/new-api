@@ -299,11 +299,12 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       <BillingFundGroups
         rows={data.fund_groups}
         quota={data.quota}
-        previous={pageIndex > 0}
-        next={(pageIndex + 1) * pagination.pageSize < data.total}
+        page={pageIndex + 1}
+        pageSize={pagination.pageSize}
+        total={data.total}
         loading={isFetching}
-        onPage={(offset) =>
-          onPaginationChange({ ...pagination, pageIndex: pageIndex + offset })
+        onPage={(page, pageSize) =>
+          onPaginationChange({ pageIndex: page - 1, pageSize })
         }
         onSelect={(group) => {
           setFundSelection({

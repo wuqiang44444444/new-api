@@ -8,10 +8,10 @@ import "strings"
 // retired browser download; machine-only columns carry authored labels.
 
 var customerExportSummaryLabels = map[string]map[string]string{
-	"currency":           {"en": "Currency", "zh": "币种"},
-	"estimate_reasons":   {"en": "Estimate reasons", "zh": "估算未完成原因"},
-	"group_name":         {"en": "Billing group", "zh": "计费组", "zh-TW": "計費群組", "fr": "Groupe de facturation", "ru": "Группа тарификации", "ja": "課金グループ", "vi": "Nhóm tính phí"},
-	"group_ratio_source": {"en": "Group ratio source", "zh": "组倍率来源", "zh-TW": "群組倍率來源", "fr": "Origine du coefficient de groupe", "ru": "Источник коэффициента группы", "ja": "グループ倍率の適用元", "vi": "Nguồn hệ số nhóm"},
+	"currency":                   {"en": "Currency", "zh": "币种"},
+	"amount_unavailable_reasons": {"en": "Amount unavailable reasons", "zh": "金额无法计算原因"},
+	"group_name":                 {"en": "Billing group", "zh": "计费组", "zh-TW": "計費群組", "fr": "Groupe de facturation", "ru": "Группа тарификации", "ja": "課金グループ", "vi": "Nhóm tính phí"},
+	"group_ratio_source":         {"en": "Group ratio source", "zh": "组倍率来源", "zh-TW": "群組倍率來源", "fr": "Origine du coefficient de groupe", "ru": "Источник коэффициента группы", "ja": "グループ倍率の適用元", "vi": "Nguồn hệ số nhóm"},
 	"field_version": {
 		"en":    "Field version",
 		"zh":    "字段版本",

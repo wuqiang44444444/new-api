@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { expect, it, vi } from 'vitest'
@@ -110,7 +110,8 @@ async function renderQualityStatement(
   quality: BillingDataQuality,
   language = 'en',
   balance: number | null = 1781719699,
-  mode = 'unknown'
+  mode = 'unknown',
+  extraChannels = 0
 ) {
   const i18n = createInstance().use(initReactI18next)
   await i18n.init({
@@ -162,6 +163,12 @@ async function renderQualityStatement(
             ],
           },
           { id: 76, name: 'current channel', usage, models: [] },
+          ...Array.from({ length: extraChannels }, (_, index) => ({
+            id: 200 + index,
+            name: `extra channel ${index + 1}`,
+            usage,
+            models: [],
+          })),
         ],
       },
     }
@@ -181,6 +188,28 @@ async function renderQualityStatement(
   )
   return { view, client }
 }
+
+it('pages channel billing groups and keeps the statement total across pages', async () => {
+  const { view, client } = await renderQualityStatement(
+    { status: 'complete' },
+    'en',
+    null,
+    'unknown',
+    9
+  )
+  const pager = within(
+    screen.getByRole('group', { name: 'Billing by channel' })
+  )
+  expect(pager.getByText('Page 1 of 2')).toBeVisible()
+  expect(screen.queryByText('extra channel 9')).not.toBeInTheDocument()
+  fireEvent.click(pager.getByRole('button', { name: 'Go to page 2' }))
+  expect(pager.getByText('Page 2 of 2')).toBeVisible()
+  expect(screen.getByText('extra channel 9')).toBeVisible()
+  expect(screen.queryByText('current channel')).not.toBeInTheDocument()
+  expect(screen.getAllByText('$1,663.551872').length).toBeGreaterThan(0)
+  view.unmount()
+  client.clear()
+})
 
 it('explains the actual quality reason and missing channel without inventing usage or hiding charges', async () => {
   const { view, client } = await renderQualityStatement({
@@ -232,10 +261,16 @@ it('renders each reported quality cause and missing channel explanation in Chine
     '上游模型身份未记录：5 条',
     '渠道 #97',
     '记录已不存在，历史费用仍保留。',
-    '共 12313 次请求',
   ]) {
     expect(screen.getByText(message)).toBeTruthy()
   }
+  const requestCard = screen
+    .getAllByText('请求数')
+    .map((label) => label.closest<HTMLElement>('[data-slot="card"]'))
+    .find((card) => card && within(card).queryByText('12,313'))
+  expect(requestCard).toBeTruthy()
+  expect(requestCard?.textContent).not.toContain('净结算金额')
+  expect(screen.queryByText('直接读取主数据库')).toBeNull()
   expect(screen.queryByText(/请刷新后再导出/)).toBeNull()
   view.unmount()
   client.clear()
@@ -323,9 +358,13 @@ it('shows an unavailable balance for a deleted customer while keeping historical
   ).toBeTruthy()
   expect(screen.queryByText('Read directly from the main database')).toBeNull()
   expect(screen.getByText('$1,663.551872')).toBeTruthy()
-  const balanceCard = screen.getByText('Current balance').parentElement
-  if (!balanceCard) throw new Error('Missing balance card')
-  expect(balanceCard.textContent).toBe('Current balance-')
+  const balanceCard = screen
+    .getByText('Current balance')
+    .closest('[data-slot="card"]')
+  if (!(balanceCard instanceof HTMLElement)) {
+    throw new Error('Missing balance card')
+  }
+  expect(within(balanceCard).getByText('-')).toBeVisible()
   view.unmount()
   client.clear()
 })

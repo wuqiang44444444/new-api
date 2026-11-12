@@ -30,6 +30,7 @@ func registerBillingReconciliationRoutes(apiRouter *gin.RouterGroup) {
 	adminRoute.Use(middleware.AdminAuth())
 	{
 		adminRoute.POST("/reports/rebuild", middleware.RootAuth(), controller.PostBillingReportRebuild)
+		adminRoute.POST("/reports/rollback", middleware.RootAuth(), controller.PostBillingReportRollback)
 		adminRoute.GET("/customer-statements", controller.GetAdminCustomerBillingStatements)
 		adminRoute.GET("/customer-logs", controller.GetAdminBillingStatementLogs)
 		adminRoute.GET("/customer-logs/stat", controller.GetAdminBillingStatementLogs)

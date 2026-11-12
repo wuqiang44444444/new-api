@@ -23,9 +23,9 @@ import { toast } from 'sonner'
 
 import { Dialog as ModalDialog } from '@/components/dialog'
 import { EmptyState } from '@/components/empty-state'
+import { ReportCard } from '@/components/report-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -68,6 +68,7 @@ type StatementVersionPanelProps = {
   isAdmin: boolean
   userId?: number
   period: { start_timestamp: number; end_timestamp: number }
+  statementDataCutoff?: number
   previewVersionId: string | null
   onPreviewChange: (draftPublicId: string | null) => void
   onChanged: () => void
@@ -214,6 +215,7 @@ export function StatementVersionPanel(props: StatementVersionPanelProps) {
           key={`${userId}:${period.start_timestamp}:${period.end_timestamp}`}
           userId={userId as number}
           period={period}
+          statementDataCutoff={props.statementDataCutoff}
           disabled={!status.topology_ok}
           onVerified={refresh}
         />
@@ -313,25 +315,25 @@ export function StatementVersionPanel(props: StatementVersionPanelProps) {
       {props.renderHeader ? (
         props.renderHeader(versionStatus, versionActions)
       ) : (
-        <Card size='sm' className='border-dashed'>
-          <CardContent className='flex flex-wrap items-center gap-2 py-3'>
+        <ReportCard className='border-dashed'>
+          <div className='flex flex-wrap items-center gap-2'>
             {versionStatus}
             <div className='ms-auto flex flex-wrap items-center gap-2'>
               {versionActions}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </ReportCard>
       )}
       {isAdmin && draft && props.previewVersionId === draft.draft_public_id && (
-        <Card size='sm' className='border-dashed'>
-          <CardContent>
+        <ReportCard className='border-dashed'>
+          <div>
             <VersionDiffSection
               userId={userId as number}
               period={period}
               draft={draft}
             />
-          </CardContent>
-        </Card>
+          </div>
+        </ReportCard>
       )}
       <ConfirmDialog
         key={draft?.draft_public_id ?? 'none'}

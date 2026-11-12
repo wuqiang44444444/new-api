@@ -582,20 +582,8 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	}
 	appendCustomerContractBillingInfo(other, relayInfo.ContractBillingFact)
-	if funded {
-		if snap != nil {
-			if tieredResult != nil && len(summary.ToolSurchargeItems) == 0 {
-				quota, err := common.QuotaRoundStrict(tieredResult.ActualQuotaBeforeGroup)
-				if err == nil {
-					if !summary.hasBillableUsage() {
-						quota = 0
-					}
-					other.SetAdmin(model.StatementOriginalQuotaLogKey, quota)
-				}
-			}
-		} else if summary.OriginalQuota != nil {
-			other.SetAdmin(model.StatementOriginalQuotaLogKey, *summary.OriginalQuota)
-		}
+	if len(summary.ToolSurchargeItems) == 0 {
+		appendSynchronousStatementOriginal(other, funded && relayInfo.QuotaClamp == nil, summary.hasBillableUsage(), snap != nil, tieredResult, summary.OriginalQuota)
 	}
 	appendBillingStatementSnapshot(relayInfo, other)
 	appendTextStatementUsage(other, relayInfo, billingUsage, summary)

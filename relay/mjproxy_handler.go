@@ -263,6 +263,7 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 	if billingErr != nil {
 		common.SysLog(common.LogText("error consuming Midjourney quota: %s", billingErr.Error()))
 	}
+	service.FreezeMidjourneyStatementOriginal(midjourneyTask, priceData, billingPrepared)
 	err = midjourneyTask.Insert()
 	if err != nil {
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "insert_midjourney_task_failed")
@@ -284,6 +285,7 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 		})}
 		other := service.GenerateMjOtherInfo(info, priceData)
 		service.AppendRelayLogAdminInfo(c, info, other)
+		service.AppendMidjourneyStatementOriginal(other, midjourneyTask)
 		model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 			ChannelId: billingChannelId,
 			ModelName: modelName,
@@ -641,6 +643,7 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 	if billingErr != nil {
 		common.SysLog(common.LogText("error consuming Midjourney quota: %s", billingErr.Error()))
 	}
+	service.FreezeMidjourneyStatementOriginal(midjourneyTask, priceData, billingPrepared)
 	err = midjourneyTask.Insert()
 	if err != nil {
 		return &dto.MidjourneyResponse{
@@ -666,6 +669,7 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 		})}
 		other := service.GenerateMjOtherInfo(relayInfo, priceData)
 		service.AppendRelayLogAdminInfo(c, relayInfo, other)
+		service.AppendMidjourneyStatementOriginal(other, midjourneyTask)
 		model.RecordConsumeLog(c, relayInfo.UserId, model.RecordConsumeLogParams{
 			ChannelId: billingChannelId,
 			ModelName: modelName,

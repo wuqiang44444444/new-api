@@ -13,13 +13,12 @@ func TestCustomerStatementSplitsDiscountCombinations(t *testing.T) {
 	db := setupBillingReconciliationTestDB(t)
 	require.NoError(t, db.Create(&User{Id: 7, Username: "customer"}).Error)
 	logs := []Log{
-		// Contract combination: 100 / 0.5 / 0.3 = 666.66...
+		// The recorded original rounds independently of the settled charge.
 		{UserId: 7, TokenId: 4, ModelName: "model-a", Type: LogTypeConsume, CreatedAt: 1100, Quota: 100,
-			Other: `{"group_ratio":0.5,"contract_discount":0.3,"contract_id":5,"contract_version":2,"contract_name":"annual"}`},
-		// No contract discount: 100 / 0.5 = 200. Legacy row has no explicit
-		// applicability marker; unrecorded contracts use only the group factor.
+			Other: `{"group_ratio":0.5,"contract_discount":0.3,"contract_id":5,"contract_version":2,"contract_name":"annual","admin_info":{"statement_original_quota":667}}`},
+		// Recorded money is available even when the historic contract identity is missing.
 		{UserId: 7, TokenId: 4, ModelName: "model-a", Type: LogTypeConsume, CreatedAt: 1101, Quota: 100,
-			Other: `{"group_ratio":0.5}`},
+			Other: `{"group_ratio":0.5,"admin_info":{"statement_original_quota":200}}`},
 	}
 	require.NoError(t, db.Create(&logs).Error)
 	statement, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1200, "api_key", 0, "", "")
@@ -69,9 +68,9 @@ func TestCustomerStatementCombinationRefundKeepsNegativeSign(t *testing.T) {
 	require.NoError(t, db.Create(&User{Id: 7, Username: "customer"}).Error)
 	logs := []Log{
 		{UserId: 7, TokenId: 4, ModelName: "video", Type: LogTypeConsume, CreatedAt: 1100, Quota: 87,
-			Other: `{"group_ratio":0.87,"contract_applicable":false}`},
+			Other: `{"group_ratio":0.87,"contract_applicable":false,"admin_info":{"statement_original_quota":100}}`},
 		{UserId: 7, TokenId: 4, ModelName: "video", Type: LogTypeRefund, CreatedAt: 1101, Quota: 87,
-			Other: `{"group_ratio":0.87,"contract_applicable":false}`},
+			Other: `{"group_ratio":0.87,"contract_applicable":false,"admin_info":{"statement_original_quota":100}}`},
 	}
 	require.NoError(t, db.Create(&logs).Error)
 	statement, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1200, "api_key", 0, "", "")
@@ -80,7 +79,7 @@ func TestCustomerStatementCombinationRefundKeepsNegativeSign(t *testing.T) {
 	combo := statement.DiscountCombinations[0]
 	assert.Equal(t, "no", combo.ContractApplicable)
 	require.NotNil(t, combo.OriginalQuota)
-	// 87 / 0.87 = 100；退款负计，净额为 0，原价与优惠互相抵消。
+	// 退款负计，净额为 0，原价与优惠互相抵消。
 	assert.EqualValues(t, 0, *combo.OriginalQuota)
 	assert.EqualValues(t, 0, combo.Usage.NetQuota)
 	require.NotNil(t, combo.DiscountQuota)
@@ -136,7 +135,7 @@ func TestCustomerStatementCombinationOverflowMergesIntoOtherRow(t *testing.T) {
 	logs := make([]Log, 0, billingDiscountCombinationCap+1)
 	for i := 0; i <= billingDiscountCombinationCap; i++ {
 		logs = append(logs, Log{UserId: 7, TokenId: 4, ModelName: "model", Type: LogTypeConsume, CreatedAt: int64(1100 + i), Quota: 10,
-			Other: `{"group_ratio":` + strconv.FormatFloat(0.1+float64(i)/1000, 'f', -1, 64) + `,"contract_applicable":false}`})
+			Other: `{"group_ratio":` + strconv.FormatFloat(0.1+float64(i)/1000, 'f', -1, 64) + `,"contract_applicable":false,"admin_info":{"statement_original_quota":100}}`})
 	}
 	require.NoError(t, db.Create(&logs).Error)
 	statement, err := GetBillingCustomerStatement(context.Background(), 7, 1000, 1500, "api_key", 0, "", "")

@@ -118,7 +118,7 @@ func observeBillingDiscountFactors(acc *billingReconciliationModelAccumulator, p
 	}
 
 	state := billingContractApplicableState(parsed)
-	if state == combinationContractApplicableUnknown || (parsed.recordedAmountsOnly && state == combinationContractUnrecorded) {
+	if state == combinationContractApplicableUnknown || state == combinationContractUnrecorded {
 		return
 	}
 	contractRatio := 1.0
@@ -133,10 +133,7 @@ func observeBillingDiscountFactors(acc *billingReconciliationModelAccumulator, p
 	}
 }
 
-// observe accumulates one settled log row. Money follows exactly the same
-// pre-discount reconstruction as accumulateBillingReconciliationPrice:
-// quota / G / C, refunds negative, never rounded per row. A zero-quota row is
-// an exact zero money fact and does not invalidate the combination.
+// observe accumulates the recorded discounts and verified amounts for one settlement event.
 func (a *billingDiscountCombinationAccumulator) observe(log billingReconciliationLog, selectedGroupId int64, parsed parsedBillingReconciliationLog, sourceIDs ...int64) {
 	if log.Type != LogTypeConsume && log.Type != LogTypeRefund {
 		return
@@ -198,34 +195,12 @@ func (a *billingDiscountCombinationAccumulator) observe(log billingReconciliatio
 		entry.combo.InputTokensKnown = false
 	}
 	accumulateBillingReconciliationLog(&entry.combo.Usage, log, parsed)
-	if parsed.recordedAmountsOnly {
-		if original, ok := recordedStatementOriginalQuota(log, parsed); ok {
-			entry.originalQuota = entry.originalQuota.Add(original)
-		} else {
-			entry.originalComplete = false
-			entry.combo.EstimateReasons = mergeBillingEstimateReasons(entry.combo.EstimateReasons, billingOriginalQuotaNotRecorded)
-		}
-		return
-	}
-	quota := max(int64(log.Quota), int64(0))
-	if quota == 0 {
-		return
-	}
-	// 还原口径与 accumulateBillingReconciliationPrice 完全一致：组与合同事实齐备且
-	// 无附加费才还原；完全没有合同记录时按 C=1，残缺合同仍不可估算。
-	if reasons := billingStatementEstimateReasons(parsed); len(reasons) > 0 {
-		entry.combo.EstimateReasons = mergeBillingEstimateReasons(entry.combo.EstimateReasons, reasons...)
+	if original, ok := customerStatementOriginalQuota(log, parsed); ok {
+		entry.originalQuota = entry.originalQuota.Add(original)
+	} else {
 		entry.originalComplete = false
-		return
+		entry.combo.EstimateReasons = mergeBillingEstimateReasons(entry.combo.EstimateReasons, statementOriginalUnavailableReasons(parsed)...)
 	}
-	original := decimal.NewFromInt(quota).Div(decimal.NewFromFloat(key.groupRatio))
-	if key.hasContractRatio {
-		original = original.Div(decimal.NewFromFloat(key.contractRatio))
-	}
-	if log.Type == LogTypeRefund {
-		original = original.Neg()
-	}
-	entry.originalQuota = entry.originalQuota.Add(original)
 }
 
 func ratioSortKey(ratio *float64) float64 {

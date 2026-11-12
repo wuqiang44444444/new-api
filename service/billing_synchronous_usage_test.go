@@ -63,7 +63,7 @@ func TestSynchronousBillingStatementUsesBookedFunds(t *testing.T) {
 				Admin map[string]any `json:"admin_info"`
 			}
 			require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
-			statement, err := model.GetBillingCustomerStatement(context.Background(), id, log.CreatedAt-1, log.CreatedAt+1, "api_key", 0, "", "", model.BillingStatementReadPolicy{RecordedAmountsOnly: true})
+			statement, err := model.GetBillingCustomerStatement(context.Background(), id, log.CreatedAt-1, log.CreatedAt+1, "api_key", 0, "", "")
 			require.NoError(t, err)
 			assert.EqualValues(t, tc.booked, statement.Summary.NetQuota)
 			if tc.wantOriginal {

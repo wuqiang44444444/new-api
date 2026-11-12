@@ -41,9 +41,7 @@ type AdminBillingReconciliationProps = {
   ) => void
 }
 
-// Let the whole tab scroll when the controls and totals may crowd out the table.
-const billingTabPanelClassName =
-  'flex min-h-0 flex-col overflow-y-auto max-sm:block [@media(max-height:42rem)]:block'
+const billingTabPanelClassName = 'flex min-h-0 flex-col overflow-hidden'
 
 export function AdminBillingReconciliation(
   props: AdminBillingReconciliationProps

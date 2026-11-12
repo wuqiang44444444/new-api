@@ -33,7 +33,7 @@ func TestCustomerBillingExpressionExplanationMatchesSettlement(t *testing.T) {
 		{"token nondefault quota conversion", tokenExpr, "base", `"usage_semantic":"openai","group_ratio":0.5,"contract_discount":0.8`, 1000, 100, 1200, 1000000, true, "0.003"},
 		{"token mismatched settlement", tokenExpr, "base", `"usage_semantic":"openai","group_ratio":0.5,"contract_discount":0.8`, 1000, 100, 900, 500000, false, ""},
 		{"independent token components with incomplete contract", tokenExpr, "base", `"usage_semantic":"openai","group_ratio":0.5,"contract_id":7`, 1000, 100, 600, 500000, true, "0.003"},
-		{"no recorded contract uses group factor", tokenExpr, "base", `"usage_semantic":"openai","group_ratio":0.5`, 1000, 100, 750, 500000, true, "0.003"},
+		{"no recorded contract cannot establish final factor", tokenExpr, "base", `"usage_semantic":"openai","group_ratio":0.5`, 1000, 100, 750, 500000, false, ""},
 		{"no recorded contract cannot explain mismatched settlement", tokenExpr, "base", `"usage_semantic":"openai","group_ratio":0.5`, 1000, 100, 600, 500000, false, ""},
 		{"separate fee stays outside model components", tokenExpr, "base", `"usage_semantic":"openai","group_ratio":0.5,"contract_discount":0.8,"fee_quota":70`, 1000, 100, 670, 500000, true, "0.003"},
 		{"task frozen seconds", taskExpr, "base", `"usage_units":{"seconds":"second"},"usage_facts":{"seconds":5},"group_ratio":0.5,"contract_discount":0.8`, 0, 0, 400000, 500000, true, "2"},

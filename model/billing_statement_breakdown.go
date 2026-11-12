@@ -325,7 +325,7 @@ func billingBreakdownInputTokens(
 }
 
 func billingBreakdownNonNegativeInt(raw json.RawMessage) (int64, bool) {
-	if len(raw) == 0 {
+	if len(raw) == 0 || string(raw) == "null" {
 		return 0, false
 	}
 	var value int64

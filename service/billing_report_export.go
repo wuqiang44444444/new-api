@@ -24,7 +24,7 @@ func freezeBillingExportReport(ctx context.Context, filters *model.CustomerExpor
 	return bound, nil
 }
 
-const dailyBillingExportFieldVersion = 23
+const dailyBillingExportFieldVersion = 24
 
 func customerExportFormatVersion(jobType string) int {
 	if isDailyBillingExport(jobType) {

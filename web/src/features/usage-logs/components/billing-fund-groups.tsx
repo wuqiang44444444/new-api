@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 
+import { ResultPagination } from '@/components/data-table/core/result-pagination'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -17,10 +18,11 @@ import { useUsageLogsContext } from './usage-logs-provider'
 export function BillingFundGroups(props: {
   rows: BillingFundGroup[]
   quota?: number
-  previous: boolean
-  next: boolean
+  page: number
+  pageSize: number
+  total: number
   loading: boolean
-  onPage: (offset: number) => void
+  onPage: (page: number, pageSize: number) => void
   onSelect: (group: string) => void
 }) {
   const { t } = useTranslation()
@@ -43,22 +45,16 @@ export function BillingFundGroups(props: {
           <p className='text-muted-foreground p-4'>{t('No Logs Found')}</p>
         )}
       </div>
-      <div className='flex justify-end gap-2'>
-        <Button
-          variant='outline'
-          disabled={props.loading || !props.previous}
-          onClick={() => props.onPage(-1)}
-        >
-          {t('Previous page')}
-        </Button>
-        <Button
-          variant='outline'
-          disabled={props.loading || !props.next}
-          onClick={() => props.onPage(1)}
-        >
-          {t('Next page')}
-        </Button>
-      </div>
+      {props.total > 0 && (
+        <ResultPagination
+          page={props.page}
+          pageSize={props.pageSize}
+          total={props.total}
+          disabled={props.loading}
+          label={t('Details')}
+          onChange={props.onPage}
+        />
+      )}
     </div>
   )
 }

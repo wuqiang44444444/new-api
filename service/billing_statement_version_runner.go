@@ -132,7 +132,7 @@ func runBillingStatementVersionGeneration(ctx context.Context, job *model.Custom
 		}
 		return nil
 	}
-	policy := model.BillingStatementReadPolicy{RecordedAmountsOnly: true, BatchTimeout: billingStatementVersionBatchTimeout, MaxGroups: billingStatementVersionMaxGroups, BeforeBatch: beforeBatch, ObserveFact: observe}
+	policy := model.BillingStatementReadPolicy{BatchTimeout: billingStatementVersionBatchTimeout, MaxGroups: billingStatementVersionMaxGroups, BeforeBatch: beforeBatch, ObserveFact: observe}
 	statement, err := model.GetBillingCustomerStatement(ctx, v.UserId, v.PeriodStart, v.PeriodEndExclusive-1, "api_key", 0, "", "", policy)
 	if err != nil {
 		return err

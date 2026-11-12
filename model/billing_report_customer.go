@@ -115,7 +115,6 @@ func newBillingReportCustomerBuild() *billingReportCustomerBuild {
 }
 
 func (a *billingReportCustomerBuild) observe(log billingReconciliationLog, parsed parsedBillingReconciliationLog, sourceID int64) error {
-	parsed.recordedAmountsOnly = true
 	a.key.observe("api_key", log, parsed, sourceID)
 	a.channel.observe("channel", log, parsed, sourceID)
 	accumulateBillingReconciliationLog(&a.overview.model.Usage, log, parsed)

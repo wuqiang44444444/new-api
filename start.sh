@@ -209,7 +209,7 @@ echo "正在启动后端，端口：$BACKEND_PORT"
 (
   cd "$ROOT_DIR"
   export SQL_DSN
-  exec env PORT="$BACKEND_PORT" go run .
+  exec env PORT="$BACKEND_PORT" LOCAL_DEV_FAST_BILLING_REPORTS="${LOCAL_DEV_FAST_BILLING_REPORTS:-true}" go run .
 ) >>"$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
 

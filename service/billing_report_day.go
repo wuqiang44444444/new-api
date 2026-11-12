@@ -9,7 +9,16 @@ import (
 	"github.com/QuantumNous/new-api/model"
 )
 
-func runDailyReport(ctx context.Context, task *model.SystemTask, runnerID string, gate func(context.Context) error) error {
+func runDailyReport(ctx context.Context, task *model.SystemTask, runnerID string, gate func(context.Context) error, localFast bool) error {
+	for followingReplay := false; ; followingReplay = true {
+		more, err := runDailyReportCycle(ctx, task, runnerID, gate, followingReplay)
+		if err != nil || !localFast || !more {
+			return err
+		}
+	}
+}
+
+func runDailyReportCycle(ctx context.Context, task *model.SystemTask, runnerID string, gate func(context.Context) error, followingReplay bool) (bool, error) {
 	now := time.Now().In(model.UsageAnalyticsZone())
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
 	probeCtx, cancelProbe := context.WithTimeout(ctx, 3*time.Second)
@@ -17,21 +26,34 @@ func runDailyReport(ctx context.Context, task *model.SystemTask, runnerID string
 		common.SysError("billing report late-source check failed: " + err.Error())
 	}
 	cancelProbe()
+	replayCtx, cancelReplay := context.WithTimeout(ctx, 3*time.Second)
+	replayPending, replayErr := model.DiscoverCustomerOriginalReplayDays(replayCtx, today, now.Unix())
+	cancelReplay()
+	if replayErr != nil {
+		common.SysError("billing original replay discovery failed: " + replayErr.Error())
+		replayPending = false
+	}
 	selectCtx, stop := context.WithTimeout(ctx, 5*time.Second)
-	start, requestedAt, due, err := model.NextDailyReportDay(selectCtx, today, now.Unix())
+	start, requestedAt, due, usageOnly, err := model.NextDailyReportDay(selectCtx, today, now.Unix())
 	stop()
-	if err != nil || !due {
-		return err
+	if err != nil {
+		return false, err
+	}
+	if followingReplay && !replayPending && !usageOnly {
+		return false, replayErr
+	}
+	if !due {
+		return false, nil
 	}
 	if err := gate(ctx); err != nil {
-		return err
+		return false, err
 	}
 	buildCtx, err := model.WithDailyReportLogBoundary(model.StageDailyReport(ctx))
 	if err != nil {
-		return err
+		return false, err
 	}
 	scopeCtx, cancel := context.WithTimeout(buildCtx, 5*time.Second)
-	scopes, err := model.DailyReportScopes(scopeCtx, start, today, now.Unix())
+	scopes, err := model.DailyReportScopes(scopeCtx, start, today, now.Unix(), usageOnly)
 	cancel()
 	if err == nil {
 		for _, scope := range scopes {
@@ -51,21 +73,24 @@ func runDailyReport(ctx context.Context, task *model.SystemTask, runnerID string
 	if err != nil {
 		waitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
-		// Both selectors must be able to advance past an unavailable day.
-		for _, kind := range []string{model.DailyReportBilling, model.DailyReportUsage} {
+		kinds := []string{model.DailyReportUsage}
+		if !usageOnly || len(scopes) > 1 {
+			kinds = append(kinds, model.DailyReportBilling)
+		}
+		for _, kind := range kinds {
 			if deferErr := model.DeferDailyReportDate(waitCtx, start, kind, err); deferErr != nil {
 				common.SysError("daily report retry could not be recorded: " + deferErr.Error())
 			}
 		}
 		if errors.Is(err, model.ErrDailyReportDeferred) {
-			return nil
+			return false, nil
 		}
-		return err
+		return false, err
 	}
 	if requestedAt != 0 {
-		return model.CompleteBillingReportRebuild(ctx, start, requestedAt)
+		return replayPending, model.CompleteBillingReportRebuild(ctx, start, requestedAt)
 	}
-	return nil
+	return replayPending || usageOnly, nil
 }
 
 func prepareDailyReport(ctx context.Context, scope model.DailyReportScope, task *model.SystemTask, runnerID string, gate func(context.Context) error, requestedAt int64) error {

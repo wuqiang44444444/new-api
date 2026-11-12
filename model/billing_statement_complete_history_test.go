@@ -36,7 +36,7 @@ func TestStatementRefundRecoveryAcrossCompleteKeyHistory(t *testing.T) {
 			sqlDB, err := db.DB()
 			require.NoError(t, err)
 			sqlDB.SetMaxOpenConns(1)
-			statement, err := GetBillingCustomerStatement(context.Background(), 7, 900, 1100, "api_key", 0, "", "", BillingStatementReadPolicy{RecordedAmountsOnly: true})
+			statement, err := GetBillingCustomerStatement(context.Background(), 7, 900, 1100, "api_key", 0, "", "")
 			require.NoError(t, err)
 			assert.EqualValues(t, -87, statement.Summary.NetQuota)
 			details, err := GetBillingStatementLogs(context.Background(), BillingStatementLogFilter{UserId: 7, Start: 900, End: 1100}, 1, 20, common.RoleCommonUser)
@@ -44,7 +44,7 @@ func TestStatementRefundRecoveryAcrossCompleteKeyHistory(t *testing.T) {
 			require.Len(t, details.Items, 1)
 			batch, err := NextCustomerExportLogBatch(context.Background(), CustomerExportBatchParams{UserId: 7, StartTimestamp: 900, EndTimestamp: 1101, Limit: 1, StatementScope: true})
 			require.NoError(t, err)
-			exported, err := BuildCustomerExportRows(context.Background(), batch, "", "", nil, true)
+			exported, err := BuildCustomerExportRows(context.Background(), batch, "", "", nil)
 			require.NoError(t, err)
 			require.Len(t, exported, 1)
 			row := CustomerBillingLogRow(details.Items[0])
@@ -108,7 +108,7 @@ func TestStatementHistoricalOpenAIInputEvidence(t *testing.T) {
 			assert.Equal(t, tc.unknown, row.InputTokensUnavailable)
 			assert.Equal(t, tc.total, row.InputTokens)
 			assert.EqualValues(t, 100, row.Quota)
-			assert.Equal(t, "200.0000", row.OriginalEstimate)
+			assert.Empty(t, row.RecordedOriginal)
 		})
 	}
 }

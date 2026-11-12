@@ -34,13 +34,16 @@ func (row billingReportLine) customerDetail() (billingReportCustomerLine, error)
 			export.RecordedOriginal = strconv.FormatInt(quota, 10)
 		}
 	}
-	export.OriginalEstimate = export.RecordedOriginal
+	export.OriginalEstimate = ""
 	export.OriginalExact = export.RecordedOriginal != ""
 	if export.OriginalExact {
 		export.QualityStatus = "exact"
 		export.EstimateReasons = nil
-	} else {
+	} else if export.CountsTowardBill {
 		export.QualityStatus = "unrecorded"
+		if len(export.EstimateReasons) == 0 {
+			export.EstimateReasons = []string{billingOriginalQuotaNotRecorded}
+		}
 	}
 	return detail, nil
 }
@@ -208,10 +211,13 @@ func (row billingReportLine) upstreamDetail(root bool) (UpstreamBillingDetailIte
 		return item, err
 	}
 	item.OriginalExactQuota = row.OriginalExact
-	if item.OriginalAmountEstimated == nil && item.OriginalAmount != nil && item.TestPricing == nil {
-		// Older published rows only used the reverse-calculated basis.
-		estimated := *item.OriginalAmount != 0
-		item.OriginalAmountEstimated = &estimated
+	if item.TestPricing == nil && item.OriginalAmount != nil &&
+		(item.OriginalAmountEstimated == nil || *item.OriginalAmountEstimated) {
+		item.OriginalAmount, item.OriginalAmountEstimated = nil, nil
+		item.OriginalExactQuota = ""
+		item.EstimateReasons = mergeBillingEstimateReasons(item.EstimateReasons, billingOriginalQuotaNotRecorded)
+		ensureBillingReconciliationQuality(&item.DataQuality).MissingHistoricalPriceRows = 1
+		finalizeBillingReconciliationQuality(&item.DataQuality)
 	}
 	if root {
 		if err := row.setUpstreamTaskID(&item); err != nil {

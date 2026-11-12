@@ -20,12 +20,17 @@ func billingStatementGroupSelect() string {
 // Recovered facts never copy admin snapshots, upstream identities or source
 // references into the response, and never update the persisted log.
 func attachBillingStatementLogFacts(log *Log, fact billingReconciliationLog, parsed parsedBillingReconciliationLog) error {
+	applyCustomerOriginalReplay(fact, &parsed)
+	row := buildCustomerExportRow(customerBillingLogScanRow(log), fact, parsed)
+	log.Group = row.GroupName
+	return setBillingLogFacts(log, row)
+}
+
+func setBillingLogFacts(log *Log, row CustomerExportRow) error {
 	var other map[string]json.RawMessage
 	if common.UnmarshalJsonStr(log.Other, &other) != nil || other == nil {
 		other = make(map[string]json.RawMessage)
 	}
-	parsed.recordedAmountsOnly = true
-	row := buildCustomerExportRow(customerBillingLogScanRow(log), fact, parsed)
 	raw, err := common.Marshal(row)
 	if err != nil {
 		return err
@@ -36,6 +41,5 @@ func attachBillingStatementLogFacts(log *Log, fact billingReconciliationLog, par
 		return err
 	}
 	log.Other = string(encoded)
-	log.Group = row.GroupName
 	return nil
 }

@@ -42,6 +42,18 @@ func billingStatementEstimateReasons(parsed parsedBillingReconciliationLog) []st
 // a missing price. Rows carrying it are counted under the auxiliary-charge
 // reason instead of the generic missing-price bucket, so messages name the
 // actual blocker. A row with both reason classes is counted once per class.
+func statementOriginalUnavailableReasons(parsed parsedBillingReconciliationLog) []string {
+	reasons := billingStatementEstimateReasons(parsed)
+	if parsed.originalReplayReason != "" && (len(reasons) == 0 ||
+		(parsed.originalReplayReason != BillingOriginalReplayUnverified && parsed.originalReplayReason != BillingOriginalReplayMissingContext)) {
+		return mergeBillingEstimateReasons(reasons, parsed.originalReplayReason)
+	}
+	if len(reasons) == 0 {
+		return []string{billingOriginalQuotaNotRecorded}
+	}
+	return reasons
+}
+
 func accumulateBillingEstimateReasonQuality(quality *BillingReconciliationDataQuality, reasons []string) {
 	if quality == nil || len(reasons) == 0 {
 		return

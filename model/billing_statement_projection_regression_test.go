@@ -22,7 +22,7 @@ func TestStatementRecoveredFactsMatchDetailsExportAndCombinations(t *testing.T) 
 	ctx := context.Background()
 	batch, err := NextCustomerExportLogBatch(ctx, CustomerExportBatchParams{UserId: 7, StartTimestamp: 1000, EndTimestamp: 1200, Limit: 100})
 	require.NoError(t, err)
-	exported, err := BuildCustomerExportRows(ctx, batch, "", "", nil, true)
+	exported, err := BuildCustomerExportRows(ctx, batch, "", "", nil)
 	require.NoError(t, err)
 	require.Len(t, exported, 1)
 	expected := exported[0]
@@ -44,7 +44,7 @@ func TestStatementRecoveredFactsMatchDetailsExportAndCombinations(t *testing.T) 
 			assert.NotContains(t, result.Items[0].Other, "private-upstream")
 		}
 	}
-	statement, err := GetBillingCustomerStatement(ctx, 7, 1000, 1200, "api_key", 0, "", "", BillingStatementReadPolicy{RecordedAmountsOnly: true})
+	statement, err := GetBillingCustomerStatement(ctx, 7, 1000, 1200, "api_key", 0, "", "")
 	require.NoError(t, err)
 	require.Len(t, statement.DiscountCombinations, 1)
 	combo := statement.DiscountCombinations[0]
@@ -63,10 +63,10 @@ func TestStatementDiscountCombinationsKeepFrozenGroupIdentityAndSource(t *testin
 	db := setupBillingReconciliationTestDB(t)
 	require.NoError(t, db.Create(&User{Id: 7, Username: "customer"}).Error)
 	logs := []Log{
-		{Group: "first", Other: `{"group_ratio":0.5,"contract_applicable":false}`},
-		{Group: "second", Other: `{"group_ratio":0.5,"contract_applicable":false}`},
-		{Group: "first", Other: `{"group_ratio":1,"user_group_ratio":0.5,"contract_applicable":false}`},
-		{Group: "", Other: `{"group_ratio":0.5,"contract_applicable":false}`},
+		{Group: "first", Other: `{"group_ratio":0.5,"contract_applicable":false,"admin_info":{"statement_original_quota":100}}`},
+		{Group: "second", Other: `{"group_ratio":0.5,"contract_applicable":false,"admin_info":{"statement_original_quota":100}}`},
+		{Group: "first", Other: `{"group_ratio":1,"user_group_ratio":0.5,"contract_applicable":false,"admin_info":{"statement_original_quota":100}}`},
+		{Group: "", Other: `{"group_ratio":0.5,"contract_applicable":false,"admin_info":{"statement_original_quota":100}}`},
 	}
 	for i := range logs {
 		logs[i].UserId, logs[i].TokenId, logs[i].ChannelId = 7, 4, 3

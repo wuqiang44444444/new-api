@@ -17,11 +17,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  Activity01Icon,
   ArrowLeft01Icon,
   ArrowDown01Icon,
   ArrowRight01Icon,
+  Discount01Icon,
+  Invoice01Icon,
   LinkSquare02Icon,
   Download01Icon,
+  ReceiptDollarIcon,
+  Wallet01Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -37,15 +42,10 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ErrorState } from '@/components/error-state'
+import { ReportCard, ReportMetricCard } from '@/components/report-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldLabel } from '@/components/ui/field'
 import {
   Select,
@@ -63,6 +63,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useResultPage } from '@/hooks/use-result-page'
 import { toIntlLocale } from '@/i18n/languages'
 import { cn } from '@/lib/utils'
 
@@ -89,6 +90,7 @@ import {
 } from '../version-api'
 import { formatVersionQuota } from '../version-money'
 import { BillingExportSection } from './billing-export-section'
+import { BillingPagination } from './billing-pagination'
 import { BillingQualityNotice } from './billing-quality-notice'
 import { BillingReportStatus } from './billing-report-status'
 import { CustomerBillingTable } from './customer-billing-table'
@@ -334,7 +336,6 @@ function CustomerStatementBody(props: CustomerStatementProps) {
       ? customerStatementLabel(statement)
       : t('Customer billing')
   }
-  const summaryGridClassName = 'grid grid-cols-2 gap-3 xl:grid-cols-4'
   const actions = (
     <>
       {props.toolbar}
@@ -378,16 +379,27 @@ function CustomerStatementBody(props: CustomerStatementProps) {
     ) : null
   const qualityNotice =
     !statementQuery.isError && statement ? (
-      <BillingQualityNotice
-        inline
-        quality={statement.data_quality}
-        recordedAmounts
-      />
+      <BillingQualityNotice inline quality={statement.data_quality} />
     ) : null
 
   const modelKeyId = props.isAdmin ? adminModelKeyId : props.modelKeyId
   const selectedModelKey = groups.find((group) => group.id === modelKeyId)
   const modelGroups = selectedModelKey ? [selectedModelKey] : groups
+  const modelRows = byApiKey
+    ? modelGroups.flatMap((group) =>
+        group.models.map((model) => ({ group, model }))
+      )
+    : []
+  const groupPaging = useResultPage(groups.length, props.dimension)
+  const modelPaging = useResultPage(modelRows.length, selectedModelKey?.id)
+  const visibleGroups = groups.slice(
+    groupPaging.offset,
+    groupPaging.offset + groupPaging.pageSize
+  )
+  const visibleModelRows = modelRows.slice(
+    modelPaging.offset,
+    modelPaging.offset + modelPaging.pageSize
+  )
   const hasModelRows = Boolean(
     byApiKey && groups.some((group) => group.models.length > 0)
   )
@@ -405,11 +417,16 @@ function CustomerStatementBody(props: CustomerStatementProps) {
 
   return (
     <div className='flex h-full min-h-0 flex-col'>
-      <div className='min-h-0 flex-1 space-y-3 overflow-y-auto px-2 pb-4 sm:px-3'>
+      <div className='@container min-h-0 flex-1 space-y-3 overflow-y-auto px-2 pb-4 sm:px-3'>
         <StatementVersionPanel
           isAdmin={props.isAdmin}
           userId={selectedUserId}
           period={props.period}
+          statementDataCutoff={
+            report?.published_days
+              ? (report.estimated_at ?? report.as_of)
+              : undefined
+          }
           previewVersionId={previewVersionId}
           onPreviewChange={setPreviewVersionId}
           onChanged={() => void statementQuery.refetch()}
@@ -460,13 +477,12 @@ function CustomerStatementBody(props: CustomerStatementProps) {
           />
         )}
         {!statementQuery.isError &&
-          (statementQuery.isPending || !statement) && (
-            <StatementSkeleton summaryGridClassName={summaryGridClassName} />
-          )}
+          (statementQuery.isPending || !statement) && <StatementSkeleton />}
         {!statementQuery.isError && !statementQuery.isPending && statement && (
           <>
             <div className={summaryGridClassName}>
               <SummaryCard
+                icon={Wallet01Icon}
                 title={t('Current balance')}
                 value={formatCurrentBalance(statement.current_balance)}
                 description={
@@ -474,10 +490,16 @@ function CustomerStatementBody(props: CustomerStatementProps) {
                     ? t(
                         'Customer record unavailable; current balance cannot be read.'
                       )
-                    : t('Read directly from the main database')
+                    : undefined
                 }
               />
               <SummaryCard
+                icon={Activity01Icon}
+                title={t('Requests')}
+                value={formatInteger(statement.summary.requests)}
+              />
+              <SummaryCard
+                icon={Invoice01Icon}
                 title={t('List price')}
                 value={
                   statement.original_quota != null
@@ -486,6 +508,7 @@ function CustomerStatementBody(props: CustomerStatementProps) {
                 }
               />
               <SummaryCard
+                icon={Discount01Icon}
                 title={t('Savings')}
                 value={
                   statement.discount_quota != null
@@ -494,23 +517,21 @@ function CustomerStatementBody(props: CustomerStatementProps) {
                 }
               />
               <SummaryCard
-                emphasized={props.isAdmin}
+                emphasized
+                icon={ReceiptDollarIcon}
                 title={t('Net settled amount')}
                 value={formatCustomerStatementQuota(
                   statement.summary.net_quota
                 )}
-                description={t('{{count}} aggregated requests', {
-                  count: statement.summary.requests,
-                })}
               />
             </div>
             <p className='text-muted-foreground text-xs'>
               {t('Net amounts include task holds and adjustments.')}
             </p>
 
-            <Card className='gap-0 rounded-lg border py-0 ring-0'>
-              <CardHeader className='flex flex-wrap items-center justify-between gap-2 py-3'>
-                <CardTitle id={keySummaryHeadingId}>
+            <ReportCard className='gap-0 p-0'>
+              <CardHeader className='flex flex-wrap items-center justify-between gap-2 px-3 py-2'>
+                <CardTitle id={keySummaryHeadingId} className='text-sm'>
                   {byApiKey ? t('Billing by API Key') : t('Billing by channel')}
                 </CardTitle>
                 {props.isAdmin && (
@@ -580,7 +601,7 @@ function CustomerStatementBody(props: CustomerStatementProps) {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {groups.map((group) => {
+                        {visibleGroups.map((group) => {
                           const isExpanded = expanded.has(group.id)
                           const canFilter =
                             hasModelRows && group.models.length > 0
@@ -595,24 +616,31 @@ function CustomerStatementBody(props: CustomerStatementProps) {
                             : group.name
                           const modelRows =
                             !byApiKey && isExpanded
-                              ? group.models.map((model, modelIndex) => (
-                                  <CustomerModelRow
-                                    version={boundVersion}
-                                    reportVersion={report?.version}
-                                    key={`model-${group.id}-${model.model_name}-${model.billing_mode}`}
-                                    model={model}
-                                    firstModelRef={
-                                      modelIndex === 0 &&
-                                      expandScrollTarget === group.id
-                                        ? firstModelRowRef
-                                        : undefined
-                                    }
-                                    dimension={props.dimension}
-                                    userId={statement.user_id}
-                                    versionBound={versionBound}
-                                    onViewDetails={openVersionLines}
-                                  />
-                                ))
+                              ? [
+                                  <PagedChannelModels
+                                    key={`models-${group.id}`}
+                                    label={groupName}
+                                    models={group.models}
+                                    renderRow={(model, modelIndex) => (
+                                      <CustomerModelRow
+                                        version={boundVersion}
+                                        reportVersion={report?.version}
+                                        key={`model-${group.id}-${model.model_name}-${model.billing_mode}`}
+                                        model={model}
+                                        firstModelRef={
+                                          modelIndex === 0 &&
+                                          expandScrollTarget === group.id
+                                            ? firstModelRowRef
+                                            : undefined
+                                        }
+                                        dimension={props.dimension}
+                                        userId={statement.user_id}
+                                        versionBound={versionBound}
+                                        onViewDetails={openVersionLines}
+                                      />
+                                    )}
+                                  />,
+                                ]
                               : []
                           return [
                             <TableRow
@@ -735,8 +763,20 @@ function CustomerStatementBody(props: CustomerStatementProps) {
                     </CustomerBillingTable>
                   </div>
                 )}
+                {groups.length > 0 && (
+                  <div className='px-3 py-2'>
+                    <BillingPagination
+                      {...groupPaging}
+                      label={
+                        byApiKey
+                          ? t('Billing by API Key')
+                          : t('Billing by channel')
+                      }
+                    />
+                  </div>
+                )}
               </CardContent>
-            </Card>
+            </ReportCard>
             {hasModelRows && modelTotalUsage && (
               <CustomerModelBilling
                 id={modelBillId}
@@ -759,29 +799,33 @@ function CustomerStatementBody(props: CustomerStatementProps) {
                 )}
                 net={formatCustomerStatementQuota(modelTotalUsage.net_quota)}
                 requests={formatInteger(modelTotalUsage.requests)}
+                pagination={
+                  <BillingPagination
+                    {...modelPaging}
+                    label={t('Model billing')}
+                  />
+                }
               >
-                {modelGroups.flatMap((group) =>
-                  group.models.map((model) => (
-                    <CustomerModelRow
-                      key={JSON.stringify([
-                        group.id,
-                        model.model_name,
-                        model.billing_mode,
-                      ])}
-                      version={boundVersion}
-                      reportVersion={report?.version}
-                      model={model}
-                      apiKey={{ id: group.id, name: group.name }}
-                      billingModelKeyId={selectedModelKey?.id}
-                      showPriceColumns={showModelPrices}
-                      isAdmin={props.isAdmin}
-                      dimension='api_key'
-                      userId={statement.user_id}
-                      versionBound={versionBound}
-                      onViewDetails={openVersionLines}
-                    />
-                  ))
-                )}
+                {visibleModelRows.map(({ group, model }) => (
+                  <CustomerModelRow
+                    key={JSON.stringify([
+                      group.id,
+                      model.model_name,
+                      model.billing_mode,
+                    ])}
+                    version={boundVersion}
+                    reportVersion={report?.version}
+                    model={model}
+                    apiKey={{ id: group.id, name: group.name }}
+                    billingModelKeyId={selectedModelKey?.id}
+                    showPriceColumns={showModelPrices}
+                    isAdmin={props.isAdmin}
+                    dimension='api_key'
+                    userId={statement.user_id}
+                    versionBound={versionBound}
+                    onViewDetails={openVersionLines}
+                  />
+                ))}
               </CustomerModelBilling>
             )}
           </>
@@ -840,6 +884,32 @@ function CustomerStatementBody(props: CustomerStatementProps) {
         initialFilter={linesFilter}
       />
     </div>
+  )
+}
+
+function PagedChannelModels(props: {
+  label: string
+  models: CustomerModelSummary[]
+  renderRow: (model: CustomerModelSummary, index: number) => ReactNode
+}) {
+  const { t } = useTranslation()
+  const paging = useResultPage(props.models.length)
+  return (
+    <>
+      {props.models
+        .slice(paging.offset, paging.offset + paging.pageSize)
+        .map(props.renderRow)}
+      {paging.total > 0 && (
+        <TableRow>
+          <TableCell colSpan={6}>
+            <BillingPagination
+              {...paging}
+              label={`${t('Model billing')} · ${props.label}`}
+            />
+          </TableCell>
+        </TableRow>
+      )}
+    </>
   )
 }
 
@@ -1031,43 +1101,40 @@ function CustomerModelRow(props: {
   )
 }
 
+const summaryGridClassName =
+  'grid gap-2 @min-[22rem]:grid-cols-2 @min-[58rem]:grid-cols-5'
+const summaryLastCardClassName =
+  '@min-[22rem]:col-span-2 @min-[58rem]:col-span-1'
+
 function SummaryCard(props: {
+  icon: typeof Wallet01Icon
   title: string
   value: string
   description?: string
   emphasized?: boolean
 }) {
   return (
-    <Card
-      size='sm'
-      className={
-        props.emphasized ? 'border-primary/25 bg-primary/5' : undefined
-      }
-    >
-      <CardHeader>
-        <CardDescription>{props.title}</CardDescription>
-        <CardTitle className='text-xl wrap-anywhere tabular-nums'>
-          {props.value}
-        </CardTitle>
-      </CardHeader>
-      {props.description && (
-        <CardContent className='text-muted-foreground text-xs'>
-          {props.description}
-        </CardContent>
-      )}
-    </Card>
+    <ReportMetricCard
+      className={props.emphasized ? summaryLastCardClassName : undefined}
+      emphasized={props.emphasized}
+      icon={<HugeiconsIcon icon={props.icon} size={14} strokeWidth={1.75} />}
+      label={props.title}
+      value={props.value}
+      caption={props.description}
+    />
   )
 }
 
-function StatementSkeleton(props: { summaryGridClassName: string }) {
+function StatementSkeleton() {
   return (
     <div className='space-y-3'>
-      <div className={props.summaryGridClassName}>
+      <div className={summaryGridClassName}>
         {[0, 1, 2, 3].map((item) => (
-          <Skeleton key={item} className='h-28 rounded-xl' />
+          <Skeleton key={item} className='h-9 rounded-lg' />
         ))}
+        <Skeleton className={cn('h-9 rounded-lg', summaryLastCardClassName)} />
       </div>
-      <Skeleton className='h-72 rounded-xl' />
+      <Skeleton className='h-40 rounded-lg' />
     </div>
   )
 }

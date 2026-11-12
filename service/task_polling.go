@@ -845,6 +845,9 @@ func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor
 		maps.Copy(usageFacts, bc.TieredSnapshot.UsageFacts)
 		maps.Copy(usageFacts, taskResult.UsageFacts)
 		result, err := billingexpr.ComputeTieredQuotaWithRequest(bc.TieredSnapshot, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: usageFacts, RecordCalculation: true})
+		if err == nil {
+			err = FinalizeTaskTieredCustomerAmount(&result, bc.TieredSnapshot, bc.ContractFact)
+		}
 		if err != nil {
 			logger.LogWarn(ctx, common.LogText("task %s expression settlement failed, keeping the pre-consumed quota: %v", task.TaskID, err))
 			return true

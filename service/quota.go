@@ -61,55 +61,6 @@ func hasCustomModelRatio(modelName string, currentRatio float64) bool {
 	return currentRatio != defaultRatio
 }
 
-func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp, error) {
-	if info.UsePrice {
-		modelPrice := decimal.NewFromFloat(info.ModelPrice)
-		quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-		groupRatio := decimal.NewFromFloat(info.GroupRatio)
-
-		quota := modelPrice.Mul(quotaPerUnit).Mul(groupRatio)
-		quota, err := ApplyCustomerContractRatio(quota, info.ContractFact)
-		if err != nil {
-			return 0, nil, err
-		}
-		result, clamp := common.QuotaFromDecimalChecked(quota)
-		return result, clamp, nil
-	}
-
-	completionRatio := decimal.NewFromFloat(ratio_setting.GetCompletionRatio(info.ModelName))
-	audioRatio := decimal.NewFromFloat(ratio_setting.GetAudioRatio(info.ModelName))
-	audioCompletionRatio := decimal.NewFromFloat(ratio_setting.GetAudioCompletionRatio(info.ModelName))
-
-	groupRatio := decimal.NewFromFloat(info.GroupRatio)
-	modelRatio := decimal.NewFromFloat(info.ModelRatio)
-	ratio := groupRatio.Mul(modelRatio)
-
-	inputTextTokens := decimal.NewFromInt(int64(info.InputDetails.TextTokens))
-	outputTextTokens := decimal.NewFromInt(int64(info.OutputDetails.TextTokens))
-	inputAudioTokens := decimal.NewFromInt(int64(info.InputDetails.AudioTokens))
-	outputAudioTokens := decimal.NewFromInt(int64(info.OutputDetails.AudioTokens))
-
-	quota := decimal.Zero
-	quota = quota.Add(inputTextTokens)
-	quota = quota.Add(outputTextTokens.Mul(completionRatio))
-	quota = quota.Add(inputAudioTokens.Mul(audioRatio))
-	quota = quota.Add(outputAudioTokens.Mul(audioRatio).Mul(audioCompletionRatio))
-
-	quota = quota.Mul(ratio)
-	quota, err := ApplyCustomerContractRatio(quota, info.ContractFact)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	// If ratio is not zero and quota is less than or equal to zero, set quota to 1
-	if !ratio.IsZero() && quota.LessThanOrEqual(decimal.Zero) {
-		quota = decimal.NewFromInt(1)
-	}
-
-	result, clamp := common.QuotaFromDecimalChecked(quota)
-	return result, clamp, nil
-}
-
 func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.RealtimeUsage) error {
 	if relayInfo.UsePrice {
 		return nil
@@ -221,7 +172,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		modelName, usePrice, modelPrice, modelRatio, groupRatio, relayInfo.ContractBillingFact,
 	)
 
-	quota, clamp, quotaErr := calculateAudioQuota(quotaInfo)
+	quota, clamp, originalQuota, quotaErr := calculateAudioQuotaWithOriginal(quotaInfo)
 	if quotaErr != nil {
 		logger.LogError(ctx, "invalid frozen customer contract billing fact: "+quotaErr.Error())
 		quota = relayInfo.FinalPreConsumedQuota
@@ -269,6 +220,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	}
 	appendCustomerContractBillingInfo(other, relayInfo.ContractBillingFact)
 	appendBillingStatementSnapshot(relayInfo, other)
+	appendSynchronousStatementOriginal(other, funded && relayInfo.QuotaClamp == nil, totalTokens != 0, tieredOk, tieredResult, originalQuota)
 	markUnsettledUsage(other, funded)
 	attachQuotaSaturation(ctx, relayInfo, other)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
@@ -359,7 +311,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		billingModelName, usePrice, modelPrice, modelRatio, groupRatio, relayInfo.ContractBillingFact,
 	)
 
-	quota, clamp, quotaErr := calculateAudioQuota(quotaInfo)
+	quota, clamp, originalQuota, quotaErr := calculateAudioQuotaWithOriginal(quotaInfo)
 	if quotaErr != nil {
 		logger.LogError(ctx, "invalid frozen customer contract billing fact: "+quotaErr.Error())
 		quota = relayInfo.FinalPreConsumedQuota
@@ -407,6 +359,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	}
 	appendCustomerContractBillingInfo(other, relayInfo.ContractBillingFact)
 	appendBillingStatementSnapshot(relayInfo, other)
+	appendSynchronousStatementOriginal(other, funded && relayInfo.QuotaClamp == nil, totalTokens != 0 || fixedPriceBilling, tieredOk, tieredResult, originalQuota)
 	markUnsettledUsage(other, funded)
 	attachQuotaSaturation(ctx, relayInfo, other)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{

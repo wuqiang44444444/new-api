@@ -279,6 +279,9 @@ func GetLogCursorDetail(ctx context.Context, userID int, reference string) (*Log
 	if len(rows) != 1 {
 		return nil, common.NewMessage("Log record is unavailable")
 	}
+	if err := attachUsageLogBillingFacts(rows[0], DB.WithContext(ctx)); err != nil {
+		return nil, err
+	}
 	if userID > 0 {
 		formatUserLogs(rows, 0)
 	}

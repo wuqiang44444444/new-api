@@ -16,6 +16,7 @@ func TestCustomerStatementReportsUnclassifiedExpressionWithoutLosingAmounts(t *t
 	other, err := common.Marshal(map[string]any{
 		"expr_b64":    base64.StdEncoding.EncodeToString([]byte(`tier("custom", param("custom_meter") * 145747.800587)`)),
 		"group_ratio": 0.87, "contract_applicable": false,
+		"admin_info": map[string]any{"statement_original_quota": 1000},
 	})
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&Log{UserId: 91, TokenId: 40, ChannelId: 76, ModelName: "video", Type: LogTypeConsume, CreatedAt: 1100, Quota: 870, Other: string(other)}).Error)

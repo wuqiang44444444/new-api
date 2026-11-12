@@ -16,17 +16,19 @@ type DailyReportScope struct {
 }
 
 type dailyReportStage struct {
-	Start          int64  `gorm:"primaryKey;autoIncrement:false"`
-	Kind           string `gorm:"primaryKey;size:12"`
-	Generation     string `gorm:"size:32;index"`
-	Previous       string `gorm:"size:32"`
-	AsOf           int64
-	UpperLogID     int64
-	SourceRows     int64
-	SourceRevision string
-	Dependencies   string
-	Incomplete     bool
-	RankReady      bool
+	OriginalReplayVersion int
+	UsageMeterVersion     int
+	Start                 int64  `gorm:"primaryKey;autoIncrement:false"`
+	Kind                  string `gorm:"primaryKey;size:12"`
+	Generation            string `gorm:"size:32;index"`
+	Previous              string `gorm:"size:32"`
+	AsOf                  int64
+	UpperLogID            int64
+	SourceRows            int64
+	SourceRevision        string
+	Dependencies          string
+	Incomplete            bool
+	RankReady             bool
 }
 
 type dailyReportStageKey struct{}
@@ -74,7 +76,8 @@ func GetDailyReportStage(ctx context.Context, scope DailyReportScope, requestedA
 	if err != nil {
 		return false, err
 	}
-	if time.Since(time.Unix(stage.AsOf, 0)) > 2*time.Hour ||
+	if !dailyReportStageVersionCurrent(stage) ||
+		time.Since(time.Unix(stage.AsOf, 0)) > 2*time.Hour ||
 		(requestedAt > 0 && stage.AsOf <= requestedAt/int64(time.Second)) {
 		return false, db.Delete(&stage).Error
 	}
@@ -89,7 +92,15 @@ func GetDailyReportStage(ctx context.Context, scope DailyReportScope, requestedA
 	return err == nil, err
 }
 
+func dailyReportStageVersionCurrent(stage dailyReportStage) bool {
+	return stage.OriginalReplayVersion == CustomerOriginalReplayVersion &&
+		(stage.Kind != DailyReportUsage || stage.UsageMeterVersion == usageReportMeterVersion)
+}
+
 func checkDailyReportStage(ctx context.Context, stage dailyReportStage) error {
+	if !dailyReportStageVersionCurrent(stage) {
+		return errDailyReportSourceChanged
+	}
 	types := []int{LogTypeConsume, LogTypeRefund}
 	if stage.Kind == DailyReportUsage {
 		types = usageScanLogTypes(usageViewOptions{WantCustomer: true, WantUpstream: true})
@@ -115,6 +126,9 @@ func checkDailyReportStage(ctx context.Context, stage dailyReportStage) error {
 	}
 	if dependencies != stage.Dependencies {
 		return errDailyReportSourceChanged
+	}
+	if stage.Kind == DailyReportBilling && stage.Previous != "" {
+		return verifyCustomerOriginalCoverage(ctx, stage.Previous, stage.Generation)
 	}
 	return nil
 }
@@ -257,7 +271,7 @@ func publishDailyReportStage(tx *gorm.DB, stage dailyReportStage) error {
 				return err
 			}
 		}
-		head := usageReportDay{Start: stage.Start, Generation: stage.Generation, AsOf: stage.AsOf, SourceRows: stage.SourceRows, UpperLogID: stage.UpperLogID, Incomplete: stage.Incomplete, RankReady: stage.RankReady}
+		head := usageReportDay{Start: stage.Start, Generation: stage.Generation, AsOf: stage.AsOf, SourceRows: stage.SourceRows, UpperLogID: stage.UpperLogID, Incomplete: stage.Incomplete, RankReady: stage.RankReady, MeterVersion: stage.UsageMeterVersion}
 		metadata, err := common.Marshal(head)
 		if err != nil {
 			return err
@@ -267,10 +281,10 @@ func publishDailyReportStage(tx *gorm.DB, stage dailyReportStage) error {
 			return err
 		}
 		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "start"}},
-			DoUpdates: clause.AssignmentColumns([]string{"generation", "as_of", "source_rows", "upper_log_id", "incomplete", "rank_ready"})}).Create(&head).Error
+			DoUpdates: clause.AssignmentColumns([]string{"generation", "as_of", "source_rows", "upper_log_id", "incomplete", "rank_ready", "meter_version"})}).Create(&head).Error
 	}
 	var current billingReportHead
-	err := tx.Where("start = ?", stage.Start).Take(&current).Error
+	err := lockForUpdate(tx).Where("start = ?", stage.Start).Take(&current).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
