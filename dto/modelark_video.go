@@ -17,7 +17,7 @@ type ModelArkVideoTask struct {
 	SafetyIdentifier string                    `json:"safety_identifier,omitempty"`
 	Priority         *int                      `json:"priority,omitempty"`
 	ServiceTier      string                    `json:"service_tier,omitempty"`
-	Usage            *ModelArkVideoTaskUsage   `json:"usage,omitempty"`
+	Usage            ModelArkVideoTaskUsage    `json:"usage"`
 	Error            *ModelArkVideoTaskError   `json:"error,omitempty"`
 	CreatedAt        int64                     `json:"created_at"`
 	UpdatedAt        int64                     `json:"updated_at"`
@@ -33,13 +33,19 @@ type ModelArkVideoTaskContent struct {
 }
 
 type ModelArkVideoTaskUsage struct {
-	CompletionTokens int                     `json:"completion_tokens,omitempty"`
-	TotalTokens      int                     `json:"total_tokens,omitempty"`
-	ToolUsage        *ModelArkVideoToolUsage `json:"tool_usage,omitempty"`
+	TotalSeconds      float64                `json:"total_seconds"`
+	InputSeconds      float64                `json:"input_seconds"`
+	OutputSeconds     float64                `json:"output_seconds"`
+	InputAudioSeconds float64                `json:"input_audio_seconds"`
+	InputImageCount   int                    `json:"input_image_count"`
+	PromptTokens      int                    `json:"prompt_tokens"`
+	CompletionTokens  int                    `json:"completion_tokens"`
+	TotalTokens       int                    `json:"total_tokens"`
+	ToolUsage         ModelArkVideoToolUsage `json:"tool_usage"`
 }
 
 type ModelArkVideoToolUsage struct {
-	WebSearch int `json:"web_search,omitempty"`
+	WebSearch int `json:"web_search"`
 }
 
 type ModelArkVideoTaskError struct {

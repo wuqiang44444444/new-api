@@ -227,6 +227,7 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	}
 	client = channel.ImageRelayHTTPClient(client, info.StartTime)
 	resp, err := client.Do(req)
+	service.ObserveInlineImageChannelAlert(c, info, "image_submit", resp, err, false)
 	service.ObserveImageHTTPExchange(req.Context(), req, resp, err, "upstream_response")
 	if err != nil {
 		if errors.Is(err, context.Canceled) || (c != nil && c.Request != nil && errors.Is(c.Request.Context().Err(), context.Canceled)) {
@@ -270,6 +271,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		return nil, apiErr
 	}
 	if strings.EqualFold(initial.Data.Status, "success") {
+		service.RecordChannelAlertHTTP(c, resp, nil)
 		return a.writeImageResponse(c, initial.Data.Result)
 	}
 	if !strings.EqualFold(initial.Data.Status, "processing") && !strings.EqualFold(initial.Data.Status, "queued") {
@@ -278,6 +280,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	if strings.TrimSpace(initial.Data.TaskID) == "" {
 		return nil, upstreamError("create response did not include task ID")
 	}
+	service.ObserveInlineImageChannelAlert(c, info, "image_submit", resp, nil, true)
 	ctx, cancel := responseContext(c, info)
 	defer cancel()
 	client, err := a.httpClient(info)
@@ -310,6 +313,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 			applyHeaderOverride(request, key, value)
 		}
 		pollResp, err := client.Do(request)
+		service.ObserveInlineImageChannelAlert(c, info, "image_query", pollResp, err, false)
 		service.ObserveImageHTTPExchange(request.Context(), request, pollResp, err, "polling")
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -341,8 +345,11 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		}
 		switch strings.ToLower(strings.TrimSpace(result.Data.Status)) {
 		case "processing", "queued":
+			service.ObserveInlineImageChannelAlert(c, info, "image_query", pollResp, nil, true)
 			continue
 		case "success":
+			service.ObserveInlineImageChannelAlert(c, info, "image_query", pollResp, nil, true)
+			service.RecordChannelAlertHTTP(c, pollResp, nil)
 			return a.writeImageResponse(c, result.Data.Result)
 		default:
 			return nil, upstreamError("unknown polling task status")

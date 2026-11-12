@@ -36,6 +36,7 @@ const maxImageResultBytes = 50 * 1024 * 1024
 
 // ExecuteImageTask runs the frozen image task against its provider.
 func ExecuteImageTask(ctx context.Context, task *model.Task) (outcome service.ImageTaskExecution) {
+	ctx = service.WithImageChannelAlert(ctx, task)
 	ctx, finishEvidence := service.BeginBackgroundRequestEvidence(ctx, task)
 	defer finishEvidence()
 	ctx, err := service.WithImageObjectStore(ctx)
@@ -183,6 +184,7 @@ func executeGeminiImageTask(ctx context.Context, c *gin.Context, task *model.Tas
 		}
 		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeUnknown, FailureCode: "result_parse_failed"}
 	}
+	service.ObserveImageChannelSuccess(ctx, "")
 	artifacts, uploadErr := storeImageResults(ctx, task, len(results), usage, func(index int) ([]byte, string, error) {
 		return results[index].Data, results[index].MimeType, nil
 	})
@@ -231,6 +233,7 @@ func executeImageRelayTask(ctx context.Context, task *model.Task, info *relaycom
 		return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeUnknown, ProviderTaskID: providerTaskID, FailureCode: "empty_result"}
 	}
 
+	service.ObserveImageChannelSuccess(ctx, "")
 	// URL 结果下载后保存到私有 OSS（异步交付按 300 秒签名续签，§5）。
 	artifacts, uploadErr := storeImageResults(ctx, task, len(urls), usage, func(index int) ([]byte, string, error) {
 		return downloadImageURL(ctx, urls[index])
@@ -277,6 +280,7 @@ func postFrozenImageRequest(ctx context.Context, c *gin.Context, info *relaycomm
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
 	}
 	resp, err := client.Do(req)
+	service.ObserveImageChannelTransport(ctx, "", resp, err)
 	service.ObserveImageHTTPExchange(ctx, req, resp, err, "generation")
 	if err != nil {
 		return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeDoRequestFailed, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
@@ -430,6 +434,7 @@ func executorFailureFromError(err error) service.ImageTaskExecution {
 // ResumeImageTaskPoll first recovers persisted objects, including native tasks
 // with no Provider ID. Only a real Provider task can be polled; never recreate.
 func ResumeImageTaskPoll(ctx context.Context, task *model.Task) (outcome service.ImageTaskExecution) {
+	ctx = service.WithImageChannelAlert(ctx, task)
 	ctx, finishEvidence := service.BeginBackgroundRequestEvidence(ctx, task)
 	defer finishEvidence()
 	ctx, err := service.WithImageObjectStore(ctx)
@@ -462,6 +467,7 @@ func ResumeImageTaskPoll(ctx context.Context, task *model.Task) (outcome service
 		if len(urls) == 0 {
 			return service.ImageTaskExecution{Outcome: service.ImageTaskOutcomeUnknown, FailureCode: "resume_pending"}
 		}
+		service.ObserveImageChannelSuccess(ctx, "")
 		artifacts, uploadErr := storeImageResults(ctx, task, len(urls), nil, func(index int) ([]byte, string, error) {
 			return downloadImageURL(ctx, urls[index])
 		})

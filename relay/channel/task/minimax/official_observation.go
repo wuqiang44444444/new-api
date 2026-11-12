@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/minimaxlink"
+	"github.com/QuantumNous/new-api/pkg/modelarkusage"
 	"github.com/QuantumNous/new-api/relay/channel/task/seedance/thirdparty"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
@@ -78,6 +79,15 @@ func decodeOfficialTaskObservation(task *model.Task, result any, rawBody []byte,
 	}
 	if len(measurements) > 0 {
 		stored["official_usage"] = measurements
+	}
+	if task.ClientProtocol == model.TaskClientProtocolModelArkV3 {
+		if display := modelarkusage.Merge(nil, &modelarkusage.Display{
+			TotalSeconds:      modelarkusage.Seconds(usage["total_seconds"], minimaxlink.OfficialMaxOutputSeconds+minimaxlink.OfficialMaxInputSeconds),
+			InputAudioSeconds: modelarkusage.Seconds(usage["input_audio_seconds"], relaycommon.MaxTaskDurationSeconds),
+			PromptTokens:      modelarkusage.Counter(usage["prompt_tokens"]),
+		}); display != nil {
+			stored[modelarkusage.ObservationKey] = display
+		}
 	}
 	tokenUsage := thirdparty.NormalizeTerminalTokenUsage(map[string]any{"task": map[string]any{"usage": usage}})
 	if len(tokenUsage.Usage) > 0 {

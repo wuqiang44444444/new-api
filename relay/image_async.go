@@ -247,6 +247,7 @@ func buildImageTask(taskID string, c *gin.Context, info *relaycommon.RelayInfo, 
 	task.Progress = "0%"
 	task.AppID = appID
 	task.PrivateData.ImageTask = execution
+	task.PrivateData.ChannelAlert = service.ChannelAlertSelection(c)
 	task.PrivateData.AppID = appID
 	task.PrivateData.BillingContext = &model.TaskBillingContext{
 		CalculationVersion: 1,

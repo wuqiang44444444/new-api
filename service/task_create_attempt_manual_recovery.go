@@ -61,6 +61,7 @@ func StageVideoTaskCreateAttemptRecovery(
 	stageTaskProtocolSnapshot(c, task, info)
 	// unknown 恢复模板冻结插件身份，恢复后的任务按同一插件版本履约。
 	task.PrivateData.Execution = TaskExecutionSnapshotFromContext(c)
+	task.PrivateData.ChannelAlert = ChannelAlertSelection(c)
 	StageFunCloudHostedMediaSnapshot(c, task)
 	StageVideoReferenceAudioSnapshot(c, task)
 	return model.RecordTaskCreateAttemptRecoveryTemplate(attemptID, task)

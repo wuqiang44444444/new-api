@@ -23,9 +23,10 @@ func SeedanceHostContract() SeedanceExtensionContract {
 			{Name: "moxing_modelark_media_v1", Hooks: []string{"buildCreate", "parseCreateResponse", "parseTaskObservation"}},
 			{Name: "ark_media_v1", Hooks: []string{"buildCreate", "parseCreateResponse", "parseTaskObservation"}},
 			{Name: "modelark_v3_byteplus", Hooks: []string{"buildCreate", "parseCreateResponse", "parseTaskObservation"}},
+			{Name: "nexhina_modelark_v3", Hooks: []string{"buildCreate", "parseCreateResponse", "parseTaskObservation"}},
 			{Name: "modelark_v3_volcengine", Hooks: []string{"buildCreate", "parseCreateResponse", "parseTaskObservation"}},
 			{Name: "feicai_videos_v1", Hooks: []string{"buildCreate", "parseCreateResponse", "parseTaskObservation"}},
 		},
-		AssetProtocols: []string{"funcloud_material", "funcloud_material_hosted", "cmcc_aicc_assets_v2", "tokensave_assets_v1", "moxing_volc_assets_v1", "ark_assets_v1", "volcengine_assets_action_v2024_01_01", "byteplus_assets_action_v2024_01_01"},
+		AssetProtocols: []string{"nexhina_ark_assets_v1", "funcloud_material", "funcloud_material_hosted", "cmcc_aicc_assets_v2", "tokensave_assets_v1", "moxing_volc_assets_v1", "ark_assets_v1", "volcengine_assets_action_v2024_01_01", "byteplus_assets_action_v2024_01_01"},
 	}
 }

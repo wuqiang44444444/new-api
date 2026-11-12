@@ -33,6 +33,9 @@ func BuildTaskBillingDeliveryLog(task *model.Task, event model.TaskBillingDelive
 		async.Reason = "customer_refund"
 	}
 	other := taskBillingOther(&copy)
+	if execution := task.PrivateData.Execution; execution != nil && execution.RequestID != "" {
+		other.SetAdmin(model.TaskCreateRequestIDLogKey, execution.RequestID)
+	}
 	// A delayed create event must describe the reservation, even when the
 	// current Task already has a terminal calculation.
 	if event.Event == "create" {
@@ -65,6 +68,9 @@ func BuildTaskBillingDeliveryLog(task *model.Task, event model.TaskBillingDelive
 		other.SetPublic("task_billing_event", "create") // Images log one completed request, without an initial consume row.
 		if data := task.PrivateData.ImageTask; data != nil {
 			other.SetPublic("image_count", data.ImageCount)
+			if data.ImageCount > 0 {
+				other.SetPublic("completed_image_count", data.ImageCount)
+			}
 			if usage := data.Usage; usage != nil {
 				completion, prompt = usage.CompletionTokens, usage.PromptTokens
 				appendImageUsageForLog(other, usage)
@@ -83,6 +89,7 @@ func BuildTaskBillingDeliveryLog(task *model.Task, event model.TaskBillingDelive
 			logType, quota = model.LogTypeRefund, -quota
 		}
 	}
+	appendTaskStatementOriginalQuota(other, task, event, logType)
 	attachQuotaSaturationToOther(other, async.QuotaClamp)
 	metadata := other.JSONString()
 	if metadata == "" {

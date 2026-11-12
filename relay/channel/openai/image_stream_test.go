@@ -44,17 +44,17 @@ func TestImageExpressionUsesCompletedCountAndProtectsAbortedStreams(t *testing.T
 	constant.StreamingTimeout = 30
 	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
 	for _, tc := range []struct {
-		name, body      string
-		stream, abort   bool
-		requested, want int
+		name, body                 string
+		stream, abort              bool
+		requested, want, completed int
 	}{
-		{"JSON uses actual count", `{"data":[{"b64_json":"first"},{"b64_json":"second"}]}`, false, false, 3, 2},
-		{"JSON wrapped as SSE uses actual count", `{"data":[{"b64_json":"first"}]}`, true, false, 3, 1},
-		{"empty response retains request", `{"data":[]}`, false, false, 3, 3},
-		{"JSON object data counts one image", `{"data":{"url":"https://example.com/a.png","b64_json":"first"}}`, false, false, 3, 1},
-		{"JSON wrapped as SSE counts object data once", `{"data":{"b64_json":"first"}}`, true, false, 3, 1},
-		{"completed stream refunds missing images", "data: {\"type\":\"image_generation.completed\",\"b64_json\":\"first\"}\n\ndata: [DONE]\n\n", true, false, 3, 1},
-		{"client abort cannot reduce count", "data: {\"type\":\"image_generation.completed\",\"b64_json\":\"first\"}\n\n", true, true, 3, 3},
+		{"JSON uses actual count", `{"data":[{"b64_json":"first"},{"b64_json":"second"}]}`, false, false, 3, 2, 2},
+		{"JSON wrapped as SSE uses actual count", `{"data":[{"b64_json":"first"}]}`, true, false, 3, 1, 1},
+		{"empty response retains request", `{"data":[]}`, false, false, 3, 3, 0},
+		{"JSON object data counts one image", `{"data":{"url":"https://example.com/a.png","b64_json":"first"}}`, false, false, 3, 1, 1},
+		{"JSON wrapped as SSE counts object data once", `{"data":{"b64_json":"first"}}`, true, false, 3, 1, 1},
+		{"completed stream refunds missing images", "data: {\"type\":\"image_generation.completed\",\"b64_json\":\"first\"}\n\ndata: [DONE]\n\n", true, false, 3, 1, 1},
+		{"client abort cannot reduce count", "data: {\"type\":\"image_generation.completed\",\"b64_json\":\"first\"}\n\n", true, true, 3, 3, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			contentType := "application/json"
@@ -78,6 +78,7 @@ func TestImageExpressionUsesCompletedCountAndProtectsAbortedStreams(t *testing.T
 				count = *info.BillingImageCount
 			}
 			assert.Equal(t, tc.want, count)
+			assert.EqualValues(t, tc.completed, info.CompletedImageCount, "estimated quantities are not completion evidence")
 			assert.Empty(t, info.PriceData.OtherRatios(), "expression quantities must not add a legacy multiplier")
 		})
 	}

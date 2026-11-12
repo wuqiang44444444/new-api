@@ -96,7 +96,7 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 		info.UpstreamModelName = upstreamModel
 	}
 	var sourceRequest any = contract.ModelArk
-	if a.protocol == dto.VideoUpstreamProtocolViduModelArkV3 || a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || a.protocol == dto.VideoUpstreamProtocolModelArkV3Volcengine || a.protocol == dto.VideoUpstreamProtocolModelArkV3BytePlus || a.protocol == dto.VideoUpstreamProtocolArkMediaV1 {
+	if a.protocol == dto.VideoUpstreamProtocolViduModelArkV3 || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || seedanceOfficialUsageProtocol(a.protocol) || a.protocol == dto.VideoUpstreamProtocolArkMediaV1 {
 		payload, _, err := a.modelArkContractPayload(c)
 		if err != nil {
 			return nil, err
@@ -135,7 +135,7 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 	if callErr != nil {
 		return nil, relaycommon.NewVideoContractError("invalid_video_parameter", seedanceHookError(callErr).Error())
 	}
-	if a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolModelArkV3Volcengine || a.protocol == dto.VideoUpstreamProtocolModelArkV3BytePlus || a.protocol == dto.VideoUpstreamProtocolArkMediaV1 {
+	if seedanceOfficialUsageProtocol(a.protocol) || a.protocol == dto.VideoUpstreamProtocolArkMediaV1 {
 		object, ok := result.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("invalid official plugin conversion")
@@ -194,7 +194,7 @@ func decodeSeedanceCreateConversion(result any, protocol dto.VideoUpstreamProtoc
 	if !ok {
 		return nil, fmt.Errorf("seedance plugin buildCreate returned an invalid body")
 	}
-	if protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || protocol == dto.VideoUpstreamProtocolModelArkV3Volcengine || protocol == dto.VideoUpstreamProtocolModelArkV3BytePlus || protocol == dto.VideoUpstreamProtocolArkMediaV1 {
+	if seedanceOfficialUsageProtocol(protocol) || protocol == dto.VideoUpstreamProtocolArkMediaV1 {
 		return decodeOfficialPluginCreate(body, object["probe"], expectedModel, expectedDuration)
 	}
 	wire := seedanceFeicaiCreateWireRequest{}

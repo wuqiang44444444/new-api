@@ -1,11 +1,13 @@
 package model
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/pkg/modelarkusage"
 )
 
 const ModelArkTaskListWindowSeconds int64 = 7 * 24 * 60 * 60
@@ -113,11 +115,10 @@ func (t *Task) ToModelArkVideoTask() *dto.ModelArkVideoTask {
 			LastFrameURL string `json:"last_frame_url"`
 		} `json:"content"`
 		Usage struct {
-			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
-			ToolUsage        *struct {
-				WebSearch int `json:"web_search"`
-			} `json:"tool_usage"`
+			CompletionTokens int             `json:"completion_tokens"`
+			TotalTokens      int             `json:"total_tokens"`
+			PromptTokens     json.RawMessage `json:"prompt_tokens"`
+			ToolUsage        json.RawMessage `json:"tool_usage"`
 		} `json:"usage"`
 	}
 	if len(t.Data) > 0 {
@@ -140,16 +141,16 @@ func (t *Task) ToModelArkVideoTask() *dto.ModelArkVideoTask {
 	if result.ServiceTier == "" {
 		result.ServiceTier = "default"
 	}
-	if upstream.Usage.CompletionTokens != 0 || upstream.Usage.TotalTokens != 0 || upstream.Usage.ToolUsage != nil {
-		result.Usage = &dto.ModelArkVideoTaskUsage{
-			CompletionTokens: upstream.Usage.CompletionTokens,
-			TotalTokens:      upstream.Usage.TotalTokens,
-		}
-		if upstream.Usage.ToolUsage != nil {
-			result.Usage.ToolUsage = &dto.ModelArkVideoToolUsage{WebSearch: upstream.Usage.ToolUsage.WebSearch}
-		}
+	result.Usage.CompletionTokens = upstream.Usage.CompletionTokens
+	result.Usage.TotalTokens = upstream.Usage.TotalTokens
+	if prompt := modelarkusage.RawCounter(upstream.Usage.PromptTokens); prompt != nil {
+		result.Usage.PromptTokens = *prompt
+	}
+	if search := modelarkusage.RawWebSearch(upstream.Usage.ToolUsage); search != nil {
+		result.Usage.ToolUsage.WebSearch = *search
 	}
 	t.projectSeedanceAcceptedUsage(result)
+	t.projectModelArkDisplayUsage(&result.Usage)
 	switch t.Status {
 	case TaskStatusSuccess:
 		result.Content = &dto.ModelArkVideoTaskContent{VideoURL: "/v1/videos/" + t.TaskID + "/content"}

@@ -133,6 +133,7 @@ func TestMiniMaxNexhinaConfiguredModelFunding(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"status":"succeeded"`)
 	assert.Contains(t, w.Body.String(), `"model":"customer-video-idc"`)
 	assert.NotContains(t, w.Body.String(), "MiniMax-H3")
+	assert.Contains(t, w.Body.String(), `"usage":{"total_seconds":4,"input_seconds":0,"output_seconds":4,"input_audio_seconds":0,"input_image_count":0,"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"tool_usage":{"web_search":0}}`)
 
 	// Re-reading the same terminal observation cannot charge or refund twice.
 	require.NoError(t, service.RefreshVideoTask(context.Background(), &task))

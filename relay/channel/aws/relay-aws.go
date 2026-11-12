@@ -234,6 +234,7 @@ func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types
 	defer cancel()
 
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
+	service.RecordChannelAlertSDKResult(c, err)
 	if err != nil {
 		return newAwsInvokeError(requestContext, err, "InvokeModel"), nil
 	}
@@ -264,6 +265,7 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 	defer cancel()
 
 	awsResp, err := a.AwsClient.InvokeModelWithResponseStream(ctx, a.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput))
+	service.RecordChannelAlertSDKResult(c, err)
 	if err != nil {
 		return newAwsInvokeError(requestContext, err, "InvokeModelWithResponseStream"), nil
 	}
@@ -337,6 +339,7 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 	defer cancel()
 
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
+	service.RecordChannelAlertSDKResult(c, err)
 	if err != nil {
 		return newAwsInvokeError(requestContext, err, "InvokeModel"), nil
 	}

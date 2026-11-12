@@ -125,6 +125,9 @@ func ModelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, ada
 	}
 
 	trace.Calculation.Add("round", "quota", preConsumedQuota, estimatedQuota)
+	if original, err := billingexpr.QuotaRoundStrict(quotaBeforeGroup); err == nil {
+		trace.Calculation.OriginalQuota = &original
+	}
 	trace.Calculation.Finish(preConsumedQuota)
 	snapshot := &billingexpr.BillingSnapshot{
 		Calculation:               trace.Calculation,

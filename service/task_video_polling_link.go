@@ -102,11 +102,11 @@ func linkVideoUpstreamTaskMissing(err error) bool {
 
 // linkVideoRedactResponse applies the protocol-specific redaction for a polled
 // response body before it is persisted on the task.
-func linkVideoRedactResponse(version relaycommon.VideoSouthboundAdapterVersion, body []byte) []byte {
+func linkVideoRedactResponse(version relaycommon.VideoSouthboundAdapterVersion, clientProtocol string, body []byte) []byte {
 	if version.IsFeicaiVideos() {
 		return redactTaskResponseForLog(body)
 	}
-	return redactVideoResponseBody(body)
+	return redactVideoResponseBody(body, clientProtocol == model.TaskClientProtocolModelArkV3)
 }
 
 // clearLinkVideoFailReasonOnRecovery drops a reconciliation failure marker

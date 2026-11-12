@@ -16,8 +16,8 @@ func TestSeedancePluginMetadataPreservesPublishedModelArkContract(t *testing.T) 
 	_, info, err := jsplugin.CompileSeedanceExtension(plugins.SeedanceSource(), jsplugin.Options{}, jsplugin.SeedanceHostContract())
 	require.NoError(t, err)
 	for _, video := range info.Configuration.Videos {
-		if video.Protocol == string(dto.VideoUpstreamProtocolViduModelArkV3) {
-			// Vidu has no legacy projection; its published contract is tested below.
+		if video.Protocol == string(dto.VideoUpstreamProtocolViduModelArkV3) || video.Protocol == string(dto.VideoUpstreamProtocolNexhinaModelArkV3) {
+			// These protocols have no legacy projection; their contracts are tested separately.
 			continue
 		}
 		models := append([]string(nil), video.Models...)

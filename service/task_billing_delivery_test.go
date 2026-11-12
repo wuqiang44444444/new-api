@@ -10,12 +10,46 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestCustomerRefundDeliveryRecordsOnlyOriginalOfBookedFunds(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state model.TaskBillingState
+		calc  *billingexpr.Calculation
+		want  *int
+	}{
+		{"settled", model.TaskBillingStateSettled, &billingexpr.Calculation{Quota: 100, OriginalQuota: common.GetPointer(127)}, common.GetPointer(127)},
+		{"debt only refunds prehold", model.TaskBillingStateDebt, &billingexpr.Calculation{Quota: 140, OriginalQuota: common.GetPointer(177)}, common.GetPointer(123)},
+		{"settled missing evidence", model.TaskBillingStateSettled, nil, nil},
+		{"settled amount mismatch", model.TaskBillingStateSettled, &billingexpr.Calculation{Quota: 101, OriginalQuota: common.GetPointer(128)}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := model.Task{}
+			task.PrivateData.BillingContext = &model.TaskBillingContext{
+				InitialCalculation: &billingexpr.Calculation{Quota: 100, OriginalQuota: common.GetPointer(123)},
+			}
+			task.PrivateData.AsyncBilling = &model.TaskAsyncBillingContext{State: tc.state, Calculation: tc.calc}
+			log, err := BuildTaskBillingDeliveryLog(&task, model.TaskBillingDelivery{Event: "customer_refund", BeforeQuota: 100})
+			require.NoError(t, err)
+			assert.Equal(t, model.LogTypeRefund, log.Type)
+			assert.Equal(t, 100, log.Quota)
+			var facts struct {
+				Admin struct {
+					Original *int `json:"statement_original_quota"`
+				} `json:"admin_info"`
+			}
+			require.NoError(t, common.UnmarshalJsonStr(log.Other, &facts))
+			assert.Equal(t, tc.want, facts.Admin.Original)
+		})
+	}
+}
 
 func TestTaskBillingDeliveryRecoversWithoutFundingReplay(t *testing.T) {
 	for _, failure := range []string{"none", "log write", "ack after split log write"} {
@@ -38,12 +72,17 @@ func TestTaskBillingDeliveryRecoversWithoutFundingReplay(t *testing.T) {
 			seedUser(t, 9919, 900)
 			task := makeTask(9919, 0, 100, 0, BillingSourceWallet, 0)
 			task.TaskID = model.GenerateTaskID()
+			task.PrivateData.Execution = &model.TaskExecutionSnapshot{RequestID: "gateway-create-request"}
+			task.PrivateData.BillingContext = &model.TaskBillingContext{
+				InitialCalculation: &billingexpr.Calculation{Version: 1, Quota: 100, OriginalQuota: common.GetPointer(127)},
+			}
 			task.PrivateData.AsyncBilling = &model.TaskAsyncBillingContext{State: model.TaskBillingStatePending}
 			require.NoError(t, task.InsertWithContext(context.Background()))
 			DeliverTaskBillingLogs(context.Background(), task.ID, 10)
 			task.PrivateData.AsyncBilling.ActualTokens = 80
 			task.PrivateData.AsyncBilling.ActualUsageReported = true
 			task.PrivateData.AsyncBilling.Operation = "settle"
+			setTaskCalculation(task, &billingexpr.Calculation{Version: 1, Quota: 80, OriginalQuota: common.GetPointer(99)}, "settlement")
 			require.NoError(t, model.DB.Save(task).Error)
 			applied, delta, err := model.ApplyTaskBillingTarget(task, 80)
 			require.NoError(t, err)
@@ -88,6 +127,16 @@ func TestTaskBillingDeliveryRecoversWithoutFundingReplay(t *testing.T) {
 			require.NoError(t, model.LOG_DB.Order("id").Find(&logs).Error)
 			require.Len(t, logs, 2)
 			assert.Equal(t, 80, logs[1].CompletionTokens)
+			for i, original := range []int{127, 28} {
+				var other map[string]any
+				require.NoError(t, common.UnmarshalJsonStr(logs[i].Other, &other))
+				admin, ok := other["admin_info"].(map[string]any)
+				require.True(t, ok)
+				assert.EqualValues(t, original, admin[model.StatementOriginalQuotaLogKey])
+				assert.Equal(t, "gateway-create-request", admin[model.TaskCreateRequestIDLogKey])
+			}
+			assert.Equal(t, fmt.Sprintf("task-billing:%d:create", task.ID), logs[0].RequestId)
+			assert.Equal(t, fmt.Sprintf("task-billing:%d:adjustment", task.ID), logs[1].RequestId)
 			var user model.User
 			require.NoError(t, model.DB.First(&user, 9919).Error)
 			assert.Equal(t, 80, user.UsedQuota)

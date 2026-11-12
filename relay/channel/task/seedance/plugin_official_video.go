@@ -99,7 +99,8 @@ func decodeOfficialPluginObservation(result any, expectedID string, apiVersion i
 // host derives usage from the raw upstream bytes before the artifact sees the
 // body: the strict integer lexeme rule cannot survive the JS number boundary.
 func seedanceOfficialUsageProtocol(protocol dto.VideoUpstreamProtocol) bool {
-	return protocol == dto.VideoUpstreamProtocolModelArkV3Volcengine ||
+	return protocol == dto.VideoUpstreamProtocolNexhinaModelArkV3 ||
+		protocol == dto.VideoUpstreamProtocolModelArkV3Volcengine ||
 		protocol == dto.VideoUpstreamProtocolModelArkV3BytePlus ||
 		protocol == dto.VideoUpstreamProtocolModelArkV3CMCC
 }

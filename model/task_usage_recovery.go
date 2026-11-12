@@ -211,7 +211,11 @@ func ReviewTaskUsage(taskID string, operatorID int, reference string, tokens *in
 			if payload == nil {
 				payload = map[string]any{}
 			}
-			payload["usage"] = &dto.ModelArkVideoTaskUsage{CompletionTokens: *tokens, TotalTokens: *tokens}
+			usage := map[string]int{}
+			if *tokens != 0 {
+				usage["completion_tokens"], usage["total_tokens"] = *tokens, *tokens
+			}
+			payload["usage"] = usage
 			var err error
 			task.Data, err = common.Marshal(payload)
 			if err != nil {

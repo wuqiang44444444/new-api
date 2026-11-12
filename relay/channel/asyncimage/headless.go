@@ -39,6 +39,7 @@ func HeadlessCreateAndPoll(ctx context.Context, info *relaycommon.RelayInfo, hea
 		return "", nil, apiErr
 	}
 	if strings.EqualFold(initial.Data.Status, "success") {
+		service.ObserveImageChannelSuccess(ctx, "image_submit")
 		return "", initial.Data.Result, nil
 	}
 	if !strings.EqualFold(initial.Data.Status, "processing") && !strings.EqualFold(initial.Data.Status, "queued") {
@@ -47,6 +48,7 @@ func HeadlessCreateAndPoll(ctx context.Context, info *relaycommon.RelayInfo, hea
 	if strings.TrimSpace(initial.Data.TaskID) == "" {
 		return "", nil, upstreamError("create response did not include task ID")
 	}
+	service.ObserveImageChannelSuccess(ctx, "image_submit")
 	// 评审 S6：取得可信 Provider 任务 ID 立即回调持久化，此后崩溃可按
 	// 既有任务恢复查询，不重建。
 	if onProviderTaskID != nil {
@@ -73,8 +75,10 @@ func HeadlessPollOnly(ctx context.Context, info *relaycommon.RelayInfo, headers 
 	}
 	switch strings.ToLower(strings.TrimSpace(result.Data.Status)) {
 	case "processing", "queued":
+		service.ObserveImageChannelSuccess(ctx, "image_query")
 		return nil, nil
 	case "success":
+		service.ObserveImageChannelSuccess(ctx, "image_query")
 		return result.Data.Result, nil
 	default:
 		return nil, upstreamError("unknown polling task status")
@@ -104,8 +108,10 @@ func headlessPollTask(ctx context.Context, info *relaycommon.RelayInfo, headers 
 		}
 		switch strings.ToLower(strings.TrimSpace(result.Data.Status)) {
 		case "processing", "queued":
+			service.ObserveImageChannelSuccess(ctx, "image_query")
 			continue
 		case "success":
+			service.ObserveImageChannelSuccess(ctx, "image_query")
 			return taskID, result.Data.Result, nil
 		default:
 			return taskID, nil, upstreamError("unknown polling task status")
@@ -141,6 +147,7 @@ func headlessPost(ctx context.Context, info *relaycommon.RelayInfo, headers map[
 		return nil, upstreamError("failed to initialize upstream client")
 	}
 	resp, err := client.Do(req)
+	service.ObserveImageChannelTransport(ctx, "image_submit", resp, err)
 	service.ObserveImageHTTPExchange(ctx, req, resp, err, "upstream_response")
 	if err != nil {
 		return nil, headlessContextError(err)
@@ -170,6 +177,7 @@ func headlessGet(ctx context.Context, info *relaycommon.RelayInfo, headers map[s
 		return nil, upstreamError("failed to initialize polling client")
 	}
 	resp, err := client.Do(req)
+	service.ObserveImageChannelTransport(ctx, "image_query", resp, err)
 	service.ObserveImageHTTPExchange(ctx, req, resp, err, "upstream_response")
 	if err != nil {
 		return nil, headlessContextError(err)

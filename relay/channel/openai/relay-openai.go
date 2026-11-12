@@ -135,7 +135,7 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			}
 
 			lastStreamData = data
-			observeStreamChoices(info, data, seenStreamToolCalls, &streamFunctionCallNames)
+			observeStreamChoices(c, info, data, seenStreamToolCalls, &streamFunctionCallNames)
 			if err := processTokenData(info, data, &responseTextBuilder, &toolCount); err != nil {
 				logger.LogError(c, common.LogText("error processing stream token data: %s", err.Error()))
 				sr.Error(err)
@@ -199,7 +199,7 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 // observeStreamChoices collects billable function call names and records the
 // finish reason facts used by health sampling from one parsed chunk.
-func observeStreamChoices(info *relaycommon.RelayInfo, data string, seen map[string]struct{}, names *[]string) {
+func observeStreamChoices(c *gin.Context, info *relaycommon.RelayInfo, data string, seen map[string]struct{}, names *[]string) {
 	var streamResponse dto.ChatCompletionsStreamResponse
 	if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
 		return
@@ -210,6 +210,7 @@ func observeStreamChoices(info *relaycommon.RelayInfo, data string, seen map[str
 				info.PerformanceBusinessRejection = true
 			}
 			info.StreamStatus.MarkCompleted()
+			service.ObserveDefaultAffinityChatChoice(c, info, choice.Index)
 		}
 		for i, tc := range choice.Delta.ToolCalls {
 			name := strings.TrimSpace(tc.Function.Name)

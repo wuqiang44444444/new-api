@@ -71,7 +71,7 @@ func SettleMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.M
 		return false, errors.New("Midjourney task must be persisted before billing")
 	}
 
-	result, billingErr := postConsumeQuotaWithResult(relayInfo, task.Quota, 0, true)
+	result, billingErr := postConsumeQuotaWithResult(relayInfo, task.Quota, 0, true, false)
 	if !result.FundingApplied {
 		task.Quota = 0
 		task.TokenId = 0

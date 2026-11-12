@@ -208,6 +208,7 @@ func xunfeiMakeRequest(c *gin.Context, textRequest dto.GeneralOpenAIRequest, dom
 	}
 	conn, resp, err := service.DialRealtimeWithEvidenceUsing(c, &d, context.Background(), authUrl, nil)
 	if err != nil || resp.StatusCode != 101 {
+		service.RecordChannelAlertHTTP(c, resp, err)
 		return nil, nil, err
 	}
 
@@ -219,6 +220,7 @@ func xunfeiMakeRequest(c *gin.Context, textRequest dto.GeneralOpenAIRequest, dom
 	// Preserve WriteJSON's terminating newline while encoding only once.
 	err = service.WriteRealtimeFrameWithEvidence(c.Request.Context(), "realtime_southbound_send", conn, websocket.TextMessage, append(encoded, '\n'))
 	if err != nil {
+		service.RecordChannelAlertHTTP(c, nil, err)
 		return nil, nil, err
 	}
 
@@ -232,6 +234,7 @@ func xunfeiMakeRequest(c *gin.Context, textRequest dto.GeneralOpenAIRequest, dom
 			messageType, msg, err := conn.ReadMessage()
 			service.ObserveRealtimeFrame(c.Request.Context(), "realtime_upstream_response", messageType, msg, err)
 			if err != nil {
+				service.RecordChannelAlertHTTP(c, nil, err)
 				common.SysLog(common.LogText("error reading stream response: %s", err.Error()))
 				break
 			}
@@ -243,6 +246,9 @@ func xunfeiMakeRequest(c *gin.Context, textRequest dto.GeneralOpenAIRequest, dom
 			}
 			dataChan <- response
 			if response.Payload.Choices.Status == 2 {
+				if response.Header.Code == 0 {
+					service.RecordChannelAlertHTTP(c, resp, nil)
+				}
 				if err != nil {
 					common.SysLog(common.LogText("error closing websocket connection: %s", err.Error()))
 				}

@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/pkg/minimaxlink"
+	"github.com/QuantumNous/new-api/pkg/modelarkusage"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -290,10 +291,14 @@ type observationBody struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
-	OfficialUsage map[string]any                  `json:"official_usage,omitempty"`
-	Usage         *taskdto.ModelArkVideoTaskUsage `json:"usage,omitempty"`
-	UsageSource   string                          `json:"usage_source,omitempty"`
-	UsageEvidence map[string]int                  `json:"usage_evidence,omitempty"`
+	OfficialUsage map[string]any         `json:"official_usage,omitempty"`
+	DisplayUsage  *modelarkusage.Display `json:"_modelark_display_usage,omitempty"`
+	Usage         *struct {
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage,omitempty"`
+	UsageSource   string         `json:"usage_source,omitempty"`
+	UsageEvidence map[string]int `json:"usage_evidence,omitempty"`
 }
 
 // ParseTaskResult maps the validated observation onto the shared polling
@@ -325,6 +330,7 @@ func (a *TaskAdaptor) ParseTaskResult(task *model.Task, _ *http.Response, respBo
 		result.UsageEvidence = observation.UsageEvidence
 		if task.IsMiniMaxV2Task() {
 			result.UsageFacts = observation.OfficialUsage
+			result.ModelArkUsage = observation.DisplayUsage
 			if observation.Usage != nil && observation.UsageSource != "" {
 				result.UsageReported = true
 				result.CompletionTokensReported = true

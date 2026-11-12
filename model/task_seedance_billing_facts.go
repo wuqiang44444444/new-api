@@ -175,6 +175,9 @@ func (t *Task) updateSeedanceObservation(fromStatus TaskStatus) (bool, error) {
 		saved.PrivateData.ResultURL = t.PrivateData.ResultURL
 		saved.PrivateData.PollFailures = t.PrivateData.PollFailures
 		saved.PrivateData.AsyncBilling = next
+		if stored.ClientProtocol == TaskClientProtocolModelArkV3 {
+			saved.mergeModelArkDisplayUsage(t.PrivateData.ModelArkUsage)
+		}
 		saved.BillingState = next.State
 		if err := tx.Model(&saved).Select("status", "progress", "start_time", "finish_time", "fail_reason", "data", "private_data", "billing_state").Updates(&saved).Error; err != nil {
 			return err
@@ -220,9 +223,6 @@ func (t *Task) projectSeedanceAcceptedUsage(result *dto.ModelArkVideoTask) {
 	async := t.PrivateData.AsyncBilling
 	if !async.ActualUsageReported {
 		return
-	}
-	if result.Usage == nil {
-		result.Usage = &dto.ModelArkVideoTaskUsage{}
 	}
 	result.Usage.CompletionTokens = async.ActualTokens
 }

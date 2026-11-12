@@ -537,13 +537,14 @@ export const meta = {
     en: "Seedance Link southbound protocol adapters",
     zh: "Seedance Link 南向协议适配",
   },
-  version: "1.5.0",
+  version: "1.6.2",
   author: { name: "yuan-gateway" },
   seedanceProtocols: [
     "vidu_modelark_v3",
     "funcloud_modelark_v3",
     "synlink_video_v1",
     "feicai_videos_v1",
+    "nexhina_modelark_v3",
     "modelark_v3_volcengine",
     "modelark_v3_byteplus",
     "ark_media_v1",
@@ -616,6 +617,24 @@ export const meta = {
         defaultModelMetadata: OFFICIAL_DEFAULT_METADATA,
         assetProtocols: ["byteplus_assets_action_v2024_01_01", "none"],
         defaultAssetProtocol: "byteplus_assets_action_v2024_01_01",
+      },
+      {
+        protocol: "nexhina_modelark_v3",
+        label: "Nexhina ModelArk V3",
+        models: ["doubao-seedance-2-0-mini-260615"],
+        modelMetadata: {
+          "doubao-seedance-2-0-mini-260615": {
+            ...OFFICIAL_BASE_METADATA,
+            maxImages: 1,
+            maxVideos: 0,
+            maxAudios: 0,
+            allowVideos: false,
+            allowAudios: false,
+            deleteVideo: false,
+          },
+        },
+        assetProtocols: ["nexhina_ark_assets_v1", "none"],
+        defaultAssetProtocol: "nexhina_ark_assets_v1",
       },
       {
         protocol: "modelark_v3_volcengine",
@@ -706,6 +725,16 @@ export const meta = {
           { kind: "general", mediaType: "audio" },
           { kind: "real_person", mediaType: "image" },
         ],
+      },
+      {
+        protocol: "nexhina_ark_assets_v1",
+        label: "Nexhina Ark Assets",
+        groupPolicy: "default_fallback",
+        groupSearch: true,
+        credential: "channel",
+        defaultURLTTLSeconds: 3600,
+        operations: ["create_asset", "get_asset", "update_asset", "delete_asset", "create_asset_group", "get_asset_group"],
+        media: [{ kind: "general", mediaType: "image" }],
       },
       {
         protocol: "ark_assets_v1",
@@ -813,6 +842,14 @@ export const seedance = {
   ark_media_v1: { buildCreate: buildArkVideoCreate, parseCreateResponse: parseArkVideoCreate, parseTaskObservation: parseArkVideoTask },
   modelark_v3_byteplus: {
     buildCreate: buildOfficialVideoCreate,
+    parseCreateResponse: parseOfficialVideoCreateResponse,
+    parseTaskObservation: parseOfficialVideoTask,
+  },
+  nexhina_modelark_v3: {
+    buildCreate(input) {
+      const result = buildOfficialVideoCreate(input);
+      return { ...result, createPath: "/seedance" + result.createPath, queryPath: "/seedance" + result.queryPath };
+    },
     parseCreateResponse: parseOfficialVideoCreateResponse,
     parseTaskObservation: parseOfficialVideoTask,
   },
@@ -1049,6 +1086,7 @@ export const seedanceAssets = {
   cmcc_aicc_assets_v2: { buildRequest: buildCMCCAssetRequest, parseResponse: parseCMCCAssetResponse },
   tokensave_assets_v1: { buildRequest: buildTokenSaveAssetRequest, parseResponse: parseTokenSaveAssetResponse },
   moxing_volc_assets_v1: { buildRequest: buildMoxingAssetRequest, parseResponse: parseMoxingAssetResponse },
+  nexhina_ark_assets_v1: { buildRequest: buildNexhinaAssetRequest, parseResponse: parseNexhinaAssetResponse },
   ark_assets_v1: { buildRequest: buildArkAssetRequest, parseResponse: parseArkAssetResponse },
   byteplus_assets_action_v2024_01_01: { buildRequest: buildOfficialAssetRequest, parseResponse: parseOfficialAssetResponse },
   volcengine_assets_action_v2024_01_01: {
@@ -1114,6 +1152,34 @@ function buildOfficialAssetRequest(input) {
       throw new Error("unsupported_asset_operation");
   }
   return { action, body };
+}
+
+function buildNexhinaAssetRequest(input) {
+  const { action, body } = buildOfficialAssetRequest({ ...input, project: "default" });
+  if (input.operation === "create_asset") {
+    body.Url = body.URL;
+    delete body.URL;
+  } else if (input.operation === "create_group") {
+    delete body.GroupType;
+  } else if (input.operation === "list_groups") {
+    delete body.Filter;
+  }
+  return { method: "POST", path: "/api/ark/v1/?Action=" + action + "&Version=2024-01-01", body };
+}
+
+function parseNexhinaAssetResponse(input) {
+  const raw = JSON.parse(input.body);
+  const error = raw?.ResponseMetadata?.Error;
+  if (input.status >= 200 && input.status < 300 && error && Object.keys(error).length) {
+    if (input.operation === "get_asset" && error.Code === "NotFound.asset_id") return { notFound: true };
+    return { stringError: { code: strictOptionalString(error, "Code") } };
+  }
+  if (input.status >= 200 && input.status < 300) {
+    if (!raw?.Result || typeof raw.Result !== "object" || Array.isArray(raw.Result)) throw new Error("invalid Nexhina asset result");
+    if (input.operation === "list_groups" && (!Array.isArray(raw.Result.Items) || !Number.isSafeInteger(raw.Result.TotalCount) || raw.Result.TotalCount < 0))
+      throw new Error("invalid Nexhina asset group page");
+  }
+  return parseOfficialAssetResponse(input);
 }
 
 function officialAssetResult(item) {

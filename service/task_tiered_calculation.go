@@ -66,6 +66,9 @@ func ComputeTaskTieredBilling(task *model.Task) (billingexpr.TieredResult, billi
 		result.Calculation.Add("round", "quota", result.ActualQuotaAfterGroup, amount.InexactFloat64())
 		result.Calculation.Finish(result.ActualQuotaAfterGroup)
 	}
+	if original, err := common.QuotaRoundStrict(result.ActualQuotaBeforeGroup); err == nil {
+		result.Calculation.OriginalQuota = &original
+	}
 	return result, input, nil
 }
 

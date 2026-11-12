@@ -13,11 +13,13 @@ import (
 )
 
 func (*TaskAdaptor) TaskLifecycleCapabilities(task *model.Task) channel.TaskLifecycleCapabilities {
-	official := task != nil && (task.PrivateData.VideoUpstreamProfile == "" || task.PrivateData.VideoUpstreamProfile == dto.VideoUpstreamProfileOfficial)
+	supportsDelete := task != nil &&
+		task.PrivateData.VideoUpstreamProtocol != dto.VideoUpstreamProtocolNexhinaModelArkV3 &&
+		(task.PrivateData.VideoUpstreamProfile == "" || task.PrivateData.VideoUpstreamProfile == dto.VideoUpstreamProfileOfficial)
 	return channel.TaskLifecycleCapabilities{
 		SupportsContent:        true,
-		SupportsCancelQueued:   official,
-		SupportsDeleteTerminal: official,
+		SupportsCancelQueued:   supportsDelete,
+		SupportsDeleteTerminal: supportsDelete,
 	}
 }
 

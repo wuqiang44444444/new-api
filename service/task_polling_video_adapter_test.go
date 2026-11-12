@@ -170,13 +170,16 @@ func TestVideoPollingRejectsUnknownFrozenAdapterBeforeFetch(t *testing.T) {
 }
 
 func TestVideoTaskDataDropsPrivateBillingEvidenceButKeepsResultProjection(t *testing.T) {
-	redacted := redactVideoResponseBody([]byte(`{
+	body := []byte(`{
 		"status":"succeeded","content":{"video_url":"https://video.example.com/result.mp4"},
 		"usage":{"completion_tokens":40594,"total_tokens":40594},
 		"usage_source":"usage.completion_tokens",
 		"usage_evidence":{"usage.prompt_tokens":0},
+		"_modelark_display_usage":{"prompt_tokens":0},
 		"_provider_billing_evidence":{"token_source":"completionTokens","reported_tokens":40594,"raw_consumption":"0.232731"}
-	}`))
+	}`)
+	version := relaycommon.VideoSouthboundAdapterVersion{}
+	redacted := linkVideoRedactResponse(version, model.TaskClientProtocolModelArkV3, body)
 	assert.Contains(t, string(redacted), "video.example.com/result.mp4")
 	assert.Contains(t, string(redacted), "completion_tokens")
 	assert.NotContains(t, string(redacted), "provider_billing_evidence")
@@ -184,6 +187,10 @@ func TestVideoTaskDataDropsPrivateBillingEvidenceButKeepsResultProjection(t *tes
 	assert.NotContains(t, string(redacted), "usage_source")
 	assert.NotContains(t, string(redacted), "usage_evidence")
 	assert.NotContains(t, string(redacted), "usage.completion_tokens")
+	assert.NotContains(t, string(redacted), "_modelark_display_usage")
+	native := linkVideoRedactResponse(version, "", body)
+	assert.Contains(t, string(native), `"_modelark_display_usage":{"prompt_tokens":0}`)
+	assert.NotContains(t, string(native), "provider_billing_evidence")
 }
 
 type videoAdapterNotFoundPollingAdaptor struct{ fetchCount int }

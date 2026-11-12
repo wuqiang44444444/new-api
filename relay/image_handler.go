@@ -30,6 +30,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		return imageAsyncHelper(c, info)
 	}
 	info.BillingImageCount = nil
+	info.CompletedImageCount = 0
 	info.ImageRequestCount = 0
 
 	imageReq, ok := info.Request.(*dto.ImageRequest)

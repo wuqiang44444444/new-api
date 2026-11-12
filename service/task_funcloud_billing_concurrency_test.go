@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/modelarkusage"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,19 +125,25 @@ func TestFunCloudDebtKeepsAcceptedUsageAndFundingTarget(t *testing.T) {
 
 func TestFunCloudFirstAcceptedZeroSurvivesConflictingPoll(t *testing.T) {
 	task := persistedFunCloudUsageTask(t, 8132, 1000)
+	task.ClientProtocol = model.TaskClientProtocolModelArkV3
+	require.NoError(t, model.DB.Model(task).UpdateColumn("client_protocol", task.ClientProtocol).Error)
 	stale := reloadTask(t, task.ID)
 	zero := 0
+	task.PrivateData.ModelArkUsage = &modelarkusage.Display{PromptTokens: &zero}
 	observeFunCloudUsage(t, task, &zero)
 	// A second valid response arrives before the first worker computes its target.
 	different := 200
+	stale.PrivateData.ModelArkUsage = &modelarkusage.Display{PromptTokens: &different, WebSearch: common.GetPointer(2)}
 	observeFunCloudUsage(t, stale, &different)
 	require.True(t, settleTaskTieredSnapshot(context.Background(), stale, different))
 	stored := reloadTask(t, task.ID)
 	assert.Zero(t, stored.Quota)
 	assert.Equal(t, 1700, getUserQuota(t, task.UserId))
-	require.NotNil(t, stored.ToModelArkVideoTask().Usage)
-	assert.Zero(t, stored.ToModelArkVideoTask().Usage.CompletionTokens)
-	assert.Equal(t, 10, stored.ToModelArkVideoTask().Usage.TotalTokens)
+	usage := stored.ToModelArkVideoTask().Usage
+	assert.Zero(t, usage.CompletionTokens)
+	assert.Equal(t, 10, usage.TotalTokens)
+	assert.Zero(t, usage.PromptTokens)
+	assert.Equal(t, 2, usage.ToolUsage.WebSearch)
 	require.NotNil(t, stored.PrivateData.AsyncBilling.UsageDiscrepancy)
 	assert.Equal(t, 200, stored.PrivateData.AsyncBilling.UsageDiscrepancy.Tokens)
 	publicJSON, err := common.Marshal(stored.ToModelArkVideoTask())

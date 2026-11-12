@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/pkg/modelarkusage"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
@@ -187,6 +188,7 @@ type RelayInfo struct {
 	TieredBillingSnapshot *billingexpr.BillingSnapshot
 	BillingRequestInput   *billingexpr.RequestInput
 	BillingImageCount     *int
+	CompletedImageCount   int64
 	// ImageRequestCount is the effective quantity sent on the current attempt;
 	// ImageQuotaBeforeGroup is the frozen legacy estimate before request ratios.
 	ImageRequestCount     int
@@ -247,6 +249,7 @@ func (info *RelayInfo) UpdateImageCount(count int64) {
 	if info == nil || count <= 0 || count > int64(dto.MaxImageN) {
 		return
 	}
+	info.CompletedImageCount = count
 	if info.PriceData.UsePrice {
 		info.PriceData.AddOtherRatio("n", float64(count))
 	}
@@ -1171,6 +1174,7 @@ type TaskInfo struct {
 	UsageSource              string                   `json:"-"` // 计费用量的形成字段（归一层写入）
 	UsageEvidence            map[string]int           `json:"-"` // 终态采集的全部合法用量证据（字段路径 -> 数值）
 	ProviderBillingEvidence  *ProviderBillingEvidence `json:"-"`
+	ModelArkUsage            *modelarkusage.Display   `json:"-"`
 }
 
 func FailTaskInfo(reason string) *TaskInfo {

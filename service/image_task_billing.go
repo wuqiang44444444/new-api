@@ -144,6 +144,9 @@ func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usag
 			result.Calculation.Add("contract_ratio", "quota", amount.String(), decimal.NewFromFloat(result.ActualQuotaBeforeGroup).Mul(decimal.NewFromFloat(snap.GroupRatio)).String(), bc.ContractFact.RatioString())
 		}
 		result.Calculation.Add("round", "quota", quota, amount.InexactFloat64())
+		if original, err := common.QuotaRoundStrict(result.ActualQuotaBeforeGroup); err == nil {
+			result.Calculation.OriginalQuota = &original
+		}
 		setTaskCalculation(task, result.Calculation.Finish(quota), "settlement")
 		return quota, clamp, nil
 	}
@@ -165,6 +168,7 @@ func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usag
 	// This native calculator is side-effect-free for image usage (no tool calls).
 	c := &gin.Context{Request: &http.Request{Header: http.Header{}}}
 	summary := calculateTextQuotaSummary(c, info, usage)
+	info.BillingCalculation.OriginalQuota = summary.OriginalQuota
 	setTaskCalculation(task, info.BillingCalculation.Finish(summary.Quota), "settlement")
 	return summary.Quota, info.QuotaClamp, nil
 }

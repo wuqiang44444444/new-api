@@ -16,6 +16,7 @@ const (
 	VideoUpstreamProtocolViduModelArkV3       = kitdto.VideoUpstreamProtocolViduModelArkV3
 	VideoUpstreamProtocolSynlinkVideoV1       = kitdto.VideoUpstreamProtocolSynlinkVideoV1
 	VideoUpstreamProtocolFunCloudModelArkV3   = kitdto.VideoUpstreamProtocolFunCloudModelArkV3
+	VideoUpstreamProtocolNexhinaModelArkV3    = kitdto.VideoUpstreamProtocolNexhinaModelArkV3
 	VideoUpstreamProtocolModelArkV3Volcengine = kitdto.VideoUpstreamProtocolModelArkV3Volcengine
 	VideoUpstreamProtocolModelArkV3BytePlus   = kitdto.VideoUpstreamProtocolModelArkV3BytePlus
 	VideoUpstreamProtocolModelArkV3CMCC       = kitdto.VideoUpstreamProtocolModelArkV3CMCC
@@ -29,6 +30,7 @@ const (
 	AssetUpstreamProtocolNone               = kitdto.AssetUpstreamProtocolNone
 	AssetUpstreamProtocolVolcengineAction   = kitdto.AssetUpstreamProtocolVolcengineAction
 	AssetUpstreamProtocolBytePlusAction     = kitdto.AssetUpstreamProtocolBytePlusAction
+	AssetUpstreamProtocolNexhinaArkV1       = kitdto.AssetUpstreamProtocolNexhinaArkV1
 	AssetUpstreamProtocolArkAssetsV1        = kitdto.AssetUpstreamProtocolArkAssetsV1
 	AssetUpstreamProtocolTokenSaveAssetsV1  = kitdto.AssetUpstreamProtocolTokenSaveAssetsV1
 	AssetUpstreamProtocolMoxingVolcAssetsV1 = kitdto.AssetUpstreamProtocolMoxingVolcAssetsV1

@@ -136,6 +136,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 			if err != nil {
 				return newAPIErrorFromParamOverride(err)
 			}
+			service.ObserveDefaultAffinityChatRequest(c, info, jsonData)
 		}
 
 		logger.LogDebug(c, "text request body: %s", jsonData)

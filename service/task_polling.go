@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/pkg/modelarkusage"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -320,6 +321,7 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 	adaptor.Init(info)
 	resp, err := adaptor.FetchBatchTasks(baseURL, ch.Key, tasks, proxy)
 	if err != nil {
+		observeChannelBatchPoll(ctx, tasks, 0, err)
 		common.SysLog(fmt.Sprintf("Get Task Do req error: %v", err))
 		for _, task := range tasks {
 			CaptureFallbackTaskPollingEvidence(adaptor, task, http.MethodGet, baseURL, 0, nil, nil, err)
@@ -338,6 +340,7 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 	for _, task := range tasks {
 		CaptureFallbackTaskPollingHTTPResponse(adaptor, task, baseURL, resp, responseBody, nil)
 	}
+	observeChannelBatchPoll(ctx, tasks, resp.StatusCode, nil)
 	switch classifyPollHTTP(resp.StatusCode) {
 	case pollClassNotFound:
 		for _, task := range tasks {
@@ -379,6 +382,9 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 				common.SysLog(common.LogText("UpdateSunoTask task error: %s", err.Error()))
 			}
 			continue
+		}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			ObserveFrozenChannelResult(ctx, task, "task_query", "", resp.StatusCode, false, true)
 		}
 		if isNonTerminalPollStatus(parsedStatus) {
 			task.PrivateData.PollFailures = 0
@@ -566,6 +572,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 	resp, err := fetchVideoTaskWithContext(ctx, adaptor, taskVideoUpstreamQueryBaseURL(task, ch, baseURL), key, task, proxy)
 	if err != nil {
+		ObserveChannelVideoPoll(ctx, task, 0, err)
 		if handled, deferErr := handleMiniMaxTemporaryQueryError(ctx, task, err, time.Now()); handled {
 			return deferErr
 		}
@@ -601,6 +608,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 	CaptureFallbackTaskPollingEvidence(adaptor, task, http.MethodGet, taskVideoUpstreamQueryBaseURL(task, ch, baseURL), resp.StatusCode, nil, responseBody, nil)
 
+	ObserveChannelVideoPoll(ctx, task, resp.StatusCode, nil)
 	logger.LogDebug(ctx, "updateVideoSingleTask response: %s", redactTaskResponseForLog(responseBody))
 
 	switch classifyPollHTTP(resp.StatusCode) {
@@ -657,7 +665,8 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if classifyPollHTTP(resp.StatusCode) == pollClassOtherClient && isNonTerminalPollStatus(parsedStatus) {
 		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassUnrecognized, resp.StatusCode, taskResult.Reason)
 	}
-	task.Data = linkVideoRedactResponse(adapterVersion, responseBody)
+	ObserveTrustedChannelVideoResult(ctx, task, resp.StatusCode, parsedStatus)
+	task.Data = linkVideoRedactResponse(adapterVersion, task.ClientProtocol, responseBody)
 
 	if len(taskResult.PluginState) > 0 {
 		task.PrivateData.PluginState = taskResult.PluginState
@@ -722,6 +731,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 	isDone := task.Status.IsTerminal()
 	if isDone {
+		if task.ClientProtocol == model.TaskClientProtocolModelArkV3 && task.HasTypedVideoBillingFacts() {
+			task.PrivateData.ModelArkUsage = taskResult.ModelArkUsage
+		}
 		prepareTerminalTaskBilling(task, taskResult)
 	}
 	if isDone && snap.Status != task.Status {
@@ -772,7 +784,7 @@ func finalizeTerminalTask(ctx context.Context, adaptor TaskPollingAdaptor, task 
 	}
 }
 
-func redactVideoResponseBody(body []byte) []byte {
+func redactVideoResponseBody(body []byte, modelArk bool) []byte {
 	var m map[string]any
 	if err := common.Unmarshal(body, &m); err != nil {
 		return body
@@ -783,6 +795,9 @@ func redactVideoResponseBody(body []byte) []byte {
 	delete(m, "usage_source")
 	delete(m, "usage_evidence")
 	delete(m, "official_usage")
+	if modelArk {
+		delete(m, modelarkusage.ObservationKey)
+	}
 	resp, _ := m["response"].(map[string]any)
 	if resp != nil {
 		delete(resp, "bytesBase64Encoded")

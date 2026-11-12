@@ -27,7 +27,7 @@ import (
 const officialH3Hold = 2_275_000
 const officialH3Final = 750_000
 
-const officialH3Request = `{"model":"customer-video","content":[{"type":"text","text":"A landscape"},{"type":"image_url","role":"reference_image","image_url":{"url":"https://media.example.test/reference.png"}},{"type":"video_url","role":"reference_video","video_url":{"url":"https://media.example.test/reference.mp4"}}]}`
+const officialH3Request = `{"model":"customer-video","content":[{"type":"text","text":"A landscape"},{"type":"image_url","role":"reference_image","image_url":{"url":"https://media.example.test/reference.png"}},{"type":"video_url","role":"reference_video","video_url":{"url":"https://media.example.test/reference.mp4"}},{"type":"audio_url","role":"reference_audio","audio_url":{"url":"https://media.example.test/reference.mp3"}}]}`
 
 func newOfficialH3Fixture(t *testing.T) *seedanceFundsFixture {
 	t.Helper()
@@ -139,7 +139,7 @@ func TestMiniMaxOfficialV2FundingPollingAndOSS(t *testing.T) {
 	assert.NotContains(t, string(task.Data), "official-task-1")
 	assert.Equal(t, model.TaskBillingStatePending, task.BillingState)
 	assert.Equal(t, seedanceFundsInitialQuota-officialH3Hold, fx.userQuota())
-	assert.JSONEq(t, `{"model":"MiniMax-H3","content":[{"type":"text","text":"A landscape"},{"type":"image_url","role":"reference_image","image_url":{"url":"https://media.example.test/reference.png"}},{"type":"video_url","role":"reference_video","video_url":{"url":"https://media.example.test/reference.mp4"}}],"duration":6,"resolution":"768P","ratio":"16:9"}`, string(fx.createRequestBody()))
+	assert.JSONEq(t, `{"model":"MiniMax-H3","content":[{"type":"text","text":"A landscape"},{"type":"image_url","role":"reference_image","image_url":{"url":"https://media.example.test/reference.png"}},{"type":"video_url","role":"reference_video","video_url":{"url":"https://media.example.test/reference.mp4"}},{"type":"audio_url","role":"reference_audio","audio_url":{"url":"https://media.example.test/reference.mp3"}}],"duration":6,"resolution":"768P","ratio":"16:9"}`, string(fx.createRequestBody()))
 
 	var jdCreates atomic.Int32
 	jdProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -230,8 +230,8 @@ func TestMiniMaxOfficialV2FundingPollingAndOSS(t *testing.T) {
 	assert.Equal(t, seedanceFundsInitialQuota-officialH3Hold, fx.userQuota())
 	fx.queryStatus.Store(http.StatusOK)
 
-	success := fmt.Sprintf(`{"task":{"id":"official-task-1","status":"succeeded","model":"MiniMax-H3","task_type":"generation","modality":"video","content":{"url":%q},"resolution":"768P","ratio":"16:9","duration":6,"usage":{"output_seconds":6,"input_image_count":1,"input_seconds":null,"completion_tokens":42}}}`, cdn.URL+"/video.mp4")
-	fx.queryBodyRes.Store(success)
+	success := fmt.Sprintf(`{"task":{"id":"official-task-1","status":"succeeded","model":"MiniMax-H3","task_type":"generation","modality":"video","content":{"url":%q},"resolution":"768P","ratio":"16:9","duration":6,"usage":{"total_seconds":8.5,"output_seconds":6,"input_image_count":1,"input_seconds":null,"prompt_tokens":0,"completion_tokens":42,"total_tokens":42}}}`, cdn.URL+"/video.mp4")
+	fx.queryBodyRes.Store(strings.Replace(success, `"total_seconds":8.5`, `"total_seconds":2`, 1))
 	fx.pollOnce(id)
 	task = fx.loadTask(id)
 	assert.EqualValues(t, model.TaskStatusSuccess, task.Status)
@@ -240,6 +240,21 @@ func TestMiniMaxOfficialV2FundingPollingAndOSS(t *testing.T) {
 	assert.NotContains(t, string(task.Data), cdn.URL)
 	assert.NotContains(t, string(task.Data), "official-task-1")
 	assert.NotContains(t, string(task.Data), "official_usage")
+	assert.NotContains(t, string(task.Data), "_modelark_display_usage")
+	assert.Zero(t, task.ToModelArkVideoTask().Usage.TotalSeconds)
+	require.NotNil(t, task.PrivateData.ModelArkUsage)
+	assert.Nil(t, task.PrivateData.ModelArkUsage.TotalSeconds)
+	legacy := task
+	legacyDisplay := *task.PrivateData.ModelArkUsage
+	legacyDisplay.TotalSeconds = common.GetPointer(2.0)
+	legacy.PrivateData.ModelArkUsage = &legacyDisplay
+	assert.Zero(t, legacy.ToModelArkVideoTask().Usage.TotalSeconds)
+	fx.queryBodyRes.Store(strings.Replace(success, `"total_seconds":8.5`, `"total_seconds":30`, 1))
+	require.NoError(t, service.RefreshVideoTask(context.Background(), &task))
+	assert.Zero(t, task.ToModelArkVideoTask().Usage.TotalSeconds)
+	fx.queryBodyRes.Store(success)
+	require.NoError(t, service.RefreshVideoTask(context.Background(), &task))
+	assert.Equal(t, 8.5, task.ToModelArkVideoTask().Usage.TotalSeconds)
 	assert.Equal(t, http.StatusConflict, minimaxGet(t, fx, "/v1/videos/"+id+"/content").Code)
 
 	// The same transfer worker stores the real fixture bytes through the S3
@@ -256,7 +271,7 @@ func TestMiniMaxOfficialV2FundingPollingAndOSS(t *testing.T) {
 
 	// Later observation fills the missing meter but cannot replace an already
 	// accepted amount. The existing recovery job completes the same funding.
-	complete := strings.Replace(success, `"input_seconds":null`, `"input_seconds":2.5`, 1)
+	complete := strings.Replace(success, `"input_seconds":null,"prompt_tokens":0`, `"input_seconds":2.5,"input_audio_seconds":6.25,"prompt_tokens":99`, 1)
 	complete = strings.Replace(complete, `"output_seconds":6`, `"output_seconds":7`, 1)
 	fx.queryBodyRes.Store(complete)
 	service.ReconcileTaskUsage(context.Background())
@@ -289,8 +304,20 @@ func TestMiniMaxOfficialV2FundingPollingAndOSS(t *testing.T) {
 	require.NotNil(t, public.Content)
 	assert.Equal(t, "ready", public.Content.DeliveryStatus)
 	assert.Equal(t, "customer-video", public.Model)
+	expectedUsage := dto.ModelArkVideoTaskUsage{
+		TotalSeconds: 8.5, InputSeconds: 2.5, OutputSeconds: 6, InputAudioSeconds: 6.25,
+		InputImageCount: 1, CompletionTokens: 42, TotalTokens: 42,
+	}
+	assert.Equal(t, expectedUsage, public.Usage)
+	assert.NotContains(t, w.Body.String(), "_modelark_display_usage")
 	assert.NotContains(t, w.Body.String(), "official-task-1")
 	assert.NotContains(t, w.Body.String(), cdn.URL)
+	w = minimaxGet(t, fx, "/api/v3/contents/generations/tasks")
+	require.Equal(t, http.StatusOK, w.Code)
+	var list dto.ModelArkVideoTaskList
+	require.NoError(t, common.Unmarshal(w.Body.Bytes(), &list))
+	require.Len(t, list.Items, 1)
+	assert.Equal(t, public.Usage, list.Items[0].Usage)
 	assert.Equal(t, before, fx.queryCalls.Load())
 
 	successful, message = request(http.MethodPost, enablePath, `{"status":1}`)

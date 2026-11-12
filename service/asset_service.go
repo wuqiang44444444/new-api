@@ -96,12 +96,14 @@ func CreateRemoteAsset(ctx context.Context, group string, userID int, req dto.Cr
 	startedAt := time.Now()
 	result, err := adapter.CreateAsset(ctx, assetRequest)
 	if err != nil {
+		observeAssetChannelAlert(ctx, "asset_create", req.Model, channel, err)
 		return dto.AssetResponse{}, normalizeAssetAdapterError(ctx, "create", req.Model, channel, time.Since(startedAt), err)
 	}
 	if strings.TrimSpace(result.ResourceID) == "" {
 		common.SysError("Seedance asset creation returned no resource id")
 		return dto.AssetResponse{}, ErrAssetUpstreamError
 	}
+	observeAssetChannelAlert(ctx, "asset_create", req.Model, channel, nil)
 	return assetResponse(req.Model, result.ResourceID, result), nil
 }
 
@@ -118,8 +120,10 @@ func GetRemoteAsset(ctx context.Context, group string, userID int, modelName, re
 	startedAt := time.Now()
 	result, err := adapter.GetAsset(ctx, resourceID)
 	if err != nil {
+		observeAssetChannelAlert(ctx, "asset_get", modelName, channel, err)
 		return dto.AssetResponse{}, normalizeAssetAdapterError(ctx, "get", modelName, channel, time.Since(startedAt), err)
 	}
+	observeAssetChannelAlert(ctx, "asset_get", modelName, channel, nil)
 	return assetResponse(modelName, resourceID, result), nil
 }
 
@@ -141,8 +145,10 @@ func UpdateRemoteAsset(ctx context.Context, group string, userID int, resourceID
 	startedAt := time.Now()
 	result, err := adapter.UpdateAsset(ctx, resourceID, req.Name)
 	if err != nil {
+		observeAssetChannelAlert(ctx, "asset_update", modelName, channel, err)
 		return dto.AssetResponse{}, normalizeAssetAdapterError(ctx, "update", modelName, channel, time.Since(startedAt), err)
 	}
+	observeAssetChannelAlert(ctx, "asset_update", modelName, channel, nil)
 	return assetResponse(modelName, resourceID, result), nil
 }
 
@@ -158,6 +164,7 @@ func DeleteRemoteAsset(ctx context.Context, group string, userID int, modelName,
 	}
 	startedAt := time.Now()
 	err = adapter.DeleteAsset(ctx, resourceID)
+	observeAssetChannelAlert(ctx, "asset_delete", modelName, channel, err)
 	return normalizeAssetAdapterError(ctx, "delete", modelName, channel, time.Since(startedAt), err)
 }
 
@@ -196,6 +203,7 @@ func CreateAssetGroup(ctx context.Context, group string, userID int, req dto.Cre
 			ProjectName: channel.GetOtherSettings().AssetProviderProject,
 		})
 		if err != nil {
+			observeAssetChannelAlert(ctx, "asset_verification_create", req.Model, channel, err)
 			return dto.AssetGroupResponse{}, normalizeAssetAdapterError(ctx, "asset_group", req.Model, channel, time.Since(startedAt), err)
 		}
 		result.SessionID = strings.TrimSpace(result.SessionID)
@@ -206,6 +214,7 @@ func CreateAssetGroup(ctx context.Context, group string, userID int, req dto.Cre
 		if _, err := validProviderURL(result.H5URL); err != nil {
 			return dto.AssetGroupResponse{}, ErrAssetUpstreamError
 		}
+		observeAssetChannelAlert(ctx, "asset_verification_create", req.Model, channel, nil)
 		return dto.AssetGroupResponse{
 			Object:          "asset_group_verification",
 			ID:              result.SessionID,
@@ -226,11 +235,13 @@ func CreateAssetGroup(ctx context.Context, group string, userID int, req dto.Cre
 		Name: req.Name, Description: req.Description, GroupType: "AIGC",
 	})
 	if err != nil {
+		observeAssetChannelAlert(ctx, "asset_group_create", req.Model, channel, err)
 		return dto.AssetGroupResponse{}, normalizeAssetAdapterError(ctx, "asset_group", req.Model, channel, time.Since(startedAt), err)
 	}
 	if strings.TrimSpace(result.ResourceID) == "" {
 		return dto.AssetGroupResponse{}, ErrAssetUpstreamError
 	}
+	observeAssetChannelAlert(ctx, "asset_group_create", req.Model, channel, nil)
 	return assetGroupResponse(req.Model, result.ResourceID, result), nil
 }
 
@@ -252,8 +263,10 @@ func GetRemoteAssetGroup(ctx context.Context, group string, userID int, modelNam
 		startedAt := time.Now()
 		result, err := verification.GetVerificationResult(ctx, resourceID)
 		if err != nil {
+			observeAssetChannelAlert(ctx, "asset_verification_get", modelName, channel, err)
 			return dto.AssetGroupResponse{}, normalizeAssetAdapterError(ctx, "asset_group", modelName, channel, time.Since(startedAt), err)
 		}
+		observeAssetChannelAlert(ctx, "asset_verification_get", modelName, channel, nil)
 		return dto.AssetGroupResponse{
 			Object:  "asset_group_verification",
 			ID:      resourceID,
@@ -269,13 +282,15 @@ func GetRemoteAssetGroup(ctx context.Context, group string, userID int, modelNam
 	startedAt := time.Now()
 	result, err := groupAdapter.GetGroup(ctx, resourceID)
 	if err != nil {
+		observeAssetChannelAlert(ctx, "asset_group_get", modelName, channel, err)
 		return dto.AssetGroupResponse{}, normalizeAssetAdapterError(ctx, "asset_group", modelName, channel, time.Since(startedAt), err)
 	}
+	observeAssetChannelAlert(ctx, "asset_group_get", modelName, channel, nil)
 	return assetGroupResponse(modelName, resourceID, result), nil
 }
 
 func CheckAssetChannelConnectivity(ctx context.Context, channel *model.Channel) error {
-	adapter, err := seedanceAssetAdapter(channel, 0, "")
+	channel, adapter, err := assetAdapterWithAlert(channel, 0, "")
 	if err != nil {
 		return assetChannelConfigurationError(err)
 	}
@@ -290,7 +305,9 @@ func CheckAssetChannelConnectivity(ctx context.Context, channel *model.Channel) 
 			ErrUnsupportedAssetOperation,
 		)
 	}
-	if err := connectivity.CheckConnectivity(ctx); err != nil {
+	err = connectivity.CheckConnectivity(ctx)
+	observeAssetChannelAlert(ctx, "asset_probe", "", channel, err)
+	if err != nil {
 		return assetChannelUpstreamError(err)
 	}
 	return nil
@@ -336,7 +353,7 @@ func assetAdapterForModel(ctx context.Context, group, modelName string, userID i
 		return nil, nil, ErrAssetModelNotFound
 	}
 	clienterrlog.Attach(ctx, clienterrlog.Report{ChannelID: channel.Id, Protocol: string(channel.GetOtherSettings().AssetUpstreamProtocol)})
-	adapter, err := seedanceAssetAdapter(channel, userID, modelName)
+	channel, adapter, err := assetAdapterWithAlert(channel, userID, modelName)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -344,6 +361,10 @@ func assetAdapterForModel(ctx context.Context, group, modelName string, userID i
 }
 
 func seedanceAssetAdapter(channel *model.Channel, userID int, modelName string) (assetadapter.Adapter, error) {
+	return seedanceAssetAdapterWithRevision(channel, userID, modelName, nil)
+}
+
+func seedanceAssetAdapterWithRevision(channel *model.Channel, userID int, modelName string, revision *string) (assetadapter.Adapter, error) {
 	if channel == nil || channel.Type != constant.ChannelTypeSeedanceLink {
 		return nil, ErrAssetUpstreamUnavailable
 	}
@@ -368,7 +389,7 @@ func seedanceAssetAdapter(channel *model.Channel, userID int, modelName string) 
 		}
 		return newFunCloudHostedMaterialAdapter(userID, modelName), nil
 	}
-	var key string
+	var key, assetKey string
 	switch declaration.Credential {
 	case "asset_key_pair":
 		credential, err := model.GetChannelAssetCredential(channel.Id)
@@ -376,6 +397,7 @@ func seedanceAssetAdapter(channel *model.Channel, userID int, modelName string) 
 			return nil, ErrAssetUpstreamUnavailable
 		}
 		key = strings.TrimSpace(credential.AccessKeyID) + "|" + strings.TrimSpace(credential.SecretAccessKey)
+		assetKey = key
 	case "channel":
 		keys := channel.GetKeys()
 		if channel.ChannelInfo.IsMultiKey || len(keys) != 1 || strings.TrimSpace(keys[0]) == "" {
@@ -392,6 +414,9 @@ func seedanceAssetAdapter(channel *model.Channel, userID int, modelName string) 
 	adapter, err := assetadapter.NewPluginAssetAdapter(entry.Plugin, declaration, settings.AssetUpstreamProtocol, channel.GetBaseURL(), key, settings.AssetRegion, settings.AssetProviderProject, httpClient)
 	if err != nil {
 		return nil, ErrAssetUpstreamUnavailable
+	}
+	if revision != nil {
+		*revision = model.ChannelAlertRevisionWithAssetKey(channel, assetKey)
 	}
 	return adapter, nil
 }

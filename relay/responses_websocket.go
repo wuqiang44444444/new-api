@@ -235,6 +235,8 @@ func (s *responsesWSSession) runRequest(state *responsesWSCallState, message []b
 func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState, create responsesWSCreateRequest) (apiErr *types.NewAPIError) {
 	policy := service.RequestPolicy(c)
 	modelName := create.Request.Model
+	alertObservation := service.ChannelAlertSocketObservationID()
+	service.BeginChannelAlertAttempt(c)
 	started := time.Now()
 	var info *relaycommon.RelayInfo
 	billingPrepared := false
@@ -321,6 +323,7 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			adaptor.Init(info)
 			target, dialErr := relaychannel.DoWssRequest(adaptor, c, info, nil)
 			if dialErr != nil {
+				service.ObserveChannelResponsesSocket(c, info, alertObservation, false)
 				apiErr = service.NormalizeViolationFeeError(types.NewError(dialErr, types.ErrorCodeDoRequestFailed))
 				service.ResetStatusCode(apiErr, c.GetString("status_code_mapping"))
 				info.LastError = apiErr
@@ -467,6 +470,7 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			}
 			switch event.Type {
 			case "response.completed", "response.done", "response.incomplete", "response.failed", "response.cancelled", "response.canceled":
+				service.ObserveChannelResponsesSocketTerminal(c, info, alertObservation, event.Type == "response.completed" || event.Type == "response.done")
 				if event.Response != nil {
 					s.lastResponseID = event.Response.ID
 				}
@@ -601,6 +605,7 @@ func (s *responsesWSSession) restoreConnectionContext(c *gin.Context, model stri
 	common.SetContextKey(c, appconstant.ContextKeyChannelParamOverride, channel.GetParamOverride())
 	common.SetContextKey(c, appconstant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, appconstant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
+	service.SetChannelAlertSelection(c, channel, s.lockedKeyIndex)
 	policy := service.RequestPolicy(c)
 	policy.BeginAttempt(channel, s.lockedGroup)
 	policy.AddEvent(service.PolicyEvent{ChannelID: channel.Id, Decision: service.PolicyDecision{Action: "select", Reason: "pinned_channel", Source: "channel_constraint"}})

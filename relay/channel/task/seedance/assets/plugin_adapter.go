@@ -46,7 +46,7 @@ func NewPluginAssetAdapter(plugin *jsplugin.LoadedPlugin, declaration *jsplugin.
 			return nil, err
 		}
 		return &PluginAssetAdapter{cmcc: connection, plugin: plugin, protocol: string(protocol), declaration: *declaration}, nil
-	case dto.AssetUpstreamProtocolArkAssetsV1, dto.AssetUpstreamProtocolTokenSaveAssetsV1, dto.AssetUpstreamProtocolMoxingVolcAssetsV1, dto.AssetUpstreamProtocolFunCloudMaterial:
+	case dto.AssetUpstreamProtocolNexhinaArkV1, dto.AssetUpstreamProtocolArkAssetsV1, dto.AssetUpstreamProtocolTokenSaveAssetsV1, dto.AssetUpstreamProtocolMoxingVolcAssetsV1, dto.AssetUpstreamProtocolFunCloudMaterial:
 		return &PluginAssetAdapter{plugin: plugin, protocol: string(protocol), declaration: *declaration, bearer: newClient(baseURL, credential, httpClient)}, nil
 	default:
 		return nil, ErrAssetOperationUnsupported

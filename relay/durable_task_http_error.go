@@ -4,6 +4,8 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/QuantumNous/new-api/service"
+
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
@@ -27,5 +29,9 @@ func durableTaskHTTPFailure(c *gin.Context, response *http.Response, info *relay
 	if disposition == relaycommon.TaskCreateOutcomeUnknown {
 		markAmbiguousTaskCreate(c, info)
 	}
-	return taskUpstreamSubmissionError(parseTaskUpstreamHTTPError(response.StatusCode, body, info), info)
+	upstream := parseTaskUpstreamHTTPError(response.StatusCode, body, info)
+	if disposition == relaycommon.TaskCreateTerminalRejection && isChannelAlertCredentialRejection(info, upstream) {
+		service.MarkChannelAlertCredentialInactive(c, response.StatusCode)
+	}
+	return taskUpstreamSubmissionError(upstream, info)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/pkg/modelarkusage"
 	commonRelay "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	hosttypes "github.com/QuantumNous/new-api/types"
@@ -136,6 +137,7 @@ type TaskPrivateData struct {
 	// Execution records safe, immutable request provenance. It lives next to
 	// other private task state so public task DTOs cannot expose it by accident.
 	Execution *TaskExecutionSnapshot `json:"execution,omitempty"`
+	ChannelAlert *ChannelAlertTaskScope `json:"channel_alert,omitempty"`
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
 	BillingSource  string              `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
 	SubscriptionId int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
@@ -171,6 +173,7 @@ type TaskPrivateData struct {
 	AppID          int                      `json:"app_id,omitempty"`
 	SkipTokenQuota bool                     `json:"skip_token_quota,omitempty"` // Playground 等不参与令牌额度记账的任务
 	AsyncBilling   *TaskAsyncBillingContext `json:"async_billing,omitempty"`
+	ModelArkUsage  *modelarkusage.Display   `json:"modelark_usage,omitempty"`
 	// ImageTask 是显式图片执行协议（image_openai_v1）的受保护快照。
 	ImageTask *TaskImageExecutionData `json:"image_task,omitempty"`
 }

@@ -20,7 +20,7 @@ func (p AssetUpstreamProtocol) GeneralAssetGroupPolicy() GeneralAssetGroupPolicy
 	switch p {
 	case AssetUpstreamProtocolNone:
 		return GeneralAssetGroupPolicyNone
-	case AssetUpstreamProtocolVolcengineAction,
+	case AssetUpstreamProtocolVolcengineAction, AssetUpstreamProtocolNexhinaArkV1,
 		AssetUpstreamProtocolBytePlusAction,
 		AssetUpstreamProtocolArkAssetsV1,
 		AssetUpstreamProtocolTokenSaveAssetsV1,

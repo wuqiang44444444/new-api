@@ -11,6 +11,7 @@ type VideoUpstreamProtocol string
 const (
 	VideoUpstreamProtocolViduModelArkV3       VideoUpstreamProtocol = "vidu_modelark_v3"
 	VideoUpstreamProtocolSynlinkVideoV1       VideoUpstreamProtocol = "synlink_video_v1"
+	VideoUpstreamProtocolNexhinaModelArkV3    VideoUpstreamProtocol = "nexhina_modelark_v3"
 	VideoUpstreamProtocolModelArkV3Volcengine VideoUpstreamProtocol = "modelark_v3_volcengine"
 	VideoUpstreamProtocolModelArkV3BytePlus   VideoUpstreamProtocol = "modelark_v3_byteplus"
 	VideoUpstreamProtocolModelArkV3CMCC       VideoUpstreamProtocol = "modelark_v3_cmcc"
@@ -27,6 +28,7 @@ const (
 func (p VideoUpstreamProtocol) IsValid() bool {
 	switch p {
 	case VideoUpstreamProtocolViduModelArkV3, VideoUpstreamProtocolSynlinkVideoV1, VideoUpstreamProtocolModelArkV3Volcengine,
+		VideoUpstreamProtocolNexhinaModelArkV3,
 		VideoUpstreamProtocolModelArkV3BytePlus,
 		VideoUpstreamProtocolModelArkV3CMCC,
 		VideoUpstreamProtocolTokenSaveMediaTaskV1,
@@ -61,7 +63,7 @@ func (p VideoUpstreamProtocol) TransportProfile() VideoUpstreamProfile {
 		return VideoUpstreamProfileThirdPartyViduModelArkV3
 	case VideoUpstreamProtocolSynlinkVideoV1:
 		return VideoUpstreamProfileThirdPartySynlinkVideoV1
-	case VideoUpstreamProtocolModelArkV3Volcengine,
+	case VideoUpstreamProtocolModelArkV3Volcengine, VideoUpstreamProtocolNexhinaModelArkV3,
 		VideoUpstreamProtocolModelArkV3BytePlus,
 		VideoUpstreamProtocolModelArkV3CMCC:
 		return VideoUpstreamProfileOfficial
@@ -84,6 +86,8 @@ func (p VideoUpstreamProtocol) TransportProfile() VideoUpstreamProfile {
 
 func (p VideoUpstreamProtocol) TransportPaths(providerModel string) (string, string) {
 	switch p {
+	case VideoUpstreamProtocolNexhinaModelArkV3:
+		return "/seedance/api/v3/contents/generations/tasks", "/seedance/api/v3/contents/generations/tasks/{task_id}"
 	case VideoUpstreamProtocolMoxingMediaTaskV1:
 		return "", "/v1/media/tasks/{task_id}"
 	case VideoUpstreamProtocolSynlinkVideoV1:
@@ -111,6 +115,7 @@ const (
 	AssetUpstreamProtocolNone               AssetUpstreamProtocol = "none"
 	AssetUpstreamProtocolVolcengineAction   AssetUpstreamProtocol = "volcengine_assets_action_v2024_01_01"
 	AssetUpstreamProtocolBytePlusAction     AssetUpstreamProtocol = "byteplus_assets_action_v2024_01_01"
+	AssetUpstreamProtocolNexhinaArkV1       AssetUpstreamProtocol = "nexhina_ark_assets_v1"
 	AssetUpstreamProtocolArkAssetsV1        AssetUpstreamProtocol = "ark_assets_v1"
 	AssetUpstreamProtocolTokenSaveAssetsV1  AssetUpstreamProtocol = "tokensave_assets_v1"
 	AssetUpstreamProtocolMoxingVolcAssetsV1 AssetUpstreamProtocol = "moxing_volc_assets_v1"
@@ -138,7 +143,7 @@ func (p AssetUpstreamProtocol) TransportProfile() AssetUpstreamProfile {
 		return AssetUpstreamProfileNone
 	case AssetUpstreamProtocolVolcengineAction, AssetUpstreamProtocolBytePlusAction:
 		return AssetUpstreamProfileOfficial
-	case AssetUpstreamProtocolArkAssetsV1:
+	case AssetUpstreamProtocolArkAssetsV1, AssetUpstreamProtocolNexhinaArkV1:
 		return AssetUpstreamProfileArk
 	case AssetUpstreamProtocolTokenSaveAssetsV1:
 		return AssetUpstreamProfileRelay

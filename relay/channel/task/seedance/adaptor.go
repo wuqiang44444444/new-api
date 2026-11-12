@@ -85,9 +85,6 @@ type responseTask struct {
 	Usage *struct {
 		CompletionTokens *int `json:"completion_tokens"`
 		TotalTokens      *int `json:"total_tokens"`
-		ToolUsage        struct {
-			WebSearch int `json:"web_search"`
-		} `json:"tool_usage"`
 	} `json:"usage"`
 	// usage_source/usage_evidence 由第三方归一层写入，描述计费用量的形成字段与全部采集证据。
 	UsageSource   string         `json:"usage_source,omitempty"`
@@ -295,15 +292,18 @@ func (a *TaskAdaptor) FetchTaskWithContext(ctx context.Context, baseURL, key str
 	}
 	resp, err := client.Do(req)
 	service.AttachRawTaskPollingEvidence(task, req, resp, err)
-	// Synlink and Vidu have no verified terminal contract for non-2xx queries. Do not let a proxy's
-	// 404/410 become a definitive missing-task result in the shared poller.
-	if err == nil && resp != nil && (profile == dto.VideoUpstreamProfileThirdPartySynlinkVideoV1 || profile == dto.VideoUpstreamProfileThirdPartyViduModelArkV3) && (resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices) {
-		_, _ = io.Copy(io.Discard, resp.Body) // Preserve the existing protected response evidence tee.
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusNotFound {
-			return nil, &relaycommon.UpstreamContractViolation{Reason: "Upstream task query returned HTTP 404; the result is unconfirmed"}
+	if err == nil && resp != nil && (resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices) {
+		// Nexhina lists HTTP 404 without promising that an accepted task is permanently gone.
+		missing := resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone
+		if (missing && task.PrivateData.VideoUpstreamProtocol == dto.VideoUpstreamProtocolNexhinaModelArkV3) ||
+			profile == dto.VideoUpstreamProfileThirdPartySynlinkVideoV1 || profile == dto.VideoUpstreamProfileThirdPartyViduModelArkV3 {
+			_, _ = io.Copy(io.Discard, resp.Body) // Preserve the existing protected response evidence tee.
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusNotFound {
+				return nil, &relaycommon.UpstreamContractViolation{Reason: "Upstream task query returned HTTP 404; the result is unconfirmed"}
+			}
+			return nil, &relaycommon.UpstreamContractViolation{Reason: fmt.Sprintf("unverified video query HTTP status %d", resp.StatusCode)}
 		}
-		return nil, &relaycommon.UpstreamContractViolation{Reason: fmt.Sprintf("unverified video query HTTP status %d", resp.StatusCode)}
 	}
 	if err != nil || resp == nil || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return resp, err
@@ -313,6 +313,7 @@ func (a *TaskAdaptor) FetchTaskWithContext(ctx context.Context, baseURL, key str
 	if err != nil {
 		return nil, fmt.Errorf("read upstream task response: %w", err)
 	}
+	rawObservation := responseBody
 	if profile.IsOfficial() && seedancePluginTaskSnapshot(task) == nil {
 		responseBody, err = normalizeOfficialTaskUsage(responseBody, taskID)
 	} else {
@@ -330,6 +331,9 @@ func (a *TaskAdaptor) FetchTaskWithContext(ctx context.Context, baseURL, key str
 	if err != nil {
 		return nil, err
 	}
+	if task.ClientProtocol == model.TaskClientProtocolModelArkV3 {
+		responseBody = attachModelArkDisplayUsage(profile, rawObservation, responseBody, taskID)
+	}
 	if profile == dto.VideoUpstreamProfileThirdPartySynlinkVideoV1 {
 		responseBody, err = attachSynlinkLastFrame(task, responseBody)
 		if err != nil {
@@ -345,9 +349,8 @@ func (*TaskAdaptor) GetModelList() []string { return ModelList }
 
 func (*TaskAdaptor) GetChannelName() string { return ChannelName }
 
-// ParseTaskResult 按统一轮询合同解析 Provider 任务响应；task 与 resp 由接口
-// 约定保留，当前协议解析不需要它们。
-func (*TaskAdaptor) ParseTaskResult(_ *model.Task, _ *http.Response, respBody []byte) (*relaycommon.TaskInfo, error) {
+// ParseTaskResult 按统一轮询合同解析 Provider 任务响应。
+func (*TaskAdaptor) ParseTaskResult(task *model.Task, _ *http.Response, respBody []byte) (*relaycommon.TaskInfo, error) {
 	providerTask := responseTask{}
 	if err := common.Unmarshal(respBody, &providerTask); err != nil {
 		return nil, errors.Wrap(err, "unmarshal Seedance task result failed")
@@ -378,6 +381,9 @@ func (*TaskAdaptor) ParseTaskResult(_ *model.Task, _ *http.Response, respBody []
 		result.UsageSource = providerTask.UsageSource
 		result.UsageEvidence = providerTask.UsageEvidence
 		result.ProviderBillingEvidence = providerTask.ProviderBillingEvidence
+		if task != nil && task.ClientProtocol == model.TaskClientProtocolModelArkV3 {
+			result.ModelArkUsage = modelArkDisplayUsageFromObservation(respBody)
+		}
 	case "failed":
 		result.Status = model.TaskStatusFailure
 		result.Progress = "100%"

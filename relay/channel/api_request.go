@@ -410,6 +410,7 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		dialer.TLSClientConfig = common2.InsecureTLSConfig
 	}
 	targetConn, resp, err := dialer.DialContext(c.Request.Context(), fullRequestURL, targetHeader)
+	service.RecordChannelAlertHTTP(c, resp, err)
 	if err != nil {
 		statusCode := http.StatusInternalServerError
 		if resp != nil {
@@ -570,6 +571,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	clienterrlog.WrapUpstreamRequest(c.Request.Context(), req)
 	req = service.AttachTaskCreateTransportProbe(c, req, &relayClient)
 	resp, err := relayClient.Do(req)
+	service.RecordChannelAlertHTTP(c, resp, err)
 	service.ObserveImageHTTPExchange(c.Request.Context(), req, resp, err, "generation")
 	if err != nil {
 		logger.LogError(c, common2.LogText("do request failed: %s", err.Error()))

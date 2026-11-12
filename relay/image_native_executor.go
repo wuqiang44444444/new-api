@@ -74,6 +74,7 @@ func executeNativeImageTask(ctx context.Context, task *model.Task) service.Image
 	oneShot := *client
 	oneShot.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := oneShot.Do(req)
+	service.ObserveImageChannelTransport(ctx, "", resp, err)
 	service.ObserveImageHTTPExchange(ctx, req, resp, err, "generation")
 	if err != nil {
 		return unknown
@@ -119,6 +120,7 @@ func executeNativeImageTask(ctx context.Context, task *model.Task) service.Image
 		unknown.FailureCode = "invalid_provider_response"
 		return unknown
 	}
+	service.ObserveImageChannelSuccess(ctx, "")
 	raw = nil
 	artifacts, err := storeImageResults(ctx, task, len(result.Data), usage, func(index int) ([]byte, string, error) {
 		item := result.Data[index]
