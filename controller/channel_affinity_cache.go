@@ -23,7 +23,11 @@ func ClearChannelAffinityCache(c *gin.Context) {
 	ruleName := strings.TrimSpace(c.Query("rule_name"))
 
 	if all == "true" {
-		deleted := service.ClearChannelAffinityCacheAll()
+		deleted, err := service.ClearChannelAffinityCacheAll()
+		if err != nil {
+			common.ApiErrorT(c, "Operation failed")
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": "",

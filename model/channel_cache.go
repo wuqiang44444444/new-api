@@ -123,9 +123,13 @@ func GetRandomSatisfiedChannel(
 	retry int,
 	filters []dto.ChannelFilter,
 ) (*Channel, error) {
+	return GetSatisfiedChannelWithPreference(group, model, retry, filters, nil)
+}
+
+func GetSatisfiedChannelWithPreference(group, model string, retry int, filters []dto.ChannelFilter, preference *ChannelSelectionPreference) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, filters)
+		return getChannelWithPreference(group, model, retry, filters, preference)
 	}
 
 	channelSyncLock.RLock()
@@ -146,6 +150,9 @@ func GetRandomSatisfiedChannel(
 
 	if len(channels) == 1 {
 		if channel, ok := channelsIDM[channels[0]]; ok {
+			if preference != nil {
+				preference.SelectedPriority = channel.GetPriority()
+			}
 			return channel, nil
 		}
 		return nil, fmt.Errorf("database consistency error: channel #%d does not exist, please contact the administrator", channels[0])
@@ -169,6 +176,9 @@ func GetRandomSatisfiedChannel(
 		retry = len(uniquePriorities) - 1
 	}
 	targetPriority := int64(sortedUniquePriorities[retry])
+	if preferred := preference.preferredInMemory(channels, targetPriority); preferred != nil {
+		return preferred, nil
+	}
 
 	// get the priority for the given retry number
 	var sumWeight = 0

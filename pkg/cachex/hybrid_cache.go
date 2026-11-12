@@ -24,6 +24,8 @@ type HybridCacheConfig[V any] struct {
 	Redis        *redis.Client
 	RedisCodec   ValueCodec[V]
 	RedisEnabled func() bool
+	// RedisOpTimeout optionally overrides the deadline for Get and SetWithTTL.
+	RedisOpTimeout time.Duration
 
 	// Memory builds a hot cache used when Redis is disabled. Keys stored in memory are fully namespaced.
 	Memory func() *hot.HotCache[string, V]
@@ -33,9 +35,10 @@ type HybridCacheConfig[V any] struct {
 type HybridCache[V any] struct {
 	ns Namespace
 
-	redis        *redis.Client
-	redisCodec   ValueCodec[V]
-	redisEnabled func() bool
+	redis          *redis.Client
+	redisCodec     ValueCodec[V]
+	redisEnabled   func() bool
+	redisOpTimeout time.Duration
 
 	memOnce sync.Once
 	memInit func() *hot.HotCache[string, V]
@@ -43,12 +46,16 @@ type HybridCache[V any] struct {
 }
 
 func NewHybridCache[V any](cfg HybridCacheConfig[V]) *HybridCache[V] {
+	if cfg.RedisOpTimeout <= 0 {
+		cfg.RedisOpTimeout = defaultRedisOpTimeout
+	}
 	return &HybridCache[V]{
-		ns:           cfg.Namespace,
-		redis:        cfg.Redis,
-		redisCodec:   cfg.RedisCodec,
-		redisEnabled: cfg.RedisEnabled,
-		memInit:      cfg.Memory,
+		ns:             cfg.Namespace,
+		redis:          cfg.Redis,
+		redisCodec:     cfg.RedisCodec,
+		redisEnabled:   cfg.RedisEnabled,
+		redisOpTimeout: cfg.RedisOpTimeout,
+		memInit:        cfg.Memory,
 	}
 }
 
@@ -85,7 +92,7 @@ func (c *HybridCache[V]) Get(key string) (value V, found bool, err error) {
 	}
 
 	if c.redisOn() {
-		ctx, cancel := context.WithTimeout(context.Background(), defaultRedisOpTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), c.redisOpTimeout)
 		defer cancel()
 
 		raw, e := c.redis.Get(ctx, full).Result()
@@ -119,7 +126,7 @@ func (c *HybridCache[V]) SetWithTTL(key string, v V, ttl time.Duration) error {
 		if err != nil {
 			return err
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), defaultRedisOpTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), c.redisOpTimeout)
 		defer cancel()
 		return c.redis.Set(ctx, full, raw, ttl).Err()
 	}

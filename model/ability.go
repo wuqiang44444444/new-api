@@ -110,12 +110,17 @@ func GetChannel(
 	retry int,
 	filters []dto.ChannelFilter,
 ) (*Channel, error) {
+	return getChannelWithPreference(group, model, retry, filters, nil)
+}
+
+func getChannelWithPreference(group, model string, retry int, filters []dto.ChannelFilter, preference *ChannelSelectionPreference) (*Channel, error) {
 	var abilities []Ability
 	err := channelRouteAbilityQuery(group, model, filters).Order("priority DESC, weight DESC").Find(&abilities).Error
 	if err != nil {
 		return nil, err
 	}
-	abilities = filterAbilitiesByConstraints(abilities, model, filters)
+	abilities = filterAbilitiesByConstraints(abilities, model, filters, preference)
+	channel := Channel{}
 	if len(abilities) > 0 {
 		priorities := make([]int64, 0)
 		seen := make(map[int64]bool)
@@ -134,12 +139,21 @@ func GetChannel(
 			retry = len(priorities) - 1
 		}
 		targetPriority := priorities[retry]
+		if preference != nil {
+			preference.SelectedPriority = targetPriority
+		}
 		abilities = lo.Filter(abilities, func(ability Ability, _ int) bool {
-			return ability.Priority == nil && targetPriority == 0 || ability.Priority != nil && *ability.Priority == targetPriority
+			inLayer := ability.Priority == nil && targetPriority == 0 || ability.Priority != nil && *ability.Priority == targetPriority
+			if inLayer && preference != nil && preference.dbChannelEnabled && ability.ChannelId == preference.ChannelID {
+				channel.Id = ability.ChannelId
+			}
+			return inLayer
 		})
 	}
-	channel := Channel{}
-	if len(abilities) > 0 {
+	if len(abilities) == 0 {
+		return nil, nil
+	}
+	if channel.Id == 0 {
 		// Randomly choose one
 		weightSum := uint(0)
 		for _, ability_ := range abilities {
@@ -155,8 +169,6 @@ func GetChannel(
 				break
 			}
 		}
-	} else {
-		return nil, nil
 	}
 	err = DB.First(&channel, "id = ?", channel.Id).Error
 	return &channel, err
@@ -165,7 +177,10 @@ func GetChannel(
 // filterAbilitiesByConstraints applies the same ChannelSatisfiesFilters
 // predicate used by the memory-cache path. A failed channel lookup fails
 // closed when a task-plugin identity is required and fails open otherwise.
-func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters []dto.ChannelFilter) []Ability {
+func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters []dto.ChannelFilter, preference *ChannelSelectionPreference) []Ability {
+	if preference != nil {
+		preference.dbChannelEnabled = false
+	}
 	if len(abilities) == 0 {
 		return nil
 	}
@@ -198,6 +213,9 @@ func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters
 		channel := channelsByID[ability.ChannelId]
 		if ok, _ := ChannelSatisfiesFilters(channel, modelName, filters); ok {
 			filtered = append(filtered, ability)
+			if preference != nil && ability.ChannelId == preference.ChannelID && channel.Status == common.ChannelStatusEnabled {
+				preference.dbChannelEnabled = true
+			}
 		}
 	}
 	return filtered

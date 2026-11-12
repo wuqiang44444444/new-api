@@ -226,7 +226,10 @@ func SelectCustomerContractChannel(param *RetryParam, initial bool) (*model.Chan
 		}
 	}
 	if selected == nil {
-		selected, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry(), filters)
+		if initial {
+			prepareDefaultChannelAffinity(param)
+		}
+		selected, err = selectChannelWithDefaultAffinity(param, param.TokenGroup, param.GetRetry(), filters)
 	}
 	if err != nil {
 		return nil, "", err

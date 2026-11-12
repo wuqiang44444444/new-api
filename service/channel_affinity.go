@@ -71,12 +71,13 @@ const (
 )
 
 type ChannelAffinityCacheStats struct {
-	Enabled       bool           `json:"enabled"`
-	Total         int            `json:"total"`
-	Unknown       int            `json:"unknown"`
-	ByRuleName    map[string]int `json:"by_rule_name"`
-	CacheCapacity int            `json:"cache_capacity"`
-	CacheAlgo     string         `json:"cache_algo"`
+	Enabled            bool           `json:"enabled"`
+	Total              int            `json:"total"`
+	Unknown            int            `json:"unknown"`
+	ByRuleName         map[string]int `json:"by_rule_name"`
+	CacheCapacity      int            `json:"cache_capacity"`
+	CacheAlgo          string         `json:"cache_algo"`
+	DefaultUserEntries *int           `json:"default_user_entries,omitempty"`
 }
 
 func getChannelAffinityCache() *cachex.HybridCache[int] {
@@ -187,28 +188,14 @@ func GetChannelAffinityCacheStats() ChannelAffinityCacheStats {
 	}
 
 	return ChannelAffinityCacheStats{
-		Enabled:       setting.Enabled,
-		Total:         total,
-		Unknown:       unknown,
-		ByRuleName:    byRuleName,
-		CacheCapacity: mainCap,
-		CacheAlgo:     mainAlgo,
+		Enabled:            setting.Enabled,
+		Total:              total,
+		Unknown:            unknown,
+		ByRuleName:         byRuleName,
+		CacheCapacity:      mainCap,
+		CacheAlgo:          mainAlgo,
+		DefaultUserEntries: defaultAffinityLocalEntryCount(),
 	}
-}
-
-func ClearChannelAffinityCacheAll() int {
-	cache := getChannelAffinityCache()
-	keys, err := cache.Keys()
-	if err != nil {
-		common.SysError(common.LogText("channel affinity cache list keys failed: err=%v", err))
-		keys = nil
-	}
-	if len(keys) > 0 {
-		if _, err := cache.DeleteMany(keys); err != nil {
-			common.SysError(common.LogText("channel affinity cache delete many failed: err=%v", err))
-		}
-	}
-	return len(keys)
 }
 
 func ClearChannelAffinityCacheByRuleName(ruleName string) (int, error) {
