@@ -146,8 +146,13 @@ func TestLocalesRenderEveryKey(t *testing.T) {
 		slices.Sort(keysByLang[lang])
 	}
 	for _, lang := range SupportedLanguages() {
-		assert.Equal(t, declared, keysByLang[lang], lang)
-		for _, key := range keysByLang[lang] {
+		if lang == LangZhTW {
+			// Traditional Chinese can reuse Simplified Chinese for new keys.
+			assert.Subset(t, declared, keysByLang[lang], lang)
+		} else {
+			assert.Equal(t, declared, keysByLang[lang], lang)
+		}
+		for _, key := range declared {
 			text := Translate(lang, key, map[string]any{})
 			assert.NotEqual(t, key, text, "%s %s", lang, key)
 			assert.False(t, strings.Contains(text, "{{"), "%s %s: %s", lang, key, text)

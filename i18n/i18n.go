@@ -2,6 +2,7 @@ package i18n
 
 import (
 	"embed"
+	"errors"
 	"slices"
 	"strings"
 	"sync"
@@ -109,6 +110,10 @@ func Translate(lang, key string, args ...map[string]any) string {
 	}
 
 	msg, err := loc.Localize(config)
+	var missing *i18n.MessageNotFoundErr
+	if err != nil && normalizeLang(lang) == LangZhTW && errors.As(err, &missing) {
+		msg, err = GetLocalizer(LangZhCN).Localize(config)
+	}
 	if err != nil {
 		// Return key as fallback if translation not found
 		return key

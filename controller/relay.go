@@ -165,6 +165,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		clienterrlog.BeginNativeRelayAttempt(c)
+		service.BeginChannelAlertAttempt(c)
 		relayInfo.StreamStatus = nil
 		relayInfo.PerformanceBusinessRejection = false
 		relayInfo.PerformanceOutputTokens = 0
@@ -204,8 +205,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			newAPIError = relayHandler(c, relayInfo)
 		}
 
+		service.ObserveChannelRelayResult(c, relayInfo, newAPIError)
 		if newAPIError == nil {
 			service.MarkRequestPolicySuccess(c, relayInfo.StreamStatus)
+			service.RecordDefaultChannelAffinitySuccess(c, channel.Id, relayInfo)
 			relayInfo.LastError = nil
 			return
 		}
@@ -581,7 +584,9 @@ func executeTaskSubmissionWith(
 		c.Request.Body = io.NopCloser(bodyStorage)
 
 		stage = "submit"
+		service.BeginChannelAlertAttempt(c)
 		result, taskErr = submit(c, relayInfo)
+		service.ObserveChannelTaskSubmission(c, relayInfo, taskErr, result != nil && result.UpstreamTaskID != "")
 		if requestErr := c.Request.Context().Err(); requestErr != nil {
 			diagnostics.cancelled("after_submit", retryParam.GetRetry()+1)
 			taskErr = service.TaskErrorWrapperLocal(requestErr, "request_cancelled", http.StatusRequestTimeout)
@@ -660,6 +665,7 @@ func executeTaskSubmissionWith(
 	// Link/Seedance 扩展：冻结客户端协议与南向 adapter 版本快照。
 	attachTaskProtocolSnapshot(c, task, relayInfo)
 	task.PrivateData.Execution = service.TaskExecutionSnapshotFromContext(c)
+	task.PrivateData.ChannelAlert = service.ChannelAlertSelection(c)
 	task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 	task.PrivateData.UpstreamRequestID = c.GetString(common.UpstreamRequestIdKey)
 	task.PrivateData.BillingSource = relayInfo.BillingSource

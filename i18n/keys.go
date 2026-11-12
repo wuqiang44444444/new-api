@@ -53,6 +53,7 @@ const (
 // recipient's language
 const (
 	MsgUserDefaultTokenName = "user.default_token_name"
+	MsgUserEmailEmpty       = "user.email_empty"
 
 	MsgEmailVerificationSubject  = "email.verification.subject"
 	MsgEmailVerificationGreeting = "email.verification.greeting"
@@ -64,6 +65,16 @@ const (
 	MsgEmailPasswordResetLink         = "email.password_reset.link"
 	MsgEmailPasswordResetLinkFallback = "email.password_reset.link_fallback"
 	MsgEmailPasswordResetValidity     = "email.password_reset.validity"
+)
+
+// Lifecycle and operations mail templates.
+const (
+	MsgMailAccountCreatedSubject = "notify.account_created.subject"
+	MsgMailAccountCreatedBody    = "notify.account_created.body"
+	MsgMailTokenCreatedSubject   = "notify.token_created.subject"
+	MsgMailTokenCreatedBody      = "notify.token_created.body"
+	MsgMailVideoRefundSubject    = "notify.video_refund.subject"
+	MsgMailVideoRefundBody       = "notify.video_refund.body"
 )
 
 // Low-quota notices, in the recipient's saved language

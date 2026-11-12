@@ -133,7 +133,7 @@ export function useSidebarData(): SidebarData {
             icon: ReceiptText,
           },
           {
-            title: t('Usage statistics'),
+            title: t('My usage'),
             url: '/usage',
             icon: BarChart3,
           },
@@ -184,7 +184,7 @@ export function useSidebarData(): SidebarData {
             icon: Scale,
           },
           {
-            title: t('Usage statistics'),
+            title: t('Customer usage'),
             url: '/admin/usage',
             icon: BarChart3,
           },

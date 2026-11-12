@@ -228,6 +228,16 @@ func SyncOptions(frequency int) {
 }
 
 func validateOptionValue(key string, value string) error {
+	if key == retiredErrorReportEnabledOption {
+		return errRetiredErrorReportEnabledOption
+	}
+	if key == "error_report_setting.recipients" {
+		_, err := operation_setting.ValidateErrorReportRecipients(value)
+		return err
+	}
+	if strings.HasPrefix(key, operation_setting.ResourceAlertPrefix) {
+		return operation_setting.ValidateResourceAlertOption(key, value)
+	}
 	if key == legacyAccessTokenRetireAtKey {
 		return errLegacyRetireAtReadOnly
 	}
@@ -253,8 +263,11 @@ func validateOptionValue(key string, value string) error {
 }
 
 func UpdateOption(key string, value string) error {
-	if key == "error_report_setting.enabled" || key == "error_report_setting.recipients" {
-		return UpdateErrorReportOption(key, value, time.Now())
+	if strings.HasPrefix(key, operation_setting.ResourceAlertPrefix) {
+		return UpdateOptionsBulk(map[string]string{key: value})
+	}
+	if key == "error_report_setting.recipients" {
+		return UpdateOptionsBulk(map[string]string{key: value})
 	}
 	if IsRequestPolicyOption(key) {
 		return UpdateRequestPolicyOptions(map[string]string{key: value})
@@ -352,7 +365,7 @@ func UpdateOptionsBulk(values map[string]string) error {
 }
 
 func updateOptionMap(key string, value string) (err error) {
-	if key == retiredThemeOptionKey || key == legacyAccessTokenRetireAtKey {
+	if key == retiredThemeOptionKey || key == legacyAccessTokenRetireAtKey || key == retiredErrorReportEnabledOption {
 		common.OptionMapRWMutex.Lock()
 		delete(common.OptionMap, key)
 		common.OptionMapRWMutex.Unlock()

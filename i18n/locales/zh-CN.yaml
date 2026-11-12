@@ -75,3 +75,12 @@ channel.upstream_update_added_models: "新增模型示例（展示 {{.Shown}}/{{
 channel.upstream_update_removed_models: "删除模型示例（展示 {{.Shown}}/{{.Total}}）：{{.Models}}"
 channel.upstream_update_failed_channels: "失败渠道 ID（展示 {{.Shown}}/{{.Total}}）：{{.Ids}}"
 channel.upstream_update_more_omitted: "（其余 {{.Count}} 个已省略）"
+
+# 账户与运维邮件模板
+user.email_empty: "请填写邮箱"
+notify.account_created.subject: "欢迎使用 {{.SiteName}}"
+notify.account_created.body: "<h2>欢迎，{{.Username}}</h2><p>你在 {{.SiteName}} 的账户已创建。如果你没有预期创建该账户，请联系管理员。</p>"
+notify.token_created.subject: "{{.SiteName}} 已创建新的 API Key"
+notify.token_created.body: "<h2>API Key 已创建</h2><p>{{.Username}}，你的 {{.SiteName}} 账户已创建一个新的 API Key。如非本人操作，请检查密钥列表并撤销陌生密钥。</p>"
+notify.video_refund.subject: "{{.SiteName}} 有视频退款待处理"
+notify.video_refund.body: "<h2>视频退款待处理</h2><p>{{.SiteName}} 的视频资金保障任务报告了失败。请在管理后台查看系统任务结果。</p>"

@@ -14,6 +14,7 @@ BACKEND_LOG="$LOG_DIR/backend.log"
 FRONTEND_PID=""
 BACKEND_PID=""
 TAIL_PID=""
+REDIS_CONTAINER=""
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -119,8 +120,36 @@ cleanup() {
       wait "$pid" 2>/dev/null || true
     fi
   done
+  if [[ -n "$REDIS_CONTAINER" ]]; then
+    docker rm -f "$REDIS_CONTAINER" >/dev/null 2>&1 || true
+  fi
   exit "$exit_code"
 }
+
+# ./start.sh --redis-only starts a disposable Redis for local integration tests.
+if [[ "${1:-}" == "--redis-only" && $# == 1 ]]; then
+  require_command docker
+  trap 'cleanup' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  REDIS_CONTAINER=$(docker run --detach --rm --publish 127.0.0.1::6379 redis:7-alpine redis-server --save "" --appendonly no)
+  deadline=$((SECONDS + 30))
+  until [[ "$(docker exec "$REDIS_CONTAINER" redis-cli ping 2>/dev/null)" == "PONG" ]]; do
+    if (( SECONDS >= deadline )); then
+      echo "本地 Redis 未通过健康检查。" >&2
+      exit 1
+    fi
+    sleep 0.2
+  done
+  printf 'REDIS_CONN_STRING=redis://%s\n' "$(docker port "$REDIS_CONTAINER" 6379/tcp)"
+  docker wait "$REDIS_CONTAINER" >/dev/null &
+  wait "$!"
+  exit
+fi
+if (( $# != 0 )); then
+  echo "用法：./start.sh [--redis-only]" >&2
+  exit 1
+fi
 
 require_command bun
 require_command go

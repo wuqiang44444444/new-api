@@ -213,6 +213,7 @@ export const STATIC_I18N_KEYS = [
   'Output',
   'Cache Read',
   'Additional charge',
+  'Duration and quantity billing',
   'Duration billing',
   'Status pending verification',
   'Account deletion',

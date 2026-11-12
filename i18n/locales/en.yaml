@@ -74,3 +74,12 @@ channel.upstream_update_added_models: "Added model examples (showing {{.Shown}}/
 channel.upstream_update_removed_models: "Removed model examples (showing {{.Shown}}/{{.Total}}): {{.Models}}"
 channel.upstream_update_failed_channels: "Failed channel IDs (showing {{.Shown}}/{{.Total}}): {{.Ids}}"
 channel.upstream_update_more_omitted: " ({{.Count}} more omitted)"
+
+# Account and operations mail templates
+user.email_empty: "Email is required"
+notify.account_created.subject: "Welcome to {{.SiteName}}"
+notify.account_created.body: "<h2>Welcome, {{.Username}}</h2><p>Your account on {{.SiteName}} has been created. If you did not expect this account, contact your administrator.</p>"
+notify.token_created.subject: "A new API key was created on {{.SiteName}}"
+notify.token_created.body: "<h2>API key created</h2><p>Hello, {{.Username}}. A new API key was created for your account on {{.SiteName}}. If you did not create it, review your API keys and revoke any unfamiliar key.</p>"
+notify.video_refund.subject: "Video refund needs attention on {{.SiteName}}"
+notify.video_refund.body: "<h2>Video refund needs attention</h2><p>The video funds guarantee task on {{.SiteName}} reported a failure. Review its system task result in the administration console.</p>"

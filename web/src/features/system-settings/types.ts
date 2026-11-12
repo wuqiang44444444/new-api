@@ -421,7 +421,6 @@ PreConsumedQuota: number
 'batch_billing_setting.batch_billing_expr'?: string
 'task_billing_setting.preconsume_tokens': string
 'billing_statement_setting.context_thresholds': string
-BillingStatementVersionEnabled: boolean
 GroupDescriptions: string
 }
 
@@ -430,15 +429,9 @@ export type OperationsSettings = {
   DemoSiteEnabled: boolean
   SelfUseModeEnabled: boolean
   QuotaRemindThreshold: string
-  SMTPServer: string
-  SMTPPort: string
-  SMTPAccount: string
-  SMTPFrom: string
-  SMTPToken: string
-  SMTPSSLEnabled: boolean
-  SMTPStartTLSEnabled: boolean
-  SMTPInsecureSkipVerify: boolean
-  SMTPForceAuthLogin: boolean
+  'resource_alert_setting.cpu': number
+  'resource_alert_setting.memory': number
+  'resource_alert_setting.disk': number
   WorkerUrl: string
   WorkerValidKey: string
   WorkerAllowHttpImageRequestEnabled: boolean
@@ -458,10 +451,8 @@ export type OperationsSettings = {
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
 
-'error_report_setting.enabled': boolean
 'error_report_setting.recipients': string
 'notification_setting.send_email_on_account_created': boolean
-'notification_setting.send_email_on_password_changed': boolean
 'notification_setting.send_email_on_token_created': boolean
 }
 

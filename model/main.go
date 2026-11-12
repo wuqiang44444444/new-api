@@ -377,7 +377,8 @@ func migrateDB() error {
 		&Log{},
 		&Midjourney{},
 		&TopUp{},
-		&QuotaData{},
+		&QuotaData{}, &quotaDataFlushReceipt{},
+
 		&Task{},
 		&TaskBillingDelivery{}, &TaskPlugin{}, &TaskCreateIdempotency{}, &TaskCreateAttempt{}, &ProviderCostExposure{}, &Model{}, &ImageTaskSlot{},
 		&TaskVideoResultObject{},
@@ -401,6 +402,10 @@ func migrateDB() error {
 		&ErrorReport{},
 		&ErrorReportPart{},
 		&ErrorReportDelivery{},
+		&ResourceAlertEpisode{},
+		&ResourceAlertDelivery{},
+		&ChannelAlertEpisode{},
+		&ChannelAlertDelivery{},
 		&UpstreamBalanceAlertDelivery{},
 		&ChannelAssetCredential{},
 		&ChannelAssetScopeIdentity{},
@@ -431,10 +436,16 @@ func migrateDB() error {
 	if err := migrateTaskUsageCheckIndex(DB); err != nil {
 		return err
 	}
-	if err := migrateErrorReportPeriods(); err != nil {
+	if err := migrateDailyReportWindowIndex(); err != nil {
+		return err
+	}
+	if err := migrateDailyErrorReportSchedule(); err != nil {
 		return err
 	}
 	if err := backfillChannelAssetScopeIdentities(); err != nil {
+		return err
+	}
+	if err := MigrateDailyReports(DB); err != nil {
 		return err
 	}
 	if err := migrateBillingReconciliationDB(); err != nil {
