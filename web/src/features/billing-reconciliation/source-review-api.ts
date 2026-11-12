@@ -8,6 +8,7 @@ export type SourceReviewScope = {
   end_timestamp: number
 }
 export type SourceDecision =
+  | 'close_small_difference'
   | 'keep_record'
   | 'investigate'
   | 'request_waiver'
@@ -43,6 +44,7 @@ export type SourceDecisionRecord = SourceDecisionInput & {
   superseded: boolean
 }
 export type SourceIssue = {
+  can_close_difference?: boolean
   decision_id: number
   id: string
   kind: string
@@ -83,12 +85,16 @@ export type SourceReview = {
   pending: number
   issues: SourceIssue[]
   retention_status: string
+  retention_needs_review?: boolean
   history: SourceDecisionRecord[]
 }
-export async function getSourceReview(params: SourceReviewScope) {
+export async function getSourceReview(
+  params: SourceReviewScope,
+  signal?: AbortSignal
+) {
   const response = await api.get<ApiResponse<SourceReview>>(
     '/api/billing/admin/customer-statement-source-review',
-    { params }
+    { params, signal, skipErrorHandler: true }
   )
   return response.data
 }
@@ -100,6 +106,9 @@ export async function recordSourceReview(
     success: boolean
     message?: string
     decision_version: number
-  }>('/api/billing/admin/customer-statement-source-review', body, { params })
+  }>('/api/billing/admin/customer-statement-source-review', body, {
+    params,
+    skipErrorHandler: true,
+  })
   return response.data
 }

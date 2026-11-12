@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
+import { ReportCard } from '@/components/report-card'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,
@@ -18,18 +19,22 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { formatBillingMonth } from '../lib'
 import { getSourceReview, type SourceIssue } from '../source-review-api'
+import { formatShanghaiTimestamp } from '../upstream-reconciliation-utils'
 import { verifyAdminStatementSource } from '../version-api'
+import { BillingPagination } from './billing-pagination'
 import type { SourceDecisionDraft } from './source-decision-form'
 import { SourceDecisionHistory } from './source-decision-history'
 import {
   SourcePendingRequests,
   type SourceRequestDraft,
 } from './source-pending-requests'
+import { SourceReviewError } from './source-review-error'
 import { SourceReviewIssue } from './source-review-issue'
 
 export function StatementSourceVerification(props: {
   userId: number
   period: { start_timestamp: number; end_timestamp: number }
+  statementDataCutoff?: number
   disabled: boolean
   onVerified: () => void
 }) {
@@ -47,6 +52,7 @@ export function StatementSourceVerification(props: {
   const hasDrafts =
     Object.keys(issueDrafts).length > 0 || Object.keys(requestDrafts).length > 0
   const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
   const [backup, setBackup] = useState('')
   const [retention, setRetention] = useState('')
   const id = useId()
@@ -58,8 +64,8 @@ export function StatementSourceVerification(props: {
       props.period.start_timestamp,
       props.period.end_timestamp,
     ],
-    queryFn: async () => {
-      const result = await getSourceReview(scope)
+    queryFn: async ({ signal }) => {
+      const result = await getSourceReview(scope, signal)
       if (
         !result.success ||
         !result.data ||
@@ -74,20 +80,36 @@ export function StatementSourceVerification(props: {
     },
     enabled: open && !props.disabled,
     retry: false,
+    meta: { errorToast: false, redirectOnInternalServerError: false },
     staleTime: 0,
     refetchOnWindowFocus: false,
   })
   const report = query.data
   const locale = toIntlLocale(i18n.language)
   const formatCount = new Intl.NumberFormat(locale).format
-  const hasFindings = Boolean(
-    report &&
-    (report.issues.length ||
-      report.blockers ||
-      report.pending ||
-      report.audit_issues?.length)
+  const issues = (report?.issues ?? []).filter(
+    (issue) => !issue.blocking || !issue.reviewed
   )
+  const hasFindings = Boolean(report && (report.blockers || report.pending))
+  const monthEnded = Date.now() >= (props.period.end_timestamp + 1) * 1000
+  let statementStatus = t(
+    'Record source completeness before issuing the statement.'
+  )
+  if (!monthEnded) {
+    statementStatus = t('The billing month is still open.')
+  } else if (report?.retention_status === 'partial') {
+    statementStatus = t('Source logs partially cleaned; correction is blocked.')
+  } else if (hasFindings) {
+    statementStatus = t('Resolve pending issues before issuing the statement.')
+  } else if (report?.retention_needs_review) {
+    statementStatus = t('Verify source completeness again.')
+  } else if (['intact', 'none'].includes(report?.retention_status ?? '')) {
+    statementStatus = t(
+      'Source checks complete. Continue with the statement workflow.'
+    )
+  }
   const mutation = useMutation({
+    meta: { errorToast: false },
     mutationFn: async () => {
       if (!report) throw new Error('No source report')
       const result = await verifyAdminStatementSource(scope, {
@@ -110,10 +132,12 @@ export function StatementSourceVerification(props: {
       props.onVerified()
     },
   })
-  const pageCount = Math.max(1, Math.ceil((report?.issues.length || 0) / 10))
+  const pageCount = Math.max(1, Math.ceil(issues.length / pageSize))
   const currentPage = Math.min(page, pageCount - 1)
-  const pageIssues =
-    report?.issues.slice(currentPage * 10, currentPage * 10 + 10) || []
+  const pageIssues = issues.slice(
+    currentPage * pageSize,
+    (currentPage + 1) * pageSize
+  )
   // Drafts remain visible even when a refresh moves their record off this page.
   const visibleIssues = [
     ...pageIssues,
@@ -123,7 +147,7 @@ export function StatementSourceVerification(props: {
       )
       .map(
         ({ issue }) =>
-          report?.issues.find((current) => current.id === issue.id) ?? issue
+          issues.find((current) => current.id === issue.id) ?? issue
       ),
   ]
   const blocked =
@@ -172,7 +196,7 @@ export function StatementSourceVerification(props: {
           <div className='flex flex-wrap items-start justify-between gap-3'>
             <p className='text-muted-foreground max-w-prose text-sm'>
               {t(
-                'Check this month’s charge and refund records for missing billing details and compare linked amounts with task settlements. Use the results to review the statement before confirming it.'
+                'Checks the customer’s records for this billing month. The statement may have a different data cutoff.'
               )}
             </p>
             <Button
@@ -187,52 +211,54 @@ export function StatementSourceVerification(props: {
           {query.isFetching && (
             <p role='status'>{t('Checking the full scope. Please wait.')}</p>
           )}
-          {query.isError && (
-            <p role='alert' className='text-destructive'>
-              {t(
-                'Source checks failed. No completeness conclusion is available.'
-              )}
-            </p>
-          )}
-          {report && (
+          {query.isError && <SourceReviewError error={query.error} />}
+          {report && (!query.isError || hasDrafts || backup || retention) && (
             <>
-              <section
-                className='space-y-1 rounded-lg border p-3'
-                aria-live='polite'
-              >
-                {!query.isFetching && !query.isError && (
+              {!query.isFetching && !query.isError && (
+                <ReportCard className='gap-1' aria-live='polite'>
                   <h3 className='text-sm font-semibold'>
                     {hasFindings
                       ? t('Some records need review')
                       : t('No issues found in the available records')}
                   </h3>
-                )}
-                <p className='text-sm'>
-                  {t(
-                    '{{rows}} charge and refund records checked · {{issues}} issues found · {{blockers}} blocking confirmation · {{pending}} awaiting action',
-                    {
+                  <p className='text-sm'>
+                    {t('{{rows}} charge and refund records checked', {
                       rows: formatCount(report.rows),
-                      issues: formatCount(report.issues.length),
-                      blockers: formatCount(report.blockers),
-                      pending: formatCount(report.pending),
-                    }
-                  )}
-                </p>
-                {!query.isFetching && !query.isError && !hasFindings && (
-                  <p className='text-muted-foreground text-sm'>
-                    {t(
-                      'This check can only see records that are still available. Verifying historical coverage requires checking backups and log retention separately.'
+                    })}
+                    {report.pending > 0 && (
+                      <>
+                        {' '}
+                        ·{' '}
+                        {t('{{count}} awaiting action', {
+                          count: report.pending,
+                        })}
+                      </>
                     )}
                   </p>
-                )}
-                <p className='text-muted-foreground text-xs'>
-                  {t('Checked at {{time}}', {
-                    time: new Date(report.captured_at * 1000).toLocaleString(
-                      locale
-                    ),
-                  })}
-                </p>
-              </section>
+                  <p className='text-sm font-medium'>{statementStatus}</p>
+                  {!hasFindings && (
+                    <p className='text-muted-foreground text-sm'>
+                      {t(
+                        'This check can only see records that are still available. Verifying historical coverage requires checking backups and log retention separately.'
+                      )}
+                    </p>
+                  )}
+                  <p className='text-muted-foreground text-xs'>
+                    {t('Checked at {{time}}', {
+                      time: formatShanghaiTimestamp(report.captured_at),
+                    })}
+                  </p>
+                  {!!props.statementDataCutoff && (
+                    <p className='text-muted-foreground text-xs'>
+                      {t('Data as of {{time}}', {
+                        time: formatShanghaiTimestamp(
+                          props.statementDataCutoff
+                        ),
+                      })}
+                    </p>
+                  )}
+                </ReportCard>
+              )}
               {hasFindings && (
                 <p className='text-muted-foreground text-sm'>
                   {t(
@@ -302,11 +328,9 @@ export function StatementSourceVerification(props: {
                   props.onVerified()
                 }}
               />
-              {report.issues.some((issue) => issue.blocking) && (
+              {issues.some((issue) => issue.blocking) && (
                 <p role='alert' className='text-destructive'>
-                  {t(
-                    'Resolve amount differences before recording completeness. Review notes do not change charges or clear blocking items.'
-                  )}
+                  {t('Resolve blocking issues before recording completeness.')}
                 </p>
               )}
               {visibleIssues.map((issue) => (
@@ -337,7 +361,7 @@ export function StatementSourceVerification(props: {
                     })
                   }
                   disappeared={
-                    !report.issues.some((current) => current.id === issue.id)
+                    !issues.some((current) => current.id === issue.id)
                   }
                   onSaved={() => {
                     void query.refetch()
@@ -345,28 +369,18 @@ export function StatementSourceVerification(props: {
                   }}
                 />
               ))}
-              {pageCount > 1 && (
-                <div className='flex items-center gap-3'>
-                  <Button
-                    size='sm'
-                    variant='outline'
-                    disabled={currentPage === 0 || hasDrafts}
-                    onClick={() => setPage(currentPage - 1)}
-                  >
-                    {t('Previous')}
-                  </Button>
-                  <span>
-                    {currentPage + 1} / {pageCount}
-                  </span>
-                  <Button
-                    size='sm'
-                    variant='outline'
-                    disabled={currentPage + 1 >= pageCount || hasDrafts}
-                    onClick={() => setPage(currentPage + 1)}
-                  >
-                    {t('Next')}
-                  </Button>
-                </div>
+              {issues.length > 0 && (
+                <BillingPagination
+                  page={currentPage + 1}
+                  pageSize={pageSize}
+                  total={issues.length}
+                  label={t('Check statement records')}
+                  disabled={hasDrafts}
+                  onChange={(nextPage, nextSize) => {
+                    setPage(nextPage - 1)
+                    setPageSize(nextSize)
+                  }}
+                />
               )}
               {!!report.history?.length && (
                 <SourceDecisionHistory history={report.history} />
@@ -379,7 +393,7 @@ export function StatementSourceVerification(props: {
                   <CollapsibleContent className='space-y-2'>
                     <p className='text-muted-foreground text-sm'>
                       {t(
-                        'For the technical reviewer: check historical data coverage. Business managers do not need to invent backup evidence. Business decisions cannot replace this check.'
+                        'Verify this month’s coverage using backup, log retention and recovery records.'
                       )}
                     </p>
                     <Label htmlFor={`${id}-backup`}>
@@ -431,11 +445,10 @@ export function StatementSourceVerification(props: {
             </>
           )}
           {mutation.isError && (
-            <p role='alert' className='text-destructive'>
-              {t(
-                'Verification was rejected. Refresh the checks before retrying.'
-              )}
-            </p>
+            <SourceReviewError
+              error={mutation.error}
+              operation='verification'
+            />
           )}
         </div>
       </Dialog>

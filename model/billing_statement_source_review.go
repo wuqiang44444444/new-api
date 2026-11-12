@@ -3,7 +3,10 @@ package model
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
+	"errors"
 	"fmt"
+	"hash"
 	"math"
 	"time"
 
@@ -21,24 +24,26 @@ type BillingSourceRelatedLog struct {
 	IdentityMatches bool  `json:"identity_matches"`
 }
 type BillingSourceIssue struct {
-	DecisionID    int64                     `json:"decision_id"`
-	ID            string                    `json:"id"`
-	Kind          string                    `json:"kind"`
-	Blocking      bool                      `json:"blocking"`
-	LogID         int                       `json:"log_id"`
-	TaskRowID     int64                     `json:"task_row_id"`
-	CreatedAt     int64                     `json:"created_at"`
-	Model         string                    `json:"model"`
-	LogType       int                       `json:"log_type"`
-	Quota         int64                     `json:"quota,string"`
-	TargetQuota   *int64                    `json:"target_quota,string,omitempty"`
-	RelatedLogIDs []int                     `json:"related_log_ids"`
-	Reasons       []string                  `json:"reasons"`
-	Reviewed      bool                      `json:"reviewed"`
-	Note          string                    `json:"note"`
-	ActorID       int                       `json:"actor_id"`
-	ReviewedAt    int64                     `json:"reviewed_at"`
-	RelatedLogs   []BillingSourceRelatedLog `json:"related_logs"`
+	CanCloseDifference bool `json:"can_close_difference,omitempty"`
+	differenceEvidence string
+	DecisionID         int64                     `json:"decision_id"`
+	ID                 string                    `json:"id"`
+	Kind               string                    `json:"kind"`
+	Blocking           bool                      `json:"blocking"`
+	LogID              int                       `json:"log_id"`
+	TaskRowID          int64                     `json:"task_row_id"`
+	CreatedAt          int64                     `json:"created_at"`
+	Model              string                    `json:"model"`
+	LogType            int                       `json:"log_type"`
+	Quota              int64                     `json:"quota,string"`
+	TargetQuota        *int64                    `json:"target_quota,string,omitempty"`
+	RelatedLogIDs      []int                     `json:"related_log_ids"`
+	Reasons            []string                  `json:"reasons"`
+	Reviewed           bool                      `json:"reviewed"`
+	Note               string                    `json:"note"`
+	ActorID            int                       `json:"actor_id"`
+	ReviewedAt         int64                     `json:"reviewed_at"`
+	RelatedLogs        []BillingSourceRelatedLog `json:"related_logs"`
 }
 type billingSourceStamp struct {
 	Revision   int64 `json:"revision"`
@@ -51,24 +56,25 @@ type BillingSourceAuditIssue struct {
 	CreatedAt int64 `json:"created_at"`
 }
 type BillingSourceReview struct {
-	PendingRequests []BillingSourceDecisionRecord   `json:"pending_requests"`
-	AuditIssues     []BillingSourceAuditIssue       `json:"audit_issues"`
-	DecisionVersion int                             `json:"decision_version"`
-	History         []BillingSourceDecisionRecord   `json:"history"`
-	UserID          int                             `json:"user_id"`
-	Start           int64                           `json:"start"`
-	End             int64                           `json:"end"`
-	CapturedAt      int64                           `json:"captured_at"`
-	Fingerprint     string                          `json:"fingerprint"`
-	Rows            int64                           `json:"rows"`
-	NetQuota        int64                           `json:"net_quota,string"`
-	Blockers        int                             `json:"blockers"`
-	Pending         int                             `json:"pending"`
-	Issues          []BillingSourceIssue            `json:"issues"`
-	Retention       BillingStatementRetentionStatus `json:"retention_status"`
-	stamp           billingSourceStamp
-	revisions       map[string]int64
-	historyBudget   int
+	PendingRequests      []BillingSourceDecisionRecord   `json:"pending_requests"`
+	AuditIssues          []BillingSourceAuditIssue       `json:"audit_issues"`
+	DecisionVersion      int                             `json:"decision_version"`
+	History              []BillingSourceDecisionRecord   `json:"history"`
+	UserID               int                             `json:"user_id"`
+	Start                int64                           `json:"start"`
+	End                  int64                           `json:"end"`
+	CapturedAt           int64                           `json:"captured_at"`
+	Fingerprint          string                          `json:"fingerprint"`
+	Rows                 int64                           `json:"rows"`
+	NetQuota             int64                           `json:"net_quota,string"`
+	Blockers             int                             `json:"blockers"`
+	Pending              int                             `json:"pending"`
+	Issues               []BillingSourceIssue            `json:"issues"`
+	Retention            BillingStatementRetentionStatus `json:"retention_status"`
+	RetentionNeedsReview bool                            `json:"retention_needs_review,omitempty"`
+	stamp                billingSourceStamp
+	revisions            map[string]int64
+	historyBudget        int
 }
 
 func billingSourceReviewStamp(ctx context.Context, db *gorm.DB, user int) (billingSourceStamp, error) {
@@ -98,7 +104,6 @@ func GetBillingSourceReview(ctx context.Context, user int, start, end int64) (*B
 }
 
 func getBillingSourceReview(ctx context.Context, user int, start, end int64, byteBudget int) (*BillingSourceReview, error) {
-	budget := billingSourceReviewBudget{remaining: byteBudget}
 	if !BillingStatementVersionTopologyOK() {
 		return nil, ErrBillingStatementVersionTopology
 	}
@@ -107,30 +112,83 @@ func getBillingSourceReview(ctx context.Context, user int, start, end int64, byt
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	before, err := billingSourceReviewStamp(ctx, DB, user)
+	var maintenance BillingStatementMaintenance
+	if err := DB.WithContext(ctx).First(&maintenance, billingStatementMaintenanceRowID).Error; err != nil {
+		return nil, err
+	}
+	if maintenance.Enabled {
+		return nil, ErrBillingStatementMaintenanceActive
+	}
+	options := sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}
+	if DB.Dialector.Name() == "sqlite" {
+		options.Isolation = sql.LevelDefault
+	}
+	generation := maintenance.Generation
+	var report *BillingSourceReview
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		report, err = scanBillingSourceReview(ctx, tx, user, start, end, byteBudget)
+		return err
+	}, &options)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := DB.WithContext(ctx).First(&maintenance, billingStatementMaintenanceRowID).Error; err != nil {
+		return nil, err
+	}
+	if maintenance.Enabled || maintenance.Generation != generation || maintenance.Generation != report.stamp.Generation {
+		return nil, ErrBillingStatementMaintenanceActive
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return report, nil
+}
+
+func scanBillingSourceReview(ctx context.Context, tx *gorm.DB, user int, start, end int64, byteBudget int) (*BillingSourceReview, error) {
+	budget := billingSourceReviewBudget{remaining: byteBudget}
+	ctx = context.WithValue(ctx, usageReportSourceKey{}, usageReportSource{main: tx, logs: tx})
+	// Snapshot queries must not consult a caller's export reference cache.
+	ctx = context.WithValue(ctx, billingRefundReferenceCacheKey{}, nil)
+	before, err := billingSourceReviewStamp(ctx, tx, user)
 	if err != nil {
 		return nil, err
 	}
 	out := &BillingSourceReview{DecisionVersion: BillingSourceDecisionVersion, UserID: user, Start: start, End: end, CapturedAt: nowSeconds(), Issues: []BillingSourceIssue{}, stamp: before, Retention: BillingStatementRetentionUnknown}
 	out.revisions = map[string]int64{fmt.Sprintf("cm:%d:%d", user, start): 0, fmt.Sprintf("review-task-month:%d:%d", user, start): 0}
 	var retention []BillingStatementRetention
-	if err := DB.WithContext(ctx).Where("user_id = ? AND period_start = ?", user, start).Find(&retention).Error; err != nil {
+	if err := tx.WithContext(ctx).Where("user_id = ? AND period_start = ?", user, start).Find(&retention).Error; err != nil {
 		return nil, err
 	}
 	if len(retention) > 0 {
 		out.Retention = retention[0].Status
+		if out.Retention == BillingStatementRetentionIntact || out.Retention == BillingStatementRetentionNone {
+			err := verifyBillingSourceAttestation(ctx, tx, retention[0])
+			if errors.Is(err, ErrBillingStatementSourceIncomplete) {
+				out.RetentionNeedsReview = true
+				out.Retention = BillingStatementRetentionUnknown
+			} else if err != nil {
+				return nil, err
+			}
+		}
 	}
-	query := LOG_DB.WithContext(ctx).Model(&Log{}).Scopes(customerSettlementLogs).Where("user_id = ? AND type IN ?", user, []int{LogTypeConsume, LogTypeRefund})
+	query := tx.WithContext(ctx).Model(&Log{}).Scopes(customerSettlementLogs).Where("user_id = ? AND type IN ?", user, []int{LogTypeConsume, LogTypeRefund})
 	digest := sha256.New()
-	write := func(v any) error {
+	write := func(v any, taskEvidence hash.Hash) error {
 		b, e := common.Marshal(v)
 		if e != nil {
 			return e
 		}
-		_, e = digest.Write(b)
-		return e
+		_, _ = digest.Write(b)
+		if taskEvidence != nil {
+			_, _ = taskEvidence.Write(b)
+		}
+		return nil
 	}
-	if err := write([]any{user, start, end, before.Generation, before.Parser}); err != nil {
+	if err := write([]any{user, start, end, before.Generation, before.Parser}, nil); err != nil {
 		return nil, err
 	}
 	// Keep only task-linked rows for reconciliation, not all text logs.
@@ -194,7 +252,7 @@ func getBillingSourceReview(ctx context.Context, user int, start, end int64, byt
 			if l.CreatedAt < start || l.CreatedAt > end {
 				continue
 			}
-			if err := write([]any{l.Id, l.CreatedAt, l.TokenId, l.ChannelId, l.ModelName, l.Type, l.Quota, l.PromptTokens, l.CompletionTokens, l.Other}); err != nil {
+			if err := write([]any{l.Id, l.CreatedAt, l.TokenId, l.ChannelId, l.ModelName, l.Type, l.Quota, l.PromptTokens, l.CompletionTokens, l.Other}, nil); err != nil {
 				return nil, err
 			}
 			out.revisions[fmt.Sprintf("refund:%d:%d", user, l.TokenId)] = 0
@@ -205,7 +263,7 @@ func getBillingSourceReview(ctx context.Context, user int, start, end int64, byt
 				out.revisions[billingStatementTaskScope(user, l.TokenId, relation.TaskID)] = 0
 			}
 			if len(out.revisions) > billingSourceReviewMaxDependencies {
-				return nil, errBillingSourceReviewBudget
+				return nil, ErrBillingSourceReviewBudget
 			}
 			out.Rows++
 			if l.Type == LogTypeRefund {
@@ -251,7 +309,7 @@ func getBillingSourceReview(ctx context.Context, user int, start, end int64, byt
 	// investigation signal. Missing identity or manual refunds are never repaired.
 	for cursor := int64(0); ; {
 		var tasks []Task
-		if err := DB.WithContext(ctx).Select("id,created_at,task_id,user_id,app_id,channel_id,quota,properties,private_data,billing_state,status").Where("user_id = ? AND id > ?", user, cursor).Order("id asc").Limit(200).Find(&tasks).Error; err != nil {
+		if err := tx.WithContext(ctx).Select("id,created_at,task_id,user_id,app_id,channel_id,quota,properties,private_data,billing_state,status").Where("user_id = ? AND id > ?", user, cursor).Order("id asc").Limit(200).Find(&tasks).Error; err != nil {
 			return nil, err
 		}
 		if len(tasks) == 0 {
@@ -259,7 +317,7 @@ func getBillingSourceReview(ctx context.Context, user int, start, end int64, byt
 		}
 		// Count owners only for this page's exact app/task identities. A global
 		// GROUP BY previously retained every task identity of the customer.
-		identity := DB.Session(&gorm.Session{NewDB: true})
+		identity := tx.Session(&gorm.Session{NewDB: true})
 		for _, task := range tasks {
 			identity = identity.Or("(app_id = ? AND task_id = ?)", task.AppID, task.TaskID)
 		}
@@ -268,7 +326,7 @@ func getBillingSourceReview(ctx context.Context, user int, start, end int64, byt
 			TaskID string
 			Count  int64
 		}
-		if err := DB.WithContext(ctx).Model(&Task{}).Select("app_id, task_id, COUNT(*) AS count").Where("user_id = ?", user).Where(identity).Group("app_id, task_id").Scan(&owners).Error; err != nil {
+		if err := tx.WithContext(ctx).Model(&Task{}).Select("app_id, task_id, COUNT(*) AS count").Where("user_id = ?", user).Where(identity).Group("app_id, task_id").Scan(&owners).Error; err != nil {
 			return nil, err
 		}
 		counts := map[string]int64{}
@@ -322,25 +380,38 @@ func getBillingSourceReview(ctx context.Context, user int, start, end int64, byt
 					net += int64(l.Quota)
 				}
 			}
+			var taskEvidence hash.Hash
 			if relevant {
-				if err := write([]any{task, task.PrivateData}); err != nil {
+				if net < int64(task.Quota) && len(ids) > 0 && !conflict && *a.TargetQuota == task.Quota {
+					evidence, err := common.Marshal([]any{
+						task.ID, task.UserId, task.AppID, task.TaskID, task.CreatedAt,
+						task.ChannelId, task.PrivateData.TokenId, task.Properties.OriginModelName,
+						task.Quota, a.State, *a.TargetQuota,
+					})
+					if err != nil {
+						return nil, err
+					}
+					taskEvidence = sha256.New()
+					_, _ = taskEvidence.Write(evidence)
+				}
+				if err := write([]any{task, task.PrivateData}, nil); err != nil {
 					return nil, err
 				}
 				for _, l := range rows {
-					if err := write([]any{l.ID, l.Type, l.Quota, l.CreatedAt, l.TokenID, l.ChannelID, l.Model, l.Other}); err != nil {
+					if err := write([]any{l.ID, l.Type, l.Quota, l.CreatedAt, l.TokenID, l.ChannelID, l.Model, l.Other}, taskEvidence); err != nil {
 						return nil, err
 					}
 				}
 				out.revisions[billingStatementTaskScope(user, task.AppID, task.TaskID)] = 0
 				out.revisions[billingSourceTaskLogScope(user, task.PrivateData.TokenId, task.TaskID)] = 0
 				if len(out.revisions) > billingSourceReviewMaxDependencies {
-					return nil, errBillingSourceReviewBudget
+					return nil, ErrBillingSourceReviewBudget
 				}
 				for _, l := range rows {
 					out.revisions[fmt.Sprintf("log:%d", l.ID)] = 0
 					out.revisions[fmt.Sprintf("refund:%d:%d", user, l.TokenID)] = 0
 					if len(out.revisions) > billingSourceReviewMaxDependencies {
-						return nil, errBillingSourceReviewBudget
+						return nil, ErrBillingSourceReviewBudget
 					}
 				}
 			}
@@ -361,29 +432,26 @@ func getBillingSourceReview(ctx context.Context, user int, start, end int64, byt
 			if err := budget.consume(1024 + len(task.Properties.OriginModelName) + 128*len(related)); err != nil {
 				return nil, err
 			}
-			out.Issues = append(out.Issues, BillingSourceIssue{ID: fmt.Sprintf("task:%d", task.ID), Kind: "task_amount", Blocking: true, TaskRowID: task.ID, CreatedAt: task.CreatedAt, Model: task.Properties.OriginModelName, Quota: net, TargetQuota: &target, RelatedLogIDs: ids, RelatedLogs: related, Reasons: reasons})
+			issue := BillingSourceIssue{ID: fmt.Sprintf("task:%d", task.ID), Kind: "task_amount", Blocking: true, TaskRowID: task.ID, CreatedAt: task.CreatedAt, Model: task.Properties.OriginModelName, Quota: net, TargetQuota: &target, RelatedLogIDs: ids, RelatedLogs: related, Reasons: reasons}
+			if taskEvidence != nil {
+				issue.differenceEvidence = fmt.Sprintf("%x", taskEvidence.Sum(nil))
+			}
+			out.Issues = append(out.Issues, issue)
 		}
 		cursor = tasks[len(tasks)-1].ID
 		budget.remaining += batchBytes
 	}
-	if err := readBillingSourceReviewRevisions(DB.WithContext(ctx), out.revisions); err != nil {
+	if err := readBillingSourceReviewRevisions(tx.WithContext(ctx), out.revisions); err != nil {
 		return nil, err
 	}
-	after, err := billingSourceReviewStamp(ctx, DB, user)
-	if err != nil {
-		return nil, err
-	}
-	if before != after {
-		return nil, ErrBillingStatementVersionConflict
-	}
-	if err := write(out.Issues); err != nil {
+	if err := write(out.Issues, nil); err != nil {
 		return nil, err
 	}
 	out.Fingerprint = fmt.Sprintf("%x", digest.Sum(nil))
 	// The same allowance is reused for the replacement history read under lock;
 	// it must not reset to a fresh full budget or charge the old history twice.
 	out.historyBudget = budget.remaining
-	if err := loadBillingSourceReviewNotes(ctx, DB, out); err != nil {
+	if err := loadBillingSourceReviewNotes(ctx, tx, out); err != nil {
 		return nil, err
 	}
 

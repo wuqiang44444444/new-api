@@ -23,7 +23,7 @@ func TestSourceHistoryUsesRemainingReviewBudget(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&BillingStatementAudit{Action: "review_source_issue", IdempotencyKey: billingSourceReviewKey(91, start), Reason: string(raw)}).Error)
 	limited, err := getBillingSourceReview(ctx, 91, start, end, 4096)
-	assert.ErrorIs(t, err, errBillingSourceReviewBudget)
+	assert.ErrorIs(t, err, ErrBillingSourceReviewBudget)
 	assert.Nil(t, limited, "historical decisions must not bypass the scan budget")
 	complete, err := GetBillingSourceReview(ctx, 91, start, end)
 	require.NoError(t, err)
@@ -58,7 +58,7 @@ func TestSourceHistoryLockedReloadReusesOnlyRemainingBudget(t *testing.T) {
 		}
 		return loadBillingSourceReviewNotes(ctx, tx, report)
 	})
-	assert.ErrorIs(t, err, errBillingSourceReviewBudget, "locked reread must not reset to a fresh full scan budget")
+	assert.ErrorIs(t, err, ErrBillingSourceReviewBudget, "locked reread must not reset to a fresh full scan budget")
 }
 
 func TestSourceHistoryPaginationPreservesLatestDecision(t *testing.T) {

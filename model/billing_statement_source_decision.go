@@ -14,6 +14,7 @@ import (
 // Decisions are administrative instructions, never a second financial ledger.
 // Adjustment requests remain pending until the authoritative correction runs.
 const (
+	BillingSourceCloseDifference = "close_small_difference"
 	BillingSourceKeep            = "keep_record"
 	BillingSourceInvestigate     = "investigate"
 	BillingSourceWaiver          = "request_waiver"
@@ -36,24 +37,25 @@ type BillingSourceReviewDecision struct {
 
 type BillingSourceDecisionRecord struct {
 	BillingSourceReviewDecision
-	Version        int      `json:"version"`
-	ID             int64    `json:"id"`
-	ActorID        int      `json:"actor_id"`
-	CreatedAt      int64    `json:"created_at"`
-	UserID         int      `json:"user_id"`
-	PeriodStart    int64    `json:"period_start"`
-	Model          string   `json:"model"`
-	LogType        int      `json:"log_type"`
-	RecordedQuota  int64    `json:"recorded_quota,string"`
-	Kind           string   `json:"kind"`
-	Blocking       bool     `json:"blocking"`
-	TargetQuota    *int64   `json:"target_quota,string,omitempty"`
-	EvidenceGaps   []string `json:"evidence_gaps"`
-	Status         string   `json:"status"`
-	StatementDelta int64    `json:"statement_delta,string"`
-	BalanceDelta   int64    `json:"balance_delta,string"`
-	CurrentSource  bool     `json:"current_source"`
-	Superseded     bool     `json:"superseded"`
+	Version            int      `json:"version"`
+	ID                 int64    `json:"id"`
+	ActorID            int      `json:"actor_id"`
+	CreatedAt          int64    `json:"created_at"`
+	UserID             int      `json:"user_id"`
+	PeriodStart        int64    `json:"period_start"`
+	Model              string   `json:"model"`
+	LogType            int      `json:"log_type"`
+	RecordedQuota      int64    `json:"recorded_quota,string"`
+	Kind               string   `json:"kind"`
+	Blocking           bool     `json:"blocking"`
+	TargetQuota        *int64   `json:"target_quota,string,omitempty"`
+	EvidenceGaps       []string `json:"evidence_gaps"`
+	Status             string   `json:"status"`
+	DifferenceEvidence string   `json:"difference_evidence,omitempty"`
+	StatementDelta     int64    `json:"statement_delta,string"`
+	BalanceDelta       int64    `json:"balance_delta,string"`
+	CurrentSource      bool     `json:"current_source"`
+	Superseded         bool     `json:"superseded"`
 }
 
 func loadBillingSourceReviewNotes(ctx context.Context, db *gorm.DB, report *BillingSourceReview) error {
@@ -69,6 +71,7 @@ func loadBillingSourceReviewNotes(ctx context.Context, db *gorm.DB, report *Bill
 	for i := range report.Issues {
 		issue := &report.Issues[i]
 		indices[issue.ID] = i
+		issue.CanCloseDifference = issue.differenceEvidence != ""
 		issue.Reviewed, issue.Note, issue.ActorID, issue.ReviewedAt, issue.DecisionID = false, "", 0, 0, 0
 	}
 	for cursor := int64(0); ; {
@@ -104,6 +107,11 @@ func loadBillingSourceReviewNotes(ctx context.Context, db *gorm.DB, report *Bill
 			latestHistory[d.IssueID] = len(report.History)
 			report.History = append(report.History, d)
 			i, ok := indices[d.IssueID]
+			if d.Decision == BillingSourceCloseDifference {
+				d.CurrentSource = ok && report.Issues[i].differenceEvidence == d.DifferenceEvidence
+				report.History[len(report.History)-1].CurrentSource = d.CurrentSource
+				report.History[len(report.History)-1].DifferenceEvidence = ""
+			}
 			if !ok {
 				continue
 			}
@@ -114,7 +122,7 @@ func loadBillingSourceReviewNotes(ctx context.Context, db *gorm.DB, report *Bill
 			if !d.CurrentSource {
 				continue
 			}
-			issue.Reviewed = d.Decision == BillingSourceKeep && !issue.Blocking
+			issue.Reviewed = d.Decision == BillingSourceKeep && !issue.Blocking || d.Decision == BillingSourceCloseDifference
 			issue.Note, issue.ActorID, issue.ReviewedAt = d.Note, note.ActorId, note.CreatedAt
 		}
 		cursor = notes[len(notes)-1].ID
@@ -134,7 +142,13 @@ func loadBillingSourceReviewNotes(ctx context.Context, db *gorm.DB, report *Bill
 		if len(report.AuditIssues) > 0 {
 			issue.Reviewed = false
 		}
-		if issue.Blocking {
+		if historyIndex, exists := latestHistory[issue.ID]; exists {
+			latest := report.History[historyIndex]
+			if latest.Status == "pending_review" && latest.Decision != BillingSourceInvestigate {
+				issue.CanCloseDifference = false
+			}
+		}
+		if issue.Blocking && !issue.Reviewed {
 			report.Blockers++
 		}
 		if !issue.Reviewed {
@@ -156,6 +170,8 @@ func RecordBillingSourceReviewDecision(ctx context.Context, user int, start, end
 	}
 	validReason := false
 	switch d.Decision {
+	case BillingSourceCloseDifference:
+		validReason = d.Reason == "small_difference_reviewed"
 	case BillingSourceKeep:
 		validReason = d.Reason == "accept_missing_details"
 	case BillingSourceInvestigate:
@@ -254,7 +270,16 @@ func RecordBillingSourceReviewDecision(ctx context.Context, user int, start, end
 			if d.Decision == BillingSourceKeep {
 				status = "record_kept"
 			}
+			if d.Decision == BillingSourceCloseDifference {
+				if !issue.CanCloseDifference || issue.Reviewed || previous != nil && previous.Status == "pending_review" && previous.Decision != BillingSourceInvestigate {
+					return ErrBillingStatementSourceIncomplete
+				}
+				status = "small_difference_closed"
+			}
 			recorded = BillingSourceDecisionRecord{UserID: user, PeriodStart: start, Model: issue.Model, LogType: issue.LogType, RecordedQuota: issue.Quota, Kind: issue.Kind, Blocking: issue.Blocking, TargetQuota: issue.TargetQuota, EvidenceGaps: issue.Reasons, Status: status}
+			if d.Decision == BillingSourceCloseDifference {
+				recorded.DifferenceEvidence = issue.differenceEvidence
+			}
 		}
 		recorded.BillingSourceReviewDecision = d
 		recorded.Version, recorded.ID, recorded.ActorID, recorded.CreatedAt = BillingSourceDecisionVersion, 0, actor, nowSeconds()

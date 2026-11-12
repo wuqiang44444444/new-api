@@ -11,6 +11,7 @@ import { LOG_TYPE_ENUM } from '@/features/usage-logs/constants'
 
 import { formatCustomerStatementQuota } from '../lib'
 import type { SourceDecisionRecord } from '../source-review-api'
+import { BillingPagination } from './billing-pagination'
 import { useSourceDecisionLabels } from './source-decision-labels'
 
 export function SourceDecisionHistory(props: {
@@ -19,11 +20,13 @@ export function SourceDecisionHistory(props: {
   const { t } = useTranslation()
   const labels = useSourceDecisionLabels()
   const [page, setPage] = useState(0)
-  const pages = Math.max(1, Math.ceil(props.history.length / 10))
+  const [pageSize, setPageSize] = useState(10)
+  const pages = Math.max(1, Math.ceil(props.history.length / pageSize))
   const current = Math.min(page, pages - 1)
   const decisions: Record<string, string> = labels.decisions
   const reasons: Record<string, string> = labels.reasons
   const newest = [...props.history].reverse()
+  const visible = newest.slice(current * pageSize, (current + 1) * pageSize)
   return (
     <Collapsible className='rounded-md border p-3'>
       <CollapsibleTrigger render={<Button variant='outline' />}>
@@ -36,7 +39,7 @@ export function SourceDecisionHistory(props: {
           </p>
         )}
         <ol className='mt-3 space-y-3'>
-          {newest.slice(current * 10, current * 10 + 10).map((record) => (
+          {visible.map((record) => (
             <li key={record.id} className='space-y-1 border-t pt-3 text-sm'>
               <p className='font-medium'>
                 {decisions[record.decision] || t('Historical review note')}
@@ -65,6 +68,25 @@ export function SourceDecisionHistory(props: {
                       ? t('Refund')
                       : t('Billing record')}
                   </p>
+                  {record.status === 'small_difference_closed' &&
+                    record.target_quota != null && (
+                      <p>
+                        {t(
+                          'Task settlement {{amount}} · Difference {{difference}}',
+                          {
+                            amount: formatCustomerStatementQuota(
+                              Number(record.target_quota)
+                            ),
+                            difference: formatCustomerStatementQuota(
+                              Math.abs(
+                                Number(record.target_quota) -
+                                  Number(record.recorded_quota)
+                              )
+                            ),
+                          }
+                        )}
+                      </p>
+                    )}
                   <p>{reasons[record.reason] || record.reason}</p>
                   <p>
                     {record.status === 'record_kept' &&
@@ -125,26 +147,19 @@ export function SourceDecisionHistory(props: {
             </li>
           ))}
         </ol>
-        {pages > 1 && (
-          <div className='mt-3 flex items-center gap-3'>
-            <Button
-              variant='outline'
-              disabled={current === 0}
-              onClick={() => setPage(current - 1)}
-            >
-              {t('Newer decisions')}
-            </Button>
-            <span>
-              {current + 1} / {pages}
-            </span>
-            <Button
-              variant='outline'
-              disabled={current + 1 >= pages}
-              onClick={() => setPage(current + 1)}
-            >
-              {t('Older decisions')}
-            </Button>
-          </div>
+        {newest.length > 0 && (
+          <BillingPagination
+            page={current + 1}
+            pageSize={pageSize}
+            total={newest.length}
+            label={t('Handling history ({{count}})', {
+              count: props.history.length,
+            })}
+            onChange={(nextPage, nextSize) => {
+              setPage(nextPage - 1)
+              setPageSize(nextSize)
+            }}
+          />
         )}
       </CollapsibleContent>
     </Collapsible>

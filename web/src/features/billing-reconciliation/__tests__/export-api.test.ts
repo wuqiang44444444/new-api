@@ -39,6 +39,7 @@ it('registers source verification through the existing scoped admin endpoint', a
       retention_evidence: 'retention checked',
     },
     {
+      skipErrorHandler: true,
       params: {
         user_id: 91,
         start_timestamp: 1785513600,

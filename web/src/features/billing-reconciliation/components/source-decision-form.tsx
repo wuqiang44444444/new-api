@@ -19,10 +19,12 @@ import {
   type SourceReviewScope,
 } from '../source-review-api'
 import { useSourceDecisionLabels } from './source-decision-labels'
+import { SourceReviewError } from './source-review-error'
 
 const schema = z
   .object({
     decision: z.enum([
+      'close_small_difference',
       'keep_record',
       'investigate',
       'request_waiver',
@@ -39,6 +41,7 @@ const schema = z
     message: 'required',
   })
 const reasons = {
+  close_small_difference: ['small_difference_reviewed'],
   keep_record: ['accept_missing_details'],
   investigate: ['amount_questioned', 'missing_evidence'],
   request_waiver: ['customer_agreement', 'service_issue'],
@@ -54,7 +57,10 @@ export type SourceDecisionDraft = {
 }
 
 export function SourceDecisionForm(props: {
-  issue: Pick<SourceIssue, 'id' | 'decision_id' | 'blocking' | 'log_type'>
+  issue: Pick<
+    SourceIssue,
+    'id' | 'decision_id' | 'blocking' | 'log_type' | 'can_close_difference'
+  >
   disabled?: boolean
   closureOnly?: boolean
   pendingRequest?: boolean
@@ -80,6 +86,26 @@ export function SourceDecisionForm(props: {
   })
   const fieldID = `${props.closureOnly ? 'request' : 'issue'}-${props.issue.id}`
   const decision = form.watch('decision')
+  const closingDifference = decision === 'close_small_difference'
+  let noteLabel = requiredNoteLabel
+  let decisionEffect = t(
+    'This saves a pending request only. No fee is waived, no record is excluded, and no refund is executed. Review remains incomplete.'
+  )
+  if (props.closureOnly) {
+    decisionEffect = t(
+      'This closes the request without changing charges or refunds. Any remaining billing issue still needs review.'
+    )
+  } else if (decision === 'keep_record') {
+    noteLabel = t('Additional note (optional)')
+    decisionEffect = t(
+      'The existing charge or refund stays on the statement. Missing details remain disclosed; this does not prove the amount is correct.'
+    )
+  } else if (closingDifference) {
+    noteLabel = t('Reason for closing the difference')
+    decisionEffect = t(
+      'This closes the issue for billing review. The bill still uses the recorded charges and refunds.'
+    )
+  }
   const reason = form.watch('reason')
   const note = form.watch('note')
   const context = `${props.fingerprint}:${props.issue.decision_id || 0}`
@@ -103,6 +129,7 @@ export function SourceDecisionForm(props: {
   }, [dirty, decision, reason, note, reviewedContext])
   const retry = useRef<{ key: string; body: SourceDecisionInput } | null>(null)
   const mutation = useMutation({
+    meta: { errorToast: false },
     mutationFn: async (body: SourceDecisionInput) => {
       const result = await recordSourceReview(props.scope, body)
       if (!result.success || result.decision_version !== 3) {
@@ -117,7 +144,15 @@ export function SourceDecisionForm(props: {
     },
   })
   const submit = form.handleSubmit((values) => {
-    if (props.disabled || needsReview || mutation.isPending) return
+    if (
+      props.disabled ||
+      needsReview ||
+      mutation.isPending ||
+      (values.decision === 'close_small_difference' &&
+        !props.issue.can_close_difference)
+    ) {
+      return
+    }
     const base = {
       ...values,
       fingerprint: props.fingerprint,
@@ -154,7 +189,10 @@ export function SourceDecisionForm(props: {
               .filter(([value]) =>
                 props.closureOnly
                   ? value === 'withdraw_request' || value === 'reject_request'
-                  : value !== 'withdraw_request' && value !== 'reject_request'
+                  : value !== 'withdraw_request' &&
+                    value !== 'reject_request' &&
+                    (value !== 'close_small_difference' ||
+                      props.issue.can_close_difference)
               )
               .map(([value, label]) => (
                 <NativeSelectOption
@@ -174,28 +212,26 @@ export function SourceDecisionForm(props: {
               ))}
           </NativeSelect>
         </Field>
-        <Field>
-          <FieldLabel htmlFor={`reason-${fieldID}`}>
-            {t('Business reason')}
-          </FieldLabel>
-          <NativeSelect
-            id={`reason-${fieldID}`}
-            {...form.register('reason')}
-            disabled={mutation.isPending || props.disabled}
-          >
-            {reasons[decision].map((value) => (
-              <NativeSelectOption key={value} value={value}>
-                {labels.reasons[value]}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </Field>
+        {!closingDifference && (
+          <Field>
+            <FieldLabel htmlFor={`reason-${fieldID}`}>
+              {t('Business reason')}
+            </FieldLabel>
+            <NativeSelect
+              id={`reason-${fieldID}`}
+              {...form.register('reason')}
+              disabled={mutation.isPending || props.disabled}
+            >
+              {reasons[decision].map((value) => (
+                <NativeSelectOption key={value} value={value}>
+                  {labels.reasons[value]}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+        )}
         <Field data-invalid={!!form.formState.errors.note}>
-          <FieldLabel htmlFor={`note-${fieldID}`}>
-            {decision === 'keep_record'
-              ? t('Additional note (optional)')
-              : requiredNoteLabel}
-          </FieldLabel>
+          <FieldLabel htmlFor={`note-${fieldID}`}>{noteLabel}</FieldLabel>
           <Textarea
             id={`note-${fieldID}`}
             {...form.register('note')}
@@ -226,20 +262,7 @@ export function SourceDecisionForm(props: {
             'Statement adjustment: $0. Customer balance change: $0. No additional charge or refund.'
           )}
         </p>
-        <p>
-          {props.closureOnly &&
-            t(
-              'This closes the request without changing charges or refunds. Any remaining billing issue still needs review.'
-            )}
-          {!props.closureOnly &&
-            (decision === 'keep_record'
-              ? t(
-                  'The existing charge or refund stays on the statement. Missing details remain disclosed; this does not prove the amount is correct.'
-                )
-              : t(
-                  'This saves a pending request only. No fee is waived, no record is excluded, and no refund is executed. Review remains incomplete.'
-                ))}
-        </p>
+        <p>{decisionEffect}</p>
         <p>
           {t(
             'The system records your identity, time, decision and amount automatically. Earlier decisions remain in the history.'
@@ -265,9 +288,17 @@ export function SourceDecisionForm(props: {
       )}
       <Button
         type='submit'
-        disabled={mutation.isPending || props.disabled || needsReview}
+        disabled={
+          mutation.isPending ||
+          props.disabled ||
+          needsReview ||
+          (decision === 'close_small_difference' &&
+            !props.issue.can_close_difference)
+        }
       >
-        {t('Save handling decision')}
+        {closingDifference
+          ? t('Close small difference')
+          : t('Save handling decision')}
       </Button>
       {dirty && (
         <Button
@@ -284,11 +315,7 @@ export function SourceDecisionForm(props: {
         </Button>
       )}
       {mutation.isError && (
-        <p role='alert' className='text-destructive text-sm'>
-          {t(
-            'Unable to save the decision. Refresh to check for changes before retrying; do not assume it was completed.'
-          )}
-        </p>
+        <SourceReviewError error={mutation.error} operation='decision' />
       )}
     </form>
   )

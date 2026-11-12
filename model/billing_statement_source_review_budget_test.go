@@ -28,7 +28,7 @@ func TestBillingSourceReviewBudgetAbortsWithoutPartialReport(t *testing.T) {
 				budget = 1500 // The source row fits; retaining its issue must fail.
 			}
 			report, err := getBillingSourceReview(ctx, 91, start, end, budget)
-			assert.ErrorIs(t, err, errBillingSourceReviewBudget)
+			assert.ErrorIs(t, err, ErrBillingSourceReviewBudget)
 			assert.Nil(t, report, "no partial result or fingerprint may escape the budget fence")
 			var audits, retention int64
 			require.NoError(t, db.Model(&BillingStatementAudit{}).Count(&audits).Error)

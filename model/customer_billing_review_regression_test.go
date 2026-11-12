@@ -17,7 +17,7 @@ func TestRefundEvidenceDoesNotDependOnPageOrBatch(t *testing.T) {
 	originals := make([]Log, 1200)
 	for i := range originals {
 		originals[i] = Log{UserId: 7, TokenId: 4 + i/600, ChannelId: 3, ModelName: "video", Type: LogTypeConsume, CreatedAt: 800, Quota: 87,
-			Other: `{"group_ratio":0.87,"contract_applicable":false,"statement_snapshot":{"billing_mode":"per_second"}}`}
+			Other: `{"group_ratio":0.87,"contract_applicable":false,"statement_snapshot":{"billing_mode":"per_second"},"admin_info":{"statement_original_quota":100}}`}
 	}
 	require.NoError(t, db.CreateInBatches(&originals, 100).Error)
 	refunds := make([]Log, len(originals))
@@ -51,7 +51,7 @@ func TestRefundEvidenceDoesNotDependOnPageOrBatch(t *testing.T) {
 			require.NoError(t, err)
 			for _, row := range rows {
 				net -= row.Quota
-				assert.NotEmpty(t, row.OriginalEstimate)
+				assert.NotEmpty(t, row.RecordedOriginal)
 			}
 			count += len(rows)
 			cursor = int64(batch[len(batch)-1].Id)

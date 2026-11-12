@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 
+import { ReportCard } from '@/components/report-card'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,
@@ -58,23 +59,36 @@ export function SourceReviewIssue(props: {
     amountLabel = t('Recorded refund')
   }
   if (issue.kind === 'task_amount') amountLabel = t('Linked records net amount')
+  let issueLabel = t('Explanation gap')
+  if (issue.blocking) {
+    issueLabel =
+      issue.reasons.length === 1 && issue.reasons[0] === 'task_log_net_mismatch'
+        ? t('Unresolved amount difference')
+        : t('Billing records need correction')
+  }
   return (
-    <article
+    <ReportCard
+      role='article'
       aria-label={t('Billing item {{reference}}', { reference: issue.id })}
-      className='space-y-3 rounded-md border p-4'
     >
       <div className='flex flex-wrap justify-between gap-2 font-medium'>
         <span>{issue.model || t('Unknown model')}</span>
-        <span>
-          {issue.blocking
-            ? t('Unresolved amount difference')
-            : t('Explanation gap')}
-        </span>
+        <span>{issueLabel}</span>
       </div>
       <p className='text-muted-foreground text-sm'>
         {new Date(issue.created_at * 1000).toLocaleString()} · {amountLabel}:{' '}
         {formatCustomerStatementQuota(Number(issue.quota))}
       </p>
+      {issue.target_quota != null && (
+        <p className='text-sm'>
+          {t('Task settlement {{amount}} · Difference {{difference}}', {
+            amount: formatCustomerStatementQuota(Number(issue.target_quota)),
+            difference: formatCustomerStatementQuota(
+              Math.abs(Number(issue.target_quota) - Number(issue.quota))
+            ),
+          })}
+        </p>
+      )}
       <p className='text-sm'>
         {issue.blocking
           ? t(
@@ -129,7 +143,7 @@ export function SourceReviewIssue(props: {
           </ul>
         </CollapsibleContent>
       </Collapsible>
-      {issue.blocking && (
+      {issue.blocking && !issue.can_close_difference && (
         <p className='text-destructive text-sm'>
           {t(
             'A note cannot clear this difference. Resolve it through the controlled correction process, then run the checks again.'
@@ -168,6 +182,6 @@ export function SourceReviewIssue(props: {
           onSaved={props.onSaved}
         />
       )}
-    </article>
+    </ReportCard>
   )
 }

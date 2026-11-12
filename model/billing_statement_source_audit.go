@@ -21,6 +21,11 @@ func validBillingSourceAudit(d BillingSourceDecisionRecord, raw string, user int
 		return false
 	}
 	switch d.Decision {
+	case BillingSourceCloseDifference:
+		return d.Version == BillingSourceDecisionVersion && d.Status == "small_difference_closed" &&
+			d.Blocking && d.Kind == "task_amount" && d.Reason == "small_difference_reviewed" && d.Note != "" &&
+			d.TargetQuota != nil && d.RecordedQuota < *d.TargetQuota && len(d.DifferenceEvidence) == 64 &&
+			len(d.EvidenceGaps) == 1 && d.EvidenceGaps[0] == "task_log_net_mismatch"
 	case BillingSourceKeep:
 		return d.Status == "record_kept" && !d.Blocking && d.Reason == "accept_missing_details"
 	case BillingSourceInvestigate:

@@ -5,6 +5,7 @@ export function useSourceDecisionLabels() {
   const { t } = useTranslation()
   return {
     decisions: {
+      close_small_difference: t('Close small difference'),
       keep_record: t('Keep the record; no additional refund'),
       investigate: t('Amount questioned; needs review'),
       request_waiver: t('Request a fee waiver'),
@@ -14,6 +15,7 @@ export function useSourceDecisionLabels() {
       reject_request: t('Reject request; keep existing accounting'),
     },
     reasons: {
+      small_difference_reviewed: t('Small difference reviewed'),
       accept_missing_details: t('Accept missing historical billing details'),
       amount_questioned: t('The customer questions the amount'),
       missing_evidence: t('More billing evidence is needed'),

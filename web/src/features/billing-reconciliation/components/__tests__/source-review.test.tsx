@@ -314,7 +314,11 @@ it('paginates all review items and treats scan failures as unknown, not complete
   })
   const client = await open()
   await screen.findByRole('article', { name: 'Billing item log:0' })
-  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  fireEvent.click(
+    within(
+      screen.getByRole('group', { name: 'Check statement records' })
+    ).getByRole('button', { name: 'Go to next page' })
+  )
   expect(
     screen.getByRole('article', { name: 'Billing item log:10' })
   ).toBeInTheDocument()
@@ -474,7 +478,11 @@ it('protects unsaved input from pagination and retains it if the issue disappear
   fireEvent.change(item.getByRole('textbox'), {
     target: { value: 'Do not lose my note' },
   })
-  expect(screen.getByRole('button', { name: /^Next$/ })).toBeDisabled()
+  expect(
+    within(
+      screen.getByRole('group', { name: 'Check statement records' })
+    ).getByRole('button', { name: 'Go to next page' })
+  ).toBeDisabled()
   api.get.mockResolvedValue({
     success: true,
     data: { ...report, fingerprint: 'fixed', issues: [] },
@@ -682,7 +690,11 @@ it('retains an issue draft when refreshed records move it to another page', asyn
   api.record.mockResolvedValue({ success: true, decision_version: 3 })
   const client = await open()
   await screen.findByRole('article', { name: 'Billing item log:1' })
-  fireEvent.click(screen.getByRole('button', { name: /^Next$/ }))
+  fireEvent.click(
+    within(
+      screen.getByRole('group', { name: 'Check statement records' })
+    ).getByRole('button', { name: 'Go to next page' })
+  )
   const item = within(
     screen.getByRole('article', { name: 'Billing item log:11' })
   )
@@ -741,12 +753,24 @@ it('retains an issue draft when refreshed records move it to another page', asyn
     ).toBeNull()
   )
   expect(second.getByRole('textbox')).toHaveValue('A different open discussion')
-  expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled()
+  expect(
+    within(
+      screen.getByRole('group', { name: 'Check statement records' })
+    ).getByRole('button', { name: 'Go to previous page' })
+  ).toBeDisabled()
   fireEvent.click(
     second.getByRole('button', { name: 'Discard unsaved changes' })
   )
-  expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled()
-  fireEvent.click(screen.getByRole('button', { name: 'Previous' }))
+  expect(
+    within(
+      screen.getByRole('group', { name: 'Check statement records' })
+    ).getByRole('button', { name: 'Go to previous page' })
+  ).toBeEnabled()
+  fireEvent.click(
+    within(
+      screen.getByRole('group', { name: 'Check statement records' })
+    ).getByRole('button', { name: 'Go to previous page' })
+  )
   expect(
     within(
       screen.getByRole('article', { name: 'Billing item log:11' })
@@ -782,7 +806,11 @@ it('retains a closure draft when earlier requests disappear and change paginatio
   api.get.mockResolvedValue({ success: true, data: report })
   const client = await open()
   await screen.findByRole('article', { name: 'Open request #1' })
-  fireEvent.click(screen.getByRole('button', { name: 'Next requests' }))
+  fireEvent.click(
+    within(
+      screen.getByRole('group', { name: 'Open handling requests' })
+    ).getByRole('button', { name: 'Go to next page' })
+  )
   const item = within(screen.getByRole('article', { name: 'Open request #11' }))
   fireEvent.change(item.getByRole('textbox'), {
     target: { value: 'Customer has withdrawn the request' },
@@ -807,4 +835,110 @@ it('retains a closure draft when earlier requests disappear and change paginatio
     retained.getByRole('button', { name: 'Save handling decision' })
   ).toBeEnabled()
   client.clear()
+})
+
+it('lets the administrator close an eligible difference and moves it out of the review list', async () => {
+  const difference = {
+    ...issue,
+    id: 'task:159',
+    kind: 'task_amount',
+    blocking: true,
+    can_close_difference: true,
+    quota: '29634',
+    target_quota: '763138',
+    reasons: ['task_log_net_mismatch'],
+  }
+  const report = {
+    fingerprint: 'source',
+    decision_version: 3,
+    rows: 1,
+    issues: [difference],
+    blockers: 1,
+    pending: 1,
+    captured_at: 100,
+  }
+  api.get
+    .mockResolvedValueOnce({ success: true, data: report })
+    .mockResolvedValue({
+      success: true,
+      data: {
+        ...report,
+        issues: [{ ...difference, reviewed: true }],
+        blockers: 0,
+        pending: 0,
+      },
+    })
+  api.record.mockResolvedValue({ success: true, decision_version: 3 })
+  await open()
+  const article = within(
+    await screen.findByRole('article', { name: 'Billing item task:159' })
+  )
+  fireEvent.change(
+    article.getByRole('combobox', { name: 'Handling decision' }),
+    {
+      target: { value: 'close_small_difference' },
+    }
+  )
+  fireEvent.change(
+    article.getByRole('textbox', { name: 'Reason for closing the difference' }),
+    {
+      target: { value: 'Reviewed the linked records.' },
+    }
+  )
+  fireEvent.click(
+    article.getByRole('button', { name: 'Close small difference' })
+  )
+  await waitFor(() => {
+    expect(api.record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        issue_id: 'task:159',
+        decision: 'close_small_difference',
+        note: 'Reviewed the linked records.',
+      })
+    )
+    expect(
+      screen.queryByRole('article', { name: 'Billing item task:159' })
+    ).toBeNull()
+  })
+})
+
+it('shows a request ID and allows retry after a failed check', async () => {
+  api.get
+    .mockRejectedValueOnce(
+      Object.assign(new Error('gateway error'), {
+        isAxiosError: true,
+        response: {
+          status: 504,
+          data: { reason: 'timeout', request_id: 'review-123' },
+        },
+      })
+    )
+    .mockResolvedValue({
+      success: true,
+      data: {
+        decision_version: 3,
+        rows: 0,
+        issues: [],
+        blockers: 0,
+        pending: 0,
+        captured_at: 100,
+      },
+    })
+  await open()
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'The check timed out. Try again.'
+  )
+  expect(screen.getByRole('alert')).toHaveTextContent('Request ID review-123')
+  expect(
+    screen.queryByRole('heading', {
+      name: 'No issues found in the available records',
+    })
+  ).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Run checks again' }))
+  expect(
+    await screen.findByRole('heading', {
+      name: 'No issues found in the available records',
+    })
+  ).toBeVisible()
 })

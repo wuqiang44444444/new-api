@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button'
-
 import { formatCustomerStatementQuota } from '../lib'
 import type {
   SourceDecisionRecord,
   SourceReviewScope,
 } from '../source-review-api'
+import { BillingPagination } from './billing-pagination'
 import {
   SourceDecisionForm,
   type SourceDecisionDraft,
@@ -36,9 +35,13 @@ export function SourcePendingRequests(props: {
   const { t } = useTranslation()
   const labels = useSourceDecisionLabels()
   const [page, setPage] = useState(0)
-  const pages = Math.max(1, Math.ceil(props.requests.length / 10))
+  const [pageSize, setPageSize] = useState(10)
+  const pages = Math.max(1, Math.ceil(props.requests.length / pageSize))
   const current = Math.min(page, pages - 1)
-  const pageRequests = props.requests.slice(current * 10, current * 10 + 10)
+  const pageRequests = props.requests.slice(
+    current * pageSize,
+    (current + 1) * pageSize
+  )
   const visibleRequests = [
     ...pageRequests,
     ...Object.values(props.drafts)
@@ -122,26 +125,18 @@ export function SourcePendingRequests(props: {
           )}
         </article>
       ))}
-      {pages > 1 && (
-        <div className='flex items-center gap-3'>
-          <Button
-            variant='outline'
-            disabled={props.hasDrafts || current === 0}
-            onClick={() => setPage(current - 1)}
-          >
-            {t('Previous requests')}
-          </Button>
-          <span>
-            {current + 1} / {pages}
-          </span>
-          <Button
-            variant='outline'
-            disabled={props.hasDrafts || current + 1 >= pages}
-            onClick={() => setPage(current + 1)}
-          >
-            {t('Next requests')}
-          </Button>
-        </div>
+      {props.requests.length > 0 && (
+        <BillingPagination
+          page={current + 1}
+          pageSize={pageSize}
+          total={props.requests.length}
+          label={t('Open handling requests')}
+          disabled={props.hasDrafts}
+          onChange={(nextPage, nextSize) => {
+            setPage(nextPage - 1)
+            setPageSize(nextSize)
+          }}
+        />
       )}
     </section>
   )
