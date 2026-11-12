@@ -304,23 +304,23 @@ it.each([200, 401])(
       access_expires_at: 2_000_000_000,
     }
     const open = vi.spyOn(XMLHttpRequest.prototype, 'open')
-    vi.spyOn(XMLHttpRequest.prototype, 'send').mockImplementation(
-      function (this: XMLHttpRequest) {
-        Object.defineProperties(this, {
-          status: { value: refreshStatus, configurable: true },
-          statusText: { value: 'Refresh response', configurable: true },
-          responseText: {
-            value: JSON.stringify({
-              success: refreshStatus === 200,
-              data: fresh,
-            }),
-            configurable: true,
-          },
-          readyState: { value: 4, configurable: true },
-        })
-        this.onloadend?.(new ProgressEvent('loadend'))
-      }
-    )
+    vi.spyOn(XMLHttpRequest.prototype, 'send').mockImplementation(function (
+      this: XMLHttpRequest
+    ) {
+      Object.defineProperties(this, {
+        status: { value: refreshStatus, configurable: true },
+        statusText: { value: 'Refresh response', configurable: true },
+        responseText: {
+          value: JSON.stringify({
+            success: refreshStatus === 200,
+            data: fresh,
+          }),
+          configurable: true,
+        },
+        readyState: { value: 4, configurable: true },
+      })
+      this.onloadend?.(new ProgressEvent('loadend'))
+    })
     let requests = 0
     api.defaults.adapter = async (config) => {
       requests++
@@ -440,5 +440,35 @@ it('rejects an unsuccessful setting update so callers cannot proceed as if it sa
   ])
   expect(success).not.toHaveBeenCalled()
   unmount()
+  client.clear()
+})
+
+it('keeps a query that handles its own 500 on the current page', async () => {
+  const navigate = vi.fn()
+  const client = createAppQueryClient(navigate)
+  const notify = vi.spyOn(toast, 'error').mockReturnValue('error')
+  const error = Object.assign(new Error('Internal server error'), {
+    status: 500,
+  })
+  const fail = () => Promise.reject(error)
+  await expect(
+    client.fetchQuery({
+      queryKey: ['statement-check'],
+      queryFn: fail,
+      retry: false,
+      meta: { errorToast: false, redirectOnInternalServerError: false },
+    })
+  ).rejects.toBe(error)
+  expect(notify).not.toHaveBeenCalled()
+  expect(navigate).not.toHaveBeenCalled()
+
+  await expect(
+    client.fetchQuery({
+      queryKey: ['other-query'],
+      queryFn: fail,
+      retry: false,
+    })
+  ).rejects.toBe(error)
+  expect(navigate).toHaveBeenCalledOnce()
   client.clear()
 })

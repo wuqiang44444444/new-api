@@ -39,17 +39,16 @@ import { cn, getPageNumbers } from '@/lib/utils'
 type DataTablePaginationProps<TData> = {
   table: Table<TData>
   compact?: boolean
+  pageSizes?: readonly number[]
+  showPageCount?: boolean
 }
 
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50, 100] as const
-const PAGE_SIZE_SELECT_ITEMS = PAGE_SIZE_OPTIONS.map((pageSize) => ({
-  value: `${pageSize}`,
-  label: pageSize,
-}))
-
 export function DataTablePagination<TData>({
   table,
   compact = false,
+  pageSizes = PAGE_SIZE_OPTIONS,
+  showPageCount = false,
 }: DataTablePaginationProps<TData>) {
   const { t } = useTranslation()
   const pagination = table.getState().pagination
@@ -108,7 +107,12 @@ export function DataTablePagination<TData>({
       )}
       style={{ overflowClipMargin: 1 }}
     >
-      <div className='flex min-w-0 shrink-0 items-center gap-2 @xl/pagination:gap-3'>
+      <div
+        className={cn(
+          'flex min-w-0 items-center gap-2 @xl/pagination:gap-3',
+          showPageCount ? 'flex-wrap justify-end' : 'shrink-0'
+        )}
+      >
         <div className='flex shrink-0 items-baseline gap-1.5 text-xs font-medium whitespace-nowrap sm:text-sm'>
           <span className='text-muted-foreground/80'>{t('Total:')}</span>
           <span className='text-foreground tabular-nums'>
@@ -117,22 +121,33 @@ export function DataTablePagination<TData>({
         </div>
 
         <div className='flex shrink-0 items-center gap-1.5 @lg/pagination:gap-2'>
-          <p className='text-muted-foreground/80 hidden text-sm font-medium whitespace-nowrap @2xl/pagination:block'>
+          <span
+            className={cn(
+              'text-muted-foreground/80 text-xs font-medium whitespace-nowrap sm:text-sm',
+              !showPageCount && 'hidden @2xl/pagination:block'
+            )}
+          >
             {t('Rows per page')}
-          </p>
+          </span>
           <Select
-            items={PAGE_SIZE_SELECT_ITEMS}
+            items={pageSizes.map((size) => ({
+              value: String(size),
+              label: size,
+            }))}
             value={`${pageSize}`}
             onValueChange={(value) => {
               table.setPageSize(Number(value))
             }}
           >
-            <SelectTrigger className='text-foreground h-8 w-[64px] font-medium tabular-nums sm:w-[70px]'>
+            <SelectTrigger
+              aria-label={t('Rows per page')}
+              className='text-foreground h-8 w-[64px] font-medium tabular-nums sm:w-[70px]'
+            >
               <SelectValue placeholder={pageSize} />
             </SelectTrigger>
             <SelectContent side='top' alignItemWithTrigger={false}>
               <SelectGroup>
-                {PAGE_SIZE_OPTIONS.map((pageSize) => (
+                {pageSizes.map((pageSize) => (
                   <SelectItem key={pageSize} value={`${pageSize}`}>
                     {pageSize}
                   </SelectItem>
@@ -142,6 +157,17 @@ export function DataTablePagination<TData>({
           </Select>
         </div>
 
+        {showPageCount && (
+          <span
+            className='text-muted-foreground text-xs whitespace-nowrap'
+            aria-live='polite'
+          >
+            {t('Page {{page}} of {{total}}', {
+              page: currentPage,
+              total: Math.max(1, totalPages),
+            })}
+          </span>
+        )}
         <div className='flex min-w-0 shrink-0 items-center gap-1 @lg/pagination:gap-1.5 @xl/pagination:gap-2'>
           <Button
             variant='outline'
@@ -177,11 +203,10 @@ export function DataTablePagination<TData>({
                       ? 'font-semibold'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
-                  onClick={() => table.setPageIndex((pageNumber as number) - 1)}
+                  aria-current={currentPage === pageNumber ? 'page' : undefined}
+                  aria-label={t('Go to page {{page}}', { page: pageNumber })}
+                  onClick={() => table.setPageIndex(Number(pageNumber) - 1)}
                 >
-                  <span className='sr-only'>
-                    {t('Go to page {{page}}', { page: pageNumber })}
-                  </span>
                   {pageNumber}
                 </Button>
               )}

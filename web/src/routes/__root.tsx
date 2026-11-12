@@ -100,7 +100,10 @@ function RootComponent() {
       {import.meta.env.MODE === 'development' && (
         <>
           <ReactQueryDevtools buttonPosition='bottom-left' />
-          <TanStackRouterDevtools position='bottom-right' />
+          {/* Keep the padding added by the router panel outside document flow. */}
+          <div className='contents [&>div]:contents'>
+            <TanStackRouterDevtools position='bottom-right' />
+          </div>
         </>
       )}
     </ThemeCustomizationProvider>
