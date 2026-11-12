@@ -54,7 +54,7 @@ operations: []
 - 终态失败后记录公开错误码，并停止轮询。
 - 图片 `unknown` 时保存已有结果并联系管理员，不自动重发或认定已退款。
 - 图片签名结果过期时重新 GET 任务取新 URL；`unavailable` 可稍后重查，`deleted` 不能靠重查恢复。
-- 视频 `succeeded` 但缺少 `usage` 不代表零费用，不要重新生成来补齐用量。
+- ModelArk 视频任务单查和列表都返回完整的 `usage`。任务 `succeeded` 时，计量值为 `0` 仍可能表示用量尚未确认；以最终账单为准，不要重新生成来补齐用量。
 - Seedance 与 H3 视频 `succeeded` 后仍需检查 `content.delivery_status`：`preparing` 时继续有界查询，
   `ready` 时下载，`unavailable` 时保留 ID 核查交付；不要因转存失败重新生成或假定退款。
 - 本站托管视频签名 URL 每次签发有效 24 小时，下载不附平台 Key；对象仍保留且授权有效时查询原任务

@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-11-09
+last-reviewed: 2026-11-12
 ---
 
 # API Key 用量账单架构
@@ -13,7 +13,7 @@ last-reviewed: 2026-11-09
 账单是用量与费用结算记录，不是税务发票或复式记账系统。本文不设计期初/期末余额、逐笔充值勾稽、跨期冲销或历史价格重算。
 
 管理员客户账单与上游对账两个 Tab、上游月度折扣与审计，以及请求级计费快照的边界见
-[客户与上游对账架构](客户与上游对账架构.md)；两者共享前端 `billing-reconciliation` 模块与只读查询入口，
+[客户与上游对账架构](账单计费-客户与上游对账架构.md)；两者共享前端 `billing-reconciliation` 模块与只读查询入口，
 但不共享金额汇总对象。
 
 ## 2. 当前实现状态
@@ -34,7 +34,8 @@ last-reviewed: 2026-11-09
 - 用量日志下钻；
 - SQLite、MySQL/PostgreSQL 使用 GORM 聚合的实现，以及 ClickHouse SQL 兼容测试。
 
-该功能没有新增数据库结构，也没有修改预扣、结算、退款或日志写入主链路。
+当前控制台的自然月账单使用正式月版本或[已发布日报](账单计费-报表日汇总架构.md)。旧自助接口
+继续提供原结算日志直读合同。
 
 ## 3. 架构决策
 
@@ -63,7 +64,8 @@ model/billing_statement_breakdown.go
 
 ### 3.2 结算日志是账单事实
 
-账单直接聚合 `logs` 中的消费和退款记录，不使用当前价格重新计算历史费用，也不以 `quota_data` 小时缓存为权威。
+消费与退款日志保存已入账事实。旧自助接口直接聚合日志，当前控制台通过日报或正式月版本读取投影。
+历史费用沿用入账时的事实，`quota_data` 服务于 Dashboard。
 
 客户账单统一排除原生渠道测试的完整标记记录（消费类型、`token_id=0`、`token_name=模型测试`、
 `content=模型测试`），因为测试计算 quota 但没有扣客户资金。真实游乐场同样可能使用 `token_id=0`，
@@ -83,10 +85,10 @@ model/billing_statement_breakdown.go
 flowchart LR
     User[登录用户]
     Page["/billing"]
-    API["GET /api/billing/self"]
+    API["GET /api/billing/statement/self"]
     Controller[Billing Controller]
     Query[Billing Statement Query]
-    Logs[(消费与退款日志)]
+    Logs[(正式月版本或已发布日报)]
     UserModel[(用户余额与累计消费)]
     Usage["/usage-logs/common"]
 
@@ -195,7 +197,7 @@ stream_ratio = stream_requests / requests
 虚高值当已核实值；余额等正常功能不受影响。主库与日志分库或 ClickHouse 拓扑不执行校正，累计展示
 保持不可用。生产部署验收未完成前不宣称线上累计金额已修复（路线图跟进）。
 
-## 6. 接口合同
+## 6. 旧自助接口合同
 
 ```text
 GET /api/billing/self
@@ -224,31 +226,15 @@ Controller 只使用认证上下文中的用户 ID，不接受任意 `user_id`�
 
 额度字段返回原始 quota，由前端按当前站点货币和倍率配置格式化。
 
-`/api/billing/self` 是正式金额与基础 Token 的权威来源；`/api/billing/self/breakdown` 只提供缓存、Context、动态计费和数据质量等可选解释。breakdown 中 `data_quality.unavailable_requests > 0` 表示历史元数据无法可靠解析，前端不得将其显示为零用量。
+在这组旧自助接口内，`/api/billing/self` 提供金额与基础 Token；`/api/billing/self/breakdown` 只提供缓存、Context、动态计费和数据质量等可选解释。breakdown 中 `data_quality.unavailable_requests > 0` 表示历史元数据无法可靠解析，前端不得将其显示为零用量。
 
 ## 7. 前端职责
 
-前端使用 React Query，以周期作为查询键：
-
-```text
-['billing-statement', start, end]
-['billing-statement-breakdown', start, end]
-```
-
-当前页面一次获取周期内全部明细，API Key 和模型筛选在本地完成。前端可以：
-
-- 切换本周、上周、近 7 天、近 30 天和自定义周期；
-- 展示明细、按模型汇总或按 API Key汇总；
-- 导出当前可见聚合行；
-- 只将与 statement 的 `token_id + model_name` 及请求数一致、且数据质量可用的 breakdown 行纳入构成汇总；
-- 携带周期、API Key名称和模型跳转到用量日志。
-
-前端不得：
-
-- 用当前价格重算 quota；
-- 从展示金额反推或修改余额；
-- 把账单汇总当作单次请求明细；
-- 向普通用户显示渠道、上游凭证或管理员审计字段。
+当前 `/billing` 以北京时间自然月查询 `/api/billing/statement/self`。未确认账期使用发布日
+版本集合，明细与异步导出沿用该集合。已确认账期通过月状态、版本明细和文件入口读取正式版本。
+账单按 API Key 与客户模型下钻，费用明细可展开逐笔入账事件。当前余额独立读取用户数据。
+查询、筛选与展示均保留用户身份和服务端金额口径。具体交互见
+[客户与上游对账架构](账单计费-客户与上游对账架构.md#8-前端边界)。
 
 价格展示投影与单笔解释展示遵循统一规则：明确的 `image-generation` 入口且图片输入独立计价时，
 基础输入单价显示“文字输入”，其余为图片输入、图片输出、文本缓存输入、图片缓存输入；通用入口
@@ -259,7 +245,7 @@ $0.01 的正价显示 `<$0.01`，并在卡片、列表与结构化价格表提�
 金额作为完整单元展示，不在数字内部断行。管理员显式保存的价格与表达式优先于内置默认投影；历史
 账单金额只来自冻结事实，改价后保持不变。
 
-## 8. 一致性、保留与失败边界
+## 8. 旧自助接口的一致性、保留与失败边界
 
 - 账单读取已写入日志的最终事实，不提供读写事务快照或月结封账。
 - `LogConsumeEnabled` 关闭或日志被清理后，历史账单可能不完整。
@@ -304,6 +290,6 @@ ClickHouse 日志库使用同一口径，并由独立合同测试验证生成 SQ
 
 ## 12. 相关文档
 
-- [客户与上游对账架构](客户与上游对账架构.md)
+- [客户与上游对账架构](账单计费-客户与上游对账架构.md)
 - [API Key 用量账单使用指南](../30-engineering/API-Key用量账单使用指南.md)
 - [01 计费与分组运维手册](../40-operations/01-计费与分组运维手册.md)

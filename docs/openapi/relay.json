@@ -8075,7 +8075,8 @@
           "model",
           "status",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "usage"
         ],
         "properties": {
           "id": {
@@ -8147,25 +8148,86 @@
           },
           "usage": {
             "type": "object",
+            "required": [
+              "total_seconds",
+              "input_seconds",
+              "output_seconds",
+              "input_audio_seconds",
+              "input_image_count",
+              "prompt_tokens",
+              "completion_tokens",
+              "total_tokens",
+              "tool_usage"
+            ],
             "properties": {
+              "total_seconds": {
+                "type": "number",
+                "minimum": 0,
+                "description": "已确认的输入视频与输出视频总秒数，音频单列。"
+              },
+              "input_seconds": {
+                "type": "number",
+                "minimum": 0,
+                "description": "已确认的输入视频秒数。"
+              },
+              "output_seconds": {
+                "type": "number",
+                "minimum": 0,
+                "description": "已确认的生成视频秒数，与顶层 duration 的时长语义独立。"
+              },
+              "input_audio_seconds": {
+                "type": "number",
+                "minimum": 0,
+                "description": "已确认的输入音频秒数。"
+              },
+              "input_image_count": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "已确认的输入图片张数。"
+              },
+              "prompt_tokens": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "来源明确的输入 Token 数。"
+              },
               "completion_tokens": {
                 "type": "integer",
-                "description": "可选完成用量；当前零值省略，不能把字段缺失补零作为计费依据。"
+                "minimum": 0,
+                "description": "完成 Token 数。"
               },
               "total_tokens": {
                 "type": "integer",
-                "description": "可选总用量；当前零值省略。"
+                "minimum": 0,
+                "description": "总 Token 数，沿用标准视频 Token 归一语义。"
               },
               "tool_usage": {
                 "type": "object",
+                "required": [
+                  "web_search"
+                ],
                 "properties": {
                   "web_search": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "已确认的搜索调用次数。"
                   }
                 }
               }
             },
-            "description": "可选用量投影，当前零值字段会省略，usage 也可能为空对象；缺失不能区分已确认零用量与尚未报告，不代表免费或结算完成。"
+            "description": "任务单查与列表固定返回完整用量字段。0 可以表示已确认的零或尚无可展示数据，不能用来判断免费或结算完成。",
+            "example": {
+              "total_seconds": 4,
+              "input_seconds": 0,
+              "output_seconds": 4,
+              "input_audio_seconds": 0,
+              "input_image_count": 0,
+              "prompt_tokens": 0,
+              "completion_tokens": 0,
+              "total_tokens": 0,
+              "tool_usage": {
+                "web_search": 0
+              }
+            }
           },
           "error": {
             "$ref": "#/components/schemas/VideoTaskError"

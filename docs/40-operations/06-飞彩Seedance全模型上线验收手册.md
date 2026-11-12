@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-10-21
+last-reviewed: 2026-11-12
 ---
 
 # 06 飞彩 Seedance 全模型上线验收手册
@@ -78,7 +78,7 @@ Provider 模型。当前渠道只使用代码协议 `feicai_videos_v1` 和无 `-
 
 - 创建响应顶层 `id` 是唯一上游任务身份；不使用创建或查询响应中的 `task_id` fallback。
 - 主轮询确认小写 `queued/processing/completed/failed` 的完整状态链。
-- 人为制造发送后断连、无效 JSON、缺少 id 或未登记非 2xx，确认进入 unknown、不重发、不换渠道、不退款。
+- 人为制造发送后断连、无效 JSON、缺少 id 或未登记非 2xx，确认进入 unknown，发送计数为一且占款先保留。到达资金保障期限仍未转移的占款自动释放，不伪造 Provider 终态。
 - 当前没有可用的 Provider 任务列表恢复源；unknown 只按冻结事实人工核实，不建立自动 CAS 恢复。
 - 当前协议的任何 terminal rejection 必须独立验证精确 HTTP status 与 error.code；不能沿用历史证据。
 

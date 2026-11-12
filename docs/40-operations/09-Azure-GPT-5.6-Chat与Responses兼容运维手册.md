@@ -1,14 +1,15 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-14
+last-reviewed: 2026-11-12
 ---
 
 # 09 Azure GPT-5.6 Chat 与 Responses 兼容运维手册
 
-## 1. 问题
+## 1. 适用范围与故障信号
 
-2026-08-05 起，真实用户通过 NEWAPI 原生入口请求：
+本手册用于 Azure 渠道的 Chat 请求携带推理等级与函数工具，且上游返回 HTTP 400、要求使用
+Responses 的排查。用等价测试请求复现：
 
 ```text
 POST /v1/chat/completions
@@ -17,10 +18,7 @@ reasoning_effort = <推理等级>
 tools = <function tools>
 ```
 
-当请求选中 Azure 渠道 `#14` 时，上游返回 HTTP 400，并明确要求改用 `/v1/responses`。同一渠道不带
-`reasoning_effort` 的普通模型测试可以成功，因此该现象不表示渠道整体不可用，也不是通用网络故障。
-
-本问题属于 NEWAPI 原生 Chat/Responses 转发范围，不属于 Link 服务合同。
+记录实际渠道、上游部署、API Version 和脱敏错误码。用相同参数复测，普通渠道探针无法覆盖推理与工具组合。
 
 ## 2. 原因
 
@@ -42,7 +40,7 @@ Responses 协议中的推理等级不是 Chat 顶层字段，而是：
 
 因此，`reasoning_effort` 并非完全不受支持；错误来自所选端点和参数组合不匹配。
 
-### 2.2 为什么只在 Azure 渠道出现
+### 2.2 对照不同渠道
 
 不同 Provider 对 Chat 与 Responses 的能力边界并不相同。其他渠道可能接受 Chat 请求、在上游内部转换，
 或者没有命中完全相同的模型与参数组合。Azure 渠道对该组合进行了严格校验，所以只有它返回了明确的
@@ -51,14 +49,10 @@ Responses 协议中的推理等级不是 Chat 顶层字段，而是：
 普通渠道测试未携带与真实请求相同的 `reasoning_effort + function tools`，测试成功不能证明这个组合在
 Chat 端点可用。
 
-### 2.3 是否能判定为 Azure 在 2026-08-05 改动
+### 2.3 核对近期变更
 
-当前仓库在该日期前后没有发现能够解释此行为的相关转发代码变化。如果线上同期也没有升级版本、修改
-Azure API Version、模型部署映射或渠道配置，可以排除本地代码在当日改变行为。
-
-但是，仅凭错误首次出现时间不能证明 Azure 当日改变了规则。现有日志同样符合“2026-08-05 首次出现
-完全匹配的真实请求”的情况。只有找到该日期之前相同模型、端点、部署、API Version、
-`reasoning_effort` 和 tools 请求成功的记录，才能进一步支持上游行为发生变化的判断。
+如需判断变更来源，对照故障前后网关版本、渠道配置、API Version、模型部署映射与请求参数。
+只有同一组合的前后结果可用于判断端点行为变化。
 
 ## 3. 解决方案
 
@@ -84,20 +78,20 @@ Azure API Version、模型部署映射或渠道配置，可以排除本地代码
    {
      "enabled": true,
      "all_channels": false,
-     "channel_ids": [14],
+     "channel_ids": [123],
      "model_patterns": ["^(?:gpt-5\\.5|gpt-5\\.6-(?:sol|terra|luna))$"]
    }
    ```
 
-   "channel_ids": 渠道编号列表
+   将示例渠道 ID 和模型表达式替换为已复现问题的范围。
 
-3. 确认渠道 `#14` 自身的请求体透传也处于关闭状态：
+3. 确认目标渠道自身的请求体透传也处于关闭状态：
 
    ```text
    pass_through_body_enabled = false
    ```
 
-配置生效后，客户端仍可调用 `/v1/chat/completions`；选中渠道 `#14` 且模型精确匹配
+配置生效后，客户端仍可调用 `/v1/chat/completions`；选中目标渠道且模型精确匹配
 `gpt-5.6-sol` 时，网关会将请求转换为 Responses 协议发送给上游，再把响应转换回 Chat Completions
 格式。全局或渠道级任一请求透传开关开启，都会绕过该兼容转换。
 
@@ -106,7 +100,7 @@ Azure API Version、模型部署映射或渠道配置，可以排除本地代码
 
 ### 3.2 上线验证
 
-先仅对渠道 `#14` 和 `gpt-5.6-sol` 灰度，并使用与故障请求相同的参数形状验证：
+先仅对目标渠道和 `gpt-5.6-sol` 灰度，并使用与故障请求相同的参数形状验证：
 
 - 非流式请求能够返回正常 Chat Completions 响应；
 - 流式请求可以正常结束；
@@ -114,7 +108,7 @@ Azure API Version、模型部署映射或渠道配置，可以排除本地代码
 - 上游实际请求路径为 Responses，而客户端入口仍为 Chat Completions；
 - usage、计费和错误日志符合预期。
 
-如果转换异常，先禁用该 Policy；如果还有其他确认支持该请求组合的渠道，可临时从渠道 `#14` 移除
+如果转换异常，先禁用该 Policy；如果还有其他确认支持该请求组合的渠道，可临时从目标渠道 移除
 `gpt-5.6-sol` 能力，避免请求再次选中该渠道。
 
 ### 3.3 不推荐的长期方案
@@ -123,9 +117,9 @@ Azure API Version、模型部署映射或渠道配置，可以排除本地代码
 - 依赖旧 Azure API Version：不能保证支持 GPT-5.6，也不能消除端点合同差异。
 - 对所有模型、所有渠道全量启用转换：扩大兼容转换影响面，不适合作为本次问题的初始处置。
 
-## 4. Chat 参数兼容现状（rc.36 同步后）
+## 4. 排查 Chat 参数兼容
 
-接取上游 rc.36 后，OpenAI/Azure Chat 参数兼容由 adapter 能力表（`GetOpenAIChatCapabilities`）
+OpenAI/Azure Chat 参数兼容由 adapter 能力表（`GetOpenAIChatCapabilities`）
 驱动，按**映射后的上游模型名**判定，与客户别名无关：
 
 - 已登记模型（含 GPT-5 系列、GPT-6 Astra 及日期快照）自动启用 `max_completion_tokens`、
@@ -144,8 +138,7 @@ Azure API Version、模型部署映射或渠道配置，可以排除本地代码
 | 需要裸名或不透明部署名的兼容 | 升级不能解决识别缺口；供应商支持 Responses 时先显式选择 Responses 端点，或关闭透传后使用 Chat→Responses 策略 |
 
 测试预算默认 16 token 含推理预算时可能不足以产生可见输出；出现空输出时先核对结束原因，调高
-测试预算不属于参数兼容修复。原 2026-08-05 的 `reasoning_effort + tools` 端点限制与 §3 的
-Chat→Responses 策略配置继续有效。
+需要复现工具调用时使用第 3 节的正式请求与适用预算。
 
 ## 5. 参考
 

@@ -1,12 +1,12 @@
 ---
-status: accepted
+status: current
 owner: Dev Team
-last-reviewed: 2026-08-25
+last-reviewed: 2026-11-12
 ---
 
 # Seedance 模型接入设计索引
 
-本目录按 Provider 收纳 Seedance 模型接入目标架构。所有线路使用 `ChannelTypeSeedanceLink` 和
+本目录按 Provider 收纳 Seedance 模型接入架构和已接受的候选设计。所有线路使用 `ChannelTypeSeedanceLink` 和
 ModelArk V3 北向；各 Provider 可以使用不同代码化上游协议、路径、鉴权、任务信封和素材方式。
 不同线路必须使用不同客户模型名，每个客户模型只对应一个已启用 Seedance Channel。
 
@@ -24,14 +24,17 @@ Provider 专题只记录自身客户价格、第三方报价和履约边界，�
 | --- | --- | --- |
 | 火山官方 | [模型与素材库对接设计](火山官方/火山官方模型与素材库对接设计.md) | `modelark_v3_volcengine` + `volcengine_assets_action_v2024_01_01`；官方模型、价格与 Action 素材合同已代码化，账号开通和生产账单需逐模型验收 |
 | BytePlus 官方 | [模型与素材库对接设计](BytePlus官方/BytePlus官方模型与素材库对接设计.md) | `modelark_v3_byteplus` + `byteplus_assets_action_v2024_01_01`；海外 `dreamina-*` 身份与国内 `doubao-*` 隔离，目标账号验收未完成 |
-| 移动云 | [模型与素材库对接设计](移动云/移动云模型与素材库对接设计.md) | 目标 `modelark_v3_cmcc` + `cmcc_aicc_assets_v2`；Standard 的 raw REST 已实测文本、480p/720p/1080p 与 `reference_video`，代码、素材和账单验收未完成；Fast、Mini、条件 2.5 仍为无 Provider 证据候选 |
-| FunCloud | [模型与素材库对接设计](FunCloud/FunCloud模型与素材库对接设计.md) | 四个独立客户模型；同一连接可在一个 Channel 配置多个映射，Standard/Fast/Mini 可选虚拟素材，2.5 无素材；真实模型、素材和账单仍需生产验收 |
+| 移动云 | [模型与素材库对接设计](移动云/移动云模型与素材库对接设计.md) | `modelark_v3_cmcc` + `cmcc_aicc_assets_v2` 已登记；Standard 的 raw REST 已探测文本、480p/720p/1080p 与 `reference_video`，素材与真实账单仍需验收；Fast、Mini、条件 2.5 仍为无 Provider 证据候选 |
+| FunCloud | [模型与素材库对接设计](FunCloud/FunCloud模型与素材库对接设计.md) | 新配置使用 `funcloud_modelark_v3`。四模型可配对远端素材、本站托管图片或 `none`。旧 V2 只服务冻结任务，V3 真实素材和账单需逐线验收 |
 | 墨行（含 TokenSave 海外转售） | [模型与素材库对接设计](墨行/墨行模型与素材库对接设计.md) | 五个客户模型、三个视频协议和三种素材协议；Fast 有真实终态 usage 与账单一致证据，Mini/2.5 未发布 |
-| 飞彩 | [模型与素材库对接设计](飞彩/飞彩模型与素材库对接设计.md) | 专用 `feicai_videos_v1`；十个固定分辨率模型，`asset_upstream_protocol=none`，不提供素材 CRUD |
+| 飞彩 | [模型与素材库对接设计](飞彩/飞彩模型与素材库对接设计.md) | 专用 `feicai_videos_v1`；十个代码登记模型，`asset_upstream_protocol=none`，不提供素材 CRUD |
 
-Seedance 各线路已于 2026-08-24 手动完成生产验收，验收口径见
-[全渠道上线验收手册](../../40-operations/05-全渠道上线验收手册.md)。架构文档只保留稳定边界
-和证据结论，不承载逐次调用流水。
+Synlink、Vidu、Nexhina 与 Ark 反代的协议、媒体和删除边界见
+[Seedance 专用渠道与 Link 架构](../Seedance专用渠道与Link架构.md#5-代码化南向协议)。
+管理可选配对统一见[渠道配置清单](../../40-operations/07-Seedance渠道配置清单.md)。
+
+各线路按当前账号、模型映射、代码制品和账期分别验收。真实创建、用量、账单与灰度的操作顺序见
+[全渠道上线验收手册](../../40-operations/05-全渠道上线验收手册.md)。
 
 `status: accepted` 表示设计边界已确定，不表示代码、渠道或生产分组已开放。配置权威是客户模型、
 Channel、`model_mapping`、价格和代码协议；是否兼容与是否上线由技术人员线下验证后通知管理员。

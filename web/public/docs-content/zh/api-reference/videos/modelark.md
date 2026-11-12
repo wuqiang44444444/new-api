@@ -1,7 +1,7 @@
 ---
 page-id: videos-modelark
 kind: api-reference
-last-verified: 2026-10-21
+last-verified: 2026-11-12
 operations:
   - listModelArkVideoModels
   - retrieveModel
@@ -421,8 +421,15 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
   "generate_audio": false,
   "service_tier": "default",
   "usage": {
+    "total_seconds": 5,
+    "input_seconds": 0,
+    "output_seconds": 5,
+    "input_audio_seconds": 0,
+    "input_image_count": 1,
+    "prompt_tokens": 0,
     "completion_tokens": 100,
-    "total_tokens": 100
+    "total_tokens": 100,
+    "tool_usage": {"web_search": 0}
   },
   "created_at": 1760000000,
   "updated_at": 1760000120
@@ -451,12 +458,24 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
 | `safety_identifier`           | string  | 创建时的公开安全标识；存在时返回                                     |
 | `priority`                    | integer | 创建时的优先级；保留显式 `0`                                         |
 | `service_tier`                | string  | 服务档位；未指定时通常为 `default`                                   |
-| `usage.completion_tokens`     | integer | 可选完成用量；当前响应省略零值，字段缺失不能区分零用量与未报告       |
-| `usage.total_tokens`          | integer | 可选总用量；当前响应省略零值，不能用字段缺失推算费用                 |
-| `usage.tool_usage.web_search` | integer | 可选工具用量                                                         |
+| `usage.total_seconds`        | number  | 已确认的输入与输出视频秒数之和，或已确认同口径的上游总秒数。音频单列 |
+| `usage.input_seconds`        | number  | 已确认的输入视频秒数 |
+| `usage.output_seconds`       | number  | 已确认的输出视频秒数 |
+| `usage.input_audio_seconds`  | number  | 已确认的输入音频秒数 |
+| `usage.input_image_count`    | integer | 已确认的输入图片数 |
+| `usage.prompt_tokens`        | integer | 来源明确的输入 Token 数 |
+| `usage.completion_tokens`    | integer | 归一后的完成 Token 数 |
+| `usage.total_tokens`         | integer | 归一后的总 Token 数 |
+| `usage.tool_usage.web_search` | integer | 已确认的搜索调用次数 |
 | `error.code`                  | string  | 失败、取消或过期时的公开错误码                                       |
 | `error.message`               | string  | 脱敏错误说明                                                         |
 | `created_at` / `updated_at`   | integer | Unix 秒时间戳                                                        |
+
+单查与列表的每个任务都返回上述 `usage` 字段。秒数允许小数。字段值为 `0` 可能表示已确认为零，
+也可能表示用量尚未确认。
+
+The single-task response and each task in the list include the same usage fields. Seconds may be
+fractional. A zero may represent confirmed zero or unavailable usage. Use the bill for final charges.
 
 终态任务的公开错误码包括 `generation_failed`、`provider_contract_failure`、`cancelled` 和 `expired`。
 单项查询返回平台已保存的状态和当前交付结果，由平台后台更新。客户 GET 不会触发上游状态查询，
@@ -493,6 +512,17 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks?page_num=1&page_size=2
       "model": "customer-seedance-model",
       "status": "running",
       "service_tier": "default",
+      "usage": {
+        "total_seconds": 0,
+        "input_seconds": 0,
+        "output_seconds": 0,
+        "input_audio_seconds": 0,
+        "input_image_count": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "tool_usage": {"web_search": 0}
+      },
       "created_at": 1760000000,
       "updated_at": 1760000030
     }
@@ -500,7 +530,8 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks?page_num=1&page_size=2
 }
 ```
 
-`total` 是过滤后的总数，`items` 是当前页的任务对象数组。
+`total` 是过滤后的总数，`items` 是当前页的任务对象数组。运行中任务也返回完整的 `usage`；
+上例中的零值不表示用量已确认或结算已完成。
 
 ## 删除或取消任务
 
@@ -631,9 +662,8 @@ contract. The response is scoped to the authenticated user and application; amou
 
 任务成功建立后，费用按创建时确定的模型、请求参数和价格规则处理。成功视频可以先交付，结算随后完成：
 
-- 按实际用量计费时，缺少 `usage` 不代表零费用，预扣可能保留到用量补齐后再结算；
-- 当前响应会省略零值用量字段，`usage` 也可能为空对象；字段缺失不能区分已确认零用量与尚未报告，
-  不得补零作为计费依据，也不能仅凭 `usage` 是否存在判断结算完成；
+- 按实际用量计费时，尚未确认所需用量可能继续保留预扣，直到用量补齐后再结算。
+  `usage` 用于展示，零值和字段是否存在均不能作为结算凭证。
 - 最终费用可能高于或低于预扣，差额按实际规则补扣或退还；不要用预扣值当最终账单；
 - 成功后的费用核实不要求重新生成视频，查询也不会重新触发生成。
 

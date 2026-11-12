@@ -1,15 +1,15 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-14
+last-reviewed: 2026-11-12
 ---
 
 # 07 Seedance 渠道配置清单
 
 ## 1. 管理原则
 
-所有 Seedance 官方和第三方模型均使用 `ChannelTypeSeedanceLink`。不同 Provider、协议、账号、地区或
-价格必须使用不同客户模型名和不同 Channel。一个客户模型只启用一个 Channel；Priority、Weight、
+所有 Seedance 官方和第三方模型均使用 `ChannelTypeSeedanceLink`。不同 Provider、协议、账号或地区使用独立 Channel 和客户模型名；同一连接可配置多个独立定价的客户模型。
+一个客户模型只能由一个已启用的标准视频 Channel 履约；Priority、Weight、
 Affinity、随机选渠、失败重选和 fallback 均不参与。
 
 管理员只选择代码协议、填写单 Key、Base URL、Models、Model Mapping、Group 和价格，不填写请求路径
@@ -21,14 +21,18 @@ Affinity、随机选渠、失败重选和 fallback 均不参与。
 | --- | --- | --- |
 | `modelark_v3_volcengine` | 火山方舟国内官方 | 官方 `/api/v3/contents/generations/tasks` |
 | `modelark_v3_byteplus` | BytePlus 官方 | 官方 `/api/v3/contents/generations/tasks` |
+| `modelark_v3_cmcc` | 移动云 AICC | `/api/v3/contents/generations/tasks` 与单项查询 |
+| `nexhina_modelark_v3` | Nexhina Seedance Mini | `/seedance/api/v3/contents/generations/tasks` 与单项查询 |
 | `tokensave_media_task_v1` | TokenSave 2.0 | `/v1/media/generations`、`/v1/media/tasks/{task_id}` |
 | `moxing_modelark_media_v1` | 墨行 2.0、Fast、Mini、2.5 | `/v1/media/generations`、`/v1/media/tasks/{task_id}` |
 | `ark_media_v1` | Ark 反代 | `/v1/ark/media/generations`、`/v1/ark/media/tasks/{task_id}` |
 | `feicai_videos_v1` | 飞彩；仅 URL，不支持素材库 | `/v1/videos`、`/v1/videos/{task_id}` |
 | `funcloud_modelark_v3` | FunCloud Standard/Fast/Mini/2.5 | 共用 `/api/v3/contents/generations/tasks` |
 | `synlink_video_v1` | Synlink 海外火山中转 | `/v1/video/generate`、`/v1/video/tasks/{task_id}` |
+| `vidu_modelark_v3` | Vidu Drama 国内与海外 | `/api/v3/contents/generations/tasks` 与单项查询 |
 
-这些路径不出现在管理员 JSON 配置中。不要把第三方协议挂回 `DoubaoVideo`，也不要让客户端调用第三方
+视频和素材的管理可选项来自 `plugins/seedance-link/plugin.js` 的 `channelConfiguration`，
+历史任务按冻结版本履约。这些路径不出现在管理员 JSON 配置中。不要把第三方协议挂回 `DoubaoVideo`，也不要让客户端调用第三方
 私有路径。
 
 墨行统一为 `moxing_modelark_media_v1` 单协议，四个精确 Provider 模型
@@ -36,7 +40,7 @@ Affinity、随机选渠、失败重选和 fallback 均不参与。
 登记于 `relaykit/dto/moxing_video_models.go` 唯一注册表。墨行未登记的新 Provider ID 会在保存和请求
 校验被拒绝；映射目标改名时由技术人员更新该登记表，通常无需改 adapter。旧 `moxing_media_task_v1` 与
 `moxing_joycreator_assets_v1` 不再接受保存或创建；存量渠道直接在同一渠道原地改协议即可，
-无需专门的素材租户迁移、盘点或默认组处理。缺省时长由 adapter 显式南向落实为 5 秒，显式 `-1`
+切换前按第 3 节的素材租户替换要求检查复用域和默认组。缺省时长由 adapter 显式南向落实为 5 秒，显式 `-1`
 原样发送并按登记预算上限估算。已创建的旧协议任务继续按创建时冻结事实查询与结算，不重发、不迁移。
 
 FunCloud 仅允许 `funcloud_modelark_v3` 新配置和新提交，四模型共用
@@ -64,14 +68,17 @@ FunCloud 仅允许 `funcloud_modelark_v3` 新配置和新提交，四模型共�
 | `tokensave_assets_v1` | `tokensave_media_task_v1` | Base URL、同一单 Key、TTL |
 | `moxing_volc_assets_v1` | `moxing_modelark_media_v1` | Base URL、同一单 Key、TTL |
 | `funcloud_material` | `funcloud_modelark_v3` | Base URL、同一单 Key、TTL；四模型均可用 |
-| `funcloud_material_hosted` | `funcloud_modelark_v3`、`synlink_video_v1` | 本站托管图片库；配对后启用平台托管素材能力 |
+| `cmcc_aicc_assets_v2` | `modelark_v3_cmcc` | 独立素材 AK/SK、TTL |
+| `nexhina_ark_assets_v1` | `nexhina_modelark_v3` | Base URL、同一单 Key、TTL |
+| `funcloud_material_hosted` | `funcloud_modelark_v3`、`synlink_video_v1`、`vidu_modelark_v3` | 本站托管普通图片，无独立素材凭据 |
 
 国内火山与 BytePlus 使用不同协议标识和账号作用域，不得互换 Host、Region 或素材 ID。使用同一墨行
 连接、`moxing_modelark_media_v1` 和 `moxing_volc_assets_v1` 的 Fast、Mini、2.5 可以配置在同一个
 Channel；不同连接或协议仍须分开。飞彩选择 `none`；FunCloud V3 四模型均可配对 `funcloud_material`。
 
-启用素材协议时，一个 Channel 就代表一个上游素材租户。需要共享素材的所有客户模型必须放在同一个
-Channel；不同租户或无法确认同租户时必须分开。首次保存会生成内部随机 identity；建立后 Channel Type
+无状态素材协议下，一个 Channel 代表一个上游素材租户，需要共享远端素材的模型应放在同一 Channel。
+本站托管图片配对线路按用户共享 `fhas_*` 引用，具体范围见
+[素材库支持矩阵](../20-architecture/Seedance模型素材库支持矩阵.md)。首次保存会生成内部随机 identity；建立后 Channel Type
 不可修改。Base URL、视频/素材协议、Project 或 Region 变化时，管理员直接在当前 Channel 编辑界面填写
 新值：页面列出精确差异，点击保存后必须勾选并确认“替换素材租户”。成功后 Channel ID 和客户模型不变，
 identity/`reuse_scope` 更新（改为 `none` 时移除）；旧素材 ID/引用可能不可用，平台不迁移、探测或删除。
@@ -84,20 +91,19 @@ AK/SK 且边界不变时，仍须确认“素材租户未变化”；平台记�
 
 ## 4. 保存与上线检查
 
-保存或启用前确认：每个客户模型名没有出现在其它已启用 Seedance Channel；只有一个 Key；需要共享素材的
+保存或启用前确认：每个客户模型名没有出现在其它已启用 Seedance 或 MiniMax 标准视频 Channel；只有一个 Key；需要共享素材的
 模型处于同一 Channel；协议及配对正确；Channel Models 逐项经管理员 mapping 解析到经技术审核的
 Provider 模型；价格和 Group 已审批。
 后台保存成功只代表配置结构合法，不代表 Provider 能力已经生产验收。
 
-上线必须逐客户模型完成真实创建、查询、删除、内容、素材和账单验证。失败或结果不明时不自动换渠；
+上线必须逐客户模型验收真实创建、查询、下载、素材和账单，并验证删除支持或明确拒绝。失败或结果不明时不自动换渠；
 管理员禁用该唯一 Channel 后，已有 Task 仍按创建时冻结的协议和连接继续处理。
 
 FunCloud 还需按[FunCloud 四模型 Token 价格](01-计费与分组运维手册.md#25-funcloud-seedance-四模型-token-价格)
 配置美元表达式和预扣上界。任何旧按秒 Standard/Fast 配置都必须在开放前替换，不得与新客户模型混用。
 
-飞彩固定使用 VIP 五模型与性价比五模型两个 Channel（渠道 66、71）。飞彩协议当前只提供完成状态和
-产物，没有已接通的实测 Token 计量合同；**两个飞彩渠道现已停用**，等待可信实测 Token 计费接通并
-补齐真实账单证据后再逐模型灰度，不得把按秒/按次旧表达式强行切换为实测 Token 收费。除 SD2 只接受
+飞彩可按 VIP 五模型和性价比五模型分别配置。飞彩协议当前只提供完成状态和
+产物，没有已接通的实测 Token 计量合同；需要以实测 Token 计费时，先取得可信用量与真实账单证据，再逐模型灰度，不得把按秒/按次旧表达式强行切换为实测 Token 收费。除 SD2 只接受
 `16:9`、`9:16` 外，其余九个模型接受代码登记的六种画幅；南向只发送 `ratio`。
 
 ## 5. 价格与预扣预算

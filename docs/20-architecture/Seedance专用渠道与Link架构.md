@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-10-21
+last-reviewed: 2026-11-12
 ---
 
 # Seedance 专用渠道与 Link 架构
@@ -14,8 +14,7 @@ Provider opaque 素材 ID 与视频引用的数据流专题细节由
 [Seedance 模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)负责。迁移步骤、实施
 清单和评审过程不进入架构正文。
 
-除第 9 节标明的 Channel 默认素材组验收边界外，当前代码已经实现本文描述的架构边界，包括无条件采集成功
-终态中的明确 usage/Token 数值，并按冻结计价方式决定是否参与客户结算。默认素材组的代码、公开元数据
+代码采集成功终态中已验证的用量，并按冻结计价方式决定是否参与客户结算。默认素材组的代码、公开元数据
 与本地回归已完成，真实 Provider 验收与生产灰度未完成，不得写成生产已发布。具体 Provider 是否可进入生产分组，
 仍取决于该线路的真实视频、素材、计费和灰度验收。
 
@@ -69,7 +68,7 @@ execution binding、内容 hash、Link Access Plan 或候选等价证明。
 
 ### 3.1.1 插件声明与渠道实例值
 
-`seedance-link` API v3 制品统一声明 10 种在用视频协议和 7 种远端素材协议的配置：Provider 模型、
+`seedance-link` API v3 制品统一声明现行视频协议及素材协议的配置，包括 Provider 模型、
 公开参数、素材配对、Project/Region、凭据槽位、素材操作/媒体、组策略与管理默认值。账号、连接、
 模型映射和素材配置实际值仍在 Channel 及受保护凭据表；声明不成为原生 `meta.models`、候选或 Ability。
 
@@ -175,6 +174,7 @@ modelark_v3_cmcc
 tokensave_media_task_v1
 moxing_modelark_media_v1
 ark_media_v1
+nexhina_modelark_v3
 feicai_videos_v1
 funcloud_modelark_v3
 synlink_video_v1
@@ -188,6 +188,7 @@ none
 volcengine_assets_action_v2024_01_01
 byteplus_assets_action_v2024_01_01
 ark_assets_v1
+nexhina_ark_assets_v1
 tokensave_assets_v1
 moxing_volc_assets_v1
 funcloud_material
@@ -197,6 +198,12 @@ cmcc_aicc_assets_v2
 
 精确枚举、路径和 transport profile 以 `relaykit/dto/upstream_protocol.go` 为代码权威。内部 transport
 profile 只服务 adapter 复用和任务快照，不是第二套管理员配置协议。
+
+`nexhina_modelark_v3` 与 `nexhina_ark_assets_v1` 可在同一 Seedance Channel 配对。视频适配复用
+ModelArk V3 传输，路径使用 `/seedance` 前缀。Mini 公开文本和单张参考图，HTTPS 图片地址和普通图片
+`asset://` 直接发送给 Nexhina。只有显式素材创建调用才注册素材，成片沿用本站私有 OSS 交付。
+Nexhina 视频任务按冻结协议关闭排队取消与终态删除。轮询收到 HTTP 404 或 410 时进入既有对账路径，
+保留预扣和可继续轮询的任务；后续可信结果仍由同一任务处理和结算。该规则不影响素材查询的 404 语义。
 
 `vidu_modelark_v3` 使用同一套 V3 路径适配 Vidu Drama 国内与海外站，区域由 Channel 的连接和精确
 模型映射表达，不从 URL 或模型名称推断协议。插件声明八个上游模型的时长、分辨率、媒体数量和
@@ -346,6 +353,37 @@ ModelArk V3 的消费和退款日志将南向模型放在管理员可见字段�
 `/v1/video/generations` 始终属于 NEWAPI 原生 `DoubaoVideo` 等渠道。Seedance adapter 对缺少 ModelArk
 V3 合同的调用 fail closed，不能把类型 61 当成原生 Doubao 渠道使用。
 
+### 6.1 统一任务用量投影
+
+单查和列表共用一个 ModelArk V3 任务投影，公开字段及单位以[视频任务用量设计](../10-product/ModelArk视频任务用量设计.md)
+为准。适配器根据任务冻结的南向协议和回包事实确认字段含义。上游模型名称、客户模型别名和当前渠道配置
+不参与用量解释。
+
+| 层 | 职责与事实来源 |
+| --- | --- |
+| 南向适配 | 在可信的任务观察中提取已明确语义的字段。验证数值类型、范围和单位，只把统一字段所需的数据交给宿主。 |
+| Task 持久化 | 复用已有可信媒体与 Token 事实。新增展示专用计量随现有观察原子持久化，保持字段存在性。后续观察可补齐空缺，缺失或冲突不能覆盖先前接受的有效值。 |
+| 北向查询 | 单查、列表共用 Task 投影。仅序列化响应时将未知项写成 `0`。查询读取本地已保存的任务，沿用用户与应用隔离。 |
+| 资金结算 | 依据冻结价格表达式和已接受的协议计量进行预扣、结算和退款。展示计量和公开默认值不进入计费输入。 |
+
+| 协议 | 媒体字段 | Token 与工具字段 |
+| --- | --- | --- |
+| MiniMax 官方 V2、Nexhina V2 | 输出秒、输入视频秒与图片数来自 Task 已接受的 `OfficialUsage`。音频秒和候选上游总秒由南向成功观察提取。 | 完成与总 Token 沿用现有归一结果。明确的输入 Token 从成功观察提取。 |
+| Seedance | 按已登记协议使用可确认的媒体计量，缺项在北向补零。 | 完成与总 Token 沿用现有归一结果。输入 Token 和搜索次数使用对应协议的明确字段。 |
+| MiniMax JD | 请求时长用于原有结算。实测时长缺项在北向补零。 | JD credit 留在供应商凭证中。Token 或工具用量缺项在北向补零。 |
+
+展示专用观测通过 `TaskInfo` 进入现有行锁事务，逐项合并到可选的 `Task.private_data.modelark_usage`。
+显式零参与合并，缺项保留为未报告。单查与列表只读授权范围内的已保存 Task，历史任务也沿这条路径投影。
+终态观察的补齐复用后台轮询和用量恢复。OSS 转存只负责交付。结算读取冻结表达式和原有计费事实。
+
+视频总秒的权威顺序是已确认分项之和、符合协议口径且与已确认分项一致的上游总秒、公开零值。
+冻结请求能证明没有输入视频时，输入秒数可确认为零。部分分项已知时，候选总秒至少要覆盖已确认分项，
+并落在冻结请求允许的范围内。音频单列，报价预算、请求时长和 JD credit 各保留原有用途。
+行锁内以最新接受的分项校验候选，查询也校验历史候选。Seedance 展示计数读取冻结协议定义的原始回包结构。
+中转协议可在顶层或 `data` 内报告 `usage`，同一字段同时报告且数值冲突时保留为未知。内部展示载体由宿主生成，
+上游同名键及其大小写变体会在生成前清理。
+各协议的展示字段映射见上表；生产灰度与剩余协议证据门槛见[路线图](../50-planning/路线图.md)第 39 项。
+
 ## 7. 视频创建与耐久执行
 
 ### 7.1 创建主链
@@ -443,7 +481,9 @@ Nexhina Hailuo V2 由 `minimax-link` 自 1.4.0 登记。协议支持 16:9 文生
 `processing` 归一为运行中。选择来自已保存渠道协议。自 `minimax-link` 1.6.1 起，Nexhina 查询的
 `task.model` 是上游展示字段，不用于匹配提交时的路由模型 ID，也不覆盖冻结的模型或计费事实。任务 ID 必须
 与冻结的上游 ID 一致；上游返回任务类型、模态时，仍须分别为视频生成和视频。该线路沿用 MiniMax V2
-冻结媒体计量和 OSS 交付。供应商对账读取 Nexhina 本身的结算记录。
+冻结媒体计量和 OSS 交付。供应商对账读取 Nexhina 本身的结算记录。创建回包按冻结协议分类：已验证的
+Nexhina 401 鉴权拒绝信封按明确拒绝释放占款，不落 `unknown`；含任务 ID、矛盾回包或超出读取上限的
+响应仍按 `unknown` 保留占款，保持只发送一次。
 
 `minimax-link` 自 1.6.0 起，三条协议均使用 `modelPolicy: configured`。渠道模型及其映射由管理员
 分别配置。保存、公开目录和提交按客户模型名查一次映射，有对应值则原样发送该 ID，否则使用客户模型名。

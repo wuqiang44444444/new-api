@@ -320,7 +320,7 @@ routes outside this scope retain their existing authentication and expiry rules.
 | 视频成功但 `delivery_status=preparing`      | 继续查询原任务，等待交付就绪                     |
 | 视频 `delivery_status=unavailable`          | 保留 ID 核查交付故障，不重新生成或假定退款        |
 | 本站托管视频签名 URL 到期                   | 对象仍保留且授权有效时查询原任务续签             |
-| 视频成功但没有 `usage`                     | 不代表免费，等待费用核实；不重新生成             |
+| ModelArk 视频已成功，但 `usage` 中的计量值为 `0` | 零值可能表示尚未确认用量；以最终账单为准，不重新生成 |
 | 多图、分辨率或字段返回 `400`               | 读取当前模型参数，按明确支持范围修正请求         |
 
 排障时只提供公开任务 ID、请求 ID、接口、时间和错误码，不提交 Key、完整签名 URL 或媒体原文。

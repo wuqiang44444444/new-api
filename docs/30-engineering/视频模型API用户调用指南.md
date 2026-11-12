@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-10-21
+last-reviewed: 2026-11-12
 ---
 
 # 视频模型 API 调用指南
@@ -19,7 +19,7 @@ NEWAPI 原生视频入口与 Seedance Link 入口彼此独立：
 `/v1/video/generations` 的 DoubaoVideo 会在南向调用火山 ModelArk V3，但它仍是 NEWAPI 原生北向合同。
 Seedance Link 不接管、不包装也不收紧该入口。
 
-## 2. Seedance 创建
+## 2. 创建标准视频任务
 
 先查询 `GET /v1/models/{customer_model}`，确认 `available=true` 并读取
 `api.video.creation.parameters` 与 `content_types`。下面的客户模型名与参数仅为示例，需替换为当前
@@ -84,17 +84,17 @@ Content-Type: application/json
 
 ## 3. 确定性路由
 
-每个已启用的 Seedance 客户模型只允许配置在一个 `ChannelTypeSeedanceLink` 渠道。请求链为：
+同一客户模型只能在一个已启用的 Seedance 或 MiniMax 标准视频渠道上履约。请求链如下。
 
 ```text
-Token / Group / price / Seedance Channel 模型登记
-  -> 客户模型唯一 Seedance Channel
+Token / Group / price / 标准视频模型登记
+  -> 客户模型唯一标准视频 Channel
   -> model_mapping
   -> video_upstream_protocol adapter
   -> 一次 Provider POST
 ```
 
-Seedance 不使用 Priority、Weight、Affinity、随机分发、失败重选、跨渠道重试或 fallback。创建请求发送
+标准视频不使用 Priority、Weight、Affinity、随机分发、失败重选、跨渠道重试或 fallback。创建请求发送
 后只有成功、明确失败或结果未知；结果未知时也不重发，因为重复创建会产生额外成本和对账歧义。
 
 ## 4. 查询、列表和删除
@@ -116,8 +116,12 @@ DELETE /api/v3/contents/generations/tasks/{task_id}
 结果待核实；客户端应有界轮询并保留原 ID，不能据此重新创建或认定退款。视频任务不随同账号 API Key
 共享，查询任务和访问内容入口应使用创建时的 Key；下载本站结果预签名地址无需附带 Key。
 
-成功交付与最终结算可以分开完成。当前用量响应省略零值，缺失 `usage.completion_tokens` 或空 `usage`
-不能区分已确认零用量与未报告；不得补零计算费用，最终费用以账单为准。
+成功交付与最终结算可以分开完成。标准视频单查与列表的每个任务都带固定的 `usage` 对象。
+它包含视频总秒数 `total_seconds`、输入和输出视频秒数 `input_seconds` / `output_seconds`、
+输入音频秒数 `input_audio_seconds`、输入图片数 `input_image_count`、三个 Token 计数
+`prompt_tokens` / `completion_tokens` / `total_tokens`，以及 `tool_usage.web_search`。
+所有字段都是数字，秒数允许小数。显示为 `0` 可能是确认为零，也可能是未确认，最终费用以账单为准。
+字段定义见 [ModelArk 视频任务用量设计](../10-product/ModelArk视频任务用量设计.md)。
 
 ### 4.1 视频结果交付与下载
 

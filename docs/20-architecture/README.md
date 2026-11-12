@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-06
+last-reviewed: 2026-11-12
 ---
 
 # 20-architecture — 架构索引
@@ -41,43 +41,41 @@ last-reviewed: 2026-09-06
 专题架构按范围与边界、职责与事实源、数据/控制流、接口或状态、约束与取舍组织。ADR 只写
 Context、Decision、Consequences 和 Alternatives；实施步骤、验证流水和剩余事项不进入架构正文。
 
-## 三分钟阅读路径
+## 阅读顺序
 
-1. [架构概览](架构概览.md)：系统边界、运行平面和事实所有权。
-2. [Seedance专用渠道与Link架构](Seedance专用渠道与Link架构.md)：ModelArk V3、确定性渠道、代码协议、视频任务和素材代理。
-3. [Link视频结果OSS托管交付架构](Link视频结果OSS托管交付架构.md)：视频结果本站 OSS 托管、24 小时预签名交付与公共交付状态合同。
-3. 涉及素材：先看[Seedance模型素材库支持矩阵](Seedance模型素材库支持矩阵.md)，再看[Seedance无状态素材代理架构](Seedance无状态素材代理架构.md)。
-4. 涉及模型目录 `api` 元数据：看[公开模型元数据投影架构](公开模型元数据投影架构.md)。
-5. 涉及异步或计费：看[账单计费-异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md)；动态计费再看[账单计费-计费表达式与协议探针架构](账单计费-计费表达式与协议探针架构.md)。
-6. 涉及普通图片和南向异步任务：看[图片服务与异步 Provider 适配架构](图片服务与异步Provider适配架构.md)。
-7. 涉及业务请求证据（业务范围、流式存储与权限边界）：看[音视频请求证据架构](音视频请求证据架构.md)。
-8. 涉及 Provider：进入[Seedance模型接入设计](Seedance模型接入设计/README.md)，按火山官方、BytePlus官方、移动云、FunCloud、墨行/TokenSave、飞彩选择目录。
-9. 需要“为什么”时看[架构决策索引](decisions/README.md)；需要公开文档交付、账单投影或通知时按下表定位专题。
+1. 从[架构概览](架构概览.md)了解请求路径、管理面和事实源。
+2. 涉及调用，从下表选择对应的分发、模型合同或履约方式。
+3. 涉及结算，从异步资金或表达式进入，再查账单投影与报表。
+4. 涉及部署或排障，查看证据、错误日志与通知专题，并按[运维索引](../40-operations/README.md)执行。
+5. 需要追溯取舍时查阅[架构决策索引](decisions/README.md)。
 
 ## 当前架构文档
 
-| 层次 | 文档 | 负责回答 | 主要代码事实 |
+| 专题 | 文档 | 负责回答 | 主要代码事实 |
 | --- | --- | --- | --- |
-| 运维 | [系统错误报告架构](运维-系统错误报告架构.md) | 小时快照、有界生成、原子发布与公平投递 | `model/error_report*`、`service/error_report*` |
-| 错误日志 | [运维-API错误日志架构](运维-API错误日志架构.md) | 已鉴权 4xx 统一诊断、error_events 持久化与扩展采集、查询边界 | `clienterrlog/`、`model/error_event*`、`controller/error_log*` |
 | 全局 | [架构概览](架构概览.md) | 系统组成、边界和事实源 | `router/`、`controller/`、`service/`、`model/`、`relay/` |
+| 渠道分发 | [渠道亲和架构](渠道亲和架构.md) | 显式会话规则与默认 API Key 亲和、绑定键、成功写入语义与缓存边界 | `service/channel_affinity*`、`service/default_channel_affinity*` |
+| 合同定价 | [账单计费-用户模型合同定价架构](账单计费-用户模型合同定价架构.md) | 模型授权、渠道组、缓存围栏和冻结计费事实 | `customer_contract` model/service/middleware |
+| 公开元数据 | [公开模型元数据投影架构](公开模型元数据投影架构.md) | 模型目录 `api` 投影的入口、一致性与脱敏规则 | `channel_seedance_public_catalog.go`、`public_image_model_api.go`、`pkg/publicmodel/` |
 | Seedance Link | [Seedance专用渠道与Link架构](Seedance专用渠道与Link架构.md) | 专用渠道、ModelArk V3、代码协议、视频任务和素材代理 | `ChannelTypeSeedanceLink`、ModelArk V3 Router、协议注册表、Task |
-| Link 视频结果交付 | [Link视频结果OSS托管交付架构](Link视频结果OSS托管交付架构.md) | 结果对象登记、转存 worker、24 小时预签名交付 | `task_video_result_objects`、`video_result_transfer`、内容入口重定向 |
+| Provider 接入 | [Seedance模型接入设计](Seedance模型接入设计/README.md) | 已收录 Provider 的原始文档、对接、价格和能力元数据 | Provider adapter、模型映射、真实验证 |
 | Seedance 素材 | [Seedance模型素材库支持矩阵](Seedance模型素材库支持矩阵.md) | 客户模型的素材操作、素材组要求、引用和错误合同 | `PublicAssetAPI`、`seedancePublicAssetAPI`、素材 Controller |
 | Seedance 代理 | [Seedance无状态素材代理架构](Seedance无状态素材代理架构.md) | opaque ID、无状态路由、Provider 边界和安全不变量 | 素材 Service、`asset_upstream_protocol` adapter |
-| 公开元数据 | [公开模型元数据投影架构](公开模型元数据投影架构.md) | 模型目录 `api` 投影的入口、一致性与脱敏规则 | `channel_seedance_public_catalog.go`、`public_image_model_api.go`、`pkg/publicmodel/` |
-| 异步与计费 | [账单计费-异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md) | create attempt、Task、资金、结算和 Provider exposure | `model/task*.go`、Task billing、exposure |
-| Azure Batch | [AzureBatch渠道与批处理作业架构](AzureBatch渠道与批处理作业架构.md) | Batch 渠道身份、`/v1/files`/`/v1/batches` 北向、行级计费与客户文件交付 | `ChannelTypeAzureBatch`、`router/batch_relay_router.go`、`service/batch_*.go` |
-| 计费表达式 | [账单计费-计费表达式与协议探针架构](账单计费-计费表达式与协议探针架构.md) | 表达式校验、协议探针、价格快照和终态结算 | `pkg/billingexpr/`、`setting/billing_setting/` |
+| 参考音频 | [Seedance 参考音频传输架构](Seedance参考音频传输架构.md) | multipart 附件、私有存储与发送边界 | `relay`、参考音频存储 |
+| Link 视频结果交付 | [Link视频结果OSS托管交付架构](Link视频结果OSS托管交付架构.md) | 结果对象登记、转存 worker、24 小时预签名交付 | `task_video_result_objects`、`video_result_transfer`、内容入口重定向 |
 | 图片数据面 | [图片服务与异步Provider适配架构](图片服务与异步Provider适配架构.md) | 原生图片入口、显式上游协议、异步 Provider 内联轮询、同步 Provider 适配和计费边界 | `ChannelTypeAsyncImage`、`image_upstream_protocol`、图片 dispatch 与专用 adaptor |
-| 音视频证据 | [音视频请求证据架构](音视频请求证据架构.md) | 业务请求证据的独立窗口、流式加密、文件排除、两天与磁盘高水位清理 | `task_request_evidences`、证据事件与访问审计、`TaskRequestEvidenceObjectStore` |
-| Provider 接入 | [Seedance模型接入设计](Seedance模型接入设计/README.md) | 六类 Provider 的原始文档、对接、价格和能力元数据 | Provider adapter、模型映射、真实验证 |
+| Azure Batch | [AzureBatch渠道与批处理作业架构](AzureBatch渠道与批处理作业架构.md) | Batch 渠道身份、`/v1/files`/`/v1/batches` 北向、行级计费与客户文件交付 | `ChannelTypeAzureBatch`、`router/batch_relay_router.go`、`service/batch_*.go` |
+| 异步与计费 | [账单计费-异步任务与计费事实架构](账单计费-异步任务与计费事实架构.md) | create attempt、Task、资金、结算和 Provider exposure | `model/task*.go`、Task billing、exposure |
+| 计费表达式 | [账单计费-计费表达式与协议探针架构](账单计费-计费表达式与协议探针架构.md) | 表达式校验、协议探针、价格快照和终态结算 | `pkg/billingexpr/`、`setting/billing_setting/` |
 | 账单投影 | [账单计费-APIKEY用量账单架构](账单计费-APIKEY用量账单架构.md) | 结算日志到用户账单的只读投影 | billing statement controller/model |
 | 对账投影 | [账单计费-客户与上游对账架构](账单计费-客户与上游对账架构.md) | 客户/上游对账、折扣审计和计费快照聚合 | reconciliation router/controller/model |
-| 公开文档 | [公开API文档交付架构](公开API文档交付架构.md) | 公开合同的构建、校验和 Web 发布 | `web/src/features/docs/`、`web/scripts/docs/` |
-| 用户通知 | [运维-用户生命周期邮件通知架构](运维-用户生命周期邮件通知架构.md) | 账户、密码、API Key 事件邮件和开关 | `notification_setting`、通知 service |
-| 合同定价 | [账单计费-用户模型合同定价架构](账单计费-用户模型合同定价架构.md) | 模型授权、渠道组、缓存围栏和冻结计费事实 | `customer_contract` model/service/middleware |
+| 报表日汇总 | [账单计费-报表日汇总架构](账单计费-报表日汇总架构.md) | 日汇总、历史发布、同批次下钻和共库资源控制 | `model/daily_report_*`、`model/billing_report_*`、`model/usage_report_*` |
 | 主库索引 | [主库索引读写平衡架构](主库索引读写平衡架构.md) | logs/tasks/error_events/casbin_rule 物理索引集合、迁移安全校验与部署约束 | `model/read_write_index_migration.go`、`model/billing_statement_task_index.go` |
+| 错误日志 | [运维-API错误日志架构](运维-API错误日志架构.md) | 已鉴权请求的 4xx 统一诊断、error_events 持久化与扩展采集、查询边界 | `clienterrlog/`、`model/error_event*`、`controller/error_log*` |
+| 音视频证据 | [音视频请求证据架构](音视频请求证据架构.md) | 业务请求证据的独立窗口、流式加密、文件排除、两天与磁盘高水位清理 | `task_request_evidences`、证据事件与访问审计、`TaskRequestEvidenceObjectStore` |
+| 用户通知 | [运维-用户生命周期邮件通知架构](运维-用户生命周期邮件通知架构.md) | SMTP／Graph 单通道、账户通知和一次性找回密码 | `notification_setting`、通知 service |
+| 运维 | [系统错误报告架构](运维-系统错误报告架构.md) | 运维日报、增量汇总、逐地址投递和资源告警 | `model/error_report*`、`service/error_report*` |
+| 公开文档 | [公开API文档交付架构](公开API文档交付架构.md) | 公开合同的构建、校验和 Web 发布 | `web/src/features/docs/`、`web/scripts/docs/` |
 
 ## 事实与变更边界
 

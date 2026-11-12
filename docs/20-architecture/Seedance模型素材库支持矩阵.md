@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-09-28
+last-reviewed: 2026-11-12
 ---
 
 # Seedance 模型素材库支持矩阵
@@ -28,16 +28,15 @@ Provider 如何签名、如何选路或如何保存平台内部快照。内部�
 `GET /v1/models/{customer_model}` 返回的 `api.assets` 是调用方运行时唯一能力依据。代码已存在不等于
 相应 Provider 已完成真实验收或已进入生产分组。
 
-2026-08-29 已完成“统一北向协议优先 + Channel 默认普通 AIGC 素材组”的代码与公开元数据接线；真实
-Provider 和生产灰度仍需逐线路验收。不得把代码合同写成全部线路已经生产开放。
+统一北向协议与 Channel 默认普通 AIGC 素材组已接入代码和公开元数据。真实 Provider 和生产灰度逐线路验收。
 
 ## 2. 通用能力矩阵
 
 | 通用类别 | `api.assets.supported` | 素材组 | 使用规则 |
 | --- | --- | --- | --- |
-| 固定分辨率系列（当前名称通常含 `720p`、`1080p`、`4k`） | `false` | 不适用 | 使用该模型允许的请求级 URL/Data URL；素材操作返回 422 |
+| 配置为 `none` 的协议（例如飞彩） | `false` | 不适用 | 使用该模型允许的请求级 URL/Data URL；素材操作返回 422 |
 | 已配置无素材组协议的模型 | `true` | 南向不使用 | 可直接创建普通素材；统一北向允许携带 `asset_group_id`，adapter 不发送该字段 |
-| 已配置可选素材组协议的模型 | `true` | 普通素材北向可选；真人素材按 `media` 要求 | 调用方 ID 优先，省略或无效时使用 Channel 默认组 |
+| 已配置可选素材组协议的模型 | `true` | 普通素材北向可选；真人素材按 `media` 要求 | 有效显式 ID 优先；只有省略、空或空白时使用 Channel 默认组 |
 | 已配置南向必需素材组协议的模型 | `true` | 普通素材北向仍可选 | Channel 默认组满足南向必填，调用方无需先创建组 |
 | 已配置本站托管协议（`funcloud_material_hosted`）的模型 | `true` | 平台托管普通组（仅普通图片素材） | 素材保存在本站对象存储并按 `user_id` 隔离共享；见无状态素材代理架构第 7 节 |
 | 未配置素材协议的其它模型 | `false` | 不适用 | 不得因为名称不含固定分辨率就推断支持 |
@@ -107,12 +106,9 @@ group ID。该名称是普通北向素材组创建的系统保留名称；默认
 - 策略为 `none` 时忽略该字段并继续创建素材。
 
 `GeneralAssetGroupPolicy` 是运行时和公开元数据的唯一权威；`GroupAdapter` 只决定管理端能否创建组，不能
-作为运行时判据。当前全部已发布且能创建普通素材组的协议目标策略为 `default_fallback`，`none` 协议不
-发送组字段。
+作为运行时判据。已登记的远端普通组协议可使用 `default_fallback`；`none` 不发送组字段，`hosted` 按用户解析托管组。
 
-这些规则仅针对普通 AIGC 素材。`real_person` 仍使用 Provider 认证流程生成的专用组 ID。当前代码已按
-[实施方案](../99-archive/2026/09/2026-08-28-Seedance渠道默认素材组实施方案.md)完成策略注册、元数据、Service 回退、
-错误合同和管理端能力；真实 Provider 与部署灰度仍需单独验收。
+这些规则仅针对普通 AIGC 素材。`real_person` 仍使用 Provider 认证流程生成的专用组 ID。管理端创建和上线步骤见[视频与素材渠道运维手册](../40-operations/02-视频与素材渠道运维手册.md)。
 
 ### 5.2 Provider opaque ID 与引用
 
