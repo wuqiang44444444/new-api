@@ -50,6 +50,12 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 // SettleBilling 执行计费结算。如果 RelayInfo 上有 BillingSession 则通过 session 结算，
 // 否则回退到旧的 PostConsumeQuota 路径（兼容按次计费等场景）。
 func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) error {
+	_, err := settleBillingWithFunding(ctx, relayInfo, actualQuota)
+	return err
+}
+
+// The funding result stays true when only the API key adjustment fails.
+func settleBillingWithFunding(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) (bool, error) {
 	if relayInfo.Billing != nil {
 		preConsumed := relayInfo.Billing.GetPreConsumedQuota()
 		delta := actualQuota - preConsumed
@@ -72,8 +78,12 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 			))
 		}
 
-		if err := relayInfo.Billing.Settle(actualQuota); err != nil {
-			return err
+		if session, ok := relayInfo.Billing.(*BillingSession); ok {
+			if applied, err := session.settleWithFunding(actualQuota); err != nil {
+				return applied, err
+			}
+		} else if err := relayInfo.Billing.Settle(actualQuota); err != nil {
+			return false, err
 		}
 
 		// 发送额度通知（订阅计费使用订阅剩余额度）
@@ -84,13 +94,14 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 				checkAndSendQuotaNotify(relayInfo, actualQuota-preConsumed, preConsumed)
 			}
 		}
-		return nil
+		return true, nil
 	}
 
 	// 回退：无 BillingSession 时使用旧路径
 	quotaDelta := actualQuota - relayInfo.FinalPreConsumedQuota
 	if quotaDelta != 0 {
-		return PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
+		result, err := postConsumeQuotaWithResult(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true, true)
+		return result.FundingApplied, err
 	}
-	return nil
+	return true, nil
 }

@@ -43,6 +43,7 @@ type Calculation struct {
 	Values            []CalculationValue `json:"values,omitempty"`
 	Steps             []CalculationStep  `json:"steps,omitempty"`
 	Quota             int                `json:"quota"`
+	OriginalQuota     *int               `json:"original_quota,omitempty"`
 }
 
 type CalculationNode struct {

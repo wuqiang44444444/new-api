@@ -58,6 +58,7 @@ type textQuotaSummary struct {
 	CacheCreationRatio5m   float64
 	CacheCreationRatio1h   float64
 	Quota                  int
+	OriginalQuota          *int
 	IsClaudeUsageSemantic  bool
 	UsageSemantic          string
 	AudioInputPrice        float64
@@ -299,7 +300,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	ratio := dModelRatio.Mul(dGroupRatio)
 	summary.ToolCallSurchargeQuota = calculateTextToolCallSurcharge(ctx, relayInfo, &summary)
 
-	var audioInputQuota decimal.Decimal
+	var audioInputQuota, originalQuota decimal.Decimal
 	if !relayInfo.PriceData.UsePrice {
 		baseTokens := dPromptTokens
 
@@ -335,8 +336,9 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			summary.AudioInputPrice = operation_setting.GetGeminiInputAudioPricePerMillionTokens(summary.ModelName)
 			if summary.AudioInputPrice > 0 {
 				baseTokens = baseTokens.Sub(dAudioTokens)
-				audioInputQuota = decimal.NewFromFloat(summary.AudioInputPrice).
-					Div(decimal.NewFromInt(1000000)).Mul(dAudioTokens).Mul(dGroupRatio).Mul(dQuotaPerUnit)
+				originalQuota = decimal.NewFromFloat(summary.AudioInputPrice).
+					Div(decimal.NewFromInt(1000000)).Mul(dAudioTokens).Mul(dQuotaPerUnit)
+				audioInputQuota = originalQuota.Mul(dGroupRatio)
 			}
 		}
 
@@ -356,7 +358,9 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		completionQuota := dCompletionTokens.Mul(dCompletionRatio)
 		calculation.Add("sum", "weighted_token", promptQuota, baseTokens, cachedTokensWithRatio, imageTokensWithRatio, cachedCreationTokensWithRatio)
 		calculation.Add("multiply", "weighted_token", completionQuota, dCompletionTokens, dCompletionRatio)
-		quotaCalculateDecimal := promptQuota.Add(completionQuota).Mul(ratio)
+		weightedTokens := promptQuota.Add(completionQuota)
+		originalQuota = originalQuota.Add(weightedTokens.Mul(dModelRatio))
+		quotaCalculateDecimal := weightedTokens.Mul(ratio)
 		calculation.Add("token_components", "quota", quotaCalculateDecimal, promptQuota, completionQuota, dModelRatio, dGroupRatio)
 		calculation.Add("audio_input", "quota", audioInputQuota, summary.AudioInputPrice, summary.AudioTokens, 1000000, summary.GroupRatio, common.QuotaPerUnit)
 		beforeAudio := quotaCalculateDecimal
@@ -383,7 +387,8 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		calculation.Add("truncate", "quota", quota, quotaCalculateDecimal)
 		noteQuotaClamp(relayInfo, clamp)
 	} else {
-		quotaCalculateDecimal := dModelPrice.Mul(dQuotaPerUnit).Mul(dGroupRatio)
+		originalQuota = dModelPrice.Mul(dQuotaPerUnit)
+		quotaCalculateDecimal := originalQuota.Mul(dGroupRatio)
 		calculation.Add("per_call", "quota", quotaCalculateDecimal, dModelPrice, dQuotaPerUnit, dGroupRatio)
 		calculation.Add("audio_input", "quota", audioInputQuota, summary.AudioInputPrice, summary.AudioTokens, 1000000, summary.GroupRatio, common.QuotaPerUnit)
 		beforeAudio := quotaCalculateDecimal
@@ -412,6 +417,18 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	} else if !ratio.IsZero() && summary.Quota == 0 {
 		summary.Quota = 1
 		calculation.Add("minimum_charge", "quota", 1, 0)
+	}
+	if relayInfo.TieredBillingSnapshot == nil && len(summary.ToolSurchargeItems) == 0 {
+		originalQuota = relayInfo.PriceData.ApplyOtherRatiosToDecimal(originalQuota)
+		quota, err := common.QuotaFromDecimalStrict(originalQuota)
+		if err == nil {
+			if !summary.hasBillableUsage() {
+				quota = 0
+			} else if !dModelRatio.IsZero() && quota == 0 {
+				quota = 1
+			}
+			summary.OriginalQuota = &quota
+		}
 	}
 
 	return summary
@@ -488,14 +505,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if !summary.hasBillableUsage() {
 		extraContent = append(extraContent, common.NewMessage("Upstream returned no usage, so nothing was charged (possibly an upstream timeout)"))
 		logger.LogError(ctx, common.LogText("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
-	} else {
-		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, summary.Quota)
-		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 	}
 
-	if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
-		logger.LogError(ctx, common.LogText("error settling billing: %s", err.Error()))
-	}
+	bookedQuota, funded := settleSynchronousUsage(ctx, relayInfo, summary.Quota, summary.hasBillableUsage())
 
 	logModel := summary.ModelName
 	if strings.HasPrefix(logModel, "gpt-4-gizmo") {
@@ -570,8 +582,24 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	}
 	appendCustomerContractBillingInfo(other, relayInfo.ContractBillingFact)
+	if funded {
+		if snap != nil {
+			if tieredResult != nil && len(summary.ToolSurchargeItems) == 0 {
+				quota, err := common.QuotaRoundStrict(tieredResult.ActualQuotaBeforeGroup)
+				if err == nil {
+					if !summary.hasBillableUsage() {
+						quota = 0
+					}
+					other.SetAdmin(model.StatementOriginalQuotaLogKey, quota)
+				}
+			}
+		} else if summary.OriginalQuota != nil {
+			other.SetAdmin(model.StatementOriginalQuotaLogKey, *summary.OriginalQuota)
+		}
+	}
 	appendBillingStatementSnapshot(relayInfo, other)
 	appendTextStatementUsage(other, relayInfo, billingUsage, summary)
+	markUnsettledUsage(other, funded)
 
 	attachQuotaSaturation(ctx, relayInfo, other)
 
@@ -581,7 +609,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		CompletionTokens: summary.CompletionTokens,
 		ModelName:        logModel,
 		TokenName:        summary.TokenName,
-		Quota:            summary.Quota,
+		Quota:            bookedQuota,
 		Content:          extraContent,
 		TokenId:          relayInfo.TokenId,
 		UseTimeSeconds:   int(summary.UseTimeSeconds),

@@ -113,12 +113,14 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 		realtime, reserveInsufficient             bool
 		wallet, outboundImages                    int
 		groupRatio                                float64
+		wantOriginal                              int
 		want                                      int
 		unit                                      billingexpr.BillingUnit
 		requestedImages, actualImages             int
 	}{
 		{name: "missing usage charges once", expression: flat, want: 5000, unit: billingexpr.BillingUnitRequest},
 		{name: "zero usage charges once", expression: flat, usage: &dto.Usage{}, want: 5000, unit: billingexpr.BillingUnitRequest},
+		{name: "discounted charge records its original price", expression: flat, groupRatio: 0.6, usage: &dto.Usage{}, want: 3000, wantOriginal: 5000, unit: billingexpr.BillingUnitRequest},
 		{name: "stream charges once", expression: flat, stream: true, usage: &dto.Usage{PromptTokens: 100, CompletionTokens: 20, TotalTokens: 120}, want: 5000, unit: billingexpr.BillingUnitRequest},
 		{name: "audio zero usage charges once", expression: flat, audio: true, usage: &dto.Usage{}, want: 5000, unit: billingexpr.BillingUnitRequest},
 		{name: "audio missing usage charges once", expression: flat, audio: true, want: 5000, unit: billingexpr.BillingUnitRequest},
@@ -249,6 +251,9 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 					assert.Equal(t, string(tc.unit), other["billing_unit"])
 					admin, ok := other["admin_info"].(map[string]any)
 					require.True(t, ok)
+					if tc.wantOriginal > 0 {
+						assert.EqualValues(t, tc.wantOriginal, admin[model.StatementOriginalQuotaLogKey])
+					}
 					snapshot, ok := admin["statement_snapshot"].(map[string]any)
 					require.True(t, ok)
 					assert.Equal(t, other["expr_b64"], snapshot["expr_b64"], "snapshot must use the settled expression on text, audio and realtime paths")
@@ -1565,4 +1570,46 @@ func TestPostTextConsumeQuotaLogsMissingUsageAsStructuredContent(t *testing.T) {
 	assert.Equal(t, []any{
 		map[string]any{"key": "Upstream returned no usage, so nothing was charged (possibly an upstream timeout)"},
 	}, other["content_parts"])
+}
+
+func TestPostTextConsumeQuotaLeavesOriginalUnknownForFreeToolUsage(t *testing.T) {
+	for _, mode := range []string{"ratio", "tiered_expr"} {
+		t.Run(mode, func(t *testing.T) {
+			truncate(t)
+			const userID, channelID = 63, 63
+			seedUser(t, userID, 10_000)
+			seedChannel(t, channelID)
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+			info := &relaycommon.RelayInfo{
+				UserId: userID, OriginModelName: "o1", UsingGroup: "default", StartTime: time.Now(),
+				RelayMode: relayconstant.RelayModeResponses, ChannelMeta: &relaycommon.ChannelMeta{ChannelId: channelID},
+				PriceData: hosttypes.PriceData{ModelRatio: 1, CompletionRatio: 1},
+				ResponsesUsageInfo: &relaycommon.ResponsesUsageInfo{BuiltInTools: map[string]*relaycommon.BuildInToolInfo{
+					dto.BuildInToolWebSearchPreview: {CallCount: 1},
+				}},
+			}
+			if mode == "tiered_expr" {
+				const expression = `tier("test", p * 2)`
+				info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{
+					BillingMode: mode, ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), QuotaPerUnit: common.QuotaPerUnit,
+				}
+			}
+			PostTextConsumeQuota(ctx, info, &dto.Usage{PromptTokens: 100, TotalTokens: 100}, nil)
+			log := getLastLog(t)
+			require.NotNil(t, log)
+			assert.Zero(t, log.Quota)
+			var other struct {
+				Admin       map[string]any      `json:"admin_info"`
+				Tools       []ToolSurchargeItem `json:"tool_surcharges"`
+				BillingMode string              `json:"billing_mode"`
+			}
+			require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
+			require.Len(t, other.Tools, 1)
+			assert.NotContains(t, other.Admin, model.StatementOriginalQuotaLogKey)
+			if mode == "tiered_expr" {
+				assert.Equal(t, mode, other.BillingMode)
+			}
+		})
+	}
 }
