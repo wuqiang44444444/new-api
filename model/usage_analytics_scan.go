@@ -30,6 +30,7 @@ import (
 //   - 退款不增加调用次数；无法关联到已结束调用的退款单列为资金事实。
 
 type usageViewOptions struct {
+	SplitCustomerBillingMode bool
 	// UserID 限定客户范围；0 表示全部客户（管理员视角）。
 	UserID int
 	// WantCustomer/WantUpstream/WantOverview 控制构建哪些投影。
@@ -67,25 +68,27 @@ type usageOverviewKey struct {
 // 日志（范围内的原生任务日志 + 按稳定 ID 直接加载的交付日志），任务行本身
 // 提供身份、终态与结束时间。
 type usageTaskPieces struct {
-	discounts         *billingDiscountCombinationAccumulator
-	tokenDetails      map[string]int64
-	gross             int64
-	refund            int64
-	input             int64
-	output            int64
-	cacheRead         int64
-	cacheWrite        int64
-	imageCount        int64
-	imageCountKnown   bool
-	imageCountMissing bool
-	seconds           decimal.Decimal
-	secondsKnown      bool
-	missingTokens     int64
-	missingSeconds    int64
-	rowsSeen          int64
-	billingMode       string
-	tokenId           int
-	tokenName         string
+	discounts               *billingDiscountCombinationAccumulator
+	tokenDetails            map[string]int64
+	gross                   int64
+	refund                  int64
+	input                   int64
+	output                  int64
+	cacheRead               int64
+	cacheWrite              int64
+	billableImageCount      *int64
+	billableImageApplicable bool
+	imageCount              int64
+	imageCountKnown         bool
+	imageCountMissing       bool
+	seconds                 decimal.Decimal
+	secondsKnown            bool
+	missingTokens           int64
+	missingSeconds          int64
+	rowsSeen                int64
+	billingMode             string
+	tokenId                 int
+	tokenName               string
 	// customerOriginal 是客户侧估算原价中间值（消费正计、可关联退款负计）。
 	customerOriginal   decimal.Decimal
 	originalKnown      bool
@@ -368,6 +371,9 @@ func (agg *usageAggregation) consumeLogRow(ctx context.Context, row usageLogRow,
 		}
 	}
 	row.parsed = parseBillingReconciliationLog(row.fact)
+	if agg.opts.WantUpstream {
+		projectFrozenChargeReplay(row.fact, &row.parsed)
+	}
 	applyCustomerOriginalReplay(row.fact, &row.parsed)
 	taskID := billingBreakdownString(row.other["task_id"])
 	isTaskFlag, _ := billingReconciliationBool(row.other["is_task"])
@@ -515,6 +521,12 @@ func (agg *usageAggregation) appendTaskLogPiece(pieces *usageTaskPieces, row usa
 	pieces.output += tokens.OutputTokens
 	pieces.cacheRead += tokens.CacheReadTokens
 	pieces.cacheWrite += tokens.CacheWriteTokens
+	if row.parsed.billableImageApplicable {
+		pieces.billableImageApplicable = true
+		if row.parsed.billableImageCount != nil {
+			pieces.billableImageCount = row.parsed.billableImageCount
+		}
+	}
 	pieces.imageCount += tokens.ImageCount
 	pieces.imageCountKnown = pieces.imageCountKnown || tokens.ImageCountKnown
 	pieces.imageCountMissing = pieces.imageCountMissing || tokens.ImageCountMissingRows > 0
@@ -561,8 +573,9 @@ func (agg *usageAggregation) applyStandalone(row usageLogRow, bundle *usageDisco
 	if day < 0 {
 		return
 	}
+	mode, imageCount, imageKnown := customerUsageLogMeter(row)
 	if agg.opts.WantUpstream && row.fact.Type == LogTypeConsume {
-		acc := agg.buildUpstreamStandalone(row, bundle, calls, result, isTest)
+		acc := agg.buildUpstreamStandalone(row, bundle, calls, result, isTest, mode, imageCount, imageKnown)
 		if acc != nil {
 			model := strings.TrimSpace(row.parsed.providerModel)
 			fallback := false
@@ -573,14 +586,13 @@ func (agg *usageAggregation) applyStandalone(row usageLogRow, bundle *usageDisco
 			if model == "" {
 				model = usageAnalyticsUnknownModel
 			}
-			key := usageUpstreamKey{day: day, channel: row.fact.ChannelId, model: model, fallback: fallback, mode: row.parsed.billingMode}
+			key := usageUpstreamKey{day: day, channel: row.fact.ChannelId, model: model, fallback: fallback, mode: mode}
 			agg.mergeUpstream(key, acc)
 		}
 	}
 	if isTest {
 		return
 	}
-	mode, imageCount, imageKnown := customerUsageLogMeter(row)
 	acc := agg.buildCustomerStandalone(row, calls, result, mode, imageCount, imageKnown)
 	key := usageCustomerKey{day: day, token: row.fact.TokenId, model: row.parsed.customerModel, billingMode: mode}
 	agg.mergeCustomer(row.fact.UserId, key, acc)
@@ -591,7 +603,7 @@ func (agg *usageAggregation) applyStandalone(row usageLogRow, bundle *usageDisco
 
 // buildUpstreamStandalone 构建上游视图的独立行累加器；无法安全归属渠道或
 // 没有渠道证据的行不虚构分组。
-func (agg *usageAggregation) buildUpstreamStandalone(row usageLogRow, bundle *usageDiscountBundle, calls int64, result string, isTest bool) *usageMetricsAcc {
+func (agg *usageAggregation) buildUpstreamStandalone(row usageLogRow, bundle *usageDiscountBundle, calls int64, result string, isTest bool, mode string, imageCount int64, imageKnown bool) *usageMetricsAcc {
 	acc := &usageMetricsAcc{}
 	acc.addCalls(result, calls)
 	var tokens UsageAnalyticsMetrics
@@ -600,6 +612,10 @@ func (agg *usageAggregation) buildUpstreamStandalone(row usageLogRow, bundle *us
 	if usageRowTokensMissing(row) {
 		acc.m.RowsMissingTokens += max(calls, 1)
 	}
+	if mode == BillingReconciliationModeToken && row.parsed.hasExpression {
+		setUpstreamExpressionTokenMeter(&acc.m, row.parsed.frozenReplay, calls)
+	}
+	setUpstreamUsageMeter(&acc.m, mode, imageCount, imageKnown, isTest, row.fact.Type == LogTypeConsume, calls)
 	if value, known, missing, unitKnown := usageRowSeconds(row); known {
 		acc.addSeconds(value, true, false)
 	} else if missing {
@@ -1083,10 +1099,8 @@ func (agg *usageAggregation) applyTaskUpstream(task *usageTaskRecord, pieces *us
 	if provider == "" {
 		provider = usageAnalyticsUnknownModel
 	}
-	mode := BillingReconciliationModeUnknown
-	if pieces != nil && pieces.billingMode != "" {
-		mode = pieces.billingMode
-	}
+	mode, count, known := customerUsageTaskMeter(task, pieces, settled)
+	setUpstreamUsageMeter(&acc.m, mode, count, known, false, settled && task.Status == TaskStatusSuccess, 1)
 	key := usageUpstreamKey{day: day, channel: task.ChannelID, model: provider, fallback: fallback, mode: mode}
 	agg.mergeUpstream(key, acc)
 }
@@ -1111,11 +1125,12 @@ func (agg *usageAggregation) foldCustomerDayTotals() ([]UsageAnalyticsMetrics, U
 // model leaves, per-day arrays and range totals, plus token identity lookup.
 func finalizeUsageCustomerView(view *UsageCustomerView, agg *usageAggregation) {
 	view.DayTotals, view.Total = agg.foldCustomerDayTotals()
+	type modelKey struct{ name, mode string }
 	type tokenBuild struct {
 		group  UsageCustomerKeyGroup
 		days   []usageMetricsAcc
 		total  usageMetricsAcc
-		models map[string]*struct {
+		models map[modelKey]*struct {
 			row  UsageCustomerModelRow
 			days []usageMetricsAcc
 		}
@@ -1125,20 +1140,24 @@ func finalizeUsageCustomerView(view *UsageCustomerView, agg *usageAggregation) {
 		build, ok := builds[key.token]
 		if !ok {
 			build = &tokenBuild{group: UsageCustomerKeyGroup{TokenId: key.token}, days: make([]usageMetricsAcc, len(agg.period.Days)),
-				models: make(map[string]*struct {
+				models: make(map[modelKey]*struct {
 					row  UsageCustomerModelRow
 					days []usageMetricsAcc
 				})}
 			builds[key.token] = build
 		}
-		modelEntry, ok := build.models[key.model]
+		model := modelKey{name: key.model}
+		if agg.opts.SplitCustomerBillingMode {
+			model.mode = key.billingMode
+		}
+		modelEntry, ok := build.models[model]
 		if !ok {
 			modelEntry = &struct {
 				row  UsageCustomerModelRow
 				days []usageMetricsAcc
-			}{row: UsageCustomerModelRow{ModelName: key.model, Days: make([]UsageAnalyticsMetrics, len(agg.period.Days))},
+			}{row: UsageCustomerModelRow{ModelName: model.name, BillingMode: model.mode, Days: make([]UsageAnalyticsMetrics, len(agg.period.Days))},
 				days: make([]usageMetricsAcc, len(agg.period.Days))}
-			build.models[key.model] = modelEntry
+			build.models[model] = modelEntry
 		}
 		modelEntry.days[key.day].merge(acc)
 		modelEntry.days[key.day].mergeCustomerUsageDiscounts(acc)
@@ -1156,13 +1175,7 @@ func finalizeUsageCustomerView(view *UsageCustomerView, agg *usageAggregation) {
 			build.group.Days = append(build.group.Days, build.days[i].finalize())
 		}
 		build.group.Total = build.total.finalize()
-		modelNames := make([]string, 0, len(build.models))
-		for name := range build.models {
-			modelNames = append(modelNames, name)
-		}
-		sort.Strings(modelNames)
-		for _, name := range modelNames {
-			entry := build.models[name]
+		for _, entry := range build.models {
 			for i := range entry.days {
 				entry.row.Days[i] = entry.days[i].finalize()
 			}
@@ -1180,7 +1193,10 @@ func finalizeUsageCustomerView(view *UsageCustomerView, agg *usageAggregation) {
 			if build.group.Models[i].Total.NetQuota != build.group.Models[j].Total.NetQuota {
 				return build.group.Models[i].Total.NetQuota > build.group.Models[j].Total.NetQuota
 			}
-			return build.group.Models[i].ModelName < build.group.Models[j].ModelName
+			if build.group.Models[i].ModelName != build.group.Models[j].ModelName {
+				return build.group.Models[i].ModelName < build.group.Models[j].ModelName
+			}
+			return build.group.Models[i].BillingMode < build.group.Models[j].BillingMode
 		})
 		view.Keys = append(view.Keys, build.group)
 	}

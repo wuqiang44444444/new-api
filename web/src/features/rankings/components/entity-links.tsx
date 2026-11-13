@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
 
+import { useModelSquareVisibility } from '@/hooks/use-model-square-visibility'
 import { cn } from '@/lib/utils'
 
 type EntityLinkBaseProps = {
@@ -40,6 +41,13 @@ type ModelLinkProps = EntityLinkBaseProps & {
  * on hover.
  */
 export function ModelLink(props: ModelLinkProps) {
+  if (!useModelSquareVisibility()) {
+    return (
+      <span className={props.className}>
+        {props.children ?? props.modelName}
+      </span>
+    )
+  }
   return (
     <Link
       to='/pricing/$modelId'
@@ -67,6 +75,11 @@ type VendorLinkProps = EntityLinkBaseProps & {
  * wraps.
  */
 export function VendorLink(props: VendorLinkProps) {
+  if (!useModelSquareVisibility()) {
+    return (
+      <span className={props.className}>{props.children ?? props.vendor}</span>
+    )
+  }
   return (
     <Link
       to='/pricing'

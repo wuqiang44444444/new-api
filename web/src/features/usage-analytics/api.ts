@@ -24,6 +24,14 @@ export type UsagePeriodParam = {
 }
 
 export type UsageReportQuery = UsagePeriodParam & { report_days?: string }
+
+export function usageReportRebuildInterval(query: {
+  state: {
+    data?: { data?: Pick<UsageAnalyticsEnvelope<unknown>, 'rebuilding_days'> }
+  }
+}) {
+  return query.state.data?.data?.rebuilding_days?.length ? 15_000 : false
+}
 type UpstreamUsageScope = { url_key?: string; channel_id?: number }
 export type UsageRankMetric = 'calls' | 'tokens' | 'amount'
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-11-12.1",
+  "contentVersion": "2026-11-14.1",
   "locales": {
     "zh": [
       {
@@ -19,11 +19,6 @@
             "depth": 2,
             "id": "能力范围",
             "text": "能力范围"
-          },
-          {
-            "depth": 2,
-            "id": "兼容性边界",
-            "text": "兼容性边界"
           },
           {
             "depth": 2,
@@ -725,13 +720,8 @@
           },
           {
             "depth": 2,
-            "id": "下载窗口与验证范围",
-            "text": "下载窗口与验证范围"
-          },
-          {
-            "depth": 2,
-            "id": "english-contract-notes",
-            "text": "English contract notes"
+            "id": "下载有效期与计费",
+            "text": "下载有效期与计费"
           }
         ]
       },
@@ -761,11 +751,6 @@
             "depth": 2,
             "id": "创建与查询示例",
             "text": "创建与查询示例"
-          },
-          {
-            "depth": 2,
-            "id": "english-contract-notes",
-            "text": "English contract notes"
           }
         ]
       },
@@ -880,18 +865,13 @@
         "pageId": "assets-lifecycle",
         "slug": "api-reference/assets",
         "title": "素材与素材组",
-        "description": "创建图片素材与可选素材组，区分代理和托管模式并引用到视频",
-        "keywords": ["AIGC 素材", "素材组", "参数", "响应"],
+        "description": "创建素材和可选素材组，查询模型支持的托管类型并在视频中引用",
+        "keywords": ["AIGC 素材", "素材组", "托管素材", "MP3", "MP4"],
         "headings": [
           {
             "depth": 2,
             "id": "调用前读取模型能力",
             "text": "调用前读取模型能力"
-          },
-          {
-            "depth": 3,
-            "id": "模型广场的-素材共享组-提示",
-            "text": "模型广场的“素材共享组”提示"
           },
           {
             "depth": 2,

@@ -14,7 +14,6 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
-	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -145,7 +144,7 @@ func (d *imageDelivery) send(c *gin.Context) {
 		}
 	}
 	if d.err != nil {
-		service.RecordImageDeliveryError(c.Request.Context(), "result_delivery", errors.New("image format delivery failed"))
+		recordImageDeliveryFailure(c.Request.Context(), d.err)
 		c.Header("Content-Length", "")
 		errorValue, _ := imageJSONLiteral(gin.H{
 			"code":    "image_delivery_failed",

@@ -39,9 +39,22 @@ func TestSynlinkHostedVideoDurableLifecycle(t *testing.T) {
 	}
 }
 
+func TestSynlinkMiniHostedAudioWithDirectVideo(t *testing.T) {
+	for _, outcome := range []string{"mixed_audio", "mixed_wrong_slot"} {
+		t.Run(outcome, func(t *testing.T) {
+			testHostedVideoCreation(t, dto.VideoUpstreamProtocolSynlinkVideoV1, outcome, "doubao-seedance-2-0-mini-260615")
+		})
+	}
+}
+
 func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, outcome, providerModel string) {
 	t.Helper()
 	directURL := outcome == "direct_url" || outcome == "direct_url_without_library"
+	mixed := outcome == "mixed_audio" || outcome == "mixed_wrong_slot" || outcome == "mixed_invalid_role"
+	objectKey := "assets/hosted.png"
+	if mixed {
+		objectKey = "assets/hosted.mp3"
+	}
 	service.InitHttpClient()
 	events := []string{}
 	db := setupTaskSubmissionDatabase(t, true, &events)
@@ -90,7 +103,7 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 	objectStore := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		storageCalls.Add(1)
 		assert.Equal(t, http.MethodHead, r.Method)
-		assert.Equal(t, "/images/prod/assets/hosted.png", r.URL.Path)
+		assert.Equal(t, "/images/prod/"+objectKey, r.URL.Path)
 		if outcome == "object_missing" {
 			w.WriteHeader(404)
 			return
@@ -107,8 +120,11 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 	require.NoError(t, err)
 	model.NotifyObjectStorageSettingUpdate(string(encoded))
 	t.Cleanup(func() { model.NotifyObjectStorageSettingUpdate("") })
-	asset := model.FunCloudHostedAsset{ID: "fhas_fixture", UserID: user.Id, Name: "fixture", Model: "customer-funcloud", ObjectKey: "assets/hosted.png", MimeType: "image/png", SizeBytes: 12, Status: model.FunCloudHostedAssetStatusReady,
+	asset := model.FunCloudHostedAsset{ID: "fhas_fixture", UserID: user.Id, Name: "fixture", Model: "customer-funcloud", ObjectKey: objectKey, MimeType: "image/png", SizeBytes: 12, Status: model.FunCloudHostedAssetStatusReady,
 		StorageLocation: model.FunCloudHostedStorageLocation{Backend: "s3", Endpoint: objectStore.URL, Bucket: "images", Prefix: "prod"}}
+	if mixed {
+		asset.MediaType, asset.MimeType = "audio", "audio/mpeg"
+	}
 	if outcome == "other_user" {
 		asset.UserID++
 	}
@@ -177,6 +193,12 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 				ImageURL *struct {
 					URL string `json:"url"`
 				} `json:"image_url"`
+				AudioURL *struct {
+					URL string `json:"url"`
+				} `json:"audio_url"`
+				VideoURL *struct {
+					URL string `json:"url"`
+				} `json:"video_url"`
 			} `json:"content"`
 			RealPersonMode bool `json:"real_person_mode"`
 		}
@@ -184,7 +206,14 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 			w.WriteHeader(500)
 			return
 		}
-		if protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || protocol == dto.VideoUpstreamProtocolViduModelArkV3 {
+		if mixed {
+			require.Len(t, payload.Content, 3)
+			require.NotNil(t, payload.Content[1].AudioURL)
+			require.NotNil(t, payload.Content[2].VideoURL)
+			assert.Equal(t, "reference_audio", payload.Content[1].Role)
+			assert.Equal(t, "reference_video", payload.Content[2].Role)
+			assert.Equal(t, "https://source.example/direct.mp4?one=1&two=2", payload.Content[2].VideoURL.URL)
+		} else if protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || protocol == dto.VideoUpstreamProtocolViduModelArkV3 {
 			assert.NotContains(t, string(body), "real_person_mode")
 			assert.NotContains(t, string(body), "omni_reference_task_type")
 			assert.NotContains(t, string(body), "asset://")
@@ -217,9 +246,16 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 				assert.Equal(t, asset.StorageLocation, sendingFacts[0].StorageLocation)
 				assert.Equal(t, asset.ObjectKey, sendingFacts[0].ObjectKey)
 			}
-			signed, err := url.Parse(payload.Content[1].ImageURL.URL)
+			signedURL := ""
+			if mixed {
+				signedURL = payload.Content[1].AudioURL.URL
+				assert.Equal(t, "audio", sendingFacts[0].MediaType)
+			} else {
+				signedURL = payload.Content[1].ImageURL.URL
+			}
+			signed, err := url.Parse(signedURL)
 			assert.NoError(t, err)
-			assert.Equal(t, "/images/prod/assets/hosted.png", signed.Path)
+			assert.Equal(t, "/images/prod/"+objectKey, signed.Path)
 			assert.Equal(t, "86400", signed.Query().Get("X-Amz-Expires"))
 		}
 		if outcome == "delete_after_accept" {
@@ -259,7 +295,7 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 	if outcome == "video_slot" {
 		mediaType, role = "video_url", "reference_video"
 	}
-	if outcome == "audio_slot" {
+	if outcome == "audio_slot" || mixed {
 		mediaType, role = "audio_url", "reference_audio"
 	}
 	if directURL {
@@ -278,7 +314,18 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 		if outcome == "keyframes" {
 			directRole = "last_frame"
 		}
-		payload["content"] = append(payload["content"].([]any), map[string]any{"type": "image_url", "role": directRole, "image_url": map[string]any{"url": "https://source.example/direct.png?one=1&two=2"}})
+		if mixed {
+			videoReference := "https://source.example/direct.mp4?one=1&two=2"
+			if outcome == "mixed_wrong_slot" {
+				videoReference = reference
+			}
+			payload["content"] = append(payload["content"].([]any), map[string]any{"type": "video_url", "role": "reference_video", "video_url": map[string]any{"url": videoReference}})
+			if outcome == "mixed_invalid_role" {
+				payload["content"] = append(payload["content"].([]any), map[string]any{"type": "image_url", "role": "first_frame", "image_url": map[string]any{"url": "https://source.example/frame.png"}})
+			}
+		} else {
+			payload["content"] = append(payload["content"].([]any), map[string]any{"type": "image_url", "role": directRole, "image_url": map[string]any{"url": "https://source.example/direct.png?one=1&two=2"}})
+		}
 	}
 	body, err := common.Marshal(payload)
 	require.NoError(t, err)
@@ -293,7 +340,7 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 	require.NoError(t, db.Find(&attempts).Error)
 	var finalUser model.User
 	require.NoError(t, db.First(&finalUser, user.Id).Error)
-	if outcome == "accepted" || outcome == "delete_after_accept" || directURL || outcome == "polling_lifecycle" || outcome == "keyframes" {
+	if outcome == "accepted" || outcome == "delete_after_accept" || directURL || outcome == "polling_lifecycle" || outcome == "keyframes" || outcome == "mixed_audio" || outcome == "non_hosted" {
 		require.Equal(t, 200, response.Code, response.Body.String())
 		require.Equal(t, int32(1), providerCalls.Load())
 		require.Len(t, tasks, 1)
@@ -331,8 +378,10 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 	} else {
 		if outcome == "object_missing" || outcome == "store_unavailable" || outcome == "location_changed" {
 			assert.Equal(t, 503, response.Code, response.Body.String())
+			assert.Contains(t, response.Body.String(), `"code":"internal_error"`)
 		} else {
 			assert.Equal(t, 400, response.Code, response.Body.String())
+			assert.Contains(t, response.Body.String(), `"code":"invalid_video_parameter"`)
 		}
 		assert.Zero(t, providerCalls.Load())
 		assert.Empty(t, tasks)
@@ -346,7 +395,7 @@ func testHostedVideoCreation(t *testing.T, protocol dto.VideoUpstreamProtocol, o
 		assert.Zero(t, storageCalls.Load())
 	}
 	assert.NotContains(t, response.Body.String(), "X-Amz-")
-	assert.NotContains(t, response.Body.String(), "assets/hosted.png")
+	assert.NotContains(t, response.Body.String(), objectKey)
 	if len(tasks) > 0 {
 		encoded, err := common.Marshal(tasks[0].PrivateData)
 		require.NoError(t, err)

@@ -229,9 +229,12 @@ func TestConfiguredSeedancePublicModelsIncludeDisabledAPIContracts(t *testing.T)
 	assert.Equal(t, dto.PublicAssetGroupOptional, publicAssetGroupRequirement(moxing.API.Assets.Media, AssetKindGeneral, "image"))
 
 	feicai := byModel["seedance-feicai-disabled"]
-	assert.False(t, feicai.API.Assets.Supported)
-	assert.False(t, publicOperationSupported(feicai.API.Assets.Operations, "create_asset"))
-	assert.Nil(t, feicai.API.Assets.Creation)
+	assert.True(t, feicai.API.Assets.Supported)
+	assert.Equal(t, "platform_hosted", feicai.API.Assets.ManagementMode)
+	assert.True(t, publicOperationSupported(feicai.API.Assets.Operations, "create_asset"))
+	require.NotNil(t, feicai.API.Assets.Creation)
+	require.NotNil(t, official.API.HostedAssets)
+	assert.Equal(t, feicai.API.Assets.ReuseScope, official.API.HostedAssets.ReuseScope)
 
 	tokenSave := byModel["seedance-tokensave-disabled"]
 	assert.True(t, tokenSave.API.Assets.Supported)

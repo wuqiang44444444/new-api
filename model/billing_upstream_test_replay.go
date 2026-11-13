@@ -51,6 +51,27 @@ func replayHistoricalTestAmount(log billingReconciliationLog, parsed parsedBilli
 			return pending
 		}
 		expression := string(decoded)
+		facts := loadCustomerExportFacts(log.Other)
+		if facts.string("billing_unit") == string(billingexpr.BillingUnitRequest) || len(facts.raw("billing_tokens")) != 0 {
+			if parsed.discountRatio == nil || *parsed.discountRatio <= 0 {
+				pending.reason = "missing_group_ratio"
+				return pending
+			}
+			result, reason := evaluateFrozenBillingExpression(log, facts, *parsed.discountRatio, false)
+			if reason != "" {
+				pending.reason = "missing_expression_context"
+				if reason == BillingOriginalReplayMismatch {
+					pending.reason = "recorded_amount_mismatch"
+				}
+				return pending
+			}
+			original, clamp := common.QuotaRoundChecked(result.ActualQuotaBeforeGroup)
+			if clamp != nil || result.ActualQuotaAfterGroup != log.Quota {
+				pending.reason = "recorded_amount_mismatch"
+				return pending
+			}
+			return upstreamTestAmount{known: true, original: decimal.NewFromInt(int64(original)), replayed: true, recorded: int64(log.Quota)}
+		}
 		prog, err := billingexpr.CompileFromCache(expression)
 		if err != nil {
 			return pending

@@ -31,6 +31,7 @@ services:
       - SQL_DSN=postgresql://yuan_gateway:${YUAN_DEV_POSTGRES_PASSWORD:?Set YUAN_DEV_POSTGRES_PASSWORD in .env}@postgres:5432/yuan_gateway_dev?sslmode=disable
       - REDIS_CONN_STRING=redis://redis
       - TZ=Asia/Shanghai
+      - PROTECTED_FETCH_DNS_SERVER=${PROTECTED_FETCH_DNS_SERVER:-}
       - BATCH_UPDATE_ENABLED=true
       # Local HTTP dev mode: keep Secure=false and leave TRUSTED_URL unset. This disables the refresh/logout OriginGuard so the :5173 -> :3000 dev proxy works.
       - SESSION_COOKIE_SECURE=false

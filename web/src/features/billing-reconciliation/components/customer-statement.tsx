@@ -1029,6 +1029,14 @@ function CustomerModelRow(props: {
               {t(billingModeLabel(props.model.billing_mode))}
             </Badge>
           </div>
+          {props.model.billing_mode === 'per_image' && (
+            <div className='text-muted-foreground mt-1 text-xs'>
+              {t('Billable image count')} ·{' '}
+              {usage.billable_images == null
+                ? t('Not recorded')
+                : formatInteger(usage.billable_images)}
+            </div>
+          )}
           {(!props.apiKey || props.isAdmin) &&
             (props.model.billing_mode === 'token' ||
               props.model.billing_mode === 'per_call') && (

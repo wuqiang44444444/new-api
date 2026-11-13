@@ -393,9 +393,11 @@ func TestListModelsReturnsDisabledSeedanceModelsWithPublicAPIContracts(t *testin
 	feicaiModel := byName["public-video-720p"]
 	require.NotNil(t, feicaiModel.API)
 	assert.Equal(t, "new-api", feicaiModel.OwnedBy)
-	assert.False(t, feicaiModel.API.Assets.Supported)
-	assert.Empty(t, feicaiModel.API.Assets.ReuseScope)
-	assert.Nil(t, feicaiModel.API.Assets.Creation)
+	assert.True(t, feicaiModel.API.Assets.Supported)
+	assert.Equal(t, "platform_hosted", feicaiModel.API.Assets.ManagementMode)
+	require.NotNil(t, feicaiModel.API.Assets.Creation)
+	require.NotNil(t, funCloudModel.API.HostedAssets)
+	assert.Equal(t, feicaiModel.API.Assets.ReuseScope, funCloudModel.API.HostedAssets.ReuseScope)
 }
 
 func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T) {

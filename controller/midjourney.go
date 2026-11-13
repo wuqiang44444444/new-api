@@ -317,10 +317,10 @@ func GetUserMidjourney(c *gin.Context) {
 	items := model.GetAllUserTask(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), queryParams)
 	total := model.CountAllUserTask(userId, queryParams)
 
-	if setting.MjForwardUrlEnabled {
-		for i, midjourney := range items {
+	for _, midjourney := range items {
+		midjourney.ChannelId = 0
+		if setting.MjForwardUrlEnabled {
 			midjourney.ImageUrl = system_setting.ServerAddress + "/mj/image/" + midjourney.MjId
-			items[i] = midjourney
 		}
 	}
 	pageInfo.SetTotal(int(total))

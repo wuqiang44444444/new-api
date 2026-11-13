@@ -15,11 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreateAssetDistinguishesUnknownFromConfirmedUnsupportedModel(t *testing.T) {
+func TestCreateAssetDistinguishesUnknownModelFromUnsupportedHostedKind(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 
 	callCreate := func(modelName string) *httptest.ResponseRecorder {
-		body := `{"name":"portrait","asset_kind":"general","media_type":"image","model":"` + modelName + `","source":{"type":"url","url":"https://1.1.1.1/portrait.png"}}`
+		body := `{"name":"portrait","asset_kind":"real_person","media_type":"image","model":"` + modelName + `","source":{"type":"url","url":"https://1.1.1.1/portrait.png"}}`
 		recorder := httptest.NewRecorder()
 		context, _ := gin.CreateTestContext(recorder)
 		context.Request = httptest.NewRequest(http.MethodPost, "/v1/assets", strings.NewReader(body))
@@ -45,5 +45,5 @@ func TestCreateAssetDistinguishesUnknownFromConfirmedUnsupportedModel(t *testing
 
 	confirmedUnsupported := callCreate("seedance-no-assets")
 	assert.Equal(t, http.StatusUnprocessableEntity, confirmedUnsupported.Code)
-	assert.Contains(t, confirmedUnsupported.Body.String(), `"code":"unsupported_asset_operation"`)
+	assert.Contains(t, confirmedUnsupported.Body.String(), `"code":"unsupported_asset_type"`)
 }

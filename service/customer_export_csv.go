@@ -25,7 +25,7 @@ import (
 // statement details use a localized projection over those same safe values.
 
 const (
-	customerExportFieldVersion          = 24
+	customerExportFieldVersion          = 25
 	customerStatementExportFieldVersion = 25
 	customerExportCsvBOM                = "\xEF\xBB\xBF"
 	// Plan-suggested starting cap for one CSV shard (100 MiB).
@@ -43,6 +43,7 @@ var customerExportCsvHeader = []string{
 	"currency", "quota_per_unit", "currency_rate", "net_amount", "original_amount", "discount_amount", "input_tokens_quality",
 	"matched_tier", "billing_line_items_usd", "billing_explanation_status", "price_conversion_basis", "amount_unavailable_reasons",
 	"original_source", "derived_output_image_tokens", "contract_expected_amount", "contract_actual_amount", "contract_settlement_delta",
+	"billable_image_count",
 }
 
 type customerExportScopeColumns struct {
@@ -246,7 +247,11 @@ func (w *customerExportCsvWriter) AppendRow(row model.CustomerExportRow, scope c
 		actual = exportCurrencyAmount(strconv.FormatInt(settlement.ActualQuota, 10), scope)
 		delta = exportCurrencyAmount(strconv.FormatInt(settlement.DeltaQuota, 10), scope)
 	}
-	record = append(record, row.OriginalSource, derived, expected, actual, delta)
+	billableImages := ""
+	if row.BillableImageCount != nil {
+		billableImages = strconv.FormatInt(*row.BillableImageCount, 10)
+	}
+	record = append(record, row.OriginalSource, derived, expected, actual, delta, billableImages)
 	if w.statementLanguage != nil {
 		record = customerStatementDetailRecord(*w.statementLanguage, record)
 	}

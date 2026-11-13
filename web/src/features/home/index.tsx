@@ -23,6 +23,7 @@ import { PublicLayout } from '@/components/layout'
 import { Footer } from '@/components/layout/components/footer'
 import { RichContent } from '@/components/rich-content'
 import { useTheme } from '@/context/theme-provider'
+import { useModelSquareVisibility } from '@/hooks/use-model-square-visibility'
 import { isLikelyHtml } from '@/lib/content-format'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -35,8 +36,8 @@ export function Home() {
   const { i18n, t } = useTranslation()
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const { resolvedTheme } = useTheme()
-  const { auth } = useAuthStore()
-  const isAuthenticated = !!auth.user
+  const isAuthenticated = useAuthStore((state) => !!state.auth.user)
+  const showPricing = useModelSquareVisibility()
   const { content, isLoaded, isUrl } = useHomePageContent()
 
   const syncIframePreferences = useCallback(() => {
@@ -127,7 +128,7 @@ export function Home() {
       showMainContainer={false}
       navLinks={[
         { title: 'Models', href: '/#models' },
-        { title: 'Pricing', href: '/pricing' },
+        ...(showPricing ? [{ title: 'Pricing', href: '/pricing' }] : []),
         { title: 'Docs', href: '/#configuration' },
         { title: 'Enterprise', href: '/#enterprise' },
       ]}
@@ -140,11 +141,11 @@ export function Home() {
           {t('Skip to main content')}
         </a>
         <main id='main-content'>
-          <Hero isAuthenticated={isAuthenticated} />
+          <Hero isAuthenticated={isAuthenticated} showPricing={showPricing} />
           <HowItWorks />
           <Features />
           <SetupGuide />
-          <CTA isAuthenticated={isAuthenticated} />
+          <CTA isAuthenticated={isAuthenticated} showPricing={showPricing} />
         </main>
         <Footer />
       </div>

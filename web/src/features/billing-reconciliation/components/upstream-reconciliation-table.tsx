@@ -171,6 +171,15 @@ export function UpstreamReconciliationTable(
             <TableHead className='text-right'>{t('Output tokens')}</TableHead>
             <TableHead className='text-right'>{t('Billable calls')}</TableHead>
             <TableHead className='text-right'>
+              {t('Billable image count')}
+            </TableHead>
+            <TableHead className='text-right'>
+              {t('Channel test billable images')}
+            </TableHead>
+            <TableHead className='text-right'>
+              {t('Images generated')}
+            </TableHead>
+            <TableHead className='text-right'>
               {t('Billable seconds')}
             </TableHead>
             <TableHead>{t('Channel discount')}</TableHead>
@@ -319,6 +328,19 @@ function ChannelRow(props: {
       <UsageCell
         parent
         showKnownSubtotal
+        value={usage.billable_images ?? null}
+        unavailable={!!usage.billable_image_missing_rows}
+      />
+      <UsageCell
+        parent
+        showKnownSubtotal
+        value={usage.test_billable_images ?? null}
+        unavailable={!!usage.test_billable_image_missing_rows}
+      />
+      <UsageCell parent value={usage.completed_images ?? null} />
+      <UsageCell
+        parent
+        showKnownSubtotal
         value={usage.seconds == null ? null : Number(usage.seconds)}
         unavailable={!!usage.seconds_unavailable_rows}
       />
@@ -440,6 +462,17 @@ function ChannelModelRow(props: {
       />
       <UsageCell
         showKnownSubtotal
+        value={props.model.usage.billable_images ?? null}
+        unavailable={!!props.model.usage.billable_image_missing_rows}
+      />
+      <UsageCell
+        showKnownSubtotal
+        value={props.model.usage.test_billable_images ?? null}
+        unavailable={!!props.model.usage.test_billable_image_missing_rows}
+      />
+      <UsageCell value={props.model.usage.completed_images ?? null} />
+      <UsageCell
+        showKnownSubtotal
         value={
           props.model.usage.seconds == null
             ? null
@@ -491,7 +524,7 @@ function ChannelModelPage(props: {
   if (query.isPending) {
     return (
       <TableRow ref={firstModelRowRef}>
-        <TableCell colSpan={14}>
+        <TableCell colSpan={17}>
           <LoadingState />
         </TableCell>
       </TableRow>
@@ -500,7 +533,7 @@ function ChannelModelPage(props: {
   if (query.isError) {
     return (
       <TableRow>
-        <TableCell colSpan={14}>
+        <TableCell colSpan={17}>
           <ErrorState
             title={t('Unable to load upstream reconciliation')}
             onRetry={() => void query.refetch()}
@@ -526,7 +559,7 @@ function ChannelModelPage(props: {
         />
       ))}
       <TableRow>
-        <TableCell colSpan={14}>
+        <TableCell colSpan={17}>
           <BillingPagination
             label={t('Model pages')}
             page={page}

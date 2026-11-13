@@ -28,6 +28,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 
+import { PageFooterProvider } from '@/components/layout/components/page-footer'
 import { api } from '@/lib/api'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
@@ -90,7 +91,14 @@ async function renderLogs(props: {
       url.startsWith('/api/log?') ||
       url.startsWith('/api/log/self?')
     ) {
-      data = { items: records, total: props.initialPage ? 102 : records.length }
+      const params = new URL(url, 'http://localhost').searchParams
+      data = {
+        items: records,
+        total: props.initialPage ? 102 : records.length,
+        ...(params.has('page_snapshot')
+          ? { page_snapshot: 'test-snapshot' }
+          : {}),
+      }
     } else if (url === '/api/group/') {
       data = []
     } else if (url === '/api/user/self/groups') {
@@ -111,7 +119,7 @@ async function renderLogs(props: {
     history: createMemoryHistory({
       initialEntries: [
         props.initialPage
-          ? `/usage-logs/common?page=${props.initialPage}`
+          ? `/usage-logs/common?page=${props.initialPage}&pageSize=100`
           : '/usage-logs/common',
       ],
     }),
@@ -119,11 +127,16 @@ async function renderLogs(props: {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+  const footer = document.createElement('div')
+  footer.dataset.testFooter = ''
+  document.body.append(footer)
   render(
     <QueryClientProvider client={client}>
-      <UsageLogsProvider>
-        <RouterProvider router={router} />
-      </UsageLogsProvider>
+      <PageFooterProvider container={footer}>
+        <UsageLogsProvider>
+          <RouterProvider router={router} />
+        </UsageLogsProvider>
+      </PageFooterProvider>
     </QueryClientProvider>
   )
   await screen.findAllByText('$0.01')
@@ -133,6 +146,9 @@ async function renderLogs(props: {
 
 afterEach(() => {
   cleanup()
+  document
+    .querySelectorAll('[data-test-footer]')
+    .forEach((node) => node.remove())
   useAuthStore.setState(useAuthStore.getInitialState(), true)
   useSystemConfigStore.setState(useSystemConfigStore.getInitialState(), true)
   localStorage.clear()
@@ -156,6 +172,50 @@ test('requests ordinary logs by page number when cursor pagination is disabled',
   expect(requests).toHaveLength(1)
   expect(requests[0].get('p')).toBe('2')
   expect(requests[0].has('page_cursor')).toBe(false)
+})
+
+test('shows the exact page total and reuses the snapshot when jumping or changing page size', async () => {
+  const user = userEvent.setup()
+  await renderLogs({
+    role: ROLE.USER,
+    enabledPlans: [],
+    activeSubscription: false,
+    initialPage: 2,
+  })
+  const requests = () =>
+    vi
+      .mocked(api.get)
+      .mock.calls.flatMap(([url]) =>
+        url.startsWith('/api/log/self?')
+          ? [new URL(url, 'http://localhost').searchParams]
+          : []
+      )
+  expect(screen.getByText('Page 2 of 2')).toBeVisible()
+  expect(screen.getByText('102')).toBeVisible()
+  expect(requests()[0].get('page_snapshot')).toBe('start')
+  expect(requests()[0].get('p')).toBe('2')
+  expect(screen.getByRole('button', { name: 'Go to next page' })).toBeDisabled()
+
+  await user.click(screen.getByRole('button', { name: 'Go to first page' }))
+  expect(await screen.findByText('Page 1 of 2')).toBeVisible()
+  await waitFor(() => expect(requests().at(-1)?.get('p')).toBe('1'))
+  expect(requests().at(-1)?.get('page_snapshot')).toBe('test-snapshot')
+
+  await user.click(screen.getByRole('combobox', { name: 'Rows per page' }))
+  await user.click(await screen.findByRole('option', { name: '20' }))
+  expect(await screen.findByText('Page 1 of 6')).toBeVisible()
+  expect(requests().at(-1)?.get('page_size')).toBe('20')
+  expect(requests().at(-1)?.get('page_snapshot')).toBe('test-snapshot')
+
+  const pageNumber = screen.getByRole('spinbutton', { name: 'Page number' })
+  await user.clear(pageNumber)
+  await user.type(pageNumber, '7{Enter}')
+  expect(requests().at(-1)?.get('p')).toBe('1')
+  await user.clear(pageNumber)
+  await user.type(pageNumber, '5{Enter}')
+  expect(await screen.findByText('Page 5 of 6')).toBeVisible()
+  expect(requests().at(-1)?.get('p')).toBe('5')
+  expect(requests().at(-1)?.get('page_snapshot')).toBe('test-snapshot')
 })
 
 test.each([{ enabledPlans: [] }, { enabledPlans: [false] }])(

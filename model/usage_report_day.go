@@ -3,7 +3,6 @@ package model
 import (
 	"context"
 	"errors"
-	"slices"
 	"sort"
 
 	"github.com/QuantumNous/new-api/common"
@@ -12,7 +11,11 @@ import (
 
 const UsageReportTaskType = "usage_report_day"
 
-const usageReportMeterVersion = 1
+const (
+	usageReportMeterVersion = 7
+	// Version 4 was the first to distinguish frozen billing tokens from telemetry.
+	frozenBillingTokenMeterVersion = 4
+)
 
 type usageReportDay struct {
 	Start        int64  `gorm:"primaryKey;autoIncrement:false"`
@@ -71,6 +74,7 @@ type UsageReportDayReference struct {
 }
 
 type PublishedUsageReport struct {
+	UsageReportRebuildStatus
 	References     []UsageReportDayReference     `json:"report_days"`
 	IncompleteDays []string                      `json:"incomplete_days,omitempty"`
 	PublishedDays  []string                      `json:"published_days"`
@@ -295,25 +299,14 @@ func reportDayHeads(ctx context.Context, period UsageAnalyticsPeriod, refs []Usa
 }
 
 func FreezeUsageReportReferences(ctx context.Context, period UsageAnalyticsPeriod, requested []UsageReportDayReference) ([]UsageReportDayReference, error) {
-	heads, err := reportDayHeads(ctx, period, requested)
+	_, meta, err := selectUsageReportDays(ctx, period, requested)
 	if err != nil {
 		return nil, err
 	}
-	if len(requested) == 0 {
-		now := common.GetTimestamp()
-		heads = slices.DeleteFunc(heads, func(day usageReportDay) bool {
-			return day.Start+86400 <= now && day.AsOf < day.Start+86400+3*3600
-		})
-	}
-	if len(heads) == 0 {
+	if len(meta.References) == 0 {
 		return nil, errors.New("usage report has not been published")
 	}
-	sort.Slice(heads, func(i, j int) bool { return heads[i].Start < heads[j].Start })
-	refs := make([]UsageReportDayReference, 0, len(heads))
-	for _, head := range heads {
-		refs = append(refs, UsageReportDayReference{Start: head.Start, Generation: head.Generation})
-	}
-	return refs, nil
+	return meta.References, nil
 }
 
 func usageReportBeforeBatch(ctx context.Context) error {
@@ -324,38 +317,15 @@ func usageReportBeforeBatch(ctx context.Context) error {
 }
 
 func loadPublishedUsageReport(ctx context.Context, period UsageAnalyticsPeriod, userID int, upstream, overview bool) (*usageAggregation, PublishedUsageReport, error) {
-	result := PublishedUsageReport{PublishedDays: []string{}, References: []UsageReportDayReference{}}
 	agg := newUsageAggregation(period, usageViewOptions{UserID: userID, WantCustomer: !upstream && !overview, WantUpstream: upstream, WantOverview: overview})
 	agg.bundle = &usageDiscountBundle{byMonth: make(map[int64]map[int]ProviderChannelBillingDiscount)}
 	refs, _ := ctx.Value(usageReportReferencesKey{}).([]UsageReportDayReference)
-	heads, err := reportDayHeads(ctx, period, refs)
+	heads, result, err := selectUsageReportDays(ctx, period, refs)
 	if err != nil {
 		return nil, result, err
 	}
-	var issues map[int64]bool
-	if len(refs) == 0 && len(heads) > 0 {
-		issues, err = dailyReportCoverageIssues(ctx, DailyReportUsage, period.StartTimestamp, period.EndTimestamp)
-		if err != nil {
-			return nil, result, err
-		}
-	}
-	byDay := make(map[int64]usageReportDay, len(heads))
 	for _, head := range heads {
-		byDay[head.Start] = head
-	}
-	for index, day := range period.Days {
-		head, ok := byDay[day.Start]
-		if !ok || day.Future || (len(refs) == 0 && day.End <= common.GetTimestamp() && head.AsOf < day.End+3*3600) {
-			continue
-		}
-		if head.Incomplete || issues[day.Start] {
-			result.IncompleteDays = append(result.IncompleteDays, day.Date)
-		}
-		result.PublishedDays = append(result.PublishedDays, day.Date)
-		result.References = append(result.References, UsageReportDayReference{Start: day.Start, Generation: head.Generation})
-		if result.AsOf == 0 || head.AsOf < result.AsOf {
-			result.AsOf = head.AsOf
-		}
+		index := usageDayIndex(period, head.Start)
 		query := DB.WithContext(ctx).Model(&usageReportDayRow{}).Where("generation = ?", head.Generation)
 		if overview {
 			query = query.Select("user_id, overview").Where("user_id > 0")
@@ -391,13 +361,30 @@ func loadPublishedUsageReport(ctx context.Context, period UsageAnalyticsPeriod, 
 			}
 			for _, leaf := range data.Customers {
 				if agg.opts.WantCustomer {
-					agg.customer[usageCustomerKey{day: index, token: leaf.Token, model: leaf.Model, billingMode: leaf.BillingMode}] = leaf.Metrics.accumulator()
+					mode := leaf.BillingMode
+					if mode == "" {
+						mode = BillingReconciliationModeUnknown
+					}
+					key := usageCustomerKey{day: index, token: leaf.Token, model: leaf.Model, billingMode: mode}
+					agg.mergeCustomer(row.UserID, key, leaf.Metrics.accumulator())
 				}
 			}
 			for _, leaf := range data.Upstream {
 				if upstream {
 					key := usageUpstreamKey{day: index, channel: leaf.Channel, model: leaf.Model, mode: leaf.Mode, fallback: leaf.Fallback, urlKey: leaf.URLKey, urlName: leaf.URLName, name: leaf.Name}
-					agg.upstream[key] = leaf.Metrics.accumulator()
+					acc := leaf.Metrics.accumulator()
+					if head.MeterVersion < frozenBillingTokenMeterVersion {
+						acc.m.InputTokens, acc.m.OutputTokens = 0, 0
+						acc.m.CacheReadTokens, acc.m.CacheWriteTokens = 0, 0
+						acc.m.TokenDetails = nil
+						if acc.m.BillingTokensApplicable || leaf.Mode == BillingReconciliationModeToken {
+							acc.m.BillingTokensApplicable = true
+							acc.m.RowsMissingTokens = acc.m.TotalCalls
+						} else {
+							acc.m.RowsMissingTokens = 0
+						}
+					}
+					agg.upstream[key] = acc
 				}
 			}
 			for month, coefficients := range data.Discounts {
@@ -409,14 +396,18 @@ func loadPublishedUsageReport(ctx context.Context, period UsageAnalyticsPeriod, 
 }
 
 func GetPublishedUsageCustomer(ctx context.Context, period UsageAnalyticsPeriod, userID int, modelName string) (UsageCustomerView, PublishedUsageReport, error) {
-	return getPublishedUsageCustomer(ctx, period, userID, modelName, false)
+	return getPublishedUsageCustomer(ctx, period, userID, modelName, false, false)
+}
+
+func GetPublishedUsageCustomerByBillingMode(ctx context.Context, period UsageAnalyticsPeriod, userID int, modelName string) (UsageCustomerView, PublishedUsageReport, error) {
+	return getPublishedUsageCustomer(ctx, period, userID, modelName, false, true)
 }
 
 func GetPublishedAdminUsageCustomer(ctx context.Context, period UsageAnalyticsPeriod, userID int) (UsageCustomerView, PublishedUsageReport, error) {
-	return getPublishedUsageCustomer(ctx, period, userID, "", true)
+	return getPublishedUsageCustomer(ctx, period, userID, "", true, false)
 }
 
-func getPublishedUsageCustomer(ctx context.Context, period UsageAnalyticsPeriod, userID int, modelName string, includeModelRanks bool) (UsageCustomerView, PublishedUsageReport, error) {
+func getPublishedUsageCustomer(ctx context.Context, period UsageAnalyticsPeriod, userID int, modelName string, includeModelRanks, splitBillingMode bool) (UsageCustomerView, PublishedUsageReport, error) {
 	view := UsageCustomerView{Keys: []UsageCustomerKeyGroup{}}
 	agg, meta, err := loadPublishedUsageReport(ctx, period, userID, false, false)
 	if err == nil {
@@ -427,6 +418,7 @@ func getPublishedUsageCustomer(ctx context.Context, period UsageAnalyticsPeriod,
 				}
 			}
 		}
+		agg.opts.SplitCustomerBillingMode = splitBillingMode
 		finalizeUsageCustomerView(&view, agg)
 		if includeModelRanks {
 			modelTotals := make(map[usageReportModelKey]*usageMetricsAcc)

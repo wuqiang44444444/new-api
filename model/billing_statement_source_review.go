@@ -228,25 +228,33 @@ func scanBillingSourceReview(ctx context.Context, tx *gorm.DB, user int, start, 
 			if int64(l.Quota) > math.MaxInt32 {
 				return nil, fmt.Errorf("invalid recorded quota")
 			}
+			var taskID string
+			var preauthID int
 			var relation struct {
-				TaskID string `json:"task_id"`
-				Admin  struct {
-					ID int `json:"original_preauth_log_id"`
-				} `json:"admin_info"`
+				TaskID common.RawMessage `json:"task_id"`
+				Admin  common.RawMessage `json:"admin_info"`
 			}
 			if common.UnmarshalJsonStr(l.Other, &relation) == nil {
-				if relation.TaskID != "" {
-					key := fmt.Sprintf("%d:%s", l.TokenId, relation.TaskID)
+				badTask := len(relation.TaskID) > 0 && common.Unmarshal(relation.TaskID, &taskID) != nil
+				var admin map[string]common.RawMessage
+				badPreauth := len(relation.Admin) > 0 && common.Unmarshal(relation.Admin, &admin) != nil
+				if raw := admin["original_preauth_log_id"]; len(raw) > 0 {
+					badPreauth = common.Unmarshal(raw, &preauthID) != nil || preauthID < 0
+				}
+				manualRefund := l.Type == LogTypeRefund && preauthID > 0
+				conflict := l.Type == LogTypeRefund && (badTask || badPreauth || manualRefund && taskID != "")
+				if taskID != "" {
+					key := fmt.Sprintf("%d:%s", l.TokenId, taskID)
 					if err := budget.consume(1024 + len(l.Other) + len(l.ModelName) + len(key)); err != nil {
 						return nil, err
 					}
-					linked[key] = append(linked[key], billingSourceRelatedEvidence{ID: l.Id, CreatedAt: l.CreatedAt, TokenID: l.TokenId, ChannelID: l.ChannelId, Model: l.ModelName, Type: l.Type, Quota: l.Quota, Other: l.Other})
+					linked[key] = append(linked[key], billingSourceRelatedEvidence{ID: l.Id, CreatedAt: l.CreatedAt, TokenID: l.TokenId, ChannelID: l.ChannelId, Model: billingSourceFrozenModel(l), Type: l.Type, Quota: l.Quota, Other: l.Other, ConflictingRefundReferences: conflict})
 				}
-				if l.Type == LogTypeRefund && relation.Admin.ID > 0 {
+				if manualRefund {
 					if err := budget.consume(1024 + len(l.Other) + len(l.ModelName)); err != nil {
 						return nil, err
 					}
-					preauth[relation.Admin.ID] = append(preauth[relation.Admin.ID], billingSourceRelatedEvidence{ID: l.Id, CreatedAt: l.CreatedAt, TokenID: l.TokenId, ChannelID: l.ChannelId, Model: l.ModelName, Type: l.Type, Quota: l.Quota, Other: l.Other})
+					preauth[preauthID] = append(preauth[preauthID], billingSourceRelatedEvidence{ID: l.Id, CreatedAt: l.CreatedAt, TokenID: l.TokenId, ChannelID: l.ChannelId, Model: billingSourceFrozenModel(l), Type: l.Type, Quota: l.Quota, Other: l.Other, ConflictingRefundReferences: conflict})
 				}
 			}
 			if l.CreatedAt < start || l.CreatedAt > end {
@@ -256,11 +264,11 @@ func scanBillingSourceReview(ctx context.Context, tx *gorm.DB, user int, start, 
 				return nil, err
 			}
 			out.revisions[fmt.Sprintf("refund:%d:%d", user, l.TokenId)] = 0
-			if relation.Admin.ID > 0 {
-				out.revisions[fmt.Sprintf("log:%d", relation.Admin.ID)] = 0
+			if preauthID > 0 {
+				out.revisions[fmt.Sprintf("log:%d", preauthID)] = 0
 			}
-			if relation.TaskID != "" {
-				out.revisions[billingStatementTaskScope(user, l.TokenId, relation.TaskID)] = 0
+			if taskID != "" {
+				out.revisions[billingStatementTaskScope(user, l.TokenId, taskID)] = 0
 			}
 			if len(out.revisions) > billingSourceReviewMaxDependencies {
 				return nil, ErrBillingSourceReviewBudget
@@ -350,8 +358,18 @@ func scanBillingSourceReview(ctx context.Context, tx *gorm.DB, user int, start, 
 			}
 			key := fmt.Sprintf("%d:%s", task.PrivateData.TokenId, task.TaskID)
 			rows := append([]billingSourceRelatedEvidence(nil), linked[key]...)
-			for _, l := range linked[key] {
-				rows = append(rows, preauth[l.ID]...)
+			// Match the formal statement's manual refund relationship. The
+			// complete customer scan above includes references from other months.
+			unverifiedRefunds := map[int]bool{}
+			for _, original := range linked[key] {
+				for _, refund := range preauth[original.ID] {
+					rows = append(rows, refund)
+					if len(preauth[original.ID]) != 1 ||
+						!billingStatementManualRefundMatches(original.Type, user, original.TokenID, original.ChannelID, original.Model, original.Quota,
+							billingStatementPreauthCandidate{key: billingStatementRefundKey{userID: user, tokenID: refund.TokenID, channelID: refund.ChannelID, model: refund.Model}, refQuota: int64(refund.Quota)}) {
+						unverifiedRefunds[refund.ID] = true
+					}
+				}
 			}
 			relevant := task.CreatedAt >= start && task.CreatedAt <= end
 			net := int64(0)
@@ -368,8 +386,9 @@ func scanBillingSourceReview(ctx context.Context, tx *gorm.DB, user int, start, 
 					relevant = true
 				}
 				matches := l.TokenID == task.PrivateData.TokenId && l.ChannelID == task.ChannelId && l.Model == task.Properties.OriginModelName
-				related = append(related, BillingSourceRelatedLog{ID: l.ID, CreatedAt: l.CreatedAt, LogType: l.Type, Quota: int64(l.Quota), IdentityMatches: matches})
-				if !matches {
+				verified := matches && !l.ConflictingRefundReferences && !unverifiedRefunds[l.ID]
+				related = append(related, BillingSourceRelatedLog{ID: l.ID, CreatedAt: l.CreatedAt, LogType: l.Type, Quota: int64(l.Quota), IdentityMatches: verified})
+				if !verified || l.Quota < 0 {
 					conflict = true
 					continue
 				}
@@ -481,12 +500,23 @@ func lockBillingSourceReview(ctx context.Context, tx *gorm.DB, r *BillingSourceR
 	if err != nil {
 		return ErrBillingStatementVersionConflict
 	}
-	current, err := billingSourceReviewStamp(ctx, tx, r.UserID)
+	current := billingSourceStamp{Revision: revision.Revision, Generation: m.Generation, Parser: BillingStatementParserVersion}
+	if current == r.stamp {
+		return nil
+	}
+
+	// The registration lock fences all tracked source writes. A changed
+	// customer revision can be unrelated to the reviewed month; compare the
+	// actual evidence under that lock before rejecting an otherwise valid save.
+	checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	rechecked, err := scanBillingSourceReview(checkCtx, tx, r.UserID, r.Start, r.End, 64<<20)
 	if err != nil {
 		return err
 	}
-	if current != r.stamp {
+	if rechecked.Fingerprint != r.Fingerprint {
 		return ErrBillingStatementVersionConflict
 	}
+	r.stamp, r.revisions = rechecked.stamp, rechecked.revisions
 	return nil
 }

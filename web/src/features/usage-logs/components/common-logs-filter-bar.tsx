@@ -114,11 +114,13 @@ function buildSearchSourceKey(values: {
 
 interface CommonLogsFilterBarProps<TData> {
   table: Table<TData>
+  onSearch?: () => void
 }
 
 export function CommonLogsFilterBar<TData>(
   props: CommonLogsFilterBarProps<TData>
 ) {
+  const { onSearch } = props
   const { t } = useTranslation()
   const isMobile = useMediaQuery('(max-width: 640px)')
   const navigate = useNavigate()
@@ -157,7 +159,7 @@ export function CommonLogsFilterBar<TData>(
       group: searchParams.group,
       username: searchParams.username,
       requestId: searchParams.requestId,
-      upstreamRequestId: searchParams.upstreamRequestId,
+      upstreamRequestId: isAdmin ? searchParams.upstreamRequestId : undefined,
       type: searchParams.type,
     }
     const filters: CommonLogFilters = {
@@ -171,7 +173,9 @@ export function CommonLogsFilterBar<TData>(
       group: searchParams.group || undefined,
       username: searchParams.username || undefined,
       requestId: searchParams.requestId || undefined,
-      upstreamRequestId: searchParams.upstreamRequestId || undefined,
+      upstreamRequestId: isAdmin
+        ? searchParams.upstreamRequestId || undefined
+        : undefined,
     }
     return {
       sourceKey: buildSearchSourceKey(sourceValues),
@@ -179,6 +183,7 @@ export function CommonLogsFilterBar<TData>(
       logType: getLogTypeValue(searchParams.type),
     }
   }, [
+    isAdmin,
     searchParams.startTime,
     searchParams.endTime,
     searchParams.channel,
@@ -211,22 +216,41 @@ export function CommonLogsFilterBar<TData>(
     [searchState]
   )
 
-  const handleApply = useCallback(
-    (nextFilters: CommonLogFilters = filters) => {
-      const filterParams = buildSearchParams(nextFilters, 'common')
-      navigate({
+  const applySearch = useCallback(
+    (search: ReturnType<typeof buildSearchParams>) => {
+      onSearch?.()
+      void queryClient.invalidateQueries({
+        queryKey: ['logs'],
+        refetchType: 'none',
+      })
+      void navigate({
         to: '/usage-logs/$section',
         params: { section: 'common' },
-        search: {
-          ...filterParams,
-          type: [logType],
+        search: (current) => ({
+          ...search,
+          scope: current.scope,
+          pageSize: current.pageSize,
           page: 1,
-        },
-      })
-      queryClient.invalidateQueries({ queryKey: ['logs'] })
-      queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
+        }),
+      }).then(() =>
+        queryClient.refetchQueries(
+          { queryKey: ['logs'], type: 'active', stale: true },
+          { cancelRefetch: false }
+        )
+      )
+      void queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
     },
-    [filters, logType, navigate, queryClient]
+    [navigate, onSearch, queryClient]
+  )
+
+  const handleApply = useCallback(
+    (nextFilters: CommonLogFilters = filters) => {
+      applySearch({
+        ...buildSearchParams(nextFilters, 'common'),
+        type: [logType],
+      })
+    },
+    [applySearch, filters, logType]
   )
 
   const handleReset = useCallback(() => {
@@ -242,18 +266,8 @@ export function CommonLogsFilterBar<TData>(
       filters: resetFilters,
       logType: LOG_TYPE_ALL_VALUE,
     })
-
-    navigate({
-      to: '/usage-logs/$section',
-      params: { section: 'common' },
-      search: {
-        page: 1,
-        ...resetSearch,
-      },
-    })
-    queryClient.invalidateQueries({ queryKey: ['logs'] })
-    queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
-  }, [navigate, queryClient])
+    applySearch(resetSearch)
+  }, [applySearch])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -267,7 +281,7 @@ export function CommonLogsFilterBar<TData>(
     !!filters.username ||
     !!filters.channel ||
     !!filters.requestId ||
-    !!filters.upstreamRequestId
+    (isAdmin && !!filters.upstreamRequestId)
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
   const hasAdditionalFilters =
@@ -278,7 +292,7 @@ export function CommonLogsFilterBar<TData>(
     isAdmin ? filters.username : undefined,
     isAdmin ? filters.channel : undefined,
     filters.requestId,
-    filters.upstreamRequestId,
+    isAdmin ? filters.upstreamRequestId : undefined,
   ].filter(Boolean).length
   const sensitiveInputClass = sensitiveVisible
     ? undefined
@@ -473,14 +487,16 @@ export function CommonLogsFilterBar<TData>(
           onKeyDown={handleKeyDown}
         />
       </LogsFilterField>
-      <LogsFilterField>
-        <LogsFilterInput
-          placeholder={t('Upstream Request ID')}
-          value={filters.upstreamRequestId || ''}
-          onChange={(e) => handleChange('upstreamRequestId', e.target.value)}
-          onKeyDown={handleKeyDown}
-        />
-      </LogsFilterField>
+      {isAdmin && (
+        <LogsFilterField>
+          <LogsFilterInput
+            placeholder={t('Upstream Request ID')}
+            value={filters.upstreamRequestId || ''}
+            onChange={(e) => handleChange('upstreamRequestId', e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+        </LogsFilterField>
+      )}
     </>
   )
 

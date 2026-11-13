@@ -31,6 +31,7 @@ import { GatewayFlow } from '../gateway-flow'
 interface HeroProps {
   className?: string
   isAuthenticated?: boolean
+  showPricing: boolean
 }
 
 export function Hero(props: HeroProps) {
@@ -120,13 +121,15 @@ export function Hero(props: HeroProps) {
                   {t('Get Started')}
                   <ArrowRight data-icon='inline-end' />
                 </Button>
-                <Button
-                  variant='outline'
-                  className='h-11 px-5'
-                  render={<Link to='/pricing' />}
-                >
-                  {t('View Pricing')}
-                </Button>
+                {props.showPricing && (
+                  <Button
+                    variant='outline'
+                    className='h-11 px-5'
+                    render={<Link to='/pricing' />}
+                  >
+                    {t('View Pricing')}
+                  </Button>
+                )}
                 {docsButton}
               </>
             )}

@@ -137,7 +137,7 @@ func (evidenceRetentionHandler) Run(ctx context.Context, task *model.SystemTask,
 			break
 		}
 	}
-	if err := cleanupEvidenceDatabase(ctx, store, &stats, persistProgress); err != nil {
+	if err := cleanupEvidenceDatabase(ctx, store, &stats, retentionSeconds, persistProgress); err != nil {
 		if errors.Is(err, model.ErrSystemTaskLockLost) {
 			return
 		}

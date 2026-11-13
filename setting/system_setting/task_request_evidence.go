@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -13,8 +12,7 @@ import (
 )
 
 // 请求证据的部署配置。采集默认关闭，仅显式配置开启；显式开启后统一采集
-// 全部登记业务操作。正文及事件明细保留期为 1～2 天（默认 2），非法配置在
-// 加载期明确报错，不静默改成永久保存或无证据模式。加密密钥未配置时从
+// 全部登记业务操作。环境变量提供保留期的部署兜底。加密密钥未配置时从
 // CRYPTO_SECRET/SESSION_SECRET 派生（见 ResolveTaskRequestEvidenceConfig）。
 const (
 	TaskRequestEvidenceEnabledEnv       = "TASK_REQUEST_EVIDENCE_ENABLED"
@@ -24,7 +22,6 @@ const (
 
 	defaultTaskRequestEvidenceStorageDir = "data/task-request-evidence"
 	defaultTaskRequestEvidenceRetention  = 2
-	maxTaskRequestEvidenceRetention      = 2
 )
 
 // TaskRequestEvidenceConfig 是证据子系统的运行配置合同。
@@ -33,6 +30,7 @@ type TaskRequestEvidenceConfig struct {
 	StorageDir       string
 	EncryptionKeyHex string
 	RetentionDays    int
+	RetentionFromEnv bool
 	// KeyDerived 表示密钥由 CRYPTO_SECRET/SESSION_SECRET 派生而非显式配置。
 	KeyDerived    bool
 	InvalidReason string
@@ -48,16 +46,20 @@ func LoadTaskRequestEvidenceConfig() TaskRequestEvidenceConfig {
 		Enabled:          enabledRaw == "true",
 		StorageDir:       common.GetEnvOrDefaultString(TaskRequestEvidenceStorageDirEnv, defaultTaskRequestEvidenceStorageDir),
 		EncryptionKeyHex: strings.TrimSpace(os.Getenv(TaskRequestEvidenceEncryptionKeyEnv)),
-		RetentionDays:    common.GetEnvOrDefault(TaskRequestEvidenceRetentionDaysEnv, defaultTaskRequestEvidenceRetention),
+		RetentionDays:    defaultTaskRequestEvidenceRetention,
 	}
 	if raw, ok := os.LookupEnv(TaskRequestEvidenceEnabledEnv); ok && raw != "" && enabledRaw != "true" && enabledRaw != "false" {
 		invalid.set("enabled must be true or false")
 		// 非法启用值不被当成开启，但必须响亮报告，避免部署方误以为已开启。
 		common.SysError("invalid " + TaskRequestEvidenceEnabledEnv + " value; collection stays disabled")
 	}
-	if raw, ok := os.LookupEnv(TaskRequestEvidenceRetentionDaysEnv); ok && raw != "" {
-		if _, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64); err != nil {
-			invalid.set("invalid integer evidence configuration")
+	if raw := strings.TrimSpace(os.Getenv(TaskRequestEvidenceRetentionDaysEnv)); raw != "" {
+		days, err := ParseTaskRequestEvidenceRetentionDays(raw)
+		if err != nil {
+			common.SysError(fmt.Sprintf("invalid %s; fallback retention is %d days", TaskRequestEvidenceRetentionDaysEnv, config.RetentionDays))
+		} else {
+			config.RetentionDays = days
+			config.RetentionFromEnv = true
 		}
 	}
 	if invalid.reason != "" {
@@ -134,9 +136,6 @@ func ValidateTaskRequestEvidenceConfig(config TaskRequestEvidenceConfig) error {
 		if err != nil || len(key) != 32 {
 			return fmt.Errorf("encryption key must be 64 hex chars (32 bytes)")
 		}
-	}
-	if config.RetentionDays < 1 || config.RetentionDays > maxTaskRequestEvidenceRetention {
-		return fmt.Errorf("retention days must be an integer between 1 and %d; permanent retention is no longer supported", maxTaskRequestEvidenceRetention)
 	}
 	return nil
 }

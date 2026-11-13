@@ -315,7 +315,7 @@ Provider 完成法律授权、撤回平台外副本或删除 Provider 已处理�
 - 创建未取得可信 Provider ID 时返回失败并记录脱敏技术日志，不建立 `create_unknown`；
 - 删除未取得明确成功时返回失败并保留原状态，不建立 `delete_unknown`；
 - 统一北向不提供素材组更新；Provider 私有更新接口不自动成为平台能力，也不建立品牌化入口；
-- 普通代理的单项 GET 读取 Provider 状态。本站托管图片的删除停止后续引用。
+- 普通代理的单项 GET 读取 Provider 状态。本站托管素材的删除停止后续引用。
 - 少见孤儿资源由管理员通知技术人员分析，不建设自动扫描或专门核查页面。
 
 ## 11. 计费与账单体验
@@ -347,7 +347,7 @@ Provider 成本证据和管理员审计投影，不返回客户。
 | Provider task/resource ID、连接快照 | 不可见 | 普通页面不展示 | 仅脱敏、按权限查看 |
 | Key、AK/SK、完整签名 URL、原始响应 | 不可见 | 不以明文展示 | 不进入普通日志或响应 |
 
-Task 按 `user_id + app_id` 隔离。本站托管图片与素材组按 `user_id` 隔离，同用户的 API Key 可共享。
+Task 按 `user_id + app_id` 隔离。本站托管素材与素材组按 `user_id` 隔离，同用户的 API Key 可共享。
 普通素材代理不持久化客户 Asset/AssetGroup，
 opaque ID 由受信应用管理；Channel 默认组 ID 是渠道级基础设施配置，不是客户资源。缓存和前端状态不能
 成为任务、资金、权限或默认组 ID 的唯一事实源。

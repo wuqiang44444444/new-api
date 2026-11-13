@@ -48,7 +48,7 @@ func recoverUniqueImageOutputOriginal(log billingReconciliationLog, parsed parse
 			known[name] = active
 		}
 	}
-	params, ok := historicalCustomerTokenParams(log, facts, known)
+	params, ok := historicalCustomerTokenParams(log, facts, known, known)
 	contract, contractOK := historicalStatementContractRatio(parsed)
 	tier := facts.string("matched_tier")
 	if !ok || !contractOK || tier == "" {

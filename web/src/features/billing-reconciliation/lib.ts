@@ -85,6 +85,7 @@ export function formatInteger(value: number | null | undefined) {
 export function billingModeLabel(mode: BillingMode) {
   if (mode === 'token') return 'Token billing'
   if (mode === 'per_call') return 'Per-call billing'
+  if (mode === 'per_image') return 'Per image'
   if (mode === 'per_second') return 'Duration billing'
   if (mode === 'duration_and_count') return 'Duration and quantity billing'
   return 'Unknown billing mode'

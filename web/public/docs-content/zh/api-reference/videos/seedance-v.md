@@ -1,7 +1,7 @@
 ---
 page-id: videos-seedance-v
 kind: api-reference
-last-verified: 2026-10-21
+last-verified: 2026-11-13
 operations:
   - listModelArkVideoModels
   - retrieveModel
@@ -40,10 +40,9 @@ curl "{{SITE_BASE_URL}}/v1/models/{{MODEL_ID_PLACEHOLDER}}" \
 | `api.video.creation.parameters` | 字段、默认值、枚举、上下限与特殊值 |
 | `api.video.creation.content_types` | 文本、图片、视频、音频角色及各自数量上限 |
 | `api.video.operations` | 支持创建、列表、查询、内容下载；删除/取消不支持 |
-| `api.assets.supported` | 是否启用本站托管图片；为 `true` 时读取素材操作、创建限制与复用域 |
+| `api.assets` / `api.hosted_assets` | 查看本站托管素材库的创建合同 |
 
-模型列表、详情和价格目录复用同一参数投影。目录可见不等于当前 Key 可调用；
-`available=false` 时按 `availability` 处理，不尝试创建。
+`available=false` 时，通过 `availability` 查看不可调用的原因。
 
 ## 创建参数
 
@@ -93,21 +92,13 @@ curl "{{SITE_BASE_URL}}/v1/models/{{MODEL_ID_PLACEHOLDER}}" \
 - 各媒体数量以元数据为准；分辨率、时长或组合不合法时在占款前拒绝。
 
 推荐使用可访问的 HTTPS 媒体 URL。参考音频还支持 Base64、Data URL 和 multipart 文件，
-遵循[标准参考音频传输](api-reference/videos/modelark#参考音频的-urlbase64-与文件)：
-每段内联或文件音频不超过 15 MiB，网关在占款前上传；存储不可用时返回
-`503 reference_audio_unavailable`。网关不检查实际媒体时长或转码，上游仍可能拒绝不可访问或不合规媒体。
+遵循[标准参考音频传输](api-reference/videos/modelark#参考音频的-url-base64-与文件)：
+每段内联或文件音频不超过 15 MiB。存储不可用时返回 `503 reference_audio_unavailable`。
+参考媒体须能在生成期间访问，并满足目标模型的格式和时长要求。
 
-本系列可配置本站托管图片。当 `api.assets.supported=true` 且
-`management_mode=platform_hosted` 时，通过[素材接口](api-reference/assets)创建图片，
-保存返回的 `id` 与 `reference`，随后把 `reference` 填入 `image_url.url`。
-首帧、尾帧与参考图片均支持这种引用，也可以与直接图片 URL 混用，角色和组合限制保持不变。
-网关在预扣前检查当前账号归属、素材状态和对象可用性，发送时转换为内部临时 URL。
-同账号可在发布相同托管复用域的模型间使用素材；删除只停止新引用，已受理任务继续。
-
-托管库支持图片创建、单项查询/删除，以及素材组创建/单项查询；不支持列表、更新或真人认证，
-也不支持将音频、视频存入该图片库。非本站 `asset://` 引用在预扣前拒绝。
-`api.assets.supported=false` 时素材操作仍返回 `422 unsupported_asset_operation`，直接图片 URL
-继续可用，且不会自动导入素材库。是否开放托管能力以当前模型元数据为准。
+[托管素材库](api-reference/assets#平台托管素材)统一接收图片、MP3 和 MP4。添加新 Seedance 模型后，
+可直接使用同账号下已有素材的 `reference`，填入对应的媒体 URL 字段。提交生成时才按目标模型校验媒体限制。
+例如，已入库的 MP3 用于 Seedance V 生成时，仍须搭配参考图片或参考视频。
 
 ## 创建与查询示例
 
@@ -156,9 +147,8 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
 curl --fail "$VIDEO_URL" --output result.mp4
 ```
 
-`VIDEO_URL` 为本次查询返回的完整地址。签名从每次签发起有效 24 小时（86400 秒），不是从任务
-创建或成功时起算；对象仍保留且授权有效时重新查询可续签，不重新生成或复制视频。
-对象保留期由部署方明确，本站不承诺永久保存。不要把 Key 拼入 URL，或将完整签名 URL 写入普通日志。
+`VIDEO_URL` 为本次查询返回的完整地址。签名从每次签发起有效 24 小时（86400 秒）。文件仍保留且授权有效时，
+重新查询原任务可续签。
 既有 `/v1/videos/{task_id}/content` 入口仍需平台鉴权，就绪后返回 `302`；curl 使用
 `--location` 跟随跳转，不用 `--location-trusted`。完整错误处理见
 [标准下载合同](api-reference/videos/modelark#下载视频或末帧)。
@@ -166,39 +156,4 @@ curl --fail "$VIDEO_URL" --output result.mp4
 本系列不支持取消/删除，不要调用 DELETE 作为退款手段。
 
 `400 invalid_request` 应修正参数；`503 create_outcome_unknown` 表示创建结果待核实，
-保留请求 ID，不要重复 POST。成功内容应尽快下载，本站不承诺永久保存。
-公开枚举说明当前合同范围，不代表每个档位与组合都已完成真实生成验收；
-模型是否开放及价格以当前部署目录为准。
-
-## English contract notes
-
-Seedance V uses ModelArk V3. Discover the exact customer model ID and follow its
-`api.video.documentation_path`; names such as `seedance-2-0-v` do not define capabilities.
-Creation defaults are 5 seconds, 720p, adaptive ratio and no generated audio. Duration is 4–15 or 4–30
-seconds according to metadata; `-1` selects intelligent duration. Resolution and image/video/audio limits
-come from the same metadata. The 15-second profiles allow 9/3/3 media items; the 30-second profile allows
-30/10/10. Some 15-second profiles support only 480p/720p; the 30-second profile does not support 4k.
-
-First and last frames are limited to one each, a last frame requires a first frame, and frames cannot mix
-with reference media. Reference audio requires a reference image or video, even when a text prompt is present.
-Inline or multipart audio follows the standard audio transport contract and is uploaded before the funds hold.
-Only `web_search` is allowed in tools; safety identifiers are limited to 64 characters. Execution expiry is
-3600–259200 seconds, default 172800. Watermark and last-frame return default to false.
-Seed, camera controls, frames, draft, output format, priority and service tier are not published.
-
-Use the same API key for creation, polling and access to the content endpoint. Creation returns a public task ID,
-not a download URL. After success, poll while `content.delivery_status=preparing`; when `ready`, download the
-returned `content.video_url` without a gateway or provider key. Investigate `unavailable` without regenerating.
-Signed GET URLs are valid for 86400 seconds from issuance; an authorized query can renew them while objects
-are retained. Retention differs from URL validity. The authenticated content endpoint returns 302 when ready;
-follow it without forwarding the gateway key to storage. Delivery failures do not change generation or billing facts
-or trigger automatic refunds. When `api.assets.supported=true` and management mode is
-`platform_hosted`, create images through the asset API and use the returned `asset://fhas_*` reference in
-`image_url.url`. References support first frames, last frames and reference images, including mixtures with
-direct image URLs. Ownership, state and storage availability are checked before the funds hold; outbound
-requests use temporary URLs. The same account can reuse images across models with the same hosted reuse scope.
-Deletion prevents new references but does not interrupt accepted tasks. Direct URLs do not create stored assets.
-The library supports image create/get/delete and group create/get, but not list/update, audio/video assets or
-real-person verification. Other opaque references are rejected before the hold. Channels without hosted
-assets still support direct URLs. Task deletion/cancellation remains unsupported.
-Do not repeat a POST after `create_outcome_unknown`; consult task and funds progress.
+保留请求 ID，不要重复 POST。

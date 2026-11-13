@@ -171,6 +171,10 @@ func mergePublicModelGroups(existing, additional []string) []string {
 // the value intentionally does not derive from the Channel identity.
 const hostedPlatformReuseScope = "platform_hosted_user"
 
+func publicHostedAssetAPI(modelName string) dto.PublicAssetAPI {
+	return seedancePublicAssetAPIWithDeclaration(modelName, dto.AssetUpstreamProtocolFunCloudHosted, 0, "", nil)
+}
+
 func seedancePublicAssetAPIWithDeclaration(modelName string, protocol dto.AssetUpstreamProtocol, assetMinURLTTLSeconds int64, reuseScope string, declaration *jsplugin.SeedanceAssetConfiguration) dto.PublicAssetAPI {
 
 	assetCreate, assetRead, assetUpdate, assetDelete := false, false, false, false
@@ -203,6 +207,14 @@ func seedancePublicAssetAPIWithDeclaration(modelName string, protocol dto.AssetU
 	managementMode := "caller_managed_stateless"
 	reuseScopeForModel := reuseScope
 	if protocol == dto.AssetUpstreamProtocolFunCloudHosted {
+		assetCreate, assetRead, assetDelete = true, true, true
+		assetUpdate, realPerson = false, false
+		groupCreate, groupRead = true, true
+		hostedMedia := dto.PlatformHostedAssetMedia()
+		media = make([]dto.PublicAssetMedia, 0, len(hostedMedia))
+		for _, item := range hostedMedia {
+			media = append(media, dto.PublicAssetMedia{Kind: AssetKindGeneral, MediaType: item.MediaType, AssetGroupRequirement: dto.PublicAssetGroupOptional})
+		}
 		managementMode = "platform_hosted"
 		reuseScopeForModel = hostedPlatformReuseScope
 	}
@@ -240,14 +252,13 @@ func seedancePublicAssetAPIWithDeclaration(modelName string, protocol dto.AssetU
 		if protocol == dto.AssetUpstreamProtocolFunCloudHosted {
 			// Hosted creation copies the source into platform storage during the
 			// create call, so no Provider fetch window is required from the caller.
+			example.ManagementMode = "platform_hosted"
 			source.ExpiresAtMinRemainingSeconds = 0
+			source.AcceptedContentTypes = dto.PlatformHostedAssetMedia()
 			source.MaxPixels = dto.PublicAssetHostedMaxPixels
 			source.MaxBytes = dto.PublicAssetFunCloudMaxBytes
 			source.RedirectLimit = dto.PublicAssetFunCloudRedirectLimit
 			source.ContentTypeMustMatchMedia = true
-			source.AcceptedContentTypes = []dto.PublicAssetSourceMediaTypes{
-				{MediaType: "image", ContentTypes: []string{"image/jpeg", "image/png", "image/webp", "image/bmp", "image/tiff", "image/gif"}},
-			}
 		}
 		if protocol == dto.AssetUpstreamProtocolFunCloudMaterial {
 			source.MaxBytes = dto.PublicAssetFunCloudMaxBytes

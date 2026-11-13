@@ -122,7 +122,7 @@ func TestPublishedUsageChannelRankFiltersAndPagesFrozenGroups(t *testing.T) {
 		{Id: 23, Name: "outside", BaseURL: common.GetPointer("https://other.example")},
 	}).Error)
 	require.NoError(t, db.Create(&[]Log{
-		{UserId: 7, ChannelId: 21, ModelName: "text", RequestId: "small", Type: LogTypeConsume, CreatedAt: start + 1, PromptTokens: 4, Other: `{"image_count":9}`},
+		{UserId: 7, ChannelId: 21, ModelName: "text", RequestId: "small", Type: LogTypeConsume, CreatedAt: start + 1, PromptTokens: 4, Other: `{"image_count":9,"billing_unit":"token"}`},
 		{UserId: 7, ChannelId: 22, ModelName: "text", RequestId: "large", Type: LogTypeConsume, CreatedAt: start + 2, PromptTokens: 10, Other: `{"completed_image_count":0,"statement_snapshot":{"billing_mode":"per_second","usage_units":{"duration":"second"}}}`},
 		{UserId: 7, ChannelId: 23, ModelName: "text", RequestId: "outside", Type: LogTypeConsume, CreatedAt: start + 3, PromptTokens: 100, Other: `{"completed_image_count":4}`},
 	}).Error)
@@ -136,22 +136,26 @@ func TestPublishedUsageChannelRankFiltersAndPagesFrozenGroups(t *testing.T) {
 	first, err := GetPublishedUsageRanks(frozen, period, filter)
 	require.NoError(t, err)
 	require.Len(t, first.Items, 1)
-	assert.EqualValues(t, 22, first.Items[0].ChannelID)
+	assert.EqualValues(t, 21, first.Items[0].ChannelID)
 	require.NotNil(t, first.Items[0].NonToken)
-	assert.True(t, first.Items[0].NonToken.ImageCountKnown)
+	assert.False(t, first.Items[0].NonToken.ImageCountKnown)
+	assert.True(t, first.Items[0].NonToken.BillingTokensApplicable)
+	assert.EqualValues(t, 4, first.Items[0].Tokens)
 	assert.Zero(t, first.Items[0].NonToken.ImageCount)
 	assert.Nil(t, first.Items[0].NonToken.Seconds)
-	assert.EqualValues(t, 1, first.Items[0].NonToken.SecondsMissingRows)
+	assert.Zero(t, first.Items[0].NonToken.SecondsMissingRows)
 	assert.True(t, first.HasMore)
 	filter.Page++
 	second, err := GetPublishedUsageRanks(frozen, period, filter)
 	require.NoError(t, err)
 	require.Len(t, second.Items, 1)
-	assert.EqualValues(t, 21, second.Items[0].ChannelID)
+	assert.EqualValues(t, 22, second.Items[0].ChannelID)
 	require.NotNil(t, second.Items[0].NonToken)
 	assert.Zero(t, second.Items[0].NonToken.ImageCount)
-	assert.False(t, second.Items[0].NonToken.ImageCountKnown)
-	assert.EqualValues(t, 1, second.Items[0].NonToken.ImageCountMissingRows)
+	assert.True(t, second.Items[0].NonToken.ImageCountKnown)
+	assert.False(t, second.Items[0].NonToken.BillingTokensApplicable)
+	assert.Zero(t, second.Items[0].Tokens)
+	assert.EqualValues(t, 1, second.Items[0].NonToken.SecondsMissingRows)
 	assert.False(t, second.HasMore)
 }
 

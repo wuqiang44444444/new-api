@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
@@ -35,7 +36,11 @@ func CustomerContractAssetAccess() gin.HandlerFunc {
 		if pin, ok, _ := service.GetChannelConstraints(c).ResolvedPin(); ok {
 			pinID = pin.ChannelId
 		}
-		if _, _, err := service.CustomerContractTypedChannel(c, publicModel, constant.ChannelTypeSeedanceLink, pinID); err != nil {
+		channelType := constant.ChannelTypeSeedanceLink
+		if model.MiniMaxLinkChannelServesModel(publicModel) {
+			channelType = constant.ChannelTypeMiniMaxLink
+		}
+		if _, _, err := service.CustomerContractTypedChannel(c, publicModel, channelType, pinID); err != nil {
 			abortTokenModelAccess(c, publicModel, "合同范围内无可用渠道 / No available channel in this contract")
 			return
 		}

@@ -28,7 +28,7 @@ func TestUsageAnalyticsStreamOutcomesInAllExports(t *testing.T) {
 			require.NotEmpty(t, rows)
 			grand := rows[len(rows)-1]
 			require.Equal(t, "grand_total", grand[0])
-			header := usageAnalyticsExportHeader("en")
+			header := usageAnalyticsExportHeader("en", view)
 			cells := make(map[string]string, len(header))
 			for i, name := range header {
 				cells[name] = grand[i]

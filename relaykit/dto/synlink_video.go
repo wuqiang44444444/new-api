@@ -11,9 +11,3 @@ func SynlinkLastFramePath(taskID string) string {
 func SynlinkVideoModels() []string {
 	return []string{"doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-0-mini-260615", "doubao-seedance-2-5-260628"}
 }
-
-// SupportsPlatformHostedImages is the code-backed pairing boundary. The stored
-// asset protocol and resource IDs remain unchanged so existing assets are shared.
-func (p VideoUpstreamProtocol) SupportsPlatformHostedImages() bool {
-	return p == VideoUpstreamProtocolFunCloudModelArkV3 || p == VideoUpstreamProtocolSynlinkVideoV1 || p == VideoUpstreamProtocolViduModelArkV3
-}

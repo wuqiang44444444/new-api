@@ -57,7 +57,11 @@ func PruneBillingReportGenerations(ctx context.Context, now int64) (bool, error)
 	// request fails closed instead of reading a partially cleaned generation.
 	if row.Published {
 		return false, db.Transaction(func(tx *gorm.DB) error {
-			if err := lockForUpdate(tx).Where("id = ?", row.ID).Take(&row).Error; err != nil {
+			// Rollback can reactivate this generation after the initial scan.
+			var retired billingReportGeneration
+			if err := lockForUpdate(tx).Where("id = ? AND published = ? AND retired_at > 0 AND retired_at < ?", row.ID, true, cutoff).Take(&retired).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			} else if err != nil {
 				return err
 			}
 			var active int64
@@ -67,7 +71,8 @@ func PruneBillingReportGenerations(ctx context.Context, now int64) (bool, error)
 			if active > 0 {
 				return nil
 			}
-			return tx.Model(&row).Updates(map[string]any{"published": false, "retired_at": now}).Error
+			return tx.Model(&retired).Where("published = ? AND retired_at = ?", true, retired.RetiredAt).
+				Updates(map[string]any{"published": false, "retired_at": now}).Error
 		})
 	}
 	var ids []int64

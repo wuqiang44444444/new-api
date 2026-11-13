@@ -183,7 +183,7 @@ func TestFunCloudHostedCreateAssetAttachesContentReasons(t *testing.T) {
 			clienterrlog.MarkAuthPassed(c, clienterrlog.AuthSourceAPIToken)
 			ctx := withHostedImageSession(c.Request.Context(), store)
 			request := assetRequestForBytes("bad-image", source, maxBytes)
-			_, gotErr = newFunCloudHostedMaterialAdapter(3, "customer-model").CreateAsset(ctx, request)
+			_, gotErr = newFunCloudHostedMaterialAdapter(3, "customer-model", hostedImageTestMedia).CreateAsset(ctx, request)
 			var ok bool
 			report, ok = clienterrlog.PeekReport(c.Request.Context())
 			require.True(t, ok)

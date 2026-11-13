@@ -8,7 +8,12 @@ import { formatPeriodRange } from './utils'
 export function UsageReportStatus(props: {
   report?: Pick<
     UsageAnalyticsEnvelope<unknown>,
-    'period' | 'generated_at' | 'published_days' | 'incomplete_days'
+    | 'period'
+    | 'generated_at'
+    | 'published_days'
+    | 'incomplete_days'
+    | 'rebuilding_days'
+    | 'source_unavailable_days'
   >
   showReportPeriod?: boolean
   showCoverage?: boolean
@@ -16,14 +21,19 @@ export function UsageReportStatus(props: {
   const { t, i18n } = useTranslation()
   const period = props.report?.period
   const publishedDays = props.report?.published_days
+  const rebuilding = props.report?.rebuilding_days
+  const unavailable = props.report?.source_unavailable_days
   const generatedAt = props.report?.generated_at
   const showCoverage = props.showCoverage ?? true
   if (!showCoverage && !publishedDays) return null
 
   // The legacy Traditional Chinese catalog does not maintain these report labels.
   const reportLanguage = i18n?.language === 'zhTW' ? 'zhCN' : undefined
-  const missing = period?.days.some(
+  const unpublished = period?.days.filter(
     (day) => !day.future && publishedDays && !publishedDays.includes(day.date)
+  )
+  const missing = unpublished?.some(
+    (day) => !rebuilding?.includes(day.date) && !unavailable?.includes(day.date)
   )
   const time =
     period && generatedAt
@@ -67,6 +77,29 @@ export function UsageReportStatus(props: {
           })}
         </span>
       )}
+      {!!rebuilding?.length && (
+        <span className='me-3 inline-block'>
+          {t('Some daily reports are being rebuilt', { lng: reportLanguage })}
+        </span>
+      )}
+      {!!unavailable?.length && (
+        <span className='me-3 inline-block'>
+          {t('Source data is insufficient for some daily reports', {
+            lng: reportLanguage,
+          })}
+        </span>
+      )}
+      {!!publishedDays?.length &&
+        unpublished?.some(
+          (day) =>
+            rebuilding?.includes(day.date) || unavailable?.includes(day.date)
+        ) && (
+          <span className='me-3 inline-block'>
+            {t('Totals are subtotals for published days', {
+              lng: reportLanguage,
+            })}
+          </span>
+        )}
       {!!props.report?.incomplete_days?.length && (
         <span className='me-3 inline-block'>
           {t('Partial data', { lng: reportLanguage })}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,8 +35,20 @@ func TestViduHostedChannelConfigurationAndPublicAssets(t *testing.T) {
 				assert.True(t, api.Assets.Supported)
 				assert.Equal(t, "platform_hosted", api.Assets.ManagementMode)
 				assert.Equal(t, hostedPlatformReuseScope, api.Assets.ReuseScope)
-				require.Len(t, api.Assets.Media, 1)
-				assert.Equal(t, "image", api.Assets.Media[0].MediaType)
+				require.NotNil(t, api.Assets.Creation)
+				expectedTypes := []kitdto.PublicAssetSourceMediaTypes{
+					{MediaType: "image", ContentTypes: []string{"image/jpeg", "image/png", "image/webp", "image/bmp", "image/tiff", "image/gif"}},
+					{MediaType: "audio", ContentTypes: []string{"audio/mpeg"}},
+					{MediaType: "video", ContentTypes: []string{"video/mp4"}},
+				}
+				assert.ElementsMatch(t, expectedTypes, api.Assets.Creation.Source.AcceptedContentTypes)
+				var expectedMedia []kitdto.PublicAssetMedia
+				for _, media := range expectedTypes {
+					expectedMedia = append(expectedMedia, kitdto.PublicAssetMedia{
+						Kind: AssetKindGeneral, MediaType: media.MediaType, AssetGroupRequirement: kitdto.PublicAssetGroupOptional,
+					})
+				}
+				assert.ElementsMatch(t, expectedMedia, api.Assets.Media)
 				encoded, err := common.Marshal(api)
 				require.NoError(t, err)
 				assert.NotContains(t, string(encoded), providerModel)

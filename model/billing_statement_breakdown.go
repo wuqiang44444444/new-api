@@ -283,16 +283,13 @@ func normalizedBillingBreakdownCacheWriteTokens(other map[string]json.RawMessage
 		fiveMinutes: fiveMinutes,
 		oneHour:     oneHour,
 	}
-	if tokens, ok := billingBreakdownNonNegativeInt(other["cache_write_tokens"]); ok {
-		writeTokens.known = true
-		writeTokens.total = tokens
-		return writeTokens
-	}
+	normalized, normalizedKnown := billingBreakdownNonNegativeInt(other["cache_write_tokens"])
 	total, totalKnown := billingBreakdownNonNegativeInt(other["cache_creation_tokens"])
-	writeTokens.known = totalKnown || fiveMinutesKnown || oneHourKnown
+	cachedCreation, cachedCreationKnown := billingBreakdownNonNegativeInt(other["cached_creation_tokens"])
+	writeTokens.known = normalizedKnown || totalKnown || cachedCreationKnown || fiveMinutesKnown || oneHourKnown
 	split := fiveMinutes
 	addBillingStatementValue(&split, oneHour)
-	writeTokens.total = max(total, split)
+	writeTokens.total = max(normalized, total, cachedCreation, split)
 	return writeTokens
 }
 

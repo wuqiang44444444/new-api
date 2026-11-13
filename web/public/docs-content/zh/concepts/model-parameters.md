@@ -24,16 +24,18 @@ operations: []
 | `api.image.edit`                  | 图片编辑输入；不能用生成参数表代替                              |
 | `api.image.async`                 | 图片显式异步请求头、查询路径和流式优先规则                      |
 | `api.video.protocol` / `creation` | 视频协议及创建合同                                              |
-| `api.assets`                      | 素材操作、媒体类型、管理模式和复用域                            |
+| `api.assets`                      | 默认素材合同，包括入库类型、操作和复用域                        |
+| `api.hosted_assets`               | 配置上游代理时单独列出的账号级托管合同                          |
 | `operations[]`                    | 找到目标 `operation`，确认 `supported=true`，使用对应方法和路径 |
 
-缺少某项元数据不等于自动支持该能力，也不要把文本模型没有 `api.image` 解释为文本不可用。
+托管入库使用平台统一的文件规则。生成时才按目标模型的 `api.video.creation.content_types` 和视频合同校验媒体限制。
+各模型公开的操作范围以目录返回的合同为准。
 
 启用合同绑定的 Key 仅显示合同当前有效范围与 Key 模型限制共同允许的模型。不同 Key 的目录可能
 不同；不要用控制台或其他 Key 的模型清单替代当前 Key 的结果。合同读取异常不能解释为空目录。
 
 单模型查询在合同范围外返回 `404 model_not_found`；非合同路径可能保留 HTTP `200` 的错误信封，
-所以还需检查正文 `error`。合同目录投影失败为 `500` 的 `success=false` / `message` 正文；
+所以还需检查正文 `error`。合同模型目录读取失败为 `500` 的 `success=false` / `message` 正文；
 合同授权加载暂不可用可能返回 `503`。这些加载错误应有限重试查询，不应改用其他模型猜测权限。
 
 ## 2. 读取参数约束
@@ -84,38 +86,21 @@ operations: []
 都需要核对当前模型，不应当作所有模型的通用组合。
 
 部分视频字段带生效条件，例如是否返回末帧、是否输出音频或使用哪种参考图角色。字段已发布也不表示
-每种输入组合都产生相同效果；请同时阅读对应视频参数表中的条件，客户无需按内部服务改变请求形状。
+每种输入组合都产生相同效果；请按对应视频参数表选择组合。
 
 ## 4. 保存调用上下文
 
-每个任务保存客户模型、协议、任务 ID、Key 的内部标识和创建时选定的参数。不要保存 Key 明文到任务日志。
-配置或价格变化后仍查询原任务，不重新选择模型来解释已经发生的请求。
-
-素材另外保存 `model + id + reference`。判断跨模型可尝试复用时比较完整、非空的 `reuse_scope`，
-不能比较界面短标签、模型名或资源前缀。详情见[素材与素材组](api-reference/assets)。
+保存任务 ID、模型 ID 和调用入口，并使用原 API Key 查询。素材保存 `model + id + reference`。
+跨模型复用代理素材时，比较两个模型的完整、非空 `reuse_scope`。托管素材按账号共享，详见[素材与素材组](api-reference/assets)。
 
 ## 图片返回格式
 
-标准图片生成与编辑通过 `response_format` 选择非流式 `url` 或 `b64_json`，不需要额外布尔开关。
-元数据中的默认值按模型表达；省略参数继续使用既有默认行为。平台异步查询的默认 URL 与同步
-模型默认值需要分别理解：异步仅在创建时显式选择 `b64_json` 才交付 Base64，查询参数不改变格式。
-URL 结果字段为 `data[].url`；`images[].image_url` 是部分编辑协议的输入，不能作为返回字段或
-`response_format` 的取值。GPT Image 的 URL 交付由本站适配；已有 Provider URL 不强制转存。
-流式事件沿用模型原协议，不能由这个字段推定 SSE 事件也会返回 URL。
+`response_format` 可选 `url` 或 `b64_json`，对应 `data[].url` 或 `data[].b64_json`。
+异步默认返回 URL，需在创建时指定 `b64_json` 才返回 Base64。同步默认值和流式响应见
+[图片返回格式](api-reference/images/generations#返回格式)。
 
 ## 视频结果交付
 
-当前 `api.video` 描述协议、创建参数与操作入口，尚无 `delivery` 描述字段。下载方式应按
-`api.video.documentation_path` 对应文档与任务响应判断，不能从模型名或 `get_video_content`
-操作存在推断需要 Key 或直接返回视频字节。
-
-Seedance 与 H3 标准视频创建返回任务 ID；生成成功后检查 `content.delivery_status`，
-就绪时从 `content.video_url` / `content.last_frame_url` 读取本站 OSS 预签名 GET 地址。
-下载签名地址无需 API Key，每次签发有效 24 小时；对象仍保留且授权有效时查询原任务可续签。
-无需新增视频 `response_format=url`，`output_format` 仍表示文件格式。完整交付状态与原生线路
-边界见[视频交付合同](api-reference/videos/modelark#下载视频或末帧)。
-
-English: `api.video` currently has no `delivery` descriptor. Follow `documentation_path` and task responses.
-Hosted standard videos use signed result URLs without an API key, valid for 86400 seconds from issuance;
-authorized queries can renew them while objects are retained. No video `response_format=url` is required;
-`output_format` still describes the file format.
+通过 `api.video.documentation_path` 查看查询和下载方式。对于托管结果，任务成功后检查
+`content.delivery_status`。就绪后使用响应中的签名 URL 下载，无需 API Key。
+`output_format` 表示文件格式。详见[视频下载](api-reference/videos/modelark#下载视频或末帧)。

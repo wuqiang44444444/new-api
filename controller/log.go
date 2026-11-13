@@ -14,25 +14,25 @@ import (
 )
 
 // logFilterFromQuery reads the log search shared by the log list and the log
-// export. Username and channel are read only for administrators.
+// export. Operational identity filters are read only for administrators.
 func logFilterFromQuery(c *gin.Context, admin bool) model.LogFilter {
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	filter := model.LogFilter{
-		Type:              logType,
-		StartTimestamp:    startTimestamp,
-		EndTimestamp:      endTimestamp,
-		ModelName:         c.Query("model_name"),
-		TokenName:         c.Query("token_name"),
-		Group:             c.Query("group"),
-		RequestId:         c.Query("request_id"),
-		UpstreamRequestId: c.Query("upstream_request_id"),
+		Type:           logType,
+		StartTimestamp: startTimestamp,
+		EndTimestamp:   endTimestamp,
+		ModelName:      c.Query("model_name"),
+		TokenName:      c.Query("token_name"),
+		Group:          c.Query("group"),
+		RequestId:      c.Query("request_id"),
 	}
 	filter.TokenID, _ = strconv.Atoi(c.Query("token_id"))
 	if admin {
 		filter.Username = c.Query("username")
 		filter.Channel, _ = strconv.Atoi(c.Query("channel"))
+		filter.UpstreamRequestId = c.Query("upstream_request_id")
 	}
 	return filter
 }
@@ -261,9 +261,8 @@ func GetLogsSelfStat(c *gin.Context) {
 	tokenName := c.Query("token_name")
 	tokenId, _ := strconv.Atoi(c.Query("token_id"))
 	modelName := c.Query("model_name")
-	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
-	quotaNum, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, tokenId, channel, group)
+	quotaNum, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, tokenId, 0, group)
 	if err != nil {
 		common.ApiError(c, err)
 		return

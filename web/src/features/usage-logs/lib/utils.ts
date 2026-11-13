@@ -217,7 +217,7 @@ export function buildApiParams(config: {
     ...(searchParams.requestId
       ? { request_id: String(searchParams.requestId) }
       : {}),
-    ...(searchParams.upstreamRequestId
+    ...(isAdmin && searchParams.upstreamRequestId
       ? { upstream_request_id: String(searchParams.upstreamRequestId) }
       : {}),
     ...buildTimeRangeParams(searchParams, false, config.recent),
@@ -274,24 +274,18 @@ export async function fetchLogsByCategory(
       searchParams,
       columnFilters,
       isAdmin,
-      recent: !searchParams.billing && !config.pageCursor,
+      recent: !searchParams.billing && !config.pageSnapshot,
     })
     if (config.groupFunds || config.fundGroup) {
       params.group_funds = config.groupFunds
       params.fund_group = config.fundGroup
-      return isAdmin
-        ? getAllLogs(params, config.signal)
-        : getUserLogs(params, config.signal)
     }
-    if (config.pageCursor) {
-      params.page_cursor = config.pageCursor
+    if (config.pageSnapshot) {
+      params.page_snapshot = config.pageSnapshot
       if (searchParams.startTime == null && searchParams.endTime == null) {
         delete params.start_timestamp
         delete params.end_timestamp
       }
-      return isAdmin
-        ? getAllLogs(params, config.signal)
-        : getUserLogs(params, config.signal)
     }
     return isAdmin
       ? getAllLogs(params, config.signal)

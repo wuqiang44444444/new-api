@@ -316,11 +316,23 @@ var customerExportSummaryColumnOrder = []string{
 	"api_key_name", "api_key_id", "model", "billing_mode", "requests", "currency",
 	"net_amount", "original_amount", "discount_amount", "gross_amount", "refund_amount",
 	"input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens",
-	"billable_calls", "refunded_calls", "data_quality",
+	"billable_calls", "refunded_calls", "billable_images", "billable_image_missing_rows", "data_quality",
 	"period_start", "period_end", "timezone", "customer_username", "generated_at",
 }
 
 func customerExportSummaryHeaderLabel(language string, key string) string {
+	switch key {
+	case "billable_images":
+		if language == "zh" {
+			return "计费张数"
+		}
+		return "Billable images"
+	case "billable_image_missing_rows":
+		if language == "zh" {
+			return "计费张数缺失笔数"
+		}
+		return "Missing billable image rows"
+	}
 	if strings.HasSuffix(key, "_quota") {
 		return customerExportSummaryMoneyLabel(language, key) + " (quota)"
 	}

@@ -2,10 +2,11 @@ package seedance
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
-	"strings"
 )
 
 // Only the host can resolve frozen asset facts and sign a temporary URL. The
@@ -23,10 +24,7 @@ func resolvePluginHostedContent(c *gin.Context, data []byte, protocol dto.VideoU
 	if err = common.Unmarshal(contentBytes, &content); err != nil {
 		return nil, err
 	}
-	content, err = resolveHostedImageContent(c, content)
-	if err != nil {
-		return nil, err
-	}
+	content = resolveHostedMediaContent(c, content)
 	if err = rejectUnresolvedHostedMedia(content); err != nil {
 		return nil, err
 	}

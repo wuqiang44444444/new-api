@@ -60,7 +60,12 @@ export function PersonalUsageOverview(props: {
     { label: t('Cache read'), value: m.cache_read_tokens },
     { label: t('Cache write'), value: m.cache_write_tokens },
   ]
-  const nonToken = usageNonTokenValues(t, m)
+  const tokenApplicable =
+    !props.upstream ||
+    m.billing_tokens_applicable ||
+    tokens > 0 ||
+    missingTokens
+  const nonToken = usageNonTokenValues(t, m, props.upstream)
   let amount = formatCustomerStatementQuota(m.net_quota)
   if (m.net_quota === 0 && moneyMissing) amount = t('unrecorded')
   if (m.net_quota === 0 && moneyPending) amount = t('Pending')
@@ -116,29 +121,36 @@ export function PersonalUsageOverview(props: {
         </ReportMetricCard>
         <ReportMetricCard
           stacked
-          label={<h2>{t('Total tokens')}</h2>}
-          value={tokenValue(tokens)}
-          mutedValue={missingTokens && tokens === 0}
+          label={
+            <h2>{props.upstream ? t('Billable tokens') : t('Total tokens')}</h2>
+          }
+          value={tokenApplicable ? tokenValue(tokens) : t('Not applicable')}
+          mutedValue={!tokenApplicable || (missingTokens && tokens === 0)}
         >
-          <div className='flex flex-wrap gap-x-2 gap-y-1'>
-            {tokenDetails.map((metric) => (
-              <div key={metric.label} className='max-w-full min-w-0 flex-auto'>
-                <h3 className='text-muted-foreground text-xs'>
-                  {metric.label}
-                </h3>
-                <p
-                  className={cn(
-                    'overflow-x-auto text-xs font-medium whitespace-nowrap tabular-nums',
-                    missingTokens &&
-                      metric.value === 0 &&
-                      'text-muted-foreground'
-                  )}
+          {tokenApplicable && (
+            <div className='flex flex-wrap gap-x-2 gap-y-1'>
+              {tokenDetails.map((metric) => (
+                <div
+                  key={metric.label}
+                  className='max-w-full min-w-0 flex-auto'
                 >
-                  {tokenValue(metric.value)}
-                </p>
-              </div>
-            ))}
-          </div>
+                  <h3 className='text-muted-foreground text-xs'>
+                    {metric.label}
+                  </h3>
+                  <p
+                    className={cn(
+                      'overflow-x-auto text-xs font-medium whitespace-nowrap tabular-nums',
+                      missingTokens &&
+                        metric.value === 0 &&
+                        'text-muted-foreground'
+                    )}
+                  >
+                    {tokenValue(metric.value)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </ReportMetricCard>
         <ReportMetricCard
           emphasized
@@ -149,7 +161,14 @@ export function PersonalUsageOverview(props: {
           caption={amountDetail}
         />
         {nonToken.length > 0 && (
-          <ReportCard className='grid auto-cols-fr grid-flow-col items-center py-1.5 @min-[56rem]:col-span-full @min-[76rem]:col-span-1'>
+          <ReportCard
+            className={cn(
+              'grid items-center py-1.5 @min-[56rem]:col-span-full',
+              nonToken.length <= 2
+                ? 'auto-cols-fr grid-flow-col @min-[76rem]:col-span-1'
+                : 'grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-y-2'
+            )}
+          >
             {nonToken.map((unit, index) => (
               <div
                 key={unit.label}
@@ -159,6 +178,7 @@ export function PersonalUsageOverview(props: {
                   stacked
                   label={<h2>{unit.label}</h2>}
                   value={unit.value}
+                  caption={unit.showSubtotal ? t('Known subtotal') : undefined}
                 />
               </div>
             ))}

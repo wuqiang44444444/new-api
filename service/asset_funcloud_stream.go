@@ -26,6 +26,7 @@ type funCloudAssetSource struct {
 	ContentType string
 	Size        int64
 	Filename    string
+	Status      int
 }
 
 type httpResponseBody interface {
@@ -106,7 +107,7 @@ func openFunCloudAssetSourceWithClient(ctx context.Context, remoteURL, mediaType
 	}
 	return &funCloudAssetSource{
 		Body: response.Body, ContentType: contentType, Size: response.ContentLength,
-		Filename: funCloudUploadFilename(contentType),
+		Filename: funCloudUploadFilename(contentType), Status: response.StatusCode,
 	}, nil
 }
 

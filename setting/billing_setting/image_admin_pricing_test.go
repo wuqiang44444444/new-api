@@ -45,7 +45,7 @@ func TestImageAdminPricesControlSettlementAndDisplay(t *testing.T) {
 	}}
 	// All five categories use the administrator's rates, including cache overlap.
 	result, err := billingexpr.ComputeTieredQuota(&billingexpr.BillingSnapshot{
-		ExprString: expression, GroupRatio: 1, QuotaPerUnit: 500000,
+		ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), GroupRatio: 1, QuotaPerUnit: 500000,
 	}, service.BuildTieredTokenParams(usage, false, billingexpr.UsedVars(expression)))
 	require.NoError(t, err)
 	assert.Equal(t, 5075, result.ActualQuotaAfterGroup)

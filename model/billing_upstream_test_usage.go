@@ -44,7 +44,7 @@ func historicalTestOmitsCacheWrite(log billingReconciliationLog, other map[strin
 	if semantic != "gemini" && !(semantic == "embedding" && billingBreakdownString(other["request_path"]) == "/v1/embeddings" && log.CompletionTokens == 0) {
 		return false
 	}
-	for _, key := range []string{"cache_write_tokens_reported", "cache_write_tokens", "cache_creation_tokens", "cache_creation_tokens_5m", "cache_creation_tokens_1h"} {
+	for _, key := range []string{"cache_write_tokens_reported", "cache_write_tokens", "cached_creation_tokens", "cache_creation_tokens", "cache_creation_tokens_5m", "cache_creation_tokens_1h"} {
 		if _, present := other[key]; present {
 			return false
 		}

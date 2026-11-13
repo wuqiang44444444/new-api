@@ -100,6 +100,23 @@ func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usag
 	}
 	if (bc.PerCallBilling && data.NativeRequest == nil) || usage == nil {
 		retainTaskInitialCalculation(task)
+		if initial := bc.InitialCalculation; initial != nil && initial.BillingUnit == billingexpr.BillingUnitRequest && initial.Quota == data.HeldQuota {
+			// On this path the frozen fixed amount is itself the final charge.
+			setTaskCalculation(task, initial, "settlement")
+		} else if bc.PerCallBilling && data.NativeRequest == nil {
+			// This protocol settles the original fixed image reservation.
+			// Its requested multiplier was already applied at admission.
+			if n := bc.OtherRatios["n"]; n >= 1 && n <= dto.MaxImageN && n == float64(int(n)) {
+				calculation := billingexpr.NewCalculation()
+				if bc.InitialCalculation != nil {
+					copy := *bc.InitialCalculation
+					calculation = &copy
+				}
+				calculation.BillingUnit = billingexpr.BillingUnitRequest
+				calculation.ImageCount = common.GetPointer(int(n))
+				setTaskCalculation(task, calculation.Finish(data.HeldQuota), "settlement")
+			}
+		}
 		return data.HeldQuota, nil, nil
 	}
 	if bc.TieredSnapshot != nil {
@@ -147,6 +164,7 @@ func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usag
 		if original, err := common.QuotaRoundStrict(result.ActualQuotaBeforeGroup); err == nil {
 			result.Calculation.OriginalQuota = &original
 		}
+		result.Calculation.BillingUnit = result.BillingUnit
 		setTaskCalculation(task, result.Calculation.Finish(quota), "settlement")
 		return quota, clamp, nil
 	}
@@ -157,6 +175,14 @@ func imageTaskTargetQuota(ctx context.Context, task *model.Task, usage *dto.Usag
 	price.ReplaceOtherRatios(bc.OtherRatios)
 	if data.NativeRequest != nil && bc.PerCallBilling && data.ImageCount > 0 && data.ImageCount <= int(dto.MaxImageN) {
 		price.AddOtherRatio("n", float64(data.ImageCount))
+	}
+	if bc.PerCallBilling {
+		billingDefaults.BillingUnit = billingexpr.BillingUnitRequest
+		if n := price.OtherRatios()["n"]; n >= 1 && n <= dto.MaxImageN && n == float64(int(n)) {
+			billingDefaults.ImageCount = common.GetPointer(int(n))
+		}
+	} else {
+		billingDefaults.BillingUnit = billingexpr.BillingUnitToken
 	}
 	info := &relaycommon.RelayInfo{
 		BillingCalculation: billingDefaults,

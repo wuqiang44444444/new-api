@@ -13,7 +13,7 @@ func TestSynlinkSharesHostedImageAndRejectsForeignOrDeletedReferences(t *testing
 	withHostedAssetDB(t)
 	store := newFakeHostedImageStore()
 	ctx := withHostedImageSession(t.Context(), store)
-	owner := newFunCloudHostedMaterialAdapter(7, "funcloud-customer")
+	owner := newFunCloudHostedMaterialAdapter(7, "funcloud-customer", hostedImageTestMedia)
 	created, err := owner.CreateAsset(ctx, hostedImageCreateRequest(t, ""))
 	require.NoError(t, err)
 	ref := "asset://" + created.ResourceID

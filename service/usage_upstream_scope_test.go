@@ -84,8 +84,8 @@ func TestUsageAnalyticsScopedUpstreamExportMatchesPublishedTotals(t *testing.T) 
 	assert.Equal(t, originalURL, csv[7])
 	assert.Equal(t, "971", csv[8])
 	assert.Equal(t, "2", csv[13])
-	assert.Empty(t, csv[28], "the complete reference amount stays blank")
-	assert.Equal(t, "1.00000000", csv[len(csv)-1], "the known subtotal occupies its own column")
+	assert.Empty(t, csv[27], "the complete reference amount stays blank")
+	assert.Equal(t, "1.00000000", csv[len(csv)-6], "the known subtotal occupies its own column")
 }
 
 func TestUsageAnalyticsUpstreamMonthlyExportUsesShanghaiCalendar(t *testing.T) {
@@ -141,5 +141,5 @@ func TestUsageAnalyticsUpstreamMonthlyExportUsesShanghaiCalendar(t *testing.T) {
 	assert.Equal(t, []string{"daily", "2026-09-30"}, rows[29][:2])
 	assert.Equal(t, "grand_total", rows[31][0])
 	assert.Equal(t, "2", rows[31][13])
-	assert.Equal(t, "1.00000000", rows[31][28])
+	assert.Equal(t, "1.00000000", rows[31][27])
 }

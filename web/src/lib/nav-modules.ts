@@ -157,6 +157,13 @@ export function getModuleAccessFromStatus(
   return parseHeaderNavModulesFromStatus(status)[module] ?? DEFAULTS[module]
 }
 
+export function canShowModelSquare(
+  access: ModuleAccess,
+  isAuthenticated: boolean
+): boolean {
+  return access.enabled && (!access.requireAuth || isAuthenticated)
+}
+
 /**
  * Read module access synchronously from the persisted status snapshot.
  *

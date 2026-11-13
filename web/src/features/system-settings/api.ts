@@ -22,6 +22,7 @@ import type {
   ConfirmPaymentComplianceResponse,
   CustomerContractRatioImpactResponse,
   EvidenceCleanupTask,
+  EvidenceRetentionPolicy,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
   SystemOptionsResponse,
@@ -93,6 +94,13 @@ export async function startEvidenceCleanupTask(targetTimestamp: number) {
   const res = await api.post<SystemTaskResponse<EvidenceCleanupTask>>(
     '/api/system-task/evidence-cleanup',
     { target_timestamp: targetTimestamp }
+  )
+  return res.data
+}
+
+export async function getEvidenceRetentionPolicy() {
+  const res = await api.get<SystemTaskResponse<EvidenceRetentionPolicy>>(
+    '/api/option/request_evidence_retention'
   )
   return res.data
 }

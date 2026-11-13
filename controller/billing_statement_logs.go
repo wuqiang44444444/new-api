@@ -35,9 +35,10 @@ func getBillingStatementLogs(c *gin.Context, admin bool) {
 		return
 	}
 	filter := model.BillingStatementLogFilter{UserId: userId, Start: period.StartTimestamp, End: period.EndTimestamp, ModelName: modelName, BillingMode: mode,
-		TokenName: c.Query("token_name"), Group: c.Query("group"), RequestId: c.Query("request_id"), UpstreamRequestId: c.Query("upstream_request_id")}
+		TokenName: c.Query("token_name"), Group: c.Query("group"), RequestId: c.Query("request_id")}
 	if admin {
 		filter.Username = c.Query("username")
+		filter.UpstreamRequestId = c.Query("upstream_request_id")
 	}
 	for name, target := range map[string]**int{"token_id": &filter.TokenId, "channel": &filter.ChannelId} {
 		if raw, present := c.GetQuery(name); present {
@@ -46,7 +47,9 @@ func getBillingStatementLogs(c *gin.Context, admin bool) {
 				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid " + name})
 				return
 			}
-			*target = &value
+			if name != "channel" || admin {
+				*target = &value
+			}
 		}
 	}
 	if raw, present := c.GetQuery("type"); present {

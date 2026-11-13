@@ -33,11 +33,7 @@ func buildFunCloudModelArkRequest(c *gin.Context, body *requestPayload) ([]byte,
 	if payload.Resolution == "" {
 		payload.Resolution = "720p"
 	}
-	var err error
-	payload.Content, err = resolveHostedImageContent(c, payload.Content)
-	if err != nil {
-		return nil, err
-	}
+	payload.Content = resolveHostedMediaContent(c, payload.Content)
 	if err := rejectUnresolvedHostedMedia(payload.Content); err != nil {
 		return nil, err
 	}

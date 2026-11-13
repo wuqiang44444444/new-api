@@ -23,8 +23,12 @@ func NextDailyReportDay(ctx context.Context, today, now int64) (start int64, req
 	}
 
 	usageAsOf := make(map[int64]int64, len(usage))
+	staleToday := false
 	for _, head := range usage {
 		usageAsOf[head.Start] = head.AsOf
+		if head.Start == today {
+			staleToday = head.MeterVersion < usageReportMeterVersion
+		}
 	}
 	published := make(map[int64]int64, len(billing))
 	var latestHistory int64
@@ -74,7 +78,7 @@ func NextDailyReportDay(ctx context.Context, today, now int64) (start int64, req
 			return 0, 0, false, false, err
 		}
 	}
-	todayDue := !retry[today] && now-published[today] >= dailyReportRefreshSeconds
+	todayDue := !retry[today] && (staleToday || now-published[today] >= dailyReportRefreshSeconds)
 	if todayDue && latestHistory >= published[today] {
 		return today, 0, true, false, nil
 	}

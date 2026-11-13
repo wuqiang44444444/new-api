@@ -2,8 +2,11 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -148,4 +151,187 @@ func TestBillingSourceReviewClosingDifferenceFollowsSingleTaskEvidence(t *testin
 	assert.False(t, opposite.Issues[0].CanCloseDifference)
 	decision.Fingerprint, decision.PreviousID, decision.RequestID = opposite.Fingerprint, opposite.History[0].ID, "close-review-task-second"
 	assert.ErrorIs(t, RecordBillingSourceReviewDecision(ctx, user, start, end, decision, 1), ErrBillingStatementSourceIncomplete)
+}
+
+func TestBillingSourceReviewRejectsCrossMonthDuplicatePreauthRefund(t *testing.T) {
+	db := setupBillingStatementVersionTestDB(t)
+	require.NoError(t, db.AutoMigrate(&Task{}))
+	ctx := context.Background()
+	const start, end = int64(1785513600), int64(1788191999)
+	target := 120
+	task := Task{UserId: 91, AppID: 40, ChannelId: 3, TaskID: "audit-task", CreatedAt: start + 1, Quota: 120, Properties: Properties{OriginModelName: "video"}, PrivateData: TaskPrivateData{TokenId: 40, AsyncBilling: &TaskAsyncBillingContext{State: TaskBillingStateSettled, TargetQuota: &target}}}
+	require.NoError(t, db.Create(&task).Error)
+	charge := Log{UserId: 91, TokenId: 40, ChannelId: 3, ModelName: "video", CreatedAt: start + 2, Type: LogTypeConsume, Quota: 120, Other: `{"task_id":"audit-task","model_price":1}`}
+	require.NoError(t, db.Create(&charge).Error)
+	for _, at := range []int64{start + 3, end + 1} {
+		refund := Log{UserId: 91, TokenId: 40, ChannelId: 3, ModelName: "video", CreatedAt: at, Type: LogTypeRefund, Quota: 10, Other: `{"model_price":1,"admin_info":{"original_preauth_log_id":` + strconv.Itoa(charge.Id) + `}}`}
+		require.NoError(t, db.Create(&refund).Error)
+	}
+	report, err := GetBillingSourceReview(ctx, 91, start, end)
+	require.NoError(t, err)
+	for _, issue := range report.Issues {
+		if issue.Kind == "task_amount" {
+			assert.False(t, issue.CanCloseDifference)
+			require.ErrorIs(t, RecordBillingSourceReviewDecision(ctx, 91, start, end, BillingSourceReviewDecision{Fingerprint: report.Fingerprint, IssueID: issue.ID, Decision: BillingSourceCloseDifference, Reason: "small_difference_reviewed", Note: "duplicate refund test", RequestID: "audit-cross-month-refund"}, 1), ErrBillingStatementSourceIncomplete)
+			closed, err := GetBillingSourceReview(ctx, 91, start, end)
+			require.NoError(t, err)
+			assert.Equal(t, 1, closed.Blockers, "invalid links must keep task issue blocked")
+			return
+		}
+	}
+	t.Fatal("task issue not found")
+}
+
+func TestBillingSourceReviewSaveIgnoresOnlyUnrelatedConcurrentFunding(t *testing.T) {
+	for _, inMonth := range []bool{false, true} {
+		t.Run(fmt.Sprintf("in_month_%t", inMonth), func(t *testing.T) {
+			db := setupBillingSourceSnapshotTestDB(t)
+			const start, end = int64(1785513600), int64(1788191999)
+			ctx := context.Background()
+			log := Log{UserId: 91, TokenId: 40, ModelName: "text", CreatedAt: start + 1, Type: LogTypeConsume, Quota: 20, Other: `{"model_price":1}`}
+			require.NoError(t, db.Create(&log).Error)
+			r, err := GetBillingSourceReview(ctx, 91, start, end)
+			require.NoError(t, err)
+			var writeErr error
+			wrote := false
+			require.NoError(t, db.Callback().Query().After("gorm:query").Register("review_test:submit_concurrent_write", func(query *gorm.DB) {
+				if wrote || query.Statement.Table != "logs" {
+					return
+				}
+				wrote = true
+				next := log
+				next.Id = 0
+				if !inMonth {
+					next.CreatedAt = end + 1
+				}
+				writeErr = db.Create(&next).Error
+			}))
+			err = RecordBillingSourceVerification(ctx, 91, start, end, BillingSourceVerification{Fingerprint: r.Fingerprint, BackupEvidence: "fixture backup", RetentionEvidence: "fixture retention"}, 1)
+			require.True(t, wrote)
+			require.NoError(t, writeErr)
+			if inMonth {
+				assert.ErrorIs(t, err, ErrBillingStatementVersionConflict)
+			} else {
+				require.NoError(t, err)
+				assert.NoError(t, VerifyBillingStatementRetention(ctx, 91, start))
+			}
+		})
+	}
+}
+
+func TestBillingSourceReviewReopensCloseAfterCrossMonthDuplicate(t *testing.T) {
+	db := setupBillingStatementVersionTestDB(t)
+	require.NoError(t, db.AutoMigrate(&Task{}))
+	ctx := context.Background()
+	const start, end = int64(1785513600), int64(1788191999)
+	target := 120
+	task := Task{UserId: 91, AppID: 40, ChannelId: 3, TaskID: "audit-task", CreatedAt: start + 1, Quota: 120, Properties: Properties{OriginModelName: "video"}, PrivateData: TaskPrivateData{TokenId: 40, AsyncBilling: &TaskAsyncBillingContext{State: TaskBillingStateSettled, TargetQuota: &target}}}
+	require.NoError(t, db.Create(&task).Error)
+	charge := Log{UserId: 91, TokenId: 40, ChannelId: 3, ModelName: "video", CreatedAt: start + 2, Type: LogTypeConsume, Quota: 120, Other: `{"task_id":"audit-task","model_price":1}`}
+	require.NoError(t, db.Create(&charge).Error)
+	refund := Log{UserId: 91, TokenId: 40, ChannelId: 3, ModelName: "video", CreatedAt: end + 1, Type: LogTypeRefund, Quota: 120, Other: `{"model_price":1,"admin_info":{"original_preauth_log_id":` + strconv.Itoa(charge.Id) + `}}`}
+	require.NoError(t, db.Create(&refund).Error)
+	report, err := GetBillingSourceReview(ctx, 91, start, end)
+	require.NoError(t, err)
+	require.Len(t, report.Issues, 1)
+	require.True(t, report.Issues[0].CanCloseDifference)
+	require.EqualValues(t, 0, report.Issues[0].Quota)
+	require.EqualValues(t, 120, report.NetQuota)
+	req := BillingSourceReviewDecision{Fingerprint: report.Fingerprint, IssueID: report.Issues[0].ID, Decision: BillingSourceCloseDifference, Reason: "small_difference_reviewed", Note: "independent review", RequestID: "independent-first"}
+	require.NoError(t, RecordBillingSourceReviewDecision(ctx, 91, start, end, req, 1))
+	report, err = GetBillingSourceReview(ctx, 91, start, end)
+	require.NoError(t, err)
+	require.Zero(t, report.Blockers)
+	refund.Id = 0
+	refund.CreatedAt += 86400
+	require.NoError(t, db.Create(&refund).Error)
+	report, err = GetBillingSourceReview(ctx, 91, start, end)
+	require.NoError(t, err)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, 1, report.Blockers)
+	assert.False(t, report.Issues[0].CanCloseDifference)
+	assert.EqualValues(t, 120, report.NetQuota)
+	req.Fingerprint, req.PreviousID, req.RequestID = report.Fingerprint, report.History[0].ID, "independent-second"
+	assert.ErrorIs(t, RecordBillingSourceReviewDecision(ctx, 91, start, end, req, 1), ErrBillingStatementSourceIncomplete)
+}
+
+func TestBillingSourceReviewRejectsDualReferenceRefundForBothTasks(t *testing.T) {
+	db := setupBillingStatementVersionTestDB(t)
+	require.NoError(t, db.AutoMigrate(&Task{}))
+	ctx := context.Background()
+	const start, end = int64(1785513600), int64(1788191999)
+	targetA, targetB := 10, 120
+	for _, spec := range []struct {
+		id     string
+		target *int
+	}{{"audit-a", &targetA}, {"audit-b", &targetB}} {
+		task := Task{UserId: 91, AppID: 40, ChannelId: 3, TaskID: spec.id, CreatedAt: start + 1, Quota: *spec.target, Properties: Properties{OriginModelName: "video"}, PrivateData: TaskPrivateData{TokenId: 40, AsyncBilling: &TaskAsyncBillingContext{State: TaskBillingStateSettled, TargetQuota: spec.target}}}
+		require.NoError(t, db.Create(&task).Error)
+	}
+	a := Log{UserId: 91, TokenId: 40, ChannelId: 3, ModelName: "video", Type: LogTypeConsume, CreatedAt: start + 2, Quota: 10, Other: `{"task_id":"audit-a","model_price":1}`}
+	b := Log{UserId: 91, TokenId: 40, ChannelId: 3, ModelName: "video", Type: LogTypeConsume, CreatedAt: start + 3, Quota: 120, Other: `{"task_id":"audit-b","model_price":1}`}
+	require.NoError(t, db.Create(&a).Error)
+	require.NoError(t, db.Create(&b).Error)
+	refund := Log{UserId: 91, TokenId: 40, ChannelId: 3, ModelName: "video", CreatedAt: end + 1, Type: LogTypeRefund, Quota: 10, Other: `{"task_id":"audit-b","model_price":1,"admin_info":{"original_preauth_log_id":` + strconv.Itoa(a.Id) + `}}`}
+	require.NoError(t, db.Create(&refund).Error)
+	report, err := GetBillingSourceReview(ctx, 91, start, end)
+	require.NoError(t, err)
+	require.Len(t, report.Issues, 2)
+	assert.Equal(t, 2, report.Blockers)
+	assert.EqualValues(t, 130, report.NetQuota)
+	for i, issue := range report.Issues {
+		assert.False(t, issue.CanCloseDifference)
+		assert.Contains(t, issue.Reasons, "identity_conflict")
+		require.NotNil(t, issue.TargetQuota)
+		assert.Equal(t, *issue.TargetQuota, issue.Quota)
+		assert.NotContains(t, issue.RelatedLogIDs, refund.Id)
+		assert.Contains(t, issue.RelatedLogs, BillingSourceRelatedLog{
+			ID: refund.Id, CreatedAt: refund.CreatedAt, LogType: LogTypeRefund, Quota: 10, IdentityMatches: false,
+		})
+		req := BillingSourceReviewDecision{Fingerprint: report.Fingerprint, IssueID: issue.ID, Decision: BillingSourceCloseDifference, Reason: "small_difference_reviewed", Note: "independent review", RequestID: fmt.Sprintf("independent-dual-reference-%d", i)}
+		assert.ErrorIs(t, RecordBillingSourceReviewDecision(ctx, 91, start, end, req, 1), ErrBillingStatementSourceIncomplete)
+	}
+}
+
+func TestBillingSourceReviewReopensCloseForMalformedCrossMonthDuplicate(t *testing.T) {
+	db := setupBillingStatementVersionTestDB(t)
+	require.NoError(t, db.AutoMigrate(&Task{}))
+	ctx := context.Background()
+	const start, end = int64(1785513600), int64(1788191999)
+	target := 120
+	task := Task{UserId: 91, AppID: 40, ChannelId: 3, TaskID: "audit-task", CreatedAt: start + 1, Quota: 120, Properties: Properties{OriginModelName: "video"}, PrivateData: TaskPrivateData{TokenId: 40, AsyncBilling: &TaskAsyncBillingContext{State: TaskBillingStateSettled, TargetQuota: &target}}}
+	require.NoError(t, db.Create(&task).Error)
+	charge := Log{UserId: 91, TokenId: 40, ChannelId: 3, ModelName: "video", CreatedAt: start + 2, Type: LogTypeConsume, Quota: 120, Other: `{"task_id":"audit-task","model_price":1}`}
+	require.NoError(t, db.Create(&charge).Error)
+	refund := Log{UserId: 91, TokenId: 40, ChannelId: 3, ModelName: "video", CreatedAt: end + 1, Type: LogTypeRefund, Quota: 120, Other: `{"model_price":1,"admin_info":{"original_preauth_log_id":` + strconv.Itoa(charge.Id) + `}}`}
+	require.NoError(t, db.Create(&refund).Error)
+	report, err := GetBillingSourceReview(ctx, 91, start, end)
+	require.NoError(t, err)
+	require.Len(t, report.Issues, 1)
+	require.True(t, report.Issues[0].CanCloseDifference)
+	require.EqualValues(t, 0, report.Issues[0].Quota)
+	require.EqualValues(t, 120, report.NetQuota)
+	req := BillingSourceReviewDecision{Fingerprint: report.Fingerprint, IssueID: report.Issues[0].ID, Decision: BillingSourceCloseDifference, Reason: "small_difference_reviewed", Note: "independent review", RequestID: "independent-first"}
+	require.NoError(t, RecordBillingSourceReviewDecision(ctx, 91, start, end, req, 1))
+	report, err = GetBillingSourceReview(ctx, 91, start, end)
+	require.NoError(t, err)
+	require.Zero(t, report.Blockers)
+	refund.Id = 0
+	refund.CreatedAt += 86400
+	refund.Other = strings.Replace(refund.Other, "{", `{"task_id":123,`, 1)
+	require.NoError(t, db.Create(&refund).Error)
+	report, err = GetBillingSourceReview(ctx, 91, start, end)
+	require.NoError(t, err)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, 1, report.Blockers)
+	assert.False(t, report.Issues[0].CanCloseDifference)
+	assert.False(t, report.Issues[0].Reviewed)
+	assert.Contains(t, report.Issues[0].RelatedLogs, BillingSourceRelatedLog{
+		ID: refund.Id, CreatedAt: refund.CreatedAt, LogType: LogTypeRefund, Quota: 120, IdentityMatches: false,
+	})
+	require.Len(t, report.History, 1)
+	assert.False(t, report.History[0].CurrentSource)
+	assert.EqualValues(t, 120, report.NetQuota)
+	req.Fingerprint, req.PreviousID, req.RequestID = report.Fingerprint, report.History[0].ID, "independent-second"
+	assert.ErrorIs(t, RecordBillingSourceReviewDecision(ctx, 91, start, end, req, 1), ErrBillingStatementSourceIncomplete)
 }

@@ -74,6 +74,7 @@ type CustomerExportRow struct {
 	TokenName                string                      `json:"token_name"`
 	CustomerModel            string                      `json:"customer_model"`
 	BillingMode              string                      `json:"billing_mode"`
+	BillableImageCount       *int64                      `json:"billable_image_count,omitempty"`
 	CountsTowardBill         bool                        `json:"counts_toward_bill"`
 	InputTokensUnavailable   bool                        `json:"input_tokens_unavailable"`
 	InputTokens              int64                       `json:"input_tokens"`
@@ -253,6 +254,7 @@ func buildCustomerExportRow(scanned customerExportScanRow, fact billingReconcili
 		TokenName:              scanned.TokenName,
 		CustomerModel:          parsed.customerModel,
 		BillingMode:            parsed.billingMode,
+		BillableImageCount:     parsed.billableImageCount,
 		CountsTowardBill:       (scanned.Type == LogTypeConsume || scanned.Type == LogTypeRefund) && !isNativeChannelTestLog(scanned.Type, scanned.TokenId, scanned.TokenName, scanned.Content),
 		InputTokens:            parsed.inputTokens,
 		InputTokensUnavailable: parsed.inputTokensUnavailable,
@@ -314,12 +316,14 @@ func buildCustomerExportRow(scanned customerExportScanRow, fact billingReconcili
 
 // customerExportFacts 每行只解析一次 other 与 statement_snapshot。
 type customerExportFacts struct {
-	other    map[string]json.RawMessage
-	snapshot map[string]json.RawMessage
+	other                 map[string]json.RawMessage
+	snapshot              map[string]json.RawMessage
+	duplicateRequestRules bool
 }
 
 func loadCustomerExportFacts(other string) customerExportFacts {
 	var facts customerExportFacts
+	facts.duplicateRequestRules = hasDuplicateFrozenRequestRules(other)
 	if common.UnmarshalJsonStr(other, &facts.other) != nil {
 		facts.other = nil
 		return facts

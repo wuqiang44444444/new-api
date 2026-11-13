@@ -23,6 +23,11 @@ export type SystemOption = {
 
 export type SystemOptionKey = string
 
+export type EvidenceRetentionPolicy = {
+  days: number
+  source: 'database' | 'environment' | 'default'
+}
+
 export type SystemOptionsResponse = {
   success: boolean
   message: string

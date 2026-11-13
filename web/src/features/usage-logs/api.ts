@@ -110,10 +110,12 @@ export async function getUsageLogDetail(
   signal: AbortSignal
 ) {
   const res = await api.get<{ success: boolean; data: UsageLog }>(
-    buildApiPath('/api/log', isAdmin),
+    isAdmin ? '/api/log/' : '/api/log/self',
     {
       params: { log_ref: ref },
       signal,
+      // React Query owns deduplication so a new fetch cannot reuse an aborted request.
+      disableDuplicate: true,
     }
   )
   if (!res.data.success || !res.data.data) {

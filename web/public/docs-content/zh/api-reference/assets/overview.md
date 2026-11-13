@@ -1,7 +1,7 @@
 ---
 page-id: assets-lifecycle
 kind: api-reference
-last-verified: 2026-09-09
+last-verified: 2026-11-13
 operations:
   - createAsset
   - getAsset
@@ -13,72 +13,58 @@ operations:
 
 # 素材与素材组
 
-素材 API 按模型公开的 `api.assets.management_mode` 履约：`caller_managed_stateless` 代理上游单资源，
-`platform_hosted` 由平台保存素材组与图片。应用均须保存创建响应中的客户 `model`、opaque `id` 和
-`reference`；两种模式都不提供素材或素材组列表。
+托管素材库按账号共享，统一接收图片、MP3 和 MP4。创建时填入当前 API Key 有权使用的客户模型 ID
+作为 `model`。托管入库按同一套文件规则校验，与所填模型无关。同账号下，不同 API Key 和新加入的
+Seedance 模型都可复用已有托管素材，无需重新上传。
+
+提交视频生成时，才按目标模型校验媒体类型、角色、数量、组合和规格。例如，MP3 可以先入库，
+但只能在支持参考音频的模型请求中使用，并须满足该模型的组合规则。
+
+已配置上游素材代理的模型仍可使用 `caller_managed_stateless`。创建本站托管素材或托管组时，
+在 JSON 中传 `"management_mode":"platform_hosted"`。省略该字段时，沿用模型配置的代理；没有配置代理时
+使用本站托管库。两种模式均提供单资源操作。
 
 所有操作使用 Bearer 鉴权。路径中的素材 ID 和素材组 ID 都是服务端返回的不透明字符串，客户端不能解析、
 改写或根据前缀判断来源。素材用于视频参考，不是图片生成或图片编辑的任务结果。
 
-> **AIGC 普通素材的推荐流程：直接创建素材，不要默认先创建素材组。** 调用
-> `POST /v1/assets` 时优先省略 `asset_group_id`（发送空字符串也按未填写处理），这样不同模型可以保持
-> 一致的接入流程。普通代理素材按模型策略使用默认组或忽略组；托管素材不传组时创建无组素材；只有业务确实需要自定义分组管理时，
-> 才先调用素材组接口。平台继续保留素材组创建与单项查询能力。
+创建普通素材时可省略 `asset_group_id`，空字符串也按省略处理。托管素材默认不分组，代理素材按所选
+合同使用默认组或忽略组。需要指定分组时，先取得可用的素材组 ID。
 
 ## 调用前读取模型能力
 
-先调用 `GET /v1/models/{customer_model}` 并读取 `api.assets`：
+调用 `GET /v1/models/{customer_model}`。默认素材合同在 `api.assets`，同时配置了代理的模型在
+`api.hosted_assets` 另列本站托管合同。两处使用相同结构。
 
 | 字段                           | 用途                                                                                        |
 | ------------------------------ | ------------------------------------------------------------------------------------------- |
 | `management_mode`              | `caller_managed_stateless` 为代理模式，`platform_hosted` 为平台托管模式                     |
-| `supported`                    | `false` 表示该客户模型不能使用素材 API                                                      |
+| `supported`                    | `false` 表示该素材合同不可用                                                      |
 | `operations[]`                 | 每个创建、查询、更新、删除、素材组和认证操作是否支持，以及对应方法与路径                    |
-| `media[]`                      | 支持的 `asset_kind`、`media_type` 组合及 `asset_group_requirement`                          |
-| `creation.required_fields`     | 当前模型创建素材时必须提交的字段                                                            |
+| `media[]`                      | 支持的 `kind`、`media_type` 组合，对应创建请求的 `asset_kind`、`media_type` 及 `asset_group_requirement`                          |
+| `creation.required_fields`     | 所选素材合同要求的创建字段                                                            |
 | `creation.name_max_characters` | `name` 最大字符数，当前公共上限为 `64`                                                      |
+| `creation.source.accepted_content_types` | 按媒体类型列出平台校验的源文件 MIME，字段存在时按该清单提交 |
 | `creation.source`              | URL 协议、端口、最大长度、最短剩余有效期、MIME、编码大小、`max_pixels` 像素上限和重定向限制 |
-| `reuse_scope`                  | 匿名素材复用域；仅两个非空值完全相同时才可尝试跨模型复用                                    |
+| `reuse_scope`                  | 代理素材复用域；两个非空值完全相同时才可尝试跨模型复用                                    |
 
 `asset_group_requirement=optional` 表示可省略组；`required` 表示该素材类型必须提供专用组；
 `unsupported` 表示普通组不参与该模型履约，省略组即可创建，不能把这个值理解成素材创建也不支持。
 
-`reuse_scope` 相同不证明素材所有权、ready 状态或永久兼容，只表示可以把同一个 opaque ID 交给另一个
-模型尝试。不同或缺失时不得跨模型发送素材 ID。
-
-### 模型广场的“素材共享组”提示
-
-控制台模型广场的模型卡片会显示“素材共享组”短标签，它是 `reuse_scope` 的界面缩写，用于在调用前
-快速判断素材库归属：
-
-- 卡片显示标签（例如 `素材共享组 4AFE`）：该模型已发布素材库，且标签相同的模型位于同一个素材
-  复用域。可以把其中一个模型创建的素材 `asset://` 引用交给同组其它模型尝试使用；悬停标签可直接
-  查看同组模型清单。
-- 卡片没有标签：该模型未发布素材库（`api.assets.supported` 不为 `true` 或模型当前不可用），不能
-  调用素材 API，也没有可比较的复用域；不得把其它模型的素材引用交给它。
-- 标签文本（如 `4AFE`）仅用于界面区分；程序必须比较完整的非空 `reuse_scope`，不要比较短标签来判断可复用性。
-- 相同标签只表示“可以尝试复用”，不保证素材一定被接受；最终存在性、权限、状态和兼容性仍由当前
-  模型选定的上游判断，规则与逐模型比较 `reuse_scope` 完全一致。
-
 ## 平台托管素材
 
-当模型的 `management_mode` 为 `platform_hosted` 时，可以按“创建普通素材组 → 在组内创建图片 →
-使用响应中的 reference 生成视频”的流程调用。素材组可选；提供时必须属于当前账号。相同账号的
-所有 API Key 共享素材组及素材，跨账号不能查询、删除或引用；更换 API Key 不使素材失效。
+选择 `platform_hosted` 时，可直接创建素材，再使用返回的 `reference` 生成视频。
+如需分组，先创建普通素材组，并在创建素材时传入当前账号下的组 ID。同一账号的 API Key 共享素材与素材组。
 
-- 当前支持 `general` 图片：JPEG、PNG、WebP、BMP、TIFF、GIF。源地址须为当次可读的公开 HTTPS
-  URL，可以带临时签名。创建调用内复制成功并保存记录后才返回 ready；源地址随后失效不影响复制件。
-- 创建验证实际图片格式、MIME 与解码内容。编码文件最大 100 MiB，图片最大 13,107,200 像素；
-  具体限制以 `creation.source` 为准。无效图片返回 `invalid_request`。
-- 每次创建产生独立素材和副本；同 URL 重复提交也不合并。仅保存响应中的 ID 与 reference，内部访问
-  地址不会返回给调用方。
-- reference 仅可用于视频请求的图片引用位置。无效、已删除、跨账号或放入视频/音频位置的托管引用
-  在资金预扣前返回 400；已知存储不可用返回 503。
-- 删除只停止该素材的新引用，已经接受的引用继续执行。素材查询发现存储不可用时返回错误；
-  不承诺上游在未来任何时刻都能读取图片。
-- 直接使用图片 URL 生成视频仍可按原合同调用；这不会创建素材或保存副本。
-
-托管能力需由部署方完成实际生成与对象存储验收后启用。
+- 托管库统一接受 JPEG、PNG、WebP、BMP、TIFF、GIF、MP3 和 MP4。源地址须为当次可读的公开 HTTPS URL，
+  可以带临时签名。创建返回 `ready` 后，源 URL 过期不影响托管素材。
+- 创建校验媒体格式和 MIME，图片另验证解码内容。编码文件最大 100 MiB，图片最大 13,107,200 像素。
+  具体限制以 `creation.source` 为准。格式或 MIME 校验失败时返回 `400 invalid_request`。
+  当前素材合同不支持的 `asset_kind` 与 `media_type` 组合返回 `422 unsupported_asset_type`。
+- 图片、音频和视频的 reference 分别放入 `image_url.url`、`audio_url.url` 和 `video_url.url`。无效、
+  已删除、跨账号或类型与槽位不匹配的托管引用在预扣前返回 `400 invalid_video_parameter`。
+  托管存储、对象或签名不可用时，视频创建返回 `503 internal_error`，此时尚未预扣。
+- 删除后不能在新任务中使用该素材。已受理的任务可继续执行。
+- 生成请求可按目标模型支持的组合混用直接 URL 和托管引用。
 
 ## 创建素材
 
@@ -90,6 +76,7 @@ curl "{{OPENAI_BASE_URL}}/assets" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "商品参考图",
+    "management_mode": "platform_hosted",
     "asset_kind": "general",
     "media_type": "image",
     "model": "{{MODEL_ID_PLACEHOLDER}}",
@@ -100,27 +87,29 @@ curl "{{OPENAI_BASE_URL}}/assets" \
   }'
 ```
 
+创建托管音频或视频时，将示例中的 `media_type` 分别改为 `audio` 或 `video`，并换成对应的 MP3 或 MP4 源地址。
+
 ### 创建请求参数
 
 | 字段                | 类型    | 必填     | 取值与说明                                                                                                                                                             |
 | ------------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `name`              | string  | 是       | 素材名称；去除首尾空白后不能为空，最多 `64` 个字符                                                                                                                     |
 | `asset_kind`        | string  | 是       | `general` 或 `real_person`                                                                                                                                             |
-| `media_type`        | string  | 是       | `image`、`video` 或 `audio`；必须出现在当前模型的 `api.assets.media` 中                                                                                                |
-| `model`             | string  | 是       | 客户模型名；用于选择唯一素材执行路径，必须使用模型目录中的原值                                                                                                         |
+| `management_mode`   | string  | 否       | `platform_hosted` 显式选择本站托管。省略时使用模型的默认素材合同 |
+| `media_type`        | string  | 是       | `image`、`video` 或 `audio`，读取所选素材合同的 `media`                                                                                                |
+| `model`             | string  | 是       | 模型目录中的客户模型名，用于访问校验。默认代理模式也用它选择素材服务                                                                                                         |
 | `asset_group_id`    | string  | 条件使用 | AIGC 普通素材可省略；代理模式按模型策略使用默认组，裁剪后非空时原值交给上游；托管模式未填写时不分组，填写时校验当前账号组归属。`real_person` 必须传认证产生的专用组 ID |
 | `source`            | object  | 是       | 本次创建使用的源对象                                                                                                                                                   |
 | `source.type`       | string  | 是       | 当前固定为 `url`                                                                                                                                                       |
-| `source.url`        | string  | 是       | 上游可访问的公网 HTTPS 绝对 URL                                                                                                                                        |
-| `source.expires_at` | integer | 否       | URL 过期时间，Unix 秒；填写时必须满足模型公开的最短剩余有效期                                                                                                          |
+| `source.url`        | string  | 是       | 当次可访问的公网 HTTPS 绝对 URL。托管模式由平台读取，代理模式按素材服务要求提供                                                                                                                                        |
+| `source.expires_at` | integer | 否       | URL 过期时间，Unix 秒。代理模式填写时须满足模型公开的最短剩余有效期；托管模式要求源地址在复制时有效                                                                                                          |
 
 `source.url` 还必须满足以下公共边界：
 
 - 只能使用 HTTPS 和 443 端口，不能包含 URL 用户名、密码或 fragment；
-- 域名或 IP 必须通过公网与 SSRF 安全校验；
+- 域名或 IP 必须能从公网访问；
 - URL 长度不能超过 `creation.source.max_url_length`；
-- URL 只用于这一次调用，不会被持久化、写入普通日志或返回给客户端；
-- 如模型目录公开 MIME、文件大小或重定向限制，源文件也必须满足这些限制。
+- 托管素材遵循上文的统一入库规则。代理素材按所选素材合同的 `creation.source` 提交。
 
 ### 创建成功响应
 
@@ -161,10 +150,9 @@ curl "{{OPENAI_BASE_URL}}/assets/example-asset-id?model={{MODEL_ID_PLACEHOLDER}}
 | 参数       | 位置  | 必填 | 说明                                     |
 | ---------- | ----- | ---- | ---------------------------------------- |
 | `asset_id` | path  | 是   | 创建响应的 `id`，原样 URL 编码后放入路径 |
-| `model`    | query | 是   | 创建该素材时保存的客户模型名             |
+| `model`    | query | 是   | 托管素材使用当前 Key 可访问的模型 ID；代理素材使用创建时保存的模型 ID |
 
-HTTP `200` 返回与创建相同的 `Asset` 对象。代理模式只查询当前模型的素材服务；托管模式查询当前账号
-的托管图片。模型与 ID 不匹配时不探测其他来源，也不自动换模型。
+HTTP `200` 返回与创建相同的 `Asset` 对象。
 
 ## 更新素材名称
 
@@ -186,8 +174,8 @@ curl -X PATCH "{{OPENAI_BASE_URL}}/assets/example-asset-id" \
 | `model`    | body | 是   | 创建时使用的客户模型名                           |
 | `name`     | body | 是   | 新名称；去除首尾空白后不能为空，最多 `64` 个字符 |
 
-HTTP `200` 返回更新后的 `Asset` 对象。只有 `operations` 中 `update_asset.supported=true` 时才能调用；
-不支持更新的模型返回 `422 unsupported_asset_operation`。
+此示例适用于 `update_asset.supported=true` 的代理素材合同。成功返回 HTTP `200` 和更新后的素材；
+托管素材改名返回 `422 unsupported_asset_operation`。
 
 ## 删除素材
 
@@ -198,13 +186,11 @@ curl -X DELETE "{{OPENAI_BASE_URL}}/assets/example-asset-id?model={{MODEL_ID_PLA
   -H "Authorization: Bearer {{API_KEY_PLACEHOLDER}}"
 ```
 
-成功返回 HTTP `204 No Content`，没有 JSON 响应体。删除失败不会建立本地 `unknown` 状态、自动重试、
-孤儿扫描或跨上游清理任务；结果不明确时调用方应停止自动重发并保留公开请求 ID。
+成功返回 HTTP `204 No Content`。删除结果不明确时，保留请求 ID 核查，暂停自动重试。
 
 ## 可选：创建普通素材组
 
-AIGC 普通素材无需为了完成基础创建而预先建组。只有模型能力明确要求素材组，或调用方需要使用上游的
-分组语义时，才执行本节；不需要分组时直接跳过，按前文创建素材即可。
+需要自定义分组时，先创建组，再将返回的 ID 作为 `asset_group_id` 提交。
 
 `POST /v1/asset-groups` · `application/json`
 
@@ -216,6 +202,7 @@ curl "{{OPENAI_BASE_URL}}/asset-groups" \
     "name": "产品素材",
     "description": "用于产品演示视频",
     "group_kind": "general",
+    "management_mode": "platform_hosted",
     "model": "{{MODEL_ID_PLACEHOLDER}}"
   }'
 ```
@@ -226,6 +213,7 @@ curl "{{OPENAI_BASE_URL}}/asset-groups" \
 | -------------- | ------ | -------- | --------------------------------------------------------------------------------- |
 | `name`         | string | 是       | 素材组名称；最多 `64` 个字符；`aigctokenaigeneral` 为系统保留名称，调用方不得创建 |
 | `description`  | string | 否       | 素材组说明；最多 `300` 个字符                                                     |
+| `management_mode` | string | 否 | 普通组可传 `platform_hosted` 以显式选择托管库 |
 | `group_kind`   | string | 是       | 普通组使用 `general`；真人认证流程使用 `real_person`                              |
 | `model`        | string | 是       | 客户模型名                                                                        |
 | `redirect_url` | string | 条件使用 | 真人认证完成后的客户端 HTTPS 跳转地址；普通组通常省略                             |
@@ -312,7 +300,7 @@ GET /v1/asset-groups/{session_id}?model={customer_model}&verification_session=tr
 HTTP `200` 返回 `AssetGroup` 对象。真人认证完成后，响应中的 `group_id` 才是创建真人素材时应填写的
 `asset_group_id`。不要把会话 `id` 当作最终素材组 ID。
 
-需要在组内创建图片时，将组创建响应的 `id` 放入素材请求的 `asset_group_id`，其余字段与直接创建图片一致。
+需要创建素材时，将组创建响应的 `id` 放入素材请求的 `asset_group_id`，其余字段与直接创建图片一致。
 普通组的单项查询示例：
 
 ```bash
@@ -323,8 +311,7 @@ curl --get "{{OPENAI_BASE_URL}}/asset-groups/example-group-id" \
 
 查询或删除素材时，`model` 同样应进行 URL 查询参数编码；可以用 `--get --data-urlencode` 构造查询。
 
-平台没有注册 `GET /v1/assets`、`GET /v1/asset-groups` 列表，也没有素材组更新或删除接口。素材组可能
-包含多项资源并产生级联影响，确需清理由上游管理员确认归属后执行。
+素材组支持创建和单项查询。素材与素材组均无列表接口。
 
 ## 在视频请求中引用素材
 
@@ -338,11 +325,10 @@ curl --get "{{OPENAI_BASE_URL}}/asset-groups/example-group-id" \
 }
 ```
 
-普通代理引用的存在性、权限、兼容性和审核由素材服务判断，平台不建立本地所有权校验。
-托管图片则在视频预扣前校验当前账号归属、有效引用和图片位置；无效、已删除或跨账号引用会被拒绝。
-无论哪种模式，素材 ready 都不保证视频一定生成成功。
+提交前按目标模型检查媒体类型、角色和组合。普通代理引用的有效性和权限由素材服务判定。
 
-完整视频请求示例（先确认模型公开 `reference_image`）：
+以下示例使用支持 `reference_image`、5 秒、`720p` 和 `16:9` 的 Seedance 模型。使用 H3 或其他模型时，
+按该模型的 `api.video.creation` 调整参数。
 
 ```bash
 curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
@@ -374,11 +360,10 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 | 状态         | 客户端行为                                                    |
 | ------------ | ------------------------------------------------------------- |
 | `processing` | 保存 `model + id`，有界轮询对应单项查询接口                   |
-| `ready`      | 保存 `reference`；需要跨模型复用时仍先比较非空 `reuse_scope`  |
-| `failed`     | 停止轮询，记录公开 `error_code` 和请求 ID，不解析原始上游身份 |
+| `ready`      | 保存 `reference`，用于视频生成  |
+| `failed`     | 停止轮询，保留 `error_code` 和请求 ID |
 
-素材 POST 不支持客户幂等键。超时不代表创建一定失败，自动重复 POST 可能产生多个上游素材；不要自动
-换模型、换路径或 fallback。
+素材创建不支持幂等键。超时后请先核查原请求，重复 POST 可能创建多个素材。
 
 ## 错误响应
 
@@ -401,10 +386,10 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 | `400`     | `reserved_asset_group_name`          | 普通调用方试图创建系统保留素材组名称；改用其它业务名称                                 |
 | `400`     | `asset_url_ttl_insufficient`         | URL 剩余有效期不足；读取 `error.details.required_min_ttl_seconds` 后换用更长有效期 URL |
 | `404`     | `model_not_found`                    | 客户模型不存在；重新读取模型目录                                                       |
-| `404`     | `asset_not_found`                    | 当前模型选定的上游未找到该素材或素材组                                                 |
+| `404`     | `asset_not_found`                    | 素材或素材组不存在，或当前账号无权访问该资源                                                 |
 | `409`     | `default_asset_group_not_configured` | 当前模型的默认素材组未配置；联系管理员完成配置，或按业务需要使用已创建的合法组 ID      |
-| `422`     | `unsupported_asset_type`             | 当前模型不支持该 `asset_kind + media_type` 组合                                        |
+| `422`     | `unsupported_asset_type`             | 所选素材合同不支持该 `asset_kind + media_type` 组合                                        |
 | `422`     | `unsupported_asset_operation`        | 当前模型未发布该素材或素材组操作                                                       |
-| `502`     | `asset_upstream_error`               | 上游拒绝或返回无效结果；不要改成其它 Provider ID 探测                                  |
-| `503`     | `asset_upstream_unavailable`         | 素材服务或凭据暂不可用；保留请求 ID 后联系管理员                                       |
+| `502`     | `asset_upstream_error`               | 素材服务操作失败、返回无效结果，或托管存储操作失败                                  |
+| `503`     | `asset_upstream_unavailable`         | 素材服务、凭据或托管存储暂不可用；保留请求 ID 后联系管理员                                       |
 | `500`     | `internal_error`                     | 平台内部错误；不要依赖错误文本判断素材是否已创建                                       |

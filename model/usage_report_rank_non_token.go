@@ -10,6 +10,9 @@ import (
 
 // UsageReportNonToken holds independent units from the same frozen report as the rank.
 type UsageReportNonToken struct {
+	BillingImageTotals
+	BillingTokensApplicable bool             `json:"billing_tokens_applicable,omitempty"`
+	BillingMeterUnknownRows int64            `json:"billing_meter_unknown_rows,omitempty"`
 	ImageCount              int64            `json:"image_count"`
 	ImageCountKnown         bool             `json:"image_count_known,omitempty"`
 	ImageCountMissingRows   int64            `json:"image_count_missing_rows,omitempty"`
@@ -20,6 +23,8 @@ type UsageReportNonToken struct {
 
 func usageReportNonToken(metrics UsageAnalyticsMetrics) *UsageReportNonToken {
 	return &UsageReportNonToken{
+		BillingImageTotals:      metrics.BillingImageTotals,
+		BillingTokensApplicable: metrics.BillingTokensApplicable, BillingMeterUnknownRows: metrics.BillingMeterUnknownRows,
 		ImageCount: metrics.ImageCount, ImageCountKnown: metrics.ImageCountKnown,
 		ImageCountMissingRows: metrics.ImageCountMissingRows, Seconds: metrics.Seconds,
 		SecondsMissingRows: metrics.SecondsMissingRows, SecondsValueMissingRows: metrics.SecondsValueMissingRows,
@@ -27,6 +32,9 @@ func usageReportNonToken(metrics UsageAnalyticsMetrics) *UsageReportNonToken {
 }
 
 func (m *UsageReportNonToken) merge(day *UsageReportNonToken) {
+	m.BillingImageTotals.add(day.BillingImageTotals)
+	m.BillingTokensApplicable = m.BillingTokensApplicable || day.BillingTokensApplicable
+	m.BillingMeterUnknownRows += day.BillingMeterUnknownRows
 	m.ImageCount += day.ImageCount
 	m.ImageCountKnown = m.ImageCountKnown || day.ImageCountKnown
 	m.ImageCountMissingRows += day.ImageCountMissingRows

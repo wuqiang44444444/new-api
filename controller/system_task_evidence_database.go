@@ -9,7 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 )
 
-func cleanupEvidenceDatabase(ctx context.Context, store service.TaskRequestEvidenceObjectStore, stats *evidenceRetentionStats, persistProgress func() error) error {
+func cleanupEvidenceDatabase(ctx context.Context, store service.TaskRequestEvidenceObjectStore, stats *evidenceRetentionStats, retentionSeconds int64, persistProgress func() error) error {
 	var cursor int64
 	for {
 		if err := ctx.Err(); err != nil {
@@ -43,7 +43,7 @@ func cleanupEvidenceDatabase(ctx context.Context, store service.TaskRequestEvide
 			break
 		}
 	}
-	orphanCutoff := stats.Cutoff - service.EvidenceRetentionSeconds()
+	orphanCutoff := stats.Cutoff - retentionSeconds
 	if stats.TargetTimestamp > 0 {
 		orphanCutoff = stats.TargetTimestamp
 	}

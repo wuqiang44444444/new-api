@@ -373,12 +373,11 @@ func runCustomerExportJob(ctx context.Context, job *model.CustomerExportJob, exe
 	}
 	ctx, stop := monitorCustomerExport(ctx, job, executor)
 	filters, err := job.DecodeFilters()
-	formatMatches := filters.FieldVersion == customerExportFormatVersion(job.JobType)
-	if job.JobType == model.CustomerExportJobTypeUsageSummary {
-		formatMatches = formatMatches || filters.FieldVersion == legacyUsageAnalyticsExportFieldVersion ||
-			(filters.UsageView == usageAnalyticsExportTypeUpstream && filters.FieldVersion == upstreamUsageKnownSubtotalFieldVersion)
+	if err == nil && job.JobType == model.CustomerExportJobTypeUsageSummary {
+		filters.FieldVersion = usageAnalyticsExportFieldVersion
 	}
-	if err == nil && (!formatMatches || (isDailyBillingExport(job.JobType) && filters.BillingReportVersion == "")) {
+	if err == nil && (filters.FieldVersion != customerExportFormatVersion(job.JobType) ||
+		(isDailyBillingExport(job.JobType) && filters.BillingReportVersion == "")) {
 		err = errCustomerExportFormatChanged
 	}
 	var sourceVersion string
@@ -837,6 +836,8 @@ func writeCustomerExportSummaryCsv(workDir string, scope customerExportScopeColu
 		row["output_tokens"] = strconv.FormatInt(usage.OutputTokens, 10)
 		row["billable_calls"] = strconv.FormatInt(usage.BillableCalls, 10)
 		row["refunded_calls"] = strconv.FormatInt(usage.RefundedCalls, 10)
+		row["billable_images"] = positiveBillingMeterCSV(usage.BillableImages)
+		row["billable_image_missing_rows"] = positiveBillingMeterCSV(usage.BillableImageMissingRows)
 		row["original_quota"] = exportQuotaAmount(original)
 		row["discount_quota"] = exportQuotaAmount(discount)
 		row["gross_quota"] = strconv.FormatInt(usage.GrossQuota, 10)

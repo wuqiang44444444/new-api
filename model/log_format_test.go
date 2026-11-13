@@ -87,11 +87,12 @@ func TestTaskPluginLogVisibilityIsRoleSeparated(t *testing.T) {
 
 func TestLegacyLogOtherVisibilityIsRoleSeparated(t *testing.T) {
 	other := common.MapToJsonStr(map[string]any{
-		"request_path":  "/v1/chat/completions",
-		"channel_id":    202,
-		"channel_name":  "legacy-secret-channel",
-		"channel_type":  1,
-		"reject_reason": "legacy-policy-rejection",
+		"request_path":        "/v1/chat/completions",
+		"channel_id":          202,
+		"channel_name":        "legacy-secret-channel",
+		"channel_type":        1,
+		"upstream_request_id": "legacy-upstream-request",
+		"reject_reason":       "legacy-policy-rejection",
 		"admin_info": map[string]any{
 			"existing_admin_field": "preserved",
 		},
@@ -105,17 +106,19 @@ func TestLegacyLogOtherVisibilityIsRoleSeparated(t *testing.T) {
 
 	t.Run("user", func(t *testing.T) {
 		logs := []*Log{{
-			Id:          99,
-			ChannelId:   77,
-			ChannelName: "resolved-secret-channel",
-			Other:       other,
+			Id:                99,
+			ChannelId:         77,
+			ChannelName:       "resolved-secret-channel",
+			UpstreamRequestId: "upstream-request",
+			Other:             other,
 		}}
 
 		formatUserLogs(logs, 10)
 
 		assert.Equal(t, 11, logs[0].Id)
-		assert.Equal(t, 77, logs[0].ChannelId)
+		assert.Zero(t, logs[0].ChannelId)
 		assert.Empty(t, logs[0].ChannelName)
+		assert.Empty(t, logs[0].UpstreamRequestId)
 		parsed, err := common.StrToMap(logs[0].Other)
 		require.NoError(t, err)
 		assert.Equal(t, "/v1/chat/completions", parsed["request_path"])
@@ -123,6 +126,7 @@ func TestLegacyLogOtherVisibilityIsRoleSeparated(t *testing.T) {
 			"channel_id",
 			"channel_name",
 			"channel_type",
+			"upstream_request_id",
 			"reject_reason",
 			"admin_info",
 			"root_info",

@@ -1,13 +1,11 @@
 ---
 page-id: troubleshooting
 kind: guide
-last-verified: 2026-10-21
+last-verified: 2026-11-13
 operations: []
 ---
 
 # 排障清单
-
-按下面顺序检查，可以避免把协议、权限、媒体格式和异步状态混在一起。
 
 ## Base URL
 
@@ -19,8 +17,7 @@ operations: []
 ## 鉴权与模型
 
 - 确认请求头中只有占位位置被替换为你的 Key。
-- 调用 `GET /v1/models` 确认模型对当前 Key 可见。
-- 不要把展示名称或内部标识当作公开模型 ID。
+- 使用当前 Key 调用 `GET /v1/models`，检查模型可用状态并复制返回的 `id`。
 - `401` 先查 Key，`403` 先查权限，`429` 再区分限流与额度。
 
 ## Content-Type
@@ -40,10 +37,11 @@ operations: []
 
 ## 素材
 
-- 调用前检查模型目录中的 `api.assets`，确认当前模型支持所需操作。
+- 创建托管素材时，从 `api.assets` 或 `api.hosted_assets` 读取 `platform_hosted` 合同。提交生成时再核对目标模型的媒体限制。
 - 调用方需要同时保存客户模型、不透明 ID 和返回的 `asset://` 引用。
-- 代理素材的存在性和兼容性由素材服务判断；托管图片在视频预扣前检查账号归属和可用引用。单项查询成功也不保证生成成功。
-- `404 model_not_found` 表示客户模型不可用；`422 unsupported_asset_operation` 表示该模型或操作明确未发布。
+- 代理素材的存在性和兼容性由素材服务判断。托管素材在视频预扣前检查账号归属、媒体槽位和对象可用性。
+- `404 model_not_found` 表示客户模型不可用。`422 unsupported_asset_operation` 表示所选素材合同未开放该操作，
+  `422 unsupported_asset_type` 表示所选素材合同不支持该素材类型。
 
 ## 异步任务
 
@@ -57,13 +55,8 @@ operations: []
 - ModelArk 视频任务单查和列表都返回完整的 `usage`。任务 `succeeded` 时，计量值为 `0` 仍可能表示用量尚未确认；以最终账单为准，不要重新生成来补齐用量。
 - Seedance 与 H3 视频 `succeeded` 后仍需检查 `content.delivery_status`：`preparing` 时继续有界查询，
   `ready` 时下载，`unavailable` 时保留 ID 核查交付；不要因转存失败重新生成或假定退款。
-- 本站托管视频签名 URL 每次签发有效 24 小时，下载不附平台 Key；对象仍保留且授权有效时查询原任务
-  可续签。访问鉴权内容入口需跟随 302，不向对象存储转发 Key。范围外原生视频沿用原合同。
+- 签名 URL 到期后，使用原 Key 重新查询任务。详见[视频下载](api-reference/videos/modelark#下载视频或末帧)。
 - 逐步示例见[图片与视频调用实战](guides/media-workflow)。
-
-English: for hosted standard videos, generation success may precede delivery. Poll `preparing`, download
-`ready` signed URLs without an API key, and investigate `unavailable` without regenerating or assuming a refund.
-URLs last 86400 seconds from issuance and can be renewed by an authorized query while objects are retained.
 
 ## 提交支持信息
 

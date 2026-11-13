@@ -22,6 +22,7 @@ var legacySensitiveLogOtherKeys = []string{
 	"channel_id",
 	"channel_name",
 	"channel_type",
+	"upstream_request_id",
 	"reject_reason",
 }
 

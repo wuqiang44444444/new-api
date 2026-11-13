@@ -54,7 +54,7 @@ func TestGPT6AstraBuiltinBilling(t *testing.T) {
 			}
 			params := service.BuildTieredTokenParams(usage, false, billingexpr.UsedVars(expression))
 			result, err := billingexpr.ComputeTieredQuotaWithRequest(&billingexpr.BillingSnapshot{
-				ExprString: expression, GroupRatio: 1, QuotaPerUnit: 500000,
+				ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), GroupRatio: 1, QuotaPerUnit: 500000,
 			}, params, billingexpr.RequestInput{Body: []byte(tc.request)})
 			require.NoError(t, err)
 			assert.Equal(t, tc.quota, result.ActualQuotaAfterGroup)

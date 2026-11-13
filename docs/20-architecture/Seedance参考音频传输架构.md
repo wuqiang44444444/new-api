@@ -70,5 +70,5 @@ FunCloud 的固定真人模式字段保持启用。HTTP URL 与 opaque 引用继
 MiniMax 类型化 adapter 在映射校验、计价与资金 hold 之前调用同一 `PrepareVideoReferenceAudio`，
 沿用入口解码、OSS 上传、签名及 Task/attempt 对象事实冻结，不复制一套上传实现。现有内部对象前缀
 保持不变，不作为渠道身份。插件只消费准备好的 URL，完整保留 `audio_url`、role 和内容顺序。
-`minimax-link@1.1.0` 最多接收三个参考音频，范围与公开元数据来自同一声明；不创建音频素材库。
+`minimax-link@1.1.0` 最多接收三个参考音频，范围与公开元数据来自同一声明。需要复用音频时使用账号级托管素材 API。
 代码与桩测试不代表内联音频标准链路已完成真实 Provider 验收。

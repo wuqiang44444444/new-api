@@ -42,6 +42,7 @@ import {
 import type { EvidenceCleanupTask, SystemTaskResponse } from '../types'
 import { EvidenceCleanupHealth } from './evidence-cleanup-health'
 import { EvidenceCleanupSummary } from './evidence-cleanup-summary'
+import { EvidenceRetentionSetting } from './evidence-retention-setting'
 
 export function EvidenceCleanup() {
   const userID = useAuthStore((state) =>
@@ -51,6 +52,7 @@ export function EvidenceCleanup() {
   return (
     <>
       <Separator />
+      <EvidenceRetentionSetting userID={userID} />
       <RootEvidenceCleanup userID={userID} />
     </>
   )
@@ -172,7 +174,7 @@ function RootEvidenceCleanup(props: { userID: number }) {
         </h4>
         <p className='text-muted-foreground mt-1 text-sm'>
           {t(
-            'Evidence is normally kept for two days. Above 90% disk usage, cleanup keeps only one day and new evidence writes pause until usage recovers.'
+            'Above 90% disk usage, evidence writes pause and cleanup targets evidence older than 24 hours.'
           )}
         </p>
       </div>

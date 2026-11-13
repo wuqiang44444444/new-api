@@ -26,8 +26,11 @@ func TestSynlinkChannelModelMappingAndHostedProjection(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, "platform_hosted", api.Assets.ManagementMode)
 		assert.Equal(t, hostedPlatformReuseScope, api.Assets.ReuseScope)
-		require.Len(t, api.Assets.Media, 1)
-		assert.Equal(t, "image", api.Assets.Media[0].MediaType)
+		var media []string
+		for _, item := range api.Assets.Media {
+			media = append(media, item.MediaType)
+		}
+		assert.ElementsMatch(t, []string{"image", "audio", "video"}, media)
 		encoded, err := common.Marshal(api)
 		require.NoError(t, err)
 		assert.NotContains(t, string(encoded), providerModel)

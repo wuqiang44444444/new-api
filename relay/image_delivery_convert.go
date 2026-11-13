@@ -200,8 +200,14 @@ func retryImageDelivery(ctx context.Context, operation func() error) error {
 			return nil
 		}
 		var download *imageResultError
-		if errors.As(err, &download) && download.DownloadHTTPStatus >= 400 && download.DownloadHTTPStatus < 500 {
-			return err
+		if errors.As(err, &download) {
+			switch download.Code {
+			case "result_download_policy_rejected", "result_download_request_failed", "result_size_limit":
+				return err
+			}
+			if download.DownloadHTTPStatus >= 400 && download.DownloadHTTPStatus < 500 {
+				return err
+			}
 		}
 		if attempt == 2 {
 			break
@@ -233,7 +239,7 @@ func downloadImageResultFile(ctx context.Context, sourceURL string, file *os.Fil
 	response, err := client.Do(req)
 	service.ObserveImageHTTPExchange(ctx, req, response, err, "result_download")
 	if err != nil {
-		return &imageResultError{Code: "result_download_transport_failed"}
+		return imageDownloadTransportError(err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {

@@ -240,7 +240,11 @@ export function UsageLogs() {
       onScopeChange={(nextScope) => {
         void navigate({
           to: '.',
-          search: (current) => ({ ...current, scope: nextScope }),
+          search: (current) => ({
+            ...current,
+            scope: nextScope,
+            page: undefined,
+          }),
           replace: true,
         })
       }}

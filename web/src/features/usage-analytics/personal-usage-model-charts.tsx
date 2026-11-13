@@ -73,7 +73,8 @@ export function PersonalUsageModelCharts(props: {
             rows={props.rows}
             colors={colors}
             metric='tokens'
-            title={t('Total tokens')}
+            title={props.upstream ? t('Billable tokens') : t('Total tokens')}
+            billingTokensOnly={props.upstream}
           />
           <ModelMetricChart
             rows={props.rows}
@@ -96,17 +97,26 @@ function ModelMetricChart(props: {
   metric: ChartMetric
   title: string
   pendingLabel?: string
+  billingTokensOnly?: boolean
 }) {
   const { t } = useTranslation()
   const { metric } = props
   const formatValue =
     metric === 'amount' ? formatCustomerStatementQuota : formatNumber
-  const partial = props.rows.some((row) =>
+  const applicableRows = props.billingTokensOnly
+    ? props.rows.filter(
+        (row) =>
+          row.nonToken?.billing_tokens_applicable ||
+          row.tokens > 0 ||
+          row.missingTokens
+      )
+    : props.rows
+  const partial = applicableRows.some((row) =>
     metric === 'tokens'
       ? row.missingTokens
       : metric === 'amount' && row.partialAmount
   )
-  const rows = props.rows
+  const rows = applicableRows
     .flatMap((row) => {
       const value = row[metric]
       if (value == null) return []
@@ -149,7 +159,10 @@ function ModelMetricChart(props: {
   const pending = partial && rows.length === 0 && props.pendingLabel
   const totalLabel = rows.length
     ? formatValue(total)
-    : pending || t('unrecorded')
+    : pending ||
+      (props.billingTokensOnly && applicableRows.length === 0
+        ? t('Not applicable')
+        : t('unrecorded'))
 
   return (
     <ReportCard

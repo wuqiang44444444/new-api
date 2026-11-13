@@ -6,7 +6,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 
 import { AdminUsage } from '../admin'
@@ -174,4 +174,113 @@ it('normalizes nullable key and URL slices at the API boundary', async () => {
     (await getAdminUsageUpstreamSummary({ period: 'day', date: '2026-09-21' }))
       .data.result.url_groups
   ).toEqual([])
+})
+
+it('refreshes the upstream report and rank automatically after the rebuilt day is published', async () => {
+  const rebuildingDay = '2026-09-22'
+  const nextStart = period.end_timestamp
+  const current = { start: period.start_timestamp, generation: 'a'.repeat(32) }
+  const rebuilt = { start: nextStart, generation: 'b'.repeat(32) }
+  const channel = { channel_id: 229, channel_name: 'Image channel' }
+  let published = false
+  const rankedSnapshots: unknown[] = []
+  get.mockImplementation(async (_url, { params }) => {
+    const billable = published ? 561 : 452
+    if (params.rank_metric) {
+      rankedSnapshots.push(JSON.parse(params.report_days))
+      return {
+        data: {
+          success: true,
+          data: {
+            total: 1,
+            items: [
+              {
+                name: channel.channel_name,
+                channel_id: channel.channel_id,
+                calls: billable,
+                tokens: 0,
+                missing_tokens: 0,
+                pending_amount: 0,
+                non_token: { billable_images: billable },
+              },
+            ],
+          },
+        },
+      }
+    }
+    const metrics = {
+      ...total,
+      total_calls: billable,
+      billable_images: billable,
+    }
+    const response = reply({
+      channels: [{ ...channel, total: metrics }],
+      url_groups: [
+        {
+          url_key: 'upstream',
+          display_name: 'Upstream',
+          total: metrics,
+          days: [],
+          models: [],
+        },
+      ],
+      total: metrics,
+    })
+    return {
+      data: {
+        ...response.data,
+        data: {
+          ...response.data.data,
+          period: {
+            ...period,
+            period: 'week',
+            days: [
+              ...period.days,
+              { date: rebuildingDay, start: nextStart, end: nextStart + 86400 },
+            ],
+          },
+          published_days: published
+            ? [period.date, rebuildingDay]
+            : [period.date],
+          rebuilding_days: published ? [] : [rebuildingDay],
+          report_days: published ? [current, rebuilt] : [current],
+        },
+      },
+    }
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  vi.useFakeTimers()
+  const { unmount } = render(
+    <QueryClientProvider client={client}>
+      <AdminUsage
+        period='week'
+        date={period.date}
+        section='upstream'
+        onSearchChange={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  try {
+    await act(async () => vi.advanceTimersByTimeAsync(100))
+    expect(
+      screen.getByText('Totals are subtotals for published days')
+    ).toBeVisible()
+    expect(rankedSnapshots).toEqual([[current]])
+
+    published = true
+    await act(async () => vi.advanceTimersByTimeAsync(15_100))
+    expect(
+      screen.queryByText('Totals are subtotals for published days')
+    ).not.toBeInTheDocument()
+    expect(rankedSnapshots).toEqual([[current], [current, rebuilt]])
+    expect(
+      screen.getByRole('row', { name: /Image channel/ })
+    ).toHaveTextContent('561')
+  } finally {
+    unmount()
+    client.clear()
+    vi.useRealTimers()
+  }
 })

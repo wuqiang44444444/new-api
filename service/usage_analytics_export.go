@@ -16,14 +16,12 @@ import (
 )
 
 const (
-	legacyUsageAnalyticsExportFieldVersion = 4
-	upstreamUsageKnownSubtotalFieldVersion = 5
-	usageAnalyticsExportFieldVersion       = 6
-	usageAnalyticsExportTypeSelf           = "self"
-	usageAnalyticsExportTypeCustomer       = "customer"
-	usageAnalyticsExportTypeUpstream       = "upstream"
-	usageAnalyticsRowTypeDaily             = "daily"
-	usageAnalyticsRowTypePeriodTotal       = "period_total"
+	usageAnalyticsExportFieldVersion = 10
+	usageAnalyticsExportTypeSelf     = "self"
+	usageAnalyticsExportTypeCustomer = "customer"
+	usageAnalyticsExportTypeUpstream = "upstream"
+	usageAnalyticsRowTypeDaily       = "daily"
+	usageAnalyticsRowTypePeriodTotal = "period_total"
 )
 
 type UsageAnalyticsExportRequest struct {
@@ -124,9 +122,16 @@ func SubmitUsageAnalyticsExport(actorId int, request UsageAnalyticsExportRequest
 		filters.UsageURLKey = request.Upstream.URLKey
 		filters.ChannelId = request.Upstream.ChannelID
 	}
-	filters.UsageReportDays, err = model.FreezeUsageReportReferences(context.Background(), period, request.ReportDays)
+	snapshot, err := model.FreezeUsageReportExport(context.Background(), period, request.ReportDays)
 	if err != nil {
 		return nil, err
+	}
+	filters.UsageReportDays = snapshot.References
+	for _, date := range append(snapshot.RebuildingDays, snapshot.SourceUnavailableDays...) {
+		if !slices.Contains(snapshot.PublishedDays, date) {
+			filters.UsageReportSubtotal = true
+			break
+		}
 	}
 	sourceVersion, err := adminUsageExportSourceVersion(context.Background(), targetUserId, filters)
 	if err != nil {
@@ -208,14 +213,7 @@ func executeUsageAnalyticsExport(ctx context.Context, job *model.CustomerExportJ
 		return nil, err
 	}
 	defer writer.Cleanup()
-	writer.header = usageAnalyticsExportHeader(filters.Language)
-	if view == usageAnalyticsExportTypeUpstream && filters.FieldVersion >= upstreamUsageKnownSubtotalFieldVersion {
-		if filters.Language == "zh" {
-			writer.header = append(writer.header, "折后参考金额已知小计")
-		} else {
-			writer.header = append(writer.header, "Known subtotal of reference amount")
-		}
-	}
+	writer.header = usageAnalyticsExportHeader(filters.Language, view)
 	rows, overviewVersion, err := usageAnalyticsExportRows(ctx, job, view, period, filters, scope)
 	if err != nil {
 		return nil, err
@@ -255,11 +253,29 @@ func executeUsageAnalyticsExport(ctx context.Context, job *model.CustomerExportJ
 }
 
 // usageAnalyticsExportHeader renders CSV headers per language (en/zh only).
-func usageAnalyticsExportHeader(language string) []string {
+func usageAnalyticsExportHeader(language, view string) []string {
+	var header []string
 	if language == "zh" {
-		return []string{"行类型", "日期", "客户 ID", "客户", "API Key ID", "API Key", "客户模型", "URL 归组", "渠道 ID", "渠道", "上游模型", "上游模型未记录", "计费方式", "调用次数", "成功", "失败", "取消", "其他终态", "输入 Token", "输出 Token", "缓存读取", "缓存写入", "图片张数", "秒数", "扣减 quota", "退款 quota", "净额 quota", "估算原价金额", "折后参考金额", "未关联退款", "缺用量行数", "缺金额行数", "金额待更新行数", "无金额用量行数", "已计价测试行数", "渠道折扣", "估算原因", "输入图片 Token", "输出图片 Token", "输入音频 Token", "输出音频 Token", "币种", "单位 quota", "汇率", "任务 ID", "生成时间", "周期开始", "周期结束", "时区", "客户周期折扣构成"}
+		header = []string{"行类型", "日期", "客户 ID", "客户", "API Key ID", "API Key", "客户模型", "URL 归组", "渠道 ID", "渠道", "上游模型", "上游模型未记录", "计费方式", "调用次数", "成功", "失败", "取消", "其他终态", "输入 Token", "输出 Token", "缓存读取", "缓存写入", "图片张数", "秒数", "扣减 quota", "退款 quota", "净额 quota", "估算原价金额", "折后参考金额", "未关联退款", "缺用量行数", "缺金额行数", "金额待更新行数", "无金额用量行数", "已计价测试行数", "渠道折扣", "估算原因", "输入图片 Token", "输出图片 Token", "输入音频 Token", "输出音频 Token", "币种", "单位 quota", "汇率", "任务 ID", "生成时间", "周期开始", "周期结束", "时区", "客户周期折扣构成"}
+	} else {
+		header = []string{"Row type", "Date", "Customer ID", "Customer", "API Key ID", "API Key", "Customer model", "URL grouping", "Channel ID", "Channel", "Provider model", "Provider model fallback", "Billing mode", "Calls", "Success", "Failure", "Cancelled", "Other", "Input tokens", "Output tokens", "Cache read", "Cache write", "Images", "Seconds", "Gross quota", "Refund quota", "Net quota", "Original amount (estimated)", "Reference amount (after discount)", "Unlinked refund", "Missing-token rows", "Missing-money rows", "Money-pending rows", "Usage-only rows", "Test-priced rows", "Channel discounts", "Estimate reasons", "Image input tokens", "Image output tokens", "Audio input tokens", "Audio output tokens", "Currency", "Quota per unit", "Currency rate", "Job ID", "Generated at", "Period start", "Period end", "Time zone", "Customer period discount combinations"}
 	}
-	return []string{"Row type", "Date", "Customer ID", "Customer", "API Key ID", "API Key", "Customer model", "URL grouping", "Channel ID", "Channel", "Provider model", "Provider model fallback", "Billing mode", "Calls", "Success", "Failure", "Cancelled", "Other", "Input tokens", "Output tokens", "Cache read", "Cache write", "Images", "Seconds", "Gross quota", "Refund quota", "Net quota", "Original amount (estimated)", "Reference amount (after discount)", "Unlinked refund", "Missing-token rows", "Missing-money rows", "Money-pending rows", "Usage-only rows", "Test-priced rows", "Channel discounts", "Estimate reasons", "Image input tokens", "Image output tokens", "Audio input tokens", "Audio output tokens", "Currency", "Quota per unit", "Currency rate", "Job ID", "Generated at", "Period start", "Period end", "Time zone", "Customer period discount combinations"}
+	switch view {
+	case usageAnalyticsExportTypeSelf, usageAnalyticsExportTypeCustomer:
+		header[22] = customerExportSummaryHeaderLabel(language, "billable_images")
+	case usageAnalyticsExportTypeUpstream:
+		if language == "zh" {
+			header[18], header[19], header[22] = "计费输入 Token", "计费输出 Token", "实际出图张数"
+			header = append(header, "折后参考金额已知小计")
+			header = append(header, billingImageTotalsCSVHeader(language)...)
+			return append(header, "计费方式未记录行数")
+		}
+		header[18], header[19], header[22] = "Billable input tokens", "Billable output tokens", "Completed images"
+		header = append(header, "Known subtotal of reference amount")
+		header = append(header, billingImageTotalsCSVHeader(language)...)
+		return append(header, "Unrecorded billing-mode rows")
+	}
+	return header
 }
 
 // usageAnalyticsScopeTail renders the trailing scope cells shared by all rows.
@@ -274,7 +290,7 @@ func usageAnalyticsScopeTail(scope customerExportScopeColumns) []string {
 // usageAnalyticsMetricsRow renders one metrics block as CSV cells; the
 // channel-discount summary sits between the usage-only counter and the
 // estimate reasons, matching the header order exactly.
-func usageAnalyticsMetricsRow(metrics model.UsageAnalyticsMetrics, discount string, scope customerExportScopeColumns, fieldVersion int) []string {
+func usageAnalyticsMetricsRow(metrics model.UsageAnalyticsMetrics, discount string, scope customerExportScopeColumns) []string {
 	cells := []string{
 		strconv.FormatInt(metrics.TotalCalls, 10),
 		strconv.FormatInt(metrics.SuccessCalls, 10),
@@ -314,13 +330,11 @@ func usageAnalyticsMetricsRow(metrics model.UsageAnalyticsMetrics, discount stri
 	if metrics.RowsMoneyPending > 0 && metrics.NetQuota == 0 {
 		cells[13] = ""
 	}
-	if fieldVersion >= usageAnalyticsExportFieldVersion {
-		if !metrics.ImageCountKnown && metrics.ImageCount == 0 {
-			cells[9] = ""
-		}
-		if metrics.ImageCountMissingRows > 0 {
-			cells[23] = strings.Trim(cells[23]+";images_unrecorded:"+strconv.FormatInt(metrics.ImageCountMissingRows, 10), ";")
-		}
+	if !metrics.ImageCountKnown && metrics.ImageCount == 0 {
+		cells[9] = ""
+	}
+	if metrics.ImageCountMissingRows > 0 {
+		cells[23] = strings.Trim(cells[23]+";images_unrecorded:"+strconv.FormatInt(metrics.ImageCountMissingRows, 10), ";")
 	}
 	if metrics.SecondsMissingRows > 0 {
 		cells[23] = strings.Trim(cells[23]+";seconds_unrecorded:"+strconv.FormatInt(metrics.SecondsMissingRows, 10), ";")
@@ -378,8 +392,15 @@ func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob,
 	appendRow := func(rowType string, date string, groupCells []string, metrics model.UsageAnalyticsMetrics) {
 		record := make([]string, 0, 48)
 		record = append(record, rowType, date)
+		if filters.UsageReportSubtotal && (rowType == "grand_total" || rowType == usageAnalyticsRowTypePeriodTotal) {
+			record[0] = strings.TrimSuffix(rowType, "_total") + "_subtotal"
+		}
 		record = append(record, groupCells...)
-		cells := usageAnalyticsMetricsRow(metrics, rowDiscount, scope, filters.FieldVersion)
+		upstream := view == usageAnalyticsExportTypeUpstream
+		cells := usageAnalyticsMetricsRow(metrics, rowDiscount, scope)
+		if upstream && !metrics.BillingTokensApplicable {
+			clear(cells[5:9])
+		}
 		if rowType == usageAnalyticsRowTypeDaily {
 			for _, day := range period.Days {
 				if day.Date == date && (day.Future || !publishedDates[date]) {
@@ -398,12 +419,22 @@ func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob,
 		record = append(record, usageAnalyticsScopeTail(scope)...)
 		record = append(record, job.JobID, formatExportTimestamp(scope.GeneratedAt),
 			formatExportTimestamp(filters.StartTimestamp), formatExportTimestamp(filters.EndTimestamp), filters.Timezone, customerDiscounts)
-		if view == usageAnalyticsExportTypeUpstream && filters.FieldVersion >= upstreamUsageKnownSubtotalFieldVersion {
+		if upstream {
 			amount := ""
 			if rowType != "not_started" && rowType != "not_published" {
 				amount = usageAnalyticsExportAmount(metrics.KnownReferenceAmount, scope)
 			}
 			record = append(record, amount)
+			images := metrics.BillingImageTotals
+			if rowType == "not_started" || rowType == "not_published" {
+				images = model.BillingImageTotals{}
+			}
+			record = append(record, billingImageTotalsCSVCells(images)...)
+			unknown := ""
+			if metrics.BillingMeterUnknownRows > 0 && rowType != "not_started" && rowType != "not_published" {
+				unknown = strconv.FormatInt(metrics.BillingMeterUnknownRows, 10)
+			}
+			record = append(record, unknown)
 		}
 		records = append(records, record)
 	}
@@ -430,24 +461,17 @@ func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob,
 		for _, group := range upstreamView.UrlGroups {
 			for _, modelGroup := range group.Models {
 				for _, channel := range modelGroup.Channels {
-					discounts := strings.Join(usageAnalyticsDiscountCells(channel), ";")
 					modelRow := modelGroup
 					modelRow.Days, modelRow.Total = channel.Days, channel.Total
 					for dayIdx, dayMetrics := range modelRow.Days {
 
 						cells := usageAnalyticsGroupCells("", "", "", "", "", group.UrlKey, strconv.Itoa(channel.ChannelId), channel.ChannelName, modelRow.ProviderModel, exportYesNo(modelRow.ProviderModelFallback), modelRow.BillingMode)
-						rowDiscount = discounts
-						if filters.FieldVersion >= upstreamUsageKnownSubtotalFieldVersion {
-							rowDiscount = strings.Join(dayMetrics.ReferenceCoefficients, ";")
-						}
+						rowDiscount = strings.Join(dayMetrics.ReferenceCoefficients, ";")
 						appendRow(usageAnalyticsRowTypeDaily, period.Days[dayIdx].Date, cells, dayMetrics)
 						rowDiscount = ""
 					}
 					cells := usageAnalyticsGroupCells("", "", "", "", "", group.UrlKey, strconv.Itoa(channel.ChannelId), channel.ChannelName, modelRow.ProviderModel, exportYesNo(modelRow.ProviderModelFallback), modelRow.BillingMode)
-					rowDiscount = discounts
-					if filters.FieldVersion >= upstreamUsageKnownSubtotalFieldVersion {
-						rowDiscount = strings.Join(modelRow.Total.ReferenceCoefficients, ";")
-					}
+					rowDiscount = strings.Join(modelRow.Total.ReferenceCoefficients, ";")
 					appendRow(usageAnalyticsRowTypePeriodTotal, "", cells, modelRow.Total)
 					rowDiscount = ""
 				}
@@ -464,7 +488,7 @@ func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob,
 		return records, "", nil
 	}
 	target := job.TargetUserId
-	customerView, _, err := model.GetPublishedUsageCustomer(ctx, period, target, filters.ModelName)
+	customerView, _, err := model.GetPublishedUsageCustomerByBillingMode(ctx, period, target, filters.ModelName)
 	if err != nil {
 		return nil, "", err
 	}
@@ -489,12 +513,10 @@ func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob,
 			}
 		}
 		for _, modelRow := range key.Models {
+			cells := usageAnalyticsGroupCells(strconv.Itoa(target), scope.CustomerName, strconv.Itoa(key.TokenId), key.TokenName, modelRow.ModelName, "", "", "", "", "", modelRow.BillingMode)
 			for dayIdx, dayMetrics := range modelRow.Days {
-
-				cells := usageAnalyticsGroupCells(strconv.Itoa(target), scope.CustomerName, strconv.Itoa(key.TokenId), key.TokenName, modelRow.ModelName, "", "", "", "", "", "")
 				appendRow(usageAnalyticsRowTypeDaily, period.Days[dayIdx].Date, cells, dayMetrics)
 			}
-			cells := usageAnalyticsGroupCells(strconv.Itoa(target), scope.CustomerName, strconv.Itoa(key.TokenId), key.TokenName, modelRow.ModelName, "", "", "", "", "", "")
 			customerDiscounts = usageCustomerDiscountExport(modelRow, filters.Language, scope)
 			appendRow(usageAnalyticsRowTypePeriodTotal, "", cells, modelRow.Total)
 			customerDiscounts = ""
@@ -502,28 +524,6 @@ func usageAnalyticsExportRows(ctx context.Context, job *model.CustomerExportJob,
 	}
 	appendRow("grand_total", "", make([]string, 11), customerView.Total)
 	return records, "", nil
-}
-
-// usageAnalyticsDiscountCells renders the channel coefficient summary cell.
-func usageAnalyticsDiscountCells(channel model.UsageUpstreamChannelRow) []string {
-	if len(channel.Discounts) == 0 {
-		return []string{""}
-	}
-	values := make([]string, 0, len(channel.Discounts))
-	for _, discount := range channel.Discounts {
-		zone := model.UsageAnalyticsZone()
-		start := time.Unix(discount.PeriodStart, 0).In(zone)
-		periodValue := start.Format("2006-01") + ":" + discount.Value.String()
-		if len(discount.Changes) > 0 {
-			segments := []string{start.Format(time.DateOnly) + ":" + discount.Value.String()}
-			for _, change := range discount.Changes {
-				segments = append(segments, time.Unix(change.EffectiveFrom, 0).In(zone).Format(time.DateOnly)+":"+change.Value.String())
-			}
-			periodValue = strings.Join(segments, " / ")
-		}
-		values = append(values, periodValue+" ("+discount.Source+", v"+strconv.FormatInt(discount.Version, 10)+")")
-	}
-	return values
 }
 
 // Regeneration preserves the accepted calendar, currency and discount evidence.
@@ -542,11 +542,15 @@ func ResubmitUsageAnalyticsExport(actorID int, sourceJobID string, selfOnly bool
 	if err != nil {
 		return nil, err
 	}
-	if _, err = usageAnalyticsPeriodFromFilters(filters); err != nil {
+	period, err := usageAnalyticsPeriodFromFilters(filters)
+	if err != nil {
 		return nil, err
 	}
 	if len(filters.UsageReportDays) == 0 {
 		return nil, errCustomerExportFormatChanged
+	}
+	if _, err = model.FreezeUsageReportReferences(context.Background(), period, filters.UsageReportDays); err != nil {
+		return nil, err
 	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return nil, model.ErrCustomerExportBackendUnsupported

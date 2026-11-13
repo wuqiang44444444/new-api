@@ -67,12 +67,14 @@ func CreateSelfCustomerExport(c *gin.Context) {
 	if !ok {
 		return
 	}
+	request.ChannelId = nil
+	request.UpstreamRequestId = ""
 	job, err := service.SubmitCustomerExportJob(c.GetInt("id"), c.GetInt("id"), request)
 	if err != nil {
 		respondCustomerExportError(c, err)
 		return
 	}
-	c.JSON(http.StatusAccepted, gin.H{"success": true, "message": "", "data": job.ToView()})
+	c.JSON(http.StatusAccepted, gin.H{"success": true, "message": "", "data": customerExportView(c, job)})
 }
 
 func CreateAdminCustomerExport(c *gin.Context) {
@@ -139,7 +141,7 @@ func ListSelfCustomerExports(c *gin.Context) {
 	}
 	views := make([]model.CustomerExportJobView, 0, len(jobs))
 	for _, job := range jobs {
-		views = append(views, job.ToView())
+		views = append(views, customerExportView(c, job))
 	}
 	common.ApiSuccess(c, gin.H{"items": views, "total": total, "page": page, "page_size": pageSize})
 }
@@ -149,7 +151,7 @@ func GetSelfCustomerExport(c *gin.Context) {
 	if !ok {
 		return
 	}
-	common.ApiSuccess(c, job.ToView())
+	common.ApiSuccess(c, customerExportView(c, job))
 }
 
 func CancelSelfCustomerExport(c *gin.Context) {
@@ -162,7 +164,16 @@ func CancelSelfCustomerExport(c *gin.Context) {
 		respondCustomerExportError(c, err)
 		return
 	}
-	common.ApiSuccess(c, job.ToView())
+	common.ApiSuccess(c, customerExportView(c, job))
+}
+
+func customerExportView(c *gin.Context, job *model.CustomerExportJob) model.CustomerExportJobView {
+	view := job.ToView()
+	if c.GetInt("role") < common.RoleAdminUser {
+		view.Filters.ChannelId = nil
+		view.Filters.UpstreamRequestId = ""
+	}
+	return view
 }
 
 // DownloadSelfCustomerExport 在下载前重新鉴权并签发短时地址；地址有效期

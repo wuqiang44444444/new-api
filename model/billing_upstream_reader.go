@@ -51,6 +51,7 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 			fact := upstreamBillingLogFact(log, log.Group)
 			parsed := parseBillingReconciliationLog(fact)
 			evidence.apply(fact, &parsed)
+			projectFrozenChargeReplay(fact, &parsed)
 			applyCustomerOriginalReplay(fact, &parsed)
 			if err := consume(log, fact, parsed); err != nil {
 				return err
@@ -127,6 +128,7 @@ func scanUpstreamBillingFacts(ctx context.Context, filter UpstreamBillingDetailF
 				policy.ObserveLogRevision(log.TupleRevision)
 			}
 			evidence.apply(facts[i], &parsed[i])
+			projectFrozenChargeReplay(facts[i], &parsed[i])
 			if err := resolveCustomerOriginalReplay(ctx, facts[i], &parsed[i]); err != nil {
 				return err
 			}

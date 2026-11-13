@@ -305,7 +305,7 @@ func TestUsageAnalyticsCountsOnlyRecordedUpstreamFailures(t *testing.T) {
 	view, err := GetUsageUpstreamView(context.Background(), period)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, view.Total.FailureCalls)
-	assert.EqualValues(t, 1, view.Total.RowsMissingTokens)
+	assert.Zero(t, view.Total.RowsMissingTokens, "a failed attempt without a billing unit is not missing billable tokens")
 	assert.Nil(t, view.Total.OriginalQuotaEstimate)
 }
 

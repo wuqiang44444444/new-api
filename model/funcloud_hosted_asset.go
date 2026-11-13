@@ -46,6 +46,7 @@ type FunCloudHostedAsset struct {
 	Name            string                        `json:"name" gorm:"type:varchar(255);not null"`
 	ObjectKey       string                        `json:"object_key" gorm:"type:varchar(512);not null"`
 	StorageLocation FunCloudHostedStorageLocation `json:"storage_location" gorm:"embedded;embeddedPrefix:storage_"`
+	MediaType       string                        `json:"media_type" gorm:"type:varchar(16);not null;default:image"`
 	MimeType        string                        `json:"mime_type" gorm:"type:varchar(127);not null"`
 	SizeBytes       int64                         `json:"size_bytes" gorm:"bigint;not null"`
 	Status          string                        `json:"status" gorm:"type:varchar(31);not null;index"`
@@ -167,6 +168,7 @@ type TaskHostedMediaFact struct {
 	StorageLocation FunCloudHostedStorageLocation `json:"storage_location"`
 	AssetID         string                        `json:"asset_id"`
 	ObjectKey       string                        `json:"object_key"`
+	MediaType       string                        `json:"media_type,omitempty"`
 	MimeType        string                        `json:"mime_type,omitempty"`
 	SizeBytes       int64                         `json:"size_bytes,omitempty"`
 }

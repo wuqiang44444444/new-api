@@ -67,7 +67,6 @@ func BuildTaskBillingDeliveryLog(task *model.Task, event model.TaskBillingDelive
 		appendImageTaskViolationFeeLog(other, &copy, quota)
 		other.SetPublic("task_billing_event", "create") // Images log one completed request, without an initial consume row.
 		if data := task.PrivateData.ImageTask; data != nil {
-			other.SetPublic("image_count", data.ImageCount)
 			if data.ImageCount > 0 {
 				other.SetPublic("completed_image_count", data.ImageCount)
 			}
@@ -75,6 +74,19 @@ func BuildTaskBillingDeliveryLog(task *model.Task, event model.TaskBillingDelive
 				completion, prompt = usage.CompletionTokens, usage.PromptTokens
 				appendImageUsageForLog(other, usage)
 				appendImageStatementUsage(other, usage)
+			}
+		}
+		if task.Status == model.TaskStatusSuccess {
+			if calculation := task.AcceptedBillingCalculation(); calculation != nil && calculation.BillingUnit != "" {
+				other.SetPublic("billing_unit", calculation.BillingUnit)
+				other.SetPublic("matched_tier", calculation.MatchedTier)
+				other.SetPublic("request_rules", calculation.RequestRules)
+				if calculation.ImageCount != nil {
+					other.SetPublic("image_count", *calculation.ImageCount)
+				}
+				if calculation.FixedPrice != nil {
+					other.SetPublic("fixed_price", *calculation.FixedPrice)
+				}
 			}
 		}
 	} else if event.Event == "refund" || event.Event == "customer_refund" {

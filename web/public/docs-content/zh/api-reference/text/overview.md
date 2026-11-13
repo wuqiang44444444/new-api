@@ -27,7 +27,7 @@ curl "{{OPENAI_BASE_URL}}/models" \
 
 图片和视频模型还会返回机器可读合同：
 
-- `supported_endpoint_types` 指明可调用的北向入口；
+- `supported_endpoint_types` 指明可调用的接口；
 - `api.image.creation` 或 `api.video.creation` 指明方法、路径、内容类型和必填字段；
 - `parameters` 是该客户模型允许的完整字段列表，包含类型、固定值、默认值、枚举和上下限；
 - `additional_properties=false` 表示列表外字段不受支持；视频的 `content_types` 另列媒体类型、角色与数量。

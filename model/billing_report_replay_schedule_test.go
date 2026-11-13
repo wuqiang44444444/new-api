@@ -86,6 +86,13 @@ func TestDailyReportSelectsCurrentRefreshBeforeAutomaticOriginalReplay(t *testin
 	require.NoError(t, db.Create(&usageReportDay{Start: today, AsOf: now}).Error)
 	require.NoError(t, db.Create(&billingReportHead{Start: today, AsOf: now}).Error)
 
+	// The prior process just refreshed today, but its meter is obsolete.
+	next, _, due, _, err = NextDailyReportDay(ctx, today, now)
+	require.NoError(t, err)
+	require.True(t, due)
+	assert.Equal(t, today, next)
+	require.NoError(t, db.Model(&usageReportDay{}).Where("start = ?", today).Update("meter_version", usageReportMeterVersion).Error)
+
 	next, revision, due, _, err := NextDailyReportDay(ctx, today, now)
 	require.NoError(t, err)
 	require.True(t, due)

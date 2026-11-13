@@ -10,6 +10,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,7 +27,7 @@ import (
 )
 
 // FunCloud 托管素材 adapter（funcloud_material_hosted）。它不访问 FunCloud
-// 上游：素材组与素材是平台持久化事实，源图片在创建调用内复制到本站私有
+// 上游：素材组与素材是平台持久化事实，源文件在创建调用内复制到本站私有
 // 对象存储。素材按 user_id 隔离与共享；删除只停止新引用，不删除对象。
 
 // funCloudHostedMediaURLTTL 是视频履约时为本站对象签发的内部访问期限。
@@ -37,10 +38,11 @@ const funCloudHostedMediaURLTTL = 24 * time.Hour
 type funCloudHostedMaterialAdapter struct {
 	userID    int
 	modelName string
+	media     []dto.PublicAssetSourceMediaTypes
 }
 
-func newFunCloudHostedMaterialAdapter(userID int, modelName string) *funCloudHostedMaterialAdapter {
-	return &funCloudHostedMaterialAdapter{userID: userID, modelName: strings.TrimSpace(modelName)}
+func newFunCloudHostedMaterialAdapter(userID int, modelName string, media []dto.PublicAssetSourceMediaTypes) *funCloudHostedMaterialAdapter {
+	return &funCloudHostedMaterialAdapter{userID: userID, modelName: strings.TrimSpace(modelName), media: media}
 }
 
 func (*funCloudHostedMaterialAdapter) Profile() dto.AssetUpstreamProfile {
@@ -53,9 +55,10 @@ func (*funCloudHostedMaterialAdapter) GeneralAssetGroupPolicy() dto.GeneralAsset
 	return dto.GeneralAssetGroupPolicyHosted
 }
 
-// Supports 首期只登记普通图片素材；视频与音频引用仍由调用方直接提供 URL。
-func (*funCloudHostedMaterialAdapter) Supports(kind, mediaType string) bool {
-	return kind == model.AssetKindGeneral && mediaType == "image"
+func (a *funCloudHostedMaterialAdapter) Supports(kind, mediaType string) bool {
+	return kind == model.AssetKindGeneral && slices.ContainsFunc(a.media, func(item dto.PublicAssetSourceMediaTypes) bool {
+		return item.MediaType == mediaType
+	})
 }
 
 func (a *funCloudHostedMaterialAdapter) CheckConnectivity(ctx context.Context) error {
@@ -94,10 +97,13 @@ func (a *funCloudHostedMaterialAdapter) GetGroup(_ context.Context, resourceID s
 	return assetadapter.GroupResult{ResourceID: record.ID, BusinessID: record.ID, Name: record.Name, Status: "active"}, nil
 }
 
-// CreateAsset 校验显式素材组归属（跨用户组一律按不存在处理），把源图片
+// CreateAsset 校验显式素材组归属（跨用户组一律按不存在处理），把源文件
 // 字节复制到本站对象存储，成功后持久化素材记录。复制成功但记录写入失败
 // 时不返回可用素材，也不做删除补偿。
 func (a *funCloudHostedMaterialAdapter) CreateAsset(ctx context.Context, req assetadapter.AssetRequest) (assetadapter.AssetResult, error) {
+	if !a.Supports(model.AssetKindGeneral, req.MediaType) {
+		return assetadapter.AssetResult{}, ErrUnsupportedAssetType
+	}
 	groupID := strings.TrimSpace(req.GroupResourceID)
 	if groupID != "" {
 		if !strings.HasPrefix(groupID, model.FunCloudHostedGroupIDPrefix) {
@@ -114,39 +120,12 @@ func (a *funCloudHostedMaterialAdapter) CreateAsset(ctx context.Context, req ass
 	if req.Source == nil {
 		return assetadapter.AssetResult{}, errors.New("hosted asset source is required")
 	}
-	data, err := readHostedAssetSource(req.Source, req.SourceMaxBytes)
-	if err != nil {
-		reason := "source_read_failed"
-		if errors.Is(err, errHostedSourceTooLarge) {
-			reason = "source_too_large"
-		}
-		clienterrlog.Attach(ctx, clienterrlog.Report{Stage: "content_validation", Reason: reason})
-		return assetadapter.AssetResult{}, err
-	}
 	contentType := strings.TrimSpace(req.SourceType)
-	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
-	expectedType := map[string]string{"jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp", "bmp": "image/bmp", "tiff": "image/tiff"}[format]
-	if err != nil || expectedType == "" {
-		clienterrlog.Attach(ctx, clienterrlog.Report{Stage: "content_validation", Reason: "invalid_image"})
-		return assetadapter.AssetResult{}, fmt.Errorf("%w: invalid hosted image content or dimensions", ErrInvalidAssetRequest)
-	}
-	if contentType != expectedType {
-		clienterrlog.Attach(ctx, clienterrlog.Report{
-			Stage: "content_validation", Reason: "content_type_mismatch",
-			Detail: map[string]string{"source_content_type": contentType},
-		})
-		return assetadapter.AssetResult{}, fmt.Errorf("%w: invalid hosted image content or dimensions", ErrInvalidAssetRequest)
-	}
-	if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width) > dto.PublicAssetHostedMaxPixels/int64(cfg.Height) {
-		clienterrlog.Attach(ctx, clienterrlog.Report{
-			Stage: "content_validation", Reason: "image_dimensions_exceeded",
-			Detail: map[string]string{"decoded_width": strconv.Itoa(cfg.Width), "decoded_height": strconv.Itoa(cfg.Height)},
-		})
-		return assetadapter.AssetResult{}, fmt.Errorf("%w: invalid hosted image content or dimensions", ErrInvalidAssetRequest)
-	}
-	if _, _, err := image.Decode(bytes.NewReader(data)); err != nil {
-		clienterrlog.Attach(ctx, clienterrlog.Report{Stage: "content_validation", Reason: "invalid_image"})
-		return assetadapter.AssetResult{}, fmt.Errorf("%w: invalid hosted image content", ErrInvalidAssetRequest)
+	if !slices.ContainsFunc(a.media, func(item dto.PublicAssetSourceMediaTypes) bool {
+		return item.MediaType == req.MediaType && slices.Contains(item.ContentTypes, contentType)
+	}) {
+		clienterrlog.Attach(ctx, clienterrlog.Report{Stage: "content_validation", Reason: "content_type_mismatch"})
+		return assetadapter.AssetResult{}, ErrInvalidAssetRequest
 	}
 	storeCtx, err := WithImageObjectStore(ctx)
 	if err != nil {
@@ -160,7 +139,13 @@ func (a *funCloudHostedMaterialAdapter) CreateAsset(ctx context.Context, req ass
 	if err != nil {
 		return assetadapter.AssetResult{}, err
 	}
-	if _, err := PutImageObject(storeCtx, objectKey, contentType, data); err != nil {
+	var size int64
+	if req.MediaType == "image" {
+		size, err = storeHostedImage(storeCtx, req, objectKey, contentType)
+	} else {
+		size, err = storeHostedAudioVideo(storeCtx, req, objectKey, contentType)
+	}
+	if err != nil {
 		return assetadapter.AssetResult{}, err
 	}
 	assetID, err := model.NewFunCloudHostedAssetID()
@@ -175,8 +160,9 @@ func (a *funCloudHostedMaterialAdapter) CreateAsset(ctx context.Context, req ass
 		Name:            strings.TrimSpace(req.Name),
 		ObjectKey:       objectKey,
 		StorageLocation: location,
+		MediaType:       req.MediaType,
 		MimeType:        contentType,
-		SizeBytes:       int64(len(data)),
+		SizeBytes:       size,
 		Status:          model.FunCloudHostedAssetStatusReady,
 	}
 	if err := model.CreateFunCloudHostedAsset(record); err != nil {
@@ -184,6 +170,46 @@ func (a *funCloudHostedMaterialAdapter) CreateAsset(ctx context.Context, req ass
 		return assetadapter.AssetResult{}, err
 	}
 	return hostedAssetResult(record), nil
+}
+
+func storeHostedImage(ctx context.Context, req assetadapter.AssetRequest, objectKey, contentType string) (int64, error) {
+	data, err := readHostedAssetSource(req.Source, req.SourceMaxBytes)
+	if err != nil {
+		reason := "source_read_failed"
+		if errors.Is(err, errHostedSourceTooLarge) {
+			reason = "source_too_large"
+		}
+		clienterrlog.Attach(ctx, clienterrlog.Report{Stage: "content_validation", Reason: reason})
+		return 0, err
+	}
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	expectedType := map[string]string{"jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp", "bmp": "image/bmp", "tiff": "image/tiff"}[format]
+	if err != nil || expectedType == "" {
+		clienterrlog.Attach(ctx, clienterrlog.Report{Stage: "content_validation", Reason: "invalid_image"})
+		return 0, fmt.Errorf("%w: invalid hosted image content or dimensions", ErrInvalidAssetRequest)
+	}
+	if contentType != expectedType {
+		clienterrlog.Attach(ctx, clienterrlog.Report{
+			Stage: "content_validation", Reason: "content_type_mismatch",
+			Detail: map[string]string{"source_content_type": contentType},
+		})
+		return 0, fmt.Errorf("%w: invalid hosted image content or dimensions", ErrInvalidAssetRequest)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width) > dto.PublicAssetHostedMaxPixels/int64(cfg.Height) {
+		clienterrlog.Attach(ctx, clienterrlog.Report{
+			Stage: "content_validation", Reason: "image_dimensions_exceeded",
+			Detail: map[string]string{"decoded_width": strconv.Itoa(cfg.Width), "decoded_height": strconv.Itoa(cfg.Height)},
+		})
+		return 0, fmt.Errorf("%w: invalid hosted image content or dimensions", ErrInvalidAssetRequest)
+	}
+	if _, _, err := image.Decode(bytes.NewReader(data)); err != nil {
+		clienterrlog.Attach(ctx, clienterrlog.Report{Stage: "content_validation", Reason: "invalid_image"})
+		return 0, fmt.Errorf("%w: invalid hosted image content", ErrInvalidAssetRequest)
+	}
+	if _, err := PutImageObject(ctx, objectKey, contentType, data); err != nil {
+		return 0, err
+	}
+	return int64(len(data)), nil
 }
 
 func (a *funCloudHostedMaterialAdapter) GetAsset(ctx context.Context, resourceID string) (assetadapter.AssetResult, error) {
@@ -252,6 +278,7 @@ func buildFunCloudHostedAssetObjectKey(contentType string) (string, error) {
 	extension := map[string]string{
 		"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
 		"image/bmp": ".bmp", "image/tiff": ".tiff", "image/gif": ".gif",
+		"audio/mpeg": ".mp3", "video/mp4": ".mp4",
 	}[strings.ToLower(contentType)]
 	random, err := common.GenerateRandomCharsKey(24)
 	if err != nil {

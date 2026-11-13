@@ -9,7 +9,7 @@ import zh from '@/i18n/locales/zh.json'
 import type { BillingDataQuality } from '../../types'
 import { CustomerStatementView } from '../customer-statement'
 
-it('shows recorded list price, savings and token-billed models beside net settlement', async () => {
+it('shows settled billing modes and the charged image count on the customer statement', async () => {
   const i18n = createInstance().use(initReactI18next)
   await i18n.init({ lng: 'en', resources: { en: { translation: {} } } })
   const client = new QueryClient({
@@ -66,6 +66,16 @@ it('shows recorded list price, savings and token-billed models beside net settle
                   token_id: 0,
                 },
               },
+              {
+                model_name: 'customer-image',
+                billing_mode: 'per_image',
+                usage: { ...usage, billable_images: 2 },
+                detail_filter: {
+                  start_timestamp: 1000,
+                  end_timestamp: 1200,
+                  token_id: 0,
+                },
+              },
             ],
           },
         ],
@@ -91,9 +101,13 @@ it('shows recorded list price, savings and token-billed models beside net settle
     screen.getByRole('button', { name: 'Export and download' })
   ).toBeTruthy()
   expect(screen.getByText('Token billing')).toBeTruthy()
+  expect(screen.getByText('Per image')).toBeVisible()
+  expect(screen.getByText('Billable image count · 2')).toBeVisible()
   expect(screen.queryByText('Per-call billing')).toBeNull()
   const detail = new URL(
-    screen.getByRole('button', { name: 'View details' }).getAttribute('href') ??
+    within(screen.getByRole('row', { name: /customer-video/ }))
+      .getByRole('button', { name: 'View details' })
+      .getAttribute('href') ??
       '',
     'http://localhost'
   )

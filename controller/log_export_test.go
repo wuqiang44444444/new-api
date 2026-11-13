@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -56,7 +57,7 @@ func seedExportLogs(t *testing.T, mainDB *gorm.DB, logDB *gorm.DB, now int64) {
 	t.Helper()
 	require.NoError(t, mainDB.Create(&model.Channel{Id: 9, Name: "primary"}).Error)
 	logs := []model.Log{
-		{UserId: 1, Username: "alice", CreatedAt: now - 3600, Type: model.LogTypeConsume, ModelName: "gpt-a", ChannelId: 9, Quota: 10, RequestId: "a-1", Other: `{"admin_info":{"use_channel":["9"]}}`},
+		{UserId: 1, Username: "alice", CreatedAt: now - 3600, Type: model.LogTypeConsume, ModelName: "gpt-a", ChannelId: 9, Quota: 10, PromptTokens: 12, CompletionTokens: 7, RequestId: "a-1", UpstreamRequestId: "provider-a-1", Other: `{"admin_info":{"use_channel":["9"]}}`},
 		{UserId: 2, Username: "bob", CreatedAt: now - 1800, Type: model.LogTypeConsume, ModelName: "gpt-b", ChannelId: 9, Quota: 20, RequestId: "b-1"},
 		{UserId: 1, Username: "alice", CreatedAt: now - 60, Type: model.LogTypeError, ModelName: "gpt-a", RequestId: "a-2"},
 		{UserId: 1, Username: "alice", CreatedAt: now - 400*24*3600, Type: model.LogTypeConsume, ModelName: "gpt-a", RequestId: "a-old"},
@@ -125,9 +126,21 @@ func TestLogExportDatabaseMatrix(t *testing.T) {
 			seedExportLogs(t, mainDB, model.LOG_DB, now)
 			query := fmt.Sprintf("start_timestamp=%d&end_timestamp=%d", now-2*24*3600, now+3600)
 
-			listed := callLogHandler(t, GetUserLogs, 1, common.RoleCommonUser, query)[0]
+			assertCustomerLog := func(row map[string]any) {
+				t.Helper()
+				assert.EqualValues(t, 0, row["channel"])
+				assert.Empty(t, row["channel_name"])
+				assert.NotContains(t, row, "upstream_request_id")
+				assert.NotContains(t, row["other"], "admin_info")
+				assert.Equal(t, "a-1", row["request_id"])
+				assert.EqualValues(t, 10, row["quota"])
+				assert.EqualValues(t, 12, row["prompt_tokens"])
+				assert.EqualValues(t, 7, row["completion_tokens"])
+			}
+			listed := callLogHandler(t, GetUserLogs, 1, common.RoleCommonUser, query+"&upstream_request_id=nonexistent")[0]
 			require.Equal(t, true, listed["success"])
 			assert.EqualValues(t, 2, listed["data"].(map[string]any)["total"])
+			assertCustomerLog(listed["data"].(map[string]any)["items"].([]any)[1].(map[string]any))
 			listed = callLogHandler(t, GetAllLogs, 3, common.RoleAdminUser, query+"&username=alice")[0]
 			require.Equal(t, true, listed["success"])
 			assert.EqualValues(t, 2, listed["data"].(map[string]any)["total"])
@@ -137,17 +150,36 @@ func TestLogExportDatabaseMatrix(t *testing.T) {
 			assert.Equal(t, []any{"a-2", "a-1"}, exportedRequestIds(own))
 			assert.Equal(t, map[string]any{"success": true, "message": "", "data": map[string]any{"count": float64(2)}}, own[2])
 			assert.Equal(t, float64(1), own[0]["id"], "user exports carry list positions, not row ids")
-			assert.Empty(t, own[1]["channel_name"])
-			assert.NotContains(t, own[1]["other"], "admin_info")
+			assertCustomerLog(own[1])
 
 			all := callLogHandler(t, ExportAllLogs, 3, common.RoleAdminUser, query+"&model_name=gpt-%25")
 			require.Len(t, all, 4)
 			assert.Equal(t, []any{"a-2", "b-1", "a-1"}, exportedRequestIds(all))
 			assert.Equal(t, "primary", all[2]["channel_name"])
+			assert.EqualValues(t, 9, all[2]["channel"])
+			assert.Equal(t, "provider-a-1", all[2]["upstream_request_id"])
 			assert.Contains(t, all[2]["other"], "admin_info")
 			assert.Equal(t, true, all[3]["success"])
 
-			if tc.kind == "clickhouse" {
+			if tc.kind != "clickhouse" {
+				first := callLogHandler(t, GetUserLogs, 1, common.RoleCommonUser, query+"&page_size=1&page_snapshot=start")[0]
+				require.Equal(t, true, first["success"], first)
+				data := first["data"].(map[string]any)
+				assert.EqualValues(t, 2, data["total"])
+				token := data["page_snapshot"].(string)
+				require.NotEmpty(t, token)
+				second := callLogHandler(t, GetUserLogs, 1, common.RoleCommonUser, query+"&page_size=1&p=2&page_snapshot="+token)[0]
+				require.Equal(t, true, second["success"], second)
+				data = second["data"].(map[string]any)
+				assert.EqualValues(t, 2, data["total"])
+				items := data["items"].([]any)
+				require.Len(t, items, 1)
+				assertCustomerLog(items[0].(map[string]any))
+				ref := data["detail_refs"].([]any)[0].(string)
+				detail := callLogHandler(t, GetUserLogs, 1, common.RoleCommonUser, "log_ref="+url.QueryEscape(ref))[0]
+				require.Equal(t, true, detail["success"], detail)
+				assertCustomerLog(detail["data"].(map[string]any))
+			} else {
 				for _, entry := range []model.Log{
 					{UserId: 1, CreatedAt: now, RequestId: "retry", Type: model.LogTypeError, Content: "first attempt failed"},
 					{UserId: 1, CreatedAt: now, RequestId: "retry", Type: model.LogTypeConsume, Content: "retry settled"},

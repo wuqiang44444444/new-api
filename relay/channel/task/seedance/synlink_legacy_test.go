@@ -32,7 +32,7 @@ func validateSynlinkRequest(providerModel string, request *dto.ModelArkVideoCrea
 			return fmt.Errorf("ratio is outside the published video request format")
 		}
 	}
-	return validateSynlinkMedia(request)
+	return validateSynlinkMedia(request, nil)
 }
 
 func buildSynlinkRequest(c *gin.Context, body *requestPayload) ([]byte, error) {
@@ -49,11 +49,7 @@ func buildSynlinkRequest(c *gin.Context, body *requestPayload) ([]byte, error) {
 		value := kitdto.BoolValue(false)
 		payload.GenerateAudio = &value
 	}
-	var err error
-	payload.Content, err = resolveHostedImageContent(c, payload.Content)
-	if err != nil {
-		return nil, err
-	}
+	payload.Content = resolveHostedMediaContent(c, payload.Content)
 	for _, item := range payload.Content {
 		for _, media := range []*MediaURL{item.ImageURL, item.VideoURL, item.AudioURL} {
 			if media != nil && strings.HasPrefix(strings.TrimSpace(media.URL), "asset://") {

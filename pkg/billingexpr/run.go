@@ -27,14 +27,7 @@ func RunExpr(exprStr string, params TokenParams) (float64, TraceResult, error) {
 }
 
 func RunExprWithRequest(exprStr string, params TokenParams, request RequestInput) (float64, TraceResult, error) {
-	entry, err := compileEntryFromCacheByHash(exprStr, ExprHashString(exprStr))
-	if err != nil {
-		if request.RecordCalculation {
-			return 0, TraceResult{}, calculationError{cause: err, phase: "compile"}
-		}
-		return 0, TraceResult{}, err
-	}
-	return runProgram(entry, params, request)
+	return RunExprByHashWithRequest(exprStr, ExprHashString(exprStr), params, request)
 }
 
 // RunExprByHash is like RunExpr but accepts a pre-computed hash for the cache
@@ -45,6 +38,9 @@ func RunExprByHash(exprStr, hash string, params TokenParams) (float64, TraceResu
 }
 
 func RunExprByHashWithRequest(exprStr, hash string, params TokenParams, request RequestInput) (float64, TraceResult, error) {
+	if request.frozenRuleHash != "" && (request.frozenRuleHash != hash || hash != ExprHashString(exprStr)) {
+		return 0, TraceResult{}, fmt.Errorf("frozen request rules belong to a different expression")
+	}
 	entry, err := compileEntryFromCacheByHash(exprStr, hash)
 	if err != nil {
 		if request.RecordCalculation {
@@ -57,7 +53,12 @@ func RunExprByHashWithRequest(exprStr, hash string, params TokenParams, request 
 
 func runProgram(entry *cachedEntry, params TokenParams, request RequestInput) (float64, TraceResult, error) {
 	requestRules, usedVars := entry.requestRules, entry.usedVars
-	if entry.usesExchangeRate {
+	usesExchangeRate := entry.usesExchangeRate
+	if request.frozenRuleProgram != nil {
+		usedVars = request.frozenRuleVars
+		usesExchangeRate = usedVars[UsdExchangeRateFunc]
+	}
+	if usesExchangeRate {
 		if err := request.ExchangeRate.Validate(); err != nil {
 			return 0, TraceResult{}, err
 		}
@@ -78,19 +79,40 @@ func runProgram(entry *cachedEntry, params TokenParams, request RequestInput) (f
 		trace.ImageCount = &imageCount
 	}
 
+	var pricedImageCount *int
+	var executedRules []bool
+	var tierConditions map[string]bool
+	var conflictingTierConditions bool
+	if request.frozenRuleProgram != nil {
+		executedRules = make([]bool, len(request.frozenRules))
+	}
 	env := map[string]any{
 		"image_count": float64(imageCount),
-		"p":           params.P,
-		"c":           params.C,
-		"len":         params.Len,
-		"cr":          params.CR,
-		"cc":          params.CC,
-		"cc1h":        params.CC1h,
-		"img":         params.Img,
-		"img_cr":      params.ImgCR,
-		"img_o":       params.ImgO,
-		"ai":          params.AI,
-		"ao":          params.AO,
+		imagePriceQuantityFunction: func(value float64) float64 {
+			pricedImageCount = &imageCount
+			return value
+		},
+		frozenTierConditionFunction: func(value bool, predicate string, want bool) bool {
+			if tierConditions == nil {
+				tierConditions = make(map[string]bool)
+			}
+			if prior, seen := tierConditions[predicate]; seen && prior != want {
+				conflictingTierConditions = true
+			}
+			tierConditions[predicate] = want
+			return value
+		},
+		"p":      params.P,
+		"c":      params.C,
+		"len":    params.Len,
+		"cr":     params.CR,
+		"cc":     params.CC,
+		"cc1h":   params.CC1h,
+		"img":    params.Img,
+		"img_cr": params.ImgCR,
+		"img_o":  params.ImgO,
+		"ai":     params.AI,
+		"ao":     params.AO,
 		"tier": func(name string, value float64) float64 {
 			trace.MatchedTier = name
 			trace.Cost = value
@@ -102,6 +124,10 @@ func runProgram(entry *cachedEntry, params TokenParams, request RequestInput) (f
 			return amount * 1_000_000
 		},
 		requestRuleTraceFunction: func(ruleIndex int, matched bool, multiplier float64) float64 {
+			if ruleIndex >= 0 && ruleIndex < len(request.frozenRules) {
+				executedRules[ruleIndex] = true
+				matched = request.frozenRules[ruleIndex].Matched
+			}
 			if matched && ruleIndex >= 0 && ruleIndex < len(trace.RequestRules) {
 				trace.RequestRules[ruleIndex].Matched = true
 			}
@@ -111,6 +137,10 @@ func runProgram(entry *cachedEntry, params TokenParams, request RequestInput) (f
 			return 1
 		},
 		requestRuleTraceIntFunction: func(ruleIndex int, matched bool, multiplier int) int {
+			if ruleIndex >= 0 && ruleIndex < len(request.frozenRules) {
+				executedRules[ruleIndex] = true
+				matched = request.frozenRules[ruleIndex].Matched
+			}
 			if matched && ruleIndex >= 0 && ruleIndex < len(trace.RequestRules) {
 				trace.RequestRules[ruleIndex].Matched = true
 			}
@@ -171,9 +201,12 @@ func runProgram(entry *cachedEntry, params TokenParams, request RequestInput) (f
 	}
 
 	program := entry.prog
+	if request.frozenRuleProgram != nil {
+		program = request.frozenRuleProgram
+	}
 	if request.RecordCalculation {
 		entry.calculationOnce.Do(func() {
-			entry.calculationProgram, entry.calculationNodes, entry.calculationError = compileCalculation(entry.body, entry.version)
+			entry.calculationProgram, entry.calculationNodes, entry.calculationError = compileCalculation(entry.body, entry.version, entry.fixedPricing)
 		})
 		if entry.calculationError != nil {
 			return 0, trace, calculationError{cause: entry.calculationError, phase: "compile"}
@@ -192,11 +225,26 @@ func runProgram(entry *cachedEntry, params TokenParams, request RequestInput) (f
 		}
 		return 0, trace, fmt.Errorf("expr run error: %w", err)
 	}
+	// An unmatched trace also represents a skipped multiplier. Only a rule
+	// executed on the reconstructed path provides evidence about its predicate.
+	if conflictingTierConditions {
+		return 0, trace, fmt.Errorf("frozen tier path disagrees on a shared condition")
+	}
+	for i, ran := range executedRules {
+		if want, shared := tierConditions[request.frozenRules[i].Cond]; ran && shared && want != request.frozenRules[i].Matched {
+			return 0, trace, fmt.Errorf("frozen tier and request multiplier disagree on their shared condition")
+		}
+	}
 	f, ok := out.(float64)
 	if !ok {
 		return 0, trace, fmt.Errorf("expr result is %T, want float64", out)
 	}
 	if trace.Calculation != nil {
+		if trace.BillingUnit == BillingUnitRequest {
+			trace.Calculation.BillingUnit = trace.BillingUnit
+			trace.Calculation.ImageCount = pricedImageCount
+			trace.Calculation.FixedPrice = trace.FixedPrice
+		}
 		// Tier names are taken only from static literals, never a request value.
 		if entry.staticTiers[trace.MatchedTier] {
 			trace.Calculation.MatchedTier = trace.MatchedTier

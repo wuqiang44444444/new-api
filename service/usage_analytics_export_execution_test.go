@@ -45,15 +45,15 @@ func TestUsageExportRunnerPublishesCurrentFormatAndRegenerates(t *testing.T) {
 	}
 }
 
-func TestUsageExportRunnerRejectsUnsupportedFormat(t *testing.T) {
+func TestUsageExportRunnerUsesCurrentFormatForQueuedOlderJob(t *testing.T) {
 	truncate(t)
 	store := setupCustomerExportServiceTest(t)
 	publishUsageExportTestDays(t, "2026-10-12")
-	job, err := SubmitUsageAnalyticsExport(42, UsageAnalyticsExportRequest{Period: "day", Date: "2026-10-12", View: "self"})
+	job, err := SubmitUsageAnalyticsExport(42, UsageAnalyticsExportRequest{Period: "day", Date: "2026-10-12", View: "self", Language: "en"})
 	require.NoError(t, err)
 	filters, err := job.DecodeFilters()
 	require.NoError(t, err)
-	filters.FieldVersion = -1
+	filters.FieldVersion = 6
 	raw, err := common.Marshal(filters)
 	require.NoError(t, err)
 	require.NoError(t, model.DB.Model(job).Update("filters", string(raw)).Error)
@@ -63,10 +63,15 @@ func TestUsageExportRunnerRejectsUnsupportedFormat(t *testing.T) {
 	runCustomerExportJob(context.Background(), claimed, "format-test", nil)
 	finished, err := model.GetCustomerExportJob(job.JobID)
 	require.NoError(t, err)
-	assert.Equal(t, model.CustomerExportJobStatusFailed, finished.Status)
-	assert.Equal(t, "format_changed", finished.ErrorCode)
-	assert.Nil(t, finished.DecodeArtifact())
-	assert.Empty(t, store.uploaded)
+	require.Equal(t, model.CustomerExportJobStatusSucceeded, finished.Status, finished.ErrorCode)
+	artifact := finished.DecodeArtifact()
+	require.NotNil(t, artifact)
+	require.Len(t, artifact.Files, 1)
+	data := bytes.TrimPrefix(store.uploaded[artifact.Files[0].ObjectKey], []byte(customerExportCsvBOM))
+	rows, err := csv.NewReader(bytes.NewReader(data)).ReadAll()
+	require.NoError(t, err)
+	require.NotEmpty(t, rows)
+	assert.Equal(t, usageAnalyticsExportHeader("en", "self"), rows[0])
 }
 
 func TestUsageExportMonthAggregatesPublishedDaysAndRegenerates(t *testing.T) {

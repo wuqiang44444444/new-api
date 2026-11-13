@@ -54,7 +54,11 @@ function StatBadge(props: {
 export function CommonLogsStats() {
   const { t } = useTranslation()
   const { isAdminView: isAdmin } = useLogsViewScope()
-  const searchParams = route.useSearch()
+  const {
+    page: _page,
+    pageSize: _pageSize,
+    ...searchParams
+  } = route.useSearch()
   const { sensitiveVisible } = useUsageLogsContext()
 
   const [expanded, setExpanded] = useState(false)

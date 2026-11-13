@@ -22,7 +22,17 @@ func (b *billingSourceReviewBudget) consume(bytes int) error {
 // Cross-period links retain only the fields used by reconciliation/fingerprints.
 // Content, token labels and all unrelated log fields remain in the current page.
 type billingSourceRelatedEvidence struct {
+	ConflictingRefundReferences         bool
 	ID, TokenID, ChannelID, Type, Quota int
 	CreatedAt                           int64
 	Model, Other                        string
+}
+
+// Use the same model identity as the formal statement for explicit relations.
+func billingSourceFrozenModel(log Log) string {
+	facts := loadCustomerExportFacts(log.Other)
+	if model := billingBreakdownString(facts.snapshot["customer_model"]); model != "" {
+		return model
+	}
+	return log.ModelName
 }

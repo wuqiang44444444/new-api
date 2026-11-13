@@ -235,6 +235,12 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
               <TableHead className='text-right'>{t('Input tokens')}</TableHead>
               <TableHead className='text-right'>{t('Output tokens')}</TableHead>
               <TableHead className='text-right'>
+                {t('Billable image count')}
+              </TableHead>
+              <TableHead className='text-right'>
+                {t('Images generated')}
+              </TableHead>
+              <TableHead className='text-right'>
                 {t('Cache read tokens')}
               </TableHead>
               <TableHead className='text-right'>
@@ -262,7 +268,7 @@ export function UpstreamDetailPanel(props: UpstreamDetailPanelProps) {
               <TableRow>
                 <TableCell
                   className='text-muted-foreground'
-                  colSpan={isRoot ? 17 : 16}
+                  colSpan={isRoot ? 19 : 18}
                 >
                   {t('No evidence rows match the current filters.')}
                 </TableCell>
@@ -344,7 +350,16 @@ function DetailRow(props: { item: UpstreamDetailItem; isRoot: boolean }) {
           </span>
         </div>
       </TableCell>
-      <TableCell className='text-xs'>{item.billing_mode}</TableCell>
+      <TableCell className='text-xs'>
+        {item.billing_mode}
+        {item.frozen_replay?.matched_tier && (
+          <span className='text-muted-foreground block'>
+            {t('Pricing tier {{name}}', {
+              name: item.frozen_replay.matched_tier,
+            })}
+          </span>
+        )}
+      </TableCell>
       <TableCell className='text-right tabular-nums'>
         {formatStatementUsage(
           item.recorded_input_tokens,
@@ -357,6 +372,11 @@ function DetailRow(props: { item: UpstreamDetailItem; isRoot: boolean }) {
           document.documentElement.lang || 'en'
         )}
       </TableCell>
+      <UsageCell
+        value={item.billable_image_count ?? null}
+        unavailable={item.billable_image_missing}
+      />
+      <UsageCell value={item.completed_image_count ?? null} />
       <UsageCell
         value={item.billing_mode === 'token' ? item.cache_read_tokens : null}
         unavailableLabel={cacheMeterUnavailableLabel(
@@ -397,6 +417,49 @@ function DetailRow(props: { item: UpstreamDetailItem; isRoot: boolean }) {
               {amountUnavailableReasonText(item.estimate_reasons, t)}
             </span>
           )}
+        {item.frozen_replay && (
+          <details className='mt-1 text-xs'>
+            <summary className='cursor-pointer'>
+              {t('Frozen price replay')}
+            </summary>
+            <dl className='grid grid-cols-[auto_auto] gap-x-2'>
+              {(
+                [
+                  [
+                    t('Replayed original quota'),
+                    item.frozen_replay.original_quota,
+                  ],
+                  [
+                    t('Replayed expected quota'),
+                    item.frozen_replay.expected_quota,
+                  ],
+                  [t('Booked quota'), item.frozen_replay.booked_quota],
+                  [t('Settlement delta quota'), item.frozen_replay.delta_quota],
+                ] as const
+              ).map(([label, amount]) =>
+                amount == null ? null : (
+                  <div key={label} className='contents'>
+                    <dt>{label}</dt>
+                    <dd>{amount.toLocaleString()}</dd>
+                  </div>
+                )
+              )}
+            </dl>
+            {item.frozen_replay.token_inputs && (
+              <p>
+                {t('Billable tokens')}{' '}
+                {Object.entries(item.frozen_replay.token_inputs)
+                  .map(([name, value]) => `${name} ${value.toLocaleString()}`)
+                  .join(' · ')}
+              </p>
+            )}
+            {item.frozen_replay.reason && (
+              <p>
+                {amountUnavailableReasonText([item.frozen_replay.reason], t)}
+              </p>
+            )}
+          </details>
+        )}
       </TableCell>
       <TableCell className='font-mono text-xs'>
         {item.request_id || t('Not recorded')}

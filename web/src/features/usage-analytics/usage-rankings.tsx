@@ -299,7 +299,7 @@ function Ranking({
           {(
             [
               ['calls', t('Calls')],
-              ['tokens', t('Total tokens')],
+              ['tokens', upstream ? t('Billable tokens') : t('Total tokens')],
               ['amount', t(upstream ? 'Reference amount' : 'Net amount')],
             ] as const
           ).map(([value, label]) => (
@@ -347,7 +347,7 @@ function Ranking({
                 </th>
               )}
               <th scope='col' className='px-2 text-right'>
-                {t('Total tokens')}
+                {upstream ? t('Billable tokens') : t('Total tokens')}
               </th>
               <th scope='col' className='px-2 text-right'>
                 {t('Non-Token usage')}
@@ -366,8 +366,11 @@ function Ranking({
                     ? t('Per image')
                     : t(billingModeLabel(row.billingMode ?? 'unknown'))
               }
-              const tokenApplicable =
-                !showBillingMode || row.billingMode === 'token'
+              const tokenApplicable = upstream
+                ? row.nonToken?.billing_tokens_applicable ||
+                  row.tokens > 0 ||
+                  row.missingTokens
+                : !showBillingMode || row.billingMode === 'token'
               return (
                 <tr key={row.id} className='border-b'>
                   <td className='py-2'>
@@ -424,10 +427,12 @@ function Ranking({
                           })}
                         </span>
                       ) : (
-                        <>
-                          <span aria-hidden='true'>—</span>
-                          <span className='sr-only'>{t('Not applicable')}</span>
-                        </>
+                        <span className='text-muted-foreground'>
+                          {!upstream && <span aria-hidden='true'>—</span>}
+                          <span className={upstream ? undefined : 'sr-only'}>
+                            {t('Not applicable')}
+                          </span>
+                        </span>
                       ))}
                     {tokenApplicable && row.tokenUsage && (
                       <UsageTokensCell metrics={row.tokenUsage} />
@@ -439,7 +444,10 @@ function Ranking({
                         : formatNumber(row.tokens))}
                   </td>
                   <td className='px-2 text-right'>
-                    <UsageNonTokenCell metrics={row.nonToken} />
+                    <UsageNonTokenCell
+                      metrics={row.nonToken}
+                      upstream={upstream}
+                    />
                   </td>
                   <td className='px-2 text-right tabular-nums'>
                     {upstream && row.partialAmount && row.amount == null

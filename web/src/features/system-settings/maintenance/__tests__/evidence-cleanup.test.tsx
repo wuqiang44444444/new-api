@@ -91,6 +91,47 @@ test('non-Root cannot see or query evidence cleanup', () => {
   expect(api.get).not.toHaveBeenCalled()
 })
 
+test('Root sees the retention source and confirms before shortening retention', async () => {
+  const user = userEvent.setup()
+  let policy = { days: 7, source: 'environment' }
+  vi.mocked(api.get).mockImplementation(async (url) => ({
+    data: {
+      success: true,
+      data: url === '/api/option/request_evidence_retention' ? policy : null,
+    },
+  }))
+  const save = vi.spyOn(api, 'put').mockImplementation(async () => {
+    policy = { days: 3, source: 'database' }
+    return { data: { success: true } }
+  })
+  renderCleanup()
+  expect(
+    await screen.findByText(
+      /Current retention is 7 days \(Deployment environment\)/
+    )
+  ).toBeVisible()
+  const field = screen.getByRole('spinbutton', {
+    name: 'Request evidence retention (days)',
+  })
+  await user.clear(field)
+  await user.type(field, '3')
+  await user.click(screen.getByRole('button', { name: 'Save retention' }))
+  const dialog = await screen.findByRole('alertdialog', {
+    name: 'Shorten request evidence retention?',
+  })
+  expect(save).not.toHaveBeenCalled()
+  await user.click(
+    within(dialog).getByRole('button', { name: 'Save retention' })
+  )
+  expect(save).toHaveBeenCalledWith('/api/option/', {
+    key: 'task_request_evidence.retention_days',
+    value: 3,
+  })
+  expect(
+    await screen.findByText(/Current retention is 3 days \(Database\)/)
+  ).toBeVisible()
+})
+
 test('Root confirms all-business irreversible scope and submits the selected Unix cutoff', async () => {
   const user = userEvent.setup()
   vi.spyOn(api, 'post').mockResolvedValue({

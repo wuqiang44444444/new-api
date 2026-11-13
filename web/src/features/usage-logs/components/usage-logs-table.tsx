@@ -16,10 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { hashKey, useQuery } from '@tanstack/react-query'
+import { hashKey, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -27,7 +27,9 @@ import {
   DataTableRow,
   useDataTable,
 } from '@/components/data-table'
+import { ResultPagination } from '@/components/data-table/core/result-pagination'
 import { ErrorState } from '@/components/error-state'
+import { PageFooterPortal } from '@/components/layout/components/page-footer'
 import { Button } from '@/components/ui/button'
 import {
   getAdminPlans,
@@ -104,6 +106,8 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const searchParams = route.useSearch()
   const userId = useAuthStore((state) => state.auth.user?.id)
   const { status, loading: statusLoading } = useStatus()
+  const navigate = route.useNavigate()
+  const queryClient = useQueryClient()
   const { data: showBillingSource = false } = useQuery({
     queryKey: ['usage-log-billing-source', isAdmin, userId],
     enabled: logCategory === 'common' && userId != null,
@@ -135,9 +139,15 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     onPaginationChange,
     ensurePageInRange,
   } = useTableUrlState({
-    search: route.useSearch(),
-    navigate: route.useNavigate(),
-    pagination: { defaultPage: 1, defaultPageSize: isMobile ? 20 : 100 },
+    search: searchParams,
+    navigate,
+    pagination: {
+      defaultPage: 1,
+      defaultPageSize:
+        isMobile || (logCategory === 'common' && !searchParams.billing)
+          ? 20
+          : 100,
+    },
     globalFilter: { enabled: false },
     columnFilters: [
       {
@@ -167,29 +177,24 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   })
 
   const isCommon = logCategory === 'common'
-  const cursorMode =
-    isCommon && !searchParams.billing && status?.log_cursor_enabled !== false
-  const filterKey = JSON.stringify([
-    viewAccess,
-    userId,
-    pagination.pageSize,
-    columnFilters,
-    searchParams,
-  ])
-  const [navigation, setNavigation] = useState<{
-    key: string
-    pages: string[]
-  }>()
-  const cursorPages =
-    navigation?.key === filterKey ? navigation.pages : ['start']
-  const pageIndex = cursorMode ? cursorPages.length - 1 : pagination.pageIndex
-  const pageCursor = cursorMode ? cursorPages[pageIndex] : undefined
-
   const billingMode = isCommon && !!searchParams.billing
+  const numberedLogs = isCommon && !billingMode
+  const snapshotMode = numberedLogs && status?.log_cursor_enabled !== false
+  const pageIndex = pagination.pageIndex
   const directBillingEvents =
     billingMode && searchParams.billingView === 'events'
-  const { page: _page, pageSize: _pageSize, ...billingFilters } = searchParams
-  const billingFilterKey = hashKey([billingFilters])
+  const {
+    page: _page,
+    pageSize: _pageSize,
+    upstreamRequestId,
+    ...filters
+  } = searchParams
+  const effectiveUpstreamRequestId = isAdmin ? upstreamRequestId : undefined
+  const billingFilterKey = hashKey([filters, effectiveUpstreamRequestId])
+  const logSnapshots = useRef(new Map<string, string>())
+  const resetLogSnapshot = useCallback(() => {
+    logSnapshots.current.clear()
+  }, [])
   const [fundSelection, setFundSelection] = useState<{
     key: string
     group: string
@@ -202,68 +207,67 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     !directBillingEvents &&
     !fundGroup &&
     !searchParams.requestId &&
-    !searchParams.upstreamRequestId
-  const { data, isLoading, isFetching, isError, refetch } = useQuery<
-    NonNullable<GetLogsResponse['data']>
-  >({
-    enabled: !cursorMode || !statusLoading,
-    queryKey: [
-      'logs',
-      logCategory,
-      viewAccess,
-      pageIndex + 1,
-      pageCursor,
-      groupFunds,
-      fundGroup,
-      userId,
-      pagination.pageSize,
-      columnFilters,
-      searchParams,
-      billingMode ? billingFilterKey : null,
-      t,
-    ],
-    queryFn: async ({ signal }) => {
-      const result = await fetchLogsByCategory({
-        logCategory,
-        isAdmin,
-        page: pageIndex + 1,
-        pageCursor,
-        groupFunds,
-        fundGroup,
-        signal,
-        pageSize: pagination.pageSize,
-        searchParams,
-        columnFilters,
-      })
+    !effectiveUpstreamRequestId
+  const listScope = [
+    logCategory,
+    viewAccess,
+    userId,
+    groupFunds,
+    fundGroup,
+    snapshotMode,
+    billingFilterKey,
+    numberedLogs ? null : columnFilters,
+  ]
+  const listScopeKey = hashKey(listScope)
+  const { data, isLoading, isFetching, isError, isPlaceholderData, refetch } =
+    useQuery<NonNullable<GetLogsResponse['data']>>({
+      enabled: !numberedLogs || !statusLoading,
+      queryKey: ['logs', listScopeKey, pageIndex, pagination.pageSize],
+      queryFn: async ({ signal }) => {
+        const pageSnapshot = snapshotMode
+          ? (logSnapshots.current.get(listScopeKey) ?? 'start')
+          : undefined
+        const result = await fetchLogsByCategory({
+          logCategory,
+          isAdmin,
+          page: pageIndex + 1,
+          pageSnapshot,
+          groupFunds,
+          fundGroup,
+          signal,
+          pageSize: pagination.pageSize,
+          searchParams,
+          columnFilters: numberedLogs ? [] : columnFilters,
+        })
 
-      if (!result?.success) {
-        throw createServerError(result, t('Failed to load logs'))
-      }
-
-      return (
-        result.data || {
-          ...DEFAULT_LOGS_DATA,
-          page: 1,
-          page_size: pagination.pageSize,
+        if (!result?.success) {
+          throw createServerError(result, 'Failed to load logs')
         }
-      )
-    },
-    placeholderData: (previousData, previousQuery) => {
-      if (
-        previousQuery?.queryKey[1] === logCategory &&
-        previousQuery.queryKey[2] === viewAccess &&
-        previousQuery.queryKey[5] === groupFunds &&
-        previousQuery.queryKey[6] === fundGroup &&
-        previousQuery.queryKey[7] === userId &&
-        previousQuery.queryKey[11] === (billingMode ? billingFilterKey : null)
-      ) {
-        return previousData
-      }
-      return undefined
-    },
-  })
 
-  const logs = data?.items || []
+        if (snapshotMode && result.data?.page_snapshot && !signal.aborted) {
+          if (pageSnapshot !== result.data.page_snapshot) {
+            queryClient.removeQueries({
+              queryKey: ['logs', listScopeKey],
+              type: 'inactive',
+            })
+          }
+          logSnapshots.current.set(listScopeKey, result.data.page_snapshot)
+        }
+
+        return (
+          result.data || {
+            ...DEFAULT_LOGS_DATA,
+            page: 1,
+            page_size: pagination.pageSize,
+          }
+        )
+      },
+      placeholderData: (previousData, previousQuery) =>
+        previousQuery?.queryKey[1] === listScopeKey ? previousData : undefined,
+    })
+
+  const logs =
+    numberedLogs && (isError || isPlaceholderData) ? undefined : data?.items
   const columns = useColumnsByCategory(
     logCategory,
     isAdmin,
@@ -271,24 +275,33 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     showBillingSource
   )
   const isLoadingData =
-    (cursorMode && statusLoading) || isLoading || (isFetching && !data)
+    (numberedLogs && (statusLoading || isPlaceholderData)) ||
+    isLoading ||
+    (isFetching && !data)
+
+  const hasCurrentPage = data && !isPlaceholderData && !isFetching && !isError
+  const ensureLogPageInRange = (pageCount: number) => {
+    if (hasCurrentPage) {
+      ensurePageInRange(Math.max(1, pageCount), { resetTo: 'last' })
+    }
+  }
 
   const { table } = useDataTable({
-    data: logs as Record<string, unknown>[],
+    data: (logs ?? DEFAULT_LOGS_DATA.items) as Record<string, unknown>[],
     columns: columns as ColumnDef<Record<string, unknown>>[],
     columnFilters,
     columnVisibilityStorageKey: getColumnVisibilityStorageKey(
       logCategory,
       viewAccess
     ),
-    pagination: { ...pagination, pageIndex },
+    pagination,
     enableRowSelection: false,
     onPaginationChange,
     onColumnFiltersChange,
     manualPagination: true,
     manualFiltering: true,
     totalCount: data?.total || 0,
-    ensurePageInRange: cursorMode ? undefined : ensurePageInRange,
+    ensurePageInRange: numberedLogs ? ensureLogPageInRange : ensurePageInRange,
   })
 
   if (billingMode && isError) {
@@ -321,51 +334,50 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     <DataTablePage
       table={table}
       compactPagination={isMobile && isCommon}
-      showPagination={!cursorMode}
+      showPagination={!numberedLogs}
       afterTable={
-        cursorMode && (
-          <div className='flex shrink-0 items-center justify-end gap-2'>
+        numberedLogs && (
+          <PageFooterPortal>
             {isError && (
-              <Button variant='ghost' onClick={() => void refetch()}>
-                {t('Retry')}
-              </Button>
+              <div className='flex items-center justify-end gap-2'>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => void refetch()}
+                >
+                  {t('Retry')}
+                </Button>
+              </div>
             )}
-            <Button
-              variant='outline'
-              disabled={pageIndex === 0 || isFetching}
-              onClick={() =>
-                setNavigation({
-                  key: filterKey,
-                  pages: cursorPages.slice(0, -1),
-                })
-              }
-            >
-              {t('Previous page')}
-            </Button>
-            <Button
-              variant='outline'
-              disabled={!data?.next_cursor || isFetching || isError}
-              onClick={() => {
-                if (data?.next_cursor) {
-                  setNavigation({
-                    key: filterKey,
-                    pages: [...cursorPages, data.next_cursor],
-                  })
+            {data && !isError && (
+              <ResultPagination
+                label={t('Usage Logs')}
+                page={pageIndex + 1}
+                pageSize={pagination.pageSize}
+                total={data.total}
+                disabled={isFetching || isPlaceholderData}
+                allowPageJump
+                onChange={(page, pageSize) =>
+                  onPaginationChange({ pageIndex: page - 1, pageSize })
                 }
-              }}
-            >
-              {t('Next page')}
-            </Button>
-          </div>
+              />
+            )}
+          </PageFooterPortal>
         )
       }
       columns={columns as ColumnDef<Record<string, unknown>>[]}
       isLoading={isLoadingData}
       isFetching={isFetching}
-      emptyTitle={t('No Logs Found')}
-      emptyDescription={t(
-        'No usage logs available. Logs will appear here once API calls are made.'
-      )}
+      emptyTitle={
+        isError && numberedLogs ? t('Failed to load logs') : t('No Logs Found')
+      }
+      emptyDescription={
+        isError && numberedLogs
+          ? ''
+          : t(
+              'No usage logs available. Logs will appear here once API calls are made.'
+            )
+      }
       skeletonKeyPrefix='usage-log-skeleton'
       applyHeaderSize
       tableClassName={cn(
@@ -376,6 +388,10 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
           table={table}
           isLoading={isLoadingData}
           logCategory={logCategory}
+          emptyTitle={
+            isError && numberedLogs ? t('Failed to load logs') : undefined
+          }
+          emptyDescription={isError && numberedLogs ? '' : undefined}
         />
       }
       toolbar={
@@ -407,7 +423,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
             </div>
           )}
           {isCommon && !searchParams.billing && (
-            <CommonLogsFilterBar table={table} />
+            <CommonLogsFilterBar table={table} onSearch={resetLogSnapshot} />
           )}
           {!isCommon && (
             <TaskLogsFilterBar table={table} logCategory={logCategory} />

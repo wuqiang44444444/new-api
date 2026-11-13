@@ -32,25 +32,29 @@ type UpstreamBillingDetailFilter struct {
 type UpstreamBillingDetailItem struct {
 	secondsRecovered        bool
 	secondsLog              billingReconciliationLog
-	SecondsSource           string           `json:"seconds_source,omitempty"`
-	Seconds                 *decimal.Decimal `json:"seconds"`
-	RowId                   int64            `json:"row_id"`
-	Time                    int64            `json:"time"`
-	ChannelId               int              `json:"channel_id"`
-	ChannelName             string           `json:"channel_name"`
-	CustomerModel           string           `json:"customer_model"`
-	ProviderModel           string           `json:"provider_model"`
-	ProviderModelFallback   bool             `json:"provider_model_fallback,omitempty"`
-	BillingMode             string           `json:"billing_mode"`
-	RecordedInputTokens     int64            `json:"recorded_input_tokens"`
-	OutputTokens            int64            `json:"output_tokens"`
-	CacheReadTokens         int64            `json:"cache_read_tokens"`
-	CacheWriteTokens        int64            `json:"cache_write_tokens"`
-	OriginalExactQuota      string           `json:"-"`
-	OriginalAmountEstimated *bool            `json:"original_amount_estimated,omitempty"`
-	OriginalAmount          *int64           `json:"original_amount,omitempty"`
-	EstimateReasons         []string         `json:"estimate_reasons,omitempty"`
-	RequestId               string           `json:"request_id"`
+	SecondsSource           string              `json:"seconds_source,omitempty"`
+	Seconds                 *decimal.Decimal    `json:"seconds"`
+	RowId                   int64               `json:"row_id"`
+	Time                    int64               `json:"time"`
+	ChannelId               int                 `json:"channel_id"`
+	ChannelName             string              `json:"channel_name"`
+	CustomerModel           string              `json:"customer_model"`
+	ProviderModel           string              `json:"provider_model"`
+	ProviderModelFallback   bool                `json:"provider_model_fallback,omitempty"`
+	FrozenReplay            *FrozenChargeReplay `json:"frozen_replay,omitempty"`
+	BillableImageCount      *int64              `json:"billable_image_count,omitempty"`
+	BillableImageMissing    bool                `json:"billable_image_missing,omitempty"`
+	CompletedImageCount     *int64              `json:"completed_image_count,omitempty"`
+	BillingMode             string              `json:"billing_mode"`
+	RecordedInputTokens     int64               `json:"recorded_input_tokens"`
+	OutputTokens            int64               `json:"output_tokens"`
+	CacheReadTokens         int64               `json:"cache_read_tokens"`
+	CacheWriteTokens        int64               `json:"cache_write_tokens"`
+	OriginalExactQuota      string              `json:"-"`
+	OriginalAmountEstimated *bool               `json:"original_amount_estimated,omitempty"`
+	OriginalAmount          *int64              `json:"original_amount,omitempty"`
+	EstimateReasons         []string            `json:"estimate_reasons,omitempty"`
+	RequestId               string              `json:"request_id"`
 	requestUserID           int
 	UpstreamRequestId       string `json:"upstream_request_id"`
 	PlatformTaskId          string `json:"platform_task_id,omitempty"`
@@ -178,6 +182,11 @@ func projectUpstreamBillingDetail(log Log, fact billingReconciliationLog, parsed
 		OutputTokens: parsed.outputTokens, CacheReadTokens: parsed.cacheReadTokens, CacheWriteTokens: parsed.cacheWrite.total,
 		RequestId: upstreamRequestIDFromLog(log), UpstreamRequestId: log.UpstreamRequestId, requestUserID: log.UserId,
 	}
+	item.BillableImageCount = parsed.billableImageCount
+	item.BillableImageMissing = parsed.billableImageApplicable && parsed.billableImageCount == nil
+	if parsed.isRequest && parsed.completedImageCount > 0 {
+		item.CompletedImageCount = &parsed.completedImageCount
+	}
 	var secondsMissing, secondsUnitKnown bool
 	item.Seconds, secondsMissing, secondsUnitKnown = upstreamBillingSeconds(fact, parsed)
 	if secondsMissing {
@@ -254,6 +263,7 @@ func upstreamBillingDetailRowFacts(item *UpstreamBillingDetailItem, fact billing
 	if other == nil {
 		other = make(map[string]json.RawMessage)
 	}
+	item.FrozenReplay = parsed.frozenReplay
 	taskId := billingBreakdownString(other["task_id"])
 	event := billingBreakdownString(other["task_billing_event"])
 	_, hasActual := other["actual_quota"]

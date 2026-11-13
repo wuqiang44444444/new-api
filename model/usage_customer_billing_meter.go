@@ -9,7 +9,7 @@ import (
 	"github.com/expr-lang/expr/ast"
 )
 
-const customerUsagePerImage = "per_image"
+const customerUsagePerImage = BillingReconciliationModePerImage
 
 func customerUsageLogMeter(row usageLogRow) (mode string, imageCount int64, imageKnown bool) {
 	if row.fact.Type != LogTypeConsume || row.parsed.fundingAdjustmentFailed || row.parsed.unavailable {
@@ -17,22 +17,19 @@ func customerUsageLogMeter(row usageLogRow) (mode string, imageCount int64, imag
 	}
 	facts := loadCustomerExportFacts(row.fact.Other)
 	unit := facts.string("billing_unit")
+	if row.parsed.billableImageApplicable {
+		if row.parsed.billableImageCount != nil {
+			return customerUsagePerImage, *row.parsed.billableImageCount, true
+		}
+		return customerUsagePerImage, 0, false
+	}
 	if unit == string(billingexpr.BillingUnitRequest) {
-		raw, err := base64.StdEncoding.DecodeString(facts.string("expr_b64"))
-		if err != nil {
-			return BillingReconciliationModeUnknown, 0, false
-		}
-		mode = customerUsageFixedTierMeter(string(raw), facts.string("matched_tier"))
-		if mode == customerUsagePerImage {
-			imageCount, imageKnown = billingBreakdownNonNegativeInt(facts.raw("image_count"))
-			imageKnown = imageKnown && imageCount > 0 && imageCount <= int64(dto.MaxImageN)
-		}
-		return mode, imageCount, imageKnown
+		return frozenFixedRequestMeter(facts), 0, false
 	}
 	// An expression with typed task meters can also emit the engine's token
 	// default. Give the frozen settlement meter precedence in that case.
 	switch row.parsed.billingMode {
-	case BillingReconciliationModePerSecond, BillingReconciliationModeDurationAndCount:
+	case BillingReconciliationModePerCall, BillingReconciliationModePerSecond, BillingReconciliationModeDurationAndCount:
 		return row.parsed.billingMode, 0, false
 	}
 	if unit == string(billingexpr.BillingUnitToken) {
@@ -132,6 +129,17 @@ func customerUsageTierMeters(node ast.Node, tier string, perImage bool) uint8 {
 	return 0
 }
 
+func customerUsageTierMetersForTask(expression, tier string) uint8 {
+	if tier == "" {
+		return 0
+	}
+	program, err := billingexpr.CompileFromCache(expression)
+	if err != nil {
+		return 0
+	}
+	return customerUsageTierMeters(program.Node(), tier, false)
+}
+
 func customerUsageTaskMeter(task *usageTaskRecord, pieces *usageTaskPieces, settled bool) (string, int64, bool) {
 	if !settled || task.Status != TaskStatusSuccess {
 		return BillingReconciliationModeUnknown, 0, false
@@ -149,14 +157,31 @@ func customerUsageTaskMeter(task *usageTaskRecord, pieces *usageTaskPieces, sett
 			calculation = async.Calculation
 		}
 	}
+	if pieces.billableImageApplicable {
+		if pieces.billableImageCount == nil {
+			return customerUsagePerImage, 0, false
+		}
+		return customerUsagePerImage, *pieces.billableImageCount, true
+	}
+	if calculation != nil {
+		switch calculation.BillingUnit {
+		case billingexpr.BillingUnitToken:
+			return BillingReconciliationModeToken, 0, false
+		case billingexpr.BillingUnitRequest:
+			if calculation.ImageCount == nil {
+				return BillingReconciliationModePerCall, 0, false
+			}
+			count := int64(*calculation.ImageCount)
+			return customerUsagePerImage, count, count > 0 && count <= int64(dto.MaxImageN)
+		}
+	}
 	image := task.PrivateData.ImageTask
 	if snapshot != nil {
 		if billingexpr.UsesFixedPricing(snapshot.ExprString) {
-			program, err := billingexpr.CompileFromCache(snapshot.ExprString)
-			if calculation == nil || err != nil {
+			if calculation == nil {
 				return BillingReconciliationModeUnknown, 0, false
 			}
-			switch customerUsageTierMeters(program.Node(), calculation.MatchedTier, false) {
+			switch customerUsageTierMetersForTask(snapshot.ExprString, calculation.MatchedTier) {
 			case usageTokenTier:
 				return BillingReconciliationModeToken, 0, false
 			case usageFixedCall:

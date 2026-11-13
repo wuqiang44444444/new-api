@@ -46,6 +46,7 @@ type UsageReportRankTokenUsage struct {
 }
 
 type UsageReportRankPage struct {
+	UsageReportRebuildStatus
 	Items   []UsageReportRankItem `json:"items"`
 	HasMore bool                  `json:"has_more"`
 	Total   int64                 `json:"total"`
@@ -165,22 +166,17 @@ func GetPublishedUsageRanks(ctx context.Context, period UsageAnalyticsPeriod, fi
 		return page, common.NewMessage("Invalid pagination")
 	}
 	requested, _ := ctx.Value(usageReportReferencesKey{}).([]UsageReportDayReference)
-	heads, err := reportDayHeads(ctx, period, requested)
+	heads, meta, err := selectUsageReportDays(ctx, period, requested)
 	if err != nil {
 		return page, err
 	}
-	now := common.GetTimestamp()
+	page.UsageReportRebuildStatus = meta.UsageReportRebuildStatus
 	ids := make([]string, 0, len(heads))
-	refs := make([]UsageReportDayReference, 0, len(heads))
+	refs := meta.References
 	legacy := false
 	for _, head := range heads {
-		index := usageDayIndex(period, head.Start)
-		if index < 0 || period.Days[index].Future || (len(requested) == 0 && period.Days[index].End <= now && head.AsOf < period.Days[index].End+3*3600) {
-			continue
-		}
 		ids = append(ids, head.Generation)
-		refs = append(refs, UsageReportDayReference{Start: head.Start, Generation: head.Generation})
-		legacy = legacy || !head.RankReady
+		legacy = legacy || !head.RankReady || filter.Kind == "channel" && head.MeterVersion < frozenBillingTokenMeterVersion
 	}
 	if len(ids) == 0 {
 		return page, nil

@@ -16,10 +16,10 @@ import (
 // guard exists because a previous version of the row builder emitted two
 // fewer cells than the header promised.
 func TestUsageAnalyticsExportSchemaAlignment(t *testing.T) {
-	metrics := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{}, "0.8", customerExportScopeColumns{}, usageAnalyticsExportFieldVersion)
+	metrics := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{}, "0.8", customerExportScopeColumns{})
 	assert.Len(t, metrics, 28)
 	for _, language := range []string{"en", "zh"} {
-		header := usageAnalyticsExportHeader(language)
+		header := usageAnalyticsExportHeader(language, "customers")
 		assert.Len(t, header, 50, "header layout: 2 + 11 group + 28 metrics + 8 scope + customer discounts")
 	}
 }
@@ -29,25 +29,23 @@ func TestUsageAnalyticsExportDistinguishesRecordedZeroAndMissingMeters(t *testin
 	recorded := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{
 		ImageCountKnown: true, ImageCountMissingRows: 1,
 		Seconds: &seconds, SecondsMissingRows: 2,
-	}, "", customerExportScopeColumns{}, usageAnalyticsExportFieldVersion)
+	}, "", customerExportScopeColumns{})
 	assert.Equal(t, "0", recorded[9])
 	assert.Equal(t, "29.25", recorded[10])
 	assert.Equal(t, "images_unrecorded:1;seconds_unrecorded:2", recorded[23])
 
 	missing := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{
 		ImageCountMissingRows: 1, SecondsMissingRows: 2,
-	}, "", customerExportScopeColumns{}, usageAnalyticsExportFieldVersion)
+	}, "", customerExportScopeColumns{})
 	assert.Empty(t, missing[9])
 	assert.Empty(t, missing[10])
 	assert.Equal(t, "images_unrecorded:1;seconds_unrecorded:2", missing[23])
 
-	notApplicable := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{}, "", customerExportScopeColumns{}, usageAnalyticsExportFieldVersion)
+	notApplicable := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{}, "", customerExportScopeColumns{})
 	assert.Empty(t, notApplicable[9])
 	assert.Empty(t, notApplicable[10])
 	assert.Empty(t, notApplicable[23])
 
-	legacy := usageAnalyticsMetricsRow(model.UsageAnalyticsMetrics{}, "", customerExportScopeColumns{}, legacyUsageAnalyticsExportFieldVersion)
-	assert.Equal(t, "0", legacy[9])
 }
 
 func TestUsageAnalyticsPeriodFromFiltersRejectsArbitraryRanges(t *testing.T) {
@@ -84,7 +82,7 @@ func TestUsageAnalyticsExportRowsPreserveDailySchemaAndScope(t *testing.T) {
 			rows, _, err := usageAnalyticsExportRows(context.Background(), &model.CustomerExportJob{JobID: "usage-file", TargetUserId: 42}, view, period, filters, scope)
 			require.NoError(t, err)
 			require.Len(t, rows, 9, "seven days, leaf total and grand total")
-			header := usageAnalyticsExportHeader("en")
+			header := usageAnalyticsExportHeader("en", view)
 			for _, row := range rows {
 				require.Len(t, row, len(header))
 			}
@@ -171,7 +169,7 @@ func TestUsageExportIncludesDeliveredVideoCustomerRefund(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, rows)
 			cells := map[string]string{}
-			for i, h := range usageAnalyticsExportHeader("en") {
+			for i, h := range usageAnalyticsExportHeader("en", view) {
 				cells[h] = rows[0][i]
 			}
 			assert.Equal(t, "1", cells["Calls"])

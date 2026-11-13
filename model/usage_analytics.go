@@ -103,12 +103,15 @@ func ResolveUsageAnalyticsPeriod(period string, date string, now int64) (UsageAn
 // UsageAnalyticsMetrics 是一个分组位置在一日或整个范围的用量、金额与质量。
 // 明确的 0 显示 0；无证据计缺失行数；不适用留空。
 type UsageAnalyticsMetrics struct {
-	TokenDetails     map[string]int64 `json:"token_details,omitempty"`
-	TotalCalls       int64            `json:"total_calls"`
-	SuccessCalls     int64            `json:"success_calls"`
-	FailureCalls     int64            `json:"failure_calls"`
-	CancelledCalls   int64            `json:"cancelled_calls"`
-	OtherResultCalls int64            `json:"other_result_calls"`
+	BillingImageTotals
+	BillingTokensApplicable bool             `json:"billing_tokens_applicable,omitempty"`
+	BillingMeterUnknownRows int64            `json:"billing_meter_unknown_rows,omitempty"`
+	TokenDetails            map[string]int64 `json:"token_details,omitempty"`
+	TotalCalls              int64            `json:"total_calls"`
+	SuccessCalls            int64            `json:"success_calls"`
+	FailureCalls            int64            `json:"failure_calls"`
+	CancelledCalls          int64            `json:"cancelled_calls"`
+	OtherResultCalls        int64            `json:"other_result_calls"`
 
 	InputTokens           int64            `json:"input_tokens"`
 	OutputTokens          int64            `json:"output_tokens"`
@@ -205,6 +208,9 @@ func (a *usageMetricsAcc) mergeTokens(source UsageAnalyticsMetrics) {
 	a.m.OutputTokens += source.OutputTokens
 	a.m.CacheReadTokens += source.CacheReadTokens
 	a.m.CacheWriteTokens += source.CacheWriteTokens
+	a.m.BillingImageTotals.add(source.BillingImageTotals)
+	a.m.BillingTokensApplicable = a.m.BillingTokensApplicable || source.BillingTokensApplicable
+	a.m.BillingMeterUnknownRows += source.BillingMeterUnknownRows
 	a.m.ImageCount += source.ImageCount
 	a.m.ImageCountKnown = a.m.ImageCountKnown || source.ImageCountKnown
 	a.m.ImageCountMissingRows += source.ImageCountMissingRows
@@ -304,6 +310,7 @@ type UsageCustomerModelRow struct {
 	// DiscountCombinations 仅解释本周期模型金额；其中日志用量不代表逻辑调用次数。
 	DiscountCombinations []BillingDiscountCombination `json:"discount_combinations,omitempty"`
 	ModelName            string                       `json:"model_name"`
+	BillingMode          string                       `json:"billing_mode,omitempty"`
 	Days                 []UsageAnalyticsMetrics      `json:"days"`
 	Total                UsageAnalyticsMetrics        `json:"total"`
 }

@@ -28,6 +28,7 @@ var customerStatementDetailColumns = []struct{ key, en, zh string }{
 	{"contract_actual_amount", "Actual task charge", "任务实际扣款"},
 	{"contract_settlement_delta", "Task charge difference (actual minus expected)", "任务扣款差额（实扣减应收）"},
 	{"billing_mode", "Billing mode", "计费方式"},
+	{"billable_image_count", "Billable images", "计费张数"},
 	{"request_count", "Counted requests", "计入请求数"},
 	{"input_tokens", "Input tokens", "输入 Token"},
 	{"output_tokens", "Output tokens", "输出 Token"},
@@ -73,6 +74,10 @@ func customerStatementDetailRecord(language string, source []string) []string {
 		value := values[column.key]
 		if column.key == "billing_line_items_usd" {
 			value = customerStatementPriceBreakdown(language, value)
+		} else if values["billing_mode"] == model.BillingReconciliationModePerImage &&
+			(column.key == "input_tokens" || column.key == "output_tokens" ||
+				column.key == "cache_read_tokens" || column.key == "cache_write_tokens" || column.key == "input_tokens_quality") {
+			value = ""
 		} else {
 			value = customerStatementExportValue(language, column.key, value)
 		}
@@ -82,7 +87,7 @@ func customerStatementDetailRecord(language string, source []string) []string {
 }
 
 var customerStatementExportValues = map[string]map[string][2]string{
-	"billing_mode":               {"token": {"Per token", "按 Token"}, "per_call": {"Per call", "按次"}, "per_second": {"Per second", "按秒"}, model.BillingReconciliationModeDurationAndCount: {"Duration and quantity", "按时长和数量"}, "unknown": {"Not recorded", "未记录"}},
+	"billing_mode":               {"token": {"Per token", "按 Token"}, "per_call": {"Per call", "按次"}, model.BillingReconciliationModePerImage: {"Per image", "按张"}, "per_second": {"Per second", "按秒"}, model.BillingReconciliationModeDurationAndCount: {"Duration and quantity", "按时长和数量"}, "unknown": {"Not recorded", "未记录"}},
 	"event_type":                 {"consume": {"Charge", "扣款"}, "refund": {"Refund", "退款"}},
 	"original_source":            {"replayed": {"Verified replay", "核验复算"}, "unique_settlement_replay": {"Unique solution verified against the actual charge", "以实扣核验的唯一解"}},
 	"contract_applicable":        {"yes": {"Applied", "已应用"}, "no": {"No contract discount", "无合同优惠"}, "unrecorded": {"Not recorded", "未记录"}, "unknown": {"Incomplete contract records", "合同记录不完整"}},

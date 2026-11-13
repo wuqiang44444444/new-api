@@ -36,7 +36,7 @@ curl "{{OPENAI_BASE_URL}}/tasks/task_xxxxxxxx" \
 不需要再次传入模型、提示词或参考图。查询参数不能改变创建时选择的结果格式：创建时显式 `response_format=b64_json` 才返回 Base64，
 显式 `url` 或省略时查询返回 URL；不要在 GET 上追加 `response_format` 来切换格式。
 
-`/v1/tasks/{task_id}` 是共享查询入口。本页只描述图片任务投影；先确认返回的 `object=image_task`
+`/v1/tasks/{task_id}` 是共享查询入口。读取图片结果前，确认返回的 `object=image_task`
 以及 `id` 与原任务一致，再按本页解析。其他任务可能返回不同形状，不保证因类型不同而返回 `404`。
 
 ## 响应示例

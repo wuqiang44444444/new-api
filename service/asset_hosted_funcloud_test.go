@@ -20,12 +20,15 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+var hostedImageTestMedia = kitdto.PlatformHostedAssetMedia()
 
 type fakeHostedImageStore struct {
 	puts      map[string][]byte
@@ -127,8 +130,8 @@ func TestFunCloudHostedAssetLifecycleAndCrossUserIsolation(t *testing.T) {
 	withHostedAssetDB(t)
 	store := newFakeHostedImageStore()
 	ctx := withHostedImageSession(context.Background(), store)
-	owner := newFunCloudHostedMaterialAdapter(7, "customer-model")
-	other := newFunCloudHostedMaterialAdapter(8, "customer-model")
+	owner := newFunCloudHostedMaterialAdapter(7, "customer-model", hostedImageTestMedia)
+	other := newFunCloudHostedMaterialAdapter(8, "customer-model", hostedImageTestMedia)
 
 	created, err := owner.CreateAsset(ctx, hostedImageCreateRequest(t, ""))
 	require.NoError(t, err)
@@ -153,7 +156,8 @@ func TestFunCloudHostedAssetLifecycleAndCrossUserIsolation(t *testing.T) {
 	_, err = owner.GetAsset(ctx, created.ResourceID)
 	assert.ErrorIs(t, err, assetadapter.ErrAssetResourceNotFound)
 	assert.Len(t, store.puts, 1)
-	assert.True(t, hostedAssetSupportsOnlyGeneralImages(owner))
+	assert.True(t, owner.Supports(model.AssetKindGeneral, "image"))
+	assert.False(t, owner.Supports(model.AssetKindRealPerson, "image"))
 }
 
 // 显式素材组按 user_id 校验归属；跨用户的组一律按不存在处理。
@@ -161,8 +165,8 @@ func TestFunCloudHostedAssetGroupOwnership(t *testing.T) {
 	withHostedAssetDB(t)
 	store := newFakeHostedImageStore()
 	ctx := withHostedImageSession(context.Background(), store)
-	owner := newFunCloudHostedMaterialAdapter(11, "customer-model")
-	other := newFunCloudHostedMaterialAdapter(12, "customer-model")
+	owner := newFunCloudHostedMaterialAdapter(11, "customer-model", hostedImageTestMedia)
+	other := newFunCloudHostedMaterialAdapter(12, "customer-model", hostedImageTestMedia)
 
 	group, err := owner.CreateGroup(ctx, assetadapter.GroupRequest{Name: "my-group"})
 	require.NoError(t, err)
@@ -201,12 +205,6 @@ func onlyHostedMimeType(t *testing.T, store *fakeHostedImageStore) string {
 		return mimeType
 	}
 	return ""
-}
-
-func hostedAssetSupportsOnlyGeneralImages(adapter assetadapter.Adapter) bool {
-	return adapter.Supports(model.AssetKindGeneral, "image") &&
-		!adapter.Supports(model.AssetKindGeneral, "video") &&
-		!adapter.Supports(model.AssetKindRealPerson, "image")
 }
 
 func hostedVideoContext(t *testing.T, hostedProtocol bool, refs ...string) (*gin.Context, *relaycommon.RelayInfo) {
@@ -281,8 +279,9 @@ func TestValidateFunCloudHostedVideoMediaOwnershipAndFreeze(t *testing.T) {
 	assert.Empty(t, GetFunCloudHostedMediaFacts(passthrough))
 
 	notHosted, notHostedInfo := hostedVideoContext(t, false, "asset://"+model.FunCloudHostedAssetIDPrefix+"known")
-	require.NotNil(t, ValidateFunCloudHostedVideoMedia(notHosted, notHostedInfo))
-	assert.Empty(t, GetFunCloudHostedMediaFacts(notHosted))
+	notHosted.Request = notHosted.Request.WithContext(withHostedImageSession(notHosted.Request.Context(), store))
+	require.Nil(t, ValidateFunCloudHostedVideoMedia(notHosted, notHostedInfo))
+	assert.Contains(t, GetFunCloudHostedMediaFacts(notHosted), "asset://"+model.FunCloudHostedAssetIDPrefix+"known")
 }
 
 // 内部临时 URL 由存储实现按托管 TTL 签发；存储禁用时失败关闭。
@@ -317,7 +316,7 @@ func TestHostedAssetRejectsInvalidImagesBeforeStorage(t *testing.T) {
 				require.NoError(t, err)
 				req.Source = bytes.NewReader(data[:len(data)-12])
 			}
-			result, err := newFunCloudHostedMaterialAdapter(7, "model").CreateAsset(withHostedImageSession(t.Context(), store), req)
+			result, err := newFunCloudHostedMaterialAdapter(7, "model", hostedImageTestMedia).CreateAsset(withHostedImageSession(t.Context(), store), req)
 			require.ErrorIs(t, err, ErrInvalidAssetRequest)
 			assert.Empty(t, result.ResourceID)
 			assert.Empty(t, store.puts)
@@ -332,7 +331,7 @@ func TestHostedAssetCreationFailuresAndIndependentCopies(t *testing.T) {
 	db := withHostedAssetDB(t)
 	store := newFakeHostedImageStore()
 	ctx := withHostedImageSession(t.Context(), store)
-	owner := newFunCloudHostedMaterialAdapter(7, "model")
+	owner := newFunCloudHostedMaterialAdapter(7, "model", hostedImageTestMedia)
 	store.failPut = true
 	failed, err := owner.CreateAsset(ctx, hostedImageCreateRequest(t, ""))
 	require.Error(t, err)
@@ -363,7 +362,7 @@ func TestHostedObjectAvailabilityAndLocationFailClosed(t *testing.T) {
 	withHostedAssetDB(t)
 	store := newFakeHostedImageStore()
 	ctx := withHostedImageSession(t.Context(), store)
-	owner := newFunCloudHostedMaterialAdapter(7, "model")
+	owner := newFunCloudHostedMaterialAdapter(7, "model", hostedImageTestMedia)
 	created, err := owner.CreateAsset(ctx, hostedImageCreateRequest(t, ""))
 	require.NoError(t, err)
 	record, err := model.GetFunCloudHostedAsset(7, created.ResourceID)
@@ -389,7 +388,7 @@ func TestHostedAcceptedReferenceSurvivesDeletionAndRuntimeReplacement(t *testing
 	withHostedAssetDB(t)
 	store := newFakeHostedImageStore()
 	ctx := withHostedImageSession(t.Context(), store)
-	owner := newFunCloudHostedMaterialAdapter(7, "model")
+	owner := newFunCloudHostedMaterialAdapter(7, "model", hostedImageTestMedia)
 	created, err := owner.CreateAsset(ctx, hostedImageCreateRequest(t, ""))
 	require.NoError(t, err)
 	c, info := hostedVideoContext(t, true, "asset://"+created.ResourceID, "asset://"+created.ResourceID)

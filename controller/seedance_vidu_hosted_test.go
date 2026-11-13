@@ -28,4 +28,11 @@ func TestViduHostedVideoDurableLifecycle(t *testing.T) {
 			})
 		}
 	}
+	for _, providerModel := range []string{"viduq3-drama-mini", "viduq3-drama-ab-mini"} {
+		for _, outcome := range []string{"mixed_audio", "mixed_wrong_slot", "mixed_invalid_role"} {
+			t.Run(providerModel+"/"+outcome, func(t *testing.T) {
+				testHostedVideoCreation(t, dto.VideoUpstreamProtocolViduModelArkV3, outcome, providerModel)
+			})
+		}
+	}
 }

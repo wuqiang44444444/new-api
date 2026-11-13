@@ -127,6 +127,7 @@ func (agg *usageAggregation) applyBatchJobs(ctx context.Context) error {
 				agg.mergeOverview(usageOverviewKey{user: job.UserId, day: day}, &customer)
 			}
 			if agg.opts.WantUpstream {
+				upstream.m.BillingTokensApplicable = true
 				name := job.Deployment
 				if name == "" {
 					name = job.PublicModel

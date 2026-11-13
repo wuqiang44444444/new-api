@@ -385,6 +385,17 @@ func storeImageResults(ctx context.Context, task *model.Task, count int, usage *
 // 评审 S11：Provider 返回的任意媒体 URL 必须走 SSRF 防护客户端（拨号时
 // 校验内网/回环目标）；该边界不得复用管理员上游连接客户端。
 func downloadImageURL(ctx context.Context, imageURL string) ([]byte, string, error) {
+	var data []byte
+	var mime string
+	err := retryImageDelivery(ctx, func() error {
+		var err error
+		data, mime, err = fetchImageURL(ctx, imageURL)
+		return err
+	})
+	return data, mime, err
+}
+
+func fetchImageURL(ctx context.Context, imageURL string) ([]byte, string, error) {
 	req, err := http.NewRequestWithContext(service.WithoutRequestEvidence(ctx), http.MethodGet, imageURL, nil)
 	if err != nil {
 		return nil, "", &imageResultError{Code: "result_download_request_failed"}
@@ -394,7 +405,7 @@ func downloadImageURL(ctx context.Context, imageURL string) ([]byte, string, err
 	resp, err := bounded.Do(req)
 	service.ObserveImageHTTPExchange(ctx, req, resp, err, "result_download")
 	if err != nil {
-		return nil, "", &imageResultError{Code: "result_download_transport_failed"}
+		return nil, "", imageDownloadTransportError(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {

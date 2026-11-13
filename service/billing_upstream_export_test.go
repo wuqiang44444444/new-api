@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/csv"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -83,9 +84,13 @@ func TestUpstreamExportFrozenScopeAndCurrentAuthorization(t *testing.T) {
 	second := records[2]
 	assert.Equal(t, "'=channel", first[9])
 	assert.Equal(t, "1000001", first[19])
-	assert.Equal(t, "Recalculated test original", records[0][len(records[0])-5])
-	assert.Equal(t, []string{"", "1", "30", "0", ""}, first[len(first)-5:])
-	assert.Empty(t, second[len(second)-5])
+	recalculated := slices.Index(records[0], "Recalculated test original")
+	require.NotEqual(t, -1, recalculated)
+	assert.Empty(t, first[recalculated])
+	assert.Empty(t, second[recalculated])
+	imageColumnsEnd := recalculated + 1 + len(frozenBillingDetailCSVHeader("en"))
+	assert.Equal(t, frozenBillingDetailCSVHeader("en"), records[0][recalculated+1:imageColumnsEnd])
+	assert.Equal(t, []string{"1", "30", "0", ""}, first[imageColumnsEnd:])
 	assert.Equal(t, "-200000", second[19])
 	assert.Equal(t, "0.12345678", first[25])
 	assert.Equal(t, "1", first[26])

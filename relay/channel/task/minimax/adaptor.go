@@ -109,6 +109,9 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(requestContext *gin.Context, i
 // before the durable attempt. Declared-scope violations surface as HTTP 400
 // invalid_request here; nothing has attempted, held funds or called JD.
 func (a *TaskAdaptor) ValidateMappedRequest(requestContext *gin.Context, info *relaycommon.RelayInfo) *taskdto.TaskError {
+	if taskErr := service.ValidateFunCloudHostedVideoMedia(requestContext, info); taskErr != nil {
+		return taskErr
+	}
 	if taskErr := service.PrepareVideoReferenceAudio(requestContext, info); taskErr != nil {
 		return taskErr
 	}

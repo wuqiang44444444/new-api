@@ -7,7 +7,11 @@ import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 
-import { getAdminUsageCustomerSummary, getAdminUsageCustomers } from './api'
+import {
+  getAdminUsageCustomerSummary,
+  getAdminUsageCustomers,
+  usageReportRebuildInterval,
+} from './api'
 import { UsageExportButton } from './export-button'
 import { PersonalUsageOverview } from './personal-usage-overview'
 import type { UsageCustomerOverviewRow, UsagePeriodKind } from './types'
@@ -36,6 +40,7 @@ export function AdminCustomerUsage(props: {
     queryKey: ['usage-admin-customers', props.period, props.date],
     queryFn: ({ signal }) =>
       getAdminUsageCustomers({ ...params, compact: true }, signal),
+    refetchInterval: usageReportRebuildInterval,
   })
   const globalReport = overview.data?.data
   const reportDays = globalReport?.report_days?.length
@@ -58,7 +63,10 @@ export function AdminCustomerUsage(props: {
         },
         signal
       ),
-    enabled: selectedUser != null && !overview.isPending,
+    enabled:
+      selectedUser != null &&
+      overview.isSuccess &&
+      (globalReport?.published_days?.length ?? 1) > 0,
   })
   const customers = new Map(
     (globalReport?.result.customers ?? []).map((customer) => [
@@ -161,10 +169,21 @@ export function AdminCustomerUsage(props: {
         </div>
         {detail.isLoading && <LoadingState />}
         {detail.isError && <ErrorState onRetry={() => void detail.refetch()} />}
+        {!customerReport && (
+          <UsageReportStatus
+            report={globalReport}
+            showReportPeriod
+            showCoverage={false}
+          />
+        )}
         {customerReport && (
           <UsageCustomerReport
             key={`${selectedUser.user_id}:${props.period}:${props.date}`}
-            report={customerReport}
+            report={{
+              ...customerReport,
+              rebuilding_days: globalReport?.rebuilding_days,
+              source_unavailable_days: globalReport?.source_unavailable_days,
+            }}
           />
         )}
       </section>
@@ -218,6 +237,8 @@ export function AdminCustomerUsage(props: {
           )}
         {globalReport &&
           (globalReport.published_days?.length ?? 1) > 0 &&
+          !globalReport.rebuilding_days?.length &&
+          !globalReport.source_unavailable_days?.length &&
           !globalReport.result.customers.length && (
             <UsageReportEmpty period={globalReport.period} />
           )}

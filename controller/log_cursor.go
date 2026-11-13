@@ -14,7 +14,8 @@ import (
 func respondLogCursorPage(c *gin.Context, admin bool) bool {
 	cursor := c.Query("page_cursor")
 	ref := c.Query("log_ref")
-	if cursor == "" && ref == "" {
+	snapshot := c.Query("page_snapshot")
+	if cursor == "" && ref == "" && snapshot == "" {
 		return false
 	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
@@ -49,7 +50,17 @@ func respondLogCursorPage(c *gin.Context, admin bool) bool {
 		return true
 	}
 	page := common.GetPageQuery(c)
-	data, err := model.GetLogCursorPage(ctx, userID, logFilterFromQuery(c, admin), cursor, page.GetPage(), page.GetPageSize(), maxRange, role)
+	filter := logFilterFromQuery(c, admin)
+	if snapshot != "" {
+		data, err := model.GetNumberedUsageLogPage(ctx, userID, filter, snapshot, page.GetPage(), page.GetPageSize(), maxRange, role)
+		if err != nil {
+			common.ApiError(c, err)
+		} else {
+			common.ApiSuccess(c, data)
+		}
+		return true
+	}
+	data, err := model.GetLogCursorPage(ctx, userID, filter, cursor, page.GetPage(), page.GetPageSize(), maxRange, role)
 	if err != nil {
 		common.ApiError(c, err)
 		return true

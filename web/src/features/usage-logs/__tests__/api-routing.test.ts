@@ -20,7 +20,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 
 import { api } from '@/lib/api'
 
-import { getAllTaskLogs } from '../api'
+import { getAllTaskLogs, getUsageLogDetail } from '../api'
 
 const originalGet = api.get
 
@@ -41,3 +41,22 @@ describe('task log API routing', () => {
     expect(requestedUrl).toBe('/api/task/?p=2&page_size=50&task_id=task-1')
   })
 })
+
+test.each([
+  [true, '/api/log/'],
+  [false, '/api/log/self'],
+] as const)(
+  'uses the canonical detail route for admin=%s',
+  async (isAdmin, path) => {
+    const signal = new AbortController().signal
+    let requestedUrl: string | undefined
+    api.get = ((url, config) => {
+      requestedUrl = api.getUri({ ...config, url })
+      return Promise.resolve({ data: { success: true, data: { id: 1 } } })
+    }) as typeof api.get
+
+    await getUsageLogDetail('test-log-reference', isAdmin, signal)
+
+    expect(requestedUrl).toBe(`${path}?log_ref=test-log-reference`)
+  }
+)

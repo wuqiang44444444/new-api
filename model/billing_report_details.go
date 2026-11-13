@@ -132,6 +132,8 @@ func (report *BillingReportManifest) customerDetails(ctx context.Context, filter
 			RequestId: row.RequestID, Other: string(raw)}
 		if role >= common.RoleAdminUser {
 			log.UpstreamRequestId = row.UpstreamRequestID
+		} else {
+			log.ChannelId = 0
 		}
 		result.Items = append(result.Items, log)
 	}

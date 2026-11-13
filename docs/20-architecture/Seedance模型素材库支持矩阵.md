@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-11-12
+last-reviewed: 2026-11-13
 ---
 
 # Seedance 模型素材库支持矩阵
@@ -13,46 +13,19 @@ Provider 如何签名、如何选路或如何保存平台内部快照。内部�
 
 ## 1. 权威边界
 
-客户模型由部署方命名；Provider、上游原始模型、Channel、Region/Project 和凭据不进入公开模型目录。
-素材能力由当前客户模型对应 Channel 的已验证 `asset_upstream_protocol` 生成，不根据模型名、Provider
-名称、URL 后缀、Key 或共享账号推断。
+客户模型由部署方命名并用于授权。本站托管素材库按账号共享，Seedance 与 MiniMax 标准视频均可使用。
+素材库统一接受图片、MP3 与 MP4，媒体类型及 MIME 由 `relaykit/dto/seedance_hosted_media.go` 定义。
+目标模型的媒体、角色、数量和组合由 `api.video.creation.content_types` 和该模型视频合同决定。
 
-代码和公开字段的对应关系如下：
+## 2. 素材合同选择
 
-| 公开合同 | 代码权威 | 作用 |
+| 模型配置 | `api.assets` | `api.hosted_assets` |
 | --- | --- | --- |
-| `api.assets` 字段结构 | `relaykit/dto/public_model_api.go` 的 `PublicAssetAPI` | 固定公开元数据形状 |
-| 每个模型的支持矩阵 | `model/channel_seedance_public_catalog.go` 的 `seedancePublicAssetAPI` | 按素材协议生成能力投影 |
-| 单资源操作和错误 | `controller/asset.go`、素材 Service 和对应 adapter | 决定实际请求是否可执行 |
+| 配置了上游素材代理 | 默认代理合同 | 账号级托管合同 |
+| 无上游素材代理，或已有本站托管配置 | 账号级托管合同 | 省略 |
 
-`GET /v1/models/{customer_model}` 返回的 `api.assets` 是调用方运行时唯一能力依据。代码已存在不等于
-相应 Provider 已完成真实验收或已进入生产分组。
-
-统一北向协议与 Channel 默认普通 AIGC 素材组已接入代码和公开元数据。真实 Provider 和生产灰度逐线路验收。
-
-## 2. 通用能力矩阵
-
-| 通用类别 | `api.assets.supported` | 素材组 | 使用规则 |
-| --- | --- | --- | --- |
-| 配置为 `none` 的协议（例如飞彩） | `false` | 不适用 | 使用该模型允许的请求级 URL/Data URL；素材操作返回 422 |
-| 已配置无素材组协议的模型 | `true` | 南向不使用 | 可直接创建普通素材；统一北向允许携带 `asset_group_id`，adapter 不发送该字段 |
-| 已配置可选素材组协议的模型 | `true` | 普通素材北向可选；真人素材按 `media` 要求 | 有效显式 ID 优先；只有省略、空或空白时使用 Channel 默认组 |
-| 已配置南向必需素材组协议的模型 | `true` | 普通素材北向仍可选 | Channel 默认组满足南向必填，调用方无需先创建组 |
-| 已配置本站托管协议（`funcloud_material_hosted`）的模型 | `true` | 平台托管普通组（仅普通图片素材） | 素材保存在本站对象存储并按 `user_id` 隔离共享；见无状态素材代理架构第 7 节 |
-| 未配置素材协议的其它模型 | `false` | 不适用 | 不得因为名称不含固定分辨率就推断支持 |
-
-固定分辨率系列当前不支持素材库，是接入文档、已注册协议和实际配置共同确认的事实：现有上游合同只有
-视频创建/查询及计费，没有可验证的素材 CRUD、素材组或真人认证接口。只有取得正式接口证据并实现
-adapter 后，矩阵才可以改变。
-
-同一 Channel 可以承载多个客户模型并共享已有素材协议，四模型统一配对已完成代码接线；对应客户模型
-仍以各自 `api.assets.operations` 判断操作范围。统一不新增素材更新/删除，不改变组策略和 opaque 引用。
-同一 Channel 投影相同非空复用域；视频协议变更确认后会产生新复用域并清除本地默认组关联。
-代码接线与实际跨模型素材可用性分别验收，不能以相同 scope 代替真实生成验证。
-
-本站托管图片协议可配对 FunCloud V3、Synlink Video V1 与 Vidu ModelArk V3；保留 `funcloud_material_hosted` 配置标识。
-三者按同一 `user_id` 共享平台素材，素材 ID 与对象无需迁移。Synlink 与 Vidu 不接收其它 Provider opaque ID，
-这类引用在预扣前返回错误；HTTP(S) URL 原值传递。跨供应商真实生成仍需单独验收。
+在创建素材或普通素材组时，传 `management_mode=platform_hosted` 可显式使用本站托管。读取与删除按
+资源 ID 进入对应库。代理继续按已配置协议和素材租户边界运行。部署上线按真实供应商和账单验收。
 
 ## 3. `api.assets` 公开字段
 
@@ -67,9 +40,8 @@ adapter 后，矩阵才可以改变。
 | `operations` | 每项操作的 HTTP 方法、路径和 `supported` | 不支持的操作必须停止，不得换 Provider 或 fallback |
 | `creation` | URL TTL、长度、MIME、大小和重定向限制 | 只提交满足该模型返回限制的创建请求 |
 
-相同非空 `reuse_scope` 表示模型位于同一个由管理员声明并由平台冻结的 Channel 素材边界；不同 Channel
-不会发布相同 scope。它仍不是 Provider 真实租户、存在性、权限、所有权或兼容性证明，最终结果由选定
-Provider 裁决。部署方可以为相同 scope 的客户模型使用相同业务后缀，但后缀不是运行时能力依据。
+普通代理的相同非空 `reuse_scope` 表示模型位于同一冻结素材租户边界。本站托管使用固定复用域，素材由
+账号共享。用于生成时，目标模型须支持对应的媒体输入。
 
 ## 4. 操作矩阵与北向路径
 
@@ -78,9 +50,9 @@ Provider 裁决。部署方可以为相同 scope 的客户模型使用相同业�
 | 操作 | 路径 | `model` 位置 | 说明 |
 | --- | --- | --- | --- |
 | 创建素材 | `POST /v1/assets` | JSON body | source URL 只用于本次调用，不持久化 |
-| 查询素材 | `GET /v1/assets/{asset_id}?model=...` | query | `asset_id` 是 Provider opaque ID |
+| 查询素材 | `GET /v1/assets/{asset_id}?model=...` | query | 使用创建响应返回的不透明素材 ID |
 | 更新素材 | `PATCH /v1/assets/{asset_id}` | JSON body | 是否支持由 `operations` 决定 |
-| 删除素材 | `DELETE /v1/assets/{asset_id}?model=...` | query | 只发送到该模型选定的 Provider |
+| 删除素材 | `DELETE /v1/assets/{asset_id}?model=...` | query | 代理模式调用选定的 Provider，托管模式停止新引用 |
 | 创建素材组/认证会话 | `POST /v1/asset-groups` | JSON body | 真人流程由 `media` 和操作矩阵共同决定 |
 | 查询素材组/认证会话 | `GET /v1/asset-groups/{id}?model=...` | query | 认证会话必须显式传 `verification_session=true` |
 
@@ -172,9 +144,9 @@ Link 架构](Seedance专用渠道与Link架构.md)、[异步任务与计费事�
 [ADR-0018：Channel 默认素材组基础设施配置](decisions/0018-Channel默认素材组基础设施配置.md) 负责。
 
 
-### 托管图片的可用性边界
+### 托管素材的可用性边界
 
-`platform_hosted` 创建同时检查实际图片内容、MIME 与像素数；公开创建约束中的 `max_pixels`
-为 13,107,200，编码字节上限仍为 100 MiB。查询时已知对象缺失、存储不可用或位置配置不一致不会返回
-虚假的 ready。视频托管引用只适用于图片槽位；不符合条件返回 400，存储不可用返回 503，均在资金
+`platform_hosted` 创建校验媒体格式和 MIME，图片另外验证解码内容与像素数。所有托管类型的编码文件上限为
+100 MiB，图片的 `max_pixels` 为 13,107,200。查询时已知对象缺失、存储不可用或位置配置不一致不会返回
+虚假的 ready。托管引用必须匹配媒体类型和对应槽位；不符合条件返回 400，存储不可用返回 503，均在资金
 hold 与 Provider POST 前拒绝。直接 URL 路径不建立素材或访问本站存储。

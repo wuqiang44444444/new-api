@@ -20,7 +20,7 @@ operations: []
 5. [错误与重试](concepts/errors)
 6. [图片与视频调用实战](guides/media-workflow)
 
-文档中的 Base URL 会根据当前部署动态显示。API Key 和模型 ID 始终是固定占位符，不会读取你的登录信息或自动填充真实凭据。
+示例使用当前站点的 Base URL。调用前请替换 API Key 和模型 ID 占位符。
 
 ## 能力范围
 
@@ -30,11 +30,7 @@ operations: []
 | 文本     | `/v1/chat/completions`、`/v1/responses`、`/v1/messages` | 选择与你的 SDK 相同的协议                      |
 | 图片     | `/v1/images/generations`、`/v1/images/edits`            | 默认同步；支持时显式选择异步任务或流式         |
 | 视频     | ModelArk V3、OpenAI Videos、Kling、即梦                 | 不同协议的字段不能混用                         |
-| 素材     | `/v1/assets`                                            | 按模型声明代理或托管素材，调用方保存 ID 与引用 |
-
-## 兼容性边界
-
-不同公开协议只在明确说明的入口上兼容。不要把内部实现字段加入通用请求，也不要依赖未在本文档公开的管理接口、任务私有字段或历史兼容入口。
+| 素材     | `/v1/assets`                                            | 账号级托管库接收图片、MP3 和 MP4。调用方保存 ID 与引用 |
 
 ## 示例约定
 

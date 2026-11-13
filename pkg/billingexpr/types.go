@@ -6,9 +6,14 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/expr-lang/expr/vm"
 )
 
 type RequestInput struct {
+	frozenRules       []RequestRuleTrace
+	frozenRuleHash    string
+	frozenRuleProgram *vm.Program
+	frozenRuleVars    map[string]bool
 	RecordCalculation bool `json:"-"`
 	PricingTime       *time.Time
 	ExchangeRate      *ExchangeRateContext

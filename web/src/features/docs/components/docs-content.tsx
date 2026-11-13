@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { Link } from '@tanstack/react-router'
 import type { Token, Tokens } from 'marked'
 import { Fragment, type ReactNode } from 'react'
-import { useTranslation } from 'react-i18next'
 
 import { resolveMarkdownLink } from '../lib/docs-links'
 import type { DocsMarkdownDocument } from '../lib/docs-markdown'
@@ -215,7 +214,6 @@ export function DocsContent({
   manifest: DocsManifest
   placeholders: DocsPlaceholderValues
 }) {
-  const { t } = useTranslation()
   const context = { locale, manifest, placeholders }
   return (
     <div className='docs-content min-w-0'>
@@ -269,11 +267,6 @@ export function DocsContent({
           )
         }
       )}
-      <p className='text-muted-foreground mt-10 border-t pt-5 text-xs'>
-        {t('Last verified: {{date}}', {
-          date: document.frontmatter.lastVerified,
-        })}
-      </p>
     </div>
   )
 }

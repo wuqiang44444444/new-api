@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
@@ -17,15 +18,22 @@ func TestViduChannelsShareHostedAssetLifecycle(t *testing.T) {
 	store := newFakeHostedImageStore()
 	ctx := withHostedImageSession(t.Context(), store)
 	var adapters []assetadapter.Adapter
-	for _, name := range []string{"customer-cn", "customer-global"} {
+	for _, variant := range []struct {
+		model   string
+		mapping string
+	}{
+		{"customer-cn", `{"customer-cn":"viduq3-drama-mini"}`},
+		{"customer-global", `{"customer-global":"viduq3-drama-ab-mini"}`},
+	} {
 		channel := &model.Channel{Type: constant.ChannelTypeSeedanceLink}
+		channel.ModelMapping = common.GetPointer(variant.mapping)
 		channel.SetOtherSettings(dto.ChannelOtherSettings{VideoUpstreamProtocol: dto.VideoUpstreamProtocolViduModelArkV3, AssetUpstreamProtocol: dto.AssetUpstreamProtocolFunCloudHosted})
-		adapter, err := seedanceAssetAdapter(channel, 7, name)
+		adapter, err := seedanceAssetAdapter(channel, 7, variant.model)
 		require.NoError(t, err)
 		adapters = append(adapters, adapter)
 		assert.True(t, adapter.Supports("general", "image"))
-		assert.False(t, adapter.Supports("general", "audio"))
-		assert.False(t, adapter.Supports("general", "video"))
+		assert.True(t, adapter.Supports("general", "audio"))
+		assert.True(t, adapter.Supports("general", "video"))
 	}
 	created, err := adapters[0].CreateAsset(ctx, hostedImageCreateRequest(t, ""))
 	require.NoError(t, err)

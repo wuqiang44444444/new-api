@@ -15,6 +15,7 @@ import (
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -95,9 +96,10 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 		// upstream model snapshot keeps the resolved provider model.
 		info.UpstreamModelName = upstreamModel
 	}
-	var sourceRequest any = contract.ModelArk
+	providerRequest := service.HostedVideoProviderRequest(c, contract.ModelArk)
+	var sourceRequest any = providerRequest
 	if a.protocol == dto.VideoUpstreamProtocolViduModelArkV3 || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 || seedanceOfficialUsageProtocol(a.protocol) || a.protocol == dto.VideoUpstreamProtocolArkMediaV1 {
-		payload, _, err := a.modelArkContractPayload(c)
+		payload, err := modelArkPayload(providerRequest)
 		if err != nil {
 			return nil, err
 		}
@@ -118,7 +120,7 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 		"limits":        map[string]any{"maxDurationSeconds": relaycommon.MaxTaskDurationSeconds},
 	}
 	if a.protocol == dto.VideoUpstreamProtocolViduModelArkV3 || a.protocol == dto.VideoUpstreamProtocolModelArkV3CMCC || a.protocol == dto.VideoUpstreamProtocolFunCloudModelArkV3 || a.protocol == dto.VideoUpstreamProtocolSynlinkVideoV1 {
-		northBytes, err := common.Marshal(contract.ModelArk)
+		northBytes, err := common.Marshal(providerRequest)
 		if err != nil {
 			return nil, err
 		}
@@ -153,8 +155,8 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 		}
 		var pricedPayload *requestPayload
 		if a.protocol == dto.VideoUpstreamProtocolTokenSaveMediaTaskV1 {
-			priced, typed, payloadErr := a.modelArkContractPayload(c)
-			if payloadErr != nil || !typed || priced == nil {
+			priced, payloadErr := modelArkPayload(providerRequest)
+			if payloadErr != nil {
 				return nil, fmt.Errorf("media plugin conversion requires the priced request contract")
 			}
 			pricedPayload = priced
@@ -174,6 +176,10 @@ func (a *TaskAdaptor) ensureSeedanceCreateConversion(c *gin.Context, info *relay
 		a.createPath = path
 		info.ChannelOtherSettings.VideoUpstreamCreatePath = path
 		info.ChannelOtherSettings.VideoUpstreamQueryPathTemplate = query
+	}
+	conversion.body, err = service.ResolveHostedVideoProviderBody(c, conversion.body)
+	if err != nil {
+		return nil, err
 	}
 	conversion.plugin = plugin
 	a.pluginCreate = conversion
@@ -383,10 +389,6 @@ func (a *TaskAdaptor) buildSeedancePluginCreateRequestBody(c *gin.Context, info 
 	conversion, err := a.ensureSeedanceCreateConversion(c, info)
 	if err != nil {
 		return nil, true, err
-	}
-	if a.protocol.SupportsPlatformHostedImages() {
-		body, err := resolvePluginHostedContent(c, conversion.body, a.protocol)
-		return body, true, err
 	}
 	return conversion.body, true, nil
 }

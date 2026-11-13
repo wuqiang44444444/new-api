@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestDailyReportKeepsPublishedUsageWhenLogsWereRemoved(t *testing.T) {
@@ -234,4 +235,87 @@ func TestConfirmedVersionFundGroupsPreserveNetAndRawLines(t *testing.T) {
 	require.Len(t, lines, 2)
 	assert.EqualValues(t, 100, lines[0].Quota)
 	assert.EqualValues(t, 30, lines[1].Quota)
+}
+
+func TestDailyReportRejectsFundingReattribution(t *testing.T) {
+	for _, tc := range []struct{ name, field, value string }{
+		{"customer model", "model_name", "text-b"},
+		{"related task", "other", `{"task_id":"task-b","model_price":1}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, start, _ := setupBillingReportTest(t)
+			ctx := context.Background()
+			row := Log{UserId: 7, TokenId: 8, ChannelId: 9, ModelName: "text-a", Type: LogTypeConsume, CreatedAt: start + 1, Quota: 100, Other: `{"task_id":"task-a","model_price":1}`}
+			require.NoError(t, db.Create(&row).Error)
+			require.NoError(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil))
+			var before, after billingReportHead
+			require.NoError(t, db.Where("start = ?", start).Take(&before).Error)
+			require.NoError(t, db.Model(&row).Update(tc.field, tc.value).Error)
+			assert.ErrorIs(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil), errDailyReportCoverageDecreased)
+			require.NoError(t, db.Where("start = ?", start).Take(&after).Error)
+			assert.Equal(t, before.Generation, after.Generation)
+		})
+	}
+}
+
+func TestDailyReportRollbackRejectsFundingReattribution(t *testing.T) {
+	db, start, _ := setupBillingReportTest(t)
+	ctx := context.Background()
+	row := Log{UserId: 7, TokenId: 8, ChannelId: 9, ModelName: "text", Type: LogTypeConsume, CreatedAt: start + 1, Quota: 100, Other: `{"task_id":"task-a","model_price":1}`}
+	require.NoError(t, db.Create(&row).Error)
+	require.NoError(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil))
+	var prior, current billingReportHead
+	require.NoError(t, db.Where("start = ?", start).Take(&prior).Error)
+	require.NoError(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil))
+	require.NoError(t, db.Where("start = ?", start).Take(&current).Error)
+	require.NotEqual(t, prior.Generation, current.Generation)
+	date := time.Unix(start, 0).In(UsageAnalyticsZone()).Format(time.DateOnly)
+	// Simulate a generation that was published before the identity guard.
+	previousLine := db.Model(&billingReportLine{}).Where("generation = ? AND source_id = ?", prior.Generation, row.Id)
+	require.NoError(t, previousLine.Update("fund_group", billingStatementFundIdentity(row, parsedBillingReconciliationLog{customerModel: "text", taskID: "task-b"})).Error)
+	require.ErrorIs(t, RestoreBillingReportGeneration(ctx, date, current.Generation, prior.Generation), errDailyReportCoverageDecreased)
+	var head billingReportHead
+	require.NoError(t, db.Where("start = ?", start).Take(&head).Error)
+	assert.Equal(t, current.Generation, head.Generation)
+	require.NoError(t, previousLine.Update("fund_group", billingStatementFundIdentity(row, parsedBillingReconciliationLog{customerModel: "text", taskID: "task-a"})).Error)
+	require.NoError(t, RestoreBillingReportGeneration(ctx, date, current.Generation, prior.Generation))
+	require.NoError(t, db.Where("start = ?", start).Take(&head).Error)
+	assert.Equal(t, prior.Generation, head.Generation)
+}
+
+func TestDailyReportPruneCannotUnpublishRestoredHead(t *testing.T) {
+	db, start, _ := setupBillingReportTest(t)
+	require.NoError(t, db.AutoMigrate(&CustomerExportJob{}))
+	ctx := context.Background()
+	row := Log{UserId: 7, TokenId: 8, ModelName: "text", Type: LogTypeConsume, CreatedAt: start + 1, Quota: 100}
+	require.NoError(t, db.Create(&row).Error)
+	require.NoError(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil))
+	var prior, current billingReportHead
+	require.NoError(t, db.Where("start = ?", start).Take(&prior).Error)
+	require.NoError(t, BuildBillingReportDay(ctx, start, "billing-test", "runner", nil, nil))
+	require.NoError(t, db.Where("start = ?", start).Take(&current).Error)
+	require.NotEqual(t, prior.Generation, current.Generation)
+	now := common.GetTimestamp()
+	require.NoError(t, db.Model(&billingReportGeneration{}).Where("id = ?", prior.Generation).Update("retired_at", now-9*86400).Error)
+	var restoreErr error
+	fired := false
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register("review:prune-race", func(tx *gorm.DB) {
+		if fired || tx.Statement.Table != "billing_report_generations" {
+			return
+		}
+		fired = true
+		restoreErr = RestoreBillingReportGeneration(ctx, time.Unix(start, 0).In(UsageAnalyticsZone()).Format(time.DateOnly), current.Generation, prior.Generation)
+	}))
+	_, err := PruneBillingReportGenerations(ctx, now)
+	require.NoError(t, err)
+	require.True(t, fired)
+	require.NoError(t, restoreErr)
+	var head billingReportHead
+	require.NoError(t, db.Where("start = ?", start).Take(&head).Error)
+	require.Equal(t, prior.Generation, head.Generation)
+	var generation billingReportGeneration
+	require.NoError(t, db.Where("id = ?", head.Generation).Take(&generation).Error)
+	assert.True(t, generation.Published)
+	_, _, err = ResolveBillingReport(ctx, start, start+86399, head.Generation)
+	assert.NoError(t, err)
 }

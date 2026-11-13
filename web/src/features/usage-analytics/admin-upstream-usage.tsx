@@ -8,29 +8,18 @@ import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 
-import { getAdminUsageUpstreamSummary } from './api'
+import { getAdminUsageUpstreamSummary, usageReportRebuildInterval } from './api'
 import { UsageExportButton } from './export-button'
 import type { UsagePeriodKind, UsageUpstreamChannelTotal } from './types'
 import { UpstreamUsageReport } from './upstream-usage-report'
 import { PublishedUsageRanking } from './usage-rankings'
 import { UsageReportEmpty } from './usage-report-empty'
 import { UsageReportStatus } from './usage-report-status'
-import { usageReportDayQuery } from './utils'
 
 export function AdminUpstreamUsage(props: {
   period: UsagePeriodKind
   date: string
-  reportDays?: string
   scrollContainer: RefObject<HTMLDivElement | null>
-  onDaySelect: (
-    day: string,
-    reportDays?: string,
-    periodReportDays?: string
-  ) => void
-  returnToPeriod?: {
-    period: Exclude<UsagePeriodKind, 'day'>
-    onClick: () => void
-  }
 }) {
   const { t } = useTranslation()
   const channelFilterId = useId()
@@ -43,26 +32,19 @@ export function AdminUpstreamUsage(props: {
   }>()
   const urlKey = url?.value
   const channelID = channel?.channel_id
-  const key = [
-    'usage-admin-upstream',
-    props.period,
-    props.date,
-    props.reportDays,
-  ]
+  const key = ['usage-admin-upstream', props.period, props.date]
   const params = {
     period: props.period,
     date: props.date,
-    report_days: props.reportDays,
   }
   const overview = useQuery({
     queryKey: key,
     queryFn: ({ signal }) =>
       getAdminUsageUpstreamSummary({ ...params, compact: true }, signal),
+    refetchInterval: usageReportRebuildInterval,
   })
   const versions = overview.data?.data.report_days
-  const reportDays = versions?.length
-    ? JSON.stringify(versions)
-    : props.reportDays
+  const reportDays = versions?.length ? JSON.stringify(versions) : undefined
   const overviewPublished =
     overview.isSuccess && (overview.data.data.published_days?.length ?? 1) > 0
   const urlReport = useQuery({
@@ -93,6 +75,7 @@ export function AdminUpstreamUsage(props: {
   let active = overview
   if (overviewPublished) active = channel ? detail : list
   const report = active.data?.data
+  const statusReport = report ?? overview.data?.data
   const hasPublishedDays = !!report && (report.published_days?.length ?? 1) > 0
   const hasUsage = !!report?.result.url_groups.length
   const channels = list.data?.data.result.channels ?? EMPTY_CHANNELS
@@ -169,17 +152,6 @@ export function AdminUpstreamUsage(props: {
     >
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div className='flex min-w-0 flex-wrap items-center gap-3'>
-          {props.returnToPeriod && (
-            <Button
-              variant='outline'
-              size='sm'
-              onClick={props.returnToPeriod.onClick}
-            >
-              {props.returnToPeriod.period === 'month'
-                ? t('Back to monthly summary')
-                : t('Back to weekly summary')}
-            </Button>
-          )}
           {channel && (
             <Button
               variant='outline'
@@ -252,12 +224,16 @@ export function AdminUpstreamUsage(props: {
           />
         </div>
       </div>
-      {report && (
+      {statusReport && (
         <UsageReportStatus
           report={{
-            ...report,
+            ...statusReport,
             incomplete_days:
-              overview.data?.data.incomplete_days ?? report.incomplete_days,
+              overview.data?.data.incomplete_days ??
+              statusReport.incomplete_days,
+            rebuilding_days: overview.data?.data.rebuilding_days,
+            source_unavailable_days:
+              overview.data?.data.source_unavailable_days,
           }}
           showReportPeriod
         />
@@ -268,27 +244,24 @@ export function AdminUpstreamUsage(props: {
         />
       )}
       {!overview.isError && !active.isError && !report && <LoadingState />}
-      {report && !hasPublishedDays && (
-        <EmptyState
-          bordered
-          title={t('Some usage data is still being prepared')}
-        />
-      )}
-      {report && hasPublishedDays && !hasUsage && (
-        <UsageReportEmpty period={report.period} />
-      )}
-      {report && hasPublishedDays && (hasUsage || props.period !== 'day') && (
-        <UpstreamUsageReport
-          report={{
-            ...report,
-            incomplete_days:
-              overview.data?.data.incomplete_days ?? report.incomplete_days,
-          }}
-          showModels={!!channel}
-          onDaySelect={(day) =>
-            props.onDaySelect(day, usageReportDayQuery(report, day), reportDays)
-          }
-        />
+      {report &&
+        !hasPublishedDays &&
+        !report.rebuilding_days?.length &&
+        !report.source_unavailable_days?.length && (
+          <EmptyState
+            bordered
+            title={t('Some usage data is still being prepared')}
+          />
+        )}
+      {report &&
+        hasPublishedDays &&
+        !hasUsage &&
+        !overview.data?.data.rebuilding_days?.length &&
+        !overview.data?.data.source_unavailable_days?.length && (
+          <UsageReportEmpty period={report.period} />
+        )}
+      {report && hasPublishedDays && hasUsage && (
+        <UpstreamUsageReport report={report} showModels={!!channel} />
       )}
       <div hidden={!!channel || channels.length === 0}>
         {channels.length > 0 && (

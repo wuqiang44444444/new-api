@@ -37,32 +37,33 @@ func ParseExprVersion(exprStr string) (version int, body string) {
 type requestRulePatcher struct {
 	requestRules         []RequestRuleTrace
 	restrictedIdentifier string
+	freezeConditions     bool
+	traceImageQuantity   bool
 }
 
 func (p *requestRulePatcher) Visit(node *ast.Node) {
 	if identifier, ok := (*node).(*ast.IdentifierNode); ok {
 		switch identifier.Value {
-		case requestRuleTraceFunction, requestRuleTraceIntFunction:
+		case requestRuleTraceFunction, requestRuleTraceIntFunction, imagePriceQuantityFunction, frozenTierConditionFunction:
 			p.restrictedIdentifier = identifier.Value
 		}
 		return
 	}
 
+	if p.traceImageQuantity {
+		traceImagePriceQuantity(node)
+	}
 	conditional, ok := (*node).(*ast.ConditionalNode)
-	if !ok || !conditional.Ternary || !usesRequestProbe(conditional.Cond) {
+	if !ok {
 		return
 	}
-	multiplier, ok := requestRuleNumber(conditional.Exp1)
-	fallback, fallbackOK := requestRuleNumber(conditional.Exp2)
-	if !ok || !fallbackOK || fallback != 1 {
+	rule, ok := requestMultiplierTrace(conditional)
+	if !ok {
 		return
 	}
-
 	ruleIndex := len(p.requestRules)
-	p.requestRules = append(p.requestRules, RequestRuleTrace{
-		Cond:       conditional.Cond.String(),
-		Multiplier: multiplier,
-	})
+	p.requestRules = append(p.requestRules, rule)
+	multiplier := rule.Multiplier
 
 	traceFunction := requestRuleTraceFunction
 	var multiplierNode ast.Node = &ast.FloatNode{Value: multiplier}
@@ -73,11 +74,15 @@ func (p *requestRulePatcher) Visit(node *ast.Node) {
 		}
 	}
 
+	condition := conditional.Cond
+	if p.freezeConditions {
+		condition = &ast.BoolNode{Value: false}
+	}
 	ast.Patch(node, &ast.CallNode{
 		Callee: &ast.IdentifierNode{Value: traceFunction},
 		Arguments: []ast.Node{
 			&ast.IntegerNode{Value: ruleIndex},
-			conditional.Cond,
+			condition,
 			multiplierNode,
 		},
 	})
@@ -115,6 +120,11 @@ type cachedEntry struct {
 	calculationProgram *vm.Program
 	calculationNodes   []CalculationNode
 	calculationError   error
+	frozenRulesOnce    sync.Once
+	frozenRulesProgram *vm.Program
+	frozenRulesError   error
+	frozenFixedMu      sync.Mutex
+	frozenFixedTiers   map[frozenFixedTierKey]*vm.Program
 	body               string
 	usesExchangeRate   bool
 	prog               *vm.Program
@@ -132,37 +142,39 @@ var (
 
 // compileEnvPrototypeV1 is the v1 type-checking prototype used at compile time.
 var compileEnvPrototypeV1 = map[string]any{
-	UsdExchangeRateFunc: func() (float64, error) { return 0, nil },
-	"image_count":       float64(1),
-	"p":                 float64(0),
-	"c":                 float64(0),
-	"len":               float64(0),
-	"cr":                float64(0),
-	"cc":                float64(0),
-	"cc1h":              float64(0),
-	"img":               float64(0),
-	"img_cr":            float64(0),
-	"img_o":             float64(0),
-	"ai":                float64(0),
-	"ao":                float64(0),
-	"tier":              func(string, float64) float64 { return 0 },
-	"fixed":             func(float64) float64 { return 0 },
-	"_trace":            func(int, bool, float64) float64 { return 1 },
-	"_trace_int":        func(int, bool, int) int { return 1 },
-	"header":            func(string) string { return "" },
-	"param":             func(string) any { return nil },
-	"u":                 func(string) any { return nil },
-	"has":               func(any, string) bool { return false },
-	"hour":              func(string) int { return 0 },
-	"minute":            func(string) int { return 0 },
-	"weekday":           func(string) int { return 0 },
-	"month":             func(string) int { return 0 },
-	"day":               func(string) int { return 0 },
-	"max":               math.Max,
-	"min":               math.Min,
-	"abs":               math.Abs,
-	"ceil":              math.Ceil,
-	"floor":             math.Floor,
+	UsdExchangeRateFunc:         func() (float64, error) { return 0, nil },
+	"image_count":               float64(1),
+	imagePriceQuantityFunction:  func(value float64) float64 { return value },
+	frozenTierConditionFunction: func(value bool, _ string, _ bool) bool { return value },
+	"p":                         float64(0),
+	"c":                         float64(0),
+	"len":                       float64(0),
+	"cr":                        float64(0),
+	"cc":                        float64(0),
+	"cc1h":                      float64(0),
+	"img":                       float64(0),
+	"img_cr":                    float64(0),
+	"img_o":                     float64(0),
+	"ai":                        float64(0),
+	"ao":                        float64(0),
+	"tier":                      func(string, float64) float64 { return 0 },
+	"fixed":                     func(float64) float64 { return 0 },
+	"_trace":                    func(int, bool, float64) float64 { return 1 },
+	"_trace_int":                func(int, bool, int) int { return 1 },
+	"header":                    func(string) string { return "" },
+	"param":                     func(string) any { return nil },
+	"u":                         func(string) any { return nil },
+	"has":                       func(any, string) bool { return false },
+	"hour":                      func(string) int { return 0 },
+	"minute":                    func(string) int { return 0 },
+	"weekday":                   func(string) int { return 0 },
+	"month":                     func(string) int { return 0 },
+	"day":                       func(string) int { return 0 },
+	"max":                       math.Max,
+	"min":                       math.Min,
+	"abs":                       math.Abs,
+	"ceil":                      math.Ceil,
+	"floor":                     math.Floor,
 }
 
 func getCompileEnv(version int) map[string]any {
@@ -284,7 +296,7 @@ func extractUsedVars(prog *vm.Program) map[string]bool {
 	ast.Find(node, func(n ast.Node) bool {
 		if id, ok := n.(*ast.IdentifierNode); ok {
 			switch id.Value {
-			case requestRuleTraceFunction, requestRuleTraceIntFunction:
+			case requestRuleTraceFunction, requestRuleTraceIntFunction, frozenTierConditionFunction:
 				return false
 			}
 			vars[id.Value] = true

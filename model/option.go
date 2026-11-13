@@ -195,6 +195,8 @@ func InitOptionMap() {
 }
 
 func loadOptionsFromDatabase() {
+	taskRequestEvidenceOptionMutex.Lock()
+	defer taskRequestEvidenceOptionMutex.Unlock()
 	requestPolicyOptionMutex.Lock()
 	defer requestPolicyOptionMutex.Unlock()
 	defer func() {
@@ -204,8 +206,13 @@ func loadOptionsFromDatabase() {
 	}()
 	passkeyOptionMutex.Lock()
 	defer passkeyOptionMutex.Unlock()
-	options, _ := AllOption()
+	options, err := AllOption()
+	if err != nil {
+		common.SysError("failed to load options from database")
+		return
+	}
 	passkeyOptions := make(map[string]string)
+	retentionLoaded := false
 	for _, option := range options {
 		if IsPasskeyDomainOption(option.Key) {
 			passkeyOptions[option.Key] = option.Value
@@ -214,7 +221,14 @@ func loadOptionsFromDatabase() {
 		err := updateOptionMap(option.Key, option.Value)
 		if err != nil {
 			common.SysLog(common.LogText("failed to update option map: %s", err.Error()))
+		} else if option.Key == system_setting.TaskRequestEvidenceRetentionOptionKey {
+			retentionLoaded = true
 		}
+	}
+	if !retentionLoaded {
+		common.OptionMapRWMutex.Lock()
+		delete(common.OptionMap, system_setting.TaskRequestEvidenceRetentionOptionKey)
+		common.OptionMapRWMutex.Unlock()
 	}
 	applyPasskeyDomainOptions(passkeyOptions)
 }
@@ -228,6 +242,10 @@ func SyncOptions(frequency int) {
 }
 
 func validateOptionValue(key string, value string) error {
+	if key == system_setting.TaskRequestEvidenceRetentionOptionKey {
+		_, err := system_setting.ParseTaskRequestEvidenceRetentionDays(value)
+		return err
+	}
 	if key == retiredErrorReportEnabledOption {
 		return errRetiredErrorReportEnabledOption
 	}
@@ -263,6 +281,9 @@ func validateOptionValue(key string, value string) error {
 }
 
 func UpdateOption(key string, value string) error {
+	if key == system_setting.TaskRequestEvidenceRetentionOptionKey {
+		return UpdateOptionsBulk(map[string]string{key: value})
+	}
 	if strings.HasPrefix(key, operation_setting.ResourceAlertPrefix) {
 		return UpdateOptionsBulk(map[string]string{key: value})
 	}
@@ -317,6 +338,10 @@ func UpdateOptionsBulk(values map[string]string) error {
 			return err
 		}
 	}
+	if _, ok := values[system_setting.TaskRequestEvidenceRetentionOptionKey]; ok {
+		taskRequestEvidenceOptionMutex.Lock()
+		defer taskRequestEvidenceOptionMutex.Unlock()
+	}
 	var policySnapshot *RequestPolicySnapshot
 	for key := range values {
 		if IsRequestPolicyOption(key) {
@@ -365,6 +390,11 @@ func UpdateOptionsBulk(values map[string]string) error {
 }
 
 func updateOptionMap(key string, value string) (err error) {
+	if key == system_setting.TaskRequestEvidenceRetentionOptionKey {
+		if err := validateOptionValue(key, value); err != nil {
+			return err
+		}
+	}
 	if key == retiredThemeOptionKey || key == legacyAccessTokenRetireAtKey || key == retiredErrorReportEnabledOption {
 		common.OptionMapRWMutex.Lock()
 		delete(common.OptionMap, key)

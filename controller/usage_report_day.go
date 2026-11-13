@@ -107,6 +107,7 @@ func respondPublishedUsage(c *gin.Context, period model.UsageAnalyticsPeriod, sc
 	common.ApiSuccess(c, gin.H{
 		"period": period, "filters": filters, "result": result, "generated_at": meta.AsOf,
 		"data_source": "published_daily_usage", "published_days": meta.PublishedDays, "incomplete_days": meta.IncompleteDays, "pending_refunds": meta.PendingRefunds, "report_days": meta.References,
+		"rebuilding_days": meta.RebuildingDays, "source_unavailable_days": meta.SourceUnavailableDays,
 		"coverage_note": usageAnalyticsCoverageNote(),
 	})
 }

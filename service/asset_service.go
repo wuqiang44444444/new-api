@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/seedanceplugin"
 	assetadapter "github.com/QuantumNous/new-api/relay/channel/task/seedance/assets"
+	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/asset_setting"
 )
 
@@ -29,6 +31,10 @@ func CreateRemoteAsset(ctx context.Context, group string, userID int, req dto.Cr
 	clienterrlog.Attach(ctx, clienterrlog.Report{Model: req.Model, Detail: assetKindMediaDetail(req.AssetKind, req.MediaType)})
 	if req.Name == "" || len([]rune(req.Name)) > dto.PublicAssetNameMaxCharacters || req.Model == "" ||
 		!model.ValidateAssetKind(req.AssetKind) || !model.ValidateAssetMediaType(req.MediaType) {
+		AttachAssetClientError(ctx, ErrInvalidAssetRequest, clienterrlog.Report{})
+		return dto.AssetResponse{}, ErrInvalidAssetRequest
+	}
+	if req.ManagementMode != "" && req.ManagementMode != "platform_hosted" {
 		AttachAssetClientError(ctx, ErrInvalidAssetRequest, clienterrlog.Report{})
 		return dto.AssetResponse{}, ErrInvalidAssetRequest
 	}
@@ -45,12 +51,13 @@ func CreateRemoteAsset(ctx context.Context, group string, userID int, req dto.Cr
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
-	channel, adapter, err := assetAdapterForModel(ctx, group, req.Model, userID)
+	channel, adapter, err := assetAdapterForModel(ctx, group, req.Model, userID, req.ManagementMode == "platform_hosted")
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
 	settings := channel.GetOtherSettings()
-	if settings.AssetUpstreamProtocol != dto.AssetUpstreamProtocolFunCloudHosted {
+	hosted := adapter.Profile() == kitdto.AssetUpstreamProfileFunCloudHosted
+	if !hosted {
 		if settings.AssetMinURLTTLSeconds <= 0 {
 			return dto.AssetResponse{}, ErrAssetUpstreamUnavailable
 		}
@@ -82,12 +89,16 @@ func CreateRemoteAsset(ctx context.Context, group string, userID int, req dto.Cr
 		Name:            req.Name,
 		MediaType:       req.MediaType,
 	}
-	if settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolFunCloudMaterial || settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolFunCloudHosted {
+	if settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolFunCloudMaterial || hosted {
 		source, sourceErr := openFunCloudAssetSource(ctx, remoteURL, req.MediaType)
 		if sourceErr != nil {
 			return dto.AssetResponse{}, sourceErr
 		}
 		defer source.Body.Close()
+		if hosted && source.Status != http.StatusOK {
+			clienterrlog.Attach(ctx, clienterrlog.Report{Stage: "source_fetch", Reason: "source_http_error"})
+			return dto.AssetResponse{}, ErrInvalidAssetRequest
+		}
 		assetRequest.Source = source.Body
 		assetRequest.SourceType = source.ContentType
 		assetRequest.SourceMaxBytes = funCloudMaterialMaxBytes
@@ -113,7 +124,7 @@ func GetRemoteAsset(ctx context.Context, group string, userID int, modelName, re
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
-	channel, adapter, err := assetAdapterForModel(ctx, group, modelName, userID)
+	channel, adapter, err := assetAdapterForModel(ctx, group, modelName, userID, strings.HasPrefix(resourceID, model.FunCloudHostedAssetIDPrefix))
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
@@ -138,7 +149,7 @@ func UpdateRemoteAsset(ctx context.Context, group string, userID int, resourceID
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
-	channel, adapter, err := assetAdapterForModel(ctx, group, modelName, userID)
+	channel, adapter, err := assetAdapterForModel(ctx, group, modelName, userID, strings.HasPrefix(resourceID, model.FunCloudHostedAssetIDPrefix))
 	if err != nil {
 		return dto.AssetResponse{}, err
 	}
@@ -158,7 +169,7 @@ func DeleteRemoteAsset(ctx context.Context, group string, userID int, modelName,
 	if err != nil {
 		return err
 	}
-	channel, adapter, err := assetAdapterForModel(ctx, group, modelName, userID)
+	channel, adapter, err := assetAdapterForModel(ctx, group, modelName, userID, strings.HasPrefix(resourceID, model.FunCloudHostedAssetIDPrefix))
 	if err != nil {
 		return err
 	}
@@ -176,7 +187,7 @@ func CreateAssetGroup(ctx context.Context, group string, userID int, req dto.Cre
 	clienterrlog.Attach(ctx, clienterrlog.Report{Model: req.Model})
 	req.RedirectURL = strings.TrimSpace(req.RedirectURL)
 	if req.Name == "" || len([]rune(req.Name)) > dto.PublicAssetNameMaxCharacters || len([]rune(req.Description)) > 300 ||
-		req.Model == "" || (req.GroupKind != model.AssetKindGeneral && req.GroupKind != model.AssetKindRealPerson) {
+		req.Model == "" || (req.ManagementMode != "" && (req.ManagementMode != "platform_hosted" || req.GroupKind != model.AssetKindGeneral)) || (req.GroupKind != model.AssetKindGeneral && req.GroupKind != model.AssetKindRealPerson) {
 		return dto.AssetGroupResponse{}, ErrInvalidAssetRequest
 	}
 	if req.RedirectURL != "" {
@@ -187,7 +198,7 @@ func CreateAssetGroup(ctx context.Context, group string, userID int, req dto.Cre
 	if req.GroupKind == model.AssetKindGeneral && req.Name == DefaultAssetGroupName {
 		return dto.AssetGroupResponse{}, ErrReservedAssetGroupName
 	}
-	channel, adapter, err := assetAdapterForModel(ctx, group, req.Model, userID)
+	channel, adapter, err := assetAdapterForModel(ctx, group, req.Model, userID, req.ManagementMode == "platform_hosted")
 	if err != nil {
 		return dto.AssetGroupResponse{}, err
 	}
@@ -251,7 +262,7 @@ func GetRemoteAssetGroup(ctx context.Context, group string, userID int, modelNam
 	if err != nil {
 		return dto.AssetGroupResponse{}, err
 	}
-	channel, adapter, err := assetAdapterForModel(ctx, group, modelName, userID)
+	channel, adapter, err := assetAdapterForModel(ctx, group, modelName, userID, !verificationSession && strings.HasPrefix(resourceID, model.FunCloudHostedGroupIDPrefix))
 	if err != nil {
 		return dto.AssetGroupResponse{}, err
 	}
@@ -313,7 +324,7 @@ func CheckAssetChannelConnectivity(ctx context.Context, channel *model.Channel) 
 	return nil
 }
 
-func assetAdapterForModel(ctx context.Context, group, modelName string, userID int) (*model.Channel, assetadapter.Adapter, error) {
+func assetAdapterForModel(ctx context.Context, group, modelName string, userID int, hosted bool) (*model.Channel, assetadapter.Adapter, error) {
 	clienterrlog.Attach(ctx, clienterrlog.Report{Model: strings.TrimSpace(modelName)})
 	if !asset_setting.Current().Enabled {
 		return nil, nil, ErrAssetLibraryUnavailable
@@ -326,18 +337,10 @@ func assetAdapterForModel(ctx context.Context, group, modelName string, userID i
 	if err != nil {
 		return nil, nil, ErrAssetUpstreamUnavailable
 	}
-	// An accessible MiniMax Link model publishes no asset operations and has
-	// no asset channel: answer with the existing unsupported-operation
-	// contract instead of resolving a Seedance channel or calling any asset
-	// upstream. The probe stays group-aware so models outside the caller's
-	// groups keep the existing not-found semantics and stay invisible.
 	if channel == nil {
-		minimaxChannel, minimaxErr := model.GetEnabledMiniMaxChannel(group, modelName, 0)
-		if minimaxErr != nil {
+		channel, err = model.GetEnabledMiniMaxChannel(group, modelName, 0)
+		if err != nil {
 			return nil, nil, ErrAssetUpstreamUnavailable
-		}
-		if minimaxChannel != nil {
-			return nil, nil, ErrUnsupportedAssetOperation
 		}
 	}
 	if channel == nil {
@@ -351,6 +354,11 @@ func assetAdapterForModel(ctx context.Context, group, modelName string, userID i
 			}
 		}
 		return nil, nil, ErrAssetModelNotFound
+	}
+	settings := channel.GetOtherSettings()
+	if hosted || settings.AssetUpstreamProtocol == "" || settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolNone ||
+		settings.AssetUpstreamProtocol == dto.AssetUpstreamProtocolFunCloudHosted {
+		return channel, newFunCloudHostedMaterialAdapter(userID, modelName, kitdto.PlatformHostedAssetMedia()), nil
 	}
 	clienterrlog.Attach(ctx, clienterrlog.Report{ChannelID: channel.Id, Protocol: string(channel.GetOtherSettings().AssetUpstreamProtocol)})
 	channel, adapter, err := assetAdapterWithAlert(channel, userID, modelName)
@@ -387,7 +395,7 @@ func seedanceAssetAdapterWithRevision(channel *model.Channel, userID int, modelN
 		if settings.AssetUpstreamProtocol != dto.AssetUpstreamProtocolFunCloudHosted {
 			return nil, ErrAssetLibraryUnavailable
 		}
-		return newFunCloudHostedMaterialAdapter(userID, modelName), nil
+		return newFunCloudHostedMaterialAdapter(userID, modelName, kitdto.PlatformHostedAssetMedia()), nil
 	}
 	var key, assetKey string
 	switch declaration.Credential {

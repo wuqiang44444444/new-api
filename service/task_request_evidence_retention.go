@@ -7,27 +7,17 @@ import (
 
 // 证据正文保留、读取侧到期判定与写入侧追加保护共用的部分。
 
-// EvidenceRetentionSeconds 返回当前配置的保留秒数；配置越界时按两天兜底，
-// 越界配置已在加载期报错，此处只防运行期异常输入。
+// EvidenceRetentionSeconds returns the normal retention policy. Disk pressure
+// requests its own fixed-cutoff cleanup and pauses capture independently.
 func EvidenceRetentionSeconds() int64 {
-	if evidenceDiskPressure.Load() {
-		return 86400
-	}
-	days := system_setting.GetTaskRequestEvidenceConfig().RetentionDays
-	if days < 1 || days > 2 {
-		return 2 * 86400
-	}
-	return int64(days) * 86400
+	return int64(system_setting.GetTaskRequestEvidenceRetentionPolicy().Days) * 86400
 }
 
 // evidenceRetentionDeadline 计算一条证据索引的有效到期时间：取
 // "索引创建时间 + 当前配置保留天数"与原有非零更早期限中的较早值；
 // 历史 retain_until=0（永久保留）同样受当前上限约束。
-func evidenceRetentionDeadline(createdAt, retainUntil int64, retentionDays int) int64 {
-	if retentionDays < 1 || retentionDays > 2 {
-		retentionDays = 2
-	}
-	deadline := createdAt + int64(retentionDays)*86400
+func evidenceRetentionDeadline(createdAt, retainUntil, retentionSeconds int64) int64 {
+	deadline := createdAt + retentionSeconds
 	if retainUntil > 0 && retainUntil < deadline {
 		return retainUntil
 	}
@@ -43,8 +33,7 @@ func evidenceBodyExpired(index *model.TaskRequestEvidence, now int64) bool {
 	if index.BodyExpired || index.CleanupRequestedAt > 0 {
 		return true
 	}
-	config := system_setting.GetTaskRequestEvidenceConfig()
-	deadline := evidenceRetentionDeadline(index.CreatedAt, index.RetainUntil, config.RetentionDays)
+	deadline := evidenceRetentionDeadline(index.CreatedAt, index.RetainUntil, EvidenceRetentionSeconds())
 	return deadline < now
 }
 

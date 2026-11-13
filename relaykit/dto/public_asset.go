@@ -41,12 +41,13 @@ type PublicAssetSourceMediaTypes struct {
 }
 
 type PublicAssetCreateExample struct {
-	Name         string                   `json:"name"`
-	AssetKind    string                   `json:"asset_kind"`
-	MediaType    string                   `json:"media_type"`
-	Model        string                   `json:"model"`
-	AssetGroupID string                   `json:"asset_group_id,omitempty"`
-	Source       PublicAssetSourceExample `json:"source"`
+	ManagementMode string                   `json:"management_mode,omitempty"`
+	Name           string                   `json:"name"`
+	AssetKind      string                   `json:"asset_kind"`
+	MediaType      string                   `json:"media_type"`
+	Model          string                   `json:"model"`
+	AssetGroupID   string                   `json:"asset_group_id,omitempty"`
+	Source         PublicAssetSourceExample `json:"source"`
 }
 
 type PublicAssetSourceExample struct {

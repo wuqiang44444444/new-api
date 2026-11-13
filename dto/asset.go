@@ -7,12 +7,13 @@ type AssetSource struct {
 }
 
 type CreateAssetRequest struct {
-	Name         string      `json:"name"`
-	AssetKind    string      `json:"asset_kind"`
-	MediaType    string      `json:"media_type"`
-	Model        string      `json:"model,omitempty"`
-	AssetGroupID string      `json:"asset_group_id,omitempty"`
-	Source       AssetSource `json:"source"`
+	ManagementMode string      `json:"management_mode,omitempty"`
+	Name           string      `json:"name"`
+	AssetKind      string      `json:"asset_kind"`
+	MediaType      string      `json:"media_type"`
+	Model          string      `json:"model,omitempty"`
+	AssetGroupID   string      `json:"asset_group_id,omitempty"`
+	Source         AssetSource `json:"source"`
 }
 
 type UpdateAssetRequest struct {
@@ -31,11 +32,12 @@ type AssetResponse struct {
 }
 
 type CreateAssetGroupRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	GroupKind   string `json:"group_kind"`
-	Model       string `json:"model"`
-	RedirectURL string `json:"redirect_url,omitempty"`
+	ManagementMode string `json:"management_mode,omitempty"`
+	Name           string `json:"name"`
+	Description    string `json:"description,omitempty"`
+	GroupKind      string `json:"group_kind"`
+	Model          string `json:"model"`
+	RedirectURL    string `json:"redirect_url,omitempty"`
 }
 
 type AssetGroupResponse struct {

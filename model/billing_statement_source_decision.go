@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -295,5 +296,12 @@ func RecordBillingSourceReviewDecision(ctx context.Context, user int, start, end
 			return err
 		}
 		return tx.Create(&BillingStatementAudit{Action: "review_source_issue", ActorId: actor, IdempotencyKey: billingSourceReviewKey(user, start), Reason: string(raw), Result: recorded.Status, CreatedAt: recorded.CreatedAt}).Error
-	})
+	}, billingSourceWriteTxOptions())
+}
+
+func billingSourceWriteTxOptions() *sql.TxOptions {
+	if DB.Dialector.Name() == "sqlite" {
+		return nil
+	}
+	return &sql.TxOptions{Isolation: sql.LevelReadCommitted}
 }

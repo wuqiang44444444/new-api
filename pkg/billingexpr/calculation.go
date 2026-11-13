@@ -36,6 +36,9 @@ func (e calculationError) Unwrap() error { return e.cause }
 type Calculation struct {
 	ExpressionVersion int                `json:"expression_version,omitempty"`
 	MatchedTier       string             `json:"matched_tier,omitempty"`
+	BillingUnit       BillingUnit        `json:"billing_unit,omitempty"`
+	ImageCount        *int               `json:"image_count,omitempty"`
+	FixedPrice        *float64           `json:"fixed_price,omitempty"`
 	UsageFacts        map[string]any     `json:"usage_facts,omitempty"`
 	RequestRules      []RequestRuleTrace `json:"request_rules,omitempty"`
 	Version           int                `json:"version"`
@@ -288,7 +291,7 @@ func (p *calculationPatcher) Visit(ptr *ast.Node) {
 	p.ids[*ptr] = d.ID
 }
 
-func compileCalculation(body string, version int) (*vm.Program, []CalculationNode, error) {
+func compileCalculation(body string, version int, fixedPricing bool) (*vm.Program, []CalculationNode, error) {
 	env := make(map[string]any)
 	for k, v := range getCompileEnv(version) {
 		env[k] = v
@@ -296,7 +299,7 @@ func compileCalculation(body string, version int) (*vm.Program, []CalculationNod
 	env["$billing_calculation"] = (*Calculation)(nil)
 	p := &calculationPatcher{ids: make(map[ast.Node]int), functions: make(map[reflect.Type]string)}
 	option := func(c *conf.Config) { p.config = c; c.Visitors = append(c.Visitors, p) }
-	program, err := expr.Compile(body, expr.Env(env), expr.Patch(&requestRulePatcher{}), option, expr.AsFloat64())
+	program, err := expr.Compile(body, expr.Env(env), expr.Patch(&requestRulePatcher{traceImageQuantity: fixedPricing}), option, expr.AsFloat64())
 	resolveCalculationPrivacy(p.nodes)
 	return program, p.nodes, err
 }

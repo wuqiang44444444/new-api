@@ -10,6 +10,7 @@ import (
 	taskdto "github.com/QuantumNous/new-api/dto"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -56,7 +57,8 @@ func (a *TaskAdaptor) ensureCreateConversion(requestContext *gin.Context, info *
 		// keeps the resolved provider model.
 		info.UpstreamModelName = upstreamModel
 	}
-	requestBytes, err := common.Marshal(contract.ModelArk)
+	providerRequest := service.HostedVideoProviderRequest(requestContext, contract.ModelArk)
+	requestBytes, err := common.Marshal(providerRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -77,9 +79,13 @@ func (a *TaskAdaptor) ensureCreateConversion(requestContext *gin.Context, info *
 	if callErr != nil {
 		return nil, relaycommon.NewVideoContractError("invalid_request", hookErrorMessage(callErr))
 	}
-	conversion, decodeErr := decodeCreateConversion(result, configuration, string(a.protocol), upstreamModel, contract.ModelArk)
+	conversion, decodeErr := decodeCreateConversion(result, configuration, string(a.protocol), upstreamModel, providerRequest)
 	if decodeErr != nil {
 		return nil, decodeErr
+	}
+	conversion.body, err = service.ResolveHostedVideoProviderBody(requestContext, conversion.body)
+	if err != nil {
+		return nil, err
 	}
 	conversion.plugin = plugin
 	a.pluginCreate = conversion

@@ -42,7 +42,6 @@ it('shows model-share charts and model usage details immediately across upstream
   }
   render(
     <UpstreamUsageReport
-      onDaySelect={() => {}}
       showModels
       report={{
         period: {
@@ -70,7 +69,8 @@ it('shows model-share charts and model usage details immediately across upstream
                   input_tokens: 30,
                   output_tokens: 10,
                   reference_amount: 500000,
-                  image_count: 2,
+                  image_count: 3,
+                  billable_images: 2,
                   seconds: '0.1',
                 }),
                 model('Model B', {
@@ -113,7 +113,7 @@ it('shows model-share charts and model usage details immediately across upstream
     screen.getByRole('region', { name: 'Upstream model breakdown' })
   )
   const calls = within(charts.getByRole('group', { name: 'Calls' }))
-  const tokens = within(charts.getByRole('group', { name: 'Total tokens' }))
+  const tokens = within(charts.getByRole('group', { name: 'Billable tokens' }))
   const amount = within(charts.getByRole('group', { name: 'Reference amount' }))
   expect(calls.getByText('Model A').closest('li')).toHaveTextContent(/9\s*75%/)
   expect(tokens.getByText('Model A').closest('li')).toHaveTextContent(
@@ -138,7 +138,7 @@ it('shows model-share charts and model usage details immediately across upstream
     'Model',
     'Calls',
     'Failed calls',
-    'Total tokens',
+    'Billable tokens',
     'Non-Token usage',
     'Reference amount',
   ])
@@ -146,7 +146,9 @@ it('shows model-share charts and model usage details immediately across upstream
   expect(within(row).getAllByRole('cell')[2]).toHaveTextContent(/^3$/)
   const successful = within(table).getByRole('row', { name: /Model B/ })
   expect(within(successful).getAllByRole('cell')[2]).toHaveTextContent(/^0$/)
-  expect(within(row).getByText('2 images')).toBeVisible()
+  expect(within(row).getByText('Billable image count · 2')).toBeVisible()
+  expect(within(row).queryByText(/Images generated/)).not.toBeInTheDocument()
+  expect(within(successful).getByText('Not applicable')).toBeVisible()
   const seconds = within(row).getByText('0.3 billing seconds')
   expect(seconds).toBeVisible()
   expect(within(table).queryByText('Known subtotal')).not.toBeInTheDocument()

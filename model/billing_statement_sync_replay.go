@@ -1,8 +1,7 @@
 package model
 
 import (
-	"fmt"
-	"strconv"
+	"encoding/json"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -11,7 +10,83 @@ import (
 	"github.com/expr-lang/expr/ast"
 	"github.com/expr-lang/expr/parser"
 	"github.com/shopspring/decimal"
+	"github.com/tidwall/gjson"
 )
+
+// Read each original object before JSON decoding can collapse duplicate keys.
+// Snapshot facts can be recorded directly or under admin_info.
+func hasDuplicateFrozenRequestRules(raw string) bool {
+	if !strings.Contains(raw, "request_rules") && !strings.Contains(raw, `\`) {
+		return false
+	}
+	var duplicate bool
+	checkRules := func(object gjson.Result) {
+		var seenRules bool
+		object.ForEach(func(key, value gjson.Result) bool {
+			if key.String() == "request_rules" {
+				duplicate = seenRules
+				seenRules = true
+			}
+			return !duplicate
+		})
+	}
+	root := gjson.Parse(raw)
+	checkRules(root)
+	if duplicate {
+		return true
+	}
+	root.ForEach(func(key, value gjson.Result) bool {
+		switch key.String() {
+		case "statement_snapshot":
+			checkRules(value)
+		case "admin_info":
+			value.ForEach(func(key, snapshot gjson.Result) bool {
+				if key.String() == "statement_snapshot" {
+					checkRules(snapshot)
+				}
+				return !duplicate
+			})
+		}
+		return !duplicate
+	})
+	return duplicate
+}
+
+func frozenStatementRequestRules(raw json.RawMessage) ([]billingexpr.RequestRuleTrace, bool) {
+	var entries []json.RawMessage
+	if common.Unmarshal(raw, &entries) != nil || entries == nil {
+		return nil, false
+	}
+	traces := make([]billingexpr.RequestRuleTrace, 0, len(entries))
+	for _, entry := range entries {
+		// Iterate the original object because decoding into a struct or map
+		// would silently overwrite an earlier occurrence of a field.
+		fields := make(map[string]string, 3)
+		valid := true
+		object := gjson.ParseBytes(entry)
+		if !object.IsObject() {
+			return nil, false
+		}
+		object.ForEach(func(key, value gjson.Result) bool {
+			name := strings.ToLower(key.String())
+			switch name {
+			case "cond", "multiplier", "matched":
+				_, duplicate := fields[name]
+				valid = !duplicate && value.Type != gjson.Null
+				fields[name] = value.Raw
+			}
+			return valid
+		})
+		var trace billingexpr.RequestRuleTrace
+		if !valid || common.UnmarshalJsonStr(fields["cond"], &trace.Cond) != nil || trace.Cond == "" ||
+			common.UnmarshalJsonStr(fields["multiplier"], &trace.Multiplier) != nil ||
+			common.UnmarshalJsonStr(fields["matched"], &trace.Matched) != nil {
+			return nil, false
+		}
+		traces = append(traces, trace)
+	}
+	return traces, true
+}
 
 func historicalBillingProbe(node ast.Node) bool {
 	id, ok := node.(*ast.IdentifierNode)
@@ -25,54 +100,32 @@ func historicalBillingProbe(node ast.Node) bool {
 	return false
 }
 
-func historicalStatementTierExpression(expression, tier string, unit billingexpr.BillingUnit, facts customerExportFacts) (string, bool) {
+func historicalStatementTierExpression(expression, tier string) (string, bool) {
 	_, body := billingexpr.ParseExprVersion(expression)
 	tree, err := parser.Parse(body)
 	if err != nil {
 		return "", false
 	}
-	root := tree.Node
-	imageFactor := false
-	if unit == billingexpr.BillingUnitRequest {
-		if product, ok := root.(*ast.BinaryNode); ok && product.Operator == "*" {
-			if count, ok := product.Right.(*ast.IdentifierNode); ok && count.Value == "image_count" {
-				root, imageFactor = product.Left, true
-			}
-		}
-	}
 	var leaves []*ast.CallNode
-	if !collectHistoricalStatementTiers(root, &leaves) {
+	if !collectHistoricalStatementTiers(tree.Node, &leaves) {
 		return "", false
 	}
 	var selected *ast.CallNode
 	for _, leaf := range leaves {
-		if unit == billingexpr.BillingUnitRequest {
-			fixed, ok := leaf.Arguments[1].(*ast.CallNode)
-			if !ok || !historicalStatementCall(fixed, "fixed", 1) {
-				return "", false
-			}
+		if leaf.Arguments[0].(*ast.StringNode).Value != tier {
+			continue
 		}
-		if leaf.Arguments[0].(*ast.StringNode).Value == tier {
-			if selected != nil && unit != billingexpr.BillingUnitRequest {
-				return "", false
-			}
-			selected = leaf
+		price, ok := leaf.Arguments[1].(*ast.CallNode)
+		if ok && historicalStatementCall(price, "fixed", 1) {
+			continue
 		}
+		if selected != nil {
+			return "", false
+		}
+		selected = leaf
 	}
 	if selected == nil {
 		return "", false
-	}
-	if unit == billingexpr.BillingUnitRequest {
-		price, ok := facts.float("fixed_price")
-		if !ok || price < 0 {
-			return "", false
-		}
-		// The writer saved the evaluated fixed() operand before image count.
-		value := fmt.Sprintf("tier(%q, fixed(%s))", tier, strconv.FormatFloat(price, 'g', -1, 64))
-		if imageFactor {
-			value += " * image_count"
-		}
-		return value, false
 	}
 	// A unique tier in a conditional tree freezes the evaluated branch. The
 	// branch's amount must have no other dependency on a missing input.
@@ -125,10 +178,10 @@ func historicalStatementImageTokens(facts customerExportFacts, semantic string) 
 	return 0, path != "" && (semantic == "anthropic" || semantic == "openai" && strings.HasPrefix(path, "/v1/images/"))
 }
 
-func replayTieredWithToolFees(log billingReconciliationLog, facts customerExportFacts, parsed parsedBillingReconciliationLog, modelBeforeGroup float64) (int64, string) {
+func frozenTieredAmountsWithToolFees(facts customerExportFacts, parsed parsedBillingReconciliationLog, modelBeforeGroup float64) (int64, int64, string) {
 	for _, legacy := range []string{"fee_quota", "image_generation_call_price", "web_search_price", "file_search_price"} {
 		if len(facts.other[legacy]) != 0 {
-			return 0, BillingOriginalReplayUnverified
+			return 0, 0, BillingOriginalReplayUnverified
 		}
 	}
 	var tools []struct {
@@ -136,17 +189,17 @@ func replayTieredWithToolFees(log billingReconciliationLog, facts customerExport
 		Price *float64 `json:"price"`
 	}
 	if common.Unmarshal(facts.other["tool_surcharges"], &tools) != nil || len(tools) == 0 {
-		return 0, BillingOriginalReplayUnverified
+		return 0, 0, BillingOriginalReplayUnverified
 	}
 	group := decimal.NewFromFloat(*parsed.discountRatio)
 	contract, ok := historicalStatementContractRatio(parsed)
 	if !ok || group.IsNegative() {
-		return 0, BillingOriginalReplayMissingContext
+		return 0, 0, BillingOriginalReplayMissingContext
 	}
 	var surchargeOriginal, surchargeBooked decimal.Decimal
 	for _, tool := range tools {
 		if tool.Count <= 0 || tool.Count > relaycommon.MaxBillableToolCallCount || tool.Price == nil || *tool.Price < 0 {
-			return 0, BillingOriginalReplayUnverified
+			return 0, 0, BillingOriginalReplayUnverified
 		}
 		amount := decimal.NewFromFloat(*tool.Price).Mul(decimal.NewFromInt(int64(tool.Count))).Div(decimal.NewFromInt(1000))
 		surchargeOriginal = surchargeOriginal.Add(amount.Mul(decimal.NewFromInt(historicalCustomerQuotaPerUnit)))
@@ -155,10 +208,10 @@ func replayTieredWithToolFees(log billingReconciliationLog, facts customerExport
 	model := decimal.NewFromFloat(modelBeforeGroup)
 	net, err := common.QuotaFromDecimalStrict(model.Mul(group).Mul(contract).Add(surchargeBooked))
 	original, originalErr := common.QuotaFromDecimalStrict(model.Add(surchargeOriginal))
-	if err != nil || originalErr != nil || net != log.Quota {
-		return 0, BillingOriginalReplayMismatch
+	if err != nil || originalErr != nil {
+		return 0, 0, BillingOriginalReplayMismatch
 	}
-	return int64(original), ""
+	return int64(original), int64(net), ""
 }
 
 func historicalStatementContractRatio(parsed parsedBillingReconciliationLog) (decimal.Decimal, bool) {

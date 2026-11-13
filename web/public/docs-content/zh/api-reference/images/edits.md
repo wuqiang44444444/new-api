@@ -19,7 +19,7 @@ operations:
 数量和格式。`content_type` 与 `parameters` 描述推荐请求编码；文件上传见本页表单示例，
 不能把 JSON 的图片对象直接当作表单文件字段。源图顺序及模型支持的 mask 以编辑合同为准。
 `api.image.async.stream_priority=false` 表示流式不优先于异步偏好，不代表模型支持 `stream` 参数。
-OpenAI／Azure 原生图片入口同时传 `stream=true` 时，通过受理检查后返回 `202`，由后台接收结果；
+OpenAI／Azure 原生图片入口同时传 `stream=true` 时仍返回 `202`，客户端随后查询任务。
 Gemini／Vertex／图片中转入口仍拒绝这一组合。受理后的幂等键提供平台任务幂等保证。
 异步受理需要平台私有对象存储；存储不可用返回 `503`，
 不扣费也不发送上游。
@@ -97,7 +97,7 @@ curl "{{OPENAI_BASE_URL}}/images/edits" \
 `file_id` 必须是当前原生图片服务可访问的图片文件 ID，不能使用本站 Batch 文件 ID、图片任务 ID 或素材 ID。
 JSON `mask` 同样使用单个引用对象，仅在模型声明支持时发送。原生 GPT Image 输入最多 16 张，
 输出 `n` 为 1～10；模型实际支持范围以元数据和服务说明为准。同步默认返回 `b64_json`，
-可用 `response_format: "url"` 请求非流式 URL 交付，转换由本站适配。上述示例已显式选择 URL。
+此示例使用 `response_format: "url"`，成功后读取 `data[].url`。
 
 协议来源：[OpenAI 图片编辑接口](https://developers.openai.com/api/reference/resources/images/methods/edit)。
 
@@ -118,19 +118,16 @@ JSON `mask` 同样使用单个引用对象，仅在模型声明支持时发送�
 此合同接受 HTTPS URL 或 JPEG/PNG/WebP Data URL，例如 `data:image/png;base64,<完整图片的Base64>`；
 不接受裸 Base64、图片引用对象或 `file_id`。最多 14 张，部分模型限制到 10 张或更少。
 字节输入每张最多 20 MiB、总计最多 50 MiB；部分模型单张限制为 10,000,000 字节。
-这些限制只属于统一图片适配，不能套用到原生 OpenAI 编辑。HTTPS URL 不由网关主动下载校验，
-调用方须保证格式、尺寸和处理期间可访问。未发布的遮罩、流式及其他字段不支持。
+这些限制适用于字符串引用。请保证 HTTPS URL 在处理期间可访问，且图片满足格式和尺寸要求。
+只发送当前模型公开的字段。
 
 两类 JSON 的输入顺序都应与提示词中的“第一张”“第二张”对应。输入图片数量不是输出 `n`。
 文件表单使用重复的 `image` 或 `image[]`，不要混用多套字段。
 
-默认同步返回 `data[]`，按模型和请求返回 URL 或 Base64；支持异步时加 `Prefer: respond-async` 后返回 202，再查询任务获得结果。异步结果存入
-平台对象存储，签名有效期为 300 秒，到期可重新查询。需要 URL 输入的服务会将字节参考图暂存私有
-对象存储，在实际发送时签发至少两小时的输入 URL；排队不会消耗该有效期。对象存储不可用时，
-需要上传的同步编辑及所有异步受理失败。同步结果 URL 可能来自上游，并不表示已由平台保存。
+默认同步返回 `data[]`。异步编辑返回 `202`，随后按[图片任务](images/tasks)查询结果。
+需要存储的编辑请求若在受理前遇到存储不可用，将返回 `503`。
 
 参考图数量可能影响费用；多图请求因价格尚未配置被拒绝时，联系管理员确认服务可用性。
-只使用当前部署已经开放并验证的模型规格。
 
 ## 异步编辑完整示例
 
@@ -286,20 +283,11 @@ data: [DONE]
 
 ## 返回格式
 
-JSON 可设置 `"response_format": "url"` 或 `"response_format": "b64_json"`；文件表单可使用
-`-F 'response_format=url'`。省略参数保持原有返回。原生 GPT Image 同样适用本站的非流式格式适配。
-已有 URL 直接交付，Base64 转 URL 使用平台对象存储；无需另加布尔开关。
-URL 有效期、流式边界、异步交付和失败计费见[返回格式](api-reference/images/generations)。
+JSON 与文件表单均可使用 `response_format` 选择 `url` 或 `b64_json`。默认值、下载有效期和交付错误见
+[图片返回格式](api-reference/images/generations#返回格式)。
 
 ## Gemini Lite 图片模型
 
-Gemini 3.1 Flash-Lite Image 使用本页标准接口。生成使用 JSON，编辑使用已发布的 JSON 图片引用
-或 multipart 文件。显式设置 `response_format=url`（multipart 使用同名表单字段），成功结果为
-`data[].url`；不要把 `response_format` 写成 `image_url`。
-
-Lite 的标准接口目前仅发布 `size=auto`（也可省略）和 `size=1024x1024`，以模型详情的 `size.enum`
-为准。前者由 Provider 决定原生 1K 输出比例，后者请求原生 1K 正方形；网关不缩放、裁切或重新编码。
-不接受 `size=1K`、任意 WxH 或 2K/4K；不把其他 Gemini 型号的像素表套用到 Lite。
-Vertex Lite 每张内联编辑图最多 7,000,000 解码字节，参数 `max_decoded_bytes` 发布该限制；
-客户端仍提交标准 `image` / `images` 或 multipart 文件，南向差异由网关适配。
-请以当前 Key 的模型可用性和管理员确认的验收范围为准。
+使用模型支持的 JSON 图片引用或 multipart 文件。`size` 取值见
+[Gemini Lite 图片尺寸](api-reference/images/generations#gemini-lite-图片模型)。Vertex Lite 每张内联编辑图
+最多 7,000,000 解码字节，见元数据 `max_decoded_bytes`。

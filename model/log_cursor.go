@@ -108,56 +108,66 @@ func GetLogCursorPage(ctx context.Context, userID int, filter LogFilter, cursor 
 		result.NextCursor = base64.RawURLEncoding.EncodeToString(data)
 		result.Items = result.Items[:size]
 	}
-	result.DetailRefs = make([]string, 0, len(result.Items))
-	expires := time.Now().Add(time.Hour).Unix()
-	for _, row := range result.Items {
-		raw, err := common.Marshal(logPageCursor{ID: row.Id, Time: row.CreatedAt, End: expires})
-		if err != nil {
-			return result, err
-		}
-		ref, err := common.EncryptShortLivedSecretForScope(logDetailScope(userID), string(raw))
-		if err != nil {
-			return result, err
-		}
-		result.DetailRefs = append(result.DetailRefs, ref)
-	}
 	offset := (page - 1) * size
 	result.Total = offset + len(result.Items)
 	if result.NextCursor != "" {
 		result.Total++
 	}
+	result.DetailRefs, err = formatLogPage(ctx, result.Items, userID, offset, role)
+	return result, err
+}
+
+// Both list paths expose the same summary and scope-bound detail reference.
+func formatLogPage(ctx context.Context, logs []*Log, userID, offset, role int) ([]string, error) {
+	detailRefs := make([]string, 0, len(logs))
+	expires := time.Now().Add(time.Hour).Unix()
+	for _, row := range logs {
+		raw, err := common.Marshal(logPageCursor{ID: row.Id, Time: row.CreatedAt, End: expires})
+		if err != nil {
+			return nil, err
+		}
+		ref, err := common.EncryptShortLivedSecretForScope(logDetailScope(userID), string(raw))
+		if err != nil {
+			return nil, err
+		}
+		detailRefs = append(detailRefs, ref)
+	}
 	if userID > 0 {
-		formatUserLogs(result.Items, offset)
+		formatUserLogs(logs, offset)
 	} else {
 		if role < common.RoleRootUser {
-			FormatAdminLogs(result.Items)
+			FormatAdminLogs(logs)
 		} else {
-			FormatRootLogs(result.Items)
+			FormatRootLogs(logs)
 		}
-		ids := make([]int, 0, len(result.Items))
-		for _, log := range result.Items {
+		channelIDs := make(map[int]struct{})
+		for _, log := range logs {
 			if log.ChannelId > 0 {
-				ids = append(ids, log.ChannelId)
+				channelIDs[log.ChannelId] = struct{}{}
 			}
 		}
-		if len(ids) > 0 {
+		if len(channelIDs) > 0 {
+			ids := make([]int, 0, len(channelIDs))
+			for id := range channelIDs {
+				ids = append(ids, id)
+			}
 			var rows []Channel
 			if err := DB.WithContext(ctx).Select("id", "name").Where("id IN ?", ids).Find(&rows).Error; err != nil {
-				return result, err
+				return nil, err
 			}
 			names := make(map[int]string, len(rows))
 			for _, row := range rows {
 				names[row.Id] = row.Name
 			}
-			for _, log := range result.Items {
+			for _, log := range logs {
 				log.ChannelName = names[log.ChannelId]
 			}
 		}
 	}
-	for _, row := range result.Items {
+	for _, row := range logs {
 		row.Other = logCursorSummaryOther(row.Other)
 	}
-	return result, nil
+	return detailRefs, nil
 }
 
 // List cells use these fields for the event's billed amount, tokens and timing.

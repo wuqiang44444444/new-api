@@ -1216,6 +1216,15 @@ function FullLogDetailsDialog(props: DetailsDialogProps) {
                       billingModeLabel(other.billing_facts.billing_mode)
                     )}
                   />
+                  {other.billing_facts.billing_mode === 'per_image' && (
+                    <DetailRow
+                      label={t('Billable image count')}
+                      value={
+                        other.billing_facts.billable_image_count ??
+                        t('Not recorded')
+                      }
+                    />
+                  )}
                   <LogDiscountCell other={other} t={t} />
                   <ContractSettlementRows
                     settlement={other.billing_facts.contract_settlement}

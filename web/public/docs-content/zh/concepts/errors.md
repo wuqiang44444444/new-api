@@ -51,13 +51,9 @@ operations: []
 
 ## 请求记录相关错误
 
-请求证据是尽力保存的观察数据。采集上限、正文格式、索引或存储故障不会拒绝业务，
-不会改变重试、结算、退款或任务结果；证据缺失也不能证明请求没有发送。业务本身的正文校验
-和正式输入、结果存储仍按对应接口规则执行。
-
 | HTTP 状态 | 错误码 | 处理方式 |
 | --- | --- | --- |
-| `503` | `evidence_unavailable` | durable attempt 的发送资格或结果无法核实；先查询任务或联系管理员，不自动重发 |
+| `503` | `evidence_unavailable` | 无法核实创建结果。已有任务 ID 时查询原任务，否则保留请求 ID 联系管理员。请暂停自动重发 |
 
 此 `503` 不表示已退款，也不能作为可安全重放的依据。
 
@@ -82,19 +78,11 @@ Seedance 与 H3 标准视频的生成状态与交付状态独立：查询可返�
 
 | HTTP 状态 | 错误码 | 调用方处理 |
 | --- | --- | --- |
-| `409` | `video_delivery_preparing` | 等待转存后重试查询或内容 GET，不重新创建 |
+| `409` | `video_delivery_preparing` | 稍后重试查询或内容 GET |
 | `410` | `video_delivery_unavailable` | 交付不可用，保留 ID 核查，不假定退款 |
-| `503` | `video_delivery_unavailable` | 当前签名存储不可用，有限重试 GET 或联系管理员 |
+| `503` | `video_delivery_unavailable` | 下载暂不可用，有限重试 GET 或联系管理员 |
 
-这些交付故障不改变已确认的生成成功和计费事实，不自动退款或重新生成。本站 OSS 签名 URL 从每次
-签发起有效 24 小时，下载不附平台 Key；对象仍保留且授权有效时查询原任务可续签。范围外原生视频
-保留原有过期规则，`video_content_expired` 不能作为本站托管结果的通用错误口径。
-完整下载与跳转规则见[ModelArk V3 视频](api-reference/videos/modelark#下载视频或末帧)。
-
-English: hosted standard video delivery errors do not change generation or billing facts. Retry the original
-GET for `409 video_delivery_preparing`; investigate `410 video_delivery_unavailable`; use bounded GET retries
-for `503 video_delivery_unavailable`. Do not regenerate or assume a refund. An authorized task query can renew
-an expired 86400-second signed URL while the object is retained; download the URL without an API key.
+交付故障不触发自动退款。签名 URL 到期后可尝试重新查询原任务，详见[视频下载](api-reference/videos/modelark#下载视频或末帧)。
 
 ## 限流与计费
 

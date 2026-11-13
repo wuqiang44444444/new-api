@@ -16,11 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { BillingImageTotals } from '@/features/usage-analytics/types'
+
 export type BillingSection = 'customer' | 'upstream'
 export type BillingDimension = 'api_key' | 'channel'
 export const BILLING_MODES = [
   'token',
   'per_call',
+  'per_image',
   'per_second',
   'duration_and_count',
   'unknown',
@@ -57,6 +60,7 @@ type BillingPeriod = {
 }
 
 type BillingUsage = {
+  billable_images?: number
   requests: number
   billable_calls: number
   refunded_calls: number
@@ -234,7 +238,7 @@ export type ProviderDiscount = {
   source_period?: number
 }
 
-export type ProviderUsage = {
+export type ProviderUsage = BillingImageTotals & {
   completed_images?: number
   seconds?: string | null
   seconds_unavailable_rows?: number
@@ -335,6 +339,18 @@ export type UpstreamDetailEvent =
   | 'channel_test'
 
 export type UpstreamDetailItem = {
+  billable_image_count?: number
+  billable_image_missing?: boolean
+  completed_image_count?: number
+  frozen_replay?: {
+    matched_tier?: string
+    token_inputs?: Record<string, number>
+    original_quota?: number
+    expected_quota?: number
+    booked_quota?: number
+    delta_quota?: number
+    reason?: string
+  }
   seconds_source?: 'recorded_usage' | 'billing_parameters' | 'refunded_hold'
   seconds?: string | null
   row_id: number

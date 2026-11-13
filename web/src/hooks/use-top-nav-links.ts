@@ -21,7 +21,10 @@ import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
 import { resolveDocsLink } from '@/lib/docs-link'
-import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
+import {
+  canShowModelSquare,
+  parseHeaderNavModulesFromStatus,
+} from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
 
 export type TopNavLink = {
@@ -46,8 +49,8 @@ export type TopNavLink = {
  */
 export function useTopNavLinks(): TopNavLink[] {
   const { t } = useTranslation()
-  const { status } = useStatus()
-  const { auth } = useAuthStore()
+  const { status, statusConfirmed } = useStatus()
+  const isAuthenticated = useAuthStore((state) => !!state.auth.user)
 
   // Parse HeaderNavModules
   const modules = useMemo(() => {
@@ -58,8 +61,6 @@ export function useTopNavLinks(): TopNavLink[] {
 
   // Documentation link (may be external)
   const docsLink = resolveDocsLink(status?.docs_link)
-
-  const isAuthed = !!auth?.user
 
   const links: TopNavLink[] = []
 
@@ -74,10 +75,8 @@ export function useTopNavLinks(): TopNavLink[] {
   }
 
   // Pricing
-  const pricing = modules?.pricing
-  if (pricing && typeof pricing === 'object' && pricing.enabled) {
-    const requiresAuth = pricing.requireAuth && !isAuthed
-    links.push({ title: t('Model Square'), href: '/pricing', requiresAuth })
+  if (statusConfirmed && canShowModelSquare(modules.pricing, isAuthenticated)) {
+    links.push({ title: t('Model Square'), href: '/pricing' })
   }
 
   // Replace the former rankings slot with documentation. Existing deployments

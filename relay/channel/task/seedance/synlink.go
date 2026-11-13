@@ -11,24 +11,24 @@ import (
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 )
 
-func validateSynlinkMedia(request *dto.ModelArkVideoCreateRequest) error {
+func validateSynlinkMedia(request *dto.ModelArkVideoCreateRequest, hostedFacts map[string]model.TaskHostedMediaFact) error {
 	for _, item := range request.Content {
 		for _, media := range []*dto.VideoMediaURL{item.ImageURL, item.VideoURL, item.AudioURL} {
 			if media == nil {
 				continue
 			}
 			ref := strings.TrimSpace(media.URL)
-			if strings.HasPrefix(ref, "asset://"+model.FunCloudHostedAssetIDPrefix) && item.Type == "image_url" && media == item.ImageURL {
+			if _, accepted := hostedFacts[ref]; accepted {
 				continue
 			}
 			// No documented prohibition of audio/video data URLs. Opaque asset
-			// references still require the registered hosted-image conversion.
+			// references still require a validated platform-hosted asset.
 			if (item.Type == "audio_url" || item.Type == "video_url") && strings.HasPrefix(ref, "data:") && strings.IndexByte(ref, ',') > len("data:") {
 				continue
 			}
 			parsed, err := url.Parse(ref)
 			if err != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-				return fmt.Errorf("this video protocol requires a platform-hosted image or an HTTP(S) media URL")
+				return fmt.Errorf("this video protocol requires a platform-hosted asset or an HTTP(S) media URL")
 			}
 		}
 	}

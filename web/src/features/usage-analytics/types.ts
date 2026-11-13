@@ -19,7 +19,16 @@ export interface UsageAnalyticsPeriod {
   days: UsageAnalyticsDay[]
 }
 
-export interface UsageNonTokenMetrics {
+export interface BillingImageTotals {
+  billable_images?: number
+  billable_image_missing_rows?: number
+  test_billable_images?: number
+  test_billable_image_missing_rows?: number
+}
+
+export interface UsageNonTokenMetrics extends BillingImageTotals {
+  billing_tokens_applicable?: boolean
+  billing_meter_unknown_rows?: number
   image_count?: number
   image_count_known?: boolean
   image_count_missing_rows?: number
@@ -182,6 +191,8 @@ export interface UsageAnalyticsEnvelope<T> {
   coverage_note: string
   published_days?: string[]
   incomplete_days?: string[] | null
+  rebuilding_days?: string[] | null
+  source_unavailable_days?: string[] | null
   report_days?: UsageReportDayReference[]
   pending_refunds?: { task_id: string; requested_at: number }[] | null
 }

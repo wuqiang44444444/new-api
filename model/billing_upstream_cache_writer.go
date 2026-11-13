@@ -17,7 +17,7 @@ func nativeUsageLogOmitsZeroCacheWrite(log billingReconciliationLog, other map[s
 	if log.Type != LogTypeConsume || isNativeChannelTestLog(log.Type, log.TokenId, log.TokenName, log.Content) {
 		return false
 	}
-	for _, key := range []string{"cache_write_tokens_reported", "cache_write_tokens", "cache_creation_tokens", "cache_creation_tokens_5m", "cache_creation_tokens_1h", "task_id", "is_task"} {
+	for _, key := range []string{"cache_write_tokens_reported", "cache_write_tokens", "cached_creation_tokens", "cache_creation_tokens", "cache_creation_tokens_5m", "cache_creation_tokens_1h", "task_id", "is_task"} {
 		if _, present := other[key]; present {
 			return false
 		}
@@ -74,7 +74,7 @@ func applyUpstreamTaskCacheApplicability(log billingReconciliationLog, other, sn
 			}
 		}
 	}
-	for _, key := range []string{"cache_tokens", "cache_write_tokens", "cache_creation_tokens", "cache_creation_tokens_5m", "cache_creation_tokens_1h", "cache_read_tokens_reported", "cache_write_tokens_reported"} {
+	for _, key := range []string{"cache_tokens", "cache_write_tokens", "cached_creation_tokens", "cache_creation_tokens", "cache_creation_tokens_5m", "cache_creation_tokens_1h", "cache_read_tokens_reported", "cache_write_tokens_reported"} {
 		if _, exists := other[key]; exists {
 			return
 		}

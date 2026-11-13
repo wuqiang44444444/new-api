@@ -260,7 +260,7 @@ func TestProtectedFetchRoundTripperRejectsPrivateTargetBeforeProxy(t *testing.T)
 	proxyURL := mustParseURL(t, "http://127.0.0.1:3128")
 	var dialed []string
 	client := newProtectedFetchHTTPClientWithProxy(
-		staticSSRFResolver{},
+		staticSSRFResolver{"localhost": {{IP: net.ParseIP("127.0.0.1")}}},
 		func(ctx context.Context, network, address string) (net.Conn, error) {
 			dialed = append(dialed, address)
 			return nil, errors.New("proxy should not be dialed")
@@ -327,4 +327,42 @@ func TestProtectedFetchRoundTripperReusesTransportPerProxy(t *testing.T) {
 	require.NotSame(t, direct, proxied)
 	require.True(t, direct.ForceAttemptHTTP2)
 	require.False(t, direct.DisableKeepAlives)
+}
+
+func TestProtectedFetchUsesConfiguredResolverAndRejectsPrivateRedirect(t *testing.T) {
+	const publicHost = "public-result.invalid"
+	const privateHost = "private-result.invalid"
+	var requested []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = append(requested, r.URL.Path)
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "http://"+privateHost+"/secret", http.StatusFound)
+			return
+		}
+		_, _ = io.WriteString(w, "image bytes")
+	}))
+	defer server.Close()
+	address := server.Listener.Addr().String()
+	var dialed []string
+	client := newProtectedFetchHTTPClientWithProxy(staticSSRFResolver{
+		publicHost:  {{IP: net.ParseIP("8.8.8.8")}},
+		privateHost: {{IP: net.ParseIP("198.18.0.20")}},
+	}, func(ctx context.Context, network, target string) (net.Conn, error) {
+		dialed = append(dialed, target)
+		return (&net.Dialer{}).DialContext(ctx, network, address)
+	}, staticProtection(&common.SSRFProtection{
+		AllowedPorts: []int{80}, ApplyIPFilterForDomain: true,
+	}), func(*http.Request) (*url.URL, error) { return nil, nil })
+
+	result, err := client.Get("http://" + publicHost + "/image")
+	require.NoError(t, err)
+	data, err := io.ReadAll(result.Body)
+	require.NoError(t, err)
+	require.NoError(t, result.Body.Close())
+	assert.Equal(t, "image bytes", string(data))
+	_, err = client.Get("http://" + publicHost + "/redirect")
+	require.Error(t, err)
+	assert.True(t, IsProtectedFetchPolicyError(err))
+	assert.Equal(t, []string{"/image", "/redirect"}, requested)
+	assert.Equal(t, []string{"8.8.8.8:80"}, dialed)
 }

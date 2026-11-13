@@ -2,7 +2,6 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 
-import { DayTotalsTable } from '../day-totals-table'
 import { UsageNonTokenCell } from '../metrics-cells'
 import { UsagePeriodPicker } from '../period-picker'
 import type { UsageAnalyticsMetrics } from '../types'
@@ -72,61 +71,6 @@ it('shows an explicitly recorded zero image count and marks partial seconds sepa
   expect(screen.getByText('29.25 billing seconds')).toBeInTheDocument()
   expect(screen.queryByText('Known subtotal')).not.toBeInTheDocument()
 })
-it('daily breakdown includes result classes, output usage and refund, and marks future dates', () => {
-  render(
-    <DayTotalsTable
-      dates={['2026-09-20', '2026-09-21']}
-      futureFlags={[false, true]}
-      days={[metrics, metrics]}
-      total={metrics}
-    />
-  )
-  expect(screen.getAllByText(/Failed/).length).toBeGreaterThan(0)
-  expect(screen.getAllByText(/Output/).length).toBeGreaterThan(0)
-  expect(screen.getAllByText(/Refund/).length).toBeGreaterThan(0)
-  expect(screen.getAllByText('Not started').length).toBeGreaterThan(0)
-})
-
-it('day mode hides the duplicate period-total column, week mode keeps it', () => {
-  render(
-    <DayTotalsTable
-      dates={['2026-09-21']}
-      futureFlags={[false]}
-      days={[metrics]}
-      total={metrics}
-    />
-  )
-  expect(screen.queryByText('Period total')).not.toBeInTheDocument()
-  cleanup()
-  render(
-    <DayTotalsTable
-      dates={['2026-09-15', '2026-09-16']}
-      futureFlags={[false, false]}
-      days={[metrics, metrics]}
-      total={metrics}
-    />
-  )
-  expect(screen.getByText('Period total')).toBeInTheDocument()
-})
-
-it('upstream daily breakdown keeps reference amounts visible when unknown and hides customer charges', () => {
-  render(
-    <DayTotalsTable
-      upstream
-      dates={['2026-09-21']}
-      futureFlags={[false]}
-      days={[metrics]}
-      total={metrics}
-    />
-  )
-  expect(
-    screen.queryByRole('rowheader', { name: 'Amount' })
-  ).not.toBeInTheDocument()
-  expect(
-    screen.getByRole('rowheader', { name: 'Reference amount' })
-  ).toBeInTheDocument()
-})
-
 it('period navigation uses dedicated period labels and moves by the period length', async () => {
   const onDateChange = vi.fn()
   render(
@@ -178,4 +122,22 @@ it('moves between calendar months without overflowing a month-end date', async (
   expect(onDateChange).toHaveBeenLastCalledWith('2024-02-01')
   await userEvent.click(screen.getByRole('button', { name: 'Previous period' }))
   expect(onDateChange).toHaveBeenLastCalledWith('2023-12-01')
+})
+
+it('separates customer and test pricing quantities from unrecorded delivery', () => {
+  render(
+    <UsageNonTokenCell
+      metrics={{
+        ...metrics,
+        billable_images: 561,
+        test_billable_images: 6,
+        billable_image_missing_rows: 1,
+        image_count_missing_rows: 553,
+      }}
+    />
+  )
+  expect(screen.getByText('Billable image count · 561')).toBeVisible()
+  expect(screen.getByText('Channel test billable images · 6')).toBeVisible()
+  expect(screen.getByText('Image count unrecorded')).toBeVisible()
+  expect(screen.getByText('Known subtotal')).toBeVisible()
 })

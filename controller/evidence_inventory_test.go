@@ -36,7 +36,7 @@ func TestEvidenceInventoryPagesOrphansAndKeepsLiveNamespaces(t *testing.T) {
 	require.NoError(t, model.DB.Callback().Query().Before("gorm:query").Register("inventory-query-count", func(*gorm.DB) { queries++ }))
 	t.Cleanup(func() { require.NoError(t, model.DB.Callback().Query().Remove("inventory-query-count")) })
 	stats := &evidenceRetentionStats{Cutoff: now}
-	require.NoError(t, cleanupEvidenceDatabase(context.Background(), store, stats, func() error { return nil }))
+	require.NoError(t, cleanupEvidenceDatabase(context.Background(), store, stats, 2*86400, func() error { return nil }))
 	assert.Less(t, queries, 20, "hundreds of namespaces must not trigger one lookup per namespace")
 	assert.EqualValues(t, 598, stats.DeletedFiles)
 	assert.Zero(t, stats.FailedItems)

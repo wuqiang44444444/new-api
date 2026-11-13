@@ -86,6 +86,12 @@ func TestCustomerStatementExportWorkerReuse(t *testing.T) {
 			stillPublished, err := SubmitCustomerExportJob(42, 42, request)
 			require.NoError(t, err)
 			assert.Equal(t, job.JobID, stillPublished.JobID)
+			// An in-place mutation cannot publish. Restore the fixture's
+			// original event and add a late independent funding event.
+			require.Error(t, model.BuildBillingReportDay(context.Background(), start, "export-fixture", "runner", nil, nil))
+			require.NoError(t, db.Model(&model.Log{}).Where("id = ?", log.Id).Update("quota", 100).Error)
+			require.NoError(t, db.Create(&model.Log{UserId: 42, TokenId: 7, ModelName: "test-model", Type: model.LogTypeRefund,
+				CreatedAt: start + 110, Quota: 10, RequestId: "late-refund", Other: `{"group_ratio":0.5}`}).Error)
 			require.NoError(t, model.BuildBillingReportDay(context.Background(), start, "export-fixture", "runner", nil, nil))
 			next, err := SubmitCustomerExportJob(42, 42, request)
 			require.NoError(t, err)

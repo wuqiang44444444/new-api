@@ -81,14 +81,23 @@ export function UsageTokensCell(props: { metrics: UsageTokenMetrics }) {
   )
 }
 
-export function UsageNonTokenCell(props: { metrics?: UsageNonTokenMetrics }) {
+export function UsageNonTokenCell(props: {
+  metrics?: UsageNonTokenMetrics
+  upstream?: boolean
+}) {
   const { t } = useTranslation()
-  const values = usageNonTokenValues(t, props.metrics)
+  const values = usageNonTokenValues(t, props.metrics, props.upstream)
   if (!values.length) {
     return (
       <span className='text-muted-foreground'>
-        <span aria-hidden='true'>—</span>
-        <span className='sr-only'>{t('Not applicable')}</span>
+        {props.upstream ? (
+          t('Not applicable')
+        ) : (
+          <>
+            <span aria-hidden='true'>—</span>
+            <span className='sr-only'>{t('Not applicable')}</span>
+          </>
+        )}
       </span>
     )
   }
@@ -97,6 +106,11 @@ export function UsageNonTokenCell(props: { metrics?: UsageNonTokenMetrics }) {
       {values.map((unit) => (
         <div key={unit.label}>
           {unit.text && <span>{unit.text}</span>}
+          {unit.showSubtotal && (
+            <span className='text-muted-foreground block text-xs'>
+              {t('Known subtotal')}
+            </span>
+          )}
           {unit.notes?.map((note) => (
             <span key={note} className='text-muted-foreground block text-xs'>
               {note}

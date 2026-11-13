@@ -7,7 +7,7 @@ import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { buttonVariants } from '@/components/ui/button'
 
-import { getUsageSelfSummary } from './api'
+import { getUsageSelfSummary, usageReportRebuildInterval } from './api'
 import { UsageExportButton } from './export-button'
 import { UsagePeriodPicker } from './period-picker'
 import { PersonalUsageKeyFilter } from './personal-usage-overview'
@@ -31,6 +31,7 @@ export function MyUsage(props: {
     queryKey: ['usage-self-summary', props.period, date],
     queryFn: ({ signal }) =>
       getUsageSelfSummary({ period: props.period, date }, signal),
+    refetchInterval: usageReportRebuildInterval,
   })
   const report = query.data?.data
   const selectedKey = report?.result.keys.find(

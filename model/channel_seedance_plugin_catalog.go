@@ -20,15 +20,16 @@ func seedancePublicModelAPIFromPlugin(configuration *jsplugin.SeedanceChannelCon
 			if !ok {
 				return dto.PublicModelAPI{}, false
 			}
-			assetDeclaration := configuration.Asset(string(assetProtocol))
-			if assetProtocol == "" {
-				assetDeclaration = configuration.Asset("none")
+			hosted := publicHostedAssetAPI(modelName)
+			if assetProtocol == "" || assetProtocol == dto.AssetUpstreamProtocolNone || assetProtocol == dto.AssetUpstreamProtocolFunCloudHosted {
+				return dto.PublicModelAPI{Video: api, Assets: &hosted}, true
 			}
+			assetDeclaration := configuration.Asset(string(assetProtocol))
 			if assetDeclaration == nil {
 				return dto.PublicModelAPI{}, false
 			}
 			assets := seedancePublicAssetAPIWithDeclaration(modelName, assetProtocol, ttl, reuseScope, assetDeclaration)
-			return dto.PublicModelAPI{Video: api, Assets: &assets}, true
+			return dto.PublicModelAPI{Video: api, Assets: &assets, HostedAssets: &hosted}, true
 		}
 	}
 	return dto.PublicModelAPI{}, false

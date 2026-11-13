@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button'
 interface CTAProps {
   className?: string
   isAuthenticated?: boolean
+  showPricing: boolean
 }
 
 const ENTERPRISE_CAPABILITIES = [
@@ -89,14 +90,16 @@ export function CTA(props: CTAProps) {
             <Button className='h-11 px-5' render={<Link to='/sign-up' />}>
               {t('Get Started')}
             </Button>
-            <Button
-              variant='outline'
-              className='h-11 px-5'
-              render={<Link to='/pricing' />}
-            >
-              {t('View Pricing')}
-              <ArrowRight data-icon='inline-end' />
-            </Button>
+            {props.showPricing && (
+              <Button
+                variant='outline'
+                className='h-11 px-5'
+                render={<Link to='/pricing' />}
+              >
+                {t('View Pricing')}
+                <ArrowRight data-icon='inline-end' />
+              </Button>
+            )}
           </div>
         </div>
 

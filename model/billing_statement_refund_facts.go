@@ -290,7 +290,7 @@ func buildBillingStatementRefundPreauthFacts(ctx context.Context, refunds []bill
 			continue
 		}
 		key := billingStatementRefundKey{userID: refund.UserId, tokenID: refund.TokenId, channelID: refund.ChannelId, model: parsed.customerModel, preauthID: parsed.refundPreauthLogId}
-		preauthRefs[parsed.refundPreauthLogId] = append(preauthRefs[parsed.refundPreauthLogId], billingStatementPreauthCandidate{key: key, refQuota: max(int64(refund.Quota), int64(0))})
+		preauthRefs[parsed.refundPreauthLogId] = append(preauthRefs[parsed.refundPreauthLogId], billingStatementPreauthCandidate{key: key, refQuota: int64(refund.Quota)})
 	}
 	if len(preauthRefs) == 0 {
 		return facts, nil
@@ -360,21 +360,17 @@ func buildBillingStatementRefundPreauthFacts(ctx context.Context, refunds []bill
 // identity mismatch, non-consume reference, shared reference or partial
 // refund keeps the association unknown (quality plan 2.1).
 func billingStatementPreauthFactFromOriginal(original billingStatementPreauthOriginal, candidates []billingStatementPreauthCandidate) (billingStatementRefundPreauthFact, bool) {
-	if original.Type != LogTypeConsume || len(candidates) != 1 {
+	if len(candidates) != 1 {
 		return billingStatementRefundPreauthFact{}, false
 	}
 	candidate := candidates[0]
-	if candidate.key.userID != original.UserId || candidate.key.tokenID != original.TokenId ||
-		candidate.key.channelID != original.ChannelId || candidate.refQuota != max(int64(original.Quota), int64(0)) {
-		return billingStatementRefundPreauthFact{}, false
-	}
 	source := billingReconciliationLog{
 		GroupName: original.GroupName, UserId: original.UserId, TokenId: original.TokenId, TokenName: "",
 		ChannelId: original.ChannelId, ModelName: original.ModelName, Type: original.Type,
 		PromptTokens: original.PromptTokens, CompletionTokens: original.CompletionTokens, Quota: original.Quota, Other: original.Other,
 	}
 	parsed := parseBillingReconciliationLog(source)
-	if parsed.customerModel != candidate.key.model {
+	if !billingStatementManualRefundMatches(original.Type, original.UserId, original.TokenId, original.ChannelId, parsed.customerModel, original.Quota, candidate) {
 		return billingStatementRefundPreauthFact{}, false
 	}
 	applyCustomerOriginalReplay(source, &parsed)
@@ -392,4 +388,12 @@ func billingStatementPreauthFactFromOriginal(original billingStatementPreauthOri
 		contractId:              parsed.contractId, contractVersion: parsed.contractVersion, contractName: parsed.contractName,
 		hasAuxiliaryCharge: parsed.hasAuxiliaryCharge, unavailable: parsed.unavailable,
 	}, true
+}
+
+// A manual preauth reference establishes a relationship only for the same
+// funding identity and a full refund. Callers also verify uniqueness.
+func billingStatementManualRefundMatches(logType, user, token, channel int, model string, quota int, candidate billingStatementPreauthCandidate) bool {
+	return logType == LogTypeConsume && user > 0 && token > 0 && quota >= 0 &&
+		candidate.key.userID == user && candidate.key.tokenID == token &&
+		candidate.key.channelID == channel && candidate.key.model == model && candidate.refQuota == int64(quota)
 }

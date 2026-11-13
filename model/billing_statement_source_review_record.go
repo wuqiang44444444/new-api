@@ -97,7 +97,7 @@ func RecordBillingSourceVerification(ctx context.Context, user int, start, end i
 			return err
 		}
 		return tx.Create(&BillingStatementAudit{Action: "verify_source_retention", ActorId: actor, IdempotencyKey: billingSourceReviewKey(user, start), Reason: string(auditRaw), Result: "intact", CreatedAt: nowSeconds()}).Error
-	})
+	}, billingSourceWriteTxOptions())
 }
 
 // An old free-text attestation cannot authorize the new reviewed workflow.

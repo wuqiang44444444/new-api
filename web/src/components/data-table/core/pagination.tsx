@@ -26,6 +26,7 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -41,6 +42,7 @@ type DataTablePaginationProps<TData> = {
   compact?: boolean
   pageSizes?: readonly number[]
   showPageCount?: boolean
+  allowPageJump?: boolean
 }
 
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50, 100] as const
@@ -49,6 +51,7 @@ export function DataTablePagination<TData>({
   compact = false,
   pageSizes = PAGE_SIZE_OPTIONS,
   showPageCount = false,
+  allowPageJump = false,
 }: DataTablePaginationProps<TData>) {
   const { t } = useTranslation()
   const pagination = table.getState().pagination
@@ -171,7 +174,10 @@ export function DataTablePagination<TData>({
         <div className='flex min-w-0 shrink-0 items-center gap-1 @lg/pagination:gap-1.5 @xl/pagination:gap-2'>
           <Button
             variant='outline'
-            className='text-muted-foreground hover:text-foreground disabled:text-muted-foreground/50 size-8 p-0 @max-lg/pagination:hidden'
+            className={cn(
+              'text-muted-foreground hover:text-foreground disabled:text-muted-foreground/50 size-8 p-0',
+              !allowPageJump && '@max-lg/pagination:hidden'
+            )}
             onClick={() => table.setPageIndex(0)}
             disabled={!table.getCanPreviousPage()}
           >
@@ -224,7 +230,10 @@ export function DataTablePagination<TData>({
           </Button>
           <Button
             variant='outline'
-            className='text-muted-foreground hover:text-foreground disabled:text-muted-foreground/50 size-8 p-0 @max-lg/pagination:hidden'
+            className={cn(
+              'text-muted-foreground hover:text-foreground disabled:text-muted-foreground/50 size-8 p-0',
+              !allowPageJump && '@max-lg/pagination:hidden'
+            )}
             onClick={() => table.setPageIndex(table.getPageCount() - 1)}
             disabled={!table.getCanNextPage()}
           >
@@ -232,6 +241,34 @@ export function DataTablePagination<TData>({
             <DoubleArrowRightIcon className='h-4 w-4' />
           </Button>
         </div>
+        {allowPageJump && totalPages > 1 && (
+          <form
+            className='flex shrink-0 items-center gap-1'
+            onSubmit={(event) => {
+              event.preventDefault()
+              const page = Number(new FormData(event.currentTarget).get('page'))
+              if (Number.isInteger(page) && page >= 1 && page <= totalPages) {
+                table.setPageIndex(page - 1)
+              }
+            }}
+          >
+            <Input
+              key={currentPage}
+              name='page'
+              type='number'
+              inputMode='numeric'
+              min={1}
+              max={totalPages}
+              required
+              aria-label={t('Page number')}
+              defaultValue={currentPage}
+              className='h-8 w-20 tabular-nums'
+            />
+            <Button type='submit' variant='outline' size='sm'>
+              {t('Go to page')}
+            </Button>
+          </form>
+        )}
       </div>
     </div>
   )

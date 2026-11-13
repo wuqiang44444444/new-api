@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -56,7 +57,13 @@ func currentFetchProtection() (*common.SSRFProtection, bool, error) {
 }
 
 func newProtectedFetchHTTPClient() *http.Client {
-	return newProtectedFetchHTTPClientWithDialer(nil, nil, nil)
+	resolver, err := protectedFetchResolver(os.Getenv("PROTECTED_FETCH_DNS_SERVER"))
+	if err != nil {
+		return newProtectedFetchHTTPClientWithDialer(nil, nil, func() (*common.SSRFProtection, bool, error) {
+			return nil, true, err
+		})
+	}
+	return newProtectedFetchHTTPClientWithDialer(resolver, nil, nil)
 }
 
 func newProtectedFetchHTTPClientWithDialer(resolver ssrfResolver, dialContext func(ctx context.Context, network, address string) (net.Conn, error), getProtection func() (*common.SSRFProtection, bool, error)) *http.Client {
@@ -89,7 +96,13 @@ func newProtectedFetchHTTPClientWithProxy(resolver ssrfResolver, dialContext fun
 			proxy:         proxy,
 			transports:    make(map[string]*http.Transport),
 		},
-		CheckRedirect: checkProtectedFetchRedirect,
+		// RoundTrip validates the redirected request with the same resolver.
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			return nil
+		},
 	}
 	if common.RelayTimeout != 0 {
 		client.Timeout = time.Duration(common.RelayTimeout) * time.Second
@@ -101,7 +114,7 @@ func (t *ssrfProtectedRoundTripper) RoundTrip(req *http.Request) (*http.Response
 	if req == nil || req.URL == nil {
 		return nil, fmt.Errorf("invalid request")
 	}
-	if err := ValidateSSRFProtectedFetchURL(req.URL.String()); err != nil {
+	if err := t.validateTarget(req.Context(), req.URL); err != nil {
 		return nil, err
 	}
 
@@ -185,7 +198,7 @@ func (d *protectedFetchDialer) DialContext(ctx context.Context, network, addr st
 		return nil, fmt.Errorf("invalid port: %s", portText)
 	}
 	if err := protection.ValidateNetworkTarget(host, port); err != nil {
-		return nil, err
+		return nil, protectedFetchPolicyError{err}
 	}
 
 	if ip := net.ParseIP(host); ip != nil {
@@ -207,7 +220,7 @@ func (d *protectedFetchDialer) DialContext(ctx context.Context, network, addr st
 			continue
 		}
 		if err := protection.ValidateResolvedIP(host, ip); err != nil {
-			return nil, err
+			return nil, protectedFetchPolicyError{err}
 		}
 		candidateIPs = append(candidateIPs, ip)
 	}

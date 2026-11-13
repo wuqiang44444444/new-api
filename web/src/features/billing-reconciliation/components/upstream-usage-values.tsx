@@ -64,6 +64,26 @@ function useUpstreamUsageMetrics(
       knownSubtotal: showImageSubtotal,
     })
   }
+  for (const [label, count, missing] of [
+    [
+      t('Billable image count'),
+      usage.billable_images,
+      usage.billable_image_missing_rows,
+    ],
+    [
+      t('Channel test billable images'),
+      usage.test_billable_images,
+      usage.test_billable_image_missing_rows,
+    ],
+  ] as const) {
+    if (count || missing) {
+      metrics.push({
+        label,
+        value: count ? format(count) : t('Not recorded'),
+        knownSubtotal: !!count && !!missing,
+      })
+    }
+  }
   if (usage.billable_calls > 0 || props.billingMode === 'per_call') {
     metrics.push({
       label: t('Billable calls'),

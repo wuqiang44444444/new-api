@@ -830,7 +830,7 @@ it('uses the selected URL, channel and frozen day for details and export', async
     )
   )
   expect(await screen.findByText('Page 1 of 1')).toBeVisible()
-  await user.click(screen.getByRole('button', { name: 'Total tokens' }))
+  await user.click(screen.getByRole('button', { name: 'Billable tokens' }))
   expect(api.get).toHaveBeenCalledWith(
     '/api/usage/admin/upstream-summary',
     expect.objectContaining({
@@ -890,6 +890,87 @@ it('uses the selected URL, channel and frozen day for details and export', async
   )
   expect(rankingButton).toHaveFocus()
   expect(screen.getByText('995')).toBeVisible()
+})
+
+it('shows non-token units in the channel ranking only when used for pricing', async () => {
+  const get = vi.mocked(api.get).getMockImplementation()
+  if (!get) throw new Error('Expected the usage API fixture')
+  vi.mocked(api.get).mockImplementation(async (url, config) => {
+    if (
+      url === '/api/usage/admin/upstream-summary' &&
+      config?.params?.rank_metric
+    ) {
+      const ranked = {
+        calls: 1,
+        missing_tokens: 0,
+        amount: 100,
+        pending_amount: 0,
+      }
+      return {
+        data: {
+          success: true,
+          data: {
+            total: 3,
+            items: [
+              {
+                ...ranked,
+                channel_id: 17,
+                name: 'Token-priced image channel',
+                tokens: 120,
+                non_token: {
+                  billing_tokens_applicable: true,
+                  image_count_missing_rows: 1,
+                },
+              },
+              {
+                ...ranked,
+                channel_id: 18,
+                name: 'Per-image channel',
+                tokens: 0,
+                non_token: {
+                  billable_image_missing_rows: 1,
+                  image_count: 1,
+                },
+              },
+              {
+                ...ranked,
+                channel_id: 19,
+                name: 'Mixed channel',
+                tokens: 240,
+                non_token: {
+                  billing_tokens_applicable: true,
+                  billable_images: 2,
+                  image_count: 3,
+                },
+              },
+            ],
+          },
+        },
+      }
+    }
+    return get(url, config)
+  })
+  mount(
+    <AdminUsage
+      period='day'
+      date={period.date}
+      section='upstream'
+      onSearchChange={vi.fn()}
+    />
+  )
+
+  const table = within(
+    await screen.findByRole('table', { name: 'Channel ranking' })
+  )
+  const token = within(table.getByRole('row', { name: /Token-priced image/ }))
+  expect(token.getByText('120')).toBeVisible()
+  expect(token.getByText('Not applicable')).toBeVisible()
+  const perImage = within(table.getByRole('row', { name: /Per-image channel/ }))
+  expect(perImage.getByText('Billable image count · unrecorded')).toBeVisible()
+  const mixed = within(table.getByRole('row', { name: /Mixed channel/ }))
+  expect(mixed.getByText('240')).toBeVisible()
+  expect(mixed.getByText('Billable image count · 2')).toBeVisible()
+  expect(table.queryByText(/Images generated/)).not.toBeInTheDocument()
 })
 
 it('offers a natural month when viewing upstream usage and keeps it when switching tabs', async () => {

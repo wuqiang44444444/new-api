@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -24,28 +24,9 @@ export function AdminUsage(props: {
   const { t } = useTranslation()
   const scrollContainer = useRef<HTMLDivElement>(null)
   const date = props.date ?? shiftDate(shanghaiToday(), -1)
-  const [drill, setDrill] = useState<{
-    date: string
-    period: UsagePeriodKind
-    reportDays?: string
-    sourcePeriod?: {
-      period: Exclude<UsagePeriodKind, 'day'>
-      date: string
-      reportDays?: string
-    }
-  }>()
   const section = props.section ?? 'customers'
   const period = props.period
-  const reportDays =
-    section === 'upstream' && drill?.date === date && drill.period === period
-      ? drill.reportDays
-      : undefined
-  const sourcePeriod =
-    section === 'upstream' && period === 'day' && drill?.date === date
-      ? drill.sourcePeriod
-      : undefined
   const setSection = (section: string) => {
-    setDrill(undefined)
     props.onSearchChange({
       period,
       date,
@@ -69,15 +50,12 @@ export function AdminUsage(props: {
           resolved={undefined}
           hideDailyRange
           onPeriodChange={(period) => {
-            setDrill(undefined)
             props.onSearchChange({ period, date, section: props.section })
           }}
           onMonthSelect={() => {
-            setDrill(undefined)
             props.onSearchChange({ period: 'month', date, section })
           }}
           onDateChange={(nextDate) => {
-            setDrill(undefined)
             props.onSearchChange({
               period,
               date: nextDate,
@@ -103,36 +81,6 @@ export function AdminUsage(props: {
             scrollContainer={scrollContainer}
             period={period}
             date={date}
-            reportDays={reportDays}
-            onDaySelect={(day, reportDays, periodReportDays) => {
-              if (period === 'day') return
-              setDrill({
-                period: 'day',
-                date: day,
-                reportDays,
-                sourcePeriod: { period, date, reportDays: periodReportDays },
-              })
-              props.onSearchChange({
-                period: 'day',
-                date: day,
-                section: 'upstream',
-              })
-            }}
-            returnToPeriod={
-              sourcePeriod
-                ? {
-                    period: sourcePeriod.period,
-                    onClick: () => {
-                      setDrill(sourcePeriod)
-                      props.onSearchChange({
-                        period: sourcePeriod.period,
-                        date: sourcePeriod.date,
-                        section: 'upstream',
-                      })
-                    },
-                  }
-                : undefined
-            }
           />
         </TabsContent>
       </Tabs>

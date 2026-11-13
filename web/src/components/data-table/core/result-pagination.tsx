@@ -12,6 +12,7 @@ export function ResultPagination(props: {
   onChange: (page: number, pageSize: number) => void
   label: string
   disabled?: boolean
+  allowPageJump?: boolean
   pageSizes?: readonly number[]
 }) {
   const pagination = { pageIndex: props.page - 1, pageSize: props.pageSize }
@@ -42,6 +43,7 @@ export function ResultPagination(props: {
         table={table}
         pageSizes={props.pageSizes}
         showPageCount
+        allowPageJump={props.allowPageJump}
       />
     </FieldSet>
   )

@@ -42,6 +42,7 @@ func init() {
 		"GET /api/error_log/":                                                          accessTokenScopeRule("ops:read"),
 		"GET /api/option/object_storage":                                               accessTokenScopeRule("option:read"),
 		"GET /api/option/mail":                                                         accessTokenScopeRule("option:read"),
+		"GET /api/option/request_evidence_retention":                                   accessTokenScopeRule("option:read"),
 		"PUT /api/option/mail":                                                         accessTokenScopeRule("option:write"),
 		"POST /api/option/mail/test":                                                   accessTokenScopeRule("option:write"),
 		"GET /api/system-info/client-error-log":                                        accessTokenScopeRule("ops:read"),

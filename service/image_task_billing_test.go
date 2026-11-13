@@ -18,6 +18,55 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestImageTaskSettlementPublishesTheChargedBranch(t *testing.T) {
+	const expression = `p > 30 ? tier("token", p * 2 + c * 4) : (param("quality") == "low" ? tier("shared", fixed(0.01667)) * image_count : tier("shared", fixed(0.05484)))`
+	for _, tc := range []struct {
+		quality, mode string
+		input, quota  int
+		images        int64
+	}{
+		{"low", model.BillingReconciliationModePerImage, 20, 16670, 2},
+		{"medium", model.BillingReconciliationModePerCall, 20, 27420, 0},
+		{"low", model.BillingReconciliationModeToken, 40, 80, 0},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			truncate(t)
+			seedUser(t, 41, 100000)
+			task := newWorkerImageTask(41, 100)
+			task.Properties.OriginModelName = "customer-image"
+			task.PrivateData.ImageTask.ChannelType = constant.ChannelTypeOpenAI
+			task.Status = model.TaskStatusSuccess
+			task.PrivateData.ImageTask.ImageCount = 1
+			task.PrivateData.ImageTask.Usage = &dto.Usage{PromptTokens: tc.input, CompletionTokens: 20, TotalTokens: tc.input + 20}
+			snap := tieredTestSnapshot(expression, 100)
+			task.PrivateData.BillingContext = &model.TaskBillingContext{TieredSnapshot: snap}
+			task.PrivateData.AsyncBilling = &model.TaskAsyncBillingContext{State: model.TaskBillingStatePending, TieredSnapshot: snap}
+			info := &relaycommon.RelayInfo{
+				TieredBillingSnapshot: snap,
+				BillingRequestInput:   &billingexpr.RequestInput{ImageCount: common.GetPointer(2)},
+			}
+			require.NoError(t, FreezeImageTaskBilling(t.Context(), task, info, &dto.ImageRequest{Quality: tc.quality}))
+			quota, _, err := imageTaskTargetQuota(t.Context(), task, task.PrivateData.ImageTask.Usage)
+			require.NoError(t, err)
+			require.Equal(t, tc.quota, quota)
+			persisted, err := common.DeepCopy(task)
+			require.NoError(t, err)
+			log, err := BuildTaskBillingDeliveryLog(persisted, model.TaskBillingDelivery{Event: "complete", AfterQuota: quota})
+			require.NoError(t, err)
+			log.CreatedAt, log.RequestId = 1100, "task-billing:41:complete"
+			require.NoError(t, model.LOG_DB.Create(log).Error)
+			statement, err := model.GetBillingCustomerStatement(t.Context(), 41, 1000, 1200, "api_key", 0, "", "")
+			require.NoError(t, err)
+			require.Len(t, statement.Groups, 1)
+			require.Len(t, statement.Groups[0].Models, 1)
+			line := statement.Groups[0].Models[0]
+			assert.Equal(t, tc.mode, line.BillingMode)
+			assert.Equal(t, tc.images, line.Usage.BillableImages)
+			assert.EqualValues(t, tc.quota, line.Usage.NetQuota)
+		})
+	}
+}
+
 func TestImageBillingFreezesEncryptedRequestProbe(t *testing.T) {
 	task := newWorkerImageTask(9905, 100)
 	snapshot := tieredTestSnapshot(`tier("base", (p + c) * (param("model") == "customer-image" ? 2 : 1) * (header("x-factor") == "double" ? 2 : 1))`, 100)

@@ -59,6 +59,7 @@ type CustomerExportFilters struct {
 	BillingReportCoverage *BillingExportCoverage    `json:"billing_report_coverage,omitempty"`
 	BillingReportVersion  string                    `json:"billing_report_version,omitempty"`
 	UsageReportDays       []UsageReportDayReference `json:"usage_report_days,omitempty"`
+	UsageReportSubtotal   bool                      `json:"usage_report_subtotal,omitempty"`
 	UsageView             string                    `json:"usage_view,omitempty"`
 	UsageSearch           string                    `json:"usage_search,omitempty"`
 	UsageURLKey           string                    `json:"usage_url_key,omitempty"`

@@ -61,12 +61,14 @@ export function UsageCustomerReport({
             </ReportCard>
           )}
           {hasUsage && personalView && <UsageModelRanking view={view} />}
-          {!hasUsage && (
-            <UsageReportEmpty
-              period={report.period}
-              personal={!!personalView}
-            />
-          )}
+          {!hasUsage &&
+            !report.rebuilding_days?.length &&
+            !report.source_unavailable_days?.length && (
+              <UsageReportEmpty
+                period={report.period}
+                personal={!!personalView}
+              />
+            )}
         </>
       )}
     </>

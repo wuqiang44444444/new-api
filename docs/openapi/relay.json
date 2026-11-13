@@ -79,7 +79,7 @@
       "get": {
         "summary": "获取模型列表",
         "deprecated": false,
-        "description": "获取模型目录。普通 NEWAPI 模型仍按当前 Key 的可用范围返回；未启用合同绑定时，所有已配置 Seedance/H3 Link 客户模型都会返回，并通过 `available`、`availability` 区分当前可调用、已禁用或受当前 Key 限制。图片和视频条目的 api 字段包含北向入口、完整允许参数及约束；视频条目还包含逐模型素材接口能力。公开元数据不会暴露 Provider 模型、渠道、凭据或南向私有路径。\n\n根据请求头自动识别返回格式：\n- 包含 `x-api-key` 和 `anthropic-version` 头时返回 Anthropic 格式\n- 包含 `x-goog-api-key` 头或 `key` 查询参数时返回 Gemini 格式\n- 其他情况返回 OpenAI 格式\n\n启用合同绑定的 API Key 仅展示合同当前有效范围与 Key 模型限制共同允许的模型；不同 Key 的目录可能不同。 / An active contract-bound API key sees models allowed by both its effective contract and its model restrictions.",
+        "description": "列出模型及其调用入口、参数和限制。未启用合同绑定时，Seedance／H3 标准视频目录也显示禁用或受 Key 限制的模型，请检查 available 和 availability。启用合同绑定时，目录只返回合同与 Key 均允许的模型。\n\n同时提供 x-api-key 和 anthropic-version 时返回 Anthropic 格式。提供 x-goog-api-key 或 key 查询参数时返回 Gemini 格式。其他请求返回 OpenAI 格式。",
         "operationId": "listModels",
         "tags": [
           "获取模型列表"
@@ -150,7 +150,7 @@
             "headers": {}
           },
           "500": {
-            "description": "合同目录投影加载失败。 / Contract discovery projection unavailable.",
+            "description": "暂时无法读取合同模型目录。",
             "content": {
               "application/json": {
                 "schema": {
@@ -164,7 +164,7 @@
             }
           },
           "503": {
-            "description": "合同授权加载暂不可用。 / Contract authorization temporarily unavailable.",
+            "description": "合同授权加载暂不可用。",
             "content": {
               "application/json": {
                 "schema": {
@@ -185,7 +185,7 @@
       "get": {
         "summary": "获取单个模型元数据",
         "deprecated": false,
-        "description": "按客户模型名获取与列表同构的单模型元数据。图片和视频条目返回北向入口、完整允许参数及约束；视频条目还返回逐操作素材能力和匿名素材复用域。响应不包含 Provider、上游原始模型名、Channel、凭据或南向路径。 启用合同绑定的 API Key 仅展示合同当前有效范围与 Key 模型限制共同允许的模型；不同 Key 的目录可能不同。 / An active contract-bound API key sees models allowed by both its effective contract and its model restrictions.",
+        "description": "按客户模型 ID 查询可用状态、调用入口、参数和限制。使用发起请求的同一 API Key 查询。",
         "operationId": "retrieveModel",
         "tags": [
           "获取模型列表"
@@ -203,7 +203,7 @@
         ],
         "responses": {
           "200": {
-            "description": "模型元数据；非合同路径模型不存在时保留 HTTP 200 的 model_not_found 错误信封，合同范围外使用 404。 / Model metadata; non-contract unknown models retain the HTTP 200 error envelope, while models outside an active contract return 404.",
+            "description": "模型元数据；非合同路径模型不存在时保留 HTTP 200 的 model_not_found 错误信封，合同范围外使用 404。",
             "content": {
               "application/json": {
                 "schema": {
@@ -230,7 +230,7 @@
             }
           },
           "500": {
-            "description": "合同目录投影加载失败。 / Contract discovery projection unavailable.",
+            "description": "暂时无法读取合同模型目录。",
             "content": {
               "application/json": {
                 "schema": {
@@ -244,7 +244,7 @@
             }
           },
           "503": {
-            "description": "合同授权加载暂不可用。 / Contract authorization temporarily unavailable.",
+            "description": "合同授权加载暂不可用。",
             "content": {
               "application/json": {
                 "schema": {
@@ -254,7 +254,7 @@
             }
           },
           "404": {
-            "description": "启用合同的 Key 无法访问该模型；非合同路径保留既有 200 错误信封。 / Model unavailable in the active contract; non-contract paths retain the existing 200 error envelope.",
+            "description": "启用合同的 Key 无法访问该模型；非合同路径保留既有 200 错误信封。",
             "content": {
               "application/json": {
                 "schema": {
@@ -454,7 +454,7 @@
       "post": {
         "summary": "创建图片",
         "deprecated": false,
-        "description": "图片生成默认返回同步结果。模型声明 api.image.async 时，可通过 Prefer: respond-async 显式选择平台任务；通过参数、资金及存储等受理检查后返回 202。OpenAI／Azure 原生图片入口同时支持 stream=true，由后台接收上游结果；Gemini／Vertex／图片中转入口仍拒绝 stream=true 与此偏好同时使用。未声明异步能力的模型忽略此偏好并返回同步结果。",
+        "description": "图片生成默认同步。模型声明 api.image.async 时，发送 Prefer: respond-async，成功受理返回 202。OpenAI／Azure 原生入口可同时发送 stream=true，仍返回任务。Gemini／Vertex／图片中转入口拒绝这一组合。未声明异步的模型忽略此偏好。",
         "operationId": "createImageGeneration",
         "tags": [
           "图片生成/OpenAI兼容格式"
@@ -565,7 +565,7 @@
             }
           },
           "502": {
-            "description": "上游或交付错误；image_delivery_failed 表示生成已计费，先读取可能存在的 data 取图，不自动重发。 / Upstream or delivery failure; image_delivery_failed means generation was charged. Recover data when present; do not regenerate.",
+            "description": "上游或交付错误；image_delivery_failed 表示生成已计费，先读取可能存在的 data 取图，不自动重发。",
             "content": {
               "application/json": {
                 "schema": {
@@ -598,7 +598,7 @@
             }
           },
           "503": {
-            "description": "生成前的依赖或受理容量检查失败，未受理。 / Dependency or admission capacity check failed before generation.",
+            "description": "生成前的依赖或受理容量检查失败，未受理。",
             "content": {
               "application/json": {
                 "schema": {
@@ -619,7 +619,7 @@
       "post": {
         "summary": "编辑图片",
         "deprecated": false,
-        "description": "图片编辑默认返回同步结果。模型声明 api.image.async 时，可通过 Prefer: respond-async 显式选择平台任务；通过参数、资金及存储等受理检查后返回 202。OpenAI／Azure 原生图片入口同时支持 stream=true，由后台接收上游结果；Gemini／Vertex／图片中转入口仍拒绝 stream=true 与此偏好同时使用。未声明异步能力的模型忽略此偏好并返回同步结果。",
+        "description": "图片编辑默认同步。模型声明 api.image.async 时，发送 Prefer: respond-async，成功受理返回 202。OpenAI／Azure 原生入口可同时发送 stream=true，仍返回任务。Gemini／Vertex／图片中转入口拒绝这一组合。未声明异步的模型忽略此偏好。",
         "operationId": "createImageEdit",
         "tags": [
           "图片生成/OpenAI兼容格式"
@@ -786,7 +786,7 @@
             }
           },
           "502": {
-            "description": "上游或交付错误；image_delivery_failed 表示生成已计费，先读取可能存在的 data 取图，不自动重发。 / Upstream or delivery failure; image_delivery_failed means generation was charged. Recover data when present; do not regenerate.",
+            "description": "上游或交付错误；image_delivery_failed 表示生成已计费，先读取可能存在的 data 取图，不自动重发。",
             "content": {
               "application/json": {
                 "schema": {
@@ -819,7 +819,7 @@
             }
           },
           "503": {
-            "description": "生成前的依赖或受理容量检查失败，未受理。 / Dependency or admission capacity check failed before generation.",
+            "description": "生成前的依赖或受理容量检查失败，未受理。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1170,7 +1170,7 @@
       "get": {
         "summary": "获取视频内容",
         "deprecated": false,
-        "description": "读取已成功视频任务的内容。Seedance Link 与 H3 标准视频托管就绪后，鉴权返回 302，Location 为自签发起有效 86400 秒的本站 OSS 预签名 GET 地址；跟随跳转不得向对象存储转发平台或 Provider Key。范围外原生视频仍按既有合同返回媒体字节。相同路径支持 HEAD，托管线路按 HEAD 方法签名；不能用查询响应中的 GET 签名地址替代 HEAD 签名。 / Hosted standard video results redirect after authentication; signed URLs authorize downloads without an API key. Native routes retain their existing behavior.",
+        "description": "下载已成功任务的内容。托管结果就绪后返回 302，Location 的签名地址自签发起有效 86400 秒。跟随跳转时请勿转发 API Key。原生视频返回媒体字节。同一路径支持 HEAD，托管结果会跳转至专用 HEAD 签名地址。",
         "operationId": "getVideoContent",
         "tags": [
           "视频生成/ModelArk格式"
@@ -1189,7 +1189,7 @@
           {
             "name": "part",
             "in": "query",
-            "description": "省略时下载主视频；last_frame 请求末帧。主视频 ready 不保证末帧 ready。 / Omit for the main video; last_frame requests the independently delivered last frame.",
+            "description": "省略时下载主视频；last_frame 请求末帧。主视频 ready 不保证末帧 ready。",
             "required": false,
             "schema": {
               "type": "string",
@@ -3149,7 +3149,7 @@
       "get": {
         "summary": "获取 ModelArk 标准视频模型目录",
         "deprecated": false,
-        "description": "返回所有已配置 Seedance（含 Seedance V）/H3 标准视频客户模型。禁用或受当前 Key 限制的模型继续返回，并由 available 与 availability 表达调用资格；api 字段提供完整 ModelArk V3 北向操作、逐模型创建参数和素材接口支持矩阵。",
+        "description": "列出标准视频模型。检查 available 和 availability 确认当前 Key 的调用资格，从 api 读取操作、参数与素材合同。",
         "operationId": "listModelArkVideoModels",
         "tags": [
           "视频生成/ModelArk格式"
@@ -3178,7 +3178,7 @@
       "post": {
         "summary": "创建 ModelArk 视频任务",
         "deprecated": false,
-        "description": "使用公开 ModelArk v3 合同创建视频任务。所有已配置 Seedance（含 Seedance V）/H3 标准视频客户模型及其当前可用状态、视频操作、创建参数和素材操作矩阵由 GET /v1/models 返回；available=false 的目录条目不能创建新任务。只发送 api.video.creation.parameters 与 content_types 登记的字段和内容；按 api.video.documentation_path 阅读模型专属的组合限制。客户名（如 seedance-2-0-v）不用于推断能力。 / Follow the model documentation_path and exact customer model ID; names do not define capabilities.",
+        "description": "使用 GET /v1/models 返回的模型 ID 创建任务。选择 available=true 的模型，按 api.video.creation 的参数和媒体约束构造请求。组合限制见 api.video.documentation_path。",
         "operationId": "createModelArkVideoTask",
         "tags": [
           "视频生成/ModelArk格式"
@@ -3207,7 +3207,7 @@
                 "additionalProperties": {
                   "type": "string",
                   "format": "binary",
-                  "description": "被 request 中 audio_url 引用的音频附件；名称唯一；MIME 仅用于存储，不验证媒体有效性；单文件最多 15 MiB（含上限，按实际字节数计算）。"
+                  "description": "由 request 中 audio_url.url 引用的音频附件。每个附件名唯一，单文件最多 15 MiB，格式和时长须符合模型要求。"
                 }
               }
             }
@@ -3235,7 +3235,17 @@
             }
           },
           "400": {
-            "description": "请求无效",
+            "description": "请求无效。托管引用的类型、归属、状态或媒体槽位无效时返回 invalid_video_parameter。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "服务暂不可用或创建结果待核实。托管对象或签名不可用时返回 internal_error，发生在预扣和提交前。create_outcome_unknown 表示需核查原请求，客户端应停止自动重发。",
             "content": {
               "application/json": {
                 "schema": {
@@ -3352,7 +3362,7 @@
     "/api/v3/contents/generations/tasks/{task_id}": {
       "get": {
         "summary": "查询 ModelArk 视频任务",
-        "description": "返回平台已保存的任务状态及当前交付结果。状态由后台更新，查询接口不触发上游状态刷新。",
+        "description": "查询任务状态和交付结果。任务处理中请退避查询原任务。",
         "deprecated": false,
         "operationId": "getModelArkVideoTask",
         "tags": [
@@ -3452,7 +3462,7 @@
         },
         "responses": {
           "201": {
-            "description": "素材已在所选 Seedance 渠道创建",
+            "description": "素材创建成功。托管素材返回 ready",
             "content": {
               "application/json": {
                 "schema": {
@@ -3462,7 +3472,7 @@
             }
           },
           "400": {
-            "description": "素材请求无效",
+            "description": "请求字段、源地址、媒体格式或大小无效，或代理源地址的剩余有效期不足",
             "content": {
               "application/json": {
                 "schema": {
@@ -3472,7 +3482,7 @@
             }
           },
           "404": {
-            "description": "客户模型不存在",
+            "description": "客户模型不存在，或显式托管素材组不存在或不属于当前账号",
             "content": {
               "application/json": {
                 "schema": {
@@ -3482,7 +3492,7 @@
             }
           },
           "409": {
-            "description": "所选 Channel 尚未配置系统默认素材组（default_asset_group_not_configured）",
+            "description": "普通代理素材需要默认组且当前模型尚未配置（default_asset_group_not_configured）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3492,7 +3502,7 @@
             }
           },
           "422": {
-            "description": "所选模型不支持该素材操作，或素材类型不受支持",
+            "description": "所选素材合同不支持该操作或 asset_kind 与 media_type 组合",
             "content": {
               "application/json": {
                 "schema": {
@@ -3521,7 +3531,7 @@
             "BearerAuth": []
           }
         ],
-        "description": "先读取模型 api.assets 的媒体类型、创建字段与管理模式。普通素材默认省略 asset_group_id；代理模式按已发布组策略履约，托管模式创建时复制图片并按账号共享。保存返回的 model、id 和 reference；不提供列表或创建幂等保证。"
+        "description": "读取 api.assets 或 api.hosted_assets 的素材合同。普通素材可省略 asset_group_id。代理模式使用已配置的素材服务。托管库统一接受图片、MP3 和 MP4，model 用于访问校验。只有提交视频生成时才按目标模型校验媒体限制。保存返回的 model、id 和 reference；不提供列表或创建幂等保证。"
       }
     },
     "/v1/assets/{asset_id}": {
@@ -3560,7 +3570,7 @@
             "BearerAuth": []
           }
         ],
-        "description": "携带原客户 model 查询单项素材。托管素材按账号隔离，代理模式由调用方管理不透明 ID。不能凭单项素材 ready 保证视频生成一定成功。"
+        "description": "携带有访问权限的客户 model 查询单项素材。托管素材按账号跨模型共享，代理模式按对应素材服务查询不透明 ID。不能凭单项素材 ready 保证视频生成一定成功。"
       },
       "patch": {
         "summary": "更新素材名称",
@@ -3604,7 +3614,7 @@
             "BearerAuth": []
           }
         ],
-        "description": "仅模型 operations 明确支持时更新单项素材的名称；不更换源图片。"
+        "description": "更新素材名称。调用前检查所用素材合同的 update_asset.supported。"
       },
       "delete": {
         "summary": "删除素材",
@@ -3634,7 +3644,7 @@
             "BearerAuth": []
           }
         ],
-        "description": "仅模型 operations 明确支持时删除单项素材。托管模式停止该素材的新引用，已经受理的引用继续执行；不通过删除素材取消视频任务。"
+        "description": "删除前检查所用素材合同的 delete_asset.supported。托管素材删除后不能用于新任务，已受理的任务继续执行。"
       }
     },
     "/v1/asset-groups": {
@@ -4491,6 +4501,10 @@
           },
           "assets": {
             "$ref": "#/components/schemas/PublicAssetAPI"
+          },
+          "hosted_assets": {
+            "$ref": "#/components/schemas/PublicAssetAPI",
+            "description": "默认素材合同为代理模式时，通过此字段读取账号级托管素材合同。"
           }
         }
       },
@@ -4773,7 +4787,7 @@
           "max_decoded_bytes": {
             "type": "integer",
             "minimum": 1,
-            "description": "每张内联参考图解码后的字节上限；数组中逐张计算，不是 URL 长度或整个数组的总预算。 / Maximum decoded bytes per inline reference image, including each array item."
+            "description": "每张内联参考图解码后的字节上限；数组中逐张计算，不是 URL 长度或整个数组的总预算。"
           }
         }
       },
@@ -4829,7 +4843,7 @@
         "properties": {
           "supported": {
             "type": "boolean",
-            "description": "该客户模型是否支持素材操作。"
+            "description": "当前素材合同是否可用。"
           },
           "documentation_path": {
             "type": "string",
@@ -4841,7 +4855,7 @@
               "caller_managed_stateless",
               "platform_hosted"
             ],
-            "description": "代理模式由调用方管理素材 ID；托管模式由平台保存图片及素材组，按账号共享。以部署方已完成验收并启用的能力为准。"
+            "description": "代理模式由调用方管理素材 ID。托管素材及素材组按账号共享。"
           },
           "requires_model": {
             "type": "boolean",
@@ -4853,25 +4867,26 @@
           },
           "reuse_scope": {
             "type": "string",
-            "description": "匿名素材复用域；仅非空值完全相同时才可尝试跨模型复用，不证明存在性、所有权、ready 状态或永久兼容。",
+            "description": "匿名素材复用域。代理引用比较代理域，托管素材按账号跨模型共享。生成时遵循目标模型的输入合同。",
             "example": "asset_scope_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
           },
           "media": {
             "type": "array",
+            "description": "素材库的入库类型和素材组要求。托管库统一接受图片、MP3 和 MP4。仅提交视频生成时才按目标模型合同校验媒体类型、角色、数量、组合和规格。",
             "items": {
               "$ref": "#/components/schemas/PublicAssetMedia"
             }
           },
           "operations": {
             "type": "array",
-            "description": "统一素材北向的完整操作表；supported=false 表示该模型明确不支持对应操作。",
+            "description": "素材操作、调用路径和可用状态。supported=false 表示当前素材合同不支持该操作。",
             "items": {
               "$ref": "#/components/schemas/PublicAPIOperation"
             }
           },
           "creation": {
             "$ref": "#/components/schemas/PublicAssetCreation",
-            "description": "仅在 create_asset 可用时返回；描述客户应如何构造 POST /v1/assets 及平台已经验证的限制。"
+            "description": "create_asset 可用时返回，包含 POST /v1/assets 的请求字段和限制。"
           }
         }
       },
@@ -4997,13 +5012,13 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0,
-            "description": "source.expires_at 提供时，其剩余有效期至少应达到该值；expires_at 可省略。"
+            "description": "代理模式填写 source.expires_at 时，剩余有效期须至少达到该值。托管模式返回 0，源 URL 需在复制时有效。"
           },
           "max_bytes": {
             "type": "integer",
             "format": "int64",
             "minimum": 1,
-            "description": "仅在网关会抓取并上传素材的协议上返回。"
+            "description": "源文件大小上限，单位为字节。字段存在时须遵守此上限。"
           },
           "redirect_limit": {
             "type": "integer",
@@ -5014,7 +5029,7 @@
           },
           "accepted_content_types": {
             "type": "array",
-            "description": "仅返回平台已验证并强制校验的 MIME；不臆测未验证的 Provider 尺寸、码率或格式限制。",
+            "description": "平台校验的源文件 MIME。托管音频使用 audio/mpeg，托管视频使用 video/mp4。",
             "items": {
               "$ref": "#/components/schemas/PublicAssetSourceMediaTypes"
             }
@@ -5060,6 +5075,11 @@
           "source"
         ],
         "properties": {
+          "management_mode": {
+            "type": "string",
+            "enum": ["platform_hosted"],
+            "description": "显式选择账号级托管库。省略时沿用已配置的上游代理，未配置代理时使用托管库。"
+          },
           "name": {
             "type": "string"
           },
@@ -6430,7 +6450,7 @@
               "url",
               "b64_json"
             ],
-            "description": "非流式结果格式：url 对应 data[].url，b64_json 对应 data[].b64_json；image_url 不是合法取值或结果字段。省略时同步按模型默认，平台异步查询默认 URL；异步格式在创建时冻结，查询参数不能修改。GPT Image 的 URL 转换由平台完成；SSE 沿用原事件格式。 / Non-streaming format: url returns data[].url; b64_json returns data[].b64_json. image_url is not a format or result field. Omission preserves the synchronous model default; platform tasks default to URL. Task format is frozen at creation; SSE retains its event format."
+            "description": "非流式结果格式。url 对应 data[].url，b64_json 对应 data[].b64_json。省略时同步使用模型默认值，异步默认 URL。异步格式在创建时指定，SSE 沿用模型的流式协议。"
           },
           "user": {
             "type": "string"
@@ -6534,7 +6554,7 @@
               "url",
               "b64_json"
             ],
-            "description": "非流式结果格式：url 对应 data[].url，b64_json 对应 data[].b64_json；image_url 不是合法取值或结果字段。省略时同步按模型默认，平台异步查询默认 URL；异步格式在创建时冻结，查询参数不能修改。GPT Image 的 URL 转换由平台完成；SSE 沿用原事件格式。 / Non-streaming format: url returns data[].url; b64_json returns data[].b64_json. image_url is not a format or result field. Omission preserves the synchronous model default; platform tasks default to URL. Task format is frozen at creation; SSE retains its event format."
+            "description": "非流式结果格式。url 对应 data[].url，b64_json 对应 data[].b64_json。省略时同步使用模型默认值，异步默认 URL。异步格式在创建时指定，SSE 沿用模型的流式协议。"
           },
           "quality": {
             "type": "string"
@@ -6637,11 +6657,11 @@
               "properties": {
                 "url": {
                   "type": "string",
-                  "description": "图片下载地址，字段名为 url，不是 image_url；及时保存。仅本站签名 URL 固定 300 秒，其他地址有效期由图片服务决定。 / Download URL, named url rather than image_url. Only platform-signed URLs have a fixed 300-second lifetime."
+                  "description": "图片下载地址，字段名为 url，不是 image_url；及时保存。仅本站签名 URL 固定 300 秒，其他地址有效期由图片服务决定。"
                 },
                 "b64_json": {
                   "type": "string",
-                  "description": "Base64 编码的完整图片字节，不含 Data URL 前缀；应解码后保存，不能当作下载地址。 / Base64-encoded image bytes without a Data URL prefix; decode before saving."
+                  "description": "Base64 编码的完整图片字节，不含 Data URL 前缀；应解码后保存，不能当作下载地址。"
                 },
                 "revised_prompt": {
                   "type": "string"
@@ -7762,12 +7782,12 @@
         "properties": {
           "model": {
             "type": "string",
-            "description": "客户可见的标准视频模型 ID。一个已启用客户模型对应一个类型化视频渠道；实际可用性与逐字段范围以 GET /v1/models 的 api.video 为准。 / Customer model ID; consult its api.video contract."
+            "description": "GET /v1/models 返回的客户模型 ID。创建前检查 available 和 api.video。"
           },
           "content": {
             "type": "array",
             "minItems": 1,
-            "description": "统一 ModelArk V3 文本和媒体条目。媒体类型、角色及组合以模型公开合同为准；asset:// 引用按素材管理模式处理，托管图片在预扣前校验账号归属和引用可用性，代理素材最终兼容性由素材服务判断。",
+            "description": "文本和媒体条目。按目标模型的生成参数选择媒体类型、角色、数量和组合。托管引用须属于当前账号且可用，可按模型规则与直接 URL 混用。",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -7977,7 +7997,7 @@
             "type": "integer",
             "minimum": -1,
             "maximum": 3600,
-            "description": "视频时长；0 无效，仅当模型 special_values 包含 -1 时支持智能时长。逐模型范围与默认值以 api.video 为准：H3 为 4–15 秒（默认 6，不支持 -1）；Seedance V 为 4–15 或 4–30 秒（默认 5，支持 -1）。 / Use per-model limits and special_values; -1 is not universal."
+            "description": "视频时长；0 无效，仅当模型 special_values 包含 -1 时支持智能时长。逐模型范围与默认值以 api.video 为准：H3 为 4–15 秒（默认 6，不支持 -1）；Seedance V 为 4–15 或 4–30 秒（默认 5，支持 -1）。"
           },
           "callback_url": {
             "type": "string",
@@ -7985,7 +8005,7 @@
           },
           "resolution": {
             "type": "string",
-            "description": "输出分辨率。穷举允许值与必填性由 api.video.creation.parameters 中对应项决定；enum 为硬限制，suggested_values 仅为非穷举推荐。不能把推荐列表当白名单，也不能把缺少 enum 当作任意分辨率均已验证。"
+            "description": "输出分辨率。穷举允许值与必填性由 api.video.creation.parameters 中对应项决定；enum 为硬限制，suggested_values 仅为非穷举推荐。未提供 enum 时，请按对应模型文档选择分辨率。"
           },
           "ratio": {
             "type": "string",
@@ -8004,7 +8024,7 @@
           },
           "generate_audio": {
             "type": "boolean",
-            "description": "是否生成音频。以当前 api.video 参数列表为准；Seedance V 默认 false，H3 不发布此开关，显式 true/false 均不可发送。 / Seedance V defaults to false; H3 does not expose this field."
+            "description": "是否生成音频。以当前 api.video 参数列表为准；Seedance V 默认 false，H3 不发布此开关，显式 true/false 均不可发送。"
           },
           "watermark": {
             "type": "boolean"
@@ -8282,7 +8302,7 @@
           "expires_at": {
             "type": "integer",
             "format": "int64",
-            "description": "可选 URL 过期时间（Unix 秒）；填写时必须满足模型公开的最短剩余有效期。"
+            "description": "可选 URL 过期时间（Unix 秒）。代理模式填写时须满足模型公开的最短剩余有效期，托管模式要求源地址在复制时有效。"
           }
         }
       },
@@ -8297,6 +8317,11 @@
           "source"
         ],
         "properties": {
+          "management_mode": {
+            "type": "string",
+            "enum": ["platform_hosted"],
+            "description": "显式选择账号级托管库。省略时沿用已配置的上游代理，未配置代理时使用托管库。"
+          },
           "name": {
             "type": "string",
             "maxLength": 64
@@ -8399,6 +8424,11 @@
           "model"
         ],
         "properties": {
+          "management_mode": {
+            "type": "string",
+            "enum": ["platform_hosted"],
+            "description": "显式选择账号级托管库。省略时沿用已配置的上游代理，未配置代理时使用托管库。"
+          },
           "name": {
             "type": "string",
             "maxLength": 64
@@ -8567,7 +8597,7 @@
         "properties": {
           "url": {
             "type": "string",
-            "description": "创建时选择 url 或省略格式后，查询返回的 300 秒签名下载地址；字段名不是 image_url。 / A 300-second signed download URL when creation selected url or omitted the format."
+            "description": "创建时选择 url 或省略格式后，查询返回的 300 秒签名下载地址；字段名不是 image_url。"
           },
           "url_expires_at": {
             "type": "integer",
@@ -8575,7 +8605,7 @@
           },
           "b64_json": {
             "type": "string",
-            "description": "Base64 编码的完整图片字节，不含 Data URL 前缀；应解码后保存，不能当作下载地址。 / Base64-encoded image bytes without a Data URL prefix; decode before saving."
+            "description": "Base64 编码的完整图片字节，不含 Data URL 前缀；应解码后保存，不能当作下载地址。"
           },
           "mime_type": {
             "type": "string"
@@ -8621,7 +8651,7 @@
           },
           "stream_priority": {
             "type": "boolean",
-            "description": "false 表示 stream=true 不优先于异步偏好；不代表该模型支持 stream 参数。OpenAI／Azure 原生图片入口以后台任务接收流式；Gemini／Vertex／图片中转入口仍拒绝两者同时使用。"
+            "description": "false 表示异步偏好优先于 stream=true。仅在模型允许时同时发送两者。"
           }
         },
         "example": {
@@ -8894,7 +8924,7 @@
               "url",
               "b64_json"
             ],
-            "description": "非流式结果格式：url 对应 data[].url，b64_json 对应 data[].b64_json；image_url 不是合法取值或结果字段。省略时同步按模型默认，平台异步查询默认 URL；异步格式在创建时冻结，查询参数不能修改。GPT Image 的 URL 转换由平台完成；SSE 沿用原事件格式。 / Non-streaming format: url returns data[].url; b64_json returns data[].b64_json. image_url is not a format or result field. Omission preserves the synchronous model default; platform tasks default to URL. Task format is frozen at creation; SSE retains its event format."
+            "description": "非流式结果格式。url 对应 data[].url，b64_json 对应 data[].b64_json。省略时同步使用模型默认值，异步默认 URL。异步格式在创建时指定，SSE 沿用模型的流式协议。"
           },
           "user": {
             "type": "string"
@@ -9083,7 +9113,7 @@
               "url",
               "b64_json"
             ],
-            "description": "非流式结果格式：url 对应 data[].url，b64_json 对应 data[].b64_json；image_url 不是合法取值或结果字段。省略时同步按模型默认，平台异步查询默认 URL；异步格式在创建时冻结，查询参数不能修改。GPT Image 的 URL 转换由平台完成；SSE 沿用原事件格式。 / Non-streaming format: url returns data[].url; b64_json returns data[].b64_json. image_url is not a format or result field. Omission preserves the synchronous model default; platform tasks default to URL. Task format is frozen at creation; SSE retains its event format."
+            "description": "非流式结果格式。url 对应 data[].url，b64_json 对应 data[].b64_json。省略时同步使用模型默认值，异步默认 URL。异步格式在创建时指定，SSE 沿用模型的流式协议。"
           }
         }
       },
@@ -9118,7 +9148,7 @@
             "minItems": 1
           }
         },
-        "description": "显式像素尺寸须使用小写 x，两边均在范围内且宽高比精确匹配；auto 由参数 default_value 单独表达。 / Explicit pixel sizes use lowercase x, bounded dimensions and an exact listed aspect ratio; auto is described by default_value."
+        "description": "显式像素尺寸须使用小写 x，两边均在范围内且宽高比精确匹配；auto 由参数 default_value 单独表达。"
       },
       "ImageDeliveryError": {
         "type": "object",
@@ -9159,11 +9189,11 @@
               "properties": {
                 "url": {
                   "type": "string",
-                  "description": "图片下载地址，字段名为 url，不是 image_url；及时保存。仅本站签名 URL 固定 300 秒，其他地址有效期由图片服务决定。 / Download URL, named url rather than image_url. Only platform-signed URLs have a fixed 300-second lifetime."
+                  "description": "图片下载地址，字段名为 url，不是 image_url；及时保存。仅本站签名 URL 固定 300 秒，其他地址有效期由图片服务决定。"
                 },
                 "b64_json": {
                   "type": "string",
-                  "description": "Base64 编码的完整图片字节，不含 Data URL 前缀；应解码后保存，不能当作下载地址。 / Base64-encoded image bytes without a Data URL prefix; decode before saving."
+                  "description": "Base64 编码的完整图片字节，不含 Data URL 前缀；应解码后保存，不能当作下载地址。"
                 },
                 "revised_prompt": {
                   "type": "string"
@@ -9175,10 +9205,10 @@
                 }
               }
             },
-            "description": "若已保留原始结果，可从中取回图片；格式可能不同于请求。没有可恢复结果时可省略。 / Original recoverable images, possibly in a different format; omitted when unavailable."
+            "description": "若已保留原始结果，可从中取回图片；格式可能不同于请求。没有可恢复结果时可省略。"
           }
         },
-        "description": "生成已完成并计费，格式交付失败；保存原始结果，不重发生成请求。 / Generation completed and was charged, but format delivery failed; recover originals without regenerating."
+        "description": "生成已完成并计费，格式交付失败；保存原始结果，不重发生成请求。"
       },
       "ModelDiscoveryError": {
         "type": "object",
@@ -9197,7 +9227,7 @@
             "type": "string"
           }
         },
-        "description": "合同模型目录加载失败；不能将其解释为空目录或无权限。 / Contract model discovery failed; this is not an empty catalog or an authorization denial."
+        "description": "合同模型目录加载失败；不能将其解释为空目录或无权限。"
       }
     },
     "parameters": {

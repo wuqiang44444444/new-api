@@ -103,7 +103,6 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 		if filters.Language == "zh" {
 		}
 	}
-	writer.setBillingCoverage(filters)
 	scope := customerExportScopeColumns{QuotaPerUnit: filters.QuotaPerUnit, Currency: filters.Currency, CurrencyRate: filters.CurrencyRate, GeneratedAt: common.GetTimestamp()}
 	progress := model.CustomerExportProgress{}
 	gate := customerExportSummaryGate(pressure, job, &progress)
@@ -113,6 +112,16 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 		}
 		return gate(ctx)
 	}, AfterBatch: func(count int) error { progress.Scanned += int64(count); return nil }}
+	baseWidth := len(writer.header)
+	if filters.FieldVersion >= dailyBillingExportFieldVersion {
+		writer.header = append(writer.header, billingImageTotalsCSVHeader(filters.Language)...)
+		label := "Completed images"
+		if filters.Language == "zh" {
+			label = "实际出图张数"
+		}
+		writer.header = append(writer.header, label)
+	}
+	writer.setBillingCoverage(filters)
 	err = model.ScanUpstreamExportSummary(ctx, filters, policy, func(channelID int, row model.ProviderURLChannelModelSummary) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -178,10 +187,10 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 				grouping = "按渠道 ID"
 			}
 			writer.header[3] = "Channel scope"
-			writer.header[len(writer.header)-2] = "Grouping basis"
+			writer.header[baseWidth-2] = "Grouping basis"
 			if filters.Language == "zh" {
 				writer.header[3] = "渠道范围"
-				writer.header[len(writer.header)-2] = "归组依据"
+				writer.header[baseWidth-2] = "归组依据"
 			}
 		}
 		record := []string{
@@ -221,6 +230,10 @@ func executeUpstreamSummaryExport(ctx context.Context, job *model.CustomerExport
 			exportCsvCellGuard(strings.Join(row.CustomerModels, "; ")),
 			grouping,
 			exportYesNo(row.DataQuality != nil && row.DataQuality.HasEstimatedOriginal),
+		}
+		if filters.FieldVersion >= dailyBillingExportFieldVersion {
+			record = append(record, billingImageTotalsCSVCells(row.Usage.BillingImageTotals)...)
+			record = append(record, positiveBillingMeterCSV(row.Usage.CompletedImages))
 		}
 		if err := writer.AppendRecord(record); err != nil {
 			return err

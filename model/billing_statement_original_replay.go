@@ -15,7 +15,7 @@ import (
 
 // CustomerOriginalReplayVersion identifies the rules used to construct a
 // customer billing projection from frozen evidence.
-const CustomerOriginalReplayVersion = 5
+const CustomerOriginalReplayVersion = 10
 
 // Native historical logs used the gateway's fixed quota denomination.
 const historicalCustomerQuotaPerUnit = 500_000
@@ -37,7 +37,19 @@ func applyCustomerOriginalReplay(log billingReconciliationLog, parsed *parsedBil
 	if _, ok := recordedStatementOriginalQuota(log, *parsed); ok {
 		return
 	}
-	original, reason := replayCustomerOriginal(log, *parsed)
+	var original int64
+	var reason string
+	state := billingContractApplicableState(*parsed)
+	if replay := parsed.frozenReplay; replay != nil && (state == combinationContractApplicableNo || state == combinationContractApplicableYes) && !parsed.hasAuxiliaryCharge {
+		reason = replay.Reason
+		if replay.OriginalQuota != nil {
+			original = *replay.OriginalQuota
+		} else if reason == "" {
+			reason = BillingOriginalReplayUnverified
+		}
+	} else {
+		original, reason = replayCustomerOriginal(log, *parsed)
+	}
 	if reason == BillingOriginalReplayMissingUsage {
 		if amount, count, ok := recoverUniqueImageOutputOriginal(log, *parsed); ok {
 			parsed.replayedOriginalQuota = &amount
@@ -97,66 +109,116 @@ func replayCustomerOriginalFromEvidence(log billingReconciliationLog, parsed par
 		}
 		return replayNativeRatioOriginal(log, facts, parsed)
 	}
+	result, reason := evaluateFrozenBillingExpression(log, facts, *parsed.discountRatio, requireFixedTier)
+	if reason != "" {
+		return 0, reason
+	}
+	original, booked, reason := frozenExpressionAmounts(facts, parsed, result.TieredResult)
+	if reason != "" {
+		return 0, reason
+	}
+	if booked != int64(log.Quota) {
+		return 0, BillingOriginalReplayMismatch
+	}
+	return original, ""
+}
+
+type frozenExpressionEvaluation struct {
+	billingexpr.TieredResult
+	tokens billingexpr.TokenParams
+	used   map[string]bool
+}
+
+func evaluateFrozenBillingExpression(log billingReconciliationLog, facts customerExportFacts, group float64, requireFixedTier bool) (frozenExpressionEvaluation, string) {
+	if facts.duplicateRequestRules {
+		return frozenExpressionEvaluation{}, BillingOriginalReplayMissingContext
+	}
 	encoded := billingBreakdownString(facts.raw("expr_b64"))
 	tier := billingBreakdownString(facts.raw("matched_tier"))
 	unit := billingexpr.BillingUnit(billingBreakdownString(facts.raw("billing_unit")))
 	if encoded == "" || tier == "" {
-		return 0, BillingOriginalReplayMissingContext
+		return frozenExpressionEvaluation{}, BillingOriginalReplayMissingContext
 	}
 	raw, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return 0, BillingOriginalReplayMissingContext
+		return frozenExpressionEvaluation{}, BillingOriginalReplayMissingContext
 	}
 	expression := string(raw)
 	program, err := billingexpr.CompileFromCache(expression)
 	if err != nil {
-		return 0, BillingOriginalReplayMissingContext
+		return frozenExpressionEvaluation{}, BillingOriginalReplayMissingContext
 	}
 	if unit == "" && !billingexpr.UsesFixedPricing(expression) {
 		// fixed() is the only expression operation that switches to per-request pricing.
 		unit = billingexpr.BillingUnitToken
 	}
 	if unit != billingexpr.BillingUnitToken && unit != billingexpr.BillingUnitRequest {
-		return 0, BillingOriginalReplayMissingContext
+		return frozenExpressionEvaluation{}, BillingOriginalReplayMissingContext
 	}
 	version := billingexpr.ExprVersion(expression)
-	used := billingexpr.UsedVars(expression)
-	if requireFixedTier || ast.Find(program.Node(), historicalBillingProbe) != nil {
-		selected, fixedTier := historicalStatementTierExpression(expression, tier, unit, facts)
+	normalizationVars := billingexpr.UsedVars(expression)
+	request := billingexpr.RequestInput{}
+	var used map[string]bool
+	var traces []billingexpr.RequestRuleTrace
+	probed := ast.Find(program.Node(), historicalBillingProbe) != nil
+	rules := facts.raw("request_rules")
+	if !requireFixedTier && (len(rules) != 0 || probed && unit == billingexpr.BillingUnitRequest) {
+		if len(rules) != 0 {
+			var valid bool
+			traces, valid = frozenStatementRequestRules(rules)
+			if !valid {
+				return frozenExpressionEvaluation{}, BillingOriginalReplayMissingContext
+			}
+		}
+		var fixedPrice *float64
+		if unit == billingexpr.BillingUnitRequest {
+			var price *float64
+			if common.Unmarshal(facts.raw("fixed_price"), &price) == nil {
+				fixedPrice = price
+			}
+		}
+		request, used, err = billingexpr.WithFrozenRequestRules(expression, request, traces, tier, fixedPrice)
+		if err != nil {
+			return frozenExpressionEvaluation{}, BillingOriginalReplayMissingContext
+		}
+		probed = false
+	}
+	if requireFixedTier || probed {
+		selected, fixedTier := historicalStatementTierExpression(expression, tier)
 		if requireFixedTier && !fixedTier {
-			return 0, BillingOriginalReplayUnverified
+			return frozenExpressionEvaluation{}, BillingOriginalReplayUnverified
 		}
 		expression = selected
 		if expression == "" {
-			return 0, BillingOriginalReplayMissingContext
+			return frozenExpressionEvaluation{}, BillingOriginalReplayMissingContext
 		}
 	}
+	if used == nil {
+		used = billingexpr.UsedVars(expression)
+	}
 	var rate *billingexpr.ExchangeRateContext
-	if billingexpr.UsesExchangeRate(expression) {
+	if used[billingexpr.UsdExchangeRateFunc] {
 		var rateFact map[string]any
 		if common.Unmarshal(facts.raw("usd_exchange_rate"), &rateFact) == nil {
 			rate = billingexpr.ParseExchangeRateFact(rateFact)
 		}
 		if rate == nil {
-			return 0, BillingOriginalReplayMissingContext
+			return frozenExpressionEvaluation{}, BillingOriginalReplayMissingContext
 		}
 	}
-	request := billingexpr.RequestInput{}
-	if raw := facts.raw("image_count"); len(raw) != 0 {
+	if used["image_count"] {
+		raw := facts.raw("image_count")
 		count, ok := billingBreakdownNonNegativeInt(raw)
 		if !ok || count <= 0 || count > int64(dto.MaxImageN) {
-			return 0, BillingOriginalReplayMissingUsage
+			return frozenExpressionEvaluation{}, BillingOriginalReplayMissingUsage
 		}
 		n := int(count)
 		request.ImageCount = &n
-	} else if used["image_count"] {
-		return 0, BillingOriginalReplayMissingUsage
 	}
-	params, ok := historicalCustomerTokenParams(log, facts, used)
+	params, ok := historicalCustomerTokenParams(log, facts, used, normalizationVars)
 	if !ok {
-		return 0, BillingOriginalReplayMissingUsage
+		return frozenExpressionEvaluation{}, BillingOriginalReplayMissingUsage
 	}
-	group := *parsed.discountRatio
 	snapshot := billingexpr.BillingSnapshot{
 		ExprString: expression, ExprHash: billingexpr.ExprHashString(expression),
 		ExprVersion: version, GroupRatio: group,
@@ -165,31 +227,53 @@ func replayCustomerOriginalFromEvidence(log billingReconciliationLog, parsed par
 	result, err := billingexpr.ComputeTieredQuotaWithRequest(&snapshot, params, request)
 	if err != nil || result.Clamp != nil || result.ActualQuotaBeforeGroup < 0 ||
 		result.MatchedTier != tier || result.BillingUnit != unit {
-		return 0, BillingOriginalReplayMismatch
+		return frozenExpressionEvaluation{}, BillingOriginalReplayMismatch
 	}
+	if traces != nil && len(result.RequestRules) != len(traces) {
+		return frozenExpressionEvaluation{}, BillingOriginalReplayMismatch
+	}
+	for i, rule := range traces {
+		if result.RequestRules[i].Matched != rule.Matched {
+			return frozenExpressionEvaluation{}, BillingOriginalReplayMismatch
+		}
+	}
+	if unit == billingexpr.BillingUnitRequest && len(facts.raw("fixed_price")) > 0 {
+		raw := facts.raw("fixed_price")
+		fixed, ok := billingReconciliationFloat(raw)
+		if !ok || string(raw) == "null" || result.FixedPrice == nil || fixed != *result.FixedPrice {
+			return frozenExpressionEvaluation{}, BillingOriginalReplayMismatch
+		}
+	}
+	return frozenExpressionEvaluation{TieredResult: result, tokens: params, used: used}, ""
+}
+
+func frozenExpressionAmounts(facts customerExportFacts, parsed parsedBillingReconciliationLog, result billingexpr.TieredResult) (original, booked int64, reason string) {
 	if parsed.hasAuxiliaryCharge {
-		return replayTieredWithToolFees(log, facts, parsed, result.ActualQuotaBeforeGroup)
+		return frozenTieredAmountsWithToolFees(facts, parsed, result.ActualQuotaBeforeGroup)
 	}
-	booked := result.ActualQuotaAfterGroup
+	booked = int64(result.ActualQuotaAfterGroup)
+	var err error
 	if parsed.contractDiscountRatio != nil {
 		discount := *parsed.contractDiscountRatio
 		if discount <= 0 || discount > 1 || math.IsNaN(discount) {
-			return 0, BillingOriginalReplayMissingContext
+			return 0, 0, BillingOriginalReplayMissingContext
 		}
 		amount := decimal.NewFromFloat(result.ActualQuotaBeforeGroup).
-			Mul(decimal.NewFromFloat(group)).Mul(decimal.NewFromFloat(discount))
-		booked, err = common.QuotaRoundStrict(amount.InexactFloat64())
+			Mul(decimal.NewFromFloat(*parsed.discountRatio)).Mul(decimal.NewFromFloat(discount))
+		var quota int
+		quota, err = common.QuotaRoundStrict(amount.InexactFloat64())
+		booked = int64(quota)
 	}
-	original, originalErr := common.QuotaRoundStrict(result.ActualQuotaBeforeGroup)
-	if err != nil || originalErr != nil || booked != log.Quota {
-		return 0, BillingOriginalReplayMismatch
+	originalQuota, originalErr := common.QuotaRoundStrict(result.ActualQuotaBeforeGroup)
+	if err != nil || originalErr != nil {
+		return 0, 0, BillingOriginalReplayMismatch
 	}
-	return int64(original), ""
+	return int64(originalQuota), booked, ""
 }
 
-func historicalCustomerTokenParams(log billingReconciliationLog, facts customerExportFacts, used map[string]bool) (billingexpr.TokenParams, bool) {
+func historicalCustomerTokenParams(log billingReconciliationLog, facts customerExportFacts, used, normalization map[string]bool) (billingexpr.TokenParams, bool) {
 	var params billingexpr.TokenParams
-	if raw := facts.other["billing_tokens"]; len(raw) != 0 {
+	if raw := facts.raw("billing_tokens"); len(raw) != 0 {
 		var frozen map[string]json.RawMessage
 		if common.Unmarshal(raw, &frozen) != nil {
 			return params, false
@@ -198,7 +282,7 @@ func historicalCustomerTokenParams(log billingReconciliationLog, facts customerE
 			"cr": &params.CR, "cc": &params.CC, "cc1h": &params.CC1h, "img": &params.Img,
 			"img_cr": &params.ImgCR, "img_o": &params.ImgO, "ai": &params.AI, "ao": &params.AO} {
 			value, ok := billingBreakdownNonNegativeInt(frozen[key])
-			if !ok && (used[key] || len(frozen[key]) != 0) {
+			if !ok && used[key] {
 				return params, false
 			}
 			*field = float64(value)
@@ -208,15 +292,18 @@ func historicalCustomerTokenParams(log billingReconciliationLog, facts customerE
 	if log.PromptTokens < 0 || log.CompletionTokens < 0 {
 		return params, false
 	}
+	semantic := billingBreakdownString(facts.other["usage_semantic"])
+	// The evaluator may use only the selected tier, but settlement normalized
+	// p/c with the entire expression before evaluating any branch.
 	for _, key := range []string{"img_cr", "img_o", "ai", "ao"} {
-		if used[key] {
+		if used[key] || (semantic != "anthropic" && normalization[key] &&
+			(used["p"] && (key == "img_cr" || key == "ai") || used["c"] && (key == "img_o" || key == "ao"))) {
 			return params, false
 		}
 	}
 	params.P, params.C = float64(log.PromptTokens), float64(log.CompletionTokens)
 	params.Len = params.P
-	semantic := billingBreakdownString(facts.other["usage_semantic"])
-	if used["img"] {
+	if used["img"] || (used["p"] && semantic != "anthropic" && normalization["img"]) {
 		imageTokens, ok := historicalStatementImageTokens(facts, semantic)
 		if !ok {
 			return params, false
@@ -225,7 +312,8 @@ func historicalCustomerTokenParams(log billingReconciliationLog, facts customerE
 	}
 	cacheRead, readKnown := billingBreakdownNonNegativeInt(facts.other["cache_tokens"])
 	cacheWrite := normalizedBillingBreakdownCacheWriteTokens(facts.other)
-	if (used["cr"] || semantic == "anthropic" && (used["p"] || used["len"])) && !readKnown {
+	if (used["cr"] || (semantic == "anthropic" && used["len"]) ||
+		(used["p"] && ((semantic == "anthropic") != normalization["cr"]))) && !readKnown {
 		return params, false
 	}
 	params.CR = float64(cacheRead)
@@ -237,28 +325,23 @@ func historicalCustomerTokenParams(log billingReconciliationLog, facts customerE
 		}
 		params.CC, params.CC1h = float64(cacheWrite.fiveMinutes), float64(cacheWrite.oneHour)
 		params.Len += params.CR + params.CC + params.CC1h
-		if !used["cr"] {
+		if !normalization["cr"] {
 			params.P += params.CR
 		}
 	case "openai", "gemini":
-		if used["cc"] && !cacheWrite.known {
-			// The synchronous text writer omitted zero cache creation fields.
-			if len(facts.other["cache_creation_tokens"]) != 0 || len(facts.other["cache_write_tokens"]) != 0 ||
-				len(facts.other["cache_creation_tokens_5m"]) != 0 || len(facts.other["cache_creation_tokens_1h"]) != 0 {
-				return params, false
-			}
-		}
-		if cacheWrite.oneHour != 0 {
+		needsWrite := used["cc"] || used["p"] && normalization["cc"]
+		if needsWrite && ((!cacheWrite.known && !nativeUsageLogOmitsZeroCacheWrite(log, facts.other) &&
+			!historicalTestOmitsCacheWrite(log, facts.other)) || cacheWrite.oneHour != 0) {
 			return params, false
 		}
 		params.CC = float64(cacheWrite.total)
-		if used["cr"] {
+		if normalization["cr"] {
 			params.P -= params.CR
 		}
-		if used["cc"] {
+		if normalization["cc"] {
 			params.P -= params.CC
 		}
-		if used["img"] {
+		if normalization["img"] {
 			params.P -= params.Img
 		}
 		params.P = max(params.P, 0)

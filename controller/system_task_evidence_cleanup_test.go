@@ -58,6 +58,40 @@ func setupEvidenceCleanupEnv(t *testing.T) (service.TaskRequestEvidenceObjectSto
 	return store, storeDir
 }
 
+func TestEvidenceRetentionDatabasePolicyAppliesToReadsAndScheduledCleanup(t *testing.T) {
+	store, storeDir := setupEvidenceCleanupEnv(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Option{}))
+	key := system_setting.TaskRequestEvidenceRetentionOptionKey
+	common.OptionMapRWMutex.Lock()
+	previousOptions := common.OptionMap
+	common.OptionMap = map[string]string{}
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = previousOptions
+		common.OptionMapRWMutex.Unlock()
+	})
+	require.NoError(t, model.UpdateOption(key, "7"))
+	legacy := seedExpiredEvidence(t, store, storeDir, 3*86400)
+	frozen := seedExpiredEvidence(t, store, storeDir, 4*86400)
+	frozen.RetainUntil = frozen.CreatedAt + 2*86400
+	require.NoError(t, model.DB.Save(frozen).Error)
+	now := common.GetTimestamp()
+	assert.False(t, service.IsEvidenceBodyExpired(legacy, now))
+	assert.True(t, service.IsEvidenceBodyExpired(frozen, now))
+
+	task, runnerID := createCleanupTask(t)
+	evidenceRetentionHandler{}.Run(context.Background(), task, runnerID)
+	require.NoError(t, model.DB.First(&model.TaskRequestEvidence{}, legacy.Id).Error)
+	assert.ErrorIs(t, model.DB.First(&model.TaskRequestEvidence{}, frozen.Id).Error, gorm.ErrRecordNotFound)
+
+	require.NoError(t, model.UpdateOption(key, "2"))
+	assert.True(t, service.IsEvidenceBodyExpired(legacy, now))
+	task, runnerID = createCleanupTask(t)
+	evidenceRetentionHandler{}.Run(context.Background(), task, runnerID)
+	assert.ErrorIs(t, model.DB.First(&model.TaskRequestEvidence{}, legacy.Id).Error, gorm.ErrRecordNotFound)
+}
+
 func createCleanupTask(t *testing.T) (*model.SystemTask, string) {
 	t.Helper()
 	task, err := model.CreateSystemTask(model.SystemTaskTypeTaskRequestEvidenceRetention, nil, nil)

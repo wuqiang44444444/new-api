@@ -1,7 +1,7 @@
 ---
 page-id: media-workflow
 kind: guide
-last-verified: 2026-10-21
+last-verified: 2026-11-13
 operations: []
 ---
 
@@ -60,7 +60,8 @@ PY
 | 编辑图片         | `edit_image.supported=true`，并读取 `api.image.edit`                                 |
 | 图片异步任务     | 存在 `api.image.async`，按其中的请求头和值选择异步                                   |
 | ModelArk V3 视频 | `api.video.protocol=modelark_v3`，`create_video.supported=true`                      |
-| 视频参考素材     | `api.assets.supported=true`，并核对媒体类型、操作与管理模式                          |
+| 托管素材入库     | `api.assets` 或 `api.hosted_assets` 中的 `platform_hosted` 合同                      |
+| 生成时引用素材   | `api.video.creation.content_types` 和目标模型的媒体限制                              |
 
 按 `parameters` 中的 `required`、`fixed_value`、`default_value`、`enum`、上下限组装请求。
 `additional_properties=false` 时不要发送未列出的字段；带点的参数名代表嵌套字段。
@@ -164,8 +165,9 @@ curl --fail-with-body \
 
 图生视频在 `content` 中加入 `image_url` 项；角色可为模型公开的首帧、末帧或参考图。
 多模态参考与完整参数见[ModelArk V3 视频](api-reference/videos/modelark)。
-使用托管图片时先[创建素材](api-reference/assets)，拿到 `reference` 后放入 `image_url.url`。
-直接 URL 生成不会自动创建可复用素材。
+需要复用时，先按托管库统一的文件规则[创建素材](api-reference/assets)。提交生成时，按目标模型的
+`api.video.creation.content_types` 和媒体限制将返回的 `reference` 填入对应字段，图片用 `image_url.url`，音频用 `audio_url.url`，视频用 `video_url.url`。直接 URL
+生成不会创建可复用素材。
 
 ## 5. 用 Python 轮询原任务
 
@@ -298,13 +300,6 @@ curl --fail --location "$MEDIA_API_BASE/v1/videos/task-public-id/content" \
 签名存储不可用返回 `503 video_delivery_unavailable`。下载故障不改变已确认的生成与计费事实，
 不自动退款或重新生成。范围外原生视频线路沿用原鉴权内容代理，详见各自视频文档。
 两类下载均检查 HTTP 状态和 `Content-Type`，失败 JSON 不能当作图片或视频保存。
-
-English: for hosted standard videos, keep polling the original task after generation succeeds while
-`content.delivery_status=preparing`. Download `content.video_url` when `ready` without an API key;
-investigate `unavailable` without regenerating or assuming a refund. Signed GET URLs last 86400 seconds
-from issuance and can be renewed by an authorized query while objects are retained. The authenticated content
-endpoint returns 302 when ready; follow it without forwarding the gateway key to storage. Native video
-routes outside this scope retain their existing authentication and expiry rules.
 
 ## 7. 常见问题
 

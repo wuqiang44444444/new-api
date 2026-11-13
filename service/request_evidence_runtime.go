@@ -93,11 +93,12 @@ func (p *evidencePiece) start() error {
 	if w.failed {
 		return errors.New("evidence window unavailable")
 	}
+	retentionSeconds := EvidenceRetentionSeconds()
 	if !w.created {
 		w.index = facts
 		w.index.Id = 0
 		w.index.CreatedAt = w.started
-		w.index.RetainUntil = w.index.CreatedAt + EvidenceRetentionSeconds()
+		w.index.RetainUntil = w.index.CreatedAt + retentionSeconds
 		if err := model.CreateTaskRequestEvidence(&w.index); err != nil {
 			w.failed = true
 			return err
@@ -106,11 +107,11 @@ func (p *evidencePiece) start() error {
 		w.facts = facts
 	}
 	p.event = &model.TaskRequestEvidenceEvent{EvidenceId: w.index.Id, Stage: p.stage, Method: p.meta.Method, Target: p.meta.Target, StatusCode: p.meta.StatusCode, ContentType: p.meta.ContentType, CreatedAt: p.meta.CreatedAt}
-	if err := model.CreateTaskRequestEvidenceEvent(p.event, EvidenceRetentionSeconds()); err != nil {
+	if err := model.CreateTaskRequestEvidenceEvent(p.event, retentionSeconds); err != nil {
 		return err
 	}
 	if !w.linked {
-		if err := model.AttachEvidenceTasks(w.index.Id, tasks, EvidenceRetentionSeconds()); err != nil {
+		if err := model.AttachEvidenceTasks(w.index.Id, tasks, retentionSeconds); err != nil {
 			return err
 		}
 		w.linked = true

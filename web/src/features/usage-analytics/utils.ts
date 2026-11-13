@@ -1,7 +1,6 @@
 import type { TFunction } from 'i18next'
 
 import type {
-  UsageAnalyticsEnvelope,
   UsageAnalyticsMetrics,
   UsageAnalyticsPeriod,
   UsageCustomerKeyGroup,
@@ -37,15 +36,6 @@ export function shiftMonth(date: string, months: number): string {
   return next.toISOString().slice(0, 10)
 }
 
-export function usageReportDayQuery(
-  report: UsageAnalyticsEnvelope<unknown>,
-  date: string
-): string | undefined {
-  const day = report.period.days.find((entry) => entry.date === date)
-  const ref = report.report_days?.find((entry) => entry.start === day?.start)
-  return ref ? JSON.stringify([ref]) : undefined
-}
-
 export function formatPeriodRange(period: UsageAnalyticsPeriod): string {
   if (period.period === 'day') {
     return period.date
@@ -79,13 +69,14 @@ export function hasActivity(metrics: UsageAnalyticsMetrics): boolean {
 
 export function usageNonTokenValues(
   t: TFunction,
-  metrics?: UsageNonTokenMetrics
+  metrics?: UsageNonTokenMetrics,
+  upstream = false
 ) {
   const values = []
   const imageCount = metrics?.image_count ?? 0
   const imageMissing = metrics?.image_count_missing_rows ?? 0
   const imageKnown = metrics?.image_count_known || imageCount > 0
-  if (imageKnown || imageMissing > 0) {
+  if (!upstream && (imageKnown || imageMissing > 0)) {
     const value = formatNumber(imageCount)
     let text = t('Image count unrecorded')
     if (imageKnown) {
@@ -99,6 +90,28 @@ export function usageNonTokenValues(
       value: imageKnown ? value : t('unrecorded'),
       text,
       partial: imageKnown && imageMissing > 0,
+    })
+  }
+  for (const [label, count, missing] of [
+    [
+      t('Billable image count'),
+      metrics?.billable_images,
+      metrics?.billable_image_missing_rows,
+    ],
+    [
+      t('Channel test billable images'),
+      metrics?.test_billable_images,
+      metrics?.test_billable_image_missing_rows,
+    ],
+  ] as const) {
+    if (!count && !missing) continue
+    const value = count ? formatNumber(count) : t('unrecorded')
+    values.push({
+      label,
+      value,
+      text: `${label} · ${value}`,
+      partial: !!count && !!missing,
+      showSubtotal: !!count && !!missing,
     })
   }
   const seconds = metrics?.seconds
@@ -128,6 +141,13 @@ export function usageNonTokenValues(
       notes,
     })
   }
+  if (upstream && metrics?.billing_meter_unknown_rows) {
+    const label = t('Billing mode')
+    const value = t('{{count}} rows unrecorded', {
+      count: metrics.billing_meter_unknown_rows,
+    })
+    values.push({ label, value, text: `${label} · ${value}`, partial: false })
+  }
   return values
 }
 
@@ -135,11 +155,25 @@ export function mergeUsageNonToken(
   total: UsageNonTokenMetrics,
   metrics: UsageNonTokenMetrics
 ): void {
+  total.billing_tokens_applicable ||= !!metrics.billing_tokens_applicable
+  total.billing_meter_unknown_rows =
+    (total.billing_meter_unknown_rows ?? 0) +
+    (metrics.billing_meter_unknown_rows ?? 0)
   total.image_count = (total.image_count ?? 0) + (metrics.image_count ?? 0)
   total.image_count_known ||= !!metrics.image_count_known
   total.image_count_missing_rows =
     (total.image_count_missing_rows ?? 0) +
     (metrics.image_count_missing_rows ?? 0)
+  total.billable_images =
+    (total.billable_images ?? 0) + (metrics.billable_images ?? 0)
+  total.billable_image_missing_rows =
+    (total.billable_image_missing_rows ?? 0) +
+    (metrics.billable_image_missing_rows ?? 0)
+  total.test_billable_images =
+    (total.test_billable_images ?? 0) + (metrics.test_billable_images ?? 0)
+  total.test_billable_image_missing_rows =
+    (total.test_billable_image_missing_rows ?? 0) +
+    (metrics.test_billable_image_missing_rows ?? 0)
   total.seconds_missing_rows =
     (total.seconds_missing_rows ?? 0) + (metrics.seconds_missing_rows ?? 0)
   total.seconds_value_missing_rows =

@@ -15,13 +15,18 @@ func (a *TaskAdaptor) modelArkContractPayload(c *gin.Context) (*requestPayload, 
 	if contract.ContractID != dto.VideoContractModelArkV3 || contract.ModelArk == nil {
 		return nil, true, relaycommon.NewVideoContractError("invalid_video_contract", "Seedance route received an incompatible video contract")
 	}
+	payload, err := modelArkPayload(contract.ModelArk)
+	return payload, true, err
+}
+
+func modelArkPayload(request *dto.ModelArkVideoCreateRequest) (*requestPayload, error) {
 	payload := &requestPayload{}
-	encoded, err := common.Marshal(contract.ModelArk)
+	encoded, err := common.Marshal(request)
 	if err != nil {
-		return nil, true, err
+		return nil, err
 	}
 	if err := common.Unmarshal(encoded, payload); err != nil {
-		return nil, true, err
+		return nil, err
 	}
-	return payload, true, nil
+	return payload, nil
 }

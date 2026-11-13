@@ -177,6 +177,9 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 			writer.header[4] = "渠道范围"
 		}
 	}
+	if filters.FieldVersion >= dailyBillingExportFieldVersion {
+		writer.header = append(writer.header, frozenBillingDetailCSVHeader(filters.Language)...)
+	}
 	writer.setBillingCoverage(filters)
 	scope := customerExportScopeColumns{QuotaPerUnit: filters.QuotaPerUnit, Currency: filters.Currency, CurrencyRate: filters.CurrencyRate, GeneratedAt: common.GetTimestamp()}
 	filter := model.UpstreamBillingDetailFilter{URLKey: filters.Upstream.URLKey, EvidenceFilter: filters.Upstream.EvidenceFilter, Start: filters.StartTimestamp, End: filters.EndTimestamp - 1, ChannelIds: filters.Upstream.ChannelIds, ProviderModel: filters.ModelName, ProviderModelFallback: filters.Upstream.ProviderModelFallback, BillingMode: filters.BillingMode, RequestId: filters.RequestId, UpstreamRequestId: filters.UpstreamRequestId}
@@ -276,6 +279,9 @@ func executeUpstreamExport(ctx context.Context, job *model.CustomerExportJob, fi
 			exportCsvCellGuard(row.PlatformTaskId), exportCsvCellGuard(row.UpstreamTaskId),
 			customerExportEstimateReasons(filters.Language, row.EstimateReasons), upstreamExportOriginalStatus(row.OriginalAmount, filters.Language), seconds, referenceQuota, testPricing,
 			upstreamExportQualityReasons(row.DataQuality, filters.Language, true), secondsBasis, testBasis, recordedFee, recomputedFee,
+		}
+		if filters.FieldVersion >= dailyBillingExportFieldVersion {
+			record = append(record, frozenBillingDetailCSVCells(row)...)
 		}
 		if err := writer.AppendRecord(record); err != nil {
 			return err

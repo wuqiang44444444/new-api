@@ -221,6 +221,7 @@ func SetApiRouter(router *gin.Engine) {
 		controller.RegisterMailSettingsRoutes(optionRoute)
 		{
 			optionRoute.GET("/", controller.GetOptions)
+			optionRoute.GET("/request_evidence_retention", middleware.DisableCache(), controller.GetTaskRequestEvidenceRetention)
 			optionRoute.GET("/request_policy", controller.GetRequestPolicy)
 			optionRoute.PATCH("/request_policy", controller.UpdateRequestPolicy)
 			optionRoute.PUT("/", controller.UpdateOption)

@@ -13,10 +13,7 @@ import (
 
 // GetConfiguredMiniMaxPublicModels projects the configured MiniMax Link
 // customer models from the same pinned declaration that drives runtime
-// validation. Only api.video is published: the MiniMax Link contract
-// declares no asset operations and no reuse scopes. When the active plugin
-// declaration is unavailable, nothing is projected (fail closed) and the
-// error is surfaced to the caller.
+// validation. The account-wide hosted library uses the common asset projection.
 func GetConfiguredMiniMaxPublicModels() ([]SeedancePublicModel, error) {
 	var channels []Channel
 	if err := DB.Where("type = ?", constant.ChannelTypeMiniMaxLink).Order("id").Find(&channels).Error; err != nil {
@@ -49,13 +46,15 @@ func GetConfiguredMiniMaxPublicModels() ([]SeedancePublicModel, error) {
 			if err != nil {
 				return nil, fmt.Errorf("MiniMax model has no published parameter declaration: %w", err)
 			}
+			hosted := publicHostedAssetAPI(modelName)
 			candidate := SeedancePublicModel{
 				videoProtocol: settings.VideoUpstreamProtocol,
 				ModelName:     modelName,
 				Enabled:       published.Enabled && channels[i].Status == common.ChannelStatusEnabled,
 				Groups:        normalizedPublicModelGroups(channels[i].GetGroups()),
 				API: dto.PublicModelAPI{
-					Video: video,
+					Video:  video,
+					Assets: &hosted,
 				},
 			}
 			if index, exists := modelIndex[modelName]; exists {

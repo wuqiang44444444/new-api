@@ -48,6 +48,59 @@ func TestLogCursorPreservesFilterAndSkipsNewerInserts(t *testing.T) {
 	assert.Equal(t, 60, stats.Quota)
 }
 
+func TestNumberedUsageLogPagesKeepExactScopedTotal(t *testing.T) {
+	db := setupBillingReconciliationTestDB(t)
+	ctx := context.Background()
+	filter := LogFilter{StartTimestamp: 100, EndTimestamp: 200, Type: LogTypeConsume}
+	require.NoError(t, db.Create(&[]Log{
+		{UserId: 1, CreatedAt: 151, Type: LogTypeConsume, RequestId: "old"},
+		{UserId: 1, CreatedAt: 150, Type: LogTypeConsume, RequestId: "middle"},
+		{UserId: 1, CreatedAt: 150, Type: LogTypeConsume, RequestId: "new", Content: "private detail", ChannelId: 77, Other: `{"is_task":true,"task_id":"video"}`},
+		{UserId: 1, CreatedAt: 150, Type: LogTypeError, RequestId: "excluded-type"},
+		{UserId: 2, CreatedAt: 150, Type: LogTypeConsume, RequestId: "excluded-user"},
+	}).Error)
+
+	first, err := GetNumberedUsageLogPage(ctx, 1, filter, "start", 1, 1, 0, common.RoleCommonUser)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, first.Total)
+	require.Len(t, first.Items, 1)
+	assert.Equal(t, "new", first.Items[0].RequestId)
+	assert.Empty(t, first.Items[0].Content)
+	require.Len(t, first.DetailRefs, 1)
+	assert.Zero(t, first.Items[0].ChannelId)
+	detail, err := GetLogCursorDetail(ctx, 1, first.DetailRefs[0])
+	require.NoError(t, err)
+	assert.Zero(t, detail.ChannelId)
+	require.NotEmpty(t, first.PageSnapshot)
+
+	require.NoError(t, db.Create(&Log{UserId: 1, CreatedAt: 151, Type: LogTypeConsume, RequestId: "late"}).Error)
+	second, err := GetNumberedUsageLogPage(ctx, 1, filter, first.PageSnapshot, 2, 1, 0, common.RoleCommonUser)
+	require.NoError(t, err)
+	require.Len(t, second.Items, 1)
+	assert.Equal(t, "middle", second.Items[0].RequestId)
+	assert.EqualValues(t, 3, second.Total)
+	last, err := GetNumberedUsageLogPage(ctx, 1, filter, first.PageSnapshot, 3, 1, 0, common.RoleCommonUser)
+	require.NoError(t, err)
+	require.Len(t, last.Items, 1)
+	assert.Equal(t, "old", last.Items[0].RequestId)
+	assert.EqualValues(t, 3, last.Total)
+
+	empty, err := GetNumberedUsageLogPage(ctx, 1, filter, last.PageSnapshot, 4, 1, 0, common.RoleCommonUser)
+	require.NoError(t, err)
+	assert.Empty(t, empty.Items)
+	assert.EqualValues(t, 3, empty.Total)
+	_, err = GetNumberedUsageLogPage(ctx, 2, filter, first.PageSnapshot, 2, 1, 0, common.RoleCommonUser)
+	require.Error(t, err)
+
+	admin, err := GetNumberedUsageLogPage(ctx, 0, filter, "start", 2, 2, 0, common.RoleAdminUser)
+	require.NoError(t, err)
+	require.Len(t, admin.Items, 2)
+	assert.Equal(t, "excluded-user", admin.Items[0].RequestId)
+	assert.Equal(t, "new", admin.Items[1].RequestId)
+	assert.Equal(t, 77, admin.Items[1].ChannelId)
+	assert.EqualValues(t, 5, admin.Total)
+}
+
 func TestBillingStatementFundGroupsKeepCrossDayRefundSeparate(t *testing.T) {
 	db, start, _ := setupBillingReportTest(t)
 	rows := []Log{

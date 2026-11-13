@@ -207,7 +207,7 @@ func TestEvidenceFilesystemRetentionCoversFileOnlyOrphans(t *testing.T) {
 		require.NoError(t, os.Chtimes(filepath.Join(dir, item.key), modified, modified))
 	}
 	stats := evidenceRetentionStats{Cutoff: now}
-	require.NoError(t, cleanupEvidenceDatabase(context.Background(), store, &stats, func() error { return nil }))
+	require.NoError(t, cleanupEvidenceDatabase(context.Background(), store, &stats, 2*86400, func() error { return nil }))
 	assert.EqualValues(t, 2, stats.DeletedFiles)
 	assert.Positive(t, stats.FreedBytes)
 	for _, key := range []string{"987654/old.bin", "loose-old.bin"} {
@@ -220,7 +220,7 @@ func TestEvidenceFilesystemRetentionCoversFileOnlyOrphans(t *testing.T) {
 	}
 	// Root's explicit cutoff applies to orphan file time as well as index time.
 	stats = evidenceRetentionStats{Cutoff: now, TargetTimestamp: now + 1}
-	require.NoError(t, cleanupEvidenceDatabase(context.Background(), store, &stats, func() error { return nil }))
+	require.NoError(t, cleanupEvidenceDatabase(context.Background(), store, &stats, 2*86400, func() error { return nil }))
 	assert.EqualValues(t, 2, stats.DeletedFiles)
 	_, err := os.Stat(filepath.Join(dir, "987654"))
 	assert.True(t, os.IsNotExist(err))

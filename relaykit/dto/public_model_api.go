@@ -1,9 +1,10 @@
 package dto
 
 type PublicModelAPI struct {
-	Image  *PublicImageAPI `json:"image,omitempty"`
-	Video  *PublicVideoAPI `json:"video,omitempty"`
-	Assets *PublicAssetAPI `json:"assets,omitempty"`
+	Image        *PublicImageAPI `json:"image,omitempty"`
+	Video        *PublicVideoAPI `json:"video,omitempty"`
+	Assets       *PublicAssetAPI `json:"assets,omitempty"`
+	HostedAssets *PublicAssetAPI `json:"hosted_assets,omitempty"`
 }
 
 type PublicImageAPI struct {

@@ -90,14 +90,14 @@ curl "{{OPENAI_BASE_URL}}/images/generations" \
 
 | 请求头                  | 说明                                                                                                                                                                       |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Prefer: respond-async` | 显式选择平台任务，通过参数、资金及存储等受理检查后返回 `202`。OpenAI／Azure 原生图片入口可同时传 `stream=true`，由后台接收结果；Gemini／Vertex／图片中转入口仍拒绝这一组合 |
+| `Prefer: respond-async` | 显式选择平台任务，成功受理返回 `202`。OpenAI／Azure 原生图片入口可同时传 `stream=true`，仍返回任务。Gemini／Vertex／图片中转入口拒绝这一组合 |
 | `Idempotency-Key`       | 可选幂等键，仅异步模式支持；同键等价请求重放原任务 ID，不同请求体返回 `409`，去除首尾空白后最多 191 字节                                                                   |
 
 已发布此能力的图片生成与编辑沿用现有模型、参数和 Key。模型详情中的
 `api.image.async` 声明请求头与查询路径；`stream_priority=false` 表示流式不优先于异步偏好，
 不代表模型支持 `stream` 参数。未携带异步偏好的请求不提供平台任务幂等保证。
 
-异步受理需要平台已启用私有对象存储及后台图片任务执行。存储不可用返回 `503`，不扣费也不发送上游。
+异步受理前若存储不可用，返回 `503`，不扣费。
 
 ### 提交异步生成
 
@@ -158,46 +158,22 @@ curl "{{OPENAI_BASE_URL}}/tasks/task_xxxxxxxx" \
 
 ## 返回格式
 
-生成与编辑接口通过可选的 `response_format` 控制完整图片结果的返回形式：
+生成与编辑使用可选参数 `response_format` 选择非流式结果。JSON 中传字符串，文件表单使用
+`-F 'response_format=url'`。
 
-| 用途 | 正确写法 |
+| `response_format` | 结果字段 |
 | --- | --- |
-| 请求图片下载地址 | `"response_format": "url"` |
-| 读取返回的图片地址 | `data[0].url`；多图遍历 `data[]` |
-| 请求并读取 Base64 | `"response_format": "b64_json"` → `data[].b64_json` |
-| 原生 JSON 编辑的参考图输入 | `images[].image_url`，见图片编辑文档 |
+| `url` | `data[].url` |
+| `b64_json` | `data[].b64_json` |
 
-`image_url` 不是返回格式，也不是标准图片结果字段；不要发送 `response_format=image_url`，
-不要读取 `data[].image_url` 或添加 `image_url=true`。参考图输入与结果输出是不同字段。
+省略时，GPT Image 和 Gemini／Vertex generateContent 同步返回 Base64，图片中转同步返回 URL，
+异步查询默认返回 URL。原生同步 SSE 按相应模型的流式协议返回事件。
 
-```json
-{
-  "model": "{{MODEL_ID_PLACEHOLDER}}",
-  "prompt": "雾中灯塔的水彩插画",
-  "response_format": "url"
-}
-```
+本站签名 URL 有效期为 300 秒，响应包含 `url_expires_at`。外部 URL 以图片服务的有效期为准。
+同步链接到期前请及时下载。若需要通过任务查询续签，请在创建时使用模型支持的异步模式。
 
-- **不传参数保持原有行为**：GPT Image 和 Gemini/Vertex generateContent 默认 Base64，
-  图片中转同步默认 URL；平台异步任务未指定格式时沿用 URL 查询结果。
-- `url` 返回 `data[].url`。已有 Provider URL 时直接交付；只有 Base64 时由平台保存并签名。
-  URL 不保证来自本站域名。GPT Image 上游不支持此参数时，由本站消费并完成转换。
-- `b64_json` 返回 `data[].b64_json`；只有 URL 时由平台安全下载并编码。
-  两种格式均保留 usage、提示词改写等结果元数据。multipart 使用 `-F 'response_format=url'`。
-- 本站签名 URL 有效期 300 秒，并返回 `url_expires_at`；Provider URL 的有效期由 Provider 决定。
-  同步结果不能通过任务查询续签，需要再次查询结果时使用已发布的显式异步能力。
-- 原生同步 SSE 沿用原事件协议，不把事件中的 Base64 转为 URL；上述格式保证适用于完整 JSON
-  结果与平台异步查询。流式和异步的可用组合仍以模型合同为准。
-- 已知需要本站转存而存储不可用时，在预扣与上游调用前返回 `503`。
-  若生成成功后下载、转存或签名失败，返回 `502 image_delivery_failed`；生成仍计费，
-  不自动重生成或退款，调用方也不应自动重发生成请求。失败响应的 `data` 保留已生成的原始图片
-  （Base64 或原 URL），`requested_response_format` 标识未完成的目标格式。请保留并读取该错误正文取图，
-  不要只保存错误消息。成功响应仍按请求格式返回。同步交付没有后台恢复任务；客户端断连或原 URL
-  过期时，不能保证通过该错误正文恢复。
-- 显式同步格式转换采用文件和流处理大图，不再因本站原有的 50 MiB 单图／512 MiB 响应阈值丢弃结果。
-  结果下载、转存和签名在本次交付预算内最多尝试三次，仅重试交付，不重复调用生成接口。
-- 网关内的下载、编码、上传、签名计入服务端处理耗时；客户另行下载 URL 和显示图片的时间不在
-  原生成请求日志内。
+需要本站存储时，受理前存储不可用会返回 `503`。若生成成功后无法提供请求的格式，按
+[交付失败时保存原图](api-reference/images/generations#交付失败时保存原图)处理 `502 image_delivery_failed`。
 
 ## 非流式响应
 
@@ -338,13 +314,6 @@ data: [DONE]
 
 ## Gemini Lite 图片模型
 
-Gemini 3.1 Flash-Lite Image 使用本页标准接口。生成使用 JSON，编辑使用已发布的 JSON 图片引用
-或 multipart 文件。显式设置 `response_format=url`（multipart 使用同名表单字段），成功结果为
-`data[].url`；返回字段是 `url`，不是 `image_url`；返回格式值也不能写为 `image_url`。
-
-Lite 的标准接口目前仅发布 `size=auto`（也可省略）和 `size=1024x1024`，以模型详情的 `size.enum`
-为准。前者由 Provider 决定原生 1K 输出比例，后者请求原生 1K 正方形；网关不缩放、裁切或重新编码。
-不接受 `size=1K`、任意 WxH 或 2K/4K；不把其他 Gemini 型号的像素表套用到 Lite。
-Vertex Lite 每张内联编辑图最多 7,000,000 解码字节，参数 `max_decoded_bytes` 发布该限制；
-客户端仍提交标准 `image` / `images` 或 multipart 文件，南向差异由网关适配。
-请以当前 Key 的模型可用性和管理员确认的验收范围为准。
+Gemini 3.1 Flash-Lite Image 的生成与编辑支持 `size=auto`（默认，模型决定 1K 图片的画幅）和
+`size=1024x1024`（1K 正方形）。按模型详情的 `size.enum` 取值。编辑输入见
+[Gemini Lite 图片编辑](api-reference/images/edits#gemini-lite-图片模型)。

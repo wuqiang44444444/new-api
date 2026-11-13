@@ -43,8 +43,8 @@ const logTypeSearchSchema = z
 
 const usageLogsSearchSchema = z.object({
   scope: z.enum(['self', 'all']).optional().catch(undefined),
-  page: z.number().optional().catch(1),
-  pageSize: z.number().optional().catch(undefined),
+  page: z.number().int().positive().optional().catch(1),
+  pageSize: z.number().int().min(1).max(100).optional().catch(undefined),
   type: logTypeSearchSchema.optional(),
   filter: z.string().optional().catch(''),
   model: z.string().optional().catch(''),

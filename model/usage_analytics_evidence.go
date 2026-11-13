@@ -73,7 +73,7 @@ func (agg *usageAggregation) applyFinalErrors(ctx context.Context) error {
 			}
 			for _, row := range batch {
 				if sentIDs[row.id] && row.fact.ChannelId > 0 {
-					acc := agg.buildUpstreamStandalone(row, agg.bundle, 1, usageResultFailure, false)
+					acc := agg.buildUpstreamStandalone(row, agg.bundle, 1, usageResultFailure, false, BillingReconciliationModeUnknown, 0, false)
 					acc.m.RowsMissingMoney = 1
 					acc.originalIncomplete = true
 					name := row.parsed.providerModel
@@ -84,7 +84,7 @@ func (agg *usageAggregation) applyFinalErrors(ctx context.Context) error {
 					if name == "" {
 						name = usageAnalyticsUnknownModel
 					}
-					agg.mergeUpstream(usageUpstreamKey{day: usageDayIndex(agg.period, row.fact.CreatedAt), channel: row.fact.ChannelId, model: name, fallback: fallback, mode: row.parsed.billingMode}, acc)
+					agg.mergeUpstream(usageUpstreamKey{day: usageDayIndex(agg.period, row.fact.CreatedAt), channel: row.fact.ChannelId, model: name, fallback: fallback, mode: BillingReconciliationModeUnknown}, acc)
 				}
 			}
 		}

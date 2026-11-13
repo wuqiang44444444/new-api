@@ -21,6 +21,7 @@ import (
 const (
 	BillingReconciliationModeToken            = "token"
 	BillingReconciliationModePerCall          = "per_call"
+	BillingReconciliationModePerImage         = "per_image"
 	BillingReconciliationModePerSecond        = "per_second"
 	BillingReconciliationModeDurationAndCount = "duration_and_count"
 	BillingReconciliationModeUnknown          = "unknown"
@@ -29,7 +30,7 @@ const (
 // ValidBillingReconciliationMode validates the persisted mode used by reports and their detail filters.
 func ValidBillingReconciliationMode(mode string) bool {
 	switch mode {
-	case BillingReconciliationModeToken, BillingReconciliationModePerCall, BillingReconciliationModePerSecond, BillingReconciliationModeDurationAndCount, BillingReconciliationModeUnknown:
+	case BillingReconciliationModeToken, BillingReconciliationModePerCall, BillingReconciliationModePerImage, BillingReconciliationModePerSecond, BillingReconciliationModeDurationAndCount, BillingReconciliationModeUnknown:
 		return true
 	default:
 		return false
@@ -117,6 +118,7 @@ type BillingReconciliationDataQuality struct {
 }
 
 type BillingReconciliationUsage struct {
+	BillingImageTotals
 	Requests         int64 `json:"requests"`
 	BillableCalls    int64 `json:"billable_calls"`
 	RefundedCalls    int64 `json:"refunded_calls"`
@@ -375,6 +377,8 @@ type parsedBillingReconciliationLog struct {
 	taskBillingEvent         string
 	hasImageCount            bool
 	completedImageCount      int64
+	billableImageCount       *int64
+	billableImageApplicable  bool
 	modelRatio               *float64
 	completionRatio          *float64
 	modelPrice               *float64
@@ -403,6 +407,7 @@ type parsedBillingReconciliationLog struct {
 	derivedOutputImageTokens *int
 	contractSettlement       *CustomerContractSettlement
 	originalReplayReason     string
+	frozenReplay             *FrozenChargeReplay
 	priceMarker              string
 	providerModel            string
 	unavailable              bool
@@ -592,6 +597,10 @@ func parseBillingReconciliationLog(log billingReconciliationLog) parsedBillingRe
 	}
 	parsed.unavailable = parsed.unavailable || parsed.fundingAdjustmentFailed
 	recoverHistoricalFixedRequestMode(log, other, snapshot, &parsed)
+	parsed.billableImageCount, parsed.billableImageApplicable = frozenBillingImage(log, parsed, customerExportFacts{other: other, snapshot: snapshot})
+	if parsed.billableImageApplicable {
+		parsed.billingMode = BillingReconciliationModePerImage
+	}
 	parsed.cacheWriteUnavailable = parsed.cacheWriteUnavailable && parsed.billingMode != BillingReconciliationModePerCall
 	return parsed
 }
@@ -638,6 +647,7 @@ func billingReconciliationRawMarker(raw json.RawMessage) string {
 }
 
 func accumulateBillingReconciliationLog(target *BillingReconciliationUsage, log billingReconciliationLog, parsed parsedBillingReconciliationLog) {
+	target.BillingImageTotals.observe(parsed.billableImageCount, parsed.billableImageApplicable, parsed.isChannelTest)
 	quota := max(int64(log.Quota), int64(0))
 	if log.Type == LogTypeConsume {
 		if parsed.isRequest {
@@ -653,10 +663,12 @@ func accumulateBillingReconciliationLog(target *BillingReconciliationUsage, log 
 		}
 		target.RefundQuota += quota
 	}
-	target.InputTokens += parsed.inputTokens
-	target.OutputTokens += parsed.outputTokens
-	target.CacheReadTokens += parsed.cacheReadTokens
-	target.CacheWriteTokens += parsed.cacheWrite.total
+	if parsed.billingMode != BillingReconciliationModePerImage {
+		target.InputTokens += parsed.inputTokens
+		target.OutputTokens += parsed.outputTokens
+		target.CacheReadTokens += parsed.cacheReadTokens
+		target.CacheWriteTokens += parsed.cacheWrite.total
+	}
 }
 
 func accumulateBillingReconciliationPrice(accumulator *billingReconciliationModelAccumulator, log billingReconciliationLog, parsed parsedBillingReconciliationLog) {
@@ -790,6 +802,7 @@ func finalizeBillingReconciliationQuality(target **BillingReconciliationDataQual
 }
 
 func accumulateBillingReconciliationUsage(target *BillingReconciliationUsage, source BillingReconciliationUsage) {
+	target.BillingImageTotals.add(source.BillingImageTotals)
 	target.Requests += source.Requests
 	target.BillableCalls += source.BillableCalls
 	target.RefundedCalls += source.RefundedCalls
@@ -838,6 +851,7 @@ type ProviderBillingPlatformSummary struct {
 // It intentionally excludes customer quota and refund fields, which are not
 // evidence of a supplier charge or credit.
 type ProviderBillingUsage struct {
+	BillingImageTotals
 	Seconds                *decimal.Decimal `json:"seconds"`
 	CompletedImages        int64            `json:"completed_images,omitempty"`
 	SecondsUnavailableRows int64            `json:"seconds_unavailable_rows,omitempty"`
@@ -884,6 +898,7 @@ func accumulateProviderBillingLog(target *ProviderBillingUsage, log billingRecon
 			target.BillableCalls++
 		}
 	}
+	target.BillingImageTotals.observe(parsed.billableImageCount, parsed.billableImageApplicable, parsed.isChannelTest)
 	target.InputTokens += parsed.recordedInputTokens
 	target.OutputTokens += parsed.outputTokens
 	target.CacheReadTokens += parsed.cacheReadTokens
@@ -892,6 +907,7 @@ func accumulateProviderBillingLog(target *ProviderBillingUsage, log billingRecon
 }
 
 func accumulateProviderBillingUsage(target *ProviderBillingUsage, source ProviderBillingUsage) {
+	target.BillingImageTotals.add(source.BillingImageTotals)
 	target.CompletedImages += source.CompletedImages
 	target.SecondsUnavailableRows += source.SecondsUnavailableRows
 	if source.Seconds != nil {

@@ -1,7 +1,7 @@
 ---
 page-id: videos-modelark
 kind: api-reference
-last-verified: 2026-11-12
+last-verified: 2026-11-13
 operations:
   - listModelArkVideoModels
   - retrieveModel
@@ -15,8 +15,7 @@ operations:
 
 # ModelArk V3 标准视频
 
-Seedance 与 H3 标准视频客户模型统一使用 ModelArk V3 任务合同。`/v1/video/generations` 属于原生通用视频
-协议，不是本接口的别名；ModelArk、Kling、即梦和 OpenAI Videos 的字段不能混用。
+Seedance、H3 和 MiniMax 标准视频可使用 ModelArk V3。创建入口为 `POST /api/v3/contents/generations/tasks`。
 
 完整流程是：查询模型 → POST 创建 → 保存 `id` → GET 轮询 → 成功后等待交付就绪，再通过结果签名地址下载。
 可复制的轮询脚本见[图片与视频调用实战](guides/media-workflow)。创建、查询和访问内容入口使用创建时
@@ -25,12 +24,7 @@ Seedance 与 H3 标准视频客户模型统一使用 ModelArk V3 任务合同。
 按模型元数据中的 `api.video.documentation_path` 阅读对应说明：
 
 - [H3 视频](api-reference/videos/h3)：参考图、视频、音频及首尾帧。
-- [Seedance V 视频](api-reference/videos/seedance-v)：本站也可能使用 `seedance-2-0-v` 等客户名，
-  具体名称以目录为准。该系列的音频与首尾帧组合规则见专页。
-
-`seedance-v` 等命名不用于推断参数范围；创建时原样使用目录返回的客户模型 ID。
-H3 不发布 `api.assets`；Seedance V 是否支持本站托管图片，以当前模型的 `api.assets.supported`
-和 `management_mode` 为准，不从客户名推断素材能力。
+- [Seedance V 视频](api-reference/videos/seedance-v)
 
 ## 查询模型与参数合同
 
@@ -41,7 +35,7 @@ GET /v1/models/{customer_model}
 GET /api/v3/contents/generations/models
 ```
 
-查询当前 Key 可用的视频模型：
+列出视频模型，通过 `available` 判断当前 Key 能否调用：
 
 ```bash
 curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models" \
@@ -130,7 +124,7 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models" \
 | `api.video.creation.parameters`    | 顶层字段的类型、必填性、固定值、默认值、枚举、推荐值和上下限 |
 | `api.video.creation.content_types` | `content` 允许的媒体类型、角色、子字段和数量边界             |
 | `api.video.operations`             | 创建、列表、查询、删除与内容下载的路径和支持状态             |
-| `api.assets`                       | 素材类型、操作、创建限制、引用格式与匿名复用域               |
+| `api.assets` / `api.hosted_assets`   | 默认素材合同，以及配置上游代理时单独列出的账号级托管合同   |
 
 模型名由部署方定义。客户端只能发送目录中的客户模型名，不能从名称推断分辨率、时长、媒体组合、
 上游模型或 Provider。
@@ -174,14 +168,11 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/models" \
 - 首帧/首尾帧与多模态参考素材不能混用。
 - 图片最多 30 项、视频最多 10 项、音频最多 10 项，总素材最多 50 项；参考视频、参考音频各自
   总时长不得超过 30 秒。支持纯音频参考，视频编辑尚未开放。
-- 上游根据内容角色与提示词判定任务类型，部分场景错误可能在任务开始后异步返回。
-  网关不根据提示词替调用方选择场景，也不改写画幅。
+- 请使用与场景匹配的媒体角色、提示词和画幅。部分组合错误在任务查询时返回。
 
-Fast/Mini 的音频参考应搭配图片或视频，文档不建议仅传音频；不能把接受 `audio_url` 视为纯音频
-生成已经验证。2.0（0818）页面未禁止纯音频，也没有提供真实履约保证。
+使用对应 Fast 或 Mini 的模型时，请将参考音频与图片或视频搭配。纯音频输入以所选模型的生成合同为准。
 
-四款对应的本站合同缺省时长为 5 秒；2.5 上游自身默认 -1 不改变本站默认值。模型名称可由部署方
-自定义，以上场景说明不能用于从客户模型名推断 Provider 或能力。
+省略 `duration` 时以模型元数据的 `default_value` 为准。
 
 ## 创建任务
 
@@ -321,7 +312,7 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 `additional_properties=false` 时，列表外字段直接返回
 `400 unsupported_parameter`。
 
-已发布字段按统一协议的条件生效，服务负责必要的转换；不要求调用方填写内部参数或改写请求结构。
+字段的生效条件见上表。
 例如是否返回末帧仍需检查成功响应中是否实际存在 `last_frame_url`，不能仅凭提交了字段就假定结果存在。
 
 ### `content` 内容项
@@ -351,15 +342,13 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 
 具体模型允许哪些 `type + role`、每种内容的数量以及组合规则，以
 `api.video.creation.content_types` 与上述场景说明为准。部分组合由上游异步校验，不能仅凭每种媒体
-分别受支持就认定其组合有效；失败不会静默删字段或降级为文生视频。
+分别受支持就认定其组合有效。
 
 ### 参考音频的 URL、Base64 与文件
 
 `type=audio_url`、`role=reference_audio` 和 `audio_url.url` 保持不变：
 
-- HTTPS 地址由网关原样传递，无需预先复制到本站 OSS。
-- 音频 Data URL（例如 `data:audio/wav;base64,...`）或裸 Base64 由网关上传到本站 OSS，使用本站
-  HTTPS URL 发送。未声明 MIME 时可根据文件头识别，但识别结果不会作为音频有效性的拒绝条件。
+- `audio_url.url` 可传 HTTPS URL、音频 Data URL（如 `data:audio/wav;base64,...`）或裸 Base64。
 - 文件使用同一路径的 `multipart/form-data`：`request` 表单项包含完整 ModelArk JSON，音频附件通过
   `audio_url.url` 中的 `file://<表单项名称>` 引用。它只引用本次上传的附件，不是服务器文件路径。
 
@@ -373,11 +362,9 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks" \
 ```
 
 附件表单项名称必须唯一，所有附件都必须被音频内容项引用；每个上传文件或解码后的 Base64 音频最多
-15 MiB（含上限，按文件实际字节数计算），全请求仍受站点请求体上限限制。本站 OSS 不可用、上传或签名失败时返回
-`503 reference_audio_unavailable`，不提交生成任务、不预扣生成费用。HTTPS URL 无需本站 OSS。
-
-网关不检查参考音频的实际时长、不转码；媒体是否有效以及是否满足模型限制由上游判断，错误信息经
-脱敏后返回。音频上传不会创建图片素材，也不会把 `audio_url` 改成 `image_url`。
+15 MiB，全请求仍受站点请求体上限限制。内联或文件音频无法读取用于生成时，可返回
+`503 reference_audio_unavailable`，此时不会预扣生成费用。请确保媒体格式、实际时长和组合符合模型要求。
+需要跨任务复用时，使用[托管素材](api-reference/assets)。
 
 ### 创建响应
 
@@ -441,11 +428,11 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
 | 字段                          | 类型    | 说明                                                                 |
 | ----------------------------- | ------- | -------------------------------------------------------------------- |
 | `id`                          | string  | 平台任务 ID                                                          |
-| `model`                       | string  | 创建时冻结的客户模型名                                               |
+| `model`                       | string  | 创建时使用的客户模型名                                               |
 | `status`                      | string  | `queued`、`running`、`succeeded`、`failed`、`cancelled` 或 `expired` |
 | `content.delivery_status`     | string  | 本站托管线路的主视频交付状态：`ready`、`preparing` 或 `unavailable`；范围外线路可省略 |
 | `content.video_url`           | string  | 本站托管线路就绪后返回 24 小时预签名 GET 地址；范围外线路沿用鉴权内容代理路径 |
-| `content.last_frame_url`      | string  | 实际存在且转存就绪的末帧预签名 GET 地址                                   |
+| `content.last_frame_url`      | string  | 末帧就绪时返回的签名 GET 地址                                   |
 | `seed`                        | integer | 实际或上游返回的随机种子；不存在时省略                               |
 | `resolution`                  | string  | 实际输出分辨率；不存在时省略                                         |
 | `duration`                    | integer | 实际时长；不存在时省略                                               |
@@ -474,14 +461,9 @@ curl "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-id" \
 单查与列表的每个任务都返回上述 `usage` 字段。秒数允许小数。字段值为 `0` 可能表示已确认为零，
 也可能表示用量尚未确认。
 
-The single-task response and each task in the list include the same usage fields. Seconds may be
-fractional. A zero may represent confirmed zero or unavailable usage. Use the bill for final charges.
-
 终态任务的公开错误码包括 `generation_failed`、`provider_contract_failure`、`cancelled` 和 `expired`。
-单项查询返回平台已保存的状态和当前交付结果，由平台后台更新。客户 GET 不会触发上游状态查询，
-频繁重复查询不会加快状态更新。一次后台查询异常不会立刻把已有任务判为业务失败；客户端应继续有界轮询。
-`running` 也可能表示执行结果仍在核实，不保证上游正在生成。等待超过客户端时限后保留原任务 ID，
-稍后继续查询或联系管理员，不重新创建任务，也不据此认定失败或退款。
+`queued` 或 `running` 时退避查询原任务。`running` 也可能表示结果仍在核实。客户端等待超时或
+单次查询失败时，保留原任务 ID，稍后继续查询或联系管理员核查。
 
 ## 列出任务
 
@@ -563,8 +545,7 @@ curl -X DELETE "{{SITE_BASE_URL}}/api/v3/contents/generations/tasks/task-public-
 
 ## 下载视频或末帧
 
-Seedance 专用线路与 MiniMax 标准视频扩展在生成成功后，先将主视频及实际提供的末帧转存本站
-私有对象存储。生成状态 `succeeded` 与交付状态 `content.delivery_status` 分别表达：
+Seedance 与 MiniMax 标准视频返回 `status=succeeded` 后，按 `content.delivery_status` 处理下载。
 
 | 交付状态 | 客户行为 |
 | --- | --- |
@@ -572,23 +553,21 @@ Seedance 专用线路与 MiniMax 标准视频扩展在生成成功后，先将�
 | `ready` | 主视频就绪，按 `video_url` 下载；实际末帧就绪时另返回 `last_frame_url` |
 | `unavailable` | 结果无法交付，不返回主视频地址；保留任务 ID 联系技术人员核查 |
 
-上例中的 `storage.example` 为示意地址；实际响应包含本站对象存储签名查询参数。签名 URL 不需要
-平台 API Key 或 Provider Key，每次签发从当前时刻起有效 24 小时（86400 秒）。复制完整 URL 下载：
+签名 URL 自签发起有效 24 小时（86400 秒）。下载时使用完整 URL，无需附带 API Key。
 
 ```bash
 curl --fail "$VIDEO_URL" --output result.mp4
 ```
 
 `VIDEO_URL` 为授权任务查询返回的完整 `content.video_url`。末帧同理使用 `content.last_frame_url`，
-文件扩展名按实际 MIME 选择。Range 断点续传和浏览器播放由对象存储履约，真实环境仍需验收。
+文件扩展名按实际 MIME 选择。断点续传取决于下载地址是否支持 Range 请求。
 
 `delivery_status=ready` 表示主视频就绪，不保证末帧已就绪；`last_frame_url` 缺失不能单独判定
 未生成末帧。需要已请求的末帧时可继续有界查询，或使用下述 `?part=last_frame` 内容入口区分
 准备中、交付不可用和部件不存在。
 
-链接到期后，在对象仍保留且调用方仍获授权时重新查询任务，可签发新的 24 小时 GET 地址；不会
-重新生成或复制视频。链接有效期与对象保留期不同，文件保留策略由部署方明确，不能按任务创建
-或完成时间推算下载链接到期时间。链接应妥善保存，避免记录到普通日志或公开分享。
+链接过期后，若文件仍保留且授权有效，重新查询原任务可续签。文件保留期由部署方设定。
+完整签名 URL 带有下载权限，请妥善保存。
 
 既有内容入口仍需平台鉴权，交付就绪后返回 `302` 跳转至本站签名地址：
 
@@ -605,60 +584,27 @@ HEAD 内容请求返回针对 HEAD 方法的签名地址；响应中的 GET 下�
 | --- | --- | --- |
 | `400` | `video_not_ready`、`invalid_content_part` | 任务尚未成功，或部件不合法 |
 | `404` | `video_not_found`、`content_not_found` | 任务或所请求的末帧不存在 |
-| `409` | `video_delivery_preparing` | 结果待转存或正在转存 |
+| `409` | `video_delivery_preparing` | 结果准备中，稍后重试 |
 | `410` | `video_delivery_unavailable` | 结果交付不可用 |
 | `503` | `video_delivery_unavailable` | 当前本站交付存储不可用 |
 
-转存或下载失败不改变已确认的生成成功和计费事实，不自动退款，不自动重新生成。ModelArk 北向
-下挂的范围外原生视频线路仍沿用本站鉴权内容代理及既有过期语义，不受上述 OSS 托管合同影响。
-
-English contract: generation success and delivery readiness are separate. Hosted results expose
-`ready`, `preparing`, or `unavailable`; ready URLs authorize GET for 86400 seconds from issuance.
-Downloads require no gateway API key. An authorized query can renew a URL while the object is retained.
-The authenticated content endpoint redirects HEAD requests to a URL signed for HEAD. Delivery failures
-never regenerate the video or change the confirmed generation and billing facts.
-The `ready` state describes the main video; the last frame may still be preparing. If its URL is absent,
-query again or use `?part=last_frame` to distinguish preparation, unavailable delivery and an absent part.
+交付失败时请核查原任务。已确认的生成费用仍按账单结算。原生视频的 `410 video_content_expired`
+表示内容已过期，重新查询原任务无法保证恢复下载。
 
 ## 素材引用
 
-视频请求可直接使用请求级媒体，也可以使用素材 API 返回的 `reference`。读取当前模型的
-`api.assets.management_mode` 区分两种流程：
-
-- `caller_managed_stateless`：普通代理 ID 不在本地验证所有权、ready 状态或作用域，由素材服务判断
-  存在性、权限、兼容性与审核；不能通过改模型探测 ID。
-- `platform_hosted`：本站托管图片会在视频预扣前校验当前账号归属、删除状态和引用位置。
-  只将图片 reference 放入 `image_url.url`，不能当作视频或音频。相同账号的 API Key 共享托管素材，
-  但视频任务仍仅属于创建它的 API Key。删除素材只阻止新引用，已受理视频继续执行。
-
-部分模型只能使用直接媒体 URL 或本站托管图片，不能消费普通代理素材 ID。不要手工构造或猜测引用，
-以模型发布的素材能力和创建响应为准。
-
-跨模型复用前比较两个模型的 `api.assets.reuse_scope`。只有两个非空值完全相同时才可尝试复用；scope
-不同或缺失时不得复用。素材创建、素材组和真人认证的详细参数见[素材与素材组](api-reference/assets)。
-
-控制台模型广场的模型卡片按同一规则显示“素材共享组”短标签：标签相同的模型位于同一素材复用域，
-可以把同一个 `asset://` 引用交给同组其它模型尝试；程序应比较完整非空 `reuse_scope`，不能仅比较短标签。
-没有标签的模型未发布素材库，也没有可比较的
-复用域，不得把其它模型的素材引用交给它。标签只是复用提示，最终存在性、权限和兼容性由当前模型
-选定的上游判断。
+将[托管素材](api-reference/assets)返回的 `reference` 填入对应的 `image_url.url`、`audio_url.url` 或
+`video_url.url`。直接 URL 可与托管引用混用。提交生成时，媒体类型、角色、数量、组合及规格须符合目标模型的要求。
 
 ## 创建结果不明、计费与重试
 
-ModelArk 创建请求最多发送一次上游 POST，当前不接受客户幂等键。发送后结果不明时返回
-`create_outcome_unknown`，平台不会自动重发或换模型。客户端必须停止自动创建，保存
-`request_id`。创建阶段钱包占款满 24 小时后自动退回，后台每 15 秒检查，退款失败每 30 秒重试；
-服务停机、数据库故障或积压可能延迟实际到账。正式任务按任务计费合同处理，不因满 24 小时自动退款。
+ModelArk V3 创建不支持客户幂等键。收到 `create_outcome_unknown` 时，保留 `request_id` 核查，
+不要重发创建请求。结果待核实且尚未建立任务的钱包占款，满 24 小时后自动退回。已受理任务按实际任务结算。
 
 控制台用量日志的“视频退款进度”显示本人请求，包括没有成功返回任务 ID 的创建占款。程序可用原
 API Key 请求 `GET /api/video-funds/token?p=1`，可选 `task_id` 按平台任务或占款请求 ID 精确筛选。
 每页 20 条；只返回该 Key 所属用户及应用的数据。金额单位为 quota，`refund_amount_known=false`
 表示历史退款额无法核实，零时间表示不适用或未知。退款不代表上游已取消；退款后不会自动补扣。
-
-Funding progress: use the original API key with `GET /api/video-funds/token?p=1`. Creation wallet holds
-are released after 24 hours; the worker checks every 15 seconds and retries failures after 30 seconds.
-Do not automatically repeat an unknown creation. Successfully accepted tasks follow their normal billing
-contract. The response is scoped to the authenticated user and application; amounts use quota units.
 
 任务成功建立后，费用按创建时确定的模型、请求参数和价格规则处理。成功视频可以先交付，结算随后完成：
 
@@ -666,11 +612,6 @@ contract. The response is scoped to the authenticated user and application; amou
   `usage` 用于展示，零值和字段是否存在均不能作为结算凭证。
 - 最终费用可能高于或低于预扣，差额按实际规则补扣或退还；不要用预扣值当最终账单；
 - 成功后的费用核实不要求重新生成视频，查询也不会重新触发生成。
-
-轮询 GET 可以有界重试；创建 POST 不能因为客户端超时而盲目重放。下载应在内容有效期内完成，
-范围外原生线路的 `410 video_content_expired` 不能通过重新查询保证恢复。本站托管线路按
-`content.delivery_status` 处理；签名 URL 到期后，在对象仍保留且授权有效时重新查询原任务续签，
-不要通过重新创建视频恢复下载。
 
 ## 错误响应
 
@@ -689,11 +630,13 @@ ModelArk 错误信封：
 | HTTP 状态     | 常见错误码                                                                        | 说明                                         |
 | ------------- | --------------------------------------------------------------------------------- | -------------------------------------------- |
 | `400`         | `invalid_request`、`unsupported_parameter`、`invalid_page_size`、`invalid_status` | 请求结构、字段、分页或过滤条件错误           |
+| `400`         | `invalid_video_parameter`                                                         | 参数或素材引用不符合当前模型合同             |
 | `401` / `403` | 鉴权或权限错误                                                                    | 检查 API Key、模型可用状态和分组             |
 | `404`         | `task_not_found`                                                                  | 当前应用范围内没有该 ModelArk 任务           |
 | `409`         | 取消或删除冲突码                                                                  | 当前任务状态不允许该操作                     |
 | `413`         | `request_body_too_large`                                                          | 请求正文或内联媒体超过上限，减少大小后再提交 |
 | `429`         | 限流或额度错误                                                                    | 根据错误码区分并退避                         |
+| `503`         | `internal_error`                                                                  | 也用于托管对象或签名不可用，此类错误发生在预扣和提交前       |
 | `503`         | `create_outcome_unknown`、`upstream_unavailable`、`cancellation_unknown`          | 不要重发创建；查询或联系管理员核查           |
 
 请求记录相关的 `evidence_*` 错误及重试边界见[错误与重试](concepts/errors#请求记录相关错误)。

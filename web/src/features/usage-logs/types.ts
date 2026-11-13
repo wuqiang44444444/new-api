@@ -243,6 +243,7 @@ export interface LogOtherData {
   // for legacy logs; unit-price display must not guess without it.
   // Response-only statement facts; shared with the server export projection.
   billing_facts?: {
+    billable_image_count?: number
     counts_toward_bill?: boolean
     recorded_original?: string
     original_source?: string
@@ -517,7 +518,7 @@ export interface TaskArtifactsResponse {
 // ============================================================================
 
 export interface GetLogsParams {
-  page_cursor?: string
+  page_snapshot?: string
   group_funds?: boolean
   fund_group?: string
   report_version?: string
@@ -552,7 +553,7 @@ export interface GetLogsResponse {
   success: boolean
   message?: string
   data?: {
-    next_cursor?: string
+    page_snapshot?: string
     detail_refs?: string[]
     fund_groups?: BillingFundGroup[]
     quota?: number
@@ -621,7 +622,7 @@ export interface GetTaskLogsParams {
  * Configuration for fetching logs by category
  */
 export interface FetchLogsConfig {
-  pageCursor?: string
+  pageSnapshot?: string
   groupFunds?: boolean
   fundGroup?: string
   signal?: AbortSignal

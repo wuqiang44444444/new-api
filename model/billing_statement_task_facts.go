@@ -129,6 +129,16 @@ func billingStatementTaskFacts(log billingReconciliationLog, other, snapshot map
 		parsed.billingMode = BillingStatementSettledExpressionMode(string(expression), units, unit)
 		return
 	}
+	if isTask && event == "create" {
+		switch billingBreakdownString(other["billing_unit"]) {
+		case string(billingexpr.BillingUnitToken):
+			parsed.billingMode = BillingReconciliationModeToken
+			return
+		case string(billingexpr.BillingUnitRequest):
+			parsed.billingMode = BillingReconciliationModePerCall
+			return
+		}
+	}
 	// Version 1 task snapshots forced per_call even with a zero fixed price.
 	// A completed async image can also carry -1 for an unconfigured fixed price.
 	price, ok := billingReconciliationFloat(billingReconciliationSnapshotRaw(snapshot, other, "model_price"))
