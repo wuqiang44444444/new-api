@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const EvidenceIndexRetentionSeconds int64 = 7 * 86400
+const evidenceAccessLogRetentionSeconds int64 = 7 * 86400
 
 // The lock is shared by event reservation, object publication and cleanup.
 func writableEvidenceIndex(tx *gorm.DB, id, now, retentionSeconds int64) (*TaskRequestEvidence, error) {
@@ -100,7 +100,7 @@ func DeleteExpiredEvidenceIndex(evidenceID, now int64) (int64, error) {
 
 func DeleteExpiredEvidenceAccessBatch(now int64, limit int) (int64, error) {
 	var ids []int64
-	if err := DB.Model(&TaskRequestEvidenceAccessLog{}).Where("created_at < ?", now-EvidenceIndexRetentionSeconds).Order("id").Limit(limit).Pluck("id", &ids).Error; err != nil {
+	if err := DB.Model(&TaskRequestEvidenceAccessLog{}).Where("created_at < ?", now-evidenceAccessLogRetentionSeconds).Order("id").Limit(limit).Pluck("id", &ids).Error; err != nil {
 		return 0, err
 	}
 	if len(ids) == 0 {

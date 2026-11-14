@@ -41,7 +41,7 @@ func runChannelConnectionProbe(ctx context.Context, channel *model.Channel) (res
 	if snapshot.ChannelInfo.IsMultiKey {
 		snapshot.ChannelInfo.MultiKeyMode = constant.MultiKeyModeRandom
 	}
-	key, _, apiErr := snapshot.GetNextEnabledKey()
+	key, slot, apiErr := snapshot.GetNextEnabledKey()
 	if apiErr != nil {
 		return testResult{localErr: apiErr, newAPIError: apiErr}
 	}
@@ -66,6 +66,10 @@ func runChannelConnectionProbe(ctx context.Context, channel *model.Channel) (res
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequestWithContext(ctx, http.MethodGet, "/v1/models", nil)
 	c.Set("channel_test_protocol", "openai")
+	if snapshot.ChannelInfo.IsMultiKey {
+		common.SetContextKey(c, constant.ContextKeyChannelIsMultiKey, true)
+		common.SetContextKey(c, constant.ContextKeyChannelMultiKeyIndex, slot)
+	}
 	clienterrlog.InstallHTTPExchange(c)
 	result.context = c
 	settings := channel.GetSetting()
@@ -83,6 +87,7 @@ func runChannelConnectionProbe(ctx context.Context, channel *model.Channel) (res
 		result.localErr, result.newAPIError = apiErr, apiErr
 		return result
 	}
+	service.WatchChannelProbeBalance(channel, slot, resp)
 	defer resp.Body.Close()
 	result.upstreamStatus = resp.StatusCode
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))

@@ -24,7 +24,8 @@ func TestEvidenceWindowFreezesDatabaseRetentionAtWrite(t *testing.T) {
 		common.OptionMapRWMutex.Unlock()
 	})
 	key := system_setting.TaskRequestEvidenceRetentionOptionKey
-	require.NoError(t, model.UpdateOption(key, "7"))
+	assert.EqualValues(t, 2*86400, EvidenceRetentionSeconds())
+	require.NoError(t, model.UpdateOption(key, "30"))
 	capture := newAPIRequestEvidence(model.TaskRequestEvidence{RequestID: "configured-retention"})
 	record := capture.newRecord("north_receive", EvidenceObjectMeta{}, false)
 	require.NotNil(t, record)
@@ -34,8 +35,8 @@ func TestEvidenceWindowFreezesDatabaseRetentionAtWrite(t *testing.T) {
 	indexes := evidenceIndexes(t, model.TaskRequestEvidenceQueryParams{RequestID: "configured-retention"})
 	require.Len(t, indexes, 1)
 	index := indexes[0]
-	assert.Equal(t, index.CreatedAt+7*86400, index.RetainUntil)
-	assert.False(t, IsEvidenceBodyExpired(index, index.CreatedAt+3*86400))
+	assert.Equal(t, index.CreatedAt+30*86400, index.RetainUntil)
+	assert.False(t, IsEvidenceBodyExpired(index, index.CreatedAt+29*86400))
 	require.NoError(t, model.UpdateOption(key, "2"))
 	assert.True(t, IsEvidenceBodyExpired(index, index.CreatedAt+3*86400))
 }
@@ -52,9 +53,6 @@ func TestEvidenceRetentionDeadline(t *testing.T) {
 }
 
 func TestEvidenceBodyExpiredBoundaries(t *testing.T) {
-	old := system_setting.GetTaskRequestEvidenceConfig()
-	t.Cleanup(func() { system_setting.SetTaskRequestEvidenceConfig(old) })
-	system_setting.SetTaskRequestEvidenceConfig(system_setting.TaskRequestEvidenceConfig{RetentionDays: 2})
 	day := int64(86400)
 	created := int64(1000000)
 	// Exactly at the deadline the body is still readable; expired after it.

@@ -227,7 +227,8 @@ func checkIfChatComplete(a *Adaptor, c *gin.Context, info *relaycommon.RelayInfo
 		return err, false
 	}
 
-	resp, err := doRequest(req, info) // 调用 doRequest
+	resp, err := doRequest(req, info)
+	service.RecordChannelAlertRelayHTTP(c, info, resp, err)
 	if err != nil {
 		return err, false
 	}
@@ -272,6 +273,7 @@ func getChatDetail(a *Adaptor, c *gin.Context, info *relaycommon.RelayInfo) (*ht
 		return nil, fmt.Errorf("setup request header failed: %w", err)
 	}
 	resp, err := doRequest(req, info)
+	service.RecordChannelAlertRelayHTTP(c, info, resp, err)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}

@@ -69,7 +69,7 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
   )
 
   useEffect(() => {
-    if (profile?.setting) {
+    if (profile) {
       setSettings(normalizeUserSettings(profile.setting))
     }
   }, [profile])
@@ -137,14 +137,19 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
           id='threshold'
           type='number'
           className='h-9'
-          value={settings.quota_warning_threshold}
+          min={0}
+          step={1}
+          value={settings.quota_warning_threshold || ''}
+          placeholder={
+            profile?.effective_quota_warning_threshold?.toString() ??
+            t('Enter threshold')
+          }
           onChange={(e) =>
             updateField('quota_warning_threshold', Number(e.target.value))
           }
-          placeholder={t('Enter threshold')}
         />
         <p className='text-muted-foreground text-xs'>
-          {t('Get notified when balance falls below this value')}
+          {t('Leave blank to use the site quota warning threshold')}
         </p>
       </div>
 

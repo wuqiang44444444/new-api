@@ -215,12 +215,12 @@ func TestChannelAlertPersistenceDialects(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			db := channelAlertDialectDB(t, dialect)
 			ctx := context.Background()
-			require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.ChannelAlertEpisode{}, &model.ChannelAlertDelivery{}))
+			require.NoError(t, db.AutoMigrate(&model.Option{}, &model.Channel{}, &model.ChannelAlertEpisode{}, &model.ChannelAlertDelivery{}))
 			channel := model.Channel{Name: "alert-dialect", Key: "old-fixture"}
 			require.NoError(t, db.Create(&channel).Error)
 			key := channelAlertDigest(dialect, common.NewRequestId())
 			event := model.ChannelAlertEpisode{ChannelID: channel.Id, ScopeKey: key, OpenKey: &key,
-				Revision: model.ChannelAlertRevision(&channel), FirstAt: 1000, LastAt: 3000, ConfirmedAt: 3500, KeySlot: -1}
+				Revision: model.ChannelAlertRevision(&channel), FirstAt: 1000, LastAt: 3000, ConfirmedAt: 3500, KeySlot: -1, Kind: string(channelAlertService)}
 			created, err := model.OpenChannelAlert(ctx, event, []string{"ops@example.com"})
 			require.NoError(t, err)
 			require.True(t, created)

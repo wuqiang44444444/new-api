@@ -28,7 +28,7 @@ func TestXunfeiEvidenceMatchesActualRequestAndExcludesBinaryResponse(t *testing.
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.EvidenceTaskLink{}))
 	model.DB = db
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, RetentionDays: 2, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32)}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32)}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

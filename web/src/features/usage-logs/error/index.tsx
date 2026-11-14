@@ -25,14 +25,21 @@ import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { VideoFundLogs } from '../video-funds'
+import type { ErrorLogFilters } from './api'
 import { ErrorLogViewer } from './components/error-log-viewer'
 
-export function ErrorLogs() {
+export function ErrorLogs(props: {
+  initialFilters?: Partial<ErrorLogFilters>
+}) {
   const { t } = useTranslation()
   const [showFunds, setShowFunds] = useState(false)
   const user = useAuthStore((state) => state.auth.user)
   const canRead = !!user && user.role >= ROLE.ADMIN
-  const viewer = showFunds ? <VideoFundLogs /> : <ErrorLogViewer />
+  const viewer = showFunds ? (
+    <VideoFundLogs />
+  ) : (
+    <ErrorLogViewer initialFilters={props.initialFilters} />
+  )
   return (
     <SectionPageLayout fixedContent>
       <SectionPageLayout.Title>{t('Error Logs')}</SectionPageLayout.Title>

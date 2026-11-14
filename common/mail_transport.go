@@ -46,7 +46,9 @@ type GraphMailConfig struct {
 var (
 	// ErrMailSubmissionUnknown means a provider may have accepted the message.
 	ErrMailSubmissionUnknown = errors.New("mail submission outcome is unknown")
-	errMailNotConfigured     = errors.New("Mail delivery is not configured")
+	// ErrMailPermanentlyRejected identifies an explicit recipient or message rejection.
+	ErrMailPermanentlyRejected = errors.New("mail submission permanently rejected")
+	errMailNotConfigured       = errors.New("Mail delivery is not configured")
 	// ErrMailBusy indicates all local transport slots are in use.
 	ErrMailBusy   = errors.New("Mail delivery is busy")
 	mailSendSlots = make(chan struct{}, 4)

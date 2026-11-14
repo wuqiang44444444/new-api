@@ -16,10 +16,57 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, getRouteApi } from '@tanstack/react-router'
+import { z } from 'zod'
 
 import { ErrorLogs } from '@/features/usage-logs/error'
 
-export const Route = createFileRoute('/_authenticated/usage-logs/error')({
-  component: ErrorLogs,
+const errorLogSearch = z.object({
+  start_timestamp: z
+    .number()
+    .int()
+    .positive()
+    .max(253402300799)
+    .optional()
+    .catch(undefined),
+  end_timestamp: z
+    .number()
+    .int()
+    .positive()
+    .max(253402300799)
+    .optional()
+    .catch(undefined),
+  event_type: z
+    .enum(['api_error', 'channel_test', 'stream_error', 'task_failure'])
+    .optional()
+    .catch(undefined),
+  channel: z
+    .number()
+    .int()
+    .positive()
+    .max(Number.MAX_SAFE_INTEGER)
+    .optional()
+    .catch(undefined),
+  status: z.number().int().min(100).max(599).optional().catch(undefined),
+  model_name: z.string().min(1).max(256).optional().catch(undefined),
+  reason: z.string().min(1).max(128).optional().catch(undefined),
 })
+
+export const Route = createFileRoute('/_authenticated/usage-logs/error')({
+  validateSearch: errorLogSearch,
+  component: ErrorLogsRoute,
+})
+
+function ErrorLogsRoute() {
+  const search = getRouteApi('/_authenticated/usage-logs/error').useSearch()
+  return (
+    <ErrorLogs
+      key={JSON.stringify(search)}
+      initialFilters={{
+        ...search,
+        channel: search.channel?.toString(),
+        status: search.status?.toString(),
+      }}
+    />
+  )
+}

@@ -29,6 +29,11 @@ func runChannelAlertDelivery() {
 		var previousOverdue int64 = -1
 		for now := range ticker.C {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			if err := model.RetryIncidentMail(ctx, true); err != nil {
+				common.SysError("channel alert mail preparation retry failed")
+			}
+			cancel()
+			ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
 			if err := model.ExpireChannelAlertLeases(ctx, now.UnixMilli()); err != nil {
 				common.SysError("channel alert mail lease scan failed")
 			}
@@ -86,7 +91,7 @@ func deliverChannelAlertMail(owner string, send mailSendFunc, now func() time.Ti
 	}
 	cancel()
 
-	status := model.MailDeliveryStopped
+	status, stopReason := model.MailDeliveryStopped, ""
 	var submitted, accepted, next int64
 	if readErr != nil {
 		status = model.MailDeliveryRetryWait
@@ -94,12 +99,15 @@ func deliverChannelAlertMail(owner string, send mailSendFunc, now func() time.Ti
 		subject, body := channelAlertMessage(episode)
 		sendCtx, cancelSend := context.WithTimeout(context.Background(), common.ShortMailSubmissionTimeout)
 		sendCtx = common.WithMailSubmissionObserver(sendCtx, func(start time.Time) { submitted = start.UnixMilli() })
-		sendErr := send(sendCtx, subject, delivery.Recipient, body)
+		sendErr := submitManagedMail(sendCtx, send, model.ChannelAlertMailType(episode.Kind), model.QueuedMailTime(delivery.QueuedAt, episode.ConfirmedAt/1000), subject, delivery.Recipient, body)
 		cancelSend()
 		switch {
 		case sendErr == nil:
 			status = model.MailDeliveryAccepted
 			accepted = now().UnixMilli()
+		case errors.Is(sendErr, errMailPreferenceDisabled):
+			stopReason = model.MailStopPreferenceDisabled
+		case errors.Is(sendErr, common.ErrMailPermanentlyRejected):
 		case errors.Is(sendErr, common.ErrMailSubmissionUnknown):
 			status = model.MailDeliveryUnknown
 		case errors.Is(sendErr, common.ErrMailBusy):
@@ -124,13 +132,16 @@ func deliverChannelAlertMail(owner string, send mailSendFunc, now func() time.Ti
 	}
 	ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	return true, model.FinishChannelAlertDelivery(ctx, *delivery, owner, status, next, submitted, accepted)
+	return true, model.FinishChannelAlertDelivery(ctx, *delivery, owner, status, next, submitted, accepted, stopReason)
 }
 
 func channelAlertMessage(event model.ChannelAlertEpisode) (string, string) {
 	zh, en := "渠道故障", "Channel outage"
 	reasonZH, reasonEN := "上游服务持续失败", "Repeated upstream service failure"
 	switch channelAlertKind(event.Kind) {
+	case channelAlertBalance:
+		zh, en = "渠道上游欠费", "Upstream channel balance alert"
+		reasonZH, reasonEN = "上游因欠费或余额不足拒绝请求，请检查渠道上游账单和余额", "The upstream rejected a request due to an overdue or insufficient balance. Check the channel's upstream billing and balance."
 	case channelAlertNetwork:
 		reasonZH, reasonEN = "节点连接持续失败", "Repeated connection failure from this gateway node"
 	case channelAlertLimit:

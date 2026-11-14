@@ -11,9 +11,7 @@ import (
 )
 
 func TestErrorEventRetentionUsesDurableCutoffAndCanBeDisabled(t *testing.T) {
-	truncate(t)
-	require.NoError(t, model.LOG_DB.AutoMigrate(&model.ErrorEvent{}))
-	t.Cleanup(func() { model.LOG_DB.Where("request_id = ?", "retention-fixture").Delete(&model.ErrorEvent{}) })
+	withErrorReportTestDB(t)
 	t.Setenv("ERROR_EVENTS_RETENTION_DAYS", "0")
 	handler := errorEventRetentionHandler{}
 	assert.False(t, handler.Enabled())
@@ -32,6 +30,10 @@ func TestErrorEventRetentionUsesDurableCutoffAndCanBeDisabled(t *testing.T) {
 	finished, err := model.GetLatestSystemTask(handler.Type())
 	require.NoError(t, err)
 	assert.Equal(t, model.SystemTaskStatusSucceeded, finished.Status)
+	require.NoError(t, model.RecordErrorEventRetentionCutoff(context.Background(), 50))
+	cutoff, err := model.ReadErrorEventRetentionCutoff(context.Background())
+	require.NoError(t, err)
+	assert.EqualValues(t, 100, cutoff)
 	var remaining []int64
 	require.NoError(t, model.LOG_DB.Model(&model.ErrorEvent{}).Where("request_id = ?", "retention-fixture").Pluck("created_at", &remaining).Error)
 	assert.Equal(t, []int64{100}, remaining, "execution must keep its submitted cutoff instead of recomputing today's retention")

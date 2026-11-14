@@ -93,7 +93,7 @@ test('non-Root cannot see or query evidence cleanup', () => {
 
 test('Root sees the retention source and confirms before shortening retention', async () => {
   const user = userEvent.setup()
-  let policy = { days: 7, source: 'environment' }
+  let policy = { days: 7, source: 'database' }
   vi.mocked(api.get).mockImplementation(async (url) => ({
     data: {
       success: true,
@@ -107,7 +107,7 @@ test('Root sees the retention source and confirms before shortening retention', 
   renderCleanup()
   expect(
     await screen.findByText(
-      /Current retention is 7 days \(Deployment environment\)/
+      /Current retention is 7 days \(Database\)/
     )
   ).toBeVisible()
   const field = screen.getByRole('spinbutton', {
@@ -129,6 +129,42 @@ test('Root sees the retention source and confirms before shortening retention', 
   })
   expect(
     await screen.findByText(/Current retention is 3 days \(Database\)/)
+  ).toBeVisible()
+})
+
+test('Root can save 30 days but cannot save 31 days', async () => {
+  const user = userEvent.setup()
+  let policy = { days: 2, source: 'default' }
+  vi.mocked(api.get).mockImplementation(async (url) => ({
+    data: {
+      success: true,
+      data: url === '/api/option/request_evidence_retention' ? policy : null,
+    },
+  }))
+  const save = vi.spyOn(api, 'put').mockImplementation(async () => {
+    policy = { days: 30, source: 'database' }
+    return { data: { success: true } }
+  })
+  renderCleanup()
+  expect(
+    await screen.findByText(/Current retention is 2 days \(Built-in default\)/)
+  ).toBeVisible()
+  const field = screen.getByRole('spinbutton', {
+    name: 'Request evidence retention (days)',
+  })
+  const submit = screen.getByRole('button', { name: 'Save retention' })
+  await user.clear(field)
+  await user.type(field, '31')
+  expect(submit).toBeDisabled()
+  await user.clear(field)
+  await user.type(field, '30')
+  await user.click(submit)
+  expect(save).toHaveBeenCalledWith('/api/option/', {
+    key: 'task_request_evidence.retention_days',
+    value: 30,
+  })
+  expect(
+    await screen.findByText(/Current retention is 30 days \(Database\)/)
   ).toBeVisible()
 })
 

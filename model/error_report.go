@@ -17,16 +17,18 @@ const (
 	ErrorReportStatusBuilding = "building"
 	ErrorReportStatusReady    = "ready"
 
-	ErrorReportStopRecipientRemoved = "recipient_removed"
+	ErrorReportStopRecipientRemoved   = "recipient_removed"
+	ErrorReportStopPermanentRejection = "permanent_rejection"
 )
 
 // ErrorReportSchedule tracks the next Beijing day and delivery round-robin position.
 type ErrorReportSchedule struct {
-	ID               int64  `gorm:"primaryKey"`
-	Scope            string `gorm:"type:varchar(32);uniqueIndex"`
-	DailyWindowStart int64  `gorm:"bigint"`
-	UpdatedAt        int64  `gorm:"bigint"`
-	DeliveryCursor   string `gorm:"type:varchar(255)"`
+	ID                   int64  `gorm:"primaryKey"`
+	Scope                string `gorm:"type:varchar(32);uniqueIndex"`
+	DailyWindowStart     int64  `gorm:"bigint"`
+	ErrorRetentionCutoff int64  `gorm:"bigint;not null;default:0"`
+	UpdatedAt            int64  `gorm:"bigint"`
+	DeliveryCursor       string `gorm:"type:varchar(255)"`
 }
 
 // ErrorReport is a frozen daily report or a historical hourly report.
@@ -78,9 +80,10 @@ type ErrorReportDelivery struct {
 	LeaseUntil    *int64 `json:"lease_until" gorm:"bigint"`
 	LastError     string `json:"last_error" gorm:"type:varchar(512)"`
 	StopReason    string `json:"stop_reason" gorm:"type:varchar(64)"`
-	AcceptedAt    int64  `json:"accepted_at" gorm:"bigint"`
-	CreatedAt     int64  `json:"created_at" gorm:"bigint"`
-	UpdatedAt     int64  `json:"updated_at" gorm:"bigint"`
+	QueuedAt      int64
+	AcceptedAt    int64 `json:"accepted_at" gorm:"bigint"`
+	CreatedAt     int64 `json:"created_at" gorm:"bigint"`
+	UpdatedAt     int64 `json:"updated_at" gorm:"bigint"`
 }
 
 func (s *ErrorReportSchedule) BeforeSave(_ *gorm.DB) error {
@@ -153,11 +156,22 @@ func PublishDailyReport(ctx context.Context, part *ErrorReportPart, recipients [
 		if part.PartNo != 1 {
 			return errors.New("invalid daily report part number")
 		}
+		if len(recipients) > 0 {
+			prefs, err := MailPreferencesInTransaction(tx)
+			// The date becomes eligible at 06:00. Re-enabling starts with the next eligible window.
+			if err != nil {
+				return err
+			}
+			if !prefs.Allows(MailDailyErrors, time.Unix(report.WindowEnd+6*3600, 0)) {
+				recipients = nil
+			}
+		}
 		if err := tx.Create(part).Error; err != nil {
 			return err
 		}
+
 		for _, recipient := range recipients {
-			row := ErrorReportDelivery{ReportID: report.ReportID, PartID: part.ID, PartNo: part.PartNo, Recipient: recipient, Status: MailDeliveryPending}
+			row := ErrorReportDelivery{ReportID: report.ReportID, PartID: part.ID, PartNo: part.PartNo, Recipient: recipient, Status: MailDeliveryPending, QueuedAt: time.Now().UnixNano()}
 			if err := tx.Create(&row).Error; err != nil {
 				return err
 			}

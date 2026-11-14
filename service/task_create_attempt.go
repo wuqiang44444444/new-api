@@ -146,12 +146,9 @@ func PrepareTaskCreateAttempt(c *gin.Context, info *relaycommon.RelayInfo) *type
 		)
 		if errors.Is(holdErr, model.ErrTaskAttemptInsufficientQuota) ||
 			errors.Is(holdErr, model.ErrTaskAttemptSubscriptionUnavailable) {
-			reason := "insufficient_quota"
-			if errors.Is(holdErr, model.ErrTaskAttemptSubscriptionUnavailable) {
-				reason = "subscription_unavailable"
-			}
+			ObserveQuotaRejection(c, holdErr)
 			clienterrlog.Attach(c.Request.Context(), clienterrlog.Report{
-				Stage: "billing_preconsume", Reason: reason, PublicCode: "insufficient_quota",
+				Stage: "billing_preconsume", PublicCode: "insufficient_quota",
 				Model: info.OriginModelName, ChannelID: info.ChannelId,
 				Protocol: string(info.ChannelOtherSettings.VideoUpstreamProtocol),
 			})
@@ -194,7 +191,11 @@ func holdTaskAttemptForBilling(info *relaycommon.RelayInfo, attemptID int64) (*m
 	case "wallet_first":
 		result, err := hold(BillingSourceWallet)
 		if errors.Is(err, model.ErrTaskAttemptInsufficientQuota) {
-			return hold(BillingSourceSubscription)
+			fallback, fallbackErr := hold(BillingSourceSubscription)
+			if errors.Is(err, model.ErrTaskAttemptTokenQuota) && errors.Is(fallbackErr, model.ErrTaskAttemptSubscriptionUnavailable) {
+				return fallback, quotaRejection{fallbackErr, clienterrlog.APIKeyQuotaInsufficient}
+			}
+			return fallback, fallbackErr
 		}
 		return result, err
 	default:

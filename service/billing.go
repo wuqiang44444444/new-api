@@ -37,6 +37,7 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 	}
 	session, apiErr := NewBillingSession(c, relayInfo, preConsumedQuota)
 	if apiErr != nil {
+		ObserveQuotaRejection(c, apiErr)
 		return apiErr
 	}
 	relayInfo.Billing = session

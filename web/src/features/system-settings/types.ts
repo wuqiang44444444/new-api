@@ -25,7 +25,7 @@ export type SystemOptionKey = string
 
 export type EvidenceRetentionPolicy = {
   days: number
-  source: 'database' | 'environment' | 'default'
+  source: 'database' | 'default'
 }
 
 export type SystemOptionsResponse = {
@@ -456,9 +456,7 @@ export type OperationsSettings = {
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
 
-'error_report_setting.recipients': string
-'notification_setting.send_email_on_account_created': boolean
-'notification_setting.send_email_on_token_created': boolean
+  'error_report_setting.recipients': string
 }
 
 export type SecuritySettings = {

@@ -138,6 +138,9 @@ func CreateBatchJob(c *gin.Context, request *dto.BatchCreateRequest) (*BatchCrea
 		UsdExchangeRate:  frozenRate,
 		LineInputs:       converted.LineInputs,
 	}
+	if channelAlerts.enabled.Load() {
+		frozen.ChannelAlert = &model.ChannelAlertTaskScope{Revision: model.ChannelAlertRevision(channel), Slot: -1}
+	}
 	estimate, err := estimateBatchJobQuota(&frozen, converted.LineEstimates)
 	if err != nil {
 		return nil, err
@@ -224,7 +227,7 @@ func CreateBatchJob(c *gin.Context, request *dto.BatchCreateRequest) (*BatchCrea
 		return nil, err
 	}
 	client := azurebatch.NewClient(channel.GetBaseURL(), channel.Key, channel.Other)
-	client.HTTPClient.Transport = WithAPIRequestEvidenceTransport(client.HTTPClient.Transport)
+	configureBatchChannelObservation(client, &frozen)
 	uploadId, err := client.UploadBatchFile(c.Request.Context(), file.Id+".jsonl", converted.Bytes)
 	if err != nil {
 		_, _ = model.ReleaseTaskCreateAttemptHold(attempt.ID, model.TaskCreateAttemptRejected)

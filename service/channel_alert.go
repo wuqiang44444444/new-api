@@ -180,9 +180,9 @@ func recordChannelAlert(scope channelAlertScope, id string, kind channelAlertKin
 	if !recorded {
 		channelAlerts.stats.Dropped.Add(1)
 	}
-	// Explicit configuration/credential facts do not depend on observing
+	// Explicit balance, configuration, and credential facts do not depend on observing
 	// silence in other nodes. The background worker checks their scope.
-	if first && (kind == channelAlertConfig || kind == channelAlertKey && scope.Slot < 0) {
+	if first && (kind == channelAlertBalance || kind == channelAlertConfig || kind == channelAlertKey && scope.Slot < 0) {
 		sample.At = time.Now().UnixMilli()
 		select {
 		case channelAlerts.hard <- channelAlertObservation{Scope: scope, Failures: []channelAlertSample{sample}}:

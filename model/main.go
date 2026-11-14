@@ -402,7 +402,7 @@ func migrateDB() error {
 		&ErrorReport{},
 		&ErrorReportPart{},
 		&ErrorReportDelivery{},
-		&ResourceAlertEpisode{},
+		&ResourceAlertEpisode{}, &WalletOperation{},
 		&ResourceAlertDelivery{},
 		&ChannelAlertEpisode{},
 		&ChannelAlertDelivery{},
@@ -440,6 +440,9 @@ func migrateDB() error {
 		return err
 	}
 	if err := migrateDailyErrorReportSchedule(); err != nil {
+		return err
+	}
+	if err := MigrateMailPreferences(); err != nil {
 		return err
 	}
 	if err := backfillChannelAssetScopeIdentities(); err != nil {

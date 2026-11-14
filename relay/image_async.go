@@ -149,6 +149,7 @@ func imageAsyncHelper(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPI
 		AppScope:          appScope,
 		AppLimit:          config.MaxPerApp,
 	}); err != nil {
+		service.ObserveQuotaRejection(c, err)
 		return imageAdmissionError(err)
 	}
 

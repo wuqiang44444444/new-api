@@ -116,18 +116,20 @@ type channelAlertGroup struct {
 }
 
 type channelAlertWindowEvidence struct {
-	successes map[channelAlertGroup]int64
-	failures  map[channelAlertGroup][]channelAlertSample
-	slots     map[channelAlertScope]map[int]int64
-	localNode string
+	successes       map[channelAlertGroup]int64
+	failures        map[channelAlertGroup][]channelAlertSample
+	slots           map[channelAlertScope]map[int]int64
+	balanceFailures map[channelAlertScope]int64
+	localNode       string
 }
 
 func (window channelAlertWindowState) evidence(nodes []string) channelAlertWindowEvidence {
 	evidence := channelAlertWindowEvidence{
-		successes: make(map[channelAlertGroup]int64),
-		failures:  make(map[channelAlertGroup][]channelAlertSample),
-		slots:     make(map[channelAlertScope]map[int]int64),
-		localNode: window.localNode,
+		successes:       make(map[channelAlertGroup]int64),
+		failures:        make(map[channelAlertGroup][]channelAlertSample),
+		slots:           make(map[channelAlertScope]map[int]int64),
+		balanceFailures: make(map[channelAlertScope]int64),
+		localNode:       window.localNode,
 	}
 	cutoff := (window.rounds[len(window.rounds)-1].start+channelAlertBucketSeconds)*1000 - (2 * channelAlertClockTolerance).Milliseconds()
 	for _, round := range window.rounds {
@@ -152,14 +154,18 @@ func (window channelAlertWindowState) evidence(nodes []string) channelAlertWindo
 						continue
 					}
 					group = channelAlertGroup{scope: scope, kind: sample.Kind}
-					if sample.Kind != channelAlertConfig {
+					if sample.Kind != channelAlertConfig && sample.Kind != channelAlertBalance {
 						group.node = window.localNode
 					}
 					switch sample.Kind {
 					case channelAlertNetwork:
 						group.node = nodes[i]
-					case channelAlertKey:
+					case channelAlertKey, channelAlertBalance:
 						group.scope.Slot = observation.Scope.Slot
+						if sample.Kind == channelAlertBalance {
+							connection := channelAlertScope{Channel: scope.Channel, Revision: scope.Revision, Slot: group.scope.Slot}
+							evidence.balanceFailures[connection] = max(evidence.balanceFailures[connection], sample.At)
+						}
 					}
 					evidence.failures[group] = append(evidence.failures[group], sample)
 				}
@@ -180,7 +186,7 @@ func channelAlertCandidate(group channelAlertGroup, samples []channelAlertSample
 		}
 	}
 	threshold := channelAlertThreshold
-	if group.kind == channelAlertKey || group.kind == channelAlertConfig {
+	if group.kind == channelAlertKey || group.kind == channelAlertConfig || group.kind == channelAlertBalance {
 		threshold = 1
 	}
 	if len(eligible) < threshold || (group.kind == channelAlertLimit && success == 0) {
@@ -198,7 +204,12 @@ func channelAlertCandidate(group channelAlertGroup, samples []channelAlertSample
 	}
 	scope := group.scope
 	kind := string(group.kind)
-	key := channelAlertDigest(strconv.Itoa(scope.Channel), scope.Revision, scope.Model, scope.Operation, strconv.Itoa(scope.Slot), group.node, kind)
+	modelName, operation := scope.Model, scope.Operation
+	if group.kind == channelAlertBalance {
+		// An exhausted connection can reject many models and operations.
+		modelName, operation = "", ""
+	}
+	key := channelAlertDigest(strconv.Itoa(scope.Channel), scope.Revision, modelName, operation, strconv.Itoa(scope.Slot), group.node, kind)
 	return model.ChannelAlertEpisode{
 		OpenKey: &key, ScopeKey: key, ChannelID: scope.Channel, Revision: scope.Revision, Model: scope.Model, Operation: scope.Operation,
 		Node: group.node, Kind: kind, KeySlot: scope.Slot, StatusCode: status, FirstAt: first, LastAt: last, EvidenceCount: len(eligible), RuleVersion: channelAlertRule,
@@ -310,7 +321,7 @@ func evaluateChannelAlertWindow(ctx context.Context, window channelAlertWindowSt
 	}
 	for _, event := range open {
 		if window.localNode != "" && event.Node != window.localNode &&
-			(event.Node != "" || (event.Kind != string(channelAlertKey) && event.Kind != string(channelAlertConfig))) {
+			(event.Node != "" || (event.Kind != string(channelAlertKey) && event.Kind != string(channelAlertConfig) && event.Kind != string(channelAlertBalance))) {
 			continue
 		}
 		scope := channelAlertScope{Channel: event.ChannelID, Revision: event.Revision, Model: event.Model, Operation: event.Operation, Slot: -1}
@@ -318,7 +329,7 @@ func evaluateChannelAlertWindow(ctx context.Context, window channelAlertWindowSt
 		success := evidence.successes[group]
 		closeReason := model.ChannelAlertClosedRecovered
 		switch channelAlertKind(event.Kind) {
-		case channelAlertKey:
+		case channelAlertKey, channelAlertBalance:
 			if event.KeySlot >= 0 {
 				success = evidence.slots[scope][event.KeySlot]
 			}
@@ -342,6 +353,10 @@ func evaluateChannelAlertWindow(ctx context.Context, window channelAlertWindowSt
 			closeReason = model.ChannelAlertClosedDeleted
 		}
 		lastFailure := event.LastAt
+		if closeReason == model.ChannelAlertClosedRecovered && event.Kind == string(channelAlertBalance) {
+			connection := channelAlertScope{Channel: event.ChannelID, Revision: event.Revision, Slot: event.KeySlot}
+			lastFailure = max(lastFailure, evidence.balanceFailures[connection])
+		}
 		if closeReason == model.ChannelAlertClosedRecovered && event.Node == "" {
 			lastFailure += (2 * channelAlertClockTolerance).Milliseconds()
 		}
@@ -357,7 +372,12 @@ func evaluateChannelAlertWindow(ctx context.Context, window channelAlertWindowSt
 		if group.kind == channelAlertKey {
 			continue
 		}
-		success := evidence.successes[channelAlertGroup{scope: group.scope, node: group.node}]
+		scope := group.scope
+		scope.Slot = -1
+		success := evidence.successes[channelAlertGroup{scope: scope, node: group.node}]
+		if group.kind == channelAlertBalance && group.scope.Slot >= 0 {
+			success = evidence.slots[scope][group.scope.Slot]
+		}
 		// Small cross-node skew must not turn a near-simultaneous success into silence.
 		if success > 0 && group.node == "" {
 			success += (2 * channelAlertClockTolerance).Milliseconds()
@@ -451,8 +471,9 @@ func runDefiniteChannelAlerts() {
 
 func confirmChannelAlert(ctx context.Context, episode model.ChannelAlertEpisode, now time.Time) error {
 	recipients, err := model.GetOperationsMailRecipients(ctx)
-	if err != nil || len(recipients) == 0 {
-		return err
+	if err != nil {
+		common.SysError("could not read channel alert recipients")
+		episode.MailPending = true
 	}
 	episode.ConfirmedAt = now.UnixMilli()
 	opened, err := model.OpenChannelAlert(ctx, episode, recipients)

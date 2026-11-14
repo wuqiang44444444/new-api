@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   createRootRoute,
+  createRoute,
   createRouter,
   createMemoryHistory,
   RouterProvider,
@@ -39,6 +40,7 @@ import en from '@/i18n/locales/en.json'
 import zh from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
 import { ROLE } from '@/lib/roles'
+import { Route as ErrorLogsRoute } from '@/routes/_authenticated/usage-logs/error'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { ErrorLogViewer } from '../components/error-log-viewer'
@@ -82,7 +84,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-async function renderViewer(lng = 'en') {
+async function renderViewer(lng = 'en', reportLink?: string) {
   const i18n = createInstance()
   await i18n.init({
     lng,
@@ -92,9 +94,28 @@ async function renderViewer(lng = 'en') {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+  const root = createRootRoute({
+    component: reportLink ? undefined : ErrorLogViewer,
+  })
+  const authenticated = createRoute({
+    getParentRoute: () => root,
+    id: '_authenticated',
+  })
+  const routeTree = reportLink
+    ? root.addChildren([
+        authenticated.addChildren([
+          createRoute({
+            validateSearch: ErrorLogsRoute.options.validateSearch,
+            component: ErrorLogsRoute.options.component,
+            getParentRoute: () => authenticated,
+            path: '/usage-logs/error',
+          }),
+        ]),
+      ])
+    : root
   const router = createRouter({
-    routeTree: createRootRoute({ component: ErrorLogViewer }),
-    history: createMemoryHistory({ initialEntries: ['/'] }),
+    routeTree,
+    history: createMemoryHistory({ initialEntries: [reportLink ?? '/'] }),
   })
   await router.load()
   render(
@@ -117,6 +138,35 @@ it('renders API error events with status, model and request id', async () => {
   expect(await screen.findByRole('cell', { name: '400' })).toBeVisible()
   expect(screen.getByRole('cell', { name: 'gpt-4o' })).toBeVisible()
   expect(screen.getByRole('cell', { name: 'req-e1' })).toBeVisible()
+})
+
+it('opens a daily report link with its date and error group filters applied', async () => {
+  useAuthStore
+    .getState()
+    .auth.setUser({ id: 1, username: 'admin', role: ROLE.ADMIN })
+  const get = vi.spyOn(api, 'get').mockResolvedValue({
+    data: { success: true, data: { total: 1, items: [ERROR_ITEM] } },
+  })
+  await renderViewer(
+    'en',
+    '/usage-logs/error?start_timestamp=1757980800&end_timestamp=1758067199&event_type=api_error&channel=42&status=504&model_name=gpt-4o&reason=upstream_http_error'
+  )
+  await waitFor(() =>
+    expect(get).toHaveBeenCalledWith('/api/error_log/', {
+      params: {
+        p: 1,
+        page_size: 20,
+        start_timestamp: 1757980800,
+        end_timestamp: 1758067199,
+        event_type: 'api_error',
+        channel: '42',
+        status: '504',
+        model_name: 'gpt-4o',
+        reason: 'upstream_http_error',
+      },
+    })
+  )
+  expect(await screen.findByRole('cell', { name: 'req-e1' })).toBeVisible()
 })
 
 it('passes request id filter to the error log API', async () => {

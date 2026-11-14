@@ -137,6 +137,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		// Batch channels verify connection and configuration with a read-only
 		// files call; testing never creates a billed batch job.
 		client := azurebatch.NewClient(channel.GetBaseURL(), channel.Key, channel.Other)
+		service.ConfigureBatchProbeBalance(client, channel)
 		verifyErr := client.VerifyConnection(ctx)
 		if verifyErr != nil {
 			return testResult{
@@ -1210,7 +1211,7 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, report, !notify)
 	if notify && (ctx == nil || ctx.Err() == nil) {
 		lang := service.RootUserLanguage()
-		service.NotifyRootUser(dto.NotifyTypeChannelTest, i18n.Translate(lang, i18n.MsgChannelTestCompletedSubject), i18n.Translate(lang, i18n.MsgChannelTestCompletedContent))
+		service.NotifyRootUser(model.MailChannelTest, dto.NotifyTypeChannelTest, i18n.Translate(lang, i18n.MsgChannelTestCompletedSubject), i18n.Translate(lang, i18n.MsgChannelTestCompletedContent))
 	}
 	return summary, nil
 }

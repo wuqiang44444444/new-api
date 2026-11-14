@@ -145,11 +145,11 @@ type evidenceStreamReader struct {
 func (r *evidenceStreamReader) Close() error { return r.file.Close() }
 func (r *evidenceStreamReader) Size() int64  { return r.size }
 
-func (s *localEncryptedEvidenceStore) openStream(key string) (io.ReadCloser, error) {
+func (s *localEncryptedEvidenceStore) openStream(key string) (evidenceBodyReader, error) {
 	return s.openStreamObject(key, true)
 }
 
-func (s *localEncryptedEvidenceStore) openStreamObject(key string, allowBodyReference bool) (io.ReadCloser, error) {
+func (s *localEncryptedEvidenceStore) openStreamObject(key string, allowBodyReference bool) (evidenceBodyReader, error) {
 	path, err := s.resolvePath(key)
 	if err != nil {
 		return nil, err

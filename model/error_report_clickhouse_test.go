@@ -56,5 +56,7 @@ func TestErrorReportClickHouseDuplicateKeys(t *testing.T) {
 	slice, err := ReadDailyReportSlice(context.Background(), 3600, 7200)
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, slice.Total)
-	assert.Equal(t, []DailyReportChannelCount{{ChannelID: 9, Count: 2}}, slice.Channels)
+	assert.EqualValues(t, 2, slice.Signals[DailyErrorOther])
+	require.Len(t, slice.Groups, 1)
+	assert.Equal(t, 9, slice.Groups[0].ChannelID)
 }

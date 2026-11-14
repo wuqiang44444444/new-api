@@ -291,6 +291,7 @@ func (a *TaskAdaptor) FetchTaskWithContext(ctx context.Context, baseURL, key str
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}
 	resp, err := client.Do(req)
+	service.WatchTaskHTTPBalance(ctx, task, "video_query", resp)
 	service.AttachRawTaskPollingEvidence(task, req, resp, err)
 	if err == nil && resp != nil && (resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices) {
 		// Nexhina lists HTTP 404 without promising that an accepted task is permanently gone.

@@ -16,6 +16,8 @@ func RegisterMailSettingsRoutes(options *gin.RouterGroup) {
 	routes := options.Group("/mail", middleware.DisableCache())
 	routes.GET("", getMailTransport)
 	routes.PUT("", updateMailTransport)
+	routes.GET("/preferences", getMailPreferences)
+	routes.PUT("/preferences", updateMailPreferences)
 	routes.POST("/test", middleware.UserCriticalRateLimit("mail-test"), sendMailTest)
 }
 

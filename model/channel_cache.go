@@ -144,6 +144,21 @@ func GetSatisfiedChannelWithPreference(group, model string, retry int, filters [
 		channels, _ = filterCandidateIDs(group2model2channels[group][normalizedModel], model, filters)
 	}
 
+	if preference != nil && preference.Policy != nil {
+		candidates := make([]*Channel, 0, len(channels))
+		for _, id := range channels {
+			if channel := channelsIDM[id]; channel != nil && channel.Status == common.ChannelStatusEnabled {
+				candidates = append(candidates, channel)
+			}
+		}
+		eligible := preference.limitCandidates(candidates)
+		channels = make([]int, 0, len(candidates))
+		for _, candidate := range candidates {
+			if preference.canSelect(candidate.Id, candidate.GetPriority(), eligible) {
+				channels = append(channels, candidate.Id)
+			}
+		}
+	}
 	if len(channels) == 0 {
 		return nil, nil
 	}

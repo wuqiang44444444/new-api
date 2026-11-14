@@ -86,6 +86,9 @@ func submitGraphMail(ctx context.Context, config GraphMailConfig, tokenURL, send
 	request = request.WithContext(httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
 		GotConn: func(httptrace.GotConnInfo) { connected.Store(true) },
 	}))
+	if err := checkMailSubmission(ctx); err != nil {
+		return err
+	}
 	observeMailSubmission(ctx)
 	response, err := graphMailHTTPClient.Do(request)
 	if err != nil {
@@ -109,6 +112,10 @@ func submitGraphMail(ctx context.Context, config GraphMailConfig, tokenURL, send
 		}
 		if response.StatusCode >= http.StatusInternalServerError || response.StatusCode == http.StatusRequestTimeout {
 			return fmt.Errorf("%w: Microsoft Graph returned HTTP %d", ErrMailSubmissionUnknown, response.StatusCode)
+		}
+		switch response.StatusCode {
+		case http.StatusBadRequest, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
+			return fmt.Errorf("%w: Microsoft Graph mail submission returned HTTP %d", ErrMailPermanentlyRejected, response.StatusCode)
 		}
 		return fmt.Errorf("Microsoft Graph mail submission returned HTTP %d", response.StatusCode)
 	}

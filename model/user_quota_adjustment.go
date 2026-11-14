@@ -23,6 +23,14 @@ type UserQuotaAdjustment struct {
 }
 
 func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuotaAdjustment, error) {
+	return adjustUserQuota(userID, operatorRole, mode, value, 0, nil)
+}
+
+func AdjustUserQuotaWithMail(userID, operatorRole int, mode string, value, actorID int, build WalletMailBuilder) (*UserQuotaAdjustment, error) {
+	return adjustUserQuota(userID, operatorRole, mode, value, actorID, build)
+}
+
+func adjustUserQuota(userID, operatorRole int, mode string, value, actorID int, build WalletMailBuilder) (*UserQuotaAdjustment, error) {
 	if userID <= 0 || (mode != "add" && mode != "subtract" && mode != "override") {
 		return nil, ErrInvalidUserQuotaAdjustment
 	}
@@ -68,7 +76,7 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 			}
 		}
 		adjustment = UserQuotaAdjustment{UserID: user.Id, Username: user.Username, Before: user.Quota, After: after}
-		return nil
+		return RecordWalletOperation(tx, WalletOperation{UserID: user.Id, ActorID: actorID, Kind: mode, Before: user.Quota, After: after}, build)
 	})
 	if err != nil {
 		return nil, err

@@ -52,3 +52,37 @@ func TestResourceAlertRetriesOnlyDefinitelyUnsubmittedRecipients(t *testing.T) {
 	require.NoError(t, db.Where("recipient = ?", "unknown@example.com").Take(&uncertain).Error)
 	assert.Equal(t, model.MailDeliveryUnknown, uncertain.Status)
 }
+
+func TestImmediateMailIsClaimedAheadOfUsageBacklog(t *testing.T) {
+	withErrorReportTestDB(t)
+	withErrorReportSetting(t, "ops@example.com")
+	t.Setenv("FINANCE_MAIL_RECIPIENTS", "finance@example.com")
+	ctx := context.Background()
+	now := time.Now()
+	day := now.Add(-48 * time.Hour).Unix()
+	for _, kind := range []string{model.PlatformUsageReportMail, model.CustomerStatusReportMail} {
+		for range 3 {
+			opened, err := model.OpenResourceAlert(ctx, model.ResourceAlertEpisode{
+				Resource: kind, OpenedAt: day, Subject: kind,
+			}, []string{"ops@example.com"})
+			require.NoError(t, err)
+			require.True(t, opened)
+		}
+	}
+	require.NoError(t, recordEvidenceCleanupHealth(ctx, now.Unix(), &model.EvidenceCleanupHealth{Alerts: []string{"cleanup_stalled"}}, false))
+	opened, err := model.OpenResourceAlert(ctx, model.ResourceAlertEpisode{
+		Resource: model.WalletRiskMail, OpenedAt: now.Unix(), Subject: "wallet-risk",
+	}, []string{"finance@example.com"})
+	require.NoError(t, err)
+	require.True(t, opened)
+
+	var sent []string
+	require.NoError(t, deliverResourceAlerts(time.Now, func(_ context.Context, subject, _, _ string) error {
+		sent = append(sent, subject)
+		return nil
+	}))
+	require.Len(t, sent, 4)
+	assert.Contains(t, sent[0], "Evidence cleanup alert")
+	assert.Equal(t, "wallet-risk", sent[1])
+	assert.Equal(t, model.PlatformUsageReportMail, sent[2])
+}

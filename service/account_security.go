@@ -1,7 +1,7 @@
 package service
 
 import (
-	"context"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -34,8 +34,7 @@ func NotifyAccountSecurityChange(email, event string) error {
 	if email == "" {
 		return nil
 	}
+	queuedAt := time.Now()
 	subject, content := renderAccountSecurityMail(event)
-	ctx, cancel := context.WithTimeout(context.Background(), common.ShortMailSubmissionTimeout)
-	defer cancel()
-	return common.SendEmailContext(ctx, subject, email, content)
+	return sendManagedNotice(model.MailAccountSecurity, queuedAt, subject, email, content)
 }

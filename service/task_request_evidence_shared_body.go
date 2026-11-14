@@ -14,7 +14,7 @@ const maxEvidenceEnvelopeBytes = len(evidenceObjectMagic) + 1 + (128 << 10)
 
 // The authenticated reference contains a source event ID and the delivery
 // envelope. A download still returns the delivery envelope and original body.
-func (s *localEncryptedEvidenceStore) openSharedEvidenceBody(key string, reference *evidenceStreamReader) (io.ReadCloser, error) {
+func (s *localEncryptedEvidenceStore) openSharedEvidenceBody(key string, reference *evidenceStreamReader) (evidenceBodyReader, error) {
 	namespace, _, _ := strings.Cut(key, "/")
 	evidenceID, err := strconv.ParseInt(namespace, 10, 64)
 	if err != nil || evidenceID <= 0 {
@@ -40,19 +40,18 @@ func (s *localEncryptedEvidenceStore) openSharedEvidenceBody(key string, referen
 	if err != nil {
 		return nil, err
 	}
-	stream := source.(*evidenceStreamReader)
-	buffered := bufio.NewReaderSize(stream, maxEvidenceEnvelopeBytes)
+	buffered := bufio.NewReaderSize(source, maxEvidenceEnvelopeBytes)
 	magic, err := buffered.ReadSlice('\n')
 	if err != nil || string(magic) != evidenceObjectMagic+"\n" {
-		_ = stream.Close()
+		_ = source.Close()
 		return nil, ErrEvidenceIntegrityFailed
 	}
 	magicSize := len(magic)
 	metadata, err := buffered.ReadSlice('\n')
-	bodySize := stream.Size() - int64(magicSize+len(metadata))
+	bodySize := source.Size() - int64(magicSize+len(metadata))
 	if err != nil || bodySize <= 0 {
-		_ = stream.Close()
+		_ = source.Close()
 		return nil, ErrEvidenceIntegrityFailed
 	}
-	return &evidenceReadCloser{Reader: io.MultiReader(bytes.NewReader(envelope), buffered), close: stream.Close, size: int64(len(envelope)) + bodySize}, nil
+	return &evidenceReadCloser{Reader: io.MultiReader(bytes.NewReader(envelope), buffered), close: source.Close, size: int64(len(envelope)) + bodySize}, nil
 }

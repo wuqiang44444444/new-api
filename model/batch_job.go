@@ -108,6 +108,7 @@ type BatchFrozenSnapshot struct {
 	AdapterVersion   string                         `json:"adapter_version"`
 	LineParams       map[string]json.RawMessage     `json:"line_params,omitempty"`
 	Connection       BatchConnection                `json:"connection"`
+	ChannelAlert     *ChannelAlertTaskScope         `json:"channel_alert,omitempty"`
 	Expr             string                         `json:"expr"`
 	ExprHash         string                         `json:"expr_hash"`
 	PricingTime      int64                          `json:"pricing_time"` // unix UTC

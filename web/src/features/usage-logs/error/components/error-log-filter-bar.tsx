@@ -131,6 +131,11 @@ export function ErrorLogFilterBar(props: {
           { value: 'all', label: t('All statuses') },
           { value: '0', label: t('No HTTP status') },
           ...STATUS_OPTIONS.map((status) => ({ value: status, label: status })),
+          ...(props.filters.status &&
+          props.filters.status !== '0' &&
+          !STATUS_OPTIONS.includes(props.filters.status)
+            ? [{ value: props.filters.status, label: props.filters.status }]
+            : []),
         ]}
         onChange={(value) =>
           props.onChange({ status: value === 'all' ? undefined : value })

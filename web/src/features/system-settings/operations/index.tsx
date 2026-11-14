@@ -53,8 +53,6 @@ const defaultOperationsSettings: OperationsSettings = {
   'perf_metrics_setting.flush_interval': 5,
   'perf_metrics_setting.bucket_time': 'hour',
   'perf_metrics_setting.retention_days': 0,
-  'notification_setting.send_email_on_account_created': false,
-  'notification_setting.send_email_on_token_created': false,
 }
 
 export function OperationsSettings() {

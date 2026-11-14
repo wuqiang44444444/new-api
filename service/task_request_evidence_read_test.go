@@ -15,7 +15,7 @@ import (
 func TestEvidenceReadabilityAcrossStoreRestart(t *testing.T) {
 	oldConfig, oldStore := system_setting.GetTaskRequestEvidenceConfig(), evidenceObjectStore
 	t.Cleanup(func() { system_setting.SetTaskRequestEvidenceConfig(oldConfig); evidenceObjectStore = oldStore })
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 2}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32)}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, InitTaskRequestEvidenceStore(config))
 	store := GetTaskRequestEvidenceStore()

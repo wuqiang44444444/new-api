@@ -78,9 +78,13 @@ func newSMTPClient(ctx context.Context, addr string, config SMTPMailConfig) (net
 func sendSMTPMail(ctx context.Context, config SMTPMailConfig, subject string, receivers []string, content string) (sendErr error) {
 	accepted := false
 	awaitingReply := false
+	submittingMessage := false
 	defer func() {
 		var rejection *textproto.Error
 		if errors.As(sendErr, &rejection) {
+			if submittingMessage && rejection.Code >= 500 && rejection.Code < 600 {
+				sendErr = fmt.Errorf("%w: SMTP rejected the submission with status %d", ErrMailPermanentlyRejected, rejection.Code)
+			}
 			return
 		}
 		if accepted {
@@ -118,14 +122,21 @@ func sendSMTPMail(ctx context.Context, config SMTPMailConfig, subject string, re
 			return err
 		}
 	}
+	if err := checkMailSubmission(ctx); err != nil {
+		return err
+	}
 	observeMailSubmission(ctx)
 	if err = client.Mail(sender); err != nil {
 		return err
 	}
+	submittingMessage = true
 	for _, receiver := range receivers {
 		if err = client.Rcpt(receiver); err != nil {
 			return err
 		}
+	}
+	if err := checkMailSubmission(ctx); err != nil {
+		return err
 	}
 	w, err := client.Data()
 	if err != nil {

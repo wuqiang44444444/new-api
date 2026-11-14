@@ -1,16 +1,11 @@
 package service
 
 import (
-	"cmp"
 	"context"
 	"fmt"
-	"maps"
-	"slices"
-	"sort"
-	"strconv"
-	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 )
@@ -19,14 +14,9 @@ func init() {
 	RegisterSystemTaskHandler(newErrorReportHandler(common.SendEmailContext))
 }
 
-type dailyReportSummary struct {
-	Errors   map[string]int64 `json:"errors"`
-	Channels map[int]int64    `json:"channels"`
-}
-
 func (h *errorReportHandler) generateDailyReport(ctx context.Context) (int, []string, error) {
 	recipients, err := model.GetOperationsMailRecipients(ctx)
-	if err != nil || len(recipients) == 0 {
+	if err != nil {
 		return 0, nil, err
 	}
 	now := h.now().In(errorReportLocation())
@@ -45,13 +35,37 @@ func (h *errorReportHandler) generateDailyReport(ctx context.Context) (int, []st
 	// Read only closed intervals, with a short grace period for queued error logs.
 	lastClosedSlice := now.Add(-5 * time.Minute).Truncate(5 * time.Minute).Unix()
 	var summary dailyReportSummary
-	if report.Summary == "" {
-		summary = dailyReportSummary{Errors: map[string]int64{}, Channels: map[int]int64{}}
-	} else if err := common.UnmarshalJsonStr(report.Summary, &summary); err != nil {
-		return 0, nil, err
+	if report.Summary != "" {
+		if err := common.UnmarshalJsonStr(report.Summary, &summary); err != nil {
+			return 0, nil, err
+		}
 	}
-	through := report.AggregatedThrough
-	total := int64(report.TotalEvents)
+	through, total := report.AggregatedThrough, int64(report.TotalEvents)
+	if summary.Signals == nil {
+		// A pending report from the old format has no triage totals. Re-read
+		// its window instead of presenting partial signal counts as complete.
+		summary.Signals = make(map[string]int64)
+		through, total = start, 0
+	}
+	initialThrough, initialGap := through, summary.RetentionGapThrough
+	cleanupCutoff, err := model.ReadErrorEventRetentionCutoff(ctx)
+	if err != nil {
+		return 0, []string{"daily error retention coverage"}, err
+	}
+	cutoff := cleanupCutoff
+	// Deployments upgrading from before the durable watermark may already
+	// have deleted rows. Treat the currently configured horizon as uncertain.
+	if days := errorEventRetentionDays(); days > 0 {
+		cutoff = max(cutoff, now.Unix()-int64(days)*86400)
+	}
+	if cutoff > start {
+		summary.RetentionGapThrough = max(initialGap, min(cutoff, report.WindowEnd))
+		through = max(through, summary.RetentionGapThrough)
+	}
+	groups := make(map[model.DailyReportErrorKey]model.DailyReportErrorGroup)
+	for _, group := range summary.Groups {
+		groups[group.DailyReportErrorKey] = group
+	}
 	var readErr error
 	for range 6 {
 		end := min(through+300, report.WindowEnd)
@@ -65,17 +79,32 @@ func (h *errorReportHandler) generateDailyReport(ctx context.Context) (int, []st
 			readErr = err
 			break
 		}
-		for _, count := range slice.Errors {
-			summary.Errors[count.Key] += count.Count
+		for signal, count := range slice.Signals {
+			summary.Signals[signal] += count
 		}
-		for _, count := range slice.Channels {
-			summary.Channels[count.ChannelID] += count.Count
+		for _, group := range slice.Groups {
+			previous := groups[group.DailyReportErrorKey]
+			group.Count += previous.Count
+			group.LastAt = max(group.LastAt, previous.LastAt)
+			groups[group.DailyReportErrorKey] = group
 		}
-		retainDailyLeaders(summary.Errors)
-		retainDailyLeaders(summary.Channels)
+		summary.Approximate = summary.Approximate || slice.GroupsCapped
 		through, total = end, total+slice.Total
 	}
-	if through != report.AggregatedThrough {
+	if through != initialThrough || summary.RetentionGapThrough != initialGap {
+		// Retention can run against a separate log store during these reads.
+		// Its watermark commits before deleting, so discard a batch when the
+		// newly excluded range intersects the portion being aggregated.
+		latestCutoff, err := model.ReadErrorEventRetentionCutoff(ctx)
+		if err != nil {
+			return 0, []string{"daily error retention coverage"}, err
+		}
+		if latestCutoff > cleanupCutoff && latestCutoff > max(initialThrough, summary.RetentionGapThrough) {
+			return 0, nil, nil
+		}
+		if err := summary.retainGroups(groups); err != nil {
+			return 0, nil, err
+		}
 		// Commit a bounded batch once, instead of contending with model
 		// traffic for a separate main-database write on every slice.
 		data, err := common.Marshal(summary)
@@ -90,7 +119,7 @@ func (h *errorReportHandler) generateDailyReport(ctx context.Context) (int, []st
 	if readErr != nil {
 		return 0, []string{"daily error aggregation"}, readErr
 	}
-	if report.AggregatedThrough < report.WindowEnd || now.Unix() < report.WindowEnd+6*3600 {
+	if through < report.WindowEnd || now.Unix() < report.WindowEnd+6*3600 {
 		return 0, nil, nil
 	}
 
@@ -100,75 +129,48 @@ func (h *errorReportHandler) generateDailyReport(ctx context.Context) (int, []st
 	if err != nil {
 		return 0, []string{"daily operations aggregation"}, err
 	}
+	readCtx, cancel = context.WithTimeout(ctx, model.DailyReportReadBudget)
+	incidents, incidentCount, err := model.ReadDailyReportChannelIncidents(readCtx, start, report.WindowEnd)
+	cancel()
+	if err != nil {
+		return 0, []string{"daily channel incidents"}, err
+	}
+	ids := make([]int, 0, len(summary.Groups)+len(incidents))
+	for _, group := range summary.Groups {
+		if group.ChannelID > 0 {
+			ids = append(ids, group.ChannelID)
+		}
+	}
+	for _, incident := range incidents {
+		ids = append(ids, incident.ChannelID)
+	}
+	readCtx, cancel = context.WithTimeout(ctx, model.DailyReportReadBudget)
+	channelNames, err := model.ReadDailyReportChannelNames(readCtx, ids)
+	cancel()
+	if err != nil {
+		return 0, []string{"daily report channel names"}, err
+	}
 	recipients, err = model.GetOperationsMailRecipients(ctx)
 	if err != nil || len(recipients) == 0 {
 		return 0, nil, err
 	}
+	var quotaAccounts map[string]int64
+	if summary.Signals[clienterrlog.WalletQuotaInsufficient]+summary.Signals[clienterrlog.SubscriptionQuotaInsufficient]+summary.Signals[clienterrlog.APIKeyQuotaInsufficient] > 0 {
+		readCtx, cancel = context.WithTimeout(ctx, model.DailyReportReadBudget)
+		quotaAccounts, err = model.ReadDailyQuotaRejectionAccounts(readCtx, max(start, summary.RetentionGapThrough), report.WindowEnd)
+		cancel()
+		if err != nil {
+			return 0, []string{"daily quota rejection accounts"}, err
+		}
+	}
 	day := time.Unix(start, 0).In(now.Location()).Format("2006-01-02")
-	part := renderDailyReport(report, day, summary, tasks, resources)
-	if err := model.PublishDailyReport(ctx, part, recipients, report.TotalEvents, report.Summary, "closed five-minute buckets; top groups are approximate"); err != nil {
+	part := renderDailyReport(report, day, summary, dailyReportOperations{tasks: tasks, resources: resources, incidents: incidents, incidentCount: incidentCount, channelNames: channelNames, asOf: now, quotaAccounts: quotaAccounts})
+	dataNote := "closed five-minute buckets; error groups may be truncated"
+	if summary.RetentionGapThrough > start {
+		dataNote = "error log coverage incomplete due to retention; counts cover available records"
+	}
+	if err := model.PublishDailyReport(ctx, part, recipients, report.TotalEvents, report.Summary, dataNote); err != nil {
 		return 0, nil, err
 	}
 	return 1, nil, model.AdvanceDailyReportCursor(ctx, start)
-}
-
-func renderDailyReport(report *model.ErrorReport, day string, summary dailyReportSummary, tasks, resources []model.DailyReportCount) *model.ErrorReportPart {
-	errors := make([]model.DailyReportCount, 0, len(summary.Errors))
-	channels := make([]model.DailyReportCount, 0, len(summary.Channels))
-	for key, count := range summary.Errors {
-		if key == "" {
-			key = "未分类 / Unclassified"
-		}
-		errors = append(errors, model.DailyReportCount{Key: key, Count: count})
-	}
-	for id, count := range summary.Channels {
-		channels = append(channels, model.DailyReportCount{Key: fmt.Sprintf("#%d", id), Count: count})
-	}
-	var body strings.Builder
-	fmt.Fprintf(&body, `<p style="margin:0 0 14px;color:#49627a">%s · 北京时间 / Beijing time</p><p style="margin:0 0 20px;padding:12px;background:#e8f5f2;color:#143f38;font-size:17px">已采集错误 / Recorded errors · <strong>%d</strong></p>`, day, report.TotalEvents)
-	for _, section := range []struct {
-		title string
-		items []model.DailyReportCount
-	}{
-		{"主要错误类型 / Top error types", errors},
-		{"受影响渠道 / Affected channels", channels},
-		{"失败运维任务 / Failed operations tasks", tasks},
-		{"资源告警 / Resource alerts", resources},
-	} {
-		fmt.Fprintf(&body, `<h3 style="margin:18px 0 6px;font-size:15px;color:#14283f">%s</h3>`, section.title)
-		sort.Slice(section.items, func(i, j int) bool {
-			if section.items[i].Count == section.items[j].Count {
-				return section.items[i].Key < section.items[j].Key
-			}
-			return section.items[i].Count > section.items[j].Count
-		})
-		if len(section.items) == 0 {
-			body.WriteString("<p>无记录 / No records</p>")
-			continue
-		}
-		rows := make([][2]string, 0, min(10, len(section.items)))
-		for _, item := range section.items[:min(10, len(section.items))] {
-			rows = append(rows, [2]string{item.Key, strconv.FormatInt(item.Count, 10)})
-		}
-		writeOperationsMailRows(&body, rows)
-	}
-	body.WriteString("<p>数据来自已落库事件，排行按时段聚合，可能遗漏迟到记录。完整详情请在后台查看。</p><p>Counts use recorded events. Rankings are based on time-slice aggregates and late events may be missing. See the console for details.</p>")
-	return &model.ErrorReportPart{ReportID: report.ReportID, PartNo: 1,
-		Subject: "运维日报 / Daily operations report — " + day, BodyHTML: renderOperationsMail("运维日报 / Daily operations report", body.String())}
-}
-
-func retainDailyLeaders[K cmp.Ordered](counts map[K]int64) {
-	const limit = 96
-	if len(counts) <= limit {
-		return
-	}
-	keys := slices.SortedFunc(maps.Keys(counts), func(a, b K) int {
-		if counts[a] != counts[b] {
-			return cmp.Compare(counts[b], counts[a])
-		}
-		return cmp.Compare(a, b)
-	})
-	for _, key := range keys[limit:] {
-		delete(counts, key)
-	}
 }

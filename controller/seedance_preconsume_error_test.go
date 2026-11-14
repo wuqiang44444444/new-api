@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	logtest "github.com/QuantumNous/new-api/clienterrlog/testutil"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/middleware"
@@ -26,9 +27,9 @@ func TestSeedancePreconsumeReportsFundingFailureBeforeProvider(t *testing.T) {
 		wallet, token            int
 		success                  bool
 	}{
-		{"wallet insufficient", "wallet_only", "insufficient_quota", 2_884_180, seedanceFundsInitialQuota, false},
-		{"token insufficient", "wallet_only", "insufficient_quota", seedanceFundsInitialQuota, hold - 1, false},
-		{"subscription unavailable", "subscription_only", "subscription_unavailable", seedanceFundsInitialQuota, seedanceFundsInitialQuota, false},
+		{"wallet insufficient", "wallet_only", clienterrlog.WalletQuotaInsufficient, 2_884_180, seedanceFundsInitialQuota, false},
+		{"token insufficient", "wallet_only", clienterrlog.APIKeyQuotaInsufficient, seedanceFundsInitialQuota, hold - 1, false},
+		{"subscription unavailable", "subscription_only", clienterrlog.SubscriptionQuotaInsufficient, seedanceFundsInitialQuota, seedanceFundsInitialQuota, false},
 		{"exact configured budget available", "wallet_only", "", hold, hold, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

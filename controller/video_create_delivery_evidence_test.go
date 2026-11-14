@@ -16,7 +16,7 @@ func TestSeedanceCreateDeliveryEvidencePreservesFundsAndPublicResponse(t *testin
 	fx.assertAttemptAtPost.Store(true)
 	require.NoError(t, fx.db.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.EvidenceTaskLink{}))
 	config := system_setting.TaskRequestEvidenceConfig{
-		Enabled: true, RetentionDays: 2, StorageDir: t.TempDir(),
+		Enabled: true, StorageDir: t.TempDir(),
 		EncryptionKeyHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
 	}
 	system_setting.SetTaskRequestEvidenceConfig(config)

@@ -40,9 +40,16 @@ func TestMailSettingsAndDailyMigration(t *testing.T) {
 		DB, LOG_DB, common.OptionMap = previousDB, previousLogDB, previousOptions
 		common.SetDatabaseTypes(previousType, previousLogType)
 	})
-	require.NoError(t, db.AutoMigrate(&Option{}, &ErrorReport{}, &ErrorReportSchedule{}, &ErrorReportDelivery{}, &ResourceAlertEpisode{}, &ResourceAlertDelivery{}, &ErrorEvent{}, &SystemTask{}))
+	// Exercise adding the coverage watermark to an existing schedule without
+	// moving its cursor or treating prior cleanup as newly verified.
+	require.NoError(t, db.Migrator().CreateTable(&legacyErrorReportSchedule{}))
+	require.NoError(t, db.AutoMigrate(&Option{}, &ErrorReport{}, &ErrorReportDelivery{}, &ResourceAlertEpisode{}, &ResourceAlertDelivery{}, &ErrorEvent{}, &SystemTask{}, &WalletOperation{}))
 	require.NoError(t, db.Exec("CREATE UNIQUE INDEX idx_error_reports_window_start ON error_reports (window_start)").Error)
 	const start int64 = 1762617600
+	require.NoError(t, db.Table("error_report_schedules").Create(map[string]any{
+		"scope": ErrorReportScheduleScopeGlobal, "daily_window_start": start,
+	}).Error)
+	require.NoError(t, db.AutoMigrate(&ErrorReportSchedule{}))
 	hour := ErrorReport{ReportID: "legacy-hour", WindowStart: start, WindowEnd: start + 3600, Status: ErrorReportStatusReady}
 	require.NoError(t, db.Create(&hour).Error)
 	require.NoError(t, db.Create(&Option{Key: retiredErrorReportEnabledOption, Value: "false"}).Error)
@@ -51,6 +58,26 @@ func TestMailSettingsAndDailyMigration(t *testing.T) {
 	require.NoError(t, db.Create(&ErrorReportDelivery{ReportID: hour.ReportID, PartID: 1, Recipient: "history@example.com", Status: "smtp_accepted"}).Error)
 
 	ctx := context.Background()
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return RecordWalletOperation(tx, WalletOperation{UserID: 11, ActorID: 12, Kind: "add", Before: 25, After: 125, CreatedAt: start}, func(tx *gorm.DB, operation WalletOperation) error {
+			_, err := OpenResourceAlertInTx(tx, ResourceAlertEpisode{Resource: WalletReceiptMail, MailUserID: operation.UserID}, []string{"account@example.com"})
+			return err
+		})
+	}))
+	wallet, err := ReadWalletOperationsSummary(ctx, start, start+1)
+	require.NoError(t, err)
+	require.Len(t, wallet, 1)
+	assert.EqualValues(t, 1, wallet[0].Count)
+	assert.Equal(t, "100", wallet[0].Credited.String())
+	assert.Equal(t, "0", wallet[0].Debited.String())
+	cutoff, err := ReadErrorEventRetentionCutoff(ctx)
+	require.NoError(t, err)
+	require.Zero(t, cutoff)
+	require.NoError(t, RecordErrorEventRetentionCutoff(ctx, start-10))
+	require.NoError(t, RecordErrorEventRetentionCutoff(ctx, start-20))
+	cutoff, err = ReadErrorEventRetentionCutoff(ctx)
+	require.NoError(t, err)
+	require.Equal(t, start-10, cutoff)
 	require.NoError(t, migrateDailyReportWindowIndex())
 	require.NoError(t, migrateDailyReportWindowIndex())
 	require.NoError(t, migrateDailyErrorReportSchedule())
@@ -80,8 +107,9 @@ func TestMailSettingsAndDailyMigration(t *testing.T) {
 	slice, err := ReadDailyReportSlice(ctx, start, start+300)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, slice.Total)
-	assert.Equal(t, []DailyReportCount{{Key: "fixture", Count: 1}}, slice.Errors)
-	assert.Equal(t, []DailyReportChannelCount{{ChannelID: 2, Count: 1}}, slice.Channels)
+	assert.EqualValues(t, 1, slice.Signals[DailyErrorOther])
+	require.Len(t, slice.Groups, 1)
+	assert.Equal(t, 2, slice.Groups[0].ChannelID)
 
 	key := "resource-fixture"
 	recipients := []string{"ops@example.com"}
@@ -96,7 +124,7 @@ func TestMailSettingsAndDailyMigration(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, opened)
 	var pendingCount int64
-	require.NoError(t, db.Model(&ResourceAlertDelivery{}).Where("status = ?", MailDeliveryPending).Count(&pendingCount).Error)
+	require.NoError(t, db.Model(&ResourceAlertDelivery{}).Where("status = ? AND recipient = ?", MailDeliveryPending, "ops@example.com").Count(&pendingCount).Error)
 	assert.EqualValues(t, 2, pendingCount)
 
 	_, resources, err := ReadDailyOperationsCounts(ctx, start, start+300)
@@ -127,3 +155,13 @@ func TestMailSettingsAndDailyMigration(t *testing.T) {
 	require.NotNil(t, effective.Graph)
 	assert.Equal(t, "00000000-0000-4000-8000-000000000002", effective.Graph.ClientID)
 }
+
+type legacyErrorReportSchedule struct {
+	ID               int64  `gorm:"primaryKey"`
+	Scope            string `gorm:"type:varchar(32);uniqueIndex"`
+	DailyWindowStart int64  `gorm:"bigint"`
+	UpdatedAt        int64  `gorm:"bigint"`
+	DeliveryCursor   string `gorm:"type:varchar(255)"`
+}
+
+func (legacyErrorReportSchedule) TableName() string { return "error_report_schedules" }

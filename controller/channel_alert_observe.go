@@ -32,6 +32,6 @@ func observeAutomaticChannelAlert(ctx context.Context, channel *model.Channel, r
 		}
 	case "readonly_probe":
 		service.ObserveChannelProbe(ctx, channel, "", "connection_probe", status, result.upstreamAttempted,
-			result.upstreamResponded, result.localErr == nil && result.newAPIError == nil, -1)
+			result.upstreamResponded, result.localErr == nil && result.newAPIError == nil, slot)
 	}
 }

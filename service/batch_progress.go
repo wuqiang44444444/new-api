@@ -82,7 +82,7 @@ func batchClientForJob(job *model.BatchJob) (*azurebatch.Client, error) {
 		return nil, errors.New("batch frozen connection is incomplete")
 	}
 	client := azurebatch.NewClient(connection.BaseURL, connection.Key, connection.APIVersion)
-	client.HTTPClient.Transport = WithAPIRequestEvidenceTransport(client.HTTPClient.Transport)
+	configureBatchChannelObservation(client, frozen)
 	return client, nil
 }
 

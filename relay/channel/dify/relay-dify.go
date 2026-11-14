@@ -100,6 +100,7 @@ func uploadDifyFile(c *gin.Context, info *relaycommon.RelayInfo, user string, me
 		// Send request
 		client := service.GetHttpClient()
 		resp, err := client.Do(req)
+		service.RecordChannelAlertRelayHTTP(c, info, resp, err)
 		if err != nil {
 			common.SysLog(common.LogText("failed to send request: %s", err.Error()))
 			return nil

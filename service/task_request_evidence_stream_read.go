@@ -19,6 +19,11 @@ const evidenceViewBytes = 64 << 10
 
 var evidenceReadSlots = make(chan struct{}, 8)
 
+type evidenceBodyReader interface {
+	io.ReadCloser
+	Size() int64
+}
+
 type evidenceReadCloser struct {
 	io.Reader
 	close func() error
@@ -33,9 +38,8 @@ func (r *evidenceReadCloser) Close() error {
 }
 func (r *evidenceReadCloser) Size() int64 { return r.size }
 
-// Download keeps the authenticated storage envelope and all captured bytes.
-// It never loads a new-format object in full or interprets its business body.
-func OpenEvidenceEventBody(event *model.TaskRequestEvidenceEvent, expired bool) (io.ReadCloser, string) {
+// OpenEvidenceEventBody opens the storage envelope and captured bytes for reading.
+func OpenEvidenceEventBody(event *model.TaskRequestEvidenceEvent, expired bool) (evidenceBodyReader, string) {
 	if expired {
 		return nil, "expired"
 	}
@@ -56,7 +60,7 @@ func OpenEvidenceEventBody(event *model.TaskRequestEvidenceEvent, expired bool) 
 	if key == "" {
 		key = EvidenceObjectKey(event.EvidenceId, event.Id)
 	}
-	var reader io.ReadCloser
+	var reader evidenceBodyReader
 	var err error
 	if local, ok := store.(*localEncryptedEvidenceStore); ok {
 		reader, err = local.openStream(key)
@@ -66,7 +70,11 @@ func OpenEvidenceEventBody(event *model.TaskRequestEvidenceEvent, expired bool) 
 		var body []byte
 		body, err = store.Get(key)
 		if err == nil {
-			reader = io.NopCloser(bytes.NewReader(body))
+			reader = &evidenceReadCloser{
+				Reader: bytes.NewReader(body),
+				size:   int64(len(body)),
+				close:  func() error { return nil },
+			}
 		}
 	}
 	if err != nil {
@@ -79,11 +87,7 @@ func OpenEvidenceEventBody(event *model.TaskRequestEvidenceEvent, expired bool) 
 		<-evidenceReadSlots
 		return nil, evidenceReadStatus(err)
 	}
-	size := int64(-1)
-	if sized, ok := reader.(interface{ Size() int64 }); ok {
-		size = sized.Size()
-	}
-	return &evidenceReadCloser{Reader: buffered, size: size, close: func() error { defer func() { <-evidenceReadSlots }(); return reader.Close() }}, "available"
+	return &evidenceReadCloser{Reader: buffered, size: reader.Size(), close: func() error { defer func() { <-evidenceReadSlots }(); return reader.Close() }}, "available"
 }
 
 func evidenceReadStatus(err error) string {

@@ -321,7 +321,7 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 	adaptor.Init(info)
 	resp, err := adaptor.FetchBatchTasks(baseURL, ch.Key, tasks, proxy)
 	if err != nil {
-		observeChannelBatchPoll(ctx, tasks, 0, err)
+		observeChannelBatchPoll(ctx, tasks, 0, err, nil)
 		common.SysLog(fmt.Sprintf("Get Task Do req error: %v", err))
 		for _, task := range tasks {
 			CaptureFallbackTaskPollingEvidence(adaptor, task, http.MethodGet, baseURL, 0, nil, nil, err)
@@ -340,7 +340,7 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 	for _, task := range tasks {
 		CaptureFallbackTaskPollingHTTPResponse(adaptor, task, baseURL, resp, responseBody, nil)
 	}
-	observeChannelBatchPoll(ctx, tasks, resp.StatusCode, nil)
+	observeChannelBatchPoll(ctx, tasks, resp.StatusCode, nil, responseBody)
 	switch classifyPollHTTP(resp.StatusCode) {
 	case pollClassNotFound:
 		for _, task := range tasks {
@@ -572,7 +572,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 	resp, err := fetchVideoTaskWithContext(ctx, adaptor, taskVideoUpstreamQueryBaseURL(task, ch, baseURL), key, task, proxy)
 	if err != nil {
-		ObserveChannelVideoPoll(ctx, task, 0, err)
+		ObserveChannelVideoPoll(ctx, task, 0, err, nil)
 		if handled, deferErr := handleMiniMaxTemporaryQueryError(ctx, task, err, time.Now()); handled {
 			return deferErr
 		}
@@ -608,7 +608,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 	CaptureFallbackTaskPollingEvidence(adaptor, task, http.MethodGet, taskVideoUpstreamQueryBaseURL(task, ch, baseURL), resp.StatusCode, nil, responseBody, nil)
 
-	ObserveChannelVideoPoll(ctx, task, resp.StatusCode, nil)
+	ObserveChannelVideoPoll(ctx, task, resp.StatusCode, nil, responseBody)
 	logger.LogDebug(ctx, "updateVideoSingleTask response: %s", redactTaskResponseForLog(responseBody))
 
 	switch classifyPollHTTP(resp.StatusCode) {
@@ -665,7 +665,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if classifyPollHTTP(resp.StatusCode) == pollClassOtherClient && isNonTerminalPollStatus(parsedStatus) {
 		return recordPollFailure(ctx, adaptor, task, snap.Status, pollClassUnrecognized, resp.StatusCode, taskResult.Reason)
 	}
-	ObserveTrustedChannelVideoResult(ctx, task, resp.StatusCode, parsedStatus)
+	ObserveTrustedChannelVideoResult(ctx, task, resp.StatusCode, parsedStatus, taskResult.Reason)
 	task.Data = linkVideoRedactResponse(adapterVersion, task.ClientProtocol, responseBody)
 
 	if len(taskResult.PluginState) > 0 {

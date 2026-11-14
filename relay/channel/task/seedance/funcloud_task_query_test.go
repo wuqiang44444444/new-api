@@ -30,7 +30,7 @@ func TestFunCloudFetchTaskUsesAIGCQueryAndReportedCompletionTokens(t *testing.T)
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.EvidenceTaskLink{}))
 	model.DB = db
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 2}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32)}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	t.Cleanup(func() {

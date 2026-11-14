@@ -38,7 +38,7 @@ func TestNativeImageDeliverySharesOnlyOriginalSuccessfulResponseEvidence(t *test
 			fixture := newNativeDiagFixture(t, http.StatusOK, upstreamBody, map[string]string{common.RequestIdKey: "fixture-upstream"}, service.APIRequestEvidence())
 			require.NoError(t, fixture.db.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.EvidenceTaskLink{}))
 			old := system_setting.GetTaskRequestEvidenceConfig()
-			config := system_setting.TaskRequestEvidenceConfig{Enabled: true, RetentionDays: 2, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32)}
+			config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32)}
 			system_setting.SetTaskRequestEvidenceConfig(config)
 			require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 			t.Cleanup(func() {

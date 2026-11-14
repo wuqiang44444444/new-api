@@ -102,7 +102,7 @@ func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, erro
 	for key, value := range raw {
 		if field, ok := strings.CutPrefix(key, "channel_affinity_setting."); ok {
 			switch field {
-			case "enabled", "session_mode", "switch_on_success", "keep_on_channel_disabled", "max_entries", "default_ttl_seconds", "rules":
+			case "enabled", "session_mode", "switch_on_success", "keep_on_channel_disabled", "max_entries", "default_ttl_seconds", "rules", "failover_mode", "failover_channel_ids", "layered_affinity":
 			default:
 				return nil, fmt.Errorf("unknown affinity option: %s", key)
 			}
@@ -112,7 +112,7 @@ func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, erro
 	// Decode through JSON so malformed scalar/array values cannot be silently ignored.
 	affinityJSON := map[string]json.RawMessage{}
 	for key, value := range affinityFields {
-		if key == "session_mode" {
+		if key == "session_mode" || key == "failover_mode" {
 			encoded, _ := common.Marshal(value)
 			affinityJSON[key] = encoded
 		} else {
@@ -180,6 +180,9 @@ func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, erro
 	default:
 		return nil, fmt.Errorf("invalid global session mode")
 	}
+	if err := validateAffinityRoutingPolicy(snapshot.Affinity); err != nil {
+		return nil, err
+	}
 	for _, rule := range snapshot.Affinity.Rules {
 		switch rule.SessionMode {
 		case "", "inherit", "off", "prefer", "strict":
@@ -223,7 +226,8 @@ func refreshRequestPolicySnapshot() error {
 func UpdateRequestPolicyOptions(values map[string]string) error {
 	requestPolicyOptionMutex.Lock()
 	defer requestPolicyOptionMutex.Unlock()
-	options := maps.Clone(CurrentRequestPolicy().Options)
+	previous := CurrentRequestPolicy()
+	options := maps.Clone(previous.Options)
 	for key, value := range values {
 		if !IsRequestPolicyOption(key) {
 			return fmt.Errorf("not a request policy option: %s", key)
@@ -232,6 +236,9 @@ func UpdateRequestPolicyOptions(values map[string]string) error {
 	}
 	snapshot, err := BuildRequestPolicy(options)
 	if err != nil {
+		return err
+	}
+	if err := protectBuiltInAffinityRules(previous, snapshot); err != nil {
 		return err
 	}
 	if err := DB.Transaction(func(tx *gorm.DB) error {

@@ -30,12 +30,15 @@ import { ErrorLogFilterBar } from './error-log-filter-bar'
 
 const EMPTY_LOGS: ErrorLogItem[] = []
 
-export function ErrorLogViewer() {
+export function ErrorLogViewer(props: {
+  initialFilters?: Partial<ErrorLogFilters>
+}) {
   const { t } = useTranslation()
-  const [filters, setFilters] = useState<ErrorLogFilters>({
+  const [filters, setFilters] = useState<ErrorLogFilters>(() => ({
+    ...props.initialFilters,
     p: 1,
     page_size: 20,
-  })
+  }))
   const invalidRange =
     filters.start_timestamp !== undefined &&
     filters.end_timestamp !== undefined &&

@@ -1,8 +1,12 @@
 package router
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,10 +20,99 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEvidenceDownloadRequiresFinalAuthenticationAndHistoricalDigest(t *testing.T) {
+	setupRelayRouterTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.AuditLog{}))
+	old := system_setting.GetTaskRequestEvidenceConfig()
+	config := system_setting.TaskRequestEvidenceConfig{StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32)}
+	system_setting.SetTaskRequestEvidenceConfig(config)
+	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
+	t.Cleanup(func() {
+		system_setting.SetTaskRequestEvidenceConfig(old)
+		require.NoError(t, service.InitTaskRequestEvidenceStore(old))
+	})
+	token := "evidence-download-test"
+	require.NoError(t, model.DB.Create(&model.User{
+		Username: token, Status: common.UserStatusEnabled, Role: common.RoleAdminUser,
+		Group: "default", AccessToken: &token, AuthVersion: 1, AffCode: token,
+	}).Error)
+	index := &model.TaskRequestEvidence{RequestID: "evidence-download"}
+	require.NoError(t, model.CreateTaskRequestEvidence(index))
+	payload := bytes.Repeat([]byte("opaque evidence bytes\n"), 10000)
+	digest := service.EvidenceSha256Hex(payload)
+	const firstPacket = len("NEVSIO3\n") + (64 << 10) + 32
+	tests := []struct {
+		name, digest string
+		payload      []byte
+		truncate     bool
+		wantError    bool
+	}{
+		{name: "blank padded digest", digest: strings.Repeat(" ", 64), payload: payload},
+		{name: "matching digest", digest: digest, payload: payload},
+		{name: "incorrect digest", digest: strings.Repeat("0", 64), payload: payload, wantError: true},
+		{name: "incorrect digest before any bytes are sent", digest: digest, payload: []byte("x"), wantError: true},
+		{name: "missing final packet", payload: payload, truncate: true, wantError: true},
+	}
+
+	engine := gin.New()
+	SetApiRouter(engine)
+	for _, protocol := range []string{"HTTP/1.1", "HTTP/2.0"} {
+		server := httptest.NewUnstartedServer(engine)
+		if protocol == "HTTP/2.0" {
+			server.EnableHTTP2 = true
+			server.StartTLS()
+		} else {
+			server.Start()
+		}
+		t.Cleanup(server.Close)
+		for _, tc := range tests {
+			t.Run(protocol+"/"+tc.name, func(t *testing.T) {
+				event := &model.TaskRequestEvidenceEvent{EvidenceId: index.Id, Sha256: tc.digest}
+				require.NoError(t, model.CreateTaskRequestEvidenceEvent(event))
+				require.NoError(t, service.GetTaskRequestEvidenceStore().PutEventBody(index.Id, event.Id, tc.payload))
+				if tc.truncate {
+					path := filepath.Join(config.StorageDir, service.EvidenceObjectKey(index.Id, event.Id))
+					require.NoError(t, os.Truncate(path, int64(firstPacket)))
+				}
+
+				path := "/api/task_request_evidence/" + strconv.FormatInt(index.Id, 10) +
+					"/events/" + strconv.FormatInt(event.Id, 10) + "/object"
+				request, err := http.NewRequest(http.MethodGet, server.URL+path, nil)
+				require.NoError(t, err)
+				request.Header.Set("Authorization", "Bearer "+token)
+				request.Header.Set("Accept-Encoding", "gzip")
+				response, err := server.Client().Do(request)
+				require.NoError(t, err)
+				defer response.Body.Close()
+				require.Equal(t, protocol, response.Proto)
+				require.Empty(t, response.Header.Get("Content-Encoding"))
+				body, readErr := io.ReadAll(response.Body)
+				if tc.wantError && len(tc.payload) == 1 {
+					require.NoError(t, readErr)
+					assert.Equal(t, http.StatusGone, response.StatusCode)
+					assert.Contains(t, string(body), "integrity_failed")
+					assert.Empty(t, response.Header.Get("Content-Disposition"))
+					return
+				}
+				require.Equal(t, http.StatusOK, response.StatusCode)
+				if tc.wantError {
+					assert.ErrorIs(t, readErr, io.ErrUnexpectedEOF)
+					assert.NotEmpty(t, body)
+					assert.Less(t, int64(len(body)), response.ContentLength)
+					return
+				}
+				require.NoError(t, readErr)
+				assert.Equal(t, int64(len(tc.payload)), response.ContentLength)
+				assert.True(t, bytes.Equal(tc.payload, body), "download must preserve the original bytes")
+			})
+		}
+	}
+}
+
 func TestTaskRequestEvidenceRoutesPermissionsAndCache(t *testing.T) {
 	setupRelayRouterTestDB(t)
 	old := system_setting.GetTaskRequestEvidenceConfig()
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 2}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32)}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	t.Cleanup(func() {

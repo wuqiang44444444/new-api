@@ -35,6 +35,7 @@ export interface ApiResponse<T = unknown> {
  * User profile data
  */
 export interface UserProfile {
+  effective_quota_warning_threshold?: number
   has_password?: boolean
   permissions?: UserPermissions
   /** User ID */

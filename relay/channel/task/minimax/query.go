@@ -66,6 +66,7 @@ func queryTaskObservation(ctx context.Context, task *model.Task, key string, cap
 		client = &direct
 	}
 	resp, err := client.Do(req)
+	service.WatchTaskHTTPBalance(ctx, task, "video_query", resp)
 	if captureEvidence {
 		service.AttachRawTaskPollingEvidence(task, req, resp, err)
 	}

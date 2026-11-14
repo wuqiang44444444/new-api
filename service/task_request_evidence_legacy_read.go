@@ -16,7 +16,7 @@ var (
 	errEvidenceReadBudget  = errors.New("evidence read resource limit")
 )
 
-func (s *localEncryptedEvidenceStore) openLegacy(file *os.File) (io.ReadCloser, error) {
+func (s *localEncryptedEvidenceStore) openLegacy(file *os.File) (evidenceBodyReader, error) {
 	defer file.Close()
 	select {
 	case evidenceLegacyReadSlot <- struct{}{}:

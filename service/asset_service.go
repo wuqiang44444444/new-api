@@ -425,6 +425,7 @@ func seedanceAssetAdapterWithRevision(channel *model.Channel, userID int, modelN
 	}
 	if revision != nil {
 		*revision = model.ChannelAlertRevisionWithAssetKey(channel, assetKey)
+		adapter.SetResponseObserver(assetBalanceObserver(channel.Id, *revision, modelName))
 	}
 	return adapter, nil
 }

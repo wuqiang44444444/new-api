@@ -68,7 +68,7 @@ func setupManageUserTestDB(t *testing.T) *gorm.DB {
 			}
 		}
 	})
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.CasbinRule{}, &model.AuthzRole{}, &model.AuthFlow{}, &model.TwoFA{}, &model.PasskeyCredential{}, &model.UserAccessToken{}))
+	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.WalletOperation{}, &model.ResourceAlertEpisode{}, &model.ResourceAlertDelivery{}, &model.User{}, &model.UserSession{}, &model.CasbinRule{}, &model.AuthzRole{}, &model.AuthFlow{}, &model.TwoFA{}, &model.PasskeyCredential{}, &model.UserAccessToken{}))
 	require.NoError(t, logDB.AutoMigrate(&model.Log{}, &model.AuditLog{}))
 	versionQuery := "SELECT version()"
 	if dialect == "sqlite" {
@@ -466,9 +466,9 @@ func TestManageUserQuotaTargetsAndWalletBounds(t *testing.T) {
 
 func TestManageUserQuotaMiddlewareKeepsOneOperationPerRequest(t *testing.T) {
 	db := setupManageUserTestDB(t)
-	pat := "quota-middleware-test-token"
-	operator := model.User{Id: 9999, Username: "root-operator", Role: common.RoleRootUser, Status: common.UserStatusEnabled, AuthVersion: 1, AccessToken: &pat, Quota: 1000}
+	operator := model.User{Id: 9999, Username: "root-operator", Role: common.RoleRootUser, Status: common.UserStatusEnabled, AuthVersion: 1, Quota: 1000}
 	require.NoError(t, db.Create(&operator).Error)
+	pat, _ := createScopedAccessToken(t, operator.Id, 0, "user:write")
 	router := gin.New()
 	router.Use(middleware.RequestId(), middleware.AccessTokenAudit())
 	router.POST("/api/user/manage", middleware.AdminAuth(), ManageUser)

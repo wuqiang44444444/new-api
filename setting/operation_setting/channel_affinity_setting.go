@@ -28,6 +28,7 @@ type ChannelAffinityRule struct {
 	IncludeUsingGroup bool `json:"include_using_group"`
 	IncludeModelName  bool `json:"include_model_name"`
 	IncludeRuleName   bool `json:"include_rule_name"`
+	FailoverOnUnavailable bool `json:"failover_on_unavailable,omitempty"`
 }
 
 type ChannelAffinitySetting struct {
@@ -39,6 +40,9 @@ type ChannelAffinitySetting struct {
 	MaxEntries            int                   `json:"max_entries"`
 	DefaultTTLSeconds     int                   `json:"default_ttl_seconds"`
 	Rules                 []ChannelAffinityRule `json:"rules"`
+	FailoverMode          string                `json:"failover_mode"`
+	FailoverChannelIDs    []int                 `json:"failover_channel_ids"`
+	LayeredAffinity       bool                  `json:"layered_affinity"`
 }
 
 // Keep Codex CLI passthrough aligned with upstream. Codex uses lower-case

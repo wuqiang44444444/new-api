@@ -56,7 +56,7 @@ notify.quota_low_title: "Your quota is running low"
 notify.subscription_quota_low_title: "Your subscription quota is running low"
 notify.quota_low_bark: "{{.Prompt}}, remaining quota: {{.Quota}}. Please top up soon"
 notify.quota_low_gotify: "{{.Prompt}}. Your remaining quota is {{.Quota}}. Please top up soon."
-notify.quota_low_email: "{{.Prompt}}. Your remaining quota is {{.Quota}}. Top up soon to keep using the service.<br/>Top-up link: <a href='{{.Link}}'>{{.Link}}</a>"
+notify.quota_low_email: "{{.Prompt}}. Your remaining quota is {{.Quota}}. Top up soon to keep using the service. The warning threshold is {{.Threshold}}.<br/>Top-up link: <a href='{{.Link}}'>{{.Link}}</a>"
 
 # Channel notices sent to the root user and model update watchers
 channel.notify_disabled_subject: "Channel \"{{.Name}}\" (#{{.Id}}) has been disabled"

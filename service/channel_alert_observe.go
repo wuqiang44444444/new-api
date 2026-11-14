@@ -7,13 +7,16 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relaymode "github.com/QuantumNous/new-api/relay/constant"
+	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
 )
@@ -25,6 +28,7 @@ type channelAlertHTTP struct {
 	status    int
 	transport bool
 	inactive  bool
+	balance   *atomic.Bool
 }
 
 func SetChannelAlertSelection(c *gin.Context, channel *model.Channel, slot int) {
@@ -44,12 +48,30 @@ func BeginChannelAlertAttempt(c *gin.Context) {
 }
 
 func RecordChannelAlertHTTP(c *gin.Context, response *http.Response, err error) {
+	recordChannelAlertHTTP(c, nil, response, err)
+}
+
+// RecordChannelAlertRelayHTTP uses the selected relay operation, including typed task submits.
+func RecordChannelAlertRelayHTTP(c *gin.Context, info *relaycommon.RelayInfo, response *http.Response, err error) {
+	recordChannelAlertHTTP(c, info, response, err)
+}
+
+func recordChannelAlertHTTP(c *gin.Context, info *relaycommon.RelayInfo, response *http.Response, err error) {
 	if !channelAlerts.enabled.Load() || c == nil {
 		return
 	}
 	outcome := channelAlertHTTP{transport: err != nil && response == nil && !errors.Is(err, context.Canceled)}
 	if response != nil {
 		outcome.status = response.StatusCode
+		operation := relayBalanceOperation(c)
+		taskSubmit := info != nil && info.TaskRelayInfo != nil
+		if taskSubmit {
+			operation = channelAlertSubmitOperation(c, info)
+		}
+		outcome.balance = watchRelayChannelBalance(c, response, operation, taskSubmit ||
+			common.GetContextKeyInt(c, constant.ContextKeyChannelType) == constant.ChannelTypeAsyncImage ||
+			common.GetContextKeyInt(c, constant.ContextKeyChannelType) == constant.ChannelTypeMiniMax ||
+			strings.HasPrefix(response.Header.Get("Content-Type"), "application/json"))
 	}
 	c.Set(channelAlertHTTPKey, outcome)
 }
@@ -113,6 +135,8 @@ func channelAlertOperation(mode int) string {
 
 func classifyChannelAlertHTTP(status int, transport bool) channelAlertKind {
 	switch {
+	case status == http.StatusPaymentRequired:
+		return channelAlertBalance
 	case transport || status == http.StatusRequestTimeout:
 		return channelAlertNetwork
 	case status == http.StatusTooManyRequests:
@@ -124,7 +148,7 @@ func classifyChannelAlertHTTP(status int, transport bool) channelAlertKind {
 	}
 }
 
-func recordChannelAlertAttempt(c *gin.Context, info *relaycommon.RelayInfo, operation, id string, success bool, code types.ErrorCode) {
+func recordChannelAlertAttempt(c *gin.Context, info *relaycommon.RelayInfo, operation, id string, success bool, code types.ErrorCode, message string) {
 	snapshot := ChannelAlertSelection(c)
 	if snapshot == nil || info.ChannelMeta == nil || !success && c.Request.Context().Err() != nil {
 		return
@@ -136,7 +160,12 @@ func recordChannelAlertAttempt(c *gin.Context, info *relaycommon.RelayInfo, oper
 		httpResult.status = clienterrlog.UpstreamResponseStatus(c.Request.Context())
 	}
 	kind := classifyChannelAlertHTTP(httpResult.status, httpResult.transport)
-	if httpResult.inactive || httpResult.status == http.StatusUnauthorized && code == types.ErrorCode("invalid_api_key") {
+	if httpResult.balance != nil && httpResult.balance.Load() {
+		return // Already recorded directly from the provider response.
+	}
+	if !success && httpResult.status >= 400 && upstreamBalanceRejected(httpResult.status, string(code), message) {
+		kind = channelAlertBalance
+	} else if httpResult.inactive || httpResult.status == http.StatusUnauthorized && code == types.ErrorCode("invalid_api_key") {
 		kind = channelAlertKey
 	} else if httpResult.status == 0 && !httpResult.transport {
 		switch code {
@@ -146,12 +175,21 @@ func recordChannelAlertAttempt(c *gin.Context, info *relaycommon.RelayInfo, oper
 	}
 	if kind == channelAlertSuccess && !success && info.StreamStatus != nil && httpResult.status >= 200 && httpResult.status < 300 {
 		stream := info.StreamStatus.OutcomeSnapshot()
-		if stream.ErrorStatus >= 400 {
+		if upstreamBalanceRejected(stream.ErrorStatus, stream.ErrorCode, "") || upstreamBalanceRejected(stream.ErrorStatus, stream.ErrorType, "") ||
+			(info.ChannelType == constant.ChannelTypeOpenAI || info.ChannelType == constant.ChannelTypeNewAPI) && stream.ErrorCode == "insufficient_quota" {
+			kind = channelAlertBalance
+			if stream.ErrorStatus >= 400 {
+				httpResult.status = stream.ErrorStatus
+			}
+		} else if stream.ErrorStatus >= 400 {
 			httpResult.status = stream.ErrorStatus
 			kind = classifyChannelAlertHTTP(stream.ErrorStatus, false)
 		} else if stream.EndReason == relaycommon.StreamEndReasonTimeout || stream.EndReason == relaycommon.StreamEndReasonScannerErr {
 			kind = channelAlertNetwork
 		}
+	}
+	if kind == channelAlertBalance && id == "" {
+		id = common.NewRequestId()
 	}
 	if success && httpResult.status > 0 || kind != channelAlertSuccess {
 		recordChannelAlert(scope, id, kind, httpResult.status)
@@ -164,7 +202,7 @@ func ObserveChannelRelayResult(c *gin.Context, info *relaycommon.RelayInfo, apiE
 	}
 	stream := info.StreamStatus
 	success := apiErr == nil && !info.PerformanceBusinessRejection && (stream == nil || stream.IsNormalEnd() && !stream.HasErrors() && (stream.ResponseOutcome() == "" || stream.ResponseOutcome() == "completed"))
-	recordChannelAlertAttempt(c, info, channelAlertOperation(info.RelayMode), c.GetString(common.RequestIdKey), success, apiErr.GetErrorCode())
+	recordChannelAlertAttempt(c, info, channelAlertOperation(info.RelayMode), c.GetString(common.RequestIdKey), success, apiErr.GetErrorCode(), apiErr.Error())
 }
 
 func ChannelAlertSocketObservationID() string {
@@ -176,7 +214,7 @@ func ChannelAlertSocketObservationID() string {
 
 func ObserveChannelResponsesSocket(c *gin.Context, info *relaycommon.RelayInfo, id string, completed bool) {
 	if channelAlerts.enabled.Load() && info != nil {
-		recordChannelAlertAttempt(c, info, "responses_websocket", id, completed, "")
+		recordChannelAlertAttempt(c, info, "responses_websocket", id, completed, "", "")
 	}
 }
 
@@ -193,10 +231,11 @@ func ObserveChannelTaskSubmission(c *gin.Context, info *relaycommon.RelayInfo, t
 		return
 	}
 	var code types.ErrorCode
+	var message string
 	if taskErr != nil {
-		code = types.ErrorCode(taskErr.Code)
+		code, message = types.ErrorCode(taskErr.Code), taskErr.Message
 	}
-	recordChannelAlertAttempt(c, info, channelAlertSubmitOperation(c, info), c.GetString(common.RequestIdKey), accepted, code)
+	recordChannelAlertAttempt(c, info, channelAlertSubmitOperation(c, info), c.GetString(common.RequestIdKey), accepted, code, message)
 }
 
 func ObserveChannelProbe(ctx context.Context, channel *model.Channel, modelName, operation string, status int, attempted, responded, success bool, slot int) {
@@ -226,7 +265,11 @@ func ObserveFrozenChannelResult(ctx context.Context, task *model.Task, operation
 		Operation: operation, Slot: snapshot.Slot}, observationID, kind, status)
 }
 
-func ObserveChannelVideoPoll(ctx context.Context, task *model.Task, status int, err error) {
+func ObserveChannelVideoPoll(ctx context.Context, task *model.Task, status int, err error, body []byte) {
+	if channelAlerts.enabled.Load() && task != nil && upstreamBalanceResponse(status, channelBalanceProfile{miniMax: task.IsMiniMaxV2Task()}, body, true) {
+		observeFrozenChannelBalance(ctx, task, "video_query", status)
+		return
+	}
 	var temporary *MiniMaxTemporaryQueryError
 	var network net.Error
 	transport := errors.As(err, &network) || errors.Is(err, io.ErrUnexpectedEOF)
@@ -271,7 +314,11 @@ func ObserveChannelRelayProbe(ctx context.Context, channel *model.Channel, model
 	ObserveChannelProbe(ctx, channel, modelName, channelAlertOperation(relayMode), status, attempted, responded, success, slot)
 }
 
-func ObserveTrustedChannelVideoResult(ctx context.Context, task *model.Task, status int, outcome model.TaskStatus) {
+func ObserveTrustedChannelVideoResult(ctx context.Context, task *model.Task, status int, outcome model.TaskStatus, reason string) {
+	if channelAlerts.enabled.Load() && outcome == model.TaskStatusFailure && upstreamBalanceRejected(0, "", reason) {
+		observeFrozenChannelBalance(ctx, task, "video_generation", status)
+		return
+	}
 	if status >= 200 && status < 300 {
 		ObserveFrozenChannelResult(ctx, task, "video_query", "", status, false, true)
 		if outcome == model.TaskStatusSuccess {
@@ -301,6 +348,16 @@ func ObserveImageChannelTransport(ctx context.Context, operation string, respons
 	status := 0
 	if response != nil {
 		status = response.StatusCode
+		profile := channelBalanceProfile{}
+		if data := task.PrivateData.ImageTask; data != nil {
+			profile.funCloudImage = data.ChannelOther.ImageUpstreamProtocol == kitdto.ImageUpstreamProtocolFunCloudAIGCV2
+			profile.billingQuota = data.ChannelOther.ImageUpstreamProtocol == kitdto.ImageUpstreamProtocolMoxingImagesV1 || data.ChannelType == constant.ChannelTypeOpenAI || data.ChannelType == constant.ChannelTypeNewAPI
+		}
+		watchChannelBalanceResponse(response, profile, true, func(balance bool) {
+			if balance {
+				observeFrozenChannelBalance(ctx, task, operation, status)
+			}
+		})
 	}
 	id := task.TaskID
 	if operation == "image_query" {
@@ -320,12 +377,18 @@ func ObserveImageChannelSuccess(ctx context.Context, operation string) {
 	ObserveFrozenChannelResult(ctx, task, operation, task.TaskID, http.StatusOK, false, true)
 }
 
-func observeChannelBatchPoll(ctx context.Context, tasks []*model.Task, status int, err error) {
+func observeChannelBatchPoll(ctx context.Context, tasks []*model.Task, status int, err error, body []byte) {
 	if !channelAlerts.enabled.Load() {
 		return
 	}
 	var network net.Error
 	transport := errors.As(err, &network) || errors.Is(err, io.ErrUnexpectedEOF)
+	if upstreamBalanceResponse(status, channelBalanceProfile{}, body, true) {
+		for _, task := range tasks {
+			observeFrozenChannelBalance(ctx, task, "task_query", status)
+		}
+		return
+	}
 	if classifyChannelAlertHTTP(status, transport) == channelAlertSuccess {
 		return
 	}
@@ -346,6 +409,9 @@ func ObserveInlineImageChannelAlert(c *gin.Context, info *relaycommon.RelayInfo,
 	status := 0
 	if response != nil {
 		status = response.StatusCode
+		if !success {
+			watchRelayChannelBalance(c, response, operation, true)
+		}
 	}
 	kind := classifyChannelAlertHTTP(status, err != nil && response == nil && !errors.Is(err, context.Canceled))
 	if success || kind != channelAlertSuccess {
@@ -365,7 +431,15 @@ func RecordChannelAlertSDKResult(c *gin.Context, err error) {
 	}
 	var response interface{ HTTPStatusCode() int }
 	if errors.As(err, &response) {
-		c.Set(channelAlertHTTPKey, channelAlertHTTP{status: response.HTTPStatusCode()})
+		status := response.HTTPStatusCode()
+		c.Set(channelAlertHTTPKey, channelAlertHTTP{status: status})
+		var provider interface {
+			ErrorCode() string
+			ErrorMessage() string
+		}
+		if status == http.StatusPaymentRequired || errors.As(err, &provider) && upstreamBalanceRejected(status, provider.ErrorCode(), provider.ErrorMessage()) {
+			recordRelayChannelBalance(c, relayBalanceOperation(c), status)
+		}
 		return
 	}
 	var network net.Error

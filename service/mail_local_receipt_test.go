@@ -13,6 +13,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -24,6 +25,11 @@ import (
 type inboxMail struct{ subject, to, body string }
 
 func newLocalMailInbox(t *testing.T) <-chan inboxMail {
+	t.Helper()
+	return newLocalMailInboxWithRejection(t, "")
+}
+
+func newLocalMailInboxWithRejection(t *testing.T, rejectedSubject string) <-chan inboxMail {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -49,13 +55,13 @@ func newLocalMailInbox(t *testing.T) <-chan inboxMail {
 			if err != nil {
 				return
 			}
-			go receiveLocalSMTP(conn, inbox)
+			go receiveLocalSMTP(conn, inbox, rejectedSubject)
 		}
 	}()
 	return inbox
 }
 
-func receiveLocalSMTP(conn net.Conn, inbox chan<- inboxMail) {
+func receiveLocalSMTP(conn net.Conn, inbox chan<- inboxMail, rejectedSubject string) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
 	wire := textproto.NewConn(conn)
@@ -81,7 +87,16 @@ func receiveLocalSMTP(conn net.Conn, inbox chan<- inboxMail) {
 				return
 			}
 			title, err := new(mime.WordDecoder).DecodeHeader(message.Header.Get("Subject"))
-			if err != nil || wire.PrintfLine("250 received") != nil {
+			if err != nil {
+				return
+			}
+			if rejectedSubject != "" && strings.Contains(title, rejectedSubject) {
+				if wire.PrintfLine("550 fixture rejection") != nil {
+					return
+				}
+				continue
+			}
+			if wire.PrintfLine("250 received") != nil {
 				return
 			}
 			inbox <- inboxMail{title, message.Header.Get("To"), string(body)}
@@ -170,6 +185,38 @@ func TestOperationalMailReachesLocalInbox(t *testing.T) {
 		require.NoError(t, db.Model(&model.ResourceAlertEpisode{}).Where("resource = ?", resource).Count(&count).Error)
 		assert.EqualValues(t, 2, count, "episode count for "+resource)
 	}
+}
+
+func TestWalletLowQuotaMailShowsPostChargeBalanceAndEffectiveThreshold(t *testing.T) {
+	db := withErrorReportTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.User{}))
+	oldCount, oldDuration := constant.NotifyLimitCount, constant.NotificationLimitDurationMinute
+	constant.NotifyLimitCount, constant.NotificationLimitDurationMinute = 2, 10
+	t.Cleanup(func() { constant.NotifyLimitCount, constant.NotificationLimitDurationMinute = oldCount, oldDuration })
+	inbox := newLocalMailInbox(t)
+	oldThreshold := common.QuotaRemindThreshold
+	common.QuotaRemindThreshold = 500000
+	t.Cleanup(func() { common.QuotaRemindThreshold = oldThreshold })
+	require.NoError(t, db.Create(&model.User{Id: 7043, Username: "wallet-account", AffCode: "w043", Quota: 1000000}).Error)
+	require.NoError(t, model.SettleWalletQuota(7043, 750000))
+	checkAndSendQuotaNotify(&relaycommon.RelayInfo{
+		UserId: 7043, UserEmail: "wallet@example.com", UserQuota: 1000000,
+		UserSetting: dto.UserSetting{Language: "en"},
+	}, 500000, 250000)
+	message := requireLocalMail(t, inbox, "quota is running low", "wallet@example.com")
+	assert.Contains(t, message.body, "remaining quota is "+logger.FormatQuota(250000))
+	assert.Contains(t, message.body, "warning threshold is "+logger.FormatQuota(500000))
+	assert.NotContains(t, message.body, logger.FormatQuota(1000000))
+	require.NoError(t, db.Create(&model.User{Id: 7044, Username: "wallet-personal", AffCode: "w044", Quota: 1000000}).Error)
+	require.NoError(t, model.SettleWalletQuota(7044, 400000))
+	require.NoError(t, model.SettleWalletQuota(7044, 50000))
+	checkAndSendQuotaNotify(&relaycommon.RelayInfo{
+		UserId: 7044, UserEmail: "personal@example.com", UserQuota: 1000000,
+		UserSetting: dto.UserSetting{Language: "en", QuotaWarningThreshold: 750000},
+	}, -100000, 500000)
+	personal := requireLocalMail(t, inbox, "quota is running low", "personal@example.com")
+	assert.Contains(t, personal.body, "remaining quota is "+logger.FormatQuota(550000))
+	assert.Contains(t, personal.body, "warning threshold is "+logger.FormatQuota(750000))
 }
 
 func TestUpstreamBalanceMailReachesLocalInbox(t *testing.T) {

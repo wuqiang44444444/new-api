@@ -144,7 +144,7 @@ func getChannelWithPreference(group, model string, retry int, filters []dto.Chan
 		}
 		abilities = lo.Filter(abilities, func(ability Ability, _ int) bool {
 			inLayer := ability.Priority == nil && targetPriority == 0 || ability.Priority != nil && *ability.Priority == targetPriority
-			if inLayer && preference != nil && preference.dbChannelEnabled && ability.ChannelId == preference.ChannelID {
+			if inLayer && preference != nil && (preference.dbChannelEnabled && ability.ChannelId == preference.ChannelID || preference.dbFallbackEnabled && channel.Id == 0 && ability.ChannelId == preference.FallbackChannelID) {
 				channel.Id = ability.ChannelId
 			}
 			return inLayer
@@ -180,6 +180,7 @@ func getChannelWithPreference(group, model string, retry int, filters []dto.Chan
 func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters []dto.ChannelFilter, preference *ChannelSelectionPreference) []Ability {
 	if preference != nil {
 		preference.dbChannelEnabled = false
+		preference.dbFallbackEnabled = false
 	}
 	if len(abilities) == 0 {
 		return nil
@@ -197,7 +198,7 @@ func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters
 
 	var channels []*Channel
 	if err := DB.Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
-		if identityFilterRequiresKey(filters) {
+		if preference != nil && preference.Policy != nil || identityFilterRequiresKey(filters) {
 			return nil
 		}
 		return abilities
@@ -208,13 +209,24 @@ func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters
 		channelsByID[channel.Id] = channel
 	}
 
+	var eligible map[int]bool
+	if preference != nil && preference.Policy != nil {
+		candidates := make([]*Channel, 0, len(channels))
+		for _, channel := range channels {
+			if ok, _ := ChannelSatisfiesFilters(channel, modelName, filters); ok && channel.Status == common.ChannelStatusEnabled {
+				candidates = append(candidates, channel)
+			}
+		}
+		eligible = preference.limitCandidates(candidates)
+	}
 	filtered := make([]Ability, 0, len(abilities))
 	for _, ability := range abilities {
 		channel := channelsByID[ability.ChannelId]
-		if ok, _ := ChannelSatisfiesFilters(channel, modelName, filters); ok {
+		if ok, _ := ChannelSatisfiesFilters(channel, modelName, filters); ok && preference.canSelect(ability.ChannelId, channel.GetPriority(), eligible) {
 			filtered = append(filtered, ability)
-			if preference != nil && ability.ChannelId == preference.ChannelID && channel.Status == common.ChannelStatusEnabled {
-				preference.dbChannelEnabled = true
+			if preference != nil && channel.Status == common.ChannelStatusEnabled {
+				preference.dbChannelEnabled = preference.dbChannelEnabled || ability.ChannelId == preference.ChannelID
+				preference.dbFallbackEnabled = preference.dbFallbackEnabled || ability.ChannelId == preference.FallbackChannelID
 			}
 		}
 	}

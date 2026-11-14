@@ -54,7 +54,7 @@ func DisableChannel(channelError types.ChannelError, reason string, audit ...mod
 		params := map[string]any{"Name": channelError.ChannelName, "Id": channelError.ChannelId, "Reason": reason}
 		subject := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledSubject, params)
 		content := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, params)
-		NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
+		NotifyRootUser(model.MailChannelDisabled, formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
 	}
 }
 
@@ -65,7 +65,7 @@ func EnableChannel(channelId int, usingKey string, channelName string, audit ...
 		params := map[string]any{"Name": channelName, "Id": channelId}
 		subject := i18n.Translate(lang, i18n.MsgChannelNotifyEnabledSubject, params)
 		content := i18n.Translate(lang, i18n.MsgChannelNotifyEnabledContent, params)
-		NotifyRootUser(formatNotifyType(channelId, common.ChannelStatusEnabled), subject, content)
+		NotifyRootUser(model.MailChannelRecovered, formatNotifyType(channelId, common.ChannelStatusEnabled), subject, content)
 	}
 }
 

@@ -427,6 +427,7 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 						}
 						continue
 					}
+					service.ObserveChannelSocketBalance(c, "responses_websocket", incoming.body)
 					if accepted {
 						if rejection.Error != nil {
 							code := ""
@@ -470,6 +471,9 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			}
 			switch event.Type {
 			case "response.completed", "response.done", "response.incomplete", "response.failed", "response.cancelled", "response.canceled":
+				if event.Type == "response.failed" {
+					service.ObserveChannelSocketBalance(c, "responses_websocket", incoming.body)
+				}
 				service.ObserveChannelResponsesSocketTerminal(c, info, alertObservation, event.Type == "response.completed" || event.Type == "response.done")
 				if event.Response != nil {
 					s.lastResponseID = event.Response.ID

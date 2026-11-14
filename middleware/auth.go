@@ -586,6 +586,9 @@ func tokenAuthWithValidator(validateToken func(string) (*model.Token, error)) gi
 				abortWithOpenAiMessage(c, http.StatusUnauthorized,
 					common.TranslateMessage(c, i18n.MsgTokenInvalid))
 			}
+			if errors.Is(err, model.ErrTokenQuotaExhausted) {
+				clienterrlog.RecordAPIKeyQuotaRejection(c)
+			}
 			return
 		}
 

@@ -48,14 +48,12 @@ const smtp = {
 }
 let actions: HTMLDivElement
 beforeEach(() => {
-  get
-    .mockReset()
-    .mockResolvedValue({
-      data: {
-        success: true,
-        data: { config: { mode: 'smtp', smtp }, has_credential: true },
-      },
-    })
+  get.mockReset().mockResolvedValue({
+    data: {
+      success: true,
+      data: { config: { mode: 'smtp', smtp }, has_credential: true },
+    },
+  })
   put.mockReset().mockImplementation(async (url: string, body: unknown) => ({
     data: {
       success: true,
@@ -147,4 +145,70 @@ test('test mail submits only a recipient and uses the saved configuration', asyn
     })
   )
   expect(put).not.toHaveBeenCalled()
+})
+
+test('changes a single mail type while keeping other switches independent', async () => {
+  const catalog = [
+    {
+      id: 'channel_upstream_balance',
+      group: 'channels',
+      label: 'Upstream payment rejection',
+      recipient: 'operations',
+      enabled: true,
+    },
+    {
+      id: 'low_upstream_balance',
+      group: 'channels',
+      label: 'Upstream low balance',
+      recipient: 'operations',
+      enabled: true,
+    },
+    {
+      id: 'account_created',
+      group: 'users',
+      label: 'Welcome email',
+      recipient: 'personal',
+      enabled: false,
+    },
+  ]
+  get.mockImplementation(async (url: string) => ({
+    data: {
+      success: true,
+      data: url.endsWith('/preferences')
+        ? { types: catalog, finance_recipients: '' }
+        : { config: { mode: 'smtp', smtp }, has_credential: true },
+    },
+  }))
+  put.mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        types: [{ ...catalog[0], enabled: false }, ...catalog.slice(1)],
+        finance_recipients: '',
+      },
+    },
+  })
+  const save = await setup()
+  const overdue = await screen.findByRole('switch', {
+    name: 'Upstream payment rejection',
+  })
+  const lowBalance = screen.getByRole('switch', {
+    name: 'Upstream low balance',
+  })
+  expect(overdue).toHaveAttribute('aria-checked', 'true')
+  expect(lowBalance).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByRole('switch', { name: 'Welcome email' })).toHaveAttribute(
+    'aria-checked',
+    'false'
+  )
+  fireEvent.click(overdue)
+  fireEvent.click(save)
+  await waitFor(() =>
+    expect(put).toHaveBeenCalledWith('/api/option/mail/preferences', {
+      types: { channel_upstream_balance: false },
+    })
+  )
+  await waitFor(() => expect(save).not.toBeDisabled())
+  expect(overdue).toHaveAttribute('aria-checked', 'false')
+  expect(lowBalance).toHaveAttribute('aria-checked', 'true')
 })

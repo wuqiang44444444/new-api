@@ -3,8 +3,21 @@ package service
 import (
 	"fmt"
 	"html"
+	"net/url"
 	"strings"
 )
+
+func consoleMailLink(path string) string {
+	address, err := url.Parse(PaymentReturnURL(path))
+	if err != nil || address.Host == "" || address.User != nil || (address.Scheme != "https" && address.Scheme != "http") {
+		return ""
+	}
+	return address.String()
+}
+
+func writeReportMailLink(body *strings.Builder, address, label string) {
+	fmt.Fprintf(body, `<p style="margin:12px 0 18px"><a href="%s" style="background:#12665e;color:#fff;display:inline-block;padding:10px 14px;text-decoration:none">%s</a></p>`, html.EscapeString(address), html.EscapeString(label))
+}
 
 // The outer table and inline styles keep the layout readable in Outlook and
 // other mail clients that strip embedded styles. Body fragments are rendered

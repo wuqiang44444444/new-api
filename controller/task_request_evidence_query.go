@@ -2,7 +2,6 @@ package controller
 
 import (
 	"encoding/base64"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -84,14 +83,15 @@ func GetTaskRequestEvidenceObject(c *gin.Context) {
 	filename := strconv.FormatInt(event.Id, 10) + ".bin"
 	c.Header("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	c.Header("Content-Type", "application/octet-stream")
-	// A later authentication/read failure must be visible as a short HTTP body,
-	// rather than a successful download of an incomplete plaintext prefix.
-	if sized, ok := payload.(interface{ Size() int64 }); ok && sized.Size() >= 0 {
-		c.Header("Content-Length", strconv.FormatInt(sized.Size(), 10))
-	}
-	c.Status(http.StatusOK)
-	if _, err := io.CopyBuffer(c.Writer, payload, make([]byte, 64<<10)); err != nil {
+	c.Writer.Header().Add("Cache-Control", "no-transform")
+	c.Header("Content-Length", strconv.FormatInt(payload.Size(), 10))
+	if err := service.CopyEvidenceDownload(c.Writer, payload, event); err != nil {
 		common.SysError("evidence download interrupted")
+		if !c.Writer.Written() {
+			c.Header("Content-Disposition", "")
+			c.Header("Content-Length", "")
+			respondEvidenceBodyStatus(c, "integrity_failed")
+		}
 	}
 }
 

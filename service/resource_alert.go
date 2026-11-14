@@ -58,9 +58,7 @@ func startResourceAlertMonitor() {
 			var previous resourceCPUCounters
 			var previousAt time.Time
 			for now := range ticker.C {
-				if len(operation_setting.ParseErrorReportRecipients(operation_setting.ErrorReportSettingSnapshot().Recipients)) == 0 {
-					continue
-				}
+
 				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 				thresholds := operation_setting.GetResourceAlertThresholds()
 				counters, memory, memoryOK := readResourceUsage(ctx)

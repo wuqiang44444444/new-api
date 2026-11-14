@@ -17,7 +17,7 @@ import (
 func TestEvidencePluginGenerationCoversRegisteredNativePathsAndLocalRejection(t *testing.T) {
 	setupRelayRouterTestDB(t)
 	previous := system_setting.GetTaskRequestEvidenceConfig()
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, RetentionDays: 2, StorageDir: t.TempDir(), EncryptionKeyHex: "0101010101010101010101010101010101010101010101010101010101010101"}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: "0101010101010101010101010101010101010101010101010101010101010101"}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	t.Cleanup(func() {

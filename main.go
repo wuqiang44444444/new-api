@@ -348,6 +348,9 @@ func InitResources() error {
 		}
 	}
 	model.InitOptionMap()
+	if err = model.ImportLegacyEvidenceRetention(); err != nil {
+		return err
+	}
 	common.LoadMailTransport = model.LoadMailTransport
 
 	// 清理旧的磁盘缓存文件

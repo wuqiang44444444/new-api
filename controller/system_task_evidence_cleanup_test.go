@@ -43,7 +43,6 @@ func setupEvidenceCleanupEnv(t *testing.T) (service.TaskRequestEvidenceObjectSto
 		Enabled:          true,
 		StorageDir:       storeDir,
 		EncryptionKeyHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-		RetentionDays:    2,
 	}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
@@ -71,8 +70,8 @@ func TestEvidenceRetentionDatabasePolicyAppliesToReadsAndScheduledCleanup(t *tes
 		common.OptionMap = previousOptions
 		common.OptionMapRWMutex.Unlock()
 	})
-	require.NoError(t, model.UpdateOption(key, "7"))
-	legacy := seedExpiredEvidence(t, store, storeDir, 3*86400)
+	require.NoError(t, model.UpdateOption(key, "30"))
+	legacy := seedExpiredEvidence(t, store, storeDir, 29*86400)
 	frozen := seedExpiredEvidence(t, store, storeDir, 4*86400)
 	frozen.RetainUntil = frozen.CreatedAt + 2*86400
 	require.NoError(t, model.DB.Save(frozen).Error)

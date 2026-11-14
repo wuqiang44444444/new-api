@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	logtest "github.com/QuantumNous/new-api/clienterrlog/testutil"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -95,12 +96,15 @@ func TestTokenAuthMarksAuthPassedAnd4xxIsRecorded(t *testing.T) {
 	assert.Contains(t, log, "route=/v1/assets")
 }
 
-// 鉴权失败不产生事件；Token 可查到但状态失败时上下文已有 user_id 也不得记录。
-func TestTokenAuthFailuresNeverRecordClientError(t *testing.T) {
+// 未知凭据不产生调用记录。匹配到有效但用尽额度的凭据保留最小业务拒绝事件。
+func TestTokenAuthRecordsOnlyConfirmedAPIKeyQuotaRejections(t *testing.T) {
 	setupAuthClientErrorDB(t)
+	previousLogDB := model.LOG_DB
+	model.LOG_DB = model.DB
+	t.Cleanup(func() { model.LOG_DB = previousLogDB })
+	require.NoError(t, model.DB.AutoMigrate(&model.ErrorEvent{}))
 	buffer := logtest.New(t)
 	user := createAuthClientErrorUser(t, "ace-fail-user")
-	createAuthClientErrorToken(t, user.Id, "aceexhaustedtoken")
 	exhausted := model.Token{
 		UserId: user.Id, Key: "aceexhaustedtoken2", Status: common.TokenStatusEnabled,
 		ExpiredTime: -1, RemainQuota: 0, Group: "default",
@@ -108,16 +112,32 @@ func TestTokenAuthFailuresNeverRecordClientError(t *testing.T) {
 	require.NoError(t, model.DB.Create(&exhausted).Error)
 
 	handlerReached := false
-	engine := newAuthClientErrorEngine(buffer, TokenAuth(), func(c *gin.Context) {
+	engine := newAuthClientErrorEngine(buffer, func(c *gin.Context) { c.Set("route_tag", "asset") }, TokenAuth(), func(c *gin.Context) {
 		handlerReached = true
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "unreachable"})
 	})
-	for _, key := range []string{"sk-unknownkey", "sk-aceexhaustedtoken2"} {
+	for i, key := range []string{"sk-unknownkey", "sk-aceexhaustedtoken2", "sk-aceexhaustedtoken2"} {
 		request := httptest.NewRequest(http.MethodPost, "/v1/assets", nil)
 		request.Header.Set("Authorization", "Bearer "+key)
 		response := httptest.NewRecorder()
 		engine.ServeHTTP(response, request)
 		require.Equal(t, http.StatusUnauthorized, response.Code, key)
+		if i == 0 {
+			var count int64
+			require.NoError(t, model.DB.Model(&model.ErrorEvent{}).Count(&count).Error)
+			assert.Zero(t, count)
+		}
+	}
+	var recorded []model.ErrorEvent
+	require.EventuallyWithT(t, func(t *assert.CollectT) {
+		assert.NoError(t, model.DB.Find(&recorded).Error)
+		assert.Len(t, recorded, 2)
+	}, 3*time.Second, 10*time.Millisecond)
+	for _, event := range recorded {
+		assert.Equal(t, clienterrlog.APIKeyQuotaInsufficient, event.Reason)
+		assert.Equal(t, user.Id, event.UserId)
+		assert.Equal(t, http.StatusUnauthorized, event.Status)
+		assert.NotContains(t, event.Detail, exhausted.Key)
 	}
 	assert.False(t, handlerReached)
 	assert.NotContains(t, buffer.String(), "event=authenticated_api_client_error")

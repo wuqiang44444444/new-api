@@ -447,7 +447,7 @@ func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp
 }
 
 // ManualCompleteTopUp 管理员手动完成订单并给用户充值
-func ManualCompleteTopUp(tradeNo string, callerIp string) error {
+func ManualCompleteTopUp(tradeNo string, callerIp string, actorID int, build WalletMailBuilder) error {
 	if tradeNo == "" {
 		return common.NewMessage("Order number not provided")
 	}
@@ -502,6 +502,10 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 			return err
 		}
 
+		var account User
+		if err := lockForUpdate(tx).Select("id", "quota").First(&account, topUp.UserId).Error; err != nil {
+			return err
+		}
 		// 增加用户额度（立即写库，保持一致性）
 		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil); err != nil {
 			return err
@@ -510,13 +514,16 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		userId = topUp.UserId
 		payMoney = topUp.Money
 		paymentMethod = topUp.PaymentMethod
-		return nil
+		return RecordWalletOperation(tx, WalletOperation{UserID: userId, ActorID: actorID, Kind: "manual_topup", Before: account.Quota, After: account.Quota + quotaToAdd}, build)
 	})
 
 	if err != nil {
 		return err
 	}
 
+	if userId == 0 {
+		return nil
+	}
 	// 事务外记录日志，避免阻塞
 	syncCreditUserQuotaCache(userId, quotaToAdd, common.LogText("manual topup"))
 	RecordTopupLog(userId, common.NewMessage("Administrator completed the order, amount added: {{quota}}, payment amount: {{amount}}", map[string]any{"quota": logger.FormatQuota(quotaToAdd), "amount": fmt.Sprintf("%f", payMoney)}), callerIp, paymentMethod, "admin")

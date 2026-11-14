@@ -14,6 +14,7 @@ import (
 
 var (
 	ErrTaskAttemptInsufficientQuota       = errors.New("task attempt quota is insufficient")
+	ErrTaskAttemptTokenQuota              = fmt.Errorf("%w: token", ErrTaskAttemptInsufficientQuota)
 	ErrTaskAttemptSubscriptionUnavailable = errors.New("task attempt subscription is unavailable")
 )
 
@@ -98,7 +99,7 @@ func HoldTaskCreateAttempt(params TaskAttemptHoldParams) (*TaskAttemptHoldResult
 					return err
 				}
 				if !token.UnlimitedQuota && token.RemainQuota < heldQuota {
-					return fmt.Errorf("%w: token", ErrTaskAttemptInsufficientQuota)
+					return ErrTaskAttemptTokenQuota
 				}
 				if err := tx.Model(&Token{}).Where("id = ?", token.Id).Updates(map[string]any{
 					"remain_quota":  gorm.Expr("remain_quota - ?", heldQuota),

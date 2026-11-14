@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -80,6 +81,11 @@ func TestGraphMailSelectedTransportAndAcceptance(t *testing.T) {
 	}
 	assert.EqualValues(t, 1, tokens.Load())
 	assert.EqualValues(t, 2, mail.Load())
+	suppressed := errors.New("notification was disabled")
+	guarded := WithMailSubmissionGuard(context.Background(), func(context.Context) error { return suppressed })
+	require.ErrorIs(t, SendEmailContext(guarded, "Fixture", "receiver@example.com", "<p>fixture</p>"), suppressed)
+	assert.EqualValues(t, 2, mail.Load(), "a denied submission never reaches Graph")
+
 	config.Graph.MailboxID = "00000000-0000-4000-8000-000000000003"
 	raw, err = Marshal(config)
 	require.NoError(t, err)
@@ -88,11 +94,17 @@ func TestGraphMailSelectedTransportAndAcceptance(t *testing.T) {
 	err = SendEmailContext(context.Background(), "Fixture", "receiver@example.com", "<p>fixture</p>")
 	require.ErrorContains(t, err, "403")
 	assert.NotContains(t, err.Error(), "private provider error")
+	assert.NotErrorIs(t, err, ErrMailPermanentlyRejected)
 	assert.EqualValues(t, 3, mail.Load())
+	responseStatus.Store(http.StatusBadRequest)
+	err = SendEmailContext(context.Background(), "Fixture", "receiver@example.com", "<p>fixture</p>")
+	assert.ErrorIs(t, err, ErrMailPermanentlyRejected)
+	assert.NotContains(t, err.Error(), "private provider error")
 	responseStatus.Store(http.StatusTooManyRequests)
 	err = SendEmailContext(context.Background(), "Fixture", "receiver@example.com", "<p>fixture</p>")
 	require.ErrorContains(t, err, "429")
 	assert.NotErrorIs(t, err, ErrMailSubmissionUnknown)
+	assert.NotErrorIs(t, err, ErrMailPermanentlyRejected)
 	for _, status := range []int32{http.StatusBadGateway, -1} {
 		responseStatus.Store(status)
 		err := SendEmailContext(context.Background(), "Fixture", "receiver@example.com", "<p>fixture</p>")

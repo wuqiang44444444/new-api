@@ -51,6 +51,10 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useResetForm } from '../hooks/use-reset-form'
 import { useUpdateOption } from '../hooks/use-update-option'
+import {
+  MailPreferenceFields,
+  type MailPreference,
+} from './mail-preference-fields'
 
 type SmtpConfig = {
   server: string
@@ -83,6 +87,7 @@ type MailOptions = {
 }
 
 const transportQueryKey = ['mail-transport']
+const mailPreferencesQueryKey = ['mail-preferences']
 const thresholdFields = [
   ['cpu', 'CPU alert threshold (%)'],
   ['memory', 'Memory alert threshold (%)'],
@@ -104,9 +109,11 @@ const schema = z.object({
   mailboxId: z.string(),
   credential: z.string(),
   recipients: z.string(),
+  financeRecipients: z.string(),
   cpu: z.string(),
   memory: z.string(),
   disk: z.string(),
+  notifications: z.record(z.string(), z.boolean()),
 })
 type FormValues = z.infer<typeof schema>
 type TextField =
@@ -119,6 +126,7 @@ type TextField =
   | 'sender'
   | 'mailboxId'
   | 'recipients'
+  | 'financeRecipients'
   | 'cpu'
   | 'memory'
   | 'disk'
@@ -163,6 +171,17 @@ export function EmailSettingsSection(props: { defaultValues: MailOptions }) {
       return requireServerSuccess(result.data).data as MailTransportView
     },
   })
+  const preferences = useQuery({
+    queryKey: mailPreferencesQueryKey,
+    queryFn: async () => {
+      const result = await api.get('/api/option/mail/preferences')
+      return requireServerSuccess(result.data).data as {
+        types: MailPreference[]
+        finance_recipients: string
+      }
+    },
+  })
+  const catalog = preferences.data?.types
   const config = transport.data?.config
   const smtp = config?.mode === 'smtp' ? config.smtp : undefined
   const graph = config?.mode === 'graph' ? config.graph : undefined
@@ -184,9 +203,13 @@ export function EmailSettingsSection(props: { defaultValues: MailOptions }) {
     mailboxId: graph?.mailbox_id ?? '',
     credential: '',
     recipients: props.defaultValues['error_report_setting.recipients'],
+    financeRecipients: preferences.data?.finance_recipients ?? '',
     cpu: String(props.defaultValues['resource_alert_setting.cpu']),
     memory: String(props.defaultValues['resource_alert_setting.memory']),
     disk: String(props.defaultValues['resource_alert_setting.disk']),
+    notifications: Object.fromEntries(
+      (catalog ?? []).map((entry) => [entry.id, entry.enabled])
+    ),
   }
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -234,6 +257,24 @@ export function EmailSettingsSection(props: { defaultValues: MailOptions }) {
           key: 'error_report_setting.recipients',
           value: recipients,
         })
+      }
+      const changes = Object.fromEntries(
+        Object.entries(values.notifications).filter(
+          ([id, enabled]) => enabled !== defaults.notifications[id]
+        )
+      )
+      const financeRecipients = values.financeRecipients.trim()
+      const financeChanged = financeRecipients !== defaults.financeRecipients
+      if (Object.keys(changes).length > 0 || financeChanged) {
+        const result = await api.put('/api/option/mail/preferences', {
+          types: changes,
+          ...(financeChanged ? { finance_recipients: financeRecipients } : {}),
+        })
+        queryClient.setQueryData(
+          mailPreferencesQueryKey,
+          requireServerSuccess(result.data).data
+        )
+        toast.success(t('Setting updated successfully'))
       }
     } catch (error) {
       handleServerError(error, t('Failed to update setting'))
@@ -403,6 +444,26 @@ export function EmailSettingsSection(props: { defaultValues: MailOptions }) {
               </p>
               {thresholdFields.map(([metric, key]) =>
                 textField(metric, t(key), 'number')
+              )}
+              {preferences.isError && (
+                <Button
+                  type='button'
+                  variant='outline'
+                  onClick={() => preferences.refetch()}
+                >
+                  {t('Retry loading email preferences')}
+                </Button>
+              )}
+              {catalog &&
+                textField('financeRecipients', t('Finance recipients'))}
+              {catalog && (
+                <MailPreferenceFields
+                  catalog={catalog}
+                  hasReportRecipients={Boolean(form.watch('recipients').trim())}
+                  hasFinanceRecipients={Boolean(
+                    form.watch('financeRecipients').trim()
+                  )}
+                />
               )}
             </SettingsForm>
           </Form>

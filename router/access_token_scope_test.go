@@ -127,6 +127,15 @@ func TestAccessTokenRouteRulesCoverEveryDashboardRoute(t *testing.T) {
 	for key := range declared {
 		assert.True(t, panel[key], "declared route %s is not a registered panel route", key)
 	}
+	for key, scope := range map[string]string{
+		"GET /api/option/mail/preferences": "option:read",
+		"PUT /api/option/mail/preferences": "option:write",
+	} {
+		rule, ok := middleware.AccessTokenRouteRule(key)
+		require.True(t, ok, key)
+		assert.Equal(t, "scope", rule.Kind(), key)
+		assert.Equal(t, scope, rule.Scope(), key)
+	}
 
 	permissionRoutes := map[string]authz.Permission{}
 	for _, route := range channelPermissionRoutes {

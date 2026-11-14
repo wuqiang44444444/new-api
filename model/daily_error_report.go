@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -90,15 +92,11 @@ type DailyReportCount struct {
 	Count int64
 }
 
-type DailyReportChannelCount struct {
-	ChannelID int
-	Count     int64
-}
-
 type DailyReportSlice struct {
-	Total    int64
-	Errors   []DailyReportCount
-	Channels []DailyReportChannelCount
+	Total        int64
+	Signals      map[string]int64
+	Groups       []DailyReportErrorGroup
+	GroupsCapped bool
 }
 
 func ReadDailyReportSlice(ctx context.Context, start, end int64) (DailyReportSlice, error) {
@@ -107,38 +105,41 @@ func ReadDailyReportSlice(ctx context.Context, start, end int64) (DailyReportSli
 		return slice, errors.New("error log database unavailable")
 	}
 	query := LOG_DB.WithContext(ctx).Model(&ErrorEvent{}).Where("created_at >= ? AND created_at < ?", start, end)
-	// One grouped scan handles the usual case. Only an unusually diverse
-	// slice needs a second count to keep its total independent of rankings.
 	const maxGroups = 128
-	var groups []struct {
-		EventType string
-		ChannelID int
-		Count     int64
-	}
-	if err := query.Session(&gorm.Session{}).Select("event_type, channel_id, COUNT(*) AS count").
-		Group("event_type, channel_id").Order("count DESC, event_type ASC, channel_id ASC").
-		Limit(maxGroups + 1).Scan(&groups).Error; err != nil {
+	if err := query.Session(&gorm.Session{}).Select("event_type, status, channel_id, model_name, reason, COUNT(*) AS count, MAX(created_at) AS last_at").
+		Group("event_type, status, channel_id, model_name, reason").
+		// Keep high-volume probes from crowding customer events out of the slice.
+		Order(clause.OrderBy{Expression: clause.Expr{
+			SQL:  "CASE WHEN event_type = ? THEN 1 ELSE 0 END, count DESC, event_type ASC, status ASC, channel_id ASC, model_name ASC, reason ASC",
+			Vars: []any{clienterrlog.EventChannelTest},
+		}}).
+		Limit(maxGroups + 1).Scan(&slice.Groups).Error; err != nil {
 		return slice, err
 	}
-	errorsByType := make(map[string]int64)
-	channels := make(map[int]int64)
-	for _, group := range groups[:min(len(groups), maxGroups)] {
-		slice.Total += group.Count
-		errorsByType[group.EventType] += group.Count
-		if group.ChannelID > 0 {
-			channels[group.ChannelID] += group.Count
+	counts := slice.Groups
+	if len(slice.Groups) > maxGroups {
+		slice.Groups = slice.Groups[:maxGroups]
+		slice.GroupsCapped = true
+		// A busy slice can lose ranking candidates, never signal totals.
+		var signalCounts []struct {
+			EventType    string
+			Status       int
+			SignalReason string
+			Count        int64
 		}
-	}
-	if len(groups) > maxGroups {
-		if err := query.Session(&gorm.Session{}).Count(&slice.Total).Error; err != nil {
+		if err := query.Session(&gorm.Session{}).Select("event_type, status, CASE WHEN event_type = ? OR (event_type = ? AND reason IN ?) THEN reason ELSE '' END AS signal_reason, COUNT(*) AS count", clienterrlog.EventStreamError, clienterrlog.EventAPIError, []string{clienterrlog.WalletQuotaInsufficient, clienterrlog.SubscriptionQuotaInsufficient, clienterrlog.APIKeyQuotaInsufficient}).
+			Group("event_type, status, signal_reason").Scan(&signalCounts).Error; err != nil {
 			return slice, err
 		}
+		counts = make([]DailyReportErrorGroup, 0, len(signalCounts))
+		for _, row := range signalCounts {
+			counts = append(counts, DailyReportErrorGroup{DailyReportErrorKey: DailyReportErrorKey{EventType: row.EventType, Status: row.Status, Reason: row.SignalReason}, Count: row.Count})
+		}
 	}
-	for label, count := range errorsByType {
-		slice.Errors = append(slice.Errors, DailyReportCount{Key: label, Count: count})
-	}
-	for id, count := range channels {
-		slice.Channels = append(slice.Channels, DailyReportChannelCount{ChannelID: id, Count: count})
+	slice.Signals = make(map[string]int64)
+	for _, count := range counts {
+		slice.Total += count.Count
+		slice.Signals[count.Signal()] += count.Count
 	}
 	return slice, nil
 }
@@ -150,7 +151,7 @@ func ReadDailyOperationsCounts(ctx context.Context, start, end int64) ([]DailyRe
 		Select("type AS label, COUNT(*) AS count").Group("type").Order("count DESC, type ASC").Limit(24).Scan(&tasks).Error; err != nil {
 		return nil, nil, err
 	}
-	err := DB.WithContext(ctx).Model(&ResourceAlertEpisode{}).Where("opened_at >= ? AND opened_at < ?", start, end).
+	err := DB.WithContext(ctx).Model(&ResourceAlertEpisode{}).Where("opened_at >= ? AND opened_at < ? AND resource NOT IN ?", start, end, []string{EvidenceCleanupAlertResource, WalletReceiptMail, WalletRiskMail, WalletSummaryMail, PersonalUsageReportMail, PlatformUsageReportMail, CustomerStatusReportMail}).
 		Select("resource AS label, COUNT(*) AS count").Group("resource").Order("resource ASC").Scan(&resources).Error
 	return tasks, resources, err
 }

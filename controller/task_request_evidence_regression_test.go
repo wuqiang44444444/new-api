@@ -30,7 +30,7 @@ func setupEvidenceViewFixture(t *testing.T) *model.TaskRequestEvidence {
 	setupGenericTaskTest(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.TaskRequestEvidence{}, &model.TaskRequestEvidenceEvent{}, &model.TaskRequestEvidenceAccessLog{}, &model.EvidenceTaskLink{}))
 	old := system_setting.GetTaskRequestEvidenceConfig()
-	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 2}
+	config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32)}
 	system_setting.SetTaskRequestEvidenceConfig(config)
 	require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 	t.Cleanup(func() {

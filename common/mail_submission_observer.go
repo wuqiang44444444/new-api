@@ -16,3 +16,17 @@ func observeMailSubmission(ctx context.Context) {
 		observer(time.Now())
 	}
 }
+
+type mailSubmissionGuardKey struct{}
+
+// WithMailSubmissionGuard checks policy after transport authentication and just before submission.
+func WithMailSubmissionGuard(ctx context.Context, guard func(context.Context) error) context.Context {
+	return context.WithValue(ctx, mailSubmissionGuardKey{}, guard)
+}
+
+func checkMailSubmission(ctx context.Context) error {
+	if guard, ok := ctx.Value(mailSubmissionGuardKey{}).(func(context.Context) error); ok {
+		return guard(ctx)
+	}
+	return nil
+}

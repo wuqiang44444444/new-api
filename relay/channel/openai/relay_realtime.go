@@ -125,6 +125,10 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 					return
 				}
 
+				if realtimeEvent.Type == "error" {
+					service.ObserveChannelSocketBalance(c, "realtime", message)
+				}
+
 				if realtimeEvent.Type == dto.RealtimeEventTypeResponseDone {
 					realtimeUsage := realtimeEvent.Response.Usage
 					if realtimeUsage != nil {

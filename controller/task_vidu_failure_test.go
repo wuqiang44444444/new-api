@@ -74,7 +74,7 @@ func TestViduFailureCommitsPublicErrorEventAndRefundOnce(t *testing.T) {
 			oldConfig := system_setting.GetTaskRequestEvidenceConfig()
 			model.LOG_DB = db
 			service.GetTaskAdaptorFunc = func(constant.TaskPlatform) service.TaskPollingAdaptor { return &taskseedance.TaskAdaptor{} }
-			config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32), RetentionDays: 2}
+			config := system_setting.TaskRequestEvidenceConfig{Enabled: true, StorageDir: t.TempDir(), EncryptionKeyHex: strings.Repeat("01", 32)}
 			system_setting.SetTaskRequestEvidenceConfig(config)
 			require.NoError(t, service.InitTaskRequestEvidenceStore(config))
 			t.Cleanup(func() {

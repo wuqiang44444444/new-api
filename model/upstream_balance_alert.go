@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -22,8 +23,12 @@ type UpstreamBalanceAlertDelivery struct {
 
 // GetOperationsMailRecipients reads the shared list at delivery boundaries.
 func GetOperationsMailRecipients(ctx context.Context) ([]string, error) {
+	return operationsMailRecipients(DB.WithContext(ctx))
+}
+
+func operationsMailRecipients(db *gorm.DB) ([]string, error) {
 	var option Option
-	if err := DB.WithContext(ctx).Where(&Option{Key: "error_report_setting.recipients"}).Find(&option).Error; err != nil {
+	if err := db.Where(&Option{Key: "error_report_setting.recipients"}).Find(&option).Error; err != nil {
 		return nil, err
 	}
 	return operation_setting.ValidateErrorReportRecipients(option.Value)

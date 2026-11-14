@@ -84,6 +84,7 @@ func classifyUpstreamBalanceAlert(result UpstreamBalanceResult, cnyPerUSD decima
 
 func (h *upstreamBalanceAlertHandler) checkAndNotify(ctx context.Context, owner string) (upstreamBalanceAlertSummary, error) {
 	result := upstreamBalanceAlertSummary{}
+	startedAt := h.now()
 	recipients, err := model.GetOperationsMailRecipients(ctx)
 	if err != nil {
 		return result, errors.New("unable to read report recipients")
@@ -132,6 +133,13 @@ func (h *upstreamBalanceAlertHandler) checkAndNotify(ctx context.Context, owner 
 			continue
 		}
 		result.Low++
+		prefs, err := model.LoadMailPreferences(ctx)
+		if err != nil {
+			return result, err
+		}
+		if !prefs.Allows(model.MailLowUpstreamBalance, startedAt) {
+			continue
+		}
 		body := renderUpstreamBalanceAlert(connection, balance, rate)
 		for _, recipient := range recipients {
 			if ctx.Err() != nil {
@@ -156,7 +164,7 @@ func (h *upstreamBalanceAlertHandler) checkAndNotify(ctx context.Context, owner 
 			if !claimed {
 				continue
 			}
-			sendErr := h.send(ctx, "上游余额低于 100 美元 / Upstream balance below USD 100", recipient, body)
+			sendErr := submitManagedMail(ctx, h.send, model.MailLowUpstreamBalance, startedAt, "上游余额低于 100 美元 / Upstream balance below USD 100", recipient, body)
 			sentAt := int64(0)
 			var unknownAt *int64
 			if sendErr == nil {
@@ -166,7 +174,7 @@ func (h *upstreamBalanceAlertHandler) checkAndNotify(ctx context.Context, owner 
 				at := h.now().Unix()
 				unknownAt = &at
 				result.Unknown++
-			} else {
+			} else if !errors.Is(sendErr, errMailPreferenceDisabled) {
 				result.Failed++
 			}
 			// A successful transport acceptance must be recorded even if the

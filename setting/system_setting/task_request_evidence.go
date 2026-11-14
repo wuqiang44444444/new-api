@@ -12,16 +12,14 @@ import (
 )
 
 // 请求证据的部署配置。采集默认关闭，仅显式配置开启；显式开启后统一采集
-// 全部登记业务操作。环境变量提供保留期的部署兜底。加密密钥未配置时从
+// 全部登记业务操作。加密密钥未配置时从
 // CRYPTO_SECRET/SESSION_SECRET 派生（见 ResolveTaskRequestEvidenceConfig）。
 const (
 	TaskRequestEvidenceEnabledEnv       = "TASK_REQUEST_EVIDENCE_ENABLED"
 	TaskRequestEvidenceStorageDirEnv    = "TASK_REQUEST_EVIDENCE_STORAGE_DIR"
 	TaskRequestEvidenceEncryptionKeyEnv = "TASK_REQUEST_EVIDENCE_ENCRYPTION_KEY"
-	TaskRequestEvidenceRetentionDaysEnv = "TASK_REQUEST_EVIDENCE_RETENTION_DAYS"
 
 	defaultTaskRequestEvidenceStorageDir = "data/task-request-evidence"
-	defaultTaskRequestEvidenceRetention  = 2
 )
 
 // TaskRequestEvidenceConfig 是证据子系统的运行配置合同。
@@ -29,8 +27,6 @@ type TaskRequestEvidenceConfig struct {
 	Enabled          bool
 	StorageDir       string
 	EncryptionKeyHex string
-	RetentionDays    int
-	RetentionFromEnv bool
 	// KeyDerived 表示密钥由 CRYPTO_SECRET/SESSION_SECRET 派生而非显式配置。
 	KeyDerived    bool
 	InvalidReason string
@@ -46,21 +42,11 @@ func LoadTaskRequestEvidenceConfig() TaskRequestEvidenceConfig {
 		Enabled:          enabledRaw == "true",
 		StorageDir:       common.GetEnvOrDefaultString(TaskRequestEvidenceStorageDirEnv, defaultTaskRequestEvidenceStorageDir),
 		EncryptionKeyHex: strings.TrimSpace(os.Getenv(TaskRequestEvidenceEncryptionKeyEnv)),
-		RetentionDays:    defaultTaskRequestEvidenceRetention,
 	}
 	if raw, ok := os.LookupEnv(TaskRequestEvidenceEnabledEnv); ok && raw != "" && enabledRaw != "true" && enabledRaw != "false" {
 		invalid.set("enabled must be true or false")
 		// 非法启用值不被当成开启，但必须响亮报告，避免部署方误以为已开启。
 		common.SysError("invalid " + TaskRequestEvidenceEnabledEnv + " value; collection stays disabled")
-	}
-	if raw := strings.TrimSpace(os.Getenv(TaskRequestEvidenceRetentionDaysEnv)); raw != "" {
-		days, err := ParseTaskRequestEvidenceRetentionDays(raw)
-		if err != nil {
-			common.SysError(fmt.Sprintf("invalid %s; fallback retention is %d days", TaskRequestEvidenceRetentionDaysEnv, config.RetentionDays))
-		} else {
-			config.RetentionDays = days
-			config.RetentionFromEnv = true
-		}
 	}
 	if invalid.reason != "" {
 		config.InvalidReason = invalid.reason

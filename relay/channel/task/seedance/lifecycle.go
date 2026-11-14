@@ -65,6 +65,7 @@ func (*TaskAdaptor) deleteOfficialTask(ctx context.Context, task *model.Task, pr
 		return err
 	}
 	resp, err := client.Do(req)
+	service.WatchTaskHTTPBalance(ctx, task, "video_cancel", resp)
 	if err != nil {
 		return err
 	}

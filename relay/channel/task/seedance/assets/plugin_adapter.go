@@ -21,12 +21,13 @@ import (
 // The legacy adapter is used only as its host-owned connection/signer state;
 // none of its Provider request or response conversion methods are invoked.
 type PluginAssetAdapter struct {
-	connection  *OfficialActionAdapter
-	cmcc        *CMCCAICCV2Adapter
-	bearer      client
-	plugin      *jsplugin.LoadedPlugin
-	protocol    string
-	declaration jsplugin.SeedanceAssetConfiguration
+	connection      *OfficialActionAdapter
+	cmcc            *CMCCAICCV2Adapter
+	bearer          client
+	plugin          *jsplugin.LoadedPlugin
+	protocol        string
+	declaration     jsplugin.SeedanceAssetConfiguration
+	observeResponse func(context.Context, string, int, []byte)
 }
 
 func NewPluginAssetAdapter(plugin *jsplugin.LoadedPlugin, declaration *jsplugin.SeedanceAssetConfiguration, protocol dto.AssetUpstreamProtocol, baseURL, credential, region, project string, httpClient HTTPDoer) (*PluginAssetAdapter, error) {
@@ -158,6 +159,11 @@ func (a *PluginAssetAdapter) GetVerificationResult(ctx context.Context, id strin
 	return result, err
 }
 
+// SetResponseObserver installs the gateway's internal response observer before use.
+func (a *PluginAssetAdapter) SetResponseObserver(observe func(context.Context, string, int, []byte)) {
+	a.observeResponse = observe
+}
+
 func (a *PluginAssetAdapter) execute(ctx context.Context, operation string, input, result any) error {
 	return a.executeWithSource(ctx, operation, input, result, nil)
 }
@@ -227,6 +233,9 @@ func (a *PluginAssetAdapter) executeWithSource(ctx context.Context, operation st
 	}
 	if int64(len(responseBody)) > responseLimit {
 		return invalidUpstreamResponse(fmt.Errorf("asset response exceeds size limit"))
+	}
+	if a.observeResponse != nil {
+		a.observeResponse(ctx, operation, response.StatusCode, responseBody)
 	}
 	args["status"] = response.StatusCode
 	args["body"] = string(responseBody)

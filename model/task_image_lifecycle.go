@@ -179,7 +179,7 @@ func InsertImageTask(params ImageTaskInsertParams) error {
 					return err
 				}
 				if !token.UnlimitedQuota && token.RemainQuota < task.Quota {
-					return ErrTaskAttemptInsufficientQuota
+					return ErrTaskAttemptTokenQuota
 				}
 				if err := tx.Model(&token).Updates(map[string]any{
 					"remain_quota":  gorm.Expr("remain_quota - ?", task.Quota),

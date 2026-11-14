@@ -2,6 +2,7 @@ package model
 
 import (
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"gorm.io/gorm"
 )
 
@@ -97,9 +98,11 @@ func CreateTaskRequestEvidence(evidence *TaskRequestEvidence) error {
 }
 
 func CreateTaskRequestEvidenceEvent(event *TaskRequestEvidenceEvent, retention ...int64) error {
-	seconds := EvidenceIndexRetentionSeconds
+	var seconds int64
 	if len(retention) > 0 {
 		seconds = retention[0]
+	} else {
+		seconds = int64(system_setting.GetTaskRequestEvidenceRetentionPolicy().Days) * 86400
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		if _, err := writableEvidenceIndex(tx, event.EvidenceId, common.GetTimestamp(), seconds); err != nil {

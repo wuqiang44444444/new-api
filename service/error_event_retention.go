@@ -37,6 +37,9 @@ func (errorEventRetentionHandler) Run(ctx context.Context, task *model.SystemTas
 	err := common.UnmarshalJsonStr(task.Payload, &payload)
 	deleted := int64(0)
 	if err == nil {
+		err = model.RecordErrorEventRetentionCutoff(ctx, payload.Cutoff)
+	}
+	if err == nil {
 		work, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		// At most 20,000 SQL rows per hourly pass; a busy backlog can wait.

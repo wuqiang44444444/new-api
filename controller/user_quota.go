@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -43,7 +44,7 @@ func manageUserQuota(c *gin.Context, req ManageRequest) {
 		markAuditLogged(c)
 	}()
 
-	adjustment, err := model.AdjustUserQuota(req.Id, c.GetInt("role"), req.Mode, req.Value)
+	adjustment, err := model.AdjustUserQuotaWithMail(req.Id, c.GetInt("role"), req.Mode, req.Value, c.GetInt("id"), service.QueueWalletOperationMail)
 	if err != nil {
 		switch {
 		case errors.Is(err, model.ErrInvalidUserQuotaAdjustment):
@@ -76,6 +77,9 @@ func manageUserQuota(c *gin.Context, req ManageRequest) {
 		params["quota"] = req.Value
 	}
 	success = true
+	if adjustment.Before != adjustment.After {
+		service.WakeWalletMailDelivery()
+	}
 	operation := model.AuditOperation{Action: action, Params: params}
 	model.RecordLogWithAdminInfo(adjustment.UserID, model.LogTypeTopup,
 		auditContentEN(action, params), auditOperatorInfo(c), &operation, c)

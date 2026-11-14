@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -45,6 +46,7 @@ type ChannelAlertEpisode struct {
 	FirstAt         int64
 	LastAt          int64
 	ConfirmedAt     int64
+	MailPending     bool   `gorm:"index"`
 	ClosedAt        int64  `gorm:"index:idx_channel_alert_scope_closed,priority:2;index"`
 	CloseReason     string `gorm:"type:varchar(24)"`
 	CredentialSlots []int  `gorm:"-"`
@@ -62,6 +64,8 @@ type ChannelAlertDelivery struct {
 	LeaseUntil       int64  `gorm:"index:idx_channel_alert_lease,priority:2"`
 	LeaseOwner       string `gorm:"type:varchar(64)"`
 	Attempts         int
+	StopReason       string `gorm:"type:varchar(64)"`
+	QueuedAt         int64
 	FirstSubmittedAt int64
 	AcceptedAt       int64
 }
@@ -127,6 +131,13 @@ func OpenChannelAlert(ctx context.Context, episode ChannelAlertEpisode, recipien
 	}
 	opened := false
 	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(recipients) > 0 {
+			prefs, err := incidentMailPreferences(tx)
+			episode.MailPending = err != nil
+			if episode.MailPending || !prefs.Allows(ChannelAlertMailType(episode.Kind), time.UnixMilli(episode.FirstAt)) {
+				recipients = nil
+			}
+		}
 		// Writing first also obtains the SQLite writer lock. A stale candidate
 		// rolls back this tentative insert together with its open-key claim.
 		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&episode)
@@ -153,15 +164,8 @@ func OpenChannelAlert(ctx context.Context, episode ChannelAlertEpisode, recipien
 		if superseded > 0 {
 			return errChannelAlertStale
 		}
-		for start := 0; start < len(recipients); start += 32 {
-			addresses := recipients[start:min(start+32, len(recipients))]
-			rows := make([]ChannelAlertDelivery, 0, len(addresses))
-			for _, address := range addresses {
-				rows = append(rows, ChannelAlertDelivery{EpisodeID: episode.ID, Recipient: address, Status: MailDeliveryPending})
-			}
-			if err := tx.Create(&rows).Error; err != nil {
-				return err
-			}
+		if err := queueChannelAlertMail(tx, episode.ID, recipients, time.Now().UnixNano()); err != nil {
+			return err
 		}
 		opened = true
 		return nil
@@ -170,6 +174,20 @@ func OpenChannelAlert(ctx context.Context, episode ChannelAlertEpisode, recipien
 		return false, nil
 	}
 	return opened && err == nil, err
+}
+
+func queueChannelAlertMail(tx *gorm.DB, id int64, recipients []string, queuedAt int64) error {
+	for start := 0; start < len(recipients); start += 32 {
+		addresses := recipients[start:min(start+32, len(recipients))]
+		rows := make([]ChannelAlertDelivery, 0, len(addresses))
+		for _, address := range addresses {
+			rows = append(rows, ChannelAlertDelivery{EpisodeID: id, Recipient: address, Status: MailDeliveryPending, QueuedAt: queuedAt})
+		}
+		if err := tx.Create(&rows).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func CloseChannelAlert(ctx context.Context, id, at int64, reason string) error {
@@ -195,8 +213,8 @@ func ClaimChannelAlertDelivery(ctx context.Context, owner string, now, leaseUnti
 	return &delivery, nil
 }
 
-func FinishChannelAlertDelivery(ctx context.Context, delivery ChannelAlertDelivery, owner, status string, next, submitted, accepted int64) error {
-	fields := map[string]any{"status": status, "lease_owner": "", "lease_until": 0, "next_attempt_at": next}
+func FinishChannelAlertDelivery(ctx context.Context, delivery ChannelAlertDelivery, owner, status string, next, submitted, accepted int64, stopReason string) error {
+	fields := map[string]any{"status": status, "lease_owner": "", "lease_until": 0, "next_attempt_at": next, "stop_reason": stopReason}
 	if status == MailDeliveryPending {
 		fields["attempts"] = gorm.Expr("attempts - 1")
 	}
@@ -230,7 +248,7 @@ func PurgeClosedChannelAlerts(ctx context.Context, cutoff int64) error {
 		var ids []int64
 		unresolved := tx.Model(&ChannelAlertDelivery{}).Select("episode_id").
 			Where("status NOT IN ?", []string{MailDeliveryAccepted, MailDeliveryStopped})
-		if err := tx.Model(&ChannelAlertEpisode{}).Where("closed_at > 0 AND closed_at < ? AND id NOT IN (?)", cutoff, unresolved).
+		if err := tx.Model(&ChannelAlertEpisode{}).Where("closed_at > 0 AND closed_at < ? AND (mail_pending IS NULL OR mail_pending = ?) AND id NOT IN (?)", cutoff, false, unresolved).
 			Order("closed_at, id").Limit(64).Pluck("id", &ids).Error; err != nil || len(ids) == 0 {
 			return err
 		}

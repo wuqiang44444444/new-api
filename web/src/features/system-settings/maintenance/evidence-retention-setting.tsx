@@ -31,6 +31,8 @@ import { getEvidenceRetentionPolicy } from '../api'
 import { useUpdateOption } from '../hooks/use-update-option'
 import type { EvidenceRetentionPolicy } from '../types'
 
+const MAX_RETENTION_DAYS = 30
+
 export function EvidenceRetentionSetting(props: { userID: number }) {
   const { t } = useTranslation()
   const inputID = useId()
@@ -69,14 +71,13 @@ export function EvidenceRetentionSetting(props: { userID: number }) {
 
   const value = draft ?? String(policy.days)
   const days = Number(value)
-  const valid = Number.isInteger(days) && days >= 1 && days <= 7
+  const valid = Number.isInteger(days) && days >= 1 && days <= MAX_RETENTION_DAYS
   const canSave =
     !updateOption.isPending &&
     valid &&
     (days !== policy.days || policy.source !== 'database')
   const sourceLabels = {
     database: t('Database'),
-    environment: t('Deployment environment'),
     default: t('Built-in default'),
   }
   const save = () => {
@@ -121,7 +122,7 @@ export function EvidenceRetentionSetting(props: { userID: number }) {
           className='w-24'
           type='number'
           min={1}
-          max={7}
+          max={MAX_RETENTION_DAYS}
           step={1}
           required
           aria-describedby={helpID}

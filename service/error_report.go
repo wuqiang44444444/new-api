@@ -42,7 +42,7 @@ func newErrorReportHandler(send mailSendFunc) *errorReportHandler {
 
 func (errorReportHandler) Type() string { return model.SystemTaskTypeErrorReport }
 
-// The scheduler needs a destination, without a separate report switch.
+// A recipient list starts the report scheduler. Once running, email preferences only gate delivery.
 func (errorReportHandler) Enabled() bool {
 	return len(operation_setting.ParseErrorReportRecipients(operation_setting.ErrorReportSettingSnapshot().Recipients)) > 0
 }
@@ -209,22 +209,31 @@ func (h *errorReportHandler) deliverClaims(ctx context.Context, runnerID string)
 		}
 		if sendErr == nil {
 			attempted++
-			sendErr = h.send(ctx, part.Subject, claim.Recipient, part.BodyHTML)
+			sendErr = submitManagedMail(ctx, h.send, model.MailDailyErrors, model.QueuedMailTime(claim.QueuedAt, claim.CreatedAt), part.Subject, claim.Recipient, part.BodyHTML)
 		}
 		state, next, acceptedAt := model.MailDeliveryAccepted, int64(0), h.now().Unix()
-		message := ""
+		message, stopReason := "", ""
 		if sendErr != nil {
-			state, acceptedAt = model.MailDeliveryRetryWait, 0
-			if errors.Is(sendErr, common.ErrMailSubmissionUnknown) {
+			acceptedAt = 0
+			switch {
+			case errors.Is(sendErr, errMailPreferenceDisabled):
+				state, stopReason = model.MailDeliveryStopped, model.MailStopPreferenceDisabled
+				attempted--
+			case errors.Is(sendErr, common.ErrMailSubmissionUnknown):
 				state = model.MailDeliveryUnknown
-			} else {
+			case errors.Is(sendErr, common.ErrMailPermanentlyRejected):
+				state, stopReason = model.MailDeliveryStopped, model.ErrorReportStopPermanentRejection
+			default:
+				state = model.MailDeliveryRetryWait
 				next = h.now().Unix() + mailDeliveryBackoff(claim.Attempts)
 			}
 			message = sanitizeErrorReportError(sendErr)
-			failures = errors.Join(failures, sendErr)
+			if !errors.Is(sendErr, errMailPreferenceDisabled) {
+				failures = errors.Join(failures, sendErr)
+			}
 		}
 		// A canceled task must still record the known outcome of its last submission.
-		ok, err := model.FinishErrorReportDelivery(claim.ID, owner, state, message, "", next, acceptedAt)
+		ok, err := model.FinishErrorReportDelivery(claim.ID, owner, state, message, stopReason, next, acceptedAt)
 		if err != nil {
 			failures = errors.Join(failures, err)
 		} else if !ok {

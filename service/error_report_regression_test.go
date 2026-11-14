@@ -170,3 +170,34 @@ func TestDailyReportRecipientFairnessAcrossDays(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, claims)
 }
+
+func TestDailyReportPermanentSMTPRejectionUnblocksSameRecipient(t *testing.T) {
+	db := withErrorReportTestDB(t)
+	withErrorReportSetting(t, "ops@example.com")
+	day := time.Date(2026, 11, 8, 0, 0, 0, 0, errorReportLocation())
+	inbox := newLocalMailInboxWithRejection(t, "2026-11-08")
+	now := day.AddDate(0, 0, 2).Add(6 * time.Hour)
+	h := newErrorReportHandler(common.SendEmailContext)
+	h.now = func() time.Time { return now }
+	first := publishTestDailyWindow(t, h, day.Unix())
+	second := publishTestDailyWindow(t, h, day.AddDate(0, 0, 1).Unix())
+
+	attempted, accepted, err := h.deliverClaims(context.Background(), "smtp")
+	require.ErrorIs(t, err, common.ErrMailPermanentlyRejected)
+	assert.Equal(t, 2, attempted)
+	assert.Equal(t, 1, accepted)
+	requireLocalMail(t, inbox, "2026-11-09", "ops@example.com")
+	var stopped, delivered model.ErrorReportDelivery
+	require.NoError(t, db.Where("report_id = ?", first).First(&stopped).Error)
+	require.NoError(t, db.Where("report_id = ?", second).First(&delivered).Error)
+	assert.Equal(t, model.MailDeliveryStopped, stopped.Status)
+	assert.Equal(t, model.ErrorReportStopPermanentRejection, stopped.StopReason)
+	assert.Contains(t, stopped.LastError, "550")
+	assert.NotContains(t, stopped.LastError, "fixture rejection")
+	assert.Equal(t, model.MailDeliveryAccepted, delivered.Status)
+
+	now = now.Add(24 * time.Hour)
+	attempted, _, err = h.deliverClaims(context.Background(), "after-restart")
+	require.NoError(t, err)
+	assert.Zero(t, attempted)
+}

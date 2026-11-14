@@ -784,6 +784,9 @@ function FullLogDetailsDialog(props: DetailsDialogProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const other = parseLogOther(props.log.other)
+  const evidenceTaskId = props.log.request_id?.startsWith('task-billing:')
+    ? other?.task_id
+    : undefined
   const typeConfig = getLogTypeConfig(props.log.type)
 
   const isViolation = isViolationFeeLog(other)
@@ -962,6 +965,7 @@ function FullLogDetailsDialog(props: DetailsDialogProps) {
         {props.isAdmin && (
           <TaskEvidence
             key={props.log.request_id}
+            taskId={evidenceTaskId}
             requestId={props.log.request_id}
             isRoot={props.isRoot}
           />

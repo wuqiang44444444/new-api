@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -479,6 +480,7 @@ func GetSelf(c *gin.Context) {
 		return
 	}
 	responseData := buildSelfUserData(user)
+	responseData["effective_quota_warning_threshold"] = common.EffectiveQuotaWarningThreshold(user.GetSetting().QuotaWarningThreshold)
 	// The authenticated role is loaded from GetUserCache. It should equal the
 	// row role, but use it for capabilities so GetSelf and login/refresh remain
 	// consistent with the authorization decision made for this request.
@@ -1358,8 +1360,8 @@ func UpdateUserSetting(c *gin.Context) {
 	}
 
 	// 验证预警阈值
-	if req.QuotaWarningThreshold <= 0 {
-		common.ApiErrorT(c, "Warning threshold must be greater than 0")
+	if req.QuotaWarningThreshold < 0 || req.QuotaWarningThreshold > common.MaxWalletQuota || math.Trunc(req.QuotaWarningThreshold) != req.QuotaWarningThreshold {
+		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
 

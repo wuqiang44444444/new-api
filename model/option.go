@@ -246,6 +246,9 @@ func validateOptionValue(key string, value string) error {
 		_, err := system_setting.ParseTaskRequestEvidenceRetentionDays(value)
 		return err
 	}
+	if isManagedMailOption(key) {
+		return ErrInvalidMailPreferences
+	}
 	if key == retiredErrorReportEnabledOption {
 		return errRetiredErrorReportEnabledOption
 	}
@@ -347,7 +350,8 @@ func UpdateOptionsBulk(values map[string]string) error {
 		if IsRequestPolicyOption(key) {
 			requestPolicyOptionMutex.Lock()
 			defer requestPolicyOptionMutex.Unlock()
-			options := maps.Clone(CurrentRequestPolicy().Options)
+			previous := CurrentRequestPolicy()
+			options := maps.Clone(previous.Options)
 			for key, value := range values {
 				if IsRequestPolicyOption(key) {
 					options[key] = value
@@ -356,6 +360,9 @@ func UpdateOptionsBulk(values map[string]string) error {
 			var err error
 			policySnapshot, err = BuildRequestPolicy(options)
 			if err != nil {
+				return err
+			}
+			if err := protectBuiltInAffinityRules(previous, policySnapshot); err != nil {
 				return err
 			}
 			break
@@ -395,7 +402,7 @@ func updateOptionMap(key string, value string) (err error) {
 			return err
 		}
 	}
-	if key == retiredThemeOptionKey || key == legacyAccessTokenRetireAtKey || key == retiredErrorReportEnabledOption {
+	if key == retiredThemeOptionKey || key == legacyAccessTokenRetireAtKey || key == retiredErrorReportEnabledOption || isManagedMailOption(key) {
 		common.OptionMapRWMutex.Lock()
 		delete(common.OptionMap, key)
 		common.OptionMapRWMutex.Unlock()

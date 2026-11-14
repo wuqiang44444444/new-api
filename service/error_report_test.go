@@ -36,6 +36,8 @@ func withErrorReportTestDB(t *testing.T) *gorm.DB {
 		&model.ErrorReportPart{},
 		&model.ErrorReportDelivery{},
 		&model.ErrorEvent{},
+		&model.Channel{},
+		&model.ChannelAlertEpisode{},
 		&model.ResourceAlertEpisode{},
 		&model.ResourceAlertDelivery{},
 		&model.SystemTask{},
@@ -85,7 +87,7 @@ func seedCompletedDailyWindow(t *testing.T, ctx context.Context, start int64) st
 	id := fmt.Sprintf("daily-%d", start)
 	report, err := model.LoadDailyReport(ctx, start, id)
 	require.NoError(t, err)
-	require.NoError(t, model.SaveDailyReportProgress(ctx, report, report.WindowEnd, `{"errors":{},"channels":{}}`, 0))
+	require.NoError(t, model.SaveDailyReportProgress(ctx, report, report.WindowEnd, `{"signals":{}}`, 0))
 	return id
 }
 

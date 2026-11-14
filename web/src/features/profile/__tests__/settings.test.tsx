@@ -57,6 +57,18 @@ const settings = {
 
 afterEach(() => vi.restoreAllMocks())
 
+it('shows the effective site threshold for an account without a personal value', () => {
+  render(
+    <NotificationTab
+      profile={{ ...profile, effective_quota_warning_threshold: 3210 }}
+      onUpdate={vi.fn()}
+    />
+  )
+  expect(
+    screen.getByRole('spinbutton', { name: 'Quota Warning Threshold' })
+  ).toHaveAttribute('placeholder', '3210')
+})
+
 describe('user settings saves across profile and security', () => {
   it('disabling IP recording sends the latest complete notification settings', async () => {
     const get = vi.spyOn(api, 'get').mockResolvedValue({
@@ -86,7 +98,7 @@ describe('user settings saves across profile and security', () => {
     await updateUserSettings({ record_ip_log: true })
     expect(put).toHaveBeenCalledWith('/api/user/setting', {
       notify_type: 'email',
-      quota_warning_threshold: 500000,
+      quota_warning_threshold: 0,
       notification_email: '',
       webhook_url: '',
       webhook_secret: '',

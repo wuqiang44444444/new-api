@@ -21,7 +21,6 @@ func TestEvidenceStoreRoundtripEncrypted(t *testing.T) {
 	require.NoError(t, err)
 	config := system_setting.TaskRequestEvidenceConfig{
 		Enabled:          true,
-		RetentionDays:    7,
 		StorageDir:       dir,
 		EncryptionKeyHex: hex.EncodeToString(key),
 	}
