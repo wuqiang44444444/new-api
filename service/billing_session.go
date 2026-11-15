@@ -462,7 +462,13 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		session, err := tryWallet()
 		if err != nil {
 			if err.GetErrorCode() == types.ErrorCodeInsufficientUserQuota {
-				return trySubscription()
+				fallback, fallbackErr := trySubscription()
+				var wallet, subscription quotaRejection
+				if fallbackErr != nil && errors.As(err, &wallet) && wallet.reason == clienterrlog.WalletQuotaInsufficient &&
+					errors.As(fallbackErr, &subscription) && subscription.reason == clienterrlog.SubscriptionQuotaInsufficient {
+					fallbackErr.Err = quotaRejection{fallbackErr.Err, clienterrlog.WalletQuotaInsufficient}
+				}
+				return fallback, fallbackErr
 			}
 			return nil, err
 		}

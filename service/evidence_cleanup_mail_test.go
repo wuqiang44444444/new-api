@@ -18,13 +18,15 @@ func TestEvidenceCleanupAlertDeliversOnceUntilRecovery(t *testing.T) {
 	now := time.Now()
 	at := now.Unix()
 	health := &model.EvidenceCleanupHealth{
-		Alerts: []string{"consecutive_failures", "cleanup_backlog"}, ConsecutiveFailures: 2, PendingIndexes: 3,
+		Alerts: []string{"consecutive_failures", "cleanup_backlog"}, ConsecutiveFailures: 2, PendingIndexes: 3, LastFailedTaskID: "cleanup-test-failed",
 	}
 	ctx := context.Background()
 	require.NoError(t, NotifyEvidenceCleanupHealth(ctx, at, health, false))
 	first := requireLocalMail(t, inbox, "Evidence cleanup alert", "ops@example.com")
 	assert.Contains(t, first.body, "consecutive_failures, cleanup_backlog")
 	assert.Contains(t, first.body, "Pending indexes")
+	assert.Contains(t, first.body, "cleanup-test-failed")
+	assert.Contains(t, first.body, "requires Root access")
 	// Flush/inspect the durable outbox only after the background sender has
 	// written its known result, before resetting the test's global database.
 	require.EventuallyWithT(t, func(c *assert.CollectT) {

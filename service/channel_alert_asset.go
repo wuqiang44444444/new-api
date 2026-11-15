@@ -34,11 +34,21 @@ func observeAssetChannelAlert(ctx context.Context, operation, modelName string, 
 	}
 	if err == nil || kind != channelAlertSuccess {
 		id, _ := ctx.Value(common.RequestIdKey).(string)
+		hasRequestID := id != ""
 		if id == "" {
 			id = common.NewRequestId()
 		}
-		recordChannelAlert(channelAlertScope{Channel: channel.Id, Revision: channel.AlertAssetRevision, Model: modelName, Operation: operation, Slot: -1},
-			id, kind, fields.StatusCode)
+		var reason channelAlertErrorReason
+		switch fields.Class {
+		case assetadapter.AssetClassTimeout:
+			reason = channelAlertTimeout
+		case assetadapter.AssetClassConnect:
+			reason = channelAlertTransport
+		case assetadapter.AssetClassReset:
+			reason = channelAlertConnReset
+		}
+		recordChannelAlertSample(channelAlertScope{Channel: channel.Id, Revision: channel.AlertAssetRevision, Model: modelName, Operation: operation, Slot: -1},
+			channelAlertSample{ID: id, Kind: kind, Status: fields.StatusCode, Reason: reason, HasRequestID: hasRequestID})
 	}
 }
 

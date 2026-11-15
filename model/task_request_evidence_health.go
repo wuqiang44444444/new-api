@@ -6,6 +6,7 @@ type EvidenceCleanupHealth struct {
 	CheckedAt               int64    `json:"checked_at"`
 	LastSucceededAt         int64    `json:"last_succeeded_at"`
 	MonitoringSince         int64    `json:"monitoring_since"`
+	LastFailedTaskID        string   `json:"-"`
 	ConsecutiveFailures     int      `json:"consecutive_failures"`
 	PendingDatabaseIndexes  int64    `json:"pending_database_indexes"`
 	OldestDatabasePendingAt int64    `json:"oldest_database_pending_at"`
@@ -37,6 +38,9 @@ func GetEvidenceCleanupHealth(now, retentionSeconds int64) (*EvidenceCleanupHeal
 	for _, task := range recent {
 		if task.Status != SystemTaskStatusFailed {
 			break
+		}
+		if health.LastFailedTaskID == "" {
+			health.LastFailedTaskID = task.TaskID
 		}
 		health.ConsecutiveFailures++
 	}

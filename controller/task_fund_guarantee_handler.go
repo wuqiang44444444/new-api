@@ -32,13 +32,14 @@ func (taskFundGuaranteeHandler) Interval() time.Duration { return 15 * time.Seco
 func (taskFundGuaranteeHandler) NewPayload() any { return nil }
 
 func (taskFundGuaranteeHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
-	err := service.RunVideoRefunds(ctx)
+	refundErr := service.RunVideoRefunds(ctx)
+	err := refundErr
 	summary := service.RunTaskCreateFundGuaranteeOnce(ctx)
 	if summary.ScanFailed || summary.Failed > 0 || summary.Blocked > 0 {
 		err = errors.New("video fund guarantee has pending failures")
 	}
 	if err != nil {
-		service.NotifyVideoFundFailure()
+		service.NotifyVideoFundFailure(summary, refundErr != nil)
 		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, summary, err)
 		return
 	}

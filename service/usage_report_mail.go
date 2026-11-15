@@ -63,7 +63,13 @@ func queueUsageReportEmails(ctx context.Context, now time.Time) (bool, error) {
 		return false, err
 	}
 	ref := meta.References[0]
-	platform, platformErr := queueAdminUsageReportEmails(ctx, period, meta, ref, now)
+	readCtx, cancel := context.WithTimeout(ctx, model.DailyReportReadBudget)
+	cutoff, cutoffErr := model.ReadErrorEventRetentionCutoff(readCtx)
+	cancel()
+	if cutoffErr != nil {
+		common.SysError("usage mail error-log coverage could not be read")
+	}
+	platform, platformErr := queueAdminUsageReportEmails(ctx, period, meta, ref, now, cutoff, cutoffErr != nil)
 	prefs, err := model.LoadMailPreferences(ctx)
 	if err != nil {
 		return platform, errors.Join(platformErr, err)
@@ -81,7 +87,14 @@ func queueUsageReportEmails(ctx context.Context, now time.Time) (bool, error) {
 		if common.IsBareMailAddress(account.Email) {
 			to = []string{account.Email}
 		}
-		opened, err := openUsageReportMail(ctx, model.PersonalUsageReportMail, ref.Start, account.UserID, usageReportMailBody(day, meta, account.Total, nil), to)
+		if len(to) == 0 {
+			continue
+		}
+		var details mailErrorDetails
+		if account.Total.FailureCalls > 0 {
+			details = loadUsageMailErrors(ctx, ref.Start, period.EndTimestamp, cutoff, cutoffErr != nil, []int{account.UserID}, false)
+		}
+		opened, err := openUsageReportMail(ctx, model.PersonalUsageReportMail, ref.Start, account.UserID, usageReportMailBody(day, meta, account.Total, nil, details), to)
 		if err != nil {
 			return queued, errors.Join(platformErr, err)
 		}
@@ -90,7 +103,7 @@ func queueUsageReportEmails(ctx context.Context, now time.Time) (bool, error) {
 	return queued, platformErr
 }
 
-func queueAdminUsageReportEmails(ctx context.Context, period model.UsageAnalyticsPeriod, meta model.PublishedUsageReport, ref model.UsageReportDayReference, now time.Time) (bool, error) {
+func queueAdminUsageReportEmails(ctx context.Context, period model.UsageAnalyticsPeriod, meta model.PublishedUsageReport, ref model.UsageReportDayReference, now time.Time, cutoff int64, coverageUnknown bool) (bool, error) {
 	recipients, err := model.GetOperationsMailRecipients(ctx)
 	if err != nil || len(recipients) == 0 {
 		return false, err
@@ -113,14 +126,22 @@ func queueAdminUsageReportEmails(ctx context.Context, period model.UsageAnalytic
 		var active int64
 		total, active, platformErr = model.PublishedUsageMailTotals(ctx, ref)
 		if platformErr == nil {
-			platformQueued, platformErr = openUsageReportMail(ctx, model.PlatformUsageReportMail, ref.Start, 0, usageReportMailBody(period.Date, meta, total, &active), recipients)
+			var details mailErrorDetails
+			if total.FailureCalls > 0 {
+				details = loadUsageMailErrors(ctx, ref.Start, period.EndTimestamp, cutoff, coverageUnknown, nil, false)
+			}
+			platformQueued, platformErr = openUsageReportMail(ctx, model.PlatformUsageReportMail, ref.Start, 0, usageReportMailBody(period.Date, meta, total, &active, details), recipients)
 		}
 	}
 	if prefs.Allows(model.MailCustomerStatus, eligible) && !slices.Contains(existing, model.CustomerStatusReportMail) {
 		var customers model.CustomerStatusReport
 		customers, customerErr = model.ReadCustomerStatusReport(ctx, ref, period.EndTimestamp)
 		if customerErr == nil {
-			customersQueued, customerErr = openUsageReportMail(ctx, model.CustomerStatusReportMail, ref.Start, 0, customerStatusReportMailBody(period.Date, meta, customers, now), recipients)
+			var details mailErrorDetails
+			if customers.AccountsWithFailures > 0 {
+				details = loadUsageMailErrors(ctx, ref.Start, period.EndTimestamp, cutoff, coverageUnknown, nil, true)
+			}
+			customersQueued, customerErr = openUsageReportMail(ctx, model.CustomerStatusReportMail, ref.Start, 0, customerStatusReportMailBody(period.Date, meta, customers, now, details), recipients)
 		}
 	}
 	return platformQueued || customersQueued, errors.Join(platformErr, customerErr)
@@ -139,7 +160,13 @@ func openUsageReportMail(ctx context.Context, kind string, start int64, userID i
 	}, recipients)
 }
 
-func usageReportMailBody(day string, meta model.PublishedUsageReport, usage model.UsageAnalyticsMetrics, active *int64) renderedUsageReportMail {
+func loadUsageMailErrors(ctx context.Context, start, end, cutoff int64, coverageUnknown bool, accounts []int, customerOnly bool) mailErrorDetails {
+	return loadMailErrorDetails(ctx, model.MailErrorScope{
+		Start: max(start, cutoff), End: end, UserIDs: accounts, CustomerOnly: customerOnly, FailuresOnly: true,
+	}, nil, coverageUnknown || cutoff > start)
+}
+
+func usageReportMailBody(day string, meta model.PublishedUsageReport, usage model.UsageAnalyticsMetrics, active *int64, details mailErrorDetails) renderedUsageReportMail {
 	title := "个人使用日报 / Your daily usage report"
 	path, action := "/usage", "查看个人用量明细 / View my usage details"
 	if active != nil {
@@ -190,12 +217,17 @@ func usageReportMailBody(day string, meta model.PublishedUsageReport, usage mode
 	if usage.BillingMeterUnknownRows > 0 || usage.RowsMoneyPending > 0 || usage.RowsMissingMoney > 0 {
 		body.WriteString("<p>部分用量的计费单位或金额待核对，详见控制台。<br>Some usage units or charges require review. See the console for details.</p>")
 	}
+	if details.checked {
+		body.WriteString("<p>以下是同日的诊断日志样本，日志记录与用量失败统计采用各自口径。<br>These diagnostic samples are from the same day. Usage failure totals follow the usage report’s counting rules.</p>")
+		writeMailErrorDetails(&body, details)
+		fmt.Fprintf(&body, "<p>该日用量共记录 %d 次失败。请在用量页核对对应用量结果。<br>The usage report records %d failed calls. Check the usage page for their outcomes.</p>", usage.FailureCalls, usage.FailureCalls)
+	}
 	if address := consoleMailLink(path + "?date=" + day + "&period=day"); address != "" {
 		writeReportMailLink(&body, address, action)
 	} else {
 		body.WriteString("<p>请登录控制台并在用量页面选择上述日期。<br>Sign in to the console and select this date on the usage page.</p>")
 	}
-	return renderedUsageReportMail{subject: title + " — " + day, body: renderOperationsMail(title, body.String())}
+	return renderedUsageReportMail{subject: title + " — " + day, body: RenderMailTemplate(title, body.String())}
 }
 
 func writeUsageMailPeriod(body *strings.Builder, day string, meta model.PublishedUsageReport) {

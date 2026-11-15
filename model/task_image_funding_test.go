@@ -13,15 +13,16 @@ import (
 
 func TestNativeImageFundingPreferenceAndAtomicSettlement(t *testing.T) {
 	for _, tc := range []struct {
-		name, pref, source      string
-		wallet, subTotal, quota int
-		overflow, reject        bool
+		name, pref, source               string
+		wallet, subTotal, quota          int
+		overflow, reject, walletRejected bool
 	}{
 		{name: "wallet_zero_hold", pref: "wallet_only", source: "wallet", wallet: 100, subTotal: 100, quota: 0},
 		{name: "wallet_only", pref: "wallet_only", source: "wallet", wallet: 100, subTotal: 100, quota: 40},
 		{name: "subscription_only", pref: "subscription_only", source: "subscription", wallet: 100, subTotal: 100, quota: 40},
 		{name: "subscription_first", pref: "subscription_first", source: "subscription", wallet: 100, subTotal: 100, quota: 40},
 		{name: "wallet_first_fallback", pref: "wallet_first", source: "subscription", wallet: 10, subTotal: 100, quota: 40},
+		{name: "wallet_first_both_reject", pref: "wallet_first", wallet: 10, subTotal: 10, quota: 40, reject: true, walletRejected: true},
 		{name: "wallet_overflow", pref: "subscription_first", source: "wallet", wallet: 100, subTotal: 10, quota: 40, overflow: true},
 		{name: "no_wallet_overflow", pref: "subscription_first", wallet: 100, subTotal: 10, quota: 40, reject: true},
 		{name: "no_subscription_fallback", pref: "subscription_only", wallet: 100, subTotal: 10, quota: 40, reject: true},
@@ -42,6 +43,7 @@ func TestNativeImageFundingPreferenceAndAtomicSettlement(t *testing.T) {
 			err := InsertImageTask(params)
 			if tc.reject {
 				require.ErrorIs(t, err, ErrTaskAttemptSubscriptionUnavailable)
+				assert.Equal(t, tc.walletRejected, errors.Is(err, ErrTaskAttemptWalletFallbackRejected))
 				var count int64
 				require.NoError(t, DB.Model(&Task{}).Count(&count).Error)
 				assert.Zero(t, count)

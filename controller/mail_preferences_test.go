@@ -35,7 +35,10 @@ func TestMailPreferencesEndpointSavesOnlyRequestedTypes(t *testing.T) {
 	}
 	initial := call(http.MethodGet, "")
 	require.True(t, initial.Success)
-	require.Len(t, initial.Data.Types, 28)
+	assert.Contains(t, initial.Data.Types, mailPreferenceView{
+		MailTypeDefinition: model.MailTypeDefinition{ID: model.MailWalletRejection, Group: "alerts", Label: "Requests rejected due to insufficient wallet balance", Recipient: "operations"},
+		Enabled:            false,
+	})
 	updated := call(http.MethodPut, `{"types":{"channel_upstream_balance":false},"finance_recipients":"finance@example.com"}`)
 	require.True(t, updated.Success)
 	assert.Equal(t, "finance@example.com", updated.Data.Finance)

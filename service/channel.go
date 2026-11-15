@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -51,10 +52,12 @@ func DisableChannel(channelError types.ChannelError, reason string, audit ...mod
 			CloseActiveWebSocketsForChannel(channelError.ChannelId, ChannelDisabledCloseReason)
 		}
 		lang := RootUserLanguage()
-		params := map[string]any{"Name": channelError.ChannelName, "Id": channelError.ChannelId, "Reason": reason}
+		params := map[string]any{"Name": safeMailText(channelError.ChannelName, 72), "Id": channelError.ChannelId, "Reason": reason}
 		subject := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledSubject, params)
 		content := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, params)
-		NotifyRootUser(model.MailChannelDisabled, formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
+		params["Reason"] = i18n.Translate(lang, i18n.MsgChannelDisableReview)
+		body := renderChannelStatusMail(i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, params), time.Now(), channelError.ChannelId, true, audit)
+		notifyRootUser(model.MailChannelDisabled, formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content, body)
 	}
 }
 
@@ -62,10 +65,11 @@ func EnableChannel(channelId int, usingKey string, channelName string, audit ...
 	success := model.UpdateChannelStatus(channelId, usingKey, common.ChannelStatusEnabled, "", audit...)
 	if success {
 		lang := RootUserLanguage()
-		params := map[string]any{"Name": channelName, "Id": channelId}
+		params := map[string]any{"Name": safeMailText(channelName, 72), "Id": channelId}
 		subject := i18n.Translate(lang, i18n.MsgChannelNotifyEnabledSubject, params)
 		content := i18n.Translate(lang, i18n.MsgChannelNotifyEnabledContent, params)
-		NotifyRootUser(model.MailChannelRecovered, formatNotifyType(channelId, common.ChannelStatusEnabled), subject, content)
+		body := renderChannelStatusMail(content, time.Now(), channelId, false, audit)
+		notifyRootUser(model.MailChannelRecovered, formatNotifyType(channelId, common.ChannelStatusEnabled), subject, content, body)
 	}
 }
 

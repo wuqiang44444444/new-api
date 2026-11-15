@@ -2,11 +2,13 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -59,4 +61,26 @@ func TestErrorReportClickHouseDuplicateKeys(t *testing.T) {
 	assert.EqualValues(t, 2, slice.Signals[DailyErrorOther])
 	require.Len(t, slice.Groups, 1)
 	assert.Equal(t, 9, slice.Groups[0].ChannelID)
+
+	require.NoError(t, mainDB.AutoMigrate(&User{}))
+	require.NoError(t, mainDB.Create(&[]User{
+		{Id: 1, Username: "root", AffCode: "r1", Role: common.RoleRootUser},
+		{Id: 2, Username: "customer", AffCode: "c2", Role: common.RoleCommonUser},
+	}).Error)
+	var events []ErrorEvent
+	for i := range 70 {
+		events = append(events, ErrorEvent{CreatedAt: 10800, RequestId: fmt.Sprintf("root-%03d", i), UserId: 1,
+			EventType: clienterrlog.EventAPIError, Status: 403, Reason: clienterrlog.WalletQuotaInsufficient})
+	}
+	for i := range 7 {
+		events = append(events, ErrorEvent{CreatedAt: 10800, RequestId: fmt.Sprintf("customer-%03d", i), UserId: 2,
+			EventType: clienterrlog.EventAPIError, Status: 403, Reason: clienterrlog.WalletQuotaInsufficient})
+	}
+	require.NoError(t, logDB.Create(&events).Error)
+	samples, err := ReadMailErrorSamples(context.Background(), MailErrorScope{Start: 10800, End: 10801, CustomerOnly: true, FailuresOnly: true})
+	require.NoError(t, err)
+	require.Len(t, samples, 5)
+	for i, sample := range samples {
+		assert.Equal(t, fmt.Sprintf("customer-%03d", 6-i), sample.RequestID)
+	}
 }

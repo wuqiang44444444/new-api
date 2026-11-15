@@ -16,6 +16,7 @@ var (
 	ErrTaskAttemptInsufficientQuota       = errors.New("task attempt quota is insufficient")
 	ErrTaskAttemptTokenQuota              = fmt.Errorf("%w: token", ErrTaskAttemptInsufficientQuota)
 	ErrTaskAttemptSubscriptionUnavailable = errors.New("task attempt subscription is unavailable")
+	ErrTaskAttemptWalletFallbackRejected  = errors.New("wallet was insufficient and subscription fallback was unavailable")
 )
 
 type TaskAttemptHoldParams struct {

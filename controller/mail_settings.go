@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -86,8 +87,9 @@ func sendMailTest(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), common.ShortMailSubmissionTimeout)
 	defer cancel()
-	if err := common.SendEmailContext(ctx, "邮件通道测试 / Mail delivery test", recipient,
-		"<h2>邮件通道测试 / Mail delivery test</h2><p>此邮件由管理员手动触发。收到此信即表示测试邮件已到达。</p><p>An administrator requested this test. Receipt of this message confirms delivery to this mailbox.</p>"); err != nil {
+	const title = "邮件通道测试 / Mail delivery test"
+	body := service.RenderMailTemplate(title, "<p>此邮件由管理员手动触发。收到此信即表示测试邮件已到达。</p><p>An administrator requested this test. Receipt of this message confirms delivery to this mailbox.</p>")
+	if err := common.SendEmailContext(ctx, title, recipient, body); err != nil {
 		common.SysLog(common.LogText("manual mail test failed: %s", err.Error()))
 		common.ApiErrorT(c, "Test email could not be submitted. Check mail settings and try again.")
 		return

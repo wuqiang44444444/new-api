@@ -37,9 +37,11 @@ func withErrorReportTestDB(t *testing.T) *gorm.DB {
 		&model.ErrorReportDelivery{},
 		&model.ErrorEvent{},
 		&model.Channel{},
+		&model.User{},
 		&model.ChannelAlertEpisode{},
 		&model.ResourceAlertEpisode{},
 		&model.ResourceAlertDelivery{},
+		&model.WalletDigestAccount{},
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
 	))

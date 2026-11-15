@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -14,6 +15,12 @@ import (
 )
 
 func respondBatchInvalid(c *gin.Context, err error) {
+	if service.ObserveQuotaRejection(c, err) {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": gin.H{
+			"message": i18n.T(c, i18n.MsgBatchQuotaInsufficient), "type": "insufficient_quota", "code": "insufficient_quota",
+		}})
+		return
+	}
 	var validateErr *dto.BatchValidateError
 	if errors.As(err, &validateErr) {
 		status := http.StatusBadRequest

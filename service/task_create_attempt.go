@@ -195,7 +195,7 @@ func holdTaskAttemptForBilling(info *relaycommon.RelayInfo, attemptID int64) (*m
 			if errors.Is(err, model.ErrTaskAttemptTokenQuota) && errors.Is(fallbackErr, model.ErrTaskAttemptSubscriptionUnavailable) {
 				return fallback, quotaRejection{fallbackErr, clienterrlog.APIKeyQuotaInsufficient}
 			}
-			return fallback, fallbackErr
+			return fallback, model.PreserveTaskWalletRejection(err, fallbackErr)
 		}
 		return result, err
 	default:

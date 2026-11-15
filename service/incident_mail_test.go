@@ -35,7 +35,7 @@ func TestIncidentSQLReadFailurePreservesFactsAndRetries(t *testing.T) {
 	opened, err := model.OpenChannelAlert(ctx, model.ChannelAlertEpisode{
 		OpenKey: &key, ScopeKey: key, ChannelID: channel.Id, Revision: model.ChannelAlertRevision(&channel),
 		Kind: "upstream_balance", FirstAt: now.UnixMilli(), LastAt: now.UnixMilli(),
-	}, recipient)
+	})
 	require.NoError(t, err)
 	require.True(t, opened)
 	opened, err = model.OpenResourceAlert(ctx, model.ResourceAlertEpisode{
@@ -107,19 +107,35 @@ func TestIncidentMailRetriesPreparationAfterConfigurationRecovers(t *testing.T) 
 	assert.Contains(t, subjects[1], "Evidence cleanup alert")
 }
 
-func TestWalletFinanceRecipientFailureRollsBackAdjustment(t *testing.T) {
+func TestWalletMailFailureCannotRollBackFunding(t *testing.T) {
 	db := withErrorReportTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.WalletOperation{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.WalletOperation{}, &model.WalletOperationMailPrepared{}, &model.TopUp{}, &model.Log{}))
+	ctx := context.Background()
 	t.Setenv("FINANCE_MAIL_RECIPIENTS", "invalid address")
-	user := model.User{Username: "wallet-rollback", Email: "account@example.com", Quota: 100}
+	t.Setenv("FINANCE_WALLET_ALERT_THRESHOLD", "100")
+	user := model.User{Username: "wallet-commit", Email: "account@example.com", Quota: 100}
 	require.NoError(t, db.Create(&user).Error)
-	_, err := model.AdjustUserQuotaWithMail(user.Id, common.RoleRootUser, "subtract", 100, 42, QueueWalletOperationMail)
-	require.Error(t, err)
+	order := model.TopUp{UserId: user.Id, Amount: 1, TradeNo: "mail-failure-order", Status: common.TopUpStatusPending, PaymentProvider: model.PaymentProviderEpay}
+	require.NoError(t, db.Create(&order).Error)
+	require.NoError(t, db.Migrator().DropTable(&model.ResourceAlertDelivery{}))
+
+	_, err := model.AdjustUserQuotaByAdmin(user.Id, common.RoleRootUser, "subtract", 100, 42)
+	require.NoError(t, err)
+	require.NoError(t, model.ManualCompleteTopUp(order.TradeNo, "", 42))
+	require.NoError(t, model.ManualCompleteTopUp(order.TradeNo, "", 42))
 	require.NoError(t, db.First(&user, user.Id).Error)
-	assert.Equal(t, 100, user.Quota)
+	assert.Equal(t, int(common.QuotaPerUnit), user.Quota)
+	require.NoError(t, db.First(&order, order.Id).Error)
+	assert.Equal(t, common.TopUpStatusSuccess, order.Status)
 	var count int64
 	require.NoError(t, db.Model(&model.WalletOperation{}).Count(&count).Error)
-	assert.Zero(t, count)
+	assert.EqualValues(t, 2, count)
+	require.Error(t, queueWalletOperationMails(ctx))
+	require.NoError(t, db.AutoMigrate(&model.ResourceAlertDelivery{}))
+	require.Error(t, queueWalletOperationMails(ctx), "invalid finance recipients affect mail preparation only")
+	t.Setenv("FINANCE_MAIL_RECIPIENTS", "finance@example.com")
+	require.NoError(t, queueWalletOperationMails(ctx))
+	require.NoError(t, queueWalletOperationMails(ctx))
 	require.NoError(t, db.Model(&model.ResourceAlertDelivery{}).Count(&count).Error)
-	assert.Zero(t, count)
+	assert.EqualValues(t, 4, count)
 }

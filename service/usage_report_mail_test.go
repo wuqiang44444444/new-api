@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
@@ -16,7 +17,7 @@ import (
 
 func TestDailyUsageEmailsFromPublishedReportReachLocalInbox(t *testing.T) {
 	db := setupVersionServiceTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.ResourceAlertEpisode{}, &model.ResourceAlertDelivery{}, &model.SystemTask{}, &model.SystemTaskLock{}, &model.TaskBillingDelivery{}))
+	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.ErrorEvent{}, &model.ErrorReportSchedule{}, &model.ResourceAlertEpisode{}, &model.ResourceAlertDelivery{}, &model.SystemTask{}, &model.SystemTaskLock{}, &model.TaskBillingDelivery{}))
 	prepareDailyReportExportTest(t)
 	inbox := newLocalMailInbox(t)
 	t.Setenv("PERSONAL_USAGE_REPORT_MAIL_ENABLED", "true")
@@ -32,6 +33,9 @@ func TestDailyUsageEmailsFromPublishedReportReachLocalInbox(t *testing.T) {
 		{Id: 12, Username: "failed", AffCode: "um12", Status: common.UserStatusEnabled, Quota: 100},
 	}
 	require.NoError(t, db.Create(&accounts).Error)
+	threshold := common.QuotaRemindThreshold
+	common.QuotaRemindThreshold = 1000
+	t.Cleanup(func() { common.QuotaRemindThreshold = threshold })
 	ctx := context.Background()
 	zone := model.UsageAnalyticsZone()
 	start := time.Date(2026, 10, 1, 0, 0, 0, 0, zone)
@@ -52,7 +56,12 @@ func TestDailyUsageEmailsFromPublishedReportReachLocalInbox(t *testing.T) {
 		{UserId: 11, CreatedAt: start.Unix() + 40, Type: model.LogTypeConsume, ModelName: "stale-model", Quota: 412004, RequestId: "stale-request"},
 		{UserId: 12, CreatedAt: start.Unix() + 50, Type: model.LogTypeError, ModelName: "failed-model", RequestId: "failed-request", ChannelId: 1},
 	}
+	logs = append(logs, model.Log{UserId: 7, CreatedAt: start.Unix() + 70, Type: model.LogTypeError, ModelName: "first-model", RequestId: "failed-first", ChannelId: 1})
 	require.NoError(t, db.Create(&logs).Error)
+	require.NoError(t, db.Create(&[]model.ErrorEvent{
+		{UserId: 7, CreatedAt: start.Unix() + 70, Status: 503, EventType: clienterrlog.EventAPIError, RequestId: "failed-first"},
+		{UserId: 8, CreatedAt: start.Unix() + 75, Status: 503, EventType: clienterrlog.EventAPIError, RequestId: "failed-admin"},
+	}).Error)
 	require.NoError(t, model.BuildUsageReportDay(ctx, start.Format(time.DateOnly), "export-fixture", "runner", nil))
 	loadTransport := common.LoadMailTransport
 	func() {
@@ -81,6 +90,10 @@ func TestDailyUsageEmailsFromPublishedReportReachLocalInbox(t *testing.T) {
 	assert.NotContains(t, first.body, logger.FormatQuota(245002))
 	assert.Contains(t, second.body, logger.FormatQuota(245002))
 	assert.NotContains(t, second.body, logger.FormatQuota(135001))
+	assert.Contains(t, first.body, "failed-first")
+	assert.Contains(t, first.body, "These diagnostic samples are from the same day")
+	assert.NotContains(t, first.body, "failed-admin")
+	assert.NotContains(t, second.body, "failed-first")
 
 	require.NoError(t, db.Create(&model.Option{Key: "error_report_setting.recipients", Value: "ops@example.com"}).Error)
 	require.True(t, queue(tick))
@@ -96,13 +109,16 @@ func TestDailyUsageEmailsFromPublishedReportReachLocalInbox(t *testing.T) {
 	assert.Contains(t, customers.body, "/admin/usage?date=2026-10-01&amp;period=day&amp;section=customers")
 	assert.Contains(t, customers.body, `href="https://gateway.example.com/users"`)
 	for label, value := range map[string]string{
-		"New customer accounts": "2", "Customers with completed calls": "4", "New customers with completed calls": "2",
-		"Customers with failed calls": "1", "Customers whose completed calls all failed": "1",
+		"New customer accounts": "2", "Customers with a recorded call outcome": "4", "New customers with a recorded call outcome": "2",
+		"Customers with failed calls": "2", "Customers whose recorded call outcomes were all failures": "1",
 		"Enabled customers with zero or negative wallet balance": "2",
 	} {
 		assert.Regexp(t, regexp.QuoteMeta(label)+`</th><td[^>]*>`+value+`</td>`, customers.body)
 	}
+	assert.Regexp(t, `Positive wallet balance below the site threshold [^<]*</th><td[^>]*>2</td>`, customers.body)
 	assert.NotContains(t, customers.body, "@example.com")
+	assert.Contains(t, customers.body, "failed-first")
+	assert.NotContains(t, customers.body, "failed-admin")
 	assert.NotContains(t, customers.body, "first-private")
 	assert.False(t, queue(tick.Add(time.Minute)))
 	var deliveries []model.ResourceAlertDelivery
@@ -130,7 +146,7 @@ func TestDailyUsageEmailsFromPublishedReportReachLocalInbox(t *testing.T) {
 func TestUsageMailTemplateMarksIncompleteMeters(t *testing.T) {
 	mail := usageReportMailBody("2026-10-01", model.PublishedUsageReport{IncompleteDays: []string{"2026-10-01"}}, model.UsageAnalyticsMetrics{
 		InputTokens: 123, RowsMissingTokens: 1, SecondsMissingRows: 1, RowsMoneyPending: 1,
-	}, nil)
+	}, nil, mailErrorDetails{})
 	assert.Contains(t, mail.body, "Partial or awaiting refresh")
 	assert.Contains(t, mail.body, "123（已知小计 / Known subtotal）")
 	assert.Contains(t, mail.body, "未记录 / Unavailable")

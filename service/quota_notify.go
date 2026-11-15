@@ -22,6 +22,14 @@ func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota, preConsume
 	if remaining >= threshold {
 		return
 	}
+	if relayInfo.UserSetting.NotifyType == "" || relayInfo.UserSetting.NotifyType == dto.NotifyTypeEmail {
+		var pendingBalance *int
+		if common.BatchUpdateEnabled && !common.RedisEnabled {
+			pendingBalance = &remaining
+		}
+		enqueueWalletNotice(relayInfo.UserId, false, pendingBalance)
+		return
+	}
 	enqueueQuotaNotification(model.MailWalletLow, relayInfo.UserId, relayInfo.UserEmail, relayInfo.UserSetting, i18n.MsgNotifyQuotaLowTitle, remaining, threshold)
 }
 
@@ -54,7 +62,11 @@ func enqueueQuotaNotification(kind model.MailType, userID int, email string, set
 		}
 		lang := setting.Language
 		prompt := i18n.Translate(lang, titleKey)
-		content, values := quotaNotifyContent(lang, setting.NotifyType, prompt, logger.FormatQuota(remaining), logger.FormatQuota(threshold))
+		balance, warning := logger.FormatQuota(remaining), logger.FormatQuota(threshold)
+		content, values := quotaNotifyContent(lang, setting.NotifyType, prompt, balance, warning)
+		if kind == model.MailSubscriptionLow && (setting.NotifyType == "" || setting.NotifyType == dto.NotifyTypeEmail) {
+			content, values = renderSubscriptionQuotaMail(balance, warning, queuedAt), nil
+		}
 		if err := notifyUser(kind, queuedAt, userID, email, setting, dto.NewNotify(dto.NotifyTypeQuotaExceed, prompt, content, values), false); err != nil {
 			common.SysError(common.LogText("failed to send quota notify to user %d: %s", userID, err.Error()))
 		}
@@ -64,12 +76,16 @@ func enqueueQuotaNotification(kind model.MailType, userID int, email string, set
 		return
 	}
 	if !quotaMailWork.enqueue(func() {
-		if dropped := quotaMailDropped.Swap(0); dropped != 0 {
-			common.SysError(common.LogText("quota mail queue full, skipped %d notifications", dropped))
-		}
+		logDroppedQuotaMail()
 		send()
 	}) {
 		quotaMailDropped.Add(1)
+	}
+}
+
+func logDroppedQuotaMail() {
+	if dropped := quotaMailDropped.Swap(0); dropped != 0 {
+		common.SysError(common.LogText("quota mail queue full, skipped %d notifications", dropped))
 	}
 }
 

@@ -13,6 +13,8 @@ type CustomerStatusReport struct {
 	EnabledAccounts          int64
 	DisabledAccounts         int64
 	NonPositiveWallets       int64
+	PositiveLowWallets       int64
+	WalletLowThreshold       int
 	AccountsWithCalls        int64
 	NewAccountsWithCalls     int64
 	AccountsWithFailures     int64
@@ -23,7 +25,7 @@ type CustomerStatusReport struct {
 // records. Only ordinary customer accounts are counted. Status and balance are
 // current at the time of collection, not historical reconstructions.
 func ReadCustomerStatusReport(ctx context.Context, day UsageReportDayReference, end int64) (CustomerStatusReport, error) {
-	var result CustomerStatusReport
+	result := CustomerStatusReport{WalletLowThreshold: common.QuotaRemindThreshold}
 	db := DB.WithContext(ctx)
 	// Count signups that were subsequently soft-deleted, while excluding deleted
 	// rows from the current account status and wallet counts.
@@ -31,8 +33,9 @@ func ReadCustomerStatusReport(ctx context.Context, day UsageReportDayReference, 
 		COUNT(CASE WHEN created_at >= ? AND created_at < ? THEN 1 END) AS new_accounts,
 		COUNT(CASE WHEN deleted_at IS NULL AND status = ? THEN 1 END) AS enabled_accounts,
 		COUNT(CASE WHEN deleted_at IS NULL AND status = ? THEN 1 END) AS disabled_accounts,
-		COUNT(CASE WHEN deleted_at IS NULL AND status = ? AND quota <= 0 THEN 1 END) AS non_positive_wallets`,
-		day.Start, end, common.UserStatusEnabled, common.UserStatusDisabled, common.UserStatusEnabled).Scan(&result).Error
+		COUNT(CASE WHEN deleted_at IS NULL AND status = ? AND quota <= 0 THEN 1 END) AS non_positive_wallets,
+		COUNT(CASE WHEN deleted_at IS NULL AND status = ? AND quota > 0 AND quota < ? THEN 1 END) AS positive_low_wallets`,
+		day.Start, end, common.UserStatusEnabled, common.UserStatusDisabled, common.UserStatusEnabled, common.UserStatusEnabled, result.WalletLowThreshold).Scan(&result).Error
 	if err != nil {
 		return result, err
 	}

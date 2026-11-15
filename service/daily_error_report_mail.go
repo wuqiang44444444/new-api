@@ -66,6 +66,7 @@ type dailyReportOperations struct {
 	channelNames     map[int]string
 	quotaAccounts    map[string]int64
 	asOf             time.Time
+	details          mailErrorDetails
 }
 
 func renderDailyReport(report *model.ErrorReport, day string, summary dailyReportSummary, ops dailyReportOperations) *model.ErrorReportPart {
@@ -198,6 +199,7 @@ func renderDailyReport(report *model.ErrorReport, day string, summary dailyRepor
 		}
 		summaryRows = append(summaryRows, [2]string{section.label, value})
 	}
+	writeMailErrorDetails(&body, ops.details)
 	if len(summary.Groups) > 0 {
 		body.WriteString("<h3>重点错误组 / Error groups to review</h3>")
 		body.WriteString("<p>每类展示最多 3 组，记录按渠道、模型、HTTP 状态和原因归并。<br>Up to three groups per category, grouped by channel, model, HTTP status and reason.</p>")
@@ -267,7 +269,7 @@ func renderDailyReport(report *model.ErrorReport, day string, summary dailyRepor
 	}
 	body.WriteString(`<p style="padding-top:12px;border-top:1px solid #dce4ee;color:#49627a;font-size:12px">错误量基于已入库事件，可能遗漏迟到记录。邮件没有成功请求总量，不能推断失败率或全站可用性。登录管理员账号可查看保留期内的脱敏请求和响应。<br>Counts cover recorded events and may miss late arrivals. No request denominator is available here to infer failure rate or site health. Sign in as an administrator to view retained, redacted request and response details.</p>`)
 	return &model.ErrorReportPart{ReportID: report.ReportID, PartNo: 1,
-		Subject: title + " — " + day, BodyHTML: renderOperationsMail(title, body.String())}
+		Subject: title + " — " + day, BodyHTML: RenderMailTemplate(title, body.String())}
 }
 
 func dailyReportErrorCount(count int64, incomplete bool) string {

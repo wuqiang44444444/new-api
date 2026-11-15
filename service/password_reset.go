@@ -54,6 +54,7 @@ func DeliverPasswordReset(email, fallbackLanguage string) {
 		i18n.Translate(lang, i18n.MsgEmailPasswordResetLink, link),
 		i18n.Translate(lang, i18n.MsgEmailPasswordResetLinkFallback, link),
 		i18n.Translate(lang, i18n.MsgEmailPasswordResetValidity, map[string]any{"Minutes": int(model.PasswordResetLifetime / time.Minute)}))
+	content = RenderMailTemplate(subject, content)
 	for range 2 {
 		ctx, cancel := context.WithTimeout(context.Background(), common.ShortMailSubmissionTimeout)
 		err = common.SendAccountEmail(ctx, subject, email, content)

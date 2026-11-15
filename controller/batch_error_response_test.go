@@ -7,9 +7,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBatchStorageErrorResponseKeepsClassificationAndHidesCause(t *testing.T) {
@@ -30,6 +33,21 @@ func TestBatchStorageErrorResponseKeepsClassificationAndHidesCause(t *testing.T)
 			assert.Equal(t, tc.status, recorder.Code)
 			assert.NotContains(t, recorder.Body.String(), "internal-read-stage")
 			assert.NotContains(t, recorder.Body.String(), "internal-storage-cause")
+		})
+	}
+}
+
+func TestBatchFundingRejectionReturnsClientError(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	for _, cause := range []error{model.ErrTaskAttemptInsufficientQuota, model.ErrTaskAttemptTokenQuota, model.ErrTaskAttemptSubscriptionUnavailable} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
+			respondBatchInvalid(c, fmt.Errorf("private reservation failure: %w", cause))
+			require.Equal(t, http.StatusForbidden, recorder.Code)
+			assert.Contains(t, recorder.Body.String(), `"code":"insufficient_quota"`)
+			assert.NotContains(t, recorder.Body.String(), "private reservation failure")
 		})
 	}
 }

@@ -118,29 +118,21 @@ func (d *ErrorReportDelivery) BeforeSave(_ *gorm.DB) error {
 	return nil
 }
 
-// lockErrorReportSchedule serializes publishing and claims.
-// SQLite reserves the writer before reading, as it has no row lock.
-func lockErrorReportSchedule(tx *gorm.DB) (ErrorReportSchedule, error) {
+func readErrorReportSchedule(tx *gorm.DB) (ErrorReportSchedule, error) {
 	var schedule ErrorReportSchedule
-	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
-		if err := tx.Model(&ErrorReportSchedule{}).Where("scope = ?", ErrorReportScheduleScopeGlobal).
-			UpdateColumn("delivery_cursor", gorm.Expr("delivery_cursor")).Error; err != nil {
-			return schedule, err
-		}
-	}
-	err := lockForUpdate(tx).Where("scope = ?", ErrorReportScheduleScopeGlobal).First(&schedule).Error
+	err := tx.Where("scope = ?", ErrorReportScheduleScopeGlobal).First(&schedule).Error
 	return schedule, err
 }
 
 // PublishDailyReport commits a complete frozen message and its per-address deliveries.
 func PublishDailyReport(ctx context.Context, part *ErrorReportPart, recipients []string, totalEvents int, summary, dataNote string) error {
 	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		schedule, err := lockErrorReportSchedule(tx)
+		schedule, err := readErrorReportSchedule(tx)
 		if err != nil {
 			return err
 		}
 		var report ErrorReport
-		if err := lockForUpdate(tx).Where("report_id = ?", part.ReportID).First(&report).Error; err != nil {
+		if err := tx.Where("report_id = ?", part.ReportID).First(&report).Error; err != nil {
 			return err
 		}
 		if report.WindowEnd-report.WindowStart != DailyReportWindowSeconds {
@@ -156,8 +148,9 @@ func PublishDailyReport(ctx context.Context, part *ErrorReportPart, recipients [
 		if part.PartNo != 1 {
 			return errors.New("invalid daily report part number")
 		}
+		queuedAt := time.Now().UnixNano()
 		if len(recipients) > 0 {
-			prefs, err := MailPreferencesInTransaction(tx)
+			prefs, err := loadMailPreferences(tx)
 			// The date becomes eligible at 06:00. Re-enabling starts with the next eligible window.
 			if err != nil {
 				return err
@@ -166,12 +159,19 @@ func PublishDailyReport(ctx context.Context, part *ErrorReportPart, recipients [
 				recipients = nil
 			}
 		}
+		// Competing generators may read the same window. Only the worker
+		// that changes its state writes the frozen body and outbox rows.
+		publish := tx.Model(&report).Where("status = ? AND aggregated_through = ?", ErrorReportStatusBuilding, report.WindowEnd).
+			UpdateColumn("status", ErrorReportStatusReady)
+		if publish.Error != nil || publish.RowsAffected == 0 {
+			return publish.Error
+		}
 		if err := tx.Create(part).Error; err != nil {
 			return err
 		}
 
 		for _, recipient := range recipients {
-			row := ErrorReportDelivery{ReportID: report.ReportID, PartID: part.ID, PartNo: part.PartNo, Recipient: recipient, Status: MailDeliveryPending, QueuedAt: time.Now().UnixNano()}
+			row := ErrorReportDelivery{ReportID: report.ReportID, PartID: part.ID, PartNo: part.PartNo, Recipient: recipient, Status: MailDeliveryPending, QueuedAt: queuedAt}
 			if err := tx.Create(&row).Error; err != nil {
 				return err
 			}
@@ -196,58 +196,64 @@ func ClaimErrorReportDeliveries(now int64, owner string, leaseUntil int64, limit
 	if limit <= 0 {
 		limit = 1
 	}
+	schedule, err := readErrorReportSchedule(DB)
+	if err != nil {
+		return nil, err
+	}
+	cursor := schedule.DeliveryCursor
 	var deliveries []*ErrorReportDelivery
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		schedule, err := lockErrorReportSchedule(tx)
-		if err != nil {
-			return err
-		}
-		// The persisted cursor prevents a large first recipient from monopolizing
-		// successive runs. Only the earliest pending day per recipient is eligible.
-		for i := 0; i < limit; i++ {
-			query := tx.Table("error_report_deliveries AS d").Select("d.*").
-				Joins("JOIN error_reports r ON r.report_id = d.report_id").
-				Where("r.window_end - r.window_start = ?", DailyReportWindowSeconds).
-				Where("d.status IN ? AND d.next_attempt_at <= ?", []string{MailDeliveryPending, MailDeliveryRetryWait}, now).
-				Where("d.lease_until IS NULL OR d.lease_until < ?", now).
-				Where(`NOT EXISTS (SELECT 1 FROM error_report_deliveries earlier
+	pending := []string{MailDeliveryPending, MailDeliveryRetryWait}
+	// The cursor is only for fairness. The conditional update on the
+	// delivery itself is the authority for ownership.
+	for attempt := 0; len(deliveries) < limit && attempt < limit+8; attempt++ {
+		query := DB.Table("error_report_deliveries AS d").Select("d.*").
+			Joins("JOIN error_reports r ON r.report_id = d.report_id").
+			Where("r.window_end - r.window_start = ?", DailyReportWindowSeconds).
+			Where("d.status IN ? AND d.next_attempt_at <= ?", pending, now).
+			Where("d.lease_until IS NULL OR d.lease_until < ?", now).
+			Where(`NOT EXISTS (SELECT 1 FROM error_report_deliveries earlier
      JOIN error_reports er ON er.report_id = earlier.report_id
      WHERE earlier.recipient = d.recipient AND earlier.status IN ?
     AND er.window_end - er.window_start = ? AND er.window_start < r.window_start)`,
-					[]string{MailDeliveryPending, MailDeliveryRetryWait, MailDeliverySending}, DailyReportWindowSeconds)
-			var delivery ErrorReportDelivery
-			candidate := query.Session(&gorm.Session{}).Where("d.recipient > ?", schedule.DeliveryCursor).
-				Order("d.recipient asc").Limit(1).Find(&delivery)
-			if candidate.Error == nil && candidate.RowsAffected == 0 && schedule.DeliveryCursor != "" {
-				candidate = query.Order("d.recipient asc").Limit(1).Find(&delivery)
-			}
-			if candidate.Error != nil {
-				return candidate.Error
-			}
-			if candidate.RowsAffected == 0 {
-				break
-			}
-			result := tx.Model(&ErrorReportDelivery{}).Where("id = ? AND status IN ?", delivery.ID, []string{MailDeliveryPending, MailDeliveryRetryWait}).
-				Updates(map[string]any{"status": MailDeliverySending, "lease_owner": owner, "lease_until": leaseUntil, "attempts": gorm.Expr("attempts + 1"), "updated_at": now})
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected == 0 {
-				break
-			}
-			if err := tx.First(&delivery, delivery.ID).Error; err != nil {
-				return err
-			}
-			deliveries = append(deliveries, &delivery)
-			schedule.DeliveryCursor = delivery.Recipient
+				[]string{MailDeliveryPending, MailDeliveryRetryWait, MailDeliverySending}, DailyReportWindowSeconds)
+		var delivery ErrorReportDelivery
+		candidate := query.Session(&gorm.Session{}).Where("d.recipient > ?", cursor).
+			Order("d.recipient asc").Limit(1).Find(&delivery)
+		if candidate.Error == nil && candidate.RowsAffected == 0 && cursor != "" {
+			candidate = query.Order("d.recipient asc").Limit(1).Find(&delivery)
 		}
-		if len(deliveries) == 0 {
-			return nil
+		if candidate.Error != nil || candidate.RowsAffected == 0 {
+			err = candidate.Error
+			break
 		}
-		return tx.Model(&schedule).Update("delivery_cursor", schedule.DeliveryCursor).Error
-	})
-	if err != nil {
+		result := DB.Model(&ErrorReportDelivery{}).
+			Where("id = ? AND status IN ? AND next_attempt_at <= ?", delivery.ID, pending, now).
+			Where("lease_until IS NULL OR lease_until < ?", now).
+			Updates(map[string]any{"status": MailDeliverySending, "lease_owner": owner, "lease_until": leaseUntil, "attempts": gorm.Expr("attempts + 1"), "updated_at": now})
+		if result.Error != nil {
+			err = result.Error
+			break
+		}
+		if result.RowsAffected == 0 {
+			continue
+		}
+		delivery.Status, delivery.LeaseOwner, delivery.LeaseUntil = MailDeliverySending, owner, &leaseUntil
+		delivery.Attempts++
+		delivery.UpdatedAt = now
+		deliveries = append(deliveries, &delivery)
+		cursor = delivery.Recipient
+	}
+	if len(deliveries) == 0 {
 		return nil, err
+	}
+	if err != nil {
+		common.SysError("the next daily email could not be claimed")
+	}
+	if cursor != schedule.DeliveryCursor {
+		result := DB.Model(&schedule).Where("delivery_cursor = ?", schedule.DeliveryCursor).UpdateColumn("delivery_cursor", cursor)
+		if result.Error != nil {
+			common.SysError("daily email delivery cursor could not be updated")
+		}
 	}
 	return deliveries, nil
 }

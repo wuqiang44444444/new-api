@@ -164,6 +164,13 @@ test('changes a single mail type while keeping other switches independent', asyn
       enabled: true,
     },
     {
+      id: 'customer_wallet_rejection',
+      group: 'alerts',
+      label: 'Requests rejected due to insufficient wallet balance',
+      recipient: 'operations',
+      enabled: false,
+    },
+    {
       id: 'account_created',
       group: 'users',
       label: 'Welcome email',
@@ -197,6 +204,15 @@ test('changes a single mail type while keeping other switches independent', asyn
   })
   expect(overdue).toHaveAttribute('aria-checked', 'true')
   expect(lowBalance).toHaveAttribute('aria-checked', 'true')
+  const walletAlert = screen.getByRole('switch', {
+    name: 'Requests rejected due to insufficient wallet balance',
+  })
+  expect(walletAlert).toHaveAttribute('aria-checked', 'false')
+  fireEvent.click(walletAlert)
+  expect(walletAlert).toHaveAccessibleDescription(
+    'Enabled, but no recipients are configured'
+  )
+  fireEvent.click(walletAlert)
   expect(screen.getByRole('switch', { name: 'Welcome email' })).toHaveAttribute(
     'aria-checked',
     'false'

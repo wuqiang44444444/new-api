@@ -42,6 +42,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { toIntlLocale } from '@/i18n/languages'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import {
   SettingsForm,
@@ -54,14 +56,19 @@ import { useResetForm } from '../hooks/use-reset-form'
 import { useUpdateOption } from '../hooks/use-update-option'
 import { safeNumberFieldProps } from '../utils/numeric-field'
 
-const numericString = z.string().refine((value) => {
+function parseWalletReminderThreshold(value: string) {
   const trimmed = value.trim()
-  if (!trimmed) return true
-  return !Number.isNaN(Number(trimmed)) && Number(trimmed) >= 0
-}, 'Enter a non-negative number or leave empty')
+  const quota = Number(trimmed)
+  return /^\d+$/.test(trimmed) && Number.isSafeInteger(quota) ? quota : null
+}
 
 const monitoringSchema = z.object({
-  QuotaRemindThreshold: numericString,
+  QuotaRemindThreshold: z
+    .string()
+    .refine(
+      (value) => parseWalletReminderThreshold(value) !== null,
+      'Enter a whole number from 0 to 9,007,199,254,740,991'
+    ),
   perf_metrics_setting: z.object({
     enabled: z.boolean(),
     flush_interval: z.coerce.number().min(1),
@@ -125,7 +132,10 @@ const normalizeFormValues = (
 export function MonitoringSettingsSection({
   defaultValues,
 }: MonitoringSettingsSectionProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const quotaPerUnit = useSystemConfigStore(
+    (state) => state.config.currency.quotaPerUnit
+  )
   const updateOption = useUpdateOption()
   const baselineRef = useRef<FlatMonitoringDefaults>(
     normalizeDefaults(defaultValues)
@@ -189,24 +199,48 @@ export function MonitoringSettingsSection({
           <FormField
             control={form.control}
             name='QuotaRemindThreshold'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Quota reminder (tokens)')}</FormLabel>
-                <FormControl>
-                  <Input
-                    type='number'
-                    min={0}
-                    step={1}
-                    value={field.value}
-                    onChange={(event) => field.onChange(event.target.value)}
-                  />
-                </FormControl>
-                <FormDescription>
-                  {t('Send email alerts when a user falls below this quota')}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
+            render={({ field }) => {
+              const quota = parseWalletReminderThreshold(field.value)
+              const amount = quota === null ? Number.NaN : quota / quotaPerUnit
+              const equivalent =
+                Number.isFinite(amount) && amount >= 0
+                  ? new Intl.NumberFormat(toIntlLocale(i18n.language), {
+                      style: 'currency',
+                      currency: 'USD',
+                      maximumSignificantDigits: 6,
+                    }).format(amount)
+                  : null
+              return (
+                <FormItem>
+                  <FormLabel>
+                    {t('Wallet reminder threshold (quota units)')}
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={0}
+                      max={Number.MAX_SAFE_INTEGER}
+                      step={1}
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Enter whole quota units. Use 0 to turn off the site warning for positive balances. Users can set their own threshold.'
+                    )}
+                    {equivalent && (
+                      <span className='block'>
+                        {t('Equivalent in USD: {{amount}}', {
+                          amount: equivalent,
+                        })}
+                      </span>
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )
+            }}
           />
 
           <div>

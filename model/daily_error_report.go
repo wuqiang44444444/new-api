@@ -151,7 +151,7 @@ func ReadDailyOperationsCounts(ctx context.Context, start, end int64) ([]DailyRe
 		Select("type AS label, COUNT(*) AS count").Group("type").Order("count DESC, type ASC").Limit(24).Scan(&tasks).Error; err != nil {
 		return nil, nil, err
 	}
-	err := DB.WithContext(ctx).Model(&ResourceAlertEpisode{}).Where("opened_at >= ? AND opened_at < ? AND resource NOT IN ?", start, end, []string{EvidenceCleanupAlertResource, WalletReceiptMail, WalletRiskMail, WalletSummaryMail, PersonalUsageReportMail, PlatformUsageReportMail, CustomerStatusReportMail}).
+	err := DB.WithContext(ctx).Model(&ResourceAlertEpisode{}).Where("opened_at >= ? AND opened_at < ? AND resource NOT IN ?", start, end, []string{EvidenceCleanupAlertResource, WalletReceiptMail, WalletRiskMail, WalletSummaryMail, PersonalUsageReportMail, PlatformUsageReportMail, CustomerStatusReportMail, CustomerWalletRejectionMail, WalletLowNoticeMail}).
 		Select("resource AS label, COUNT(*) AS count").Group("resource").Order("resource ASC").Scan(&resources).Error
 	return tasks, resources, err
 }

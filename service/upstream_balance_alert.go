@@ -213,5 +213,8 @@ func renderUpstreamBalanceAlert(connection UpstreamBalanceConnection, result Ups
 	}
 	body.WriteString(`</ul><p>多个 Key 可能共用同一账户，请勿合计。 / Keys may share an account. Do not add these balances together.</p>
 <p>每 10 分钟检查一次。持续低余额每 24 小时再次提醒，恢复后再次跌破会重新提醒。 / Checked every 10 minutes. Reminders repeat every 24 hours while low or after a new drop following recovery.</p>`)
-	return renderOperationsMail("上游低余额提醒 / Low upstream balance", body.String())
+	if link := consoleMailLink("/channels"); link != "" {
+		writeReportMailLink(&body, link, "查看关联渠道 / Review affected channels")
+	}
+	return RenderMailTemplate("上游低余额提醒 / Low upstream balance", body.String())
 }

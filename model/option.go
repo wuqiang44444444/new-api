@@ -397,6 +397,13 @@ func UpdateOptionsBulk(values map[string]string) error {
 }
 
 func updateOptionMap(key string, value string) (err error) {
+	var walletReminderThreshold int
+	if key == "QuotaRemindThreshold" {
+		walletReminderThreshold, err = operation_setting.ParseWalletReminderThreshold(value)
+		if err != nil {
+			return err
+		}
+	}
 	if key == system_setting.TaskRequestEvidenceRetentionOptionKey {
 		if err := validateOptionValue(key, value); err != nil {
 			return err
@@ -681,7 +688,7 @@ func updateOptionMap(key string, value string) (err error) {
 	case "QuotaForInvitee":
 		common.QuotaForInvitee, _ = strconv.Atoi(value)
 	case "QuotaRemindThreshold":
-		common.QuotaRemindThreshold, _ = strconv.Atoi(value)
+		common.QuotaRemindThreshold = walletReminderThreshold
 	case "PreConsumedQuota":
 		common.PreConsumedQuota, _ = strconv.Atoi(value)
 	case "ModelRequestRateLimitCount":

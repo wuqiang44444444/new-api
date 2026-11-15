@@ -37,6 +37,7 @@ const (
 	MsgDistributorInvalidParseModel            = "distributor.invalid_request_parse_model"
 
 	MsgQuotaUserInsufficient             = "quota.user_insufficient"
+	MsgBatchQuotaInsufficient            = "quota.batch_insufficient"
 	MsgQuotaPreConsumeInsufficient       = "quota.pre_consume_insufficient"
 	MsgQuotaSubscriptionInsufficient     = "quota.subscription_insufficient"
 	MsgRelayModelPriceNotConfigured      = "relay.model_price_not_configured"
@@ -70,6 +71,7 @@ const (
 // Lifecycle and operations mail templates.
 const (
 	MsgMailAccountCreatedSubject = "notify.account_created.subject"
+	MsgMailOpenConsole           = "notify.open_console"
 	MsgMailAccountCreatedBody    = "notify.account_created.body"
 	MsgMailTokenCreatedSubject   = "notify.token_created.subject"
 	MsgMailTokenCreatedBody      = "notify.token_created.body"
@@ -79,6 +81,11 @@ const (
 
 // Low-quota notices, in the recipient's saved language
 const (
+	MsgNotifyWalletOpen                = "notify.wallet_open"
+	MsgNotifyWalletLowTitle            = "notify.wallet_low_title"
+	MsgNotifyWalletLowEmail            = "notify.wallet_low_email"
+	MsgNotifyWalletRejectedTitle       = "notify.wallet_rejected_title"
+	MsgNotifyWalletRejectedEmail       = "notify.wallet_rejected_email"
 	MsgNotifyQuotaLowTitle             = "notify.quota_low_title"
 	MsgNotifySubscriptionQuotaLowTitle = "notify.subscription_quota_low_title"
 	MsgNotifyQuotaLowBark              = "notify.quota_low_bark"
@@ -93,6 +100,7 @@ const (
 	MsgChannelNotifyEnabledSubject  = "channel.notify_enabled_subject"
 	MsgChannelNotifyEnabledContent  = "channel.notify_enabled_content"
 	MsgChannelTestCompletedSubject  = "channel.test_completed_subject"
+	MsgChannelDisableReview         = "channel.disable_review"
 	MsgChannelTestCompletedContent  = "channel.test_completed_content"
 	MsgChannelResponseTimeExceeded  = "channel.response_time_exceeded"
 

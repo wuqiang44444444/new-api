@@ -34,6 +34,7 @@ const (
 	MailDisk                 MailType = "resource_disk"
 	MailEvidenceCleanup      MailType = "evidence_cleanup"
 	MailVideoFunds           MailType = "video_funds"
+	MailWalletRejection      MailType = "customer_wallet_rejection"
 	MailWalletRisk           MailType = "wallet_risk"
 	MailDailyErrors          MailType = "daily_errors"
 	MailPlatformUsage        MailType = "platform_usage"
@@ -72,6 +73,7 @@ var mailTypes = []MailTypeDefinition{
 	{MailDisk, "alerts", "Disk threshold alert", "operations"},
 	{MailEvidenceCleanup, "alerts", "Evidence cleanup failure", "operations"},
 	{MailVideoFunds, "alerts", "Video refund or hold release failure", "root"},
+	{MailWalletRejection, "alerts", "Requests rejected due to insufficient wallet balance", "operations"},
 	{MailWalletRisk, "alerts", "High-risk wallet change", "finance"},
 	{MailDailyErrors, "reports", "Daily system error report", "operations"},
 	{MailPlatformUsage, "reports", "Daily platform usage report", "operations"},
@@ -114,21 +116,22 @@ func (p MailPreferences) Allows(kind MailType, queuedAt time.Time) bool {
 }
 
 func LoadMailPreferences(ctx context.Context) (MailPreferences, error) {
-	return loadMailPreferences(DB.WithContext(ctx), false)
+	return loadMailPreferences(DB.WithContext(ctx))
 }
 
-func loadMailPreferences(tx *gorm.DB, lock bool) (MailPreferences, error) {
-	if lock {
-		tx = lockForUpdate(tx)
-	}
+func loadMailPreferences(tx *gorm.DB) (MailPreferences, error) {
 	var row Option
-	result := tx.Where(&Option{Key: mailPreferencesOption}).Find(&row)
+	return readMailPreferences(tx, &row)
+}
+
+func readMailPreferences(tx *gorm.DB, row *Option) (MailPreferences, error) {
+	result := tx.Where(&Option{Key: mailPreferencesOption}).Find(row)
 	if result.Error != nil {
 		return MailPreferences{}, result.Error
 	}
 	prefs := MailPreferences{Types: make(map[MailType]MailPreference, len(mailTypes))}
 	for _, kind := range mailTypes {
-		prefs.Types[kind.ID] = MailPreference{Enabled: kind.ID != MailWelcome && kind.ID != MailTokenCreated}
+		prefs.Types[kind.ID] = MailPreference{Enabled: kind.ID != MailWelcome && kind.ID != MailTokenCreated && kind.ID != MailWalletRejection}
 	}
 	if row.Value != "" {
 		var saved MailPreferences
@@ -211,38 +214,48 @@ func saveMailPreferences(ctx context.Context, changes map[MailType]bool, finance
 				}
 			}
 		}
+		var previous Option
 		var err error
-		prefs, err = loadMailPreferences(tx, true)
+		prefs, err = readMailPreferences(tx, &previous)
 		if err != nil {
 			return err
 		}
 		now := time.Now().UnixNano()
+		var changed []MailType
 		for kind, enabled := range changes {
 			old := prefs.Types[kind]
-			if old.Enabled == enabled {
-				continue
-			}
-			old.Enabled, old.ChangedAt = enabled, now
-			if enabled {
-				if err := queueOpenIncidentMail(tx, kind, now); err != nil {
-					return err
-				}
-			} else if err := stopPendingMail(tx, kind); err != nil {
-				return err
-			}
-			prefs.Types[kind] = old
-		}
-		if finance != nil {
-			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "key"}}, DoUpdates: clause.AssignmentColumns([]string{"value"})}).Create(&Option{Key: financeMailRecipientsOption, Value: *finance}).Error; err != nil {
-				return err
+			if old.Enabled != enabled {
+				prefs.Types[kind] = MailPreference{Enabled: enabled, ChangedAt: now}
+				changed = append(changed, kind)
 			}
 		}
 		raw, err := common.Marshal(prefs)
 		if err != nil {
 			return err
 		}
-		if err := tx.Model(&Option{}).Where(&Option{Key: mailPreferencesOption}).Update("value", string(raw)).Error; err != nil {
-			return err
+		if string(raw) != previous.Value {
+			result := tx.Model(&Option{}).Where(&Option{Key: mailPreferencesOption}).
+				Where("value = ?", previous.Value).Update("value", string(raw))
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return errors.New("mail preferences changed, retry the update")
+			}
+		}
+		for _, kind := range changed {
+			if prefs.Enabled(kind) {
+				if err := queueOpenIncidentMail(tx, kind, now); err != nil {
+					return err
+				}
+			} else if err := stopPendingMail(tx, kind); err != nil {
+				return err
+			}
+		}
+		if finance != nil {
+			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "key"}}, DoUpdates: clause.AssignmentColumns([]string{"value"})}).Create(&Option{Key: financeMailRecipientsOption, Value: *finance}).Error; err != nil {
+				return err
+			}
 		}
 		return tx.Where(clause.IN{Column: clause.Column{Name: "key"}, Values: []any{legacyWelcomeOption, legacyTokenCreatedOption}}).Delete(&Option{}).Error
 	})
@@ -277,7 +290,8 @@ var resourceMailTypes = map[string]MailType{
 	"cpu": MailCPU, "memory": MailMemory, "disk_data": MailDisk, "disk_log": MailDisk,
 	EvidenceCleanupAlertResource: MailEvidenceCleanup, WalletRiskMail: MailWalletRisk, WalletReceiptMail: MailWalletReceipt,
 	WalletSummaryMail: MailWalletSummary, PersonalUsageReportMail: MailPersonalUsage, PlatformUsageReportMail: MailPlatformUsage,
-	CustomerStatusReportMail: MailCustomerStatus,
+	CustomerStatusReportMail:    MailCustomerStatus,
+	CustomerWalletRejectionMail: MailWalletRejection, WalletLowNoticeMail: MailWalletLow,
 }
 
 func ChannelAlertMailType(kind string) MailType { return channelMailTypes[kind] }
@@ -304,10 +318,6 @@ func resourceMailKinds(kind MailType) []string {
 
 func isManagedMailOption(key string) bool {
 	return key == mailPreferencesOption || key == financeMailRecipientsOption || strings.HasPrefix(key, "notification_setting.send_email_on_")
-}
-
-func MailPreferencesInTransaction(tx *gorm.DB) (MailPreferences, error) {
-	return loadMailPreferences(tx, true)
 }
 
 func QueuedMailTime(nanos, seconds int64) time.Time {

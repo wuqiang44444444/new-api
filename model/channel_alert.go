@@ -11,14 +11,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-var errChannelAlertStale = errors.New("stale channel alert evidence")
 
 const (
 	ChannelAlertClosedRecovered     = "recovered"
@@ -32,27 +29,33 @@ type ChannelAlertTaskScope struct {
 }
 
 type ChannelAlertEpisode struct {
-	ID              int64   `gorm:"primaryKey"`
-	OpenKey         *string `gorm:"type:char(64);uniqueIndex"`
-	ScopeKey        string  `gorm:"type:char(64);index:idx_channel_alert_scope_closed,priority:1"`
-	ChannelID       int     `gorm:"index"`
-	Revision        string  `gorm:"type:char(32)"`
-	Model           string  `gorm:"type:varchar(128)"`
-	Operation       string  `gorm:"type:varchar(48)"`
-	Node            string  `gorm:"type:varchar(128)"`
-	Kind            string  `gorm:"type:varchar(24)"`
-	KeySlot         int
-	StatusCode      int
-	FirstAt         int64
-	LastAt          int64
-	ConfirmedAt     int64
-	MailPending     bool   `gorm:"index"`
-	ClosedAt        int64  `gorm:"index:idx_channel_alert_scope_closed,priority:2;index"`
-	CloseReason     string `gorm:"type:varchar(24)"`
-	CredentialSlots []int  `gorm:"-"`
-	EvidenceCount   int
-	RuleVersion     int
-	Preview         bool `gorm:"index"`
+	ID               int64   `gorm:"primaryKey"`
+	OpenKey          *string `gorm:"type:char(64);uniqueIndex"`
+	ScopeKey         string  `gorm:"type:char(64);index:idx_channel_alert_scope_closed,priority:1"`
+	ChannelID        int     `gorm:"index"`
+	ChannelName      string  `gorm:"type:text"`
+	Revision         string  `gorm:"type:char(32)"`
+	Model            string  `gorm:"type:varchar(128)"`
+	Operation        string  `gorm:"type:varchar(48)"`
+	Node             string  `gorm:"type:varchar(128)"`
+	Kind             string  `gorm:"type:varchar(24)"`
+	KeySlot          int
+	StatusCode       int
+	LastErrorReason  string `gorm:"type:varchar(48)"`
+	LastRequestID    string `gorm:"type:varchar(96)"`
+	FirstAt          int64
+	LastAt           int64
+	ConfirmedAt      int64
+	MailPending      bool                     `gorm:"index"`
+	ClosedAt         int64                    `gorm:"index:idx_channel_alert_scope_closed,priority:2;index"`
+	CloseReason      string                   `gorm:"type:varchar(24)"`
+	CredentialSlots  []int                    `gorm:"-"`
+	MailEvidenceHTML string                   `gorm:"type:text" json:"-"`
+	MailSamples      []ChannelMailObservation `gorm:"-" json:"-"`
+	MailSamplesJSON  string                   `gorm:"type:text" json:"-"`
+	EvidenceCount    int
+	RuleVersion      int
+	Preview          bool `gorm:"index"`
 }
 
 type ChannelAlertDelivery struct {
@@ -123,57 +126,37 @@ func ChannelAlertCredentialSlots(channel *Channel) []int {
 	return slots
 }
 
-// OpenChannelAlert atomically commits one incident and its per-recipient work.
-func OpenChannelAlert(ctx context.Context, episode ChannelAlertEpisode, recipients []string) (bool, error) {
+// OpenChannelAlert records the incident and marks it for independent mail preparation.
+func OpenChannelAlert(ctx context.Context, episode ChannelAlertEpisode) (bool, error) {
+	db := DB.WithContext(ctx)
 	var existing ChannelAlertEpisode
-	if err := DB.WithContext(ctx).Select("id").Where("open_key = ?", episode.OpenKey).Limit(1).Find(&existing).Error; err != nil || existing.ID > 0 {
+	if err := db.Select("id").Where("open_key = ?", episode.OpenKey).Limit(1).Find(&existing).Error; err != nil || existing.ID > 0 {
 		return false, err
 	}
-	opened := false
-	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if len(recipients) > 0 {
-			prefs, err := incidentMailPreferences(tx)
-			episode.MailPending = err != nil
-			if episode.MailPending || !prefs.Allows(ChannelAlertMailType(episode.Kind), time.UnixMilli(episode.FirstAt)) {
-				recipients = nil
-			}
+	var channel Channel
+	if err := db.First(&channel, episode.ChannelID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
 		}
-		// Writing first also obtains the SQLite writer lock. A stale candidate
-		// rolls back this tentative insert together with its open-key claim.
-		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&episode)
-		if result.Error != nil || result.RowsAffected == 0 {
-			return result.Error
-		}
-		var channel Channel
-		if err := lockForUpdate(tx).First(&channel, episode.ChannelID).Error; err != nil {
-			return err
-		}
-		revision, err := CurrentChannelAlertRevision(tx, &channel, episode.Operation, episode.Revision)
-		if err != nil {
-			return err
-		}
-		if revision != episode.Revision || episode.Kind == "credential" && channel.ChannelInfo.IsMultiKey &&
-			!slices.Equal(ChannelAlertCredentialSlots(&channel), episode.CredentialSlots) {
-			return errChannelAlertStale
-		}
-		var superseded int64
-		if err := tx.Model(&ChannelAlertEpisode{}).
-			Where("scope_key = ? AND closed_at >= ?", episode.ScopeKey, episode.FirstAt).Count(&superseded).Error; err != nil {
-			return err
-		}
-		if superseded > 0 {
-			return errChannelAlertStale
-		}
-		if err := queueChannelAlertMail(tx, episode.ID, recipients, time.Now().UnixNano()); err != nil {
-			return err
-		}
-		opened = true
-		return nil
-	})
-	if err == errChannelAlertStale || err == gorm.ErrRecordNotFound {
+		return false, err
+	}
+	revision, err := CurrentChannelAlertRevision(db, &channel, episode.Operation, episode.Revision)
+	if err != nil {
+		return false, err
+	}
+	if revision != episode.Revision || episode.Kind == "credential" && channel.ChannelInfo.IsMultiKey &&
+		!slices.Equal(ChannelAlertCredentialSlots(&channel), episode.CredentialSlots) {
 		return false, nil
 	}
-	return opened && err == nil, err
+	var superseded int64
+	if err := db.Model(&ChannelAlertEpisode{}).
+		Where("scope_key = ? AND closed_at >= ?", episode.ScopeKey, episode.FirstAt).Count(&superseded).Error; err != nil || superseded > 0 {
+		return false, err
+	}
+	episode.ChannelName = common.SanitizeTaskDiagnostic(channel.Name)
+	episode.MailPending = !episode.Preview
+	result := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&episode)
+	return result.RowsAffected == 1 && result.Error == nil, result.Error
 }
 
 func queueChannelAlertMail(tx *gorm.DB, id int64, recipients []string, queuedAt int64) error {

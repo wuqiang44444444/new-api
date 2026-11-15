@@ -44,7 +44,7 @@ func TestMailPreferencesGateEveryMailTypeIndependently(t *testing.T) {
 
 func TestMailPreferencesStopsPendingRowsAndPreservesOperationalFacts(t *testing.T) {
 	db := withErrorReportTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.ChannelAlertDelivery{}, &model.User{}, &model.WalletOperation{}))
+	require.NoError(t, db.AutoMigrate(&model.ChannelAlertDelivery{}, &model.User{}, &model.WalletOperation{}, &model.WalletOperationMailPrepared{}))
 	ctx := context.Background()
 	require.NoError(t, model.UpdateOption("error_report_setting.recipients", "ops@example.com"))
 	t.Setenv("FINANCE_MAIL_RECIPIENTS", "finance@example.com")
@@ -60,8 +60,10 @@ func TestMailPreferencesStopsPendingRowsAndPreservesOperationalFacts(t *testing.
 	require.NoError(t, db.Create(&model.ErrorReportDelivery{Status: model.MailDeliveryRetryWait, Recipient: "ops@example.com", NextAttemptAt: now.Add(time.Hour).Unix()}).Error)
 	user := model.User{Username: "mail-fixture", Email: "account@example.com", Quota: 100, Status: common.UserStatusEnabled}
 	require.NoError(t, db.Create(&user).Error)
-	_, err := model.AdjustUserQuotaWithMail(user.Id, common.RoleRootUser, "subtract", 100, 42, QueueWalletOperationMail)
+	_, err := model.AdjustUserQuotaByAdmin(user.Id, common.RoleRootUser, "subtract", 100, 42)
 	require.NoError(t, err)
+	require.NoError(t, queueWalletOperationMails(ctx))
+	require.NoError(t, model.RetryIncidentMail(ctx, true))
 	_, err = model.UpdateMailPreferences(ctx, map[model.MailType]bool{
 		model.MailChannelBalance: false, model.MailDailyErrors: false, model.MailWalletReceipt: false, model.MailWalletRisk: false, model.MailCPU: false,
 	}, nil)
@@ -69,7 +71,7 @@ func TestMailPreferencesStopsPendingRowsAndPreservesOperationalFacts(t *testing.
 	require.NoError(t, confirmChannelAlert(ctx, episode("balance-2", "upstream_balance"), now))
 	_, err = observeResourceAlert(ctx, "fixture", resourceObservation{"cpu", "CPU", 96, 85}, now.Unix())
 	require.NoError(t, err)
-	_, err = model.AdjustUserQuotaWithMail(user.Id, common.RoleRootUser, "add", 10, 42, QueueWalletOperationMail)
+	_, err = model.AdjustUserQuotaByAdmin(user.Id, common.RoleRootUser, "add", 10, 42)
 	require.NoError(t, err)
 	var count int64
 	require.NoError(t, db.Model(&model.ChannelAlertEpisode{}).Count(&count).Error)
@@ -93,7 +95,7 @@ func TestMailPreferencesStopsPendingRowsAndPreservesOperationalFacts(t *testing.
 	sent, err := deliverChannelAlertMail("mail-policy", common.SendEmailContext, time.Now)
 	require.NoError(t, err)
 	require.True(t, sent)
-	requireLocalMail(t, inbox, "Channel outage", "ops@example.com")
+	requireLocalMail(t, inbox, "Channel alert", "ops@example.com")
 	sent, err = deliverChannelAlertMail("mail-policy", common.SendEmailContext, time.Now)
 	require.NoError(t, err)
 	assert.False(t, sent)

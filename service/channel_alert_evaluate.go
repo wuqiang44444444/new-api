@@ -1,6 +1,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -192,15 +193,29 @@ func channelAlertCandidate(group channelAlertGroup, samples []channelAlertSample
 	if len(eligible) < threshold || (group.kind == channelAlertLimit && success == 0) {
 		return model.ChannelAlertEpisode{}, false
 	}
-	var first, last int64
-	status := 0
+	var first int64
+	newest := make([]channelAlertSample, 0, model.MailErrorLimit+1)
 	for _, sample := range eligible {
 		if first == 0 || sample.At < first {
 			first = sample.At
 		}
-		if sample.At > last {
-			last, status = sample.At, sample.Status
+		newest = append(newest, sample)
+		slices.SortFunc(newest, func(a, b channelAlertSample) int {
+			if order := cmp.Compare(b.At, a.At); order != 0 {
+				return order
+			}
+			return cmp.Compare(b.ID, a.ID)
+		})
+		newest = newest[:min(len(newest), model.MailErrorLimit)]
+	}
+	last := newest[0]
+	mailSamples := make([]model.ChannelMailObservation, 0, len(newest))
+	for _, s := range newest {
+		snapshot := model.ChannelMailObservation{At: s.At, Status: s.Status, Reason: string(s.Reason)}
+		if s.HasRequestID {
+			snapshot.RequestID = s.ID
 		}
+		mailSamples = append(mailSamples, snapshot)
 	}
 	scope := group.scope
 	kind := string(group.kind)
@@ -209,10 +224,15 @@ func channelAlertCandidate(group channelAlertGroup, samples []channelAlertSample
 		// An exhausted connection can reject many models and operations.
 		modelName, operation = "", ""
 	}
+	var requestID string
+	if last.HasRequestID {
+		requestID = last.ID
+	}
 	key := channelAlertDigest(strconv.Itoa(scope.Channel), scope.Revision, modelName, operation, strconv.Itoa(scope.Slot), group.node, kind)
 	return model.ChannelAlertEpisode{
 		OpenKey: &key, ScopeKey: key, ChannelID: scope.Channel, Revision: scope.Revision, Model: scope.Model, Operation: scope.Operation,
-		Node: group.node, Kind: kind, KeySlot: scope.Slot, StatusCode: status, FirstAt: first, LastAt: last, EvidenceCount: len(eligible), RuleVersion: channelAlertRule,
+		Node: group.node, Kind: kind, KeySlot: scope.Slot, StatusCode: last.Status, FirstAt: first, LastAt: last.At,
+		MailSamples: mailSamples, LastErrorReason: string(last.Reason), LastRequestID: requestID, EvidenceCount: len(eligible), RuleVersion: channelAlertRule,
 	}, true
 }
 
@@ -299,7 +319,8 @@ func evaluateChannelAlertWindow(ctx context.Context, window channelAlertWindowSt
 	}
 	evidence := window.evidence(nodes)
 	var open []model.ChannelAlertEpisode
-	if err := model.DB.WithContext(ctx).Where("closed_at = 0 AND open_key IS NOT NULL AND (preview = ? OR preview IS NULL)", false).Find(&open).Error; err != nil {
+	if err := model.DB.WithContext(ctx).Omit("MailEvidenceHTML", "MailSamplesJSON").
+		Where("closed_at = 0 AND open_key IS NOT NULL AND (preview = ? OR preview IS NULL)", false).Find(&open).Error; err != nil {
 		return err
 	}
 	opened := make(map[string]bool, len(open))
@@ -470,13 +491,13 @@ func runDefiniteChannelAlerts() {
 }
 
 func confirmChannelAlert(ctx context.Context, episode model.ChannelAlertEpisode, now time.Time) error {
-	recipients, err := model.GetOperationsMailRecipients(ctx)
-	if err != nil {
-		common.SysError("could not read channel alert recipients")
-		episode.MailPending = true
-	}
 	episode.ConfirmedAt = now.UnixMilli()
-	opened, err := model.OpenChannelAlert(ctx, episode, recipients)
+	if len(episode.MailSamples) > 0 {
+		if samples, err := common.Marshal(episode.MailSamples); err == nil {
+			episode.MailSamplesJSON = string(samples)
+		}
+	}
+	opened, err := model.OpenChannelAlert(ctx, episode)
 	if opened {
 		channelAlerts.stats.Confirmed.Add(1)
 		common.SysLog(fmt.Sprintf("channel alert confirmed channel_id=%d kind=%s observation_ms=%d processing_ms=%d", episode.ChannelID, episode.Kind, episode.ConfirmedAt-episode.FirstAt, episode.ConfirmedAt-episode.LastAt))

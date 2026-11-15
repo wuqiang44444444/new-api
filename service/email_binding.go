@@ -179,12 +179,12 @@ func generateEmailBindingCodes(requireOld bool) (emailBindingCodes, error) {
 
 func sendEmailBindingCodes(state model.EmailBindingState, codes emailBindingCodes) error {
 	subject, content := renderEmailBindingCode(codes.New, false)
-	if err := common.SendAccountEmail(context.Background(), subject, state.Email, content); err != nil {
+	if err := common.SendAccountEmail(context.Background(), subject, state.Email, RenderMailTemplate(subject, content)); err != nil {
 		return err
 	}
 	if codes.Old != "" {
 		subject, content = renderEmailBindingCode(codes.Old, true)
-		return common.SendAccountEmail(context.Background(), subject, state.CurrentEmail, content)
+		return common.SendAccountEmail(context.Background(), subject, state.CurrentEmail, RenderMailTemplate(subject, content))
 	}
 	return nil
 }

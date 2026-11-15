@@ -5,13 +5,21 @@ import (
 	"html"
 	"net/url"
 	"strings"
+
+	"github.com/QuantumNous/new-api/setting/system_setting"
 )
 
 func consoleMailLink(path string) string {
-	address, err := url.Parse(PaymentReturnURL(path))
+	address, err := url.Parse(strings.TrimSpace(system_setting.ServerAddress))
 	if err != nil || address.Host == "" || address.User != nil || (address.Scheme != "https" && address.Scheme != "http") {
 		return ""
 	}
+	endpoint, err := url.Parse(path)
+	if err != nil || endpoint.Host != "" || endpoint.Scheme != "" || !strings.HasPrefix(endpoint.Path, "/") {
+		return ""
+	}
+	address.Path = strings.TrimRight(address.Path, "/") + endpoint.Path
+	address.RawPath, address.RawQuery, address.Fragment, address.ForceQuery = "", endpoint.RawQuery, endpoint.Fragment, false
 	return address.String()
 }
 
@@ -19,10 +27,9 @@ func writeReportMailLink(body *strings.Builder, address, label string) {
 	fmt.Fprintf(body, `<p style="margin:12px 0 18px"><a href="%s" style="background:#12665e;color:#fff;display:inline-block;padding:10px 14px;text-decoration:none">%s</a></p>`, html.EscapeString(address), html.EscapeString(label))
 }
 
-// The outer table and inline styles keep the layout readable in Outlook and
-// other mail clients that strip embedded styles. Body fragments are rendered
-// by the operations templates from escaped data.
-func renderOperationsMail(title, bodyHTML string) string {
+// RenderMailTemplate wraps a rendered HTML fragment. The outer table and inline styles keep the layout readable in Outlook and
+// other mail clients that strip embedded styles. Callers escape dynamic body content.
+func RenderMailTemplate(title, bodyHTML string) string {
 	return `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
 <body style="margin:0;background:#eef2f6;color:#17263a;font-family:Arial,'Microsoft YaHei',sans-serif">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef2f6">

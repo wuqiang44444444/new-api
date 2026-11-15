@@ -9,34 +9,48 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
 // WalletOperation is the committed fact for manual wallet changes and top-up
 // completions. It is separate from best-effort audit and usage logs.
 type WalletOperation struct {
-	ID        int64 `gorm:"primaryKey"`
-	UserID    int
-	ActorID   int
-	Kind      string `gorm:"type:varchar(24)"`
-	Before    int    `gorm:"column:quota_before"`
-	After     int    `gorm:"column:quota_after"`
-	CreatedAt int64  `gorm:"type:bigint;index"`
+	ID           int64 `gorm:"primaryKey"`
+	UserID       int
+	ActorID      int
+	Kind         string `gorm:"type:varchar(24)"`
+	Before       int    `gorm:"column:quota_before"`
+	After        int    `gorm:"column:quota_after"`
+	CreatedAt    int64  `gorm:"type:bigint;index"`
+	MailEligible bool   `gorm:"index"`
 }
 
-type WalletMailBuilder func(tx *gorm.DB, operation WalletOperation) error
+// WalletOperationMailPrepared is mail bookkeeping. Mail workers never
+// update the wallet ledger or a customer balance.
+type WalletOperationMailPrepared struct {
+	OperationID int64 `gorm:"primaryKey;autoIncrement:false"`
+}
 
-func RecordWalletOperation(tx *gorm.DB, operation WalletOperation, build WalletMailBuilder) error {
+func PendingWalletOperationMails(ctx context.Context) ([]WalletOperation, error) {
+	db := DB.WithContext(ctx)
+	prepared := db.Model(&WalletOperationMailPrepared{}).Select("operation_id")
+	var operations []WalletOperation
+	err := db.Where("mail_eligible = ? AND id NOT IN (?)", true, prepared).Order("id").Limit(32).Find(&operations).Error
+	return operations, err
+}
+
+func MarkWalletOperationMailPrepared(ctx context.Context, id int64) error {
+	return DB.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&WalletOperationMailPrepared{OperationID: id}).Error
+}
+
+func RecordWalletOperation(tx *gorm.DB, operation WalletOperation) error {
 	if operation.Before == operation.After {
 		return nil
 	}
-	if err := tx.Create(&operation).Error; err != nil {
-		return err
-	}
-	if build != nil {
-		return build(tx, operation)
-	}
-	return nil
+	operation.MailEligible = operation.ActorID > 0
+	return tx.Create(&operation).Error
 }
 
 func FinanceMailRecipients(tx *gorm.DB) ([]string, error) {

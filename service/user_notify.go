@@ -17,13 +17,22 @@ import (
 )
 
 func NotifyRootUser(kind model.MailType, t string, subject string, content string) {
+	notifyRootUser(kind, t, subject, content, "")
+}
+
+func notifyRootUser(kind model.MailType, t, subject, content, emailHTML string) {
 	queuedAt := time.Now()
 	if !EnqueueMailWork(func() {
 		root := model.GetRootUser()
 		if root == nil || root.Id <= 0 {
 			return
 		}
-		if err := notifyUser(kind, queuedAt, root.Id, root.Email, root.GetSetting(), dto.NewNotify(t, subject, content, nil), true); err != nil {
+		settings := root.GetSetting()
+		body, plainText := content, true
+		if emailHTML != "" && (settings.NotifyType == "" || settings.NotifyType == dto.NotifyTypeEmail) {
+			body, plainText = emailHTML, false
+		}
+		if err := notifyUser(kind, queuedAt, root.Id, root.Email, settings, dto.NewNotify(t, subject, body, nil), plainText); err != nil {
 			common.SysLog(common.LogText("failed to notify root user: %s", err.Error()))
 		}
 	}) {
@@ -52,7 +61,16 @@ func NotifyUpstreamModelUpdateWatchers(render func(lang string) (subject string,
 			continue
 		}
 		subject, content := render(userSetting.Language)
-		if err := notifyUser(model.MailUpstreamModels, startedAt, user.Id, user.Email, userSetting, dto.NewNotify(dto.NotifyTypeChannelUpdate, subject, content, nil), true); err != nil {
+		plainText := true
+		if userSetting.NotifyType == "" || userSetting.NotifyType == dto.NotifyTypeEmail {
+			var body strings.Builder
+			body.WriteString("<p>" + strings.ReplaceAll(html.EscapeString(content), "\n", "<br>\n") + "</p>")
+			if link := consoleMailLink("/channels"); link != "" {
+				writeReportMailLink(&body, link, "打开渠道管理 / Open channel management")
+			}
+			content, plainText = body.String(), false
+		}
+		if err := notifyUser(model.MailUpstreamModels, startedAt, user.Id, user.Email, userSetting, dto.NewNotify(dto.NotifyTypeChannelUpdate, subject, content, nil), plainText); err != nil {
 			common.SysLog(common.LogText("failed to notify user %d for upstream model update: %s", user.Id, err.Error()))
 			continue
 		}
@@ -139,9 +157,9 @@ func sendEmailNotify(kind model.MailType, queuedAt time.Time, userEmail string, 
 		content = strings.Replace(content, dto.ContentValueParam, fmt.Sprintf("%v", value), 1)
 	}
 	if plainText {
-		content = strings.ReplaceAll(html.EscapeString(content), "\n", "<br>\n")
+		content = "<p>" + strings.ReplaceAll(html.EscapeString(content), "\n", "<br>\n") + "</p>"
 	}
-	return sendManagedNotice(kind, queuedAt, data.Title, userEmail, content)
+	return sendManagedNotice(kind, queuedAt, data.Title, userEmail, RenderMailTemplate(data.Title, content))
 }
 
 func sendBarkNotify(barkURL string, data dto.Notify) error {

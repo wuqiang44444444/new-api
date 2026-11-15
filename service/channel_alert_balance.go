@@ -209,7 +209,7 @@ func watchRelayChannelBalance(c *gin.Context, response *http.Response, operation
 		(response.Body == nil || response.ContentLength > channelAlertBalanceBodyLimit || response.StatusCode < 400 && !applicationErrors) {
 		return nil
 	}
-	scope, id := relayBalanceObservation(c, operation)
+	scope, id, hasRequestID := relayBalanceObservation(c, operation)
 	if scope.Channel == 0 {
 		return nil
 	}
@@ -226,21 +226,21 @@ func watchRelayChannelBalance(c *gin.Context, response *http.Response, operation
 	watchChannelBalanceResponse(response, profile, applicationErrors, func(balance bool) {
 		if balance {
 			observed.Store(true)
-			recordChannelAlert(scope, id, channelAlertBalance, status)
+			recordChannelAlertSample(scope, channelAlertSample{ID: id, Kind: channelAlertBalance, Status: status, HasRequestID: hasRequestID})
 		}
 	})
 	return observed
 }
 
 func recordRelayChannelBalance(c *gin.Context, operation string, status int) {
-	scope, id := relayBalanceObservation(c, operation)
-	recordChannelAlert(scope, id, channelAlertBalance, status)
+	scope, id, hasRequestID := relayBalanceObservation(c, operation)
+	recordChannelAlertSample(scope, channelAlertSample{ID: id, Kind: channelAlertBalance, Status: status, HasRequestID: hasRequestID})
 }
 
-func relayBalanceObservation(c *gin.Context, operation string) (channelAlertScope, string) {
+func relayBalanceObservation(c *gin.Context, operation string) (channelAlertScope, string, bool) {
 	snapshot := ChannelAlertSelection(c)
 	if snapshot == nil {
-		return channelAlertScope{}, ""
+		return channelAlertScope{}, "", false
 	}
 	scope := channelAlertScope{
 		Channel: common.GetContextKeyInt(c, constant.ContextKeyChannelId), Revision: snapshot.Revision,
@@ -248,9 +248,9 @@ func relayBalanceObservation(c *gin.Context, operation string) (channelAlertScop
 	}
 	id := c.GetString(common.RequestIdKey)
 	if id == "" {
-		id = common.NewRequestId()
+		return scope, common.NewRequestId(), false
 	}
-	return scope, id
+	return scope, id, true
 }
 
 // ObserveChannelSocketBalance handles provider error frames without an HTTP error.

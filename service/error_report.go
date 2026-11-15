@@ -191,16 +191,7 @@ func (h *errorReportHandler) deliverClaims(ctx context.Context, runnerID string)
 		if sendErr == nil && part == nil {
 			sendErr = errors.New("report part unavailable")
 		}
-		recipients, err = model.GetOperationsMailRecipients(ctx)
-		if err != nil {
-			_, finishErr := model.FinishErrorReportDelivery(claim.ID, owner, model.MailDeliveryRetryWait, "", "", now+60, 0)
-			return attempted, accepted, errors.Join(failures, err, finishErr)
-		}
 		if !slices.Contains(recipients, claim.Recipient) {
-			if len(recipients) == 0 {
-				_, err = model.FinishErrorReportDelivery(claim.ID, owner, model.MailDeliveryRetryWait, "", "", now, 0)
-				return attempted, accepted, errors.Join(failures, err)
-			}
 			_, err = model.FinishErrorReportDelivery(claim.ID, owner, model.MailDeliveryStopped, "", model.ErrorReportStopRecipientRemoved, now, 0)
 			if err != nil {
 				return attempted, accepted, errors.Join(failures, err)

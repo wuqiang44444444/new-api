@@ -43,7 +43,7 @@ func TestMailSettingsAndDailyMigration(t *testing.T) {
 	// Exercise adding the coverage watermark to an existing schedule without
 	// moving its cursor or treating prior cleanup as newly verified.
 	require.NoError(t, db.Migrator().CreateTable(&legacyErrorReportSchedule{}))
-	require.NoError(t, db.AutoMigrate(&Option{}, &ErrorReport{}, &ErrorReportDelivery{}, &ResourceAlertEpisode{}, &ResourceAlertDelivery{}, &ErrorEvent{}, &SystemTask{}, &WalletOperation{}))
+	require.NoError(t, db.AutoMigrate(&Option{}, &ErrorReport{}, &ErrorReportDelivery{}, &ResourceAlertEpisode{}, &ResourceAlertDelivery{}, &ErrorEvent{}, &SystemTask{}, &WalletOperation{}, &WalletOperationMailPrepared{}))
 	require.NoError(t, db.Exec("CREATE UNIQUE INDEX idx_error_reports_window_start ON error_reports (window_start)").Error)
 	const start int64 = 1762617600
 	require.NoError(t, db.Table("error_report_schedules").Create(map[string]any{
@@ -59,10 +59,7 @@ func TestMailSettingsAndDailyMigration(t *testing.T) {
 
 	ctx := context.Background()
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return RecordWalletOperation(tx, WalletOperation{UserID: 11, ActorID: 12, Kind: "add", Before: 25, After: 125, CreatedAt: start}, func(tx *gorm.DB, operation WalletOperation) error {
-			_, err := OpenResourceAlertInTx(tx, ResourceAlertEpisode{Resource: WalletReceiptMail, MailUserID: operation.UserID}, []string{"account@example.com"})
-			return err
-		})
+		return RecordWalletOperation(tx, WalletOperation{UserID: 11, ActorID: 12, Kind: "add", Before: 25, After: 125, CreatedAt: start})
 	}))
 	wallet, err := ReadWalletOperationsSummary(ctx, start, start+1)
 	require.NoError(t, err)
@@ -70,6 +67,16 @@ func TestMailSettingsAndDailyMigration(t *testing.T) {
 	assert.EqualValues(t, 1, wallet[0].Count)
 	assert.Equal(t, "100", wallet[0].Credited.String())
 	assert.Equal(t, "0", wallet[0].Debited.String())
+	require.NoError(t, db.Create(&WalletOperation{UserID: 12, ActorID: 12, Kind: "add", Before: 1, After: 2, CreatedAt: start - 1}).Error)
+	pending, err := PendingWalletOperationMails(ctx)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, 11, pending[0].UserID)
+	require.NoError(t, MarkWalletOperationMailPrepared(ctx, pending[0].ID))
+	require.NoError(t, MarkWalletOperationMailPrepared(ctx, pending[0].ID))
+	pending, err = PendingWalletOperationMails(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, pending)
 	cutoff, err := ReadErrorEventRetentionCutoff(ctx)
 	require.NoError(t, err)
 	require.Zero(t, cutoff)
@@ -123,6 +130,8 @@ func TestMailSettingsAndDailyMigration(t *testing.T) {
 	opened, err = OpenResourceAlert(ctx, ResourceAlertEpisode{OpenKey: &key, Resource: "cpu", OpenedAt: start + 3}, recipients)
 	require.NoError(t, err)
 	assert.True(t, opened)
+	require.NoError(t, db.Create(&Option{Key: "error_report_setting.recipients", Value: recipients[0]}).Error)
+	require.NoError(t, RetryIncidentMail(ctx, false))
 	var pendingCount int64
 	require.NoError(t, db.Model(&ResourceAlertDelivery{}).Where("status = ? AND recipient = ?", MailDeliveryPending, "ops@example.com").Count(&pendingCount).Error)
 	assert.EqualValues(t, 2, pendingCount)

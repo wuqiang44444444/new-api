@@ -17,7 +17,7 @@ type quotaRejection struct {
 
 func (err quotaRejection) Unwrap() error { return err.error }
 
-func ObserveQuotaRejection(c *gin.Context, err error) {
+func ObserveQuotaRejection(c *gin.Context, err error) bool {
 	var rejected quotaRejection
 	var reason string
 	switch {
@@ -25,14 +25,20 @@ func ObserveQuotaRejection(c *gin.Context, err error) {
 		reason = rejected.reason
 	case errors.Is(err, model.ErrTaskAttemptTokenQuota):
 		reason = clienterrlog.APIKeyQuotaInsufficient
+	case errors.Is(err, model.ErrTaskAttemptWalletFallbackRejected):
+		reason = clienterrlog.WalletQuotaInsufficient
 	case errors.Is(err, model.ErrTaskAttemptSubscriptionUnavailable):
 		reason = clienterrlog.SubscriptionQuotaInsufficient
 	case errors.Is(err, model.ErrTaskAttemptInsufficientQuota):
 		reason = clienterrlog.WalletQuotaInsufficient
 	default:
-		return
+		return false
 	}
 	clienterrlog.Attach(c.Request.Context(), clienterrlog.Report{
 		Stage: "billing_preconsume", Reason: reason,
 	})
+	if reason == clienterrlog.WalletQuotaInsufficient {
+		enqueueWalletRejectionNotice(c.GetInt("id"))
+	}
+	return true
 }

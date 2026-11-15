@@ -24,7 +24,7 @@ func holdNativeImageFundingTx(tx *gorm.DB, task *Task, preference string) error 
 		if !errors.Is(err, ErrTaskAttemptInsufficientQuota) {
 			return err
 		}
-		return holdImageSubscriptionTx(tx, task)
+		return PreserveTaskWalletRejection(err, holdImageSubscriptionTx(tx, task))
 	}
 	if pref == "subscription_only" {
 		return holdImageSubscriptionTx(tx, task)

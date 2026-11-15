@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -36,5 +37,11 @@ func NotifyAccountSecurityChange(email, event string) error {
 	}
 	queuedAt := time.Now()
 	subject, content := renderAccountSecurityMail(event)
-	return sendManagedNotice(model.MailAccountSecurity, queuedAt, subject, email, content)
+	var body strings.Builder
+	body.WriteString(content)
+	writeOperationsMailRows(&body, [][2]string{{"通知时间（北京时间） / Notified at (Beijing time)", queuedAt.In(errorReportLocation()).Format("2006-01-02 15:04:05")}})
+	if link := consoleMailLink("/security"); link != "" {
+		writeReportMailLink(&body, link, "检查账户安全 / Review account security")
+	}
+	return sendManagedNotice(model.MailAccountSecurity, queuedAt, subject, email, RenderMailTemplate(subject, body.String()))
 }

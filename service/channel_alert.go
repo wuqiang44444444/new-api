@@ -45,10 +45,12 @@ type channelAlertScope struct {
 }
 
 type channelAlertSample struct {
-	ID     string
-	At     int64
-	Status int
-	Kind   channelAlertKind
+	ID           string
+	At           int64
+	Status       int
+	Kind         channelAlertKind
+	Reason       channelAlertErrorReason `json:",omitempty"`
+	HasRequestID bool                    `json:",omitempty"`
 }
 
 type channelAlertObservation struct {
@@ -171,18 +173,21 @@ func (buffer *channelAlertBuffer) seal(start int64) ([]channelAlertObservation, 
 }
 
 func recordChannelAlert(scope channelAlertScope, id string, kind channelAlertKind, status int) {
+	recordChannelAlertSample(scope, channelAlertSample{ID: id, Kind: kind, Status: status})
+}
+
+func recordChannelAlertSample(scope channelAlertScope, sample channelAlertSample) {
 	if !channelAlerts.enabled.Load() || scope.Channel <= 0 || scope.Revision == "" ||
-		len(scope.Model) > 128 || len(scope.Operation) > 48 || len(id) > 96 || (kind != channelAlertSuccess && id == "") {
+		len(scope.Model) > 128 || len(scope.Operation) > 48 || len(sample.ID) > 96 || (sample.Kind != channelAlertSuccess && sample.ID == "") {
 		return
 	}
-	sample := channelAlertSample{ID: id, Kind: kind, Status: status}
 	recorded, first := channelAlerts.buffer.add(scope, sample)
 	if !recorded {
 		channelAlerts.stats.Dropped.Add(1)
 	}
 	// Explicit balance, configuration, and credential facts do not depend on observing
 	// silence in other nodes. The background worker checks their scope.
-	if first && (kind == channelAlertBalance || kind == channelAlertConfig || kind == channelAlertKey && scope.Slot < 0) {
+	if first && (sample.Kind == channelAlertBalance || sample.Kind == channelAlertConfig || sample.Kind == channelAlertKey && scope.Slot < 0) {
 		sample.At = time.Now().UnixMilli()
 		select {
 		case channelAlerts.hard <- channelAlertObservation{Scope: scope, Failures: []channelAlertSample{sample}}:

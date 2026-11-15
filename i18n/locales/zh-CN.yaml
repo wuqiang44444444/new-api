@@ -53,6 +53,12 @@ email.password_reset.link_fallback: "如果链接无法点击，请尝试点击�
 email.password_reset.validity: "重置链接 {{.Minutes}} 分钟内有效，如果不是本人操作，请忽略。"
 
 # Low-quota notices
+notify.wallet_rejected_title: "钱包余额不足，一次调用已被拒绝"
+notify.wallet_rejected_email: "您最近的一次调用超出了钱包可用余额。请查看余额，充值后再试。"
+notify.wallet_open: "打开钱包"
+notify.wallet_low_title: "您的钱包余额偏低"
+notify.wallet_low_email: "当前钱包余额为 {{.Quota}}，提醒阈值为 {{.Threshold}}。请及时充值，避免影响后续调用。"
+quota.batch_insufficient: "额度不足，无法创建批处理任务。"
 notify.quota_low_title: "您的额度即将用尽"
 notify.subscription_quota_low_title: "您的订阅额度即将用尽"
 notify.quota_low_bark: "{{.Prompt}}，剩余额度：{{.Quota}}，请及时充值"
@@ -65,6 +71,7 @@ channel.notify_disabled_content: "通道「{{.Name}}」（#{{.Id}}）已被禁�
 channel.notify_enabled_subject: "通道「{{.Name}}」（#{{.Id}}）已被启用"
 channel.notify_enabled_content: "通道「{{.Name}}」（#{{.Id}}）已被启用"
 channel.test_completed_subject: "通道测试完成"
+channel.disable_review: "已达到自动停用条件，请核对渠道错误日志。"
 channel.test_completed_content: "所有通道测试已完成"
 channel.response_time_exceeded: "响应时间 {{.Seconds}}s 超过阈值 {{.Threshold}}s"
 channel.upstream_update_notify_subject: "上游模型巡检通知"
@@ -78,6 +85,7 @@ channel.upstream_update_more_omitted: "（其余 {{.Count}} 个已省略）"
 
 # 账户与运维邮件模板
 user.email_empty: "请填写邮箱"
+notify.open_console: "打开控制台"
 notify.account_created.subject: "欢迎使用 {{.SiteName}}"
 notify.account_created.body: "<h2>欢迎，{{.Username}}</h2><p>你在 {{.SiteName}} 的账户已创建。如果你没有预期创建该账户，请联系管理员。</p>"
 notify.token_created.subject: "{{.SiteName}} 已创建新的 API Key"

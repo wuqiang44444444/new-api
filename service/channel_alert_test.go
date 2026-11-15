@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relaymode "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
@@ -51,8 +53,11 @@ func TestChannelAlertLocalWindowDeliversWithoutRedis(t *testing.T) {
 	db := withErrorReportTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.ChannelAlertEpisode{}, &model.ChannelAlertDelivery{}))
 	require.NoError(t, model.UpdateOption("error_report_setting.recipients", "ops@example.com"))
+	oldAddress := system_setting.ServerAddress
+	system_setting.ServerAddress = "https://console.example.test/gateway?obsolete=1#fragment"
+	t.Cleanup(func() { system_setting.ServerAddress = oldAddress })
 	inbox := newLocalMailInbox(t)
-	channel := model.Channel{Name: "local-fixture", Models: "model-a", Key: "fixture-private"}
+	channel := model.Channel{Name: "local <fixture>", Models: "model-a", Key: "fixture-private"}
 	require.NoError(t, db.Create(&channel).Error)
 	scope := channelAlertScope{Channel: channel.Id, Revision: model.ChannelAlertRevision(&channel), Model: "model-a", Operation: "chat", Slot: -1}
 	window := channelAlertWindowState{localNode: "gateway-local"}
@@ -61,20 +66,54 @@ func TestChannelAlertLocalWindowDeliversWithoutRedis(t *testing.T) {
 		Failures: []channelAlertSample{
 			{ID: "one", At: 1001000, Kind: channelAlertService, Status: 503},
 			{ID: "two", At: 1002000, Kind: channelAlertService, Status: 503},
-			{ID: "three", At: 1003000, Kind: channelAlertService, Status: 503},
+			{ID: "request-three", At: 1003000, Kind: channelAlertService, Status: 503, Reason: channelAlertOverload, HasRequestID: true},
 		},
 	}}}}}, 256)
 
 	require.NoError(t, evaluateChannelAlertWindow(context.Background(), window, []string{"gateway-local"}, time.Unix(1005, 0)))
+	require.NoError(t, db.Model(&channel).Update("name", "renamed after confirmation").Error)
 	sent, err := deliverChannelAlertMail("smtp-worker", common.SendEmailContext, time.Now)
 	require.NoError(t, err)
 	require.True(t, sent)
-	mail := requireLocalMail(t, inbox, "Channel outage", "ops@example.com")
+	mail := requireLocalMail(t, inbox, "Channel alert", "ops@example.com")
 	assert.Contains(t, mail.body, "gateway-local")
+	assert.Contains(t, mail.body, "Channel ID</th>")
+	assert.Contains(t, mail.body, "local &lt;fixture&gt;")
+	assert.NotContains(t, mail.body, "renamed after confirmation")
+	assert.Contains(t, mail.body, "Failures counted</th>")
+	assert.Contains(t, mail.body, ">3</td>")
+	assert.Contains(t, mail.body, "503 Service Unavailable")
+	assert.Contains(t, mail.body, "Upstream reported service overload")
+	assert.Contains(t, mail.body, "request-three")
+	assert.Contains(t, mail.body, fmt.Sprintf("https://console.example.test/gateway/usage-logs/error?channel=%d&amp;end_timestamp=1065&amp;model_name=%%22model-a%%22&amp;start_timestamp=1001", channel.Id))
+	assert.NotContains(t, mail.body, "obsolete=1")
 	assert.NotContains(t, mail.body, channel.Key)
 	var episode model.ChannelAlertEpisode
 	require.NoError(t, db.First(&episode).Error)
 	assert.Equal(t, "gateway-local", episode.Node)
+}
+
+func TestChannelAlertMailReportsTransportReasonWithoutErrorText(t *testing.T) {
+	transportErr := &url.Error{
+		Op: "Post", URL: "https://provider.example.test?signature=fixture-private",
+		Err: context.DeadlineExceeded,
+	}
+	group := channelAlertGroup{scope: channelAlertScope{Channel: 1}, kind: channelAlertNetwork}
+	episode, confirmed := channelAlertCandidate(group, []channelAlertSample{
+		{ID: "one", At: 1000, Kind: group.kind, Status: http.StatusRequestTimeout},
+		{ID: "two", At: 2000, Kind: group.kind, Status: http.StatusRequestTimeout},
+		{ID: "three", At: 3000, Kind: group.kind, Reason: channelAlertTransportReason(transportErr)},
+	}, 0)
+	require.True(t, confirmed)
+	episode.ConfirmedAt = 5000
+	_, body := channelAlertMessage(episode, "current-channel")
+	assert.Contains(t, body, "Connection or read timed out")
+	assert.Contains(t, body, "Current channel name")
+	assert.Contains(t, body, "current-channel")
+	assert.NotContains(t, body, "provider.example.test")
+	assert.NotContains(t, body, "fixture-private")
+	assert.NotContains(t, body, "Latest failed gateway request ID")
+	assert.NotContains(t, body, "Latest sample upstream HTTP")
 }
 
 func TestChannelAlertRedisWindowAndMail(t *testing.T) {
@@ -177,7 +216,7 @@ func TestChannelAlertRedisWindowAndMail(t *testing.T) {
 	sent, err := deliverChannelAlertMail("smtp-worker", common.SendEmailContext, time.Now)
 	require.NoError(t, err)
 	require.True(t, sent)
-	mail := requireLocalMail(t, inbox, "Channel outage", "ops@example.com")
+	mail := requireLocalMail(t, inbox, "Channel alert", "ops@example.com")
 	assert.Contains(t, mail.body, "model-a")
 	assert.NotContains(t, mail.body, channel.Key)
 	var delivery model.ChannelAlertDelivery
@@ -220,13 +259,16 @@ func TestChannelAlertPersistenceDialects(t *testing.T) {
 			require.NoError(t, db.Create(&channel).Error)
 			key := channelAlertDigest(dialect, common.NewRequestId())
 			event := model.ChannelAlertEpisode{ChannelID: channel.Id, ScopeKey: key, OpenKey: &key,
-				Revision: model.ChannelAlertRevision(&channel), FirstAt: 1000, LastAt: 3000, ConfirmedAt: 3500, KeySlot: -1, Kind: string(channelAlertService)}
-			created, err := model.OpenChannelAlert(ctx, event, []string{"ops@example.com"})
+				Revision: model.ChannelAlertRevision(&channel), FirstAt: 1000, LastAt: 3000, ConfirmedAt: 3500, KeySlot: -1, Kind: string(channelAlertService),
+				LastErrorReason: string(channelAlertOverload), LastRequestID: "fixture-request"}
+			created, err := model.OpenChannelAlert(ctx, event)
 			require.NoError(t, err)
 			require.True(t, created)
-			created, err = model.OpenChannelAlert(ctx, event, []string{"ops@example.com"})
+			created, err = model.OpenChannelAlert(ctx, event)
 			require.NoError(t, err)
 			require.False(t, created)
+			require.NoError(t, db.Create(&model.Option{Key: "error_report_setting.recipients", Value: "ops@example.com"}).Error)
+			require.NoError(t, model.RetryIncidentMail(ctx, true))
 			row, err := model.ClaimChannelAlertDelivery(ctx, "lease-owner", 3600, 4500)
 			require.NoError(t, err)
 			require.NotNil(t, row)
@@ -241,12 +283,15 @@ func TestChannelAlertPersistenceDialects(t *testing.T) {
 			var closed model.ChannelAlertEpisode
 			require.NoError(t, db.First(&closed, row.EpisodeID).Error)
 			assert.Equal(t, model.ChannelAlertClosedRecovered, closed.CloseReason)
-			created, err = model.OpenChannelAlert(ctx, event, []string{"ops@example.com"})
+			assert.Equal(t, channel.Name, closed.ChannelName)
+			assert.Equal(t, event.LastErrorReason, closed.LastErrorReason)
+			assert.Equal(t, event.LastRequestID, closed.LastRequestID)
+			created, err = model.OpenChannelAlert(ctx, event)
 			require.NoError(t, err)
 			require.False(t, created)
 			require.NoError(t, db.Model(&channel).Update("key", "new-fixture").Error)
 			event.FirstAt, event.LastAt = 6000, 8000
-			created, err = model.OpenChannelAlert(ctx, event, nil)
+			created, err = model.OpenChannelAlert(ctx, event)
 			require.NoError(t, err)
 			require.False(t, created)
 		})
@@ -266,7 +311,7 @@ func TestChannelAlertDeliveryRetryAfterRestart(t *testing.T) {
 	episode := model.ChannelAlertEpisode{ChannelID: channel.Id, ScopeKey: key, OpenKey: &key,
 		Revision: model.ChannelAlertRevision(&channel), Kind: string(channelAlertService), KeySlot: -1,
 		FirstAt: now.Add(-time.Second).UnixMilli(), LastAt: now.Add(-time.Millisecond).UnixMilli(), ConfirmedAt: now.UnixMilli()}
-	created, err := model.OpenChannelAlert(ctx, episode, []string{"ops@example.com"})
+	created, err := model.OpenChannelAlert(ctx, episode)
 	require.NoError(t, err)
 	require.True(t, created)
 	processed, err := deliverChannelAlertMail("busy-transport", func(context.Context, string, string, string) error {
@@ -295,7 +340,7 @@ func TestChannelAlertDeliveryRetryAfterRestart(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, processed)
-	requireLocalMail(t, inbox, "Channel outage", "ops@example.com")
+	requireLocalMail(t, inbox, "Channel alert", "ops@example.com")
 	require.NoError(t, db.First(&pending, pending.ID).Error)
 	assert.Equal(t, model.MailDeliveryAccepted, pending.Status)
 	assert.Equal(t, 2, pending.Attempts)
@@ -432,6 +477,21 @@ func TestChannelAlertRelayIgnoresLocalAcceptanceAndPreservesUpstreamStatus(t *te
 	require.Len(t, rows[0].Failures, 1)
 	assert.Equal(t, channelAlertLimit, rows[0].Failures[0].Kind)
 	assert.Equal(t, http.StatusTooManyRequests, rows[0].Failures[0].Status)
+
+	channelAlerts.buffer.sealed = 0
+	BeginChannelAlertAttempt(c)
+	RecordChannelAlertHTTP(c, &http.Response{StatusCode: http.StatusServiceUnavailable}, nil)
+	ObserveChannelRelayResult(c, info, types.WithOpenAIError(types.OpenAIError{
+		Code: "overloaded_error", Message: "fixture-private response",
+	}, http.StatusServiceUnavailable))
+	rows, ok = channelAlerts.buffer.seal(channelAlertBucket(time.Now().Unix()))
+	require.True(t, ok)
+	require.Len(t, rows, 1)
+	require.Len(t, rows[0].Failures, 1)
+	assert.Equal(t, channelAlertSample{
+		ID: "synthetic-id", At: rows[0].Failures[0].At, Kind: channelAlertService, Status: http.StatusServiceUnavailable,
+		Reason: channelAlertOverload, HasRequestID: true,
+	}, rows[0].Failures[0])
 
 	// A caller can disconnect after receiving a completed response, while
 	// quota accounting is still finishing in the handler.

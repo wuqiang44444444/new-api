@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
@@ -232,10 +233,10 @@ func SendEmailVerification(c *gin.Context) {
 	content := fmt.Sprintf("<p>%s</p>"+
 		"<p>%s</p>"+
 		"<p>%s</p>",
-		i18n.T(c, i18n.MsgEmailVerificationGreeting, systemName),
+		i18n.T(c, i18n.MsgEmailVerificationGreeting, map[string]any{"SystemName": html.EscapeString(common.SystemName)}),
 		i18n.T(c, i18n.MsgEmailVerificationCode, map[string]any{"Code": code}),
 		i18n.T(c, i18n.MsgEmailVerificationValidity, map[string]any{"Minutes": common.VerificationValidMinutes}))
-	err = common.SendAccountEmail(c.Request.Context(), subject, email, content)
+	err = common.SendAccountEmail(c.Request.Context(), subject, email, service.RenderMailTemplate(subject, content))
 	if err == nil || errors.Is(err, common.ErrMailSubmissionUnknown) {
 		common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose)
 	}

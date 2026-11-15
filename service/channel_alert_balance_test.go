@@ -101,6 +101,7 @@ func TestChannelAlertBalanceSendsOnceAcrossOperationsAndReopensAfterRecovery(t *
 	require.True(t, sent)
 	mail := requireLocalMail(t, inbox, "Upstream channel balance alert", "ops@example.com")
 	assert.Contains(t, mail.body, "403")
+	assert.Contains(t, mail.body, "request-one")
 	assert.NotContains(t, mail.body, "private-provider-detail")
 	assert.NotContains(t, mail.body, channel.Key)
 	sent, err = deliverChannelAlertMail("balance-mail", common.SendEmailContext, time.Now)

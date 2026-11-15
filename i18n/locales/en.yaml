@@ -52,6 +52,12 @@ email.password_reset.link_fallback: "If the link does not open, copy the link be
 email.password_reset.validity: "The reset link is valid for {{.Minutes}} minutes. If you did not request it, please ignore this email."
 
 # Low-quota notices
+notify.wallet_rejected_title: "A request was declined because your wallet balance was insufficient"
+notify.wallet_rejected_email: "Your wallet could not cover a recent request. Check your balance and top up before retrying."
+notify.wallet_open: "Open your wallet"
+notify.wallet_low_title: "Your wallet balance is low"
+notify.wallet_low_email: "Your wallet balance is {{.Quota}}. Your warning threshold is {{.Threshold}}. Top up to keep using the service."
+quota.batch_insufficient: "Insufficient quota to create the batch job."
 notify.quota_low_title: "Your quota is running low"
 notify.subscription_quota_low_title: "Your subscription quota is running low"
 notify.quota_low_bark: "{{.Prompt}}, remaining quota: {{.Quota}}. Please top up soon"
@@ -64,6 +70,7 @@ channel.notify_disabled_content: "Channel \"{{.Name}}\" (#{{.Id}}) has been disa
 channel.notify_enabled_subject: "Channel \"{{.Name}}\" (#{{.Id}}) has been enabled"
 channel.notify_enabled_content: "Channel \"{{.Name}}\" (#{{.Id}}) has been enabled"
 channel.test_completed_subject: "Channel test completed"
+channel.disable_review: "The auto-disable criteria were met. Review the channel error logs."
 channel.test_completed_content: "All channel tests have completed"
 channel.response_time_exceeded: "response time {{.Seconds}}s exceeds the threshold of {{.Threshold}}s"
 channel.upstream_update_notify_subject: "Upstream model check notice"
@@ -77,6 +84,7 @@ channel.upstream_update_more_omitted: " ({{.Count}} more omitted)"
 
 # Account and operations mail templates
 user.email_empty: "Email is required"
+notify.open_console: "Open console"
 notify.account_created.subject: "Welcome to {{.SiteName}}"
 notify.account_created.body: "<h2>Welcome, {{.Username}}</h2><p>Your account on {{.SiteName}} has been created. If you did not expect this account, contact your administrator.</p>"
 notify.token_created.subject: "A new API key was created on {{.SiteName}}"

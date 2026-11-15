@@ -5,6 +5,8 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/QuantumNous/new-api/common"
+
 	"github.com/QuantumNous/new-api/setting/config"
 )
 
@@ -30,8 +32,22 @@ func GetQuotaSetting() *QuotaSetting {
 	return &quotaSetting
 }
 
-// ValidateQuotaOption validates reservation settings before they are persisted.
+// ParseWalletReminderThreshold accepts a whole number of quota units. Zero
+// turns off the site warning for positive balances; blank is invalid.
+func ParseWalletReminderThreshold(value string) (int, error) {
+	number, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || number > common.MaxWalletQuota {
+		return 0, common.NewMessage("Enter a whole number from 0 to 9,007,199,254,740,991")
+	}
+	return int(number), nil
+}
+
+// ValidateQuotaOption validates quota settings before they are persisted.
 func ValidateQuotaOption(key, value string) error {
+	if key == "QuotaRemindThreshold" {
+		_, err := ParseWalletReminderThreshold(value)
+		return err
+	}
 	if key != "quota_setting.trust_quota_usd" && key != "quota_setting.pre_consume_multiplier" {
 		return nil
 	}

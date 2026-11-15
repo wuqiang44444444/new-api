@@ -27,6 +27,7 @@ const channelAlertHTTPKey = "channel_alert_http"
 type channelAlertHTTP struct {
 	status    int
 	transport bool
+	reason    channelAlertErrorReason
 	inactive  bool
 	balance   *atomic.Bool
 }
@@ -61,6 +62,9 @@ func recordChannelAlertHTTP(c *gin.Context, info *relaycommon.RelayInfo, respons
 		return
 	}
 	outcome := channelAlertHTTP{transport: err != nil && response == nil && !errors.Is(err, context.Canceled)}
+	if outcome.transport {
+		outcome.reason = channelAlertTransportReason(err)
+	}
 	if response != nil {
 		outcome.status = response.StatusCode
 		operation := relayBalanceOperation(c)
@@ -160,6 +164,8 @@ func recordChannelAlertAttempt(c *gin.Context, info *relaycommon.RelayInfo, oper
 		httpResult.status = clienterrlog.UpstreamResponseStatus(c.Request.Context())
 	}
 	kind := classifyChannelAlertHTTP(httpResult.status, httpResult.transport)
+	reason := httpResult.reason
+	failureCode := string(code)
 	if httpResult.balance != nil && httpResult.balance.Load() {
 		return // Already recorded directly from the provider response.
 	}
@@ -168,8 +174,7 @@ func recordChannelAlertAttempt(c *gin.Context, info *relaycommon.RelayInfo, oper
 	} else if httpResult.inactive || httpResult.status == http.StatusUnauthorized && code == types.ErrorCode("invalid_api_key") {
 		kind = channelAlertKey
 	} else if httpResult.status == 0 && !httpResult.transport {
-		switch code {
-		case types.ErrorCodeChannelParamOverrideInvalid, types.ErrorCodeChannelHeaderOverrideInvalid, types.ErrorCodeChannelModelMappedError, types.ErrorCodeChannelInvalidKey:
+		if reason = channelAlertConfigReason(code); reason != "" {
 			kind = channelAlertConfig
 		}
 	}
@@ -184,15 +189,29 @@ func recordChannelAlertAttempt(c *gin.Context, info *relaycommon.RelayInfo, oper
 		} else if stream.ErrorStatus >= 400 {
 			httpResult.status = stream.ErrorStatus
 			kind = classifyChannelAlertHTTP(stream.ErrorStatus, false)
+			failureCode = stream.ErrorCode
+			if failureCode == "" {
+				failureCode = stream.ErrorType
+			}
 		} else if stream.EndReason == relaycommon.StreamEndReasonTimeout || stream.EndReason == relaycommon.StreamEndReasonScannerErr {
 			kind = channelAlertNetwork
+			reason = channelAlertStreamRead
+			if stream.EndReason == relaycommon.StreamEndReasonTimeout {
+				reason = channelAlertTimeout
+			}
 		}
 	}
+	if kind == channelAlertService {
+		reason = channelAlertServiceReason(failureCode)
+	}
+	hasRequestID := id != "" && id == c.GetString(common.RequestIdKey)
 	if kind == channelAlertBalance && id == "" {
 		id = common.NewRequestId()
 	}
 	if success && httpResult.status > 0 || kind != channelAlertSuccess {
-		recordChannelAlert(scope, id, kind, httpResult.status)
+		recordChannelAlertSample(scope, channelAlertSample{
+			ID: id, Kind: kind, Status: httpResult.status, Reason: reason, HasRequestID: hasRequestID,
+		})
 	}
 }
 
@@ -298,8 +317,9 @@ func ObserveChannelSelectionFailure(c *gin.Context, channel *model.Channel, mode
 	if strings.HasSuffix(c.Request.URL.Path, "/contents/generations/tasks") {
 		operation = "video_submit"
 	}
-	recordChannelAlert(channelAlertScope{Channel: channel.Id, Revision: model.ChannelAlertRevision(channel), Model: modelName, Operation: operation, Slot: -1},
-		c.GetString(common.RequestIdKey), channelAlertConfig, 0)
+	id := c.GetString(common.RequestIdKey)
+	recordChannelAlertSample(channelAlertScope{Channel: channel.Id, Revision: model.ChannelAlertRevision(channel), Model: modelName, Operation: operation, Slot: -1},
+		channelAlertSample{ID: id, Kind: channelAlertConfig, Reason: channelAlertMissingKey, HasRequestID: id != ""})
 }
 
 func channelAlertSubmitOperation(c *gin.Context, info *relaycommon.RelayInfo) string {
@@ -415,8 +435,13 @@ func ObserveInlineImageChannelAlert(c *gin.Context, info *relaycommon.RelayInfo,
 	}
 	kind := classifyChannelAlertHTTP(status, err != nil && response == nil && !errors.Is(err, context.Canceled))
 	if success || kind != channelAlertSuccess {
-		recordChannelAlert(channelAlertScope{Channel: info.ChannelId, Revision: snapshot.Revision, Model: info.OriginModelName,
-			Operation: operation, Slot: snapshot.Slot}, c.GetString(common.RequestIdKey), kind, status)
+		id := c.GetString(common.RequestIdKey)
+		var reason channelAlertErrorReason
+		if kind == channelAlertNetwork && response == nil {
+			reason = channelAlertTransportReason(err)
+		}
+		recordChannelAlertSample(channelAlertScope{Channel: info.ChannelId, Revision: snapshot.Revision, Model: info.OriginModelName,
+			Operation: operation, Slot: snapshot.Slot}, channelAlertSample{ID: id, Kind: kind, Status: status, Reason: reason, HasRequestID: id != ""})
 	}
 }
 
@@ -444,6 +469,6 @@ func RecordChannelAlertSDKResult(c *gin.Context, err error) {
 	}
 	var network net.Error
 	if errors.As(err, &network) || errors.Is(err, context.DeadlineExceeded) {
-		c.Set(channelAlertHTTPKey, channelAlertHTTP{transport: true})
+		c.Set(channelAlertHTTPKey, channelAlertHTTP{transport: true, reason: channelAlertTransportReason(err)})
 	}
 }

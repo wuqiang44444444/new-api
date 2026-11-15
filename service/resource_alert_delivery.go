@@ -18,6 +18,33 @@ var resourceAlertDeliveryQueued atomic.Bool
 
 func resourceMailRecipientAllowed(ctx context.Context, episode model.ResourceAlertEpisode, address string) (bool, error) {
 	switch episode.Resource {
+	case model.WalletLowNoticeMail:
+		if episode.OpenKey == nil && !episode.WalletRejection {
+			return false, nil
+		}
+		var account model.User
+		err := model.DB.WithContext(ctx).Select("id", "status", "email", "quota", "setting").First(&account, episode.MailUserID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		setting := account.GetSetting()
+		if walletNoticeEmail(&account, setting) != address {
+			return false, nil
+		}
+		// A dated episode with ClosedAt set also identifies legacy rejection-only notices.
+		if !episode.WalletRejection && episode.ClosedAt == 0 {
+			balance, err := walletNoticeBalance(account)
+			if err != nil {
+				return false, err
+			}
+			if balance >= common.EffectiveQuotaWarningThreshold(setting.QuotaWarningThreshold) {
+				return false, model.CloseWalletNotice(ctx, episode.ID, time.Now().Unix())
+			}
+		}
+		return true, nil
 	case model.PersonalUsageReportMail, model.WalletReceiptMail:
 		db := model.DB.WithContext(ctx)
 		if episode.Resource == model.PersonalUsageReportMail {
@@ -38,10 +65,7 @@ func resourceMailRecipientAllowed(ctx context.Context, episode model.ResourceAle
 }
 
 func recordResourceAlert(ctx context.Context, key, node string, observation resourceObservation, at int64) (bool, error) {
-	recipients, err := model.GetOperationsMailRecipients(ctx)
-	if err != nil {
-		common.SysError("could not read resource alert recipients")
-	}
+
 	var body strings.Builder
 	writeOperationsMailRows(&body, [][2]string{
 		{"资源 / Resource", observation.label},
@@ -50,13 +74,18 @@ func recordResourceAlert(ctx context.Context, key, node string, observation reso
 		{"阈值 / Threshold", fmt.Sprintf("%d%%", observation.threshold)},
 		{"采样时间 / Sampled at (UTC+8)", time.Unix(at, 0).In(errorReportLocation()).Format("2006-01-02 15:04:05")},
 	})
+	body.WriteString("<p>检查节点上该资源的近期使用趋势和并发负载。<br>Review recent utilization and concurrent load on this node.</p>")
+	body.WriteString("<p>系统信息仅限 Root。交接时请提供节点、读数和采样时间。<br>System Information requires Root access. Include the node, reading and sample time when escalating.</p>")
+	if link := consoleMailLink("/system-info"); link != "" {
+		writeReportMailLink(&body, link, "打开系统信息（Root） / Open system information (Root)")
+	}
 	title := "资源阈值告警 / Resource threshold alert"
 	episode := model.ResourceAlertEpisode{
 		OpenKey: &key, Resource: observation.key, OpenedAt: at,
 		Subject:  title + " — " + observation.label,
-		BodyHTML: renderOperationsMail(title, body.String()), MailPending: err != nil,
+		BodyHTML: RenderMailTemplate(title, body.String()),
 	}
-	_, err = model.OpenResourceAlert(ctx, episode, recipients)
+	_, err := model.OpenResourceAlert(ctx, episode, nil)
 	return err == nil, err
 }
 
@@ -67,7 +96,7 @@ func queueResourceAlertDeliveries() {
 	if !EnqueueMailWork(func() {
 		defer resourceAlertDeliveryQueued.Store(false)
 		if err := deliverResourceAlerts(time.Now, common.SendEmailContext); err != nil {
-			common.SysError("resource alert delivery could not be processed")
+			common.SysError(fmt.Sprintf("resource alert delivery could not be processed: %v", err))
 		}
 	}) {
 		// The next sample can wake the worker. Pending rows remain in the database.

@@ -7,24 +7,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// Isolate preference-read errors from the incident transaction. PostgreSQL
-// requires rolling back to a savepoint after an unsuccessful SQL statement.
-func incidentMailPreferences(tx *gorm.DB) (prefs MailPreferences, err error) {
-	err = tx.Transaction(func(read *gorm.DB) error {
-		prefs, err = MailPreferencesInTransaction(read)
-		return err
-	})
-	return prefs, err
-}
-
 type pendingIncidentMail struct {
 	ID      int64
 	Kind    string
 	EventAt int64 // Unix milliseconds
 }
 
-// RetryIncidentMail only considers incidents whose original preparation
-// failed. Closed incidents still represent an alert that could not be queued.
+// RetryIncidentMail prepares independently committed incidents.
+// A closed incident may still have mail waiting to be prepared.
 func RetryIncidentMail(ctx context.Context, channelAlerts bool) error {
 	db := DB.WithContext(ctx)
 	var episode, delivery any = &ResourceAlertEpisode{}, &ResourceAlertDelivery{}
@@ -41,17 +31,18 @@ func RetryIncidentMail(ctx context.Context, channelAlerts bool) error {
 	if err != nil || len(pending) == 0 {
 		return err
 	}
-	return db.Transaction(func(tx *gorm.DB) error {
-		prefs, err := MailPreferencesInTransaction(tx)
-		if err != nil {
-			return err
-		}
-		recipients, err := operationsMailRecipients(tx)
-		if err != nil {
-			return err
-		}
-		now := time.Now().UnixNano()
-		for _, row := range pending {
+	queuedAt := time.Now().UnixNano()
+	prefs, err := loadMailPreferences(db)
+	if err != nil {
+		return err
+	}
+	recipients, err := operationsMailRecipients(db)
+	if err != nil {
+		return err
+	}
+	// Each incident commits on its own so a row's claim never holds write locks across the batch.
+	for _, row := range pending {
+		err := db.Transaction(func(tx *gorm.DB) error {
 			claim := tx.Model(episode).Where("id = ? AND mail_pending = ?", row.ID, true).UpdateColumn("mail_pending", false)
 			if claim.Error != nil {
 				return claim.Error
@@ -61,18 +52,20 @@ func RetryIncidentMail(ctx context.Context, channelAlerts bool) error {
 				kind = ChannelAlertMailType(row.Kind)
 			}
 			if claim.RowsAffected == 0 || len(recipients) == 0 || !prefs.Allows(kind, time.UnixMilli(row.EventAt)) {
-				continue
+				return nil
 			}
 			var existing int64
 			if err := tx.Model(delivery).Where("episode_id = ?", row.ID).Count(&existing).Error; err != nil {
 				return err
 			}
-			if existing == 0 {
-				if err := queue(tx, row.ID, recipients, now); err != nil {
-					return err
-				}
+			if existing > 0 {
+				return nil
 			}
+			return queue(tx, row.ID, recipients, queuedAt)
+		})
+		if err != nil {
+			return err
 		}
-		return nil
-	})
+	}
+	return nil
 }

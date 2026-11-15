@@ -447,7 +447,7 @@ func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp
 }
 
 // ManualCompleteTopUp 管理员手动完成订单并给用户充值
-func ManualCompleteTopUp(tradeNo string, callerIp string, actorID int, build WalletMailBuilder) error {
+func ManualCompleteTopUp(tradeNo string, callerIp string, actorID int) error {
 	if tradeNo == "" {
 		return common.NewMessage("Order number not provided")
 	}
@@ -514,7 +514,7 @@ func ManualCompleteTopUp(tradeNo string, callerIp string, actorID int, build Wal
 		userId = topUp.UserId
 		payMoney = topUp.Money
 		paymentMethod = topUp.PaymentMethod
-		return RecordWalletOperation(tx, WalletOperation{UserID: userId, ActorID: actorID, Kind: "manual_topup", Before: account.Quota, After: account.Quota + quotaToAdd}, build)
+		return RecordWalletOperation(tx, WalletOperation{UserID: userId, ActorID: actorID, Kind: "manual_topup", Before: account.Quota, After: account.Quota + quotaToAdd})
 	})
 
 	if err != nil {

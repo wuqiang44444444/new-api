@@ -81,7 +81,7 @@ func UpdateMailTransport(ctx context.Context, config common.MailTransportConfig)
 			return err
 		}
 		var saved Option
-		if err := lockForUpdate(tx).Where(&Option{Key: common.MailTransportOption}).First(&saved).Error; err != nil {
+		if err := tx.Where(&Option{Key: common.MailTransportOption}).First(&saved).Error; err != nil {
 			return err
 		}
 		var current common.MailTransportConfig
@@ -112,7 +112,14 @@ func UpdateMailTransport(ctx context.Context, config common.MailTransportConfig)
 		if err != nil {
 			return err
 		}
-		return tx.Model(&saved).Update("value", string(encoded)).Error
+		if saved.Value == string(encoded) {
+			return nil
+		}
+		result := tx.Model(&saved).Where("value = ?", saved.Value).Update("value", string(encoded))
+		if result.Error == nil && result.RowsAffected == 0 {
+			return errors.New("mail transport changed, retry the update")
+		}
+		return result.Error
 	})
 	if err != nil {
 		return err

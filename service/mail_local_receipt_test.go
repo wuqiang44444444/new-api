@@ -140,16 +140,36 @@ func TestOperationalMailReachesLocalInbox(t *testing.T) {
 		UserId: root.Id, UserEmail: root.Email, UserSetting: root.GetSetting(),
 		SubscriptionId: 1, SubscriptionAmountTotal: 100, SubscriptionAmountUsedAfterPreConsume: 95,
 	})
-	requireLocalMail(t, inbox, "subscription quota", root.Email)
-	NotifyVideoFundFailure()
-	requireLocalMail(t, inbox, "Video refund needs attention", root.Email)
+	subscription := requireLocalMail(t, inbox, "subscription quota", root.Email)
+	assert.Contains(t, subscription.body, "Remaining subscription quota")
+	assert.Contains(t, subscription.body, "Warning threshold")
+	assert.Contains(t, subscription.body, "/wallet")
+	NotifyChannelProbeRun(time.Now(), 4, 1, 3, 0, []ChannelProbeMailFailure{
+		{ChannelID: 81, Reason: ChannelTestReasonResponseTimeExceeded, At: time.Now()},
+		{ChannelID: 82, Reason: "test_config_error", At: time.Now()},
+		{ChannelID: 83, Reason: "test_upstream_rejected", Status: 429, At: time.Now()},
+	})
+	probe := requireLocalMail(t, inbox, "Channel", root.Email)
+	assert.Contains(t, probe.body, "Response exceeded the time threshold")
+	assert.Contains(t, probe.body, "Channel configuration or request build failed")
+	assert.Contains(t, probe.body, "Upstream rejected the probe")
+	assert.Contains(t, probe.body, "/channels")
+	NotifyVideoFundFailure(TaskCreateFundSummary{Failed: 1}, true)
+	fund := requireLocalMail(t, inbox, "Video refund needs attention", root.Email)
+	assert.Contains(t, fund.body, "Hold release failures")
+	assert.Contains(t, fund.body, "Refund processing")
+	assert.Contains(t, fund.body, "/system-info")
 
 	channel := model.Channel{Name: "fixture", Type: 1, Status: common.ChannelStatusEnabled, Models: "gpt-4o-mini", Group: "default"}
 	require.NoError(t, db.Create(&channel).Error)
 	DisableChannel(*types.NewChannelError(channel.Id, channel.Type, channel.Name, false, "", true), "fixture failure")
-	requireLocalMail(t, inbox, "has been disabled", root.Email)
+	disabled := requireLocalMail(t, inbox, "has been disabled", root.Email)
+	assert.NotContains(t, disabled.body, "fixture failure")
+	assert.Contains(t, disabled.body, "/usage-logs/error?channel=")
 	EnableChannel(channel.Id, "", channel.Name)
-	requireLocalMail(t, inbox, "has been enabled", root.Email)
+	recovered := requireLocalMail(t, inbox, "has been enabled", root.Email)
+	assert.Contains(t, recovered.body, "Recovered at (Beijing time)")
+	assert.Contains(t, recovered.body, "/channels")
 	rootSetting := root.GetSetting()
 	rootSetting.UpstreamModelUpdateNotifyEnabled = true
 	root.SetSetting(rootSetting)
@@ -159,7 +179,8 @@ func TestOperationalMailReachesLocalInbox(t *testing.T) {
 	})
 	modelMail := requireLocalMail(t, inbox, "Models changed", root.Email)
 	assert.Contains(t, modelMail.body, "&lt;a href=")
-	assert.NotContains(t, modelMail.body, "<a href=")
+	assert.NotContains(t, modelMail.body, `<a href="https://example.test"`)
+	assert.Contains(t, modelMail.body, "/channels")
 
 	ctx := context.Background()
 	for _, resource := range []string{"cpu", "memory", "disk_data"} {
@@ -197,26 +218,28 @@ func TestWalletLowQuotaMailShowsPostChargeBalanceAndEffectiveThreshold(t *testin
 	oldThreshold := common.QuotaRemindThreshold
 	common.QuotaRemindThreshold = 500000
 	t.Cleanup(func() { common.QuotaRemindThreshold = oldThreshold })
-	require.NoError(t, db.Create(&model.User{Id: 7043, Username: "wallet-account", AffCode: "w043", Quota: 1000000}).Error)
+	require.NoError(t, db.Create(&model.User{Id: 7043, Username: "wallet-account", Setting: `{"language":"en"}`, Email: "wallet@example.com", AffCode: "w043", Status: common.UserStatusEnabled, Quota: 1000000}).Error)
 	require.NoError(t, model.SettleWalletQuota(7043, 750000))
 	checkAndSendQuotaNotify(&relaycommon.RelayInfo{
 		UserId: 7043, UserEmail: "wallet@example.com", UserQuota: 1000000,
 		UserSetting: dto.UserSetting{Language: "en"},
 	}, 500000, 250000)
-	message := requireLocalMail(t, inbox, "quota is running low", "wallet@example.com")
-	assert.Contains(t, message.body, "remaining quota is "+logger.FormatQuota(250000))
-	assert.Contains(t, message.body, "warning threshold is "+logger.FormatQuota(500000))
+	message := requireLocalMail(t, inbox, "wallet balance is low", "wallet@example.com")
+	assert.Contains(t, message.body, "wallet balance is "+formatWalletMailQuota(250000))
+	assert.Contains(t, message.body, "warning threshold is "+formatWalletMailQuota(500000))
 	assert.NotContains(t, message.body, logger.FormatQuota(1000000))
-	require.NoError(t, db.Create(&model.User{Id: 7044, Username: "wallet-personal", AffCode: "w044", Quota: 1000000}).Error)
+	account := model.User{Id: 7044, Username: "wallet-personal", Email: "personal@example.com", AffCode: "w044", Status: common.UserStatusEnabled, Quota: 1000000}
+	account.SetSetting(dto.UserSetting{Language: "en", QuotaWarningThreshold: 750000})
+	require.NoError(t, db.Create(&account).Error)
 	require.NoError(t, model.SettleWalletQuota(7044, 400000))
 	require.NoError(t, model.SettleWalletQuota(7044, 50000))
 	checkAndSendQuotaNotify(&relaycommon.RelayInfo{
 		UserId: 7044, UserEmail: "personal@example.com", UserQuota: 1000000,
 		UserSetting: dto.UserSetting{Language: "en", QuotaWarningThreshold: 750000},
 	}, -100000, 500000)
-	personal := requireLocalMail(t, inbox, "quota is running low", "personal@example.com")
-	assert.Contains(t, personal.body, "remaining quota is "+logger.FormatQuota(550000))
-	assert.Contains(t, personal.body, "warning threshold is "+logger.FormatQuota(750000))
+	personal := requireLocalMail(t, inbox, "wallet balance is low", "personal@example.com")
+	assert.Contains(t, personal.body, "wallet balance is "+formatWalletMailQuota(550000))
+	assert.Contains(t, personal.body, "warning threshold is "+formatWalletMailQuota(750000))
 }
 
 func TestUpstreamBalanceMailReachesLocalInbox(t *testing.T) {

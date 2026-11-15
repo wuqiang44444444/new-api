@@ -30,7 +30,7 @@ func TestDailyReportReceivesWalletSubscriptionAndAPIKeyRejections(t *testing.T) 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	recorded := make(chan clienterrlog.Event, 3)
+	recorded := make(chan clienterrlog.Event, 4)
 	sink := clienterrlog.NewSink(ctx, 16, func(event clienterrlog.Event) error { recorded <- event; return nil })
 	engine := gin.New()
 	engine.Use(sink.Middleware())
@@ -56,6 +56,7 @@ func TestDailyReportReceivesWalletSubscriptionAndAPIKeyRejections(t *testing.T) 
 	start, end := day.Unix(), day.AddDate(0, 0, 1).Unix()
 	for route, reason := range map[string]string{
 		"wallet_only":       clienterrlog.WalletQuotaInsufficient,
+		"wallet_first":      clienterrlog.WalletQuotaInsufficient,
 		"subscription_only": clienterrlog.SubscriptionQuotaInsufficient,
 		"key":               clienterrlog.APIKeyQuotaInsufficient,
 	} {
