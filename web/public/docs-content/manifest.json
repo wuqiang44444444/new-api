@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-11-14.1",
+  "contentVersion": "2026-11-15.1",
   "defaultLocale": "zh",
   "locales": {
     "zh": {
@@ -261,6 +261,21 @@
               "file": "zh/api-reference/assets/overview.md",
               "description": "创建素材和可选素材组，查询模型支持的托管类型并在视频中引用",
               "keywords": ["AIGC 素材", "素材组", "托管素材", "MP3", "MP4"],
+              "assets": []
+            }
+          ]
+        },
+        {
+          "id": "account",
+          "title": "账户 API",
+          "pages": [
+            {
+              "id": "account-balance",
+              "title": "查询账户余额",
+              "slug": "api-reference/account/balance",
+              "file": "zh/api-reference/account/balance.md",
+              "description": "使用 API Key 查询所属账户的 USD 钱包余额",
+              "keywords": ["余额", "钱包", "API Key", "USD"],
               "assets": []
             }
           ]

@@ -31,6 +31,7 @@ operations: []
 | 图片     | `/v1/images/generations`、`/v1/images/edits`            | 默认同步；支持时显式选择异步任务或流式         |
 | 视频     | ModelArk V3、OpenAI Videos、Kling、即梦                 | 不同协议的字段不能混用                         |
 | 素材     | `/v1/assets`                                            | 账号级托管库接收图片、MP3 和 MP4。调用方保存 ID 与引用 |
+| 账户余额 | [GET /api/user/balance](api-reference/account/balance)   | 使用 API Key 查询所属账户的 USD 钱包余额       |
 
 ## 示例约定
 

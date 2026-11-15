@@ -7,6 +7,9 @@
   },
   "tags": [
     {
+      "name": "账户余额"
+    },
+    {
       "name": "获取模型列表"
     },
     {
@@ -75,6 +78,112 @@
     }
   ],
   "paths": {
+    "/api/user/balance": {
+      "get": {
+        "operationId": "getUserBalance",
+        "summary": "查询账户钱包余额",
+        "description": "使用 Bearer API Key 查询该 Key 所属账户的钱包余额。请求无需查询参数或请求体。余额以 USD 计，最低返回 0。",
+        "tags": [
+          "账户余额"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "查询成功时 success 为 true。读取余额失败时仍可能返回 HTTP 200，且 success 为 false。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "required": [
+                            "balance",
+                            "currency"
+                          ],
+                          "properties": {
+                            "balance": {
+                              "type": "number",
+                              "minimum": 0,
+                              "description": "API Key 所属账户的钱包余额。"
+                            },
+                            "currency": {
+                              "type": "string",
+                              "enum": [
+                                "USD"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/UserBalanceError"
+                    }
+                  ]
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "balance": 12.345678,
+                    "currency": "USD"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API Key 缺失、无效或已停用。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserBalanceError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "API Key 所属账户不可用。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserBalanceError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "请求触发限流。"
+          },
+          "500": {
+            "description": "鉴权服务暂时不可用。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserBalanceError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/models": {
       "get": {
         "summary": "获取模型列表",
@@ -2949,7 +3058,7 @@
       "post": {
         "summary": "创建 Batch 作业（已实现，未公开）",
         "deprecated": false,
-        "description": "代码已实现，尚未进入公开 operation 白名单；真实 Provider、三数据库迁移、容量与生产灰度验收未完成，不代表生产已发布。\n\n文件和作业按用户及创建时的应用（API Key）隔离，同账号其他 Key 不能访问。\n\nJSON 请求体最多 128 KiB。使用本站输入文件 ID 创建文本 Chat Completions 批处理，客户模型来自文件，不能用顶层 model 改选。成功返回 200 和本站作业对象，不是 202 图片任务。没有客户幂等键；创建超时或返回 500 时，受理结果可能待核实且预扣保留，不自动重发、换渠道或退款。已有 ID 时只查询原作业；没有 ID 时联系管理员核查原请求。",
+        "description": "代码已实现，尚未进入公开 operation 白名单；真实 Provider、三数据库迁移、容量与生产灰度验收未完成，不代表生产已发布。\n\n文件和作业按用户及创建时的应用（API Key）隔离，同账号其他 Key 不能访问。\n\nJSON 请求体最多 128 KiB。使用本站输入文件 ID 创建文本 Chat Completions 批处理，客户模型来自文件，不能用顶层 model 改选。成功返回 200 和本站作业对象，不是 202 图片任务。确认预扣额度不足返回 403 和 insufficient_quota，未创建上游作业。没有客户幂等键；创建超时或返回 500 时，受理结果可能待核实且预扣保留，不自动重发、换渠道或退款。已有 ID 时只查询原作业；没有 ID 时联系管理员核查原请求。",
         "operationId": "createBatch",
         "tags": [
           "Batch/Files（未公开）"
@@ -2983,6 +3092,9 @@
           },
           "400": {
             "$ref": "#/components/responses/BatchInvalidRequest"
+          },
+          "403": {
+            "description": "确认预扣额度不足，错误类型及 code 为 insufficient_quota。未创建上游作业。"
           },
           "404": {
             "$ref": "#/components/responses/BatchResourceNotFound"
@@ -3937,6 +4049,24 @@
   },
   "components": {
     "schemas": {
+      "UserBalanceError": {
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
       "BatchFile": {
         "type": "object",
         "required": [

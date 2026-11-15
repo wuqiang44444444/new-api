@@ -2,6 +2,11 @@
   "schemaVersion": 1,
   "operations": [
     {
+      "operationId": "getUserBalance",
+      "status": "published",
+      "family": "account"
+    },
+    {
       "operationId": "listModels",
       "status": "published",
       "family": "text"

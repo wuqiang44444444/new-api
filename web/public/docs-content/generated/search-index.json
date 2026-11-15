@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "2026-11-14.1",
+  "contentVersion": "2026-11-15.1",
   "locales": {
     "zh": [
       {
@@ -947,6 +947,25 @@
             "depth": 2,
             "id": "错误响应",
             "text": "错误响应"
+          }
+        ]
+      },
+      {
+        "pageId": "account-balance",
+        "slug": "api-reference/account/balance",
+        "title": "查询账户余额",
+        "description": "使用 API Key 查询所属账户的 USD 钱包余额",
+        "keywords": ["余额", "钱包", "API Key", "USD"],
+        "headings": [
+          {
+            "depth": 2,
+            "id": "请求",
+            "text": "请求"
+          },
+          {
+            "depth": 2,
+            "id": "响应",
+            "text": "响应"
           }
         ]
       },
