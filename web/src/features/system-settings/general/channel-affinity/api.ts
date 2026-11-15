@@ -62,3 +62,12 @@ export async function getAffinityUsageCache(params: {
   } as Record<string, unknown>)
   return res.data
 }
+
+export async function clearAffinityLayer(
+  layer: 'session' | 'api_key' | 'user'
+) {
+  const res = await api.delete('/api/option/channel_affinity_cache', {
+    params: { layer },
+  })
+  return res.data
+}

@@ -782,6 +782,9 @@ func handleConfigUpdate(key, value string) bool {
 	configMap := map[string]string{
 		configKey: value,
 	}
+	if replaceChannelAffinityRules(cfg, configKey, value) {
+		return true
+	}
 	config.UpdateConfigFromMap(cfg, configMap)
 
 	// 特定配置的后处理

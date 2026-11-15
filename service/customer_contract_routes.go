@@ -213,14 +213,18 @@ func SelectCustomerContractChannel(param *RetryParam, initial bool) (*model.Chan
 		}
 	} else if initial {
 		if id, found := GetPreferredChannelByAffinity(c, param.ModelName, param.TokenGroup); found {
+			usable := false
 			candidate, loadErr := model.CacheGetChannel(id)
 			if loadErr == nil {
 				if ok, _ := model.ChannelSatisfiesFilters(candidate, param.ModelName, filters); ok {
-					selected = candidate
-					MarkChannelAffinityUsed(c, routes[id], id)
+					usable = true
+					if allowFailoverBinding(param, candidate, routes[id]) {
+						selected = candidate
+						MarkChannelAffinityUsed(c, routes[id], id)
+					}
 				}
 			}
-			if selected == nil && !ShouldKeepChannelAffinityOnChannelDisabled() {
+			if !usable && !ShouldKeepChannelAffinityOnChannelDisabled() {
 				ClearCurrentChannelAffinityCache(c)
 			}
 		}
@@ -230,6 +234,9 @@ func SelectCustomerContractChannel(param *RetryParam, initial bool) (*model.Chan
 			prepareDefaultChannelAffinity(param)
 		}
 		selected, err = selectChannelWithDefaultAffinity(param, param.TokenGroup, param.GetRetry(), filters)
+		if initial {
+			selected, _, err = resolveFailoverBinding(c, selected, param.TokenGroup, err)
+		}
 	}
 	if err != nil {
 		return nil, "", err

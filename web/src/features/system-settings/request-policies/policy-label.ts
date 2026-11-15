@@ -5,6 +5,45 @@ import type { TFunction } from 'i18next'
 // sources reported by the channel operations summary.
 export function policyLabel(t: TFunction, value: string): string {
   switch (value) {
+    case 'channel_failover':
+      return t('Channel failover')
+    case 'bound_channel_temporarily_unavailable':
+      return t('Bound channel is temporarily unavailable')
+    case 'bound_channel_would_be_bypassed':
+      return t('Bound channel would be bypassed (observe only)')
+    case 'recovery_trial_success':
+      return t('Recovery trial succeeded')
+    case 'recovery_trial_failed':
+      return t('Recovery trial failed')
+    case 'recovery_trial_unconfirmed':
+      return t('Recovery trial unconfirmed')
+    case 'recovery_trial_unrecorded':
+      return t('Recovery trial result not recorded')
+    case 'contract_route_unavailable':
+      return t('Contract routes unavailable')
+    case 'eligible_failover_channel':
+    case 'eligible_backup':
+      return t('Eligible backup channel')
+    case 'binding_updated_after_success':
+      return t('Binding updated after successful failover')
+    case 'no_eligible_backup':
+      return t('No eligible backup channel')
+    case 'original_channel_required':
+      return t('Request requires its original channel')
+    case 'response_started_or_cancelled':
+      return t('Response already started or request cancelled')
+    case 'migration_rejected':
+      return t('Backup rejected the migrated request')
+    case 'failover_attempt_used':
+      return t('Failover attempt already used')
+    case 'probe_recovery_trial':
+      return t('Controlled recovery trial')
+    case 'upstream_unavailable_sample':
+      return t('Upstream failure recorded')
+    case 'health_unknown':
+      return t('Channel health unavailable')
+    case 'migration_not_verified':
+      return t('Request content is outside the verified migration scope')
     case 'upstream_failure':
       return t('Upstream request failed')
     case 'request_failed':

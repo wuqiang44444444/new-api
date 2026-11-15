@@ -398,3 +398,23 @@ func TestInitChannelMetaResetsPerAttemptStreamStateAndPreservesRequestState(t *t
 func ptr[T any](value T) *T {
 	return &value
 }
+
+func TestReinitializedChannelUsesItsOwnOutboundHeaders(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1/messages", nil)
+	info := GenRelayInfoClaude(c, &dto.ClaudeRequest{Model: "claude-test"})
+	info.RequestHeaders = map[string]string{"anthropic-beta": "source-only"}
+	common.SetContextKey(c, constant.ContextKeyChannelParamOverride, map[string]any{
+		"operations": []any{map[string]any{"mode": "pass_headers", "value": []string{"anthropic-beta"}, "keep_origin": true}},
+	})
+	info.InitChannelMeta(c)
+	_, err := ApplyParamOverrideWithRelayInfo([]byte(`{"context_management":{"edits":[]}}`), info)
+	require.NoError(t, err)
+	require.Equal(t, "source-only", GetEffectiveHeaderOverride(info)["anthropic-beta"])
+
+	common.SetContextKey(c, constant.ContextKeyChannelHeaderOverride, map[string]any{"anthropic-beta": "backup-only"})
+	info.InitChannelMeta(c)
+	_, err = ApplyParamOverrideWithRelayInfo([]byte(`{"context_management":{"edits":[]}}`), info)
+	require.NoError(t, err)
+	assert.Equal(t, "backup-only", GetEffectiveHeaderOverride(info)["anthropic-beta"])
+}

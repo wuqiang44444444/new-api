@@ -33,6 +33,7 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { ChannelAffinitySection } from '../general/channel-affinity'
 import { safeNumberFieldProps } from '../utils/numeric-field'
 import { getPolicyConfig, type PolicyConfig } from './api'
+import { FailoverRoutingFields } from './failover-routing-fields'
 import { policyLabel } from './policy-label'
 import { RetrySection } from './retry-section'
 import {
@@ -89,9 +90,10 @@ function RoutingPolicyEditor(props: { config: PolicyConfig }) {
     next.AutomaticRetryStatusCodes = parseHttpStatusCodeRules(
       next.AutomaticRetryStatusCodes
     ).normalized
+    const baseline = routingPolicyOptions(defaults)
     const delta = Object.fromEntries(
       Object.entries(next).filter(([key, value]) => {
-        const previous = props.config.options[key]
+        const previous = baseline[key]
         if (key === 'channel_affinity_setting.rules') {
           return (
             JSON.stringify(JSON.parse(value)) !==
@@ -128,6 +130,7 @@ function RoutingPolicyEditor(props: { config: PolicyConfig }) {
         />
         <div className='min-w-0 space-y-4'>
           <AffinitySettings />
+          <FailoverRoutingFields />
           <FormField
             control={form.control}
             name='channel_affinity_setting.rules'

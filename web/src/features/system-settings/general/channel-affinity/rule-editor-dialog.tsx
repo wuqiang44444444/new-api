@@ -47,6 +47,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { SettingsSwitchField } from '../../components/settings-form-layout'
 import { policyLabel } from '../../request-policies/policy-label'
 import { RULE_TEMPLATES } from './constants'
+import { isSystemAffinityRule } from './system-rules'
 import type { AffinityRule, KeySource, SessionMode } from './types'
 
 type KeySourceRow = KeySource & {
@@ -83,6 +84,7 @@ interface RuleFormValues {
   value_regex: string
   ttl_seconds: number
   skip_retry_on_failure: boolean
+  failover_on_unavailable: boolean
   include_using_group: boolean
   include_model_name: boolean
   include_rule_name: boolean
@@ -134,6 +136,7 @@ export function RuleEditorDialog(props: Props) {
       value_regex: '',
       ttl_seconds: 0,
       skip_retry_on_failure: false,
+      failover_on_unavailable: false,
       include_using_group: true,
       include_model_name: false,
       include_rule_name: true,
@@ -155,6 +158,7 @@ export function RuleEditorDialog(props: Props) {
       value_regex: r.value_regex || '',
       ttl_seconds: r.ttl_seconds || 0,
       skip_retry_on_failure: !!r.skip_retry_on_failure,
+      failover_on_unavailable: !!r.failover_on_unavailable,
       include_using_group: r.include_using_group ?? true,
       include_model_name: !!r.include_model_name,
       include_rule_name: r.include_rule_name ?? true,
@@ -188,6 +192,7 @@ export function RuleEditorDialog(props: Props) {
         value_regex: '',
         ttl_seconds: 0,
         skip_retry_on_failure: false,
+        failover_on_unavailable: false,
         include_using_group: true,
         include_model_name: false,
         include_rule_name: true,
@@ -244,6 +249,7 @@ export function RuleEditorDialog(props: Props) {
       value_regex: values.value_regex.trim(),
       ttl_seconds: Number(values.ttl_seconds || 0),
       skip_retry_on_failure: values.skip_retry_on_failure,
+      failover_on_unavailable: values.failover_on_unavailable || undefined,
       include_using_group: values.include_using_group,
       include_model_name: values.include_model_name,
       include_rule_name: values.include_rule_name,
@@ -289,6 +295,7 @@ export function RuleEditorDialog(props: Props) {
           <Input
             id='affinity-rule-name'
             placeholder='prefer-by-conversation-id'
+            readOnly={isSystemAffinityRule(props.rule?.name || '')}
             {...form.register('name', { required: true })}
           />
         </div>
@@ -341,6 +348,13 @@ export function RuleEditorDialog(props: Props) {
               mode: policyLabel(t, props.globalSessionMode || 'prefer'),
             })}
           </p>
+          <Label className='flex items-center gap-2 py-2'>
+            <input
+              type='checkbox'
+              {...form.register('failover_on_unavailable')}
+            />
+            {t('Allow failover when a strict session channel is unavailable')}
+          </Label>
         </div>
 
         <Separator />

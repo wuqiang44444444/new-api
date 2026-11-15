@@ -78,6 +78,11 @@ type ChannelAffinityCacheStats struct {
 	CacheCapacity      int            `json:"cache_capacity"`
 	CacheAlgo          string         `json:"cache_algo"`
 	DefaultUserEntries *int           `json:"default_user_entries,omitempty"`
+	APIKeyEntries      *int           `json:"api_key_entries"`
+	UserEntries        *int           `json:"user_entries"`
+	StatsAvailable     bool           `json:"stats_available"`
+	Shared             bool           `json:"shared"`
+	RefreshedAt        time.Time      `json:"refreshed_at"`
 }
 
 func getChannelAffinityCache() *cachex.HybridCache[int] {
@@ -144,6 +149,7 @@ func GetChannelAffinityCacheStats() ChannelAffinityCacheStats {
 	}
 
 	keys, err := cache.Keys()
+	statsAvailable := err == nil
 	if err != nil {
 		common.SysError(common.LogText("channel affinity cache list keys failed: err=%v", err))
 		keys = nil
@@ -195,6 +201,11 @@ func GetChannelAffinityCacheStats() ChannelAffinityCacheStats {
 		CacheCapacity:      mainCap,
 		CacheAlgo:          mainAlgo,
 		DefaultUserEntries: defaultAffinityLocalEntryCount(),
+		APIKeyEntries:      affinityEntryCount(defaultAffinityCache()),
+		UserEntries:        affinityEntryCount(userAffinityCache()),
+		StatsAvailable:     statsAvailable,
+		Shared:             common.RedisEnabled && common.RDB != nil,
+		RefreshedAt:        time.Now(),
 	}
 }
 
@@ -579,6 +590,7 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 			ttlSeconds = setting.DefaultTTLSeconds
 		}
 		cacheKeySuffix := buildChannelAffinityCacheKeySuffix(rule, modelName, usingGroup, affinityValue)
+		cacheKeySuffix = layeredSessionCacheKey(c, rule, modelName, usingGroup, cacheKeySuffix)
 		cacheKeyFull := channelAffinityCacheNamespace + ":" + cacheKeySuffix
 		state.SessionMode, state.SessionModeSource = EffectiveSessionMode(setting, rule)
 		state.RuleName = rule.Name
@@ -604,6 +616,7 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 		}
 		cache := getChannelAffinityCache()
 		channelID, found, err := cache.Get(cacheKeySuffix)
+		rememberSessionBinding(c, channelID, err, rule.FailoverOnUnavailable)
 		if err != nil {
 			common.SysError(common.LogText("channel affinity cache get failed: key=%s, err=%v", cacheKeyFull, err))
 			return 0, false
@@ -650,6 +663,7 @@ func ClearCurrentChannelAffinityCache(c *gin.Context) bool {
 		return false
 	}
 	c.Set(ginKeyChannelAffinitySkipRetry, false)
+	markAffinityBindingCleared(c, deleted[cacheKey])
 	for _, ok := range deleted {
 		if ok {
 			return true

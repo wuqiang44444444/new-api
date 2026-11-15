@@ -69,6 +69,7 @@ import {
   isMultiKeyChannel,
 } from '../lib'
 import type { Channel } from '../types'
+import { ChannelFailoverDialog } from './channel-failover-health'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { useChannels } from './channels-provider'
 
@@ -84,6 +85,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const queryClient = useQueryClient()
   const currentUser = useAuthStore((s) => s.auth.user)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [failoverOpen, setFailoverOpen] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [isTogglingStatus, setIsTogglingStatus] = useState(false)
 
@@ -288,6 +290,13 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
             </DropdownMenuItem>
           )}
 
+          <DropdownMenuItem onClick={() => setFailoverOpen(true)}>
+            {t('Channel failover')}
+            <DropdownMenuShortcut>
+              <Gauge size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+
           {/* Test Connection */}
           <DropdownMenuItem onClick={handleTest} disabled={unsupportedProbe}>
             {t('Test Connection')}
@@ -385,6 +394,12 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {failoverOpen && (
+        <ChannelFailoverDialog
+          channel={channel}
+          onOpenChange={setFailoverOpen}
+        />
+      )}
       <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}

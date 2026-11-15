@@ -460,7 +460,9 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 				if strings.HasPrefix(event.Type, "response.") {
 					if !accepted {
 						// Like HTTP, bind the session only once upstream accepted the request.
-						service.RecordChannelAffinity(c, s.lockedChannelID)
+						if !service.RecordLayeredAffinityAccepted(c, s.lockedChannelID) {
+							service.RecordChannelAffinity(c, s.lockedChannelID)
+						}
 					}
 					accepted = true
 					if event.Response != nil && event.Response.ID != "" {

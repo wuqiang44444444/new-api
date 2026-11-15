@@ -115,6 +115,9 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	if ActiveCustomerContract(param.Ctx) != nil {
 		return SelectCustomerContractChannel(param, false)
 	}
+	if usesAutoFailoverSupplement(param) {
+		return selectAutoFailoverSupplement(param, GetChannelConstraints(param.Ctx).Filters)
+	}
 	var channel *model.Channel
 	var err error
 	selectGroup := param.TokenGroup
@@ -274,6 +277,9 @@ type ChannelSelectError struct {
 // filters. The group the channel was chosen from is returned for auto-group
 // callers. The caller still applies SetupContextForSelectedChannel.
 func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam) (*model.Channel, string, *ChannelSelectError) {
+	if channel, group, selectionErr, handled := beginChannelFailoverSelection(retry); handled {
+		return channel, group, selectionErr
+	}
 	if ActiveCustomerContract(c) != nil {
 		channel, group, err := SelectCustomerContractChannel(retry, true)
 		if err != nil {
@@ -324,17 +330,21 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 						if model.IsChannelEnabledForGroupModel(g, modelName, preferred.Id) {
 							selectGroup = g
 							common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
-							channel = preferred
 							affinityUsable = true
-							MarkChannelAffinityUsed(c, g, preferred.Id)
+							if allowFailoverBinding(retry, preferred, g) {
+								channel = preferred
+								MarkChannelAffinityUsed(c, g, preferred.Id)
+							}
 							break
 						}
 					}
 				} else if model.IsChannelEnabledForGroupModel(usingGroup, modelName, preferred.Id) {
-					channel = preferred
 					selectGroup = usingGroup
 					affinityUsable = true
-					MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
+					if allowFailoverBinding(retry, preferred, usingGroup) {
+						channel = preferred
+						MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
+					}
 				}
 			}
 			if !affinityUsable && !ShouldKeepChannelAffinityOnChannelDisabled() {
@@ -350,6 +360,7 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 		prepareDefaultChannelAffinity(retry)
 		var err error
 		channel, selectGroup, err = CacheGetRandomSatisfiedChannel(retry)
+		channel, selectGroup, err = resolveFailoverBinding(c, channel, selectGroup, err)
 		if err != nil {
 			showGroup := usingGroup
 			if usingGroup == "auto" {

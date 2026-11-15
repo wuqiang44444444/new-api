@@ -50,6 +50,7 @@ import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
 
 import { policyLabel } from '../../request-policies/policy-label'
+import { isSystemAffinityRule } from './system-rules'
 import type { AffinityRule, CacheStats, SessionMode } from './types'
 
 interface SessionRulesTableProps {
@@ -105,6 +106,11 @@ export function SessionRulesTable(props: SessionRulesTableProps) {
           cell: (rule) => (
             <div className='flex min-w-0 flex-col gap-1.5'>
               <TruncatedCell tabIndex={0}>{rule.name || '—'}</TruncatedCell>
+              <span className='text-muted-foreground text-xs'>
+                {isSystemAffinityRule(rule.name)
+                  ? t('System default rule')
+                  : t('Custom rule')}
+              </span>
               <div
                 className='text-muted-foreground min-w-0'
                 data-table-text='secondary'
@@ -236,6 +242,9 @@ export function SessionRulesTable(props: SessionRulesTableProps) {
           cell: (rule) => {
             if (!rule.include_rule_name) return t('N/A')
             if (!props.cacheStats) return '—'
+            if (props.cacheStats.stats_available === false) {
+              return t('Unavailable')
+            }
             return formatNumber(
               props.cacheStats.by_rule_name?.[rule.name] || 0,
               locale
@@ -282,6 +291,7 @@ export function SessionRulesTable(props: SessionRulesTableProps) {
                   ) : null}
                   <DropdownMenuItem
                     variant='destructive'
+                    disabled={isSystemAffinityRule(rule.name)}
                     onClick={() => props.onDelete(rule)}
                   >
                     <Trash2 aria-hidden='true' />

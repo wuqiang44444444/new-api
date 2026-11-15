@@ -175,6 +175,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 					logger.LogInfo(c, common.LogText("realtime streaming localUsage: %v", localUsage))
 
 				} else if realtimeEvent.Type == dto.RealtimeEventTypeSessionUpdated || realtimeEvent.Type == dto.RealtimeEventTypeSessionCreated {
+					service.RecordLayeredAffinityAccepted(c, info.GetChannelID())
 					realtimeSession := realtimeEvent.Session
 					if realtimeSession != nil {
 						// update audio format

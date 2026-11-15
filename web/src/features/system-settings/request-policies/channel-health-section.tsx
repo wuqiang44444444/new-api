@@ -44,6 +44,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { ChannelFailoverHealth } from '@/features/channels/components/channel-failover-health'
 import { handleServerError } from '@/lib/handle-server-error'
 import { parseHttpStatusCodeRules } from '@/lib/http-status-code-rules'
 
@@ -292,6 +293,7 @@ export function ChannelHealthSection({
 
   return (
     <SettingsSection title={t('Channel health')}>
+      <ChannelFailoverHealth />
       <div className='text-muted-foreground space-y-1 text-sm'>
         <p>{t('Source: global settings. Changes take effect after saving.')}</p>
         <p>

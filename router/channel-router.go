@@ -55,6 +55,9 @@ func registerChannelRoutes(apiRouter *gin.RouterGroup) {
 }
 
 var channelPermissionRoutes = []permissionRoute{
+	{method: http.MethodGet, path: "/failover", permission: authz.ChannelRead, handler: controller.GetChannelFailoverHealth},
+	{method: http.MethodGet, path: "/:id/failover", permission: authz.ChannelRead, handler: controller.GetChannelFailoverHealth},
+	{method: http.MethodPost, path: "/:id/failover", permission: authz.ChannelOperate, handler: controller.UpdateChannelFailoverHealth},
 	{method: http.MethodGet, path: "/seedance/configuration", permission: authz.ChannelRead, handler: controller.GetSeedanceChannelConfiguration},
 	{method: http.MethodGet, path: "/minimax/configuration", permission: authz.ChannelRead, handler: controller.GetMinimaxChannelConfiguration},
 	{method: http.MethodGet, path: "/", permission: authz.ChannelRead, handler: controller.GetAllChannels},

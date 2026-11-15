@@ -16,9 +16,8 @@ func ObserveDefaultAffinityChatRequest(c *gin.Context, info *relaycommon.RelayIn
 	if c.Request.URL.Path != "/v1/chat/completions" || info.GetFinalRequestRelayFormat() != types.RelayFormatOpenAI {
 		return
 	}
-	state, _ := c.Get(defaultAffinityContextKey)
-	affinity, ok := state.(*defaultAffinityRequest)
-	if !ok {
+	affinity := affinityStreamTracker(c)
+	if affinity == nil {
 		return
 	}
 	affinity.chatOverrideAttempt = info.ChannelMeta
@@ -51,9 +50,8 @@ func ObserveDefaultAffinityChatChoice(c *gin.Context, info *relaycommon.RelayInf
 	if c == nil {
 		return
 	}
-	state, _ := c.Get(defaultAffinityContextKey)
-	affinity, ok := state.(*defaultAffinityRequest)
-	if !ok {
+	affinity := affinityStreamTracker(c)
+	if affinity == nil {
 		return
 	}
 	count := affinity.chatChoiceCount(c, info)

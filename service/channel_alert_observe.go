@@ -33,6 +33,9 @@ type channelAlertHTTP struct {
 }
 
 func SetChannelAlertSelection(c *gin.Context, channel *model.Channel, slot int) {
+	if r := failoverRequestFrom(c); r != nil {
+		r.recordSelection(c, channel, slot)
+	}
 	if !channelAlerts.enabled.Load() {
 		return
 	}
@@ -43,6 +46,9 @@ func SetChannelAlertSelection(c *gin.Context, channel *model.Channel, slot int) 
 }
 
 func BeginChannelAlertAttempt(c *gin.Context) {
+	if r := failoverRequestFrom(c); r != nil {
+		r.beginAttempt()
+	}
 	if channelAlerts.enabled.Load() {
 		c.Set(channelAlertHTTPKey, channelAlertHTTP{})
 	}
@@ -58,6 +64,7 @@ func RecordChannelAlertRelayHTTP(c *gin.Context, info *relaycommon.RelayInfo, re
 }
 
 func recordChannelAlertHTTP(c *gin.Context, info *relaycommon.RelayInfo, response *http.Response, err error) {
+	recordFailoverHTTP(c, response, err != nil && response == nil && !errors.Is(err, context.Canceled))
 	if !channelAlerts.enabled.Load() || c == nil {
 		return
 	}

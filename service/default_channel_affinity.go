@@ -88,6 +88,9 @@ type defaultAffinityRequest struct {
 }
 
 func prepareDefaultChannelAffinity(param *RetryParam) {
+	if prepareLayeredAffinity(param) {
+		return
+	}
 	c := param.Ctx
 	if c == nil || c.Request == nil || c.Request.Method != http.MethodPost || param.GetRetry() != 0 ||
 		!operation_setting.GetChannelAffinitySetting().Enabled {
@@ -145,17 +148,26 @@ func prepareDefaultChannelAffinity(param *RetryParam) {
 }
 
 func selectChannelWithDefaultAffinity(param *RetryParam, group string, retry int, filters []dto.ChannelFilter) (*model.Channel, error) {
+	return selectChannelWithAffinity(param, group, retry, filters, selectFailoverCandidate)
+}
+
+type affinityChannelSelector func(*RetryParam, string, int, []dto.ChannelFilter, *model.ChannelSelectionPreference) (*model.Channel, error)
+
+func selectChannelWithAffinity(param *RetryParam, group string, retry int, filters []dto.ChannelFilter, selectCandidate affinityChannelSelector) (*model.Channel, error) {
+	if preference, found := layeredAffinityPreference(param); found {
+		return selectCandidate(param, group, retry, filters, preference)
+	}
 	state, _ := param.Ctx.Get(defaultAffinityContextKey)
 	affinity, ok := state.(*defaultAffinityRequest)
 	if !ok {
-		return model.GetRandomSatisfiedChannel(group, param.ModelName, retry, filters)
+		return selectCandidate(param, group, retry, filters, nil)
 	}
 	preference := model.ChannelSelectionPreference{}
 	initial := affinity.first.channelID == 0
 	if initial {
 		preference.ChannelID = affinity.preferred
 	}
-	channel, err := model.GetSatisfiedChannelWithPreference(group, param.ModelName, retry, filters, &preference)
+	channel, err := selectCandidate(param, group, retry, filters, &preference)
 	if err != nil || channel == nil {
 		return channel, err
 	}

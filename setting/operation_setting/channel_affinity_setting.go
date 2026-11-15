@@ -28,6 +28,8 @@ type ChannelAffinityRule struct {
 	IncludeUsingGroup bool `json:"include_using_group"`
 	IncludeModelName  bool `json:"include_model_name"`
 	IncludeRuleName   bool `json:"include_rule_name"`
+
+	// Strict sessions may bypass a temporarily unavailable channel only when enabled.
 	FailoverOnUnavailable bool `json:"failover_on_unavailable,omitempty"`
 }
 
@@ -43,6 +45,8 @@ type ChannelAffinitySetting struct {
 	FailoverMode          string                `json:"failover_mode"`
 	FailoverChannelIDs    []int                 `json:"failover_channel_ids"`
 	LayeredAffinity       bool                  `json:"layered_affinity"`
+
+	FailoverVerifiedPairs []ChannelFailoverVerifiedPair `json:"failover_verified_pairs"`
 }
 
 // Keep Codex CLI passthrough aligned with upstream. Codex uses lower-case

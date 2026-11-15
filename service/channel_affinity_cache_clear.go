@@ -11,11 +11,12 @@ import (
 func ClearChannelAffinityCacheAll() (int, error) {
 	legacy, legacyErr := clearAffinityCache(getChannelAffinityCache())
 	defaults, defaultErr := clearAffinityCache(defaultAffinityCache())
-	if err := errors.Join(legacyErr, defaultErr); err != nil {
-		common.SysError(common.LogText("channel affinity cache clear failed: explicit_rules=%t default_users=%t", legacyErr != nil, defaultErr != nil))
-		return legacy + defaults, fmt.Errorf("clear channel affinity caches: %w", err)
+	users, userErr := clearAffinityCache(userAffinityCache())
+	if err := errors.Join(legacyErr, defaultErr, userErr); err != nil {
+		common.SysError(common.LogText("channel affinity cache clear failed: session=%t api_key=%t user=%t", legacyErr != nil, defaultErr != nil, userErr != nil))
+		return legacy + defaults + users, fmt.Errorf("clear channel affinity caches: %w", err)
 	}
-	return legacy + defaults, nil
+	return legacy + defaults + users, nil
 }
 
 func clearAffinityCache(cache *cachex.HybridCache[int]) (int, error) {
@@ -31,4 +32,25 @@ func clearAffinityCache(cache *cachex.HybridCache[int]) (int, error) {
 		}
 	}
 	return deleted, err
+}
+
+func affinityEntryCount(cache *cachex.HybridCache[int]) *int {
+	keys, err := cache.Keys()
+	if err != nil {
+		return nil
+	}
+	return common.GetPointer(len(keys))
+}
+
+func ClearChannelAffinityLayer(layer string) (int, error) {
+	switch layer {
+	case "session":
+		return clearAffinityCache(getChannelAffinityCache())
+	case "api_key":
+		return clearAffinityCache(defaultAffinityCache())
+	case "user":
+		return clearAffinityCache(userAffinityCache())
+	default:
+		return 0, common.NewMessage("Invalid parameters")
+	}
 }

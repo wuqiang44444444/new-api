@@ -22,6 +22,10 @@ func ClearChannelAffinityCache(c *gin.Context) {
 	all := strings.TrimSpace(c.Query("all"))
 	ruleName := strings.TrimSpace(c.Query("rule_name"))
 
+	if clearChannelAffinityLayer(c) {
+		return
+	}
+
 	if all == "true" {
 		deleted, err := service.ClearChannelAffinityCacheAll()
 		if err != nil {

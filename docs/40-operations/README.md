@@ -1,7 +1,7 @@
 ---
 status: current
 owner: Dev Team
-last-reviewed: 2026-11-12
+last-reviewed: 2026-11-14
 ---
 
 # 40-operations — 运维与发布
@@ -32,6 +32,7 @@ last-reviewed: 2026-11-12
 | Azure Chat 请求兼容 | [09 Azure GPT-5.6 Chat 与 Responses](09-Azure-GPT-5.6-Chat与Responses兼容运维手册.md) |
 | 客户模型合同 | [10 用户模型合同运维](10-用户模型合同运维手册.md) |
 | 私有请求证据、容量与清理 | [11 业务请求证据运维](11-音视频证据运维手册.md) |
+| 会话保持、渠道故障切换与重试 | [12 请求策略会话与重试设置](12-请求策略会话与重试设置手册.md) |
 | SQLite 数据迁移或补齐 | [SQLite 全量迁移 PostgreSQL](SQLite全量迁移PostgreSQL手册.md)、[SQLite 历史日志用户名补齐](SQLite历史日志用户名补齐手册.md) |
 | 冻结 Synlink 失败任务 | [Synlink 失败任务处置](Synlink失败任务处置手册.md) |
 

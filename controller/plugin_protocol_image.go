@@ -162,6 +162,7 @@ func serveTaskPluginImageProtocol(c *gin.Context, pinned pluginruntime.PinnedEnd
 			item["b64_json"] = encoded
 		}
 	}
+	service.RecordLayeredAffinityAccepted(c, task.ChannelId)
 	c.JSON(http.StatusOK, response)
 }
 

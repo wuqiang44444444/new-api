@@ -35,6 +35,7 @@ export interface AffinityRule {
   value_regex?: string
   ttl_seconds: number
   skip_retry_on_failure: boolean
+  failover_on_unavailable?: boolean
   include_using_group: boolean
   include_model_name: boolean
   include_rule_name: boolean
@@ -48,6 +49,11 @@ export interface CacheStats {
   by_rule_name: Record<string, number>
   cache_capacity: number
   cache_algo: string
+  api_key_entries?: number | null
+  user_entries?: number | null
+  stats_available?: boolean
+  shared?: boolean
+  refreshed_at?: string
 }
 
 export interface ChannelAffinitySettings {

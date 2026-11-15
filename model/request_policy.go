@@ -102,7 +102,7 @@ func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, erro
 	for key, value := range raw {
 		if field, ok := strings.CutPrefix(key, "channel_affinity_setting."); ok {
 			switch field {
-			case "enabled", "session_mode", "switch_on_success", "keep_on_channel_disabled", "max_entries", "default_ttl_seconds", "rules", "failover_mode", "failover_channel_ids", "layered_affinity":
+			case "enabled", "session_mode", "switch_on_success", "keep_on_channel_disabled", "max_entries", "default_ttl_seconds", "rules", "failover_mode", "failover_channel_ids", "layered_affinity", "failover_verified_pairs":
 			default:
 				return nil, fmt.Errorf("unknown affinity option: %s", key)
 			}
@@ -228,6 +228,9 @@ func UpdateRequestPolicyOptions(values map[string]string) error {
 	defer requestPolicyOptionMutex.Unlock()
 	previous := CurrentRequestPolicy()
 	options := maps.Clone(previous.Options)
+	if err := stampFailoverPairRevisions(values); err != nil {
+		return err
+	}
 	for key, value := range values {
 		if !IsRequestPolicyOption(key) {
 			return fmt.Errorf("not a request policy option: %s", key)

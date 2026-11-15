@@ -48,6 +48,7 @@ import { formatNumber } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { cn } from '@/lib/utils'
 
+import { AffinityLayerCacheStats } from './affinity-layer-cache-stats'
 import { getCacheStats, clearAllCache, clearRuleCache } from './api'
 import { RULE_TEMPLATES, cloneTemplate, makeUniqueName } from './constants'
 import { RuleEditorDialog } from './rule-editor-dialog'
@@ -334,7 +335,7 @@ export function ChannelAffinitySection(props: Props) {
               className='text-muted-foreground size-4 shrink-0'
             />
             <span className='text-muted-foreground'>{t('Cache Entries')}</span>
-            {cacheStats ? (
+            {cacheStats && cacheStats.stats_available !== false ? (
               <span className='flex flex-wrap items-baseline gap-1 font-medium tabular-nums'>
                 {formatNumber(cacheStats.total, locale)}
                 <span className='text-muted-foreground font-normal'>
@@ -374,6 +375,9 @@ export function ChannelAffinitySection(props: Props) {
           </div>
         </div>
       </section>
+      {cacheStats?.refreshed_at && (
+        <AffinityLayerCacheStats stats={cacheStats} onCleared={refreshCache} />
+      )}
 
       {deletingRule !== null && (
         <ConfirmDialog

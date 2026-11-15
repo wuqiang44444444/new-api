@@ -173,7 +173,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
-			newAPIError = channelErr
+			newAPIError = service.PreserveChannelFailoverError(c, channelErr, relayInfo.LastError)
 			break
 		}
 		service.AppendUsedChannel(c, channel.Id)
@@ -206,9 +206,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		service.ObserveChannelRelayResult(c, relayInfo, newAPIError)
+		service.ObserveChannelFailoverResult(c, relayInfo, newAPIError)
 		if newAPIError == nil {
+			service.ObserveNativeStreamOutcome(c, relayInfo)
 			service.MarkRequestPolicySuccess(c, relayInfo.StreamStatus)
-			service.RecordDefaultChannelAffinitySuccess(c, channel.Id, relayInfo)
+			service.RecordNativeChannelAffinitySuccess(c, channel.Id, relayInfo)
 			relayInfo.LastError = nil
 			return
 		}
@@ -217,6 +219,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.LastError = newAPIError
 
 		decision := service.DecideRelayRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry())
+		service.ChannelFailoverRetryCommitted(c, decision)
 		service.RecordPolicyFailure(c, channel.Id, newAPIError, decision)
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
 
@@ -342,6 +345,9 @@ func RelayMidjourney(c *gin.Context) {
 	}
 	//err = relayMidjourneySubmit(c, relayMode)
 	log.Println(mjErr)
+	if mjErr == nil && policy.Successful {
+		service.RecordLayeredAffinityAccepted(c, c.GetInt("channel_id"))
+	}
 	if mjErr != nil {
 		policy.Successful = false
 		statusCode := http.StatusBadRequest
@@ -760,6 +766,7 @@ func executeTaskSubmissionWith(
 		return nil, taskErr
 	}
 	if task.Status != model.TaskStatusFailure {
+		service.RecordLayeredAffinityAccepted(c, task.ChannelId)
 		service.MarkRequestPolicySuccess(c, nil)
 	} else {
 		policy.AddEvent(service.PolicyEvent{Decision: service.PolicyDecision{Action: "stop", Reason: "task_failed", Source: "upstream"}})

@@ -131,6 +131,9 @@ func (c *HybridCache[V]) SetWithTTL(key string, v V, ttl time.Duration) error {
 		return c.redis.Set(ctx, full, raw, ttl).Err()
 	}
 
+	lock := c.writeLock(full)
+	lock.Lock()
+	defer lock.Unlock()
 	c.memCache().SetWithTTL(full, v, ttl)
 	return nil
 }

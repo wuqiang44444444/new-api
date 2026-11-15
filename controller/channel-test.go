@@ -50,6 +50,7 @@ type testResult struct {
 	upstreamAttempted bool
 	upstreamResponded bool
 	checkUnsupported  bool
+	recoveryEvidence  string
 }
 
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
@@ -110,6 +111,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		result.upstreamStatus = upstreamStatus
 		result.upstreamAttempted = network.attempted.Load()
 		result.upstreamResponded = network.received.Load()
+		result.recoveryEvidence = routingRecoveryEvidence(ctx, result)
 	}()
 	tik := time.Now()
 	var unsupportedTestChannelTypes = []int{
@@ -543,6 +545,10 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			newAPIError: respErr,
 		}
 	}
+	if isRoutingRecoveryProbe(ctx) {
+		upstreamStatus = c.GetInt("channel_test_upstream_status")
+		return testResult{context: c, recoveryEvidence: routingRecoveryProbeOutcome(c, httpResp, info)}
+	}
 	usageEstimated := !isTestUsageValue(usageA, common.GetContextKeyBool(c, constant.ContextKeyLocalCountTokens))
 	usage, usageErr := coerceTestUsage(usageA, isStream, info.GetEstimatePromptTokens())
 	if usageErr != nil {
@@ -968,13 +974,14 @@ func TestChannel(c *gin.Context) {
 // channelTestSummary records the outcome of one channel test cycle so the
 // system task can persist a per-run result for history.
 type channelTestSummary struct {
-	Tested      int                              `json:"tested"`
-	Succeeded   int                              `json:"succeeded"`
-	Failed      int                              `json:"failed"`
-	Disabled    int                              `json:"disabled"`
-	Enabled     int                              `json:"enabled"`
-	Unsupported int                              `json:"unsupported,omitempty"`
-	Checks      []service.ChannelAutoCheckResult `json:"checks,omitempty"`
+	Tested       int                              `json:"tested"`
+	Succeeded    int                              `json:"succeeded"`
+	Failed       int                              `json:"failed"`
+	Disabled     int                              `json:"disabled"`
+	Enabled      int                              `json:"enabled"`
+	Unsupported  int                              `json:"unsupported,omitempty"`
+	Checks       []service.ChannelAutoCheckResult `json:"checks,omitempty"`
+	mailFailures []service.ChannelProbeMailFailure
 }
 
 func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, disableThreshold int64, automatic bool) channelTestSummary {
@@ -1042,6 +1049,10 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		summary.Succeeded++
 	} else {
 		summary.Failed++
+		if !automatic {
+			_, reason, _ := service.ClassifyChannelTestFailure(result.localErr, newAPIError, "")
+			summary.mailFailures = []service.ChannelProbeMailFailure{{ChannelID: channel.Id, Status: result.upstreamStatus, Model: result.testedModel, Reason: reason, At: time.Now()}}
+		}
 		// 错误事件（仅观察）：取消/跳过的测试在上面提前返回，不产生事件；
 		// finalAPIError 已含阈值判定，Seedance 只读探针失败按 probe 分类。
 		service.RecordAutoChannelTestFailureEvent(channel, result.testedModel, result.context, result.localErr, newAPIError, result.upstreamStatus, milliseconds, thresholdExceeded, !isConfigOnly && shouldUseStreamForAutomaticChannelTest(channel), summary.Checks)
@@ -1155,6 +1166,9 @@ func runChannelTestWorkers(
 		summary.Enabled += result.Enabled
 		summary.Unsupported += result.Unsupported
 		summary.Checks = append(summary.Checks, result.Checks...)
+		if len(result.mailFailures) > 0 {
+			summary.mailFailures = service.LatestChannelProbeFailures(summary.mailFailures, result.mailFailures)
+		}
 		processed++
 		if report != nil && ctx.Err() == nil {
 			report(processed, total)
@@ -1210,8 +1224,7 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 	concurrency := operation_setting.GetMonitorSetting().ChannelTestConcurrency
 	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, report, !notify)
 	if notify && (ctx == nil || ctx.Err() == nil) {
-		lang := service.RootUserLanguage()
-		service.NotifyRootUser(model.MailChannelTest, dto.NotifyTypeChannelTest, i18n.Translate(lang, i18n.MsgChannelTestCompletedSubject), i18n.Translate(lang, i18n.MsgChannelTestCompletedContent))
+		service.NotifyChannelProbeRun(time.Now(), summary.Tested, summary.Succeeded, summary.Failed, summary.Unsupported, summary.mailFailures)
 	}
 	return summary, nil
 }

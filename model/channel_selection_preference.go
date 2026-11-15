@@ -9,11 +9,11 @@ import (
 // ChannelSelectionPreference is an optional preference within the layer the
 // ordinary selector would use. SelectedPriority reports the effective layer.
 type ChannelSelectionPreference struct {
-	ChannelID        int
+	ChannelID         int
 	FallbackChannelID int
-	Policy *ChannelSelectionPolicy
-	SelectedPriority int64
-	dbChannelEnabled bool
+	Policy            *ChannelSelectionPolicy
+	SelectedPriority  int64
+	dbChannelEnabled  bool
 	dbFallbackEnabled bool
 }
 
@@ -35,7 +35,7 @@ func (p *ChannelSelectionPreference) preferredInMemory(ids []int, priority int64
 // ChannelSelectionPolicy applies only after the request's authorization and
 // protocol filters. It can exclude candidates and cap the retry priority.
 type ChannelSelectionPolicy struct {
-	Eligible func([]*Channel) map[int]bool
+	Eligible    func([]*Channel) map[int]bool
 	MaxPriority *int64
 }
 

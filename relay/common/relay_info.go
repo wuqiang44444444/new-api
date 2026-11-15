@@ -335,6 +335,10 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	}
 
 	info.ChannelMeta = channelMeta
+	// Parameter overrides derive headers for this attempt from the selected
+	// channel and request. A retry must not inherit the previous channel's headers.
+	info.RuntimeHeadersOverride = nil
+	info.UseRuntimeHeadersOverride = false
 
 	// Channel identity feeds the converter options snapshot (e.g.
 	// OpenRouterDialect); drop the cache so a cross-channel retry rebuilds it.
