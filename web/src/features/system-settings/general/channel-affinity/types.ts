@@ -56,6 +56,18 @@ export interface CacheStats {
   refreshed_at?: string
 }
 
+export type AffinityCacheLayer = 'session' | 'api_key' | 'user'
+
+export interface AffinityCacheEntriesPage {
+  entries: {
+    fingerprint: string
+    channel_id: number
+    channel_name: string
+    ttl_seconds: number | null
+  }[]
+  next_cursor?: string
+}
+
 export interface ChannelAffinitySettings {
   'channel_affinity_setting.enabled': boolean
   'channel_affinity_setting.session_mode'?: '' | SessionMode

@@ -20,13 +20,14 @@ type MailErrorSample struct {
 }
 
 type MailErrorScope struct {
-	Start, End   int64
-	UserIDs      []int // nil is unscoped; an empty slice permits no account.
-	RequestIDs   []string
-	Reason       string
-	ChannelID    int
-	CustomerOnly bool
-	FailuresOnly bool
+	Start, End                int64
+	UserIDs                   []int // nil is unscoped; an empty slice permits no account.
+	RequestIDs                []string
+	Reason                    string
+	ChannelID                 int
+	CustomerOnly              bool
+	FailuresOnly              bool
+	ExcludePassedChannelTests bool
 }
 
 func ReadMailErrorSamples(ctx context.Context, scope MailErrorScope) ([]MailErrorSample, error) {
@@ -57,6 +58,9 @@ func ReadMailErrorSamples(ctx context.Context, scope MailErrorScope) ([]MailErro
 		db = db.Where("((event_type = ? AND status >= ?) OR event_type = ? OR (event_type = ? AND reason NOT IN ?))",
 			clienterrlog.EventAPIError, 400, clienterrlog.EventTaskFailure, clienterrlog.EventStreamError,
 			[]string{"client_disconnected", "upstream_response_cancelled", "stream_soft_errors", "stream_stopped_with_error"})
+	}
+	if scope.ExcludePassedChannelTests {
+		db = withoutPassedChannelTests(db)
 	}
 	if scope.UserIDs != nil {
 		var newest []MailErrorSample

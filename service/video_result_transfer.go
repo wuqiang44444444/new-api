@@ -31,6 +31,11 @@ const (
 	videoResultSweepWindow = 24 * time.Hour
 )
 
+var videoResultTransferPlatforms = []constant.TaskPlatform{
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeSeedanceLink)),
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeMiniMaxLink)),
+}
+
 // videoResultMaxBytes 是单文件托管大小上限（§4.2 待运营确认的默认值）；
 // 用包级变量承载，测试可缩小以验证有界读取。
 var videoResultMaxBytes = int64(1) << 30
@@ -48,11 +53,13 @@ var ResolveMiniMaxVideoContentFunc func(ctx context.Context, task *model.Task) (
 
 // VideoResultTransferSummary 汇报一轮转存执行结果，作为 system task result。
 type VideoResultTransferSummary struct {
-	Attempted   int `json:"attempted"`
-	Ready       int `json:"ready"`
-	Failed      int `json:"failed"`
-	Unavailable int `json:"unavailable"`
-	Swept       int `json:"swept"`
+	Attempted            int    `json:"attempted"`
+	Ready                int    `json:"ready"`
+	Failed               int    `json:"failed"`
+	Unavailable          int    `json:"unavailable"`
+	Swept                int    `json:"swept"`
+	Backlog              *int64 `json:"backlog,omitempty"`
+	MaxReadyDelaySeconds int64  `json:"max_ready_delay_seconds"`
 }
 
 // VideoResultTransferScoped 报告任务是否属于 Link 视频结果托管范围
@@ -96,11 +103,7 @@ func RegisterVideoResultTransfer(ctx context.Context, task *model.Task) {
 // 重新登记。窗口之外的存量任务不自动迁移（上线前盘点决定范围）。
 func runVideoResultSweep(ctx context.Context) int {
 	windowStart := common.GetTimestamp() - int64(videoResultSweepWindow.Seconds())
-	platforms := []constant.TaskPlatform{
-		constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeSeedanceLink)),
-		constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeMiniMaxLink)),
-	}
-	gaps, err := model.FindVideoResultRegistrationGaps(platforms, windowStart, 200)
+	gaps, err := model.FindVideoResultRegistrationGaps(ctx, videoResultTransferPlatforms, windowStart, 200)
 	if err != nil {
 		logger.LogWarn(ctx, "video result registration sweep query failed: "+err.Error())
 		return 0
@@ -125,6 +128,9 @@ func RunVideoResultTransferPass(ctx context.Context, report func(processed, tota
 	}
 	storeReady := VideoResultDeliveryAvailable(ctx)
 	summary.Swept = runVideoResultSweep(ctx)
+	if backlog, err := model.CountVideoResultTransferBacklog(ctx); err == nil {
+		summary.Backlog = &backlog
+	}
 	rows, err := model.ClaimVideoResultObjects(
 		videoResultTransferBatchSize, videoResultRunnerID(), common.GetTimestamp(), int64(videoResultTransferClaimTTL.Seconds()),
 	)
@@ -140,13 +146,14 @@ func RunVideoResultTransferPass(ctx context.Context, report func(processed, tota
 		if report != nil {
 			report(i, total)
 		}
+		var outcome transferOutcome
 		if !storeReady {
 			// 存储不可用是可重试状态：退避重试，不下发上游直链，不回退旧代理。
-			rescheduleVideoResultRetry(&rows[i], "object storage unavailable")
-			summary.Failed++
-			continue
+			outcome = rescheduleVideoResultRetry(ctx, &rows[i], nil, videoDeliveryStorageStage, "object storage unavailable")
+		} else {
+			outcome = transferVideoResultObject(ctx, &rows[i], &summary)
 		}
-		switch transferVideoResultObject(ctx, &rows[i]) {
+		switch outcome {
 		case transferReady:
 			summary.Ready++
 		case transferRetryable:
@@ -198,20 +205,35 @@ const (
 
 // rescheduleVideoResultRetry 退回 pending 等待下次领取；用尽尝试次数时改为
 // 如实标记交付不可用。
-func rescheduleVideoResultRetry(row *model.TaskVideoResultObject, reason string) {
+func rescheduleVideoResultRetry(ctx context.Context, row *model.TaskVideoResultObject, task *model.Task, stage, reason string) transferOutcome {
 	next := videoResultRetryAt(row.Attempts)
 	if next == 0 {
-		commitVideoResultUnavailable(row, reason)
-		return
+		return commitVideoResultUnavailable(ctx, row, task, stage, "video_delivery_retry_exhausted", reason)
 	}
-	if _, err := model.RescheduleVideoResultObjectRetry(row.ID, row.ClaimedBy, next, reason, common.GetTimestamp()); err != nil {
-		logger.LogWarn(context.Background(), fmt.Sprintf("video result retry reschedule failed for task %s: %s", row.TaskID, err.Error()))
+	won, err := model.RescheduleVideoResultObjectRetry(row.ID, row.ClaimedBy, next, reason, common.GetTimestamp())
+	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("video result retry reschedule failed for task %s part %s", row.TaskID, row.Part))
+	} else if won {
+		logger.LogWarn(ctx, fmt.Sprintf("video delivery retry scheduled: task_id=%s part=%s stage=%s attempt=%d", row.TaskID, row.Part, stage, row.Attempts))
 	}
+	return transferRetryable
 }
 
-func commitVideoResultUnavailable(row *model.TaskVideoResultObject, reason string) transferOutcome {
-	if _, err := model.FinishVideoResultObjectUnavailable(row.ID, row.ClaimedBy, reason, common.GetTimestamp()); err != nil {
-		logger.LogWarn(context.Background(), fmt.Sprintf("video result unavailable commit failed for task %s: %s", row.TaskID, err.Error()))
+func commitVideoResultUnavailable(ctx context.Context, row *model.TaskVideoResultObject, task *model.Task, stage, code, reason string) transferOutcome {
+	now := common.GetTimestamp()
+	var event *model.VideoDeliveryError
+	if code != "" {
+		event = newVideoDeliveryFailure(row, task, stage, code, now)
+	}
+	won, err := model.FinishVideoResultObjectUnavailable(ctx, row.ID, row.ClaimedBy, reason, now, event)
+	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("video result unavailable commit failed for task %s part %s", row.TaskID, row.Part))
+	}
+	if !won || err != nil {
+		return transferRetryable
+	}
+	if code != "" {
+		logger.LogWarn(ctx, fmt.Sprintf("video delivery failed: task_id=%s part=%s stage=%s reason=%s", row.TaskID, row.Part, stage, code))
 	}
 	return transferUnavailable
 }
@@ -219,59 +241,61 @@ func commitVideoResultUnavailable(row *model.TaskVideoResultObject, reason strin
 // transferVideoResultObject 完成一个部件的读取与上传，并提交对象登记事实。
 // 对象位置由平台生成（task + part），失败不产生新对象身份；同一对象键重复
 // 上传是幂等覆盖，配合登记事实满足崩溃恢复，不反复生成新对象。
-func transferVideoResultObject(ctx context.Context, row *model.TaskVideoResultObject) transferOutcome {
+func transferVideoResultObject(ctx context.Context, row *model.TaskVideoResultObject, summary *VideoResultTransferSummary) transferOutcome {
 	task, exists, err := model.GetUniqueByOnlyTaskId(row.TaskID)
 	if err != nil || !exists || task == nil {
-		rescheduleVideoResultRetry(row, "task lookup failed")
-		return transferRetryable
+		return rescheduleVideoResultRetry(ctx, row, nil, videoDeliveryStateStage, "task lookup failed")
 	}
 	if task.ClientDeletedAt != 0 {
-		return commitVideoResultUnavailable(row, "task deleted")
+		return commitVideoResultUnavailable(ctx, row, task, "", "", "task deleted")
 	}
 	if task.Status != model.TaskStatusSuccess {
-		rescheduleVideoResultRetry(row, "task is not successful yet")
-		return transferRetryable
+		return rescheduleVideoResultRetry(ctx, row, task, videoDeliveryStateStage, "task is not successful yet")
 	}
 	objectKey, err := videoResultObjectKey(task.TaskID, row.Part)
 	if err != nil {
-		rescheduleVideoResultRetry(row, "object key derivation failed")
-		return transferRetryable
+		return rescheduleVideoResultRetry(ctx, row, task, videoDeliveryStateStage, "object key derivation failed")
 	}
 	source, err := resolveVideoResultSource(ctx, task, row.Part)
 	if err != nil {
-		return commitVideoResultFailure(ctx, row, err)
+		return commitVideoResultFailure(ctx, row, task, videoDeliverySourceStage, err)
 	}
 	defer func() { _ = source.close() }()
 	store, err := currentVideoResultObjectStore(ctx)
 	if err != nil {
-		rescheduleVideoResultRetry(row, "object storage unavailable")
-		return transferRetryable
+		return rescheduleVideoResultRetry(ctx, row, task, videoDeliveryStorageStage, "object storage unavailable")
 	}
 	storeCtx, cancel := context.WithTimeout(ctx, videoResultTransferTimeout)
 	defer cancel()
 	mimeType := videoResultMimeTypeForPart(row.Part, source.contentType)
-	size, err := store.putVideoResultObject(storeCtx, objectKey, mimeType, source.body, videoResultMaxBytes)
+	size, err := store.putVideoResultObject(storeCtx, objectKey, mimeType, videoResultSourceReader{source.body}, videoResultMaxBytes)
 	if err != nil {
-		return commitVideoResultFailure(ctx, row, err)
+		return commitVideoResultFailure(ctx, row, task, videoDeliveryStorageStage, err)
 	}
-	won, err := model.FinishVideoResultObjectReady(row.ID, row.ClaimedBy, store.videoResultLocation(), objectKey, mimeType, size, common.GetTimestamp())
+	readyAt := common.GetTimestamp()
+	won, err := model.FinishVideoResultObjectReady(row.ID, row.ClaimedBy, store.videoResultLocation(), objectKey, mimeType, size, readyAt)
 	if err != nil || !won {
 		logger.LogWarn(ctx, fmt.Sprintf("video result ready commit failed for task %s part %s", row.TaskID, row.Part))
 		return transferRetryable
+	}
+	if task.FinishTime > 0 {
+		summary.MaxReadyDelaySeconds = max(summary.MaxReadyDelaySeconds, readyAt-task.FinishTime)
 	}
 	return transferReady
 }
 
 // commitVideoResultFailure 把一次读取/上传失败归类为可重试或交付不可用。
-func commitVideoResultFailure(ctx context.Context, row *model.TaskVideoResultObject, err error) transferOutcome {
-	if errors.Is(err, errVideoResultTooLarge) || errors.Is(err, errVideoResultUnavailable) {
-		if ctx != nil && errors.Is(err, errVideoResultTooLarge) {
-			logger.LogWarn(ctx, fmt.Sprintf("video result exceeds size limit for task %s part %s", row.TaskID, row.Part))
-		}
-		return commitVideoResultUnavailable(row, videoResultSanitizedReason(err))
+func commitVideoResultFailure(ctx context.Context, row *model.TaskVideoResultObject, task *model.Task, stage string, err error) transferOutcome {
+	switch {
+	case errors.Is(err, errVideoResultTooLarge):
+		return commitVideoResultUnavailable(ctx, row, task, videoDeliverySourceStage, "video_delivery_result_too_large", videoResultSanitizedReason(err))
+	case errors.Is(err, errVideoResultUnavailable):
+		return commitVideoResultUnavailable(ctx, row, task, stage, "video_delivery_result_unavailable", videoResultSanitizedReason(err))
+	case errors.Is(err, errVideoResultSourceRead):
+		return rescheduleVideoResultRetry(ctx, row, task, videoDeliverySourceStage, videoResultSanitizedReason(err))
+	default:
+		return rescheduleVideoResultRetry(ctx, row, task, stage, videoResultSanitizedReason(err))
 	}
-	rescheduleVideoResultRetry(row, videoResultSanitizedReason(err))
-	return transferRetryable
 }
 
 // videoResultSanitizedReason 收敛失败描述：不含上游 URL、凭据或响应正文。
@@ -312,10 +336,7 @@ func (videoResultTransferHandler) Enabled() bool {
 	if count > 0 {
 		return true
 	}
-	gaps, err := model.FindVideoResultRegistrationGaps([]constant.TaskPlatform{
-		constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeSeedanceLink)),
-		constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeMiniMaxLink)),
-	}, VideoResultSweepWindowStart(), 1)
+	gaps, err := model.FindVideoResultRegistrationGaps(ctx, videoResultTransferPlatforms, VideoResultSweepWindowStart(), 1)
 	return err == nil && len(gaps) > 0
 }
 

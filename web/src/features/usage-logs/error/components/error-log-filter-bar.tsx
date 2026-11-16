@@ -107,6 +107,7 @@ export function ErrorLogFilterBar(props: {
           { value: 'channel_test', label: t('Channel Test') },
           { value: 'stream_error', label: t('Stream Error') },
           { value: 'task_failure', label: t('Task Failure') },
+          { value: 'video_delivery', label: t('Video Delivery Failure') },
         ]}
         onChange={(value) =>
           props.onChange({ event_type: value === 'all' ? undefined : value })

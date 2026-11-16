@@ -252,12 +252,14 @@ func channelAutoCheckResult(channel *model.Channel, result testResult, scope str
 		detail["probe_media"] = kind
 		detail["connection_result"] = channelConnectionObservation(result)
 	}
-	if result.checkUnsupported {
+	if service.ChannelTestFoundryRejection(result.context) {
+		service.AddChannelTestFoundryRejectionDetail(detail)
+	} else if result.checkUnsupported {
 		detail["check_result"] = "unsupported"
 	} else if result.localErr != nil || result.newAPIError != nil {
 		detail["check_result"] = "failed"
 	}
-	if !result.checkUnsupported && (result.localErr != nil || result.newAPIError != nil) {
+	if detail["check_result"] == "failed" {
 		_, reason, code := service.ClassifyChannelTestFailure(result.localErr, result.newAPIError, "")
 		detail["check_reason"], detail["check_code"] = reason, code
 	}

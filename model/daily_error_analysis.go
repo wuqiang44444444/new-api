@@ -50,7 +50,7 @@ func (key DailyReportErrorKey) Signal() string {
 			return DailyErrorStreamWarning
 		}
 		return key.EventType
-	case clienterrlog.EventTaskFailure, clienterrlog.EventChannelTest:
+	case clienterrlog.EventTaskFailure, clienterrlog.EventChannelTest, clienterrlog.EventVideoDelivery:
 		return key.EventType
 	}
 	return DailyErrorOther

@@ -510,6 +510,32 @@ func TestChannelAlertRelayIgnoresLocalAcceptanceAndPreservesUpstreamStatus(t *te
 	assert.Positive(t, rows[0].Success)
 }
 
+func TestChannelAlertDistinguishesRespondedProbeFromConnectionFailure(t *testing.T) {
+	previous := channelAlerts.enabled.Swap(true)
+	previousBuckets, previousDropped := channelAlerts.buffer.buckets, channelAlerts.buffer.dropped
+	previousSealed := channelAlerts.buffer.sealed
+	channelAlerts.buffer.buckets = make(map[int64]map[channelAlertScope]*channelAlertObservation)
+	channelAlerts.buffer.dropped = make(map[int64]bool)
+	channelAlerts.buffer.sealed = 0
+	t.Cleanup(func() {
+		channelAlerts.enabled.Store(previous)
+		channelAlerts.buffer.buckets, channelAlerts.buffer.dropped = previousBuckets, previousDropped
+		channelAlerts.buffer.sealed = previousSealed
+	})
+
+	ctx := context.Background()
+	channel := &model.Channel{Id: 59}
+	ObserveChannelProbe(ctx, channel, "claude-fable-5", "chat", http.StatusBadRequest, true, true, false, -1)
+	assert.Empty(t, channelAlerts.buffer.buckets, "a rejected response is neither a connection failure nor a generation success")
+
+	ObserveChannelProbe(ctx, channel, "claude-fable-5", "chat", 0, true, false, false, -1)
+	rows, ok := channelAlerts.buffer.seal(channelAlertBucket(time.Now().Unix()))
+	require.True(t, ok)
+	require.Len(t, rows, 1)
+	require.Len(t, rows[0].Failures, 1)
+	assert.Equal(t, channelAlertNetwork, rows[0].Failures[0].Kind)
+}
+
 func BenchmarkChannelAlertRelayHooks(b *testing.B) {
 	for _, enabled := range []bool{false, true} {
 		b.Run(fmt.Sprintf("enabled=%t", enabled), func(b *testing.B) {

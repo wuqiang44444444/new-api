@@ -51,6 +51,7 @@ func TestDailyReportPublishesHighCardinalityMultibyteWindow(t *testing.T) {
 		{clienterrlog.EventStreamError, "", clienterrlog.EventStreamError, 200},
 		{clienterrlog.EventStreamError, "client_disconnected", model.DailyErrorStreamDisconnected, 200},
 		{clienterrlog.EventTaskFailure, "", clienterrlog.EventTaskFailure, 0},
+		{clienterrlog.EventVideoDelivery, "video_delivery_retry_exhausted", clienterrlog.EventVideoDelivery, 0},
 	}
 	var rows []model.ErrorEvent
 	for _, category := range categories {
@@ -86,6 +87,49 @@ func TestDailyReportPublishesHighCardinalityMultibyteWindow(t *testing.T) {
 	cursor, err := model.DailyReportCursor(ctx, day.Unix())
 	require.NoError(t, err)
 	assert.Equal(t, end, cursor)
+}
+
+func TestDailyReportOmitsPassedFoundryProbeAndKeepsOrdinaryFailures(t *testing.T) {
+	db := withErrorReportTestDB(t)
+	withErrorReportSetting(t, "ops@example.com")
+	ctx := t.Context()
+	day := time.Date(2026, 11, 9, 0, 0, 0, 0, errorReportLocation())
+	end := day.AddDate(0, 0, 1).Unix()
+	reportID := seedCompletedDailyWindow(t, ctx, day.Unix())
+	require.NoError(t, db.Model(&model.ErrorReport{}).Where("report_id = ?", reportID).
+		UpdateColumn("aggregated_through", end-300).Error)
+	ordinary := model.ErrorEvent{CreatedAt: end - 2, EventType: clienterrlog.EventChannelTest,
+		ChannelId: 59, Status: 200, PublicCode: "555420", Reason: "test_upstream_rejected",
+		ModelName: "ordinary-probe-model", RequestId: "ordinary-probe",
+		Detail: `{"test_mode":"auto","check_result":"failed","upstream_status":"400"}`}
+	passed := ordinary
+	passed.CreatedAt, passed.ModelName, passed.RequestId = end-1, "foundry-probe-model", "passed-probe"
+	passed.Detail = `{"test_mode":"auto","check_result":"passed","generation_evidence":"rejected","upstream_status":"400"}`
+	require.NoError(t, db.Create(&[]model.ErrorEvent{ordinary, passed}).Error)
+
+	handler := newErrorReportHandler(nil)
+	handler.now = func() time.Time { return day.Add(30 * time.Hour) }
+	generated, _, err := handler.generateDailyReport(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, generated)
+	var saved model.ErrorReport
+	require.NoError(t, db.Where("report_id = ?", reportID).Take(&saved).Error)
+	assert.Equal(t, 1, saved.TotalEvents)
+	var summary dailyReportSummary
+	require.NoError(t, common.UnmarshalJsonStr(saved.Summary, &summary))
+	assert.EqualValues(t, 1, summary.Signals[clienterrlog.EventChannelTest])
+	require.Len(t, summary.Groups, 1)
+	assert.Equal(t, ordinary.ModelName, summary.Groups[0].ModelName)
+	var part model.ErrorReportPart
+	require.NoError(t, db.Where("report_id = ?", reportID).Take(&part).Error)
+	assert.Contains(t, part.BodyHTML, ordinary.ModelName)
+	assert.NotContains(t, part.BodyHTML, passed.ModelName)
+	rows, total, err := model.GetErrorEvents(model.ErrorEventFilter{EventType: clienterrlog.EventChannelTest, ChannelId: 59}, 0, 10)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, total)
+	require.Len(t, rows, 2)
+	assert.Equal(t, passed.RequestId, rows[0].RequestId)
+	assert.Equal(t, passed.Detail, rows[0].Detail)
 }
 
 func TestDailyReportCompletesPreviousBeijingDay(t *testing.T) {

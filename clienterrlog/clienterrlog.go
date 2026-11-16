@@ -5,7 +5,7 @@
 // docs/80-dev/2026-09-17-全量错误日志独立菜单分析与方案.md）：
 //   - `MarkAuthPassed` 只表示本请求已通过正式鉴权入口并放行下游，不参与权限判定，
 //     不持久化、不缓存，不构成另一套认证事实源。
-//   - 健康容量内每个「已鉴权 + 最终 4xx」请求写一条 WARN；故障时业务优先，丢失可观察。
+//   - 健康容量内每个「已鉴权 + 最终 4xx」请求写一条 WARN；明确的 Link 交付等待除外。
 //   - relay/asset 模块的 API 调用最终 4xx/5xx 额外交由注册的 persister 持久化到
 //     错误事件表（仅本模块；dashboard/web 等页面流量不持久化）。
 //   - 业务失败处通过 `Attach` 提供白名单诊断（阶段/原因码/受控上下文）；未分类的
@@ -101,6 +101,8 @@ type requestReport struct {
 	protocol   string
 	detail     map[string]string
 	stream     streamDiag
+
+	videoDeliveryWaiting bool
 
 	upstreamStatus int
 }

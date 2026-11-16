@@ -163,7 +163,9 @@ func (h *errorReportHandler) generateDailyReport(ctx context.Context) (int, []st
 			common.SysError("daily email quota rejection account totals could not be read")
 		}
 	}
-	details := loadMailErrorDetails(ctx, model.MailErrorScope{Start: max(start, summary.RetentionGapThrough), End: report.WindowEnd}, nil, summary.RetentionGapThrough > start)
+	details := loadMailErrorDetails(ctx, model.MailErrorScope{
+		Start: max(start, summary.RetentionGapThrough), End: report.WindowEnd, ExcludePassedChannelTests: true,
+	}, nil, summary.RetentionGapThrough > start)
 	day := time.Unix(start, 0).In(now.Location()).Format("2006-01-02")
 	part := renderDailyReport(report, day, summary, dailyReportOperations{tasks: tasks, resources: resources, incidents: incidents, incidentCount: incidentCount, channelNames: channelNames, asOf: now, quotaAccounts: quotaAccounts, details: details})
 	dataNote := "closed five-minute buckets; error groups may be truncated"

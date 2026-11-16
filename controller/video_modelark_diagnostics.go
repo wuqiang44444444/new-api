@@ -5,6 +5,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func attachVideoDeliveryError(c *gin.Context, reason, code string) {
+	clienterrlog.Attach(c.Request.Context(), clienterrlog.Report{
+		Stage:      "video_delivery",
+		Reason:     reason,
+		PublicCode: code,
+		Protocol:   "modelark_v3",
+	})
+}
+
 func attachModelArkVideoErrorDiagnostics(c *gin.Context, code string) {
 	if code != "task_not_found" {
 		return

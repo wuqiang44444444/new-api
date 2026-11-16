@@ -90,6 +90,9 @@ func renderDailyReport(report *model.ErrorReport, day string, summary dailyRepor
 	case summary.Signals[model.DailyErrorAPI5xx]+summary.Signals[clienterrlog.EventStreamError]+summary.Signals[clienterrlog.EventTaskFailure] > 0:
 		triageTitle, triageBG, triageAccent = "优先核对客户失败 / Review customer failures", "#fff4df", "#9a5b1b"
 		analysis = "已有客户 API 5xx、需排查的流式异常或任务失败的记录。优先核对对应渠道和原因，确认影响范围。<br>Review recorded API 5xx, stream errors requiring investigation or failed tasks first to establish customer impact."
+	case summary.Signals[clienterrlog.EventVideoDelivery] > 0:
+		triageTitle, triageBG, triageAccent = "核对视频交付故障 / Review video delivery failures", "#fff4df", "#9a5b1b"
+		analysis = "已有视频结果交付故障记录。按交付阶段核对上游文件读取与本站存储。<br>Review video delivery events by stage to check source retrieval and platform storage."
 	case summary.Signals[clienterrlog.WalletQuotaInsufficient]+summary.Signals[clienterrlog.SubscriptionQuotaInsufficient]+summary.Signals[clienterrlog.APIKeyQuotaInsufficient] > 0:
 		triageTitle = "核对额度不足 / Review quota rejections"
 		analysis = "请求被本站的资金来源或 API Key 限额阻断。请按下方分类处理。<br>Requests were blocked by account funding or API key limits. Review the breakdown below."
@@ -178,6 +181,7 @@ func renderDailyReport(report *model.ErrorReport, day string, summary dailyRepor
 		{model.DailyErrorAPI5xx, "客户 API 5xx / Customer API 5xx"},
 		{clienterrlog.EventStreamError, "需排查的流式异常 / Stream errors to investigate"},
 		{clienterrlog.EventTaskFailure, "异步任务失败或过期 / Failed or expired tasks"},
+		{clienterrlog.EventVideoDelivery, "视频交付故障 / Video delivery failures"},
 		{model.DailyErrorAPI429, "客户 API 429 / Customer API 429"},
 		{clienterrlog.WalletQuotaInsufficient, "钱包余额不足 / Insufficient wallet balance"},
 		{clienterrlog.SubscriptionQuotaInsufficient, "订阅不可用或额度不足 / Subscription unavailable or insufficient quota"},

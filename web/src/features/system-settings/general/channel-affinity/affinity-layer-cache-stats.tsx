@@ -8,10 +8,9 @@ import { Button } from '@/components/ui/button'
 import { toIntlLocale } from '@/i18n/languages'
 import { handleServerError } from '@/lib/handle-server-error'
 
+import { AffinityLayerCacheDetails } from './affinity-layer-cache-details'
 import { clearAffinityLayer } from './api'
-import type { CacheStats } from './types'
-
-type Layer = 'session' | 'api_key' | 'user'
+import type { AffinityCacheLayer, CacheStats } from './types'
 
 export function AffinityLayerCacheStats({
   stats,
@@ -21,9 +20,11 @@ export function AffinityLayerCacheStats({
   onCleared: () => void
 }) {
   const { t, i18n } = useTranslation()
-  const [selectedLayer, setSelectedLayer] = useState<Layer | null>(null)
+  const [selectedLayer, setSelectedLayer] = useState<AffinityCacheLayer | null>(
+    null
+  )
   const mutation = useMutation({
-    mutationFn: async (layer: Layer) => {
+    mutationFn: async (layer: AffinityCacheLayer) => {
       const result = await clearAffinityLayer(layer)
       if (!result.success) {
         throw new Error(result.message || t('Operation failed'))
@@ -70,6 +71,7 @@ export function AffinityLayerCacheStats({
             <span className='tabular-nums'>
               {total == null ? t('Unavailable') : total.toLocaleString(locale)}
             </span>
+            <AffinityLayerCacheDetails layer={id} label={label} />
             <Button
               type='button'
               size='sm'

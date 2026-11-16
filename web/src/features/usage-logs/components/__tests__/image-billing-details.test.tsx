@@ -146,3 +146,40 @@ it('shows reported legacy image usage and preserves explicit zero counts', () =>
   expect(screen.getByText('Image Out').nextElementSibling).toHaveTextContent('196')
   expect(screen.queryByText('Text Output')).toBeNull()
 })
+
+it('shows the frozen fixed price per image in the fee details', () => {
+  const log = usageLogSchema.parse({
+    id: 1,
+    user_id: 1,
+    created_at: 1000,
+    type: 2,
+    content: '',
+    model_name: 'public-image',
+    quota: 8335,
+    prompt_tokens: 53,
+    completion_tokens: 196,
+    other: JSON.stringify({
+      request_path: '/v1/images/generations',
+      billing_mode: 'tiered_expr',
+      billing_unit: 'request',
+      matched_tier: '1K_low',
+      fixed_price: 0.01667,
+      image_count: 1,
+      billing_explanation: { lines: [] },
+    }),
+  })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <DetailsDialog
+        log={log}
+        open
+        isAdmin={false}
+        isRoot={false}
+        onOpenChange={() => {}}
+      />
+    </QueryClientProvider>
+  )
+
+  expect(screen.getByText('$0.01667/image')).toBeVisible()
+  expect(screen.queryByText('$0.01667/M')).toBeNull()
+})

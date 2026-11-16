@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -175,15 +176,15 @@ func ClaimVideoResultObjects(limit int, runnerID string, now int64, claimTTLSeco
 	return claimed, nil
 }
 
-func videoResultCompletionScope(objectID int64, runnerID string) *gorm.DB {
-	return DB.Model(&TaskVideoResultObject{}).
+func videoResultCompletionScope(db *gorm.DB, objectID int64, runnerID string) *gorm.DB {
+	return db.Model(&TaskVideoResultObject{}).
 		Where("id = ? AND status = ? AND claimed_by = ?", objectID, TaskVideoResultStatusTransferring, runnerID)
 }
 
 // FinishVideoResultObjectReady 在领取租约内提交对象登记事实：CAS 保证只有
 // 领取者能写入，重复提交（上传成功但提交结果未知后重试）是幂等覆盖。
 func FinishVideoResultObjectReady(objectID int64, runnerID string, location VideoResultStorageLocation, objectKey, mimeType string, sizeBytes int64, now int64) (bool, error) {
-	result := videoResultCompletionScope(objectID, runnerID).Updates(map[string]any{
+	result := videoResultCompletionScope(DB, objectID, runnerID).Updates(map[string]any{
 		"status":           TaskVideoResultStatusReady,
 		"storage_backend":  location.Backend,
 		"storage_endpoint": location.Endpoint,
@@ -203,7 +204,7 @@ func FinishVideoResultObjectReady(objectID int64, runnerID string, location Vide
 // RescheduleVideoResultObjectRetry 把可重试失败退回 pending 并按退避时间再领
 // 取；重试只针对同一任务同一结果的读取或上传。
 func RescheduleVideoResultObjectRetry(objectID int64, runnerID string, nextAttemptAt int64, sanitizedError string, now int64) (bool, error) {
-	result := videoResultCompletionScope(objectID, runnerID).Updates(map[string]any{
+	result := videoResultCompletionScope(DB, objectID, runnerID).Updates(map[string]any{
 		"status":           TaskVideoResultStatusPending,
 		"claimed_by":       "",
 		"claim_expires_at": int64(0),
@@ -216,15 +217,23 @@ func RescheduleVideoResultObjectRetry(objectID int64, runnerID string, nextAttem
 
 // FinishVideoResultObjectUnavailable 如实记录交付不可用（上游失效、超出重试
 // 上限或任务已删除），不改任务状态、资金事实，也不回退旧代理。
-func FinishVideoResultObjectUnavailable(objectID int64, runnerID string, sanitizedError string, now int64) (bool, error) {
-	result := videoResultCompletionScope(objectID, runnerID).Updates(map[string]any{
-		"status":           TaskVideoResultStatusUnavailable,
-		"claimed_by":       "",
-		"claim_expires_at": int64(0),
-		"last_error":       sanitizedError,
-		"updated_at":       now,
+func FinishVideoResultObjectUnavailable(ctx context.Context, objectID int64, runnerID string, sanitizedError string, now int64, event *VideoDeliveryError) (bool, error) {
+	won := false
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := videoResultCompletionScope(tx, objectID, runnerID).Updates(map[string]any{
+			"status":           TaskVideoResultStatusUnavailable,
+			"claimed_by":       "",
+			"claim_expires_at": int64(0),
+			"last_error":       sanitizedError,
+			"updated_at":       now,
+		})
+		won = result.RowsAffected == 1
+		if result.Error != nil || !won || event == nil {
+			return result.Error
+		}
+		return tx.Create(event).Error
 	})
-	return result.RowsAffected == 1, result.Error
+	return won && err == nil, err
 }
 
 // CountVideoResultTransferWork 统计待执行行数（pending 或租约过期的
@@ -242,15 +251,16 @@ func CountVideoResultTransferWork(now int64) (int64, error) {
 // FindVideoResultRegistrationGaps 返回完成窗口内成功且缺少任一实际结果部件的
 // 范围内 Link 视频任务，用于补登记（进程崩溃或登记提交失败后的持久恢复）。
 // 窗口之外的存量任务不自动迁移，其范围由部署方上线前盘点决定。
-func FindVideoResultRegistrationGaps(platforms []constant.TaskPlatform, windowStart int64, limit int) ([]Task, error) {
+func FindVideoResultRegistrationGaps(ctx context.Context, platforms []constant.TaskPlatform, windowStart int64, limit int) ([]Task, error) {
 	if len(platforms) == 0 || limit <= 0 {
 		return nil, nil
 	}
+	db := DB.WithContext(ctx)
 	var gaps []Task
 	cursor := int64(0)
 	for len(gaps) < limit {
 		var candidates []Task
-		err := DB.Where(
+		err := db.Where(
 			"status = ? AND client_protocol = ? AND client_deleted_at = ? AND finish_time >= ? AND platform IN ?",
 			TaskStatusSuccess, TaskClientProtocolModelArkV3, 0, windowStart, platforms,
 		).Where("tasks.id > ?", cursor).
@@ -267,7 +277,7 @@ func FindVideoResultRegistrationGaps(platforms []constant.TaskPlatform, windowSt
 			taskIDs = append(taskIDs, candidates[i].TaskID)
 		}
 		var registered []TaskVideoResultObject
-		if err := DB.Select("task_id", "part").Where("task_id IN ?", taskIDs).Find(&registered).Error; err != nil {
+		if err := db.Select("task_id", "part").Where("task_id IN ?", taskIDs).Find(&registered).Error; err != nil {
 			return nil, err
 		}
 		parts := make(map[string]map[string]bool, len(candidates))

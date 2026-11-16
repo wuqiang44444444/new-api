@@ -85,7 +85,11 @@ func ClaudeErrorWrapperLocal(err error, code string, statusCode int) *dto.Claude
 	return claudeErr
 }
 
-func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
+func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) *types.NewAPIError {
+	return relayErrorHandler(ctx, resp, showBodyWhenFail, nil)
+}
+
+func relayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool, observeError func(json.RawMessage)) (newApiErr *types.NewAPIError) {
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 
 	clienterrlog.EnsureUpstreamResponseCapture(ctx, resp)
@@ -116,6 +120,9 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 	}
 
 	if common.GetJsonType(errResponse.Error) == "object" {
+		if observeError != nil {
+			observeError(errResponse.Error)
+		}
 		// General format error (OpenAI, Anthropic, Gemini, etc.)
 		oaiError := errResponse.TryToOpenAIError()
 		if oaiError != nil {

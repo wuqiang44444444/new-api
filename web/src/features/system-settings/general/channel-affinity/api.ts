@@ -17,8 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
-import type { CacheStats } from './types'
+import type {
+  AffinityCacheEntriesPage,
+  AffinityCacheLayer,
+  CacheStats,
+} from './types'
 
 export async function getCacheStats(): Promise<{
   success: boolean
@@ -63,9 +68,24 @@ export async function getAffinityUsageCache(params: {
   return res.data
 }
 
-export async function clearAffinityLayer(
-  layer: 'session' | 'api_key' | 'user'
-) {
+export async function getAffinityCacheEntries(
+  layer: AffinityCacheLayer,
+  cursor: string | undefined,
+  signal: AbortSignal
+): Promise<AffinityCacheEntriesPage> {
+  const res = await api.get<{
+    success: boolean
+    data: AffinityCacheEntriesPage
+  }>('/api/option/channel_affinity_cache/entries', {
+    params: { layer, cursor },
+    signal,
+    disableDuplicate: true,
+    skipErrorHandler: true,
+  })
+  return requireServerSuccess(res.data).data
+}
+
+export async function clearAffinityLayer(layer: AffinityCacheLayer) {
   const res = await api.delete('/api/option/channel_affinity_cache', {
     params: { layer },
   })

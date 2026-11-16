@@ -56,15 +56,17 @@ func TestChannelFailoverEvidenceAndRecovery(t *testing.T) {
 	for _, check := range []struct {
 		name, state, result, expected string
 		trial                         bool
+		status                        int
 	}{
-		{"executor error", "cooldown", "unconfirmed", "pending", false},
-		{"healthy probe", "pending", "success", "trial_ready", false},
-		{"failed trial", "trial_ready", "failed", "cooldown", true},
-		{"interrupted trial", "trial_ready", "unconfirmed", "trial_ready", true},
-		{"successful trial", "trial_ready", "success", "", true},
+		{"executor error", "cooldown", "unconfirmed", "pending", false, 0},
+		{"rejected probe", "cooldown", "unconfirmed", "pending", false, 400},
+		{"healthy probe", "pending", "success", "trial_ready", false, 200},
+		{"failed trial", "trial_ready", "failed", "cooldown", true, 503},
+		{"interrupted trial", "trial_ready", "unconfirmed", "trial_ready", true, 0},
+		{"successful trial", "trial_ready", "success", "", true, 200},
 	} {
 		t.Run(check.name, func(t *testing.T) {
-			_, _, err := updateChannelFailoverHealth(scope, func(next *ChannelFailoverHealth, now time.Time) bool {
+			before, _, err := updateChannelFailoverHealth(scope, func(next *ChannelFailoverHealth, now time.Time) bool {
 				next.State, next.Lease, next.LeaseUntil = check.state, "valid", now.Add(time.Minute)
 				return true
 			})
@@ -73,10 +75,16 @@ func TestChannelFailoverEvidenceAndRecovery(t *testing.T) {
 			require.NoError(t, err)
 			assert.False(t, committed, "a stale lease cannot report a recorded result")
 			assert.Equal(t, check.state, readChannelFailoverHealth(t.Context(), []ChannelFailoverScope{scope})[scope].State)
-			committed, err = CompleteChannelFailoverCheck(scope, "valid", check.result, 200, check.trial)
+			committed, err = CompleteChannelFailoverCheck(scope, "valid", check.result, check.status, check.trial)
 			require.NoError(t, err)
 			assert.True(t, committed)
-			assert.Equal(t, check.expected, readChannelFailoverHealth(t.Context(), []ChannelFailoverScope{scope})[scope].State)
+			after := readChannelFailoverHealth(t.Context(), []ChannelFailoverScope{scope})[scope]
+			assert.Equal(t, check.expected, after.State)
+			if !check.trial && check.result == "unconfirmed" {
+				assert.Equal(t, "unconfirmed", after.ProbeResult)
+				assert.Equal(t, check.status, after.ProbeStatus)
+				assert.Equal(t, before.CooldownStep, after.CooldownStep)
+			}
 		})
 	}
 }

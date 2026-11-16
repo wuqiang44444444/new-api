@@ -285,7 +285,8 @@ export async function handleTestChannel(
     success: boolean,
     responseTime?: number,
     error?: string,
-    errorCode?: string
+    errorCode?: string,
+    generationEvidence?: ChannelTestResponse['generation_evidence']
   ) => void
 ): Promise<void> {
   const payload =
@@ -306,18 +307,20 @@ export async function handleTestChannel(
     const target = getChannelTestLabel(options)
     if (response.success) {
       if (!options?.silent) {
+        const description =
+          response.generation_evidence === 'rejected'
+            ? i18next.t('Upstream responded, generation rejected')
+            : duration && i18next.t('Response time: {{duration}}', { duration })
         toast.success(
           i18next.t('{{target}} test succeeded', { target }),
-          duration
-            ? {
-                description: i18next.t('Response time: {{duration}}', {
-                  duration,
-                }),
-              }
-            : undefined
+          description ? { description } : undefined
         )
       }
-      onTestComplete?.(true, responseTime)
+      if (response.generation_evidence === 'rejected') {
+        onTestComplete?.(true, responseTime, undefined, undefined, 'rejected')
+      } else {
+        onTestComplete?.(true, responseTime)
+      }
     } else {
       const errorMsg =
         getServerMessage(response) || i18next.t(ERROR_MESSAGES.TEST_FAILED)
@@ -329,7 +332,12 @@ export async function handleTestChannel(
             : errorMsg,
         })
       }
-      onTestComplete?.(false, responseTime, getServerMessage(response), response.error_code)
+      onTestComplete?.(
+        false,
+        responseTime,
+        getServerMessage(response),
+        response.error_code
+      )
     }
   } catch (_error: unknown) {
     const err = _error as { response?: { data?: unknown } }

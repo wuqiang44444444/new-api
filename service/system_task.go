@@ -128,6 +128,7 @@ func StartSystemTaskRunner() {
 		if !common.IsMasterNode {
 			return
 		}
+		go runVideoDeliveryDiagnostics()
 
 		runnerID := fmt.Sprintf("%s-%s", common.NodeName, common.GetRandomString(8))
 		gopool.Go(func() {

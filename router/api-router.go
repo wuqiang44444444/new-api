@@ -231,6 +231,7 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/model_pricing/preview", controller.PreviewModelPricing)
 			optionRoute.POST("/payment_compliance", controller.ConfirmPaymentCompliance)
 			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)
+			optionRoute.GET("/channel_affinity_cache/entries", middleware.DisableCache(), controller.GetChannelAffinityCacheDetails)
 			optionRoute.POST("/customer_contract_ratio_impact", controller.PreviewCustomerContractRatioImpact)
 			optionRoute.POST("/billing-expression/preview", controller.PreviewBillingExpression)
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)

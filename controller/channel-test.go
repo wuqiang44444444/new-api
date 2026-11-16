@@ -519,17 +519,19 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		if httpResp.StatusCode != http.StatusOK {
 			// 在读取响应处冻结真实上游状态；不得从包装后的错误反推。
 			upstreamStatus = httpResp.StatusCode
-			err := service.RelayErrorHandler(c.Request.Context(), httpResp, true)
-			common.SysError(common.LogText(
-				"channel test bad response: channel_id=%d name=%s type=%d model=%s endpoint_type=%s status=%d err=%v",
-				channel.Id,
-				channel.Name,
-				channel.Type,
-				testModel,
-				endpointType,
-				httpResp.StatusCode,
-				err,
-			))
+			err := service.ChannelTestUpstreamError(c, channel.Type, httpResp)
+			if !service.ChannelTestFoundryRejection(c) {
+				common.SysError(common.LogText(
+					"channel test bad response: channel_id=%d name=%s type=%d model=%s endpoint_type=%s status=%d err=%v",
+					channel.Id,
+					channel.Name,
+					channel.Type,
+					testModel,
+					endpointType,
+					httpResp.StatusCode,
+					err,
+				))
+			}
 			return testResult{
 				context:     c,
 				localErr:    err,
@@ -938,6 +940,15 @@ func TestChannel(c *gin.Context) {
 	if result.localErr != nil {
 		// 错误事件（仅观察）：管理接口实际返回 200，事件按「渠道测试」类型保存。
 		service.RecordManualChannelTestFailureEvent(c, channel, result.testedModel, endpointType, isStream, result.context, result.localErr, result.newAPIError, result.upstreamStatus, time.Since(tik).Milliseconds())
+		if service.ChannelTestFoundryRejection(result.context) {
+			milliseconds := time.Since(tik).Milliseconds()
+			go channel.UpdateResponseTime(milliseconds)
+			c.JSON(http.StatusOK, gin.H{
+				"success": true, "message": "", "time": float64(milliseconds) / 1000,
+				"generation_evidence": "rejected",
+			})
+			return
+		}
 		resp := gin.H{
 			"success": false,
 			"message": result.localErr.Error(),
@@ -1009,7 +1020,10 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	}
 
 	service.PrepareChannelTestAudit(result.context)
-	observeAutomaticChannelAlert(ctx, channel, result, scope, automatic)
+	passedWithRejection := service.ChannelTestFoundryRejection(result.context)
+	if !passedWithRejection {
+		observeAutomaticChannelAlert(ctx, channel, result, scope, automatic)
+	}
 	summary.Tested++
 
 	isConfigOnly := automatic && scope != "generation_probe" && scope != "readonly_probe"
@@ -1020,11 +1034,11 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	// 本地校验终止的失败没有上游观测，配置失败也不是上游故障，不得据此
 	// 禁用渠道或覆盖渠道延迟。
 	upstreamObserved := !isSeedanceLink && !result.checkUnsupported && (!automatic || (scope == "generation_probe" && result.upstreamAttempted))
-	if newAPIError != nil && upstreamObserved {
+	if !passedWithRejection && newAPIError != nil && upstreamObserved {
 		shouldBanChannel = service.ShouldDisableChannel(result.newAPIError)
 	}
 
-	if common.AutomaticDisableChannelEnabled && !shouldBanChannel && upstreamObserved && (!automatic || result.upstreamResponded) {
+	if !passedWithRejection && common.AutomaticDisableChannelEnabled && !shouldBanChannel && upstreamObserved && (!automatic || result.upstreamResponded) {
 		if milliseconds > disableThreshold {
 			// The reason is stored with the channel and sent in the disable
 			// notice; no request states a language here.
@@ -1038,13 +1052,16 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		}
 	}
 
-	if automatic {
+	if automatic || passedWithRejection {
 		finalResult := result
 		finalResult.newAPIError = newAPIError
 		summary.Checks = []service.ChannelAutoCheckResult{channelAutoCheckResult(channel, finalResult, scope)}
 	}
 	if result.checkUnsupported {
 		summary.Unsupported++
+	} else if passedWithRejection {
+		summary.Succeeded++
+		service.RecordAutoChannelTestFailureEvent(channel, result.testedModel, result.context, result.localErr, newAPIError, result.upstreamStatus, milliseconds, false, shouldUseStreamForAutomaticChannelTest(channel), summary.Checks)
 	} else if newAPIError == nil && result.localErr == nil {
 		summary.Succeeded++
 	} else {
@@ -1065,7 +1082,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 
 	// 只有携带真实上游往返的成功才具备恢复证明力：配置检查通过不能恢复因上游
 	// 故障自动禁用的渠道，素材只读探针也不能证明视频创建链路恢复。
-	if upstreamObserved && result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
+	if !passedWithRejection && upstreamObserved && result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
 		service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name, service.ChannelStatusAuditForRequest(result.context, nil))
 		summary.Enabled++
 	}

@@ -385,6 +385,6 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 		},
 	}
 
-	c.JSON(http.StatusOK, response)
+	helper.RenderChatCompletionJSON(c, http.StatusOK, response)
 	return nil, &response.Usage
 }

@@ -878,9 +878,11 @@ it('preserves automatic text probe presentation', async () => {
             ...ERROR_ITEM,
             event_type: 'channel_test',
             status: 0,
+            public_code: '555420',
             detail: JSON.stringify({
               test_mode: 'auto',
               check_scope: 'generation_probe',
+              check_result: 'failed',
               upstream_status: '400',
             }),
           },
@@ -891,8 +893,54 @@ it('preserves automatic text probe presentation', async () => {
   await renderViewer()
   expect(await screen.findByText('Channel Test')).toBeVisible()
   expect(screen.getByText('Upstream HTTP 400')).toBeVisible()
+  expect(
+    screen.queryByText('Check passed · Generation rejected')
+  ).not.toBeInTheDocument()
   expect(screen.queryByText('Not a customer request')).not.toBeInTheDocument()
 })
+
+it.each(['manual', 'auto'])(
+  'keeps the Foundry rejection visible for a passed %s check',
+  async (mode) => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          total: 1,
+          items: [
+            {
+              ...ERROR_ITEM,
+              event_type: 'channel_test',
+              status: mode === 'manual' ? 200 : 0,
+              public_code: '555420',
+              detail: JSON.stringify({
+                test_mode: mode,
+                config_check: 'passed',
+                check_result: 'passed',
+                generation_evidence: 'rejected',
+                upstream_status: '400',
+              }),
+            },
+          ],
+        },
+      },
+    })
+    await renderViewer('zh')
+    const status = await screen.findByText('检查通过 · 生成被拒绝')
+    expect(status).toBeVisible()
+    expect(screen.getByText('上游 HTTP 400')).toBeVisible()
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('button', { name: '详情' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('检查通过 · 生成被拒绝')).toBeVisible()
+    expect(within(dialog).getByText('上游 HTTP 400')).toBeVisible()
+    const resultRow = within(dialog).getByText('本次检查结果').parentElement
+    if (!resultRow) throw new Error('Missing check result row')
+    expect(within(resultRow).getByText('通过')).toBeVisible()
+    expect(within(dialog).getByText('上游已响应，生成被拒绝')).toBeVisible()
+  }
+)
 
 it('labels historical video probes and explains their scope in Chinese', async () => {
   vi.spyOn(api, 'get').mockResolvedValue({

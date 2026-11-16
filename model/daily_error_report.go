@@ -104,7 +104,8 @@ func ReadDailyReportSlice(ctx context.Context, start, end int64) (DailyReportSli
 	if LOG_DB == nil {
 		return slice, errors.New("error log database unavailable")
 	}
-	query := LOG_DB.WithContext(ctx).Model(&ErrorEvent{}).Where("created_at >= ? AND created_at < ?", start, end)
+	query := withoutPassedChannelTests(LOG_DB.WithContext(ctx).Model(&ErrorEvent{}).
+		Where("created_at >= ? AND created_at < ?", start, end))
 	const maxGroups = 128
 	if err := query.Session(&gorm.Session{}).Select("event_type, status, channel_id, model_name, reason, COUNT(*) AS count, MAX(created_at) AS last_at").
 		Group("event_type, status, channel_id, model_name, reason").

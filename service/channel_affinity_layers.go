@@ -41,16 +41,15 @@ type layeredAffinityRequest struct {
 }
 
 var userAffinityCache = sync.OnceValue(func() *cachex.HybridCache[int] {
-	return cachex.NewHybridCache(cachex.HybridCacheConfig[int]{
+	return cachex.NewInspectableHybridCache(cachex.HybridCacheConfig[int]{
 		Namespace: "new-api:user_channel_affinity:v1", Redis: common.RDB, RedisEnabled: func() bool { return common.RedisEnabled },
 		RedisCodec: cachex.IntCodec{}, RedisOpTimeout: defaultAffinityRedisLimit,
-		Memory: func() *hot.HotCache[string, int] {
-			capacity := operation_setting.GetChannelAffinitySetting().MaxEntries
-			if capacity <= 0 {
-				capacity = 100000
-			}
-			return hot.NewHotCache[string, int](hot.LRU, capacity).WithTTL(defaultAffinityTTL).WithJanitor().Build()
-		},
+	}, func() *hot.HotCache[string, cachex.InspectableValue[int]] {
+		capacity := operation_setting.GetChannelAffinitySetting().MaxEntries
+		if capacity <= 0 {
+			capacity = 100000
+		}
+		return hot.NewHotCache[string, cachex.InspectableValue[int]](hot.LRU, capacity).WithTTL(defaultAffinityTTL).WithJanitor().Build()
 	})
 })
 

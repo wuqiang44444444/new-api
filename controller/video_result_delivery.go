@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/QuantumNous/new-api/clienterrlog"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -124,6 +125,7 @@ func serveVideoResultDelivery(c *gin.Context, task *model.Task) bool {
 	}
 	rows, err := model.ListVideoResultObjects(task.TaskID)
 	if err != nil {
+		attachVideoDeliveryError(c, "video_delivery_lookup_failed", "internal_error")
 		modelArkVideoError(c, http.StatusInternalServerError, "internal_error", "Failed to query video delivery")
 		return true
 	}
@@ -135,6 +137,7 @@ func serveVideoResultDelivery(c *gin.Context, task *model.Task) bool {
 	if row != nil {
 		url, _, signErr := service.PresignVideoResultDownload(c.Request.Context(), row, c.Request.Method)
 		if signErr != nil {
+			attachVideoDeliveryError(c, "video_delivery_signing_failed", "video_delivery_unavailable")
 			modelArkVideoError(c, http.StatusServiceUnavailable, "video_delivery_unavailable", "Video delivery storage is unavailable")
 			return true
 		}
@@ -142,16 +145,18 @@ func serveVideoResultDelivery(c *gin.Context, task *model.Task) bool {
 		c.Redirect(http.StatusFound, url)
 		return true
 	}
-	partPresent := false
+	partPresent, waiting := false, false
 	for i := range rows {
 		if rows[i].Part != part {
 			continue
 		}
 		partPresent = true
 		if rows[i].Status == model.TaskVideoResultStatusUnavailable {
+			attachVideoDeliveryError(c, "video_delivery_unavailable", "video_delivery_unavailable")
 			modelArkVideoError(c, http.StatusGone, "video_delivery_unavailable", "Video delivery is unavailable")
 			return true
 		}
+		waiting = rows[i].Status == model.TaskVideoResultStatusPending || rows[i].Status == model.TaskVideoResultStatusTransferring
 		break
 	}
 	if !partPresent {
@@ -167,9 +172,16 @@ func serveVideoResultDelivery(c *gin.Context, task *model.Task) bool {
 			return true
 		}
 		if task.FinishTime < service.VideoResultSweepWindowStart() {
+			attachVideoDeliveryError(c, "video_delivery_outside_registration_window", "video_delivery_unavailable")
 			modelArkVideoError(c, http.StatusGone, "video_delivery_unavailable", "Video delivery is unavailable")
 			return true
 		}
+		waiting = true
+	}
+	if waiting {
+		clienterrlog.MarkVideoDeliveryWaiting(c.Request.Context())
+	} else {
+		attachVideoDeliveryError(c, "video_delivery_invalid_object_state", "video_delivery_preparing")
 	}
 	modelArkVideoError(c, http.StatusConflict, "video_delivery_preparing", "Video result is being prepared for download")
 	return true

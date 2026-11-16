@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"gorm.io/gorm"
@@ -143,7 +144,7 @@ func TestFinishVideoResultObjectUnavailableAndLookup(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, claimed, 1)
 
-	won, err := FinishVideoResultObjectUnavailable(claimed[0].ID, "runner", "upstream result expired", now+1)
+	won, err := FinishVideoResultObjectUnavailable(context.Background(), claimed[0].ID, "runner", "upstream result expired", now+1, nil)
 	require.NoError(t, err)
 	require.True(t, won)
 
@@ -167,7 +168,7 @@ func TestFindVideoResultRegistrationGaps(t *testing.T) {
 	task := videoResultTestTask("task_gap", 67)
 	insertVideoResultTaskForTest(t, task)
 
-	gaps, err := FindVideoResultRegistrationGaps(platforms, common.GetTimestamp()-60, 10)
+	gaps, err := FindVideoResultRegistrationGaps(context.Background(), platforms, common.GetTimestamp()-60, 10)
 	require.NoError(t, err)
 	found := false
 	for _, gap := range gaps {
@@ -178,11 +179,11 @@ func TestFindVideoResultRegistrationGaps(t *testing.T) {
 	assert.True(t, found, "successful in-scope task without rows is a registration gap")
 
 	require.NoError(t, RegisterVideoResultObjects(task, []string{TaskVideoResultPartVideo}))
-	gaps, err = FindVideoResultRegistrationGaps(platforms, common.GetTimestamp()-60, 10)
+	gaps, err = FindVideoResultRegistrationGaps(context.Background(), platforms, common.GetTimestamp()-60, 10)
 	require.NoError(t, err)
 	assert.Contains(t, gaps, *task, "missing last frame must remain recoverable")
 	require.NoError(t, RegisterVideoResultObjects(task, VideoTaskResultParts(task)))
-	gaps, err = FindVideoResultRegistrationGaps(platforms, common.GetTimestamp()-60, 10)
+	gaps, err = FindVideoResultRegistrationGaps(context.Background(), platforms, common.GetTimestamp()-60, 10)
 	require.NoError(t, err)
 	for _, gap := range gaps {
 		assert.NotEqual(t, task.TaskID, gap.TaskID)
@@ -193,7 +194,7 @@ func TestFindVideoResultRegistrationGaps(t *testing.T) {
 	old.CreatedAt = common.GetTimestamp() - 99999
 	old.FinishTime = old.CreatedAt + 10
 	insertVideoResultTaskForTest(t, old)
-	gaps, err = FindVideoResultRegistrationGaps(platforms, common.GetTimestamp()-3600, 10)
+	gaps, err = FindVideoResultRegistrationGaps(context.Background(), platforms, common.GetTimestamp()-3600, 10)
 	require.NoError(t, err)
 	for _, gap := range gaps {
 		assert.NotEqual(t, old.TaskID, gap.TaskID)
@@ -230,7 +231,7 @@ func TestVideoResultRecoveryWindowUsesCompletionTime(t *testing.T) {
 	task := videoResultTestTask("task_old_creation_recent_completion", constant.ChannelTypeSeedanceLink)
 	task.CreatedAt = common.GetTimestamp() - 48*3600
 	insertVideoResultTaskForTest(t, task)
-	gaps, err := FindVideoResultRegistrationGaps([]constant.TaskPlatform{task.Platform}, common.GetTimestamp()-3600, 200)
+	gaps, err := FindVideoResultRegistrationGaps(context.Background(), []constant.TaskPlatform{task.Platform}, common.GetTimestamp()-3600, 200)
 	require.NoError(t, err)
 	assert.Contains(t, gaps, *task, "a recently completed task must remain recoverable regardless of creation time")
 }
@@ -255,7 +256,7 @@ func TestVideoResultRecoveryScansPastCompleteTasks(t *testing.T) {
 	missing := videoResultTestTask("task_after_complete_page", constant.ChannelTypeSeedanceLink)
 	insertVideoResultTaskForTest(t, missing)
 	require.NoError(t, RegisterVideoResultObjects(missing, []string{TaskVideoResultPartVideo}))
-	gaps, err := FindVideoResultRegistrationGaps([]constant.TaskPlatform{missing.Platform}, now-1, 1)
+	gaps, err := FindVideoResultRegistrationGaps(context.Background(), []constant.TaskPlatform{missing.Platform}, now-1, 1)
 	require.NoError(t, err)
 	require.Len(t, gaps, 1)
 	assert.Equal(t, missing.TaskID, gaps[0].TaskID)

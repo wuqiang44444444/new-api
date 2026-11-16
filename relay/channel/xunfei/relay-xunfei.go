@@ -136,6 +136,10 @@ func xunfeiStreamHandler(c *gin.Context, textRequest dto.GeneralOpenAIRequest, a
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed)
 	}
+	return writeXunfeiChatStream(c, dataChan, stopChan)
+}
+
+func writeXunfeiChatStream(c *gin.Context, dataChan <-chan XunfeiChatResponse, stopChan <-chan bool) (*dto.Usage, *types.NewAPIError) {
 	helper.SetEventStreamHeaders(c)
 	var usage dto.Usage
 	c.Stream(func(w io.Writer) bool {
@@ -150,7 +154,7 @@ func xunfeiStreamHandler(c *gin.Context, textRequest dto.GeneralOpenAIRequest, a
 				common.SysLog(common.LogText("error marshalling stream response: %s", err.Error()))
 				return true
 			}
-			c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonResponse)})
+			c.Render(-1, common.CustomEvent{Data: "data: " + common.ChatCompletionDeltaJSON(c, string(jsonResponse))})
 			return true
 		case <-stopChan:
 			c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
@@ -166,6 +170,10 @@ func xunfeiHandler(c *gin.Context, textRequest dto.GeneralOpenAIRequest, appId s
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed)
 	}
+	return writeXunfeiChatResponse(c, dataChan, stopChan)
+}
+
+func writeXunfeiChatResponse(c *gin.Context, dataChan <-chan XunfeiChatResponse, stopChan <-chan bool) (*dto.Usage, *types.NewAPIError) {
 	var usage dto.Usage
 	var content string
 	var xunfeiResponse XunfeiChatResponse
@@ -198,7 +206,7 @@ func xunfeiHandler(c *gin.Context, textRequest dto.GeneralOpenAIRequest, appId s
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
 	c.Writer.Header().Set("Content-Type", "application/json")
-	_, _ = c.Writer.Write(jsonResponse)
+	_, _ = c.Writer.Write(common.ChatCompletionMessageJSON(c, jsonResponse))
 	return &usage, nil
 }
 

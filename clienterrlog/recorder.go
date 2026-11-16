@@ -16,7 +16,7 @@ func withReport(ctx context.Context, report *requestReport) context.Context {
 }
 
 // Recorder 是注册在 RequestId 之后的统一记录出口：请求结束时检查
-// 「正式鉴权成功标记 + 最终状态为 4xx」，满足则写一条 WARN 事件。
+// 「正式鉴权成功标记 + 最终状态为 4xx」，确定的正常交付等待除外。
 // 未标记成功的请求不产生事件；不重新执行鉴权，不改变请求处理顺序。
 func Recorder() gin.HandlerFunc { return defaultSink.Middleware() }
 
@@ -51,8 +51,12 @@ func (s *Sink) record(c *gin.Context, startedAt time.Time, report *requestReport
 	report.mu.Lock()
 	marker, passed := report.auth, report.authPassed
 	stream := report.stream
+	videoDeliveryWaiting := report.videoDeliveryWaiting
 	report.mu.Unlock()
 	if !passed {
+		return
+	}
+	if videoDeliveryWaiting && !stream.set && isVideoDeliveryWait(c.Request.Method, marker.Route, status) {
 		return
 	}
 	if status >= 400 {

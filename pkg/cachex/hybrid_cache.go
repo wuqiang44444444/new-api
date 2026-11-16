@@ -41,22 +41,35 @@ type HybridCache[V any] struct {
 	redisOpTimeout time.Duration
 
 	memOnce sync.Once
-	memInit func() *hot.HotCache[string, V]
-	mem     *hot.HotCache[string, V]
+	memInit func() memoryStore[V]
+	mem     memoryStore[V]
+}
+
+type memoryStore[V any] interface {
+	Get(string) (V, bool, error)
+	SetWithTTL(string, V, time.Duration)
+	Keys() []string
+	Purge()
+	DeleteMany([]string) map[string]bool
+	Capacity() (int, int)
+	Algorithm() (string, string)
 }
 
 func NewHybridCache[V any](cfg HybridCacheConfig[V]) *HybridCache[V] {
 	if cfg.RedisOpTimeout <= 0 {
 		cfg.RedisOpTimeout = defaultRedisOpTimeout
 	}
-	return &HybridCache[V]{
+	cache := &HybridCache[V]{
 		ns:             cfg.Namespace,
 		redis:          cfg.Redis,
 		redisCodec:     cfg.RedisCodec,
 		redisEnabled:   cfg.RedisEnabled,
 		redisOpTimeout: cfg.RedisOpTimeout,
-		memInit:        cfg.Memory,
 	}
+	if cfg.Memory != nil {
+		cache.memInit = func() memoryStore[V] { return cfg.Memory() }
+	}
+	return cache
 }
 
 func (c *HybridCache[V]) FullKey(key string) string {
@@ -73,7 +86,7 @@ func (c *HybridCache[V]) redisOn() bool {
 	return c.redisEnabled()
 }
 
-func (c *HybridCache[V]) memCache() *hot.HotCache[string, V] {
+func (c *HybridCache[V]) memCache() memoryStore[V] {
 	c.memOnce.Do(func() {
 		if c.memInit == nil {
 			c.mem = hot.NewHotCache[string, V](hot.LRU, 1).Build()

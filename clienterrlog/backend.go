@@ -9,16 +9,17 @@ import (
 // 事件类型常量：唯一区分事件类型。module 继续描述流量域、stage 继续描述失败阶段，
 // 两者不承担类型语义（docs/80-dev/2026-09-17-全量错误日志独立菜单分析与方案.md 扩展节）。
 const (
-	EventAPIError    = "api_error"
-	EventChannelTest = "channel_test"
-	EventStreamError = "stream_error"
-	EventTaskFailure = "task_failure"
+	EventAPIError      = "api_error"
+	EventChannelTest   = "channel_test"
+	EventStreamError   = "stream_error"
+	EventTaskFailure   = "task_failure"
+	EventVideoDelivery = "video_delivery"
 )
 
 // ValidEventType 校验事件类型白名单；空值表示第一轮遗留生产者，按 api_error 归类。
 func ValidEventType(eventType string) bool {
 	switch eventType {
-	case "", EventAPIError, EventChannelTest, EventStreamError, EventTaskFailure:
+	case "", EventAPIError, EventChannelTest, EventStreamError, EventTaskFailure, EventVideoDelivery:
 		return true
 	}
 	return false

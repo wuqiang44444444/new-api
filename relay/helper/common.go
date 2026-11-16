@@ -103,7 +103,7 @@ func StringData(c *gin.Context, str string) error {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
-	c.Render(-1, common.CustomEvent{Data: "data: " + str})
+	c.Render(-1, common.CustomEvent{Data: "data: " + common.ChatCompletionDeltaJSON(c, str)})
 	return FlushWriter(c)
 }
 

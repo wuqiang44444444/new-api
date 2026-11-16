@@ -68,6 +68,10 @@ export function ErrorLogDetailsDialog(props: { entry: ErrorLogItem }) {
   const isTaskFailure = props.entry.event_type === 'task_failure'
   const isAutoChannelTest =
     props.entry.event_type === 'channel_test' && detail.test_mode === 'auto'
+  const showChannelCheck =
+    isAutoChannelTest ||
+    (props.entry.event_type === 'channel_test' &&
+      detail.generation_evidence === 'rejected')
   // A linked identity permits a lookup; only recorded evidence determines
   // whether the original is available, including events with HTTP snapshots.
   const showTaskEvidence = Boolean(
@@ -79,15 +83,10 @@ export function ErrorLogDetailsDialog(props: { entry: ErrorLogItem }) {
       !(isTaskFailure && key === 'fail_reason') &&
       !(isTaskFailure && key === 'create_upstream_request_id') &&
       !(
-        isAutoChannelTest &&
+        showChannelCheck &&
         (AUTO_CHECK_DETAIL_KEYS as readonly string[]).includes(key)
       )
   )
-  const autoCheckEntries = isAutoChannelTest
-    ? AUTO_CHECK_DETAIL_KEYS.filter((key) => detail[key]).map(
-        (key) => [key, detail[key]] as const
-      )
-    : []
   const channelValue = formatChannelLabel(props.entry)
   return (
     <Dialog
@@ -170,11 +169,14 @@ export function ErrorLogDetailsDialog(props: { entry: ErrorLogItem }) {
           />
         )}
       </DetailSection>
-      {autoCheckEntries.length > 0 && (
-        <DetailSection label={t('Auto check')}>
-          <ChannelCheckDetails detail={Object.fromEntries(autoCheckEntries)} />
-        </DetailSection>
-      )}
+      {showChannelCheck &&
+        AUTO_CHECK_DETAIL_KEYS.some((key) => detail[key]) && (
+          <DetailSection
+            label={isAutoChannelTest ? t('Auto check') : t('Channel test')}
+          >
+            <ChannelCheckDetails detail={detail} />
+          </DetailSection>
+        )}
       <DetailSection label={t('Caller')}>
         <DetailRow
           label={t('Username')}

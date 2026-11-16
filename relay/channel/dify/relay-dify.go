@@ -297,6 +297,6 @@ func difyHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respons
 	}
 	c.Writer.Header().Set("Content-Type", "application/json")
 	c.Writer.WriteHeader(resp.StatusCode)
-	c.Writer.Write(jsonResponse)
+	c.Writer.Write(common.ChatCompletionMessageJSON(c, jsonResponse))
 	return &difyResponse.MetaData.Usage, nil
 }

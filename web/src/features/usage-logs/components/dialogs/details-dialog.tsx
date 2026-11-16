@@ -236,7 +236,7 @@ function BillingBreakdown(props: {
       for (const entry of tieredSummary.priceEntries) {
         rows.push({
           label: t(entry.shortLabel),
-          value: `${fmtPrice(entry.price)}/${entry.unit === 'request' ? t('request') : 'M'}`,
+          value: `${fmtPrice(entry.price)}/${entry.unit === 'token' ? 'M' : t(entry.unit)}`,
         })
       }
     }

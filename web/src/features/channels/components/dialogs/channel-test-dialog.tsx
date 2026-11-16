@@ -89,6 +89,7 @@ import {
 } from '../../lib'
 import type {
   Channel,
+  ChannelTestResponse,
   GetChannelsResponse,
   SearchChannelsResponse,
 } from '../../types'
@@ -115,6 +116,7 @@ type TestResult = {
   completedAt?: number
   error?: string
   errorCode?: string
+  generationEvidence?: ChannelTestResponse['generation_evidence']
 }
 
 type BatchProgress = {
@@ -551,7 +553,7 @@ function ChannelTestDialogContent({
             stream: effectiveStreamTest || undefined,
             silent,
           },
-          (success, responseTime, error, errorCode) => {
+          (success, responseTime, error, errorCode, generationEvidence) => {
             const completedAt = Date.now()
             finalResult = {
               status: success ? 'success' : 'error',
@@ -559,6 +561,7 @@ function ChannelTestDialogContent({
               completedAt,
               error,
               errorCode,
+              generationEvidence,
             }
             updateTestResult(model, finalResult)
           }
@@ -1169,7 +1172,13 @@ function TestStatusCell({ result }: { result?: TestResult }) {
 
   if (result.status === 'success') {
     return (
-      <StatusBadge label={t('Success')} variant='success' copyable={false} />
+      <StatusBadge
+        label={
+          result.generationEvidence === 'rejected' ? t('Passed') : t('Success')
+        }
+        variant='success'
+        copyable={false}
+      />
     )
   }
 
@@ -1201,6 +1210,13 @@ function TestResultCell({
   }
 
   if (result.status === 'success') {
+    if (result.generationEvidence === 'rejected') {
+      return (
+        <span className='text-muted-foreground text-sm'>
+          {t('Upstream responded, generation rejected')}
+        </span>
+      )
+    }
     return typeof result.responseTime === 'number' ? (
       <span className='text-muted-foreground text-sm'>
         {formatResponseTime(result.responseTime, t)}

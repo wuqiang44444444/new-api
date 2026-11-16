@@ -156,6 +156,10 @@ func upstreamRequestIDFromTestContext(testContext *gin.Context) string {
 }
 
 func submitChannelTestFailureEvent(c *gin.Context, event clienterrlog.BackendEvent) {
+	if ChannelTestFoundryRejection(c) {
+		event.PublicCode = ChannelTestFoundryRejectionCode
+		AddChannelTestFoundryRejectionDetail(event.Detail)
+	}
 	if status := ChannelTestUpstreamCostStatus(c); status != "" {
 		if event.Detail == nil {
 			event.Detail = make(map[string]string)

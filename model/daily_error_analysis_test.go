@@ -30,6 +30,8 @@ func TestDailyReportCountsCustomerSignalsWhenProbesFillRanking(t *testing.T) {
 		rows = append(rows, probe, probe)
 	}
 	rows = append(rows,
+		ErrorEvent{CreatedAt: 100, EventType: clienterrlog.EventChannelTest, ChannelId: 59, Status: 200, PublicCode: "555420",
+			Detail: `{"check_result":"passed","generation_evidence":"rejected","upstream_status":"400"}`},
 		ErrorEvent{CreatedAt: 101, EventType: clienterrlog.EventAPIError, Status: 503},
 		ErrorEvent{CreatedAt: 102, EventType: clienterrlog.EventStreamError, Status: 200, Reason: "client_disconnected"},
 		ErrorEvent{CreatedAt: 103, EventType: clienterrlog.EventStreamError, Status: 200, Reason: "stream_timeout"},

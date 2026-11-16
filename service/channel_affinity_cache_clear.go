@@ -43,14 +43,22 @@ func affinityEntryCount(cache *cachex.HybridCache[int]) *int {
 }
 
 func ClearChannelAffinityLayer(layer string) (int, error) {
+	cache := channelAffinityCacheForLayer(layer)
+	if cache == nil {
+		return 0, common.NewMessage("Invalid parameters")
+	}
+	return clearAffinityCache(cache)
+}
+
+func channelAffinityCacheForLayer(layer string) *cachex.HybridCache[int] {
 	switch layer {
 	case "session":
-		return clearAffinityCache(getChannelAffinityCache())
+		return getChannelAffinityCache()
 	case "api_key":
-		return clearAffinityCache(defaultAffinityCache())
+		return defaultAffinityCache()
 	case "user":
-		return clearAffinityCache(userAffinityCache())
+		return userAffinityCache()
 	default:
-		return 0, common.NewMessage("Invalid parameters")
+		return nil
 	}
 }

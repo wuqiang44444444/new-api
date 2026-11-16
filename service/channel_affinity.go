@@ -97,19 +97,18 @@ func getChannelAffinityCache() *cachex.HybridCache[int] {
 			defaultTTLSeconds = 3600
 		}
 
-		channelAffinityCache = cachex.NewHybridCache[int](cachex.HybridCacheConfig[int]{
+		channelAffinityCache = cachex.NewInspectableHybridCache(cachex.HybridCacheConfig[int]{
 			Namespace: cachex.Namespace(channelAffinityCacheNamespace),
 			Redis:     common.RDB,
 			RedisEnabled: func() bool {
 				return common.RedisEnabled && common.RDB != nil
 			},
 			RedisCodec: cachex.IntCodec{},
-			Memory: func() *hot.HotCache[string, int] {
-				return hot.NewHotCache[string, int](hot.LRU, capacity).
-					WithTTL(time.Duration(defaultTTLSeconds) * time.Second).
-					WithJanitor().
-					Build()
-			},
+		}, func() *hot.HotCache[string, cachex.InspectableValue[int]] {
+			return hot.NewHotCache[string, cachex.InspectableValue[int]](hot.LRU, capacity).
+				WithTTL(time.Duration(defaultTTLSeconds) * time.Second).
+				WithJanitor().
+				Build()
 		})
 	})
 	return channelAffinityCache

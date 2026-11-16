@@ -46,6 +46,10 @@ func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
 		return
 	}
 
+	originalLength := len(data)
+	if src == nil || (src.StatusCode >= http.StatusOK && src.StatusCode < http.StatusMultipleChoices) {
+		data = common.ChatCompletionMessageJSON(c, data)
+	}
 	body := io.NopCloser(bytes.NewBuffer(data))
 
 	// We shouldn't set the header before we parse the response body, because the parse part may fail.
@@ -61,6 +65,9 @@ func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
 		}
 	}
 
+	if len(data) != originalLength {
+		dropUpstreamBodyValidators(c.Writer.Header())
+	}
 	// set Content-Length header manually BEFORE calling WriteHeader
 	c.Writer.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 

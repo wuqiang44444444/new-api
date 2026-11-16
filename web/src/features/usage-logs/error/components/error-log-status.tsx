@@ -40,12 +40,16 @@ export function ErrorLogStatus(props: {
   }
   if (props.entry.event_type === 'channel_test') {
     status = 0
+    let passedWithRejection = false
     try {
       const detail = JSON.parse(props.entry.detail || '{}')
       const recorded = Number(detail?.upstream_status)
       if (Number.isInteger(recorded) && recorded >= 100 && recorded <= 599) {
         status = recorded
       }
+      passedWithRejection =
+        detail?.check_result === 'passed' &&
+        detail?.generation_evidence === 'rejected'
     } catch {
       // Missing diagnostic metadata must not be inferred from the error code.
     }
@@ -53,6 +57,18 @@ export function ErrorLogStatus(props: {
       status > 0
         ? t('Upstream HTTP {{status}}', { status })
         : t('Upstream HTTP status not recorded')
+    if (passedWithRejection) {
+      return (
+        <div className='flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5'>
+          <StatusBadge
+            label={t('Check passed · Generation rejected')}
+            variant='info'
+            copyable={false}
+          />
+          <span className='text-muted-foreground text-xs'>{label}</span>
+        </div>
+      )
+    }
   }
   return (
     <StatusBadge

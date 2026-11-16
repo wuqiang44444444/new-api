@@ -28,6 +28,8 @@ export function errorEventTypeLabel(
       return t('Stream Error')
     case 'task_failure':
       return t('Task Failure')
+    case 'video_delivery':
+      return t('Video Delivery Failure')
     default:
       return t('API Error')
   }

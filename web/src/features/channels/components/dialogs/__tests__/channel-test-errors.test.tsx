@@ -45,28 +45,55 @@ const channel = channelSchema.parse({
   models: 'nano-banana-2',
 })
 
-function SelectedChannelDialog() {
+function SelectedChannelDialog({
+  selectedChannel,
+}: {
+  selectedChannel: typeof channel
+}) {
   const { setCurrentRow } = useChannels()
   useEffect(() => {
-    setCurrentRow(channel)
-  }, [setCurrentRow])
+    setCurrentRow(selectedChannel)
+  }, [selectedChannel, setCurrentRow])
   return <ChannelTestDialog open onOpenChange={() => undefined} />
 }
 
-function renderChannelTest() {
+function renderChannelTest(selectedChannel = channel) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
       <ChannelsProvider>
-        <SelectedChannelDialog />
+        <SelectedChannelDialog selectedChannel={selectedChannel} />
       </ChannelsProvider>
     </QueryClientProvider>
   )
 }
 
 describe('Channel test failure display', () => {
+  test('passes a Foundry probe while showing the generation rejection', async () => {
+    vi.mocked(testChannel).mockResolvedValue({
+      success: true,
+      generation_evidence: 'rejected',
+      time: 0.3,
+    })
+    renderChannelTest({
+      ...channel,
+      id: 59,
+      type: 14,
+      models: 'claude-fable-5',
+    })
+    const row = await screen.findByRole('row', { name: /claude-fable-5/ })
+    await userEvent
+      .setup()
+      .click(within(row).getByRole('button', { name: 'Test Connection' }))
+    expect(await within(row).findByText('Passed')).toBeVisible()
+    expect(
+      within(row).getByText('Upstream responded, generation rejected')
+    ).toBeVisible()
+    expect(within(row).queryByText('Failed')).not.toBeInTheDocument()
+  })
+
   test('shows the specific billing error instead of claiming the model has no price', async () => {
     const message =
       'the current image adapter cannot supply the verified usage required by this billing expression'

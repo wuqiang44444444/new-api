@@ -35,15 +35,14 @@ var defaultAffinityCache = sync.OnceValue(func() *cachex.HybridCache[int] {
 })
 
 func newDefaultAffinityCache(redisClient *redis.Client) *cachex.HybridCache[int] {
-	return cachex.NewHybridCache[int](cachex.HybridCacheConfig[int]{
+	return cachex.NewInspectableHybridCache(cachex.HybridCacheConfig[int]{
 		Namespace:      cachex.Namespace(defaultAffinityNamespace),
 		Redis:          redisClient,
 		RedisEnabled:   func() bool { return common.RedisEnabled },
 		RedisCodec:     cachex.IntCodec{},
 		RedisOpTimeout: defaultAffinityRedisLimit,
-		Memory: func() *hot.HotCache[string, int] {
-			return hot.NewHotCache[string, int](hot.LRU, defaultAffinityCapacity).WithTTL(defaultAffinityTTL).WithJanitor().Build()
-		},
+	}, func() *hot.HotCache[string, cachex.InspectableValue[int]] {
+		return hot.NewHotCache[string, cachex.InspectableValue[int]](hot.LRU, defaultAffinityCapacity).WithTTL(defaultAffinityTTL).WithJanitor().Build()
 	})
 }
 

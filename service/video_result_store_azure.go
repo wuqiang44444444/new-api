@@ -42,6 +42,9 @@ func (s *azureBlobArtifactStore) putVideoResultObject(ctx context.Context, objec
 		if errors.Is(err, errVideoResultTooLarge) {
 			return 0, err
 		}
+		if errors.Is(err, errVideoResultSourceRead) {
+			return 0, errVideoResultSourceRead
+		}
 		RecordImageDeliveryError(ctx, "video_result_store", err)
 		return 0, azureStoreError("upload video result to object store failed", err)
 	}

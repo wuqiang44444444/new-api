@@ -29,6 +29,7 @@ type ThinkingContentInfo struct {
 	IsFirstThinkingContent  bool
 	SendLastThinkingContent bool
 	HasSentThinkingContent  bool
+	OpenChoices             map[int]struct{}
 }
 
 const (

@@ -123,6 +123,9 @@ function autoCheckDetailValue(
       if (value === 'not_checked') return t('Not checked')
       return value
     case 'generation_evidence':
+      if (value === 'rejected') {
+        return t('Upstream responded, generation rejected')
+      }
       return value === 'not_verified' ? t('Not verified this run') : value
     case 'upstream_request':
       if (value === 'not_sent') return t('Not sent')
